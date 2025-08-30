@@ -445,4 +445,208 @@
                 }
                 
                 console.log('✅ Step 3: ToolManager v8初期化完了');
-                this.initialization
+                this.initializationSteps.push('ToolManager v8初期化');
+                
+                // Step 4: Manager連携確認
+                console.log('🔍 v8 Manager連携確認開始');
+                this.toolManager.verifyInjection();
+                console.log('✅ v8 Manager連携確認完了');
+                
+                this.v8Features.managerIntegration = true;
+                this.v8Features.toolSystemReady = true;
+                
+                console.log('✅ AppCore - v8 Manager群初期化完了');
+                
+            } catch (error) {
+                console.error('💀 v8 Manager群初期化エラー:', error);
+                throw error;
+            }
+        }
+        
+        /**
+         * 他Manager群作成・登録
+         */
+        createAndRegisterManagers() {
+            // CoordinateManager
+            const coordinateManager = new window.Tegaki.CoordinateManager();
+            this.registerManager('coordinate', coordinateManager);
+            
+            // RecordManager
+            const recordManager = new window.Tegaki.RecordManager();
+            this.registerManager('record', recordManager);
+            
+            // ConfigManager
+            const configManager = new window.Tegaki.ConfigManager();
+            this.registerManager('config', configManager);
+            
+            // ErrorManager（既存インスタンス使用）
+            if (window.Tegaki.ErrorManagerInstance) {
+                this.registerManager('error', window.Tegaki.ErrorManagerInstance);
+            }
+            
+            // EventBus（既存インスタンス使用）
+            if (window.Tegaki.EventBusInstance) {
+                this.registerManager('eventbus', window.Tegaki.EventBusInstance);
+            }
+            
+            // ShortcutManager
+            const shortcutManager = new window.Tegaki.ShortcutManager();
+            this.registerManager('shortcut', shortcutManager);
+            
+            // NavigationManager
+            const navigationManager = new window.Tegaki.NavigationManager();
+            this.registerManager('navigation', navigationManager);
+        }
+        
+        /**
+         * Manager登録
+         */
+        registerManager(key, instance) {
+            this.managers.set(key, instance);
+            this.managerInstances.set(key, instance);
+            
+            // グローバル登録
+            const managerKey = `${key.charAt(0).toUpperCase() + key.slice(1)}ManagerInstance`;
+            window.Tegaki[managerKey] = instance;
+        }
+        
+        /**
+         * v8システム開始
+         */
+        async startV8System() {
+            console.log('🚀 AppCore - v8システム開始');
+            
+            if (!this.canvasManager || !this.toolManager) {
+                throw new Error('Managers not initialized - call initializeV8Managers() first');
+            }
+            
+            if (!this.canvasElementReady) {
+                throw new Error('Canvas element not ready - system cannot start');
+            }
+            
+            try {
+                // 最終依存注入検証
+                this.toolManager.verifyInjection();
+                console.log('✅ ToolManager依存注入検証完了');
+                
+                // システム準備完了通知
+                if (window.Tegaki?.EventBusInstance?.emit) {
+                    window.Tegaki.EventBusInstance.emit('v8SystemReady', {
+                        rendererType: this.rendererType,
+                        webgpuSupported: this.webgpuSupported,
+                        managers: Array.from(this.managers.keys()),
+                        features: this.v8Features,
+                        canvasElementReady: this.canvasElementReady
+                    });
+                }
+                
+                this.systemStarted = true;
+                this.v8Ready = true;
+                
+                console.log('✅ AppCore - v8システム開始完了');
+                
+                // 初期化サマリー出力
+                this.outputInitializationSummary();
+                
+            } catch (error) {
+                console.error('💀 v8システム開始エラー:', error);
+                throw error;
+            }
+        }
+        
+        /**
+         * 初期化サマリー出力（コンソール過剰表示削減版）
+         */
+        outputInitializationSummary() {
+            console.log('✅ AppCore v8システム完了');
+            console.log(`📊 PixiJS ${window.PIXI.VERSION} | ${this.rendererType} | Manager数: ${this.managers.size}`);
+        }
+        
+        /**
+         * Manager取得
+         */
+        getManagerInstance(key) {
+            return this.managerInstances.get(key);
+        }
+        
+        /**
+         * PixiJS Application取得
+         */
+        getPixiApp() {
+            return this.pixiApp;
+        }
+        
+        /**
+         * CanvasManager取得
+         */
+        getCanvasManager() {
+            return this.canvasManager;
+        }
+        
+        /**
+         * ToolManager取得
+         */
+        getToolManager() {
+            return this.toolManager;
+        }
+        
+        /**
+         * システム準備状況確認
+         */
+        isV8Ready() {
+            return this.v8Ready && 
+                   this.systemStarted && 
+                   this.pixiApp && 
+                   this.canvasManager && 
+                   this.toolManager &&
+                   this.canvasElementReady &&
+                   this.v8Features.canvasElementReady;
+        }
+        
+        /**
+         * v8デバッグ情報取得
+         */
+        getV8DebugInfo() {
+            return {
+                className: 'AppCore',
+                version: 'v8.12.0',
+                systemStatus: {
+                    v8Ready: this.v8Ready,
+                    systemStarted: this.systemStarted,
+                    pixiAppReady: !!this.pixiApp,
+                    canvasElementReady: this.canvasElementReady,
+                    canvasManagerReady: this.canvasManager ? this.canvasManager.isV8Ready() : false,
+                    toolManagerReady: this.toolManager ? this.toolManager.isReady() : false
+                },
+                rendererInfo: {
+                    type: this.rendererType,
+                    webgpuSupported: this.webgpuSupported,
+                    pixiVersion: window.PIXI ? window.PIXI.VERSION : 'not loaded'
+                },
+                managerInfo: {
+                    registeredManagers: Array.from(this.managers.keys()),
+                    managerCount: this.managers.size,
+                    canvasManager: !!this.canvasManager,
+                    toolManager: !!this.toolManager
+                },
+                v8Features: this.v8Features,
+                canvasStatus: this.getCanvasStatus(),
+                initializationSteps: this.initializationSteps,
+                memoryUsage: {
+                    pixiApp: !!this.pixiApp,
+                    managersMap: this.managers.size,
+                    instancesMap: this.managerInstances.size
+                }
+            };
+        }
+    }
+
+    // グローバル登録
+    if (!window.Tegaki) {
+        window.Tegaki = {};
+    }
+    window.Tegaki.AppCore = AppCore;
+    
+    console.log('✅ AppCore v8統合基盤システム Loaded - 構文エラー修正・完全版');
+
+})();

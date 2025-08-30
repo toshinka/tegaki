@@ -1,35 +1,29 @@
 /**
  * 📄 FILE: js/tegaki-application.js
  * 📌 RESPONSIBILITY: PixiJS v8対応メインアプリケーション・システム初期化統制・UI連携
- * 🚨 修正内容: Canvas DOM挿入処理追加・座標取得修正・400x400サイズ確実適用
  * 
  * @provides
  *   - TegakiApplication（クラス）
  *   - async initialize(): void（v8システム完全初期化）
- *   - async createCanvasV8(): PIXI.Application（v8 Application作成・AppCore連携修正版）
- *   - async setupCanvas(): void（Canvas DOM挿入処理）🚨NEW
+ *   - async createCanvasV8(): PIXI.Application（v8 Application作成・AppCore連携版）
+ *   - async setupCanvas(): void（Canvas DOM挿入処理）
  *   - async initializeV8Managers(): void（Manager群初期化）
  *   - setupV8UI(): void（UI設定・イベント登録）
  *   - selectToolV8(toolName): boolean（ツール選択）
- *   - isReady(): boolean（初期化完了確認・強化版）
- *   - getDebugInfo(): Object（v7互換デバッグ情報）
- *   - getV8DebugInfo(): Object（v8デバッグ情報）
+ *   - isReady(): boolean（初期化完了確認）
+ *   - getDebugInfo(): Object（v8デバッグ情報）
  *   - getV8FeatureStatus(): Object（v8機能状況）
- *   - handleV8PointerEvents(): void（高精度ポインター処理）
  *
  * @uses
  *   - window.Tegaki.AppCore（v8統合基盤システム）
- *   - appCore.createCanvasV8(): PIXI.Application（修正：正しいAPI使用）
- *   - appCore.initializeV8Managers(): void（Manager群初期化）
- *   - appCore.startV8System(): void（システム開始）
- *   - appCore.isV8Ready(): boolean（準備状況確認）
- *   - window.Tegaki.ErrorManagerInstance.showError()（エラー表示）
- *   - window.Tegaki.EventBusInstance.emit()（イベント通知）
- *   - window.Tegaki.TegakiIcons.replaceAllToolIcons()（アイコン適用）
- *   - document.getElementById()（DOM操作）🚨NEW
+ *   - appCore.createCanvasV8(): PIXI.Application
+ *   - appCore.initializeV8Managers(): void
+ *   - appCore.startV8System(): void
+ *   - appCore.isV8Ready(): boolean
+ *   - document.getElementById()（DOM操作）
  *
  * @initflow
- *   1. AppCore作成 → 2. AppCore.createCanvasV8()呼び出し → 3. setupCanvas() DOM挿入🚨NEW
+ *   1. AppCore作成 → 2. AppCore.createCanvasV8()呼び出し → 3. setupCanvas() DOM挿入
  *   → 4. Manager群初期化 → 5. システム開始 → 6. UI設定 → 7. 初期化完了確認 → 8. 準備完了通知
  *
  * @forbids
@@ -37,19 +31,19 @@
  *   🚫 フォールバック禁止  
  *   🚫 フェイルセーフ禁止
  *   🚫 v7/v8二重管理禁止
- *   🚫 未実装メソッド呼び出し禁止（createCanvasV8修正済み）
- *   🚫 Canvas DOM挿入スキップ禁止🚨NEW
+ *   🚫 未実装メソッド呼び出し禁止
+ *   🚫 Canvas DOM挿入スキップ禁止
  *
  * @manager-key
  *   window.Tegaki.TegakiApplicationInstance
  *
  * @dependencies-strict
- *   REQUIRED: PixiJS v8.12.0, AppCore, HTML DOM要素（canvas-container）🚨UPDATE
+ *   REQUIRED: PixiJS v8.12.0, AppCore, HTML DOM要素（canvas-container）
  *   OPTIONAL: ErrorManager, EventBus, TegakiIcons
  *   FORBIDDEN: Manager直接作成、v7互換コード
  *
  * @integration-flow
- *   Bootstrap.start() → TegakiApplication.initialize() → AppCore統合 → Canvas DOM挿入🚨NEW 
+ *   Bootstrap.start() → TegakiApplication.initialize() → AppCore統合 → Canvas DOM挿入
  *   → Manager初期化 → UI統合
  *
  * @method-naming-rules
@@ -57,10 +51,10 @@
  *   UI系: setupV8xxx() / handleV8xxx()
  *   状態系: isReady() / getV8DebugInfo() / getV8FeatureStatus()
  *   ツール系: selectToolV8()
- *   DOM系: setupCanvas() / ensureCanvasDOMPlacement()🚨NEW
+ *   DOM系: setupCanvas()
  *
  * @error-handling
- *   throw: 初期化失敗・AppCore未準備・必須Manager未存在・DOM要素未発見🚨UPDATE
+ *   throw: 初期化失敗・AppCore未準備・必須Manager未存在・DOM要素未発見
  *   false: UI機能失敗・ツール選択失敗
  *   log: 警告・状態変更・デバッグ情報
  *
@@ -68,7 +62,7 @@
  *   初期化状態は内部管理・isReady()経由確認
  *   AppCore状態は間接参照・直接操作禁止
  *   UI状態は専用メソッド経由更新
- *   DOM状態は確実性重視・要素存在確認必須🚨NEW
+ *   DOM状態は確実性重視・要素存在確認必須
  *
  * @performance-notes
  *   非同期初期化でUIブロック回避・16ms以内目標
@@ -95,14 +89,14 @@ if (!window.Tegaki.TegakiApplication) {
             this.fullyReady = false;
             this.v8SystemReady = false;
             this.initializationComplete = false;
-            this.canvasDOMReady = false; // 🚨NEW: Canvas DOM挿入状態
+            this.canvasDOMReady = false;
             
             // v8基盤システム
             this.appCore = null;
             this.pixiApp = null;
             
             // v8レンダラー情報
-            this.rendererType = null; // 'webgpu' | 'webgl'
+            this.rendererType = null;
             this.webgpuSupported = null;
             
             // v8機能状態
@@ -116,7 +110,7 @@ if (!window.Tegaki.TegakiApplication) {
                 eventsConfigured: false,
                 toolsReady: false,
                 systemValidated: false,
-                canvasDOMInserted: false // 🚨NEW
+                canvasDOMInserted: false
             };
             
             // v8初期化情報
@@ -152,8 +146,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8システム完全初期化・WebGPU対応・非同期処理・初期化完了保証
-         * 🚨修正：Canvas DOM挿入処理を追加
+         * v8システム完全初期化・WebGPU対応・非同期処理・初期化完了保証
          */
         async initialize() {
             console.log('🚀 TegakiApplication v8システム初期化開始');
@@ -163,12 +156,12 @@ if (!window.Tegaki.TegakiApplication) {
                 await this.createAppCoreV8();
                 this.v8InitializationSteps.push('v8 AppCore created');
                 
-                // Step 2: v8 Application作成・WebGPU対応（修正：正しいAPI使用）
+                // Step 2: v8 Application作成・WebGPU対応
                 await this.createCanvasV8();
                 this.v8InitializationSteps.push('v8 Application created with WebGPU support');
                 this.v8Features.asyncInitialization = true;
                 
-                // 🚨NEW Step 3: Canvas DOM挿入（最重要修正）
+                // Step 3: Canvas DOM挿入（最重要修正）
                 await this.setupCanvas();
                 this.v8InitializationSteps.push('v8 Canvas DOM inserted');
                 this.v8Features.canvasDOMInserted = true;
@@ -222,7 +215,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8 AppCore作成
+         * v8 AppCore作成
          */
         async createAppCoreV8() {
             console.log('🚀 v8 AppCore作成開始');
@@ -232,12 +225,11 @@ if (!window.Tegaki.TegakiApplication) {
             }
             
             this.appCore = new window.Tegaki.AppCore();
-            
             console.log('✅ v8 AppCore作成完了');
         }
         
         /**
-         * 🚀 v8 Application作成・WebGPU対応・非同期初期化（修正：AppCore API統一）
+         * v8 Application作成・WebGPU対応・非同期初期化
          */
         async createCanvasV8() {
             console.log('🚀 v8 Application作成開始');
@@ -246,7 +238,7 @@ if (!window.Tegaki.TegakiApplication) {
                 // v8設定取得（400x400デフォルト確実適用）
                 const config = this.getV8CanvasConfig();
                 
-                // 🚨修正: AppCore.createCanvasV8() を正しく呼び出し
+                // AppCore.createCanvasV8() を正しく呼び出し
                 this.pixiApp = await this.appCore.createCanvasV8(config.width, config.height);
                 
                 if (!this.pixiApp) {
@@ -270,7 +262,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚨NEW: Canvas DOM挿入処理（最重要修正）
+         * Canvas DOM挿入処理（最重要修正）
          * この処理が欠落していたため、キャンバスが表示されなかった
          */
         async setupCanvas() {
@@ -326,7 +318,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚨NEW: Canvas サイズ確実適用
+         * Canvas サイズ確実適用
          */
         ensureCanvasSize(canvas, width, height) {
             // PixiJS Application サイズ調整
@@ -344,7 +336,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8 Manager群統合初期化
+         * v8 Manager群統合初期化
          */
         async initializeV8Managers() {
             console.log('🔧 v8 Manager群統合初期化開始');
@@ -366,7 +358,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8システム開始・統合確認
+         * v8システム開始・統合確認
          */
         async startV8System() {
             console.log('🚀 v8システム開始');
@@ -389,8 +381,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 初期化完了確認・状態確定
-         * 🚨修正：Canvas DOM挿入確認を追加
+         * 初期化完了確認・状態確定
          */
         async finalizeInitialization() {
             console.log('🔍 TegakiApplication 初期化完了確認開始');
@@ -406,7 +397,7 @@ if (!window.Tegaki.TegakiApplication) {
                     throw new Error('PixiJS Application not ready for finalization');
                 }
                 
-                // 🚨NEW: Canvas DOM挿入確認
+                // Canvas DOM挿入確認
                 const container = document.getElementById('canvas-container');
                 const insertedCanvas = container?.querySelector('canvas');
                 if (!container || !insertedCanvas || insertedCanvas !== this.pixiApp.canvas) {
@@ -472,7 +463,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 初期化完了通知（外部確認用）
+         * 初期化完了通知（外部確認用）
          */
         notifyInitializationComplete() {
             console.log('📡 TegakiApplication 初期化完了通知送信');
@@ -511,8 +502,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8対応UI設定・イベント登録
-         * 🚨修正：Canvas DOM挿入後の確実なイベント設定
+         * v8対応UI設定・イベント登録
          */
         setupV8UI() {
             console.log('🎨 v8対応UI設定開始');
@@ -542,8 +532,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8キャンバスイベント設定
-         * 🚨修正：DOM挿入確認後の確実なイベントリスナー設定
+         * v8キャンバスイベント設定
          */
         setupV8CanvasEvents() {
             if (!this.pixiApp?.canvas) {
@@ -578,8 +567,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8高精度ポインターダウン処理
-         * 🚨修正：座標変換処理の安全性強化
+         * v8高精度ポインターダウン処理
          */
         handleV8PointerDown(event) {
             if (!this.isReady()) return;
@@ -590,8 +578,8 @@ if (!window.Tegaki.TegakiApplication) {
                 
                 // v8ツール処理
                 const toolManager = this.appCore.getToolManager();
-                if (toolManager?.handlePointerDown) {
-                    toolManager.handlePointerDown(coords.x, coords.y, event);
+                if (toolManager && typeof toolManager.onPointerDown === 'function') {
+                    toolManager.onPointerDown({ x: coords.x, y: coords.y, originalEvent: event });
                 }
                 
             } catch (error) {
@@ -600,8 +588,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8高精度ポインタームーブ処理
-         * 🚨修正：座標変換処理の安全性強化
+         * v8高精度ポインタームーブ処理
          */
         handleV8PointerMove(event) {
             if (!this.isReady()) return;
@@ -612,8 +599,8 @@ if (!window.Tegaki.TegakiApplication) {
                 
                 // v8ツール処理（リアルタイム描画）
                 const toolManager = this.appCore.getToolManager();
-                if (toolManager?.handlePointerMove) {
-                    toolManager.handlePointerMove(coords.x, coords.y, event);
+                if (toolManager && typeof toolManager.onPointerMove === 'function') {
+                    toolManager.onPointerMove({ x: coords.x, y: coords.y, originalEvent: event });
                 }
                 
             } catch (error) {
@@ -622,8 +609,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8高精度ポインターアップ処理
-         * 🚨修正：座標変換処理の安全性強化
+         * v8高精度ポインターアップ処理
          */
         handleV8PointerUp(event) {
             if (!this.isReady()) return;
@@ -634,8 +620,8 @@ if (!window.Tegaki.TegakiApplication) {
                 
                 // v8ツール処理
                 const toolManager = this.appCore.getToolManager();
-                if (toolManager?.handlePointerUp) {
-                    toolManager.handlePointerUp(coords.x, coords.y, event);
+                if (toolManager && typeof toolManager.onPointerUp === 'function') {
+                    toolManager.onPointerUp({ x: coords.x, y: coords.y, originalEvent: event });
                 }
                 
             } catch (error) {
@@ -644,8 +630,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8高精度座標取得
-         * 🚨修正：400x400キャンバスサイズ対応・エラー処理強化
+         * v8高精度座標取得
          */
         getV8CanvasCoordinates(event) {
             try {
@@ -684,8 +669,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8座標表示更新
-         * 🚨修正：エラー処理強化・座標計算の安定化
+         * v8座標表示更新
          */
         updateV8CoordinateDisplay(event) {
             const coordElement = document.getElementById('coordinates');
@@ -700,7 +684,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8ホイール処理
+         * v8ホイール処理
          */
         handleV8Wheel(event) {
             event.preventDefault();
@@ -708,7 +692,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8ツールボタン設定
+         * v8ツールボタン設定
          */
         setupV8ToolButtons() {
             // v8ペンツールボタン
@@ -727,7 +711,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8機能ボタン設定
+         * v8機能ボタン設定
          */
         setupV8FeatureButtons() {
             // v8 Undo/Redoボタン（将来実装）
@@ -750,7 +734,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8アイコン適用
+         * v8アイコン適用
          */
         setupV8Icons() {
             if (window.Tegaki?.TegakiIcons?.replaceAllToolIcons) {
@@ -762,7 +746,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8ツール選択・即座反映（修正：AppCore経由）
+         * v8ツール選択・即座反映
          */
         selectToolV8(toolName) {
             console.log(`🔧 v8ツール選択: ${toolName}`);
@@ -773,7 +757,7 @@ if (!window.Tegaki.TegakiApplication) {
             }
             
             try {
-                // 🚨修正: ToolManager経由でツール選択（AppCore.selectToolV8は存在しない）
+                // ToolManager経由でツール選択
                 const toolManager = this.appCore.getToolManager();
                 if (!toolManager || typeof toolManager.switchTool !== 'function') {
                     console.error('❌ ToolManager not available or switchTool method not found');
@@ -802,7 +786,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8ツールボタン表示更新
+         * v8ツールボタン表示更新
          */
         updateV8ToolButtons(selectedTool) {
             // 全てのツールボタンからactiveクラス削除
@@ -825,7 +809,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8ステータス表示更新
+         * v8ステータス表示更新
          */
         updateV8StatusDisplay() {
             // v8レンダラー情報表示
@@ -839,14 +823,14 @@ if (!window.Tegaki.TegakiApplication) {
             // v8キャンバス情報表示
             const canvasInfo = document.getElementById('canvas-info');
             if (canvasInfo) {
-                canvasInfo.textContent = '400×400px'; // 固定表示
+                canvasInfo.textContent = '400×400px';
             }
             
             // v8現在ツール表示
             const currentTool = document.getElementById('current-tool');
             if (currentTool) {
                 const toolManager = this.appCore?.getToolManager();
-                const toolName = toolManager?.getCurrentToolName?.() || 'pen';
+                const toolName = toolManager?.currentToolName || 'pen';
                 const toolDisplayNames = {
                     pen: 'v8ペン',
                     eraser: 'v8消しゴム'
@@ -857,12 +841,12 @@ if (!window.Tegaki.TegakiApplication) {
             // v8色表示
             const currentColor = document.getElementById('current-color');
             if (currentColor) {
-                currentColor.textContent = '#800000'; // ふたばマルーン
+                currentColor.textContent = '#800000';
             }
         }
         
         /**
-         * 🚀 v8機能統合
+         * v8機能統合
          */
         integrateV8Features() {
             console.log('🚀 v8機能統合開始');
@@ -886,7 +870,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8設定取得（400x400デフォルト確実適用）
+         * v8設定取得（400x400デフォルト確実適用）
          */
         getV8CanvasConfig() {
             // ConfigManager v8対応確認
@@ -895,19 +879,18 @@ if (!window.Tegaki.TegakiApplication) {
             } else {
                 // フォールバック設定（v8標準・400x400サイズ固定）
                 return {
-                    width: 400,  // 固定値
-                    height: 400, // 固定値
-                    backgroundColor: 0xf0e0d6, // ふたばクリーム
+                    width: 400,
+                    height: 400,
+                    backgroundColor: 0xf0e0d6,
                     antialias: true,
-                    resolution: Math.min(window.devicePixelRatio || 1, 2.0), // DPR制限
-                    preference: 'webgpu' // WebGPU優先
+                    resolution: Math.min(window.devicePixelRatio || 1, 2.0),
+                    preference: 'webgpu'
                 };
             }
         }
         
         /**
-         * 🚀 v8対応状況確認（初期化完了確認修正版）
-         * 🚨修正：Canvas DOM挿入確認を追加
+         * v8対応状況確認（初期化完了確認修正版）
          */
         isReady() {
             return this.initialized && 
@@ -927,7 +910,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 詳細準備状況確認（デバッグ用）
+         * 詳細準備状況確認（デバッグ用）
          */
         getReadinessDetails() {
             return {
@@ -956,17 +939,16 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8初期化成功ログ出力（コンソール削減版）
+         * v8初期化成功ログ出力（コンソール削減版）
          */
         logV8InitializationSuccess() {
             const elapsedTime = this.initializationEndTime - this.initializationStartTime;
-            
             console.log('✅ TegakiApplication v8初期化成功');
             console.log(`📊 ${this.rendererType} | ${elapsedTime}ms | Ready: ${this.isReady()}`);
         }
         
         /**
-         * 🚨 v8機能状況取得メソッド（追加：index.htmlエラー修正）
+         * v8機能状況取得メソッド
          */
         getV8FeatureStatus() {
             return {
@@ -994,7 +976,7 @@ if (!window.Tegaki.TegakiApplication) {
         }
         
         /**
-         * 🚀 v8デバッグ情報取得（修正強化版）
+         * v8デバッグ情報取得
          */
         getV8DebugInfo() {
             return {

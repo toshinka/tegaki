@@ -6,22 +6,23 @@
  * @manager-key window.Tegaki.PenToolInstance
  * @dependencies-strict 必須: CanvasManager, CoordinateManager, RecordManager / オプション: EventBus, ConfigManager
  * @integration-flow ToolManager → createTool → Manager統一注入 → アクティブ化
- * @method-naming-rules startStroke()/addPoint()/endStroke()統一
+ * @method-naming-rules onPointerDown()/onPointerMove()/onPointerUp()統一、startStroke()/addPoint()/endStroke()内部処理
  * @state-management 状態は直接操作禁止・専用メソッド経由のみ
  * @performance-notes v8 Graphics・WebGPU対応・リアルタイム描画・60fps対応
  * 
- * PenTool PixiJS v8完全対応版 - コンストラクタエラー修正・描画機能修正版
- * - v8 Graphics API完全準拠（rect().fill()形式）
+ * PenTool PixiJS v8完全対応版 - onPointerXxxメソッド追加・描画機能修正版
+ * - v8 Graphics API完全準拠（stroke()形式）
  * - v7 API完全削除（beginFill/endFill等禁止）
  * - WebGPU対応・リアルタイム描画
  * - TPF形式ストローク保存準備
  * - Manager統一注入完全対応
- * - コンストラクタでのCanvasManager必須条件を削除
+ * - TegakiApplication連携対応（onPointerXxxメソッド実装）
  */
 
 class PenTool extends window.Tegaki.AbstractTool {
     constructor(toolName = 'pen') {
         super(toolName);
+        console.log('🖊️ PenTool v8.12.0作成開始 - onPointerXxx対応版');
         
         // v8描画状態
         this.currentStroke = null;
@@ -49,15 +50,15 @@ class PenTool extends window.Tegaki.AbstractTool {
         this.graphics = null;
         this.drawContainer = null;
         
-        console.log('🖊️ PenTool v8.12.0作成完了 - コンストラクタエラー修正版');
+        console.log('✅ PenTool v8.12.0作成完了 - onPointerXxx対応版');
     }
     
     /**
-     * ✅確認済み: Manager統一注入（Object形式）
+     * Manager統一注入（Object形式）
      * CanvasManager, CoordinateManager, RecordManager必須確認
      */
     setManagers(managers) {
-        console.log('🔧 pen Manager統一注入開始...');
+        console.log('🔧 PenTool Manager統一注入開始...');
         
         try {
             if (!managers || typeof managers !== 'object') {
@@ -82,11 +83,11 @@ class PenTool extends window.Tegaki.AbstractTool {
                 throw new Error(`必須Manager不足: ${missingManagers.join(', ')}`);
             }
             
-            console.log('✅ pen: Manager統一注入完了');
+            console.log('✅ PenTool: Manager統一注入完了');
             return true;
             
         } catch (error) {
-            console.error('❌ pen: Manager統一注入失敗:', error);
+            console.error('❌ PenTool: Manager統一注入失敗:', error);
             throw error;
         }
     }
@@ -99,7 +100,7 @@ class PenTool extends window.Tegaki.AbstractTool {
     }
     
     /**
-     * ✅確認済み: Tool アクティブ化・v8描画機能初期化
+     * Tool アクティブ化・v8描画機能初期化
      */
     activate() {
         console.log('🖊️ PenTool アクティブ化開始');
@@ -125,7 +126,7 @@ class PenTool extends window.Tegaki.AbstractTool {
     }
     
     /**
-     * 🚀 v8描画機能初期化（Graphics API v8準拠）
+     * v8描画機能初期化（Graphics API v8準拠）
      */
     initializeV8DrawingFeatures() {
         try {
@@ -148,17 +149,17 @@ class PenTool extends window.Tegaki.AbstractTool {
             // v8機能フラグ設定
             this.v8FeaturesEnabled = true;
             
-            console.log('✅ v8描画機能初期化完了');
+            console.log('✅ PenTool v8描画機能初期化完了');
             
         } catch (error) {
-            console.error('❌ v8描画機能初期化失敗:', error);
+            console.error('❌ PenTool v8描画機能初期化失敗:', error);
             this.v8FeaturesEnabled = false;
             throw error;
         }
     }
     
     /**
-     * 🎨 v8 Graphics設定（新API準拠・v7 API完全削除）
+     * v8 Graphics設定（新API準拠・v7 API完全削除）
      */
     setupV8Graphics() {
         try {
@@ -177,47 +178,116 @@ class PenTool extends window.Tegaki.AbstractTool {
             // Container追加
             if (this.drawContainer && this.graphics) {
                 this.drawContainer.addChild(this.graphics);
-                console.log('📦 Graphics追加完了: Container → Graphics');
+                console.log('📦 PenTool Graphics追加完了: Container → Graphics');
             }
             
-            console.log('✅ v8 Graphics設定完了');
+            console.log('✅ PenTool v8 Graphics設定完了');
             
         } catch (error) {
-            console.error('❌ v8 Graphics設定失敗:', error);
+            console.error('❌ PenTool v8 Graphics設定失敗:', error);
             throw error;
         }
     }
     
     /**
-     * ⚡ v8リアルタイム描画有効化
+     * v8リアルタイム描画有効化
      */
     enableRealtimeDrawing() {
         try {
             this.realtimeDrawingEnabled = true;
             this.webGPUOptimized = !!window.PIXI?.Graphics;
             
-            console.log('⚡ v8リアルタイム描画有効');
+            console.log('⚡ PenTool v8リアルタイム描画有効');
             
         } catch (error) {
-            console.error('❌ リアルタイム描画設定失敗:', error);
+            console.error('❌ PenTool リアルタイム描画設定失敗:', error);
         }
     }
     
+    // ========================================
+    // TegakiApplication連携用 onPointerXxx メソッド
+    // ========================================
+    
     /**
-     * 🖊️ 描画開始（v8 Graphics API準拠）
+     * 🖱️ ポインターダウン処理（TegakiApplication→ToolManager→PenTool）
+     * @param {Object} event - {x, y, originalEvent}
      */
-    startStroke(point) {
-        if (!this.v8FeaturesEnabled || !this.graphics) {
-            console.warn('⚠️ v8描画機能未準備 - 描画スキップ');
+    onPointerDown(event) {
+        console.log('🖊️ PenTool.onPointerDown():', event);
+        
+        if (!this.v8FeaturesEnabled) {
+            console.warn('⚠️ PenTool v8描画機能未準備 - 描画スキップ');
             return;
         }
         
         try {
+            const point = { x: event.x, y: event.y };
+            this.startStroke(point);
+            
+        } catch (error) {
+            console.error('❌ PenTool.onPointerDown エラー:', error);
+        }
+    }
+    
+    /**
+     * 🖱️ ポインタームーブ処理（TegakiApplication→ToolManager→PenTool）
+     * @param {Object} event - {x, y, originalEvent}
+     */
+    onPointerMove(event) {
+        if (!this.isDrawing || !this.v8FeaturesEnabled) {
+            return;
+        }
+        
+        try {
+            const point = { x: event.x, y: event.y };
+            this.addStrokePoint(point);
+            
+        } catch (error) {
+            console.error('❌ PenTool.onPointerMove エラー:', error);
+        }
+    }
+    
+    /**
+     * 🖱️ ポインターアップ処理（TegakiApplication→ToolManager→PenTool）
+     * @param {Object} event - {x, y, originalEvent}
+     */
+    onPointerUp(event) {
+        console.log('🖊️ PenTool.onPointerUp():', event);
+        
+        if (!this.isDrawing) {
+            return;
+        }
+        
+        try {
+            const point = { x: event.x, y: event.y };
+            this.endStroke(point);
+            
+        } catch (error) {
+            console.error('❌ PenTool.onPointerUp エラー:', error);
+        }
+    }
+    
+    // ========================================
+    // 内部描画処理メソッド
+    // ========================================
+    
+    /**
+     * 描画開始（v8 Graphics API準拠）
+     */
+    startStroke(point) {
+        if (!this.v8FeaturesEnabled || !this.graphics) {
+            console.warn('⚠️ PenTool v8描画機能未準備 - 描画スキップ');
+            return;
+        }
+        
+        try {
+            console.log('🖊️ PenTool 描画開始:', point);
+            
             // 描画状態初期化
             this.isDrawing = true;
             this.strokePoints = [point];
             
-            // v8新API: Graphics.clear() → Graphics.moveTo()
+            // v8新API: Graphics.clear() → moveTo()
             this.graphics.clear();
             this.graphics.moveTo(point.x, point.y);
             
@@ -233,16 +303,18 @@ class PenTool extends window.Tegaki.AbstractTool {
                     opacity: this.strokeOpacity,
                     started: Date.now()
                 };
+                
+                console.log('📝 PenTool ストローク記録開始:', this.currentStroke.id);
             }
             
         } catch (error) {
-            console.error('❌ 描画開始失敗:', error);
+            console.error('❌ PenTool 描画開始失敗:', error);
             this.isDrawing = false;
         }
     }
     
     /**
-     * ➡️ 描画継続（v8 Graphics API準拠）
+     * 描画継続（v8 Graphics API準拠）
      */
     addStrokePoint(point) {
         if (!this.isDrawing || !this.v8FeaturesEnabled || !this.graphics) {
@@ -253,10 +325,8 @@ class PenTool extends window.Tegaki.AbstractTool {
             // 座標追加
             this.strokePoints.push(point);
             
-            // v8新API: Graphics.lineTo() → stroke()
+            // v8新API: lineTo() → stroke()
             this.graphics.lineTo(point.x, point.y);
-            
-            // v8新API: stroke()でライン描画
             this.graphics.stroke(this.v8StrokeStyle);
             
             // ストローク記録更新
@@ -265,12 +335,12 @@ class PenTool extends window.Tegaki.AbstractTool {
             }
             
         } catch (error) {
-            console.error('❌ 描画継続失敗:', error);
+            console.error('❌ PenTool 描画継続失敗:', error);
         }
     }
     
     /**
-     * ✅ 描画終了（v8 Graphics API準拠・TPF形式保存）
+     * 描画終了（v8 Graphics API準拠・TPF形式保存）
      */
     endStroke(point) {
         if (!this.isDrawing) {
@@ -278,6 +348,8 @@ class PenTool extends window.Tegaki.AbstractTool {
         }
         
         try {
+            console.log('🖊️ PenTool 描画終了:', point);
+            
             // 最終座標追加
             if (point) {
                 this.addStrokePoint(point);
@@ -293,123 +365,108 @@ class PenTool extends window.Tegaki.AbstractTool {
                 this.currentStroke.ended = Date.now();
                 this.currentStroke.duration = this.currentStroke.ended - this.currentStroke.started;
                 
-                // TPF形式保存
-                this.recordManager.addStroke(this.currentStroke);
+                console.log('📝 PenTool ストローク完了:', {
+                    id: this.currentStroke.id,
+                    points: this.currentStroke.points.length,
+                    duration: this.currentStroke.duration
+                });
+                
+                // TPF形式保存（RecordManager利用可能な場合）
+                if (typeof this.recordManager.addStroke === 'function') {
+                    this.recordManager.addStroke(this.currentStroke);
+                } else {
+                    console.warn('⚠️ RecordManager.addStroke() not available');
+                }
             }
             
-            // 状態リセット
+            // 描画状態リセット
             this.isDrawing = false;
             this.currentStroke = null;
             this.strokePoints = [];
             
         } catch (error) {
-            console.error('❌ 描画終了失敗:', error);
+            console.error('❌ PenTool 描画終了失敗:', error);
             this.isDrawing = false;
+            this.currentStroke = null;
         }
     }
     
-    /**
-     * 🖱️ マウスダウンイベント（v8対応）
-     */
-    handlePointerDown(event) {
-        try {
-            if (!this.coordinateManager) {
-                console.warn('⚠️ CoordinateManager未準備');
-                return;
-            }
-            
-            const canvasPoint = this.coordinateManager.toCanvasCoords(event.clientX, event.clientY);
-            this.startStroke(canvasPoint);
-            
-        } catch (error) {
-            console.error('❌ PointerDown処理失敗:', error);
-        }
-    }
+    // ========================================
+    // Tool管理・設定メソッド
+    // ========================================
     
     /**
-     * 🖱️ マウス移動イベント（v8対応）
-     */
-    handlePointerMove(event) {
-        if (!this.isDrawing || !this.coordinateManager) {
-            return;
-        }
-        
-        try {
-            const canvasPoint = this.coordinateManager.toCanvasCoords(event.clientX, event.clientY);
-            this.addStrokePoint(canvasPoint);
-            
-        } catch (error) {
-            console.error('❌ PointerMove処理失敗:', error);
-        }
-    }
-    
-    /**
-     * 🖱️ マウスアップイベント（v8対応）
-     */
-    handlePointerUp(event) {
-        if (!this.isDrawing) {
-            return;
-        }
-        
-        try {
-            let canvasPoint = null;
-            
-            if (this.coordinateManager) {
-                canvasPoint = this.coordinateManager.toCanvasCoords(event.clientX, event.clientY);
-            }
-            
-            this.endStroke(canvasPoint);
-            
-        } catch (error) {
-            console.error('❌ PointerUp処理失敗:', error);
-            this.isDrawing = false;
-        }
-    }
-    
-    /**
-     * 🔄 Tool無効化
+     * Tool無効化
      */
     deactivate() {
-        try {
-            // 描画中断
-            if (this.isDrawing) {
-                this.endStroke(null);
-            }
-            
-            // Graphics清理
-            if (this.graphics && this.drawContainer) {
-                this.drawContainer.removeChild(this.graphics);
-                this.graphics.destroy();
-                this.graphics = null;
-            }
-            
-            // 状態リセット
-            this.v8FeaturesEnabled = false;
-            this.realtimeDrawingEnabled = false;
-            this.isDrawing = false;
-            this.currentStroke = null;
-            this.strokePoints = [];
-            
-            // 親クラス無効化
-            super.deactivate();
-            
-        } catch (error) {
-            console.error('❌ Tool無効化失敗:', error);
+        console.log('🖊️ PenTool 無効化');
+        
+        // 進行中描画の強制終了
+        if (this.isDrawing) {
+            this.endStroke(null);
         }
+        
+        // Graphics削除
+        if (this.graphics && this.drawContainer) {
+            this.drawContainer.removeChild(this.graphics);
+            this.graphics.destroy();
+            this.graphics = null;
+        }
+        
+        // 状態リセット
+        this.v8FeaturesEnabled = false;
+        this.isDrawing = false;
+        this.currentStroke = null;
+        this.strokePoints = [];
+        
+        // 親クラス無効化
+        super.deactivate();
+        
+        console.log('✅ PenTool 無効化完了');
     }
     
     /**
-     * 📊 v8描画状態取得
+     * ストロークスタイル更新
      */
-    getDrawingStatus() {
+    updateStrokeStyle(style) {
+        if (style.width !== undefined) {
+            this.strokeWidth = style.width;
+        }
+        if (style.color !== undefined) {
+            this.strokeColor = style.color;
+        }
+        if (style.opacity !== undefined) {
+            this.strokeOpacity = style.opacity;
+        }
+        
+        // v8スタイル更新
+        this.v8StrokeStyle = {
+            width: this.strokeWidth,
+            color: this.strokeColor,
+            alpha: this.strokeOpacity,
+            cap: 'round',
+            join: 'round'
+        };
+        
+        console.log('🎨 PenTool スタイル更新:', this.v8StrokeStyle);
+    }
+    
+    /**
+     * Tool状態取得
+     */
+    getState() {
         return {
+            toolName: this.toolName,
+            isActive: this.isActive,
+            isDrawing: this.isDrawing,
             v8FeaturesEnabled: this.v8FeaturesEnabled,
             realtimeDrawingEnabled: this.realtimeDrawingEnabled,
             webGPUOptimized: this.webGPUOptimized,
-            isDrawing: this.isDrawing,
             strokePoints: this.strokePoints.length,
-            graphics: !!this.graphics,
-            drawContainer: !!this.drawContainer
+            strokeStyle: this.v8StrokeStyle,
+            hasManagers: !!this.managers,
+            hasGraphics: !!this.graphics,
+            hasDrawContainer: !!this.drawContainer
         };
     }
     
@@ -418,45 +475,41 @@ class PenTool extends window.Tegaki.AbstractTool {
      */
     getDebugInfo() {
         return {
-            ...super.getDebugInfo(),
-            drawingStatus: this.getDrawingStatus(),
+            className: 'PenTool',
+            version: 'v8.12.0',
+            state: this.getState(),
             managers: {
                 canvas: !!this.canvasManager,
                 coordinate: !!this.coordinateManager,
                 record: !!this.recordManager,
                 eventbus: !!this.eventBus,
                 config: !!this.configManager
-            }
+            },
+            currentStroke: this.currentStroke ? {
+                id: this.currentStroke.id,
+                points: this.currentStroke.points.length,
+                started: this.currentStroke.started
+            } : null
         };
     }
-}
-
-// PenTool v8初期化関数
-function initializePenToolV8() {
-    console.log('🖊️ PenTool v8完全対応版初期化開始');
     
-    try {
-        const penTool = new PenTool();
-        
-        // グローバル登録
-        window.Tegaki = window.Tegaki || {};
-        window.Tegaki.PenTool = PenTool;
-        window.Tegaki.PenToolInstance = penTool;
-        
-        console.log('✅ PenTool v8完全対応版初期化完了');
-        return penTool;
-        
-    } catch (error) {
-        console.error('❌ PenTool v8初期化失敗:', error);
-        throw error;
+    /**
+     * 準備状態確認
+     */
+    isReady() {
+        return this.v8FeaturesEnabled && 
+               !!this.canvasManager && 
+               !!this.coordinateManager && 
+               !!this.recordManager && 
+               !!this.graphics && 
+               !!this.drawContainer;
     }
 }
 
 // グローバル登録
-if (typeof window !== 'undefined') {
-    window.Tegaki = window.Tegaki || {};
-    window.Tegaki.PenTool = PenTool;
-    window.Tegaki.initializePenToolV8 = initializePenToolV8;
-    
-    console.log('🖊️ PenTool v8.12.0コンストラクタエラー修正版 Loaded');
+if (!window.Tegaki) {
+    window.Tegaki = {};
 }
+
+window.Tegaki.PenTool = PenTool;
+console.log('🖊️ PenTool v8.12.0完全対応版 Loaded - onPointerXxx対応・描画機能修正版');
