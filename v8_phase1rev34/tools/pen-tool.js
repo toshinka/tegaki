@@ -1,127 +1,280 @@
 /**
- * @fileoverview PenTool v8.12.0 Phase1.5 包括的修正版
- * @description PixiJS v8対応・継続描画問題修正・外部入力対応・RecordManager統合
- * @author Claude
- * @date 2025-08-30
- * @version Phase1.5-r5
- * 
- * @provides PenTool, window.Tegaki.PenTool
- * @uses AbstractTool, CanvasManager, CoordinateManager, RecordManager, NavigationManager
- * @initflow 1. AbstractTool.constructor() → 2. setManagers() → 3. activate() → 4. Graphics初期化
- * @forbids 💀 双方向依存禁止 🚫 フォールバック禁止 🚫 フェイルセーフ禁止 🚫 v7/v8 両対応による二重管理禁止 🚫 未実装メソッド呼び出し禁止 🚫 目先のエラー修正のためのDRY・SOLID原則違反
- * @manager-key window.Tegaki.ToolManagerInstance.tools.get('pen')
- * @dependencies-strict REQUIRED: AbstractTool, CanvasManager, CoordinateManager, RecordManager; OPTIONAL: NavigationManager; FORBIDDEN: 他Tool直接参照
- * @integration-flow AppCore → ToolManager.initializeV8Tools() → new PenTool() → setManagers() → activate()
- * @method-naming-rules startDrawing()/endDrawing(), startOperation()/endOperation() 形式で統一
- * @state-management 描画状態は直接操作せず、専用メソッド経由。isDrawing/tempStroke等
- * @performance-notes Graphics作成は重い処理。再利用とContainer分離で最適化。16ms描画維持
+ * 📄 FILE: tools/pen-tool.js
+ * 📌 RESPONSIBILITY: ペン描画ツール・ストローク作成・外部入力対応・継続描画問題修正
+ *
+ * @provides
+ *   - PenTool クラス
+ *   - onPointerDown(event) - ポインターダウン描画開始
+ *   - onPointerMove(event) - ポインタームーブ描画継続
+ *   - onPointerUp(event) - ポインターアップ描画終了
+ *   - setManagers(managers) - Manager統一注入
+ *   - activate() - ツールアクティブ化
+ *   - deactivate() - ツール非アクティブ化
+ *   - resetDrawingState() - 描画状態リセット
+ *   - getDebugInfo() - デバッグ情報取得
+ *
+ * @uses
+ *   - AbstractTool.constructor()
+ *   - AbstractTool.setManagers()
+ *   - AbstractTool.activate()
+ *   - AbstractTool.deactivate()
+ *   - CanvasManager.getDrawContainer()
+ *   - CoordinateManager.toCanvasCoords()
+ *   - RecordManager.startOperation()
+ *   - RecordManager.addPoint()
+ *   - RecordManager.endOperation()
+ *   - NavigationManager.getCameraBounds()
+ *   - PIXI.Graphics()
+ *
+ * @initflow
+ *   1. new PenTool() → 2. setManagers() → 3. activate() → 4. onPointerDown() → 5. createStrokeGraphics() → 6. onPointerUp()
+ *
+ * @forbids
+ *   💀 双方向依存禁止
+ *   🚫 フォールバック禁止
+ *   🚫 フェイルセーフ禁止
+ *   🚫 v7/v8 両対応による二重管理禁止
+ *   🚫 未実装メソッド呼び出し禁止
+ *   🚫 目先のエラー修正のためのDRY・SOLID原則違反
+ *
+ * @manager-key
+ *   window.Tegaki.ToolManagerInstance.tools.get('pen')
+ *
+ * @dependencies-strict
+ *   REQUIRED: AbstractTool, CanvasManager, CoordinateManager, RecordManager
+ *   OPTIONAL: NavigationManager
+ *   FORBIDDEN: 他Tool直接参照
+ *
+ * @integration-flow
+ *   AppCore → ToolManager.initializeV8Tools() → new PenTool() → setManagers() → activate()
+ *
+ * @method-naming-rules
+ *   - startDrawing()/endDrawing() 形式統一
+ *   - startOperation()/endOperation() 形式統一
+ *   - onPointerXxx() - ポインターイベント処理
+ *
+ * @state-management
+ *   - 描画状態は直接操作せず、専用メソッド経由
+ *   - isDrawing/isRecording/tempStroke等の状態管理
+ *   - 状態変更は必ずEventBus通知
+ *
+ * @performance-notes
+ *   - Graphics作成は重い処理、再利用とContainer分離で最適化
+ *   - 16ms描画維持、WebGPU対応
+ *   - deactivate時の確実な解放
  */
 
-// PenTool Phase1.5 包括的修正版 - 継続描画問題・外部入力・RecordManager統合対応
+// PenTool Phase1.5 STEP3修正版 - Manager注入エラー修正・API統一対応
 class PenTool extends window.Tegaki.AbstractTool {
     /**
-     * PenTool v8.12.0 Phase1.5版コンストラクタ
-     * @description 継続描画問題修正・外部入力バッファリング・RecordManager統合対応
+     * PenTool v8.12.0 STEP3修正版コンストラクタ
+     * @description Manager注入エラー修正・API統一・継続描画問題解決
      */
     constructor() {
         super('pen');
         
-        // 描画状態管理（Phase1.5強化版）
+        // 描画状態管理
         this.isDrawing = false;
-        this.isRecording = false;  // RecordManager記録状態
-        this.currentStroke = null;  // 現在のGraphicsインスタンス
-        this.tempStroke = [];       // キャンバス外描画バッファ
+        this.isRecording = false;
+        this.currentStroke = null;
+        this.tempStroke = [];
         
-        // 描画設定（Phase1.5統合版）
+        // 描画設定
         this.strokeColor = 0x800000;  // futaba-maroon
         this.strokeWidth = 3;
         this.strokeOpacity = 1.0;
         
-        // Manager参照キャッシュ
+        // Manager参照（初期化時はnull）
         this.canvasManager = null;
         this.coordinateManager = null;
         this.recordManager = null;
         this.navigationManager = null;
+        this.eventBus = null;
         
-        console.log('🖊️ PenTool v8.12.0 Phase1.5版 作成完了 - 継続描画修正・外部入力・RecordManager統合対応');
+        console.log('🖊️ PenTool v8.12.0 STEP3修正版 作成開始');
     }
     
     /**
-     * Manager統一注入処理（Phase1.5強化版）
+     * Manager統一注入処理（STEP3修正版）
      * @param {Object} managers - Manager群オブジェクト
+     * @returns {boolean} 注入成功フラグ
      */
     setManagers(managers) {
-        super.setManagers(managers);
-        
-        // 必須Manager直接参照キャッシュ（性能最適化）
-        this.canvasManager = this.managers.canvas;
-        this.coordinateManager = this.managers.coordinate;
-        this.recordManager = this.managers.record;
-        this.navigationManager = this.managers.navigation;
-        
-        console.log('🖊️ PenTool: Manager統一注入完了（Phase1.5強化版）');
+        try {
+            console.log('🔧 PenTool: Manager統一注入開始（STEP3修正版）');
+            
+            // 型・値チェック
+            if (!managers || typeof managers !== 'object') {
+                console.error('❌ PenTool: managers が null/undefined または Object でない');
+                return false;
+            }
+            
+            // 親クラスのsetManagers実行
+            const parentResult = super.setManagers(managers);
+            if (parentResult === false) {
+                console.error('❌ PenTool: AbstractTool.setManagers() 失敗');
+                return false;
+            }
+            
+            // Manager直接参照キャッシュ（性能最適化）
+            console.log('📦 PenTool: Manager キャッシュ作成開始');
+            
+            // 必須Manager確認・キャッシュ
+            if (this.managers.canvas) {
+                this.canvasManager = this.managers.canvas;
+                console.log('✅ PenTool: CanvasManager キャッシュ完了');
+            } else {
+                console.warn('⚠️ PenTool: CanvasManager not found in managers');
+            }
+            
+            if (this.managers.coordinate) {
+                this.coordinateManager = this.managers.coordinate;
+                console.log('✅ PenTool: CoordinateManager キャッシュ完了');
+            } else {
+                console.warn('⚠️ PenTool: CoordinateManager not found in managers');
+            }
+            
+            if (this.managers.record) {
+                this.recordManager = this.managers.record;
+                console.log('✅ PenTool: RecordManager キャッシュ完了');
+            } else {
+                console.warn('⚠️ PenTool: RecordManager not found in managers');
+            }
+            
+            // オプションManager
+            if (this.managers.navigation) {
+                this.navigationManager = this.managers.navigation;
+                console.log('✅ PenTool: NavigationManager キャッシュ完了');
+            }
+            
+            if (this.managers.eventbus) {
+                this.eventBus = this.managers.eventbus;
+                console.log('✅ PenTool: EventBus キャッシュ完了');
+            }
+            
+            console.log('✅ PenTool: Manager統一注入完了（STEP3修正版）');
+            return true;
+            
+        } catch (error) {
+            console.error('🚨 PenTool: setManagers() エラー:', error);
+            return false;
+        }
     }
     
     /**
-     * ツールアクティブ化処理（Phase1.5版）
-     * @description Graphics初期化とPointer配線を実行
+     * ツールアクティブ化処理（STEP3修正版）
      */
     activate() {
-        super.activate();
-        
-        // RecordManager準備状態確認
-        if (this.recordManager && typeof this.recordManager.isReady === 'function') {
-            const isReady = this.recordManager.isReady();
-            console.log(`🖊️ PenTool: RecordManager準備状態 = ${isReady}`);
+        try {
+            super.activate();
+            
+            // Manager準備状態確認
+            this.verifyManagersReady();
+            
+            console.log('✅ PenTool: アクティブ化完了（STEP3修正版）');
+            
+        } catch (error) {
+            console.error('🚨 PenTool: activate() エラー:', error);
         }
-        
-        console.log('🖊️ PenTool アクティブ化完了（Phase1.5版）');
     }
     
     /**
-     * PointerDown処理（Phase1.5完全修正版）
+     * Manager準備状態確認
+     */
+    verifyManagersReady() {
+        const checks = {
+            canvasManager: !!this.canvasManager,
+            coordinateManager: !!this.coordinateManager,
+            recordManager: !!this.recordManager,
+            recordManagerReady: this.recordManager && typeof this.recordManager.isReady === 'function' ? this.recordManager.isReady() : false
+        };
+        
+        console.log('🔍 PenTool: Manager準備状態確認:', checks);
+        
+        if (!checks.canvasManager) {
+            console.warn('⚠️ PenTool: CanvasManager 未注入');
+        }
+        if (!checks.coordinateManager) {
+            console.warn('⚠️ PenTool: CoordinateManager 未注入');
+        }
+        if (!checks.recordManager) {
+            console.warn('⚠️ PenTool: RecordManager 未注入');
+        }
+        if (checks.recordManager && !checks.recordManagerReady) {
+            console.warn('⚠️ PenTool: RecordManager 未準備');
+        }
+        
+        return checks;
+    }
+    
+    /**
+     * PointerDown処理（継続描画問題修正版）
      * @param {PointerEvent} event - ポインターイベント
      */
     onPointerDown(event) {
-        if (!this.isActive || this.isDrawing) {
+        console.log('🖊️ PenTool: onPointerDown() 開始');
+        
+        // 基本状態確認
+        if (!this.isActive) {
+            console.log('ℹ️ PenTool: 非アクティブ状態のため描画無効');
+            return;
+        }
+        
+        if (this.isDrawing) {
+            console.log('ℹ️ PenTool: 既に描画中のため無視');
             return;
         }
         
         try {
+            // Manager準備確認
+            if (!this.coordinateManager) {
+                console.error('❌ PenTool: CoordinateManager 未準備');
+                return;
+            }
+            
             // DOM座標→キャンバス座標変換
             const canvasPoint = this.coordinateManager.toCanvasCoords(event.clientX, event.clientY);
+            console.log('📍 変換座標:', canvasPoint);
             
-            // 外部入力バッファ初期化
+            // 描画状態初期化
             this.tempStroke = [canvasPoint];
             this.isDrawing = true;
             this.isRecording = false;
             
-            // カメラ内判定（NavigationManager使用）
+            // カメラ内判定
             const insideCamera = this.isInsideCamera(canvasPoint);
+            console.log('🎯 カメラ内判定:', insideCamera);
             
             if (insideCamera) {
-                // カメラ内：即座にRecordManager開始
+                // カメラ内：即座に記録開始
                 this.startRecording(canvasPoint);
             }
             
-            console.log(`🖊️ 描画開始: ${JSON.stringify(canvasPoint)} (カメラ内: ${insideCamera})`);
+            console.log('✅ PenTool: onPointerDown() 完了');
             
         } catch (error) {
-            console.error('🚨 PenTool PointerDown エラー:', error);
+            console.error('🚨 PenTool: onPointerDown() エラー:', error);
             this.resetDrawingState();
         }
     }
     
     /**
-     * PointerMove処理（Phase1.5外部入力対応版）
+     * PointerMove処理（外部入力対応版）
      * @param {PointerEvent} event - ポインターイベント
      */
     onPointerMove(event) {
+        // 描画中でない場合は無視
         if (!this.isActive || !this.isDrawing) {
             return;
         }
         
         try {
+            // Manager準備確認
+            if (!this.coordinateManager) {
+                console.error('❌ PenTool: CoordinateManager 未準備');
+                return;
+            }
+            
             // DOM座標→キャンバス座標変換
             const canvasPoint = this.coordinateManager.toCanvasCoords(event.clientX, event.clientY);
             
@@ -131,7 +284,7 @@ class PenTool extends window.Tegaki.AbstractTool {
             if (!this.isRecording) {
                 // 未記録状態：カメラ内侵入チェック
                 if (this.isInsideCamera(canvasPoint)) {
-                    console.log('🖊️ カメラ内侵入 - 記録開始');
+                    console.log('🎯 PenTool: カメラ内侵入 - 記録開始');
                     this.startRecording(canvasPoint);
                 }
             } else {
@@ -140,35 +293,38 @@ class PenTool extends window.Tegaki.AbstractTool {
             }
             
         } catch (error) {
-            console.error('🚨 PenTool PointerMove エラー:', error);
+            console.error('🚨 PenTool: onPointerMove() エラー:', error);
             this.resetDrawingState();
         }
     }
     
     /**
-     * PointerUp処理（Phase1.5完全修正版）
+     * PointerUp処理（完全修正版）
      * @param {PointerEvent} event - ポインターイベント
      */
     onPointerUp(event) {
-        console.log('🖊️ PointerUp - 描画終了処理開始');
+        console.log('🖊️ PenTool: onPointerUp() 開始 - 描画終了処理');
         
+        // 描画中でない場合は無視
         if (!this.isActive || !this.isDrawing) {
+            console.log('ℹ️ PenTool: 描画中でないため無視');
             return;
         }
         
         try {
             // 記録中なら終了処理
             if (this.isRecording) {
+                console.log('🔚 PenTool: 記録終了処理開始');
                 this.endRecording();
             }
             
-            // 描画状態を完全リセット
+            // 描画状態を完全リセット（重要）
             this.resetDrawingState();
             
-            console.log('✅ PenTool: 描画状態リセット完了');
+            console.log('✅ PenTool: onPointerUp() 完了 - 描画状態リセット');
             
         } catch (error) {
-            console.error('🚨 PenTool PointerUp エラー:', error);
+            console.error('🚨 PenTool: onPointerUp() エラー:', error);
             this.resetDrawingState();
         }
     }
@@ -179,13 +335,15 @@ class PenTool extends window.Tegaki.AbstractTool {
      */
     startRecording(startPoint) {
         try {
-            // Graphics作成と初期化
+            console.log('🎬 PenTool: 記録開始処理');
+            
+            // Graphics作成
             this.createStrokeGraphics();
             
             // RecordManager記録開始
             if (this.recordManager && typeof this.recordManager.startOperation === 'function') {
                 this.recordManager.startOperation('stroke', this.tempStroke);
-                console.log('✅ RecordManager記録開始');
+                console.log('✅ RecordManager: 記録開始');
             } else {
                 console.log('ℹ️ RecordManager未準備 - 描画のみ実行');
             }
@@ -194,9 +352,10 @@ class PenTool extends window.Tegaki.AbstractTool {
             this.renderTempStroke();
             
             this.isRecording = true;
+            console.log('✅ PenTool: 記録開始完了');
             
         } catch (error) {
-            console.error('🚨 記録開始エラー:', error);
+            console.error('🚨 PenTool: startRecording() エラー:', error);
             throw error;
         }
     }
@@ -206,10 +365,17 @@ class PenTool extends window.Tegaki.AbstractTool {
      */
     createStrokeGraphics() {
         try {
+            console.log('🎨 PenTool: Graphics作成開始');
+            
+            // Manager準備確認
+            if (!this.canvasManager) {
+                throw new Error('CanvasManager未準備');
+            }
+            
             // 新規Graphics作成
             this.currentStroke = new PIXI.Graphics();
             
-            // v8対応 line設定
+            // v8対応 stroke設定
             this.currentStroke.setStrokeStyle({
                 width: this.strokeWidth,
                 color: this.strokeColor,
@@ -218,13 +384,16 @@ class PenTool extends window.Tegaki.AbstractTool {
             
             // DrawContainerに追加（v8では必須）
             const drawContainer = this.canvasManager.getDrawContainer();
+            if (!drawContainer) {
+                throw new Error('DrawContainer取得失敗');
+            }
+            
             drawContainer.addChild(this.currentStroke);
             
-            console.log(`✅ Graphics作成・Container追加完了: color=0x${this.strokeColor.toString(16)}, width=${this.strokeWidth}`);
-            console.log(`📦 DrawContainer children count: ${drawContainer.children.length}`);
+            console.log('✅ PenTool: Graphics作成・Container追加完了');
             
         } catch (error) {
-            console.error('🚨 Graphics作成エラー:', error);
+            console.error('🚨 PenTool: createStrokeGraphics() エラー:', error);
             throw error;
         }
     }
@@ -238,6 +407,8 @@ class PenTool extends window.Tegaki.AbstractTool {
         }
         
         try {
+            console.log('🖌️ PenTool: tempStroke描画開始');
+            
             // 最初の点でmoveTo
             const firstPoint = this.tempStroke[0];
             this.currentStroke.moveTo(firstPoint.x, firstPoint.y);
@@ -248,10 +419,10 @@ class PenTool extends window.Tegaki.AbstractTool {
                 this.currentStroke.lineTo(point.x, point.y);
             }
             
-            console.log(`🖊️ tempStroke描画完了: ${this.tempStroke.length}点`);
+            console.log(`✅ PenTool: tempStroke描画完了 (${this.tempStroke.length}点)`);
             
         } catch (error) {
-            console.error('🚨 tempStroke描画エラー:', error);
+            console.error('🚨 PenTool: renderTempStroke() エラー:', error);
         }
     }
     
@@ -274,7 +445,7 @@ class PenTool extends window.Tegaki.AbstractTool {
             }
             
         } catch (error) {
-            console.error('🚨 点追加エラー:', error);
+            console.error('🚨 PenTool: addPointToStroke() エラー:', error);
         }
     }
     
@@ -283,6 +454,8 @@ class PenTool extends window.Tegaki.AbstractTool {
      */
     endRecording() {
         try {
+            console.log('🔚 PenTool: 記録終了処理');
+            
             // RecordManager記録終了
             if (this.recordManager && typeof this.recordManager.endOperation === 'function') {
                 const strokeMeta = {
@@ -291,18 +464,20 @@ class PenTool extends window.Tegaki.AbstractTool {
                     opacity: this.strokeOpacity,
                     layer: 'default',
                     tool: 'pen',
-                    engine: 'pixi'
+                    engine: 'pixi-v8'
                 };
                 
                 this.recordManager.endOperation(strokeMeta);
-                console.log('✅ RecordManager記録終了');
+                console.log('✅ RecordManager: 記録終了');
             }
             
             this.isRecording = false;
             this.currentStroke = null;
             
+            console.log('✅ PenTool: 記録終了完了');
+            
         } catch (error) {
-            console.error('🚨 記録終了エラー:', error);
+            console.error('🚨 PenTool: endRecording() エラー:', error);
         }
     }
     
@@ -324,27 +499,31 @@ class PenTool extends window.Tegaki.AbstractTool {
                    point.y >= bounds.y && 
                    point.y <= bounds.y + bounds.height;
         } catch (error) {
-            console.warn('⚠️ カメラ境界取得エラー:', error);
+            console.warn('⚠️ PenTool: getCameraBounds() エラー:', error);
             return true;  // エラー時は内部扱い
         }
     }
     
     /**
-     * 描画状態完全リセット（Phase1.5強化版）
+     * 描画状態完全リセット（重要）
      */
     resetDrawingState() {
+        console.log('🔄 PenTool: 描画状態リセット開始');
+        
         this.isDrawing = false;
         this.isRecording = false;
         this.currentStroke = null;
         this.tempStroke = [];
         
-        console.log('🔄 PenTool: 描画状態完全リセット');
+        console.log('✅ PenTool: 描画状態リセット完了');
     }
     
     /**
      * 強制描画終了（ツール切替時）
      */
     deactivate() {
+        console.log('🔄 PenTool: deactivate() 開始');
+        
         if (this.isDrawing) {
             console.log('⚠️ PenTool: 強制描画終了');
             if (this.isRecording) {
@@ -354,7 +533,7 @@ class PenTool extends window.Tegaki.AbstractTool {
         }
         
         super.deactivate();
-        console.log('🖊️ PenTool 非アクティブ化完了');
+        console.log('✅ PenTool: deactivate() 完了');
     }
     
     /**
@@ -363,30 +542,36 @@ class PenTool extends window.Tegaki.AbstractTool {
      */
     getDebugInfo() {
         return {
+            className: 'PenTool',
+            version: 'STEP3修正版',
             toolName: this.name,
             isActive: this.isActive,
-            isDrawing: this.isDrawing,
-            isRecording: this.isRecording,
-            tempStrokeLength: this.tempStroke.length,
+            drawingState: {
+                isDrawing: this.isDrawing,
+                isRecording: this.isRecording,
+                tempStrokeLength: this.tempStroke.length,
+                hasCurrentStroke: !!this.currentStroke
+            },
             strokeSettings: {
                 color: this.strokeColor,
                 width: this.strokeWidth,
                 opacity: this.strokeOpacity
             },
-            managersReady: {
+            managersStatus: {
                 canvas: !!this.canvasManager,
                 coordinate: !!this.coordinateManager,
                 record: !!this.recordManager,
-                navigation: !!this.navigationManager
+                navigation: !!this.navigationManager,
+                eventbus: !!this.eventBus
             }
         };
     }
 }
 
-// グローバル登録（Phase1.5準拠）
+// グローバル登録
 window.Tegaki = window.Tegaki || {};
 window.Tegaki.PenTool = PenTool;
 
-console.log('🖊️ PenTool v8.12.0 Phase1.5版 Loaded - 継続描画修正・外部入力対応・RecordManager統合完了');
-console.log('📏 修正内容: PointerUp完全修正・tempStroke実装・RecordManager統合・カメラ外描画対応');
-console.log('🚀 特徴: 描画状態完全管理・外部入力バッファリング・Manager統合・継続描画問題解決');
+console.log('🖊️ PenTool v8.12.0 STEP3修正版 Loaded - Manager注入エラー修正・継続描画問題解決');
+console.log('📏 修正内容: setManagers()エラー処理強化・Manager準備状態確認・API統一対応');
+console.log('🚀 特徴: 詳細ログ・Manager準備状態確認・描画状態完全管理・外部入力バッファリング');

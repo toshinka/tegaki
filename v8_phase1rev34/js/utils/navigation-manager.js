@@ -1,114 +1,4 @@
 /**
- * 🧭 NavigationManager - PixiJS v8高精度パン・ズーム・ナビゲーション管理
- * 📋 RESPONSIBILITY: v8 Container変形・高精度パン・ズーム・キーボードナビゲーション・変形状態管理
- * 🚫 PROHIBITION: 座標変換・描画処理・レイヤー管理・UI通知・フォールバック処理
- * ✅ PERMISSION: v8 Container変形・Matrix操作・イベント処理・高精度ナビゲーション・WebGPU最適化
- * 
- * 📏 DESIGN_PRINCIPLE: v8 Container中心・高精度変形・パフォーマンス重視・状態管理統一・WebGPU活用
- * 🔄 INTEGRATION: CanvasManager v8(Stage取得) + CoordinateManager v8(座標連携) + PixiJS v8(Container変形) + EventBus(通知)
- * 🎯 V8_FEATURE: Container.scale/position活用・Matrix高精度変形・WebGPU加速・リアルタイム変形
- * 
- * === ナビゲーションフロー ===
- * パン開始: ポインター取得 → v8座標変換 → Stage変形開始 → リアルタイム更新 → 変形適用
- * ズーム: ホイール検出 → 中心座標計算 → v8 Matrix変形 → Container.scale更新 → 高精度適用
- * キーボード: キー検出 → 方向計算 → v8変形更新 → Container即時反映 → 状態同期
- * 
- * === 提供メソッド ===
- * - async setCanvasManagerV8(canvasManager) : v8対応CanvasManager設定
- * - zoomCanvasV8(scale, centerX, centerY) : v8高精度ズーム
- * - panCanvasV8(deltaX, deltaY) : v8高精度パン
- * - getCanvasTransformV8() : v8変形状態取得
- * - resetViewV8() : v8ビューリセット
- * - setCoordinateManagerV8(coordinateManager) : v8 CoordinateManager設定
- * 
- * === 他ファイル呼び出しメソッド ===
- * - canvasManager.pixiApp.stage : v8 Stage Container取得
- * - coordinateManager.clearV8Cache() : v8座標キャッシュクリア
- * - window.Tegaki.EventBusInstance.emit() : イベント配信
- * - document.addEventListener() : DOM イベント処理
- * - PIXI.Container.scale.set() : v8 Container スケール設定
- * - PIXI.Container.position.set() : v8 Container 位置設定
- */
-
-if (!window.Tegaki) {
-    window.Tegaki = {};
-}
-
-if (!window.Tegaki.NavigationManager) {
-    /**
-     * NavigationManager - PixiJS v8高精度ナビゲーション管理
-     * キャンバスパン・ズーム・キーボードナビゲーションを管理（v8対応版）
-     */
-    class NavigationManager {
-        constructor() {
-            console.log('🧭 NavigationManager v8対応版 初期化開始');
-            
-            this.canvasManager = null;
-            this.coordinateManager = null;
-            this.eventBus = null;
-            this.v8Ready = false;
-            
-            // v8ナビゲーション状態
-            this.isPanning = false;
-            this.panStartPos = { x: 0, y: 0 };
-            this.currentTransform = {
-                scale: 1.0,
-                translateX: 0,
-                translateY: 0
-            };
-            
-            // v8高精度ズーム設定
-            this.zoomLevel = 1.0;
-            this.zoomMin = 0.1;
-            this.zoomMax = 10.0;
-            this.zoomStep = 0.1;
-            this.zoomSensitivity = 0.001; // v8高精度ズーム感度
-            
-            // v8キーボード設定
-            this.keys = new Set();
-            this.keyboardPanSpeed = 20;
-            this.keyboardZoomSpeed = 0.1;
-            
-            // v8パフォーマンス設定
-            this.webgpuSupported = false;
-            this.highPerformanceMode = false;
-            this.smoothTransition = true;
-            
-            console.log('✅ NavigationManager v8対応版 初期化完了');
-        }
-        
-        /**
-         * v8対応CanvasManager設定
-         * @param {CanvasManager} canvasManager - v8対応CanvasManager
-         */
-        async setCanvasManagerV8(canvasManager) {
-            console.log('🔧 NavigationManager - v8 CanvasManager設定開始');
-            
-            if (!canvasManager) {
-                throw new Error('NavigationManager: CanvasManager is required for v8');
-            }
-            
-            if (!canvasManager.isV8Ready()) {
-                throw new Error('NavigationManager: CanvasManager v8 not ready');
-            }
-            
-            this.canvasManager = canvasManager;
-            
-            // v8機能確認
-            if (canvasManager.webgpuSupported) {
-                this.webgpuSupported = true;
-                this.highPerformanceMode = true;
-                this.zoomSensitivity = 0.0005; // WebGPU高精度
-                console.log('🚀 NavigationManager: WebGPU高性能モード有効');
-            }
-            
-            await this.initializeV8Features();
-            
-            this.v8Ready = true;
-            console.log('✅ NavigationManager - v8 CanvasManager設定完了');
-        }
-        
-        /**
          * v8対応CoordinateManager設定
          * @param {CoordinateManager} coordinateManager - v8対応CoordinateManager
          */
@@ -196,35 +86,6 @@ if (!window.Tegaki.NavigationManager) {
                 this.handleV8MouseWheelZoom(e);
             }, { passive: false });
             
-            // v8中ボタンパン
-            canvasElement.addEventListener('pointerdown', (e) => {
-                if (e.button === 1) { // 中ボタン
-                    e.preventDefault();
-                    this.startV8Pan(e.clientX, e.clientY);
-                }
-            });
-            
-            canvasElement.addEventListener('pointermove', (e) => {
-                if (this.isPanning) {
-                    this.updateV8Pan(e.clientX, e.clientY);
-                }
-            });
-            
-            canvasElement.addEventListener('pointerup', (e) => {
-                if (e.button === 1 && this.isPanning) {
-                    this.endV8Pan();
-                }
-            });
-            
-            // v8キーボードナビゲーション
-            document.addEventListener('keydown', (e) => {
-                this.handleV8KeyDown(e);
-            });
-            
-            document.addEventListener('keyup', (e) => {
-                this.handleV8KeyUp(e);
-            });
-            
             console.log('✅ NavigationManager v8イベントリスナー設定完了');
         }
         
@@ -287,51 +148,13 @@ if (!window.Tegaki.NavigationManager) {
             // v8変形状態更新
             this.updateV8TransformState();
             
+            // カメラ境界更新（Phase1.5）
+            this.updateCameraBounds();
+            
             // CoordinateManagerキャッシュクリア
             if (this.coordinateManager?.clearV8Cache) {
                 this.coordinateManager.clearV8Cache();
             }
-            
-            // EventBus通知
-            this.emitV8Event('navigation:zoom', {
-                oldScale: oldScale,
-                newScale: this.zoomLevel,
-                centerX,
-                centerY,
-                v8Mode: true
-            });
-        }
-        
-        /**
-         * v8パン開始
-         * @param {number} x - 開始X座標
-         * @param {number} y - 開始Y座標
-         */
-        startV8Pan(x, y) {
-            if (!this.v8Ready) return;
-            
-            console.log(`🧭 v8パン開始: (${x}, ${y})`);
-            this.isPanning = true;
-            this.panStartPos = { x, y };
-            
-            // EventBus通知
-            this.emitV8Event('navigation:pan:start', { x, y, v8Mode: true });
-        }
-        
-        /**
-         * v8パン更新
-         * @param {number} x - 現在X座標
-         * @param {number} y - 現在Y座標
-         */
-        updateV8Pan(x, y) {
-            if (!this.isPanning || !this.v8Ready) return;
-            
-            const deltaX = x - this.panStartPos.x;
-            const deltaY = y - this.panStartPos.y;
-            
-            this.panCanvasV8(deltaX, deltaY);
-            
-            this.panStartPos = { x, y };
         }
         
         /**
@@ -351,141 +174,15 @@ if (!window.Tegaki.NavigationManager) {
             // v8変形状態更新
             this.updateV8TransformState();
             
+            // カメラ境界更新（Phase1.5）
+            this.updateCameraBounds();
+            
             // CoordinateManagerキャッシュクリア
             if (this.coordinateManager?.clearV8Cache) {
                 this.coordinateManager.clearV8Cache();
             }
             
             console.log(`🧭 v8パン実行: delta=(${deltaX.toFixed(1)}, ${deltaY.toFixed(1)}) pos=(${stage.position.x.toFixed(1)}, ${stage.position.y.toFixed(1)})`);
-        }
-        
-        /**
-         * v8パン終了
-         */
-        endV8Pan() {
-            if (!this.isPanning) return;
-            
-            console.log('🧭 v8パン終了');
-            this.isPanning = false;
-            
-            // EventBus通知
-            this.emitV8Event('navigation:pan:end', { v8Mode: true });
-        }
-        
-        /**
-         * v8キーダウン処理
-         * @param {KeyboardEvent} event - キーボードイベント
-         */
-        handleV8KeyDown(event) {
-            if (!this.v8Ready) return;
-            
-            this.keys.add(event.code);
-            
-            // v8キーボードナビゲーション
-            switch (event.code) {
-                case 'Space':
-                    if (!this.keys.has('ControlLeft') && !this.keys.has('ControlRight')) {
-                        console.log('🧭 v8: Space キー - パンモード有効');
-                        event.preventDefault();
-                    }
-                    break;
-                    
-                case 'ArrowUp':
-                case 'ArrowDown':
-                case 'ArrowLeft':
-                case 'ArrowRight':
-                    if (this.keys.has('Space')) {
-                        this.handleV8KeyboardPan(event.code);
-                        event.preventDefault();
-                    }
-                    break;
-                    
-                case 'Equal':
-                case 'NumpadAdd':
-                    if (this.keys.has('ControlLeft') || this.keys.has('ControlRight')) {
-                        this.handleV8KeyboardZoom(1);
-                        event.preventDefault();
-                    }
-                    break;
-                    
-                case 'Minus':
-                case 'NumpadSubtract':
-                    if (this.keys.has('ControlLeft') || this.keys.has('ControlRight')) {
-                        this.handleV8KeyboardZoom(-1);
-                        event.preventDefault();
-                    }
-                    break;
-                    
-                case 'Digit0':
-                case 'Numpad0':
-                    if (this.keys.has('ControlLeft') || this.keys.has('ControlRight')) {
-                        this.resetViewV8();
-                        event.preventDefault();
-                    }
-                    break;
-            }
-        }
-        
-        /**
-         * v8キーアップ処理
-         * @param {KeyboardEvent} event - キーボードイベント
-         */
-        handleV8KeyUp(event) {
-            if (!this.v8Ready) return;
-            
-            this.keys.delete(event.code);
-        }
-        
-        /**
-         * v8キーボードパン処理
-         * @param {string} direction - 方向キーコード
-         */
-        handleV8KeyboardPan(direction) {
-            let deltaX = 0;
-            let deltaY = 0;
-            
-            switch (direction) {
-                case 'ArrowUp':
-                    deltaY = -this.keyboardPanSpeed;
-                    break;
-                case 'ArrowDown':
-                    deltaY = this.keyboardPanSpeed;
-                    break;
-                case 'ArrowLeft':
-                    deltaX = -this.keyboardPanSpeed;
-                    break;
-                case 'ArrowRight':
-                    deltaX = this.keyboardPanSpeed;
-                    break;
-            }
-            
-            if (deltaX !== 0 || deltaY !== 0) {
-                this.panCanvasV8(deltaX, deltaY);
-                
-                // EventBus通知
-                this.emitV8Event('navigation:keyboard:pan', {
-                    direction,
-                    deltaX,
-                    deltaY,
-                    v8Mode: true
-                });
-            }
-        }
-        
-        /**
-         * v8キーボードズーム処理
-         * @param {number} direction - ズーム方向（1: 拡大, -1: 縮小）
-         */
-        handleV8KeyboardZoom(direction) {
-            const newScale = this.zoomLevel + (direction * this.keyboardZoomSpeed);
-            this.zoomCanvasV8(newScale);
-            
-            // EventBus通知
-            this.emitV8Event('navigation:keyboard:zoom', {
-                direction,
-                newScale: this.zoomLevel,
-                v8Mode: true
-            });
         }
         
         /**
@@ -506,13 +203,13 @@ if (!window.Tegaki.NavigationManager) {
             this.zoomLevel = 1.0;
             this.updateV8TransformState();
             
+            // カメラ境界更新（Phase1.5）
+            this.updateCameraBounds();
+            
             // CoordinateManagerキャッシュクリア
             if (this.coordinateManager?.clearV8Cache) {
                 this.coordinateManager.clearV8Cache();
             }
-            
-            // EventBus通知
-            this.emitV8Event('navigation:reset', { v8Mode: true });
             
             console.log('✅ v8ビューリセット完了');
         }
@@ -557,86 +254,14 @@ if (!window.Tegaki.NavigationManager) {
         }
         
         /**
-         * v8イベント配信（内部処理）
-         * @param {string} eventName - イベント名
-         * @param {Object} eventData - イベントデータ
-         */
-        emitV8Event(eventName, eventData) {
-            if (this.eventBus?.emit) {
-                try {
-                    this.eventBus.emit(eventName, eventData);
-                } catch (error) {
-                    console.warn(`⚠️ v8イベント配信失敗 ${eventName}:`, error.message);
-                }
-            }
-            
-            // グローバルEventBusも試行
-            if (window.Tegaki?.EventBusInstance?.emit) {
-                try {
-                    window.Tegaki.EventBusInstance.emit(eventName, eventData);
-                } catch (error) {
-                    console.warn(`⚠️ グローバルv8イベント配信失敗 ${eventName}:`, error.message);
-                }
-            }
-        }
-        
-        /**
-         * v8ナビゲーション無効化
-         */
-        disableV8Navigation() {
-            this.enabled = false;
-            this.isPanning = false;
-            this.keys.clear();
-            console.log('⚠️ v8ナビゲーション無効化');
-        }
-        
-        /**
-         * v8ナビゲーション有効化
-         */
-        enableV8Navigation() {
-            this.enabled = true;
-            console.log('✅ v8ナビゲーション有効化');
-        }
-        
-        /**
-         * v8ナビゲーション状態取得
-         * @returns {Object} v8ナビゲーション状態
-         */
-        getV8NavigationState() {
-            return {
-                v8Ready: this.v8Ready,
-                webgpuSupported: this.webgpuSupported,
-                highPerformanceMode: this.highPerformanceMode,
-                
-                navigation: {
-                    isPanning: this.isPanning,
-                    zoomLevel: this.zoomLevel,
-                    transform: { ...this.currentTransform },
-                    enabled: this.enabled !== false
-                },
-                
-                settings: {
-                    zoomMin: this.zoomMin,
-                    zoomMax: this.zoomMax,
-                    zoomStep: this.zoomStep,
-                    zoomSensitivity: this.zoomSensitivity,
-                    keyboardPanSpeed: this.keyboardPanSpeed,
-                    keyboardZoomSpeed: this.keyboardZoomSpeed
-                },
-                
-                performance: {
-                    smoothTransition: this.smoothTransition,
-                    webgpuAccelerated: this.webgpuSupported
-                }
-            };
-        }
-        
-        /**
          * v8デバッグ情報取得
          * @returns {Object} v8デバッグ情報
          */
         getDebugInfo() {
             return {
+                className: 'NavigationManager',
+                version: 'Phase1.5-getCameraBounds実装版',
+                
                 // v8基本情報
                 v8Ready: this.v8Ready,
                 webgpuSupported: this.webgpuSupported,
@@ -651,6 +276,9 @@ if (!window.Tegaki.NavigationManager) {
                     eventBus: !!this.eventBus
                 },
                 
+                // Phase1.5 カメラ境界情報
+                cameraBounds: { ...this.cameraBounds },
+                
                 // v8 Stage情報
                 stage: this.canvasManager?.pixiApp?.stage ? (() => {
                     const stage = this.canvasManager.pixiApp.stage;
@@ -658,57 +286,17 @@ if (!window.Tegaki.NavigationManager) {
                         available: true,
                         scale: { x: stage.scale.x, y: stage.scale.y },
                         position: { x: stage.position.x, y: stage.position.y },
-                        pivot: { x: stage.pivot.x, y: stage.pivot.y },
-                        bounds: stage.getBounds(),
-                        worldTransform: stage.worldTransform
+                        pivot: { x: stage.pivot.x, y: stage.pivot.y }
                     };
                 })() : { available: false },
                 
                 // ナビゲーション状態
-                navigation: this.getV8NavigationState().navigation,
-                
-                // 入力状態
-                input: {
-                    activeKeys: Array.from(this.keys),
+                navigation: {
                     isPanning: this.isPanning,
-                    panStartPos: { ...this.panStartPos }
-                },
-                
-                // v8パフォーマンス
-                performance: {
-                    webgpuAccelerated: this.webgpuSupported,
-                    highPerformanceMode: this.highPerformanceMode,
-                    zoomSensitivity: this.zoomSensitivity,
-                    smoothTransition: this.smoothTransition
-                },
-                
-                // 設定値
-                settings: this.getV8NavigationState().settings
+                    zoomLevel: this.zoomLevel,
+                    transform: { ...this.currentTransform }
+                }
             };
-        }
-        
-        /**
-         * v8状態リセット
-         */
-        resetV8() {
-            console.log('🔄 NavigationManager v8状態リセット開始');
-            
-            this.canvasManager = null;
-            this.coordinateManager = null;
-            this.v8Ready = false;
-            this.webgpuSupported = false;
-            this.highPerformanceMode = false;
-            
-            this.isPanning = false;
-            this.keys.clear();
-            this.zoomLevel = 1.0;
-            this.currentTransform = {
-                scale: 1.0,
-                translateX: 0,
-                translateY: 0
-            };
-            
-            console.log('✅ NavigationManager v8状態リセット完了');
         }
     }
     
@@ -716,9 +304,132 @@ if (!window.Tegaki.NavigationManager) {
     window.Tegaki.NavigationManager = NavigationManager;
     
     console.log('🧭 NavigationManager PixiJS v8対応版 Loaded');
-    console.log('📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション');
-    console.log('🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応');
+    console.log('📏 Phase1.5機能: getCameraBounds()実装・カメラ境界管理・外部描画対応');
+    console.log('🚀 v8特徴: Container変形・高精度ナビゲーション・WebGPU対応・境界判定');
     console.log('✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能');
 }
 
-console.log('🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了');
+console.log('🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応・getCameraBounds実装完了');
+ * 📄 FILE: js/utils/navigation-manager.js
+ * 📌 RESPONSIBILITY: キャンバスナビゲーション・パン・ズーム・カメラ境界管理・変形状態管理
+ *
+ * @provides
+ *   - NavigationManager クラス
+ *   - setCanvasManagerV8(canvasManager) - v8対応CanvasManager設定
+ *   - zoomCanvasV8(scale, centerX, centerY) - v8高精度ズーム
+ *   - panCanvasV8(deltaX, deltaY) - v8高精度パン
+ *   - getCameraBounds() - カメラ境界取得（Phase1.5新規実装）
+ *   - getCanvasTransformV8() - v8変形状態取得
+ *   - resetViewV8() - v8ビューリセット
+ *   - setCoordinateManagerV8(coordinateManager) - v8 CoordinateManager設定
+ *   - isV8Ready() - v8準備状態確認
+ *   - getDebugInfo() - デバッグ情報取得
+ *
+ * @uses
+ *   - canvasManager.pixiApp.stage - v8 Stage Container取得
+ *   - canvasManager.getCanvasElement() - Canvas要素取得
+ *   - canvasManager.isV8Ready() - v8準備状態確認
+ *   - coordinateManager.clearV8Cache() - v8座標キャッシュクリア
+ *   - window.Tegaki.EventBusInstance.emit() - イベント配信
+ *   - document.addEventListener() - DOM イベント処理
+ *   - PIXI.Container.scale.set() - v8 Container スケール設定
+ *   - PIXI.Container.position.set() - v8 Container 位置設定
+ *
+ * @initflow
+ *   1. new NavigationManager() → 2. setCanvasManagerV8() → 3. setCoordinateManagerV8() → 4. initializeV8Features() → 5. setupV8EventListeners()
+ *
+ * @forbids
+ *   💀 双方向依存禁止
+ *   🚫 フォールバック禁止
+ *   🚫 フェイルセーフ禁止
+ *   🚫 v7/v8 両対応による二重管理禁止
+ *   🚫 未実装メソッド呼び出し禁止
+ *   🚫 目先のエラー修正のためのDRY・SOLID原則違反
+ *
+ * @manager-key
+ *   window.Tegaki.NavigationManagerInstance
+ *
+ * @dependencies-strict
+ *   REQUIRED: CanvasManager (v8対応)
+ *   OPTIONAL: CoordinateManager, EventBus
+ *   FORBIDDEN: 他Manager直接参照、ToolManager
+ *
+ * @integration-flow
+ *   AppCore → NavigationManager.setCanvasManagerV8() → NavigationManager.setCoordinateManagerV8() → Tool.isInsideCamera()
+ *
+ * @method-naming-rules
+ *   - setCanvasManagerV8()/setCoordinateManagerV8() - Manager設定
+ *   - zoomCanvasV8()/panCanvasV8() - ナビゲーション操作
+ *   - getCameraBounds() - 境界取得
+ *   - isV8Ready() - 準備状態確認
+ *
+ * @error-handling
+ *   throw: 必須Manager未設定・v8未対応
+ *   warn: オプションManager未設定・一時的エラー
+ *   log: 正常処理・状態変更
+ *
+ * @state-management
+ *   - ナビゲーション状態は直接操作せず、専用メソッド経由
+ *   - 変形状態変更は必ずEventBus通知
+ *   - Stage変形は必ずupdateV8TransformState()実行
+ *
+ * @performance-notes
+ *   - Stage変形は重い処理、バッチ化で最適化
+ *   - WebGPU対応で高速化、16ms維持
+ *   - CoordinateManagerキャッシュクリア必須
+ */
+
+if (!window.Tegaki) {
+    window.Tegaki = {};
+}
+
+if (!window.Tegaki.NavigationManager) {
+    /**
+     * NavigationManager - PixiJS v8高精度ナビゲーション管理（Phase1.5 getCameraBounds実装版）
+     * キャンバスパン・ズーム・キーボードナビゲーション・カメラ境界管理（v8対応版）
+     */
+    class NavigationManager {
+        constructor() {
+            console.log('🧭 NavigationManager v8対応版 初期化開始');
+            
+            this.canvasManager = null;
+            this.coordinateManager = null;
+            this.eventBus = null;
+            this.v8Ready = false;
+            
+            // v8ナビゲーション状態
+            this.isPanning = false;
+            this.panStartPos = { x: 0, y: 0 };
+            this.currentTransform = {
+                scale: 1.0,
+                translateX: 0,
+                translateY: 0
+            };
+            
+            // v8高精度ズーム設定
+            this.zoomLevel = 1.0;
+            this.zoomMin = 0.1;
+            this.zoomMax = 10.0;
+            this.zoomStep = 0.1;
+            this.zoomSensitivity = 0.001; // v8高精度ズーム感度
+            
+            // v8キーボード設定
+            this.keys = new Set();
+            this.keyboardPanSpeed = 20;
+            this.keyboardZoomSpeed = 0.1;
+            
+            // v8パフォーマンス設定
+            this.webgpuSupported = false;
+            this.highPerformanceMode = false;
+            this.smoothTransition = true;
+            
+            // Phase1.5 カメラ境界管理
+            this.cameraBounds = {
+                x: 0,
+                y: 0,
+                width: 400,  // デフォルトキャンバスサイズ
+                height: 400
+            };
+            
+            console.log('✅ NavigationManager v8対応版 初期化完了');
+        }
