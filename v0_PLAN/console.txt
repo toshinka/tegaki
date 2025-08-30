@@ -1,535 +1,100 @@
- 🚨 ErrorManager Simple 作成
- 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
- 🔧 ConfigManager v8対応版 作成
- 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
- 🔄 EventBus Simple 作成
- 🔄 EventBus Simple Loaded - シンプルイベント通信
- 🎯 CoordinateManager PixiJS v8対応版 Loaded
- 📏 v8機能: 高精度座標変換・Container変形対応・WebGPU最適化・リアルタイム変換
- 🚀 v8特徴: 高精度変換・Matrix活用・NavigationManager統合・60fps+対応
- ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
- 🎯 CoordinateManager PixiJS v8対応版 Loaded - 高精度座標変換・Container変形・WebGPU対応完了
- 🧭 NavigationManager PixiJS v8対応版 Loaded
- 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
- 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
- ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
- 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
- 🔄 RecordManager v8対応版 Loaded - TPF形式・非破壊編集・v8 Graphics・Undo/Redo完全対応完了
- 🔄 RecordManager v8対応版 Loaded - TPF形式・非破壊編集・v8 Graphics・Undo/Redo完全対応完了
- ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
- 🔧 setupPhase15Shortcuts・enableメソッド追加済み
- 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
- 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
- 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
- ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
- 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
- 🚀 CanvasManager v8.12.0完全対応版 Loaded - 400x400デフォルト・コンソール削減・描画修正版
- 🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版 Loaded
- 📏 修正内容: event → eventbus統一・Object形式前提・Map対策・型安全性確保・詳細デバッグ
- 🚀 特徴: startOperation/endOperation方式対応・Manager統一注入完成・架空メソッド削除・Manager名称統一対応
- 🖊️ PenTool v8.12.0完全対応版 Loaded - onPointerXxx対応・描画機能修正版
- 🧹 EraserTool v8.12.0完全対応版 Loaded - Graphics API v8準拠・消去機能修正版
- 📏 修正内容: v8新API準拠・v7 API完全削除・高精度hit-test・TPF形式保存・マスク消去
- 🚀 特徴: shape().fill()新API・WebGPU対応・Container階層消去・v7互換削除・Manager統一注入完全対応
- 🚀 ToolManager v8.12.0完全対応版・Pointerイベント処理対応版 Loaded
- 📏 修正内容: PenTool作成エラー修正・Manager注入方法改善・Pointerイベント処理追加・コンソール出力削減
- 🚀 特徴: 防御的依存注入・検証強化・CanvasManager.getDrawContainer()保証・Tool作成時適切Manager注入・TegakiApplication連携対応
- ✅ AppCore v8統合基盤システム Loaded - 構文エラー修正・完全版
- 🚀 TegakiApplication PixiJS v8対応版 Loaded - Canvas DOM挿入修正・座標取得修正・400x400サイズ確実適用版
- 🚀 TegakiApplication PixiJS v8対応版 Loaded - Canvas DOM挿入修正・座標取得修正・400x400サイズ確実適用版
- 🚀 main.js v8統合エントリーポイント Loaded - グローバル関数・デバッグ機能・WebGPU対応
- ✅ PixiJS v8確認完了 - v8統合機能利用可能
- 🧪 Phase1.5統合テスト Loaded
- 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
- 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
- ⏳ DOM Loading - DOMContentLoaded待機中...
- 🚀 Bootstrap PixiJS v8対応版 - コンソール削減・初期化フロー修正版 Loaded
- 🎯 Bootstrap PixiJS v8対応版 registered - 読み込み確認強化・新Manager統合対応版
- 🔧 Bootstrap PixiJS v8対応版 実行開始...
- ⏳ PixiJS v8読み込み確認開始...
- ✅ PixiJS発見 (試行 1/100)
- 🚀 PixiJS v8確認完了: 8.12.0
- 🔍 WebGPU Support: true
+error-manager.js:20 🚨 ErrorManager Simple 作成
+error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+config-manager.js:71 🔧 ConfigManager v8対応版 作成
+config-manager.js:495 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
+event-bus.js:20 🔄 EventBus Simple 作成
+event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
+coordinate-manager.js:268 🎯 CoordinateManager v8対応版 Loaded
+navigation-manager.js:718 🧭 NavigationManager PixiJS v8対応版 Loaded
+navigation-manager.js:719 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
+navigation-manager.js:720 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
+navigation-manager.js:721 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+navigation-manager.js:724 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
+record-manager.js:538 🔄 RecordManager v8対応版 Loaded - addStrokeメソッド実装版
+shortcut-manager.js:416 ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
+shortcut-manager.js:417 🔧 setupPhase15Shortcuts・enableメソッド追加済み
+shortcut-manager.js:418 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
+minimal-deps.js:22 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
+minimal-deps.js:168 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
+minimal-deps.js:169 ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
+minimal-deps.js:170 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
+canvas-manager.js:550 🚀 CanvasManager v8.12.0完全対応版 Loaded - Graphics分離管理・座標変換支援・描画消失問題解決版
+abstract-tool.js:329 🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版 Loaded
+abstract-tool.js:330 📏 修正内容: event → eventbus統一・Object形式前提・Map対策・型安全性確保・詳細デバッグ
+abstract-tool.js:331 🚀 特徴: startOperation/endOperation方式対応・Manager統一注入完成・架空メソッド削除・Manager名称統一対応
+pen-tool.js:374 Uncaught SyntaxError: Unexpected end of input
+eraser-tool.js:598 🧹 EraserTool v8.12.0完全対応版 Loaded - Graphics API v8準拠・消去機能修正版
+eraser-tool.js:599 📏 修正内容: v8新API準拠・v7 API完全削除・高精度hit-test・TPF形式保存・マスク消去
+eraser-tool.js:600 🚀 特徴: shape().fill()新API・WebGPU対応・Container階層消去・v7互換削除・Manager統一注入完全対応
+tool-manager.js:640 🚀 ToolManager v8.12.0完全対応版・Pointerイベント処理対応版 Loaded
+tool-manager.js:641 📏 修正内容: PenTool作成エラー修正・Manager注入方法改善・Pointerイベント処理追加・コンソール出力削減
+tool-manager.js:642 🚀 特徴: 防御的依存注入・検証強化・CanvasManager.getDrawContainer()保証・Tool作成時適切Manager注入・TegakiApplication連携対応
+app-core.js:650 ✅ AppCore v8統合基盤システム Loaded - 構文エラー修正・完全版
+tegaki-application.js:1096 🚀 TegakiApplication PixiJS v8対応版 Loaded - Canvas DOM挿入修正・座標取得修正・400x400サイズ確実適用版
+tegaki-application.js:1101 🚀 TegakiApplication PixiJS v8対応版 Loaded - Canvas DOM挿入修正・座標取得修正・400x400サイズ確実適用版
+main.js:330 🚀 main.js v8統合エントリーポイント Loaded - グローバル関数・デバッグ機能・WebGPU対応
+main.js:338 ✅ PixiJS v8確認完了 - v8統合機能利用可能
+phase15-integration-test.js:593 🧪 Phase1.5統合テスト Loaded
+phase15-integration-test.js:594 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
+phase15-integration-test.js:595 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
+bootstrap.js:306 ⏳ DOM Loading - DOMContentLoaded待機中...
+bootstrap.js:326 🚀 Bootstrap PixiJS v8対応版 - コンソール削減・初期化フロー修正版 Loaded
+bootstrap.js:308 🎯 Bootstrap PixiJS v8対応版 registered - 読み込み確認強化・新Manager統合対応版
+bootstrap.js:37 🔧 Bootstrap PixiJS v8対応版 実行開始...
+bootstrap.js:65 ⏳ PixiJS v8読み込み確認開始...
+bootstrap.js:99 ✅ PixiJS発見 (試行 1/100)
+bootstrap.js:76 🚀 PixiJS v8確認完了: 8.12.0
+bootstrap.js:85 🔍 WebGPU Support: true
+bootstrap.js:111 🚀 PixiJS v8.12.0 loaded from node_modules
+bootstrap.js:112 ✅ PixiJS v8.12.0 confirmed
+bootstrap.js:113 ✅ PIXI.Application: 利用可能
+bootstrap.js:114 ✅ PIXI.Container: 利用可能
+bootstrap.js:115 ✅ PIXI.Graphics: 利用可能
+bootstrap.js:116 ✅ PixiJS v8環境確認完了
+bootstrap.js:123 🔍 Phase1.5 依存関係確認開始...
+bootstrap.js:146 ✅ TegakiApplication: 利用可能
+bootstrap.js:146 ✅ AppCore: 利用可能
+bootstrap.js:146 ✅ CanvasManager: 利用可能
+ ✅ ToolManager: 利用可能
+ ✅ ErrorManager: 利用可能
+ ✅ ConfigManager: 利用可能
+ ✅ EventBus: 利用可能
+ ✅ CoordinateManager: 利用可能
+ ✅ NavigationManager: 利用可能
+ ✅ RecordManager: 利用可能
+ ✅ ShortcutManager: 利用可能
+bootstrap.js:149 ❌ PenTool: 未ロード
+checkDependencies @ bootstrap.js:149
+start @ bootstrap.js:44
+await in start
+runBootstrap @ bootstrap.js:294
+(anonymous) @ bootstrap.js:310
+ ✅ EraserTool: 利用可能
+ 📊 依存関係確認結果: 12/13 クラス利用可能
+bootstrap.js:56 💀 Bootstrap エラー: Error: 必須クラス未ロード: PenTool
+    at Bootstrap.checkDependencies (bootstrap.js:157:23)
+    at Bootstrap.start (bootstrap.js:44:28)
+    at async runBootstrap (bootstrap.js:294:13)
+    at async HTMLDocument.<anonymous> (bootstrap.js:310:17)
+start @ bootstrap.js:56
+await in start
+runBootstrap @ bootstrap.js:294
+(anonymous) @ bootstrap.js:310
+bootstrap.js:235 💀 Bootstrap 初期化失敗: Error: 必須クラス未ロード: PenTool
+    at Bootstrap.checkDependencies (bootstrap.js:157:23)
+    at Bootstrap.start (bootstrap.js:44:28)
+    at async runBootstrap (bootstrap.js:294:13)
+    at async HTMLDocument.<anonymous> (bootstrap.js:310:17)
+handleInitializationError @ bootstrap.js:235
+start @ bootstrap.js:57
+await in start
+runBootstrap @ bootstrap.js:294
+(anonymous) @ bootstrap.js:310
+ ❌ TEGAKI V8初期化失敗: 必須クラス未ロード: PenTool 
  🚀 PixiJS v8.12.0 loaded from node_modules
  ✅ PixiJS v8.12.0 confirmed
- ✅ PIXI.Application: 利用可能
- ✅ PIXI.Container: 利用可能
- ✅ PIXI.Graphics: 利用可能
- ✅ PixiJS v8環境確認完了
- 🔍 Phase1.5 依存関係確認開始...
- ✅ TegakiApplication: 利用可能
- ✅ AppCore: 利用可能
-bootstrap.js:146 ✅ CanvasManager: 利用可能
-bootstrap.js:146 ✅ ToolManager: 利用可能
-bootstrap.js:146 ✅ ErrorManager: 利用可能
-bootstrap.js:146 ✅ ConfigManager: 利用可能
-bootstrap.js:146 ✅ EventBus: 利用可能
-bootstrap.js:146 ✅ CoordinateManager: 利用可能
-bootstrap.js:146 ✅ NavigationManager: 利用可能
-bootstrap.js:146 ✅ RecordManager: 利用可能
-bootstrap.js:146 ✅ ShortcutManager: 利用可能
-bootstrap.js:146 ✅ PenTool: 利用可能
-bootstrap.js:146 ✅ EraserTool: 利用可能
-bootstrap.js:154 📊 依存関係確認結果: 13/13 クラス利用可能
-bootstrap.js:167 🎨 TegakiApplication v8対応版 インスタンス化開始...
-tegaki-application.js:85 🚀 TegakiApplication v8対応版 作成・自動初期化開始
-tegaki-application.js:152 🚀 TegakiApplication v8システム初期化開始
-tegaki-application.js:221 🚀 v8 AppCore作成開始
-app-core.js:90 🚀 AppCore v8統合基盤システム 作成開始
-app-core.js:122 ✅ AppCore v8統合基盤システム 作成完了
-tegaki-application.js:228 ✅ v8 AppCore作成完了
-bootstrap.js:176 🚀 TegakiApplication v8対応版 作成・自動初期化開始
-tegaki-application.js:152 🚀 TegakiApplication v8システム初期化開始
-tegaki-application.js:221 🚀 v8 AppCore作成開始
-app-core.js:90 🚀 AppCore v8統合基盤システム 作成開始
-app-core.js:122 ✅ AppCore v8統合基盤システム 作成完了
-tegaki-application.js:228 ✅ v8 AppCore作成完了
-tegaki-application.js:235 🚀 v8 Application作成開始
-app-core.js:132 🎨 AppCore.createCanvasV8(800, 600) - TegakiApplication互換API
-app-core.js:239 🚀 AppCore - v8 Application作成開始 (800x600)
-tegaki-application.js:235 🚀 v8 Application作成開始
-app-core.js:132 🎨 AppCore.createCanvasV8(800, 600) - TegakiApplication互換API
-app-core.js:239 🚀 AppCore - v8 Application作成開始 (800x600)
-app-core.js:248 ✅ PixiJS v8確認完了: 8.12.0
-app-core.js:248 ✅ PixiJS v8確認完了: 8.12.0
-index.html:577 🚀 PixiJS v8.12.0 loaded from node_modules
-index.html:579 ✅ PixiJS v8.12.0 confirmed
-app-core.js:286 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
-_createDeviceAndAdaptor @ pixi.min.js:2121
-init @ pixi.min.js:2121
-init @ pixi.min.js:585
-await in init
-Sm @ pixi.min.js:585
-await in Sm
-init @ pixi.min.js:585
-createV8Application @ app-core.js:286
-await in createV8Application
-createCanvasV8 @ app-core.js:136
-createCanvasV8 @ tegaki-application.js:242
-initialize @ tegaki-application.js:160
-await in initialize
-TegakiApplication @ tegaki-application.js:123
-initializeTegakiApplication @ bootstrap.js:175
-start @ bootstrap.js:47
-await in start
-runBootstrap @ bootstrap.js:294
-(anonymous) @ bootstrap.js:310
-app-core.js:286 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
-_createDeviceAndAdaptor @ pixi.min.js:2121
-init @ pixi.min.js:2121
-init @ pixi.min.js:585
-await in init
-Sm @ pixi.min.js:585
-await in Sm
-init @ pixi.min.js:585
-createV8Application @ app-core.js:286
-await in createV8Application
-createCanvasV8 @ app-core.js:136
-createCanvasV8 @ tegaki-application.js:242
-initialize @ tegaki-application.js:160
-await in initialize
-initializeTegakiApplication @ bootstrap.js:179
-start @ bootstrap.js:47
-await in start
-runBootstrap @ bootstrap.js:294
-(anonymous) @ bootstrap.js:310
-app-core.js:323 ✅ AppCore - v8 Application作成完了 (800x600)
-app-core.js:323 ✅ AppCore - v8 Application作成完了 (800x600)
-app-core.js:146 ✅ Canvas要素準備完了
-app-core.js:151 ✅ AppCore.createCanvasV8完了 - 800x600キャンバス生成
-app-core.js:146 ✅ Canvas要素準備完了
-app-core.js:151 ✅ AppCore.createCanvasV8完了 - 800x600キャンバス生成
-tegaki-application.js:253 ✅ v8 Application作成完了
-tegaki-application.js:254 📊 v8レンダラー: 2 (WebGPU: true)
-tegaki-application.js:253 ✅ v8 Application作成完了
-tegaki-application.js:254 📊 v8レンダラー: 2 (WebGPU: true)
-tegaki-application.js:269 🎨 Canvas DOM挿入処理開始
-tegaki-application.js:278 ✅ Canvas要素取得完了
-tegaki-application.js:285 ✅ canvas-container要素確認完了
-tegaki-application.js:292 ✅ Canvas要素DOM挿入完了
-tegaki-application.js:299 ✅ Canvas スタイル適用完了（400x400, cursor: crosshair）
-tegaki-application.js:307 ✅ Canvas DOM挿入確認完了
-tegaki-application.js:335 ✅ Canvas サイズ確実適用完了: 400x400
-tegaki-application.js:312 ✅ setupCanvas完了 - Canvas DOM挿入・サイズ適用・スタイル設定完了
-tegaki-application.js:269 🎨 Canvas DOM挿入処理開始
-tegaki-application.js:278 ✅ Canvas要素取得完了
-tegaki-application.js:285 ✅ canvas-container要素確認完了
-tegaki-application.js:292 ✅ Canvas要素DOM挿入完了
-tegaki-application.js:299 ✅ Canvas スタイル適用完了（400x400, cursor: crosshair）
-tegaki-application.js:307 ✅ Canvas DOM挿入確認完了
-tegaki-application.js:335 ✅ Canvas サイズ確実適用完了: 400x400
-tegaki-application.js:312 ✅ setupCanvas完了 - Canvas DOM挿入・サイズ適用・スタイル設定完了
-tegaki-application.js:342 🔧 v8 Manager群統合初期化開始
-app-core.js:351 🔧 AppCore - v8 Manager群初期化開始
-app-core.js:363 1️⃣ CanvasManager v8初期化開始...
-canvas-manager.js:31 CanvasManager: constructed (v8 friendly)
-canvas-manager.js:187 CanvasManager: layers created (layer0, layer1, interactionOverlay)
- CanvasManager: initialization complete (logical 400x400, DPR 2)
- 🔧 v8 Manager群統合初期化開始
- 🔧 AppCore - v8 Manager群初期化開始
- 1️⃣ CanvasManager v8初期化開始...
- CanvasManager: constructed (v8 friendly)
- CanvasManager: layers created (layer0, layer1, interactionOverlay)
- CanvasManager: initialization complete (logical 400x400, DPR 2)
- ✅ CanvasManager v8 Application設定完了
- ✅ Step 1: CanvasManager v8完全初期化完了
- 2️⃣ Manager統一登録開始...
- 🎯 CoordinateManager v8対応版 作成開始
- ✅ CoordinateManager v8対応版 作成完了
- 🚀 RecordManager v8初期化開始
- 🔄 RecordManager v8対応版 作成開始 - TPF形式・Undo/Redo・v8 Graphics統合版
- ✅ v8準備完了: setManagersでManager統合後に利用可能
- 🔄 RecordManager v8対応版 作成完了
- 🔧 ConfigManager v8対応版 作成
- ⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始
- ⌨️ ShortcutManager スタブ実装完了
- 🧭 NavigationManager v8対応版 初期化開始
- ✅ NavigationManager v8対応版 初期化完了
- ✅ Step 2: Manager統一登録完了
- 3️⃣ ToolManager v8初期化開始...
- 🚀 ToolManager v8.12.0作成開始 - Pointerイベント処理対応版
- ✅ CanvasManager注入成功
- ✅ ToolManager v8.12.0作成完了 - Pointerイベント処理対応版
- ✅ ToolManager作成成功
- 🔧 ToolManager - Manager統一注入開始
- ✅ Map形式で受信 - 直接利用
- ✅ CanvasManager統一注入成功
- ✅ DrawContainer取得成功: true
- ✅ ToolManager: Manager統一注入完了
- ✅ ToolManager.setManagers() 成功
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- ✅ ToolManager依存注入検証PASS
- 🚀 v8 Tool初期化開始（修正版）
- ✅ v8依存関係確認完了
- 🔧 WebGPU対応状況: 対応
- 1️⃣ v8 PenTool作成開始...（修正版）
- 🎯 AbstractTool 作成開始: pen
- ✅ pen AbstractTool 作成完了
- 🖊️ PenTool v8.12.0作成開始 - onPointerXxx対応版
- ✅ PenTool v8.12.0作成完了 - onPointerXxx対応版
- 🔧 PenTool Manager注入開始
- 🔧 PenTool Manager統一注入開始...
- ✅ PenTool: Manager統一注入完了
- ✅ PenTool Manager統一注入完了
- ✅ CanvasManager v8 Application設定完了
- ✅ Step 1: CanvasManager v8完全初期化完了
- 2️⃣ Manager統一登録開始...
- 🎯 CoordinateManager v8対応版 作成開始
- ✅ CoordinateManager v8対応版 作成完了
- 🚀 RecordManager v8初期化開始
- 🔄 RecordManager v8対応版 作成開始 - TPF形式・Undo/Redo・v8 Graphics統合版
- ✅ v8準備完了: setManagersでManager統合後に利用可能
- 🔄 RecordManager v8対応版 作成完了
- 🔧 ConfigManager v8対応版 作成
- ⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始
- ⌨️ ShortcutManager スタブ実装完了
- 🧭 NavigationManager v8対応版 初期化開始
- ✅ NavigationManager v8対応版 初期化完了
- ✅ Step 2: Manager統一登録完了
- 3️⃣ ToolManager v8初期化開始...
- 🚀 ToolManager v8.12.0作成開始 - Pointerイベント処理対応版
- ✅ CanvasManager注入成功
- ✅ ToolManager v8.12.0作成完了 - Pointerイベント処理対応版
- ✅ ToolManager作成成功
- 🔧 ToolManager - Manager統一注入開始
- ✅ Map形式で受信 - 直接利用
- ✅ CanvasManager統一注入成功
- ✅ DrawContainer取得成功: true
- ✅ ToolManager: Manager統一注入完了
- ✅ ToolManager.setManagers() 成功
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- ✅ ToolManager依存注入検証PASS
- 🚀 v8 Tool初期化開始（修正版）
- ✅ v8依存関係確認完了
- 🔧 WebGPU対応状況: 対応
- 1️⃣ v8 PenTool作成開始...（修正版）
- 🎯 AbstractTool 作成開始: pen
- ✅ pen AbstractTool 作成完了
- 🖊️ PenTool v8.12.0作成開始 - onPointerXxx対応版
- ✅ PenTool v8.12.0作成完了 - onPointerXxx対応版
- 🔧 PenTool Manager注入開始
- 🔧 PenTool Manager統一注入開始...
- ✅ PenTool: Manager統一注入完了
- ✅ PenTool Manager統一注入完了
- ✅ PenTool登録完了
- 2️⃣ v8 EraserTool作成開始...（修正版）
- 🎯 AbstractTool 作成開始: eraser
- ✅ eraser AbstractTool 作成完了
- 🧹 EraserTool v8.12.0完全対応版作成開始 - Graphics API v8準拠・消去機能修正版
- 🔧 EraserTool Manager注入開始
- 🔧 eraser Manager統一注入開始...（消去機能修正版）
- 📦 eraser 受信Manager型: object
- ✅ eraser: Manager群をObject形式で保存完了
- 📋 eraser 利用可能Manager キー: (9) ['canvas', 'coordinate', 'record', 'config', 'error', 'eventbus', 'shortcut', 'navigation', 'tool']
- 📋 eraser 利用可能Manager数: 9
- 📦 eraser Manager[canvas]: CanvasManager
- 📦 eraser Manager[coordinate]: CoordinateManager
- 📦 eraser Manager[record]: RecordManager
- 📦 eraser Manager[config]: ConfigManager
- 📦 eraser Manager[error]: ErrorManager
- 📦 eraser Manager[eventbus]: EventBus
- 📦 eraser Manager[shortcut]: ShortcutManager
- 📦 eraser Manager[navigation]: NavigationManager
- 📦 eraser Manager[tool]: ToolManager
- 🔍 eraser 必須Manager[canvas]: exists=true, hasValue=[object Object]
- 🔍 eraser 必須Manager[coordinate]: exists=true, hasValue=[object Object]
- 🔍 eraser 必須Manager[record]: exists=true, hasValue=[object Object]
- ✅ eraser: 必須Manager確認完了: (3) ['canvas', 'coordinate', 'record']
- ✅ eraser: Manager統一注入完了（Object形式）
- ✅ EraserTool Manager統一注入完了
- ✅ PenTool登録完了
- 2️⃣ v8 EraserTool作成開始...（修正版）
- 🎯 AbstractTool 作成開始: eraser
- ✅ eraser AbstractTool 作成完了
- 🧹 EraserTool v8.12.0完全対応版作成開始 - Graphics API v8準拠・消去機能修正版
- 🔧 EraserTool Manager注入開始
- 🔧 eraser Manager統一注入開始...（消去機能修正版）
- 📦 eraser 受信Manager型: object
- ✅ eraser: Manager群をObject形式で保存完了
- 📋 eraser 利用可能Manager キー: (9) ['canvas', 'coordinate', 'record', 'config', 'error', 'eventbus', 'shortcut', 'navigation', 'tool']
- 📋 eraser 利用可能Manager数: 9
- 📦 eraser Manager[canvas]: CanvasManager
- 📦 eraser Manager[coordinate]: CoordinateManager
- 📦 eraser Manager[record]: RecordManager
- 📦 eraser Manager[config]: ConfigManager
- 📦 eraser Manager[error]: ErrorManager
- 📦 eraser Manager[eventbus]: EventBus
- 📦 eraser Manager[shortcut]: ShortcutManager
- 📦 eraser Manager[navigation]: NavigationManager
- 📦 eraser Manager[tool]: ToolManager
- 🔍 eraser 必須Manager[canvas]: exists=true, hasValue=[object Object]
- 🔍 eraser 必須Manager[coordinate]: exists=true, hasValue=[object Object]
- 🔍 eraser 必須Manager[record]: exists=true, hasValue=[object Object]
- ✅ eraser: 必須Manager確認完了: (3) ['canvas', 'coordinate', 'record']
- ✅ eraser: Manager統一注入完了（Object形式）
- ✅ EraserTool Manager統一注入完了
- ✅ EraserTool登録完了
- 🔄 Tool切り替え: pen
- 🔄 Tool切り替え開始: pen → pen
- 🖊️ PenTool アクティブ化開始
- 🎯 pen Tool アクティブ化
- 📦 pen: DrawContainer取得完了
- ✅ pen Tool アクティブ化完了
- 📦 PenTool Graphics追加完了: Container → Graphics
- ✅ PenTool v8 Graphics設定完了
- ⚡ PenTool v8リアルタイム描画有効
- ✅ PenTool v8描画機能初期化完了
- ✅ PenTool アクティブ化完了
- ✅ EraserTool登録完了
- 🔄 Tool切り替え: pen
- 🔄 Tool切り替え開始: pen → pen
- 🖊️ PenTool アクティブ化開始
- 🎯 pen Tool アクティブ化
- 📦 pen: DrawContainer取得完了
- ✅ pen Tool アクティブ化完了
- 📦 PenTool Graphics追加完了: Container → Graphics
- ✅ PenTool v8 Graphics設定完了
- ⚡ PenTool v8リアルタイム描画有効
- ✅ PenTool v8描画機能初期化完了
- ✅ PenTool アクティブ化完了
- ✅ pen Tool アクティブ化完了
- ✅ Tool切り替え完了: pen
- ✅ pen Tool アクティブ化完了
- ✅ Tool切り替え完了: pen
- ✅ v8 Tool初期化完了
- ✅ v8 Tool初期化完了
- ✅ ToolManager v8ツール初期化完了
- ✅ Step 3: ToolManager v8初期化完了
- 🔍 v8 Manager連携確認開始
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- ✅ v8 Manager連携確認完了
- ✅ AppCore - v8 Manager群初期化完了
- ✅ ToolManager v8ツール初期化完了
- ✅ Step 3: ToolManager v8初期化完了
- 🔍 v8 Manager連携確認開始
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- ✅ v8 Manager連携確認完了
- ✅ AppCore - v8 Manager群初期化完了
- ✅ v8 Manager群統合初期化完了
- ✅ v8 Manager群統合初期化完了
- 🚀 v8システム開始
- 🚀 AppCore - v8システム開始
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- ✅ ToolManager依存注入検証完了
- ✅ AppCore - v8システム開始完了
- ✅ AppCore v8システム完了
- 📊 PixiJS 8.12.0 | 2 | Manager数: 9
- 🚀 v8システム開始
- 🚀 AppCore - v8システム開始
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- ✅ ToolManager依存注入検証完了
- ✅ AppCore - v8システム開始完了
- ✅ AppCore v8システム完了
- 📊 PixiJS 8.12.0 | 2 | Manager数: 9
- ✅ v8システム開始完了
- ✅ v8システム開始完了
- 🎨 v8対応UI設定開始
- ✅ v8キャンバスイベント設定完了
- ✅ v8ツールボタン設定完了
- ✅ v8機能ボタン設定完了
- ✅ Icon replaced: download-tool → download
- ✅ Icon replaced: resize-tool → resize
- ✅ Icon replaced: palette-tool → palette
- ✅ Icon replaced: pen-tool → pen
- ✅ Icon replaced: eraser-tool → eraser
- ✅ Icon replaced: fill-tool → fill
- ✅ Icon replaced: select-tool → select
- ✅ Icon replaced: layers-tool → layers
- ✅ Icon replaced: settings-tool → settings
- 🎨 Icon internalization completed: 9 success, 0 errors
- ✅ v8アイコン適用完了
- ✅ v8対応UI設定完了
- 🚀 v8機能統合開始
- ✅ v8リアルタイム描画有効
- ✅ v8 Container階層有効
- ✅ v8 Canvas DOM挿入有効
- ✅ v8機能統合完了
- 🔍 TegakiApplication 初期化完了確認開始
- ✅ Canvas DOM挿入確認完了
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- ✅ ToolManager依存注入確認完了
- ✅ Canvas events configured
- ✅ TegakiApplication 初期化完了確認完了
- 🎨 v8対応UI設定開始
- ✅ v8キャンバスイベント設定完了
- ✅ v8ツールボタン設定完了
- ✅ v8機能ボタン設定完了
- ✅ Icon replaced: download-tool → download
- ✅ Icon replaced: resize-tool → resize
- ✅ Icon replaced: palette-tool → palette
- ✅ Icon replaced: pen-tool → pen
- ✅ Icon replaced: eraser-tool → eraser
- ✅ Icon replaced: fill-tool → fill
- ✅ Icon replaced: select-tool → select
- ✅ Icon replaced: layers-tool → layers
- ✅ Icon replaced: settings-tool → settings
- 🎨 Icon internalization completed: 9 success, 0 errors
- ✅ v8アイコン適用完了
-tegaki-application.js:526 ✅ v8対応UI設定完了
-tegaki-application.js:852 🚀 v8機能統合開始
-tegaki-application.js:856 ✅ v8リアルタイム描画有効
-tegaki-application.js:861 ✅ v8 Container階層有効
-tegaki-application.js:866 ✅ v8 Canvas DOM挿入有効
-tegaki-application.js:869 ✅ v8機能統合完了
-tegaki-application.js:387 🔍 TegakiApplication 初期化完了確認開始
-tegaki-application.js:406 ✅ Canvas DOM挿入確認完了
-tool-manager.js:192 🔍 ToolManager依存注入検証開始...
-tool-manager.js:200 ✅ CanvasManager注入確認完了
-tool-manager.js:208 ✅ getDrawContainer()メソッド確認完了
-tool-manager.js:225 ✅ getDrawContainer()実行確認完了
-tool-manager.js:233 ✅ Container妥当性確認完了
-tool-manager.js:238 ✅ ToolManager依存注入検証完了 - 全検証PASS
-tegaki-application.js:443 ✅ ToolManager依存注入確認完了
-tegaki-application.js:452 ✅ Canvas events configured
-tegaki-application.js:457 ✅ TegakiApplication 初期化完了確認完了
-tegaki-application.js:201 ✅ TegakiApplication v8システム初期化完了
-tegaki-application.js:946 ✅ TegakiApplication v8初期化成功
-tegaki-application.js:947 📊 2 | 174ms | Ready: true
-tegaki-application.js:469 📡 TegakiApplication 初期化完了通知送信
-tegaki-application.js:201 ✅ TegakiApplication v8システム初期化完了
-tegaki-application.js:946 ✅ TegakiApplication v8初期化成功
-tegaki-application.js:947 📊 2 | 174ms | Ready: true
-tegaki-application.js:469 📡 TegakiApplication 初期化完了通知送信
-bootstrap.js:186 🎉 TegakiApplication v8システム初期化成功！
-bootstrap.js:204 🚀 v8レンダラー: unknown
-bootstrap.js:205 🔧 WebGPU対応: false
-bootstrap.js:206 ⏱️ 初期化時間: unknownms
-bootstrap.js:207 📝 v8初期化ステップ: []
-bootstrap.js:208 🔧 v8機能: {webgpuEnabled: false, asyncInitialization: true, containerHierarchy: true, realtimeDrawing: true, managerIntegration: true, …}
-bootstrap.js:228 ✅ Phase1.5 完全版 - 全Manager統合済み・PixiJS v8対応
-bootstrap.js:52 ✅ Bootstrap完了 - Tegaki v8アプリケーション開始完了
-bootstrap.js:53 🚀 使用中レンダラー: WebGPU対応・PixiJS 8.12.0
-index.html:590 📊 v8.12.0初期化後状況確認
-index.html:482 🚀 v8デバッグ情報: {v8SystemReady: true, initialized: true, fullyReady: true, initializationComplete: true, canvasDOMReady: true, …}
-index.html:483 🎯 v8機能状況: {pixiVersion: '8.12.0', webgpuEnabled: false, webgpuSupported: true, rendererType: 2, containerSupport: true, …}
-index.html:492 🖥️ レンダラー: {type: 2, webgpu: false, version: '8.12.0', canvas: canvas}
-index.html:499 🔧 NavigationManager: {v8Ready: false, webgpuSupported: false, highPerformanceMode: false, managers: {…}, stage: {…}, …}
-index.html:499 🔧 RecordManager: {ready: false, v8Ready: false, managersReady: false, drawContainerReady: false, managers: {…}, …}
-index.html:499 🔧 CoordinateManager: {v8Ready: false, webgpuSupported: false, highPrecisionMode: true, managers: {…}, canvas: null, …}
-pen-tool.js:216 🖊️ PenTool.onPointerDown(): {x: 3, y: 5, originalEvent: PointerEvent}
-pen-tool.js:284 🖊️ PenTool 描画開始: {x: 3, y: 5}
-pen-tool.js:307 📝 PenTool ストローク記録開始: stroke_1756518180830
-pen-tool.js:216 🖊️ PenTool.onPointerDown(): {x: 3, y: 5, originalEvent: PointerEvent}
-pen-tool.js:284 🖊️ PenTool 描画開始: {x: 3, y: 5}
-pen-tool.js:307 📝 PenTool ストローク記録開始: stroke_1756518180830
-pen-tool.js:255 🖊️ PenTool.onPointerUp(): {x: 19, y: 5, originalEvent: PointerEvent}
-pen-tool.js:351 🖊️ PenTool 描画終了: {x: 19, y: 5}
-pen-tool.js:368 📝 PenTool ストローク完了: {id: 'stroke_1756518180830', points: 54, duration: 411}
-app-core.js:274 ⚠️ RecordManager.addStroke() not available
-console.warn @ app-core.js:274
-endStroke @ pen-tool.js:378
-onPointerUp @ pen-tool.js:263
-onPointerUp @ tool-manager.js:482
-handleV8PointerUp @ tegaki-application.js:624
-(anonymous) @ tegaki-application.js:555
-pen-tool.js:255 🖊️ PenTool.onPointerUp(): {x: 19, y: 5, originalEvent: PointerEvent}
-main.js:346 ⚠️ TegakiApplication v8初期化未完了
-pen-tool.js:216 🖊️ PenTool.onPointerDown(): {x: 165, y: 185, originalEvent: PointerEvent}
-pen-tool.js:284 🖊️ PenTool 描画開始: {x: 165, y: 185}
-pen-tool.js:307 📝 PenTool ストローク記録開始: stroke_1756518183167
-pen-tool.js:216 🖊️ PenTool.onPointerDown(): {x: 165, y: 185, originalEvent: PointerEvent}
-pen-tool.js:284 🖊️ PenTool 描画開始: {x: 165, y: 185}
-pen-tool.js:307 📝 PenTool ストローク記録開始: stroke_1756518183167
-pen-tool.js:255 🖊️ PenTool.onPointerUp(): {x: 186, y: 185, originalEvent: PointerEvent}
-pen-tool.js:351 🖊️ PenTool 描画終了: {x: 186, y: 185}
-pen-tool.js:368 📝 PenTool ストローク完了: {id: 'stroke_1756518183167', points: 62, duration: 449}
-app-core.js:274 ⚠️ RecordManager.addStroke() not available
-console.warn @ app-core.js:274
-endStroke @ pen-tool.js:378
-onPointerUp @ pen-tool.js:263
-onPointerUp @ tool-manager.js:482
-handleV8PointerUp @ tegaki-application.js:624
-(anonymous) @ tegaki-application.js:555
-pen-tool.js:255 🖊️ PenTool.onPointerUp(): {x: 186, y: 185, originalEvent: PointerEvent}
-pen-tool.js:216 🖊️ PenTool.onPointerDown(): {x: 365, y: 382, originalEvent: PointerEvent}
-pen-tool.js:284 🖊️ PenTool 描画開始: {x: 365, y: 382}
-pen-tool.js:307 📝 PenTool ストローク記録開始: stroke_1756518200528
-pen-tool.js:216 🖊️ PenTool.onPointerDown(): {x: 365, y: 382, originalEvent: PointerEvent}
-pen-tool.js:284 🖊️ PenTool 描画開始: {x: 365, y: 382}
-pen-tool.js:307 📝 PenTool ストローク記録開始: stroke_1756518200529
-pen-tool.js:255 🖊️ PenTool.onPointerUp(): {x: 377, y: 383, originalEvent: PointerEvent}
-pen-tool.js:351 🖊️ PenTool 描画終了: {x: 377, y: 383}
-pen-tool.js:368 📝 PenTool ストローク完了: {id: 'stroke_1756518200529', points: 50, duration: 460}
-app-core.js:274 ⚠️ RecordManager.addStroke() not available
-console.warn @ app-core.js:274
-endStroke @ pen-tool.js:378
-onPointerUp @ pen-tool.js:263
-onPointerUp @ tool-manager.js:482
-handleV8PointerUp @ tegaki-application.js:624
-(anonymous) @ tegaki-application.js:555
-pen-tool.js:255 🖊️ PenTool.onPointerUp(): {x: 377, y: 383, originalEvent: PointerEvent}
+index.html:613 ⚠️ TegakiApplication v8初期化未完了
+(anonymous) @ index.html:613
+setTimeout
+(anonymous) @ index.html:588
+ ⚠️ TegakiApplication v8初期化未完了

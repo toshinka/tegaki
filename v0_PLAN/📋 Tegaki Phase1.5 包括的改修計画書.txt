@@ -1,0 +1,281 @@
+# 📋 Tegaki Phase1.5 包括的改修計画書
+**座標ズレ・描画消失問題解決版** | Rev.2025-08-30-fix
+
+---
+
+## 🔥 **緊急問題分析**
+
+### 🎯 **主要問題**
+1. **座標ズレ問題**: 右下に行くほど描画位置がずれる
+2. **描画消失問題**: 新しい描画開始時に前の描画が消える  
+3. **Graphics重複処理**: クリア処理が不適切
+4. **座標変換チェーン不備**: DOM → Canvas → World変換が不正確
+
+### 📊 **根本原因（コンソール分析）**
+```
+PenTool.startStroke() → this.graphics.clear()  // ← 全Graphics消去
+PenTool座標: {x: 3, y: 5} → world座標不明
+座標変換: clientToWorld()未実装 → 直接DOM座標使用
+RecordManager.addStroke() not available → TPF保存失敗
+```
+
+---
+
+## 🛠️ **改修戦略**
+
+### 📐 **Phase 1: 座標変換システム統一**
+```javascript
+// ✅ 統一座標変換フロー
+DOM座標(clientX/Y) 
+  ↓ CoordinateManager.clientToCanvas()
+Canvas座標(canvasX/Y)
+  ↓ CanvasManager.canvasToWorld()  
+World座標(worldX/Y) → 描画実行
+```
+
+### 🎨 **Phase 2: Graphics管理分離**
+```javascript
+// ✅ Graphics階層分離
+drawContainer
+  ├── permanentGraphics (確定描画・クリア禁止)
+  ├── tempGraphics (一時描画・クリア許可)
+  └── strokeGraphics[id] (個別ストローク管理)
+```
+
+### 🔄 **Phase 3: 描画フロー再構築**  
+```javascript
+// ✅ 非破壊描画フロー
+1. 新Graphics作成 (per stroke)
+2. 座標変換 (統一API)
+3. 描画実行 (v8 API)
+4. permanentGraphicsに追加
+5. tempGraphics.clear() (一時のみ)
+```
+
+---
+
+## 📄 **ファイル別改修内容**
+
+### 🎯 **優先度A: 座標変換基盤**
+
+#### `coordinate-manager.js`
+```javascript
+/**
+ * @provides clientToCanvas, canvasToWorld, worldToCanvas, clientToWorld
+ * @uses CanvasManager.getPixiApp, CanvasManager.getDrawContainer  
+ * @responsibility 統一座標変換・DPR対応・Container変形対応
+ */
+
+// ✅ 実装メソッド
+- clientToCanvas(clientX, clientY) → {x, y} 
+- canvasToWorld(canvasX, canvasY) → {x, y}
+- clientToWorld(clientX, clientY) → {x, y} // 統合API
+- getTransformMatrix() → PIXI.Matrix
+```
+
+#### `canvas-manager.js`  
+```javascript
+/**
+ * @provides getDrawContainer, clientToCanvasPixel, getTransformMatrix
+ * @fixes Graphics作成分離・座標変換支援メソッド追加
+ */
+
+// ✅ 追加メソッド
+- clientToCanvasPixel(clientX, clientY) → {x, y}
+- createStrokeGraphics(strokeId) → PIXI.Graphics
+- addPermanentGraphics(graphics) → void
+- clearTemporaryGraphics() → void
+```
+
+### 🎯 **優先度B: Tool描画修正**
+
+#### `pen-tool.js`
+```javascript
+/**
+ * @fixes 座標変換統一・Graphics分離・非破壊描画
+ */
+
+// ✅ 修正内容
+- onPointerDown(): 座標変換 → clientToWorld()使用
+- startStroke(): 個別Graphics作成・clear()禁止
+- addStrokePoint(): 正確座標・リアルタイム描画
+- endStroke(): permanentGraphics追加・tempクリア
+```
+
+#### `tool-manager.js`
+```javascript
+/**
+ * @fixes Pointer座標を正確にTool転送
+ */
+
+// ✅ 修正内容  
+- handleV8PointerXxx(): DOM座標取得精度向上
+- 座標変換をToolではなくManagerで実行
+- Tool固有座標変換削除
+```
+
+### 🎯 **優先度C: Record統合**
+
+#### `record-manager.js`
+```javascript
+/**
+ * @fixes addStroke()メソッド実装・TPF保存確実化
+ */
+
+// ✅ 実装メソッド
+- addStroke(strokeData) → boolean
+- getStrokeHistory() → TPFStroke[]
+- clearHistory() → void
+- isReady() → boolean
+```
+
+---
+
+## 🔧 **技術仕様**
+
+### 📐 **座標変換精度**
+```javascript
+// ✅ DPR対応座標変換
+const dpr = window.devicePixelRatio || 1;
+const canvasRect = canvas.getBoundingClientRect();
+const canvasX = (clientX - canvasRect.left) * dpr;
+const canvasY = (clientY - canvasRect.top) * dpr;
+
+// ✅ Container変形対応
+const worldPoint = drawContainer.toLocal({x: canvasX, y: canvasY});
+```
+
+### 🎨 **Graphics管理構造**
+```javascript
+// ✅ レイヤー構造
+drawContainer (getDrawContainer())
+  ├── permanentLayer (確定描画)
+  │   ├── strokeGraphics_001
+  │   ├── strokeGraphics_002  
+  │   └── strokeGraphics_003
+  ├── temporaryLayer (一時描画)
+  │   └── tempGraphics (毎回clear)
+  └── overlayLayer (UI・カーソル)
+      └── cursorGraphics
+```
+
+### 🔄 **描画状態管理**
+```javascript
+// ✅ Tool状態管理
+const toolState = {
+  isDrawing: boolean,
+  currentStrokeId: string,
+  currentGraphics: PIXI.Graphics,
+  lastPoint: {x, y},
+  strokeStartTime: timestamp
+};
+```
+
+---
+
+## 🚀 **改修手順**
+
+### **Step 1: 座標変換統一 (15分)**
+1. CoordinateManager.clientToWorld()実装
+2. CanvasManager.clientToCanvasPixel()実装  
+3. 座標変換テスト実行
+
+### **Step 2: Graphics管理分離 (20分)**  
+1. CanvasManager Graphics管理メソッド追加
+2. PenTool Graphics分離・非破壊化
+3. 描画テスト: 複数ストローク保持確認
+
+### **Step 3: Tool描画修正 (15分)**
+1. PenTool 座標変換統一適用
+2. ToolManager Pointer座標精度向上  
+3. 描画テスト: 座標ズレ解消確認
+
+### **Step 4: Record統合 (10分)**
+1. RecordManager.addStroke()実装
+2. TPF保存テスト
+3. 統合テスト実行
+
+### **Step 5: 検証・最適化 (10分)**
+1. 座標精度テスト (4隅 + 中心)
+2. 複数ストローク描画テスト
+3. パフォーマンステスト (60FPS確認)
+
+---
+
+## ✅ **完了基準**
+
+### **機能要件**
+- [ ] 座標ズレなし (画面全域で±1px以内)
+- [ ] 複数ストローク保持 (描画消失なし) 
+- [ ] 60FPS維持 (リアルタイム描画)
+- [ ] TPF保存確実 (RecordManager連携)
+
+### **品質要件**  
+- [ ] コンソールエラーなし
+- [ ] メモリリークなし (Graphics適切解放)
+- [ ] ヘッダー完全記載
+- [ ] 循環依存なし
+
+### **テストケース**
+```javascript
+// ✅ 必須テスト
+A: 左上(0,0)描画 → world座標(0,0)近似
+B: 右下(400,400)描画 → 正確位置描画
+C: 複数ストローク → 全て保持・消失なし
+D: DPR変更環境 → 座標精度維持  
+E: ブラウザズーム → 描画位置変化なし
+```
+
+---
+
+## 🔍 **AI改修ループ対策**
+
+### **改修順序固定化**
+```
+CoordinateManager → CanvasManager → PenTool → ToolManager → RecordManager
+↑ この順序厳守・逆行禁止 ↑
+```
+
+### **依存関係検証**
+```javascript
+// ✅ 改修前確認必須
+1. @uses記載内容の実装確認
+2. Manager注入順序の確認  
+3. 座標変換チェーンの確認
+4. Graphics階層の確認
+```
+
+### **段階的テスト**
+```javascript
+// ✅ ファイル毎テスト必須
+改修 → 単体テスト → 統合テスト → 次ファイル
+失敗時: 前ファイルに問題 → 戻って修正
+```
+
+---
+
+## 📊 **改修完了チェックリスト**
+
+### **コード品質**
+- [ ] ヘッダー記載完了 (@provides/@uses/@forbids等)
+- [ ] console.log過剰削除 (Error/Warnのみ保持)  
+- [ ] v7 API完全削除確認
+- [ ] 架空メソッド呼出し確認・削除
+
+### **機能統合**  
+- [ ] Manager間連携確認
+- [ ] Tool → Manager API統一
+- [ ] EventBus活用 (双方向依存回避)
+- [ ] グローバル登録確認
+
+### **性能・品質**
+- [ ] 60FPS描画確認
+- [ ] メモリ使用量確認  
+- [ ] WebGPU対応確認
+- [ ] エラーハンドリング確認
+
+---
+
+**🎯 目標**: 座標ズレ・描画消失問題の完全解決 + Phase2準備完了  
+**⏱️ 予想時間**: 70分 (改修60分 + テスト10分)  
+**🚀 成果**: 安定したペン描画基盤 + 拡張可能アーキテクチャ

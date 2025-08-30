@@ -1,25 +1,34 @@
-/* ============================
-   原因推定（簡潔）
-   - 表示されている警告:
-     "The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127"
-     -> Chromium 側の WebGPU 実装に関する警告。単体では致命的ではないが、環境によっては app の WebGPU 初期化コードが失敗（あるいは未対応のAPI呼び出しを行う）し、そのままレンダラ生成を止めてしまう実装になっている。
-   - 追加でキャンバスが出ない/座標が拾えない理由:
-     1) WebGPU 初期化失敗時にフォールバック処理（WebGL）を適切に行っていない。
-     2) Canvas DOM の挿入箇所や append/replace ロジックが期待と異なる（既存 canvas を上書きしてしまう、または CSS で非表示にしている）。
-     3) ポインタイベントの登録が canvas ではなく別要素に付与されている（サイドバーアイコンのみ反応している）。
-     4) Manager の初期化順序が分散しており、Canvasより先にToolがイベント購読してしまう等のレースがある。
-   ============================
 
-/* ============================
-   推奨包括改修方針（要点）
-   1) 初期化を AppCore に集中化（上記コード）。AppCore は renderer 選定方針を決め、CanvasManager に一度だけ生成命令を渡す。
-   2) 双方向依存は全て EventBus に置換。各 Manager/Tool は EventBus を使って通信する。
-   3) WebGPU は明示的に無効化（現時点では WebGL を使う）。WebGPU が必要なら opt-in フラグと十分なフォールバック実装を追加する。
-   4) Canvas は CanvasManager が sole owner。Canvas の DOM 追加/削除/スタイルは CanvasManager のみが行う。
-   5) ポインタ座標取得は CanvasManager が正しい boundingClientRect を使って正規化して EventBus 経由で配信する。
-   6) Tool は Graphics レイヤを作り、そのレイヤに描画。Tool は CanvasManager.stage を直接参照せず、app を介してステージに追加する（責務分離）。
-   7) Console の冗長出力は AppCore の debug フラグを用いて制御。
-   8) v7/v8 両対応コードは即刻排除。v8 前提でリファクタする。
-   9) ファイルヘッダー（@provides, @uses, @initflow, @forbids 等）を必ず付与し、手作業での二重管理を避ける（CI チェック推奨）。
-   10) 最小統合テストとして debug/phase15-integration-test.js を用意し、Pen/Eraser 切替、描画、座標取得を自動または手動で確認する。
-   ============================
+// ============================================================================
+// Additional Notes / 改修計画（短く箇条書き）
+// ============================================================================
+// 1) 根本原因 (推定)
+//    - 問題は「DOM clientX/Y -> Canvas バッキングピクセル -> world の変換」が不正確だったため。
+//    - 具体的には CSS 表示サイズと実際の backing canvas のサイズ (devicePixelRatio による拡大) を混同していた。
+//    - さらに、ツール側が直接 clientX/clientY を stage 座標として扱っていたため、ステージの transform（パン/ズーム）が反映されずズレが増幅した。
+//    - Chromium の "powerPreference ignored" は警告であり描画座標ズレの直接原因ではない（注記は残す）。
+//
+// 2) 主要対応 (このコミットで適用済み)
+//    - CanvasManager.clientToCanvasPixel() を導入して CSS -> backing pixel を正確に計算。
+//    - CanvasManager.clientToWorld() で drawContainer.toLocal(...) を使用し transform を尊重して world 座標を求める。
+//    - PenTool は常に canvasManager 経由で world 座標を受け取り、描画は drawContainer 内で行うよう一本化。
+//    - ToolManager が managers を注入することでツール側の direct DOM 操作をやめさせた。
+//    - RecordManager が無くても動作するようガードを追加（ログと警告出力）
+//
+// 3) 作業手順（リリース/デプロイ時）
+//    - 1. 本ファイル群に置き換え（既存の各ファイルをバックアップ）
+//    - 2. index.html が PIXI v8 を読み込んでいることを確認（node_modules 経由 or CDN）
+//    - 3. ページを開き、コンソールに CanvasManager 初期化ログと DPI 表示が出ることを確認
+//    - 4. マウスで (0,0) 〜 (right,bottom) を描き、コンソール上の PenTool 描画ログで world 座標が妥当であることを検証
+//    - 5. RecordManager が存在する場合は stroke が記録されるかを確認
+//
+// 4) テストケース（必ず実行）
+//    - A: 画面左上 (client 0,0) -> world ≒ 0,0（ほぼ一致）
+//    - B: 画面中央 (client width/2,height/2) を描画して、ペンの軌跡がキャンバスの中央に描かれることを確認
+//    - C: ブラウザズーム（Ctrl+）や devicePixelRatio を変えた環境で CSS ディメンションと backing size に差が出ても動作すること
+//    - D: ペンで右/下方向へ長距離に描いてもズレが累積しないこと
+//
+// 5) 将来の注意点 / 拡張
+//    - Container 階層の複雑化 (複数のスケーリング/回転) を考慮し、必要なら canvasManager.clientToWorld に対するユニットテストを作成すること
+//    - WebGPU レンダラ利用時も PIXI の renderer.resolution / autoDensity の挙動は同様なので、同変換ロジックで対応可能
+//    - v7/v8 の二重管理は厳禁。v7 API を利用するコードは削除/移行してください。
