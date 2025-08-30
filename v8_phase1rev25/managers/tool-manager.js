@@ -1,6 +1,6 @@
 /**
- * 📄 FILE: tool-manager.js
- * 📌 RESPONSIBILITY: Tool管理・切り替え・Manager統一注入・操作フロー管理
+ * 📄 FILE: managers/tool-manager.js
+ * 📌 RESPONSIBILITY: Tool管理・切り替え・Manager統一注入・操作フロー管理・Pointerイベント処理
  *
  * @provides
  *   - ToolManager クラス
@@ -10,12 +10,18 @@
  *   - registerTool(name, toolClass) - Tool登録
  *   - setManagers(managers) - Manager統一注入
  *   - verifyInjection() - 注入検証
+ *   - onPointerDown(event) - ポインターダウン処理
+ *   - onPointerMove(event) - ポインタームーブ処理
+ *   - onPointerUp(event) - ポインターアップ処理
  *
  * @uses
  *   - CanvasManager.getDrawContainer()
  *   - AbstractTool.setManagersObject()
  *   - AbstractTool.activate()
  *   - AbstractTool.deactivate()
+ *   - AbstractTool.onPointerDown()
+ *   - AbstractTool.onPointerMove()
+ *   - AbstractTool.onPointerUp()
  *   - PenTool constructor
  *   - EraserTool constructor
  *
@@ -43,6 +49,7 @@
  *   - startOperation()/endOperation() 形式統一
  *   - setManagers() - Manager注入
  *   - verifyInjection() - 注入検証
+ *   - onPointerXxx() - ポインターイベント処理
  *
  * @error-handling
  *   - Manager注入失敗時は Tool初期化をスキップ
@@ -63,20 +70,22 @@
     'use strict';
 
     /**
-     * 🔧 ToolManager v8.12.0完全対応版・PenTool作成修正版
+     * 🔧 ToolManager v8.12.0完全対応版・Pointerイベント処理追加版
      * 
      * 📏 修正内容:
      * - PenTool作成エラー修正・Manager注入方法改善
+     * - Pointerイベント処理メソッド追加
      * - コンソール出力削減・重要ログのみ保持
      * 
      * 🚀 特徴:
      * - 防御的依存注入・検証強化
      * - CanvasManager.getDrawContainer()保証
      * - Tool作成時の適切なManager注入
+     * - TegakiApplication連携対応
      */
     class ToolManager {
         constructor(canvasManagerDI = null) {
-            console.log(`🚀 ToolManager v8.12.0作成開始 - PenTool作成修正版`);
+            console.log(`🚀 ToolManager v8.12.0作成開始 - Pointerイベント処理対応版`);
             
             // 基本状態初期化
             this.canvasManager = null;
@@ -91,6 +100,10 @@
             // v8対応状態
             this.v8Ready = false;
             this.webGPUSupported = false;
+            
+            // Pointerイベント状態管理
+            this.isPointerDown = false;
+            this.lastPointerPosition = { x: 0, y: 0 };
             
             // DI注入確認（コンストラクタでの注入をサポート）
             if (canvasManagerDI) {
@@ -111,7 +124,7 @@
                 }
             }
             
-            console.log(`✅ ToolManager v8.12.0作成完了 - PenTool作成修正版`);
+            console.log(`✅ ToolManager v8.12.0作成完了 - Pointerイベント処理対応版`);
         }
 
         /**
@@ -401,10 +414,91 @@
         }
 
         /**
+         * 🖱️ ポインターダウン処理（TegakiApplication連携）
+         * 
+         * @param {Object} event - ポインターイベント {x, y, originalEvent}
+         */
+        onPointerDown(event) {
+            if (!this.currentTool) {
+                console.warn('⚠️ No current tool available for pointer down');
+                return;
+            }
+
+            try {
+                this.isPointerDown = true;
+                this.lastPointerPosition = { x: event.x, y: event.y };
+
+                // 現在のToolにポインターダウンイベントを伝達
+                if (typeof this.currentTool.onPointerDown === 'function') {
+                    this.currentTool.onPointerDown(event);
+                } else {
+                    console.warn(`⚠️ Current tool (${this.currentToolName}) has no onPointerDown method`);
+                }
+
+            } catch (error) {
+                console.error('❌ ToolManager.onPointerDown処理エラー:', error);
+            }
+        }
+
+        /**
+         * 🖱️ ポインタームーブ処理（TegakiApplication連携）
+         * 
+         * @param {Object} event - ポインターイベント {x, y, originalEvent}
+         */
+        onPointerMove(event) {
+            if (!this.currentTool) {
+                return;
+            }
+
+            try {
+                this.lastPointerPosition = { x: event.x, y: event.y };
+
+                // 現在のToolにポインタームーブイベントを伝達
+                if (typeof this.currentTool.onPointerMove === 'function') {
+                    this.currentTool.onPointerMove(event);
+                }
+
+            } catch (error) {
+                console.error('❌ ToolManager.onPointerMove処理エラー:', error);
+            }
+        }
+
+        /**
+         * 🖱️ ポインターアップ処理（TegakiApplication連携）
+         * 
+         * @param {Object} event - ポインターイベント {x, y, originalEvent}
+         */
+        onPointerUp(event) {
+            if (!this.currentTool) {
+                return;
+            }
+
+            try {
+                this.isPointerDown = false;
+                this.lastPointerPosition = { x: event.x, y: event.y };
+
+                // 現在のToolにポインターアップイベントを伝達
+                if (typeof this.currentTool.onPointerUp === 'function') {
+                    this.currentTool.onPointerUp(event);
+                }
+
+            } catch (error) {
+                console.error('❌ ToolManager.onPointerUp処理エラー:', error);
+            }
+        }
+
+        /**
          * 📊 現在のTool取得
          */
         getCurrentTool() {
             return this.currentTool;
+        }
+
+        /**
+         * 📊 現在のTool名取得
+         */
+        getCurrentToolName() {
+            return this.currentToolName;
         }
 
         /**
@@ -429,110 +523,122 @@
             const hasTools = this.tools.size > 0;
             const hasCurrentTool = this.currentTool !== null;
             
-            console.log(`🔍 ToolManager準備状態確認:`);
-        console.log(`  - CanvasManager: ${hasCanvasManager}`);
-        console.log(`  - getDrawContainer method: ${hasGetDrawContainer}`);
-        console.log(`  - DrawContainer: ${hasDrawContainer}`);
-        console.log(`  - Managers: ${hasManagers}`);
-        console.log(`  - Tools: ${hasTools} (${this.tools.size}個)`);
-        console.log(`  - CurrentTool: ${hasCurrentTool} (${this.currentToolName})`);
-        
-        return hasCanvasManager && hasGetDrawContainer && hasDrawContainer && hasManagers && hasTools;
-    }
-
-    /**
-     * 📊 ToolManager状態取得
-     */
-    getState() {
-        return {
-            currentToolName: this.currentToolName,
-            toolCount: this.tools.size,
-            v8Ready: this.v8Ready,
-            webGPUSupported: this.webGPUSupported,
-            hasCanvasManager: !!this.canvasManager,
-            hasGetDrawContainer: this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function',
-            hasDrawContainer: !!this.drawContainer,
-            hasManagers: !!this.managersObject,
-            isReady: this.isReady()
-        };
-    }
-
-    /**
-     * 🎨 描画Container取得
-     */
-    getDrawContainer() {
-        return this.drawContainer;
-    }
-
-    /**
-     * 🔧 Tool設定更新
-     * 
-     * @param {string} toolName - Tool名
-     * @param {Object} settings - 設定オブジェクト
-     */
-    updateToolSettings(toolName, settings) {
-        const tool = this.tools.get(toolName);
-        if (tool && tool.updateSettings) {
-            tool.updateSettings(settings);
-            console.log(`🔧 Tool設定更新: ${toolName}`, settings);
+            return hasCanvasManager && hasGetDrawContainer && hasDrawContainer && hasManagers && hasTools;
         }
-    }
 
-    /**
-     * 🧪 デバッグ情報取得
-     */
-    getDebugInfo() {
-        const toolInfo = {};
-        for (const [name, tool] of this.tools) {
-            toolInfo[name] = {
-                isActive: tool.isActive || false,
-                isReady: tool.isReady ? tool.isReady() : false,
-                state: tool.getState ? tool.getState() : 'unavailable'
+        /**
+         * 📊 ToolManager状態取得
+         */
+        getState() {
+            return {
+                currentToolName: this.currentToolName,
+                toolCount: this.tools.size,
+                v8Ready: this.v8Ready,
+                webGPUSupported: this.webGPUSupported,
+                hasCanvasManager: !!this.canvasManager,
+                hasGetDrawContainer: this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function',
+                hasDrawContainer: !!this.drawContainer,
+                hasManagers: !!this.managersObject,
+                isReady: this.isReady(),
+                isPointerDown: this.isPointerDown,
+                lastPointerPosition: this.lastPointerPosition
             };
         }
-        
-        return {
-            currentTool: this.currentToolName,
-            tools: toolInfo,
-            managers: this.managersObject ? Object.keys(this.managersObject) : [],
-            canvasManager: !!this.canvasManager,
-            getDrawContainerMethod: this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function',
-            drawContainer: !!this.drawContainer,
-            v8Ready: this.v8Ready,
-            injectionVerified: this.canvasManager && this.drawContainer && this.managersObject
-        };
-    }
 
-    // 🚨修正追加: AppCoreとの互換性メソッド
-    setManagersObject(managers) {
-        return this.setManagers(managers);
-    }
+        /**
+         * 🎨 描画Container取得
+         */
+        getDrawContainer() {
+            return this.drawContainer;
+        }
 
-    setManagerRegistrationInfo(managers) {
-        console.log(`✅ ToolManager: Manager統一登録情報設定完了（互換性メソッド）`);
-        this.managerRegistrationInfo = managers;
-    }
-
-    initializeDrawContainer() {
-        if (this.canvasManager && this.canvasManager.getDrawContainer && !this.drawContainer) {
-            try {
-                this.drawContainer = this.canvasManager.getDrawContainer();
-                console.log(`✅ DrawContainer初期化完了（互換性メソッド）`);
-            } catch (error) {
-                console.warn(`⚠️ DrawContainer初期化失敗:`, error.message);
+        /**
+         * 🔧 Tool設定更新
+         * 
+         * @param {string} toolName - Tool名
+         * @param {Object} settings - 設定オブジェクト
+         */
+        updateToolSettings(toolName, settings) {
+            const tool = this.tools.get(toolName);
+            if (tool && tool.updateSettings) {
+                tool.updateSettings(settings);
+                console.log(`🔧 Tool設定更新: ${toolName}`, settings);
             }
         }
+
+        /**
+         * 🧪 デバッグ情報取得
+         */
+        getDebugInfo() {
+            const toolInfo = {};
+            for (const [name, tool] of this.tools) {
+                toolInfo[name] = {
+                    isActive: tool.isActive || false,
+                    isReady: tool.isReady ? tool.isReady() : false,
+                    state: tool.getState ? tool.getState() : 'unavailable'
+                };
+            }
+            
+            return {
+                currentTool: this.currentToolName,
+                tools: toolInfo,
+                toolsCount: this.tools.size,
+                managers: this.managersObject ? Object.keys(this.managersObject) : [],
+                canvasManager: !!this.canvasManager,
+                getDrawContainerMethod: this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function',
+                drawContainer: !!this.drawContainer,
+                v8Ready: this.v8Ready,
+                injectionVerified: this.canvasManager && this.drawContainer && this.managersObject,
+                pointerState: {
+                    isPointerDown: this.isPointerDown,
+                    lastPosition: this.lastPointerPosition
+                }
+            };
+        }
+
+        // 互換性メソッド（AppCoreとの連携用）
+        setManagersObject(managers) {
+            return this.setManagers(managers);
+        }
+
+        setManagerRegistrationInfo(managers) {
+            console.log(`✅ ToolManager: Manager統一登録情報設定完了（互換性メソッド）`);
+            this.managerRegistrationInfo = managers;
+        }
+
+        initializeDrawContainer() {
+            if (this.canvasManager && this.canvasManager.getDrawContainer && !this.drawContainer) {
+                try {
+                    this.drawContainer = this.canvasManager.getDrawContainer();
+                    console.log(`✅ DrawContainer初期化完了（互換性メソッド）`);
+                } catch (error) {
+                    console.warn(`⚠️ DrawContainer初期化失敗:`, error.message);
+                }
+            }
+        }
+
+        // 後方互換メソッド（旧API対応）
+        handlePointerDown(x, y, event) {
+            return this.onPointerDown({ x, y, originalEvent: event });
+        }
+
+        handlePointerMove(x, y, event) {
+            return this.onPointerMove({ x, y, originalEvent: event });
+        }
+
+        handlePointerUp(x, y, event) {
+            return this.onPointerUp({ x, y, originalEvent: event });
+        }
     }
-}
 
-// グローバル登録
-if (!window.Tegaki) {
-    window.Tegaki = {};
-}
+    // グローバル登録
+    if (!window.Tegaki) {
+        window.Tegaki = {};
+    }
 
-window.Tegaki.ToolManager = ToolManager;
-console.log(`🚀 ToolManager v8.12.0完全対応版・PenTool作成修正版 Loaded`);
-console.log(`📏 修正内容: PenTool作成エラー修正・Manager注入方法改善・コンソール出力削減`);
-console.log(`🚀 特徴: 防御的依存注入・検証強化・CanvasManager.getDrawContainer()保証・Tool作成時適切Manager注入`);
+    window.Tegaki.ToolManager = ToolManager;
+    console.log(`🚀 ToolManager v8.12.0完全対応版・Pointerイベント処理対応版 Loaded`);
+    console.log(`📏 修正内容: PenTool作成エラー修正・Manager注入方法改善・Pointerイベント処理追加・コンソール出力削減`);
+    console.log(`🚀 特徴: 防御的依存注入・検証強化・CanvasManager.getDrawContainer()保証・Tool作成時適切Manager注入・TegakiApplication連携対応`);
 
 })()
