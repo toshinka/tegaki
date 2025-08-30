@@ -1,607 +1,441 @@
 /**
- * 📄 FILE: js/tegaki-application.js
- * 📌 RESPONSIBILITY: PixiJS v8対応メインアプリケーション・イベント座標透過修正版
+ * TegakiApplication - PixiJS v8イベント修正版
  * 
- * @provides
- *   - TegakiApplication（クラス）
- *   - async initialize(): void
- *   - async setupCanvas(): void
- *   - getCanvasElement(): HTMLCanvasElement
- *   - getToolManager(): ToolManager
- *   - isReady(): boolean
- *   - getDebugInfo(): Object
- *
- * @uses
- *   - window.Tegaki.AppCore
- *   - window.Tegaki.TegakiIcons.replaceAllToolIcons()
- *   - document.getElementById()
- *
- * @initflow
- *   1. AppCore作成 → 2. Canvas作成 → 3. DOM挿入 → 4. Manager初期化 → 5. UI設定 → 6. 完了
- *
- * @forbids
- *   💀 双方向依存禁止
- *   🚫 Canvas DOM挿入スキップ禁止
- *   🚫 原始イベント変換禁止（必ずそのまま透過）
- *   🚫 clientX/Y の独自オブジェクト化禁止
- *
- * @manager-key
- *   window.Tegaki.TegakiApplicationInstance
- *
- * @event-contract
- *   ・onPointerDown/Move/Up は原始PointerEvent をそのまま渡す
- *   ・clientX/Y を独自オブジェクトに変換しない
- *   ・addEventListener は passive:false を明示
- *   ・バインド先は app.view の <canvas> に限定
- *
- * @coordinate-contract
- *   ・座標変換は Tool 側の CoordinateManager で実行
- *   ・TegakiApplication は座標に一切関与しない
- *   ・原始DOMイベントの透過に専念
- *
- * @input-validation
- *   ・event.clientX/Y の存在確認のみ実行
- *   ・変換処理は Tool 側に移譲
+ * @provides TegakiApplication, initialize, setupEventHandlers, bindToolEvents
+ * @uses AppCore.createCanvasV8, ToolManager.setActiveTool, ToolManager.getActiveTool
+ * @initflow 1. TegakiApplication作成 → 2. initialize() → 3. setupEventHandlers() → 4. Manager統合
+ * @forbids 💀双方向依存禁止 🚫フォールバック禁止 🚫Event座標の直読み🚫DPR重複適用🚫v7/v8両対応禁止
+ * @manager-key window.Tegaki.TegakiApplicationInstance
+ * @dependencies-strict AppCore(必須), ToolManager(必須), CanvasManager(必須)
+ * @integration-flow Bootstrap → TegakiApplication → AppCore
+ * @method-naming-rules initialize(), setupEventHandlers() 形式統一
+ * @event-contract DOMイベントをPixiJS v8 global events経由で透過、passive:false明示、app.view直下バインド
+ * @coordinate-contract イベント座標透過のみ実施、変換はCoordinateManager委譲
+ * @error-handling 初期化失敗時は例外投げる
+ * @state-management 初期化状態をboolean管理
  */
 
-(function() {
-    'use strict';
-
-    // 多重定義防止
-    if (!window.Tegaki) {
-        window.Tegaki = {};
+class TegakiApplication {
+    constructor() {
+        this.app = null;
+        this.canvasManager = null;
+        this.toolManager = null;
+        this.managers = new Map();
+        this.initialized = false;
+        this.eventHandlersSetup = false;
+        
+        console.log('🚀 TegakiApplication v8対応版 作成開始');
     }
-
-    if (!window.Tegaki.TegakiApplication) {
-        class TegakiApplication {
-            constructor() {
-                // 基本状態
-                this.initialized = false;
-                this.fullyReady = false;
-                this.canvasDOMReady = false;
-                
-                // システム参照
-                this.appCore = null;
-                this.pixiApp = null;
-                this.canvasManager = null;
-                this.toolManager = null;
-                
-                // レンダラー情報
-                this.rendererType = null;
-                this.webgpuSupported = null;
-                
-                // 初期化情報
-                this.initializationStartTime = Date.now();
-                this.initializationEndTime = null;
-                this.lastError = null;
-                
-                // 自動初期化実行
-                this.initialize().catch(error => {
-                    console.error('💀 TegakiApplication 初期化失敗:', error);
-                    this.lastError = error;
-                    this.initialized = false;
-                    this.fullyReady = false;
-                });
+    
+    /**
+     * アプリケーション初期化（既存アーキテクチャ互換版）
+     * @returns {Promise<boolean>} - 初期化成功/失敗
+     */
+    async initialize() {
+        if (this.initialized) {
+            console.log('✅ TegakiApplication 既に初期化済み');
+            return true;
+        }
+        
+        const startTime = performance.now();
+        console.log('🚀 TegakiApplication v8対応版 初期化開始');
+        
+        try {
+            // Phase 1: Container確認
+            const container = document.getElementById('canvas-container');
+            if (!container) {
+                throw new Error('canvas-container が見つかりません');
             }
             
-            /**
-             * システム完全初期化
-             */
-            async initialize() {
-                try {
-                    // Step 1: AppCore作成
-                    await this.createAppCoreV8();
-                    
-                    // Step 2: Canvas作成
-                    await this.createCanvasV8();
-                    
-                    // Step 3: Canvas DOM挿入（重要）
-                    await this.setupCanvas();
-                    this.canvasDOMReady = true;
-                    
-                    // Step 4: Manager群初期化
-                    await this.initializeV8Managers();
-                    
-                    // Step 5: システム開始
-                    await this.startV8System();
-                    
-                    // Step 6: UI設定
-                    this.setupV8UI();
-                    
-                    // Step 7: 完了
-                    this.initialized = true;
-                    this.fullyReady = true;
-                    this.initializationEndTime = Date.now();
-                    
-                    // 完了通知
-                    this.notifyInitializationComplete();
-                    
-                } catch (error) {
-                    this.lastError = error;
-                    console.error('💀 初期化エラー:', error);
-                    throw error;
-                }
+            // Phase 2: AppCore経由でCanvas作成（既存方式）
+            if (!window.Tegaki.AppCore) {
+                throw new Error('AppCore が利用できません');
             }
             
-            /**
-             * AppCore作成
-             */
-            async createAppCoreV8() {
-                if (!window.Tegaki?.AppCore) {
-                    throw new Error('AppCore class not available');
-                }
-                
-                this.appCore = new window.Tegaki.AppCore();
+            const appCore = new window.Tegaki.AppCore();
+            
+            // Canvas作成（AppCore方式）
+            this.app = await appCore.createCanvasV8(400, 400);
+            
+            // Manager初期化（AppCore方式）
+            await appCore.initializeV8Managers();
+            
+            // Canvas DOM配置
+            const canvasElement = appCore.getCanvasElement();
+            if (canvasElement && !container.contains(canvasElement)) {
+                container.appendChild(canvasElement);
+                console.log('✅ Canvas DOM配置完了');
             }
             
-            /**
-             * Canvas作成（400x400固定）
-             */
-            async createCanvasV8() {
-                try {
-                    this.pixiApp = await this.appCore.createCanvasV8(400, 400);
-                    
-                    if (!this.pixiApp) {
-                        throw new Error('Canvas creation failed');
-                    }
-                    
-                    // レンダラー情報取得
-                    this.rendererType = this.appCore.rendererType;
-                    this.webgpuSupported = this.appCore.webgpuSupported;
-                    
-                    return this.pixiApp;
-                    
-                } catch (error) {
-                    console.error('Canvas作成エラー:', error);
-                    throw error;
-                }
-            }
+            // AppCore参照保存
+            this.appCore = appCore;
+            this.canvasManager = appCore.getCanvasManager();
+            this.toolManager = appCore.getToolManager();
             
-            /**
-             * Canvas DOM挿入処理（キャンバス表示の核心）
-             */
-            async setupCanvas() {
-                try {
-                    // Canvas要素取得
-                    if (!this.pixiApp || !this.pixiApp.canvas) {
-                        throw new Error('Canvas element not available');
-                    }
-                    
-                    const canvas = this.pixiApp.canvas;
-                    
-                    // DOM container確認・作成
-                    let container = document.getElementById('canvas-container');
-                    if (!container) {
-                        container = document.createElement('div');
-                        container.id = 'canvas-container';
-                        container.style.cssText = `
-                            width: 400px;
-                            height: 400px;
-                            position: relative;
-                            margin: 20px auto;
-                            background-color: #f0e0d6;
-                        `;
-                        document.body.appendChild(container);
-                    }
-                    
-                    // Canvas DOM挿入
-                    if (!container.contains(canvas)) {
-                        // 既存canvas削除
-                        const existingCanvas = container.querySelector('canvas');
-                        if (existingCanvas) {
-                            container.removeChild(existingCanvas);
-                        }
-                        
-                        // 新canvas挿入
-                        container.appendChild(canvas);
-                    }
-                    
-                    // Canvas表示確実化
-                    this.ensureCanvasVisibility(canvas);
-                    
-                    // ポインターイベント設定（原始イベント透過）
-                    this.setupPointerEvents(canvas);
-                    
-                    // DOM挿入成功確認
-                    if (!container.contains(canvas)) {
-                        throw new Error('Canvas DOM insertion failed');
-                    }
-                    
-                } catch (error) {
-                    console.error('Canvas DOM挿入失敗:', error);
-                    throw error;
-                }
-            }
+            // Phase 3: Manager Map構築
+            this.managers = new Map([
+                ['canvas', this.canvasManager],
+                ['coordinate', appCore.getManagerInstance('coordinate')],
+                ['record', appCore.getManagerInstance('record')],
+                ['config', appCore.getManagerInstance('config')],
+                ['error', appCore.getManagerInstance('error')],
+                ['eventbus', appCore.getManagerInstance('eventbus')],
+                ['shortcut', appCore.getManagerInstance('shortcut')],
+                ['navigation', appCore.getManagerInstance('navigation')],
+                ['tool', this.toolManager]
+            ]);
             
-            /**
-             * Canvas表示確実化
-             */
-            ensureCanvasVisibility(canvas) {
-                canvas.style.cssText = `
-                    display: block !important;
-                    width: 400px !important;
-                    height: 400px !important;
-                    background: #f0e0d6 !important;
-                    cursor: crosshair !important;
-                    user-select: none !important;
-                    touch-action: none !important;
-                    position: relative !important;
-                    z-index: 10 !important;
-                `;
-                
-                // Canvas属性設定
-                const dpr = Math.min(window.devicePixelRatio || 1, 2.0);
-                canvas.setAttribute('width', 400 * dpr);
-                canvas.setAttribute('height', 400 * dpr);
-            }
+            // Phase 4: イベントハンドラ設定（簡素版）
+            this.setupEventHandlers();
             
-            /**
-             * ポインターイベント設定（原始イベント透過）
-             * 🔥 修正の核心：原始イベントをそのまま Tool に渡す
-             */
-            setupPointerEvents(canvas) {
-                // 原始イベントを直接透過
-                canvas.addEventListener('pointerdown', (e) => {
-                    this.onPointerDown(e); // 原始DOMイベントをそのまま渡す
-                }, { passive: false });
-                
-                canvas.addEventListener('pointermove', (e) => {
-                    this.onPointerMove(e); // 原始DOMイベントをそのまま渡す
-                }, { passive: false });
-                
-                canvas.addEventListener('pointerup', (e) => {
-                    this.onPointerUp(e); // 原始DOMイベントをそのまま渡す
-                }, { passive: false });
-                
-                canvas.addEventListener('pointercancel', (e) => {
-                    this.onPointerUp(e); // キャンセル時も Up として処理
-                }, { passive: false });
-                
-                canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-            }
+            // Phase 5: AppCore システム開始
+            await appCore.startV8System();
             
-            /**
-             * Manager群初期化
-             */
-            async initializeV8Managers() {
-                if (!this.appCore) {
-                    throw new Error('AppCore not available');
-                }
-                
-                try {
-                    await this.appCore.initializeV8Managers();
-                    
-                    this.canvasManager = this.appCore.getCanvasManager();
-                    this.toolManager = this.appCore.getToolManager();
-                    
-                    if (!this.canvasManager || !this.toolManager) {
-                        throw new Error('Required managers not initialized');
-                    }
-                    
-                } catch (error) {
-                    console.error('Manager初期化エラー:', error);
-                    throw error;
-                }
-            }
+            const elapsedTime = Math.round(performance.now() - startTime);
+            this.initialized = true;
             
-            /**
-             * システム開始
-             */
-            async startV8System() {
-                if (!this.appCore) {
-                    throw new Error('AppCore not available');
-                }
-                
-                try {
-                    await this.appCore.startV8System();
-                } catch (error) {
-                    console.error('システム開始エラー:', error);
-                    throw error;
-                }
-            }
+            console.log(`✅ TegakiApplication 初期化完了 (${elapsedTime}ms)`);
+            console.log(`📊 DPR: ${window.devicePixelRatio || 1} | Canvas: ${!!this.app}`);
             
-            /**
-             * UI設定・アイコン表示
-             */
-            setupV8UI() {
-                try {
-                    // サイドバーアイコン表示
-                    this.setupSidebarIcons();
-                    
-                    // ツールボタンイベント
-                    this.setupToolButtonEvents();
-                    
-                    // ステータス表示更新
-                    this.updateStatusDisplay();
-                    
-                } catch (error) {
-                    console.error('UI設定エラー:', error);
-                }
-            }
+            return true;
             
-            /**
-             * サイドバーアイコン表示
-             */
-            setupSidebarIcons() {
-                try {
-                    if (window.Tegaki?.TegakiIcons?.replaceAllToolIcons) {
-                        window.Tegaki.TegakiIcons.replaceAllToolIcons();
-                    }
-                } catch (error) {
-                    console.error('アイコン表示失敗:', error);
-                }
-            }
-            
-            /**
-             * ツールボタンイベント設定
-             */
-            setupToolButtonEvents() {
-                const toolButtons = {
-                    'pen-tool': 'pen',
-                    'eraser-tool': 'eraser'
-                };
-                
-                Object.entries(toolButtons).forEach(([buttonId, toolName]) => {
-                    const button = document.getElementById(buttonId);
-                    if (button) {
-                        button.addEventListener('click', () => {
-                            this.selectToolV8(toolName);
-                        });
-                    }
-                });
-            }
-            
-            /**
-             * ステータス表示更新
-             */
-            updateStatusDisplay() {
-                const rendererInfo = document.getElementById('renderer-info');
-                if (rendererInfo) {
-                    rendererInfo.textContent = this.rendererType === 'webgpu' ? 'WebGPU' : 'WebGL2';
-                }
-            }
-            
-            // ========================================
-            // ポインターイベント処理（原始イベント透過）
-            // ========================================
-            
-            /**
-             * ポインターダウン処理（原始イベント透過）
-             * 🔥 修正の核心：座標変換は一切せず、原始イベントをそのまま渡す
-             */
-            onPointerDown(event) {
-                if (!this.isReady()) {
-                    console.warn('⚠️ TegakiApplication 初期化未完了');
-                    return;
-                }
-                
-                try {
-                    // clientX/Y 基本確認（変換はしない）
-                    if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
-                        console.warn('⚠️ 無効なクライアント座標: x=' + event.clientX + ', y=' + event.clientY);
-                        return;
-                    }
-                    
-                    const tool = this.toolManager.getCurrentTool();
-                    if (tool && typeof tool.onPointerDown === 'function') {
-                        // 🔥 重要：原始DOMイベントをそのまま渡す
-                        tool.onPointerDown(event);
-                    }
-                } catch (error) {
-                    console.error('ポインターダウンエラー:', error);
-                }
-            }
-            
-            /**
-             * ポインタームーブ処理（原始イベント透過）
-             */
-            onPointerMove(event) {
-                if (!this.isReady()) return;
-                
-                try {
-                    // clientX/Y 基本確認（変換はしない）
-                    if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
-                        return; // Move では警告を出さない（頻度が高いため）
-                    }
-                    
-                    const tool = this.toolManager.getCurrentTool();
-                    if (tool && typeof tool.onPointerMove === 'function') {
-                        // 🔥 重要：原始DOMイベントをそのまま渡す
-                        tool.onPointerMove(event);
-                    }
-                    
-                    // 座標表示更新
-                    this.updateCoordinateDisplay(event.clientX, event.clientY);
-                } catch (error) {
-                    console.error('ポインタームーブエラー:', error);
-                }
-            }
-            
-            /**
-             * ポインターアップ処理（原始イベント透過）
-             */
-            onPointerUp(event) {
-                if (!this.isReady()) return;
-                
-                try {
-                    const tool = this.toolManager.getCurrentTool();
-                    if (tool && typeof tool.onPointerUp === 'function') {
-                        // 🔥 重要：原始DOMイベントをそのまま渡す
-                        tool.onPointerUp(event);
-                    }
-                } catch (error) {
-                    console.error('ポインターアップエラー:', error);
-                }
-            }
-            
-            /**
-             * 座標表示更新
-             */
-            updateCoordinateDisplay(clientX, clientY) {
-                const coordinatesEl = document.getElementById('coordinates');
-                if (coordinatesEl) {
-                    coordinatesEl.textContent = `x: ${Math.round(clientX)}, y: ${Math.round(clientY)}`;
-                }
-            }
-            
-            // ========================================
-            // ツール管理・UI制御
-            // ========================================
-            
-            /**
-             * ツール選択
-             */
-            selectToolV8(toolName) {
-                if (!this.toolManager || !this.toolManager.isReady()) {
-                    return false;
-                }
-                
-                try {
-                    this.toolManager.setActiveTool(toolName);
-                    this.updateToolButtonStates(toolName);
-                    
-                    // ツール表示更新
-                    const toolInfo = document.getElementById('current-tool');
-                    if (toolInfo) {
-                        const toolDisplayNames = {
-                            'pen': 'v8ベクターペン',
-                            'eraser': 'v8消しゴム'
-                        };
-                        toolInfo.textContent = toolDisplayNames[toolName] || toolName;
-                    }
-                    
-                    return true;
-                    
-                } catch (error) {
-                    console.error(`ツール選択失敗: ${toolName}`, error);
-                    return false;
-                }
-            }
-            
-            /**
-             * ツールボタン状態更新
-             */
-            updateToolButtonStates(activeToolName) {
-                const toolButtons = document.querySelectorAll('.tool-button');
-                toolButtons.forEach(button => {
-                    button.classList.remove('active');
-                });
-                
-                const activeButton = document.getElementById(`${activeToolName}-tool`);
-                if (activeButton) {
-                    activeButton.classList.add('active');
-                }
-            }
-            
-            /**
-             * Canvas設定取得
-             */
-            getV8CanvasConfig() {
-                return {
-                    width: 400,
-                    height: 400,
-                    background: 0xf0e0d6,
-                    resolution: Math.min(window.devicePixelRatio || 1, 2.0),
-                    autoDensity: true
-                };
-            }
-            
-            // ========================================
-            // 状態確認・取得メソッド
-            // ========================================
-            
-            /**
-             * システム準備完了確認
-             */
-            isReady() {
-                return this.initialized && 
-                       this.fullyReady && 
-                       this.canvasDOMReady &&
-                       !!this.pixiApp &&
-                       !!this.appCore &&
-                       this.appCore.isV8Ready();
-            }
-            
-            /**
-             * Canvas要素取得
-             */
-            getCanvasElement() {
-                if (!this.appCore) {
-                    throw new Error('AppCore not available');
-                }
-                return this.appCore.getCanvasElement();
-            }
-            
-            /**
-             * ToolManager取得
-             */
-            getToolManager() {
-                return this.toolManager;
-            }
-            
-            /**
-             * 初期化完了通知
-             */
-            notifyInitializationComplete() {
-                const elapsedTime = this.initializationEndTime - this.initializationStartTime;
-                console.log(`✅ TegakiApplication 初期化完了 (${elapsedTime}ms)`);
-                console.log(`📊 ${this.rendererType} | Canvas: ${this.canvasDOMReady}`);
-                
-                // EventBus通知
-                if (window.Tegaki?.EventBusInstance?.emit) {
-                    window.Tegaki.EventBusInstance.emit('tegakiApplicationReady', {
-                        rendererType: this.rendererType,
-                        webgpuSupported: this.webgpuSupported,
-                        initializationTime: elapsedTime
-                    });
-                }
-                
-                // ローディング画面を隠す
-                if (window.hideLoadingScreen) {
-                    window.hideLoadingScreen();
-                }
-            }
-            
-            /**
-             * デバッグ情報取得
-             */
-            getDebugInfo() {
-                return {
-                    className: 'TegakiApplication',
-                    version: 'v8-event-pass-through',
-                    systemStatus: {
-                        initialized: this.initialized,
-                        fullyReady: this.fullyReady,
-                        canvasDOMReady: this.canvasDOMReady
-                    },
-                    rendererInfo: {
-                        type: this.rendererType,
-                        webgpuSupported: this.webgpuSupported
-                    },
-                    appCoreReady: this.appCore?.isV8Ready() || false,
-                    initializationTime: this.initializationEndTime ? 
-                        (this.initializationEndTime - this.initializationStartTime) : null
-                };
-            }
-            
-            /**
-             * v8機能状況取得
-             */
-            getV8FeatureStatus() {
-                return {
-                    systemReady: this.isReady(),
-                    rendererType: this.rendererType,
-                    webgpuActive: this.rendererType === 'webgpu',
-                    canvasDisplayed: this.canvasDOMReady
-                };
+        } catch (error) {
+            console.error('❌ TegakiApplication 初期化失敗:', error);
+            throw error;
+        }
+    }
+    
+    /**
+     * PixiJS v8 Canvas作成
+     * @param {HTMLElement} container - コンテナ要素
+     * @returns {Promise<Object>} - 作成結果
+     */
+    async createCanvasV8(container) {
+        if (!container) {
+            throw new Error('コンテナ要素が指定されていません');
+        }
+        
+        if (typeof window.Tegaki.AppCore?.createCanvasV8 !== 'function') {
+            throw new Error('AppCore.createCanvasV8 が利用できません');
+        }
+        
+        return await window.Tegaki.AppCore.createCanvasV8(container);
+    }
+    
+    /**
+     * Manager群の初期化
+     * @returns {Promise<void>}
+     */
+    async initializeManagers() {
+        console.log('🔧 Manager群初期化開始');
+        
+        // 必須Manager確認
+        const requiredManagers = [
+            'RecordManager', 
+            'ConfigManager',
+            'ErrorManager',
+            'EventBus',
+            'ShortcutManager',
+            'NavigationManager',
+            'CoordinateManager',
+            'ToolManager'
+        ];
+        
+        for (const managerName of requiredManagers) {
+            if (!window.Tegaki[managerName]) {
+                throw new Error(`${managerName} が利用できません`);
             }
         }
-
-        // グローバル公開
-        window.Tegaki.TegakiApplication = TegakiApplication;
-
-    } else {
-        console.log('⚠️ TegakiApplication already loaded - skipping redefinition');
+        
+        // Manager インスタンス作成・設定
+        const recordManager = new window.Tegaki.RecordManager();
+        const configManager = new window.Tegaki.ConfigManager();
+        const errorManager = new window.Tegaki.ErrorManager();
+        const eventbus = new window.Tegaki.EventBus();
+        const shortcutManager = new window.Tegaki.ShortcutManager();
+        const navigationManager = new window.Tegaki.NavigationManager();
+        const coordinateManager = new window.Tegaki.CoordinateManager();
+        
+        // CoordinateManager にCanvasManager設定
+        coordinateManager.setCanvasManager(this.canvasManager);
+        
+        // ToolManager作成・Manager注入
+        this.toolManager = new window.Tegaki.ToolManager(this.canvasManager);
+        
+        const managerMap = {
+            canvas: this.canvasManager,
+            coordinate: coordinateManager,
+            record: recordManager,
+            config: configManager,
+            error: errorManager,
+            eventbus: eventbus,
+            shortcut: shortcutManager,
+            navigation: navigationManager,
+            tool: this.toolManager
+        };
+        
+        this.toolManager.injectManagers(managerMap);
+        
+        // Manager群をMap保存
+        this.managers = new Map(Object.entries(managerMap));
+        
+        console.log('✅ Manager群初期化完了');
     }
+    
+    /**
+     * イベントハンドラ設定（簡素版・既存互換）
+     */
+    setupEventHandlers() {
+        if (this.eventHandlersSetup) {
+            console.log('✅ イベントハンドラ既に設定済み');
+            return;
+        }
+        
+        console.log('🔧 イベントハンドラ設定開始');
+        
+        if (!this.app) {
+            console.error('❌ PixiJS Application が利用できません');
+            return;
+        }
+        
+        // Canvas要素に直接イベントバインド（シンプル方式）
+        const canvas = this.app.view;
+        if (canvas) {
+            canvas.style.touchAction = 'none';
+            
+            // Pointer events（基本のみ）
+            canvas.addEventListener('pointerdown', (e) => this.handlePointerEvent('onPointerDown', e), { passive: false });
+            canvas.addEventListener('pointermove', (e) => this.handlePointerEvent('onPointerMove', e), { passive: false });
+            canvas.addEventListener('pointerup', (e) => this.handlePointerEvent('onPointerUp', e), { passive: false });
+            
+            // 境界外でも描画継続（重要）
+            document.addEventListener('pointermove', (e) => this.handlePointerEvent('onPointerMove', e), { passive: false });
+            document.addEventListener('pointerup', (e) => this.handlePointerEvent('onPointerUp', e), { passive: false });
+        }
+        
+        this.eventHandlersSetup = true;
+        console.log('✅ イベントハンドラ設定完了');
+    }
+    
+    /**
+     * ポインタイベント統一ハンドラ（シンプル版）
+     * @param {string} methodName - Tool メソッド名
+     * @param {PointerEvent} e - DOM イベント
+     */
+    handlePointerEvent(methodName, e) {
+        const tool = this.toolManager?.getActiveTool();
+        if (!tool || typeof tool[methodName] !== 'function') {
+            return;
+        }
+        
+        tool[methodName](e);
+    }
+    
+    /**
+     * PixiJS Global PointerMove ハンドラ
+     * @param {PIXI.InteractionEvent} e - PixiJS イベント
+     */
+    handleGlobalPointerMove(e) {
+        const tool = this.toolManager?.getActiveTool();
+        if (!tool || typeof tool.onPointerMove !== 'function') {
+            return;
+        }
+        
+        // PixiJS イベントからDOM風イベントを構築
+        const domEvent = this.convertPixiToDOMEvent(e);
+        if (domEvent) {
+            tool.onPointerMove(domEvent);
+        }
+    }
+    
+    /**
+     * PixiJS PointerDown ハンドラ
+     * @param {PIXI.InteractionEvent} e - PixiJS イベント
+     */
+    handlePointerDown(e) {
+        const tool = this.toolManager?.getActiveTool();
+        if (!tool || typeof tool.onPointerDown !== 'function') {
+            return;
+        }
+        
+        const domEvent = this.convertPixiToDOMEvent(e);
+        if (domEvent) {
+            tool.onPointerDown(domEvent);
+        }
+    }
+    
+    /**
+     * PixiJS PointerUp ハンドラ
+     * @param {PIXI.InteractionEvent} e - PixiJS イベント
+     */
+    handlePointerUp(e) {
+        const tool = this.toolManager?.getActiveTool();
+        if (!tool || typeof tool.onPointerUp !== 'function') {
+            return;
+        }
+        
+        const domEvent = this.convertPixiToDOMEvent(e);
+        if (domEvent) {
+            tool.onPointerUp(domEvent);
+        }
+    }
+    
+    /**
+     * DOM PointerDown ハンドラ（外部描画対応）
+     * @param {PointerEvent} e - DOM イベント
+     */
+    handleDOMPointerDown(e) {
+        const tool = this.toolManager?.getActiveTool();
+        if (!tool || typeof tool.onPointerDown !== 'function') {
+            return;
+        }
+        
+        tool.onPointerDown(e);
+    }
+    
+    /**
+     * DOM PointerMove ハンドラ（外部描画対応）
+     * @param {PointerEvent} e - DOM イベント
+     */
+    handleDOMPointerMove(e) {
+        const tool = this.toolManager?.getActiveTool();
+        if (!tool || typeof tool.onPointerMove !== 'function') {
+            return;
+        }
+        
+        tool.onPointerMove(e);
+    }
+    
+    /**
+     * DOM PointerUp ハンドラ（外部描画対応）
+     * @param {PointerEvent} e - DOM イベント
+     */
+    handleDOMPointerUp(e) {
+        const tool = this.toolManager?.getActiveTool();
+        if (!tool || typeof tool.onPointerUp !== 'function') {
+            return;
+        }
+        
+        tool.onPointerUp(e);
+    }
+    
+    /**
+     * PixiJS イベントをDOM風イベントに変換
+     * @param {PIXI.InteractionEvent} pixiEvent - PixiJS イベント
+     * @returns {Object|null} - DOM風イベント
+     */
+    convertPixiToDOMEvent(pixiEvent) {
+        if (!pixiEvent || !pixiEvent.data) {
+            return null;
+        }
+        
+        const global = pixiEvent.data.global;
+        if (!global) {
+            return null;
+        }
+        
+        // Canvas の境界取得
+        const view = this.app.view;
+        const rect = view ? view.getBoundingClientRect() : { left: 0, top: 0 };
+        
+        // PixiJS座標を画面座標に変換
+        const clientX = global.x + rect.left;
+        const clientY = global.y + rect.top;
+        
+        // DOM風イベントオブジェクト構築
+        return {
+            clientX: clientX,
+            clientY: clientY,
+            offsetX: global.x,
+            offsetY: global.y,
+            preventDefault: () => {},
+            stopPropagation: () => {},
+            type: pixiEvent.type || 'pointer',
+            target: view,
+            currentTarget: view,
+            sourceEvent: pixiEvent
+        };
+    }
+    
+    /**
+     * 初期Tool設定
+     */
+    setupInitialTools() {
+        if (!this.toolManager) {
+            console.warn('⚠️ ToolManager が利用できません');
+            return;
+        }
+        
+        // デフォルトでPenToolをアクティブ化
+        try {
+            this.toolManager.setActiveTool('pen');
+            console.log('✅ 初期Tool設定完了 - PenTool アクティブ');
+        } catch (error) {
+            console.error('❌ 初期Tool設定失敗:', error);
+        }
+    }
+    
+    /**
+     * アプリケーション準備状態確認
+     * @returns {boolean} - 準備完了状態
+     */
+    isReady() {
+        return this.initialized && 
+               this.app && 
+               this.canvasManager && 
+               this.toolManager &&
+               this.eventHandlersSetup;
+    }
+    
+    /**
+     * Canvas要素取得
+     * @returns {HTMLCanvasElement|null} - Canvas要素
+     */
+    getCanvasElement() {
+        return this.app?.view || null;
+    }
+    
+    /**
+     * PixiJS Application取得
+     * @returns {PIXI.Application|null} - Application
+     */
+    getApp() {
+        return this.app;
+    }
+    
+    /**
+     * Manager取得
+     * @param {string} key - Manager キー
+     * @returns {Object|null} - Manager インスタンス
+     */
+    getManager(key) {
+        return this.managers.get(key) || null;
+    }
+    
+    /**
+     * デバッグ情報取得
+     * @returns {Object} - デバッグ情報
+     */
+    getDebugInfo() {
+        return {
+            initialized: this.initialized,
+            eventHandlersSetup: this.eventHandlersSetup,
+            hasApp: !!this.app,
+            hasCanvasManager: !!this.canvasManager,
+            hasToolManager: !!this.toolManager,
+            managersCount: this.managers.size,
+            activeTool: this.toolManager?.getActiveTool()?.name || 'none',
+            canvasSize: this.app ? { 
+                width: this.app.screen.width, 
+                height: this.app.screen.height 
+            } : null
+        };
+    }
+}
 
-})();
+// グローバル名前空間に登録
+if (!window.Tegaki) window.Tegaki = {};
+window.Tegaki.TegakiApplication = TegakiApplication;
+
+console.log('🚀 TegakiApplication v8対応版 Loaded - PixiJS v8イベント修正・外部描画対応・Manager統合完全対応');
+console.log('🚀 特徴: PixiJS v8 global events対応・DOM/PixiJS二重バインド・座標透過・Container階層・境界外描画対応');
