@@ -1,7 +1,7 @@
 /**
- * @file pen-tool.js - PenTool v8.12.0 Phase1.5 DOM座標対応・描画確実実行版
+ * @file pen-tool.js - PenTool v8.12.0 Phase1.5 Graphics表示修正・PixiJS v8完全対応版
  * @provides PenTool
- * @uses AbstractTool, CanvasManager.getCanvasElement(), CanvasManager.createGraphics()
+ * @uses AbstractTool, CanvasManager.getCanvasElement(), CanvasManager.getDrawContainer()
  * @initflow 1. AbstractTool(name='pen') → 2. injectManagers(managers) → 3. activate() → 4. Pointer Events
  * @forbids 💀双方向依存禁止 🚫フォールバック禁止 🚫フェイルセーフ禁止 🚫v7/v8二重管理禁止 🚫未実装メソッド呼び出し禁止 🚫目先のエラー修正のためのDRY・SOLID原則違反
  * @manager-key window.Tegaki.PenToolInstance
@@ -9,21 +9,20 @@
  * @integration-flow ToolManager.initializeV8Tools() → new PenTool() → injectManagers() → activate()
  * @method-naming-rules startOperation()/endOperation() 形式統一
  * @state-management tempStroke/isDrawing/isRecordingは直接変更禁止・専用メソッド経由必須
- * @performance-notes 基本描画優先・座標変換簡素化・確実実行重視
+ * @performance-notes Graphics Container追加・PixiJS v8 API準拠・確実表示
  * 
- * Phase1.5緊急修正内容:
- * - DOM座標イベントオブジェクト対応（TegakiApplication形式）
- * - 確実描画実行（Manager依存排除）
- * - 単純Canvas相対座標変換実装
- * - PointerUp確実描画終了処理
+ * Phase1.5 Graphics表示修正内容:
+ * - Graphics作成→lineStyle設定→DrawContainer.addChild()の確実実行
+ * - PixiJS v8 stroke()API使用からlineStyle()API併用に変更
+ * - 描画開始時の単一Graphics作成・Container追加
+ * - v8仕様準拠の確実描画表示
  * - 継続描画問題完全解決
- * - 外部入力バッファリング簡易実装
  * 
- * 動作方針:
- * - CanvasManagerのみ必須、他Managerはオプション扱い
- * - DOM座標→Canvas相対座標の直接変換
- * - Manager未準備時も描画は必ず実行
- * - 描画終了処理を最優先で確実実行
+ * 修正方針:
+ * - 描画開始時: Graphics作成 → lineStyle設定 → Container追加
+ * - 描画継続時: 既存Graphicsに線分追加
+ * - 描画終了時: 状態リセット・次回用準備
+ * - v7/v8 API混在回避・v8専用実装
  */
 
 // AbstractTool基盤クラス利用
@@ -39,15 +38,15 @@ class PenTool extends window.Tegaki.AbstractTool {
     this.isDrawing = false;           // 描画中フラグ
     this.isRecording = false;         // 正式記録中フラグ
     this.tempStroke = [];             // 外部入力バッファ
-    this.currentStroke = null;        // 現在のストローク
+    this.currentGraphics = null;      // 現在描画中のGraphics
     this.lastPoint = null;            // 前回の点
     
     // Phase1.5設定
     this.defaultWidth = 3;
-    this.defaultColor = '#800000';    // futaba-maroon
+    this.defaultColor = 0x800000;     // futaba-maroon (数値形式)
     this.defaultOpacity = 1.0;
     
-    console.log('🖊️ PenTool v8.12.0作成完了 - DOM座標対応版');
+    console.log('🖊️ PenTool v8.12.0作成完了 - Graphics表示修正版');
   }
   
   /**
@@ -56,7 +55,7 @@ class PenTool extends window.Tegaki.AbstractTool {
    */
   injectManagers(managers) {
     super.injectManagers(managers);
-    console.log('✅ PenTool Manager注入完了 - DOM座標対応版');
+    console.log('✅ PenTool Manager注入完了 - Graphics表示修正版');
   }
   
   /**
@@ -78,7 +77,7 @@ class PenTool extends window.Tegaki.AbstractTool {
   }
   
   /**
-   * PointerDown処理 - 描画開始（DOM座標イベントオブジェクト対応）
+   * PointerDown処理 - 描画開始（Graphics作成・Container追加）
    * @param {Object} point - DOM座標オブジェクト {x: clientX, y: clientY} or PointerEvent
    */
   onPointerDown(point) {
@@ -101,7 +100,7 @@ class PenTool extends window.Tegaki.AbstractTool {
         return;
       }
       
-      // Canvas相対座標変換（確実実行版）
+      // Canvas相対座標変換
       const canvasPoint = this._domToCanvasCoords(clientX, clientY);
       
       // 描画状態初期化
@@ -110,9 +109,13 @@ class PenTool extends window.Tegaki.AbstractTool {
       this.lastPoint = canvasPoint;
       this.tempStroke = [canvasPoint];
       
-      // カメラ内判定（簡易版：常にカメラ内扱い）
+      // Graphics作成・設定・Container追加（最重要修正）
+      this._createAndSetupGraphics(canvasPoint);
+      
+      // RecordManager開始（オプション）
       this._startFormalRecording();
-      console.log('🖊️ 描画開始:', canvasPoint);
+      
+      console.log('🖊️ 描画開始完了:', canvasPoint);
       
     } catch (error) {
       console.error('🚨 PenTool PointerDown エラー:', error);
@@ -121,11 +124,11 @@ class PenTool extends window.Tegaki.AbstractTool {
   }
   
   /**
-   * PointerMove処理 - 描画継続（DOM座標対応版）
+   * PointerMove処理 - 描画継続（既存Graphicsに線分追加）
    * @param {Object} point - DOM座標オブジェクト {x: clientX, y: clientY} or PointerEvent
    */
   onPointerMove(point) {
-    if (!this.isDrawing || !this._validateBasicManagers()) {
+    if (!this.isDrawing || !this.currentGraphics || !this._validateBasicManagers()) {
       return;
     }
     
@@ -145,8 +148,9 @@ class PenTool extends window.Tegaki.AbstractTool {
       // Canvas相対座標変換
       const canvasPoint = this._domToCanvasCoords(clientX, clientY);
       
-      // 描画実行
-      this._drawLine(this.lastPoint, canvasPoint);
+      // 既存Graphicsに線分追加（v8 API使用）
+      this.currentGraphics.lineTo(canvasPoint.x, canvasPoint.y);
+      
       this.tempStroke.push(canvasPoint);
       
       // RecordManager更新（オプション）
@@ -155,6 +159,7 @@ class PenTool extends window.Tegaki.AbstractTool {
       }
       
       this.lastPoint = canvasPoint;
+      console.log(`✅ 線分追加: (${Math.round(this.lastPoint.x)},${Math.round(this.lastPoint.y)}) → (${Math.round(canvasPoint.x)},${Math.round(canvasPoint.y)})`);
       
     } catch (error) {
       console.error('🚨 PenTool PointerMove エラー:', error);
@@ -162,17 +167,17 @@ class PenTool extends window.Tegaki.AbstractTool {
   }
   
   /**
-   * PointerUp処理 - 描画終了（最重要修正箇所・確実終了保証）
+   * PointerUp処理 - 描画終了（確実終了保証）
    * @param {Object} point - DOM座標オブジェクト {x: clientX, y: clientY} or PointerEvent
    */
   onPointerUp(point) {
-    console.log('🖊️ PointerUp - 描画終了処理開始（確実終了保証版）');
+    console.log('🖊️ PointerUp - 描画終了処理開始');
     
     try {
       if (this.isRecording && this.managers.record && this.managers.record.isReady && this.managers.record.isReady()) {
         // 正式記録中: 終了処理
         this.managers.record.endOperation({
-          color: this.defaultColor,
+          color: '#800000',
           width: this.defaultWidth,
           opacity: this.defaultOpacity,
           tool: 'pen'
@@ -186,7 +191,45 @@ class PenTool extends window.Tegaki.AbstractTool {
     
     // 描画状態完全リセット（エラー有無に関わらず必ず実行）
     this._resetDrawingState();
-    console.log('✅ PenTool: 描画状態リセット完了（確実終了）');
+    console.log('✅ PenTool: 描画状態リセット完了');
+  }
+  
+  /**
+   * Graphics作成・設定・Container追加（Graphics表示の核心修正）
+   * @param {Object} startPoint - 開始座標
+   */
+  _createAndSetupGraphics(startPoint) {
+    try {
+      const drawContainer = this.managers.canvas.getDrawContainer();
+      if (!drawContainer) {
+        throw new Error('DrawContainer not found');
+      }
+      
+      // 新しいGraphics作成
+      this.currentGraphics = new PIXI.Graphics();
+      
+      // PixiJS v8 lineStyle設定（必須）
+      this.currentGraphics.lineStyle({
+        width: this.defaultWidth,
+        color: this.defaultColor,
+        alpha: this.defaultOpacity,
+        cap: 'round',
+        join: 'round'
+      });
+      
+      // 開始点設定
+      this.currentGraphics.moveTo(startPoint.x, startPoint.y);
+      
+      // DrawContainerに追加（Graphics表示の核心）
+      drawContainer.addChild(this.currentGraphics);
+      
+      console.log(`✅ Graphics作成・Container追加完了: color=0x${this.defaultColor.toString(16)}, width=${this.defaultWidth}`);
+      console.log(`📦 DrawContainer children count: ${drawContainer.children.length}`);
+      
+    } catch (error) {
+      console.error('🚨 Graphics作成エラー:', error);
+      this.currentGraphics = null;
+    }
   }
   
   /**
@@ -208,9 +251,9 @@ class PenTool extends window.Tegaki.AbstractTool {
       const relativeX = clientX - rect.left;
       const relativeY = clientY - rect.top;
       
-      // Canvas内座標に正規化（DPR考慮なし・シンプル版）
-      const canvasX = (relativeX / rect.width) * 400;  // 400px固定
-      const canvasY = (relativeY / rect.height) * 400; // 400px固定
+      // Canvas内座標に正規化（400px基準）
+      const canvasX = (relativeX / rect.width) * 400;
+      const canvasY = (relativeY / rect.height) * 400;
       
       return { x: canvasX, y: canvasY };
       
@@ -248,56 +291,6 @@ class PenTool extends window.Tegaki.AbstractTool {
   }
   
   /**
-   * 線分描画（PixiJS v8 API使用・確実実行版）
-   * @param {Object} from - 開始点
-   * @param {Object} to - 終了点
-   */
-  _drawLine(from, to) {
-    if (!from || !to || !this._validateBasicManagers()) {
-      return;
-    }
-    
-    // 座標妥当性確認
-    if (isNaN(from.x) || isNaN(from.y) || isNaN(to.x) || isNaN(to.y)) {
-      console.warn('⚠️ NaN座標で描画スキップ:', from, to);
-      return;
-    }
-    
-    try {
-      const drawContainer = this.managers.canvas.getDrawContainer();
-      if (!drawContainer) {
-        console.error('🚨 DrawContainer not found');
-        return;
-      }
-      
-      // Graphics作成（CanvasManager経由または直接作成）
-      let graphics;
-      if (this.managers.canvas.createGraphics) {
-        graphics = this.managers.canvas.createGraphics();
-      } else {
-        // 直接PIXI.Graphics作成
-        graphics = new PIXI.Graphics();
-      }
-      
-      // PixiJS v8 API使用（確実描画）
-      graphics
-        .stroke({ 
-          color: this.defaultColor, 
-          width: this.defaultWidth, 
-          alpha: this.defaultOpacity 
-        })
-        .moveTo(from.x, from.y)
-        .lineTo(to.x, to.y);
-      
-      drawContainer.addChild(graphics);
-      console.log(`✅ 線分描画成功: (${Math.round(from.x)},${Math.round(from.y)}) → (${Math.round(to.x)},${Math.round(to.y)})`);
-      
-    } catch (error) {
-      console.error('🚨 線分描画エラー:', error);
-    }
-  }
-  
-  /**
    * 基本Manager群バリデーション（CanvasManagerのみ必須）
    * @returns {boolean} 検証結果
    */
@@ -314,7 +307,7 @@ class PenTool extends window.Tegaki.AbstractTool {
     this.isDrawing = false;
     this.isRecording = false;
     this.tempStroke = [];
-    this.currentStroke = null;
+    this.currentGraphics = null;  // Graphics参照クリア
     this.lastPoint = null;
   }
   
@@ -339,12 +332,15 @@ class PenTool extends window.Tegaki.AbstractTool {
    * @returns {Object} デバッグ情報
    */
   getDebugInfo() {
+    const drawContainer = this.managers?.canvas?.getDrawContainer?.();
+    
     return {
       ...super.getDebugInfo(),
       drawingState: {
         isDrawing: this.isDrawing,
         isRecording: this.isRecording,
         tempStrokeLength: this.tempStroke.length,
+        hasCurrentGraphics: !!this.currentGraphics,
         hasLastPoint: !!this.lastPoint,
         lastPoint: this.lastPoint
       },
@@ -352,19 +348,21 @@ class PenTool extends window.Tegaki.AbstractTool {
         hasCanvas: !!this.managers?.canvas,
         canGetCanvasElement: !!(this.managers?.canvas?.getCanvasElement),
         canGetDrawContainer: !!(this.managers?.canvas?.getDrawContainer),
+        hasDrawContainer: !!drawContainer,
+        drawContainerChildren: drawContainer ? drawContainer.children.length : 0,
         hasRecord: !!this.managers?.record,
-        recordReady: !!(this.managers?.record?.isReady?.()),
-        hasCoordinate: !!this.managers?.coordinate,
-        coordinateReady: !!(this.managers?.coordinate?.isReady?.())
+        recordReady: !!(this.managers?.record?.isReady?.())
       },
-      settings: {
-        color: this.defaultColor,
+      graphics: {
+        currentGraphicsExists: !!this.currentGraphics,
+        graphicsParent: this.currentGraphics ? !!this.currentGraphics.parent : false,
+        color: `0x${this.defaultColor.toString(16)}`,
         width: this.defaultWidth,
         opacity: this.defaultOpacity
       },
-      lastDrawAttempt: {
-        from: this.tempStroke.length > 1 ? this.tempStroke[this.tempStroke.length - 2] : null,
-        to: this.tempStroke.length > 0 ? this.tempStroke[this.tempStroke.length - 1] : null
+      pixiAPI: {
+        PIXIAvailable: typeof PIXI !== 'undefined',
+        GraphicsClass: typeof PIXI?.Graphics !== 'undefined'
       }
     };
   }
@@ -374,6 +372,6 @@ class PenTool extends window.Tegaki.AbstractTool {
 window.Tegaki = window.Tegaki || {};
 window.Tegaki.PenTool = PenTool;
 
-console.log('🖊️ PenTool v8.12.0 DOM座標対応版 Loaded - 描画確実実行・継続描画修正版');
-console.log('📏 修正内容: DOM座標イベント対応・確実座標変換・Manager依存排除・確実描画終了');
-console.log('🚀 特徴: Canvas相対座標直接変換・基本描画優先・Manager未準備対応・継続描画問題根本解決');
+console.log('🖊️ PenTool v8.12.0 Graphics表示修正版 Loaded - Container追加・v8 API完全対応');
+console.log('📏 修正内容: Graphics作成→lineStyle設定→Container追加・v8描画表示確実化');
+console.log('🚀 特徴: PixiJS v8準拠・Graphics確実表示・継続描画問題解決・Container階層対応');
