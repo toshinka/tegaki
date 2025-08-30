@@ -1,14 +1,12 @@
-error-manager.js:20 🚨 ErrorManager Simple 作成
-error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
-config-manager.js:71 🔧 ConfigManager v8対応版 作成
-config-manager.js:495 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
-event-bus.js:20 🔄 EventBus Simple 作成
-event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
-coordinate-manager.js:304 CoordinateManager v8対応版・座標ズレ問題解決版 Loaded
-coordinate-manager.js:305 Step2完了: 高精度座標変換・右下座標ズレ修正・±1px精度実現
-coordinate-manager.js:306 特徴: DPR対応強化・Container変形対応・座標検証機能・統計取得
-navigation-manager.js:718 🧭 NavigationManager PixiJS v8対応版 Loaded
-navigation-manager.js:719 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
+ 🚨 ErrorManager Simple 作成
+ 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+ 🔧 ConfigManager v8対応版 作成
+ 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
+ 🔄 EventBus Simple 作成
+ 🔄 EventBus Simple Loaded - シンプルイベント通信
+coordinate-manager.js:431 Uncaught SyntaxError: Unexpected identifier 'setCanvasManager'
+ 🧭 NavigationManager PixiJS v8対応版 Loaded
+ 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
 navigation-manager.js:720 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
 navigation-manager.js:721 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
 navigation-manager.js:724 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
@@ -20,14 +18,11 @@ minimal-deps.js:22 📦 Minimal Dependencies - 名前倉庫版（修正・競合
 minimal-deps.js:168 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
 minimal-deps.js:169 ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
 minimal-deps.js:170 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
-canvas-manager.js:48 CanvasManager: constructed (v8 friendly)
-canvas-manager.js:473 CanvasManager v8.12.0完全対応版 Loaded - Graphics分離管理・座標変換支援・描画消失問題解決版
+canvas-manager.js:705 CanvasManager v8.12.0完全対応版 Loaded - Graphics分離管理・座標変換支援・描画消失問題解決版
 abstract-tool.js:329 🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版 Loaded
 abstract-tool.js:330 📏 修正内容: event → eventbus統一・Object形式前提・Map対策・型安全性確保・詳細デバッグ
 abstract-tool.js:331 🚀 特徴: startOperation/endOperation方式対応・Manager統一注入完成・架空メソッド削除・Manager名称統一対応
-pen-tool.js:593 PenTool v8.12.0完全対応版・座標ズレ描画消失問題解決版 Loaded
-pen-tool.js:594 修正内容: 初期化順序確立・Manager準備状態確認・イベントキューイング・Graphics分離管理
-pen-tool.js:595 特徴: 座標変換統一・描画消失防止・TPF保存・v8完全対応・準備状態管理完成版
+pen-tool.js:1 Uncaught SyntaxError: Unexpected token '}'
 eraser-tool.js:598 🧹 EraserTool v8.12.0完全対応版 Loaded - Graphics API v8準拠・消去機能修正版
 eraser-tool.js:599 📏 修正内容: v8新API準拠・v7 API完全削除・高精度hit-test・TPF形式保存・マスク消去
 eraser-tool.js:600 🚀 特徴: shape().fill()新API・WebGPU対応・Container階層消去・v7互換削除・Manager統一注入完全対応
@@ -46,6 +41,4 @@ index.html:577 🚀 PixiJS v8.12.0 loaded from node_modules
 index.html:579 ✅ PixiJS v8.12.0 confirmed
 index.html:613 ⚠️ TegakiApplication v8初期化未完了
 (anonymous) @ index.html:613
-setTimeout
-(anonymous) @ index.html:588
 main.js:346 ⚠️ TegakiApplication v8初期化未完了
