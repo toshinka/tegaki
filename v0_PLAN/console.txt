@@ -4,25 +4,27 @@
  🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
  🔄 EventBus Simple 作成
  🔄 EventBus Simple Loaded - シンプルイベント通信
-coordinate-manager.js:431 Uncaught SyntaxError: Unexpected identifier 'setCanvasManager'
+ 🧭 CoordinateManager v8対応版・座標ズレ問題解決版 Loaded
+ 📏 特徴: DPR対応強化・Container変形対応・座標検証機能・統計取得
+ ✅ 座標変換統一: clientToWorld(), clientToCanvas(), canvasToWorld(), worldToCanvas()
  🧭 NavigationManager PixiJS v8対応版 Loaded
  📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
-navigation-manager.js:720 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
-navigation-manager.js:721 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
-navigation-manager.js:724 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
-record-manager.js:538 🔄 RecordManager v8対応版 Loaded - addStrokeメソッド実装版
-shortcut-manager.js:416 ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
-shortcut-manager.js:417 🔧 setupPhase15Shortcuts・enableメソッド追加済み
-shortcut-manager.js:418 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
-minimal-deps.js:22 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
-minimal-deps.js:168 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
-minimal-deps.js:169 ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
-minimal-deps.js:170 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
-canvas-manager.js:705 CanvasManager v8.12.0完全対応版 Loaded - Graphics分離管理・座標変換支援・描画消失問題解決版
+ 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
+ ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+ 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
+ 🔄 RecordManager v8対応版 Loaded - addStrokeメソッド実装版
+ ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
+ 🔧 setupPhase15Shortcuts・enableメソッド追加済み
+ 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
+ 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
+ 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
+ ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
+ 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
+ 🎨 CanvasManager v8.12.0完全対応版 Loaded - Graphics分離管理・座標変換支援・描画消失問題解決版
 abstract-tool.js:329 🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版 Loaded
 abstract-tool.js:330 📏 修正内容: event → eventbus統一・Object形式前提・Map対策・型安全性確保・詳細デバッグ
 abstract-tool.js:331 🚀 特徴: startOperation/endOperation方式対応・Manager統一注入完成・架空メソッド削除・Manager名称統一対応
-pen-tool.js:1 Uncaught SyntaxError: Unexpected token '}'
+pen-tool.js:440 Uncaught SyntaxError: Unexpected token '{'
 eraser-tool.js:598 🧹 EraserTool v8.12.0完全対応版 Loaded - Graphics API v8準拠・消去機能修正版
 eraser-tool.js:599 📏 修正内容: v8新API準拠・v7 API完全削除・高精度hit-test・TPF形式保存・マスク消去
 eraser-tool.js:600 🚀 特徴: shape().fill()新API・WebGPU対応・Container階層消去・v7互換削除・Manager統一注入完全対応
@@ -37,8 +39,27 @@ main.js:338 ✅ PixiJS v8確認完了 - v8統合機能利用可能
 phase15-integration-test.js:593 🧪 Phase1.5統合テスト Loaded
 phase15-integration-test.js:594 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
 phase15-integration-test.js:595 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
+bootstrap.js:454 🚀 Bootstrap PixiJS v8対応版・初期化順序確立版 Loaded
+bootstrap.js:455 📏 特徴: DOM挿入確実化・Manager順序制御・座標変換確立・統合テスト自動実行
+bootstrap.js:393 🚀 Bootstrap PixiJS v8対応版 実行開始...
+bootstrap.js:72 🔍 PixiJS v8利用可能性確認開始
+bootstrap.js:80 🎯 PixiJS バージョン: 8.12.0
+bootstrap.js:88 🎮 WebGPU対応: ❌ (WebGL2フォールバック)
+bootstrap.js:90 ✅ PixiJS v8利用可能性確認完了
+bootstrap.js:98 🏗️ Canvas Container存在確認・作成開始
+bootstrap.js:120 🏗️ canvas-container既存確認
+bootstrap.js:129 ✅ Canvas Container準備完了
+bootstrap.js:138 🔍 Phase1.5依存関係確認開始
+bootstrap.js:165 ❌ 必須依存関係不足: Array(1)
+checkPhase15Dependencies @ bootstrap.js:165
+bootstrap.js:426 💥 Bootstrap初期化失敗: Error: Required dependencies missing: Tegaki.PenTool
+    at checkPhase15Dependencies (bootstrap.js:166:19)
+    at HTMLDocument.start (bootstrap.js:402:13)
+start @ bootstrap.js:426
+bootstrap.js:427 🔍 デバッグ情報: Object
 index.html:577 🚀 PixiJS v8.12.0 loaded from node_modules
 index.html:579 ✅ PixiJS v8.12.0 confirmed
+bootstrap.js:166 Uncaught (in promise) Error: Required dependencies missing: Tegaki.PenTool
 index.html:613 ⚠️ TegakiApplication v8初期化未完了
 (anonymous) @ index.html:613
 main.js:346 ⚠️ TegakiApplication v8初期化未完了

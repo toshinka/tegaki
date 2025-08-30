@@ -76,7 +76,7 @@
      */
     class CoordinateManager {
         constructor() {
-            console.log('CoordinateManager v8対応版・座標ズレ問題解決版 作成開始');
+            console.log('🧭 CoordinateManager v8対応版・座標ズレ問題解決版 作成開始');
             
             // Manager参照
             this.canvasManager = null;
@@ -108,7 +108,111 @@
                 this.readyResolve = resolve;
             });
             
-            console.log('CoordinateManager 作成完了');
+            console.log('🧭 CoordinateManager 作成完了');
+        }
+
+        /**
+         * CanvasManager設定・準備完了処理
+         * @param {CanvasManager} canvasManager - v8準備完了済みCanvasManager
+         */
+        async setCanvasManager(canvasManager) {
+            console.log('🧭 CoordinateManager: CanvasManager設定開始');
+            
+            try {
+                if (!canvasManager) {
+                    throw new Error('CanvasManager is required');
+                }
+                
+                // CanvasManager準備完了確認
+                if (!canvasManager.isV8Ready()) {
+                    throw new Error('CanvasManager not ready - v8 initialization required');
+                }
+                
+                this.canvasManager = canvasManager;
+                
+                // 座標変換初期化
+                await this.initializeCoordinateTransform();
+                
+                // 準備完了
+                this.ready = true;
+                
+                // readyPromise解決
+                if (this.readyResolve) {
+                    this.readyResolve();
+                }
+                
+                console.log('🧭 CoordinateManager: CanvasManager設定完了');
+                
+                // 状態通知
+                this.emitReadyState();
+                
+            } catch (error) {
+                console.error('🧭 CoordinateManager: CanvasManager設定失敗:', error);
+                throw error;
+            }
+        }
+        
+        /**
+         * 座標変換システム初期化
+         */
+        async initializeCoordinateTransform() {
+            console.log('🧭 CoordinateManager: 座標変換システム初期化');
+            
+            try {
+                // DPR設定更新
+                this.updateDPRSettings();
+                
+                // 変換行列初期化
+                this.updateTransformMatrix();
+                
+                // Canvas要素確認
+                const canvas = this.canvasManager.getCanvasElement();
+                if (!canvas) {
+                    throw new Error('Canvas element not available');
+                }
+                
+                // DrawContainer確認
+                const drawContainer = this.canvasManager.getDrawContainer();
+                if (!drawContainer) {
+                    throw new Error('DrawContainer not available');
+                }
+                
+                console.log('🧭 CoordinateManager: 座標変換システム初期化完了');
+                
+            } catch (error) {
+                console.error('🧭 CoordinateManager: 座標変換システム初期化失敗:', error);
+                throw error;
+            }
+        }
+        
+        /**
+         * DPR設定更新
+         */
+        updateDPRSettings() {
+            const newDPR = Math.min(window.devicePixelRatio || 1, 2.0);
+            if (newDPR !== this.dpr) {
+                this.dpr = newDPR;
+                this.transformCacheValid = false;
+            }
+        }
+        
+        /**
+         * 変換行列更新
+         */
+        updateTransformMatrix() {
+            if (!this.canvasManager) return;
+            
+            try {
+                const drawContainer = this.canvasManager.getDrawContainer();
+                if (drawContainer) {
+                    this.transformMatrix.copyFrom(drawContainer.worldTransform);
+                    this.lastTransformUpdate = Date.now();
+                    this.transformCacheValid = true;
+                }
+            } catch (error) {
+                console.warn('🧭 CoordinateManager: 変換行列更新失敗:', error);
+                this.transformCacheValid = false;
+            }
         }
         
         // ========================================
@@ -141,7 +245,7 @@
                 return worldPoint;
                 
             } catch (error) {
-                console.error('CoordinateManager.clientToWorld失敗:', error);
+                console.error('🧭 CoordinateManager.clientToWorld失敗:', error);
                 throw error;
             }
         }
@@ -180,7 +284,7 @@
                 return { x: canvasX, y: canvasY };
                 
             } catch (error) {
-                console.error('CoordinateManager.clientToCanvas失敗:', error);
+                console.error('🧭 CoordinateManager.clientToCanvas失敗:', error);
                 throw error;
             }
         }
@@ -211,7 +315,7 @@
                 return { x: localPoint.x, y: localPoint.y };
                 
             } catch (error) {
-                console.error('CoordinateManager.canvasToWorld失敗:', error);
+                console.error('🧭 CoordinateManager.canvasToWorld失敗:', error);
                 throw error;
             }
         }
@@ -242,7 +346,7 @@
                 return { x: globalPoint.x, y: globalPoint.y };
                 
             } catch (error) {
-                console.error('CoordinateManager.worldToCanvas失敗:', error);
+                console.error('🧭 CoordinateManager.worldToCanvas失敗:', error);
                 throw error;
             }
         }
@@ -420,110 +524,8 @@
     }
     window.Tegaki.CoordinateManager = CoordinateManager;
 
-    console.log('CoordinateManager v8対応版・座標ズレ問題解決版 Loaded');
-    console.log('Step2完了: 高精度座標変換・右下座標ズレ修正・±1px精度実現');
-    console.log('特徴: DPR対応強化・Container変形対応・座標検証機能・統計取得');
+    console.log('🧭 CoordinateManager v8対応版・座標ズレ問題解決版 Loaded');
+    console.log('📏 特徴: DPR対応強化・Container変形対応・座標検証機能・統計取得');
+    console.log('✅ 座標変換統一: clientToWorld(), clientToCanvas(), canvasToWorld(), worldToCanvas()');
 
-})();/**
-         * CanvasManager設定・準備完了処理
-         * @param {CanvasManager} canvasManager - v8準備完了済みCanvasManager
-         */
-        async setCanvasManager(canvasManager) {
-            console.log('CoordinateManager: CanvasManager設定開始');
-            
-            try {
-                if (!canvasManager) {
-                    throw new Error('CanvasManager is required');
-                }
-                
-                // CanvasManager準備完了確認
-                if (!canvasManager.isV8Ready()) {
-                    throw new Error('CanvasManager not ready - v8 initialization required');
-                }
-                
-                this.canvasManager = canvasManager;
-                
-                // 座標変換初期化
-                await this.initializeCoordinateTransform();
-                
-                // 準備完了
-                this.ready = true;
-                
-                // readyPromise解決
-                if (this.readyResolve) {
-                    this.readyResolve();
-                }
-                
-                console.log('CoordinateManager: CanvasManager設定完了');
-                
-                // 状態通知
-                this.emitReadyState();
-                
-            } catch (error) {
-                console.error('CoordinateManager: CanvasManager設定失敗:', error);
-                throw error;
-            }
-        }
-        
-        /**
-         * 座標変換システム初期化
-         */
-        async initializeCoordinateTransform() {
-            console.log('CoordinateManager: 座標変換システム初期化');
-            
-            try {
-                // DPR設定更新
-                this.updateDPRSettings();
-                
-                // 変換行列初期化
-                this.updateTransformMatrix();
-                
-                // Canvas要素確認
-                const canvas = this.canvasManager.getCanvasElement();
-                if (!canvas) {
-                    throw new Error('Canvas element not available');
-                }
-                
-                // DrawContainer確認
-                const drawContainer = this.canvasManager.getDrawContainer();
-                if (!drawContainer) {
-                    throw new Error('DrawContainer not available');
-                }
-                
-                console.log('CoordinateManager: 座標変換システム初期化完了');
-                
-            } catch (error) {
-                console.error('CoordinateManager: 座標変換システム初期化失敗:', error);
-                throw error;
-            }
-        }
-        
-        /**
-         * DPR設定更新
-         */
-        updateDPRSettings() {
-            const newDPR = Math.min(window.devicePixelRatio || 1, 2.0);
-            if (newDPR !== this.dpr) {
-                this.dpr = newDPR;
-                this.transformCacheValid = false;
-            }
-        }
-        
-        /**
-         * 変換行列更新
-         */
-        updateTransformMatrix() {
-            if (!this.canvasManager) return;
-            
-            try {
-                const drawContainer = this.canvasManager.getDrawContainer();
-                if (drawContainer) {
-                    this.transformMatrix.copyFrom(drawContainer.worldTransform);
-                    this.lastTransformUpdate = Date.now();
-                    this.transformCacheValid = true;
-                }
-            } catch (error) {
-                console.warn('CoordinateManager: 変換行列更新失敗:', error);
-                this.transformCacheValid = false;
-            }
-        }
+})();

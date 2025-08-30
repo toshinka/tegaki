@@ -84,7 +84,7 @@
 
     class CanvasManager {
         constructor() {
-            console.log('CanvasManager: constructed (v8 friendly)');
+            console.log('🎨 CanvasManager: constructed (v8 friendly)');
             
             // 基本プロパティ
             this.pixiApp = null;
@@ -138,7 +138,7 @@
             }
             
             try {
-                console.log('CanvasManager: v8 Application初期化開始');
+                console.log('🎨 CanvasManager: v8 Application初期化開始');
                 
                 // Step 1: Application設定
                 this.pixiApp = pixiApp;
@@ -167,10 +167,10 @@
                     this.pixiApp.canvas.style.height = this.defaultHeight + 'px';
                 }
                 
-                console.log(`CanvasManager: v8初期化完了 (${this.defaultWidth}x${this.defaultHeight}, ${this.rendererType})`);
+                console.log(`🎨 CanvasManager: v8初期化完了 (${this.defaultWidth}x${this.defaultHeight}, ${this.rendererType})`);
                 
             } catch (error) {
-                console.error('CanvasManager初期化エラー:', error);
+                console.error('🎨 CanvasManager初期化エラー:', error);
                 throw error;
             }
         }
@@ -191,7 +191,7 @@
          * v8描画Container作成（階層分離対応）
          */
         createV8DrawingContainer() {
-            console.log('CanvasManager: Container階層作成開始');
+            console.log('🎨 CanvasManager: Container階層作成開始');
             
             if (!this.pixiApp?.stage) {
                 throw new Error('v8 Application stage not available for layer creation');
@@ -231,14 +231,14 @@
                 throw new Error('v8DrawingContainer assignment failed');
             }
             
-            console.log('CanvasManager: Container階層作成完了');
+            console.log('🎨 CanvasManager: Container階層作成完了');
         }
         
         /**
          * Graphics管理システム初期化（描画消失問題解決の核心）
          */
         initializeGraphicsManagement() {
-            console.log('CanvasManager: Graphics管理システム初期化開始');
+            console.log('🎨 CanvasManager: Graphics管理システム初期化開始');
             
             if (!this.v8DrawingContainer) {
                 throw new Error('Drawing container not available for Graphics management');
@@ -273,7 +273,7 @@
             // Container階層ソート
             this.v8DrawingContainer.sortChildren();
             
-            console.log('CanvasManager: Graphics管理システム初期化完了');
+            console.log('🎨 CanvasManager: Graphics管理システム初期化完了');
         }
         
         // ========================================
@@ -301,7 +301,7 @@
             this.graphicsStats.totalGraphicsCreated++;
             this.graphicsStats.permanentGraphicsCount = this.permanentGraphics.size;
             
-            console.log(`Graphics作成: ${strokeId}`);
+            console.log(`🎨 Graphics作成: ${strokeId}`);
             return graphics;
         }
         
@@ -332,11 +332,11 @@
                     this.graphicsLayers.temporary.sortChildren();
                 }
                 
-                console.log(`永続Graphics追加: ${graphics.name}`);
+                console.log(`🎨 永続Graphics追加: ${graphics.name}`);
                 return true;
                 
             } catch (error) {
-                console.error('永続Graphics追加失敗:', error);
+                console.error('🎨 永続Graphics追加失敗:', error);
                 return false;
             }
         }
@@ -363,21 +363,21 @@
          * 全永続Graphicsクリア（Canvas全消去用）
          */
         clearAllPermanentGraphics() {
-            console.log('全永続Graphics消去開始');
+            console.log('🎨 全永続Graphics消去開始');
             
             for (const [strokeId, graphics] of this.permanentGraphics) {
                 if (graphics.parent) {
                     graphics.parent.removeChild(graphics);
                 }
                 graphics.destroy();
-                console.log(`Graphics破棄: ${strokeId}`);
+                console.log(`🎨 Graphics破棄: ${strokeId}`);
             }
             
             this.permanentGraphics.clear();
             this.graphicsStats.permanentGraphicsCount = 0;
             this.graphicsStats.memoryOptimizations++;
             
-            console.log('全永続Graphics消去完了');
+            console.log('🎨 全永続Graphics消去完了');
         }
         
         // ========================================
@@ -496,7 +496,7 @@
                 this.pixiApp.canvas.style.height = height + 'px';
             }
             
-            console.log(`Canvas サイズ変更: ${width}x${height} (DPR: ${limitedDPR})`);
+            console.log(`🎨 Canvas サイズ変更: ${width}x${height} (DPR: ${limitedDPR})`);
         }
         
         // ========================================
@@ -673,7 +673,7 @@
          * メモリクリーンアップ（開発・デバッグ用）
          */
         cleanup() {
-            console.log('CanvasManager: メモリクリーンアップ開始');
+            console.log('🎨 CanvasManager: メモリクリーンアップ開始');
             
             // 全Graphics破棄
             this.clearAllPermanentGraphics();
@@ -695,13 +695,13 @@
                 this.graphicsLayers = null;
             }
             
-            console.log('CanvasManager: メモリクリーンアップ完了');
+            console.log('🎨 CanvasManager: メモリクリーンアップ完了');
         }
     }
 
     // グローバル公開
     window.Tegaki.CanvasManager = CanvasManager;
 
-    console.log('CanvasManager v8.12.0完全対応版 Loaded - Graphics分離管理・座標変換支援・描画消失問題解決版');
+    console.log('🎨 CanvasManager v8.12.0完全対応版 Loaded - Graphics分離管理・座標変換支援・描画消失問題解決版');
 
 })();
