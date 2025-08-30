@@ -1,177 +1,50 @@
-────────────────────────────────────────
-1) 現象（要点）
-────────────────────────────────────────
-- コンソールに "The powerPreference option is currently ignored when calling requestAdapter() on Windows"（警告）が出るが致命的ではない。Pixi/WebGPU のブラウザ固有挙動。
-- CoordinateManager.getTransformMatrix で null の getDrawContainer を読もうとして TypeError。
-- PenTool で "CoordinateManager not ready - call setCanvasManager() first" エラー頻出。座標変換系が初期化順序に依存しており、ツールが早期にイベント受け取ると未設定状態で処理してしまう。
-- ペン描画が右下へ行くほどズレる（ワールド⇄スクリーン変換の行列生成/原点/スケール/キャンバス解像度の取り扱い不整合）。
+なぜ「失敗」と考えるか（要点）
 
-根本仮説：
-- Canvas（Pixi アプリ）初期化 → CanvasManager 登録 → CoordinateManager の結線（setCanvasManager） → ToolManager 登録/イベントバインド の順序が守られていない。
-- CoordinateManager が Canvas のコンテナやレンダラー参照を前提に行列を生成しているため、参照未設定時に null を参照する。
-- DPI / devicePixelRatio / ピクセル比や CSS スケーリングをワールド座標に取り込んでいないため、描画座標がズレる。
-- さらに、v7/v8 両対応の痕跡が残り設定や API 呼び出しの分岐で二重管理が起きている（@forbids に記載すること）。
+bootstrap.js の初期化コードは 各 Manager の ready/isV8Ready を厳格にチェックしているため、ひとつでも期待どおり準備できないと初期化を中止する設計になっています（いわゆる fail-fast）。
+GitHub
 
-────────────────────────────────────────
-2) 改修の全体方針（必須ルール）
-────────────────────────────────────────
-（1）全ファイルヘッダー追加（必須） — 下記「ヘッダーテンプレート」を全ファイル先頭に追加。
-（2）初期化順序は Promise / async/await で明示し、各 Manager に ready Promise を持たせる。イベントバインドは ready が解決してから行う。
-（3）双方向依存禁止。Manager は一方通行で参照を受け渡す（例：CanvasManager → CoordinateManager → ToolManager）。
-（4）v7/v8 両対応の二重実装禁止。どちらか一方に完全に移行（v8 推奨）。移行ドキュメント単独に残す。
-（5）全クラス・関数は window または window.Tegaki 名前空間に公開。
-（6）エラーハンドリング：致命的でないものは console.warn、致命的な初期化失敗は Error を throw してアプリ起動を停止（fail-fast）。
-（7）座標変換は単一責務：CoordinateManager のみがワールド⇄スクリーンの全責務を持つ。どのツールも直接 DOM/CSS サイズを読むな。
-（8）テストフック：各 Manager に testHook を提供（@testing-hooks）。デバッグモードでは initflow の状態を出力可能にする。
+AppCore 側も 「キャンバスが DOM に配置されていない」「CanvasManager.getDrawContainer() が null」等は初期化失敗に結びつけるチェックを入れているため、キャンバス未挿入や drawContainer が作られていないと初期化未完了になります。
+GitHub
 
-────────────────────────────────────────
-3) 全ファイル共通ヘッダー（テンプレート） — 全ファイル最上部に追加
-────────────────────────────────────────
-/**
- * @provides
- *   - <列挙>: このファイルが公開するクラス/メソッド（例: CanvasManager, CanvasManager.init, CanvasManager.ready）
- *
- * @uses
- *   - <列挙>: このファイルが外部から利用するメソッド（例: window.Tegaki.ErrorManager.report）
- *
- * @initflow
- *   1. bootstrap.start() 呼び出し
- *   2. CanvasManager.init()
- *   3. CanvasManager.ready (Promise resolves)
- *   4. CoordinateManager.setCanvasManager(CanvasManager.instance)
- *   5. CoordinateManager.ready (Promise resolves)
- *   6. ToolManager.init(CoordinateManager.instance)
- *   7. ToolManager.bindEvents()
- *   8. UI/Debug を表示
- *
- * @forbids
- *   - 双方向依存禁止
- *   - フォールバック禁止
- *   - フェイルセーフ禁止（隠蔽的にエラーを吸わない）
- *   - v7/v8 両対応による二重管理禁止
- *   - 未実装メソッド呼び出し禁止
- *   - DRY/SOLID 原則逸脱の修正禁止（臨時の複雑化を許さない）
- *
- * @manager-key
- *   - window.Tegaki.CanvasManagerInstance
- *
- * @dependencies-strict
- *   - 必須: PixiJS (v8), CoordinateManager
- *   - オプション: RecordManager (描画記録)
- *
- * @integration-flow
- *   - CanvasManager は bootstrap から呼ばれる（唯一の起点）
- *
- * @method-naming-rules
- *   - startOperation()/endOperation() 形式を採用
- *
- * @error-handling (Manager系ファイルのみ)
- *   - 初期化失敗は Promise.reject で上位に伝搬
- *
- * @testing-hooks (Manager系ファイルのみ)
- *   - .forceReadyForTest()
- */
+リポジトリには Phase1.5 用の統合テストヘルパーがあり、実行すると manager の存在／準備状況や座標テスト結果を出力できます（window.Tegaki.runPhase15Test()）。まずこのテスト結果を見るのが最短で確実な調査方法です。
+GitHub
 
-（※上記ヘッダーはすべての js ファイル先頭にコピーすること）
+したがって「責任分界と座標集中化を入れたが どこかが ready にならず途中で止まっている」か、「起動順／DOM挿入順が壊れてキャンバスが DOM にない」――どちらか、あるいは両方、が最有力です。
 
-────────────────────────────────────────
-4) 初期化・統合フロー（厳密手順）
-────────────────────────────────────────
-（bootstrap.js 側）
-1. bootstrap.start() が起動。
-2. await window.Tegaki.ErrorManager.init();
-3. await window.Tegaki.ConfigManager.init();
-4. await CanvasManager.init()  // CanvasManager は Pixi.Application を生成し、renderer/ticker を準備。CanvasManager.ready Promise を公開
-5. await CoordinateManager.init(CanvasManager.instance) // setCanvasManager 内で transform 行列の初期値を作成し ready を解決
-6. await ToolManager.init({ canvasManager: CanvasManager.instance, coordinateManager: CoordinateManager.instance })
-7. ToolManager.bindEvents() // ここで canvas 要素へ pointerdown/up/move などを確実に bind
-8. Debug/test hook 初回呼び出し（任意）
+よくある原因と優先対処（優先度高い順）
 
-重要：Tool のイベントバインドは ToolManager 内で行い、Tool は bind 時に CoordinateManager.ready を必ずチェックする。Tool は ready になるまでイベント処理を queue する。
+キャンバスが DOM に挿入されていない
 
-────────────────────────────────────────
-5) 具体的な不具合箇所と対策（ファイル別）
-────────────────────────────────────────
-A) app-core.js / pixi 初期化周辺
-- 対処：
-  - requestAdapter 警告は try/catch で無視せず console.warn に留める。init を止めない。
-  - Pixi.Application 作成後、必ず CanvasManager.renderer.options.width/height と CSS サイズの整合を取る（devicePixelRatio の扱いを中央化）。
+#canvas-container が index.html に存在するか、また TegakiApplication が container.appendChild(canvas) を呼んでいるか確認。AppCore.ensureCanvasDOMPlacement() が false を返すと初期化が止まります。
+GitHub
 
-B) canvas-manager.js（必須置換/改善）
-- 必要機能：
-  - .init(options): async 初期化。内部で Pixi.Application を生成。
-  - .ready: Promise が解決されたら外部が利用可能。
-  - .getCanvasElement(), .getStage(), .getDrawContainer()
-  - window.Tegaki.CanvasManagerInstance にインスタンスを格納
-  - DPI/scale 計算：init 時に devicePixelRatio を読む。CSS サイズ→レンダラー解像度への変換をここで統一。
-- 安全ガード：
-  - init 内で try/catch。初期化失敗で ErrorManager.report を呼ぶ。
-  - getDrawContainer() は null を返さない（未準備なら throw ではなく、ready Promise が未解決の旨を有意義なエラーメッセージで返す）。
+一時対処（コンソールから手で差し込む）:
 
-C) coordinate-manager.js（最重要：座標問題）
-- 必要機能：
-  - .init(canvasManager): async。内部で drawContainer を参照して transform の初期行列を計算。
-  - .ready: Promise。
-  - .setCanvasManager(canvasManager): 明示的に呼ぶ API（既存コードとの互換性のため残すが、init が推奨）。
-  - clientToWorld(clientX, clientY) と worldToClient(x,y) は devicePixelRatio と CSS オフセットを正しく考慮。
-  - getTransformMatrix() は drawContainer が null の場合は詳細なエラーを投げず、"CoordinateManager not ready..." を返す代わりに ready Promise を参照する仕組みへ変更。
-- 行列・スケールのチェックポイント：
-  - canvas の CSS サイズと renderer の actual width/height（devicePixelRatio を掛けた値）を保持。
-  - ビューポート原点（左上）とコンテンツ原点（0,0）の扱いを統一。例：world 座標系は常に描画ローカル座標（drawContainer の local 坐標）。
-  - scale/translate は浮動小数点誤差を考慮して clamp。
-
-D) tool-manager.js / pen-tool.js
-- 必要改修：
-  - ToolManager.init() は CoordinateManager.ready を await してから Tool の初期化/イベントバインドを行う。
-  - PenTool.onPointerDown: 最初に `if (!this.coordinateManager?.isReady) { this.eventQueue.push(event); return; }` のようにイベントをキューして、CoordinateManager.ready.then(() => flushQueue()) を実装。
-  - 既存の "CoordinateManager not ready - call setCanvasManager() first" を throw ではなく、ユーザに分かりやすくログし、イベントをキュー／スキップする。だが、重大な欠陥を見つけた場合は ErrorManager へ報告。
-
-E) bootstrap.js / main.js
-- bootstrap.start() は各 Manager の init を順に await するよう修正。start の最後で ToolManager.bindEvents() を呼ぶ。
-
-F) debug/phase15-integration-test.js
-- debug ツールは ready チェックを強化。getDebugInfo を呼ぶ前に CoordinateManager.ready を await する。
-
-G) assets/icons.js
-- UI に影響は少ないが、icons は静的ロードのみにして、ツール側で誤って他所のアイコンを参照していないか整合チェックを追加。
-
-────────────────────────────────────────
-6) 実装チェックリスト（必ず実行）
-────────────────────────────────────────
-- [ ] 全ファイルにヘッダーを追加
-- [ ] CanvasManager.init() を Promise ベースに変更し、window.Tegaki.CanvasManagerInstance をセット
-- [ ] CoordinateManager.init(canvasManager) を追加。setCanvasManager は init のラッパーにする
-- [ ] ToolManager.init() で CoordinateManager.ready を await
-- [ ] Tool のイベントバインドは ToolManager が行う（Tool 自身は bind しない）
-- [ ] devicePixelRatio/renderer 解像度の計算を CanvasManager に一本化
-- [ ] PenTool のイベントキュー実装（CoordinateManager 未準備時はキュー）
-- [ ] 例外的状況を ErrorManager.report で中央集権的に扱う
-- [ ] v7/v8 両対応コードを削除 or 別ブランチへ移動（プロダクトには残さない）
-- [ ] すべての Manager/Tool に .ready と .forceReadyForTest を実装
-- [ ] unit/integration テスト（debug/integration-test を実行）で initflow を検証
+(function(){
+  const appCore = window.TegakiAppInstance || window.Tegaki?.AppCoreInstance;
+  const canvas = appCore?.getCanvasElement?.() || appCore?.getPixiApp?.()?.view || document.querySelector('canvas');
+  const container = document.getElementById('canvas-container');
+  if (canvas && container && !container.contains(canvas)) {
+    container.appendChild(canvas);
+    console.log('Canvas appended to #canvas-container');
+  } else { console.warn('Append skipped (canvas/container missing or already appended)', {canvas,container}); }
+})();
 
 
-────────────────────────────────────────
-9) 追加の注意点（運用ポリシー）
-────────────────────────────────────────
-- 「目先の」try/catch でエラーを吸い上げてしまう修正は厳禁。原因をラップして明示的に報告すること。
-- v7/v8 の混在が見られたら、v7 向けコードを完全に隔離（feature-legacy ブランチ）し、プロダクトからは排除する。
-- 依存禁止事項をヘッダーで明示し、PR 作成時にヘッダーが揃っているか自動チェックする CI スクリプトを導入することを推奨（簡易 lint）。
-- 末尾に「変更履歴」ブロックを必ず残す（誰がいつ何を変えたか）。
+上でキャンバスが表示されれば、bootstrap のチェックは通るはずです。
 
-────────────────────────────────────────
-10) 作業優先度（高→低）
-────────────────────────────────────────
-1. CanvasManager.ready／CoordinateManager.ready の Promise 化と順序保証（最重要）
-2. PenTool のキュー化・ToolManager の bind 移動
-3. DPI / renderer 解像度の一元化
-4. debug/getDebugInfo の ready 検査
-5. コードベースから v7/v8 混在コードを排除
-6. ヘッダーの全ファイル適用・CI でのチェック導入
+CanvasManager が getDrawContainer() を返さない / isV8Ready が false
 
-────────────────────────────────────────
-11) まとめ（短く）
-────────────────────────────────────────
-- 原因は「初期化順序（CanvasManager ⇢ CoordinateManager ⇢ Tool）」と「座標系計算の不統一（DPR/CSS vs renderer）」です。
-- 対策は Manager に明確な ready Promise を持たせ、Tool のイベントバインドは ready 後に行うこと。PenTool は未準備時にイベントをキューする。
-- 全ファイルへ統一ヘッダーを入れて依存・禁止事項を明確化することで再発を防止します。
+initializeV8Managers() 内で CanvasManager.getDrawContainer() をテストしているため、drawContainer の生成漏れは初期化失敗になります。CanvasManager.initializeV8Application() が正常に呼ばれているか確認してください。
+GitHub
++1
+
+CoordinateManager が Canvas を受け取って isReady() になっていない
+
+bootstrap は await coordinateManager.setCanvasManager(canvasManager) を呼んでいます。setCanvasManager() が例外を投げるか resolve しないと先に進みません（その場合 console にエラーが残ります）。
+GitHub
+
+アイコンが表示されない（Sidebar）
+
+まず network タブで assets/icons.js が 200 OK で読み込まれているか確認。スクリプトの読み込み順が違うと window.Tegaki.assets 等が未定義のままツールが評価されます（tools が icons を参照する前に icons.js をロードする必要あり）。
+GitHub
