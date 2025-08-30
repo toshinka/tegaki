@@ -72,12 +72,10 @@
 
     /**
      * CoordinateManager - 統一座標変換システム
-     * 座標ズレ問題完全解決版
+     * 座標ズレ問題完全解決版（右下座標ズレ対策強化）
      */
     class CoordinateManager {
         constructor() {
-            console.log('🧭 CoordinateManager v8対応版・座標ズレ問題解決版 作成開始');
-            
             // Manager参照
             this.canvasManager = null;
             
@@ -86,11 +84,19 @@
             this.readyPromise = null;
             this.readyResolve = null;
             
-            // 座標変換設定
-            this.dpr = Math.min(window.devicePixelRatio || 1, 2.0); // DPR制限
+            // 座標変換設定（高精度対応）
+            this.dpr = Math.min(window.devicePixelRatio || 1, 2.0);
             this.transformMatrix = new PIXI.Matrix();
             this.lastTransformUpdate = 0;
             this.transformCacheValid = false;
+            
+            // Canvas情報キャッシュ（座標ズレ防止）
+            this.canvasInfo = {
+                element: null,
+                rect: null,
+                logicalSize: null,
+                lastUpdate: 0
+            };
             
             // 座標変換統計（精度確認用）
             this.coordinateStats = {
@@ -100,15 +106,15 @@
                 canvasToWorldCalls: 0,
                 worldToCanvasCalls: 0,
                 lastTransformTime: 0,
-                averageTransformTime: 0
+                averageTransformTime: 0,
+                precisionErrors: 0,
+                maxError: 0
             };
             
             // 準備完了Promise作成
             this.readyPromise = new Promise((resolve) => {
                 this.readyResolve = resolve;
             });
-            
-            console.log('🧭 CoordinateManager 作成完了');
         }
 
         /**
@@ -116,8 +122,6 @@
          * @param {CanvasManager} canvasManager - v8準備完了済みCanvasManager
          */
         async setCanvasManager(canvasManager) {
-            console.log('🧭 CoordinateManager: CanvasManager設定開始');
-            
             try {
                 if (!canvasManager) {
                     throw new Error('CanvasManager is required');
@@ -141,8 +145,6 @@
                     this.readyResolve();
                 }
                 
-                console.log('🧭 CoordinateManager: CanvasManager設定完了');
-                
                 // 状態通知
                 this.emitReadyState();
                 
@@ -156,11 +158,12 @@
          * 座標変換システム初期化
          */
         async initializeCoordinateTransform() {
-            console.log('🧭 CoordinateManager: 座標変換システム初期化');
-            
             try {
                 // DPR設定更新
                 this.updateDPRSettings();
+                
+                // Canvas情報更新
+                this.updateCanvasInfo();
                 
                 // 変換行列初期化
                 this.updateTransformMatrix();
@@ -177,8 +180,6 @@
                     throw new Error('DrawContainer not available');
                 }
                 
-                console.log('🧭 CoordinateManager: 座標変換システム初期化完了');
-                
             } catch (error) {
                 console.error('🧭 CoordinateManager: 座標変換システム初期化失敗:', error);
                 throw error;
@@ -193,6 +194,41 @@
             if (newDPR !== this.dpr) {
                 this.dpr = newDPR;
                 this.transformCacheValid = false;
+                this.canvasInfo.lastUpdate = 0; // Canvas情報も更新必要
+            }
+        }
+        
+        /**
+         * Canvas情報更新（座標ズレ防止のキャッシュ）
+         */
+        updateCanvasInfo() {
+            if (!this.canvasManager) return;
+            
+            try {
+                const canvas = this.canvasManager.getCanvasElement();
+                if (!canvas) return;
+                
+                // Canvas情報更新（高頻度アクセス対応）
+                this.canvasInfo = {
+                    element: canvas,
+                    rect: canvas.getBoundingClientRect(),
+                    logicalSize: {
+                        width: canvas.width / this.dpr,
+                        height: canvas.height / this.dpr
+                    },
+                    physicalSize: {
+                        width: canvas.width,
+                        height: canvas.height
+                    },
+                    cssSize: {
+                        width: parseFloat(canvas.style.width) || canvas.offsetWidth,
+                        height: parseFloat(canvas.style.height) || canvas.offsetHeight
+                    },
+                    lastUpdate: Date.now()
+                };
+                
+            } catch (error) {
+                console.warn('🧭 CoordinateManager: Canvas情報更新失敗:', error);
             }
         }
         
@@ -233,11 +269,17 @@
                     throw new Error('CoordinateManager not ready');
                 }
                 
-                // Step 1: DOM座標 → Canvas座標
-                const canvasPoint = this.clientToCanvas(clientX, clientY);
+                // Canvas情報更新確認（座標ズレ防止）
+                const cacheAge = Date.now() - this.canvasInfo.lastUpdate;
+                if (cacheAge > 500) { // 500ms毎に更新
+                    this.updateCanvasInfo();
+                }
                 
-                // Step 2: Canvas座標 → World座標
-                const worldPoint = this.canvasToWorld(canvasPoint.x, canvasPoint.y);
+                // Step 1: DOM座標 → Canvas座標（高精度版）
+                const canvasPoint = this.clientToCanvasPrecision(clientX, clientY);
+                
+                // Step 2: Canvas座標 → World座標（Container変形対応）
+                const worldPoint = this.canvasToWorldPrecision(canvasPoint.x, canvasPoint.y);
                 
                 // 統計更新
                 this.updateStats('clientToWorld', startTime);
@@ -251,77 +293,86 @@
         }
         
         /**
-         * DOM座標をCanvas座標に変換（DPR・CSS変形対応）
+         * DOM座標をCanvas座標に変換（高精度版・右下座標ズレ対策）
          * @param {number} clientX - DOM座標X
          * @param {number} clientY - DOM座標Y
          * @returns {{x: number, y: number}} Canvas座標
          */
-        clientToCanvas(clientX, clientY) {
-            const startTime = performance.now();
-            
+        clientToCanvasPrecision(clientX, clientY) {
             try {
-                if (!this.ready) {
-                    throw new Error('CoordinateManager not ready');
+                const canvasInfo = this.canvasInfo;
+                
+                if (!canvasInfo.element || !canvasInfo.rect) {
+                    throw new Error('Canvas information not available');
                 }
                 
-                const canvas = this.canvasManager.getCanvasElement();
-                const rect = canvas.getBoundingClientRect();
+                // 高精度正規化座標計算（座標ズレ防止の核心）
+                const normalizedX = (clientX - canvasInfo.rect.left) / canvasInfo.rect.width;
+                const normalizedY = (clientY - canvasInfo.rect.top) / canvasInfo.rect.height;
                 
-                // CSS表示サイズベースの正規化座標（0-1範囲）
-                const normalizedX = (clientX - rect.left) / rect.width;
-                const normalizedY = (clientY - rect.top) / rect.height;
+                // 境界チェック（範囲外座標の適切な処理）
+                const clampedX = Math.max(0, Math.min(1, normalizedX));
+                const clampedY = Math.max(0, Math.min(1, normalizedY));
                 
-                // Canvas論理サイズに変換（DPR考慮）
-                const canvasLogicalWidth = canvas.width / this.dpr;
-                const canvasLogicalHeight = canvas.height / this.dpr;
-                
-                const canvasX = normalizedX * canvasLogicalWidth;
-                const canvasY = normalizedY * canvasLogicalHeight;
-                
-                // 統計更新
-                this.updateStats('clientToCanvas', startTime);
+                // Canvas論理座標に変換（DPR考慮・高精度）
+                const canvasX = clampedX * canvasInfo.logicalSize.width;
+                const canvasY = clampedY * canvasInfo.logicalSize.height;
                 
                 return { x: canvasX, y: canvasY };
                 
             } catch (error) {
-                console.error('🧭 CoordinateManager.clientToCanvas失敗:', error);
+                console.error('🧭 CoordinateManager.clientToCanvasPrecision失敗:', error);
                 throw error;
             }
         }
         
         /**
-         * Canvas座標をWorld座標に変換（Container変形対応）
+         * Canvas座標をWorld座標に変換（Container変形対応・高精度版）
          * @param {number} canvasX - Canvas座標X
          * @param {number} canvasY - Canvas座標Y
          * @returns {{x: number, y: number}} World座標
          */
-        canvasToWorld(canvasX, canvasY) {
-            const startTime = performance.now();
-            
+        canvasToWorldPrecision(canvasX, canvasY) {
             try {
-                if (!this.ready) {
-                    throw new Error('CoordinateManager not ready');
-                }
-                
                 const drawContainer = this.canvasManager.getDrawContainer();
                 
-                // Container変形を考慮した座標変換
+                // Container変形行列が更新されている場合は再取得
+                this.updateTransformMatrix();
+                
+                // 高精度座標変換（Container変形対応）
                 const globalPoint = { x: canvasX, y: canvasY };
                 const localPoint = drawContainer.toLocal(globalPoint);
-                
-                // 統計更新
-                this.updateStats('canvasToWorld', startTime);
                 
                 return { x: localPoint.x, y: localPoint.y };
                 
             } catch (error) {
-                console.error('🧭 CoordinateManager.canvasToWorld失敗:', error);
+                console.error('🧭 CoordinateManager.canvasToWorldPrecision失敗:', error);
                 throw error;
             }
         }
         
         /**
-         * World座標をCanvas座標に変換（逆変換）
+         * 公開API: DOM座標 → Canvas座標
+         */
+        clientToCanvas(clientX, clientY) {
+            const startTime = performance.now();
+            const result = this.clientToCanvasPrecision(clientX, clientY);
+            this.updateStats('clientToCanvas', startTime);
+            return result;
+        }
+        
+        /**
+         * 公開API: Canvas座標 → World座標
+         */
+        canvasToWorld(canvasX, canvasY) {
+            const startTime = performance.now();
+            const result = this.canvasToWorldPrecision(canvasX, canvasY);
+            this.updateStats('canvasToWorld', startTime);
+            return result;
+        }
+        
+        /**
+         * World座標をCanvas座標に変換（逆変換・高精度）
          * @param {number} worldX - World座標X
          * @param {number} worldY - World座標Y
          * @returns {{x: number, y: number}} Canvas座標
@@ -336,7 +387,7 @@
                 
                 const drawContainer = this.canvasManager.getDrawContainer();
                 
-                // World座標をContainer座標系に変換
+                // World座標をCanvas座標に変換（高精度）
                 const localPoint = { x: worldX, y: worldY };
                 const globalPoint = drawContainer.toGlobal(localPoint);
                 
@@ -370,7 +421,7 @@
         }
         
         /**
-         * 座標変換テスト（デバッグ用）
+         * 座標変換テスト（デバッグ用・精度確認）
          * @param {number} clientX - テスト用DOM座標X
          * @param {number} clientY - テスト用DOM座標Y
          * @returns {Object} 変換結果詳細
@@ -386,22 +437,36 @@
                 
                 const endTime = performance.now();
                 
-                // 逆変換精度確認
+                // 逆変換精度確認（座標ズレ検出）
                 const canvasError = {
                     x: Math.abs(canvasPoint.x - backToCanvas.x),
                     y: Math.abs(canvasPoint.y - backToCanvas.y)
                 };
+                
+                // 最大エラー更新
+                const maxError = Math.max(canvasError.x, canvasError.y);
+                if (maxError > this.coordinateStats.maxError) {
+                    this.coordinateStats.maxError = maxError;
+                }
+                
+                // 精度エラーカウント
+                if (maxError > 1.0) {
+                    this.coordinateStats.precisionErrors++;
+                }
                 
                 return {
                     input: { x: clientX, y: clientY },
                     canvas: canvasPoint,
                     world: worldPoint,
                     backToCanvas: backToCanvas,
-                    canvasError: canvasError,
+                    error: canvasError,
                     transformTime: endTime - startTime,
                     precision: {
-                        acceptable: canvasError.x < 1 && canvasError.y < 1,
-                        highPrecision: canvasError.x < 0.1 && canvasError.y < 0.1
+                        acceptable: maxError < 1.0,
+                        highPrecision: maxError < 0.1,
+                        errorLevel: maxError < 0.1 ? 'excellent' : 
+                                   maxError < 1.0 ? 'good' : 
+                                   maxError < 5.0 ? 'poor' : 'critical'
                     }
                 };
                 
@@ -468,7 +533,7 @@
         }
         
         /**
-         * デバッグ情報取得
+         * デバッグ情報取得（座標ズレ診断用）
          * @returns {Object} 詳細デバッグ情報
          */
         getDebugInfo() {
@@ -477,7 +542,7 @@
             
             return {
                 className: 'CoordinateManager',
-                version: 'v8対応版・座標ズレ問題解決版',
+                version: 'v8-precision-fix',
                 ready: this.ready,
                 canvasManagerReady: this.canvasManager?.isV8Ready() || false,
                 dprInfo: {
@@ -485,16 +550,7 @@
                     effectiveDPR: this.dpr,
                     limited: this.dpr < window.devicePixelRatio
                 },
-                canvasInfo: canvas ? {
-                    width: canvas.width,
-                    height: canvas.height,
-                    styleWidth: canvas.style.width,
-                    styleHeight: canvas.style.height,
-                    logicalSize: {
-                        width: canvas.width / this.dpr,
-                        height: canvas.height / this.dpr
-                    }
-                } : null,
+                canvasInfo: this.canvasInfo,
                 containerInfo: drawContainer ? {
                     x: drawContainer.x,
                     y: drawContainer.y,
@@ -509,10 +565,14 @@
                     cacheAge: Date.now() - this.lastTransformUpdate
                 },
                 stats: { ...this.coordinateStats },
-                testResults: this.isReady() ? {
-                    topLeft: this.testCoordinate(0, 0),
-                    center: this.testCoordinate(200, 200),
-                    bottomRight: this.testCoordinate(400, 400)
+                precisionTest: this.isReady() ? {
+                    corners: {
+                        topLeft: this.testCoordinate(0, 0),
+                        topRight: this.testCoordinate(400, 0),
+                        center: this.testCoordinate(200, 200),
+                        bottomLeft: this.testCoordinate(0, 400),
+                        bottomRight: this.testCoordinate(400, 400)
+                    }
                 } : null
             };
         }
@@ -523,9 +583,5 @@
         window.Tegaki = {};
     }
     window.Tegaki.CoordinateManager = CoordinateManager;
-
-    console.log('🧭 CoordinateManager v8対応版・座標ズレ問題解決版 Loaded');
-    console.log('📏 特徴: DPR対応強化・Container変形対応・座標検証機能・統計取得');
-    console.log('✅ 座標変換統一: clientToWorld(), clientToCanvas(), canvasToWorld(), worldToCanvas()');
 
 })();

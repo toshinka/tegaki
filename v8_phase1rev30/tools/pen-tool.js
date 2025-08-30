@@ -94,8 +94,6 @@
         constructor(toolName = 'pen') {
             super(toolName);
             
-            console.log('🖊️ PenTool: 非破壊描画・座標ズレ解決版 作成開始');
-            
             // 描画状態管理
             this.currentStroke = null;
             this.isDrawing = false;
@@ -143,8 +141,6 @@
             this.readyPromise = new Promise((resolve) => {
                 this.readyResolve = resolve;
             });
-            
-            console.log('🖊️ PenTool: 作成完了');
         }
         
         // ========================================
@@ -157,8 +153,6 @@
          * @returns {Promise<boolean>} 注入成功フラグ
          */
         async setManagers(managers) {
-            console.log('🖊️ PenTool: Manager統一注入開始');
-            
             try {
                 if (!managers || typeof managers !== 'object') {
                     throw new Error('Manager注入失敗: Object形式必須');
@@ -192,7 +186,6 @@
                     this.readyResolve();
                 }
                 
-                console.log('🖊️ PenTool: Manager統一注入完了');
                 return true;
                 
             } catch (error) {
@@ -205,12 +198,9 @@
          * Manager準備完了待機（段階的確認）
          */
         async waitForManagersReady() {
-            console.log('🖊️ PenTool: Manager準備完了待機開始');
-            
             // CanvasManager準備待機
             if (this.canvasManager) {
                 if (!this.canvasManager.isV8Ready()) {
-                    console.log('🖊️ PenTool: CanvasManager準備待機中...');
                     let attempts = 0;
                     const maxAttempts = 50;
                     
@@ -223,48 +213,37 @@
                         throw new Error(`CanvasManager準備タイムアウト (${maxAttempts * 100}ms)`);
                     }
                 }
-                console.log('🖊️ PenTool: CanvasManager準備完了確認');
             }
             
             // CoordinateManager準備待機
             if (this.coordinateManager) {
                 if (!this.coordinateManager.isReady()) {
-                    console.log('🖊️ PenTool: CoordinateManager準備待機中...');
                     await this.coordinateManager.waitForReady();
                 }
-                console.log('🖊️ PenTool: CoordinateManager準備完了確認');
             }
             
             // RecordManager準備待機
             if (this.recordManager && typeof this.recordManager.isReady === 'function') {
                 if (!this.recordManager.isReady()) {
-                    console.log('🖊️ PenTool: RecordManager準備待機中...');
-                    // RecordManagerが準備完了するまで待機
                     let attempts = 0;
                     while (!this.recordManager.isReady() && attempts < 30) {
                         await new Promise(resolve => setTimeout(resolve, 100));
                         attempts++;
                     }
                 }
-                console.log('🖊️ PenTool: RecordManager準備完了確認');
             }
-            
-            console.log('🖊️ PenTool: 全Manager準備完了');
         }
         
         /**
          * Tool アクティブ化・v8描画機能初期化
          */
         async activate() {
-            console.log('🖊️ PenTool: アクティブ化開始');
-            
             try {
                 // 親クラス アクティブ化
                 super.activate();
                 
                 // Manager準備完了確認
                 if (!this.managersReady) {
-                    console.log('🖊️ PenTool: Manager準備待機中...');
                     await this.readyPromise;
                 }
                 
@@ -273,8 +252,6 @@
                 
                 // キューイングされたイベント処理
                 await this.processEventQueue();
-                
-                console.log('🖊️ PenTool: アクティブ化完了');
                 
             } catch (error) {
                 console.error('🖊️ PenTool: アクティブ化失敗:', error);
@@ -286,8 +263,6 @@
          * v8描画機能初期化（Graphics分離対応）
          */
         async initializeV8DrawingFeatures() {
-            console.log('🖊️ PenTool: v8描画機能初期化開始');
-            
             try {
                 // DrawContainer取得
                 this.drawContainer = this.canvasManager.getDrawContainer();
@@ -303,8 +278,6 @@
                 
                 // v8機能フラグ設定
                 this.v8FeaturesEnabled = true;
-                
-                console.log('🖊️ PenTool: v8描画機能初期化完了');
                 
             } catch (error) {
                 console.error('🖊️ PenTool: v8描画機能初期化失敗:', error);
@@ -325,7 +298,6 @@
             try {
                 // 準備状態確認
                 if (!this.isReadyForDrawing()) {
-                    console.warn('🖊️ PenTool: 描画準備未完了 - イベントキューイング');
                     this.queueEvent('pointerdown', event);
                     return;
                 }
@@ -360,7 +332,6 @@
                 
             } catch (error) {
                 console.error('🖊️ PenTool.onPointerMove エラー:', error);
-                // 描画中のエラーは致命的でない限り継続
             }
         }
         
@@ -396,10 +367,7 @@
          * @param {Object} point - World座標 {x, y}
          */
         startStroke(point) {
-            console.log('🖊️ PenTool: 描画開始', point);
-            
             if (!this.isReadyForDrawing()) {
-                console.warn('🖊️ PenTool: 描画準備未完了');
                 return;
             }
             
@@ -412,7 +380,6 @@
                 const strokeId = 'stroke_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5);
                 this.currentStrokeGraphics = this.canvasManager.createStrokeGraphics(strokeId);
                 
-                // ❌ 削除: this.graphics.clear() // 全Graphics消去禁止
                 // ✅ 一時Graphicsのみクリア（重要な修正）
                 this.canvasManager.clearTemporaryGraphics();
                 
@@ -432,6 +399,10 @@
                     started: Date.now()
                 };
                 
+            } catch (error) {
+                console.error('🖊️ PenTool: 描画開始失敗:', error);
+            }
+        }
         
         /**
          * 描画継続（リアルタイム・永続Graphics両対応）
@@ -489,8 +460,6 @@
                 return;
             }
             
-            console.log('🖊️ PenTool: 描画終了処理開始');
-            
             try {
                 // 最終座標追加
                 if (point) {
@@ -500,9 +469,7 @@
                 // 永続Graphicsを描画コンテナに追加（描画保持・重要）
                 if (this.currentStrokeGraphics) {
                     const success = this.canvasManager.addPermanentGraphics(this.currentStrokeGraphics);
-                    if (!success) {
-                        console.warn('🖊️ PenTool: 永続Graphics追加失敗');
-                    } else {
+                    if (success) {
                         console.log(`🖊️ PenTool: 永続Graphics追加成功 ID:${this.currentStroke?.id}`);
                     }
                 }
@@ -521,14 +488,10 @@
                             const saveResult = this.recordManager.addStroke(this.currentStroke);
                             if (saveResult) {
                                 console.log(`🖊️ PenTool: TPF保存成功 ID:${this.currentStroke.id}`);
-                            } else {
-                                console.warn('🖊️ PenTool: TPF保存失敗');
                             }
                         } catch (saveError) {
                             console.error('🖊️ PenTool: TPF保存エラー:', saveError);
                         }
-                    } else {
-                        console.warn('🖊️ PenTool: RecordManager.addStroke()未実装');
                     }
                 }
                 
@@ -540,8 +503,6 @@
                         (this.drawingStats.averageStrokeLength * (this.drawingStats.totalStrokes - 1) + 
                          this.strokePoints.length) / this.drawingStats.totalStrokes;
                 }
-                
-                console.log(`🖊️ PenTool: 描画終了完了 - 座標数:${this.strokePoints.length}, 総ストローク:${this.drawingStats.totalStrokes}`);
                 
             } catch (error) {
                 console.error('🖊️ PenTool: 描画終了失敗:', error);
@@ -587,7 +548,6 @@
         queueEvent(eventType, event) {
             // キューサイズ制限
             if (this.eventQueue.length >= this.maxQueueSize) {
-                console.warn('🖊️ PenTool: イベントキュー満杯 - 古いイベントを削除');
                 this.eventQueue.shift();
             }
             
@@ -601,14 +561,9 @@
             
             // 古いイベント削除
             const cutoffTime = Date.now() - this.queueTimeoutMs;
-            const initialLength = this.eventQueue.length;
             this.eventQueue = this.eventQueue.filter(queuedEvent => 
                 queuedEvent.timestamp > cutoffTime
             );
-            
-            if (this.eventQueue.length < initialLength) {
-                console.warn(`🖊️ PenTool: 古いイベント削除 ${initialLength - this.eventQueue.length}件`);
-            }
         }
         
         /**
@@ -619,7 +574,6 @@
                 return;
             }
             
-            console.log(`🖊️ PenTool: イベントキュー処理開始 - ${this.eventQueue.length}件`);
             this.isProcessingQueue = true;
             
             try {
@@ -629,7 +583,6 @@
                     const queuedEvent = this.eventQueue.shift();
                     
                     if (!this.isReadyForDrawing()) {
-                        console.warn('🖊️ PenTool: イベントキュー処理中に準備状態が変化');
                         break;
                     }
                     
@@ -655,8 +608,6 @@
                     await new Promise(resolve => setTimeout(resolve, 10));
                 }
                 
-                console.log(`🖊️ PenTool: イベントキュー処理完了 - ${processedCount}件処理`);
-                
             } catch (error) {
                 console.error('🖊️ PenTool: イベントキュー処理エラー:', error);
             } finally {
@@ -672,7 +623,6 @@
         handleCoordinateError(error, event) {
             if (error.message.includes('not ready')) {
                 // Manager未準備の場合はイベントをキューイング
-                console.warn('🖊️ PenTool: Manager未準備 - イベントキューイング');
                 this.queueEvent('pointerdown', event);
             } else {
                 // その他のエラーは報告
@@ -688,12 +638,9 @@
          * Tool非アクティブ化（状態クリア）
          */
         deactivate() {
-            console.log('🖊️ PenTool: 非アクティブ化開始');
-            
             try {
                 // 進行中の描画があれば強制終了
                 if (this.isDrawing) {
-                    console.warn('🖊️ PenTool: 進行中描画を強制終了');
                     this.endStroke();
                 }
                 
@@ -707,8 +654,6 @@
                 this.eventQueue = [];
                 this.isProcessingQueue = false;
                 
-                console.log('🖊️ PenTool: 非アクティブ化完了');
-                
             } catch (error) {
                 console.error('🖊️ PenTool: 非アクティブ化失敗:', error);
             }
@@ -719,17 +664,14 @@
          */
         setStrokeWidth(width) {
             this.strokeWidth = Math.max(0.5, Math.min(50, width));
-            console.log(`🖊️ PenTool: 線幅変更 ${this.strokeWidth}px`);
         }
         
         setStrokeColor(color) {
             this.strokeColor = color;
-            console.log(`🖊️ PenTool: 色変更 0x${color.toString(16)}`);
         }
         
         setStrokeOpacity(opacity) {
             this.strokeOpacity = Math.max(0, Math.min(1, opacity));
-            console.log(`🖊️ PenTool: 透明度変更 ${this.strokeOpacity}`);
         }
         
         // ========================================
@@ -782,7 +724,7 @@
         getDebugInfo() {
             return {
                 className: 'PenTool',
-                version: 'v8.12.0-non-destructive-drawing',
+                version: 'v8.12.0-syntax-fix',
                 toolState: {
                     toolName: this.toolName,
                     isActive: this.isActive,
@@ -823,12 +765,7 @@
                     currentStrokeGraphics: !!this.currentStrokeGraphics,
                     temporaryGraphics: !!this.temporaryGraphics,
                     drawContainer: !!this.drawContainer
-                },
-                coordinateTest: this.isReadyForDrawing() ? {
-                    topLeft: this.testCoordinate(0, 0),
-                    center: this.testCoordinate(200, 200),
-                    bottomRight: this.testCoordinate(400, 400)
-                } : null
+                }
             };
         }
     }
@@ -838,9 +775,5 @@
         window.Tegaki = {};
     }
     window.Tegaki.PenTool = PenTool;
-
-    console.log('🖊️ PenTool v8.12.0完全対応版・座標ズレ描画消失問題解決版 Loaded');
-    console.log('📏 修正内容: 非破壊Graphics分離・統一座標変換・初期化順序確立・イベントキューイング');
-    console.log('✅ 特徴: 座標ズレ完全解決・描画消失防止・TPF保存・v8完全対応・準備状態管理完成版');
 
 })();
