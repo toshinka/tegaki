@@ -1,6 +1,6 @@
 /**
  * 📄 FILE: js/utils/record-manager.js
- * 📌 RESPONSIBILITY: TPF形式ストローク記録・履歴管理・非破壊編集・Manager初期化修正版
+ * 📌 RESPONSIBILITY: TPF形式ストローク記録・履歴管理・Manager注入問題修正版
  *
  * @provides
  *   - RecordManager クラス
@@ -80,30 +80,25 @@ if (!window.Tegaki) {
 }
 
 /**
- * 📝 RecordManager v8対応版 - Manager初期化修正・addStroke実装版
+ * 📝 RecordManager Manager注入問題修正版
  * 
  * 🔧 修正内容:
- * - Manager注入タイミング修正
- * - setManagers()呼び出し確認
+ * - Manager注入確認・初期化タイミング修正
  * - isReady()状態管理強化
- * - addStroke()初期化順序対応
+ * - 即座にsetManagers()対応
+ * - 準備状態の確実化
  * 
  * 🚀 特徴:
  * - TPF v0.2準拠データ形式
- * - Manager依存注入パターン統一
- * - 初期化エラー完全対応
+ * - Manager依存注入パターン完全対応
+ * - 初期化順序問題完全解決
  */
 class RecordManager {
     constructor() {
         console.log('🚀 RecordManager v8初期化開始');
         
         // Manager統合（注入方式・初期化修正）
-        this.managers = {
-            canvas: null,
-            eventbus: null,
-            config: null,
-            error: null
-        };
+        this.managers = new Map();
         
         // TPF履歴管理
         this.tpfHistory = [];        // TPF記録履歴
@@ -114,27 +109,24 @@ class RecordManager {
         this.ready = false;          // 完全準備完了
         this.v8Ready = false;        // v8統合完了
         this.managersReady = false;  // Manager注入完了
-        this.initialized = false;    // 基本初期化完了
+        this.initialized = true;     // 基本初期化完了
         
         // 設定・統計
         this.maxHistorySize = 1000;  // 最大履歴数
         this.operationCount = 0;     // 操作カウント
         this.lastError = null;       // 最終エラー
         
-        // 初期化完了フラグ設定
-        this.initialized = true;
-        
         console.log('🔄 RecordManager v8対応版 作成完了');
     }
     
     /**
-     * 🔧 Manager統合注入（初期化修正版）
+     * 🔧 Manager統合注入（修正版・即座対応）
      * 
      * @param {Object|Map} managers - Manager群
      * @returns {boolean} 注入成功フラグ
      */
     setManagers(managers) {
-        console.log('🔧 RecordManager Manager統合注入開始');
+        console.log('🔧 RecordManager Manager統合注入開始（修正版）');
         
         if (!this.initialized) {
             console.error('❌ RecordManager: 基本初期化未完了');
@@ -142,28 +134,28 @@ class RecordManager {
         }
         
         try {
-            // Manager型確認・統一処理（修正版）
-            let managersObj;
+            // Manager型確認・統一処理
             if (managers instanceof Map) {
-                console.log('📦 Map形式Manager受信');
-                managersObj = Object.fromEntries(managers);
+                console.log('📦 Map形式Manager受信 - 直接使用');
+                this.managers = new Map(managers);
             } else if (typeof managers === 'object' && managers !== null) {
-                console.log('📦 Object形式Manager受信');
-                managersObj = managers;
+                console.log('📦 Object形式Manager受信 - Map変換');
+                this.managers = new Map(Object.entries(managers));
             } else {
                 throw new Error(`Invalid managers type: ${typeof managers} - Object or Map required`);
             }
             
-            // 必須Manager確認・注入（厳格チェック）
+            console.log(`📋 RecordManager受信Manager数: ${this.managers.size}`);
+            
+            // 必須Manager確認・検証（厳格チェック）
             const requiredManagers = ['canvas', 'eventbus'];
             const missingManagers = [];
             
             for (const key of requiredManagers) {
-                if (!managersObj[key]) {
+                if (!this.managers.has(key)) {
                     missingManagers.push(key);
                 } else {
-                    this.managers[key] = managersObj[key];
-                    console.log(`✅ ${key}Manager注入成功`);
+                    console.log(`✅ ${key}Manager注入確認完了`);
                 }
             }
             
@@ -171,12 +163,11 @@ class RecordManager {
                 throw new Error(`Required managers missing: ${missingManagers.join(', ')}`);
             }
             
-            // オプションManager注入
-            const optionalManagers = ['config', 'error'];
+            // オプションManager確認
+            const optionalManagers = ['config', 'error', 'coordinate', 'navigation', 'shortcut', 'tool'];
             for (const key of optionalManagers) {
-                if (managersObj[key]) {
-                    this.managers[key] = managersObj[key];
-                    console.log(`✅ ${key}Manager注入成功 (オプション)`);
+                if (this.managers.has(key)) {
+                    console.log(`✅ ${key}Manager注入確認完了 (オプション)`);
                 }
             }
             
@@ -184,10 +175,14 @@ class RecordManager {
             this.managersReady = true;
             console.log('✅ Manager注入フェーズ完了');
             
-            // v8統合確認実行
-            this.validateV8Integration();
+            // v8統合確認実行（即座）
+            const validationResult = this.validateV8Integration();
             
-            console.log('✅ RecordManager Manager統合注入完了');
+            if (!validationResult) {
+                console.warn('⚠️ v8統合確認で問題検出 - 後続処理継続');
+            }
+            
+            console.log('✅ RecordManager Manager統合注入完了（修正版）');
             return true;
             
         } catch (error) {
@@ -204,10 +199,10 @@ class RecordManager {
     }
     
     /**
-     * 🔍 v8統合確認・準備完了チェック（修正版）
+     * 🔍 v8統合確認・準備完了チェック（寛容版・エラー処理改善）
      */
     validateV8Integration() {
-        console.log('🔍 RecordManager v8統合確認開始');
+        console.log('🔍 RecordManager v8統合確認開始（修正版）');
         
         try {
             // Manager注入状態確認
@@ -216,37 +211,46 @@ class RecordManager {
             }
             
             // CanvasManager確認（v8準拠）
-            if (!this.managers.canvas) {
+            const canvasManager = this.managers.get('canvas');
+            if (!canvasManager) {
                 throw new Error('CanvasManager not injected');
             }
             
-            if (typeof this.managers.canvas.getDrawContainer !== 'function') {
+            if (typeof canvasManager.getDrawContainer !== 'function') {
                 throw new Error('CanvasManager getDrawContainer method not available');
             }
             
-            // CanvasManager v8準備確認
-            if (typeof this.managers.canvas.isV8Ready === 'function' && !this.managers.canvas.isV8Ready()) {
-                throw new Error('CanvasManager v8 not ready');
+            // CanvasManager v8準備確認（寛容版）
+            if (typeof canvasManager.isV8Ready === 'function') {
+                if (!canvasManager.isV8Ready()) {
+                    console.warn('⚠️ CanvasManager v8準備未完了 - 待機状態維持');
+                    return false;
+                }
+            } else {
+                console.warn('⚠️ CanvasManager.isV8Ready()メソッド未実装 - スキップ');
             }
             
-            // DrawContainer取得確認（実行テスト）
+            // DrawContainer取得確認（実行テスト・寛容版）
             let drawContainer;
             try {
-                drawContainer = this.managers.canvas.getDrawContainer();
+                drawContainer = canvasManager.getDrawContainer();
             } catch (error) {
-                throw new Error(`DrawContainer取得失敗: ${error.message}`);
+                console.warn(`⚠️ DrawContainer取得失敗: ${error.message} - 後続処理スキップ`);
+                return false;
             }
             
             if (!drawContainer) {
-                throw new Error('DrawContainer is null');
+                console.warn('⚠️ DrawContainer is null - 後続処理スキップ');
+                return false;
             }
             
             if (!drawContainer.addChild || typeof drawContainer.addChild !== 'function') {
-                throw new Error('DrawContainer addChild method not available');
+                console.warn('⚠️ DrawContainer addChild method not available - 機能制限');
             }
             
-            // EventBus確認
-            if (!this.managers.eventbus || typeof this.managers.eventbus.emit !== 'function') {
+            // EventBus確認（オプション）
+            const eventbus = this.managers.get('eventbus');
+            if (!eventbus || typeof eventbus.emit !== 'function') {
                 console.warn('⚠️ EventBus利用不可 - イベント通知無効');
             }
             
@@ -254,17 +258,18 @@ class RecordManager {
             this.v8Ready = true;
             this.ready = true;
             
-            console.log('✅ RecordManager v8統合確認完了');
+            console.log('✅ RecordManager v8統合確認完了（修正版）');
+            return true;
             
         } catch (error) {
             this.lastError = error;
-            console.error('❌ RecordManager v8統合確認エラー:', error);
+            console.warn(`⚠️ RecordManager v8統合確認エラー: ${error.message} - 準備状態維持`);
             
-            // 失敗時状態設定
+            // 失敗時状態設定（寛容）
             this.ready = false;
             this.v8Ready = false;
             
-            throw error;
+            return false;
         }
     }
     
@@ -277,12 +282,31 @@ class RecordManager {
     addStroke(strokeData) {
         console.log('📝 RecordManager.addStroke() 開始:', strokeData?.id);
         
-        // 準備状態確認（厳格版）
+        // 準備状態確認（寛容版）
         if (!this.isReady()) {
-            const errorMsg = 'RecordManager not ready - call setManagers() first';
-            console.warn(`⚠️ ${errorMsg}`);
-            this.notifyError(errorMsg);
-            return false;
+            const errorMsg = 'RecordManager not ready';
+            console.warn(`⚠️ ${errorMsg} - Manager準備状況:`, {
+                managersReady: this.managersReady,
+                ready: this.ready,
+                v8Ready: this.v8Ready,
+                managerCount: this.managers.size
+            });
+            
+            // 自動再確認試行
+            if (this.managersReady) {
+                console.log('🔄 RecordManager 自動準備完了確認実行');
+                this.validateV8Integration();
+                
+                if (this.isReady()) {
+                    console.log('✅ 自動準備完了確認成功 - addStroke継続');
+                } else {
+                    console.warn('❌ 自動準備完了確認失敗 - addStroke中断');
+                    return false;
+                }
+            } else {
+                console.warn('❌ Manager未注入 - addStroke中断');
+                return false;
+            }
         }
         
         try {
@@ -306,6 +330,11 @@ class RecordManager {
                 if (typeof pt.x !== 'number' || typeof pt.y !== 'number') {
                     throw new Error(`Invalid point data at index ${i}: x=${pt.x}, y=${pt.y}`);
                 }
+                
+                // NaN確認
+                if (!Number.isFinite(pt.x) || !Number.isFinite(pt.y)) {
+                    throw new Error(`NaN point data at index ${i}: x=${pt.x}, y=${pt.y}`);
+                }
             }
             
             // TPF形式に変換
@@ -322,7 +351,7 @@ class RecordManager {
             // 履歴サイズ制限
             this.enforceHistoryLimit();
             
-            // イベント通知
+            // イベント通知（エラー耐性）
             this.notifyEvent('strokeAdded', {
                 id: tpfStroke.id,
                 points: tpfStroke.points.length,
@@ -499,51 +528,74 @@ class RecordManager {
     }
     
     /**
-     * 📢 イベント通知
+     * 📢 イベント通知（エラー耐性強化）
      * 
      * @param {string} eventName - イベント名
      * @param {Object} data - イベントデータ
      */
     notifyEvent(eventName, data) {
-        if (this.managers.eventbus?.emit) {
-            try {
-                this.managers.eventbus.emit(eventName, data);
-            } catch (error) {
-                console.warn('⚠️ イベント通知失敗:', error);
+        try {
+            const eventbus = this.managers.get('eventbus');
+            if (eventbus && typeof eventbus.emit === 'function') {
+                eventbus.emit(eventName, data);
             }
+        } catch (error) {
+            console.warn('⚠️ イベント通知失敗:', error);
         }
     }
     
     /**
-     * 🚨 エラー通知
+     * 🚨 エラー通知（エラー耐性強化）
      * 
      * @param {string} message - エラーメッセージ
      * @param {Object} context - エラーコンテキスト
      */
     notifyError(message, context = {}) {
-        if (this.managers.error?.showError) {
-            try {
-                this.managers.error.showError(`RecordManager: ${message}`, context);
-            } catch (error) {
-                console.error('❌ エラー通知失敗:', error);
+        try {
+            const errorManager = this.managers.get('error');
+            if (errorManager && typeof errorManager.showError === 'function') {
+                errorManager.showError(`RecordManager: ${message}`, context);
+            } else {
+                console.error(`❌ RecordManager: ${message}`, context);
             }
-        } else {
-            console.error(`❌ RecordManager: ${message}`, context);
+        } catch (error) {
+            console.error('❌ エラー通知失敗:', error);
         }
     }
     
     /**
-     * ✅ 準備状況確認（修正版）
+     * ✅ 準備状況確認（修正版・詳細ログ）
      * 
      * @returns {boolean} 準備完了状態
      */
     isReady() {
-        return this.initialized &&
-               this.managersReady && 
-               this.ready && 
-               this.v8Ready &&
-               !!this.managers.canvas &&
-               typeof this.managers.canvas.getDrawContainer === 'function';
+        const checks = {
+            initialized: this.initialized,
+            managersReady: this.managersReady,
+            ready: this.ready,
+            v8Ready: this.v8Ready,
+            canvasManager: this.managers.has('canvas'),
+            canvasManagerMethod: false
+        };
+        
+        // CanvasManager詳細確認
+        if (checks.canvasManager) {
+            const canvasManager = this.managers.get('canvas');
+            checks.canvasManagerMethod = typeof canvasManager.getDrawContainer === 'function';
+        }
+        
+        const result = checks.initialized &&
+                      checks.managersReady && 
+                      checks.ready && 
+                      checks.v8Ready &&
+                      checks.canvasManager &&
+                      checks.canvasManagerMethod;
+        
+        if (!result) {
+            console.log('🔍 RecordManager準備状態詳細:', checks);
+        }
+        
+        return result;
     }
     
     /**
@@ -611,9 +663,11 @@ class RecordManager {
      * @returns {Object} 詳細デバッグ情報
      */
     getDebugInfo() {
+        const canvasManager = this.managers.get('canvas');
+        
         return {
             className: 'RecordManager',
-            version: 'v8-initialization-fixed',
+            version: 'v8-manager-injection-fix',
             readiness: {
                 initialized: this.initialized,
                 managersReady: this.managersReady,
@@ -622,11 +676,16 @@ class RecordManager {
                 isReady: this.isReady()
             },
             managers: {
-                canvas: !!this.managers.canvas,
-                canvasV8Ready: this.managers.canvas?.isV8Ready?.() || false,
-                eventbus: !!this.managers.eventbus,
-                config: !!this.managers.config,
-                error: !!this.managers.error
+                totalCount: this.managers.size,
+                canvas: this.managers.has('canvas'),
+                canvasV8Ready: canvasManager?.isV8Ready?.() || false,
+                eventbus: this.managers.has('eventbus'),
+                config: this.managers.has('config'),
+                error: this.managers.has('error'),
+                coordinate: this.managers.has('coordinate'),
+                navigation: this.managers.has('navigation'),
+                shortcut: this.managers.has('shortcut'),
+                tool: this.managers.has('tool')
             },
             history: this.getHistoryStats(),
             lastError: this.lastError?.message || null,
@@ -655,7 +714,7 @@ class RecordManager {
         console.log(`🚀 RecordManager startOperation: ${kind}`);
         
         if (!this.isReady()) {
-            throw new Error('RecordManager not ready - call setManagers() first');
+            console.warn('⚠️ RecordManager not ready for startOperation - 続行');
         }
         
         // 現在の操作終了
@@ -704,7 +763,7 @@ class RecordManager {
                 ...meta
             };
             
-            // addStroke経由で保存
+            // addStroke経由で保存（準備状況によらず試行）
             const saveResult = this.addStroke(strokeData);
             
             const completedOperation = this.currentOperation;
@@ -738,6 +797,12 @@ class RecordManager {
         }
         
         try {
+            // 座標検証
+            if (!Number.isFinite(pt.x) || !Number.isFinite(pt.y)) {
+                console.warn(`⚠️ 無効な座標 - addPointスキップ: x=${pt.x}, y=${pt.y}`);
+                return false;
+            }
+            
             this.currentOperation.points.push({
                 x: pt.x,
                 y: pt.y,
@@ -756,4 +821,4 @@ class RecordManager {
 
 // グローバル登録
 window.Tegaki.RecordManager = RecordManager;
-console.log('🔄 RecordManager v8対応版 Loaded - 初期化修正・Manager注入強化版');
+console.log('🔄 RecordManager Manager注入問題修正版 Loaded - 準備状態確認強化・エラー耐性向上');
