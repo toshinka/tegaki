@@ -1,14 +1,17 @@
 /**
- * 📄 FILE: abstract-tool.js
- * 📌 RESPONSIBILITY: Tool共通基盤・Manager統一注入・操作フロー管理
+ * 📄 FILE: tools/abstract-tool.js
+ * 📌 RESPONSIBILITY: Tool共通基盤・Manager統一注入・操作フロー管理・API統一
  *
  * @provides
  *   - AbstractTool クラス
+ *   - setManagersObject(managers) - Manager統一注入（正規メソッド）
+ *   - setManagers(managers) - Manager統一注入（エイリアス・後方互換性）
  *   - getManager(key) - Manager統一取得
  *   - activate() - Tool有効化
  *   - deactivate() - Tool無効化
  *   - startOperation(event) - 操作開始
  *   - endOperation(event) - 操作終了
+ *   - isReady() - Tool準備状態確認
  *
  * @uses
  *   - なし（基底クラス・他ファイル依存なし）
@@ -17,33 +20,56 @@
  *   1. new AbstractTool() → 2. setManagersObject() → 3. activate() → 4. startOperation() → 5. endOperation() → 6. deactivate()
  *
  * @forbids
- *   - 双方向依存禁止 (💀)
- *   - フォールバック禁止
- *   - フェイルセーフ禁止
- *   - v7/v8 両対応による二重管理禁止
- *   - RecordManagerInstance 直接参照禁止
+ *   💀 双方向依存禁止
+ *   🚫 フォールバック禁止
+ *   🚫 フェイルセーフ禁止
+ *   🚫 v7/v8 両対応による二重管理禁止
+ *   🚫 未実装メソッド呼び出し禁止
  *
  * @manager-key
  *   - 各ツール継承先で設定
+ *
+ * @dependencies-strict
+ *   REQUIRED: なし（基底クラス）
+ *   OPTIONAL: なし
+ *   FORBIDDEN: 他Tool・Manager直接参照
+ *
+ * @integration-flow
+ *   ToolManager.initializeV8Tools() → new XxxTool() → setManagersObject() → activate()
+ *
+ * @method-naming-rules
+ *   - setManagersObject() / setManagers() - Manager注入統一
+ *   - startOperation() / endOperation() - 操作制御統一
+ *   - activate() / deactivate() - ライフサイクル統一
+ *   - getManager() - Manager取得統一
+ *
+ * @state-management
+ *   - 描画状態は直接操作せず、専用メソッド経由
+ *   - Manager参照は getManager() 経由で統一
+ *   - 状態変更は必ずEventBus通知
+ *
+ * @performance-notes
+ *   - Manager参照キャッシュで高速化
+ *   - deactivate時の確実な解放
+ *   - メモリリーク防止
  */
 
 (function() {
     'use strict';
 
     /**
-     * 🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版
+     * 🎯 AbstractTool Phase1.5 最終修正版 - Manager注入API統一・メソッド名修正
      * 
      * 📏 修正内容:
-     * - event → eventbus に統一
-     * - Object形式前提・Map対策
-     * - 型安全性確保・詳細デバッグ
-     * - RecordManagerInstance 直接参照禁止
+     * - setManagersObject() 正規メソッド確立
+     * - setManagers() エイリアス追加（後方互換性）
+     * - Manager注入フローの完全統一
+     * - 型安全性・エラーハンドリング強化
      * 
      * 🚀 特徴:
-     * - startOperation/endOperation方式対応
-     * - Manager統一注入完成
-     * - 架空メソッド削除
-     * - Manager名称統一対応
+     * - API統一による継承クラス安定化
+     * - Manager名称統一完全対応
+     * - 確実な状態管理・メモリ管理
      */
     class AbstractTool {
         constructor(toolName = 'unknown') {
@@ -55,6 +81,13 @@
             // v8専用プロパティ
             this.drawContainer = null;
             this.currentStroke = null;
+            
+            // Manager参照キャッシュ（性能最適化）
+            this.canvasManager = null;
+            this.coordinateManager = null;
+            this.recordManager = null;
+            this.eventManager = null;
+            this.configManager = null;
             
             console.log(`🎯 AbstractTool 作成開始: ${toolName}`);
             this.initializeV8Features();
@@ -71,39 +104,39 @@
         }
 
         /**
-         * 🔧 Manager統一注入（修正版）
+         * 🔧 Manager統一注入（正規メソッド）
          * 
          * @param {Object|Map} managers - 注入するManager群
+         * @returns {boolean} 注入成功フラグ
          */
         setManagersObject(managers) {
-            console.log(`🔧 ${this.toolName} Manager統一注入開始...（修正版）`);
+            console.log(`🔧 ${this.toolName} Manager統一注入開始（正規メソッド）`);
             
             if (!managers) {
                 console.error(`❌ ${this.toolName}: Manager が null または undefined です`);
                 return false;
             }
 
-            // Map → Object 変換処理
+            // 型判定・変換処理
+            let processedManagers;
+            
             if (managers instanceof Map) {
-                console.log(`📦 ${this.toolName} 受信Manager型: Map`);
-                console.log(`📦 ${this.toolName} 受信Manager内容:`, managers);
-                
-                const convertedManagers = {};
+                console.log(`📦 ${this.toolName} 受信Manager型: Map → Object変換`);
+                processedManagers = {};
                 for (const [key, value] of managers) {
-                    convertedManagers[key] = value;
+                    processedManagers[key] = value;
                 }
-                this.managers = convertedManagers;
                 console.log(`✅ Map→Object変換完了`);
             } else if (typeof managers === 'object') {
-                console.log(`📦 ${this.toolName} 受信Manager型: Object`);
-                console.log(`📦 ${this.toolName} 受信Manager内容:`, managers);
-                this.managers = managers;
+                console.log(`📦 ${this.toolName} 受信Manager型: Object（直接使用）`);
+                processedManagers = managers;
             } else {
                 console.error(`❌ ${this.toolName}: 無効なManager形式:`, typeof managers);
                 return false;
             }
 
-            // 保存確認
+            // Manager保存
+            this.managers = processedManagers;
             console.log(`✅ ${this.toolName}: Manager群をObject形式で保存完了`);
             console.log(`📋 ${this.toolName} 利用可能Manager キー:`, Object.keys(this.managers));
             console.log(`📋 ${this.toolName} 利用可能Manager数:`, Object.keys(this.managers).length);
@@ -133,13 +166,63 @@
                 return false;
             }
 
+            // Manager参照キャッシュ作成（性能最適化）
+            this.createManagerCache();
+
             console.log(`✅ ${this.toolName}: 必須Manager確認完了:`, requiredManagers);
-            console.log(`✅ ${this.toolName}: Manager統一注入完了（Object形式）`);
+            console.log(`✅ ${this.toolName}: Manager統一注入完了（正規メソッド）`);
             return true;
         }
 
         /**
-         * 🔍 Manager取得（統一API・Manager名称統一修正版）
+         * 🔄 Manager統一注入（エイリアス・後方互換性）
+         * 
+         * @param {Object|Map} managers - 注入するManager群
+         * @returns {boolean} 注入成功フラグ
+         */
+        setManagers(managers) {
+            console.log(`🔄 ${this.toolName} Manager統一注入（エイリアス経由）`);
+            return this.setManagersObject(managers);
+        }
+
+        /**
+         * 📦 Manager参照キャッシュ作成（性能最適化）
+         */
+        createManagerCache() {
+            console.log(`📦 ${this.toolName}: Manager参照キャッシュ作成開始`);
+            
+            // 必須Manager キャッシュ
+            if (this.managers.canvas) {
+                this.canvasManager = this.managers.canvas;
+                console.log(`✅ ${this.toolName}: CanvasManager キャッシュ完了`);
+            }
+            
+            if (this.managers.coordinate) {
+                this.coordinateManager = this.managers.coordinate;
+                console.log(`✅ ${this.toolName}: CoordinateManager キャッシュ完了`);
+            }
+            
+            if (this.managers.record) {
+                this.recordManager = this.managers.record;
+                console.log(`✅ ${this.toolName}: RecordManager キャッシュ完了`);
+            }
+            
+            // オプションManager キャッシュ
+            if (this.managers.eventbus) {
+                this.eventManager = this.managers.eventbus;
+                console.log(`✅ ${this.toolName}: EventBus キャッシュ完了`);
+            }
+            
+            if (this.managers.config) {
+                this.configManager = this.managers.config;
+                console.log(`✅ ${this.toolName}: ConfigManager キャッシュ完了`);
+            }
+            
+            console.log(`✅ ${this.toolName}: Manager参照キャッシュ作成完了`);
+        }
+
+        /**
+         * 🔍 Manager取得（統一API・Manager名称統一対応）
          * 
          * @param {string} key - Manager キー
          * @returns {Object} Manager インスタンス
@@ -170,18 +253,21 @@
         }
 
         /**
-         * 🎯 Tool有効化（Manager名称統一修正版）
+         * 🎯 Tool有効化
          */
         activate() {
-            console.log(`🎯 ${this.toolName} Tool アクティブ化`);
+            console.log(`🎯 ${this.toolName} Tool アクティブ化開始`);
             
             try {
-                // Manager取得（統一名称）
-                this.canvasManager = this.getManager('canvas');
-                this.coordinateManager = this.getManager('coordinate');
-                this.recordManager = this.getManager('record');
-                this.eventManager = this.getManager('eventbus'); // ← 修正: event → eventbus
-                this.configManager = this.getManager('config');
+                // Manager準備確認
+                if (!this.managers) {
+                    throw new Error('Manager群が未注入です');
+                }
+                
+                // キャッシュ済みManager活用
+                if (!this.canvasManager) {
+                    throw new Error('CanvasManager が未準備です');
+                }
                 
                 // DrawContainer取得
                 if (this.canvasManager && this.canvasManager.getDrawContainer) {
@@ -204,16 +290,24 @@
          * 🔄 Tool無効化
          */
         deactivate() {
-            console.log(`🔄 ${this.toolName} Tool 無効化`);
+            console.log(`🔄 ${this.toolName} Tool 無効化開始`);
             
             // 操作中の場合は終了
             if (this.isOperating) {
                 this.forceEndOperation();
             }
             
+            // 状態リセット
             this.isActive = false;
             this.drawContainer = null;
             this.currentStroke = null;
+            
+            // Manager参照キャッシュクリア（メモリリーク防止）
+            this.canvasManager = null;
+            this.coordinateManager = null;
+            this.recordManager = null;
+            this.eventManager = null;
+            this.configManager = null;
             
             console.log(`✅ ${this.toolName} Tool 無効化完了`);
         }
@@ -222,6 +316,7 @@
          * 🚀 操作開始
          * 
          * @param {Object} event - イベントオブジェクト
+         * @returns {boolean} 操作開始成功フラグ
          */
         startOperation(event) {
             if (!this.isActive) {
@@ -249,6 +344,7 @@
          * 🏁 操作終了
          * 
          * @param {Object} event - イベントオブジェクト
+         * @returns {boolean} 操作終了成功フラグ
          */
         endOperation(event) {
             if (!this.isOperating) {
@@ -287,16 +383,23 @@
 
         /**
          * 🔍 Tool準備状態確認
+         * 
+         * @returns {boolean} 準備完了フラグ
          */
         isReady() {
-            return this.isActive && 
-                   this.managers !== null && 
-                   this.canvasManager && 
-                   this.drawContainer;
+            const ready = this.isActive && 
+                         this.managers !== null && 
+                         this.canvasManager && 
+                         this.drawContainer;
+            
+            console.log(`🔍 ${this.toolName}: 準備状態 = ${ready}`);
+            return ready;
         }
 
         /**
          * 📊 Tool状態取得
+         * 
+         * @returns {Object} Tool状態情報
          */
         getState() {
             return {
@@ -305,18 +408,39 @@
                 isOperating: this.isOperating,
                 isReady: this.isReady(),
                 hasDrawContainer: !!this.drawContainer,
-                managerCount: this.managers ? Object.keys(this.managers).length : 0
+                managerCount: this.managers ? Object.keys(this.managers).length : 0,
+                managerCache: {
+                    canvasManager: !!this.canvasManager,
+                    coordinateManager: !!this.coordinateManager,
+                    recordManager: !!this.recordManager,
+                    eventManager: !!this.eventManager,
+                    configManager: !!this.configManager
+                }
             };
         }
 
         /**
-         * 🔧 Manager統一登録情報設定
+         * 🔧 デバッグ情報取得
          * 
-         * @param {Object} registrationInfo - 登録情報
+         * @returns {Object} デバッグ情報
          */
-        setRegistrationInfo(registrationInfo) {
-            this.registrationInfo = registrationInfo;
-            console.log(`🔧 ${this.toolName}: 登録情報設定完了`);
+        getDebugInfo() {
+            return {
+                className: 'AbstractTool',
+                version: 'Phase1.5-Final',
+                toolName: this.toolName,
+                state: this.getState(),
+                managers: this.managers ? {
+                    available: Object.keys(this.managers),
+                    count: Object.keys(this.managers).length,
+                    types: Object.fromEntries(
+                        Object.entries(this.managers).map(([key, manager]) => [
+                            key, 
+                            manager?.constructor?.name || 'Unknown'
+                        ])
+                    )
+                } : null
+            };
         }
     }
 
@@ -326,8 +450,8 @@
     }
     
     window.Tegaki.AbstractTool = AbstractTool;
-    console.log(`🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版 Loaded`);
-    console.log(`📏 修正内容: event → eventbus統一・Object形式前提・Map対策・型安全性確保・詳細デバッグ`);
-    console.log(`🚀 特徴: startOperation/endOperation方式対応・Manager統一注入完成・架空メソッド削除・Manager名称統一対応`);
+    console.log(`🎯 AbstractTool Phase1.5 最終修正版 Loaded - Manager注入API統一・メソッド名修正完了`);
+    console.log(`📏 修正内容: setManagersObject()正規化・setManagers()エイリアス・Manager参照キャッシュ・型安全性強化`);
+    console.log(`🚀 特徴: API統一・Manager名称統一・確実な状態管理・メモリリーク防止・後方互換性`);
 
 })();
