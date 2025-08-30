@@ -1,505 +1,175 @@
-# 🔥 Tegaki Phase1.5 包括的改修戦略書
-**座標ズレ・描画消失・初期化問題完全解決版** | Rev.2025-08-30-critical-fix
+# 📋 Tegaki Phase1.5 包括的問題修正計画書 v8.12.0
+
+**Rev. 2025-08-30-r4** | **Priority: Critical Fix**
+
+## 🔍 現状分析
+
+### ✅ 成功している要素
+- PixiJS v8.12.0 初期化成功
+- Canvas DOM表示成功 (400x400)
+- Manager群の注入完了
+- PenTool/EraserTool作成成功
+- AbstractTool基盤確立
+
+### 🚨 Critical Issues（即修正必要）
+
+#### 1. **継続描画問題**
+- **現象**: マウスボタンを離しても描画が続く
+- **原因**: PointerUp イベントで描画終了処理が呼ばれていない
+- **エラー**: `RecordManager not ready - call setManagers() first`
+
+#### 2. **消しゴム未機能**
+- **現象**: 消しゴムツールが選択できない
+- **原因**: `toolManager.setActiveTool is not a function`
+- **エラー**: `toolManager.getTools is not a function`
+
+#### 3. **キャンバス外描画未実装**
+- **現象**: カメラ外からの描画開始ができない
+- **原因**: 外部入力バッファリング機能が未実装
+
+## 🎯 修正戦略
+
+### Step 1: API不整合修正（最優先）
+
+**ToolManager API統一**
+- `getTools()` → `this.tools` Map直接アクセス
+- `setActiveTool()` → `switchTool()` に統一
+- RecordManager初期化順序修正
+
+**RecordManager初期化修正**
+- `setManagers()` 呼び出しタイミング修正
+- Manager注入完了確認後にメソッド呼び出し
+
+### Step 2: Pointer Event修正
+
+**座標変換フロー確立**
+```
+DOM座標 → CoordinateManager.clientToWorld() → World座標 → Tool処理
+```
+
+**描画終了処理確実化**
+- PointerUp で必ず `isDrawing = false`
+- 異常終了時の状態リセット保証
+
+### Step 3: 外部入力対応実装
+
+**tempStroke バッファリング**
+- 画面外でも Pointer追跡
+- カメラ内侵入時に正式描画開始
+- NavigationManager.getCameraBounds() による判定
+
+## 🔧 具体的修正内容
+
+### ファイル別修正箇所
+
+#### 1. **tool-manager.js** 
+- `getTools()` メソッド追加
+- `setActiveTool()` → `switchTool()` エイリアス追加
+- Manager注入順序修正
+
+#### 2. **record-manager.js**
+- `setManagers()` 呼び出し確認
+- `isReady()` 状態管理修正
+- TPF v0.2 準拠データ保存
+
+#### 3. **pen-tool.js**
+- PointerUp で確実な描画終了
+- 外部入力バッファリング実装
+- 継続描画問題修正
+
+#### 4. **eraser-tool.js**
+- Manager注入API統一
+- Graphics v8 API対応
+
+#### 5. **coordinate-manager.js**
+- カメラ外座標変換対応
+- 外部入力判定機能追加
+
+#### 6. **navigation-manager.js**
+- `getCameraBounds()` 実装
+- パン/ズーム基礎機能
+
+## 📊 実装フロー
+
+### Phase A: API修正（30分）
+1. ToolManager API統一
+2. RecordManager初期化修正
+3. Manager注入順序確立
+
+### Phase B: 描画修正（45分）
+1. PointerUp処理修正
+2. 座標変換統一
+3. Graphics描画確実化
+
+### Phase C: 外部入力対応（60分）
+1. tempStroke実装
+2. カメラ境界判定
+3. 外部→内部連続描画
+
+### Phase D: 統合テスト（15分）
+1. 基本描画確認
+2. Undo/Redo確認
+3. ツール切替確認
+4. 外部描画確認
+
+## 🚀 期待される効果
+
+### 解決される問題
+- [x] 継続描画問題 → PointerUpで確実終了
+- [x] 消しゴム未機能 → API統一で解決
+- [x] キャンバス外描画 → tempStroke実装
+
+### 追加機能
+- [x] 外部入力バッファリング
+- [x] カメラ分離概念導入
+- [x] TPF v0.2 準拠データ保存
+
+## 🔍 検収チェックリスト
+
+- [ ] ペン描画開始→移動→**終了で描画停止**
+- [ ] 消しゴムツール選択可能
+- [ ] キャンバス外から描画開始→内部で継続
+- [ ] Undo/Redo で履歴管理
+- [ ] ツール切替が正常動作
+- [ ] 座標ズレなし
+- [ ] Console error解消
+
+## 📁 修正対象ファイル
+
+1. **managers/tool-manager.js** - API統一・Manager注入修正
+2. **js/utils/record-manager.js** - 初期化・setManagers修正
+3. **tools/pen-tool.js** - PointerUp修正・外部入力対応
+4. **tools/eraser-tool.js** - Manager注入API修正
+5. **js/utils/coordinate-manager.js** - 外部座標変換追加
+6. **js/utils/navigation-manager.js** - getCameraBounds実装
+
+## 🎯 成功指標
+
+**即座確認可能な動作**
+1. ペン描画 → マウス離す → **描画停止**
+2. 消しゴムボタン → **切替成功**
+3. 画面外描画開始 → 内部侵入 → **継続線**
+
+**技術的成功指標**
+- Console error: 0件
+- Manager注入成功率: 100%
+- 描画→記録→Undo のフロー成功
+- TPF形式データ保存成功
 
 ---
 
-## 🚨 **緊急問題分析 (Critical Issue Analysis)**
+## 🔄 Phase1.5→Phase2 準備
 
-### 🎯 **主要問題 (Primary Issues)**
-1. **座標ズレ問題**: 右下に行くほど描画位置がずれる
-2. **描画消失問題**: PenTool修正でキャンバスとサイドバーアイコンが消失
-3. **初期化順序破綻**: Manager間の依存注入が適切に機能していない
-4. **責任分界の混乱**: ファイル間のDRY・SOLID原則違反
+**Phase1.5完了後の基盤**
+- カメラ分離概念確立
+- TPF v0.2 データ形式確立
+- Manager依存注入パターン確立
 
-### 🔍 **根本原因分析 (Root Cause Analysis)**
-
-#### A. **座標変換チェーン問題**
-```javascript
-// ❌ 現在の問題のある変換チェーン
-DOM座標 → Canvas座標 (不正確な変換)
-         ↓
-       World座標 (Container変形未対応)
-```
-
-#### B. **Graphics管理問題**
-```javascript
-// ❌ 現在のGraphics管理問題
-- PenTool.graphics.clear() で全Graphics消去
-- temporaryGraphics と permanentGraphics の混同
-- Container階層の不適切な操作
-```
-
-#### C. **Manager依存注入問題**
-```javascript
-// ❌ 現在の依存注入問題
-- 初期化順序の不整合
-- Manager準備状態の検証不足
-- 循環依存の発生リスク
-```
+**Phase2展開可能要素**
+- レイヤー管理（TPF layer フィールド活用）
+- バウンディングボックス最適化
+- 部分再描画システム
 
 ---
 
-## 🛠️ **包括的改修戦略 (Comprehensive Reform Strategy)**
-
-### 📐 **Phase 1: 座標システム統一改修**
-
-#### **1.1 CoordinateManager 完全再構築**
-```javascript
-/**
- * 統一座標変換システム - 座標ズレ完全解決版
- */
-class CoordinateManager {
-    constructor() {
-        this.canvasManager = null;
-        this.dpr = window.devicePixelRatio || 1;
-        this.transformMatrix = new PIXI.Matrix();
-    }
-    
-    // ✅ 統一座標変換メソッド
-    clientToWorld(clientX, clientY) {
-        // Step 1: DOM座標 → Canvas座標
-        const canvasPoint = this.clientToCanvas(clientX, clientY);
-        
-        // Step 2: Canvas座標 → World座標 (Container変形対応)
-        const worldPoint = this.canvasToWorld(canvasPoint.x, canvasPoint.y);
-        
-        return worldPoint;
-    }
-    
-    // DPR・Container変形・CSS変形すべてに対応
-    clientToCanvas(clientX, clientY) {
-        const canvas = this.canvasManager.getCanvasElement();
-        const rect = canvas.getBoundingClientRect();
-        
-        // CSS表示サイズベースの正規化座標
-        const normalizedX = (clientX - rect.left) / rect.width;
-        const normalizedY = (clientY - rect.top) / rect.height;
-        
-        // Canvas論理サイズに変換
-        const canvasX = normalizedX * canvas.width / this.dpr;
-        const canvasY = normalizedY * canvas.height / this.dpr;
-        
-        return { x: canvasX, y: canvasY };
-    }
-    
-    canvasToWorld(canvasX, canvasY) {
-        const drawContainer = this.canvasManager.getDrawContainer();
-        
-        // Container変形を考慮した座標変換
-        const localPoint = drawContainer.toLocal({ x: canvasX, y: canvasY });
-        
-        return { x: localPoint.x, y: localPoint.y };
-    }
-}
-```
-
-#### **1.2 CanvasManager 座標支援メソッド追加**
-```javascript
-/**
- * Canvas座標変換支援 - CanvasManager責務分離版
- */
-class CanvasManager {
-    // ✅ 精密座標変換メソッド
-    getCanvasRect() {
-        return this.pixiApp.canvas.getBoundingClientRect();
-    }
-    
-    getCanvasLogicalSize() {
-        return {
-            width: this.pixiApp.canvas.width / this.effectiveDPR,
-            height: this.pixiApp.canvas.height / this.effectiveDPR
-        };
-    }
-    
-    // 座標変換係数取得
-    getTransformCoefficients() {
-        const rect = this.getCanvasRect();
-        const logical = this.getCanvasLogicalSize();
-        
-        return {
-            scaleX: logical.width / rect.width,
-            scaleY: logical.height / rect.height,
-            offsetX: rect.left,
-            offsetY: rect.top
-        };
-    }
-}
-```
-
-### 🎨 **Phase 2: Graphics管理システム再構築**
-
-#### **2.1 Graphics階層分離の完全実装**
-```javascript
-/**
- * Graphics管理 - 描画消失問題完全解決版
- */
-class CanvasManager {
-    initializeGraphicsManagement() {
-        // 階層構造作成
-        this.graphicsLayers = {
-            permanent: new PIXI.Container(),    // 確定描画
-            temporary: new PIXI.Container(),    // 一時描画
-            overlay: new PIXI.Container()       // UI重ね合わせ
-        };
-        
-        // zIndex設定
-        this.graphicsLayers.permanent.zIndex = 100;
-        this.graphicsLayers.temporary.zIndex = 200;
-        this.graphicsLayers.overlay.zIndex = 300;
-        
-        // DrawContainerに追加
-        Object.values(this.graphicsLayers).forEach(layer => {
-            this.v8DrawingContainer.addChild(layer);
-        });
-        
-        // 一時Graphics作成
-        this.temporaryGraphics = new PIXI.Graphics();
-        this.graphicsLayers.temporary.addChild(this.temporaryGraphics);
-    }
-    
-    // ✅ ストローク専用Graphics作成
-    createStrokeGraphics(strokeId) {
-        const graphics = new PIXI.Graphics();
-        graphics.name = strokeId;
-        graphics.zIndex = Date.now(); // 描画順序保証
-        
-        // 永続レイヤーに追加
-        this.graphicsLayers.permanent.addChild(graphics);
-        this.permanentGraphics.set(strokeId, graphics);
-        
-        return graphics;
-    }
-    
-    // ✅ 一時Graphics専用クリア (全体に影響なし)
-    clearTemporaryGraphics() {
-        if (this.temporaryGraphics) {
-            this.temporaryGraphics.clear();
-        }
-    }
-}
-```
-
-#### **2.2 PenTool 非破壊描画システム**
-```javascript
-/**
- * PenTool 非破壊描画 - Graphics分離完全版
- */
-class PenTool {
-    startStroke(point) {
-        // ❌ 削除: this.graphics.clear() // 全Graphics消去
-        
-        // ✅ 新規Graphics作成のみ
-        this.currentStrokeGraphics = this.canvasManager.createStrokeGraphics();
-        this.canvasManager.clearTemporaryGraphics(); // 一時のみクリア
-        
-        // 描画開始
-        this.drawStrokePoint(point, true); // isFirst: true
-    }
-    
-    addStrokePoint(point) {
-        this.drawStrokePoint(point, false);
-    }
-    
-    drawStrokePoint(point, isFirst = false) {
-        // 一時Graphics: リアルタイム表示
-        if (isFirst) {
-            this.temporaryGraphics.moveTo(point.x, point.y);
-        } else {
-            this.temporaryGraphics.lineTo(point.x, point.y);
-        }
-        this.temporaryGraphics.stroke({
-            width: this.strokeWidth,
-            color: this.strokeColor,
-            alpha: this.strokeOpacity
-        });
-        
-        // 永続Graphics: 確定保存用
-        if (isFirst) {
-            this.currentStrokeGraphics.moveTo(point.x, point.y);
-        } else {
-            this.currentStrokeGraphics.lineTo(point.x, point.y);
-        }
-        this.currentStrokeGraphics.stroke({
-            width: this.strokeWidth,
-            color: this.strokeColor,
-            alpha: this.strokeOpacity
-        });
-    }
-    
-    endStroke(point) {
-        // 最終描画
-        if (point) {
-            this.addStrokePoint(point);
-        }
-        
-        // 一時Graphics クリア (永続Graphicsは保持)
-        this.canvasManager.clearTemporaryGraphics();
-        
-        // TPF保存
-        this.saveToRecord();
-        
-        // 状態リセット
-        this.resetStrokeState();
-    }
-}
-```
-
-### 🔄 **Phase 3: 初期化順序・依存注入の完全統制**
-
-#### **3.1 AppCore 初期化フロー確立**
-```javascript
-/**
- * AppCore 初期化統制 - Manager順序保証版
- */
-class AppCore {
-    async initializeV8Managers() {
-        // Step 1: 基盤Manager初期化
-        await this.initializeCoreManagers();
-        
-        // Step 2: 座標・描画Manager初期化
-        await this.initializeDrawingManagers();
-        
-        // Step 3: Tool・UI Manager初期化
-        await this.initializeToolManagers();
-        
-        // Step 4: 統合検証
-        await this.verifySystemIntegration();
-    }
-    
-    async initializeCoreManagers() {
-        // 1. CanvasManager (最優先)
-        this.canvasManager = new CanvasManager();
-        await this.canvasManager.initializeV8Application(this.pixiApp);
-        this.verifyManagerReady(this.canvasManager, 'CanvasManager');
-        
-        // 2. ErrorManager, EventBus (既存)
-        this.registerExistingManagers();
-    }
-    
-    async initializeDrawingManagers() {
-        // 3. CoordinateManager
-        this.coordinateManager = new CoordinateManager();
-        await this.coordinateManager.setCanvasManager(this.canvasManager);
-        this.verifyManagerReady(this.coordinateManager, 'CoordinateManager');
-        
-        // 4. RecordManager
-        this.recordManager = new RecordManager();
-        await this.recordManager.initialize();
-        this.verifyManagerReady(this.recordManager, 'RecordManager');
-    }
-    
-    async initializeToolManagers() {
-        // 5. ToolManager (全依存Manager準備完了後)
-        this.toolManager = new ToolManager();
-        await this.toolManager.setManagers({
-            canvas: this.canvasManager,
-            coordinate: this.coordinateManager,
-            record: this.recordManager,
-            eventbus: this.eventBus,
-            error: this.errorManager
-        });
-        
-        // 6. Tool作成
-        await this.toolManager.initializeV8Tools();
-        this.verifyManagerReady(this.toolManager, 'ToolManager');
-    }
-    
-    // ✅ Manager準備検証の強化
-    verifyManagerReady(manager, managerName) {
-        if (!manager.isReady()) {
-            const debugInfo = manager.getDebugInfo ? manager.getDebugInfo() : {};
-            throw new Error(`${managerName} initialization failed: ${JSON.stringify(debugInfo)}`);
-        }
-    }
-}
-```
-
-#### **3.2 Manager間統一インターフェース**
-```javascript
-/**
- * Manager統一インターフェース - isReady() 統一実装
- */
-
-// CanvasManager
-class CanvasManager {
-    isReady() {
-        return this.v8Ready && 
-               !!this.pixiApp && 
-               !!this.v8DrawingContainer &&
-               !!this.temporaryGraphics &&
-               this.layers.has('main');
-    }
-}
-
-// CoordinateManager
-class CoordinateManager {
-    isReady() {
-        return !!this.canvasManager && 
-               this.canvasManager.isReady();
-    }
-}
-
-// RecordManager
-class RecordManager {
-    isReady() {
-        return this.initialized && 
-               typeof this.addStroke === 'function';
-    }
-}
-
-// ToolManager
-class ToolManager {
-    isReady() {
-        return this.managersInjected && 
-               this.toolsInitialized &&
-               this.tools.has('pen') &&
-               this.tools.has('eraser');
-    }
-}
-```
-
----
-
-## 🚀 **改修実行手順 (Implementation Sequence)**
-
-### **Stage A: 座標システム修正 (30分)**
-1. CoordinateManager.clientToWorld() 完全実装
-2. CanvasManager 座標支援メソッド追加
-3. 座標変換テスト実行
-
-### **Stage B: Graphics管理修正 (30分)**
-1. CanvasManager Graphics階層分離実装
-2. PenTool 非破壊描画システム実装
-3. 描画消失テスト → 複数ストローク保持確認
-
-### **Stage C: 初期化順序修正 (30分)**
-1. AppCore 初期化フロー再構築
-2. Manager統一isReady()実装
-3. 依存注入検証テスト
-
-### **Stage D: 統合テスト・最適化 (30分)**
-1. 座標精度テスト (4隅 + 中心)
-2. 描画性能テスト (60FPS維持確認)
-3. メモリリークテスト
-
----
-
-## 🔧 **ファイル別改修詳細**
-
-### **📄 utils/coordinate-manager.js**
-```javascript
-/**
- * @provides clientToWorld, clientToCanvas, canvasToWorld, isReady
- * @uses CanvasManager.getCanvasElement, CanvasManager.getDrawContainer
- * @forbids 🚫 直接DOM座標使用禁止
- */
-
-// ✅ 実装必須メソッド
-- clientToWorld(clientX, clientY) → {x, y}
-- clientToCanvas(clientX, clientY) → {x, y}  
-- canvasToWorld(canvasX, canvasY) → {x, y}
-- isReady() → boolean
-- setCanvasManager(canvasManager) → Promise<void>
-```
-
-### **📄 managers/canvas-manager.js**
-```javascript
-/**
- * @provides createStrokeGraphics, clearTemporaryGraphics, getTemporaryGraphics
- * @fixes Graphics階層分離・座標変換支援
- */
-
-// ✅ 追加必須メソッド
-- initializeGraphicsManagement() → void
-- createStrokeGraphics(strokeId?) → PIXI.Graphics
-- clearTemporaryGraphics() → void
-- getTransformCoefficients() → Object
-```
-
-### **📄 tools/pen-tool.js**
-```javascript
-/**
- * @fixes 座標変換統一・非破壊描画・初期化順序対応
- * @forbids 🚫 Graphics.clear()全消去禁止
- */
-
-// ✅ 修正必須メソッド
-- startStroke() : Graphics作成・全消去削除
-- addStrokePoint() : 非破壊描画・永続Graphics同期
-- endStroke() : 一時クリア・永続保持
-```
-
-### **📄 js/app-core.js**
-```javascript
-/**
- * @fixes 初期化順序統制・Manager検証強化
- */
-
-// ✅ 修正必須メソッド
-- initializeV8Managers() : 段階的初期化
-- verifyManagerReady() : 準備検証強化
-```
-
----
-
-## ✅ **完了基準・品質保証**
-
-### **機能要件**
-- [ ] 座標ズレ完全解消 (全画面±1px以内)
-- [ ] 描画消失なし (複数ストローク保持)
-- [ ] キャンバス・サイドバー表示正常
-- [ ] 初期化エラーなし
-
-### **性能要件**
-- [ ] 60FPS維持 (リアルタイム描画)
-- [ ] メモリリークなし
-- [ ] WebGPU対応
-
-### **品質要件**
-- [ ] DRY・SOLID原則遵守
-- [ ] ファイル責任分界明確
-- [ ] ヘッダー完全記載
-- [ ] 循環依存なし
-
----
-
-## 🔍 **AI改修ループ対策**
-
-### **改修順序の厳格化**
-```
-CoordinateManager → CanvasManager → PenTool → AppCore
-↑ この順序を厳守・途中変更禁止 ↑
-```
-
-### **ファイル間影響の事前チェック**
-```javascript
-// ✅ 改修前必須確認
-1. @uses 記載内容の実装確認
-2. メソッドシグネチャの一致確認  
-3. Manager準備状態の確認
-4. Graphics階層の確認
-```
-
-### **段階的テスト実行**
-```javascript
-// ✅ 改修後即時テスト
-ファイル改修 → 単体テスト → 統合テスト → 次ファイル
-失敗時は前ファイルに原因 → 戻って修正
-```
-
----
-
-## 📊 **緊急度・影響度マトリックス**
-
-| 問題 | 緊急度 | 影響度 | 改修優先度 |
-|------|--------|--------|------------|
-| 座標ズレ | 高 | 高 | **最優先** |
-| 描画消失 | 高 | 高 | **最優先** |  
-| 初期化失敗 | 高 | 中 | 優先 |
-| UI表示問題 | 中 | 中 | 優先 |
-
----
-
-**🎯 最終目標**: 座標ズレ・描画消失問題の完全解決 + 安定した描画基盤確立  
-**⏱️ 目標時間**: 120分 (改修100分 + テスト20分)  
-**🚀 期待効果**: Phase1.5完成 + Phase2準備完了 + 開発効率化
+*この計画書に従い、ファイル単位での段階的修正を実行します。各修正後に動作確認を行い、問題の根本解決を確実にします。*

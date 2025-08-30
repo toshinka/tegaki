@@ -1,52 +1,55 @@
-error-manager.js:20 🚨 ErrorManager Simple 作成
-error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
-config-manager.js:71 🔧 ConfigManager v8対応版 作成
-config-manager.js:495 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
-event-bus.js:20 🔄 EventBus Simple 作成
-event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
-navigation-manager.js:718 🧭 NavigationManager PixiJS v8対応版 Loaded
-navigation-manager.js:719 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
-navigation-manager.js:720 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
-navigation-manager.js:721 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
-navigation-manager.js:724 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
-record-manager.js:538 🔄 RecordManager v8対応版 Loaded - addStrokeメソッド実装版
-shortcut-manager.js:416 ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
-shortcut-manager.js:417 🔧 setupPhase15Shortcuts・enableメソッド追加済み
-shortcut-manager.js:418 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
-minimal-deps.js:22 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
-minimal-deps.js:168 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
-minimal-deps.js:169 ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
-minimal-deps.js:170 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
-canvas-manager.js:705 🎨 CanvasManager v8.12.0完全対応版 Loaded - Graphics分離管理・座標変換支援・描画消失問題解決版
+ 🚨 ErrorManager Simple 作成
+ 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+ 🔧 ConfigManager v8対応版 作成
+ 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
+ 🔄 EventBus Simple 作成
+ 🔄 EventBus Simple Loaded - シンプルイベント通信
+ 🧭 NavigationManager PixiJS v8対応版 Loaded
+ 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
+ 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
+ ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+ 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
+ 🔄 RecordManager v8対応版 Loaded - 初期化修正・Manager注入強化版
+ ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
+ 🔧 setupPhase15Shortcuts・enableメソッド追加済み
+ 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
+ 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
+ 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
+ ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
+ 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
+ 🎨 CanvasManager v8.12.0完全対応版 Loaded - Graphics分離管理・座標変換支援・描画消失問題解決版
 abstract-tool.js:329 🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版 Loaded
 abstract-tool.js:330 📏 修正内容: event → eventbus統一・Object形式前提・Map対策・型安全性確保・詳細デバッグ
 abstract-tool.js:331 🚀 特徴: startOperation/endOperation方式対応・Manager統一注入完成・架空メソッド削除・Manager名称統一対応
+pen-tool.js:377 🖊️ PenTool v8.12.0 DOM座標対応版 Loaded - 描画確実実行・継続描画修正版
+pen-tool.js:378 📏 修正内容: DOM座標イベント対応・確実座標変換・Manager依存排除・確実描画終了
+pen-tool.js:379 🚀 特徴: Canvas相対座標直接変換・基本描画優先・Manager未準備対応・継続描画問題根本解決
 eraser-tool.js:598 🧹 EraserTool v8.12.0完全対応版 Loaded - Graphics API v8準拠・消去機能修正版
 eraser-tool.js:599 📏 修正内容: v8新API準拠・v7 API完全削除・高精度hit-test・TPF形式保存・マスク消去
 eraser-tool.js:600 🚀 特徴: shape().fill()新API・WebGPU対応・Container階層消去・v7互換削除・Manager統一注入完全対応
-tool-manager.js:640 🚀 ToolManager v8.12.0完全対応版・Pointerイベント処理対応版 Loaded
-tool-manager.js:641 📏 修正内容: PenTool作成エラー修正・Manager注入方法改善・Pointerイベント処理追加・コンソール出力削減
-tool-manager.js:642 🚀 特徴: 防御的依存注入・検証強化・CanvasManager.getDrawContainer()保証・Tool作成時適切Manager注入・TegakiApplication連携対応
+tool-manager.js:742 🚀 ToolManager v8.12.0完全対応版・API統一修正版 Loaded
+tool-manager.js:743 📏 修正内容: getTools()追加・setActiveTool()エイリアス・Manager注入強化・API統一完了
+tool-manager.js:744 🚀 特徴: 防御的依存注入・Tool初期化エラー完全対応・ポインターイベント統一処理
 main.js:330 🚀 main.js v8統合エントリーポイント Loaded - グローバル関数・デバッグ機能・WebGPU対応
 main.js:338 ✅ PixiJS v8確認完了 - v8統合機能利用可能
 phase15-integration-test.js:593 🧪 Phase1.5統合テスト Loaded
 phase15-integration-test.js:594 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
 phase15-integration-test.js:595 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
- 🚀 Bootstrap PixiJS v8対応版・初期化順序確立版 Loaded
- 📏 特徴: DOM挿入確実化・Manager順序制御・座標変換確立・統合テスト自動実行
- 🚀 Bootstrap PixiJS v8対応版 実行開始...
- 🔍 PixiJS v8利用可能性確認開始
- 🎯 PixiJS バージョン: 8.12.0
- 🎮 WebGPU対応: ❌ (WebGL2フォールバック)
- ✅ PixiJS v8利用可能性確認完了
- 🏗️ Canvas Container存在確認・作成開始
- 🏗️ canvas-container既存確認
- ✅ Canvas Container準備完了
- 🔍 Phase1.5依存関係確認開始
- ✅ Phase1.5依存関係確認完了
- 🚀 TegakiApplication v8対応版 初期化開始
- 🚀 PixiJS v8.12.0 loaded from node_modules
- ✅ PixiJS v8.12.0 confirmed
+bootstrap.js:454 🚀 Bootstrap PixiJS v8対応版・初期化順序確立版 Loaded
+bootstrap.js:455 📏 特徴: DOM挿入確実化・Manager順序制御・座標変換確立・統合テスト自動実行
+bootstrap.js:393 🚀 Bootstrap PixiJS v8対応版 実行開始...
+bootstrap.js:72 🔍 PixiJS v8利用可能性確認開始
+bootstrap.js:80 🎯 PixiJS バージョン: 8.12.0
+bootstrap.js:88 🎮 WebGPU対応: ❌ (WebGL2フォールバック)
+bootstrap.js:90 ✅ PixiJS v8利用可能性確認完了
+bootstrap.js:98 🏗️ Canvas Container存在確認・作成開始
+bootstrap.js:120 🏗️ canvas-container既存確認
+bootstrap.js:129 ✅ Canvas Container準備完了
+bootstrap.js:138 🔍 Phase1.5依存関係確認開始
+bootstrap.js:169 ✅ Phase1.5依存関係確認完了
+bootstrap.js:178 🚀 TegakiApplication v8対応版 初期化開始
+index.html:577 🚀 PixiJS v8.12.0 loaded from node_modules
+index.html:579 ✅ PixiJS v8.12.0 confirmed
 app-core.js:274 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
 _createDeviceAndAdaptor @ pixi.min.js:2121
 init @ pixi.min.js:2121
@@ -110,9 +113,9 @@ start @ bootstrap.js:405
  ⌨️ ShortcutManager スタブ実装完了
  🧭 NavigationManager v8対応版 初期化開始
  ✅ NavigationManager v8対応版 初期化完了
- 🚀 ToolManager v8.12.0作成開始 - Pointerイベント処理対応版
+ 🚀 ToolManager v8.12.0作成開始 - API統一修正版
  ✅ CanvasManager注入成功
- ✅ ToolManager v8.12.0作成完了 - Pointerイベント処理対応版
+ ✅ ToolManager v8.12.0作成完了 - API統一修正版
  🔧 ToolManager - Manager統一注入開始
  ✅ Map形式で受信 - 直接利用
  ✅ CanvasManager統一注入成功
@@ -124,38 +127,105 @@ start @ bootstrap.js:405
  ✅ getDrawContainer()実行確認完了
  ✅ Container妥当性確認完了
  ✅ ToolManager依存注入検証完了 - 全検証PASS
- 🚀 v8 Tool初期化開始（修正版）
+ 🚀 v8 Tool初期化開始（API統一版）
  ✅ v8依存関係確認完了
  🔧 WebGPU対応状況: 対応
- 1️⃣ v8 PenTool作成開始...（修正版）
+ 1️⃣ v8 PenTool作成開始...
  🎯 AbstractTool 作成開始: pen
  ✅ pen AbstractTool 作成完了
+ 🖊️ PenTool v8.12.0作成完了 - DOM座標対応版
  🔧 PenTool Manager注入開始
+ 🔧 pen Manager統一注入開始...（修正版）
+ 📦 pen 受信Manager型: Object
+ 📦 pen 受信Manager内容: {canvas: CanvasManager, coordinate: CoordinateManager, record: RecordManager, config: ConfigManager, error: ErrorManager, …}
+ ✅ pen: Manager群をObject形式で保存完了
+ 📋 pen 利用可能Manager キー: (9) ['canvas', 'coordinate', 'record', 'config', 'error', 'eventbus', 'shortcut', 'navigation', 'tool']
+ 📋 pen 利用可能Manager数: 9
+ 📦 pen Manager[canvas]: CanvasManager
+ 📦 pen Manager[coordinate]: CoordinateManager
+ 📦 pen Manager[record]: RecordManager
+ 📦 pen Manager[config]: ConfigManager
+ 📦 pen Manager[error]: ErrorManager
+ 📦 pen Manager[eventbus]: EventBus
+ 📦 pen Manager[shortcut]: ShortcutManager
+ 📦 pen Manager[navigation]: NavigationManager
+ 📦 pen Manager[tool]: ToolManager
+ 🔍 pen 必須Manager[canvas]: exists=true, hasValue=[object Object]
+ 🔍 pen 必須Manager[coordinate]: exists=true, hasValue=[object Object]
+ 🔍 pen 必須Manager[record]: exists=true, hasValue=[object Object]
+ ✅ pen: 必須Manager確認完了: (3) ['canvas', 'coordinate', 'record']
+ ✅ pen: Manager統一注入完了（Object形式）
+ 🚀 ToolManager v8.12.0作成開始 - API統一修正版
+ ✅ CanvasManager注入成功
+ ✅ ToolManager v8.12.0作成完了 - API統一修正版
+ 🔧 ToolManager - Manager統一注入開始
+ ✅ Map形式で受信 - 直接利用
+ ✅ CanvasManager統一注入成功
+ ✅ DrawContainer取得成功: true
+ ✅ ToolManager: Manager統一注入完了
+ 🔍 ToolManager依存注入検証開始...
+ ✅ CanvasManager注入確認完了
+ ✅ getDrawContainer()メソッド確認完了
+ ✅ getDrawContainer()実行確認完了
+ ✅ Container妥当性確認完了
+ ✅ ToolManager依存注入検証完了 - 全検証PASS
+ 🚀 v8 Tool初期化開始（API統一版）
+ ✅ v8依存関係確認完了
+ 🔧 WebGPU対応状況: 対応
+ 1️⃣ v8 PenTool作成開始...
+ 🎯 AbstractTool 作成開始: pen
+ ✅ pen AbstractTool 作成完了
+ 🖊️ PenTool v8.12.0作成完了 - DOM座標対応版
+ 🔧 PenTool Manager注入開始
+ 🔧 pen Manager統一注入開始...（修正版）
+ 📦 pen 受信Manager型: Object
+ 📦 pen 受信Manager内容: {canvas: CanvasManager, coordinate: CoordinateManager, record: RecordManager, config: ConfigManager, error: ErrorManager, …}
+ ✅ pen: Manager群をObject形式で保存完了
+ 📋 pen 利用可能Manager キー: (9) ['canvas', 'coordinate', 'record', 'config', 'error', 'eventbus', 'shortcut', 'navigation', 'tool']
+ 📋 pen 利用可能Manager数: 9
+ 📦 pen Manager[canvas]: CanvasManager
+ 📦 pen Manager[coordinate]: CoordinateManager
+ 📦 pen Manager[record]: RecordManager
+ 📦 pen Manager[config]: ConfigManager
+ 📦 pen Manager[error]: ErrorManager
+ 📦 pen Manager[eventbus]: EventBus
+ 📦 pen Manager[shortcut]: ShortcutManager
+ 📦 pen Manager[navigation]: NavigationManager
+ 📦 pen Manager[tool]: ToolManager
+ 🔍 pen 必須Manager[canvas]: exists=true, hasValue=[object Object]
+ 🔍 pen 必須Manager[coordinate]: exists=true, hasValue=[object Object]
+ 🔍 pen 必須Manager[record]: exists=true, hasValue=[object Object]
+ ✅ pen: 必須Manager確認完了: (3) ['canvas', 'coordinate', 'record']
+ ✅ pen: Manager統一注入完了（Object形式）
  ✅ PenTool Manager統一注入完了
- 🚀 ToolManager v8.12.0作成開始 - Pointerイベント処理対応版
- ✅ CanvasManager注入成功
- ✅ ToolManager v8.12.0作成完了 - Pointerイベント処理対応版
- 🔧 ToolManager - Manager統一注入開始
- ✅ Map形式で受信 - 直接利用
- ✅ CanvasManager統一注入成功
- ✅ DrawContainer取得成功: true
- ✅ ToolManager: Manager統一注入完了
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- 🚀 v8 Tool初期化開始（修正版）
- ✅ v8依存関係確認完了
- 🔧 WebGPU対応状況: 対応
- 1️⃣ v8 PenTool作成開始...（修正版）
- 🎯 AbstractTool 作成開始: pen
- ✅ pen AbstractTool 作成完了
- 🔧 PenTool Manager注入開始
  ✅ PenTool Manager統一注入完了
  ✅ PenTool登録完了
- 2️⃣ v8 EraserTool作成開始...（修正版）
+ 2️⃣ v8 EraserTool作成開始...
+ 🎯 AbstractTool 作成開始: eraser
+ ✅ eraser AbstractTool 作成完了
+ 🧹 EraserTool v8.12.0完全対応版作成開始 - Graphics API v8準拠・消去機能修正版
+ 🔧 EraserTool Manager注入開始
+ 🔧 eraser Manager統一注入開始...（消去機能修正版）
+ 📦 eraser 受信Manager型: object
+ ✅ eraser: Manager群をObject形式で保存完了
+ 📋 eraser 利用可能Manager キー: (9) ['canvas', 'coordinate', 'record', 'config', 'error', 'eventbus', 'shortcut', 'navigation', 'tool']
+ 📋 eraser 利用可能Manager数: 9
+ 📦 eraser Manager[canvas]: CanvasManager
+ 📦 eraser Manager[coordinate]: CoordinateManager
+ 📦 eraser Manager[record]: RecordManager
+ 📦 eraser Manager[config]: ConfigManager
+ 📦 eraser Manager[error]: ErrorManager
+ 📦 eraser Manager[eventbus]: EventBus
+ 📦 eraser Manager[shortcut]: ShortcutManager
+ 📦 eraser Manager[navigation]: NavigationManager
+ 📦 eraser Manager[tool]: ToolManager
+ 🔍 eraser 必須Manager[canvas]: exists=true, hasValue=[object Object]
+ 🔍 eraser 必須Manager[coordinate]: exists=true, hasValue=[object Object]
+ 🔍 eraser 必須Manager[record]: exists=true, hasValue=[object Object]
+ ✅ eraser: 必須Manager確認完了: (3) ['canvas', 'coordinate', 'record']
+ ✅ eraser: Manager統一注入完了（Object形式）
+ ✅ PenTool登録完了
+ 2️⃣ v8 EraserTool作成開始...
  🎯 AbstractTool 作成開始: eraser
  ✅ eraser AbstractTool 作成完了
  🧹 EraserTool v8.12.0完全対応版作成開始 - Graphics API v8準拠・消去機能修正版
@@ -180,172 +250,171 @@ start @ bootstrap.js:405
  ✅ eraser: 必須Manager確認完了: (3) ['canvas', 'coordinate', 'record']
  ✅ eraser: Manager統一注入完了（Object形式）
  ✅ EraserTool Manager統一注入完了
- ✅ PenTool登録完了
- 2️⃣ v8 EraserTool作成開始...（修正版）
- 🎯 AbstractTool 作成開始: eraser
- ✅ eraser AbstractTool 作成完了
- 🧹 EraserTool v8.12.0完全対応版作成開始 - Graphics API v8準拠・消去機能修正版
- 🔧 EraserTool Manager注入開始
- 🔧 eraser Manager統一注入開始...（消去機能修正版）
- 📦 eraser 受信Manager型: object
- ✅ eraser: Manager群をObject形式で保存完了
- 📋 eraser 利用可能Manager キー: (9) ['canvas', 'coordinate', 'record', 'config', 'error', 'eventbus', 'shortcut', 'navigation', 'tool']
- 📋 eraser 利用可能Manager数: 9
- 📦 eraser Manager[canvas]: CanvasManager
- 📦 eraser Manager[coordinate]: CoordinateManager
- 📦 eraser Manager[record]: RecordManager
- 📦 eraser Manager[config]: ConfigManager
- 📦 eraser Manager[error]: ErrorManager
- 📦 eraser Manager[eventbus]: EventBus
- 📦 eraser Manager[shortcut]: ShortcutManager
- 📦 eraser Manager[navigation]: NavigationManager
- 📦 eraser Manager[tool]: ToolManager
- 🔍 eraser 必須Manager[canvas]: exists=true, hasValue=[object Object]
- 🔍 eraser 必須Manager[coordinate]: exists=true, hasValue=[object Object]
- 🔍 eraser 必須Manager[record]: exists=true, hasValue=[object Object]
- ✅ eraser: 必須Manager確認完了: (3) ['canvas', 'coordinate', 'record']
- ✅ eraser: Manager統一注入完了（Object形式）
  ✅ EraserTool Manager統一注入完了
  ✅ EraserTool登録完了
- 🔄 Tool切り替え: pen
+ 🔄 デフォルトTool切り替え: pen
  🔄 Tool切り替え開始: pen → pen
  🎯 pen Tool アクティブ化
  📦 pen: DrawContainer取得完了
  ✅ pen Tool アクティブ化完了
+ 🖊️ PenTool アクティブ化完了
  ✅ EraserTool登録完了
- 🔄 Tool切り替え: pen
+ 🔄 デフォルトTool切り替え: pen
  🔄 Tool切り替え開始: pen → pen
  🎯 pen Tool アクティブ化
  📦 pen: DrawContainer取得完了
  ✅ pen Tool アクティブ化完了
+ 🖊️ PenTool アクティブ化完了
+ ✅ pen Tool アクティブ化完了
+ ✅ Tool切り替え完了: pen
+ ✅ pen Tool アクティブ化完了
+ ✅ Tool切り替え完了: pen
+ ✅ v8 Tool初期化完了
+ ✅ v8 Tool初期化完了
+ 🔍 ToolManager依存注入検証開始...
+ ✅ CanvasManager注入確認完了
+ ✅ getDrawContainer()メソッド確認完了
+ ✅ getDrawContainer()実行確認完了
+ ✅ Container妥当性確認完了
+ ✅ ToolManager依存注入検証完了 - 全検証PASS
+ 🔍 ToolManager依存注入検証開始...
+ ✅ CanvasManager注入確認完了
+ ✅ getDrawContainer()メソッド確認完了
+ ✅ getDrawContainer()実行確認完了
+ ✅ Container妥当性確認完了
+ ✅ ToolManager依存注入検証完了 - 全検証PASS
+ 🔍 ToolManager依存注入検証開始...
+ ✅ CanvasManager注入確認完了
+ ✅ getDrawContainer()メソッド確認完了
+ ✅ getDrawContainer()実行確認完了
+ ✅ Container妥当性確認完了
+ ✅ ToolManager依存注入検証完了 - 全検証PASS
+ ✅ Icon replaced: download-tool → download
+ ✅ Icon replaced: resize-tool → resize
+ ✅ Icon replaced: palette-tool → palette
+ ✅ Icon replaced: pen-tool → pen
+ ✅ Icon replaced: eraser-tool → eraser
+ ✅ Icon replaced: fill-tool → fill
+ ✅ Icon replaced: select-tool → select
+ ✅ Icon replaced: layers-tool → layers
+ ✅ Icon replaced: settings-tool → settings
+ 🎨 Icon internalization completed: 9 success, 0 errors
+ 🔍 ToolManager依存注入検証開始...
+ ✅ CanvasManager注入確認完了
+ ✅ getDrawContainer()メソッド確認完了
+ ✅ getDrawContainer()実行確認完了
+ ✅ Container妥当性確認完了
+ ✅ ToolManager依存注入検証完了 - 全検証PASS
+ ✅ Icon replaced: download-tool → download
+ ✅ Icon replaced: resize-tool → resize
+ ✅ Icon replaced: palette-tool → palette
+ ✅ Icon replaced: pen-tool → pen
+ ✅ Icon replaced: eraser-tool → eraser
+ ✅ Icon replaced: fill-tool → fill
+ ✅ Icon replaced: select-tool → select
+ ✅ Icon replaced: layers-tool → layers
+ ✅ Icon replaced: settings-tool → settings
+ 🎨 Icon internalization completed: 9 success, 0 errors
+ ✅ AppCore v8システム完了
+ 📊 PixiJS 8.12.0 | 2 | Manager数: 9
+ ✅ AppCore v8システム完了
+app-core.js:600 📊 PixiJS 8.12.0 | 2 | Manager数: 9
+icons.js:176 ✅ Icon replaced: download-tool → download
+icons.js:176 ✅ Icon replaced: resize-tool → resize
+icons.js:176 ✅ Icon replaced: palette-tool → palette
+icons.js:176 ✅ Icon replaced: pen-tool → pen
+icons.js:176 ✅ Icon replaced: eraser-tool → eraser
+icons.js:176 ✅ Icon replaced: fill-tool → fill
+icons.js:176 ✅ Icon replaced: select-tool → select
+icons.js:176 ✅ Icon replaced: layers-tool → layers
+icons.js:176 ✅ Icon replaced: settings-tool → settings
+icons.js:197 🎨 Icon internalization completed: 9 success, 0 errors
+icons.js:176 ✅ Icon replaced: download-tool → download
+icons.js:176 ✅ Icon replaced: resize-tool → resize
+icons.js:176 ✅ Icon replaced: palette-tool → palette
+icons.js:176 ✅ Icon replaced: pen-tool → pen
+icons.js:176 ✅ Icon replaced: eraser-tool → eraser
+icons.js:176 ✅ Icon replaced: fill-tool → fill
+icons.js:176 ✅ Icon replaced: select-tool → select
+icons.js:176 ✅ Icon replaced: layers-tool → layers
+icons.js:176 ✅ Icon replaced: settings-tool → settings
+icons.js:197 🎨 Icon internalization completed: 9 success, 0 errors
+bootstrap.js:185 🚀 TegakiApplication基本初期化完了
+bootstrap.js:201 ✅ CanvasManager準備完了確認
+bootstrap.js:209 🧭 CoordinateManager.setCanvasManager() 実行...
+bootstrap.js:216 ✅ CoordinateManager準備完了確認
+bootstrap.js:229 ✅ PenTool準備完了確認
+bootstrap.js:238 ✅ 座標変換テスト成功
+bootstrap.js:242 🎉 TegakiApplication v8システム初期化成功！
+bootstrap.js:256 🧪 Phase1.5統合テスト開始
+bootstrap.js:319 🧪 Phase1.5統合テスト結果: {managerStatus: {…}, coordinateTestResults: {…}, canvasDOMStatus: {…}, timestamp: '2025-08-30T13:35:30.454Z', success: true}
+bootstrap.js:322 ✅ 全システム準備完了 - ペン描画利用可能
+bootstrap.js:419 🎉 Bootstrap完了 - Tegaki v8アプリケーション開始完了
+bootstrap.js:420 🎮 使用中レンダラー: WebGPU対応・PixiJS 8.12.0
+bootstrap.js:421 🧪 テスト実行: window.Tegaki.runPhase15Test()
 app-core.js:262 ⚠️ TegakiApplication v8初期化未完了
 console.warn @ app-core.js:262
 (anonymous) @ index.html:613
 setTimeout
 (anonymous) @ index.html:588
- ✅ pen Tool アクティブ化完了
- ✅ Tool切り替え完了: pen
- ✅ v8 Tool初期化完了
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- ✅ Icon replaced: download-tool → download
- ✅ Icon replaced: resize-tool → resize
- ✅ Icon replaced: palette-tool → palette
- ✅ Icon replaced: pen-tool → pen
- ✅ Icon replaced: eraser-tool → eraser
- ✅ Icon replaced: fill-tool → fill
- ✅ Icon replaced: select-tool → select
- ✅ Icon replaced: layers-tool → layers
- ✅ Icon replaced: settings-tool → settings
- 🎨 Icon internalization completed: 9 success, 0 errors
- ✅ AppCore v8システム完了
- 📊 PixiJS 8.12.0 | 2 | Manager数: 9
- ✅ Icon replaced: download-tool → download
- ✅ Icon replaced: resize-tool → resize
- ✅ Icon replaced: palette-tool → palette
- ✅ Icon replaced: pen-tool → pen
- ✅ Icon replaced: eraser-tool → eraser
- ✅ Icon replaced: fill-tool → fill
- ✅ Icon replaced: select-tool → select
- ✅ Icon replaced: layers-tool → layers
- ✅ Icon replaced: settings-tool → settings
- 🎨 Icon internalization completed: 9 success, 0 errors
- ✅ pen Tool アクティブ化完了
- ✅ Tool切り替え完了: pen
- ✅ v8 Tool初期化完了
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- ✅ Icon replaced: download-tool → download
- ✅ Icon replaced: resize-tool → resize
- ✅ Icon replaced: palette-tool → palette
- ✅ Icon replaced: pen-tool → pen
- ✅ Icon replaced: eraser-tool → eraser
- ✅ Icon replaced: fill-tool → fill
- ✅ Icon replaced: select-tool → select
- ✅ Icon replaced: layers-tool → layers
- ✅ Icon replaced: settings-tool → settings
- 🎨 Icon internalization completed: 9 success, 0 errors
- ✅ AppCore v8システム完了
- 📊 PixiJS 8.12.0 | 2 | Manager数: 9
- ✅ Icon replaced: download-tool → download
- ✅ Icon replaced: resize-tool → resize
- ✅ Icon replaced: palette-tool → palette
- ✅ Icon replaced: pen-tool → pen
- ✅ Icon replaced: eraser-tool → eraser
- ✅ Icon replaced: fill-tool → fill
- ✅ Icon replaced: select-tool → select
- ✅ Icon replaced: layers-tool → layers
- ✅ Icon replaced: settings-tool → settings
- 🎨 Icon internalization completed: 9 success, 0 errors
- 🚀 TegakiApplication基本初期化完了
- ✅ CanvasManager準備完了確認
- 🧭 CoordinateManager.setCanvasManager() 実行...
- ✅ CoordinateManager準備完了確認
-bootstrap.js:246 ❌ TegakiApplication初期化失敗: TypeError: toolManager.getTools is not a function
-    at initializeTegakiApplication (bootstrap.js:224:41)
-    at async HTMLDocument.start (bootstrap.js:405:31)
-initializeTegakiApplication @ bootstrap.js:246
-await in initializeTegakiApplication
-start @ bootstrap.js:405
-bootstrap.js:426 💥 Bootstrap初期化失敗: TypeError: toolManager.getTools is not a function
-    at initializeTegakiApplication (bootstrap.js:224:41)
-    at async HTMLDocument.start (bootstrap.js:405:31)
-start @ bootstrap.js:426
- 🔍 デバッグ情報: {className: 'Bootstrap', version: 'v8-phase1.5-fixed', dependencies: {…}, domStatus: {…}, timing: {…}}
-bootstrap.js:224 Uncaught (in promise) TypeError: toolManager.getTools is not a function
-initializeTegakiApplication @ bootstrap.js:224
-await in initializeTegakiApplication
-start @ bootstrap.js:405
- 🎨 Graphics作成: stroke_1756552679443_z7yd5
- 🎨 Graphics作成: stroke_1756552679443_pa8b2
- 🎨 永続Graphics追加: stroke_1756552679443_pa8b2
- 🖊️ PenTool: 永続Graphics追加成功 ID:stroke_1756552679443_pa8b2
- 📝 RecordManager.addStroke() 開始: stroke_1756552679443_pa8b2
-app-core.js:262 ⚠️ RecordManager not ready - call setManagers() first
-console.warn @ app-core.js:262
-addStroke @ record-manager.js:175
-endStroke @ pen-tool.js:488
-onPointerUp @ pen-tool.js:352
-onPointerUp @ tegaki-application.js:409
-(anonymous) @ tegaki-application.js:230
- ⚠️ TegakiApplication v8初期化未完了
-app-core.js:575 ツール切り替え失敗: eraser TypeError: this.toolManager.setActiveTool is not a function
-    at AppCore.switchTool (app-core.js:572:38)
-    at HTMLDivElement.<anonymous> (app-core.js:560:30)
-switchTool @ app-core.js:575
-(anonymous) @ app-core.js:560
-tegaki-application.js:455 ツール選択失敗: eraser TypeError: this.toolManager.setActiveTool is not a function
-    at TegakiApplication.selectToolV8 (tegaki-application.js:439:38)
-    at HTMLDivElement.<anonymous> (tegaki-application.js:320:34)
-selectToolV8 @ tegaki-application.js:455
-(anonymous) @ tegaki-application.js:320
-app-core.js:575 ツール切り替え失敗: eraser TypeError: this.toolManager.setActiveTool is not a function
-    at AppCore.switchTool (app-core.js:572:38)
-    at HTMLDivElement.<anonymous> (app-core.js:560:30)
-switchTool @ app-core.js:575
-(anonymous) @ app-core.js:560
-tegaki-application.js:455 ツール選択失敗: eraser TypeError: this.toolManager.setActiveTool is not a function
-    at TegakiApplication.selectToolV8 (tegaki-application.js:439:38)
-    at HTMLDivElement.<anonymous> (tegaki-application.js:320:34)
-selectToolV8 @ tegaki-application.js:455
-(anonymous) @ tegaki-application.js:320
+pen-tool.js:169 🖊️ PointerUp - 描画終了処理開始（確実終了保証版）
+pen-tool.js:189 ✅ PenTool: 描画状態リセット完了（確実終了）
+pen-tool.js:169 🖊️ PointerUp - 描画終了処理開始（確実終了保証版）
+pen-tool.js:189 ✅ PenTool: 描画状態リセット完了（確実終了）
+main.js:346 ⚠️ TegakiApplication v8初期化未完了
+pen-tool.js:238 ℹ️ RecordManager未準備 - 描画のみ実行
+pen-tool.js:115 🖊️ 描画開始: {x: 298, y: 313}
+pen-tool.js:238 ℹ️ RecordManager未準備 - 描画のみ実行
+pen-tool.js:115 🖊️ 描画開始: {x: 298, y: 313}
+pen-tool.js:293 ✅ 線分描画成功: (298,313) → (299,313)
+pen-tool.js:293 ✅ 線分描画成功: (299,313) → (299,313)
+pen-tool.js:293 ✅ 線分描画成功: (299,313) → (300,313)
+pen-tool.js:293 ✅ 線分描画成功: (300,313) → (300,313)
+pen-tool.js:293 ✅ 線分描画成功: (300,313) → (301,313)
+pen-tool.js:293 ✅ 線分描画成功: (301,313) → (301,313)
+pen-tool.js:293 ✅ 線分描画成功: (301,313) → (303,313)
+pen-tool.js:293 ✅ 線分描画成功: (303,313) → (303,313)
+pen-tool.js:293 ✅ 線分描画成功: (303,313) → (304,313)
+pen-tool.js:293 ✅ 線分描画成功: (304,313) → (304,313)
+pen-tool.js:293 ✅ 線分描画成功: (304,313) → (306,314)
+pen-tool.js:293 ✅ 線分描画成功: (306,314) → (306,314)
+pen-tool.js:293 ✅ 線分描画成功: (306,314) → (311,314)
+pen-tool.js:293 ✅ 線分描画成功: (311,314) → (311,314)
+pen-tool.js:293 ✅ 線分描画成功: (311,314) → (313,314)
+pen-tool.js:293 ✅ 線分描画成功: (313,314) → (313,314)
+pen-tool.js:293 ✅ 線分描画成功: (313,314) → (319,315)
+pen-tool.js:293 ✅ 線分描画成功: (319,315) → (319,315)
+pen-tool.js:293 ✅ 線分描画成功: (319,315) → (321,315)
+pen-tool.js:293 ✅ 線分描画成功: (321,315) → (321,315)
+pen-tool.js:293 ✅ 線分描画成功: (321,315) → (323,315)
+pen-tool.js:293 ✅ 線分描画成功: (323,315) → (323,315)
+pen-tool.js:293 ✅ 線分描画成功: (323,315) → (328,315)
+pen-tool.js:293 ✅ 線分描画成功: (328,315) → (328,315)
+pen-tool.js:293 ✅ 線分描画成功: (328,315) → (331,315)
+pen-tool.js:293 ✅ 線分描画成功: (331,315) → (331,315)
+pen-tool.js:293 ✅ 線分描画成功: (331,315) → (335,315)
+pen-tool.js:293 ✅ 線分描画成功: (335,315) → (335,315)
+pen-tool.js:293 ✅ 線分描画成功: (335,315) → (337,315)
+pen-tool.js:293 ✅ 線分描画成功: (337,315) → (337,315)
+pen-tool.js:293 ✅ 線分描画成功: (337,315) → (339,315)
+pen-tool.js:293 ✅ 線分描画成功: (339,315) → (339,315)
+pen-tool.js:293 ✅ 線分描画成功: (339,315) → (343,315)
+pen-tool.js:293 ✅ 線分描画成功: (343,315) → (343,315)
+pen-tool.js:293 ✅ 線分描画成功: (343,315) → (345,315)
+pen-tool.js:293 ✅ 線分描画成功: (345,315) → (345,315)
+pen-tool.js:293 ✅ 線分描画成功: (345,315) → (346,315)
+pen-tool.js:293 ✅ 線分描画成功: (346,315) → (346,315)
+pen-tool.js:293 ✅ 線分描画成功: (346,315) → (347,315)
+pen-tool.js:293 ✅ 線分描画成功: (347,315) → (347,315)
+pen-tool.js:293 ✅ 線分描画成功: (347,315) → (348,315)
+pen-tool.js:293 ✅ 線分描画成功: (348,315) → (348,315)
+pen-tool.js:293 ✅ 線分描画成功: (348,315) → (349,315)
+pen-tool.js:293 ✅ 線分描画成功: (349,315) → (349,315)
+pen-tool.js:293 ✅ 線分描画成功: (349,315) → (349,315)
+pen-tool.js:293 ✅ 線分描画成功: (349,315) → (349,315)
+pen-tool.js:293 ✅ 線分描画成功: (349,315) → (350,315)
+pen-tool.js:293 ✅ 線分描画成功: (350,315) → (350,315)
+pen-tool.js:169 🖊️ PointerUp - 描画終了処理開始（確実終了保証版）
+pen-tool.js:189 ✅ PenTool: 描画状態リセット完了（確実終了）
+pen-tool.js:169 🖊️ PointerUp - 描画終了処理開始（確実終了保証版）
+pen-tool.js:189 ✅ PenTool: 描画状態リセット完了（確実終了）
