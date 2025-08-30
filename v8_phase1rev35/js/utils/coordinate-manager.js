@@ -6,10 +6,13 @@
  *   - CoordinateManager（クラス）
  *   - clientToWorld(clientX, clientY): {x, y}
  *   - clientToCanvas(clientX, clientY): {x, y}
+ *   - toCanvasCoords(clientX, clientY): {x, y} - API統一エイリアス
  *   - canvasToWorld(canvasX, canvasY): {x, y}
  *   - setCanvasManager(canvasManager): Promise<void>
  *   - isReady(): boolean
+ *   - isV8Ready(): boolean
  *   - waitForReady(): Promise<void>
+ *   - clearV8Cache(): void - v8キャッシュクリア
  *   - testCoordinate(clientX, clientY): Object
  *   - getDebugInfo(): Object
  *
@@ -26,25 +29,59 @@
  *   🚫 直接DOM座標使用禁止
  *   🚫 DPR未考慮座標変換禁止
  *   🚫 Container変形無視禁止
+ *   🚫 未実装メソッド呼び出し禁止
+ *   🚫 目先のエラー修正のためのDRY・SOLID原則違反
  *
  * @manager-key
  *   window.Tegaki.CoordinateManagerInstance
+ *
+ * @dependencies-strict
+ *   REQUIRED: CanvasManager (v8対応)
+ *   OPTIONAL: NavigationManager
+ *   FORBIDDEN: 他Manager直接参照
+ *
+ * @integration-flow
+ *   AppCore → CoordinateManager.setCanvasManager() → Tool.toCanvasCoords()
+ *
+ * @method-naming-rules
+ *   - clientToXxx() - DOM座標からの変換
+ *   - canvasToXxx() - Canvas座標からの変換
+ *   - toCanvasCoords() - 統一API
+ *   - isV8Ready() - 準備状態確認
+ *
+ * @error-handling
+ *   throw: 必須Manager未設定・座標変換失敗
+ *   warn: 一時的エラー・キャッシュ無効
+ *   log: 正常処理・統計更新
+ *
+ * @state-management
+ *   - キャッシュは直接操作せず、updateCanvasCache()経由
+ *   - 座標変換結果はイミュータブル
+ *   - 状態確認は必ずisReady()経由
+ *
+ * @performance-notes
+ *   - 座標変換は高頻度、キャッシュ最適化必須
+ *   - DPR計算は重い処理、キャッシュ活用
+ *   - 16ms維持、バッチ変換対応
  */
 
 (function() {
     'use strict';
 
     /**
-     * CoordinateManager - 座標ズレ完全解決版
+     * CoordinateManager - 座標ズレ完全解決版・API統一版
      * 左上ズレ・右下ズレ対策強化・高精度座標変換
      */
     class CoordinateManager {
         constructor() {
+            console.log('🎯 CoordinateManager API統一版 初期化開始');
+            
             // Manager参照
             this.canvasManager = null;
             
             // 準備状態
             this.ready = false;
+            this.v8Ready = false;
             this.readyPromise = null;
             this.readyResolve = null;
             
@@ -56,6 +93,14 @@
                 element: null,
                 rect: null,
                 logicalSize: null,
+                lastUpdate: 0,
+                valid: false
+            };
+            
+            // v8キャッシュ（高性能版）
+            this.v8Cache = {
+                stage: null,
+                drawContainer: null,
                 lastUpdate: 0,
                 valid: false
             };
@@ -72,20 +117,24 @@
             this.readyPromise = new Promise((resolve) => {
                 this.readyResolve = resolve;
             });
+            
+            console.log('✅ CoordinateManager API統一版 初期化完了');
         }
 
         /**
-         * CanvasManager設定・準備完了処理
+         * CanvasManager設定・準備完了処理（v8対応強化版）
          * @param {CanvasManager} canvasManager - v8準備完了済みCanvasManager
          */
         async setCanvasManager(canvasManager) {
             try {
+                console.log('🎯 CoordinateManager: CanvasManager設定開始');
+                
                 if (!canvasManager) {
                     throw new Error('CanvasManager is required');
                 }
                 
                 if (!canvasManager.isV8Ready()) {
-                    throw new Error('CanvasManager not ready');
+                    throw new Error('CanvasManager not v8 ready');
                 }
                 
                 this.canvasManager = canvasManager;
@@ -93,15 +142,21 @@
                 // Canvas情報初期化
                 this.updateCanvasCache();
                 
+                // v8キャッシュ初期化
+                this.updateV8Cache();
+                
                 // 準備完了
                 this.ready = true;
+                this.v8Ready = true;
                 
                 if (this.readyResolve) {
                     this.readyResolve();
                 }
                 
+                console.log('✅ CoordinateManager: CanvasManager設定完了');
+                
             } catch (error) {
-                console.error('🧭 CoordinateManager設定失敗:', error);
+                console.error('🚨 CoordinateManager設定失敗:', error);
                 throw error;
             }
         }
@@ -147,6 +202,37 @@
             }
         }
         
+        /**
+         * v8キャッシュ更新（高性能版）
+         */
+        updateV8Cache() {
+            if (!this.canvasManager?.isV8Ready()) return;
+            
+            try {
+                const stage = this.canvasManager.pixiApp?.stage;
+                const drawContainer = this.canvasManager.getDrawContainer();
+                
+                this.v8Cache = {
+                    stage: stage,
+                    drawContainer: drawContainer,
+                    lastUpdate: Date.now(),
+                    valid: !!(stage && drawContainer)
+                };
+                
+            } catch (error) {
+                console.warn('v8キャッシュ更新失敗:', error);
+                this.v8Cache.valid = false;
+            }
+        }
+        
+        /**
+         * v8キャッシュクリア（Navigation Manager連携用）
+         */
+        clearV8Cache() {
+            this.v8Cache.valid = false;
+            this.canvasCache.valid = false;
+        }
+        
         // ========================================
         // 統一座標変換メソッド（座標ズレ解決の核心）
         // ========================================
@@ -169,6 +255,12 @@
                 const cacheAge = Date.now() - this.canvasCache.lastUpdate;
                 if (!this.canvasCache.valid || cacheAge > 500) {
                     this.updateCanvasCache();
+                }
+                
+                // v8キャッシュ更新確認
+                const v8CacheAge = Date.now() - this.v8Cache.lastUpdate;
+                if (!this.v8Cache.valid || v8CacheAge > 500) {
+                    this.updateV8Cache();
                 }
                 
                 // Step 1: DOM座標 → Canvas座標（高精度版）
@@ -231,7 +323,14 @@
          */
         canvasToWorldHighPrecision(canvasX, canvasY) {
             try {
-                const drawContainer = this.canvasManager.getDrawContainer();
+                // v8キャッシュ使用（高性能）
+                let drawContainer = this.v8Cache.valid ? 
+                    this.v8Cache.drawContainer : 
+                    this.canvasManager.getDrawContainer();
+                
+                if (!drawContainer) {
+                    throw new Error('DrawContainer not available');
+                }
                 
                 // 高精度座標変換（Container変形対応）
                 const globalPoint = { x: canvasX, y: canvasY };
@@ -245,6 +344,10 @@
             }
         }
         
+        // ========================================
+        // 公開API（統一インターフェース）
+        // ========================================
+        
         /**
          * 公開API: DOM座標 → Canvas座標
          */
@@ -257,6 +360,17 @@
          */
         canvasToWorld(canvasX, canvasY) {
             return this.canvasToWorldHighPrecision(canvasX, canvasY);
+        }
+        
+        /**
+         * 統一API: DOM座標 → Canvas座標（Tool用エイリアス）
+         * PenToolなどで使用される統一メソッド名
+         * @param {number} clientX - DOM座標X
+         * @param {number} clientY - DOM座標Y
+         * @returns {{x: number, y: number}} Canvas座標
+         */
+        toCanvasCoords(clientX, clientY) {
+            return this.clientToCanvasHighPrecision(clientX, clientY);
         }
         
         /**
@@ -312,6 +426,15 @@
         }
         
         /**
+         * v8準備完了確認
+         */
+        isV8Ready() {
+            return this.v8Ready && 
+                   this.isReady() && 
+                   this.v8Cache.valid;
+        }
+        
+        /**
          * 準備完了まで待機
          */
         waitForReady() {
@@ -327,10 +450,20 @@
         getDebugInfo() {
             return {
                 className: 'CoordinateManager',
-                version: 'v8-precision-fix',
+                version: 'v8-api-unified-fix',
                 ready: this.ready,
+                v8Ready: this.v8Ready,
                 canvasManagerReady: this.canvasManager?.isV8Ready() || false,
-                canvasCache: this.canvasCache,
+                canvasCache: {
+                    valid: this.canvasCache.valid,
+                    lastUpdate: this.canvasCache.lastUpdate,
+                    age: Date.now() - this.canvasCache.lastUpdate
+                },
+                v8Cache: {
+                    valid: this.v8Cache.valid,
+                    lastUpdate: this.v8Cache.lastUpdate,
+                    age: Date.now() - this.v8Cache.lastUpdate
+                },
                 stats: this.stats,
                 precisionTest: this.isReady() ? {
                     topLeft: this.testCoordinate(0, 0),
@@ -346,5 +479,7 @@
         window.Tegaki = {};
     }
     window.Tegaki.CoordinateManager = CoordinateManager;
+
+    console.log('🎯 CoordinateManager API統一版 Loaded - toCanvasCoords統一・v8キャッシュ・高精度座標変換');
 
 })();
