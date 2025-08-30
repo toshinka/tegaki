@@ -1,6 +1,6 @@
 /**
  * 📄 FILE: js/tegaki-application.js
- * 📌 RESPONSIBILITY: PixiJS v8対応メインアプリケーション・Canvas DOM挿入確実化・座標ズレ完全解決
+ * 📌 RESPONSIBILITY: PixiJS v8対応メインアプリケーション・イベント座標透過修正版
  * 
  * @provides
  *   - TegakiApplication（クラス）
@@ -22,10 +22,26 @@
  * @forbids
  *   💀 双方向依存禁止
  *   🚫 Canvas DOM挿入スキップ禁止
- *   🚫 アイコン表示スキップ禁止
+ *   🚫 原始イベント変換禁止（必ずそのまま透過）
+ *   🚫 clientX/Y の独自オブジェクト化禁止
  *
  * @manager-key
  *   window.Tegaki.TegakiApplicationInstance
+ *
+ * @event-contract
+ *   ・onPointerDown/Move/Up は原始PointerEvent をそのまま渡す
+ *   ・clientX/Y を独自オブジェクトに変換しない
+ *   ・addEventListener は passive:false を明示
+ *   ・バインド先は app.view の <canvas> に限定
+ *
+ * @coordinate-contract
+ *   ・座標変換は Tool 側の CoordinateManager で実行
+ *   ・TegakiApplication は座標に一切関与しない
+ *   ・原始DOMイベントの透過に専念
+ *
+ * @input-validation
+ *   ・event.clientX/Y の存在確認のみ実行
+ *   ・変換処理は Tool 側に移譲
  */
 
 (function() {
@@ -161,7 +177,6 @@
                         container.style.cssText = `
                             width: 400px;
                             height: 400px;
-                            border: 2px solid #800000;
                             position: relative;
                             margin: 20px auto;
                             background-color: #f0e0d6;
@@ -184,7 +199,7 @@
                     // Canvas表示確実化
                     this.ensureCanvasVisibility(canvas);
                     
-                    // ポインターイベント設定
+                    // ポインターイベント設定（原始イベント透過）
                     this.setupPointerEvents(canvas);
                     
                     // DOM挿入成功確認
@@ -206,7 +221,6 @@
                     display: block !important;
                     width: 400px !important;
                     height: 400px !important;
-                    border: 2px solid #800000 !important;
                     background: #f0e0d6 !important;
                     cursor: crosshair !important;
                     user-select: none !important;
@@ -222,13 +236,27 @@
             }
             
             /**
-             * ポインターイベント設定（座標ズレ対策）
+             * ポインターイベント設定（原始イベント透過）
+             * 🔥 修正の核心：原始イベントをそのまま Tool に渡す
              */
             setupPointerEvents(canvas) {
-                canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
-                canvas.addEventListener('pointermove', (e) => this.onPointerMove(e));
-                canvas.addEventListener('pointerup', (e) => this.onPointerUp(e));
-                canvas.addEventListener('pointercancel', (e) => this.onPointerUp(e));
+                // 原始イベントを直接透過
+                canvas.addEventListener('pointerdown', (e) => {
+                    this.onPointerDown(e); // 原始DOMイベントをそのまま渡す
+                }, { passive: false });
+                
+                canvas.addEventListener('pointermove', (e) => {
+                    this.onPointerMove(e); // 原始DOMイベントをそのまま渡す
+                }, { passive: false });
+                
+                canvas.addEventListener('pointerup', (e) => {
+                    this.onPointerUp(e); // 原始DOMイベントをそのまま渡す
+                }, { passive: false });
+                
+                canvas.addEventListener('pointercancel', (e) => {
+                    this.onPointerUp(e); // キャンセル時も Up として処理
+                }, { passive: false });
+                
                 canvas.addEventListener('contextmenu', (e) => e.preventDefault());
             }
             
@@ -333,43 +361,31 @@
                 }
             }
             
-            /**
-             * 機能統合
-             */
-            integrateV8Features() {
-                // v8機能統合処理
-            }
-            
-            /**
-             * 初期化完了処理
-             */
-            async finalizeInitialization() {
-                // 最終確認処理
-                if (!this.pixiApp || !this.canvasManager || !this.toolManager) {
-                    throw new Error('Required components not ready');
-                }
-                
-                if (!this.canvasDOMReady) {
-                    throw new Error('Canvas DOM not ready');
-                }
-            }
-            
             // ========================================
-            // ポインターイベント処理（座標ズレ対策）
+            // ポインターイベント処理（原始イベント透過）
             // ========================================
             
             /**
-             * ポインターダウン処理（座標変換統一）
+             * ポインターダウン処理（原始イベント透過）
+             * 🔥 修正の核心：座標変換は一切せず、原始イベントをそのまま渡す
              */
             onPointerDown(event) {
-                if (!this.isReady()) return;
+                if (!this.isReady()) {
+                    console.warn('⚠️ TegakiApplication 初期化未完了');
+                    return;
+                }
                 
                 try {
+                    // clientX/Y 基本確認（変換はしない）
+                    if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
+                        console.warn('⚠️ 無効なクライアント座標: x=' + event.clientX + ', y=' + event.clientY);
+                        return;
+                    }
+                    
                     const tool = this.toolManager.getCurrentTool();
                     if (tool && typeof tool.onPointerDown === 'function') {
-                        // DOM座標を直接渡す（CoordinateManagerで変換）
-                        const point = { x: event.clientX, y: event.clientY };
-                        tool.onPointerDown(point);
+                        // 🔥 重要：原始DOMイベントをそのまま渡す
+                        tool.onPointerDown(event);
                     }
                 } catch (error) {
                     console.error('ポインターダウンエラー:', error);
@@ -377,16 +393,21 @@
             }
             
             /**
-             * ポインタームーブ処理
+             * ポインタームーブ処理（原始イベント透過）
              */
             onPointerMove(event) {
                 if (!this.isReady()) return;
                 
                 try {
+                    // clientX/Y 基本確認（変換はしない）
+                    if (typeof event.clientX !== 'number' || typeof event.clientY !== 'number') {
+                        return; // Move では警告を出さない（頻度が高いため）
+                    }
+                    
                     const tool = this.toolManager.getCurrentTool();
                     if (tool && typeof tool.onPointerMove === 'function') {
-                        const point = { x: event.clientX, y: event.clientY };
-                        tool.onPointerMove(point);
+                        // 🔥 重要：原始DOMイベントをそのまま渡す
+                        tool.onPointerMove(event);
                     }
                     
                     // 座標表示更新
@@ -397,7 +418,7 @@
             }
             
             /**
-             * ポインターアップ処理
+             * ポインターアップ処理（原始イベント透過）
              */
             onPointerUp(event) {
                 if (!this.isReady()) return;
@@ -405,8 +426,8 @@
                 try {
                     const tool = this.toolManager.getCurrentTool();
                     if (tool && typeof tool.onPointerUp === 'function') {
-                        const point = { x: event.clientX, y: event.clientY };
-                        tool.onPointerUp(point);
+                        // 🔥 重要：原始DOMイベントをそのまま渡す
+                        tool.onPointerUp(event);
                     }
                 } catch (error) {
                     console.error('ポインターアップエラー:', error);
@@ -519,24 +540,19 @@
             }
             
             /**
-             * 初期化成功ログ
-             */
-            logV8InitializationSuccess() {
-                const elapsedTime = this.initializationEndTime - this.initializationStartTime;
-                console.log(`✅ TegakiApplication 初期化完了 (${elapsedTime}ms)`);
-                console.log(`📊 ${this.rendererType} | Canvas: ${this.canvasDOMReady}`);
-            }
-            
-            /**
              * 初期化完了通知
              */
             notifyInitializationComplete() {
+                const elapsedTime = this.initializationEndTime - this.initializationStartTime;
+                console.log(`✅ TegakiApplication 初期化完了 (${elapsedTime}ms)`);
+                console.log(`📊 ${this.rendererType} | Canvas: ${this.canvasDOMReady}`);
+                
                 // EventBus通知
                 if (window.Tegaki?.EventBusInstance?.emit) {
                     window.Tegaki.EventBusInstance.emit('tegakiApplicationReady', {
                         rendererType: this.rendererType,
                         webgpuSupported: this.webgpuSupported,
-                        initializationTime: this.initializationEndTime - this.initializationStartTime
+                        initializationTime: elapsedTime
                     });
                 }
                 
@@ -552,7 +568,7 @@
             getDebugInfo() {
                 return {
                     className: 'TegakiApplication',
-                    version: 'v8-syntax-fix',
+                    version: 'v8-event-pass-through',
                     systemStatus: {
                         initialized: this.initialized,
                         fullyReady: this.fullyReady,

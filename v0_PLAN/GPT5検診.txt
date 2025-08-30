@@ -1,50 +1,174 @@
-なぜ「失敗」と考えるか（要点）
+了解。ログを手掛かりに、描画が始まらない原因とフローの健全性を点検しました。結論からいきます。
 
-bootstrap.js の初期化コードは 各 Manager の ready/isV8Ready を厳格にチェックしているため、ひとつでも期待どおり準備できないと初期化を中止する設計になっています（いわゆる fail-fast）。
-GitHub
+結論（最重要）
 
-AppCore 側も 「キャンバスが DOM に配置されていない」「CanvasManager.getDrawContainer() が null」等は初期化失敗に結びつけるチェックを入れているため、キャンバス未挿入や drawContainer が作られていないと初期化未完了になります。
-GitHub
+根本原因は「DOMイベントの座標が undefined のまま PenTool に渡っている」こと。
+onPointerDown() は呼ばれているのに、直後に clientX/Y=undefined 警告 → 座標変換失敗で早期中断、という流れです（pen-tool.js:199 → app-core.js:262 の「無効なクライアント座標: x=undefined, y=undefined」→ pen-tool.js:217「座標変換失敗」）。この連鎖はイベントハンドラで原始イベント e を渡していない、または独自イベントに変換する過程で clientX/Y が落ちている時に典型的に起こります。
 
-リポジトリには Phase1.5 用の統合テストヘルパーがあり、実行すると manager の存在／準備状況や座標テスト結果を出力できます（window.Tegaki.runPhase15Test()）。まずこのテスト結果を見るのが最短で確実な調査方法です。
-GitHub
+何が起きているか（ログからの因果）
 
-したがって「責任分界と座標集中化を入れたが どこかが ready にならず途中で止まっている」か、「起動順／DOM挿入順が壊れてキャンバスが DOM にない」――どちらか、あるいは両方、が最有力です。
+初期化と Manager 注入は正常に進み、「ペン描画利用可能」まで到達しています（Bootstrap の完了ログと Phase1.5 統合テストの PASS）。
 
-よくある原因と優先対処（優先度高い順）
+ところが、最初のペン操作で座標が undefined：
+PenTool: onPointerDown() 開始 → 無効なクライアント座標: x=undefined, y=undefined → PenTool: 座標変換失敗 - 描画中断。その後 onPointerUp() が「isDrawing: false」のまま終了を繰り返すため線が一切引かれない。
 
-キャンバスが DOM に挿入されていない
+直接の修正ポイント（最短で直す）
+1) イベント配線：原始イベントを必ず渡す
 
-#canvas-container が index.html に存在するか、また TegakiApplication が container.appendChild(canvas) を呼んでいるか確認。AppCore.ensureCanvasDOMPlacement() が false を返すと初期化が止まります。
-GitHub
+addEventListener('pointerdown', handler) の handler が e を受け取り、そのまま tool.onPointerDown(e) に渡るようにしてください。
+ありがちなバグは：
 
-一時対処（コンソールから手で差し込む）:
+() => tool.onPointerDown() のように 引数なしで呼んでしまう
 
-(function(){
-  const appCore = window.TegakiAppInstance || window.Tegaki?.AppCoreInstance;
-  const canvas = appCore?.getCanvasElement?.() || appCore?.getPixiApp?.()?.view || document.querySelector('canvas');
-  const container = document.getElementById('canvas-container');
-  if (canvas && container && !container.contains(canvas)) {
-    container.appendChild(canvas);
-    console.log('Canvas appended to #canvas-container');
-  } else { console.warn('Append skipped (canvas/container missing or already appended)', {canvas,container}); }
-})();
+EventBus で 独自イベントに載せ替えた際に clientX/Y を失う（detail にコピーしてない 等）
+
+例（バインド例）：
+
+// 悪い例
+canvasEl.addEventListener('pointerdown', () => tool.onPointerDown());
+
+// 良い例（原始イベントを透過）
+canvasEl.addEventListener('pointerdown', (e) => tool.onPointerDown(e), { passive: false });
+canvasEl.addEventListener('pointermove', (e) => tool.onPointerMove(e), { passive: false });
+canvasEl.addEventListener('pointerup',   (e) => tool.onPointerUp(e),   { passive: false });
+
+2) イベントの発火元を Canvas(View) に限定
+
+document や親コンテナに付けると、ターゲット移送時に offsetX/offsetY が不安定になったり、Transform とのズレが出やすいです。
+
+app.view（Pixi の <canvas>）や描画レイヤ直下の DOMに紐づけてください。
+
+3) convertEventToCoords の耐性強化（Pointer/Mouse/Touch 全吸収）
+
+取得順にフォールバック：
+
+function getClientXY(e) {
+  if (!e) return null;
+  // PointerEvent / MouseEvent
+  if (typeof e.clientX === 'number' && typeof e.clientY === 'number') {
+    return { x: e.clientX, y: e.clientY };
+  }
+  // TouchEvent
+  const t = e.touches?.[0] || e.changedTouches?.[0];
+  if (t && typeof t.clientX === 'number' && typeof t.clientY === 'number') {
+    return { x: t.clientX, y: t.clientY };
+  }
+  // どうしても無い場合は offset 系を最後の手段で
+  if (typeof e.offsetX === 'number' && typeof e.offsetY === 'number') {
+    // 後段で rect 起点に変換できるなら offset でも可
+    return { x: e.offsetX, y: e.offsetY, isOffset: true };
+  }
+  return null;
+}
 
 
-上でキャンバスが表示されれば、bootstrap のチェックは通るはずです。
+null の場合は早期 return＋一度だけ警告（スパム防止）。
 
-CanvasManager が getDrawContainer() を返さない / isV8Ready が false
+4) DPR・Rect・コンテナ変形の一貫ロジック
 
-initializeV8Managers() 内で CanvasManager.getDrawContainer() をテストしているため、drawContainer の生成漏れは初期化失敗になります。CanvasManager.initializeV8Application() が正常に呼ばれているか確認してください。
-GitHub
-+1
+画面→キャンバス座標は 「getBoundingClientRect → 物理ピクセル(DPR適用) → Pixi座標系」の一方向パイプで統一。
 
-CoordinateManager が Canvas を受け取って isReady() になっていない
+例（ざっくり）：
 
-bootstrap は await coordinateManager.setCanvasManager(canvasManager) を呼んでいます。setCanvasManager() が例外を投げるか resolve しないと先に進みません（その場合 console にエラーが残ります）。
-GitHub
+const rect = app.view.getBoundingClientRect();
+const dpr = window.devicePixelRatio || 1;
+// 画面座標 (client) をキャンバス内の正規化座標へ
+const nx = (clientX - rect.left) * dpr;
+const ny = (clientY - rect.top)  * dpr;
+// Container にスケール/回転があれば CoordinateManager 経由で変換
+const { x, y } = coordinateManager.toLocalFromCanvas({ x: nx, y: ny });
 
-アイコンが表示されない（Sidebar）
 
-まず network タブで assets/icons.js が 200 OK で読み込まれているか確認。スクリプトの読み込み順が違うと window.Tegaki.assets 等が未定義のままツールが評価されます（tools が icons を参照する前に icons.js をロードする必要あり）。
-GitHub
+Container 変形を使用している前提なので、最後は必ず CoordinateManager の入口を通す。
+
+フロー健全性レビュー（Manager/メソッド配置は概ね良好）
+
+Manager の初期化順・注入ログは健全で、ToolManager→各 Tool への Map 注入も PASS。設計は適正に見えます。
+
+異常は座標イベント変換レイヤのみ。ここが直れば、他の管理層はそのまま活きます。
+
+再発防止のための具体策
+A) イベント契約（Contract）をヘッダーに明文化
+
+各ファイル先頭に、次の契約をコメント追加：
+
+Event Contract（全 Tool 共通）
+
+onPointerDown/Move/Up(e: PointerEvent|MouseEvent|TouchEvent) を必ず原始イベントで呼ぶ
+
+clientX/Y を主要ソース。Touch は touches[0] を clientX/Y に正規化してから渡す
+
+passive:false を要求（スクロール干渉防止／preventDefault 可能化）
+
+発火元は app.view 直下の DOM に限定
+
+Coordinate Contract
+
+画面→キャンバス→ローカルは CoordinateManager を正規ルートとする
+
+DPR／Container 変形対応は CoordinateManager に集約し、Tool 側は触らない
+
+DPR Policy
+
+取得は 1 箇所のみ（重複取得・重複適用禁止）
+
+物理座標化は「rect 基準 → *dpr」の一回のみ
+
+Error Policy
+
+clientX/Y 欠落時は描画中断しつつ一度だけ警告
+
+連続発生時は Event 配線の誤りを指摘するガイダンスを出す
+
+B) ユニット&統合テスト
+
+runPhase15Test() に 擬似 PointerEvent を投げる統合テストを追加し、最終点（Graphics に path が積まれるか）まで検証。
+
+ケース：
+
+PointerEvent（通常）
+
+TouchEvent（モバイル）
+
+EventBus 経由（カスタムイベント）：detail.clientX/Y に写経できているか
+
+C) 型とガード
+
+onPointerDown(e?: Event) の e を 必須にし、!e なら即 return（型 or ランタイムで強制）。
+
+convertEventToCoords は 戻り値が不正なら Tool 状態を一切進めない。
+
+D) CSS/DOM 側の地雷排除
+
+<canvas> に pointer-events: auto; touch-action: none; を付与（ブラウザ既定動作の抑止）。
+
+キャンバスの親に transform がある場合は Rect 計算に影響するので、getBoundingClientRect 起点で必ず補正。
+
+参考となる最小差分（イメージ）
+// tegaki-application.js / あるいは main.js の配線部
+- canvasEl.addEventListener('pointerdown', () => tool.onPointerDown());
++ canvasEl.addEventListener('pointerdown', (e) => tool.onPointerDown(e), { passive: false });
++ canvasEl.addEventListener('pointermove', (e) => tool.onPointerMove(e), { passive: false });
++ canvasEl.addEventListener('pointerup',   (e) => tool.onPointerUp(e),   { passive: false });
+
+// pen-tool.js
+- convertEventToCoords(e) {
+-   const { clientX, clientY } = e; // ここで undefined
+-   ...
+- }
++ convertEventToCoords(e) {
++   const p = getClientXY(e); // 上述のヘルパ
++   if (!p) {
++     this.error.warn('無効なクライアント座標（イベント未透過 or 変換漏れ）');
++     return null;
++   }
++   const rect = this.canvas.getView().getBoundingClientRect();
++   const dpr = window.devicePixelRatio || 1;
++   const cx = (p.x - rect.left) * dpr;
++   const cy = (p.y - rect.top)  * dpr;
++   return this.coordinate.toLocalFromCanvas({ x: cx, y: cy });
++ }
+
+補足：ログ中の気になる点
+
+初期化の途中で一瞬「TegakiApplication v8初期化未完了」の警告が混ざっていますが、その後に正常完了しており実害は今のところ無さそう（重複初期化の順序ログと混在）。警告の出力条件を**「本当に未完了の時のみ」**に厳格化すると、ノイズが減ってデバッグ性が上がります。

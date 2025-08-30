@@ -1,6 +1,6 @@
 /**
- * 📄 FILE: utils/coordinate-manager.js
- * 📌 RESPONSIBILITY: 統一座標変換システム・座標ズレ完全解決版（NaN問題修正）
+ * 📄 FILE: js/utils/coordinate-manager.js
+ * 📌 RESPONSIBILITY: 統一座標変換システム・ログ削減版
  * 
  * @provides
  *   - CoordinateManager（クラス）
@@ -30,7 +30,6 @@
  *   🚫 DPR未考慮座標変換禁止
  *   🚫 Container変形無視禁止
  *   🚫 未実装メソッド呼び出し禁止
- *   🚫 目先のエラー修正のためのDRY・SOLID原則違反
  *   🚫 NaN座標変換結果許可禁止
  *
  * @manager-key
@@ -50,10 +49,25 @@
  *   - toCanvasCoords() - 統一API
  *   - isV8Ready() - 準備状態確認
  *
+ * @event-contract
+ *   ・clientX/Y は必ずNumber.isFinite()でチェック
+ *   ・変換結果は必ず有効座標を保証
+ *   ・エラー時はフォールバック座標を返す
+ *
+ * @coordinate-contract
+ *   ・DOM座標→Canvas座標→World座標の一方向変換
+ *   ・DPR補正は一回のみ（Cache内で実行）
+ *   ・Container変形はWorld座標変換時に適用
+ *
+ * @input-validation
+ *   ・clientX/Y が NaN/undefined の場合は即座にエラー
+ *   ・座標変換途中でNaN発生時はフォールバック
+ *   ・Manager未準備時は待機またはエラー
+ *
  * @error-handling
- *   throw: 必須Manager未設定・座標変換失敗
- *   warn: 一時的エラー・キャッシュ無効
- *   log: 正常処理・統計更新
+ *   throw: 必須Manager未設定・重大座標変換失敗
+ *   warn: 一時的エラー・キャッシュ無効（重要時のみ）
+ *   log: 初期化完了・重大エラー（最低限のみ）
  *
  * @state-management
  *   - キャッシュは直接操作せず、updateCanvasCache()経由
@@ -64,19 +78,18 @@
  *   - 座標変換は高頻度、キャッシュ最適化必須
  *   - DPR計算は重い処理、キャッシュ活用
  *   - 16ms維持、バッチ変換対応
+ *   - console.log削減による性能向上
  */
 
 (function() {
     'use strict';
 
     /**
-     * CoordinateManager - 座標変換NaN問題修正版・API統一版
-     * 座標変換結果NaN防止・高精度座標変換・エラー処理強化
+     * CoordinateManager - ログ削減・高性能版
+     * NaN防止・高精度座標変換・最低限ログ
      */
     class CoordinateManager {
         constructor() {
-            console.log('🎯 CoordinateManager API統一版 初期化開始');
-            
             // Manager参照
             this.canvasManager = null;
             
@@ -118,18 +131,13 @@
             this.readyPromise = new Promise((resolve) => {
                 this.readyResolve = resolve;
             });
-            
-            console.log('✅ CoordinateManager API統一版 初期化完了');
         }
 
         /**
          * CanvasManager設定・準備完了処理（v8対応強化版）
-         * @param {CanvasManager} canvasManager - v8準備完了済みCanvasManager
          */
         async setCanvasManager(canvasManager) {
             try {
-                console.log('🎯 CoordinateManager: CanvasManager設定開始');
-                
                 if (!canvasManager) {
                     throw new Error('CanvasManager is required');
                 }
@@ -154,8 +162,6 @@
                     this.readyResolve();
                 }
                 
-                console.log('✅ CoordinateManager: CanvasManager設定完了');
-                
             } catch (error) {
                 console.error('🚨 CoordinateManager設定失敗:', error);
                 throw error;
@@ -170,17 +176,13 @@
             
             try {
                 const canvas = this.canvasManager.getCanvasElement();
-                if (!canvas) {
-                    console.warn('⚠️ Canvas要素取得失敗');
-                    return;
-                }
+                if (!canvas) return;
                 
-                // Canvas矩形情報取得（高精度・NaN防止）
+                // Canvas矩形情報取得
                 const rect = canvas.getBoundingClientRect();
                 
                 // 矩形情報検証（NaN・無効値チェック）
                 if (!this.isValidRect(rect)) {
-                    console.warn('⚠️ 無効な矩形情報:', rect);
                     return;
                 }
                 
@@ -192,7 +194,6 @@
                 
                 // 論理サイズ検証
                 if (!this.isValidSize(logicalSize)) {
-                    console.warn('⚠️ 無効な論理サイズ:', logicalSize);
                     return;
                 }
                 
@@ -212,13 +213,8 @@
                     valid: true
                 };
                 
-                console.log('✅ Canvas情報更新完了:', {
-                    rect: `${rect.width}x${rect.height}`,
-                    logical: `${logicalSize.width}x${logicalSize.height}`,
-                    dpr: this.dpr
-                });
-                
             } catch (error) {
+                // エラー時のみログ出力
                 console.warn('Canvas情報更新失敗:', error);
                 this.canvasCache.valid = false;
             }
@@ -226,8 +222,6 @@
         
         /**
          * 矩形情報有効性チェック（NaN防止）
-         * @param {DOMRect} rect - 矩形情報
-         * @returns {boolean} 有効性
          */
         isValidRect(rect) {
             if (!rect) return false;
@@ -244,8 +238,6 @@
         
         /**
          * サイズ情報有効性チェック（NaN防止）
-         * @param {Object} size - サイズ情報
-         * @returns {boolean} 有効性
          */
         isValidSize(size) {
             if (!size) return false;
@@ -274,13 +266,12 @@
                 };
                 
             } catch (error) {
-                console.warn('v8キャッシュ更新失敗:', error);
                 this.v8Cache.valid = false;
             }
         }
         
         /**
-         * v8キャッシュクリア（Navigation Manager連携用）
+         * v8キャッシュクリア
          */
         clearV8Cache() {
             this.v8Cache.valid = false;
@@ -293,9 +284,6 @@
         
         /**
          * DOM座標をWorld座標に変換（NaN防止完全版）
-         * @param {number} clientX - DOM座標X
-         * @param {number} clientY - DOM座標Y
-         * @returns {{x: number, y: number}} World座標
          */
         clientToWorld(clientX, clientY) {
             const startTime = performance.now();
@@ -332,7 +320,7 @@
                 
                 // 中間結果検証
                 if (!this.isValidCoordinate(canvasPoint)) {
-                    throw new Error(`Invalid canvas coordinate result: ${JSON.stringify(canvasPoint)}`);
+                    throw new Error(`Invalid canvas coordinate result`);
                 }
                 
                 // Step 2: Canvas座標 → World座標（Container変形対応）
@@ -340,7 +328,7 @@
                 
                 // 最終結果検証
                 if (!this.isValidCoordinate(worldPoint)) {
-                    throw new Error(`Invalid world coordinate result: ${JSON.stringify(worldPoint)}`);
+                    throw new Error(`Invalid world coordinate result`);
                 }
                 
                 // 統計更新
@@ -349,20 +337,18 @@
                 return worldPoint;
                 
             } catch (error) {
+                // エラー時のみログ出力
                 console.error('座標変換失敗:', error);
                 this.updateStats(startTime, false);
                 
                 // フォールバック座標（NaN回避）
                 const fallback = { x: 0, y: 0 };
-                console.warn('⚠️ フォールバック座標を使用:', fallback);
                 return fallback;
             }
         }
         
         /**
          * 座標有効性チェック（NaN防止）
-         * @param {Object} coord - 座標オブジェクト
-         * @returns {boolean} 有効性
          */
         isValidCoordinate(coord) {
             if (!coord) return false;
@@ -371,9 +357,6 @@
         
         /**
          * DOM座標をCanvas座標に変換（NaN防止強化版）
-         * @param {number} clientX - DOM座標X
-         * @param {number} clientY - DOM座標Y
-         * @returns {{x: number, y: number}} Canvas座標
          */
         clientToCanvasHighPrecision(clientX, clientY) {
             try {
@@ -397,7 +380,7 @@
                 
                 // NaN確認
                 if (!Number.isFinite(normalizedX) || !Number.isFinite(normalizedY)) {
-                    throw new Error(`Normalized coordinates NaN: x=${normalizedX}, y=${normalizedY}`);
+                    throw new Error(`Normalized coordinates NaN`);
                 }
                 
                 // 境界チェック（範囲外座標の適切な処理）
@@ -410,7 +393,7 @@
                 
                 // 最終結果NaN確認
                 if (!Number.isFinite(canvasX) || !Number.isFinite(canvasY)) {
-                    throw new Error(`Canvas coordinates NaN: x=${canvasX}, y=${canvasY}`);
+                    throw new Error(`Canvas coordinates NaN`);
                 }
                 
                 return { x: canvasX, y: canvasY };
@@ -423,15 +406,12 @@
         
         /**
          * Canvas座標をWorld座標に変換（Container変形対応・NaN防止版）
-         * @param {number} canvasX - Canvas座標X
-         * @param {number} canvasY - Canvas座標Y
-         * @returns {{x: number, y: number}} World座標
          */
         canvasToWorldHighPrecision(canvasX, canvasY) {
             try {
                 // 入力値検証
                 if (!Number.isFinite(canvasX) || !Number.isFinite(canvasY)) {
-                    throw new Error(`Invalid canvas coordinates: x=${canvasX}, y=${canvasY}`);
+                    throw new Error(`Invalid canvas coordinates`);
                 }
                 
                 // v8キャッシュ使用（高性能）
@@ -449,7 +429,7 @@
                 
                 // 結果検証
                 if (!Number.isFinite(worldPoint.x) || !Number.isFinite(worldPoint.y)) {
-                    throw new Error(`World coordinates NaN: x=${worldPoint.x}, y=${worldPoint.y}`);
+                    throw new Error(`World coordinates NaN`);
                 }
                 
                 return worldPoint;
@@ -481,9 +461,6 @@
         /**
          * 統一API: DOM座標 → Canvas座標（Tool用エイリアス）
          * PenToolなどで使用される統一メソッド名
-         * @param {number} clientX - DOM座標X
-         * @param {number} clientY - DOM座標Y
-         * @returns {{x: number, y: number}} Canvas座標
          */
         toCanvasCoords(clientX, clientY) {
             return this.clientToCanvasHighPrecision(clientX, clientY);
@@ -491,9 +468,6 @@
         
         /**
          * 座標変換テスト（精度確認・デバッグ用）
-         * @param {number} clientX - テスト用DOM座標X
-         * @param {number} clientY - テスト用DOM座標Y
-         * @returns {Object} 変換結果詳細
          */
         testCoordinate(clientX, clientY) {
             try {
@@ -570,7 +544,7 @@
         getDebugInfo() {
             return {
                 className: 'CoordinateManager',
-                version: 'v8-nan-fix',
+                version: 'v8-performance-optimized',
                 ready: this.ready,
                 v8Ready: this.v8Ready,
                 canvasManagerReady: this.canvasManager?.isV8Ready() || false,
@@ -601,7 +575,5 @@
         window.Tegaki = {};
     }
     window.Tegaki.CoordinateManager = CoordinateManager;
-
-    console.log('🎯 CoordinateManager NaN問題修正版 Loaded - 座標変換結果NaN完全防止・エラー処理強化');
 
 })();
