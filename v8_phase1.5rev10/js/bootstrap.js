@@ -1,10 +1,11 @@
 /**
- * Bootstrap PixiJS v8対応版・二重初期化防止版
- * ChangeLog: 2025-09-01 二重初期化完全防止・シングルトン実装
+ * Bootstrap PixiJS v8対応版・構文エラー修正・依存チェック強化版
+ * ChangeLog: 2025-09-01 構文エラー修正・依存チェック強化・二重初期化完全防止
  * 
  * @provides
  *   ・PixiJS v8利用可能性確認（checkPixiJSAvailability）
  *   ・Canvas Container準備（setupCanvasContainer）
+ *   ・Phase1.5依存関係確認（checkPhase15Dependencies）強化版
  *   ・TegakiApplication単一初期化（initializeTegakiApplication）
  *   ・Bootstrap実行制御（start）
  * 
@@ -14,10 +15,10 @@
  *   ・Phase1.5統合テスト実行
  * 
  * @initflow
- *   1. Bootstrap.start() - 実行フラグ確認
+ *   1. Bootstrap.start() - 実行フラグ確認・二重実行防止
  *   2. PixiJS v8利用可能性確認
  *   3. Canvas Container準備
- *   4. Phase1.5依存関係確認
+ *   4. Phase1.5依存関係確認（強化版：実行可能性まで検証）
  *   5. TegakiApplication単一インスタンス初期化
  *   6. 統合テスト自動実行
  * 
@@ -25,15 +26,21 @@
  *   ・💀 二重初期化禁止（実行フラグで制御）
  *   ・🚫 TegakiApplication複数インスタンス作成禁止
  *   ・🚫 DOM準備前の実行禁止
+ *   ・🚫 依存クラス存在確認不足（typeof function 検証必須）
  * 
  * @integration-flow
  *   ・DOMContentLoaded後にstart()実行
  *   ・全体初期化の起点
+ * 
+ * @error-handling
+ *   ・依存関係確認失敗時は具体的エラーメッセージ
+ *   ・初期化失敗時は実行フラグクリア（再試行可能）
+ *   ・構文エラー検出時は該当ファイル名表示
  */
 
 class Bootstrap {
     constructor() {
-        this.version = 'v8-singletone-fix';
+        this.version = 'v8-syntax-dependency-fix';
         this.className = 'Bootstrap';
         this.startTime = Date.now();
         
@@ -53,6 +60,7 @@ class Bootstrap {
             start: null,
             pixiCheck: null,
             domSetup: null,
+            dependencyCheck: null,
             appInit: null,
             complete: null
         };
@@ -63,7 +71,7 @@ class Bootstrap {
     // ===========================================
     
     /**
-     * Bootstrap開始（二重実行防止版）
+     * Bootstrap開始（二重実行防止・構文エラー対応版）
      */
     async start() {
         // 二重実行防止チェック
@@ -73,7 +81,7 @@ class Bootstrap {
         }
         
         try {
-            console.log('🚀 Bootstrap PixiJS v8対応版・二重初期化防止版 実行開始...');
+            console.log('🚀 Bootstrap PixiJS v8対応版・構文エラー修正版 実行開始...');
             this.timing.start = Date.now();
             
             // 実行フラグ設定（他の初期化をブロック）
@@ -87,7 +95,7 @@ class Bootstrap {
             // ステップ2: Canvas Container準備
             await this.setupCanvasContainer();
             
-            // ステップ3: Phase1.5依存関係確認
+            // ステップ3: Phase1.5依存関係確認（強化版）
             await this.checkPhase15Dependencies();
             
             // ステップ4: TegakiApplication初期化（シングルトン）
@@ -195,27 +203,69 @@ class Bootstrap {
     }
     
     /**
-     * Phase1.5依存関係確認
+     * Phase1.5依存関係確認（強化版：実行可能性まで検証）
      */
     async checkPhase15Dependencies() {
-        console.log('🔍 Phase1.5依存関係確認開始');
+        console.log('🔍 Phase1.5依存関係確認開始（強化版）');
+        this.timing.dependencyCheck = Date.now();
         
         try {
-            // 必須クラス確認
+            // 必須クラス確認（実行可能性まで検証）
             const requiredClasses = [
                 'TegakiApplication', 'AppCore', 'CanvasManager', 
                 'CoordinateManager', 'ToolManager', 'PenTool', 'EraserTool'
             ];
             
             const missing = [];
+            const syntaxErrors = [];
+            
             for (const className of requiredClasses) {
+                // 存在確認
                 if (!window.Tegaki || !window.Tegaki[className]) {
                     missing.push(className);
+                    continue;
+                }
+                
+                // 実行可能性確認（型チェック）
+                const ClassRef = window.Tegaki[className];
+                if (typeof ClassRef !== 'function') {
+                    syntaxErrors.push(`${className} (typeof: ${typeof ClassRef})`);
+                    continue;
+                }
+                
+                // 基本的なコンストラクタ確認
+                try {
+                    // インスタンス化テスト（軽量）
+                    if (className === 'TegakiApplication') {
+                        // TegakiApplicationはgetInstance()を使用
+                        if (typeof ClassRef.getInstance !== 'function') {
+                            syntaxErrors.push(`${className}.getInstance() not available`);
+                        }
+                    } else {
+                        // 他のクラスは通常のコンストラクタ確認
+                        new ClassRef();
+                    }
+                    
+                    console.log(`✅ ${className}: 構文・実行可能性 OK`);
+                    
+                } catch (constructorError) {
+                    // 軽微な初期化エラーは許容（Manager依存等）
+                    if (constructorError.message.includes('not ready') || 
+                        constructorError.message.includes('not injected')) {
+                        console.log(`✅ ${className}: 構文 OK（Manager依存エラーは正常）`);
+                    } else {
+                        syntaxErrors.push(`${className} (${constructorError.message})`);
+                    }
                 }
             }
             
+            // エラー判定・詳細レポート
             if (missing.length > 0) {
                 throw new Error(`Required classes not loaded: ${missing.join(', ')}`);
+            }
+            
+            if (syntaxErrors.length > 0) {
+                throw new Error(`Classes have syntax/structure errors: ${syntaxErrors.join(', ')}`);
             }
             
             // Phase1.5統合テスト存在確認
@@ -225,7 +275,7 @@ class Bootstrap {
                 this.dependencies.phase15 = true;
             }
             
-            console.log('✅ Phase1.5依存関係確認完了');
+            console.log('✅ Phase1.5依存関係確認完了（強化版）');
             
         } catch (error) {
             console.error('💀 Phase1.5依存関係確認失敗:', error);
@@ -340,6 +390,7 @@ class Bootstrap {
             total: now - startTime,
             pixiCheck: this.timing.pixiCheck ? this.timing.pixiCheck - startTime : 0,
             domSetup: this.timing.domSetup ? this.timing.domSetup - startTime : 0,
+            dependencyCheck: this.timing.dependencyCheck ? this.timing.dependencyCheck - startTime : 0,
             appInit: this.timing.appInit ? this.timing.appInit - startTime : 0,
             complete: this.timing.complete ? this.timing.complete - startTime : 0
         };
@@ -397,16 +448,16 @@ if (document.readyState === 'loading') {
         }
     });
 } else {
-    // DOM既に準備済みの場合は即座に実行
+    // DOM既に準備完了
     setTimeout(async () => {
         try {
             await startBootstrap();
         } catch (error) {
-            console.error('💥 即座Bootstrap失敗:', error);
+            console.error('💥 遅延Bootstrap失敗:', error);
         }
-    }, 0);
+    }, 100);
 }
 
-console.log('🚀 Bootstrap PixiJS v8対応版・二重初期化防止版 Loaded');
-console.log('📏 特徴: シングルトンパターン・二重実行完全防止・TegakiApplication単一インスタンス制御・DOM準備確実化');
+console.log('🚀 Bootstrap PixiJS v8対応版・構文エラー修正・依存チェック強化版 Loaded');
+console.log('📏 特徴: 構文エラー対応・実行可能性検証・二重実行完全防止・TegakiApplication単一インスタンス制御');
 console.log('🎯 使用方法: DOMContentLoaded後に自動実行 or window.Tegaki.startBootstrap()で手動実行');
