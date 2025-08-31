@@ -1,37 +1,37 @@
- 🚨 ErrorManager Simple 作成
- 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
- 🔧 ConfigManager v8対応版 作成
- 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
- 🔄 EventBus Simple 作成
- 🔄 EventBus Simple Loaded - シンプルイベント通信
- 📐 CoordinateManager v8対応版・Manager統一API契約版 Loaded
- 🚀 特徴: isReady()メソッド実装・configure/attach/init/dispose完全対応・PixiJS v8互換・DPR制限・境界判定
- 🧭 NavigationManager PixiJS v8対応版 Loaded
- 📏 Phase1.5機能: getCameraBounds()実装・カメラ境界管理・外部描画対応
- 🚀 v8特徴: Container変形・高精度ナビゲーション・WebGPU対応・境界判定
- ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
- 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応・getCameraBounds実装完了
- 🔄 RecordManager Manager注入問題修正版 Loaded - 準備状態確認強化・エラー耐性向上
- ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
- 🔧 setupPhase15Shortcuts・enableメソッド追加済み
- 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
- 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
- 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
- ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
- 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
- 🎨 CanvasManager v8.12.0完全対応版 Loaded - Graphics分離管理・座標変換支援・描画消失問題解決版
- 🎯 AbstractTool Manager参照問題修正版 Loaded - Manager注入API統一・参照キャッシュ問題解決・v8完全対応
- 🖊️ PenTool v8.12.0 Manager統一注入・継続描画修正・外部描画対応版 Loaded
- 🚀 特徴: setManagersObject()統一・forceEndDrawing()冪等保証・tempStrokeバッファリング・TPF完全記録
- 🧹 EraserTool v8.12.0 最終修正版 Loaded - PixiJS v8対応・hit-test消去・座標変換修正・Manager統一注入完全対応
- 🚀 特徴: Graphics境界判定・距離ベース消去・Container階層対応・エラー耐性・記録機能
- 🚀 ToolManager v8.12.0完全対応版・API統一修正版 Loaded
- 📏 修正内容: getTools()追加・setActiveTool()エイリアス・Manager注入強化・API統一完了
- 🚀 特徴: 防御的依存注入・Tool初期化エラー完全対応・ポインターイベント統一処理
- 🚀 AppCore v8統合基盤システム・Manager統一API契約対応版 Loaded
- 🚀 特徴: isReady()エイリアス自動注入・依存関係順序制御・エラー耐性・統一初期化
- 🚀 TegakiApplication v8対応版 Loaded - PixiJS v8イベント修正・外部描画対応・Manager統合完全対応
- 🚀 特徴: PixiJS v8 global events対応・DOM/PixiJS二重バインド・座標透過・Container階層・境界外描画対応
+error-manager.js:20 🚨 ErrorManager Simple 作成
+error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+config-manager.js:71 🔧 ConfigManager v8対応版 作成
+config-manager.js:495 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
+event-bus.js:20 🔄 EventBus Simple 作成
+event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
+coordinate-manager.js:703 📐 CoordinateManager v8対応版・Manager統一API契約版 Loaded
+coordinate-manager.js:704 🚀 特徴: isReady()メソッド実装・configure/attach/init/dispose完全対応・PixiJS v8互換・DPR制限・境界判定
+navigation-manager.js:484 🧭 NavigationManager PixiJS v8対応版 Loaded
+navigation-manager.js:485 📏 Phase1.5機能: getCameraBounds()実装・カメラ境界管理・外部描画対応
+navigation-manager.js:486 🚀 v8特徴: Container変形・高精度ナビゲーション・WebGPU対応・境界判定
+navigation-manager.js:487 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+navigation-manager.js:490 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応・getCameraBounds実装完了
+record-manager.js:824 🔄 RecordManager Manager注入問題修正版 Loaded - 準備状態確認強化・エラー耐性向上
+shortcut-manager.js:416 ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
+shortcut-manager.js:417 🔧 setupPhase15Shortcuts・enableメソッド追加済み
+shortcut-manager.js:418 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
+minimal-deps.js:22 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
+minimal-deps.js:168 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
+minimal-deps.js:169 ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
+minimal-deps.js:170 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
+canvas-manager.js:705 🎨 CanvasManager v8.12.0完全対応版 Loaded - Graphics分離管理・座標変換支援・描画消失問題解決版
+abstract-tool.js:504 🎯 AbstractTool Manager参照問題修正版 Loaded - Manager注入API統一・参照キャッシュ問題解決・v8完全対応
+pen-tool.js:842 🖊️ PenTool v8.12.0 Manager統一注入・継続描画修正・外部描画対応版 Loaded
+pen-tool.js:843 🚀 特徴: setManagersObject()統一・forceEndDrawing()冪等保証・tempStrokeバッファリング・TPF完全記録
+eraser-tool.js:332 🧹 EraserTool v8.12.0 最終修正版 Loaded - PixiJS v8対応・hit-test消去・座標変換修正・Manager統一注入完全対応
+eraser-tool.js:333 🚀 特徴: Graphics境界判定・距離ベース消去・Container階層対応・エラー耐性・記録機能
+tool-manager.js:742 🚀 ToolManager v8.12.0完全対応版・API統一修正版 Loaded
+tool-manager.js:743 📏 修正内容: getTools()追加・setActiveTool()エイリアス・Manager注入強化・API統一完了
+tool-manager.js:744 🚀 特徴: 防御的依存注入・Tool初期化エラー完全対応・ポインターイベント統一処理
+app-core.js:1049 🚀 AppCore v8統合基盤システム・Manager統一API契約対応版 Loaded
+app-core.js:1050 🚀 特徴: isReady()エイリアス自動注入・依存関係順序制御・エラー耐性・統一初期化
+tegaki-application.js:440 🚀 TegakiApplication v8対応版 Loaded - PixiJS v8イベント修正・外部描画対応・Manager統合完全対応
+tegaki-application.js:441 🚀 特徴: PixiJS v8 global events対応・DOM/PixiJS二重バインド・座標透過・Container階層・境界外描画対応
  🚀 main.js v8統合エントリーポイント Loaded - グローバル関数・デバッグ機能・WebGPU対応
  ✅ PixiJS v8確認完了 - v8統合機能利用可能
  🧪 Phase1.5統合テスト Loaded
@@ -58,8 +58,20 @@
  🚀 AppCore: v8 Application作成開始
  🚀 PixiJS v8.12.0 loaded from node_modules
  ✅ PixiJS v8.12.0 confirmed
- The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
+app-core.js:221 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
 _createDeviceAndAdaptor @ pixi.min.js:2121
+init @ pixi.min.js:2121
+init @ pixi.min.js:585
+await in init
+Sm @ pixi.min.js:585
+await in Sm
+init @ pixi.min.js:585
+createV8Application @ app-core.js:221
+await in createV8Application
+createCanvasV8 @ app-core.js:147
+initialize @ tegaki-application.js:58
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
  ✅ AppCore: v8 Application作成完了
  ✅ AppCore: Canvas要素準備完了
  🚀 AppCore: Manager群統一初期化開始（統一API契約準拠版）
@@ -93,183 +105,198 @@ _createDeviceAndAdaptor @ pixi.min.js:2121
  ✅ 基盤Manager群登録完了: 8個
  🔧 AppCore: Manager群統一API契約初期化開始
  🔧 Manager[config] 統一API契約初期化開始
- ⚠️ Manager[config]: isReady()メソッド未実装 - エイリアス注入実行
-applyUnifiedAPIContract @ app-core.js:523
- ⚠️ Manager[config]: isReady()デフォルトエイリアス注入（常にtrue）
-applyUnifiedAPIContract @ app-core.js:538
+app-core.js:529 ⚠️ Manager[config]: isReady()メソッド未実装 - エイリアス注入実行
+applyUnifiedAPIContract @ app-core.js:529
+initializeManagerWithContract @ app-core.js:492
+initializeAllManagersWithContract @ app-core.js:471
+initializeV8Managers @ app-core.js:344
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
+app-core.js:541 ⚠️ Manager[config]: isReady()デフォルトエイリアス注入（常にtrue）
+applyUnifiedAPIContract @ app-core.js:541
+initializeManagerWithContract @ app-core.js:492
+initializeAllManagersWithContract @ app-core.js:471
+initializeV8Managers @ app-core.js:344
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
  ✅ Manager[config] 統一API契約初期化完了
  🔧 Manager[eventbus] 統一API契約初期化開始
- ⚠️ Manager[eventbus]: isReady()メソッド未実装 - エイリアス注入実行
-applyUnifiedAPIContract @ app-core.js:523
- ⚠️ Manager[eventbus]: isReady()デフォルトエイリアス注入（常にtrue）
-applyUnifiedAPIContract @ app-core.js:538
+app-core.js:529 ⚠️ Manager[eventbus]: isReady()メソッド未実装 - エイリアス注入実行
+applyUnifiedAPIContract @ app-core.js:529
+initializeManagerWithContract @ app-core.js:492
+initializeAllManagersWithContract @ app-core.js:471
+await in initializeAllManagersWithContract
+initializeV8Managers @ app-core.js:344
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
+app-core.js:541 ⚠️ Manager[eventbus]: isReady()デフォルトエイリアス注入（常にtrue）
+applyUnifiedAPIContract @ app-core.js:541
+initializeManagerWithContract @ app-core.js:492
+initializeAllManagersWithContract @ app-core.js:471
+await in initializeAllManagersWithContract
+initializeV8Managers @ app-core.js:344
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
  ✅ Manager[eventbus] 統一API契約初期化完了
  🔧 Manager[error] 統一API契約初期化開始
- ⚠️ Manager[error]: isReady()メソッド未実装 - エイリアス注入実行
-applyUnifiedAPIContract @ app-core.js:523
- ⚠️ Manager[error]: isReady()デフォルトエイリアス注入（常にtrue）
-applyUnifiedAPIContract @ app-core.js:538
+app-core.js:529 ⚠️ Manager[error]: isReady()メソッド未実装 - エイリアス注入実行
+applyUnifiedAPIContract @ app-core.js:529
+initializeManagerWithContract @ app-core.js:492
+initializeAllManagersWithContract @ app-core.js:471
+await in initializeAllManagersWithContract
+initializeV8Managers @ app-core.js:344
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
+app-core.js:541 ⚠️ Manager[error]: isReady()デフォルトエイリアス注入（常にtrue）
+applyUnifiedAPIContract @ app-core.js:541
+initializeManagerWithContract @ app-core.js:492
+initializeAllManagersWithContract @ app-core.js:471
+await in initializeAllManagersWithContract
+initializeV8Managers @ app-core.js:344
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
  ✅ Manager[error] 統一API契約初期化完了
  🔧 Manager[coordinate] 統一API契約初期化開始
  📐 CoordinateManager: configure() 開始
- ✅ CoordinateManager: configure() 完了 Object
+ ✅ CoordinateManager: configure() 完了 {dprLimit: 2, boundaryCheck: true, precision: 2}
  📐 CoordinateManager: attach() 開始
- ❌ CoordinateManager: attach() エラー: 
-attach @ coordinate-manager.js:155
- ❌ Manager[coordinate] 統一API契約初期化エラー: 
-initializeManagerWithContract @ app-core.js:508
- ⚠️ Manager[coordinate] 初期化失敗 - 継続実行
-initializeManagerWithContract @ app-core.js:511
- 🔧 Manager[navigation] 統一API契約初期化開始
- ⚠️ Manager[navigation]: isReady()メソッド未実装 - エイリアス注入実行
-applyUnifiedAPIContract @ app-core.js:523
- ⚠️ Manager[navigation]: isReady()デフォルトエイリアス注入（常にtrue）
-applyUnifiedAPIContract @ app-core.js:538
- ✅ Manager[navigation] 統一API契約初期化完了
- 🔧 Manager[record] 統一API契約初期化開始
- ✅ Manager[record] 統一API契約初期化完了
- 🔧 Manager[shortcut] 統一API契約初期化開始
- ⚠️ Manager[shortcut]: isReady()メソッド未実装 - エイリアス注入実行
-applyUnifiedAPIContract @ app-core.js:523
- ⚠️ Manager[shortcut]: isReady()デフォルトエイリアス注入（常にtrue）
-applyUnifiedAPIContract @ app-core.js:538
- ✅ Manager[shortcut] 統一API契約初期化完了
- ✅ Manager群統一API契約初期化完了
- 🛠️ AppCore: ToolManager初期化開始
- 🚀 ToolManager v8.12.0作成開始 - API統一修正版
- ✅ CanvasManager注入成功
- ✅ ToolManager v8.12.0作成完了 - API統一修正版
- 📦 Manager[tool] 登録完了 - global: ToolManagerInstance
- 🔧 ToolManager - Manager統一注入開始
- ✅ Map形式で受信 - 直接利用
- ✅ CanvasManager統一注入成功
- ✅ DrawContainer取得成功: true
- ✅ ToolManager: Manager統一注入完了
- 🔍 ToolManager依存注入検証開始...
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager依存注入検証完了 - 全検証PASS
- 🚀 v8 Tool初期化開始（API統一版）
- ✅ v8依存関係確認完了
- 🔧 WebGPU対応状況: 対応
- 1️⃣ v8 PenTool作成開始...
- 🎯 AbstractTool 作成開始: pen
- ✅ pen AbstractTool 作成完了
- 🖊️ PenTool v8.12.0 Manager統一注入・継続描画修正版 作成開始
- ✅ PenTool 作成完了
- 🔧 PenTool Manager注入開始
- 🔄 pen: Manager統一注入（エイリアス経由）
- 🖊️ PenTool: Manager統一注入開始（正規メソッド）
- 🔧 pen Manager統一注入開始（正規メソッド）
- 📦 pen 受信Manager型: Object（直接使用）
- ✅ pen: Manager群をMap形式で保存完了
- 📋 pen 利用可能Manager キー: Array(9)
- 📋 pen 利用可能Manager数: 9
- 📦 pen Manager[canvas]: CanvasManager
- 📦 pen Manager[coordinate]: CoordinateManager
- 📦 pen Manager[record]: RecordManager
- 📦 pen Manager[config]: ConfigManager
- 📦 pen Manager[navigation]: NavigationManager
- 📦 pen Manager[shortcut]: ShortcutManager
- 📦 pen Manager[error]: ErrorManager
- 📦 pen Manager[eventbus]: EventBus
- 📦 pen Manager[tool]: ToolManager
- 🔍 pen 必須Manager[canvas]: exists=true, hasValue=true
- 🔍 pen 必須Manager[coordinate]: exists=true, hasValue=true
- 🔍 pen 必須Manager[record]: exists=true, hasValue=true
- 📦 pen: Manager参照キャッシュ作成開始
- ✅ pen: canvasManager キャッシュ完了
- ✅ pen: coordinateManager キャッシュ完了
- ✅ pen: recordManager キャッシュ完了
- ✅ pen: eventbusManager キャッシュ完了
- ✅ pen: configManager キャッシュ完了
- ✅ pen: Manager参照キャッシュ作成完了
- ✅ pen: 必須Manager確認完了: Array(3)
- ✅ pen: Manager統一注入完了（正規メソッド）
- 🖊️ PenTool: 固有初期化開始
- ✅ PenTool: 固有初期化完了
- ✅ PenTool: Manager統一注入完了
- ✅ PenTool Manager統一注入完了
- ✅ PenTool登録完了
- 2️⃣ v8 EraserTool作成開始...
- 🎯 AbstractTool 作成開始: eraser
- ✅ eraser AbstractTool 作成完了
- 🧹 EraserTool v8.12.0 作成完了 - PixiJS v8対応・hit-test消去
- 🔧 EraserTool Manager注入開始
- 🔄 eraser: Manager統一注入（エイリアス経由）
- 🔧 eraser Manager統一注入開始（正規メソッド）
- 📦 eraser 受信Manager型: Object（直接使用）
- ✅ eraser: Manager群をMap形式で保存完了
- 📋 eraser 利用可能Manager キー: Array(9)
- 📋 eraser 利用可能Manager数: 9
- 📦 eraser Manager[canvas]: CanvasManager
- 📦 eraser Manager[coordinate]: CoordinateManager
- 📦 eraser Manager[record]: RecordManager
- 📦 eraser Manager[config]: ConfigManager
- 📦 eraser Manager[navigation]: NavigationManager
- 📦 eraser Manager[shortcut]: ShortcutManager
-abstract-tool.js:127 📦 eraser Manager[error]: ErrorManager
-abstract-tool.js:127 📦 eraser Manager[eventbus]: EventBus
-abstract-tool.js:127 📦 eraser Manager[tool]: ToolManager
-abstract-tool.js:135 🔍 eraser 必須Manager[canvas]: exists=true, hasValue=true
-abstract-tool.js:135 🔍 eraser 必須Manager[coordinate]: exists=true, hasValue=true
-abstract-tool.js:135 🔍 eraser 必須Manager[record]: exists=true, hasValue=true
-abstract-tool.js:143 📦 eraser: Manager参照キャッシュ作成開始
-abstract-tool.js:188 ✅ eraser: canvasManager キャッシュ完了
-abstract-tool.js:188 ✅ eraser: coordinateManager キャッシュ完了
-abstract-tool.js:188 ✅ eraser: recordManager キャッシュ完了
-abstract-tool.js:188 ✅ eraser: eventbusManager キャッシュ完了
-abstract-tool.js:188 ✅ eraser: configManager キャッシュ完了
-abstract-tool.js:145 ✅ eraser: Manager参照キャッシュ作成完了
-abstract-tool.js:149 ✅ eraser: 必須Manager確認完了: Array(3)
-abstract-tool.js:159 ✅ eraser: Manager統一注入完了（正規メソッド）
-tool-manager.js:369 ✅ EraserTool Manager統一注入完了
-tool-manager.js:308 ✅ EraserTool登録完了
-tool-manager.js:314 🔄 デフォルトTool切り替え: pen
-tool-manager.js:414 🔄 Tool切り替え開始: pen → pen
-abstract-tool.js:272 🎯 pen Tool アクティブ化開始
-abstract-tool.js:295 📦 pen: DrawContainer取得完了
-abstract-tool.js:308 ✅ pen Tool アクティブ化完了
-tool-manager.js:434 ✅ pen Tool アクティブ化完了
-tool-manager.js:440 ✅ Tool切り替え完了: pen
-tool-manager.js:318 ✅ v8 Tool初期化完了
-app-core.js:642 ✅ ToolManager初期化完了
-app-core.js:658 🔍 AppCore: Manager初期化結果確認
-app-core.js:676 📊 Manager初期化結果: Object
-app-core.js:357 💀 AppCore: Manager群統一初期化エラー: Error: Critical Manager initialization failed: coordinate
-    at AppCore.validateManagerInitialization (app-core.js:683:23)
-    at AppCore.initializeV8Managers (app-core.js:349:22)
+coordinate-manager.js:175 ❌ CanvasManager利用可能メソッド: []
+attach @ coordinate-manager.js:175
+applyUnifiedAPIContract @ app-core.js:561
+initializeManagerWithContract @ app-core.js:492
+initializeAllManagersWithContract @ app-core.js:471
+await in initializeAllManagersWithContract
+initializeV8Managers @ app-core.js:344
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
+coordinate-manager.js:194 ❌ CoordinateManager: attach() エラー: CanvasManager required methods missing. Available: 
+attach @ coordinate-manager.js:194
+applyUnifiedAPIContract @ app-core.js:561
+initializeManagerWithContract @ app-core.js:492
+initializeAllManagersWithContract @ app-core.js:471
+await in initializeAllManagersWithContract
+initializeV8Managers @ app-core.js:344
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
+app-core.js:563 ❌ Manager[coordinate].attach() 失敗: CanvasManager required methods missing. Available: 
+applyUnifiedAPIContract @ app-core.js:563
+initializeManagerWithContract @ app-core.js:492
+initializeAllManagersWithContract @ app-core.js:471
+await in initializeAllManagersWithContract
+initializeV8Managers @ app-core.js:344
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
+app-core.js:509 ❌ Manager[coordinate] 統一API契約初期化エラー: CanvasManager required methods missing. Available: 
+initializeManagerWithContract @ app-core.js:509
+await in initializeManagerWithContract
+initializeAllManagersWithContract @ app-core.js:471
+await in initializeAllManagersWithContract
+initializeV8Managers @ app-core.js:344
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
+app-core.js:358 💀 AppCore: Manager群統一初期化エラー: Error: CanvasManager required methods missing. Available: 
+    at CoordinateManager.attach (coordinate-manager.js:176:23)
+    at AppCore.applyUnifiedAPIContract (app-core.js:561:29)
+    at AppCore.initializeManagerWithContract (app-core.js:492:28)
+    at AppCore.initializeAllManagersWithContract (app-core.js:471:28)
+    at async AppCore.initializeV8Managers (app-core.js:344:17)
     at async TegakiApplication.initialize (tegaki-application.js:61:13)
     at async initializeTegakiApplication (bootstrap.js:183:13)
     at async HTMLDocument.start (bootstrap.js:405:31)
-initializeV8Managers @ app-core.js:357
-app-core.js:898 💀 AppCore初期化失敗レポート: Object
-outputInitializationFailureReport @ app-core.js:898
-tegaki-application.js:103 ❌ TegakiApplication 初期化失敗: Error: Critical Manager initialization failed: coordinate
-    at AppCore.validateManagerInitialization (app-core.js:683:23)
-    at AppCore.initializeV8Managers (app-core.js:349:22)
+initializeV8Managers @ app-core.js:358
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
+app-core.js:938 💀 AppCore初期化失敗レポート: {mainError: 'CanvasManager required methods missing. Available: ', initializationSteps: Array(2), managerResults: {…}, systemState: {…}}
+outputInitializationFailureReport @ app-core.js:938
+initializeV8Managers @ app-core.js:359
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
+tegaki-application.js:103 ❌ TegakiApplication 初期化失敗: Error: CanvasManager required methods missing. Available: 
+    at CoordinateManager.attach (coordinate-manager.js:176:23)
+    at AppCore.applyUnifiedAPIContract (app-core.js:561:29)
+    at AppCore.initializeManagerWithContract (app-core.js:492:28)
+    at AppCore.initializeAllManagersWithContract (app-core.js:471:28)
+    at async AppCore.initializeV8Managers (app-core.js:344:17)
     at async TegakiApplication.initialize (tegaki-application.js:61:13)
     at async initializeTegakiApplication (bootstrap.js:183:13)
     at async HTMLDocument.start (bootstrap.js:405:31)
 initialize @ tegaki-application.js:103
-bootstrap.js:246 ❌ TegakiApplication初期化失敗: Error: Critical Manager initialization failed: coordinate
-    at AppCore.validateManagerInitialization (app-core.js:683:23)
-    at AppCore.initializeV8Managers (app-core.js:349:22)
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
+bootstrap.js:246 ❌ TegakiApplication初期化失敗: Error: CanvasManager required methods missing. Available: 
+    at CoordinateManager.attach (coordinate-manager.js:176:23)
+    at AppCore.applyUnifiedAPIContract (app-core.js:561:29)
+    at AppCore.initializeManagerWithContract (app-core.js:492:28)
+    at AppCore.initializeAllManagersWithContract (app-core.js:471:28)
+    at async AppCore.initializeV8Managers (app-core.js:344:17)
     at async TegakiApplication.initialize (tegaki-application.js:61:13)
     at async initializeTegakiApplication (bootstrap.js:183:13)
     at async HTMLDocument.start (bootstrap.js:405:31)
 initializeTegakiApplication @ bootstrap.js:246
-bootstrap.js:426 💥 Bootstrap初期化失敗: Error: Critical Manager initialization failed: coordinate
-    at AppCore.validateManagerInitialization (app-core.js:683:23)
-    at AppCore.initializeV8Managers (app-core.js:349:22)
+await in initializeTegakiApplication
+start @ bootstrap.js:405
+bootstrap.js:426 💥 Bootstrap初期化失敗: Error: CanvasManager required methods missing. Available: 
+    at CoordinateManager.attach (coordinate-manager.js:176:23)
+    at AppCore.applyUnifiedAPIContract (app-core.js:561:29)
+    at AppCore.initializeManagerWithContract (app-core.js:492:28)
+    at AppCore.initializeAllManagersWithContract (app-core.js:471:28)
+    at async AppCore.initializeV8Managers (app-core.js:344:17)
     at async TegakiApplication.initialize (tegaki-application.js:61:13)
     at async initializeTegakiApplication (bootstrap.js:183:13)
     at async HTMLDocument.start (bootstrap.js:405:31)
 start @ bootstrap.js:426
-bootstrap.js:427 🔍 デバッグ情報: Object
-app-core.js:683 Uncaught (in promise) Error: Critical Manager initialization failed: coordinate
+ 🔍 デバッグ情報: {className: 'Bootstrap', version: 'v8-phase1.5-fixed', dependencies: {…}, domStatus: {…}, timing: {…}}
+bootstrap.js:428 Uncaught (in promise) Error: CanvasManager required methods missing. Available: 
+attach @ coordinate-manager.js:176
+applyUnifiedAPIContract @ app-core.js:561
+initializeManagerWithContract @ app-core.js:492
+initializeAllManagersWithContract @ app-core.js:471
+await in initializeAllManagersWithContract
+initializeV8Managers @ app-core.js:344
+await in initializeV8Managers
+initialize @ tegaki-application.js:61
+await in initialize
+initializeTegakiApplication @ bootstrap.js:183
+start @ bootstrap.js:405
 index.html:613 ⚠️ TegakiApplication v8初期化未完了
 (anonymous) @ index.html:613
-main.js:346 ⚠️ TegakiApplication v8初期化未完了
+setTimeout
+(anonymous) @ index.html:588
+ ⚠️ TegakiApplication v8初期化未完了

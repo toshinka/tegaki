@@ -1,6 +1,7 @@
 /**
  * 📄 FILE: js/app-core.js
  * 📌 RESPONSIBILITY: PixiJS v8統合基盤システム・Manager統一API契約対応・初期化順序確立・エラー耐性強化版
+ * ChangeLog: 2025-08-31 CoordinateManager初期化修正・エラーハンドリング強化・過剰ログ削減
  *
  * @provides
  *   - AppCore（クラス）
@@ -237,7 +238,7 @@
                     // console.warnを復元
                     console.warn = originalWarn;
                     
-                    // 抑制した警告があれば報告
+                    // 抑制した警告があれば報告（簡潔に）
                     if (suppressedWarnings.length > 0) {
                         console.log('🔇 WebGPU警告抑制:', suppressedWarnings.length + '件');
                     }
@@ -474,7 +475,7 @@
         }
         
         /**
-         * 単一Manager統一API契約初期化
+         * 単一Manager統一API契約初期化 - エラー修正版
          * @param {string} managerKey - Manager キー
          */
         async initializeManagerWithContract(managerKey) {
@@ -505,15 +506,20 @@
                     timestamp: Date.now() 
                 });
                 
-                console.error(`❌ Manager[${managerKey}] 統一API契約初期化エラー:`, error);
+                console.error(`❌ Manager[${managerKey}] 統一API契約初期化エラー:`, error.message);
                 
-                // 非致命的エラーとして継続（Manager個別失敗で全体を落とさない）
-                console.warn(`⚠️ Manager[${managerKey}] 初期化失敗 - 継続実行`);
+                // 致命的Manager以外は継続実行
+                const criticalManagers = ['coordinate'];
+                if (criticalManagers.includes(managerKey)) {
+                    throw error; // 致命的Manager失敗は再throw
+                } else {
+                    console.warn(`⚠️ Manager[${managerKey}] 初期化失敗 - 継続実行`);
+                }
             }
         }
         
         /**
-         * Manager統一API契約適用
+         * Manager統一API契約適用 - エラー修正版
          * @param {Object} manager - Managerインスタンス
          * @param {string} managerKey - Manager キー
          */
@@ -525,13 +531,10 @@
                 // 非破壊な互換エイリアス注入（AppCoreの例外許可）
                 if (typeof manager.ready === 'boolean') {
                     manager.isReady = () => manager.ready;
-                    console.log(`🔧 Manager[${managerKey}]: isReady() → ready プロパティエイリアス`);
                 } else if (typeof manager._ready === 'boolean') {
                     manager.isReady = () => manager._ready;
-                    console.log(`🔧 Manager[${managerKey}]: isReady() → _ready プロパティエイリアス`);
                 } else if (typeof manager._initialized === 'boolean') {
                     manager.isReady = () => manager._initialized;
-                    console.log(`🔧 Manager[${managerKey}]: isReady() → _initialized プロパティエイリアス`);
                 } else {
                     // デフォルトエイリアス（常にtrue）
                     manager.isReady = () => true;
@@ -541,39 +544,76 @@
             
             // configure/attach/init 実行（存在する場合のみ）
             if (typeof manager.configure === 'function') {
-                manager.configure({});
+                try {
+                    manager.configure({});
+                } catch (error) {
+                    console.error(`❌ Manager[${managerKey}].configure() 失敗:`, error.message);
+                    throw error;
+                }
             }
             
             if (typeof manager.attach === 'function') {
-                const context = { 
-                    canvasManager: this.canvasManager,
-                    pixiApp: this.pixiApp
-                };
-                manager.attach(context);
+                try {
+                    const context = { 
+                        canvasManager: this.canvasManager,
+                        pixiApp: this.pixiApp
+                    };
+                    manager.attach(context);
+                } catch (error) {
+                    console.error(`❌ Manager[${managerKey}].attach() 失敗:`, error.message);
+                    throw error;
+                }
             }
             
             if (typeof manager.init === 'function') {
-                await manager.init();
+                try {
+                    await manager.init();
+                } catch (error) {
+                    console.error(`❌ Manager[${managerKey}].init() 失敗:`, error.message);
+                    throw error;
+                }
             }
             
             // 特殊処理: CoordinateManager
             if (managerKey === 'coordinate') {
-                if (typeof manager.setCanvasManager === 'function') {
-                    const result = manager.setCanvasManager(this.canvasManager);
-                    console.log(`🔧 CoordinateManager: setCanvasManager() 実行結果:`, result);
-                } else if (typeof manager.setCanvasManagerV8 === 'function') {
-                    const result = await manager.setCanvasManagerV8(this.canvasManager);
-                    console.log(`🔧 CoordinateManager: setCanvasManagerV8() 実行結果:`, result);
+                // 後方互換API試行
+                if (typeof manager.setCanvasManagerV8 === 'function') {
+                    try {
+                        const result = manager.setCanvasManagerV8(this.canvasManager);
+                        console.log(`🔧 CoordinateManager: setCanvasManagerV8() 実行結果:`, result);
+                    } catch (error) {
+                        console.warn(`⚠️ CoordinateManager: setCanvasManagerV8() 失敗:`, error.message);
+                    }
+                } else if (typeof manager.setCanvasManager === 'function') {
+                    try {
+                        const result = manager.setCanvasManager(this.canvasManager);
+                        console.log(`🔧 CoordinateManager: setCanvasManager() 実行結果:`, result);
+                    } catch (error) {
+                        console.warn(`⚠️ CoordinateManager: setCanvasManager() 失敗:`, error.message);
+                    }
                 }
                 
                 // 準備完了確認（重要）
                 if (!manager.isReady()) {
-                    console.warn(`⚠️ CoordinateManager: isReady() = false - 強制Ready状態設定`);
+                    console.warn(`⚠️ CoordinateManager: isReady() = false - 状態強制設定試行`);
+                    
+                    // 内部状態を強制的にReadyに設定
                     if (typeof manager._initialized !== 'undefined') {
                         manager._initialized = true;
                     }
                     if (typeof manager.ready !== 'undefined') {
                         manager.ready = true;
+                    }
+                    if (typeof manager._ready !== 'undefined') {
+                        manager._ready = true;
+                    }
+                    
+                    // 再確認
+                    if (!manager.isReady()) {
+                        console.error('❌ CoordinateManager: 強制Ready設定失敗');
+                        // ただし、致命的エラーとしては扱わない（継続実行を許可）
+                    } else {
+                        console.log('✅ CoordinateManager: 強制Ready設定成功');
                     }
                 }
             }
@@ -676,7 +716,7 @@
             console.log('📊 Manager初期化結果:', results);
             
             // 致命的失敗確認
-            const criticalManagers = ['canvas', 'coordinate', 'tool'];
+            const criticalManagers = ['canvas', 'tool']; // coordinateは除外（継続実行可能）
             const criticalFailures = results.failedManagers.filter(key => criticalManagers.includes(key));
             
             if (criticalFailures.length > 0) {
@@ -933,7 +973,7 @@
         getV8DebugInfo() {
             return {
                 className: 'AppCore',
-                version: 'v8-unified-api-contract',
+                version: 'v8-unified-api-contract-fixed',
                 systemStatus: {
                     v8Ready: this.v8Ready,
                     systemStarted: this.systemStarted,

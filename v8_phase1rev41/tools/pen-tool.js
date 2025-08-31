@@ -1,12 +1,15 @@
 /**
  * 📄 FILE: tools/pen-tool.js
- * 📌 RESPONSIBILITY: ペン描画ツール・Manager注入統一・継続描画修正・外部描画対応・TPF記録完全版
+ * 📌 RESPONSIBILITY: ペン描画ツール・Manager注入統一・継続描画完全修正・外部描画対応・TPF記録完全版
+ * ChangeLog: 2025-08-31 継続描画問題完全修正・PointerLeave/Cancel対応・確実終了処理・過剰ログ削減
  *
  * @provides
  *   - PenTool（クラス・AbstractTool継承）
  *   - onPointerDown(event): void - ペン描画開始
  *   - onPointerMove(event): void - ペン描画継続
  *   - onPointerUp(event): void - ペン描画終了
+ *   - onPointerLeave(event): void - ペン描画強制終了（継続描画修正）
+ *   - onPointerCancel(event): void - ペン描画キャンセル終了（継続描画修正）
  *   - forceEndDrawing(): void - 強制描画終了（継続描画問題修正）
  *   - setStrokeStyle(style): void - ストローク設定
  *   - drawToContainer(container): void - 直接描画
@@ -32,6 +35,7 @@
  *   🚫 DPR重複適用禁止
  *   🚫 描画状態の不完全管理（継続描画問題）
  *   🚫 未初期化状態でのポインタイベント処理禁止
+ *   🚫 PointerLeave/Cancelイベント未対応（継続描画の原因）
  *
  * @manager-key
  *   window.Tegaki.PenToolInstance
@@ -45,7 +49,7 @@
  *   ToolManager → PenTool.setManagersObject() → PenTool.activate() → PointerEvent処理
  *
  * @method-naming-rules
- *   ポインタ系: onPointerDown(), onPointerMove(), onPointerUp()
+ *   ポインタ系: onPointerDown(), onPointerMove(), onPointerUp(), onPointerLeave(), onPointerCancel()
  *   描画制御系: startDrawing(), updateDrawing(), endDrawing(), forceEndDrawing()
  *   設定系: setStrokeStyle(), getStrokeStyle()
  *   状態系: isDrawing(), getState()
@@ -55,11 +59,13 @@
  *   tempStroke配列で外部描画バッファリング
  *   状態変更は必ずメソッド経由
  *   forceEndDrawing()による確実な終了保証
+ *   PointerLeave/Cancel時の強制終了対応
  *
  * @performance-notes
  *   pointermoveでの高頻度処理最適化
  *   tempStroke配列による外部描画バッファリング
  *   RequestAnimationFrame活用（将来）
+ *   過剰ログ削減（描画中ログ最小化）
  *
  * @input-validation
  *   受け取った座標がnull/undefined/NaNの場合は即座にreturn
@@ -67,7 +73,7 @@
  *
  * @tool-contract
  *   setManagersObject(managers): boolean - Manager注入（必須）
- *   onPointerDown/Move/Up(event): void - ポインタイベント処理（必須）
+ *   onPointerDown/Move/Up/Leave/Cancel(event): void - ポインタイベント処理（必須）
  *   forceEndDrawing(): void - 強制終了（冪等・必須）
  *   destroy(): void - 解放処理
  *   getState(): Object - 状態取得（テスト用）
@@ -154,16 +160,12 @@ class PenTool extends window.Tegaki.AbstractTool {
      * PenTool固有初期化
      */
     initializePenSpecific() {
-        console.log('🖊️ PenTool: 固有初期化開始');
-        
         // 描画状態リセット
         this.resetDrawingState();
         
         // 外部描画対応初期化
         this.tempStroke = [];
         this.externalDrawing = false;
-        
-        console.log('✅ PenTool: 固有初期化完了');
     }
     
     /**
@@ -179,20 +181,17 @@ class PenTool extends window.Tegaki.AbstractTool {
     }
     
     // ================================
-    // ポインタイベント処理（修正版）
+    // ポインタイベント処理（継続描画完全修正版）
     // ================================
     
     /**
-     * ポインタダウン処理（継続描画問題修正版）
+     * ポインタダウン処理
      * @param {PointerEvent} event - ポインタイベント
      */
     onPointerDown(event) {
-        console.log('🖊️ PenTool: onPointerDown() 開始');
-        
         try {
             // 準備状態確認
             if (!this.isReady() || !this.isActive()) {
-                console.warn('⚠️ PenTool: 未準備状態でのPointerDown');
                 return;
             }
             
@@ -204,18 +203,14 @@ class PenTool extends window.Tegaki.AbstractTool {
             
             // イベント妥当性確認
             if (!event) {
-                console.warn('⚠️ PenTool: 無効なイベント');
                 return;
             }
             
             // 座標変換
             const coords = this.convertEventToCanvasCoords(event);
             if (!coords) {
-                console.warn('⚠️ PenTool: 座標変換失敗');
                 return;
             }
-            
-            console.log('🖊️ 描画開始座標:', coords);
             
             // カメラ内描画確認
             const inCamera = this.isPointInCamera(coords);
@@ -238,7 +233,7 @@ class PenTool extends window.Tegaki.AbstractTool {
     }
     
     /**
-     * ポインタムーブ処理（外部描画対応版）
+     * ポインタムーブ処理
      * @param {PointerEvent} event - ポインタイベント
      */
     onPointerMove(event) {
@@ -281,18 +276,9 @@ class PenTool extends window.Tegaki.AbstractTool {
      * @param {PointerEvent} event - ポインタイベント
      */
     onPointerUp(event) {
-        console.log('🖊️ PenTool: onPointerUp() - 継続描画問題修正版');
-        console.log('🖊️ 現在の描画状態:', { 
-            isDrawing: this.isDrawing, 
-            externalDrawing: this.externalDrawing,
-            drawingLocked: this.drawingLocked 
-        });
-        
         try {
-            // 強制描画終了（確実な終了保証）
+            // ✅ 重要な修正: 必ず強制描画終了を実行
             this.forceEndDrawing();
-            
-            console.log('✅ PenTool: 描画終了完了');
             
             if (event) {
                 event.preventDefault();
@@ -307,21 +293,63 @@ class PenTool extends window.Tegaki.AbstractTool {
     }
     
     /**
+     * ポインタリーブ処理（継続描画修正の重要な追加）
+     * @param {PointerEvent} event - ポインタイベント
+     */
+    onPointerLeave(event) {
+        try {
+            // ✅ 重要な修正: PointerLeave時も強制終了
+            if (this.isDrawing || this.externalDrawing) {
+                console.log('🖊️ PenTool: PointerLeave → 強制描画終了');
+                this.forceEndDrawing();
+            }
+            
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            
+        } catch (error) {
+            this.handleDrawingError('onPointerLeave', error);
+            this.resetDrawingState();
+        }
+    }
+    
+    /**
+     * ポインタキャンセル処理（継続描画修正の重要な追加）
+     * @param {PointerEvent} event - ポインタイベント
+     */
+    onPointerCancel(event) {
+        try {
+            // ✅ 重要な修正: PointerCancel時も強制終了
+            if (this.isDrawing || this.externalDrawing) {
+                console.log('🖊️ PenTool: PointerCancel → 強制描画終了');
+                this.forceEndDrawing();
+            }
+            
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            
+        } catch (error) {
+            this.handleDrawingError('onPointerCancel', error);
+            this.resetDrawingState();
+        }
+    }
+    
+    /**
      * 強制描画終了（継続描画問題修正の核心・冪等保証）
      */
     forceEndDrawing() {
-        console.log('🖊️ PenTool: forceEndDrawing() 実行 - 冪等保証版');
-        
         try {
             // 既に終了済みなら何もしない（冪等性）
             if (!this.isDrawing && !this.externalDrawing && !this.drawingLocked) {
-                console.log('✅ PenTool: 既に描画終了済み');
                 return;
             }
             
             // 描画ロック（多重終了防止）
             if (this.drawingLocked) {
-                console.log('⚠️ PenTool: 描画終了処理中 - スキップ');
                 return;
             }
             
@@ -340,8 +368,6 @@ class PenTool extends window.Tegaki.AbstractTool {
             // 状態完全リセット
             this.resetDrawingState();
             
-            console.log('✅ PenTool: forceEndDrawing() 完了');
-            
         } catch (error) {
             console.error('❌ PenTool: forceEndDrawing() エラー:', error);
             // エラー時も確実にリセット
@@ -359,8 +385,6 @@ class PenTool extends window.Tegaki.AbstractTool {
      */
     startDrawing(coords) {
         try {
-            console.log('🖊️ PenTool: 通常描画開始');
-            
             this.isDrawing = true;
             this.currentPath = [coords];
             
@@ -382,12 +406,8 @@ class PenTool extends window.Tegaki.AbstractTool {
      */
     startExternalDrawing(coords) {
         try {
-            console.log('🖊️ PenTool: 外部描画開始（バッファリング）');
-            
             this.externalDrawing = true;
             this.tempStroke = [coords];
-            
-            console.log('📦 外部描画: tempStrokeにバッファ開始');
             
         } catch (error) {
             console.error('❌ 外部描画開始エラー:', error);
@@ -433,7 +453,6 @@ class PenTool extends window.Tegaki.AbstractTool {
             
             if (inCamera && this.tempStroke.length > 1) {
                 // カメラ内侵入 → 通常描画に移行
-                console.log('📦 外部→内部描画移行: tempStroke適用開始');
                 this.convertExternalToNormal();
             }
             
@@ -450,8 +469,6 @@ class PenTool extends window.Tegaki.AbstractTool {
             if (this.tempStroke.length === 0) {
                 return;
             }
-            
-            console.log('🔄 外部→通常描画移行');
             
             // 外部描画終了
             this.externalDrawing = false;
@@ -475,8 +492,6 @@ class PenTool extends window.Tegaki.AbstractTool {
             
             // tempStrokeクリア
             this.tempStroke = [];
-            
-            console.log('✅ 外部→通常描画移行完了');
             
         } catch (error) {
             console.error('❌ 外部→通常描画移行エラー:', error);
@@ -532,11 +547,6 @@ class PenTool extends window.Tegaki.AbstractTool {
                 return;
             }
             
-            console.log('🖊️ 現在ストローク終了:', { 
-                pathLength: this.currentPath.length,
-                hasPixiStroke: !!this.currentStroke 
-            });
-            
             // TPF記録終了
             this.endTPFRecord();
             
@@ -558,13 +568,8 @@ class PenTool extends window.Tegaki.AbstractTool {
     finishExternalStroke() {
         try {
             if (this.tempStroke.length < 2) {
-                console.log('🖊️ 外部ストローク短すぎる - 記録せず破棄');
                 return;
             }
-            
-            console.log('🖊️ 外部ストローク終了（描画外完了）:', {
-                tempStrokeLength: this.tempStroke.length
-            });
             
             // 外部描画として記録する場合のロジック（将来実装）
             // 現在は単純に破棄
@@ -589,7 +594,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         try {
             const recordManager = this.getRecordManager();
             if (!recordManager || typeof recordManager.startOperation !== 'function') {
-                console.warn('⚠️ PenTool: RecordManager記録開始不可');
                 return;
             }
             
@@ -597,8 +601,6 @@ class PenTool extends window.Tegaki.AbstractTool {
             const initialPoints = [startCoords, ...additionalPoints];
             
             recordManager.startOperation('stroke', initialPoints);
-            
-            console.log('📝 TPF記録開始:', { initialPointCount: initialPoints.length });
             
         } catch (error) {
             console.error('❌ TPF記録開始エラー:', error);
@@ -642,8 +644,6 @@ class PenTool extends window.Tegaki.AbstractTool {
             
             recordManager.endOperation(metadata);
             
-            console.log('📝 TPF記録終了:', metadata);
-            
         } catch (error) {
             console.error('❌ TPF記録終了エラー:', error);
         }
@@ -669,7 +669,6 @@ class PenTool extends window.Tegaki.AbstractTool {
             // CoordinateManager使用（必須）
             const coordinateManager = this.getCoordinateManager();
             if (!coordinateManager || typeof coordinateManager.screenToCanvas !== 'function') {
-                console.warn('⚠️ PenTool: CoordinateManager利用不可');
                 return null;
             }
             
@@ -742,7 +741,6 @@ class PenTool extends window.Tegaki.AbstractTool {
             return coords.inBounds !== false;
             
         } catch (error) {
-            console.warn('⚠️ カメラ内判定エラー:', error);
             return coords.inBounds !== false;
         }
     }
@@ -770,8 +768,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         if (typeof style.alpha === 'number') {
             this.strokeStyle.alpha = Math.min(Math.max(style.alpha, 0), 1);
         }
-        
-        console.log('🎨 ストロークスタイル更新:', this.strokeStyle);
     }
     
     /**
@@ -810,7 +806,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         try {
             this.forceEndDrawing();
         } catch (resetError) {
-            console.error('❌ エラー時状態リセット失敗:', resetError);
             this.resetDrawingState();
         }
     }
@@ -819,8 +814,6 @@ class PenTool extends window.Tegaki.AbstractTool {
      * Tool破棄
      */
     destroy() {
-        console.log('🖊️ PenTool: destroy() 開始');
-        
         try {
             // 描画強制終了
             this.forceEndDrawing();
@@ -829,8 +822,6 @@ class PenTool extends window.Tegaki.AbstractTool {
             if (typeof super.destroy === 'function') {
                 super.destroy();
             }
-            
-            console.log('✅ PenTool: destroy() 完了');
             
         } catch (error) {
             console.error('❌ PenTool: destroy() エラー:', error);
