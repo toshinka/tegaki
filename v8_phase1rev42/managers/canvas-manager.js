@@ -1,19 +1,24 @@
 /**
  * 📄 FILE: managers/canvas-manager.js
- * 📌 RESPONSIBILITY: PixiJS v8 Canvas管理・Graphics階層分離・描画消失問題解決
+ * 📌 RESPONSIBILITY: PixiJS v8 Canvas管理・Manager統一API契約対応・CoordinateManager連携修正版
+ * ChangeLog: 2025-08-31 CoordinateManager API不一致修正・統一ライフサイクル実装・エラー修正
  * 
  * @provides
  *   - CanvasManager（クラス）
- *   - initializeV8Application(pixiApp): Promise<void>
- *   - getDrawContainer(): PIXI.Container
+ *   - configure(config): void - 設定注入（統一API）
+ *   - attach(context): void - Context注入（統一API）
+ *   - init(): Promise<void> - 非同期初期化（統一API）
+ *   - isReady(): boolean - 準備完了判定（AppCore依存）
+ *   - dispose(): void - 解放処理（統一API）
+ *   - getView(): HTMLCanvasElement - Canvas要素取得（CoordinateManager互換）
+ *   - getApp(): PIXI.Application - PIXI.Application取得（CoordinateManager互換）
+ *   - getDrawContainer(): PIXI.Container - 描画Container取得
+ *   - getCanvasElement(): HTMLCanvasElement - Canvas要素取得（エイリアス）
+ *   - getPixiApp(): PIXI.Application - PIXI.Application取得（エイリアス）
  *   - createStrokeGraphics(strokeId?): PIXI.Graphics
  *   - addPermanentGraphics(graphics): boolean
  *   - clearTemporaryGraphics(): void
  *   - getTemporaryGraphics(): PIXI.Graphics
- *   - getCanvasElement(): HTMLCanvasElement
- *   - getPixiApp(): PIXI.Application
- *   - isV8Ready(): boolean
- *   - getTransformCoefficients(): Object
  *   - resizeV8Canvas(width, height): void
  *   - getDebugInfo(): Object
  *
@@ -24,8 +29,7 @@
  *   - window.Tegaki.ErrorManagerInstance.showError（エラー処理）
  *
  * @initflow
- *   1. constructor → 2. initializeV8Application → 3. createV8DrawingContainer
- *   → 4. initializeGraphicsManagement → 5. v8Ready = true
+ *   1. constructor → 2. configure() → 3. attach() → 4. init() → 5. isReady()=true
  *
  * @forbids
  *   💀 双方向依存禁止
@@ -41,19 +45,22 @@
  *   window.Tegaki.CanvasManagerInstance
  *
  * @dependencies-strict
- *   REQUIRED: PixiJS v8.12.0
+ *   REQUIRED: PIXI v8.12.0
  *   OPTIONAL: ErrorManager
  *   FORBIDDEN: 他のCanvas管理システム、v7互換コード
  *
  * @integration-flow
- *   AppCore.createCanvasV8 → CanvasManager.initializeV8Application
- *   → DrawContainer作成 → ToolManager注入可能
+ *   AppCore.createCanvasV8 → CanvasManager.configure/attach/init
+ *   → CoordinateManager注入可能 → ToolManager注入可能
  *
  * @method-naming-rules
- *   初期化系: initializeV8xxx()
- *   取得系: getDrawContainer(), getCanvasElement()
+ *   統一ライフサイクル: configure(), attach(), init(), isReady(), dispose()
+ *   CoordinateManager互換: getView(), getApp(), getDrawContainer()
+ *   エイリアス: getCanvasElement(), getPixiApp()
  *   Graphics管理: createStrokeGraphics(), addPermanentGraphics(), clearTemporaryGraphics()
- *   座標系: getTransformCoefficients()
+ *
+ * @manager-lifecycle
+ *   configure/attach/init/isReady/dispose完全実装（AppCore統一API契約準拠）
  *
  * @error-handling
  *   throw: 初期化失敗・必須コンポーネント未作成・Graphics操作失敗
@@ -62,7 +69,7 @@
  *
  * @testing-hooks
  *   - getDebugInfo(): システム状態詳細・Graphics統計・メモリ使用量
- *   - isV8Ready(): 完全準備状態確認
+ *   - isReady(): 完全準備状態確認
  *   - getGraphicsStats(): Graphics管理統計
  *
  * @state-management
@@ -86,11 +93,15 @@
         constructor() {
             console.log('🎨 CanvasManager: constructed (v8 friendly)');
             
+            // Manager統一API契約状態
+            this._configured = false;
+            this._attached = false;
+            this._initialized = false;
+            this._ready = false;
+            
             // 基本プロパティ
             this.pixiApp = null;
             this.layers = new Map();
-            this.initialized = false;
-            this.v8Ready = false;
             this.activeLayerId = 'layer1';
             
             // デフォルトキャンバスサイズ（400x400固定）
@@ -115,6 +126,14 @@
             // 背景色設定（ふたばクリーム）
             this.backgroundColor = 0xf0e0d6; // #f0e0d6
             
+            // 設定
+            this.config = {
+                width: this.defaultWidth,
+                height: this.defaultHeight,
+                backgroundColor: this.backgroundColor,
+                maxDPR: this.maxDPR
+            };
+            
             // Graphics統計
             this.graphicsStats = {
                 totalGraphicsCreated: 0,
@@ -122,6 +141,273 @@
                 temporaryGraphicsClears: 0,
                 memoryOptimizations: 0
             };
+        }
+        
+        // ================================
+        // Manager統一API契約（必須実装）
+        // ================================
+        
+        /**
+         * 設定注入（同期）
+         * @param {Object} config - 設定オブジェクト
+         */
+        configure(config = {}) {
+            console.log('🎨 CanvasManager: configure() 開始');
+            
+            try {
+                // 設定マージ
+                if (config.width !== undefined) {
+                    this.config.width = Math.max(100, Math.min(2000, config.width));
+                }
+                if (config.height !== undefined) {
+                    this.config.height = Math.max(100, Math.min(2000, config.height));
+                }
+                if (config.backgroundColor !== undefined) {
+                    this.config.backgroundColor = config.backgroundColor;
+                    this.backgroundColor = config.backgroundColor;
+                }
+                if (config.maxDPR !== undefined) {
+                    this.config.maxDPR = Math.max(1.0, Math.min(4.0, config.maxDPR));
+                    this.maxDPR = config.maxDPR;
+                }
+                
+                this.defaultWidth = this.config.width;
+                this.defaultHeight = this.config.height;
+                
+                this._configured = true;
+                console.log('✅ CanvasManager: configure() 完了', this.config);
+                
+            } catch (error) {
+                console.error('❌ CanvasManager: configure() エラー:', error);
+                throw error;
+            }
+        }
+        
+        /**
+         * Context注入（同期）
+         * @param {Object} context - AppCoreからのContext
+         */
+        attach(context) {
+            console.log('🎨 CanvasManager: attach() 開始');
+            
+            try {
+                // 基本検証
+                if (!context) {
+                    console.warn('⚠️ CanvasManager: Context is null - 継続実行');
+                }
+                
+                // PIXI利用可能性確認
+                if (typeof PIXI === 'undefined') {
+                    throw new Error('PixiJS not available');
+                }
+                
+                if (!PIXI.Application) {
+                    throw new Error('PixiJS Application not available');
+                }
+                
+                this._attached = true;
+                console.log('✅ CanvasManager: attach() 完了');
+                
+            } catch (error) {
+                console.error('❌ CanvasManager: attach() エラー:', error);
+                throw error;
+            }
+        }
+        
+        /**
+         * 非同期初期化
+         * @returns {Promise<void>}
+         */
+        async init() {
+            console.log('🎨 CanvasManager: init() 開始');
+            
+            try {
+                if (!this._configured) {
+                    console.warn('⚠️ CanvasManager: 未configure - 自動configure実行');
+                    this.configure();
+                }
+                
+                if (!this._attached) {
+                    console.warn('⚠️ CanvasManager: 未attach - 自動attach実行');
+                    this.attach({});
+                }
+                
+                // PixiJS Application が外部で作成されている場合はそれを使用
+                if (!this.pixiApp) {
+                    throw new Error('PixiJS Application not provided - should be created by AppCore');
+                }
+                
+                // v8 Application設定・完全初期化
+                await this.initializeV8Application(this.pixiApp);
+                
+                this._initialized = true;
+                this._ready = true;
+                
+                console.log('✅ CanvasManager: init() 完了');
+                
+            } catch (error) {
+                console.error('❌ CanvasManager: init() エラー:', error);
+                throw error;
+            }
+        }
+        
+        /**
+         * 準備完了判定（AppCore依存）
+         * @returns {boolean} 準備完了状態
+         */
+        isReady() {
+            return this._configured && 
+                   this._attached && 
+                   this._initialized && 
+                   this._ready &&
+                   !!this.pixiApp && 
+                   !!this.v8DrawingContainer &&
+                   !!this.graphicsLayers &&
+                   !!this.temporaryGraphics;
+        }
+        
+        /**
+         * 解放処理
+         */
+        dispose() {
+            console.log('🎨 CanvasManager: dispose() 開始');
+            
+            try {
+                // 全Graphics破棄
+                this.clearAllPermanentGraphics();
+                
+                // 一時Graphics破棄
+                if (this.temporaryGraphics) {
+                    this.temporaryGraphics.destroy();
+                    this.temporaryGraphics = null;
+                }
+                
+                // Graphics層破棄
+                if (this.graphicsLayers) {
+                    Object.values(this.graphicsLayers).forEach(layer => {
+                        if (layer.parent) {
+                            layer.parent.removeChild(layer);
+                        }
+                        layer.destroy();
+                    });
+                    this.graphicsLayers = null;
+                }
+                
+                // Layer破棄
+                for (const [layerId, layer] of this.layers) {
+                    if (layer.parent) {
+                        layer.parent.removeChild(layer);
+                    }
+                    layer.destroy();
+                }
+                this.layers.clear();
+                
+                // PixiJS Application破棄（ただし外部作成の場合は破棄しない）
+                this.pixiApp = null;
+                this.v8DrawingContainer = null;
+                
+                // 状態リセット
+                this._configured = false;
+                this._attached = false;
+                this._initialized = false;
+                this._ready = false;
+                
+                console.log('✅ CanvasManager: dispose() 完了');
+                
+            } catch (error) {
+                console.error('❌ CanvasManager: dispose() エラー:', error);
+            }
+        }
+        
+        // ================================
+        // CoordinateManager互換API（重要な修正）
+        // ================================
+        
+        /**
+         * Canvas要素取得（CoordinateManager互換API）
+         * @returns {HTMLCanvasElement} Canvas DOM要素
+         */
+        getView() {
+            if (!this.pixiApp?.canvas) {
+                throw new Error('CanvasManager: canvas element not available');
+            }
+            return this.pixiApp.canvas;
+        }
+        
+        /**
+         * PIXI.Application取得（CoordinateManager互換API）
+         * @returns {PIXI.Application} PixiJS Application
+         */
+        getApp() {
+            if (!this.pixiApp) {
+                throw new Error('CanvasManager: PIXI Application not available');
+            }
+            return this.pixiApp;
+        }
+        
+        /**
+         * 描画Container取得（CoordinateManager互換API）
+         * @returns {PIXI.Container} v8描画Container
+         */
+        getDrawContainer() {
+            if (!this.isReady()) {
+                throw new Error('CanvasManager not fully initialized');
+            }
+            
+            if (!this.v8DrawingContainer) {
+                throw new Error('v8 Drawing Container not available - initialization failed');
+            }
+            
+            return this.v8DrawingContainer;
+        }
+        
+        // ================================
+        // エイリアスAPI（既存コード互換）
+        // ================================
+        
+        /**
+         * Canvas要素取得（エイリアス）
+         * @returns {HTMLCanvasElement} Canvas DOM要素
+         */
+        getCanvasElement() {
+            return this.getView();
+        }
+        
+        /**
+         * PIXI.Application取得（エイリアス）
+         * @returns {PIXI.Application} PixiJS Application
+         */
+        getPixiApp() {
+            return this.getApp();
+        }
+        
+        /**
+         * v8対応状況確認（エイリアス）
+         * @returns {boolean} 完全準備状態
+         */
+        isV8Ready() {
+            return this.isReady();
+        }
+        
+        // ================================
+        // PixiJS Application管理
+        // ================================
+        
+        /**
+         * 外部作成のPixiJS Applicationを設定
+         * @param {PIXI.Application} pixiApp - 外部で作成されたPixiJS Application
+         */
+        setPixiApplication(pixiApp) {
+            if (!pixiApp) {
+                throw new Error('PixiJS Application is required');
+            }
+            
+            if (!pixiApp.stage) {
+                throw new Error('PixiJS Application has no stage');
+            }
+            
+            this.pixiApp = pixiApp;
+            console.log('🎨 CanvasManager: 外部PixiJS Application設定完了');
         }
         
         /**
@@ -157,17 +443,13 @@
                 // Step 5: Graphics管理システム初期化（重要な修正）
                 this.initializeGraphicsManagement();
                 
-                // Step 6: 完全初期化完了
-                this.v8Ready = true;
-                this.initialized = true;
-                
                 // DOM要素のサイズも確実に設定
                 if (this.pixiApp.canvas) {
                     this.pixiApp.canvas.style.width = this.defaultWidth + 'px';
                     this.pixiApp.canvas.style.height = this.defaultHeight + 'px';
                 }
                 
-                console.log(`🎨 CanvasManager: v8初期化完了 (${this.defaultWidth}x${this.defaultHeight}, ${this.rendererType})`);
+                console.log(`🎨 CanvasManager: v8初期化完了 (${this.defaultWidth}x${this.defaultHeight}, ${this.effectiveDPR})`);
                 
             } catch (error) {
                 console.error('🎨 CanvasManager初期化エラー:', error);
@@ -389,7 +671,7 @@
          * @returns {DOMRect} Canvas要素のBoundingClientRect
          */
         getCanvasRect() {
-            const canvas = this.getCanvasElement();
+            const canvas = this.getView();
             return canvas.getBoundingClientRect();
         }
         
@@ -499,45 +781,6 @@
             console.log(`🎨 Canvas サイズ変更: ${width}x${height} (DPR: ${limitedDPR})`);
         }
         
-        // ========================================
-        // アクセサーメソッド・状態確認
-        // ========================================
-        
-        /**
-         * v8描画Container取得（確実版・AppCore連携用）
-         * @returns {PIXI.Container} v8描画Container
-         */
-        getDrawContainer() {
-            if (!this.v8Ready) {
-                throw new Error('CanvasManager not fully initialized');
-            }
-            
-            if (!this.v8DrawingContainer) {
-                throw new Error('v8 Drawing Container not available - initialization failed');
-            }
-            
-            return this.v8DrawingContainer;
-        }
-        
-        /**
-         * キャンバス要素取得
-         * @returns {HTMLCanvasElement} Canvas DOM要素
-         */
-        getCanvasElement() {
-            if (!this.pixiApp?.canvas) {
-                throw new Error('v8 CanvasManager: canvas element not available');
-            }
-            return this.pixiApp.canvas;
-        }
-        
-        /**
-         * PixiJS Application取得
-         * @returns {PIXI.Application} PixiJS Application
-         */
-        getPixiApp() {
-            return this.pixiApp;
-        }
-        
         /**
          * レイヤー取得
          * @param {string} layerId - レイヤーID
@@ -551,23 +794,6 @@
             }
             
             return layer || null;
-        }
-        
-        /**
-         * v8対応状況確認（完全版）
-         * @returns {boolean} 完全準備状態
-         */
-        isV8Ready() {
-            return this.v8Ready && 
-                   this.initialized &&
-                   !!this.pixiApp && 
-                   !!this.rendererType &&
-                   !!this.v8DrawingContainer &&
-                   !!this.graphicsLayers &&
-                   !!this.temporaryGraphics &&
-                   this.layers.has('main') &&
-                   this.layers.has('layer0') &&
-                   this.layers.has('layer1');
         }
         
         // ========================================
@@ -610,18 +836,28 @@
         getDebugInfo() {
             return {
                 className: 'CanvasManager',
-                version: 'v8.12.0-graphics-management-fixed',
-                initialization: {
-                    v8Ready: this.v8Ready,
-                    initialized: this.initialized,
-                    pixiAppReady: !!this.pixiApp,
-                    drawContainerReady: !!this.v8DrawingContainer
+                version: 'v8.12.0-unified-api-contract-fixed',
+                lifecycle: {
+                    configured: this._configured,
+                    attached: this._attached,
+                    initialized: this._initialized,
+                    ready: this._ready,
+                    isReady: this.isReady()
                 },
                 pixiInfo: {
                     version: typeof PIXI !== 'undefined' ? PIXI.VERSION : 'unknown',
                     rendererType: this.rendererType,
                     webgpuSupported: this.webgpuSupported,
-                    webgpuActive: this.rendererType === 'webgpu'
+                    webgpuActive: this.rendererType === 'webgpu',
+                    applicationReady: !!this.pixiApp,
+                    stageReady: !!this.pixiApp?.stage
+                },
+                coordinateCompatibility: {
+                    getView: typeof this.getView === 'function',
+                    getApp: typeof this.getApp === 'function',
+                    getDrawContainer: typeof this.getDrawContainer === 'function',
+                    getCanvasElement: typeof this.getCanvasElement === 'function',
+                    getPixiApp: typeof this.getPixiApp === 'function'
                 },
                 graphicsManagement: {
                     layersCreated: !!this.graphicsLayers,
@@ -635,7 +871,8 @@
                     layerNames: Array.from(this.layers.keys()),
                     activeLayer: this.activeLayerId,
                     mainLayerValid: this.layers.get('main') === this.layers.get('layer1'),
-                    stageChildrenCount: this.pixiApp?.stage?.children?.length || 0
+                    stageChildrenCount: this.pixiApp?.stage?.children?.length || 0,
+                    drawingContainerReady: !!this.v8DrawingContainer
                 },
                 canvasInfo: this.pixiApp ? {
                     logicalSize: {
@@ -656,11 +893,6 @@
                     backgroundColor: '0x' + this.backgroundColor.toString(16),
                     defaultSize: `${this.defaultWidth}x${this.defaultHeight}`
                 } : null,
-                coordinateSupport: {
-                    transformCoefficientsReady: true,
-                    canvasRectSupported: true,
-                    logicalSizeSupported: true
-                },
                 memoryManagement: {
                     permanentGraphics: this.permanentGraphics.size,
                     graphicsIdCounter: this.graphicsIdCounter,
@@ -668,40 +900,11 @@
                 }
             };
         }
-        
-        /**
-         * メモリクリーンアップ（開発・デバッグ用）
-         */
-        cleanup() {
-            console.log('🎨 CanvasManager: メモリクリーンアップ開始');
-            
-            // 全Graphics破棄
-            this.clearAllPermanentGraphics();
-            
-            // 一時Graphics破棄
-            if (this.temporaryGraphics) {
-                this.temporaryGraphics.destroy();
-                this.temporaryGraphics = null;
-            }
-            
-            // Graphics層破棄
-            if (this.graphicsLayers) {
-                Object.values(this.graphicsLayers).forEach(layer => {
-                    if (layer.parent) {
-                        layer.parent.removeChild(layer);
-                    }
-                    layer.destroy();
-                });
-                this.graphicsLayers = null;
-            }
-            
-            console.log('🎨 CanvasManager: メモリクリーンアップ完了');
-        }
     }
 
     // グローバル公開
     window.Tegaki.CanvasManager = CanvasManager;
 
-    console.log('🎨 CanvasManager v8.12.0完全対応版 Loaded - Graphics分離管理・座標変換支援・描画消失問題解決版');
+    console.log('🎨 CanvasManager v8.12.0完全対応版 Loaded - Manager統一API契約対応・CoordinateManager連携修正・描画消失問題解決版');
 
 })();

@@ -1,0 +1,215 @@
+# 🚀 Tegaki v8_phase1rev42 包括修正計画書 - Manager契約統一・初期化完全対応版
+
+**Rev. 2025-08-31-Comprehensive** | **Priority: Critical Architecture Fix**
+
+## 🔍 根本原因分析（console.txt解析結果）
+
+### 🚨 **Primary Issue: CanvasManager メソッド不整合**
+```javascript
+❌ CoordinateManager.attach() エラー: "CanvasManager required methods missing. Available: []"
+```
+
+**問題**: CoordinateManager が CanvasManager から以下の必須メソッドを期待しているが存在しない
+- `getCanvasElement()` または `getCanvas()`
+- `getStage()` または `getContainer()`
+- その他の公開API
+
+**影響**: 全体初期化失敗 → UI未表示 → 描画機能完全停止
+
+### 🚨 **Secondary Issues**
+1. **Manager契約の不統一**: isReady() エイリアス注入は動作しているが、根本的API不整合
+2. **Tool登録失敗**: CanvasManager初期化失敗により、後続のTool系も未初期化
+3. **座標系未確立**: CoordinateManager失敗により座標変換不可
+
+## 🎯 修正戦略
+
+### **基本方針**: Manager契約の完全統一・段階的修正・千日手回避
+
+1. **CanvasManager API標準化**: 必要なpublicメソッドを確実に実装
+2. **CoordinateManager 依存関係修正**: CanvasManagerとの契約を明確化
+3. **Manager初期化フロー安定化**: エラー耐性と段階的復旧
+4. **Tool系統合**: Manager準備完了後のTool登録・UI表示
+
+## 📋 ファイル別修正内容
+
+### **1. managers/canvas-manager.js**
+**問題**: 公開APIが不足・CoordinateManagerが期待するメソッドが未実装
+
+**修正内容**:
+- `getCanvasElement()`: app.view を返す
+- `getContainer()` または `getStage()`: メインコンテナを返す
+- `getApplication()`: PIXI.Application インスタンスを返す
+- `getDimensions()`: { width, height } を返す
+- 統一ライフサイクル（configure/attach/init/isReady/dispose）の完全実装
+
+### **2. js/utils/coordinate-manager.js**
+**問題**: CanvasManager依存が過度・API契約が曖昧
+
+**修正内容**:
+- CanvasManager必須メソッドリストの明確化
+- エラー時のグレースフルダウングレード（部分機能で継続）
+- attach()での依存関係チェック強化・明確なエラーメッセージ
+
+### **3. js/app-core.js**
+**問題**: Manager初期化順序とエラーハンドリング
+
+**修正内容**:
+- 依存関係に基づく初期化順序の厳格化
+- 個別Manager失敗時の部分継続機能
+- isReady()状態の詳細ログ・デバッグUI
+
+### **4. tools/abstract-tool.js**
+**問題**: Manager注入API不整合
+
+**修正内容**:
+- `setManagersObject()` を正規APIとして確立
+- `setManagers()` エイリアスの追加
+- Manager依存チェックの強化
+
+### **5. tools/pen-tool.js & tools/eraser-tool.js**
+**問題**: 継続描画・Manager注入・座標処理
+
+**修正内容**:
+- `super.setManagersObject()` への統一
+- `forceEndDrawing()` の確実実行
+- PointerUp/Leave/Cancel での状態リセット保証
+
+### **6. UI表示系 (assets/icons.js integration)**
+**問題**: 初期化未完了時のUI表示
+
+**修正内容**:
+- EventBus 'app:ready' 待ちでのUI表示
+- 未準備時のオーバーレイ表示
+
+## 🔄 修正手順（段階的・テスト可能）
+
+### **Phase A: CanvasManager API修正（最優先）**
+1. 必須公開メソッドの追加・実装
+2. ライフサイクルメソッドの完全実装
+3. 単体テスト（getCanvasElement()等の動作確認）
+
+### **Phase B: CoordinateManager 依存修正**
+1. CanvasManager API呼び出し部分の修正
+2. エラーハンドリングの改善
+3. 統合テスト（attach()の成功確認）
+
+### **Phase C: 全体初期化フロー修正**
+1. AppCore初期化順序の調整
+2. Manager状態監視の強化
+3. エンドツーエンドテスト（アプリ起動〜UI表示）
+
+### **Phase D: Tool系・描画機能修正**
+1. Tool登録・Manager注入の修正
+2. 描画開始・終了処理の修正
+3. 機能テスト（ペン描画・消しゴム・座標精度）
+
+## 🎯 成功基準
+
+### **必須（Done Definition）**
+- [ ] アプリ初期化完了（console エラーなし）
+- [ ] Canvas表示（400x400）
+- [ ] サイドバーアイコン表示
+- [ ] ペン描画開始・確実な終了
+- [ ] 消しゴム機能動作
+- [ ] 座標精度（ずれなし）
+
+### **推奨（Quality Gate）**
+- [ ] Manager状態の詳細ログ表示
+- [ ] 外部描画機能（tempStroke）
+- [ ] Undo/Redo基本機能
+- [ ] 統合テスト自動実行
+
+## 🚨 千日手対策
+
+### **AI改修ループ回避策**
+1. **一度に一つのManager**: 完全修正→テスト→次へ
+2. **API契約の事前確認**: 呼び出し先メソッドの実装状況を必ず確認
+3. **段階的コミット**: 各Phaseで動作確認・ロールバック可能
+4. **依存関係マップ**: Manager間の呼び出し関係を明示
+
+### **架空メソッド防止策**
+1. **@provides確認**: 修正前に必ず対象ファイルの公開APIを確認
+2. **メソッド存在チェック**: `typeof obj.method === 'function'` での事前確認
+3. **統一命名規則**: Manager系は configure/attach/init/isReady/dispose に統一
+
+## 📊 Manager依存関係マップ
+
+```
+ConfigManager (独立)
+    ↓
+CanvasManager (PIXI.Application管理)
+    ↓
+EventBus, ErrorManager (独立)
+    ↓
+NavigationManager → CanvasManager依存
+    ↓
+CoordinateManager → CanvasManager + NavigationManager依存
+    ↓
+RecordManager → CoordinateManager依存
+    ↓
+ToolManager → 全Manager依存
+    ↓
+Tools (AbstractTool → PenTool, EraserTool)
+    ↓
+UI/Sidebar → EventBus 'app:ready' 待ち
+```
+
+## 🔧 重要な実装ポイント
+
+### **Manager契約統一**
+```javascript
+// 全Manager必須実装
+class SomeManager {
+    configure(config) { /* 同期 */ }
+    attach(context) { /* 同期・依存注入 */ }
+    async init() { /* 非同期・初期化 */ }
+    isReady() { return this._ready; }
+    dispose() { /* 解放 */ }
+}
+```
+
+### **座標処理一元化**
+```javascript
+// ❌ 禁止: 直接座標計算
+const canvasX = event.clientX - rect.left;
+
+// ✅ 正解: CoordinateManager経由
+const canvasPoint = this.coordinateManager.screenToCanvas({
+    x: event.clientX, 
+    y: event.clientY 
+});
+```
+
+### **Tool Manager注入統一**
+```javascript
+// AbstractTool
+setManagersObject(managers) {
+    // 必須Manager確認
+    const required = ['canvasManager', 'coordinateManager', 'recordManager'];
+    for (const key of required) {
+        if (!managers[key]) return false;
+    }
+    this.managers = managers;
+    return true;
+}
+```
+
+## ⚡ 緊急修正優先度
+
+### **🔥 最高優先（即時修正）**
+1. `managers/canvas-manager.js`: 公開API追加
+2. `js/utils/coordinate-manager.js`: 依存チェック修正
+
+### **🚀 高優先（Phase A完了後）**
+3. `js/app-core.js`: 初期化エラーハンドリング
+4. `tools/abstract-tool.js`: Manager注入API統一
+
+### **📈 中優先（基本機能確認後）**
+5. `tools/pen-tool.js`, `tools/eraser-tool.js`: 描画機能
+6. UI表示系統合
+
+---
+
+**💡 重要**: この修正により、現在の「全体初期化失敗」から脱出し、段階的にTegakiアプリの機能を復旧させます。Manager契約の統一により、今後の機能拡張時の安定性も確保されます。
+
+**🎯 最重要指標**: `console.txt`で見られる「❌ CanvasManager利用可能メソッド: []」が解決され、正常な初期化ログが表示されることです。
