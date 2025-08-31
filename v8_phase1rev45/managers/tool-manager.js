@@ -2,13 +2,14 @@
  * 📄 FILE: managers/tool-manager.js
  * 📌 RESPONSIBILITY: Tool管理・切り替え・Manager統一注入・操作フロー管理・Pointerイベント処理
  *
- * ChangeLog: 2025-08-31 API修正・Manager注入順序修正・getCurrentTool()確認・継続描画修正
+ * ChangeLog: 2025-08-31 API統一修正・getActiveTool()エイリアス追加・TegakiApplication互換対応
  *
  * @provides
  *   - ToolManager クラス
  *   - switchTool(toolName) - Tool切り替え
  *   - setActiveTool(toolName) - Tool切り替え（互換性エイリアス）
- *   - getCurrentTool() - 現在のTool取得（修正: getActiveTool → getCurrentTool）
+ *   - getCurrentTool() - 現在のTool取得（正規メソッド）
+ *   - getActiveTool() - 現在のTool取得（TegakiApplication互換エイリアス）
  *   - getTools() - Tool Map取得
  *   - initializeV8Tools() - v8 Tool群初期化
  *   - registerTool(name, toolClass) - Tool登録
@@ -21,7 +22,7 @@
  *
  * @uses
  *   - CanvasManager.getDrawContainer()
- *   - AbstractTool.setManagersObject() - 修正: 正規メソッド優先
+ *   - AbstractTool.setManagersObject() - 正規メソッド優先
  *   - AbstractTool.activate()
  *   - AbstractTool.deactivate()
  *   - AbstractTool.onPointerDown()
@@ -38,7 +39,7 @@
  *   🚫 フォールバック禁止
  *   🚫 フェイルセーフ禁止
  *   🚫 v7/v8 両対応による二重管理禁止
- *   🚫 未実装メソッド呼び出し禁止（getActiveTool → getCurrentTool 修正）
+ *   🚫 未実装メソッド呼び出し禁止
  *   🚫 API名称不整合禁止
  *
  * @manager-key
@@ -58,7 +59,8 @@
  *   - verifyInjection() - 注入検証
  *   - switchTool()/setActiveTool() - Tool切り替え（両対応）
  *   - getTools() - Tool Map取得
- *   - getCurrentTool() - 現在Tool取得（修正: getActiveTool → getCurrentTool）
+ *   - getCurrentTool() - 現在Tool取得（正規）
+ *   - getActiveTool() - 現在Tool取得（互換エイリアス）
  *   - onPointerXxx() - ポインターイベント処理
  *
  * @error-handling
@@ -82,22 +84,23 @@
     'use strict';
 
     /**
-     * 🔧 ToolManager v8.12.0完全対応版・API修正版
+     * 🔧 ToolManager v8.12.0完全対応版・API統一修正版
      * 
      * 📏 修正内容:
+     * - getActiveTool()エイリアス追加（TegakiApplication互換対応）
+     * - API名称統一完了
      * - Manager注入API順序修正（setManagersObject優先）
-     * - getCurrentTool()メソッド確認・getActiveTool削除
      * - Tool注入エラー完全対応
      * - 継続描画問題修正
      * 
      * 🚀 特徴:
-     * - API名称統一・後方互換性確保
+     * - API名称統一・TegakiApplication完全互換
      * - 防御的依存注入・検証強化
      * - Tool初期化エラー完全対応
      */
     class ToolManager {
         constructor(canvasManagerDI = null) {
-            console.log(`🚀 ToolManager v8.12.0作成開始 - API修正版`);
+            console.log(`🚀 ToolManager v8.12.0作成開始 - API統一修正版`);
             
             // 基本状態初期化
             this.canvasManager = null;
@@ -124,7 +127,7 @@
                 this._handleConstructorInjection(canvasManagerDI);
             }
             
-            console.log(`✅ ToolManager v8.12.0作成完了 - API修正版`);
+            console.log(`✅ ToolManager v8.12.0作成完了 - API統一修正版`);
         }
 
         /**
@@ -262,7 +265,7 @@
          * 🚀 v8 Tool初期化（API修正版）
          */
         async initializeV8Tools() {
-            console.log(`🚀 v8 Tool初期化開始（API修正版）`);
+            console.log(`🚀 v8 Tool初期化開始（API統一修正版）`);
             
             // 前提条件確認
             if (!this.managersInjected) {
@@ -479,11 +482,20 @@
         }
 
         /**
-         * 📊 現在のTool取得（修正: getActiveTool → getCurrentTool）
+         * 📊 現在のTool取得（正規メソッド）
          * 
          * @returns {Object|null} 現在のToolインスタンス
          */
         getCurrentTool() {
+            return this.currentTool;
+        }
+
+        /**
+         * 📊 現在のTool取得（TegakiApplication互換エイリアス）
+         * 
+         * @returns {Object|null} 現在のToolインスタンス
+         */
+        getActiveTool() {
             return this.currentTool;
         }
 
@@ -666,7 +678,7 @@
             
             return {
                 className: 'ToolManager',
-                version: 'v8.12.0-api-fixed',
+                version: 'v8.12.0-api-unified',
                 currentTool: this.currentToolName,
                 tools: toolInfo,
                 toolsCount: this.tools.size,
@@ -692,7 +704,8 @@
                     getTools: typeof this.getTools === 'function',
                     setActiveTool: typeof this.setActiveTool === 'function',
                     switchTool: typeof this.switchTool === 'function',
-                    getCurrentTool: typeof this.getCurrentTool === 'function', // 修正確認
+                    getCurrentTool: typeof this.getCurrentTool === 'function',
+                    getActiveTool: typeof this.getActiveTool === 'function', // 互換エイリアス確認
                     verifyInjection: typeof this.verifyInjection === 'function'
                 }
             };
@@ -753,8 +766,8 @@
     }
 
     window.Tegaki.ToolManager = ToolManager;
-    console.log(`🚀 ToolManager v8.12.0完全対応版・API修正版 Loaded`);
-    console.log(`📏 修正内容: getCurrentTool()確認・setManagersObject優先・Manager注入強化・API統一完了`);
+    console.log(`🚀 ToolManager v8.12.0完全対応版・API統一修正版 Loaded`);
+    console.log(`📏 修正内容: getActiveTool()エイリアス追加・TegakiApplication完全互換・API統一完了`);
     console.log(`🚀 特徴: 防御的依存注入・Tool初期化エラー完全対応・ポインターイベント統一処理`);
 
 })();
