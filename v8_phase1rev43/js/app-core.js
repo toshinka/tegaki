@@ -1,7 +1,7 @@
 /**
  * 📄 FILE: js/app-core.js
- * 📌 RESPONSIBILITY: PixiJS v8統合基盤システム・Manager統一API契約対応・初期化順序確立・エラー耐性強化版
- * ChangeLog: 2025-08-31 CoordinateManager初期化修正・エラーハンドリング強化・過剰ログ削減
+ * 📌 RESPONSIBILITY: PixiJS v8統合基盤システム・Manager統一API契約対応・CanvasManager初期化フロー修正版
+ * ChangeLog: 2025-08-31 CanvasManager初期化フロー修正・統一ライフサイクル準拠・エラーハンドリング強化
  *
  * @provides
  *   - AppCore（クラス）
@@ -320,7 +320,7 @@
         // ================================
         
         /**
-         * v8 Manager群初期化（Manager統一API契約準拠・エラー耐性強化版）
+         * v8 Manager群初期化（Manager統一API契約準拠・CanvasManager初期化フロー修正版）
          */
         async initializeV8Managers() {
             console.log('🚀 AppCore: Manager群統一初期化開始（統一API契約準拠版）');
@@ -334,7 +334,7 @@
             }
             
             try {
-                // Phase 1: CanvasManager初期化（最優先）
+                // Phase 1: CanvasManager初期化（最優先・修正版）
                 await this.initializeCanvasManager();
                 
                 // Phase 2: 基盤Manager群作成・登録
@@ -362,7 +362,7 @@
         }
         
         /**
-         * CanvasManager初期化（最優先処理）
+         * CanvasManager初期化（最優先処理・修正版）
          */
         async initializeCanvasManager() {
             console.log('🎨 AppCore: CanvasManager初期化開始');
@@ -371,28 +371,50 @@
                 // CanvasManager作成
                 this.canvasManager = new window.Tegaki.CanvasManager();
                 
-                // v8 Application注入・初期化
-                await this.canvasManager.initializeV8Application(this.pixiApp);
+                // 統一ライフサイクル適用（重要な修正）
+                // Step 1: configure
+                this.canvasManager.configure({
+                    width: 400,
+                    height: 400,
+                    backgroundColor: 0xf0e0d6,
+                    maxDPR: 2.0
+                });
+                
+                // Step 2: attach - PixiJS Application注入
+                this.canvasManager.attach({
+                    pixiApp: this.pixiApp
+                });
+                
+                // Step 3: init - 非同期初期化
+                await this.canvasManager.init();
                 
                 // 完全準備確認
+                if (!this.canvasManager.isReady()) {
+                    const debugInfo = this.canvasManager.getDebugInfo();
+                    console.error('🔍 CanvasManager準備失敗詳細:', debugInfo);
+                    throw new Error('CanvasManager not ready after initialization');
+                }
+                
+                // API存在確認
                 if (typeof this.canvasManager.getDrawContainer !== 'function') {
                     throw new Error('CanvasManager.getDrawContainer() method not available');
                 }
                 
+                // 動作確認テスト
                 const testContainer = this.canvasManager.getDrawContainer();
                 if (!testContainer) {
                     throw new Error('CanvasManager.getDrawContainer() returned null');
                 }
                 
-                if (!this.canvasManager.isV8Ready()) {
-                    throw new Error('CanvasManager not ready');
-                }
-                
                 // Manager登録
                 this.registerManager('canvas', this.canvasManager);
-                this.managerInitResults.set('canvas', { success: true, timestamp: Date.now() });
+                this.managerInitResults.set('canvas', { 
+                    success: true, 
+                    timestamp: Date.now(),
+                    isReady: this.canvasManager.isReady()
+                });
                 
-                this.initializationSteps.push('CanvasManager v8完全初期化');
+                this.initializationSteps.push('CanvasManager統一ライフサイクル初期化完了');
                 console.log('✅ CanvasManager初期化完了');
                 
             } catch (error) {
@@ -973,13 +995,13 @@
         getV8DebugInfo() {
             return {
                 className: 'AppCore',
-                version: 'v8-unified-api-contract-fixed',
+                version: 'v8-canvas-manager-lifecycle-fixed',
                 systemStatus: {
                     v8Ready: this.v8Ready,
                     systemStarted: this.systemStarted,
                     pixiAppReady: !!this.pixiApp,
                     canvasElementReady: this.canvasElementReady,
-                    canvasManagerReady: this.canvasManager ? this.canvasManager.isV8Ready() : false,
+                    canvasManagerReady: this.canvasManager ? this.canvasManager.isReady() : false,
                     toolManagerReady: this.toolManager ? this.toolManager.isReady() : false
                 },
                 rendererInfo: {
@@ -1047,6 +1069,6 @@
     window.Tegaki.AppCore = AppCore;
 
     console.log('🚀 AppCore v8統合基盤システム・Manager統一API契約対応版 Loaded');
-    console.log('🚀 特徴: isReady()エイリアス自動注入・依存関係順序制御・エラー耐性・統一初期化');
+    console.log('🚀 特徴: CanvasManager初期化フロー修正・統一ライフサイクル準拠・エラー耐性・統一初期化');
 
 })();
