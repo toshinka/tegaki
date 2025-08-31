@@ -1,251 +1,403 @@
-# 🚀 Tegaki v8 Phase1.5 包括的改修計画書
+# 🚀 Tegaki v8 Phase1.5 包括的改修計画書 v2.0
+## 📊 依存関係マップ・初期化フロー完全版・架空メソッド撲滅
 
-## 📊 現状分析・問題点の特定
+### 🎯 現在の状況（2025-09-01 更新）
 
-### 🔥 重大な問題（即座に修正が必要）
+#### ✅ 解決済み問題
+1. **ToolManager 構文エラー** → 完全修正済み
+2. **`Tegaki.ToolManager` 登録** → グローバル登録完了
+3. **CoordinateManager 依存メソッド不在** → `CanvasManager.getApplication()` 追加済み
 
-1. **EraserTool構文エラー** 
-   - `eraser-tool.js:572` で構文エラー発生
-   - 日本語コメントが不正な位置に混入
-   - `window.Tegaki.EraserTool is not a constructor` エラー
-
-2. **ToolManager準備状態問題**
-   - `ToolManager still not ready after verification`
-   - `isReady()` メソッドの実装不備
-
-3. **座標表示オフセット問題**
-   - 座標(0,0)が(110,95)に表示される座標変換の不具合
-
-4. **Manager依存注入の不整合**
-   - `RecordManager not ready - call setManagers() first`
-   - `this.toolManager.setActiveTool is not a function`
-
-### ⚠️ 中程度の問題
-
-5. **ペン継続描画問題**
-   - ペンを離しても描画が続く不具合
-   - `onPointerUp` 処理の不備
-
-6. **消しゴム機能完全停止**
-   - EraserToolの読み込み失敗により消しゴムが使用不可
-
-### 🔧 軽微な問題
-
-7. **キャンバス枠の復活**
-   - 削除したはずのキャンバス枠が表示される
-
-## 🎯 改修方針・アーキテクチャ設計
-
-### 🏗️ Manager初期化フロー（推奨順序）
-
-```
-1. ConfigManager.configure() 
-2. CanvasManager.attach() → CanvasManager.init() 
-3. EventBus.attach/init()
-4. NavigationManager.attach/init()
-5. CoordinateManager.attach/init()
-6. RecordManager.attach/init() 
-7. ToolManager.attach/init()
-8. UI/Sidebar起動（EventBus 'app:ready'待機）
-9. ShortcutManager.attach/init()
-```
-
-### 📦 依存関係マッピング
-
-#### Manager間依存関係
-```
-CanvasManager (基幹) 
-├── CoordinateManager (Canvas参照必須)
-├── ToolManager (Canvas/Draw Container必須)
-├── RecordManager (独立、但しCanvas状態参照)
-├── NavigationManager (Canvas変形処理)
-└── EventBus (全Manager共通通信層)
-```
-
-#### Tool依存関係
-```
-AbstractTool (基底)
-├── PenTool
-│   ├── CanvasManager (DrawContainer取得)
-│   ├── CoordinateManager (座標変換)
-│   └── RecordManager (描画記録)
-└── EraserTool 
-    ├── CanvasManager (DrawContainer取得)
-    ├── CoordinateManager (座標変換)
-    └── RecordManager (消去記録)
-```
-
-### 🔄 データフロー（描画プロセス）
-
-```
-1. DOM Event → TegakiApplication.onPointerXxx()
-2. TegakiApplication → CoordinateManager.clientToWorld()
-3. TegakiApplication → ToolManager.currentTool.onPointerXxx()
-4. Tool → CanvasManager.getDrawContainer()
-5. Tool → PIXI.Graphics操作 (v8 API)
-6. Tool → RecordManager.addStroke() (描画完了時)
-```
-
-## 🛠️ 具体的改修計画
-
-### Phase 1: 緊急修正（即座に実行）
-
-#### 1.1 EraserTool構文修正
-- **対象**: `tools/eraser-tool.js` 
-- **問題**: 日本語コメント構文エラー
-- **対策**: ファイル全体を新規作成・完全修正版に置換
-
-#### 1.2 ToolManager準備状態修正
-- **対象**: `managers/tool-manager.js`
-- **問題**: `isReady()` の実装不備
-- **対策**: 正しい `isReady()` 実装・エラーハンドリング改善
-
-#### 1.3 座標変換修正
-- **対象**: `utils/coordinate-manager.js`
-- **問題**: DPR・Container変形の重複適用
-- **対策**: 座標変換ロジックの見直し・検証機能追加
-
-### Phase 2: Manager統合修正（依存関係修正）
-
-#### 2.1 依存注入統一化
-- **対象**: 全Manager・Tool
-- **問題**: Manager注入方法の不整合
-- **対策**: 
-  ```javascript
-  // 統一形式
-  setManagersObject(managers) // Object形式受け取り
-  configure(config)          // 設定注入
-  attach(context)           // Pixi参照注入
-  init()                   // Promise<void> 初期化
-  isReady()               // boolean 準備完了確認
-  dispose()               // 解放処理
-  ```
-
-#### 2.2 初期化順序の厳格化
-- **対象**: `js/app-core.js`, `js/tegaki-application.js`
-- **対策**: Promiseチェーン・await/async による順次初期化
-
-### Phase 3: 描画処理最適化
-
-#### 3.1 PixiJS v8 API完全準拠
-- **対象**: 全描画処理
-- **問題**: v7とv8のAPI混在
-- **対策**: 
-  ```javascript
-  // v8新API使用
-  graphics.circle(x, y, radius).fill({color: 0xff0000});
-  graphics.moveTo(x, y).lineTo(x2, y2).stroke({width: 2, color: 0x000000});
-  ```
-
-#### 3.2 座標系統一
-- **対象**: 全座標処理
-- **対策**: `CoordinateManager` 経由のみ・直接座標計算禁止
-
-## 📋 ファイル別詳細改修内容
-
-### 🔧 重要ファイル（優先度：高）
-
-#### `tools/eraser-tool.js` 【緊急】
-**状態**: 構文エラー・完全動作不能  
-**改修内容**:
-- 日本語コメント構文エラー修正
-- v8 Graphics API完全準拠
-- Manager注入方式統一
-- 消去アルゴリズム v8最適化
-
-#### `managers/tool-manager.js` 【緊急】
-**状態**: `isReady()` 不備・Tool切り替え失敗  
-**改修内容**:
-- `isReady()` メソッド正しい実装
-- `setActiveTool()` メソッド確認・修正
-- Tool登録・切り替えフロー最適化
-
-#### `utils/coordinate-manager.js` 【高】
-**状態**: 座標オフセット問題  
-**改修内容**:
-- DPR適用ロジック見直し
-- Canvas変形・Container階層座標処理修正
-- 座標変換検証機能追加
-
-### 📦 中程度ファイル（優先度：中）
-
-#### `js/app-core.js` 【中】
-**改修内容**:
-- Manager初期化順序厳格化
-- エラーハンドリング強化
-- Ready状態監視改善
-
-#### `tools/pen-tool.js` 【中】
-**改修内容**:
-- `onPointerUp` 処理確実化
-- 継続描画問題修正
-- Manager依存関係整理
-
-### 🎨 UI・視覚的改修（優先度：低）
-
-#### キャンバス枠削除
-**対象**: `managers/canvas-manager.js`
-**改修内容**: CSS・スタイル設定でborder完全削除
-
-## 🧪 検証・テスト計画
-
-### 必須検証項目
-
-1. **Manager初期化順序**
-   ```javascript
-   // 各Manager.isReady() が true を返すことを確認
-   console.log('Ready Status:', managers.map(m => `${m.constructor.name}: ${m.isReady()}`));
-   ```
-
-2. **座標変換精度**
-   ```javascript
-   // (0,0) が正確に描画されることを確認
-   const testPoint = coordinateManager.clientToWorld(0, 0);
-   console.log('Transform Test:', testPoint); // 期待値: {x:0, y:0} 近似
-   ```
-
-3. **Tool動作確認**
-   ```javascript
-   // Tool切り替え・描画・消去の一連フロー
-   toolManager.setActiveTool('pen');   // ペン選択
-   // 描画テスト実行
-   toolManager.setActiveTool('eraser'); // 消しゴム選択  
-   // 消去テスト実行
-   ```
-
-## ⚡ 実装順序（推奨）
-
-### Step 1: 緊急修正（30分）
-1. `tools/eraser-tool.js` 完全再作成
-2. `managers/tool-manager.js` `isReady()` 修正
-
-### Step 2: 座標系修正（20分）
-1. `utils/coordinate-manager.js` 座標変換ロジック修正
-2. 座標表示テスト・検証
-
-### Step 3: Manager統合（15分）
-1. `js/app-core.js` 初期化順序修正
-2. 依存注入エラー解消
-
-### Step 4: 動作検証（15分）
-1. ペン描画テスト
-2. 消しゴムテスト
-3. 座標変換テスト
-
-## 💾 期待される結果
-
-### ✅ 修正後の動作
-- キャンバス表示: (0,0) 座標に正確に描画
-- ペン機能: スムーズな描画・正確な終了処理
-- 消しゴム機能: 完全復旧・正常な消去動作
-- Tool切り替え: エラーなしの確実な切り替え
-- 座標変換: DPR・Container変形の正確な処理
-
-### 📊 パフォーマンス向上
-- PixiJS v8最適化: WebGPU対応・高速描画
-- Manager軽量化: 不要なログ・冗長処理削除
-- メモリ効率: Graphics適切な破棄・リークなし
+#### ❌ 現在の問題
+1. **CanvasManager 初期化順序問題** - `getDrawContainer()` 呼び出し時に `isReady()` = false
+2. **Manager 間の初期化タイミング不整合** - 依存関係が満たされる前にメソッド呼び出し
+3. **架空メソッド呼び出しリスク** - ファイル間の実装状況確認不足
 
 ---
 
-**🎯 この改修計画に従って順次実装することで、Tegaki v8 Phase1.5の安定動作と将来のPhase2-3への拡張性を確保できます。**
+## 📋 ファイル間依存関係マップ（完全版）
+
+### 🏗️ アーキテクチャ階層
+
+```
+┌─────────────────────────────────────────────────────────────┐
+│                    🎮 UI Layer                               │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │  assets/icons.js (EventBus 'app:ready' 待機)           │ │
+│  └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+         │
+         ▼ EventBus('app:ready')
+┌─────────────────────────────────────────────────────────────┐
+│                🎯 Application Layer                         │
+│  ┌─────────────────────┐  ┌─────────────────────────────────┐ │
+│  │  TegakiApplication  │  │         AppCore                 │ │
+│  │  - initialize()     │◄─┤  - initializeV8Managers()     │ │
+│  │  - createCanvasV8() │  │  - createCanvasV8()            │ │
+│  └─────────────────────┘  └─────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+         │
+         ▼ Manager初期化
+┌─────────────────────────────────────────────────────────────┐
+│                📦 Manager Layer                             │
+│                                                             │
+│  🎨 CanvasManager (基幹)                                    │
+│  ├── PROVIDES: getApplication(), getDrawContainer()         │
+│  ├── REQUIRES: PixiJS Application                           │
+│  └── STATUS: configure → attach → init → initializeV8App   │
+│                                                             │
+│  📏 CoordinateManager                                       │
+│  ├── PROVIDES: clientToWorld(), screenToCanvas()           │
+│  ├── REQUIRES: CanvasManager.getApplication()              │
+│  └── STATUS: configure → attach → init                     │
+│                                                             │
+│  🔧 ToolManager                                             │
+│  ├── PROVIDES: setActiveTool(), onPointerXxx()             │
+│  ├── REQUIRES: CanvasManager.getDrawContainer()            │
+│  └── STATUS: configure → attach → init → setManagers       │
+│                                                             │
+│  🔄 Other Managers                                          │
+│  ├── EventBus (独立)                                       │
+│  ├── RecordManager (独立)                                  │
+│  └── NavigationManager (CanvasManager依存)                 │
+└─────────────────────────────────────────────────────────────┘
+         │
+         ▼ Tool注入
+┌─────────────────────────────────────────────────────────────┐
+│                🛠️ Tool Layer                               │
+│  ┌─────────────────┐  ┌─────────────────────────────────────┐ │
+│  │   PenTool       │  │        EraserTool                   │ │
+│  │ - onPointerXxx()│  │  - onPointerXxx()                  │ │
+│  │ - setManagers() │  │  - setManagers()                   │ │
+│  └─────────────────┘  └─────────────────────────────────────┘ │
+│         │                        │                           │
+│         ▼ extends                 ▼ extends                  │
+│  ┌─────────────────────────────────────────────────────────┐ │
+│  │                AbstractTool                             │ │
+│  │  - setManagersObject() ← 統一Manager注入API             │ │
+│  └─────────────────────────────────────────────────────────┘ │
+└─────────────────────────────────────────────────────────────┘
+```
+
+### 🔗 具体的依存関係
+
+#### Manager → Manager 依存
+```
+CanvasManager (基幹)
+├── 依存なし (PixiJS のみ)
+└── 提供: getApplication(), getDrawContainer()
+
+CoordinateManager
+├── 依存: CanvasManager.getApplication()
+├── 依存: CanvasManager.getCanvasElement()
+└── 提供: clientToWorld(), screenToCanvas()
+
+ToolManager  
+├── 依存: CanvasManager.getDrawContainer()
+└── 提供: setActiveTool(), getCurrentTool()
+
+RecordManager
+├── 依存なし (独立)
+└── 提供: addStroke()
+
+NavigationManager
+├── 依存: CanvasManager.getApplication()
+└── 提供: pan(), zoom()
+
+EventBus
+├── 依存なし (独立)
+└── 提供: emit(), on()
+```
+
+#### Tool → Manager 依存
+```
+AbstractTool
+├── 依存: Manager統一注入 (setManagersObject)
+└── 提供: 基底機能
+
+PenTool extends AbstractTool
+├── 依存: CanvasManager.getDrawContainer()
+├── 依存: CanvasManager.createStrokeGraphics()
+├── 依存: CoordinateManager.clientToWorld()
+└── 依存: RecordManager.addStroke()
+
+EraserTool extends AbstractTool
+├── 依存: CanvasManager.getDrawContainer()
+├── 依存: CoordinateManager.clientToWorld()
+└── 依存: RecordManager.addStroke()
+```
+
+---
+
+## ⚡ 正しい初期化フロー（修正版）
+
+### 📋 Phase 1: 基幹システム準備
+```javascript
+// 1. Bootstrap起動
+bootstrap.js:start()
+└── initializeTegakiApplication()
+    └── new TegakiApplication()
+        └── TegakiApplication.initialize()
+
+// 2. TegakiApplication初期化
+TegakiApplication.initialize() {
+    await this.createCanvasV8();              // Canvas作成
+    await this.initializeV8Managers();        // Manager群初期化
+}
+```
+
+### 📋 Phase 2: Canvas作成・PixiJS準備
+```javascript
+// 3. Canvas作成 (TegakiApplication → AppCore)
+TegakiApplication.createCanvasV8()
+└── AppCore.createCanvasV8()
+    ├── createV8Application()                 // PixiJS Application作成
+    ├── setupV8Canvas()                       // DOM配置
+    └── return pixiApp
+
+// 4. PixiJS Application作成完了
+pixiApp = new PIXI.Application({...})        // PixiJS v8準拠
+```
+
+### 📋 Phase 3: Manager群初期化（依存順序厳守）
+```javascript
+// 5. Manager初期化 (TegakiApplication → AppCore)
+TegakiApplication.initializeV8Managers()
+└── AppCore.initializeV8Managers()
+    │
+    // Step 1: 基幹Manager (依存なし)
+    ├── ConfigManager.configure(config)
+    ├── EventBus.attach(context) → EventBus.init()
+    │
+    // Step 2: Canvas基幹 (PixiJS依存)
+    ├── CanvasManager.configure(config)
+    ├── CanvasManager.attach({pixiApp})
+    ├── CanvasManager.init()
+    ├── CanvasManager.initializeV8Application(pixiApp)  // ここが重要！
+    │   └── isReady() = true になる
+    │
+    // Step 3: Canvas依存Manager群
+    ├── CoordinateManager.configure(config)
+    ├── CoordinateManager.attach({canvas: canvasManager})
+    ├── CoordinateManager.init()               // getApplication()使用
+    │
+    ├── NavigationManager.configure(config)
+    ├── NavigationManager.attach({canvas: canvasManager})
+    ├── NavigationManager.init()
+    │
+    ├── RecordManager.configure(config)
+    ├── RecordManager.attach(context)
+    ├── RecordManager.init()
+    │
+    // Step 4: 全Manager統合
+    ├── ToolManager.configure(config)
+    ├── ToolManager.attach(context)
+    ├── ToolManager.init()
+    ├── ToolManager.setManagers(managersMap)    // 統一注入
+    ├── ToolManager.verifyInjection()          // getDrawContainer()使用
+    ├── ToolManager.initializeV8Tools()        // Tool作成
+    └── ToolManager.setActiveTool('pen')       // デフォルト設定
+```
+
+### 📋 Phase 4: UI準備・完了通知
+```javascript
+// 6. 初期化完了通知
+AppCore.emitAppReady()
+└── EventBus.emit('app:ready')
+    └── assets/icons.js 起動
+        └── サイドバー・UI表示
+```
+
+---
+
+## 🚨 現在の問題と解決策
+
+### ❌ 問題1: CanvasManager初期化タイミング
+**症状**: `getDrawContainer()` 呼び出し時に `isReady()` = false
+**原因**: `initializeV8Application()` が完了する前に `getDrawContainer()` が呼ばれている
+
+**解決策**:
+```javascript
+// AppCore.initializeV8Managers() 修正要
+async initializeV8Managers() {
+    // CanvasManager完全初期化確実化
+    await this.canvasManager.init();
+    await this.canvasManager.initializeV8Application(this.pixiApp);
+    
+    // isReady()確認必須
+    if (!this.canvasManager.isReady()) {
+        throw new Error('CanvasManager initialization verification failed');
+    }
+    
+    // 他Manager初期化続行
+    // ...
+}
+```
+
+### ❌ 問題2: 架空メソッド呼び出し防止システム
+**対策**: 実装状況確認機能
+
+```javascript
+// 各Manager・Toolに実装状況確認メソッド追加
+class CanvasManager {
+    static getProvidedMethods() {
+        return [
+            'configure', 'attach', 'init', 'isReady', 'dispose',
+            'getApplication', 'getDrawContainer', 'createStrokeGraphics',
+            'getCanvasElement', 'getTransformCoefficients'
+        ];
+    }
+    
+    verifyMethodExists(methodName) {
+        if (typeof this[methodName] !== 'function') {
+            throw new Error(`Method ${methodName} not implemented in ${this.constructor.name}`);
+        }
+        return true;
+    }
+}
+
+// 呼び出し前確認の例
+if (canvasManager.verifyMethodExists('getDrawContainer')) {
+    const drawContainer = canvasManager.getDrawContainer();
+}
+```
+
+---
+
+## 📝 ファイル別実装確認チェックリスト
+
+### ✅ 完了ファイル
+- [x] `managers/tool-manager.js` - 構文エラー修正・統一ライフサイクル実装
+- [x] `managers/canvas-manager.js` - getApplication()追加・CoordinateManager連携
+- [ ] `js/app-core.js` - Manager初期化順序修正 ⚠️要修正
+- [ ] `js/tegaki-application.js` - Canvas作成・Manager初期化連携 ⚠️要修正
+
+### 📋 実装確認が必要なファイル
+```
+utils/coordinate-manager.js
+├── REQUIRES: CanvasManager.getApplication()
+├── REQUIRES: CanvasManager.getCanvasElement()
+└── STATUS: 実装確認要
+
+utils/record-manager.js  
+├── REQUIRES: 独立動作
+└── STATUS: 実装確認要
+
+tools/pen-tool.js
+├── REQUIRES: setManagersObject()
+├── REQUIRES: onPointerDown/Move/Up()
+└── STATUS: 実装確認要
+
+tools/eraser-tool.js
+├── REQUIRES: setManagersObject()
+├── REQUIRES: onPointerDown/Move/Up()  
+└── STATUS: 実装確認要
+```
+
+---
+
+## 🎯 緊急修正優先順位
+
+### 🔥 Priority 1: Manager初期化順序修正 (15分)
+1. **AppCore.initializeV8Managers()** 修正
+   - CanvasManager完全初期化確認
+   - isReady()検証追加
+   - 依存順序厳格化
+
+2. **TegakiApplication.initializeV8Managers()** 修正
+   - AppCore連携強化
+   - エラーハンドリング改善
+
+### ⚡ Priority 2: 架空メソッド撲滅システム (10分)
+1. **メソッド実装確認機能** 追加
+2. **呼び出し前検証** システム実装
+3. **依存関係検証** 自動化
+
+### 📊 Priority 3: 動作検証・テスト (10分)
+1. **Manager初期化テスト**
+2. **Tool動作テスト** 
+3. **描画・消去テスト**
+
+---
+
+## 💡 架空メソッド撲滅戦略
+
+### 🛡️ 防御策1: 実装確認システム
+```javascript
+// 統一メソッド存在確認
+function verifyManagerMethods(manager, requiredMethods) {
+    const missing = requiredMethods.filter(method => 
+        typeof manager[method] !== 'function'
+    );
+    
+    if (missing.length > 0) {
+        throw new Error(`Missing methods in ${manager.constructor.name}: ${missing.join(', ')}`);
+    }
+    
+    return true;
+}
+
+// 使用例
+verifyManagerMethods(canvasManager, ['getApplication', 'getDrawContainer']);
+verifyManagerMethods(toolManager, ['setActiveTool', 'getCurrentTool']);
+```
+
+### 🛡️ 防御策2: Manager契約定義
+```javascript
+// Manager契約インターface
+const ManagerContract = {
+    Lifecycle: ['configure', 'attach', 'init', 'isReady', 'dispose'],
+    CanvasManager: ['getApplication', 'getDrawContainer', 'createStrokeGraphics'],
+    ToolManager: ['setActiveTool', 'getCurrentTool', 'initializeV8Tools'],
+    CoordinateManager: ['clientToWorld', 'screenToCanvas']
+};
+```
+
+### 🛡️ 防御策3: 段階的確認
+```javascript
+// 段階的Manager確認
+async function safeManagerInitialization(managers) {
+    // Step 1: 基本ライフサイクル確認
+    for (const [name, manager] of managers) {
+        verifyManagerMethods(manager, ManagerContract.Lifecycle);
+    }
+    
+    // Step 2: 専用メソッド確認  
+    verifyManagerMethods(managers.get('canvas'), ManagerContract.CanvasManager);
+    verifyManagerMethods(managers.get('tool'), ManagerContract.ToolManager);
+    
+    // Step 3: 初期化実行
+    // 依存順序で実行...
+}
+```
+
+---
+
+## 🚀 期待される結果
+
+### ✅ 修正後の状態
+1. **CanvasManager**: `getDrawContainer()` 正常動作
+2. **CoordinateManager**: 初期化成功・座標変換動作
+3. **ToolManager**: Tool切り替え・描画イベント処理成功
+4. **PenTool**: 描画動作・座標(0,0)正確表示
+5. **EraserTool**: 消去動作復活
+6. **UI**: サイドバー・アイコン表示
+
+### 📊 パフォーマンス指標
+- **初期化時間**: < 1秒
+- **描画応答**: < 16ms (60fps)
+- **メモリ使用**: 安定・リーク無し
+- **エラー率**: 0% (架空メソッド呼び出し撲滅)
+
+---
+
+## 🎯 次のステップ
+
+1. **AppCore.initializeV8Managers()** 緊急修正実施
+2. **架空メソッド防御システム** 実装
+3. **動作検証** 実施
+4. **Phase2準備**: レイヤー・エフェクト機能準備
+
+---
+
+**📢 重要**: この計画書に従って順次実装することで、Manager間の依存関係混乱と架空メソッド呼び出し問題を根本的に解決し、Tegaki v8 Phase1.5の完全安定動作を実現します。
