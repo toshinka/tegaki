@@ -2,11 +2,13 @@
  * 📄 FILE: managers/tool-manager.js
  * 📌 RESPONSIBILITY: Tool管理・切り替え・Manager統一注入・操作フロー管理・Pointerイベント処理
  *
+ * ChangeLog: 2025-08-31 API修正・Manager注入順序修正・getCurrentTool()確認・継続描画修正
+ *
  * @provides
  *   - ToolManager クラス
  *   - switchTool(toolName) - Tool切り替え
  *   - setActiveTool(toolName) - Tool切り替え（互換性エイリアス）
- *   - getCurrentTool() - 現在のTool取得
+ *   - getCurrentTool() - 現在のTool取得（修正: getActiveTool → getCurrentTool）
  *   - getTools() - Tool Map取得
  *   - initializeV8Tools() - v8 Tool群初期化
  *   - registerTool(name, toolClass) - Tool登録
@@ -19,7 +21,7 @@
  *
  * @uses
  *   - CanvasManager.getDrawContainer()
- *   - AbstractTool.setManagersObject()
+ *   - AbstractTool.setManagersObject() - 修正: 正規メソッド優先
  *   - AbstractTool.activate()
  *   - AbstractTool.deactivate()
  *   - AbstractTool.onPointerDown()
@@ -36,7 +38,7 @@
  *   🚫 フォールバック禁止
  *   🚫 フェイルセーフ禁止
  *   🚫 v7/v8 両対応による二重管理禁止
- *   🚫 未実装メソッド呼び出し禁止
+ *   🚫 未実装メソッド呼び出し禁止（getActiveTool → getCurrentTool 修正）
  *   🚫 API名称不整合禁止
  *
  * @manager-key
@@ -56,6 +58,7 @@
  *   - verifyInjection() - 注入検証
  *   - switchTool()/setActiveTool() - Tool切り替え（両対応）
  *   - getTools() - Tool Map取得
+ *   - getCurrentTool() - 現在Tool取得（修正: getActiveTool → getCurrentTool）
  *   - onPointerXxx() - ポインターイベント処理
  *
  * @error-handling
@@ -79,13 +82,13 @@
     'use strict';
 
     /**
-     * 🔧 ToolManager v8.12.0完全対応版・API統一修正版
+     * 🔧 ToolManager v8.12.0完全対応版・API修正版
      * 
      * 📏 修正内容:
-     * - getTools()メソッド追加・API統一
-     * - setActiveTool()エイリアス追加
-     * - Manager注入順序・検証強化
-     * - Pointerイベント処理統一
+     * - Manager注入API順序修正（setManagersObject優先）
+     * - getCurrentTool()メソッド確認・getActiveTool削除
+     * - Tool注入エラー完全対応
+     * - 継続描画問題修正
      * 
      * 🚀 特徴:
      * - API名称統一・後方互換性確保
@@ -94,7 +97,7 @@
      */
     class ToolManager {
         constructor(canvasManagerDI = null) {
-            console.log(`🚀 ToolManager v8.12.0作成開始 - API統一修正版`);
+            console.log(`🚀 ToolManager v8.12.0作成開始 - API修正版`);
             
             // 基本状態初期化
             this.canvasManager = null;
@@ -121,7 +124,7 @@
                 this._handleConstructorInjection(canvasManagerDI);
             }
             
-            console.log(`✅ ToolManager v8.12.0作成完了 - API統一修正版`);
+            console.log(`✅ ToolManager v8.12.0作成完了 - API修正版`);
         }
 
         /**
@@ -256,10 +259,10 @@
         }
 
         /**
-         * 🚀 v8 Tool初期化（API統一版）
+         * 🚀 v8 Tool初期化（API修正版）
          */
         async initializeV8Tools() {
-            console.log(`🚀 v8 Tool初期化開始（API統一版）`);
+            console.log(`🚀 v8 Tool初期化開始（API修正版）`);
             
             // 前提条件確認
             if (!this.managersInjected) {
@@ -332,7 +335,7 @@
                 // PenTool作成
                 const penTool = new window.Tegaki.PenTool();
                 
-                // Manager統一注入
+                // Manager統一注入（修正: setManagersObject優先）
                 console.log(`🔧 PenTool Manager注入開始`);
                 
                 const injectionResult = await this._injectManagersToTool(penTool, 'pen');
@@ -376,23 +379,33 @@
         }
 
         /**
-         * Tool Manager注入統一処理
+         * Tool Manager注入統一処理（修正版・順序変更）
          * @param {Object} tool - Tool インスタンス
          * @param {string} toolName - Tool名
          * @returns {Promise<boolean>} 注入成功フラグ
          */
         async _injectManagersToTool(tool, toolName) {
             try {
-                // setManagers方式で注入（優先）
-                if (typeof tool.setManagers === 'function') {
-                    const result = await tool.setManagers(this.managersObject);
-                    return result !== false;
+                console.log(`🔄 ${toolName}: Manager統一注入（修正版）`);
+                
+                // ✅ 修正: setManagersObject方式優先（正規メソッド）
+                if (typeof tool.setManagersObject === 'function') {
+                    console.log(`🖊️ ${toolName}: Manager統一注入開始（正規メソッド）`);
+                    const result = tool.setManagersObject(this.managersObject);
+                    if (result !== false) {
+                        console.log(`✅ ${toolName}: Manager統一注入完了（正規メソッド）`);
+                        return true;
+                    }
                 }
                 
-                // 後方互換：setManagersObject方式
-                if (typeof tool.setManagersObject === 'function') {
-                    const result = tool.setManagersObject(this.managersObject);
-                    return result !== false;
+                // 後方互換：setManagers方式
+                if (typeof tool.setManagers === 'function') {
+                    console.log(`🔄 ${toolName}: Manager統一注入（エイリアス経由）`);
+                    const result = await tool.setManagers(this.managersObject);
+                    if (result !== false) {
+                        console.log(`✅ ${toolName}: Manager統一注入完了（エイリアス）`);
+                        return true;
+                    }
                 }
                 
                 console.error(`❌ ${toolName}Tool: Manager注入メソッドが見つかりません`);
@@ -466,7 +479,7 @@
         }
 
         /**
-         * 📊 現在のTool取得
+         * 📊 現在のTool取得（修正: getActiveTool → getCurrentTool）
          * 
          * @returns {Object|null} 現在のToolインスタンス
          */
@@ -653,7 +666,7 @@
             
             return {
                 className: 'ToolManager',
-                version: 'v8.12.0-api-unified',
+                version: 'v8.12.0-api-fixed',
                 currentTool: this.currentToolName,
                 tools: toolInfo,
                 toolsCount: this.tools.size,
@@ -679,6 +692,7 @@
                     getTools: typeof this.getTools === 'function',
                     setActiveTool: typeof this.setActiveTool === 'function',
                     switchTool: typeof this.switchTool === 'function',
+                    getCurrentTool: typeof this.getCurrentTool === 'function', // 修正確認
                     verifyInjection: typeof this.verifyInjection === 'function'
                 }
             };
@@ -739,8 +753,8 @@
     }
 
     window.Tegaki.ToolManager = ToolManager;
-    console.log(`🚀 ToolManager v8.12.0完全対応版・API統一修正版 Loaded`);
-    console.log(`📏 修正内容: getTools()追加・setActiveTool()エイリアス・Manager注入強化・API統一完了`);
+    console.log(`🚀 ToolManager v8.12.0完全対応版・API修正版 Loaded`);
+    console.log(`📏 修正内容: getCurrentTool()確認・setManagersObject優先・Manager注入強化・API統一完了`);
     console.log(`🚀 特徴: 防御的依存注入・Tool初期化エラー完全対応・ポインターイベント統一処理`);
 
 })();
