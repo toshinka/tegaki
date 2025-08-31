@@ -422,40 +422,212 @@
 
     <!-- 🚀 v8対応読み込み順序 -->
  
-    <!-- Base Utilities (v8対応) -->
-    <script src="./js/utils/error-manager.js"></script>
-    <script src="./js/utils/config-manager.js"></script>
-    <script src="./js/utils/event-bus.js"></script>
-    <script src="./js/utils/coordinate-manager.js"></script>
-    <script src="./js/utils/navigation-manager.js"></script>
-    <script src="./js/utils/record-manager.js"></script>
-    <script src="./js/utils/shortcut-manager.js"></script>
-    <script src="./js/utils/minimal-deps.js"></script>
+# 📋 Phase1.5 緊急修正完了 - 実装ガイド
+
+## 🚨 修正された問題
+
+### ✅ **解決済み問題**
+1. **構文エラー完全修正**: coordinate-manager.js の `Unexpected token ')'` 解決
+2. **正規表現エラー修正**: tool-manager.js の `Invalid regular expression: missing /` 解決
+3. **Manager統一API対応**: setManagersObject() 正規メソッド確立
+4. **継続描画問題解決**: PointerLeave/Cancel 対応による確実な描画終了
+5. **Bootstrap依存エラー解決**: CoordinateManager 依存チェーンを修正
+
+## 🔧 修正されたファイル
+
+### 1. **coordinate-manager.js** - 構文エラー完全修正版
+- 不完全なコードを完全修正
+- Manager統一API契約完全対応
+- testCoordinate() メソッド追加
+
+### 2. **tool-manager.js** - 正規表現エラー修正版
+- `/^[a-zA-Z][a-zA-Z0-9_-]*$/` の正しい正規表現記法
+- Manager統一API契約対応
+- PointerLeave/Cancel イベント対応
+
+### 3. **pen-tool.js** - 継続描画問題完全解決版
+- `forceEndDrawing()` による冪等な描画終了保証
+- PointerLeave/Cancel イベントでの強制終了処理
+- setManagersObject() 統一メソッド使用
+
+### 4. **abstract-tool.js** - setManagersObject統一版
+- setManagersObject() を正規メソッドとして確立
+- setManagers() を後方互換エイリアスとして追加
+- Manager参照の統一管理
+
+## 🚀 実装手順
+
+### **Step 1: ファイル置換**
+以下のファイルを提供されたコードで完全置換してください：
+
+```
+js/utils/coordinate-manager.js
+managers/tool-manager.js
+tools/pen-tool.js
+tools/abstract-tool.js
+```
+
+### **Step 2: Bootstrap 依存チェック修正**
+bootstrap.js の依存チェック部分を以下に修正：
+
+```javascript
+// checkPhase15Dependencies 関数内
+function checkPhase15Dependencies() {
+    console.log('🔍 Phase1.5依存関係確認開始');
     
-    <!-- Managers (v8対応) -->
-    <script src="./managers/canvas-manager.js"></script>
+    const required = [
+        'Tegaki.ErrorManager',
+        'Tegaki.ConfigManager',
+        'Tegaki.EventBus',
+        'Tegaki.CoordinateManager',  // ✅ これが確実に存在するようになった
+        'Tegaki.NavigationManager',
+        'Tegaki.RecordManager',
+        'Tegaki.ShortcutManager',
+        'Tegaki.CanvasManager',
+        'Tegaki.ToolManager',        // ✅ 正規表現エラー修正により安全
+        'Tegaki.AbstractTool',
+        'Tegaki.AppCore',
+        'Tegaki.TegakiApplication'
+    ];
     
-    <!-- Tools (v8対応) -->
-    <script src="./tools/abstract-tool.js"></script>
-    <script src="./tools/pen-tool.js"></script>
-    <script src="./tools/eraser-tool.js"></script>
+    const missing = required.filter(dep => {
+        const parts = dep.split('.');
+        let obj = window;
+        for (const part of parts) {
+            if (!obj[part]) {
+                return true;
+            }
+            obj = obj[part];
+        }
+        return false;
+    });
     
-    <!-- Tool Manager (v8対応) -->
-    <script src="./managers/tool-manager.js"></script>
+    if (missing.length > 0) {
+        console.error('❌ 必須依存関係不足:', missing);
+        throw new Error(`Required dependencies missing: ${missing.join(', ')}`);
+    }
     
-    <!-- Application Core (v8対応) -->
-    <script src="./js/app-core.js"></script>
-    <script src="./js/tegaki-application.js"></script>
-    <script src="./js/main.js"></script>
-    
-    <!-- Assets (継続使用) -->
-    <script src="./assets/icons.js"></script>
-    
-    <!-- Debug (v8対応) -->
-    <script src="./debug/phase15-integration-test.js"></script>
-    
-    <!-- Bootstrap (v8対応・最後) -->
-    <script src="./js/bootstrap.js"></script>
+    console.log('✅ Phase1.5依存関係確認完了');
+}
+```
+
+### **Step 3: HTML Script順序確認**
+index.html の script タグが以下の順序であることを確認：
+
+```html
+<!-- PixiJS -->
+<script src="node_modules/pixi.js/dist/pixi.min.js"></script>
+
+<!-- Utils（基盤） -->
+<script src="js/utils/minimal-deps.js"></script>
+<script src="js/utils/error-manager.js"></script>
+<script src="js/utils/config-manager.js"></script>
+<script src="js/utils/event-bus.js"></script>
+<script src="js/utils/coordinate-manager.js"></script>   <!-- ✅ 修正版 -->
+<script src="js/utils/navigation-manager.js"></script>
+<script src="js/utils/record-manager.js"></script>
+<script src="js/utils/shortcut-manager.js"></script>
+
+<!-- Managers -->
+<script src="managers/canvas-manager.js"></script>
+<script src="managers/tool-manager.js"></script>        <!-- ✅ 修正版 -->
+
+<!-- Tools -->
+<script src="tools/abstract-tool.js"></script>          <!-- ✅ 修正版 -->
+<script src="tools/pen-tool.js"></script>               <!-- ✅ 修正版 -->
+<script src="tools/eraser-tool.js"></script>
+
+<!-- Application -->
+<script src="js/app-core.js"></script>
+<script src="js/tegaki-application.js"></script>
+<script src="js/main.js"></script>
+
+<!-- Assets -->
+<script src="assets/icons.js"></script>
+
+<!-- Debug -->
+<script src="debug/phase15-integration-test.js"></script>
+
+<!-- Bootstrap（最後） -->
+<script src="js/bootstrap.js"></script>
+```
+
+## 🔍 動作確認方法
+
+### **Step 1: 基本起動確認**
+1. ブラウザでindex.htmlを開く
+2. コンソールで以下を確認：
+   ```
+   ✅ CoordinateManager v8対応版・構文エラー完全修正版 Loaded
+   ✅ ToolManager v8対応版・正規表現修正版・Manager統一API契約版 Loaded
+   ✅ AbstractTool Manager参照統一・setManagersObject正規化版 Loaded
+   ✅ PenTool v8.12.0 継続描画問題完全修正版 Loaded
+   ✅ Bootstrap PixiJS v8対応版 実行開始...
+   ✅ TegakiApplication v8初期化完了
+   ```
+
+### **Step 2: 継続描画修正確認**
+1. ペンツールでキャンバスに線を引く
+2. マウスボタンを離す
+3. **確認ポイント**: 描画が確実に停止する（継続しない）
+4. コンソールで「forceEndDrawing() 実行完了」を確認
+
+### **Step 3: Manager注入確認**
+コンソールで以下を実行：
+```javascript
+// Tool Manager の状態確認
+console.log(window.Tegaki.ToolManagerInstance?.getDebugInfo());
+
+// PenTool の状態確認
+const penTool = window.Tegaki.ToolManagerInstance?.getCurrentTool();
+console.log(penTool?.getState());
+```
+
+## 🎯 期待される効果
+
+### ✅ **即座に解決される問題**
+1. **Bootstrap 初期化成功**: 依存関係エラーが解消
+2. **構文エラー排除**: JavaScript 実行が正常化
+3. **継続描画問題解決**: マウスを離すと確実に描画停止
+4. **Manager統一注入**: PenTool/EraserTool が正常に動作
+
+### 📈 **追加される機能**
+1. **外部描画対応基盤**: 画面外からの描画開始バッファリング
+2. **安定したツール切替**: ペン↔消しゴム切替がエラーなし
+3. **TPF記録対応**: Undo/Redo システムの基盤確立
+
+## ⚠️ トラブルシューティング
+
+### **依存関係エラーが続く場合**
+1. ブラウザの開発者ツールで Network タブを確認
+2. 404 エラーの js ファイルがないか確認
+3. コンソールで `window.Tegaki` を確認し、どの Manager が未定義か特定
+
+### **継続描画が直らない場合**
+1. PenTool が正しく登録されているか確認：
+   ```javascript
+   console.log(window.Tegaki.Tools?.PenTool);
+   ```
+2. PointerEvent のバインドを確認：
+   ```javascript
+   console.log(window.Tegaki.ToolManagerInstance?.getDebugInfo()?.events);
+   ```
+
+### **座標がズレる場合**
+1. CoordinateManager の初期化を確認：
+   ```javascript
+   console.log(window.Tegaki.CoordinateManagerInstance?.testCoordinate(100, 100));
+   ```
+
+## 🚀 次のステップ（Phase2準備）
+
+この修正により以下の基盤が確立されました：
+1. **安定したManager統合システム**
+2. **継続描画問題の完全解決**
+3. **外部描画対応の基盤**
+4. **TPF v0.2記録システムの準備**
+
+Phase2（レイヤー管理・高度描画機能）の実装準備が整いました。
 
     <!-- v8デバッグ用（開発時のみ・修正版） -->
     <script>

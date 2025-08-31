@@ -1,7 +1,7 @@
 /**
  * 📄 FILE: js/utils/coordinate-manager.js
- * 📌 RESPONSIBILITY: PixiJS v8座標変換・Manager統一API契約完全対応・isReady()メソッド実装・testCoordinate()追加版
- * ChangeLog: 2025-08-31 testCoordinate()メソッド追加・統合テスト対応・attach()メソッドエラー修正・CanvasManager参照修正・初期化フロー安定化・構文エラー修正
+ * 📌 RESPONSIBILITY: PixiJS v8座標変換・Manager統一API契約完全対応・構文エラー完全修正版
+ * ChangeLog: 2025-08-31 構文エラー完全修正・不完全コード修正・Manager統一API契約対応・testCoordinate()追加
  *
  * @provides
  *   - CoordinateManager（クラス）
@@ -13,6 +13,7 @@
  *   - screenToCanvas(screenCoords): Object - 画面→キャンバス座標変換
  *   - toLocalFromCanvas(canvasCoords): Object - キャンバス→ローカル座標変換
  *   - canvasToScreen(canvasCoords): Object - キャンバス→画面座標変換
+ *   - localToCanvas(localCoords): Object - ローカル→キャンバス座標変換
  *   - setCanvasManagerV8(canvasManager): boolean - v8互換API（後方互換）
  *   - testCoordinate(x, y): Object - 座標変換テスト（統合テスト用）
  *
@@ -44,12 +45,6 @@
  * @integration-flow
  *   AppCore → CoordinateManager.configure/attach/init → Tools使用
  *
- * @method-naming-rules
- *   変換系: screenToCanvas(), canvasToScreen(), toLocalFromCanvas()
- *   ライフサイクル系: configure(), attach(), init(), isReady(), dispose()
- *   設定系: setCanvasManagerV8()（後方互換）
- *   テスト系: testCoordinate()（統合テスト用）
- *
  * @coordinate-contract
  *   座標変換の唯一ルート・DPR補正一回のみ・Container変形対応・境界判定機能
  *
@@ -60,17 +55,11 @@
  *
  * @input-validation
  *   座標null/undefined時は処理停止・NaN/Infinite座標は警告・妥当性チェック必須
- *
- * @testing-hooks
- *   - getDebugInfo(): Object - 状態・設定・統計情報
- *   - debugCoordinateChain(screenCoords): Object - 変換チェーン確認
- *   - testCoordinate(x, y): Object - 座標変換テスト（統合テスト用）
- *   - isReady(): boolean - 準備状態確認
  */
 
 class CoordinateManager {
     constructor() {
-        console.log('📐 CoordinateManager v8対応版・Manager統一API契約版 作成');
+        console.log('📐 CoordinateManager v8対応版・構文エラー完全修正版 作成');
         
         // Manager統一API契約状態
         this._configured = false;
@@ -131,7 +120,7 @@ class CoordinateManager {
     }
     
     /**
-     * Context注入（同期）- エラー修正版
+     * Context注入（同期）
      * @param {Object} context - CanvasManager等の参照
      */
     attach(context) {
@@ -154,10 +143,9 @@ class CoordinateManager {
                 throw new Error('Invalid CanvasManager instance');
             }
             
-            // ✅ 重要な修正: 必須メソッド存在確認を柔軟に
+            // v8 CanvasManager API確認
             let hasRequiredMethods = false;
             
-            // v8 CanvasManager API確認
             if (typeof canvasManager.getView === 'function' && 
                 typeof canvasManager.getDrawContainer === 'function') {
                 hasRequiredMethods = true;
@@ -171,19 +159,11 @@ class CoordinateManager {
             }
             
             if (!hasRequiredMethods) {
-                // より詳細なエラー情報
                 const availableMethods = Object.getOwnPropertyNames(canvasManager)
                     .filter(name => typeof canvasManager[name] === 'function');
                 
                 console.error('❌ CanvasManager利用可能メソッド:', availableMethods);
                 throw new Error(`CanvasManager required methods missing. Available: ${availableMethods.join(', ')}`);
-            }
-            
-            // CanvasManager準備状態確認（可能な場合のみ）
-            if (typeof canvasManager.isV8Ready === 'function') {
-                if (!canvasManager.isV8Ready()) {
-                    console.warn('⚠️ CoordinateManager: CanvasManager not v8 ready - 継続実行');
-                }
             }
             
             this.canvasManager = canvasManager;
@@ -200,7 +180,7 @@ class CoordinateManager {
     }
     
     /**
-     * 非同期初期化 - エラー修正版
+     * 非同期初期化
      * @returns {Promise<void>}
      */
     async init() {
@@ -220,7 +200,7 @@ class CoordinateManager {
                 throw new Error('CanvasManager not attached');
             }
             
-            // CanvasManager準備完了確認（より柔軟に）
+            // CanvasManager準備完了確認
             let canvasManagerReady = false;
             
             if (typeof this.canvasManager.isV8Ready === 'function') {
@@ -231,14 +211,14 @@ class CoordinateManager {
                 canvasManagerReady = true;
             } else {
                 console.warn('⚠️ CoordinateManager: CanvasManager準備状態不明 - 継続実行');
-                canvasManagerReady = true; // 継続実行を許可
+                canvasManagerReady = true;
             }
             
             if (!canvasManagerReady) {
                 console.warn('⚠️ CoordinateManager: CanvasManager not ready - 強制継続');
             }
             
-            // 初期変換テスト（より安全に）
+            // 初期変換テスト
             try {
                 const testResult = this.screenToCanvas({ x: 0, y: 0 });
                 if (testResult) {
@@ -524,11 +504,11 @@ class CoordinateManager {
     }
     
     // ================================
-    // テスト・統合テスト用メソッド（新規追加）
+    // テスト・統合テスト用メソッド
     // ================================
     
     /**
-     * 座標変換テスト（統合テスト用・新規追加）
+     * 座標変換テスト（統合テスト用）
      * @param {number} x - テスト座標X（デフォルト100）
      * @param {number} y - テスト座標Y（デフォルト100）
      * @returns {Object} テスト結果
@@ -745,7 +725,7 @@ class CoordinateManager {
         
         return {
             className: 'CoordinateManager',
-            version: 'v8-unified-api-contract-with-test',
+            version: 'v8-syntax-error-fixed',
             state: {
                 configured: this._configured,
                 attached: this._attached,
@@ -756,7 +736,7 @@ class CoordinateManager {
             stats: { ...this.stats },
             dependencies: {
                 canvasManager: !!canvasManager,
-                canvasManagerV8Ready: canvasManager?.isV8Ready?.() || false,
+                canvasManagerV8Ready: canvasManager && typeof canvasManager.isV8Ready === 'function' ? canvasManager.isV8Ready() : false,
                 canvasView: !!this.getCanvasView(),
                 drawContainer: !!this.getDrawContainer()
             },
@@ -782,5 +762,5 @@ class CoordinateManager {
 if (!window.Tegaki) window.Tegaki = {};
 window.Tegaki.CoordinateManager = CoordinateManager;
 
-console.log('📐 CoordinateManager v8対応版・Manager統一API契約版 Loaded');
-console.log('🚀 特徴: testCoordinate()メソッド追加・isReady()メソッド実装・configure/attach/init/dispose完全対応・PixiJS v8互換・DPR制限・境界判定');
+console.log('📐 CoordinateManager v8対応版・構文エラー完全修正版 Loaded');
+console.log('🚀 特徴: 構文エラー修正・Manager統一API契約・testCoordinate()実装・PixiJS v8互換・DPR制限・境界判定');
