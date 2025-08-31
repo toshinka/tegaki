@@ -1,174 +1,155 @@
-了解。ログを手掛かりに、描画が始まらない原因とフローの健全性を点検しました。結論からいきます。
+# Tegaki v8_phase1rev40 重大不具合の特定と改修計画（プレーンテキスト／一括コピペ用）
 
-結論（最重要）
+目的:
+- 「サイドバーアイコンが出ない」「キャンバスが出ない（見えない/停止する）」「座標問題」「ペン描画できない」をまとめて収束させる。
+- PixiJS v8 と Manager 構成の正しい初期化フローを確立し、AI（別チャット）でも安全に改修・拡張できる「見通しの良い構造」に整える。
+- 余剰分割や命名不一致による“過剰な複雑化”を是正し、最小限の契約（インターフェース）で揃える。
 
-根本原因は「DOMイベントの座標が undefined のまま PenTool に渡っている」こと。
-onPointerDown() は呼ばれているのに、直後に clientX/Y=undefined 警告 → 座標変換失敗で早期中断、という流れです（pen-tool.js:199 → app-core.js:262 の「無効なクライアント座標: x=undefined, y=undefined」→ pen-tool.js:217「座標変換失敗」）。この連鎖はイベントハンドラで原始イベント e を渡していない、または独自イベントに変換する過程で clientX/Y が落ちている時に典型的に起こります。
+根拠となる事実（抜粋・要点）:
+- 初期化が coordinateManager.isReady() 呼び出しで落ちている。TypeError: isReady is not a function。これにより TegakiApplication 初期化が中断され、以後の UI（サイドバー）やキャンバス構築フローが走らない。→ 「サイドバー/キャンバスが出ない」の直接原因。（console.txt の最終エラー）【出典: console.txt の “coordinateManager.isReady is not a function” 記録】
+- Tool 系の Manager 注入 API に名称不一致（super.setManagers vs super.setManagersObject）問題が存在し、ツール登録/切替の失敗や描画不能を引き起こす潜在不具合が示唆されている。（以前の調査・計画メモで明記）【出典: 📋 Phase1.5 最終修正計画書の「メソッド名不一致」「setManagersObject が正」記述】
+- 継続描画停止（PointerUp で確実に終了させる）課題も指摘済みで、Pointer イベントの最終化ルーチンが堅牢でない可能性。（同計画メモより）【出典: 📋 Phase1.5 最終修正計画書の「forceEndDrawing() 確実実行」課題】
 
-何が起きているか（ログからの因果）
+（注: 上記 “出典” の詳細ログ・記述は依頼者提供のファイル群に基づく）
 
-初期化と Manager 注入は正常に進み、「ペン描画利用可能」まで到達しています（Bootstrap の完了ログと Phase1.5 統合テストの PASS）。
+────────────────────────────────────
+A. いま起きている不具合の「一次原因」と「二次症状」
 
-ところが、最初のペン操作で座標が undefined：
-PenTool: onPointerDown() 開始 → 無効なクライアント座標: x=undefined, y=undefined → PenTool: 座標変換失敗 - 描画中断。その後 onPointerUp() が「isDrawing: false」のまま終了を繰り返すため線が一切引かれない。
+1) 一次原因: Manager 契約(Contract)の不一致
+- AppCore.initializeV8Managers が coordinateManager.isReady() を前提にしているのに、CoordinateManager 側に isReady() が存在しない/名称が異なるため TypeError で落ちる。
+- 初期化時点で例外により後続処理（UI構築/アイコン注入/Canvas 表示・描画起動）が全停止。
+→ 結果として「サイドバー不表示」「キャンバス未表示（または表示前で停止）」が発生。
+【根拠: console.txt の TypeError ログ】
 
-直接の修正ポイント（最短で直す）
-1) イベント配線：原始イベントを必ず渡す
+2) 二次症状: ツール登録・切替・描画に関する連鎖
+- 抽象ツール/具象ツール間の Manager 注入 API 名不一致（setManagers vs setManagersObject）により、ツール登録が失敗・未完になる経路がある。
+- ツール未登録または不完全登録のまま切替しようとして失敗、描画も開始できない。
+【根拠: 既存ドキュメントの指摘】
 
-addEventListener('pointerdown', handler) の handler が e を受け取り、そのまま tool.onPointerDown(e) に渡るようにしてください。
-ありがちなバグは：
+3) 継続描画停止できない/座標ズレ
+- PointerUp での確実な終了処理（forceEndDrawing 等）と座標変換の単一点集中が未徹底だと、描画の終了漏れやズレが残存する。
+【根拠: 既存ドキュメントの指摘】
 
-() => tool.onPointerDown() のように 引数なしで呼んでしまう
+────────────────────────────────────
+B. PixiJS v8 として正しい初期化フロー（最小の“正解”）
 
-EventBus で 独自イベントに載せ替えた際に clientX/Y を失う（detail にコピーしてない 等）
+基本原則（最小契約）:
+- すべての Manager は同一のライフサイクル契約を持つ。
+  1. configure(config): 設定注入（同期）
+  2. attach(ctx): Pixi Application や Stage/DOM 等の参照を束ねたコンテキスト注入（同期）
+  3. init(): 内部リソースの初期化（必要なら非同期を許容、ただし呼び側は await ていねいに）
+  4. isReady(): boolean — 現在の準備完了状態を返す（AppCore 側の共通確認点）
+  5. dispose(): 解放処理（任意）
+- AppCore 側は *必ず* feature-detect（関数存在確認）を行い、存在しない場合はエイリアス等で吸収する。
+- 順序制御（依存順）:
+  ConfigManager → CanvasManager（Pixi Application/Stage 構築）→ EventBus → NavigationManager → CoordinateManager（Canvas/Navigation を参照して座標系を確立）→ RecordManager → ToolManager → UI/Sidebar（icons.js 実体貼り込み）→ ShortcutManager
+- どの段でも isReady() が falsy / 欠如なら、エラーを投げずに “未準備のまま” ログ化し、後続をスキップ。最終的に “App 全体 isReady=false” として画面に明示（オーバーレイ）し、デバッグ可能にする。
 
-例（バインド例）：
+この「最小契約」と「依存順」を、v8_phase1rev40 の AppCore.initializeV8Managers と各 Manager に反映するのが最優先。
 
-// 悪い例
-canvasEl.addEventListener('pointerdown', () => tool.onPointerDown());
+────────────────────────────────────
+C. ファイル単位の「最低限の修正」指示（コード掲載は控えめ／文章のみ）
 
-// 良い例（原始イベントを透過）
-canvasEl.addEventListener('pointerdown', (e) => tool.onPointerDown(e), { passive: false });
-canvasEl.addEventListener('pointermove', (e) => tool.onPointerMove(e), { passive: false });
-canvasEl.addEventListener('pointerup',   (e) => tool.onPointerUp(e),   { passive: false });
+1) js/utils/coordinate-manager.js
+- isReady(): boolean を新設。内部フラグ _ready を持ち、attach と init の完了時に true。
+- 既に ready 相当の状態管理があれば、isReady を単純委譲（ラッパ）で実装して互換性を作る。
+- screenToCanvas / canvasToScreen / world 変換などの公開 API を *このファイルに一極集中*。他所での計算/重複変換は禁止。
+- CanvasManager / NavigationManager からの参照は attach(ctx) で安全に受け取り、null/未設定ガードを徹底。
 
-2) イベントの発火元を Canvas(View) に限定
+2) js/app-core.js
+- initializeV8Managers 内で、各 Manager の関数存在チェックを行い、isReady が無ければ
+  - if (typeof m.isReady !== 'function') m.isReady = () => !!m.ready || !!m._ready;
+  のように安全なエイリアス関数を注入（「契約の片側吸収」）。
+- 依存順の厳守。CoordinateManager は CanvasManager と NavigationManager の attach 後に init。
+- Manager 列挙・初期化は for-of ループで一貫し、個別 try/catch で“単発失敗でも全体が落ちない”ように。最後に “どれが未就業か” をリスト表示する。
 
-document や親コンテナに付けると、ターゲット移送時に offsetX/offsetY が不安定になったり、Transform とのズレが出やすいです。
+3) js/utils/minimal-deps.js
+- ここには “名前倉庫/予約” 以上のロジックは置かない（console にも「競合排除済み」とある）。抽象/具象の実装は必ず各専用ファイルに。
+- 既にそうなっているが、“抽象ツール/RecordManager 等の実装がここに混入しない” ことを定期確認する。
 
-app.view（Pixi の <canvas>）や描画レイヤ直下の DOMに紐づけてください。
+4) tools/abstract-tool.js
+- setManagersObject(managers) を「正規 API」とする。受け取った managers の必須キーの存在検証（canvasManager, coordinateManager, recordManager, eventBus など）を行い、足りなければ false を返す（throw は避け、上位で集約）。
+- 後方互換: setManagers(managers) は setManagersObject の単純委譲エイリアス。
+- onPointerDown / onPointerMove / onPointerUp の「終端保証」フックを用意（各具象ツールは super 呼び出し前提に）し、forceEndDrawing の共通化ポイントを提供する。
 
-3) convertEventToCoords の耐性強化（Pointer/Mouse/Touch 全吸収）
+5) tools/pen-tool.js
+- super.setManagers(...) 呼び出しを super.setManagersObject(...) に統一。
+- PointerUp/Leave/Cancel で “必ず” forceEndDrawing を呼ぶ。二重呼び出しに耐える冪等実装（内部フラグで多重終了を無害化）。
+- 描画中 flag（isDrawing）とストローク一時バッファ（tempStroke）は AbstractTool 側の標準フィールドを利用。ペン側は「ペン固有の描画（太さ/アルファ/パターン）」ロジックに専念。
+- 変換は必ず coordinateManager.screenToCanvas(point) を通す。CanvasManager/NavigationManager/DOM から生値を拾って自前計算しない。
 
-取得順にフォールバック：
+6) tools/eraser-tool.js
+- Manager 注入・イベント終端・座標変換の扱いは Pen と同型に揃える（API 統一）。相違は「消す対象の決定と適用」のみ。
 
-function getClientXY(e) {
-  if (!e) return null;
-  // PointerEvent / MouseEvent
-  if (typeof e.clientX === 'number' && typeof e.clientY === 'number') {
-    return { x: e.clientX, y: e.clientY };
-  }
-  // TouchEvent
-  const t = e.touches?.[0] || e.changedTouches?.[0];
-  if (t && typeof t.clientX === 'number' && typeof t.clientY === 'number') {
-    return { x: t.clientX, y: t.clientY };
-  }
-  // どうしても無い場合は offset 系を最後の手段で
-  if (typeof e.offsetX === 'number' && typeof e.offsetY === 'number') {
-    // 後段で rect 起点に変換できるなら offset でも可
-    return { x: e.offsetX, y: e.offsetY, isOffset: true };
-  }
-  return null;
-}
+7) managers/tool-manager.js
+- registerTool(name, instance) 時に instance.setManagersObject(managers) の戻り値を検証し、false/例外なら登録を保留して警告ログ。App 全体を落とさない。
+- getTools() と setActiveTool(name) を公開。active 切替は「前ツールの終了→次ツールの準備」の順序を強制。Pointer キャプチャ中の切替も安全に（強制終了→切替→再開はしない）。
 
+8) js/tegaki-application.js / js/bootstrap.js / index.html
+- 初期化フェーズで「App 全体 isReady=false の場合は、画面に“未準備オーバーレイ”を出す」簡易 UI を追加。これにより“サイドバーが無い/キャンバスが無い”のが“クラッシュ”なのか“未準備”なのかを即判別できる。
+- サイドバー（assets/icons.js を使用）挿入は “App 全体 isReady=true” のイベント後（EventBus 経由）に行う。未準備なら何もしない。
+- 既存の Phase1.5 統合テスト（window.Tegaki.runPhase15Test）があるなら、App 準備完了時に 1 回だけ自動実行可能にするトグルを用意（デフォルト OFF）。【出典: console に “Phase1.5 統合テスト Loaded / runPhase15Test()” 記録あり】
 
-null の場合は早期 return＋一度だけ警告（スパム防止）。
+────────────────────────────────────
+D. 過剰分割/複雑化の抑制（フェイルセーフ設計の最小セット）
 
-4) DPR・Rect・コンテナ変形の一貫ロジック
+- 「抽象レイヤと具象レイヤ」の境界を1段に制限する（AbstractTool → Pen/Eraser）。中間 Adapter/Helper クラスを増やさない。
+- “変換は CoordinateManager だけ” を原則化。各所に散った座標補正（DPR 補正や Container スケール）は撤去して集約。
+- Manager の「準備状態」の確認点は isReady() に一本化。ready, _ready, initialized などの多名義は廃止（残す場合は isReady エイリアスを必須化）。
+- AppCore は「関数存在チェックとエイリアス注入」で上位互換を担保しつつ、契約をログに出力（どの Manager がどの API を実装しているかを一覧で表示）。
 
-画面→キャンバス座標は 「getBoundingClientRect → 物理ピクセル(DPR適用) → Pixi座標系」の一方向パイプで統一。
+────────────────────────────────────
+E. 改修手順（AI に任せやすい順序・小さなコミット単位）
 
-例（ざっくり）：
+Step 0: 事前確認（そのまま実行してよい）
+- main ブランチとは独立した修正ブランチ v8_phase1rev40-fix1 を切る。
+- index.html で PixiJS v8 のロードと “WebGL2 フォールバック” は問題ないことが console に出ているので（v8.12.0/フォールバック表記あり）、グラフィック基盤は生きていると判断可能。【出典: console のバージョン/フォールック記録】
 
-const rect = app.view.getBoundingClientRect();
-const dpr = window.devicePixelRatio || 1;
-// 画面座標 (client) をキャンバス内の正規化座標へ
-const nx = (clientX - rect.left) * dpr;
-const ny = (clientY - rect.top)  * dpr;
-// Container にスケール/回転があれば CoordinateManager 経由で変換
-const { x, y } = coordinateManager.toLocalFromCanvas({ x: nx, y: ny });
+Step 1: CoordinateManager に isReady を追加
+- _ready=false 初期化 → attach 完了で半Ready → init 完了で true。
+- AppCore はここで止まっているので、まずこれだけで「サイドバー/キャンバスが未出現のまま初期化が進むか」を確認する。エラーが消えれば次へ。
+【根拠: 最優先で落ちている箇所へのホットフィックス】
 
+Step 2: AppCore の初期化に API フォールバック（エイリアス）を実装
+- 各 Manager について isReady が未定義ならダックタイピングで代替。これにより今後の“名称揺れ”での全体停止を予防。
+- 初期化の try/catch を細分化し、“どの Manager が未準備か” を一覧ログ化。落とさずに最後まで進める。
 
-Container 変形を使用している前提なので、最後は必ず CoordinateManager の入口を通す。
+Step 3: AbstractTool/ToolManager の契約統一
+- AbstractTool: setManagersObject 正規化 + setManagers エイリアス化。
+- ToolManager: 登録フェーズでの戻り値検証とエラー隔離、切替時の終端保証（前ツールの強制終了）を追加。
 
-フロー健全性レビュー（Manager/メソッド配置は概ね良好）
+Step 4: Pen/Eraser の API 揃えと Pointer 終端保証
+- Pen: super.setManagersObject に統一、onPointerUp/Leave/Cancel で forceEndDrawing を必ず実行（冪等）。
+- Eraser: 上記と同型に揃える。相違点は hit-test/消去ロジックのみ。
 
-Manager の初期化順・注入ログは健全で、ToolManager→各 Tool への Map 注入も PASS。設計は適正に見えます。
+Step 5: 座標系の一元化
+- すべてのツール・Manager から座標計算を撤収し、CoordinateManager の screenToCanvas/canvasToScreen/world 変換に切り替え。DPR 補正/Container スケール/ナビゲーション変換をそこで完結させる。
+- 既存コードに二重補正が残っていないか gre p/検索で機械的に除去。
 
-異常は座標イベント変換レイヤのみ。ここが直れば、他の管理層はそのまま活きます。
+Step 6: サイドバー/アイコンの表示タイミングを “App 全体 isReady=true” 後に限定
+- initialize 完了イベント（EventBus）で icons.js に描画させる。未準備時は何もしない。これで「アイコンが先に失敗して全体を巻き込む」連鎖を断つ。
 
-再発防止のための具体策
-A) イベント契約（Contract）をヘッダーに明文化
+Step 7: 統合テストの自動化フック
+- window.Tegaki.runPhase15Test を手動で叩けることは console から確認できるので、デバッグボタンか URL クエリ（?test=phase15）で起動できる小さなフックを追加。
+【出典: console の “Phase1.5 統合テスト Loaded / runPhase15Test()” 記録】
 
-各ファイル先頭に、次の契約をコメント追加：
+────────────────────────────────────
+F. 受け入れ基準（Done の定義）
 
-Event Contract（全 Tool 共通）
+必須:
+- 初期化が最後まで完走し、未例外で App 全体 isReady=true。
+- サイドバーアイコンが表示される（icons.js の描画が走る）。
+- キャンバスが 400x400 で生成される（console に既に「400x400 (DPR: 2)」の出力があるので、画面にも反映されること）。
+- ペンツールでドラッグ中のみ描画され、PointerUp/Leave/Cancel で確実に停止する（継続描画の消失）。
+- 画面外開始→画面内進入の描画時に破綻しない（必要なら後続 Phase で tempStroke 実装を有効化）。
+- Console に重大エラーが無い。警告は 3 件以内、内容が「未実装/将来フラグ」であることを明記。
 
-onPointerDown/Move/Up(e: PointerEvent|MouseEvent|TouchEvent) を必ず原始イベントで呼ぶ
+任意（推奨）:
+- isReady 一覧ダンプ（どの Manager が isReady を持つか/値は何か）をデバッグ出力で 1 行。
+- EventBus の “app:ready” ブロードキャストで Sidebar/UI の起動に統一。
 
-clientX/Y を主要ソース。Touch は touches[0] を clientX/Y に正規化してから渡す
+────────────────────────────────────
+G. なぜこれで「見通しが良くなる」のか（AI 改修しやすさの確保）
 
-passive:false を要求（スクロール干渉防止／preventDefault 可能化）
-
-発火元は app.view 直下の DOM に限定
-
-Coordinate Contract
-
-画面→キャンバス→ローカルは CoordinateManager を正規ルートとする
-
-DPR／Container 変形対応は CoordinateManager に集約し、Tool 側は触らない
-
-DPR Policy
-
-取得は 1 箇所のみ（重複取得・重複適用禁止）
-
-物理座標化は「rect 基準 → *dpr」の一回のみ
-
-Error Policy
-
-clientX/Y 欠落時は描画中断しつつ一度だけ警告
-
-連続発生時は Event 配線の誤りを指摘するガイダンスを出す
-
-B) ユニット&統合テスト
-
-runPhase15Test() に 擬似 PointerEvent を投げる統合テストを追加し、最終点（Graphics に path が積まれるか）まで検証。
-
-ケース：
-
-PointerEvent（通常）
-
-TouchEvent（モバイル）
-
-EventBus 経由（カスタムイベント）：detail.clientX/Y に写経できているか
-
-C) 型とガード
-
-onPointerDown(e?: Event) の e を 必須にし、!e なら即 return（型 or ランタイムで強制）。
-
-convertEventToCoords は 戻り値が不正なら Tool 状態を一切進めない。
-
-D) CSS/DOM 側の地雷排除
-
-<canvas> に pointer-events: auto; touch-action: none; を付与（ブラウザ既定動作の抑止）。
-
-キャンバスの親に transform がある場合は Rect 計算に影響するので、getBoundingClientRect 起点で必ず補正。
-
-参考となる最小差分（イメージ）
-// tegaki-application.js / あるいは main.js の配線部
-- canvasEl.addEventListener('pointerdown', () => tool.onPointerDown());
-+ canvasEl.addEventListener('pointerdown', (e) => tool.onPointerDown(e), { passive: false });
-+ canvasEl.addEventListener('pointermove', (e) => tool.onPointerMove(e), { passive: false });
-+ canvasEl.addEventListener('pointerup',   (e) => tool.onPointerUp(e),   { passive: false });
-
-// pen-tool.js
-- convertEventToCoords(e) {
--   const { clientX, clientY } = e; // ここで undefined
--   ...
-- }
-+ convertEventToCoords(e) {
-+   const p = getClientXY(e); // 上述のヘルパ
-+   if (!p) {
-+     this.error.warn('無効なクライアント座標（イベント未透過 or 変換漏れ）');
-+     return null;
-+   }
-+   const rect = this.canvas.getView().getBoundingClientRect();
-+   const dpr = window.devicePixelRatio || 1;
-+   const cx = (p.x - rect.left) * dpr;
-+   const cy = (p.y - rect.top)  * dpr;
-+   return this.coordinate.toLocalFromCanvas({ x: cx, y: cy });
-+ }
-
-補足：ログ中の気になる点
-
-初期化の途中で一瞬「TegakiApplication v8初期化未完了」の警告が混ざっていますが、その後に正常完了しており実害は今のところ無さそう（重複初期化の順序ログと混在）。警告の出力条件を**「本当に未完了の時のみ」**に厳格化すると、ノイズが減ってデバッグ性が上がります。
+- “Manager 契約 v1（configure/attach/init/isReady/dispose）” が最小・明快で、どのファイルを開いても同じ型を探せばよい。
+- “座標は CoordinateManager だけ” と決めることで、AI が修正時に座標ロジックを探し回る必要がなくなる（DRY/単一責任
