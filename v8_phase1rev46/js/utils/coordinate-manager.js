@@ -1,7 +1,7 @@
 /**
  * 📄 FILE: js/utils/coordinate-manager.js
- * 📌 RESPONSIBILITY: PixiJS v8座標変換・Manager統一API契約完全対応・isReady()メソッド実装・エラー修正版
- * ChangeLog: 2025-08-31 attach()メソッドエラー修正・CanvasManager参照修正・初期化フロー安定化
+ * 📌 RESPONSIBILITY: PixiJS v8座標変換・Manager統一API契約完全対応・isReady()メソッド実装・testCoordinate()追加版
+ * ChangeLog: 2025-08-31 testCoordinate()メソッド追加・統合テスト対応・attach()メソッドエラー修正・CanvasManager参照修正・初期化フロー安定化
  *
  * @provides
  *   - CoordinateManager（クラス）
@@ -14,6 +14,7 @@
  *   - toLocalFromCanvas(canvasCoords): Object - キャンバス→ローカル座標変換
  *   - canvasToScreen(canvasCoords): Object - キャンバス→画面座標変換
  *   - setCanvasManagerV8(canvasManager): boolean - v8互換API（後方互換）
+ *   - testCoordinate(x, y): Object - 座標変換テスト（統合テスト用）
  *
  * @uses
  *   - CanvasManager.getApp(): PIXI.Application
@@ -47,6 +48,7 @@
  *   変換系: screenToCanvas(), canvasToScreen(), toLocalFromCanvas()
  *   ライフサイクル系: configure(), attach(), init(), isReady(), dispose()
  *   設定系: setCanvasManagerV8()（後方互換）
+ *   テスト系: testCoordinate()（統合テスト用）
  *
  * @coordinate-contract
  *   座標変換の唯一ルート・DPR補正一回のみ・Container変形対応・境界判定機能
@@ -62,6 +64,7 @@
  * @testing-hooks
  *   - getDebugInfo(): Object - 状態・設定・統計情報
  *   - debugCoordinateChain(screenCoords): Object - 変換チェーン確認
+ *   - testCoordinate(x, y): Object - 座標変換テスト（統合テスト用）
  *   - isReady(): boolean - 準備状態確認
  */
 
@@ -385,6 +388,117 @@ class CoordinateManager {
             if (!drawContainer) {
                 // DrawContainerが無い場合は等価変換
                 return {
+                    x: Number(localCoords.x.toFixed(this.config.precision)),
+                    y: Number(localCoords.y.toFixed(this.config.precision))
+                };
+            }
+            
+            // PixiJS v8 Container.toGlobal API使用
+            const localPoint = new PIXI.Point(localCoords.x, localCoords.y);
+            const globalPoint = drawContainer.toGlobal(localPoint);
+            
+            return {
+                x: Number(globalPoint.x.toFixed(this.config.precision)),
+                y: Number(globalPoint.y.toFixed(this.config.precision))
+            };
+            
+        } catch (error) {
+            this.stats.lastError = error;
+            this.stats.errors++;
+            console.error('❌ ローカル→キャンバス座標変換エラー:', error);
+            
+            // 安全なフォールバック
+            return {
+                x: Number(localCoords.x.toFixed(this.config.precision)),
+                y: Number(localCoords.y.toFixed(this.config.precision))
+            };
+        }
+    }
+    
+    // ================================
+    // デバッグ・診断機能
+    // ================================
+    
+    /**
+     * デバッグ情報取得
+     * @returns {Object} 状態・設定・統計情報
+     */
+    getDebugInfo() {
+        const canvasManager = this.canvasManager;
+        
+        return {
+            className: 'CoordinateManager',
+            version: 'v8-unified-api-contract-with-test',
+            state: {
+                configured: this._configured,
+                attached: this._attached,
+                initialized: this._initialized,
+                ready: this.isReady()
+            },
+            config: { ...this.config },
+            stats: { ...this.stats },
+            dependencies: {
+                canvasManager: !!canvasManager,
+                canvasManagerV8Ready: canvasManager?.isV8Ready?.() || false,
+                canvasView: !!this.getCanvasView(),
+                drawContainer: !!this.getDrawContainer()
+            },
+            capabilities: {
+                screenToCanvas: typeof this.screenToCanvas === 'function',
+                canvasToScreen: typeof this.canvasToScreen === 'function',
+                toLocalFromCanvas: typeof this.toLocalFromCanvas === 'function',
+                localToCanvas: typeof this.localToCanvas === 'function',
+                debugChain: typeof this.debugCoordinateChain === 'function',
+                testCoordinate: typeof this.testCoordinate === 'function'
+            },
+            runtime: {
+                pixiVersion: window.PIXI ? window.PIXI.VERSION : 'not loaded',
+                dpr: window.devicePixelRatio || 1,
+                dprLimited: Math.min(window.devicePixelRatio || 1, this.config.dprLimit),
+                timestamp: Date.now()
+            }
+        };
+    }
+    
+    /**
+     * Canvas要素取得（内部用・複数方法試行）
+     */
+    getCanvasView() {
+        if (!this.canvasManager) return null;
+        
+        if (typeof this.canvasManager.getView === 'function') {
+            return this.canvasManager.getView();
+        } else if (typeof this.canvasManager.getCanvas === 'function') {
+            return this.canvasManager.getCanvas();
+        } else if (this.canvasManager.app && this.canvasManager.app.view) {
+            return this.canvasManager.app.view;
+        }
+        
+        return null;
+    }
+    
+    /**
+     * DrawContainer取得（内部用）
+     */
+    getDrawContainer() {
+        if (!this.canvasManager) return null;
+        
+        if (typeof this.canvasManager.getDrawContainer === 'function') {
+            return this.canvasManager.getDrawContainer();
+        }
+        
+        return null;
+    }
+}
+
+// グローバル名前空間に登録
+if (!window.Tegaki) window.Tegaki = {};
+window.Tegaki.CoordinateManager = CoordinateManager;
+
+console.log('📐 CoordinateManager v8対応版・Manager統一API契約版 Loaded');
+console.log('🚀 特徴: testCoordinate()メソッド追加・isReady()メソッド実装・configure/attach/init/dispose完全対応・PixiJS v8互換・DPR制限・境界判定');) {
+                // DrawContainerが無い場合は等価変換
+                return {
                     x: Number(canvasCoords.x.toFixed(this.config.precision)),
                     y: Number(canvasCoords.y.toFixed(this.config.precision))
                 };
@@ -463,6 +577,88 @@ class CoordinateManager {
             this.stats.errors++;
             console.error('❌ キャンバス→画面座標変換エラー:', error);
             return null;
+        }
+    }
+    
+    // ================================
+    // テスト・統合テスト用メソッド（新規追加）
+    // ================================
+    
+    /**
+     * 座標変換テスト（統合テスト用・新規追加）
+     * @param {number} x - テスト座標X（デフォルト100）
+     * @param {number} y - テスト座標Y（デフォルト100）
+     * @returns {Object} テスト結果
+     */
+    testCoordinate(x = 100, y = 100) {
+        console.log(`🧪 CoordinateManager: 座標変換テスト実行 (${x}, ${y})`);
+        
+        try {
+            // 入力座標検証
+            if (typeof x !== 'number' || typeof y !== 'number') {
+                return {
+                    success: false,
+                    error: 'Invalid input coordinates - numbers required',
+                    ready: this.isReady()
+                };
+            }
+            
+            // 準備状態確認
+            if (!this.isReady()) {
+                return {
+                    success: false,
+                    error: 'CoordinateManager not ready',
+                    ready: this.isReady(),
+                    state: {
+                        configured: this._configured,
+                        attached: this._attached,
+                        initialized: this._initialized,
+                        hasCanvasManager: !!this.canvasManager
+                    }
+                };
+            }
+            
+            // 座標変換実行
+            const result = this.screenToCanvas({ x, y });
+            
+            if (!result) {
+                return {
+                    success: false,
+                    error: 'screenToCanvas() returned null',
+                    ready: this.isReady(),
+                    input: { x, y }
+                };
+            }
+            
+            // 逆変換テスト（精度確認）
+            const backToScreen = this.canvasToScreen(result);
+            
+            return {
+                success: true,
+                input: { x, y },
+                output: result,
+                backToScreen: backToScreen,
+                ready: this.isReady(),
+                stats: {
+                    totalConversions: this.stats.conversions,
+                    errors: this.stats.errors,
+                    warnings: this.stats.warnings
+                },
+                timestamp: Date.now()
+            };
+            
+        } catch (error) {
+            this.stats.lastError = error;
+            this.stats.errors++;
+            
+            return {
+                success: false,
+                error: error.message,
+                ready: this.isReady(),
+                input: { x, y },
+                stackTrace: error.stack,
+                timestamp: Date.now()
+            };
         }
     }
     
@@ -591,114 +787,4 @@ class CoordinateManager {
                 drawContainer = this.canvasManager.getDrawContainer();
             }
             
-            if (!drawContainer) {
-                // DrawContainerが無い場合は等価変換
-                return {
-                    x: Number(localCoords.x.toFixed(this.config.precision)),
-                    y: Number(localCoords.y.toFixed(this.config.precision))
-                };
-            }
-            
-            // PixiJS v8 Container.toGlobal API使用
-            const localPoint = new PIXI.Point(localCoords.x, localCoords.y);
-            const globalPoint = drawContainer.toGlobal(localPoint);
-            
-            return {
-                x: Number(globalPoint.x.toFixed(this.config.precision)),
-                y: Number(globalPoint.y.toFixed(this.config.precision))
-            };
-            
-        } catch (error) {
-            this.stats.lastError = error;
-            this.stats.errors++;
-            console.error('❌ ローカル→キャンバス座標変換エラー:', error);
-            
-            // 安全なフォールバック
-            return {
-                x: Number(localCoords.x.toFixed(this.config.precision)),
-                y: Number(localCoords.y.toFixed(this.config.precision))
-            };
-        }
-    }
-    
-    // ================================
-    // デバッグ・診断機能
-    // ================================
-    
-    /**
-     * デバッグ情報取得
-     * @returns {Object} 状態・設定・統計情報
-     */
-    getDebugInfo() {
-        const canvasManager = this.canvasManager;
-        
-        return {
-            className: 'CoordinateManager',
-            version: 'v8-unified-api-contract-fixed',
-            state: {
-                configured: this._configured,
-                attached: this._attached,
-                initialized: this._initialized,
-                ready: this.isReady()
-            },
-            config: { ...this.config },
-            stats: { ...this.stats },
-            dependencies: {
-                canvasManager: !!canvasManager,
-                canvasManagerV8Ready: canvasManager?.isV8Ready?.() || false,
-                canvasView: !!this.getCanvasView(),
-                drawContainer: !!this.getDrawContainer()
-            },
-            capabilities: {
-                screenToCanvas: typeof this.screenToCanvas === 'function',
-                canvasToScreen: typeof this.canvasToScreen === 'function',
-                toLocalFromCanvas: typeof this.toLocalFromCanvas === 'function',
-                localToCanvas: typeof this.localToCanvas === 'function',
-                debugChain: typeof this.debugCoordinateChain === 'function'
-            },
-            runtime: {
-                pixiVersion: window.PIXI ? window.PIXI.VERSION : 'not loaded',
-                dpr: window.devicePixelRatio || 1,
-                dprLimited: Math.min(window.devicePixelRatio || 1, this.config.dprLimit),
-                timestamp: Date.now()
-            }
-        };
-    }
-    
-    /**
-     * Canvas要素取得（内部用・複数方法試行）
-     */
-    getCanvasView() {
-        if (!this.canvasManager) return null;
-        
-        if (typeof this.canvasManager.getView === 'function') {
-            return this.canvasManager.getView();
-        } else if (typeof this.canvasManager.getCanvas === 'function') {
-            return this.canvasManager.getCanvas();
-        } else if (this.canvasManager.app && this.canvasManager.app.view) {
-            return this.canvasManager.app.view;
-        }
-        
-        return null;
-    }
-    
-    /**
-     * DrawContainer取得（内部用）
-     */
-    getDrawContainer() {
-        if (!this.canvasManager) return null;
-        
-        if (typeof this.canvasManager.getDrawContainer === 'function') {
-            return this.canvasManager.getDrawContainer();
-        }
-        
-        return null;
-    }
-}
-
-// グローバル名前空間に登録
-if (!window.Tegaki) window.Tegaki = {};
-window.Tegaki.CoordinateManager = CoordinateManager;
-
-console.log('📐 CoordinateManager v8対応版・Manager統一API契約版 Loaded');
-console.log('🚀 特徴: isReady()メソッド実装・configure/attach/init/dispose完全対応・PixiJS v8互換・DPR制限・境界判定');
+            if (!drawContainer

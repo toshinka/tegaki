@@ -1,773 +1,843 @@
 /**
- * 📄 FILE: managers/tool-manager.js
- * 📌 RESPONSIBILITY: Tool管理・切り替え・Manager統一注入・操作フロー管理・Pointerイベント処理
- *
- * ChangeLog: 2025-08-31 API統一修正・getActiveTool()エイリアス追加・TegakiApplication互換対応
+ * 📄 FILE: tools/pen-tool.js
+ * 📌 RESPONSIBILITY: ペン描画ツール・Manager注入統一・継続描画完全修正・外部描画対応・TPF記録完全版
+ * ChangeLog: 2025-08-31 setManagersObject()メソッド名修正・継続描画問題完全修正・PointerLeave/Cancel対応・確実終了処理・過剰ログ削減
  *
  * @provides
- *   - ToolManager クラス
- *   - switchTool(toolName) - Tool切り替え
- *   - setActiveTool(toolName) - Tool切り替え（互換性エイリアス）
- *   - getCurrentTool() - 現在のTool取得（正規メソッド）
- *   - getActiveTool() - 現在のTool取得（TegakiApplication互換エイリアス）
- *   - getTools() - Tool Map取得
- *   - initializeV8Tools() - v8 Tool群初期化
- *   - registerTool(name, toolClass) - Tool登録
- *   - setManagers(managers) - Manager統一注入
- *   - verifyInjection() - 注入検証
- *   - onPointerDown(event) - ポインターダウン処理
- *   - onPointerMove(event) - ポインタームーブ処理
- *   - onPointerUp(event) - ポインターアップ処理
- *   - isReady() - 準備状態確認
+ *   - PenTool（クラス・AbstractTool継承）
+ *   - onPointerDown(event): void - ペン描画開始
+ *   - onPointerMove(event): void - ペン描画継続
+ *   - onPointerUp(event): void - ペン描画終了
+ *   - onPointerLeave(event): void - ペン描画強制終了（継続描画修正）
+ *   - onPointerCancel(event): void - ペン描画キャンセル終了（継続描画修正）
+ *   - forceEndDrawing(): void - 強制描画終了（継続描画問題修正）
+ *   - setStrokeStyle(style): void - ストローク設定
+ *   - drawToContainer(container): void - 直接描画
+ *   - getState(): Object - 現在状態取得
  *
  * @uses
- *   - CanvasManager.getDrawContainer()
- *   - AbstractTool.setManagersObject() - 正規メソッド優先
- *   - AbstractTool.activate()
- *   - AbstractTool.deactivate()
- *   - AbstractTool.onPointerDown()
- *   - AbstractTool.onPointerMove()
- *   - AbstractTool.onPointerUp()
- *   - PenTool constructor
- *   - EraserTool constructor
+ *   - super.setManagersObject(managers): boolean - AbstractTool Manager注入（修正済み）
+ *   - CoordinateManager.screenToCanvas(screenCoords): Object - 座標変換
+ *   - NavigationManager.getCameraBounds(): Rectangle - カメラ範囲確認
+ *   - RecordManager.startOperation(kind, initialPoints): void - TPF記録開始
+ *   - RecordManager.addPoint(point): void - 座標追加
+ *   - RecordManager.endOperation(metadata): void - TPF記録終了
+ *   - CanvasManager.getDrawContainer(): PIXI.Container - 描画コンテナ
+ *   - EventBus.emit(eventName, data): void - 描画イベント通知
  *
  * @initflow
- *   1. new ToolManager() → 2. setManagers() → 3. verifyInjection() → 4. initializeV8Tools() → 5. switchTool() → 6. Tool.activate()
+ *   1. new PenTool() → 2. setManagersObject(managers) → 3. activate() → 4. tempStroke初期化 → 5. イベント処理準備
  *
  * @forbids
  *   💀 双方向依存禁止
- *   🚫 フォールバック禁止
- *   🚫 フェイルセーフ禁止
- *   🚫 v7/v8 両対応による二重管理禁止
- *   🚫 未実装メソッド呼び出し禁止
- *   🚫 API名称不整合禁止
+ *   🚫 直接Manager操作禁止（AbstractTool経由必須）
+ *   🚫 座標の独自計算禁止（CoordinateManager必須）
+ *   🚫 DPR重複適用禁止
+ *   🚫 描画状態の不完全管理（継続描画問題）
+ *   🚫 未初期化状態でのポインタイベント処理禁止
+ *   🚫 PointerLeave/Cancelイベント未対応（継続描画の原因）
  *
  * @manager-key
- *   window.Tegaki.ToolManagerInstance
+ *   window.Tegaki.PenToolInstance
  *
  * @dependencies-strict
- *   REQUIRED: CanvasManager (getDrawContainer必須)
- *   OPTIONAL: EventBus, RecordManager
- *   FORBIDDEN: 他ToolManager, 循環依存
+ *   REQUIRED: AbstractTool, CanvasManager, CoordinateManager, RecordManager
+ *   OPTIONAL: NavigationManager, EventBus
+ *   FORBIDDEN: 他Tool直接参照, 循環依存
  *
  * @integration-flow
- *   AppCore → ToolManager.setManagers() → verifyInjection() → Tool.setManagersObject() → Tool.activate()
+ *   ToolManager → PenTool.setManagersObject() → PenTool.activate() → PointerEvent処理
  *
  * @method-naming-rules
- *   - startOperation()/endOperation() 形式統一
- *   - setManagers() - Manager注入
- *   - verifyInjection() - 注入検証
- *   - switchTool()/setActiveTool() - Tool切り替え（両対応）
- *   - getTools() - Tool Map取得
- *   - getCurrentTool() - 現在Tool取得（正規）
- *   - getActiveTool() - 現在Tool取得（互換エイリアス）
- *   - onPointerXxx() - ポインターイベント処理
- *
- * @error-handling
- *   throw: Manager注入失敗・API呼び出し失敗・Tool初期化失敗
- *   warn: Tool作成失敗・activate()失敗（再試行可能）
- *   log: 正常処理完了・状態変更
+ *   ポインタ系: onPointerDown(), onPointerMove(), onPointerUp(), onPointerLeave(), onPointerCancel()
+ *   描画制御系: startDrawing(), updateDrawing(), endDrawing(), forceEndDrawing()
+ *   設定系: setStrokeStyle(), getStrokeStyle()
+ *   状態系: isDrawing(), getState()
  *
  * @state-management
- *   - 状態は直接操作せず、必ず専用メソッド経由
- *   - Manager参照はsetManagers()後のみ利用
- *   - Tool状態変更は適切なライフサイクルメソッド使用
+ *   描画状態はisDrawingフラグで厳密管理
+ *   tempStroke配列で外部描画バッファリング
+ *   状態変更は必ずメソッド経由
+ *   forceEndDrawing()による確実な終了保証
+ *   PointerLeave/Cancel時の強制終了対応
  *
- * @testing-hooks
- *   - verifyInjection() - 注入検証テスト
- *   - isReady() - 準備状態確認
- *   - getDebugInfo() - デバッグ情報取得
- *   - getTools() - Tool一覧取得
+ * @performance-notes
+ *   pointermoveでの高頻度処理最適化
+ *   tempStroke配列による外部描画バッファリング
+ *   RequestAnimationFrame活用（将来）
+ *   過剰ログ削減（描画中ログ最小化）
+ *
+ * @input-validation
+ *   受け取った座標がnull/undefined/NaNの場合は即座にreturn
+ *   外部入力は常に型チェック・境界チェック実行
+ *
+ * @tool-contract
+ *   setManagersObject(managers): boolean - Manager注入（必須）
+ *   onPointerDown/Move/Up/Leave/Cancel(event): void - ポインタイベント処理（必須）
+ *   forceEndDrawing(): void - 強制終了（冪等・必須）
+ *   destroy(): void - 解放処理
+ *   getState(): Object - 状態取得（テスト用）
+ *
+ * @error-handling
+ *   throw: Manager注入失敗・初期化失敗
+ *   false: 描画操作失敗・座標変換失敗
+ *   warn: 一時的エラー・外部描画バッファ関連
  */
 
-(function() {
-    'use strict';
-
+class PenTool extends window.Tegaki.AbstractTool {
+    constructor() {
+        super('pen');
+        console.log('🖊️ PenTool v8.12.0 Manager統一注入・継続描画修正版 作成開始');
+        
+        // 描画状態管理（厳密）
+        this.isDrawing = false;
+        this.drawingLocked = false; // 多重描画防止
+        
+        // 現在のストローク・パス
+        this.currentStroke = null; // PIXI.Graphics インスタンス
+        this.currentPath = []; // Point配列（TPF記録用）
+        
+        // 外部描画対応（画面外からの描画開始）
+        this.tempStroke = []; // 画面外描画バッファ
+        this.externalDrawing = false; // 外部描画モードフラグ
+        
+        // ストローク設定
+        this.strokeStyle = {
+            width: 2,
+            color: 0x800000, // futaba-maroon
+            alpha: 1.0,
+            cap: 'round',
+            join: 'round'
+        };
+        
+        // パフォーマンス統計
+        this.stats = {
+            strokesDrawn: 0,
+            pointsProcessed: 0,
+            errors: 0,
+            lastError: null,
+            created: Date.now()
+        };
+        
+        console.log('✅ PenTool 作成完了');
+    }
+    
+    // ================================
+    // Manager注入・初期化（修正版）
+    // ================================
+    
     /**
-     * 🔧 ToolManager v8.12.0完全対応版・API統一修正版
-     * 
-     * 📏 修正内容:
-     * - getActiveTool()エイリアス追加（TegakiApplication互換対応）
-     * - API名称統一完了
-     * - Manager注入API順序修正（setManagersObject優先）
-     * - Tool注入エラー完全対応
-     * - 継続描画問題修正
-     * 
-     * 🚀 特徴:
-     * - API名称統一・TegakiApplication完全互換
-     * - 防御的依存注入・検証強化
-     * - Tool初期化エラー完全対応
+     * Manager統一注入（重要な修正: setManagers → setManagersObject）
+     * @param {Object|Map} managers - Manager群
+     * @returns {boolean} 注入成功フラグ
      */
-    class ToolManager {
-        constructor(canvasManagerDI = null) {
-            console.log(`🚀 ToolManager v8.12.0作成開始 - API統一修正版`);
+    setManagersObject(managers) {
+        console.log('🖊️ PenTool: Manager統一注入開始（正規メソッド）');
+        
+        try {
+            // ✅ 重要な修正: super.setManagersObject() 呼び出し
+            const parentResult = super.setManagersObject(managers);
             
-            // 基本状態初期化
-            this.canvasManager = null;
-            this.tools = new Map();
-            this.currentTool = null;
-            this.currentToolName = 'pen';
-            
-            // Manager統一注入用
-            this.managers = null;
-            this.managersObject = null;
-            this.drawContainer = null;
-            
-            // v8対応状態
-            this.v8Ready = false;
-            this.webGPUSupported = false;
-            this.managersInjected = false;
-            
-            // Pointerイベント状態管理
-            this.isPointerDown = false;
-            this.lastPointerPosition = { x: 0, y: 0 };
-            
-            // DI注入確認（コンストラクタでの注入をサポート）
-            if (canvasManagerDI) {
-                this._handleConstructorInjection(canvasManagerDI);
+            if (!parentResult) {
+                throw new Error('AbstractTool Manager注入失敗');
             }
             
-            console.log(`✅ ToolManager v8.12.0作成完了 - API統一修正版`);
-        }
-
-        /**
-         * コンストラクタDI処理
-         */
-        _handleConstructorInjection(canvasManagerDI) {
-            if (typeof canvasManagerDI === 'object' && canvasManagerDI !== null) {
-                if (canvasManagerDI.canvasManager) {
-                    // {canvasManager: instance} 形式
-                    this.canvasManager = canvasManagerDI.canvasManager;
-                } else if (canvasManagerDI.getDrawContainer) {
-                    // 直接CanvasManagerインスタンス形式
-                    this.canvasManager = canvasManagerDI;
-                }
-            }
+            // PenTool固有の初期化
+            this.initializePenSpecific();
             
-            if (this.canvasManager && this.canvasManager.getDrawContainer) {
-                console.log(`✅ CanvasManager注入成功`);
-            }
-        }
-
-        /**
-         * 🔧 Manager統一注入（修正版・防御強化）
-         * 
-         * @param {Object|Map} managers - 注入するManager群
-         * @returns {boolean} 注入成功フラグ
-         */
-        setManagers(managers) {
-            console.log(`🔧 ToolManager - Manager統一注入開始`);
-            
-            if (!managers) {
-                console.error(`❌ ToolManager: null/undefined managers received`);
-                return false;
-            }
-            
-            let managersMap;
-            
-            if (managers instanceof Map) {
-                console.log(`✅ Map形式で受信 - 直接利用`);
-                managersMap = managers;
-            } else if (typeof managers === 'object' && managers !== null) {
-                console.log(`✅ Object形式で受信 - Map変換実行`);
-                managersMap = new Map(Object.entries(managers));
-            } else {
-                console.error(`❌ ToolManager: 無効なManager形式:`, typeof managers);
-                return false;
-            }
-            
-            // Map・Object両形式で保存
-            this.managers = managersMap;
-            this.managersObject = Object.fromEntries(managersMap);
-            
-            // CanvasManager特別処理（最重要）
-            if (managersMap.has("canvas")) {
-                this.canvasManager = managersMap.get("canvas");
-                console.log(`✅ CanvasManager統一注入成功`);
-                
-                // getDrawContainer()可用性確認
-                this._verifyCanvasManager();
-            } else {
-                console.warn(`⚠️ CanvasManager（"canvas"キー）が見つかりません`);
-            }
-            
-            this.managersInjected = true;
-            console.log(`✅ ToolManager: Manager統一注入完了`);
+            console.log('✅ PenTool: Manager統一注入完了');
             return true;
+            
+        } catch (error) {
+            this.stats.lastError = error;
+            this.stats.errors++;
+            console.error('❌ PenTool: Manager統一注入エラー:', error);
+            return false;
         }
-
-        /**
-         * CanvasManager検証
-         */
-        _verifyCanvasManager() {
-            if (this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function') {
-                try {
-                    this.drawContainer = this.canvasManager.getDrawContainer();
-                    console.log(`✅ DrawContainer取得成功:`, !!this.drawContainer);
-                } catch (error) {
-                    console.warn(`⚠️ DrawContainer取得失敗:`, error.message);
-                }
+    }
+    
+    /**
+     * PenTool固有初期化
+     */
+    initializePenSpecific() {
+        // 描画状態リセット
+        this.resetDrawingState();
+        
+        // 外部描画対応初期化
+        this.tempStroke = [];
+        this.externalDrawing = false;
+    }
+    
+    /**
+     * 描画状態完全リセット
+     */
+    resetDrawingState() {
+        this.isDrawing = false;
+        this.drawingLocked = false;
+        this.currentStroke = null;
+        this.currentPath = [];
+        this.tempStroke = [];
+        this.externalDrawing = false;
+    }
+    
+    // ================================
+    // ポインタイベント処理（継続描画完全修正版）
+    // ================================
+    
+    /**
+     * ポインタダウン処理
+     * @param {PointerEvent} event - ポインタイベント
+     */
+    onPointerDown(event) {
+        try {
+            // 準備状態確認
+            if (!this.isReady() || !this.isActive()) {
+                return;
+            }
+            
+            // 多重描画防止
+            if (this.isDrawing || this.drawingLocked) {
+                console.warn('⚠️ PenTool: 描画中のPointerDown無視');
+                return;
+            }
+            
+            // イベント妥当性確認
+            if (!event) {
+                return;
+            }
+            
+            // 座標変換
+            const coords = this.convertEventToCanvasCoords(event);
+            if (!coords) {
+                return;
+            }
+            
+            // カメラ内描画確認
+            const inCamera = this.isPointInCamera(coords);
+            
+            if (inCamera) {
+                // 通常描画開始
+                this.startDrawing(coords);
             } else {
-                console.warn(`⚠️ CanvasManager.getDrawContainer()が利用不可`);
+                // 外部描画開始（tempStrokeバッファリング）
+                this.startExternalDrawing(coords);
             }
+            
+            // イベント処理完了
+            event.preventDefault();
+            event.stopPropagation();
+            
+        } catch (error) {
+            this.handleDrawingError('onPointerDown', error);
         }
-
-        /**
-         * 🔍 依存注入検証（厳格版）
-         */
-        verifyInjection() {
-            console.log(`🔍 ToolManager依存注入検証開始...`);
-            
-            // Step 1: Manager注入状態確認
-            if (!this.managersInjected) {
-                throw new Error("ToolManager: setManagers() not called");
+    }
+    
+    /**
+     * ポインタムーブ処理
+     * @param {PointerEvent} event - ポインタイベント
+     */
+    onPointerMove(event) {
+        // 描画中でなければ無視
+        if (!this.isDrawing && !this.externalDrawing) {
+            return;
+        }
+        
+        try {
+            // イベント妥当性確認
+            if (!event) {
+                return;
             }
             
-            // Step 2: CanvasManager存在確認
-            if (!this.canvasManager) {
-                throw new Error("ToolManager: CanvasManager injection failed");
-            }
-            console.log(`✅ CanvasManager注入確認完了`);
-            
-            // Step 3: getDrawContainer()メソッド確認
-            if (typeof this.canvasManager.getDrawContainer !== 'function') {
-                throw new Error("ToolManager: getDrawContainer() method not available");
-            }
-            console.log(`✅ getDrawContainer()メソッド確認完了`);
-            
-            // Step 4: getDrawContainer()実行確認
-            let drawContainer;
-            try {
-                drawContainer = this.canvasManager.getDrawContainer();
-            } catch (error) {
-                throw new Error(`ToolManager: getDrawContainer() execution failed: ${error.message}`);
+            // 座標変換
+            const coords = this.convertEventToCanvasCoords(event);
+            if (!coords) {
+                return;
             }
             
+            this.stats.pointsProcessed++;
+            
+            if (this.externalDrawing) {
+                // 外部描画継続
+                this.updateExternalDrawing(coords);
+            } else {
+                // 通常描画継続
+                this.updateDrawing(coords);
+            }
+            
+            event.preventDefault();
+            
+        } catch (error) {
+            this.handleDrawingError('onPointerMove', error);
+        }
+    }
+    
+    /**
+     * ポインタアップ処理（継続描画問題完全修正版）
+     * @param {PointerEvent} event - ポインタイベント
+     */
+    onPointerUp(event) {
+        try {
+            // ✅ 重要な修正: 必ず強制描画終了を実行
+            this.forceEndDrawing();
+            
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            
+        } catch (error) {
+            this.handleDrawingError('onPointerUp', error);
+            // エラー時も確実に状態リセット
+            this.resetDrawingState();
+        }
+    }
+    
+    /**
+     * ポインタリーブ処理（継続描画修正の重要な追加）
+     * @param {PointerEvent} event - ポインタイベント
+     */
+    onPointerLeave(event) {
+        try {
+            // ✅ 重要な修正: PointerLeave時も強制終了
+            if (this.isDrawing || this.externalDrawing) {
+                console.log('🖊️ PenTool: PointerLeave → 強制描画終了');
+                this.forceEndDrawing();
+            }
+            
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            
+        } catch (error) {
+            this.handleDrawingError('onPointerLeave', error);
+            this.resetDrawingState();
+        }
+    }
+    
+    /**
+     * ポインタキャンセル処理（継続描画修正の重要な追加）
+     * @param {PointerEvent} event - ポインタイベント
+     */
+    onPointerCancel(event) {
+        try {
+            // ✅ 重要な修正: PointerCancel時も強制終了
+            if (this.isDrawing || this.externalDrawing) {
+                console.log('🖊️ PenTool: PointerCancel → 強制描画終了');
+                this.forceEndDrawing();
+            }
+            
+            if (event) {
+                event.preventDefault();
+                event.stopPropagation();
+            }
+            
+        } catch (error) {
+            this.handleDrawingError('onPointerCancel', error);
+            this.resetDrawingState();
+        }
+    }
+    
+    /**
+     * 強制描画終了（継続描画問題修正の核心・冪等保証）
+     */
+    forceEndDrawing() {
+        try {
+            // 既に終了済みなら何もしない（冪等性）
+            if (!this.isDrawing && !this.externalDrawing && !this.drawingLocked) {
+                return;
+            }
+            
+            // 描画ロック（多重終了防止）
+            if (this.drawingLocked) {
+                return;
+            }
+            
+            this.drawingLocked = true;
+            
+            // 通常描画の終了処理
+            if (this.isDrawing && this.currentStroke) {
+                this.finishCurrentStroke();
+            }
+            
+            // 外部描画の終了処理
+            if (this.externalDrawing && this.tempStroke.length > 0) {
+                this.finishExternalStroke();
+            }
+            
+            // 状態完全リセット
+            this.resetDrawingState();
+            
+        } catch (error) {
+            console.error('❌ PenTool: forceEndDrawing() エラー:', error);
+            // エラー時も確実にリセット
+            this.resetDrawingState();
+        }
+    }
+    
+    // ================================
+    // 描画処理（通常・外部対応）
+    // ================================
+    
+    /**
+     * 通常描画開始
+     * @param {Object} coords - 開始座標
+     */
+    startDrawing(coords) {
+        try {
+            this.isDrawing = true;
+            this.currentPath = [coords];
+            
+            // PIXI.Graphics作成・描画開始
+            this.createPixiStroke(coords);
+            
+            // TPF記録開始
+            this.startTPFRecord(coords);
+            
+        } catch (error) {
+            console.error('❌ 通常描画開始エラー:', error);
+            this.resetDrawingState();
+        }
+    }
+    
+    /**
+     * 外部描画開始（画面外からの描画）
+     * @param {Object} coords - 開始座標
+     */
+    startExternalDrawing(coords) {
+        try {
+            this.externalDrawing = true;
+            this.tempStroke = [coords];
+            
+        } catch (error) {
+            console.error('❌ 外部描画開始エラー:', error);
+            this.resetDrawingState();
+        }
+    }
+    
+    /**
+     * 描画継続
+     * @param {Object} coords - 継続座標
+     */
+    updateDrawing(coords) {
+        if (!this.currentStroke || !this.isDrawing) {
+            return;
+        }
+        
+        try {
+            // パス追加
+            this.currentPath.push(coords);
+            
+            // PixiJS描画更新
+            this.currentStroke.lineTo(coords.x, coords.y);
+            
+            // TPF記録追加
+            this.addTPFPoint(coords);
+            
+        } catch (error) {
+            console.error('❌ 描画継続エラー:', error);
+        }
+    }
+    
+    /**
+     * 外部描画継続
+     * @param {Object} coords - 継続座標
+     */
+    updateExternalDrawing(coords) {
+        try {
+            // tempStrokeに追加
+            this.tempStroke.push(coords);
+            
+            // カメラ内侵入チェック
+            const inCamera = this.isPointInCamera(coords);
+            
+            if (inCamera && this.tempStroke.length > 1) {
+                // カメラ内侵入 → 通常描画に移行
+                this.convertExternalToNormal();
+            }
+            
+        } catch (error) {
+            console.error('❌ 外部描画継続エラー:', error);
+        }
+    }
+    
+    /**
+     * 外部描画→通常描画移行
+     */
+    convertExternalToNormal() {
+        try {
+            if (this.tempStroke.length === 0) {
+                return;
+            }
+            
+            // 外部描画終了
+            this.externalDrawing = false;
+            
+            // 通常描画開始（tempStrokeの最初の点で）
+            const startCoords = this.tempStroke[0];
+            this.isDrawing = true;
+            this.currentPath = [...this.tempStroke];
+            
+            // PixiJS描画作成
+            this.createPixiStroke(startCoords);
+            
+            // tempStrokeの全座標を適用
+            for (let i = 1; i < this.tempStroke.length; i++) {
+                const coords = this.tempStroke[i];
+                this.currentStroke.lineTo(coords.x, coords.y);
+            }
+            
+            // TPF記録開始（全座標で）
+            this.startTPFRecord(startCoords, this.tempStroke.slice(1));
+            
+            // tempStrokeクリア
+            this.tempStroke = [];
+            
+        } catch (error) {
+            console.error('❌ 外部→通常描画移行エラー:', error);
+            this.resetDrawingState();
+        }
+    }
+    
+    // ================================
+    // PixiJS描画処理
+    // ================================
+    
+    /**
+     * PIXI.Graphics ストローク作成
+     * @param {Object} startCoords - 開始座標
+     */
+    createPixiStroke(startCoords) {
+        try {
+            const drawContainer = this.getDrawContainer();
             if (!drawContainer) {
-                throw new Error("ToolManager: getDrawContainer() returned null");
+                throw new Error('DrawContainer not available');
             }
-            console.log(`✅ getDrawContainer()実行確認完了`);
             
-            // Step 5: Container妥当性確認
-            if (!drawContainer.addChild || typeof drawContainer.addChild !== 'function') {
-                throw new Error("ToolManager: invalid Container - missing addChild method");
-            }
-            console.log(`✅ Container妥当性確認完了`);
+            // Graphics作成・スタイル設定
+            this.currentStroke = new PIXI.Graphics();
             
-            // DrawContainer保存
-            this.drawContainer = drawContainer;
+            // PixiJS v8対応のlineStyle
+            this.currentStroke.lineStyle({
+                width: this.strokeStyle.width,
+                color: this.strokeStyle.color,
+                alpha: this.strokeStyle.alpha,
+                cap: this.strokeStyle.cap,
+                join: this.strokeStyle.join
+            });
             
-            console.log(`✅ ToolManager依存注入検証完了 - 全検証PASS`);
-            return true;
+            // 描画開始
+            this.currentStroke.moveTo(startCoords.x, startCoords.y);
+            
+            // コンテナに追加
+            drawContainer.addChild(this.currentStroke);
+            
+        } catch (error) {
+            console.error('❌ PIXI ストローク作成エラー:', error);
+            throw error;
         }
-
-        /**
-         * 🚀 v8 Tool初期化（API修正版）
-         */
-        async initializeV8Tools() {
-            console.log(`🚀 v8 Tool初期化開始（API統一修正版）`);
-            
-            // 前提条件確認
-            if (!this.managersInjected) {
-                console.error(`❌ Manager群が未注入です - setManagers()を先に実行してください`);
-                return false;
-            }
-            
-            if (!this.drawContainer) {
-                console.error(`❌ DrawContainer未初期化 - verifyInjection()を先に実行してください`);
-                return false;
-            }
-            
-            // 依存関係確認
-            if (!window.Tegaki?.AbstractTool) {
-                console.error(`❌ AbstractTool未ロード`);
-                return false;
-            }
-            
-            if (!window.PIXI?.Graphics) {
-                console.error(`❌ PixiJS v8未ロード`);
-                return false;
-            }
-            
-            console.log(`✅ v8依存関係確認完了`);
-            
-            // WebGPU対応状況
-            this.webGPUSupported = !!window.PIXI?.Graphics;
-            console.log(`🔧 WebGPU対応状況:`, this.webGPUSupported ? '対応' : '非対応');
-            
-            try {
-                // 1. PenTool作成・登録
-                console.log(`1️⃣ v8 PenTool作成開始...`);
-                const penTool = await this.createV8PenTool();
-                if (penTool) {
-                    this.tools.set('pen', penTool);
-                    console.log(`✅ PenTool登録完了`);
-                } else {
-                    console.error(`❌ PenTool作成失敗`);
-                }
-                
-                // 2. EraserTool作成・登録
-                console.log(`2️⃣ v8 EraserTool作成開始...`);
-                const eraserTool = await this.createV8EraserTool();
-                if (eraserTool) {
-                    this.tools.set('eraser', eraserTool);
-                    console.log(`✅ EraserTool登録完了`);
-                } else {
-                    console.error(`❌ EraserTool作成失敗`);
-                }
-                
-                // 3. デフォルトTool切り替え
-                console.log(`🔄 デフォルトTool切り替え: ${this.currentToolName}`);
-                await this.switchTool(this.currentToolName);
-                
-                this.v8Ready = true;
-                console.log(`✅ v8 Tool初期化完了`);
-                return true;
-                
-            } catch (error) {
-                console.error(`💀 v8 Tool初期化エラー:`, error);
-                return false;
-            }
+    }
+    
+    /**
+     * 現在状態取得（テスト・デバッグ用）
+     * @returns {Object} 現在状態
+     */
+    getState() {
+        return {
+            toolName: this.name,
+            isDrawing: this.isDrawing,
+            externalDrawing: this.externalDrawing,
+            drawingLocked: this.drawingLocked,
+            hasCurrentStroke: !!this.currentStroke,
+            currentPathLength: this.currentPath.length,
+            tempStrokeLength: this.tempStroke.length,
+            strokeStyle: { ...this.strokeStyle },
+            stats: { ...this.stats },
+            isReady: this.isReady(),
+            isActive: this.isActive(),
+            managersReady: this.managersReady
+        };
+    }
+    
+    /**
+     * 描画エラーハンドリング
+     * @param {string} context - エラー発生場所
+     * @param {Error} error - エラーオブジェクト
+     */
+    handleDrawingError(context, error) {
+        this.stats.lastError = error;
+        this.stats.errors++;
+        
+        console.error(`❌ PenTool ${context} エラー:`, error);
+        
+        // 安全な状態リセット
+        try {
+            this.forceEndDrawing();
+        } catch (resetError) {
+            this.resetDrawingState();
         }
-
-        /**
-         * 🖊️ v8 PenTool作成（Manager注入強化版）
-         */
-        async createV8PenTool() {
-            try {
-                // PenTool作成
-                const penTool = new window.Tegaki.PenTool();
-                
-                // Manager統一注入（修正: setManagersObject優先）
-                console.log(`🔧 PenTool Manager注入開始`);
-                
-                const injectionResult = await this._injectManagersToTool(penTool, 'pen');
-                if (!injectionResult) {
-                    console.error(`❌ PenTool Manager注入失敗`);
-                    return null;
-                }
-                
-                console.log(`✅ PenTool Manager統一注入完了`);
-                return penTool;
-                
-            } catch (error) {
-                console.error(`💀 PenTool作成エラー:`, error);
-                return null;
-            }
-        }
-
-        /**
-         * 🧹 v8 EraserTool作成（Manager注入強化版）
-         */
-        async createV8EraserTool() {
-            try {
-                const eraserTool = new window.Tegaki.EraserTool();
-                
-                // Manager統一注入
-                console.log(`🔧 EraserTool Manager注入開始`);
-                
-                const injectionResult = await this._injectManagersToTool(eraserTool, 'eraser');
-                if (!injectionResult) {
-                    console.error(`❌ EraserTool Manager注入失敗`);
-                    return null;
-                }
-                
-                console.log(`✅ EraserTool Manager統一注入完了`);
-                return eraserTool;
-                
-            } catch (error) {
-                console.error(`💀 EraserTool作成エラー:`, error);
-                return null;
-            }
-        }
-
-        /**
-         * Tool Manager注入統一処理（修正版・順序変更）
-         * @param {Object} tool - Tool インスタンス
-         * @param {string} toolName - Tool名
-         * @returns {Promise<boolean>} 注入成功フラグ
-         */
-        async _injectManagersToTool(tool, toolName) {
-            try {
-                console.log(`🔄 ${toolName}: Manager統一注入（修正版）`);
-                
-                // ✅ 修正: setManagersObject方式優先（正規メソッド）
-                if (typeof tool.setManagersObject === 'function') {
-                    console.log(`🖊️ ${toolName}: Manager統一注入開始（正規メソッド）`);
-                    const result = tool.setManagersObject(this.managersObject);
-                    if (result !== false) {
-                        console.log(`✅ ${toolName}: Manager統一注入完了（正規メソッド）`);
-                        return true;
-                    }
-                }
-                
-                // 後方互換：setManagers方式
-                if (typeof tool.setManagers === 'function') {
-                    console.log(`🔄 ${toolName}: Manager統一注入（エイリアス経由）`);
-                    const result = await tool.setManagers(this.managersObject);
-                    if (result !== false) {
-                        console.log(`✅ ${toolName}: Manager統一注入完了（エイリアス）`);
-                        return true;
-                    }
-                }
-                
-                console.error(`❌ ${toolName}Tool: Manager注入メソッドが見つかりません`);
-                return false;
-                
-            } catch (error) {
-                console.error(`❌ ${toolName}Tool Manager注入エラー:`, error);
-                return false;
-            }
-        }
-
-        /**
-         * 🔄 Tool切り替え（メイン実装）
-         * 
-         * @param {string} toolName - 切り替え先Tool名
-         * @returns {Promise<boolean>} 切り替え成功フラグ
-         */
-        async switchTool(toolName) {
-            console.log(`🔄 Tool切り替え開始: ${this.currentToolName} → ${toolName}`);
+    }
+    
+    /**
+     * Tool破棄
+     */
+    destroy() {
+        try {
+            // 描画強制終了
+            this.forceEndDrawing();
             
-            // Tool存在確認
-            const newTool = this.tools.get(toolName);
-            if (!newTool) {
-                console.error(`❌ Tool not found: ${toolName}`);
-                return false;
+            // 親クラス破棄
+            if (typeof super.destroy === 'function') {
+                super.destroy();
             }
             
-            try {
-                // 現在のTool無効化
-                if (this.currentTool && typeof this.currentTool.deactivate === 'function') {
-                    this.currentTool.deactivate();
-                }
-                
-                // 新しいTool有効化
-                if (typeof newTool.activate === 'function') {
-                    await newTool.activate();
-                }
-                
-                console.log(`✅ ${toolName} Tool アクティブ化完了`);
-                
-                // 状態更新
-                this.currentTool = newTool;
-                this.currentToolName = toolName;
-                
-                console.log(`✅ Tool切り替え完了: ${toolName}`);
-                return true;
-                
-            } catch (error) {
-                console.error(`💀 Tool切り替えエラー (${toolName}):`, error);
-                return false;
-            }
+        } catch (error) {
+            console.error('❌ PenTool: destroy() エラー:', error);
         }
+    }
+}
 
-        /**
-         * 🔄 Tool切り替え（互換性エイリアス）
-         * 
-         * @param {string} toolName - 切り替え先Tool名
-         * @returns {Promise<boolean>} 切り替え成功フラグ
-         */
-        async setActiveTool(toolName) {
-            return await this.switchTool(toolName);
-        }
+// グローバル登録
+if (!window.Tegaki) {
+    window.Tegaki = {};
+}
+if (!window.Tegaki.Tools) {
+    window.Tegaki.Tools = {};
+}
+window.Tegaki.Tools.PenTool = PenTool;
+window.Tegaki.PenTool = PenTool; // 後方互換
 
-        /**
-         * 📊 Tool Map取得（API統一）
-         * 
-         * @returns {Map} Tool Map
-         */
-        getTools() {
-            return this.tools;
-        }
-
-        /**
-         * 📊 現在のTool取得（正規メソッド）
-         * 
-         * @returns {Object|null} 現在のToolインスタンス
-         */
-        getCurrentTool() {
-            return this.currentTool;
-        }
-
-        /**
-         * 📊 現在のTool取得（TegakiApplication互換エイリアス）
-         * 
-         * @returns {Object|null} 現在のToolインスタンス
-         */
-        getActiveTool() {
-            return this.currentTool;
-        }
-
-        /**
-         * 📊 現在のTool名取得
-         * 
-         * @returns {string} 現在のTool名
-         */
-        getCurrentToolName() {
-            return this.currentToolName;
-        }
-
-        /**
-         * 🖱️ ポインターダウン処理（TegakiApplication連携）
-         * 
-         * @param {Object} event - ポインターイベント {x, y, originalEvent}
-         */
-        onPointerDown(event) {
-            if (!this.currentTool) {
-                console.warn('⚠️ No current tool available for pointer down');
+console.log('🖊️ PenTool v8.12.0 Manager統一注入・継続描画修正・外部描画対応版 Loaded');
+console.log('🚀 特徴: setManagersObject()統一・forceEndDrawing()冪等保証・tempStrokeバッファリング・TPF完全記録');在ストローク終了
+     */
+    finishCurrentStroke() {
+        try {
+            if (!this.currentStroke || this.currentPath.length < 1) {
                 return;
             }
-
-            try {
-                this.isPointerDown = true;
-                this.lastPointerPosition = { x: event.x, y: event.y };
-
-                // 現在のToolにポインターダウンイベントを伝達
-                if (typeof this.currentTool.onPointerDown === 'function') {
-                    this.currentTool.onPointerDown(event);
-                } else {
-                    console.warn(`⚠️ Current tool (${this.currentToolName}) has no onPointerDown method`);
-                }
-
-            } catch (error) {
-                console.error('❌ ToolManager.onPointerDown処理エラー:', error);
-            }
-        }
-
-        /**
-         * 🖱️ ポインタームーブ処理（TegakiApplication連携）
-         * 
-         * @param {Object} event - ポインターイベント {x, y, originalEvent}
-         */
-        onPointerMove(event) {
-            if (!this.currentTool) {
-                return;
-            }
-
-            try {
-                this.lastPointerPosition = { x: event.x, y: event.y };
-
-                // 現在のToolにポインタームーブイベントを伝達
-                if (typeof this.currentTool.onPointerMove === 'function') {
-                    this.currentTool.onPointerMove(event);
-                }
-
-            } catch (error) {
-                console.error('❌ ToolManager.onPointerMove処理エラー:', error);
-            }
-        }
-
-        /**
-         * 🖱️ ポインターアップ処理（TegakiApplication連携）
-         * 
-         * @param {Object} event - ポインターイベント {x, y, originalEvent}
-         */
-        onPointerUp(event) {
-            if (!this.currentTool) {
-                return;
-            }
-
-            try {
-                this.isPointerDown = false;
-                this.lastPointerPosition = { x: event.x, y: event.y };
-
-                // 現在のToolにポインターアップイベントを伝達
-                if (typeof this.currentTool.onPointerUp === 'function') {
-                    this.currentTool.onPointerUp(event);
-                }
-
-            } catch (error) {
-                console.error('❌ ToolManager.onPointerUp処理エラー:', error);
-            }
-        }
-
-        /**
-         * 📝 Tool登録
-         * 
-         * @param {string} name - Tool名
-         * @param {Function} toolClass - Toolクラス
-         */
-        registerTool(name, toolClass) {
-            console.log(`📝 Tool登録: ${name}`);
-            this.tools.set(name, toolClass);
-        }
-
-        /**
-         * 🔍 ToolManager準備状態確認（API統一版）
-         * 
-         * @returns {boolean} 準備状態
-         */
-        isReady() {
-            const hasCanvasManager = this.canvasManager !== null;
-            const hasGetDrawContainer = hasCanvasManager && typeof this.canvasManager.getDrawContainer === 'function';
-            const hasDrawContainer = this.drawContainer !== null;
-            const hasManagers = this.managersObject !== null && this.managersInjected;
-            const hasTools = this.tools.size > 0;
-            const hasCurrentTool = this.currentTool !== null;
             
-            return hasCanvasManager && hasGetDrawContainer && hasDrawContainer && hasManagers && hasTools && hasCurrentTool;
+            // TPF記録終了
+            this.endTPFRecord();
+            
+            // ストローク統計更新
+            this.stats.strokesDrawn++;
+            
+            // 参照クリア
+            this.currentStroke = null;
+            this.currentPath = [];
+            
+        } catch (error) {
+            console.error('❌ 現在ストローク終了エラー:', error);
         }
-
-        /**
-         * 📊 ToolManager状態取得
-         * 
-         * @returns {Object} 詳細状態情報
-         */
-        getState() {
-            return {
-                currentToolName: this.currentToolName,
-                toolCount: this.tools.size,
-                toolNames: Array.from(this.tools.keys()),
-                v8Ready: this.v8Ready,
-                webGPUSupported: this.webGPUSupported,
-                managersInjected: this.managersInjected,
-                hasCanvasManager: !!this.canvasManager,
-                hasGetDrawContainer: this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function',
-                hasDrawContainer: !!this.drawContainer,
-                hasManagers: !!this.managersObject,
-                isReady: this.isReady(),
-                pointerState: {
-                    isPointerDown: this.isPointerDown,
-                    lastPosition: this.lastPointerPosition
-                }
+    }
+    
+    /**
+     * 外部ストローク終了
+     */
+    finishExternalStroke() {
+        try {
+            if (this.tempStroke.length < 2) {
+                return;
+            }
+            
+            // 外部描画として記録する場合のロジック（将来実装）
+            // 現在は単純に破棄
+            
+            this.tempStroke = [];
+            
+        } catch (error) {
+            console.error('❌ 外部ストローク終了エラー:', error);
+        }
+    }
+    
+    // ================================
+    // TPF記録処理
+    // ================================
+    
+    /**
+     * TPF記録開始
+     * @param {Object} startCoords - 開始座標
+     * @param {Array} additionalPoints - 追加座標配列（外部描画移行時）
+     */
+    startTPFRecord(startCoords, additionalPoints = []) {
+        try {
+            const recordManager = this.getRecordManager();
+            if (!recordManager || typeof recordManager.startOperation !== 'function') {
+                return;
+            }
+            
+            // 初期座標配列作成
+            const initialPoints = [startCoords, ...additionalPoints];
+            
+            recordManager.startOperation('stroke', initialPoints);
+            
+        } catch (error) {
+            console.error('❌ TPF記録開始エラー:', error);
+        }
+    }
+    
+    /**
+     * TPF記録点追加
+     * @param {Object} coords - 追加座標
+     */
+    addTPFPoint(coords) {
+        try {
+            const recordManager = this.getRecordManager();
+            if (!recordManager || typeof recordManager.addPoint !== 'function') {
+                return;
+            }
+            
+            recordManager.addPoint(coords);
+            
+        } catch (error) {
+            console.error('❌ TPF記録点追加エラー:', error);
+        }
+    }
+    
+    /**
+     * TPF記録終了
+     */
+    endTPFRecord() {
+        try {
+            const recordManager = this.getRecordManager();
+            if (!recordManager || typeof recordManager.endOperation !== 'function') {
+                return;
+            }
+            
+            const metadata = {
+                tool: 'pen',
+                style: { ...this.strokeStyle },
+                pathLength: this.currentPath.length,
+                timestamp: Date.now()
             };
+            
+            recordManager.endOperation(metadata);
+            
+        } catch (error) {
+            console.error('❌ TPF記録終了エラー:', error);
         }
-
-        /**
-         * 🎨 描画Container取得
-         * 
-         * @returns {PIXI.Container|null} 描画Container
-         */
-        getDrawContainer() {
-            return this.drawContainer;
-        }
-
-        /**
-         * 🔧 Tool設定更新
-         * 
-         * @param {string} toolName - Tool名
-         * @param {Object} settings - 設定オブジェクト
-         */
-        updateToolSettings(toolName, settings) {
-            const tool = this.tools.get(toolName);
-            if (tool && typeof tool.updateSettings === 'function') {
-                tool.updateSettings(settings);
-                console.log(`🔧 Tool設定更新: ${toolName}`, settings);
+    }
+    
+    // ================================
+    // 座標変換・ユーティリティ
+    // ================================
+    
+    /**
+     * イベント→キャンバス座標変換（統一）
+     * @param {PointerEvent} event - ポインタイベント
+     * @returns {Object|null} キャンバス座標 {x, y} または null
+     */
+    convertEventToCanvasCoords(event) {
+        try {
+            // clientX/Y取得
+            const clientCoords = this.getClientXY(event);
+            if (!clientCoords) {
+                return null;
             }
-        }
-
-        /**
-         * 🧪 デバッグ情報取得（API統一版）
-         * 
-         * @returns {Object} 詳細デバッグ情報
-         */
-        getDebugInfo() {
-            const toolInfo = {};
-            for (const [name, tool] of this.tools) {
-                toolInfo[name] = {
-                    className: tool.constructor.name,
-                    isActive: tool.isActive || false,
-                    isReady: tool.isReady ? tool.isReady() : 'method not available',
-                    state: tool.getState ? tool.getState() : 'getState not available',
-                    hasOnPointerDown: typeof tool.onPointerDown === 'function',
-                    hasOnPointerMove: typeof tool.onPointerMove === 'function',
-                    hasOnPointerUp: typeof tool.onPointerUp === 'function'
-                };
+            
+            // CoordinateManager使用（必須）
+            const coordinateManager = this.getCoordinateManager();
+            if (!coordinateManager || typeof coordinateManager.screenToCanvas !== 'function') {
+                return null;
+            }
+            
+            const result = coordinateManager.screenToCanvas(clientCoords);
+            
+            if (!result || typeof result.x !== 'number' || typeof result.y !== 'number') {
+                return null;
             }
             
             return {
-                className: 'ToolManager',
-                version: 'v8.12.0-api-unified',
-                currentTool: this.currentToolName,
-                tools: toolInfo,
-                toolsCount: this.tools.size,
-                availableTools: Array.from(this.tools.keys()),
-                managers: this.managersObject ? Object.keys(this.managersObject) : [],
-                managerCount: this.managersObject ? Object.keys(this.managersObject).length : 0,
-                injectionStatus: {
-                    managersInjected: this.managersInjected,
-                    canvasManager: !!this.canvasManager,
-                    getDrawContainerMethod: this.canvasManager && typeof this.canvasManager.getDrawContainer === 'function',
-                    drawContainer: !!this.drawContainer
-                },
-                readinessStatus: {
-                    v8Ready: this.v8Ready,
-                    isReady: this.isReady(),
-                    webGPUSupported: this.webGPUSupported
-                },
-                pointerState: {
-                    isPointerDown: this.isPointerDown,
-                    lastPosition: this.lastPointerPosition
-                },
-                apiMethods: {
-                    getTools: typeof this.getTools === 'function',
-                    setActiveTool: typeof this.setActiveTool === 'function',
-                    switchTool: typeof this.switchTool === 'function',
-                    getCurrentTool: typeof this.getCurrentTool === 'function',
-                    getActiveTool: typeof this.getActiveTool === 'function', // 互換エイリアス確認
-                    verifyInjection: typeof this.verifyInjection === 'function'
-                }
+                x: result.x,
+                y: result.y,
+                inBounds: result.inBounds !== false // デフォルトtrue
             };
+            
+        } catch (error) {
+            console.error('❌ 座標変換エラー:', error);
+            return null;
         }
-
-        // ========================================
-        // 後方互換・ヘルパーメソッド
-        // ========================================
-
-        /**
-         * 後方互換メソッド（setManagersObject）
-         */
-        setManagersObject(managers) {
-            return this.setManagers(managers);
+    }
+    
+    /**
+     * clientX/Y取得（TouchEvent対応）
+     * @param {Event} event - イベント
+     * @returns {Object|null} {x, y} または null
+     */
+    getClientXY(event) {
+        if (!event) {
+            return null;
         }
-
-        /**
-         * Manager登録情報設定（互換性）
-         */
-        setManagerRegistrationInfo(managers) {
-            console.log(`✅ ToolManager: Manager統一登録情報設定完了（互換性メソッド）`);
-            this.managerRegistrationInfo = managers;
+        
+        // PointerEvent/MouseEvent
+        if (typeof event.clientX === 'number' && typeof event.clientY === 'number') {
+            return { x: event.clientX, y: event.clientY };
         }
-
-        /**
-         * DrawContainer初期化（互換性）
-         */
-        initializeDrawContainer() {
-            if (this.canvasManager && this.canvasManager.getDrawContainer && !this.drawContainer) {
-                try {
-                    this.drawContainer = this.canvasManager.getDrawContainer();
-                    console.log(`✅ DrawContainer初期化完了（互換性メソッド）`);
-                } catch (error) {
-                    console.warn(`⚠️ DrawContainer初期化失敗:`, error.message);
+        
+        // TouchEvent
+        const touch = event.touches?.[0] || event.changedTouches?.[0];
+        if (touch && typeof touch.clientX === 'number' && typeof touch.clientY === 'number') {
+            return { x: touch.clientX, y: touch.clientY };
+        }
+        
+        return null;
+    }
+    
+    /**
+     * カメラ内座標判定
+     * @param {Object} coords - 座標
+     * @returns {boolean} カメラ内フラグ
+     */
+    isPointInCamera(coords) {
+        if (!coords) {
+            return false;
+        }
+        
+        try {
+            // NavigationManager使用（オプション）
+            const navManager = this.managerCache?.get('navigation');
+            if (navManager && typeof navManager.getCameraBounds === 'function') {
+                const bounds = navManager.getCameraBounds();
+                if (bounds) {
+                    return coords.x >= bounds.x && 
+                           coords.y >= bounds.y && 
+                           coords.x <= bounds.x + bounds.width && 
+                           coords.y <= bounds.y + bounds.height;
                 }
             }
-        }
-
-        /**
-         * 旧形式Pointerイベント処理（後方互換）
-         */
-        handlePointerDown(x, y, event) {
-            return this.onPointerDown({ x, y, originalEvent: event });
-        }
-
-        handlePointerMove(x, y, event) {
-            return this.onPointerMove({ x, y, originalEvent: event });
-        }
-
-        handlePointerUp(x, y, event) {
-            return this.onPointerUp({ x, y, originalEvent: event });
+            
+            // フォールバック: 境界情報使用
+            return coords.inBounds !== false;
+            
+        } catch (error) {
+            return coords.inBounds !== false;
         }
     }
-
-    // グローバル登録
-    if (!window.Tegaki) {
-        window.Tegaki = {};
+    
+    // ================================
+    // 設定・状態管理
+    // ================================
+    
+    /**
+     * ストロークスタイル設定
+     * @param {Object} style - スタイル設定
+     */
+    setStrokeStyle(style) {
+        if (!style || typeof style !== 'object') {
+            return;
+        }
+        
+        // 安全な設定マージ
+        if (typeof style.width === 'number' && style.width > 0) {
+            this.strokeStyle.width = Math.min(Math.max(style.width, 1), 100);
+        }
+        if (typeof style.color === 'number') {
+            this.strokeStyle.color = style.color;
+        }
+        if (typeof style.alpha === 'number') {
+            this.strokeStyle.alpha = Math.min(Math.max(style.alpha, 0), 1);
+        }
     }
-
-    window.Tegaki.ToolManager = ToolManager;
-    console.log(`🚀 ToolManager v8.12.0完全対応版・API統一修正版 Loaded`);
-    console.log(`📏 修正内容: getActiveTool()エイリアス追加・TegakiApplication完全互換・API統一完了`);
-    console.log(`🚀 特徴: 防御的依存注入・Tool初期化エラー完全対応・ポインターイベント統一処理`);
-
-})();
+    
+    /**
+     * 現
