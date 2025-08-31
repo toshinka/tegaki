@@ -1,155 +1,181 @@
-# Tegaki v8_phase1rev40 重大不具合の特定と改修計画（プレーンテキスト／一括コピペ用）
+-------------------------------------------------------------------------
+【要点（結論）】
+1) 最初の致命的原因：managers/tool-manager.js における構文エラー（Uncaught SyntaxError: Unexpected token '.'）が原因でそのファイルの実行が中断され、結果として window.Tegaki.ToolManager が定義されないため「is not a constructor」エラーが発生しています。
+   → 構文エラーでスクリプト全体が評価されないと、その後で new しようとしても未定義扱いになります（bootstrap/log に出ている現象）。:contentReference[oaicite:0]{index=0}
 
-目的:
-- 「サイドバーアイコンが出ない」「キャンバスが出ない（見えない/停止する）」「座標問題」「ペン描画できない」をまとめて収束させる。
-- PixiJS v8 と Manager 構成の正しい初期化フローを確立し、AI（別チャット）でも安全に改修・拡張できる「見通しの良い構造」に整える。
-- 余剰分割や命名不一致による“過剰な複雑化”を是正し、最小限の契約（インターフェース）で揃える。
+2) 二次的な問題：スクリプト読み込み順が不適切である可能性。Manager（ToolManager, CanvasManager 等）定義前に AppCore 側が参照していると未定義エラーになります。bootstrap の起動フローと index.html の <script> 順を必ず整列させる必要があります。:contentReference[oaicite:1]{index=1}
 
-根拠となる事実（抜粋・要点）:
-- 初期化が coordinateManager.isReady() 呼び出しで落ちている。TypeError: isReady is not a function。これにより TegakiApplication 初期化が中断され、以後の UI（サイドバー）やキャンバス構築フローが走らない。→ 「サイドバー/キャンバスが出ない」の直接原因。（console.txt の最終エラー）【出典: console.txt の “coordinateManager.isReady is not a function” 記録】
-- Tool 系の Manager 注入 API に名称不一致（super.setManagers vs super.setManagersObject）問題が存在し、ツール登録/切替の失敗や描画不能を引き起こす潜在不具合が示唆されている。（以前の調査・計画メモで明記）【出典: 📋 Phase1.5 最終修正計画書の「メソッド名不一致」「setManagersObject が正」記述】
-- 継続描画停止（PointerUp で確実に終了させる）課題も指摘済みで、Pointer イベントの最終化ルーチンが堅牢でない可能性。（同計画メモより）【出典: 📋 Phase1.5 最終修正計画書の「forceEndDrawing() 確実実行」課題】
+3) 余談だが Pixi v8 の初期化警告（powerPreference 警告）は致命的ではないが、WebGPU/adapter の差分に注意して初期化フローを分離しておく方が堅牢です。:contentReference[oaicite:2]{index=2}
 
-（注: 上記 “出典” の詳細ログ・記述は依頼者提供のファイル群に基づく）
+-------------------------------------------------------------------------
+【即効でやること（優先順位順）】
+A. tool-manager.js の 479 行付近の構文エラーを確実に潰す（optional chaining '?.' やクラス外の余分な '.' が原因であれば明示的な if-check に書き換える）。
+   - 理由：このファイルがシンタックスエラーならそれ以降が実行されず「ToolManager がコンストラクタでない」になる。:contentReference[oaicite:3]{index=3}
 
-────────────────────────────────────
-A. いま起きている不具合の「一次原因」と「二次症状」
+B. 各 manager スクリプトは必ず `window.Tegaki` 名前空間に「クラス定義（またはファクトリ）→ 登録」の順で公開する。
+   - 例：`class ToolManager { ... } window.Tegaki.ToolManager = ToolManager;`（必須）
+   - 理由：グローバル参照で new している既存コードとの互換性を担保するため。
 
-1) 一次原因: Manager 契約(Contract)の不一致
-- AppCore.initializeV8Managers が coordinateManager.isReady() を前提にしているのに、CoordinateManager 側に isReady() が存在しない/名称が異なるため TypeError で落ちる。
-- 初期化時点で例外により後続処理（UI構築/アイコン注入/Canvas 表示・描画起動）が全停止。
-→ 結果として「サイドバー不表示」「キャンバス未表示（または表示前で停止）」が発生。
-【根拠: console.txt の TypeError ログ】
+C. index.html の script 読み込み順を厳格にする（下記「起動フロー」参照）。特に managers と utils は AppCore / bootstrap より先に来ること。
 
-2) 二次症状: ツール登録・切替・描画に関する連鎖
-- 抽象ツール/具象ツール間の Manager 注入 API 名不一致（setManagers vs setManagersObject）により、ツール登録が失敗・未完になる経路がある。
-- ツール未登録または不完全登録のまま切替しようとして失敗、描画も開始できない。
-【根拠: 既存ドキュメントの指摘】
+D. AppCore 側は manager を new する前に existence check と try/catch を追加し、失敗時はデバッグ情報を出す（init を中断しても原因が特定しやすいようにする）。:contentReference[oaicite:4]{index=4}
 
-3) 継続描画停止できない/座標ズレ
-- PointerUp での確実な終了処理（forceEndDrawing 等）と座標変換の単一点集中が未徹底だと、描画の終了漏れやズレが残存する。
-【根拠: 既存ドキュメントの指摘】
+E. optional chaining 等のモダン構文は避ける（ESM/Bundler/トランスパイル禁止条件のため）。代わりに古典的なガード (if (obj && obj.prop) ...) を使う。
 
-────────────────────────────────────
-B. PixiJS v8 として正しい初期化フロー（最小の“正解”）
+-------------------------------------------------------------------------
+【起動フロー（簡潔で正しい順）】
+（必要なスクリプト順。HTML 内の <script> はこの順に並べる）
+1. minimal-deps.js（ポリフィルや軽いユーティリティ。名前空間初期化）
+2. utils/* （error-manager.js, config-manager.js, event-bus.js, coordinate-manager.js, navigation-manager.js, record-manager.js, shortcut-manager.js）
+3. managers/* （canvas-manager.js, tool-manager.js, 他の manager）
+4. assets/icons.js（アイコン置換ロジック等）
+5. tools/* （abstract-tool.js, pen-tool.js, eraser-tool.js 等）
+6. debug/phase15-integration-test.js （デバッグ用、任意）
+7. js/bootstrap.js（DOM ready → TegakiApplication.initialize() 呼び出し）
+8. js/main.js（もしあるなら UI 初期化等）
 
-基本原則（最小契約）:
-- すべての Manager は同一のライフサイクル契約を持つ。
-  1. configure(config): 設定注入（同期）
-  2. attach(ctx): Pixi Application や Stage/DOM 等の参照を束ねたコンテキスト注入（同期）
-  3. init(): 内部リソースの初期化（必要なら非同期を許容、ただし呼び側は await ていねいに）
-  4. isReady(): boolean — 現在の準備完了状態を返す（AppCore 側の共通確認点）
-  5. dispose(): 解放処理（任意）
-- AppCore 側は *必ず* feature-detect（関数存在確認）を行い、存在しない場合はエイリアス等で吸収する。
-- 順序制御（依存順）:
-  ConfigManager → CanvasManager（Pixi Application/Stage 構築）→ EventBus → NavigationManager → CoordinateManager（Canvas/Navigation を参照して座標系を確立）→ RecordManager → ToolManager → UI/Sidebar（icons.js 実体貼り込み）→ ShortcutManager
-- どの段でも isReady() が falsy / 欠如なら、エラーを投げずに “未準備のまま” ログ化し、後続をスキップ。最終的に “App 全体 isReady=false” として画面に明示（オーバーレイ）し、デバッグ可能にする。
+理由：utils が提供する isReady / EventBus / ErrorManager を managers が利用し、managers がツールや canvas を提供して初めて AppCore が安全に起動できるため。bootstrap は最後に実行。
 
-この「最小契約」と「依存順」を、v8_phase1rev40 の AppCore.initializeV8Managers と各 Manager に反映するのが最優先。
+-------------------------------------------------------------------------
+【設計ルール（守ること）】
+- すべての公開クラス/関数は window または window.Tegaki 名前空間に露出する。
+- 各ファイルは単一責務（single responsibility）に厳密に従う。
+- ES2023 の構文を用いるが、ブラウザネイティブで互換性がない機能（optional chaining 等）は使わない。
+- 例外発生箇所は try/catch で拾い、ErrorManager に渡す。
+- Manager の API 契約（少なくとも isReady(), init(), dispose() を持たせる）。未実装ならデフォルト実装を注入する。
 
-────────────────────────────────────
-C. ファイル単位の「最低限の修正」指示（コード掲載は控えめ／文章のみ）
+-------------------------------------------------------------------------
+【最小限の修正サンプル： tool-manager.js（完全置き換え用の安全版）】
+※実運用の全実装ではなく、安全に読み込めてエラーを出しやすい「置き換え用テンプレート」です。これにより SyntaxError を潰し、window.Tegaki.ToolManager が確実に存在する状態を作れます。
 
-1) js/utils/coordinate-manager.js
-- isReady(): boolean を新設。内部フラグ _ready を持ち、attach と init の完了時に true。
-- 既に ready 相当の状態管理があれば、isReady を単純委譲（ラッパ）で実装して互換性を作る。
-- screenToCanvas / canvasToScreen / world 変換などの公開 API を *このファイルに一極集中*。他所での計算/重複変換は禁止。
-- CanvasManager / NavigationManager からの参照は attach(ctx) で安全に受け取り、null/未設定ガードを徹底。
+--- コピーして tool-manager.js を丸ごと置き換えてください ---
+/* FILE: managers/tool-manager.js
+   RESPONSIBILITY: 安全な ToolManager 定義（ES2023 準拠だが optional-chaining 等は排除）
+*/
+(function(){
+  // 名前空間初期化
+  if (!window.Tegaki) window.Tegaki = {};
 
-2) js/app-core.js
-- initializeV8Managers 内で、各 Manager の関数存在チェックを行い、isReady が無ければ
-  - if (typeof m.isReady !== 'function') m.isReady = () => !!m.ready || !!m._ready;
-  のように安全なエイリアス関数を注入（「契約の片側吸収」）。
-- 依存順の厳守。CoordinateManager は CanvasManager と NavigationManager の attach 後に init。
-- Manager 列挙・初期化は for-of ループで一貫し、個別 try/catch で“単発失敗でも全体が落ちない”ように。最後に “どれが未就業か” をリスト表示する。
+  // シンプルなデフォルトエラー処理（ErrorManager がある場合はそちらに投げる）
+  function reportError(e){
+    try {
+      if (window.Tegaki.ErrorManagerInstance && typeof window.Tegaki.ErrorManagerInstance.handle === 'function') {
+        window.Tegaki.ErrorManagerInstance.handle(e);
+        return;
+      }
+    } catch(_) {}
+    console.error('[ToolManager] ', e);
+  }
 
-3) js/utils/minimal-deps.js
-- ここには “名前倉庫/予約” 以上のロジックは置かない（console にも「競合排除済み」とある）。抽象/具象の実装は必ず各専用ファイルに。
-- 既にそうなっているが、“抽象ツール/RecordManager 等の実装がここに混入しない” ことを定期確認する。
+  // ToolManager クラス（最低限の責務）
+  function ToolManagerConstructor(options){
+    this.options = options || {};
+    this.tools = {};
+    this.activeTool = null;
+    this._isReady = false;
+  }
 
-4) tools/abstract-tool.js
-- setManagersObject(managers) を「正規 API」とする。受け取った managers の必須キーの存在検証（canvasManager, coordinateManager, recordManager, eventBus など）を行い、足りなければ false を返す（throw は避け、上位で集約）。
-- 後方互換: setManagers(managers) は setManagersObject の単純委譲エイリアス。
-- onPointerDown / onPointerMove / onPointerUp の「終端保証」フックを用意（各具象ツールは super 呼び出し前提に）し、forceEndDrawing の共通化ポイントを提供する。
+  ToolManagerConstructor.prototype.init = function(){
+    try {
+      // 必要ならここで依存 manager の存在チェックを行う
+      // 例: if (!window.Tegaki.CanvasManager) throw new Error('CanvasManager required');
+      this._isReady = true;
+      return true;
+    } catch (e) {
+      reportError(e);
+      this._isReady = false;
+      return false;
+    }
+  };
 
-5) tools/pen-tool.js
-- super.setManagers(...) 呼び出しを super.setManagersObject(...) に統一。
-- PointerUp/Leave/Cancel で “必ず” forceEndDrawing を呼ぶ。二重呼び出しに耐える冪等実装（内部フラグで多重終了を無害化）。
-- 描画中 flag（isDrawing）とストローク一時バッファ（tempStroke）は AbstractTool 側の標準フィールドを利用。ペン側は「ペン固有の描画（太さ/アルファ/パターン）」ロジックに専念。
-- 変換は必ず coordinateManager.screenToCanvas(point) を通す。CanvasManager/NavigationManager/DOM から生値を拾って自前計算しない。
+  ToolManagerConstructor.prototype.isReady = function(){
+    return !!this._isReady;
+  };
 
-6) tools/eraser-tool.js
-- Manager 注入・イベント終端・座標変換の扱いは Pen と同型に揃える（API 統一）。相違は「消す対象の決定と適用」のみ。
+  ToolManagerConstructor.prototype.registerTool = function(key, toolInstance){
+    if (!key) throw new Error('registerTool: key required');
+    this.tools[key] = toolInstance;
+  };
 
-7) managers/tool-manager.js
-- registerTool(name, instance) 時に instance.setManagersObject(managers) の戻り値を検証し、false/例外なら登録を保留して警告ログ。App 全体を落とさない。
-- getTools() と setActiveTool(name) を公開。active 切替は「前ツールの終了→次ツールの準備」の順序を強制。Pointer キャプチャ中の切替も安全に（強制終了→切替→再開はしない）。
+  ToolManagerConstructor.prototype.getTool = function(key){
+    return this.tools[key] || null;
+  };
 
-8) js/tegaki-application.js / js/bootstrap.js / index.html
-- 初期化フェーズで「App 全体 isReady=false の場合は、画面に“未準備オーバーレイ”を出す」簡易 UI を追加。これにより“サイドバーが無い/キャンバスが無い”のが“クラッシュ”なのか“未準備”なのかを即判別できる。
-- サイドバー（assets/icons.js を使用）挿入は “App 全体 isReady=true” のイベント後（EventBus 経由）に行う。未準備なら何もしない。
-- 既存の Phase1.5 統合テスト（window.Tegaki.runPhase15Test）があるなら、App 準備完了時に 1 回だけ自動実行可能にするトグルを用意（デフォルト OFF）。【出典: console に “Phase1.5 統合テスト Loaded / runPhase15Test()” 記録あり】
+  ToolManagerConstructor.prototype.setActiveTool = function(key){
+    var t = this.getTool(key);
+    if (t) { this.activeTool = t; return true; }
+    return false;
+  };
 
-────────────────────────────────────
-D. 過剰分割/複雑化の抑制（フェイルセーフ設計の最小セット）
+  ToolManagerConstructor.prototype.dispose = function(){
+    // 簡易 dispose
+    this.tools = {};
+    this.activeTool = null;
+    this._isReady = false;
+  };
 
-- 「抽象レイヤと具象レイヤ」の境界を1段に制限する（AbstractTool → Pen/Eraser）。中間 Adapter/Helper クラスを増やさない。
-- “変換は CoordinateManager だけ” を原則化。各所に散った座標補正（DPR 補正や Container スケール）は撤去して集約。
-- Manager の「準備状態」の確認点は isReady() に一本化。ready, _ready, initialized などの多名義は廃止（残す場合は isReady エイリアスを必須化）。
-- AppCore は「関数存在チェックとエイリアス注入」で上位互換を担保しつつ、契約をログに出力（どの Manager がどの API を実装しているかを一覧で表示）。
+  // 公開（必ず constructor を直接公開する）
+  window.Tegaki.ToolManager = ToolManagerConstructor;
+})();
+--- end of file ---
 
-────────────────────────────────────
-E. 改修手順（AI に任せやすい順序・小さなコミット単位）
+解説：
+- 上のテンプレートは「class」構文を避けて function/prototype にしてあります。これにより古い JS エンジンでも構文エラーを出しにくくなります（optional-chaining・private fields 等を避けるため）。この修正で "Unexpected token '.'" の発生源を排除できるはずです。:contentReference[oaicite:5]{index=5}
 
-Step 0: 事前確認（そのまま実行してよい）
-- main ブランチとは独立した修正ブランチ v8_phase1rev40-fix1 を切る。
-- index.html で PixiJS v8 のロードと “WebGL2 フォールバック” は問題ないことが console に出ているので（v8.12.0/フォールバック表記あり）、グラフィック基盤は生きていると判断可能。【出典: console のバージョン/フォールック記録】
+-------------------------------------------------------------------------
+【AppCore 側の安全対策（app-core.js に入れるべき簡易ガード）】
+- manager を new するコードは次のように保護する：
+  try {
+    if (typeof window.Tegaki.ToolManager === 'function') {
+      this.toolManager = new window.Tegaki.ToolManager({/* options */});
+      if (!this.toolManager.init()) throw new Error('ToolManager.init() failed');
+    } else {
+      throw new Error('ToolManager not available or not a constructor');
+    }
+  } catch (e) {
+    // ここで ErrorManager に渡しつつ初期化を中断
+    console.error(e);
+    window.Tegaki.ErrorManagerInstance && window.Tegaki.ErrorManagerInstance.handle(e);
+    throw e; // もしくは graceful fallback
+  }
+- これにより「is not a constructor」のエラーメッセージ発生箇所を捕まえ、原因が「未定義」なのか「初期化失敗」なのかを区別できます。:contentReference[oaicite:6]{index=6}
 
-Step 1: CoordinateManager に isReady を追加
-- _ready=false 初期化 → attach 完了で半Ready → init 完了で true。
-- AppCore はここで止まっているので、まずこれだけで「サイドバー/キャンバスが未出現のまま初期化が進むか」を確認する。エラーが消えれば次へ。
-【根拠: 最優先で落ちている箇所へのホットフィックス】
+-------------------------------------------------------------------------
+【coordinate-manager の警告対策】
+- "未初期化状態での変換要求" は coordinate-manager の init チェック不足による呼出し順問題。
+- 対策：coordinate-manager 側に `screenToCanvas()` など外部公開 API の先頭で `if (!this.isReady()) { throw new Error('CoordinateManager not ready'); }` を入れる。呼び出し側（UI ハンドラ等）は try/catch でガードする。
 
-Step 2: AppCore の初期化に API フォールバック（エイリアス）を実装
-- 各 Manager について isReady が未定義ならダックタイピングで代替。これにより今後の“名称揺れ”での全体停止を予防。
-- 初期化の try/catch を細分化し、“どの Manager が未準備か” を一覧ログ化。落とさずに最後まで進める。
+-------------------------------------------------------------------------
+【読み込み順チェックリスト（デバッグ時に必ず確認）】
+1. index.html に managers/tool-manager.js が存在しているか（パス誤りで 404 になっていないか）。
+2. ブラウザの DevTools → Network で該当 .js が 200 で取れていることを確認。
+3. 該当ファイルを開いて（エディタ or コンソール）構文的に怪しい箇所（'?.' 、'??' 、'::'、private fields #name、トップレベル await 等）が無いことを確認。
+4. tool-manager.js を上のテンプレートに置き換え、一度動かして console の SyntaxError が消えたら次に進む。
+5. SyntaxError が消えたら次に「window.Tegaki.ToolManager is not a constructor」が消えるか確認。もし出るなら、ToolManager が関数であるか typeof をコンソールで確認する（typeof window.Tegaki.ToolManager）。
+6. まだだめなら app-core 側の try/catch がどんなメッセージを吐くか確認し、呼び出し側スタックを追う。
 
-Step 3: AbstractTool/ToolManager の契約統一
-- AbstractTool: setManagersObject 正規化 + setManagers エイリアス化。
-- ToolManager: 登録フェーズでの戻り値検証とエラー隔離、切替時の終端保証（前ツールの強制終了）を追加。
+-------------------------------------------------------------------------
+【補足（なぜ optional chaining を避けるか）】
+- ユーザー条件で Vite/TypeScript/ESM 等を禁止しているためトランスパイラ無しでブラウザネイティブのみで動かす必要があります。optional chaining 等が原因で古い実行環境や不可解なツールパイプラインで SyntaxError を誘発するケースがあるため、手作業で安全なガードコードに置き換えるのが最も堅実です。:contentReference[oaicite:7]{index=7}
 
-Step 4: Pen/Eraser の API 揃えと Pointer 終端保証
-- Pen: super.setManagersObject に統一、onPointerUp/Leave/Cancel で forceEndDrawing を必ず実行（冪等）。
-- Eraser: 上記と同型に揃える。相違点は hit-test/消去ロジックのみ。
+-------------------------------------------------------------------------
+【最後に（実務的な工程）】
+1) まず tool-manager.js を上のテンプレートで置き換え → ブラウザの SyntaxError が消えることを確認。
+2) index.html の読み込み順を上のフローに合わせる。
+3) app-core.js の manager 初期化ガードを入れる（致命的失敗時は ErrorManager に投げる）。
+4) coordinate-manager の isReady チェックを厳密にする。
+5) Pen 描画フロー：PenTool は abstract-tool を継承し、CanvasManager の API（例えば drawPath, beginStroke, endStroke）を呼ぶ形で、ToolManager が PenTool を登録する流れを確認する。
+6) すべて成功したらフェーズ別で元の機能を段階的に戻す（アイコン置換、詳細ツール機能など）。
 
-Step 5: 座標系の一元化
-- すべてのツール・Manager から座標計算を撤収し、CoordinateManager の screenToCanvas/canvasToScreen/world 変換に切り替え。DPR 補正/Container スケール/ナビゲーション変換をそこで完結させる。
-- 既存コードに二重補正が残っていないか gre p/検索で機械的に除去。
+-------------------------------------------------------------------------
+【引用／参照ファイル（今回検査に使ったファイル）】
+- app-core.js（起動・Manager 統合処理）。:contentReference[oaicite:8]{index=8}
+- managers/tool-manager.js（問題箇所のあるファイル）。:contentReference[oaicite:9]{index=9}
+- managers/canvas-manager.js（Canvas 初期化の責務があるファイル）。:contentReference[oaicite:10]{index=10}
+- bootstrap.js（startup フロー）。:contentReference[oaicite:11]{index=11}
 
-Step 6: サイドバー/アイコンの表示タイミングを “App 全体 isReady=true” 後に限定
-- initialize 完了イベント（EventBus）で icons.js に描画させる。未準備時は何もしない。これで「アイコンが先に失敗して全体を巻き込む」連鎖を断つ。
+-------------------------------------------------------------------------
+必要であれば、上記テンプレートと同じ形式で CanvasManager、coordinate-manager、app-core の「丸ごと置換用テンプレート」も提供します（今回はまず tool-manager.js の SyntaxError を確実に潰すのが先決なので、優先度を下げています）。状況が進んだら次のファイルを順次提示します。 
 
-Step 7: 統合テストの自動化フック
-- window.Tegaki.runPhase15Test を手動で叩けることは console から確認できるので、デバッグボタンか URL クエリ（?test=phase15）で起動できる小さなフックを追加。
-【出典: console の “Phase1.5 統合テスト Loaded / runPhase15Test()” 記録】
-
-────────────────────────────────────
-F. 受け入れ基準（Done の定義）
-
-必須:
-- 初期化が最後まで完走し、未例外で App 全体 isReady=true。
-- サイドバーアイコンが表示される（icons.js の描画が走る）。
-- キャンバスが 400x400 で生成される（console に既に「400x400 (DPR: 2)」の出力があるので、画面にも反映されること）。
-- ペンツールでドラッグ中のみ描画され、PointerUp/Leave/Cancel で確実に停止する（継続描画の消失）。
-- 画面外開始→画面内進入の描画時に破綻しない（必要なら後続 Phase で tempStroke 実装を有効化）。
-- Console に重大エラーが無い。警告は 3 件以内、内容が「未実装/将来フラグ」であることを明記。
-
-任意（推奨）:
-- isReady 一覧ダンプ（どの Manager が isReady を持つか/値は何か）をデバッグ出力で 1 行。
-- EventBus の “app:ready” ブロードキャストで Sidebar/UI の起動に統一。
-
-────────────────────────────────────
-G. なぜこれで「見通しが良くなる」のか（AI 改修しやすさの確保）
-
-- “Manager 契約 v1（configure/attach/init/isReady/dispose）” が最小・明快で、どのファイルを開いても同じ型を探せばよい。
-- “座標は CoordinateManager だけ” と決めることで、AI が修正時に座標ロジックを探し回る必要がなくなる（DRY/単一責任
+以上。何を先に置き換えたか（ファイル名）と、置き換え後のコンソールの最初の 10 行ログを教えてください。次のアクションを具体的に指示します。
+-------------------------------------------------------------------------
