@@ -1,7 +1,7 @@
-# 📘 Tegaki Rulebook v8
-**PixiJS v8基盤・分散ヘッダー運用指針**  
-Rev.2025-08-29-v8 | 恒久的指針・規約・品質基準
-
+# 📘 Tegaki Rulebook v8 - Design Contract
+**設計契約・責任分界・アーキテクチャ原則**  
+Rev.2025-08-31-Design-Contract | 契約条項のみ・サンプルコード排除版
+🚨最新の"pixi.js v8.12.0"を使用する事🚨
 ---
 
 ## 🎯 **基本理念（不変）**
@@ -11,7 +11,7 @@ Rev.2025-08-29-v8 | 恒久的指針・規約・品質基準
 - **高品質描画**: 60FPS安定・WebGPU活用・レスポンス最優先
 - **非破壊編集**: TPF（TegakiPathFormat）による完全可逆操作
 - **拡張性確保**: 段階的進化・プラグイン対応・アニメーション基盤
-- **ブラウザネイティブ**: HTML直開き・ES2023準拠・外部依存最小
+- **ブラウザネイティブ**: HTML直開き・ES2023準拠・車輪の再発明をしないよう相性の良いライブラリの積極活用。
 - **構文完整性とDRY・SOLID原則を遵守、ファイルの明確な責任分界化。
 
 ### 🚫 永続的禁止事項（Eternal Prohibitions）
@@ -26,436 +26,464 @@ Rev.2025-08-29-v8 | 恒久的指針・規約・品質基準
 
 ---
 
-## 🏗️ **PixiJS v8基盤アーキテクチャ**
+## 🎯 **Design Contract Philosophy**
 
-### 🎨 レンダリング基盤
-```javascript
-// ✅ v8準拠レンダラー初期化
-const app = new PIXI.Application({
-    preference: 'webgpu',  // WebGPU優先・WebGL2フォールバック
-    width: 400, height: 400,
-    backgroundColor: 0xffffff,
-    antialias: true,
-    resolution: window.devicePixelRatio || 1
-});
-
-// ✅ Container階層活用
-stage → drawContainer → layerContainer → strokeContainer
-     → uiContainer → toolContainer
-```
-
-### 📊 データフロー（TPF中心）
-```
-入力 → 座標変換 → TPFストローク生成 → RecordManager登録
-  ↓                                      ↓
-座標管理 ← CanvasManager ← 描画命令 ← TPF履歴
-  ↓                ↓           ↓
-Navigation ← CoordinateManager → Renderer（Pixi Graphics）
-```
-
-### 🔗 Manager間連携規則
-```
-AppCore（初期化統制）
-  ↓ 
-CanvasManager（描画基盤） → NavigationManager（カメラ）
-  ↓                         ↓
-ToolManager（入力制御） → CoordinateManager（座標変換）
-  ↓                    ↓
-RecordManager（履歴） → EventBus（非同期通信）
-```
+### 💎 Core Principles（不変原則）
+- **Single Responsibility**: 各ファイル・クラスは単一責務のみ
+- **Explicit Dependencies**: 依存関係は明示的に宣言・注入
+- **Immutable Contracts**: 一度確立したAPIは破壊的変更禁止
+- **Fail Fast**: エラーは隠蔽せず早期発見・即座報告
+- **Zero Ambiguity**: 曖昧な動作・フォールバック禁止
 
 ---
 
-## 📄 **分散ヘッダー管理体系**
+## 📋 **Contract 1: Manager Lifecycle（必須実装）**
 
-### 🎯 方針転換：集中 → 分散
-- **従来**: symbol-dictionary.txt で一括管理
-- **v8新方式**: 各ファイルヘッダーに一次情報を記載
-- **辞典役割**: ファイル横断検索・依存関係可視化・整合性検証
+### 🔄 統一ライフサイクルAPI
+```
+configure(config) → attach(context) → init() → isReady() → dispose()
+     ↓                ↓               ↓          ↓           ↓
+   設定注入        コンテキスト注入   初期化    準備確認    リソース解放
+```
 
-### 📝 ヘッダー必須タグ（厳格遵守）
+### 📝 Contract Details
+- **configure(config)**: 同期・設定オブジェクト注入・戻り値boolean
+- **attach(context)**: 同期・Pixi Application等の参照注入・戻り値boolean  
+- **init()**: 非同期可能（Promise対応）・内部初期化・完了後isReady=true
+- **isReady()**: 同期・準備完了判定・AppCoreが依存・戻り値boolean
+- **dispose()**: 同期/非同期対応・リソース解放・メモリリーク防止
 
-#### 🌐 全ファイル必須
+### 🚨 Lifecycle Violations
+- configure前のattach実行 → **CONTRACT VIOLATION**
+- init前のisReady()=true → **CONTRACT VIOLATION**  
+- dispose後のメソッド呼び出し → **CONTRACT VIOLATION**
+- ライフサイクルのスキップ → **CONTRACT VIOLATION**
+
+---
+
+## 📋 **Contract 2: Dependency Injection（依存注入契約）**
+
+### 🎯 統一注入インターフェース
+
+#### **Manager系**: setManagersObject(managers) Contract
+```
+入力: Object形式 { canvas: CanvasManager, tool: ToolManager, ... }
+処理: 1. 型検証 → 2. 必須Manager確認 → 3. 内部保存 → 4. 依存関係構築
+出力: boolean（成功=true、失敗=false）
+例外: 引数不正・必須Manager不足・型不整合時のみthrow
+```
+
+#### **Tool系**: setManagersObject(managers) Contract
+```
+入力: Object形式 { canvas: CanvasManager, coordinate: CoordinateManager, record: RecordManager }
+処理: 1. AbstractTool.setManagersObject()継承 → 2. Tool固有Manager追加保存
+出力: boolean（成功=true、失敗=false） 
+責務: Manager参照保存・依存関係確立・初期化準備
+```
+
+### 🚫 Injection Anti-Patterns
+- **Silent Fallback**: Manager不足を暗黙補完 → **FORBIDDEN**
+- **Direct Global Access**: window.Tegaki直接参照 → **FORBIDDEN**
+- **Circular Injection**: A→B、B→A の双方向注入 → **FORBIDDEN**
+- **Late Binding**: 使用時のManager探索 → **FORBIDDEN**
+
+---
+
+## 📋 **Contract 3: Event Flow（イベント契約）**
+
+### 🎮 Pointer Event Contract
+```
+DOM Event → bootstrap層 → CoordinateManager → ToolManager → ActiveTool
+    ↓            ↓              ↓               ↓           ↓
+  raw event  座標正規化    Canvas座標変換   Tool選択    描画実行
+```
+
+### 📝 Event Processing Rules
+1. **DOM Binding**: app.view（canvas要素）のみ・passive:false必須
+2. **Coordinate Normalization**: clientX/Y直接使用禁止・CoordinateManager必須経由
+3. **Tool Delegation**: ToolManager → ActiveTool への委譲処理
+4. **Event Lifecycle**: onPointerDown → onPointerMove* → onPointerUp の順序保証
+
+### 🚨 Event Violations
+- clientX/Y直接参照 → **CONTRACT VIOLATION**
+- DOM以外への直接バインド → **CONTRACT VIOLATION**
+- イベント順序の非保証 → **CONTRACT VIOLATION**
+- 座標変換の重複適用 → **CONTRACT VIOLATION**
+
+---
+
+## 📋 **Contract 4: Coordinate System（座標契約）**
+
+### 📐 座標変換チェーン（厳格）
+```
+DOM座標(clientX/Y) → CoordinateManager.toCanvasCoords() → Canvas座標(x/y)
+                              ↓
+NavigationManager.worldToView() → View座標(表示用)
+```
+
+### 🎯 Coordinate Rules
+- **Single Source of Truth**: CoordinateManagerが唯一の座標変換元
+- **DPR Handling**: devicePixelRatio補正は一度のみ・重複禁止
+- **Precision Control**: 小数点以下2桁固定・丸め誤差防止
+- **Bounds Checking**: キャンバス境界判定はCoordinateManager責務
+
+### 🚫 Coordinate Anti-Patterns
+- Tool内での独自座標計算 → **FORBIDDEN**
+- DPRの重複適用 → **FORBIDDEN**
+- 精度を考慮しない座標操作 → **FORBIDDEN**
+- 境界判定の重複実装 → **FORBIDDEN**
+
+---
+
+## 📋 **Contract 5: Tool Interface（ツール契約）**
+
+### 🛠️ Tool Required Interface
+```javascript
+// ✅ AbstractTool継承必須メソッド
+class CustomTool extends AbstractTool {
+    // 必須実装
+    onPointerDown(event) { /* 描画開始処理 */ }
+    onPointerMove(event) { /* 描画継続処理 */ }
+    onPointerUp(event)   { /* 描画終了処理 */ }
+    
+    // 必須実装
+    activate()           { /* ツール有効化 */ }
+    deactivate()         { /* ツール無効化 */ }
+    forceEndDrawing()    { /* 強制描画終了・冪等性保証 */ }
+    
+    // 必須実装
+    getState()           { /* 現在状態返却 */ }
+    destroy()            { /* リソース解放 */ }
+}
+```
+
+### 🎨 Drawing Operation Contract
+```
+startOperation() → addPoint() → addPoint() → ... → endOperation()
+     ↓               ↓            ↓                      ↓
+RecordManager    座標追加    Graphics更新           TPF確定
+```
+
+### 🚫 Tool Violations
+- RecordManager経由しない描画 → **CONTRACT VIOLATION**
+- forceEndDrawing()の非冪等実装 → **CONTRACT VIOLATION**
+- activate/deactivate非対応 → **CONTRACT VIOLATION**
+- 状態管理の直接操作 → **CONTRACT VIOLATION**
+
+---
+
+## 📋 **Contract 6: Record System（記録契約）**
+
+### 📝 TPF Operation Contract
+```javascript
+// ✅ 正規TPF操作フロー
+RecordManager.startOperation(kind, initialPoints?)
+    ↓
+RecordManager.addPoint(canvasPoint) 
+    ↓ (繰り返し)
+RecordManager.endOperation(metadata)
+    ↓
+TPFStroke生成・履歴追加・EventBus通知
+```
+
+### 🎯 TPF Data Integrity
+- **UUID Uniqueness**: Stroke IDは重複禁止・UUID必須
+- **Point Validation**: 座標は数値のみ・NaN/null/undefined禁止
+- **Metadata Required**: meta フィールドは必須・省略禁止
+- **Kind Strict**: 'stroke'|'erase'のみ許可・文字列厳密
+
+### 🚫 Record Violations
+- 直接TPFStroke生成 → **CONTRACT VIOLATION**
+- RecordManager経由しない履歴操作 → **CONTRACT VIOLATION**
+- TPF構造の部分変更 → **CONTRACT VIOLATION**
+- 不完全データの保存 → **CONTRACT VIOLATION**
+
+---
+
+## 📋 **Contract 7: Error Handling（エラー契約）**
+
+### 🚨 Error Level Contract
+```
+CRITICAL → throw Error       // 初期化失敗・アプリ継続不可
+ERROR    → return false      // 処理失敗・回復可能・ログ必須
+WARNING  → console.warn      // 一時的問題・継続可能
+INFO     → console.log       // 正常動作情報・開発用
+DEBUG    → console.debug     // 詳細トレース・本番非出力
+```
+
+### 🎯 Error Response Rules
+- **Fast Fail**: 致命的エラーは即座にthrow・隠蔽禁止
+- **Graceful Degradation**: 可能な場合のみ・必ずログ出力
+- **Error Context**: エラー発生時は十分なコンテキスト情報付与
+- **Recovery Path**: エラー後の回復手順を明示
+
+### 🚫 Error Anti-Patterns
+- Silent Error Swallow → **FORBIDDEN**
+- 未定義エラーの無視 → **FORBIDDEN**
+- コンテキスト不明なエラー → **FORBIDDEN**
+- エラー後の暗黙継続 → **FORBIDDEN**
+
+---
+
+## 📋 **Contract 8: Performance（性能契約）**
+
+### ⚡ Performance Targets
+- **Frame Rate**: 60FPS維持・16ms以内処理完了
+- **Memory Usage**: 描画後の即座解放・リーク禁止
+- **Startup Time**: 500ms以内初期化完了・遅延最小化  
+- **Response Time**: ポインター入力から描画まで50ms以内
+
+### 🎯 Optimization Rules
+- **RAF Usage**: 重い処理はrequestAnimationFrame内で実行
+- **Object Pooling**: 大量作成オブジェクトはプール活用
+- **Lazy Loading**: 使用時ロード・初期化コスト削減
+- **Cleanup Required**: deactivate/destroy時の確実なリソース解放
+
+### 🚫 Performance Violations
+- 16ms超過処理 → **CONTRACT VIOLATION**
+- メモリリーク → **CONTRACT VIOLATION**
+- 不要な再計算 → **CONTRACT VIOLATION**  
+- リソース未解放 → **CONTRACT VIOLATION**
+
+---
+
+## 📋 **Contract 9: Testing（テスト契約）**
+
+### 🧪 Required Testing Interface
+```javascript
+// ✅ 全Manager・Tool必須実装
+class SomeManager {
+    getDebugInfo() { /* デバッグ情報返却 */ }
+    isReady() { /* 準備状態返却 */ }
+    resetForTesting() { /* テスト用リセット */ }
+}
+```
+
+### 🎯 Testing Standards
+- **Debug Info**: 現在状態・依存関係・エラー履歴を含む
+- **Ready State**: isReady()で正確な準備状態返却
+- **Test Reset**: テスト間での状態完全リセット
+- **Error Simulation**: エラー状態再現機能
+
+### 🚫 Testing Violations
+- getDebugInfo()未実装 → **CONTRACT VIOLATION**
+- isReady()の不正確な返却 → **CONTRACT VIOLATION**
+- テスト間状態リーク → **CONTRACT VIOLATION**
+- デバッグ情報不足 → **CONTRACT VIOLATION**
+
+---
+
+## 📋 **Contract 10: Architectural Boundaries（境界契約）**
+
+### 🏗️ Layer Boundaries
+```
+UI Layer (icons.js) ← EventBus → AppCore Layer (app-core.js)
+                                      ↓
+                               Manager Layer (各Manager)
+                                      ↓  
+                               Tool Layer (AbstractTool継承)
+                                      ↓
+                              Graphics Layer (PixiJS v8)
+```
+
+### 🎯 Boundary Rules
+- **Layer Skip Prohibition**: 層をスキップした直接アクセス禁止
+- **Upward Communication**: 下位層から上位層へはEventBusのみ
+- **Downward Injection**: 上位層から下位層へは依存注入のみ
+- **Peer Communication**: 同層間の直接通信禁止
+
+### 🚫 Boundary Violations
+- UI層からManager直接操作 → **ARCHITECTURAL VIOLATION**
+- Tool層からAppCore直接アクセス → **ARCHITECTURAL VIOLATION**
+- Manager間の相互直接呼び出し → **ARCHITECTURAL VIOLATION**
+- 暗黙的グローバル参照 → **ARCHITECTURAL VIOLATION**
+
+---
+
+## 📋 **Contract 11: Global Namespace（名前空間契約）**
+
+### 🌐 Namespace Structure Contract
+```javascript
+window.Tegaki = {
+    // Manager Instances（Instance接尾辞必須）
+    CanvasManagerInstance: CanvasManager,
+    ToolManagerInstance: ToolManager,
+    
+    // Tool Classes（Tools.配下必須）  
+    Tools: {
+        AbstractTool: AbstractTool,
+        PenTool: PenTool,
+        EraserTool: EraserTool
+    },
+    
+    // Application Core
+    TegakiApplicationInstance: TegakiApplication,
+    AppCoreInstance: AppCore
+};
+```
+
+### 🎯 Naming Rules
+- **Manager Instance**: `[ClassName]Instance` 形式必須
+- **Tool Classes**: `Tools.[ClassName]` 階層必須
+- **Constants**: `Constants.[CONSTANT_NAME]` 大文字必須
+- **Case Consistency**: PascalCase(クラス)・camelCase(インスタンス)厳守
+
+### 🚫 Namespace Violations
+- Instance接尾辞なしManager登録 → **NAMING VIOLATION**
+- Tools階層外のTool登録 → **NAMING VIOLATION**
+- camelCase/PascalCase混在 → **NAMING VIOLATION**
+- 名前空間汚染 → **NAMESPACE VIOLATION**
+
+---
+
+## 📋 **Contract 12: PixiJS v8 Integration（v8統合契約）**
+
+### 🎨 v8 API Exclusive Usage
+```javascript
+// ✅ v8準拠Graphics操作
+const graphics = new PIXI.Graphics();
+graphics.circle(x, y, radius).fill(color);        // v8新API
+graphics.roundRect(x, y, w, h, radius).stroke({   // v8新API
+    color: 0xff0000, 
+    width: 2 
+});
+
+// 🚫 v7互換API使用禁止
+graphics.beginFill(color);                        // v7廃止
+graphics.drawCircle(x, y, radius);                // v7廃止  
+graphics.endFill();                               // v7廃止
+```
+
+### 🎯 v8 Container Hierarchy
+```
+Application.stage
+├── backgroundContainer (背景・グリッド)
+├── drawContainer (メイン描画・Tool対象)
+│   ├── layerContainer[0] (default layer)
+│   └── tempStrokeContainer (一時描画)
+├── uiContainer (UI要素)
+└── debugContainer (開発用)
+```
+
+### 🚫 v8 Integration Violations
+- v7 API使用 → **VERSION VIOLATION**
+- Container階層無視 → **ARCHITECTURE VIOLATION**
+- WebGPU/WebGL混在対応 → **COMPLEXITY VIOLATION**
+- v8特性未活用 → **PERFORMANCE VIOLATION**
+
+---
+
+## 📋 **Contract 13: File Header（ヘッダー契約）**
+
+### 📝 Mandatory Header Tags
 ```javascript
 /**
- * 📄 FILE: [ファイルパス]
- * 📌 RESPONSIBILITY: [このファイルの単一責務]
- *
- * @provides
- *   - [外部公開メソッド・クラス一覧]
- *   - [必ずコロンハイフン形式で記載]
- *
- * @uses  
- *   - [他ファイル呼び出しメソッド一覧]
- *   - [Manager.method() 形式で記載]
- *
- * @initflow
- *   1. [初期化] → 2. [処理] → 3. [終了]
- *   [必ず番号付き順序で記載]
- *
- * @forbids
- *   💀 双方向依存禁止
- *   🚫 フォールバック禁止  
- *   🚫 フェイルセーフ禁止
- *   🚫 v7/v8二重管理禁止
- *   [追加禁止事項があれば記載]
- *
- * @manager-key
- *   window.Tegaki.[ManagerName]Instance
- *   [グローバル登録キー・必ず実装と一致]
- *
- * @dependencies-strict
- *   REQUIRED: [必須依存ファイル]
- *   OPTIONAL: [任意依存ファイル]  
- *   FORBIDDEN: [依存禁止ファイル]
- *
- * @integration-flow
- *   [上位からの呼出し経路を明示]
- *   AppCore → Manager.initialize → Tool.setup
- *
- * @method-naming-rules
- *   操作系: startOperation() / endOperation()
- *   取得系: getSomething() / getCurrentSomething()
- *   設定系: setSomething() / updateSomething()
+ * @provides    - 外部公開メソッド・クラス（実装済みのみ）
+ * @uses        - 他ファイル依存メソッド（存在確認済みのみ）
+ * @initflow    - 初期化順序（番号付き必須）
+ * @forbids     - 禁止事項（最低限5項目必須）
+ * @manager-key - グローバル登録キー（実装と完全一致）
+ * @dependencies-strict - REQUIRED/OPTIONAL/FORBIDDEN分類
+ * @integration-flow    - 上位からの呼び出し経路
+ * @method-naming-rules - API命名規則遵守
  */
 ```
 
-#### 🎯 ファイル種別追加タグ
+### 🎯 Header Quality Rules
+- **Accuracy**: 実装とヘッダーの完全一致
+- **Completeness**: 必須タグの完全記載
+- **Consistency**: プロジェクト全体での用語統一
+- **Traceability**: 変更履歴の明確な記録
 
-##### 🏢 Manager系ファイル
-```javascript
-* @error-handling
-*   throw: 初期化失敗・必須パラメータ不正
-*   false: オプション処理失敗・設定更新失敗
-*   log: 一時的エラー・警告レベル
-*
-* @testing-hooks  
-*   - getDebugInfo(): Object
-*   - isReady(): boolean
-*   - resetForTesting(): void
-```
-
-##### 🛠️ Tool系/描画処理ファイル
-```javascript
-* @state-management
-*   直接プロパティ操作禁止
-*   必ず専用getter/setter経由
-*   状態変更は必ずEventBus通知
-*
-* @performance-notes
-*   16ms目標・60FPS維持
-*   WebGPU最適化対象
-*   deactivate時の確実な解放
-```
-
-### 🔍 ヘッダー記載検証ルール
-
-#### ✅ 記載前確認必須
-1. **@provides確認**: 実装済みメソッドのみ記載
-2. **@uses確認**: 呼び出し先ファイルで@provides確認
-3. **@manager-key確認**: 実装クラスと文字列完全一致
-4. **循環依存チェック**: @dependencies-strictで防止
-
-#### 🚨 禁止されるヘッダー記載
-```javascript
-// ❌ 未実装メソッドの記載
-* @provides
-*   - drawCircle()  // ← 未実装なのに記載は禁止
-
-// ❌ 存在しないメソッド呼び出し
-* @uses
-*   - SomeManager.nonExistentMethod()  // ← 存在確認必須
-
-// ❌ 曖昧な初期化フロー  
-* @initflow
-*   1. 適当に初期化 → 2. なんとなく処理  // ← 具体性必須
-```
+### 🚫 Header Violations
+- 未実装メソッドの@provides記載 → **DOCUMENTATION VIOLATION**
+- 存在しないメソッドの@uses記載 → **INTEGRATION VIOLATION**
+- @manager-keyと実装の不一致 → **REGISTRY VIOLATION**
+- 必須タグの欠落 → **COMPLIANCE VIOLATION**
 
 ---
 
-## 🎨 **TPF（TegakiPathFormat v0.2）規約**
+## 📋 **Contract 14: Memory Management（メモリ契約）**
 
-### 📋 データ構造定義（厳格）
-```javascript
-// ✅ 正規TPFStroke構造
-const TPFStroke = {
-    id: string,              // UUID必須・重複禁止
-    kind: 'stroke'|'erase',  // 種別・厳密enum
-    layer: string,           // Phase1.5は'default'固定
-    color: string,           // '#rrggbb'形式厳守
-    width: number,           // px単位・正数のみ
-    opacity: number,         // 0.0-1.0範囲厳守
-    points: Point[],         // 生座標配列・必須
-    path?: string,           // SVG 'd'属性・Phase1.5任意
-    bounds?: Rectangle,      // 最適化用・Phase1.5任意
-    meta: {                  // メタ情報・必須
-        created: timestamp,
-        tool: 'pen'|'eraser',
-        engine: 'pixi-v8'    // v8識別子
-    }
-};
-
-// ✅ Point構造
-const Point = {
-    x: number,        // キャンバス座標・必須
-    y: number,        // キャンバス座標・必須  
-    pressure?: number,// 0.0-1.0・Phase1.5任意
-    time?: number     // timestamp・Phase1.5任意
-};
+### 🧹 Resource Lifecycle
+```
+acquire → use → release → verify
+   ↓       ↓       ↓        ↓
+リソース取得 → 利用 → 明示的解放 → リーク検証
 ```
 
-### 🔄 TPF操作フロー（厳守）
-```javascript
-// ✅ 正規フロー
-1. RecordManager.startOperation('stroke', initialPoints?)
-2. 描画中: RecordManager.addPoint(point)
-3. 描画終了: RecordManager.endOperation(metadata)
-4. 自動: TPF履歴追加・bounds計算・EventBus通知
+### 🎯 Memory Rules
+- **Explicit Cleanup**: destroy()/dispose()での明示的解放
+- **Event Listener Cleanup**: addEventListener後の確実なremoveEventListener
+- **Graphics Cleanup**: PixiJS Graphics/Container の destroy()実行
+- **Reference Cleanup**: 循環参照回避・null代入
 
-// 🚫 禁止フロー
-- 直接TPFStroke生成・Graphicsへ直接描画
-- RecordManager経由しない履歴操作
-- TPF構造の部分的変更・不完全データ
-```
+### 🚫 Memory Violations
+- イベントリスナー未解放 → **MEMORY LEAK**
+- Graphics/Container未破棄 → **MEMORY LEAK**
+- 循環参照作成 → **MEMORY LEAK**
+- WeakMap未活用（該当時） → **MEMORY LEAK**
 
 ---
 
-## 🌐 **グローバル名前空間規約**
+## 📋 **Contract 15: External Dependency（外部依存契約）**
 
-### 🎯 window.Tegaki階層構造
-```javascript
-window.Tegaki = {
-    // === Core Managers ===
-    CanvasManagerInstance: CanvasManager,
-    ToolManagerInstance: ToolManager,
-    RecordManagerInstance: RecordManager,
-    
-    // === Utility Managers ===  
-    CoordinateManagerInstance: CoordinateManager,
-    NavigationManagerInstance: NavigationManager,
-    EventBusInstance: EventBus,
-    ConfigManagerInstance: ConfigManager,
-    ErrorManagerInstance: ErrorManager,
-    ShortcutManagerInstance: ShortcutManager,
-    
-    // === Application Core ===
-    TegakiApplicationInstance: TegakiApplication,
-    AppCoreInstance: AppCore,
-    
-    // === Tools Registry ===
-    Tools: {
-        AbstractTool: AbstractTool,
-        PenTool: PenTool, 
-        EraserTool: EraserTool,
-        // Phase2+: SelectionTool, TransformTool...
-    },
-    
-    // === Constants & Enums ===
-    Constants: {
-        DEFAULT_CANVAS_SIZE: { width: 400, height: 400 },
-        TPF_VERSION: '0.2',
-        ENGINE_VERSION: 'pixi-v8'
-    },
-    
-    // === Debugging & Utils ===
-    Debug: {
-        getGlobalDebugInfo: () => Object,
-        performanceMonitor?: PerformanceMonitor  // Phase3
-    }
-};
-```
+### 📦 Approved Dependencies
+- **PixiJS v8.12.0**: 描画エンジン・WebGPU/WebGL対応
+- **Browser APIs**: DOM・Canvas・Pointer Events・localStorage
 
-### 📝 命名規則（厳格）
+### 🚫 Forbidden Dependencies
+- **Build Tools**: Vite・TypeScript・Webpack・ESM bundlers
+- **Framework**: React・Vue・Angular・jQuery
+- **Polyfills**: babel・core-js・Legacy browser support
+- **CDN**: 外部CDN・リモートスクリプト（開発時除く）
 
-#### 🏢 Manager/Core系
-```javascript
-// ✅ 正規命名
-class SomethingManager { }        // PascalCase
-const instanceName = new Manager(); // camelCase
-window.Tegaki.SomethingManagerInstance  // Instance接尾辞
-
-// 🚫 禁止命名  
-class somethingmanager { }        // 小文字禁止
-class Something_Manager { }       // アンダースコア禁止
-```
-
-#### 🛠️ Method系
-```javascript
-// ✅ 統一API命名
-startOperation() / endOperation()    // 操作開始/終了
-getCurrentSomething()               // 現在状態取得
-setSomething() / updateSomething()  // 設定/更新
-initializeSomething()              // 初期化
-cleanupSomething()                 // 解放
-
-// 🚫  避けるべき命名
-doSomething() / makeSomething()    // 曖昧動詞
-getSomething() / getSomething2()   // 重複・連番
-```
+### 🎯 Dependency Rules
+- **Vanilla JavaScript**: ES2023準拠・ネイティブブラウザAPI優先
+- **Direct Loading**: HTML script tagによる直接読み込み
+- **No Transpilation**: 動的変換なし・ブラウザ直接実行
+- **Offline Capable**: ネットワーク無しでも基本機能動作
 
 ---
 
-## 🚀 **初期化順序・依存管理**
+## 📊 **Contract Verification（契約検証）**
 
-### 📋 厳格初期化チェーン
-```javascript
-// ✅ Phase1.5確立済みフロー
-async function initializeTegakiApplication() {
-    // Step 1: 基盤Manager
-    const canvasManager = new CanvasManager();
-    await canvasManager.initialize();  // WebGPU/WebGL自動選択
-    if (!canvasManager.isV8Ready) throw new Error('PixiJS v8初期化失敗');
-    
-    // Step 2: 座標・Navigation Manager
-    const coordinateManager = new CoordinateManager(canvasManager);
-    const navigationManager = new NavigationManager(canvasManager);
-    
-    // Step 3: Record・EventBus
-    const recordManager = new RecordManager();
-    const eventBus = new EventBus();
-    
-    // Step 4: Tool Manager・統合
-    const toolManager = new ToolManager({
-        canvasManager, navigationManager, 
-        coordinateManager, recordManager
-    });
-    await toolManager.initializeV8Tools();
-    
-    // Step 5: Application Ready
-    window.Tegaki.TegakiApplicationInstance.isReady = true;
-    console.log('✅ Tegaki v8 Application Ready');
-}
+### ✅ Verification Checklist
+```
+[ ] Manager Lifecycle API実装完了
+[ ] Dependency Injection正常動作
+[ ] Event Flow順序保証
+[ ] Coordinate System単一経路
+[ ] Tool Interface完全実装
+[ ] Record System TPF準拠
+[ ] Error Handling適切分類
+[ ] Performance Target達成
+[ ] Testing Interface完備
+[ ] Architectural Boundary遵守
+[ ] Global Namespace適切
+[ ] PixiJS v8 API限定使用
+[ ] File Header完全記載
+[ ] Memory Management確実
+[ ] External Dependency準拠
 ```
 
-### 🔗 依存関係マトリックス
-```
-                Canvas  Tool  Record  Coord  Nav   Event
-CanvasManager     -     ❌     ❌     ❌    ❌      ✅
-ToolManager      ✅     -      ✅     ✅    ✅      ✅  
-RecordManager    ❌     ❌     -      ❌    ❌      ✅
-CoordinateManager✅     ❌     ❌     -     ❌      ❌
-NavigationManager✅     ❌     ❌     ✅    -       ✅
-EventBus         ❌     ❌     ❌     ❌    ❌      -
-
-✅=依存OK ❌=依存禁止
-```
+### 🎯 Contract Compliance Rating
+- **A+**: 全Contract 100%遵守・品質保証完了
+- **A**: 主要Contract遵守・軽微違反のみ
+- **B**: 重要Contract遵守・改修要項あり
+- **C**: Contract違反多数・設計見直し必要
+- **F**: Contract根本違反・アーキテクチャ破綻
 
 ---
 
-## 🎨 **描画・座標系統一規約**
+**📝 重要注意**: 
+- このRulebookは **Design Contract** であり、実装例・サンプルコードは含まない
+- 具体的API仕様・データ構造は **Symbol Dictionary** を参照
+- Contract違反は設計上の欠陥であり、緊急修正対象とする
+- Phase進化時もContract安定性を最優先とする
 
-### 📐 座標変換フロー（厳守）
-```javascript
-// ✅ 正規座標変換チェーン
-Client座標(DOM) → CoordinateManager.toCanvasCoords() 
-              → Canvas座標(描画空間)
-              → NavigationManager.worldToView() 
-              → View座標(画面表示)
-```
-
-### 🎭 描画レイヤー階層
-```javascript
-// ✅ v8 Container階層活用
-PIXI.Application.stage
-├── backgroundContainer    // 背景・グリッド
-├── drawContainer         // メイン描画領域
-│   ├── layerContainer[0] // レイヤー0(default)  
-│   ├── layerContainer[1] // レイヤー1... (Phase2+)
-│   └── tempStrokeContainer // 一時描画
-├── uiContainer           // UI要素・ツール表示
-└── debugContainer        // デバッグ情報（開発時）
-```
-
-### 🖌️ 描画品質規約
-```javascript
-// ✅ 描画設定標準
-const strokeStyle = {
-    width: number,        // 1-100px推奨
-    color: 0xrrggbb,     // 16進数カラー
-    alpha: 0.0-1.0,      // 透明度
-    cap: 'round',        // 線端形状
-    join: 'round',       // 線接続形状
-    miterLimit: 10       // マイター制限
-};
-
-// 🎯 パフォーマンス目標
-- 60FPS維持（WebGPU環境）
-- 16ms描画時間以内
-- メモリリーク防止（描画後cleanup必須）
-```
-
----
-
-## 🧪 **テスト・デバッグ規約**
-
-### 🔍 必須デバッグ情報
-```javascript
-// ✅ 各Managerに必須実装
-getDebugInfo() {
-    return {
-        className: this.constructor.name,
-        isReady: this.isReady,
-        currentState: this.getCurrentState(),
-        dependencies: this.getDependencies(),
-        memoryUsage: this.getMemoryUsage(),
-        lastError: this.lastError || null
-    };
-}
-```
-
-### 🚨 エラー処理階層
-```javascript
-// ✅ エラー処理方針
-CRITICAL → throw Error          // 初期化失敗・必須リソース
-ERROR    → return false         // 処理失敗・回復可能
-WARNING  → console.warn + log   // 一時的問題・継続可能
-INFO     → console.log          // 正常動作情報
-DEBUG    → console.debug        // 詳細トレース情報
-```
-
-### 🎯 品質検証チェックリスト
-```
-[ ] ヘッダー記載完全性（全必須タグ記載）
-[ ] @provides/@uses整合性（呼び出し先存在確認）
-[ ] @manager-key実装一致（文字列・インスタンス）
-[ ] 循環依存不存在（@dependencies-strict検証）
-[ ] 初期化順序遵守（isReady状態確認）
-[ ] エラー処理適切（throw/false/log使い分け）
-[ ] メモリリーク防止（cleanup実装確認）
-[ ] TPF構造準拠（正規フロー・データ整合性）
-```
-
----
-
-## 🚀 **Phase進化戦略**
-
-### 📊 品質保証段階
-```
-Phase1.5: 基盤安定化・TPF確立・v8移行完了
-    ↓ 
-Phase2.0: レイヤー管理・選択変形・高度描画
-    ↓
-Phase3.0: アニメーション・出力機能・最適化
-    ↓
-Plugin Era: プラグイン対応・サードパーティ拡張
-```
-
-### 🎯 各Phase完了基準
-- **機能完全動作**: 全機能エラーなし動作
-- **性能基準達成**: 60FPS・メモリ使用量基準内
-- **ヘッダー整備完了**: 全ファイル規約準拠
-- **依存関係健全**: 循環依存・架空メソッド皆無
-- **テスト網羅**: 主要機能・エラーケーステスト
-
----
-
-## 📋 **Rulebook改訂履歴**
-
-| Version | Date | Changes |
-|---------|------|---------|
-| v7 | 2025-08-29 | 初版・v7基盤ルール策定 |
-| v8 | 2025-08-29 | PixiJS v8対応・分散ヘッダー導入・TPF v0.2準拠 |
-
+**🎯 成功基準**: 全Contract遵守によるアーキテクチャ安定性確保
+**🚫 禁止事項**: Contract迂回・暗黙修正・複雑化による問題隠蔽
 ---
 
 **📝 重要**: このRulebookは恒久的指針であり、技術変更に応じて最小限の改訂のみ行う  
