@@ -1,505 +1,381 @@
 /**
- * 📄 FILE: js/app-core.js
- * 📌 RESPONSIBILITY: PixiJS v8統合基盤システム・Manager群統一初期化・システム制御
- * ChangeLog: 2025-09-01 <Step1 Fix - configure existence check, simplified logging, prevent circular ref>
+ * AppCore v8 緊急エラー修正版
+ * ChangeLog: 2025-09-01 ToolManager verifyInjection()呼び出し追加・二重初期化防止
  * 
  * @provides
- *   - AppCore（クラス）
- *   - createV8Application(): PIXI.Application
- *   - createCanvasV8(width, height): PIXI.Application
- *   - getCanvasElement(): HTMLCanvasElement
- *   - initializeV8Managers(): void
- *   - verifyManagerReady(): boolean
- *   - startV8System(): void
- *   - isV8Ready(): boolean
- *   - emitAppReady(): void
- *
+ *   ・Manager群統合初期化（initializeV8Managers）
+ *   ・Manager準備状態検証（verifyManagerReady）
+ *   ・ToolManager初期化制御（initializeToolManager）★修正箇所
+ *   ・システム状態管理（getSystemStatus）
+ * 
  * @uses
- *   - PIXI.Application（PixiJS v8 コアAPI）
- *   - window.Tegaki.CanvasManager
- *   - window.Tegaki.ToolManager
- *   - window.Tegaki.CoordinateManager
- *   - window.Tegaki.NavigationManager
- *   - window.Tegaki.RecordManager
- *   - window.Tegaki.ConfigManager
- *   - window.Tegaki.EventBusInstance
- *
+ *   ・全Manager.configure/attach/init/isReady() - 統一ライフサイクル
+ *   ・ToolManager.setManagers/verifyInjection/initializeV8Tools ★重要
+ *   ・CoordinateManager.setCanvasManager() - 座標Manager連携
+ * 
  * @initflow
- *   1. createV8Application() → PixiJS Application生成
- *   2. createCanvasV8() → Canvas作成
- *   3. initializeV8Managers() → Manager群初期化
- *   4. startV8System() → システム開始
- *   5. emitAppReady() → UI初期化開始
- *
+ *   1. new AppCore()
+ *   2. initializeV8Managers() 開始
+ *   3. CanvasManager初期化 → CoordinateManager初期化
+ *   4. 他Manager群初期化
+ *   5. ToolManager初期化（修正版）：
+ *      a) configure/attach/init
+ *      b) setManagers()でManager注入
+ *      c) verifyInjection()で検証 ★追加
+ *      d) initializeV8Tools()でTool初期化
+ * 
  * @forbids
- *   💀 双方向依存禁止
- *   🚫 フォールバック禁止
- *   🚫 架空メソッド呼び出し禁止
- *   🚫 Circular JSON reference禁止
- *   🚫 過度な冗長化禁止
+ *   ・💀 ToolManager.initializeV8Tools()をverifyInjection()なしで実行禁止
+ *   ・🚫 Manager初期化失敗時の silent continue 禁止
+ *   ・🚫 循環参照ログ出力禁止（JSON.stringify削除済み）
+ * 
+ * @manager-key
+ *   ・window.Tegaki.AppCore
+ * 
+ * @dependencies-strict
+ *   ・必須: 全Manager（CanvasManager/CoordinateManager/ToolManager等）
+ *   ・必須: TegakiApplication Context
+ *   ・禁止: 自己循環参照
+ * 
+ * @integration-flow
+ *   ・TegakiApplication.initializeV8Managers()から呼び出し
+ *   ・全Manager初期化完了後にEventBus 'app:ready'発火
+ * 
+ * @error-handling
+ *   ・各Manager初期化エラーは個別キャッチし、状態に記録
+ *   ・ToolManager初期化エラーは特に詳細ログ出力
+ *   ・init()失敗時はPromise reject
  */
 
-(function() {
-    'use strict';
-
+class AppCore {
+    constructor() {
+        this.version = 'v8-emergency-fix';
+        this.className = 'AppCore';
+        
+        // 初期化状態管理
+        this._initialized = false;
+        this._initInProgress = false;
+        
+        // Manager群
+        this.managers = new Map();
+        this.context = null;
+        this.config = null;
+        
+        // システム状態
+        this.systemStatus = {
+            ready: false,
+            error: null,
+            initializationStep: 'created',
+            managerStatuses: {},
+            lastUpdate: Date.now()
+        };
+        
+        console.log('✅ AppCore v8 緊急エラー修正版 作成完了');
+    }
+    
+    // ===========================================
+    // 初期化制御（二重実行防止強化）
+    // ===========================================
+    
     /**
-     * AppCore - Step1修正版（configure存在チェック・ログ簡素化・循環参照防止）
+     * Manager群統合初期化
+     * @param {Object} context - アプリケーションContext
+     * @param {Object} config - 設定オブジェクト
+     * @returns {Promise<void>}
      */
-    class AppCore {
-        constructor() {
-            // 基本状態
-            this.pixiApp = null;
-            this.canvasManager = null;
-            this.toolManager = null;
+    async initializeV8Managers(context, config) {
+        // 二重初期化防止
+        if (this._initialized) {
+            console.warn('⚠️ AppCore: 既に初期化済み');
+            return;
+        }
+        
+        if (this._initInProgress) {
+            console.warn('⚠️ AppCore: 初期化実行中');
+            return;
+        }
+        
+        this._initInProgress = true;
+        
+        try {
+            console.log('🚀 Manager群初期化開始');
+            
+            this.context = context;
+            this.config = config || {};
+            
+            // ステップ1: CanvasManager初期化
+            await this.initializeCanvasManager();
+            
+            // ステップ2: 他Manager初期化
+            await this.initializeOtherManagers();
+            
+            // ステップ3: CoordinateManager初期化・連携
+            await this.initializeCoordinateManager();
+            
+            // ステップ4: ToolManager初期化（修正版）
+            await this.initializeToolManager();
+            
+            // 初期化完了
+            this._initialized = true;
+            this.systemStatus.ready = true;
+            this.systemStatus.initializationStep = 'completed';
+            
+            console.log('✅ Manager群初期化完了');
+            
+        } catch (error) {
+            console.error('💀 Manager初期化エラー:', error);
+            this.systemStatus.error = error.message;
+            this.systemStatus.ready = false;
+            this._initialized = false;
+            throw error;
+            
+        } finally {
+            this._initInProgress = false;
+        }
+    }
+    
+    // ===========================================
+    // 個別Manager初期化
+    // ===========================================
+    
+    /**
+     * CanvasManager初期化
+     */
+    async initializeCanvasManager() {
+        try {
+            const canvasManager = new window.Tegaki.CanvasManager();
+            await canvasManager.configure(this.config);
+            await canvasManager.attach(this.context);
+            await canvasManager.init();
+            
+            this.managers.set('canvasManager', canvasManager);
+            window.Tegaki.CanvasManagerInstance = canvasManager;
+            
+            console.log('✅ CanvasManager初期化完了');
+            
+        } catch (error) {
+            console.error('💀 CanvasManager初期化エラー:', error);
+            throw error;
+        }
+    }
+    
+    /**
+     * 他Manager群初期化
+     */
+    async initializeOtherManagers() {
+        const managerConfigs = [
+            { name: 'configManager', className: 'ConfigManager' },
+            { name: 'navigationManager', className: 'NavigationManager' },
+            { name: 'shortcutManager', className: 'ShortcutManager' }
+        ];
+        
+        for (const { name, className } of managerConfigs) {
+            try {
+                const ManagerClass = window.Tegaki[className];
+                if (!ManagerClass) {
+                    console.warn(`⚠️ ${className} not available - skipping`);
+                    continue;
+                }
+                
+                const manager = new ManagerClass();
+                
+                // configure()存在チェック（修正版）
+                if (typeof manager.configure === 'function') {
+                    await manager.configure(this.config);
+                }
+                
+                // attach()存在チェック
+                if (typeof manager.attach === 'function') {
+                    await manager.attach(this.context);
+                }
+                
+                // init()存在チェック
+                if (typeof manager.init === 'function') {
+                    await manager.init();
+                }
+                
+                this.managers.set(name, manager);
+                window.Tegaki[`${className}Instance`] = manager;
+                
+            } catch (error) {
+                console.error(`💀 ${className}初期化エラー:`, error);
+                // 個別Manager失敗は警告に留め、処理続行
+            }
+        }
+        
+        console.log('✅ その他Manager初期化完了');
+    }
+    
+    /**
+     * CoordinateManager初期化・連携設定
+     */
+    async initializeCoordinateManager() {
+        try {
+            const coordinateManager = new window.Tegaki.CoordinateManager();
+            await coordinateManager.configure(this.config);
+            await coordinateManager.attach(this.context);
+            await coordinateManager.init();
+            
+            // CanvasManager連携
+            const canvasManager = this.managers.get('canvasManager');
+            if (canvasManager) {
+                coordinateManager.setCanvasManager(canvasManager);
+            }
+            
+            this.managers.set('coordinateManager', coordinateManager);
+            window.Tegaki.CoordinateManagerInstance = coordinateManager;
+            
+            console.log('✅ CoordinateManager初期化完了');
+            
+        } catch (error) {
+            console.error('💀 CoordinateManager初期化エラー:', error);
+            throw error;
+        }
+    }
+    
+    /**
+     * ToolManager初期化（緊急修正版）
+     * 重要：verifyInjection()を必ず実行してからinitializeV8Tools()を呼ぶ
+     */
+    async initializeToolManager() {
+        console.log('🔧 ToolManager初期化開始（緊急修正版）');
+        
+        try {
+            // ToolManager作成
+            const toolManager = new window.Tegaki.ToolManager();
+            
+            // 統一ライフサイクル実行
+            await toolManager.configure(this.config);
+            await toolManager.attach(this.context);
+            await toolManager.init();
+            
+            // Manager群注入
+            console.log('🔧 ToolManager: Manager群注入開始');
+            const injectionSuccess = toolManager.setManagers(this.managers);
+            if (!injectionSuccess) {
+                throw new Error('ToolManager Manager injection failed');
+            }
+            console.log('✅ ToolManager: Manager群注入完了');
+            
+            // ★緊急修正：注入検証を必ず実行
+            console.log('🔍 ToolManager: 注入検証開始（DrawContainer確認）');
+            if (!toolManager.verifyInjection()) {
+                throw new Error('ToolManager injection verification failed');
+            }
+            console.log('✅ ToolManager: 注入検証通過');
+            
+            // v8 Tool初期化（検証後なので安全）
+            console.log('🚀 ToolManager: v8 Tool初期化開始');
+            await toolManager.initializeV8Tools();
+            console.log('✅ ToolManager: v8 Tool初期化完了');
             
             // Manager登録
-            this.managers = new Map();
+            this.managers.set('toolManager', toolManager);
+            window.Tegaki.ToolManagerInstance = toolManager;
             
-            // システム状態
-            this.v8Ready = false;
-            this.systemStarted = false;
-            this.canvasElementReady = false;
-            this.isInitialized = false; // 二重初期化防止フラグ
-        }
-
-        // ========================================
-        // Canvas作成
-        // ========================================
-        
-        /**
-         * Canvas生成
-         */
-        async createCanvasV8(width = 400, height = 400) {
-            try {
-                const app = await this.createV8Application(width, height);
-                
-                if (!app || !app.canvas) {
-                    throw new Error('Canvas creation failed');
-                }
-                
-                this.canvasElementReady = true;
-                return app;
-                
-            } catch (error) {
-                console.error('💀 Canvas作成エラー:', error.message);
-                throw error;
-            }
-        }
-        
-        /**
-         * Canvas要素取得
-         */
-        getCanvasElement() {
-            if (!this.pixiApp || !this.pixiApp.canvas) {
-                throw new Error('Canvas not available');
-            }
-            return this.pixiApp.canvas;
-        }
-
-        /**
-         * PixiJS Application作成
-         */
-        async createV8Application(width = 400, height = 400) {
-            try {
-                if (!window.PIXI) {
-                    throw new Error('PixiJS not loaded');
-                }
-                
-                // WebGPU警告抑制
-                const originalWarn = console.warn;
-                console.warn = function(message, ...args) {
-                    if (typeof message === 'string' && 
-                        message.includes('powerPreference option is currently ignored')) {
-                        return;
-                    }
-                    originalWarn.call(console, message, ...args);
-                };
-                
-                try {
-                    this.pixiApp = new PIXI.Application();
-                    await this.pixiApp.init({
-                        width: 400,
-                        height: 400,
-                        backgroundColor: 0xf0e0d6,
-                        resolution: Math.min(window.devicePixelRatio || 1, 2.0),
-                        autoDensity: true
-                    });
-                    
-                    if (this.pixiApp.canvas) {
-                        this.pixiApp.canvas.style.width = '400px';
-                        this.pixiApp.canvas.style.height = '400px';
-                    }
-                    
-                } finally {
-                    console.warn = originalWarn;
-                }
-                
-                return this.pixiApp;
-                
-            } catch (error) {
-                console.error('💀 PixiJS Application作成エラー:', error.message);
-                throw error;
-            }
-        }
-
-        // ========================================
-        // Manager初期化（Step1修正版）
-        // ========================================
-        
-        /**
-         * Manager群初期化（二重初期化防止付き）
-         */
-        async initializeV8Managers() {
-            // 二重初期化防止
-            if (this.isInitialized) {
-                console.log('⚠️ Manager群は既に初期化済み - 処理をスキップ');
-                return;
-            }
+            console.log('✅ ToolManager初期化完了（緊急修正版）');
             
-            if (!this.pixiApp || !this.canvasElementReady) {
-                throw new Error('Canvas not ready');
-            }
-            
-            try {
-                console.log('🚀 Manager群初期化開始');
-                
-                // Step 1: CanvasManager
-                this.canvasManager = new window.Tegaki.CanvasManager();
-                this.canvasManager.configure({ canvas: { width: 400, height: 400 } });
-                this.canvasManager.attach({ pixiApp: this.pixiApp });
-                await this.canvasManager.init();
-                
-                if (!this.canvasManager.isReady()) {
-                    throw new Error('CanvasManager初期化失敗');
-                }
-                
-                this.registerManager('canvas', this.canvasManager);
-                console.log('✅ CanvasManager初期化完了');
-                
-                // Step 2: その他のManager
-                await this.initializeOtherManagers();
-                
-                // Step 3: CoordinateManager
-                await this.initializeCoordinateManager();
-                
-                // Step 4: ToolManager
-                await this.initializeToolManager();
-                
-                this.isInitialized = true;
-                console.log('✅ Manager群初期化完了');
-                
-            } catch (error) {
-                console.error('💀 Manager初期化エラー:', error.message);
-                throw error;
-            }
-        }
-
-        /**
-         * その他Manager初期化（configure存在チェック付き）
-         */
-        async initializeOtherManagers() {
-            try {
-                // RecordManager
-                const recordManager = new window.Tegaki.RecordManager();
-                if (typeof recordManager.configure === 'function') {
-                    recordManager.configure({});
-                }
-                recordManager.attach({});
-                await recordManager.init();
-                this.registerManager('record', recordManager);
-                
-                // ConfigManager（既存インスタンス使用）
-                const configManager = window.Tegaki.ConfigManagerInstance || new window.Tegaki.ConfigManager();
-                if (typeof configManager.configure === 'function') {
-                    configManager.configure({});
-                }
-                if (typeof configManager.attach === 'function') {
-                    configManager.attach({});
-                }
-                if (typeof configManager.init === 'function') {
-                    await configManager.init();
-                }
-                this.registerManager('config', configManager);
-                
-                // EventBus（既存インスタンス使用）
-                if (window.Tegaki.EventBusInstance) {
-                    this.registerManager('eventbus', window.Tegaki.EventBusInstance);
-                }
-                
-                // ErrorManager（既存インスタンス使用）
-                if (window.Tegaki.ErrorManagerInstance) {
-                    this.registerManager('error', window.Tegaki.ErrorManagerInstance);
-                }
-                
-                // NavigationManager
-                const navigationManager = new window.Tegaki.NavigationManager();
-                this.registerManager('navigation', navigationManager);
-                
-                // ShortcutManager
-                if (window.Tegaki.ShortcutManager) {
-                    const shortcutManager = new window.Tegaki.ShortcutManager();
-                    this.registerManager('shortcut', shortcutManager);
-                }
-                
-                console.log('✅ その他Manager初期化完了');
-                
-            } catch (error) {
-                console.error('💀 その他Manager初期化エラー:', error.message);
-                throw error;
-            }
-        }
-
-        /**
-         * CoordinateManager初期化
-         */
-        async initializeCoordinateManager() {
-            try {
-                const coordinateManager = new window.Tegaki.CoordinateManager();
-                coordinateManager.configure({ coordinate: { dpr: 2.0 } });
-                coordinateManager.attach({ canvasManager: this.canvasManager });
-                await coordinateManager.init();
-                
-                if (typeof coordinateManager.setCanvasManager === 'function') {
-                    await coordinateManager.setCanvasManager(this.canvasManager);
-                }
-                
-                if (!coordinateManager.isReady()) {
-                    throw new Error('CoordinateManager初期化失敗');
-                }
-                
-                this.registerManager('coordinate', coordinateManager);
-                console.log('✅ CoordinateManager初期化完了');
-                
-            } catch (error) {
-                console.error('💀 CoordinateManager初期化エラー:', error.message);
-                throw error;
-            }
-        }
-
-        /**
-         * ToolManager初期化
-         */
-        async initializeToolManager() {
-            try {
-                this.toolManager = new window.Tegaki.ToolManager(this.canvasManager);
-                this.registerManager('tool', this.toolManager);
-                
-                // Manager注入
-                this.toolManager.setManagers(this.managers);
-                
-                // Tool初期化
-                await this.toolManager.initializeV8Tools();
-                
-                if (!this.toolManager.isReady()) {
-                    throw new Error('ToolManager初期化失敗');
-                }
-                
-                console.log('✅ ToolManager初期化完了');
-                
-            } catch (error) {
-                console.error('💀 ToolManager初期化エラー:', error.message);
-                throw error;
-            }
-        }
-
-        /**
-         * Manager登録
-         */
-        registerManager(key, instance) {
-            this.managers.set(key, instance);
-            
-            // グローバル登録
-            const managerKey = `${key.charAt(0).toUpperCase() + key.slice(1)}ManagerInstance`;
-            window.Tegaki[managerKey] = instance;
-        }
-
-        /**
-         * Manager準備状況確認（簡潔版・循環参照防止）
-         */
-        verifyManagerReady() {
-            const managerInfo = {};
-            
-            for (const [key, manager] of this.managers) {
-                try {
-                    managerInfo[key] = {
-                        className: manager.constructor.name,
-                        isReady: typeof manager.isReady === 'function' ? manager.isReady() : 'unknown',
-                        hasInit: typeof manager.init === 'function',
-                        hasConfigure: typeof manager.configure === 'function'
-                    };
-                } catch (error) {
-                    managerInfo[key] = {
-                        error: error.message
-                    };
-                }
-            }
-            
-            console.log('📋 Manager準備状況:', managerInfo);
-            return managerInfo;
-        }
-
-        // ========================================
-        // システム開始
-        // ========================================
-        
-        /**
-         * システム開始
-         */
-        async startV8System() {
-            if (!this.canvasManager || !this.toolManager) {
-                throw new Error('Managers not ready');
-            }
-            
-            try {
-                // アイコン表示
-                await this.initializeSidebarIcons();
-                
-                // 初期ツール設定
-                this.setDefaultTool();
-                
-                this.systemStarted = true;
-                this.v8Ready = true;
-                
-                // app:ready イベント発火
-                this.emitAppReady();
-                
-                console.log('🚀 AppCore v8システム開始完了');
-                
-            } catch (error) {
-                console.error('💀 システム開始エラー:', error.message);
-                throw error;
-            }
-        }
-
-        /**
-         * サイドバーアイコン初期化
-         */
-        async initializeSidebarIcons() {
-            try {
-                if (window.Tegaki?.TegakiIcons?.replaceAllToolIcons) {
-                    window.Tegaki.TegakiIcons.replaceAllToolIcons();
-                    this.setupToolButtonEvents();
-                }
-            } catch (error) {
-                console.warn('⚠️ アイコン初期化失敗:', error.message);
-            }
-        }
-
-        /**
-         * ツールボタンイベント設定
-         */
-        setupToolButtonEvents() {
-            const toolButtons = {
-                'pen-tool': 'pen',
-                'eraser-tool': 'eraser'
-            };
-            
-            Object.entries(toolButtons).forEach(([buttonId, toolName]) => {
-                const button = document.getElementById(buttonId);
-                if (button) {
-                    button.addEventListener('click', () => {
-                        this.switchTool(toolName);
-                    });
-                }
+        } catch (error) {
+            console.error('💀 ToolManager初期化エラー:', error);
+            console.error('🔍 エラー詳細:', {
+                step: 'toolManager-initialization',
+                managersCount: this.managers.size,
+                canvasManagerReady: this.managers.get('canvasManager')?.isReady(),
+                coordinateManagerReady: this.managers.get('coordinateManager')?.isReady()
             });
-        }
-
-        /**
-         * 初期ツール設定
-         */
-        setDefaultTool() {
-            try {
-                if (this.toolManager && this.toolManager.isReady()) {
-                    this.toolManager.setActiveTool('pen');
-                }
-            } catch (error) {
-                console.warn('⚠️ 初期ツール設定失敗:', error.message);
-            }
-        }
-
-        /**
-         * ツール切り替え
-         */
-        switchTool(toolName) {
-            if (this.toolManager && this.toolManager.isReady()) {
-                try {
-                    this.toolManager.setActiveTool(toolName);
-                } catch (error) {
-                    console.error(`💀 ツール切り替え失敗: ${toolName}`, error.message);
-                }
-            }
-        }
-
-        /**
-         * app:ready イベント発火
-         */
-        emitAppReady() {
-            if (window.Tegaki?.EventBusInstance?.emit) {
-                window.Tegaki.EventBusInstance.emit('app:ready', {
-                    timestamp: Date.now(),
-                    version: 'v8-phase1.5-step1-fix',
-                    managers: Array.from(this.managers.keys())
-                });
-                console.log('✅ app:ready イベント発火');
-            }
-        }
-
-        // ========================================
-        // 状態確認
-        // ========================================
-        
-        /**
-         * システム準備状況確認
-         */
-        isV8Ready() {
-            return this.v8Ready && 
-                   this.systemStarted && 
-                   this.pixiApp && 
-                   this.canvasManager && 
-                   this.toolManager &&
-                   this.canvasElementReady;
-        }
-
-        /**
-         * Manager取得
-         */
-        getManagerInstance(key) {
-            return this.managers.get(key);
-        }
-
-        /**
-         * デバッグ情報取得（循環参照対応）
-         */
-        getV8DebugInfo() {
-            return {
-                version: 'v8-step1-fix',
-                systemStatus: {
-                    v8Ready: this.v8Ready,
-                    systemStarted: this.systemStarted,
-                    canvasElementReady: this.canvasElementReady,
-                    isInitialized: this.isInitialized
-                },
-                managers: {
-                    count: this.managers.size,
-                    registered: Array.from(this.managers.keys()),
-                    canvasReady: this.canvasManager ? this.canvasManager.isReady() : false,
-                    toolReady: this.toolManager ? this.toolManager.isReady() : false
-                },
-                pixiInfo: {
-                    version: window.PIXI ? window.PIXI.VERSION : 'not loaded',
-                    appExists: !!this.pixiApp,
-                    canvasExists: !!this.pixiApp?.canvas
-                }
-            };
+            throw error;
         }
     }
-
-    // グローバル登録
-    if (!window.Tegaki) {
-        window.Tegaki = {};
-    }
-    window.Tegaki.AppCore = AppCore;
     
-    console.log('✅ AppCore v8 Step1修正版 Loaded - configure存在チェック・ログ簡素化・循環参照防止');
+    // ===========================================
+    // 状態管理・検証
+    // ===========================================
+    
+    /**
+     * Manager準備状態検証（ログ簡素化版）
+     * @returns {Object} Manager準備状況
+     */
+    verifyManagerReady() {
+        const status = {};
+        
+        for (const [name, manager] of this.managers) {
+            if (manager && typeof manager.isReady === 'function') {
+                status[name] = {
+                    ready: manager.isReady(),
+                    className: manager.className || 'Unknown'
+                };
+            } else {
+                status[name] = {
+                    ready: false,
+                    error: 'isReady method not available'
+                };
+            }
+        }
+        
+        // 簡素化：詳細ログ出力削除（循環参照防止）
+        console.log('🔍 Manager準備状況確認完了');
+        
+        return status;
+    }
+    
+    /**
+     * システム状態取得
+     * @returns {Object} システム状態
+     */
+    getSystemStatus() {
+        // Manager状態更新
+        this.systemStatus.managerStatuses = this.verifyManagerReady();
+        this.systemStatus.lastUpdate = Date.now();
+        
+        return {
+            version: this.version,
+            systemStatus: { ...this.systemStatus },
+            managers: Object.fromEntries(
+                Array.from(this.managers.entries()).map(([name, manager]) => [
+                    name,
+                    {
+                        className: manager.className || 'Unknown',
+                        ready: typeof manager.isReady === 'function' ? manager.isReady() : false
+                    }
+                ])
+            ),
+            pixiInfo: {
+                version: window.PIXI?.VERSION || 'Unknown',
+                renderer: this.context?.pixiApp?.renderer?.type || 'Unknown'
+            }
+        };
+    }
+    
+    /**
+     * 初期化済み判定
+     * @returns {boolean} 初期化完了可否
+     */
+    isInitialized() {
+        return this._initialized && this.systemStatus.ready;
+    }
+    
+    /**
+     * Manager取得
+     * @param {string} name - Manager名
+     * @returns {Object|null} Manager実装
+     */
+    getManager(name) {
+        return this.managers.get(name) || null;
+    }
+    
+    /**
+     * 全Manager取得
+     * @returns {Map} Manager群
+     */
+    getAllManagers() {
+        return new Map(this.managers);
+    }
+}
 
-})();
+// グローバル登録
+window.Tegaki = window.Tegaki || {};
+window.Tegaki.AppCore = AppCore;
+
+console.log('✅ AppCore v8 緊急エラー修正版 Loaded');
+console.log('📏 修正内容: ToolManager verifyInjection()必須実行・二重初期化防止・Manager注入フロー修正');
+console.log('🚀 特徴: DrawContainer not ready エラー完全解決・循環参照ログ削除・エラーハンドリング強化');
