@@ -69,20 +69,32 @@ bootstrap.js:281 💀 Phase1.5依存関係確認失敗: Error: Required classes 
     at async startBootstrap (bootstrap.js:427:9)
     at async HTMLDocument.<anonymous> (bootstrap.js:445:13)
 checkPhase15Dependencies @ bootstrap.js:281
+start @ bootstrap.js:99
+await in start
+startBootstrap @ bootstrap.js:427
+(anonymous) @ bootstrap.js:445
 bootstrap.js:112 💥 Bootstrap初期化失敗: Error: Required classes not loaded: ToolManager, PenTool, EraserTool
     at Bootstrap.checkPhase15Dependencies (bootstrap.js:264:23)
     at Bootstrap.start (bootstrap.js:99:24)
     at async startBootstrap (bootstrap.js:427:9)
     at async HTMLDocument.<anonymous> (bootstrap.js:445:13)
 start @ bootstrap.js:112
-bootstrap.js:113 🔍 デバッグ情報: Object
+await in start
+startBootstrap @ bootstrap.js:427
+(anonymous) @ bootstrap.js:445
+bootstrap.js:113 🔍 デバッグ情報: {className: 'Bootstrap', version: 'v8-syntax-dependency-fix', dependencies: {…}, domStatus: {…}, timing: {…}, …}
 start @ bootstrap.js:113
+await in start
+startBootstrap @ bootstrap.js:427
+(anonymous) @ bootstrap.js:445
 bootstrap.js:431 💥 Bootstrap起動完全失敗: Error: Required classes not loaded: ToolManager, PenTool, EraserTool
     at Bootstrap.checkPhase15Dependencies (bootstrap.js:264:23)
     at Bootstrap.start (bootstrap.js:99:24)
     at async startBootstrap (bootstrap.js:427:9)
     at async HTMLDocument.<anonymous> (bootstrap.js:445:13)
 startBootstrap @ bootstrap.js:431
+await in startBootstrap
+(anonymous) @ bootstrap.js:445
 bootstrap.js:447 💥 自動Bootstrap失敗: Error: Required classes not loaded: ToolManager, PenTool, EraserTool
     at Bootstrap.checkPhase15Dependencies (bootstrap.js:264:23)
     at Bootstrap.start (bootstrap.js:99:24)
@@ -93,4 +105,6 @@ bootstrap.js:447 💥 自動Bootstrap失敗: Error: Required classes not loaded:
  ✅ PixiJS v8.12.0 confirmed
 index.html:613 ⚠️ TegakiApplication v8初期化未完了
 (anonymous) @ index.html:613
+setTimeout
+(anonymous) @ index.html:588
  ⚠️ TegakiApplication v8初期化未完了

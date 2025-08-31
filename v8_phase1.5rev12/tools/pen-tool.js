@@ -92,11 +92,6 @@ class PenTool extends window.Tegaki.AbstractTool {
     // Tool統一API（必須実装）
     // ===========================================
     
-    /**
-     * Manager群注入（必須API）
-     * @param {Object} managers - Manager群
-     * @returns {boolean} 注入成功可否
-     */
     setManagersObject(managers) {
         console.log('🔧 PenTool: Manager注入開始');
         
@@ -135,10 +130,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         }
     }
     
-    /**
-     * PointerDownイベント処理（描画開始）
-     * @param {Event} event - PointerDownイベント
-     */
     onPointerDown(event) {
         if (!this.managersReady) {
             console.warn('⚠️ PenTool: Manager未準備 - 描画スキップ');
@@ -167,10 +158,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         }
     }
     
-    /**
-     * PointerMoveイベント処理（描画継続）
-     * @param {Event} event - PointerMoveイベント
-     */
     onPointerMove(event) {
         if (!this.managersReady || !this.isDrawing) {
             return;
@@ -192,10 +179,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         }
     }
     
-    /**
-     * PointerUpイベント処理（描画終了）
-     * @param {Event} event - PointerUpイベント
-     */
     onPointerUp(event) {
         if (!this.managersReady) {
             return;
@@ -213,9 +196,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         }
     }
     
-    /**
-     * 描画強制終了（冪等・必須API）
-     */
     forceEndDrawing() {
         if (!this.isDrawing && !this.strokeStarted) {
             return; // 既に終了済み
@@ -253,9 +233,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         }
     }
     
-    /**
-     * Tool破棄（必須API）
-     */
     destroy() {
         // 描画強制終了
         this.forceEndDrawing();
@@ -272,10 +249,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         console.log('✅ PenTool: destroy() 完了');
     }
     
-    /**
-     * Tool状態取得（必須API）
-     * @returns {Object} Tool状態
-     */
     getState() {
         return {
             className: this.className,
@@ -298,11 +271,6 @@ class PenTool extends window.Tegaki.AbstractTool {
     // 描画処理（PixiJS v8対応）
     // ===========================================
     
-    /**
-     * ストローク開始
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     */
     startStroke(x, y) {
         if (this.isDrawing) {
             console.warn('⚠️ PenTool: 既に描画中 - 強制終了後再開');
@@ -348,11 +316,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         }
     }
     
-    /**
-     * ストローク継続
-     * @param {number} x - X座標
-     * @param {number} y - Y座標
-     */
     continueStroke(x, y) {
         if (!this.isDrawing || !this.currentStroke) {
             return;
@@ -388,9 +351,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         }
     }
     
-    /**
-     * ストローク終了
-     */
     endStroke() {
         if (!this.isDrawing) {
             return;
@@ -421,9 +381,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         }
     }
     
-    /**
-     * 現在のストローク確定
-     */
     finalizeCurrentStroke() {
         if (!this.currentStroke) {
             return;
@@ -444,10 +401,6 @@ class PenTool extends window.Tegaki.AbstractTool {
     // Tool設定管理
     // ===========================================
     
-    /**
-     * ペン設定変更
-     * @param {Object} settings - 設定 {width, color, opacity}
-     */
     updateSettings(settings) {
         if (settings.width !== undefined) {
             this.strokeWidth = Math.max(0.5, Math.min(50, settings.width));
@@ -464,10 +417,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         console.log('✅ PenTool: 設定更新完了');
     }
     
-    /**
-     * 現在の設定取得
-     * @returns {Object} 現在の設定
-     */
     getSettings() {
         return {
             width: this.strokeWidth,
@@ -480,45 +429,6 @@ class PenTool extends window.Tegaki.AbstractTool {
     // 状態管理・デバッグ
     // ===========================================
     
-    /**
-     * Tool状態取得（上書き・詳細版）
-     * @returns {Object} 詳細状態
-     */
-    getState() {
-        return {
-            className: this.className,
-            version: this.version,
-            toolName: this.toolName,
-            
-            // 描画状態（継続バグ診断用）
-            isDrawing: this.isDrawing,
-            strokeStarted: this.strokeStarted,
-            hasCurrentStroke: !!this.currentStroke,
-            
-            // Manager準備状態
-            managersReady: this.managersReady,
-            managerReferences: {
-                canvasManager: !!this.canvasManager,
-                coordinateManager: !!this.coordinateManager,
-                eventBus: !!this.eventBus,
-                drawContainer: !!this.drawContainer
-            },
-            
-            // 描画設定
-            settings: this.getSettings(),
-            
-            // 座標履歴
-            strokeInfo: {
-                pointCount: this.strokePoints.length,
-                lastPoint: this.lastPoint ? { ...this.lastPoint } : null
-            }
-        };
-    }
-    
-    /**
-     * デバッグ情報取得
-     * @returns {Object} デバッグ情報
-     */
     getDebugInfo() {
         return {
             ...this.getState(),
@@ -531,10 +441,6 @@ class PenTool extends window.Tegaki.AbstractTool {
         };
     }
     
-    /**
-     * Tool健全性チェック
-     * @returns {Object} 健全性チェック結果
-     */
     healthCheck() {
         const issues = [];
         

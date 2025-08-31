@@ -171,11 +171,6 @@ class ToolManager {
     // Manager注入・検証（重要：エラー原因箇所）
     // ===========================================
     
-    /**
-     * Manager群注入（Map形式・Object形式両対応）
-     * @param {Map|Object} managers - Manager群
-     * @returns {boolean} 注入成功可否
-     */
     setManagers(managers) {
         console.log('🔧 ToolManager: setManagers() 開始');
         
@@ -218,19 +213,10 @@ class ToolManager {
         }
     }
     
-    /**
-     * Manager群注入（Object形式専用・後方互換）
-     * @param {Object} managersObj - Manager群（Object形式）
-     * @returns {boolean} 注入成功可否
-     */
     setManagersObject(managersObj) {
         return this.setManagers(managersObj);
     }
     
-    /**
-     * 注入検証（重要：DrawContainer取得前に必須実行）
-     * @returns {boolean} 検証通過可否
-     */
     verifyInjection() {
         console.log('🔍 ToolManager: verifyInjection() 開始');
         
@@ -278,10 +264,6 @@ class ToolManager {
     // v8 Tool初期化（修正版：verifyInjection後実行）
     // ===========================================
     
-    /**
-     * v8対応Tool群初期化
-     * 注意：verifyInjection() 成功後のみ実行可能
-     */
     async initializeV8Tools() {
         console.log('🚀 ToolManager: initializeV8Tools() 開始');
         
@@ -320,9 +302,6 @@ class ToolManager {
         }
     }
     
-    /**
-     * PenTool初期化
-     */
     async initializePenTool() {
         try {
             if (!window.Tegaki.PenTool) {
@@ -352,9 +331,6 @@ class ToolManager {
         }
     }
     
-    /**
-     * EraserTool初期化
-     */
     async initializeEraserTool() {
         try {
             if (!window.Tegaki.EraserTool) {
@@ -388,12 +364,6 @@ class ToolManager {
     // Tool管理
     // ===========================================
     
-    /**
-     * Tool登録
-     * @param {string} name - Tool名
-     * @param {Object} tool - Tool実装
-     * @returns {boolean} 登録成功可否
-     */
     registerTool(name, tool) {
         try {
             if (!name || !tool) {
@@ -422,19 +392,10 @@ class ToolManager {
         }
     }
     
-    /**
-     * アクティブTool取得
-     * @returns {Object|null} 現在のアクティブTool
-     */
     getActiveTool() {
         return this.activeTool;
     }
     
-    /**
-     * アクティブTool設定
-     * @param {string} toolName - Tool名
-     * @returns {boolean} 設定成功可否
-     */
     setActiveTool(toolName) {
         try {
             if (!this.tools.has(toolName)) {
@@ -464,19 +425,10 @@ class ToolManager {
         }
     }
     
-    /**
-     * Tool一覧取得
-     * @returns {Array} 登録済みTool名一覧
-     */
     getToolNames() {
         return Array.from(this.tools.keys());
     }
     
-    /**
-     * 特定Tool取得
-     * @param {string} toolName - Tool名
-     * @returns {Object|null} Tool実装
-     */
     getTool(toolName) {
         return this.tools.get(toolName) || null;
     }
@@ -485,10 +437,6 @@ class ToolManager {
     // 描画イベント中継
     // ===========================================
     
-    /**
-     * PointerDownイベント処理
-     * @param {Event} event - PointerDownイベント
-     */
     handlePointerDown(event) {
         if (!this.activeTool) {
             console.warn('⚠️ ToolManager: アクティブTool未設定');
@@ -502,10 +450,6 @@ class ToolManager {
         }
     }
     
-    /**
-     * PointerMoveイベント処理
-     * @param {Event} event - PointerMoveイベント
-     */
     handlePointerMove(event) {
         if (!this.activeTool) {
             return;
@@ -518,10 +462,6 @@ class ToolManager {
         }
     }
     
-    /**
-     * PointerUpイベント処理
-     * @param {Event} event - PointerUpイベント
-     */
     handlePointerUp(event) {
         if (!this.activeTool) {
             return;
@@ -534,9 +474,6 @@ class ToolManager {
         }
     }
     
-    /**
-     * 描画強制終了
-     */
     forceEndDrawing() {
         if (!this.activeTool) {
             return;
@@ -554,10 +491,6 @@ class ToolManager {
     // 状態管理・デバッグ
     // ===========================================
     
-    /**
-     * ToolManager状態取得
-     * @returns {Object} 現在の状態
-     */
     getStatus() {
         return {
             className: this.className,
@@ -573,11 +506,6 @@ class ToolManager {
         };
     }
     
-    /**
-     * Tool個別状態取得
-     * @param {string} toolName - Tool名
-     * @returns {Object|null} Tool状態
-     */
     getToolStatus(toolName) {
         const tool = this.getTool(toolName);
         if (!tool) {
@@ -591,10 +519,6 @@ class ToolManager {
         }
     }
     
-    /**
-     * 全Tool状態取得
-     * @returns {Object} 全Tool状態
-     */
     getAllToolStatus() {
         const status = {};
         for (const toolName of this.getToolNames()) {
@@ -603,10 +527,6 @@ class ToolManager {
         return status;
     }
     
-    /**
-     * デバッグ情報取得
-     * @returns {Object} デバッグ情報
-     */
     getDebugInfo() {
         return {
             ...this.getStatus(),
