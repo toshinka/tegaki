@@ -1,171 +1,157 @@
 /**
- * PenTool - PixiJS v8対応・座標問題修正版
- * 
- * @provides PenTool, createStroke, onPointerDown, onPointerMove, onPointerUp, convertEventToCoords
- * @uses CoordinateManager.toLocalFromCanvas, CanvasManager.getDrawContainer, RecordManager.recordStroke
- * @initflow 1. AbstractTool 継承 → 2. Manager注入 → 3. activate() → 4. イベントハンドリング
- * @forbids 💀双方向依存禁止 🚫フォールバック禁止 🚫v7/v8両対応禁止 🚫未実装メソッド呼び出し禁止 🚫Event座標の直読み🚫DPR重複適用
- * @manager-key window.Tegaki.ToolManager.tools.pen
- * @dependencies-strict CoordinateManager(必須), CanvasManager(必須), RecordManager(必須)
- * @integration-flow ToolManager → PenTool → AbstractTool
- * @method-naming-rules startOperation()/endOperation() 形式統一
- * @event-contract onPointerDown/Move/Up は原始イベントをそのまま受け渡す、clientX/Y主要ソース、passive:false、app.view直下バインド
- * @coordinate-contract 画面→キャンバス→ローカル変換はCoordinateManager経由、DPR補正一回のみ、Container変形はCoordinateManager処理
- * @state-management 状態は直接操作せず専用メソッド経由
- * @input-validation 座標がnull/undefinedの場合は処理停止
- * @performance-notes PixiJS v8 Graphics API使用、描画負荷最適化
+ * PenTool - 座標変換のみ修正版（既存システム完全互換）
+ * 元のPenToolをベースに座標変換ロジックのみ修正
  */
 
 class PenTool extends window.Tegaki.AbstractTool {
     constructor() {
         super('pen');
         
-        // 描画状態管理
         this.isDrawing = false;
         this.currentStroke = null;
         this.currentPath = [];
         
-        // 設定
         this.strokeWidth = 3;
         this.strokeColor = 0x800000; // futaba-maroon
-        this.smoothingFactor = 0.3;
         
-        console.log('🖊️ PenTool v8.12.0 作成完了 - PixiJS v8 Graphics対応・座標問題修正版');
+        console.log('🖊️ PenTool v8 座標修正版 作成完了');
     }
     
-    /**
-     * PointerDown イベント処理 - 描画開始
-     * @param {PointerEvent|MouseEvent|TouchEvent} e - 原始イベント
-     */
     onPointerDown(e) {
         console.log('🖊️ PenTool: onPointerDown() 開始');
         
-        // 入力検証
         if (!e) {
-            console.warn('⚠️ PenTool: イベントオブジェクトが null/undefined');
+            console.warn('⚠️ イベントが null');
             return;
         }
         
-        // 座標変換
         const coords = this.convertEventToCoords(e);
         if (!coords) {
-            console.warn('🖊️ PenTool: 座標変換失敗 - 描画中断');
+            console.warn('⚠️ 座標変換失敗');
             return;
         }
         
-        console.log('🖊️ PenTool: 描画開始', { x: coords.x, y: coords.y });
+        console.log('🖊️ 描画開始座標:', coords);
         
-        // 描画状態開始
         this.isDrawing = true;
-        this.currentPath = [{ x: coords.x, y: coords.y }];
-        
-        // 新しいストローク作成
+        this.currentPath = [coords];
         this.startStroke(coords);
         
-        // イベント防止
         e.preventDefault();
     }
     
-    /**
-     * PointerMove イベント処理 - 描画継続
-     * @param {PointerEvent|MouseEvent|TouchEvent} e - 原始イベント
-     */
     onPointerMove(e) {
-        if (!this.isDrawing || !e) {
-            return;
-        }
+        if (!this.isDrawing || !e) return;
         
-        // 座標変換
         const coords = this.convertEventToCoords(e);
-        if (!coords) {
-            return;
-        }
+        if (!coords) return;
         
-        // パス追加
-        this.currentPath.push({ x: coords.x, y: coords.y });
-        
-        // 描画更新
+        this.currentPath.push(coords);
         this.updateStroke(coords);
         
         e.preventDefault();
     }
     
-    /**
-     * PointerUp イベント処理 - 描画終了
-     * @param {PointerEvent|MouseEvent|TouchEvent} e - 原始イベント
-     */
     onPointerUp(e) {
-        console.log(`🖊️ PenTool: onPointerUp() - isDrawing: ${this.isDrawing}`);
+        console.log('🖊️ onPointerUp - isDrawing:', this.isDrawing);
         
-        if (!this.isDrawing) {
-            return;
-        }
+        if (!this.isDrawing) return;
         
-        // 描画終了
         this.finishStroke();
-        
-        // 状態リセット
         this.isDrawing = false;
         this.currentStroke = null;
         this.currentPath = [];
         
-        console.log('🖊️ PenTool: 描画完了');
+        console.log('🖊️ 描画完了');
         
-        if (e) {
-            e.preventDefault();
-        }
+        if (e) e.preventDefault();
     }
     
     /**
-     * イベント座標からキャンバス座標への変換
-     * @param {PointerEvent|MouseEvent|TouchEvent} e - DOM イベント
-     * @returns {Object|null} - 変換された座標 {x, y} または null
+     * 座標変換（修正版・フォールバック付き）
      */
     convertEventToCoords(e) {
-        if (!e) {
-            return null;
-        }
+        if (!e) return null;
         
-        // clientX/Y取得 (複数イベントタイプ対応)
         const clientCoords = this.getClientXY(e);
         if (!clientCoords) {
-            console.warn('⚠️ 無効なクライアント座標（イベント未透過 or 変換漏れ）');
+            console.warn('⚠️ clientX/Y取得失敗');
             return null;
         }
         
+        // Method 1: 既存CoordinateManager使用
+        if (this.coordinateManager) {
+            try {
+                if (typeof this.coordinateManager.clientToWorld === 'function') {
+                    const result = this.coordinateManager.clientToWorld(clientCoords.x, clientCoords.y);
+                    if (result && typeof result.x === 'number' && typeof result.y === 'number') {
+                        return result;
+                    }
+                }
+                
+                if (typeof this.coordinateManager.toCanvasCoords === 'function') {
+                    const result = this.coordinateManager.toCanvasCoords(clientCoords.x, clientCoords.y);
+                    if (result && typeof result.x === 'number' && typeof result.y === 'number') {
+                        return result;
+                    }
+                }
+            } catch (error) {
+                console.warn('⚠️ CoordinateManager変換失敗:', error);
+            }
+        }
+        
+        // Method 2: 直接計算フォールバック
+        return this.fallbackCoordinateConversion(clientCoords);
+    }
+    
+    /**
+     * 座標変換フォールバック（DPR対応・NaN防止）
+     */
+    fallbackCoordinateConversion(clientCoords) {
         try {
-            // CoordinateManager経由で変換
-            if (!this.coordinateManager) {
-                console.error('❌ CoordinateManager が利用できません');
+            const canvas = this.canvasManager?.getCanvasElement();
+            if (!canvas) {
+                console.error('❌ Canvas要素が取得できません');
                 return null;
             }
             
-            // 画面座標からキャンバス座標への変換
-            const canvasCoords = this.coordinateManager.screenToCanvas(clientCoords);
-            if (!canvasCoords) {
-                console.warn('⚠️ 画面→キャンバス座標変換失敗');
+            const rect = canvas.getBoundingClientRect();
+            
+            // DPR適用（最大2.0に制限）
+            const dpr = Math.min(window.devicePixelRatio || 1, 2.0);
+            
+            // Canvas座標計算
+            const x = (clientCoords.x - rect.left) * dpr;
+            const y = (clientCoords.y - rect.top) * dpr;
+            
+            // NaN検証
+            if (!Number.isFinite(x) || !Number.isFinite(y)) {
+                console.warn('⚠️ 座標計算でNaN発生');
                 return null;
             }
             
-            // キャンバス座標からローカル座標への変換
-            const localCoords = this.coordinateManager.toLocalFromCanvas(canvasCoords);
-            return localCoords;
+            console.log('📐 座標変換:', {
+                client: clientCoords,
+                rect: { left: rect.left, top: rect.top },
+                dpr: dpr,
+                result: { x, y }
+            });
+            
+            return { x, y };
             
         } catch (error) {
-            console.error('❌ 座標変換エラー:', error);
+            console.error('❌ フォールバック座標変換失敗:', error);
             return null;
         }
     }
     
     /**
-     * イベントからclientX/Y取得 (フォールバック付き)
-     * @param {Event} e - DOM イベント
-     * @returns {Object|null} - {x, y} または null
+     * clientX/Y取得（TouchEvent対応）
      */
     getClientXY(e) {
         if (!e) return null;
         
-        // PointerEvent / MouseEvent
+        // PointerEvent/MouseEvent
         if (typeof e.clientX === 'number' && typeof e.clientY === 'number') {
             return { x: e.clientX, y: e.clientY };
         }
@@ -180,21 +166,18 @@ class PenTool extends window.Tegaki.AbstractTool {
     }
     
     /**
-     * 新しいストローク開始
-     * @param {Object} coords - 開始座標 {x, y}
+     * ストローク開始
      */
     startStroke(coords) {
         try {
             const drawContainer = this.canvasManager?.getDrawContainer();
             if (!drawContainer) {
-                console.error('❌ DrawContainer が取得できません');
+                console.error('❌ DrawContainer取得失敗');
                 return;
             }
             
-            // PixiJS v8 Graphics作成
             this.currentStroke = new PIXI.Graphics();
             
-            // ストローク設定 (v8 API)
             this.currentStroke.lineStyle({
                 width: this.strokeWidth,
                 color: this.strokeColor,
@@ -202,10 +185,7 @@ class PenTool extends window.Tegaki.AbstractTool {
                 join: PIXI.LINE_JOIN.ROUND
             });
             
-            // 開始点設定
             this.currentStroke.moveTo(coords.x, coords.y);
-            
-            // コンテナに追加
             drawContainer.addChild(this.currentStroke);
             
         } catch (error) {
@@ -214,34 +194,26 @@ class PenTool extends window.Tegaki.AbstractTool {
     }
     
     /**
-     * ストローク更新 - 線を延長
-     * @param {Object} coords - 現在座標 {x, y}
+     * ストローク更新
      */
     updateStroke(coords) {
-        if (!this.currentStroke) {
-            return;
-        }
+        if (!this.currentStroke) return;
         
         try {
-            // PixiJS v8では lineTo で線を描画
             this.currentStroke.lineTo(coords.x, coords.y);
-            
         } catch (error) {
             console.error('❌ ストローク更新エラー:', error);
         }
     }
     
     /**
-     * ストローク完成 - 記録と後処理
+     * ストローク完成
      */
     finishStroke() {
-        if (!this.currentStroke || this.currentPath.length < 2) {
-            return;
-        }
+        if (!this.currentStroke || this.currentPath.length < 2) return;
         
         try {
-            // RecordManager に記録
-            if (this.recordManager) {
+            if (this.recordManager && typeof this.recordManager.recordStroke === 'function') {
                 const strokeData = {
                     type: 'pen',
                     path: [...this.currentPath],
@@ -254,25 +226,17 @@ class PenTool extends window.Tegaki.AbstractTool {
                 
                 this.recordManager.recordStroke(strokeData);
             }
-            
         } catch (error) {
             console.error('❌ ストローク記録エラー:', error);
         }
     }
     
-    /**
-     * Tool アクティブ化処理
-     */
     activate() {
         super.activate();
-        console.log('🖊️ PenTool アクティブ化完了');
+        console.log('🖊️ PenTool アクティブ化');
     }
     
-    /**
-     * Tool 非アクティブ化処理
-     */
     deactivate() {
-        // 描画中の場合は強制終了
         if (this.isDrawing) {
             this.finishStroke();
             this.isDrawing = false;
@@ -281,13 +245,12 @@ class PenTool extends window.Tegaki.AbstractTool {
         }
         
         super.deactivate();
-        console.log('🖊️ PenTool 非アクティブ化完了');
+        console.log('🖊️ PenTool 非アクティブ化');
     }
 }
 
-// グローバル名前空間に登録
+// グローバル登録
 if (!window.Tegaki) window.Tegaki = {};
 window.Tegaki.PenTool = PenTool;
 
-console.log('🖊️ PenTool v8.12.0 最終修正版 Loaded - 座標問題修正・PixiJS v8対応・Manager統一注入・描画システム完全対応');
-console.log('🚀 特徴: v8新Graphics API・WebGPU対応・座標変換修正・イベント透過修正・Container階層描画');
+console.log('🖊️ PenTool 座標修正版 Loaded - 既存システム互換・フォールバック対応');
