@@ -1,62 +1,53 @@
 /**
  * 🔧 ConfigManager - PixiJS v8対応設定管理（WebGPU・Container階層・高精度設定）
- * 📋 RESPONSIBILITY: v8設定管理・WebGPU設定・Container設定・高精度レンダリング設定・デフォルト値提供
- * 🚫 PROHIBITION: UI操作・描画処理・Manager作成・フォールバック・フェイルセーフ
- * ✅ PERMISSION: v8設定値管理・WebGPU設定・Container階層設定・高精度設定・デフォルト値提供
+ * ChangeLog: 2025-09-01 <Step1 Fix - Added missing configure(), attach(), init() methods for Manager lifecycle>
  * 
- * 📏 DESIGN_PRINCIPLE: v8設定特化・WebGPU優先・Container階層対応・高精度レンダリング
- * 🔄 INTEGRATION: v8 Manager群設定提供・WebGPU設定・Container設定・高精度設定
- * 🚀 V8_MIGRATION: WebGPU設定追加・Container階層設定・高精度レンダリング設定・v7設定廃止
+ * @provides
+ *   - ConfigManager（クラス）
+ *   - configure(config)          // 同期：設定注入（必須ライフサイクル）
+ *   - attach(context)            // 同期：参照注入（必須ライフサイクル）
+ *   - init() -> Promise          // 非同期：内部初期化（必須ライフサイクル）
+ *   - isReady() -> boolean       // 同期：準備完了判定（必須ライフサイクル）
+ *   - dispose()                  // 同期：解放（必須ライフサイクル）
+ *   - getCanvasConfigV8() - v8キャンバス設定・WebGPU対応・高精度レンダリング
+ *   - getV8RendererConfig() - v8レンダラー設定・WebGPU優先・高性能設定
+ *   - getV8ToolConfig(toolName) - v8ツール設定・リアルタイム描画・高精度
+ *   - getV8ContainerConfig() - v8 Container階層設定・zIndex・マスク・フィルター
+ *   - getV8PerformanceConfig() - v8性能設定・WebGPU最適化・高速化
+ *   - updateV8Config(section, updates) - v8設定更新・動的変更対応
+ *   - getV8DebugConfig() - v8デバッグ設定・WebGPU情報・統計情報
+ *   - getV8Color(colorName) - v8色定義取得
+ *   - getAllV8Colors() - v8全色取得
+ *   - getWebGPUConfig() - WebGPU対応設定取得
+ *   - validateV8Config() - v8設定バリデーション
+ *   - generateOptimizedV8Config(webgpuSupported) - v8環境最適化設定生成
+ *   - getV8DebugInfo() - v8デバッグ情報取得
  * 
- * 📌 提供メソッド一覧（v8対応・実装確認済み）:
- * ✅ getCanvasConfigV8() - v8キャンバス設定・WebGPU対応・高精度レンダリング
- * ✅ getV8RendererConfig() - v8レンダラー設定・WebGPU優先・高性能設定
- * ✅ getV8ToolConfig(toolName) - v8ツール設定・リアルタイム描画・高精度
- * ✅ getV8ContainerConfig() - v8 Container階層設定・zIndex・マスク・フィルター
- * ✅ getV8PerformanceConfig() - v8性能設定・WebGPU最適化・高速化
- * ✅ updateV8Config(section, updates) - v8設定更新・動的変更対応
- * ✅ getV8DebugConfig() - v8デバッグ設定・WebGPU情報・統計情報
- * ✅ getV8Color(colorName) - v8色定義取得
- * ✅ getAllV8Colors() - v8全色取得
- * ✅ getWebGPUConfig() - WebGPU対応設定取得
- * ✅ validateV8Config() - v8設定バリデーション
- * ✅ generateOptimizedV8Config(webgpuSupported) - v8環境最適化設定生成
- * ✅ getV8DebugInfo() - v8デバッグ情報取得
+ * @uses
+ *   - window.devicePixelRatio - デバイス解像度取得（Browser API）
+ *   - console.log/warn - ログ出力（Browser API）
+ *   - Object.assign/keys/values/entries - オブジェクト操作（JavaScript標準）
+ *   - JSON.parse/stringify - JSON処理（JavaScript標準）
  * 
- * 📌 他ファイル呼び出しメソッド一覧（実装確認済み）:
- * ✅ window.devicePixelRatio - デバイス解像度取得（Browser API）
- * ✅ console.log() - ログ出力（Browser API）
- * ✅ console.warn() - 警告ログ出力（Browser API）  
- * ✅ Object.assign() - オブジェクト結合（JavaScript標準）
- * ✅ Object.keys() - オブジェクトキー取得（JavaScript標準）
- * ✅ Object.values() - オブジェクト値取得（JavaScript標準）
- * ✅ Object.entries() - オブジェクトエントリー取得（JavaScript標準）
- * ✅ JSON.parse() - JSON解析（JavaScript標準）
- * ✅ JSON.stringify() - JSON文字列化（JavaScript標準）
+ * @initflow
+ *   1. ConfigManager.configure(config) → 設定注入
+ *   2. ConfigManager.attach(context) → 参照注入
+ *   3. ConfigManager.init() → 内部初期化・設定バリデーション
+ *   4. isReady() === true → 他Managerから利用可能
  * 
- * 📐 v8設定提供フロー:
- * 開始 → v8設定初期化・WebGPU優先設定 → Container階層設定 → 高精度レンダリング設定 → 
- * Manager群設定提供 → 動的設定更新対応 → 完了
- * 依存関係: WebGPU API(優先) → Container階層(基盤) → 高精度設定(品質)
+ * @forbids
+ *   💀 双方向依存禁止
+ *   🚫 フォールバック禁止
+ *   🚫 UI操作・描画処理・Manager作成禁止
+ *   🚫 v7互換設定の継続使用禁止
  * 
- * 🚨 CRITICAL_V8_DEPENDENCIES: v8必須設定項目
- * - WebGPU優先設定 (preference: 'webgpu')
- * - 高解像度対応 (resolution: devicePixelRatio)
- * - Container階層有効 (sortableChildren: true)
- * - 高性能モード (powerPreference: 'high-performance')
+ * @manager-key
+ *   - window.Tegaki.ConfigManagerInstance
  * 
- * 🔧 V8_CONFIGURATION_ORDER: v8設定順序（推奨）
- * 1. WebGPU優先設定
- * 2. 高解像度・高性能設定
- * 3. Container階層設定
- * 4. ツール高精度設定
- * 5. デバッグ・統計設定
- * 
- * 🚫 V8_ABSOLUTE_PROHIBITIONS: v8移行時絶対禁止設定
- * - v7互換設定継続使用
- * - WebGL強制設定 (preference: 'webgl'固定)
- * - フォールバック複雑化設定
- * - 低解像度固定設定
+ * @dependencies-strict
+ *   - 必須: なし（設定提供のため単独動作）
+ *   - オプション: なし
+ *   - 禁止: 他Manager依存（設定提供者のため）
  */
 
 // Tegaki名前空間初期化
@@ -69,6 +60,15 @@ window.Tegaki = window.Tegaki || {};
 class ConfigManager {
     constructor() {
         console.log('🔧 ConfigManager v8対応版 作成');
+        
+        // Manager共通ライフサイクル用状態
+        this._status = {
+            ready: false,
+            error: null,
+            initialized: false
+        };
+        this._config = null;
+        this._context = null;
         
         // v8基本設定
         this.v8Config = {
@@ -169,10 +169,118 @@ class ConfigManager {
             webgpuActive: 0x2196F3,                      // #2196F3 - WebGPU有効色
             webglFallback: 0xFF9800                      // #FF9800 - WebGL フォールバック色
         };
-        
-        // v7互換設定（廃止予定）
-        this.legacyConfig = this.generateLegacyCompatibilityConfig();
     }
+    
+    // ========================================
+    // Manager統一ライフサイクル（必須実装）
+    // ========================================
+    
+    /**
+     * 設定注入（Manager統一ライフサイクル）
+     */
+    configure(config = {}) {
+        try {
+            this._config = config;
+            
+            // 設定をv8Configにマージ
+            if (config.canvas) {
+                Object.assign(this.v8Config.canvas, config.canvas);
+            }
+            if (config.renderer) {
+                Object.assign(this.v8Config.renderer, config.renderer);
+            }
+            if (config.tools) {
+                Object.assign(this.v8Config.tools, config.tools);
+            }
+            
+            console.log('🔧 ConfigManager: configure() 完了');
+            return true;
+            
+        } catch (error) {
+            this._status.error = error.message;
+            console.error('💀 ConfigManager: configure() エラー:', error.message);
+            return false;
+        }
+    }
+    
+    /**
+     * 参照注入（Manager統一ライフサイクル）
+     */
+    attach(context = {}) {
+        try {
+            this._context = context;
+            console.log('🔧 ConfigManager: attach() 完了');
+            return true;
+            
+        } catch (error) {
+            this._status.error = error.message;
+            console.error('💀 ConfigManager: attach() エラー:', error.message);
+            return false;
+        }
+    }
+    
+    /**
+     * 内部初期化（Manager統一ライフサイクル）
+     */
+    async init() {
+        try {
+            // 設定バリデーション実行
+            const validationErrors = this.validateV8Config();
+            if (validationErrors.length > 0) {
+                console.warn('⚠️ ConfigManager: 設定検証で警告:', validationErrors);
+            }
+            
+            this._status.initialized = true;
+            this._status.ready = true;
+            this._status.error = null;
+            
+            console.log('✅ ConfigManager: init() 完了');
+            
+        } catch (error) {
+            this._status.error = error.message;
+            this._status.ready = false;
+            console.error('💀 ConfigManager: init() エラー:', error.message);
+            throw error;
+        }
+    }
+    
+    /**
+     * 準備完了判定（Manager統一ライフサイクル）
+     */
+    isReady() {
+        return this._status.ready && this._status.initialized;
+    }
+    
+    /**
+     * 解放（Manager統一ライフサイクル）
+     */
+    dispose() {
+        try {
+            this._config = null;
+            this._context = null;
+            this._status = {
+                ready: false,
+                error: null,
+                initialized: false
+            };
+            
+            console.log('🔧 ConfigManager: dispose() 完了');
+            
+        } catch (error) {
+            console.error('💀 ConfigManager: dispose() エラー:', error.message);
+        }
+    }
+    
+    /**
+     * 状態取得（Manager統一API）
+     */
+    getStatus() {
+        return { ...this._status };
+    }
+    
+    // ========================================
+    // v8設定提供メソッド
+    // ========================================
     
     /**
      * v8キャンバス設定取得・WebGPU対応・高精度レンダリング
@@ -348,78 +456,6 @@ class ConfigManager {
     }
     
     /**
-     * v7互換設定生成（廃止予定）
-     */
-    generateLegacyCompatibilityConfig() {
-        return {
-            canvas: {
-                width: this.v8Config.canvas.width,
-                height: this.v8Config.canvas.height,
-                backgroundColor: this.v8Config.canvas.backgroundColor,
-                backgroundAlpha: this.v8Config.canvas.backgroundAlpha,
-                antialias: this.v8Config.canvas.antialias,
-                resolution: 1 // v7互換性のため固定
-            },
-            tools: {
-                pen: {
-                    color: this.v8Config.tools.pen.color,
-                    lineWidth: this.v8Config.tools.pen.lineWidth,
-                    opacity: this.v8Config.tools.pen.opacity
-                },
-                eraser: {
-                    size: this.v8Config.tools.eraser.size,
-                    opacity: this.v8Config.tools.eraser.opacity
-                }
-            }
-        };
-    }
-    
-    /**
-     * キャンバス設定取得（v7互換）
-     */
-    getCanvasConfig() {
-        console.warn('⚠️ getCanvasConfig() is deprecated - use getCanvasConfigV8()');
-        return { ...this.legacyConfig.canvas };
-    }
-    
-    /**
-     * ツール設定取得（v7互換）
-     */
-    getToolConfig(toolName) {
-        console.warn('⚠️ getToolConfig() is deprecated - use getV8ToolConfig()');
-        return this.legacyConfig.tools[toolName] ? { ...this.legacyConfig.tools[toolName] } : null;
-    }
-    
-    /**
-     * UI設定取得（v7互換）
-     */
-    getUIConfig() {
-        console.warn('⚠️ getUIConfig() is deprecated - use v8 specific configs');
-        return {
-            theme: 'futaba',
-            sidebarWidth: 50,
-            statusHeight: 60,
-            toolButtonSize: 36
-        };
-    }
-    
-    /**
-     * デバッグ設定取得（v7互換）
-     */
-    getDebugConfig() {
-        console.warn('⚠️ getDebugConfig() is deprecated - use getV8DebugConfig()');
-        return { ...this.v8Config.debug };
-    }
-    
-    /**
-     * 色定義取得（v7互換）
-     */
-    getColor(colorName) {
-        console.warn('⚠️ getColor() is deprecated - use getV8Color()');
-        return this.v8Colors[colorName] || null;
-    }
-    
-    /**
      * v8デバッグ情報取得
      */
     getV8DebugInfo() {
@@ -452,14 +488,6 @@ class ConfigManager {
     }
     
     /**
-     * デバッグ情報取得（v7互換）
-     */
-    getDebugInfo() {
-        console.warn('⚠️ getDebugInfo() is deprecated - use getV8DebugInfo()');
-        return this.getV8DebugInfo();
-    }
-    
-    /**
      * v8設定リセット
      */
     resetV8ToDefaults() {
@@ -484,6 +512,78 @@ class ConfigManager {
             colors: this.getAllV8Colors(),
             webgpu: this.getWebGPUConfig()
         };
+    }
+    
+    // ========================================
+    // v7互換メソッド（廃止予定）
+    // ========================================
+    
+    /**
+     * キャンバス設定取得（v7互換）
+     */
+    getCanvasConfig() {
+        console.warn('⚠️ getCanvasConfig() is deprecated - use getCanvasConfigV8()');
+        return {
+            width: this.v8Config.canvas.width,
+            height: this.v8Config.canvas.height,
+            backgroundColor: this.v8Config.canvas.backgroundColor,
+            backgroundAlpha: this.v8Config.canvas.backgroundAlpha,
+            antialias: this.v8Config.canvas.antialias,
+            resolution: 1 // v7互換性のため固定
+        };
+    }
+    
+    /**
+     * ツール設定取得（v7互換）
+     */
+    getToolConfig(toolName) {
+        console.warn('⚠️ getToolConfig() is deprecated - use getV8ToolConfig()');
+        const toolConfig = this.v8Config.tools[toolName];
+        if (!toolConfig) return null;
+        
+        return {
+            color: toolConfig.color,
+            lineWidth: toolConfig.lineWidth,
+            opacity: toolConfig.opacity,
+            size: toolConfig.size
+        };
+    }
+    
+    /**
+     * UI設定取得（v7互換）
+     */
+    getUIConfig() {
+        console.warn('⚠️ getUIConfig() is deprecated - use v8 specific configs');
+        return {
+            theme: 'futaba',
+            sidebarWidth: 50,
+            statusHeight: 60,
+            toolButtonSize: 36
+        };
+    }
+    
+    /**
+     * デバッグ設定取得（v7互換）
+     */
+    getDebugConfig() {
+        console.warn('⚠️ getDebugConfig() is deprecated - use getV8DebugConfig()');
+        return { ...this.v8Config.debug };
+    }
+    
+    /**
+     * 色定義取得（v7互換）
+     */
+    getColor(colorName) {
+        console.warn('⚠️ getColor() is deprecated - use getV8Color()');
+        return this.v8Colors[colorName] || null;
+    }
+    
+    /**
+     * デバッグ情報取得（v7互換）
+     */
+    getDebugInfo() {
+        console.warn('⚠️ getDebugInfo() is deprecated - use getV8DebugInfo()');
+        return this.getV8DebugInfo();
     }
 }
 

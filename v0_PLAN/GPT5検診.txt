@@ -1,74 +1,82 @@
-🔍 主なエラー箇所
+=== Tegaki v8 Phase1.5rev7 改修計画表 ===
 
-RecordManager / ConfigManager が未対応
+目的:
+- 肥大化コードをルールブック準拠に整理
+- ConfigManager.configure エラー解消
+- サイドバーアイコン未表示とペン描画不能の原因を潰す
 
-RecordManager初期化警告: TypeError: recordManager.configure is not a function
-ConfigManager初期化警告: TypeError: configManager.configure is not a function
+------------------------------------------------------------
+1. 肥大化問題の整理
+------------------------------------------------------------
+[現状]
+- AppCore が Manager 初期化・検証・デバッグ出力をすべて抱え責任過多
+- JSON.stringify で PixiJS 内部オブジェクトを丸ごと出力しようとし循環参照エラー
+- 各 Manager に冗長ログが散在し、「開始」「method確認」「完了」と段階が細分化されている
+- configure() を無条件呼び出し → 存在しない場合でも呼ばれエラー化
 
+[改善策]
+- AppCore の責任を「初期化制御と依存解決」に限定
+- verifyManagerReady では Manager 情報を最小限出力
+  className, version, isReady のみに制限
+- Manager ログは「開始」「完了」の2段階のみ残す
+- configure() 呼び出しは存在チェック付きに変更
+  (typeof m.configure === "function" のみ実行)
 
-→ configure() メソッドが存在せず、AppCore の初期化フローで警告が出ている。
+------------------------------------------------------------
+2. ConfigManager.configure エラー
+------------------------------------------------------------
+[原因]
+- AppCore.initializeOtherManagers が configManager.configure() を呼ぶが
+  config-manager.js にメソッド未実装
 
-循環参照エラー
+[改善策]
+- config-manager.js に空の configure() を追加するか、
+  AppCore 側で存在チェックを入れる
+- 責任分離の観点からは「AppCore側で存在チェック」の方が適切
 
-💀 v8 Manager群初期化エラー: TypeError: Converting circular structure to JSON
-    --> starting at object with constructor 'Xc'
-        property 'root' -> object with constructor 'Z'
-        --- property 'renderGroup' closes the circle
+------------------------------------------------------------
+3. サイドバーアイコン未表示
+------------------------------------------------------------
+[原因候補]
+- assets/icons.js のエクスポート形式が UI 側と不一致
+- DOM へのアイコン描画処理が初期化失敗でスキップされている
+- PixiJS Container と DOM サイドバーが同期していない
 
+[改善策]
+- icons.js を確認し、export の形式を UI 側 (index.html / bootstrap.js) が参照できる形に統一
+- TegakiApplication.initialize が成功してから UI ビルドを実行するよう順序を見直す
 
-→ AppCore.verifyManagerReady() が JSON.stringify() を使って Manager 状態を出力しようとした際に、PixiJS のオブジェクト (root → renderGroup) を含んでしまい循環参照に。
-そのため TegakiApplication の初期化全体が失敗 → ツールはアクティブ化ログは出ても、描画処理が実行されない。
+------------------------------------------------------------
+4. ペン描画不能
+------------------------------------------------------------
+[原因]
+- TegakiApplication 初期化が configManager.configure エラーで止まり
+  → ToolManager.initV8Tools() 後の pointer イベントが bind されていない
+- そのため PenTool の addStroke が呼ばれない状態
 
-📌 原因まとめ
+[改善策]
+- 上記エラーを解消すればペン描画も復帰
+- runPhase15Test() を実行して pointerdown→addStroke→draw のログを確認
 
-configure() を持たない Manager を AppCore が呼び出している。
+------------------------------------------------------------
+5. 実施順序
+------------------------------------------------------------
+1. app-core.js
+   - initializeOtherManagers 内の configure 呼び出しに存在チェック追加
+   - verifyManagerReady の JSON.stringify を削除し、キー限定ログに修正
+2. config-manager.js / record-manager.js
+   - configure が不要であれば削除
+   - 将来拡張に備え placeholder のみ残すなら空実装を加える
+3. 各 Manager のログを「開始」「完了」のみに削減
+4. icons.js の export / import を見直し、UI 側で正常参照できるよう統一
+5. 再度 runPhase15Test() で
+   - アイコン表示確認
+   - ペン描画確認
 
-verifyManagerReady() のデバッグ出力が PixiJS の循環参照構造を直列化しようとしてクラッシュ。
-
-その結果、初期化が「未完了」扱いとなり、PenTool がアクティブ化しても Canvas への描画が無効になっている。
-
-💡 改善策
-
-RecordManager / ConfigManager に configure スタブを追加
-
-configure() {
-    // Phase1.5 では空実装でOK
-    return true;
-}
-
-
-これで初期化フローが正常に進む。
-
-AppCore.verifyManagerReady の循環参照対策
-
-JSON.stringify() で PixiJS オブジェクトを直列化しないようにする。
-
-例: safeStringify を導入
-
-function safeStringify(obj) {
-  const seen = new WeakSet();
-  return JSON.stringify(obj, (key, value) => {
-    if (typeof value === "object" && value !== null) {
-      if (seen.has(value)) return "[Circular]";
-      seen.add(value);
-    }
-    return value;
-  }, 2);
-}
-
-
-verifyManagerReady 内で safeStringify を使う。
-
-描画テストを復帰
-
-循環参照エラーで TegakiApplication.initialize が fail → PenTool の pointerdown イベントが bind されていない可能性大。
-
-エラー解消後、window.Tegaki.runPhase15Test() を実行してペン描画確認。
-
-✅ 推奨修正手順
-
-record-manager.js / config-manager.js に configure() を追加（空でOK）。
-
-app-core.js の verifyManagerReady を safeStringify 方式に変更。
-
-再実行 → 循環参照エラーが消え、PenTool の pointerdown → addStroke が呼ばれて線が描けるようになるはず。
+------------------------------------------------------------
+6. 完了目標
+------------------------------------------------------------
+- 初期化エラーが発生しない (configManager.configure)
+- サイドバーにアイコンが表示される
+- ペンツールで描画可能になる
+- 冗長ログ・責任過多を解消しルールブック準拠のシンプル構造へ整理

@@ -1,181 +1,173 @@
- 🚨 ErrorManager Simple 作成
- 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
- 🔧 ConfigManager v8対応版 作成
- 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
- 🔄 EventBus Simple 作成
- 🔄 EventBus Simple Loaded - シンプルイベント通信
- 📏 CoordinateManager v8座標修正版 Loaded - 座標オフセット問題完全解決
- 📏 修正内容: 座標オフセット修正・DPR重複適用防止・Container変形修正・Canvas bounds計算修正
- 🚀 特徴: PixiJS v8完全準拠・高精度DPR処理・Container階層変形対応・DOM座標との完全一致保証
- 🧭 NavigationManager PixiJS v8対応版 Loaded
- 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
- 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
- ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
- 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
- 🔄 RecordManager v8対応版 Loaded - addStrokeメソッド実装版
- ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
- 🔧 setupPhase15Shortcuts・enableメソッド追加済み
- 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
- 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
- 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
- ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
- 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
- 🎨 CanvasManager v8.12.0完全修正版 Loaded - getApplication()追加・CoordinateManager連携・座標オフセット問題修正・Manager統一ライフサイクル
- 📏 修正内容: getApplication()メソッド追加・Manager統一ライフサイクル実装・_status内部状態管理・座標変換係数取得改善・Container階層管理改善
- 🚀 特徴: CoordinateManager完全対応・座標オフセット問題解決・Manager統一API完全準拠・Graphics分離管理・描画消失問題解決・WebGPU対応
- 🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版 Loaded
- 📏 修正内容: setManagers()エイリアス追加・event → eventbus統一・Object形式前提・Map対策・型安全性確保・詳細デバッグ
- 🚀 特徴: startOperation/endOperation方式対応・Manager統一注入完成・架空メソッド削除・Manager名称統一対応・後方互換性確保
- 🖊️ PenTool v8.12.0 完全修正版 Loaded - Manager注入修正・継続描画問題解決・外部描画対応
- 🧹 EraserTool v8.12.0完全修正版 Loaded - 構文エラー解決・Graphics API v8準拠
- 📏 修正内容: 構文エラー完全修正・Manager注入API修正・v8新API準拠・エラーハンドリング強化
- 🚀 特徴: shape().fill()新API・WebGPU対応・Manager統一注入・確実な終了処理
- 🚀 ToolManager v8.12.0構文エラー完全修正版 Loaded - 構文エラー解決・isReady()修正・setActiveTool()追加・準備状態問題完全解決
- 📏 修正内容: 構文エラー完全修正・isReady()メソッド完全修正・setActiveTool()メソッド追加・Manager統一ライフサイクル実装・_status内部状態管理・Tool準備状態検証強化
- 🚀 特徴: Manager統一API完全準拠・Tool切り替えエラー完全解決・防御的状態管理・AppCore初期化エラー完全解決対応
- 🚀 AppCore v8 Manager初期化順序修正版 Loaded
- 📏 修正内容: CanvasManager完全初期化確立・依存順序厳守・架空メソッド防止システム実装
- 🚀 特徴: Manager契約検証・準備状態確認・段階的初期化・エラーハンドリング強化
- 🚀 TegakiApplication v8 Manager初期化フロー修正版 Loaded
- 📏 修正内容: AppCore完全委譲・Manager初期化順序修正・エラーハンドリング強化・座標処理統一
- 🚀 特徴: 責任分離・依存関係明確化・Canvas DOM挿入確実化・ポインターイベント最適化
- 🚀 main.js v8統合エントリーポイント Loaded - グローバル関数・デバッグ機能・WebGPU対応
- ✅ PixiJS v8確認完了 - v8統合機能利用可能
- 🧪 Phase1.5統合テスト Loaded
- 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
- 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
- 🚀 Bootstrap PixiJS v8対応版・初期化順序確立版・ToolManager対応版 Loaded
- 📏 特徴: DOM挿入確実化・Manager順序制御・座標変換確立・Tool準備確認・統合テスト自動実行
- 🚀 Bootstrap PixiJS v8対応版 実行開始...
- 🔍 PixiJS v8利用可能性確認開始
- 🎯 PixiJS バージョン: 8.12.0
- 🎮 WebGPU対応: ❌ (WebGL2フォールバック)
- ✅ PixiJS v8利用可能性確認完了
- 🏗️ Canvas Container存在確認・作成開始
- 🏗️ canvas-container既存確認
- ✅ Canvas Container準備完了
- 🔍 Phase1.5依存関係確認開始
- ✅ Phase1.5依存関係確認完了
- 🚀 TegakiApplication v8対応版 初期化開始
- 🚀 TegakiApplication v8 Manager初期化フロー修正版 作成開始
- 🚀 TegakiApplication 初期化開始
- ✅ AppCore作成完了
- 🚀 TegakiApplication 初期化開始
- ✅ AppCore作成完了
- 🚀 PixiJS v8.12.0 loaded from node_modules
- ✅ PixiJS v8.12.0 confirmed
-app-core.js:363 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
-_createDeviceAndAdaptor @ pixi.min.js:2121
-init @ pixi.min.js:2121
-init @ pixi.min.js:585
-await in init
-Sm @ pixi.min.js:585
-await in Sm
-init @ pixi.min.js:585
-createV8Application @ app-core.js:363
-await in createV8Application
-createCanvasV8 @ app-core.js:241
-createCanvasV8 @ tegaki-application.js:208
-initialize @ tegaki-application.js:143
-await in initialize
-TegakiApplication @ tegaki-application.js:119
-initializeTegakiApplication @ bootstrap.js:183
-start @ bootstrap.js:440
-app-core.js:363 The powerPreference option is currently ignored when calling requestAdapter() on Windows. See https://crbug.com/369219127
-_createDeviceAndAdaptor @ pixi.min.js:2121
-init @ pixi.min.js:2121
-init @ pixi.min.js:585
-await in init
-Sm @ pixi.min.js:585
-await in Sm
-init @ pixi.min.js:585
-createV8Application @ app-core.js:363
-await in createV8Application
-createCanvasV8 @ app-core.js:241
-createCanvasV8 @ tegaki-application.js:208
-initialize @ tegaki-application.js:143
-await in initialize
-initializeTegakiApplication @ bootstrap.js:184
-start @ bootstrap.js:440
- ✅ Canvas作成完了 (2)
- ✅ Canvas作成完了 (2)
- 🎨 Canvas DOM挿入開始
- ✅ ポインターイベント設定完了
- ✅ Canvas DOM挿入完了
- 🎨 Canvas DOM挿入開始
- ✅ ポインターイベント設定完了
- ✅ Canvas DOM挿入完了
- 🔧 Manager群初期化開始（AppCore委譲）
- 🚀 Manager群初期化開始（依存順序厳守版）
- Step 1: CanvasManager初期化開始
- 🎨 CanvasManager v8.12.0完全修正版 作成開始
- ✅ CanvasManager v8.12.0完全修正版 作成完了
- ✅ CanvasManager method verification passed
- ✅ CanvasManager method verification passed
- 🔧 CanvasManager: configure() 開始
- ✅ CanvasManager: configure() 完了 (400x400)
- 🔧 CanvasManager: attach() 開始
- ✅ PixiJS Application Context から取得
- ✅ CanvasManager: attach() 完了
- 🚀 CanvasManager: init() 開始
- 🎨 CanvasManager: v8 Application初期化開始
- 🎨 Canvas サイズ変更: 400x400 (DPR: 2)
- 🎨 CanvasManager: Container階層作成開始
- 🎨 CanvasManager: Container階層作成完了
- 🎨 CanvasManager: Graphics管理システム初期化開始
- 🎨 CanvasManager: Graphics管理システム初期化完了
- 🎨 CanvasManager: v8初期化完了 (400x400, 2)
- 🔧 Manager群初期化開始（AppCore委譲）
- 🚀 Manager群初期化開始（依存順序厳守版）
- Step 1: CanvasManager初期化開始
- 🎨 CanvasManager v8.12.0完全修正版 作成開始
- ✅ CanvasManager v8.12.0完全修正版 作成完了
- ✅ CanvasManager method verification passed
- ✅ CanvasManager method verification passed
- 🔧 CanvasManager: configure() 開始
- ✅ CanvasManager: configure() 完了 (400x400)
- 🔧 CanvasManager: attach() 開始
- ✅ PixiJS Application Context から取得
- ✅ CanvasManager: attach() 完了
- 🚀 CanvasManager: init() 開始
- 🎨 CanvasManager: v8 Application初期化開始
- 🎨 Canvas サイズ変更: 400x400 (DPR: 2)
- 🎨 CanvasManager: Container階層作成開始
- 🎨 CanvasManager: Container階層作成完了
- 🎨 CanvasManager: Graphics管理システム初期化開始
- 🎨 CanvasManager: Graphics管理システム初期化完了
- 🎨 CanvasManager: v8初期化完了 (400x400, 2)
- ✅ CanvasManager: init() 完了
- ✅ CanvasManager: init() 完了
- 🎨 CanvasManager: v8 Application初期化開始
- 🎨 Canvas サイズ変更: 400x400 (DPR: 2)
- 🎨 CanvasManager: Container階層作成開始
- 🎨 CanvasManager: Container階層作成完了
- 🎨 CanvasManager: Graphics管理システム初期化開始
- 🎨 CanvasManager: Graphics管理システム初期化完了
- 🎨 CanvasManager: v8初期化完了 (400x400, 2)
- 🎨 CanvasManager: v8 Application初期化開始
- 🎨 Canvas サイズ変更: 400x400 (DPR: 2)
- 🎨 CanvasManager: Container階層作成開始
- 🎨 CanvasManager: Container階層作成完了
- 🎨 CanvasManager: Graphics管理システム初期化開始
- 🎨 CanvasManager: Graphics管理システム初期化完了
- 🎨 CanvasManager: v8初期化完了 (400x400, 2)
- ✅ CanvasManager ready state verified
- ✅ Step 1: CanvasManager完全初期化完了
- Step 2: 基幹Manager群初期化開始
- 📏 CoordinateManager v8座標修正版 作成開始
- ✅ CoordinateManager v8座標修正版 作成完了
- 🚀 RecordManager v8初期化開始
- 🔄 RecordManager v8対応版 作成完了
-app-core.js:351 RecordManager初期化警告: TypeError: recordManager.configure is not a function
-    at AppCore.createAndRegisterBasicManagers (app-core.js:588:31)
-    at AppCore.initializeV8Managers (app-core.js:482:22)
+error-manager.js:20 🚨 ErrorManager Simple 作成
+error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+config-manager.js:62 🔧 ConfigManager v8対応版 作成
+config-manager.js:595 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
+event-bus.js:20 🔄 EventBus Simple 作成
+event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
+coordinate-manager.js:984 📏 CoordinateManager v8座標修正版 Loaded - 座標オフセット問題完全解決
+coordinate-manager.js:985 📏 修正内容: 座標オフセット修正・DPR重複適用防止・Container変形修正・Canvas bounds計算修正
+coordinate-manager.js:986 🚀 特徴: PixiJS v8完全準拠・高精度DPR処理・Container階層変形対応・DOM座標との完全一致保証
+navigation-manager.js:718 🧭 NavigationManager PixiJS v8対応版 Loaded
+navigation-manager.js:719 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
+navigation-manager.js:720 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
+navigation-manager.js:721 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+navigation-manager.js:724 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
+record-manager.js:175 🔄 RecordManager Minimal v8対応版 Loaded - ライフサイクル実装・ストローク記録機能
+shortcut-manager.js:416 ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
+shortcut-manager.js:417 🔧 setupPhase15Shortcuts・enableメソッド追加済み
+shortcut-manager.js:418 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
+minimal-deps.js:22 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
+minimal-deps.js:168 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
+minimal-deps.js:169 ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
+minimal-deps.js:170 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
+canvas-manager.js:978 🎨 CanvasManager v8.12.0完全修正版 Loaded - getApplication()追加・CoordinateManager連携・座標オフセット問題修正・Manager統一ライフサイクル
+canvas-manager.js:979 📏 修正内容: getApplication()メソッド追加・Manager統一ライフサイクル実装・_status内部状態管理・座標変換係数取得改善・Container階層管理改善
+canvas-manager.js:980 🚀 特徴: CoordinateManager完全対応・座標オフセット問題解決・Manager統一API完全準拠・Graphics分離管理・描画消失問題解決・WebGPU対応
+abstract-tool.js:370 🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版 Loaded
+abstract-tool.js:371 📏 修正内容: setManagers()エイリアス追加・event → eventbus統一・Object形式前提・Map対策・型安全性確保・詳細デバッグ
+abstract-tool.js:372 🚀 特徴: startOperation/endOperation方式対応・Manager統一注入完成・架空メソッド削除・Manager名称統一対応・後方互換性確保
+pen-tool.js:830 🖊️ PenTool v8.12.0 完全修正版 Loaded - Manager注入修正・継続描画問題解決・外部描画対応
+eraser-tool.js:761 🧹 EraserTool v8.12.0完全修正版 Loaded - 構文エラー解決・Graphics API v8準拠
+eraser-tool.js:762 📏 修正内容: 構文エラー完全修正・Manager注入API修正・v8新API準拠・エラーハンドリング強化
+eraser-tool.js:763 🚀 特徴: shape().fill()新API・WebGPU対応・Manager統一注入・確実な終了処理
+tool-manager.js:1000 🚀 ToolManager v8.12.0構文エラー完全修正版 Loaded - 構文エラー解決・isReady()修正・setActiveTool()追加・準備状態問題完全解決
+tool-manager.js:1001 📏 修正内容: 構文エラー完全修正・isReady()メソッド完全修正・setActiveTool()メソッド追加・Manager統一ライフサイクル実装・_status内部状態管理・Tool準備状態検証強化
+tool-manager.js:1002 🚀 特徴: Manager統一API完全準拠・Tool切り替えエラー完全解決・防御的状態管理・AppCore初期化エラー完全解決対応
+app-core.js:503 ✅ AppCore v8 Step1修正版 Loaded - configure存在チェック・ログ簡素化・循環参照防止
+tegaki-application.js:842 🚀 TegakiApplication v8 Manager初期化フロー修正版 Loaded
+tegaki-application.js:843 📏 修正内容: AppCore完全委譲・Manager初期化順序修正・エラーハンドリング強化・座標処理統一
+tegaki-application.js:844 🚀 特徴: 責任分離・依存関係明確化・Canvas DOM挿入確実化・ポインターイベント最適化
+main.js:330 🚀 main.js v8統合エントリーポイント Loaded - グローバル関数・デバッグ機能・WebGPU対応
+main.js:338 ✅ PixiJS v8確認完了 - v8統合機能利用可能
+phase15-integration-test.js:593 🧪 Phase1.5統合テスト Loaded
+phase15-integration-test.js:594 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
+phase15-integration-test.js:595 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
+bootstrap.js:489 🚀 Bootstrap PixiJS v8対応版・初期化順序確立版・ToolManager対応版 Loaded
+bootstrap.js:490 📏 特徴: DOM挿入確実化・Manager順序制御・座標変換確立・Tool準備確認・統合テスト自動実行
+bootstrap.js:428 🚀 Bootstrap PixiJS v8対応版 実行開始...
+bootstrap.js:73 🔍 PixiJS v8利用可能性確認開始
+bootstrap.js:81 🎯 PixiJS バージョン: 8.12.0
+bootstrap.js:89 🎮 WebGPU対応: ❌ (WebGL2フォールバック)
+bootstrap.js:91 ✅ PixiJS v8利用可能性確認完了
+bootstrap.js:99 🏗️ Canvas Container存在確認・作成開始
+bootstrap.js:120 🏗️ canvas-container既存確認
+bootstrap.js:129 ✅ Canvas Container準備完了
+bootstrap.js:138 🔍 Phase1.5依存関係確認開始
+bootstrap.js:170 ✅ Phase1.5依存関係確認完了
+bootstrap.js:179 🚀 TegakiApplication v8対応版 初期化開始
+tegaki-application.js:95 🚀 TegakiApplication v8 Manager初期化フロー修正版 作成開始
+tegaki-application.js:136 🚀 TegakiApplication 初期化開始
+tegaki-application.js:196 ✅ AppCore作成完了
+tegaki-application.js:136 🚀 TegakiApplication 初期化開始
+tegaki-application.js:196 ✅ AppCore作成完了
+tegaki-application.js:222 ✅ Canvas作成完了 (undefined)
+tegaki-application.js:222 ✅ Canvas作成完了 (undefined)
+tegaki-application.js:236 🎨 Canvas DOM挿入開始
+tegaki-application.js:326 ✅ ポインターイベント設定完了
+tegaki-application.js:283 ✅ Canvas DOM挿入完了
+tegaki-application.js:236 🎨 Canvas DOM挿入開始
+tegaki-application.js:326 ✅ ポインターイベント設定完了
+tegaki-application.js:283 ✅ Canvas DOM挿入完了
+tegaki-application.js:338 🔧 Manager群初期化開始（AppCore委譲）
+app-core.js:164 🚀 Manager群初期化開始
+canvas-manager.js:117 🎨 CanvasManager v8.12.0完全修正版 作成開始
+canvas-manager.js:167 ✅ CanvasManager v8.12.0完全修正版 作成完了
+canvas-manager.js:180 🔧 CanvasManager: configure() 開始
+canvas-manager.js:195 ✅ CanvasManager: configure() 完了 (400x400)
+canvas-manager.js:211 🔧 CanvasManager: attach() 開始
+canvas-manager.js:217 ✅ PixiJS Application Context から取得
+canvas-manager.js:224 ✅ CanvasManager: attach() 完了
+canvas-manager.js:240 🚀 CanvasManager: init() 開始
+canvas-manager.js:460 🎨 CanvasManager: v8 Application初期化開始
+canvas-manager.js:814 🎨 Canvas サイズ変更: 400x400 (DPR: 2)
+canvas-manager.js:511 🎨 CanvasManager: Container階層作成開始
+canvas-manager.js:551 🎨 CanvasManager: Container階層作成完了
+canvas-manager.js:558 🎨 CanvasManager: Graphics管理システム初期化開始
+canvas-manager.js:593 🎨 CanvasManager: Graphics管理システム初期化完了
+canvas-manager.js:486 🎨 CanvasManager: v8初期化完了 (400x400, 1)
+tegaki-application.js:338 🔧 Manager群初期化開始（AppCore委譲）
+app-core.js:164 🚀 Manager群初期化開始
+canvas-manager.js:117 🎨 CanvasManager v8.12.0完全修正版 作成開始
+canvas-manager.js:167 ✅ CanvasManager v8.12.0完全修正版 作成完了
+canvas-manager.js:180 🔧 CanvasManager: configure() 開始
+canvas-manager.js:195 ✅ CanvasManager: configure() 完了 (400x400)
+canvas-manager.js:211 🔧 CanvasManager: attach() 開始
+canvas-manager.js:217 ✅ PixiJS Application Context から取得
+canvas-manager.js:224 ✅ CanvasManager: attach() 完了
+canvas-manager.js:240 🚀 CanvasManager: init() 開始
+canvas-manager.js:460 🎨 CanvasManager: v8 Application初期化開始
+canvas-manager.js:814 🎨 Canvas サイズ変更: 400x400 (DPR: 2)
+canvas-manager.js:511 🎨 CanvasManager: Container階層作成開始
+canvas-manager.js:551 🎨 CanvasManager: Container階層作成完了
+canvas-manager.js:558 🎨 CanvasManager: Graphics管理システム初期化開始
+canvas-manager.js:593 🎨 CanvasManager: Graphics管理システム初期化完了
+canvas-manager.js:486 🎨 CanvasManager: v8初期化完了 (400x400, 1)
+canvas-manager.js:262 ✅ CanvasManager: init() 完了
+canvas-manager.js:262 ✅ CanvasManager: init() 完了
+app-core.js:177 ✅ CanvasManager初期化完了
+app-core.js:177 ✅ CanvasManager初期化完了
+config-manager.js:196 🔧 ConfigManager: configure() 完了
+config-manager.js:212 🔧 ConfigManager: attach() 完了
+config-manager.js:237 ✅ ConfigManager: init() 完了
+config-manager.js:196 🔧 ConfigManager: configure() 完了
+config-manager.js:212 🔧 ConfigManager: attach() 完了
+config-manager.js:237 ✅ ConfigManager: init() 完了
+navigation-manager.js:44 🧭 NavigationManager v8対応版 初期化開始
+navigation-manager.js:77 ✅ NavigationManager v8対応版 初期化完了
+shortcut-manager.js:20 ⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始
+shortcut-manager.js:41 ⌨️ ShortcutManager スタブ実装完了
+app-core.js:244 ✅ その他Manager初期化完了
+navigation-manager.js:44 🧭 NavigationManager v8対応版 初期化開始
+navigation-manager.js:77 ✅ NavigationManager v8対応版 初期化完了
+shortcut-manager.js:20 ⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始
+shortcut-manager.js:41 ⌨️ ShortcutManager スタブ実装完了
+app-core.js:244 ✅ その他Manager初期化完了
+coordinate-manager.js:111 📏 CoordinateManager v8座標修正版 作成開始
+coordinate-manager.js:148 ✅ CoordinateManager v8座標修正版 作成完了
+coordinate-manager.js:161 🔧 CoordinateManager: configure() 開始
+coordinate-manager.js:173 ✅ CoordinateManager: configure() 完了
+coordinate-manager.js:189 🔧 CoordinateManager: attach() 開始
+coordinate-manager.js:199 ✅ CoordinateManager: attach() 完了
+coordinate-manager.js:215 🚀 CoordinateManager: init() 開始
+coordinate-manager.js:235 ✅ CoordinateManager: init() 完了
+coordinate-manager.js:111 📏 CoordinateManager v8座標修正版 作成開始
+coordinate-manager.js:148 ✅ CoordinateManager v8座標修正版 作成完了
+coordinate-manager.js:161 🔧 CoordinateManager: configure() 開始
+coordinate-manager.js:173 ✅ CoordinateManager: configure() 完了
+coordinate-manager.js:189 🔧 CoordinateManager: attach() 開始
+coordinate-manager.js:199 ✅ CoordinateManager: attach() 完了
+coordinate-manager.js:215 🚀 CoordinateManager: init() 開始
+coordinate-manager.js:235 ✅ CoordinateManager: init() 完了
+coordinate-manager.js:346 🔧 CoordinateManager: setCanvasManager() 開始
+coordinate-manager.js:372 📦 HTML Canvas取得: PixiJS App経由
+coordinate-manager.js:382 📦 Stage取得: PixiJS App経由
+coordinate-manager.js:668 📏 Canvas bounds更新: {bounds: {…}, scroll: {…}, dpr: 2}
+coordinate-manager.js:403 ✅ CoordinateManager: setCanvasManager() 完了
+coordinate-manager.js:404 📊 参照状態: {pixiApp: true, htmlCanvas: true, stage: true, drawContainer: true, bounds: true}
+coordinate-manager.js:346 🔧 CoordinateManager: setCanvasManager() 開始
+coordinate-manager.js:372 📦 HTML Canvas取得: PixiJS App経由
+coordinate-manager.js:382 📦 Stage取得: PixiJS App経由
+coordinate-manager.js:668 📏 Canvas bounds更新: {bounds: {…}, scroll: {…}, dpr: 2}
+coordinate-manager.js:403 ✅ CoordinateManager: setCanvasManager() 完了
+coordinate-manager.js:404 📊 参照状態: {pixiApp: true, htmlCanvas: true, stage: true, drawContainer: true, bounds: true}
+app-core.js:271 ✅ CoordinateManager初期化完了
+app-core.js:271 ✅ CoordinateManager初期化完了
+tool-manager.js:126 🚀 ToolManager v8.12.0完全修正版 作成開始
+tool-manager.js:160 ✅ ToolManager v8.12.0完全修正版 作成完了
+tool-manager.js:359 🔧 ToolManager: setManagers() 開始
+tool-manager.js:368 ✅ Map形式で受信 - 直接利用
+tool-manager.js:386 ✅ CanvasManager統一注入成功
+tool-manager.js:391 ✅ ToolManager: setManagers() 完了
+tool-manager.js:474 🚀 ToolManager: initializeV8Tools() 開始
+tool-manager.js:560 ❌ ToolManager: initializeV8Tools() 失敗: Error: DrawContainer not ready - call verifyInjection() first
+    at ToolManager.initializeV8Tools (tool-manager.js:481:27)
+    at AppCore.initializeToolManager (app-core.js:291:40)
+    at AppCore.initializeV8Managers (app-core.js:186:28)
     at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
     at async TegakiApplication.initialize (tegaki-application.js:152:21)
-console.warn @ app-core.js:351
-createAndRegisterBasicManagers @ app-core.js:592
-initializeV8Managers @ app-core.js:482
+initializeV8Tools @ tool-manager.js:560
+initializeToolManager @ app-core.js:291
+initializeV8Managers @ app-core.js:186
 await in initializeV8Managers
 initializeV8Managers @ tegaki-application.js:341
 initialize @ tegaki-application.js:152
@@ -183,274 +175,34 @@ await in initialize
 TegakiApplication @ tegaki-application.js:119
 initializeTegakiApplication @ bootstrap.js:183
 start @ bootstrap.js:440
- 🔧 ConfigManager v8対応版 作成
-app-core.js:351 ConfigManager初期化警告: TypeError: configManager.configure is not a function
-    at AppCore.createAndRegisterBasicManagers (app-core.js:599:31)
-    at AppCore.initializeV8Managers (app-core.js:482:22)
-    at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
-    at async TegakiApplication.initialize (tegaki-application.js:152:21)
-console.warn @ app-core.js:351
-createAndRegisterBasicManagers @ app-core.js:603
-initializeV8Managers @ app-core.js:482
-await in initializeV8Managers
-initializeV8Managers @ tegaki-application.js:341
-initialize @ tegaki-application.js:152
-await in initialize
-TegakiApplication @ tegaki-application.js:119
-initializeTegakiApplication @ bootstrap.js:183
-start @ bootstrap.js:440
- ⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始
- ⌨️ ShortcutManager スタブ実装完了
- 🧭 NavigationManager v8対応版 初期化開始
- ✅ NavigationManager v8対応版 初期化完了
- ✅ Step 2: 基幹Manager群登録完了
- Step 3: CoordinateManager初期化開始
- ✅ CoordinateManager method verification passed
- 🔧 CoordinateManager: configure() 開始
- ✅ CoordinateManager: configure() 完了
- 🔧 CoordinateManager: attach() 開始
- ✅ CoordinateManager: attach() 完了
- 🚀 CoordinateManager: init() 開始
- ✅ CoordinateManager: init() 完了
- ✅ CanvasManager ready state verified
- ✅ Step 1: CanvasManager完全初期化完了
- Step 2: 基幹Manager群初期化開始
- 📏 CoordinateManager v8座標修正版 作成開始
- ✅ CoordinateManager v8座標修正版 作成完了
- 🚀 RecordManager v8初期化開始
- 🔄 RecordManager v8対応版 作成完了
-app-core.js:351 RecordManager初期化警告: TypeError: recordManager.configure is not a function
-    at AppCore.createAndRegisterBasicManagers (app-core.js:588:31)
-    at AppCore.initializeV8Managers (app-core.js:482:22)
+tool-manager.js:126 🚀 ToolManager v8.12.0完全修正版 作成開始
+tool-manager.js:160 ✅ ToolManager v8.12.0完全修正版 作成完了
+tool-manager.js:359 🔧 ToolManager: setManagers() 開始
+tool-manager.js:368 ✅ Map形式で受信 - 直接利用
+tool-manager.js:386 ✅ CanvasManager統一注入成功
+tool-manager.js:391 ✅ ToolManager: setManagers() 完了
+tool-manager.js:474 🚀 ToolManager: initializeV8Tools() 開始
+tool-manager.js:560 ❌ ToolManager: initializeV8Tools() 失敗: Error: DrawContainer not ready - call verifyInjection() first
+    at ToolManager.initializeV8Tools (tool-manager.js:481:27)
+    at AppCore.initializeToolManager (app-core.js:291:40)
+    at AppCore.initializeV8Managers (app-core.js:186:28)
     at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
     at async TegakiApplication.initialize (tegaki-application.js:152:21)
     at async initializeTegakiApplication (bootstrap.js:184:13)
     at async HTMLDocument.start (bootstrap.js:440:31)
-console.warn @ app-core.js:351
-createAndRegisterBasicManagers @ app-core.js:592
-initializeV8Managers @ app-core.js:482
+initializeV8Tools @ tool-manager.js:560
+initializeToolManager @ app-core.js:291
+initializeV8Managers @ app-core.js:186
 await in initializeV8Managers
 initializeV8Managers @ tegaki-application.js:341
 initialize @ tegaki-application.js:152
 await in initialize
 initializeTegakiApplication @ bootstrap.js:184
 start @ bootstrap.js:440
- 🔧 ConfigManager v8対応版 作成
-app-core.js:351 ConfigManager初期化警告: TypeError: configManager.configure is not a function
-    at AppCore.createAndRegisterBasicManagers (app-core.js:599:31)
-    at AppCore.initializeV8Managers (app-core.js:482:22)
-    at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
-    at async TegakiApplication.initialize (tegaki-application.js:152:21)
-    at async initializeTegakiApplication (bootstrap.js:184:13)
-    at async HTMLDocument.start (bootstrap.js:440:31)
-console.warn @ app-core.js:351
-createAndRegisterBasicManagers @ app-core.js:603
-initializeV8Managers @ app-core.js:482
-await in initializeV8Managers
-initializeV8Managers @ tegaki-application.js:341
-initialize @ tegaki-application.js:152
-await in initialize
-initializeTegakiApplication @ bootstrap.js:184
-start @ bootstrap.js:440
- ⌨️ ShortcutManager Phase1.5スタブ実装 - 初期化開始
- ⌨️ ShortcutManager スタブ実装完了
- 🧭 NavigationManager v8対応版 初期化開始
- ✅ NavigationManager v8対応版 初期化完了
- ✅ Step 2: 基幹Manager群登録完了
- Step 3: CoordinateManager初期化開始
- ✅ CoordinateManager method verification passed
- 🔧 CoordinateManager: configure() 開始
- ✅ CoordinateManager: configure() 完了
- 🔧 CoordinateManager: attach() 開始
- ✅ CoordinateManager: attach() 完了
- 🚀 CoordinateManager: init() 開始
- ✅ CoordinateManager: init() 完了
- 🔧 CoordinateManager: setCanvasManager() 開始
- 📦 HTML Canvas取得: PixiJS App経由
- 📦 Stage取得: PixiJS App経由
- 📏 Canvas bounds更新: {bounds: {…}, scroll: {…}, dpr: 2}
- ✅ CoordinateManager: setCanvasManager() 完了
- 📊 参照状態: {pixiApp: true, htmlCanvas: true, stage: true, drawContainer: true, bounds: true}
- 🔧 CoordinateManager: setCanvasManager() 開始
- 📦 HTML Canvas取得: PixiJS App経由
- 📦 Stage取得: PixiJS App経由
- 📏 Canvas bounds更新: {bounds: {…}, scroll: {…}, dpr: 2}
- ✅ CoordinateManager: setCanvasManager() 完了
- 📊 参照状態: {pixiApp: true, htmlCanvas: true, stage: true, drawContainer: true, bounds: true}
- ✅ CoordinateManager ready state verified
- ✅ Step 3: CoordinateManager初期化完了
- Step 4: ToolManager初期化開始
- 🚀 ToolManager v8.12.0完全修正版 作成開始
- ✅ ToolManager v8.12.0完全修正版 作成完了
- ✅ ToolManager method verification passed
- 🔧 ToolManager: setManagers() 開始
- ✅ Map形式で受信 - 直接利用
- ✅ CanvasManager統一注入成功
- ✅ ToolManager: setManagers() 完了
- 🔍 ToolManager: verifyInjection() 開始
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager: verifyInjection() 完了
- 🚀 ToolManager: initializeV8Tools() 開始
- ✅ v8依存関係確認完了
- 1️⃣ PenTool作成開始
- 🎯 AbstractTool 作成開始: pen
- ✅ pen AbstractTool 作成完了
- 🔧 PenTool Manager注入開始
- 🔧 pen Manager統一注入開始...（修正版）
- 📦 pen 受信Manager型: object
- ✅ pen: Manager群をObject形式で保存完了
- 📋 pen 利用可能Manager キー: (9) ['canvas', 'coordinate', 'record', 'config', 'error', 'eventbus', 'shortcut', 'navigation', 'tool']
- 📋 pen 利用可能Manager数: 9
- 📦 pen Manager[canvas]: CanvasManager
- 📦 pen Manager[coordinate]: CoordinateManager
- 📦 pen Manager[record]: RecordManager
- 📦 pen Manager[config]: ConfigManager
- 📦 pen Manager[error]: ErrorManager
- 📦 pen Manager[eventbus]: EventBus
- 📦 pen Manager[shortcut]: ShortcutManager
- 📦 pen Manager[navigation]: NavigationManager
- 📦 pen Manager[tool]: ToolManager
- 🔍 pen 必須Manager[canvas]: exists=true, hasValue=[object Object]
- 🔍 pen 必須Manager[coordinate]: exists=true, hasValue=[object Object]
- 🔍 pen 必須Manager[record]: exists=true, hasValue=[object Object]
- ✅ pen: 必須Manager確認完了: (3) ['canvas', 'coordinate', 'record']
- ✅ pen: Manager統一注入完了（Object形式）
- ✅ PenTool Manager統一注入完了
- ✅ CoordinateManager ready state verified
- ✅ Step 3: CoordinateManager初期化完了
- Step 4: ToolManager初期化開始
- 🚀 ToolManager v8.12.0完全修正版 作成開始
- ✅ ToolManager v8.12.0完全修正版 作成完了
- ✅ ToolManager method verification passed
- 🔧 ToolManager: setManagers() 開始
- ✅ Map形式で受信 - 直接利用
- ✅ CanvasManager統一注入成功
- ✅ ToolManager: setManagers() 完了
- 🔍 ToolManager: verifyInjection() 開始
- ✅ CanvasManager注入確認完了
- ✅ getDrawContainer()メソッド確認完了
- ✅ getDrawContainer()実行確認完了
- ✅ Container妥当性確認完了
- ✅ ToolManager: verifyInjection() 完了
- 🚀 ToolManager: initializeV8Tools() 開始
- ✅ v8依存関係確認完了
- 1️⃣ PenTool作成開始
- 🎯 AbstractTool 作成開始: pen
- ✅ pen AbstractTool 作成完了
- 🔧 PenTool Manager注入開始
- 🔧 pen Manager統一注入開始...（修正版）
- 📦 pen 受信Manager型: object
- ✅ pen: Manager群をObject形式で保存完了
- 📋 pen 利用可能Manager キー: (9) ['canvas', 'coordinate', 'record', 'config', 'error', 'eventbus', 'shortcut', 'navigation', 'tool']
- 📋 pen 利用可能Manager数: 9
- 📦 pen Manager[canvas]: CanvasManager
- 📦 pen Manager[coordinate]: CoordinateManager
- 📦 pen Manager[record]: RecordManager
- 📦 pen Manager[config]: ConfigManager
- 📦 pen Manager[error]: ErrorManager
- 📦 pen Manager[eventbus]: EventBus
- 📦 pen Manager[shortcut]: ShortcutManager
- 📦 pen Manager[navigation]: NavigationManager
- 📦 pen Manager[tool]: ToolManager
- 🔍 pen 必須Manager[canvas]: exists=true, hasValue=[object Object]
- 🔍 pen 必須Manager[coordinate]: exists=true, hasValue=[object Object]
- 🔍 pen 必須Manager[record]: exists=true, hasValue=[object Object]
- ✅ pen: 必須Manager確認完了: (3) ['canvas', 'coordinate', 'record']
- ✅ pen: Manager統一注入完了（Object形式）
- ✅ PenTool Manager統一注入完了
- ✅ PenTool登録完了
- 2️⃣ EraserTool作成開始
- 🎯 AbstractTool 作成開始: eraser
- ✅ eraser AbstractTool 作成完了
- 🧹 EraserTool v8.12.0完全修正版作成開始 - 構文エラー解決・Graphics API v8準拠
- 🔧 EraserTool Manager注入開始
- 🔧 eraser Manager統一注入開始...（修正版）
- 📦 eraser 受信Manager型: object
- ✅ eraser: Manager群をObject形式で保存完了
- 📋 eraser 利用可能Manager キー: (9) ['canvas', 'coordinate', 'record', 'config', 'error', 'eventbus', 'shortcut', 'navigation', 'tool']
- 📋 eraser 利用可能Manager数: 9
- 📦 eraser Manager[canvas]: CanvasManager
- 📦 eraser Manager[coordinate]: CoordinateManager
- 📦 eraser Manager[record]: RecordManager
- 📦 eraser Manager[config]: ConfigManager
- 📦 eraser Manager[error]: ErrorManager
- 📦 eraser Manager[eventbus]: EventBus
- 📦 eraser Manager[shortcut]: ShortcutManager
- 📦 eraser Manager[navigation]: NavigationManager
- 📦 eraser Manager[tool]: ToolManager
- 🔍 eraser 必須Manager[canvas]: exists=true, hasValue=[object Object]
- 🔍 eraser 必須Manager[coordinate]: exists=true, hasValue=[object Object]
- 🔍 eraser 必須Manager[record]: exists=true, hasValue=[object Object]
- ✅ eraser: 必須Manager確認完了: (3) ['canvas', 'coordinate', 'record']
- ✅ eraser: Manager統一注入完了（Object形式）
- ✅ EraserTool Manager統一注入完了
- ✅ EraserTool Manager統一注入完了
- ✅ PenTool登録完了
- 2️⃣ EraserTool作成開始
- 🎯 AbstractTool 作成開始: eraser
- ✅ eraser AbstractTool 作成完了
- 🧹 EraserTool v8.12.0完全修正版作成開始 - 構文エラー解決・Graphics API v8準拠
- 🔧 EraserTool Manager注入開始
- 🔧 eraser Manager統一注入開始...（修正版）
- 📦 eraser 受信Manager型: object
- ✅ eraser: Manager群をObject形式で保存完了
- 📋 eraser 利用可能Manager キー: (9) ['canvas', 'coordinate', 'record', 'config', 'error', 'eventbus', 'shortcut', 'navigation', 'tool']
- 📋 eraser 利用可能Manager数: 9
- 📦 eraser Manager[canvas]: CanvasManager
- 📦 eraser Manager[coordinate]: CoordinateManager
- 📦 eraser Manager[record]: RecordManager
- 📦 eraser Manager[config]: ConfigManager
- 📦 eraser Manager[error]: ErrorManager
- 📦 eraser Manager[eventbus]: EventBus
- 📦 eraser Manager[shortcut]: ShortcutManager
- 📦 eraser Manager[navigation]: NavigationManager
- 📦 eraser Manager[tool]: ToolManager
- 🔍 eraser 必須Manager[canvas]: exists=true, hasValue=[object Object]
- 🔍 eraser 必須Manager[coordinate]: exists=true, hasValue=[object Object]
- 🔍 eraser 必須Manager[record]: exists=true, hasValue=[object Object]
- ✅ eraser: 必須Manager確認完了: (3) ['canvas', 'coordinate', 'record']
- ✅ eraser: Manager統一注入完了（Object形式）
- ✅ EraserTool Manager統一注入完了
- ✅ EraserTool Manager統一注入完了
- ✅ EraserTool登録完了
- 📊 Tool作成結果: pen: success, eraser: success
- 🔄 デフォルトTool設定: pen
- 🎯 ToolManager: setActiveTool(pen) 開始
- 🔄 Tool切り替え開始: pen → pen
- 🎯 pen Tool アクティブ化
- 📦 pen: DrawContainer取得完了
- ✅ pen Tool アクティブ化完了
- ✅ EraserTool登録完了
- 📊 Tool作成結果: pen: success, eraser: success
- 🔄 デフォルトTool設定: pen
-tool-manager.js:675 🎯 ToolManager: setActiveTool(pen) 開始
-tool-manager.js:634 🔄 Tool切り替え開始: pen → pen
-abstract-tool.js:217 🎯 pen Tool アクティブ化
-abstract-tool.js:230 📦 pen: DrawContainer取得完了
-abstract-tool.js:236 ✅ pen Tool アクティブ化完了
-app-core.js:351 ⚠️ TegakiApplication v8初期化未完了
-console.warn @ app-core.js:351
-(anonymous) @ index.html:613
-setTimeout
-(anonymous) @ index.html:588
-pen-tool.js:197 ✅ PenTool Manager統一注入完了
-tool-manager.js:650 ✅ pen Tool アクティブ化完了
-tool-manager.js:659 ✅ Tool切り替え完了: pen
-tool-manager.js:688 ✅ ToolManager: setActiveTool(pen) 完了
-tool-manager.js:553 ✅ ToolManager: initializeV8Tools() 完了 (2個のTool)
-app-core.js:571 💀 v8 Manager群初期化エラー: TypeError: Converting circular structure to JSON
-    --> starting at object with constructor 'Xc'
-    |     property 'root' -> object with constructor 'Z'
-    --- property 'renderGroup' closes the circle
-    at JSON.stringify (<anonymous>)
-    at AppCore.verifyManagerReady (app-core.js:221:79)
-    at AppCore.initializeV8Managers (app-core.js:553:22)
-    at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
-    at async TegakiApplication.initialize (tegaki-application.js:152:21)
-initializeV8Managers @ app-core.js:571
+app-core.js:300 💀 ToolManager初期化エラー: DrawContainer not ready - call verifyInjection() first
+initializeToolManager @ app-core.js:300
+await in initializeToolManager
+initializeV8Managers @ app-core.js:186
 await in initializeV8Managers
 initializeV8Managers @ tegaki-application.js:341
 initialize @ tegaki-application.js:152
@@ -458,8 +210,18 @@ await in initialize
 TegakiApplication @ tegaki-application.js:119
 initializeTegakiApplication @ bootstrap.js:183
 start @ bootstrap.js:440
-app-core.js:572 🔍 Manager状態: {canvas: {…}, coordinate: {…}, record: {…}, config: {…}, error: {…}, …}
-initializeV8Managers @ app-core.js:572
+app-core.js:300 💀 ToolManager初期化エラー: DrawContainer not ready - call verifyInjection() first
+initializeToolManager @ app-core.js:300
+await in initializeToolManager
+initializeV8Managers @ app-core.js:186
+await in initializeV8Managers
+initializeV8Managers @ tegaki-application.js:341
+initialize @ tegaki-application.js:152
+await in initialize
+initializeTegakiApplication @ bootstrap.js:184
+start @ bootstrap.js:440
+app-core.js:192 💀 Manager初期化エラー: DrawContainer not ready - call verifyInjection() first
+initializeV8Managers @ app-core.js:192
 await in initializeV8Managers
 initializeV8Managers @ tegaki-application.js:341
 initialize @ tegaki-application.js:152
@@ -467,13 +229,18 @@ await in initialize
 TegakiApplication @ tegaki-application.js:119
 initializeTegakiApplication @ bootstrap.js:183
 start @ bootstrap.js:440
-tegaki-application.js:368 💀 Manager初期化エラー: TypeError: Converting circular structure to JSON
-    --> starting at object with constructor 'Xc'
-    |     property 'root' -> object with constructor 'Z'
-    --- property 'renderGroup' closes the circle
-    at JSON.stringify (<anonymous>)
-    at AppCore.verifyManagerReady (app-core.js:221:79)
-    at AppCore.initializeV8Managers (app-core.js:553:22)
+app-core.js:192 💀 Manager初期化エラー: DrawContainer not ready - call verifyInjection() first
+initializeV8Managers @ app-core.js:192
+await in initializeV8Managers
+initializeV8Managers @ tegaki-application.js:341
+initialize @ tegaki-application.js:152
+await in initialize
+initializeTegakiApplication @ bootstrap.js:184
+start @ bootstrap.js:440
+tegaki-application.js:368 💀 Manager初期化エラー: Error: DrawContainer not ready - call verifyInjection() first
+    at ToolManager.initializeV8Tools (tool-manager.js:481:27)
+    at AppCore.initializeToolManager (app-core.js:291:40)
+    at AppCore.initializeV8Managers (app-core.js:186:28)
     at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
     at async TegakiApplication.initialize (tegaki-application.js:152:21)
 initializeV8Managers @ tegaki-application.js:368
@@ -483,7 +250,7 @@ await in initialize
 TegakiApplication @ tegaki-application.js:119
 initializeTegakiApplication @ bootstrap.js:183
 start @ bootstrap.js:440
-tegaki-application.js:372 🔍 AppCore状態: {className: 'AppCore', version: 'v8.12.0-manager-initialization-fixed', systemStatus: {…}, rendererInfo: {…}, managerInfo: {…}, …}
+tegaki-application.js:372 🔍 AppCore状態: {version: 'v8-step1-fix', systemStatus: {…}, managers: {…}, pixiInfo: {…}}
 initializeV8Managers @ tegaki-application.js:372
 await in initializeV8Managers
 initialize @ tegaki-application.js:152
@@ -491,13 +258,31 @@ await in initialize
 TegakiApplication @ tegaki-application.js:119
 initializeTegakiApplication @ bootstrap.js:183
 start @ bootstrap.js:440
-tegaki-application.js:176 💀 初期化エラー: TypeError: Converting circular structure to JSON
-    --> starting at object with constructor 'Xc'
-    |     property 'root' -> object with constructor 'Z'
-    --- property 'renderGroup' closes the circle
-    at JSON.stringify (<anonymous>)
-    at AppCore.verifyManagerReady (app-core.js:221:79)
-    at AppCore.initializeV8Managers (app-core.js:553:22)
+tegaki-application.js:368 💀 Manager初期化エラー: Error: DrawContainer not ready - call verifyInjection() first
+    at ToolManager.initializeV8Tools (tool-manager.js:481:27)
+    at AppCore.initializeToolManager (app-core.js:291:40)
+    at AppCore.initializeV8Managers (app-core.js:186:28)
+    at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
+    at async TegakiApplication.initialize (tegaki-application.js:152:21)
+    at async initializeTegakiApplication (bootstrap.js:184:13)
+    at async HTMLDocument.start (bootstrap.js:440:31)
+initializeV8Managers @ tegaki-application.js:368
+await in initializeV8Managers
+initialize @ tegaki-application.js:152
+await in initialize
+initializeTegakiApplication @ bootstrap.js:184
+start @ bootstrap.js:440
+tegaki-application.js:372 🔍 AppCore状態: {version: 'v8-step1-fix', systemStatus: {…}, managers: {…}, pixiInfo: {…}}
+initializeV8Managers @ tegaki-application.js:372
+await in initializeV8Managers
+initialize @ tegaki-application.js:152
+await in initialize
+initializeTegakiApplication @ bootstrap.js:184
+start @ bootstrap.js:440
+tegaki-application.js:176 💀 初期化エラー: Error: DrawContainer not ready - call verifyInjection() first
+    at ToolManager.initializeV8Tools (tool-manager.js:481:27)
+    at AppCore.initializeToolManager (app-core.js:291:40)
+    at AppCore.initializeV8Managers (app-core.js:186:28)
     at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
     at async TegakiApplication.initialize (tegaki-application.js:152:21)
 initialize @ tegaki-application.js:176
@@ -511,13 +296,27 @@ await in initialize
 TegakiApplication @ tegaki-application.js:119
 initializeTegakiApplication @ bootstrap.js:183
 start @ bootstrap.js:440
-tegaki-application.js:120 💀 TegakiApplication 初期化失敗: TypeError: Converting circular structure to JSON
-    --> starting at object with constructor 'Xc'
-    |     property 'root' -> object with constructor 'Z'
-    --- property 'renderGroup' closes the circle
-    at JSON.stringify (<anonymous>)
-    at AppCore.verifyManagerReady (app-core.js:221:79)
-    at AppCore.initializeV8Managers (app-core.js:553:22)
+tegaki-application.js:176 💀 初期化エラー: Error: DrawContainer not ready - call verifyInjection() first
+    at ToolManager.initializeV8Tools (tool-manager.js:481:27)
+    at AppCore.initializeToolManager (app-core.js:291:40)
+    at AppCore.initializeV8Managers (app-core.js:186:28)
+    at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
+    at async TegakiApplication.initialize (tegaki-application.js:152:21)
+    at async initializeTegakiApplication (bootstrap.js:184:13)
+    at async HTMLDocument.start (bootstrap.js:440:31)
+initialize @ tegaki-application.js:176
+await in initialize
+initializeTegakiApplication @ bootstrap.js:184
+start @ bootstrap.js:440
+tegaki-application.js:177 🔍 失敗ステップ: (6) ['AppCore作成', 'AppCore作成', 'Canvas作成', 'Canvas作成', 'Canvas DOM挿入', 'Canvas DOM挿入']
+initialize @ tegaki-application.js:177
+await in initialize
+initializeTegakiApplication @ bootstrap.js:184
+start @ bootstrap.js:440
+tegaki-application.js:120 💀 TegakiApplication 初期化失敗: Error: DrawContainer not ready - call verifyInjection() first
+    at ToolManager.initializeV8Tools (tool-manager.js:481:27)
+    at AppCore.initializeToolManager (app-core.js:291:40)
+    at AppCore.initializeV8Managers (app-core.js:186:28)
     at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
     at async TegakiApplication.initialize (tegaki-application.js:152:21)
 (anonymous) @ tegaki-application.js:120
@@ -531,94 +330,16 @@ Promise.catch
 TegakiApplication @ tegaki-application.js:119
 initializeTegakiApplication @ bootstrap.js:183
 start @ bootstrap.js:440
-tegaki-application.js:127 🔍 AppCore状態: {className: 'AppCore', version: 'v8.12.0-manager-initialization-fixed', systemStatus: {…}, rendererInfo: {…}, managerInfo: {…}, …}
+tegaki-application.js:127 🔍 AppCore状態: {version: 'v8-step1-fix', systemStatus: {…}, managers: {…}, pixiInfo: {…}}
 (anonymous) @ tegaki-application.js:127
 Promise.catch
 TegakiApplication @ tegaki-application.js:119
 initializeTegakiApplication @ bootstrap.js:183
 start @ bootstrap.js:440
-pen-tool.js:197 ✅ PenTool Manager統一注入完了
-tool-manager.js:650 ✅ pen Tool アクティブ化完了
-tool-manager.js:659 ✅ Tool切り替え完了: pen
-tool-manager.js:688 ✅ ToolManager: setActiveTool(pen) 完了
-tool-manager.js:553 ✅ ToolManager: initializeV8Tools() 完了 (2個のTool)
-app-core.js:571 💀 v8 Manager群初期化エラー: TypeError: Converting circular structure to JSON
-    --> starting at object with constructor 'Xc'
-    |     property 'root' -> object with constructor 'Z'
-    --- property 'renderGroup' closes the circle
-    at JSON.stringify (<anonymous>)
-    at AppCore.verifyManagerReady (app-core.js:221:79)
-    at AppCore.initializeV8Managers (app-core.js:553:22)
-    at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
-    at async TegakiApplication.initialize (tegaki-application.js:152:21)
-    at async initializeTegakiApplication (bootstrap.js:184:13)
-    at async HTMLDocument.start (bootstrap.js:440:31)
-initializeV8Managers @ app-core.js:571
-await in initializeV8Managers
-initializeV8Managers @ tegaki-application.js:341
-initialize @ tegaki-application.js:152
-await in initialize
-initializeTegakiApplication @ bootstrap.js:184
-start @ bootstrap.js:440
-app-core.js:572 🔍 Manager状態: {canvas: {…}, coordinate: {…}, record: {…}, config: {…}, error: {…}, …}
-initializeV8Managers @ app-core.js:572
-await in initializeV8Managers
-initializeV8Managers @ tegaki-application.js:341
-initialize @ tegaki-application.js:152
-await in initialize
-initializeTegakiApplication @ bootstrap.js:184
-start @ bootstrap.js:440
-tegaki-application.js:368 💀 Manager初期化エラー: TypeError: Converting circular structure to JSON
-    --> starting at object with constructor 'Xc'
-    |     property 'root' -> object with constructor 'Z'
-    --- property 'renderGroup' closes the circle
-    at JSON.stringify (<anonymous>)
-    at AppCore.verifyManagerReady (app-core.js:221:79)
-    at AppCore.initializeV8Managers (app-core.js:553:22)
-    at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
-    at async TegakiApplication.initialize (tegaki-application.js:152:21)
-    at async initializeTegakiApplication (bootstrap.js:184:13)
-    at async HTMLDocument.start (bootstrap.js:440:31)
-initializeV8Managers @ tegaki-application.js:368
-await in initializeV8Managers
-initialize @ tegaki-application.js:152
-await in initialize
-initializeTegakiApplication @ bootstrap.js:184
-start @ bootstrap.js:440
-tegaki-application.js:372 🔍 AppCore状態: {className: 'AppCore', version: 'v8.12.0-manager-initialization-fixed', systemStatus: {…}, rendererInfo: {…}, managerInfo: {…}, …}
-initializeV8Managers @ tegaki-application.js:372
-await in initializeV8Managers
-initialize @ tegaki-application.js:152
-await in initialize
-initializeTegakiApplication @ bootstrap.js:184
-start @ bootstrap.js:440
-tegaki-application.js:176 💀 初期化エラー: TypeError: Converting circular structure to JSON
-    --> starting at object with constructor 'Xc'
-    |     property 'root' -> object with constructor 'Z'
-    --- property 'renderGroup' closes the circle
-    at JSON.stringify (<anonymous>)
-    at AppCore.verifyManagerReady (app-core.js:221:79)
-    at AppCore.initializeV8Managers (app-core.js:553:22)
-    at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
-    at async TegakiApplication.initialize (tegaki-application.js:152:21)
-    at async initializeTegakiApplication (bootstrap.js:184:13)
-    at async HTMLDocument.start (bootstrap.js:440:31)
-initialize @ tegaki-application.js:176
-await in initialize
-initializeTegakiApplication @ bootstrap.js:184
-start @ bootstrap.js:440
-tegaki-application.js:177 🔍 失敗ステップ: (6) ['AppCore作成', 'AppCore作成', 'Canvas作成', 'Canvas作成', 'Canvas DOM挿入', 'Canvas DOM挿入']
-initialize @ tegaki-application.js:177
-await in initialize
-initializeTegakiApplication @ bootstrap.js:184
-start @ bootstrap.js:440
-bootstrap.js:261 ❌ TegakiApplication初期化失敗: TypeError: Converting circular structure to JSON
-    --> starting at object with constructor 'Xc'
-    |     property 'root' -> object with constructor 'Z'
-    --- property 'renderGroup' closes the circle
-    at JSON.stringify (<anonymous>)
-    at AppCore.verifyManagerReady (app-core.js:221:79)
-    at AppCore.initializeV8Managers (app-core.js:553:22)
+bootstrap.js:261 ❌ TegakiApplication初期化失敗: Error: DrawContainer not ready - call verifyInjection() first
+    at ToolManager.initializeV8Tools (tool-manager.js:481:27)
+    at AppCore.initializeToolManager (app-core.js:291:40)
+    at AppCore.initializeV8Managers (app-core.js:186:28)
     at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
     at async TegakiApplication.initialize (tegaki-application.js:152:21)
     at async initializeTegakiApplication (bootstrap.js:184:13)
@@ -626,29 +347,31 @@ bootstrap.js:261 ❌ TegakiApplication初期化失敗: TypeError: Converting cir
 initializeTegakiApplication @ bootstrap.js:261
 await in initializeTegakiApplication
 start @ bootstrap.js:440
-bootstrap.js:461 💥 Bootstrap初期化失敗: TypeError: Converting circular structure to JSON
-    --> starting at object with constructor 'Xc'
-    |     property 'root' -> object with constructor 'Z'
-    --- property 'renderGroup' closes the circle
-    at JSON.stringify (<anonymous>)
-    at AppCore.verifyManagerReady (app-core.js:221:79)
-    at AppCore.initializeV8Managers (app-core.js:553:22)
+bootstrap.js:461 💥 Bootstrap初期化失敗: Error: DrawContainer not ready - call verifyInjection() first
+    at ToolManager.initializeV8Tools (tool-manager.js:481:27)
+    at AppCore.initializeToolManager (app-core.js:291:40)
+    at AppCore.initializeV8Managers (app-core.js:186:28)
     at async TegakiApplication.initializeV8Managers (tegaki-application.js:341:21)
     at async TegakiApplication.initialize (tegaki-application.js:152:21)
     at async initializeTegakiApplication (bootstrap.js:184:13)
     at async HTMLDocument.start (bootstrap.js:440:31)
 start @ bootstrap.js:461
 bootstrap.js:462 🔍 デバッグ情報: {className: 'Bootstrap', version: 'v8-phase1.5-toolmanager-fixed', dependencies: {…}, domStatus: {…}, timing: {…}}
-bootstrap.js:463 Uncaught (in promise) TypeError: Converting circular structure to JSON
-    --> starting at object with constructor 'Xc'
-    |     property 'root' -> object with constructor 'Z'
-    --- property 'renderGroup' closes the circle
-verifyManagerReady @ app-core.js:221
-initializeV8Managers @ app-core.js:553
+index.html:577 🚀 PixiJS v8.12.0 loaded from node_modules
+index.html:579 ✅ PixiJS v8.12.0 confirmed
+bootstrap.js:463 Uncaught (in promise) Error: DrawContainer not ready - call verifyInjection() first
+initializeV8Tools @ tool-manager.js:481
+initializeToolManager @ app-core.js:291
+initializeV8Managers @ app-core.js:186
 await in initializeV8Managers
 initializeV8Managers @ tegaki-application.js:341
 initialize @ tegaki-application.js:152
 await in initialize
 initializeTegakiApplication @ bootstrap.js:184
 start @ bootstrap.js:440
+app-core.js:115 ⚠️ TegakiApplication v8初期化未完了
+console.warn @ app-core.js:115
+(anonymous) @ index.html:613
+setTimeout
+(anonymous) @ index.html:588
 main.js:346 ⚠️ TegakiApplication v8初期化未完了
