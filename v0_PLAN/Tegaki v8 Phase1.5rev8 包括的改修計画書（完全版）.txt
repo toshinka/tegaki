@@ -1,0 +1,324 @@
+# Tegaki v8 Phase1.5rev8 包括的改修計画書（完全版）
+
+## 🚨 緊急問題分析
+
+### 致命的エラー
+1. **ToolManager の DrawContainer 準備不完了**
+   ```
+   Error: DrawContainer not ready - call verifyInjection() first
+   ```
+   - ToolManager.initializeV8Tools() で DrawContainer が未準備
+   - verifyInjection() が呼ばれていない、または失敗
+
+2. **二重初期化の発生**
+   ```
+   // コンソールログで確認される重複実行
+   CanvasManager 作成 → 作成 (2回実行)
+   AppCore作成 → AppCore作成 (2回実行)
+   Canvas作成 → Canvas作成 (2回実行)
+   Canvas DOM挿入 → Canvas DOM挿入 (2回実行)
+   ```
+
+3. **初期化順序の問題**
+   - CanvasManager は正常に初期化完了
+   - CoordinateManager も正常に初期化完了
+   - ToolManager で DrawContainer 参照時にエラー
+
+## 🗺️ 依存関係マップ（現状問題付き）
+
+```
+AppCore (初期化制御)
+├── CanvasManager ✅ (正常初期化完了)
+│   ├── PixiJS Application ✅
+│   ├── Container階層 ✅
+│   └── DrawContainer ✅ (作成済みだが参照できない)
+├── CoordinateManager ✅ (正常初期化完了)
+│   └── CanvasManager参照 ✅
+├── ConfigManager ✅ (空実装だが動作)
+├── EventBus ✅
+├── NavigationManager ✅
+├── RecordManager ✅ (スタブ実装)
+├── ShortcutManager ✅ (スタブ実装)
+└── ToolManager ❌ (DrawContainer参照エラー)
+    ├── CanvasManager参照 ❌ (注入済みだが DrawContainer 取得失敗)
+    ├── PenTool ❌ (ToolManager初期化失敗で未登録)
+    └── EraserTool ❌ (ToolManager初期化失敗で未登録)
+
+二重初期化の原因:
+- TegakiApplication が2回インスタンス化される
+- Bootstrap または main.js での重複呼び出し
+```
+
+## 🔍 架空メソッド・参照エラー検出
+
+### 1. ToolManager の verifyInjection() 問題
+- **問題**: DrawContainer 参照時に verifyInjection() が必要だがスキップされている
+- **原因**: 初期化フローで verifyInjection() が呼ばれていない
+
+### 2. CanvasManager との連携問題
+- **問題**: CanvasManager は DrawContainer を作成済みだが、ToolManager から参照不可
+- **原因**: Manager間の参照注入タイミングの問題
+
+### 3. 二重初期化による状態不整合
+- **問題**: 同一 Manager が複数回初期化される
+- **原因**: Bootstrap/main.js の重複実行
+
+## 🔄 正常な初期化フロー（完全版・修正版）
+
+### Phase 1: ブートストラップ（単一実行保証）
+```
+1. Bootstrap.start() - 実行フラグで重複防止
+2. TegakiApplication 単一インスタンス作成
+3. AppCore 単一インスタンス作成
+```
+
+### Phase 2: コア Manager 初期化
+```
+4. CanvasManager.configure() → attach() → init()
+   - PixiJS Application 作成
+   - Container階層作成（stage/worldContainer/drawContainer）
+   - Graphics管理システム初期化
+5. EventBus.attach() → init()
+```
+
+### Phase 3: 依存 Manager 初期化
+```
+6. CoordinateManager.configure() → attach() → init()
+7. CoordinateManager.setCanvasManager(canvasManager) ✅
+8. NavigationManager.configure() → attach() → init()
+9. ConfigManager.configure() → attach() → init()
+10. RecordManager.configure() → attach() → init()
+11. ShortcutManager.configure() → attach() → init()
+```
+
+### Phase 4: ToolManager 初期化（修正要）
+```
+12. ToolManager.configure() → attach() → init()
+13. ToolManager.setManagers(managers) ✅
+14. ToolManager.verifyInjection() ← ★ここが不足！
+15. ToolManager.initializeV8Tools() ← verifyInjection()後に実行
+16. Tool登録（PenTool/EraserTool）
+```
+
+### Phase 5: UI・最終化
+```
+17. EventBus 'app:ready' イベント発火
+18. icons.js/Sidebar 初期化
+19. ポインターイベント設定
+```
+
+## 🛠️ 具体的修正計画
+
+### STEP 1: 緊急エラー修正（最優先）
+
+#### 1.1 ToolManager.js 修正
+**問題**: verifyInjection() の呼び出し不足
+```javascript
+// 現在のエラー原因
+async initializeV8Tools() {
+    // verifyInjection() が呼ばれていない
+    const drawContainer = this.canvasManager.getDrawContainer(); // ← エラー
+}
+
+// 修正版
+async initializeV8Tools() {
+    // まず検証を実行
+    if (!this.verifyInjection()) {
+        throw new Error('Manager injection verification failed');
+    }
+    const drawContainer = this.canvasManager.getDrawContainer();
+}
+```
+
+#### 1.2 AppCore.js 修正
+**問題**: ToolManager 初期化時の verifyInjection() 呼び出し不足
+```javascript
+// 修正版
+async initializeToolManager() {
+    await this.managers.toolManager.configure(this.config);
+    await this.managers.toolManager.attach(this.context);
+    await this.managers.toolManager.init();
+    
+    // Manager注入
+    this.managers.toolManager.setManagers(this.managers);
+    
+    // ★追加: 注入検証
+    if (!this.managers.toolManager.verifyInjection()) {
+        throw new Error('ToolManager injection verification failed');
+    }
+    
+    // ツール初期化
+    await this.managers.toolManager.initializeV8Tools();
+}
+```
+
+### STEP 2: 二重初期化防止
+
+#### 2.1 Bootstrap.js 修正
+**問題**: 重複実行防止フラグの不足
+```javascript
+// グローバル実行フラグ追加
+if (window.Tegaki && window.Tegaki.isBootstrapped) {
+    console.warn('⚠️ Bootstrap already executed');
+    return;
+}
+
+// 実行開始時にフラグ設定
+window.Tegaki = window.Tegaki || {};
+window.Tegaki.isBootstrapped = true;
+```
+
+#### 2.2 TegakiApplication.js 修正
+**問題**: 複数インスタンス作成防止
+```javascript
+// シングルトンパターン実装
+static getInstance() {
+    if (!TegakiApplication._instance) {
+        TegakiApplication._instance = new TegakiApplication();
+    }
+    return TegakiApplication._instance;
+}
+```
+
+### STEP 3: Manager 間連携強化
+
+#### 3.1 CanvasManager.js 修正
+**問題**: DrawContainer の確実な提供
+```javascript
+getDrawContainer() {
+    if (!this._status.ready) {
+        throw new Error('CanvasManager not ready - call init() first');
+    }
+    if (!this.drawContainer) {
+        throw new Error('DrawContainer not created');
+    }
+    return this.drawContainer;
+}
+
+// デバッグ用状態確認メソッド追加
+getContainerStatus() {
+    return {
+        ready: this._status.ready,
+        hasStage: !!this.stage,
+        hasWorldContainer: !!this.worldContainer,
+        hasDrawContainer: !!this.drawContainer,
+        appReady: !!this.app
+    };
+}
+```
+
+### STEP 4: 座標問題修正（既存問題）
+
+#### 4.1 CoordinateManager.js 座標オフセット修正
+- x0y0 が x110y95 で表示される問題
+- DPR重複適用防止
+- Container変形の正確な処理
+
+#### 4.2 Tools の座標処理統一
+- すべての座標変換を CoordinateManager 経由に統一
+- 直接座標参照の禁止
+
+### STEP 5: 消しゴム・描画継続バグ修正
+
+#### 5.1 EraserTool.js 修正
+- v8 新API準拠（shape().fill()）
+- Manager注入API修正
+
+#### 5.2 PenTool.js 修正
+- forceEndDrawing() の確実な実行
+- 描画継続バグの修正
+
+## 🧪 統合テスト強化計画
+
+### テスト項目
+1. **初期化テスト**
+   - 単一実行保証（二重初期化防止）
+   - 全Manager の isReady() === true 確認
+   - エラーログの完全消失確認
+
+2. **Manager間連携テスト**
+   - ToolManager → CanvasManager → DrawContainer 参照
+   - CoordinateManager → CanvasManager 座標変換
+   - EventBus イベント伝播
+
+3. **描画機能テスト**
+   - PenTool での正確な座標描画
+   - EraserTool での消去機能
+   - 座標オフセット問題の解決確認
+
+### テスト実行方法
+```javascript
+// 統合テスト実行
+window.Tegaki.runPhase15Test();
+
+// 個別確認
+console.log('Manager状況:', window.Tegaki.AppCore.verifyManagerReady());
+console.log('ToolManager状況:', window.Tegaki.managers.toolManager.getStatus());
+console.log('Canvas状況:', window.Tegaki.managers.canvasManager.getContainerStatus());
+```
+
+## 📋 修正優先順序
+
+### 🔥 即座修正（緊急）
+1. ToolManager verifyInjection() 呼び出し追加
+2. AppCore ToolManager 初期化フロー修正
+3. 二重初期化防止フラグ実装
+
+### 🔥 高優先（1日以内）
+4. CanvasManager DrawContainer 状態確認強化
+5. Bootstrap シングルトン実装
+6. 座標オフセット問題修正
+
+### 🟡 中優先（週内）
+7. 消しゴム機能修復
+8. 描画継続バグ修正
+9. UI サイドバー表示修復
+
+## 🚫 今後の肥大化防止ルール（追加）
+
+### 初期化制御ルール
+1. **シングルトンパターン必須**
+   - Bootstrap, TegakiApplication, AppCore
+   - 重複実行の完全禁止
+
+2. **初期化フロー検証必須**
+   - 各ステップで前提条件確認
+   - verifyInjection() の確実な実行
+
+3. **Manager 間参照の型安全性**
+   - 参照前の存在確認必須
+   - エラーメッセージの統一
+
+### コーディング原則（強化）
+4. **Manager は状態を自己完結で管理**
+   - getStatus(), getContainerStatus() 等の状態確認メソッド必須
+   - 他 Manager の内部状態に直接依存禁止
+
+5. **エラーハンドリングの統一**
+   - 全 Manager で同一エラー形式
+   - デバッグ情報の標準化
+
+## 🎯 完了目標（具体化）
+
+### 機能面
+- ✅ エラーログの完全消失（DrawContainer not ready エラー解決）
+- ✅ Canvas に正常にペンで描画（座標 x0y0 が実際に x0y0 で表示）
+- ✅ 消しゴムが正常に動作
+- ✅ ツール切り替えの正常動作
+- ✅ サイドバーアイコンの表示復旧
+
+### アーキテクチャ面
+- ✅ 二重初期化の完全防止
+- ✅ Manager 間の依存関係明確化
+- ✅ 責任分離原則の完全遵守
+- ✅ PixiJS v8 新API への完全準拠
+
+### 品質面
+- ✅ ログ出力の簡潔化（必要最小限）
+- ✅ デバッグ機能の充実
+- ✅ 統合テストの自動化
+- ✅ ルールブック準拠の完全実装
+
+---
+
+**注意**: この計画書は現在の致命的エラーの完全解決を最優先に作成されています。STEP1 の緊急修正完了後、順次他の問題に対処してください。各修正時は必ず統合テストで検証し、新たな循環依存や架空メソッド呼び出しを発生させないよう注意してください。
