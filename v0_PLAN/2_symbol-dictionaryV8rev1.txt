@@ -1,0 +1,410 @@
+# 📚 Symbol Dictionary v8 - 用語定義特化版
+**ヘッダータグ・API名・データ構造の統一定義辞典**  
+Rev.2025-08-31-Terms-Only | 契約とコードを繋ぐ用語統一
+
+---
+
+## 🎯 **辞典の役割（改修後）**
+
+### 📖 責任分界
+- **Rulebook**: 「どう振る舞うべきか」の契約条項
+- **Symbol Dictionary**: 「用語の正確な意味」の定義集
+- **ファイルヘッダー**: 「実装の一次情報」の情報源
+
+### 🔍 辞典活用方法
+1. **ヘッダー作成時**: 正しいタグ名・API名を確認
+2. **メソッド呼び出し時**: 正確なメソッド名・引数形式を確認
+3. **データ構造定義時**: TPF・Config等の正確な構造を確認
+4. **禁止事項確認時**: アンチパターン・非推奨APIを確認
+
+---
+
+## 🏷️ **Header Tag Definitions（ヘッダータグ定義）**
+
+### 📤 @provides（提供API定義）
+- **定義**: このファイルが外部に公開するメソッド・クラス・プロパティ
+- **用途**: 他ファイルからの呼び出し可能性確認・API一覧生成
+- **形式**: `- methodName(args) -> returnType`
+- **禁止**: 未実装メソッドの記載・曖昧な型表記
+
+### 📥 @uses（依存API定義）  
+- **定義**: このファイルが他ファイルから呼び出すメソッド
+- **用途**: 依存関係追跡・呼び出し先存在確認
+- **形式**: `- ManagerInstance.methodName()`
+- **禁止**: 存在しないメソッド記載・推測による記載
+
+### 🔄 @initflow（初期化フロー定義）
+- **定義**: このファイル・クラスの初期化手順
+- **用途**: 依存順序確認・初期化タイミング調整
+- **形式**: `1. step → 2. step → 3. step`
+- **禁止**: 順序不明・分岐説明なし・曖昧な記述
+
+### 🚫 @forbids（禁止事項定義）
+- **定義**: このファイルで実装・使用してはいけない機能・パターン
+- **用途**: アンチパターン防止・設計違反検出
+- **形式**: `💀 symbol description` `🚫 symbol description`
+- **禁止**: 理由説明なし・曖昧な禁止
+
+### 🔑 @manager-key（Manager登録キー定義）
+- **定義**: window.Tegakiでの登録キー名
+- **用途**: グローバル参照・インスタンス取得
+- **形式**: `window.Tegaki.[ClassName]Instance`
+- **禁止**: 実装と不一致・Instance接尾辞なし
+
+### 🔗 @dependencies-strict（依存関係定義）
+- **定義**: 必須・任意・禁止依存の厳密分類
+- **用途**: 依存注入順序・循環依存検出
+- **形式**: `REQUIRED: [list]` `OPTIONAL: [list]` `FORBIDDEN: [list]`
+- **禁止**: 分類不明・循環依存許可
+
+### 🔄 @integration-flow（統合フロー定義）
+- **定義**: 上位システムからの呼び出し経路
+- **用途**: システム統合時の実行順序確認
+- **形式**: `CallerClass → thisClass.method() → TargetClass`
+- **禁止**: 経路不明・暗黙実行
+
+### 📝 @method-naming-rules（命名規則定義）
+- **定義**: このファイルで使用するAPI命名パターン
+- **用途**: 一貫した命名・予測可能API
+- **形式**: `operation: startSomething()/endSomething()`
+- **禁止**: 不一致命名・曖昧動詞使用
+
+---
+
+## 🏢 **Manager API Vocabulary（Manager API用語集）**
+
+### 🎨 CanvasManager Terms
+- **initialize()**: PixiJS v8 Application初期化・WebGPU/WebGL自動選択
+- **getDrawContainer()**: 描画用Containerインスタンス取得・Tool描画対象
+- **createDrawContainer()**: 描画Container新規作成・階層構築
+- **getStage()**: PIXI.Application.stage取得・ルートContainer
+- **resize(width, height)**: キャンバスサイズ変更・DPR対応
+- **isV8Ready**: 初期化完了フラグ・boolean・読み取り専用
+
+### 🛠️ ToolManager Terms
+- **initializeV8Tools()**: Tool群の一括初期化・Manager注入実行
+- **switchTool(toolName)**: アクティブTool変更・前Tool無効化
+- **getCurrentTool()**: 現在アクティブなToolインスタンス取得
+- **getCurrentToolName()**: 現在アクティブなTool名（string）取得
+- **registerTool(name, toolClass)**: Tool登録・Map保存
+- **setManagersObject(managers)**: Manager群注入・Object形式受付
+- **verifyInjection()**: 依存注入検証・エラー時throw
+- **getDrawContainer()**: CanvasManager経由DrawContainer取得
+- **onPointerDown(event)**: ポインターダウン委譲処理
+- **onPointerMove(event)**: ポインタームーブ委譲処理  
+- **onPointerUp(event)**: ポインターアップ委譲処理
+- **isReady()**: Tool・Manager準備完了判定
+
+### 📝 RecordManager Terms
+- **startOperation(kind, initialPoints)**: TPF操作開始・kind='stroke'|'erase'
+- **addPoint(point)**: 座標追加・{x,y}形式・Canvas座標
+- **endOperation(metadata)**: 操作確定・TPFStroke生成・履歴追加
+- **undo()**: 最新操作取り消し・戻り値boolean
+- **redo()**: 取り消し操作復元・戻り値boolean
+- **getCurrentHistory()**: 現在の履歴配列取得・TPFStroke[]
+- **clearHistory()**: 履歴完全クリア・不可逆操作
+- **rebuild(history)**: 指定履歴から描画再構築
+
+### 🧭 NavigationManager Terms
+- **setCamera(x, y, scale)**: カメラ位置・倍率設定
+- **getCameraBounds()**: カメラ範囲Rectangle取得
+- **panCamera(deltaX, deltaY)**: カメラパン移動
+- **zoomCamera(scale, centerPoint)**: カメラズーム・中心点指定可能
+- **resetCamera()**: カメラ位置リセット・デフォルト状態復帰
+- **worldToView(point)**: ワールド座標→ビュー座標変換
+- **viewToWorld(point)**: ビュー座標→ワールド座標変換
+
+### 📐 CoordinateManager Terms
+- **toCanvasCoords(clientX, clientY)**: DOM座標→Canvas座標変換
+- **toClientCoords(canvasX, canvasY)**: Canvas座標→DOM座標変換
+- **isInsideCanvas(point)**: Canvas内判定・boolean
+- **getBoundingRect()**: Canvas境界DOMRect取得
+- **updateTransform()**: 変換行列更新・リサイズ等で実行
+- **setCanvasManager(canvasManager)**: CanvasManager参照設定
+
+---
+
+## 🛠️ **Tool API Vocabulary（Tool API用語集）**
+
+### 🎨 AbstractTool Terms
+- **setManagersObject(managers)**: Manager注入・Object形式・戻り値boolean
+- **activate()**: Tool有効化・描画準備・イベントバインド
+- **deactivate()**: Tool無効化・状態クリア・イベント解除
+- **onPointerDown(event)**: ポインター開始処理・描画開始判定
+- **onPointerMove(event)**: ポインター移動処理・描画継続
+- **onPointerUp(event)**: ポインター終了処理・描画確定
+- **forceEndDrawing()**: 強制描画終了・冪等性保証・異常時回復
+- **getName()**: Tool名取得・string・識別用
+- **isActive()**: アクティブ状態確認・boolean
+- **getState()**: 現在状態取得・Object・デバッグ用
+- **destroy()**: リソース解放・メモリリーク防止
+
+### ✏️ PenTool Terms
+- **tempStroke**: 一時描画配列・描画中のPoint蓄積
+- **currentStroke**: 現在描画中のGraphicsインスタンス
+- **isDrawing**: 描画中フラグ・boolean・状態管理
+- **drawToContainer(container)**: 指定Container直接描画
+- **setStrokeStyle(style)**: ストローク設定・{color, width, opacity}
+- **startStroke(point)**: ストローク開始・RecordManager連携
+- **addStrokePoint(point)**: ストローク点追加・Graphics更新
+- **endStroke()**: ストローク終了・TPF確定
+
+### 🧹 EraserTool Terms
+- **eraserSize**: 消去サイズ・number・pixel単位
+- **eraserMode**: 消去モード・'pixel'|'object'・Phase1.5='object'
+- **eraseAtPoint(point)**: 指定座標消去実行
+- **setEraserSize(size)**: 消去サイズ変更
+- **findTargetStrokes(point)**: 消去対象ストローク検索
+- **executeErase(targets)**: 消去実行・RecordManager連携
+
+---
+
+## 📊 **Data Structure Vocabulary（データ構造用語集）**
+
+### 🎨 TPFStroke（TegakiPathFormat v0.2）
+- **id**: string・UUID・重複禁止・必須
+- **kind**: 'stroke'|'erase'・操作種別・厳密enum
+- **layer**: string・レイヤー識別・Phase1.5='default'固定
+- **color**: string・'#rrggbb'形式・6桁16進数厳守
+- **width**: number・線幅・1-100推奨・正数のみ
+- **opacity**: number・透明度・0.0-1.0厳密範囲
+- **points**: Point[]・座標配列・最低1要素・空配列禁止
+- **path**: string・SVG 'd'属性・Phase1.5任意
+- **bounds**: Rectangle・境界矩形・最適化用・Phase1.5任意
+- **meta**: TPFMetadata・メタ情報・必須
+
+### 📍 Point Structure
+- **x**: number・Canvas X座標・必須・数値のみ
+- **y**: number・Canvas Y座標・必須・数値のみ
+- **pressure**: number・筆圧・0.0-1.0・Phase1.5任意
+- **time**: number・タイムスタンプ・Phase1.5任意
+
+### 📋 TPFMetadata Structure
+- **created**: number・作成タイムスタンプ・Date.now()
+- **tool**: 'pen'|'eraser'・使用ツール・必須
+- **engine**: 'pixi-v8'・エンジン識別・v8固定
+- **version**: '0.2'・TPFバージョン・必須
+
+### 📐 Rectangle Structure
+- **x**: number・左上X座標
+- **y**: number・左上Y座標  
+- **width**: number・幅・正数のみ
+- **height**: number・高さ・正数のみ
+
+---
+
+## ⚙️ **Configuration Vocabulary（設定用語集）**
+
+### 🎨 PenConfig Structure
+- **color**: string・'#rrggbb'形式・デフォルト'#800000'
+- **width**: number・線幅・デフォルト2・1-100推奨
+- **opacity**: number・透明度・デフォルト1.0・0.0-1.0
+- **smoothing**: boolean・スムージング・Phase1.5=false
+- **pressureSensitive**: boolean・筆圧感知・Phase1.5=false
+
+### 🧹 EraserConfig Structure
+- **size**: number・消去サイズ・デフォルト10・1-50推奨
+- **mode**: 'pixel'|'object'・消去モード・Phase1.5='object'
+- **strength**: number・消去強度・0.0-1.0・Phase1.5=1.0
+
+### 📏 CanvasConfig Structure
+- **width**: number・キャンバス幅・デフォルト400
+- **height**: number・キャンバス高さ・デフォルト400
+- **backgroundColor**: string・背景色・デフォルト'#f0e0d6'
+- **dpr**: number・デバイスピクセル比・自動取得
+
+---
+
+## 🎯 **Event Vocabulary（イベント用語集）**
+
+### 📡 EventBus Event Names
+- **'app:initialized'**: アプリケーション初期化完了
+- **'app:ready'**: 全機能利用可能状態
+- **'app:error'**: アプリケーション エラー発生
+- **'canvas:created'**: キャンバス作成完了
+- **'canvas:resized'**: キャンバスサイズ変更
+- **'tool:switched'**: ツール切り替え実行
+- **'stroke:started'**: ストローク開始
+- **'stroke:completed'**: ストローク完了
+- **'history:changed'**: 履歴変更発生
+
+### 🖱️ Pointer Event Structure
+- **x**: number・Canvas X座標・CoordinateManager変換後
+- **y**: number・Canvas Y座標・CoordinateManager変換後
+- **originalEvent**: Event・DOM原始イベント・参照用
+
+---
+
+## 🔧 **Method Naming Vocabulary（メソッド命名用語集）**
+
+### 🎯 Operation Pattern
+- **start[Something]()**・**end[Something]()**: 操作開始・終了ペア
+- **get[Something]()**・**set[Something]()**: 取得・設定ペア
+- **is[Something]()**・**has[Something]()**: 状態確認・boolean戻り値
+- **create[Something]()**・**destroy[Something]()**: 生成・破棄ペア
+
+### 🚫 Forbidden Method Names
+- **do[Something]()**: 曖昧動詞・具体性不足
+- **make[Something]()**: 曖昧動詞・生成意図不明
+- **handle[Something]()**: 汎用すぎ・責務不明
+- **process[Something]()**: 処理内容不明・詳細化必要
+
+### ✅ Preferred Method Names
+- **initialize[Something]()**: 初期化処理・明確な開始
+- **update[Something]()**: 更新処理・変更内容明示
+- **validate[Something]()**: 検証処理・boolean戻り値
+- **cleanup[Something]()**: 清理処理・リソース解放
+
+---
+
+## 🌐 **Global Key Vocabulary（グローバルキー用語集）**
+
+### 🏢 Manager Instance Keys
+- **window.Tegaki.CanvasManagerInstance**: CanvasManager唯一インスタンス
+- **window.Tegaki.ToolManagerInstance**: ToolManager唯一インスタンス
+- **window.Tegaki.RecordManagerInstance**: RecordManager唯一インスタンス
+- **window.Tegaki.CoordinateManagerInstance**: CoordinateManager唯一インスタンス
+- **window.Tegaki.NavigationManagerInstance**: NavigationManager唯一インスタンス
+- **window.Tegaki.EventBusInstance**: EventBus唯一インスタンス
+- **window.Tegaki.ConfigManagerInstance**: ConfigManager唯一インスタンス
+- **window.Tegaki.ErrorManagerInstance**: ErrorManager唯一インスタンス
+- **window.Tegaki.ShortcutManagerInstance**: ShortcutManager唯一インスタンス
+
+### 🛠️ Tool Class Keys
+- **window.Tegaki.Tools.AbstractTool**: AbstractTool基底クラス
+- **window.Tegaki.Tools.PenTool**: PenTool実装クラス
+- **window.Tegaki.Tools.EraserTool**: EraserTool実装クラス
+
+### 🚀 Application Core Keys
+- **window.Tegaki.TegakiApplicationInstance**: 最上位アプリケーション
+- **window.Tegaki.AppCoreInstance**: アプリケーション統合管理
+
+---
+
+## 🎨 **PixiJS v8 API Vocabulary（v8 API用語集）**
+
+### ✅ v8 Approved Graphics API
+- **graphics.circle(x, y, radius).fill(color)**: 円描画・v8新API
+- **graphics.roundRect(x, y, w, h, r).stroke(style)**: 角丸矩形・v8新API
+- **graphics.moveTo(x, y).lineTo(x, y).stroke(style)**: 線描画・v8新API
+- **graphics.clear()**: Graphics内容クリア・v8継続
+- **graphics.destroy()**: Graphicsインスタンス破棄・v8継続
+
+### 🚫 v7 Deprecated API（使用禁止）
+- **graphics.beginFill(color)**: v7廃止・fill()使用
+- **graphics.drawCircle(x, y, radius)**: v7廃止・circle()使用
+- **graphics.endFill()**: v7廃止・fill()自動
+- **graphics.lineStyle(width, color)**: v7廃止・stroke()使用
+
+### 🏗️ v8 Container Hierarchy Terms
+- **Application.stage**: ルートContainer・変更禁止
+- **backgroundContainer**: 背景・グリッド表示用
+- **drawContainer**: メイン描画領域・Tool対象
+- **layerContainer[n]**: レイヤー別Container・Phase2拡張
+- **tempStrokeContainer**: 一時描画・描画中専用
+- **uiContainer**: UI要素表示用
+- **debugContainer**: デバッグ情報表示用
+
+---
+
+## 🚫 **Anti-Pattern Vocabulary（アンチパターン用語集）**
+
+### 💀 Forbidden Patterns
+- **Circular Dependency**: A→B→A循環依存・設計破綻原因
+- **Silent Fallback**: エラー時無言復旧・デバッグ困難化
+- **Direct DOM Manipulation**: Canvas以外DOM操作・責務逸脱
+- **Global Variable Pollution**: window直接汚染・名前空間違反
+- **Memory Leak**: リソース未解放・性能劣化原因
+
+### 🚫 Deprecated Terms
+- **setManagers()**: setManagersObject()が正式・後方互換のみ
+- **handlePointer***(): onPointer***()が正式・命名統一
+- **drawCircle()**: circle().fill()が正式・v8対応
+- **beginFill()/endFill()**: fill()が正式・v8対応
+
+### ⚠️ Caution Required Terms
+- **localStorage**: ブラウザ依存・代替手段検討必要
+- **setTimeout/setInterval**: RAF推奨・性能考慮必要
+- **console.log**: 本番環境削除検討・ログレベル管理
+
+---
+
+## 🎯 **Constants Vocabulary（定数用語集）**
+
+### 📏 Size Constants
+- **DEFAULT_CANVAS_WIDTH**: 400・デフォルトキャンバス幅
+- **DEFAULT_CANVAS_HEIGHT**: 400・デフォルトキャンバス高さ
+- **MIN_CANVAS_SIZE**: 100・最小キャンバスサイズ
+- **MAX_CANVAS_SIZE**: 4096・最大キャンバスサイズ
+- **DEFAULT_PEN_WIDTH**: 2・デフォルトペン太さ
+- **DEFAULT_ERASER_SIZE**: 10・デフォルト消しゴムサイズ
+
+### 🎨 Color Constants
+- **FUTABA_MAROON**: '#800000'・ふたば茶・アクティブペン色
+- **FUTABA_CREAM**: '#f0e0d6'・ふたばクリーム・背景色
+- **DEFAULT_STROKE_COLOR**: '#000000'・デフォルトストローク色
+
+### ⚡ Performance Constants
+- **TARGET_FPS**: 60・目標フレームレート
+- **MAX_FRAME_TIME**: 16・最大フレーム時間(ms)
+- **COORDINATE_PRECISION**: 2・座標精度(小数点桁数)
+
+---
+
+## 🔄 **State Management Vocabulary（状態管理用語集）**
+
+### 📊 Manager State Terms
+- **isReady**: boolean・初期化完了状態
+- **isActive**: boolean・アクティブ動作状態  
+- **hasError**: boolean・エラー発生状態
+- **lastUpdate**: number・最終更新タイムスタンプ
+
+### 🎨 Drawing State Terms
+- **isDrawing**: boolean・描画実行中状態
+- **currentStroke**: Graphics・現在描画Graphics
+- **tempStroke**: Point[]・一時座標配列
+- **strokeCount**: number・ストローク数
+
+### 🎛️ Tool State Terms
+- **activeTool**: string・現在アクティブTool名
+- **toolSettings**: Object・Tool設定オブジェクト
+- **lastToolUsed**: string・前回使用Tool名
+
+---
+
+## 📚 **Reference Links（参照リンク）**
+
+### 📖 Internal References
+- **Contract 1 (Manager Lifecycle)**: Rulebook参照・ライフサイクルAPI詳細
+- **Contract 4 (Coordinate System)**: Rulebook参照・座標変換契約
+- **Contract 5 (Tool Interface)**: Rulebook参照・Tool実装要件
+- **Contract 6 (Record System)**: Rulebook参照・TPF操作フロー
+
+### 🔗 External References
+- **PixiJS v8 Documentation**: 公式API仕様・最新情報
+- **Canvas API Specification**: W3C標準・DOM操作制限
+- **Pointer Events Specification**: W3C標準・イベント処理
+
+---
+
+## 🔄 **Dictionary Maintenance（辞典メンテナンス）**
+
+### 📝 Update Triggers
+- **新API追加時**: @providesタグ追加→辞典エントリ追加
+- **メソッド名変更時**: 旧名非推奨化→新名エントリ追加
+- **データ構造変更時**: 構造定義更新→フィールド説明修正
+- **禁止事項追加時**: @forbidsタグ追加→アンチパターン追加
+
+### ✅ Quality Checklist
+- [ ] 全ヘッダータグに対応する辞典エントリ存在
+- [ ] 全メソッド名の正確な定義・引数・戻り値記載
+- [ ] 全データ構造の完全な field 定義
+- [ ] アンチパターンの明確な代替案提示
+- [ ] 参照リンクの生きた状態確認
+
+---
+
+**📝 重要**: この辞典は **用語定義のみ** を扱い、実装方法・サンプルコードは含まない  
+**🔍 活用**: ヘッダー作成・API呼び出し・データ構造設計時の正確性確保  
+**🎯 品質**: 用語の一意性・完全性・実装との整合性を最優先  
+**🔄 更新**: ファイル変更時の即座反映・整合性維持を継続
