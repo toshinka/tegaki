@@ -1,0 +1,1135 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8 列車型 (修正版)</title>
+    <meta name="description" content="列車型構造による分割型描画ツール - 初期化フラグ修正版">
+    <style>
+        /* リセットCSS */
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        /* ローディング画面 */
+        #loading-screen {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(135deg, #ffffee, #f0e0d6);
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            z-index: 9999;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+        }
+        
+        .loading-logo {
+            font-size: 2.5rem;
+            color: #800000;
+            margin-bottom: 2rem;
+            font-weight: 600;
+        }
+        
+        .loading-train {
+            font-size: 3rem;
+            margin-bottom: 1rem;
+        }
+        
+        .loading-progress {
+            width: 300px;
+            height: 4px;
+            background: #e9c2ba;
+            border-radius: 2px;
+            overflow: hidden;
+            margin-bottom: 1rem;
+        }
+        
+        .loading-bar {
+            height: 100%;
+            background: linear-gradient(90deg, #800000, #aa5a56);
+            width: 0%;
+            transition: width 0.3s ease;
+        }
+        
+        .loading-status {
+            color: #5d4037;
+            font-size: 0.9rem;
+            font-family: monospace;
+        }
+        
+        .fade-out {
+            animation: fadeOut 0.5s ease-out forwards;
+        }
+        
+        @keyframes fadeOut {
+            to {
+                opacity: 0;
+                visibility: hidden;
+            }
+        }
+        
+        /* エラー表示 */
+        .error-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #ffebee;
+            border: 2px solid #d32f2f;
+            border-radius: 8px;
+            padding: 20px;
+            max-width: 500px;
+            z-index: 10000;
+            font-family: monospace;
+            display: none;
+        }
+        
+        .error-title {
+            color: #d32f2f;
+            font-weight: bold;
+            margin-bottom: 10px;
+        }
+        
+        .error-message {
+            color: #666;
+            margin-bottom: 15px;
+            white-space: pre-wrap;
+        }
+        
+        .error-button {
+            background: #d32f2f;
+            color: white;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+
+        /* メインレイアウト - 初期化後に表示 */
+        .main-layout {
+            display: none; /* 初期化完了まで非表示 */
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .main-layout.initialized {
+            display: grid;
+        }
+        
+        .sidebar {
+            background: #f0e0d6;
+            border-right: 2px solid #e9c2ba;
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid #e9c2ba;
+            background: #ffffee;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            color: #800000;
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button:hover {
+            background: #cf9c97;
+            border-color: #aa5a56;
+            transform: scale(1.05);
+        }
+        
+        .tool-button.active {
+            background: #800000;
+            color: #ffffff;
+            border-color: #800000;
+        }
+        
+        .tool-separator {
+            height: 1px;
+            background: #e9c2ba;
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: #ffffee;
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #drawing-canvas {
+            display: block;
+            cursor: crosshair;
+        }
+        
+        .popup-panel {
+            position: fixed;
+            background: #f0e0d6;
+            border: 2px solid #800000;
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+            padding: 20px;
+            z-index: 2000;
+            display: none;
+            user-select: none;
+            width: 320px;
+        }
+        
+        .popup-panel.show {
+            display: block;
+        }
+        
+        .popup-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: #800000;
+            margin-bottom: 16px;
+            text-align: center;
+            border-bottom: 2px solid #e9c2ba;
+            padding-bottom: 8px;
+        }
+        
+        .size-presets {
+            display: flex;
+            justify-content: space-between;
+            gap: 6px;
+            margin-bottom: 16px;
+            padding: 12px;
+            background: #ffffee;
+            border-radius: 8px;
+            border: 1px solid #e9c2ba;
+        }
+        
+        .size-preset-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            padding: 6px 4px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+            min-width: 40px;
+        }
+        
+        .size-preset-item:hover {
+            background: #cf9c97;
+        }
+        
+        .size-preset-item.active {
+            background: #800000;
+            color: #ffffff;
+        }
+        
+        .size-preview-circle {
+            background: #800000;
+            border-radius: 50%;
+            transition: all 0.2s ease;
+        }
+        
+        .slider-container {
+            position: relative;
+            margin-bottom: 16px;
+        }
+        
+        .slider {
+            width: 100%;
+            height: 6px;
+            background: #e9c2ba;
+            border-radius: 3px;
+            cursor: pointer;
+            position: relative;
+        }
+        
+        .slider-track {
+            height: 100%;
+            background: #800000;
+            border-radius: 3px;
+            transition: width 0.1s ease;
+        }
+        
+        .slider-handle {
+            width: 16px;
+            height: 16px;
+            background: #800000;
+            border: 2px solid #ffffee;
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+        }
+        
+        .slider-value {
+            position: absolute;
+            right: 0;
+            top: -20px;
+            font-size: 12px;
+            color: #5d4037;
+            font-family: monospace;
+            min-width: 40px;
+            text-align: right;
+        }
+
+        /* デバッグパネル */
+        .debug-panel {
+            position: fixed;
+            bottom: 20px;
+            right: 20px;
+            background: #f0e0d6;
+            border: 2px solid #cf9c97;
+            border-radius: 8px;
+            padding: 10px;
+            font-family: monospace;
+            font-size: 11px;
+            max-width: 300px;
+            z-index: 1000;
+        }
+        
+        .debug-title {
+            color: #800000;
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+        
+        .debug-item {
+            margin-bottom: 2px;
+            display: flex;
+            justify-content: space-between;
+        }
+    </style>
+</head>
+<body>
+    <!-- ローディング画面 -->
+    <div id="loading-screen">
+        <div class="loading-logo">Tegaki v8 列車型 (修正版)</div>
+        <div class="loading-train">🚄</div>
+        <div class="loading-progress">
+            <div class="loading-bar" id="loading-bar"></div>
+        </div>
+        <div class="loading-status" id="loading-status">初期化中...</div>
+    </div>
+    
+    <!-- メインレイアウト -->
+    <div class="main-layout" id="main-layout">
+        <div class="sidebar">
+            <div class="tool-button active" id="pen-tool" data-popup="pen-settings" title="ベクターペン">✏</div>
+            <div class="tool-button" id="eraser-tool" title="消しゴム">🧽</div>
+            <div class="tool-separator"></div>
+            <div class="tool-button" id="clear-tool" title="全消去">🗑</div>
+        </div>
+        <div class="canvas-area">
+            <div id="drawing-canvas"></div>
+        </div>
+    </div>
+
+    <!-- ペンツール設定ポップアップ -->
+    <div class="popup-panel" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        <div class="setting-group">
+            <div class="size-presets">
+                <div class="size-preset-item" data-size="1">
+                    <div class="size-preview-circle" style="width: 1px; height: 1px;"></div>
+                    <div>1</div>
+                </div>
+                <div class="size-preset-item" data-size="4">
+                    <div class="size-preview-circle" style="width: 4px; height: 4px;"></div>
+                    <div>4</div>
+                </div>
+                <div class="size-preset-item active" data-size="16">
+                    <div class="size-preview-circle" style="width: 16px; height: 16px;"></div>
+                    <div>16</div>
+                </div>
+                <div class="size-preset-item" data-size="32">
+                    <div class="size-preview-circle" style="width: 20px; height: 20px;"></div>
+                    <div>32</div>
+                </div>
+            </div>
+        </div>
+        <div class="setting-group">
+            <div>サイズ</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-size-slider">
+                    <div class="slider-track" id="pen-size-track"></div>
+                    <div class="slider-handle" id="pen-size-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-size-value">16.0px</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- エラーパネル -->
+    <div class="error-panel" id="error-panel">
+        <div class="error-title">🚨 列車システムエラー</div>
+        <div class="error-message" id="error-message"></div>
+        <button class="error-button" onclick="location.reload()">再読み込み</button>
+    </div>
+
+    <!-- デバッグパネル -->
+    <div class="debug-panel" id="debug-panel">
+        <div class="debug-title">初期化状況</div>
+        <div class="debug-item">
+            <span>A1 Ready:</span>
+            <span id="debug-a1">⏳</span>
+        </div>
+        <div class="debug-item">
+            <span>A2 Ready:</span>
+            <span id="debug-a2">⏳</span>
+        </div>
+        <div class="debug-item">
+            <span>A3 Ready:</span>
+            <span id="debug-a3">⏳</span>
+        </div>
+        <div class="debug-item">
+            <span>総合:</span>
+            <span id="debug-total">⏳</span>
+        </div>
+    </div>
+
+    <!-- Pixi.js ライブラリ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+    
+    <script>
+        /**
+         * ============================================================
+         * Tegaki v8 列車型統合システム - 初期化フラグ修正版
+         * ============================================================
+         */
+
+        // ============================================================
+        // デバッグシステム - リアルタイム状態表示
+        // ============================================================
+        class DebugMonitor {
+            static updateStatus(key, value) {
+                const element = document.getElementById(`debug-${key}`);
+                if (element) {
+                    element.textContent = value ? '✅' : '⏳';
+                    element.style.color = value ? '#2e7d32' : '#f57c00';
+                }
+                console.log(`[Debug] ${key.toUpperCase()} Ready:`, value);
+            }
+
+            static updateProgress(progress, status) {
+                const bar = document.getElementById('loading-bar');
+                const statusEl = document.getElementById('loading-status');
+                if (bar) bar.style.width = `${progress}%`;
+                if (statusEl) statusEl.textContent = status;
+            }
+        }
+
+        // ============================================================
+        // グローバル状態管理 - 完全な状態追跡
+        // ============================================================
+        window.TEGAKI_SYMBOLS = {
+            VERSION: '8.0.0-train-fixed',
+            BUILD: '20250902-fixed',
+            
+            COLORS: {
+                FUTABA_MAROON: 0x800000,
+                FUTABA_LIGHT_MAROON: 0xaa5a56,
+                FUTABA_MEDIUM: 0xcf9c97,
+                FUTABA_LIGHT_MEDIUM: 0xe9c2ba,
+                FUTABA_CREAM: 0xf0e0d6,
+                FUTABA_BACKGROUND: 0xffffee,
+                TEXT_PRIMARY: 0x2c1810,
+                TEXT_SECONDARY: 0x5d4037,
+                TEXT_INVERSE: 0xffffff
+            },
+            
+            CANVAS: {
+                DEFAULT_WIDTH: 400,
+                DEFAULT_HEIGHT: 400,
+                MIN_SIZE: 100,
+                MAX_SIZE: 4096,
+                RESOLUTION: 1
+            },
+            
+            TOOLS: {
+                PEN: 'pen',
+                ERASER: 'eraser',
+                CLEAR: 'clear'
+            },
+            
+            BRUSH: {
+                MIN_SIZE: 0.1,
+                MAX_SIZE: 100,
+                DEFAULT_SIZE: 16.0,
+                DEFAULT_OPACITY: 0.85
+            }
+        };
+
+        window.TEGAKI_STATE = {
+            // 初期化完了フラグ - ここが重要！
+            a1Ready: false,
+            a2Ready: false,
+            a3Ready: false,
+            systemReady: false,
+            
+            // システム状態
+            isInitialized: false,
+            app: null,
+            
+            // 描画状態
+            currentTool: 'pen',
+            brushSize: 16.0,
+            brushColor: 0x800000,
+            opacity: 0.85,
+            canvasWidth: 400,
+            canvasHeight: 400,
+            isDrawing: false,
+            currentPath: null,
+            paths: [],
+            
+            // UI状態
+            activePopup: null
+        };
+
+        // ============================================================
+        // メインシステム制御 - 修正版
+        // ============================================================
+        class TegakiV8TrainSystem {
+            constructor() {
+                this.initializationTimeout = 30000; // 30秒タイムアウト
+                this.pollingInterval = 100; // 100msごとにチェック
+            }
+
+            async boot() {
+                try {
+                    console.log('🚄 Tegaki v8 列車型システム起動開始 (修正版)');
+                    DebugMonitor.updateProgress(5, 'システム起動中...');
+                    
+                    // 基盤チェック
+                    await this.checkDependencies();
+                    DebugMonitor.updateProgress(10, 'A-1車両初期化中...');
+                    
+                    // A-1車両初期化
+                    await this.initA1Car();
+                    await this.waitForReady('a1Ready', 'A-1車両');
+                    DebugMonitor.updateStatus('a1', true);
+                    DebugMonitor.updateProgress(25, 'A-2車両初期化中...');
+                    
+                    // A-2車両初期化
+                    await this.initA2Car();
+                    await this.waitForReady('a2Ready', 'A-2車両');
+                    DebugMonitor.updateStatus('a2', true);
+                    DebugMonitor.updateProgress(50, 'A-3車両初期化中...');
+                    
+                    // A-3車両初期化
+                    await this.initA3Car();
+                    await this.waitForReady('a3Ready', 'A-3車両');
+                    DebugMonitor.updateStatus('a3', true);
+                    DebugMonitor.updateProgress(75, 'UI初期化中...');
+                    
+                    // UI初期化
+                    await this.initUI();
+                    DebugMonitor.updateProgress(95, '最終確認中...');
+                    
+                    // システム完成
+                    window.TEGAKI_STATE.systemReady = true;
+                    window.TEGAKI_STATE.isInitialized = true;
+                    DebugMonitor.updateStatus('total', true);
+                    DebugMonitor.updateProgress(100, '起動完了!');
+                    
+                    await this.completeBootup();
+                    console.log('✅ Tegaki v8 列車型システム起動完了');
+                    
+                } catch (error) {
+                    console.error('[Boot] システム起動失敗:', error);
+                    this.handleError('システム起動エラー', error);
+                }
+            }
+
+            /**
+             * 汎用的な待機関数 - タイムアウト付き
+             */
+            async waitForReady(flagName, description) {
+                console.log(`[Wait] ${description} 完了待機開始...`);
+                
+                return new Promise((resolve, reject) => {
+                    let elapsed = 0;
+                    const startTime = Date.now();
+                    
+                    const checkReady = () => {
+                        elapsed = Date.now() - startTime;
+                        const isReady = window.TEGAKI_STATE[flagName];
+                        
+                        console.log(`[Wait] ${description} Ready: ${isReady} (${elapsed}ms経過)`);
+                        
+                        if (isReady) {
+                            console.log(`[Wait] ✅ ${description} 完了確認`);
+                            resolve();
+                        } else if (elapsed > this.initializationTimeout) {
+                            reject(new Error(`${description} 初期化タイムアウト (${this.initializationTimeout}ms)`));
+                        } else {
+                            setTimeout(checkReady, this.pollingInterval);
+                        }
+                    };
+                    
+                    checkReady();
+                });
+            }
+
+            async checkDependencies() {
+                console.log('[Debug] 依存関係チェック開始');
+                
+                if (typeof PIXI === 'undefined') {
+                    throw new Error('Pixi.js が読み込まれていません');
+                }
+                
+                console.log('[Debug] Pixi.js 確認完了:', PIXI.VERSION);
+                return true;
+            }
+
+            /**
+             * A-1車両初期化
+             */
+            async initA1Car() {
+                console.log('[A-1] ヘッダー車両初期化開始');
+                
+                // シンボル・状態確認
+                if (!window.TEGAKI_SYMBOLS || !window.TEGAKI_STATE) {
+                    throw new Error('[A-1] グローバル状態が未初期化');
+                }
+                
+                // 状態初期化
+                window.TEGAKI_STATE.currentTool = window.TEGAKI_SYMBOLS.TOOLS.PEN;
+                window.TEGAKI_STATE.brushSize = window.TEGAKI_SYMBOLS.BRUSH.DEFAULT_SIZE;
+                window.TEGAKI_STATE.brushColor = window.TEGAKI_SYMBOLS.COLORS.FUTABA_MAROON;
+                window.TEGAKI_STATE.opacity = window.TEGAKI_SYMBOLS.BRUSH.DEFAULT_OPACITY;
+                
+                console.log('[A-1] ヘッダー車両初期化完了');
+                
+                // 重要: フラグを明示的にセット
+                window.TEGAKI_STATE.a1Ready = true;
+            }
+
+            /**
+             * A-2車両初期化 - イベントバス・コアマネージャー
+             */
+            async initA2Car() {
+                console.log('[A-2] コアマネージャー車両初期化開始');
+                
+                // イベントバス初期化
+                window.TEGAKI_EventBus = {
+                    listeners: new Map(),
+                    
+                    on(eventName, callback) {
+                        if (!this.listeners.has(eventName)) {
+                            this.listeners.set(eventName, []);
+                        }
+                        this.listeners.get(eventName).push(callback);
+                    },
+                    
+                    emit(eventName, data) {
+                        const callbacks = this.listeners.get(eventName);
+                        if (callbacks) {
+                            callbacks.forEach(callback => {
+                                try {
+                                    callback(data);
+                                } catch (error) {
+                                    console.error(`[EventBus] ${eventName} エラー:`, error);
+                                }
+                            });
+                        }
+                    },
+                    
+                    off(eventName, callback) {
+                        const callbacks = this.listeners.get(eventName);
+                        if (callbacks) {
+                            const index = callbacks.indexOf(callback);
+                            if (index > -1) {
+                                callbacks.splice(index, 1);
+                            }
+                        }
+                    }
+                };
+                
+                // キャンバスマネージャー
+                window.TEGAKI_CanvasManager = {
+                    app: null,
+                    drawingContainer: null,
+                    
+                    async init() {
+                        console.log('[A-2] CanvasManager初期化開始');
+                        const { CANVAS, COLORS } = window.TEGAKI_SYMBOLS;
+                        const state = window.TEGAKI_STATE;
+
+                        this.app = new PIXI.Application({
+                            width: state.canvasWidth,
+                            height: state.canvasHeight,
+                            backgroundColor: COLORS.FUTABA_BACKGROUND,
+                            antialias: true,
+                            resolution: CANVAS.RESOLUTION
+                        });
+
+                        window.TEGAKI_STATE.app = this.app;
+                        this.drawingContainer = new PIXI.Container();
+                        this.app.stage.addChild(this.drawingContainer);
+                        
+                        console.log('[A-2] CanvasManager初期化完了');
+                    },
+                    
+                    mountToDOM() {
+                        if (!this.app) return;
+                        const container = document.getElementById('drawing-canvas');
+                        if (container) {
+                            container.appendChild(this.app.view);
+                        }
+                    }
+                };
+
+                // ツールマネージャー
+                window.TEGAKI_ToolManager = {
+                    setTool(toolName) {
+                        const { TOOLS } = window.TEGAKI_SYMBOLS;
+                        if (!Object.values(TOOLS).includes(toolName)) {
+                            console.error(`[A-2] 不明なツール: ${toolName}`);
+                            return;
+                        }
+                        window.TEGAKI_STATE.currentTool = toolName;
+                        window.TEGAKI_EventBus.emit('tool-changed', toolName);
+                    },
+                    
+                    setBrushSize(size) {
+                        const { BRUSH } = window.TEGAKI_SYMBOLS;
+                        const clampedSize = Math.max(BRUSH.MIN_SIZE, Math.min(BRUSH.MAX_SIZE, size));
+                        window.TEGAKI_STATE.brushSize = Math.round(clampedSize * 10) / 10;
+                        window.TEGAKI_EventBus.emit('brush-size-changed', window.TEGAKI_STATE.brushSize);
+                    }
+                };
+
+                console.log('[A-2] コアマネージャー車両初期化完了');
+                
+                // 重要: フラグを明示的にセット
+                window.TEGAKI_STATE.a2Ready = true;
+            }
+
+            /**
+             * A-3車両初期化 - 描画エンジン・統合システム
+             */
+            async initA3Car() {
+                console.log('[A-3] 統合システム車両初期化開始');
+                
+                // 描画エンジン
+                window.TEGAKI_DrawingEngine = {
+                    paths: [],
+                    currentPath: null,
+
+                    createPath(x, y, size, color, opacity, tool = 'pen') {
+                        const { COLORS } = window.TEGAKI_SYMBOLS;
+                        const canvasManager = window.TEGAKI_CanvasManager;
+
+                        const path = {
+                            id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                            graphics: new PIXI.Graphics(),
+                            points: [],
+                            color: tool === 'eraser' ? COLORS.FUTABA_BACKGROUND : color,
+                            size: size,
+                            opacity: tool === 'eraser' ? 1.0 : opacity,
+                            tool: tool,
+                            isComplete: false
+                        };
+
+                        path.graphics.beginFill(path.color, path.opacity);
+                        path.graphics.drawCircle(x, y, size / 2);
+                        path.graphics.endFill();
+
+                        path.points.push({ x, y, size });
+                        canvasManager.drawingContainer.addChild(path.graphics);
+                        this.paths.push(path);
+                        
+                        return path;
+                    },
+
+                    drawLine(path, x, y) {
+                        if (!path || path.points.length === 0) return;
+
+                        const lastPoint = path.points[path.points.length - 1];
+                        const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
+
+                        if (distance < 1.5) return;
+
+                        path.graphics.beginFill(path.color, path.opacity);
+                        path.graphics.drawCircle(x, y, path.size / 2);
+                        path.graphics.endFill();
+
+                        path.points.push({ x, y, size: path.size });
+                    },
+
+                    clear() {
+                        const canvasManager = window.TEGAKI_CanvasManager;
+                        this.paths.forEach(path => {
+                            canvasManager.drawingContainer.removeChild(path.graphics);
+                            path.graphics.destroy();
+                        });
+                        this.paths = [];
+                        this.currentPath = null;
+                    }
+                };
+
+                // インタラクションシステム
+                window.TEGAKI_InteractionSystem = {
+                    isDrawing: false,
+
+                    init() {
+                        console.log('[A-3] InteractionSystem初期化開始');
+                        const app = window.TEGAKI_STATE.app;
+                        if (!app) {
+                            throw new Error('[A-3] Pixiアプリケーションが未初期化');
+                        }
+
+                        app.stage.interactive = true;
+                        app.stage.hitArea = new PIXI.Rectangle(0, 0, window.TEGAKI_STATE.canvasWidth, window.TEGAKI_STATE.canvasHeight);
+
+                        app.stage.on('pointerdown', (event) => this.handlePointerDown(event));
+                        app.stage.on('pointermove', (event) => this.handlePointerMove(event));
+                        app.stage.on('pointerup', () => this.handlePointerUp());
+                        app.stage.on('pointerupoutside', () => this.handlePointerUp());
+                        
+                        console.log('[A-3] InteractionSystem初期化完了');
+                    },
+
+                    getLocalPointerPosition(event) {
+                        const app = window.TEGAKI_STATE.app;
+                        if (!app) return { x: 0, y: 0 };
+                        
+                        const rect = app.view.getBoundingClientRect();
+                        const originalEvent = event.data?.originalEvent || event;
+                        
+                        const x = (originalEvent.clientX - rect.left) * (window.TEGAKI_STATE.canvasWidth / rect.width);
+                        const y = (originalEvent.clientY - rect.top) * (window.TEGAKI_STATE.canvasHeight / rect.height);
+                        
+                        return { x, y };
+                    },
+
+                    clampToCanvas(point) {
+                        const state = window.TEGAKI_STATE;
+                        return {
+                            x: Math.max(0, Math.min(state.canvasWidth, point.x)),
+                            y: Math.max(0, Math.min(state.canvasHeight, point.y))
+                        };
+                    },
+
+                    handlePointerDown(event) {
+                        if (window.TEGAKI_STATE.activePopup) return;
+
+                        const point = this.getLocalPointerPosition(event);
+                        const clampedPoint = this.clampToCanvas(point);
+                        
+                        this.isDrawing = true;
+                        window.TEGAKI_STATE.isDrawing = true;
+
+                        const drawingEngine = window.TEGAKI_DrawingEngine;
+                        const state = window.TEGAKI_STATE;
+
+                        drawingEngine.currentPath = drawingEngine.createPath(
+                            clampedPoint.x, 
+                            clampedPoint.y,
+                            state.brushSize,
+                            state.brushColor,
+                            state.opacity,
+                            state.currentTool
+                        );
+
+                        window.TEGAKI_STATE.currentPath = drawingEngine.currentPath;
+                    },
+
+                    handlePointerMove(event) {
+                        if (this.isDrawing && !window.TEGAKI_STATE.activePopup) {
+                            const point = this.getLocalPointerPosition(event);
+                            const clampedPoint = this.clampToCanvas(point);
+                            
+                            const drawingEngine = window.TEGAKI_DrawingEngine;
+                            if (drawingEngine.currentPath) {
+                                drawingEngine.drawLine(drawingEngine.currentPath, clampedPoint.x, clampedPoint.y);
+                            }
+                        }
+                    },
+
+                    handlePointerUp() {
+                        if (!this.isDrawing) return;
+
+                        this.isDrawing = false;
+                        window.TEGAKI_STATE.isDrawing = false;
+
+                        const drawingEngine = window.TEGAKI_DrawingEngine;
+                        if (drawingEngine.currentPath) {
+                            drawingEngine.currentPath.isComplete = true;
+                        }
+
+                        drawingEngine.currentPath = null;
+                        window.TEGAKI_STATE.currentPath = null;
+                    }
+                };
+
+                // A-3初期化実行
+                try {
+                    await window.TEGAKI_CanvasManager.init();
+                    window.TEGAKI_CanvasManager.mountToDOM();
+                    window.TEGAKI_InteractionSystem.init();
+                    
+                    console.log('[A-3] 統合システム車両初期化完了');
+                    
+                    // 重要: フラグを明示的にセット
+                    window.TEGAKI_STATE.a3Ready = true;
+                } catch (error) {
+                    console.error('[A-3] 初期化エラー:', error);
+                    throw error;
+                }
+            }
+
+            /**
+             * UI初期化
+             */
+            async initUI() {
+                console.log('[UI] UI初期化開始');
+                
+                // UI要素のイベント設定
+                this.setupToolButtons();
+                this.setupSliders();
+                this.setupPopups();
+                
+                console.log('[UI] UI初期化完了');
+            }
+
+            setupToolButtons() {
+                // ペンツール
+                const penTool = document.getElementById('pen-tool');
+                if (penTool) {
+                    penTool.addEventListener('click', () => {
+                        window.TEGAKI_ToolManager.setTool('pen');
+                        this.setActiveToolButton('pen');
+                        this.togglePopup('pen-settings');
+                    });
+                }
+
+                // 消しゴムツール
+                const eraserTool = document.getElementById('eraser-tool');
+                if (eraserTool) {
+                    eraserTool.addEventListener('click', () => {
+                        window.TEGAKI_ToolManager.setTool('eraser');
+                        this.setActiveToolButton('eraser');
+                        this.closeAllPopups();
+                    });
+                }
+
+                // 全消去ツール
+                const clearTool = document.getElementById('clear-tool');
+                if (clearTool) {
+                    clearTool.addEventListener('click', () => {
+                        if (confirm('キャンバスを全消去しますか？')) {
+                            window.TEGAKI_DrawingEngine.clear();
+                        }
+                    });
+                }
+            }
+
+            setActiveToolButton(tool) {
+                document.querySelectorAll('.tool-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                const toolButton = document.getElementById(tool + '-tool');
+                if (toolButton) {
+                    toolButton.classList.add('active');
+                }
+            }
+
+            setupSliders() {
+                this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
+                    window.TEGAKI_ToolManager.setBrushSize(value);
+                    return value.toFixed(1) + 'px';
+                });
+
+                // プリセットボタン
+                document.querySelectorAll('.size-preset-item').forEach(preset => {
+                    preset.addEventListener('click', () => {
+                        const size = parseFloat(preset.getAttribute('data-size'));
+                        window.TEGAKI_ToolManager.setBrushSize(size);
+                        this.updateSliderValue('pen-size-slider', size);
+                        
+                        // プリセットのアクティブ状態更新
+                        document.querySelectorAll('.size-preset-item').forEach(p => p.classList.remove('active'));
+                        preset.classList.add('active');
+                    });
+                });
+            }
+
+            createSlider(sliderId, min, max, initial, callback) {
+                const container = document.getElementById(sliderId);
+                if (!container) return;
+
+                const track = container.querySelector('.slider-track');
+                const handle = container.querySelector('.slider-handle');
+                const valueDisplay = container.parentNode.querySelector('.slider-value');
+
+                let isDragging = false;
+                let currentValue = initial;
+
+                const updateSlider = (value) => {
+                    currentValue = Math.max(min, Math.min(max, value));
+                    const percentage = ((currentValue - min) / (max - min)) * 100;
+                    
+                    track.style.width = percentage + '%';
+                    handle.style.left = percentage + '%';
+                    valueDisplay.textContent = callback(currentValue);
+                };
+
+                const getValueFromPosition = (clientX) => {
+                    const rect = container.getBoundingClientRect();
+                    const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                    return min + (percentage * (max - min));
+                };
+
+                container.addEventListener('mousedown', (e) => {
+                    isDragging = true;
+                    updateSlider(getValueFromPosition(e.clientX));
+                    e.preventDefault();
+                });
+
+                document.addEventListener('mousemove', (e) => {
+                    if (isDragging) {
+                        updateSlider(getValueFromPosition(e.clientX));
+                    }
+                });
+
+                document.addEventListener('mouseup', () => {
+                    isDragging = false;
+                });
+
+                updateSlider(initial);
+            }
+
+            updateSliderValue(sliderId, value) {
+                // スライダー値の更新処理（実装は簡略化）
+                console.log(`スライダー ${sliderId} を ${value} に更新`);
+            }
+
+            setupPopups() {
+                // ポップアップ外クリックで閉じる
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.popup-panel') && !e.target.closest('[data-popup]')) {
+                        this.closeAllPopups();
+                    }
+                });
+            }
+
+            togglePopup(popupId) {
+                const popup = document.getElementById(popupId);
+                if (!popup) return;
+
+                const isVisible = popup.classList.contains('show');
+                this.closeAllPopups();
+                
+                if (!isVisible) {
+                    popup.classList.add('show');
+                    window.TEGAKI_STATE.activePopup = popup;
+                }
+            }
+
+            closeAllPopups() {
+                document.querySelectorAll('.popup-panel').forEach(popup => {
+                    popup.classList.remove('show');
+                });
+                window.TEGAKI_STATE.activePopup = null;
+            }
+
+            /**
+             * 起動完了処理
+             */
+            async completeBootup() {
+                console.log('[Boot] 起動完了処理開始');
+                
+                // ローディング画面を隠す
+                const loadingScreen = document.getElementById('loading-screen');
+                if (loadingScreen) {
+                    loadingScreen.classList.add('fade-out');
+                    setTimeout(() => {
+                        loadingScreen.style.display = 'none';
+                    }, 500);
+                }
+
+                // メインレイアウトを表示
+                const mainLayout = document.getElementById('main-layout');
+                if (mainLayout) {
+                    mainLayout.classList.add('initialized');
+                }
+
+                // デバッグパネルを5秒後に隠す
+                setTimeout(() => {
+                    const debugPanel = document.getElementById('debug-panel');
+                    if (debugPanel) {
+                        debugPanel.style.opacity = '0.3';
+                    }
+                }, 5000);
+
+                console.log('[Boot] 起動完了処理完了');
+            }
+
+            /**
+             * エラーハンドリング
+             */
+            handleError(title, error) {
+                console.error('[Error]', title, error);
+                
+                const errorPanel = document.getElementById('error-panel');
+                const errorMessage = document.getElementById('error-message');
+                
+                if (errorPanel && errorMessage) {
+                    errorMessage.textContent = `${title}\n\n${error.message}\n\nスタック:\n${error.stack}`;
+                    errorPanel.style.display = 'block';
+                }
+
+                // ローディング画面を隠す
+                const loadingScreen = document.getElementById('loading-screen');
+                if (loadingScreen) {
+                    loadingScreen.style.display = 'none';
+                }
+            }
+        }
+
+        // ============================================================
+        // システム起動
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('🚄 DOM読み込み完了 - システム起動開始');
+            
+            const system = new TegakiV8TrainSystem();
+            system.boot().catch(error => {
+                console.error('💥 システム起動失敗:', error);
+            });
+        });
+
+        // 即座起動の場合
+        if (document.readyState !== 'loading') {
+            console.log('🚄 即座起動 - システム起動開始');
+            
+            const system = new TegakiV8TrainSystem();
+            system.boot().catch(error => {
+                console.error('💥 システム起動失敗:', error);
+            });
+        }
+    </script>
+</body>
+</html>
