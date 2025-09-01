@@ -10,6 +10,7 @@
  *   - undo() / redo()
  *   - getTPFHistory()
  *   - setManagers(managers)
+ *   - init(): Promise<void>
  *   - isReady()
  *
  * @uses
@@ -18,7 +19,7 @@
  *   - PIXI.Graphics v8 API
  *
  * @initflow
- *   1. constructor → 2. setManagers → 3. addStroke利用可能
+ *   1. constructor → 2. setManagers → 3. init() → 4. addStroke利用可能
  *
  * @forbids
  *   💀 双方向依存禁止
@@ -34,19 +35,7 @@
  *   OPTIONAL: ConfigManager, ErrorManager
  *   FORBIDDEN: Tool直接依存
  *
- * @integration-flow
- *   AppCore → setManagers → Tool → addStroke → TPF記録
- *
- * @method-naming-rules
- *   記録系: addStroke() / startOperation() / endOperation()
- *   履歴系: undo() / redo() / getTPFHistory()
- *   管理系: setManagers() / isReady()
- *
- * @error-handling
- *   初期化失敗時は例外スロー、操作失敗時はfalse返却
- *
- * @performance-notes
- *   TPF記録は最小限のデータ構造、メモリ効率重視
+ * ChangeLog: 2025-09-01 init()メソッド追加・Manager完全初期化対応
  */
 
 // 多重定義防止
@@ -56,7 +45,7 @@ if (!window.Tegaki) {
 
 /**
  * RecordManager - TPF形式ストローク記録・履歴管理
- * addStrokeメソッド実装版
+ * addStrokeメソッド・init()メソッド実装版
  */
 class RecordManager {
     constructor() {
@@ -79,6 +68,7 @@ class RecordManager {
         this.ready = false;
         this.v8Ready = false;
         this.managersReady = false;
+        this.initialized = false;
         
         // 設定・統計
         this.maxHistorySize = 1000;  // 最大履歴数
@@ -123,7 +113,6 @@ class RecordManager {
             }
             
             this.managersReady = true;
-            this.validateV8Integration();
             
             console.log('✅ RecordManager Manager統合注入完了');
             return true;
@@ -136,9 +125,45 @@ class RecordManager {
     }
     
     /**
+     * 初期化処理（新規追加：AppCore統合用）
+     */
+    async init() {
+        console.log('🔄 RecordManager init() 開始');
+        
+        try {
+            if (this.initialized) {
+                console.log('⚠️ RecordManager already initialized');
+                return true;
+            }
+            
+            if (!this.managersReady) {
+                throw new Error('Managers not set - call setManagers() first');
+            }
+            
+            // v8統合確認・準備完了チェック
+            await this.validateV8Integration();
+            
+            // 初期化完了
+            this.initialized = true;
+            this.ready = true;
+            this.v8Ready = true;
+            
+            console.log('✅ RecordManager init() 完了');
+            return true;
+            
+        } catch (error) {
+            this.lastError = error;
+            console.error('❌ RecordManager init() エラー:', error);
+            this.ready = false;
+            this.v8Ready = false;
+            throw error;
+        }
+    }
+    
+    /**
      * v8統合確認・準備完了チェック
      */
-    validateV8Integration() {
+    async validateV8Integration() {
         try {
             // CanvasManager確認
             if (!this.managers.canvas || typeof this.managers.canvas.getDrawContainer !== 'function') {
@@ -151,16 +176,18 @@ class RecordManager {
                 throw new Error('DrawContainer not ready or invalid');
             }
             
-            this.ready = true;
-            this.v8Ready = true;
+            // CanvasManager v8準備確認
+            if (typeof this.managers.canvas.isV8Ready === 'function') {
+                if (!this.managers.canvas.isV8Ready()) {
+                    throw new Error('CanvasManager not v8 ready');
+                }
+            }
             
             console.log('✅ RecordManager v8統合確認完了');
             
         } catch (error) {
             this.lastError = error;
             console.error('❌ RecordManager v8統合確認エラー:', error);
-            this.ready = false;
-            this.v8Ready = false;
             throw error;
         }
     }
@@ -172,7 +199,7 @@ class RecordManager {
         console.log('📝 RecordManager.addStroke() 開始:', strokeData?.id);
         
         if (!this.isReady()) {
-            console.warn('⚠️ RecordManager not ready - call setManagers() first');
+            console.warn('⚠️ RecordManager not ready - call init() first');
             return false;
         }
         
@@ -387,6 +414,7 @@ class RecordManager {
         return this.ready && 
                this.managersReady && 
                this.v8Ready &&
+               this.initialized &&
                !!this.managers.canvas &&
                typeof this.managers.canvas.getDrawContainer === 'function';
     }
@@ -443,6 +471,7 @@ class RecordManager {
             ready: this.isReady(),
             v8Ready: this.v8Ready,
             managersReady: this.managersReady,
+            initialized: this.initialized,
             managers: {
                 canvas: !!this.managers.canvas,
                 eventbus: !!this.managers.eventbus,
@@ -535,4 +564,4 @@ class RecordManager {
 
 // グローバル登録
 window.Tegaki.RecordManager = RecordManager;
-console.log('🔄 RecordManager v8対応版 Loaded - addStrokeメソッド実装版');
+console.log('🔄 RecordManager v8対応版 Loaded - addStrokeメソッド・init()メソッド実装版');
