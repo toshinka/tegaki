@@ -175,31 +175,37 @@
                     // 基盤チェック（DOM依存なし）
                     this.updateProgress(5, 'Pixi.js確認中...');
                     await this.checkDependencies();
+                    console.log('[Boot] 基盤チェック完了');
                     
                     // A列車読み込み・初期化
                     this.updateProgress(10, 'A-1車両読み込み中...');
                     await this.loadA1Car();
+                    await this.waitForA1Ready();
+                    console.log('[Boot] A-1車両完了');
                     
                     this.updateProgress(25, 'A-2車両読み込み中...');
                     await this.loadA2Car();
+                    await this.waitForA2Ready();
+                    console.log('[Boot] A-2車両完了');
                     
                     this.updateProgress(40, 'A-3車両読み込み中...');
                     await this.loadA3Car();
-                    
-                    // A列車完成まで待機
-                    this.updateProgress(55, 'A列車統合中...');
-                    await this.waitForATrain();
+                    await this.waitForATrainReady();
+                    console.log('[Boot] A列車統合完了');
                     
                     // B車両読み込み・初期化
                     this.updateProgress(70, 'B-1 UI車両読み込み中...');
                     await this.loadB1Car();
+                    console.log('[Boot] B-1車両完了');
                     
                     this.updateProgress(85, 'B-2 ステータス車両読み込み中...');
                     await this.loadB2Car();
+                    console.log('[Boot] B-2車両完了');
                     
                     // 最終統合テスト
                     this.updateProgress(95, '統合テスト実行中...');
                     await this.runIntegrationTest();
+                    console.log('[Boot] 統合テスト完了');
                     
                     // 起動完了
                     this.updateProgress(100, '起動完了!');
@@ -208,6 +214,7 @@
                     console.log('✅ Tegaki v8 列車型システム起動完了');
                     
                 } catch (error) {
+                    console.error('[Boot] システム起動失敗:', error);
                     this.handleError('システム起動エラー', error);
                 }
             }
@@ -504,6 +511,8 @@
             async loadA3Car() {
                 return this.loadCarScript('A-3', `
                     // A-3車両コード (統合システム・描画エンジン)
+                    console.log('[A-3] 統合システム車両コード実行開始');
+                    
                     window.TEGAKI_DrawingEngine = {
                         paths: [],
                         currentPath: null,
@@ -575,13 +584,18 @@
                         isDrawing: false,
 
                         init() {
+                            console.log('[A-3] InteractionSystem初期化開始');
                             const app = window.TEGAKI_STATE.app;
-                            if (!app) return;
+                            if (!app) {
+                                console.error('[A-3] Pixiアプリケーションが未初期化');
+                                return;
+                            }
 
                             app.stage.on('pointerdown', (event) => this.handlePointerDown(event));
                             app.stage.on('pointermove', (event) => this.handlePointerMove(event));
                             app.stage.on('pointerup', () => this.handlePointerUp());
                             app.stage.on('pointerupoutside', () => this.handlePointerUp());
+                            console.log('[A-3] InteractionSystem初期化完了');
                         },
 
                         handlePointerDown(event) {
@@ -646,6 +660,7 @@
                         lastTime: 0,
 
                         start() {
+                            console.log('[A-3] PerformanceMonitor開始');
                             const update = () => {
                                 this.frameCount++;
                                 const currentTime = performance.now();
@@ -665,21 +680,31 @@
                         }
                     };
 
-                    // A-3初期化
+                    // A-3初期化実行
                     async function initA3() {
-                        await window.TEGAKI_CanvasManager.init();
-                        window.TEGAKI_CanvasManager.mountToDOM();
-                        window.TEGAKI_InteractionSystem.init();
-                        window.TEGAKI_PerformanceMonitor.start();
+                        console.log('[A-3] A-3初期化関数実行開始');
                         
-                        window.TEGAKI_STATE.isInitialized = true;
-                        window.TEGAKI_STATE.aTrainReady = true;
-                        
-                        console.log('[A-3] 統合システム車両初期化完了 - A列車完成');
-                        window.TEGAKI_EventBus.emit('a-train-ready');
+                        try {
+                            await window.TEGAKI_CanvasManager.init();
+                            window.TEGAKI_CanvasManager.mountToDOM();
+                            window.TEGAKI_InteractionSystem.init();
+                            window.TEGAKI_PerformanceMonitor.start();
+                            
+                            window.TEGAKI_STATE.isInitialized = true;
+                            window.TEGAKI_STATE.aTrainReady = true;
+                            
+                            console.log('[A-3] 統合システム車両初期化完了 - A列車完成');
+                            window.TEGAKI_EventBus.emit('a-train-ready');
+                        } catch (error) {
+                            console.error('[A-3] 初期化エラー:', error);
+                            throw error;
+                        }
                     }
 
-                    initA3();
+                    // 即座に初期化実行
+                    initA3().catch(error => {
+                        console.error('[A-3] initA3実行失敗:', error);
+                    });
                 `);
             }
 
