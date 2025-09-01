@@ -1,81 +1,76 @@
-1. 原因分析
+エラーの原因
 
-ペンポップアップ変更
+チェック関数で DOM 操作を先に実行
 
-ペンポップアップ.png → 枠付き表示に変更
-
-サイズ計算ロジックをリニア変換に変更
-
-プリセット保持用の新データ構造追加
-→ この段階で「キャンバスのサイズ計算や描画初期化のDOM参照」が遅延していると、Pixi.Applicationの生成前にcanvasサイズが0になり得ます。
-
-ツールバーアイコンの色変更
-
-CSSやSVGのstroke/fillを変更
-→ DOM作成順序やclass名指定がPixiやAppCore初期化前だと、描画が正しく反映されない可能性。
-
-初期化フロー破綻
-
-v7rev2では CanvasManager.attach() → CanvasManager.init() の順でcanvas生成
-
-v7rev3では、ペンポップアップとプリセット保持追加により attach/initの順序がずれている、またはDOM参照が失敗
-→ 結果として app.view にPixi canvasがアタッチされない。Consoleエラーは出ていないので try/catchで握られているか、Canvasサイズが0のまま になっている。
-
-2. 対策案
-A. 初期化順序の明示化（必須）
-1. ConfigManager.configure()          // 設定読み込み
-2. CanvasManager.attach()             // DOM要素参照
-3. CanvasManager.init()               // Pixi.Application生成
-4. EventBus.attach/init()             // pointer/touch
-5. ToolManager.attach/init()          // ペンポップアップ含む
-6. UI/Sidebar 起動                    // アイコン配置
+TegakiV8TrainSystem.checkDependencies
 
 
-ポイント：ペンポップアップやツールデータは CanvasManager.init() 完了後に参照する
+内で document.querySelector(...) を呼んでいますが、この呼び出し時点で該当要素がまだ DOM に存在していない。
 
-これを守らないと canvasが存在しない状態で描画処理が走り、見えないだけ になる
+列車型の読み込み順序の影響
 
-B. ペンポップアップ変更の安全化
+tegaki-a1-header.html などヘッダーや共通辞典は先に読み込む想定
 
-枠表示に変えるなら、初期化時に以下を確認：
+tegaki-b1-ui.html など UI 関連の DOM はまだ描画されていない
 
-// サイズ計算
-popupSize = Math.min(preset.size, maxCircleSize);
-// DOM作成
-const popupCircle = document.createElement('div');
-popupCircle.style.border = '2px solid #800000';
-popupCircle.style.width = popupSize + 'px';
-popupCircle.style.height = popupSize + 'px';
-popupCircle.style.borderRadius = '50%';
+しかし checkDependencies がメインファイルで先に実行されるため、querySelector で取得できずエラーになっている
 
+v7時代と違い、全体を HTML で列車化したため、DOM の準備が従来とは異なるタイミングになった
 
-重要：Pixi canvas生成後にDOMへappendすること
+対策案
+1. DOM が完全に描画されるまで待つ
 
-プリセット保持用データは、canvas生成前に宣言するだけでOK
+DOMContentLoaded イベントまたは window.onload で起動処理を包むと安全です。
 
-C. アイコンカラー変更
-
-SVGを直接変更する場合：
-
-iconSvg.setAttribute('stroke', '#800000');
+document.addEventListener('DOMContentLoaded', () => {
+    TegakiV8TrainSystem.boot();
+});
 
 
-CSSの場合：
+これにより、列車型で分割されても UI 要素が存在する状態でチェックが行われます。
 
-.futaba-icon {
-    stroke: #800000;
-    fill: none;
+2. checkDependencies の実装を防御的に変更
+
+DOM がない場合はエラーを投げずに、後でチェックするように変更も可能です。
+
+checkDependencies() {
+    const element = document.querySelector('#some-tool-button');
+    if (!element) {
+        console.warn('⚠ DOM要素がまだ準備されていません: #some-tool-button');
+        return false; // 後で再チェック
+    }
+    return true;
 }
 
+3. 列車型の読み込み順序の確認
 
-注意：Pixi canvas上の描画には影響しない。あくまでDOM側のツールバーアイコン。
+A列車（ヘッダー・コア初期化）は先に読み込む
 
-3. 確認ポイント
+B列車（UI・ステータス）は DOM 描画後に読み込む
 
-CanvasManager.attach() で app.view が正しく取得できているか
+<!-- 列車順序例 -->
+<script src="tegaki-a1-header.html"></script>
+<script src="tegaki-a2-core.html"></script>
+<script src="tegaki-a3-integration.html"></script>
+<script src="tegaki-b1-ui.html"></script>
+<script src="tegaki-b2-status.html"></script>
+<script>
+  document.addEventListener('DOMContentLoaded', () => {
+      TegakiV8TrainSystem.boot();
+  });
+</script>
 
-CanvasManager.init() が Promise を返して完了しているか
 
-ペンポップアップやプリセット保持の処理は init完了後に行う
+ポイントは DOM 依存部分は必ず描画後に起動 すること。
 
-CSS/DOM変更は Pixi canvasより先に行わない
+まとめ
+
+エラーは DOM操作をDOM描画前に実行 しているのが原因
+
+対策は以下のどちらか：
+
+DOMContentLoaded で起動を遅延
+
+checkDependencies を防御的に書き換え、DOMがなくても落ちないようにする
+
+列車型自体は正しいが、DOM依存処理の起動タイミングを調整する必要あり

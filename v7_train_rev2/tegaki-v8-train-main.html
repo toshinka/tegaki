@@ -172,7 +172,7 @@
                 try {
                     console.log('🚄 Tegaki v8 列車型システム起動開始');
                     
-                    // 基盤チェック
+                    // 基盤チェック（DOM依存なし）
                     this.updateProgress(5, 'Pixi.js確認中...');
                     await this.checkDependencies();
                     
@@ -213,39 +213,42 @@
             }
 
             /**
-             * 依存関係チェック
+             * 依存関係チェック（DOM不要）
              */
             async checkDependencies() {
-                return new Promise((resolve, reject) => {
-                    // Pixi.js確認
-                    if (typeof PIXI === 'undefined') {
-                        reject(new Error('Pixi.js が読み込まれていません'));
-                        return;
-                    }
-                    
-                    // ブラウザAPI確認
-                    const requiredAPIs = [
-                        'requestAnimationFrame',
-                        'addEventListener',
-                        'querySelector'
-                    ];
-                    
-                    const missing = requiredAPIs.filter(api => typeof window[api] === 'undefined');
-                    if (missing.length > 0) {
-                        reject(new Error(`必要なブラウザAPIが不足: ${missing.join(', ')}`));
-                        return;
-                    }
-                    
-                    console.log('[Main] 依存関係チェック完了');
-                    setTimeout(resolve, 200);
-                });
+                console.log('[Debug] checkDependencies 開始');
+                
+                // Pixi.js確認
+                if (typeof PIXI === 'undefined') {
+                    throw new Error('Pixi.js が読み込まれていません');
+                }
+                console.log('[Debug] Pixi.js 確認完了:', PIXI.VERSION);
+                
+                // 基本ブラウザAPI確認（DOM以外）
+                const requiredAPIs = [
+                    'requestAnimationFrame',
+                    'addEventListener', 
+                    'performance'
+                ];
+                
+                const missing = requiredAPIs.filter(api => typeof window[api] === 'undefined');
+                if (missing.length > 0) {
+                    throw new Error(`必要なブラウザAPIが不足: ${missing.join(', ')}`);
+                }
+                
+                console.log('[Debug] ブラウザAPI確認完了');
+                return true;
             }
 
             /**
              * A-1車両読み込み
              */
             async loadA1Car() {
+                console.log('[Debug] A-1車両読み込み開始');
+                
                 return this.loadCarScript('A-1', `
+                    console.log('[A-1] ヘッダー車両コード実行開始');
+                    
                     // A-1車両コード (ヘッダー・ルールブック・ChangeLog)
                     window.TEGAKI_SYMBOLS = {
                         VERSION: '8.0.0-train',
@@ -324,7 +327,11 @@
              * A-2車両読み込み
              */
             async loadA2Car() {
+                console.log('[Debug] A-2車両読み込み開始');
+                
                 return this.loadCarScript('A-2', `
+                    console.log('[A-2] コアマネージャー車両コード実行開始');
+                    
                     // A-2車両コード (コアマネージャー・イベントバス)
                     window.TEGAKI_EventBus = {
                         listeners: new Map(),
@@ -362,6 +369,7 @@
                         drawingContainer: null,
                         
                         async init() {
+                            console.log('[A-2] CanvasManager初期化開始');
                             const { CANVAS, COLORS } = window.TEGAKI_SYMBOLS;
                             const state = window.TEGAKI_STATE;
 
@@ -764,6 +772,7 @@
                         z-index: 2000;
                         display: none;
                         user-select: none;
+                        width: 320px;
                     }
                     
                     .popup-panel.show {
@@ -919,7 +928,7 @@
                             document.body.innerHTML = \`
                                 <div class="main-layout">
                                     <div class="sidebar">
-                                        <div class="tool-button active" id="pen-tool" data-popup="pen-settings" title="ベクターペン">🖊</div>
+                                        <div class="tool-button active" id="pen-tool" data-popup="pen-settings" title="ベクターペン">✏</div>
                                         <div class="tool-button" id="eraser-tool" title="消しゴム">🧽</div>
                                         <div class="tool-separator"></div>
                                         <div class="tool-button disabled" id="fill-tool" title="塗りつぶし">🪣</div>
@@ -1133,241 +1142,3 @@
                     if (window.TEGAKI_STATE?.aTrainReady) {
                         window.TEGAKI_B1_UI.init();
                     }
-                `);
-            }
-
-            /**
-             * B-2車両読み込み（ステータス車両）
-             */
-            async loadB2Car() {
-                return this.loadCarScript('B-2', `
-                    // B-2車両コード (ステータス車両)
-                    window.TEGAKI_B2_Status = {
-                        init() {
-                            this.createStatusPanel();
-                            this.connectToEventBus();
-                            this.startMonitoring();
-                            console.log('[B-2] ステータス車両初期化完了');
-                        },
-
-                        createStatusPanel() {
-                            if (document.querySelector('.status-panel')) return;
-                            
-                            const statusPanel = document.createElement('div');
-                            statusPanel.className = 'status-panel';
-                            statusPanel.innerHTML = \`
-                                <div class="status-group">
-                                    <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
-                                    <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
-                                    <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
-                                </div>
-                                <div class="status-group">
-                                    <div class="status-item">FPS: <span id="fps">60</span></div>
-                                    <div class="status-item">Memory: <span id="memory-usage">1.2MB</span></div>
-                                </div>
-                            \`;
-                            document.body.appendChild(statusPanel);
-                        },
-
-                        connectToEventBus() {
-                            window.TEGAKI_EventBus.on('pointer-moved', (point) => {
-                                const coordsElement = document.getElementById('coordinates');
-                                if (coordsElement) {
-                                    coordsElement.textContent = \`x: \${Math.round(point.x)}, y: \${Math.round(point.y)}\`;
-                                }
-                            });
-
-                            window.TEGAKI_EventBus.on('tool-changed', (toolName) => {
-                                const toolElement = document.getElementById('current-tool');
-                                if (toolElement) {
-                                    const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
-                                    toolElement.textContent = toolNames[toolName] || toolName;
-                                }
-                            });
-
-                            window.TEGAKI_EventBus.on('canvas-resized', ({ width, height }) => {
-                                const canvasElement = document.getElementById('canvas-info');
-                                if (canvasElement) {
-                                    canvasElement.textContent = \`\${width}×\${height}px\`;
-                                }
-                            });
-
-                            window.TEGAKI_EventBus.on('fps-updated', (fps) => {
-                                const fpsElement = document.getElementById('fps');
-                                if (fpsElement) {
-                                    fpsElement.textContent = fps;
-                                }
-                            });
-                        },
-
-                        startMonitoring() {
-                            setInterval(() => {
-                                if (performance.memory) {
-                                    const used = performance.memory.usedJSHeapSize;
-                                    const usage = (used / 1024 / 1024).toFixed(1);
-                                    const memoryElement = document.getElementById('memory-usage');
-                                    if (memoryElement) {
-                                        memoryElement.textContent = usage + 'MB';
-                                    }
-                                }
-                            }, 2000);
-                        }
-                    };
-
-                    window.TEGAKI_EventBus.on('a-train-ready', () => {
-                        window.TEGAKI_B2_Status.init();
-                    });
-
-                    if (window.TEGAKI_STATE?.aTrainReady) {
-                        window.TEGAKI_B2_Status.init();
-                    }
-                `);
-            }
-
-            /**
-             * A列車完成待機
-             */
-            async waitForATrain() {
-                return new Promise((resolve) => {
-                    if (window.TEGAKI_STATE?.aTrainReady) {
-                        resolve();
-                        return;
-                    }
-
-                    const checkATrain = () => {
-                        if (window.TEGAKI_STATE?.aTrainReady) {
-                            resolve();
-                        } else {
-                            setTimeout(checkATrain, 100);
-                        }
-                    };
-
-                    checkATrain();
-                });
-            }
-
-            /**
-             * 統合テスト実行
-             */
-            async runIntegrationTest() {
-                return new Promise((resolve, reject) => {
-                    try {
-                        // 必須システム確認
-                        const requiredSystems = [
-                            'TEGAKI_SYMBOLS',
-                            'TEGAKI_STATE', 
-                            'TEGAKI_EventBus',
-                            'TEGAKI_CanvasManager',
-                            'TEGAKI_CoordinateManager',
-                            'TEGAKI_ToolManager',
-                            'TEGAKI_DrawingEngine',
-                            'TEGAKI_InteractionSystem'
-                        ];
-
-                        const missing = requiredSystems.filter(system => !window[system]);
-                        
-                        if (missing.length > 0) {
-                            throw new Error(`統合テスト失敗 - 不足システム: ${missing.join(', ')}`);
-                        }
-
-                        // Pixiアプリケーション確認
-                        if (!window.TEGAKI_STATE.app) {
-                            throw new Error('統合テスト失敗 - Pixiアプリケーションが未初期化');
-                        }
-
-                        // UI要素確認
-                        if (!document.querySelector('.main-layout')) {
-                            throw new Error('統合テスト失敗 - UI要素が未作成');
-                        }
-
-                        console.log('✅ 統合テスト完了');
-                        setTimeout(resolve, 300);
-                        
-                    } catch (error) {
-                        reject(error);
-                    }
-                });
-            }
-
-            /**
-             * 起動完了
-             */
-            async completeBootup() {
-                return new Promise((resolve) => {
-                    setTimeout(() => {
-                        this.loadingScreen.classList.add('fade-out');
-                        setTimeout(() => {
-                            this.loadingScreen.style.display = 'none';
-                            resolve();
-                        }, 500);
-                    }, 1000);
-                });
-            }
-
-            /**
-             * 車両スクリプト読み込み
-             */
-            async loadCarScript(carName, scriptCode) {
-                return new Promise((resolve, reject) => {
-                    try {
-                        const script = document.createElement('script');
-                        script.textContent = scriptCode;
-                        document.head.appendChild(script);
-                        
-                        console.log(`[${carName}] 車両読み込み完了`);
-                        setTimeout(resolve, 200);
-                        
-                    } catch (error) {
-                        reject(new Error(`[${carName}] 車両読み込み失敗: ${error.message}`));
-                    }
-                });
-            }
-
-            /**
-             * スタイルシート追加
-             */
-            addStyleSheet(css) {
-                const style = document.createElement('style');
-                style.textContent = css;
-                document.head.appendChild(style);
-            }
-
-            /**
-             * 進捗更新
-             */
-            updateProgress(percentage, status) {
-                if (this.loadingBar) {
-                    this.loadingBar.style.width = percentage + '%';
-                }
-                if (this.loadingStatus) {
-                    this.loadingStatus.textContent = status;
-                }
-                this.loadingProgress = percentage;
-            }
-
-            /**
-             * エラーハンドリング
-             */
-            handleError(title, error) {
-                console.error(`${title}:`, error);
-                
-                if (this.errorPanel) {
-                    document.getElementById('error-message').textContent = 
-                        `${title}\n\n${error.message}\n\n詳細はコンソールを確認してください。`;
-                    this.errorPanel.style.display = 'block';
-                }
-                
-                this.loadingScreen.style.display = 'none';
-            }
-        }
-
-        // ============================================================
-        // システム起動
-        // ============================================================
-        window.addEventListener('DOMContentLoaded', async () => {
-            const trainSystem = new TegakiV8TrainSystem();
-            await trainSystem.boot();
-        });
-    </script>
-</body>
-</html>
