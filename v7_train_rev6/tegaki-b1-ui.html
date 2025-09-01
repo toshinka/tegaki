@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8 列車型 (画面復帰版)</title>
+    <title>Tegaki v8 列車型 - B-1 UI車両</title>
     <style>
         * {
             margin: 0;
@@ -104,7 +104,7 @@
         }
         
         .canvas-area {
-            background: var(--futaba-background);
+            background: var(--futaba-cream);
             position: relative;
             overflow: hidden;
             display: flex;
@@ -191,7 +191,6 @@
             border-radius: 4px;
             transition: all 0.2s ease;
             min-width: 40px;
-            text-align: center;
         }
         
         .size-preset-item:hover {
@@ -204,23 +203,17 @@
         }
         
         .size-preview-circle {
-            background: var(--futaba-maroon);
+            background: #800000;
             border-radius: 50%;
             transition: all 0.2s ease;
             min-width: 0.5px;
             min-height: 0.5px;
-            margin: 0 auto;
-        }
-        
-        .size-preset-item.active .size-preview-circle {
-            background: var(--text-inverse);
         }
         
         .size-preview-label {
             font-size: 10px;
             font-weight: 600;
             margin-top: 2px;
-            line-height: 1;
         }
         
         .size-preview-percent {
@@ -228,7 +221,6 @@
             font-weight: 400;
             margin-top: 1px;
             opacity: 0.8;
-            line-height: 1;
         }
         
         .slider-container {
@@ -440,36 +432,6 @@
             background: var(--futaba-light-maroon);
         }
         
-        .status-panel {
-            position: fixed;
-            bottom: 20px;
-            left: 70px;
-            right: 20px;
-            background: var(--futaba-cream);
-            border: 2px solid var(--futaba-medium);
-            border-radius: 12px;
-            padding: 8px 16px;
-            font-family: monospace;
-            font-size: 11px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
-            z-index: 50;
-        }
-        
-        .status-group {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-        }
-        
-        .status-item {
-            display: flex;
-            align-items: center;
-            gap: 4px;
-        }
-        
         .popup-panel.draggable {
             cursor: move;
         }
@@ -478,16 +440,9 @@
             cursor: grabbing;
             transform: scale(1.02);
         }
-        
-        @media (max-width: 1200px) {
-            .popup-panel {
-                max-width: 90vw;
-            }
-        }
     </style>
 </head>
 <body>
-    <!-- メインレイアウト -->
     <div class="main-layout">
         <div class="sidebar">
             <div class="tool-button disabled" id="download-tool" title="ダウンロード">
@@ -523,10 +478,6 @@
             </div>
             
             <div class="tool-separator"></div>
-            
-            <div class="tool-button" id="clear-tool" title="全消去">
-                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/trash-2.svg" alt="clear">
-            </div>
             
             <div class="tool-button disabled" id="settings-tool" title="設定">
                 <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/settings.svg" alt="settings">
@@ -568,7 +519,7 @@
                 </div>
                 <div class="size-preset-item active" data-size="16">
                     <div class="size-preview-circle" style="width: 16px; height: 16px;"></div>
-                    <div class="size-preview-label">16.0</div>
+                    <div class="size-preview-label">16</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
                 <div class="size-preset-item" data-size="32">
@@ -649,4 +600,49 @@
                     </div>
                     <div class="slider-value" id="pen-smoothing-value">30.0%</div>
                 </div>
-                <div class="slider-button small" id="pen-smoothing-increase
+                <div class="slider-button small" id="pen-smoothing-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-smoothing-increase">+1</div>
+                <div class="slider-button small" id="pen-smoothing-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="pressure-sensitivity"></div>
+                    <div class="checkbox-label">筆圧感度 (120Hz対応)</div>
+                </div>
+            </div>
+            
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="edge-smoothing"></div>
+                    <div class="checkbox-label">エッジスムージング</div>
+                </div>
+            </div>
+            
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="gpu-acceleration"></div>
+                    <div class="checkbox-label">GPU加速</div>
+                </div>
+                <div class="checkbox-status">遅延: 0.6ms</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- リサイズ設定ポップアップ -->
+    <div class="popup-panel resize-settings draggable" id="resize-settings" style="left: 60px; top: 150px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバスサイズ</div>
+            <div class="size-input-group">
+                <div class="size-input-field">
+                    <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                </div>
+                <div class="size-multiply">×</div>
+                <div class="size-input-field">
+                    <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+                </div>
+            
