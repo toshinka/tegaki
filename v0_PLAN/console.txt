@@ -1,110 +1,161 @@
-error-manager.js:20 🚨 ErrorManager Simple 作成
-error-manager.js:132 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
-config-manager.js:62 🔧 ConfigManager v8対応版 作成
-config-manager.js:595 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
-event-bus.js:20 🔄 EventBus Simple 作成
-event-bus.js:97 🔄 EventBus Simple Loaded - シンプルイベント通信
-coordinate-manager.js:585 📏 CoordinateManager v8 座標オフセット問題完全修正版 Loaded
-coordinate-manager.js:586 📏 修正内容: x0y0→x110y95表示問題解決・DPR重複適用防止・Canvas bounds正確計算・Container変形修正
-coordinate-manager.js:587 🚀 特徴: PixiJS v8完全準拠・高精度DPR処理・Container階層変形対応・DOM座標との完全一致保証・座標オフセット完全解決
-navigation-manager.js:718 🧭 NavigationManager PixiJS v8対応版 Loaded
-navigation-manager.js:719 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
-navigation-manager.js:720 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
-navigation-manager.js:721 ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
-navigation-manager.js:724 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
-record-manager.js:175 🔄 RecordManager Minimal v8対応版 Loaded - ライフサイクル実装・ストローク記録機能
-shortcut-manager.js:416 ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
-shortcut-manager.js:417 🔧 setupPhase15Shortcuts・enableメソッド追加済み
-shortcut-manager.js:418 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
-minimal-deps.js:22 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
-minimal-deps.js:168 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
-minimal-deps.js:169 ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
-minimal-deps.js:170 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
-canvas-manager.js:978 🎨 CanvasManager v8.12.0完全修正版 Loaded - getApplication()追加・CoordinateManager連携・座標オフセット問題修正・Manager統一ライフサイクル
-canvas-manager.js:979 📏 修正内容: getApplication()メソッド追加・Manager統一ライフサイクル実装・_status内部状態管理・座標変換係数取得改善・Container階層管理改善
-canvas-manager.js:980 🚀 特徴: CoordinateManager完全対応・座標オフセット問題解決・Manager統一API完全準拠・Graphics分離管理・描画消失問題解決・WebGPU対応
-abstract-tool.js:370 🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版 Loaded
-abstract-tool.js:371 📏 修正内容: setManagers()エイリアス追加・event → eventbus統一・Object形式前提・Map対策・型安全性確保・詳細デバッグ
-abstract-tool.js:372 🚀 特徴: startOperation/endOperation方式対応・Manager統一注入完成・架空メソッド削除・Manager名称統一対応・後方互換性確保
-pen-tool.js:6 Uncaught SyntaxError: Invalid or unexpected token
-eraser-tool.js:6 Uncaught SyntaxError: Invalid or unexpected token
-tool-manager.js:9 Uncaught SyntaxError: Invalid or unexpected token
-app-core.js:536 ✅ AppCore v8 ToolManager初期化フロー完全修正版 Loaded
-app-core.js:537 📏 修正内容: ToolManager verifyInjection()必須実行・初期化順序確定・Manager注入フロー完全修正
-app-core.js:538 🚀 特徴: DrawContainer not ready エラー完全解決・二重初期化防止・統一ライフサイクル・app:ready イベント確実発火
-tegaki-application.js:456 🚀 TegakiApplication v8 シングルトン・二重初期化防止版 Loaded
-tegaki-application.js:457 📏 修正内容: シングルトンパターン実装・二重初期化完全防止・AppCore完全委譲・状態管理強化
-tegaki-application.js:458 🚀 特徴: 単一インスタンス保証・初期化フロー制御・Manager群統合管理・エラーハンドリング強化
-tegaki-application.js:459 🎯 使用方法: TegakiApplication.getInstance().initialize() でシングルトン初期化
-main.js:330 🚀 main.js v8統合エントリーポイント Loaded - グローバル関数・デバッグ機能・WebGPU対応
-main.js:338 ✅ PixiJS v8確認完了 - v8統合機能利用可能
-phase15-integration-test.js:593 🧪 Phase1.5統合テスト Loaded
-phase15-integration-test.js:594 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
-phase15-integration-test.js:595 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
-bootstrap.js:461 🚀 Bootstrap PixiJS v8対応版・構文エラー修正・依存チェック強化版 Loaded
-bootstrap.js:462 📏 特徴: 構文エラー対応・実行可能性検証・二重実行完全防止・TegakiApplication単一インスタンス制御
-bootstrap.js:463 🎯 使用方法: DOMContentLoaded後に自動実行 or window.Tegaki.startBootstrap()で手動実行
-bootstrap.js:84 🚀 Bootstrap PixiJS v8対応版・構文エラー修正版 実行開始...
-bootstrap.js:132 🔍 PixiJS v8利用可能性確認開始
-bootstrap.js:141 🎯 PixiJS バージョン: 8.12.0
-bootstrap.js:145 🎮 WebGPU対応: ✅
+ 🚨 ErrorManager Simple 作成
+ 🚨 ErrorManager Simple Loaded - 専任エラー処理・シンプル構造
+ 🔧 ConfigManager v8対応版 作成
+ 🔧 ConfigManager PixiJS v8対応版 Loaded - WebGPU・Container階層・高精度設定
+ 🔄 EventBus Simple 作成
+ 🔄 EventBus Simple Loaded - シンプルイベント通信
+ 📏 CoordinateManager v8 座標オフセット問題完全修正版 Loaded
+ 📏 修正内容: x0y0→x110y95表示問題解決・DPR重複適用防止・Canvas bounds正確計算・Container変形修正
+ 🚀 特徴: PixiJS v8完全準拠・高精度DPR処理・Container階層変形対応・DOM座標との完全一致保証・座標オフセット完全解決
+ 🧭 NavigationManager PixiJS v8対応版 Loaded
+ 📏 v8機能: Container変形・高精度パン・ズーム・WebGPU最適化・リアルタイムナビゲーション
+ 🚀 v8特徴: Matrix活用・高精度変形・CoordinateManager統合・60fps+対応
+ ✅ v8準備完了: setCanvasManagerV8()でv8対応CanvasManager設定後に利用可能
+ 🧭 NavigationManager PixiJS v8対応版 Loaded - Container変形・高精度ナビゲーション・WebGPU対応完了
+ 🔄 RecordManager Minimal v8対応版 Loaded - ライフサイクル実装・ストローク記録機能
+ ⌨️ ShortcutManager Phase1.5スタブ実装（修正版） - 名前空間登録完了
+ 🔧 setupPhase15Shortcuts・enableメソッド追加済み
+ 🔧 次のステップ: 詳細実装・Phase別ショートカット管理・UI統合・アクセシビリティ対応
+ 📦 Minimal Dependencies - 名前倉庫版（修正・競合排除済み）
+ 📦 Minimal Dependencies 名前倉庫版（修正・競合排除済み） Loaded
+ ✅ 実装済みクラス競合排除完了 - AbstractTool・RecordManager等は各専用ファイルで実装
+ 📋 Phase2/Phase3クラス名前予約完了 - 将来実装時の名前空間確保済み
+ 🎨 CanvasManager v8.12.0完全修正版 Loaded - getApplication()追加・CoordinateManager連携・座標オフセット問題修正・Manager統一ライフサイクル
+ 📏 修正内容: getApplication()メソッド追加・Manager統一ライフサイクル実装・_status内部状態管理・座標変換係数取得改善・Container階層管理改善
+ 🚀 特徴: CoordinateManager完全対応・座標オフセット問題解決・Manager統一API完全準拠・Graphics分離管理・描画消失問題解決・WebGPU対応
+ 🎯 AbstractTool Phase1.5 Manager統一注入・Manager名称統一修正版 Loaded
+ 📏 修正内容: setManagers()エイリアス追加・event → eventbus統一・Object形式前提・Map対策・型安全性確保・詳細デバッグ
+ 🚀 特徴: startOperation/endOperation方式対応・Manager統一注入完成・架空メソッド削除・Manager名称統一対応・後方互換性確保
+ 🖋️ PenTool AbstractTool準拠・架空メソッド撲滅版 作成開始
+ 🖋️ PenTool AbstractTool準拠・架空メソッド撲滅版 Loaded
+ 📏 修正内容: AbstractTool継承修正・Manager統一注入・座標変換修正・Graphics管理改善・構文エラー修正
+ 🚀 特徴: 架空メソッド撲滅・入力検証強化・エラーハンドリング・ストローク記録・状態管理
+ 🧹 EraserTool AbstractTool準拠・架空メソッド撲滅版 作成開始
+ 🧹 EraserTool AbstractTool準拠・架空メソッド撲滅版 Loaded
+ 📏 修正内容: AbstractTool継承修正・Manager統一注入・消去ブレンドモード・Graphics管理改善・構文エラー修正
+ 🚀 特徴: 架空メソッド撲滅・入力検証強化・エラーハンドリング・消去記録・状態管理・destination-out対応
+ 🔧 ToolManager Manager統一ライフサイクル・架空メソッド撲滅版 作成開始
+ 🔧 ToolManager Manager統一ライフサイクル・架空メソッド撲滅版 Loaded
+ 📏 修正内容: Manager統一ライフサイクル実装・Tool統一注入API・依存確認システム・構文エラー修正
+ 🚀 特徴: 架空メソッド撲滅・Tool群作成制御・Manager注入確認・EventBus統合・状態管理強化
+ 🚀 AppCore Manager初期化順序・依存関係・架空メソッド撲滅版 作成開始
+ 🚀 AppCore Manager初期化順序・依存関係・架空メソッド撲滅版 Loaded
+ 📏 修正内容: Manager初期化順序確定・依存関係厳格化・isReady確認・ToolManager完全統合・架空メソッド撲滅
+ 🚀 特徴: Phase別初期化・Manager契約確認・エラー集約・グレースフルダウングレード・Tool統合制御・UI連携強化
+ 🚀 TegakiApplication v8 シングルトン・二重初期化防止版 Loaded
+ 📏 修正内容: シングルトンパターン実装・二重初期化完全防止・AppCore完全委譲・状態管理強化
+ 🚀 特徴: 単一インスタンス保証・初期化フロー制御・Manager群統合管理・エラーハンドリング強化
+ 🎯 使用方法: TegakiApplication.getInstance().initialize() でシングルトン初期化
+ 🚀 main.js v8統合エントリーポイント Loaded - グローバル関数・デバッグ機能・WebGPU対応
+ ✅ PixiJS v8確認完了 - v8統合機能利用可能
+ 🧪 Phase1.5統合テスト Loaded
+ 📏 新Manager統合状況確認・機能テスト・レポート生成・Phase1.5完全対応
+ 🔄 使用方法: window.Tegaki.runPhase15Test() でテスト実行
+ 🚀 Bootstrap PixiJS v8対応版・構文エラー修正・依存チェック強化版 Loaded
+ 📏 特徴: 構文エラー対応・実行可能性検証・二重実行完全防止・TegakiApplication単一インスタンス制御
+ 🎯 使用方法: DOMContentLoaded後に自動実行 or window.Tegaki.startBootstrap()で手動実行
+ 🚀 Bootstrap PixiJS v8対応版・構文エラー修正版 実行開始...
+ 🔍 PixiJS v8利用可能性確認開始
+ 🎯 PixiJS バージョン: 8.12.0
+ 🎮 WebGPU対応: ✅
 bootstrap.js:148 ✅ PixiJS v8利用可能性確認完了
- 🏗️ Canvas Container存在確認・作成開始
- 🏗️ canvas-container既存確認
- 🏗️ sidebar-container作成
- ✅ Canvas Container準備完了
- 🔍 Phase1.5依存関係確認開始（強化版）
- ✅ TegakiApplication: 構文・実行可能性 OK
- ✅ AppCore v8 ToolManager初期化フロー完全修正版 作成完了
- ✅ AppCore: 構文・実行可能性 OK
- 🎨 CanvasManager v8.12.0完全修正版 作成開始
- ✅ CanvasManager v8.12.0完全修正版 作成完了
- ✅ CanvasManager: 構文・実行可能性 OK
- 📏 CoordinateManager v8 座標オフセット問題完全修正版 作成開始
- ✅ CoordinateManager v8 座標オフセット問題完全修正版 作成完了
- ✅ CoordinateManager: 構文・実行可能性 OK
-bootstrap.js:281 💀 Phase1.5依存関係確認失敗: Error: Required classes not loaded: ToolManager, PenTool, EraserTool
-    at Bootstrap.checkPhase15Dependencies (bootstrap.js:264:23)
-    at Bootstrap.start (bootstrap.js:99:24)
+bootstrap.js:160 🏗️ Canvas Container存在確認・作成開始
+bootstrap.js:183 🏗️ canvas-container既存確認
+bootstrap.js:189 🏗️ sidebar-container作成
+bootstrap.js:197 ✅ Canvas Container準備完了
+bootstrap.js:209 🔍 Phase1.5依存関係確認開始（強化版）
+bootstrap.js:249 ✅ TegakiApplication: 構文・実行可能性 OK
+app-core.js:91 🚀 AppCore instance created
+bootstrap.js:249 ✅ AppCore: 構文・実行可能性 OK
+canvas-manager.js:117 🎨 CanvasManager v8.12.0完全修正版 作成開始
+canvas-manager.js:167 ✅ CanvasManager v8.12.0完全修正版 作成完了
+bootstrap.js:249 ✅ CanvasManager: 構文・実行可能性 OK
+coordinate-manager.js:46 📏 CoordinateManager v8 座標オフセット問題完全修正版 作成開始
+coordinate-manager.js:78 ✅ CoordinateManager v8 座標オフセット問題完全修正版 作成完了
+bootstrap.js:249 ✅ CoordinateManager: 構文・実行可能性 OK
+tool-manager.js:110 🔧 ToolManager インスタンス作成完了
+bootstrap.js:249 ✅ ToolManager: 構文・実行可能性 OK
+abstract-tool.js:89 🎯 AbstractTool 作成開始: unknown
+abstract-tool.js:91 ✅ unknown AbstractTool 作成完了
+pen-tool.js:85 🖋️ PenTool instance created
+bootstrap.js:249 ✅ PenTool: 構文・実行可能性 OK
+abstract-tool.js:89 🎯 AbstractTool 作成開始: unknown
+abstract-tool.js:91 ✅ unknown AbstractTool 作成完了
+eraser-tool.js:84 🧹 EraserTool instance created
+bootstrap.js:249 ✅ EraserTool: 構文・実行可能性 OK
+bootstrap.js:278 ✅ Phase1.5依存関係確認完了（強化版）
+bootstrap.js:290 🚀 TegakiApplication v8対応版 初期化開始
+tegaki-application.js:48 🚀 TegakiApplication v8 シングルトン・二重初期化防止版 作成開始
+tegaki-application.js:78 ✅ TegakiApplication シングルトンインスタンス作成完了
+tegaki-application.js:133 🚀 TegakiApplication 初期化開始
+app-core.js:91 🚀 AppCore instance created
+tegaki-application.js:195 ✅ AppCore作成完了
+tegaki-application.js:215 ✅ Canvas作成完了 (400x400)
+tegaki-application.js:227 🎨 Canvas DOM挿入開始
+tegaki-application.js:248 ✅ Canvas DOM挿入完了
+tegaki-application.js:288 ✅ ポインターイベント設定完了
+tegaki-application.js:300 🔧 Manager群初期化開始（AppCore委譲）
+app-core.js:209 🚀 AppCore Manager群初期化開始
+app-core.js:237 🚀 AppCore Manager群初期化失敗: Error: Canvas must be created first
+    at AppCore.initializeV8Managers (app-core.js:219:27)
+    at TegakiApplication.initializeV8Managers (tegaki-application.js:315:32)
+    at TegakiApplication.initialize (tegaki-application.js:152:24)
+    at async Bootstrap.initializeTegakiApplication (bootstrap.js:312:13)
+    at async Bootstrap.start (bootstrap.js:102:13)
     at async startBootstrap (bootstrap.js:427:9)
     at async HTMLDocument.<anonymous> (bootstrap.js:445:13)
-checkPhase15Dependencies @ bootstrap.js:281
-start @ bootstrap.js:99
-await in start
-startBootstrap @ bootstrap.js:427
-(anonymous) @ bootstrap.js:445
-bootstrap.js:112 💥 Bootstrap初期化失敗: Error: Required classes not loaded: ToolManager, PenTool, EraserTool
-    at Bootstrap.checkPhase15Dependencies (bootstrap.js:264:23)
-    at Bootstrap.start (bootstrap.js:99:24)
+initializeV8Managers @ app-core.js:237
+tegaki-application.js:320 💀 Manager初期化エラー: Error: Canvas must be created first
+    at AppCore.initializeV8Managers (app-core.js:219:27)
+    at TegakiApplication.initializeV8Managers (tegaki-application.js:315:32)
+    at TegakiApplication.initialize (tegaki-application.js:152:24)
+    at async Bootstrap.initializeTegakiApplication (bootstrap.js:312:13)
+    at async Bootstrap.start (bootstrap.js:102:13)
+    at async startBootstrap (bootstrap.js:427:9)
+    at async HTMLDocument.<anonymous> (bootstrap.js:445:13)
+initializeV8Managers @ tegaki-application.js:320
+tegaki-application.js:166 💀 初期化エラー: TypeError: this.appCore?.getSystemStatus is not a function
+    at TegakiApplication.initializeV8Managers (tegaki-application.js:321:58)
+    at async TegakiApplication.initialize (tegaki-application.js:152:13)
+    at async Bootstrap.initializeTegakiApplication (bootstrap.js:312:13)
+    at async Bootstrap.start (bootstrap.js:102:13)
+    at async startBootstrap (bootstrap.js:427:9)
+    at async HTMLDocument.<anonymous> (bootstrap.js:445:13)
+initialize @ tegaki-application.js:166
+tegaki-application.js:167 🔍 失敗ステップ: Array(4)
+initialize @ tegaki-application.js:167
+bootstrap.js:320 ❌ TegakiApplication初期化失敗: TypeError: this.appCore?.getSystemStatus is not a function
+    at TegakiApplication.initialize (tegaki-application.js:168:58)
+    at async Bootstrap.initializeTegakiApplication (bootstrap.js:312:13)
+    at async Bootstrap.start (bootstrap.js:102:13)
+    at async startBootstrap (bootstrap.js:427:9)
+    at async HTMLDocument.<anonymous> (bootstrap.js:445:13)
+initializeTegakiApplication @ bootstrap.js:320
+bootstrap.js:112 💥 Bootstrap初期化失敗: TypeError: this.appCore?.getSystemStatus is not a function
+    at TegakiApplication.initialize (tegaki-application.js:168:58)
+    at async Bootstrap.initializeTegakiApplication (bootstrap.js:312:13)
+    at async Bootstrap.start (bootstrap.js:102:13)
     at async startBootstrap (bootstrap.js:427:9)
     at async HTMLDocument.<anonymous> (bootstrap.js:445:13)
 start @ bootstrap.js:112
-await in start
-startBootstrap @ bootstrap.js:427
-(anonymous) @ bootstrap.js:445
-bootstrap.js:113 🔍 デバッグ情報: {className: 'Bootstrap', version: 'v8-syntax-dependency-fix', dependencies: {…}, domStatus: {…}, timing: {…}, …}
+bootstrap.js:113 🔍 デバッグ情報: Object
 start @ bootstrap.js:113
-await in start
-startBootstrap @ bootstrap.js:427
-(anonymous) @ bootstrap.js:445
-bootstrap.js:431 💥 Bootstrap起動完全失敗: Error: Required classes not loaded: ToolManager, PenTool, EraserTool
-    at Bootstrap.checkPhase15Dependencies (bootstrap.js:264:23)
-    at Bootstrap.start (bootstrap.js:99:24)
+bootstrap.js:431 💥 Bootstrap起動完全失敗: TypeError: this.appCore?.getSystemStatus is not a function
+    at TegakiApplication.initialize (tegaki-application.js:168:58)
+    at async Bootstrap.initializeTegakiApplication (bootstrap.js:312:13)
+    at async Bootstrap.start (bootstrap.js:102:13)
     at async startBootstrap (bootstrap.js:427:9)
     at async HTMLDocument.<anonymous> (bootstrap.js:445:13)
 startBootstrap @ bootstrap.js:431
-await in startBootstrap
-(anonymous) @ bootstrap.js:445
-bootstrap.js:447 💥 自動Bootstrap失敗: Error: Required classes not loaded: ToolManager, PenTool, EraserTool
-    at Bootstrap.checkPhase15Dependencies (bootstrap.js:264:23)
-    at Bootstrap.start (bootstrap.js:99:24)
+bootstrap.js:447 💥 自動Bootstrap失敗: TypeError: this.appCore?.getSystemStatus is not a function
+    at TegakiApplication.initialize (tegaki-application.js:168:58)
+    at async Bootstrap.initializeTegakiApplication (bootstrap.js:312:13)
+    at async Bootstrap.start (bootstrap.js:102:13)
     at async startBootstrap (bootstrap.js:427:9)
     at async HTMLDocument.<anonymous> (bootstrap.js:445:13)
 (anonymous) @ bootstrap.js:447
- 🚀 PixiJS v8.12.0 loaded from node_modules
- ✅ PixiJS v8.12.0 confirmed
+index.html:577 🚀 PixiJS v8.12.0 loaded from node_modules
+index.html:579 ✅ PixiJS v8.12.0 confirmed
 index.html:613 ⚠️ TegakiApplication v8初期化未完了
 (anonymous) @ index.html:613
-setTimeout
-(anonymous) @ index.html:588
- ⚠️ TegakiApplication v8初期化未完了
+main.js:346 ⚠️ TegakiApplication v8初期化未完了

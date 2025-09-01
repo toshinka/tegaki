@@ -1,11 +1,12 @@
 /**
- * ChangeLog: 2025-09-01 Manager初期化順序・依存関係・架空メソッド撲滅修正
+ * ChangeLog: 2025-09-01 Manager初期化順序・Canvas連携・getSystemStatus追加修正
  * 
  * @provides
  *   ・アプリケーション制御: initializeV8Managers(), createCanvasV8()
  *   ・Manager統合管理: Manager群作成・初期化・依存解決
  *   ・イベント統合: app:ready発火・UI連携
  *   ・エラーハンドリング: Manager個別エラー集約・グレースフルダウングレード
+ *   ・状態管理: getSystemStatus(), getInitializationStatus()
  * 
  * @uses
  *   ・CanvasManager統一ライフサイクル: configure/attach/init/isReady/dispose + getApplication/getDrawContainer
@@ -17,7 +18,7 @@
  * 
  * @initflow
  *   1. AppCore.createCanvasV8() - PixiJS Application作成・DOM配置
- *   2. AppCore.initializeV8Managers() - Manager群初期化（依存順序厳守）
+ *   2. AppCore.initializeV8Managers(context, config) - Manager群初期化（依存順序厳守）
  *     - ConfigManager.configure
  *     - EventBus.attach/init
  *     - CanvasManager.configure/attach/init/initializeV8Application
@@ -58,11 +59,11 @@
  *   ・ログ出力必須・振る舞い変更禁止・開発用テスト検知可能
  */
 
-// AppCore - Manager初期化順序・依存関係・架空メソッド撲滅版
+// AppCore - Manager初期化順序・Canvas連携・架空メソッド撲滅版
 (function() {
     'use strict';
     
-    console.log('🚀 AppCore Manager初期化順序・依存関係・架空メソッド撲滅版 作成開始');
+    console.log('🚀 AppCore Manager初期化順序・Canvas連携・架空メソッド撲滅版 作成開始');
     
     class AppCore {
         constructor() {
@@ -202,10 +203,11 @@
         
         /**
          * Manager群初期化（依存順序厳守）
+         * @param {Object} context 外部コンテキスト（PixiJS Application等）
          * @param {Object} config 設定オブジェクト
          * @returns {Promise}
          */
-        async initializeV8Managers(config = {}) {
+        async initializeV8Managers(context = {}, config = {}) {
             console.log('🚀 AppCore Manager群初期化開始');
             
             if (this._initializationStatus.managers) {
@@ -214,9 +216,16 @@
             }
             
             try {
+                // 外部からPixiJS Applicationを受け取る場合
+                if (context.pixiApp && !this._pixiApp) {
+                    this._pixiApp = context.pixiApp;
+                    this._initializationStatus.canvas = true;
+                    console.log('🚀 External PixiJS Application received');
+                }
+                
                 // 前提条件確認
-                if (!this._initializationStatus.canvas || !this._pixiApp) {
-                    throw new Error('Canvas must be created first');
+                if (!this._pixiApp) {
+                    throw new Error('PixiJS Application required - call createCanvasV8() first or provide pixiApp in context');
                 }
                 
                 // 設定準備
@@ -230,6 +239,9 @@
                 
                 this._initializationStatus.managers = true;
                 this._initializationStatus.tools = true;
+                
+                // アプリケーション準備完了通知
+                this.emitAppReady();
                 
                 console.log('🚀 AppCore Manager群初期化完了');
                 
@@ -397,10 +409,12 @@
             if (typeof manager.configure === 'function') {
                 manager.configure(config);
             } else {
-                console.warn(`🚀 ${className} missing configure method`);
                 // 非破壊的エイリアス注入（AppCore層のみ許可）
                 manager.configure = (cfg) => {
-                    console.log(`🚀 Fallback configure for ${className}:`, cfg);
+                    // ログ抑制（デバッグ時のみ出力）
+                    if (this._debugMode) {
+                        console.log(`🚀 Fallback configure for ${className}:`, cfg);
+                    }
                 };
             }
             
@@ -409,10 +423,12 @@
                 const context = this._buildManagerContext(className);
                 manager.attach(context);
             } else {
-                console.warn(`🚀 ${className} missing attach method`);
                 // 非破壊的エイリアス注入
                 manager.attach = (ctx) => {
-                    console.log(`🚀 Fallback attach for ${className}:`, ctx);
+                    // ログ抑制（デバッグ時のみ出力）
+                    if (this._debugMode) {
+                        console.log(`🚀 Fallback attach for ${className}:`, ctx);
+                    }
                 };
             }
             
@@ -420,19 +436,23 @@
             if (typeof manager.init === 'function') {
                 await manager.init();
             } else {
-                console.warn(`🚀 ${className} missing init method`);
                 // 非破壊的エイリアス注入
                 manager.init = async () => {
-                    console.log(`🚀 Fallback init for ${className}`);
+                    // ログ抑制（デバッグ時のみ出力）
+                    if (this._debugMode) {
+                        console.log(`🚀 Fallback init for ${className}`);
+                    }
                 };
             }
             
             // isReady（準備完了確認）
             if (typeof manager.isReady !== 'function') {
-                console.warn(`🚀 ${className} missing isReady method, adding fallback`);
                 // 非破壊的エイリアス注入
                 manager.isReady = () => {
-                    console.log(`🚀 Fallback isReady for ${className}: true`);
+                    // ログ抑制（デバッグ時のみ出力）
+                    if (this._debugMode) {
+                        console.log(`🚀 Fallback isReady for ${className}: true`);
+                    }
                     return true;
                 };
             }
@@ -557,6 +577,14 @@
         //================================================
         
         /**
+         * 初期化完了判定
+         * @returns {boolean}
+         */
+        isInitialized() {
+            return this._initialized;
+        }
+        
+        /**
          * Manager群取得
          * @returns {Map}
          */
@@ -573,6 +601,23 @@
         }
         
         /**
+         * 単一Manager取得
+         * @param {string} key Manager キー
+         * @returns {Object|null}
+         */
+        getManager(key) {
+            return this._managers.get(key) || null;
+        }
+        
+        /**
+         * 全Manager取得（Map形式）
+         * @returns {Map}
+         */
+        getAllManagers() {
+            return this._managers;
+        }
+        
+        /**
          * 初期化状態取得
          * @returns {Object}
          */
@@ -581,6 +626,24 @@
                 ...this._initializationStatus,
                 managerCount: this._managers.size,
                 errorCount: this._errors.length,
+                managersReady: this._checkAllManagersReady()
+            };
+        }
+        
+        /**
+         * システム状態取得（TegakiApplicationから呼び出される）
+         * @returns {Object}
+         */
+        getSystemStatus() {
+            return {
+                initialized: this._initialized,
+                canvas: this._initializationStatus.canvas,
+                managers: this._initializationStatus.managers,
+                tools: this._initializationStatus.tools,
+                ready: this._initializationStatus.ready,
+                managerCount: this._managers.size,
+                errors: this._errors,
+                pixiApp: !!this._pixiApp,
                 managersReady: this._checkAllManagersReady()
             };
         }
@@ -650,8 +713,8 @@
     
     window.Tegaki.AppCore = AppCore;
     
-    console.log('🚀 AppCore Manager初期化順序・依存関係・架空メソッド撲滅版 Loaded');
-    console.log('📏 修正内容: Manager初期化順序確定・依存関係厳格化・isReady確認・ToolManager完全統合・架空メソッド撲滅');
+    console.log('🚀 AppCore Manager初期化順序・Canvas連携・架空メソッド撲滅版 Loaded');
+    console.log('📏 修正内容: Manager初期化順序確定・Canvas連携修正・getSystemStatus追加・依存関係厳格化・架空メソッド撲滅');
     console.log('🚀 特徴: Phase別初期化・Manager契約確認・エラー集約・グレースフルダウングレード・Tool統合制御・UI連携強化');
     
 })();

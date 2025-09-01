@@ -1,6 +1,6 @@
 /**
- * TegakiApplication v8 シングルトン・二重初期化防止版
- * ChangeLog: 2025-09-01 シングルトンパターン実装・二重初期化完全防止
+ * TegakiApplication v8 シングルトン・AppCore連携修正版
+ * ChangeLog: 2025-09-01 シングルトンパターン実装・AppCore連携修正・初期化フロー最適化
  * 
  * @provides
  *   ・TegakiApplication.getInstance() - シングルトンアクセス
@@ -10,18 +10,19 @@
  *   ・AppCore初期化委譲（initializeV8Managers）
  * 
  * @uses
+ *   ・AppCore.createCanvasV8() - Canvas作成（AppCore内で実行）
  *   ・AppCore.initializeV8Managers() - Manager群初期化
- *   ・CanvasManager.getApplication() - PixiJS Application取得
- *   ・ToolManager.handlePointer*() - 描画イベント中継
+ *   ・AppCore.getSystemStatus() - 状態取得
  * 
  * @initflow
  *   1. TegakiApplication.getInstance() - 単一インスタンス取得
  *   2. initialize() - 初期化実行（二重実行防止）
- *   3. AppCore作成・Canvas作成
- *   4. Canvas DOM挿入
- *   5. ポインターイベント設定
- *   6. AppCore Manager群初期化委譲
- *   7. EventBus 'app:ready' イベント発火
+ *   3. AppCore作成
+ *   4. PixiJS Application作成（外部で作成→AppCoreに渡す）
+ *   5. Canvas DOM挿入
+ *   6. ポインターイベント設定
+ *   7. AppCore Manager群初期化委譲（pixiApp渡し）
+ *   8. EventBus 'app:ready' イベント発火
  * 
  * @forbids
  *   ・💀 複数インスタンス作成禁止（シングルトン）
@@ -45,9 +46,9 @@ class TegakiApplication {
             return TegakiApplication._instance;
         }
         
-        console.log('🚀 TegakiApplication v8 シングルトン・二重初期化防止版 作成開始');
+        console.log('🚀 TegakiApplication v8 シングルトン・AppCore連携修正版 作成開始');
         
-        this.version = 'v8-singleton-fix';
+        this.version = 'v8-appcore-integration-fix';
         this.className = 'TegakiApplication';
         
         // 初期化状態管理
@@ -66,9 +67,11 @@ class TegakiApplication {
             pixiOptions: {
                 width: 400,
                 height: 400,
-                backgroundColor: 0xf0e0d6,
+                backgroundColor: 0xf0e0d6, // futaba-cream
                 antialias: true,
-                resolution: window.devicePixelRatio || 1
+                resolution: window.devicePixelRatio || 1,
+                autoDensity: true,
+                powerPreference: 'high-performance'
             }
         };
         
@@ -136,7 +139,7 @@ class TegakiApplication {
             await this.createAppCore();
             this._initializationSteps.push('AppCore作成');
             
-            // ステップ2: Canvas作成
+            // ステップ2: Canvas作成（外部で作成し、AppCoreに渡す）
             await this.createCanvas();
             this._initializationSteps.push('Canvas作成');
             
@@ -148,7 +151,7 @@ class TegakiApplication {
             await this.setupPointerEvents();
             this._initializationSteps.push('ポインターイベント設定');
             
-            // ステップ5: Manager群初期化（AppCore委譲）
+            // ステップ5: Manager群初期化（AppCore委譲・pixiApp渡し）
             await this.initializeV8Managers();
             this._initializationSteps.push('Manager群初期化');
             
@@ -165,7 +168,11 @@ class TegakiApplication {
         } catch (error) {
             console.error('💀 初期化エラー:', error);
             console.error('🔍 失敗ステップ:', this._initializationSteps);
-            console.error('🔍 AppCore状態:', this.appCore?.getSystemStatus());
+            
+            // AppCore状態確認（getSystemStatusメソッドを使用）
+            if (this.appCore && typeof this.appCore.getSystemStatus === 'function') {
+                console.error('🔍 AppCore状態:', this.appCore.getSystemStatus());
+            }
             
             this._initialized = false;
             throw error;
@@ -190,7 +197,6 @@ class TegakiApplication {
             }
             
             this.appCore = new window.Tegaki.AppCore();
-            window.Tegaki.AppCore = this.appCore; // グローバル参照
             
             console.log('✅ AppCore作成完了');
             
@@ -201,16 +207,21 @@ class TegakiApplication {
     }
     
     /**
-     * Canvas作成
+     * Canvas作成（外部でPixiJS Application作成）
      */
     async createCanvas() {
         try {
-            // PixiJS Application作成（一時的）
-            const tempApp = new PIXI.Application(this.config.pixiOptions);
-            await tempApp.init(this.config.pixiOptions);
+            if (this.pixiApp) {
+                console.warn('⚠️ Canvas 既存 - スキップ');
+                return;
+            }
             
-            this.pixiApp = tempApp;
-            this.htmlCanvas = tempApp.canvas;
+            // PixiJS Application作成
+            const app = new PIXI.Application();
+            await app.init(this.config.pixiOptions);
+            
+            this.pixiApp = app;
+            this.htmlCanvas = app.canvas;
             
             console.log('✅ Canvas作成完了', `(${this.config.canvasSize.width}x${this.config.canvasSize.height})`);
             
@@ -240,8 +251,15 @@ class TegakiApplication {
             if (this.htmlCanvas && this.htmlCanvas.parentNode !== canvasContainer) {
                 canvasContainer.appendChild(this.htmlCanvas);
                 
-                // Canvas スタイル設定
-                this.htmlCanvas.style.cssText = 'display: block; border: none; outline: none; user-select: none; touch-action: none;';
+                // Canvas スタイル設定（縁なし・Crystaライク）
+                this.htmlCanvas.style.cssText = `
+                    display: block;
+                    border: none;
+                    outline: none;
+                    user-select: none;
+                    touch-action: none;
+                    cursor: crosshair;
+                `;
                 this.htmlCanvas.tabIndex = -1; // フォーカス無効
             }
             
@@ -265,25 +283,36 @@ class TegakiApplication {
             // イベントオプション
             const eventOptions = { passive: false, capture: false };
             
-            // ポインターイベント設定（一時的・ToolManager初期化後に委譲）
-            const tempPointerHandler = (event) => {
+            // ポインターイベント設定（ToolManager委譲）
+            const pointerHandler = (event) => {
                 event.preventDefault();
-                // ToolManager準備後にイベント委譲
-                if (window.Tegaki.ToolManagerInstance) {
-                    const toolManager = window.Tegaki.ToolManagerInstance;
-                    if (event.type === 'pointerdown' && toolManager.handlePointerDown) {
-                        toolManager.handlePointerDown(event);
-                    } else if (event.type === 'pointermove' && toolManager.handlePointerMove) {
-                        toolManager.handlePointerMove(event);
-                    } else if (event.type === 'pointerup' && toolManager.handlePointerUp) {
-                        toolManager.handlePointerUp(event);
+                
+                // ToolManager取得・イベント委譲
+                const toolManager = this.getManager('tool') || window.Tegaki?.ToolManagerInstance;
+                if (toolManager) {
+                    if (event.type === 'pointerdown' && typeof toolManager.onPointerDown === 'function') {
+                        toolManager.onPointerDown(event);
+                    } else if (event.type === 'pointermove' && typeof toolManager.onPointerMove === 'function') {
+                        toolManager.onPointerMove(event);
+                    } else if (event.type === 'pointerup' && typeof toolManager.onPointerUp === 'function') {
+                        toolManager.onPointerUp(event);
+                    }
+                } else {
+                    // ToolManager未準備時はイベント記録のみ
+                    if (this._debugMode) {
+                        console.log(`Pointer event queued: ${event.type} at (${event.clientX}, ${event.clientY})`);
                     }
                 }
             };
             
-            this.htmlCanvas.addEventListener('pointerdown', tempPointerHandler, eventOptions);
-            this.htmlCanvas.addEventListener('pointermove', tempPointerHandler, eventOptions);
-            this.htmlCanvas.addEventListener('pointerup', tempPointerHandler, eventOptions);
+            this.htmlCanvas.addEventListener('pointerdown', pointerHandler, eventOptions);
+            this.htmlCanvas.addEventListener('pointermove', pointerHandler, eventOptions);
+            this.htmlCanvas.addEventListener('pointerup', pointerHandler, eventOptions);
+            
+            // タッチイベント重複防止
+            this.htmlCanvas.addEventListener('touchstart', (e) => e.preventDefault(), eventOptions);
+            this.htmlCanvas.addEventListener('touchmove', (e) => e.preventDefault(), eventOptions);
+            this.htmlCanvas.addEventListener('touchend', (e) => e.preventDefault(), eventOptions);
             
             console.log('✅ ポインターイベント設定完了');
             
@@ -294,31 +323,46 @@ class TegakiApplication {
     }
     
     /**
-     * Manager群初期化（AppCore委譲）
+     * Manager群初期化（AppCore委譲・pixiApp渡し）
      */
     async initializeV8Managers() {
-        console.log('🔧 Manager群初期化開始（AppCore委譲）');
+        console.log('🔧 Manager群初期化開始（AppCore委譲・pixiApp渡し）');
         
         try {
             if (!this.appCore) {
                 throw new Error('AppCore not created');
             }
             
-            // Context作成
+            if (!this.pixiApp) {
+                throw new Error('PixiJS Application not created');
+            }
+            
+            // Context作成（pixiAppを明示的に渡す）
             const context = {
                 pixiApp: this.pixiApp,
                 htmlCanvas: this.htmlCanvas,
                 canvasContainer: document.getElementById('canvas-container')
             };
             
-            // AppCore初期化委譲
-            await this.appCore.initializeV8Managers(context, this.config);
+            // 設定作成
+            const config = {
+                debugMode: false, // ログ抑制
+                ...this.config
+            };
+            
+            // AppCore初期化委譲（context・configを渡す）
+            await this.appCore.initializeV8Managers(context, config);
             
             console.log('✅ Manager群初期化完了（AppCore委譲）');
             
         } catch (error) {
             console.error('💀 Manager初期化エラー:', error);
-            console.error('🔍 AppCore状態:', this.appCore?.getSystemStatus());
+            
+            // AppCore状態確認
+            if (this.appCore && typeof this.appCore.getSystemStatus === 'function') {
+                console.error('🔍 AppCore状態:', this.appCore.getSystemStatus());
+            }
+            
             throw error;
         }
     }
@@ -328,20 +372,11 @@ class TegakiApplication {
      */
     async finalizeInitialization() {
         try {
-            // EventBus 'app:ready' イベント発火
-            const eventBus = this.appCore?.getManager('eventBus');
-            if (eventBus && typeof eventBus.emit === 'function') {
-                eventBus.emit('app:ready', {
-                    version: this.version,
-                    timestamp: Date.now(),
-                    managers: this.appCore.getAllManagers()
-                });
-                console.log('📡 app:ready イベント発火完了');
-            }
-            
             // グローバル参照更新
+            window.Tegaki = window.Tegaki || {};
             window.Tegaki.app = this;
             window.Tegaki.appCore = this.appCore;
+            window.Tegaki.pixiApp = this.pixiApp;
             
             console.log('✅ 最終化処理完了');
             
@@ -368,15 +403,17 @@ class TegakiApplication {
      * @returns {Object} アプリケーション状態
      */
     getStatus() {
+        const appCoreStatus = this.appCore?.getSystemStatus() || {};
+        
         return {
             className: this.className,
             version: this.version,
             initialized: this.isInitialized(),
             initInProgress: this._initInProgress,
             initSteps: [...this._initializationSteps],
-            appCoreReady: this.appCore?.isInitialized() || false,
             canvasReady: !!(this.pixiApp && this.htmlCanvas),
-            managers: this.appCore?.getAllManagers() || new Map()
+            appCore: appCoreStatus,
+            pixiVersion: window.PIXI?.VERSION || 'unknown'
         };
     }
     
@@ -410,7 +447,7 @@ class TegakiApplication {
      */
     dispose() {
         try {
-            // Manager群解放
+            // Manager群解放（AppCore経由）
             if (this.appCore) {
                 const managers = this.appCore.getAllManagers();
                 for (const [name, manager] of managers) {
@@ -453,7 +490,7 @@ TegakiApplication._instance = null;
 window.Tegaki = window.Tegaki || {};
 window.Tegaki.TegakiApplication = TegakiApplication;
 
-console.log('🚀 TegakiApplication v8 シングルトン・二重初期化防止版 Loaded');
-console.log('📏 修正内容: シングルトンパターン実装・二重初期化完全防止・AppCore完全委譲・状態管理強化');
-console.log('🚀 特徴: 単一インスタンス保証・初期化フロー制御・Manager群統合管理・エラーハンドリング強化');
+console.log('🚀 TegakiApplication v8 シングルトン・AppCore連携修正版 Loaded');
+console.log('📏 修正内容: AppCore連携修正・Canvas作成フロー改善・Manager初期化コンテキスト渡し・getSystemStatus対応');
+console.log('🚀 特徴: 単一インスタンス保証・AppCore完全連携・初期化フロー最適化・エラーハンドリング強化');
 console.log('🎯 使用方法: TegakiApplication.getInstance().initialize() でシングルトン初期化');
