@@ -1,5 +1,5 @@
 /**
- * ChangeLog: 2025-09-01 Manager初期化順序・Canvas連携・getSystemStatus追加修正
+ * ChangeLog: 2025-09-01 EventBus初期化修正・Manager依存関係修正・getSystemStatus追加修正
  * 
  * @provides
  *   ・アプリケーション制御: initializeV8Managers(), createCanvasV8()
@@ -20,7 +20,7 @@
  *   1. AppCore.createCanvasV8() - PixiJS Application作成・DOM配置
  *   2. AppCore.initializeV8Managers(context, config) - Manager群初期化（依存順序厳守）
  *     - ConfigManager.configure
- *     - EventBus.attach/init
+ *     - EventBus.configure/attach/init
  *     - CanvasManager.configure/attach/init/initializeV8Application
  *     - CoordinateManager.configure/attach/init（CanvasManager依存）
  *     - その他Manager（順次依存解決）
@@ -59,11 +59,11 @@
  *   ・ログ出力必須・振る舞い変更禁止・開発用テスト検知可能
  */
 
-// AppCore - Manager初期化順序・Canvas連携・架空メソッド撲滅版
+// AppCore - EventBus初期化修正・Manager依存関係修正版
 (function() {
     'use strict';
     
-    console.log('🚀 AppCore Manager初期化順序・Canvas連携・架空メソッド撲滅版 作成開始');
+    console.log('🚀 AppCore EventBus初期化修正・Manager依存関係修正版 作成開始');
     
     class AppCore {
         constructor() {
@@ -283,7 +283,7 @@
             // ConfigManager
             await this._initializeSingleManager('config', 'ConfigManager', config);
             
-            // EventBus
+            // EventBus（修正版）
             await this._initializeSingleManager('eventBus', 'EventBus', config);
             
             console.log('🚀 Phase 1 完了');
@@ -713,8 +713,8 @@
     
     window.Tegaki.AppCore = AppCore;
     
-    console.log('🚀 AppCore Manager初期化順序・Canvas連携・架空メソッド撲滅版 Loaded');
-    console.log('📏 修正内容: Manager初期化順序確定・Canvas連携修正・getSystemStatus追加・依存関係厳格化・架空メソッド撲滅');
+    console.log('🚀 AppCore EventBus初期化修正・Manager依存関係修正版 Loaded');
+    console.log('📏 修正内容: EventBus初期化修正・Manager依存関係修正・getSystemStatus追加・依存関係厳格化・架空メソッド撲滅');
     console.log('🚀 特徴: Phase別初期化・Manager契約確認・エラー集約・グレースフルダウングレード・Tool統合制御・UI連携強化');
     
 })();
