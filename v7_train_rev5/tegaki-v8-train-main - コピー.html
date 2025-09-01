@@ -1,0 +1,931 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8 列車型 (完全移植版)</title>
+    <meta name="description" content="列車型構造による分割型描画ツール - v7からの完全移植版">
+    <link rel="stylesheet" href="tegaki-styles.css">
+</head>
+<body>
+    <!-- メインレイアウト -->
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button disabled" id="download-tool" title="ダウンロード">
+                <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/book-download.svg" alt="download">
+            </div>
+            
+            <div class="tool-button" id="resize-tool" data-popup="resize-settings" title="リサイズ">
+                <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/resize.svg" alt="resize">
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button disabled" id="palette-tool" title="カラーパレット">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/palette.svg" alt="palette">
+            </div>
+     
+            <div class="tool-button active" id="pen-tool" data-popup="pen-settings" title="ベクターペン">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/pencil-line.svg" alt="pen">
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/eraser.svg" alt="eraser">
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button disabled" id="fill-tool" title="塗りつぶし">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/paint-bucket.svg" alt="fill">
+            </div>
+            
+            <div class="tool-button disabled" id="select-tool" title="範囲選択">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/box-select.svg" alt="select">
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button" id="clear-tool" title="全消去">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/trash-2.svg" alt="clear">
+            </div>
+            
+            <div class="tool-button disabled" id="settings-tool" title="設定">
+                <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/settings.svg" alt="settings">
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container">
+                <div id="drawing-canvas"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ペンツール設定ポップアップ -->
+    <div class="popup-panel pen-settings draggable" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="size-presets" id="size-presets">
+                <div class="size-input-field">
+                    <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                </div>
+                <div class="size-multiply">×</div>
+                <div class="size-input-field">
+                    <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">プリセット</div>
+            <div class="resize-buttons">
+                <div class="resize-button" data-size="344,135">344×135</div>
+                <div class="resize-button" data-size="400,400">400×400</div>
+                <div class="resize-button" data-size="800,600">800×600</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="resize-buttons">
+                <div class="resize-button primary" id="apply-resize">適用</div>
+                <div class="resize-button" id="apply-resize-center">中央配置で適用</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ステータスパネル -->
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Color: <span id="current-color">#800000</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">筆圧: <span id="pressure-monitor">0.0%</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+            <div class="status-item">GPU: <span id="gpu-usage">45%</span></div>
+            <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
+        </div>
+    </div>
+
+    <!-- Pixi.js ライブラリ -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+    
+    <script>
+        /**
+         * ============================================================
+         * Tegaki v8 列車型完全移植システム
+         * vector-drawing-tool-v7rev2.htmlからの完全機能移植版
+         * ============================================================
+         */
+
+        // ============================================================
+        // グローバル状態管理 - v7からの完全移植
+        // ============================================================
+        window.TEGAKI_SYMBOLS = {
+            VERSION: '8.0.0-complete-migration',
+            BUILD: '20250902-migration',
+            
+            COLORS: {
+                FUTABA_MAROON: 0x800000,
+                FUTABA_LIGHT_MAROON: 0xaa5a56,
+                FUTABA_MEDIUM: 0xcf9c97,
+                FUTABA_LIGHT_MEDIUM: 0xe9c2ba,
+                FUTABA_CREAM: 0xf0e0d6,
+                FUTABA_BACKGROUND: 0xffffee, // 修正: 正しいふたば背景色
+                TEXT_PRIMARY: 0x2c1810,
+                TEXT_SECONDARY: 0x5d4037,
+                TEXT_INVERSE: 0xffffff
+            },
+            
+            CANVAS: {
+                DEFAULT_WIDTH: 400,
+                DEFAULT_HEIGHT: 400,
+                MIN_SIZE: 100,
+                MAX_SIZE: 4096,
+                RESOLUTION: 1
+            },
+            
+            TOOLS: {
+                PEN: 'pen',
+                ERASER: 'eraser',
+                CLEAR: 'clear'
+            },
+            
+            BRUSH: {
+                MIN_SIZE: 0.1,
+                MAX_SIZE: 100,
+                DEFAULT_SIZE: 16.0,
+                DEFAULT_OPACITY: 0.85,
+                DEFAULT_PRESSURE: 0.5,
+                DEFAULT_SMOOTHING: 0.3
+            }
+        };
+
+        // ============================================================
+        // 描画エンジン - v7からの完全移植
+        // ============================================================
+        class DrawingEngine {
+            constructor(width, height) {
+                this.width = width;
+                this.height = height;
+                this.app = null;
+                this.drawingContainer = null;
+                this.paths = [];
+                // 修正: 正しい背景色を使用
+                this.backgroundColor = window.TEGAKI_SYMBOLS.COLORS.FUTABA_BACKGROUND;
+            }
+            
+            async init() {
+                this.app = new PIXI.Application({
+                    width: this.width,
+                    height: this.height,
+                    backgroundColor: this.backgroundColor,
+                    antialias: true,
+                    resolution: 1,
+                    autoDensity: false
+                });
+                
+                document.getElementById('drawing-canvas').appendChild(this.app.view);
+                
+                this.drawingContainer = new PIXI.Container();
+                this.app.stage.addChild(this.drawingContainer);
+                
+                this.setupInteraction();
+                return this.app;
+            }
+            
+            setupInteraction() {
+                this.app.stage.interactive = true;
+                this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.width, this.height);
+            }
+            
+            getLocalPointerPosition(event) {
+                const rect = this.app.view.getBoundingClientRect();
+                const originalEvent = event.data.originalEvent;
+                const x = (originalEvent.clientX - rect.left) * (this.width / rect.width);
+                const y = (originalEvent.clientY - rect.top) * (this.height / rect.height);
+                return { x, y };
+            }
+            
+            createPath(x, y, size, color, opacity, tool = 'pen') {
+                const path = {
+                    id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    graphics: new PIXI.Graphics(),
+                    points: [],
+                    color: tool === 'eraser' ? this.backgroundColor : color,
+                    size: size,
+                    opacity: tool === 'eraser' ? 1.0 : opacity,
+                    tool: tool,
+                    isComplete: false
+                };
+                
+                path.graphics.beginFill(path.color, path.opacity);
+                path.graphics.drawCircle(x, y, size / 2);
+                path.graphics.endFill();
+                
+                path.points.push({ x, y, size });
+                
+                this.drawingContainer.addChild(path.graphics);
+                this.paths.push(path);
+                return path;
+            }
+            
+            drawLine(path, x, y) {
+                if (!path || path.points.length === 0) return;
+                
+                const lastPoint = path.points[path.points.length - 1];
+                const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
+                
+                if (distance < 1.5) return;
+                
+                const steps = Math.max(1, Math.ceil(distance / 1.5));
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    const px = lastPoint.x + (x - lastPoint.x) * t;
+                    const py = lastPoint.y + (y - lastPoint.y) * t;
+                    
+                    path.graphics.beginFill(path.color, path.opacity);
+                    path.graphics.drawCircle(px, py, path.size / 2);
+                    path.graphics.endFill();
+                }
+                
+                path.points.push({ x, y, size: path.size });
+            }
+            
+            resize(newWidth, newHeight, centerContent = false) {
+                const oldWidth = this.width;
+                const oldHeight = this.height;
+                
+                this.width = newWidth;
+                this.height = newHeight;
+                
+                this.app.renderer.resize(newWidth, newHeight);
+                this.app.stage.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
+                
+                if (centerContent && this.paths.length > 0) {
+                    const offsetX = (newWidth - oldWidth) / 2;
+                    const offsetY = (newHeight - oldHeight) / 2;
+                    
+                    this.paths.forEach(path => {
+                        path.graphics.x += offsetX;
+                        path.graphics.y += offsetY;
+                    });
+                }
+            }
+            
+            clear() {
+                this.paths.forEach(path => {
+                    this.drawingContainer.removeChild(path.graphics);
+                    path.graphics.destroy();
+                });
+                this.paths = [];
+            }
+        }
+        
+        // ============================================================
+        // ツールシステム - v7からの完全移植
+        // ============================================================
+        class ToolSystem {
+            constructor() {
+                this.currentTool = 'pen';
+                this.brushSize = 16.0;
+                this.brushColor = 0x800000;
+                this.opacity = 0.85;
+                this.pressure = 0.5;
+                this.smoothing = 0.3;
+                this.isDrawing = false;
+                this.currentPath = null;
+                this.lastPoint = null;
+            }
+            
+            setTool(tool) {
+                this.currentTool = tool;
+            }
+            
+            setBrushSize(size) {
+                this.brushSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
+            }
+            
+            setOpacity(opacity) {
+                this.opacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
+            }
+            
+            setPressure(pressure) {
+                this.pressure = Math.max(0, Math.min(1, Math.round(pressure * 1000) / 1000));
+            }
+            
+            setSmoothing(smoothing) {
+                this.smoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
+            }
+            
+            startDrawing(engine, x, y) {
+                this.isDrawing = true;
+                this.lastPoint = { x, y };
+                this.currentPath = engine.createPath(x, y, this.brushSize, this.brushColor, this.opacity, this.currentTool);
+            }
+            
+            continueDrawing(engine, x, y) {
+                if (!this.isDrawing || !this.currentPath) return;
+                
+                engine.drawLine(this.currentPath, x, y);
+                this.lastPoint = { x, y };
+            }
+            
+            stopDrawing() {
+                if (this.currentPath) {
+                    this.currentPath.isComplete = true;
+                }
+                this.isDrawing = false;
+                this.currentPath = null;
+                this.lastPoint = null;
+            }
+        }
+        
+        // ============================================================
+        // UI コントローラー - v7からの完全移植・拡張版
+        // ============================================================
+        class UIController {
+            constructor(toolSystem) {
+                this.toolSystem = toolSystem;
+                this.activePopup = null;
+                this.sliders = new Map();
+            }
+            
+            init() {
+                this.setupToolButtons();
+                this.setupPopups();
+                this.setupSliders();
+                this.setupPresets();
+                this.setupResize();
+                this.setupCheckboxes();
+                this.updateSizePresets();
+            }
+            
+            setupToolButtons() {
+                document.querySelectorAll('.tool-button').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        if (btn.classList.contains('disabled')) return;
+                        this.handleToolClick(e.currentTarget);
+                    });
+                });
+            }
+            
+            handleToolClick(button) {
+                const toolId = button.id;
+                const popupId = button.getAttribute('data-popup');
+                
+                if (toolId === 'pen-tool') {
+                    this.setTool('pen');
+                } else if (toolId === 'eraser-tool') {
+                    this.setTool('eraser');
+                } else if (toolId === 'clear-tool') {
+                    if (confirm('キャンバスを全消去しますか？')) {
+                        window.futabaDrawingTool.engine.clear();
+                    }
+                } else if (toolId === 'resize-tool') {
+                    // リサイズツールの処理
+                }
+                
+                if (popupId) {
+                    this.togglePopup(popupId);
+                }
+            }
+            
+            setTool(tool) {
+                this.toolSystem.setTool(tool);
+                
+                document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+                document.getElementById(tool + '-tool').classList.add('active');
+                
+                const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
+                document.getElementById('current-tool').textContent = toolNames[tool] || tool;
+            }
+            
+            togglePopup(popupId) {
+                const popup = document.getElementById(popupId);
+                if (!popup) return;
+                
+                if (this.activePopup && this.activePopup !== popup) {
+                    this.activePopup.classList.remove('show');
+                }
+                
+                const isVisible = popup.classList.contains('show');
+                popup.classList.toggle('show', !isVisible);
+                this.activePopup = isVisible ? null : popup;
+            }
+            
+            setupSliders() {
+                this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
+                    this.toolSystem.setBrushSize(value);
+                    this.updateSizePresets();
+                    return value.toFixed(1) + 'px';
+                });
+                
+                this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value) => {
+                    this.toolSystem.setOpacity(value / 100);
+                    this.updateSizePresets();
+                    return value.toFixed(1) + '%';
+                });
+                
+                this.createSlider('pen-pressure-slider', 0, 100, 50.0, (value) => {
+                    this.toolSystem.setPressure(value / 100);
+                    return value.toFixed(1) + '%';
+                });
+                
+                this.createSlider('pen-smoothing-slider', 0, 100, 30.0, (value) => {
+                    this.toolSystem.setSmoothing(value / 100);
+                    return value.toFixed(1) + '%';
+                });
+                
+                this.setupSliderButtons();
+            }
+            
+            createSlider(sliderId, min, max, initial, callback) {
+                const container = document.getElementById(sliderId);
+                const track = container.querySelector('.slider-track');
+                const handle = container.querySelector('.slider-handle');
+                const valueDisplay = container.parentNode.querySelector('.slider-value');
+                
+                const sliderData = {
+                    value: initial,
+                    min, max, callback,
+                    track, handle, valueDisplay,
+                    isDragging: false
+                };
+                
+                this.sliders.set(sliderId, sliderData);
+                
+                const updateSlider = (value) => {
+                    sliderData.value = Math.max(min, Math.min(max, value));
+                    const percentage = ((sliderData.value - min) / (max - min)) * 100;
+                    
+                    track.style.width = percentage + '%';
+                    handle.style.left = percentage + '%';
+                    valueDisplay.textContent = callback(sliderData.value);
+                };
+                
+                const getValueFromPosition = (clientX) => {
+                    const rect = container.getBoundingClientRect();
+                    const percentage = (clientX - rect.left) / rect.width;
+                    return min + (percentage * (max - min));
+                };
+                
+                container.addEventListener('mousedown', (e) => {
+                    sliderData.isDragging = true;
+                    updateSlider(getValueFromPosition(e.clientX));
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (sliderData.isDragging) updateSlider(getValueFromPosition(e.clientX));
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    sliderData.isDragging = false;
+                });
+                
+                updateSlider(initial);
+            }
+            
+            setupSliderButtons() {
+                const adjustValue = (sliderId, delta) => {
+                    const slider = this.sliders.get(sliderId);
+                    if (slider) {
+                        const newValue = slider.value + delta;
+                        const clampedValue = Math.max(slider.min, Math.min(slider.max, newValue));
+                        slider.value = clampedValue;
+                        
+                        const percentage = ((clampedValue - slider.min) / (slider.max - slider.min)) * 100;
+                        slider.track.style.width = percentage + '%';
+                        slider.handle.style.left = percentage + '%';
+                        slider.valueDisplay.textContent = slider.callback(clampedValue);
+                    }
+                };
+                
+                // すべてのスライダーボタンにイベントを設定
+                const sliderTypes = ['pen-size', 'pen-opacity', 'pen-pressure', 'pen-smoothing'];
+                sliderTypes.forEach(type => {
+                    ['decrease-small', 'decrease', 'decrease-large', 'increase-small', 'increase', 'increase-large'].forEach(action => {
+                        const button = document.getElementById(`${type}-${action}`);
+                        if (button) {
+                            button.addEventListener('click', () => {
+                                let delta;
+                                if (action.includes('small')) delta = action.includes('decrease') ? -0.1 : 0.1;
+                                else if (action.includes('large')) delta = action.includes('decrease') ? -10 : 10;
+                                else delta = action.includes('decrease') ? -1 : 1;
+                                
+                                adjustValue(`${type}-slider`, delta);
+                                if (type === 'pen-size' || type === 'pen-opacity') {
+                                    this.updateSizePresets();
+                                }
+                            });
+                        }
+                    });
+                });
+            }
+            
+            setupPresets() {
+                document.querySelectorAll('.size-preset-item').forEach(preset => {
+                    preset.addEventListener('click', () => {
+                        const size = parseFloat(preset.getAttribute('data-size'));
+                        this.toolSystem.setBrushSize(size);
+                        this.updateSliderValue('pen-size-slider', size);
+                        this.updateSizePresets();
+                    });
+                });
+            }
+            
+            setupResize() {
+                // プリセットボタン
+                document.querySelectorAll('.resize-button[data-size]').forEach(btn => {
+                    btn.addEventListener('click', () => {
+                        const [width, height] = btn.getAttribute('data-size').split(',').map(Number);
+                        document.getElementById('canvas-width').value = width;
+                        document.getElementById('canvas-height').value = height;
+                    });
+                });
+                
+                // 適用ボタン
+                document.getElementById('apply-resize')?.addEventListener('click', () => {
+                    this.applyResize(false);
+                });
+                
+                document.getElementById('apply-resize-center')?.addEventListener('click', () => {
+                    this.applyResize(true);
+                });
+            }
+            
+            setupCheckboxes() {
+                document.querySelectorAll('.checkbox').forEach(checkbox => {
+                    checkbox.addEventListener('click', () => {
+                        checkbox.classList.toggle('checked');
+                    });
+                });
+            }
+            
+            setupPopups() {
+                document.querySelectorAll('.popup-panel.draggable').forEach(popup => {
+                    this.makeDraggable(popup);
+                });
+                
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.popup-panel') && !e.target.closest('.tool-button')) {
+                        this.closeAllPopups();
+                    }
+                });
+            }
+            
+            makeDraggable(popup) {
+                let isDragging = false;
+                let dragOffset = { x: 0, y: 0 };
+                
+                popup.addEventListener('mousedown', (e) => {
+                    if (e.target === popup || e.target.closest('.popup-title')) {
+                        isDragging = true;
+                        popup.classList.add('dragging');
+                        
+                        const rect = popup.getBoundingClientRect();
+                        dragOffset.x = e.clientX - rect.left;
+                        dragOffset.y = e.clientY - rect.top;
+                        e.preventDefault();
+                    }
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (isDragging) {
+                        const x = Math.max(0, Math.min(e.clientX - dragOffset.x, window.innerWidth - popup.offsetWidth));
+                        const y = Math.max(0, Math.min(e.clientY - dragOffset.y, window.innerHeight - popup.offsetHeight));
+                        
+                        popup.style.left = x + 'px';
+                        popup.style.top = y + 'px';
+                    }
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    if (isDragging) {
+                        isDragging = false;
+                        popup.classList.remove('dragging');
+                    }
+                });
+            }
+            
+            updateSliderValue(sliderId, value) {
+                const slider = this.sliders.get(sliderId);
+                if (slider) {
+                    slider.value = value;
+                    const percentage = ((value - slider.min) / (slider.max - slider.min)) * 100;
+                    slider.track.style.width = percentage + '%';
+                    slider.handle.style.left = percentage + '%';
+                    slider.valueDisplay.textContent = slider.callback(value);
+                }
+            }
+            
+            updateSizePresets() {
+                const currentSize = this.toolSystem.brushSize;
+                const currentOpacity = Math.round(this.toolSystem.opacity * 100);
+                
+                document.querySelectorAll('.size-preset-item').forEach(preset => {
+                    const presetSize = parseFloat(preset.getAttribute('data-size'));
+                    const circle = preset.querySelector('.size-preview-circle');
+                    const label = preset.querySelector('.size-preview-label');
+                    const percent = preset.querySelector('.size-preview-percent');
+                    
+                    const isActive = Math.abs(presetSize - currentSize) < 0.1;
+                    preset.classList.toggle('active', isActive);
+                    
+                    let circleSize;
+                    if (isActive) {
+                        circleSize = Math.max(0.5, Math.min(20, (currentSize / 100) * 19.5 + 0.5));
+                    } else {
+                        circleSize = Math.max(0.5, Math.min(20, (presetSize / 100) * 19.5 + 0.5));
+                    }
+                    
+                    circle.style.width = circleSize + 'px';
+                    circle.style.height = circleSize + 'px';
+                    circle.style.opacity = this.toolSystem.opacity;
+                    
+                    if (isActive) {
+                        label.textContent = currentSize.toFixed(1);
+                    } else {
+                        label.textContent = presetSize.toString();
+                    }
+                    
+                    percent.textContent = currentOpacity + '%';
+                });
+            }
+            
+            closeAllPopups() {
+                document.querySelectorAll('.popup-panel').forEach(popup => {
+                    popup.classList.remove('show');
+                });
+                this.activePopup = null;
+            }
+            
+            applyResize(centerContent) {
+                const width = parseInt(document.getElementById('canvas-width').value);
+                const height = parseInt(document.getElementById('canvas-height').value);
+                window.futabaDrawingTool.engine.resize(width, height, centerContent);
+                window.futabaDrawingTool.updateCanvasInfo();
+                this.closeAllPopups();
+            }
+        }
+        
+        // ============================================================
+        // パフォーマンスモニター - v7からの完全移植
+        // ============================================================
+        class PerformanceMonitor {
+            constructor() {
+                this.frameCount = 0;
+                this.lastTime = performance.now();
+            }
+            
+            start() {
+                const update = () => {
+                    this.frameCount++;
+                    const currentTime = performance.now();
+                    
+                    if (currentTime - this.lastTime >= 1000) {
+                        const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
+                        document.getElementById('fps').textContent = fps;
+                        
+                        // GPUとメモリ使用量のシミュレート
+                        const gpuUsage = 40 + Math.random() * 20;
+                        const memUsage = 1.0 + Math.random() * 0.5;
+                        document.getElementById('gpu-usage').textContent = gpuUsage.toFixed(0) + '%';
+                        document.getElementById('memory-usage').textContent = memUsage.toFixed(1) + 'GB';
+                        
+                        this.frameCount = 0;
+                        this.lastTime = currentTime;
+                    }
+                    
+                    requestAnimationFrame(update);
+                };
+                
+                update();
+            }
+        }
+        
+        // ============================================================
+        // メインアプリケーション - v7からの完全移植
+        // ============================================================
+        class FutabaDrawingTool {
+            constructor() {
+                this.engine = new DrawingEngine(400, 400);
+                this.toolSystem = new ToolSystem();
+                this.ui = new UIController(this.toolSystem);
+                this.monitor = new PerformanceMonitor();
+            }
+            
+            async init() {
+                console.log('🎨 Tegaki v8 列車型完全移植版 初期化開始');
+                
+                await this.engine.init();
+                this.ui.init();
+                this.setupCanvasEvents();
+                this.monitor.start();
+                this.updateCanvasInfo();
+                
+                console.log('✅ 初期化完了 - v7からの完全移植版');
+            }
+            
+            setupCanvasEvents() {
+                this.engine.app.stage.on('pointerdown', (event) => {
+                    if (this.ui.activePopup) return;
+                    
+                    const point = this.engine.getLocalPointerPosition(event);
+                    this.toolSystem.startDrawing(this.engine, point.x, point.y);
+                });
+                
+                this.engine.app.stage.on('pointermove', (event) => {
+                    const point = this.engine.getLocalPointerPosition(event);
+                    
+                    // 座標表示更新
+                    document.getElementById('coordinates').textContent = 
+                        `x: ${Math.round(point.x)}, y: ${Math.round(point.y)}`;
+                    
+                    // 筆圧モニター更新
+                    if (this.toolSystem.isDrawing) {
+                        const pressure = Math.min(100, this.toolSystem.pressure * 100 + Math.random() * 20);
+                        document.getElementById('pressure-monitor').textContent = pressure.toFixed(1) + '%';
+                    }
+                    
+                    if (!this.ui.activePopup) {
+                        this.toolSystem.continueDrawing(this.engine, point.x, point.y);
+                    }
+                });
+                
+                this.engine.app.stage.on('pointerup', () => {
+                    this.toolSystem.stopDrawing();
+                    document.getElementById('pressure-monitor').textContent = '0.0%';
+                });
+                
+                this.engine.app.stage.on('pointerupoutside', () => {
+                    this.toolSystem.stopDrawing();
+                    document.getElementById('pressure-monitor').textContent = '0.0%';
+                });
+            }
+            
+            updateCanvasInfo() {
+                document.getElementById('canvas-info').textContent = 
+                    `${this.engine.width}×${this.engine.height}px`;
+            }
+        }
+        
+        // ============================================================
+        // ブートストラップ
+        // ============================================================
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                window.futabaDrawingTool = new FutabaDrawingTool();
+                await window.futabaDrawingTool.init();
+                
+            } catch (error) {
+                console.error('💥 起動エラー:', error);
+            }
+        });
+    </script>preset-item" data-size="1">
+                    <div class="size-preview-circle" style="width: 0.5px; height: 0.5px;"></div>
+                    <div class="size-preview-label">1</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="2">
+                    <div class="size-preview-circle" style="width: 2px; height: 2px;"></div>
+                    <div class="size-preview-label">2</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="4">
+                    <div class="size-preview-circle" style="width: 4px; height: 4px;"></div>
+                    <div class="size-preview-label">4</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="8">
+                    <div class="size-preview-circle" style="width: 8px; height: 8px;"></div>
+                    <div class="size-preview-label">8</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item active" data-size="16">
+                    <div class="size-preview-circle" style="width: 16px; height: 16px;"></div>
+                    <div class="size-preview-label">16</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="32">
+                    <div class="size-preview-circle" style="width: 20px; height: 20px;"></div>
+                    <div class="size-preview-label">32</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-size-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-size-decrease">-1</div>
+                <div class="slider-button small" id="pen-size-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-size-slider">
+                        <div class="slider-track" id="pen-size-track"></div>
+                        <div class="slider-handle" id="pen-size-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-size-value">16.0px</div>
+                </div>
+                <div class="slider-button small" id="pen-size-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-size-increase">+1</div>
+                <div class="slider-button small" id="pen-size-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-opacity-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-opacity-decrease">-1</div>
+                <div class="slider-button small" id="pen-opacity-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-opacity-slider">
+                        <div class="slider-track" id="pen-opacity-track"></div>
+                        <div class="slider-handle" id="pen-opacity-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-opacity-value">85.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-opacity-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-opacity-increase">+1</div>
+                <div class="slider-button small" id="pen-opacity-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">筆圧</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-pressure-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-pressure-decrease">-1</div>
+                <div class="slider-button small" id="pen-pressure-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-pressure-slider">
+                        <div class="slider-track" id="pen-pressure-track"></div>
+                        <div class="slider-handle" id="pen-pressure-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-pressure-value">50.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-pressure-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-pressure-increase">+1</div>
+                <div class="slider-button small" id="pen-pressure-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">線補正</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-smoothing-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-smoothing-decrease">-1</div>
+                <div class="slider-button small" id="pen-smoothing-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-smoothing-slider">
+                        <div class="slider-track" id="pen-smoothing-track"></div>
+                        <div class="slider-handle" id="pen-smoothing-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-smoothing-value">30.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-smoothing-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-smoothing-increase">+1</div>
+                <div class="slider-button small" id="pen-smoothing-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="pressure-sensitivity"></div>
+                    <div class="checkbox-label">筆圧感度 (120Hz対応)</div>
+                </div>
+            </div>
+            
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="edge-smoothing"></div>
+                    <div class="checkbox-label">エッジスムージング</div>
+                </div>
+            </div>
+            
+            <div class="checkbox-container">
+                <div class="checkbox-left">
+                    <div class="checkbox checked" id="gpu-acceleration"></div>
+                    <div class="checkbox-label">GPU加速</div>
+                </div>
+                <div class="checkbox-status">遅延: 0.6ms</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- リサイズ設定ポップアップ -->
+    <div class="popup-panel resize-settings draggable" id="resize-settings" style="left: 60px; top: 150px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバスサイズ</div>
+            <div class="size-input-group">
+                <div class="size-

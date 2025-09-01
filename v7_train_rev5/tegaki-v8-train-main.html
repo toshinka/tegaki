@@ -1,0 +1,652 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8 列車型 (画面復帰版)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg, .tool-button img {
+            width: 20px;
+            height: 20px;
+        }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .tool-button.disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #drawing-canvas {
+            display: block;
+            cursor: crosshair;
+        }
+        
+        .popup-panel {
+            position: fixed;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+            padding: 20px;
+            z-index: 2000;
+            backdrop-filter: blur(12px);
+            display: none;
+            user-select: none;
+        }
+        
+        .popup-panel.show {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        
+        .pen-settings {
+            width: 320px;
+            min-height: 400px;
+        }
+        
+        .resize-settings {
+            width: 280px;
+        }
+        
+        .popup-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            margin-bottom: 16px;
+            text-align: center;
+            border-bottom: 2px solid var(--futaba-light-medium);
+            padding-bottom: 8px;
+        }
+        
+        .setting-group {
+            margin-bottom: 16px;
+        }
+        
+        .setting-label {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .size-presets {
+            display: flex;
+            justify-content: space-between;
+            gap: 6px;
+            margin-bottom: 16px;
+            padding: 12px;
+            background: var(--futaba-background);
+            border-radius: 8px;
+            border: 1px solid var(--futaba-light-medium);
+        }
+        
+        .size-preset-item {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 4px;
+            cursor: pointer;
+            padding: 6px 4px;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+            min-width: 40px;
+            text-align: center;
+        }
+        
+        .size-preset-item:hover {
+            background: var(--futaba-medium);
+        }
+        
+        .size-preset-item.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .size-preview-circle {
+            background: var(--futaba-maroon);
+            border-radius: 50%;
+            transition: all 0.2s ease;
+            min-width: 0.5px;
+            min-height: 0.5px;
+            margin: 0 auto;
+        }
+        
+        .size-preset-item.active .size-preview-circle {
+            background: var(--text-inverse);
+        }
+        
+        .size-preview-label {
+            font-size: 10px;
+            font-weight: 600;
+            margin-top: 2px;
+            line-height: 1;
+        }
+        
+        .size-preview-percent {
+            font-size: 8px;
+            font-weight: 400;
+            margin-top: 1px;
+            opacity: 0.8;
+            line-height: 1;
+        }
+        
+        .slider-container {
+            position: relative;
+            margin-bottom: 16px;
+        }
+        
+        .slider-controls {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .slider-button {
+            width: 24px;
+            height: 24px;
+            border: 1px solid var(--futaba-medium);
+            background: var(--futaba-background);
+            border-radius: 4px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: var(--futaba-maroon);
+            font-size: 10px;
+            user-select: none;
+            transition: all 0.2s ease;
+        }
+        
+        .slider-button.small {
+            width: 20px;
+            height: 20px;
+            font-size: 8px;
+        }
+        
+        .slider-button:hover {
+            background: var(--futaba-medium);
+        }
+        
+        .slider-button:active {
+            transform: scale(0.9);
+        }
+        
+        .slider {
+            width: 100%;
+            height: 6px;
+            background: var(--futaba-light-medium);
+            border-radius: 3px;
+            outline: none;
+            cursor: pointer;
+            position: relative;
+            flex: 1;
+        }
+        
+        .slider-track {
+            height: 100%;
+            background: var(--futaba-maroon);
+            border-radius: 3px;
+            transition: width 0.1s ease;
+        }
+        
+        .slider-handle {
+            width: 16px;
+            height: 16px;
+            background: var(--futaba-maroon);
+            border: 2px solid var(--futaba-background);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .slider-handle:active {
+            cursor: grabbing;
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+        
+        .slider-value {
+            position: absolute;
+            right: 0;
+            top: -20px;
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            min-width: 40px;
+            text-align: right;
+        }
+        
+        .checkbox-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            margin-bottom: 8px;
+            cursor: pointer;
+            padding: 4px;
+            border-radius: 4px;
+            transition: background 0.2s ease;
+        }
+        
+        .checkbox-container:hover {
+            background: var(--futaba-light-medium);
+        }
+        
+        .checkbox-left {
+            display: flex;
+            align-items: center;
+        }
+        
+        .checkbox {
+            width: 16px;
+            height: 16px;
+            border: 2px solid var(--futaba-medium);
+            border-radius: 3px;
+            margin-right: 8px;
+            position: relative;
+            background: var(--futaba-background);
+            cursor: pointer;
+        }
+        
+        .checkbox.checked {
+            background: var(--futaba-maroon);
+            border-color: var(--futaba-maroon);
+        }
+        
+        .checkbox.checked::after {
+            content: "✓";
+            position: absolute;
+            color: white;
+            font-size: 12px;
+            left: 1px;
+            top: -2px;
+        }
+        
+        .checkbox-label {
+            font-size: 12px;
+            color: var(--text-primary);
+        }
+        
+        .checkbox-status {
+            font-size: 11px;
+            color: var(--text-secondary);
+            font-family: monospace;
+        }
+        
+        .size-input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .size-input-field {
+            flex: 1;
+        }
+        
+        .size-input {
+            width: 100%;
+            padding: 8px 12px;
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            background: var(--futaba-background);
+            font-family: monospace;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .size-input:focus {
+            outline: none;
+            border-color: var(--futaba-maroon);
+        }
+        
+        .size-multiply {
+            color: var(--futaba-maroon);
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .resize-buttons {
+            display: flex;
+            gap: 8px;
+        }
+        
+        .resize-button {
+            flex: 1;
+            padding: 10px;
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 8px;
+            background: var(--futaba-background);
+            color: var(--futaba-maroon);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+        
+        .resize-button:hover {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .resize-button.primary {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .resize-button.primary:hover {
+            background: var(--futaba-light-maroon);
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .popup-panel.draggable {
+            cursor: move;
+        }
+        
+        .popup-panel.dragging {
+            cursor: grabbing;
+            transform: scale(1.02);
+        }
+        
+        @media (max-width: 1200px) {
+            .popup-panel {
+                max-width: 90vw;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- メインレイアウト -->
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button disabled" id="download-tool" title="ダウンロード">
+                <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/book-download.svg" alt="download">
+            </div>
+            
+            <div class="tool-button" id="resize-tool" data-popup="resize-settings" title="リサイズ">
+                <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/resize.svg" alt="resize">
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button disabled" id="palette-tool" title="カラーパレット">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/palette.svg" alt="palette">
+            </div>
+     
+            <div class="tool-button active" id="pen-tool" data-popup="pen-settings" title="ベクターペン">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/pencil-line.svg" alt="pen">
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/eraser.svg" alt="eraser">
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button disabled" id="fill-tool" title="塗りつぶし">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/paint-bucket.svg" alt="fill">
+            </div>
+            
+            <div class="tool-button disabled" id="select-tool" title="範囲選択">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/box-select.svg" alt="select">
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button" id="clear-tool" title="全消去">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/trash-2.svg" alt="clear">
+            </div>
+            
+            <div class="tool-button disabled" id="settings-tool" title="設定">
+                <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/settings.svg" alt="settings">
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container">
+                <div id="drawing-canvas"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ペンツール設定ポップアップ -->
+    <div class="popup-panel pen-settings draggable" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="size-presets" id="size-presets">
+                <div class="size-preset-item" data-size="1">
+                    <div class="size-preview-circle" style="width: 0.5px; height: 0.5px;"></div>
+                    <div class="size-preview-label">1</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="2">
+                    <div class="size-preview-circle" style="width: 2px; height: 2px;"></div>
+                    <div class="size-preview-label">2</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="4">
+                    <div class="size-preview-circle" style="width: 4px; height: 4px;"></div>
+                    <div class="size-preview-label">4</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="8">
+                    <div class="size-preview-circle" style="width: 8px; height: 8px;"></div>
+                    <div class="size-preview-label">8</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item active" data-size="16">
+                    <div class="size-preview-circle" style="width: 16px; height: 16px;"></div>
+                    <div class="size-preview-label">16.0</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+                <div class="size-preset-item" data-size="32">
+                    <div class="size-preview-circle" style="width: 20px; height: 20px;"></div>
+                    <div class="size-preview-label">32</div>
+                    <div class="size-preview-percent">85%</div>
+                </div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-size-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-size-decrease">-1</div>
+                <div class="slider-button small" id="pen-size-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-size-slider">
+                        <div class="slider-track" id="pen-size-track"></div>
+                        <div class="slider-handle" id="pen-size-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-size-value">16.0px</div>
+                </div>
+                <div class="slider-button small" id="pen-size-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-size-increase">+1</div>
+                <div class="slider-button small" id="pen-size-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-opacity-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-opacity-decrease">-1</div>
+                <div class="slider-button small" id="pen-opacity-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-opacity-slider">
+                        <div class="slider-track" id="pen-opacity-track"></div>
+                        <div class="slider-handle" id="pen-opacity-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-opacity-value">85.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-opacity-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-opacity-increase">+1</div>
+                <div class="slider-button small" id="pen-opacity-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">筆圧</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-pressure-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-pressure-decrease">-1</div>
+                <div class="slider-button small" id="pen-pressure-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-pressure-slider">
+                        <div class="slider-track" id="pen-pressure-track"></div>
+                        <div class="slider-handle" id="pen-pressure-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-pressure-value">50.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-pressure-increase-small">+0.1</div>
+                <div class="slider-button small" id="pen-pressure-increase">+1</div>
+                <div class="slider-button small" id="pen-pressure-increase-large">+10</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">線補正</div>
+            <div class="slider-controls">
+                <div class="slider-button small" id="pen-smoothing-decrease-small">-0.1</div>
+                <div class="slider-button small" id="pen-smoothing-decrease">-1</div>
+                <div class="slider-button small" id="pen-smoothing-decrease-large">-10</div>
+                <div class="slider-container" style="flex: 1; margin-bottom: 0;">
+                    <div class="slider" id="pen-smoothing-slider">
+                        <div class="slider-track" id="pen-smoothing-track"></div>
+                        <div class="slider-handle" id="pen-smoothing-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pen-smoothing-value">30.0%</div>
+                </div>
+                <div class="slider-button small" id="pen-smoothing-increase
