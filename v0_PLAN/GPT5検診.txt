@@ -1,4 +1,27 @@
-重要ポイントは――現状、Bootstrap は動くが ToolManager / CanvasManager / PenTool 等の主要ファイルがほぼ空（または欠損）で、ブート時の存在／構文チェックで未ロード扱いになりキャンバス生成・描画フローに到達していない点です（bootstrap の依存チェックロジックを確認しました）。
+結論（短く）
+
+全体として PixiJS v8 の初期化パターン（app.init()）、描画API（Graphics.moveTo/lineTo/stroke()）への対応は正しく押さえられている一方で、重要な Manager 実装（CanvasManager / CoordinateManager / ToolManager / icons 等）がヘッダ／骨子しか用意されておらず実行時に致命的な欠損となるため、現状は「設計は良いが実装が不十分で起動・描画できない」状態です。まずは欠損Managerの具備が最優先です。
+GitHub
++1
+pixijs.download
+
+要点サマリ（証拠付き）
+
+package.json に pixi.js: ^8.12.0 があり、v8 を想定した設計になっている。→ v8 前提。
+GitHub
+
+AppCore は v8 の推奨パターン（new PIXI.Application(); await app.init({...})）を使っており、WebGPU/WebGL 選択や DPR 管理なども考慮している。良い。
+GitHub
+pixijs.download
+
+TegakiApplication は Canvas の DOM 挿入、pointer イベントを canvas に束ねて clientX/clientY をツールに渡す設計（ツール側で座標変換）になっている。イベント経路はシンプル。
+GitHub
+
+PenTool は「一時表示用 Graphics（temporaryGraphics）＋永続用 Graphics（currentStrokeGraphics）」という非破壊・二重バッファ方式を採り、イベントキューイング、初期化待ちロジック、TPF 保存の呼び出しなどまで整備されている。描画フロー自体は v8 の Graphics API に沿っている。
+GitHub
+pixijs.com
+
+だが重要な Manager 実装（CanvasManager、CoordinateManager、ToolManager、icons 等）がほぼヘッダだけ（実装未完成）で、AppCore.initializeV8Managers() や Bootstrap の依存チェックで実行時エラーになる可能性が高い。統合テストスクリプトもそれを想定して未実装を検出するようになっている。ここを実装しないと起動しない/描画できない。
 GitHub
 +3
 GitHub
@@ -6,31 +29,74 @@ GitHub
 GitHub
 +3
 
-問題の要点（短く）
+詳細な所見（問題点と理由）
+良い点
 
-Bootstrap は動作し、DOM と PIXI のチェックや Required classes not loaded の検出ルールを持っています。起動フローは bootstrap.js 側で整備済み。
+v8 の app.init() を正しく使っている（非同期init）。初期化フローのチェックや出力も丁寧。
 GitHub
+pixijs.download
 
-しかし managers/tool-manager.js / managers/canvas-manager.js / tools/pen-tool.js が空または中身が欠落しており、Bootstrap.checkPhase15Dependencies() による存在・実行可能性確認に失敗して初期化が止まっています（missing クラス扱い）。つまり構造（ファイル配置）は合っているが、メソッド/クラス実体が無いのが直接原因です。
+抽象ツール基底（AbstractTool）と PenTool の設計は依存注入・キューイング・非破壊描画・デバッグ情報を含み、実装の質は高い。
+GitHub
++1
+
+重大欠落（実行に致命的）
+
+CanvasManager の実実装がない（ヘッダのみ）。PenTool や AppCore は canvasManager.getDrawContainer() / createStrokeGraphics() / getTemporaryGraphics() 等を呼ぶが、その実体がないためランタイムで is not a constructor や getDrawContainer is not a function が発生する。
+GitHub
++1
+
+CoordinateManager（clientToWorld 等）未実装だと、pointer の座標変換で描画が全く合わない／例外が出る。TegakiApplication は DOM 座標をツールに渡す設計なので、変換ロジックは必須。
+GitHub
++1
+
+ToolManager / icons モジュールが未完成。UI 表示やツール切り替えが期待どおり動かない。統合テストも未実装を検出するようになっている。
 GitHub
 +2
 GitHub
 +2
 
-正しい「キャンバス出現フロー」と「ペン描画フロー」（期待する順序）
+中リスク（設計上改善推奨）
 
-Bootstrap.start()（DOMContentLoaded 後） → checkPixiJSAvailability() → setupCanvasContainer() が走る。これで #canvas-container が DOM に用意される。
+console.warn を丸ごとフックして WebGPU 警告を抑制している（AppCore.createV8Application）。副作用で別の重要な警告も抑えられてしまうリスクがある。より狭いパターン（正規表現で WebGPU 警告のみ）に留めるか、ログを収集してデバッグ表示する方が安全。
 GitHub
 
-Bootstrap.checkPhase15Dependencies() により CanvasManager, ToolManager, PenTool 等が存在かつ実行可能であることを確認する（typeof === 'function' と軽量インスタンス化チェック）。存在しなければここで止まる。
+Canvas DOM 挿入処理が Bootstrap / AppCore / TegakiApplication に分散している（重複）。責務を一箇所にまとめたほうが分かりやすく、競合を避けられる。
+GitHub
++2
+GitHub
++2
+
+固定 400×400 と DPR 上限（2.0）を複数箇所でハードコードしている。デバッグ用途では良いが、将来レスポンシブ化や高DPR端末での品質を考えるなら設定化が良い。
+GitHub
++1
+
+優先対応（順番にやるべきこと）
+
+A. 即対応（必須）
+
+CanvasManager を実装する（以下に最低限の骨子例を付記）。PenTool が期待する API を全部含めること：initializeV8Application(pixiApp), getDrawContainer(), createStrokeGraphics(id), getTemporaryGraphics(), addPermanentGraphics(g), clearTemporaryGraphics(), isV8Ready(), getCanvasElement()。
+GitHub
++1
+
+CoordinateManager を実装する（clientToWorld(clientX,clientY) と waitForReady() 、キャンバス位置・DPR考慮の変換ロジック）。これがないと描画位置が全く合わない。
 GitHub
 
-AppCore.initializeV8Managers()（想定）で CanvasManager を起動し、内部で PIXI.Application を生成して #canvas-container に app.view を追加、drawContainer（描画用コンテナ）を作る。CanvasManager.getDrawContainer() を公開する。
+ToolManager と icons（TegakiIcons）を用意して、AppCore.initializeV8Managers() が正しく new window.Tegaki.CanvasManager() 等を作れる状態にする。
+GitHub
++1
 
-ToolManager.setManagers({ canvasManager, eventBus, coordinateManager, ... }) → ToolManager.verifyInjection() を実行して依存注入を確定。
+B. 高優先（実装後にすぐ）
+4. 統合テスト（window.Tegaki.runPhase15Test()）を回して未実装箇所を洗い出す（既に用意されたスクリプトがある）。
+GitHub
 
-ToolManager.initializeV8Tools() で PenTool / EraserTool を登録し、デフォルトツールを選択。ツールは activate() / deactivate() を持つ。
+5. console.warn の抑制を限定（警告の prefix か正規表現に限定）して、他の警告を見落とさないようにする。
+GitHub
 
-UI（サイドバー）のツール選択で ToolManager.switchTool(toolId) を呼び、現在選択ツールの pointerdown/pointermove/pointerup を CanvasManager の app.view にバインドして実際の描画を行う。
+C. 改善（余裕があれば）
+6. Canvas DOM 挿入の責務 consolidation（Bootstrap のみで container を作り、TegakiApplication/AppCore はそれを参照する形に）。
+GitHub
++1
 
-上のどこかでクラスが未定義だと Bootstrap の依存チェックで止まり、キャンバス描画には到達しません（現状と一致）
+7. 設定を configManager 経由にして 400×400 や DPR 上限を外から変えられるようにする。
+GitHub
