@@ -1,143 +1,36 @@
-# Tegaki v8 Phase1.5rev10 エラー原因と改修案（完全版指示書）
+重要ポイントは――現状、Bootstrap は動くが ToolManager / CanvasManager / PenTool 等の主要ファイルがほぼ空（または欠損）で、ブート時の存在／構文チェックで未ロード扱いになりキャンバス生成・描画フローに到達していない点です（bootstrap の依存チェックロジックを確認しました）。
+GitHub
++3
+GitHub
++3
+GitHub
++3
 
-## 0) 事実関係の整理（根拠）
-- ブートストラップは v8.12.0 を検出し WebGPU も有効。Canvas コンテナも生成開始までは到達している（bootstrap.js の段階ログ）〔根拠: コンソール〕。:contentReference[oaicite:0]{index=0}
-- ただし「Required classes not loaded: ToolManager」で依存関係チェックが失敗し、起動全体が停止している（bootstrap.js:218 起点）〔根拠: コンソール〕。:contentReference[oaicite:1]{index=1}
-- 失敗の直前に `tool-manager.js:9 Uncaught SyntaxError: Invalid or unexpected token` が発生。ToolManager の定義そのものがパース不能 -> クラス未登録 -> 依存確認 NG の因果関係〔根拠: コンソール〕。:contentReference[oaicite:2]{index=2}
-- v8.12 系対応の各 Manager/Tool はロード済みログが多数出ており（CanvasManager, AbstractTool, Pen/Eraser 等）、AppCore も「verifyInjection 必須」「二重初期化防止」等の修正を織り込み済みである旨の自己ログが出ている〔根拠: コンソール〕。つまり現時点の最上位ブロッカーは ToolManager の構文エラー。:contentReference[oaicite:3]{index=3}
-- 既存の包括的改修計画書（rev8）は、ToolManager の verifyInjection 呼び出しと初期化順の是正、二重初期化防止などの方針を既に定めている（今回のログとも一致）〔根拠: rev8 計画書〕。:contentReference[oaicite:4]{index=4}
+問題の要点（短く）
 
-## 1) 主原因（Root Cause）
-A. `managers/tool-manager.js` のパースエラー（行 9 付近）により、クラス定義が作られず「未ロード扱い」となる。
-  - よくある実例: BOM/不可視制御文字の混入、テンプレートリテラルの不完全閉じ、トレーリング「.」や余剰バッククォート、全角記号の混入、ESM/モジュール境界の誤記（例: export の直前にゴミ文字）など。
-  - これにより Bootstrap の依存性チェック `Required classes not loaded: ToolManager` が落ちる。〔根拠: コンソール〕。:contentReference[oaicite:5]{index=5}
+Bootstrap は動作し、DOM と PIXI のチェックや Required classes not loaded の検出ルールを持っています。起動フローは bootstrap.js 側で整備済み。
+GitHub
 
-B. （副次）ToolManager が読み込めないため、rev8 計画書で規定された「verifyInjection 実行後に initializeV8Tools()」フローまで到達しない。〔根拠: rev8 計画書＋今回コンソールの到達点〕。:contentReference[oaicite:6]{index=6}
+しかし managers/tool-manager.js / managers/canvas-manager.js / tools/pen-tool.js が空または中身が欠落しており、Bootstrap.checkPhase15Dependencies() による存在・実行可能性確認に失敗して初期化が止まっています（missing クラス扱い）。つまり構造（ファイル配置）は合っているが、メソッド/クラス実体が無いのが直接原因です。
+GitHub
++2
+GitHub
++2
 
-## 2) 直近の修復手順（最短復旧ルート）
+正しい「キャンバス出現フロー」と「ペン描画フロー」（期待する順序）
 
-STEP-1: `managers/tool-manager.js` の構文エラー除去
-  1-1. エンコード/不可視文字の除去
-      - 保存形式を UTF-8 (BOM なし) に統一。
-      - 先頭数行に不可視文字（\uFEFF, \u200B など）が混入していないか確認。VSCode の「Render Control Characters」を ON。
-      - 先頭コメントブロック直後の `export class ToolManager` 直前に異常トークンがないか精査。
+Bootstrap.start()（DOMContentLoaded 後） → checkPixiJSAvailability() → setupCanvasContainer() が走る。これで #canvas-container が DOM に用意される。
+GitHub
 
-  1-2. 早期文法チェック
-      - ローカルで `node --check managers/tool-manager.js`（Node が ES2022 互換構文を素で解せない場合は esbuild/tsx 経由のパース確認でも可）。
-      - ブラウザ側は、単体で `tool-manager.js` を `<script type="module">` で読み込み、コンソールに単発でエラーが消えることを確認。
+Bootstrap.checkPhase15Dependencies() により CanvasManager, ToolManager, PenTool 等が存在かつ実行可能であることを確認する（typeof === 'function' と軽量インスタンス化チェック）。存在しなければここで止まる。
+GitHub
 
-  1-3. 最小クラス骨格の暫定復旧（必要に応じたガード）
-      - 例（骨格方針）:
-        ```js
-        // @provides ToolManager
-        export class ToolManager {
-          constructor() {
-            this._managers = null;
-            this._ready = false;
-          }
-          setManagers(m) { this._managers = m; }
-          verifyInjection() {
-            const m = this._managers || {};
-            return !!(m.canvasManager && m.eventBus);
-          }
-          async init() { /* no-op or light init */ }
-          async initializeV8Tools() {
-            if (!this.verifyInjection()) throw new Error('Manager injection verification failed');
-            const draw = this._managers.canvasManager.getDrawContainer();
-            if (!draw) throw new Error('DrawContainer not available');
-            // Pen/Eraser の登録処理へ
-          }
-          isReady() { return this._ready; }
-        }
-        ```
-      - 既存の内部 API 名と衝突しない範囲で、まず構文面を通すことを最優先。
+AppCore.initializeV8Managers()（想定）で CanvasManager を起動し、内部で PIXI.Application を生成して #canvas-container に app.view を追加、drawContainer（描画用コンテナ）を作る。CanvasManager.getDrawContainer() を公開する。
 
-STEP-2: ロード順と存在確認の強化
-  2-1. `index.html` の `<script>` 群で、utils → managers → tools → core/main の順を厳守。ToolManager より先に依存クラス（CanvasManager, EventBus 等）がロード済みであること。
-  2-2. `bootstrap.js` の依存チェックで、単に「存在チェック」だけでなく「パース済み（= typeof === 'function'）」まで確認するユーティリティを導入。
-      - 例: `isClassLoaded('ToolManager')` が `window.ToolManager` 参照でなく ES Modules の import 実体を検査する形に寄せる。
+ToolManager.setManagers({ canvasManager, eventBus, coordinateManager, ... }) → ToolManager.verifyInjection() を実行して依存注入を確定。
 
-STEP-3: rev8 計画書準拠の初期化フローに合流
-  3-1. AppCore 側で ToolManager に対し `setManagers()` → `verifyInjection()` → `initializeV8Tools()` の順番を保証（rev8 計画書の指針に一致）〔根拠: rev8 計画書〕。:contentReference[oaicite:7]{index=7}
-  3-2. エラー時のメッセージを統一（「injection verification failed」「DrawContainer not available」など）。
+ToolManager.initializeV8Tools() で PenTool / EraserTool を登録し、デフォルトツールを選択。ツールは activate() / deactivate() を持つ。
 
-STEP-4: 回帰確認（今回ログの観点で）
-  4-1. `tool-manager.js:9` の SyntaxError が消えること。
-  4-2. Bootstrap の「Required classes not loaded: ToolManager」ログが消え、Phase1.5 依存確認が PASS すること。〔根拠: 期待結果は今回の失敗ログの反転〕。:contentReference[oaicite:8]{index=8}
+UI（サイドバー）のツール選択で ToolManager.switchTool(toolId) を呼び、現在選択ツールの pointerdown/pointermove/pointerup を CanvasManager の app.view にバインドして実際の描画を行う。
 
-## 3) ファイル別・改修ポイント要約
-
-- managers/tool-manager.js（最優先）
-  - 構文エラー除去（不可視文字、未閉じ、全角記号、余剰トークンを掃除）。
-  - ESM としての `export`/`import` 整理。名前つき/デフォルト混在の見直し。
-  - `setManagers() → verifyInjection() → initializeV8Tools()` を堅牢化。
-  - 例外メッセージの統一。
-
-- js/bootstrap.js
-  - 依存チェック強化：ToolManager が「定義済みかつ関数/クラスか」を検査。
-  - 二重起動防止フラグ（isBootstrapped）を厳格化（rev8 計画書の方針継承）。:contentReference[oaicite:9]{index=9}
-
-- js/app-core.js
-  - ToolManager 初期化の順番を固定：`configure → attach → init → setManagers → verifyInjection → initializeV8Tools`（rev8 計画書と一致）。:contentReference[oaicite:10]{index=10}
-
-- managers/canvas-manager.js / utils/coordinate-manager.js
-  - 既に v8 対応・座標オフセット修正完了のログが出ている。状態確認 API（getContainerStatus 等）の公開を徹底し、ToolManager 側からも安全に参照（rev8 計画書と同趣旨）。:contentReference[oaicite:11]{index=11}:contentReference[oaicite:12]{index=12}
-
-- tools/pen-tool.js / tools/eraser-tool.js
-  - v8 新 API（Graphics の shape().fill() 等）準拠は完了ログあり。ToolManager 復旧後にツール登録・切替の回帰確認を行う。:contentReference[oaicite:13]{index=13}
-
-- assets/icons.js / サイドバー UI
-  - `app:ready` 後に初期化される設計を維持。ToolManager 復旧で UI 側も解消可能性高。アイコンマッピングの実体（lucide-static 等）と DOM 側反映の整合を再確認。
-
-## 4) テスト観点（合格条件）
-- 起動時ログから `tool-manager.js:9` の SyntaxError 消失。依存確認 PASS。〔反証は現ログ〕。:contentReference[oaicite:14]{index=14}
-- `window.Tegaki.runPhase15Test()` が実行可能になり、全チェックが PASS（rev8 計画書のテスト節と整合）。:contentReference[oaicite:15]{index=15}
-- Pen/Eraser の描画・消去、座標(0,0) の見た目一致、ツール切替の正常化（回帰）。:contentReference[oaicite:16]{index=16}
-
-## 5) 既存「rev8 包括的改修計画書」に対する追加事項（不足補完）
-A. 「構文健全性チェック」を初期化前の強制ゲートに
-  - 追加ルール：全 JS を CI で `esbuild`/`tsc --allowJs`/`node --check` 等でプリパースし、1ファイルでも構文エラーがあれば配信をブロック。
-  - 対象: `managers/*`, `tools/*`, `utils/*`, `js/*`
-
-B. 依存チェックの粒度を「存在 → 実行可能」へ格上げ
-  - これまでの「存在」から、`typeof === 'function'` または `instanceof` で稼働性まで確認。
-  - 失敗時の例外文言は ID 付き（例: `DEPCHK:ToolManager:not-loadable`）にしてデバッグ容易化。
-
-C. 文字コード/不可視文字のガード
-  - 追加ルール：リポジトリ全体へ `.editorconfig` と `.gitattributes` を導入し、`*.js text eol=lf`、`utf-8`、`BOM 無し` を強制。
-  - CI に「不可視文字スキャナ」（簡易スクリプト）を追加。
-
-D. スクリプト読み込みの整合チェック
-  - `index.html` に `data-module="true"` のような属性を付与し、Bootstrap が DOM から順序・重複を検証する仕組みを追加。
-
-E. ログ規約の最終統一
-  - 重大（💥/🚨）、警告（⚠️）、進捗（🚀/✅）、診断（🔍）の粒度定義と抑制レベル（URL パラメータ `?log=debug|info|warn|error`）を rev8 計画書本文に追記。
-
-F. @provides ヘッダーテンプレの厳密化（全ファイル必須・自動検証）
-  - 例（各 .js 冒頭）：
-    ```
-    /**
-     * @module managers/tool-manager
-     * @provides ToolManager
-     * @depends CanvasManager, EventBus, CoordinateManager
-     * @phase Phase1.5
-     * @pixi v8.12.0
-     */
-    ```
-  - CI で `@provides` の重複や未提供を検出。
-
-※A〜F は rev8 計画書の「初期化制御」「エラーハンドリング統一」「ルールブック準拠」を、より実運用・配布安全性まで拡張した補強。:contentReference[oaicite:17]{index=17}
-
-## 6) 実務チェックリスト（担当者向け）
-- [ ] tool-manager.js を単体で構文チェック（不可視文字掃除、UTF-8N 固定）。
-- [ ] ブラウザで `tool-manager.js` の単独読込テスト（SyntaxError が 0 件）。
-- [ ] index.html のロード順（utils → managers → tools → core）を確認。
-- [ ] Bootstrap 依存チェックが PASS になることを確認。
-- [ ] `runPhase15Test()` の全項目 PASS。
-- [ ] Pen/Eraser の基本操作回帰（描画→消去→再描画→切替）。
-- [ ] アイコン表示（assets/icons.js）とツール選択 UI の整合確認。
-
-## 7) まとめ（今回の一撃ポイント）
-- 最上位ブロッカーは `managers/tool-manager.js` の構文エラー。まずこれを除去すれば、Bootstrap の依存性チェックは通る見込み。〔根拠: 現行ログのエラー順序と rev8 計画の想定フロー〕。:contentReference[oaicite:18]{index=18}:contentReference[oaicite:19]{index=19}
-- その後、rev8 計画書で規定済みの `verifyInjection → initializeV8Tools` の順を AppCore/Bootstrap 双方で担保すれば、Phase1.5 のツール登録・UI 初期化まで到達する。
-- 再発防止として、構文健全性の CI ゲート・文字コード規約・ロード順/依存チェックの強化を計画書に追記する。
+上のどこかでクラスが未定義だと Bootstrap の依存チェックで止まり、キャンバス描画には到達しません（現状と一致）
