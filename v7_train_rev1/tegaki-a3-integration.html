@@ -1,0 +1,356 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tegaki v8 列車型 - A-3 統合システム</title>
+</head>
+<body>
+    <script>
+        /**
+         * ============================================================
+         * Tegaki v8 列車型構造 - A-3 統合システム・描画エンジン
+         * ============================================================
+         * 
+         * A-2依存: EventBus, CanvasManager, CoordinateManager, ToolManager
+         * B車両提供: 描画システム基盤、イベントハンドリング統合
+         */
+
+        // ============================================================
+        // A-2依存関係チェック
+        // ============================================================
+        if (!window.TEGAKI_STATE?.a2Ready) {
+            throw new Error('[A-3] A-2車両が未初期化です');
+        }
+
+        // ============================================================
+        // DrawingEngine - 描画エンジンコア
+        // ============================================================
+        window.TEGAKI_DrawingEngine = {
+            paths: [],
+            currentPath: null,
+
+            /**
+             * パス作成
+             */
+            createPath(x, y, size, color, opacity, tool = 'pen') {
+                const { COLORS } = window.TEGAKI_SYMBOLS;
+                const canvasManager = window.TEGAKI_CanvasManager;
+
+                const path = {
+                    id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    graphics: new PIXI.Graphics(),
+                    points: [],
+                    color: tool === 'eraser' ? COLORS.FUTABA_BACKGROUND : color,
+                    size: size,
+                    opacity: tool === 'eraser' ? 1.0 : opacity,
+                    tool: tool,
+                    isComplete: false
+                };
+
+                // 初回描画：円形ブラシで点を描画
+                path.graphics.beginFill(path.color, path.opacity);
+                path.graphics.drawCircle(x, y, size / 2);
+                path.graphics.endFill();
+
+                path.points.push({ x, y, size });
+
+                canvasManager.drawingContainer.addChild(path.graphics);
+                this.paths.push(path);
+                
+                console.log(`[A-3] パス作成: ${tool}, サイズ:${size}`);
+                window.TEGAKI_EventBus.emit('path-created', path);
+                
+                return path;
+            },
+
+            /**
+             * 線描画
+             */
+            drawLine(path, x, y) {
+                if (!path || path.points.length === 0) return;
+
+                const lastPoint = path.points[path.points.length - 1];
+                const distance = window.TEGAKI_CoordinateManager.getDistance({ x, y }, lastPoint);
+                const { PERFORMANCE } = window.TEGAKI_SYMBOLS;
+
+                // 最小距離フィルタ
+                if (distance < PERFORMANCE.MIN_DRAW_DISTANCE) return;
+
+                // 連続する円形で線を描画
+                const steps = Math.max(1, Math.ceil(distance / PERFORMANCE.MIN_DRAW_DISTANCE));
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    const px = lastPoint.x + (x - lastPoint.x) * t;
+                    const py = lastPoint.y + (y - lastPoint.y) * t;
+
+                    path.graphics.beginFill(path.color, path.opacity);
+                    path.graphics.drawCircle(px, py, path.size / 2);
+                    path.graphics.endFill();
+                }
+
+                path.points.push({ x, y, size: path.size });
+                window.TEGAKI_EventBus.emit('line-drawn', { path, x, y });
+            },
+
+            /**
+             * キャンバスクリア
+             */
+            clear() {
+                const canvasManager = window.TEGAKI_CanvasManager;
+                
+                this.paths.forEach(path => {
+                    canvasManager.drawingContainer.removeChild(path.graphics);
+                    path.graphics.destroy();
+                });
+                
+                this.paths = [];
+                this.currentPath = null;
+                
+                console.log('[A-3] キャンバスクリア完了');
+                window.TEGAKI_EventBus.emit('canvas-cleared');
+            }
+        };
+
+        // ============================================================
+        // InteractionSystem - 入力処理システム
+        // ============================================================
+        window.TEGAKI_InteractionSystem = {
+            isDrawing: false,
+
+            /**
+             * 初期化
+             */
+            init() {
+                const app = window.TEGAKI_STATE.app;
+                if (!app) {
+                    console.error('[A-3] Pixiアプリケーションが未初期化');
+                    return;
+                }
+
+                // PointerDownイベント
+                app.stage.on('pointerdown', (event) => {
+                    this.handlePointerDown(event);
+                });
+
+                // PointerMoveイベント
+                app.stage.on('pointermove', (event) => {
+                    this.handlePointerMove(event);
+                });
+
+                // PointerUpイベント
+                app.stage.on('pointerup', () => {
+                    this.handlePointerUp();
+                });
+
+                app.stage.on('pointerupoutside', () => {
+                    this.handlePointerUp();
+                });
+
+                console.log('[A-3] インタラクションシステム初期化完了');
+            },
+
+            /**
+             * ポインターダウン処理
+             */
+            handlePointerDown(event) {
+                // UIポップアップがアクティブな場合は描画しない
+                if (window.TEGAKI_STATE.activePopup) return;
+
+                const point = window.TEGAKI_CoordinateManager.getLocalPointerPosition(event);
+                const clampedPoint = window.TEGAKI_CoordinateManager.clampToCanvas(point);
+                
+                this.isDrawing = true;
+                window.TEGAKI_STATE.isDrawing = true;
+
+                // 描画開始
+                const drawingEngine = window.TEGAKI_DrawingEngine;
+                const state = window.TEGAKI_STATE;
+
+                drawingEngine.currentPath = drawingEngine.createPath(
+                    clampedPoint.x, 
+                    clampedPoint.y,
+                    state.brushSize,
+                    state.brushColor,
+                    state.opacity,
+                    state.currentTool
+                );
+
+                window.TEGAKI_STATE.currentPath = drawingEngine.currentPath;
+                window.TEGAKI_EventBus.emit('drawing-started', clampedPoint);
+            },
+
+            /**
+             * ポインター移動処理
+             */
+            handlePointerMove(event) {
+                const point = window.TEGAKI_CoordinateManager.getLocalPointerPosition(event);
+                const clampedPoint = window.TEGAKI_CoordinateManager.clampToCanvas(point);
+
+                // 座標表示更新（B車両で処理）
+                window.TEGAKI_EventBus.emit('pointer-moved', clampedPoint);
+
+                // 描画中の処理
+                if (this.isDrawing && !window.TEGAKI_STATE.activePopup) {
+                    const drawingEngine = window.TEGAKI_DrawingEngine;
+                    if (drawingEngine.currentPath) {
+                        drawingEngine.drawLine(drawingEngine.currentPath, clampedPoint.x, clampedPoint.y);
+                    }
+                }
+            },
+
+            /**
+             * ポインターアップ処理
+             */
+            handlePointerUp() {
+                if (!this.isDrawing) return;
+
+                this.isDrawing = false;
+                window.TEGAKI_STATE.isDrawing = false;
+
+                const drawingEngine = window.TEGAKI_DrawingEngine;
+                if (drawingEngine.currentPath) {
+                    drawingEngine.currentPath.isComplete = true;
+                }
+
+                drawingEngine.currentPath = null;
+                window.TEGAKI_STATE.currentPath = null;
+
+                window.TEGAKI_EventBus.emit('drawing-ended');
+            }
+        };
+
+        // ============================================================
+        // PerformanceMonitor - パフォーマンス監視
+        // ============================================================
+        window.TEGAKI_PerformanceMonitor = {
+            frameCount: 0,
+            lastTime: 0,
+
+            /**
+             * 監視開始
+             */
+            start() {
+                const update = () => {
+                    this.frameCount++;
+                    const currentTime = performance.now();
+
+                    if (currentTime - this.lastTime >= 1000) {
+                        const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
+                        window.TEGAKI_EventBus.emit('fps-updated', fps);
+
+                        this.frameCount = 0;
+                        this.lastTime = currentTime;
+                    }
+
+                    requestAnimationFrame(update);
+                };
+
+                update();
+                console.log('[A-3] パフォーマンス監視開始');
+            }
+        };
+
+        // ============================================================
+        // A-3 車両統合システム
+        // ============================================================
+        window.TEGAKI_A3 = {
+            /**
+             * A-3車両初期化
+             */
+            async init() {
+                console.log('[A-3] 統合システム車両初期化開始');
+
+                // キャンバスをDOMにマウント
+                window.TEGAKI_CanvasManager.mountToDOM();
+
+                // インタラクションシステム初期化
+                window.TEGAKI_InteractionSystem.init();
+
+                // パフォーマンス監視開始
+                window.TEGAKI_PerformanceMonitor.start();
+
+                // A列車完了処理
+                this.completeATrain();
+
+                window.TEGAKI_STATE.currentCar = 'A-3';
+                console.log('[A-3] 統合システム車両初期化完了 - A列車完成');
+            },
+
+            /**
+             * A列車完了処理
+             */
+            completeATrain() {
+                window.TEGAKI_STATE.isInitialized = true;
+                window.TEGAKI_STATE.aTrainReady = true;
+
+                // B車両準備完了通知
+                console.log('[A-3] A列車完成 - B車両ロード可能');
+                window.TEGAKI_EventBus.emit('a-train-ready');
+
+                // 基本的な動作確認
+                this.validateATrainSystems();
+            },
+
+            /**
+             * A列車システム検証
+             */
+            validateATrainSystems() {
+                const requiredSystems = [
+                    'TEGAKI_SYMBOLS',
+                    'TEGAKI_STATE', 
+                    'TEGAKI_EventBus',
+                    'TEGAKI_CanvasManager',
+                    'TEGAKI_CoordinateManager',
+                    'TEGAKI_ToolManager',
+                    'TEGAKI_DrawingEngine',
+                    'TEGAKI_InteractionSystem',
+                    'TEGAKI_PerformanceMonitor'
+                ];
+
+                const missing = requiredSystems.filter(system => !window[system]);
+                
+                if (missing.length > 0) {
+                    console.error('[A-3] 不足システム:', missing);
+                    throw new Error(`[A-3] 必須システムが不足: ${missing.join(', ')}`);
+                }
+
+                // Pixiアプリケーション確認
+                if (!window.TEGAKI_STATE.app) {
+                    throw new Error('[A-3] Pixiアプリケーションが未初期化');
+                }
+
+                console.log('[A-3] A列車システム検証完了');
+            }
+        };
+
+        // ============================================================
+        // A-3車両自動初期化
+        // ============================================================
+        document.addEventListener('DOMContentLoaded', async () => {
+            // A-2完了待ち
+            if (window.TEGAKI_STATE?.a2Ready) {
+                await window.TEGAKI_A3.init();
+            } else {
+                console.error('[A-3] A-2車両が未完了のため初期化できません');
+            }
+        });
+
+        // ============================================================
+        // A列車完了ログ
+        // ============================================================
+        window.TEGAKI_EventBus.on('a-train-ready', () => {
+            console.log('🚄 A列車初期化完了');
+            console.log('📋 利用可能システム:');
+            console.log('  - EventBus: 車両間通信');
+            console.log('  - CanvasManager: Pixi v7アプリケーション');
+            console.log('  - CoordinateManager: 座標計算');
+            console.log('  - ToolManager: ツール状態管理');
+            console.log('  - DrawingEngine: 描画エンジン');
+            console.log('  - InteractionSystem: 入力処理');
+            console.log('  - PerformanceMonitor: FPS監視');
+            console.log('🚃 B車両ロード待機中...');
+        });
+    </script>
+</body>
+</html>

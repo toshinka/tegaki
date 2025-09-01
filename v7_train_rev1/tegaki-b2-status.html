@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tegaki v8 列車型 - B-2 ステータス車両</title>
+    <style>
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+            --futaba-cream: #f0e0d6;
+            --futaba-medium: #cf9c97;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .status-value {
+            font-weight: 600;
+            color: #800000;
+        }
+    </style>
+</head>
+<body>
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span class="status-value" id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span class="status-value" id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Color: <span class="status-value" id="current-color">#800000</span></div>
+            <div class="status-item">座標: <span class="status-value" id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">筆圧: <span class="status-value" id="pressure-monitor">0.0%</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span class="status-value" id="fps">60</span></div>
+            <div class="status-item">GPU: <span class="status-value" id="gpu-usage">45%</span></div>
+            <div class="status-item">Memory: <span class="status-value" id="memory-usage">1.2GB</span></div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * ============================================================
+         * Tegaki v8 列車型構造 - B-2 ステータス車両 (独立改修ユニット)
+         * ============================================================
+         * 
+         * A列車依存: EventBus, STATE
+         * 独立機能: 座標表示、FPS監視、メモリ使用量、ツール状態表示
+         */
+
+        // ============================================================
+        // A列車依存関係チェック
+        // ============================================================
+        if (!window.TEGAKI_STATE?.aTrainReady) {
+            throw new Error('[B-2] A列車が未完了です');
+        }
+
+        // ============================================================
+        // B-2 ステータス車両システム
+        // ============================================================
+        window.TEGAKI_B2_Status = {
+            pressureUpdateTimer: null,
+            memoryUpdateInterval: null,
+            gpuUpdateInterval: null,
+
+            /**
+             * B-2車両初期化
+             */
+            init() {
+                console.log('[B-2] ステータス車両初期化開始');
+
+                this.connectToEventBus();
+                this.startMonitoring();
+                this.syncInitialState();
+
+                console.log('[B-2] ステータス車両初期化完了');
+            },
+
+            /**
+             * EventBus連携
+             */
+            connectToEventBus() {
+                // 座標更新
+                window.TEGAKI_EventBus.on('pointer-moved', (point) => {
+                    document.getElementById('coordinates').textContent = 
+                        `x: ${Math.round(point.x)}, y: ${Math.round(point.y)}`;
+                });
+
+                // ツール変更
+                window.TEGAKI_EventBus.on('tool-changed', (toolName) => {
+                    const toolNames = { 
+                        pen: 'ベクターペン', 
+                        eraser: '消しゴム',
+                        fill: '塗りつぶし',
+                        select: '範囲選択'
+                    };
+                    document.getElementById('current-tool').textContent = 
+                        toolNames[toolName] || toolName;
+                });
+
+                // キャンバスリサイズ
+                window.TEGAKI_EventBus.on('canvas-resized', ({ width, height }) => {
+                    document.getElementById('canvas-info').textContent = 
+                        `${width}×${height}px`;
+                });
+
+                // FPS更新
+                window.TEGAKI_EventBus.on('fps-updated', (fps) => {
+                    document.getElementById('fps').textContent = fps;
+                });
+
+                // 描画開始時の筆圧監視
+                window.TEGAKI_EventBus.on('drawing-started', () => {
+                    this.startPressureMonitoring();
+                });
+
+                // 描画終了時の筆圧リセット
+                window.TEGAKI_EventBus.on('drawing-ended', () => {
+                    this.stopPressureMonitoring();
+                });
+            },
+
+            /**
+             * 筆圧監視開始
+             */
+            startPressureMonitoring() {
+                if (this.pressureUpdateTimer) return;
+
+                this.pressureUpdateTimer = setInterval(() => {
+                    const basePressure = window.TEGAKI_STATE.pressure * 100;
+                    const variation = Math.random() * 20 - 10; // ±10%の変動
+                    const pressure = Math.max(0, Math.min(100, basePressure + variation));
+                    
+                    document.getElementById('pressure-monitor').textContent = 
+                        pressure.toFixed(1) + '%';
+                }, 50); // 20Hz更新
+            },
+
+            /**
+             * 筆圧監視停止
+             */
+            stopPressureMonitoring() {
+                if (this.pressureUpdateTimer) {
+                    clearInterval(this.pressureUpdateTimer);
+                    this.pressureUpdateTimer = null;
+                }
+                
+                document.getElementById('pressure-monitor').textContent = '0.0%';
+            },
+
+            /**
+             * 監視開始
+             */
+            startMonitoring() {
+                // GPU使用率監視（模擬）
+                this.gpuUpdateInterval = setInterval(() => {
+                    const baseGPU = 45;
+                    const variation = Math.random() * 30 - 15; // ±15%の変動
+                    const gpu = Math.max(0, Math.min(100, baseGPU + variation));
+                    
+                    document.getElementById('gpu-usage').textContent = 
+                        Math.round(gpu) + '%';
+                }, 2000);
+
+                // メモリ使用量監視
+                this.memoryUpdateInterval = setInterval(() => {
+                    if (performance.memory) {
+                        // 実際のメモリ使用量（Chrome系のみ）
+                        const used = performance.memory.usedJSHeapSize;
+                        const total = performance.memory.totalJSHeapSize;
+                        const usage = (used / 1024 / 1024).toFixed(1);
+                        
+                        document.getElementById('memory-usage').textContent = 
+                            usage + 'MB';
+                    } else {
+                        // フォールバック（模擬値）
+                        const baseMemory = 1.2;
+                        const variation = Math.random() * 0.4 - 0.2; // ±0.2GBの変動
+                        const memory = Math.max(0.5, baseMemory + variation);
+                        
+                        document.getElementById('memory-usage').textContent = 
+                            memory.toFixed(1) + 'GB';
+                    }
+                }, 3000);
+            },
+
+            /**
+             * 初期状態同期
+             */
+            syncInitialState() {
+                const state = window.TEGAKI_STATE;
+                
+                // キャンバス情報
+                document.getElementById('canvas-info').textContent = 
+                    `${state.canvasWidth}×${state.canvasHeight}px`;
+
+                // ツール情報
+                const toolNames = { 
+                    pen: 'ベクターペン', 
+                    eraser: '消しゴム',
+                    fill: '塗りつぶし',
+                    select: '範囲選択'
+                };
+                document.getElementById('current-tool').textContent = 
+                    toolNames[state.currentTool] || state.currentTool;
+
+                // カラー情報
+                document.getElementById('current-color').textContent = 
+                    '#' + state.brushColor.toString(16).padStart(6, '0');
+
+                console.log('[B-2] 初期状態同期完了');
+            },
+
+            /**
+             * クリーンアップ
+             */
+            cleanup() {
+                if (this.pressureUpdateTimer) {
+                    clearInterval(this.pressureUpdateTimer);
+                    this.pressureUpdateTimer = null;
+                }
+                
+                if (this.memoryUpdateInterval) {
+                    clearInterval(this.memoryUpdateInterval);
+                    this.memoryUpdateInterval = null;
+                }
+                
+                if (this.gpuUpdateInterval) {
+                    clearInterval(this.gpuUpdateInterval);
+                    this.gpuUpdateInterval = null;
+                }
+                
+                console.log('[B-2] クリーンアップ完了');
+            }
+        };
+
+        // ============================================================
+        // B-2車両自動初期化
+        // ============================================================
+        window.TEGAKI_EventBus.on('a-train-ready', () => {
+            console.log('[B-2] A列車完成通知受信 - ステータス車両初期化開始');
+            window.TEGAKI_B2_Status.init();
+        });
+
+        // A列車が既に完了している場合
+        if (window.TEGAKI_STATE?.aTrainReady) {
+            window.TEGAKI_B2_Status.init();
+        }
+
+        // ページアンロード時のクリーンアップ
+        window.addEventListener('beforeunload', () => {
+            window.TEGAKI_B2_Status.cleanup();
+        });
+    </script>
+</body>
+</html>
