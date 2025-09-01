@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクター絵描きツール v0.7</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v0.7</title>
     <style>
         * {
             margin: 0;
@@ -72,12 +72,6 @@
             width: 20px;
             height: 20px;
         }
-
-        .tool-button img {
-            width: 20px;
-            height: 20px;
-            filter: hue-rotate(0deg) saturate(1) brightness(0.3) sepia(1) hue-rotate(0deg) saturate(10) hue-rotate(0deg);
-        }
         
         .tool-button:hover {
             background: var(--futaba-medium);
@@ -91,10 +85,6 @@
             color: var(--text-inverse);
             border-color: var(--futaba-maroon);
             box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
-        }
-
-        .tool-button.active img {
-            filter: brightness(0) invert(1);
         }
         
         .tool-button.disabled {
@@ -215,12 +205,11 @@
         }
         
         .size-preview-circle {
-            border: 2px solid #800000;
+            background: #800000;
             border-radius: 50%;
             transition: all 0.2s ease;
-            min-width: 4px;
-            min-height: 4px;
-            background: transparent;
+            min-width: 0.5px;
+            min-height: 0.5px;
         }
         
         .size-preview-label {
@@ -444,24 +433,6 @@
         .resize-button.primary:hover {
             background: var(--futaba-light-maroon);
         }
-
-        .preset-reset-button {
-            width: 100%;
-            padding: 8px;
-            border: 2px solid var(--futaba-maroon);
-            border-radius: 8px;
-            background: var(--futaba-background);
-            color: var(--futaba-maroon);
-            font-weight: 600;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            margin-top: 8px;
-        }
-        
-        .preset-reset-button:hover {
-            background: var(--futaba-maroon);
-            color: var(--text-inverse);
-        }
         
         .status-panel {
             position: fixed;
@@ -564,37 +535,36 @@
         <div class="setting-group">
             <div class="size-presets" id="size-presets">
                 <div class="size-preset-item" data-size="1">
-                    <div class="size-preview-circle"></div>
+                    <div class="size-preview-circle" style="width: 0.5px; height: 0.5px; background: #800000;"></div>
                     <div class="size-preview-label">1</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
                 <div class="size-preset-item" data-size="2">
-                    <div class="size-preview-circle"></div>
+                    <div class="size-preview-circle" style="width: 2px; height: 2px; background: #800000;"></div>
                     <div class="size-preview-label">2</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
                 <div class="size-preset-item" data-size="4">
-                    <div class="size-preview-circle"></div>
+                    <div class="size-preview-circle" style="width: 4px; height: 4px; background: #800000;"></div>
                     <div class="size-preview-label">4</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
                 <div class="size-preset-item" data-size="8">
-                    <div class="size-preview-circle"></div>
+                    <div class="size-preview-circle" style="width: 8px; height: 8px; background: #800000;"></div>
                     <div class="size-preview-label">8</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
                 <div class="size-preset-item active" data-size="16">
-                    <div class="size-preview-circle"></div>
+                    <div class="size-preview-circle" style="width: 16px; height: 16px; background: #800000;"></div>
                     <div class="size-preview-label">16</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
                 <div class="size-preset-item" data-size="32">
-                    <div class="size-preview-circle"></div>
+                    <div class="size-preview-circle" style="width: 20px; height: 20px; background: #800000;"></div>
                     <div class="size-preview-label">32</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
             </div>
-            <button class="preset-reset-button" id="preset-reset">プリセット初期化</button>
         </div>
         
         <div class="setting-group">
@@ -750,7 +720,7 @@
     
     <script>
         /**
-         * 🎨 ふたば☆ちゃんねる風ベクター絵描きツール v0.7
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v0.7
          * 修正版 - プリセット改良・UI調整対応
          */
         
@@ -891,9 +861,6 @@
                 this.isDrawing = false;
                 this.currentPath = null;
                 this.lastPoint = null;
-                
-                // プリセットサイズの記録 - 🔧 rev3追加
-                this.presetSizes = [1, 2, 4, 8, 16, 32];
             }
             
             setTool(tool) {
@@ -901,7 +868,7 @@
             }
             
             setBrushSize(size) {
-                this.brushSize = Math.max(0.1, Math.min(500, Math.round(size * 10) / 10));
+                this.brushSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
             }
             
             setOpacity(opacity) {
@@ -914,18 +881,6 @@
             
             setSmoothing(smoothing) {
                 this.smoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
-            }
-            
-            // 🔧 rev3追加: プリセットサイズを更新
-            updatePresetSize(index, size) {
-                if (index >= 0 && index < this.presetSizes.length) {
-                    this.presetSizes[index] = Math.max(0.1, Math.min(500, Math.round(size * 10) / 10));
-                }
-            }
-            
-            // 🔧 rev3追加: プリセットサイズをリセット
-            resetPresetSizes() {
-                this.presetSizes = [1, 2, 4, 8, 16, 32];
             }
             
             startDrawing(engine, x, y) {
@@ -957,26 +912,16 @@
                 this.toolSystem = toolSystem;
                 this.activePopup = null;
                 this.sliders = new Map();
-                this.isInitialized = false; // 🔧 初期化フラグ追加
             }
             
             init() {
-                // 🔧 初期化順序を明確化
-                console.log('🔧 UI初期化開始 - 安全な順序で実行');
-                
                 this.setupToolButtons();
                 this.setupPopups();
                 this.setupSliders();
                 this.setupPresets();
                 this.setupResize();
                 this.setupCheckboxes();
-                this.setupPresetReset(); // 🔧 rev3追加
-                
-                // 最後にプリセット更新を実行
                 this.updateSizePresets();
-                this.isInitialized = true;
-                
-                console.log('✅ UI初期化完了');
             }
             
             setupToolButtons() {
@@ -1027,15 +972,15 @@
             }
             
             setupSliders() {
-                this.createSlider('pen-size-slider', 0.1, 500, 16.0, (value) => {
+                this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
                     this.toolSystem.setBrushSize(value);
-                    if (this.isInitialized) this.updateSizePresets(); // 🔧 安全チェック
+                    this.updateSizePresets();
                     return value.toFixed(1) + 'px';
                 });
                 
                 this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value) => {
                     this.toolSystem.setOpacity(value / 100);
-                    if (this.isInitialized) this.updateSizePresets(); // 🔧 安全チェック
+                    this.updateSizePresets(); // 不透明度変更時も更新
                     return value.toFixed(1) + '%';
                 });
                 
@@ -1117,53 +1062,53 @@
                 // ペンサイズ調整ボタン
                 document.getElementById('pen-size-decrease-small')?.addEventListener('click', () => {
                     adjustValue('pen-size-slider', -0.1);
-                    if (this.isInitialized) this.updateSizePresets();
+                    this.updateSizePresets();
                 });
                 document.getElementById('pen-size-decrease')?.addEventListener('click', () => {
                     adjustValue('pen-size-slider', -1);
-                    if (this.isInitialized) this.updateSizePresets();
+                    this.updateSizePresets();
                 });
                 document.getElementById('pen-size-decrease-large')?.addEventListener('click', () => {
                     adjustValue('pen-size-slider', -10);
-                    if (this.isInitialized) this.updateSizePresets();
+                    this.updateSizePresets();
                 });
                 document.getElementById('pen-size-increase-small')?.addEventListener('click', () => {
                     adjustValue('pen-size-slider', 0.1);
-                    if (this.isInitialized) this.updateSizePresets();
+                    this.updateSizePresets();
                 });
                 document.getElementById('pen-size-increase')?.addEventListener('click', () => {
                     adjustValue('pen-size-slider', 1);
-                    if (this.isInitialized) this.updateSizePresets();
+                    this.updateSizePresets();
                 });
                 document.getElementById('pen-size-increase-large')?.addEventListener('click', () => {
                     adjustValue('pen-size-slider', 10);
-                    if (this.isInitialized) this.updateSizePresets();
+                    this.updateSizePresets();
                 });
                 
                 // 不透明度調整ボタン
                 document.getElementById('pen-opacity-decrease-small')?.addEventListener('click', () => {
                     adjustValue('pen-opacity-slider', -0.1);
-                    if (this.isInitialized) this.updateSizePresets();
+                    this.updateSizePresets();
                 });
                 document.getElementById('pen-opacity-decrease')?.addEventListener('click', () => {
                     adjustValue('pen-opacity-slider', -1);
-                    if (this.isInitialized) this.updateSizePresets();
+                    this.updateSizePresets();
                 });
                 document.getElementById('pen-opacity-decrease-large')?.addEventListener('click', () => {
                     adjustValue('pen-opacity-slider', -10);
-                    if (this.isInitialized) this.updateSizePresets();
+                    this.updateSizePresets();
                 });
                 document.getElementById('pen-opacity-increase-small')?.addEventListener('click', () => {
                     adjustValue('pen-opacity-slider', 0.1);
-                    if (this.isInitialized) this.updateSizePresets();
+                    this.updateSizePresets();
                 });
                 document.getElementById('pen-opacity-increase')?.addEventListener('click', () => {
                     adjustValue('pen-opacity-slider', 1);
-                    if (this.isInitialized) this.updateSizePresets();
+                    this.updateSizePresets();
                 });
                 document.getElementById('pen-opacity-increase-large')?.addEventListener('click', () => {
                     adjustValue('pen-opacity-slider', 10);
-                    if (this.isInitialized) this.updateSizePresets();
+                    this.updateSizePresets();
                 });
                 
                 // 筆圧調整ボタン
@@ -1208,38 +1153,13 @@
             }
             
             setupPresets() {
-                document.querySelectorAll('.size-preset-item').forEach((preset, index) => {
+                document.querySelectorAll('.size-preset-item').forEach(preset => {
                     preset.addEventListener('click', () => {
-                        const currentSize = this.toolSystem.presetSizes[index];
-                        this.toolSystem.setBrushSize(currentSize);
-                        this.updateSliderValue('pen-size-slider', currentSize);
-                        if (this.isInitialized) this.updateSizePresets();
+                        const size = parseFloat(preset.getAttribute('data-size'));
+                        this.toolSystem.setBrushSize(size);
+                        this.updateSliderValue('pen-size-slider', size);
+                        this.updateSizePresets();
                     });
-                    
-                    // 🔧 rev3追加: プリセットを長押しで現在のサイズに変更
-                    let longPressTimer;
-                    preset.addEventListener('mousedown', () => {
-                        longPressTimer = setTimeout(() => {
-                            this.toolSystem.updatePresetSize(index, this.toolSystem.brushSize);
-                            if (this.isInitialized) this.updateSizePresets();
-                        }, 1000);
-                    });
-                    
-                    preset.addEventListener('mouseup', () => {
-                        clearTimeout(longPressTimer);
-                    });
-                    
-                    preset.addEventListener('mouseleave', () => {
-                        clearTimeout(longPressTimer);
-                    });
-                });
-            }
-            
-            // 🔧 rev3追加: プリセットリセット機能
-            setupPresetReset() {
-                document.getElementById('preset-reset').addEventListener('click', () => {
-                    this.toolSystem.resetPresetSizes();
-                    if (this.isInitialized) this.updateSizePresets();
                 });
             }
             
@@ -1318,15 +1238,12 @@
                 }
             }
             
-            // 🔧 rev3修正: 枠線スタイル＋リニア変換対応
             updateSizePresets() {
-                if (!this.isInitialized) return; // 初期化前は実行しない
-                
                 const currentSize = this.toolSystem.brushSize;
                 const currentOpacity = Math.round(this.toolSystem.opacity * 100);
                 
-                document.querySelectorAll('.size-preset-item').forEach((preset, index) => {
-                    const presetSize = this.toolSystem.presetSizes[index];
+                document.querySelectorAll('.size-preset-item').forEach(preset => {
+                    const presetSize = parseFloat(preset.getAttribute('data-size'));
                     const circle = preset.querySelector('.size-preview-circle');
                     const label = preset.querySelector('.size-preview-label');
                     const percent = preset.querySelector('.size-preview-percent');
@@ -1335,14 +1252,20 @@
                     const isActive = Math.abs(presetSize - currentSize) < 0.1;
                     preset.classList.toggle('active', isActive);
                     
-                    // 🔧 枠線スタイル: 4px-20pxの範囲でリニア変換
-                    const displaySize = isActive ? currentSize : presetSize;
-                    const circleSize = Math.max(4, Math.min(20, (displaySize / 500) * 16 + 4));
+                    // 円のサイズ更新（0.5-20pxの範囲で線形変換）
+                    let circleSize;
+                    if (isActive) {
+                        // アクティブなプリセットは現在のスライダー値を反映
+                        circleSize = Math.max(0.5, Math.min(20, (currentSize / 100) * 19.5 + 0.5));
+                    } else {
+                        // 非アクティブなプリセットは固定サイズ値を反映
+                        circleSize = Math.max(0.5, Math.min(20, (presetSize / 100) * 19.5 + 0.5));
+                    }
                     
                     circle.style.width = circleSize + 'px';
                     circle.style.height = circleSize + 'px';
                     
-                    // 🔧 不透明度の適用（枠線に対して）
+                    // 不透明度の適用
                     circle.style.opacity = this.toolSystem.opacity;
                     
                     // ラベルの更新
@@ -1402,42 +1325,23 @@
             }
             
             async init() {
-                console.log('🎨 ふたば☆ちゃんねる風ベクター絵描きツール v0.7 初期化開始');
+                console.log('🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v0.7 初期化開始');
                 
-                // 🔧 修正: 初期化順序を厳格に管理
-                console.log('1️⃣ DrawingEngine初期化中...');
                 await this.engine.init();
-                console.log('✅ DrawingEngine初期化完了');
-                
-                console.log('2️⃣ UIController初期化中...');
                 this.ui.init();
-                console.log('✅ UIController初期化完了');
-                
-                console.log('3️⃣ イベントハンドラ設定中...');
                 this.setupCanvasEvents();
                 this.setupResizeHandlers();
-                console.log('✅ イベントハンドラ設定完了');
-                
-                console.log('4️⃣ パフォーマンスモニター開始...');
                 this.monitor.start();
                 this.updateCanvasInfo();
-                console.log('✅ パフォーマンスモニター開始完了');
                 
-                console.log('✅ 初期化完了 - v0.7 rev3 修正内容:');
-                console.log('  🎯 プリセット円形を枠線スタイルに変更');
-                console.log('  📏 サイズプリセット動的更新機能追加');
-                console.log('  🔄 プリセット初期化ボタン追加');
-                console.log('  🎨 ツールバーアイコン色調整');
-                console.log('  🔧 初期化順序問題修正');
+                console.log('✅ 初期化完了 - v0.7 修正内容:');
+                console.log('  🎯 64サイズプリセット削除・6項目均等配置');
+                console.log('  🎨 プリセット色統一 (#800000)');
+                console.log('  📊 アクティブプリセット動的リサイズ (0.5-20px)');
+                console.log('  🔢 リアルタイム数値更新機能');
             }
             
             setupCanvasEvents() {
-                // 🔧 安全チェック: engineが初期化済みか確認
-                if (!this.engine.app) {
-                    console.error('❌ Canvas初期化エラー: engineが未初期化');
-                    return;
-                }
-                
                 this.engine.app.stage.on('pointerdown', (event) => {
                     if (this.ui.activePopup) return;
                     
@@ -1482,7 +1386,7 @@
                     this.applyResize(false);
                 });
                 
-                document.getElementById('apply-resize-center')?.addEventListener('click', () => {
+                document.getElementById('apply-resize-center').addEventListener('click', () => {
                     this.applyResize(true);
                 });
             }
@@ -1502,4 +1406,15 @@
         }
         
         // ==== Bootstrap ====
-        window.addEventListener('DOMContentLoaded', async ()
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                window.futabaDrawingTool = new FutabaDrawingTool();
+                await window.futabaDrawingTool.init();
+                
+            } catch (error) {
+                console.error('❌ 起動エラー:', error);
+            }
+        });
+    </script>
+</body>
+</html>

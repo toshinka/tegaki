@@ -1,165 +1,81 @@
-結論（短く）
+1. 原因分析
 
-全体として PixiJS v8 の初期化パターン（app.init()）、描画API（Graphics.moveTo/lineTo/stroke()）への対応は正しく押さえられている一方で、重要な Manager 実装（CanvasManager / CoordinateManager / ToolManager / icons 等）がヘッダ／骨子しか用意されておらず実行時に致命的な欠損となるため、現状は「設計は良いが実装が不十分で起動・描画できない」状態です。まずは欠損Managerの具備が最優先です。
-GitHub
-+1
-pixijs.download
+ペンポップアップ変更
 
-要点サマリ（証拠付き）
+ペンポップアップ.png → 枠付き表示に変更
 
-package.json に pixi.js: ^8.12.0 があり、v8 を想定した設計になっている。→ v8 前提。
-GitHub
+サイズ計算ロジックをリニア変換に変更
 
-AppCore は v8 の推奨パターン（new PIXI.Application(); await app.init({...})）を使っており、WebGPU/WebGL 選択や DPR 管理なども考慮している。良い。
-GitHub
-pixijs.download
+プリセット保持用の新データ構造追加
+→ この段階で「キャンバスのサイズ計算や描画初期化のDOM参照」が遅延していると、Pixi.Applicationの生成前にcanvasサイズが0になり得ます。
 
-TegakiApplication は Canvas の DOM 挿入、pointer イベントを canvas に束ねて clientX/clientY をツールに渡す設計（ツール側で座標変換）になっている。イベント経路はシンプル。
-GitHub
+ツールバーアイコンの色変更
 
-PenTool は「一時表示用 Graphics（temporaryGraphics）＋永続用 Graphics（currentStrokeGraphics）」という非破壊・二重バッファ方式を採り、イベントキューイング、初期化待ちロジック、TPF 保存の呼び出しなどまで整備されている。描画フロー自体は v8 の Graphics API に沿っている。
-GitHub
-pixijs.com
+CSSやSVGのstroke/fillを変更
+→ DOM作成順序やclass名指定がPixiやAppCore初期化前だと、描画が正しく反映されない可能性。
 
-だが重要な Manager 実装（CanvasManager、CoordinateManager、ToolManager、icons 等）がほぼヘッダだけ（実装未完成）で、AppCore.initializeV8Managers() や Bootstrap の依存チェックで実行時エラーになる可能性が高い。統合テストスクリプトもそれを想定して未実装を検出するようになっている。ここを実装しないと起動しない/描画できない。
-GitHub
-+3
-GitHub
-+3
-GitHub
-+3
+初期化フロー破綻
 
-詳細な所見（問題点と理由）
-良い点
+v7rev2では CanvasManager.attach() → CanvasManager.init() の順でcanvas生成
 
-v8 の app.init() を正しく使っている（非同期init）。初期化フローのチェックや出力も丁寧。
-GitHub
-pixijs.download
+v7rev3では、ペンポップアップとプリセット保持追加により attach/initの順序がずれている、またはDOM参照が失敗
+→ 結果として app.view にPixi canvasがアタッチされない。Consoleエラーは出ていないので try/catchで握られているか、Canvasサイズが0のまま になっている。
 
-抽象ツール基底（AbstractTool）と PenTool の設計は依存注入・キューイング・非破壊描画・デバッグ情報を含み、実装の質は高い。
-GitHub
-+1
-
-重大欠落（実行に致命的）
-
-CanvasManager の実実装がない（ヘッダのみ）。PenTool や AppCore は canvasManager.getDrawContainer() / createStrokeGraphics() / getTemporaryGraphics() 等を呼ぶが、その実体がないためランタイムで is not a constructor や getDrawContainer is not a function が発生する。
-GitHub
-+1
-
-CoordinateManager（clientToWorld 等）未実装だと、pointer の座標変換で描画が全く合わない／例外が出る。TegakiApplication は DOM 座標をツールに渡す設計なので、変換ロジックは必須。
-GitHub
-+1
-
-ToolManager / icons モジュールが未完成。UI 表示やツール切り替えが期待どおり動かない。統合テストも未実装を検出するようになっている。
-GitHub
-+2
-GitHub
-+2
-
-中リスク（設計上改善推奨）
-
-console.warn を丸ごとフックして WebGPU 警告を抑制している（AppCore.createV8Application）。副作用で別の重要な警告も抑えられてしまうリスクがある。より狭いパターン（正規表現で WebGPU 警告のみ）に留めるか、ログを収集してデバッグ表示する方が安全。
-GitHub
-
-Canvas DOM 挿入処理が Bootstrap / AppCore / TegakiApplication に分散している（重複）。責務を一箇所にまとめたほうが分かりやすく、競合を避けられる。
-GitHub
-+2
-GitHub
-+2
-
-固定 400×400 と DPR 上限（2.0）を複数箇所でハードコードしている。デバッグ用途では良いが、将来レスポンシブ化や高DPR端末での品質を考えるなら設定化が良い。
-GitHub
-+1
-
-優先対応（順番にやるべきこと）
-
-A. 即対応（必須）
-
-CanvasManager を実装する（以下に最低限の骨子例を付記）。PenTool が期待する API を全部含めること：initializeV8Application(pixiApp), getDrawContainer(), createStrokeGraphics(id), getTemporaryGraphics(), addPermanentGraphics(g), clearTemporaryGraphics(), isV8Ready(), getCanvasElement()。
-GitHub
-+1
-
-CoordinateManager を実装する（clientToWorld(clientX,clientY) と waitForReady() 、キャンバス位置・DPR考慮の変換ロジック）。これがないと描画位置が全く合わない。
-GitHub
-
-ToolManager と icons（TegakiIcons）を用意して、AppCore.initializeV8Managers() が正しく new window.Tegaki.CanvasManager() 等を作れる状態にする。
-GitHub
-+1
-
-B. 高優先（実装後にすぐ）
-4. 統合テスト（window.Tegaki.runPhase15Test()）を回して未実装箇所を洗い出す（既に用意されたスクリプトがある）。
-GitHub
-
-5. console.warn の抑制を限定（警告の prefix か正規表現に限定）して、他の警告を見落とさないようにする。
-GitHub
-
-C. 改善（余裕があれば）
-6. Canvas DOM 挿入の責務 consolidation（Bootstrap のみで container を作り、TegakiApplication/AppCore はそれを参照する形に）。
-GitHub
-+1
-
-7. 設定を configManager 経由にして 400×400 や DPR 上限を外から変えられるようにする。
-
-最後に（まとめ）
-
-設計・方針（v8 準拠・非破壊描画・依存注入・イベントキュー）は 非常に良好。
-GitHub
-+1
-
-ただし現状は 「設計はできてるが、Manager群の実装が欠けている」 ため、まず CanvasManager と CoordinateManager（と icons / ToolManager）の実装を最優先
+2. 対策案
+A. 初期化順序の明示化（必須）
+1. ConfigManager.configure()          // 設定読み込み
+2. CanvasManager.attach()             // DOM要素参照
+3. CanvasManager.init()               // Pixi.Application生成
+4. EventBus.attach/init()             // pointer/touch
+5. ToolManager.attach/init()          // ペンポップアップ含む
+6. UI/Sidebar 起動                    // アイコン配置
 
 
-現状のコードで「肥大化・見通し悪化」しそうな要素
+ポイント：ペンポップアップやツールデータは CanvasManager.init() 完了後に参照する
 
-console.log / console.warn の多用
+これを守らないと canvasが存在しない状態で描画処理が走り、見えないだけ になる
 
-AppCore で console.warn を上書きして WebGPU 警告を消す仕組み → 他の警告も握りつぶす。
+B. ペンポップアップ変更の安全化
 
-PenTool や AppCore に「初期化待ち」「キュー追加」などのログが大量。
+枠表示に変えるなら、初期化時に以下を確認：
 
-→ デバッグ時は便利だが、本番ではノイズ。
+// サイズ計算
+popupSize = Math.min(preset.size, maxCircleSize);
+// DOM作成
+const popupCircle = document.createElement('div');
+popupCircle.style.border = '2px solid #800000';
+popupCircle.style.width = popupSize + 'px';
+popupCircle.style.height = popupSize + 'px';
+popupCircle.style.borderRadius = '50%';
 
-フォールバック的コードの散在
 
-例：if (!pixiApp?.stage) throw new Error(...) のような「毎回の防御」コードが多い。
+重要：Pixi canvas生成後にDOMへappendすること
 
-ルールブック通り「CanvasManager/CoordinateManager が責務を担う」と決まっているなら、ここは一箇所で保証すべきで、本体に冗長に書かない方がよい。
+プリセット保持用データは、canvas生成前に宣言するだけでOK
 
-責務の重複
+C. アイコンカラー変更
 
-Canvas の生成や DOM 追加が、Bootstrap と TegakiApplication と AppCore に分散。
+SVGを直接変更する場合：
 
-どこで何が最初に呼ばれるかが複雑化 → AI からすると「依存ループに見える」恐れ。
+iconSvg.setAttribute('stroke', '#800000');
 
-改善の方向性
 
-ヘッダーコメントで明文化
+CSSの場合：
 
-「このファイルでは debug ログは禁止」「エラーハンドリングは ErrorManager に一元化」「Canvas 要素の生成責務は Bootstrap に集約」など。
+.futaba-icon {
+    stroke: #800000;
+    fill: none;
+}
 
-AI がコードを読むとき最初にルールを把握できる。
 
-ログレベル管理
+注意：Pixi canvas上の描画には影響しない。あくまでDOM側のツールバーアイコン。
 
-ErrorManager や ConfigManager に LOG_LEVEL を置き、debug/info/warn/error のレベル別にまとめる。
+3. 確認ポイント
 
-本体コードからは ErrorManager.log('debug', 'メッセージ') のように呼び出す。
+CanvasManager.attach() で app.view が正しく取得できているか
 
-→ console 出力の氾濫防止、本番では OFF にできる。
+CanvasManager.init() が Promise を返して完了しているか
 
-フォールバック排除
+ペンポップアップやプリセット保持の処理は init完了後に行う
 
-本体コードには「必ず存在する前提」の API だけを書く。
-
-存在チェックや代替処理は Manager 層で吸収。
-
-どうしても必要な fallback は「禁止/推奨」ルールをヘッダーに明記してから Manager 側に実装。
-
-単一責務を保証するコメント
-
-例：@responsibility Bootstrap = Canvas生成のみ
-@responsibility AppCore = PixiJS初期化・Manager接続
-@responsibility TegakiApplication = DOMイベントとTool委譲のみ
-
-こう書いてあれば AI もファイルをまたいで役割を誤解しない。
-
+CSS/DOM変更は Pixi canvasより先に行わない
