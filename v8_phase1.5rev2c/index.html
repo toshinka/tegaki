@@ -9,7 +9,8 @@
          - Container階層によるレイヤー管理
          - 初回クリック問題解決・遅延なし描画
          - フォールバック削除・v8機能フル活用
-         - node_modules読み込み・ローカル運用対応 -->
+         - node_modules読み込み・ローカル運用対応
+         - 🎨 クリスタ風フレームレスキャンバス実装 -->
     <style>
         * {
             margin: 0;
@@ -139,22 +140,39 @@
             align-items: center;
         }
         
+        /* 🎨 クリスタ風フレームレス・キャンバスコンテナ */
         .canvas-container {
             background: transparent;
+            /* 🚫 枠線完全除去 - クリスタ風シンプル表示 */
             border: none;
-            border-radius: 0;
+            outline: none;
             box-shadow: none;
+            border-radius: 0;
             overflow: visible;
             position: relative;
+            /* キャンバス背景：ふたばクリーム（デフォルトレイヤー0）*/
+            background-color: var(--futaba-cream);
         }
         
         #canvas-container {
             display: block;
+            /* 🚫 枠線・アウトライン完全除去 */
+            border: none;
+            outline: none;
+            box-shadow: none;
+            /* 透明背景 - Canvas要素の背景色を活かす */
+            background: transparent;
         }
         
+        /* 🎨 Canvas要素自体も完全フレームレス */
         #canvas-container canvas {
             display: block;
             cursor: crosshair;
+            /* 🚫 Canvas要素の枠線・アウトライン完全除去 */
+            border: none !important;
+            outline: none !important;
+            box-shadow: none !important;
+            /* Canvas背景は app-core.js で設定（ふたばクリーム） */
         }
         
         .status-panel {
@@ -302,6 +320,20 @@
             color: var(--text-secondary);
             font-size: 12px;
         }
+        
+        /* 🎨 Phase2準備：透明度チェッカーパターン（レイヤー0削除時に表示）*/
+        .transparency-checker {
+            background-image: 
+                linear-gradient(45deg, #ffffff 25%, transparent 25%),
+                linear-gradient(-45deg, #ffffff 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #ffffff 75%),
+                linear-gradient(-45deg, transparent 75%, #ffffff 75%);
+            background-size: 16px 16px;
+            background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+            background-color: #e0e0e0;
+            /* Phase2実装時まで非表示 */
+            display: none;
+        }
     </style>
 </head>
 <body>
@@ -337,6 +369,7 @@
         
         <div class="canvas-area">
             <div class="canvas-container">
+                <!-- 🎨 フレームレス・キャンバスコンテナ（クリスタ風） -->
                 <div id="canvas-container"></div>
             </div>
         </div>
