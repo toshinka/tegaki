@@ -99,4 +99,67 @@ GitHub
 +1
 
 7. 設定を configManager 経由にして 400×400 や DPR 上限を外から変えられるようにする。
+
+最後に（まとめ）
+
+設計・方針（v8 準拠・非破壊描画・依存注入・イベントキュー）は 非常に良好。
 GitHub
++1
+
+ただし現状は 「設計はできてるが、Manager群の実装が欠けている」 ため、まず CanvasManager と CoordinateManager（と icons / ToolManager）の実装を最優先
+
+
+現状のコードで「肥大化・見通し悪化」しそうな要素
+
+console.log / console.warn の多用
+
+AppCore で console.warn を上書きして WebGPU 警告を消す仕組み → 他の警告も握りつぶす。
+
+PenTool や AppCore に「初期化待ち」「キュー追加」などのログが大量。
+
+→ デバッグ時は便利だが、本番ではノイズ。
+
+フォールバック的コードの散在
+
+例：if (!pixiApp?.stage) throw new Error(...) のような「毎回の防御」コードが多い。
+
+ルールブック通り「CanvasManager/CoordinateManager が責務を担う」と決まっているなら、ここは一箇所で保証すべきで、本体に冗長に書かない方がよい。
+
+責務の重複
+
+Canvas の生成や DOM 追加が、Bootstrap と TegakiApplication と AppCore に分散。
+
+どこで何が最初に呼ばれるかが複雑化 → AI からすると「依存ループに見える」恐れ。
+
+改善の方向性
+
+ヘッダーコメントで明文化
+
+「このファイルでは debug ログは禁止」「エラーハンドリングは ErrorManager に一元化」「Canvas 要素の生成責務は Bootstrap に集約」など。
+
+AI がコードを読むとき最初にルールを把握できる。
+
+ログレベル管理
+
+ErrorManager や ConfigManager に LOG_LEVEL を置き、debug/info/warn/error のレベル別にまとめる。
+
+本体コードからは ErrorManager.log('debug', 'メッセージ') のように呼び出す。
+
+→ console 出力の氾濫防止、本番では OFF にできる。
+
+フォールバック排除
+
+本体コードには「必ず存在する前提」の API だけを書く。
+
+存在チェックや代替処理は Manager 層で吸収。
+
+どうしても必要な fallback は「禁止/推奨」ルールをヘッダーに明記してから Manager 側に実装。
+
+単一責務を保証するコメント
+
+例：@responsibility Bootstrap = Canvas生成のみ
+@responsibility AppCore = PixiJS初期化・Manager接続
+@responsibility TegakiApplication = DOMイベントとTool委譲のみ
+
+こう書いてあれば AI もファイルをまたいで役割を誤解しない。
+
