@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8rev4 - キャンバス外描画対応</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8rev3 - キャンバス外描画対応</title>
     <style>
         * {
             margin: 0;
@@ -118,8 +118,6 @@
             display: inline-block;
             border-radius: 4px;
             box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
-            width: 100%;
-            height: 100%;
         }
         
         canvas {
@@ -306,36 +304,16 @@
             align-items: center;
             gap: 4px;
         }
-
-        .camera-controls {
-            position: fixed;
-            top: 20px;
-            right: 20px;
-            background: var(--futaba-cream);
-            border: 2px solid var(--futaba-medium);
-            border-radius: 8px;
-            padding: 10px;
-            z-index: 200;
-            display: flex;
-            flex-direction: column;
-            gap: 8px;
-        }
-
-        .camera-button {
-            padding: 6px 12px;
-            border: 1px solid var(--futaba-maroon);
-            background: var(--futaba-background);
+        
+        /* キャンバス外描画用の新しいスタイル */
+        .off-canvas-indicator {
+            position: absolute;
             color: var(--futaba-maroon);
-            border-radius: 4px;
-            cursor: pointer;
             font-size: 12px;
-            text-align: center;
-            transition: all 0.2s ease;
-        }
-
-        .camera-button:hover {
-            background: var(--futaba-maroon);
-            color: var(--text-inverse);
+            font-weight: bold;
+            pointer-events: none;
+            z-index: 10;
+            opacity: 0.7;
         }
         
         @media (max-width: 1200px) {
@@ -393,13 +371,6 @@
             </div>
         </div>
     </div>
-
-    <!-- カメラ操作コントロール -->
-    <div class="camera-controls">
-        <div class="camera-button" id="center-view">中央表示</div>
-        <div class="camera-button" id="fit-canvas">キャンバス全体</div>
-        <div class="camera-button" id="reset-zoom">ズームリセット</div>
-    </div>
     
     <!-- ポップアップパネル（ペンツール） -->
     <div class="popup-panel" id="pen-settings" style="left: 60px; top: 100px;">
@@ -425,6 +396,14 @@
                 </div>
                 <div class="slider-value" id="pen-opacity-value">85.0%</div>
             </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバス外描画</div>
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="offcanvas-enabled" checked style="margin: 0;">
+                <span style="font-size: 13px;">キャンバス外からの描画を許可</span>
+            </label>
         </div>
     </div>
     
@@ -452,10 +431,10 @@
             <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
             <div class="status-item">Color: <span id="current-color">#800000</span></div>
             <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
-            <div class="status-item">カメラ: <span id="camera-info">1.0x</span></div>
         </div>
         
         <div class="status-group">
+            <div class="status-item">Off-canvas: <span id="offcanvas-status">ON</span></div>
             <div class="status-item">FPS: <span id="fps">60</span></div>
             <div class="status-item">GPU: <span id="gpu-usage">45%</span></div>
             <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
@@ -464,40 +443,38 @@
 
     <!-- PixiJS v8 and Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/pixi-viewport@6.0.2/dist/viewport.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
     
     <script>
         /**
-         * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8rev4 - キャンバス外描画対応
-         * PixiJS v8 + pixi-viewport 対応版 - カメラ分離・キャンバス外描画機能
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8rev3 - キャンバス外描画対応版
+         * PixiJS v8 対応版 - キャンバス外からの描画開始・取り込み機能追加
          */
         
         // ==== Station: Global Configuration and Initialization ====
         class StationManager {
             constructor() {
                 this.config = {
-                    version: '8.0.4-extended',
+                    version: '8.0.3-offcanvas',
                     pixiVersion: '8.0.5',
                     canvasWidth: 400,
                     canvasHeight: 400,
-                    worldWidth: 2000,  // 拡張された描画領域
-                    worldHeight: 2000,
                     antialias: true,
-                    resolution: window.devicePixelRatio || 1,
-                    autoDensity: true
+                    resolution: 1, // 固定値でキャンバスサイズ倍加防止
+                    autoDensity: false // 自動調整無効化
                 };
                 
                 this.libraries = {
                     pixi: window.PIXI,
-                    viewport: window.pixiViewport,
-                    gsap: window.gsap
+                    gsap: window.gsap,
+                    hammer: window.Hammer
                 };
             }
             
             init() {
                 console.log(`🚂 Station: Initializing Futaba Drawing Tool v${this.config.version}`);
-                console.log(`📦 PixiJS v${this.config.pixiVersion} + pixi-viewport loaded`);
+                console.log(`📦 PixiJS v${this.config.pixiVersion} loaded`);
                 
                 // Check library availability
                 Object.entries(this.libraries).forEach(([name, lib]) => {
@@ -521,26 +498,27 @@
                 this.coreEngine = null;
                 this.uiController = null;
                 this.toolSystem = null;
-                this.cameraSystem = null;
+                this.viewport = null;
                 this.performanceMonitor = null;
+                this.offCanvasManager = null;
             }
             
             async init() {
                 console.log('🚂 Main: Starting application initialization');
                 
-                // Initialize PIXI Application
+                // Initialize PIXI Application with Futaba cream background
                 this.app = new PIXI.Application();
                 await this.app.init({
-                    width: window.innerWidth - 50, // サイドバー分を除く
-                    height: window.innerHeight,
-                    background: 0xffffee, // Futaba background
-                    backgroundAlpha: 1,
+                    width: this.station.config.canvasWidth,
+                    height: this.station.config.canvasHeight,
+                    background: 0xf0e0d6, // Futaba cream 修正
+                    backgroundAlpha: 1, // 完全不透明
                     antialias: this.station.config.antialias,
                     resolution: this.station.config.resolution,
                     autoDensity: this.station.config.autoDensity
                 });
                 
-                // Mount to DOM
+                // Mount to DOM with container for proper background display
                 const canvasContainer = document.getElementById('canvas-container');
                 canvasContainer.appendChild(this.app.canvas);
                 
@@ -548,25 +526,328 @@
                 this.coreEngine = new CoreEngine(this.app, this.station.config);
                 await this.coreEngine.init();
                 
-                this.cameraSystem = new CameraSystem(this.app, this.coreEngine, this.station.config);
-                this.cameraSystem.init();
-                
-                this.toolSystem = new ToolSystem(this.coreEngine, this.cameraSystem);
+                this.toolSystem = new ToolSystem(this.coreEngine);
                 this.toolSystem.init();
                 
-                this.uiController = new UIController(this.toolSystem, this.coreEngine, this.cameraSystem);
+                // Initialize off-canvas drawing manager
+                this.offCanvasManager = new OffCanvasManager(this.coreEngine, this.toolSystem);
+                this.offCanvasManager.init();
+                
+                this.uiController = new UIController(this.toolSystem, this.coreEngine, this.offCanvasManager);
                 this.uiController.init();
                 
                 this.performanceMonitor = new PerformanceMonitor();
                 this.performanceMonitor.start();
                 
-                console.log('✅ Main: Application ready with extended canvas support');
-                console.log('🔧 Features:');
-                console.log('  🎨 Extended canvas: キャンバス外描画対応');
-                console.log('  📷 Camera system: ドラッグ・ズーム・パン対応');
-                console.log('  🖌️ Seamless drawing: 境界を超えた描画');
+                // Setup viewport (pan/zoom with Hammer.js)
+                this.setupViewport();
+                
+                console.log('✅ Main: Application ready with off-canvas drawing');
+                console.log('🔧 New features:');
+                console.log('  🖌️ Off-canvas drawing: Start outside, commit inside');
+                console.log('  📚 Non-destructive stroke recording');
+                console.log('  🎯 Canvas boundary detection');
                 
                 return this.app;
+            }
+            
+            setupViewport() {
+                const canvas = this.app.canvas;
+                const hammer = new Hammer(canvas);
+                
+                // Enable pan and pinch
+                hammer.get('pan').set({ direction: Hammer.DIRECTION_ALL });
+                hammer.get('pinch').set({ enable: true });
+                
+                let lastPanX = 0, lastPanY = 0;
+                let lastScale = 1;
+                
+                hammer.on('panstart', (e) => {
+                    lastPanX = e.deltaX;
+                    lastPanY = e.deltaY;
+                });
+                
+                hammer.on('panmove', (e) => {
+                    if (this.toolSystem.isDrawing) return; // Don't pan while drawing
+                    
+                    const deltaX = e.deltaX - lastPanX;
+                    const deltaY = e.deltaY - lastPanY;
+                    
+                    this.coreEngine.drawingContainer.x += deltaX;
+                    this.coreEngine.drawingContainer.y += deltaY;
+                    
+                    lastPanX = e.deltaX;
+                    lastPanY = e.deltaY;
+                });
+                
+                hammer.on('pinchstart', (e) => {
+                    lastScale = e.scale;
+                });
+                
+                hammer.on('pinchmove', (e) => {
+                    if (this.toolSystem.isDrawing) return; // Don't zoom while drawing
+                    
+                    const scaleChange = e.scale / lastScale;
+                    this.coreEngine.drawingContainer.scale.x *= scaleChange;
+                    this.coreEngine.drawingContainer.scale.y *= scaleChange;
+                    
+                    lastScale = e.scale;
+                });
+            }
+        }
+        
+        // ==== Off-Canvas Drawing Manager ====
+        class OffCanvasManager {
+            constructor(coreEngine, toolSystem) {
+                this.coreEngine = coreEngine;
+                this.toolSystem = toolSystem;
+                this.enabled = true;
+                this.orphanStrokes = new Map(); // pointerId -> strokeData
+                this.tempGraphics = new Map(); // pointerId -> PIXI.Graphics (temp visual)
+                this.globalPointerActive = new Set(); // active pointers
+            }
+            
+            init() {
+                console.log('🚂 Off-Canvas Manager: Initializing off-canvas drawing');
+                this.setupGlobalListeners();
+            }
+            
+            setupGlobalListeners() {
+                // Global pointer events on entire window for off-canvas detection
+                document.addEventListener('pointerdown', this.onGlobalPointerDown.bind(this), true);
+                document.addEventListener('pointermove', this.onGlobalPointerMove.bind(this), true);
+                document.addEventListener('pointerup', this.onGlobalPointerUp.bind(this), true);
+                document.addEventListener('pointercancel', this.onGlobalPointerUp.bind(this), true);
+            }
+            
+            onGlobalPointerDown(event) {
+                if (!this.enabled || this.toolSystem.currentTool === 'eraser') return;
+                
+                // Check if pointer is outside canvas area
+                const canvasRect = this.coreEngine.app.canvas.getBoundingClientRect();
+                const isOutsideCanvas = (
+                    event.clientX < canvasRect.left ||
+                    event.clientX > canvasRect.right ||
+                    event.clientY < canvasRect.top ||
+                    event.clientY > canvasRect.bottom
+                );
+                
+                if (isOutsideCanvas) {
+                    // Start off-canvas stroke
+                    const worldPos = this.screenToWorld(event.clientX, event.clientY);
+                    this.startOffCanvasStroke(event.pointerId, worldPos.x, worldPos.y, event);
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                
+                this.globalPointerActive.add(event.pointerId);
+            }
+            
+            onGlobalPointerMove(event) {
+                if (!this.enabled) return;
+                
+                // Continue off-canvas stroke if exists
+                if (this.orphanStrokes.has(event.pointerId)) {
+                    const worldPos = this.screenToWorld(event.clientX, event.clientY);
+                    this.continueOffCanvasStroke(event.pointerId, worldPos.x, worldPos.y);
+                    
+                    // Check if stroke enters canvas bounds
+                    if (this.isPointInCanvas(worldPos.x, worldPos.y)) {
+                        this.commitOffCanvasStroke(event.pointerId);
+                    }
+                    
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+            }
+            
+            onGlobalPointerUp(event) {
+                if (this.orphanStrokes.has(event.pointerId)) {
+                    // End off-canvas stroke
+                    this.endOffCanvasStroke(event.pointerId);
+                    event.preventDefault();
+                    event.stopPropagation();
+                }
+                
+                this.globalPointerActive.delete(event.pointerId);
+            }
+            
+            startOffCanvasStroke(pointerId, x, y, event) {
+                console.log(`🖌️ Off-canvas stroke started at (${Math.round(x)}, ${Math.round(y)})`);
+                
+                // Create stroke data (non-destructive record)
+                const strokeData = {
+                    id: `offcanvas_${pointerId}_${Date.now()}`,
+                    points: [{ x, y, timestamp: Date.now() }],
+                    color: this.toolSystem.brushColor,
+                    size: this.toolSystem.brushSize,
+                    opacity: this.toolSystem.opacity,
+                    tool: this.toolSystem.currentTool,
+                    startTime: Date.now(),
+                    isOffCanvas: true
+                };
+                
+                this.orphanStrokes.set(pointerId, strokeData);
+                
+                // Create temporary visual representation
+                const tempGraphics = new PIXI.Graphics();
+                tempGraphics.alpha = 0.5; // Semi-transparent to indicate it's not committed
+                tempGraphics.circle(x, y, strokeData.size / 2);
+                tempGraphics.fill({ color: strokeData.color, alpha: strokeData.opacity });
+                
+                // Add to stage but behind main drawing
+                this.coreEngine.app.stage.addChildAt(tempGraphics, 0);
+                this.tempGraphics.set(pointerId, tempGraphics);
+                
+                // Show off-canvas indicator
+                this.showOffCanvasIndicator(x, y);
+            }
+            
+            continueOffCanvasStroke(pointerId, x, y) {
+                const strokeData = this.orphanStrokes.get(pointerId);
+                const tempGraphics = this.tempGraphics.get(pointerId);
+                
+                if (!strokeData || !tempGraphics) return;
+                
+                // Add point to stroke data
+                const lastPoint = strokeData.points[strokeData.points.length - 1];
+                const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
+                
+                if (distance >= 1.5) {
+                    strokeData.points.push({ x, y, timestamp: Date.now() });
+                    
+                    // Update temporary visual
+                    const steps = Math.max(1, Math.ceil(distance / 1.5));
+                    for (let i = 1; i <= steps; i++) {
+                        const t = i / steps;
+                        const px = lastPoint.x + (x - lastPoint.x) * t;
+                        const py = lastPoint.y + (y - lastPoint.y) * t;
+                        
+                        tempGraphics.circle(px, py, strokeData.size / 2);
+                        tempGraphics.fill({ color: strokeData.color, alpha: strokeData.opacity });
+                    }
+                }
+            }
+            
+            commitOffCanvasStroke(pointerId) {
+                const strokeData = this.orphanStrokes.get(pointerId);
+                const tempGraphics = this.tempGraphics.get(pointerId);
+                
+                if (!strokeData || !tempGraphics) return;
+                
+                console.log(`✅ Off-canvas stroke committed: ${strokeData.points.length} points`);
+                
+                // Remove temporary visual
+                this.coreEngine.app.stage.removeChild(tempGraphics);
+                tempGraphics.destroy();
+                this.tempGraphics.delete(pointerId);
+                
+                // Create real path in drawing system
+                if (strokeData.points.length > 0) {
+                    const firstPoint = strokeData.points[0];
+                    const realPath = this.coreEngine.createPath(
+                        firstPoint.x, firstPoint.y,
+                        strokeData.size, strokeData.color, strokeData.opacity, strokeData.tool
+                    );
+                    
+                    // Replay all points to create complete stroke
+                    for (let i = 1; i < strokeData.points.length; i++) {
+                        const point = strokeData.points[i];
+                        this.coreEngine.drawLine(realPath, point.x, point.y);
+                    }
+                    
+                    realPath.isComplete = true;
+                }
+                
+                // Clean up
+                this.orphanStrokes.delete(pointerId);
+                this.hideOffCanvasIndicator();
+            }
+            
+            endOffCanvasStroke(pointerId) {
+                const tempGraphics = this.tempGraphics.get(pointerId);
+                
+                if (tempGraphics) {
+                    // Remove temporary visual without committing
+                    this.coreEngine.app.stage.removeChild(tempGraphics);
+                    tempGraphics.destroy();
+                    this.tempGraphics.delete(pointerId);
+                }
+                
+                // Keep stroke data as orphan for potential future use
+                const strokeData = this.orphanStrokes.get(pointerId);
+                if (strokeData) {
+                    console.log(`📦 Off-canvas stroke stored as orphan: ${strokeData.points.length} points`);
+                    // Could implement orphan stroke management UI in the future
+                }
+                
+                this.hideOffCanvasIndicator();
+            }
+            
+            isPointInCanvas(x, y) {
+                return (x >= 0 && x <= this.coreEngine.config.canvasWidth &&
+                        y >= 0 && y <= this.coreEngine.config.canvasHeight);
+            }
+            
+            screenToWorld(clientX, clientY) {
+                // Convert screen coordinates to world coordinates
+                const canvasRect = this.coreEngine.app.canvas.getBoundingClientRect();
+                const canvasX = clientX - canvasRect.left;
+                const canvasY = clientY - canvasRect.top;
+                
+                // Account for container scaling and positioning
+                const container = this.coreEngine.drawingContainer;
+                const worldX = (canvasX - container.x) / container.scale.x;
+                const worldY = (canvasY - container.y) / container.scale.y;
+                
+                return { x: worldX, y: worldY };
+            }
+            
+            showOffCanvasIndicator(x, y) {
+                // Visual feedback for off-canvas drawing
+                this.hideOffCanvasIndicator(); // Remove existing
+                
+                const indicator = document.createElement('div');
+                indicator.className = 'off-canvas-indicator';
+                indicator.textContent = '⟫ Drawing off-canvas';
+                indicator.style.left = '60px';
+                indicator.style.top = '20px';
+                indicator.id = 'off-canvas-indicator';
+                
+                document.body.appendChild(indicator);
+            }
+            
+            hideOffCanvasIndicator() {
+                const indicator = document.getElementById('off-canvas-indicator');
+                if (indicator) {
+                    indicator.remove();
+                }
+            }
+            
+            setEnabled(enabled) {
+                this.enabled = enabled;
+                console.log(`Off-canvas drawing: ${enabled ? 'enabled' : 'disabled'}`);
+                
+                // Update status display
+                const statusElement = document.getElementById('offcanvas-status');
+                if (statusElement) {
+                    statusElement.textContent = enabled ? 'ON' : 'OFF';
+                }
+            }
+            
+            // Get orphan strokes for potential future features (layer management, etc.)
+            getOrphanStrokes() {
+                return Array.from(this.orphanStrokes.values());
+            }
+            
+            // Clear all orphan strokes
+            clearOrphanStrokes() {
+                this.orphanStrokes.clear();
+                this.tempGraphics.forEach(graphics => {
+                    this.coreEngine.app.stage.removeChild(graphics);
+                    graphics.destroy();
+                });
+                this.tempGraphics.clear();
             }
         }
         
@@ -575,48 +856,59 @@
             constructor(app, config) {
                 this.app = app;
                 this.config = config;
-                this.backgroundLayer = null;
-                this.canvasLayer = null;
                 this.drawingContainer = null;
-                this.canvasOutline = null;
                 this.paths = [];
             }
             
             async init() {
-                console.log('🚂 A1-Core: Initializing extended drawing engine');
+                console.log('🚂 A1-Core: Initializing drawing engine');
                 
-                // Create background layer
-                this.backgroundLayer = new PIXI.Container();
-                this.app.stage.addChild(this.backgroundLayer);
-                
-                // Create extended background (world space)
-                const worldBg = new PIXI.Graphics();
-                worldBg.rect(0, 0, this.config.worldWidth, this.config.worldHeight);
-                worldBg.fill(0xf0e0d6); // Futaba cream
-                this.backgroundLayer.addChild(worldBg);
-                
-                // Create canvas layer
-                this.canvasLayer = new PIXI.Container();
-                this.backgroundLayer.addChild(this.canvasLayer);
-                
-                // Create canvas outline (logical canvas boundary)
-                this.canvasOutline = new PIXI.Graphics();
-                const centerX = (this.config.worldWidth - this.config.canvasWidth) / 2;
-                const centerY = (this.config.worldHeight - this.config.canvasHeight) / 2;
-                
-                this.canvasOutline.rect(centerX, centerY, this.config.canvasWidth, this.config.canvasHeight);
-                this.canvasOutline.stroke({ width: 2, color: 0x800000, alpha: 0.5 });
-                this.canvasLayer.addChild(this.canvasOutline);
-                
-                // Create main drawing container
+                // Create main drawing container with proper initialization
                 this.drawingContainer = new PIXI.Container();
+                this.drawingContainer.pivot.set(0, 0); // 左上原点に設定
                 this.drawingContainer.position.set(0, 0);
-                this.canvasLayer.addChild(this.drawingContainer);
+                this.app.stage.addChild(this.drawingContainer);
+                
+                // Setup interaction on drawing container directly
+                this.drawingContainer.interactive = true;
+                this.drawingContainer.on('pointerdown', this.onPointerDown.bind(this));
+                this.drawingContainer.on('pointermove', this.onPointerMove.bind(this));
+                this.drawingContainer.on('pointerup', this.onPointerUp.bind(this));
+                this.drawingContainer.on('pointerupoutside', this.onPointerUp.bind(this));
+                
+                // Set proper hit area
+                this.drawingContainer.hitArea = new PIXI.Rectangle(0, 0, this.config.canvasWidth, this.config.canvasHeight);
                 
                 return true;
             }
             
-            // 論理座標系での描画（キャンバス外も含む）
+            onPointerDown(event) {
+                const pos = this.drawingContainer.toLocal(event.data.global);
+                if (this.toolSystem) {
+                    this.toolSystem.startDrawing(pos.x, pos.y);
+                }
+            }
+            
+            onPointerMove(event) {
+                const pos = this.drawingContainer.toLocal(event.data.global);
+                if (this.toolSystem) {
+                    this.toolSystem.updateCoordinates(pos.x, pos.y);
+                    this.toolSystem.continueDrawing(pos.x, pos.y);
+                }
+            }
+            
+            onPointerUp(event) {
+                if (this.toolSystem) {
+                    this.toolSystem.stopDrawing();
+                }
+            }
+            
+            // Screen to canvas coordinate conversion (統一された変換関数)
+            screenToCanvas(globalPos) {
+                return this.drawingContainer.toLocal(globalPos);
+            }
+            
+            // Create path with vector support (v8 API 使用)
             createPath(x, y, size, color, opacity, tool = 'pen') {
                 const path = {
                     id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -626,31 +918,32 @@
                     size: size,
                     opacity: opacity,
                     tool: tool,
-                    isComplete: false
+                    isComplete: false,
+                    createdAt: Date.now()
                 };
                 
-                // 初期点を描画（v8 API使用）
+                // Draw initial circle using v8 API
                 path.graphics.circle(x, y, size / 2);
                 path.graphics.fill({ color: path.color, alpha: path.opacity });
                 
-                path.points.push({ x, y, size });
+                path.points.push({ x, y, size, timestamp: Date.now() });
                 
                 this.drawingContainer.addChild(path.graphics);
                 this.paths.push(path);
                 return path;
             }
             
-            // 継続描画（スムーズな線描画）
+            // Continue drawing line with smooth circles
             drawLine(path, x, y) {
                 if (!path || path.points.length === 0) return;
                 
                 const lastPoint = path.points[path.points.length - 1];
                 const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
                 
-                // 距離フィルタ
+                // Minimum distance filter
                 if (distance < 1.5) return;
                 
-                // 連続する円で滑らかな線を描画
+                // Draw continuous circles for smooth line using v8 API
                 const steps = Math.max(1, Math.ceil(distance / 1.5));
                 for (let i = 1; i <= steps; i++) {
                     const t = i / steps;
@@ -661,24 +954,31 @@
                     path.graphics.fill({ color: path.color, alpha: path.opacity });
                 }
                 
-                path.points.push({ x, y, size: path.size });
+                path.points.push({ x, y, size: path.size, timestamp: Date.now() });
             }
             
-            // キャンバスリサイズ（論理キャンバスサイズ変更）
-            resize(newWidth, newHeight) {
+            // Resize canvas with proper resolution handling
+            resize(newWidth, newHeight, centerContent = false) {
+                const oldWidth = this.config.canvasWidth;
+                const oldHeight = this.config.canvasHeight;
+                
                 this.config.canvasWidth = newWidth;
                 this.config.canvasHeight = newHeight;
                 
-                // キャンバス枠線の更新
-                this.canvasOutline.clear();
-                const centerX = (this.config.worldWidth - newWidth) / 2;
-                const centerY = (this.config.worldHeight - newHeight) / 2;
+                // Proper resize with fixed resolution
+                this.app.renderer.resize(newWidth, newHeight);
+                this.drawingContainer.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
                 
-                this.canvasOutline.rect(centerX, centerY, newWidth, newHeight);
-                this.canvasOutline.stroke({ width: 2, color: 0x800000, alpha: 0.5 });
+                if (centerContent && this.paths.length > 0) {
+                    const offsetX = (newWidth - oldWidth) / 2;
+                    const offsetY = (newHeight - oldHeight) / 2;
+                    
+                    this.drawingContainer.x += offsetX;
+                    this.drawingContainer.y += offsetY;
+                }
             }
             
-            // 全描画データをクリア
+            // Clear all paths
             clear() {
                 this.paths.forEach(path => {
                     this.drawingContainer.removeChild(path.graphics);
@@ -687,97 +987,11 @@
                 this.paths = [];
             }
         }
-
-        // ==== Camera System: Viewport Management ====
-        class CameraSystem {
-            constructor(app, coreEngine, config) {
-                this.app = app;
-                this.coreEngine = coreEngine;
-                this.config = config;
-                this.viewport = null;
-            }
-
-            init() {
-                console.log('🚂 Camera: Initializing viewport system');
-
-                // Create pixi-viewport
-                this.viewport = new pixiViewport.Viewport({
-                    screenWidth: this.app.screen.width,
-                    screenHeight: this.app.screen.height,
-                    worldWidth: this.config.worldWidth,
-                    worldHeight: this.config.worldHeight,
-                    events: this.app.renderer.events
-                });
-
-                // Add viewport to stage and move background to viewport
-                this.app.stage.addChild(this.viewport);
-                this.viewport.addChild(this.coreEngine.backgroundLayer);
-
-                // Enable camera controls
-                this.viewport
-                    .drag({ mouseButtons: 'right' }) // 右クリックでドラッグ
-                    .pinch()
-                    .wheel({ smooth: 3 })
-                    .decelerate()
-                    .clampZoom({ minScale: 0.1, maxScale: 5.0 });
-
-                // 初期位置を論理キャンバス中央に設定
-                this.centerOnCanvas();
-
-                // ズーム変更時の処理
-                this.viewport.on('zoomed', () => {
-                    this.updateCameraInfo();
-                });
-
-                this.viewport.on('moved', () => {
-                    this.updateCameraInfo();
-                });
-            }
-
-            // 論理キャンバス中央にカメラを移動
-            centerOnCanvas() {
-                const centerX = this.config.worldWidth / 2;
-                const centerY = this.config.worldHeight / 2;
-                this.viewport.moveCenter(centerX, centerY);
-            }
-
-            // キャンバス全体を表示
-            fitCanvas() {
-                const centerX = (this.config.worldWidth - this.config.canvasWidth) / 2;
-                const centerY = (this.config.worldHeight - this.config.canvasHeight) / 2;
-                
-                this.viewport.fitWorld(
-                    centerX - 50, centerY - 50,
-                    this.config.canvasWidth + 100,
-                    this.config.canvasHeight + 100
-                );
-            }
-
-            // ズームリセット
-            resetZoom() {
-                this.viewport.setZoom(1.0);
-                this.centerOnCanvas();
-            }
-
-            // スクリーン座標をワールド座標に変換
-            screenToWorld(globalPos) {
-                return this.viewport.toWorld(globalPos);
-            }
-
-            // カメラ情報を更新
-            updateCameraInfo() {
-                const cameraInfo = document.getElementById('camera-info');
-                if (cameraInfo) {
-                    cameraInfo.textContent = `${this.viewport.scale.x.toFixed(1)}x`;
-                }
-            }
-        }
         
         // ==== Tool System: Drawing Tools Management ====
         class ToolSystem {
-            constructor(coreEngine, cameraSystem) {
+            constructor(coreEngine) {
                 this.coreEngine = coreEngine;
-                this.cameraSystem = cameraSystem;
                 this.currentTool = 'pen';
                 this.brushSize = 16.0;
                 this.brushColor = 0x800000; // Futaba maroon
@@ -786,53 +1000,13 @@
                 this.currentPath = null;
                 this.lastPoint = null;
                 
-                // Set up event handlers
-                this.setupDrawingEvents();
+                // Set reference in core engine
+                this.coreEngine.toolSystem = this;
             }
             
             init() {
-                console.log('🚂 Tool System: Initializing extended drawing tools');
-            }
-
-            setupDrawingEvents() {
-                const canvas = this.cameraSystem.app.canvas;
-                
-                // Pointer events for drawing
-                canvas.addEventListener('pointerdown', (e) => this.onPointerDown(e));
-                canvas.addEventListener('pointermove', (e) => this.onPointerMove(e));
-                canvas.addEventListener('pointerup', (e) => this.onPointerUp(e));
-                canvas.addEventListener('pointercancel', (e) => this.onPointerUp(e));
-
-                // Prevent context menu on right click (used for camera)
-                canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-            }
-
-            onPointerDown(event) {
-                // 左クリックのみ描画（右クリックはカメラ操作用）
-                if (event.button !== 0) return;
-                
-                const globalPos = { x: event.clientX, y: event.clientY };
-                const worldPos = this.cameraSystem.screenToWorld(globalPos);
-                
-                this.startDrawing(worldPos.x, worldPos.y);
-                event.preventDefault();
-            }
-
-            onPointerMove(event) {
-                const globalPos = { x: event.clientX, y: event.clientY };
-                const worldPos = this.cameraSystem.screenToWorld(globalPos);
-                
-                this.updateCoordinates(worldPos.x, worldPos.y);
-                
-                if (this.isDrawing && event.buttons === 1) {
-                    this.continueDrawing(worldPos.x, worldPos.y);
-                }
-            }
-
-            onPointerUp(event) {
-                if (this.isDrawing) {
-                    this.stopDrawing();
-                }
+                console.log('🚂 Tool System: Initializing drawing tools');
+                // Event handling is now done in CoreEngine
             }
             
             setTool(tool) {
@@ -853,7 +1027,7 @@
                 this.lastPoint = { x, y };
                 
                 // For eraser, use background color with full opacity
-                const drawColor = this.currentTool === 'eraser' ? 0xf0e0d6 : this.brushColor;
+                const drawColor = this.currentTool === 'eraser' ? 0xf0e0d6 : this.brushColor; // Futaba cream for eraser
                 const drawOpacity = this.currentTool === 'eraser' ? 1.0 : this.opacity;
                 
                 this.currentPath = this.coreEngine.createPath(x, y, this.brushSize, drawColor, drawOpacity, this.currentTool);
@@ -885,10 +1059,10 @@
         
         // ==== B1-UI: User Interface Controller ====
         class UIController {
-            constructor(toolSystem, coreEngine, cameraSystem) {
+            constructor(toolSystem, coreEngine, offCanvasManager) {
                 this.toolSystem = toolSystem;
                 this.coreEngine = coreEngine;
-                this.cameraSystem = cameraSystem;
+                this.offCanvasManager = offCanvasManager;
                 this.activePopup = null;
                 this.sliders = new Map();
                 this.isDragging = false;
@@ -896,38 +1070,13 @@
             }
             
             init() {
-                console.log('🚂 B1-UI: Initializing extended user interface');
+                console.log('🚂 B1-UI: Initializing user interface');
                 this.setupToolButtons();
                 this.setupPopups();
                 this.setupSliders();
                 this.setupResizeHandlers();
-                this.setupCameraControls();
+                this.setupOffCanvasControls();
                 this.updateCanvasInfo();
-                this.updateCameraInfo();
-            }
-
-            setupCameraControls() {
-                const centerBtn = document.getElementById('center-view');
-                const fitBtn = document.getElementById('fit-canvas');
-                const resetBtn = document.getElementById('reset-zoom');
-
-                if (centerBtn) {
-                    centerBtn.addEventListener('click', () => {
-                        this.cameraSystem.centerOnCanvas();
-                    });
-                }
-
-                if (fitBtn) {
-                    fitBtn.addEventListener('click', () => {
-                        this.cameraSystem.fitCanvas();
-                    });
-                }
-
-                if (resetBtn) {
-                    resetBtn.addEventListener('click', () => {
-                        this.cameraSystem.resetZoom();
-                    });
-                }
             }
             
             setupToolButtons() {
@@ -1101,6 +1250,15 @@
                 }
             }
             
+            setupOffCanvasControls() {
+                const offCanvasCheckbox = document.getElementById('offcanvas-enabled');
+                if (offCanvasCheckbox) {
+                    offCanvasCheckbox.addEventListener('change', (e) => {
+                        this.offCanvasManager.setEnabled(e.target.checked);
+                    });
+                }
+            }
+            
             applyResize() {
                 const widthInput = document.getElementById('canvas-width');
                 const heightInput = document.getElementById('canvas-height');
@@ -1110,7 +1268,7 @@
                     const height = parseInt(heightInput.value);
                     
                     if (width >= 100 && width <= 4096 && height >= 100 && height <= 4096) {
-                        this.coreEngine.resize(width, height);
+                        this.coreEngine.resize(width, height, false);
                         this.updateCanvasInfo();
                         this.closeAllPopups();
                     }
@@ -1122,10 +1280,6 @@
                 if (canvasInfo) {
                     canvasInfo.textContent = `${this.coreEngine.config.canvasWidth}×${this.coreEngine.config.canvasHeight}px`;
                 }
-            }
-
-            updateCameraInfo() {
-                // Camera info is updated by CameraSystem
             }
             
             closeAllPopups() {
@@ -1177,7 +1331,7 @@
             
             async init() {
                 try {
-                    console.log('🎨 Futaba Vector Drawing Tool v8rev4-extended - Starting initialization');
+                    console.log('🎨 Futaba Vector Drawing Tool v8rev3-offcanvas - Starting initialization');
                     
                     // Initialize station (global config and libraries)
                     if (!this.station.init()) {
@@ -1188,18 +1342,12 @@
                     this.main = new MainController(this.station);
                     await this.main.init();
                     
-                    console.log('✅ Futaba Drawing Tool v8rev4-extended - Ready!');
-                    console.log('🎯 Extended Features:');
-                    console.log('  🖌️  キャンバス外描画: 境界を超えた描画が可能');
-                    console.log('  📷  カメラシステム: 右クリックドラッグ・ホイールズーム');
-                    console.log('  🔍  ビューポート: 論理キャンバスと表示領域の分離');
-                    console.log('  📐  座標変換: スクリーン⇄ワールド座標の統一変換');
-                    console.log('');
-                    console.log('📝 操作方法:');
-                    console.log('  🖱️  左クリック: 描画');
-                    console.log('  🖱️  右クリックドラッグ: カメラ移動');
-                    console.log('  🎯  マウスホイール: ズーム');
-                    console.log('  📷  右上ボタン: カメラ操作');
+                    console.log('✅ Futaba Drawing Tool v8rev3-offcanvas - Ready!');
+                    console.log('🎯 New Features:');
+                    console.log('  🖌️  Off-canvas Drawing: Start outside canvas, commit when entering');
+                    console.log('  📚  Non-destructive Recording: All strokes preserved for future features');
+                    console.log('  🎯  Canvas Boundary Detection: Automatic stroke commitment');
+                    console.log('  ⚙️  Toggle Control: Enable/disable off-canvas drawing');
                     
                     return true;
                 } catch (error) {
@@ -1224,9 +1372,6 @@
                             <div>⚠️ アプリケーションの初期化に失敗しました</div>
                             <div style="font-size: 14px; margin-top: 10px;">
                                 ブラウザのコンソールでエラー詳細を確認してください
-                            </div>
-                            <div style="font-size: 12px; margin-top: 20px; color: var(--text-secondary);">
-                                PixiJS v8 + pixi-viewport が必要です
                             </div>
                         </div>
                     `;
