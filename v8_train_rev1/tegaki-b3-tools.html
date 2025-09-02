@@ -1,0 +1,208 @@
+<!-- File: tegaki-b3-tools.html -->
+<script>
+/**
+ * 🚋 B3-Tools: ツールシステム
+ * @provides: ペン設定, 描画ツール, 設定管理
+ * @depends: A1-Core, A2-Integration
+ * @role: ツール管理
+ */
+
+window.Tegaki = window.Tegaki || {};
+
+Tegaki.B3 = (() => {
+    "use strict";
+    
+    // ==== Tool System ====
+    class ToolSystem {
+        constructor() {
+            // v7rev2の初期設定を完全移植
+            this.currentTool = 'pen';
+            this.brushSize = 16.0;
+            this.brushColor = 0x800000;  // ふたば茶
+            this.opacity = 0.85;         // 85%
+            this.pressure = 0.5;         // 50%
+            this.smoothing = 0.3;        // 30%
+            
+            // 描画状態
+            this.isDrawing = false;
+            this.currentPath = null;
+            this.lastPoint = null;
+            
+            // 設定フラグ
+            this.pressureSensitivity = true;
+            this.edgeSmoothing = true;
+            this.gpuAcceleration = true;
+        }
+        
+        init() {
+            console.log('[B3-Tools] ツールシステム初期化');
+            
+            // 初期値でB2-Statusを更新
+            this.updateStatusDisplay();
+            
+            console.log('[B3-Tools] ✅ ツールシステム初期化完了');
+        }
+        
+        // ==== Tool Management ====
+        setTool(tool) {
+            const oldTool = this.currentTool;
+            this.currentTool = tool;
+            
+            console.log(`[B3-Tools] ツール変更: ${oldTool} -> ${tool}`);
+            
+            // ステータス更新
+            if (Tegaki.B2 && Tegaki.B2.updateToolInfo) {
+                Tegaki.B2.updateToolInfo(tool);
+            }
+        }
+        
+        getCurrentTool() {
+            return this.currentTool;
+        }
+        
+        // ==== Brush Settings ====
+        setBrushSize(size) {
+            const oldSize = this.brushSize;
+            this.brushSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
+            
+            if (oldSize !== this.brushSize) {
+                console.log(`[B3-Tools] ブラシサイズ: ${oldSize} -> ${this.brushSize}px`);
+                
+                // B1-UIのプリセット表示を更新
+                if (Tegaki.B1 && Tegaki.B1.updateSizePresets) {
+                    Tegaki.B1.updateSizePresets();
+                }
+            }
+        }
+        
+        getBrushSize() {
+            return this.brushSize;
+        }
+        
+        setOpacity(opacity) {
+            const oldOpacity = this.opacity;
+            this.opacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
+            
+            if (oldOpacity !== this.opacity) {
+                console.log(`[B3-Tools] 不透明度: ${Math.round(oldOpacity * 100)}% -> ${Math.round(this.opacity * 100)}%`);
+                
+                // B1-UIのプリセット表示を更新
+                if (Tegaki.B1 && Tegaki.B1.updateSizePresets) {
+                    Tegaki.B1.updateSizePresets();
+                }
+            }
+        }
+        
+        getOpacity() {
+            return this.opacity;
+        }
+        
+        setPressure(pressure) {
+            const oldPressure = this.pressure;
+            this.pressure = Math.max(0, Math.min(1, Math.round(pressure * 1000) / 1000));
+            
+            if (oldPressure !== this.pressure) {
+                console.log(`[B3-Tools] 筆圧: ${Math.round(oldPressure * 100)}% -> ${Math.round(this.pressure * 100)}%`);
+            }
+        }
+        
+        getCurrentPressure() {
+            return this.pressure;
+        }
+        
+        setSmoothing(smoothing) {
+            const oldSmoothing = this.smoothing;
+            this.smoothing = Math.max(0, Math.min(1, Math.round(smoothing * 1000) / 1000));
+            
+            if (oldSmoothing !== this.smoothing) {
+                console.log(`[B3-Tools] 線補正: ${Math.round(oldSmoothing * 100)}% -> ${Math.round(this.smoothing * 100)}%`);
+            }
+        }
+        
+        getSmoothing() {
+            return this.smoothing;
+        }
+        
+        // ==== Color Management ====
+        setBrushColor(color) {
+            const oldColor = this.brushColor;
+            this.brushColor = typeof color === 'string' ? parseInt(color.replace('#', ''), 16) : color;
+            
+            if (oldColor !== this.brushColor) {
+                const colorHex = '#' + this.brushColor.toString(16).padStart(6, '0');
+                console.log(`[B3-Tools] 色変更: #${oldColor.toString(16)} -> ${colorHex}`);
+                
+                // B2-Statusの色表示を更新
+                if (Tegaki.B2 && Tegaki.B2.updateColorInfo) {
+                    Tegaki.B2.updateColorInfo(colorHex);
+                }
+            }
+        }
+        
+        getBrushColor() {
+            return this.brushColor;
+        }
+        
+        getBrushColorHex() {
+            return '#' + this.brushColor.toString(16).padStart(6, '0');
+        }
+        
+        // ==== Feature Toggles ====
+        setPressureSensitivity(enabled) {
+            this.pressureSensitivity = enabled;
+            console.log(`[B3-Tools] 筆圧感度: ${enabled ? 'ON' : 'OFF'}`);
+        }
+        
+        setEdgeSmoothing(enabled) {
+            this.edgeSmoothing = enabled;
+            console.log(`[B3-Tools] エッジスムージング: ${enabled ? 'ON' : 'OFF'}`);
+        }
+        
+        setGPUAcceleration(enabled) {
+            this.gpuAcceleration = enabled;
+            console.log(`[B3-Tools] GPU加速: ${enabled ? 'ON' : 'OFF'}`);
+        }
+        
+        // ==== Drawing State Management ====
+        startDrawing(x, y) {
+            this.isDrawing = true;
+            this.lastPoint = { x, y };
+            console.log(`[B3-Tools] 描画開始: (${x.toFixed(1)}, ${y.toFixed(1)})`);
+        }
+        
+        continueDrawing(x, y) {
+            if (!this.isDrawing) return false;
+            
+            this.lastPoint = { x, y };
+            return true;
+        }
+        
+        stopDrawing() {
+            if (!this.isDrawing) return;
+            
+            this.isDrawing = false;
+            this.currentPath = null;
+            this.lastPoint = null;
+            console.log('[B3-Tools] 描画終了');
+        }
+        
+        // ==== Preset Management ====
+        loadPreset(presetName) {
+            const presets = {
+                'fine': { size: 2.0, opacity: 0.9, pressure: 0.3 },
+                'normal': { size: 16.0, opacity: 0.85, pressure: 0.5 },
+                'thick': { size: 32.0, opacity: 0.8, pressure: 0.7 }
+            };
+            
+            const preset = presets[presetName];
+            if (preset) {
+                this.setBrushSize(preset.size);
+                this.setOpacity(preset.opacity);
+                this.setPressure(preset.pressure);
+                
+                console.log(`[B3-Tools] プリセット適用: ${presetName}`);
+                
+                // UI反映
+                if (Tegaki.B1) {
+                    if (Tegaki.B1.updateSliderValue) {
+                        Tegaki.B1.
