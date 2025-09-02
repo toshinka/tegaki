@@ -1,0 +1,163 @@
+Futaba Vector Drawing Tool v8
+v8 化後 修正ガイド
+1. キャンバスと背景透明化
+
+問題
+
+キャンバスに枠が出ている、透明枠になっていない
+
+確認点 / 修正方法
+
+Pixi.Application 初期化時に backgroundAlpha: 0 を設定する
+
+const app = new PIXI.Application({
+  width: canvasWidth,
+  height: canvasHeight,
+  backgroundAlpha: 0, // 透明にする
+  antialias: true
+});
+
+
+CSS 側も確認
+
+canvas {
+  border: none;
+  display: block;
+}
+
+
+Container / Viewport の背景色が透過になっているかも確認
+
+2. 座標系（左上原点）
+
+問題
+
+描画がズレる、座標が怪しい
+
+左上を (0,0) にしたいが、v8 化後の Container / Viewport の pivot や position が影響している可能性
+
+確認点 / 修正方法
+
+メイン描画用 Container の pivot は (0,0) にする
+
+drawingContainer.pivot.set(0, 0);
+drawingContainer.position.set(0, 0);
+
+
+Viewport を使用している場合
+
+viewport.setZoom(1); // 初期ズーム
+viewport.moveCenter(0, 0); // 原点を左上に
+
+
+pointer イベントでスクリーン座標→キャンバス座標変換を統一
+
+const toCanvas = (e) => {
+  const pos = e.data.global;
+  return drawingContainer.toLocal(pos);
+}
+
+3. サイドバーアイコン（SVG）
+
+問題
+
+SVG がロードされず、独自描画になっている
+
+確認点 / 修正方法
+
+CDN 経由で @tabler/icons または lucide を読み込む
+
+<script type="module">
+import { IconName } from 'https://cdn.jsdelivr.net/npm/@tabler/icons@3.34.1/icons/index.esm.js';
+</script>
+
+
+Pixi.UI Button にアイコンを割り当てる
+
+const btn = new PIXI.UI.Button({
+  label: '', // アイコンのみ
+  icon: IconName, // SVGパスを設定
+});
+
+
+v8 API では Texture.from(URL/SVG) で生成
+
+const texture = PIXI.Texture.from('path/to/icon.svg');
+btn.icon.texture = texture;
+
+
+ローカル参照の場合は、相対パスと CORS に注意
+
+4. ペン描画できない
+
+問題
+
+pointerdown / pointermove / pointerup が動作していない
+
+座標系のズレやイベントバインド不足の可能性
+
+確認点 / 修正方法
+
+Container / Viewport への pointer イベント登録
+
+drawingContainer.interactive = true;
+drawingContainer.on('pointerdown', onPointerDown);
+drawingContainer.on('pointermove', onPointerMove);
+drawingContainer.on('pointerup', onPointerUp);
+drawingContainer.on('pointerupoutside', onPointerUp);
+
+
+Event オブジェクトで global 座標を取得し、Container.toLocal で変換
+
+function onPointerMove(e) {
+  if(!isDrawing) return;
+  const pos = drawingContainer.toLocal(e.data.global);
+  currentPath.lineTo(pos.x, pos.y);
+}
+
+
+Graphics の再描画時に clear → lineStyle → moveTo → lineTo の順で描画
+
+5. 全体初期化フロー確認
+
+順序
+
+station: 初期化ログ / ライブラリ読み込み
+
+main: Pixi.Application 作成 / 描画 Container 準備
+
+A1-Core: 描画エンジン初期化（Graphics, Container, pointer イベント）
+
+Tool System: pen/eraser 他ツール初期化
+
+B1-UI: ボタン・ポップアップ初期化（Pixi.UI Button / icon 割り当て）
+
+Performance Monitor: FPS / デバッグ表示開始
+
+6. 推奨修正手順
+
+キャンバス透明化と CSS 修正
+
+描画 Container / Viewport の pivot/position を修正
+
+pointer イベントバインドと座標変換関数確認
+
+SVG アイコンロード確認・Pixi.UI Button への割り当て
+
+ペン描画テスト
+
+0,0 起点で動くか
+
+lineStyle/Graphics.clear が反映されるか
+
+全体ログで初期化順序を確認
+
+必要に応じてツール・UI の微調整
+
+💡 注意ポイント
+
+Pixi v8 では Graphics / Texture.from / Interactive の挙動が v7 と微妙に違う
+
+Event / Viewport の初期化順序が描画成功に直結
+
+SVGアイコンのパス解釈は v8 用に修正必要

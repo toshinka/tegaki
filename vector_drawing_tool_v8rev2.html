@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8rev2</title>
     <style>
         * {
             margin: 0;
@@ -112,10 +112,10 @@
             align-items: center;
         }
         
-        #drawing-canvas {
+        canvas {
+            border: none;
             display: block;
             cursor: crosshair;
-            border: 1px solid var(--futaba-light-medium);
         }
         
         .popup-panel {
@@ -454,21 +454,20 @@
     
     <script>
         /**
-         * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8
-         * PixiJS v8 対応版
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8rev2
+         * PixiJS v8 対応版 - 修正版
          */
         
         // ==== Station: Global Configuration and Initialization ====
         class StationManager {
             constructor() {
                 this.config = {
-                    version: '8.0.0',
+                    version: '8.0.2',
                     pixiVersion: '8.0.5',
                     canvasWidth: 400,
                     canvasHeight: 400,
-                    backgroundColor: 0xf0e0d6,
                     antialias: true,
-                    resolution: 1
+                    resolution: window.devicePixelRatio || 1
                 };
                 
                 this.libraries = {
@@ -511,19 +510,20 @@
             async init() {
                 console.log('🚂 Main: Starting application initialization');
                 
-                // Initialize PIXI Application
+                // Initialize PIXI Application with transparent background
                 this.app = new PIXI.Application();
                 await this.app.init({
                     width: this.station.config.canvasWidth,
                     height: this.station.config.canvasHeight,
-                    backgroundColor: this.station.config.backgroundColor,
+                    backgroundAlpha: 0, // 透明化
                     antialias: this.station.config.antialias,
                     resolution: this.station.config.resolution,
                     autoDensity: false
                 });
                 
                 // Mount to DOM
-                document.getElementById('drawing-canvas').appendChild(this.app.canvas);
+                const canvasContainer = document.getElementById('drawing-canvas');
+                canvasContainer.appendChild(this.app.canvas);
                 
                 // Initialize car modules in order
                 this.coreEngine = new CoreEngine(this.app, this.station.config);
@@ -597,43 +597,65 @@
                 this.config = config;
                 this.drawingContainer = null;
                 this.paths = [];
-                this.backgroundColor = config.backgroundColor;
             }
             
             async init() {
                 console.log('🚂 A1-Core: Initializing drawing engine');
                 
-                // Create main drawing container
+                // Create main drawing container with proper initialization
                 this.drawingContainer = new PIXI.Container();
+                this.drawingContainer.pivot.set(0, 0); // 左上原点に設定
+                this.drawingContainer.position.set(0, 0);
                 this.app.stage.addChild(this.drawingContainer);
                 
-                // Setup interaction
-                this.app.stage.eventMode = 'static';
-                this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.config.canvasWidth, this.config.canvasHeight);
+                // Setup interaction on drawing container directly
+                this.drawingContainer.interactive = true;
+                this.drawingContainer.on('pointerdown', this.onPointerDown.bind(this));
+                this.drawingContainer.on('pointermove', this.onPointerMove.bind(this));
+                this.drawingContainer.on('pointerup', this.onPointerUp.bind(this));
+                this.drawingContainer.on('pointerupoutside', this.onPointerUp.bind(this));
+                
+                // Set proper hit area
+                this.drawingContainer.hitArea = new PIXI.Rectangle(0, 0, this.config.canvasWidth, this.config.canvasHeight);
                 
                 return true;
             }
             
-            // Screen to canvas coordinate conversion
-            screenToCanvas(screenX, screenY) {
-                const rect = this.app.canvas.getBoundingClientRect();
-                const x = (screenX - rect.left) * (this.config.canvasWidth / rect.width);
-                const y = (screenY - rect.top) * (this.config.canvasHeight / rect.height);
-                
-                // Apply container transform
-                const localPoint = this.drawingContainer.toLocal(new PIXI.Point(x, y), this.app.stage);
-                return { x: localPoint.x, y: localPoint.y };
+            onPointerDown(event) {
+                const pos = this.drawingContainer.toLocal(event.data.global);
+                if (this.toolSystem) {
+                    this.toolSystem.startDrawing(pos.x, pos.y);
+                }
             }
             
-            // Create path with vector support
+            onPointerMove(event) {
+                const pos = this.drawingContainer.toLocal(event.data.global);
+                if (this.toolSystem) {
+                    this.toolSystem.updateCoordinates(pos.x, pos.y);
+                    this.toolSystem.continueDrawing(pos.x, pos.y);
+                }
+            }
+            
+            onPointerUp(event) {
+                if (this.toolSystem) {
+                    this.toolSystem.stopDrawing();
+                }
+            }
+            
+            // Screen to canvas coordinate conversion (統一された変換関数)
+            screenToCanvas(globalPos) {
+                return this.drawingContainer.toLocal(globalPos);
+            }
+            
+            // Create path with vector support (v8 API 使用)
             createPath(x, y, size, color, opacity, tool = 'pen') {
                 const path = {
                     id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                     graphics: new PIXI.Graphics(),
                     points: [],
-                    color: tool === 'eraser' ? this.backgroundColor : color,
+                    color: color,
                     size: size,
-                    opacity: tool === 'eraser' ? 1.0 : opacity,
+                    opacity: opacity,
                     tool: tool,
                     isComplete: false
                 };
@@ -659,7 +681,7 @@
                 // Minimum distance filter
                 if (distance < 1.5) return;
                 
-                // Draw continuous circles for smooth line
+                // Draw continuous circles for smooth line using v8 API
                 const steps = Math.max(1, Math.ceil(distance / 1.5));
                 for (let i = 1; i <= steps; i++) {
                     const t = i / steps;
@@ -682,7 +704,7 @@
                 this.config.canvasHeight = newHeight;
                 
                 this.app.renderer.resize(newWidth, newHeight);
-                this.app.stage.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
+                this.drawingContainer.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
                 
                 if (centerContent && this.paths.length > 0) {
                     const offsetX = (newWidth - oldWidth) / 2;
@@ -714,40 +736,14 @@
                 this.isDrawing = false;
                 this.currentPath = null;
                 this.lastPoint = null;
+                
+                // Set reference in core engine
+                this.coreEngine.toolSystem = this;
             }
             
             init() {
                 console.log('🚂 Tool System: Initializing drawing tools');
-                this.setupCanvasEvents();
-            }
-            
-            setupCanvasEvents() {
-                const stage = this.coreEngine.app.stage;
-                
-                stage.on('pointerdown', (event) => {
-                    const globalPoint = event.global;
-                    const canvasPoint = this.coreEngine.screenToCanvas(globalPoint.x, globalPoint.y);
-                    this.startDrawing(canvasPoint.x, canvasPoint.y);
-                });
-                
-                stage.on('pointermove', (event) => {
-                    const globalPoint = event.global;
-                    const canvasPoint = this.coreEngine.screenToCanvas(globalPoint.x, globalPoint.y);
-                    
-                    // Update coordinates display
-                    this.updateCoordinates(canvasPoint.x, canvasPoint.y);
-                    
-                    // Continue drawing if active
-                    this.continueDrawing(canvasPoint.x, canvasPoint.y);
-                });
-                
-                stage.on('pointerup', () => {
-                    this.stopDrawing();
-                });
-                
-                stage.on('pointerupoutside', () => {
-                    this.stopDrawing();
-                });
+                // Event handling is now done in CoreEngine
             }
             
             setTool(tool) {
@@ -766,7 +762,12 @@
             startDrawing(x, y) {
                 this.isDrawing = true;
                 this.lastPoint = { x, y };
-                this.currentPath = this.coreEngine.createPath(x, y, this.brushSize, this.brushColor, this.opacity, this.currentTool);
+                
+                // For eraser, use background color with full opacity
+                const drawColor = this.currentTool === 'eraser' ? 0xffffee : this.brushColor;
+                const drawOpacity = this.currentTool === 'eraser' ? 1.0 : this.opacity;
+                
+                this.currentPath = this.coreEngine.createPath(x, y, this.brushSize, drawColor, drawOpacity, this.currentTool);
             }
             
             continueDrawing(x, y) {
@@ -831,6 +832,7 @@
                     this.togglePopup('pen-settings');
                 } else if (toolId === 'eraser-tool') {
                     this.setTool('eraser');
+                    this.closeAllPopups();
                 } else if (toolId === 'resize-tool') {
                     this.togglePopup('resize-settings');
                 }
@@ -849,6 +851,10 @@
                 if (toolElement) {
                     toolElement.textContent = toolNames[tool] || tool;
                 }
+                
+                // Update canvas cursor
+                const canvas = this.coreEngine.app.canvas;
+                canvas.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair';
             }
             
             togglePopup(popupId) {
@@ -987,9 +993,11 @@
                     const width = parseInt(widthInput.value);
                     const height = parseInt(heightInput.value);
                     
-                    this.coreEngine.resize(width, height, false);
-                    this.updateCanvasInfo();
-                    this.closeAllPopups();
+                    if (width >= 100 && width <= 4096 && height >= 100 && height <= 4096) {
+                        this.coreEngine.resize(width, height, false);
+                        this.updateCanvasInfo();
+                        this.closeAllPopups();
+                    }
                 }
             }
             
@@ -1049,7 +1057,7 @@
             
             async init() {
                 try {
-                    console.log('🎨 Futaba Vector Drawing Tool v8 - Starting initialization');
+                    console.log('🎨 Futaba Vector Drawing Tool v8rev2 - Starting initialization');
                     
                     // Initialize station (global config and libraries)
                     if (!this.station.init()) {
@@ -1060,8 +1068,8 @@
                     this.main = new MainController(this.station);
                     await this.main.init();
                     
-                    console.log('✅ Futaba Drawing Tool v8 - Ready!');
-                    console.log('🎯 Features: PixiJS v8, Vector Drawing, Viewport Control');
+                    console.log('✅ Futaba Drawing Tool v8rev2 - Ready!');
+                    console.log('🎯 Features: PixiJS v8, Vector Drawing, Fixed Canvas & Pointer Events');
                     
                     return true;
                 } catch (error) {
