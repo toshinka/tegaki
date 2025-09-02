@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev5 - オフキャンバス対応</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev6 - pixi-viewport カメラ移動版</title>
     <style>
         * {
             margin: 0;
@@ -428,7 +428,7 @@
     <div class="status-panel">
         <div class="status-group">
             <div class="status-item">Camera: <span id="camera-info">400×400px</span></div>
-            <div class="status-item">Backend: <span id="backend-info">1200×1200px</span></div>
+            <div class="status-item">World: <span id="world-info">2000×2000px</span></div>
             <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
             <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
         </div>
@@ -436,28 +436,32 @@
         <div class="status-group">
             <div class="status-item">Off-canvas: <span id="offcanvas-status">ON</span></div>
             <div class="status-item">History: <span id="history-status">0/50</span></div>
+            <div class="status-item">Camera: <span id="camera-transform">位置(0,0) 拡大1.00 回転0°</span></div>
             <div class="status-item">FPS: <span id="fps">60</span></div>
         </div>
     </div>
 
     <!-- PixiJS v8 and Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pixi-viewport@5.0.2/dist/viewport.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
     
     <script>
         /**
-         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev5
-         * オフキャンバス描画システム実装版
-         * - カメラキャンバス：表示される範囲（400x400）
-         * - バックエンドキャンバス：実際の描画領域（3倍サイズ透明）
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev6
+         * pixi-viewport カメラ移動版
+         * GPT5レポート対応: 背景＋描画レイヤーの統一カメラ操作、座標系統一
+         * - カメラビューポート：表示される範囲（400x400）
+         * - ワールド空間：描画領域全体（2000x2000）
+         * - 背景＋描画レイヤー：viewport内で統一移動
          */
         
         // グローバル変数
         let pixiApp = null;
-        let cameraContainer = null;        // カメラ表示用コンテナ
-        let backendContainer = null;       // バックエンド描画用コンテナ
-        let interactiveArea = null;        // 描画判定エリア（拡張範囲）
+        let viewport = null;               // pixi-viewport（カメラ役）
+        let backgroundLayer = null;        // 背景レイヤー
+        let drawingLayer = null;          // 描画レイヤー
         
         let currentPath = null;
         let isDrawing = false;
@@ -470,49 +474,254 @@
         // カメラ設定
         let cameraWidth = 400;
         let cameraHeight = 400;
-        let backendWidth = 1200;   // 3倍サイズ
-        let backendHeight = 1200;  // 3倍サイズ
-        let cameraOffset = { x: 400, y: 400 }; // バックエンド中央にカメラを配置
+        let worldWidth = 2000;
+        let worldHeight = 2000;
+        
+        // キャンバス移動機能の状態管理
+        let cameraState = {
+            spacePressed: false,
+            shiftPressed: false,
+            isDragging: false,
+            dragStart: { x: 0, y: 0 },
+            dragMode: null, // 'move', 'scale', 'rotate'
+            threshold: 5    // 縦横判定しきい値（px）
+        };
         
         // ==== 座標変換システム ====
         class CoordinateSystem {
-            // スクリーン座標 → ワールド座標（バックエンドキャンバス基準）
+            // スクリーン座標 → ワールド座標（viewport経由）
             static screenToWorld(screenX, screenY) {
-                if (!pixiApp) return { x: screenX, y: screenY };
+                if (!pixiApp || !viewport) return { x: screenX, y: screenY };
                 
                 const rect = pixiApp.canvas.getBoundingClientRect();
-                const canvasX = screenX - rect.left;
-                const canvasY = screenY - rect.top;
+                const localX = screenX - rect.left;
+                const localY = screenY - rect.top;
                 
-                // カメラ座標 → ワールド座標
-                const worldX = canvasX + cameraOffset.x;
-                const worldY = canvasY + cameraOffset.y;
+                // viewport経由でワールド座標に変換
+                const worldPos = viewport.toWorld(localX, localY);
+                return { x: worldPos.x, y: worldPos.y };
+            }
+            
+            // ワールド座標 → スクリーン座標
+            static worldToScreen(worldX, worldY) {
+                if (!viewport) return { x: worldX, y: worldY };
                 
-                return { x: worldX, y: worldY };
+                const screenPos = viewport.toScreen(worldX, worldY);
+                return { x: screenPos.x, y: screenPos.y };
             }
             
-            // ワールド座標 → カメラ座標
-            static worldToCamera(worldX, worldY) {
-                return {
-                    x: worldX - cameraOffset.x,
-                    y: worldY - cameraOffset.y
-                };
+            // 描画可能領域判定（ワールド座標基準）
+            static isInDrawableArea(worldX, worldY) {
+                if (!offCanvasEnabled) {
+                    // カメラ範囲のみ
+                    const screen = this.worldToScreen(worldX, worldY);
+                    return screen.x >= 0 && screen.x < cameraWidth &&
+                           screen.y >= 0 && screen.y < cameraHeight;
+                } else {
+                    // ワールド全体
+                    return worldX >= 0 && worldX < worldWidth &&
+                           worldY >= 0 && worldY < worldHeight;
+                }
+            }
+        }
+        
+        // ==== キャンバス移動機能システム（pixi-viewport版） ====
+        class CameraNavigationSystem {
+            static init() {
+                console.log('pixi-viewport カメラ移動システム初期化開始');
+                this.setupKeyboardEvents();
+                this.setupViewportEvents();
+                this.updateCameraStatus();
+                console.log('pixi-viewport カメラ移動システム初期化完了');
             }
             
-            // カメラ範囲内判定
-            static isInCameraView(worldX, worldY) {
-                const camera = this.worldToCamera(worldX, worldY);
-                return camera.x >= 0 && camera.x < cameraWidth && 
-                       camera.y >= 0 && camera.y < cameraHeight;
+            static setupKeyboardEvents() {
+                window.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space') {
+                        cameraState.spacePressed = true;
+                        e.preventDefault();
+                    }
+                    if (e.shiftKey) cameraState.shiftPressed = true;
+
+                    // 反転処理
+                    if (e.code === 'KeyH' && !e.ctrlKey) {
+                        if (cameraState.shiftPressed) {
+                            // 上下反転
+                            viewport.scale.y *= -1;
+                        } else {
+                            // 左右反転
+                            viewport.scale.x *= -1;
+                        }
+                        this.updateCameraStatus();
+                        e.preventDefault();
+                    }
+
+                    // HOMEキーでリセット
+                    if (e.code === 'Home') {
+                        this.resetCamera();
+                        e.preventDefault();
+                    }
+
+                    // 方向キーによる微調整
+                    if (cameraState.spacePressed) {
+                        const moveStep = 10;
+                        const rotateStep = 0.05;
+                        const scaleStep = 0.05;
+                        
+                        if (cameraState.shiftPressed) {
+                            // 拡縮・回転
+                            if (e.code === 'ArrowUp') {
+                                const factor = 1 + scaleStep;
+                                viewport.scale.x *= factor;
+                                viewport.scale.y *= factor;
+                            }
+                            if (e.code === 'ArrowDown') {
+                                const factor = 1 - scaleStep;
+                                viewport.scale.x *= factor;
+                                viewport.scale.y *= factor;
+                            }
+                            if (e.code === 'ArrowLeft') {
+                                viewport.rotation -= rotateStep;
+                            }
+                            if (e.code === 'ArrowRight') {
+                                viewport.rotation += rotateStep;
+                            }
+                        } else {
+                            // 移動
+                            if (e.code === 'ArrowUp') viewport.y -= moveStep;
+                            if (e.code === 'ArrowDown') viewport.y += moveStep;
+                            if (e.code === 'ArrowLeft') viewport.x -= moveStep;
+                            if (e.code === 'ArrowRight') viewport.x += moveStep;
+                        }
+                        this.updateCameraStatus();
+                        e.preventDefault();
+                    }
+                });
+
+                window.addEventListener('keyup', (e) => {
+                    if (e.code === 'Space') {
+                        cameraState.spacePressed = false;
+                        this.updateCursor();
+                    }
+                    if (!e.shiftKey) cameraState.shiftPressed = false;
+                });
             }
             
-            // 拡張判定エリア内かチェック（オフキャンバス描画用）
-            static isInExtendedArea(worldX, worldY) {
-                const margin = Math.max(cameraWidth, cameraHeight) * 0.3; // 30%の余白
-                return worldX >= cameraOffset.x - margin && 
-                       worldX <= cameraOffset.x + cameraWidth + margin &&
-                       worldY >= cameraOffset.y - margin && 
-                       worldY <= cameraOffset.y + cameraHeight + margin;
+            static setupViewportEvents() {
+                if (!viewport) return;
+                
+                // カスタムドラッグ処理
+                viewport.on('pointerdown', (e) => {
+                    if (!cameraState.spacePressed) return;
+                    
+                    cameraState.isDragging = true;
+                    const pos = e.data.global;
+                    cameraState.dragStart.x = pos.x;
+                    cameraState.dragStart.y = pos.y;
+                    cameraState.dragMode = null;
+                    
+                    // viewport の組み込みドラッグを一時停止
+                    viewport.plugins.pause('drag');
+                });
+                
+                viewport.on('pointermove', (e) => {
+                    if (!cameraState.isDragging) return;
+                    
+                    const pos = e.data.global;
+                    const dx = pos.x - cameraState.dragStart.x;
+                    const dy = pos.y - cameraState.dragStart.y;
+                    
+                    // 縦横判定
+                    if (!cameraState.dragMode) {
+                        if (cameraState.shiftPressed) {
+                            if (Math.abs(dx) > cameraState.threshold || Math.abs(dy) > cameraState.threshold) {
+                                cameraState.dragMode = Math.abs(dy) > Math.abs(dx) ? 'scale' : 'rotate';
+                            } else return;
+                        } else {
+                            cameraState.dragMode = 'move';
+                        }
+                    }
+                    
+                    // 操作適用
+                    if (cameraState.dragMode === 'move') {
+                        viewport.x += dx;
+                        viewport.y += dy;
+                    } else if (cameraState.dragMode === 'scale') {
+                        const factor = 1 + dy / 200;
+                        viewport.scale.x *= factor;
+                        viewport.scale.y *= factor;
+                    } else if (cameraState.dragMode === 'rotate') {
+                        viewport.rotation += dx / 100;
+                    }
+                    
+                    cameraState.dragStart.x = pos.x;
+                    cameraState.dragStart.y = pos.y;
+                    this.updateCameraStatus();
+                });
+                
+                viewport.on('pointerup', () => {
+                    if (cameraState.isDragging) {
+                        cameraState.isDragging = false;
+                        cameraState.dragMode = null;
+                        
+                        // viewport の組み込みドラッグを再開
+                        viewport.plugins.resume('drag');
+                        this.updateCursor();
+                    }
+                });
+                
+                // ホイール操作
+                window.addEventListener('wheel', (e) => {
+                    if (cameraState.shiftPressed) {
+                        // 回転
+                        viewport.rotation += e.deltaY * 0.01;
+                    } else {
+                        // 拡縮
+                        const factor = 1 - e.deltaY * 0.001;
+                        viewport.scale.x *= factor;
+                        viewport.scale.y *= factor;
+                    }
+                    this.updateCameraStatus();
+                    e.preventDefault();
+                });
+                
+                // viewport の変更イベントを監視
+                viewport.on('moved', () => this.updateCameraStatus());
+                viewport.on('zoomed', () => this.updateCameraStatus());
+            }
+            
+            static updateCursor() {
+                if (!pixiApp || !pixiApp.canvas) return;
+                
+                if (cameraState.spacePressed && !cameraState.isDragging) {
+                    pixiApp.canvas.style.cursor = 'grab';
+                } else if (cameraState.isDragging) {
+                    pixiApp.canvas.style.cursor = 'grabbing';
+                } else {
+                    pixiApp.canvas.style.cursor = 'crosshair';
+                }
+            }
+            
+            static resetCamera() {
+                if (!viewport) return;
+                
+                viewport.x = cameraWidth / 2;
+                viewport.y = cameraHeight / 2;
+                viewport.scale.set(1, 1);
+                viewport.rotation = 0;
+                this.updateCameraStatus();
+                console.log('カメラをリセットしました');
+            }
+            
+            static updateCameraStatus() {
+                const statusElement = document.getElementById('camera-transform');
+                if (statusElement && viewport) {
+                    const x = Math.round(viewport.x - cameraWidth / 2);
+                    const y = Math.round(viewport.y - cameraHeight / 2);
+                    const scale = Math.abs(viewport.scale.x).toFixed(2);
+                    const rotation = Math.round(viewport.rotation * 180 / Math.PI);
+                    statusElement.textContent = `位置(${x},${y}) 拡大${scale} 回転${rotation}°`;
+                }
             }
         }
         
@@ -557,13 +766,13 @@
             }
         }
         
-        // ==== 描画システム ====
-        class DrawingSystem {
+        // ==== PIXIベース描画システム（viewport対応版） ====
+        class PIXIDrawingSystem {
             static createPath(worldX, worldY) {
                 const graphics = new PIXI.Graphics();
                 
-                // バックエンドに追加
-                backendContainer.addChild(graphics);
+                // 描画レイヤーに追加
+                drawingLayer.addChild(graphics);
                 
                 // 最初のポイントを描画
                 graphics.circle(worldX, worldY, currentBrush.size / 2);
@@ -605,34 +814,73 @@
             }
             
             static eraseAtPoint(worldX, worldY, eraserSize) {
-                // バックエンドコンテナ内の全描画オブジェクトをチェック
+                // 描画レイヤー内の全描画オブジェクトをチェック
                 const eraserRadius = eraserSize / 2;
+                let hasErased = false;
                 
-                backendContainer.children.forEach(child => {
+                // 削除対象のオブジェクトを収集
+                const childrenToCheck = [...drawingLayer.children];
+                
+                childrenToCheck.forEach(child => {
                     if (child instanceof PIXI.Graphics && child !== currentPath?.graphics) {
                         // 消しゴム範囲内に描画があるかチェック
                         const bounds = child.getBounds();
+                        const centerX = bounds.x + bounds.width / 2;
+                        const centerY = bounds.y + bounds.height / 2;
                         const distance = Math.sqrt(
-                            Math.pow(worldX - (bounds.x + bounds.width/2), 2) + 
-                            Math.pow(worldY - (bounds.y + bounds.height/2), 2)
+                            Math.pow(worldX - centerX, 2) + 
+                            Math.pow(worldY - centerY, 2)
                         );
                         
-                        if (distance < eraserRadius + Math.max(bounds.width, bounds.height)/2) {
+                        const objectRadius = Math.max(bounds.width, bounds.height) / 2;
+                        
+                        if (distance < eraserRadius + objectRadius) {
                             // 透明度を下げるか完全に削除
-                            child.alpha = Math.max(0, child.alpha - 0.3);
+                            child.alpha = Math.max(0, child.alpha - 0.4);
                             if (child.alpha <= 0.1) {
-                                backendContainer.removeChild(child);
+                                drawingLayer.removeChild(child);
                                 child.destroy();
                             }
+                            hasErased = true;
                         }
                     }
                 });
+                
+                return hasErased;
             }
             
             static finishPath(path) {
                 if (!path) return null;
                 
-                // 履歴に追加
+                // 消しゴムの場合は、グラフィックス自体は削除（消去効果のみ残す）
+                if (path.tool === 'eraser') {
+                    if (drawingLayer.children.includes(path.graphics)) {
+                        drawingLayer.removeChild(path.graphics);
+                        path.graphics.destroy();
+                    }
+                    
+                    // 消しゴム操作を履歴に記録
+                    const eraserAction = {
+                        tool: 'eraser',
+                        points: [...path.points],
+                        brush: { ...path.brush }
+                    };
+                    
+                    HistoryManager.push({
+                        undo: () => {
+                            console.log('消しゴム操作の取り消しは未実装です');
+                        },
+                        redo: () => {
+                            eraserAction.points.forEach(point => {
+                                PIXIDrawingSystem.eraseAtPoint(point.x, point.y, eraserAction.brush.size);
+                            });
+                        }
+                    });
+                    
+                    return null;
+                }
+                
+                // ペンツールの場合の通常処理
                 const pathCopy = {
                     graphics: path.graphics,
                     points: [...path.points],
@@ -642,13 +890,13 @@
                 
                 HistoryManager.push({
                     undo: () => {
-                        if (backendContainer.children.includes(pathCopy.graphics)) {
-                            backendContainer.removeChild(pathCopy.graphics);
+                        if (drawingLayer.children.includes(pathCopy.graphics)) {
+                            drawingLayer.removeChild(pathCopy.graphics);
                             pathCopy.graphics.destroy();
                         }
                     },
                     redo: () => {
-                        if (!backendContainer.children.includes(pathCopy.graphics)) {
+                        if (!drawingLayer.children.includes(pathCopy.graphics)) {
                             // グラフィックスを再作成
                             const newGraphics = new PIXI.Graphics();
                             if (pathCopy.tool === 'pen') {
@@ -658,7 +906,7 @@
                                 });
                             }
                             pathCopy.graphics = newGraphics;
-                            backendContainer.addChild(newGraphics);
+                            drawingLayer.addChild(newGraphics);
                         }
                     }
                 });
@@ -667,81 +915,101 @@
             }
         }
         
+        // ==== 背景システム ====
+        class BackgroundSystem {
+            static createBackground() {
+                if (!backgroundLayer) return;
+                
+                // グリッド背景を作成
+                const grid = new PIXI.Graphics();
+                
+                // グリッドの設定
+                const gridSize = 50;
+                const gridColor = 0xdddddd;
+                const gridAlpha = 0.5;
+                
+                grid.lineStyle(1, gridColor, gridAlpha);
+                
+                // 縦線
+                for (let x = 0; x <= worldWidth; x += gridSize) {
+                    grid.moveTo(x, 0);
+                    grid.lineTo(x, worldHeight);
+                }
+                
+                // 横線
+                for (let y = 0; y <= worldHeight; y += gridSize) {
+                    grid.moveTo(0, y);
+                    grid.lineTo(worldWidth, y);
+                }
+                
+                backgroundLayer.addChild(grid);
+                
+                // 中央マーカー
+                const center = new PIXI.Graphics();
+                center.circle(worldWidth / 2, worldHeight / 2, 5);
+                center.fill({ color: 0x800000, alpha: 0.7 });
+                backgroundLayer.addChild(center);
+                
+                console.log('背景グリッドを作成しました');
+            }
+        }
+        
         // ==== イベントハンドラー ====
         function onPointerDown(event) {
-            if (!pixiApp || !backendContainer) return;
+            if (!pixiApp || !drawingLayer) return;
+            
+            // カメラ移動中は描画を無視
+            if (cameraState.spacePressed) return;
             
             const world = CoordinateSystem.screenToWorld(event.clientX, event.clientY);
             
-            // オフキャンバス描画が無効でカメラ範囲外なら無視
-            if (!offCanvasEnabled && !CoordinateSystem.isInCameraView(world.x, world.y)) {
-                return;
-            }
-            
-            // 拡張エリア外なら無視（完全に外れすぎている場合）
-            if (!CoordinateSystem.isInExtendedArea(world.x, world.y)) {
+            // 描画可能領域判定
+            if (!CoordinateSystem.isInDrawableArea(world.x, world.y)) {
                 return;
             }
             
             isDrawing = true;
-            currentPath = DrawingSystem.createPath(world.x, world.y);
+            currentPath = PIXIDrawingSystem.createPath(world.x, world.y);
         }
         
         function onPointerMove(event) {
             const world = CoordinateSystem.screenToWorld(event.clientX, event.clientY);
             
-            // 座標表示更新
+            // 座標表示更新（ワールド座標）
             const coordsElement = document.getElementById('coordinates');
             if (coordsElement) {
-                const camera = CoordinateSystem.worldToCamera(world.x, world.y);
-                coordsElement.textContent = `x: ${Math.round(camera.x)}, y: ${Math.round(camera.y)}`;
+                coordsElement.textContent = `x: ${Math.round(world.x)}, y: ${Math.round(world.y)}`;
             }
             
-            if (!isDrawing || !currentPath) return;
+            if (!isDrawing || !currentPath || cameraState.spacePressed) return;
             
-            DrawingSystem.drawLine(currentPath, world.x, world.y);
+            PIXIDrawingSystem.drawLine(currentPath, world.x, world.y);
         }
         
         function onPointerUp(event) {
             if (!isDrawing || !currentPath) return;
             
             isDrawing = false;
-            DrawingSystem.finishPath(currentPath);
+            PIXIDrawingSystem.finishPath(currentPath);
             currentPath = null;
         }
         
-        // ==== カメラビュー更新システム ====
+        // ==== カメラシステム ====
         class CameraSystem {
-            static updateView() {
-                if (!cameraContainer || !backendContainer) return;
-                
-                // カメラコンテナの位置を調整して、バックエンドの該当範囲を表示
-                cameraContainer.position.set(-cameraOffset.x, -cameraOffset.y);
-                
-                // マスクを設定してカメラ範囲のみ表示
-                const mask = new PIXI.Graphics();
-                mask.rect(0, 0, cameraWidth, cameraHeight);
-                mask.fill(0xffffff);
-                cameraContainer.mask = mask;
-            }
-            
             static resize(newWidth, newHeight) {
-                if (!pixiApp) return;
+                if (!pixiApp || !viewport) return;
                 
                 const oldWidth = cameraWidth;
                 const oldHeight = cameraHeight;
                 
                 cameraWidth = newWidth;
                 cameraHeight = newHeight;
-                backendWidth = newWidth * 3;
-                backendHeight = newHeight * 3;
-                
-                // カメラオフセット調整（中央に配置）
-                cameraOffset.x = backendWidth / 2 - cameraWidth / 2;
-                cameraOffset.y = backendHeight / 2 - cameraHeight / 2;
                 
                 // PIXI Applicationリサイズ
                 pixiApp.renderer.resize(newWidth, newHeight);
+                
+                // viewportリサイズ
+                viewport.resize(newWidth, newHeight);
                 
                 // キャンバスコンテナのサイズを更新
                 const canvasContainer = document.getElementById('canvas-container');
@@ -752,21 +1020,20 @@
                     pixiApp.canvas.style.height = newHeight + 'px';
                 }
                 
-                // インタラクティブエリア更新
-                if (interactiveArea) {
-                    interactiveArea.clear();
-                    interactiveArea.rect(0, 0, newWidth, newHeight);
-                    interactiveArea.fill({ color: 0xf0e0d6, alpha: 0.01 });
-                }
-                
-                // ビュー更新
-                this.updateView();
+                // カメラ位置を調整（中央維持）
+                const centerX = newWidth / 2;
+                const centerY = newHeight / 2;
+                viewport.moveCenter(worldWidth / 2, worldHeight / 2);
                 
                 // ステータス更新
                 const cameraInfo = document.getElementById('camera-info');
-                const backendInfo = document.getElementById('backend-info');
+                const worldInfo = document.getElementById('world-info');
                 if (cameraInfo) cameraInfo.textContent = `${newWidth}×${newHeight}px`;
-                if (backendInfo) backendInfo.textContent = `${backendWidth}×${backendHeight}px`;
+                if (worldInfo) worldInfo.textContent = `${worldWidth}×${worldHeight}px`;
+                
+                CameraNavigationSystem.updateCameraStatus();
+                
+                console.log(`カメラリサイズ完了: ${newWidth}x${newHeight}`);
             }
         }
         
@@ -994,7 +1261,7 @@
         
         // ==== 初期化関数 ====
         async function initializeApp() {
-            console.log('オフキャンバス対応アプリケーション初期化開始');
+            console.log('pixi-viewport ベースアプリケーション初期化開始');
             
             try {
                 // PIXI Application作成
@@ -1003,7 +1270,8 @@
                     width: cameraWidth,
                     height: cameraHeight,
                     backgroundColor: 0xf0e0d6,
-                    antialias: true
+                    antialias: true,
+                    backgroundAlpha: 1
                 });
                 
                 console.log('PIXI Application作成完了');
@@ -1017,37 +1285,60 @@
                 canvasContainer.appendChild(pixiApp.canvas);
                 console.log('キャンバスをDOMに追加完了');
                 
-                // バックエンドコンテナ作成（透明・非破壊記録用）
-                backendContainer = new PIXI.Container();
+                // pixi-viewport初期化
+                if (!window.Viewport) {
+                    throw new Error('pixi-viewport が読み込まれていません');
+                }
                 
-                // カメラコンテナ作成（表示用）
-                cameraContainer = new PIXI.Container();
-                cameraContainer.addChild(backendContainer);
-                pixiApp.stage.addChild(cameraContainer);
+                viewport = new Viewport.Viewport({
+                    screenWidth: cameraWidth,
+                    screenHeight: cameraHeight,
+                    worldWidth: worldWidth,
+                    worldHeight: worldHeight,
+                    interaction: pixiApp.renderer.events
+                });
                 
-                // カメラビュー初期設定
-                CameraSystem.updateView();
+                // viewport を stage に追加
+                pixiApp.stage.addChild(viewport);
                 
-                // インタラクティブエリア設定
-                interactiveArea = new PIXI.Graphics();
-                interactiveArea.rect(0, 0, cameraWidth, cameraHeight);
-                interactiveArea.fill({ color: 0xf0e0d6, alpha: 0.01 });
-                interactiveArea.eventMode = 'static';
-                pixiApp.stage.addChild(interactiveArea);
+                // カメラ中心を支点として設定
+                viewport.pivot.set(cameraWidth / 2, cameraHeight / 2);
+                viewport.position.set(cameraWidth / 2, cameraHeight / 2);
+                
+                // 初期カメラ位置を中央に設定
+                viewport.moveCenter(worldWidth / 2, worldHeight / 2);
+                
+                console.log('pixi-viewport初期化完了');
+                
+                // レイヤー作成
+                backgroundLayer = new PIXI.Container();
+                drawingLayer = new PIXI.Container();
+                
+                // viewport にレイヤーを追加
+                viewport.addChild(backgroundLayer);
+                viewport.addChild(drawingLayer);
+                
+                // 背景作成
+                BackgroundSystem.createBackground();
+                
+                console.log('レイヤーシステム初期化完了');
                 
                 // 描画イベント設定
-                interactiveArea.on('pointerdown', onPointerDown);
-                interactiveArea.on('pointermove', onPointerMove);
-                interactiveArea.on('pointerup', onPointerUp);
-                interactiveArea.on('pointerupoutside', onPointerUp);
+                viewport.on('pointerdown', onPointerDown);
+                viewport.on('pointermove', onPointerMove);
+                viewport.on('pointerup', onPointerUp);
+                viewport.on('pointerupoutside', onPointerUp);
                 
-                // 拡張描画エリア設定（オフキャンバス対応）
+                // 拡張描画エリア設定
                 document.addEventListener('mousedown', onPointerDown);
                 document.addEventListener('mousemove', onPointerMove);
                 document.addEventListener('mouseup', onPointerUp);
                 document.addEventListener('mouseleave', onPointerUp);
                 
-                console.log('オフキャンバス描画システム初期化完了');
+                console.log('描画イベントシステム初期化完了');
+                
+                // カメラ移動機能初期化
+                CameraNavigationSystem.init();
                 
                 // UI初期化
                 UIController.init();
@@ -1060,25 +1351,31 @@
                 
                 // ステータス更新
                 const cameraInfo = document.getElementById('camera-info');
-                const backendInfo = document.getElementById('backend-info');
+                const worldInfo = document.getElementById('world-info');
                 if (cameraInfo) cameraInfo.textContent = `${cameraWidth}×${cameraHeight}px`;
-                if (backendInfo) backendInfo.textContent = `${backendWidth}×${backendHeight}px`;
+                if (worldInfo) worldInfo.textContent = `${worldWidth}×${worldHeight}px`;
                 
-                console.log('✅ オフキャンバス対応アプリケーション初期化完了');
-                console.log('🎯 実装された新機能:');
-                console.log('  🔧 透明バックエンドキャンバス（3倍サイズ）');
-                console.log('  🔧 カメラベース表示システム');
-                console.log('  🔧 オフキャンバス描画対応');
-                console.log('  🔧 消しゴム機能修正');
-                console.log('  🔧 ワールド座標システム統合');
-                console.log('  🔧 非破壊履歴管理');
+                console.log('✅ pixi-viewport ベースアプリケーション初期化完了');
+                console.log('🎯 改修完了項目:');
+                console.log('  🔧 pixi-viewport による統一カメラシステム');
+                console.log('  🔧 背景＋描画レイヤーの同時移動');
+                console.log('  🔧 カメラ中心支点での回転・拡縮');
+                console.log('  🔧 座標系統一（ワールド座標基準）');
+                console.log('  🔧 描画座標のズレ問題解決');
+                console.log('🎯 キャンバス移動操作:');
+                console.log('  🔧 Space + ドラッグ → 移動');
+                console.log('  🔧 Shift + Space + ドラッグ → 拡縮/回転（縦横判定）');
+                console.log('  🔧 ホイール → 拡縮, Shift + ホイール → 回転');
+                console.log('  🔧 H / Shift+H → 左右・上下反転');
+                console.log('  🔧 HOMEキー → カメラリセット');
+                console.log('  🔧 方向キー（Space押下時）→ 微調整');
                 
                 return true;
                 
             } catch (error) {
                 console.error('❌ 初期化失敗:', error);
                 
-                // フォールバック: エラー表示
+                // エラー表示
                 const canvasContainer = document.getElementById('canvas-container');
                 if (canvasContainer) {
                     canvasContainer.innerHTML = `
@@ -1098,7 +1395,7 @@
                             box-sizing: border-box;
                         ">
                             <div style="font-size: 24px; margin-bottom: 10px;">⚠️</div>
-                            <div style="font-size: 14px; margin-bottom: 10px;">オフキャンバス初期化エラー</div>
+                            <div style="font-size: 14px; margin-bottom: 10px;">pixi-viewport 初期化エラー</div>
                             <div style="font-size: 12px; opacity: 0.8;">${error.message}</div>
                             <div style="font-size: 11px; margin-top: 10px; opacity: 0.6;">
                                 ブラウザを再読み込みしてください
@@ -1113,7 +1410,7 @@
         
         // ==== DOMContentLoaded で初期化実行 ====
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('DOM読み込み完了 - オフキャンバス対応初期化開始');
+            console.log('DOM読み込み完了 - pixi-viewport 初期化開始');
             
             // ライブラリチェック
             if (!window.PIXI) {
@@ -1121,12 +1418,27 @@
                 return;
             }
             
+            if (!window.Viewport) {
+                console.error('❌ pixi-viewport が読み込まれていません');
+                return;
+            }
+            
             console.log(`✅ PIXI.js v${PIXI.VERSION} 読み込み完了`);
+            console.log('✅ pixi-viewport 読み込み完了');
             
             // アプリケーション初期化
             initializeApp().then((success) => {
                 if (success) {
-                    console.log('🎨 Futaba Drawing Tool v8rev5-offcanvas 起動完了');
+                    console.log('🎨 Futaba Drawing Tool v8rev6 - pixi-viewport Camera Navigation 起動完了');
+                    console.log('📘 キャンバス移動操作ガイド:');
+                    console.log('  Space + ドラッグ: カメラ移動');
+                    console.log('  Shift + Space + ドラッグ: 拡縮/回転（縦横自動判定）');
+                    console.log('  ホイール: 拡縮');
+                    console.log('  Shift + ホイール: 回転');
+                    console.log('  H: 左右反転');
+                    console.log('  Shift + H: 上下反転');
+                    console.log('  HOME: カメラリセット');
+                    console.log('  方向キー（Space押下時）: 移動・拡縮・回転の微調整');
                 } else {
                     console.log('❌ 初期化に失敗しました');
                 }
