@@ -3,8 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8 列車型 (完全移植版)</title>
-    <meta name="description" content="列車型構造による分割型描画ツール - v7からの完全移植版">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8 列車型 (画面復帰版)</title>
     <style>
         * {
             margin: 0;
@@ -69,7 +68,7 @@
             user-select: none;
         }
         
-        .tool-button img {
+        .tool-button svg, .tool-button img {
             width: 20px;
             height: 20px;
         }
@@ -111,10 +110,6 @@
             display: flex;
             justify-content: center;
             align-items: center;
-        }
-        
-        .canvas-container {
-            position: relative;
         }
         
         #drawing-canvas {
@@ -196,6 +191,7 @@
             border-radius: 4px;
             transition: all 0.2s ease;
             min-width: 40px;
+            text-align: center;
         }
         
         .size-preset-item:hover {
@@ -208,17 +204,23 @@
         }
         
         .size-preview-circle {
-            background: #800000;
+            background: var(--futaba-maroon);
             border-radius: 50%;
             transition: all 0.2s ease;
             min-width: 0.5px;
             min-height: 0.5px;
+            margin: 0 auto;
+        }
+        
+        .size-preset-item.active .size-preview-circle {
+            background: var(--text-inverse);
         }
         
         .size-preview-label {
             font-size: 10px;
             font-weight: 600;
             margin-top: 2px;
+            line-height: 1;
         }
         
         .size-preview-percent {
@@ -226,6 +228,7 @@
             font-weight: 400;
             margin-top: 1px;
             opacity: 0.8;
+            line-height: 1;
         }
         
         .slider-container {
@@ -565,7 +568,7 @@
                 </div>
                 <div class="size-preset-item active" data-size="16">
                     <div class="size-preview-circle" style="width: 16px; height: 16px;"></div>
-                    <div class="size-preview-label">16</div>
+                    <div class="size-preview-label">16.0</div>
                     <div class="size-preview-percent">85%</div>
                 </div>
                 <div class="size-preset-item" data-size="32">
@@ -734,15 +737,12 @@
     <script>
         /**
          * ============================================================
-         * Tegaki v8 列車型完全移植システム 
-         * vector-drawing-tool-v7rev2.htmlからの完全機能移植版
-         * 責任分界を明確化しつつ単一ファイルで動作保証
+         * Tegaki v8 列車型画面復帰版
+         * vector-drawing-tool-v7rev2.htmlの完全復刻
          * ============================================================
          */
 
-        // ============================================================
-        // 【1. Core Engine - 描画エンジン】責任範囲: 描画処理・Canvas管理
-        // ============================================================
+        // ==== Drawing Engine ====
         class DrawingEngine {
             constructor(width, height) {
                 this.width = width;
@@ -750,7 +750,7 @@
                 this.app = null;
                 this.drawingContainer = null;
                 this.paths = [];
-                this.backgroundColor = 0xffffee; // 正しいふたば背景色
+                this.backgroundColor = 0xf0e0d6; // クリーム色キャンバス背景
             }
             
             async init() {
@@ -860,9 +860,7 @@
             }
         }
         
-        // ============================================================
-        // 【2. Tool System - ツール管理】責任範囲: 描画ツール状態・設定管理
-        // ============================================================
+        // ==== Tool System ====
         class ToolSystem {
             constructor() {
                 this.currentTool = 'pen';
@@ -919,9 +917,7 @@
             }
         }
         
-        // ============================================================
-        // 【3. UI Controller - UI制御】責任範囲: UI操作・ポップアップ・スライダー管理
-        // ============================================================
+        // ==== UI Controller ====
         class UIController {
             constructor(toolSystem) {
                 this.toolSystem = toolSystem;
@@ -937,6 +933,10 @@
                 this.setupResize();
                 this.setupCheckboxes();
                 this.updateSizePresets();
+                
+                // ペンツールポップアップを初期表示
+                document.getElementById('pen-settings').classList.add('show');
+                this.activePopup = document.getElementById('pen-settings');
             }
             
             setupToolButtons() {
@@ -1078,6 +1078,7 @@
                     }
                 };
                 
+                // 全スライダーボタンのイベント設定
                 const sliderTypes = ['pen-size', 'pen-opacity', 'pen-pressure', 'pen-smoothing'];
                 sliderTypes.forEach(type => {
                     ['decrease-small', 'decrease', 'decrease-large', 'increase-small', 'increase', 'increase-large'].forEach(action => {
@@ -1243,9 +1244,7 @@
             }
         }
         
-        // ============================================================
-        // 【4. Performance Monitor - パフォーマンス監視】責任範囲: FPS・GPU監視
-        // ============================================================
+        // ==== Performance Monitor ====
         class PerformanceMonitor {
             constructor() {
                 this.frameCount = 0;
@@ -1261,6 +1260,7 @@
                         const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
                         document.getElementById('fps').textContent = fps;
                         
+                        // GPU・メモリ使用量シミュレート
                         const gpuUsage = 40 + Math.random() * 20;
                         const memUsage = 1.0 + Math.random() * 0.5;
                         document.getElementById('gpu-usage').textContent = gpuUsage.toFixed(0) + '%';
@@ -1277,9 +1277,7 @@
             }
         }
         
-        // ============================================================
-        // 【5. Main Application - アプリ統合】責任範囲: 全体統合・イベント処理
-        // ============================================================
+        // ==== Main Application ====
         class FutabaDrawingTool {
             constructor() {
                 this.engine = new DrawingEngine(400, 400);
@@ -1289,7 +1287,7 @@
             }
             
             async init() {
-                console.log('🎨 Tegaki v8 列車型完全移植版 初期化開始');
+                console.log('🎨 Tegaki v8 画面復帰版 初期化開始');
                 
                 await this.engine.init();
                 this.ui.init();
@@ -1297,13 +1295,7 @@
                 this.monitor.start();
                 this.updateCanvasInfo();
                 
-                console.log('✅ 初期化完了 - v7からの完全移植版');
-                console.log('📋 責任分界:');
-                console.log('  🎯 DrawingEngine: 描画処理・Canvas管理');
-                console.log('  🔧 ToolSystem: ツール状態・設定管理');
-                console.log('  🖱️ UIController: UI操作・ポップアップ管理');
-                console.log('  📊 PerformanceMonitor: FPS・リソース監視');
-                console.log('  🚂 FutabaDrawingTool: 全体統合・イベント処理');
+                console.log('✅ 画面復帰版 初期化完了');
             }
             
             setupCanvasEvents() {
@@ -1347,16 +1339,14 @@
             }
         }
         
-        // ============================================================
-        // 【6. Bootstrap - アプリ起動】責任範囲: 初期化・エラーハンドリング
-        // ============================================================
+        // ==== Bootstrap ====
         window.addEventListener('DOMContentLoaded', async () => {
             try {
                 window.futabaDrawingTool = new FutabaDrawingTool();
                 await window.futabaDrawingTool.init();
                 
             } catch (error) {
-                console.error('💥 起動エラー:', error);
+                console.error('⚠ 起動エラー:', error);
             }
         });
     </script>
