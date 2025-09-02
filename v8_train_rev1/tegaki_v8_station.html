@@ -1,0 +1,311 @@
+<!-- File: index.html -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8</title>
+    
+    <!-- 
+    🚉 本指示は「列車型ファイル構造」での改修を徹底するためのルールである。  
+    中央集約的なツリー型構造は人間には見やすいが、AIによる改修には不向きである。  
+    AIが安全かつ局所的に改修できるように、以下の列車型ルールを常に適用すること。  
+    ⚠️ 列車型アーキテクチャ 改修ルール（常時適用）
+    1. 【依存】  
+       - 車両は「前方の車両」にのみ依存可能。  
+       - 横断依存は禁止。  
+       - main は station（駅ヘッダー）を起点として順序を管理する。  
+    2. 【分割と肥大化防止】  
+       - 車両が肥大化したら必ず新しい車両を追加すること。  
+       - A車両は基盤（a1=core, a2=integration 等）、B車両はUIやステータス等の拡張。  
+    3. 【モジュール化】  
+       - 各車両は内部をモジュール化し、局所改修可能にすること。  
+       - main は統合制御のみに専念。  
+    4. 【改修ルール】  
+       - header（station）は必ず最初に実行され、全ファイルの責務を記述する。  
+       - ファイルの先頭に `<!-- File: ファイル名 -->` を必ず記載し、差し替えミスを防ぐ。  
+       - 必要に応じて「ミニヘッダー辞典」を各ファイルに追記し、参照性を高める。  
+    5. 【B車両の扱い】  
+       - B車両（UI, status等）は必要に応じて独立改修・追加可能。  
+       - A車両は安定性重視でむやみに改修しない。  
+    6. 【理念】  
+       - 列車は「station → main → 各車両」と順序を保ち、役割ごとに独立して走る構造である。  
+       - main に依存しすぎず、車両を単体で改修・交換できる状態を維持する。  
+       - 改修AIは station ヘッダーを必ず参照し、責務を確認してから改修を行う。  
+    🚫 原則（フォールバック・フェイルセーフ禁止）  
+    - フォールバックや多重化で誤魔化さず、エラーは検知した上で隠蔽せず、構造上の責務で対処すること。  
+    - 構造は剛直かつシンプルに保ち、冗長化を避ける。  
+    - consoleログは必要最低限とし、肥大化を防ぐ。
+    -->
+    
+    <!-- 車両接続表 -->
+    <!-- A1: Core (基盤エンジン) - Canvas管理・描画基盤・リサイズ -->
+    <!-- A2: Integration (統合制御) - 車両間API・イベント配線 -->
+    <!-- B1: UI (ユーザーインターフェース) - サイドバー・ポップアップ・ツール選択 -->
+    <!-- B2: Status (ステータス表示) - ステータスバー・FPS監視・座標表示 -->
+    <!-- B3: Tools (ツールシステム) - ペン設定・描画ツール・設定管理 -->
+    <!-- Styles: 全体CSS・ふたばテーマ -->
+    
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg {
+            width: 20px;
+            height: 20px;
+        }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .tool-button.disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #drawing-canvas {
+            display: block;
+            cursor: crosshair;
+        }
+        
+        /* ポップアップ共通スタイル */
+        .popup-panel {
+            position: fixed;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+            padding: 20px;
+            z-index: 2000;
+            backdrop-filter: blur(12px);
+            display: none;
+            user-select: none;
+        }
+        
+        .popup-panel.show {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <!-- サイドバー（B1-UIが管理） -->
+        <div class="sidebar" id="sidebar">
+            <!-- ツールボタンはB1-UIで生成 -->
+        </div>
+        
+        <!-- キャンバスエリア（A1-Coreが管理） -->
+        <div class="canvas-area">
+            <div class="canvas-container">
+                <div id="drawing-canvas"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ステータスパネル（B2-Statusが管理） -->
+    <div class="status-panel" id="status-panel">
+        <!-- ステータス項目はB2-Statusで生成 -->
+    </div>
+    
+    <!-- PIXI.js CDN読み込み -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+    
+    <!-- 列車の順序読み込み（前→後） -->
+    <script src="./tegaki-a1-core.html"></script>
+    <script src="./tegaki-a2-integration.html"></script>
+    <script src="./tegaki-b1-ui.html"></script>
+    <script src="./tegaki-b2-status.html"></script>
+    <script src="./tegaki-b3-tools.html"></script>
+    
+    <!-- 駅制御スクリプト -->
+    <script>
+        /**
+         * 🚉 Tegaki v8 駅制御システム
+         * 全車両の初期化順序を管理し、完全移植を保証する
+         */
+        
+        // 全体名前空間
+        window.Tegaki = {};
+        
+        // 駅制御
+        class Station {
+            constructor() {
+                this.initialized = false;
+                this.startTime = performance.now();
+            }
+            
+            async boot() {
+                console.log('[Station] 🚉 Tegaki v8 列車起動開始');
+                
+                try {
+                    // Phase 1: 基盤構築
+                    console.log('[Station] Phase 1: 基盤構築');
+                    await Tegaki.A1.initCore();
+                    
+                    // Phase 2: 統合・配線
+                    console.log('[Station] Phase 2: 統合・配線');
+                    await Tegaki.A2.wireUp();
+                    
+                    // Phase 3: UI構築
+                    console.log('[Station] Phase 3: UI構築');
+                    await Tegaki.B1.initUI();
+                    
+                    // Phase 4: ステータス・監視
+                    console.log('[Station] Phase 4: ステータス・監視');
+                    await Tegaki.B2.initStatus();
+                    
+                    // Phase 5: ツール初期化
+                    console.log('[Station] Phase 5: ツール初期化');
+                    await Tegaki.B3.initTools();
+                    
+                    this.initialized = true;
+                    const bootTime = performance.now() - this.startTime;
+                    console.log(`[Station] ✅ 全車両起動完了 (${bootTime.toFixed(1)}ms)`);
+                    console.log('[Station] 🎨 v7rev2完全移植版が利用可能です');
+                    
+                } catch (error) {
+                    console.error('[Station] ❌ 起動エラー:', error);
+                    throw error;
+                }
+            }
+        }
+        
+        // DOMContentLoaded時に駅起動
+        document.addEventListener('DOMContentLoaded', async () => {
+            try {
+                window.station = new Station();
+                await window.station.boot();
+            } catch (error) {
+                console.error('🚨 駅起動失敗:', error);
+            }
+        });
+    </script>
+</body>
+</html>

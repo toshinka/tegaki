@@ -1,0 +1,249 @@
+<!-- File: tegaki-a2-integration.html -->
+<script>
+/**
+ * 🚂 A2-Integration: 統合制御
+ * @provides: 車両間API, イベント配線, 全体制御
+ * @depends: A1-Core
+ * @role: 統合層
+ */
+
+window.Tegaki = window.Tegaki || {};
+
+Tegaki.A2 = (() => {
+    "use strict";
+    
+    // ==== API Bridge System ====
+    const apiBridge = {
+        // 描画API（A1への委譲）
+        startDrawing: null,
+        continueDrawing: null,
+        stopDrawing: null,
+        
+        // UI更新API（B1への委譲）
+        updateCoordinates: null,
+        updatePressure: null,
+        
+        // ステータス更新API（B2への委譲）
+        updateCanvasInfo: null,
+        updateToolInfo: null
+    };
+    
+    // ==== Event Coordination ====
+    class EventCoordinator {
+        constructor() {
+            this.isDrawing = false;
+            this.currentPath = null;
+            this.lastPoint = null;
+        }
+        
+        setupCanvasEvents() {
+            const engine = Tegaki.A1.getEngine();
+            if (!engine || !engine.app) {
+                throw new Error('[A2-Integration] A1-Core not ready');
+            }
+            
+            // v7rev2のイベント処理を完全移植
+            engine.app.stage.on('pointerdown', (event) => {
+                if (this.shouldSkipEvent()) return;
+                
+                const point = engine.getLocalPointerPosition(event);
+                this.handlePointerDown(point.x, point.y);
+            });
+            
+            engine.app.stage.on('pointermove', (event) => {
+                const point = engine.getLocalPointerPosition(event);
+                this.handlePointerMove(point.x, point.y);
+            });
+            
+            engine.app.stage.on('pointerup', () => {
+                this.handlePointerUp();
+            });
+            
+            engine.app.stage.on('pointerupoutside', () => {
+                this.handlePointerUp();
+            });
+        }
+        
+        shouldSkipEvent() {
+            // UIポップアップが開いている場合はスキップ
+            return Tegaki.B1 && Tegaki.B1.hasActivePopup && Tegaki.B1.hasActivePopup();
+        }
+        
+        handlePointerDown(x, y) {
+            if (apiBridge.startDrawing) {
+                this.isDrawing = true;
+                this.lastPoint = { x, y };
+                apiBridge.startDrawing(x, y);
+            }
+        }
+        
+        handlePointerMove(x, y) {
+            // 座標表示更新（B2に委譲）
+            if (apiBridge.updateCoordinates) {
+                apiBridge.updateCoordinates(Math.round(x), Math.round(y));
+            }
+            
+            // 筆圧モニター更新（描画中のみ）
+            if (this.isDrawing && apiBridge.updatePressure) {
+                // v7rev2の筆圧計算を移植
+                const pressure = Math.min(100, 
+                    (Tegaki.B3 ? Tegaki.B3.getCurrentPressure() * 100 : 50) + Math.random() * 20
+                );
+                apiBridge.updatePressure(pressure.toFixed(1));
+            }
+            
+            // 描画続行
+            if (this.isDrawing && apiBridge.continueDrawing) {
+                apiBridge.continueDrawing(x, y);
+                this.lastPoint = { x, y };
+            }
+        }
+        
+        handlePointerUp() {
+            if (this.isDrawing) {
+                this.isDrawing = false;
+                this.currentPath = null;
+                this.lastPoint = null;
+                
+                if (apiBridge.stopDrawing) {
+                    apiBridge.stopDrawing();
+                }
+                
+                // 筆圧リセット
+                if (apiBridge.updatePressure) {
+                    apiBridge.updatePressure('0.0');
+                }
+            }
+        }
+        
+        // リサイズ処理
+        handleResize(width, height, centerContent = false) {
+            const engine = Tegaki.A1.getEngine();
+            if (engine) {
+                engine.resize(width, height, centerContent);
+                
+                // ステータス更新
+                if (apiBridge.updateCanvasInfo) {
+                    apiBridge.updateCanvasInfo(width, height);
+                }
+            }
+        }
+    }
+    
+    // ==== Integration State ====
+    const state = {
+        coordinator: null,
+        isWiredUp: false
+    };
+    
+    // ==== API Registration ====
+    function registerAPI(apiName, handler) {
+        if (typeof handler !== 'function') {
+            throw new Error(`[A2-Integration] Invalid handler for API: ${apiName}`);
+        }
+        apiBridge[apiName] = handler;
+    }
+    
+    function getAPI(apiName) {
+        return apiBridge[apiName];
+    }
+    
+    // ==== Cross-Car Contracts ====
+    function bindContracts() {
+        // B3-Tools → A1-Core 描画契約
+        if (Tegaki.B3 && Tegaki.A1) {
+            const engine = Tegaki.A1.getEngine();
+            const toolSystem = Tegaki.B3.getToolSystem();
+            
+            registerAPI('startDrawing', (x, y) => {
+                const currentTool = toolSystem.currentTool;
+                const size = toolSystem.brushSize;
+                const color = toolSystem.brushColor;
+                const opacity = toolSystem.opacity;
+                
+                state.coordinator.currentPath = engine.createPath(x, y, size, color, opacity, currentTool);
+            });
+            
+            registerAPI('continueDrawing', (x, y) => {
+                if (state.coordinator.currentPath) {
+                    engine.drawLine(state.coordinator.currentPath, x, y);
+                }
+            });
+            
+            registerAPI('stopDrawing', () => {
+                if (state.coordinator.currentPath) {
+                    state.coordinator.currentPath.isComplete = true;
+                }
+                state.coordinator.currentPath = null;
+            });
+        }
+        
+        // B1-UI → A2-Integration 座標更新契約
+        registerAPI('updateCoordinates', (x, y) => {
+            if (Tegaki.B2 && Tegaki.B2.updateCoordinates) {
+                Tegaki.B2.updateCoordinates(x, y);
+            }
+        });
+        
+        // B1-UI → A2-Integration 筆圧更新契約
+        registerAPI('updatePressure', (pressure) => {
+            if (Tegaki.B2 && Tegaki.B2.updatePressure) {
+                Tegaki.B2.updatePressure(pressure);
+            }
+        });
+        
+        // リサイズ契約
+        registerAPI('updateCanvasInfo', (width, height) => {
+            if (Tegaki.B2 && Tegaki.B2.updateCanvasInfo) {
+                Tegaki.B2.updateCanvasInfo(width, height);
+            }
+        });
+    }
+    
+    // ==== Public API ====
+    async function wireUp() {
+        console.log('[A2-Integration] 配線開始');
+        
+        try {
+            // A1-Coreの準備確認
+            if (!Tegaki.A1 || !Tegaki.A1.isReady()) {
+                throw new Error('[A2-Integration] A1-Core not ready');
+            }
+            
+            // イベントコーディネーター初期化
+            state.coordinator = new EventCoordinator();
+            
+            // 契約結び
+            bindContracts();
+            
+            // キャンバスイベント設定
+            state.coordinator.setupCanvasEvents();
+            
+            state.isWiredUp = true;
+            console.log('[A2-Integration] ✅ 全車両配線完了');
+            
+        } catch (error) {
+            console.error('[A2-Integration] ❌ 配線失敗:', error);
+            throw error;
+        }
+    }
+    
+    function isReady() {
+        return state.isWiredUp && state.coordinator;
+    }
+    
+    function getCoordinator() {
+        return state.coordinator;
+    }
+    
+    // 外部アクセス用API
+    return {
+        wireUp,
+        isReady,
+        getCoordinator,
+        registerAPI,
+        getAPI,
+        get state() { return state; }
+    };
+})();
+</script>
