@@ -1,24 +1,55 @@
 # Tegaki v8 トレイン化完全移植計画書
 
-## 🚉 駅（Station）設計
-
-### index.html 構成要素
-```html
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <!-- 総則ヘッダー（改修ルール全文） -->
-  <!-- Styles読み込み -->
-</head>
-<body>
-  <!-- 初期DOM構造 -->
-  <!-- 車両読み込み（順序固定） -->
-  <!-- 駅制御スクリプト -->
-</body>
-</html>
-```
 
 ## 🚂 車両編成と責務
+
+A1-Core（基盤エンジン）
+
+形式: tegaki-a1-core.js
+
+提供: Canvas管理、描画基盤
+
+依存: DOM
+
+A2-Integration（統合制御）
+
+形式: tegaki-a2-integration.js
+
+提供: 車両間API・イベント配線
+
+依存: A1
+
+B1-UI（UI制御）
+
+形式: tegaki-b1-ui.js
+
+提供: サイドバー・ポップアップ
+
+依存: A1, A2
+
+B2-Status（監視表示）
+
+形式: tegaki-b2-status.js
+
+提供: ステータスバー、FPS監視
+
+依存: A1, A2
+
+B3-Tools（ツール管理）
+
+形式: tegaki-b3-tools.js
+
+提供: ペン・消しゴム・設定管理
+
+依存: A1, A2
+
+Styles（スタイル定義）
+
+形式: tegaki-styles.css
+
+提供: レイアウト・配色・アニメーション
+
+依存: なし
 
 ### A1-Core（基盤エンジン）
 **@provides**: Canvas管理、描画エンジン、リサイズ処理  
@@ -83,17 +114,53 @@
 - ふたば風カラーテーマ
 - アニメーション定義
 
-## 🔄 初期化シーケンス
+🚉 駅（Station）設計
+tegaki_v8_station.html 構成
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <!-- 総則ヘッダー（改修ルール全文） -->
+  <link rel="stylesheet" href="tegaki-styles.css">
+</head>
+<body>
+  <!-- 初期DOM構造 -->
+  <script src="tegaki-a1-core.js"></script>
+  <script src="tegaki-a2-integration.js"></script>
+  <script src="tegaki-b1-ui.js"></script>
+  <script src="tegaki-b2-status.js"></script>
+  <script src="tegaki-b3-tools.js"></script>
+  <script src="station-main.js"></script>
+</body>
+</html>
 
-```
+
+👉 ポイント
+
+車両ファイルは .js 化してモジュールとして読み込む。
+
+CSS は tegaki-styles.css として完全分離。
+
+
+🔄 初期化シーケンス
 [Station] 🚉 boot
-├─ A1.initCore()     # Canvas生成・基盤初期化
-├─ A2.wireUp()       # 車両間API結線
-├─ B1.initUI()       # UI構築・イベント設定  
-├─ B2.initStatus()   # ステータス監視開始
-├─ B3.initTools()    # ツール初期化
+├─ A1.initCore()
+├─ A2.wireUp()
+├─ B1.initUI()
+├─ B2.initStatus()
+├─ B3.initTools()
 └─ [Station] ✅ ready
-```
+
+📁 ファイル構成
+tegaki-v8/
+├── tegaki_v8_station.html   # 🚉 駅（總則+接続表）
+├── tegaki-a1-core.js        # 🚂 基盤エンジン
+├── tegaki-a2-integration.js # 🚂 統合制御  
+├── tegaki-b1-ui.js          # 🚋 UI制御
+├── tegaki-b2-status.js      # 🚋 ステータス
+├── tegaki-b3-tools.js       # 🚋 ツール管理
+├── tegaki-styles.css        # 🎨 スタイル定義
+└── station-main.js          # 🚉 駅制御ロジック（boot）
+
 
 ## 📋 完全移植チェックリスト
 
@@ -135,6 +202,13 @@
 3. **設定変更禁止**: 初期値・動作を勝手に変更しない
 4. **依存追加禁止**: 新しいライブラリを追加しない
 
+.html 内にJSロジックを書かない（必ず .js 車両へ分離）
+
+import/export の乱用禁止（駅の制御で順序を保証）
+
+機能削除・省略禁止
+
+
 ### 変更が必要な場合の対応
 駅の差分記録に以下を明記：
 - 変更理由
@@ -164,17 +238,6 @@
 2. 動作比較テスト（v7rev2 vs v8）
 3. パフォーマンス検証
 
-## 📁 ファイル構成
-
-```
-tegaki-v8/
-├── index.html              # 🚉 駅（總則+接続表）
-├── tegaki-a1-core.html     # 🚂 基盤エンジン
-├── tegaki-a2-integration.html # 🚂 統合制御  
-├── tegaki-b1-ui.html       # 🚋 UI制御
-├── tegaki-b2-status.html   # 🚋 ステータス
-├── tegaki-b3-tools.html    # 🚋 ツール管理
-└── tegaki-styles.css       # 🎨 スタイル定義
 ```
 
 ## 🎯 成功基準
