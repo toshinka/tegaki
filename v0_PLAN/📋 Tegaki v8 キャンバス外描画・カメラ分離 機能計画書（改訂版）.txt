@@ -1,0 +1,163 @@
+📋 Tegaki v8 キャンバス外描画・カメラ分離 機能計画書（改訂版）
+
+【目的】
+- クリスタのように「表示領域外に線を引き続けられる」描画体験を Tegaki v8 に導入する。
+- PixiJS v8 の Viewport 機能を活かし、描画領域と表示カメラを完全に分離する。
+- 描画対象はキャンバスの矩形を超えても存在可能とし、カメラでの視認範囲を制御する。
+
+【設計原則】
+- 剛直構造：フェイルセーフや冗長化を禁止。責務ごとにレイヤーを分離。
+- フォールバック禁止：キャンバス外処理は常に「存在する前提」で動作。
+- ログ最小化：初期化とエラー検出のみ出力。
+- PixiJS v8 APIのみを利用、後方互換やv7コードは一切混在させない。
+
+【基本構造】
+1. Root Stage（Pixi Application Stage）
+   - 背景レイヤー (BackgroundLayer)
+   - キャンバスレイヤー (CanvasLayer)
+   - UIレイヤー (UILayer)
+
+2. CanvasLayer の内部
+   - DrawingContainer（実際の描画オブジェクトが入る）
+   - この Container は論理的なキャンバス矩形サイズよりも拡張可能（境界制限なし）
+   - ユーザー操作によるストロークは常に DrawingContainer に記録
+
+3. Viewport
+   - PixiJS v8 の viewport (camera) を利用
+   - 表示範囲と描画範囲を完全に分離
+   - ユーザーはカメラを動かすことで「キャンバス外」を覗くように操作
+
+【描画フロー】
+1. ペン入力開始
+   - マウス／ペン座標を CanvasLayer のローカル座標に変換
+   - 変換後の座標がキャンバス矩形外でもストロークを許容
+
+2. 線描画処理
+   - DrawingContainer に Graphics または Line オブジェクトを追加
+   - 表示領域外でもそのまま記録される
+
+3. 再描画／表示
+   - Viewport の移動・拡縮によって可視領域を制御
+   - PixiJS renderer が見えている部分だけを GPU レンダリング
+
+【データ管理】
+- 内部ストロークデータは「論理座標系」で保存（キャンバス外も含む）
+- 出力（エクスポート・サムネイル）時のみキャンバス矩形にクリッピング可能
+- Undo/Redo 履歴はストローク単位で記録（キャンバス外を含む）
+
+【UI仕様】
+- 初期表示時は「論理キャンバス矩形」が表示され、枠線をガイドとして描画
+- 枠線外にも描画可能だが、エクスポート時には矩形外をクリップするか選択可能
+- ナビゲータ（ミニマップ）UIを追加予定（将来拡張）
+
+【追加検討課題】
+- ストロークが膨大になった場合のレンダリング負荷
+  → cacheAsBitmap など Pixi v8 のキャッシュAPIを適切に利用
+- キャンバス外データを含めた保存形式の定義
+  → JSON/独自形式で論理座標を保持し、PNG/JPEG出力時にクリップ
+
+
+以下叩き台コード。間違ってる部分もあるかもです。
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Tegaki v8 キャンバス外描画テスト</title>
+  <style>
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background: #f0e0d6; /* Futaba Cream */
+    }
+    #app {
+      width: 100%;
+      height: 100%;
+    }
+  </style>
+</head>
+<body>
+  <div id="app"></div>
+
+  <!-- PixiJS v8 -->
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
+  <!-- pixi-viewport -->
+  <script src="https://cdn.jsdelivr.net/npm/pixi-viewport@6/dist/viewport.min.js"></script>
+
+  <script>
+    // 🎨 Futaba Vector Drawing Tool v8 - キャンバス外描画テスト
+
+    const FUTABA_COLORS = {
+      MAROON: 0x800000,
+      CREAM: 0xf0e0d6
+    };
+
+    const container = document.getElementById("app");
+
+    // Pixi Application 初期化
+    const app = new PIXI.Application();
+    app.init({
+      width: container.clientWidth,
+      height: container.clientHeight,
+      resolution: devicePixelRatio,
+      autoDensity: true,
+      backgroundColor: FUTABA_COLORS.CREAM
+    }).then(() => {
+      container.appendChild(app.canvas);
+
+      // 背景（仮: 5000x5000 の作業領域）
+      const background = new PIXI.Graphics()
+        .beginFill(FUTABA_COLORS.CREAM)
+        .drawRect(0, 0, 5000, 5000)
+        .endFill();
+
+      // 描画レイヤー
+      const drawingContainer = new PIXI.Container();
+      drawingContainer.addChild(background);
+
+      // Viewport 初期化（カメラ制御）
+      const viewport = new pixi_viewport.Viewport({
+        screenWidth: app.screen.width,
+        screenHeight: app.screen.height,
+        worldWidth: 5000,
+        worldHeight: 5000,
+        events: app.renderer.events
+      });
+      app.stage.addChild(viewport);
+      viewport.addChild(drawingContainer);
+
+      // カメラ操作を有効化
+      viewport
+        .drag()
+        .pinch()
+        .wheel()
+        .decelerate();
+
+      // テスト描画（キャンバス外でもOK）
+      function drawStroke(x, y) {
+        const g = new PIXI.Graphics()
+          .lineStyle(2, FUTABA_COLORS.MAROON)
+          .moveTo(x, y)
+          .lineTo(x + 120, y + 80);
+        drawingContainer.addChild(g);
+      }
+
+      // 中央とキャンバス外にストロークを描く
+      drawStroke(200, 200);      // 中央付近
+      drawStroke(-300, -150);    // 左上キャンバス外
+      drawStroke(4800, 4800);    // 右下キャンバス外
+
+      console.info("✅ Tegaki v8 キャンバス外描画テスト初期化完了");
+    });
+  </script>
+</body>
+</html>
+
+
+
+
+
+
