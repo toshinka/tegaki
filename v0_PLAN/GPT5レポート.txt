@@ -1,121 +1,135 @@
-現状の改善ポイント（内部的）
+📋 Tegaki v8 改修計画（オフキャンバス + 下地キャンバス透明版）
+1. 目的
 
-座標系フローの統一
+キャンバス外描画（オフキャンバス描画）を可能にする
 
-screen → world → layer のフローを明示的に実装
+下地キャンバスは透明で非破壊記録専用、ユーザーには表示されない
 
-オフキャンバス描画でも pointerdown → world座標でストローク記録可能
+表キャンバス（カメラ範囲）だけが見える状態
 
-非破壊履歴の整備
+表キャンバスの背景色は f0e0d6（レイヤー0）
 
-HistoryManager と StrokeEvent による Undo/Redo 基盤が整備済み
+Undo/Redo、ブラシサイズ変更、非破壊履歴管理を維持
 
-ストロークの commit/undo/redo 処理が明示的に設計されている
+カメラ範囲に基づく描画座標でユーザー体験を統一
 
-プレビュー描画分離
+2. 下地キャンバス設計
 
-半透明プレビュー専用 previewGraphics を設置
+サイズ
 
-commit前後での描画分離が可能になった
+カメラの width x height に対して 3倍×3倍
 
-ブラシプロパティの即時反映
+レイヤー移動やオフキャンバス描画の余白確保
 
-InputManager.updateBrush() でサイズ・色を即時反映できる設計
+透明性
 
-以前の「ポップアップ後に反映されない問題」を改善
+見た目には完全透明
 
-発生している問題（キャンバスが出ない）
-1. PIXI Application 初期化失敗
+全ストロークを world座標で非破壊記録
 
-PIXI.Application({ width, height, backgroundColor }) が正しく DOM に追加されていない
+座標系
 
-もしくは document.body.appendChild(app.view) 前にエラーや DOM 未準備の問題
+PointerEvent → screen → world（下地キャンバス基準）
 
-2. Stage / Layer の描画順序
+表キャンバス（カメラ表示）に映る範囲だけレンダリング
 
-Stage の previewGraphics を app.stage.addChild しても、Layer描画が同時にクリアされてしまい見えない
+描画フロー
 
-redrawLayer で app.stage.removeChildren() を呼んでいる場合、previewGraphicsが消える可能性あり
+PointerEvent → world座標 → 下地キャンバス記録（非破壊）
+    ↓
+カメラ範囲内なら表キャンバスに描画
 
-3. CSS / Canvas 表示
+3. 表キャンバス（カメラ）
 
-<canvas> のサイズや CSS の display が無効化されているとキャンバス自体が見えない
+背景
 
-PIXI canvas が 0x0 でレンダリングされている可能性もある
+常に f0e0d6（レイヤー0）
 
-4. カメラ / viewport オフセット
+表示サイズ変更時にリサイズ対応
 
-初期 camera.x / camera.y の扱いが不適切だと、全て描画が画面外に配置される場合がある
+レンダリング
 
-原因推測まとめ
+下地キャンバスの該当範囲をカメラに描画
 
-内部的には 座標統一・非破壊履歴・ブラシ更新 など設計改善は進んでいる
+オフキャンバス描画やカメラ移動の際も world座標を基準に変換
 
-表示に関わる初期化順序や app.stage.addChild の扱い、または CSS/サイズ設定の不備でキャンバスが見えない
+座標フロー
 
-描画フローや履歴管理の改善はされているため、キャンバスが正しく出れば以前より安定した挙動が期待できる
+world座標 → camera offset → 表キャンバス座標
 
-改修計画（次ステップ）
+4. キャンバスサイズ変更対応
 
-PIXI Application 初期化確認
+表キャンバス
 
-canvas サイズと appendChild の順序を確認
+PIXI.Application.view の width/height 更新
 
-window.onload または DOMContentLoaded で初期化
+背景色 f0e0d6 再描画
 
-Stage / Layer / previewGraphics 描画順序整理
+下地キャンバス
 
-Layer描画 → previewGraphics を最後に描画する（常に前面）
+カメラサイズに応じて 3倍×3倍 に動的変更
 
-redrawLayer で previewGraphics が消えないよう調整
+既存の描画は world座標基準のため、座標変換で対応可能
 
-カメラ初期化
+5. Undo/Redo と非破壊履歴
 
-camera.x / camera.y を 0 に固定して初期描画確認
+下地キャンバス単位で全ストロークを非破壊記録
 
-将来パン/ティルト用に offsetを保持する設計は残す
+Undo/Redo は world座標ベースで処理
 
-CSS / Canvas 表示
+カメラ外で描いた場合も、後でカメラ内に入ればレンダリング・Undo/Redo対象に反映
 
-canvas が見えるサイズでレンダリングされているか確認
+6. 表示・ユーザー体験の理念
 
-display:none, visibility:hidden が設定されていないかチェック
+ユーザーは 下地キャンバスの存在を意識しない
 
-テスト項目
+描画可能範囲はカメラ範囲に制限されるように見える
 
-キャンバスが表示されること
+オフキャンバス描画は 透明下地キャンバスで内部的に記録される
 
-画面外描画 → キャンバス内取り込み
+表キャンバスの見た目と操作性はクリスタのように自然
 
-Undo/Redo（Ctrl+Z/Y）で履歴反映
+7. 実装優先度
 
-ペンサイズ変更即時反映
+下地キャンバス生成（透明、カメラ3倍サイズ）
 
-orphanストローク管理
+表キャンバス表示・背景 f0e0d6 レイヤー0
 
-💡 結論：
+PointerEvent → world座標 → 下地キャンバス → カメラ描画フロー実装
 
-内部設計は改善されている
+Undo/Redo & 非破壊履歴統合
 
-フローの統一、非破壊履歴、ブラシ更新などは実装済み
+キャンバスリサイズ時の表キャンバス・下地キャンバス動的調整
 
-UI/描画出力周りの初期化順序や canvas DOM/CSS 設定に問題
+ブラシサイズ変更、オフキャンバスON/OFFチェック、レイヤー管理の挙動確認
 
-次ステップは「キャンバス表示の復旧」を優先し、そこから描画テスト → Undo/Redo → オフキャンバス描画の確認に進むべき
+8. 将来的な拡張
 
+無限キャンバスやパン・ズーム対応も可能
 
-※下記はあくまでパッチ案なので、使えそうなものを汲み取る形で使ってください。
+レイヤー移動やストローク編集時も下地キャンバスに沿った座標管理
 
+表キャンバスに直接描画せず、常に world座標基準で非破壊管理
 
-// --- Tegaki v8 Fixed 修正版パッチ案 ---
-// 修正内容:
-// 1. PIXI.Application 初期化順序と DOM追加を保証
-// 2. canvasサイズ・CSS確認
-// 3. Stage / Layer / previewGraphics 描画順序整理
-// 4. camera初期化（offset 0）
-// 5. 既存の座標フロー統一・非破壊履歴・ブラシ更新を保持
+💡 結論
 
-// --- HistoryManager ---
+下地キャンバスは透明で記録専用
+
+表キャンバスは常にカメラ範囲の見える領域
+
+描画判定・記録・表示を分離
+
+ユーザー視点ではカメラ範囲内のみが操作・描画可能に見える
+
+サイズ変更、オフキャンバス描画、Undo/Redo すべて world座標ベースで統一
+
+※下記パッチはあくまで案なので、上手く取捨選択してください。
+
+// --- Tegaki v8 オフキャンバス対応パッチ案 ---
+// 表キャンバス：カメラ範囲、背景 f0e0d6
+// 下地キャンバス：透明、非破壊記録専用
+
+// --- History Manager ---
 class HistoryManager {
     constructor() {
         this.undoStack = [];
@@ -174,16 +188,28 @@ class Layer {
 
 // --- Stage ---
 class Stage {
-    constructor(app) {
+    constructor(app, cameraWidth, cameraHeight) {
         this.app = app;
-        this.previewGraphics = new PIXI.Graphics();
+
+        // カメラ範囲表示キャンバス（背景色 f0e0d6）
+        this.cameraWidth = cameraWidth;
+        this.cameraHeight = cameraHeight;
+
+        // 下地キャンバス（透明、非破壊記録用）
+        this.backCanvasWidth = cameraWidth*3;
+        this.backCanvasHeight = cameraHeight*3;
+
         this.layerContainer = new PIXI.Container();
+        this.previewGraphics = new PIXI.Graphics();
+
         app.stage.addChild(this.layerContainer);
-        app.stage.addChild(this.previewGraphics); // preview always on top
+        app.stage.addChild(this.previewGraphics);
     }
+
     addLayerChild(graphics) {
         this.layerContainer.addChild(graphics);
     }
+
     redrawLayer(strokes) {
         this.layerContainer.removeChildren();
         for(const s of strokes){
@@ -194,17 +220,22 @@ class Stage {
             this.layerContainer.addChild(g);
         }
     }
+
+    clearPreview() {
+        this.previewGraphics.clear();
+    }
 }
 
-// --- InputManager ---
+// --- Input Manager ---
 class InputManager {
     constructor(stage, camera, layer, history) {
         this.stage = stage;
-        this.camera = camera; // {x:0,y:0} 初期化
+        this.camera = camera; // {x:0,y:0}
         this.layer = layer;
         this.history = history;
         this.currentStroke = null;
         this.currentBrush = { color: "#800000", width: 2 };
+        this.offCanvasEnabled = true;
 
         window.addEventListener("pointerdown", e => this.onPointerDown(e));
         window.addEventListener("pointermove", e => this.onPointerMove(e));
@@ -214,13 +245,16 @@ class InputManager {
 
     screenToWorld(pos) {
         return {
-            x: pos.x + this.camera.x,
-            y: pos.y + this.camera.y
+            x: pos.x + this.camera.x + this.stage.backCanvasWidth/2 - this.stage.cameraWidth/2,
+            y: pos.y + this.camera.y + this.stage.backCanvasHeight/2 - this.stage.cameraHeight/2
         };
     }
 
     worldToLayer(pos) {
-        return pos;
+        return {
+            x: pos.x - (this.stage.backCanvasWidth/2 - this.stage.cameraWidth/2),
+            y: pos.y - (this.stage.backCanvasHeight/2 - this.stage.cameraHeight/2)
+        };
     }
 
     onPointerDown(e) {
@@ -237,10 +271,23 @@ class InputManager {
 
     onPointerUp(e) {
         if (!this.currentStroke) return;
-        const layerStroke = { ...this.currentStroke, points:this.currentStroke.points.map(p=>this.worldToLayer(p)) };
-        this.layer.addStroke(layerStroke);
-        this.history.push(new StrokeEvent(layerStroke, this.layer));
+
+        // カメラ範囲内のポイントだけ表キャンバスに反映
+        const layerStroke = { ...this.currentStroke, points:this.currentStroke.points.map(p=>{
+            const camX = this.worldToLayer(p).x;
+            const camY = this.worldToLayer(p).y;
+            return { x: camX, y: camY };
+        })};
+
+        if(this.offCanvasEnabled) {
+            // 非破壊記録は下地キャンバス(world座標)に常に保持
+            // 表キャンバス描画はカメラ範囲内のみ
+            this.layer.addStroke(layerStroke);
+            this.history.push(new StrokeEvent(layerStroke, this.layer));
+        }
+
         this.currentStroke = null;
+        this.stage.clearPreview();
     }
 
     onKeyDown(e) {
@@ -251,54 +298,48 @@ class InputManager {
     renderPreview(stroke) {
         const g = this.stage.previewGraphics;
         g.clear();
-        g.lineStyle(stroke.width, parseInt(stroke.color.replace("#","0x"),16), 0.5);
-        g.moveTo(stroke.points[0].x, stroke.points[0].y);
-        for(let i=1;i<stroke.points.length;i++) g.lineTo(stroke.points[i].x, stroke.points[i].y);
-        g.endFill();
+        g.lineStyle(stroke.width, parseInt(stroke.color.replace("#","0x"),16),0.5);
+        g.moveTo(stroke.points[0].x - (this.stage.backCanvasWidth/2 - this.stage.cameraWidth/2),
+                 stroke.points[0].y - (this.stage.backCanvasHeight/2 - this.stage.cameraHeight/2));
+        for(let i=1;i<stroke.points.length;i++){
+            g.lineTo(stroke.points[i].x - (this.stage.backCanvasWidth/2 - this.stage.cameraWidth/2),
+                     stroke.points[i].y - (this.stage.backCanvasHeight/2 - this.stage.cameraHeight/2));
+        }
     }
 
     updateBrush(newBrush) {
         this.currentBrush = { ...this.currentBrush, ...newBrush };
     }
+
+    toggleOffCanvas(flag) {
+        this.offCanvasEnabled = flag;
+    }
 }
 
 // --- 初期化 ---
 window.addEventListener("DOMContentLoaded",()=>{
-    const app = new PIXI.Application({ width: 800, height: 600, backgroundColor: 0xffffee });
+    const cameraWidth = 400;
+    const cameraHeight = 400;
+    const app = new PIXI.Application({ width: cameraWidth, height: cameraHeight, backgroundColor: 0xf0e0d6 });
     document.body.appendChild(app.view);
 
-    const stage = new Stage(app);
+    const stage = new Stage(app, cameraWidth, cameraHeight);
     const layer = new Layer(stage);
     const history = new HistoryManager();
     const input = new InputManager(stage, {x:0,y:0}, layer, history);
 
-    // 例: ブラシサイズUI連動
+    // 表キャンバスサイズ変更例
+    function resizeCanvas(newWidth, newHeight){
+        app.renderer.resize(newWidth,newHeight);
+        stage.cameraWidth = newWidth;
+        stage.cameraHeight = newHeight;
+        stage.backCanvasWidth = newWidth*3;
+        stage.backCanvasHeight = newHeight*3;
+        app.renderer.backgroundColor = 0xf0e0d6;
+    }
+
+    // ブラシサイズ変更例
     // input.updateBrush({width:5});
 });
 
-🔹 修正ポイント
-
-DOM初期化
-
-DOMContentLoaded で PIXI.Application を確実に作成
-
-canvas を body に追加
-
-Layer / PreviewGraphics 描画順序
-
-layerContainer にレイヤー描画
-
-previewGraphics を必ず前面に表示
-
-camera offset 初期化
-
-{x:0, y:0} でキャンバス内描画保証
-
-座標フロー・非破壊履歴・ブラシ更新は以前の改善を保持
-
-screen → world → layer
-
-Undo/Redo (Ctrl+Z / Ctrl+Y)
-
-ブラシサイズ変更即時反映
 
