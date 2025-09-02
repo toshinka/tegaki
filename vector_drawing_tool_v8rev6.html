@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev5 - オフキャンバス対応改修版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev5 - PIXIバックエンド対応改修版</title>
     <style>
         * {
             margin: 0;
@@ -448,18 +448,19 @@
     <script>
         /**
          * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev5
-         * オフキャンバス描画システム実装改修版
-         * GPT5レポート対応: 動的リサイズ、カメラ座標管理、消しゴム修正、背景色処理
+         * PIXIベースバックエンド管理システム改修版
+         * GPT5レポート対応: 透明矩形ベースの描画範囲管理、統一スケール処理
          * - カメラキャンバス：表示される範囲（400x400）
-         * - バックエンドキャンバス：実際の描画領域（3倍サイズ透明）
+         * - バックエンドキャンバス：実際の描画領域（PIXIコンテナ＋透明矩形）
          */
         
         // グローバル変数
         let pixiApp = null;
         let cameraContainer = null;        // カメラ表示用コンテナ
         let backendContainer = null;       // バックエンド描画用コンテナ
+        let backendRect = null;            // 透明矩形（描画範囲定義用）
         let interactiveArea = null;        // 描画判定エリア（拡張範囲）
-        let backendScale = 3;          　　// 好みの倍率
+        let backendScale = 3;             // 好みの倍率
         
         let currentPath = null;
         let isDrawing = false;
@@ -511,7 +512,7 @@
             
             // 拡張判定エリア内かチェック（オフキャンバス描画用）
             static isInExtendedArea(worldX, worldY) {
-                const margin = Math.max(cameraWidth, cameraHeight) * 0.3; // 30%の余白
+                const margin = Math.max(cameraWidth, cameraHeight) * 2; // 200%の余白
                 return worldX >= cameraOffset.x - margin && 
                        worldX <= cameraOffset.x + cameraWidth + margin &&
                        worldY >= cameraOffset.y - margin && 
@@ -560,12 +561,12 @@
             }
         }
         
-        // ==== 描画システム ====
-        class DrawingSystem {
+        // ==== PIXIベース描画システム（改修版） ====
+        class PIXIDrawingSystem {
             static createPath(worldX, worldY) {
                 const graphics = new PIXI.Graphics();
                 
-                // バックエンドに追加
+                // バックエンドコンテナに追加（透明矩形の後に追加）
                 backendContainer.addChild(graphics);
                 
                 // 最初のポイントを描画
@@ -616,7 +617,10 @@
                 const childrenToCheck = [...backendContainer.children];
                 
                 childrenToCheck.forEach(child => {
-                    if (child instanceof PIXI.Graphics && child !== currentPath?.graphics) {
+                    if (child instanceof PIXI.Graphics && 
+                        child !== currentPath?.graphics && 
+                        child !== backendRect) { // 透明矩形は除外
+                        
                         // 消しゴム範囲内に描画があるかチェック
                         const bounds = child.getBounds();
                         const centerX = bounds.x + bounds.width/2;
@@ -642,7 +646,7 @@
                 
                 // 消去処理を行った場合、強制再描画
                 if (hasErased) {
-                    CameraSystem.forceRedraw();
+                    PIXIBackendManager.forceRedraw();
                 }
             }
             
@@ -671,7 +675,7 @@
                         redo: () => {
                             // 消しゴムのredo処理
                             eraserAction.points.forEach(point => {
-                                DrawingSystem.eraseAtPoint(point.x, point.y, eraserAction.brush.size);
+                                PIXIDrawingSystem.eraseAtPoint(point.x, point.y, eraserAction.brush.size);
                             });
                         }
                     });
@@ -693,7 +697,7 @@
                             backendContainer.removeChild(pathCopy.graphics);
                             pathCopy.graphics.destroy();
                         }
-                        CameraSystem.forceRedraw();
+                        PIXIBackendManager.forceRedraw();
                     },
                     redo: () => {
                         if (!backendContainer.children.includes(pathCopy.graphics)) {
@@ -708,11 +712,79 @@
                             pathCopy.graphics = newGraphics;
                             backendContainer.addChild(newGraphics);
                         }
-                        CameraSystem.forceRedraw();
+                        PIXIBackendManager.forceRedraw();
                     }
                 });
                 
                 return pathCopy;
+            }
+        }
+        
+        // ==== PIXIベースバックエンド管理システム（新規追加） ====
+        class PIXIBackendManager {
+            static initializeBackend() {
+                // バックエンドコンテナ作成
+                backendContainer = new PIXI.Container();
+                
+                // 透明矩形作成（描画範囲定義用）
+                backendRect = new PIXI.Graphics();
+                this.updateBackendRect();
+                
+                // 透明矩形をコンテナに追加（必ず最初に追加）
+                backendContainer.addChild(backendRect);
+                
+                console.log(`PIXIバックエンド初期化完了: ${backendWidth}x${backendHeight}px`);
+            }
+            
+            static updateBackendRect() {
+                if (!backendRect) return;
+                
+                // 透明矩形を再描画
+                backendRect.clear();
+                backendRect.rect(0, 0, backendWidth, backendHeight);
+                backendRect.fill({ color: 0x000000, alpha: 0.001 }); // ほぼ透明
+                
+                console.log(`バックエンド矩形更新: ${backendWidth}x${backendHeight}px`);
+            }
+            
+            static resizeBackend(newWidth, newHeight) {
+                const oldWidth = cameraWidth;
+                const oldHeight = cameraHeight;
+                
+                cameraWidth = newWidth;
+                cameraHeight = newHeight;
+                backendWidth = newWidth * backendScale;
+                backendHeight = newHeight * backendScale;
+
+                // カメラオフセット調整（中央に配置）
+                cameraOffset.x = backendWidth / 2 - cameraWidth / 2;
+                cameraOffset.y = backendHeight / 2 - cameraHeight / 2;
+
+                // 透明矩形サイズ更新
+                this.updateBackendRect();
+
+                console.log(`バックエンドリサイズ完了: カメラ${newWidth}x${newHeight} → バックエンド${backendWidth}x${backendHeight}`);
+            }
+            
+            static forceRedraw() {
+                if (!pixiApp) return;
+                
+                // PIXIレンダラーを強制的に再描画
+                pixiApp.renderer.render(pixiApp.stage);
+            }
+            
+            static clearAllDrawings() {
+                if (!backendContainer) return;
+                
+                // 透明矩形以外のすべての子要素を削除
+                const childrenToRemove = backendContainer.children.filter(child => child !== backendRect);
+                childrenToRemove.forEach(child => {
+                    backendContainer.removeChild(child);
+                    if (child.destroy) child.destroy();
+                });
+                
+                this.forceRedraw();
+                console.log('すべての描画をクリアしました');
             }
         }
         
@@ -733,7 +805,7 @@
             }
             
             isDrawing = true;
-            currentPath = DrawingSystem.createPath(world.x, world.y);
+            currentPath = PIXIDrawingSystem.createPath(world.x, world.y);
         }
         
         function onPointerMove(event) {
@@ -748,14 +820,14 @@
             
             if (!isDrawing || !currentPath) return;
             
-            DrawingSystem.drawLine(currentPath, world.x, world.y);
+            PIXIDrawingSystem.drawLine(currentPath, world.x, world.y);
         }
         
         function onPointerUp(event) {
             if (!isDrawing || !currentPath) return;
             
             isDrawing = false;
-            DrawingSystem.finishPath(currentPath);
+            PIXIDrawingSystem.finishPath(currentPath);
             currentPath = null;
         }
         
@@ -777,37 +849,14 @@
             static resize(newWidth, newHeight) {
                 if (!pixiApp) return;
                 
-                const oldWidth = cameraWidth;
-                const oldHeight = cameraHeight;
-                
-                cameraWidth = newWidth;
-                cameraHeight = newHeight;
-                backendWidth = newWidth * backendScale;
-                backendHeight = newHeight * backendScale;
-
-                
-                // カメラオフセット調整（中央に配置）
-                cameraOffset.x = backendWidth / 2 - cameraWidth / 2;
-                cameraOffset.y = backendHeight / 2 - cameraHeight / 2;
-                
-                // 既存の描画内容を一時保存
-                const existingPaths = [...backendContainer.children];
-                
-                // バックエンドコンテナをクリア（描画内容は保持）
-                backendContainer.removeChildren();
+                // PIXIバックエンド管理システムでリサイズ
+                PIXIBackendManager.resizeBackend(newWidth, newHeight);
                 
                 // PIXI Applicationリサイズ
                 pixiApp.renderer.resize(newWidth, newHeight);
                 
                 // 背景色を再塗装
                 pixiApp.renderer.background.color = 0xf0e0d6;
-                
-                // 保存した描画内容を復元
-                existingPaths.forEach(child => {
-                    if (child instanceof PIXI.Graphics) {
-                        backendContainer.addChild(child);
-                    }
-                });
                 
                 // キャンバスコンテナのサイズを更新
                 const canvasContainer = document.getElementById('canvas-container');
@@ -829,20 +878,13 @@
                 this.updateView();
                 
                 // 強制再描画
-                this.forceRedraw();
+                PIXIBackendManager.forceRedraw();
                 
                 // ステータス更新
                 const cameraInfo = document.getElementById('camera-info');
                 const backendInfo = document.getElementById('backend-info');
                 if (cameraInfo) cameraInfo.textContent = `${newWidth}×${newHeight}px`;
                 if (backendInfo) backendInfo.textContent = `${backendWidth}×${backendHeight}px`;
-            }
-            
-            static forceRedraw() {
-                if (!pixiApp) return;
-                
-                // レンダラーを強制的に再描画
-                pixiApp.renderer.render(pixiApp.stage);
             }
         }
         
@@ -1030,15 +1072,6 @@
                         this.closeAllPopups();
                     }
                 }
-// ==== バックエンド領域を確保する透明レイヤー ====
-if (!backendContainer._boundsRect) {
-    backendContainer._boundsRect = new PIXI.Graphics();
-    backendContainer.addChildAt(backendContainer._boundsRect, 0); // 一番下に置く
-}
-backendContainer._boundsRect.clear();
-backendContainer._boundsRect.rect(0, 0, backendWidth, backendHeight);
-backendContainer._boundsRect.fill({ color: 0x000000, alpha: 0.001 }); // 透明
-
             }
             
             static closeAllPopups() {
@@ -1079,7 +1112,7 @@ backendContainer._boundsRect.fill({ color: 0x000000, alpha: 0.001 }); // 透明
         
         // ==== 初期化関数 ====
         async function initializeApp() {
-            console.log('オフキャンバス対応アプリケーション初期化開始');
+            console.log('PIXIベースアプリケーション初期化開始');
             
             try {
                 // PIXI Application作成
@@ -1103,8 +1136,8 @@ backendContainer._boundsRect.fill({ color: 0x000000, alpha: 0.001 }); // 透明
                 canvasContainer.appendChild(pixiApp.canvas);
                 console.log('キャンバスをDOMに追加完了');
                 
-                // バックエンドコンテナ作成（透明・非破壊記録用）
-                backendContainer = new PIXI.Container();
+                // PIXIバックエンド管理システム初期化
+                PIXIBackendManager.initializeBackend();
                 
                 // カメラコンテナ作成（表示用）
                 cameraContainer = new PIXI.Container();
@@ -1133,7 +1166,7 @@ backendContainer._boundsRect.fill({ color: 0x000000, alpha: 0.001 }); // 透明
                 document.addEventListener('mouseup', onPointerUp);
                 document.addEventListener('mouseleave', onPointerUp);
                 
-                console.log('オフキャンバス描画システム初期化完了');
+                console.log('PIXIベース描画システム初期化完了');
                 
                 // UI初期化
                 UIController.init();
@@ -1150,10 +1183,11 @@ backendContainer._boundsRect.fill({ color: 0x000000, alpha: 0.001 }); // 透明
                 if (cameraInfo) cameraInfo.textContent = `${cameraWidth}×${cameraHeight}px`;
                 if (backendInfo) backendInfo.textContent = `${backendWidth}×${backendHeight}px`;
                 
-                console.log('✅ オフキャンバス対応アプリケーション初期化完了');
+                console.log('✅ PIXIベースアプリケーション初期化完了');
                 console.log('🎯 GPT5レポート対応改修項目:');
-                console.log('  🔧 動的リサイズ時のバックエンドキャンバス再確保');
-                console.log('  🔧 カメラ座標システム統合とワールド座標記録');
+                console.log('  🔧 透明矩形ベースの描画範囲管理システム');
+                console.log('  🔧 PIXIコンテナによる統一スケール処理');
+                console.log('  🔧 バックエンドリサイズ時の自動範囲調整');
                 console.log('  🔧 消しゴム機能強化と強制再描画');
                 console.log('  🔧 背景色処理とリサイズ時の色再設定');
                 console.log('  🔧 非破壊履歴管理システム');
@@ -1183,7 +1217,7 @@ backendContainer._boundsRect.fill({ color: 0x000000, alpha: 0.001 }); // 透明
                             box-sizing: border-box;
                         ">
                             <div style="font-size: 24px; margin-bottom: 10px;">⚠️</div>
-                            <div style="font-size: 14px; margin-bottom: 10px;">オフキャンバス初期化エラー</div>
+                            <div style="font-size: 14px; margin-bottom: 10px;">PIXIベース初期化エラー</div>
                             <div style="font-size: 12px; opacity: 0.8;">${error.message}</div>
                             <div style="font-size: 11px; margin-top: 10px; opacity: 0.6;">
                                 ブラウザを再読み込みしてください
@@ -1198,7 +1232,7 @@ backendContainer._boundsRect.fill({ color: 0x000000, alpha: 0.001 }); // 透明
         
         // ==== DOMContentLoaded で初期化実行 ====
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('DOM読み込み完了 - オフキャンバス対応初期化開始');
+            console.log('DOM読み込み完了 - PIXIベース初期化開始');
             
             // ライブラリチェック
             if (!window.PIXI) {
@@ -1211,7 +1245,7 @@ backendContainer._boundsRect.fill({ color: 0x000000, alpha: 0.001 }); // 透明
             // アプリケーション初期化
             initializeApp().then((success) => {
                 if (success) {
-                    console.log('🎨 Futaba Drawing Tool v8rev5-offcanvas-fixed 起動完了');
+                    console.log('🎨 Futaba Drawing Tool v8rev5-pixi-backend 起動完了');
                 } else {
                     console.log('❌ 初期化に失敗しました');
                 }

@@ -1,216 +1,210 @@
-🛠 改修計画
+vector_drawing_tool_v8rev5.html 改修計画（PIXI 仕様にリサイズ反映）
+1. 改修の目的
 
-下地キャンバスを動的にリサイズ
+描画範囲の自動管理
+現状の自作バックエンドでは、backendWidth / backendHeight の変更が Canvas や描画処理に正しく反映されない場合がある。
+→ PIXI の Container + Graphics を使うことで、透明矩形を置くだけで描画範囲を自動管理可能。
 
-resizeCanvas(width, height) 時に
-offscreenCanvas.width = width * 3;
-offscreenCanvas.height = height * 3;
-と再確保する。
+スケール変更の統一化
+現状では backendScale を掛ける処理を自前で管理しているが、PIXI を使うことで scale プロパティで一括管理できる。
 
-これにより「カメラの 3倍×3倍の透明下地」が常に確保され、リサイズ後もズレが発生しない。
+将来的な拡張の容易化
+マスク、スクロール、回転など、PIXI の標準機能をそのまま使えるため、追加機能の実装コストを下げられる。
 
-カメラ座標の導入
+2. 改修方針
 
-cameraX, cameraY を基準に
-mainCanvas.drawImage(offscreenCanvas, cameraX, cameraY, width, height, 0, 0, width, height);
-とすることで「下地に描いたものをカメラで切り取って表示」できる。
+透明矩形（透明 Graphics）を常に配置
 
-これで無限キャンバスに近い仕組みが可能になる。
-
-消しゴム修正
-
-offscreenCtx.globalCompositeOperation = "destination-out" のあと必ず
-mainCanvas に drawImage をかけ直す。
-
-さらに履歴 (history) にも「消去ストローク」を push する必要がある。
-
-リサイズ時の背景色
-
-mainCanvas の背景色（f0e0d6）を再塗り直す処理を
-resizeCanvas に追加する。
-
-👉 まとめると、
-「非破壊記録・透明下地キャンバス」はコード上でも正しく機能しているけれど、 動的リサイズとカメラ座標管理が未完成 なので、今後の拡張（無限キャンバス・レイヤー移動）を見据えて修正が必要、という状態です。
+const backendContainer = new PIXI.Container();
+const backendRect = new PIXI.Graphics();
+backendRect.beginFill(0x000000, 0); // 完全透明
+backendRect.drawRect(0, 0, backendWidth, backendHeight);
+backendRect.endFill();
+backendContainer.addChild(backendRect);
+app.stage.addChild(backendContainer);
 
 
-🎯 改修目的
+これにより PIXI が描画範囲を認識する
 
-下地キャンバス (offscreenCanvas) を カメラ範囲の3倍×3倍 に動的確保する。
+子要素（描画オブジェクト）の表示/スケーリングが容易になる
 
-ユーザーのリサイズ操作に応じて再計算・再描画を行い、見た目のズレや背景色の残存を防ぐ。
+リサイズ時の反映
 
-将来的なカメラ移動にも備え、カメラ座標を基準に mainCanvas に切り出す方式に改修する。
-
-🛠 改修計画
-1. resizeCanvas の修正
-
-現在：mainCanvas.width/height しか更新していない。
-
-改修：offscreenCanvas も「カメラ範囲の3倍」に合わせてリサイズ。
-
-function resizeCanvas(width, height) {
-    mainCanvas.width = width;
-    mainCanvas.height = height;
-
-    // 背景塗り直し（f0e0d6）
-    const ctx = mainCanvas.getContext("2d");
-    ctx.fillStyle = "#f0e0d6";
-    ctx.fillRect(0, 0, width, height);
-
-    // 下地キャンバスを動的再確保（3倍）
-    offscreenCanvas.width = width * 3;
-    offscreenCanvas.height = height * 3;
-}
-
-2. 描画ループの修正
-
-現在：drawImage(offscreenCanvas, 0, 0, width, height, 0, 0, width, height);
-
-改修：カメラ座標 (cameraX, cameraY) を考慮。
-
-function render() {
-    ctx.fillStyle = "#f0e0d6";
-    ctx.fillRect(0, 0, mainCanvas.width, mainCanvas.height);
-
-    ctx.drawImage(
-        offscreenCanvas,
-        cameraX, cameraY, mainCanvas.width, mainCanvas.height, // 切り出し
-        0, 0, mainCanvas.width, mainCanvas.height             // mainCanvasに表示
-    );
+function resizeBackend(newWidth, newHeight) {
+    backendWidth = newWidth * backendScale;
+    backendHeight = newHeight * backendScale;
+    backendRect.clear();
+    backendRect.beginFill(0x000000, 0);
+    backendRect.drawRect(0, 0, backendWidth, backendHeight);
+    backendRect.endFill();
 }
 
 
-👉 こうすることで、カメラ移動や拡張が自然に実装できる。
+透明矩形のサイズを更新するだけで、描画領域が自動調整される
 
-3. ストローク記録時の座標変換
+backendContainer.scale.set(...) で全体スケールも統一可能
 
-mousemove などで取得する x, y は mainCanvas 基準。
+既存自作描画処理の置換
 
-改修：オフスクリーン記録時に カメラオフセットを加算する。
+backendContext.drawXXX 系の自作描画処理は PIXI Graphics / Sprite で置換
 
-offscreenCtx.lineTo(x + cameraX, y + cameraY);
+最小限のラッパー関数を作り、従来の描画 API 呼び出しを PIXI にマッピングする
+
+3. 期待される効果
+
+リサイズやスケール変更が正確にバックエンドに反映される
+
+子オブジェクトの描画が透明矩形に収まることを自動保証
+
+将来のカメラ、スクロール、回転、マスク機能への対応が容易
+
+自作 Canvas 管理コードを減らし、保守性が向上
+
+4. 注意点
+
+PIXI を導入するため、vector_drawing_tool_v8rev5.html 内の自作 Canvas 初期化コードは置換
+
+描画速度はほぼ同等だが、大量オブジェクト描画時は PIXI の最適化（cacheAsBitmap など）を考慮
+
+既存スケール・座標計算は PIXI のスケールと座標に置き換え
+
+💡 ポイントまとめ：
+
+透明矩形 = 描画範囲の基準
+
+Container + scale = バックエンド全体のスケール管理
+
+既存描画関数は PIXI ラッパーに置換
 
 
-これで「offscreenCanvas に常にワールド座標で記録」される。
+※下記はサンプルコードです
 
-4. 履歴管理の維持
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Vector Drawing Tool v8rev5 - PIXI互換ラッパー版</title>
+<style>
+  body { margin: 0; overflow: hidden; }
+  canvas { display: block; }
+</style>
+</head>
+<body>
 
-history.push(stroke) はそのまま活かせる。
-
-ただし stroke 内の座標も cameraX, cameraY 加算済みで保存する必要がある。
-
-✅ 期待される改善効果
-
-キャンバスを小さくリサイズしても 見た目の背景と下地が一致する。
-
-大きくしても下地が拡張されるので 端ギリギリまで描画しても破綻しない。
-
-将来の 無限キャンバス / カメラ移動 / レイヤー移動 に備えられる。
-
-この改修を入れると、「ユーザーが意識するのはカメラ座標だけ」で済みます。
-👉 下地キャンバスは常に3倍確保 → カメラで切り出し → 背景色を mainCanvas で描画。
-
-
-🔧 参考用コード（差し込み用）
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.2.4/pixi.min.js"></script>
 <script>
-const mainCanvas = document.getElementById("canvas");
-const ctx = mainCanvas.getContext("2d");
+/* ===== グローバル変数 ===== */
+let backendScale = 5;      // 好みの倍率
+let backendWidth = 400 * backendScale;
+let backendHeight = 400 * backendScale;
 
-// 下地キャンバス（透明）
-const offscreenCanvas = document.createElement("canvas");
-const offscreenCtx = offscreenCanvas.getContext("2d");
+let app, backendContainer, backendRect;
 
-// カメラ座標（将来の移動も考慮）
-let cameraX = 0;
-let cameraY = 0;
+/* ===== 初期化 ===== */
+function init() {
+    app = new PIXI.Application({
+        width: window.innerWidth,
+        height: window.innerHeight,
+        backgroundColor: 0xffffff,
+    });
+    document.body.appendChild(app.view);
 
-// ================================
-// 📌 キャンバスリサイズ処理
-// ================================
-function resizeCanvas(width, height) {
-    // 表示用キャンバス
-    mainCanvas.width = width;
-    mainCanvas.height = height;
+    // バックエンド用コンテナ
+    backendContainer = new PIXI.Container();
+    app.stage.addChild(backendContainer);
 
-    // 背景色を塗り直す
-    ctx.fillStyle = "#f0e0d6";
-    ctx.fillRect(0, 0, width, height);
+    // 透明矩形（描画範囲）
+    backendRect = new PIXI.Graphics();
+    drawBackendRect(backendWidth, backendHeight);
+    backendContainer.addChild(backendRect);
 
-    // 下地キャンバスをカメラ範囲の3倍で確保
-    offscreenCanvas.width = width * 3;
-    offscreenCanvas.height = height * 3;
+    // リサイズイベント
+    window.addEventListener('resize', onResize);
 
-    // 中央にカメラを置く（カメラ移動を考慮）
-    cameraX = width;
-    cameraY = height;
+    // サンプル描画（既存 API 風）
+    SampleAPI.drawCircle(50, 50, 25, 0xff0000);
+    SampleAPI.drawRect(100, 100, 60, 40, 0x0000ff);
 }
 
-// ================================
-// 📌 描画ループ（mainCanvasへ切り出し）
-// ================================
-function render() {
-    // 背景塗り直し
-    ctx.fillStyle = "#f0e0d6";
-    ctx.fillRect(0, 0, mainCanvas.width, mainCanvas.height);
-
-    // 下地キャンバスの一部を mainCanvas へ表示
-    ctx.drawImage(
-        offscreenCanvas,
-        cameraX, cameraY, mainCanvas.width, mainCanvas.height, // 切り出し元
-        0, 0, mainCanvas.width, mainCanvas.height              // 表示先
-    );
+/* ===== バックエンド矩形描画 ===== */
+function drawBackendRect(width, height) {
+    backendRect.clear();
+    backendRect.beginFill(0x000000, 0); // 完全透明
+    backendRect.drawRect(0, 0, width, height);
+    backendRect.endFill();
 }
 
-// ================================
-// 📌 ペン描画処理（例）
-// ================================
-let drawing = false;
+/* ===== バックエンドリサイズ ===== */
+function resizeBackend(newWidth, newHeight) {
+    backendWidth = newWidth * backendScale;
+    backendHeight = newHeight * backendScale;
+    drawBackendRect(backendWidth, backendHeight);
 
-mainCanvas.addEventListener("mousedown", (e) => {
-    drawing = true;
-    const x = e.offsetX + cameraX;
-    const y = e.offsetY + cameraY;
-    offscreenCtx.beginPath();
-    offscreenCtx.moveTo(x, y);
-});
+    // 全体スケール調整（既存描画 API の互換のため）
+    backendContainer.scale.set(1 / backendScale);
+}
 
-mainCanvas.addEventListener("mousemove", (e) => {
-    if (!drawing) return;
-    const x = e.offsetX + cameraX;
-    const y = e.offsetY + cameraY;
-    offscreenCtx.lineTo(x, y);
-    offscreenCtx.stroke();
-    render();
-});
+/* ===== ウィンドウリサイズ時 ===== */
+function onResize() {
+    app.renderer.resize(window.innerWidth, window.innerHeight);
+    // 必要に応じて backendWidth / backendHeight を更新
+    // resizeBackend(window.innerWidth, window.innerHeight);
+}
 
-mainCanvas.addEventListener("mouseup", () => {
-    drawing = false;
-});
+/* ===== 既存描画 API 風ラッパー ===== */
+const SampleAPI = {
+    drawCircle: function(x, y, radius, color) {
+        const g = new PIXI.Graphics();
+        g.beginFill(color);
+        g.drawCircle(x * backendScale, y * backendScale, radius * backendScale);
+        g.endFill();
+        backendContainer.addChild(g);
+    },
+    drawRect: function(x, y, width, height, color) {
+        const g = new PIXI.Graphics();
+        g.beginFill(color);
+        g.drawRect(x * backendScale, y * backendScale, width * backendScale, height * backendScale);
+        g.endFill();
+        backendContainer.addChild(g);
+    },
+    clear: function() {
+        backendContainer.removeChildren(1); // 透明矩形は残す
+    }
+};
 
-// ================================
-// 📌 初期化
-// ================================
-resizeCanvas(400, 400);
-render();
+/* ===== 初期化実行 ===== */
+init();
 </script>
+</body>
+</html>
+🔹 改修ポイントと説明（改修担当向け）
+透明矩形を常に置く
 
-✅ このコードのポイント
+描画範囲を明示的に確保。PIXI 側でスケールや座標管理がしやすくなる。
 
-下地キャンバスは常に3倍サイズ
+backendScale による統一スケール
 
-resizeCanvas 時に自動で再確保。
+従来自作バックエンドの「ピクセル単位」感覚を維持。
 
-cameraX, cameraY で「どこを切り出すか」を決定。
+既存コードの座標・サイズをそのまま使える。
 
-描画は常にオフセット加算
+互換ラッパー SampleAPI
 
-x + cameraX, y + cameraY を記録。
+drawCircle, drawRect, clear を用意。
 
-将来カメラ移動しても記録がズレない。
+従来自作描画関数をほぼそのまま置き換え可能。
 
-背景色は mainCanvas 側で管理
+PIXI Graphics を内部的に生成し、backendContainer に追加。
 
-下地キャンバスは常に透明。
+backendContainer.scale
 
-表示時に f0e0d6 を塗ってから drawImage。
+拡大縮小やリサイズに合わせた描画調整を統一的に実施。
+
+リサイズ対応
+
+ウィンドウリサイズ時に PIXI レンダラーを更新。
+
+必要に応じてバックエンド描画領域もリサイズ可能。
+
+💡 この形にすると、従来の自作描画コードをほぼ変えずに PIXI に置き換えられるため、既存ロジックはそのまま再利用、拡張や高速化も容易です。
 
