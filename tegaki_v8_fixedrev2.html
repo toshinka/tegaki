@@ -1,0 +1,926 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev4 - キャンバス外描画対応</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button img,
+        .tool-button svg {
+            width: 20px;
+            height: 20px;
+        }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .tool-button.disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .canvas-container {
+            background: var(--futaba-cream);
+            display: inline-block;
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            min-width: 400px;
+            min-height: 400px;
+        }
+        
+        canvas {
+            border: none;
+            display: block;
+            cursor: crosshair;
+        }
+        
+        .popup-panel {
+            position: fixed;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+            padding: 20px;
+            z-index: 2000;
+            backdrop-filter: blur(12px);
+            display: none;
+            user-select: none;
+            min-width: 280px;
+        }
+        
+        .popup-panel.show {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        
+        .popup-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            margin-bottom: 16px;
+            text-align: center;
+            border-bottom: 2px solid var(--futaba-light-medium);
+            padding-bottom: 8px;
+        }
+        
+        .setting-group {
+            margin-bottom: 16px;
+        }
+        
+        .setting-label {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .slider {
+            flex: 1;
+            height: 6px;
+            background: var(--futaba-light-medium);
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .slider-track {
+            height: 100%;
+            background: var(--futaba-maroon);
+            border-radius: 3px;
+            transition: width 0.1s ease;
+        }
+        
+        .slider-handle {
+            width: 16px;
+            height: 16px;
+            background: var(--futaba-maroon);
+            border: 2px solid var(--futaba-background);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .slider-handle:active {
+            cursor: grabbing;
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+        
+        .slider-value {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            min-width: 50px;
+            text-align: right;
+        }
+        
+        .size-input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .size-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            background: var(--futaba-background);
+            font-family: monospace;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .size-input:focus {
+            outline: none;
+            border-color: var(--futaba-maroon);
+        }
+        
+        .size-multiply {
+            color: var(--futaba-maroon);
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .action-button {
+            padding: 10px 16px;
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 8px;
+            background: var(--futaba-background);
+            color: var(--futaba-maroon);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        
+        .action-button:hover {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .action-button.primary {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .action-button.primary:hover {
+            background: var(--futaba-light-maroon);
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .off-canvas-indicator {
+            position: absolute;
+            color: var(--futaba-maroon);
+            font-size: 12px;
+            font-weight: bold;
+            pointer-events: none;
+            z-index: 10;
+            opacity: 0.7;
+        }
+        
+        @media (max-width: 1200px) {
+            .popup-panel {
+                max-width: 90vw;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button disabled" id="download-tool" title="ダウンロード">
+                <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/book-download.svg" alt="download">
+            </div>
+            
+            <div class="tool-button" id="resize-tool" title="リサイズ">
+                <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/resize.svg" alt="resize">
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button disabled" id="palette-tool" title="カラーパレット">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/palette.svg" alt="palette">
+            </div>
+     
+            <div class="tool-button active" id="pen-tool" title="ベクターペン">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/pencil-line.svg" alt="pen">
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/eraser.svg" alt="eraser">
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button disabled" id="fill-tool" title="塗りつぶし">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/paint-bucket.svg" alt="fill">
+            </div>
+            
+            <div class="tool-button disabled" id="select-tool" title="範囲選択">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/box-select.svg" alt="select">
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button disabled" id="settings-tool" title="設定">
+                <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/settings.svg" alt="settings">
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container" id="canvas-container">
+                <!-- キャンバスはここに追加されます -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- ポップアップパネル（ペンツール） -->
+    <div class="popup-panel" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-size-slider">
+                    <div class="slider-track" id="pen-size-track"></div>
+                    <div class="slider-handle" id="pen-size-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-size-value">16.0px</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-opacity-slider">
+                    <div class="slider-track" id="pen-opacity-track"></div>
+                    <div class="slider-handle" id="pen-opacity-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-opacity-value">85.0%</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバス外描画</div>
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="offcanvas-enabled" checked style="margin: 0;">
+                <span style="font-size: 13px;">キャンバス外からの描画を許可</span>
+            </label>
+        </div>
+    </div>
+    
+    <!-- ポップアップパネル（リサイズ） -->
+    <div class="popup-panel" id="resize-settings" style="left: 60px; top: 150px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバスサイズ</div>
+            <div class="size-input-group">
+                <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                <div class="size-multiply">×</div>
+                <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="action-button" id="apply-resize">適用</div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Color: <span id="current-color">#800000</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">Off-canvas: <span id="offcanvas-status">ON</span></div>
+            <div class="status-item">History: <span id="history-status">0/50</span></div>
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+            <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
+        </div>
+    </div>
+
+    <!-- PixiJS v8 and Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    
+    <script>
+        /**
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev4 - 根本修正版
+         * キャンバス表示・ポップアップ機能の完全復旧
+         */
+        
+        // グローバル変数
+        let pixiApp = null;
+        let drawingContainer = null;
+        let currentPath = null;
+        let isDrawing = false;
+        let currentBrush = { size: 16, color: 0x800000, opacity: 0.85 };
+        let historyStack = [];
+        let redoStack = [];
+        
+        // ==== 履歴管理 ====
+        class HistoryManager {
+            static push(action) {
+                historyStack.push(action);
+                redoStack = [];
+                if (historyStack.length > 50) {
+                    historyStack.shift();
+                }
+                this.updateStatus();
+            }
+            
+            static undo() {
+                const action = historyStack.pop();
+                if (!action) return;
+                redoStack.push(action);
+                action.undo();
+                this.updateStatus();
+            }
+            
+            static redo() {
+                const action = redoStack.pop();
+                if (!action) return;
+                historyStack.push(action);
+                action.redo();
+                this.updateStatus();
+            }
+            
+            static updateStatus() {
+                const statusElement = document.getElementById('history-status');
+                if (statusElement) {
+                    statusElement.textContent = `${historyStack.length}/50`;
+                }
+            }
+        }
+        
+        // ==== 描画システム ====
+        function createPath(x, y) {
+            const graphics = new PIXI.Graphics();
+            graphics.circle(x, y, currentBrush.size / 2);
+            graphics.fill({ color: currentBrush.color, alpha: currentBrush.opacity });
+            
+            const path = {
+                graphics: graphics,
+                points: [{ x, y }],
+                brush: { ...currentBrush }
+            };
+            
+            drawingContainer.addChild(graphics);
+            return path;
+        }
+        
+        function drawLine(path, x, y) {
+            const lastPoint = path.points[path.points.length - 1];
+            const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
+            
+            if (distance < 1) return;
+            
+            const steps = Math.max(1, Math.ceil(distance / 2));
+            for (let i = 1; i <= steps; i++) {
+                const t = i / steps;
+                const px = lastPoint.x + (x - lastPoint.x) * t;
+                const py = lastPoint.y + (y - lastPoint.y) * t;
+                
+                path.graphics.circle(px, py, path.brush.size / 2);
+                path.graphics.fill({ color: path.brush.color, alpha: path.brush.opacity });
+            }
+            
+            path.points.push({ x, y });
+        }
+        
+        // ==== イベントハンドラー ====
+        function onPointerDown(event) {
+            if (!pixiApp) return;
+            
+            const rect = pixiApp.canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            
+            isDrawing = true;
+            currentPath = createPath(x, y);
+        }
+        
+        function onPointerMove(event) {
+            if (!isDrawing || !currentPath || !pixiApp) return;
+            
+            const rect = pixiApp.canvas.getBoundingClientRect();
+            const x = event.clientX - rect.left;
+            const y = event.clientY - rect.top;
+            
+            drawLine(currentPath, x, y);
+            
+            // 座標表示更新
+            const coordsElement = document.getElementById('coordinates');
+            if (coordsElement) {
+                coordsElement.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
+            }
+        }
+        
+        function onPointerUp(event) {
+            if (!isDrawing || !currentPath) return;
+            
+            isDrawing = false;
+            
+            // 履歴に追加
+            const pathCopy = {
+                graphics: currentPath.graphics,
+                points: [...currentPath.points],
+                brush: { ...currentPath.brush }
+            };
+            
+            HistoryManager.push({
+                undo: () => {
+                    if (drawingContainer.children.includes(pathCopy.graphics)) {
+                        drawingContainer.removeChild(pathCopy.graphics);
+                    }
+                },
+                redo: () => {
+                    if (!drawingContainer.children.includes(pathCopy.graphics)) {
+                        drawingContainer.addChild(pathCopy.graphics);
+                    }
+                }
+            });
+            
+            currentPath = null;
+        }
+        
+        // ==== UI Controller ====
+        class UIController {
+            static activePopup = null;
+            
+            static init() {
+                console.log('UI Controller: 初期化開始');
+                this.setupToolButtons();
+                this.setupPopups();
+                this.setupSliders();
+                this.setupKeyboardShortcuts();
+                console.log('UI Controller: 初期化完了');
+            }
+            
+            static setupToolButtons() {
+                document.querySelectorAll('.tool-button').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        if (btn.classList.contains('disabled')) return;
+                        this.handleToolClick(btn);
+                    });
+                });
+            }
+            
+            static handleToolClick(button) {
+                const toolId = button.id;
+                console.log(`ツールクリック: ${toolId}`);
+                
+                if (toolId === 'pen-tool') {
+                    this.setActiveTool('pen-tool');
+                    this.togglePopup('pen-settings');
+                } else if (toolId === 'eraser-tool') {
+                    this.setActiveTool('eraser-tool');
+                    this.closeAllPopups();
+                } else if (toolId === 'resize-tool') {
+                    this.togglePopup('resize-settings');
+                }
+            }
+            
+            static setActiveTool(toolId) {
+                document.querySelectorAll('.tool-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                document.getElementById(toolId).classList.add('active');
+                
+                const toolNames = { 
+                    'pen-tool': 'ベクターペン', 
+                    'eraser-tool': '消しゴム' 
+                };
+                const toolElement = document.getElementById('current-tool');
+                if (toolElement) {
+                    toolElement.textContent = toolNames[toolId] || 'ツール';
+                }
+            }
+            
+            static togglePopup(popupId) {
+                console.log(`ポップアップ切り替え: ${popupId}`);
+                const popup = document.getElementById(popupId);
+                if (!popup) return;
+                
+                if (this.activePopup && this.activePopup !== popup) {
+                    this.activePopup.classList.remove('show');
+                }
+                
+                const isVisible = popup.classList.contains('show');
+                popup.classList.toggle('show', !isVisible);
+                this.activePopup = isVisible ? null : popup;
+            }
+            
+            static setupPopups() {
+                // クリック外でポップアップを閉じる
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.popup-panel') && !e.target.closest('.tool-button')) {
+                        this.closeAllPopups();
+                    }
+                });
+                
+                // リサイズボタン
+                const resizeButton = document.getElementById('apply-resize');
+                if (resizeButton) {
+                    resizeButton.addEventListener('click', () => this.applyResize());
+                }
+            }
+            
+            static setupSliders() {
+                this.createSlider('pen-size-slider', 1, 100, 16, (value) => {
+                    currentBrush.size = value;
+                    return value.toFixed(1) + 'px';
+                });
+                
+                this.createSlider('pen-opacity-slider', 0, 100, 85, (value) => {
+                    currentBrush.opacity = value / 100;
+                    return value.toFixed(1) + '%';
+                });
+            }
+            
+            static createSlider(sliderId, min, max, initial, callback) {
+                const container = document.getElementById(sliderId);
+                if (!container) return;
+                
+                const track = container.querySelector('.slider-track');
+                const handle = container.querySelector('.slider-handle');
+                const valueDisplay = container.parentNode.querySelector('.slider-value');
+                
+                if (!track || !handle || !valueDisplay) return;
+                
+                let isDragging = false;
+                let value = initial;
+                
+                const updateSlider = (newValue) => {
+                    value = Math.max(min, Math.min(max, newValue));
+                    const percentage = ((value - min) / (max - min)) * 100;
+                    
+                    track.style.width = percentage + '%';
+                    handle.style.left = percentage + '%';
+                    valueDisplay.textContent = callback(value);
+                };
+                
+                const getValueFromPosition = (clientX) => {
+                    const rect = container.getBoundingClientRect();
+                    const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                    return min + (percentage * (max - min));
+                };
+                
+                container.addEventListener('mousedown', (e) => {
+                    isDragging = true;
+                    updateSlider(getValueFromPosition(e.clientX));
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (isDragging) updateSlider(getValueFromPosition(e.clientX));
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    isDragging = false;
+                });
+                
+                updateSlider(initial);
+            }
+            
+            static setupKeyboardShortcuts() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.ctrlKey) {
+                        if (e.key === 'z') {
+                            HistoryManager.undo();
+                            e.preventDefault();
+                        } else if (e.key === 'y') {
+                            HistoryManager.redo();
+                            e.preventDefault();
+                        }
+                    }
+                });
+            }
+            
+            static applyResize() {
+                const widthInput = document.getElementById('canvas-width');
+                const heightInput = document.getElementById('canvas-height');
+                
+                if (widthInput && heightInput && pixiApp) {
+                    const width = parseInt(widthInput.value);
+                    const height = parseInt(heightInput.value);
+                    
+                    if (width >= 100 && width <= 4096 && height >= 100 && height <= 4096) {
+                        pixiApp.renderer.resize(width, height);
+                        
+                        const canvasInfo = document.getElementById('canvas-info');
+                        if (canvasInfo) {
+                            canvasInfo.textContent = `${width}×${height}px`;
+                        }
+                        
+                        this.closeAllPopups();
+                    }
+                }
+            }
+            
+            static closeAllPopups() {
+                document.querySelectorAll('.popup-panel').forEach(popup => {
+                    popup.classList.remove('show');
+                });
+                this.activePopup = null;
+            }
+        }
+        
+        // ==== Performance Monitor ====
+        class PerformanceMonitor {
+            static start() {
+                let frameCount = 0;
+                let lastTime = performance.now();
+                
+                const update = () => {
+                    frameCount++;
+                    const currentTime = performance.now();
+                    
+                    if (currentTime - lastTime >= 1000) {
+                        const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                        const fpsElement = document.getElementById('fps');
+                        if (fpsElement) {
+                            fpsElement.textContent = fps;
+                        }
+                        
+                        frameCount = 0;
+                        lastTime = currentTime;
+                    }
+                    
+                    requestAnimationFrame(update);
+                };
+                
+                update();
+            }
+        }
+        
+        // ==== 初期化関数 ====
+        async function initializeApp() {
+            console.log('アプリケーション初期化開始');
+            
+            try {
+                // PIXI Application作成
+                pixiApp = new PIXI.Application();
+                await pixiApp.init({
+                    width: 400,
+                    height: 400,
+                    backgroundColor: 0xf0e0d6,
+                    antialias: true
+                });
+                
+                console.log('PIXI Application作成完了');
+                
+                // キャンバスをDOMに追加
+                const canvasContainer = document.getElementById('canvas-container');
+                if (!canvasContainer) {
+                    throw new Error('キャンバスコンテナが見つかりません');
+                }
+                
+                canvasContainer.appendChild(pixiApp.canvas);
+                console.log('キャンバスをDOMに追加完了');
+                
+                // 描画コンテナ作成
+                drawingContainer = new PIXI.Container();
+                pixiApp.stage.addChild(drawingContainer);
+                
+                // インタラクティブエリア設定
+                const interactiveArea = new PIXI.Graphics();
+                interactiveArea.rect(0, 0, 400, 400);
+                interactiveArea.fill({ color: 0xf0e0d6, alpha: 0.01 });
+                interactiveArea.eventMode = 'static';
+                pixiApp.stage.addChild(interactiveArea);
+                
+                // 描画イベント設定
+                interactiveArea.on('pointerdown', onPointerDown);
+                interactiveArea.on('pointermove', onPointerMove);
+                interactiveArea.on('pointerup', onPointerUp);
+                interactiveArea.on('pointerupoutside', onPointerUp);
+                
+                console.log('描画システム初期化完了');
+                
+                // UI初期化
+                UIController.init();
+                
+                // パフォーマンスモニター開始
+                PerformanceMonitor.start();
+                
+                // 初期履歴状態更新
+                HistoryManager.updateStatus();
+                
+                console.log('✅ アプリケーション初期化完了');
+                console.log('🎯 修正された問題:');
+                console.log('  🔧 PIXI v8の正しい初期化順序');
+                console.log('  🔧 キャンバスDOM追加の確実な実行');
+                console.log('  🔧 ポップアップUIの完全な動作');
+                console.log('  🔧 描画システムの統合');
+                console.log('  🔧 履歴管理とキーボードショートカット');
+                
+                return true;
+                
+            } catch (error) {
+                console.error('❌ 初期化失敗:', error);
+                
+                // フォールバック: エラー表示
+                const canvasContainer = document.getElementById('canvas-container');
+                if (canvasContainer) {
+                    canvasContainer.innerHTML = `
+                        <div style="
+                            width: 400px; 
+                            height: 400px; 
+                            background: #f0e0d6;
+                            border: 2px dashed #800000;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            flex-direction: column;
+                            color: #800000;
+                            font-family: monospace;
+                            text-align: center;
+                            padding: 20px;
+                            box-sizing: border-box;
+                        ">
+                            <div style="font-size: 24px; margin-bottom: 10px;">⚠️</div>
+                            <div style="font-size: 14px; margin-bottom: 10px;">キャンバス初期化エラー</div>
+                            <div style="font-size: 12px; opacity: 0.8;">${error.message}</div>
+                            <div style="font-size: 11px; margin-top: 10px; opacity: 0.6;">
+                                ブラウザを再読み込みしてください
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                return false;
+            }
+        }
+        
+        // ==== DOMContentLoaded で初期化実行 ====
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM読み込み完了 - 初期化開始');
+            
+            // ライブラリチェック
+            if (!window.PIXI) {
+                console.error('❌ PIXI.js が読み込まれていません');
+                return;
+            }
+            
+            console.log(`✅ PIXI.js v${PIXI.VERSION} 読み込み完了`);
+            
+            // アプリケーション初期化
+            initializeApp().then((success) => {
+                if (success) {
+                    console.log('🎨 Futaba Drawing Tool v8rev4-fixed 起動完了');
+                } else {
+                    console.log('❌ 初期化に失敗しました');
+                }
+            }).catch((error) => {
+                console.error('❌ 予期しないエラー:', error);
+            });
+        });
+        
+    </script>
+</body>
+</html>

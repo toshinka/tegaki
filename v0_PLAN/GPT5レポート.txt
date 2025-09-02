@@ -1,83 +1,304 @@
-✅ 良くなっている点
+現状の改善ポイント（内部的）
 
-すべてのファイルに <!-- File: ... --> ヘッダーあり → 列車型ルール準拠。
+座標系フローの統一
 
-駅（station）
+screen → world → layer のフローを明示的に実装
 
-bootTrain() を用意して、A1→A2→B1→B2→B3 の順序で呼び出している。
+オフキャンバス描画でも pointerdown → world座標でストローク記録可能
 
-分岐や横断依存なし、前方依存ルールを守れている。
+非破壊履歴の整備
 
-A1（core）
+HistoryManager と StrokeEvent による Undo/Redo 基盤が整備済み
 
-CanvasManager と DrawingEngine のスタブが定義されていて、キャンバス生成と簡易描画準備ができる形。
+ストロークの commit/undo/redo 処理が明示的に設計されている
 
-A2（integration）
+プレビュー描画分離
 
-EventBus と Integrator あり。イベントのハブ機構が存在。
+半透明プレビュー専用 previewGraphics を設置
 
-各 B 車両からの購読を受け取れる土台はできている。
+commit前後での描画分離が可能になった
 
-B1（UI）
+ブラシプロパティの即時反映
 
-スライダーやボタン、プリセット選択など UI 要素を data-* 属性で整備。
+InputManager.updateBrush() でサイズ・色を即時反映できる設計
 
-UIController がイベントを拾って A2 に渡す流れになっている。
+以前の「ポップアップ後に反映されない問題」を改善
 
-B2（status）
+発生している問題（キャンバスが出ない）
+1. PIXI Application 初期化失敗
 
-FPS、座標、筆圧などを表示する StatusMonitor が配置済み。
+PIXI.Application({ width, height, backgroundColor }) が正しく DOM に追加されていない
 
-DOM 更新ロジックは動作する見込み。
+もしくは document.body.appendChild(app.view) 前にエラーや DOM 未準備の問題
 
-B3（tools）
+2. Stage / Layer の描画順序
 
-ToolSystem が定義されていて、現在のツール・設定値を管理可能。
+Stage の previewGraphics を app.stage.addChild しても、Layer描画が同時にクリアされてしまい見えない
 
-⚠️ 検査で気づいた不足・問題点
+redrawLayer で app.stage.removeChildren() を呼んでいる場合、previewGraphicsが消える可能性あり
 
-実際の描画処理がまだ未移植
+3. CSS / Canvas 表示
 
-A1 の DrawingEngine は関数枠だけで、PIXI 初期化やベクターペン描画ロジックは空。
+<canvas> のサイズや CSS の display が無効化されているとキャンバス自体が見えない
 
-結果、キャンバスは出ても線は描けない。
+PIXI canvas が 0x0 でレンダリングされている可能性もある
 
-UI 操作が見た目止まり
+4. カメラ / viewport オフセット
 
-スライダーやボタンは反応するが、A2 経由で A1/DrawingEngine に値が届く処理が無い。
+初期 camera.x / camera.y の扱いが不適切だと、全て描画が画面外に配置される場合がある
 
-例: ブラシサイズ変更しても線幅が変わらない。
+原因推測まとめ
 
-ステータス表示もデータ源がない
+内部的には 座標統一・非破壊履歴・ブラシ更新 など設計改善は進んでいる
 
-B2 は DOM 更新可能だが、A1/A2 側から値が送られてこないので常に初期値のまま。
+表示に関わる初期化順序や app.stage.addChild の扱い、または CSS/サイズ設定の不備でキャンバスが見えない
 
-ツール切り替えロジックが未配線
+描画フローや履歴管理の改善はされているため、キャンバスが正しく出れば以前より安定した挙動が期待できる
 
-B3 に定義はあるが、実際にキャンバスや UI と連動していない。
+改修計画（次ステップ）
 
-CSS は反映されるが、見た目は v7rev2 と少し差異あり
+PIXI Application 初期化確認
 
-UI 配置がシンプル化されており、旧版にあった調整ボタン群（±0.1 / ±1 / ±10）がまだ未再現。
+canvas サイズと appendChild の順序を確認
 
-📝 判定
+window.onload または DOMContentLoaded で初期化
 
-構造は正しく分割済み。
-駅 → A1(core) → A2(integration) → B1/B2/B3(UI/Status/Tools) の列車型アーキテクチャは成立している。
+Stage / Layer / previewGraphics 描画順序整理
 
-機能面ではまだスケルトン状態。
-v7rev2 にあった「線が描ける・値が反映される・ステータスが更新される」といった動作は未移植。
-UI の見た目はほぼ一致しているが、一部の細かい調整UIが削がれている。
+Layer描画 → previewGraphics を最後に描画する（常に前面）
 
-👉 まとめると、
-「分割化は適切にできた、でも機能はまだ移植されていない」 という状態です。
+redrawLayer で previewGraphics が消えないよう調整
 
-次のステップは、
+カメラ初期化
 
-A1 に v7rev2 の描画ロジックを移植（PIXI 初期化＆パス描画）。
+camera.x / camera.y を 0 に固定して初期描画確認
 
-A2 にイベントブリッジを書く（UIやツールからの変更を DrawingEngine へ）。
+将来パン/ティルト用に offsetを保持する設計は残す
 
-B1〜B3 の連動強化（UI操作 → A2 → A1、A1の状態 → A2 → B2 へ反映）。
+CSS / Canvas 表示
 
+canvas が見えるサイズでレンダリングされているか確認
+
+display:none, visibility:hidden が設定されていないかチェック
+
+テスト項目
+
+キャンバスが表示されること
+
+画面外描画 → キャンバス内取り込み
+
+Undo/Redo（Ctrl+Z/Y）で履歴反映
+
+ペンサイズ変更即時反映
+
+orphanストローク管理
+
+💡 結論：
+
+内部設計は改善されている
+
+フローの統一、非破壊履歴、ブラシ更新などは実装済み
+
+UI/描画出力周りの初期化順序や canvas DOM/CSS 設定に問題
+
+次ステップは「キャンバス表示の復旧」を優先し、そこから描画テスト → Undo/Redo → オフキャンバス描画の確認に進むべき
+
+
+※下記はあくまでパッチ案なので、使えそうなものを汲み取る形で使ってください。
+
+
+// --- Tegaki v8 Fixed 修正版パッチ案 ---
+// 修正内容:
+// 1. PIXI.Application 初期化順序と DOM追加を保証
+// 2. canvasサイズ・CSS確認
+// 3. Stage / Layer / previewGraphics 描画順序整理
+// 4. camera初期化（offset 0）
+// 5. 既存の座標フロー統一・非破壊履歴・ブラシ更新を保持
+
+// --- HistoryManager ---
+class HistoryManager {
+    constructor() {
+        this.undoStack = [];
+        this.redoStack = [];
+    }
+    push(event) {
+        this.undoStack.push(event);
+        this.redoStack = [];
+    }
+    undo() {
+        const event = this.undoStack.pop();
+        if (!event) return;
+        this.redoStack.push(event);
+        event.undo();
+    }
+    redo() {
+        const event = this.redoStack.pop();
+        if (!event) return;
+        this.undoStack.push(event);
+        event.redo();
+    }
+}
+
+class StrokeEvent {
+    constructor(stroke, layer) {
+        this.stroke = stroke;
+        this.layer = layer;
+    }
+    undo() { this.layer.removeStroke(this.stroke); }
+    redo() { this.layer.addStroke(this.stroke); }
+}
+
+// --- Layer ---
+class Layer {
+    constructor(stage) {
+        this.stage = stage;
+        this.strokes = [];
+    }
+    addStroke(stroke) {
+        this.strokes.push(stroke);
+        this.renderStroke(stroke);
+    }
+    removeStroke(stroke) {
+        const idx = this.strokes.indexOf(stroke);
+        if (idx >= 0) this.strokes.splice(idx,1);
+        this.stage.redrawLayer(this.strokes);
+    }
+    renderStroke(stroke) {
+        const g = new PIXI.Graphics();
+        g.lineStyle(stroke.width, parseInt(stroke.color.replace("#","0x"),16));
+        g.moveTo(stroke.points[0].x, stroke.points[0].y);
+        for(let i=1;i<stroke.points.length;i++) g.lineTo(stroke.points[i].x, stroke.points[i].y);
+        this.stage.addLayerChild(g);
+    }
+}
+
+// --- Stage ---
+class Stage {
+    constructor(app) {
+        this.app = app;
+        this.previewGraphics = new PIXI.Graphics();
+        this.layerContainer = new PIXI.Container();
+        app.stage.addChild(this.layerContainer);
+        app.stage.addChild(this.previewGraphics); // preview always on top
+    }
+    addLayerChild(graphics) {
+        this.layerContainer.addChild(graphics);
+    }
+    redrawLayer(strokes) {
+        this.layerContainer.removeChildren();
+        for(const s of strokes){
+            const g = new PIXI.Graphics();
+            g.lineStyle(s.width, parseInt(s.color.replace("#","0x"),16));
+            g.moveTo(s.points[0].x,s.points[0].y);
+            for(let i=1;i<s.points.length;i++) g.lineTo(s.points[i].x,s.points[i].y);
+            this.layerContainer.addChild(g);
+        }
+    }
+}
+
+// --- InputManager ---
+class InputManager {
+    constructor(stage, camera, layer, history) {
+        this.stage = stage;
+        this.camera = camera; // {x:0,y:0} 初期化
+        this.layer = layer;
+        this.history = history;
+        this.currentStroke = null;
+        this.currentBrush = { color: "#800000", width: 2 };
+
+        window.addEventListener("pointerdown", e => this.onPointerDown(e));
+        window.addEventListener("pointermove", e => this.onPointerMove(e));
+        window.addEventListener("pointerup", e => this.onPointerUp(e));
+        window.addEventListener("keydown", e => this.onKeyDown(e));
+    }
+
+    screenToWorld(pos) {
+        return {
+            x: pos.x + this.camera.x,
+            y: pos.y + this.camera.y
+        };
+    }
+
+    worldToLayer(pos) {
+        return pos;
+    }
+
+    onPointerDown(e) {
+        const worldPos = this.screenToWorld({x:e.clientX, y:e.clientY});
+        this.currentStroke = { points:[worldPos], color:this.currentBrush.color, width:this.currentBrush.width };
+    }
+
+    onPointerMove(e) {
+        if (!this.currentStroke) return;
+        const worldPos = this.screenToWorld({x:e.clientX, y:e.clientY});
+        this.currentStroke.points.push(worldPos);
+        this.renderPreview(this.currentStroke);
+    }
+
+    onPointerUp(e) {
+        if (!this.currentStroke) return;
+        const layerStroke = { ...this.currentStroke, points:this.currentStroke.points.map(p=>this.worldToLayer(p)) };
+        this.layer.addStroke(layerStroke);
+        this.history.push(new StrokeEvent(layerStroke, this.layer));
+        this.currentStroke = null;
+    }
+
+    onKeyDown(e) {
+        if (e.ctrlKey && e.key === 'z') { this.history.undo(); e.preventDefault(); }
+        else if (e.ctrlKey && e.key === 'y') { this.history.redo(); e.preventDefault(); }
+    }
+
+    renderPreview(stroke) {
+        const g = this.stage.previewGraphics;
+        g.clear();
+        g.lineStyle(stroke.width, parseInt(stroke.color.replace("#","0x"),16), 0.5);
+        g.moveTo(stroke.points[0].x, stroke.points[0].y);
+        for(let i=1;i<stroke.points.length;i++) g.lineTo(stroke.points[i].x, stroke.points[i].y);
+        g.endFill();
+    }
+
+    updateBrush(newBrush) {
+        this.currentBrush = { ...this.currentBrush, ...newBrush };
+    }
+}
+
+// --- 初期化 ---
+window.addEventListener("DOMContentLoaded",()=>{
+    const app = new PIXI.Application({ width: 800, height: 600, backgroundColor: 0xffffee });
+    document.body.appendChild(app.view);
+
+    const stage = new Stage(app);
+    const layer = new Layer(stage);
+    const history = new HistoryManager();
+    const input = new InputManager(stage, {x:0,y:0}, layer, history);
+
+    // 例: ブラシサイズUI連動
+    // input.updateBrush({width:5});
+});
+
+🔹 修正ポイント
+
+DOM初期化
+
+DOMContentLoaded で PIXI.Application を確実に作成
+
+canvas を body に追加
+
+Layer / PreviewGraphics 描画順序
+
+layerContainer にレイヤー描画
+
+previewGraphics を必ず前面に表示
+
+camera offset 初期化
+
+{x:0, y:0} でキャンバス内描画保証
+
+座標フロー・非破壊履歴・ブラシ更新は以前の改善を保持
+
+screen → world → layer
+
+Undo/Redo (Ctrl+Z / Ctrl+Y)
+
+ブラシサイズ変更即時反映
 
