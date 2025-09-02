@@ -5,25 +5,10 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Tegaki v8 列車型 - スタイル車両</title>
-    
+</head>
+<body>
+    <!-- vector-drawing-tool-v7rev2.html のCSS完全移植 -->
     <style>
-        /**
-         * ============================================================
-         * Tegaki v8 列車型 - スタイル車両
-         * ============================================================
-         * 
-         * 【責務】
-         * - 全体CSSスタイル集約
-         * - ふたばちゃんねる風デザイン定義
-         * - レスポンシブ・アニメーション定義
-         * - 独立改修可能なスタイル管理
-         * 
-         * 【特徴】
-         * - PixiJS v7/v8両対応
-         * - 軽量化・最適化済み
-         * - GPU加速対応デザイン
-         */
-        
         * {
             margin: 0;
             padding: 0;
@@ -41,14 +26,6 @@
             --text-primary: #2c1810;
             --text-secondary: #5d4037;
             --text-inverse: #ffffff;
-            
-            --transition-fast: 0.1s cubic-bezier(0.4, 0, 0.2, 1);
-            --transition-smooth: 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-            --transition-slow: 0.3s ease-out;
-            
-            --shadow-light: 0 2px 4px rgba(128, 0, 0, 0.1);
-            --shadow-medium: 0 4px 12px rgba(128, 0, 0, 0.2);
-            --shadow-heavy: 0 8px 32px rgba(128, 0, 0, 0.3);
         }
         
         body {
@@ -67,9 +44,6 @@
             gap: 0;
         }
         
-        /* ============================================================
-         * サイドバー - ツールボタン配置エリア
-         * ============================================================ */
         .sidebar {
             background: var(--futaba-cream);
             border-right: 2px solid var(--futaba-light-medium);
@@ -92,14 +66,13 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            transition: all var(--transition-smooth);
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
             color: var(--futaba-maroon);
             position: relative;
             user-select: none;
         }
         
-        .tool-button svg,
-        .tool-button img {
+        .tool-button svg {
             width: 20px;
             height: 20px;
         }
@@ -108,14 +81,14 @@
             background: var(--futaba-medium);
             border-color: var(--futaba-light-maroon);
             transform: scale(1.05);
-            box-shadow: var(--shadow-medium);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
         }
         
         .tool-button.active {
             background: var(--futaba-maroon);
             color: var(--text-inverse);
             border-color: var(--futaba-maroon);
-            box-shadow: var(--shadow-light);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
         }
         
         .tool-button.disabled {
@@ -134,9 +107,6 @@
             margin: 4px 2px;
         }
         
-        /* ============================================================
-         * キャンバスエリア - 描画領域
-         * ============================================================ */
         .canvas-area {
             background: var(--futaba-background);
             position: relative;
@@ -146,24 +116,17 @@
             align-items: center;
         }
         
-        .canvas-container {
-            position: relative;
-        }
-        
         #drawing-canvas {
             display: block;
             cursor: crosshair;
         }
         
-        /* ============================================================
-         * ポップアップパネル - ツール設定UI
-         * ============================================================ */
         .popup-panel {
             position: fixed;
             background: var(--futaba-cream);
             border: 2px solid var(--futaba-maroon);
             border-radius: 16px;
-            box-shadow: var(--shadow-heavy);
+            box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
             padding: 20px;
             z-index: 2000;
             backdrop-filter: blur(12px);
@@ -173,7 +136,7 @@
         
         .popup-panel.show {
             display: block;
-            animation: fadeIn var(--transition-slow);
+            animation: fadeIn 0.3s ease-out;
         }
         
         @keyframes fadeIn {
@@ -211,9 +174,6 @@
             font-weight: 500;
         }
         
-        /* ============================================================
-         * プリセット - サイズプリセット表示
-         * ============================================================ */
         .size-presets {
             display: flex;
             justify-content: space-between;
@@ -233,7 +193,7 @@
             cursor: pointer;
             padding: 6px 4px;
             border-radius: 4px;
-            transition: all var(--transition-smooth);
+            transition: all 0.2s ease;
             min-width: 40px;
         }
         
@@ -249,7 +209,7 @@
         .size-preview-circle {
             background: #800000;
             border-radius: 50%;
-            transition: all var(--transition-smooth);
+            transition: all 0.2s ease;
             min-width: 0.5px;
             min-height: 0.5px;
         }
@@ -267,9 +227,6 @@
             opacity: 0.8;
         }
         
-        /* ============================================================
-         * スライダー - 値調整UI
-         * ============================================================ */
         .slider-container {
             position: relative;
             margin-bottom: 16px;
@@ -295,7 +252,7 @@
             color: var(--futaba-maroon);
             font-size: 10px;
             user-select: none;
-            transition: all var(--transition-fast);
+            transition: all 0.2s ease;
         }
         
         .slider-button.small {
@@ -327,7 +284,7 @@
             height: 100%;
             background: var(--futaba-maroon);
             border-radius: 3px;
-            transition: width var(--transition-fast);
+            transition: width 0.1s ease;
         }
         
         .slider-handle {
@@ -340,7 +297,7 @@
             top: 50%;
             transform: translate(-50%, -50%);
             cursor: grab;
-            box-shadow: var(--shadow-light);
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
         }
         
         .slider-handle:active {
@@ -359,9 +316,6 @@
             text-align: right;
         }
         
-        /* ============================================================
-         * チェックボックス・入力フィールド
-         * ============================================================ */
         .checkbox-container {
             display: flex;
             align-items: center;
@@ -370,7 +324,7 @@
             cursor: pointer;
             padding: 4px;
             border-radius: 4px;
-            transition: background var(--transition-fast);
+            transition: background 0.2s ease;
         }
         
         .checkbox-container:hover {
@@ -465,7 +419,7 @@
             color: var(--futaba-maroon);
             font-weight: 600;
             cursor: pointer;
-            transition: all var(--transition-smooth);
+            transition: all 0.2s ease;
         }
         
         .resize-button:hover {
@@ -482,9 +436,6 @@
             background: var(--futaba-light-maroon);
         }
         
-        /* ============================================================
-         * ステータスパネル - 描画情報表示
-         * ============================================================ */
         .status-panel {
             position: fixed;
             bottom: 20px;
@@ -499,7 +450,7 @@
             display: flex;
             justify-content: space-between;
             align-items: center;
-            box-shadow: var(--shadow-medium);
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
             z-index: 50;
         }
         
@@ -515,9 +466,6 @@
             gap: 4px;
         }
         
-        /* ============================================================
-         * ドラッグ可能要素 - ポップアップドラッグ
-         * ============================================================ */
         .popup-panel.draggable {
             cursor: move;
         }
@@ -527,127 +475,15 @@
             transform: scale(1.02);
         }
         
-        /* ============================================================
-         * レスポンシブ対応
-         * ============================================================ */
         @media (max-width: 1200px) {
             .popup-panel {
                 max-width: 90vw;
             }
         }
-        
-        @media (max-width: 768px) {
-            .main-layout {
-                grid-template-columns: 40px 1fr;
-            }
-            
-            .sidebar {
-                padding: 8px 4px;
-            }
-            
-            .tool-button {
-                width: 32px;
-                height: 32px;
-            }
-            
-            .tool-button svg,
-            .tool-button img {
-                width: 16px;
-                height: 16px;
-            }
-            
-            .popup-panel {
-                max-width: 95vw;
-                max-height: 90vh;
-                overflow-y: auto;
-            }
-            
-            .status-panel {
-                left: 50px;
-                font-size: 10px;
-            }
-            
-            .status-group {
-                gap: 12px;
-            }
-        }
-        
-        /* ============================================================
-         * 高DPI対応・パフォーマンス最適化
-         * ============================================================ */
-        @media (-webkit-min-device-pixel-ratio: 2), (min-resolution: 192dpi) {
-            .tool-button svg,
-            .tool-button img {
-                image-rendering: -webkit-optimize-contrast;
-                image-rendering: crisp-edges;
-            }
-        }
-        
-        /* GPU加速対応 */
-        .popup-panel,
-        .tool-button,
-        .slider-handle {
-            will-change: transform;
-        }
-        
-        .popup-panel.show {
-            transform: translateZ(0);
-        }
-        
-        /* ============================================================
-         * アクセシビリティ対応
-         * ============================================================ */
-        @media (prefers-reduced-motion: reduce) {
-            * {
-                animation-duration: 0.01ms !important;
-                animation-iteration-count: 1 !important;
-                transition-duration: 0.01ms !important;
-            }
-        }
-        
-        .tool-button:focus-visible,
-        .resize-button:focus-visible,
-        .slider:focus-visible,
-        .checkbox:focus-visible {
-            outline: 2px solid var(--futaba-maroon);
-            outline-offset: 2px;
-        }
-        
-        /* ============================================================
-         * 印刷対応（必要最小限）
-         * ============================================================ */
-        @media print {
-            .sidebar,
-            .popup-panel,
-            .status-panel {
-                display: none !important;
-            }
-            
-            .main-layout {
-                grid-template-columns: 1fr;
-            }
-            
-            .canvas-area {
-                background: white;
-            }
-        }
     </style>
-</head>
-<body>
+    
     <script>
-        /**
-         * ============================================================
-         * Tegaki v8 列車型 - スタイル車両初期化
-         * ============================================================
-         */
-        
-        console.log('[Styles] 🎨 スタイル車両ロード完了');
-        console.log('[Styles] 📐 レスポンシブ対応・GPU加速・アクセシビリティ対応済み');
-        
-        // スタイル車両準備完了通知
-        if (window.TEGAKI_STATE) {
-            window.TEGAKI_STATE.stylesReady = true;
-        }
+        console.log('[Styles] ✅ スタイル車両ロード完了 - v7デザイン移植済み');
     </script>
 </body>
 </html>

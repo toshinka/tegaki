@@ -10,28 +10,15 @@
     <script>
         /**
          * ============================================================
-         * Tegaki v8 列車型 - A-2コア車両（描画エンジン・ツールシステム）
+         * Tegaki v8 列車型 - A-2コア車両
+         * vector-drawing-tool-v7rev2.html の DrawingEngine / ToolSystem を移植
          * ============================================================
-         * 
-         * 【責務】
-         * - PixiJS描画エンジン初期化
-         * - ツールシステム実装
-         * - キャンバス管理
-         * - 描画処理の中核機能
-         * 
-         * 【依存関係】
-         * - A-1: header統合済み（main）→ シンボル辞典・グローバル状態
-         * - 前方依存のみ、横断依存禁止
-         * 
-         * 【元機能移植】
-         * - DrawingEngine（元vector-drawing-tool-v7rev2.html）
-         * - ToolSystem（同上）
          */
 
         console.log('[A-2] 🎨 コア車両初期化開始');
 
         // ============================================================
-        // Drawing Engine - PixiJS描画エンジン
+        // Drawing Engine（元ファイルから完全移植）
         // ============================================================
         class DrawingEngine {
             constructor(width, height) {
@@ -40,44 +27,37 @@
                 this.app = null;
                 this.drawingContainer = null;
                 this.paths = [];
-                this.backgroundColor = window.TEGAKI_SYMBOLS?.COLORS?.FUTABA_CREAM || 0xf0e0d6;
+                this.backgroundColor = 0xf0e0d6; // 元ファイルと同じ背景色
             }
             
             async init() {
-                try {
-                    console.log('[A-2] 🖼 PixiJS初期化開始');
-                    
-                    // resolution=1で固定、devicePixelRatioによる拡大を防ぐ
-                    this.app = new PIXI.Application({
-                        width: this.width,
-                        height: this.height,
-                        backgroundColor: this.backgroundColor,
-                        antialias: true,
-                        resolution: window.TEGAKI_SYMBOLS?.CANVAS?.RESOLUTION || 1,
-                        autoDensity: false
-                    });
-                    
-                    // キャンバス要素を配置
-                    const canvasContainer = document.getElementById('drawing-canvas');
-                    if (!canvasContainer) {
-                        throw new Error('drawing-canvas要素が見つかりません');
-                    }
-                    
-                    canvasContainer.appendChild(this.app.view);
-                    
-                    // 描画用コンテナ
-                    this.drawingContainer = new PIXI.Container();
-                    this.app.stage.addChild(this.drawingContainer);
-                    
-                    this.setupInteraction();
-                    
-                    console.log('[A-2] ✅ PixiJS初期化完了');
-                    return this.app;
-                    
-                } catch (error) {
-                    console.error('[A-2] ⚠ PixiJS初期化失敗:', error);
-                    throw error;
+                console.log('[A-2] 🖼 PixiJS初期化開始');
+                
+                // 元ファイルと同じPixi設定
+                this.app = new PIXI.Application({
+                    width: this.width,
+                    height: this.height,
+                    backgroundColor: this.backgroundColor,
+                    antialias: true,
+                    resolution: 1, // 元ファイルの修正版設定
+                    autoDensity: false // 元ファイルの修正版設定
+                });
+                
+                const canvasContainer = document.getElementById('drawing-canvas');
+                if (!canvasContainer) {
+                    throw new Error('drawing-canvas要素が見つかりません');
                 }
+                
+                canvasContainer.appendChild(this.app.view);
+                
+                // 描画用コンテナ
+                this.drawingContainer = new PIXI.Container();
+                this.app.stage.addChild(this.drawingContainer);
+                
+                this.setupInteraction();
+                
+                console.log('[A-2] ✅ PixiJS初期化完了');
+                return this.app;
             }
             
             setupInteraction() {
@@ -93,7 +73,7 @@
                 return { x, y };
             }
             
-            // 参考コードと同じ円形ブラシ方式を採用
+            // 元ファイルの円形ブラシ方式を完全移植
             createPath(x, y, size, color, opacity, tool = 'pen') {
                 const path = {
                     id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -118,19 +98,18 @@
                 return path;
             }
             
-            // 連続する円形で滑らかな線を描画
+            // 元ファイルの連続円形描画を完全移植
             drawLine(path, x, y) {
                 if (!path || path.points.length === 0) return;
                 
                 const lastPoint = path.points[path.points.length - 1];
                 const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
                 
-                // 最小距離フィルタ
-                const minDistance = window.TEGAKI_SYMBOLS?.PERFORMANCE?.MIN_DRAW_DISTANCE || 1.5;
-                if (distance < minDistance) return;
+                // 最小距離フィルタ（元ファイルと同じ）
+                if (distance < 1.5) return;
                 
                 // 連続する円形で線を描画
-                const steps = Math.max(1, Math.ceil(distance / minDistance));
+                const steps = Math.max(1, Math.ceil(distance / 1.5));
                 for (let i = 1; i <= steps; i++) {
                     const t = i / steps;
                     const px = lastPoint.x + (x - lastPoint.x) * t;
@@ -184,27 +163,23 @@
                 }
             }
         }
-        
+
         // ============================================================
-        // Tool System - ツール管理システム
+        // Tool System（元ファイルから完全移植）
         // ============================================================
         class ToolSystem {
             constructor() {
-                // シンボル辞典から初期値を取得
-                const symbols = window.TEGAKI_SYMBOLS;
-                
-                this.currentTool = symbols?.TOOLS?.PEN || 'pen';
-                this.brushSize = symbols?.BRUSH?.DEFAULT_SIZE || 16.0;
-                this.brushColor = symbols?.COLORS?.FUTABA_MAROON || 0x800000;
-                this.opacity = symbols?.BRUSH?.DEFAULT_OPACITY || 0.85;
-                this.pressure = symbols?.BRUSH?.DEFAULT_PRESSURE || 0.5;
-                this.smoothing = symbols?.BRUSH?.DEFAULT_SMOOTHING || 0.3;
-                
+                // 元ファイルの初期値を使用
+                this.currentTool = 'pen';
+                this.brushSize = 16.0;
+                this.brushColor = 0x800000; // ふたばちゃんねる風カラー
+                this.opacity = 0.85;
+                this.pressure = 0.5;
+                this.smoothing = 0.3;
                 this.isDrawing = false;
                 this.currentPath = null;
                 this.lastPoint = null;
                 
-                // グローバル状態と同期
                 this.syncToGlobalState();
             }
             
@@ -227,9 +202,7 @@
             }
             
             setBrushSize(size) {
-                const minSize = window.TEGAKI_SYMBOLS?.BRUSH?.MIN_SIZE || 0.1;
-                const maxSize = window.TEGAKI_SYMBOLS?.BRUSH?.MAX_SIZE || 100;
-                this.brushSize = Math.max(minSize, Math.min(maxSize, Math.round(size * 10) / 10));
+                this.brushSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
                 this.syncToGlobalState();
             }
             
@@ -274,13 +247,12 @@
         }
 
         // ============================================================
-        // Canvas Manager - キャンバス統合管理
+        // Canvas Manager（元ファイルのFutabaDrawingTool部分を移植）
         // ============================================================
         class CanvasManager {
             constructor() {
-                const symbols = window.TEGAKI_SYMBOLS;
-                const width = symbols?.CANVAS?.DEFAULT_WIDTH || 400;
-                const height = symbols?.CANVAS?.DEFAULT_HEIGHT || 400;
+                const width = window.TEGAKI_SYMBOLS?.CANVAS?.DEFAULT_WIDTH || 400;
+                const height = window.TEGAKI_SYMBOLS?.CANVAS?.DEFAULT_HEIGHT || 400;
                 
                 this.engine = new DrawingEngine(width, height);
                 this.toolSystem = new ToolSystem();
@@ -312,10 +284,10 @@
                 }
             }
             
+            // 元ファイルのイベント処理を完全移植
             setupCanvasEvents() {
                 // ポインター描画開始
                 this.app.stage.on('pointerdown', (event) => {
-                    // UIが開いている場合は描画無効
                     if (window.TEGAKI_STATE?.activePopup) return;
                     
                     const point = this.engine.getLocalPointerPosition(event);
@@ -326,10 +298,25 @@
                 this.app.stage.on('pointermove', (event) => {
                     const point = this.engine.getLocalPointerPosition(event);
                     
-                    // 座標表示更新（B-2車両で処理される）
+                    // 座標表示更新
                     if (window.TEGAKI_STATE) {
                         window.TEGAKI_STATE.mouseX = Math.round(point.x);
                         window.TEGAKI_STATE.mouseY = Math.round(point.y);
+                        
+                        // 元ファイルと同じ座標表示更新
+                        const coordElement = document.getElementById('coordinates');
+                        if (coordElement) {
+                            coordElement.textContent = `x: ${Math.round(point.x)}, y: ${Math.round(point.y)}`;
+                        }
+                        
+                        // 筆圧モニター更新（元ファイルの簡易実装）
+                        if (this.toolSystem.isDrawing) {
+                            const pressure = Math.min(100, this.toolSystem.pressure * 100 + Math.random() * 20);
+                            const pressureElement = document.getElementById('pressure-monitor');
+                            if (pressureElement) {
+                                pressureElement.textContent = pressure.toFixed(1) + '%';
+                            }
+                        }
                     }
                     
                     // 描画続行
@@ -341,20 +328,34 @@
                 // ポインター描画終了
                 this.app.stage.on('pointerup', () => {
                     this.toolSystem.stopDrawing();
+                    // 筆圧モニターをリセット
+                    const pressureElement = document.getElementById('pressure-monitor');
+                    if (pressureElement) {
+                        pressureElement.textContent = '0.0%';
+                    }
                 });
                 
                 this.app.stage.on('pointerupoutside', () => {
                     this.toolSystem.stopDrawing();
+                    // 筆圧モニターをリセット
+                    const pressureElement = document.getElementById('pressure-monitor');
+                    if (pressureElement) {
+                        pressureElement.textContent = '0.0%';
+                    }
                 });
             }
             
-            // リサイズ処理
             resize(width, height, centerContent = false) {
                 this.engine.resize(width, height, centerContent);
                 console.log(`[A-2] 📐 キャンバスリサイズ: ${width}×${height}`);
+                
+                // キャンバス情報更新（元ファイルと同じ）
+                const canvasInfoElement = document.getElementById('canvas-info');
+                if (canvasInfoElement) {
+                    canvasInfoElement.textContent = `${width}×${height}px`;
+                }
             }
             
-            // クリア処理
             clear() {
                 this.engine.clear();
                 console.log('[A-2] 🗑 キャンバスクリア');
@@ -362,13 +363,13 @@
         }
 
         // ============================================================
-        // A-2車両初期化・エクスポート
+        // A-2車両エクスポート・初期化
         // ============================================================
         
-        // グローバルエクスポート（他車両から参照可能）
+        // グローバルエクスポート
         window.TEGAKI_DrawingEngine = DrawingEngine;
         window.TEGAKI_ToolSystem = ToolSystem;
-        window.TEGAKI_CanvasManager = null; // 初期化後に設定
+        window.TEGAKI_CanvasManager = null;
 
         // A-2車両初期化関数
         window.TEGAKI_A2 = {
@@ -383,6 +384,12 @@
                     
                     if (typeof PIXI === 'undefined') {
                         throw new Error('PixiJS が読み込まれていません');
+                    }
+                    
+                    // drawing-canvas要素の存在確認
+                    if (!document.getElementById('drawing-canvas')) {
+                        console.log('[A-2] ⚠ drawing-canvas要素が未配置 - UI車両の初期化待ち');
+                        return;
                     }
                     
                     // CanvasManager初期化
@@ -402,16 +409,19 @@
             }
         };
 
-        // A-2車両自動初期化
+                // A-2車両自動初期化
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', () => {
-                window.TEGAKI_A2.init().catch(console.error);
+                // UIが読み込まれた後に初期化
+                setTimeout(() => {
+                    window.TEGAKI_A2.init().catch(console.error);
+                }, 100);
             });
         } else {
-            window.TEGAKI_A2.init().catch(console.error);
+            // UIが読み込まれた後に初期化
+            setTimeout(() => {
+                window.TEGAKI_A2.init().catch(console.error);
+            }, 100);
         }
 
         console.log('[A-2] 🎨 コア車両ロード完了 - 初期化待機中');
-    </script>
-</body>
-</html>
