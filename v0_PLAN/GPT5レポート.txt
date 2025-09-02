@@ -1,345 +1,216 @@
-📋 Tegaki v8 改修計画（オフキャンバス + 下地キャンバス透明版）
-1. 目的
+🛠 改修計画
 
-キャンバス外描画（オフキャンバス描画）を可能にする
+下地キャンバスを動的にリサイズ
 
-下地キャンバスは透明で非破壊記録専用、ユーザーには表示されない
+resizeCanvas(width, height) 時に
+offscreenCanvas.width = width * 3;
+offscreenCanvas.height = height * 3;
+と再確保する。
 
-表キャンバス（カメラ範囲）だけが見える状態
+これにより「カメラの 3倍×3倍の透明下地」が常に確保され、リサイズ後もズレが発生しない。
 
-表キャンバスの背景色は f0e0d6（レイヤー0）
+カメラ座標の導入
 
-Undo/Redo、ブラシサイズ変更、非破壊履歴管理を維持
+cameraX, cameraY を基準に
+mainCanvas.drawImage(offscreenCanvas, cameraX, cameraY, width, height, 0, 0, width, height);
+とすることで「下地に描いたものをカメラで切り取って表示」できる。
 
-カメラ範囲に基づく描画座標でユーザー体験を統一
+これで無限キャンバスに近い仕組みが可能になる。
 
-2. 下地キャンバス設計
+消しゴム修正
 
-サイズ
+offscreenCtx.globalCompositeOperation = "destination-out" のあと必ず
+mainCanvas に drawImage をかけ直す。
 
-カメラの width x height に対して 3倍×3倍
+さらに履歴 (history) にも「消去ストローク」を push する必要がある。
 
-レイヤー移動やオフキャンバス描画の余白確保
+リサイズ時の背景色
 
-透明性
+mainCanvas の背景色（f0e0d6）を再塗り直す処理を
+resizeCanvas に追加する。
 
-見た目には完全透明
+👉 まとめると、
+「非破壊記録・透明下地キャンバス」はコード上でも正しく機能しているけれど、 動的リサイズとカメラ座標管理が未完成 なので、今後の拡張（無限キャンバス・レイヤー移動）を見据えて修正が必要、という状態です。
 
-全ストロークを world座標で非破壊記録
 
-座標系
+🎯 改修目的
 
-PointerEvent → screen → world（下地キャンバス基準）
+下地キャンバス (offscreenCanvas) を カメラ範囲の3倍×3倍 に動的確保する。
 
-表キャンバス（カメラ表示）に映る範囲だけレンダリング
+ユーザーのリサイズ操作に応じて再計算・再描画を行い、見た目のズレや背景色の残存を防ぐ。
 
-描画フロー
+将来的なカメラ移動にも備え、カメラ座標を基準に mainCanvas に切り出す方式に改修する。
 
-PointerEvent → world座標 → 下地キャンバス記録（非破壊）
-    ↓
-カメラ範囲内なら表キャンバスに描画
+🛠 改修計画
+1. resizeCanvas の修正
 
-3. 表キャンバス（カメラ）
+現在：mainCanvas.width/height しか更新していない。
 
-背景
+改修：offscreenCanvas も「カメラ範囲の3倍」に合わせてリサイズ。
 
-常に f0e0d6（レイヤー0）
+function resizeCanvas(width, height) {
+    mainCanvas.width = width;
+    mainCanvas.height = height;
 
-表示サイズ変更時にリサイズ対応
+    // 背景塗り直し（f0e0d6）
+    const ctx = mainCanvas.getContext("2d");
+    ctx.fillStyle = "#f0e0d6";
+    ctx.fillRect(0, 0, width, height);
 
-レンダリング
-
-下地キャンバスの該当範囲をカメラに描画
-
-オフキャンバス描画やカメラ移動の際も world座標を基準に変換
-
-座標フロー
-
-world座標 → camera offset → 表キャンバス座標
-
-4. キャンバスサイズ変更対応
-
-表キャンバス
-
-PIXI.Application.view の width/height 更新
-
-背景色 f0e0d6 再描画
-
-下地キャンバス
-
-カメラサイズに応じて 3倍×3倍 に動的変更
-
-既存の描画は world座標基準のため、座標変換で対応可能
-
-5. Undo/Redo と非破壊履歴
-
-下地キャンバス単位で全ストロークを非破壊記録
-
-Undo/Redo は world座標ベースで処理
-
-カメラ外で描いた場合も、後でカメラ内に入ればレンダリング・Undo/Redo対象に反映
-
-6. 表示・ユーザー体験の理念
-
-ユーザーは 下地キャンバスの存在を意識しない
-
-描画可能範囲はカメラ範囲に制限されるように見える
-
-オフキャンバス描画は 透明下地キャンバスで内部的に記録される
-
-表キャンバスの見た目と操作性はクリスタのように自然
-
-7. 実装優先度
-
-下地キャンバス生成（透明、カメラ3倍サイズ）
-
-表キャンバス表示・背景 f0e0d6 レイヤー0
-
-PointerEvent → world座標 → 下地キャンバス → カメラ描画フロー実装
-
-Undo/Redo & 非破壊履歴統合
-
-キャンバスリサイズ時の表キャンバス・下地キャンバス動的調整
-
-ブラシサイズ変更、オフキャンバスON/OFFチェック、レイヤー管理の挙動確認
-
-8. 将来的な拡張
-
-無限キャンバスやパン・ズーム対応も可能
-
-レイヤー移動やストローク編集時も下地キャンバスに沿った座標管理
-
-表キャンバスに直接描画せず、常に world座標基準で非破壊管理
-
-💡 結論
-
-下地キャンバスは透明で記録専用
-
-表キャンバスは常にカメラ範囲の見える領域
-
-描画判定・記録・表示を分離
-
-ユーザー視点ではカメラ範囲内のみが操作・描画可能に見える
-
-サイズ変更、オフキャンバス描画、Undo/Redo すべて world座標ベースで統一
-
-※下記パッチはあくまで案なので、上手く取捨選択してください。
-
-// --- Tegaki v8 オフキャンバス対応パッチ案 ---
-// 表キャンバス：カメラ範囲、背景 f0e0d6
-// 下地キャンバス：透明、非破壊記録専用
-
-// --- History Manager ---
-class HistoryManager {
-    constructor() {
-        this.undoStack = [];
-        this.redoStack = [];
-    }
-    push(event) {
-        this.undoStack.push(event);
-        this.redoStack = [];
-    }
-    undo() {
-        const event = this.undoStack.pop();
-        if (!event) return;
-        this.redoStack.push(event);
-        event.undo();
-    }
-    redo() {
-        const event = this.redoStack.pop();
-        if (!event) return;
-        this.undoStack.push(event);
-        event.redo();
-    }
+    // 下地キャンバスを動的再確保（3倍）
+    offscreenCanvas.width = width * 3;
+    offscreenCanvas.height = height * 3;
 }
 
-class StrokeEvent {
-    constructor(stroke, layer) {
-        this.stroke = stroke;
-        this.layer = layer;
-    }
-    undo() { this.layer.removeStroke(this.stroke); }
-    redo() { this.layer.addStroke(this.stroke); }
+2. 描画ループの修正
+
+現在：drawImage(offscreenCanvas, 0, 0, width, height, 0, 0, width, height);
+
+改修：カメラ座標 (cameraX, cameraY) を考慮。
+
+function render() {
+    ctx.fillStyle = "#f0e0d6";
+    ctx.fillRect(0, 0, mainCanvas.width, mainCanvas.height);
+
+    ctx.drawImage(
+        offscreenCanvas,
+        cameraX, cameraY, mainCanvas.width, mainCanvas.height, // 切り出し
+        0, 0, mainCanvas.width, mainCanvas.height             // mainCanvasに表示
+    );
 }
 
-// --- Layer ---
-class Layer {
-    constructor(stage) {
-        this.stage = stage;
-        this.strokes = [];
-    }
-    addStroke(stroke) {
-        this.strokes.push(stroke);
-        this.renderStroke(stroke);
-    }
-    removeStroke(stroke) {
-        const idx = this.strokes.indexOf(stroke);
-        if (idx >= 0) this.strokes.splice(idx,1);
-        this.stage.redrawLayer(this.strokes);
-    }
-    renderStroke(stroke) {
-        const g = new PIXI.Graphics();
-        g.lineStyle(stroke.width, parseInt(stroke.color.replace("#","0x"),16));
-        g.moveTo(stroke.points[0].x, stroke.points[0].y);
-        for(let i=1;i<stroke.points.length;i++) g.lineTo(stroke.points[i].x, stroke.points[i].y);
-        this.stage.addLayerChild(g);
-    }
+
+👉 こうすることで、カメラ移動や拡張が自然に実装できる。
+
+3. ストローク記録時の座標変換
+
+mousemove などで取得する x, y は mainCanvas 基準。
+
+改修：オフスクリーン記録時に カメラオフセットを加算する。
+
+offscreenCtx.lineTo(x + cameraX, y + cameraY);
+
+
+これで「offscreenCanvas に常にワールド座標で記録」される。
+
+4. 履歴管理の維持
+
+history.push(stroke) はそのまま活かせる。
+
+ただし stroke 内の座標も cameraX, cameraY 加算済みで保存する必要がある。
+
+✅ 期待される改善効果
+
+キャンバスを小さくリサイズしても 見た目の背景と下地が一致する。
+
+大きくしても下地が拡張されるので 端ギリギリまで描画しても破綻しない。
+
+将来の 無限キャンバス / カメラ移動 / レイヤー移動 に備えられる。
+
+この改修を入れると、「ユーザーが意識するのはカメラ座標だけ」で済みます。
+👉 下地キャンバスは常に3倍確保 → カメラで切り出し → 背景色を mainCanvas で描画。
+
+
+🔧 参考用コード（差し込み用）
+<script>
+const mainCanvas = document.getElementById("canvas");
+const ctx = mainCanvas.getContext("2d");
+
+// 下地キャンバス（透明）
+const offscreenCanvas = document.createElement("canvas");
+const offscreenCtx = offscreenCanvas.getContext("2d");
+
+// カメラ座標（将来の移動も考慮）
+let cameraX = 0;
+let cameraY = 0;
+
+// ================================
+// 📌 キャンバスリサイズ処理
+// ================================
+function resizeCanvas(width, height) {
+    // 表示用キャンバス
+    mainCanvas.width = width;
+    mainCanvas.height = height;
+
+    // 背景色を塗り直す
+    ctx.fillStyle = "#f0e0d6";
+    ctx.fillRect(0, 0, width, height);
+
+    // 下地キャンバスをカメラ範囲の3倍で確保
+    offscreenCanvas.width = width * 3;
+    offscreenCanvas.height = height * 3;
+
+    // 中央にカメラを置く（カメラ移動を考慮）
+    cameraX = width;
+    cameraY = height;
 }
 
-// --- Stage ---
-class Stage {
-    constructor(app, cameraWidth, cameraHeight) {
-        this.app = app;
+// ================================
+// 📌 描画ループ（mainCanvasへ切り出し）
+// ================================
+function render() {
+    // 背景塗り直し
+    ctx.fillStyle = "#f0e0d6";
+    ctx.fillRect(0, 0, mainCanvas.width, mainCanvas.height);
 
-        // カメラ範囲表示キャンバス（背景色 f0e0d6）
-        this.cameraWidth = cameraWidth;
-        this.cameraHeight = cameraHeight;
-
-        // 下地キャンバス（透明、非破壊記録用）
-        this.backCanvasWidth = cameraWidth*3;
-        this.backCanvasHeight = cameraHeight*3;
-
-        this.layerContainer = new PIXI.Container();
-        this.previewGraphics = new PIXI.Graphics();
-
-        app.stage.addChild(this.layerContainer);
-        app.stage.addChild(this.previewGraphics);
-    }
-
-    addLayerChild(graphics) {
-        this.layerContainer.addChild(graphics);
-    }
-
-    redrawLayer(strokes) {
-        this.layerContainer.removeChildren();
-        for(const s of strokes){
-            const g = new PIXI.Graphics();
-            g.lineStyle(s.width, parseInt(s.color.replace("#","0x"),16));
-            g.moveTo(s.points[0].x,s.points[0].y);
-            for(let i=1;i<s.points.length;i++) g.lineTo(s.points[i].x,s.points[i].y);
-            this.layerContainer.addChild(g);
-        }
-    }
-
-    clearPreview() {
-        this.previewGraphics.clear();
-    }
+    // 下地キャンバスの一部を mainCanvas へ表示
+    ctx.drawImage(
+        offscreenCanvas,
+        cameraX, cameraY, mainCanvas.width, mainCanvas.height, // 切り出し元
+        0, 0, mainCanvas.width, mainCanvas.height              // 表示先
+    );
 }
 
-// --- Input Manager ---
-class InputManager {
-    constructor(stage, camera, layer, history) {
-        this.stage = stage;
-        this.camera = camera; // {x:0,y:0}
-        this.layer = layer;
-        this.history = history;
-        this.currentStroke = null;
-        this.currentBrush = { color: "#800000", width: 2 };
-        this.offCanvasEnabled = true;
+// ================================
+// 📌 ペン描画処理（例）
+// ================================
+let drawing = false;
 
-        window.addEventListener("pointerdown", e => this.onPointerDown(e));
-        window.addEventListener("pointermove", e => this.onPointerMove(e));
-        window.addEventListener("pointerup", e => this.onPointerUp(e));
-        window.addEventListener("keydown", e => this.onKeyDown(e));
-    }
-
-    screenToWorld(pos) {
-        return {
-            x: pos.x + this.camera.x + this.stage.backCanvasWidth/2 - this.stage.cameraWidth/2,
-            y: pos.y + this.camera.y + this.stage.backCanvasHeight/2 - this.stage.cameraHeight/2
-        };
-    }
-
-    worldToLayer(pos) {
-        return {
-            x: pos.x - (this.stage.backCanvasWidth/2 - this.stage.cameraWidth/2),
-            y: pos.y - (this.stage.backCanvasHeight/2 - this.stage.cameraHeight/2)
-        };
-    }
-
-    onPointerDown(e) {
-        const worldPos = this.screenToWorld({x:e.clientX, y:e.clientY});
-        this.currentStroke = { points:[worldPos], color:this.currentBrush.color, width:this.currentBrush.width };
-    }
-
-    onPointerMove(e) {
-        if (!this.currentStroke) return;
-        const worldPos = this.screenToWorld({x:e.clientX, y:e.clientY});
-        this.currentStroke.points.push(worldPos);
-        this.renderPreview(this.currentStroke);
-    }
-
-    onPointerUp(e) {
-        if (!this.currentStroke) return;
-
-        // カメラ範囲内のポイントだけ表キャンバスに反映
-        const layerStroke = { ...this.currentStroke, points:this.currentStroke.points.map(p=>{
-            const camX = this.worldToLayer(p).x;
-            const camY = this.worldToLayer(p).y;
-            return { x: camX, y: camY };
-        })};
-
-        if(this.offCanvasEnabled) {
-            // 非破壊記録は下地キャンバス(world座標)に常に保持
-            // 表キャンバス描画はカメラ範囲内のみ
-            this.layer.addStroke(layerStroke);
-            this.history.push(new StrokeEvent(layerStroke, this.layer));
-        }
-
-        this.currentStroke = null;
-        this.stage.clearPreview();
-    }
-
-    onKeyDown(e) {
-        if (e.ctrlKey && e.key === 'z') { this.history.undo(); e.preventDefault(); }
-        else if (e.ctrlKey && e.key === 'y') { this.history.redo(); e.preventDefault(); }
-    }
-
-    renderPreview(stroke) {
-        const g = this.stage.previewGraphics;
-        g.clear();
-        g.lineStyle(stroke.width, parseInt(stroke.color.replace("#","0x"),16),0.5);
-        g.moveTo(stroke.points[0].x - (this.stage.backCanvasWidth/2 - this.stage.cameraWidth/2),
-                 stroke.points[0].y - (this.stage.backCanvasHeight/2 - this.stage.cameraHeight/2));
-        for(let i=1;i<stroke.points.length;i++){
-            g.lineTo(stroke.points[i].x - (this.stage.backCanvasWidth/2 - this.stage.cameraWidth/2),
-                     stroke.points[i].y - (this.stage.backCanvasHeight/2 - this.stage.cameraHeight/2));
-        }
-    }
-
-    updateBrush(newBrush) {
-        this.currentBrush = { ...this.currentBrush, ...newBrush };
-    }
-
-    toggleOffCanvas(flag) {
-        this.offCanvasEnabled = flag;
-    }
-}
-
-// --- 初期化 ---
-window.addEventListener("DOMContentLoaded",()=>{
-    const cameraWidth = 400;
-    const cameraHeight = 400;
-    const app = new PIXI.Application({ width: cameraWidth, height: cameraHeight, backgroundColor: 0xf0e0d6 });
-    document.body.appendChild(app.view);
-
-    const stage = new Stage(app, cameraWidth, cameraHeight);
-    const layer = new Layer(stage);
-    const history = new HistoryManager();
-    const input = new InputManager(stage, {x:0,y:0}, layer, history);
-
-    // 表キャンバスサイズ変更例
-    function resizeCanvas(newWidth, newHeight){
-        app.renderer.resize(newWidth,newHeight);
-        stage.cameraWidth = newWidth;
-        stage.cameraHeight = newHeight;
-        stage.backCanvasWidth = newWidth*3;
-        stage.backCanvasHeight = newHeight*3;
-        app.renderer.backgroundColor = 0xf0e0d6;
-    }
-
-    // ブラシサイズ変更例
-    // input.updateBrush({width:5});
+mainCanvas.addEventListener("mousedown", (e) => {
+    drawing = true;
+    const x = e.offsetX + cameraX;
+    const y = e.offsetY + cameraY;
+    offscreenCtx.beginPath();
+    offscreenCtx.moveTo(x, y);
 });
 
+mainCanvas.addEventListener("mousemove", (e) => {
+    if (!drawing) return;
+    const x = e.offsetX + cameraX;
+    const y = e.offsetY + cameraY;
+    offscreenCtx.lineTo(x, y);
+    offscreenCtx.stroke();
+    render();
+});
+
+mainCanvas.addEventListener("mouseup", () => {
+    drawing = false;
+});
+
+// ================================
+// 📌 初期化
+// ================================
+resizeCanvas(400, 400);
+render();
+</script>
+
+✅ このコードのポイント
+
+下地キャンバスは常に3倍サイズ
+
+resizeCanvas 時に自動で再確保。
+
+cameraX, cameraY で「どこを切り出すか」を決定。
+
+描画は常にオフセット加算
+
+x + cameraX, y + cameraY を記録。
+
+将来カメラ移動しても記録がズレない。
+
+背景色は mainCanvas 側で管理
+
+下地キャンバスは常に透明。
+
+表示時に f0e0d6 を塗ってから drawImage。
 
