@@ -1,24 +1,22 @@
-tegaki-v8-train-main.html:37 [Main] 🚂 Tegaki v8 列車型システム開始
-tegaki-v8-train-main.html:148 [Main] ✅ Header統合完了 - シンボル辞典・グローバル状態初期化済み
-tegaki-v8-train-main.html:344 [Main] 🚀 Tegaki v8 列車型システム起動
-tegaki-v8-train-main.html:345 [Main] 📋 改修内容:
-tegaki-v8-train-main.html:346 [Main]   - Header統合完了（A-1→main）
-tegaki-v8-train-main.html:347 [Main]   - ファイル名コメント導入
-tegaki-v8-train-main.html:348 [Main]   - 順次依存構造実装
-tegaki-v8-train-main.html:349 [Main]   - 元機能完全移植
-tegaki-v8-train-main.html:164 [Main] 🚃 車両ロード開始 - 順次依存構造
-tegaki-v8-train-main.html:251 [Main] 🚃 styles 車両ロード完了
-VM22:484 Uncaught SyntaxError: Failed to execute 'appendChild' on 'Node': Unexpected end of input
-    at TrainController.executeScript (tegaki-v8-train-main.html:279:35)
-    at TrainController.loadCar (tegaki-v8-train-main.html:245:34)
-    at async TrainController.loadCars (tegaki-v8-train-main.html:170:17)
-    at async TrainController.initializeSystem (tegaki-v8-train-main.html:298:17)
-    at async tegaki-v8-train-main.html:352:17
-executeScript @ tegaki-v8-train-main.html:279
-loadCar @ tegaki-v8-train-main.html:245
-await in loadCar
-loadCars @ tegaki-v8-train-main.html:170
-await in loadCars
-initializeSystem @ tegaki-v8-train-main.html:298
-(anonymous) @ tegaki-v8-train-main.html:352
-tegaki-v8-train-main.html:251 [Main] 🚃 a2-core 車両ロード完了
+lodash.min.js:16 Uncaught SyntaxError: Unexpected token 'export'
+vector_drawing_tool_v8.html:1056 🎨 Futaba Vector Drawing Tool v8 - Starting initialization
+vector_drawing_tool_v8.html:488 🚂 Station: Initializing Futaba Drawing Tool v8.0.0
+vector_drawing_tool_v8.html:489 📦 PixiJS v8.0.5 loaded
+vector_drawing_tool_v8.html:496 ✅ Library pixi loaded
+vector_drawing_tool_v8.html:496 ✅ Library gsap loaded
+vector_drawing_tool_v8.html:496 ✅ Library hammer loaded
+vector_drawing_tool_v8.html:494 ❌ Library lodash not found
+(anonymous) @ vector_drawing_tool_v8.html:494
+vector_drawing_tool_v8.html:517 🚂 Main: Starting application initialization
+vector_drawing_tool_v8.html:1070 ❌ Initialization failed: TypeError: Cannot read properties of undefined (reading 'canvas')
+    at get canvas (Application.ts:164:30)
+    at MainController.init (vector_drawing_tool_v8.html:530:80)
+    at FutabaDrawingTool.init (vector_drawing_tool_v8.html:1063:37)
+    at vector_drawing_tool_v8.html:1080:48
+init @ vector_drawing_tool_v8.html:1070
+vector_drawing_tool_v8.html:1082 💥 Application startup failed: TypeError: Cannot read properties of undefined (reading 'canvas')
+    at get canvas (Application.ts:164:30)
+    at MainController.init (vector_drawing_tool_v8.html:530:80)
+    at FutabaDrawingTool.init (vector_drawing_tool_v8.html:1063:37)
+    at vector_drawing_tool_v8.html:1080:48
+(anonymous) @ vector_drawing_tool_v8.html:1082

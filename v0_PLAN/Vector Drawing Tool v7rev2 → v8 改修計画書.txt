@@ -1,0 +1,149 @@
+Vector Drawing Tool v7rev2 → v8 改修計画書
+1. 目的
+
+PixiJS v8 に移行し、最新APIと高速描画機能を活用する。
+
+@pixi/ui を中心に UI を整備し、ポップアップ・ボタン・スライダー等を簡単に扱えるようにする。
+
+ライブラリ活用で車輪の再発明を防止する。
+
+一括改修で動作確認後に分割化を行い、AIによる局所改修や拡張が容易な構造に移行する。
+
+2. 対象ファイル
+
+vector-drawing-tool-v7rev2.html（単一ファイル）
+
+3. 改修方針
+
+PixiJS v8 化
+
+CDN経由で PixiJS v8 を導入
+
+Application 初期化、Renderer 設定、Viewport（ズーム／パン）の調整
+
+Graphics・Container・RenderTexture の互換性チェック
+
+ライブラリ導入
+
+必須
+
+@pixi/ui → UIコンポーネント（ボタン、ポップアップ、スライダー）
+
+pixi-svg → ベクターパス描画強化
+
+Hammer.js → タッチ／ジェスチャ対応（キャンバス移動、ズーム）
+
+GSAP → UIアニメーション（ポップアップフェード、ツールチップ）
+
+lodash-es → 座標計算・ユーティリティ関数
+
+将来用（導入は保留）
+
+@pixi/gif → GIFアニメーション、コマ管理
+
+@pixi/text-bitmap → 高速テキスト描画
+
+@tabler/icons / lucide-static → アイコンセット
+
+tweedle.js → Pixiアニメーション補助
+
+機能整備
+
+キャンバス移動・ズーム
+
+ドラッグでパン、ピンチでズーム
+
+Hammer.js または PixiJS の Viewport を活用
+
+ベクターペン強化
+
+SVG / Path ベースのストローク保持
+
+太さ・色の非破壊編集に対応
+
+ポップアップ・UI
+
+@pixi/ui ボタンでツール選択
+
+ツールごとのポップアップ（設定や情報表示）
+
+GSAPで軽いアニメーション演出
+
+座標・描画基盤整備
+
+screen→canvas 変換、canvas→screen 変換関数の統合
+
+レイヤー単位で Graphics / Container を管理する準備
+
+今後の非破壊変形・レイヤー機能の土台整備
+
+コンソールログ・デバッグ
+
+v7時代の不要ログは削除
+
+エラーは隠さず構造上で検知
+
+フェイルセーフやフォールバックは導入せず、列車型ルールに準拠
+
+4. CDN読み込み例
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.12.0/dist/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/@pixi/ui@2.1.0/dist/pixi-ui.umd.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi-svg@3.2.0/dist/pixi-svg.umd.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/lodash-es@4.17.21/lodash.min.js"></script>
+
+5. 改修ステップ
+ステップ1：PixiJS v8 への移行
+
+Application の初期化
+
+Canvas サイズ設定
+
+Graphics / Container の互換性確認
+
+画面描画・ズーム・パンの動作確認
+
+ステップ2：ライブラリ統合
+
+@pixi/ui ボタン配置、簡単なポップアップ表示
+
+Hammer.js を利用したドラッグ／ピンチ操作
+
+GSAP でポップアップアニメーション
+
+pixi-svg を使ったベクターペン描画テスト
+
+ステップ3：描画・座標基盤整備
+
+画面座標変換関数統合
+
+レイヤーコンテナの初期化
+
+非破壊描画の土台を準備
+
+ステップ4：動作確認
+
+単一ファイルとして v8版が動く状態を確認
+
+コンソールエラーなし、描画・UI・操作の基本動作チェック
+
+ステップ5：次ステップ（分割化）
+
+v8 動作確認後に列車型分割化を実施
+
+tegaki-a1-core.html（描画・座標管理）
+
+tegaki-b1-ui.html（UI・ツールバー・ポップアップ）
+
+tegaki-b2-status.html（状態管理・レイヤー情報）
+
+必要に応じて B3, B4 など追加
+
+6. 注意点
+
+v8 化前に分割すると、互換性修正が複数ファイルにまたがり面倒
+
+ポップアップやツールUIも v8＋@pixi/ui に依存させることで、分割後も局所改修可能
+
+GIF・タイムラインなどの高度機能は後回し
