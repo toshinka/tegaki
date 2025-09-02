@@ -1,0 +1,187 @@
+<!-- File: tegaki-b3-tools.html -->
+<script>
+/**
+ * 🚋 B3-Tools（ツール管理車両）
+ * @provides: ペン設定、描画ツール、設定管理
+ * @depends: A1-Core, A2-Integration
+ * @role: ツール管理
+ * 
+ * v7rev2完全移植：ToolSystemクラス全体、ブラシ設定・色設定、
+ * ツール切り替えロジック
+ * 
+ * ミニヘッダー辞典（Symbol Dictionary準拠）：
+ * - brushSize: 16.0px (初期値)
+ * - opacity: 85% (初期値)  
+ * - pressure: 50% (初期値)
+ * - stabilizer: 30% (初期値)
+ * - color: #800000 (ふたば茶)
+ * - tools: pen, eraser, fill, shape
+ */
+
+// ==== Tool Manager ====
+class ToolManager {
+    constructor(toolSystem, uiController, statusController) {
+        this.toolSystem = toolSystem;
+        this.uiController = uiController;
+        this.statusController = statusController;
+        
+        // Symbol Dictionary準拠の設定値
+        this.settings = {
+            brushSize: 16.0,
+            opacity: 85.0,
+            pressure: 50.0,
+            smoothing: 30.0,
+            color: '#800000',
+            tool: 'pen'
+        };
+    }
+    
+    init() {
+        this.initializeSettings();
+        this.bindToolEvents();
+        this.syncWithUI();
+    }
+    
+    initializeSettings() {
+        // Symbol Dictionary準拠の初期値を設定
+        this.toolSystem.setBrushSize(this.settings.brushSize);
+        this.toolSystem.setOpacity(this.settings.opacity / 100);
+        this.toolSystem.setPressure(this.settings.pressure / 100);
+        this.toolSystem.setSmoothing(this.settings.smoothing / 100);
+        this.toolSystem.setTool(this.settings.tool);
+        
+        console.log('🔧 B3-Tools: Symbol Dictionary準拠設定値適用完了');
+    }
+    
+    bindToolEvents() {
+        // ツール切り替えイベントの拡張
+        this.extendToolSwitching();
+        
+        // 設定値変更時の連携処理
+        this.setupSettingsSync();
+    }
+    
+    extendToolSwitching() {
+        // ペンツール切り替え
+        const penTool = document.getElementById('pen-tool');
+        if (penTool) {
+            penTool.addEventListener('click', () => {
+                this.switchTool('pen', 'ベクターペン');
+            });
+        }
+        
+        // 消しゴムツール切り替え
+        const eraserTool = document.getElementById('eraser-tool');
+        if (eraserTool) {
+            eraserTool.addEventListener('click', () => {
+                this.switchTool('eraser', '消しゴム');
+            });
+        }
+    }
+    
+    switchTool(toolType, toolName) {
+        this.settings.tool = toolType;
+        this.toolSystem.setTool(toolType);
+        
+        // UIの更新
+        if (this.uiController) {
+            this.uiController.setTool(toolType);
+        }
+        
+        // ステータスバーの更新
+        if (this.statusController) {
+            this.statusController.updateCurrentTool(toolName);
+        }
+        
+        // ツールボタンのアクティブ状態更新
+        document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+        const activeBtn = document.getElementById(toolType + '-tool');
+        if (activeBtn) {
+            activeBtn.classList.add('active');
+        }
+    }
+    
+    setupSettingsSync() {
+        // スライダー変更時の設定値同期
+        const syncSettings = () => {
+            this.settings.brushSize = this.toolSystem.brushSize;
+            this.settings.opacity = Math.round(this.toolSystem.opacity * 100);
+            this.settings.pressure = Math.round(this.toolSystem.pressure * 100);
+            this.settings.smoothing = Math.round(this.toolSystem.smoothing * 100);
+            
+            // プリセット更新
+            if (this.uiController) {
+                this.uiController.updateSizePresets();
+            }
+        };
+        
+        // 定期的に同期（簡易実装）
+        setInterval(syncSettings, 100);
+    }
+    
+    syncWithUI() {
+        // UIコントローラーとの初期同期
+        if (this.uiController) {
+            this.uiController.updateSizePresets();
+        }
+        
+        // ステータスコントローラーとの初期同期
+        if (this.statusController) {
+            this.statusController.updateCurrentColor(this.settings.color);
+            this.statusController.updateCurrentTool('ベクターペン');
+        }
+    }
+    
+    // 設定値の取得・設定メソッド（将来的な拡張用）
+    getSetting(key) {
+        return this.settings[key];
+    }
+    
+    setSetting(key, value) {
+        this.settings[key] = value;
+        
+        // ツールシステムに反映
+        switch (key) {
+            case 'brushSize':
+                this.toolSystem.setBrushSize(value);
+                break;
+            case 'opacity':
+                this.toolSystem.setOpacity(value / 100);
+                break;
+            case 'pressure':
+                this.toolSystem.setPressure(value / 100);
+                break;
+            case 'smoothing':
+                this.toolSystem.setSmoothing(value / 100);
+                break;
+            case 'tool':
+                this.toolSystem.setTool(value);
+                break;
+        }
+        
+        // UI更新
+        if (this.uiController) {
+            this.uiController.updateSizePresets();
+        }
+    }
+    
+    // プリセット管理（6項目、動的更新対応）
+    getPresetSizes() {
+        return [1, 2, 4, 8, 16, 32]; // Symbol Dictionary準拠
+    }
+    
+    applyPreset(size) {
+        this.setSetting('brushSize', size);
+        
+        // スライダー値も更新
+        if (this.uiController) {
+            this.uiController.updateSliderValue('pen-size-slider', size);
+        }
+    }
+}
+
+// B3-Tools車両をグローバルエクスポート
+window.TegakiB3Tools = {
+    ToolManager
+};
+</script>

@@ -1,0 +1,346 @@
+<!-- File: tegaki-b1-ui.html -->
+<script>
+/**
+ * 🚋 B1-UI（ユーザーインターフェース車両）
+ * @provides: サイドバー、ポップアップ、ツール選択
+ * @depends: A1-Core, A2-Integration
+ * @role: UI制御
+ * 
+ * v7rev2完全移植：UIControllerクラス全体、ツールボタンのHTML生成・イベント、
+ * ポップアップ制御、スライダー・プリセット機能、ドラッグ機能
+ */
+
+// ==== UI Controller (v7rev2完全移植) ====
+class UIController {
+    constructor(toolSystem) {
+        this.toolSystem = toolSystem;
+        this.activePopup = null;
+        this.sliders = new Map();
+    }
+    
+    init() {
+        this.setupToolButtons();
+        this.setupPopups();
+        this.setupSliders();
+        this.setupPresets();
+        this.setupResize();
+        this.setupCheckboxes();
+        this.updateSizePresets();
+    }
+    
+    setupToolButtons() {
+        document.querySelectorAll('.tool-button').forEach(btn => {
+            btn.addEventListener('click', (e) => {
+                if (btn.classList.contains('disabled')) return;
+                this.handleToolClick(e.currentTarget);
+            });
+        });
+    }
+    
+    handleToolClick(button) {
+        const toolId = button.id;
+        const popupId = button.getAttribute('data-popup');
+        
+        if (toolId === 'pen-tool') {
+            this.setTool('pen');
+        } else if (toolId === 'eraser-tool') {
+            this.setTool('eraser');
+        }
+        
+        if (popupId) {
+            this.togglePopup(popupId);
+        }
+    }
+    
+    setTool(tool) {
+        this.toolSystem.setTool(tool);
+        
+        document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+        document.getElementById(tool + '-tool').classList.add('active');
+        
+        const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
+        const currentToolElement = document.getElementById('current-tool');
+        if (currentToolElement) {
+            currentToolElement.textContent = toolNames[tool] || tool;
+        }
+    }
+    
+    togglePopup(popupId) {
+        const popup = document.getElementById(popupId);
+        if (!popup) return;
+        
+        if (this.activePopup && this.activePopup !== popup) {
+            this.activePopup.classList.remove('show');
+        }
+        
+        const isVisible = popup.classList.contains('show');
+        popup.classList.toggle('show', !isVisible);
+        this.activePopup = isVisible ? null : popup;
+    }
+    
+    setupSliders() {
+        this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
+            this.toolSystem.setBrushSize(value);
+            this.updateSizePresets();
+            return value.toFixed(1) + 'px';
+        });
+        
+        this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value) => {
+            this.toolSystem.setOpacity(value / 100);
+            this.updateSizePresets(); // 不透明度変更時も更新
+            return value.toFixed(1) + '%';
+        });
+        
+        this.createSlider('pen-pressure-slider', 0, 100, 50.0, (value) => {
+            this.toolSystem.setPressure(value / 100);
+            return value.toFixed(1) + '%';
+        });
+        
+        this.createSlider('pen-smoothing-slider', 0, 100, 30.0, (value) => {
+            this.toolSystem.setSmoothing(value / 100);
+            return value.toFixed(1) + '%';
+        });
+        
+        this.setupSliderButtons();
+    }
+    
+    createSlider(sliderId, min, max, initial, callback) {
+        const container = document.getElementById(sliderId);
+        if (!container) return;
+        
+        const track = container.querySelector('.slider-track');
+        const handle = container.querySelector('.slider-handle');
+        const valueDisplay = container.parentNode.querySelector('.slider-value');
+        
+        const sliderData = {
+            value: initial,
+            min, max, callback,
+            track, handle, valueDisplay,
+            isDragging: false
+        };
+        
+        this.sliders.set(sliderId, sliderData);
+        
+        const updateSlider = (value) => {
+            sliderData.value = Math.max(min, Math.min(max, value));
+            const percentage = ((sliderData.value - min) / (max - min)) * 100;
+            
+            if (track) track.style.width = percentage + '%';
+            if (handle) handle.style.left = percentage + '%';
+            if (valueDisplay) valueDisplay.textContent = callback(sliderData.value);
+        };
+        
+        const getValueFromPosition = (clientX) => {
+            const rect = container.getBoundingClientRect();
+            const percentage = (clientX - rect.left) / rect.width;
+            return min + (percentage * (max - min));
+        };
+        
+        container.addEventListener('mousedown', (e) => {
+            sliderData.isDragging = true;
+            updateSlider(getValueFromPosition(e.clientX));
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (sliderData.isDragging) updateSlider(getValueFromPosition(e.clientX));
+        });
+        
+        document.addEventListener('mouseup', () => {
+            sliderData.isDragging = false;
+        });
+        
+        updateSlider(initial);
+    }
+    
+    setupSliderButtons() {
+        const adjustValue = (sliderId, delta) => {
+            const slider = this.sliders.get(sliderId);
+            if (slider) {
+                const newValue = slider.value + delta;
+                const clampedValue = Math.max(slider.min, Math.min(slider.max, newValue));
+                slider.value = clampedValue;
+                
+                const percentage = ((clampedValue - slider.min) / (slider.max - slider.min)) * 100;
+                if (slider.track) slider.track.style.width = percentage + '%';
+                if (slider.handle) slider.handle.style.left = percentage + '%';
+                if (slider.valueDisplay) slider.valueDisplay.textContent = slider.callback(clampedValue);
+            }
+        };
+        
+        // ペンサイズ調整ボタン
+        const setupAdjustButtons = (prefix, sliderId, updatePresets = false) => {
+            const buttons = [
+                { id: `${prefix}-decrease-small`, delta: -0.1 },
+                { id: `${prefix}-decrease`, delta: -1 },
+                { id: `${prefix}-decrease-large`, delta: -10 },
+                { id: `${prefix}-increase-small`, delta: 0.1 },
+                { id: `${prefix}-increase`, delta: 1 },
+                { id: `${prefix}-increase-large`, delta: 10 }
+            ];
+            
+            buttons.forEach(({ id, delta }) => {
+                const element = document.getElementById(id);
+                if (element) {
+                    element.addEventListener('click', () => {
+                        adjustValue(sliderId, delta);
+                        if (updatePresets) this.updateSizePresets();
+                    });
+                }
+            });
+        };
+        
+        setupAdjustButtons('pen-size', 'pen-size-slider', true);
+        setupAdjustButtons('pen-opacity', 'pen-opacity-slider', true);
+        setupAdjustButtons('pen-pressure', 'pen-pressure-slider');
+        setupAdjustButtons('pen-smoothing', 'pen-smoothing-slider');
+    }
+    
+    setupPresets() {
+        document.querySelectorAll('.size-preset-item').forEach(preset => {
+            preset.addEventListener('click', () => {
+                const size = parseFloat(preset.getAttribute('data-size'));
+                this.toolSystem.setBrushSize(size);
+                this.updateSliderValue('pen-size-slider', size);
+                this.updateSizePresets();
+            });
+        });
+    }
+    
+    setupResize() {
+        document.querySelectorAll('.resize-button[data-size]').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const [width, height] = btn.getAttribute('data-size').split(',').map(Number);
+                const widthInput = document.getElementById('canvas-width');
+                const heightInput = document.getElementById('canvas-height');
+                if (widthInput) widthInput.value = width;
+                if (heightInput) heightInput.value = height;
+            });
+        });
+    }
+    
+    setupCheckboxes() {
+        document.querySelectorAll('.checkbox').forEach(checkbox => {
+            checkbox.addEventListener('click', () => {
+                checkbox.classList.toggle('checked');
+            });
+        });
+    }
+    
+    setupPopups() {
+        document.querySelectorAll('.popup-panel.draggable').forEach(popup => {
+            this.makeDraggable(popup);
+        });
+        
+        document.addEventListener('click', (e) => {
+            if (!e.target.closest('.popup-panel') && !e.target.closest('.tool-button')) {
+                this.closeAllPopups();
+            }
+        });
+    }
+    
+    makeDraggable(popup) {
+        let isDragging = false;
+        let dragOffset = { x: 0, y: 0 };
+        
+        popup.addEventListener('mousedown', (e) => {
+            if (e.target === popup || e.target.closest('.popup-title')) {
+                isDragging = true;
+                popup.classList.add('dragging');
+                
+                const rect = popup.getBoundingClientRect();
+                dragOffset.x = e.clientX - rect.left;
+                dragOffset.y = e.clientY - rect.top;
+                e.preventDefault();
+            }
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (isDragging) {
+                const x = Math.max(0, Math.min(e.clientX - dragOffset.x, window.innerWidth - popup.offsetWidth));
+                const y = Math.max(0, Math.min(e.clientY - dragOffset.y, window.innerHeight - popup.offsetHeight));
+                
+                popup.style.left = x + 'px';
+                popup.style.top = y + 'px';
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (isDragging) {
+                isDragging = false;
+                popup.classList.remove('dragging');
+            }
+        });
+    }
+    
+    updateSliderValue(sliderId, value) {
+        const slider = this.sliders.get(sliderId);
+        if (slider) {
+            slider.value = value;
+            const percentage = ((value - slider.min) / (slider.max - slider.min)) * 100;
+            if (slider.track) slider.track.style.width = percentage + '%';
+            if (slider.handle) slider.handle.style.left = percentage + '%';
+            if (slider.valueDisplay) slider.valueDisplay.textContent = slider.callback(value);
+        }
+    }
+    
+    updateSizePresets() {
+        const currentSize = this.toolSystem.brushSize;
+        const currentOpacity = Math.round(this.toolSystem.opacity * 100);
+        
+        document.querySelectorAll('.size-preset-item').forEach(preset => {
+            const presetSize = parseFloat(preset.getAttribute('data-size'));
+            const circle = preset.querySelector('.size-preview-circle');
+            const label = preset.querySelector('.size-preview-label');
+            const percent = preset.querySelector('.size-preview-percent');
+            
+            // アクティブ状態の更新
+            const isActive = Math.abs(presetSize - currentSize) < 0.1;
+            preset.classList.toggle('active', isActive);
+            
+            // 円のサイズ更新（0.5-20pxの範囲で線形変換）
+            let circleSize;
+            if (isActive) {
+                // アクティブなプリセットは現在のスライダー値を反映
+                circleSize = Math.max(0.5, Math.min(20, (currentSize / 100) * 19.5 + 0.5));
+            } else {
+                // 非アクティブなプリセットは固定サイズ値を反映
+                circleSize = Math.max(0.5, Math.min(20, (presetSize / 100) * 19.5 + 0.5));
+            }
+            
+            if (circle) {
+                circle.style.width = circleSize + 'px';
+                circle.style.height = circleSize + 'px';
+                // 不透明度の適用
+                circle.style.opacity = this.toolSystem.opacity;
+            }
+            
+            // ラベルの更新
+            if (label) {
+                if (isActive) {
+                    label.textContent = currentSize.toFixed(1);
+                } else {
+                    label.textContent = presetSize.toString();
+                }
+            }
+            
+            // パーセント表示の更新
+            if (percent) {
+                percent.textContent = currentOpacity + '%';
+            }
+        });
+    }
+    
+    closeAllPopups() {
+        document.querySelectorAll('.popup-panel').forEach(popup => {
+            popup.classList.remove('show');
+        });
+        this.activePopup = null;
+    }
+}
+
+// B1-UI車両をグローバルエクスポート
+window.TegakiB1UI = {
+    UIController
+};
+</script>

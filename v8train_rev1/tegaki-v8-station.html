@@ -1,17 +1,32 @@
-<!-- File: tegaki_v8_station.html -->
+<!-- File: index.html -->
 <!DOCTYPE html>
 <html lang="ja">
 <head>
-    <!-- 🚉 Tegaki v8 Station Header - 列車型アーキテクチャ総則 -->
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8 (トレイン版)</title>
     
-    <!-- 🎨 スタイル車両 -->
-    <link rel="stylesheet" href="tegaki-styles.css">
+    <!-- 🚉 Tegaki v8 トレイン化計画書準拠 駅制御ヘッダー -->
+    <!-- 
+    🚂 車両編成と責務:
+    - A1-Core: Canvas管理・描画エンジン・リサイズ処理
+    - A2-Integration: イベント配線・車両間API・全体制御  
+    - B1-UI: サイドバー・ポップアップ・ツール選択
+    - B2-Status: ステータスバー・FPS監視・座標表示
+    - B3-Tools: ペン設定・描画ツール・設定管理
+    - Styles: 全体CSS・レスポンシブ対応
+    
+    🔄 初期化シーケンス (依存順序):
+    [Station] → A1.initCore() → A2.wireUp() → B1.initUI() → B2.initStatus() → B3.initTools() → ready
+    
+    ⚠️ 完全移植原則: v7rev2の機能を一切削除・簡略化・設定変更禁止
+    -->
+    
+    <!-- Styles読み込み -->
+    <link rel="stylesheet" href="#" id="tegaki-styles-placeholder">
 </head>
 <body>
-    <!-- 🚉 駅 DOM構造 -->
+    <!-- 初期DOM構造 -->
     <div class="main-layout">
         <div class="sidebar">
             <div class="tool-button disabled" id="download-tool" title="ダウンロード">
@@ -60,7 +75,7 @@
         </div>
     </div>
     
-    <!-- ポップアップパネル構造 -->
+    <!-- ポップアップパネル -->
     <div class="popup-panel pen-settings draggable" id="pen-settings" style="left: 60px; top: 100px;">
         <div class="popup-title">ベクターペンツール設定</div>
         
@@ -248,47 +263,40 @@
         </div>
     </div>
 
-    <!-- 🚉 PIXI.js 基盤ライブラリ -->
+    <!-- 🚂 車両読み込み（順序固定・依存関係遵守） -->
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+    <script src="#" id="tegaki-a1-core-placeholder"></script>
+    <script src="#" id="tegaki-a2-integration-placeholder"></script>
+    <script src="#" id="tegaki-b1-ui-placeholder"></script>
+    <script src="#" id="tegaki-b2-status-placeholder"></script>
+    <script src="#" id="tegaki-b3-tools-placeholder"></script>
     
-    <!-- 🚂 車両編成読み込み（順序厳守） -->
+    <!-- 駅制御スクリプト（最終初期化シーケンス） -->
     <script>
-        // 🚉 Station Boot Sequence
-        console.log('🚉 Tegaki v8 Station - 列車型アーキテクチャ起動');
-        console.log('🚂 車両編成:');
-        console.log('  A1-Core: 基盤エンジン（PIXI.js管理）');
-        console.log('  A2-Integration: 統合制御（車両間API）');
-        console.log('  B1-UI: ユーザーインターフェース');
-        console.log('  B2-Status: ステータス表示・監視');
-        console.log('  B3-Tools: ツールシステム');
-        console.log('  Station-Main: 駅制御ロジック');
+        /**
+         * 🚉 Tegaki v8 駅制御システム
+         * v7rev2完全移植・列車型構造対応
+         */
         
-        // 🎯 グローバル変数初期化（車両間共有）
-        window.TegakiV8 = {
-            engine: null,
-            toolSystem: null,
-            ui: null,
-            monitor: null,
-            integration: null
-        };
-        
-        // 🚉 Station DOM Ready State
-        window.TegakiV8.stationReady = new Promise(resolve => {
-            if (document.readyState === 'loading') {
-                document.addEventListener('DOMContentLoaded', resolve);
-            } else {
-                resolve();
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                console.log('🚉 Tegaki v8 トレイン版 起動開始');
+                console.log('📋 完全移植チェックリスト準拠 - v7rev2機能保持');
+                
+                // 🔄 初期化シーケンス（依存順序厳守）
+                if (!window.TegakiStation) {
+                    throw new Error('車両システム未読み込み');
+                }
+                
+                const station = new window.TegakiStation();
+                await station.boot();
+                
+                console.log('✅ Tegaki v8 トレイン版 起動完了');
+                
+            } catch (error) {
+                console.error('❌ 駅制御エラー:', error);
             }
         });
-        
-        console.log('🎯 Station準備完了 - 車両読み込み開始');
     </script>
-    
-    <script src="tegaki-a1-core.js"></script>
-    <script src="tegaki-a2-integration.js"></script>
-    <script src="tegaki-b1-ui.js"></script>
-    <script src="tegaki-b2-status.js"></script>
-    <script src="tegaki-b3-tools.js"></script>
-    <script src="station-main.js"></script>
 </body>
 </html>

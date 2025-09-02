@@ -1,0 +1,32 @@
+/* File: tegaki-styles.css */
+/**
+ * 🎨 Tegaki v8 Styles (v7rev2完全移植)
+ * @provides: 全体CSS、レスポンシブ対応
+ * @depends: なし
+ * @role: 視覚設計
+ * 
+ * v7rev2完全移植：全CSS、ふたば風カラーテーマ、アニメーション定義
+ * 省略禁止 - 完全移植原則遵守
+ */
+
+* {
+    margin: 0;
+    padding: 0;
+    box-sizing: border-box;
+}
+
+:root {
+    /* ふたばチャンネルカラーパレット（完全継承） */
+    --futaba-maroon: #800000;        /* アクティブペンカラー：デフォルトペン色 */
+    --futaba-light-maroon: #aa5a56;
+    --futaba-medium: #cf9c97;
+    --futaba-light-medium: #e9c2ba;
+    --futaba-cream: #f0e0d6;         /* キャンバス背景レイヤー0：デフォルト色 */
+    --futaba-background: #ffffee;
+    
+    --text-primary: #2c1810;
+    --text-secondary: #5d4037;
+    --text-inverse: #ffffff;
+}
+
+body

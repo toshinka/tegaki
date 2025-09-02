@@ -1,20 +1,16 @@
-/* File: tegaki-a1-core.js */
+<!-- File: tegaki-a1-core.html -->
+<script>
 /**
- * 🚂 Tegaki A1-Core - 基盤エンジン車両
+ * 🚂 A1-Core（基盤エンジン車両）
+ * @provides: Canvas管理、描画エンジン、リサイズ処理
+ * @depends: Station DOM
+ * @role: 描画基盤
  * 
- * @provides Canvas管理、PIXI.js初期化、描画基盤、リサイズ処理
- * @depends Station DOM
- * @role 描画基盤
- * 
- * v7rev2完全移植対象:
- * - DrawingEngine クラス全体
- * - PIXI.js初期化処理（resolution=1固定）
- * - Canvas生成・リサイズロジック
- * - 基本描画メソッド（createPath, drawLine）
- * - 円形ブラシ方式（連続する円で滑らかな線）
+ * v7rev2完全移植：DrawingEngineクラス全体、PIXI.js初期化処理、
+ * Canvas生成・リサイズロジック、基本描画メソッド（createPath, drawLine）
  */
 
-// 🚂 A1-Core: DrawingEngine クラス（v7rev2完全移植）
+// ==== Drawing Engine (v7rev2完全移植) ====
 class DrawingEngine {
     constructor(width, height) {
         this.width = width;
@@ -22,51 +18,35 @@ class DrawingEngine {
         this.app = null;
         this.drawingContainer = null;
         this.paths = [];
-        this.backgroundColor = 0xf0e0d6; // ふたば背景色
-        
-        console.log(`🚂 A1-Core: DrawingEngine初期化 ${width}x${height}`);
+        this.backgroundColor = 0xf0e0d6; // ふたばクリーム
     }
     
     async init() {
-        console.log('🔧 A1-Core: PIXI.js初期化開始');
-        
-        // 🎯 v7rev2完全移植: resolution=1固定、devicePixelRatio拡大を防ぐ
+        // 🔧 v7rev2と同じ設定: resolution=1で固定、devicePixelRatioによる拡大を防ぐ
         this.app = new PIXI.Application({
             width: this.width,
             height: this.height,
             backgroundColor: this.backgroundColor,
             antialias: true,
-            resolution: 1, // 固定値（v7rev2と同じ）
-            autoDensity: false // 無効化（v7rev2と同じ）
+            resolution: 1, // 固定値
+            autoDensity: false // 無効化
         });
         
-        // Canvas要素をDOM に挿入
-        const canvasElement = document.getElementById('drawing-canvas');
-        if (!canvasElement) {
-            throw new Error('❌ A1-Core: #drawing-canvas要素が見つかりません');
-        }
-        
-        canvasElement.appendChild(this.app.view);
+        document.getElementById('drawing-canvas').appendChild(this.app.view);
         
         // 描画用コンテナ
         this.drawingContainer = new PIXI.Container();
         this.app.stage.addChild(this.drawingContainer);
         
         this.setupInteraction();
-        console.log('✅ A1-Core: PIXI.js初期化完了');
         return this.app;
     }
     
     setupInteraction() {
         this.app.stage.interactive = true;
         this.app.stage.hitArea = new PIXI.Rectangle(0, 0, this.width, this.height);
-        console.log('🎯 A1-Core: インタラクション設定完了');
     }
     
-    /**
-     * ポインター位置をローカル座標に変換
-     * v7rev2完全移植
-     */
     getLocalPointerPosition(event) {
         const rect = this.app.view.getBoundingClientRect();
         const originalEvent = event.data.originalEvent;
@@ -75,10 +55,7 @@ class DrawingEngine {
         return { x, y };
     }
     
-    /**
-     * パスを作成（円形ブラシ方式）
-     * v7rev2完全移植: 参考コードと同じ円形ブラシ方式を採用
-     */
+    // 🔧 v7rev2と同じ円形ブラシ方式を採用
     createPath(x, y, size, color, opacity, tool = 'pen') {
         const path = {
             id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -91,7 +68,7 @@ class DrawingEngine {
             isComplete: false
         };
         
-        // 初回描画: 円形ブラシで点を描画（v7rev2と同じ）
+        // 初回描画: 円形ブラシで点を描画
         path.graphics.beginFill(path.color, path.opacity);
         path.graphics.drawCircle(x, y, size / 2);
         path.graphics.endFill();
@@ -100,25 +77,20 @@ class DrawingEngine {
         
         this.drawingContainer.addChild(path.graphics);
         this.paths.push(path);
-        
-        console.log(`🎨 A1-Core: パス作成 ${tool} size=${size} opacity=${opacity}`);
         return path;
     }
     
-    /**
-     * 線を描画（連続する円形で滑らかな線）
-     * v7rev2完全移植: 連続する円形で線を描画
-     */
+    // 🔧 連続する円形で滑らかな線を描画
     drawLine(path, x, y) {
         if (!path || path.points.length === 0) return;
         
         const lastPoint = path.points[path.points.length - 1];
         const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
         
-        // 最小距離フィルタ（v7rev2と同じ）
+        // 最小距離フィルタ
         if (distance < 1.5) return;
         
-        // 連続する円形で線を描画（v7rev2と同じ）
+        // 連続する円形で線を描画
         const steps = Math.max(1, Math.ceil(distance / 1.5));
         for (let i = 1; i <= steps; i++) {
             const t = i / steps;
@@ -133,10 +105,6 @@ class DrawingEngine {
         path.points.push({ x, y, size: path.size });
     }
     
-    /**
-     * キャンバスリサイズ
-     * v7rev2完全移植
-     */
     resize(newWidth, newHeight, centerContent = false) {
         const oldWidth = this.width;
         const oldHeight = this.height;
@@ -156,52 +124,19 @@ class DrawingEngine {
                 path.graphics.y += offsetY;
             });
         }
-        
-        console.log(`🔧 A1-Core: リサイズ完了 ${newWidth}x${newHeight} center=${centerContent}`);
     }
     
-    /**
-     * 全パスをクリア
-     * v7rev2完全移植
-     */
     clear() {
         this.paths.forEach(path => {
             this.drawingContainer.removeChild(path.graphics);
             path.graphics.destroy();
         });
         this.paths = [];
-        console.log('🧹 A1-Core: 全パスクリア完了');
-    }
-    
-    /**
-     * 描画状態の取得
-     */
-    getDrawingState() {
-        return {
-            width: this.width,
-            height: this.height,
-            pathCount: this.paths.length
-        };
     }
 }
 
-// 🚂 A1-Core車両の初期化と登録
-(async function initA1Core() {
-    await window.TegakiV8.stationReady;
-    
-    try {
-        // DrawingEngine を初期化（400x400 - v7rev2と同じ初期値）
-        window.TegakiV8.engine = new DrawingEngine(400, 400);
-        
-        console.log('🚂 A1-Core車両: 乗車完了');
-        console.log('  提供機能: Canvas管理、PIXI.js基盤、描画エンジン');
-        console.log('  初期化: DrawingEngine準備完了');
-        
-        // 次の車両への準備完了通知
-        window.TegakiV8.coreReady = true;
-        
-    } catch (error) {
-        console.error('❌ A1-Core車両: 初期化エラー', error);
-        throw error;
-    }
-})();
+// A1-Core車両をグローバルエクスポート
+window.TegakiA1Core = {
+    DrawingEngine
+};
+</script>
