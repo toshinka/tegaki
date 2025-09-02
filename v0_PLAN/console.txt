@@ -1,22 +1,19 @@
-lodash.min.js:16 Uncaught SyntaxError: Unexpected token 'export'
-vector_drawing_tool_v8.html:1056 🎨 Futaba Vector Drawing Tool v8 - Starting initialization
-vector_drawing_tool_v8.html:488 🚂 Station: Initializing Futaba Drawing Tool v8.0.0
-vector_drawing_tool_v8.html:489 📦 PixiJS v8.0.5 loaded
-vector_drawing_tool_v8.html:496 ✅ Library pixi loaded
-vector_drawing_tool_v8.html:496 ✅ Library gsap loaded
-vector_drawing_tool_v8.html:496 ✅ Library hammer loaded
-vector_drawing_tool_v8.html:494 ❌ Library lodash not found
-(anonymous) @ vector_drawing_tool_v8.html:494
-vector_drawing_tool_v8.html:517 🚂 Main: Starting application initialization
-vector_drawing_tool_v8.html:1070 ❌ Initialization failed: TypeError: Cannot read properties of undefined (reading 'canvas')
-    at get canvas (Application.ts:164:30)
-    at MainController.init (vector_drawing_tool_v8.html:530:80)
-    at FutabaDrawingTool.init (vector_drawing_tool_v8.html:1063:37)
-    at vector_drawing_tool_v8.html:1080:48
-init @ vector_drawing_tool_v8.html:1070
-vector_drawing_tool_v8.html:1082 💥 Application startup failed: TypeError: Cannot read properties of undefined (reading 'canvas')
-    at get canvas (Application.ts:164:30)
-    at MainController.init (vector_drawing_tool_v8.html:530:80)
-    at FutabaDrawingTool.init (vector_drawing_tool_v8.html:1063:37)
-    at vector_drawing_tool_v8.html:1080:48
-(anonymous) @ vector_drawing_tool_v8.html:1082
+vector_drawing_tool_v8.html:1052 🎨 Futaba Vector Drawing Tool v8 - Starting initialization
+vector_drawing_tool_v8.html:482 🚂 Station: Initializing Futaba Drawing Tool v8.0.0
+vector_drawing_tool_v8.html:483 📦 PixiJS v8.0.5 loaded
+vector_drawing_tool_v8.html:491 ✅ Library pixi loaded
+vector_drawing_tool_v8.html:491 ✅ Library gsap loaded
+vector_drawing_tool_v8.html:491 ✅ Library hammer loaded
+vector_drawing_tool_v8.html:512 🚂 Main: Starting application initialization
+vector_drawing_tool_v8.html:604 🚂 A1-Core: Initializing drawing engine
+vector_drawing_tool_v8.html:720 🚂 Tool System: Initializing drawing tools
+vector_drawing_tool_v8.html:808 🚂 B1-UI: Initializing user interface
+vector_drawing_tool_v8.html:1019 🚂 Performance Monitor: Starting FPS tracking
+vector_drawing_tool_v8.html:544 ✅ Main: Application ready
+vector_drawing_tool_v8.html:1063 ✅ Futaba Drawing Tool v8 - Ready!
+vector_drawing_tool_v8.html:1064 🎯 Features: PixiJS v8, Vector Drawing, Viewport Control
+vector_drawing_tool_v8.html:755 Tool changed to: eraser
+vector_drawing_tool_v8.html:755 Tool changed to: pen
+vector_drawing_tool_v8.html:755 Tool changed to: eraser
+vector_drawing_tool_v8.html:755 Tool changed to: pen
+vector_drawing_tool_v8.html:755 Tool changed to: pen
