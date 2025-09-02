@@ -1,163 +1,67 @@
-Futaba Vector Drawing Tool v8
-v8 化後 修正ガイド
-1. キャンバスと背景透明化
+1. サイドバーアイコンが v7 と違う
+原因候補
 
-問題
+v7 (vector-drawing-tool-v7rev2.html) では lucide-static のアイコンを明示的に読み込んでいたが、v8 では pixi.js 側に統合した際に参照が抜けている。
 
-キャンバスに枠が出ている、透明枠になっていない
+また、v8 ファイルを確認すると、アイコン定義を icons.js / lucide-react 互換のものに切り替えたが、読み込み方法が揃っていない。結果、デフォルトフォントアイコンや別のSVGが出ている。
 
-確認点 / 修正方法
+改修案
 
-Pixi.Application 初期化時に backgroundAlpha: 0 を設定する
+icons.js の import 部分を見直し、lucide-static/icons/*.svg を確実にロードする。
+
+v7 で使われていたアイコンマッピングをそのまま v8 に移植する。
+例：pencil-line.svg → ペンツール、eraser.svg → 消しゴム、など。
+
+2. キャンバスカラーが背景と一緒になっている
+原因候補
+
+v7 では CSS変数 --futaba-cream をキャンバス背景（レイヤー0）に設定していたが、v8 では PixiJS の renderer.background.color がデフォルトの 0xffffff になっている。
+
+ルールブックにも キャンバス背景は --futaba-cream (#f0e0d6) と明記されているのに反映されていない。
+
+改修案
+
+Pixi アプリ初期化時に以下を追加：
+
+app.renderer.background.color = 0xf0e0d6; // Futaba cream
+
+
+もしくは CSSレイヤーとして <canvas> の背面に div を置き、 background: var(--futaba-cream); を指定。
+
+将来的にはルールブックの記載通り「キャンバス背景レイヤー0」をPixiの描画オブジェクトとして定義するのが望ましい。
+
+3. キャンバスサイズが倍になっている
+原因候補
+
+v7 では CSS上のcanvasサイズと内部の描画解像度を区別して処理（デバイスピクセル比に応じて app.renderer.resize を調整）していた。
+
+v8 では Pixi v8 移行時に resolution 設定が抜けていて、結果的に 2倍スケーリングがかかっている可能性。
+
+もしくは app.view.width/height と app.renderer.width/height を二重に設定している。
+
+改修案
+
+PixiJS v8 初期化時に以下を追加：
 
 const app = new PIXI.Application({
-  width: canvasWidth,
-  height: canvasHeight,
-  backgroundAlpha: 0, // 透明にする
-  antialias: true
+  width: container.clientWidth,
+  height: container.clientHeight,
+  resolution: window.devicePixelRatio || 1,
+  autoDensity: true,
+  backgroundColor: 0xf0e0d6
 });
 
 
-CSS 側も確認
+autoDensity: true を忘れずに指定し、CSSで表示サイズと内部解像度を一致させる。
 
-canvas {
-  border: none;
-  display: block;
-}
+v7 のスケーリング処理（devicePixelRatio対応）を移植するのも確実。
 
+まとめ
 
-Container / Viewport の背景色が透過になっているかも確認
+v8での不具合は主に「移植漏れ」。
 
-2. 座標系（左上原点）
+アイコン定義の読み込みが抜けている → v7の icons.js をそのまま反映
 
-問題
+キャンバス背景がデフォルト白のまま → Futaba Cream (#f0e0d6) を指定
 
-描画がズレる、座標が怪しい
-
-左上を (0,0) にしたいが、v8 化後の Container / Viewport の pivot や position が影響している可能性
-
-確認点 / 修正方法
-
-メイン描画用 Container の pivot は (0,0) にする
-
-drawingContainer.pivot.set(0, 0);
-drawingContainer.position.set(0, 0);
-
-
-Viewport を使用している場合
-
-viewport.setZoom(1); // 初期ズーム
-viewport.moveCenter(0, 0); // 原点を左上に
-
-
-pointer イベントでスクリーン座標→キャンバス座標変換を統一
-
-const toCanvas = (e) => {
-  const pos = e.data.global;
-  return drawingContainer.toLocal(pos);
-}
-
-3. サイドバーアイコン（SVG）
-
-問題
-
-SVG がロードされず、独自描画になっている
-
-確認点 / 修正方法
-
-CDN 経由で @tabler/icons または lucide を読み込む
-
-<script type="module">
-import { IconName } from 'https://cdn.jsdelivr.net/npm/@tabler/icons@3.34.1/icons/index.esm.js';
-</script>
-
-
-Pixi.UI Button にアイコンを割り当てる
-
-const btn = new PIXI.UI.Button({
-  label: '', // アイコンのみ
-  icon: IconName, // SVGパスを設定
-});
-
-
-v8 API では Texture.from(URL/SVG) で生成
-
-const texture = PIXI.Texture.from('path/to/icon.svg');
-btn.icon.texture = texture;
-
-
-ローカル参照の場合は、相対パスと CORS に注意
-
-4. ペン描画できない
-
-問題
-
-pointerdown / pointermove / pointerup が動作していない
-
-座標系のズレやイベントバインド不足の可能性
-
-確認点 / 修正方法
-
-Container / Viewport への pointer イベント登録
-
-drawingContainer.interactive = true;
-drawingContainer.on('pointerdown', onPointerDown);
-drawingContainer.on('pointermove', onPointerMove);
-drawingContainer.on('pointerup', onPointerUp);
-drawingContainer.on('pointerupoutside', onPointerUp);
-
-
-Event オブジェクトで global 座標を取得し、Container.toLocal で変換
-
-function onPointerMove(e) {
-  if(!isDrawing) return;
-  const pos = drawingContainer.toLocal(e.data.global);
-  currentPath.lineTo(pos.x, pos.y);
-}
-
-
-Graphics の再描画時に clear → lineStyle → moveTo → lineTo の順で描画
-
-5. 全体初期化フロー確認
-
-順序
-
-station: 初期化ログ / ライブラリ読み込み
-
-main: Pixi.Application 作成 / 描画 Container 準備
-
-A1-Core: 描画エンジン初期化（Graphics, Container, pointer イベント）
-
-Tool System: pen/eraser 他ツール初期化
-
-B1-UI: ボタン・ポップアップ初期化（Pixi.UI Button / icon 割り当て）
-
-Performance Monitor: FPS / デバッグ表示開始
-
-6. 推奨修正手順
-
-キャンバス透明化と CSS 修正
-
-描画 Container / Viewport の pivot/position を修正
-
-pointer イベントバインドと座標変換関数確認
-
-SVG アイコンロード確認・Pixi.UI Button への割り当て
-
-ペン描画テスト
-
-0,0 起点で動くか
-
-lineStyle/Graphics.clear が反映されるか
-
-全体ログで初期化順序を確認
-
-必要に応じてツール・UI の微調整
-
-💡 注意ポイント
-
-Pixi v8 では Graphics / Texture.from / Interactive の挙動が v7 と微妙に違う
-
-Event / Viewport の初期化順序が描画成功に直結
-
-SVGアイコンのパス解釈は v8 用に修正必要
+キャンバスサイズが倍 → resolution と autoDensity 設定を復元
