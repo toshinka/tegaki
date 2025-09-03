@@ -179,3 +179,134 @@ Space+矢印キー で微調整移動。
 
 Homeキー でカメラリセット。
 
+
+※下記は参考コードです。
+
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <title>Futaba Drawing Tool v8rev3 - Camera Example</title>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.0.5/pixi.min.js"></script>
+</head>
+<body>
+<canvas id="drawingCanvas"></canvas>
+<script>
+/* =========================================================
+ * 1. アプリ初期化
+ * ========================================================= */
+const app = new PIXI.Application({
+  view: document.getElementById("drawingCanvas"),
+  width: 400,
+  height: 400,
+  backgroundColor: 0xffffff
+});
+document.body.appendChild(app.view);
+
+/* =========================================================
+ * 2. コンテナ構造
+ * ========================================================= */
+const cameraContainer = new PIXI.Container();   // カメラ枠
+const worldContainer = new PIXI.Container();    // 描画用ワールド
+const uiContainer = new PIXI.Container();       // UI用
+
+// cameraContainer に worldContainer を入れる
+cameraContainer.addChild(worldContainer);
+
+// マスク（カメラ窓を 400x400 に制限）
+const maskGraphics = new PIXI.Graphics();
+maskGraphics.beginFill(0x000000);
+maskGraphics.drawRect(0, 0, 400, 400);
+maskGraphics.endFill();
+cameraContainer.mask = maskGraphics;
+cameraContainer.addChild(maskGraphics);
+
+// ステージに配置
+app.stage.addChild(cameraContainer);
+app.stage.addChild(uiContainer);
+
+/* =========================================================
+ * 3. CameraManager
+ * ========================================================= */
+class CameraManager {
+  constructor(world) {
+    this.world = world;
+  }
+  moveBy(dx, dy) {
+    this.world.x += dx;
+    this.world.y += dy;
+    console.log(`Camera moved: (${this.world.x}, ${this.world.y})`);
+  }
+  reset() {
+    this.world.x = 0;
+    this.world.y = 0;
+    console.log("Camera reset");
+  }
+}
+
+const camera = new CameraManager(worldContainer);
+
+/* =========================================================
+ * 4. 入力処理
+ * ========================================================= */
+let isDragging = false;
+let lastX = 0, lastY = 0;
+
+app.view.addEventListener("mousedown", (e) => {
+  if (e.buttons === 1 && e.shiftKey === false && e.ctrlKey === false && e.altKey === false && e.metaKey === false && e.getModifierState(" ")) {
+    // Spaceキーを押しながらクリックでドラッグ開始
+    isDragging = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+  }
+});
+
+app.view.addEventListener("mousemove", (e) => {
+  if (isDragging) {
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    camera.moveBy(dx, dy);
+    lastX = e.clientX;
+    lastY = e.clientY;
+  }
+});
+
+app.view.addEventListener("mouseup", () => {
+  isDragging = false;
+});
+
+// キーボード入力
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Home") {
+    camera.reset();
+  }
+  if (e.code === "ArrowLeft" && e.getModifierState(" ")) camera.moveBy(-5, 0);
+  if (e.code === "ArrowRight" && e.getModifierState(" ")) camera.moveBy(5, 0);
+  if (e.code === "ArrowUp" && e.getModifierState(" ")) camera.moveBy(0, -5);
+  if (e.code === "ArrowDown" && e.getModifierState(" ")) camera.moveBy(0, 5);
+});
+
+/* =========================================================
+ * 5. デバッグ用のオブジェクト（動き確認用）
+ * ========================================================= */
+const debugGraphics = new PIXI.Graphics();
+debugGraphics.beginFill(0xff0000);
+debugGraphics.drawCircle(0, 0, 20);
+debugGraphics.endFill();
+worldContainer.addChild(debugGraphics);
+debugGraphics.position.set(200, 200);
+
+</script>
+</body>
+</html>
+
+📝 説明
+
+CameraManager が worldContainer の座標を管理します。
+
+Space+Drag でパン移動。
+
+Space+矢印キー で微調整移動。
+
+Homeキー でカメラリセット。
+
