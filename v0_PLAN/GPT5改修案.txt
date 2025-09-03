@@ -1,0 +1,59 @@
+🔍 現状の評価と解析
+✅ 実装のポイント
+
+DOMベースのカメラ移動: cameraContainer の位置を直接操作することで、DOM上でのカメラ移動が実現されています。
+
+描画ツールの連携: ペンツールや消しゴムツールが、カメラ移動と連動して動作するようになっています。
+
+⚠️ 残る課題
+
+カメラの揺れ（ジッター）: カメラ移動時にブルブルとした揺れが発生しています。
+
+🧩 ジッターの原因と考えられる要因
+
+ジッター（ブルブル震える現象）は、以下の要因が考えられます：
+
+cameraContainer の位置更新のタイミング: cameraContainer の位置を直接変更する際、描画のタイミングと同期が取れていない可能性があります。
+
+cameraContainer の位置の単位: cameraContainer の位置が小数点単位で更新されると、ピクセル単位での描画に誤差が生じ、ジッターの原因となることがあります。
+
+描画ツールの座標変換: 描画ツールがワールド座標とスクリーン座標の変換を適切に行っていない場合、描画位置がずれ、ジッターを引き起こすことがあります。
+
+🛠 改善案と実装方法
+1. cameraContainer の位置更新のタイミングの調整
+
+cameraContainer の位置更新を、PIXI.Ticker の update イベント内で行うことで、描画のタイミングと同期を取ることができます。
+
+PIXI.Ticker.shared.add(() => {
+  cameraContainer.x = worldContainer.x;
+  cameraContainer.y = worldContainer.y;
+});
+
+
+2. cameraContainer の位置の単位の調整
+
+cameraContainer の位置を整数単位で更新することで、ピクセル単位での描画誤差を防ぎ、ジッターを軽減できます。
+
+cameraContainer.x = Math.round(worldContainer.x);
+cameraContainer.y = Math.round(worldContainer.y);
+
+
+3. 描画ツールの座標変換の見直し
+
+描画ツールがワールド座標とスクリーン座標の変換を適切に行っているか確認し、必要に応じて修正します。
+
+function screenToWorld(x, y) {
+  return {
+    x: (x - worldContainer.x) / worldContainer.scale.x,
+    y: (y - worldContainer.y) / worldContainer.scale.y,
+  };
+}
+
+
+🔄 次のステップ
+
+上記の改善案を実装: cameraContainer の位置更新のタイミングと単位を調整し、描画ツールの座標変換を見直します。
+
+挙動の確認: 改善後、カメラ移動時のジッターが軽減されたか確認します。
+
+追加の調整: ジッターが依然として発生する場合、cameraContainer の位置更新の方法や描画ツールの実装をさらに見直します。
