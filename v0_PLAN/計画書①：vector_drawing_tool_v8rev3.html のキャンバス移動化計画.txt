@@ -134,4 +134,11 @@ document.addEventListener("keydown", (e) => {
   }
 });
 
+✅ まとめ
+
+今回は 移動専用 のカメラだけ
+
+scale と rotation はダミーで残す → 後から「ズーム」「回転」を足せる
+
+drawAll() の中に camera.applyTransform(ctx) を必ず通す設計にすると拡張が容易
 
