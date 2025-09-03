@@ -1,0 +1,37 @@
+【目的】
+- @pixi ライブラリを導入し、レイヤー機能を実装する
+- サイドバーにレイヤー操作用アイコンを追加（セッティングアイコンの上に配置）
+
+【改修内容】
+1. レイヤー構造
+   - worldContainer 内に複数の LayerContainer を保持
+   - activeLayer を選択状態として描画対象にする
+   - 新規レイヤー追加 / 削除 / 表示非表示切替 / 順序入れ替えに対応
+
+2. サイドバーアイコン
+   - @tabler/icons のSVGを利用
+   - [+] 新規レイヤー
+   - [↑↓] 順序入れ替え
+   - [👁] 表示/非表示
+   - [ゴミ箱] 削除
+   - 配置はセッティングアイコンの上に縦並び
+
+3. 操作フロー
+   - アイコンクリックで対象レイヤーに対する操作を実行
+   - activeLayer の切替UIを用意（クリック選択）
+
+【参考パッチ案】
+- レイヤー生成：
+  const newLayer = new PIXI.Container();
+  worldContainer.addChild(newLayer);
+  layers.push(newLayer);
+  activeLayer = newLayer;
+
+- レイヤー削除：
+  worldContainer.removeChild(targetLayer);
+
+【検証項目】
+- 新規レイヤーを追加して描画できる
+- レイヤー順序を入れ替えると表示が変わる
+- 非表示レイヤーには描画されない
+- サイドバーから直感的に操作できる

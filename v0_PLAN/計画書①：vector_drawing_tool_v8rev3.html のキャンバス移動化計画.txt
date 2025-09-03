@@ -1,0 +1,137 @@
+【目的】
+- v8rev3 を基点に「キャンバス移動（ワールド移動／カメラ移動）」を実装する
+- 既存ツールの一般的な言い方「キャンバス移動」を採用して説明統一
+
+【改修内容】
+1. PixiJS Container 構造を整理
+   - stage
+     └─ cameraContainer (マスク付き、窓の役割)
+         └─ worldContainer (実際のキャンバス描画)
+     └─ uiContainer (UI表示。マスク無し)
+
+2. イベント処理
+   - pointerdown / pointermove / pointerup を cameraContainer にバインド
+   - ドラッグ中は worldContainer.position を更新する
+   - wheel イベントで worldContainer.scale を更新しズームを実装
+   - 座標変換のため screenToWorld / worldToScreen 関数を実装する
+
+3. カメラ枠サイズ変更対応
+   - デフォルト 400x400
+   - サイズ変更時は cameraContainer.mask を再生成
+   - app.renderer.resize も呼ぶ
+
+【参考パッチ案】
+- pointermoveで移動：
+  worldContainer.x += dx;
+  worldContainer.y += dy;
+
+- ズーム処理：
+  newScale = clamp(oldScale * (1 - deltaY * 0.001), 0.2, 4.0);
+  worldContainer.scale.set(newScale);
+
+【検証項目】
+- スペース　+　ドラッグでキャンバス全体が移動する
+- ホイールで拡大縮小できる
+- カメラ枠変更時も窓が正しく更新される
+
+
+=== 目的 ===
+- vector_drawing_tool_v8rev3.html をベースに「カメラ移動（キャンバス移動）」を実装する
+- 操作は Space + ドラッグ（マウス）、または Space + 方向キー
+- 将来的な拡張（ズーム・回転・加速・ショートカット群）に備えた拡張性を残す
+- レイヤー機能や画面外描画との競合を避けるため「移動」のみに絞る
+
+=== 実装方針 ===
+1. Cameraオブジェクトを導入し、x, y の平行移動を管理する
+2. 描画コンテキストは Camera のオフセットを加味してレンダリングする
+3. 入力処理
+   - マウス: Space + 左ドラッグで Camera.x / Camera.y を加算
+   - キーボード: Space + ←↑↓→ で一定量移動
+4. 将来拡張を見越し、Camera クラスには scale, rotation プロパティを予約しておく
+   - 今回は使わない（値はデフォルト 1, 0 に固定）
+5. UI 表示は最小限（例えば座標デバッグ表示をオプションで追加可）
+
+💻 お手本コード
+
+/**
+ * Camera class for managing viewport movement
+ */
+class Camera {
+  constructor() {
+    this.x = 0;
+    this.y = 0;
+    this.scale = 1;     // reserved for future zoom
+    this.rotation = 0;  // reserved for future rotation
+  }
+
+  applyTransform(ctx) {
+    ctx.setTransform(this.scale, 0, 0, this.scale, this.x, this.y);
+    // rotationは今回は未使用
+  }
+}
+
+// ============================
+// Usage in main drawing system
+// ============================
+
+// camera instance
+const camera = new Camera();
+
+// handle drawing with camera offset
+function drawAll(ctx) {
+  ctx.save();
+  camera.applyTransform(ctx);
+
+  // ここでキャンバス上の全てのレイヤー・線を描画
+  drawLayers(ctx);
+
+  ctx.restore();
+}
+
+// ----------------------------
+// Input handling (simple demo)
+// ----------------------------
+let isPanning = false;
+let lastX = 0, lastY = 0;
+
+canvas.addEventListener("mousedown", (e) => {
+  if (e.button === 0 && e.shiftKey === false && e.ctrlKey === false && e.metaKey === false && e.altKey === false) {
+    if (e.spaceKey || e.getModifierState("Space")) {
+      isPanning = true;
+      lastX = e.clientX;
+      lastY = e.clientY;
+    }
+  }
+});
+
+canvas.addEventListener("mousemove", (e) => {
+  if (isPanning) {
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    camera.x += dx;
+    camera.y += dy;
+    lastX = e.clientX;
+    lastY = e.clientY;
+    requestAnimationFrame(() => drawAll(ctx));
+  }
+});
+
+canvas.addEventListener("mouseup", () => {
+  isPanning = false;
+});
+
+// keyboard arrow movement with Space
+document.addEventListener("keydown", (e) => {
+  if (e.code.startsWith("Arrow") && e.getModifierState("Space")) {
+    const step = 10;
+    switch (e.code) {
+      case "ArrowLeft": camera.x += step; break;
+      case "ArrowRight": camera.x -= step; break;
+      case "ArrowUp": camera.y += step; break;
+      case "ArrowDown": camera.y -= step; break;
+    }
+    requestAnimationFrame(() => drawAll(ctx));
+  }
+});
+
+
