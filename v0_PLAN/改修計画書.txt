@@ -1,0 +1,313 @@
+【改修計画書 — vector_drawing_tool_v8rev6 改修（ワールド／カメラ操作統合）】
+目的:
+  - World（描画領域：Backend / World）を正しくパン／ズーム／回転できるようにする。
+  - Camera（表示窓：400×400）とWorldの関係を正しく設計・実装し、画面全体移動（スクロール、ドラッグ）をWorld側に反映させる。
+  - 座標変換（screen <-> camera <-> world）を一貫性あるAPIに集約する。
+  - 既存のUIテキスト表示（tegaki_worldview_system.html 上のステータス）と整合する動作を担保する。
+
+前提・前置き:
+  - PixiJSv8をバックエンドに利用していることを前提とする（実際のバージョンは package.json に准ずる）。
+  - 現行ファイル: vector_drawing_tool_v8rev6.html, tegaki_worldview_system.html, v0_PLAN/V8_rulebook.txt を参照して実装する。
+  - UIには Camera: 400×400px 表示、Backend（World）: 1200x1200 などの情報があるため World の実寸（logical size）はこれに合わせる。
+
+必須変更箇所（高レベル）:
+  1. シーン構造の明確化（stage / cameraContainer / worldContainer / layer(s)）
+     - stage
+       ├─ cameraContainer (表示窓サイズ: 400×400, clip/maskを持つ)
+       │   └─ worldContainer (実際の world の座標系。ここに描画レイヤをぶら下げる)
+       └─ uiContainer (ステータスやボタン等、スクロールしない要素)
+  2. World 操作用の Transform API を導入（関数群）
+     - setWorldPosition(x,y), translateWorld(dx,dy), setWorldScale(s), setWorldRotation(rad)
+     - getWorldTransform() -> {x,y,scale,rotation}
+  3. 座標変換 API を一本化
+     - screenToWorld(screenX, screenY) // 画面(ブラウザ)座標 -> world座標
+     - worldToScreen(worldX, worldY) // world座標 -> 画面座標
+     - cameraToWorld / worldToCamera が必要なら追加
+  4. イベントハンドラの見直し（ドラッグ/ホイール等）
+     - ドラッグ（パン）は cameraContainer のドラッグで worldContainer を translate する実装（pointerdown/move/up）
+     - ホイール（ズーム）は worldContainer の scale を更新し、zoom中心を保持してズームする
+  5. レンダリング更新の確実化
+     - Pixi ticker / requestAnimationFrame で worldContainer の transform 変更を反映する
+     - デバッグ時は render 後に world の transform を console.log するオプションを用意
+  6. 既存ステータス表示の更新ロジック
+     - World: 位置/拡大/回転 を表示する箇所を新APIに接続
+
+実装手順（詳細・ステップ番号順）:
+  ステップ A — 構造の定義 & 初期化
+    1. stage, renderer の初期化を確認（既存コードを流用）。
+    2. cameraContainer を作成し、表示領域 (400x400) に対する mask を設定する。
+       - cameraContainer.mask = new PIXI.Graphics(); mask.drawRect(0,0, cameraW, cameraH);
+       - cameraContainer.interactive = true; // イベントを拾う
+    3. worldContainer を作成し cameraContainer の子に addChild(worldContainer) する。
+    4. worldContainer の logical size を Backend/World（例: 1200x1200）に合わせて初期化。
+    5. uiContainer を作成して stage に addChild(uiContainer)（ステータス等を常に描画）。
+
+  ステップ B — Transform API 実装
+    1. createWorldAPI() 関数を用意。戻り値は set/get/translate/scale/rotate 関数群。
+       - setWorldPosition(x,y) { worldContainer.position.set(x,y); markDirty(); }
+       - translateWorld(dx,dy) { worldContainer.position.x += dx; worldContainer.position.y += dy; markDirty(); }
+       - setWorldScale(s, centerWorldX?, centerWorldY?) { apply scale and adjust position to keep center stable; markDirty(); }
+       - note: markDirty() は次のrenderで反映するフラグ
+    2. 変更は必ず worldContainer の transform を直接更新する（CSSやDOMではなくPixiのTransform）。
+
+  ステップ C — 座標変換の一本化
+    1. screenToWorld(screenX, screenY):
+       - 取得手順（Pixiのグローバル位置を使う or 行列を逆に使う）
+       - Option A (単純): stage.toLocal(new PIXI.Point(screenX, screenY), worldContainer) の利用を検討
+       - Option B (数学的): worldMatrixInverse を取得して適用（確実でテストしやすい）
+    2. worldToScreen(worldX, worldY): 相互に逆変換を提供
+
+  ステップ D — イベントハンドラ（パン／ズーム）
+    1. ドラッグ（パン）
+       - cameraContainer.on('pointerdown', onPointerDown)
+       - onPointerMove: delta = currentPointer - prevPointer; translateWorld(delta.x, delta.y)
+       - onPointerUp: remove move listener
+       - 注意: world の移動は逆方向か合っているか（UX確認）
+    2. ホイール（ズーム）
+       - cameraContainer に wheel イベントを登録（DOMレベル: canvas.addEventListener('wheel', ... )）
+       - zoomFactor = 1 + deltaY * zoomSpeed; newScale = clamp(scale * zoomFactor, min, max)
+       - ズーム時は「ズーム中心（mouseのworld座標）」に対して位置補正を行う：
+         * centerWorld = screenToWorld(mouseX, mouseY)
+         * setWorldScale(newScale, centerWorld.x, centerWorld.y)
+    3. 2本指ピンチ（タッチ）サポート（将来的に）
+       - Hammer.js 等を使うなら、pinchイベントを world scale にマップする
+
+  ステップ E — レンダリングとデバッグ
+    1. Pixi ticker に更新を追加:
+       - ticker.add(() => { if (dirty) { renderer.render(stage); dirty=false; updateStatusBar(); } })
+       - 必要なら常時 render でもOK（パフォーマンス考慮）
+    2. デバッグフラグ on のときに worldContainer.x/y/scale を console.log 出力
+    3. ステータス表示（tegaki_worldview_system.html にある表示）を新状態で更新する関数を実装（updateStatusBar()）
+
+  ステップ F — 既存コードの差し替え/移行
+    1. 現状 camera 固定にしている箇所（例: UIが camera のみにバインドしている処理）を洗い出す。
+    2. それらを上記 API 呼び出し（translateWorld, setWorldScale 等）へ置き換える。
+    3. 既存の screenToCanvas 等の命名がばらついている場合は、deprecatedコメントを付けつつ一本化関数へ委譲。
+
+  ステップ G — 安全対策と境界条件
+    1. World 移動の制約（ワールド外に移動しすぎないように clamp）
+       - world.x の min/max を World サイズと camera サイズで計算して制限
+    2. scale の min/max 値を定義（例: 0.2 - 4.0）
+    3. 単位系の明確化（ピクセルベースで統一）
+
+  ステップ H — ドキュメント & コメント
+    1. 主要関数に JSDoc コメントを追加（引数単位を明記）。
+    2. 変更点はコミットごとに短い説明を付与（例: "fix: world translate not applied to worldContainer"）。
+
+受け入れ条件（Acceptance Criteria）:
+  - ドラッグ（パン）で World の内容が Camera 窓内で移動すること（Cameraウィンドウは固定、Worldが動く挙動）。
+  - ホイールでズームした際、マウスカーソル位置を中心にスムーズにズームすること。
+  - screenToWorld と worldToScreen が双方向で一致する（単体テストを用意）。
+  - ステータス表示に World の位置/スケール/回転が正しく反映されること。
+  - 既存の描画機能（ペン描画、レイヤ、履歴等）が従来通り動作すること（回帰テスト）。
+
+ファイル差分の想定（編集箇所）:
+  - vector_drawing_tool_v8rev6.html : main 初期化、イベントバインド、Transform API 実装
+  - tegaki_worldview_system.html : ステータス読み取りの接続先（新APIに変更）
+  - libs / utils (もしあれば): 座標変換ユーティリティ（screenToWorld.js 等）
+  - tests/: 単体テスト追加（座標変換、zoom center consistency）
+
+注意点（実装AIへの指示）:
+  - 既存の命名規則、コードスタイル（ESLint/Prettierの有無）に従うこと。
+  - 破壊的な変更は最小限に抑え、まず feature ブランチで作業、CIで確認後マージすること。
+  - 変更ごとに小さなコミットで論理的に分割すること（init, api, events, ui-update, tests）。
+  - 画面サイズや高DPI環境を考慮すること（devicePixelRatio の扱い）。
+
+【チェックリスト／テスト手順／PRテンプレ】
+
+チェックリスト（開発時）
+  - [ ] stage, renderer, cameraContainer, worldContainer が正しく生成される
+  - [ ] cameraContainer に mask がセットされる（400×400）
+  - [ ] worldContainer の transform が API によって変更可能
+  - [ ] screenToWorld / worldToScreen の単体テストを追加
+  - [ ] ドラッグで世界がパンする（Cursor が grab に変化する）
+  - [ ] ホイールズームがマウス位置中心で行われる（中心ズレなし）
+  - [ ] ステータス表示（位置/拡大/回転）が変化に追従する
+  - [ ] 既存のペン描画・履歴が正常に動作（サンプル描画で確認）
+  - [ ] モバイル（タッチ）基本動作確認（簡易）
+  - [ ] パフォーマンス監視（dropping frames がないか）
+
+手動テストシナリオ（短）
+  - シナリオ1: マウスでドラッグ -> World がスムーズに動く。world.x/y が変わる。
+  - シナリオ2: ホイールでズームイン -> マウス位置の要素が拡大の中心になる。
+  - シナリオ3: ズーム最大/最小時の clamp が正しく効く。
+  - シナリオ4: ステータスバーに表示される World: 位置/拡大/回転 が実値と一致。
+  - シナリオ5: ペンで描く -> 描画が Camera 窓の位置に連動して正しい world 座標に記録される。
+
+自動テスト（推奨）
+  - screenToWorld(worldX) <-> worldToScreen を一連の座標で round-trip して一致を assert
+  - translateWorld に対して worldContainer.position が更新されることを assert
+  - setWorldScale の中心補正ロジックが centerWorld を維持していることを assert
+
+PRテンプレ（短）
+  - タイトル: feat(world-camera): implement world-camera transform API and pan/zoom
+  - 説明:
+    - 何を直したか（概要）
+    - 変更ファイル一覧
+    - 確認手順（上記 手動テストシナリオを貼る）
+    - 既知の制約・注意点
+  - チェック:
+    - [ ] 単体テスト追加済
+    - [ ] 手動テスト実施済
+    - [ ] ドキュメント更新済（関数 JSDoc、ステータス表示更新）
+  - レビューアへ: 重点的に見てほしい箇所（座標変換、ズーム中心、既存ペンロジックの影響範囲）
+
+ロールバック指針:
+  - main ブランチへマージ前に issue が出た場合、該当 feature ブランチを revert し、段階的に小コミットで再実装を行う。
+  - 破壊的な変更が発生したら、旧バージョンの world 初期化ロジックをコメントアウト残しで一時復帰できるようにしておく。
+
+備考（運用上の提案）:
+  - 開発段階では debug モードを用意して world の transform を可視化（座標グリッドオーバーレイ）すると切り分けが早くなる。
+  - 将来的に Viewport 用の専用ユーティリティ（pixi-viewport 等）を導入する選択肢を残すが、まずは自前APIで確実に動作させること。
+
+
+
+
+
+「参考パッチ／コード案」
+
+※資料（案の中にふたばカラーじゃないのがあるかもなので注意）
+ふたばチャンネルカラー
+--futaba-maroon: #800000;     （アクティブペンカラー：デフォルトペン色）
+--futaba-light-maroon: #aa5a56;
+--futaba-medium: #cf9c97;
+--futaba-light-medium: #e9c2ba;
+--futaba-cream: #f0e0d6;  （キャンバス背景レイヤー0：デフォルト色）
+--futaba-background: #ffffee;
+
+
+1. 初期化時のシーン構造
+<script type="module">
+import * as PIXI from 'pixi.js';
+
+// ▼ Pixi初期化
+const app = new PIXI.Application({
+  width: 400,
+  height: 400,
+  backgroundColor: 0xffffff,
+});
+document.body.appendChild(app.view);
+
+// ▼ カメラ (表示窓)
+const cameraContainer = new PIXI.Container();
+cameraContainer.interactive = true;
+app.stage.addChild(cameraContainer);
+
+// マスクを設定（Camera = 400x400の窓）
+const mask = new PIXI.Graphics();
+mask.beginFill(0x000000);
+mask.drawRect(0, 0, 400, 400);
+mask.endFill();
+cameraContainer.mask = mask;
+cameraContainer.addChild(mask);
+
+// ▼ ワールド (描画領域)
+const worldContainer = new PIXI.Container();
+cameraContainer.addChild(worldContainer);
+
+// デバッグ用: グリッドを描く
+const grid = new PIXI.Graphics();
+grid.lineStyle(1, 0xcccccc, 1);
+for (let i = 0; i <= 2000; i += 100) {
+  grid.moveTo(i, 0);
+  grid.lineTo(i, 2000);
+  grid.moveTo(0, i);
+  grid.lineTo(2000, i);
+}
+worldContainer.addChild(grid);
+
+// ▼ UI (固定表示: ステータスやボタン)
+const uiContainer = new PIXI.Container();
+app.stage.addChild(uiContainer);
+
+
+2. World制御API（Transform操作）
+// World操作API
+function setWorldPosition(x, y) {
+  worldContainer.position.set(x, y);
+}
+function translateWorld(dx, dy) {
+  worldContainer.position.x += dx;
+  worldContainer.position.y += dy;
+}
+function setWorldScale(scale, centerX = 0, centerY = 0) {
+  const oldScale = worldContainer.scale.x;
+  const newScale = scale;
+
+  // ズーム中心を保持する補正
+  const worldPosBefore = screenToWorld(centerX, centerY);
+  worldContainer.scale.set(newScale);
+  const worldPosAfter = screenToWorld(centerX, centerY);
+
+  worldContainer.position.x += (worldPosAfter.x - worldPosBefore.x) * newScale;
+  worldContainer.position.y += (worldPosAfter.y - worldPosBefore.y) * newScale;
+}
+
+// 座標変換
+function screenToWorld(screenX, screenY) {
+  return app.stage.toLocal(new PIXI.Point(screenX, screenY), worldContainer);
+}
+function worldToScreen(worldX, worldY) {
+  return app.stage.toGlobal(new PIXI.Point(worldX, worldY), worldContainer);
+}
+
+3. 入力イベント（パン & ズーム）
+// パン（ドラッグ移動）
+let dragging = false;
+let prev = null;
+
+cameraContainer.on('pointerdown', (e) => {
+  dragging = true;
+  prev = e.data.global.clone();
+});
+cameraContainer.on('pointermove', (e) => {
+  if (!dragging) return;
+  const current = e.data.global.clone();
+  const dx = current.x - prev.x;
+  const dy = current.y - prev.y;
+  translateWorld(dx, dy);
+  prev = current;
+});
+cameraContainer.on('pointerup', () => { dragging = false; });
+cameraContainer.on('pointerupoutside', () => { dragging = false; });
+
+// ホイール（ズーム）
+app.view.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const zoomSpeed = 0.001;
+  const scale = worldContainer.scale.x;
+  const newScale = Math.min(4, Math.max(0.2, scale * (1 - e.deltaY * zoomSpeed)));
+
+  setWorldScale(newScale, e.offsetX, e.offsetY);
+});
+
+4. ステータス更新例
+function updateStatusBar() {
+  const status = document.getElementById('status');
+  if (!status) return;
+  status.textContent =
+    `World: 位置(${worldContainer.x.toFixed(1)}, ${worldContainer.y.toFixed(1)}) ` +
+    `拡大${worldContainer.scale.x.toFixed(2)} 回転${worldContainer.rotation.toFixed(2)}`;
+}
+
+app.ticker.add(() => {
+  updateStatusBar();
+});
+
+
+HTML側に以下を置いておくと動作確認しやすいです：
+
+<div id="status">World: 位置(0,0) 拡大1.00 回転0°</div>
+
+まとめ
+
+カメラは固定の400×400窓
+
+Worldがパン・ズーム可能
+
+screenToWorld / worldToScreenで座標変換
+
+イベントは cameraContainerに紐づける
+
+
+
