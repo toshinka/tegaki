@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8rev7 - 独自カメラ移動版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev7 - ワールドビュー操作統合版</title>
     <style>
         * {
             margin: 0;
@@ -88,11 +88,6 @@
             box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
         }
         
-        .tool-button.active svg {
-            fill: var(--text-inverse);
-            stroke: var(--text-inverse);
-        }
-        
         .tool-button.disabled {
             opacity: 0.4;
             cursor: not-allowed;
@@ -113,6 +108,9 @@
             background: var(--futaba-background);
             position: relative;
             overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
         }
         
         .canvas-container {
@@ -438,33 +436,31 @@
         <div class="status-group">
             <div class="status-item">Off-canvas: <span id="offcanvas-status">ON</span></div>
             <div class="status-item">History: <span id="history-status">0/50</span></div>
-            <div class="status-item">Camera: <span id="camera-transform">位置(0,0) 拡大1.00 回転0°</span></div>
+            <div class="status-item">World: <span id="world-transform">位置(0,0) 拡大1.00 回転0°</span></div>
             <div class="status-item">FPS: <span id="fps">60</span></div>
         </div>
     </div>
 
-    <!-- PixiJS v8 only (viewport除去) -->
+    <!-- PixiJS v8 and Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
     
     <script>
         /**
-         * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8rev7
-         * 独自カメラ移動版 (pixi-viewport削除・GPT5レポート準拠)
-         * - カメラコンテナで背景+描画レイヤーを統一制御
-         * - Space + ドラッグ: 移動
-         * - Shift + Space + ドラッグ: 拡縮/回転（縦横判定）
-         * - ホイール: 拡縮、Shift+ホイール: 回転
-         * - H/Shift+H: 左右・上下反転
-         * - HOME: カメラリセット
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev7
+         * ワールドビュー操作統合版
+         * - worldContainer による統一カメラシステム
+         * - 背景+描画レイヤーの同期移動・拡縮・回転
+         * - カメラフレーム固定、中身だけ動く方式
+         * - 座標系統一：キャンバス座標とワールド座標の相互変換
          */
         
         // グローバル変数
         let pixiApp = null;
-        let cameraContainer = null;        // 独自カメラコンテナ
-        let backgroundLayer = null;        // 背景レイヤー
-        let drawingLayer = null;          // 描画レイヤー
+        let worldContainer = null;     // 統一カメラシステム（全要素がここに格納される）
+        let backgroundLayer = null;   // 背景レイヤー
+        let drawingLayer = null;      // 描画レイヤー
         
         let currentPath = null;
         let isDrawing = false;
@@ -487,45 +483,40 @@
             isDragging: false,
             dragStart: { x: 0, y: 0 },
             dragMode: null, // 'move', 'scale', 'rotate'
-            threshold: 5,    // 縦横判定しきい値（px）
-            lastMoveTime: 0,
-            initial: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }
+            threshold: 5    // 縦横判定しきい値（px）
         };
         
         // ==== 座標変換システム ====
         class CoordinateSystem {
-            // スクリーン座標 → ワールド座標（カメラ変換考慮）
+            // スクリーン座標 → ワールド座標（worldContainer経由）
             static screenToWorld(screenX, screenY) {
-                if (!pixiApp || !cameraContainer) return { x: screenX, y: screenY };
+                if (!pixiApp || !worldContainer) return { x: screenX, y: screenY };
                 
                 const rect = pixiApp.canvas.getBoundingClientRect();
                 const localX = screenX - rect.left;
                 const localY = screenY - rect.top;
                 
-                // カメラ変換を逆算してワールド座標に変換
-                const worldX = (localX - cameraContainer.x) / cameraContainer.scale.x;
-                const worldY = (localY - cameraContainer.y) / cameraContainer.scale.y;
-                
-                return { x: worldX, y: worldY };
+                // worldContainer の transform を逆計算してワールド座標を取得
+                const point = new PIXI.Point(localX, localY);
+                worldContainer.toLocal(point, pixiApp.stage, point);
+                return { x: point.x, y: point.y };
             }
             
             // ワールド座標 → スクリーン座標
             static worldToScreen(worldX, worldY) {
-                if (!cameraContainer) return { x: worldX, y: worldY };
+                if (!worldContainer) return { x: worldX, y: worldY };
                 
-                const screenX = worldX * cameraContainer.scale.x + cameraContainer.x;
-                const screenY = worldY * cameraContainer.scale.y + cameraContainer.y;
-                
-                return { x: screenX, y: screenY };
+                const point = new PIXI.Point(worldX, worldY);
+                worldContainer.toGlobal(point, pixiApp.stage, point);
+                return { x: point.x, y: point.y };
             }
             
             // 描画可能領域判定（ワールド座標基準）
             static isInDrawableArea(worldX, worldY) {
                 if (!offCanvasEnabled) {
                     // カメラ範囲のみ
-                    const screen = this.worldToScreen(worldX, worldY);
-                    return screen.x >= 0 && screen.x < cameraWidth &&
-                           screen.y >= 0 && screen.y < cameraHeight;
+                    return worldX >= 0 && worldX < cameraWidth &&
+                           worldY >= 0 && worldY < cameraHeight;
                 } else {
                     // ワールド全体
                     return worldX >= 0 && worldX < worldWidth &&
@@ -534,21 +525,20 @@
             }
         }
         
-        // ==== 独自カメラ移動システム ====
-        class CameraNavigationSystem {
+        // ==== ワールドビュー操作システム（統一カメラシステム） ====
+        class WorldViewSystem {
             static init() {
-                console.log('独自カメラ移動システム初期化開始');
+                console.log('WorldView 統一カメラシステム初期化開始');
                 this.setupKeyboardEvents();
                 this.setupMouseEvents();
-                this.updateCameraStatus();
-                console.log('独自カメラ移動システム初期化完了');
+                this.updateWorldStatus();
+                console.log('WorldView 統一カメラシステム初期化完了');
             }
             
             static setupKeyboardEvents() {
                 window.addEventListener('keydown', (e) => {
                     if (e.code === 'Space') {
                         cameraState.spacePressed = true;
-                        this.updateCursor();
                         e.preventDefault();
                     }
                     if (e.shiftKey) cameraState.shiftPressed = true;
@@ -557,18 +547,18 @@
                     if (e.code === 'KeyH' && !e.ctrlKey) {
                         if (cameraState.shiftPressed) {
                             // 上下反転
-                            cameraContainer.scale.y *= -1;
+                            worldContainer.scale.y *= -1;
                         } else {
                             // 左右反転
-                            cameraContainer.scale.x *= -1;
+                            worldContainer.scale.x *= -1;
                         }
-                        this.updateCameraStatus();
+                        this.updateWorldStatus();
                         e.preventDefault();
                     }
 
                     // HOMEキーでリセット
                     if (e.code === 'Home') {
-                        this.resetCamera();
+                        this.resetWorldView();
                         e.preventDefault();
                     }
 
@@ -582,28 +572,28 @@
                             // 拡縮・回転
                             if (e.code === 'ArrowUp') {
                                 const factor = 1 + scaleStep;
-                                cameraContainer.scale.x *= factor;
-                                cameraContainer.scale.y *= factor;
+                                worldContainer.scale.x *= factor;
+                                worldContainer.scale.y *= factor;
                             }
                             if (e.code === 'ArrowDown') {
                                 const factor = 1 - scaleStep;
-                                cameraContainer.scale.x *= factor;
-                                cameraContainer.scale.y *= factor;
+                                worldContainer.scale.x *= factor;
+                                worldContainer.scale.y *= factor;
                             }
                             if (e.code === 'ArrowLeft') {
-                                cameraContainer.rotation -= rotateStep;
+                                worldContainer.rotation -= rotateStep;
                             }
                             if (e.code === 'ArrowRight') {
-                                cameraContainer.rotation += rotateStep;
+                                worldContainer.rotation += rotateStep;
                             }
                         } else {
                             // 移動
-                            if (e.code === 'ArrowUp') cameraContainer.y -= moveStep;
-                            if (e.code === 'ArrowDown') cameraContainer.y += moveStep;
-                            if (e.code === 'ArrowLeft') cameraContainer.x -= moveStep;
-                            if (e.code === 'ArrowRight') cameraContainer.x += moveStep;
+                            if (e.code === 'ArrowUp') worldContainer.y += moveStep;
+                            if (e.code === 'ArrowDown') worldContainer.y -= moveStep;
+                            if (e.code === 'ArrowLeft') worldContainer.x += moveStep;
+                            if (e.code === 'ArrowRight') worldContainer.x -= moveStep;
                         }
-                        this.updateCameraStatus();
+                        this.updateWorldStatus();
                         e.preventDefault();
                     }
                 });
@@ -621,24 +611,22 @@
                 if (!pixiApp || !pixiApp.canvas) return;
                 
                 // カスタムドラッグ処理
-                pixiApp.canvas.addEventListener('pointerdown', (e) => {
+                pixiApp.canvas.addEventListener('mousedown', (e) => {
                     if (!cameraState.spacePressed) return;
                     
                     cameraState.isDragging = true;
                     cameraState.dragStart.x = e.clientX;
                     cameraState.dragStart.y = e.clientY;
                     cameraState.dragMode = null;
-                    cameraState.lastMoveTime = performance.now();
                     
                     this.updateCursor();
                 });
                 
-                pixiApp.canvas.addEventListener('pointermove', (e) => {
+                pixiApp.canvas.addEventListener('mousemove', (e) => {
                     if (!cameraState.isDragging) return;
                     
                     const dx = e.clientX - cameraState.dragStart.x;
                     const dy = e.clientY - cameraState.dragStart.y;
-                    const dt = performance.now() - cameraState.lastMoveTime;
                     
                     // 縦横判定
                     if (!cameraState.dragMode) {
@@ -651,35 +639,24 @@
                         }
                     }
                     
-                    const speedFactor = dt > 0 ? Math.min(5, Math.sqrt(dx * dx + dy * dy) / dt * 10) : 1;
-                    
                     // 操作適用
                     if (cameraState.dragMode === 'move') {
-                        cameraContainer.x += dx * speedFactor;
-                        cameraContainer.y += dy * speedFactor;
+                        worldContainer.x += dx;
+                        worldContainer.y += dy;
                     } else if (cameraState.dragMode === 'scale') {
-                        const factor = 1 + dy / 200 * speedFactor;
-                        cameraContainer.scale.x *= factor;
-                        cameraContainer.scale.y *= factor;
+                        const factor = 1 + dy / 200;
+                        worldContainer.scale.x *= factor;
+                        worldContainer.scale.y *= factor;
                     } else if (cameraState.dragMode === 'rotate') {
-                        cameraContainer.rotation += dx / 100 * speedFactor;
+                        worldContainer.rotation += dx / 100;
                     }
                     
                     cameraState.dragStart.x = e.clientX;
                     cameraState.dragStart.y = e.clientY;
-                    cameraState.lastMoveTime = performance.now();
-                    this.updateCameraStatus();
+                    this.updateWorldStatus();
                 });
                 
-                pixiApp.canvas.addEventListener('pointerup', () => {
-                    if (cameraState.isDragging) {
-                        cameraState.isDragging = false;
-                        cameraState.dragMode = null;
-                        this.updateCursor();
-                    }
-                });
-                
-                pixiApp.canvas.addEventListener('pointerleave', () => {
+                pixiApp.canvas.addEventListener('mouseup', () => {
                     if (cameraState.isDragging) {
                         cameraState.isDragging = false;
                         cameraState.dragMode = null;
@@ -689,17 +666,16 @@
                 
                 // ホイール操作
                 pixiApp.canvas.addEventListener('wheel', (e) => {
-                    const speedFactor = Math.min(5, Math.abs(e.deltaY) / 10);
                     if (cameraState.shiftPressed) {
                         // 回転
-                        cameraContainer.rotation += e.deltaY * 0.01 * speedFactor;
+                        worldContainer.rotation += e.deltaY * 0.01;
                     } else {
                         // 拡縮
-                        const factor = 1 + e.deltaY * 0.001 * speedFactor;
-                        cameraContainer.scale.x *= factor;
-                        cameraContainer.scale.y *= factor;
+                        const factor = 1 - e.deltaY * 0.001;
+                        worldContainer.scale.x *= factor;
+                        worldContainer.scale.y *= factor;
                     }
-                    this.updateCameraStatus();
+                    this.updateWorldStatus();
                     e.preventDefault();
                 });
             }
@@ -716,25 +692,29 @@
                 }
             }
             
-            static resetCamera() {
-                if (!cameraContainer) return;
+            static resetWorldView() {
+                if (!worldContainer) return;
                 
-                cameraContainer.x = cameraState.initial.x;
-                cameraContainer.y = cameraState.initial.y;
-                cameraContainer.scale.x = cameraState.initial.scaleX;
-                cameraContainer.scale.y = cameraState.initial.scaleY;
-                cameraContainer.rotation = cameraState.initial.rotation;
-                this.updateCameraStatus();
-                console.log('カメラをリセットしました');
+                // カメラフレームの中心にワールドの中心を配置
+                worldContainer.x = cameraWidth / 2;
+                worldContainer.y = cameraHeight / 2;
+                worldContainer.scale.set(1, 1);
+                worldContainer.rotation = 0;
+                
+                // ワールドの中心がカメラの中心に来るように調整
+                worldContainer.pivot.set(worldWidth / 2, worldHeight / 2);
+                
+                this.updateWorldStatus();
+                console.log('ワールドビューをリセットしました');
             }
             
-            static updateCameraStatus() {
-                const statusElement = document.getElementById('camera-transform');
-                if (statusElement && cameraContainer) {
-                    const x = Math.round(cameraContainer.x - cameraWidth / 2);
-                    const y = Math.round(cameraContainer.y - cameraHeight / 2);
-                    const scale = Math.abs(cameraContainer.scale.x).toFixed(2);
-                    const rotation = Math.round(cameraContainer.rotation * 180 / Math.PI);
+            static updateWorldStatus() {
+                const statusElement = document.getElementById('world-transform');
+                if (statusElement && worldContainer) {
+                    const x = Math.round(worldContainer.x - cameraWidth / 2);
+                    const y = Math.round(worldContainer.y - cameraHeight / 2);
+                    const scale = Math.abs(worldContainer.scale.x).toFixed(2);
+                    const rotation = Math.round(worldContainer.rotation * 180 / Math.PI);
                     statusElement.textContent = `位置(${x},${y}) 拡大${scale} 回転${rotation}°`;
                 }
             }
@@ -781,7 +761,7 @@
             }
         }
         
-        // ==== PIXIベース描画システム ====
+        // ==== PIXIベース描画システム（worldContainer対応版） ====
         class PIXIDrawingSystem {
             static createPath(worldX, worldY) {
                 const graphics = new PIXI.Graphics();
@@ -1012,7 +992,7 @@
         // ==== カメラシステム ====
         class CameraSystem {
             static resize(newWidth, newHeight) {
-                if (!pixiApp || !cameraContainer) return;
+                if (!pixiApp || !worldContainer) return;
                 
                 const oldWidth = cameraWidth;
                 const oldHeight = cameraHeight;
@@ -1032,15 +1012,9 @@
                     pixiApp.canvas.style.height = newHeight + 'px';
                 }
                 
-                // カメラ位置を調整（中央維持）
-                const centerX = newWidth / 2;
-                const centerY = newHeight / 2;
-                cameraContainer.x = centerX;
-                cameraContainer.y = centerY;
-                
-                // 初期値更新
-                cameraState.initial.x = centerX;
-                cameraState.initial.y = centerY;
+                // ワールドビューを再センタリング
+                worldContainer.x = newWidth / 2;
+                worldContainer.y = newHeight / 2;
                 
                 // ステータス更新
                 const cameraInfo = document.getElementById('camera-info');
@@ -1048,7 +1022,7 @@
                 if (cameraInfo) cameraInfo.textContent = `${newWidth}×${newHeight}px`;
                 if (worldInfo) worldInfo.textContent = `${worldWidth}×${worldHeight}px`;
                 
-                CameraNavigationSystem.updateCameraStatus();
+                WorldViewSystem.updateWorldStatus();
                 
                 console.log(`カメラリサイズ完了: ${newWidth}x${newHeight}`);
             }
@@ -1278,7 +1252,7 @@
         
         // ==== 初期化関数 ====
         async function initializeApp() {
-            console.log('独自カメラベースアプリケーション初期化開始');
+            console.log('ワールドビュー統合システムアプリケーション初期化開始');
             
             try {
                 // PIXI Application作成
@@ -1302,30 +1276,24 @@
                 canvasContainer.appendChild(pixiApp.canvas);
                 console.log('キャンバスをDOMに追加完了');
                 
-                // 独自カメラコンテナ初期化
-                cameraContainer = new PIXI.Container();
-                pixiApp.stage.addChild(cameraContainer);
+                // worldContainer初期化（統一カメラシステムの中核）
+                worldContainer = new PIXI.Container();
+                pixiApp.stage.addChild(worldContainer);
                 
-                // 初期カメラ位置を中央に設定
-                cameraContainer.x = cameraWidth / 2;
-                cameraContainer.y = cameraHeight / 2;
+                // カメラフレームの中心にワールドの中心を配置
+                worldContainer.x = cameraWidth / 2;
+                worldContainer.y = cameraHeight / 2;
+                worldContainer.pivot.set(worldWidth / 2, worldHeight / 2);
                 
-                // 初期値保存
-                cameraState.initial.x = cameraContainer.x;
-                cameraState.initial.y = cameraContainer.y;
-                cameraState.initial.scaleX = cameraContainer.scale.x;
-                cameraState.initial.scaleY = cameraContainer.scale.y;
-                cameraState.initial.rotation = cameraContainer.rotation;
-                
-                console.log('独自カメラコンテナ初期化完了');
+                console.log('worldContainer統一カメラシステム初期化完了');
                 
                 // レイヤー作成
                 backgroundLayer = new PIXI.Container();
                 drawingLayer = new PIXI.Container();
                 
-                // カメラコンテナにレイヤーを追加
-                cameraContainer.addChild(backgroundLayer);
-                cameraContainer.addChild(drawingLayer);
+                // worldContainer にレイヤーを追加
+                worldContainer.addChild(backgroundLayer);
+                worldContainer.addChild(drawingLayer);
                 
                 // 背景作成
                 BackgroundSystem.createBackground();
@@ -1340,8 +1308,8 @@
                 
                 console.log('描画イベントシステム初期化完了');
                 
-                // カメラ移動機能初期化
-                CameraNavigationSystem.init();
+                // ワールドビュー操作機能初期化
+                WorldViewSystem.init();
                 
                 // UI初期化
                 UIController.init();
@@ -1358,7 +1326,20 @@
                 if (cameraInfo) cameraInfo.textContent = `${cameraWidth}×${cameraHeight}px`;
                 if (worldInfo) worldInfo.textContent = `${worldWidth}×${worldHeight}px`;
                 
-                console.log('✅ 独自カメラベースアプリケーション初期化完了');
+                console.log('✅ ワールドビュー統合システムアプリケーション初期化完了');
+                console.log('🎯 改修完了項目:');
+                console.log('  🔧 worldContainer による統一カメラシステム');
+                console.log('  🔧 背景+描画レイヤーの同期移動');
+                console.log('  🔧 カメラフレーム固定、中身だけ動く方式');
+                console.log('  🔧 座標系統一（ワールド座標基準）');
+                console.log('  🔧 描画座標のズレ問題解決');
+                console.log('🎯 ワールドビュー操作:');
+                console.log('  🔧 Space + ドラッグ → 移動');
+                console.log('  🔧 Shift + Space + ドラッグ → 拡縮/回転（縦横判定）');
+                console.log('  🔧 ホイール → 拡縮, Shift + ホイール → 回転');
+                console.log('  🔧 H / Shift+H → 左右・上下反転');
+                console.log('  🔧 HOMEキー → ワールドビューリセット');
+                console.log('  🔧 方向キー（Space押下時）→ 微調整');
                 
                 return true;
                 
@@ -1385,7 +1366,7 @@
                             box-sizing: border-box;
                         ">
                             <div style="font-size: 24px; margin-bottom: 10px;">⚠️</div>
-                            <div style="font-size: 14px; margin-bottom: 10px;">独自カメラ初期化エラー</div>
+                            <div style="font-size: 14px; margin-bottom: 10px;">ワールドビュー統合システム初期化エラー</div>
                             <div style="font-size: 12px; opacity: 0.8;">${error.message}</div>
                             <div style="font-size: 11px; margin-top: 10px; opacity: 0.6;">
                                 ブラウザを再読み込みしてください
@@ -1400,7 +1381,7 @@
         
         // ==== DOMContentLoaded で初期化実行 ====
         document.addEventListener('DOMContentLoaded', () => {
-            console.log('DOM読み込み完了 - 独自カメラ初期化開始');
+            console.log('DOM読み込み完了 - ワールドビュー統合システム初期化開始');
             
             // ライブラリチェック
             if (!window.PIXI) {
@@ -1413,7 +1394,16 @@
             // アプリケーション初期化
             initializeApp().then((success) => {
                 if (success) {
-                    console.log('🎨 Futaba Drawing Tool v8rev7 - 独自カメラ移動システム起動完了');
+                    console.log('🎨 Futaba Drawing Tool v8rev7 - ワールドビュー操作統合版 起動完了');
+                    console.log('📘 ワールドビュー操作ガイド:');
+                    console.log('  Space + ドラッグ: 全体移動');
+                    console.log('  Shift + Space + ドラッグ: 拡縮/回転（縦横自動判定）');
+                    console.log('  ホイール: 拡縮');
+                    console.log('  Shift + ホイール: 回転');
+                    console.log('  H: 左右反転');
+                    console.log('  Shift + H: 上下反転');
+                    console.log('  HOME: ワールドビューリセット');
+                    console.log('  方向キー（Space押下時）: 移動・拡縮・回転の微調整');
                 } else {
                     console.log('❌ 初期化に失敗しました');
                 }
