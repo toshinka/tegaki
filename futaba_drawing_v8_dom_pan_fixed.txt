@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev4 - ジッター修正版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev5 - 根本修正版</title>
     <style>
         * {
             margin: 0;
@@ -433,16 +433,16 @@
     
     <script>
         /**
-         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev4-jitter-fixed
-         * PixiJS v8 対応版 - 全体見直し・ジッター修正版
-         * 改修内容：構文エラー修正、座標系統一、メソッド重複解消、フロー整理
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev5-root-fix
+         * PixiJS v8 対応版 - ジッター根本修正版
+         * 改修内容：window レベルイベントでキャンバス依存を解消、線形パン実現
          */
         
         // ==== Station: Global Configuration and Initialization ====
         class StationManager {
             constructor() {
                 this.config = {
-                    version: '8.0.4-jitter-fixed',
+                    version: '8.0.5-root-fix',
                     pixiVersion: '8.0.5',
                     canvasWidth: 400,
                     canvasHeight: 400,
@@ -475,7 +475,7 @@
             }
         }
         
-        // ==== CameraManager: DOM Position Control (Jitter Fixed) ====
+        // ==== CameraManager: Window-Level Event Pan (Jitter Fixed) ====
         class CameraManager {
             constructor(worldContainer) {
                 this.worldContainer = worldContainer;
@@ -491,20 +491,22 @@
                     startY: 0
                 };
                 
-                // Ticker synchronization for smooth updates
+                // Ticker synchronization and window event handlers
                 this.ticker = null;
                 this.updateScheduled = false;
                 this.initialized = false;
+                this.panMoveHandler = null;
+                this.panUpHandler = null;
             }
             
             initialize(ticker) {
                 this.ticker = ticker;
                 this.ticker.add(this.updateCameraPositionTick.bind(this));
                 this.initialized = true;
-                console.log('📷 CameraManager: Ticker synchronization enabled');
+                console.log('📷 CameraManager: Window-level event handling enabled');
             }
             
-            // PIXI.Ticker同期での位置更新（ジッター修正）
+            // PIXI.Ticker同期でのスムーズ更新
             updateCameraPositionTick() {
                 if (!this.updateScheduled || !this.initialized) return;
                 
@@ -543,39 +545,59 @@
                 return { x: x, y: y };
             }
             
-            startPanning(x, y) {
+            // 画面絶対座標を使ったパン開始（根本修正）
+            startPanning(clientX, clientY) {
                 this.cameraState.isPanning = true;
-                this.cameraState.startX = x;
-                this.cameraState.startY = y;
-                console.log('📷 DOM panning started');
+                this.cameraState.startX = clientX;
+                this.cameraState.startY = clientY;
+
+                // window レベルで mousemove と mouseup を捕捉（画面絶対座標使用）
+                this.panMoveHandler = this.onPanMove.bind(this);
+                this.panUpHandler = this.onPanUp.bind(this);
+                window.addEventListener('mousemove', this.panMoveHandler, { passive: false });
+                window.addEventListener('mouseup', this.panUpHandler, { passive: false });
+                
+                console.log('📷 DOM panning started with window capture');
             }
             
-            updatePanning(x, y) {
+            // window mousemove での線形パン処理
+            onPanMove(e) {
                 if (!this.cameraState.isPanning) return;
-                
-                const dx = x - this.cameraState.startX;
-                const dy = y - this.cameraState.startY;
-                
-                // 目標位置を更新（小数点も許容、丸めは描画時に実行）
+
+                const dx = e.clientX - this.cameraState.startX;
+                const dy = e.clientY - this.cameraState.startY;
+
                 this.cameraState.targetX += dx;
                 this.cameraState.targetY += dy;
-                
-                // bounds制限（viewport内に収まるよう調整）
-                const maxOffsetX = window.innerWidth;
-                const maxOffsetY = window.innerHeight;
-                this.cameraState.targetX = Math.max(-maxOffsetX, Math.min(maxOffsetX, this.cameraState.targetX));
-                this.cameraState.targetY = Math.max(-maxOffsetY, Math.min(maxOffsetY, this.cameraState.targetY));
-                
-                this.cameraState.startX = x;
-                this.cameraState.startY = y;
-                
-                // 次フレームでの更新をスケジュール
+
+                // bounds制限（viewport調整）
+                const maxOffsetX = (window.innerWidth - 50) / 2;  // sidebar分調整
+                const maxOffsetY = window.innerHeight / 2;
+                this.cameraState.targetX = Math.max(-maxOffsetX * 2, Math.min(maxOffsetX * 2, this.cameraState.targetX));
+                this.cameraState.targetY = Math.max(-maxOffsetY * 2, Math.min(maxOffsetY * 2, this.cameraState.targetY));
+
+                this.cameraState.startX = e.clientX;
+                this.cameraState.startY = e.clientY;
+
                 this.updateScheduled = true;
                 this.updateStatusDisplay();
+                
+                e.preventDefault();
+            }
+            
+            // window mouseup での確実な停止
+            onPanUp(e) {
+                this.stopPanning();
             }
             
             stopPanning() {
                 this.cameraState.isPanning = false;
+                if (this.panMoveHandler) {
+                    window.removeEventListener('mousemove', this.panMoveHandler);
+                    window.removeEventListener('mouseup', this.panUpHandler);
+                    this.panMoveHandler = null;
+                    this.panUpHandler = null;
+                }
                 console.log('📷 DOM panning stopped');
             }
             
@@ -584,10 +606,10 @@
                 this.cameraState.targetY += dy;
                 
                 // bounds制限
-                const maxOffsetX = window.innerWidth;
-                const maxOffsetY = window.innerHeight;
-                this.cameraState.targetX = Math.max(-maxOffsetX, Math.min(maxOffsetX, this.cameraState.targetX));
-                this.cameraState.targetY = Math.max(-maxOffsetY, Math.min(maxOffsetY, this.cameraState.targetY));
+                const maxOffsetX = (window.innerWidth - 50) / 2;
+                const maxOffsetY = window.innerHeight / 2;
+                this.cameraState.targetX = Math.max(-maxOffsetX * 2, Math.min(maxOffsetX * 2, this.cameraState.targetX));
+                this.cameraState.targetY = Math.max(-maxOffsetY * 2, Math.min(maxOffsetY * 2, this.cameraState.targetY));
                 
                 this.updateScheduled = true;
                 this.updateStatusDisplay();
@@ -601,6 +623,9 @@
                 this.cameraState.y = 0;
                 this.cameraState.scale = 1;
                 this.cameraState.isPanning = false;
+                
+                // 確実にイベントリスナーを解除
+                this.stopPanning();
                 
                 // 即座に中央位置にリセット
                 this.canvasContainer.style.transform = 'translate(-50%, -50%)';
@@ -734,7 +759,7 @@
                 }
                 
                 const canvas = this.coreEngine.app.canvas;
-                canvas.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair';
+cell' : 'crosshair';
             }
             
             togglePopup(popupId) {
@@ -953,9 +978,9 @@
                 
                 this.setupInputHandlers();
                 
-                console.log('✅ Main: Application ready with DOM pan (jitter fixed)');
+                console.log('✅ Main: Application ready with window-level pan (root fix)');
                 console.log('🎮 DOM Pan Controls:');
-                console.log('  📱 Space + Drag: Move canvas (DOM)');
+                console.log('  📱 Space + Drag: Linear canvas movement');
                 console.log('  ⌨️  Space + Arrow Keys: Fine movement (±10px)');
                 console.log('  🏠 Home: Reset canvas position');
                 
@@ -998,14 +1023,15 @@
                     }
                 });
                 
+                // 確実にSpace離しでパン停止
                 document.addEventListener('keyup', (e) => {
                     if (e.code === 'Space') {
                         this.spacePressed = false;
-                        this.cameraManager.stopPanning();
+                        this.cameraManager.stopPanning(); // 確実にリスナー解除
                     }
                 });
                 
-                // Handle focus loss
+                // Handle focus loss - 確実にパン停止
                 window.addEventListener('blur', () => {
                     this.spacePressed = false;
                     this.cameraManager.stopPanning();
@@ -1013,7 +1039,7 @@
             }
         }
         
-        // ==== A1-Core: Drawing Engine and Container Management ====
+        // ==== A1-Core: Drawing Engine with Window-Level Pan Support ====
         class CoreEngine {
             constructor(app, config) {
                 this.app = app;
@@ -1030,7 +1056,7 @@
             }
             
             async initialize() {
-                console.log('🚂 A1-Core: Initializing container structure (DOM pan)');
+                console.log('🚂 A1-Core: Initializing container structure (window-level pan)');
                 
                 // Create container hierarchy
                 this.cameraContainer = new PIXI.Container();
@@ -1066,22 +1092,24 @@
                 this.cameraContainer.on('pointerup', this.onPointerUp.bind(this));
                 this.cameraContainer.on('pointerupoutside', this.onPointerUp.bind(this));
                 
-                console.log('✅ Container structure initialized (DOM pan):');
+                console.log('✅ Container structure initialized (window-level pan):');
                 console.log('  🎯 cameraContainer (with mask)');
                 console.log('  🌍 worldContainer (fixed at 0,0)');
                 console.log('  🖼️ uiContainer (UI layer)');
-                console.log('  📍 DOM movement: .canvas-container positioning');
+                console.log('  🌐 Window-level event: pan isolation');
                 
                 return true;
             }
             
-            // DOM Pan対応: イベント処理
+            // Window-level pan対応: イベント処理の分離
             onPointerDown(event) {
                 const spacePressed = window.futabaDrawingTool.main.spacePressed;
                 
                 if (spacePressed) {
-                    // DOMパン開始
-                    this.cameraManager.startPanning(event.global.x, event.global.y);
+                    // originalEvent から画面絶対座標を取得してパン開始
+                    const originalEvent = event.data.originalEvent;
+                    this.cameraManager.startPanning(originalEvent.clientX, originalEvent.clientY);
+                    event.stopPropagation(); // イベント伝播を止めて干渉防止
                 } else {
                     // 描画開始
                     this.toolManager.beginDrawing(event.global.x, event.global.y, spacePressed);
@@ -1091,14 +1119,15 @@
             onPointerMove(event) {
                 const spacePressed = window.futabaDrawingTool.main.spacePressed;
                 
-                if (spacePressed && this.cameraManager.cameraState.isPanning) {
-                    // DOMパン継続
-                    this.cameraManager.updatePanning(event.global.x, event.global.y);
+                if (spacePressed) {
+                    // パン中は描画スキップ、座標更新のみ（オプションで）
+                    if (window.futabaDrawingTool.main.uiManager) {
+                        window.futabaDrawingTool.main.uiManager.updateCoordinatesDisplay(event.global.x, event.global.y);
+                    }
+                    return; // パン処理は window で行うのでスキップ
                 } else {
-                    // 描画継続 & 座標表示更新
+                    // 描画継続
                     this.toolManager.continueDrawing(event.global.x, event.global.y, spacePressed);
-                    
-                    // Update coordinates display
                     if (window.futabaDrawingTool.main.uiManager) {
                         window.futabaDrawingTool.main.uiManager.updateCoordinatesDisplay(event.global.x, event.global.y);
                     }
@@ -1111,6 +1140,7 @@
                 if (!spacePressed) {
                     this.toolManager.endDrawing();
                 }
+                // パンの停止は window mouseup で処理されるので不要
             }
             
             createDrawingPath(x, y, size, color, opacity, tool) {
@@ -1225,7 +1255,7 @@
             
             async initialize() {
                 try {
-                    console.log('🎨 Futaba Vector Drawing Tool v8rev4-jitter-fixed - Starting initialization');
+                    console.log('🎨 Futaba Vector Drawing Tool v8rev5-root-fix - Starting initialization');
                     
                     if (!this.station.initialize()) {
                         throw new Error('Station initialization failed');
@@ -1234,15 +1264,14 @@
                     this.main = new MainController(this.station);
                     await this.main.initialize();
                     
-                    console.log('✅ Futaba Drawing Tool v8rev4-jitter-fixed - Ready!');
-                    console.log('🎯 全体見直し完了 (Complete System Review):');
-                    console.log('  📷 CameraManager: PIXI.Ticker同期更新');
-                    console.log('  🎯 Position Updates: 整数座標丸め処理');
-                    console.log('  🎮 Transform3D: ハードウェアアクセラレーション');
-                    console.log('  🎨 Drawing System: 座標変換簡略化');
-                    console.log('  📊 Method Names: 重複解消・統一化');
-                    console.log('  🛠️ Flow Review: Canvas出現・描画・記録の整理');
-                    console.log('  ⚡ Syntax Fixed: 構文エラー解消');
+                    console.log('✅ Futaba Drawing Tool v8rev5-root-fix - Ready!');
+                    console.log('🎯 ジッター根本修正完了 (Root Jitter Fix):');
+                    console.log('  📷 CameraManager: Window-level event handling');
+                    console.log('  🎯 Position Updates: 画面絶対座標使用');
+                    console.log('  🎮 Event Isolation: キャンバス依存解消');
+                    console.log('  🎨 Drawing System: パン時のイベント分離');
+                    console.log('  📊 Linear Movement: 線形・スムーズパン');
+                    console.log('  🛠️ Jitter Eliminated: フィードバックループ解消');
                     
                     return true;
                 } catch (error) {
