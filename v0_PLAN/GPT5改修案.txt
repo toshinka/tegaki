@@ -1,92 +1,129 @@
+✅ 改修策
+
+次の流れで修正すればOKです。
+
+レイヤーパネルDOMを生成
+
+<div id="layer-panel" class="layer-panel hidden">
+  <div class="layer" data-id="0">背景</div>
+  <div class="layer" data-id="1">レイヤー1</div>
+</div>
 
 
-推奨の改修アプローチ
+初期状態は hidden クラスで非表示。
 
-エラー修正
+CSSで右サイドにパネルが出るようにする。
 
-UIManager.activateTool 内の cursor 設定を修正：
+サイドバーのレイヤーアイコンにイベントを繋げる
 
-const canvas = this.coreEngine.app.canvas;
-canvas.style.cursor = this.currentTool === 'eraser' ? 'cell' : 'crosshair';
-
-
-コピー時の改行・インデントも確認し、文字列リテラルが正しく閉じているかチェック。
-
-他のSyntaxErrorがある場合は同様に修正。
-
-クラス・メソッド整理
-
-StationManager + FutabaDrawingTool → AppInitializer
-
-MainController → AppController
-
-CoreEngine → DrawingEngine
-
-CameraManager → CanvasPanManager
-
-ToolManager → DrawingTools
-
-UIManager → InterfaceManager
-
-PerformanceMonitor → SystemMonitor
-
-メソッドセクション分離：
-
-// ---- Public Methods ----
-// ---- Private Methods ----
-// ---- Event Handlers ----
-// ---- Utility Functions ----
+document.getElementById("layerButton").addEventListener("click", () => {
+  document.getElementById("layer-panel").classList.toggle("hidden");
+});
 
 
-状態管理の統合
+これでクリックするとパネルが表示/非表示。
 
-this.state = {
-    canvasPosX: 50,
-    canvasPosY: 50,
-    rotation: 0,
-    scale: 1,
-    isFlippedX: false,
-    isFlippedY: false,
-    posX: 0,
-    posY: 0,
-    isDrawing: false,
-    currentTool: 'pen',
-    brushSize: 16
-};
+レイヤー情報をPixiコンテナと同期
+
+レイヤー追加時に new PIXI.Container() を作ってステージに追加。
+
+同時にパネルにも <div class="layer">新規レイヤー</div> を追加。
+
+選択中のレイヤーは .active クラスを付けて見た目で分かるように。
+
+削除・非表示機能の実装
+
+削除 → container.destroy() してパネルからも消す。
+
+非表示 → container.visible = false; を切り替え。
+
+🛠 提案する直し方
+
+今のコードには「レイヤーパネルUIの生成とトグル処理」がそもそも書かれていないので、それを追加すれば動きます。
+
+Pixi LayersやPixi UIは使っていないので気にしなくてOK。
+
+LayerPlan.txt の仕様に沿って「Pixiコンテナをレイヤーに見立ててUIで操作する」実装を進めれば良い。
 
 
-冗長ログ・未使用機能の整理
+=====================================
 
-console.log → DEBUGフラグ条件化
 
-未実装ツール → コメントアウトまたは警告スタブ関数
+マウス操作では Space+ドラッグ → スムーズに移動できる
 
-CSSセレクタ整理：冗長な .tool-button img, .tool-button svg → .tool-button :is(img, svg)
+ペン操作では「浮いた状態」でも動いてしまう（押し付けてなくてもホバーで動く感じ）
 
-DOMパン / PixiJS座標系整理
+本来は「ペンがキャンバスに接触してから（pointerdown → move）」じゃないと移動が始まってほしくない
 
-Rev2で実装済みの updateCameraPositionTick / Ticker同期更新を保持
+🔍 原因
 
-screenToWorld / worldToScreen は不要
+これは PointerEvent の扱いが原因です。
 
-DOM left/top + transform で中央調整維持
+マウスとペンの違い
 
-追加点（任意）
+マウス → mousedown / mousemove / mouseup
 
-Bounds制限（画面外移動防止）
+ペン → pointerdown / pointermove / pointerup
 
-Space + Arrowキーによる微調整
+ペンは hover 時にも pointermove が飛ぶ（特に Windows Ink やタブレット環境）。
 
-Homeキーでキャンバス中央リセット
+今のコードは pointermove をそのまま「カメラ移動」に結びつけているので、押していなくても動く。
 
-将来レイヤー変形・反転・回転にも同じ座標管理方針を適用
+判定不足
 
-結論
+「Space が押されている」だけで移動を開始している。
 
-ファイル分割は現状維持（スリム化やリファクタリングで十分）
+「pointerdown（押している状態）」を確認していない。
 
-ジッター問題は既存実装で解決済み → DOMパン維持
+結果、hover状態でも move が発火して動いてしまう。
 
-優先修正はSyntaxErrorと状態統合、冗長コード整理
+✅ 改善策
 
-AIが扱いやすい構造・命名にリファクタリングすることで、将来改修も容易
+pointerdown があるときだけ移動モードにするフラグを追加すれば直ります。
+
+例：修正イメージ
+let isPanning = false;
+let isSpacePressed = false;
+
+// Spaceキー押下状態を記録
+document.addEventListener("keydown", (e) => {
+  if (e.code === "Space") isSpacePressed = true;
+});
+document.addEventListener("keyup", (e) => {
+  if (e.code === "Space") isSpacePressed = false;
+  isPanning = false; // Space離したら強制終了
+});
+
+// pointerdownでフラグをオン
+canvas.addEventListener("pointerdown", (e) => {
+  if (isSpacePressed) {
+    isPanning = true;
+    lastX = e.clientX;
+    lastY = e.clientY;
+  }
+});
+
+// pointermoveで移動
+canvas.addEventListener("pointermove", (e) => {
+  if (isPanning && isSpacePressed) {
+    const dx = e.clientX - lastX;
+    const dy = e.clientY - lastY;
+    camera.x += dx;
+    camera.y += dy;
+    lastX = e.clientX;
+    lastY = e.clientY;
+  }
+});
+
+// pointerupで終了
+canvas.addEventListener("pointerup", () => {
+  isPanning = false;
+});
+
+📝 改修ポイント
+
+isSpacePressed だけでなく 「押しているかどうか」(pointerdown) を確認するフラグが必要。
+
+これで **マウスもペンも「押し込み + Space」でのみ移動」**になる。
+
+hover状態での pointermove は無視される。
