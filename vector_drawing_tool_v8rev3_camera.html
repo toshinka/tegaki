@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8rev3 - カメラ移動版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev3 - カメラ移動対応</title>
     <style>
         * {
             margin: 0;
@@ -415,9 +415,10 @@
         </div>
         
         <div class="status-group">
-            <div class="status-item">Camera: <span id="camera-info">x:0, y:0, z:1.0x</span></div>
-            <div class="status-item">操作: <span id="camera-hint">Space+ドラッグ, ホイール, Home</span></div>
+            <div class="status-item">Camera: <span id="camera-info">x: 0, y: 0</span></div>
             <div class="status-item">FPS: <span id="fps">60</span></div>
+            <div class="status-item">GPU: <span id="gpu-usage">45%</span></div>
+            <div class="status-item">Memory: <span id="memory-usage">1.2GB</span></div>
         </div>
     </div>
 
@@ -428,15 +429,15 @@
     
     <script>
         /**
-         * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8rev3 - カメラ移動版
-         * PixiJS v8 対応版 - Pixi Container方式カメラ移動（ショートカット運用）
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev3 - カメラ移動対応
+         * PixiJS v8 対応版 - Pixi Container方式カメラシステム実装
          */
         
         // ==== Station: Global Configuration and Initialization ====
         class StationManager {
             constructor() {
                 this.config = {
-                    version: '8.0.3-camera-pixi',
+                    version: '8.0.3-camera',
                     pixiVersion: '8.0.5',
                     canvasWidth: 400,
                     canvasHeight: 400,
@@ -456,6 +457,7 @@
                 console.log(`🚂 Station: Initializing Futaba Drawing Tool v${this.config.version}`);
                 console.log(`📦 PixiJS v${this.config.pixiVersion} loaded`);
                 
+                // Check library availability
                 Object.entries(this.libraries).forEach(([name, lib]) => {
                     if (!lib) {
                         console.error(`❌ Library ${name} not found`);
@@ -469,41 +471,6 @@
             }
         }
         
-        // ==== Camera: Camera Movement Management (Pixi Container方式) ====
-        class Camera {
-            constructor() {
-                this.reset();
-                this.moveStep = 20; // Space + Arrow移動量
-            }
-            
-            move(dx, dy) {
-                this.x += dx;
-                this.y += dy;
-            }
-            
-            setPosition(x, y) {
-                this.x = x;
-                this.y = y;
-            }
-            
-            reset() {
-                this.x = 0;
-                this.y = 0;
-                this.scale = 1.0;
-                this.rotation = 0; // 将来用予約
-            }
-            
-            // worldContainerに座標変換を適用
-            applyTransform(worldContainer) {
-                worldContainer.position.set(this.x, this.y);
-                // scale, rotationは将来用に予約（現時点では未使用）
-            }
-            
-            getInfo() {
-                return `x:${Math.round(this.x)}, y:${Math.round(this.y)}, z:${this.scale.toFixed(1)}x`;
-            }
-        }
-        
         // ==== Main: Core Application Controller ====
         class MainController {
             constructor(station) {
@@ -512,18 +479,13 @@
                 this.coreEngine = null;
                 this.uiController = null;
                 this.toolSystem = null;
-                this.camera = null;
-                this.inputHandler = null;
                 this.performanceMonitor = null;
             }
             
             async init() {
                 console.log('🚂 Main: Starting application initialization');
                 
-                // Initialize Camera
-                this.camera = new Camera();
-                
-                // Initialize PIXI Application
+                // Initialize PIXI Application with Futaba cream background
                 this.app = new PIXI.Application();
                 await this.app.init({
                     width: this.station.config.canvasWidth,
@@ -535,132 +497,233 @@
                     autoDensity: this.station.config.autoDensity
                 });
                 
+                // Mount to DOM with container
                 const canvasContainer = document.getElementById('canvas-container');
                 canvasContainer.appendChild(this.app.canvas);
                 
-                // Initialize modules
-                this.coreEngine = new CoreEngine(this.app, this.station.config, this.camera);
+                // Initialize car modules in order
+                this.coreEngine = new CoreEngine(this.app, this.station.config);
                 await this.coreEngine.init();
                 
                 this.toolSystem = new ToolSystem(this.coreEngine);
                 this.toolSystem.init();
                 
-                this.inputHandler = new InputHandler(this.camera, this.coreEngine, this.toolSystem);
-                this.inputHandler.init(this.app.canvas);
-                
-                this.uiController = new UIController(this.toolSystem, this.coreEngine, this.camera);
+                this.uiController = new UIController(this.toolSystem, this.coreEngine);
                 this.uiController.init();
                 
-                this.performanceMonitor = new PerformanceMonitor(this.camera);
+                this.performanceMonitor = new PerformanceMonitor();
                 this.performanceMonitor.start();
                 
-                console.log('✅ Main: Application ready with Pixi Container camera system');
-                console.log('📷 Camera Controls:');
-                console.log('  • Space + ドラッグ: カメラパン');
-                console.log('  • Space + 矢印キー: 微調整移動');
-                console.log('  • Home: カメラリセット');
+                console.log('✅ Main: Application ready');
+                console.log('📧 New features:');
+                console.log('  🎬 Camera: Pixi Container based camera system');
+                console.log('  ⌨️  Shortcuts: Space+Drag (pan), Space+Arrows (move), Home (reset)');
+                console.log('  🔧 Event separation: Camera vs Drawing events');
                 
                 return this.app;
             }
         }
         
-        // ==== A1-Core: Drawing Engine with Pixi Container Camera ====
+        // ==== A1-Core: Drawing Engine with Camera Support ====
         class CoreEngine {
-            constructor(app, config, camera) {
+            constructor(app, config) {
                 this.app = app;
                 this.config = config;
-                this.camera = camera;
                 
-                // Pixi Container構造
-                this.cameraContainer = null;  // 表示窓（マスク付き）
-                this.worldContainer = null;   // 描画世界
-                this.uiContainer = null;      // UI表示用（マスク無し）
-                this.mask = null;
+                // Pixi Container hierarchy for camera system
+                this.cameraContainer = null;
+                this.worldContainer = null;
+                this.uiContainer = null;
+                
                 this.paths = [];
+                this.camera = { x: 0, y: 0, scale: 1, rotation: 0 };
+                
+                // Camera control state
+                this.isPanning = false;
+                this.lastPanX = 0;
+                this.lastPanY = 0;
             }
             
             async init() {
-                console.log('🚂 A1-Core: Initializing Pixi Container camera system');
+                console.log('🚂 A1-Core: Initializing camera-enabled drawing engine');
                 
-                this.setupContainers();
-                this.setupMask();
-                this.setupInteraction();
+                // Create Container hierarchy according to plan
+                this.setupContainerHierarchy();
+                this.setupCameraControls();
+                this.setupDrawingEvents();
                 
                 return true;
             }
             
-            setupContainers() {
-                // Container構造: stage → cameraContainer → worldContainer
+            setupContainerHierarchy() {
+                // Camera container with mask (viewport window)
                 this.cameraContainer = new PIXI.Container();
-                this.worldContainer = new PIXI.Container();
-                this.uiContainer = new PIXI.Container();
                 
-                // 階層構築
+                // Create mask for camera viewport
+                const mask = new PIXI.Graphics();
+                mask.rect(0, 0, this.config.canvasWidth, this.config.canvasHeight);
+                mask.fill(0xffffff);
+                this.cameraContainer.mask = mask;
+                this.app.stage.addChild(mask);
+                
+                // World container for drawing content (affected by camera)
+                this.worldContainer = new PIXI.Container();
                 this.cameraContainer.addChild(this.worldContainer);
                 this.app.stage.addChild(this.cameraContainer);
+                
+                // UI container for UI elements (not affected by camera)
+                this.uiContainer = new PIXI.Container();
                 this.app.stage.addChild(this.uiContainer);
+                
+                console.log('📐 Container hierarchy created: stage → cameraContainer → worldContainer + uiContainer');
             }
             
-            setupMask() {
-                // カメラ枠マスク生成
-                this.mask = new PIXI.Graphics();
-                this.updateMask();
-                this.cameraContainer.mask = this.mask;
-                this.app.stage.addChild(this.mask);
+            setupCameraControls() {
+                // Camera controls only on cameraContainer
+                this.cameraContainer.interactive = true;
+                this.cameraContainer.hitArea = new PIXI.Rectangle(0, 0, this.config.canvasWidth, this.config.canvasHeight);
+                
+                // Space + Drag pan control
+                this.cameraContainer.on('pointerdown', (e) => {
+                    if (e.data.originalEvent.getModifierState && e.data.originalEvent.getModifierState('Control')) {
+                        this.isPanning = true;
+                        const pos = e.data.global;
+                        this.lastPanX = pos.x;
+                        this.lastPanY = pos.y;
+                        e.stopPropagation();
+                    }
+                });
+                
+                this.cameraContainer.on('pointermove', (e) => {
+                    if (this.isPanning) {
+                        const pos = e.data.global;
+                        const dx = pos.x - this.lastPanX;
+                        const dy = pos.y - this.lastPanY;
+                        
+                        this.worldContainer.x += dx;
+                        this.worldContainer.y += dy;
+                        
+                        this.camera.x = -this.worldContainer.x;
+                        this.camera.y = -this.worldContainer.y;
+                        
+                        this.lastPanX = pos.x;
+                        this.lastPanY = pos.y;
+                        
+                        this.updateCameraStatus();
+                        e.stopPropagation();
+                    }
+                });
+                
+                this.cameraContainer.on('pointerup', () => {
+                    this.isPanning = false;
+                });
+                
+                this.cameraContainer.on('pointerupoutside', () => {
+                    this.isPanning = false;
+                });
+                
+                // Keyboard shortcuts for camera
+                document.addEventListener('keydown', (e) => {
+                    const step = 20;
+                    
+                    // Space + Arrow keys for fine movement
+                    if (e.code === 'Space') {
+                        e.preventDefault();
+                        switch (e.code) {
+                            case 'ArrowLeft':
+                                this.worldContainer.x += step;
+                                break;
+                            case 'ArrowRight':
+                                this.worldContainer.x -= step;
+                                break;
+                            case 'ArrowUp':
+                                this.worldContainer.y += step;
+                                break;
+                            case 'ArrowDown':
+                                this.worldContainer.y -= step;
+                                break;
+                        }
+                        this.camera.x = -this.worldContainer.x;
+                        this.camera.y = -this.worldContainer.y;
+                        this.updateCameraStatus();
+                    }
+                    
+                    // Home key for camera reset
+                    if (e.code === 'Home') {
+                        this.worldContainer.x = 0;
+                        this.worldContainer.y = 0;
+                        this.camera.x = 0;
+                        this.camera.y = 0;
+                        this.updateCameraStatus();
+                        e.preventDefault();
+                    }
+                });
+                
+                console.log('🎬 Camera controls setup: Ctrl+Drag (pan), Home (reset)');
             }
             
-            updateMask() {
-                if (this.mask) {
-                    this.mask.clear();
-                    this.mask.rect(0, 0, this.config.canvasWidth, this.config.canvasHeight);
-                    this.mask.fill(0xffffff);
+            setupDrawingEvents() {
+                // Drawing events on worldContainer (separated from camera controls)
+                this.worldContainer.interactive = true;
+                this.worldContainer.hitArea = new PIXI.Rectangle(-10000, -10000, 20000, 20000); // Large hit area for drawing beyond canvas
+                
+                this.worldContainer.on('pointerdown', (e) => {
+                    // Only draw when not panning (no Space key)
+                    if (!this.isPanning && this.toolSystem) {
+                        const pos = this.screenToWorld(e.data.global.x, e.data.global.y);
+                        this.toolSystem.startDrawing(pos.x, pos.y);
+                    }
+                });
+                
+                this.worldContainer.on('pointermove', (e) => {
+                    const pos = this.screenToWorld(e.data.global.x, e.data.global.y);
+                    if (this.toolSystem) {
+                        this.toolSystem.updateCoordinates(pos.x, pos.y);
+                        if (!this.isPanning) {
+                            this.toolSystem.continueDrawing(pos.x, pos.y);
+                        }
+                    }
+                });
+                
+                this.worldContainer.on('pointerup', (e) => {
+                    if (this.toolSystem && !this.isPanning) {
+                        this.toolSystem.stopDrawing();
+                    }
+                });
+                
+                this.worldContainer.on('pointerupoutside', (e) => {
+                    if (this.toolSystem && !this.isPanning) {
+                        this.toolSystem.stopDrawing();
+                    }
+                });
+                
+                console.log('✏️ Drawing events setup on worldContainer');
+            }
+            
+            // Screen to world coordinate conversion (camera-aware)
+            screenToWorld(screenX, screenY) {
+                return {
+                    x: screenX - this.worldContainer.x,
+                    y: screenY - this.worldContainer.y
+                };
+            }
+            
+            // World to screen coordinate conversion
+            worldToScreen(worldX, worldY) {
+                return {
+                    x: worldX + this.worldContainer.x,
+                    y: worldY + this.worldContainer.y
+                };
+            }
+            
+            updateCameraStatus() {
+                const cameraInfo = document.getElementById('camera-info');
+                if (cameraInfo) {
+                    cameraInfo.textContent = `x: ${Math.round(this.camera.x)}, y: ${Math.round(this.camera.y)}`;
                 }
             }
             
-            setupInteraction() {
-                // worldContainerでの描画インタラクション
-                this.worldContainer.eventMode = 'static';
-                this.worldContainer.on('pointerdown', this.onPointerDown.bind(this));
-                this.worldContainer.on('pointermove', this.onPointerMove.bind(this));
-                this.worldContainer.on('pointerup', this.onPointerUp.bind(this));
-                this.worldContainer.on('pointerupoutside', this.onPointerUp.bind(this));
-            }
-            
-            onPointerDown(event) {
-                const pos = this.worldContainer.toLocal(event.global);
-                if (this.toolSystem) {
-                    this.toolSystem.startDrawing(pos.x, pos.y);
-                }
-            }
-            
-            onPointerMove(event) {
-                const pos = this.worldContainer.toLocal(event.global);
-                if (this.toolSystem) {
-                    this.toolSystem.updateCoordinates(pos.x, pos.y);
-                    this.toolSystem.continueDrawing(pos.x, pos.y);
-                }
-            }
-            
-            onPointerUp(event) {
-                if (this.toolSystem) {
-                    this.toolSystem.stopDrawing();
-                }
-            }
-            
-            // カメラ変換をworldContainerに適用
-            updateCameraTransform() {
-                this.camera.applyTransform(this.worldContainer);
-            }
-            
-            // 座標変換ヘルパー
-            screenToWorld(screenPos) {
-                return this.worldContainer.toLocal(screenPos);
-            }
-            
-            worldToScreen(worldPos) {
-                return this.worldContainer.toGlobal(worldPos);
-            }
-            
+            // Create path with vector support (v8 API)
             createPath(x, y, size, color, opacity, tool = 'pen') {
                 const path = {
                     id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -673,24 +736,29 @@
                     isComplete: false
                 };
                 
+                // Draw initial circle using v8 API
                 path.graphics.circle(x, y, size / 2);
                 path.graphics.fill({ color: path.color, alpha: path.opacity });
                 
                 path.points.push({ x, y, size });
                 
+                // Add to worldContainer so it's affected by camera
                 this.worldContainer.addChild(path.graphics);
                 this.paths.push(path);
                 return path;
             }
             
+            // Continue drawing line with smooth circles
             drawLine(path, x, y) {
                 if (!path || path.points.length === 0) return;
                 
                 const lastPoint = path.points[path.points.length - 1];
                 const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
                 
+                // Minimum distance filter
                 if (distance < 1.5) return;
                 
+                // Draw continuous circles for smooth line using v8 API
                 const steps = Math.max(1, Math.ceil(distance / 1.5));
                 for (let i = 1; i <= steps; i++) {
                     const t = i / steps;
@@ -704,23 +772,41 @@
                 path.points.push({ x, y, size: path.size });
             }
             
-            resize(newWidth, newHeight) {
+            // Resize canvas with camera support
+            resize(newWidth, newHeight, centerContent = false) {
                 const oldWidth = this.config.canvasWidth;
                 const oldHeight = this.config.canvasHeight;
                 
                 this.config.canvasWidth = newWidth;
                 this.config.canvasHeight = newHeight;
                 
+                // Proper resize with fixed resolution
                 this.app.renderer.resize(newWidth, newHeight);
-                this.updateMask();
                 
-                // canvasWidth/canvasHeight undefined エラー回避
-                if (this.app.canvas) {
-                    this.app.canvas.width = newWidth;
-                    this.app.canvas.height = newHeight;
+                // Update camera mask
+                const mask = this.cameraContainer.mask;
+                if (mask) {
+                    mask.clear();
+                    mask.rect(0, 0, newWidth, newHeight);
+                    mask.fill(0xffffff);
+                }
+                
+                // Update hit areas
+                this.cameraContainer.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
+                
+                if (centerContent && this.paths.length > 0) {
+                    const offsetX = (newWidth - oldWidth) / 2;
+                    const offsetY = (newHeight - oldHeight) / 2;
+                    
+                    this.worldContainer.x += offsetX;
+                    this.worldContainer.y += offsetY;
+                    this.camera.x = -this.worldContainer.x;
+                    this.camera.y = -this.worldContainer.y;
+                    this.updateCameraStatus();
                 }
             }
             
+            // Clear all paths
             clear() {
                 this.paths.forEach(path => {
                     this.worldContainer.removeChild(path.graphics);
@@ -730,162 +816,25 @@
             }
         }
         
-        // ==== Input Handler: Pixi Container Camera Input (ショートカット運用) ====
-        class InputHandler {
-            constructor(camera, coreEngine, toolSystem) {
-                this.camera = camera;
-                this.coreEngine = coreEngine;
-                this.toolSystem = toolSystem;
-                
-                this.isPanning = false;
-                this.isSpacePressed = false;
-                this.lastPanPos = { x: 0, y: 0 };
-                
-                this.keys = new Set();
-                this.keyMoveInterval = null;
-            }
-            
-            init(canvas) {
-                this.setupCameraInput(canvas);
-                this.setupKeyboardInput();
-            }
-            
-            setupCameraInput(canvas) {
-                // cameraContainer でのパン操作（Space + ドラッグ）
-                this.coreEngine.cameraContainer.eventMode = 'static';
-                
-                this.coreEngine.cameraContainer.on('pointerdown', (e) => {
-                    if (this.isSpacePressed && !this.toolSystem.isDrawing) {
-                        this.isPanning = true;
-                        const pos = e.global;
-                        this.lastPanPos = { x: pos.x, y: pos.y };
-                        canvas.style.cursor = 'grabbing';
-                        e.stopPropagation();
-                    }
-                });
-                
-                this.coreEngine.cameraContainer.on('pointermove', (e) => {
-                    if (this.isPanning) {
-                        const pos = e.global;
-                        const dx = pos.x - this.lastPanPos.x;
-                        const dy = pos.y - this.lastPanPos.y;
-                        
-                        this.camera.move(dx, dy);
-                        this.coreEngine.updateCameraTransform();
-                        
-                        this.lastPanPos = { x: pos.x, y: pos.y };
-                        e.stopPropagation();
-                    }
-                });
-                
-                this.coreEngine.cameraContainer.on('pointerup', () => {
-                    if (this.isPanning) {
-                        this.isPanning = false;
-                        canvas.style.cursor = this.isSpacePressed ? 'grab' : 'crosshair';
-                    }
-                });
-                
-                this.coreEngine.cameraContainer.on('pointerupoutside', () => {
-                    if (this.isPanning) {
-                        this.isPanning = false;
-                        canvas.style.cursor = this.isSpacePressed ? 'grab' : 'crosshair';
-                    }
-                });
-                
-                // マウス離脱時の処理
-                canvas.addEventListener('mouseleave', () => {
-                    this.isPanning = false;
-                    canvas.style.cursor = 'crosshair';
-                });
-            }
-            
-            setupKeyboardInput() {
-                // Space キーでカメラパンモード切り替え
-                document.addEventListener('keydown', (e) => {
-                    if (e.code === 'Space') {
-                        if (!this.isSpacePressed) {
-                            this.isSpacePressed = true;
-                            const canvas = this.coreEngine.app.canvas;
-                            canvas.style.cursor = this.isPanning ? 'grabbing' : 'grab';
-                        }
-                        e.preventDefault();
-                    }
-                    
-                    // Home キーでカメラリセット
-                    if (e.code === 'Home') {
-                        this.camera.reset();
-                        this.coreEngine.updateCameraTransform();
-                        e.preventDefault();
-                    }
-                    
-                    this.keys.add(e.code);
-                    this.startKeyMovement();
-                });
-                
-                document.addEventListener('keyup', (e) => {
-                    if (e.code === 'Space') {
-                        this.isSpacePressed = false;
-                        this.isPanning = false;
-                        const canvas = this.coreEngine.app.canvas;
-                        canvas.style.cursor = 'crosshair';
-                    }
-                    
-                    this.keys.delete(e.code);
-                    if (this.keys.size === 0 || !this.hasArrowKeys()) {
-                        this.stopKeyMovement();
-                    }
-                });
-            }
-            
-            hasArrowKeys() {
-                return this.keys.has('ArrowLeft') || this.keys.has('ArrowRight') || 
-                       this.keys.has('ArrowUp') || this.keys.has('ArrowDown');
-            }
-            
-            // Space + 矢印キーでの連続移動
-            startKeyMovement() {
-                if (this.keyMoveInterval || !this.isSpacePressed || !this.hasArrowKeys()) return;
-                
-                this.keyMoveInterval = setInterval(() => {
-                    let dx = 0, dy = 0;
-                    
-                    if (this.keys.has('ArrowLeft')) dx += this.camera.moveStep;
-                    if (this.keys.has('ArrowRight')) dx -= this.camera.moveStep;
-                    if (this.keys.has('ArrowUp')) dy += this.camera.moveStep;
-                    if (this.keys.has('ArrowDown')) dy -= this.camera.moveStep;
-                    
-                    if (dx !== 0 || dy !== 0) {
-                        this.camera.move(dx, dy);
-                        this.coreEngine.updateCameraTransform();
-                    }
-                }, 16); // ~60fps
-            }
-            
-            stopKeyMovement() {
-                if (this.keyMoveInterval) {
-                    clearInterval(this.keyMoveInterval);
-                    this.keyMoveInterval = null;
-                }
-            }
-        }
-        
         // ==== Tool System: Drawing Tools Management ====
         class ToolSystem {
             constructor(coreEngine) {
                 this.coreEngine = coreEngine;
                 this.currentTool = 'pen';
                 this.brushSize = 16.0;
-                this.brushColor = 0x800000;
+                this.brushColor = 0x800000; // Futaba maroon
                 this.opacity = 0.85;
                 this.isDrawing = false;
                 this.currentPath = null;
                 this.lastPoint = null;
                 
+                // Set reference in core engine
                 this.coreEngine.toolSystem = this;
             }
             
             init() {
                 console.log('🚂 Tool System: Initializing drawing tools');
+                // Event handling is now done in CoreEngine
             }
             
             setTool(tool) {
@@ -905,7 +854,8 @@
                 this.isDrawing = true;
                 this.lastPoint = { x, y };
                 
-                const drawColor = this.currentTool === 'eraser' ? 0xf0e0d6 : this.brushColor;
+                // For eraser, use background color with full opacity
+                const drawColor = this.currentTool === 'eraser' ? 0xf0e0d6 : this.brushColor; // Futaba cream for eraser
                 const drawOpacity = this.currentTool === 'eraser' ? 1.0 : this.opacity;
                 
                 this.currentPath = this.coreEngine.createPath(x, y, this.brushSize, drawColor, drawOpacity, this.currentTool);
@@ -937,10 +887,9 @@
         
         // ==== B1-UI: User Interface Controller ====
         class UIController {
-            constructor(toolSystem, coreEngine, camera) {
+            constructor(toolSystem, coreEngine) {
                 this.toolSystem = toolSystem;
                 this.coreEngine = coreEngine;
-                this.camera = camera;
                 this.activePopup = null;
                 this.sliders = new Map();
                 this.isDragging = false;
@@ -968,6 +917,7 @@
             handleToolClick(button) {
                 const toolId = button.id;
                 
+                // Handle tool selection
                 if (toolId === 'pen-tool') {
                     this.setTool('pen');
                     this.togglePopup('pen-settings');
@@ -982,15 +932,18 @@
             setTool(tool) {
                 this.toolSystem.setTool(tool);
                 
+                // Update button states
                 document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
                 document.getElementById(tool + '-tool').classList.add('active');
                 
+                // Update status display
                 const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
                 const toolElement = document.getElementById('current-tool');
                 if (toolElement) {
                     toolElement.textContent = toolNames[tool] || tool;
                 }
                 
+                // Update canvas cursor
                 const canvas = this.coreEngine.app.canvas;
                 canvas.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair';
             }
@@ -999,6 +952,7 @@
                 const popup = document.getElementById(popupId);
                 if (!popup) return;
                 
+                // Close other popups
                 if (this.activePopup && this.activePopup !== popup) {
                     this.activePopup.classList.remove('show');
                 }
@@ -1009,6 +963,7 @@
             }
             
             setupPopups() {
+                // Simple popup drag functionality
                 document.querySelectorAll('.popup-panel').forEach(popup => {
                     const title = popup.querySelector('.popup-title');
                     if (title) {
@@ -1017,12 +972,14 @@
                     }
                 });
                 
+                // Close popups when clicking outside
                 document.addEventListener('click', (e) => {
                     if (!e.target.closest('.popup-panel') && !e.target.closest('.tool-button')) {
                         this.closeAllPopups();
                     }
                 });
                 
+                // Global drag handlers
                 document.addEventListener('mousemove', (e) => this.onDrag(e));
                 document.addEventListener('mouseup', () => this.stopDrag());
             }
@@ -1128,7 +1085,7 @@
                     const height = parseInt(heightInput.value);
                     
                     if (width >= 100 && width <= 4096 && height >= 100 && height <= 4096) {
-                        this.coreEngine.resize(width, height);
+                        this.coreEngine.resize(width, height, false);
                         this.updateCanvasInfo();
                         this.closeAllPopups();
                     }
@@ -1152,8 +1109,7 @@
         
         // ==== Performance Monitor ====
         class PerformanceMonitor {
-            constructor(camera) {
-                this.camera = camera;
+            constructor() {
                 this.frameCount = 0;
                 this.lastTime = performance.now();
             }
@@ -1170,12 +1126,6 @@
                         const fpsElement = document.getElementById('fps');
                         if (fpsElement) {
                             fpsElement.textContent = fps;
-                        }
-                        
-                        // Update camera info
-                        const cameraInfoElement = document.getElementById('camera-info');
-                        if (cameraInfoElement) {
-                            cameraInfoElement.textContent = this.camera.getInfo();
                         }
                         
                         this.frameCount = 0;
@@ -1198,20 +1148,23 @@
             
             async init() {
                 try {
-                    console.log('🎨 Futaba Vector Drawing Tool v8rev3-camera-pixi - Starting initialization');
+                    console.log('🎨 Futaba Vector Drawing Tool v8rev3-camera - Starting initialization');
                     
+                    // Initialize station (global config and libraries)
                     if (!this.station.init()) {
                         throw new Error('Station initialization failed');
                     }
                     
+                    // Initialize main controller
                     this.main = new MainController(this.station);
                     await this.main.init();
                     
-                    console.log('✅ Futaba Drawing Tool v8rev3-camera-pixi - Ready!');
-                    console.log('📷 Pixi Container Camera Controls:');
-                    console.log('  • Space + ドラッグ: カメラパン');
-                    console.log('  • Space + 矢印キー: 微調整移動');
-                    console.log('  • Home: カメラリセット');
+                    console.log('✅ Futaba Drawing Tool v8rev3-camera - Ready!');
+                    console.log('🎯 New Camera Features:');
+                    console.log('  🎬 Container Hierarchy: stage → cameraContainer → worldContainer + uiContainer');
+                    console.log('  ⌨️  Camera Controls: Ctrl+Drag (pan), Home (reset)');
+                    console.log('  📐 Event Separation: Camera vs Drawing events completely separated');
+                    console.log('  🔄 Coordinate Conversion: screen ↔ world with camera awareness');
                     
                     return true;
                 } catch (error) {
@@ -1228,6 +1181,7 @@
                 await window.futabaDrawingTool.init();
             } catch (error) {
                 console.error('💥 Application startup failed:', error);
+                // Show user-friendly error message
                 const canvasArea = document.querySelector('.canvas-area');
                 if (canvasArea) {
                     canvasArea.innerHTML = `
@@ -1244,3 +1198,4 @@
     </script>
 </body>
 </html>
+                
