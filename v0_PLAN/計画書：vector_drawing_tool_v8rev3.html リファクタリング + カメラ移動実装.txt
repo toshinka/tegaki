@@ -1,0 +1,181 @@
+計画書：vector_drawing_tool_v8rev3.html リファクタリング + カメラ移動実装
+
+────────────────────────────
+1. シンボル辞典（Symbol Dictionary）
+────────────────────────────
+【コンテナ構造】
+- stage: PixiJSのルートステージ
+  ├─ cameraContainer: カメラ窓（マスク付き）
+  │    └─ worldContainer: 実際の描画レイヤー（ペンやオブジェクト）
+  └─ uiContainer: UIやツールバーなど（マスク無し）
+
+【マネージャー / Manager】
+- CameraManager
+  - 役割: カメラの位置・ズーム・リセット管理
+  - メソッド:
+    - moveBy(dx, dy): カメラを移動
+    - reset(): カメラ位置をリセット
+    - getWorldPosition(screenX, screenY): スクリーン座標をワールド座標に変換
+- ToolManager
+  - 役割: ペンや消しゴムなど描画ツールの選択と管理
+- UIManager
+  - 役割: サイドバーやポップアップUIの管理
+
+【主要シンボル】
+- worldContainer: 描画内容が入る親コンテナ
+- cameraContainer: worldContainerをマスクするビューポート
+- uiContainer: ツールバーやUIを配置
+- app: Pixi.Application インスタンス
+
+【ショートカット】
+- Space + Drag: カメラパン
+- Space + Arrow Keys: 微調整移動
+- Home: カメラ位置をリセット
+
+────────────────────────────
+2. リファクタリング計画
+────────────────────────────
+(1) 命名の統一
+- 既存コードのcanvas/world/camera表記を辞典準拠に整理。
+- CameraManager, ToolManager, UIManager を追加。
+
+(2) コンテナ構造の整理
+- stage直下に cameraContainer と uiContainer を配置。
+- cameraContainer に worldContainer を内包し、maskを付与。
+- uiContainer はマスク無しでサイドバー等を表示。
+
+(3) Manager導入
+- CameraManager を新規実装。
+  - worldContainer.position.x/y を管理。
+  - reset() で (0,0) に戻す。
+- ToolManager と UIManager は名前だけ導入、処理は現行コード流用。
+
+────────────────────────────
+3. 改修ステップ
+────────────────────────────
+Step 1: rev3コードを辞典準拠にリファクタリング
+- worldContainer, cameraContainer, uiContainer を作成。
+- stageに配置して役割を分ける。
+
+Step 2: CameraManagerを追加
+- moveBy(dx,dy) で worldContainer.position を変更。
+- reset() で worldContainer.position.set(0,0)。
+- Homeキーで reset() を呼ぶ。
+
+Step 3: 入力イベントの実装
+- Space + Drag → moveBy(dx,dy)
+- Space + 矢印キー → moveBy(±5,0 / 0,±5)
+- Homeキー → reset()
+
+Step 4: 動作検証
+- コンソールログで worldContainer.x, y の変化を確認。
+- ペンツールとの干渉がないか確認。
+
+Step 5: rev6統合準備
+- 辞典に沿って命名整理済みのため、rev6へ統合しやすい。
+- rev6では辞典を参照しながら置換する。
+
+────────────────────────────
+4. 注意点
+────────────────────────────
+- 最初の改修では「移動のみ」。ズーム・回転は後回し。
+- 既存の描画機能を壊さないことを優先。
+- コンソールログを多用して挙動確認する。
+
+
+※以下はお手本コード。あくまで参考用です
+
+計画書：vector_drawing_tool_v8rev3.html リファクタリング + カメラ移動実装
+
+────────────────────────────
+1. シンボル辞典（Symbol Dictionary）
+────────────────────────────
+【コンテナ構造】
+- stage: PixiJSのルートステージ
+  ├─ cameraContainer: カメラ窓（マスク付き）
+  │    └─ worldContainer: 実際の描画レイヤー（ペンやオブジェクト）
+  └─ uiContainer: UIやツールバーなど（マスク無し）
+
+【マネージャー / Manager】
+- CameraManager
+  - 役割: カメラの位置・ズーム・リセット管理
+  - メソッド:
+    - moveBy(dx, dy): カメラを移動
+    - reset(): カメラ位置をリセット
+    - getWorldPosition(screenX, screenY): スクリーン座標をワールド座標に変換
+- ToolManager
+  - 役割: ペンや消しゴムなど描画ツールの選択と管理
+- UIManager
+  - 役割: サイドバーやポップアップUIの管理
+
+【主要シンボル】
+- worldContainer: 描画内容が入る親コンテナ
+- cameraContainer: worldContainerをマスクするビューポート
+- uiContainer: ツールバーやUIを配置
+- app: Pixi.Application インスタンス
+
+【ショートカット】
+- Space + Drag: カメラパン
+- Space + Arrow Keys: 微調整移動
+- Home: カメラ位置をリセット
+
+────────────────────────────
+2. リファクタリング計画
+────────────────────────────
+(1) 命名の統一
+- 既存コードのcanvas/world/camera表記を辞典準拠に整理。
+- CameraManager, ToolManager, UIManager を追加。
+
+(2) コンテナ構造の整理
+- stage直下に cameraContainer と uiContainer を配置。
+- cameraContainer に worldContainer を内包し、maskを付与。
+- uiContainer はマスク無しでサイドバー等を表示。
+
+(3) Manager導入
+- CameraManager を新規実装。
+  - worldContainer.position.x/y を管理。
+  - reset() で (0,0) に戻す。
+- ToolManager と UIManager は名前だけ導入、処理は現行コード流用。
+
+────────────────────────────
+3. 改修ステップ
+────────────────────────────
+Step 1: rev3コードを辞典準拠にリファクタリング
+- worldContainer, cameraContainer, uiContainer を作成。
+- stageに配置して役割を分ける。
+
+Step 2: CameraManagerを追加
+- moveBy(dx,dy) で worldContainer.position を変更。
+- reset() で worldContainer.position.set(0,0)。
+- Homeキーで reset() を呼ぶ。
+
+Step 3: 入力イベントの実装
+- Space + Drag → moveBy(dx,dy)
+- Space + 矢印キー → moveBy(±5,0 / 0,±5)
+- Homeキー → reset()
+
+Step 4: 動作検証
+- コンソールログで worldContainer.x, y の変化を確認。
+- ペンツールとの干渉がないか確認。
+
+Step 5: rev6統合準備
+- 辞典に沿って命名整理済みのため、rev6へ統合しやすい。
+- rev6では辞典を参照しながら置換する。
+
+────────────────────────────
+4. 注意点
+────────────────────────────
+- 最初の改修では「移動のみ」。ズーム・回転は後回し。
+- 既存の描画機能を壊さないことを優先。
+- コンソールログを多用して挙動確認する。
+
+📝 説明
+
+CameraManager が worldContainer の座標を管理します。
+
+Space+Drag でパン移動。
+
+Space+矢印キー で微調整移動。
+
+Homeキー でカメラリセット。
+
