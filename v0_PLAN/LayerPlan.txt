@@ -1,163 +1,186 @@
-🎨 Tegaki Layer & Timeline 計画書
-【目的】
+==============================
+Futaba Drawing Tool
+Layer Implementation Plan (独立版)
+==============================
+
+■目的
+- スリム化済みのDOMパン/キャンバス移動環境にレイヤー機能を統合
+- 削除ボタンなしで横フリックによるレイヤー削除
+- サイドバーアイコンでレイヤーパネルON/OFF
+- DOMパンやレイヤー変形との整合性保持
+- 将来的な拡張（無限キャンバス、World座標系パン）を考慮
+
+■シンボル辞典
+シンボル　　　　　　責任範囲　　　　　　　　　主要メソッド
+LayerManager　　　　レイヤー管理　　　　　　 addLayer(), setActiveLayer(), removeLayer(), transformLayer(), moveLayer()
+LayerPanel　　　　　サイドバーUI制御　　　　　 setupIcon(), setupPanelSwipe(), createLayerIcon()
+
+■理想的なフロー
+1. レイヤー初期化
+   - LayerManager 初期化
+   - 初期レイヤー生成、stage に追加
+   - LayerPanel 初期化
+
+2. レイヤー選択・操作
+   - サイドバーアイコン押下で LayerManager.setActiveLayer()
+   - transformLayer() / moveLayer() で変形・移動
+   - 横フリックで LayerManager.removeLayer()
+
+3. DOMパン・描画との共存
+   - coreEngine.isDomPan などフラグで互換性維持
+   - transformLayer や moveLayer は DOM 位置・PIXI座標を意識
+
+■フローチャート（簡易）
+[LayerManager 初期化] → [新規レイヤー追加] → [LayerPanel 初期化] → [アイコン押下でアクティブ切替]
+→ [横フリックで削除] → [変形・移動]
+
+■UI設計
+- サイドバーに SVG アイコン（CDN取得）
+- アイコン押下でレイヤーパネル表示ON/OFF
+- レイヤーパネル内で横フリック操作による削除判定
+- 削除ボタンは設置せず、UIを簡潔に
+
+■拡張ポイント
+- 無限キャンバス対応
+- World座標系パンとのハイブリッド
+- 回転・拡縮・反転・移動などの transformLayer に統一
+- DOMパン時でも PIXI.Container 座標系と同期可能
+
+■作業AI向けポイント
+- 命名を統一（LayerManager / LayerPanel / transformLayer / moveLayer）
+- フローが明確
+- メソッド単位で責任範囲を分離
+- 将来的拡張を考慮した柔軟設計
+
+※下記はコード例です
+
+/* ==============================
+   Futaba Drawing Tool Layer Plan (改修版)
+   ============================== */
+
+/* ------------------------------
+   LayerManager: レイヤー管理
+------------------------------- */
+class LayerManager {
+    constructor(coreEngine) {
+        this.core = coreEngine;
+        this.layers = [];  // PIXI.Container配列
+        this.activeLayer = null;
+    }
+
+    addLayer(layer) {
+        this.layers.push(layer);
+        if (!this.activeLayer) this.activeLayer = layer;
+    }
+
+    setActiveLayer(layer) {
+        this.activeLayer = layer;
+        this.updateLayerPanelUI();
+    }
+
+    removeLayer(layer) {
+        const idx = this.layers.indexOf(layer);
+        if (idx !== -1) {
+            // DOM上はフリック操作で削除
+            this.layers.splice(idx, 1);
+            layer.parent.removeChild(layer);
+        }
+        if (this.activeLayer === layer) this.activeLayer = this.layers[0] || null;
+        this.updateLayerPanelUI();
+    }
+
+    /* レイヤーパネル表示更新 */
+    updateLayerPanelUI() {
+        // ここでサイドバーのアイコンとパネル状態を同期
+        this.layers.forEach(layer => {
+            const panelEl = document.getElementById(`layer-panel-${layer.id}`);
+            if (panelEl) panelEl.classList.toggle('active', layer === this.activeLayer);
+        });
+    }
+
+    /* レイヤー変形共通メソッド */
+    transformLayer(layer, options) {
+        if (!layer) return;
+        if (options.scale !== undefined) layer.scale.set(options.scale);
+        if (options.rotation !== undefined) layer.rotation = options.rotation;
+        if (options.flipX) layer.scale.x *= -1;
+        if (options.flipY) layer.scale.y *= -1;
+    }
+
+    moveLayer(layer, dx, dy) {
+        if (!layer) return;
+        layer.x += dx;
+        layer.y += dy;
+    }
+}
+
+/* ------------------------------
+   LayerPanel: サイドバーUI制御
+------------------------------- */
+class LayerPanel {
+    constructor(layerManager) {
+        this.layerManager = layerManager;
+        this.panelEl = document.getElementById('layer-panel');
+        this.iconEl = document.getElementById('layer-icon');
+        this.setupIcon();
+        this.setupPanelSwipe();
+    }
+
+    /* サイドバーアイコン押下でON/OFF切替 */
+    setupIcon() {
+        this.iconEl.addEventListener('click', () => {
+            this.panelEl.classList.toggle('visible');
+        });
+    }
+
+    /* 横フリックで削除操作 */
+    setupPanelSwipe() {
+        let startX = 0;
+        this.panelEl.addEventListener('touchstart', e => {
+            startX = e.touches[0].clientX;
+        });
+        this.panelEl.addEventListener('touchend', e => {
+            const endX = e.changedTouches[0].clientX;
+            const dx = endX - startX;
+            if (Math.abs(dx) > 50) { // 横フリック判定
+                const layerId = this.panelEl.dataset.activeLayerId;
+                const layer = this.layerManager.layers.find(l => l.id === layerId);
+                if (layer) this.layerManager.removeLayer(layer);
+            }
+        });
+    }
+
+    /* レイヤーパネル生成 (SVGアイコン取得はCDN) */
+    createLayerIcon(layer) {
+        const icon = document.createElement('img');
+        icon.src = `https://cdn.example.com/icons/layer.svg`;
+        icon.id = `layer-icon-${layer.id}`;
+        icon.classList.add('layer-icon');
+        icon.addEventListener('click', () => {
+            this.layerManager.setActiveLayer(layer);
+        });
+        document.getElementById('sidebar').appendChild(icon);
+    }
+}
+
+/* ------------------------------
+   使用フロー例
+------------------------------- */
+// 1. LayerManager 初期化
+const layerManager = new LayerManager(coreEngine);
+
+// 2. 新規レイヤー作成
+const newLayer = new PIXI.Container();
+newLayer.id = `layer-${Date.now()}`;
+layerManager.addLayer(newLayer);
+coreEngine.stage.addChild(newLayer);
+
+// 3. LayerPanel 初期化
+const layerPanel = new LayerPanel(layerManager);
+layerPanel.createLayerIcon(newLayer);
+
+// 4. DOMパン・World座標系との共存
+// coreEngine.isDomPan との互換性保持
 
-@pixi/layers を導入してマルチレイヤー描画を可能にする
 
-Adobe Fresco風のレイヤーパネルUI を DOM ベースで実装
 
-カット（フレーム）管理 を導入し、将来的に GIF/動画タイムライン に拡張
-
-機能実装の進行を Phaseごとに分割 し、段階的に完成度を高める
-
-【全体構造】
-
-PixiJS: 描画専用（PIXI.display.Layer によるレイヤー管理）
-
-DOM: レイヤーパネル・サイドバー・タイムラインUIを担当
-
-双方向同期：DOM操作 → Pixiに反映、Pixi状態 → DOM更新
-
-【Phase分割】
-Phase 1: 基本レイヤー管理
-
-レイヤー構造
-
-worldStage 内に PIXI.display.Layer を複数保持
-
-activeLayer のみ描画対象にする
-
-レイヤーパネルUI（DOM）
-
-上下に伸びるリスト形式でレイヤーを表示
-
-各項目に以下の操作を実装
-
-👁 表示/非表示（チェックボックス → layer.visible）
-
-📝 名前編集
-
-🗑 削除
-
-新規レイヤー追加（➕ ボタン）
-
-Phase 2: レイヤー操作強化
-
-操作追加
-
-ドラッグ＆ドロップで順序入れ替え（Sortable.js を利用）
-
-透明度スライダー → layer.alpha に反映
-
-ブレンドモード選択（NORMAL, MULTIPLY, SCREEN 等）
-
-フォルダ管理
-
-レイヤーをフォルダ（グループ）に入れ子化可能
-
-フォルダの展開/折り畳みUI
-
-フォルダごと非表示切替
-
-Phase 3: レイヤーパネルUI改善
-
-表示演出
-
-Adobe Fresco風に 中央からスライドイン（CSS transition）
-
-レイヤー追加時にフェードインアニメーション
-
-サイドバーアイコン
-
-lucide-static のSVGをCDNで取得し、縦に配置
-
-➕ 新規レイヤー
-
-🗂 新規フォルダ
-
-👁 表示切替
-
-🗑 削除
-
-ドラッグ操作感
-
-ハンドルアイコン [≡] を掴んで並び替え可能
-
-Phase 4: カット（フレーム）管理
-
-カット構造
-
-1カット = 1フレーム（cutContainer）
-
-各カットは独自のレイヤーセットを保持
-
-カット操作UI
-
-「CUT1 ⇄ CUT2」切り替えボタン
-
-カット追加/削除
-
-カット複製
-
-同期
-
-現在のカット変更時に対応するレイヤーセットを読み込み
-
-Phase 5: タイムライン拡張（GIF/動画向け）
-
-UI
-
-横軸 = レイヤー（トラック）
-
-縦軸 = カット（フレーム）
-
-各セル = そのカットにおけるレイヤー状態
-
-機能
-
-カットごとにレイヤーON/OFFを設定可能
-
-再生/停止ボタンでプレビュー
-
-GIF/MP4書き出し準備（将来拡張）
-
-【実装ポイント】
-
-DOMとPixiの同期
-
-DOMの順序変更イベント → PixiのworldStage.children更新
-
-DOMのチェックボックス → layer.visible に反映
-
-DOMのスライダー → layer.alpha に反映
-
-ドラッグ＆ドロップ
-
-Sortable.js を利用してDOMリストを制御
-
-並び順が変わったらPixiのzIndexを再設定
-
-アニメーション
-
-レイヤーパネル表示/非表示 → CSS transition
-
-タイムラインスクロール → CSS overflow + スクロールバー
-
-【検証項目】
-
-[Phase1] 新規レイヤーを追加し描画できる
-
-[Phase2] レイヤーをドラッグで順序変更できる
-
-[Phase2] 透明度やブレンドモードが正しく反映される
-
-[Phase3] レイヤーパネルが中央からアニメーションで出現
-
-[Phase4] CUT1 ⇄ CUT2 の切替でレイヤーセットが入れ替わる
-
-[Phase5] タイムラインで再生するとアニメのプレビューが動く
-
-
-📝 Phase1 実装手順書（基本レイヤー管理）
-1. 必要ライブラリを読み込む
-
-vector_drawing_tool_v8rev3.html に以下を追加してください。
