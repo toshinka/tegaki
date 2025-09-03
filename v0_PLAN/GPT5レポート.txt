@@ -1,136 +1,107 @@
-原因は Viewport.Viewport is not a constructor です。
+# Tegaki v8 キャンバス移動独自実装 改訂版計画書
 
-これが意味すること：
+## 1. 概要
+本改修では pixi-viewport に依存せず、独自にキャンバス移動（カメラ移動）を実装する。
+背景キャンバスと描画レイヤーを一括で動かすことで、ユーザー操作に対する直感的な操作を保証する。
+回転・拡縮・反転はカメラ中心を支点として行い、レイヤーの描画座標との整合性を保つ。
 
-pixi-viewport の読み込み形式の問題
+## 2. 操作仕様
 
-<script src="https://cdn.jsdelivr.net/npm/pixi-viewport/dist/viewport.min.js"></script> を使った場合、グローバルオブジェクトは Viewport であり、Viewport.Viewport ではなく new Viewport(...) で作る必要があります。
+### 2.1 キャンバス操作（ショートカットキーのみ）
+## ショートカット割当
+- **移動**
+  - Space + ドラッグ
+  - Space + 方向キー
+- **拡縮・回転**
+  - Shift + Space + ドラッグ
+  - Shift + Space + 方向キー
+- **拡縮・回転（マウスホイール）**
+  - ホイール回転
+  - Shift + ホイール回転
+- **反転**
+  - H（左右反転）
+  - Shift + H（上下反転）
 
-ES Module のように import { Viewport } from 'pixi-viewport' ではなく、ブラウザ用の UMD バンドルを <script> で読み込む場合の仕様です。
-
-コード上の誤り
-
-現状のコードでは new Viewport.Viewport(...) としているため、存在しないコンストラクタを呼んで TypeError になっています。
-
-改修計画
-
-目的: pixi-viewport をブラウザ読み込みで正しく初期化し、キャンバス移動/拡縮/回転が動作するようにする。
-
-Viewport の初期化修正
-
-// 修正前
-const viewport = new Viewport.Viewport({ ... });
-
-// 修正後（UMD版の場合）
-const viewport = new Viewport({ ... });
-
-
-Viewport がグローバル変数として UMD で提供されているため、.Viewport は不要。
-
-そのほか依存関係確認
-
-PIXI.js v8 はすでに読み込まれていることを確認済みなので問題なし。
-
-viewport に対する drag/pinch/wheel/decelerate の呼び出しもそのままでOK。
-
-テストポイント
-
-ブラウザでページを開き、console に TypeError が出ないこと
-
-Space+ドラッグ / Shift+Space+ドラッグ / ホイール / H / Home が期待通り動作すること
-
-背景＋描画レイヤーが一括で移動・回転・拡縮されること
-
-後続対応
-
-将来的に ES Modules 版に切り替える場合は、import { Viewport } from 'pixi-viewport' を使えるように変更する。
-
-既存の <script> 方式で十分なら、上記修正だけで問題は解消。
-
-要するに、修正は new Viewport.Viewport(...) → new Viewport(...) だけで済みます。
+※拡縮・回転のリセットはHOMEキーで。
 
 
+※ドラッグ操作で縦移動から開始した場合は拡縮のみ、横移動から開始した場合は回転のみを実行。
+※微小な動きによる暴発を防ぐため、縦横判定にはしきい値を設ける。
 
-☑サイドバーアイコンの色がふたばカラーでない事について
+### 2.2 座標系と支点
+- キャンバス移動はカメラ視点の移動として扱う。
+- 拡縮・回転・反転の中心は **カメラ中心**（画面中央）に固定。
+- 描画レイヤーの座標はキャンバス移動に合わせて一括で変換。
+- 背景グリッドや判定用キャンバスも同様に移動。
 
-1. 原因
+### 2.3 記憶系との関係
+- レイヤー移動ではなくキャンバス移動のため、既存の描画記憶機構は原則影響なし。
+- ただし、ドラッグ操作中の開始点や記録済み線データの描画表示に不整合が生じないよう座標変換を統一する。
 
-lucide-static の SVG は内部で stroke="currentColor" ではなく灰色など固定値になっている場合がある
+## 3. 実装方針
 
-PixiJS の PIXI.Sprite.from() で SVG を読み込むと、SVG 内の色情報がそのまま反映されるため、後から tint で変更しても期待通りの色にならないことがある
+### 3.1 ドラッグ操作
+- PointerDown → PointerMove → PointerUp の流れで移動量 dx, dy を計算。
+- 縦横判定しきい値に基づき操作モードを決定。
+- 操作モード:
+  - move: 画面全体の平行移動
+  - scale: 拡縮
+  - rotate: 回転
+- 移動・拡縮・回転は **カメラ中心支点で計算**。
 
-2. 改修方針
+### 3.2 ホイール操作
+- Shift 未押下: 拡縮
+- Shift 押下: 回転
+- 必要に応じ速度補正係数を適用。
 
-方針 A：SVG 内の stroke を書き換えてから PixiJS で読み込む
+### 3.3 反転・リセット
+- H キー: 左右反転
+- Shift + H キー: 上下反転
+- Home キー: 位置・拡縮・回転を初期値に戻す
 
-function loadIconSVG(url, color="#800000"){
-    return fetch(url)
-        .then(resp => resp.text())
-        .then(svgText => {
-            // stroke と fill を指定色に書き換え
-            svgText = svgText.replace(/stroke=".*?"/g, `stroke="${color}"`);
-            svgText = svgText.replace(/fill=".*?"/g, `fill="${color}"`);
-            // Blob に変換して URL を生成
-            const blob = new Blob([svgText], { type: "image/svg+xml" });
-            const blobURL = URL.createObjectURL(blob);
-            return PIXI.Sprite.from(blobURL);
-        });
-}
+### 3.4 慣性移動（オプション）
+- PointerUp 時に最後の速度を取得し、時間経過で減衰させつつ移動。
+- 物理演算不要で、線形補間または指数減衰で実装可能。
 
-// 使用例
-loadIconSVG('icons/pencil-line.svg').then(sprite => {
-    sprite.x = 10;
-    sprite.y = 10;
-    app.stage.addChild(sprite);
-});
+### 3.5 SVGアイコン色統一（付随改修）
+- ツールバーアイコンは `#800000` に統一。
+- SVG内の `stroke` と `fill` をロード時に書き換え、PixiJS Sprite に変換。
+- Tint 処理では固定色 SVG に対応できないため、文字列操作後 Blob URL で読み込む。
 
+## 4. 注意事項
+- 座標系のフローを明確化し、ドラッグ操作中に拡縮・回転・移動が混ざらないように制御。
+- レイヤー移動実装時との整合性を考慮し、キャンバス移動用の座標変換は独立して管理。
+- 慣性移動や速度補正は UX 向上のため必須ではないが推奨。
 
-ポイント
-
-fetch で SVG を取得して文字列操作
-
-stroke と fill を #800000 に統一
-
-Blob URL を生成して PixiJS の Sprite に変換
-
-方針 B：PixiJS の tint で色を変更する（SVG が currentColor 使用の場合のみ）
-
-const sprite = PIXI.Sprite.from('icons/pencil-line.svg');
-sprite.tint = 0x800000; // 16進数カラー
-
-
-ただし、SVG 内で固定色が設定されている場合は効かない
-
-3. 改修計画
-
-SVG アイコンを一括で色変更するラッパ関数を作る
-
-新規作成アイコンも同じ関数で読み込む
-
-既存 toolbar アイコン読み込み箇所を置き換え
-
-PIXI.Sprite.from(url) → loadIconSVG(url, "#800000")
-
-確認ポイント
-
-灰色で出ていたアイコンがすべて #800000 に統一されること
-
-PixiJS 上での描画やスケーリングに問題がないこと
-
-💡 補足
-
-ランタイムで色を変えたい場合は方針 A が確実
-
-事前に SVG を編集して stroke/fill を currentColor にしておけば tint で簡単に変えられる
+## 5. 優先実装順序
+1. 背景キャンバス＋描画レイヤーの一括移動
+2. PointerDrag による縦横判定（移動・拡縮・回転）
+3. ホイールによる拡縮・回転
+4. 反転キー / リセットキー対応
+5. 慣性移動・速度補正の追加
+6. SVG アイコンの色統一（#800000）
 
 
-※既存 Tegaki v8 のツールバーアイコンをすべて #800000 に統一して PixiJS 上で描画するサンプル
+
+pixi-viewport を使わず独自実装でのカメラ移動＋拡縮＋回転＋反転＋リセット対応のサンプルコードを作成します。
+
+ポイント：
+
+背景キャンバスと描画レイヤーを一括で操作
+
+Space + ドラッグで移動、Shift + Space + ドラッグで拡縮/回転判定
+
+ホイールによる拡縮/回転
+
+H/Shift+H で反転、Home でリセット
+
+カメラ中心を支点に統一
 
 <!DOCTYPE html>
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<title>Tegaki v8 Toolbar Icon Color Fix</title>
+<title>Tegaki v8 独自カメラ操作サンプル</title>
 <style> body{margin:0;overflow:hidden;} </style>
 </head>
 <body>
@@ -141,16 +112,200 @@ const app = new PIXI.Application({ width: 800, height: 600, backgroundColor: 0xe
 document.body.appendChild(app.view);
 
 // ================================
-// SVGアイコンを読み込みつつ色を統一
+// 背景レイヤー＋描画レイヤー
+// ================================
+const cameraContainer = new PIXI.Container();
+app.stage.addChild(cameraContainer);
+
+const backgroundLayer = new PIXI.Container();
+const drawingLayer = new PIXI.Container();
+cameraContainer.addChild(backgroundLayer);
+cameraContainer.addChild(drawingLayer);
+
+// 背景グリッド
+const bg = new PIXI.Graphics();
+bg.lineStyle(1,0xcccccc);
+for(let x=0;x<2000;x+=50) bg.moveTo(x,0).lineTo(x,2000);
+for(let y=0;y<2000;y+=50) bg.moveTo(0,y).lineTo(2000,y);
+backgroundLayer.addChild(bg);
+
+// ================================
+// 操作状態
+// ================================
+let state = {
+    spacePressed: false,
+    shiftPressed: false,
+    isDragging: false,
+    dragStart: {x:0,y:0},
+    dragMode: null, // 'move' | 'scale' | 'rotate'
+    threshold: 5,
+    lastMoveTime: 0,
+    initial: {x:0, y:0, scaleX:1, scaleY:1, rotation:0}
+};
+
+// 初期値保持
+state.initial.x = cameraContainer.x = app.view.width/2;
+state.initial.y = cameraContainer.y = app.view.height/2;
+state.initial.scaleX = cameraContainer.scale.x;
+state.initial.scaleY = cameraContainer.scale.y;
+state.initial.rotation = cameraContainer.rotation;
+
+// ================================
+// キーボード
+// ================================
+window.addEventListener('keydown', e=>{
+    if(e.code==='Space') state.spacePressed=true;
+    if(e.shiftKey) state.shiftPressed=true;
+
+    if(e.code==='Home'){
+        cameraContainer.x = state.initial.x;
+        cameraContainer.y = state.initial.y;
+        cameraContainer.scale.x = state.initial.scaleX;
+        cameraContainer.scale.y = state.initial.scaleY;
+        cameraContainer.rotation = state.initial.rotation;
+    }
+
+    if(e.code==='KeyH'){
+        if(state.shiftPressed) cameraContainer.scale.y *= -1;
+        else cameraContainer.scale.x *= -1;
+    }
+});
+window.addEventListener('keyup', e=>{
+    if(e.code==='Space') state.spacePressed=false;
+    if(!e.shiftKey) state.shiftPressed=false;
+});
+
+// ================================
+// ドラッグ判定
+// ================================
+app.view.addEventListener('pointerdown', e=>{
+    if(!state.spacePressed) return;
+    state.isDragging=true;
+    state.dragStart.x = e.clientX;
+    state.dragStart.y = e.clientY;
+    state.dragMode = null;
+    state.lastMoveTime = performance.now();
+});
+app.view.addEventListener('pointermove', e=>{
+    if(!state.isDragging) return;
+    const dx = e.clientX - state.dragStart.x;
+    const dy = e.clientY - state.dragStart.y;
+    const dt = performance.now() - state.lastMoveTime;
+
+    if(!state.dragMode){
+        if(state.shiftPressed){
+            if(Math.abs(dx)>state.threshold || Math.abs(dy)>state.threshold){
+                state.dragMode = Math.abs(dy)>Math.abs(dx) ? 'scale' : 'rotate';
+            } else return;
+        } else state.dragMode = 'move';
+    }
+
+    const speedFactor = dt>0 ? Math.min(5, Math.sqrt(dx*dx+dy*dy)/dt*10) : 1;
+
+    if(state.dragMode==='move'){
+        cameraContainer.x += dx*speedFactor;
+        cameraContainer.y += dy*speedFactor;
+    } else if(state.dragMode==='scale'){
+        const factor = 1 + dy/200*speedFactor;
+        cameraContainer.scale.x *= factor;
+        cameraContainer.scale.y *= factor;
+    } else if(state.dragMode==='rotate'){
+        cameraContainer.rotation += dx/100*speedFactor;
+    }
+
+    state.dragStart.x = e.clientX;
+    state.dragStart.y = e.clientY;
+    state.lastMoveTime = performance.now();
+});
+app.view.addEventListener('pointerup', ()=>{ state.isDragging=false; state.dragMode=null; });
+app.view.addEventListener('pointerleave', ()=>{ state.isDragging=false; state.dragMode=null; });
+
+// ================================
+// ホイール操作
+// ================================
+app.view.addEventListener('wheel', e=>{
+    const speedFactor = Math.min(5, Math.abs(e.deltaY)/10);
+    if(state.shiftPressed) cameraContainer.rotation += e.deltaY*0.01*speedFactor;
+    else{
+        const factor = 1 + e.deltaY*0.001*speedFactor;
+        cameraContainer.scale.x *= factor;
+        cameraContainer.scale.y *= factor;
+    }
+});
+
+// ================================
+// 描画例
+// ================================
+const line = new PIXI.Graphics();
+line.lineStyle(2,0xff0000);
+line.moveTo(100,100);
+line.lineTo(300,300);
+drawingLayer.addChild(line);
+</script>
+
+</body>
+</html>
+
+✅ 特徴
+
+独自カメラコンテナで背景＋描画レイヤーを一括操作
+
+Space + ドラッグで移動
+
+Shift + Space + ドラッグで縦＝拡縮、横＝回転判定
+
+ホイールで拡縮/回転
+
+反転 H / Shift+H
+
+Home で位置・スケール・回転をリセット
+
+カメラ中心を支点に統一
+
+
+※独自カメラ移動＋拡縮＋回転＋反転＋リセット機能に加え、ツールバーアイコンを SVG で読み込みつつ #800000 に統一した完全サンプル
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Tegaki v8 独自カメラ＋アイコン統一サンプル</title>
+<style> body{margin:0;overflow:hidden;} </style>
+</head>
+<body>
+
+<script src="https://pixijs.download/release/pixi.min.js"></script>
+<script>
+const app = new PIXI.Application({ width: 800, height: 600, backgroundColor: 0xeeeeee });
+document.body.appendChild(app.view);
+
+// ================================
+// カメラコンテナ＋レイヤー
+// ================================
+const cameraContainer = new PIXI.Container();
+app.stage.addChild(cameraContainer);
+
+const backgroundLayer = new PIXI.Container();
+const drawingLayer = new PIXI.Container();
+cameraContainer.addChild(backgroundLayer);
+cameraContainer.addChild(drawingLayer);
+
+// 背景グリッド
+const bg = new PIXI.Graphics();
+bg.lineStyle(1,0xcccccc);
+for(let x=0;x<2000;x+=50) bg.moveTo(x,0).lineTo(x,2000);
+for(let y=0;y<2000;y+=50) bg.moveTo(0,y).lineTo(2000,y);
+backgroundLayer.addChild(bg);
+
+// ================================
+// ツールバーアイコンロード関数
 // ================================
 function loadIconSVG(url, color="#800000") {
     return fetch(url)
-        .then(resp => resp.text())
-        .then(svgText => {
-            // stroke と fill を指定色に書き換え
+        .then(resp=>resp.text())
+        .then(svgText=>{
             svgText = svgText.replace(/stroke=".*?"/g, `stroke="${color}"`);
             svgText = svgText.replace(/fill=".*?"/g, `fill="${color}"`);
-            // Blob に変換して URL を生成
             const blob = new Blob([svgText], { type: "image/svg+xml" });
             const blobURL = URL.createObjectURL(blob);
             return PIXI.Sprite.from(blobURL);
@@ -158,7 +313,7 @@ function loadIconSVG(url, color="#800000") {
 }
 
 // ================================
-// Toolbar アイコンサンプル配置
+// ツールバーアイコン配置例
 // ================================
 const toolbarIcons = [
     'icons/pencil-line.svg',
@@ -166,51 +321,134 @@ const toolbarIcons = [
     'icons/zoom-in.svg',
     'icons/zoom-out.svg'
 ];
-
 const iconSpacing = 50;
-let loadedIcons = [];
-
-Promise.all(toolbarIcons.map(url => loadIconSVG(url, "#800000")))
-    .then(sprites => {
-        sprites.forEach((sprite, idx) => {
+Promise.all(toolbarIcons.map(url=>loadIconSVG(url,"#800000")))
+    .then(sprites=>{
+        sprites.forEach((sprite,idx)=>{
             sprite.x = 10;
-            sprite.y = 10 + idx * iconSpacing;
-            sprite.width = 32;  // サイズ調整
+            sprite.y = 10 + idx*iconSpacing;
+            sprite.width = 32;
             sprite.height = 32;
             app.stage.addChild(sprite);
-            loadedIcons.push(sprite);
         });
-        console.log("✅ Toolbar icons loaded with #800000 color");
+        console.log("✅ Toolbar icons loaded with #800000");
     })
-    .catch(err => {
-        console.error("❌ Icon loading error:", err);
-    });
+    .catch(err=>console.error("❌ Icon load error:",err));
 
 // ================================
-// 背景グリッド例
+// 操作状態
 // ================================
-const bg = new PIXI.Graphics();
-bg.lineStyle(1,0xcccccc);
-for(let x=0;x<800;x+=50) bg.moveTo(x,0).lineTo(x,600);
-for(let y=0;y<600;y+=50) bg.moveTo(0,y).lineTo(800,y);
-app.stage.addChild(bg);
+let state = {
+    spacePressed: false,
+    shiftPressed: false,
+    isDragging: false,
+    dragStart: {x:0,y:0},
+    dragMode: null,
+    threshold: 5,
+    lastMoveTime: 0,
+    initial: {x:0,y:0,scaleX:1,scaleY:1,rotation:0}
+};
+
+// 初期値
+state.initial.x = cameraContainer.x = app.view.width/2;
+state.initial.y = cameraContainer.y = app.view.height/2;
+state.initial.scaleX = cameraContainer.scale.x;
+state.initial.scaleY = cameraContainer.scale.y;
+state.initial.rotation = cameraContainer.rotation;
+
+// ================================
+// キーボード
+// ================================
+window.addEventListener('keydown', e=>{
+    if(e.code==='Space') state.spacePressed=true;
+    if(e.shiftKey) state.shiftPressed=true;
+
+    if(e.code==='Home'){
+        cameraContainer.x = state.initial.x;
+        cameraContainer.y = state.initial.y;
+        cameraContainer.scale.x = state.initial.scaleX;
+        cameraContainer.scale.y = state.initial.scaleY;
+        cameraContainer.rotation = state.initial.rotation;
+    }
+
+    if(e.code==='KeyH'){
+        if(state.shiftPressed) cameraContainer.scale.y *= -1;
+        else cameraContainer.scale.x *= -1;
+    }
+});
+window.addEventListener('keyup', e=>{
+    if(e.code==='Space') state.spacePressed=false;
+    if(!e.shiftKey) state.shiftPressed=false;
+});
+
+// ================================
+// ドラッグ操作
+// ================================
+app.view.addEventListener('pointerdown', e=>{
+    if(!state.spacePressed) return;
+    state.isDragging=true;
+    state.dragStart.x = e.clientX;
+    state.dragStart.y = e.clientY;
+    state.dragMode = null;
+    state.lastMoveTime = performance.now();
+});
+app.view.addEventListener('pointermove', e=>{
+    if(!state.isDragging) return;
+    const dx = e.clientX - state.dragStart.x;
+    const dy = e.clientY - state.dragStart.y;
+    const dt = performance.now() - state.lastMoveTime;
+
+    if(!state.dragMode){
+        if(state.shiftPressed){
+            if(Math.abs(dx)>state.threshold || Math.abs(dy)>state.threshold){
+                state.dragMode = Math.abs(dy)>Math.abs(dx) ? 'scale' : 'rotate';
+            } else return;
+        } else state.dragMode = 'move';
+    }
+
+    const speedFactor = dt>0 ? Math.min(5, Math.sqrt(dx*dx+dy*dy)/dt*10) : 1;
+
+    if(state.dragMode==='move'){
+        cameraContainer.x += dx*speedFactor;
+        cameraContainer.y += dy*speedFactor;
+    } else if(state.dragMode==='scale'){
+        const factor = 1 + dy/200*speedFactor;
+        cameraContainer.scale.x *= factor;
+        cameraContainer.scale.y *= factor;
+    } else if(state.dragMode==='rotate'){
+        cameraContainer.rotation += dx/100*speedFactor;
+    }
+
+    state.dragStart.x = e.clientX;
+    state.dragStart.y = e.clientY;
+    state.lastMoveTime = performance.now();
+});
+app.view.addEventListener('pointerup', ()=>{ state.isDragging=false; state.dragMode=null; });
+app.view.addEventListener('pointerleave', ()=>{ state.isDragging=false; state.dragMode=null; });
+
+// ================================
+// ホイール操作
+// ================================
+app.view.addEventListener('wheel', e=>{
+    const speedFactor = Math.min(5, Math.abs(e.deltaY)/10);
+    if(state.shiftPressed) cameraContainer.rotation += e.deltaY*0.01*speedFactor;
+    else{
+        const factor = 1 + e.deltaY*0.001*speedFactor;
+        cameraContainer.scale.x *= factor;
+        cameraContainer.scale.y *= factor;
+    }
+});
+
+// ================================
+// 描画例
+// ================================
+const line = new PIXI.Graphics();
+line.lineStyle(2,0xff0000);
+line.moveTo(100,100);
+line.lineTo(300,300);
+drawingLayer.addChild(line);
+
 </script>
-
 </body>
 </html>
-
-✅ 改修ポイント
-
-SVG 内の stroke/fill を #800000 に統一
-
-既存 PixiJS Sprite.from(url) を置き換え
-
-非同期ロード対応
-
-Promise.all() で全アイコンロード完了後に配置
-
-サイズ・位置調整が可能
-
-ランタイムでも簡単に色を変更できる
-
 

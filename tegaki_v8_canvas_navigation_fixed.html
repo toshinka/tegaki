@@ -1,0 +1,1427 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8rev7 - 独自カメラ移動版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button img,
+        .tool-button svg {
+            width: 20px;
+            height: 20px;
+        }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.active svg {
+            fill: var(--text-inverse);
+            stroke: var(--text-inverse);
+        }
+        
+        .tool-button.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .tool-button.disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .canvas-container {
+            background: var(--futaba-cream);
+            display: inline-block;
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            position: relative;
+        }
+        
+        canvas {
+            border: none;
+            display: block;
+            cursor: crosshair;
+        }
+        
+        .popup-panel {
+            position: fixed;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+            padding: 20px;
+            z-index: 2000;
+            backdrop-filter: blur(12px);
+            display: none;
+            user-select: none;
+            min-width: 280px;
+        }
+        
+        .popup-panel.show {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        
+        .popup-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            margin-bottom: 16px;
+            text-align: center;
+            border-bottom: 2px solid var(--futaba-light-medium);
+            padding-bottom: 8px;
+        }
+        
+        .setting-group {
+            margin-bottom: 16px;
+        }
+        
+        .setting-label {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .slider {
+            flex: 1;
+            height: 6px;
+            background: var(--futaba-light-medium);
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .slider-track {
+            height: 100%;
+            background: var(--futaba-maroon);
+            border-radius: 3px;
+            transition: width 0.1s ease;
+        }
+        
+        .slider-handle {
+            width: 16px;
+            height: 16px;
+            background: var(--futaba-maroon);
+            border: 2px solid var(--futaba-background);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .slider-handle:active {
+            cursor: grabbing;
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+        
+        .slider-value {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            min-width: 50px;
+            text-align: right;
+        }
+        
+        .size-input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .size-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            background: var(--futaba-background);
+            font-family: monospace;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .size-input:focus {
+            outline: none;
+            border-color: var(--futaba-maroon);
+        }
+        
+        .size-multiply {
+            color: var(--futaba-maroon);
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .action-button {
+            padding: 10px 16px;
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 8px;
+            background: var(--futaba-background);
+            color: var(--futaba-maroon);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        
+        .action-button:hover {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .action-button.primary {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .action-button.primary:hover {
+            background: var(--futaba-light-maroon);
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        .off-canvas-indicator {
+            position: absolute;
+            color: var(--futaba-maroon);
+            font-size: 12px;
+            font-weight: bold;
+            pointer-events: none;
+            z-index: 10;
+            opacity: 0.7;
+        }
+        
+        @media (max-width: 1200px) {
+            .popup-panel {
+                max-width: 90vw;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button disabled" id="download-tool" title="ダウンロード">
+                <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/book-download.svg" alt="download">
+            </div>
+            
+            <div class="tool-button" id="resize-tool" title="リサイズ">
+                <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/resize.svg" alt="resize">
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button disabled" id="palette-tool" title="カラーパレット">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/palette.svg" alt="palette">
+            </div>
+     
+            <div class="tool-button active" id="pen-tool" title="ベクターペン">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/pencil-line.svg" alt="pen">
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/eraser.svg" alt="eraser">
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button disabled" id="fill-tool" title="塗りつぶし">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/paint-bucket.svg" alt="fill">
+            </div>
+            
+            <div class="tool-button disabled" id="select-tool" title="範囲選択">
+                <img src="https://cdn.jsdelivr.net/npm/lucide-static/icons/box-select.svg" alt="select">
+            </div>
+            
+            <div class="tool-separator"></div>
+            
+            <div class="tool-button disabled" id="settings-tool" title="設定">
+                <img src="https://cdn.jsdelivr.net/npm/@tabler/icons/icons/outline/settings.svg" alt="settings">
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container" id="canvas-container">
+                <!-- キャンバスはここに追加されます -->
+            </div>
+        </div>
+    </div>
+    
+    <!-- ポップアップパネル（ペンツール） -->
+    <div class="popup-panel" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-size-slider">
+                    <div class="slider-track" id="pen-size-track"></div>
+                    <div class="slider-handle" id="pen-size-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-size-value">16.0px</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-opacity-slider">
+                    <div class="slider-track" id="pen-opacity-track"></div>
+                    <div class="slider-handle" id="pen-opacity-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-opacity-value">85.0%</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバス外描画</div>
+            <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
+                <input type="checkbox" id="offcanvas-enabled" checked style="margin: 0;">
+                <span style="font-size: 13px;">キャンバス外からの描画を許可</span>
+            </label>
+        </div>
+    </div>
+    
+    <!-- ポップアップパネル（リサイズ） -->
+    <div class="popup-panel" id="resize-settings" style="left: 60px; top: 150px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバスサイズ</div>
+            <div class="size-input-group">
+                <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                <div class="size-multiply">×</div>
+                <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="action-button" id="apply-resize">適用</div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Camera: <span id="camera-info">400×400px</span></div>
+            <div class="status-item">World: <span id="world-info">2000×2000px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">Off-canvas: <span id="offcanvas-status">ON</span></div>
+            <div class="status-item">History: <span id="history-status">0/50</span></div>
+            <div class="status-item">Camera: <span id="camera-transform">位置(0,0) 拡大1.00 回転0°</span></div>
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+        </div>
+    </div>
+
+    <!-- PixiJS v8 only (viewport除去) -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    
+    <script>
+        /**
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵描きツール v8rev7
+         * 独自カメラ移動版 (pixi-viewport削除・GPT5レポート準拠)
+         * - カメラコンテナで背景+描画レイヤーを統一制御
+         * - Space + ドラッグ: 移動
+         * - Shift + Space + ドラッグ: 拡縮/回転（縦横判定）
+         * - ホイール: 拡縮、Shift+ホイール: 回転
+         * - H/Shift+H: 左右・上下反転
+         * - HOME: カメラリセット
+         */
+        
+        // グローバル変数
+        let pixiApp = null;
+        let cameraContainer = null;        // 独自カメラコンテナ
+        let backgroundLayer = null;        // 背景レイヤー
+        let drawingLayer = null;          // 描画レイヤー
+        
+        let currentPath = null;
+        let isDrawing = false;
+        let currentTool = 'pen';
+        let currentBrush = { size: 16, color: 0x800000, opacity: 0.85 };
+        let historyStack = [];
+        let redoStack = [];
+        let offCanvasEnabled = true;
+        
+        // カメラ設定
+        let cameraWidth = 400;
+        let cameraHeight = 400;
+        let worldWidth = 2000;
+        let worldHeight = 2000;
+        
+        // カメラ移動機能の状態管理
+        let cameraState = {
+            spacePressed: false,
+            shiftPressed: false,
+            isDragging: false,
+            dragStart: { x: 0, y: 0 },
+            dragMode: null, // 'move', 'scale', 'rotate'
+            threshold: 5,    // 縦横判定しきい値（px）
+            lastMoveTime: 0,
+            initial: { x: 0, y: 0, scaleX: 1, scaleY: 1, rotation: 0 }
+        };
+        
+        // ==== 座標変換システム ====
+        class CoordinateSystem {
+            // スクリーン座標 → ワールド座標（カメラ変換考慮）
+            static screenToWorld(screenX, screenY) {
+                if (!pixiApp || !cameraContainer) return { x: screenX, y: screenY };
+                
+                const rect = pixiApp.canvas.getBoundingClientRect();
+                const localX = screenX - rect.left;
+                const localY = screenY - rect.top;
+                
+                // カメラ変換を逆算してワールド座標に変換
+                const worldX = (localX - cameraContainer.x) / cameraContainer.scale.x;
+                const worldY = (localY - cameraContainer.y) / cameraContainer.scale.y;
+                
+                return { x: worldX, y: worldY };
+            }
+            
+            // ワールド座標 → スクリーン座標
+            static worldToScreen(worldX, worldY) {
+                if (!cameraContainer) return { x: worldX, y: worldY };
+                
+                const screenX = worldX * cameraContainer.scale.x + cameraContainer.x;
+                const screenY = worldY * cameraContainer.scale.y + cameraContainer.y;
+                
+                return { x: screenX, y: screenY };
+            }
+            
+            // 描画可能領域判定（ワールド座標基準）
+            static isInDrawableArea(worldX, worldY) {
+                if (!offCanvasEnabled) {
+                    // カメラ範囲のみ
+                    const screen = this.worldToScreen(worldX, worldY);
+                    return screen.x >= 0 && screen.x < cameraWidth &&
+                           screen.y >= 0 && screen.y < cameraHeight;
+                } else {
+                    // ワールド全体
+                    return worldX >= 0 && worldX < worldWidth &&
+                           worldY >= 0 && worldY < worldHeight;
+                }
+            }
+        }
+        
+        // ==== 独自カメラ移動システム ====
+        class CameraNavigationSystem {
+            static init() {
+                console.log('独自カメラ移動システム初期化開始');
+                this.setupKeyboardEvents();
+                this.setupMouseEvents();
+                this.updateCameraStatus();
+                console.log('独自カメラ移動システム初期化完了');
+            }
+            
+            static setupKeyboardEvents() {
+                window.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space') {
+                        cameraState.spacePressed = true;
+                        this.updateCursor();
+                        e.preventDefault();
+                    }
+                    if (e.shiftKey) cameraState.shiftPressed = true;
+
+                    // 反転処理
+                    if (e.code === 'KeyH' && !e.ctrlKey) {
+                        if (cameraState.shiftPressed) {
+                            // 上下反転
+                            cameraContainer.scale.y *= -1;
+                        } else {
+                            // 左右反転
+                            cameraContainer.scale.x *= -1;
+                        }
+                        this.updateCameraStatus();
+                        e.preventDefault();
+                    }
+
+                    // HOMEキーでリセット
+                    if (e.code === 'Home') {
+                        this.resetCamera();
+                        e.preventDefault();
+                    }
+
+                    // 方向キーによる微調整
+                    if (cameraState.spacePressed) {
+                        const moveStep = 10;
+                        const rotateStep = 0.05;
+                        const scaleStep = 0.05;
+                        
+                        if (cameraState.shiftPressed) {
+                            // 拡縮・回転
+                            if (e.code === 'ArrowUp') {
+                                const factor = 1 + scaleStep;
+                                cameraContainer.scale.x *= factor;
+                                cameraContainer.scale.y *= factor;
+                            }
+                            if (e.code === 'ArrowDown') {
+                                const factor = 1 - scaleStep;
+                                cameraContainer.scale.x *= factor;
+                                cameraContainer.scale.y *= factor;
+                            }
+                            if (e.code === 'ArrowLeft') {
+                                cameraContainer.rotation -= rotateStep;
+                            }
+                            if (e.code === 'ArrowRight') {
+                                cameraContainer.rotation += rotateStep;
+                            }
+                        } else {
+                            // 移動
+                            if (e.code === 'ArrowUp') cameraContainer.y -= moveStep;
+                            if (e.code === 'ArrowDown') cameraContainer.y += moveStep;
+                            if (e.code === 'ArrowLeft') cameraContainer.x -= moveStep;
+                            if (e.code === 'ArrowRight') cameraContainer.x += moveStep;
+                        }
+                        this.updateCameraStatus();
+                        e.preventDefault();
+                    }
+                });
+
+                window.addEventListener('keyup', (e) => {
+                    if (e.code === 'Space') {
+                        cameraState.spacePressed = false;
+                        this.updateCursor();
+                    }
+                    if (!e.shiftKey) cameraState.shiftPressed = false;
+                });
+            }
+            
+            static setupMouseEvents() {
+                if (!pixiApp || !pixiApp.canvas) return;
+                
+                // カスタムドラッグ処理
+                pixiApp.canvas.addEventListener('pointerdown', (e) => {
+                    if (!cameraState.spacePressed) return;
+                    
+                    cameraState.isDragging = true;
+                    cameraState.dragStart.x = e.clientX;
+                    cameraState.dragStart.y = e.clientY;
+                    cameraState.dragMode = null;
+                    cameraState.lastMoveTime = performance.now();
+                    
+                    this.updateCursor();
+                });
+                
+                pixiApp.canvas.addEventListener('pointermove', (e) => {
+                    if (!cameraState.isDragging) return;
+                    
+                    const dx = e.clientX - cameraState.dragStart.x;
+                    const dy = e.clientY - cameraState.dragStart.y;
+                    const dt = performance.now() - cameraState.lastMoveTime;
+                    
+                    // 縦横判定
+                    if (!cameraState.dragMode) {
+                        if (cameraState.shiftPressed) {
+                            if (Math.abs(dx) > cameraState.threshold || Math.abs(dy) > cameraState.threshold) {
+                                cameraState.dragMode = Math.abs(dy) > Math.abs(dx) ? 'scale' : 'rotate';
+                            } else return;
+                        } else {
+                            cameraState.dragMode = 'move';
+                        }
+                    }
+                    
+                    const speedFactor = dt > 0 ? Math.min(5, Math.sqrt(dx * dx + dy * dy) / dt * 10) : 1;
+                    
+                    // 操作適用
+                    if (cameraState.dragMode === 'move') {
+                        cameraContainer.x += dx * speedFactor;
+                        cameraContainer.y += dy * speedFactor;
+                    } else if (cameraState.dragMode === 'scale') {
+                        const factor = 1 + dy / 200 * speedFactor;
+                        cameraContainer.scale.x *= factor;
+                        cameraContainer.scale.y *= factor;
+                    } else if (cameraState.dragMode === 'rotate') {
+                        cameraContainer.rotation += dx / 100 * speedFactor;
+                    }
+                    
+                    cameraState.dragStart.x = e.clientX;
+                    cameraState.dragStart.y = e.clientY;
+                    cameraState.lastMoveTime = performance.now();
+                    this.updateCameraStatus();
+                });
+                
+                pixiApp.canvas.addEventListener('pointerup', () => {
+                    if (cameraState.isDragging) {
+                        cameraState.isDragging = false;
+                        cameraState.dragMode = null;
+                        this.updateCursor();
+                    }
+                });
+                
+                pixiApp.canvas.addEventListener('pointerleave', () => {
+                    if (cameraState.isDragging) {
+                        cameraState.isDragging = false;
+                        cameraState.dragMode = null;
+                        this.updateCursor();
+                    }
+                });
+                
+                // ホイール操作
+                pixiApp.canvas.addEventListener('wheel', (e) => {
+                    const speedFactor = Math.min(5, Math.abs(e.deltaY) / 10);
+                    if (cameraState.shiftPressed) {
+                        // 回転
+                        cameraContainer.rotation += e.deltaY * 0.01 * speedFactor;
+                    } else {
+                        // 拡縮
+                        const factor = 1 + e.deltaY * 0.001 * speedFactor;
+                        cameraContainer.scale.x *= factor;
+                        cameraContainer.scale.y *= factor;
+                    }
+                    this.updateCameraStatus();
+                    e.preventDefault();
+                });
+            }
+            
+            static updateCursor() {
+                if (!pixiApp || !pixiApp.canvas) return;
+                
+                if (cameraState.spacePressed && !cameraState.isDragging) {
+                    pixiApp.canvas.style.cursor = 'grab';
+                } else if (cameraState.isDragging) {
+                    pixiApp.canvas.style.cursor = 'grabbing';
+                } else {
+                    pixiApp.canvas.style.cursor = 'crosshair';
+                }
+            }
+            
+            static resetCamera() {
+                if (!cameraContainer) return;
+                
+                cameraContainer.x = cameraState.initial.x;
+                cameraContainer.y = cameraState.initial.y;
+                cameraContainer.scale.x = cameraState.initial.scaleX;
+                cameraContainer.scale.y = cameraState.initial.scaleY;
+                cameraContainer.rotation = cameraState.initial.rotation;
+                this.updateCameraStatus();
+                console.log('カメラをリセットしました');
+            }
+            
+            static updateCameraStatus() {
+                const statusElement = document.getElementById('camera-transform');
+                if (statusElement && cameraContainer) {
+                    const x = Math.round(cameraContainer.x - cameraWidth / 2);
+                    const y = Math.round(cameraContainer.y - cameraHeight / 2);
+                    const scale = Math.abs(cameraContainer.scale.x).toFixed(2);
+                    const rotation = Math.round(cameraContainer.rotation * 180 / Math.PI);
+                    statusElement.textContent = `位置(${x},${y}) 拡大${scale} 回転${rotation}°`;
+                }
+            }
+        }
+        
+        // ==== 履歴管理 ====
+        class HistoryManager {
+            static push(action) {
+                historyStack.push(action);
+                redoStack = [];
+                if (historyStack.length > 50) {
+                    historyStack.shift();
+                }
+                this.updateStatus();
+            }
+            
+            static undo() {
+                const action = historyStack.pop();
+                if (!action) return;
+                redoStack.push(action);
+                action.undo();
+                this.updateStatus();
+            }
+            
+            static redo() {
+                const action = redoStack.pop();
+                if (!action) return;
+                historyStack.push(action);
+                action.redo();
+                this.updateStatus();
+            }
+            
+            static clear() {
+                historyStack = [];
+                redoStack = [];
+                this.updateStatus();
+            }
+            
+            static updateStatus() {
+                const statusElement = document.getElementById('history-status');
+                if (statusElement) {
+                    statusElement.textContent = `${historyStack.length}/50`;
+                }
+            }
+        }
+        
+        // ==== PIXIベース描画システム ====
+        class PIXIDrawingSystem {
+            static createPath(worldX, worldY) {
+                const graphics = new PIXI.Graphics();
+                
+                // 描画レイヤーに追加
+                drawingLayer.addChild(graphics);
+                
+                // 最初のポイントを描画
+                graphics.circle(worldX, worldY, currentBrush.size / 2);
+                graphics.fill({ color: currentBrush.color, alpha: currentBrush.opacity });
+                
+                const path = {
+                    graphics: graphics,
+                    points: [{ x: worldX, y: worldY }],
+                    brush: { ...currentBrush },
+                    tool: currentTool
+                };
+                
+                return path;
+            }
+            
+            static drawLine(path, worldX, worldY) {
+                const lastPoint = path.points[path.points.length - 1];
+                const distance = Math.sqrt((worldX - lastPoint.x) ** 2 + (worldY - lastPoint.y) ** 2);
+                
+                if (distance < 1) return;
+                
+                const steps = Math.max(1, Math.ceil(distance / 2));
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    const px = lastPoint.x + (worldX - lastPoint.x) * t;
+                    const py = lastPoint.y + (worldY - lastPoint.y) * t;
+                    
+                    if (path.tool === 'eraser') {
+                        // 消しゴムの場合は、交差する既存パスを削除
+                        this.eraseAtPoint(px, py, path.brush.size);
+                    } else {
+                        // ペンの場合は通常描画
+                        path.graphics.circle(px, py, path.brush.size / 2);
+                        path.graphics.fill({ color: path.brush.color, alpha: path.brush.opacity });
+                    }
+                }
+                
+                path.points.push({ x: worldX, y: worldY });
+            }
+            
+            static eraseAtPoint(worldX, worldY, eraserSize) {
+                // 描画レイヤー内の全描画オブジェクトをチェック
+                const eraserRadius = eraserSize / 2;
+                let hasErased = false;
+                
+                // 削除対象のオブジェクトを収集
+                const childrenToCheck = [...drawingLayer.children];
+                
+                childrenToCheck.forEach(child => {
+                    if (child instanceof PIXI.Graphics && child !== currentPath?.graphics) {
+                        // 消しゴム範囲内に描画があるかチェック
+                        const bounds = child.getBounds();
+                        const centerX = bounds.x + bounds.width / 2;
+                        const centerY = bounds.y + bounds.height / 2;
+                        const distance = Math.sqrt(
+                            Math.pow(worldX - centerX, 2) + 
+                            Math.pow(worldY - centerY, 2)
+                        );
+                        
+                        const objectRadius = Math.max(bounds.width, bounds.height) / 2;
+                        
+                        if (distance < eraserRadius + objectRadius) {
+                            // 透明度を下げるか完全に削除
+                            child.alpha = Math.max(0, child.alpha - 0.4);
+                            if (child.alpha <= 0.1) {
+                                drawingLayer.removeChild(child);
+                                child.destroy();
+                            }
+                            hasErased = true;
+                        }
+                    }
+                });
+                
+                return hasErased;
+            }
+            
+            static finishPath(path) {
+                if (!path) return null;
+                
+                // 消しゴムの場合は、グラフィックス自体は削除（消去効果のみ残す）
+                if (path.tool === 'eraser') {
+                    if (drawingLayer.children.includes(path.graphics)) {
+                        drawingLayer.removeChild(path.graphics);
+                        path.graphics.destroy();
+                    }
+                    
+                    // 消しゴム操作を履歴に記録
+                    const eraserAction = {
+                        tool: 'eraser',
+                        points: [...path.points],
+                        brush: { ...path.brush }
+                    };
+                    
+                    HistoryManager.push({
+                        undo: () => {
+                            console.log('消しゴム操作の取り消しは未実装です');
+                        },
+                        redo: () => {
+                            eraserAction.points.forEach(point => {
+                                PIXIDrawingSystem.eraseAtPoint(point.x, point.y, eraserAction.brush.size);
+                            });
+                        }
+                    });
+                    
+                    return null;
+                }
+                
+                // ペンツールの場合の通常処理
+                const pathCopy = {
+                    graphics: path.graphics,
+                    points: [...path.points],
+                    brush: { ...path.brush },
+                    tool: path.tool
+                };
+                
+                HistoryManager.push({
+                    undo: () => {
+                        if (drawingLayer.children.includes(pathCopy.graphics)) {
+                            drawingLayer.removeChild(pathCopy.graphics);
+                            pathCopy.graphics.destroy();
+                        }
+                    },
+                    redo: () => {
+                        if (!drawingLayer.children.includes(pathCopy.graphics)) {
+                            // グラフィックスを再作成
+                            const newGraphics = new PIXI.Graphics();
+                            if (pathCopy.tool === 'pen') {
+                                pathCopy.points.forEach(point => {
+                                    newGraphics.circle(point.x, point.y, pathCopy.brush.size / 2);
+                                    newGraphics.fill({ color: pathCopy.brush.color, alpha: pathCopy.brush.opacity });
+                                });
+                            }
+                            pathCopy.graphics = newGraphics;
+                            drawingLayer.addChild(newGraphics);
+                        }
+                    }
+                });
+                
+                return pathCopy;
+            }
+        }
+        
+        // ==== 背景システム ====
+        class BackgroundSystem {
+            static createBackground() {
+                if (!backgroundLayer) return;
+                
+                // グリッド背景を作成
+                const grid = new PIXI.Graphics();
+                
+                // グリッドの設定
+                const gridSize = 50;
+                const gridColor = 0xdddddd;
+                const gridAlpha = 0.5;
+                
+                grid.lineStyle(1, gridColor, gridAlpha);
+                
+                // 縦線
+                for (let x = 0; x <= worldWidth; x += gridSize) {
+                    grid.moveTo(x, 0);
+                    grid.lineTo(x, worldHeight);
+                }
+                
+                // 横線
+                for (let y = 0; y <= worldHeight; y += gridSize) {
+                    grid.moveTo(0, y);
+                    grid.lineTo(worldWidth, y);
+                }
+                
+                backgroundLayer.addChild(grid);
+                
+                // 中央マーカー
+                const center = new PIXI.Graphics();
+                center.circle(worldWidth / 2, worldHeight / 2, 5);
+                center.fill({ color: 0x800000, alpha: 0.7 });
+                backgroundLayer.addChild(center);
+                
+                console.log('背景グリッドを作成しました');
+            }
+        }
+        
+        // ==== イベントハンドラー ====
+        function onPointerDown(event) {
+            if (!pixiApp || !drawingLayer) return;
+            
+            // カメラ移動中は描画を無視
+            if (cameraState.spacePressed) return;
+            
+            const world = CoordinateSystem.screenToWorld(event.clientX, event.clientY);
+            
+            // 描画可能領域判定
+            if (!CoordinateSystem.isInDrawableArea(world.x, world.y)) {
+                return;
+            }
+            
+            isDrawing = true;
+            currentPath = PIXIDrawingSystem.createPath(world.x, world.y);
+        }
+        
+        function onPointerMove(event) {
+            const world = CoordinateSystem.screenToWorld(event.clientX, event.clientY);
+            
+            // 座標表示更新（ワールド座標）
+            const coordsElement = document.getElementById('coordinates');
+            if (coordsElement) {
+                coordsElement.textContent = `x: ${Math.round(world.x)}, y: ${Math.round(world.y)}`;
+            }
+            
+            if (!isDrawing || !currentPath || cameraState.spacePressed) return;
+            
+            PIXIDrawingSystem.drawLine(currentPath, world.x, world.y);
+        }
+        
+        function onPointerUp(event) {
+            if (!isDrawing || !currentPath) return;
+            
+            isDrawing = false;
+            PIXIDrawingSystem.finishPath(currentPath);
+            currentPath = null;
+        }
+        
+        // ==== カメラシステム ====
+        class CameraSystem {
+            static resize(newWidth, newHeight) {
+                if (!pixiApp || !cameraContainer) return;
+                
+                const oldWidth = cameraWidth;
+                const oldHeight = cameraHeight;
+                
+                cameraWidth = newWidth;
+                cameraHeight = newHeight;
+                
+                // PIXI Applicationリサイズ
+                pixiApp.renderer.resize(newWidth, newHeight);
+                
+                // キャンバスコンテナのサイズを更新
+                const canvasContainer = document.getElementById('canvas-container');
+                if (canvasContainer && pixiApp.canvas) {
+                    canvasContainer.style.width = newWidth + 'px';
+                    canvasContainer.style.height = newHeight + 'px';
+                    pixiApp.canvas.style.width = newWidth + 'px';
+                    pixiApp.canvas.style.height = newHeight + 'px';
+                }
+                
+                // カメラ位置を調整（中央維持）
+                const centerX = newWidth / 2;
+                const centerY = newHeight / 2;
+                cameraContainer.x = centerX;
+                cameraContainer.y = centerY;
+                
+                // 初期値更新
+                cameraState.initial.x = centerX;
+                cameraState.initial.y = centerY;
+                
+                // ステータス更新
+                const cameraInfo = document.getElementById('camera-info');
+                const worldInfo = document.getElementById('world-info');
+                if (cameraInfo) cameraInfo.textContent = `${newWidth}×${newHeight}px`;
+                if (worldInfo) worldInfo.textContent = `${worldWidth}×${worldHeight}px`;
+                
+                CameraNavigationSystem.updateCameraStatus();
+                
+                console.log(`カメラリサイズ完了: ${newWidth}x${newHeight}`);
+            }
+        }
+        
+        // ==== UI Controller ====
+        class UIController {
+            static activePopup = null;
+            
+            static init() {
+                console.log('UI Controller: 初期化開始');
+                this.setupToolButtons();
+                this.setupPopups();
+                this.setupSliders();
+                this.setupKeyboardShortcuts();
+                console.log('UI Controller: 初期化完了');
+            }
+            
+            static setupToolButtons() {
+                document.querySelectorAll('.tool-button').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        if (btn.classList.contains('disabled')) return;
+                        this.handleToolClick(btn);
+                    });
+                });
+            }
+            
+            static handleToolClick(button) {
+                const toolId = button.id;
+                console.log(`ツールクリック: ${toolId}`);
+                
+                if (toolId === 'pen-tool') {
+                    this.setActiveTool('pen');
+                    this.togglePopup('pen-settings');
+                } else if (toolId === 'eraser-tool') {
+                    this.setActiveTool('eraser');
+                    this.closeAllPopups();
+                } else if (toolId === 'resize-tool') {
+                    this.togglePopup('resize-settings');
+                }
+            }
+            
+            static setActiveTool(tool) {
+                currentTool = tool;
+                
+                document.querySelectorAll('.tool-button').forEach(btn => {
+                    btn.classList.remove('active');
+                });
+                
+                const toolButton = document.getElementById(`${tool}-tool`);
+                if (toolButton) {
+                    toolButton.classList.add('active');
+                }
+                
+                const toolNames = { 
+                    'pen': 'ベクターペン', 
+                    'eraser': '消しゴム' 
+                };
+                const toolElement = document.getElementById('current-tool');
+                if (toolElement) {
+                    toolElement.textContent = toolNames[tool] || 'ツール';
+                }
+            }
+            
+            static togglePopup(popupId) {
+                console.log(`ポップアップ切り替え: ${popupId}`);
+                const popup = document.getElementById(popupId);
+                if (!popup) return;
+                
+                if (this.activePopup && this.activePopup !== popup) {
+                    this.activePopup.classList.remove('show');
+                }
+                
+                const isVisible = popup.classList.contains('show');
+                popup.classList.toggle('show', !isVisible);
+                this.activePopup = isVisible ? null : popup;
+            }
+            
+            static setupPopups() {
+                // クリック外でポップアップを閉じる
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.popup-panel') && !e.target.closest('.tool-button')) {
+                        this.closeAllPopups();
+                    }
+                });
+                
+                // リサイズボタン
+                const resizeButton = document.getElementById('apply-resize');
+                if (resizeButton) {
+                    resizeButton.addEventListener('click', () => this.applyResize());
+                }
+                
+                // オフキャンバス設定
+                const offCanvasCheck = document.getElementById('offcanvas-enabled');
+                if (offCanvasCheck) {
+                    offCanvasCheck.addEventListener('change', (e) => {
+                        offCanvasEnabled = e.target.checked;
+                        const statusElement = document.getElementById('offcanvas-status');
+                        if (statusElement) {
+                            statusElement.textContent = offCanvasEnabled ? 'ON' : 'OFF';
+                        }
+                    });
+                }
+            }
+            
+            static setupSliders() {
+                this.createSlider('pen-size-slider', 1, 100, 16, (value) => {
+                    currentBrush.size = value;
+                    return value.toFixed(1) + 'px';
+                });
+                
+                this.createSlider('pen-opacity-slider', 0, 100, 85, (value) => {
+                    currentBrush.opacity = value / 100;
+                    return value.toFixed(1) + '%';
+                });
+            }
+            
+            static createSlider(sliderId, min, max, initial, callback) {
+                const container = document.getElementById(sliderId);
+                if (!container) return;
+                
+                const track = container.querySelector('.slider-track');
+                const handle = container.querySelector('.slider-handle');
+                const valueDisplay = container.parentNode.querySelector('.slider-value');
+                
+                if (!track || !handle || !valueDisplay) return;
+                
+                let isDragging = false;
+                let value = initial;
+                
+                const updateSlider = (newValue) => {
+                    value = Math.max(min, Math.min(max, newValue));
+                    const percentage = ((value - min) / (max - min)) * 100;
+                    
+                    track.style.width = percentage + '%';
+                    handle.style.left = percentage + '%';
+                    valueDisplay.textContent = callback(value);
+                };
+                
+                const getValueFromPosition = (clientX) => {
+                    const rect = container.getBoundingClientRect();
+                    const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                    return min + (percentage * (max - min));
+                };
+                
+                container.addEventListener('mousedown', (e) => {
+                    isDragging = true;
+                    updateSlider(getValueFromPosition(e.clientX));
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (isDragging) updateSlider(getValueFromPosition(e.clientX));
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    isDragging = false;
+                });
+                
+                updateSlider(initial);
+            }
+            
+            static setupKeyboardShortcuts() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.ctrlKey) {
+                        if (e.key === 'z') {
+                            HistoryManager.undo();
+                            e.preventDefault();
+                        } else if (e.key === 'y') {
+                            HistoryManager.redo();
+                            e.preventDefault();
+                        }
+                    }
+                });
+            }
+            
+            static applyResize() {
+                const widthInput = document.getElementById('canvas-width');
+                const heightInput = document.getElementById('canvas-height');
+                
+                if (widthInput && heightInput) {
+                    const width = parseInt(widthInput.value);
+                    const height = parseInt(heightInput.value);
+                    
+                    if (width >= 100 && width <= 4096 && height >= 100 && height <= 4096) {
+                        CameraSystem.resize(width, height);
+                        this.closeAllPopups();
+                    }
+                }
+            }
+            
+            static closeAllPopups() {
+                document.querySelectorAll('.popup-panel').forEach(popup => {
+                    popup.classList.remove('show');
+                });
+                this.activePopup = null;
+            }
+        }
+        
+        // ==== Performance Monitor ====
+        class PerformanceMonitor {
+            static start() {
+                let frameCount = 0;
+                let lastTime = performance.now();
+                
+                const update = () => {
+                    frameCount++;
+                    const currentTime = performance.now();
+                    
+                    if (currentTime - lastTime >= 1000) {
+                        const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                        const fpsElement = document.getElementById('fps');
+                        if (fpsElement) {
+                            fpsElement.textContent = fps;
+                        }
+                        
+                        frameCount = 0;
+                        lastTime = currentTime;
+                    }
+                    
+                    requestAnimationFrame(update);
+                };
+                
+                update();
+            }
+        }
+        
+        // ==== 初期化関数 ====
+        async function initializeApp() {
+            console.log('独自カメラベースアプリケーション初期化開始');
+            
+            try {
+                // PIXI Application作成
+                pixiApp = new PIXI.Application();
+                await pixiApp.init({
+                    width: cameraWidth,
+                    height: cameraHeight,
+                    backgroundColor: 0xf0e0d6,
+                    antialias: true,
+                    backgroundAlpha: 1
+                });
+                
+                console.log('PIXI Application作成完了');
+                
+                // キャンバスをDOMに追加
+                const canvasContainer = document.getElementById('canvas-container');
+                if (!canvasContainer) {
+                    throw new Error('キャンバスコンテナが見つかりません');
+                }
+                
+                canvasContainer.appendChild(pixiApp.canvas);
+                console.log('キャンバスをDOMに追加完了');
+                
+                // 独自カメラコンテナ初期化
+                cameraContainer = new PIXI.Container();
+                pixiApp.stage.addChild(cameraContainer);
+                
+                // 初期カメラ位置を中央に設定
+                cameraContainer.x = cameraWidth / 2;
+                cameraContainer.y = cameraHeight / 2;
+                
+                // 初期値保存
+                cameraState.initial.x = cameraContainer.x;
+                cameraState.initial.y = cameraContainer.y;
+                cameraState.initial.scaleX = cameraContainer.scale.x;
+                cameraState.initial.scaleY = cameraContainer.scale.y;
+                cameraState.initial.rotation = cameraContainer.rotation;
+                
+                console.log('独自カメラコンテナ初期化完了');
+                
+                // レイヤー作成
+                backgroundLayer = new PIXI.Container();
+                drawingLayer = new PIXI.Container();
+                
+                // カメラコンテナにレイヤーを追加
+                cameraContainer.addChild(backgroundLayer);
+                cameraContainer.addChild(drawingLayer);
+                
+                // 背景作成
+                BackgroundSystem.createBackground();
+                
+                console.log('レイヤーシステム初期化完了');
+                
+                // 描画イベント設定
+                document.addEventListener('mousedown', onPointerDown);
+                document.addEventListener('mousemove', onPointerMove);
+                document.addEventListener('mouseup', onPointerUp);
+                document.addEventListener('mouseleave', onPointerUp);
+                
+                console.log('描画イベントシステム初期化完了');
+                
+                // カメラ移動機能初期化
+                CameraNavigationSystem.init();
+                
+                // UI初期化
+                UIController.init();
+                
+                // パフォーマンスモニター開始
+                PerformanceMonitor.start();
+                
+                // 初期履歴状態更新
+                HistoryManager.updateStatus();
+                
+                // ステータス更新
+                const cameraInfo = document.getElementById('camera-info');
+                const worldInfo = document.getElementById('world-info');
+                if (cameraInfo) cameraInfo.textContent = `${cameraWidth}×${cameraHeight}px`;
+                if (worldInfo) worldInfo.textContent = `${worldWidth}×${worldHeight}px`;
+                
+                console.log('✅ 独自カメラベースアプリケーション初期化完了');
+                
+                return true;
+                
+            } catch (error) {
+                console.error('❌ 初期化失敗:', error);
+                
+                // エラー表示
+                const canvasContainer = document.getElementById('canvas-container');
+                if (canvasContainer) {
+                    canvasContainer.innerHTML = `
+                        <div style="
+                            width: ${cameraWidth}px; 
+                            height: ${cameraHeight}px; 
+                            background: #f0e0d6;
+                            border: 2px dashed #800000;
+                            display: flex;
+                            align-items: center;
+                            justify-content: center;
+                            flex-direction: column;
+                            color: #800000;
+                            font-family: monospace;
+                            text-align: center;
+                            padding: 20px;
+                            box-sizing: border-box;
+                        ">
+                            <div style="font-size: 24px; margin-bottom: 10px;">⚠️</div>
+                            <div style="font-size: 14px; margin-bottom: 10px;">独自カメラ初期化エラー</div>
+                            <div style="font-size: 12px; opacity: 0.8;">${error.message}</div>
+                            <div style="font-size: 11px; margin-top: 10px; opacity: 0.6;">
+                                ブラウザを再読み込みしてください
+                            </div>
+                        </div>
+                    `;
+                }
+                
+                return false;
+            }
+        }
+        
+        // ==== DOMContentLoaded で初期化実行 ====
+        document.addEventListener('DOMContentLoaded', () => {
+            console.log('DOM読み込み完了 - 独自カメラ初期化開始');
+            
+            // ライブラリチェック
+            if (!window.PIXI) {
+                console.error('❌ PIXI.js が読み込まれていません');
+                return;
+            }
+            
+            console.log(`✅ PIXI.js v${PIXI.VERSION} 読み込み完了`);
+            
+            // アプリケーション初期化
+            initializeApp().then((success) => {
+                if (success) {
+                    console.log('🎨 Futaba Drawing Tool v8rev7 - 独自カメラ移動システム起動完了');
+                } else {
+                    console.log('❌ 初期化に失敗しました');
+                }
+            }).catch((error) => {
+                console.error('❌ 予期しないエラー:', error);
+            });
+        });
+        
+    </script>
+</body>
+</html>
