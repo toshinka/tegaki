@@ -107,10 +107,10 @@
         .canvas-area {
             background: var(--futaba-background);
             position: relative;
-            overflow: hidden;
+            overflow: visible;
             display: flex;
-            justify-content: center;
-            align-items: center;
+            justify-content: flex-start;
+            align-items: flex-start;
         }
         
         .canvas-container {
@@ -118,6 +118,10 @@
             display: inline-block;
             border-radius: 4px;
             box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
         }
         
         canvas {
@@ -429,16 +433,16 @@
     
     <script>
         /**
-         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev3-camera-fixed
-         * PixiJS v8 対応版 - カメラ移動機能改修版
-         * 改修ガイド適用：命名統一、座標変換整理、イベント処理分離
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev3-dom-pan
+         * PixiJS v8 対応版 - DOMパン改修版（解析ガイド適用）
+         * 改修内容：仮想パンからDOMパンに切り替え、枠と内容を一体移動
          */
         
         // ==== Station: Global Configuration and Initialization ====
         class StationManager {
             constructor() {
                 this.config = {
-                    version: '8.0.3-camera-fixed',
+                    version: '8.0.3-dom-pan',
                     pixiVersion: '8.0.5',
                     canvasWidth: 400,
                     canvasHeight: 400,
@@ -471,10 +475,11 @@
             }
         }
         
-        // ==== CameraManager: Camera Position and Control（改修ガイド準拠）====
+        // ==== CameraManager: DOM Position Control (DOM Pan Implementation) ====
         class CameraManager {
             constructor(worldContainer) {
                 this.worldContainer = worldContainer;
+                this.canvasContainer = document.getElementById('canvas-container');
                 this.cameraState = {
                     x: 0,
                     y: 0,
@@ -485,27 +490,21 @@
                 };
             }
             
-            // 座標変換: screenToWorld（改修ガイド準拠）
+            // 座標変換: screenToWorld (DOM Pan用に簡略化)
             screenToWorld(x, y) {
-                return {
-                    x: (x - this.worldContainer.x) / this.worldContainer.scale.x,
-                    y: (y - this.worldContainer.y) / this.worldContainer.scale.y
-                };
+                return { x, y }; // DOM移動なのでワールド=画面座標
             }
             
-            // 座標変換: worldToScreen（改修ガイド準拠）
+            // 座標変換: worldToScreen (DOM Pan用に簡略化)
             worldToScreen(x, y) {
-                return {
-                    x: x * this.worldContainer.scale.x + this.worldContainer.x,
-                    y: y * this.worldContainer.scale.y + this.worldContainer.y
-                };
+                return { x, y }; // DOM移動なのでワールド=画面座標
             }
             
             startPanning(x, y) {
                 this.cameraState.isPanning = true;
                 this.cameraState.startX = x;
                 this.cameraState.startY = y;
-                console.log('📷 Camera panning started');
+                console.log('📷 DOM panning started');
             }
             
             updatePanning(x, y) {
@@ -514,41 +513,67 @@
                 const dx = x - this.cameraState.startX;
                 const dy = y - this.cameraState.startY;
                 
-                this.worldContainer.x += dx;
-                this.worldContainer.y += dy;
+                // DOM位置更新
+                const currentLeft = parseFloat(this.canvasContainer.style.left) || 50;
+                const currentTop = parseFloat(this.canvasContainer.style.top) || 50;
                 
-                this.cameraState.x = this.worldContainer.x;
-                this.cameraState.y = this.worldContainer.y;
+                const newLeft = currentLeft + (dx / window.innerWidth * 100);
+                const newTop = currentTop + (dy / window.innerHeight * 100);
+                
+                // Bounds制限 (0% ~ 100%)
+                const boundedLeft = Math.max(0, Math.min(100, newLeft));
+                const boundedTop = Math.max(0, Math.min(100, newTop));
+                
+                this.canvasContainer.style.left = `${boundedLeft}%`;
+                this.canvasContainer.style.top = `${boundedTop}%`;
+                this.canvasContainer.style.transform = 'translate(-50%, -50%)';
+                
                 this.cameraState.startX = x;
                 this.cameraState.startY = y;
                 
+                // cameraState.x/yをDOM位置に同期（status表示用）
+                this.cameraState.x += dx;
+                this.cameraState.y += dy;
                 this.updateCameraStatus();
-                console.log(`📷 Camera pos: ${Math.round(this.cameraState.x)}, ${Math.round(this.cameraState.y)}, scale: ${this.cameraState.scale}`);
+                
+                console.log(`📷 DOM pos: ${Math.round(boundedLeft)}%, ${Math.round(boundedTop)}%`);
             }
             
             stopPanning() {
                 this.cameraState.isPanning = false;
-                console.log('📷 Camera panning stopped');
+                console.log('📷 DOM panning stopped');
             }
             
             moveByArrows(dx, dy) {
-                this.worldContainer.x += dx;
-                this.worldContainer.y += dy;
-                this.cameraState.x = this.worldContainer.x;
-                this.cameraState.y = this.worldContainer.y;
+                const currentLeft = parseFloat(this.canvasContainer.style.left) || 50;
+                const currentTop = parseFloat(this.canvasContainer.style.top) || 50;
+                
+                const newLeft = currentLeft + (dx / window.innerWidth * 100);
+                const newTop = currentTop + (dy / window.innerHeight * 100);
+                
+                // Bounds制限 (0% ~ 100%)
+                const boundedLeft = Math.max(0, Math.min(100, newLeft));
+                const boundedTop = Math.max(0, Math.min(100, newTop));
+                
+                this.canvasContainer.style.left = `${boundedLeft}%`;
+                this.canvasContainer.style.top = `${boundedTop}%`;
+                
+                this.cameraState.x += dx;
+                this.cameraState.y += dy;
                 this.updateCameraStatus();
-                console.log(`📷 Camera arrow move: (${Math.round(this.cameraState.x)}, ${Math.round(this.cameraState.y)})`);
+                console.log(`📷 DOM arrow move: (${Math.round(this.cameraState.x)}, ${Math.round(this.cameraState.y)})`);
             }
             
             resetCamera() {
-                this.worldContainer.x = 0;
-                this.worldContainer.y = 0;
-                this.worldContainer.scale.set(1);
+                this.canvasContainer.style.left = '50%';
+                this.canvasContainer.style.top = '50%';
+                this.canvasContainer.style.transform = 'translate(-50%, -50%)';
+                
                 this.cameraState.x = 0;
                 this.cameraState.y = 0;
                 this.cameraState.scale = 1;
                 this.cameraState.isPanning = false;
-                console.log('📷 Camera reset');
+                console.log('📷 DOM camera reset');
                 this.updateCameraStatus();
             }
             
@@ -586,7 +611,7 @@
                 this.opacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
             }
             
-            // 改修：描画開始時にカメラパン状態をチェック
+            // 描画開始時にカメラパン状態をチェック
             startDrawing(x, y, spacePressed) {
                 if (spacePressed) return false; // カメラ操作中は描画無効
                 
@@ -597,7 +622,7 @@
                 const drawOpacity = this.currentTool === 'eraser' ? 1.0 : this.opacity;
                 
                 this.currentPath = this.coreEngine.createPath(x, y, this.brushSize, drawColor, drawOpacity, this.currentTool);
-                console.log(`🎨 Drawing started at world coords: (${Math.round(x)}, ${Math.round(y)})`);
+                console.log(`🎨 Drawing started at coords: (${Math.round(x)}, ${Math.round(y)})`);
                 return true;
             }
             
@@ -840,7 +865,7 @@
             }
         }
         
-        // ==== Main: Core Application Controller（改修：キー制御とイベント分離）====
+        // ==== Main: Core Application Controller (DOM Pan Compatible) ====
         class MainController {
             constructor(station) {
                 this.station = station;
@@ -851,8 +876,8 @@
                 this.cameraManager = null;
                 this.performanceMonitor = null;
                 
-                // Input state（改修ガイド準拠）
-                this.spacePressed = false;  // 命名統一
+                // Input state
+                this.spacePressed = false;
             }
             
             async init() {
@@ -889,16 +914,15 @@
                 
                 this.setupInputHandlers();
                 
-                console.log('✅ Main: Application ready with camera control (fixed)');
-                console.log('🎮 Camera Controls:');
-                console.log('  📱 Space + Drag: Pan camera');
+                console.log('✅ Main: Application ready with DOM pan (fixed)');
+                console.log('🎮 DOM Pan Controls:');
+                console.log('  📱 Space + Drag: Move canvas (DOM)');
                 console.log('  ⌨️  Space + Arrow Keys: Fine movement (±10px)');
-                console.log('  🏠 Home: Reset camera');
+                console.log('  🏠 Home: Reset canvas position');
                 
                 return this.app;
             }
             
-            // 改修：キーボード制御を改修ガイドに沿って整理
             setupInputHandlers() {
                 // Keyboard handlers
                 document.addEventListener('keydown', (e) => {
@@ -950,13 +974,13 @@
             }
         }
         
-        // ==== A1-Core: Drawing Engine and Container Management（改修）====
+        // ==== A1-Core: Drawing Engine and Container Management (DOM Pan Compatible) ====
         class CoreEngine {
             constructor(app, config) {
                 this.app = app;
                 this.config = config;
                 
-                // Container structure following Symbol Dictionary（改修ガイド準拠）
+                // Container structure (仮想パン廃止、worldContainerは固定)
                 this.cameraContainer = null;
                 this.worldContainer = null;
                 this.uiContainer = null;
@@ -967,18 +991,18 @@
             }
             
             async init() {
-                console.log('🚂 A1-Core: Initializing container structure (fixed)');
+                console.log('🚂 A1-Core: Initializing container structure (DOM pan)');
                 
-                // Create container hierarchy per Symbol Dictionary
+                // Create container hierarchy
                 this.cameraContainer = new PIXI.Container();
                 this.worldContainer = new PIXI.Container();
                 this.uiContainer = new PIXI.Container();
                 
-                // Setup camera container with mask（改修：マスク設定改良）
+                // Setup camera container (マスクは不要だがCanvas境界として維持)
                 const maskGraphics = new PIXI.Graphics();
                 maskGraphics.rect(0, 0, this.config.canvasWidth, this.config.canvasHeight);
                 maskGraphics.fill(0x000000);
-                this.app.stage.addChild(maskGraphics); // マスクを別途追加
+                this.app.stage.addChild(maskGraphics);
                 this.cameraContainer.mask = maskGraphics;
                 
                 // Add worldContainer to cameraContainer
@@ -988,36 +1012,40 @@
                 this.app.stage.addChild(this.cameraContainer);
                 this.app.stage.addChild(this.uiContainer);
                 
-                // Setup interaction on cameraContainer（改修ガイド準拠）
+                // Setup interaction on cameraContainer
                 this.cameraContainer.eventMode = "static";
                 this.cameraContainer.hitArea = new PIXI.Rectangle(0, 0, this.config.canvasWidth, this.config.canvasHeight);
                 
-                // イベント処理を分離（改修ガイド準拠）
+                // DOM Pan: worldContainerは常に固定位置 (0, 0)
+                this.worldContainer.x = 0;
+                this.worldContainer.y = 0;
+                this.worldContainer.scale.set(1);
+                
+                // イベント処理設定
                 this.cameraContainer.on('pointerdown', this.onPointerDown.bind(this));
                 this.cameraContainer.on('pointermove', this.onPointerMove.bind(this));
                 this.cameraContainer.on('pointerup', this.onPointerUp.bind(this));
                 this.cameraContainer.on('pointerupoutside', this.onPointerUp.bind(this));
                 
-                console.log('✅ Container structure initialized (fixed):');
-                console.log('  🎯 cameraContainer (with separate mask)');
-                console.log('  🌍 worldContainer (drawing layer)');
-                console.log('  🖼️  uiContainer (UI layer)');
-                console.log('  📐 eventMode: static, hitArea set');
+                console.log('✅ Container structure initialized (DOM pan):');
+                console.log('  🎯 cameraContainer (with mask)');
+                console.log('  🌍 worldContainer (fixed at 0,0)');
+                console.log('  🖼️ uiContainer (UI layer)');
+                console.log('  📍 DOM movement: .canvas-container positioning');
                 
                 return true;
             }
             
-            // 改修：イベント処理を改修ガイドに沿って分離
+            // DOM Pan対応: イベント処理簡略化
             onPointerDown(event) {
                 const spacePressed = window.futabaDrawingTool.main.spacePressed;
                 
                 if (spacePressed) {
-                    // カメラパン開始
+                    // DOMパン開始
                     this.cameraManager.startPanning(event.global.x, event.global.y);
                 } else {
-                    // 描画開始（ワールド座標系で）
-                    const worldPos = this.cameraManager.screenToWorld(event.global.x, event.global.y);
-                    this.toolManager.startDrawing(worldPos.x, worldPos.y, spacePressed);
+                    // 描画開始（座標変換不要）
+                    this.toolManager.startDrawing(event.global.x, event.global.y, spacePressed);
                 }
             }
             
@@ -1025,16 +1053,15 @@
                 const spacePressed = window.futabaDrawingTool.main.spacePressed;
                 
                 if (spacePressed && this.cameraManager.cameraState.isPanning) {
-                    // カメラパン継続
+                    // DOMパン継続
                     this.cameraManager.updatePanning(event.global.x, event.global.y);
                 } else {
-                    // 描画継続 & 座標表示更新（ワールド座標系で）
-                    const worldPos = this.cameraManager.screenToWorld(event.global.x, event.global.y);
-                    this.toolManager.continueDrawing(worldPos.x, worldPos.y, spacePressed);
+                    // 描画継続 & 座標表示更新（座標変換不要）
+                    this.toolManager.continueDrawing(event.global.x, event.global.y, spacePressed);
                     
-                    // Update coordinates display with world coordinates
+                    // Update coordinates display
                     if (window.futabaDrawingTool.main.uiManager) {
-                        window.futabaDrawingTool.main.uiManager.updateCoordinates(worldPos.x, worldPos.y);
+                        window.futabaDrawingTool.main.uiManager.updateCoordinates(event.global.x, event.global.y);
                     }
                 }
             }
@@ -1045,7 +1072,7 @@
                 if (!spacePressed) {
                     this.toolManager.stopDrawing();
                 }
-                // カメラパンはキーアップ時に停止するので、ここでは処理しない
+                // DOMパンはキーアップ時に停止するのでここでは処理しない
             }
             
             createPath(x, y, size, color, opacity, tool = 'pen') {
@@ -1109,13 +1136,8 @@
                 
                 this.cameraContainer.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
                 
-                if (centerContent && this.paths.length > 0) {
-                    const offsetX = (newWidth - oldWidth) / 2;
-                    const offsetY = (newHeight - oldHeight) / 2;
-                    
-                    this.worldContainer.x += offsetX;
-                    this.worldContainer.y += offsetY;
-                }
+                // DOM Pan: worldContainerは常に固定、centerContentは無視
+                // (DOM位置調整は別途必要に応じて実装)
             }
             
             clear() {
@@ -1168,7 +1190,7 @@
             
             async init() {
                 try {
-                    console.log('🎨 Futaba Vector Drawing Tool v8rev3-camera-fixed - Starting initialization');
+                    console.log('🎨 Futaba Vector Drawing Tool v8rev3-dom-pan - Starting initialization');
                     
                     if (!this.station.init()) {
                         throw new Error('Station initialization failed');
@@ -1177,13 +1199,14 @@
                     this.main = new MainController(this.station);
                     await this.main.init();
                     
-                    console.log('✅ Futaba Drawing Tool v8rev3-camera-fixed - Ready!');
-                    console.log('🎯 改修完了:');
-                    console.log('  📷 CameraManager: 座標変換統一 (screenToWorld/worldToScreen)');
-                    console.log('  🏗️  Container Structure: mask分離、eventMode設定');
-                    console.log('  🎮 Input Controls: Space+Drag, Space+Arrows(±10px), Home');
-                    console.log('  🎨 Drawing System: パン中の描画禁止実装');
-                    console.log('  📊 Status Display: ワールド座標表示');
+                    console.log('✅ Futaba Drawing Tool v8rev3-dom-pan - Ready!');
+                    console.log('🎯 改修完了 (DOM Pan Implementation):');
+                    console.log('  📷 CameraManager: DOM位置制御 (.canvas-container)');
+                    console.log('  🗃️ Container Structure: worldContainer固定、DOM移動');
+                    console.log('  🎮 Input Controls: Space+Drag(DOM), Space+Arrows, Home');
+                    console.log('  🎨 Drawing System: 座標変換簡略化');
+                    console.log('  📊 Status Display: 直接座標表示');
+                    console.log('  🏗️ Canvas + Contents: 一体移動実現');
                     
                     return true;
                 } catch (error) {
