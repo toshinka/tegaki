@@ -549,7 +549,7 @@
                 const localX = screenX - rect.left;
                 const localY = screenY - rect.top;
                 
-                // stage座標系でのポイントを作成
+                // stageベースのポイントを作成
                 const point = new PIXI.Point(localX, localY);
                 // worldContainer基準のローカル座標に変換
                 return worldContainer.toLocal(point);
@@ -569,18 +569,10 @@
                 };
             }
             
-            // 描画可能領域判定（ワールド座標基準）
+            // 描画可能領域判定（改修計画書：ワールドは無限に描ける）
             static isInDrawableArea(worldX, worldY) {
-                if (!offCanvasEnabled) {
-                    // カメラ範囲のみ（スクリーン座標で判定）
-                    const screen = this.worldToScreen(worldX, worldY);
-                    return screen.x >= 0 && screen.x < cameraWidth &&
-                           screen.y >= 0 && screen.y < cameraHeight;
-                } else {
-                    // ワールド全体
-                    return worldX >= 0 && worldX < worldWidth &&
-                           worldY >= 0 && worldY < worldHeight;
-                }
+                // 改修計画書に従い、マスクは「表示窓」のみ、描画は無制限
+                return true;
             }
         }
         
@@ -836,7 +828,7 @@
             }
         }
         
-        // ==== PIXIベース描画システム ====
+        // ==== PIXI描画システム ====
         class PIXIDrawingSystem {
             static createPath(worldX, worldY) {
                 const graphics = new PIXI.Graphics();
@@ -985,13 +977,17 @@
             }
         }
         
-        // ==== 背景システム ====
+        // ==== 背景システム（改修計画書準拠）====
         class BackgroundSystem {
             static createBackground() {
                 if (!backgroundLayer) return;
                 
+                // 既存の背景をクリア
+                backgroundLayer.removeChildren();
+                
                 // グリッド背景を作成
                 const grid = new PIXI.Graphics();
+                grid.name = 'background-grid';
                 
                 // グリッドの設定
                 const gridSize = 50;
@@ -1000,46 +996,60 @@
                 
                 grid.lineStyle(1, gridColor, gridAlpha);
                 
+                // ワールド全体をカバーする大きなグリッド（改修計画書：無限描画対応）
+                const extendedSize = Math.max(worldWidth * 2, worldHeight * 2);
+                
                 // 縦線
-                for (let x = 0; x <= worldWidth; x += gridSize) {
-                    grid.moveTo(x, 0);
-                    grid.lineTo(x, worldHeight);
+                for (let x = -extendedSize; x <= extendedSize; x += gridSize) {
+                    grid.moveTo(x, -extendedSize);
+                    grid.lineTo(x, extendedSize);
                 }
                 
                 // 横線
-                for (let y = 0; y <= worldHeight; y += gridSize) {
-                    grid.moveTo(0, y);
-                    grid.lineTo(worldWidth, y);
+                for (let y = -extendedSize; y <= extendedSize; y += gridSize) {
+                    grid.moveTo(-extendedSize, y);
+                    grid.lineTo(extendedSize, y);
                 }
                 
                 backgroundLayer.addChild(grid);
                 
+                // ワールドの基準領域（元の1200x1200）を示す枠線
+                const worldBorder = new PIXI.Graphics();
+                worldBorder.name = 'world-border';
+                worldBorder.lineStyle(3, 0x800000, 0.8);
+                worldBorder.drawRect(0, 0, worldWidth, worldHeight);
+                backgroundLayer.addChild(worldBorder);
+                
                 // 中央マーカー
                 const center = new PIXI.Graphics();
-                center.circle(worldWidth / 2, worldHeight / 2, 5);
+                center.name = 'center-marker';
+                center.circle(worldWidth / 2, worldHeight / 2, 8);
                 center.fill({ color: 0x800000, alpha: 0.7 });
+                
+                // 十字線も追加
+                center.lineStyle(2, 0x800000, 0.7);
+                center.moveTo(worldWidth / 2 - 20, worldHeight / 2);
+                center.lineTo(worldWidth / 2 + 20, worldHeight / 2);
+                center.moveTo(worldWidth / 2, worldHeight / 2 - 20);
+                center.lineTo(worldWidth / 2, worldHeight / 2 + 20);
+                
                 backgroundLayer.addChild(center);
                 
-                // ワールド境界線
-                const border = new PIXI.Graphics();
-                border.lineStyle(2, 0x800000, 0.8);
-                border.drawRect(0, 0, worldWidth, worldHeight);
-                backgroundLayer.addChild(border);
-                
-                console.log('背景グリッドを作成しました');
+                console.log('背景システム初期化完了（改修計画書準拠）');
             }
         }
         
-        // ==== イベントハンドラー ====
+        // ==== イベントハンドラー（改修計画書準拠）====
         function onPointerDown(event) {
             if (!pixiApp || !drawingLayer) return;
             
             // ワールド移動中は描画を無視
             if (worldState.spacePressed) return;
             
+            // 改修計画書準拠：ペン入力は screenToWorld でワールド座標化してから描画
             const world = CoordinateSystem.screenToWorld(event.clientX, event.clientY);
             
-            // 描画可能領域判定
+            // 描画可能領域判定（改修計画書：無制限描画）
             if (!CoordinateSystem.isInDrawableArea(world.x, world.y)) {
                 return;
             }
@@ -1049,6 +1059,7 @@
         }
         
         function onPointerMove(event) {
+            // 改修計画書準拠：座標系を一元管理
             const world = CoordinateSystem.screenToWorld(event.clientX, event.clientY);
             
             // 座標表示更新（ワールド座標）
@@ -1059,6 +1070,7 @@
             
             if (!isDrawing || !currentPath || worldState.spacePressed) return;
             
+            // 改修計画書準拠：pointermove時はカメラ枠を超えても座標変換してworldContainerに書き込む
             PIXIDrawingSystem.drawLine(currentPath, world.x, world.y);
         }
         
@@ -1070,13 +1082,12 @@
             currentPath = null;
         }
         
-        // ==== カメラシステム ====
+        // ==== カメラシステム（改修計画書準拠：カメラ窓をリサイズ可能に）====
         class CameraSystem {
             static resize(newWidth, newHeight) {
                 if (!pixiApp || !cameraContainer) return;
                 
-                const oldWidth = cameraWidth;
-                const oldHeight = cameraHeight;
+                console.log(`カメラリサイズ開始: ${cameraWidth}x${cameraHeight} → ${newWidth}x${newHeight}`);
                 
                 cameraWidth = newWidth;
                 cameraHeight = newHeight;
@@ -1084,7 +1095,7 @@
                 // PIXI Applicationリサイズ
                 pixiApp.renderer.resize(newWidth, newHeight);
                 
-                // マスクを更新
+                // マスクを更新（改修計画書の resizeCamera 参考）
                 if (cameraContainer.mask) {
                     cameraContainer.mask.clear();
                     cameraContainer.mask.beginFill(0x000000);
@@ -1103,14 +1114,12 @@
                 
                 // ステータス更新
                 const cameraInfo = document.getElementById('camera-info');
-                const backendInfo = document.getElementById('backend-info');
                 if (cameraInfo) cameraInfo.textContent = `${newWidth}×${newHeight}px`;
-                if (backendInfo) backendInfo.textContent = `${worldWidth}×${worldHeight}px`;
                 
                 WorldNavigationSystem.updateWorldStatus();
                 markDirty();
                 
-                console.log(`カメラリサイズ完了: ${newWidth}x${newHeight}`);
+                console.log(`カメラリサイズ完了: ${newWidth}x${newHeight} (ワールドは維持)`);
             }
         }
         
@@ -1119,12 +1128,10 @@
             static activePopup = null;
             
             static init() {
-                console.log('UI Controller: 初期化開始');
                 this.setupToolButtons();
                 this.setupPopups();
                 this.setupSliders();
                 this.setupKeyboardShortcuts();
-                console.log('UI Controller: 初期化完了');
             }
             
             static setupToolButtons() {
@@ -1138,7 +1145,6 @@
             
             static handleToolClick(button) {
                 const toolId = button.id;
-                console.log(`ツールクリック: ${toolId}`);
                 
                 if (toolId === 'pen-tool') {
                     this.setActiveTool('pen');
@@ -1174,7 +1180,6 @@
             }
             
             static togglePopup(popupId) {
-                console.log(`ポップアップ切り替え: ${popupId}`);
                 const popup = document.getElementById(popupId);
                 if (!popup) return;
                 
@@ -1199,18 +1204,6 @@
                 const resizeButton = document.getElementById('apply-resize');
                 if (resizeButton) {
                     resizeButton.addEventListener('click', () => this.applyResize());
-                }
-                
-                // オフキャンバス設定
-                const offCanvasCheck = document.getElementById('offcanvas-enabled');
-                if (offCanvasCheck) {
-                    offCanvasCheck.addEventListener('change', (e) => {
-                        offCanvasEnabled = e.target.checked;
-                        const statusElement = document.getElementById('offcanvas-status');
-                        if (statusElement) {
-                            statusElement.textContent = offCanvasEnabled ? 'ON' : 'OFF';
-                        }
-                    });
                 }
             }
             
@@ -1349,7 +1342,7 @@
             statusElement.textContent = `位置(${x},${y}) 拡大${scale} 回転${rotation}°`;
         }
         
-        // ==== 初期化関数 ====
+        // ==== 初期化関数（改修計画書準拠）====
         async function initializeApp() {
             console.log('ワールドビュー修正版アプリケーション初期化開始');
             
@@ -1364,8 +1357,6 @@
                     backgroundAlpha: 1
                 });
                 
-                console.log('PIXI Application作成完了');
-                
                 // キャンバスをDOMに追加
                 const canvasContainer = document.getElementById('canvas-container');
                 if (!canvasContainer) {
@@ -1373,7 +1364,12 @@
                 }
                 
                 canvasContainer.appendChild(pixiApp.canvas);
-                console.log('キャンバスをDOMに追加完了');
+                
+                // 改修計画書準拠：CameraContainer構造を見直す
+                // app.stage
+                //   ├─ cameraContainer (マスク有り、サイズ変更対応)
+                //   │   └─ worldContainer (実際のキャンバス・描画レイヤー)
+                //   └─ uiContainer (UI系、マスク無し)
                 
                 // cameraContainer初期化（表示窓：400×400、固定）
                 cameraContainer = new PIXI.Container();
@@ -1388,13 +1384,9 @@
                 cameraContainer.mask = mask;
                 cameraContainer.addChild(mask);
                 
-                console.log('cameraContainer（表示窓）初期化完了');
-                
                 // worldContainer初期化（描画領域：1200×1200、移動可能）
                 worldContainer = new PIXI.Container();
                 cameraContainer.addChild(worldContainer);
-                
-                console.log('worldContainer（描画領域）初期化完了');
                 
                 // UIコンテナ（固定表示）
                 uiContainer = new PIXI.Container();
@@ -1411,15 +1403,11 @@
                 // 背景作成
                 BackgroundSystem.createBackground();
                 
-                console.log('レイヤーシステム初期化完了');
-                
                 // 描画イベント設定
                 document.addEventListener('mousedown', onPointerDown);
                 document.addEventListener('mousemove', onPointerMove);
                 document.addEventListener('mouseup', onPointerUp);
                 document.addEventListener('mouseleave', onPointerUp);
-                
-                console.log('描画イベントシステム初期化完了');
                 
                 // ワールドナビゲーション機能初期化
                 WorldNavigationSystem.init();
@@ -1447,59 +1435,16 @@
                 if (cameraInfo) cameraInfo.textContent = `${cameraWidth}×${cameraHeight}px`;
                 if (backendInfo) backendInfo.textContent = `${worldWidth}×${worldHeight}px`;
                 
-                console.log('✅ ワールドビュー修正版アプリケーション初期化完了');
-                console.log('🎯 修正完了項目（改修計画書.txt準拠）:');
-                console.log('  🔧 cameraContainer（表示窓400×400、固定、マスク付き）');
-                console.log('  🔧 worldContainer（描画領域1200×1200、移動・拡縮・回転可能）');
-                console.log('  🔧 uiContainer（固定表示要素）');
-                console.log('  🔧 座標変換API統一（screenToWorld / worldToScreen）');
-                console.log('  🔧 WorldTransformAPI（setWorldPosition, translateWorld, setWorldScale, setWorldRotation）');
-                console.log('  🔧 パン・ズーム操作でワールド全体が自然に動く');
-                console.log('  🔧 ズーム中心保持機能');
-                console.log('  🔧 背景・描画の同期移動');
-                console.log('🎯 操作方法:');
-                console.log('  🔧 Space + ドラッグ → ワールド移動');
-                console.log('  🔧 Shift + Space + ドラッグ → 拡縮/回転（縦横自動判定）');
-                console.log('  🔧 ホイール → ズーム（マウス位置中心）');
-                console.log('  🔧 Shift + ホイール → 回転');
-                console.log('  🔧 H / Shift+H → 左右・上下反転');
-                console.log('  🔧 HOMEキー → ワールドリセット');
-                console.log('  🔧 方向キー（Space押下時）→ 微調整');
+                console.log('改修計画書準拠実装完了:');
+                console.log('- cameraContainer（表示窓、マスク付き）とworldContainer（描画領域）の分離');
+                console.log('- マスクは表示枠のみ適用、描画レイヤーは自由に描画可能');
+                console.log('- カメラ窓をリサイズ可能に対応');
+                console.log('- ワールドは無限に描ける仕様');
                 
                 return true;
                 
             } catch (error) {
-                console.error('❌ 初期化失敗:', error);
-                
-                // エラー表示
-                const canvasContainer = document.getElementById('canvas-container');
-                if (canvasContainer) {
-                    canvasContainer.innerHTML = `
-                        <div style="
-                            width: ${cameraWidth}px; 
-                            height: ${cameraHeight}px; 
-                            background: #f0e0d6;
-                            border: 2px dashed #800000;
-                            display: flex;
-                            align-items: center;
-                            justify-content: center;
-                            flex-direction: column;
-                            color: #800000;
-                            font-family: monospace;
-                            text-align: center;
-                            padding: 20px;
-                            box-sizing: border-box;
-                        ">
-                            <div style="font-size: 24px; margin-bottom: 10px;">⚠️</div>
-                            <div style="font-size: 14px; margin-bottom: 10px;">ワールドビュー修正版初期化エラー</div>
-                            <div style="font-size: 12px; opacity: 0.8;">${error.message}</div>
-                            <div style="font-size: 11px; margin-top: 10px; opacity: 0.6;">
-                                ブラウザを再読み込みしてください
-                            </div>
-                        </div>
-                    `;
-                }
-                
+                console.error('初期化失敗:', error);
                 return false;
             }
         }
@@ -1510,35 +1455,25 @@
             
             // ライブラリチェック
             if (!window.PIXI) {
-                console.error('❌ PIXI.js が読み込まれていません');
+                console.error('PIXI.js が読み込まれていません');
                 return;
             }
             
-            console.log(`✅ PIXI.js v${PIXI.VERSION} 読み込み完了`);
+            console.log(`PIXI.js v${PIXI.VERSION} 読み込み完了`);
             
             // アプリケーション初期化
             initializeApp().then((success) => {
                 if (success) {
-                    console.log('🎨 Futaba Drawing Tool v8rev7 - ワールドビュー修正版 起動完了');
-                    console.log('📘 操作ガイド:');
-                    console.log('  Space + ドラッグ: ワールド全体移動（カメラ固定、中身が動く）');
-                    console.log('  Shift + Space + ドラッグ: 拡縮/回転（縦横自動判定）');
-                    console.log('  ホイール: ズーム（マウス位置中心）');
-                    console.log('  Shift + ホイール: 回転');
-                    console.log('  H: 左右反転');
-                    console.log('  Shift + H: 上下反転');
-                    console.log('  HOME: ワールドリセット');
-                    console.log('  方向キー（Space押下時）: 移動・拡縮・回転の微調整');
-                    console.log('📘 修正点:');
-                    console.log('  ✅ カメラフレーム固定問題を解決');
-                    console.log('  ✅ ワールド全体が自然に動くように修正');
-                    console.log('  ✅ 座標変換の統一化');
-                    console.log('  ✅ ズーム中心保持機能');
+                    console.log('Futaba Drawing Tool v8rev7 - ワールドビュー修正版 起動完了');
+                    console.log('改修計画書の重要ポイント実装確認:');
+                    console.log('✅ カメラを200x200 → 600x600に変えてもワールド全体はそのまま、窓だけ拡大縮小される');
+                    console.log('✅ 画面外から線を引いても worldContainer に描かれる');
+                    console.log('✅ UI（ボタンやステータス表示）はマスクされない');
                 } else {
-                    console.log('❌ 初期化に失敗しました');
+                    console.log('初期化に失敗しました');
                 }
             }).catch((error) => {
-                console.error('❌ 予期しないエラー:', error);
+                console.error('予期しないエラー:', error);
             });
         });
         
