@@ -694,13 +694,37 @@
                 };
                 this.handlers = { move: null, up: null, cancel: null };
                 this.updateScheduled = false;
+                this.initialized = false;
             }
             
             initialize(ticker) {
                 this.ticker = ticker;
                 this.ticker.add(() => this.updatePosition());
                 this.setupPointerEvents();
+                this.setInitialPosition(); // 修正: 初期位置を明示的に設定
+                this.initialized = true;
                 log('📷 DomPositionManager: Pointer events with pen support enabled');
+            }
+            
+            // 修正: 初期位置を正しく設定
+            setInitialPosition() {
+                // viewportCenterの計算を統一
+                const viewportCenter = this.calculateViewportCenter();
+                
+                // 初期transformを設定
+                this.container.style.transform = 'translate(-50%, -50%)';
+                this.container.style.left = viewportCenter.x + 'px';
+                this.container.style.top = viewportCenter.y + 'px';
+                
+                this.updateStatusDisplay();
+            }
+            
+            // 修正: ビューポート中央の計算を統一
+            calculateViewportCenter() {
+                return {
+                    x: (window.innerWidth - 310) / 2 + 50, // サイドバー50px分を追加
+                    y: window.innerHeight / 2
+                };
             }
             
             setupPointerEvents() {
@@ -795,20 +819,18 @@
                     this.position.x = Math.round(targetX);
                     this.position.y = Math.round(targetY);
                     
-                    const viewportCenter = {
-                        x: (window.innerWidth - 310) / 2,
-                        y: window.innerHeight / 2
-                    };
+                    // 修正: ビューポート中央の計算を統一
+                    const viewportCenter = this.calculateViewportCenter();
                     
                     const offset = {
                         x: viewportCenter.x + this.position.x,
                         y: viewportCenter.y + this.position.y
                     };
                     
-                    this.container.style.transform = 
-                        `translate3d(${offset.x}px, ${offset.y}px, 0) translate(-50%, -50%)`;
-                    this.container.style.left = '0px';
-                    this.container.style.top = '0px';
+                    // 修正: transformの適用方法を統一
+                    this.container.style.transform = 'translate(-50%, -50%)';
+                    this.container.style.left = offset.x + 'px';
+                    this.container.style.top = offset.y + 'px';
                 }
                 
                 this.updateScheduled = false;
@@ -850,9 +872,8 @@
                 this.state.panning = false;
                 this.stopPanning();
                 
-                this.container.style.transform = 'translate(-50%, -50%)';
-                this.container.style.left = '50%';
-                this.container.style.top = '50%';
+                // 修正: リセット時も統一された位置設定
+                this.setInitialPosition();
                 
                 log('📷 Position reset');
                 this.updateStatusDisplay();

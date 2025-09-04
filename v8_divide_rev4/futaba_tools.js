@@ -22,7 +22,9 @@ class LayerManager {
             dragging: false,
             dragItem: null,
             startY: 0,
-            offset: 0
+            offset: 0,
+            boundMouseMove: null,
+            boundMouseUp: null
         };
     }
     
@@ -256,15 +258,12 @@ class LayerManager {
             
             layerItem.classList.add('dragging');
             
-            const boundMouseMove = this.onLayerDrag.bind(this);
-            const boundMouseUp = this.onLayerDragEnd.bind(this);
+            // 修正: バインド済みハンドラーを保存
+            this.dragState.boundMouseMove = (e) => this.onLayerDrag(e);
+            this.dragState.boundMouseUp = (e) => this.onLayerDragEnd(e);
             
-            document.addEventListener('mousemove', boundMouseMove);
-            document.addEventListener('mouseup', boundMouseUp);
-            
-            // クリーンアップ用にイベントハンドラを保存
-            this.dragState.boundMouseMove = boundMouseMove;
-            this.dragState.boundMouseUp = boundMouseUp;
+            document.addEventListener('mousemove', this.dragState.boundMouseMove);
+            document.addEventListener('mouseup', this.dragState.boundMouseUp);
             
             e.preventDefault();
             e.stopPropagation();
@@ -276,6 +275,12 @@ class LayerManager {
         
         const layerList = document.getElementById('layer-list');
         const items = Array.from(layerList.children);
+        const dragItem = this.dragState.dragItem; // 修正: dragItemを正しく参照
+        
+        // ドラッグ中のアイテムの視覚的移動
+        dragItem.style.position = 'absolute';
+        dragItem.style.top = (e.clientY - this.dragState.offset) + 'px';
+        dragItem.style.zIndex = '1000';
         
         // ドロップターゲットの検出
         items.forEach(item => {
@@ -325,6 +330,7 @@ class LayerManager {
             document.removeEventListener('mouseup', this.dragState.boundMouseUp);
         }
         
+        // 修正: dragStateを正しく初期化
         this.dragState = {
             dragging: false,
             dragItem: null,
@@ -756,10 +762,4 @@ if (typeof window !== 'undefined') {
 }
 
 // ==== Utility Functions ====
-// log関数はfutaba_main.htmlで定義済みのため、ここでは定義しないラッグ中のアイテムの視覚的移動
-        const dragItem = this.dragState.dragItem;
-        dragItem.style.position = 'absolute';
-        dragItem.style.top = (e.clientY - this.dragState.offset) + 'px';
-        dragItem.style.zIndex = '1000';
-        
-        // ド
+// log関数はfutaba_main.htmlで定義済みのため、ここでは定義しない
