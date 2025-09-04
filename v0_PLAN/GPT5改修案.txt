@@ -1,129 +1,294 @@
-✅ 改修策
+====================================================
+Futaba Drawing Tool v8 - キャンバス移動改修計画
+====================================================
 
-次の流れで修正すればOKです。
+■ 1. 目的
+- ペン操作でも Space + ドラッグでキャンバス移動できるようにする
+- フローティング状態（ペンが画面に触れていない状態）ではキャンバスが追従しないようにする
+- マウス操作との挙動は維持
 
-レイヤーパネルDOMを生成
+---
 
-<div id="layer-panel" class="layer-panel hidden">
-  <div class="layer" data-id="0">背景</div>
-  <div class="layer" data-id="1">レイヤー1</div>
-</div>
+■ 2. 現状の問題
+- マウス: 正常に動作
+- ペン:
+  1. Space + ペンドラッグでキャンバス移動開始
+  2. ペンがフローティング状態になるとキャンバスが追従し続ける
+  3. Space を離すと移動停止
+- 原因: ペンのフローティング状態でも pointermove が発火し、既存ドラッグ判定が残っているため
+
+---
+
+■ 3. 改修方針
+1. ドラッグ開始条件を明確化
+   - Space押下中
+   - pointerdown イベント発生
+   - ペンの場合は pressure > 0
+2. pointermove イベントの処理条件を追加
+   - isDragging == true
+   - Space押下中
+   - ペンの場合は pressure > 0
+3. pointerup / pointercancel イベントでドラッグ状態をリセット
+   - フローティング状態でも停止するように
+4. マウス操作は従来通り維持
+
+---
+
+■ 4. 状態変数
+- isDragging: ドラッグ中フラグ
+- isSpacePressed: Spaceキー押下フラグ
+- dragStart: ドラッグ開始座標
+- canvasPos: canvas-container の位置
+- pointerType / pressure: pointerイベントの判定用
+
+---
+
+■ 5. フロー
+1. pointerdown 発生
+   - 条件: Space押下かつ pressure > 0
+   - isDragging = true, dragStart 記録
+2. pointermove 発生
+   - 条件: isDragging == true かつ Space押下中かつ pressure > 0
+   - dx/dy 計算 → canvas-container 移動
+   - dragStart 更新
+3. pointerup / pointercancel 発生
+   - isDragging = false
+
+---
+
+■ 6. 注意点
+- pointermove はフローティング中でも発火するため pressure=0 の場合は無視
+- マウス操作は pressure プロパティがないため無条件で処理
+- 他の描画ツールや UI 操作と干渉しないように propagation を管理
+====================================================
 
 
-初期状態は hidden クラスで非表示。
+// ========================
+// Futaba Drawing Tool v8 - ペン対応キャンバス移動サンプル
+// ========================
 
-CSSで右サイドにパネルが出るようにする。
-
-サイドバーのレイヤーアイコンにイベントを繋げる
-
-document.getElementById("layerButton").addEventListener("click", () => {
-  document.getElementById("layer-panel").classList.toggle("hidden");
-});
-
-
-これでクリックするとパネルが表示/非表示。
-
-レイヤー情報をPixiコンテナと同期
-
-レイヤー追加時に new PIXI.Container() を作ってステージに追加。
-
-同時にパネルにも <div class="layer">新規レイヤー</div> を追加。
-
-選択中のレイヤーは .active クラスを付けて見た目で分かるように。
-
-削除・非表示機能の実装
-
-削除 → container.destroy() してパネルからも消す。
-
-非表示 → container.visible = false; を切り替え。
-
-🛠 提案する直し方
-
-今のコードには「レイヤーパネルUIの生成とトグル処理」がそもそも書かれていないので、それを追加すれば動きます。
-
-Pixi LayersやPixi UIは使っていないので気にしなくてOK。
-
-LayerPlan.txt の仕様に沿って「Pixiコンテナをレイヤーに見立ててUIで操作する」実装を進めれば良い。
-
-
-=====================================
-
-
-マウス操作では Space+ドラッグ → スムーズに移動できる
-
-ペン操作では「浮いた状態」でも動いてしまう（押し付けてなくてもホバーで動く感じ）
-
-本来は「ペンがキャンバスに接触してから（pointerdown → move）」じゃないと移動が始まってほしくない
-
-🔍 原因
-
-これは PointerEvent の扱いが原因です。
-
-マウスとペンの違い
-
-マウス → mousedown / mousemove / mouseup
-
-ペン → pointerdown / pointermove / pointerup
-
-ペンは hover 時にも pointermove が飛ぶ（特に Windows Ink やタブレット環境）。
-
-今のコードは pointermove をそのまま「カメラ移動」に結びつけているので、押していなくても動く。
-
-判定不足
-
-「Space が押されている」だけで移動を開始している。
-
-「pointerdown（押している状態）」を確認していない。
-
-結果、hover状態でも move が発火して動いてしまう。
-
-✅ 改善策
-
-pointerdown があるときだけ移動モードにするフラグを追加すれば直ります。
-
-例：修正イメージ
-let isPanning = false;
+let isDragging = false;
 let isSpacePressed = false;
+let dragStart = { x: 0, y: 0 };
+let canvasPos = { x: 0, y: 0 };
 
-// Spaceキー押下状態を記録
-document.addEventListener("keydown", (e) => {
-  if (e.code === "Space") isSpacePressed = true;
-});
-document.addEventListener("keyup", (e) => {
-  if (e.code === "Space") isSpacePressed = false;
-  isPanning = false; // Space離したら強制終了
-});
+// Spaceキー押下管理
+window.addEventListener('keydown', e => { if(e.code === 'Space') isSpacePressed = true; });
+window.addEventListener('keyup', e => { if(e.code === 'Space') isSpacePressed = false; });
 
-// pointerdownでフラグをオン
-canvas.addEventListener("pointerdown", (e) => {
-  if (isSpacePressed) {
-    isPanning = true;
-    lastX = e.clientX;
-    lastY = e.clientY;
-  }
-});
+// pointerdown
+app.view.addEventListener('pointerdown', e => {
+    // Space押下中のみドラッグ開始
+    if(!isSpacePressed) return;
 
-// pointermoveで移動
-canvas.addEventListener("pointermove", (e) => {
-  if (isPanning && isSpacePressed) {
-    const dx = e.clientX - lastX;
-    const dy = e.clientY - lastY;
-    camera.x += dx;
-    camera.y += dy;
-    lastX = e.clientX;
-    lastY = e.clientY;
-  }
+    // ペンの場合はフローティング状態を無視 (pressure=0)
+    if(e.pointerType === 'pen' && e.pressure === 0) return;
+
+    isDragging = true;
+    dragStart.x = e.clientX;
+    dragStart.y = e.clientY;
+
+    // pointer capture を設定して pointermove を確実に捕捉
+    e.target.setPointerCapture(e.pointerId);
 });
 
-// pointerupで終了
-canvas.addEventListener("pointerup", () => {
-  isPanning = false;
+// pointermove
+app.view.addEventListener('pointermove', e => {
+    if(!isDragging || !isSpacePressed) return;
+
+    // フローティング状態は無視
+    if(e.pointerType === 'pen' && e.pressure === 0) return;
+
+    const dx = e.clientX - dragStart.x;
+    const dy = e.clientY - dragStart.y;
+
+    // canvas-container の位置更新
+    canvasPos.x += dx;
+    canvasPos.y += dy;
+    app.view.style.left = canvasPos.x + 'px';
+    app.view.style.top = canvasPos.y + 'px';
+
+    dragStart.x = e.clientX;
+    dragStart.y = e.clientY;
 });
 
-📝 改修ポイント
+// pointerup / pointercancel
+app.view.addEventListener('pointerup', e => {
+    isDragging = false;
+    e.target.releasePointerCapture(e.pointerId);
+});
+app.view.addEventListener('pointercancel', e => {
+    isDragging = false;
+    e.target.releasePointerCapture(e.pointerId);
+});
 
-isSpacePressed だけでなく 「押しているかどうか」(pointerdown) を確認するフラグが必要。
 
-これで **マウスもペンも「押し込み + Space」でのみ移動」**になる。
+🔹 ポイント
 
-hover状態での pointermove は無視される。
+Space+ペンドラッグで移動
+
+pointerdown でフローティング状態を無視 (pressure>0)
+
+pointermove で dx/dy 更新
+
+フローティング状態の追従防止
+
+pressure===0 の場合は pointermove を無視
+
+マウス操作は従来通り動作
+
+pressure プロパティがないため無条件で移動処理
+
+pointer capture を利用
+
+ペンをドラッグ中にビュー外へ移動してもイベントが途切れない
+
+==============================================================
+
+
+====================================================
+Futaba Drawing Tool v8 - レイヤー順序入れ替え改修計画
+====================================================
+
+■ 1. 目的
+- レイヤーパネル上でドラッグ操作により、描画レイヤーの表示順序を変更できるようにする
+- 現在の Pixi UI + @pixi/layers の構造に自然に統合
+- ユーザーはドラッグでレイヤー階層を直感的に入れ替え可能
+
+---
+
+■ 2. 現状の状況
+- レイヤー機能は最小限搭載済み（追加・削除可能）
+- UI は Pixi UI を利用
+- 描画は各レイヤー PIXI.Container 上に行われている
+- LayerGroup で管理されている
+
+---
+
+■ 3. 改修方針
+1. **ドラッグ可能な UI 要素**
+   - Pixi UI の `UIDraggable` を利用して、レイヤー UI パネルのカードを縦方向にドラッグ可能にする
+2. **LayerGroup 順序との同期**
+   - ドラッグ終了 (`dragend`) イベントで、UI 上の順序を取得
+   - LayerGroup.children 配列の順序を UI と一致させる
+   - 描画優先度は LayerGroup 内のインデックス順で決まるため、再描画不要
+3. **アクティブレイヤーの保持**
+   - ドラッグ中にアクティブレイヤーは赤ハイライトで維持
+4. **制約**
+   - 背景レイヤーは順序変更不可
+   - 削除不可
+5. **追加考慮**
+   - ライブラリ `UIDraggable` のドラッグ対象をカード全体に設定
+   - 複数レイヤー追加後も自動でドラッグ対応
+
+---
+
+■ 4. 状態変数
+- `layerPanel`: UIList / UIContainer 配下のレイヤーカードリスト
+- `drawingLayerGroup`: PIXI.LayerGroup / Container で描画レイヤーを管理
+- `currentLayer`: 現在アクティブな描画レイヤー
+- `draggedUIItem`: 現在ドラッグ中の UI カード
+
+---
+
+■ 5. フロー
+1. レイヤーカードに UIDraggable を設定
+2. `dragstart` イベントで `draggedUIItem` に設定
+3. `dragmove` でカードの表示位置を更新（UI 上のみ）
+4. `dragend` で UI 上の並び順を取得
+5. LayerGroup.children を UI 順に合わせてインデックス更新
+6. `updateLayerPanel()` でアクティブハイライト・ボタン再描画
+
+---
+
+■ 6. 注意点
+- 背景レイヤー（Layer 0）は固定
+- アクティブレイヤー変更時は赤ハイライトを更新
+- UIDraggable の dragend 内で LayerGroup の setChildIndex を使う
+- マウス・ペン両対応
+- 他の UI 操作（追加・削除）と干渉しないようイベント管理
+
+---
+
+■ 7. ライブラリ活用
+- @pixi/ui: UIDraggable, UIContainer, UIList, UIButton, UILabel
+- @pixi/layers: LayerGroup, Stage
+- ライブラリを使うことでドラッグ処理や UI 更新が簡素化され、AIでも追従しやすい
+====================================================
+
+// ========================
+// Futaba Drawing Tool v8 - レイヤー順序ドラッグサンプル
+// ========================
+
+// layerPanel: UIContainer 配下にレイヤーカードを配置
+// drawingLayerGroup: PIXI.Container (または PIXI.LayerGroup) に描画レイヤーを保持
+// currentLayer: 現在アクティブなレイヤー
+
+// 1. レイヤーカード作成・ドラッグ設定
+function createLayerCard(layer, index) {
+    const card = new UIContainer();
+    const label = new UILabel({ text: index === 0 ? '背景' : `レイヤー ${index}` });
+    card.addChild(label);
+
+    // アクティブハイライト
+    if(layer === currentLayer){
+        label.style.fill = 0xff0000;
+    }
+
+    // 背景以外は削除ボタン
+    if(index !== 0){
+        const delBtn = new UIButton({ text: '🗑' });
+        delBtn.on('click', () => {
+            drawingLayerGroup.removeChild(layer);
+            if(currentLayer === layer) currentLayer = layer1; // デフォルトを Layer1 に
+            updateLayerPanel();
+        });
+        card.addChild(delBtn);
+    }
+
+    // ドラッグ設定 (UIDraggable)
+    const draggable = new UIDraggable(card, { axis: 'y' });
+    draggable.on('dragend', () => {
+        syncLayerOrderWithUI();
+    });
+
+    return card;
+}
+
+// 2. UIパネル更新
+function updateLayerPanel() {
+    layerPanel.removeChildren();
+    const layers = [layer0, layer1, ...drawingLayerGroup.children.slice(2)];
+    layers.forEach((layer, index) => {
+        const card = createLayerCard(layer, index);
+        layerPanel.addChild(card);
+    });
+}
+
+// 3. UI順序に合わせて LayerGroup 更新
+function syncLayerOrderWithUI() {
+    const uiItems = layerPanel.children;
+    uiItems.forEach((uiItem, newIndex) => {
+        const labelText = uiItem.children[0].text;
+        let targetLayer;
+        if(labelText === '背景'){
+            targetLayer = layer0;
+        } else {
+            const idx = parseInt(labelText.replace('レイヤー ', ''), 10);
+            targetLayer = drawingLayerGroup.children[idx] || layer1;
+        }
+
+        if(targetLayer && drawingLayerGroup.getChildIndex(targetLayer) !== newIndex){
+            drawingLayerGroup.setChildIndex(targetLayer, newIndex);
+        }
+    });
+
+    // アクティブハイライト更新
+    updateLayerPanel();
+}
+
+// 4. 初回描画
+updateLayerPanel();
+
+
+
