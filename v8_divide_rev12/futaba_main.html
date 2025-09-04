@@ -1,0 +1,701 @@
+</style>
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button" id="resize-tool" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-scaling-icon lucide-scaling">
+                    <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M14 15H9v-5"/>
+                    <path d="M16 3h5v5"/>
+                    <path d="M21 3 9 15"/>
+                </svg>
+            </div>
+            
+            <div class="tool-button active" id="layer-tool" title="レイヤー">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <polygon points="12,2 2,7 12,12 22,7 12,2"/>
+                    <polyline points="2,17 12,22 22,17"/>
+                    <polyline points="2,12 12,17 22,12"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button" id="pen-tool" title="ベクターペン">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pen-line-icon lucide-pen-line">
+                    <path d="M13 21h8"/>
+                    <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+                </svg>
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eraser-icon lucide-eraser">
+                    <path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/>
+                    <path d="m5.082 11.09 8.828 8.828"/>
+                </svg>
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container" id="canvas-container">
+                <div class="checkerboard-overlay"></div>
+                <div id="drawing-canvas"></div>
+            </div>
+        </div>
+        
+        <!-- レイヤーパネル -->
+        <div class="layer-panel" id="layer-panel">
+            <div class="layer-header">
+                <span>レイヤー</span>
+                <div class="layer-controls">
+                    <div class="layer-add-btn" id="add-layer-btn" title="レイヤー追加"></div>
+                    <div class="layer-add-btn" id="add-file-btn" title="ファイル追加"></div>
+                </div>
+            </div>
+            <div class="layer-list" id="layer-list"></div>
+        </div>
+    </div>
+    
+    <!-- レイヤー操作ポップアップ -->
+    <div class="layer-popup" id="layer-popup">
+        <div class="popup-title">レイヤー設定</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-container">
+                <div class="slider" id="layer-opacity-slider">
+                    <div class="slider-track" id="layer-opacity-track"></div>
+                    <div class="slider-handle" id="layer-opacity-handle"></div>
+                </div>
+                <div class="slider-value" id="layer-opacity-value">100%</div>
+            </div>
+        </div>
+        
+        <div class="action-buttons">
+            <div class="action-button" id="merge-layer-btn">下と結合</div>
+            <div class="action-button" id="duplicate-layer-btn">複製</div>
+        </div>
+    </div>
+    
+    <!-- ツール設定ポップアップ -->
+    <div class="popup-panel" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-size-slider">
+                    <div class="slider-track" id="pen-size-track"></div>
+                    <div class="slider-handle" id="pen-size-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-size-value">16.0px</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-opacity-slider">
+                    <div class="slider-track" id="pen-opacity-track"></div>
+                    <div class="slider-handle" id="pen-opacity-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-opacity-value">85.0%</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="popup-panel" id="resize-settings" style="left: 60px; top: 150px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバスサイズ</div>
+            <div class="size-input-group">
+                <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                <div class="size-multiply">×</div>
+                <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="action-button" id="apply-resize">適用</div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Layer: <span id="current-layer">背景</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">Camera: <span id="camera-position">x: 0, y: 0</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+        </div>
+    </div>
+    
+    <!-- UNDO通知 -->
+    <div class="undo-notification" id="undo-notification">
+        レイヤーを削除しました
+    </div>
+
+    <!-- ライブラリ読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+    
+    <script>
+        /**
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev8
+         * AI改修版 - Drawing Engine Hub
+         */
+        
+        const APP_CONFIG = {
+            version: '8.0.8-ai-refactored',
+            canvas: { width: 400, height: 400 },
+            rendering: { antialias: true, resolution: 1 }
+        };
+        
+        // === Bootstrap: ライブラリチェック ===
+        class AppBootstrap {
+            static checkLibraries() {
+                const required = { pixi: window.PIXI, gsap: window.gsap };
+                return Object.entries(required).every(([name, lib]) => {
+                    if (!lib) {
+                        console.error(`❌ Library ${name} not found`);
+                        return false;
+                    }
+                    return true;
+                });
+            }
+            
+            static init() {
+                return this.checkLibraries();
+            }
+        }
+        
+        // === CameraController: キャンバス移動制御 ===
+        class CameraController {
+            constructor() {
+                this.container = document.getElementById('canvas-container');
+                this.position = { x: 0, y: 0, targetX: 0, targetY: 0 };
+                this.state = { 
+                    panning: false, 
+                    startX: 0, 
+                    startY: 0,
+                    pointerId: null
+                };
+                this.updateScheduled = false;
+            }
+            
+            initialize(ticker) {
+                this.ticker = ticker;
+                this.ticker.add(() => this.updatePosition());
+                this.setupPointerEvents();
+                this.setInitialPosition();
+            }
+            
+            setInitialPosition() {
+                const viewportCenter = this.calculateViewportCenter();
+                this.container.style.transform = 'translate(-50%, -50%)';
+                this.container.style.left = viewportCenter.x + 'px';
+                this.container.style.top = viewportCenter.y + 'px';
+                this.updateStatusDisplay();
+            }
+            
+            calculateViewportCenter() {
+                return {
+                    x: (window.innerWidth - 50) / 2 + 25,
+                    y: window.innerHeight / 2
+                };
+            }
+            
+            setupPointerEvents() {
+                this.container.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+            }
+            
+            onPointerDown(e) {
+                if (!window.futabaApp.spacePressed) return;
+                
+                if (e.pointerType === 'pen' && e.pressure === 0) return;
+                
+                this.state.panning = true;
+                this.state.startX = e.clientX;
+                this.state.startY = e.clientY;
+                this.state.pointerId = e.pointerId;
+                
+                this.container.setPointerCapture(e.pointerId);
+                
+                const onMove = (e) => this.onPointerMove(e);
+                const onUp = (e) => this.onPointerUp(e);
+                
+                this.container.addEventListener('pointermove', onMove);
+                this.container.addEventListener('pointerup', onUp);
+                this.container.addEventListener('pointercancel', onUp);
+                
+                this.onUp = () => {
+                    this.container.removeEventListener('pointermove', onMove);
+                    this.container.removeEventListener('pointerup', onUp);
+                    this.container.removeEventListener('pointercancel', onUp);
+                };
+                
+                e.preventDefault();
+            }
+            
+            onPointerMove(e) {
+                if (!this.state.panning || e.pointerId !== this.state.pointerId) return;
+                if (!window.futabaApp.spacePressed) return;
+                
+                if (e.pointerType === 'pen' && e.pressure === 0) return;
+                
+                const dx = e.clientX - this.state.startX;
+                const dy = e.clientY - this.state.startY;
+                
+                this.position.targetX += dx;
+                this.position.targetY += dy;
+                
+                const maxOffset = {
+                    x: (window.innerWidth - 50) / 2,
+                    y: window.innerHeight / 2
+                };
+                
+                this.position.targetX = Math.max(-maxOffset.x * 2, Math.min(maxOffset.x * 2, this.position.targetX));
+                this.position.targetY = Math.max(-maxOffset.y * 2, Math.min(maxOffset.y * 2, this.position.targetY));
+                
+                this.state.startX = e.clientX;
+                this.state.startY = e.clientY;
+                this.updateScheduled = true;
+                this.updateStatusDisplay();
+                
+                e.preventDefault();
+            }
+            
+            onPointerUp(e) {
+                if (e.pointerId !== this.state.pointerId) return;
+                this.stopPanning();
+            }
+            
+            stopPanning() {
+                this.state.panning = false;
+                if (this.state.pointerId && this.container.hasPointerCapture(this.state.pointerId)) {
+                    this.container.releasePointerCapture(this.state.pointerId);
+                }
+                if (this.onUp) this.onUp();
+                this.state.pointerId = null;
+            }
+            
+            updatePosition() {
+                if (!this.updateScheduled) return;
+                
+                const { x, y } = this.position;
+                const { targetX, targetY } = this.position;
+                
+                if (x !== targetX || y !== targetY) {
+                    this.position.x = Math.round(targetX);
+                    this.position.y = Math.round(targetY);
+                    
+                    const viewportCenter = this.calculateViewportCenter();
+                    const offset = {
+                        x: viewportCenter.x + this.position.x,
+                        y: viewportCenter.y + this.position.y
+                    };
+                    
+                    this.container.style.transform = 'translate(-50%, -50%)';
+                    this.container.style.left = offset.x + 'px';
+                    this.container.style.top = offset.y + 'px';
+                }
+                
+                this.updateScheduled = false;
+            }
+            
+            moveByArrows(dx, dy) {
+                this.position.targetX += dx;
+                this.position.targetY += dy;
+                
+                const maxOffset = {
+                    x: (window.innerWidth - 50) / 2,
+                    y: window.innerHeight / 2
+                };
+                
+                this.position.targetX = Math.max(-maxOffset.x * 2, Math.min(maxOffset.x * 2, this.position.targetX));
+                this.position.targetY = Math.max(-maxOffset.y * 2, Math.min(maxOffset.y * 2, this.position.targetY));
+                
+                this.updateScheduled = true;
+                this.updateStatusDisplay();
+            }
+            
+            reset() {
+                this.position = { x: 0, y: 0, targetX: 0, targetY: 0 };
+                this.state.panning = false;
+                this.stopPanning();
+                this.setInitialPosition();
+            }
+            
+            updateStatusDisplay() {
+                const element = document.getElementById('camera-position');
+                if (element) {
+                    element.textContent = `x: ${Math.round(this.position.targetX)}, y: ${Math.round(this.position.targetY)}`;
+                }
+            }
+        }
+        
+        // === DrawingEngine: PIXI描画エンジン ===
+        class DrawingEngine {
+            constructor() {
+                this.app = null;
+                this.containers = { camera: null, world: null, ui: null };
+                this.paths = [];
+                this.layerBridge = null;
+                this.camera = null;
+            }
+            
+            async initialize() {
+                this.app = new PIXI.Application();
+                await this.app.init({
+                    width: APP_CONFIG.canvas.width,
+                    height: APP_CONFIG.canvas.height,
+                    background: 0xf0e0d6,
+                    backgroundAlpha: 0,
+                    antialias: APP_CONFIG.rendering.antialias,
+                    resolution: APP_CONFIG.rendering.resolution,
+                    autoDensity: false
+                });
+                
+                const container = document.getElementById('drawing-canvas');
+                container.appendChild(this.app.canvas);
+                
+                this.setupContainers();
+                this.setupInteraction();
+                
+                this.layerBridge = new window.FutabaLayers.LayerBridge(this);
+                this.camera = new CameraController();
+                this.camera.initialize(this.app.ticker);
+                
+                return true;
+            }
+            
+            setupContainers() {
+                this.containers.camera = new PIXI.Container();
+                this.containers.world = new PIXI.Container();
+                this.containers.ui = new PIXI.Container();
+                
+                const maskGraphics = new PIXI.Graphics();
+                maskGraphics.rect(0, 0, APP_CONFIG.canvas.width, APP_CONFIG.canvas.height);
+                maskGraphics.fill(0x000000);
+                this.app.stage.addChild(maskGraphics);
+                this.containers.camera.mask = maskGraphics;
+                
+                this.containers.camera.addChild(this.containers.world);
+                this.app.stage.addChild(this.containers.camera);
+                this.app.stage.addChild(this.containers.ui);
+                
+                this.containers.world.x = 0;
+                this.containers.world.y = 0;
+                this.containers.world.scale.set(1);
+            }
+            
+            setupInteraction() {
+                this.containers.camera.eventMode = "static";
+                this.containers.camera.hitArea = new PIXI.Rectangle(0, 0, APP_CONFIG.canvas.width, APP_CONFIG.canvas.height);
+                
+                this.containers.camera.on('pointerdown', (e) => this.onPointerDown(e));
+                this.containers.camera.on('pointermove', (e) => this.onPointerMove(e));
+                this.containers.camera.on('pointerup', (e) => this.onPointerUp(e));
+                this.containers.camera.on('pointerupoutside', (e) => this.onPointerUp(e));
+                this.containers.camera.on('pointercancel', (e) => this.onPointerUp(e));
+            }
+            
+            onPointerDown(event) {
+                const spacePressed = window.futabaApp.spacePressed;
+                const originalEvent = event.data.originalEvent;
+                
+                if (spacePressed) {
+                    event.stopPropagation();
+                } else {
+                    if (originalEvent.pointerType === 'pen' && originalEvent.pressure === 0) {
+                        return;
+                    }
+                    
+                    if (window.futabaApp.tools) {
+                        window.futabaApp.tools.startDrawing(event.global.x, event.global.y, spacePressed);
+                    }
+                }
+            }
+            
+            onPointerMove(event) {
+                const spacePressed = window.futabaApp.spacePressed;
+                const originalEvent = event.data.originalEvent;
+                
+                if (spacePressed) {
+                    if (window.futabaApp.ui) {
+                        window.futabaApp.ui.updateCoordinates(event.global.x, event.global.y);
+                    }
+                    return;
+                } else {
+                    if (originalEvent.pointerType === 'pen' && originalEvent.pressure === 0) {
+                        return;
+                    }
+                    
+                    if (window.futabaApp.tools) {
+                        window.futabaApp.tools.continueDrawing(event.global.x, event.global.y, spacePressed);
+                    }
+                    if (window.futabaApp.ui) {
+                        window.futabaApp.ui.updateCoordinates(event.global.x, event.global.y);
+                    }
+                }
+            }
+            
+            onPointerUp(event) {
+                const spacePressed = window.futabaApp.spacePressed;
+                
+                if (!spacePressed) {
+                    if (window.futabaApp.tools) {
+                        window.futabaApp.tools.stopDrawing();
+                    }
+                }
+            }
+            
+            createPath(x, y, size, color, opacity) {
+                const path = {
+                    id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    graphics: new PIXI.Graphics(),
+                    points: [],
+                    color, size, opacity,
+                    isComplete: false
+                };
+                
+                path.graphics.circle(x, y, size / 2);
+                path.graphics.fill({ color: path.color, alpha: path.opacity });
+                
+                path.points.push({ x, y, size });
+                
+                if (this.layerBridge.layerSystem) {
+                    this.layerBridge.layerSystem.addPathToActiveLayer(path);
+                }
+                this.paths.push(path);
+                return path;
+            }
+            
+            extendPath(path, x, y) {
+                if (!path || path.points.length === 0) return;
+                
+                const lastPoint = path.points[path.points.length - 1];
+                const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
+                
+                if (distance < 1.5) return;
+                
+                const steps = Math.max(1, Math.ceil(distance / 1.5));
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    const px = lastPoint.x + (x - lastPoint.x) * t;
+                    const py = lastPoint.y + (y - lastPoint.y) * t;
+                    
+                    path.graphics.circle(px, py, path.size / 2);
+                    path.graphics.fill({ color: path.color, alpha: path.opacity });
+                }
+                
+                path.points.push({ x, y, size: path.size });
+            }
+            
+            resize(newWidth, newHeight) {
+                APP_CONFIG.canvas.width = newWidth;
+                APP_CONFIG.canvas.height = newHeight;
+                
+                this.app.renderer.resize(newWidth, newHeight);
+                
+                if (this.containers.camera.mask) {
+                    this.containers.camera.mask.clear();
+                    this.containers.camera.mask.rect(0, 0, newWidth, newHeight);
+                    this.containers.camera.mask.fill(0x000000);
+                }
+                
+                this.containers.camera.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
+            }
+            
+            clear() {
+                this.paths.forEach(path => {
+                    path.graphics.destroy();
+                });
+                this.paths = [];
+                
+                if (this.layerBridge.layerSystem) {
+                    this.layerBridge.layerSystem.clearAllLayers();
+                }
+            }
+        }
+        
+        // === SystemMonitor: FPS監視 ===
+        class SystemMonitor {
+            constructor() {
+                this.frameCount = 0;
+                this.lastTime = performance.now();
+            }
+            
+            start() {
+                const update = () => {
+                    this.frameCount++;
+                    const currentTime = performance.now();
+                    
+                    if (currentTime - this.lastTime >= 1000) {
+                        const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
+                        const element = document.getElementById('fps');
+                        if (element) {
+                            element.textContent = fps;
+                        }
+                        
+                        this.frameCount = 0;
+                        this.lastTime = currentTime;
+                    }
+                    
+                    requestAnimationFrame(update);
+                };
+                
+                update();
+            }
+        }
+        
+        // === AppController: メインアプリ制御 ===
+        class AppController {
+            constructor() {
+                this.spacePressed = false;
+                this.engine = new DrawingEngine();
+                this.monitor = new SystemMonitor();
+                
+                this.tools = null;
+                this.ui = null;
+                this.layerSystem = null;
+            }
+            
+            async initialize() {
+                await this.engine.initialize();
+                this.monitor.start();
+                this.setupInputHandlers();
+                
+                // レイヤーシステム初期化
+                const { layerSystem, layerUI } = this.engine.layerBridge.initializeLayerSystem();
+                this.layerSystem = layerSystem;
+                
+                return true;
+            }
+            
+            setTools(tools, ui) {
+                this.tools = tools;
+                this.ui = ui;
+                
+                console.log('🎨 Futaba Drawing Tool v8rev8 - AI Refactored Ready!');
+                console.log('📋 Architecture:');
+                console.log('  🏛️ futaba_main.html - Drawing Engine Hub');
+                console.log('  🎨 futaba_layers.js - Layer System Satellite');
+                console.log('  🔧 futaba_tools.js - Tools Satellite');
+            }
+            
+            setupInputHandlers() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space') {
+                        this.spacePressed = true;
+                        e.preventDefault();
+                    }
+                    
+                    if (e.code === 'Home') {
+                        this.engine.camera.reset();
+                        e.preventDefault();
+                    }
+                    
+                    if (this.spacePressed) {
+                        const moveMap = {
+                            'ArrowLeft': [10, 0],
+                            'ArrowRight': [-10, 0],
+                            'ArrowUp': [0, 10],
+                            'ArrowDown': [0, -10]
+                        };
+                        
+                        if (moveMap[e.code]) {
+                            this.engine.camera.moveByArrows(...moveMap[e.code]);
+                            e.preventDefault();
+                        }
+                    }
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    if (e.code === 'Space') {
+                        this.spacePressed = false;
+                        this.engine.camera.stopPanning();
+                    }
+                });
+                
+                window.addEventListener('blur', () => {
+                    this.spacePressed = false;
+                    this.engine.camera.stopPanning();
+                });
+            }
+        }
+        
+        // === アプリケーション起動 ===
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                if (!AppBootstrap.init()) {
+                    throw new Error('Library initialization failed');
+                }
+                
+                window.futabaApp = new AppController();
+                await window.futabaApp.initialize();
+                
+                // スクリプト読み込み
+                const loadScript = (src) => {
+                    return new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = src;
+                        script.onload = resolve;
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                    });
+                };
+                
+                try {
+                    await loadScript('futaba_layers.js');
+                    await loadScript('futaba_tools.js');
+                } catch (error) {
+                    console.error('❌ Failed to load satellite scripts:', error);
+                    const canvasArea = document.querySelector('.canvas-area');
+                    if (canvasArea) {
+                        canvasArea.innerHTML = `
+                            <div style="text-align: center; color: var(--futaba-maroon); font-size: 18px; padding: 40px;">
+                                <div>⚠️ サテライトスクリプトの読み込みに失敗しました</div>
+                                <div style="font-size: 14px; margin-top: 10px;">
+                                    futaba_layers.js と futaba_tools.js が同じディレクトリにあることを確認してください
+                                </div>
+                            </div>
+                        `;
+                    }
+                }
+                
+            } catch (error) {
+                console.error('💥 Application startup failed:', error);
+                const canvasArea = document.querySelector('.canvas-area');
+                if (canvasArea) {
+                    canvasArea.innerHTML = `
+                        <div style="text-align: center; color: var(--futaba-maroon); font-size: 18px; padding: 40px;">
+                            <div>⚠️ アプリケーションの初期化に失敗しました</div>
+                            <div style="font-size: 14px; margin-top: 10px;">
+                                ブラウザのコンソールでエラー詳細を確認してください
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        });
+    </script>
+</body>
+</html><!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev8 - AI改修版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
