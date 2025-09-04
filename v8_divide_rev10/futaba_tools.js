@@ -516,6 +516,8 @@ class InterfaceManager {
 
 // 統合初期化システム - レイヤーシステム完了後に実行
 window.initializeToolsAfterLayers = function(layerManager, layerUI) {
+    console.log('ツールシステム初期化開始');
+    
     if (!window.futabaApp) {
         console.error('Main app not found');
         return;
@@ -524,15 +526,24 @@ window.initializeToolsAfterLayers = function(layerManager, layerUI) {
     const app = window.futabaApp;
     const engine = app.engine;
     
+    if (!engine || !engine.app) {
+        console.error('Drawing engine not ready');
+        return;
+    }
+    
     // ツールシステム初期化
     const drawingTools = new DrawingTools(engine, layerManager);
     const interfaceManager = new InterfaceManager(drawingTools, engine, layerManager);
     
+    console.log('ツールインスタンス作成完了');
+    
     // UI初期化
     interfaceManager.initialize();
+    console.log('InterfaceManager初期化完了');
     
     // AppController に接続
     app.setTools(drawingTools, interfaceManager, layerManager);
+    console.log('AppController接続完了');
     
     // グローバルエクスポート
     window.FutabaTools = {
@@ -547,27 +558,27 @@ window.initializeToolsAfterLayers = function(layerManager, layerUI) {
 };
 
 // フォールバック初期化（レイヤーシステムがない場合）
+const fallbackInitialize = () => {
+    if (window.pendingLayerManager && window.pendingLayerUI) {
+        console.log('待機中のレイヤー情報でツール初期化');
+        window.initializeToolsAfterLayers(window.pendingLayerManager, window.pendingLayerUI);
+        window.pendingLayerManager = null;
+        window.pendingLayerUI = null;
+    } else if (window.futabaApp && !window.FutabaLayers) {
+        console.log('レイヤーシステムなしでツール初期化');
+        const mockLayerManager = { 
+            getActiveLayer: () => ({ visible: "open" }),
+            layers: new Map()
+        };
+        window.initializeToolsAfterLayers(mockLayerManager, null);
+    }
+};
+
+// 自動初期化タイマー
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(() => {
-            if (!window.FutabaLayers && window.futabaApp) {
-                console.log('レイヤーシステムなしでツール初期化');
-                const mockLayerManager = { 
-                    getActiveLayer: () => ({ visible: "open" }),
-                    layers: new Map()
-                };
-                window.initializeToolsAfterLayers(mockLayerManager, null);
-            }
-        }, 500);
+        setTimeout(fallbackInitialize, 600);
     });
 } else {
-    setTimeout(() => {
-        if (!window.FutabaLayers && window.futabaApp) {
-            const mockLayerManager = { 
-                getActiveLayer: () => ({ visible: "open" }),
-                layers: new Map()
-            };
-            window.initializeToolsAfterLayers(mockLayerManager, null);
-        }
-    }, 500);
+    setTimeout(fallbackInitialize, 600);
 }

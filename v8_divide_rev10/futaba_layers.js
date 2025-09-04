@@ -979,16 +979,23 @@ class LayerUI {
 
 // 初期化とグローバルエクスポート
 function initializeLayerSystem() {
+    console.log('レイヤーシステム初期化開始');
+    
     if (!window.futabaApp?.engine?.layerBridge) {
-        console.error('LayerBridge not found - waiting for main app...');
-        return;
+        console.error('LayerBridge not found - main app not ready');
+        return false;
     }
     
     const layerManager = new LayerManager(window.futabaApp.engine.layerBridge);
     const layerUI = new LayerUI(layerManager);
     
+    console.log('LayerManager作成完了');
+    
     layerManager.initialize();
+    console.log('LayerManager初期化完了');
+    
     layerUI.initialize();
+    console.log('LayerUI初期化完了');
     
     // グローバルアクセス
     window.FutabaLayers = { LayerManager, LayerUI, layerManager, layerUI };
@@ -998,14 +1005,21 @@ function initializeLayerSystem() {
     // tools.jsに通知
     if (window.initializeToolsAfterLayers) {
         window.initializeToolsAfterLayers(layerManager, layerUI);
+    } else {
+        console.log('ツール初期化関数待機中...');
+        // ツール初期化関数を待機
+        window.pendingLayerManager = layerManager;
+        window.pendingLayerUI = layerUI;
     }
+    
+    return true;
 }
 
 // 自動初期化
 if (document.readyState === 'loading') {
     document.addEventListener('DOMContentLoaded', () => {
-        setTimeout(initializeLayerSystem, 200);
+        setTimeout(initializeLayerSystem, 100);
     });
 } else {
-    setTimeout(initializeLayerSystem, 200);
+    setTimeout(initializeLayerSystem, 100);
 }

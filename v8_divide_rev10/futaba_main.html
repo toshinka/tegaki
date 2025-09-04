@@ -258,6 +258,8 @@
             }
             
             async initialize() {
+                console.log('DrawingEngine初期化開始');
+                
                 this.app = new PIXI.Application();
                 await this.app.init({
                     width: CONFIG.canvas.width,
@@ -269,12 +271,19 @@
                     autoDensity: false
                 });
                 
-                document.getElementById('drawing-canvas').appendChild(this.app.canvas);
+                const canvasTarget = document.getElementById('drawing-canvas');
+                if (!canvasTarget) {
+                    throw new Error('Canvas target element not found');
+                }
+                
+                canvasTarget.appendChild(this.app.canvas);
+                console.log('PIXIキャンバス DOM追加完了:', this.app.canvas);
                 
                 this.setupContainers();
                 this.setupInteraction();
                 this.layerBridge = new LayerBridge(this);
                 
+                console.log('DrawingEngine初期化完了');
                 return true;
             }
             
