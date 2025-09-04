@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev7 - ペン対応+レイヤードラッグ版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev7 - 分割版</title>
     <style>
         * {
             margin: 0;
@@ -576,29 +576,32 @@
     <!-- PixiJS v8 and Libraries -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-    <script src="futaba_tools.js"></script>
     
     <script>
         /**
          * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev7
-         * PixiJS v8 対応版 - メインシステム（基盤クラス群）
-         * 分割構成: futaba_main.html (基盤) + futaba_tools.js (ツール群)
+         * 描画基盤ハブ (futaba_main.html)
+         * PixiJS v8 対応版 - ペン対応キャンバス移動版
          */
         
-        // Configuration
+        // ==== Configuration ====
         const APP_CONFIG = {
-            version: '8.0.7-pen-layer-drag-split',
+            version: '8.0.7-split-arch',
             canvas: { width: 400, height: 400 },
             rendering: { antialias: true, resolution: 1 },
             debug: true
         };
         
-        // Utility functions
+        // ==== Utility Functions ====
         const log = (message, ...args) => {
             if (APP_CONFIG.debug) console.log(message, ...args);
         };
         
         // ==== AppBootstrap: Library Management ====
+        /**
+         * 【目的】ライブラリの初期化・依存関係チェック
+         * 【責務】PIXI・GSAP等の外部ライブラリ管理
+         */
         class AppBootstrap {
             static checkLibraries() {
                 const required = { pixi: window.PIXI, gsap: window.gsap };
@@ -618,212 +621,66 @@
             }
         }
         
-        // ==== LayerManager: Layer System with Drag Ordering ====
-        class LayerManager {
+        // ==== LayerBridge: Layer Interface ====
+        /**
+         * 【目的】LayerManager と DrawingEngine 間の疎結合接続
+         * 【入力】DrawingEngine インスタンス
+         * 【出力】PIXI Container 操作プロキシメソッド
+         * 【副作用】PIXI Containers の追加・削除・並び替え
+         */
+        class LayerBridge {
             constructor(drawingEngine) {
                 this.engine = drawingEngine;
-                this.layers = new Map();
-                this.activeLayerId = null;
-                this.nextLayerId = 1;
-                this.ui = null;
-                this.dragState = {
-                    dragging: false,
-                    dragItem: null,
-                    startY: 0,
-                    offset: 0
-                };
+                this.manager = null;
             }
             
-            initialize() {
-                // Create background layer
-                this.createLayer('背景', true);
-                log('🎯 LayerManager: Background layer created');
+            // tools.js LayerManager からの接続
+            connectManager(layerManager) {
+                this.manager = layerManager;
+                log('🌉 LayerManager connected to DrawingEngine');
             }
             
-            createLayer(name = null, isBackground = false) {
-                const layerId = isBackground ? 0 : this.nextLayerId++;
-                const layerName = name || `レイヤー${layerId}`;
-                
-                const container = new PIXI.Container();
-                container.name = layerName;
-                container.visible = true;
-                
-                const layer = {
-                    id: layerId,
-                    name: layerName,
-                    container: container,
-                    visible: true,
-                    paths: []
-                };
-                
-                this.layers.set(layerId, layer);
-                this.engine.containers.world.addChild(container);
-                
-                if (this.activeLayerId === null || isBackground) {
-                    this.activeLayerId = layerId;
+            // PIXI操作のプロキシメソッド群
+            addContainer(container) {
+                if (this.engine.containers.world) {
+                    this.engine.containers.world.addChild(container);
+                    log(`🎯 Container added: ${container.name}`);
                 }
-                
-                this.updateLayerUI();
-                log(`🔄 Layer reordered: ${fromIndex} → ${toIndex}`);
             }
             
-            updateLayerUI() {
-                if (!this.ui) return;
-                
-                const layerList = document.getElementById('layer-list');
-                if (!layerList) return;
-                
-                layerList.innerHTML = '';
-                
-                // Render layers in reverse order (top to bottom in UI)
-                const layerIds = Array.from(this.layers.keys()).reverse();
-                
-                layerIds.forEach((layerId, index) => {
-                    const layer = this.layers.get(layerId);
-                    const layerItem = document.createElement('div');
-                    layerItem.className = `layer-item ${layerId === this.activeLayerId ? 'active' : ''}`;
-                    layerItem.dataset.layerId = layerId;
-                    layerItem.dataset.layerIndex = index;
-                    
-                    layerItem.innerHTML = `
-                        <div class="layer-visibility ${layer.visible ? '' : 'hidden'}" data-action="toggle-visibility">
-                            ${layer.visible ? '👁️' : '⚫'}
-                        </div>
-                        <div class="layer-name">${layer.name}</div>
-                        ${layerId !== 0 ? '<div class="layer-delete" data-action="delete">×</div>' : ''}
-                    `;
-                    
-                    // Event handlers
-                    layerItem.addEventListener('click', (e) => {
-                        const action = e.target.dataset.action;
-                        if (action === 'toggle-visibility') {
-                            this.toggleLayerVisibility(layerId);
-                        } else if (action === 'delete') {
-                            this.deleteLayer(layerId);
-                        } else if (!this.dragState.dragging) {
-                            this.setActiveLayer(layerId);
-                        }
-                    });
-                    
-                    // レイヤードラッグ機能（背景レイヤー以外）
-                    if (layerId !== 0) {
-                        this.setupLayerDrag(layerItem, index);
-                    }
-                    
-                    layerList.appendChild(layerItem);
-                });
-            }
-            
-            setupLayerDrag(layerItem, index) {
-                const layerName = layerItem.querySelector('.layer-name');
-                
-                layerName.addEventListener('mousedown', (e) => {
-                    if (e.button !== 0) return; // 左クリックのみ
-                    
-                    this.dragState.dragging = true;
-                    this.dragState.dragItem = layerItem;
-                    this.dragState.startY = e.clientY;
-                    this.dragState.offset = e.clientY - layerItem.getBoundingClientRect().top;
-                    
-                    layerItem.classList.add('dragging');
-                    
-                    const boundMouseMove = this.onLayerDrag.bind(this);
-                    const boundMouseUp = this.onLayerDragEnd.bind(this);
-                    
-                    document.addEventListener('mousemove', boundMouseMove);
-                    document.addEventListener('mouseup', boundMouseUp);
-                    
-                    // クリーンアップ用にイベントハンドラを保存
-                    this.dragState.boundMouseMove = boundMouseMove;
-                    this.dragState.boundMouseUp = boundMouseUp;
-                    
-                    e.preventDefault();
-                    e.stopPropagation();
-                });
-            }
-            
-            onLayerDrag(e) {
-                if (!this.dragState.dragging || !this.dragState.dragItem) return;
-                
-                const layerList = document.getElementById('layer-list');
-                const items = Array.from(layerList.children);
-                
-                // ドラッグ中のアイテムの視覚的移動
-                const dragItem = this.dragState.dragItem;
-                dragItem.style.position = 'absolute';
-                dragItem.style.top = (e.clientY - this.dragState.offset) + 'px';
-                dragItem.style.zIndex = '1000';
-                
-                // ドロップターゲットの検出
-                items.forEach(item => {
-                    item.classList.remove('drop-target');
-                    if (item !== dragItem) {
-                        const rect = item.getBoundingClientRect();
-                        if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
-                            item.classList.add('drop-target');
-                        }
-                    }
-                });
-                
-                e.preventDefault();
-            }
-            
-            onLayerDragEnd(e) {
-                if (!this.dragState.dragging || !this.dragState.dragItem) return;
-                
-                const layerList = document.getElementById('layer-list');
-                const items = Array.from(layerList.children);
-                const dragItem = this.dragState.dragItem;
-                
-                // ドロップターゲットの検出
-                const dropTarget = items.find(item => 
-                    item !== dragItem && item.classList.contains('drop-target')
-                );
-                
-                if (dropTarget) {
-                    const fromIndex = parseInt(dragItem.dataset.layerIndex);
-                    const toIndex = parseInt(dropTarget.dataset.layerIndex);
-                    this.reorderLayers(fromIndex, toIndex);
+            removeContainer(container) {
+                if (this.engine.containers.world) {
+                    this.engine.containers.world.removeChild(container);
+                    container.destroy();
+                    log(`🗑️ Container removed: ${container.name}`);
                 }
-                
-                // クリーンアップ
-                dragItem.classList.remove('dragging');
-                dragItem.style.position = '';
-                dragItem.style.top = '';
-                dragItem.style.zIndex = '';
-                
-                items.forEach(item => item.classList.remove('drop-target'));
-                
-                // イベントリスナー削除
-                if (this.dragState.boundMouseMove) {
-                    document.removeEventListener('mousemove', this.dragState.boundMouseMove);
-                }
-                if (this.dragState.boundMouseUp) {
-                    document.removeEventListener('mouseup', this.dragState.boundMouseUp);
-                }
-                
-                this.dragState = {
-                    dragging: false,
-                    dragItem: null,
-                    startY: 0,
-                    offset: 0,
-                    boundMouseMove: null,
-                    boundMouseUp: null
-                };
-                
-                setTimeout(() => this.updateLayerUI(), 100); // UI再構築
             }
             
-            updateStatusDisplay() {
-                const activeLayer = this.getActiveLayer();
-                const element = document.getElementById('current-layer');
-                if (element && activeLayer) {
-                    element.textContent = activeLayer.name;
+            reorderContainer(container, index) {
+                if (this.engine.containers.world) {
+                    this.engine.containers.world.removeChild(container);
+                    this.engine.containers.world.addChildAt(container, index);
+                    log(`🔄 Container reordered: ${container.name} → index ${index}`);
+                }
+            }
+            
+            // アクティブレイヤーへのパス追加
+            addPathToActiveLayer(path) {
+                if (this.manager) {
+                    this.manager.addPathToActiveLayer(path);
+                } else {
+                    console.error('❌ LayerManager not connected');
                 }
             }
         }
         
         // ==== DomPositionManager: Canvas Position Control with Pen Support ====
+        /**
+         * 【目的】DOM基準のキャンバス位置制御・ペン対応パンニング
+         * 【入力】ポインターイベント（マウス・ペン・タッチ）
+         * 【出力】DOM transformによる位置更新
+         * 【副作用】canvas-container DOM要素の transform プロパティ
+         */
         class DomPositionManager {
             constructor() {
                 this.container = document.getElementById('canvas-container');
@@ -1018,14 +875,19 @@
         }
         
         // ==== DrawingEngine: Core Drawing System ====
+        /**
+         * 【目的】PIXI管理・描画コア・パス作成
+         * 【入力】ポインターイベント・描画パラメータ
+         * 【出力】PIXI Graphics オブジェクト・パス情報
+         * 【副作用】PIXI Application・Containers の状態変更
+         */
         class DrawingEngine {
             constructor() {
                 this.app = null;
                 this.containers = { camera: null, world: null, ui: null };
                 this.paths = [];
-                this.tools = null;
+                this.layerBridge = null;
                 this.positionManager = null;
-                this.layerManager = null;
             }
             
             async initialize() {
@@ -1047,6 +909,9 @@
                 
                 this.setupContainers();
                 this.setupInteraction();
+                
+                // LayerBridge 初期化
+                this.layerBridge = new LayerBridge(this);
                 
                 log('✅ DrawingEngine initialized with container structure');
                 return true;
@@ -1097,7 +962,9 @@
                         return;
                     }
                     
-                    this.tools.startDrawing(event.global.x, event.global.y, spacePressed);
+                    if (window.futabaApp.tools) {
+                        window.futabaApp.tools.startDrawing(event.global.x, event.global.y, spacePressed);
+                    }
                 }
             }
             
@@ -1115,7 +982,9 @@
                         return;
                     }
                     
-                    this.tools.continueDrawing(event.global.x, event.global.y, spacePressed);
+                    if (window.futabaApp.tools) {
+                        window.futabaApp.tools.continueDrawing(event.global.x, event.global.y, spacePressed);
+                    }
                     if (window.futabaApp.ui) {
                         window.futabaApp.ui.updateCoordinates(event.global.x, event.global.y);
                     }
@@ -1126,7 +995,9 @@
                 const spacePressed = window.futabaApp.spacePressed;
                 
                 if (!spacePressed) {
-                    this.tools.stopDrawing();
+                    if (window.futabaApp.tools) {
+                        window.futabaApp.tools.stopDrawing();
+                    }
                 }
             }
             
@@ -1144,7 +1015,8 @@
                 
                 path.points.push({ x, y, size });
                 
-                this.layerManager.addPathToActiveLayer(path);
+                // LayerBridge経由でアクティブレイヤーに追加
+                this.layerBridge.addPathToActiveLayer(path);
                 this.paths.push(path);
                 return path;
             }
@@ -1191,14 +1063,20 @@
                 });
                 this.paths = [];
                 
-                this.layerManager.layers.forEach(layer => {
-                    layer.paths = [];
-                    layer.container.removeChildren();
-                });
+                // LayerBridge経由でレイヤーのクリアを通知
+                if (this.layerBridge.manager) {
+                    this.layerBridge.manager.clearAllLayers();
+                }
             }
         }
         
         // ==== SystemMonitor: Performance Tracking ====
+        /**
+         * 【目的】パフォーマンス監視・FPS計測
+         * 【入力】requestAnimationFrame タイマー
+         * 【出力】FPS値のDOM更新
+         * 【副作用】status-panel内のFPS表示更新
+         */
         class SystemMonitor {
             constructor() {
                 this.frameCount = 0;
@@ -1231,41 +1109,56 @@
         }
         
         // ==== AppController: Main Application Logic ====
+        /**
+         * 【目的】アプリケーション統合制御・入力処理・コンポーネント連携
+         * 【入力】キーボード・マウス・ペンイベント
+         * 【出力】統合されたお絵かきアプリケーション
+         * 【副作用】全システムコンポーネントの初期化・状態管理
+         */
         class AppController {
             constructor() {
                 this.spacePressed = false;
                 this.engine = new DrawingEngine();
                 this.positionManager = new DomPositionManager();
-                this.layerManager = new LayerManager(this.engine);
-                this.tools = null; // Will be initialized from futaba_tools.js
-                this.ui = null; // Will be initialized from futaba_tools.js
                 this.monitor = new SystemMonitor();
+                
+                // tools.js から設定される
+                this.tools = null;
+                this.ui = null;
+                this.layerManager = null;
             }
             
             async initialize() {
-                log('🚂 AppController: Starting application with layer system');
+                log('🚂 AppController: Starting application with split architecture');
                 
                 await this.engine.initialize();
                 this.engine.positionManager = this.positionManager;
-                this.engine.layerManager = this.layerManager;
                 
-                this.layerManager.initialize();
                 this.positionManager.initialize(this.engine.app.ticker);
                 this.monitor.start();
                 
                 this.setupInputHandlers();
                 
-                log('✅ Base system ready - waiting for tools initialization');
+                log('✅ Drawing Engine ready - waiting for tools.js');
                 return true;
             }
             
-            // Called from futaba_tools.js after tools are initialized
-            setTools(tools, ui) {
+            // tools.js から呼び出される接続メソッド
+            setTools(tools, ui, layerManager) {
                 this.tools = tools;
                 this.ui = ui;
-                this.engine.tools = tools;
+                this.layerManager = layerManager;
                 
-                log('🔧 Tools connected to main system');
+                // LayerBridge接続
+                this.engine.layerBridge.connectManager(layerManager);
+                
+                log('🌉 Tools connected - application ready');
+                
+                console.log('🎨 Futaba Drawing Tool v8rev7 - Split Architecture Ready!');
+                console.log('📋 System Architecture:');
+                console.log('  ✅ futaba_main.html - Drawing Engine Hub');
+                console.log('  🔄 LayerBridge - Loose coupling interface');
+                console.log('  ⏳ futaba_tools.js - Tools & UI Hub (loading...)');
             }
             
             setupInputHandlers() {
@@ -1319,8 +1212,38 @@
                 window.futabaApp = new AppController();
                 await window.futabaApp.initialize();
                 
-                // Tools will be initialized by futaba_tools.js
-                log('🎨 Main system initialized - waiting for tools');
+                // futaba_tools.js の読み込みを待つ
+                const loadToolsScript = () => {
+                    const script = document.createElement('script');
+                    script.src = 'futaba_tools.js';
+                    script.onload = () => {
+                        log('📄 futaba_tools.js loaded successfully');
+                    };
+                    script.onerror = () => {
+                        console.error('❌ Failed to load futaba_tools.js');
+                        const canvasArea = document.querySelector('.canvas-area');
+                        if (canvasArea) {
+                            canvasArea.innerHTML = `
+                                <div style="text-align: center; color: var(--futaba-maroon); font-size: 18px; padding: 40px;">
+                                    <div>⚠️ futaba_tools.js の読み込みに失敗しました</div>
+                                    <div style="font-size: 14px; margin-top: 10px;">
+                                        ファイルが同じディレクトリにあることを確認してください
+                                    </div>
+                                    <div style="font-size: 12px; margin-top: 16px; padding: 12px; 
+                                               background: var(--futaba-cream); border-radius: 8px;">
+                                        <div>デバッグ情報:</div>
+                                        <div>Current URL: ${window.location.href}</div>
+                                        <div>Script path: futaba_tools.js</div>
+                                    </div>
+                                </div>
+                            `;
+                        }
+                    };
+                    document.head.appendChild(script);
+                };
+                
+                // 少し待ってからtools.jsを読み込み（DOMの準備を確実にするため）
+                setTimeout(loadToolsScript, 200);
                 
             } catch (error) {
                 console.error('💥 Application startup failed:', error);
@@ -1340,132 +1263,3 @@
     </script>
 </body>
 </html>
-                log(`🎨 Layer created: ${layerName} (ID: ${layerId})`);
-                return layer;
-            }
-            
-            duplicateLayer(layerId) {
-                const sourceLayer = this.layers.get(layerId);
-                if (!sourceLayer) return null;
-                
-                const newLayer = this.createLayer(`${sourceLayer.name} コピー`);
-                
-                // Copy all paths from source layer
-                sourceLayer.paths.forEach(path => {
-                    const newPath = this.clonePath(path);
-                    newLayer.container.addChild(newPath.graphics);
-                    newLayer.paths.push(newPath);
-                });
-                
-                this.setActiveLayer(newLayer.id);
-                log(`📋 Layer duplicated: ${sourceLayer.name} → ${newLayer.name}`);
-                return newLayer;
-            }
-            
-            clonePath(originalPath) {
-                const clonedGraphics = new PIXI.Graphics();
-                
-                // Recreate path from points
-                originalPath.points.forEach((point, index) => {
-                    clonedGraphics.circle(point.x, point.y, point.size / 2);
-                    clonedGraphics.fill({ 
-                        color: originalPath.color, 
-                        alpha: originalPath.opacity 
-                    });
-                });
-                
-                return {
-                    id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                    graphics: clonedGraphics,
-                    points: [...originalPath.points],
-                    color: originalPath.color,
-                    size: originalPath.size,
-                    opacity: originalPath.opacity,
-                    isComplete: originalPath.isComplete
-                };
-            }
-            
-            deleteLayer(layerId) {
-                if (layerId === 0) return; // Cannot delete background layer
-                if (this.layers.size <= 1) return; // Must have at least one layer
-                
-                const layer = this.layers.get(layerId);
-                if (!layer) return;
-                
-                // Destroy all paths in layer
-                layer.paths.forEach(path => {
-                    path.graphics.destroy();
-                });
-                
-                // Remove container from world
-                this.engine.containers.world.removeChild(layer.container);
-                layer.container.destroy();
-                
-                // Remove from layers map
-                this.layers.delete(layerId);
-                
-                // Set new active layer if needed
-                if (this.activeLayerId === layerId) {
-                    const remainingLayers = Array.from(this.layers.keys());
-                    this.activeLayerId = remainingLayers[remainingLayers.length - 1];
-                }
-                
-                this.updateLayerUI();
-                log(`🗑️ Layer deleted: ${layer.name} (ID: ${layerId})`);
-            }
-            
-            setActiveLayer(layerId) {
-                if (this.layers.has(layerId)) {
-                    this.activeLayerId = layerId;
-                    this.updateLayerUI();
-                    this.updateStatusDisplay();
-                    log(`👆 Active layer: ${this.layers.get(layerId).name}`);
-                }
-            }
-            
-            toggleLayerVisibility(layerId) {
-                const layer = this.layers.get(layerId);
-                if (!layer) return;
-                
-                layer.visible = !layer.visible;
-                layer.container.visible = layer.visible;
-                this.updateLayerUI();
-                log(`👁️ Layer visibility: ${layer.name} → ${layer.visible}`);
-            }
-            
-            getActiveLayer() {
-                return this.layers.get(this.activeLayerId);
-            }
-            
-            addPathToActiveLayer(path) {
-                const activeLayer = this.getActiveLayer();
-                if (activeLayer) {
-                    activeLayer.paths.push(path);
-                    activeLayer.container.addChild(path.graphics);
-                }
-            }
-            
-            // レイヤー順序並び替え
-            reorderLayers(fromIndex, toIndex) {
-                const layerIds = Array.from(this.layers.keys()).reverse();
-                
-                if (fromIndex < 0 || fromIndex >= layerIds.length ||
-                    toIndex < 0 || toIndex >= layerIds.length ||
-                    fromIndex === toIndex) return;
-                
-                // 背景レイヤー（index 0）は移動不可
-                const fromLayerId = layerIds[fromIndex];
-                if (fromLayerId === 0) return;
-                
-                // 背景レイヤーとの入れ替えは禁止
-                const toLayerId = layerIds[toIndex];
-                if (toLayerId === 0) return;
-                
-                // PIXI Container の順序を更新
-                const layerContainers = layerIds.map(id => this.layers.get(id).container);
-                const fromContainer = layerContainers[fromIndex];
-                
-                this.engine.containers.world.removeChild(fromContainer);
-                this.engine.containers.world.addChildAt(fromContainer, toIndex);
-                
-                this.updateLayerUI();
