@@ -27,12 +27,15 @@ class LayerManager {
     }
     
     initialize() {
-        // Create background layer
-        this.createLayer('背景', true);
+        // Create background layer - 引数でfromIndexを明示
+        this.createLayer(0, { name: '背景', isBackground: true });
         log('🎯 LayerManager: Background layer created');
     }
     
-    createLayer(name = null, isBackground = false) {
+    // fromIndex引数を追加、デフォルト値を設定
+    createLayer(fromIndex = 0, options = {}) {
+        const { name = null, isBackground = false } = options;
+        
         const layerId = isBackground ? 0 : this.nextLayerId++;
         const layerName = name || `レイヤー${layerId}`;
         
@@ -66,7 +69,7 @@ class LayerManager {
         const sourceLayer = this.layers.get(layerId);
         if (!sourceLayer) return null;
         
-        const newLayer = this.createLayer(`${sourceLayer.name} コピー`);
+        const newLayer = this.createLayer(0, { name: `${sourceLayer.name} コピー` });
         
         // Copy all paths from source layer
         sourceLayer.paths.forEach(path => {
@@ -273,12 +276,6 @@ class LayerManager {
         
         const layerList = document.getElementById('layer-list');
         const items = Array.from(layerList.children);
-        
-        // ドラッグ中のアイテムの視覚的移動
-        const dragItem = this.dragState.dragItem;
-        dragItem.style.position = 'absolute';
-        dragItem.style.top = (e.clientY - this.dragState.offset) + 'px';
-        dragItem.style.zIndex = '1000';
         
         // ドロップターゲットの検出
         items.forEach(item => {
@@ -500,7 +497,7 @@ class InterfaceManager {
         
         if (addLayerBtn) {
             addLayerBtn.addEventListener('click', () => {
-                const newLayer = this.layers.createLayer();
+                const newLayer = this.layers.createLayer(0);
                 this.layers.setActiveLayer(newLayer.id);
             });
         }
@@ -657,7 +654,7 @@ class InterfaceManager {
     
     updateCanvasInfo() {
         const element = document.getElementById('canvas-info');
-        if (element) {
+        if (element && window.APP_CONFIG && window.APP_CONFIG.canvas) {
             element.textContent = `${window.APP_CONFIG.canvas.width}×${window.APP_CONFIG.canvas.height}px`;
         }
     }
@@ -759,8 +756,10 @@ if (typeof window !== 'undefined') {
 }
 
 // ==== Utility Functions ====
-const log = (message, ...args) => {
-    if (window.APP_CONFIG && window.APP_CONFIG.debug) {
-        console.log(message, ...args);
-    }
-};
+// log関数はfutaba_main.htmlで定義済みのため、ここでは定義しないラッグ中のアイテムの視覚的移動
+        const dragItem = this.dragState.dragItem;
+        dragItem.style.position = 'absolute';
+        dragItem.style.top = (e.clientY - this.dragState.offset) + 'px';
+        dragItem.style.zIndex = '1000';
+        
+        // ド
