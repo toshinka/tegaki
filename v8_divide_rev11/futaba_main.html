@@ -675,6 +675,8 @@
             }
             
             async initialize() {
+                console.log('AppController初期化開始');
+                
                 await this.engine.initialize();
                 this.engine.positionManager = this.positionManager;
                 
@@ -683,8 +685,43 @@
                 
                 this.setupInputHandlers();
                 
-                console.log('描画エンジン準備完了 - レイヤーシステム読み込み中...');
+                console.log('AppController初期化完了 - レイヤーシステム読み込み中...');
+                
+                // 初期化完了後、モジュールを順次読み込み
+                this.loadModules();
+                
                 return true;
+            }
+            
+            async loadModules() {
+                try {
+                    // レイヤーシステムを読み込み
+                    await this.loadScript('futaba_layers.js', 'レイヤーシステム');
+                    
+                    // 少し待ってからツールシステムを読み込み
+                    setTimeout(async () => {
+                        await this.loadScript('futaba_tools.js', 'ツールシステム');
+                    }, 200);
+                    
+                } catch (error) {
+                    console.error('モジュール読み込みエラー:', error);
+                }
+            }
+            
+            loadScript(src, name) {
+                return new Promise((resolve, reject) => {
+                    const script = document.createElement('script');
+                    script.src = src;
+                    script.onload = () => {
+                        console.log(`${name} 読み込み完了`);
+                        resolve();
+                    };
+                    script.onerror = () => {
+                        console.error(`${name} 読み込み失敗`);
+                        reject(new Error(`Failed to load ${src}`));
+                    };
+                    document.head.appendChild(script);
+                });
             }
             
             setTools(tools, ui, layerManager) {
@@ -738,46 +775,21 @@
             }
         }
         
-        // Bootstrap
-        window.addEventListener('DOMContentLoaded', async () => {
+        // Bootstrap - 即座に実行
+        async function initializeApp() {
             try {
-                console.log('🚀 アプリケーション開始');
+                console.log('アプリケーション開始');
                 
                 if (!window.PIXI || !window.gsap) {
                     throw new Error('Required libraries not loaded');
                 }
-                console.log('✅ ライブラリ読み込み完了');
+                console.log('ライブラリ読み込み確認済み');
                 
                 window.futabaApp = new AppController();
                 await window.futabaApp.initialize();
-                console.log('✅ 描画エンジン初期化完了');
-                
-                const loadModule = (src, name) => {
-                    return new Promise((resolve, reject) => {
-                        const script = document.createElement('script');
-                        script.src = src;
-                        script.onload = () => {
-                            console.log(`✅ ${name} 読み込み完了`);
-                            resolve();
-                        };
-                        script.onerror = () => {
-                            console.error(`❌ ${name} 読み込み失敗`);
-                            reject();
-                        };
-                        document.head.appendChild(script);
-                    });
-                };
-                
-                // レイヤーシステムを先に読み込み
-                await loadModule('futaba_layers.js', 'レイヤーシステム');
-                
-                // 少し待ってからツールシステムを読み込み
-                setTimeout(async () => {
-                    await loadModule('futaba_tools.js', 'ツールシステム');
-                }, 300);
                 
             } catch (error) {
-                console.error('❌ 起動に失敗しました:', error);
+                console.error('起動に失敗しました:', error);
                 const canvasArea = document.querySelector('.canvas-area');
                 if (canvasArea) {
                     canvasArea.innerHTML = `
@@ -791,6 +803,13 @@
                     `;
                 }
             }
-        });
+        }
+        
+        // DOMContentLoaded で即座に実行
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initializeApp);
+        } else {
+            initializeApp();
+        }
         
         // Global exports
