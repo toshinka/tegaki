@@ -1,0 +1,768 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ふたば☆ちゃんねる風ベクターお絵かきツール v8rev9 - 描画エンジン</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+            font-size: 12px;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 200px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg {
+            width: 20px;
+            height: 20px;
+            pointer-events: none;
+        }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.active svg {
+            stroke: var(--text-inverse);
+        }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: visible;
+            display: flex;
+            justify-content: flex-start;
+            align-items: flex-start;
+        }
+        
+        .canvas-container {
+            background: var(--futaba-cream);
+            display: inline-block;
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            touch-action: none;
+            overflow: hidden;
+        }
+        
+        .checkerboard-overlay {
+            position: absolute;
+            inset: 0;
+            background-size: 16px 16px;
+            background-image:
+                linear-gradient(45deg, #eee 25%, transparent 25%),
+                linear-gradient(-45deg, #eee 25%, transparent 25%),
+                linear-gradient(45deg, transparent 75%, #eee 75%),
+                linear-gradient(-45deg, transparent 75%, #eee 75%);
+            pointer-events: none;
+            z-index: 1;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+        }
+        
+        canvas {
+            border: none;
+            display: block;
+            cursor: crosshair;
+            touch-action: none;
+            position: relative;
+            z-index: 2;
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 270px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button" id="resize-tool" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                    <path d="M14 15H9v-5"/>
+                    <path d="M16 3h5v5"/>
+                    <path d="M21 3 9 15"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button active" id="pen-tool" title="ベクターペン">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M13 21h8"/>
+                    <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+                </svg>
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/>
+                    <path d="m5.082 11.09 8.828 8.828"/>
+                </svg>
+            </div>
+        </div>
+        
+        <div id="layer-panel-container">
+            <!-- レイヤーパネルがここに注入される -->
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container" id="canvas-container">
+                <div class="checkerboard-overlay"></div>
+                <div id="drawing-canvas"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Layer: <span id="current-layer">背景</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">Camera: <span id="camera-position">x: 0, y: 0</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+    
+    <script>
+        /**
+         * ふたば☆ちゃんねる風ベクターお絵かきツール v8rev9
+         * 描画エンジン中核部 - PIXI.js制御・Canvas操作・位置管理
+         */
+        
+        const CONFIG = {
+            version: '8.0.9-engine',
+            canvas: { width: 400, height: 400 },
+            rendering: { antialias: true, resolution: 1 },
+            debug: false
+        };
+        
+        // DrawingEngine: PIXI.js描画システム
+        class DrawingEngine {
+            constructor() {
+                this.app = null;
+                this.containers = { camera: null, world: null, ui: null };
+                this.paths = [];
+                this.layerBridge = null;
+                this.positionManager = null;
+                this.backgroundFill = null;
+            }
+            
+            async initialize() {
+                this.app = new PIXI.Application();
+                await this.app.init({
+                    width: CONFIG.canvas.width,
+                    height: CONFIG.canvas.height,
+                    background: 0xf0e0d6,
+                    backgroundAlpha: 0,
+                    antialias: CONFIG.rendering.antialias,
+                    resolution: CONFIG.rendering.resolution,
+                    autoDensity: false
+                });
+                
+                document.getElementById('drawing-canvas').appendChild(this.app.canvas);
+                
+                this.setupContainers();
+                this.setupInteraction();
+                this.layerBridge = new LayerBridge(this);
+                
+                return true;
+            }
+            
+            setupContainers() {
+                this.containers.camera = new PIXI.Container();
+                this.containers.world = new PIXI.Container();
+                this.containers.ui = new PIXI.Container();
+                
+                const maskGraphics = new PIXI.Graphics();
+                maskGraphics.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+                maskGraphics.fill(0x000000);
+                this.app.stage.addChild(maskGraphics);
+                this.containers.camera.mask = maskGraphics;
+                
+                this.containers.camera.addChild(this.containers.world);
+                this.app.stage.addChild(this.containers.camera);
+                this.app.stage.addChild(this.containers.ui);
+            }
+            
+            setupInteraction() {
+                this.containers.camera.eventMode = "static";
+                this.containers.camera.hitArea = new PIXI.Rectangle(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+                
+                this.containers.camera.on('pointerdown', (e) => this.onPointerDown(e));
+                this.containers.camera.on('pointermove', (e) => this.onPointerMove(e));
+                this.containers.camera.on('pointerup', (e) => this.onPointerUp(e));
+                this.containers.camera.on('pointerupoutside', (e) => this.onPointerUp(e));
+                this.containers.camera.on('pointercancel', (e) => this.onPointerUp(e));
+            }
+            
+            onPointerDown(event) {
+                const spacePressed = window.futabaApp.spacePressed;
+                const originalEvent = event.data.originalEvent;
+                
+                if (spacePressed) {
+                    event.stopPropagation();
+                } else {
+                    if (originalEvent.pointerType === 'pen' && originalEvent.pressure === 0) return;
+                    
+                    if (window.futabaApp.tools) {
+                        window.futabaApp.tools.startDrawing(event.global.x, event.global.y);
+                    }
+                }
+            }
+            
+            onPointerMove(event) {
+                const spacePressed = window.futabaApp.spacePressed;
+                const originalEvent = event.data.originalEvent;
+                
+                if (spacePressed) {
+                    if (window.futabaApp.ui) {
+                        window.futabaApp.ui.updateCoordinates(event.global.x, event.global.y);
+                    }
+                    return;
+                } else {
+                    if (originalEvent.pointerType === 'pen' && originalEvent.pressure === 0) return;
+                    
+                    if (window.futabaApp.tools) {
+                        window.futabaApp.tools.continueDrawing(event.global.x, event.global.y);
+                    }
+                    if (window.futabaApp.ui) {
+                        window.futabaApp.ui.updateCoordinates(event.global.x, event.global.y);
+                    }
+                }
+            }
+            
+            onPointerUp(event) {
+                const spacePressed = window.futabaApp.spacePressed;
+                
+                if (!spacePressed && window.futabaApp.tools) {
+                    window.futabaApp.tools.stopDrawing();
+                }
+            }
+            
+            createPath(x, y, size, color, opacity) {
+                const path = {
+                    id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    graphics: new PIXI.Graphics(),
+                    points: [],
+                    color, size, opacity,
+                    isComplete: false
+                };
+                
+                path.graphics.circle(x, y, size / 2);
+                path.graphics.fill({ color: path.color, alpha: path.opacity });
+                
+                path.points.push({ x, y, size });
+                
+                this.layerBridge.addPathToActiveLayer(path);
+                this.paths.push(path);
+                return path;
+            }
+            
+            extendPath(path, x, y) {
+                if (!path || path.points.length === 0) return;
+                
+                const lastPoint = path.points[path.points.length - 1];
+                const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
+                
+                if (distance < 1.5) return;
+                
+                const steps = Math.max(1, Math.ceil(distance / 1.5));
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    const px = lastPoint.x + (x - lastPoint.x) * t;
+                    const py = lastPoint.y + (y - lastPoint.y) * t;
+                    
+                    path.graphics.circle(px, py, path.size / 2);
+                    path.graphics.fill({ color: path.color, alpha: path.opacity });
+                }
+                
+                path.points.push({ x, y, size: path.size });
+            }
+            
+            resize(newWidth, newHeight) {
+                CONFIG.canvas.width = newWidth;
+                CONFIG.canvas.height = newHeight;
+                
+                this.app.renderer.resize(newWidth, newHeight);
+                
+                if (this.containers.camera.mask) {
+                    this.containers.camera.mask.clear();
+                    this.containers.camera.mask.rect(0, 0, newWidth, newHeight);
+                    this.containers.camera.mask.fill(0x000000);
+                }
+                
+                this.containers.camera.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
+            }
+        }
+        
+        // LayerBridge: エンジンとレイヤー管理の接続
+        class LayerBridge {
+            constructor(drawingEngine) {
+                this.engine = drawingEngine;
+                this.manager = null;
+            }
+            
+            connectManager(layerManager) {
+                this.manager = layerManager;
+            }
+            
+            addContainer(container) {
+                if (this.engine.containers.world) {
+                    this.engine.containers.world.addChild(container);
+                }
+            }
+            
+            removeContainer(container) {
+                if (this.engine.containers.world) {
+                    this.engine.containers.world.removeChild(container);
+                    container.destroy();
+                }
+            }
+            
+            reorderContainer(container, index) {
+                if (this.engine.containers.world) {
+                    this.engine.containers.world.removeChild(container);
+                    this.engine.containers.world.addChildAt(container, index);
+                }
+            }
+            
+            addPathToActiveLayer(path) {
+                if (this.manager) {
+                    this.manager.addPathToActiveLayer(path);
+                }
+            }
+        }
+        
+        // CanvasPositionManager: Canvas位置制御
+        class CanvasPositionManager {
+            constructor() {
+                this.container = document.getElementById('canvas-container');
+                this.position = { x: 0, y: 0, targetX: 0, targetY: 0 };
+                this.state = { 
+                    panning: false, 
+                    startX: 0, 
+                    startY: 0,
+                    pointerId: null,
+                    pointerType: null
+                };
+                this.handlers = { move: null, up: null, cancel: null };
+                this.updateScheduled = false;
+            }
+            
+            initialize(ticker) {
+                this.ticker = ticker;
+                this.ticker.add(() => this.updatePosition());
+                this.setupPointerEvents();
+                this.setInitialPosition();
+            }
+            
+            setInitialPosition() {
+                const viewportCenter = this.calculateViewportCenter();
+                
+                this.container.style.transform = 'translate(-50%, -50%)';
+                this.container.style.left = viewportCenter.x + 'px';
+                this.container.style.top = viewportCenter.y + 'px';
+                
+                this.updateStatusDisplay();
+            }
+            
+            calculateViewportCenter() {
+                return {
+                    x: (window.innerWidth - 250) / 2 + 125,
+                    y: window.innerHeight / 2
+                };
+            }
+            
+            setupPointerEvents() {
+                this.container.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+                
+                this.handlers.move = (e) => this.onPointerMove(e);
+                this.handlers.up = (e) => this.onPointerUp(e);
+                this.handlers.cancel = (e) => this.onPointerCancel(e);
+            }
+            
+            onPointerDown(e) {
+                if (!window.futabaApp.spacePressed) return;
+                
+                if (e.pointerType === 'pen' && e.pressure === 0) return;
+                
+                this.state.panning = true;
+                this.state.startX = e.clientX;
+                this.state.startY = e.clientY;
+                this.state.pointerId = e.pointerId;
+                this.state.pointerType = e.pointerType;
+                
+                this.container.setPointerCapture(e.pointerId);
+                
+                this.container.addEventListener('pointermove', this.handlers.move);
+                this.container.addEventListener('pointerup', this.handlers.up);
+                this.container.addEventListener('pointercancel', this.handlers.cancel);
+                
+                e.preventDefault();
+            }
+            
+            onPointerMove(e) {
+                if (!this.state.panning || e.pointerId !== this.state.pointerId) return;
+                if (!window.futabaApp.spacePressed) return;
+                
+                if (e.pointerType === 'pen' && e.pressure === 0) return;
+                
+                const dx = e.clientX - this.state.startX;
+                const dy = e.clientY - this.state.startY;
+                
+                this.position.targetX += dx;
+                this.position.targetY += dy;
+                
+                const maxOffset = {
+                    x: (window.innerWidth - 250) / 2,
+                    y: window.innerHeight / 2
+                };
+                
+                this.position.targetX = Math.max(-maxOffset.x * 2, Math.min(maxOffset.x * 2, this.position.targetX));
+                this.position.targetY = Math.max(-maxOffset.y * 2, Math.min(maxOffset.y * 2, this.position.targetY));
+                
+                this.state.startX = e.clientX;
+                this.state.startY = e.clientY;
+                this.updateScheduled = true;
+                this.updateStatusDisplay();
+                
+                e.preventDefault();
+            }
+            
+            onPointerUp(e) {
+                if (e.pointerId !== this.state.pointerId) return;
+                this.stopPanning();
+            }
+            
+            onPointerCancel(e) {
+                if (e.pointerId !== this.state.pointerId) return;
+                this.stopPanning();
+            }
+            
+            updatePosition() {
+                if (!this.updateScheduled) return;
+                
+                const { x, y } = this.position;
+                const { targetX, targetY } = this.position;
+                
+                if (x !== targetX || y !== targetY) {
+                    this.position.x = Math.round(targetX);
+                    this.position.y = Math.round(targetY);
+                    
+                    const viewportCenter = this.calculateViewportCenter();
+                    
+                    const offset = {
+                        x: viewportCenter.x + this.position.x,
+                        y: viewportCenter.y + this.position.y
+                    };
+                    
+                    this.container.style.transform = 'translate(-50%, -50%)';
+                    this.container.style.left = offset.x + 'px';
+                    this.container.style.top = offset.y + 'px';
+                }
+                
+                this.updateScheduled = false;
+            }
+            
+            stopPanning() {
+                this.state.panning = false;
+                
+                if (this.state.pointerId && this.container.hasPointerCapture(this.state.pointerId)) {
+                    this.container.releasePointerCapture(this.state.pointerId);
+                }
+                
+                this.container.removeEventListener('pointermove', this.handlers.move);
+                this.container.removeEventListener('pointerup', this.handlers.up);
+                this.container.removeEventListener('pointercancel', this.handlers.cancel);
+                
+                this.state.pointerId = null;
+                this.state.pointerType = null;
+            }
+            
+            moveByArrows(dx, dy) {
+                this.position.targetX += dx;
+                this.position.targetY += dy;
+                
+                const maxOffset = {
+                    x: (window.innerWidth - 250) / 2,
+                    y: window.innerHeight / 2
+                };
+                
+                this.position.targetX = Math.max(-maxOffset.x * 2, Math.min(maxOffset.x * 2, this.position.targetX));
+                this.position.targetY = Math.max(-maxOffset.y * 2, Math.min(maxOffset.y * 2, this.position.targetY));
+                
+                this.updateScheduled = true;
+                this.updateStatusDisplay();
+            }
+            
+            reset() {
+                this.position = { x: 0, y: 0, targetX: 0, targetY: 0 };
+                this.state.panning = false;
+                this.stopPanning();
+                
+                this.setInitialPosition();
+                this.updateStatusDisplay();
+            }
+            
+            updateStatusDisplay() {
+                const element = document.getElementById('camera-position');
+                if (element) {
+                    element.textContent = `x: ${Math.round(this.position.targetX)}, y: ${Math.round(this.position.targetY)}`;
+                }
+            }
+        }
+        
+        // SystemMonitor: FPS監視
+        class SystemMonitor {
+            constructor() {
+                this.frameCount = 0;
+                this.lastTime = performance.now();
+            }
+            
+            start() {
+                const update = () => {
+                    this.frameCount++;
+                    const currentTime = performance.now();
+                    
+                    if (currentTime - this.lastTime >= 1000) {
+                        const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
+                        const element = document.getElementById('fps');
+                        if (element) {
+                            element.textContent = fps;
+                        }
+                        
+                        this.frameCount = 0;
+                        this.lastTime = currentTime;
+                    }
+                    
+                    requestAnimationFrame(update);
+                };
+                
+                update();
+            }
+        }
+        
+        // AppController: メインアプリケーション制御
+        class AppController {
+            constructor() {
+                this.spacePressed = false;
+                this.engine = new DrawingEngine();
+                this.positionManager = new CanvasPositionManager();
+                this.monitor = new SystemMonitor();
+                
+                this.tools = null;
+                this.ui = null;
+                this.layerManager = null;
+            }
+            
+            async initialize() {
+                await this.engine.initialize();
+                this.engine.positionManager = this.positionManager;
+                
+                this.positionManager.initialize(this.engine.app.ticker);
+                this.monitor.start();
+                
+                this.setupInputHandlers();
+                
+                console.log('描画エンジン準備完了 - レイヤーシステム読み込み中...');
+                return true;
+            }
+            
+            setTools(tools, ui, layerManager) {
+                this.tools = tools;
+                this.ui = ui;
+                this.layerManager = layerManager;
+                
+                this.engine.layerBridge.connectManager(layerManager);
+                
+                console.log('ふたば☆ちゃんねる風ベクターお絵かきツール v8rev9 起動完了');
+            }
+            
+            setupInputHandlers() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space') {
+                        this.spacePressed = true;
+                        e.preventDefault();
+                    }
+                    
+                    if (e.code === 'Home') {
+                        this.positionManager.reset();
+                        e.preventDefault();
+                    }
+                    
+                    if (this.spacePressed) {
+                        const moveMap = {
+                            'ArrowLeft': [10, 0],
+                            'ArrowRight': [-10, 0],
+                            'ArrowUp': [0, 10],
+                            'ArrowDown': [0, -10]
+                        };
+                        
+                        if (moveMap[e.code]) {
+                            this.positionManager.moveByArrows(...moveMap[e.code]);
+                            e.preventDefault();
+                        }
+                    }
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    if (e.code === 'Space') {
+                        this.spacePressed = false;
+                        this.positionManager.stopPanning();
+                    }
+                });
+                
+                window.addEventListener('blur', () => {
+                    this.spacePressed = false;
+                    this.positionManager.stopPanning();
+                });
+            }
+        }
+        
+        // Bootstrap
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                if (!window.PIXI || !window.gsap) {
+                    throw new Error('Required libraries not loaded');
+                }
+                
+                window.futabaApp = new AppController();
+                await window.futabaApp.initialize();
+                
+                const loadModule = (src, name) => {
+                    const script = document.createElement('script');
+                    script.src = src;
+                    script.onload = () => console.log(`${name} loaded`);
+                    script.onerror = () => console.error(`Failed to load ${name}`);
+                    document.head.appendChild(script);
+                };
+                
+                setTimeout(() => {
+                    loadModule('futaba_layers.js', 'Layer System');
+                    loadModule('futaba_tools.js', 'Tools System'); 
+                }, 100);
+                
+            } catch (error) {
+                console.error('起動に失敗しました:', error);
+                document.querySelector('.canvas-area').innerHTML = `
+                    <div style="text-align: center; color: var(--futaba-maroon); font-size: 18px; padding: 40px;">
+                        起動に失敗しました<br>
+                        <div style="font-size: 14px; margin-top: 10px;">
+                            ブラウザのコンソールでエラー詳細を確認してください
+                        </div>
+                    </div>
+                `;
+            }
+        });
+        
+        // Global exports

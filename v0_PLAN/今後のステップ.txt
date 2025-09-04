@@ -1,0 +1,19 @@
+今後のステップ
+Phase 2: 残りB系衛星の作成
+
+B2_interface_satellite.js: UI制御・DOM操作
+B3_tools_satellite.js: ツール処理（ペン・消しゴム等）
+
+Phase 3: 既存コードからの移行
+
+既存のfutaba_main.htmlをfutaba_hub.htmlに置き換え
+既存のfutaba_tools.jsから機能をB2/B3に分離
+動作確認とデバッグ
+
+Phase 4: 高度機能の追加
+
+B4_animation_satellite.js: SPINE/Live2D対応
+B5_export_satellite.js: 書き出し機能
+B6_physics_satellite.js: 物理演算
+
+この設計により、AIが主星Hubのみで全体構造を把握し、適切な衛星への改修提案ができる理想的なスター型アーキテクチャが実現されます。
