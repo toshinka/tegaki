@@ -1,231 +1,128 @@
-レイヤーUI 改修計画書（v8_divide_rev2 / Fresco風・軽量実装）
+レイヤーUI 改修計画書（v8_divide_rev2 / Fresco風ミニマル設計版）
 作成目的：
-- 既存の分割構成（futaba_main.html / futaba_tools.js）上に、操作負荷の少ないレイヤーUIを実装。
-- ルールブック（V8_rulebook）準拠：冗長化回避・責務分離・座標系の一貫性。
-- 画像合成は通常合成（Normal）のみ。クリッピング・乗算系は今回未実装。
+- サイドバーを排除し、クリーンなUIを実現（Adobe Fresco風）。
+- レイヤー数に応じて動的に伸縮する「レイヤーサイドバー判定」。
+- ポップアップによるシンプル操作（透明度・結合・複製）。
+- 背景透過表現（チェックパターン）は独立扱いとし、レイヤー実装から分離。
 
 ────────────────────────────────────
-1. 機能サマリ（ユーザー要求の反映）
-- レイヤー項目（カード）：
-  - 目アイコン（開/閉/×の3状態）。クリックで開閉、長押しで一時非表示。
-  - 透明度（不透明度）スライダー：ポップアップ内に配置（0–100%）。
-  - 「下のレイヤーと結合」「複製」ボタン：ポップアップ内。
-  - スワイプ左/右で削除（確認トースト表示→取り消し可）。
-  - 背景（レイヤー0）は消しゴムで消去可。消去部分はチェック柄表示。
-  - ファイル（フォルダ）項目には合成サムネイルを表示。
-- アイコン：
-  - レイヤー追加（layer+）、ファイル追加（file+）…SVG読み込み（スプライト化）。
-  - 目アイコン3種（open/closed/disabled(×)）…SVG差し替え。
-- レイアウト：
-  - 初期は中央に表示。レイヤー/ファイルの追加で左右へ均等に伸長。
-  - レイヤーサイドバーはレイヤー数に応じ縦方向に伸縮。半透明で圧迫感軽減。
-  - フォント・横幅は現状の2/3へ縮小（端数回避：例 18px→12px、300px→200px）。
-- チェック柄（背景透過表現）：
-  - 拡大縮小の影響を受けない画面空間タイル（screen-space）で表示。
-- CUT1（縦軸のアニメ用コマ）：
-  - 今回は器のみ：縦軸＝CUT（カット/コマ）、横軸＝レイヤー/フォルダ（トラック的）。
-  - CUT単位で合成サムネイル保持。将来GIF等に拡張。
-- 削除動作：
-  - 左右スワイプ検出→スライドアウト→UNDO 5秒。フォルダ削除は確認ダイアログ。
-- アクセシビリティ：
-  - Tab移動、Spaceで可視切替、Deleteで削除、Ctrl+Dで複製、Ctrl+Eで下と結合。
+1. UI設計（外観と挙動）
+- 基本構成：
+  - キャンバス中央に描画領域。
+  - 右側にレイヤーリスト・判定（透明背景）。レイヤー数に応じて可変長。
+  - リスト項目は Adobe Fresco 同様にコンパクト表示。
+- レイヤー項目：
+  - 目アイコン（開/閉/×）。クリックで切替。
+  - レイヤー名＋不透明度（例：100%）。
+  - 背景レイヤー（Layer 0）は専用表示（削除不可、透明表現可）。
+- ポップアップ（レイヤー右クリック or メニューから呼び出し）：
+  - 不透明度スライダー（0–100%）。
+  - 「下のレイヤーと結合」ボタン。
+  - 「複製」ボタン。
+- 操作：
+  - レイヤー項目を左右スワイプ → 削除。
+  - 削除時はスライドアウトアニメーション＋UNDO。
+- サイズ感（画像準拠）：
+  - レイヤー項目高さ：約28px。
+  - フォントサイズ：約12px。
+  - レイヤー群ボックス幅：約180–200px。
+  - ポップアップ幅：約220px。角丸12px、背景薄ピンク。
 
 ────────────────────────────────────
-2. データモデル（最小）
-type LayerId = string;
-type FileId  = string;  // フォルダも含む
-type CutId   = string;  // CUT（カット）
-
+2. データモデル
 Layer {
-  id: LayerId
+  id: string
   name: string
-  visible: "open" | "closed" | "disabled"  // disabledは×表示（ロック相当）
-  opacity: number          // 0..1
-  blend: "normal"          // 今回は固定
-  isBackground: boolean    // レイヤー0に付与
-  parentFileId: FileId
-  order: number            // 表示順（0上→N下）※ルールブックの0基準統一
-  renderTex?: PIXI.RenderTexture // サムネ生成補助（任意）
+  visible: "open"|"closed"|"disabled"
+  opacity: number  // 0..1
+  isBackground: boolean
+  order: number
 }
 
 FileNode {
-  id: FileId
+  id: string
   name: string
-  type: "file" | "folder"
-  children: (LayerId | FileId)[]
-  thumbnail?: HTMLCanvasElement | ImageBitmap // 合成サムネ
-  order: number
-  parent?: FileId | null
-}
-
-Cut {
-  id: CutId
-  name: string   // CUT1, CUT2...
-  rootFiles: FileId[] // 横軸の起点。各CUT内でレイヤー/フォルダを構成
+  children: (Layer|FileNode)[]
   thumbnail?: ImageBitmap
 }
 
 AppState {
-  activeCut: CutId
-  selection: { type: "layer"|"file"; id: LayerId|FileId } | null
-}
-
-不変条件：
-- orderは配列順と一致。全更新時はユーティリティで正規化。
-- isBackground=trueなレイヤーは blend=normal 固定、削除禁止（×＝ロック）。
-- opacityは0..1のfloat、UI表示は％。
-
-────────────────────────────────────
-3. UI構成（責務分割）
-- LayerSidebar（描画・イベント束ね。表示/並び替え/スワイプ検出）
-- LayerItem（1行表示、目アイコン、名前、％、選択ハイライト）
-- LayerPopup（ポップアップ：スライダー・結合・複製）
-- FileBar（ファイル/フォルダ行。サムネ表示と追加ボタン）
-- CutRail（縦のCUT切替。初期はCUT1のみ）
-- PatternOverlay（チェック柄の画面空間タイル）
-- IconSprite（SVGをまとめて読み込み→シンボル参照）
-
-サイズ・トークン（2/3化の基準値）：
-- font-size: 12px（元18px想定）
-- sidebar width: 200px（元300px）
-- row height: 28px（元42px）
-- popup width: 240px、padding: 8px、corner-radius: 12px
-- 不透明度スライダー：track 160px / thumb 16px
-- サイドバー不透明度：0.85
-
-────────────────────────────────────
-4. 描画・実装の要点（PIXI/DOM 混在OK）
-4-1. チェック柄（拡縮非依存）
-- 画面空間の固定パターン：
-  - CSS：<div class="checkerboard fixed"></div> を Canvas 上位に重ね、Canvasの透明部分のみ表示。
-  - または PIXI の screen-space quad + REPEAT テクスチャ。カメラズームを無視してUVを固定。
-- パターン生成：16pxの白/灰タイル。CSS例：background-size:16px 16px; background-image: linear-gradient...（軽量）
-
-4-2. 合成サムネイル
-- レイヤー/フォルダ/ファイル単位：PIXI.RenderTextureへ draw → toCanvas() → 64–96pxで生成。
-- 更新トリガ：描画確定時・opacity/visibility変更時・結合/複製/順序変更時。
-
-4-3. ポップアップ
-- anchor：LayerItemの右端クリックで開く。外クリック/ESCで閉じる。
-- 内容：Opacity Slider（0–100%）、[下と結合]、[複製]
-- アニメ：fade+scale（100ms以下、prefers-reduced-motion対応）
-
-4-4. スワイプ削除
-- pointerdown→move距離判定（|dx|>24px）で削除候補。スライドアウトCSS → 一時キュー → UNDO可。
-- 背景レイヤーは削除不可。スワイプ時はロック表示（×）。
-
-4-5. 入出力（SVGアイコン）
-- 起動時にSVGをfetch→<symbol>化→<use href="#icon-layer-plus">で参照。
-- 目アイコン3種：eye-open / eye-closed / eye-crossed。
-
-────────────────────────────────────
-5. コマンド/API（外部公開；@provides）
-@provides LayerManager
-- createLayer({ afterId?, atIndex?, inFileId?, isBackground? }): LayerId
-- duplicateLayer(layerId): LayerId
-- mergeDown(layerId): LayerId | null    // 直下の可視レイヤーと結合
-- setOpacity(layerId, value01): void
-- setVisibility(layerId, "open"|"closed"|"disabled"): void
-- reorderLayer(layerId, toIndex): void
-- deleteLayer(layerId): void            // 背景は例外処理（禁止）
-
-@provides FileManager
-- createFile({ name }): FileId
-- createFolder({ name, parentId? }): FileId
-- deleteFile(fileId): void
-- updateThumbnail(fileOrLayerId): Promise<void>
-
-@provides CutManager
-- createCut(name?): CutId
-- switchCut(cutId): void
-
-補助（内部ユーティリティ）
-- captureComposite(targetId, { size=96 }): ImageBitmap
-- normalizeOrder(list): void
-- withUndo(action, inverse): void
-
-────────────────────────────────────
-6. イベント設計
-- click(LayerItem.eye) → toggleVisibility()
-- click(LayerItem.body) → select(layerId)
-- context/ellipsis → openPopup(layerId)
-- popup: change(opacity) → setOpacity(layerId)
-- popup: click(mergeDown) → mergeDown(layerId)
-- popup: click(duplicate) → duplicateLayer(layerId)
-- swipe → deleteLayer(layerId)（UNDO可能）
-- keyboard: Space(visibility), Del(delete), Ctrl+D(duplicate), Ctrl+E(merge)
-
-────────────────────────────────────
-7. 背景レイヤー（レイヤー0）仕様
-- isBackground=true、blend=normal固定、削除不可。
-- 消しゴムは alpha を下げる（PNG的透明）。透明部はチェック柄で可視化。
-- 背景色は任意設定可（将来）。今回は透明前提＋チェック柄優先表示。
-
-────────────────────────────────────
-8. 例：最小DOM/CSS（抜粋・プレーン）
-/* サイズは2/3化済み・端数排除 */
-.sidebar { width:200px; font-size:12px; opacity:.85; }
-.layer-row { height:28px; display:flex; align-items:center; }
-.popup { width:240px; padding:8px; border-radius:12px; }
-.checkerboard.fixed {
-  position:absolute; inset:0;
-  background-size:16px 16px;
-  background-image:
-    linear-gradient(45deg, #eee 25%, transparent 25%),
-    linear-gradient(-45deg, #eee 25%, transparent 25%),
-    linear-gradient(45deg, transparent 75%, #eee 75%),
-    linear-gradient(-45deg, transparent 75%, #eee 75%);
-  background-position: 0 0, 0 8px, 8px -8px, -8px 0;
-  pointer-events:none;   /* 描画操作はキャンバスへ */
+  activeLayer: string|null
+  layers: Layer[]
+  files: FileNode[]
 }
 
 ────────────────────────────────────
-9. 実装手順（スプリント別）
-Sprint-1（UI土台・アイコン・2/3化）
-- SVGスプライト導入（layer+, file+, eye-open/closed/crossed）。
-- Sidebar/LayerItem/FileBarのDOM組み立て（スタイル2/3化）。
-- 背景チェック柄の固定オーバーレイ設置。
-
-Sprint-2（ポップアップ＋基本操作）
-- LayerPopup実装（opacity / mergeDown / duplicate）。
-- 可視切替、選択、削除（スワイプ＋UNDO）。
-- 背景レイヤーの保護（削除禁止・×表示）。
-
-Sprint-3（サムネ・CUT器）
-- RenderTextureで合成サムネ生成・更新フック。
-- FileBarにサムネ表示。
-- CUT1の器（CutManager）と切替UI（単一CUTから開始）。
-
-Sprint-4（仕上げ）
-- キーボードショートカット、トースト/UNDO、リスト並べ替え（ドラッグ）。
-- 性能確認（サムネ生成のスロットリング/デバウンス）。
+3. 背景透過表現（チェックパターン）【別項目】
+- レイヤー要素とは独立したオーバーレイ。
+- 描画領域の透明部分を覆う screen-space タイル。
+- ズーム/パンの影響を受けない固定サイズ（例：16px）。
+- CSS または PIXI Quad で実装：
+  - CSS例：
+    .checkerboard {
+      position:absolute; inset:0;
+      background-size:16px 16px;
+      background-image:
+        linear-gradient(45deg,#eee 25%,transparent 25%),
+        linear-gradient(-45deg,#eee 25%,transparent 25%),
+        linear-gradient(45deg,transparent 75%,#eee 75%),
+        linear-gradient(-45deg,transparent 75%,#eee 75%);
+      pointer-events:none;
+    }
 
 ────────────────────────────────────
-10. 受け入れ基準（Acceptance）
-- [UI] サイドバーは初期中央表示、項目追加で左右に均等拡張する。
-- [操作] 目アイコン3状態が視覚反映される。Spaceでトグル可。
-- [操作] ポップアップから透明度調整・下と結合・複製が可能。
-- [操作] スワイプで削除→UNDOが機能する。背景レイヤーは削除不可。
-- [表示] 背景チェック柄はズームしてもサイズが変わらない。
-- [表示] ファイル/フォルダに合成サムネが表示される。
-- [安定] 既存描画機能と競合なし（マウス操作はCanvasへ透過）。
-- [性能] サムネ更新は1秒あたり最大2回まで（バースト抑制）。
+4. イベント仕様
+- click(eye) → toggle visibility
+- click(layer body) → select
+- right-click/ellipsis → open popup
+- popup slider → change opacity
+- popup button(mergeDown) → 下のレイヤーと結合
+- popup button(duplicate) → 複製
+- swipe(layer item) → 削除（UNDO付き）
 
 ────────────────────────────────────
-11. 既存コードへの影響点（最小修正ポインタ）
-- futaba_tools.js
-  - LayerManager：mergeDown/duplicate/setOpacity/toggleVisibility の@provides実装
-  - captureComposite / normalizeOrder のユーティリティ追加
-- futaba_main.html
-  - Sidebar/Popup/IconsのDOMテンプレート挿入
-  - 起動時にSVGスプライトを読み込み
-  - チェック柄オーバーレイをCanvas背面 or 前面に配置（pointer-events:none）
+5. アイコン仕様
+- SVGスプライトを利用。
+- 必要アイコン：
+  - レイヤー追加（layer+）
+  - ファイル追加（file+）
+  - 目（open/closed/disabled×）
+- 単色（ダークレッド系）で統一、軽量表示。
 
 ────────────────────────────────────
-12. リスクと対策
-- サムネ生成負荷 → レンダリング確定時のみ更新＋デバウンス。
-- スワイプ誤検出 → 閾値24px＋縦移動優先時はキャンセル。
-- 背景透過表現のずれ → 画面空間固定（CSS固定タイル）を採用。
-- 将来の合成モード追加 → Layer.blend列挙型で拡張可能に保持。
+6. 背景レイヤー仕様
+- 削除不可（スワイプ操作は無効化）。
+- 消しゴムで透明化 → チェックパターンが透ける。
+- blendModeは normal 固定。
 
-以上。必要最小限の責務分離とUI/データの直交性を担保し、段階導入可能な形で実装する。
+────────────────────────────────────
+7. 実装手順
+Step-1：
+  - レイヤーリストの透明UI実装（可変長・半透明）。
+  - 背景チェックパターン（CSSオーバーレイ）。
+Step-2：
+  - 目アイコン3状態。
+  - スワイプ削除（UNDO付き）。
+  - 背景レイヤー保護。
+Step-3：
+  - ポップアップ：透明度スライダー・結合・複製。
+Step-4：
+  - ファイル（フォルダ）追加とサムネ表示。
+  - 微調整（サイズ感・フォント・配色）。
+
+────────────────────────────────────
+8. 受け入れ基準
+- [UI] レイヤーリストは半透明で、数に応じて可変長。
+- [UI] 背景透過はチェック柄で固定表示。ズーム影響なし。
+- [操作] レイヤー削除は左右スワイプ、UNDO可能。
+- [操作] ポップアップから不透明度変更・複製・結合が可能。
+- [操作] 背景レイヤーは削除不可。消しゴムで透明化可能。
+- [性能] 通常描画性能を維持（FPS60前後）。
+
+────────────────────────────────────
+9. 将来拡張（メモ）
+- CUT（アニメフレーム管理）は縦軸管理に拡張予定。
+- 合成サムネイル表示をファイルノードに追加。
+- ブレンドモード拡張（乗算・加算等）は別フェーズ。
+
+以上。Adobe Fresco風のクリーンUIを実現する最小要素を整理し、背景チェック柄は別項目として切り出した。
