@@ -7,9 +7,12 @@
  *   - record(action): 新しいアクションを履歴に追加
  *   - handleUndo(): 直前のアクションを取り消す
  *   - handleRedo(): 取り消したアクションをやり直す
+ *   - getState(): 履歴状態の取得
+ *   - clear(): 履歴のクリア
  * @notes
  *   - 全ての確定イベントは必ず主星経由でここに登録される。
  *   - 衛星同士で直接アクセスしないこと。
+ *   - コンソールログはdebugフラグで制御する。
  * ==========================================================
  */
 window.MyApp = window.MyApp || {};
@@ -43,7 +46,7 @@ window.MyApp = window.MyApp || {};
                 this.index -= removeCount;
             }
             
-            if(global.MyApp.debug) {
+            if(this.mainApi && this.mainApi.debugMode) {
                 console.log('[History] record:', action.type);
             }
         }
@@ -54,7 +57,7 @@ window.MyApp = window.MyApp || {};
             const action = this.stack[this.index--];
             this._applyUndoAction(action);
             
-            if(global.MyApp.debug) {
+            if(this.mainApi && this.mainApi.debugMode) {
                 console.log('[History] undo:', action.type);
             }
         }
@@ -65,7 +68,7 @@ window.MyApp = window.MyApp || {};
             const action = this.stack[++this.index];
             this._applyRedoAction(action);
             
-            if(global.MyApp.debug) {
+            if(this.mainApi && this.mainApi.debugMode) {
                 console.log('[History] redo:', action.type);
             }
         }
@@ -75,7 +78,7 @@ window.MyApp = window.MyApp || {};
             switch(action.type) {
                 case 'stroke':
                     // ストロークの削除（実装は簡略化）
-                    if(global.MyApp.debug) {
+                    if(this.mainApi && this.mainApi.debugMode) {
                         console.log('[History] Undo stroke:', action.payload.pathId);
                     }
                     break;
@@ -93,7 +96,7 @@ window.MyApp = window.MyApp || {};
                     }
                     break;
                 default:
-                    if(global.MyApp.debug) {
+                    if(this.mainApi && this.mainApi.debugMode) {
                         console.log('[History] Undo not implemented for:', action.type);
                     }
             }
@@ -104,7 +107,7 @@ window.MyApp = window.MyApp || {};
             switch(action.type) {
                 case 'stroke':
                     // ストロークの復元
-                    if(global.MyApp.debug) {
+                    if(this.mainApi && this.mainApi.debugMode) {
                         console.log('[History] Redo stroke:', action.payload.pathId);
                     }
                     break;
@@ -118,7 +121,7 @@ window.MyApp = window.MyApp || {};
                     }
                     break;
                 default:
-                    if(global.MyApp.debug) {
+                    if(this.mainApi && this.mainApi.debugMode) {
                         console.log('[History] Redo not implemented for:', action.type);
                     }
             }
@@ -136,10 +139,11 @@ window.MyApp = window.MyApp || {};
         clear() {
             this.stack = [];
             this.index = -1;
-            if(global.MyApp.debug) {
+            if(this.mainApi && this.mainApi.debugMode) {
                 console.log('[History] cleared');
             }
         }
     }
 
+    global.MyApp.HistoryService = HistoryService;
 })(window);

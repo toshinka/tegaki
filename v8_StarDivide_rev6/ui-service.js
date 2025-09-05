@@ -1,51 +1,4 @@
-_createLayerPanel() {
-            // 元のレイヤーパネルUIを再現
-            const layerPanel = document.createElement('div');
-            layerPanel.id = 'layer-panel';
-            layerPanel.style.cssText = `
-                position: fixed;
-                right: 20px;
-                top: 50%;
-                transform: translateY(-50%);
-                z-index: 1000;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                gap: 8px;
-                pointer-events: none;
-            `;
-            
-            // 追加ボタン（元のSVGアイコンを使用）
-            const addButton = document.createElement('div');
-            addButton.id = 'add-layer-btn';
-            addButton.className = 'layer-add-button';
-            addButton.title = 'レイヤー追加';
-            addButton.style.cssText = `
-                width: 36px;
-                height: 36px;
-                background: var(--futaba-cream);
-                border: 2px solid var(--futaba-light-medium);
-                border-radius: 8px;
-                display: flex;
-                align-items: center;
-                justify-content: center;
-                cursor: pointer;
-                transition: all 0.2s ease;
-                box-shadow: 0 2px 8px rgba(128, 0, 0, 0.1);
-                pointer-events: all;
-            `;
-            addButton.innerHTML = `
-                <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
-                    <line x1="15" x2="15" y1="12" y2="18"/>
-                    <line x1="12" x2="18" y1="15" y2="15"/>
-                    <rect width="14" height="14" x="8" y="8" rx="2" ry="2"/>
-                    <path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/>
-                </svg>
-            `;
-            
-            const layerList = document.createElement('div');
-            layerList.id = 'layer-list';
-            lay/**
+/**
  * ==========================================================
  * @module UIService
  * @role   UI管理・ユーザーインタラクション・エラー表示
@@ -54,9 +7,11 @@ _createLayerPanel() {
  *   - showError(message): エラーメッセージ表示
  *   - updateToolUI(toolId): ツールUI更新
  *   - updateLayerPanel(layerData): レイヤーパネル更新
+ *   - updateCoordinates(x, y): 座標表示更新
  * @notes
  *   - DOM生成・操作を一元管理する。
  *   - ユーザー操作は主星に通知して処理を委譲する。
+ *   - コンソールログはdebugフラグで制御する。
  * ==========================================================
  */
 window.MyApp = window.MyApp || {};
@@ -80,7 +35,7 @@ window.MyApp = window.MyApp || {};
             this._createStatusPanel();
             this._setupToolHandlers();
             
-            if(global.MyApp.debug) {
+            if(this.mainApi && this.mainApi.debugMode) {
                 console.log('[UIService] UI components initialized');
             }
         }
@@ -167,20 +122,11 @@ window.MyApp = window.MyApp || {};
         }
 
         _setupToolHandlers() {
-            // 既存のツールボタンにイベントハンドラーを追加
-            const toolButtons = document.querySelectorAll('.tool-button');
-            toolButtons.forEach(button => {
-                button.addEventListener('click', (e) => {
-                    const toolId = this._getToolIdFromElement(button);
-                    if(toolId && this.mainApi) {
-                        this.mainApi.notify({
-                            type: 'tools.toolSelect',
-                            payload: { tool: toolId }
-                        });
-                        this._updateToolButtons(toolId);
-                    }
-                });
-            });
+            // ツールボタンは既にMainControllerで設定済みなので、
+            // ここでは追加の設定のみ行う
+            if(this.mainApi && this.mainApi.debugMode) {
+                console.log('[UIService] Tool handlers ready');
+            }
         }
 
         _getToolIdFromElement(element) {
@@ -192,6 +138,22 @@ window.MyApp = window.MyApp || {};
             return null;
         }
 
+        updateCurrentTool(toolId) {
+            const element = document.getElementById('current-tool');
+            if(element) {
+                const toolNames = {
+                    'brush': 'ベクターペン',
+                    'eraser': '消しゴム', 
+                    'transform': '変形',
+                    'resize': 'リサイズ'
+                };
+                element.textContent = toolNames[toolId] || toolId;
+            }
+            
+            // ツールボタンのアクティブ状態更新
+            this._updateToolButtons(toolId);
+        }
+
         _updateToolButtons(activeToolId) {
             // ツールボタンのアクティブ状態を更新
             document.querySelectorAll('.tool-button').forEach(btn => {
@@ -201,8 +163,7 @@ window.MyApp = window.MyApp || {};
             let buttonId = null;
             if(activeToolId === 'brush') buttonId = 'pen-tool';
             else if(activeToolId === 'eraser') buttonId = 'eraser-tool';
-            else if(activeToolId === 'transform') buttonId = 'transform-tool';
-            else if(activeToolId === 'resize') buttonId = 'resize-tool';
+            else if(activeToolId === 'transform') buttonId = 'resize-tool';
             
             if(buttonId) {
                 const activeBtn = document.getElementById(buttonId);
@@ -213,6 +174,8 @@ window.MyApp = window.MyApp || {};
         }
 
         updateLayerPanel(layerData) {
+            if(!layerData || !Array.isArray(layerData)) return;
+            
             const layerList = document.getElementById('layer-list');
             if(!layerList) return;
             
@@ -235,7 +198,7 @@ window.MyApp = window.MyApp || {};
                 `;
                 
                 layerItem.innerHTML = `
-                    <span class="layer-name">${layer.name}</span>
+                    <span class="layer-name">${layer.name || `Layer ${layer.id}`}</span>
                     <span class="layer-visibility" style="cursor: pointer;">${layer.visible ? '👁️' : '👁️‍🗨️'}</span>
                 `;
                 
@@ -264,19 +227,6 @@ window.MyApp = window.MyApp || {};
             });
         }
 
-        updateCurrentTool(toolName) {
-            const element = document.getElementById('current-tool');
-            if(element) {
-                const toolNames = {
-                    'brush': 'ベクターペン',
-                    'eraser': '消しゴム', 
-                    'transform': '変形',
-                    'resize': 'リサイズ'
-                };
-                element.textContent = toolNames[toolName] || toolName;
-            }
-        }
-
         updateCurrentLayer(layerName) {
             const element = document.getElementById('current-layer');
             if(element) {
@@ -287,38 +237,14 @@ window.MyApp = window.MyApp || {};
         updateCoordinates(x, y) {
             const element = document.getElementById('coordinates');
             if(element) {
-                element.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
+                element.textContent = `x: ${Math.round(x || 0)}, y: ${Math.round(y || 0)}`;
             }
         }
 
         showError(message) {
             // エラーメッセージの表示
             const errorDiv = document.createElement('div');
-            errorDiv.style.cssText = `
-                position: fixed;
-                top: 20px;
-                right: 20px;
-                z-index: 10000;
-                background: var(--futaba-maroon);
-                color: white;
-                padding: 16px;
-                border-radius: 8px;
-                box-shadow: 0 4px 12px rgba(0,0,0,0.3);
-                max-width: 300px;
-                font-size: 14px;
-                animation: slideIn 0.3s ease-out;
-            `;
-            
-            // CSS animation
-            const style = document.createElement('style');
-            style.textContent = `
-                @keyframes slideIn {
-                    from { transform: translateX(100%); opacity: 0; }
-                    to { transform: translateX(0); opacity: 1; }
-                }
-            `;
-            document.head.appendChild(style);
-            
+            errorDiv.className = 'error-notification';
             errorDiv.innerHTML = `
                 <strong>⚠️ エラー</strong><br>
                 <small>${message}</small>
@@ -331,13 +257,14 @@ window.MyApp = window.MyApp || {};
                 if (errorDiv.parentNode) {
                     errorDiv.style.animation = 'slideIn 0.3s ease-in reverse';
                     setTimeout(() => {
-                        errorDiv.parentNode.removeChild(errorDiv);
-                        document.head.removeChild(style);
+                        if (errorDiv.parentNode) {
+                            errorDiv.parentNode.removeChild(errorDiv);
+                        }
                     }, 300);
                 }
             }, 5000);
             
-            if(global.MyApp.debug) {
+            if(this.mainApi && this.mainApi.debugMode) {
                 console.log(`[UIService] Error displayed: ${message}`);
             }
         }
@@ -394,7 +321,10 @@ window.MyApp = window.MyApp || {};
         }
 
         hidePopup() {
-            this.hideAllPopups();
+            if(this.panels.popup && this.panels.popup.parentNode) {
+                this.panels.popup.parentNode.removeChild(this.panels.popup);
+                this.panels.popup = null;
+            }
         }
 
         // 座標更新のためのマウス追跡
@@ -418,15 +348,7 @@ window.MyApp = window.MyApp || {};
             this.updateCurrentTool('brush');
             this.updateCurrentLayer('レイヤー1');
             
-            // ポップアップ外クリックで閉じる処理
-            document.addEventListener('click', (e) => {
-                if (!e.target.closest('.popup-panel') && 
-                    !e.target.closest('.tool-button')) {
-                    this.hideAllPopups();
-                }
-            });
-            
-            if(global.MyApp.debug) {
+            if(this.mainApi && this.mainApi.debugMode) {
                 console.log('[UIService] Initialization completed');
             }
         }
