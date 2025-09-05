@@ -1,272 +1,94 @@
-エラーは出ないがキャンバスもツールポップアップも表示されない というものです。これは描画や UI がそもそも初期化されていない、または DOM にマウントされていないことが主な原因です。仕組みとして確認すべき箇所を整理します。
+🔍 問題の概要
 
-1. DrawingEngine の初期化と canvas DOM マウント
-症状
+消しゴムがペンの振る舞いをする: 描画中に消しゴムツールを選択しても、描画が消去ではなく描画として行われてしまう。
 
-canvas が DOM に追加されない → 描画されない
+描画フローの不整合: drawing-engine.js 内での描画処理がツールの種類に応じて適切に分岐していない可能性がある。
 
-PIXI.Application は作成されているが表示されない可能性
+🛠 改善案
+1. ツールの切り替えと描画処理の分岐
 
-原因候補
+drawing-engine.js 内で、現在のツール（ペンまたは消しゴム）を明示的に管理し、それに応じて描画処理を分岐させる必要があります。以下のような構造を検討してください。
 
-document.getElementById('drawing-canvas') が存在しない（main.html 側で canvas コンテナ未作成）
+// 現在のツールを管理する変数
+let currentTool = 'pen'; // 初期状態はペン
 
-DrawingEngine.register(mainApi) が呼ばれる前に DOM が読み込まれていない
-
-appendChild が実行されていない（this.app.view が正しくない）
-
-対策
-
-main.html に <div id="drawing-canvas"></div> を確実に配置
-
-DrawingEngine.register(mainApi) を DOMContentLoaded または main 初期化後に呼ぶ
-
-IIFE 内で this.app.view が正しく container に追加されているか確認
-
-2. UIService / ToolManager の初期化順序
-症状
-
-ツールポップアップが表示されない
-
-ツール選択やイベントが無効
-
-原因候補
-
-UIService が DOM にツールバーを作成する前に DrawingEngine が必要な container を参照している
-
-ToolManager が UIService に依存している場合、register / attach イベントが順序不正
-
-MainController.notify を通してイベントが伝わっていない
-
-対策
-
-MainController の init で
-
-1. DrawingEngine.register(mainApi)
-2. LayerService.register(mainApi)
-3. PositionService.register(mainApi)
-4. ToolManager.register(mainApi)
-5. UIService.register(mainApi)
-
-
-の順序で初期化
-
-UIService のツールバー作成は DrawingEngine.app や #drawing-canvas が存在することを前提とする
-
-ポップアップや sidebar は UIService.render() で DOM に確実に追加
-
-3. Layer / Position / Transform の依存関係
-症状
-
-Space キーで手のマークになるがキャンバス移動できない
-
-レイヤーや Transform 操作が効かない
-
-原因候補
-
-PositionService が DrawingEngine.app.stage を参照していない
-
-LayerService が container を取得できていない
-
-TransformTool が engineBridge を経由していない
-
-対策
-
-PositionService は必ず DrawingEngine.register 以降に初期化
-
-LayerService は ensureLayerContainer(layerId) で確実に container を生成
-
-TransformTool は mainApi.getEngineBridge() から描画用 container にアクセス
-
-EventListener は MainController.notify → ToolManager → Tool に届くことを確認
-
-4. まとめ・チェックリスト
-[DOM]
-- #drawing-canvas が main.html に存在する
-- ツールバー、レイヤーサイドバー用 container も存在
-
-[初期化順序]
-- MainController.init:
-  1. DrawingEngine.register(mainApi)
-  2. LayerService.register(mainApi)
-  3. PositionService.register(mainApi)
-  4. ToolManager.register(mainApi)
-  5. UIService.register(mainApi)
-
-[DrawingEngine]
-- this.app = PIXI.Application(...) が正常
-- container.appendChild(this.app.view) が DOM に追加される
-- engineBridge が mainApi に渡される
-
-[ToolManager / UIService]
-- ツールボタンクリックで event が MainController.notify を通る
-- UIService.render() で toolbar, layer sidebar が DOM に追加
-- ToolManager.getActiveTool() が常に取得可能
-
-[Layer / Position / Transform]
-- ensureLayerContainer(layerId) で container が作成
-- TransformTool / BrushTool / EraserTool が engineBridge を通じて描画
-- Space + ドラッグで PositionService が stage を translate
-
-[イベント]
-- MainController.notify(event) → 各衛星が受信可能
-- Event payload が正しく構造化されている
-
-
-💡 結論
-
-キャンバス・ツール表示されないのは、ほぼ DOM マウントと初期化順序 の問題です。
-
-DrawingEngine と UIService の初期化タイミングがずれると canvas が表示されず、ポップアップも無効になります。
-
-まず main.html 側で #drawing-canvas を確実に作ることと、MainController.init の初期化順序を上記の通りに揃えることが最優先です。]]
-
-※キャンバスが確実に表示され、ツールポップアップも機能する初期化順序のサンプル
-// star_architecture_main.js (rev9 安全化サンプル)
-class MainController {
-  constructor() {
-    this.mainApi = {
-      notify: this.notify.bind(this),
-      requestConfirm: this.requestConfirm.bind(this),
-      getEngineBridge: () => this.engineBridge,
-      getLayerList: () => this.layerService?.getLayerList() || [],
-      debugMode: false
-    };
-
-    // 衛星のインスタンス保持
-    this.drawingEngine = null;
-    this.layerService = null;
-    this.positionService = null;
-    this.toolManager = null;
-    this.uiService = null;
-    this.historyService = null;
-    this.errorService = null;
-
-    document.addEventListener("DOMContentLoaded", () => {
-      this.init();
-    });
-  }
-
-  init() {
-    // ------------------------------
-    // 1. エラー・履歴系のサービス初期化
-    // ------------------------------
-    this.errorService = new ErrorService();
-    this.errorService.register(this.mainApi);
-
-    this.historyService = new HistoryService();
-    this.historyService.register(this.mainApi);
-
-    // ------------------------------
-    // 2. 描画エンジン初期化（canvas DOM追加含む）
-    // ------------------------------
-    this.drawingEngine = new DrawingEngine();
-    this.drawingEngine.register(this.mainApi);
-    this.engineBridge = this.drawingEngine.getEngineBridge();
-
-    // ------------------------------
-    // 3. レイヤー / 位置管理
-    // ------------------------------
-    this.layerService = new LayerService();
-    this.layerService.register(this.mainApi);
-
-    this.positionService = new PositionService();
-    this.positionService.register(this.mainApi);
-
-    // ------------------------------
-    // 4. ツール系
-    // ------------------------------
-    this.toolManager = new ToolManager();
-    this.toolManager.register(this.mainApi);
-
-    // 必要ツール登録
-    this.toolManager.registerTool(new BrushTool());
-    this.toolManager.registerTool(new EraserTool());
-    this.toolManager.registerTool(new TransformTool());
-
-    // ------------------------------
-    // 5. UI系
-    // ------------------------------
-    this.uiService = new UIService();
-    this.uiService.register(this.mainApi);
-
-    // ツールバー / レイヤーサイドバーを描画
-    this.uiService.render();
-
-    // ------------------------------
-    // 初期化完了ログ
-    // ------------------------------
-    if (this.mainApi.debugMode) {
-      console.log("[MainController] init complete.");
-    }
-  }
-
-  // ------------------------------
-  // MainController API
-  // ------------------------------
-  notify(event) {
-    // 各衛星への通知やログ集約
-    if (this.mainApi.debugMode) {
-      console.log("[MainController.notify]", event.type, event.payload);
-    }
-    // 例：ツール操作イベントを layerService へ伝達
-    if (event.type.startsWith("tools.")) {
-      this.layerService?.handleToolEvent(event);
-    }
-  }
-
-  requestConfirm(request) {
-    // 例：レイヤー順序変更の確定など
-    this.historyService?.record(request);
+// 描画処理の関数
+function drawStroke(strokePoints) {
+  if (currentTool === 'pen') {
+    // ペンの描画処理
+    drawWithPen(strokePoints);
+  } else if (currentTool === 'eraser') {
+    // 消しゴムの描画処理
+    eraseWithEraser(strokePoints);
   }
 }
 
-// ------------------------------
-// DrawingEngine (rev9 安全化)
-// ------------------------------
-class DrawingEngine {
-  constructor() {
-    // canvas DOM 作成用 container
-    this.container = document.getElementById("drawing-canvas");
-    if (!this.container) {
-      console.error("DrawingEngine: #drawing-canvas が存在しません。");
-      this.container = document.createElement("div");
-      this.container.id = "drawing-canvas";
-      document.body.appendChild(this.container);
-    }
-
-    // PIXI.Application 作成
-    this.app = new PIXI.Application({
-      width: 1024,
-      height: 768,
-      backgroundColor: 0xffffff,
-      antialias: true
-    });
-
-    // DOM に追加
-    this.container.appendChild(this.app.view);
-
-    // EngineBridge 作成
-    this.engineBridge = {
-      app: this.app,
-      drawTemporaryStroke: (layerId, points) => { /* 実装 */ },
-      commitStroke: (layerId, strokeData) => { /* 実装 */ },
-      clearLayer: (layerId) => { /* 実装 */ },
-      takeSnapshot: (layerId) => { /* 実装 */ }
-    };
-  }
-
-  register(mainApi) {
-    mainApi.engineBridge = this.engineBridge;
-  }
-
-  getEngineBridge() {
-    return this.engineBridge;
+// ツールの切り替え関数
+function setTool(tool) {
+  if (tool === 'pen' || tool === 'eraser') {
+    currentTool = tool;
+  } else {
+    console.error('無効なツールが指定されました');
   }
 }
 
-// ------------------------------
-// Main 初期化
-// ------------------------------
-window.MyApp = window.MyApp || {};
-window.MyApp.mainController = new MainController();
+
+このように、currentTool 変数で現在のツールを管理し、drawStroke 関数内でそのツールに応じた描画処理を呼び出すようにします。
+
+2. 描画処理の分離
+
+ペンと消しゴムの描画処理は明確に分けるべきです。例えば、以下のようにそれぞれの描画処理を関数として定義します。
+
+function drawWithPen(strokePoints) {
+  // ペンによる描画処理
+  const graphics = new PIXI.Graphics();
+  graphics.lineStyle(4, 0x000000, 1);
+  graphics.moveTo(strokePoints[0].x, strokePoints[0].y);
+  strokePoints.forEach(point => {
+    graphics.lineTo(point.x, point.y);
+  });
+  // 描画をステージに追加
+  app.stage.addChild(graphics);
+}
+
+function eraseWithEraser(strokePoints) {
+  // 消しゴムによる描画処理（消去）
+  const graphics = new PIXI.Graphics();
+  graphics.lineStyle(10, 0xffffff, 1); // 白色で消去
+  graphics.moveTo(strokePoints[0].x, strokePoints[0].y);
+  strokePoints.forEach(point => {
+    graphics.lineTo(point.x, point.y);
+  });
+  // 描画をステージに追加
+  app.stage.addChild(graphics);
+}
+
+
+消しゴムの描画処理では、lineStyle の太さや色を調整することで消去の効果を実現します。
+
+3. 履歴管理と非破壊編集
+
+描画操作を非破壊で行うためには、履歴管理を適切に行う必要があります。history-service.js での履歴管理が適切に行われているか確認し、描画操作ごとに履歴を記録するようにします。
+
+function commitStroke(strokeData) {
+  // 履歴に描画データを追加
+  historyService.addHistory({
+    type: 'draw',
+    data: strokeData
+  });
+  // 描画処理を実行
+  drawStroke(strokeData.points);
+}
+
+
+このように、描画処理を実行する前に履歴に記録し、Undo/Redo 操作が可能なようにします。
+
+✅ 確認ポイント
+
+ ツールの切り替え: ペンと消しゴムの切り替えが適切に行われているか。
+
+ 描画処理の分岐: 現在のツールに応じて描画処理が分岐しているか。
+
+ 履歴管理: 描画操作が履歴として適切に記録されているか。
+
+ 非破壊編集: 描画操作が非破壊で行われているか。

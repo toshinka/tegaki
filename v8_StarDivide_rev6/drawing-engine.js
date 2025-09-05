@@ -26,41 +26,39 @@ window.FutabaDrawingEngine = (function() {
         }
         
         drawTemp(points) {
-            if (this.tempGraphics) {
-                this.stage.removeChild(this.tempGraphics);
-                this.tempGraphics.destroy();
-            }
+            this._clearTemp();
+            
+            if (points.length === 0) return;
             
             this.tempGraphics = new PIXI.Graphics();
             this.tempGraphics.alpha = this.settings.opacity;
+            // No blend mode needed for pen - default is normal
             
-            if (points.length > 0) {
-                // Draw smooth line with circles for better quality
-                for (let i = 0; i < points.length; i++) {
-                    const point = points[i];
-                    this.tempGraphics.circle(point.x, point.y, this.settings.size / 2);
-                    this.tempGraphics.fill({ 
-                        color: this.settings.color,
-                        alpha: 1.0 // Alpha is set on container level
-                    });
+            // Draw smooth line with circles for better quality
+            for (let i = 0; i < points.length; i++) {
+                const point = points[i];
+                this.tempGraphics.circle(point.x, point.y, this.settings.size / 2);
+                this.tempGraphics.fill({ 
+                    color: this.settings.color,
+                    alpha: 1.0 // Alpha is set on container level
+                });
+                
+                // Connect points with line segments
+                if (i > 0) {
+                    const prevPoint = points[i - 1];
+                    const distance = Math.sqrt((point.x - prevPoint.x) ** 2 + (point.y - prevPoint.y) ** 2);
+                    const steps = Math.max(1, Math.ceil(distance / 1.5));
                     
-                    // Connect points with line segments
-                    if (i > 0) {
-                        const prevPoint = points[i - 1];
-                        const distance = Math.sqrt((point.x - prevPoint.x) ** 2 + (point.y - prevPoint.y) ** 2);
-                        const steps = Math.max(1, Math.ceil(distance / 1.5));
+                    for (let s = 1; s <= steps; s++) {
+                        const t = s / steps;
+                        const px = prevPoint.x + (point.x - prevPoint.x) * t;
+                        const py = prevPoint.y + (point.y - prevPoint.y) * t;
                         
-                        for (let s = 1; s <= steps; s++) {
-                            const t = s / steps;
-                            const px = prevPoint.x + (point.x - prevPoint.x) * t;
-                            const py = prevPoint.y + (point.y - prevPoint.y) * t;
-                            
-                            this.tempGraphics.circle(px, py, this.settings.size / 2);
-                            this.tempGraphics.fill({ 
-                                color: this.settings.color,
-                                alpha: 1.0
-                            });
-                        }
+                        this.tempGraphics.circle(px, py, this.settings.size / 2);
+                        this.tempGraphics.fill({ 
+                            color: this.settings.color,
+                            alpha: 1.0
+                        });
                     }
                 }
             }
@@ -77,6 +75,7 @@ window.FutabaDrawingEngine = (function() {
             
             const graphics = new PIXI.Graphics();
             graphics.alpha = this.settings.opacity;
+            // No blend mode needed for pen - default is normal
             
             const points = strokeData.points || [];
             if (points.length > 0) {
@@ -149,42 +148,39 @@ window.FutabaDrawingEngine = (function() {
         }
         
         drawTemp(points) {
-            if (this.tempGraphics) {
-                this.stage.removeChild(this.tempGraphics);
-                this.tempGraphics.destroy();
-            }
+            this._clearTemp();
+            
+            if (points.length === 0) return;
             
             this.tempGraphics = new PIXI.Graphics();
-            // Set erase blend mode for temporary preview
+            // Critical: Set erase blend mode for temporary preview
             this.tempGraphics.blendMode = PIXI.BLEND_MODES.ERASE;
             
-            if (points.length > 0) {
-                // Draw eraser preview
-                for (let i = 0; i < points.length; i++) {
-                    const point = points[i];
-                    this.tempGraphics.circle(point.x, point.y, this.settings.size / 2);
-                    this.tempGraphics.fill({ 
-                        color: 0xffffff, // White for erasing
-                        alpha: this.settings.opacity
-                    });
+            // Draw eraser preview
+            for (let i = 0; i < points.length; i++) {
+                const point = points[i];
+                this.tempGraphics.circle(point.x, point.y, this.settings.size / 2);
+                this.tempGraphics.fill({ 
+                    color: 0xffffff, // White for erasing
+                    alpha: this.settings.opacity
+                });
+                
+                // Connect points with line segments
+                if (i > 0) {
+                    const prevPoint = points[i - 1];
+                    const distance = Math.sqrt((point.x - prevPoint.x) ** 2 + (point.y - prevPoint.y) ** 2);
+                    const steps = Math.max(1, Math.ceil(distance / 2.0));
                     
-                    // Connect points with line segments
-                    if (i > 0) {
-                        const prevPoint = points[i - 1];
-                        const distance = Math.sqrt((point.x - prevPoint.x) ** 2 + (point.y - prevPoint.y) ** 2);
-                        const steps = Math.max(1, Math.ceil(distance / 2.0));
+                    for (let s = 1; s <= steps; s++) {
+                        const t = s / steps;
+                        const px = prevPoint.x + (point.x - prevPoint.x) * t;
+                        const py = prevPoint.y + (point.y - prevPoint.y) * t;
                         
-                        for (let s = 1; s <= steps; s++) {
-                            const t = s / steps;
-                            const px = prevPoint.x + (point.x - prevPoint.x) * t;
-                            const py = prevPoint.y + (point.y - prevPoint.y) * t;
-                            
-                            this.tempGraphics.circle(px, py, this.settings.size / 2);
-                            this.tempGraphics.fill({ 
-                                color: 0xffffff,
-                                alpha: this.settings.opacity
-                            });
-                        }
+                        this.tempGraphics.circle(px, py, this.settings.size / 2);
+                        this.tempGraphics.fill({ 
+                            color: 0xffffff,
+                            alpha: this.settings.opacity
+                        });
                     }
                 }
             }
@@ -278,7 +274,9 @@ window.FutabaDrawingEngine = (function() {
             this._penEngine = null;
             this._eraserEngine = null;
             
+            // 現在のツールを管理する変数（改修案実装）
             this.currentTool = 'pen';
+            
             this.drawingState = {
                 active: false,
                 currentStroke: null,
@@ -431,9 +429,40 @@ window.FutabaDrawingEngine = (function() {
             }
         }
         
+        // ツールの切り替え関数（改修案実装）
+        setTool(tool) {
+            if (tool === 'pen' || tool === 'eraser') {
+                this.currentTool = tool;
+            } else {
+                console.error('[DrawingEngine] 無効なツールが指定されました:', tool);
+            }
+        }
+        
+        // 描画処理の関数（改修案実装）
+        drawStroke(strokePoints) {
+            if (this.currentTool === 'pen') {
+                // ペンの描画処理
+                this.drawWithPen(strokePoints);
+            } else if (this.currentTool === 'eraser') {
+                // 消しゴムの描画処理
+                this.eraseWithEraser(strokePoints);
+            }
+        }
+        
+        // ペンによる描画処理（改修案実装）
+        drawWithPen(strokePoints) {
+            this._penEngine.drawTemp(strokePoints);
+        }
+        
+        // 消しゴムによる描画処理（改修案実装）
+        eraseWithEraser(strokePoints) {
+            this._eraserEngine.drawTemp(strokePoints);
+        }
+        
         // API Methods for EngineBridge compatibility
         drawTemporaryStroke(toolId, strokePoints) {
             try {
+                // 改修案に従い、現在のツールに応じて描画処理を分岐
                 switch (toolId) {
                     case 'pen':
                         this._penEngine.drawTemp(strokePoints);
@@ -453,6 +482,7 @@ window.FutabaDrawingEngine = (function() {
             try {
                 let result = null;
                 
+                // 改修案に従い、現在のツールに応じて描画処理を分岐
                 switch (toolId) {
                     case 'pen':
                         result = this._penEngine.commit(strokeData);
@@ -563,7 +593,8 @@ window.FutabaDrawingEngine = (function() {
                 this.cancelDrawing(); // Cancel previous if any
             }
             
-            this.currentTool = tool || 'pen';
+            // 改修案に従い現在のツールを設定
+            this.setTool(tool || 'pen');
             this.drawingState.active = true;
             this.drawingState.strokePoints = [point];
             
@@ -579,7 +610,7 @@ window.FutabaDrawingEngine = (function() {
             // Add point to stroke
             this.drawingState.strokePoints.push(point);
             
-            // Update temporary stroke
+            // Update temporary stroke using current tool
             this.drawTemporaryStroke(this.currentTool, this.drawingState.strokePoints);
         }
         
@@ -615,7 +646,7 @@ window.FutabaDrawingEngine = (function() {
                     { ...this._eraserEngine.settings }
             };
             
-            // Commit stroke
+            // Commit stroke using current tool
             const result = this.commitStroke(this.currentTool, strokeData);
             
             // Reset drawing state
