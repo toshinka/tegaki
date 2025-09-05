@@ -1,0 +1,227 @@
+改修計画書（プレーンテキスト）
+対象：v8_StarDivide_rev3 → リファクタリングを伴う分割改修（HTML直開き対応 / 星型アーキテクチャ厳守）
+前提条件（固定）
+- 実行環境：Chrome 最新、ローカルで HTML 直開き可能（file://）を想定
+- 技術スタック：PixiJS v8（CDN読み込み）、ES2023（モジュールは使用しない）、fetch API 可
+- 禁止事項：TypeScript / Vite / ESM / bundler / Babel 不使用
+- グローバル名前空間：window.MyApp を採用（全モジュールはここへ登録）
+目標
+1. 主星（MainController）は「発火・仲介・確定と記録」のみに責務を限定する（肥大化は許容するが機能は仲介に限定）。
+2. 衛星（各サービス・ツール）は「単一責務」を持つ。衛星間直接参照は禁止。主星を介してのみ通信。
+3. 命名と API を厳格に定義し、ファイル横断で誤解が起きないようにする。
+4. エラーはサイレントに隠蔽せず、ErrorService 経由で主星に上げ、UI に通知する。
+5. コンソールログは最小限にし、デバッグフラグで詳細化可能にする。
+6. 非破壊レイヤー移動やベクターペン／消しゴムはツール単位で分離して実装する。
+
+主要モジュール（衛星）一覧と責務（推奨ファイル名）
+- MainController (main.html)
+  - 初期化順序の保証、名前空間への登録、イベントルーター（router）
+  - confirm（確定）処理および HistoryService への橋渡し
+  - ErrorService の一元受け取りと UI 通知
+- LayerService (layer-service.js)
+  - レイヤーの生成／削除／インデックス管理（順序移動: reorderLayer）
+  - レイヤーに属するメタ（visibility, locked, transform）管理（transformはTransformServiceへ委譲）
+  - Stage コンテナの提供（engine とは橋渡しで連携）
+- TransformService (transform-service.js)
+  - レイヤーの座標移動・回転・スケール（非破壊操作：操作のbefore/after情報を生成）
+  - transform の検証（bounds, collision など）
+- ToolManager (tool-manager.js)
+  - 現在選択中ツールの管理（setActiveTool / getActiveTool）
+  - 各 Tool を登録（registerTool）
+- BrushTool / EraserTool / TransformTool (tools/brush-tool.js など)
+  - 各ツールは Tool インターフェースに従う（start(point), move(point), end(), serialize()）
+  - EraserTool は Pixi の BLEND_MODES.ERASE を使い、消しは透明化を行う
+- DrawingEngine (drawing-engine.js)
+  - Pixi.Application の生成（app.renderer, app.stageの管理）
+  - EngineBridge: 衛星が実描画を要求するための最小 API（drawStroke, commitLayerSnapshot）
+- HistoryService (history-service.js)
+  - record(action), undo(), redo(), getState()
+  - action は {type: STRING, payload: OBJECT, timestamp, meta:{requestId}} 形式
+- UIService (ui-service.js)
+  - DOM の生成（非描画 UI）、ユーザ操作を main に通知
+- PositionService（位置系）(position-service.js)
+  - カメラ操作、座標系変換（canvas<->world）
+- ErrorService (error-service.js)
+  - 全衛星のエラーフローを受けて main に通知。UI向けの簡潔なエラーメッセージを整形する。
+
+命名規約（必須）
+- ファイル名：kebab-case（例: layer-service.js）
+- クラス名：PascalCase（例: LayerService）
+- グローバル登録：window.MyApp.LayerService = LayerService
+- メソッド名：camelCase、動詞始まり（createLayer, reorderLayer, startStroke）
+- イベント名：domain.action をドットで区切る（例: tools.brushStart / layers.reorderRequest / history.record）
+- Tool インターフェース関数名は統一（start, move, end, cancel, serialize）
+
+イベント仕様（JSON スキーマ簡易）
+- 基本イベント形式：
+  { type: "domain.action", payload: {...}, meta: { requestId: "uuid", origin: "Tool|UI" } }
+- 例：
+  - tools.brushStart -> payload:{x,y,toolId,settings}
+  - layers.reorderRequest -> payload:{fromIndex,toIndex,layerId}
+  - layers.reorderConfirm -> payload:{fromIndex,toIndex,layerId}
+  - tools.strokeCommit -> payload:{layerId,strokeData}
+- 全イベントは MainController.notify(event) を経由して dispatch する
+
+エラー方針（厳格）
+- 衛星は内部で try/catch して recoverable なエラーは main.notify({type:'error.recoverable', payload}) で報告
+- unrecoverable は main.notify({type:'error.fatal', payload}) を呼び例外を main に委ねる
+- main は ErrorService に喚起し、UIService 経由でユーザに簡潔に表示する（詳細ログは開発モードのみ）
+- フォールバックや多重化は基本回避。代替動作が必要な場合は明示的に main が制御する
+
+ログ方針
+- window.MyApp.debug = false/true フラグで制御
+- main.log(level, tag, payload) を通じた一元ロギング。console.log の直接使用を禁止（コード規約）
+- 本番（debug=false）：error と warning のみ出力
+
+設計ルール（必読）
+1. 衛星間直接参照禁止（例外：Immutable 値の読み取りは可だが参照は不可）
+2. 衛星は register(mainApi) を持ち、mainApi からのみ呼ばれるメソッドを限定提供する
+3. Tool は DrawingEngine に直接描画要求を出さず、MainController へイベントを送って確定を行う（render のパフォーマンスを考え、必要時は部分的に最適化）
+4. transform 操作は TransformService が計算し、LayerService に変換結果を返す（LayerService は変換の適用と履歴登録のためのデータを返す）
+5. HistoryService は main の確定（confirm）を受けて record すること（衛星が直接 record してはならない）
+
+移行手順（ステップ）
+A. 事前準備
+  - 全 JS ファイルを lint（括弧・閉じ忘れ等）
+  - 名前空間確認（window.MyApp が全ファイル先頭で作られていること）
+B. インターフェース定義
+  - 各モジュールの register(mainApi) と公開メソッド一覧を簡潔に定義（ドキュメント）
+C. MainController の骨組み作成（最優先）
+  - MainController.init を作り、各衛星を new して register する順序を確実にする
+D. 衛星の単体化・分割
+  - LayerService を first-cut として分離（既存 layer-manager を LayerService 名に合わせて修正）
+  - DrawingEngine を EngineBridge として分割（Pixi 初期化部を EngineBridge、stroke buffer 等は BrushTool に移す）
+  - ToolManager と各 Tool を作成
+E. 確認作業
+  - 各ステップで unit-test（簡易）と manual check（HTML直開き）を行う
+F. 非破壊操作実装
+  - TransformService ⇄ LayerService の協調を作る（reorder/transform -> main confirm -> history record）
+G. リリース前チェック
+  - デバッグフラグ確認、console の出力量、エラーフロー、読み込み順序
+
+テストと検証
+- ユニットテストは手動スクリプトでも可。最小検証セット：
+  1. レイヤー作成／削除／順序変更（reorder）→ main 経由で確定されること
+  2. ペン描画の start/move/end → main 経由で commit されること
+  3. 消しゴムツール：erase 動作（blendMode=ERASE が有効）
+  4. Undo/Redo：history.record が main により行われること
+  5. エラー生成：衛星が error を送信した場合 main が UI を通じて通知すること
+
+ローリングバック・安全策
+- 改修は小さな段階（LayerService 切出し → Tool 分離 → TransformService 切出し）で行う
+- 各段階で既存の rev タグを作成して、失敗時にすぐ戻せるようにする
+- 破壊的変更は必ず feature branch で行う（GitHub 上のワークフロー）
+
+優先度表（初期改修フェーズ）
+1. MainController のルーターと register API の明文化（必須）
+2. DrawingEngine の Pixi 初期化部分を EngineBridge に分離（必須）
+3. LayerService の分離（高）
+4. ToolManager + BrushTool / EraserTool の分割（高）
+5. HistoryService の main 経由一元化（高）
+6. TransformService の導入（中）
+7. PositionService / UIService の細分化（低）
+
+成果物（納品イメージ）
+- 改修計画ドキュメント（このファイル）
+- リファクタリング後のファイル群（main.html, engine-bridge.js, layer-service.js, tool-manager.js, tools/..., history-service.js, transform-service.js, ui-service.js）
+- 最小動作サンプル（HTML直開きで起動可）
+- テスト手順書（manual check リスト）
+
+備考
+- 命名やメソッドの意図が曖昧な箇所はすべて「役割コメント」を付ける（// ROLE: ...）
+- ErrorService の導入で「隠蔽されたエラー」を排除する。フォールバックは main の指示で行う
+- console.log は main.log を通して管理し、デバッグモード切替で制御すること
+
+（続き：簡潔な API カタログ例 / イベント一覧）
+
+---- MainController API (exposed to satellites via register(mainApi)) ----
+mainApi = {
+  notify(event)                // 衛星から main へイベント通知（必須）
+  requestConfirm(request)      // 衛星が main に「確定」を要求する（例：reorder）
+  getEngineBridge()            // EngineBridge への参照（描画用最小API） - readonly
+  getLayerList()               // 層情報の読み取り用（immutable copy）
+  debugMode: boolean           // デバッグフラグ
+}
+
+---- EngineBridge (DrawingEngine が main に登録する最小 API) ----
+engineBridge = {
+  app: PIXI.Application,                         // readonly
+  drawTemporaryStroke(layerId, strokePoints)    // 描画バッファへの一時描画（ツールが呼ぶ）
+  commitStroke(layerId, strokeData)              // 描画の確定（main が呼ぶ）
+  clearLayer(layerId)                            // レイヤークリア
+  takeSnapshot(layerId)                          // レイヤーのスナップショットを返す（undo用）
+}
+
+---- Tool インターフェース（各ツールが実装すべき） ----
+Tool = {
+  id: "brush" | "eraser" | "transform" | ...,
+  start(point, meta),
+  move(point, meta),
+  end(point, meta),
+  cancel(meta),
+  serialize() -> object
+}
+
+---- イベント一覧（抜粋） ----
+- tools.brushStart  payload:{toolId, x,y, settings}
+- tools.brushMove   payload:{points:[{x,y}], toolId}
+- tools.brushEnd    payload:{strokeData, layerId}
+- layers.reorderRequest payload:{fromIndex,toIndex,layerId}
+- layers.reorderConfirm payload:{fromIndex,toIndex,layerId}
+- history.record payload:{action:{type,payload}}
+- error.recoverable payload:{code,msg,context}
+- error.fatal payload:{code,msg,stack}
+
+---- 命名禁止リスト（例） ----
+- 汎用的すぎる名前：Manager, Handler（単独で使う禁止。必ず Service/Tool の suffix を付ける）
+- ambiguous verbs：moveLayer（→ reorderLayer or translateLayer に置き換える）
+- 同一ファイル横断で同名メソッドを定義しない。やむを得ず同名にする場合は namespace prefix を必須（例：layer.reorder, transform.reorder）
+
+---- 最短の実装チェックリスト ----
+1. main.html に MainController で mainApi を生成し window.MyApp.mainApi として登録
+2. engine-bridge.js（DrawingEngine）を作成し mainApi.registerEngine(engineBridge)
+3. layer-service.js を作成し mainApi へ register
+4. tool-manager.js と tools/brush-tool.js を作成し mainApi へ register
+5. history-service.js を main 内で初期化し、各確定時に record を呼ぶ
+6. UIService を作成し、ツールの UI 操作が main.notify(event) を呼ぶことを確認
+
+✅ 衛星ファイルのヘッダーに入れると良い情報
+
+これは見通しを保つために効果的です。以下のような「軽量メタデータ」を冒頭コメントに必ず書くと整理しやすいです。
+
+/**
+ * @module EraserTool
+ * @role 描画ツール（消去処理専用）
+ * @depends MainController (イベント経由)
+ * @provides eraseStroke(canvas, path, options)
+ * @notes 主星の HistoryService を通じて確定処理を行うこと。
+ */
+
+推奨ヘッダールール
+
+1.@module: ファイルの正式モジュール名
+
+2.@role: そのモジュールの役割（1行で説明）
+
+3.@depends: 依存先（衛星同士は禁止。依存は主星のみが原則）
+
+4.@provides: 外部に提供する公開メソッド一覧
+
+5.@notes: 特記事項（エラー処理ポリシー、主星との責務分担など）
+
+✅ このヘッダールールを導入するメリット
+
+・命名の曖昧さを防げる（ファイルを跨いでも役割が一目瞭然）
+
+・AIに依頼する時に有効（「@provides の一覧を見て修正してください」で済む）
+
+・依存関係が崩れるのを防止（衛星同士の直結を禁止できる）
+
+・過去の設計意図が残る（後から読み直してもなぜこうしたか分かる）
+
+
+
+
+
+
+

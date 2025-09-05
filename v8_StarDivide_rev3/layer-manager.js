@@ -113,15 +113,8 @@ window.FutabaLayerManager = (function() {
             if (layer && pathData && pathData.graphics) {
                 layer.paths.push(pathData);
                 
-                // For eraser paths, ensure proper blend mode and layer order
-                if (pathData.isEraser) {
-                    pathData.graphics.blendMode = PIXI.BLEND_MODES.ERASE;
-                    // Add eraser at the top to erase all below
-                    layer.container.addChild(pathData.graphics);
-                } else {
-                    // Add regular paths normally
-                    layer.container.addChild(pathData.graphics);
-                }
+                // Graphics already has correct blend mode set by drawing engine
+                layer.container.addChild(pathData.graphics);
                 
                 return true;
             }

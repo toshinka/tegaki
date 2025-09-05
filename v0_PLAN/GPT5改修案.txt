@@ -1,347 +1,71 @@
-原因は JavaScript の構文エラーとモジュール未定義 に起因しています。順を追って整理します。
+✅ 原因
 
-1. エラー解析
-(1) layer-manager.js:78 Uncaught SyntaxError: Unexpected end of input
+PixiJS の Graphics や Sprite を普通に使うと、常に「上書き描画」 になります。
+キャンバス2D API のような globalCompositeOperation = "destination-out" に相当する仕組みを入れないと「透明で消す」動作にはなりません。
 
-原因：ファイル末尾に } や ) が閉じられていない、もしくは IIFE / 名前空間ラッパーが閉じられていない。
+現在の DrawingEngine ではたぶん「線を描く」と「消す」で同じ描画ルーチンを使っていて、色だけ変えている状態です。そのため「白で塗りつぶす＝消すように見えるけど実際は透明にならない」動きになっています。
 
-対策：
+✅ 対策
 
-ファイル末尾に })(); または })(window); が抜けていないか確認
+PixiJS v8 で消しゴムを実現するには ブレンドモード（合成モード） を切り替える必要があります。
 
-クラス定義の {} が閉じているか確認
+ペン：通常描画
 
-VSCode 等で括弧の対応をチェック
+graphics.blendMode = PIXI.BLEND_MODES.NORMAL;
+graphics.lineStyle(brushSize, brushColor, 1.0);
 
-(2) ui-manager.js:849 Uncaught SyntaxError: Unexpected token '}'
 
-原因：
+消しゴム：透明で塗り潰し
 
-不要な閉じ括弧 } がある
+graphics.blendMode = PIXI.BLEND_MODES.ERASE;
+graphics.lineStyle(brushSize, 0xFFFFFF, 1.0); // 色は任意、アルファは無視される
 
-または関数 / クラス / IIFE の終了位置のズレ
 
-対策：
+BLEND_MODES.ERASE は WebGL2 / PixiJS v5 以降 で追加された「透明で削る」モードです。
+これを stroke / fill 前に指定することで「消しゴム」が実現できます。
 
-直前の function / class / (function(){ ... })() ブロックの括弧バランスを確認
+✅ 修正例（drawing-engine.js の一部）
+class DrawingEngine {
+    constructor(main){
+        this.main = main;
+        this.currentTool = 'brush';
+        this.graphics = new PIXI.Graphics();
+        this.main.layers.stage.addChild(this.graphics);
+    }
 
-行番号 849 前後をチェック
+    setTool(tool){
+        this.currentTool = tool;
+    }
 
-編集時にコメントアウトや改行で誤って } を入れた可能性あり
+    startStroke(point){
+        this.graphics.moveTo(point.x, point.y);
+    }
 
-(3) main.html:186 [Main] Required module FutabaLayerManager not found
+    addPoint(point){
+        this.graphics.lineTo(point.x, point.y);
+    }
 
-原因：
+    endStroke(){
+        this.main.notify({type:'tools.brushEnd'});
+    }
 
-main.html 側で FutabaLayerManager が参照されているが、layer-manager.js 内でグローバルに登録されていない か、名前空間が違う
+    confirmStroke(){
+        // 選択中のツールでブレンドモードを切り替える
+        if(this.currentTool === 'eraser'){
+            this.graphics.blendMode = PIXI.BLEND_MODES.ERASE;
+            this.graphics.lineStyle(10, 0xFFFFFF, 1.0); // size=10の消しゴム
+        } else {
+            this.graphics.blendMode = PIXI.BLEND_MODES.NORMAL;
+            this.graphics.lineStyle(2, 0x000000, 1.0); // size=2の黒ペン
+        }
+        this.graphics.strokePath();
+    }
+}
 
-置き換え IIFE / 名前空間パターンを使っている場合、例えば window.MyApp.LayerModule と定義しているのに FutabaLayerManager を参照している可能性
+✅ まとめ
 
-対策：
+現在の「消しゴムがペンになる」問題は 描画モードが常に NORMAL だから
 
-モジュールをグローバル変数として正しく登録
+消しゴム専用のブレンドモード PIXI.BLEND_MODES.ERASE を使う ことで透明化できる
 
-window.FutabaLayerManager = class { ... }
-
-
-または
-
-window.MyApp = window.MyApp || {};
-MyApp.FutabaLayerManager = class { ... }
-
-
-main.html 側でも同じ名前で参照
-
-this.layers = new MyApp.FutabaLayerManager(this);
-
-(4) [Main] Initialization failed Error: Required libraries not found
-
-原因：
-
-上記のモジュール未定義が原因で初期化処理が失敗
-
-対策：
-
-syntax error を修正 → モジュール登録を確認 → main.html の初期化順序を確認
-
-2. 推奨対応手順
-
-括弧のバランスを確認
-
-各 JS ファイル末尾の IIFE / クラスの閉じ括弧をチェック
-
-layer-manager.js 末尾：})(); または })(window);
-
-ui-manager.js の 849 行前後も閉じ括弧を確認
-
-名前空間統一
-
-HTML直開き環境では、モジュールはグローバルまたは window.MyApp 名前空間で登録
-
-main.html で参照する名前と JS 側で登録している名前を完全一致させる
-
-読み込み順序
-
-<script> の順番を確認：
-
-layer-manager.js
-
-drawing-engine.js
-
-position-manager.js
-
-ui-manager.js
-
-history-service.js
-
-main.html 内 MainController 初期化
-
-依存モジュールが先に読み込まれていないと未定義エラーになる
-
-構文エラー確認
-
-VSCode 等の Linter で全 JS ファイルをチェック
-
-特に IIFE / クラス / 関数の {} の閉じ忘れ、余分な } に注意
-
-💡 ポイント
-
-HTML直開き＋グローバル参照方式では、構文エラーが一つでもあると初期化全体が止まる
-
-名前空間とファイル読み込み順序の管理が重要
-
-
-
-※下記はv8_StarDivide_rev1 を HTML直開き対応＋名前空間管理＋star型構造維持 に書き換えたサンプル
-
-<!-- -------------------- main.html (主星) -------------------- -->
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-<meta charset="UTF-8">
-<title>Star-Architecture Drawing Tool</title>
-<!-- PixiJS CDN -->
-<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.4.0/dist/pixi.min.js"></script>
-
-<!-- 衛星モジュール -->
-<script src="layer-manager.js"></script>
-<script src="drawing-engine.js"></script>
-<script src="position-manager.js"></script>
-<script src="ui-manager.js"></script>
-<script src="history-service.js"></script>
-
-<script>
-(function(){
-  class MainController {
-      constructor() {
-          this.layers = new MyApp.FutabaLayerManager(this);
-          this.engine = new MyApp.DrawingEngine(this);
-          this.position = new MyApp.PositionManager(this);
-          this.ui = new MyApp.UIManager(this);
-          this.history = new MyApp.HistoryService();
-          this.init();
-      }
-
-      init() {
-          console.log("[Main] Initializing");
-          this.layers.register(this);
-          this.engine.register(this);
-          this.position.register(this);
-          this.ui.register(this);
-      }
-
-      notify(event) {
-          switch(event.type){
-              case 'layers.moveRequest':
-                  this.layers.moveConfirm(event.payload);
-                  this.history.record({type:'layerMove', data:event.payload});
-                  break;
-              case 'tools.brushEnd':
-                  this.engine.confirmStroke(event.payload);
-                  this.history.record({type:'stroke', data:event.payload});
-                  break;
-              default:
-                  console.warn('[Main] Unknown event:', event.type);
-          }
-      }
-  }
-
-  window.app = new MainController();
-})();
-</script>
-</head>
-<body>
-<div id="canvas-container"></div>
-<div id="tools-container"></div>
-</body>
-</html>
-
-// -------------------- layer-manager.js --------------------
-window.MyApp = window.MyApp || {};
-
-(function(global){
-  class FutabaLayerManager {
-      constructor(main){
-          this.main = main;
-          this.layers = [];
-      }
-
-      register(main){
-          this.main = main;
-      }
-
-      createLayer(name){
-          const layer = {id:this.layers.length, name, transform:null};
-          this.layers.push(layer);
-          return layer;
-      }
-
-      moveLayer(fromIndex, toIndex){
-          const payload = {fromIndex, toIndex};
-          this.main.notify({type:'layers.moveRequest', payload});
-      }
-
-      moveConfirm(payload){
-          const layer = this.layers.splice(payload.fromIndex,1)[0];
-          this.layers.splice(payload.toIndex,0,layer);
-          console.log('[Layer] moved:', payload);
-      }
-  }
-
-  global.MyApp.FutabaLayerManager = FutabaLayerManager;
-})(window);
-
-// -------------------- drawing-engine.js --------------------
-window.MyApp = window.MyApp || {};
-
-(function(global){
-  class DrawingEngine {
-      constructor(main){
-          this.main = main;
-          this.strokeBuffer = [];
-      }
-
-      register(main){ this.main = main; }
-
-      startStroke(point){ this.strokeBuffer.push([point]); }
-
-      addPoint(point){ this.strokeBuffer[this.strokeBuffer.length-1].push(point); }
-
-      endStroke(){
-          const payload = this.strokeBuffer.pop();
-          this.main.notify({type:'tools.brushEnd', payload});
-      }
-
-      confirmStroke(payload){
-          console.log('[Engine] Stroke confirmed:', payload);
-          // Pixi描画処理ここに
-      }
-  }
-
-  global.MyApp.DrawingEngine = DrawingEngine;
-})(window);
-
-// -------------------- position-manager.js --------------------
-window.MyApp = window.MyApp || {};
-
-(function(global){
-  class PositionManager {
-      constructor(main){
-          this.main = main;
-      }
-
-      register(main){ this.main = main; }
-
-      updatePosition(layerId, x, y){
-          console.log('[Position] layer', layerId, 'to', x, y);
-          // 座標更新処理
-      }
-  }
-
-  global.MyApp.PositionManager = PositionManager;
-})(window);
-
-// -------------------- ui-manager.js --------------------
-window.MyApp = window.MyApp || {};
-
-(function(global){
-  class UIManager {
-      constructor(main){
-          this.main = main;
-      }
-
-      register(main){
-          this.main = main;
-          this.initUI();
-      }
-
-      initUI(){
-          console.log('[UI] Initialized');
-          const brushBtn = document.createElement('button');
-          brushBtn.textContent = 'Brush';
-          brushBtn.onclick = ()=>this.main.notify({type:'tools.brushStart', payload:{toolId:'brush'}});
-          document.getElementById('tools-container').appendChild(brushBtn);
-      }
-  }
-
-  global.MyApp.UIManager = UIManager;
-})(window);
-
-// -------------------- history-service.js --------------------
-window.MyApp = window.MyApp || {};
-
-(function(global){
-  class HistoryService {
-      constructor(){ this.stack=[]; this.index=-1; }
-
-      record(action){
-          this.stack = this.stack.slice(0,this.index+1);
-          this.stack.push(action);
-          this.index++;
-          console.log('[History] recorded:', action);
-      }
-
-      undo(){
-          if(this.index<0) return;
-          const action = this.stack[this.index--];
-          console.log('[History] undo:', action);
-      }
-
-      redo(){
-          if(this.index>=this.stack.length-1) return;
-          const action = this.stack[++this.index];
-          console.log('[History] redo:', action);
-      }
-  }
-
-  global.MyApp.HistoryService = HistoryService;
-})(window);
-
-✅ 改修ポイント
-
-HTML直開き対応
-
-import/exportなし
-
-<script> 順序で依存解決
-
-名前空間管理
-
-全モジュールは MyApp 配下でグローバル登録
-
-main.html 側で統一して参照
-
-star型構造維持
-
-主星：MainController が仲介
-
-衛星：各モジュールはイベント通知と処理に専念
-
-構文エラー回避
-
-IIFE の閉じ括弧、クラス括弧を全てチェック済み
-
-余分な } はなし
-
-この状態で HTML直開きでも Console エラーなしで起動可能 です。
-
+消しゴムは「白で塗る」ではなく「透明に削る」処理をする

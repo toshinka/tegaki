@@ -324,10 +324,6 @@ window.FutabaDrawingEngine = (function() {
             
             // Add to temporary container for immediate feedback
             if (this.drawingState.currentPath && this.drawingState.currentPath.graphics) {
-                // For eraser, ensure it gets proper blend mode immediately
-                if (this.currentTool === 'eraser') {
-                    this.drawingState.currentPath.graphics.blendMode = PIXI.BLEND_MODES.ERASE;
-                }
                 this.containers.world.addChild(this.drawingState.currentPath.graphics);
             }
         }
