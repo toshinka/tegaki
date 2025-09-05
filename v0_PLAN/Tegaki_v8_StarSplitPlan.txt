@@ -1,0 +1,119 @@
+============================================================
+Tegaki v8 星型分離改修計画書（ドラフト＋具体化）
+============================================================
+
+目的
+------------------------------------------------------------
+- futaba_layers_rev4.html をベースに、改修時の影響範囲を最小化
+  → 主星(MainController)＋1衛星の改修で済む構造を意識
+- CANVAS2D 排除、PixiJSによるベクターペン重視描画
+- レイヤー移動・Undo/Redo・非破壊描画フローの衛星化
+- ショートカット操作（P/E, CTRL+Z/Y）対応
+
+------------------------------------------------------------
+1. 基本方針
+------------------------------------------------------------
+1.1 衛星は「フロー単位」で衛星化する
+  - 単純な責務分離ではなく、機能フローとしてまとまったものを衛星化
+  - 例：DrawingEngine + LayerService を統合的に扱うが、改修時に LayerService のみ変更可能
+1.2 主星は衛星の仲介・確定・エラーハンドリングに専念
+  - 衛星同士の直接依存は禁止
+1.3 Canvas2Dは排除、描画はPixiJS Graphicsによるベクターペンのみ
+  - Transform・Undo/Redo対応のため
+1.4 改修時の影響範囲を見える化
+  - 各衛星に register(mainApi) を持たせ、主星経由で操作
+  - UIやショートカット操作は別衛星化も検討可能だが現状は主星経由で通知
+
+------------------------------------------------------------
+2. 衛星・ファイル構成（rev4ベース）
+------------------------------------------------------------
+| 衛星 (ファイル)               | 主な責務 / API                               | 改修時影響範囲 |
+|--------------------------------|---------------------------------------------|----------------|
+| MainController (main.html)     | 衛星初期化、イベント仲介、ErrorService 呼び出し | 全体           |
+| DrawingEngine (drawing-engine.js)| PixiJS Application生成、EngineBridge 提供 | 描画フロー全般 |
+| LayerService (layer-manager.js)| レイヤー生成/削除/移動、Stage管理           | レイヤー関連   |
+| PositionService (position-manager.js)| パン・ズーム管理、座標変換                   | キャンバス移動 |
+| ToolManager (tool-manager.js)  | ツール登録/選択、Toolインターフェース提供    | ツール操作     |
+| BrushTool / EraserTool / TransformTool (tools/*.js)| 描画フローの実装、serialize(), start/move/end| 個別ツール     |
+| HistoryService (history-service.js)| record/undo/redo、非破壊記録フロー        | 履歴管理       |
+| UIService (ui-manager.js)      | DOM生成、ツール通知、ポップアップ操作        | UI表示         |
+| ErrorService (error-service.js)| エラーフロー管理、UI通知                     | 全体           |
+
+------------------------------------------------------------
+3. 衛星間フロー例（ペン描画）
+------------------------------------------------------------
+1. ツール操作（BrushTool.start/move/end） → ToolManager 経由
+2. ToolManager → MainController.notify(event)
+3. MainController → LayerService/PositionService で描画座標計算
+4. MainController → DrawingEngine.drawTemporaryStroke / commitStroke
+5. MainController → HistoryService.record(action)（end時）
+6. Undo/Redo: MainController → HistoryService.undo()/redo() → LayerService + DrawingEngine更新
+7. エラー: 衛星 → MainController.notify({type:'error'}) → ErrorService → UIService
+
+※消しゴムもベクターペン扱い、BlendMode.ERASE相当を使用
+
+------------------------------------------------------------
+4. 改修時の操作範囲指針
+------------------------------------------------------------
+- ペン・消しゴム描画フロー変更 → DrawingEngine + 該当Tool + HistoryService
+- レイヤー挿入/削除/移動 → LayerService + HistoryService
+- キャンバス移動・ズーム → PositionServiceのみ
+- UI表示/ポップアップ変更 → UIServiceのみ
+- ショートカット追加 → ToolManager または独立衛星化を検討
+
+------------------------------------------------------------
+5. メソッド・フロー辞典の参考構造
+------------------------------------------------------------
+1. MainController
+   - notify(event)
+   - dispatch(action)
+   - registerSatellite(satelliteApi)
+2. DrawingEngine
+   - drawTemporaryStroke(layerId, points)
+   - commitStroke(layerId, strokeData)
+   - clearLayer(layerId)
+   - takeSnapshot(layerId)
+3. LayerService
+   - createLayer(name)
+   - removeLayer(layerId)
+   - reorderLayer(fromIndex, toIndex)
+   - setLayerMeta(layerId, meta)
+4. PositionService
+   - setPan(x, y)
+   - setZoom(scale)
+   - canvasToWorld(point)
+   - worldToCanvas(point)
+5. ToolManager
+   - setActiveTool(toolId)
+   - registerTool(tool)
+6. Brush/Eraser/TransformTool
+   - start(point, meta)
+   - move(point, meta)
+   - end(point, meta)
+   - cancel(meta)
+   - serialize()
+7. HistoryService
+   - record(action)
+   - undo()
+   - redo()
+   - getState()
+8. UIService
+   - createToolbar()
+   - createLayerPopup()
+   - toggleSidebar()
+9. ErrorService
+   - reportRecoverable(code, msg, context)
+   - reportFatal(code, msg, stack)
+
+------------------------------------------------------------
+6. 改修のポイント
+------------------------------------------------------------
+- 衛星間依存を避け、主星経由でイベント・データやり取り
+- Canvas2D排除 → PixiJS Graphicsのみ
+- 消しゴムもベクターペンフローで統一
+- LayerServiceはDrawingEngineに依存せず、EngineBridgeで描画
+- 改修時は衛星単位で済む構造を維持
+- Undo/Redo は HistoryServiceで一括管理、非破壊レイヤー対応
+- 将来的にショートカットなど新衛星を追加可能な構造
+
+============================================================
