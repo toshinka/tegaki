@@ -37,15 +37,11 @@ window.MyApp = window.MyApp || {};
         register(mainApi) {
             this.mainApi = mainApi;
             this.engine = mainApi.getEngineBridge();
-            this._setupCanvasHandlers();
         }
 
-        _setupCanvasHandlers() {
-            // DrawingEngineが既にハンドラーを設定するので、ここでは重複設定を避ける
-            // BrushToolは主にDrawingEngineからの通知を受け取る形に変更
-        }
-
-        _onPointerDown(e) {
+        start(payload) {
+            const { x, y } = payload;
+            
             // スペースキー押下中は描画しない
             if(this._isSpacePressed()) return;
             
@@ -53,38 +49,7 @@ window.MyApp = window.MyApp || {};
             if(!this._isActiveTool()) return;
 
             // ペン入力で圧力が0の場合は無視
-            if(e.pointerType === 'pen' && e.pressure === 0) return;
-
-            const rect = e.target.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-
-            this.start({ x, y });
-            e.preventDefault();
-        }
-
-        _onPointerMove(e) {
-            if(!this.isDrawing) return;
-            if(this._isSpacePressed()) return;
-
-            // ペン入力で圧力が0の場合は無視
-            if(e.pointerType === 'pen' && e.pressure === 0) return;
-
-            const rect = e.target.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-
-            this.move({ x, y });
-        }
-
-        _onPointerUp(e) {
-            if(this.isDrawing) {
-                this.end();
-            }
-        }
-
-        start(payload) {
-            const { x, y } = payload;
+            if(payload.pointerType === 'pen' && payload.pressure === 0) return;
             
             this.points = [{ x, y }];
             this.isDrawing = true;
@@ -98,10 +63,17 @@ window.MyApp = window.MyApp || {};
             }
         }
 
-        move(point) {
+        move(payload) {
             if(!this.isDrawing) return;
             
-            const { x, y } = point;
+            // スペースキー押下中は描画しない
+            if(this._isSpacePressed()) return;
+            
+            const { x, y } = payload;
+            
+            // ペン入力で圧力が0の場合は無視
+            if(payload.pointerType === 'pen' && payload.pressure === 0) return;
+
             const lastPoint = this.points[this.points.length - 1];
             
             // 最小距離チェック（パフォーマンス向上）
@@ -112,7 +84,7 @@ window.MyApp = window.MyApp || {};
             this._drawTemporary();
         }
 
-        end() {
+        end(payload) {
             if(!this.isDrawing) return;
             
             this.isDrawing = false;
@@ -162,10 +134,9 @@ window.MyApp = window.MyApp || {};
         }
 
         _isSpacePressed() {
-            // 主星に問い合わせ
-            if(this.mainApi && this.mainApi.requestConfirm) {
-                const state = this.mainApi.requestConfirm('spaceState');
-                return state && state.pressed;
+            if(this.mainApi && this.mainApi.getAppState) {
+                const s = this.mainApi.getAppState();
+                return s && s.spacePressed;
             }
             return false;
         }

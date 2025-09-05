@@ -170,7 +170,7 @@
     <script src="tools/brush-tool.js"></script>
     <script src="tools/eraser-tool.js"></script>
     <script src="tools/transform-tool.js"></script>
-    <script src="ui-manager.js"></script>
+    <script src="ui-service.js"></script>
 
     <script>
 /**
@@ -212,6 +212,7 @@ window.MyApp = window.MyApp || {};
     class MainController {
         constructor() {
             this.name = 'MainController';
+            // appState 管理（スペース押下など）
             this.appState = {
                 initialized: false,
                 currentTool: 'brush',
@@ -229,6 +230,8 @@ window.MyApp = window.MyApp || {};
                 requestConfirm: (req) => this._handleRequestConfirm(req),
                 getEngineBridge: () => this.engineBridge,
                 getLayerList: () => this.layerService ? this.layerService.getLayerList() : [],
+                // mainApi にアプリ状態参照 API を追加
+                getAppState: () => ({ ...this.appState }),
                 debugMode: global.MyApp.debug
             };
             global.MyApp.mainApi = this.mainApi;
@@ -270,6 +273,20 @@ window.MyApp = window.MyApp || {};
                 if(this.historyService && this.historyService.register) this.historyService.register(this.mainApi);
                 if(this.errorService && this.errorService.register) this.errorService.register(this.mainApi);
 
+                // 初期レイヤーが無ければ一つ作る（UIの表示を確実にする）
+                if(this.layerService && this.layerService.createLayer) {
+                    if(this.layerService.getLayerList().length === 0) {
+                        this.layerService.createLayer('Background');
+                    }
+                }
+                // UI がレイヤーを表示する public メソッドを持っている場合はリフレッシュを要求
+                if(this.uiService && this.uiService.refreshLayers) {
+                    this.uiService.refreshLayers();
+                } else if(this.uiService && this.uiService._renderLayers) {
+                    // 互換フォールバック（private名の場合）
+                    try { this.uiService._renderLayers(); } catch(e) {}
+                }
+
                 // 入力ハンドラー設定
                 this._setupInputHandlers();
 
@@ -309,6 +326,18 @@ window.MyApp = window.MyApp || {};
                 case 'tools.toolSelect':
                     this._handleToolSelect(event.payload);
                     break;
+                case 'layers.createRequest':
+                    this._handleLayerCreateRequest(event.payload);
+                    break;
+                case 'pointer.down':
+                    this._handlePointerEvent('down', event.payload);
+                    break;
+                case 'pointer.move':
+                    this._handlePointerEvent('move', event.payload);
+                    break;
+                case 'pointer.up':
+                    this._handlePointerEvent('up', event.payload);
+                    break;
                 case 'error.recoverable':
                 case 'error.fatal':
                     if(this.errorService && this.errorService.receiveError) {
@@ -322,6 +351,15 @@ window.MyApp = window.MyApp || {};
                     } else {
                         log('warn', 'Main', 'Unhandled event: ' + event.type);
                     }
+            }
+        }
+
+        _handlePointerEvent(type, payload) {
+            if(this.toolManager && this.toolManager.handleEvent) {
+                this.toolManager.handleEvent({
+                    type: `pointer.${type}`,
+                    payload
+                });
             }
         }
 
@@ -379,36 +417,6 @@ window.MyApp = window.MyApp || {};
             }
         }
 
-        _handleDrawingStrokeStart(payload) {
-            if(this.engine && this.engine.startDrawing) {
-                this.engine.startDrawing(payload);
-            }
-        }
-
-        _handleDrawingStrokeMove(payload) {
-            if(this.engine && this.engine.continueDrawing) {
-                this.engine.continueDrawing(payload);
-            }
-        }
-
-        _handleDrawingStrokeEnd(payload) {
-            if(this.engine && this.engine.endDrawing) {
-                const strokeData = this.engine.endDrawing();
-                if(strokeData) {
-                    this._handleStrokeCommit({
-                        layerId: 0,
-                        strokeData: strokeData
-                    });
-                }
-            }
-        }
-
-        _handleCoordinatesUpdate(payload) {
-            if(this.uiService && this.uiService.updateCoordinates) {
-                this.uiService.updateCoordinates(payload.point.x, payload.point.y);
-            }
-        }
-
         _handleLayerCreateRequest(payload) {
             if(this.layerService && this.layerService.createLayer) {
                 const layerId = this.layerService.createLayer(payload.name);
@@ -419,20 +427,29 @@ window.MyApp = window.MyApp || {};
                         timestamp: Date.now()
                     });
                 }
+                // レイヤー追加後のUI更新
+                if(this.uiService && this.uiService.refreshLayers) {
+                    this.uiService.refreshLayers();
+                }
             }
         }
 
         _handleRequestConfirm(req) {
+            if(req === 'spaceState') {
+                return { pressed: !!this.appState.spacePressed };
+            }
             // 将来のRPC確定処理用プレースホルダー
             log('info', 'Main', ['requestConfirm', req]);
             return { confirmed: true, timestamp: Date.now() };
         }
 
         _setupInputHandlers() {
-            document.addEventListener('keydown', (e) => {
-                if (e.code === 'Space') {
+            // global キーイベントで space の ON/OFF 管理
+            window.addEventListener('keydown', (e) => {
+                if(e.code === 'Space' && !this.appState.spacePressed) {
                     this.appState.spacePressed = true;
-                    this.positionService && this.positionService.handleSpaceDown && this.positionService.handleSpaceDown();
+                    document.body.style.cursor = 'grab';
+                    // prevent page scroll on space
                     e.preventDefault();
                 }
                 
@@ -448,16 +465,17 @@ window.MyApp = window.MyApp || {};
                 }
             });
             
-            document.addEventListener('keyup', (e) => {
-                if (e.code === 'Space') {
+            window.addEventListener('keyup', (e) => {
+                if(e.code === 'Space' && this.appState.spacePressed) {
                     this.appState.spacePressed = false;
-                    this.positionService && this.positionService.handleSpaceUp && this.positionService.handleSpaceUp();
+                    document.body.style.cursor = 'auto';
+                    e.preventDefault();
                 }
             });
             
             window.addEventListener('blur', () => {
                 this.appState.spacePressed = false;
-                this.positionService && this.positionService.handleSpaceUp && this.positionService.handleSpaceUp();
+                document.body.style.cursor = 'auto';
             });
         }
 
