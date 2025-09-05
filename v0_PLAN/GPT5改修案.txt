@@ -1,71 +1,267 @@
-✅ 原因
+「コンソールにエラーは出ないが、UI が反応しない／描けない／パンできない」系は イベントの伝達経路が切れている（または期待する要素やフラグが未設定） ことがほとんどです。
 
-PixiJS の Graphics や Sprite を普通に使うと、常に「上書き描画」 になります。
-キャンバス2D API のような globalCompositeOperation = "destination-out" に相当する仕組みを入れないと「透明で消す」動作にはなりません。
+結論（要点まとめ）
 
-現在の DrawingEngine ではたぶん「線を描く」と「消す」で同じ描画ルーチンを使っていて、色だけ変えている状態です。そのため「白で塗りつぶす＝消すように見えるけど実際は透明にならない」動きになっています。
+発生している問題と主要原因（確度高 → 低）
 
-✅ 対策
+1.ツールボタンを押してもポップアップしない
+→ UI 作成 と ToolManager の「DOM セレクタ／イベントの期待」が噛み合っていない。
+対策：UI 側に適切な id/class を付ける／または ToolManager を DOM 依存から外して mainApi 経由で受け取る（推奨）。
 
-PixiJS v8 で消しゴムを実現するには ブレンドモード（合成モード） を切り替える必要があります。
+2.レイヤーサイドが表示されない
+→ 初期レイヤーが作られていない、または UI がレイヤー一覧を再描画していない。
+対策：Main の初期化で デフォルトレイヤー作成＋UI に refreshLayers() 呼び出しを行う。
 
-ペン：通常描画
+3.Space のハンドルでカーソルだけ替わるがパンしない
+→ Space 状態フラグはセットされているが、DrawingEngine が canvas pointer イベントでパン処理をしていない（もしくはパンイベントが main に伝搬していない）。
+対策：DrawingEngine に pointerdown/move/up を実装し、Space 時は isPanning=true にして containers.world を移動する。
 
-graphics.blendMode = PIXI.BLEND_MODES.NORMAL;
-graphics.lineStyle(brushSize, brushColor, 1.0);
+4.ペンで描けない
+→ pointer イベントが ToolManager → activeTool へ届いていない（DrawingEngine が pointer イベントを mainApi.notify に流していない、もしくは ToolManager が pointer イベントを start/move/end に変換していない）。
+対策：DrawingEngine が pointer イベントを mainApi.notify({type:'pointer.down'|'pointer.move'|'pointer.up', payload}) で流し、ToolManager がそれを受けて active tool の start/move/end を呼ぶ。
 
+優先適用順（短時間で動くように）
 
-消しゴム：透明で塗り潰し
+MainController：mainApi に getAppState()（space 状態）と requestConfirm を実装。起動時にデフォルトレイヤーを作成。
 
-graphics.blendMode = PIXI.BLEND_MODES.ERASE;
-graphics.lineStyle(brushSize, 0xFFFFFF, 1.0); // 色は任意、アルファは無視される
+DrawingEngine：キャンバスに pointer イベントを追加 → ポインタを main に通知。Space時はパン処理を実装。
 
+ToolManager：handleEvent を拡張して pointer.down/move/up をツールの start/move/end にマッピングする（DOM クエリではなく mainApi 経由ルートを確実にする）。
 
-BLEND_MODES.ERASE は WebGL2 / PixiJS v5 以降 で追加された「透明で削る」モードです。
-これを stroke / fill 前に指定することで「消しゴム」が実現できます。
+UIManager/UIService：ツールボタンに id と class='tool-button' をつける／refreshLayers() を公開して Main が呼べるようにする。
 
-✅ 修正例（drawing-engine.js の一部）
-class DrawingEngine {
-    constructor(main){
-        this.main = main;
-        this.currentTool = 'brush';
-        this.graphics = new PIXI.Graphics();
-        this.main.layers.stage.addChild(this.graphics);
-    }
+BrushTool：_isSpacePressed() を mainApi.getAppState() 参照にする（requestConfirm 依存をやめる）。また一時描画は engineBridge を通しているので、pointer経路が直れば描画が動くはず。
 
-    setTool(tool){
-        this.currentTool = tool;
-    }
+差分コード（貼り付け／置換用）
 
-    startStroke(point){
-        this.graphics.moveTo(point.x, point.y);
-    }
+下にファイル別に最小差分コードを出します。各コードは 既存ファイルの該当箇所に置き換えるか、関数追加 してください。行番号が違っても、関数の中身を差し替え／追加すればOK。
+必ず操作前にファイルのバックアップ（コピー）を取ってください。
 
-    addPoint(point){
-        this.graphics.lineTo(point.x, point.y);
-    }
+1) main.html — MainController の init 周りに以下を追加してください
 
-    endStroke(){
-        this.main.notify({type:'tools.brushEnd'});
-    }
+（目的：space フラグ管理 / mainApi.getAppState / デフォルトレイヤー作成 / UI リフレッシュ呼び出し）
 
-    confirmStroke(){
-        // 選択中のツールでブレンドモードを切り替える
-        if(this.currentTool === 'eraser'){
-            this.graphics.blendMode = PIXI.BLEND_MODES.ERASE;
-            this.graphics.lineStyle(10, 0xFFFFFF, 1.0); // size=10の消しゴム
-        } else {
-            this.graphics.blendMode = PIXI.BLEND_MODES.NORMAL;
-            this.graphics.lineStyle(2, 0x000000, 1.0); // size=2の黒ペン
-        }
-        this.graphics.strokePath();
-    }
+// -------  MainController._initGlobals or constructor area -------
+// appState 管理（スペース押下など）
+this.appState = { spacePressed: false };
+
+// mainApi にアプリ状態参照 API を追加
+this.mainApi.getAppState = () => ({ ...this.appState });
+
+// 既存の mainApi.requestConfirm の実装があれば残すが、最低限以下を提供
+this.mainApi.requestConfirm = (key) => {
+  if(key === 'spaceState') return { pressed: !!this.appState.spacePressed };
+  return null;
+};
+
+// global キーイベントで space の ON/OFF 管理（DOMContentLoaded の外でも可）
+window.addEventListener('keydown', (e) => {
+  if(e.code === 'Space' && !this.appState.spacePressed) {
+    this.appState.spacePressed = true;
+    document.body.style.cursor = 'grab';
+    // prevent page scroll on space
+    e.preventDefault();
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if(e.code === 'Space' && this.appState.spacePressed) {
+    this.appState.spacePressed = false;
+    document.body.style.cursor = 'auto';
+    e.preventDefault();
+  }
+});
+
+// ------- MainController._initOrder の最後（サービス登録完了後） -------
+// 初期レイヤーが無ければ一つ作る（UIの表示を確実にする）
+if(this.layerService && this.layerService.createLayer) {
+  if(this.layerService.getLayerList().length === 0) {
+    this.layerService.createLayer('Background');
+  }
+}
+// UI がレイヤーを表示する public メソッドを持っている場合はリフレッシュを要求
+if(this.uiService && this.uiService.refreshLayers) {
+  this.uiService.refreshLayers();
+} else if(this.uiService && this.uiService._renderLayers) {
+  // 互換フォールバック（private名の場合）
+  try { this.uiService._renderLayers(); } catch(e) {}
 }
 
-✅ まとめ
+2) drawing-engine.js — _createPixiApp() の .then(...) 内に以下を追加してください
 
-現在の「消しゴムがペンになる」問題は 描画モードが常に NORMAL だから
+（目的：canvas pointer handlers を追加し、space 時は panning を行い、それ以外は mainApi に pointer イベントを通知）
 
-消しゴム専用のブレンドモード PIXI.BLEND_MODES.ERASE を使う ことで透明化できる
+// after container.appendChild(this.app.view) or after app created & appended...
+// ensure canvas receives pointer events and no default touch action
+this.app.view.style.touchAction = 'none';
+this._isPanning = false;
+this._lastPan = null;
 
-消しゴムは「白で塗る」ではなく「透明に削る」処理をする
+// helper: screen -> local canvas coords
+const getCanvasPos = (e) => {
+  const rect = this.app.view.getBoundingClientRect();
+  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
+};
+
+// pointerdown
+this.app.view.addEventListener('pointerdown', (e) => {
+  const pos = getCanvasPos(e);
+  // if main says space pressed -> start panning
+  const spaceState = this.mainApi && this.mainApi.getAppState ? this.mainApi.getAppState().spacePressed : false;
+  if(spaceState) {
+    this._isPanning = true;
+    this._lastPan = { x: e.clientX, y: e.clientY };
+    this.app.view.setPointerCapture(e.pointerId);
+    return;
+  }
+  // otherwise forward to main as pointer.down
+  if(this.mainApi && this.mainApi.notify) {
+    this.mainApi.notify({ type: 'pointer.down', payload: { x: pos.x, y: pos.y, pointerType: e.pointerType, pressure: e.pressure } });
+  }
+});
+
+// pointermove
+this.app.view.addEventListener('pointermove', (e) => {
+  const pos = getCanvasPos(e);
+  if(this._isPanning && this._lastPan) {
+    const dx = e.clientX - this._lastPan.x;
+    const dy = e.clientY - this._lastPan.y;
+    // move world container (UI container stays fixed)
+    if(this.containers && this.containers.world) {
+      this.containers.world.x += dx;
+      this.containers.world.y += dy;
+    }
+    this._lastPan = { x: e.clientX, y: e.clientY };
+    return;
+  }
+  if(this.mainApi && this.mainApi.notify) {
+    this.mainApi.notify({ type: 'pointer.move', payload: { x: pos.x, y: pos.y, pointerType: e.pointerType, pressure: e.pressure } });
+  }
+});
+
+// pointerup / cancel
+this.app.view.addEventListener('pointerup', (e) => {
+  if(this._isPanning) {
+    this._isPanning = false;
+    this._lastPan = null;
+    this.app.view.releasePointerCapture(e.pointerId);
+    return;
+  }
+  const pos = getCanvasPos(e);
+  if(this.mainApi && this.mainApi.notify) {
+    this.mainApi.notify({ type: 'pointer.up', payload: { x: pos.x, y: pos.y, pointerType: e.pointerType, pressure: e.pressure } });
+  }
+});
+this.app.view.addEventListener('pointercancel', (e) => {
+  if(this._isPanning) {
+    this._isPanning = false;
+    this._lastPan = null;
+  }
+  if(this.mainApi && this.mainApi.notify) {
+    this.mainApi.notify({ type: 'pointer.up', payload: { x: 0, y: 0 } });
+  }
+});
+
+
+注意：この実装は “world コンテナのみパンさせる” 方針です（UI コンテナを動かさない）。もし UI も一緒にパンしたいなら this.app.stage を移動してください。
+
+3) tool-manager.js — handleEvent を pointer 系に対応させる（既存の handleEvent と置換）
+
+（目的：main → ToolManager → active tool の start/move/end を確実に実行）
+
+handleEvent(event) {
+  if(!event || !event.type) return;
+  const tool = this.getActiveTool();
+  switch(event.type) {
+    case 'pointer.down':
+      if(tool && tool.start) tool.start(event.payload);
+      break;
+    case 'pointer.move':
+      if(tool && tool.move) tool.move(event.payload);
+      break;
+    case 'pointer.up':
+      if(tool && tool.end) tool.end(event.payload);
+      break;
+    default:
+      // fallback: if tool implements handleEvent, forward
+      if(tool && tool.handleEvent) tool.handleEvent(event);
+      else if(global.MyApp.debug) console.log('[ToolManager] unhandled event', event.type);
+  }
+}
+
+
+既存の DOM クエリ _setupUIHandlers() は残しても良いですが「DOM 依存は弱める」方が安定します。UI 側は mainApi.notify を呼べば良い設計にするとさらに堅牢です。
+
+4) ui-manager.js / ui-service.js — ツールボタンに id と class を付与し、ポップアップ表示の API を作る
+
+（目的：ToolManager／UI が一致して操作できるようにする。UIService は refreshLayers() を公開）
+
+// 例：ツールボタン生成部分（ui-service.js の _renderToolbar）
+const brushBtn = document.createElement('button');
+brushBtn.id = 'pen-tool';                   // MUST: ToolManager が参照する id
+brushBtn.className = 'tool-button';
+brushBtn.textContent = 'Brush';
+brushBtn.onclick = () => {
+  // 明確に main を経由してツール開始通知
+  if(this.mainApi) this.mainApi.notify({ type:'tools.toolStart', payload:{ toolId:'brush', x:0, y:0 } });
+  // ポップアップを表示するならここで togglePopup('brush')
+  this.toggleToolPopup && this.toggleToolPopup('brush');
+};
+this._containerTools.appendChild(brushBtn);
+
+// Eraser
+eraserBtn.id = 'eraser-tool';
+eraserBtn.className = 'tool-button';
+// ...同様にイベント登録...
+
+// レイヤー更新用 public メソッド
+refreshLayers() {
+  // clear and re-render list
+  if(!this._containerLayers) return;
+  this._containerLayers.innerHTML = '';
+  const layers = (this.mainApi && this.mainApi.getLayerList) ? this.mainApi.getLayerList() : [];
+  const ul = document.createElement('ul');
+  layers.forEach(l => {
+    const li = document.createElement('li');
+    li.textContent = `${l.id}: ${l.name}`;
+    ul.appendChild(li);
+  });
+  this._containerLayers.appendChild(ul);
+}
+
+
+ポップアップは toggleToolPopup(toolId) を UIService 内に実装し、ツール設定（スライダーなど）を表示／非表示するようにしてください。
+
+5) brush-tool.js — _isSpacePressed() の参照先を mainApi.getAppState() に変更
+
+（目的：Space 判定が main 側のフラグを参照するように）
+
+_isSpacePressed() {
+  if(this.mainApi && this.mainApi.getAppState) {
+    const s = this.mainApi.getAppState();
+    return s && s.spacePressed;
+  }
+  return false;
+}
+
+
+これでツールは main の space フラグと一致します。
+
+小さい注意点 / チェックリスト（実行前に確認）
+
+HTML に配置されている要素 id（canvas コンテナ名など）が DrawingEngine が期待する drawing-canvas と一致しているか。
+
+MainController が UIService と LayerService を register(mainApi) → createLayer → uiService.refreshLayers() の順で呼んでいるか。
+
+Tool の register メソッドで this.engine = mainApi.getEngineBridge() を取得できているか（Engine の初期化タイミングに注意：Engine の init が非同期なら Tool の register は Engine 完了後に呼ぶ等）。
+
+drawing-engine が this._initialized をセットするタイミング（.then の中）なので、Tool.register が早すぎると engineBridge が null になる。Main の初期化順を “Engine first (and wait) → then register tools/UI” にするのが最も確実。
+
+期待する効果（この順で当てれば）
+
+Main によるデフォルトレイヤー作成 → レイヤーサイドが表示される
+
+UIボタンがツールを mainApi.notify 経由で起動 → ポップアップ表示処理が起動する
+
+DrawingEngine が pointer イベントを送る → ToolManager が active tool の start/move/end を呼ぶ → ペンで描ける
+
+Space 押下で DrawingEngine 側が panning を行う → キー操作で手のマーク + 実際にキャンバス移動できる

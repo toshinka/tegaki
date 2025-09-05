@@ -224,9 +224,9 @@ window.MyApp = window.MyApp || {};
             this.containers = null;
             this._layers = {};
         }
-
-    global.MyApp.DrawingEngine = DrawingEngine;
     }
 
+    // クラスを公開
     global.MyApp.DrawingEngine = DrawingEngine;
+
 })(window);
