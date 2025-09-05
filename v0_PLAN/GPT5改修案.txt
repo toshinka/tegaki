@@ -1,94 +1,185 @@
-🔍 問題の概要
+改修案（優先度順・具体パッチ例を含む）
+A. まず最初にやること（短時間で確かめる）
 
-消しゴムがペンの振る舞いをする: 描画中に消しゴムツールを選択しても、描画が消去ではなく描画として行われてしまう。
+全コードベースで notify( と dispatch( を grep して、呼び出しの payload に type: が必ず入っているか確認。入っていない箇所はすべて type を追加する（ログに出ている "Unhandled event type: undefined" を消すため）。
 
-描画フローの不整合: drawing-engine.js 内での描画処理がツールの種類に応じて適切に分岐していない可能性がある。
+例（修正前）
 
-🛠 改善案
-1. ツールの切り替えと描画処理の分岐
+mainApi?.notify('engine', { width: w, height: h });
 
-drawing-engine.js 内で、現在のツール（ペンまたは消しゴム）を明示的に管理し、それに応じて描画処理を分岐させる必要があります。以下のような構造を検討してください。
 
-// 現在のツールを管理する変数
-let currentTool = 'pen'; // 初期状態はペン
+修正後:
 
-// 描画処理の関数
-function drawStroke(strokePoints) {
-  if (currentTool === 'pen') {
-    // ペンの描画処理
-    drawWithPen(strokePoints);
-  } else if (currentTool === 'eraser') {
-    // 消しゴムの描画処理
-    eraseWithEraser(strokePoints);
+mainApi?.notify('engine', { type: 'canvas-change', width: w, height: h });
+
+
+drawing-engine と layer-manager は type を付けている箇所が見えますが、他の衛星／UI 側（main.html の inline code）に残骸があるかもしれません。まずここを潰してください。
+GitHub
++1
+
+mainApi のイベントログ（どこでログしているか）を一時的に拡張して、受け取ったイベント全体を console.log(JSON.stringify(payload)) で出すようにすると、type が無い送信元を特定しやすくなります。
+
+B. 座標系を一元化する（推奨：PIXI 側へ統一） — これが最も効果が大きい
+
+問題の本質：PositionManager が DOM/CSS トランスフォームでキャンバスを移動する実装で、DrawingEngine（PIXI）のコンテナ座標とは同期していない。これが「描けない」「座標が 0 のまま」「最初にズレる」などの原因になる。
+
+対策：PositionManager.updatePosition() で DOM の style.transform を直接操作する代わりに、DrawingEngine（PIXI）の containers.camera か containers.world に対して座標・スケールを設定する。つまり PositionManager は PIXI の容器を操作する API を使う。
+
+具体的パッチ（抜粋）
+
+position-manager.js の updatePosition() を以下のように差し替え（コメント付き）：
+
+// 変更点: DOM transform をやめ、PIXI コンテナ（camera/world）を操作する
+updatePosition() {
+  if (!this.updateScheduled) return;
+  try {
+    const { targetX, targetY } = this.position;
+    const { current: currentZoom, target: targetZoom } = this.zoom;
+
+    // 補間（必要なら）
+    this.position.x = Math.round(targetX);
+    this.position.y = Math.round(targetY);
+    if (Math.abs(this.zoom.current - targetZoom) > 0.001) {
+      this.zoom.current += (targetZoom - this.zoom.current) * 0.1;
+      if (Math.abs(this.zoom.current - targetZoom) < 0.001) this.zoom.current = targetZoom;
+    }
+
+    // DrawingEngine のコンテナに適用する（mainApi 経由で drawing engine を取得）
+    const drawingEngine = this.mainApi?.getSatellite?.('drawing') || this.mainApi?.getSatellite?.('drawingEngine') || window.DrawingEngineInstance;
+    if (drawingEngine && drawingEngine.getApi) {
+      const api = drawingEngine.getApi();
+      const containers = api.getContainers(); // { camera, world, ui }
+      if (containers && containers.camera) {
+        // camera 側の transform を更新（ワールドの中心合わせなどは適宜調整）
+        containers.camera.x = this.position.x;
+        containers.camera.y = this.position.y;
+        containers.camera.scale.set(this.zoom.current);
+      }
+    } else {
+      // フォールバック：従来の DOM transform（暫定）
+      const viewportCenter = { x: (window.innerWidth - 310) / 2, y: window.innerHeight / 2 };
+      const offset = { x: viewportCenter.x + this.position.x, y: viewportCenter.y + this.position.y };
+      this.container.style.transform = `translate3d(${offset.x}px, ${offset.y}px, 0) translate(-50%, -50%) scale(${this.zoom.current})`;
+    }
+
+    this.updateScheduled = false;
+  } catch (error) {
+    this.reportError('UPDATE_POSITION_ERROR', 'Failed to update position', error);
+    this.updateScheduled = false;
   }
 }
 
-// ツールの切り替え関数
-function setTool(tool) {
-  if (tool === 'pen' || tool === 'eraser') {
-    currentTool = tool;
-  } else {
-    console.error('無効なツールが指定されました');
+
+ポイント：
+
+mainApi.getSatellite('drawing') 等で DrawingEngine インスタンスを取得できるインタフェースが必要（なければ DrawingEngine を window に置く等で参照可能にする）。
+
+PIXI 側に座標操作を移すことで、pointer の event.global（PIXI が返すグローバル座標）と canvas 内のワールド座標が一致します。
+
+（注）この変更をすると PositionManager.screenToWorld() / worldToScreen() のロジックも PIXI の transform を使うように見直す必要があります（app.renderer.plugins.interaction.mapPositionToPoint や container.toLocal を使う）。
+
+参照：PositionManager, DrawingEngine の実装箇所。
+GitHub
++1
+
+C. pointer / space 判定の見直し（ペン描画不可の可能性）
+
+DrawingEngine.onPointerDown では const spacePressed = window.futabaApp?.getSpacePressed?.() || false; if (spacePressed) { event.stopPropagation(); return; } としている（スペースでパン抑止）。一方 PositionManager.onPointerDown は if (!spacePressed) return; としており、逆にパンが動かないときにしか動作しないようにも見えます。
+
+対応：両方の条件を見直し、スペースが押されているときにパン、押されていないときに描画 という意図なら PositionManager.onPointerDown は if (!spacePressed) return; で良いが、DrawingEngine と整合しているか確認してください。実際の UI 期待動作に合わせて boolean を揃えてください。
+GitHub
++1
+
+D. PIXI.Graphics の正しい使い方（マスク/背景が効かない問題）
+
+drawing-engine.js、layer-manager.js のマスク・背景作成は以下のように書き換えを推奨します。
+
+例（mask と background）：
+
+// mask
+const maskGraphics = new PIXI.Graphics();
+maskGraphics.beginFill(0x000000, 1);
+maskGraphics.drawRect(0, 0, config.canvas?.width || 400, config.canvas?.height || 400);
+maskGraphics.endFill();
+this.app.stage.addChild(maskGraphics);
+this.containers.camera.mask = maskGraphics;
+
+// background
+const backgroundGraphics = new PIXI.Graphics();
+backgroundGraphics.beginFill(0xf0e0d6, 1);
+backgroundGraphics.drawRect(0, 0, config.canvas?.width || 400, config.canvas?.height || 400);
+backgroundGraphics.endFill();
+container.addChild(backgroundGraphics);
+
+
+rect() / fill() の非標準的な使い方は互換問題を起こすことがあります。
+GitHub
++1
+
+E. LayerManager の UI/登録の確認（レイヤーが増えない対策）
+
+LayerManager.register(mainApi) 内で mainApi に自分を登録して受信できるようにする（もし mainApi が衛星登録 API を持つなら）。
+
+async register(mainApi) {
+  this.mainApi = mainApi;
+  if (this.mainApi?.registerSatellite) {
+    this.mainApi.registerSatellite('layers', this);
   }
 }
 
 
-このように、currentTool 変数で現在のツールを管理し、drawStroke 関数内でそのツールに応じた描画処理を呼び出すようにします。
+UI 側（main.html）の「レイヤー＋」ボタンが mainApi.dispatch('layers', { type:'create-layer' }) のような形で呼ぶこと。受け手（mainApi）が layers チャネルに対して create-layer を方法として呼び出すルーティングを持っているか確認してください。layer-manager は getApi() を返すので、mainApi 側ルーティングで satellite.getApi().createLayer() を呼ぶ実装が必要です。
+GitHub
 
-2. 描画処理の分離
+F. イベント/ログの改善（デバッグを簡単にする）
 
-ペンと消しゴムの描画処理は明確に分けるべきです。例えば、以下のようにそれぞれの描画処理を関数として定義します。
+mainApi 側で受け取ったイベントを console.log('EVENT from', channel, payload) と全体出力する一時パッチを入れて、type が欠落する送信元を特定する。
 
-function drawWithPen(strokePoints) {
-  // ペンによる描画処理
-  const graphics = new PIXI.Graphics();
-  graphics.lineStyle(4, 0x000000, 1);
-  graphics.moveTo(strokePoints[0].x, strokePoints[0].y);
-  strokePoints.forEach(point => {
-    graphics.lineTo(point.x, point.y);
-  });
-  // 描画をステージに追加
-  app.stage.addChild(graphics);
-}
+さらに Unhandled event type: undefined の出力箇所を改修して、受け取ったオブジェクト全体をログするようにする（原因追跡が速くなります）。
 
-function eraseWithEraser(strokePoints) {
-  // 消しゴムによる描画処理（消去）
-  const graphics = new PIXI.Graphics();
-  graphics.lineStyle(10, 0xffffff, 1); // 白色で消去
-  graphics.moveTo(strokePoints[0].x, strokePoints[0].y);
-  strokePoints.forEach(point => {
-    graphics.lineTo(point.x, point.y);
-  });
-  // 描画をステージに追加
-  app.stage.addChild(graphics);
-}
+ルールブック（設計面）からの指摘（簡潔）
+
+ヘッダー不足：各衛星ファイルに @provides と @requires 形式のヘッダーを入れてください（外部公開 API と依存先を明示）。rulebook に従うべきです。
+GitHub
+
+メソッド命名：getApi() / register() / initialize() のパターンは良いですが、mainApi?.getSatellite?.('main') のような文字列依存を減らして、衛星名は定数化・enum 化すると安全。
+
+イベント契約（必須）：{ type: string, ... } を全イベントに必須にすること（バリデーション層を mainApi に作るのが理想）。rulebook に書かれている公開メソッド一覧とイベント契約書をヘッダに置くこと。
+GitHub
+
+実施すべきテスト手順（短い順）
+
+mainApi のログを短期間有効化して notify/dispatch の payload を全ログ出力 → type のない送信元を特定。
+
+PositionManager.updatePosition() を一時的に PIXI に直接反映する 実装に差し替え、問題（描画できない / 座標 0のまま / 初回ズレ）が直るか確認。
+
+pointer down/move/up のフローで console.log（pointerType, pressure, event.global / e.clientX 等）を入れて、どの段階で座標が期待値から外れているか確認。
+
+Layer + ボタンを押した時の mainApi 経路（UI → mainApi → LayerManager）をステップ実行して、createLayer が呼ばれているか、updateLayerUI() が呼ばれているか確認。
+
+マスク／背景の描画が正しいか、beginFill/drawRect/endFill に直して確認。
+
+提案する短期パッチセット（取り込みやすい順）
+
+（最優先）全 notify/dispatch 呼び出しで type を必ず付与。ログを入れて undefined 発信源を潰す。
+
+position-manager.js の updatePosition() を PIXI コンテナ更新へ切り替え（上のコード参照）。これで多くの「描けない／座標不一致」問題が解消する可能性が高い。
+GitHub
++1
+
+drawing-engine.js と layer-manager.js の Graphics 書き方を beginFill/drawRect/endFill に修正。
+GitHub
++1
+
+LayerManager.register() で mainApi へ確実に自分を登録する（registerSatellite など）。UI ボタン側の dispatch が type: 'create-layer' で来ることを確認。
+GitHub
+
+追加の設計改善（中長期）
+
+mainApi にイベント・バリデータ（受信 payload を検査して type がない場合はエラーを返す）を作る。
+
+PositionManager が PIXI の存在を直接参照しないように、DrawingEngine 側で「transform を受ける API（例: setCameraTransform(x,y,scale)）」を作り、PositionManager はその API を叩くだけにする（責務分離）。
+
+ルールブックに「イベント契約」セクションを足して、全衛星が従うべき type 列挙を規定する。
 
 
-消しゴムの描画処理では、lineStyle の太さや色を調整することで消去の効果を実現します。
-
-3. 履歴管理と非破壊編集
-
-描画操作を非破壊で行うためには、履歴管理を適切に行う必要があります。history-service.js での履歴管理が適切に行われているか確認し、描画操作ごとに履歴を記録するようにします。
-
-function commitStroke(strokeData) {
-  // 履歴に描画データを追加
-  historyService.addHistory({
-    type: 'draw',
-    data: strokeData
-  });
-  // 描画処理を実行
-  drawStroke(strokeData.points);
-}
-
-
-このように、描画処理を実行する前に履歴に記録し、Undo/Redo 操作が可能なようにします。
-
-✅ 確認ポイント
-
- ツールの切り替え: ペンと消しゴムの切り替えが適切に行われているか。
-
- 描画処理の分岐: 現在のツールに応じて描画処理が分岐しているか。
-
- 履歴管理: 描画操作が履歴として適切に記録されているか。
-
- 非破壊編集: 描画操作が非破壊で行われているか。

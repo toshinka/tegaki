@@ -1,0 +1,181 @@
+# 星型分離 改修ルールブック＋フロー辞典 (統合改訂版)
+
+---
+
+## 基本理念
+
+本計画は「星型分離」を前提にした設計原則に基づく。  
+星型とは「中心に主星 (main) を置き、各衛星 (satellite) が独立して周回する」構造を指す。  
+衛星は最小限の責務のみを持ち、主星を通じてのみ結合する。  
+この構造により、依存関係の爆発を防ぎ、部分的な改修が全体を破壊しない設計を実現する。
+
+### ダブル・スター理念
+- 主星 (main) と統括衛星 (manager) の二重構造を採る。
+- 主星は入口と統合、衛星は専門化と独立性を持つ。
+- 全体が「双星系」のように均衡を取りながら機能する。
+
+---
+
+## 前提条件
+
+1. **独立性の尊重**  
+   - 衛星は直接依存せず、mainApi を介して通信する。  
+   - 循環参照を禁止する。
+
+2. **公開と非公開の峻別**  
+   - 公開 API は `@provides` に明記する。  
+   - 内部 API は外部から参照してはならない。
+
+3. **透明性**  
+   - イベント通知は全て `type` を持つ。  
+   - `type` は外部仕様書に一意に対応する。
+
+---
+
+## ヘッダールール
+
+- 各衛星ファイルの冒頭にヘッダーを記述する。
+- `@provides` : 外部に公開するメソッドやイベントを列挙。
+- `@requires` : 依存関係を列挙。
+- 公開 API とイベント `type` は一貫させる。
+
+例:
+
+/**
+
+@provides createLayer, deleteLayer
+
+@requires DrawingEngine
+*/
+
+
+---
+
+## イベント契約 (改訂)
+
+- すべてのイベントには `type` を必須とする。
+- payload の内容は疎結合とし、拡張可能であること。
+- mainApi は受信時に `type` を検証する。
+- 欠落時は `error-reported` を返し、UI に通知する。
+
+### 推奨イベント例
+- `canvas-resized`
+- `stroke-begin`
+- `stroke-update`
+- `stroke-end`
+- `layer-created`
+- `layer-updated`
+- `error-reported`
+
+---
+
+## 座標系の取り扱い (改訂)
+
+- 座標は以下の三層で表現する：
+  1. **スクリーン座標** (DOM/Pixi pointer)
+  2. **カメラ座標** (内部操作用)
+  3. **ワールド座標** (描画基準)
+
+- DOM の transform による移動は禁止。  
+- すべて PIXI コンテナの transform を利用する。  
+- DrawingEngine が唯一の変換 API を提供する：
+  - `screenToWorld(point)`
+  - `worldToScreen(point)`
+- PositionManager は直接 transform を操作せず、
+  `setCameraTransform(x, y, scale)` を介して委譲する。
+
+---
+
+## ペン描画フロー (改訂)
+
+1. **入力**  
+   - PointerDown を UI 層が受け取り、PositionManager に渡す。
+
+2. **座標変換**  
+   - PositionManager がスクリーン座標 → ワールド座標へ変換。
+
+3. **描画処理**  
+   - DrawingEngine がワールド座標でストロークを記録。
+
+4. **ストローク保持**  
+   - ストロークはアクティブレイヤーに一時的に保持される。
+
+5. **更新**  
+   - PointerMove ごとにストロークが延長される。
+
+6. **確定**  
+   - PointerUp にてストロークがレイヤーに保存される。
+
+7. **排他制御**  
+   - Space キー押下中は描画を停止し、パン操作に切り替える。
+
+---
+
+## レイヤーフロー (改訂)
+
+- UI の操作は mainApi 経由で LayerManager に伝わる。
+- LayerManager の責務：
+  - `createLayer()`
+  - `deleteLayer(id)`
+  - `moveLayer(id, direction)`
+  - `setActiveLayer(id)`
+
+- LayerManager は状態更新のたびにイベントを発行し、UI と同期させる。
+- `layer:active` は常に一意。
+
+---
+
+## フロー辞典
+
+### `flow:pen-drawing`
+ペン入力を処理する標準フロー。座標変換・描画・レイヤー確定までの手続きを含む。
+
+### `flow:layer-operation`
+レイヤー作成・削除・順序変更などの処理フロー。
+
+### `flow:camera-control`
+カメラ移動・ズームの処理フロー。ペン入力との排他を守る。
+
+---
+
+## シンボル一覧
+
+### イベント関連
+- `event:type` : イベント種別。
+- `event:payload` : イベントに付随するデータ。
+
+### 座標関連
+- `coordinate:screen` : ユーザ入力時のスクリーン座標。
+- `coordinate:camera` : カメラ座標系。
+- `coordinate:world` : ワールド座標系。
+- `camera:transform` : カメラの位置とスケールを保持するオブジェクト。
+
+### レイヤー関連
+- `layer:active` : 現在のアクティブレイヤー。
+- `layer:stack` : レイヤー集合。
+
+### フロー関連
+- `flow:pen-drawing` : ペン入力処理の標準フロー。
+- `flow:layer-operation` : レイヤー操作の標準フロー。
+- `flow:camera-control` : カメラ移動・ズーム処理の標準フロー。
+
+---
+
+## エラー処理
+
+- すべての衛星は `reportError(code, message, error)` を実装し、mainApi 経由で ErrorService に渡す。
+- ErrorService は `error-reported` を UI に通知する。
+
+---
+
+## 設計原則まとめ
+
+- 星型分離を守り、衛星は独立性を維持する。  
+- イベントは必ず `type` を持つ。  
+- 座標変換は DrawingEngine が一元管理する。  
+- ペンとパンは排他的である。  
+- レイヤー操作は UI → mainApi → LayerManager → UI の一方向フローとする。  
+- 公開 API はヘッダーで明示する。  
+
+---
+

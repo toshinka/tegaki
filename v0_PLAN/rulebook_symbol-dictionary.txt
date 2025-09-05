@@ -130,3 +130,122 @@ ToolManager → DrawingEngine → LayerManager/PositionManager → MainControlle
 - UIManagerは現状維持、ショートカットで操作
 - Canvas2Dは排除、PixiJS GraphicsベースでWorld座標描画
 - 将来的に衛星分離可能な構造を保つ
+
+
+# Rulebook Symbol Dictionary (統合改訂版)
+
+この文書は、Tegaki v8 系におけるシンボル定義と設計原則を定める。
+
+---
+
+## 基本記号と命名規則
+
+- シンボルは小文字英字とハイフンで構成する。
+- クラス名・公開 API はキャメルケースを用いる。
+- ファイル単位では衛星 (satellite) と呼び、main.html を主星とする。
+
+---
+
+## ヘッダールール
+
+- 各衛星ファイルの冒頭にヘッダーを記述すること。
+- `@provides` : 外部に公開する API を列挙する。
+- `@requires` : 依存する外部モジュールや API を列挙する。
+- 公開 API 名とイベント `type` 名は一貫させること。
+
+---
+
+## イベント契約
+
+- すべての `notify` / `dispatch` に渡す payload には `type` フィールドを必須とする。
+- `type` は小文字・ハイフン区切りで表現し、機能単位で一意とする。
+- mainApi は受信時に `type` の有無を検証し、欠落していればエラーを返す。
+- 推奨イベント種別例：
+  - `canvas-resized`
+  - `stroke-begin`
+  - `stroke-update`
+  - `stroke-end`
+  - `layer-created`
+  - `layer-updated`
+  - `error-reported`
+
+---
+
+## 座標系の扱い
+
+- 座標は「スクリーン座標」「カメラ座標」「ワールド座標」の三層で管理する。
+- DOM の CSS transform による移動・拡縮は禁止する。
+- 移動・拡縮は必ず PIXI コンテナの transform を利用する。
+- DrawingEngine が唯一の座標変換 API を提供する：
+  - `screenToWorld(point)`
+  - `worldToScreen(point)`
+- PositionManager は直接 transform を操作せず、
+  `setCameraTransform(x, y, scale)` を通じて DrawingEngine に委譲する。
+
+---
+
+## ペン描画フロー
+
+1. PointerDown イベントを UI 層が受け取る。
+2. PositionManager がスクリーン座標をワールド座標に変換する。
+3. DrawingEngine がワールド座標でストロークを記録する。
+4. ストロークはアクティブレイヤーに追加される。
+5. PointerMove でストロークが更新される。
+6. PointerUp でストロークが確定し、レイヤーに保存される。
+7. Space キー押下中は描画を抑止し、パン動作が優先される。
+
+---
+
+## レイヤーフロー
+
+- UI の操作は mainApi 経由で LayerManager に伝達する。
+- LayerManager の公開 API:
+  - `createLayer()`
+  - `deleteLayer(id)`
+  - `moveLayer(id, direction)`
+  - `setActiveLayer(id)`
+- LayerManager は更新のたびにイベントを発行し、UI を同期させる。
+- `layer:active` は常に一意のレイヤーを指す。
+
+---
+
+## シンボル一覧
+
+### イベント関連
+- `event:type` : イベント種別を示す必須フィールド。
+- `event:payload` : イベントに付随するデータ。
+
+### 座標関連
+- `coordinate:screen` : ユーザ入力時のスクリーン座標。
+- `coordinate:camera` : カメラ座標系。
+- `coordinate:world` : ワールド座標系。
+- `camera:transform` : カメラの位置とスケールを保持するオブジェクト。
+
+### レイヤー関連
+- `layer:active` : 現在アクティブなレイヤーの識別子。
+- `layer:stack` : レイヤーの順序付き集合。
+
+### フロー関連
+- `flow:pen-drawing` : ペン入力処理の標準フロー。
+- `flow:layer-operation` : レイヤー操作の標準フロー。
+- `flow:camera-control` : カメラ移動・ズーム処理の標準フロー。
+
+---
+
+## エラー処理
+
+- すべての衛星は `reportError(code, message, error)` を持ち、mainApi 経由で ErrorService に通知する。
+- ErrorService はイベント `type: "error-reported"` を発行し、UI に通知する。
+
+---
+
+## 設計原則まとめ
+
+- イベントは必ず `type` を持つ。
+- 座標変換は DrawingEngine が一元管理する。
+- ペンとパンは排他的で、Space キーで切り替わる。
+- レイヤー操作は UI → mainApi → LayerManager → UI の一方向フローとする。
+- 各衛星はヘッダーで API を明示し、依存を宣言する。
+
+---
+
