@@ -1,6 +1,8 @@
 /**
- * Layer Manager Satellite
+ * Layer Manager Satellite - Fixed Version
  * レイヤー管理・並び替え・可視性制御の責務を担う衛星モジュール
+ * - getActiveLayer メソッド追加
+ * - レイヤーコンテナの命名規則修正
  */
 
 window.FutabaLayerManager = (function() {
@@ -20,7 +22,8 @@ window.FutabaLayerManager = (function() {
             const layerName = name || (isBackground ? '背景' : `レイヤー${layerId}`);
             
             const container = new PIXI.Container();
-            container.name = layerName;
+            // Important: Set container name to match the layerId for lookup
+            container.name = layerId.toString();
             container.visible = true;
             
             const layer = {
@@ -122,6 +125,7 @@ window.FutabaLayerManager = (function() {
         }
         
         addPathToActiveLayer(pathData) {
+            if (!this.activeLayerId) return false;
             return this.addPathToLayer(this.activeLayerId, pathData);
         }
         
@@ -273,6 +277,11 @@ window.FutabaLayerManager = (function() {
             return this.bridge.getLayerData(layerId);
         }
         
+        // Fixed: Add missing getActiveLayer method
+        getActiveLayer() {
+            return this.bridge.getActiveLayer();
+        }
+        
         toggleLayerVisibility(layerId) {
             try {
                 const success = this.bridge.toggleLayerVisibility(layerId);
@@ -308,7 +317,12 @@ window.FutabaLayerManager = (function() {
         }
         
         addPathToActiveLayer(pathData) {
-            return this.bridge.addPathToActiveLayer(pathData);
+            try {
+                return this.bridge.addPathToActiveLayer(pathData);
+            } catch (error) {
+                this.mainAPI.notifyError('ERR_LAYER_ADD_PATH', 'Failed to add path to active layer', error);
+                return false;
+            }
         }
         
         removePath(pathId) {
