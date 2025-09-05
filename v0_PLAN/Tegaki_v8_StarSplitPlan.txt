@@ -117,3 +117,305 @@ Tegaki v8 星型分離改修計画書（ドラフト＋具体化）
 - 将来的にショートカットなど新衛星を追加可能な構造
 
 ============================================================
+
+
+📝下記はサンプルコードです。参考にしてください。
+============================================================
+
+<!-- futaba_layers_rev5_sample.html -->
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Tegaki v8 Sample</title>
+<style>
+  body { margin:0; overflow:hidden; }
+  #canvas-container { width:100vw; height:100vh; background:#fff; }
+</style>
+</head>
+<body>
+<div id="canvas-container"></div>
+
+<!-- External Libraries -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+
+<script>
+// =======================
+// MainController
+// =======================
+class MainController {
+  constructor() {
+    this.satellites = {};
+    this.debug = true;
+  }
+
+  registerSatellite(name, api) {
+    this.satellites[name] = api;
+  }
+
+  notify(event) {
+    if (this.debug) console.log('[MainController] Event:', event.type, event.payload);
+    // Dispatch to satellites if needed
+  }
+}
+
+// =======================
+// DrawingEngine
+// =======================
+class DrawingEngine {
+  constructor(container) {
+    this.app = new PIXI.Application({
+      width: container.clientWidth,
+      height: container.clientHeight,
+      backgroundAlpha: 0
+    });
+    container.appendChild(this.app.view);
+    this.layers = {};
+  }
+
+  createLayer(id) {
+    const layer = new PIXI.Graphics();
+    layer.name = id;
+    this.app.stage.addChild(layer);
+    this.layers[id] = layer;
+    return layer;
+  }
+
+  drawTemporaryStroke(layerId, points, color=0x000000, width=2) {
+    const layer = this.layers[layerId];
+    if (!layer) return;
+    layer.clear();
+    layer.lineStyle(width, color);
+    layer.moveTo(points[0].x, points[0].y);
+    for (let i=1;i<points.length;i++) layer.lineTo(points[i].x, points[i].y);
+  }
+
+  commitStroke(layerId, points, color=0x000000, width=2) {
+    const layer = this.layers[layerId];
+    if (!layer) return;
+    layer.lineStyle(width, color);
+    layer.moveTo(points[0].x, points[0].y);
+    for (let i=1;i<points.length;i++) layer.lineTo(points[i].x, points[i].y);
+  }
+}
+
+// =======================
+// LayerService
+// =======================
+class LayerService {
+  constructor(engine) {
+    this.engine = engine;
+    this.layerIds = [];
+  }
+
+  createLayer(name) {
+    const id = `layer_${this.layerIds.length}`;
+    this.layerIds.push(id);
+    this.engine.createLayer(id);
+    return id;
+  }
+
+  reorderLayer(fromIndex, toIndex) {
+    if (fromIndex < 0 || toIndex < 0) return;
+    const [id] = this.layerIds.splice(fromIndex,1);
+    this.layerIds.splice(toIndex,0,id);
+    // Stage child reordering
+    this.engine.app.stage.setChildIndex(this.engine.layers[id], toIndex);
+  }
+}
+
+// =======================
+// ToolManager
+// =======================
+class ToolManager {
+  constructor(main) {
+    this.main = main;
+    this.tools = {};
+    this.activeTool = null;
+  }
+
+  registerTool(tool) {
+    this.tools[tool.id] = tool;
+  }
+
+  setActiveTool(toolId) {
+    this.activeTool = this.tools[toolId];
+  }
+}
+
+// =======================
+// Tools
+// =======================
+class BrushTool {
+  constructor(engine, layerService) {
+    this.id = 'brush';
+    this.engine = engine;
+    this.layerService = layerService;
+    this.points = [];
+    this.currentLayer = null;
+  }
+
+  start(point) {
+    if (!this.currentLayer) this.currentLayer = this.layerService.layerIds[0];
+    this.points = [point];
+  }
+
+  move(point) {
+    this.points.push(point);
+    this.engine.drawTemporaryStroke(this.currentLayer, this.points, 0x000000, 2);
+  }
+
+  end() {
+    this.engine.commitStroke(this.currentLayer, this.points, 0x000000, 2);
+    this.points = [];
+  }
+
+  cancel() {
+    this.points = [];
+  }
+
+  serialize() {
+    return { layer: this.currentLayer, points: this.points };
+  }
+}
+
+class EraserTool {
+  constructor(engine, layerService) {
+    this.id = 'eraser';
+    this.engine = engine;
+    this.layerService = layerService;
+    this.points = [];
+    this.currentLayer = null;
+  }
+
+  start(point) {
+    if (!this.currentLayer) this.currentLayer = this.layerService.layerIds[0];
+    this.points = [point];
+  }
+
+  move(point) {
+    this.points.push(point);
+    this.engine.drawTemporaryStroke(this.currentLayer, this.points, 0xFFFFFF, 10);
+  }
+
+  end() {
+    this.engine.commitStroke(this.currentLayer, this.points, 0xFFFFFF, 10);
+    this.points = [];
+  }
+
+  cancel() {
+    this.points = [];
+  }
+
+  serialize() {
+    return { layer: this.currentLayer, points: this.points };
+  }
+}
+
+// =======================
+// HistoryService
+// =======================
+class HistoryService {
+  constructor() {
+    this.stack = [];
+    this.pointer = -1;
+  }
+
+  record(action) {
+    this.stack = this.stack.slice(0,this.pointer+1);
+    this.stack.push(action);
+    this.pointer++;
+  }
+
+  undo() {
+    if (this.pointer<0) return;
+    const action = this.stack[this.pointer];
+    this.pointer--;
+    return action;
+  }
+
+  redo() {
+    if (this.pointer+1>=this.stack.length) return;
+    this.pointer++;
+    return this.stack[this.pointer];
+  }
+}
+
+// =======================
+// Initialization
+// =======================
+const container = document.getElementById('canvas-container');
+const main = new MainController();
+const engine = new DrawingEngine(container);
+const layerService = new LayerService(engine);
+const toolManager = new ToolManager(main);
+const history = new HistoryService();
+
+layerService.createLayer('base');
+
+const brush = new BrushTool(engine, layerService);
+const eraser = new EraserTool(engine, layerService);
+
+toolManager.registerTool(brush);
+toolManager.registerTool(eraser);
+toolManager.setActiveTool('brush');
+
+// =======================
+// Mouse / Touch Handling
+// =======================
+let isDrawing = false;
+container.addEventListener('pointerdown', e=>{
+  isDrawing = true;
+  const pt = { x:e.offsetX, y:e.offsetY };
+  toolManager.activeTool.start(pt);
+});
+
+container.addEventListener('pointermove', e=>{
+  if(!isDrawing) return;
+  const pt = { x:e.offsetX, y:e.offsetY };
+  toolManager.activeTool.move(pt);
+});
+
+container.addEventListener('pointerup', e=>{
+  if(!isDrawing) return;
+  const pt = { x:e.offsetX, y:e.offsetY };
+  toolManager.activeTool.end();
+  isDrawing=false;
+  history.record(toolManager.activeTool.serialize());
+});
+
+// =======================
+// Shortcuts
+// =======================
+document.addEventListener('keydown', e=>{
+  if(e.ctrlKey && e.key==='z') {
+    const action = history.undo();
+    if(action) console.log('Undo:', action);
+  }
+  if(e.ctrlKey && e.key==='y') {
+    const action = history.redo();
+    if(action) console.log('Redo:', action);
+  }
+  if(e.key==='p') toolManager.setActiveTool('brush');
+  if(e.key==='e') toolManager.setActiveTool('eraser');
+});
+</script>
+</body>
+</html>
+
+
+
+
+このサンプルでは：
+
+Canvas2Dは使用せず、PixiJS Graphicsでベクターペン・消しゴムを描画
+
+Undo/RedoはCtrl+Z / Ctrl+Yで操作
+
+ペン(P)/消しゴム(E)の切替はショートカットのみ
+
+LayerService + DrawingEngine + ToolManager + HistoryServiceの関係を整理
+
+改修時はDrawingEngine内で描画フローを分離して切り出せる構造
+
