@@ -1,0 +1,970 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev8 - 星型分離版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg {
+            width: 20px;
+            height: 20px;
+            stroke: #800000;
+        }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.active svg {
+            stroke: #ffffff;
+        }
+        
+        .tool-button.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .tool-button.disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: visible;
+            display: flex;
+            justify-content: flex-start;
+            align-items: flex-start;
+        }
+        
+        .canvas-container {
+            background: var(--futaba-cream);
+            display: inline-block;
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            touch-action: none;
+        }
+        
+        canvas {
+            border: none;
+            display: block;
+            cursor: crosshair;
+            touch-action: none;
+        }
+        
+        .layer-panel-container {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none;
+        }
+        
+        .layer-add-button {
+            width: 36px;
+            height: 36px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.1);
+            pointer-events: all;
+        }
+        
+        .layer-add-button:hover {
+            background: var(--futaba-medium);
+            transform: scale(1.1);
+        }
+        
+        .layer-add-button svg {
+            width: 18px;
+            height: 18px;
+            stroke: #800000;
+        }
+        
+        .layer-panel-items {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: transparent;
+            border-radius: 8px;
+            padding: 8px;
+            pointer-events: all;
+        }
+        
+        .layer-item {
+            width: 140px;
+            height: 48px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+            position: relative;
+            box-shadow: 0 2px 4px rgba(128, 0, 0, 0.1);
+        }
+        
+        .layer-item:hover {
+            border-color: var(--futaba-medium);
+            background: var(--futaba-background);
+        }
+        
+        .layer-item.active {
+            border-color: var(--futaba-maroon);
+            background: var(--futaba-light-medium);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.2);
+        }
+        
+        .layer-item.dragging {
+            opacity: 0.7;
+            transform: rotate(2deg);
+            z-index: 1000;
+            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.4);
+        }
+        
+        .layer-item.drop-target {
+            border-color: var(--futaba-maroon);
+            background: var(--futaba-medium);
+        }
+        
+        .layer-name {
+            flex: 1;
+            font-size: 12px;
+            color: var(--text-primary);
+            font-weight: 500;
+            margin-right: 8px;
+        }
+        
+        .layer-visibility {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+        
+        .layer-visibility:hover {
+            background: var(--futaba-light-medium);
+        }
+        
+        .layer-visibility svg {
+            width: 14px;
+            height: 14px;
+            stroke: #800000;
+        }
+        
+        .layer-visibility.hidden svg {
+            opacity: 0.3;
+        }
+        
+        .popup-panel {
+            position: fixed;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+            padding: 20px;
+            z-index: 2000;
+            backdrop-filter: blur(12px);
+            display: none;
+            user-select: none;
+            min-width: 280px;
+        }
+        
+        .popup-panel.show {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        
+        .popup-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            margin-bottom: 16px;
+            text-align: center;
+            border-bottom: 2px solid var(--futaba-light-medium);
+            padding-bottom: 8px;
+        }
+        
+        .setting-group {
+            margin-bottom: 16px;
+        }
+        
+        .setting-label {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .slider {
+            flex: 1;
+            height: 6px;
+            background: var(--futaba-light-medium);
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .slider-track {
+            height: 100%;
+            background: var(--futaba-maroon);
+            border-radius: 3px;
+            transition: width 0.1s ease;
+        }
+        
+        .slider-handle {
+            width: 16px;
+            height: 16px;
+            background: var(--futaba-maroon);
+            border: 2px solid var(--futaba-background);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .slider-handle:active {
+            cursor: grabbing;
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+        
+        .slider-value {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            min-width: 50px;
+            text-align: right;
+        }
+        
+        .size-input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .size-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            background: var(--futaba-background);
+            font-family: monospace;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .size-input:focus {
+            outline: none;
+            border-color: var(--futaba-maroon);
+        }
+        
+        .size-multiply {
+            color: var(--futaba-maroon);
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .action-button {
+            padding: 10px 16px;
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 8px;
+            background: var(--futaba-background);
+            color: var(--futaba-maroon);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        
+        .action-button:hover {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .action-button.primary {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .action-button.primary:hover {
+            background: var(--futaba-light-maroon);
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        @media (max-width: 1200px) {
+            .popup-panel {
+                max-width: 90vw;
+            }
+            .layer-panel-container {
+                right: 10px;
+            }
+            .status-panel {
+                right: 170px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button" id="resize-tool" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-scaling-icon lucide-scaling"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M14 15H9v-5"/><path d="M16 3h5v5"/><path d="M21 3 9 15"/></svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button active" id="pen-tool" title="ベクターペン">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pen-line-icon lucide-pen-line"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eraser-icon lucide-eraser"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg>
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container" id="canvas-container">
+                <div id="drawing-canvas"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 右側中央レイヤーパネル -->
+    <div class="layer-panel-container" id="layer-panel-container">
+        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy-plus-icon lucide-copy-plus"><line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        </div>
+        
+        <div class="layer-panel-items" id="layer-list">
+            <!-- レイヤーアイテムが動的に生成される -->
+        </div>
+    </div>
+    
+    <!-- ポップアップパネル（ペンツール） -->
+    <div class="popup-panel" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-size-slider">
+                    <div class="slider-track" id="pen-size-track"></div>
+                    <div class="slider-handle" id="pen-size-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-size-value">16.0px</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-opacity-slider">
+                    <div class="slider-track" id="pen-opacity-track"></div>
+                    <div class="slider-handle" id="pen-opacity-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-opacity-value">85.0%</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ポップアップパネル（リサイズ） -->
+    <div class="popup-panel" id="resize-settings" style="left: 60px; top: 150px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバスサイズ</div>
+            <div class="size-input-group">
+                <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                <div class="size-multiply">×</div>
+                <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="action-button" id="apply-resize">適用</div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Layer: <span id="current-layer">背景</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">Camera: <span id="camera-position">x: 0, y: 0</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+        </div>
+    </div>
+
+    <!-- PixiJS v8 and Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+    
+    <!-- 衛星ファイル読み込み（修正されたパス） -->
+    <script src="error-service.js"></script>
+    <script src="drawing-engine.js"></script>
+    <script src="layer-manager.js"></script>
+    <script src="position-manager.js"></script>
+    <script src="tool-manager.js"></script>
+    <script src="ui-manager.js"></script>
+    
+    <script>
+        /**
+         * ファイル名: main.html
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev8 - MainController (主星)
+         * 星型分離版 - 衛星統括・イベント仲介・エラーハンドリング
+         */
+        
+        const APP_CONFIG = {
+            version: '8.0.8-star-split',
+            canvas: { width: 400, height: 400 },
+            rendering: { antialias: true, resolution: 1 },
+            debug: true  // デバッグモードを有効化
+        };
+        
+        const log = (message, ...args) => {
+            if (APP_CONFIG.debug) console.log(message, ...args);
+        };
+        
+        // ==== AppBootstrap: Library Management ====
+        class AppBootstrap {
+            static checkLibraries() {
+                const required = { pixi: window.PIXI, gsap: window.gsap };
+                return Object.entries(required).every(([name, lib]) => {
+                    if (!lib) {
+                        console.error(`❌ Library ${name} not found`);
+                        return false;
+                    }
+                    return true;
+                });
+            }
+            
+            static init() {
+                return this.checkLibraries();
+            }
+        }
+        
+        // ==== SystemMonitor: Performance Tracking ====
+        class SystemMonitor {
+            constructor() {
+                this.frameCount = 0;
+                this.lastTime = performance.now();
+            }
+            
+            start() {
+                const update = () => {
+                    this.frameCount++;
+                    const currentTime = performance.now();
+                    
+                    if (currentTime - this.lastTime >= 1000) {
+                        const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
+                        const element = document.getElementById('fps');
+                        if (element) {
+                            element.textContent = fps;
+                        }
+                        
+                        this.frameCount = 0;
+                        this.lastTime = currentTime;
+                    }
+                    
+                    requestAnimationFrame(update);
+                };
+                
+                update();
+            }
+        }
+        
+        // ==== MainController: 主星 - 衛星統括・イベント仲介 ====
+        class MainController {
+            constructor() {
+                this.satellites = new Map();
+                this.eventQueue = [];
+                this.spacePressed = false;
+                this.monitor = new SystemMonitor();
+                this.initialized = false;
+            }
+            
+            async initialize() {
+                try {
+                    log('🚀 Starting MainController initialization...');
+                    
+                    // 各衛星の初期化（依存関係順）
+                    log('📡 Registering ErrorService...');
+                    const errorService = new window.ErrorService();
+                    await this.registerSatellite('error', errorService);
+                    
+                    log('📡 Registering DrawingEngine...');
+                    const drawingEngine = new window.DrawingEngine();
+                    await this.registerSatellite('engine', drawingEngine);
+                    
+                    log('📡 Registering LayerManager...');
+                    const layerManager = new window.LayerManager(drawingEngine);
+                    await this.registerSatellite('layers', layerManager);
+                    
+                    log('📡 Registering PositionManager...');
+                    const positionManager = new window.PositionManager();
+                    await this.registerSatellite('position', positionManager);
+                    
+                    log('📡 Registering ToolManager...');
+                    const toolManager = new window.ToolManager(drawingEngine, layerManager);
+                    await this.registerSatellite('tools', toolManager);
+                    
+                    log('📡 Registering UIManager...');
+                    const uiManager = new window.UIManager(toolManager, drawingEngine, layerManager);
+                    await this.registerSatellite('ui', uiManager);
+                    
+                    // 衛星間の相互接続
+                    log('🔗 Setting up satellite connections...');
+                    this.setupSatelliteConnections();
+                    
+                    // 入力システム初期化
+                    log('⌨️ Setting up input handlers...');
+                    this.setupInputHandlers();
+                    
+                    // モニタリング開始
+                    log('📊 Starting performance monitoring...');
+                    this.monitor.start();
+                    
+                    this.initialized = true;
+                    log('✅ Futaba Drawing Tool v8rev8 - Star Split Version Ready!');
+                    console.log('🎨 Futaba Drawing Tool v8rev8 - Star Split Version Ready!');
+                    
+                } catch (error) {
+                    const errorService = this.getSatellite('error');
+                    if (errorService) {
+                        errorService.reportFatal('INIT_FAILED', 'Application initialization failed', error.stack);
+                    } else {
+                        console.error('💥 Critical initialization error:', error);
+                    }
+                    throw error;
+                }
+            }
+            
+            async registerSatellite(name, satellite) {
+                try {
+                    log(`🛰️ Registering satellite: ${name}`);
+                    
+                    if (satellite.register && typeof satellite.register === 'function') {
+                        await satellite.register(this.createSatelliteApi(name));
+                    }
+                    
+                    if (satellite.initialize && typeof satellite.initialize === 'function') {
+                        await satellite.initialize();
+                    }
+                    
+                    this.satellites.set(name, satellite);
+                    log(`✅ Satellite '${name}' registered successfully`);
+                    
+                } catch (error) {
+                    console.error(`❌ Failed to register satellite '${name}':`, error);
+                    throw error;
+                }
+            }
+            
+            createSatelliteApi(satelliteName) {
+                return {
+                    notify: (event) => this.notify(satelliteName, event),
+                    dispatch: (action) => this.dispatch(satelliteName, action),
+                    getSatellite: (name) => this.getSatellite(name),
+                    getConfig: () => APP_CONFIG
+                };
+            }
+            
+            notify(from, event) {
+                log(`📢 Event from ${from}:`, event);
+                
+                try {
+                    // イベントの種類に応じて適切な衛星に転送
+                    switch (event.type) {
+                        case 'error':
+                            this.getSatellite('error')?.handleError(event);
+                            break;
+                        case 'tool-change':
+                            this.getSatellite('ui')?.handleToolChange(event);
+                            break;
+                        case 'layer-change':
+                            this.getSatellite('ui')?.handleLayerChange(event);
+                            break;
+                        case 'canvas-change':
+                            this.getSatellite('ui')?.handleCanvasChange(event);
+                            break;
+                        case 'coordinates-change':
+                            this.getSatellite('ui')?.handleCoordinatesChange(event);
+                            break;
+                        default:
+                            log(`⚠️ Unhandled event type: ${event.type}`);
+                    }
+                } catch (error) {
+                    this.getSatellite('error')?.reportRecoverable('EVENT_HANDLING_ERROR', 'Event handling failed', { from, event, error: error.message });
+                }
+            }
+            
+            dispatch(from, action) {
+                log(`🚀 Action from ${from}:`, action);
+                
+                try {
+                    // アクション処理のルーティング
+                    switch (action.type) {
+                        case 'start-drawing':
+                            return this.handleStartDrawing(action);
+                        case 'continue-drawing':
+                            return this.handleContinueDrawing(action);
+                        case 'stop-drawing':
+                            return this.handleStopDrawing(action);
+                        case 'resize-canvas':
+                            return this.handleResizeCanvas(action);
+                        case 'create-layer':
+                            return this.handleCreateLayer(action);
+                        case 'delete-layer':
+                            return this.handleDeleteLayer(action);
+                        case 'reorder-layers':
+                            return this.handleReorderLayers(action);
+                        default:
+                            log(`⚠️ Unhandled action type: ${action.type}`);
+                    }
+                } catch (error) {
+                    this.getSatellite('error')?.reportRecoverable('ACTION_HANDLING_ERROR', 'Action handling failed', { from, action, error: error.message });
+                }
+            }
+            
+            getSatellite(name) {
+                return this.satellites.get(name);
+            }
+            
+            setupSatelliteConnections() {
+                // 描画エンジンと位置管理の接続
+                const engine = this.getSatellite('engine');
+                const position = this.getSatellite('position');
+                
+                if (engine && position) {
+                    position.initialize(engine.app.ticker);
+                }
+                
+                // レイヤー管理とUI管理の接続
+                const layers = this.getSatellite('layers');
+                const ui = this.getSatellite('ui');
+                
+                if (layers && ui) {
+                    layers.ui = ui;
+                }
+            }
+            
+            setupInputHandlers() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space') {
+                        this.spacePressed = true;
+                        e.preventDefault();
+                    }
+                    
+                    if (e.code === 'Home') {
+                        const position = this.getSatellite('position');
+                        position?.reset();
+                        e.preventDefault();
+                    }
+                    
+                    if (this.spacePressed) {
+                        const moveMap = {
+                            'ArrowLeft': [10, 0],
+                            'ArrowRight': [-10, 0],
+                            'ArrowUp': [0, 10],
+                            'ArrowDown': [0, -10]
+                        };
+                        
+                        if (moveMap[e.code]) {
+                            const position = this.getSatellite('position');
+                            position?.moveByArrows(...moveMap[e.code]);
+                            e.preventDefault();
+                        }
+                    }
+                    
+                    // ツールショートカット
+                    if (e.key.toLowerCase() === 'p' && !e.ctrlKey && !e.altKey) {
+                        this.getSatellite('tools')?.setActiveTool('pen');
+                        e.preventDefault();
+                    }
+                    
+                    if (e.key.toLowerCase() === 'e' && !e.ctrlKey && !e.altKey) {
+                        this.getSatellite('tools')?.setActiveTool('eraser');
+                        e.preventDefault();
+                    }
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    if (e.code === 'Space') {
+                        this.spacePressed = false;
+                        const position = this.getSatellite('position');
+                        position?.stopPanning();
+                    }
+                });
+                
+                window.addEventListener('blur', () => {
+                    this.spacePressed = false;
+                    const position = this.getSatellite('position');
+                    position?.stopPanning();
+                });
+            }
+            
+            // Action Handlers
+            handleStartDrawing(action) {
+                const tools = this.getSatellite('tools');
+                const position = this.getSatellite('position');
+                
+                if (tools && position) {
+                    const worldPos = position.screenToWorld(action.x, action.y);
+                    return tools.startDrawing(worldPos.x, worldPos.y, this.spacePressed);
+                }
+                return false;
+            }
+            
+            handleContinueDrawing(action) {
+                const tools = this.getSatellite('tools');
+                const position = this.getSatellite('position');
+                
+                if (tools && position) {
+                    const worldPos = position.screenToWorld(action.x, action.y);
+                    tools.continueDrawing(worldPos.x, worldPos.y, this.spacePressed);
+                }
+            }
+            
+            handleStopDrawing(action) {
+                const tools = this.getSatellite('tools');
+                if (tools) {
+                    tools.stopDrawing();
+                }
+            }
+            
+            handleResizeCanvas(action) {
+                const engine = this.getSatellite('engine');
+                const layers = this.getSatellite('layers');
+                
+                if (engine && layers) {
+                    engine.resize(action.width, action.height);
+                    layers.updateBackgroundSize(action.width, action.height);
+                    
+                    this.notify('main', {
+                        type: 'canvas-change',
+                        width: action.width,
+                        height: action.height
+                    });
+                }
+            }
+            
+            handleCreateLayer(action) {
+                const layers = this.getSatellite('layers');
+                if (layers) {
+                    const newLayer = layers.createLayer(action.name);
+                    layers.setActiveLayer(newLayer.id);
+                    
+                    this.notify('main', {
+                        type: 'layer-change',
+                        activeLayer: newLayer
+                    });
+                    
+                    return newLayer;
+                }
+            }
+            
+            handleDeleteLayer(action) {
+                const layers = this.getSatellite('layers');
+                if (layers) {
+                    layers.deleteLayer(action.layerId);
+                    
+                    this.notify('main', {
+                        type: 'layer-change',
+                        activeLayer: layers.getActiveLayer()
+                    });
+                }
+            }
+            
+            handleReorderLayers(action) {
+                const layers = this.getSatellite('layers');
+                if (layers) {
+                    layers.reorderLayers(action.fromIndex, action.toIndex);
+                }
+            }
+            
+            // Public API for external access
+            getSpacePressed() {
+                return this.spacePressed;
+            }
+        }
+        
+        // ==== Application Bootstrap ====
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                log('🏁 Starting application bootstrap...');
+                
+                if (!AppBootstrap.init()) {
+                    throw new Error('Library initialization failed');
+                }
+                
+                window.futabaApp = new MainController();
+                await window.futabaApp.initialize();
+                
+            } catch (error) {
+                console.error('💥 Application startup failed:', error);
+                const canvasArea = document.querySelector('.canvas-area');
+                if (canvasArea) {
+                    canvasArea.innerHTML = `
+                        <div style="text-align: center; color: var(--futaba-maroon); font-size: 18px; padding: 40px;">
+                            <div>⚠️ アプリケーションの初期化に失敗しました</div>
+                            <div style="font-size: 14px; margin-top: 10px;">
+                                ブラウザのコンソールでエラー詳細を確認してください
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
