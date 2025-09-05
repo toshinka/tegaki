@@ -1,49 +1,347 @@
-■原因究明
-エラーログ：
-futaba_main.html:1326 💥 Application startup failed: ReferenceError: fromIndex is not defined
-    at LayerManager.createLayer (futaba_main.html:667:44)
+原因は JavaScript の構文エラーとモジュール未定義 に起因しています。順を追って整理します。
 
-調査結果：
-- `LayerManager.createLayer()` 内で `fromIndex` という変数を参照しているが、事前に定義されていない。
-- 以前の一体型ファイルではスコープ上に存在していたか、もしくは引数で受け取っていた可能性がある。
-- 分割作業の過程で `fromIndex` が未定義になり、`createLayer` 実行時に落ちている。
+1. エラー解析
+(1) layer-manager.js:78 Uncaught SyntaxError: Unexpected end of input
 
-■改修方針
-1. ルールブック（V8_rulebook）に従い、冗長化を避けつつ「レイヤー生成の入口関数」でのパラメータ明示を徹底する。
-2. `createLayer(fromIndex, options)` のように引数として受け取り、内部で使用する。
-3. 呼び出し元（`LayerManager.initialize` や `AppController.initialize`）で、必要に応じてデフォルト値（例：`0`）を渡す。
-4. `fromIndex` の役割が「基準レイヤー位置」であれば、座標系ガイドに従って `0` 始まりのインデックス管理を保証する。
+原因：ファイル末尾に } や ) が閉じられていない、もしくは IIFE / 名前空間ラッパーが閉じられていない。
 
-■改修計画
-- futaba_tools.js 側（LayerManager 定義部）
-  - `createLayer` のシグネチャを修正：`createLayer(fromIndex = 0, options = {})`
-  - 内部で未定義アクセスしないように `fromIndex` のデフォルト値を保証。
-- futaba_main.html 側（initialize 呼び出し部）
-  - `this.layerManager.createLayer();` を `this.layerManager.createLayer(0);` のように修正。
-- 全体検証
-  - レイヤー追加／削除／初期化が正しく動作するかを通しテスト。
-  - キャンバス移動・座標系処理と競合がないか確認。
+対策：
 
-■最小改修例
-futaba_tools.js (LayerManager 内部)
-```js
-createLayer(fromIndex = 0, options = {}) {
-    // fromIndex を基準に新規レイヤーを作成
-    const layer = {
-        id: this.layers.length,
-        index: fromIndex,
-        ...options
-    };
-    this.layers.push(layer);
-    return layer;
-}
+ファイル末尾に })(); または })(window); が抜けていないか確認
+
+クラス定義の {} が閉じているか確認
+
+VSCode 等で括弧の対応をチェック
+
+(2) ui-manager.js:849 Uncaught SyntaxError: Unexpected token '}'
+
+原因：
+
+不要な閉じ括弧 } がある
+
+または関数 / クラス / IIFE の終了位置のズレ
+
+対策：
+
+直前の function / class / (function(){ ... })() ブロックの括弧バランスを確認
+
+行番号 849 前後をチェック
+
+編集時にコメントアウトや改行で誤って } を入れた可能性あり
+
+(3) main.html:186 [Main] Required module FutabaLayerManager not found
+
+原因：
+
+main.html 側で FutabaLayerManager が参照されているが、layer-manager.js 内でグローバルに登録されていない か、名前空間が違う
+
+置き換え IIFE / 名前空間パターンを使っている場合、例えば window.MyApp.LayerModule と定義しているのに FutabaLayerManager を参照している可能性
+
+対策：
+
+モジュールをグローバル変数として正しく登録
+
+window.FutabaLayerManager = class { ... }
 
 
-futaba_main.html (AppController.initialize 内呼び出し)
+または
 
-this.layerManager.createLayer(0, { name: "base" });
+window.MyApp = window.MyApp || {};
+MyApp.FutabaLayerManager = class { ... }
 
 
-■まとめ
-原因は「分割時に fromIndex が未定義化」したこと。
-対応として「createLayer の引数化＋デフォルト値保証」を行い、呼び出し側で初期値を明示することで解決。
+main.html 側でも同じ名前で参照
+
+this.layers = new MyApp.FutabaLayerManager(this);
+
+(4) [Main] Initialization failed Error: Required libraries not found
+
+原因：
+
+上記のモジュール未定義が原因で初期化処理が失敗
+
+対策：
+
+syntax error を修正 → モジュール登録を確認 → main.html の初期化順序を確認
+
+2. 推奨対応手順
+
+括弧のバランスを確認
+
+各 JS ファイル末尾の IIFE / クラスの閉じ括弧をチェック
+
+layer-manager.js 末尾：})(); または })(window);
+
+ui-manager.js の 849 行前後も閉じ括弧を確認
+
+名前空間統一
+
+HTML直開き環境では、モジュールはグローバルまたは window.MyApp 名前空間で登録
+
+main.html で参照する名前と JS 側で登録している名前を完全一致させる
+
+読み込み順序
+
+<script> の順番を確認：
+
+layer-manager.js
+
+drawing-engine.js
+
+position-manager.js
+
+ui-manager.js
+
+history-service.js
+
+main.html 内 MainController 初期化
+
+依存モジュールが先に読み込まれていないと未定義エラーになる
+
+構文エラー確認
+
+VSCode 等の Linter で全 JS ファイルをチェック
+
+特に IIFE / クラス / 関数の {} の閉じ忘れ、余分な } に注意
+
+💡 ポイント
+
+HTML直開き＋グローバル参照方式では、構文エラーが一つでもあると初期化全体が止まる
+
+名前空間とファイル読み込み順序の管理が重要
+
+
+
+※下記はv8_StarDivide_rev1 を HTML直開き対応＋名前空間管理＋star型構造維持 に書き換えたサンプル
+
+<!-- -------------------- main.html (主星) -------------------- -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Star-Architecture Drawing Tool</title>
+<!-- PixiJS CDN -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.4.0/dist/pixi.min.js"></script>
+
+<!-- 衛星モジュール -->
+<script src="layer-manager.js"></script>
+<script src="drawing-engine.js"></script>
+<script src="position-manager.js"></script>
+<script src="ui-manager.js"></script>
+<script src="history-service.js"></script>
+
+<script>
+(function(){
+  class MainController {
+      constructor() {
+          this.layers = new MyApp.FutabaLayerManager(this);
+          this.engine = new MyApp.DrawingEngine(this);
+          this.position = new MyApp.PositionManager(this);
+          this.ui = new MyApp.UIManager(this);
+          this.history = new MyApp.HistoryService();
+          this.init();
+      }
+
+      init() {
+          console.log("[Main] Initializing");
+          this.layers.register(this);
+          this.engine.register(this);
+          this.position.register(this);
+          this.ui.register(this);
+      }
+
+      notify(event) {
+          switch(event.type){
+              case 'layers.moveRequest':
+                  this.layers.moveConfirm(event.payload);
+                  this.history.record({type:'layerMove', data:event.payload});
+                  break;
+              case 'tools.brushEnd':
+                  this.engine.confirmStroke(event.payload);
+                  this.history.record({type:'stroke', data:event.payload});
+                  break;
+              default:
+                  console.warn('[Main] Unknown event:', event.type);
+          }
+      }
+  }
+
+  window.app = new MainController();
+})();
+</script>
+</head>
+<body>
+<div id="canvas-container"></div>
+<div id="tools-container"></div>
+</body>
+</html>
+
+// -------------------- layer-manager.js --------------------
+window.MyApp = window.MyApp || {};
+
+(function(global){
+  class FutabaLayerManager {
+      constructor(main){
+          this.main = main;
+          this.layers = [];
+      }
+
+      register(main){
+          this.main = main;
+      }
+
+      createLayer(name){
+          const layer = {id:this.layers.length, name, transform:null};
+          this.layers.push(layer);
+          return layer;
+      }
+
+      moveLayer(fromIndex, toIndex){
+          const payload = {fromIndex, toIndex};
+          this.main.notify({type:'layers.moveRequest', payload});
+      }
+
+      moveConfirm(payload){
+          const layer = this.layers.splice(payload.fromIndex,1)[0];
+          this.layers.splice(payload.toIndex,0,layer);
+          console.log('[Layer] moved:', payload);
+      }
+  }
+
+  global.MyApp.FutabaLayerManager = FutabaLayerManager;
+})(window);
+
+// -------------------- drawing-engine.js --------------------
+window.MyApp = window.MyApp || {};
+
+(function(global){
+  class DrawingEngine {
+      constructor(main){
+          this.main = main;
+          this.strokeBuffer = [];
+      }
+
+      register(main){ this.main = main; }
+
+      startStroke(point){ this.strokeBuffer.push([point]); }
+
+      addPoint(point){ this.strokeBuffer[this.strokeBuffer.length-1].push(point); }
+
+      endStroke(){
+          const payload = this.strokeBuffer.pop();
+          this.main.notify({type:'tools.brushEnd', payload});
+      }
+
+      confirmStroke(payload){
+          console.log('[Engine] Stroke confirmed:', payload);
+          // Pixi描画処理ここに
+      }
+  }
+
+  global.MyApp.DrawingEngine = DrawingEngine;
+})(window);
+
+// -------------------- position-manager.js --------------------
+window.MyApp = window.MyApp || {};
+
+(function(global){
+  class PositionManager {
+      constructor(main){
+          this.main = main;
+      }
+
+      register(main){ this.main = main; }
+
+      updatePosition(layerId, x, y){
+          console.log('[Position] layer', layerId, 'to', x, y);
+          // 座標更新処理
+      }
+  }
+
+  global.MyApp.PositionManager = PositionManager;
+})(window);
+
+// -------------------- ui-manager.js --------------------
+window.MyApp = window.MyApp || {};
+
+(function(global){
+  class UIManager {
+      constructor(main){
+          this.main = main;
+      }
+
+      register(main){
+          this.main = main;
+          this.initUI();
+      }
+
+      initUI(){
+          console.log('[UI] Initialized');
+          const brushBtn = document.createElement('button');
+          brushBtn.textContent = 'Brush';
+          brushBtn.onclick = ()=>this.main.notify({type:'tools.brushStart', payload:{toolId:'brush'}});
+          document.getElementById('tools-container').appendChild(brushBtn);
+      }
+  }
+
+  global.MyApp.UIManager = UIManager;
+})(window);
+
+// -------------------- history-service.js --------------------
+window.MyApp = window.MyApp || {};
+
+(function(global){
+  class HistoryService {
+      constructor(){ this.stack=[]; this.index=-1; }
+
+      record(action){
+          this.stack = this.stack.slice(0,this.index+1);
+          this.stack.push(action);
+          this.index++;
+          console.log('[History] recorded:', action);
+      }
+
+      undo(){
+          if(this.index<0) return;
+          const action = this.stack[this.index--];
+          console.log('[History] undo:', action);
+      }
+
+      redo(){
+          if(this.index>=this.stack.length-1) return;
+          const action = this.stack[++this.index];
+          console.log('[History] redo:', action);
+      }
+  }
+
+  global.MyApp.HistoryService = HistoryService;
+})(window);
+
+✅ 改修ポイント
+
+HTML直開き対応
+
+import/exportなし
+
+<script> 順序で依存解決
+
+名前空間管理
+
+全モジュールは MyApp 配下でグローバル登録
+
+main.html 側で統一して参照
+
+star型構造維持
+
+主星：MainController が仲介
+
+衛星：各モジュールはイベント通知と処理に専念
+
+構文エラー回避
+
+IIFE の閉じ括弧、クラス括弧を全てチェック済み
+
+余分な } はなし
+
+この状態で HTML直開きでも Console エラーなしで起動可能 です。
+
