@@ -21,13 +21,13 @@
 ## 🏗️ 技術スタック・開発環境
 
 ### ✅ 使用技術（固定）
-- **PixiJS v7** - 描画・キャンバス基盤（CDN読み込み）
+- **PixiJS v8** - 描画・キャンバス基盤（CDN読み込み）
 - **JavaScript ES2023** - モダン構文積極利用
 - **fetch API** - HTTP通信（必要時）
 - **HTML直開き** - ローカルファイル直接実行可能
 
 ### 🚫 禁止技術
-- **Vite / TypeScript / ESM** - HTML直開きで動くことが必須
+- **Vite / TypeScript / ESMの禁止、HTML直開きで動くことが必須。
 - **webpack / Babel** - ビルドプロセス禁止
 - **jQuery** - モダン構文で代替
 - **後方互換** - 古いブラウザ考慮なし

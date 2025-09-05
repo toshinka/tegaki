@@ -1,0 +1,659 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v9 - Star Architecture</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg {
+            width: 20px;
+            height: 20px;
+            stroke: #800000;
+        }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.active svg {
+            stroke: #ffffff;
+        }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: visible;
+            display: flex;
+            justify-content: flex-start;
+            align-items: flex-start;
+        }
+        
+        .canvas-container {
+            background: var(--futaba-cream);
+            display: inline-block;
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            touch-action: none;
+        }
+        
+        canvas {
+            border: none;
+            display: block;
+            cursor: crosshair;
+            touch-action: none;
+        }
+        
+        .layer-panel-container, .popup-panel, .status-panel {
+            /* UI components will be styled by ui-manager.js */
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button" id="resize-tool" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M14 15H9v-5"/><path d="M16 3h5v5"/><path d="M21 3 9 15"/></svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button active" id="pen-tool" title="ベクターペン">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg>
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container" id="canvas-container">
+                <div id="drawing-canvas"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+    
+    <!-- Satellite Modules -->
+    <script src="layer-manager.js"></script>
+    <script src="drawing-engine.js"></script>
+    <script src="position-manager.js"></script>
+    <script src="ui-manager.js"></script>
+    <script src="history-service.js"></script>
+    
+    <script>
+        /**
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v9
+         * Star Architecture - Main Controller (主星)
+         */
+        
+        const APP_CONFIG = {
+            version: '9.0.0-star-architecture',
+            canvas: { width: 400, height: 400 },
+            rendering: { antialias: true, resolution: 1 },
+            debug: false
+        };
+        
+        // Structured Logger
+        const Logger = {
+            error: (tag, message, context) => {
+                console.error(`[${tag}] ${message}`, context || '');
+            },
+            warn: (tag, message, context) => {
+                if (APP_CONFIG.debug) {
+                    console.warn(`[${tag}] ${message}`, context || '');
+                }
+            },
+            info: (tag, message, context) => {
+                if (APP_CONFIG.debug) {
+                    console.log(`[${tag}] ${message}`, context || '');
+                }
+            }
+        };
+        
+        // Event System
+        class EventDispatcher {
+            constructor() {
+                this.listeners = new Map();
+            }
+            
+            on(eventType, callback) {
+                if (!this.listeners.has(eventType)) {
+                    this.listeners.set(eventType, new Set());
+                }
+                this.listeners.get(eventType).add(callback);
+            }
+            
+            off(eventType, callback) {
+                if (this.listeners.has(eventType)) {
+                    this.listeners.get(eventType).delete(callback);
+                }
+            }
+            
+            emit(eventType, payload = {}, meta = {}) {
+                const event = {
+                    type: eventType,
+                    payload,
+                    meta: {
+                        timestamp: performance.now(),
+                        requestId: Math.random().toString(36).substr(2, 9),
+                        ...meta
+                    }
+                };
+                
+                if (this.listeners.has(eventType)) {
+                    this.listeners.get(eventType).forEach(callback => {
+                        try {
+                            callback(event);
+                        } catch (error) {
+                            Logger.error('EventDispatcher', `Error in event handler for ${eventType}`, error);
+                        }
+                    });
+                }
+                
+                return event;
+            }
+        }
+        
+        // Main Controller (主星)
+        class MainController {
+            constructor() {
+                this.eventBus = new EventDispatcher();
+                this.satellites = new Map();
+                this.appState = {
+                    initialized: false,
+                    currentTool: 'pen',
+                    spacePressed: false
+                };
+                this.errorStates = new Set();
+            }
+            
+            async initialize() {
+                try {
+                    Logger.info('Main', 'Initializing application...');
+                    
+                    // Check libraries
+                    if (!this.checkLibraries()) {
+                        throw new Error('Required libraries not found');
+                    }
+                    
+                    // Initialize satellites
+                    await this.initializeSatellites();
+                    
+                    // Setup input handlers
+                    this.setupInputHandlers();
+                    
+                    // Setup event routing
+                    this.setupEventRouting();
+                    
+                    this.appState.initialized = true;
+                    Logger.info('Main', 'Application initialized successfully');
+                    
+                } catch (error) {
+                    Logger.error('Main', 'Initialization failed', error);
+                    this.showError('初期化に失敗しました', error.message);
+                }
+            }
+            
+            checkLibraries() {
+                const required = { 
+                    PIXI: window.PIXI, 
+                    gsap: window.gsap,
+                    FutabaLayerManager: window.FutabaLayerManager,
+                    FutabaDrawingEngine: window.FutabaDrawingEngine,
+                    FutabaPositionManager: window.FutabaPositionManager,
+                    FutabaUIManager: window.FutabaUIManager,
+                    FutabaHistoryService: window.FutabaHistoryService
+                };
+                
+                for (const [name, lib] of Object.entries(required)) {
+                    if (!lib) {
+                        Logger.error('Main', `Required module ${name} not found`);
+                        return false;
+                    }
+                }
+                return true;
+            }
+            
+            async initializeSatellites() {
+                // Initialize in dependency order
+                const initOrder = [
+                    { name: 'historyService', Class: window.FutabaHistoryService },
+                    { name: 'drawingEngine', Class: window.FutabaDrawingEngine },
+                    { name: 'layerManager', Class: window.FutabaLayerManager },
+                    { name: 'positionManager', Class: window.FutabaPositionManager },
+                    { name: 'uiManager', Class: window.FutabaUIManager }
+                ];
+                
+                for (const { name, Class } of initOrder) {
+                    try {
+                        const satellite = new Class();
+                        await satellite.register(this.createSatelliteAPI(name));
+                        this.satellites.set(name, satellite);
+                        Logger.info('Main', `Satellite ${name} initialized`);
+                    } catch (error) {
+                        Logger.error('Main', `Failed to initialize ${name}`, error);
+                        throw error;
+                    }
+                }
+            }
+            
+            createSatelliteAPI(satelliteName) {
+                return {
+                    notify: (eventType, payload, meta) => {
+                        return this.eventBus.emit(eventType, payload, { ...meta, origin: satelliteName });
+                    },
+                    
+                    notifyError: (errorCode, message, context) => {
+                        Logger.error(satelliteName, `${errorCode}: ${message}`, context);
+                        this.handleSatelliteError(satelliteName, errorCode, message, context);
+                    },
+                    
+                    requestConfirm: (requestId, data) => {
+                        return this.confirmRequest(satelliteName, requestId, data);
+                    },
+                    
+                    getConfig: () => APP_CONFIG,
+                    
+                    getSatellite: (name) => {
+                        if (this.satellites.has(name)) {
+                            return this.createSatelliteProxy(name);
+                        }
+                        return null;
+                    }
+                };
+            }
+            
+            createSatelliteProxy(targetSatellite) {
+                const satellite = this.satellites.get(targetSatellite);
+                if (!satellite) return null;
+                
+                // Return limited API for satellite-to-satellite communication
+                return {
+                    request: (method, ...args) => {
+                        if (typeof satellite[method] === 'function') {
+                            return satellite[method](...args);
+                        }
+                        Logger.error('Main', `Method ${method} not found in ${targetSatellite}`);
+                        return null;
+                    }
+                };
+            }
+            
+            setupEventRouting() {
+                // Layer events
+                this.eventBus.on('layers.moveRequest', (event) => {
+                    this.handleLayerMoveRequest(event);
+                });
+                
+                this.eventBus.on('layers.createRequest', (event) => {
+                    this.handleLayerCreateRequest(event);
+                });
+                
+                this.eventBus.on('layers.deleteRequest', (event) => {
+                    this.handleLayerDeleteRequest(event);
+                });
+                
+                this.eventBus.on('layers.visibilityToggle', (event) => {
+                    this.handleLayerVisibilityToggle(event);
+                });
+                
+                // Drawing events
+                this.eventBus.on('drawing.strokeStart', (event) => {
+                    this.handleStrokeStart(event);
+                });
+                
+                this.eventBus.on('drawing.strokeMove', (event) => {
+                    this.handleStrokeMove(event);
+                });
+                
+                this.eventBus.on('drawing.strokeEnd', (event) => {
+                    this.handleStrokeEnd(event);
+                });
+                
+                // Tool events
+                this.eventBus.on('tools.select', (event) => {
+                    this.handleToolSelect(event);
+                });
+                
+                // Canvas events
+                this.eventBus.on('canvas.resize', (event) => {
+                    this.handleCanvasResize(event);
+                });
+            }
+            
+            // Event Handlers
+            handleLayerMoveRequest(event) {
+                const { fromIndex, toIndex } = event.payload;
+                const layerManager = this.satellites.get('layerManager');
+                const historyService = this.satellites.get('historyService');
+                
+                try {
+                    if (layerManager.validateLayerMove(fromIndex, toIndex)) {
+                        // Record before state
+                        historyService.record({
+                            type: 'layerMove',
+                            before: { fromIndex, toIndex: fromIndex },
+                            after: { fromIndex, toIndex }
+                        });
+                        
+                        // Confirm move
+                        this.eventBus.emit('layers.moveConfirm', event.payload);
+                    } else {
+                        Logger.warn('Main', 'Invalid layer move request', event.payload);
+                    }
+                } catch (error) {
+                    Logger.error('Main', 'Layer move failed', error);
+                }
+            }
+            
+            handleLayerCreateRequest(event) {
+                const layerManager = this.satellites.get('layerManager');
+                const historyService = this.satellites.get('historyService');
+                
+                try {
+                    const layerId = layerManager.createLayer(event.payload.name);
+                    
+                    historyService.record({
+                        type: 'layerCreate',
+                        layerId,
+                        data: event.payload
+                    });
+                    
+                    this.eventBus.emit('layers.createConfirm', { layerId, ...event.payload });
+                } catch (error) {
+                    Logger.error('Main', 'Layer creation failed', error);
+                }
+            }
+            
+            handleLayerDeleteRequest(event) {
+                const layerManager = this.satellites.get('layerManager');
+                const historyService = this.satellites.get('historyService');
+                
+                try {
+                    const { layerId } = event.payload;
+                    const layerData = layerManager.getLayerData(layerId);
+                    
+                    if (layerManager.deleteLayer(layerId)) {
+                        historyService.record({
+                            type: 'layerDelete',
+                            layerId,
+                            layerData
+                        });
+                        
+                        this.eventBus.emit('layers.deleteConfirm', { layerId });
+                    }
+                } catch (error) {
+                    Logger.error('Main', 'Layer deletion failed', error);
+                }
+            }
+            
+            handleLayerVisibilityToggle(event) {
+                const layerManager = this.satellites.get('layerManager');
+                try {
+                    layerManager.toggleLayerVisibility(event.payload.layerId);
+                } catch (error) {
+                    Logger.error('Main', 'Layer visibility toggle failed', error);
+                }
+            }
+            
+            handleStrokeStart(event) {
+                if (this.appState.spacePressed) return;
+                
+                const drawingEngine = this.satellites.get('drawingEngine');
+                try {
+                    drawingEngine.startDrawing(event.payload);
+                } catch (error) {
+                    Logger.error('Main', 'Stroke start failed', error);
+                }
+            }
+            
+            handleStrokeMove(event) {
+                if (this.appState.spacePressed) return;
+                
+                const drawingEngine = this.satellites.get('drawingEngine');
+                try {
+                    drawingEngine.continueDrawing(event.payload);
+                } catch (error) {
+                    Logger.error('Main', 'Stroke move failed', error);
+                }
+            }
+            
+            handleStrokeEnd(event) {
+                const drawingEngine = this.satellites.get('drawingEngine');
+                const historyService = this.satellites.get('historyService');
+                
+                try {
+                    const strokeData = drawingEngine.endDrawing();
+                    
+                    if (strokeData) {
+                        historyService.record({
+                            type: 'stroke',
+                            data: strokeData
+                        });
+                        
+                        this.eventBus.emit('drawing.strokeConfirm', { strokeData });
+                    }
+                } catch (error) {
+                    Logger.error('Main', 'Stroke end failed', error);
+                }
+            }
+            
+            handleToolSelect(event) {
+                this.appState.currentTool = event.payload.tool;
+                this.eventBus.emit('tools.selectConfirm', event.payload);
+            }
+            
+            handleCanvasResize(event) {
+                const drawingEngine = this.satellites.get('drawingEngine');
+                const layerManager = this.satellites.get('layerManager');
+                
+                try {
+                    const { width, height } = event.payload;
+                    
+                    // Update config
+                    APP_CONFIG.canvas.width = width;
+                    APP_CONFIG.canvas.height = height;
+                    
+                    // Resize engine and layers
+                    drawingEngine.resize(width, height);
+                    layerManager.updateCanvasSize(width, height);
+                    
+                    this.eventBus.emit('canvas.resizeConfirm', event.payload);
+                } catch (error) {
+                    Logger.error('Main', 'Canvas resize failed', error);
+                }
+            }
+            
+            setupInputHandlers() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space') {
+                        this.appState.spacePressed = true;
+                        this.eventBus.emit('input.spaceDown');
+                        e.preventDefault();
+                    }
+                    
+                    if (e.code === 'Home') {
+                        this.eventBus.emit('input.homeKey');
+                        e.preventDefault();
+                    }
+                    
+                    // Undo/Redo shortcuts
+                    if (e.ctrlKey || e.metaKey) {
+                        if (e.key === 'z' && !e.shiftKey) {
+                            this.eventBus.emit('history.undo');
+                            e.preventDefault();
+                        } else if ((e.key === 'Z' && e.shiftKey) || e.key === 'y') {
+                            this.eventBus.emit('history.redo');
+                            e.preventDefault();
+                        }
+                    }
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    if (e.code === 'Space') {
+                        this.appState.spacePressed = false;
+                        this.eventBus.emit('input.spaceUp');
+                    }
+                });
+                
+                window.addEventListener('blur', () => {
+                    this.appState.spacePressed = false;
+                    this.eventBus.emit('input.spaceUp');
+                });
+            }
+            
+            handleSatelliteError(satelliteName, errorCode, message, context) {
+                const errorKey = `${satelliteName}.${errorCode}`;
+                
+                if (this.errorStates.has(errorKey)) return; // Prevent spam
+                
+                this.errorStates.add(errorKey);
+                
+                // Auto-clear error state after delay
+                setTimeout(() => {
+                    this.errorStates.delete(errorKey);
+                }, 5000);
+                
+                // Show user-facing error for critical issues
+                if (errorCode.startsWith('ERR_CRITICAL_')) {
+                    this.showError('重要なエラーが発生しました', message);
+                }
+            }
+            
+            confirmRequest(satelliteName, requestId, data) {
+                // Implement request confirmation logic
+                return { confirmed: true, requestId, timestamp: Date.now() };
+            }
+            
+            showError(title, message) {
+                const errorDiv = document.createElement('div');
+                errorDiv.style.cssText = `
+                    position: fixed; top: 20px; right: 20px; z-index: 10000;
+                    background: var(--futaba-maroon); color: white;
+                    padding: 16px; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+                    max-width: 300px; font-size: 14px;
+                `;
+                errorDiv.innerHTML = `
+                    <strong>${title}</strong><br>
+                    <small>${message}</small>
+                `;
+                
+                document.body.appendChild(errorDiv);
+                
+                setTimeout(() => {
+                    errorDiv.remove();
+                }, 5000);
+            }
+        }
+        
+        // Application Bootstrap
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                window.futabaApp = new MainController();
+                await window.futabaApp.initialize();
+            } catch (error) {
+                Logger.error('Bootstrap', 'Application startup failed', error);
+                
+                const canvasArea = document.querySelector('.canvas-area');
+                if (canvasArea) {
+                    canvasArea.innerHTML = `
+                        <div style="text-align: center; color: var(--futaba-maroon); font-size: 18px; padding: 40px;">
+                            <div>⚠️ アプリケーションの初期化に失敗しました</div>
+                            <div style="font-size: 14px; margin-top: 10px;">
+                                ブラウザのコンソールでエラー詳細を確認してください
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
