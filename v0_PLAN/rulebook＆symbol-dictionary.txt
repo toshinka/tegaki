@@ -1,0 +1,132 @@
+==========================================================
+Tegaki v8 星型分離 改修ルールブック＋フロー辞典
+==========================================================
+
+1. 基本理念
+----------------------------------------------------------
+- Tegaki v8 は「星型アーキテクチャ」を採用
+  - 主星(MainController)が中核となり、衛星(Service/Tool)を統括
+  - 衛星は主星にのみ依存し、衛星同士の直接依存は禁止
+  - 機能拡張は新規衛星追加または既存衛星のフロー拡張で対応
+- 改修時の原則
+  - 可能な限り主星と単一衛星の修正で完結するよう構造化
+  - フロー単位で衛星化して、一括管理ができる設計を推奨
+
+前提条件
+- 実行環境：Chrome 最新、ローカル HTML 直開き(file://)可
+- 技術スタック：PixiJS v8（CDN読み込み）、ES2023（モジュール未使用）、fetch API 可
+- 禁止事項：Canvas2D, TypeScript, Vite, ESM, bundler, Babel 不使用
+- グローバル名前空間：window.MyApp（全モジュールはここに登録
+- 描画は PixiJS v8 の Graphics を用いたベクター描画のみを使用する
+- Canvas2D は使用しない
+- レイヤー移動やカメラ外からの描画も World 座標系に従い正しく表示
+- 消しゴムも Graphics によるベクターパスで透明化する
+- ペンと消しゴムの挙動は DrawingEngine 内で統一管理
+- キャンバス外に描画した場合も World 座標変換を経て表示可能
+- PositionManager が canvas <-> world 座標変換を一元管理
+- ボタンは不要、将来ショートカット管理を分離可能な構造にする
+
+主星・衛星責務
+1. 主星（MainController）
+  - 発火・仲介・確定・履歴の橋渡しのみに責務を限定
+  - 衛星を直接操作せず、イベント/bridge経由で通信
+2. 衛星（各サービス・ツール）
+  - 単一責務
+  - 主星経由のみで通信、衛星間直接参照禁止
+3. 命名・API
+  - ファイル横断での誤解防止、統一規約を遵守
+4. エラー
+  - 隠蔽せず ErrorService 経由で主星に通知、UI に反映
+5. ログ
+  - main.log 経由で管理、console.log は直接使用禁止
+
+
+
+2. 命名規約
+----------------------------------------------------------
+- ファイル名：kebab-case（例: layer-manager.js）
+- クラス名：PascalCase（例: LayerManager）
+- グローバル登録：window.MyApp.[Module] = ModuleClass
+- メソッド名：camelCase、動詞始まり（例: createLayer, reorderLayer, startStroke）
+- イベント名：domain.action形式（例: tools.brushStart / layers.reorderRequest）
+- Tool インターフェース：start/move/end/cancel/serialize
+- 内部衛星は MainController 経由でのみアクセス可能
+
+3. フロー・メソッド辞典
+----------------------------------------------------------
+(1) ペン／消しゴム描画
+ToolManager → DrawingEngine → LayerManager/PositionManager → MainController → HistoryService
+
+- ToolManager
+  - start(point), move(point), end(point)
+  - activeTool管理
+- DrawingEngine
+  - drawTemporaryStroke(layerId, strokePoints)  // 一時描画
+  - commitStroke(layerId, strokeData)           // 確定描画
+  - Canvas座標は描画時のみ使用、履歴記録はWorld座標
+- LayerManager
+  - addLayer, removeLayer, reorderLayer
+  - メタ管理: visibility, locked
+  - transform適用 (非破壊)
+- PositionManager
+  - canvasToWorld, worldToCanvas, zoom, pan
+  - 無限キャンバス対応
+- MainController
+  - notify(event) → HistoryService record
+  - エラー受け取り → ErrorService
+- HistoryService
+  - record(action), undo(), redo()
+  - スナップショット保持 (LayerData/World座標)
+- 消しゴム
+  - commitStroke内でBLEND_MODE切替、透明化を表現
+
+(2) 非破壊レイヤー移動（TransformTool）
+- TransformTool → PositionManager → LayerManager → commitStroke / record
+- 履歴は座標差分のみ保存、undo/redo対応
+- ワールド座標基準
+
+(3) Undo/Redoフロー
+- MainController → HistoryService
+- DrawingEngineはスナップショット生成担当
+- LayerManager/PositionManagerからのデータをWorld座標で保持
+
+(4) エラー伝播
+- Tool / Engine / LayerManager内例外 → MainController.notify → ErrorService
+- サイレント非表示禁止
+- UI通知 via UIManager
+
+(5) アクティブツール切り替え
+- ToolManagerで管理
+- 描画中イベントは currentTool 経由のみ発火
+
+4. イベント形式（JSONスキーマ）
+----------------------------------------------------------
+{
+  type: "domain.action",
+  payload: {...},
+  meta: { requestId: "uuid", origin: "Tool|UI" }
+}
+
+- tools.brushStart: payload:{toolId, x, y, settings}
+- tools.eraserStart: payload:{toolId, x, y, settings}
+- layers.reorderRequest: payload:{fromIndex, toIndex, layerId}
+- layers.reorderConfirm: payload:{fromIndex, toIndex, layerId}
+- history.record: payload:{action:{type,payload}}
+- error.recoverable / error.fatal: payload:{code, msg, context}
+
+5. 衛星ヘッダー・役割
+----------------------------------------------------------
+- @module   モジュール名
+- @role     担当責務
+- @depends  依存先 (基本は MainControllerのみ)
+- @provides 公開API
+- @notes    補足・改修注意点
+
+6. 改修時の注意点
+----------------------------------------------------------
+- 衛星は単一フロー単位で修正できる構造を維持
+- 消しゴム/ペンは DrawingEngine内で処理を分離
+- LayerManager/PositionManagerは座標変換や非破壊操作のみを担当
+- UIManagerは現状維持、ショートカットで操作
+- Canvas2Dは排除、PixiJS GraphicsベースでWorld座標描画
+- 将来的に衛星分離可能な構造を保つ

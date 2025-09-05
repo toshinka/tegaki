@@ -419,3 +419,80 @@ LayerService + DrawingEngine + ToolManager + HistoryServiceの関係を整理
 
 改修時はDrawingEngine内で描画フローを分離して切り出せる構造
 
+
+
+
+◆1. ペン描画→記録フロー
+
+今は「ToolManager → DrawingEngine → LayerManager/PositionManager → MainController → HistoryService」という流れが基本ですが、実務上は以下のように整理すると誤解が少なくなります：
+
+1.ToolManager
+
+ 現在アクティブのツールが start/move/end を発火
+
+2.DrawingEngine（EngineBridge）
+
+ 描画バッファに一時描画 (drawTemporaryStroke)
+
+ 終了時に確定 (commitStroke)
+
+3.LayerManager / PositionManager
+
+ レイヤー構造や座標系の確認
+
+ 必要に応じて canvasToWorld / worldToCanvas 変換
+
+4.MainController
+
+ 確定イベントを受け取り、HistoryService に通知
+
+5.HistoryService
+
+ action を record
+
+ undo/redo 対応用にスナップショットを保持
+
+ポイント
+
+ 消しゴムは commitStroke 内で BLEND_MODE を切り替える
+
+ 座標系は 常に World 座標基準で履歴に記録
+
+ Canvas 座標への変換は描画時のみ（スクリーン依存フローを避ける）
+
+◆2. World座標の扱い
+
+ Tool → Engine → Layer の間は World 座標基準
+
+ Canvas 座標は描画・レンダリング時のみ使用
+
+ 無限キャンバスやパン/ズーム対応に必要
+
+ フロー辞典に「どこで World → Canvas に変換するか」を明示すると誤用を防げる
+
+◆3. 他に指標として明示すべきフロー
+
+1.非破壊レイヤー移動
+
+ TransformTool → PositionManager → LayerManager → commitStroke / record
+
+ 履歴に座標差分だけを残す
+
+2.Undo/Redoフロー
+
+ どの衛星がスナップショットを取得するか
+
+ DrawingEngine が canvas → data に変換する
+
+3.エラー伝播
+
+ Tool で例外発生 → MainController.notify → ErrorService
+
+4.サイレントに隠さず明示的にフローを通す
+
+ アクティブツール切り替え
+
+ ToolManager が activeTool を切り替え
+
+ 描画中のイベントは必ず currentTool 経由でのみ発火
+
