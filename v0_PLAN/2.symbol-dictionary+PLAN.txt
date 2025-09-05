@@ -1,0 +1,200 @@
+# Tegaki StarDivide 辞典（理想形）
+
+## MainController (主星)
+- registerSatellite(id, instance)
+- notify(event: { type, payload })
+- getState() : 現在の状態を返す（座標・レイヤーなど）
+- dispatch(action) : Actionを各Managerに配信
+
+### 通信フロー
+- Main ⇄ LayerManager
+- Main ⇄ DrawingEngine
+- Main ⇄ PositionManager
+- Main ⇄ UIManager
+- Main ⇄ HistoryService
+
+---
+
+## DrawingEngine
+- startStroke(point, toolId)
+- continueStroke(point)
+- endStroke(point)
+- clearLayer(layerId)
+
+### 通信
+- 受信: toolId は必ず ToolManager 経由で Main から受け取る
+- 送信: notify("drawing.strokeStart"/"drawing.strokeEnd")
+
+---
+
+## LayerManager
+- createLayer(name)
+- deleteLayer(id)
+- selectLayer(id)
+- reorderLayer(id, position)
+- getActiveLayer()
+
+### 通信
+- notify("layers.updated")
+
+---
+
+## PositionManager
+- toWorld(point) : 画面座標 → ワールド座標
+- toScreen(point) : ワールド座標 → 画面座標
+- pan(dx, dy)
+- zoom(scale)
+
+### 通信
+- notify("position.changed")
+
+---
+
+## UIManager
+- showPopup(message)
+- updateToolbar(state)
+- bindShortcuts()
+
+### 通信
+- listen("history.changed")
+- listen("layers.updated")
+
+---
+
+## HistoryService
+- record(action)
+- undo()
+- redo()
+
+### 通信
+- notify("history.changed")
+
+---
+
+## ToolManager（仮想）
+- selectTool(toolId)
+- getCurrentTool()
+- getToolConfig(toolId)
+
+---
+
+📝現状 rev6 からの修正計画
+
+# 修正計画（rev6 → 理想形）
+
+## 1. 架空メソッドの削除
+- mainAPI.getSatellite('drawingEngine') → 廃止
+- manager.request(...) 呼び出し → 廃止
+- PositionManager は toWorld(), toScreen() に統一
+
+## 2. DrawingEngine の責務修正
+- 現状: currentTool を保持して判定している
+- 修正: toolId は必ず ToolManager → Main → DrawingEngine のフローで渡す
+
+## 3. Notification の統一
+- 現状: notify("drawing.ready")
+- 修正: notify({ type: "drawing.ready", payload: {} })
+- 全モジュールで domain.action 形式を強制
+
+## 4. UIManager の不要メソッド整理
+- updateHistoryState() → 使用箇所なし、削除または統合
+
+## 5. フローフィックス
+- 座標変換: DrawingEngine 内で request() を直叩きしている
+    → 修正: MainController 経由で PositionManager に依頼
+- 記録フロー: Stroke 終了時に HistoryService.record(action) を呼ぶよう統一
+
+## 6. ヘッダールール追記
+- 各ファイル先頭に @notes:
+  - 責務の範囲
+  - 通信対象
+  - 提供メソッド（@provides）
+
+---
+
+📝rev6 差分リスト
+
+# MainController / main.html
+- ✅ registerSatellite, notify あり
+- ❌ dispatch(action) が未実装（直接呼び出しが多い）
+- ❌ getState() が未実装（状態取得を各マネージャにバラバラで依頼）
+- ⚠ notify は文字列だけ渡すケースあり → { type, payload } に統一必要
+
+---
+
+# DrawingEngine
+- ✅ startStroke / continueStroke / endStroke あり
+- ⚠ toolId 判定を内部で保持（currentTool）している
+   → 理想形では ToolManager→Main→DrawingEngine に渡すフロー
+- ❌ clearLayer(layerId) が未実装
+- ⚠ 座標処理で PositionManager を直接参照 → Main 経由に修正必要
+- ⚠ notify("drawing.ready") → フォーマット修正必要
+
+---
+
+# LayerManager
+- ✅ createLayer / deleteLayer / selectLayer あり
+- ✅ getActiveLayer() あり
+- ⚠ reorderLayer の命名が曖昧（moveLayer の方が一貫性？）
+- ⚠ notify("layers.updated") が呼ばれていない箇所あり
+
+---
+
+# PositionManager
+- ✅ pan / zoom あり
+- ⚠ toWorld / toScreen が未統一
+   - rev6: screenToWorld, worldToScreen の名称
+   - → 命名を理想形 (toWorld, toScreen) に統一
+- ⚠ DrawingEngine が直接呼び出している → Main 経由に修正必要
+
+---
+
+# UIManager
+- ✅ showPopup, updateToolbar, bindShortcuts あり
+- ❌ updateHistoryState() → 辞典に存在しない → 削除または統合
+- ⚠ notify を直接呼ばずイベントを聞いている箇所が不明確
+
+---
+
+# HistoryService
+- ✅ record(action), undo(), redo() あり
+- ⚠ notify("history.changed") の呼び出しが統一されていない
+- ⚠ action の記録粒度が曖昧（stroke単位か layer操作単位かが混在）
+
+---
+
+# ToolManager（仮想 / 未実装）
+- ❌ selectTool(toolId) が DrawingEngine 内部に埋め込み
+- ❌ getCurrentTool が存在せず、直接 currentTool にアクセス
+- ❌ getToolConfig 不在
+- → DrawingEngine と UIManager に分散している処理を整理して ToolManager に委譲すべき
+
+---
+
+まとめ
+
+・不足（未実装）
+
+　Main: dispatch(), getState()
+
+　DrawingEngine: clearLayer()
+
+　ToolManager 一式
+
+・過剰（削除/統合候補）
+
+　UIManager: updateHistoryState()
+
+　架空呼び出し mainAPI.getSatellite / manager.request
+
+・修正要（命名・フロー）
+
+　PositionManager: screenToWorld/worldToScreen → toWorld/toScreen
+
+　LayerManager: reorderLayer 命名/通知不足
+
+　DrawingEngine: tool判定方式を外部依存に修正
+
+　HistoryService: notify と action 粒度の統一
+
+
