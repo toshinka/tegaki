@@ -1,0 +1,483 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v9 - Star Architecture</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg {
+            width: 20px;
+            height: 20px;
+            stroke: #800000;
+        }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.active svg {
+            stroke: #ffffff;
+        }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: visible;
+            display: flex;
+            justify-content: flex-start;
+            align-items: flex-start;
+        }
+        
+        .canvas-container {
+            background: var(--futaba-cream);
+            display: inline-block;
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            touch-action: none;
+        }
+        
+        canvas {
+            border: none;
+            display: block;
+            cursor: crosshair;
+            touch-action: none;
+        }
+        
+        .layer-panel-container, .popup-panel, .status-panel {
+            /* UI components styled by ui-service.js */
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button" id="resize-tool" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M14 15H9v-5"/><path d="M16 3h5v5"/><path d="M21 3 9 15"/></svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button active" id="pen-tool" title="ベクターペン">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg>
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container" id="canvas-container">
+                <div id="drawing-canvas"></div>
+            </div>
+        </div>
+    </div>
+
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+    
+    <!-- Satellite Modules -->
+    <script src="error-service.js"></script>
+    <script src="history-service.js"></script>
+    <script src="drawing-engine.js"></script>
+    <script src="layer-service.js"></script>
+    <script src="position-service.js"></script>
+    <script src="tool-manager.js"></script>
+    <script src="tools/brush-tool.js"></script>
+    <script src="tools/eraser-tool.js"></script>
+    <script src="tools/transform-tool.js"></script>
+    <script src="ui-service.js"></script>
+
+    <script>
+/**
+ * ==========================================================
+ * @module MainController
+ * @role   主星 - イベント仲介・確定・記録の統一管理
+ * @depends 全衛星モジュールをwindow.MyApp名前空間で管理
+ * @provides
+ *   - notify(event): 衛星からのイベント通知受理
+ *   - requestConfirm(request): 衛星からの確定要求処理
+ *   - getEngineBridge(): EngineBridge最小APIの提供
+ *   - getLayerList(): レイヤー情報の読み取り専用提供
+ * @notes
+ *   - 衛星間直接通信は禁止。必ず主星を経由すること。
+ *   - エラーは隠蔽せず、ErrorService経由で通知すること。
+ *   - console.logは最小限に抑制、debugフラグで制御する。
+ * ==========================================================
+ */
+window.MyApp = window.MyApp || {};
+(function(global){
+    const DEBUG = false; // Set to true for detailed logging
+    global.MyApp.debug = DEBUG;
+
+    /**
+     * Minimal logger with debug flag control
+     */
+    function log(level, tag, payload) {
+        if (!global.MyApp.debug && level !== 'error') return;
+        const out = `[${tag}] ${payload instanceof Object ? JSON.stringify(payload) : payload}`;
+        if(level === 'error') console.error(out);
+        else if(level === 'warn' && global.MyApp.debug) console.warn(out);
+        else if(global.MyApp.debug) console.log(out);
+    }
+
+    /**
+     * MainController - 主星
+     * 責務: イベント仲介・確定処理・履歴記録の統一管理
+     */
+    class MainController {
+        constructor() {
+            this.name = 'MainController';
+            this.appState = {
+                initialized: false,
+                currentTool: 'brush',
+                spacePressed: false
+            };
+            this._initGlobals();
+            this._initServices();
+            this._initOrder();
+        }
+
+        _initGlobals() {
+            // mainApi: 衛星が使用する最低限API
+            this.mainApi = {
+                notify: (event) => this.notify(event),
+                requestConfirm: (req) => this._handleRequestConfirm(req),
+                getEngineBridge: () => this.engineBridge,
+                getLayerList: () => this.layerService ? this.layerService.getLayerList() : [],
+                debugMode: global.MyApp.debug
+            };
+            global.MyApp.mainApi = this.mainApi;
+        }
+
+        _initServices() {
+            // 読み込み順序に依存する（HTMLのscript順序に従う）
+            this.errorService = new (global.MyApp.ErrorService || function(){})();
+            this.historyService = new (global.MyApp.HistoryService || function(){})();
+            this.engine = new (global.MyApp.DrawingEngine || function(){})();
+            this.layerService = new (global.MyApp.LayerService || function(){})();
+            this.positionService = new (global.MyApp.PositionService || function(){})();
+            this.toolManager = new (global.MyApp.ToolManager || function(){})();
+            this.uiService = new (global.MyApp.UIService || function(){})();
+        }
+
+        _initOrder() {
+            try {
+                // 初期化順序: Engine -> Layers -> Position -> Tools -> UI -> History/Error
+                if(this.engine && this.engine.register) this.engine.register(this.mainApi);
+                this.engineBridge = this.engine && this.engine.getEngineBridge ? this.engine.getEngineBridge() : null;
+
+                if(this.layerService && this.layerService.register) this.layerService.register(this.mainApi);
+                if(this.positionService && this.positionService.register) this.positionService.register(this.mainApi);
+                if(this.toolManager && this.toolManager.register) this.toolManager.register(this.mainApi);
+                
+                // ツールの登録
+                if(global.MyApp.BrushTool && this.toolManager.registerTool) {
+                    this.toolManager.registerTool(new global.MyApp.BrushTool());
+                }
+                if(global.MyApp.EraserTool && this.toolManager.registerTool) {
+                    this.toolManager.registerTool(new global.MyApp.EraserTool());
+                }
+                if(global.MyApp.TransformTool && this.toolManager.registerTool) {
+                    this.toolManager.registerTool(new global.MyApp.TransformTool());
+                }
+
+                if(this.uiService && this.uiService.register) this.uiService.register(this.mainApi);
+                if(this.historyService && this.historyService.register) this.historyService.register(this.mainApi);
+                if(this.errorService && this.errorService.register) this.errorService.register(this.mainApi);
+
+                // 入力ハンドラー設定
+                this._setupInputHandlers();
+
+                log('info', 'Main', 'Initialization completed');
+                this.appState.initialized = true;
+
+            } catch (err) {
+                log('error', 'Main', 'Initialization failed: ' + (err && err.stack ? err.stack : err));
+                if(this.errorService && this.errorService.notifyFatal) {
+                    this.errorService.notifyFatal({ code: 'INIT_FAIL', msg: String(err) });
+                }
+            }
+        }
+
+        /**
+         * 衛星からの全イベントのエントリーポイント
+         */
+        notify(event) {
+            if(!event || !event.type) {
+                this._reportRecoverableError('INVALID_EVENT', 'Event missing type', event);
+                return;
+            }
+
+            log('info', 'Main', `Event received: ${event.type}`);
+
+            // イベントルーティング - 必要に応じて拡張
+            switch(event.type) {
+                case 'layers.reorderRequest':
+                    this._handleLayerReorderRequest(event.payload, event.meta);
+                    break;
+                case 'tools.strokeCommit':
+                    this._handleStrokeCommit(event.payload);
+                    break;
+                case 'tools.toolStart':
+                    this.toolManager.handleToolStart && this.toolManager.handleToolStart(event.payload);
+                    break;
+                case 'tools.toolSelect':
+                    this._handleToolSelect(event.payload);
+                    break;
+                case 'error.recoverable':
+                case 'error.fatal':
+                    if(this.errorService && this.errorService.receiveError) {
+                        this.errorService.receiveError(event);
+                    }
+                    break;
+                default:
+                    // ToolManagerに転送
+                    if(this.toolManager && this.toolManager.handleEvent) {
+                        this.toolManager.handleEvent(event);
+                    } else {
+                        log('warn', 'Main', 'Unhandled event: ' + event.type);
+                    }
+            }
+        }
+
+        _handleLayerReorderRequest(payload) {
+            if(!payload || typeof payload.fromIndex !== 'number' || typeof payload.toIndex !== 'number') {
+                this._reportRecoverableError('INVALID_REORDER', 'Invalid reorder payload', payload);
+                return;
+            }
+            
+            const ok = this.layerService.prepareReorder ? this.layerService.prepareReorder(payload) : true;
+            if(!ok) {
+                this._reportRecoverableError('REORDER_BLOCKED', 'Reorder blocked by validation', payload);
+                return;
+            }
+            
+            // 確定処理
+            this.layerService.reorderLayer(payload.fromIndex, payload.toIndex);
+            const snap = this.engineBridge && this.engineBridge.takeSnapshot ? this.engineBridge.takeSnapshot() : null;
+            this.historyService.record({ 
+                type: 'layerReorder', 
+                payload, 
+                snapshot: snap, 
+                timestamp: Date.now() 
+            });
+        }
+
+        _handleStrokeCommit(payload) {
+            if(!payload || typeof payload.layerId === 'undefined') {
+                this._reportRecoverableError('INVALID_STROKE', 'Missing layerId', payload);
+                return;
+            }
+            
+            // エンジンに確定を依頼
+            if(this.engineBridge && this.engineBridge.commitStroke) {
+                this.engineBridge.commitStroke(payload.layerId, payload.strokeData);
+                const snap = this.engineBridge.takeSnapshot && this.engineBridge.takeSnapshot(payload.layerId);
+                this.historyService.record({ 
+                    type: 'stroke', 
+                    payload, 
+                    snapshot: snap, 
+                    timestamp: Date.now() 
+                });
+            } else {
+                this._reportRecoverableError('ENGINE_MISSING', 'EngineBridge missing', {});
+            }
+        }
+
+        _handleToolSelect(payload) {
+            this.appState.currentTool = payload.tool;
+            log('info', 'Main', `Tool selected: ${payload.tool}`);
+            
+            // UIServiceに通知
+            if(this.uiService && this.uiService.updateCurrentTool) {
+                this.uiService.updateCurrentTool(payload.tool);
+            }
+        }
+
+        _handleDrawingStrokeStart(payload) {
+            if(this.engine && this.engine.startDrawing) {
+                this.engine.startDrawing(payload);
+            }
+        }
+
+        _handleDrawingStrokeMove(payload) {
+            if(this.engine && this.engine.continueDrawing) {
+                this.engine.continueDrawing(payload);
+            }
+        }
+
+        _handleDrawingStrokeEnd(payload) {
+            if(this.engine && this.engine.endDrawing) {
+                const strokeData = this.engine.endDrawing();
+                if(strokeData) {
+                    this._handleStrokeCommit({
+                        layerId: 0,
+                        strokeData: strokeData
+                    });
+                }
+            }
+        }
+
+        _handleCoordinatesUpdate(payload) {
+            if(this.uiService && this.uiService.updateCoordinates) {
+                this.uiService.updateCoordinates(payload.point.x, payload.point.y);
+            }
+        }
+
+        _handleLayerCreateRequest(payload) {
+            if(this.layerService && this.layerService.createLayer) {
+                const layerId = this.layerService.createLayer(payload.name);
+                if(this.historyService && this.historyService.record) {
+                    this.historyService.record({
+                        type: 'layerCreate',
+                        payload: { layerId, name: payload.name },
+                        timestamp: Date.now()
+                    });
+                }
+            }
+        }
+
+        _handleRequestConfirm(req) {
+            // 将来のRPC確定処理用プレースホルダー
+            log('info', 'Main', ['requestConfirm', req]);
+            return { confirmed: true, timestamp: Date.now() };
+        }
+
+        _setupInputHandlers() {
+            document.addEventListener('keydown', (e) => {
+                if (e.code === 'Space') {
+                    this.appState.spacePressed = true;
+                    this.positionService && this.positionService.handleSpaceDown && this.positionService.handleSpaceDown();
+                    e.preventDefault();
+                }
+                
+                // Undo/Redo
+                if (e.ctrlKey || e.metaKey) {
+                    if (e.key === 'z' && !e.shiftKey) {
+                        this.historyService && this.historyService.handleUndo && this.historyService.handleUndo();
+                        e.preventDefault();
+                    } else if ((e.key === 'Z' && e.shiftKey) || e.key === 'y') {
+                        this.historyService && this.historyService.handleRedo && this.historyService.handleRedo();
+                        e.preventDefault();
+                    }
+                }
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                if (e.code === 'Space') {
+                    this.appState.spacePressed = false;
+                    this.positionService && this.positionService.handleSpaceUp && this.positionService.handleSpaceUp();
+                }
+            });
+            
+            window.addEventListener('blur', () => {
+                this.appState.spacePressed = false;
+                this.positionService && this.positionService.handleSpaceUp && this.positionService.handleSpaceUp();
+            });
+        }
+
+        _reportRecoverableError(code, msg, context) {
+            log('warn', 'Main', {code, msg, context});
+            if(this.errorService && this.errorService.receiveError) {
+                this.errorService.receiveError({ 
+                    type: 'error.recoverable', 
+                    payload:{code, msg, context} 
+                });
+            }
+        }
+    }
+
+    // アプリケーション起動
+    window.addEventListener('DOMContentLoaded', ()=> {
+        global.MyApp.main = new MainController();
+    });
+
+})(window);
+    </script>
+</body>
+</html>
