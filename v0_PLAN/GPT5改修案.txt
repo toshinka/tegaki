@@ -1,267 +1,272 @@
-「コンソールにエラーは出ないが、UI が反応しない／描けない／パンできない」系は イベントの伝達経路が切れている（または期待する要素やフラグが未設定） ことがほとんどです。
+エラーは出ないがキャンバスもツールポップアップも表示されない というものです。これは描画や UI がそもそも初期化されていない、または DOM にマウントされていないことが主な原因です。仕組みとして確認すべき箇所を整理します。
 
-結論（要点まとめ）
+1. DrawingEngine の初期化と canvas DOM マウント
+症状
 
-発生している問題と主要原因（確度高 → 低）
+canvas が DOM に追加されない → 描画されない
 
-1.ツールボタンを押してもポップアップしない
-→ UI 作成 と ToolManager の「DOM セレクタ／イベントの期待」が噛み合っていない。
-対策：UI 側に適切な id/class を付ける／または ToolManager を DOM 依存から外して mainApi 経由で受け取る（推奨）。
+PIXI.Application は作成されているが表示されない可能性
 
-2.レイヤーサイドが表示されない
-→ 初期レイヤーが作られていない、または UI がレイヤー一覧を再描画していない。
-対策：Main の初期化で デフォルトレイヤー作成＋UI に refreshLayers() 呼び出しを行う。
+原因候補
 
-3.Space のハンドルでカーソルだけ替わるがパンしない
-→ Space 状態フラグはセットされているが、DrawingEngine が canvas pointer イベントでパン処理をしていない（もしくはパンイベントが main に伝搬していない）。
-対策：DrawingEngine に pointerdown/move/up を実装し、Space 時は isPanning=true にして containers.world を移動する。
+document.getElementById('drawing-canvas') が存在しない（main.html 側で canvas コンテナ未作成）
 
-4.ペンで描けない
-→ pointer イベントが ToolManager → activeTool へ届いていない（DrawingEngine が pointer イベントを mainApi.notify に流していない、もしくは ToolManager が pointer イベントを start/move/end に変換していない）。
-対策：DrawingEngine が pointer イベントを mainApi.notify({type:'pointer.down'|'pointer.move'|'pointer.up', payload}) で流し、ToolManager がそれを受けて active tool の start/move/end を呼ぶ。
+DrawingEngine.register(mainApi) が呼ばれる前に DOM が読み込まれていない
 
-優先適用順（短時間で動くように）
+appendChild が実行されていない（this.app.view が正しくない）
 
-MainController：mainApi に getAppState()（space 状態）と requestConfirm を実装。起動時にデフォルトレイヤーを作成。
+対策
 
-DrawingEngine：キャンバスに pointer イベントを追加 → ポインタを main に通知。Space時はパン処理を実装。
+main.html に <div id="drawing-canvas"></div> を確実に配置
 
-ToolManager：handleEvent を拡張して pointer.down/move/up をツールの start/move/end にマッピングする（DOM クエリではなく mainApi 経由ルートを確実にする）。
+DrawingEngine.register(mainApi) を DOMContentLoaded または main 初期化後に呼ぶ
 
-UIManager/UIService：ツールボタンに id と class='tool-button' をつける／refreshLayers() を公開して Main が呼べるようにする。
+IIFE 内で this.app.view が正しく container に追加されているか確認
 
-BrushTool：_isSpacePressed() を mainApi.getAppState() 参照にする（requestConfirm 依存をやめる）。また一時描画は engineBridge を通しているので、pointer経路が直れば描画が動くはず。
+2. UIService / ToolManager の初期化順序
+症状
 
-差分コード（貼り付け／置換用）
+ツールポップアップが表示されない
 
-下にファイル別に最小差分コードを出します。各コードは 既存ファイルの該当箇所に置き換えるか、関数追加 してください。行番号が違っても、関数の中身を差し替え／追加すればOK。
-必ず操作前にファイルのバックアップ（コピー）を取ってください。
+ツール選択やイベントが無効
 
-1) main.html — MainController の init 周りに以下を追加してください
+原因候補
 
-（目的：space フラグ管理 / mainApi.getAppState / デフォルトレイヤー作成 / UI リフレッシュ呼び出し）
+UIService が DOM にツールバーを作成する前に DrawingEngine が必要な container を参照している
 
-// -------  MainController._initGlobals or constructor area -------
-// appState 管理（スペース押下など）
-this.appState = { spacePressed: false };
+ToolManager が UIService に依存している場合、register / attach イベントが順序不正
 
-// mainApi にアプリ状態参照 API を追加
-this.mainApi.getAppState = () => ({ ...this.appState });
+MainController.notify を通してイベントが伝わっていない
 
-// 既存の mainApi.requestConfirm の実装があれば残すが、最低限以下を提供
-this.mainApi.requestConfirm = (key) => {
-  if(key === 'spaceState') return { pressed: !!this.appState.spacePressed };
-  return null;
-};
+対策
 
-// global キーイベントで space の ON/OFF 管理（DOMContentLoaded の外でも可）
-window.addEventListener('keydown', (e) => {
-  if(e.code === 'Space' && !this.appState.spacePressed) {
-    this.appState.spacePressed = true;
-    document.body.style.cursor = 'grab';
-    // prevent page scroll on space
-    e.preventDefault();
+MainController の init で
+
+1. DrawingEngine.register(mainApi)
+2. LayerService.register(mainApi)
+3. PositionService.register(mainApi)
+4. ToolManager.register(mainApi)
+5. UIService.register(mainApi)
+
+
+の順序で初期化
+
+UIService のツールバー作成は DrawingEngine.app や #drawing-canvas が存在することを前提とする
+
+ポップアップや sidebar は UIService.render() で DOM に確実に追加
+
+3. Layer / Position / Transform の依存関係
+症状
+
+Space キーで手のマークになるがキャンバス移動できない
+
+レイヤーや Transform 操作が効かない
+
+原因候補
+
+PositionService が DrawingEngine.app.stage を参照していない
+
+LayerService が container を取得できていない
+
+TransformTool が engineBridge を経由していない
+
+対策
+
+PositionService は必ず DrawingEngine.register 以降に初期化
+
+LayerService は ensureLayerContainer(layerId) で確実に container を生成
+
+TransformTool は mainApi.getEngineBridge() から描画用 container にアクセス
+
+EventListener は MainController.notify → ToolManager → Tool に届くことを確認
+
+4. まとめ・チェックリスト
+[DOM]
+- #drawing-canvas が main.html に存在する
+- ツールバー、レイヤーサイドバー用 container も存在
+
+[初期化順序]
+- MainController.init:
+  1. DrawingEngine.register(mainApi)
+  2. LayerService.register(mainApi)
+  3. PositionService.register(mainApi)
+  4. ToolManager.register(mainApi)
+  5. UIService.register(mainApi)
+
+[DrawingEngine]
+- this.app = PIXI.Application(...) が正常
+- container.appendChild(this.app.view) が DOM に追加される
+- engineBridge が mainApi に渡される
+
+[ToolManager / UIService]
+- ツールボタンクリックで event が MainController.notify を通る
+- UIService.render() で toolbar, layer sidebar が DOM に追加
+- ToolManager.getActiveTool() が常に取得可能
+
+[Layer / Position / Transform]
+- ensureLayerContainer(layerId) で container が作成
+- TransformTool / BrushTool / EraserTool が engineBridge を通じて描画
+- Space + ドラッグで PositionService が stage を translate
+
+[イベント]
+- MainController.notify(event) → 各衛星が受信可能
+- Event payload が正しく構造化されている
+
+
+💡 結論
+
+キャンバス・ツール表示されないのは、ほぼ DOM マウントと初期化順序 の問題です。
+
+DrawingEngine と UIService の初期化タイミングがずれると canvas が表示されず、ポップアップも無効になります。
+
+まず main.html 側で #drawing-canvas を確実に作ることと、MainController.init の初期化順序を上記の通りに揃えることが最優先です。]]
+
+※キャンバスが確実に表示され、ツールポップアップも機能する初期化順序のサンプル
+// star_architecture_main.js (rev9 安全化サンプル)
+class MainController {
+  constructor() {
+    this.mainApi = {
+      notify: this.notify.bind(this),
+      requestConfirm: this.requestConfirm.bind(this),
+      getEngineBridge: () => this.engineBridge,
+      getLayerList: () => this.layerService?.getLayerList() || [],
+      debugMode: false
+    };
+
+    // 衛星のインスタンス保持
+    this.drawingEngine = null;
+    this.layerService = null;
+    this.positionService = null;
+    this.toolManager = null;
+    this.uiService = null;
+    this.historyService = null;
+    this.errorService = null;
+
+    document.addEventListener("DOMContentLoaded", () => {
+      this.init();
+    });
   }
-});
-window.addEventListener('keyup', (e) => {
-  if(e.code === 'Space' && this.appState.spacePressed) {
-    this.appState.spacePressed = false;
-    document.body.style.cursor = 'auto';
-    e.preventDefault();
-  }
-});
 
-// ------- MainController._initOrder の最後（サービス登録完了後） -------
-// 初期レイヤーが無ければ一つ作る（UIの表示を確実にする）
-if(this.layerService && this.layerService.createLayer) {
-  if(this.layerService.getLayerList().length === 0) {
-    this.layerService.createLayer('Background');
-  }
-}
-// UI がレイヤーを表示する public メソッドを持っている場合はリフレッシュを要求
-if(this.uiService && this.uiService.refreshLayers) {
-  this.uiService.refreshLayers();
-} else if(this.uiService && this.uiService._renderLayers) {
-  // 互換フォールバック（private名の場合）
-  try { this.uiService._renderLayers(); } catch(e) {}
-}
+  init() {
+    // ------------------------------
+    // 1. エラー・履歴系のサービス初期化
+    // ------------------------------
+    this.errorService = new ErrorService();
+    this.errorService.register(this.mainApi);
 
-2) drawing-engine.js — _createPixiApp() の .then(...) 内に以下を追加してください
+    this.historyService = new HistoryService();
+    this.historyService.register(this.mainApi);
 
-（目的：canvas pointer handlers を追加し、space 時は panning を行い、それ以外は mainApi に pointer イベントを通知）
+    // ------------------------------
+    // 2. 描画エンジン初期化（canvas DOM追加含む）
+    // ------------------------------
+    this.drawingEngine = new DrawingEngine();
+    this.drawingEngine.register(this.mainApi);
+    this.engineBridge = this.drawingEngine.getEngineBridge();
 
-// after container.appendChild(this.app.view) or after app created & appended...
-// ensure canvas receives pointer events and no default touch action
-this.app.view.style.touchAction = 'none';
-this._isPanning = false;
-this._lastPan = null;
+    // ------------------------------
+    // 3. レイヤー / 位置管理
+    // ------------------------------
+    this.layerService = new LayerService();
+    this.layerService.register(this.mainApi);
 
-// helper: screen -> local canvas coords
-const getCanvasPos = (e) => {
-  const rect = this.app.view.getBoundingClientRect();
-  return { x: e.clientX - rect.left, y: e.clientY - rect.top };
-};
+    this.positionService = new PositionService();
+    this.positionService.register(this.mainApi);
 
-// pointerdown
-this.app.view.addEventListener('pointerdown', (e) => {
-  const pos = getCanvasPos(e);
-  // if main says space pressed -> start panning
-  const spaceState = this.mainApi && this.mainApi.getAppState ? this.mainApi.getAppState().spacePressed : false;
-  if(spaceState) {
-    this._isPanning = true;
-    this._lastPan = { x: e.clientX, y: e.clientY };
-    this.app.view.setPointerCapture(e.pointerId);
-    return;
-  }
-  // otherwise forward to main as pointer.down
-  if(this.mainApi && this.mainApi.notify) {
-    this.mainApi.notify({ type: 'pointer.down', payload: { x: pos.x, y: pos.y, pointerType: e.pointerType, pressure: e.pressure } });
-  }
-});
+    // ------------------------------
+    // 4. ツール系
+    // ------------------------------
+    this.toolManager = new ToolManager();
+    this.toolManager.register(this.mainApi);
 
-// pointermove
-this.app.view.addEventListener('pointermove', (e) => {
-  const pos = getCanvasPos(e);
-  if(this._isPanning && this._lastPan) {
-    const dx = e.clientX - this._lastPan.x;
-    const dy = e.clientY - this._lastPan.y;
-    // move world container (UI container stays fixed)
-    if(this.containers && this.containers.world) {
-      this.containers.world.x += dx;
-      this.containers.world.y += dy;
+    // 必要ツール登録
+    this.toolManager.registerTool(new BrushTool());
+    this.toolManager.registerTool(new EraserTool());
+    this.toolManager.registerTool(new TransformTool());
+
+    // ------------------------------
+    // 5. UI系
+    // ------------------------------
+    this.uiService = new UIService();
+    this.uiService.register(this.mainApi);
+
+    // ツールバー / レイヤーサイドバーを描画
+    this.uiService.render();
+
+    // ------------------------------
+    // 初期化完了ログ
+    // ------------------------------
+    if (this.mainApi.debugMode) {
+      console.log("[MainController] init complete.");
     }
-    this._lastPan = { x: e.clientX, y: e.clientY };
-    return;
   }
-  if(this.mainApi && this.mainApi.notify) {
-    this.mainApi.notify({ type: 'pointer.move', payload: { x: pos.x, y: pos.y, pointerType: e.pointerType, pressure: e.pressure } });
+
+  // ------------------------------
+  // MainController API
+  // ------------------------------
+  notify(event) {
+    // 各衛星への通知やログ集約
+    if (this.mainApi.debugMode) {
+      console.log("[MainController.notify]", event.type, event.payload);
+    }
+    // 例：ツール操作イベントを layerService へ伝達
+    if (event.type.startsWith("tools.")) {
+      this.layerService?.handleToolEvent(event);
+    }
   }
-});
 
-// pointerup / cancel
-this.app.view.addEventListener('pointerup', (e) => {
-  if(this._isPanning) {
-    this._isPanning = false;
-    this._lastPan = null;
-    this.app.view.releasePointerCapture(e.pointerId);
-    return;
-  }
-  const pos = getCanvasPos(e);
-  if(this.mainApi && this.mainApi.notify) {
-    this.mainApi.notify({ type: 'pointer.up', payload: { x: pos.x, y: pos.y, pointerType: e.pointerType, pressure: e.pressure } });
-  }
-});
-this.app.view.addEventListener('pointercancel', (e) => {
-  if(this._isPanning) {
-    this._isPanning = false;
-    this._lastPan = null;
-  }
-  if(this.mainApi && this.mainApi.notify) {
-    this.mainApi.notify({ type: 'pointer.up', payload: { x: 0, y: 0 } });
-  }
-});
-
-
-注意：この実装は “world コンテナのみパンさせる” 方針です（UI コンテナを動かさない）。もし UI も一緒にパンしたいなら this.app.stage を移動してください。
-
-3) tool-manager.js — handleEvent を pointer 系に対応させる（既存の handleEvent と置換）
-
-（目的：main → ToolManager → active tool の start/move/end を確実に実行）
-
-handleEvent(event) {
-  if(!event || !event.type) return;
-  const tool = this.getActiveTool();
-  switch(event.type) {
-    case 'pointer.down':
-      if(tool && tool.start) tool.start(event.payload);
-      break;
-    case 'pointer.move':
-      if(tool && tool.move) tool.move(event.payload);
-      break;
-    case 'pointer.up':
-      if(tool && tool.end) tool.end(event.payload);
-      break;
-    default:
-      // fallback: if tool implements handleEvent, forward
-      if(tool && tool.handleEvent) tool.handleEvent(event);
-      else if(global.MyApp.debug) console.log('[ToolManager] unhandled event', event.type);
+  requestConfirm(request) {
+    // 例：レイヤー順序変更の確定など
+    this.historyService?.record(request);
   }
 }
 
+// ------------------------------
+// DrawingEngine (rev9 安全化)
+// ------------------------------
+class DrawingEngine {
+  constructor() {
+    // canvas DOM 作成用 container
+    this.container = document.getElementById("drawing-canvas");
+    if (!this.container) {
+      console.error("DrawingEngine: #drawing-canvas が存在しません。");
+      this.container = document.createElement("div");
+      this.container.id = "drawing-canvas";
+      document.body.appendChild(this.container);
+    }
 
-既存の DOM クエリ _setupUIHandlers() は残しても良いですが「DOM 依存は弱める」方が安定します。UI 側は mainApi.notify を呼べば良い設計にするとさらに堅牢です。
+    // PIXI.Application 作成
+    this.app = new PIXI.Application({
+      width: 1024,
+      height: 768,
+      backgroundColor: 0xffffff,
+      antialias: true
+    });
 
-4) ui-manager.js / ui-service.js — ツールボタンに id と class を付与し、ポップアップ表示の API を作る
+    // DOM に追加
+    this.container.appendChild(this.app.view);
 
-（目的：ToolManager／UI が一致して操作できるようにする。UIService は refreshLayers() を公開）
-
-// 例：ツールボタン生成部分（ui-service.js の _renderToolbar）
-const brushBtn = document.createElement('button');
-brushBtn.id = 'pen-tool';                   // MUST: ToolManager が参照する id
-brushBtn.className = 'tool-button';
-brushBtn.textContent = 'Brush';
-brushBtn.onclick = () => {
-  // 明確に main を経由してツール開始通知
-  if(this.mainApi) this.mainApi.notify({ type:'tools.toolStart', payload:{ toolId:'brush', x:0, y:0 } });
-  // ポップアップを表示するならここで togglePopup('brush')
-  this.toggleToolPopup && this.toggleToolPopup('brush');
-};
-this._containerTools.appendChild(brushBtn);
-
-// Eraser
-eraserBtn.id = 'eraser-tool';
-eraserBtn.className = 'tool-button';
-// ...同様にイベント登録...
-
-// レイヤー更新用 public メソッド
-refreshLayers() {
-  // clear and re-render list
-  if(!this._containerLayers) return;
-  this._containerLayers.innerHTML = '';
-  const layers = (this.mainApi && this.mainApi.getLayerList) ? this.mainApi.getLayerList() : [];
-  const ul = document.createElement('ul');
-  layers.forEach(l => {
-    const li = document.createElement('li');
-    li.textContent = `${l.id}: ${l.name}`;
-    ul.appendChild(li);
-  });
-  this._containerLayers.appendChild(ul);
-}
-
-
-ポップアップは toggleToolPopup(toolId) を UIService 内に実装し、ツール設定（スライダーなど）を表示／非表示するようにしてください。
-
-5) brush-tool.js — _isSpacePressed() の参照先を mainApi.getAppState() に変更
-
-（目的：Space 判定が main 側のフラグを参照するように）
-
-_isSpacePressed() {
-  if(this.mainApi && this.mainApi.getAppState) {
-    const s = this.mainApi.getAppState();
-    return s && s.spacePressed;
+    // EngineBridge 作成
+    this.engineBridge = {
+      app: this.app,
+      drawTemporaryStroke: (layerId, points) => { /* 実装 */ },
+      commitStroke: (layerId, strokeData) => { /* 実装 */ },
+      clearLayer: (layerId) => { /* 実装 */ },
+      takeSnapshot: (layerId) => { /* 実装 */ }
+    };
   }
-  return false;
+
+  register(mainApi) {
+    mainApi.engineBridge = this.engineBridge;
+  }
+
+  getEngineBridge() {
+    return this.engineBridge;
+  }
 }
 
-
-これでツールは main の space フラグと一致します。
-
-小さい注意点 / チェックリスト（実行前に確認）
-
-HTML に配置されている要素 id（canvas コンテナ名など）が DrawingEngine が期待する drawing-canvas と一致しているか。
-
-MainController が UIService と LayerService を register(mainApi) → createLayer → uiService.refreshLayers() の順で呼んでいるか。
-
-Tool の register メソッドで this.engine = mainApi.getEngineBridge() を取得できているか（Engine の初期化タイミングに注意：Engine の init が非同期なら Tool の register は Engine 完了後に呼ぶ等）。
-
-drawing-engine が this._initialized をセットするタイミング（.then の中）なので、Tool.register が早すぎると engineBridge が null になる。Main の初期化順を “Engine first (and wait) → then register tools/UI” にするのが最も確実。
-
-期待する効果（この順で当てれば）
-
-Main によるデフォルトレイヤー作成 → レイヤーサイドが表示される
-
-UIボタンがツールを mainApi.notify 経由で起動 → ポップアップ表示処理が起動する
-
-DrawingEngine が pointer イベントを送る → ToolManager が active tool の start/move/end を呼ぶ → ペンで描ける
-
-Space 押下で DrawingEngine 側が panning を行う → キー操作で手のマーク + 実際にキャンバス移動できる
+// ------------------------------
+// Main 初期化
+// ------------------------------
+window.MyApp = window.MyApp || {};
+window.MyApp.mainController = new MainController();
