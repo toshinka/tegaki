@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev8 - 三分割星型運用版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev9 - 三分割星型運用版（修正版）</title>
     <style>
         * {
             margin: 0;
@@ -90,16 +90,6 @@
         
         .tool-button.active svg {
             stroke: #ffffff;
-        }
-        
-        .tool-button.disabled {
-            opacity: 0.4;
-            cursor: not-allowed;
-        }
-        
-        .tool-button.disabled:hover {
-            transform: none;
-            box-shadow: none;
         }
         
         .tool-separator {
@@ -211,18 +201,6 @@
             border-color: var(--futaba-maroon);
             background: var(--futaba-light-medium);
             box-shadow: 0 2px 8px rgba(128, 0, 0, 0.2);
-        }
-        
-        .layer-item.dragging {
-            opacity: 0.7;
-            transform: rotate(2deg);
-            z-index: 1000;
-            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.4);
-        }
-        
-        .layer-item.drop-target {
-            border-color: var(--futaba-maroon);
-            background: var(--futaba-medium);
         }
         
         .layer-name {
@@ -436,18 +414,6 @@
             align-items: center;
             gap: 4px;
         }
-        
-        @media (max-width: 1200px) {
-            .popup-panel {
-                max-width: 90vw;
-            }
-            .layer-panel-container {
-                right: 10px;
-            }
-            .status-panel {
-                right: 170px;
-            }
-        }
     </style>
 </head>
 <body>
@@ -557,15 +523,15 @@
          * @module   MainController
          * @role     衛星管理・イベント仲介・状態確定・記録
          * @depends  engine-position.js, layer-tool-ui.js, error-service.js
-         * @provides registerSatellite(), notifyEvent(), startApplication()
-         * @notes    衛星間直接参照禁止、イベント型/payload統一、座標系管理
+         * @provides registerSatellite(), safeNotify(), startApplication()
+         * @notes    衛星間直接参照禁止、イベント型/payload統一、座標系管理、循環参照排除
          * @flow     UI操作 → MainController → 衛星 → MainController → UI更新
          * @memory   衛星管理、アプリ状態、キーボード状態（spacePressed）
          */
         
         // Application Configuration
         const APP_CONFIG = {
-            version: '8.0.8-three-satellite',
+            version: '8.0.9-three-satellite-fixed',
             canvas: { width: 400, height: 400 },
             rendering: { antialias: true, resolution: 1 },
             debug: false
@@ -588,48 +554,40 @@
                 log(`[MainController] Satellite registered: ${name}`);
             }
             
-            function notifyEvent(type, payload = {}) {
-                // Event validation to prevent circular references
+            /**
+             * 循環参照を安全に処理してイベントを通知
+             */
+            function safeNotify(type, payload = {}) {
+                let safePayload;
                 try {
+                    // 循環参照チェック
                     JSON.stringify(payload);
+                    safePayload = payload;
                 } catch (e) {
                     console.warn(`[MainController] Event payload contains circular references: ${type}`);
-                    // Create safe payload with only primitive values
-                    const safePayload = createSafePayload(payload);
-                    console.log(`[MainController] Using safe payload for: ${type}`, safePayload);
-                    payload = safePayload;
+                    // 循環参照除去：ID・座標のみコピー
+                    safePayload = JSON.parse(JSON.stringify(payload, (key, value) => {
+                        // parent, children, graphics などの循環参照を除外
+                        if (key === 'parent' || key === 'children' || key === 'graphics' || 
+                            (typeof value === 'object' && value && value._pixi)) {
+                            return undefined;
+                        }
+                        return value;
+                    }));
                 }
                 
                 // Notify all satellites
                 for (const [name, satellite] of Object.entries(satellites)) {
                     if (satellite.onEvent) {
-                        satellite.onEvent({ type, payload });
-                    }
-                }
-                
-                log(`[MainController] Event notified: ${type}`, payload);
-            }
-            
-            function createSafePayload(payload) {
-                if (typeof payload !== 'object' || payload === null) {
-                    return payload;
-                }
-                
-                const safe = {};
-                for (const [key, value] of Object.entries(payload)) {
-                    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-                        safe[key] = value;
-                    } else if (value && typeof value === 'object') {
-                        if (value.id !== undefined) safe[key + 'Id'] = value.id;
-                        if (value.x !== undefined && value.y !== undefined) {
-                            safe[key + 'Position'] = { x: value.x, y: value.y };
-                        }
-                        if (value.width !== undefined && value.height !== undefined) {
-                            safe[key + 'Size'] = { width: value.width, height: value.height };
+                        try {
+                            satellite.onEvent({ type, payload: safePayload });
+                        } catch (error) {
+                            console.error(`[MainController] Error notifying ${name}:`, error);
                         }
                     }
                 }
-                return safe;
+                
+                log(`[MainController] Event notified: ${type}`, safePayload);
             }
             
             async function startApplication() {
@@ -650,7 +608,7 @@
                     startSystemMonitor();
                     
                     appState.initialized = true;
-                    console.log('🎨 Futaba Drawing Tool v8rev8 (Three-Satellite) - Ready!');
+                    console.log('🎨 Futaba Drawing Tool v8rev9 (Three-Satellite Fixed) - Ready!');
                     
                 } catch (error) {
                     console.error('💥 Application startup failed:', error);
@@ -664,12 +622,12 @@
                 document.addEventListener('keydown', (e) => {
                     if (e.code === 'Space') {
                         appState.spacePressed = true;
-                        notifyEvent('space-pressed', { pressed: true });
+                        safeNotify('space-pressed', { pressed: true });
                         e.preventDefault();
                     }
                     
                     if (e.code === 'Home') {
-                        notifyEvent('camera-reset-requested');
+                        safeNotify('camera-reset-requested');
                         e.preventDefault();
                     }
                     
@@ -682,7 +640,10 @@
                         };
                         
                         if (moveMap[e.code]) {
-                            notifyEvent('camera-arrow-move', { dx: moveMap[e.code][0], dy: moveMap[e.code][1] });
+                            safeNotify('camera-arrow-move', { 
+                                dx: moveMap[e.code][0], 
+                                dy: moveMap[e.code][1] 
+                            });
                             e.preventDefault();
                         }
                     }
@@ -691,13 +652,13 @@
                 document.addEventListener('keyup', (e) => {
                     if (e.code === 'Space') {
                         appState.spacePressed = false;
-                        notifyEvent('space-released', { pressed: false });
+                        safeNotify('space-released', { pressed: false });
                     }
                 });
                 
                 window.addEventListener('blur', () => {
                     appState.spacePressed = false;
-                    notifyEvent('space-released', { pressed: false });
+                    safeNotify('space-released', { pressed: false });
                 });
             }
             
@@ -732,7 +693,7 @@
             
             return {
                 registerSatellite,
-                notifyEvent,
+                safeNotify,
                 startApplication,
                 getAppState
             };

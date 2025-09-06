@@ -1,0 +1,367 @@
+1. 現象
+
+イベントに関するエラー
+
+main.html:596 [MainController] Event payload contains circular references: path-ready-for-layer
+
+
+MainController が受け取った payload に 循環参照が含まれている
+
+典型例は、Layer や Stroke オブジェクトに 親子参照 (parent/children) があり、そのまま JSON.stringify したため発生
+
+描画不可 / ペンで描けない
+
+原因は EnginePosition が stroke を受け取って描画する前に payload エラーで停止 している可能性
+
+または UI → LayerToolUI → MainController → EnginePosition の イベントフローが途中で止まっている
+
+キャンバス移動不可
+
+Camera / World / Screen 座標系フローが破綻している
+
+原因は EnginePosition が camera 座標を更新しても Pixi stage の位置に反映されていないか、または MainController が座標イベントを正しく仲介していない
+
+2. 原因の本質
+2.1 循環参照
+
+payload 内に layer.parent や children を含めたまま MainController に渡すと JSON.stringify が失敗
+
+これによりイベント通知が途中で止まり、描画や座標更新が実行されない
+
+2.2 ペン描画不可
+
+上記循環参照エラーにより、stroke-drawn 相当のイベントが EnginePosition に伝わらない
+
+また、path-ready-for-layer などのイベントも止まる
+
+2.3 キャンバス移動不可
+
+Camera → World → Screen 変換のフローで、座標更新は MainController に通知されているが EnginePosition が Pixi stage に反映していない
+
+あるいは MainController で座標変換を二重に処理しており、ズレや反映漏れが発生
+
+3. 改修案
+3.1 イベント payload の循環参照排除
+
+payload にはプリミティブ・ID・座標のみ渡す
+
+例えば Layer オブジェクトを渡す場合：
+
+// NG: layer オブジェクトそのまま
+MainController.notifyEvent('path-ready-for-layer', { layer });
+
+// OK: ID と必要最小情報のみ
+MainController.notifyEvent('path-ready-for-layer', {
+  layerId: layer.id,
+  points: layer.points  // 座標のみ
+});
+
+
+循環参照のあるオブジェクトは渡さず、EnginePosition / LayerToolUI 側で再取得
+
+3.2 EnginePosition の描画フロー修正
+
+World→Screen 座標変換を必ず行い、Pixi stage に描画する
+
+Camera 座標の反映：
+
+function setCamera(x, y) {
+  camera.x = x;
+  camera.y = y;
+  // Pixi stage 位置更新
+  app.stage.x = -camera.x;
+  app.stage.y = -camera.y;
+
+  MainController.notifyEvent('camera-moved', { camera: {...camera} });
+}
+
+
+これにより「Camera が動かないで中身だけ動く」問題を解消
+
+3.3 LayerToolUI / Stroke フロー整理
+
+Layer 作成時も payload は ID と座標のみ
+
+Stroke 登録時に layerId と World座標の points のみ を MainController 経由で渡す
+
+EnginePosition で Screen 座標に変換して描画
+
+3.4 MainController イベント仲介
+
+payload の安全性を確認してから notifyEvent
+
+function safeNotify(type, payload) {
+  try {
+    JSON.stringify(payload); // 循環参照チェック
+    notifyEvent(type, payload);
+  } catch(e) {
+    console.error("[MainController] Event payload contains circular references:", type);
+  }
+}
+
+4. 推奨フロー（修正版）
+[UI操作] → LayerToolUI
+    → MainController (payload ID & coordinatesのみ)
+        → EnginePosition.drawStroke(worldPoints)
+            → Screen座標変換 → Pixi stage 描画
+Camera移動 → EnginePosition.setCamera → stage位置更新
+
+5. まとめ
+問題	原因	改修策
+Event payload 循環参照	Layer / Stroke に parent/children を含めて送信	payload は ID と座標のみ。循環参照排除
+ペン描画不可	イベント通知が途中で止まる	safeNotify + EnginePosition で描画フロー再構築
+キャンバス移動不可	Camera 座標反映漏れ / stage 位置未更新	setCamera 内で stage.x/y を更新
+Layer作成が二重	LayerID 安定化不足	createLayer で layers.length に基づく連番 ID に固定
+
+💡 次ステップ
+
+LayerToolUI / EnginePosition で payload を循環参照なしに統一
+
+EnginePosition に Camera stage 反映を実装
+
+MainController の notifyEvent を安全化（循環参照チェック）
+
+ペン描画・キャンバス移動の動作確認
+
+
+※下記は雛形コードです。
+
+
+1. 主星：main.html（MainController）
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>三分割星型運用 - MainController Rev2</title>
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
+  <script src="engine-position.js"></script>
+  <script src="layer-tool-ui.js"></script>
+  <script src="error-service.js"></script>
+</head>
+<body>
+  <canvas id="mainCanvas" width="800" height="600"></canvas>
+
+  <script>
+  /**
+   * @module   MainController
+   * @role     衛星管理・イベント仲介・状態確定・記録
+   * @depends  engine-position.js, layer-tool-ui.js, error-service.js
+   * @provides registerSatellite(), safeNotify(), startApplication()
+   * @notes    衛星間直接参照禁止、イベント型/payload統一、座標系管理
+   */
+
+  const MainController = (() => {
+    const satellites = {};
+
+    function registerSatellite(name, module) {
+      satellites[name] = module;
+    }
+
+    function safeNotify(type, payload) {
+      // payload に循環参照があればコピー/除外して送信
+      let safePayload;
+      try {
+        JSON.stringify(payload);
+        safePayload = payload;
+      } catch(e) {
+        console.warn("[MainController] Payload contains circular references:", type);
+        // 循環参照除去：ID・座標のみコピー
+        safePayload = JSON.parse(JSON.stringify(payload, (key, value) => {
+          if (key === 'parent' || key === 'children') return undefined;
+          return value;
+        }));
+      }
+      for (const key in satellites) {
+        if (satellites[key].onEvent) satellites[key].onEvent({ type, payload: safePayload });
+      }
+    }
+
+    async function startApplication() {
+      try {
+        await satellites.errorService.init();
+        await satellites.enginePosition.init(document.getElementById('mainCanvas'));
+        await satellites.layerToolUI.init();
+        console.log("[MainController] Application started.");
+      } catch (err) {
+        satellites.errorService.reportError('APP_START_FAILED', err);
+      }
+    }
+
+    return {
+      registerSatellite,
+      safeNotify,
+      startApplication
+    };
+  })();
+
+  // 衛星登録
+  MainController.registerSatellite('enginePosition', EnginePosition);
+  MainController.registerSatellite('layerToolUI', LayerToolUI);
+  MainController.registerSatellite('errorService', ErrorService);
+
+  // アプリ起動
+  MainController.startApplication();
+  </script>
+</body>
+</html>
+
+2. 衛星1：engine-position.js
+
+/**
+ * @module   EnginePosition
+ * @role     描画エンジン + 座標管理
+ * @depends  MainController
+ * @provides init(canvas), drawStroke(stroke), worldToScreen(point), screenToWorld(point), setCamera(x,y)
+ * @notes    Camera/World/Screen座標系を厳格に区別、循環参照禁止
+ * @flow     Stroke登録→World→Screen→Pixi描画→MainController通知
+ * @memory   Camera位置、World座標履歴、描画ストローク履歴
+ */
+
+const EnginePosition = (() => {
+  let app, camera = { x:0, y:0 }, strokes = [];
+
+  async function init(canvas) {
+    app = new PIXI.Application({ view: canvas, width: canvas.width, height: canvas.height });
+    console.log("[EnginePosition] Initialized.");
+  }
+
+  function drawStroke(stroke) {
+    strokes.push(stroke);
+
+    // World→Screen変換
+    stroke.points.forEach(p => {
+      p.screenX = p.x - camera.x;
+      p.screenY = p.y - camera.y;
+    });
+
+    // Pixi描画
+    const g = new PIXI.Graphics();
+    g.lineStyle(2, 0x000000);
+    const pts = stroke.points;
+    if (pts.length>0) g.moveTo(pts[0].screenX, pts[0].screenY);
+    for (let i=1;i<pts.length;i++) g.lineTo(pts[i].screenX, pts[i].screenY);
+    app.stage.addChild(g);
+
+    MainController.safeNotify('stroke-drawn', {
+      layerId: stroke.layerId,
+      points: stroke.points.map(p => ({x: p.x, y: p.y}))  // 循環参照除去
+    });
+  }
+
+  function worldToScreen(point) { return { x: point.x - camera.x, y: point.y - camera.y }; }
+  function screenToWorld(point) { return { x: point.x + camera.x, y: point.y + camera.y }; }
+
+  function setCamera(x, y) {
+    camera.x = x; camera.y = y;
+    // Pixi stage に反映
+    app.stage.x = -camera.x;
+    app.stage.y = -camera.y;
+    MainController.safeNotify('camera-moved', { camera: {...camera} });
+  }
+
+  function onEvent(event) {
+    // 例: MainController通知受信
+  }
+
+  return { init, drawStroke, worldToScreen, screenToWorld, setCamera, onEvent };
+})();
+
+3. 衛星2：layer-tool-ui.js
+
+/**
+ * @module   LayerToolUI
+ * @role     レイヤー管理 + ツール + UI
+ * @depends  MainController
+ * @provides init(), createLayer(name?), deleteLayer(id), setActiveLayer(id), onUIButtonClick(event)
+ * @notes    Layer ID 安定生成、UIボタン重複禁止、循環参照禁止
+ * @flow     レイヤー作成 → LayerManager → MainController → UI更新
+ * @memory   レイヤー構造、アクティブレイヤーID、ツール選択状態
+ */
+
+const LayerToolUI = (() => {
+  let layers = [], activeLayerId = null;
+
+  async function init() {
+    console.log("[LayerToolUI] Initialized.");
+  }
+
+  function createLayer(name="layer") {
+    const id = `layer-${layers.length+1}`;
+    const layer = { id, name, points: [] };  // points のみ保持、親子参照禁止
+    layers.push(layer);
+    activeLayerId = id;
+    MainController.safeNotify('layer-created', { layerId: layer.id });
+  }
+
+  function deleteLayer(id) {
+    layers = layers.filter(l=>l.id!==id);
+    if (activeLayerId===id) activeLayerId = layers.length>0?layers[0].id:null;
+    MainController.safeNotify('layer-deleted', { id });
+  }
+
+  function setActiveLayer(id) {
+    if (layers.find(l=>l.id===id)) {
+      activeLayerId = id;
+      MainController.safeNotify('layer-activated', { id });
+    }
+  }
+
+  function onUIButtonClick(event) {
+    if (event.type==="add-layer") createLayer();
+  }
+
+  function onEvent(event) {
+    // 例: MainController通知受信
+  }
+
+  return { init, createLayer, deleteLayer, setActiveLayer, onUIButtonClick, onEvent };
+})();
+
+
+4. 衛星3：error-service.js
+
+/**
+ * @module   ErrorService
+ * @role     エラー検知・通知
+ * @depends  MainController
+ * @provides reportError(code, details), showErrorNotification(msg)
+ * @notes    payload に循環参照を含めない、全イベント型統一
+ * @flow     衛星内部エラー → MainController → UI表示 / ログ
+ * @memory   発生済みエラー履歴
+ */
+
+const ErrorService = (() => {
+  let history = [];
+
+  async function init() {
+    console.log("[ErrorService] Initialized.");
+  }
+
+  function reportError(code, details) {
+    history.push({ code, details, timestamp: Date.now() });
+    showErrorNotification(`[${code}] ${details}`);
+  }
+
+  function showErrorNotification(msg) {
+    console.error("[ErrorService] ", msg);
+    MainController.safeNotify('error-occurred', { message: msg });
+  }
+
+  function onEvent(event) {
+    // 他衛星からのエラー受信も処理可能
+  }
+
+  return { init, reportError, showErrorNotification, onEvent };
+})();
+
+✅ 改修ポイント
+
+payload は循環参照除去（Layer/Stroke は ID と座標のみ）
+
+Camera 移動時に Pixi stage 反映（app.stage.x/y = -camera.x/y）
+
+Layer ID の安定生成
+
+MainController に safeNotify 導入でイベント停止防止
+
+Stroke/Layer フロー明確化でペン描画・キャンバス移動の動作安定
