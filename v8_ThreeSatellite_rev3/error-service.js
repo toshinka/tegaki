@@ -25,6 +25,9 @@ const ErrorService = (() => {
         'MEMORY_ALLOCATION_FAILED': 'メモリ割り当てエラー',
         'CIRCULAR_REFERENCE_ERROR': '循環参照エラー',
         'EVENT_PAYLOAD_ERROR': 'イベントpayloadエラー',
+        'LAYER_CONTAINER_ERROR': 'レイヤーContainer管理エラー',
+        'CAMERA_SYNC_ERROR': 'Camera同期エラー',
+        'ACTIVE_LAYER_ERROR': 'アクティブレイヤー制御エラー',
         'UNKNOWN_ERROR': '不明なエラー'
     };
     
@@ -163,7 +166,9 @@ const ErrorService = (() => {
             'ENGINE_INIT_FAILED',
             'LIBRARY_LOAD_FAILED',
             'MEMORY_ALLOCATION_FAILED',
-            'CIRCULAR_REFERENCE_ERROR'
+            'CIRCULAR_REFERENCE_ERROR',
+            'LAYER_CONTAINER_ERROR',
+            'CAMERA_SYNC_ERROR'
         ];
         
         return criticalErrors.includes(code);
@@ -331,6 +336,43 @@ const ErrorService = (() => {
         });
     }
     
+    /**
+     * レイヤーContainer管理エラーを専用に報告
+     */
+    function reportLayerContainerError(layerId, operation, error) {
+        reportError('LAYER_CONTAINER_ERROR', {
+            layerId,
+            operation,
+            message: `Layer container error: ${operation} for layer ${layerId}`,
+            error: error?.message || String(error)
+        });
+    }
+    
+    /**
+     * Camera同期エラーを専用に報告
+     */
+    function reportCameraSyncError(operation, cameraState, error) {
+        reportError('CAMERA_SYNC_ERROR', {
+            operation,
+            cameraX: cameraState?.x,
+            cameraY: cameraState?.y,
+            message: `Camera sync error: ${operation}`,
+            error: error?.message || String(error)
+        });
+    }
+    
+    /**
+     * アクティブレイヤー制御エラーを専用に報告
+     */
+    function reportActiveLayerError(operation, layerId, error) {
+        reportError('ACTIVE_LAYER_ERROR', {
+            operation,
+            layerId,
+            message: `Active layer error: ${operation} for layer ${layerId}`,
+            error: error?.message || String(error)
+        });
+    }
+    
     // Event Handler from MainController
     function onEvent(event) {
         switch (event.type) {
@@ -366,6 +408,36 @@ const ErrorService = (() => {
                     reportCircularReference(event.payload.eventType, event.payload.objectInfo);
                 }
                 break;
+                
+            case 'layer-container-error':
+                if (event.payload?.layerId && event.payload?.operation) {
+                    reportLayerContainerError(
+                        event.payload.layerId,
+                        event.payload.operation,
+                        event.payload.error
+                    );
+                }
+                break;
+                
+            case 'camera-sync-error':
+                if (event.payload?.operation) {
+                    reportCameraSyncError(
+                        event.payload.operation,
+                        event.payload.cameraState,
+                        event.payload.error
+                    );
+                }
+                break;
+                
+            case 'active-layer-error':
+                if (event.payload?.operation && event.payload?.layerId) {
+                    reportActiveLayerError(
+                        event.payload.operation,
+                        event.payload.layerId,
+                        event.payload.error
+                    );
+                }
+                break;
         }
     }
     
@@ -381,6 +453,9 @@ const ErrorService = (() => {
         logPerformanceWarning,
         reportCircularReference,
         reportEventPayloadError,
+        reportLayerContainerError,
+        reportCameraSyncError,
+        reportActiveLayerError,
         onEvent
     };
 })();

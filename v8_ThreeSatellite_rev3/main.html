@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev9 - 三分割星型運用版（修正版）</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev10 - 三分割星型運用版（修正版）</title>
     <style>
         * {
             margin: 0;
@@ -531,7 +531,7 @@
         
         // Application Configuration
         const APP_CONFIG = {
-            version: '8.0.9-three-satellite-fixed',
+            version: '8.0.10-three-satellite-fixed',
             canvas: { width: 400, height: 400 },
             rendering: { antialias: true, resolution: 1 },
             debug: false
@@ -604,11 +604,14 @@
                     await satellites.enginePosition.init(document.getElementById('drawing-canvas'));
                     await satellites.layerToolUI.init();
                     
+                    // Camera初期化でオフセット防止（重要な修正点）
+                    satellites.enginePosition.setCamera(0, 0);
+                    
                     setupInputHandlers();
                     startSystemMonitor();
                     
                     appState.initialized = true;
-                    console.log('🎨 Futaba Drawing Tool v8rev9 (Three-Satellite Fixed) - Ready!');
+                    console.log('🎨 Futaba Drawing Tool v8rev10 (Three-Satellite Fixed) - Ready!');
                     
                 } catch (error) {
                     console.error('💥 Application startup failed:', error);
@@ -729,7 +732,7 @@
                 // Make MainController available globally for satellites
                 window.MainController = MainController;
                 
-            } catch (error) {
+                            } catch (error) {
                 console.error('💥 Bootstrap failed:', error);
                 const canvasArea = document.querySelector('.canvas-area');
                 if (canvasArea) {

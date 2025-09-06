@@ -3,13 +3,13 @@
  * @role     レイヤー管理 + ツール + UI
  * @depends  MainController
  * @provides init(), createLayer(name?), deleteLayer(id), setActiveLayer(id), onUIButtonClick(event)
- * @notes    Layer ID 安定生成、UIボタン重複禁止、循環参照禁止
- * @flow     レイヤー作成 → LayerManager → MainController → UI更新
+ * @notes    Layer ID 安定生成、UIボタン重複禁止、循環参照禁止、アクティブレイヤー制御強化
+ * @flow     レイヤー作成 → LayerManager → MainController → EnginePosition → UI更新
  * @memory   レイヤー構造、アクティブレイヤーID、ツール選択状態、UI状態
  */
 
 const LayerToolUI = (() => {
-    // Layer Management - ID安定生成
+    // Layer Management - ID安定生成（重要な修正点）
     let layers = new Map();
     let activeLayerId = null;
     let nextLayerId = 1;
@@ -40,7 +40,7 @@ const LayerToolUI = (() => {
             setupResizeControls();
             setupLayerControls();
             
-            // Create initial layers - ID安定化
+            // Create initial layers - ID安定化（重要な修正点）
             createBackgroundLayer();
             createLayer('レイヤー1');
             setActiveLayer(1);
@@ -61,7 +61,7 @@ const LayerToolUI = (() => {
         }
     }
     
-    // Layer Management Functions - 安定ID生成
+    // Layer Management Functions - 安定ID生成（重要な修正点）
     function createBackgroundLayer() {
         const layerId = 0;  // 背景レイヤーは常に0
         const layerName = '背景';
@@ -70,7 +70,7 @@ const LayerToolUI = (() => {
             id: layerId,
             name: layerName,
             visible: true,
-            paths: [],
+            strokes: [],
             isBackground: true
         };
         
@@ -78,7 +78,7 @@ const LayerToolUI = (() => {
         activeLayerId = layerId;
         
         // 循環参照なしで通知 - layerオブジェクトそのまま渡さない
-        window.MainController?.safeNotify('background-layer-created', { 
+        window.MainController?.safeNotify('layer-created', { 
             layerId: layer.id,
             name: layer.name,
             visible: layer.visible,
@@ -94,7 +94,7 @@ const LayerToolUI = (() => {
             id: layerId,
             name: layerName,
             visible: true,
-            paths: [],
+            strokes: [],
             isBackground: false
         };
         
@@ -156,21 +156,21 @@ const LayerToolUI = (() => {
         return layers.get(activeLayerId);
     }
     
-    function addPathToActiveLayer(pathData) {
+    function addStrokeToActiveLayer(strokeData) {
         const activeLayer = getActiveLayer();
-        if (activeLayer && pathData) {
-            // pathオブジェクトではなくIDと必要最小情報のみ保存
-            activeLayer.paths.push({
-                pathId: pathData.pathId || 'unknown',
-                pointsCount: pathData.points?.length || 0,
-                color: pathData.color,
-                size: pathData.size,
-                opacity: pathData.opacity
+        if (activeLayer && strokeData) {
+            // strokeオブジェクトではなくIDと必要最小情報のみ保存
+            activeLayer.strokes.push({
+                strokeId: strokeData.strokeId || 'unknown',
+                pointsCount: strokeData.points?.length || 0,
+                color: strokeData.color,
+                size: strokeData.size,
+                opacity: strokeData.opacity
             });
             
-            window.MainController?.safeNotify('path-added-to-layer', { 
+            window.MainController?.safeNotify('stroke-added-to-layer', { 
                 layerId: activeLayer.id, 
-                pathId: pathData.pathId || 'unknown'
+                strokeId: strokeData.strokeId || 'unknown'
             });
         }
     }
@@ -208,28 +208,43 @@ const LayerToolUI = (() => {
         window.MainController?.safeNotify('brush-opacity-changed', { opacity });
     }
     
+    // Drawing Operations - アクティブレイヤー制御強化（重要な修正点）
     function startDrawing(x, y, isPanning) {
         if (isPanning) return false;
+        
+        const activeLayer = getActiveLayer();
+        if (!activeLayer) return false;
         
         drawing.active = true;
         
         const color = currentTool === 'eraser' ? 0xf0e0d6 : brushColor;
         const alpha = currentTool === 'eraser' ? 1.0 : opacity;
         
-        // World座標のみでpath作成データ作成
-        const pathData = {
+        // World座標のみでstroke作成データ作成、アクティブレイヤーID付与
+        const strokeData = {
             x, y,
             size: brushSize,
             color,
             opacity: alpha
         };
         
-        window.MainController?.safeNotify('path-created', { path: pathData });
+        // アクティブレイヤーIDと共に通知（重要な修正点）
+        window.MainController?.safeNotify('path-created', { 
+            path: strokeData,
+            layerId: activeLayer.id 
+        });
         return true;
     }
     
     function continueDrawing(x, y, isPanning) {
         if (!drawing.active || isPanning) return;
+        
+        // アクティブレイヤー確認（重要な修正点）
+        const activeLayer = getActiveLayer();
+        if (!activeLayer) {
+            stopDrawing();
+            return;
+        }
         
         // World座標のみ送信
         window.MainController?.safeNotify('path-extend', { x, y });
@@ -240,6 +255,25 @@ const LayerToolUI = (() => {
             drawing.active = false;
             window.MainController?.safeNotify('path-complete', {});
         }
+    }
+    
+    // Eraser Operations - アクティブレイヤー制御（重要な修正点）
+    function eraseStroke(stroke) {
+        const activeLayer = getActiveLayer();
+        if (!activeLayer || !stroke) return false;
+        
+        // アクティブレイヤーのstrokeのみ消去可能
+        if (stroke.layerId !== activeLayer.id) {
+            console.warn('[LayerToolUI] Cannot erase stroke from inactive layer');
+            return false;
+        }
+        
+        // 消去処理
+        window.MainController?.safeNotify('stroke-erase-requested', {
+            strokeId: stroke.id,
+            layerId: activeLayer.id
+        });
+        return true;
     }
     
     // UI Management Functions
@@ -675,8 +709,8 @@ const LayerToolUI = (() => {
                 
             case 'path-ready-for-layer':
                 if (event.payload) {
-                    // 循環参照なしのpathデータを受信
-                    addPathToActiveLayer(event.payload);
+                    // 循環参照なしのstrokeデータを受信
+                    addStrokeToActiveLayer(event.payload);
                 }
                 break;
                 
@@ -699,6 +733,7 @@ const LayerToolUI = (() => {
         setOpacity,
         updateCoordinates,
         closeAllPopups,
+        eraseStroke,
         onEvent,
         
         // Getters for controlled access

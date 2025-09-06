@@ -3,16 +3,16 @@
  * @role     描画エンジン + 座標管理
  * @depends  MainController
  * @provides init(canvas), drawStroke(stroke), worldToScreen(point), screenToWorld(point), setCamera(x,y)
- * @notes    Camera/World/Screen座標系を厳格に区別、循環参照禁止
+ * @notes    Camera/World/Screen座標系を厳格に区別、循環参照禁止、Pixi stageでCamera反映
  * @flow     Stroke登録→World→Screen→Pixi描画→MainController通知
- * @memory   Camera位置、World座標履歴、描画ストローク履歴
+ * @memory   Camera位置、World座標履歴、描画ストローク履歴、LayerごとのContainer
  */
 
 const EnginePosition = (() => {
     let app = null;
     let containers = { camera: null, world: null, ui: null };
     let camera = { x: 0, y: 0, targetX: 0, targetY: 0 };
-    let paths = [];
+    let strokes = [];
     let canvasContainer = null;
     let positionState = {
         panning: false,
@@ -22,8 +22,10 @@ const EnginePosition = (() => {
         pointerType: null
     };
     let handlers = { move: null, up: null, cancel: null };
-    let updateScheduled = false;
     let currentDrawingPath = null;
+    
+    // Layer Container Management - 重要な修正点
+    const layerContainers = {}; // layerId -> PIXI.Container
     
     // Coordinate System Management - 座標系統一
     function worldToScreen(point) {
@@ -41,7 +43,7 @@ const EnginePosition = (() => {
     }
     
     /**
-     * Camera座標設定 - Pixi stage に必ず反映
+     * Camera座標設定 - Pixi stage に必ず反映（重要な修正点）
      */
     function setCamera(x, y) {
         camera.targetX = x;
@@ -49,7 +51,7 @@ const EnginePosition = (() => {
         camera.x = Math.round(x);
         camera.y = Math.round(y);
         
-        // Pixi stage 位置更新 - 重要な修正点
+        // Pixi stage 位置更新 - 改修案に従った重要な修正
         if (app && app.stage) {
             app.stage.x = -camera.x;
             app.stage.y = -camera.y;
@@ -61,6 +63,28 @@ const EnginePosition = (() => {
         window.MainController?.safeNotify('camera-moved', { 
             camera: { x: camera.x, y: camera.y } 
         });
+    }
+    
+    /**
+     * LayerごとのContainerを登録・管理（重要な修正点）
+     */
+    function registerLayerContainer(layerId) {
+        if (!layerContainers[layerId]) {
+            const container = new PIXI.Container();
+            containers.world.addChild(container);
+            layerContainers[layerId] = container;
+            console.log(`[EnginePosition] Layer container created: ${layerId}`);
+        }
+        return layerContainers[layerId];
+    }
+    
+    /**
+     * レイヤーの表示/非表示切替
+     */
+    function setLayerVisibility(layerId, visible) {
+        if (layerContainers[layerId]) {
+            layerContainers[layerId].visible = visible;
+        }
     }
     
     function updateCameraDisplay() {
@@ -89,7 +113,7 @@ const EnginePosition = (() => {
         positionState.panning = false;
         stopPanning();
         
-        // Pixi stage リセット
+        // Pixi stage リセット（重要な修正点）
         if (app && app.stage) {
             app.stage.x = 0;
             app.stage.y = 0;
@@ -327,13 +351,48 @@ const EnginePosition = (() => {
         }
     }
     
-    // Drawing Operations
-    function createPath(x, y, size, color, opacity) {
+    // Drawing Operations - レイヤーContainer対応（重要な修正点）
+    function drawStroke(stroke) {
+        if (!stroke || !stroke.layerId) return;
+        
+        strokes.push(stroke);
+        
+        // レイヤーContainer取得/作成
+        const layerContainer = registerLayerContainer(stroke.layerId);
+        
+        // World座標からScreen座標に変換
+        const pts = stroke.points.map(p => ({
+            ...p, 
+            screenX: p.x - camera.x, 
+            screenY: p.y - camera.y
+        }));
+        
+        const g = new PIXI.Graphics();
+        g.lineStyle(2, stroke.color || 0x000000);
+        
+        if (pts.length > 0) {
+            g.moveTo(pts[0].screenX, pts[0].screenY);
+            for (let i = 1; i < pts.length; i++) {
+                g.lineTo(pts[i].screenX, pts[i].screenY);
+            }
+        }
+        
+        // アクティブレイヤーのContainerに描画（重要な修正点）
+        layerContainer.addChild(g);
+        
+        // 循環参照なしで通知
+        window.MainController?.safeNotify('stroke-drawn', { 
+            layerId: stroke.layerId, 
+            points: pts 
+        });
+    }
+    
+    function createPath(x, y, size, color, opacity, layerId) {
         const path = {
             id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
             graphics: new PIXI.Graphics(),
             points: [],
-            color, size, opacity,
+            color, size, opacity, layerId,
             isComplete: false
         };
         
@@ -341,11 +400,12 @@ const EnginePosition = (() => {
         path.graphics.fill({ color: path.color, alpha: path.opacity });
         
         path.points.push({ x, y, size });
-        paths.push(path);
+        strokes.push(path);
         currentDrawingPath = path;
         
-        // Worldコンテナに追加
-        containers.world.addChild(path.graphics);
+        // レイヤーContainerに追加（重要な修正点）
+        const layerContainer = registerLayerContainer(layerId);
+        layerContainer.addChild(path.graphics);
         
         return path;
     }
@@ -382,7 +442,8 @@ const EnginePosition = (() => {
                 pointsCount: path.points.length,
                 color: path.color,
                 size: path.size,
-                opacity: path.opacity
+                opacity: path.opacity,
+                layerId: path.layerId
             });
         }
     }
@@ -443,10 +504,22 @@ const EnginePosition = (() => {
                 }
                 break;
                 
+            case 'layer-created':
+                if (event.payload?.layerId) {
+                    registerLayerContainer(event.payload.layerId);
+                }
+                break;
+                
+            case 'layer-visibility-changed':
+                if (event.payload?.layerId !== undefined && event.payload?.visible !== undefined) {
+                    setLayerVisibility(event.payload.layerId, event.payload.visible);
+                }
+                break;
+                
             case 'path-created':
-                if (event.payload?.path) {
+                if (event.payload?.path && event.payload?.layerId) {
                     const { x, y, size, color, opacity } = event.payload.path;
-                    const newPath = createPath(x, y, size, color, opacity);
+                    const newPath = createPath(x, y, size, color, opacity, event.payload.layerId);
                     
                     // 循環参照なしでpath ready通知
                     window.MainController?.safeNotify('path-ready-for-layer', {
@@ -454,7 +527,8 @@ const EnginePosition = (() => {
                         points: newPath.points.map(p => ({ x: p.x, y: p.y })),
                         color: newPath.color,
                         size: newPath.size,
-                        opacity: newPath.opacity
+                        opacity: newPath.opacity,
+                        layerId: newPath.layerId
                     });
                 }
                 break;
@@ -479,16 +553,20 @@ const EnginePosition = (() => {
         worldToScreen,
         screenToWorld,
         setCamera,
+        drawStroke,
         createPath,
         extendPath,
         completePath,
         resize,
+        registerLayerContainer,
+        setLayerVisibility,
         onEvent,
         
         // Getters for controlled access
         getApp: () => app,
         getContainers: () => containers,
         getCurrentPath: () => currentDrawingPath,
-        getPaths: () => [...paths]
+        getStrokes: () => [...strokes],
+        getLayerContainers: () => ({ ...layerContainers })
     };
 })();
