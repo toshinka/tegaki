@@ -1,188 +1,199 @@
+🔎 原因の切り分け
+
+main.html のイベントループ
+
+mousemove / pointermove で呼ばれる座標更新が
+worldToScreen / screenToWorld を経由していない。
+
+そのため「ストロークはワールド座標」「カメラ移動はコンテナ座標」という分離が保たれていない。
+
+MainController → EnginePosition 呼び出し
+
+カメラ移動を layer.position でやっていた時代の呼び出しが残っている。
+
+それが cameraContainer.position に統合されていない。
+
+レイヤー生成
+
+createLayer が stage 直下に追加されている可能性あり。
+
+本来は cameraContainer.addChild(layer) でなければカメラ移動に追従しない。
+
+✅ 改修案（main.html 側にも修正必須）
+
+A. 初期化
+
+await EnginePosition.init(document.getElementById("drawingCanvas"));
+EnginePosition.createLayer("Layer 1");
 
 
-✅ 原因候補
+createLayer を呼ぶときに、必ず cameraContainer に入れるようにする。
 
-stage.x / stage.y の直接更新が無効化されている PIXI v8 では、stage 自体は特殊なルート Container であり、stage.x / stage.y を直接動かしても描画結果が反映されない場合があります。 → 代わりに「カメラ専用の Container」を作り、その Container にすべてのレイヤーをぶら下げて動かす必要があります。
+B. カメラ移動
 
-Stroke 描画時に「すでに座標変換済みの点」を記録している 現行の drawStroke は以下の流れになっていました：
-
-const pts = stroke.points.map(p=>({...p, screenX:p.x-camera.x, screenY:p.y-camera.y}));
-g.moveTo(pts[0].screenX, pts[0].screenY);
-
-
-→ つまり「世界座標を保持」せずに「カメラ座標を引いたスクリーン座標だけ」を保持している。 そのため、あとからカメラを動かしても stage 側での移動が効かない。
-
-✅ 対策
-
-カメラ用コンテナを導入
-
-let cameraContainer;
-async function init(canvas) {
-  app = new PIXI.Application({ view: canvas, width: canvas.width, height: canvas.height });
-  cameraContainer = new PIXI.Container();
-  app.stage.addChild(cameraContainer);
-}
-
-
-→ 各レイヤーは cameraContainer に addChild。
-
-Stroke は「ワールド座標」で保持する
-
-stroke.points = [{x:..., y:...}] のまま保存。
-
-Graphics に描画するときは「そのままワールド座標を moveTo/lineTo」。
-
-表示上は cameraContainer.position.set(-camera.x, -camera.y) で全体を動かす。
-
-こうすることで「描いた後にカメラを動かしても全部一緒に動く」状態になります。
-
-修正版 setCamera
-
-function setCamera(x, y) {
-  camera.x = x; camera.y = y;
-  cameraContainer.position.set(-camera.x, -camera.y);
-  MainController.safeNotify('camera-moved', { camera:{...camera} });
-}
-
-
-✅ 改修不足だった点
-
-rev3 の実装では app.stage.x = -camera.x をやっていたが、Pixi v8 の stage は移動対象として使えない。
-
-Stroke も「スクリーン座標化して描画してしまっていた」ため、後からカメラを動かしても追従しない。
-
-engine-position.js 雛形 を提示します。
-
-ポイントは以下の通りです：
-
-cameraContainer を導入して、すべてのレイヤーをここに入れる
-
-stroke はワールド座標で保持 → 描画時はそのまま使う
-
-カメラ移動は cameraContainer の位置変更で実現
-
-/**
- * @module engine-position
- * @role   座標・カメラ制御とレイヤー描画の中核
- * @depends MainController
- * @provides init, createLayer, setActiveLayer, addStroke, eraseStroke, setCamera
- * @notes
- *   - stroke.points は必ずワールド座標で保持
- *   - cameraContainer を stage に追加し、その中で全レイヤーを管理
- *   - setCamera() は container の position を動かすのみ
- */
-
-const EnginePosition = (function(){
-  let app, cameraContainer;
-  let camera = { x:0, y:0 };
-  let layers = [];
-  let activeLayer = null;
-
-  // 初期化
-  async function init(canvas) {
-    app = new PIXI.Application({
-      view: canvas,
-      width: canvas.width,
-      height: canvas.height,
-      backgroundColor: 0xffffff,
-      antialias: true
-    });
-
-    // カメラ用コンテナ
-    cameraContainer = new PIXI.Container();
-    app.stage.addChild(cameraContainer);
-
-    MainController.safeNotify("engine-ready", { ok:true });
+// 例: ドラッグでカメラ移動
+canvas.addEventListener("pointermove", (e)=>{
+  if(draggingCamera){
+    EnginePosition.setCamera(
+      cameraStart.x - (e.clientX - dragStart.x),
+      cameraStart.y - (e.clientY - dragStart.y)
+    );
   }
+});
 
-  // レイヤー作成
-  function createLayer(name){
-    const g = new PIXI.Graphics();
-    g.meta = { name, strokes: [] };
 
-    cameraContainer.addChild(g);
-    layers.push(g);
-    activeLayer = g;
+setCamera(x,y) を必ず呼ぶ。
 
-    MainController.safeNotify("layer-created", { name });
-  }
+レイヤーや Graphics を直接 position 移動しない。
 
-  // アクティブレイヤー切り替え
-  function setActiveLayer(name){
-    const found = layers.find(l=>l.meta.name===name);
-    if(found){
-      activeLayer = found;
-      MainController.safeNotify("layer-activated", { name });
-    }
-  }
+C. 座標変換
 
-  // ストローク追加（ワールド座標で保持）
-  function addStroke(stroke){
-    if(!activeLayer) return;
-
-    activeLayer.meta.strokes.push(stroke);
-    redrawLayer(activeLayer);
-
-    MainController.safeNotify("stroke-added", { layer:activeLayer.meta.name });
-  }
-
-  // 消去ストローク
-  function eraseStroke(stroke){
-    if(!activeLayer) return;
-
-    const radius = stroke.brushSize || 5;
-    activeLayer.meta.strokes = activeLayer.meta.strokes.filter(s => {
-      return !s.points.some(p => {
-        const dx = p.x - stroke.points[0].x;
-        const dy = p.y - stroke.points[0].y;
-        return Math.sqrt(dx*dx+dy*dy) < radius;
-      });
-    });
-
-    redrawLayer(activeLayer);
-    MainController.safeNotify("stroke-erased", { layer:activeLayer.meta.name });
-  }
-
-  // レイヤー再描画
-  function redrawLayer(layer){
-    const g = layer;
-    g.clear();
-
-    for(const s of g.meta.strokes){
-      g.lineStyle(s.brushSize||1, s.color||0x000000, 1.0);
-      if(s.points.length>0){
-        g.moveTo(s.points[0].x, s.points[0].y); // ←ワールド座標そのまま
-        for(let i=1;i<s.points.length;i++){
-          g.lineTo(s.points[i].x, s.points[i].y);
-        }
-      }
-    }
-  }
-
-  // カメラ移動
-  function setCamera(x,y){
-    camera.x = x;
-    camera.y = y;
-
-    // container を移動するだけ
-    cameraContainer.position.set(-camera.x, -camera.y);
-
-    MainController.safeNotify("camera-moved", { camera:{...camera} });
-  }
-
+// スクリーン→ワールド
+function toWorld(x,y){
   return {
-    init,
-    createLayer,
-    setActiveLayer,
-    addStroke,
-    eraseStroke,
-    setCamera
+    x: x + EnginePosition.getCamera().x,
+    y: y + EnginePosition.getCamera().y
   };
-})();
+}
 
 
-これで：
+ペン入力時にこの変換を通すことで、stroke が「ワールド座標」として保持される。
 
-ペンで描いた後にカメラを動かすと すべてのレイヤーがまとめて動く
+📝 まとめ
 
-レイヤー切り替えも「ワールド座標を共通基盤」とするので整合性が保たれる
+engine-position.js 側は「カメラコンテナ方式」にすでに改修済み。
+
+でも main.html が古い呼び出しをしているので反映されていない。
+
+main.html を修正して、EnginePosition.setCamera() と screen→world を必ず通すようにすれば、カメラ移動で描画内容がちゃんと追従するようになります。
+
+
+※以下は修正サンプルです。参考に。
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>ThreeSatellite Rev4 Sample</title>
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.x/dist/pixi.min.js"></script>
+  <script src="engine-position.js"></script>
+  <script src="layer-tool-ui.js"></script>
+  <script src="error-service.js"></script>
+  <style>
+    body { margin: 0; overflow: hidden; }
+    #toolbar { position: fixed; top: 5px; left: 5px; background: #eee; padding: 5px; }
+  </style>
+</head>
+<body>
+  <div id="toolbar">
+    <button id="moveCamera">Move</button>
+    <button id="drawPen">Pen</button>
+    <button id="eraser">Eraser</button>
+    <button id="addLayer">+ Layer</button>
+  </div>
+  <canvas id="drawingCanvas"></canvas>
+
+  <script>
+    // ==============================
+    // MainController 相当
+    // ==============================
+    let mode = "pen"; // pen | eraser | move
+    let drawing = false;
+    let lastPos = null;
+    let cameraStart = { x: 0, y: 0 };
+    let dragStart = { x: 0, y: 0 };
+
+    async function init() {
+      await EnginePosition.init(document.getElementById("drawingCanvas"));
+      EnginePosition.createLayer("Layer 1");
+      bindUI();
+      bindInput();
+    }
+
+    function bindUI() {
+      document.getElementById("moveCamera").onclick = () => { mode = "move"; };
+      document.getElementById("drawPen").onclick = () => { mode = "pen"; };
+      document.getElementById("eraser").onclick = () => { mode = "eraser"; };
+      document.getElementById("addLayer").onclick = () => {
+        EnginePosition.createLayer("Layer " + Date.now());
+      };
+    }
+
+    function bindInput() {
+      const canvas = document.getElementById("drawingCanvas");
+
+      canvas.addEventListener("pointerdown", (e) => {
+        if (mode === "move") {
+          // カメラ移動開始
+          const cam = EnginePosition.getCamera();
+          cameraStart = { x: cam.x, y: cam.y };
+          dragStart = { x: e.clientX, y: e.clientY };
+          drawing = true;
+        } else {
+          // ペン/消しゴム
+          const world = toWorld(e.clientX, e.clientY);
+          lastPos = world;
+          drawing = true;
+        }
+      });
+
+      canvas.addEventListener("pointermove", (e) => {
+        if (!drawing) return;
+
+        if (mode === "move") {
+          // カメラ移動
+          const dx = e.clientX - dragStart.x;
+          const dy = e.clientY - dragStart.y;
+          EnginePosition.setCamera(cameraStart.x - dx, cameraStart.y - dy);
+        } else {
+          // ペン/消しゴム
+          const world = toWorld(e.clientX, e.clientY);
+          if (lastPos) {
+            EnginePosition.drawLine(
+              EnginePosition.getActiveLayer(),
+              lastPos,
+              world,
+              mode
+            );
+          }
+          lastPos = world;
+        }
+      });
+
+      canvas.addEventListener("pointerup", () => {
+        drawing = false;
+        lastPos = null;
+      });
+    }
+
+    // スクリーン座標 → ワールド座標変換
+    function toWorld(x, y) {
+      return EnginePosition.screenToWorld(x, y);
+    }
+
+    init();
+  </script>
+</body>
+</html>
+
+📌 ポイント
+
+カメラ移動
+
+EnginePosition.setCamera(x, y) を必ず呼ぶ
+
+layer.position を直接動かさない
+
+座標変換
+
+toWorld(e.clientX, e.clientY) を必ず通す
+
+ストロークはワールド座標で記録される
+
+レイヤー生成
+
+EnginePosition.createLayer() は cameraContainer にぶら下がるので、カメラ移動で一緒に動く
+
+
+
+
