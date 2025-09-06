@@ -720,7 +720,16 @@
             }
             
             notify(from, event) {
-                log(`📢 Event from ${from}:`, event);
+                // デバッグ: 受信したイベント全体をログ出力（JSON.stringify）
+                if (APP_CONFIG.debug) {
+                    console.log(`📢 Event from ${from}:`, from, JSON.stringify(event));
+                }
+                
+                // typeが存在しない場合の警告
+                if (!event || typeof event.type === 'undefined') {
+                    console.warn(`⚠️ Unhandled event type: undefined from ${from}. Event:`, event);
+                    return;
+                }
                 
                 try {
                     // イベントの種類に応じて適切な衛星に転送
@@ -741,7 +750,9 @@
                             this.getSatellite('ui')?.handleCoordinatesChange(event);
                             break;
                         default:
-                            log(`⚠️ Unhandled event type: ${event.type}`);
+                            if (APP_CONFIG.debug) {
+                                console.warn(`⚠️ Unhandled event type: ${event.type} from ${from}`);
+                            }
                     }
                 } catch (error) {
                     this.getSatellite('error')?.reportRecoverable('EVENT_HANDLING_ERROR', 'Event handling failed', { from, event, error: error.message });
@@ -749,7 +760,16 @@
             }
             
             dispatch(from, action) {
-                log(`🚀 Action from ${from}:`, action);
+                // デバッグ: 受信したアクション全体をログ出力（JSON.stringify）
+                if (APP_CONFIG.debug) {
+                    console.log(`🚀 Action from ${from}:`, from, JSON.stringify(action));
+                }
+                
+                // typeが存在しない場合の警告
+                if (!action || typeof action.type === 'undefined') {
+                    console.warn(`⚠️ Unhandled action type: undefined from ${from}. Action:`, action);
+                    return;
+                }
                 
                 try {
                     // アクション処理のルーティング
@@ -769,7 +789,9 @@
                         case 'reorder-layers':
                             return this.handleReorderLayers(action);
                         default:
-                            log(`⚠️ Unhandled action type: ${action.type}`);
+                            if (APP_CONFIG.debug) {
+                                console.warn(`⚠️ Unhandled action type: ${action.type} from ${from}`);
+                            }
                     }
                 } catch (error) {
                     this.getSatellite('error')?.reportRecoverable('ACTION_HANDLING_ERROR', 'Action handling failed', { from, action, error: error.message });
@@ -851,6 +873,17 @@
                     const position = this.getSatellite('position');
                     position?.stopPanning();
                 });
+                
+                // レイヤー追加ボタンのイベント設定
+                const addLayerBtn = document.getElementById('add-layer-btn');
+                if (addLayerBtn) {
+                    addLayerBtn.addEventListener('click', () => {
+                        this.dispatch('ui', {
+                            type: 'create-layer',
+                            name: `レイヤー${Date.now()}`
+                        });
+                    });
+                }
             }
             
             // Action Handlers
@@ -906,7 +939,11 @@
                     
                     this.notify('main', {
                         type: 'layer-change',
-                        activeLayer: newLayer
+                        activeLayer: {
+                            id: newLayer?.id,
+                            name: newLayer?.name,
+                            visible: newLayer?.visible
+                        }
                     });
                     
                     return newLayer;
@@ -918,9 +955,14 @@
                 if (layers) {
                     layers.deleteLayer(action.layerId);
                     
+                    const activeLayer = layers.getActiveLayer();
                     this.notify('main', {
                         type: 'layer-change',
-                        activeLayer: layers.getActiveLayer()
+                        activeLayer: {
+                            id: activeLayer?.id,
+                            name: activeLayer?.name,
+                            visible: activeLayer?.visible
+                        }
                     });
                 }
             }

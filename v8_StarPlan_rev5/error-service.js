@@ -1,7 +1,9 @@
 /**
  * ファイル名: error-service.js
+ * @provides ErrorService, エラー処理機能, 復旧処理
+ * @requires MainController API
  * ErrorService衛星 - エラーフロー管理、UI通知、復旧処理
- * 星型分離版 v8rev8 - 完全版
+ * 星型分離版 v8rev8 - 修正版（type付きイベント対応）
  */
 
 window.ErrorService = class ErrorService {

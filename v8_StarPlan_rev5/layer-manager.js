@@ -1,7 +1,9 @@
 /**
  * ファイル名: layer-manager.js
+ * @provides LayerManager, レイヤー管理機能, UI更新
+ * @requires DrawingEngine, PIXI.js, MainController API
  * LayerManager衛星 - レイヤー生成/削除/移動、Stage管理
- * 星型分離版 v8rev8 - 修正版
+ * 星型分離版 v8rev8 - 修正版（type付きイベント対応）
  */
 
 window.LayerManager = class LayerManager {
@@ -22,6 +24,10 @@ window.LayerManager = class LayerManager {
     
     async register(mainApi) {
         this.mainApi = mainApi;
+        // mainApiにレイヤーマネージャーを登録（衛星登録機能があれば）
+        if (this.mainApi?.registerSatellite) {
+            this.mainApi.registerSatellite('layers', this);
+        }
     }
     
     async initialize() {
@@ -44,11 +50,12 @@ window.LayerManager = class LayerManager {
         container.name = layerName;
         container.visible = true;
         
-        // 背景塗りつぶし作成
+        // 背景塗りつぶし作成（修正: beginFill/drawRect/endFillに変更）
         const config = this.mainApi?.getConfig() || {};
         const backgroundGraphics = new PIXI.Graphics();
-        backgroundGraphics.rect(0, 0, config.canvas?.width || 400, config.canvas?.height || 400);
-        backgroundGraphics.fill(0xf0e0d6); // futaba-cream color
+        backgroundGraphics.beginFill(0xf0e0d6, 1); // futaba-cream color
+        backgroundGraphics.drawRect(0, 0, config.canvas?.width || 400, config.canvas?.height || 400);
+        backgroundGraphics.endFill();
         container.addChild(backgroundGraphics);
         
         const layer = {
@@ -147,12 +154,16 @@ window.LayerManager = class LayerManager {
             this.updateLayerUI();
             this.log(`Deleted layer: ${layerId}`);
             
-            // 削除完了通知（修正: typeを追加）
-            this.mainApi?.notify('layers', {
+            // 削除完了通知（修正: typeを必ず追加、循環参照を避ける）
+            this.mainApi?.notify({
                 type: 'layer-change',
                 action: 'deleted',
                 layerId: layerId,
-                activeLayer: this.getActiveLayer()
+                activeLayer: {
+                    id: this.getActiveLayer()?.id,
+                    name: this.getActiveLayer()?.name,
+                    visible: this.getActiveLayer()?.visible
+                }
             });
             
             return true;
@@ -171,8 +182,8 @@ window.LayerManager = class LayerManager {
             
             this.log(`Active layer changed to: ${layerId}`);
             
-            // レイヤー変更通知（修正: typeを追加）
-            this.mainApi?.notify('layers', {
+            // レイヤー変更通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
                 type: 'layer-change',
                 action: 'activated',
                 layerId: layerId,
@@ -236,8 +247,9 @@ window.LayerManager = class LayerManager {
             const backgroundLayer = this.layers.get(0);
             if (backgroundLayer && backgroundLayer.backgroundGraphics) {
                 backgroundLayer.backgroundGraphics.clear();
-                backgroundLayer.backgroundGraphics.rect(0, 0, width, height);
-                backgroundLayer.backgroundGraphics.fill(0xf0e0d6);
+                backgroundLayer.backgroundGraphics.beginFill(0xf0e0d6, 1);
+                backgroundLayer.backgroundGraphics.drawRect(0, 0, width, height);
+                backgroundLayer.backgroundGraphics.endFill();
                 this.log(`Background size updated to ${width}x${height}`);
             }
         } catch (error) {
@@ -494,7 +506,7 @@ window.LayerManager = class LayerManager {
     }
     
     reportError(code, message, error) {
-        this.mainApi?.notify('layers', {
+        this.mainApi?.notify({
             type: 'error',
             code,
             message,

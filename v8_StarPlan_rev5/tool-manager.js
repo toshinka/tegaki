@@ -1,7 +1,9 @@
 /**
  * ファイル名: tool-manager.js
+ * @provides ToolManager, ツール管理機能, 描画フロー
+ * @requires DrawingEngine, LayerManager, MainController API
  * ToolManager衛星 - ツール登録/選択、描画フロー管理
- * 星型分離版 v8rev8 - 修正版
+ * 星型分離版 v8rev8 - 修正版（type付きイベント対応）
  */
 
 window.ToolManager = class ToolManager {
@@ -89,8 +91,8 @@ window.ToolManager = class ToolManager {
         
         this.log(`Tool changed from ${oldTool} to ${toolId}`);
         
-        // ツール変更通知
-        this.mainApi?.notify('tools', {
+        // ツール変更通知（修正: typeを必ず追加）
+        this.mainApi?.notify({
             type: 'tool-change',
             oldTool,
             newTool: toolId,
@@ -452,7 +454,7 @@ window.ToolManager = class ToolManager {
     }
     
     reportError(code, message, error) {
-        this.mainApi?.notify('tools', {
+        this.mainApi?.notify({
             type: 'error',
             code,
             message,

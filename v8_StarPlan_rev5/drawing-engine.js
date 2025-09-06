@@ -1,7 +1,9 @@
 /**
  * ファイル名: drawing-engine.js
+ * @provides DrawingEngine, PIXI描画機能, 座標系管理
+ * @requires PIXI.js, MainController API
  * DrawingEngine衛星 - PixiJS Application生成、描画フロー管理
- * 星型分離版 v8rev8 - 修正版
+ * 星型分離版 v8rev8 - 修正版（type付きイベント対応）
  */
 
 window.DrawingEngine = class DrawingEngine {
@@ -56,11 +58,12 @@ window.DrawingEngine = class DrawingEngine {
         this.containers.world = new PIXI.Container();
         this.containers.ui = new PIXI.Container();
         
-        // マスク設定
+        // マスク設定（修正: beginFill/drawRect/endFillに変更）
         const config = this.mainApi?.getConfig() || {};
         const maskGraphics = new PIXI.Graphics();
-        maskGraphics.rect(0, 0, config.canvas?.width || 400, config.canvas?.height || 400);
-        maskGraphics.fill(0x000000);
+        maskGraphics.beginFill(0x000000, 1);
+        maskGraphics.drawRect(0, 0, config.canvas?.width || 400, config.canvas?.height || 400);
+        maskGraphics.endFill();
         
         this.app.stage.addChild(maskGraphics);
         this.containers.camera.mask = maskGraphics;
@@ -113,8 +116,8 @@ window.DrawingEngine = class DrawingEngine {
                 return;
             }
             
-            // アクション送信（修正: typeを追加）
-            this.mainApi?.dispatch('engine', {
+            // アクション送信（修正: typeを必ず追加）
+            this.mainApi?.dispatch({
                 type: 'start-drawing',
                 x: event.global.x,
                 y: event.global.y,
@@ -133,8 +136,8 @@ window.DrawingEngine = class DrawingEngine {
             const spacePressed = window.futabaApp?.getSpacePressed?.() || false;
             const originalEvent = event.data.originalEvent;
             
-            // 座標情報を常に通知（修正: typeを追加）
-            this.mainApi?.notify('engine', {
+            // 座標情報を常に通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
                 type: 'coordinates-change',
                 x: event.global.x,
                 y: event.global.y
@@ -149,8 +152,8 @@ window.DrawingEngine = class DrawingEngine {
                 return;
             }
             
-            // アクション送信（修正: typeを追加）
-            this.mainApi?.dispatch('engine', {
+            // アクション送信（修正: typeを必ず追加）
+            this.mainApi?.dispatch({
                 type: 'continue-drawing',
                 x: event.global.x,
                 y: event.global.y,
@@ -169,8 +172,8 @@ window.DrawingEngine = class DrawingEngine {
             const spacePressed = window.futabaApp?.getSpacePressed?.() || false;
             
             if (!spacePressed) {
-                // アクション送信（修正: typeを追加）
-                this.mainApi?.dispatch('engine', {
+                // アクション送信（修正: typeを必ず追加）
+                this.mainApi?.dispatch({
                     type: 'stop-drawing',
                     x: event.global.x,
                     y: event.global.y
@@ -194,9 +197,10 @@ window.DrawingEngine = class DrawingEngine {
                 timestamp: Date.now()
             };
             
-            // 初期点を描画
-            path.graphics.circle(x, y, size / 2);
-            path.graphics.fill({ color: path.color, alpha: path.opacity });
+            // 初期点を描画（修正: beginFill/drawCircle/endFillに変更）
+            path.graphics.beginFill(path.color, path.opacity);
+            path.graphics.drawCircle(x, y, size / 2);
+            path.graphics.endFill();
             
             path.points.push({ x, y, size, timestamp: Date.now() });
             
@@ -221,15 +225,16 @@ window.DrawingEngine = class DrawingEngine {
             // 最小距離チェック
             if (distance < 1.5) return;
             
-            // 補間描画
+            // 補間描画（修正: beginFill/drawCircle/endFillに変更）
             const steps = Math.max(1, Math.ceil(distance / 1.5));
             for (let i = 1; i <= steps; i++) {
                 const t = i / steps;
                 const px = lastPoint.x + (x - lastPoint.x) * t;
                 const py = lastPoint.y + (y - lastPoint.y) * t;
                 
-                path.graphics.circle(px, py, path.size / 2);
-                path.graphics.fill({ color: path.color, alpha: path.opacity });
+                path.graphics.beginFill(path.color, path.opacity);
+                path.graphics.drawCircle(px, py, path.size / 2);
+                path.graphics.endFill();
             }
             
             path.points.push({ x, y, size: path.size, timestamp: Date.now() });
@@ -250,11 +255,12 @@ window.DrawingEngine = class DrawingEngine {
             
             this.app.renderer.resize(newWidth, newHeight);
             
-            // マスク更新
+            // マスク更新（修正: beginFill/drawRect/endFillに変更）
             if (this.containers.camera.mask) {
                 this.containers.camera.mask.clear();
-                this.containers.camera.mask.rect(0, 0, newWidth, newHeight);
-                this.containers.camera.mask.fill(0x000000);
+                this.containers.camera.mask.beginFill(0x000000, 1);
+                this.containers.camera.mask.drawRect(0, 0, newWidth, newHeight);
+                this.containers.camera.mask.endFill();
             }
             
             // ヒットエリア更新
@@ -262,8 +268,8 @@ window.DrawingEngine = class DrawingEngine {
             
             this.log(`Canvas resized to ${newWidth}x${newHeight}`);
             
-            // リサイズ完了通知（修正: typeを追加）
-            this.mainApi?.notify('engine', {
+            // リサイズ完了通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
                 type: 'canvas-change',
                 width: newWidth,
                 height: newHeight
@@ -338,7 +344,7 @@ window.DrawingEngine = class DrawingEngine {
     }
     
     reportError(code, message, error) {
-        this.mainApi?.notify('engine', {
+        this.mainApi?.notify({
             type: 'error',
             code,
             message,

@@ -1,7 +1,9 @@
 /**
  * ファイル名: position-manager.js
+ * @provides PositionManager, パン・ズーム機能, 座標変換
+ * @requires MainController API, DrawingEngine
  * PositionManager衛星 - パン・ズーム管理、座標変換、ペン対応
- * 星型分離版 v8rev8 - 修正版
+ * 星型分離版 v8rev8 - 修正版（PIXI座標系統一・type付きイベント対応）
  */
 
 window.PositionManager = class PositionManager {
@@ -15,11 +17,13 @@ window.PositionManager = class PositionManager {
             startY: 0,
             pointerId: null,
             pointerType: null
-        };
+        }
+};;
         this.handlers = { move: null, up: null, cancel: null };
         this.updateScheduled = false;
         this.mainApi = null;
         this.ticker = null;
+        this.drawingEngine = null; // PIXIコンテナ操作のため
     }
     
     async register(mainApi) {
@@ -37,6 +41,9 @@ window.PositionManager = class PositionManager {
             if (this.ticker) {
                 this.ticker.add(() => this.updatePosition());
             }
+            
+            // DrawingEngineインスタンスの取得
+            this.drawingEngine = this.mainApi?.getSatellite?.('engine') || window.DrawingEngineInstance;
             
             this.setupPointerEvents();
             this.log('PositionManager initialized successfully');
@@ -63,8 +70,7 @@ window.PositionManager = class PositionManager {
     onPointerDown(e) {
         try {
             // MainController への参照修正
-            const spacePressed = this.mainApi?.getSatellite?.('main')?.getSpacePressed?.() || 
-                                window.futabaApp?.getSpacePressed?.() || false;
+            const spacePressed = window.futabaApp?.getSpacePressed?.() || false;
             if (!spacePressed) return;
             
             // ペン入力の圧力チェック
@@ -97,8 +103,7 @@ window.PositionManager = class PositionManager {
         
         try {
             // MainController への参照修正
-            const spacePressed = this.mainApi?.getSatellite?.('main')?.getSpacePressed?.() || 
-                                window.futabaApp?.getSpacePressed?.() || false;
+            const spacePressed = window.futabaApp?.getSpacePressed?.() || false;
             if (!spacePressed) return;
             
             // ペン入力の圧力チェック
@@ -186,44 +191,39 @@ window.PositionManager = class PositionManager {
         }
     }
     
+    // 修正版: PIXIコンテナ操作を追加したupdatePosition
     updatePosition() {
         if (!this.updateScheduled) return;
         
         try {
-            const { x, y } = this.position;
             const { targetX, targetY } = this.position;
             const { current: currentZoom, target: targetZoom } = this.zoom;
-            
-            // 位置の補間
-            if (x !== targetX || y !== targetY) {
-                this.position.x = Math.round(targetX);
-                this.position.y = Math.round(targetY);
+
+            // 補間（必要なら）
+            this.position.x = Math.round(targetX);
+            this.position.y = Math.round(targetY);
+            if (Math.abs(this.zoom.current - targetZoom) > 0.001) {
+                this.zoom.current += (targetZoom - this.zoom.current) * 0.1;
+                if (Math.abs(this.zoom.current - targetZoom) < 0.001) this.zoom.current = targetZoom;
             }
-            
-            // ズームの補間
-            if (Math.abs(currentZoom - targetZoom) > 0.001) {
-                this.zoom.current += (targetZoom - currentZoom) * 0.1;
-                if (Math.abs(this.zoom.current - targetZoom) < 0.001) {
-                    this.zoom.current = targetZoom;
+
+            // DrawingEngine のコンテナに適用する（mainApi 経由で drawing engine を取得）
+            if (this.drawingEngine && this.drawingEngine.getApi) {
+                const api = this.drawingEngine.getApi();
+                const containers = api.getContainers(); // { camera, world, ui }
+                if (containers && containers.camera) {
+                    // camera 側の transform を更新（ワールドの中心合わせなどは適宜調整）
+                    containers.camera.x = this.position.x;
+                    containers.camera.y = this.position.y;
+                    containers.camera.scale.set(this.zoom.current);
                 }
+            } else {
+                // フォールバック：従来の DOM transform（暫定）
+                const viewportCenter = { x: (window.innerWidth - 310) / 2, y: window.innerHeight / 2 };
+                const offset = { x: viewportCenter.x + this.position.x, y: viewportCenter.y + this.position.y };
+                this.container.style.transform = `translate3d(${offset.x}px, ${offset.y}px, 0) translate(-50%, -50%) scale(${this.zoom.current})`;
             }
-            
-            // Transform適用
-            const viewportCenter = {
-                x: (window.innerWidth - 310) / 2,
-                y: window.innerHeight / 2
-            };
-            
-            const offset = {
-                x: viewportCenter.x + this.position.x,
-                y: viewportCenter.y + this.position.y
-            };
-            
-            this.container.style.transform = 
-                `translate3d(${offset.x}px, ${offset.y}px, 0) translate(-50%, -50%) scale(${this.zoom.current})`;
-            this.container.style.left = '0px';
-            this.container.style.top = '0px';
-            
+
             this.updateScheduled = false;
             
         } catch (error) {
@@ -285,9 +285,21 @@ window.PositionManager = class PositionManager {
             this.state.panning = false;
             this.stopPanning();
             
-            this.container.style.transform = 'translate(-50%, -50%) scale(1)';
-            this.container.style.left = '50%';
-            this.container.style.top = '50%';
+            // PIXIコンテナもリセット
+            if (this.drawingEngine && this.drawingEngine.getApi) {
+                const api = this.drawingEngine.getApi();
+                const containers = api.getContainers();
+                if (containers && containers.camera) {
+                    containers.camera.x = 0;
+                    containers.camera.y = 0;
+                    containers.camera.scale.set(1);
+                }
+            } else {
+                // フォールバック
+                this.container.style.transform = 'translate(-50%, -50%) scale(1)';
+                this.container.style.left = '50%';
+                this.container.style.top = '50%';
+            }
             
             this.updateStatusDisplay();
             this.log('Position reset');
@@ -297,13 +309,28 @@ window.PositionManager = class PositionManager {
         }
     }
     
-    // 座標変換
+    // 修正版座標変換（PIXIのtoLocalを使用推奨だが、まず従来版を維持）
     screenToWorld(x, y) {
         try {
+            // PIXIの座標変換を使用する場合
+            if (this.drawingEngine && this.drawingEngine.getApi) {
+                const api = this.drawingEngine.getApi();
+                const containers = api.getContainers();
+                if (containers && containers.camera) {
+                    const rect = this.container.getBoundingClientRect();
+                    const localX = x - rect.left;
+                    const localY = y - rect.top;
+                    
+                    // PIXI の toLocal を使って変換
+                    const worldPoint = containers.camera.toLocal({ x: localX, y: localY });
+                    return { x: worldPoint.x, y: worldPoint.y };
+                }
+            }
+            
+            // フォールバック：従来の座標変換
             const rect = this.container.getBoundingClientRect();
             const zoom = this.zoom.current;
             
-            // スクリーン座標をキャンバス座標に変換
             const canvasX = (x - rect.left) / zoom;
             const canvasY = (y - rect.top) / zoom;
             
@@ -317,10 +344,24 @@ window.PositionManager = class PositionManager {
     
     worldToScreen(x, y) {
         try {
+            // PIXIの座標変換を使用する場合
+            if (this.drawingEngine && this.drawingEngine.getApi) {
+                const api = this.drawingEngine.getApi();
+                const containers = api.getContainers();
+                if (containers && containers.camera) {
+                    const screenPoint = containers.camera.toGlobal({ x, y });
+                    const rect = this.container.getBoundingClientRect();
+                    return { 
+                        x: screenPoint.x + rect.left, 
+                        y: screenPoint.y + rect.top 
+                    };
+                }
+            }
+            
+            // フォールバック：従来の座標変換
             const rect = this.container.getBoundingClientRect();
             const zoom = this.zoom.current;
             
-            // ワールド座標をスクリーン座標に変換
             const screenX = rect.left + x * zoom;
             const screenY = rect.top + y * zoom;
             
@@ -407,7 +448,7 @@ window.PositionManager = class PositionManager {
     }
     
     reportError(code, message, error) {
-        this.mainApi?.notify('position', {
+        this.mainApi?.notify({
             type: 'error',
             code,
             message,
@@ -432,4 +473,3 @@ window.PositionManager = class PositionManager {
             stopPanning: () => this.stopPanning()
         };
     }
-};
