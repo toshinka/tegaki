@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev11 - 三分割星型運用版（カメラ移動修正版）</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev5 - 三分割星型運用版（改修版）</title>
     <style>
         * {
             margin: 0;
@@ -499,7 +499,7 @@
         <div class="status-group">
             <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
             <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
-            <div class="status-item">Layer: <span id="current-layer">背景</span></div>
+            <div class="status-item">Layer: <span id="current-layer">レイヤー1</span></div>
             <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
             <div class="status-item">Camera: <span id="camera-position">x: 0, y: 0</span></div>
         </div>
@@ -511,28 +511,26 @@
 
     <!-- Library Dependencies -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
     
     <!-- Satellite Modules -->
+    <script src="error-service.js"></script>
     <script src="engine-position.js"></script>
     <script src="layer-tool-ui.js"></script>
-    <script src="error-service.js"></script>
     
     <script>
         /**
          * @module   MainController
          * @role     衛星管理・イベント仲介・状態確定・記録
          * @depends  engine-position.js, layer-tool-ui.js, error-service.js
-         * @provides registerSatellite(), safeNotify(), startApplication()
-         * @notes    衛星間直接参照禁止、イベント型/payload統一、座標系管理、循環参照排除
+         * @provides registerSatellite(), emit(), on(), startApplication()
+         * @notes    座標系一元管理、循環参照排除、カメラ移動レイヤー追従、責務表遵守
          * @flow     UI操作 → MainController → 衛星 → MainController → UI更新
          * @memory   衛星管理、アプリ状態、キーボード状態（spacePressed）
-         * @revision カメラ移動統合修正 - EnginePosition.setCamera()必須、screenToWorld座標変換統一
          */
         
         // Application Configuration
         const APP_CONFIG = {
-            version: '8.0.11-camera-movement-fixed',
+            version: '8.0.10-rev5-fixed',
             canvas: { width: 400, height: 400 },
             rendering: { antialias: true, resolution: 1 },
             debug: false
@@ -545,13 +543,10 @@
         // Main Controller - 主星（Host for all satellites）
         const MainController = (() => {
             const satellites = {};
+            const listeners = {};
             const appState = {
                 spacePressed: false,
-                initialized: false,
-                // カメラ移動統合のための状態管理
-                cameraMoving: false,
-                dragStartPosition: { x: 0, y: 0 },
-                cameraDragStart: { x: 0, y: 0 }
+                initialized: false
             };
             
             function registerSatellite(name, module) {
@@ -559,20 +554,16 @@
                 log(`[MainController] Satellite registered: ${name}`);
             }
             
-            /**
-             * 循環参照を安全に処理してイベントを通知
-             */
-            function safeNotify(type, payload = {}) {
+            // EventEmitter pattern for unified event handling
+            function emit(event, payload = {}) {
+                // Circular reference safe payload
                 let safePayload;
                 try {
-                    // 循環参照チェック
                     JSON.stringify(payload);
                     safePayload = payload;
                 } catch (e) {
-                    console.warn(`[MainController] Event payload contains circular references: ${type}`);
-                    // 循環参照除去：ID・座標のみコピー
+                    console.warn(`[MainController] Circular reference in event: ${event}`);
                     safePayload = JSON.parse(JSON.stringify(payload, (key, value) => {
-                        // parent, children, graphics などの循環参照を除外
                         if (key === 'parent' || key === 'children' || key === 'graphics' || 
                             (typeof value === 'object' && value && value._pixi)) {
                             return undefined;
@@ -581,51 +572,33 @@
                     }));
                 }
                 
+                if (listeners[event]) {
+                    listeners[event].forEach(fn => {
+                        try {
+                            fn(safePayload);
+                        } catch (error) {
+                            console.error(`[MainController] Error in listener for ${event}:`, error);
+                        }
+                    });
+                }
+                
                 // Notify all satellites
                 for (const [name, satellite] of Object.entries(satellites)) {
                     if (satellite.onEvent) {
                         try {
-                            satellite.onEvent({ type, payload: safePayload });
+                            satellite.onEvent({ type: event, payload: safePayload });
                         } catch (error) {
                             console.error(`[MainController] Error notifying ${name}:`, error);
                         }
                     }
                 }
                 
-                log(`[MainController] Event notified: ${type}`, safePayload);
+                log(`[MainController] Event emitted: ${event}`, safePayload);
             }
             
-            /**
-             * スクリーン座標 → ワールド座標変換（改修案対応）
-             */
-            function screenToWorld(x, y) {
-                if (satellites.enginePosition && satellites.enginePosition.screenToWorld) {
-                    return satellites.enginePosition.screenToWorld({ x, y });
-                }
-                // フォールバックなしで直接カメラオフセット適用
-                const camera = getCamera();
-                return { x: x + camera.x, y: y + camera.y };
-            }
-            
-            /**
-             * カメラ位置取得（改修案対応）
-             */
-            function getCamera() {
-                if (satellites.enginePosition && satellites.enginePosition.getCamera) {
-                    return satellites.enginePosition.getCamera();
-                }
-                return { x: 0, y: 0 };
-            }
-            
-            /**
-             * カメラ移動実行（改修案対応 - 必ずEnginePosition.setCamera()を通す）
-             */
-            function setCamera(x, y) {
-                if (satellites.enginePosition && satellites.enginePosition.setCamera) {
-                    satellites.enginePosition.setCamera(x, y);
-                } else {
-                    console.warn('[MainController] EnginePosition.setCamera() not available');
-                }
+            function on(event, fn) {
+                listeners[event] = listeners[event] || [];
+                listeners[event].push(fn);
             }
             
             async function startApplication() {
@@ -633,61 +606,54 @@
                 
                 try {
                     // Library check
-                    if (!window.PIXI || !window.gsap) {
-                        throw new Error('Required libraries not found');
+                    if (!window.PIXI) {
+                        throw new Error('PixiJS not found');
                     }
                     
-                    // Initialize satellites in correct order
+                    // Initialize satellites in order
                     await satellites.errorService.init();
                     await satellites.enginePosition.init(document.getElementById('drawing-canvas'));
                     await satellites.layerToolUI.init();
                     
-                    // Camera初期化でオフセット防止（重要な修正点）
-                    setCamera(0, 0);
-                    
+                    // Setup input handlers
                     setupInputHandlers();
                     startSystemMonitor();
                     
                     appState.initialized = true;
-                    console.log('🎨 Futaba Drawing Tool v8rev11 (Camera Movement Fixed) - Ready!');
+                    console.log('🎨 Futaba Drawing Tool v8rev5 (Fixed) - Ready!');
                     
                 } catch (error) {
                     console.error('💥 Application startup failed:', error);
-                    if (satellites.errorService) {
-                        satellites.errorService.reportError('APP_START_FAILED', error.message);
-                    }
+                    satellites.errorService?.reportError('APP_START_FAILED', error.message);
                 }
             }
             
             function setupInputHandlers() {
-                // キーボード入力統合（修正版）
+                // Space key for camera movement
                 document.addEventListener('keydown', (e) => {
                     if (e.code === 'Space') {
                         appState.spacePressed = true;
-                        safeNotify('space-pressed', { pressed: true });
+                        emit('space-pressed', { pressed: true });
                         e.preventDefault();
                     }
                     
+                    // Camera reset
                     if (e.code === 'Home') {
-                        safeNotify('camera-reset-requested');
+                        emit('camera-reset');
                         e.preventDefault();
                     }
                     
-                    // Space + 矢印キーでカメラ移動（改修案対応）
+                    // Camera movement with arrows
                     if (appState.spacePressed) {
                         const moveMap = {
-                            'ArrowLeft': [10, 0],
-                            'ArrowRight': [-10, 0],
-                            'ArrowUp': [0, 10],
-                            'ArrowDown': [0, -10]
+                            'ArrowLeft': { dx: 10, dy: 0 },
+                            'ArrowRight': { dx: -10, dy: 0 },
+                            'ArrowUp': { dx: 0, dy: 10 },
+                            'ArrowDown': { dx: 0, dy: -10 }
                         };
                         
                         if (moveMap[e.code]) {
-                            const camera = getCamera();
-                            setCamera(
-                                camera.x + moveMap[e.code][0], 
-                                camera.y + moveMap[e.code][1]
-                            );
+                            emit('camera-move', moveMap[e.code]);
                             e.preventDefault();
                         }
                     }
@@ -696,134 +662,13 @@
                 document.addEventListener('keyup', (e) => {
                     if (e.code === 'Space') {
                         appState.spacePressed = false;
-                        safeNotify('space-released', { pressed: false });
+                        emit('space-released', { pressed: false });
                     }
                 });
                 
                 window.addEventListener('blur', () => {
                     appState.spacePressed = false;
-                    safeNotify('space-released', { pressed: false });
-                });
-                
-                // マウス/タッチ入力統合（改修案対応 - 座標変換統一）
-                setupCanvasInteraction();
-            }
-            
-            /**
-             * キャンバス操作統合設定（改修案の重要な修正点）
-             * - 必ずscreenToWorld座標変換を通す
-             * - カメラ移動はEnginePosition.setCamera()を必須使用
-             * - Space押下時のカメラ移動とペン入力を適切に分離
-             */
-            function setupCanvasInteraction() {
-                const canvasContainer = document.getElementById('canvas-container');
-                if (!canvasContainer) return;
-                
-                let drawing = false;
-                let lastWorldPos = null;
-                
-                // PointerDown: 描画開始 or カメラ移動開始
-                canvasContainer.addEventListener('pointerdown', (e) => {
-                    if (e.pointerType === 'pen' && e.pressure === 0) return;
-                    
-                    const screenPos = { x: e.offsetX, y: e.offsetY };
-                    const worldPos = screenToWorld(screenPos.x, screenPos.y);
-                    
-                    if (appState.spacePressed) {
-                        // カメラ移動開始（改修案対応）
-                        appState.cameraMoving = true;
-                        appState.dragStartPosition = { x: e.clientX, y: e.clientY };
-                        const camera = getCamera();
-                        appState.cameraDragStart = { x: camera.x, y: camera.y };
-                        e.preventDefault();
-                    } else {
-                        // 描画開始（改修案対応 - ワールド座標で通知）
-                        drawing = true;
-                        lastWorldPos = worldPos;
-                        safeNotify('stroke-start-requested', {
-                            x: worldPos.x,
-                            y: worldPos.y,
-                            pressure: e.pressure || 1.0,
-                            pointerType: e.pointerType || 'mouse'
-                        });
-                    }
-                });
-                
-                // PointerMove: 描画継続 or カメラ移動継続
-                canvasContainer.addEventListener('pointermove', (e) => {
-                    if (e.pointerType === 'pen' && e.pressure === 0) return;
-                    
-                    const screenPos = { x: e.offsetX, y: e.offsetY };
-                    const worldPos = screenToWorld(screenPos.x, screenPos.y);
-                    
-                    // 座標表示更新（改修案対応 - ワールド座標で表示）
-                    safeNotify('coordinates-changed', {
-                        x: worldPos.x,
-                        y: worldPos.y
-                    });
-                    
-                    if (appState.cameraMoving && appState.spacePressed) {
-                        // カメラ移動継続（改修案対応）
-                        const dx = e.clientX - appState.dragStartPosition.x;
-                        const dy = e.clientY - appState.dragStartPosition.y;
-                        
-                        setCamera(
-                            appState.cameraDragStart.x - dx,
-                            appState.cameraDragStart.y - dy
-                        );
-                        e.preventDefault();
-                    } else if (drawing && !appState.spacePressed) {
-                        // 描画継続（改修案対応 - ワールド座標で通知）
-                        if (lastWorldPos) {
-                            safeNotify('stroke-continue-requested', {
-                                x: worldPos.x,
-                                y: worldPos.y,
-                                pressure: e.pressure || 1.0,
-                                pointerType: e.pointerType || 'mouse'
-                            });
-                        }
-                        lastWorldPos = worldPos;
-                    }
-                });
-                
-                // PointerUp: 描画終了 or カメラ移動終了
-                canvasContainer.addEventListener('pointerup', (e) => {
-                    if (appState.cameraMoving) {
-                        appState.cameraMoving = false;
-                    }
-                    
-                    if (drawing && !appState.spacePressed) {
-                        drawing = false;
-                        lastWorldPos = null;
-                        safeNotify('stroke-end-requested', {});
-                    }
-                });
-                
-                // PointerCancel/PointerLeave: 強制終了
-                canvasContainer.addEventListener('pointercancel', (e) => {
-                    appState.cameraMoving = false;
-                    if (drawing) {
-                        drawing = false;
-                        lastWorldPos = null;
-                        safeNotify('stroke-end-requested', {});
-                    }
-                });
-                
-                canvasContainer.addEventListener('pointerleave', (e) => {
-                    appState.cameraMoving = false;
-                    if (drawing) {
-                        drawing = false;
-                        lastWorldPos = null;
-                        safeNotify('stroke-end-requested', {});
-                    }
-                });
-                
-                // ホイールスクロールでズーム（将来拡張用）
-                canvasContainer.addEventListener('wheel', (e) => {
-                    if (appState.spacePressed) {
-                        // 将来的にズーム機能追加時に使用
-                        e.preventDefault();
-                    }
+                    emit('space-released', { pressed: false });
                 });
             }
             
@@ -858,39 +703,24 @@
             
             return {
                 registerSatellite,
-                safeNotify,
+                emit,
+                on,
                 startApplication,
-                getAppState,
-                // 改修案対応で追加されたメソッド
-                screenToWorld,
-                getCamera,
-                setCamera
+                getAppState
             };
         })();
-        
-        // Library Check and Bootstrap
-        function checkLibraries() {
-            const required = { pixi: window.PIXI, gsap: window.gsap };
-            return Object.entries(required).every(([name, lib]) => {
-                if (!lib) {
-                    console.error(`❌ Library ${name} not found`);
-                    return false;
-                }
-                return true;
-            });
-        }
         
         // Application Bootstrap
         window.addEventListener('DOMContentLoaded', async () => {
             try {
-                if (!checkLibraries()) {
-                    throw new Error('Library initialization failed');
+                if (!window.PIXI) {
+                    throw new Error('PixiJS not loaded');
                 }
                 
                 // Register satellites
+                MainController.registerSatellite('errorService', ErrorService);
                 MainController.registerSatellite('enginePosition', EnginePosition);
                 MainController.registerSatellite('layerToolUI', LayerToolUI);
-                MainController.registerSatellite('errorService', ErrorService);
                 
                 // Start application
                 await MainController.startApplication();

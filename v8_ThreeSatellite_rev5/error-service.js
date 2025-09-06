@@ -1,33 +1,30 @@
 /**
  * @module   ErrorService
- * @role     エラー検知・通知
+ * @role     エラー検知・通知・ログ管理
  * @depends  MainController
- * @provides reportError(code, details), showErrorNotification(msg)
- * @notes    payload に循環参照を含めない、全イベント型統一
- * @flow     衛星内部エラー → MainController → UI表示 / ログ
- * @memory   発生済みエラー履歴
+ * @provides init(), reportError(code, details), logError(event, detail)
+ * @notes    循環参照排除、フォールバック禁止、エラー隠蔽禁止、見通し重視
+ * @flow     衛星内部エラー → MainController → 強制停止またはログ通知
+ * @memory   エラー履歴（最小限）
  */
 
 const ErrorService = (() => {
-    let errorHistory = [];
     let initialized = false;
+    let errorHistory = [];
     
-    // Error codes and their descriptions
+    // Error codes - 改修案に沿った定義
     const ERROR_CODES = {
-        'APP_START_FAILED': 'アプリケーション開始エラー',
-        'ENGINE_INIT_FAILED': '描画エンジン初期化エラー',
-        'LAYER_CREATE_FAILED': 'レイヤー作成エラー',
-        'UI_SETUP_FAILED': 'UI設定エラー',
-        'CANVAS_RESIZE_FAILED': 'キャンバスリサイズエラー',
-        'DRAWING_OPERATION_FAILED': '描画操作エラー',
-        'LIBRARY_LOAD_FAILED': 'ライブラリ読み込みエラー',
-        'COORDINATE_CONVERSION_FAILED': '座標変換エラー',
-        'MEMORY_ALLOCATION_FAILED': 'メモリ割り当てエラー',
-        'CIRCULAR_REFERENCE_ERROR': '循環参照エラー',
-        'EVENT_PAYLOAD_ERROR': 'イベントpayloadエラー',
-        'LAYER_CONTAINER_ERROR': 'レイヤーContainer管理エラー',
+        'APP_START_FAILED': 'アプリケーション開始失敗',
+        'ENGINE_INIT_FAILED': '描画エンジン初期化失敗',
+        'LAYER_CREATE_FAILED': 'レイヤー作成失敗',
+        'UI_SETUP_FAILED': 'UI設定失敗',
+        'CANVAS_RESIZE_FAILED': 'キャンバスリサイズ失敗',
+        'DRAWING_OPERATION_FAILED': '描画操作失敗',
         'CAMERA_SYNC_ERROR': 'Camera同期エラー',
+        'LAYER_CONTAINER_ERROR': 'レイヤーContainer管理エラー',
         'ACTIVE_LAYER_ERROR': 'アクティブレイヤー制御エラー',
+        'COORDINATE_CONVERSION_ERROR': '座標変換エラー',
+        'CIRCULAR_REFERENCE_ERROR': '循環参照エラー',
         'UNKNOWN_ERROR': '不明なエラー'
     };
     
@@ -46,7 +43,7 @@ const ErrorService = (() => {
     function setupGlobalErrorHandlers() {
         // Global JavaScript errors
         window.addEventListener('error', (event) => {
-            reportError('UNKNOWN_ERROR', {
+            logError('GLOBAL_JS_ERROR', {
                 message: event.message,
                 filename: event.filename,
                 line: event.lineno,
@@ -56,153 +53,174 @@ const ErrorService = (() => {
         
         // Unhandled promise rejections
         window.addEventListener('unhandledrejection', (event) => {
-            reportError('UNKNOWN_ERROR', {
+            logError('UNHANDLED_PROMISE_REJECTION', {
                 message: 'Unhandled Promise Rejection',
                 reason: event.reason?.toString() || 'Unknown reason'
             });
         });
-        
-        // PixiJS specific error handling
-        window.addEventListener('pixi-error', (event) => {
-            reportError('DRAWING_OPERATION_FAILED', {
-                message: 'PixiJS Error',
-                detail: event.detail || 'Unknown PixiJS error'
-            });
-        });
     }
     
+    /**
+     * エラー報告 - フェイルセーフ禁止、強制停止または通知ログ
+     */
     function reportError(code, details) {
         if (!initialized) {
-            console.error('[ErrorService] Not initialized, logging directly:', code, details);
+            console.error('[ErrorService] Not initialized:', code, details);
             return;
         }
         
         const timestamp = new Date().toISOString();
+        const description = ERROR_CODES[code] || ERROR_CODES['UNKNOWN_ERROR'];
+        
+        // 循環参照を安全に処理
+        const safeDetails = sanitizeDetails(details);
+        
         const errorEntry = {
             code,
-            details: sanitizeErrorDetails(details),
-            timestamp,
-            description: ERROR_CODES[code] || ERROR_CODES['UNKNOWN_ERROR']
+            description,
+            details: safeDetails,
+            timestamp
         };
         
+        // エラー履歴保存（最大50件）
         errorHistory.push(errorEntry);
-        
-        // Keep only the last 50 errors to prevent memory bloat
         if (errorHistory.length > 50) {
             errorHistory = errorHistory.slice(-50);
         }
         
-        // Log to console
-        console.error(`[ErrorService] ${errorEntry.description}:`, errorEntry.details);
-        
-        // Show user notification for critical errors
+        // 重要なエラーは強制停止
         if (isCriticalError(code)) {
-            showErrorNotification(errorEntry.description, errorEntry.details);
+            console.error(`[ErrorService] CRITICAL ERROR - ${description}:`, safeDetails);
+            showCriticalErrorDialog(description, safeDetails);
+            // フォールバック禁止 - 重要なエラーは処理を止める
+            throw new Error(`Critical error: ${code} - ${description}`);
+        } else {
+            console.warn(`[ErrorService] ${description}:`, safeDetails);
+            showWarningNotification(description);
         }
         
-        // Notify MainController - 循環参照なしで通知
-        window.MainController?.safeNotify('error-reported', {
+        // MainController経由で通知
+        window.MainController?.emit('error-reported', {
             code,
-            description: errorEntry.description,
+            description,
             timestamp,
-            isCritical: isCriticalError(code),
-            // detailsは含めない（循環参照の可能性があるため）
-            hasDetails: errorEntry.details ? true : false
+            isCritical: isCriticalError(code)
         });
     }
     
     /**
-     * 循環参照を安全に処理してエラー詳細を無害化
+     * 循環参照を安全に除去
      */
-    function sanitizeErrorDetails(details) {
+    function sanitizeDetails(details) {
         try {
             if (typeof details === 'string') {
                 return details;
             }
             
             if (typeof details === 'object' && details !== null) {
-                const sanitized = {};
-                
-                for (const [key, value] of Object.entries(details)) {
-                    if (typeof value === 'string' || typeof value === 'number' || typeof value === 'boolean') {
-                        sanitized[key] = value;
-                    } else if (value instanceof Error) {
-                        sanitized[key] = {
-                            name: value.name,
-                            message: value.message,
-                            stack: value.stack?.split('\n').slice(0, 5).join('\n') // スタックトレース短縮
-                        };
-                    } else if (typeof value === 'object') {
-                        // 循環参照や PixiJS オブジェクトを除去
-                        try {
-                            // JSON.stringifyで循環参照をチェック
-                            const testStringify = JSON.stringify(value);
-                            sanitized[key] = JSON.parse(testStringify);
-                        } catch (e) {
-                            // 循環参照があるか、非シリアライズ可能な場合
-                            if (value && value.constructor) {
-                                sanitized[key] = `[Object - ${value.constructor.name}]`;
-                            } else {
-                                sanitized[key] = '[Object - cannot serialize]';
-                            }
-                        }
-                    } else {
-                        sanitized[key] = String(value);
-                    }
-                }
-                
-                return sanitized;
+                // JSON.stringifyで循環参照をチェック
+                JSON.stringify(details);
+                return details;
             }
             
             return String(details);
-        } catch (error) {
-            return 'Error details could not be sanitized';
+        } catch (e) {
+            // 循環参照がある場合
+            return {
+                error: 'Circular reference detected in error details',
+                originalType: typeof details,
+                stringified: String(details).substring(0, 100)
+            };
         }
     }
     
+    /**
+     * クリティカルエラー判定
+     */
     function isCriticalError(code) {
-        const criticalErrors = [
+        const criticalCodes = [
             'APP_START_FAILED',
             'ENGINE_INIT_FAILED',
-            'LIBRARY_LOAD_FAILED',
-            'MEMORY_ALLOCATION_FAILED',
-            'CIRCULAR_REFERENCE_ERROR',
+            'CAMERA_SYNC_ERROR',
             'LAYER_CONTAINER_ERROR',
-            'CAMERA_SYNC_ERROR'
+            'CIRCULAR_REFERENCE_ERROR'
         ];
-        
-        return criticalErrors.includes(code);
+        return criticalCodes.includes(code);
     }
     
-    function showErrorNotification(title, details) {
-        // Create temporary notification element
-        const notification = document.createElement('div');
-        notification.className = 'error-notification';
-        notification.innerHTML = `
-            <div class="error-notification-content">
-                <div class="error-title">⚠️ ${title}</div>
-                <div class="error-message">${getDisplayMessage(details)}</div>
-                <button class="error-close" onclick="this.parentElement.parentElement.remove()">閉じる</button>
+    /**
+     * クリティカルエラーダイアログ表示
+     */
+    function showCriticalErrorDialog(title, details) {
+        const dialog = document.createElement('div');
+        dialog.style.cssText = `
+            position: fixed;
+            top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(128, 0, 0, 0.9);
+            color: white;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            z-index: 99999;
+            font-family: monospace;
+            font-size: 14px;
+        `;
+        
+        dialog.innerHTML = `
+            <div style="text-align: center; max-width: 600px; padding: 40px;">
+                <h2 style="color: #ffcccc; margin-bottom: 20px;">💥 重大エラー</h2>
+                <p style="margin-bottom: 20px;">${title}</p>
+                <pre style="background: rgba(0,0,0,0.3); padding: 20px; border-radius: 8px; text-align: left; overflow: auto;">
+${JSON.stringify(details, null, 2).substring(0, 500)}
+                </pre>
+                <p style="margin-top: 20px; color: #ffcccc;">
+                    アプリケーションを再読み込みしてください
+                </p>
+                <button onclick="location.reload()" style="
+                    margin-top: 20px; padding: 10px 20px; 
+                    background: white; color: #800000; 
+                    border: none; border-radius: 4px; 
+                    cursor: pointer; font-weight: bold;
+                ">再読み込み</button>
             </div>
         `;
         
-        // Add styles
+        document.body.appendChild(dialog);
+    }
+    
+    /**
+     * 警告通知表示
+     */
+    function showWarningNotification(message) {
+        const notification = document.createElement('div');
         notification.style.cssText = `
             position: fixed;
-            top: 20px;
-            right: 20px;
-            z-index: 10000;
+            top: 20px; right: 20px;
             background: var(--futaba-cream, #f0e0d6);
             border: 2px solid var(--futaba-maroon, #800000);
-            border-radius: 12px;
+            border-radius: 8px;
             padding: 16px;
             box-shadow: 0 4px 16px rgba(128, 0, 0, 0.3);
             max-width: 400px;
+            z-index: 10000;
             font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            font-size: 14px;
+            color: var(--futaba-maroon, #800000);
             animation: slideIn 0.3s ease-out;
         `;
         
-        // Add CSS animation
+        notification.innerHTML = `
+            <div style="display: flex; align-items: center; gap: 8px;">
+                <span style="font-size: 16px;">⚠️</span>
+                <span>${message}</span>
+                <button onclick="this.parentElement.parentElement.remove()" style="
+                    background: none; border: none; 
+                    cursor: pointer; font-size: 16px;
+                    margin-left: auto;
+                ">×</button>
+            </div>
+        `;
+        
         if (!document.getElementById('error-notification-styles')) {
             const styles = document.createElement('style');
             styles.id = 'error-notification-styles';
@@ -211,211 +229,104 @@ const ErrorService = (() => {
                     from { transform: translateX(100%); opacity: 0; }
                     to { transform: translateX(0); opacity: 1; }
                 }
-                .error-notification-content .error-title {
-                    color: var(--futaba-maroon, #800000);
-                    font-weight: 600;
-                    margin-bottom: 8px;
-                    font-size: 14px;
-                }
-                .error-notification-content .error-message {
-                    color: var(--text-primary, #2c1810);
-                    font-size: 12px;
-                    margin-bottom: 12px;
-                    line-height: 1.4;
-                }
-                .error-notification-content .error-close {
-                    background: var(--futaba-maroon, #800000);
-                    color: white;
-                    border: none;
-                    padding: 4px 12px;
-                    border-radius: 4px;
-                    font-size: 12px;
-                    cursor: pointer;
-                    transition: background-color 0.2s;
-                }
-                .error-notification-content .error-close:hover {
-                    background: var(--futaba-light-maroon, #aa5a56);
-                }
             `;
             document.head.appendChild(styles);
         }
         
         document.body.appendChild(notification);
         
-        // Auto-remove after 10 seconds
+        // 5秒後に自動削除
         setTimeout(() => {
             if (notification.parentElement) {
                 notification.remove();
             }
-        }, 10000);
+        }, 5000);
     }
     
-    function getDisplayMessage(details) {
-        if (typeof details === 'string') {
-            return details;
-        }
-        
-        if (typeof details === 'object' && details !== null) {
-            if (details.message) {
-                return details.message;
-            }
-            
-            // Try to create a readable message from object properties
-            const keys = Object.keys(details).slice(0, 3); // 最初の3つのキーのみ表示
-            if (keys.length > 0) {
-                return keys.map(key => `${key}: ${details[key]}`).join(', ');
-            }
-        }
-        
-        return 'エラーの詳細情報を取得できませんでした';
-    }
-    
-    function getErrorHistory() {
-        return [...errorHistory];
-    }
-    
-    function clearErrorHistory() {
-        errorHistory = [];
-        window.MainController?.safeNotify('error-history-cleared', {});
-    }
-    
-    function getErrorStats() {
-        const stats = {
-            total: errorHistory.length,
-            byCode: {},
-            recent: errorHistory.slice(-10).map(error => ({
-                code: error.code,
-                description: error.description,
-                timestamp: error.timestamp,
-                isCritical: isCriticalError(error.code)
-            }))
+    /**
+     * エラーログ記録 - イベント型とdetailを記録
+     */
+    function logError(event, detail) {
+        const timestamp = new Date().toISOString();
+        const logEntry = {
+            event,
+            detail: sanitizeDetails(detail),
+            timestamp
         };
         
-        errorHistory.forEach(error => {
-            stats.byCode[error.code] = (stats.byCode[error.code] || 0) + 1;
-        });
+        console.error(`[ErrorService] ${event}:`, logEntry.detail);
         
-        return stats;
-    }
-    
-    function logDebugInfo(category, message, data = {}) {
-        if (APP_CONFIG?.debug) {
-            console.log(`[Debug:${category}]`, message, sanitizeErrorDetails(data));
-        }
-    }
-    
-    function logPerformanceWarning(operation, duration, threshold = 100) {
-        if (duration > threshold) {
-            reportError('PERFORMANCE_WARNING', {
-                operation,
-                duration: `${duration}ms`,
-                threshold: `${threshold}ms`
-            });
-        }
-    }
-    
-    /**
-     * 循環参照エラーを専用に報告
-     */
-    function reportCircularReference(eventType, objectInfo = {}) {
-        reportError('CIRCULAR_REFERENCE_ERROR', {
-            eventType,
-            message: `Event payload contains circular references: ${eventType}`,
-            ...sanitizeErrorDetails(objectInfo)
+        // MainController経由で通知
+        window.MainController?.emit('error-logged', {
+            event,
+            timestamp,
+            hasDetail: logEntry.detail ? true : false
         });
     }
     
     /**
-     * イベントpayloadエラーを専用に報告
+     * 警告ログ
      */
-    function reportEventPayloadError(eventType, error) {
-        reportError('EVENT_PAYLOAD_ERROR', {
-            eventType,
-            message: `Event payload error: ${eventType}`,
-            error: error.message || String(error)
-        });
+    function warn(message) {
+        console.warn(`[ErrorService] ${message}`);
     }
     
     /**
-     * レイヤーContainer管理エラーを専用に報告
-     */
-    function reportLayerContainerError(layerId, operation, error) {
-        reportError('LAYER_CONTAINER_ERROR', {
-            layerId,
-            operation,
-            message: `Layer container error: ${operation} for layer ${layerId}`,
-            error: error?.message || String(error)
-        });
-    }
-    
-    /**
-     * Camera同期エラーを専用に報告
+     * 専用エラー報告メソッド群
      */
     function reportCameraSyncError(operation, cameraState, error) {
         reportError('CAMERA_SYNC_ERROR', {
             operation,
             cameraX: cameraState?.x,
             cameraY: cameraState?.y,
-            message: `Camera sync error: ${operation}`,
             error: error?.message || String(error)
         });
     }
     
-    /**
-     * アクティブレイヤー制御エラーを専用に報告
-     */
+    function reportLayerContainerError(layerId, operation, error) {
+        reportError('LAYER_CONTAINER_ERROR', {
+            layerId,
+            operation,
+            error: error?.message || String(error)
+        });
+    }
+    
     function reportActiveLayerError(operation, layerId, error) {
         reportError('ACTIVE_LAYER_ERROR', {
             operation,
             layerId,
-            message: `Active layer error: ${operation} for layer ${layerId}`,
             error: error?.message || String(error)
         });
     }
     
-    // Event Handler from MainController
+    function reportCircularReference(eventType, objectInfo = {}) {
+        reportError('CIRCULAR_REFERENCE_ERROR', {
+            eventType,
+            objectInfo: sanitizeDetails(objectInfo)
+        });
+    }
+    
+    /**
+     * エラー履歴取得
+     */
+    function getErrorHistory() {
+        return [...errorHistory];
+    }
+    
+    /**
+     * エラー履歴クリア
+     */
+    function clearErrorHistory() {
+        errorHistory = [];
+        window.MainController?.emit('error-history-cleared');
+    }
+    
+    // Event handler from MainController
     function onEvent(event) {
         switch (event.type) {
-            case 'performance-measure':
-                if (event.payload?.operation && event.payload?.duration) {
-                    logPerformanceWarning(
-                        event.payload.operation, 
-                        event.payload.duration,
-                        event.payload.threshold
-                    );
-                }
-                break;
-                
-            case 'debug-log-requested':
-                if (event.payload?.category && event.payload?.message) {
-                    logDebugInfo(
-                        event.payload.category,
-                        event.payload.message,
-                        event.payload.data
-                    );
-                }
-                break;
-                
-            case 'error-history-request':
-                window.MainController?.safeNotify('error-history-response', {
-                    history: getErrorHistory(),
-                    stats: getErrorStats()
-                });
-                break;
-                
-            case 'circular-reference-detected':
-                if (event.payload?.eventType) {
-                    reportCircularReference(event.payload.eventType, event.payload.objectInfo);
-                }
-                break;
-                
-            case 'layer-container-error':
-                if (event.payload?.layerId && event.payload?.operation) {
-                    reportLayerContainerError(
-                        event.payload.layerId,
-                        event.payload.operation,
-                        event.payload.error
-                    );
+            case 'error-occurred':
+                if (event.payload?.source && event.payload?.error) {
+                    logError(`${event.payload.source}_ERROR`, event.payload.error);
                 }
                 break;
                 
@@ -424,6 +335,16 @@ const ErrorService = (() => {
                     reportCameraSyncError(
                         event.payload.operation,
                         event.payload.cameraState,
+                        event.payload.error
+                    );
+                }
+                break;
+                
+            case 'layer-container-error':
+                if (event.payload?.layerId && event.payload?.operation) {
+                    reportLayerContainerError(
+                        event.payload.layerId,
+                        event.payload.operation,
                         event.payload.error
                     );
                 }
@@ -438,6 +359,15 @@ const ErrorService = (() => {
                     );
                 }
                 break;
+                
+            case 'circular-reference-detected':
+                if (event.payload?.eventType) {
+                    reportCircularReference(
+                        event.payload.eventType,
+                        event.payload.objectInfo
+                    );
+                }
+                break;
         }
     }
     
@@ -445,17 +375,14 @@ const ErrorService = (() => {
     return {
         init,
         reportError,
-        showErrorNotification,
+        logError,
+        warn,
+        reportCameraSyncError,
+        reportLayerContainerError,
+        reportActiveLayerError,
+        reportCircularReference,
         getErrorHistory,
         clearErrorHistory,
-        getErrorStats,
-        logDebugInfo,
-        logPerformanceWarning,
-        reportCircularReference,
-        reportEventPayloadError,
-        reportLayerContainerError,
-        reportCameraSyncError,
-        reportActiveLayerError,
         onEvent
     };
 })();

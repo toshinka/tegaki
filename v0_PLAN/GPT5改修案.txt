@@ -1,199 +1,442 @@
-🔎 原因の切り分け
+# 改修計画書 v8_ThreeSatellite_rev4 → rev5
 
-main.html のイベントループ
+## 1. 改修目的
+- ペン描画・消去は正常化済みだが、以下の問題が残っている：
+  1. カメラ移動が「カメラのみ移動」状態で、描画内容と同期していない。
+  2. レイヤー層の独立性が崩れ、レイヤーを切り替えても stroke が共有されてしまう。
+  3. イベントフローの責務がファイル間で曖昧になり、座標管理が分散。
 
-mousemove / pointermove で呼ばれる座標更新が
-worldToScreen / screenToWorld を経由していない。
+- 本改修の目的：
+  - **座標系の一元管理 (PositionManager経由)**
+  - **カメラ移動と全レイヤーの追従**
+  - **レイヤー切替の明確化と stroke 管理の分離**
+  - **責務表・イベントフローに沿った一貫性ある実装**
 
-そのため「ストロークはワールド座標」「カメラ移動はコンテナ座標」という分離が保たれていない。
+---
 
-MainController → EnginePosition 呼び出し
+## 2. 現状の課題点
 
-カメラ移動を layer.position でやっていた時代の呼び出しが残っている。
+### 2.1 カメラ移動
+- `cameraContainer` のみが動き、各レイヤーの `position` が同期していない。
+- `screenToWorld` が UI 側と描画側で不一致を起こす可能性。
 
-それが cameraContainer.position に統合されていない。
+### 2.2 レイヤー管理
+- `activeLayer` 切替時に stroke が共有され、レイヤー独立性が消失。
+- `LayerManager` のみで state を保持し、描画エンジンに反映されていない。
 
-レイヤー生成
+### 2.3 イベントフローの不足
+- main.html のイベントハンドラから PositionManager を飛ばさず、直接 Pixi オブジェクトを操作している箇所がある。
+- どのイベントがどの責務に落ちるか曖昧。
 
-createLayer が stage 直下に追加されている可能性あり。
+---
 
-本来は cameraContainer.addChild(layer) でなければカメラ移動に追従しない。
+## 3. 改修方針
 
-✅ 改修案（main.html 側にも修正必須）
+### 3.1 座標系統合
+- **禁止ルール**：`Layer.position` に直接代入禁止。
+- すべての座標変換は `EnginePosition` の `screenToWorld` / `worldToScreen` を利用。
+- `cameraContainer` は PositionManager 管理下に置く。
 
-A. 初期化
+### 3.2 カメラ移動フローの修正
+- [pointermove] → MainController → `EnginePosition.setCamera(dx,dy)`  
+- `setCamera` 内で `cameraContainer.position` を更新  
+- **全レイヤーは cameraContainer に addChild して追従させる**  
+- `DrawingEngine` は stroke を常に world 座標で記録。表示上の動きは cameraContainer に依存。
 
-await EnginePosition.init(document.getElementById("drawingCanvas"));
-EnginePosition.createLayer("Layer 1");
+### 3.3 レイヤー独立化
+- `LayerManager` は Pixi.Container を生成し、必ず cameraContainer の子供に置く。
+- 各 stroke は **activeLayer 内の Graphics** に格納される。
+- 消去・描画時は必ず activeLayer を参照。
+
+### 3.4 エラーハンドリング
+- `ErrorService` はフェイルセーフ禁止 → 例外時は強制停止または通知ログ。
+- `logError` で「どのイベント → どの責務で失敗したか」を記録。
+
+---
+イベントフローと責務表の明文化 & 改修タスク一覧
+
+## 4. イベントフローと相関関係
+
+### 4.1 全体フロー図
+
+[ユーザー操作]  
+　↓  
+UIManager (layer-tool-ui.js)  
+　↓  
+MainController (main.html)  
+　↓  
+LayerManager / DrawingEngine / PositionManager  
+　↓  
+PixiJS (描画・表示)
+
+---
+
+### 4.2 イベントフロー詳細
+
+1. **カメラ移動**
+   - [pointerdown + drag] (main.html)  
+   → MainController.emit("camera-move", dx, dy)  
+   → EnginePosition.setCamera(dx, dy)  
+   → cameraContainer.position 更新  
+   → 全レイヤー追従  
+
+2. **描画フロー**
+   - [pointerdown + move] (main.html)  
+   → MainController.emit("path-start")  
+   → DrawingEngine.startStroke(EnginePosition.screenToWorld(x,y))  
+   → activeLayer.graphics に描画  
+
+3. **レイヤー操作**
+   - [UI: レイヤー追加]  
+   → UIManager.requestNewLayer()  
+   → MainController.emit("layer-add")  
+   → LayerManager.createLayer()  
+   → cameraContainer.addChild(newLayer)
+
+4. **座標変換**
+   - screen(x,y)  
+   → EnginePosition.screenToWorld(x,y)  
+   → world(x,y) で stroke 記録  
+
+---
+
+## 5. 責務表
+
+### main.html (MainController)
+- @role: イベント仲介（UI・入力と衛星の中継のみ）
+- @depends: LayerManager, DrawingEngine, EnginePosition, ErrorService
+- @provides:
+  - emit(eventName, payload)
+  - on(eventName, handler)
+
+### layer-tool-ui.js (LayerManager + UIManager)
+- @role: レイヤー管理（生成・切替）、UI操作
+- @depends: MainController
+- @provides:
+  - createLayer()
+  - setActiveLayer(layerId)
+  - getActiveLayer()
+
+### engine-position.js (PositionManager)
+- @role: カメラ移動と座標変換の一元管理
+- @depends: MainController
+- @provides:
+  - setCamera(dx, dy)
+  - screenToWorld(x,y)
+  - worldToScreen(x,y)
+
+### error-service.js (ErrorService)
+- @role: ログと例外管理
+- @depends: MainController
+- @provides:
+  - logError(event, detail)
+  - warn(message)
+
+---
+
+## 6. 改修タスク一覧
+
+1. **main.html**
+   - pointermove / pointerdown / pointerup をすべて MainController.emit 経由に変更
+   - camera 移動時は必ず `EnginePosition.setCamera` を呼ぶ
+
+2. **engine-position.js**
+   - `cameraContainer` を唯一の親ノードにする
+   - `setCamera` 内で `cameraContainer.position` 更新
+   - `screenToWorld` / `worldToScreen` を DrawingEngine で利用できるよう公開
+
+3. **layer-tool-ui.js**
+   - レイヤー生成時に必ず cameraContainer.addChild(layer) する
+   - activeLayer のみを DrawingEngine に通知
+   - 消去/描画は activeLayer.graphics のみに限定
+
+4. **drawing-engine (main内)**
+   - stroke 記録は必ず world座標
+   - 再描画は cameraContainer の座標系に従う
+
+5. **error-service.js**
+   - Event payload の循環参照チェックを厳格化
+   - エラー発生時は console.error + 強制停止
+   - フォールバックは禁止
+
+---
+
+# 改修手順書 - ThreeSatellite Rev4 キャンバス移動/座標修正
+
+対象: 
+- main.html
+- engine-position.js
+- layer-tool-ui.js
+- error-service.js
+
+---
+
+## 1. MainController の役割整理
+- MainController は「発火・仲介・確定と記録」に限定。
+- 各衛星（UI, EnginePosition, LayerToolUI）は MainController を経由して通信。
+
+### 必要なイベント
+- "camera-move" : カメラ移動要求
+- "draw-start" / "draw-move" / "draw-end" : ペン描画フロー
+- "layer-active" : アクティブレイヤー変更通知
+
+---
+
+## 2. main.html 改修
+1. Pixi.Application の生成時に `resizeTo: window` を必ず設定。
+2. `EnginePosition` を stage にアタッチし、返す `cameraContainer` を唯一の描画親にする。
+3. pointerdown/pointermove/pointerup を MainController イベントに変換。
+4. 右クリックドラッグで "camera-move" を発火する処理を追加。
+5. DrawingEngine 的な処理は MainController.on("draw-*") の中に組み込む。
+
+---
+
+## 3. engine-position.js 改修
+1. `this.cameraContainer = new PIXI.Container()` を stage に addChild。
+2. `setCamera(dx,dy)` で **cameraContainer の位置だけ** を動かす。
+3. screenToWorld/worldToScreen をシンプルに定義：
+   - world = screen - cameraContainer.position
+   - screen = world + cameraContainer.position
+4. MainController.on("camera-move") で setCamera を呼ぶ。
+
+---
+
+## 4. layer-tool-ui.js 改修
+1. すべてのレイヤーは **enginePosition.cameraContainer** に addChild する。
+   → これでカメラ移動と連動。
+2. createLayer(name) で {id, name, graphics} を生成。
+   - graphics.lineStyle(2, 0x000000) をデフォルト設定可。
+3. setActiveLayer(id) を呼ぶと、MainController.emit("layer-active", layer) を通知。
+
+---
+
+## 5. error-service.js 改修
+- `console.warn` / `console.error` のラッパーに限定。
+- 循環参照オブジェクトを stringify しない。
+  → イベント payload は基本的に {x,y} / id / name / type のみにする。
+
+---
+
+## 6. イベントフロー再確認
+- [カメラ移動]  
+  pointermove(right-drag) → MainController.emit("camera-move", {dx,dy})  
+  → EnginePosition.setCamera → cameraContainer.position 更新 → 全レイヤー追従  
+
+- [描画]  
+  pointerdown(left) → screenToWorld → MainController.emit("draw-start", pos)  
+  pointermove → screenToWorld → MainController.emit("draw-move", pos)  
+  pointerup → MainController.emit("draw-end")  
+
+- [レイヤー追加]  
+  UI操作 → LayerToolUI.createLayer(name) → cameraContainer に addChild →  
+  MainController.emit("layer-active", layer)  
+
+---
+
+## 7. 実装チェックポイント
+- ✅ cameraContainer のみを動かす → レイヤーが全体で追従するか？
+- ✅ screenToWorld が描画ストロークに反映されるか？
+- ✅ layer-active が正しく切り替わり、前のレイヤーに干渉しないか？
+- ✅ 循環参照（PIXI.DisplayObject.parent）は payload に含めない。
+
+---
+
+## 8. 移行手順
+1. rev4 の main.html 内のカメラ・描画処理を削除し、雛形のロジックを統合。
+2. engine-position.js を雛形に差し替え。
+3. layer-tool-ui.js を雛形に差し替え。
+4. error-service.js を最小実装に戻す。
+5. 再起動して [カメラ移動 → ペン描画 → レイヤー切替] を順に検証。
 
 
-createLayer を呼ぶときに、必ず cameraContainer に入れるようにする。
-
-B. カメラ移動
-
-// 例: ドラッグでカメラ移動
-canvas.addEventListener("pointermove", (e)=>{
-  if(draggingCamera){
-    EnginePosition.setCamera(
-      cameraStart.x - (e.clientX - dragStart.x),
-      cameraStart.y - (e.clientY - dragStart.y)
-    );
-  }
-});
+---
 
 
-setCamera(x,y) を必ず呼ぶ。
-
-レイヤーや Graphics を直接 position 移動しない。
-
-C. 座標変換
-
-// スクリーン→ワールド
-function toWorld(x,y){
-  return {
-    x: x + EnginePosition.getCamera().x,
-    y: y + EnginePosition.getCamera().y
-  };
-}
-
-
-ペン入力時にこの変換を通すことで、stroke が「ワールド座標」として保持される。
-
-📝 まとめ
-
-engine-position.js 側は「カメラコンテナ方式」にすでに改修済み。
-
-でも main.html が古い呼び出しをしているので反映されていない。
-
-main.html を修正して、EnginePosition.setCamera() と screen→world を必ず通すようにすれば、カメラ移動で描画内容がちゃんと追従するようになります。
-
-
-※以下は修正サンプルです。参考に。
+rev4 改修計画に基づく最小サンプル雛形コード
+📄 main.html
 
 <!DOCTYPE html>
-<html lang="ja">
+<html>
 <head>
-  <meta charset="UTF-8">
+  <meta charset="utf-8" />
   <title>ThreeSatellite Rev4 Sample</title>
-  <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.x/dist/pixi.min.js"></script>
-  <script src="engine-position.js"></script>
-  <script src="layer-tool-ui.js"></script>
-  <script src="error-service.js"></script>
-  <style>
-    body { margin: 0; overflow: hidden; }
-    #toolbar { position: fixed; top: 5px; left: 5px; background: #eee; padding: 5px; }
-  </style>
+  <script src="https://pixijs.download/release/pixi.min.js"></script>
+  <script src="./error-service.js"></script>
+  <script src="./engine-position.js"></script>
+  <script src="./layer-tool-ui.js"></script>
 </head>
 <body>
-  <div id="toolbar">
-    <button id="moveCamera">Move</button>
-    <button id="drawPen">Pen</button>
-    <button id="eraser">Eraser</button>
-    <button id="addLayer">+ Layer</button>
-  </div>
-  <canvas id="drawingCanvas"></canvas>
+  <canvas id="view"></canvas>
 
   <script>
-    // ==============================
-    // MainController 相当
-    // ==============================
-    let mode = "pen"; // pen | eraser | move
-    let drawing = false;
-    let lastPos = null;
-    let cameraStart = { x: 0, y: 0 };
-    let dragStart = { x: 0, y: 0 };
-
-    async function init() {
-      await EnginePosition.init(document.getElementById("drawingCanvas"));
-      EnginePosition.createLayer("Layer 1");
-      bindUI();
-      bindInput();
-    }
-
-    function bindUI() {
-      document.getElementById("moveCamera").onclick = () => { mode = "move"; };
-      document.getElementById("drawPen").onclick = () => { mode = "pen"; };
-      document.getElementById("eraser").onclick = () => { mode = "eraser"; };
-      document.getElementById("addLayer").onclick = () => {
-        EnginePosition.createLayer("Layer " + Date.now());
-      };
-    }
-
-    function bindInput() {
-      const canvas = document.getElementById("drawingCanvas");
-
-      canvas.addEventListener("pointerdown", (e) => {
-        if (mode === "move") {
-          // カメラ移動開始
-          const cam = EnginePosition.getCamera();
-          cameraStart = { x: cam.x, y: cam.y };
-          dragStart = { x: e.clientX, y: e.clientY };
-          drawing = true;
-        } else {
-          // ペン/消しゴム
-          const world = toWorld(e.clientX, e.clientY);
-          lastPos = world;
-          drawing = true;
-        }
-      });
-
-      canvas.addEventListener("pointermove", (e) => {
-        if (!drawing) return;
-
-        if (mode === "move") {
-          // カメラ移動
-          const dx = e.clientX - dragStart.x;
-          const dy = e.clientY - dragStart.y;
-          EnginePosition.setCamera(cameraStart.x - dx, cameraStart.y - dy);
-        } else {
-          // ペン/消しゴム
-          const world = toWorld(e.clientX, e.clientY);
-          if (lastPos) {
-            EnginePosition.drawLine(
-              EnginePosition.getActiveLayer(),
-              lastPos,
-              world,
-              mode
-            );
+    // MainController
+    const MainController = (() => {
+      const listeners = {};
+      return {
+        emit(event, payload) {
+          if (!listeners[event]) {
+            ErrorService.warn(`Unhandled event: ${event}`);
+            return;
           }
-          lastPos = world;
+          listeners[event].forEach(fn => fn(payload));
+        },
+        on(event, fn) {
+          listeners[event] = listeners[event] || [];
+          listeners[event].push(fn);
         }
-      });
+      };
+    })();
 
-      canvas.addEventListener("pointerup", () => {
-        drawing = false;
-        lastPos = null;
-      });
-    }
+    // Pixiアプリ初期化
+    const app = new PIXI.Application({
+      view: document.getElementById("view"),
+      resizeTo: window,
+      backgroundColor: 0xffffff
+    });
 
-    // スクリーン座標 → ワールド座標変換
-    function toWorld(x, y) {
-      return EnginePosition.screenToWorld(x, y);
-    }
+    // EnginePosition (cameraContainerの親)
+    const enginePosition = new EnginePosition(app.stage, MainController);
 
-    init();
+    // Layer管理
+    const layerManager = new LayerToolUI(enginePosition.cameraContainer, MainController);
+
+    // 入力ハンドラ
+    let drawing = false;
+    app.view.addEventListener("pointerdown", e => {
+      drawing = true;
+      const pos = enginePosition.screenToWorld(e.clientX, e.clientY);
+      MainController.emit("draw-start", pos);
+    });
+
+    app.view.addEventListener("pointermove", e => {
+      if (!drawing) return;
+      const pos = enginePosition.screenToWorld(e.clientX, e.clientY);
+      MainController.emit("draw-move", pos);
+    });
+
+    app.view.addEventListener("pointerup", e => {
+      drawing = false;
+      MainController.emit("draw-end");
+    });
+
+    // カメラ移動操作（例：ドラッグ右クリック）
+    let camMoving = false, lastX = 0, lastY = 0;
+    app.view.addEventListener("pointerdown", e => {
+      if (e.button === 2) {
+        camMoving = true;
+        lastX = e.clientX; lastY = e.clientY;
+      }
+    });
+    app.view.addEventListener("pointermove", e => {
+      if (camMoving) {
+        const dx = e.clientX - lastX;
+        const dy = e.clientY - lastY;
+        lastX = e.clientX; lastY = e.clientY;
+        MainController.emit("camera-move", { dx, dy });
+      }
+    });
+    app.view.addEventListener("pointerup", e => {
+      if (e.button === 2) camMoving = false;
+    });
+
+    // DrawingEngine (Mainに内包)
+    let activeGraphics = null;
+    MainController.on("layer-active", layer => {
+      activeGraphics = layer.graphics;
+    });
+
+    MainController.on("draw-start", pos => {
+      if (!activeGraphics) return;
+      activeGraphics.moveTo(pos.x, pos.y);
+    });
+    MainController.on("draw-move", pos => {
+      if (!activeGraphics) return;
+      activeGraphics.lineTo(pos.x, pos.y);
+      activeGraphics.stroke();
+    });
+    MainController.on("draw-end", () => {});
+
+    // 初期レイヤー
+    layerManager.createLayer("Layer 1");
   </script>
 </body>
 </html>
 
-📌 ポイント
+📄 engine-position.js
 
-カメラ移動
+class EnginePosition {
+  constructor(stage, main) {
+    this.main = main;
+    this.cameraContainer = new PIXI.Container();
+    stage.addChild(this.cameraContainer);
 
-EnginePosition.setCamera(x, y) を必ず呼ぶ
+    this.main.on("camera-move", ({ dx, dy }) => {
+      this.setCamera(dx, dy);
+    });
+  }
 
-layer.position を直接動かさない
+  setCamera(dx, dy) {
+    this.cameraContainer.x += dx;
+    this.cameraContainer.y += dy;
+  }
 
-座標変換
+  screenToWorld(sx, sy) {
+    return {
+      x: sx - this.cameraContainer.x,
+      y: sy - this.cameraContainer.y
+    };
+  }
 
-toWorld(e.clientX, e.clientY) を必ず通す
+  worldToScreen(wx, wy) {
+    return {
+      x: wx + this.cameraContainer.x,
+      y: wy + this.cameraContainer.y
+    };
+  }
+}
 
-ストロークはワールド座標で記録される
+📄 layer-tool-ui.js
 
-レイヤー生成
+class LayerToolUI {
+  constructor(cameraContainer, main) {
+    this.main = main;
+    this.cameraContainer = cameraContainer;
+    this.layers = [];
+    this.activeLayer = null;
+  }
 
-EnginePosition.createLayer() は cameraContainer にぶら下がるので、カメラ移動で一緒に動く
+  createLayer(name) {
+    const layer = {
+      id: Date.now(),
+      name,
+      graphics: new PIXI.Graphics()
+    };
+    this.cameraContainer.addChild(layer.graphics);
+    this.layers.push(layer);
+    this.setActiveLayer(layer.id);
+    return layer;
+  }
 
+  setActiveLayer(id) {
+    const layer = this.layers.find(l => l.id === id);
+    if (!layer) return;
+    this.activeLayer = layer;
+    this.main.emit("layer-active", layer);
+  }
 
+  getActiveLayer() {
+    return this.activeLayer;
+  }
+}
 
+📄 error-service.js
 
+const ErrorService = {
+  warn(msg) {
+    console.warn(`[Warn] ${msg}`);
+  },
+  error(msg) {
+    console.error(`[Error] ${msg}`);
+    throw new Error(msg);
+  }
+};

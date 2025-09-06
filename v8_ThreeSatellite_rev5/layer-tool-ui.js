@@ -1,37 +1,29 @@
 /**
  * @module   LayerToolUI
- * @role     レイヤー管理 + ツール + UI
+ * @role     レイヤー管理・ツール管理・UI制御
  * @depends  MainController
- * @provides init(), createLayer(name?), deleteLayer(id), setActiveLayer(id), onUIButtonClick(event)
- * @notes    Layer ID 安定生成、UIボタン重複禁止、循環参照禁止、EnginePosition統合
- * @flow     レイヤー作成 → EnginePosition → MainController → UI更新
- * @memory   レイヤー構造、アクティブレイヤーID、ツール選択状態、UI状態
- * @revision EnginePosition統合対応 - createLayer処理をEnginePositionに移管、ID統合管理
+ * @provides init(), createLayer(name), setActiveLayer(id), onUIButtonClick(event)
+ * @notes    アクティブレイヤー制御強化、stroke独立性確保、レイヤー切替明確化
+ * @flow     レイヤー作成 → MainController → EnginePosition → UI更新
+ * @memory   レイヤー構造、アクティブレイヤーID、ツール状態、UI状態
  */
 
 const LayerToolUI = (() => {
-    // Layer Management - EnginePositionとの統合（改修案対応）
+    // Layer Management - ID安定生成
     let layers = new Map();
     let activeLayerId = null;
     let nextLayerId = 1;
     
-    // Tool Management  
+    // Tool Management
     let currentTool = 'pen';
     let brushSize = 16.0;
     let brushColor = 0x800000;
     let opacity = 0.85;
-    let drawing = { active: false, path: null };
+    let drawing = { active: false };
     
     // UI State
     let activePopup = null;
     let sliders = new Map();
-    let dragState = { active: false, offset: { x: 0, y: 0 } };
-    let layerDragState = {
-        dragging: false,
-        dragItem: null,
-        startY: 0,
-        offset: 0
-    };
     
     async function init() {
         try {
@@ -41,18 +33,20 @@ const LayerToolUI = (() => {
             setupResizeControls();
             setupLayerControls();
             
-            // 初期レイヤー作成はEnginePositionに移管（改修案対応）
-            // EnginePositionが背景レイヤーを作成済みなので、UI側は同期のみ
+            // 初期レイヤー作成 - ID安定化
+            createLayer('レイヤー1');
+            setActiveLayer(1);
             
             updateCanvasInfo();
             updateToolDisplay();
+            updateLayerUI();
             
-            console.log('[LayerToolUI] Initialized with EnginePosition integration');
+            console.log('[LayerToolUI] Initialized');
             return true;
             
         } catch (error) {
             console.error('[LayerToolUI] Initialization failed:', error);
-            window.MainController?.safeNotify('error-occurred', {
+            window.MainController?.emit('error-occurred', {
                 source: 'LayerToolUI',
                 error: error.message
             });
@@ -60,64 +54,49 @@ const LayerToolUI = (() => {
         }
     }
     
-    // Layer Management Functions - EnginePosition統合（改修案の重要な修正点）
-    /**
-     * レイヤー作成 - EnginePositionに移管
-     */
+    // Layer Management Functions - アクティブレイヤー制御強化
     function createLayer(name = null) {
-        const layerName = name || `レイヤー${nextLayerId++}`;
+        const layerId = nextLayerId++;
+        const layerName = name || `レイヤー${layerId}`;
         
-        // EnginePositionでレイヤー作成要求（改修案対応）
-        window.MainController?.safeNotify('layer-created-external', { 
-            name: layerName
-        });
-        
-        // UI側は後でenginePositionからの通知で同期
-        console.log(`[LayerToolUI] Layer creation requested: ${layerName}`);
-    }
-    
-    /**
-     * レイヤー情報をEnginePositionから受信して同期（改修案対応）
-     */
-    function syncLayerFromEngine(layerData) {
         const layer = {
-            id: layerData.layerId,
-            name: layerData.name,
-            visible: layerData.visible !== false,
-            strokes: [],
-            isBackground: layerData.isBackground || false
+            id: layerId,
+            name: layerName,
+            visible: true,
+            strokes: [], // レイヤー独立のstroke管理
+            isBackground: false
         };
         
-        layers.set(layer.id, layer);
-        
-        // アクティブレイヤーが未設定の場合は設定
-        if (activeLayerId === null) {
-            activeLayerId = layer.id;
-        }
-        
+        layers.set(layerId, layer);
         updateLayerUI();
-        console.log(`[LayerToolUI] Layer synced from EnginePosition: ${layer.name} (ID: ${layer.id})`);
+        
+        // MainController経由で通知
+        window.MainController?.emit('layer-created', { 
+            layerId: layer.id,
+            name: layer.name,
+            visible: layer.visible,
+            isBackground: layer.isBackground
+        });
+        
+        return layer;
     }
     
     function deleteLayer(layerId) {
-        if (layerId === 0) return; // Cannot delete background layer
-        if (layers.size <= 2) return; // Must have background + at least one layer
+        if (layers.size <= 1) return; // 最低1つは保持
         
         const layer = layers.get(layerId);
-        if (!layer || layer.isBackground) return;
+        if (!layer) return;
         
         layers.delete(layerId);
         
+        // アクティブレイヤー調整
         if (activeLayerId === layerId) {
-            const remainingLayers = Array.from(layers.keys()).filter(id => id !== 0);
-            activeLayerId = remainingLayers[remainingLayers.length - 1] || 0;
-            
-            // EnginePositionにアクティブレイヤー変更通知（改修案対応）
-            window.MainController?.safeNotify('active-layer-changed', { layerId: activeLayerId });
+            const remainingLayers = Array.from(layers.keys());
+            activeLayerId = remainingLayers[remainingLayers.length - 1];
         }
         
         updateLayerUI();
-        window.MainController?.safeNotify('layer-deleted', { layerId: layerId });
+        window.MainController?.emit('layer-deleted', { layerId });
     }
     
     function setActiveLayer(layerId) {
@@ -126,8 +105,10 @@ const LayerToolUI = (() => {
             updateLayerUI();
             updateStatusDisplay();
             
-            // EnginePositionにアクティブレイヤー変更通知（改修案対応）
-            window.MainController?.safeNotify('active-layer-changed', { layerId: layerId });
+            // アクティブレイヤー変更を通知
+            window.MainController?.emit('layer-active', { 
+                layerId: layerId 
+            });
         }
     }
     
@@ -138,8 +119,7 @@ const LayerToolUI = (() => {
         layer.visible = !layer.visible;
         updateLayerUI();
         
-        // EnginePositionに表示状態変更通知（改修案対応）
-        window.MainController?.safeNotify('layer-visibility-changed', { 
+        window.MainController?.emit('layer-visibility-changed', { 
             layerId: layerId, 
             visible: layer.visible 
         });
@@ -149,71 +129,16 @@ const LayerToolUI = (() => {
         return layers.get(activeLayerId);
     }
     
-    function addStrokeToActiveLayer(strokeData) {
+    // Drawing Operations - アクティブレイヤー制御
+    function startDrawing(x, y) {
         const activeLayer = getActiveLayer();
-        if (activeLayer && strokeData) {
-            // strokeオブジェクトではなくIDと必要最小情報のみ保存
-            activeLayer.strokes.push({
-                strokeId: strokeData.strokeId || strokeData.pathId || 'unknown',
-                pointsCount: strokeData.points?.length || strokeData.pointsCount || 0,
-                color: strokeData.color,
-                size: strokeData.size,
-                opacity: strokeData.opacity
-            });
-            
-            console.log(`[LayerToolUI] Stroke added to layer ${activeLayer.name}: ${strokeData.strokeId || strokeData.pathId}`);
-        }
-    }
-    
-    function reorderLayers(fromIndex, toIndex) {
-        const layerIds = Array.from(layers.keys()).filter(id => id !== 0).reverse();
-        
-        if (fromIndex < 0 || fromIndex >= layerIds.length ||
-            toIndex < 0 || toIndex >= layerIds.length ||
-            fromIndex === toIndex) return;
-        
-        updateLayerUI();
-        
-        window.MainController?.safeNotify('layers-reordered', { 
-            fromIndex, 
-            toIndex 
-        });
-    }
-    
-    // Tool Management Functions
-    function selectTool(tool) {
-        currentTool = tool;
-        updateToolDisplay();
-        
-        window.MainController?.safeNotify('tool-selected', { tool });
-    }
-    
-    function setBrushSize(size) {
-        brushSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
-        window.MainController?.safeNotify('brush-size-changed', { size: brushSize });
-    }
-    
-    function setOpacity(opacityValue) {
-        opacity = Math.max(0, Math.min(1, Math.round(opacityValue * 1000) / 1000));
-        window.MainController?.safeNotify('brush-opacity-changed', { opacity });
-    }
-    
-    // Drawing Operations - アクティブレイヤー制御強化（改修案対応）
-    function startDrawing(x, y, isPanning) {
-        if (isPanning) return false;
-        
-        const activeLayer = getActiveLayer();
-        if (!activeLayer) {
-            console.warn('[LayerToolUI] No active layer for drawing');
-            return false;
-        }
+        if (!activeLayer) return false;
         
         drawing.active = true;
         
         const color = currentTool === 'eraser' ? 0xf0e0d6 : brushColor;
         const alpha = currentTool === 'eraser' ? 1.0 : opacity;
         
-        // World座標でstroke作成データ作成、アクティブレイヤーID付与
         const strokeData = {
             x, y,
             size: brushSize,
@@ -221,63 +146,56 @@ const LayerToolUI = (() => {
             opacity: alpha
         };
         
-        // アクティブレイヤーIDと共に通知（改修案の重要な修正点）
-        window.MainController?.safeNotify('path-created', { 
+        // アクティブレイヤーIDと共に描画開始を通知
+        window.MainController?.emit('path-created', { 
             path: strokeData,
             layerId: activeLayer.id 
         });
         
-        console.log(`[LayerToolUI] Drawing started on layer: ${activeLayer.name} (${activeLayer.id})`);
         return true;
     }
     
-    function continueDrawing(x, y, isPanning) {
-        if (!drawing.active || isPanning) return;
+    function continueDrawing(x, y) {
+        if (!drawing.active) return;
         
-        // アクティブレイヤー確認（改修案対応）
         const activeLayer = getActiveLayer();
         if (!activeLayer) {
-            console.warn('[LayerToolUI] No active layer for drawing continuation');
             stopDrawing();
             return;
         }
         
-        // World座標のみ送信
-        window.MainController?.safeNotify('path-extend', { x, y });
+        window.MainController?.emit('path-extend', { x, y });
     }
     
     function stopDrawing() {
         if (drawing.active) {
             drawing.active = false;
-            window.MainController?.safeNotify('path-complete', {});
-            console.log('[LayerToolUI] Drawing completed');
+            window.MainController?.emit('path-complete');
         }
     }
     
-    // Eraser Operations - アクティブレイヤー制御（改修案対応）
-    function eraseStroke(stroke) {
-        const activeLayer = getActiveLayer();
-        if (!activeLayer || !stroke) return false;
+    // Tool Management
+    function selectTool(tool) {
+        currentTool = tool;
+        updateToolDisplay();
         
-        // アクティブレイヤーのstrokeのみ消去可能
-        if (stroke.layerId !== activeLayer.id) {
-            console.warn('[LayerToolUI] Cannot erase stroke from inactive layer');
-            return false;
-        }
-        
-        // 消去処理
-        window.MainController?.safeNotify('stroke-erase-requested', {
-            strokeId: stroke.id,
-            layerId: activeLayer.id
-        });
-        return true;
+        window.MainController?.emit('tool-selected', { tool });
+    }
+    
+    function setBrushSize(size) {
+        brushSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
+        window.MainController?.emit('brush-size-changed', { size: brushSize });
+    }
+    
+    function setOpacity(opacityValue) {
+        opacity = Math.max(0, Math.min(1, Math.round(opacityValue * 1000) / 1000));
+        window.MainController?.emit('brush-opacity-changed', { opacity });
     }
     
     // UI Management Functions
     function setupToolButtons() {
         document.querySelectorAll('.tool-button').forEach(btn => {
             btn.addEventListener('click', (e) => {
-                if (btn.classList.contains('disabled')) return;
                 handleToolClick(e.currentTarget);
             });
         });
@@ -307,15 +225,6 @@ const LayerToolUI = (() => {
         if (toolElement) {
             toolElement.textContent = toolNames[currentTool] || currentTool;
         }
-        
-        // Update cursor through EnginePosition
-        const cursors = { pen: 'crosshair', eraser: 'cell' };
-        const cursor = cursors[currentTool] || 'crosshair';
-        
-        const app = window.EnginePosition?.getApp?.();
-        if (app?.canvas) {
-            app.canvas.style.cursor = cursor;
-        }
     }
     
     function setupLayerControls() {
@@ -323,7 +232,8 @@ const LayerToolUI = (() => {
         
         if (addLayerBtn) {
             addLayerBtn.addEventListener('click', () => {
-                createLayer(); // EnginePositionに移管済み
+                const newLayer = createLayer();
+                setActiveLayer(newLayer.id);
             });
         }
     }
@@ -334,15 +244,14 @@ const LayerToolUI = (() => {
         
         layerList.innerHTML = '';
         
-        // Render layers in reverse order (top to bottom in UI), exclude background
-        const layerIds = Array.from(layers.keys()).filter(id => id !== 0).reverse();
+        // レイヤーを逆順で表示（上から下）
+        const layerIds = Array.from(layers.keys()).reverse();
         
-        layerIds.forEach((layerId, index) => {
+        layerIds.forEach((layerId) => {
             const layer = layers.get(layerId);
             const layerItem = document.createElement('div');
             layerItem.className = `layer-item ${layerId === activeLayerId ? 'active' : ''}`;
             layerItem.dataset.layerId = layerId;
-            layerItem.dataset.layerIndex = index;
             
             const eyeIcon = layer.visible ? 
                 '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-icon lucide-eye"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>' :
@@ -360,145 +269,13 @@ const LayerToolUI = (() => {
                 const action = e.target.closest('[data-action]')?.dataset.action;
                 if (action === 'toggle-visibility') {
                     toggleLayerVisibility(layerId);
-                } else if (!layerDragState.dragging) {
+                } else {
                     setActiveLayer(layerId);
                 }
             });
             
-            // Layer drag functionality
-            setupLayerDrag(layerItem, index);
-            
             layerList.appendChild(layerItem);
         });
-        
-        // Add background layer at the bottom
-        const backgroundLayer = layers.get(0);
-        if (backgroundLayer) {
-            const backgroundItem = document.createElement('div');
-            backgroundItem.className = `layer-item ${0 === activeLayerId ? 'active' : ''}`;
-            backgroundItem.dataset.layerId = 0;
-            
-            const eyeIcon = backgroundLayer.visible ? 
-                '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-icon lucide-eye"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>' :
-                '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off-icon lucide-eye-off"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
-            
-            backgroundItem.innerHTML = `
-                <div class="layer-name">${backgroundLayer.name}</div>
-                <div class="layer-visibility ${backgroundLayer.visible ? '' : 'hidden'}" data-action="toggle-visibility">
-                    ${eyeIcon}
-                </div>
-            `;
-            
-            backgroundItem.addEventListener('click', (e) => {
-                const action = e.target.closest('[data-action]')?.dataset.action;
-                if (action === 'toggle-visibility') {
-                    toggleLayerVisibility(0);
-                } else {
-                    setActiveLayer(0);
-                }
-            });
-            
-            layerList.appendChild(backgroundItem);
-        }
-    }
-    
-    function setupLayerDrag(layerItem, index) {
-        const layerName = layerItem.querySelector('.layer-name');
-        
-        layerName.addEventListener('mousedown', (e) => {
-            if (e.button !== 0) return;
-            
-            layerDragState.dragging = true;
-            layerDragState.dragItem = layerItem;
-            layerDragState.startY = e.clientY;
-            layerDragState.offset = e.clientY - layerItem.getBoundingClientRect().top;
-            
-            layerItem.classList.add('dragging');
-            
-            const boundMouseMove = onLayerDrag.bind(this);
-            const boundMouseUp = onLayerDragEnd.bind(this);
-            
-            document.addEventListener('mousemove', boundMouseMove);
-            document.addEventListener('mouseup', boundMouseUp);
-            
-            layerDragState.boundMouseMove = boundMouseMove;
-            layerDragState.boundMouseUp = boundMouseUp;
-            
-            e.preventDefault();
-            e.stopPropagation();
-        });
-    }
-    
-    function onLayerDrag(e) {
-        if (!layerDragState.dragging || !layerDragState.dragItem) return;
-        
-        const layerList = document.getElementById('layer-list');
-        const items = Array.from(layerList.children).filter(item => 
-            !item.dataset.layerId || item.dataset.layerId !== '0'
-        );
-        
-        const dragItem = layerDragState.dragItem;
-        dragItem.style.position = 'absolute';
-        dragItem.style.top = (e.clientY - layerDragState.offset) + 'px';
-        dragItem.style.zIndex = '1000';
-        
-        items.forEach(item => {
-            item.classList.remove('drop-target');
-            if (item !== dragItem) {
-                const rect = item.getBoundingClientRect();
-                if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
-                    item.classList.add('drop-target');
-                }
-            }
-        });
-        
-        e.preventDefault();
-    }
-    
-    function onLayerDragEnd(e) {
-        if (!layerDragState.dragging || !layerDragState.dragItem) return;
-        
-        const layerList = document.getElementById('layer-list');
-        const items = Array.from(layerList.children).filter(item => 
-            !item.dataset.layerId || item.dataset.layerId !== '0'
-        );
-        const dragItem = layerDragState.dragItem;
-        
-        const dropTarget = items.find(item => 
-            item !== dragItem && item.classList.contains('drop-target')
-        );
-        
-        if (dropTarget) {
-            const fromIndex = parseInt(dragItem.dataset.layerIndex);
-            const toIndex = parseInt(dropTarget.dataset.layerIndex);
-            reorderLayers(fromIndex, toIndex);
-        }
-        
-        // Cleanup
-        dragItem.classList.remove('dragging');
-        dragItem.style.position = '';
-        dragItem.style.top = '';
-        dragItem.style.zIndex = '';
-        
-        items.forEach(item => item.classList.remove('drop-target'));
-        
-        if (layerDragState.boundMouseMove) {
-            document.removeEventListener('mousemove', layerDragState.boundMouseMove);
-        }
-        if (layerDragState.boundMouseUp) {
-            document.removeEventListener('mouseup', layerDragState.boundMouseUp);
-        }
-        
-        layerDragState = {
-            dragging: false,
-            dragItem: null,
-            startY: 0,
-            offset: 0,
-            boundMouseMove: null,
-            boundMouseUp: null
-        };
-        
-        setTimeout(() => updateLayerUI(), 100);
     }
     
     function updateStatusDisplay() {
@@ -524,14 +301,6 @@ const LayerToolUI = (() => {
     }
     
     function setupPopups() {
-        document.querySelectorAll('.popup-panel').forEach(popup => {
-            const title = popup.querySelector('.popup-title');
-            if (title) {
-                title.style.cursor = 'move';
-                title.addEventListener('mousedown', (e) => startDrag(e, popup));
-            }
-        });
-        
         document.addEventListener('click', (e) => {
             if (!e.target.closest('.popup-panel') && 
                 !e.target.closest('.tool-button') &&
@@ -539,33 +308,6 @@ const LayerToolUI = (() => {
                 closeAllPopups();
             }
         });
-        
-        document.addEventListener('mousemove', (e) => onDrag(e));
-        document.addEventListener('mouseup', () => stopDrag());
-    }
-    
-    function startDrag(e, popup) {
-        dragState.active = popup;
-        const rect = popup.getBoundingClientRect();
-        dragState.offset.x = e.clientX - rect.left;
-        dragState.offset.y = e.clientY - rect.top;
-        e.preventDefault();
-    }
-    
-    function onDrag(e) {
-        if (!dragState.active) return;
-        
-        const x = Math.max(0, Math.min(e.clientX - dragState.offset.x, 
-            window.innerWidth - dragState.active.offsetWidth));
-        const y = Math.max(0, Math.min(e.clientY - dragState.offset.y, 
-            window.innerHeight - dragState.active.offsetHeight));
-        
-        dragState.active.style.left = x + 'px';
-        dragState.active.style.top = y + 'px';
-    }
-    
-    function stopDrag() {
-        dragState.active = false;
     }
     
     function closeAllPopups() {
@@ -653,7 +395,7 @@ const LayerToolUI = (() => {
             const height = parseInt(heightInput.value);
             
             if (width >= 100 && width <= 4096 && height >= 100 && height <= 4096) {
-                window.MainController?.safeNotify('canvas-resize-requested', { 
+                window.MainController?.emit('canvas-resize-requested', { 
                     width, height 
                 });
                 updateCanvasInfo();
@@ -685,39 +427,24 @@ const LayerToolUI = (() => {
                 }
                 break;
                 
-            case 'stroke-start-requested':
+            case 'draw-start':
                 if (event.payload?.x !== undefined && event.payload?.y !== undefined) {
-                    const appState = window.MainController?.getAppState();
-                    startDrawing(event.payload.x, event.payload.y, appState?.spacePressed);
+                    startDrawing(event.payload.x, event.payload.y);
                 }
                 break;
                 
-            case 'stroke-continue-requested':
+            case 'draw-move':
                 if (event.payload?.x !== undefined && event.payload?.y !== undefined) {
-                    const appState = window.MainController?.getAppState();
-                    continueDrawing(event.payload.x, event.payload.y, appState?.spacePressed);
+                    continueDrawing(event.payload.x, event.payload.y);
                 }
                 break;
                 
-            case 'stroke-end-requested':
+            case 'draw-end':
                 stopDrawing();
                 break;
                 
-            case 'layer-created':
-                // LayerToolUIからの通知を受信してEnginePositionで実際にレイヤーContainer作成（改修案対応）
-                if (event.payload?.layerId !== undefined) {
-                    registerLayerContainer(event.payload.layerId);
-                    if (activeLayerId === null) {
-                        setActiveLayer(event.payload.layerId);
-                    }
-                }
-                break;
-                
-            case 'path-ready-for-layer':
-                if (event.payload) {
-                    // 循環参照なしのstrokeデータを受信
-                    addStrokeToActiveLayer(event.payload);
-                }
+            case 'stroke-completed':
+                // stroke完了時の処理（必要に応じて）
                 break;
                 
             case 'canvas-resized':
@@ -739,8 +466,6 @@ const LayerToolUI = (() => {
         setOpacity,
         updateCoordinates,
         closeAllPopups,
-        eraseStroke,
-        syncLayerFromEngine,
         onEvent,
         
         // Getters for controlled access
