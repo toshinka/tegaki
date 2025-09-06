@@ -1,362 +1,188 @@
-1. 現象
 
-ペン描画・消しゴムは正常
 
-Stroke 登録や描画フローは正常に動作している。
+✅ 原因候補
 
-キャンバス移動（カメラ移動）が正しくない
+stage.x / stage.y の直接更新が無効化されている PIXI v8 では、stage 自体は特殊なルート Container であり、stage.x / stage.y を直接動かしても描画結果が反映されない場合があります。 → 代わりに「カメラ専用の Container」を作り、その Container にすべてのレイヤーをぶら下げて動かす必要があります。
 
-Camera 座標だけが動き、Pixi stage は動かず描画内容は固定。
+Stroke 描画時に「すでに座標変換済みの点」を記録している 現行の drawStroke は以下の流れになっていました：
 
-初動時に左方向にオフセット（約150pxくらい）が発生。
+const pts = stroke.points.map(p=>({...p, screenX:p.x-camera.x, screenY:p.y-camera.y}));
+g.moveTo(pts[0].screenX, pts[0].screenY);
 
-レイヤー管理が不正
 
-LayerToolUI でレイヤー+ は動作する。
+→ つまり「世界座標を保持」せずに「カメラ座標を引いたスクリーン座標だけ」を保持している。 そのため、あとからカメラを動かしても stage 側での移動が効かない。
 
-ただし アクティブレイヤー切替時に、以前のレイヤーで書いた Stroke が消せる。
+✅ 対策
 
-Layer 層の概念が破綻しており、LayerID の管理や Stroke の紐付けが正しく反映されていない。
+カメラ用コンテナを導入
 
-2. 原因分析
-2.1 キャンバス移動の挙動
+let cameraContainer;
+async function init(canvas) {
+  app = new PIXI.Application({ view: canvas, width: canvas.width, height: canvas.height });
+  cameraContainer = new PIXI.Container();
+  app.stage.addChild(cameraContainer);
+}
 
-EnginePosition.setCamera(x,y) は camera 値のみ更新しており、Pixi stage には反映されていない。
 
-現状の drawStroke() は World→Screen 変換で Camera を減算して描画しているが、既存の Stroke には適用されない。
+→ 各レイヤーは cameraContainer に addChild。
 
-→ そのため、Camera が動いても「見た目は動かない」状態。
+Stroke は「ワールド座標」で保持する
 
-初動オフセットは stage 初期位置 + Camera 初期値が不揃いで発生。
+stroke.points = [{x:..., y:...}] のまま保存。
 
-2.2 レイヤー概念の破綻
+Graphics に描画するときは「そのままワールド座標を moveTo/lineTo」。
 
-LayerToolUI は LayerID を管理しているが、Stroke がどの Layer に属するかの紐付けが不十分。
+表示上は cameraContainer.position.set(-camera.x, -camera.y) で全体を動かす。
 
-Stroke 登録時に stroke.layerId を正しく設定していない場合、Layer切替で全 Stroke が操作可能になってしまう。
+こうすることで「描いた後にカメラを動かしても全部一緒に動く」状態になります。
 
-また、Layer が描画順やアクティブ状態で Pixi Graphics をまとめて管理していないため、Layer の描画分離が失われている。
-
-3. 改修案
-3.1 Camera 反映の統合
-
-Pixi stage を Camera に従って移動
+修正版 setCamera
 
 function setCamera(x, y) {
-  camera.x = x;
-  camera.y = y;
-  app.stage.x = -camera.x; // stage そのものを移動
-  app.stage.y = -camera.y;
-  MainController.safeNotify('camera-moved', { camera: {...camera} });
+  camera.x = x; camera.y = y;
+  cameraContainer.position.set(-camera.x, -camera.y);
+  MainController.safeNotify('camera-moved', { camera:{...camera} });
 }
 
 
-既存 Stroke の再描画
+✅ 改修不足だった点
 
-Camera 移動後、既存の Graphics をクリアし、再描画する
+rev3 の実装では app.stage.x = -camera.x をやっていたが、Pixi v8 の stage は移動対象として使えない。
 
-または 各 Stroke に layerId を保持し、Layer ごとに Pixi Container を分ける
+Stroke も「スクリーン座標化して描画してしまっていた」ため、後からカメラを動かしても追従しない。
 
-3.2 Layer 分離の強化
+engine-position.js 雛形 を提示します。
 
-Layerごとに Pixi Container を作成
+ポイントは以下の通りです：
 
-const layerContainers = {}; // layerId -> PIXI.Container
-function createLayer(name="layer") {
-    const id = `layer-${layers.length+1}`;
-    const layer = { id, name, points: [] };
-    layers.push(layer);
-    activeLayerId = id;
-    const container = new PIXI.Container();
-    app.stage.addChild(container);
-    layerContainers[id] = container;
-    MainController.safeNotify('layer-created', { layerId: id });
-}
+cameraContainer を導入して、すべてのレイヤーをここに入れる
 
+stroke はワールド座標で保持 → 描画時はそのまま使う
 
-Stroke 描画時にアクティブレイヤー Container に描画
-
-function drawStroke(stroke) {
-    strokes.push(stroke);
-    const pts = stroke.points.map(p=>({...p, screenX:p.x-camera.x, screenY:p.y-camera.y}));
-    const g = new PIXI.Graphics();
-    g.lineStyle(2, 0x000000);
-    if(pts.length>0) g.moveTo(pts[0].screenX, pts[0].screenY);
-    for(let i=1;i<pts.length;i++) g.lineTo(pts[i].screenX, pts[i].screenY);
-    layerContainers[stroke.layerId].addChild(g);
-    MainController.safeNotify('stroke-drawn', { layerId: stroke.layerId, points: pts });
-}
-
-
-アクティブ Layer 以外の Stroke は消しゴム操作不可
-
-消しゴム操作は layerId === activeLayerId の場合のみ許可
-
-Layerごとに Container を分けておけば、描画・消去の分離が容易
-
-3.3 初期オフセット修正
-
-app.stage の初期位置を (0,0) に揃える
-
-Camera 初期値を (0,0) に固定
-
-起動時にオフセットが加わらないように setCamera(0,0) を呼ぶ
-
-4. 推奨フロー（改修後）
-[UI操作]
-   → LayerToolUI (レイヤーID付Stroke生成)
-       → MainController.safeNotify
-           → EnginePosition.drawStroke
-               → layerContainers[activeLayerId] に描画
-               → Camera考慮したWorld→Screen変換
-Camera移動 → EnginePosition.setCamera
-   → stage.x/y 更新 + 既存 Stroke 再描画 or Container移動
-
-
-💡 ポイント
-
-Pixi Container を Layer ごとに分離することでレイヤー概念を復活
-
-Camera 移動時は stage そのものを移動 + 必要に応じて再描画
-
-Stroke/Layer payload は循環参照なしで MainController に通知
-
-消しゴムや描画フローが アクティブ Layer に限定されるようになる
-
-
-※下記はコードの雛形です。参考に。
-
-1. 主星：main.html
-
-<!DOCTYPE html>
-<html lang="ja">
-<head>
-  <meta charset="UTF-8">
-  <title>三分割星型運用 - MainController Rev3</title>
-  <script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
-  <script src="engine-position.js"></script>
-  <script src="layer-tool-ui.js"></script>
-  <script src="error-service.js"></script>
-</head>
-<body>
-  <canvas id="mainCanvas" width="800" height="600"></canvas>
-
-  <script>
-  /**
-   * @module   MainController
-   * @role     衛星管理・イベント仲介・状態確定・記録
-   * @depends  engine-position.js, layer-tool-ui.js, error-service.js
-   * @provides registerSatellite(), safeNotify(), startApplication()
-   * @notes    payload循環参照禁止、衛星間直接参照禁止、座標系統合
-   */
-
-  const MainController = (() => {
-    const satellites = {};
-
-    function registerSatellite(name, module) {
-      satellites[name] = module;
-    }
-
-    function safeNotify(type, payload) {
-      let safePayload;
-      try {
-        JSON.stringify(payload);
-        safePayload = payload;
-      } catch(e) {
-        console.warn("[MainController] Payload contains circular references:", type);
-        safePayload = JSON.parse(JSON.stringify(payload, (key, value) => {
-          if (key === 'parent' || key === 'children') return undefined;
-          return value;
-        }));
-      }
-      for (const key in satellites) {
-        if (satellites[key].onEvent) satellites[key].onEvent({ type, payload: safePayload });
-      }
-    }
-
-    async function startApplication() {
-      try {
-        await satellites.errorService.init();
-        await satellites.enginePosition.init(document.getElementById('mainCanvas'));
-        await satellites.layerToolUI.init();
-        // Camera初期化でオフセット防止
-        satellites.enginePosition.setCamera(0,0);
-        console.log("[MainController] Application started.");
-      } catch (err) {
-        satellites.errorService.reportError('APP_START_FAILED', err);
-      }
-    }
-
-    return { registerSatellite, safeNotify, startApplication };
-  })();
-
-  MainController.registerSatellite('enginePosition', EnginePosition);
-  MainController.registerSatellite('layerToolUI', LayerToolUI);
-  MainController.registerSatellite('errorService', ErrorService);
-
-  MainController.startApplication();
-  </script>
-</body>
-</html>
-
-2. 衛星1：engine-position.js
+カメラ移動は cameraContainer の位置変更で実現
 
 /**
- * @module   EnginePosition
- * @role     描画エンジン + 座標管理
- * @depends  MainController
- * @provides init(canvas), drawStroke(stroke), setCamera(x,y), worldToScreen(), screenToWorld()
- * @notes    Camera/World/Screen座標系を統合、Pixi ContainerでLayer分離
+ * @module engine-position
+ * @role   座標・カメラ制御とレイヤー描画の中核
+ * @depends MainController
+ * @provides init, createLayer, setActiveLayer, addStroke, eraseStroke, setCamera
+ * @notes
+ *   - stroke.points は必ずワールド座標で保持
+ *   - cameraContainer を stage に追加し、その中で全レイヤーを管理
+ *   - setCamera() は container の position を動かすのみ
  */
 
-const EnginePosition = (() => {
-  let app, camera = { x:0, y:0 }, strokes = [];
-  const layerContainers = {}; // layerId -> PIXI.Container
+const EnginePosition = (function(){
+  let app, cameraContainer;
+  let camera = { x:0, y:0 };
+  let layers = [];
+  let activeLayer = null;
 
+  // 初期化
   async function init(canvas) {
-    app = new PIXI.Application({ view: canvas, width: canvas.width, height: canvas.height });
-    console.log("[EnginePosition] Initialized.");
+    app = new PIXI.Application({
+      view: canvas,
+      width: canvas.width,
+      height: canvas.height,
+      backgroundColor: 0xffffff,
+      antialias: true
+    });
+
+    // カメラ用コンテナ
+    cameraContainer = new PIXI.Container();
+    app.stage.addChild(cameraContainer);
+
+    MainController.safeNotify("engine-ready", { ok:true });
   }
 
-  function registerLayerContainer(layerId) {
-    if(!layerContainers[layerId]) {
-      const container = new PIXI.Container();
-      app.stage.addChild(container);
-      layerContainers[layerId] = container;
+  // レイヤー作成
+  function createLayer(name){
+    const g = new PIXI.Graphics();
+    g.meta = { name, strokes: [] };
+
+    cameraContainer.addChild(g);
+    layers.push(g);
+    activeLayer = g;
+
+    MainController.safeNotify("layer-created", { name });
+  }
+
+  // アクティブレイヤー切り替え
+  function setActiveLayer(name){
+    const found = layers.find(l=>l.meta.name===name);
+    if(found){
+      activeLayer = found;
+      MainController.safeNotify("layer-activated", { name });
     }
   }
 
-  function drawStroke(stroke) {
-    strokes.push(stroke);
-    registerLayerContainer(stroke.layerId);
+  // ストローク追加（ワールド座標で保持）
+  function addStroke(stroke){
+    if(!activeLayer) return;
 
-    const pts = stroke.points.map(p=>({...p, screenX:p.x-camera.x, screenY:p.y-camera.y}));
-    const g = new PIXI.Graphics();
-    g.lineStyle(2, 0x000000);
-    if(pts.length>0) g.moveTo(pts[0].screenX, pts[0].screenY);
-    for(let i=1;i<pts.length;i++) g.lineTo(pts[i].screenX, pts[i].screenY);
+    activeLayer.meta.strokes.push(stroke);
+    redrawLayer(activeLayer);
 
-    layerContainers[stroke.layerId].addChild(g);
-
-    MainController.safeNotify('stroke-drawn', { layerId: stroke.layerId, points: pts });
+    MainController.safeNotify("stroke-added", { layer:activeLayer.meta.name });
   }
 
-  function setCamera(x, y) {
-    camera.x = x; camera.y = y;
-    app.stage.x = -camera.x;
-    app.stage.y = -camera.y;
-    MainController.safeNotify('camera-moved', { camera:{...camera} });
+  // 消去ストローク
+  function eraseStroke(stroke){
+    if(!activeLayer) return;
+
+    const radius = stroke.brushSize || 5;
+    activeLayer.meta.strokes = activeLayer.meta.strokes.filter(s => {
+      return !s.points.some(p => {
+        const dx = p.x - stroke.points[0].x;
+        const dy = p.y - stroke.points[0].y;
+        return Math.sqrt(dx*dx+dy*dy) < radius;
+      });
+    });
+
+    redrawLayer(activeLayer);
+    MainController.safeNotify("stroke-erased", { layer:activeLayer.meta.name });
   }
 
-  function worldToScreen(p) { return { x:p.x-camera.x, y:p.y-camera.y }; }
-  function screenToWorld(p) { return { x:p.x+camera.x, y:p.y+camera.y }; }
+  // レイヤー再描画
+  function redrawLayer(layer){
+    const g = layer;
+    g.clear();
 
-  function onEvent(event) {
-    // 例: MainController通知受信
+    for(const s of g.meta.strokes){
+      g.lineStyle(s.brushSize||1, s.color||0x000000, 1.0);
+      if(s.points.length>0){
+        g.moveTo(s.points[0].x, s.points[0].y); // ←ワールド座標そのまま
+        for(let i=1;i<s.points.length;i++){
+          g.lineTo(s.points[i].x, s.points[i].y);
+        }
+      }
+    }
   }
 
-  return { init, drawStroke, setCamera, worldToScreen, screenToWorld, onEvent };
+  // カメラ移動
+  function setCamera(x,y){
+    camera.x = x;
+    camera.y = y;
+
+    // container を移動するだけ
+    cameraContainer.position.set(-camera.x, -camera.y);
+
+    MainController.safeNotify("camera-moved", { camera:{...camera} });
+  }
+
+  return {
+    init,
+    createLayer,
+    setActiveLayer,
+    addStroke,
+    eraseStroke,
+    setCamera
+  };
 })();
 
 
-3. 衛星2：layer-tool-ui.js
+これで：
 
-/**
- * @module   LayerToolUI
- * @role     レイヤー管理 + ツール + UI
- * @depends  MainController
- * @provides init(), createLayer(name?), deleteLayer(id), setActiveLayer(id), onUIButtonClick(event)
- * @notes    LayerID 安定生成、アクティブレイヤー制御、循環参照禁止
- */
+ペンで描いた後にカメラを動かすと すべてのレイヤーがまとめて動く
 
-const LayerToolUI = (() => {
-  let layers = [], activeLayerId = null;
-  const strokes = [];
-
-  async function init() {
-    console.log("[LayerToolUI] Initialized.");
-  }
-
-  function createLayer(name="layer") {
-    const id = `layer-${layers.length+1}`;
-    const layer = { id, name, points: [] };
-    layers.push(layer);
-    activeLayerId = id;
-    MainController.safeNotify('layer-created', { layerId: id });
-  }
-
-  function setActiveLayer(id) {
-    if(layers.find(l=>l.id===id)) activeLayerId = id;
-    MainController.safeNotify('layer-activated', { id });
-  }
-
-  function drawStroke(points) {
-    if(!activeLayerId) return;
-    const stroke = { layerId: activeLayerId, points };
-    strokes.push(stroke);
-    MainController.safeNotify('path-ready-for-layer', { layerId: activeLayerId, points });
-  }
-
-  function eraseStroke(stroke) {
-    if(stroke.layerId!==activeLayerId) return; // 他レイヤーは消せない
-    // 消去処理
-  }
-
-  function onUIButtonClick(event) {
-    if(event.type==="add-layer") createLayer();
-  }
-
-  function onEvent(event) {
-    // 例: MainController通知受信
-  }
-
-  return { init, createLayer, setActiveLayer, drawStroke, eraseStroke, onUIButtonClick, onEvent };
-})();
-
-4. 衛星3：error-service.js
-
-/**
- * @module   ErrorService
- * @role     エラー検知・通知
- * @depends  MainController
- * @provides reportError(code, details), showErrorNotification(msg)
- */
-
-const ErrorService = (() => {
-  let history = [];
-
-  async function init() {
-    console.log("[ErrorService] Initialized.");
-  }
-
-  function reportError(code, details) {
-    history.push({ code, details, timestamp: Date.now() });
-    showErrorNotification(`[${code}] ${details}`);
-  }
-
-  function showErrorNotification(msg) {
-    console.error("[ErrorService] ", msg);
-    MainController.safeNotify('error-occurred', { message: msg });
-  }
-
-  function onEvent(event) {
-    // 他衛星からのエラー受信も処理可能
-  }
-
-  return { init, reportError, showErrorNotification, onEvent };
-})();
-
-
-✅ 修正ポイント
-
-Layerごとに Pixi Container 分離 → 他レイヤーの Stroke を操作不可に。
-
-Camera 移動時に Pixi stage 反映 → 描画内容も含めてスクロール。
-
-Layer ID 安定化 → layer-${index+1}。
-
-Stroke payload は循環参照なしで MainController に通知。
-
-アクティブレイヤー判定で消しゴム制御。
-
-
+レイヤー切り替えも「ワールド座標を共通基盤」とするので整合性が保たれる

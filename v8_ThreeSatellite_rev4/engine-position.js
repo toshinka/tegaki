@@ -565,6 +565,7 @@ const EnginePosition = (() => {
         // Getters for controlled access
         getApp: () => app,
         getContainers: () => containers,
+        getCameraContainer: () => cameraContainer,
         getCurrentPath: () => currentDrawingPath,
         getStrokes: () => [...strokes],
         getLayerContainers: () => ({ ...layerContainers })
