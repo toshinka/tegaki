@@ -447,7 +447,7 @@ const EnginePosition = (() => {
         screenToWorld,
         setCamera,
         getCamera,
-        createLayer,
+        registerLayerContainer,
         setActiveLayer,
         getActiveLayer,
         setLayerVisibility,

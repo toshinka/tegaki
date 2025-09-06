@@ -39,10 +39,32 @@
 - @flow     動的フロー（例: Stroke → World→Screen → DrawingEngine、レイヤー作成 → LayerManager → MainController → UI更新）
 - @memory   状態・描画履歴保持（Layer構造、Camera位置、描画履歴など）
 
-## 6. イベントフロー例
-[ユーザー操作] → UIManager → MainController → LayerManager / DrawingEngine / PositionManager
-[Camera移動] → PositionManager → MainController → DrawingEngine
-[レイヤー作成] → LayerManager → MainController → UIManager
+## 6. イベントフローと責務相関
+
+### 6.1 イベントフロー例
+- [ユーザー操作] → UIManager → MainController → LayerManager / DrawingEngine / PositionManager  
+- [Camera移動] → PositionManager → MainController → DrawingEngine  
+- [レイヤー作成] → LayerManager → MainController → UIManager  
+
+### 6.2 カメラ移動フロー
+- pointermove (main) → EnginePosition.setCamera → cameraContainer.position 更新 → 全レイヤー追従
+
+### 6.3 座標変換フロー
+- screen(x,y) → EnginePosition.screenToWorld → world(x,y) → stroke 記録
+
+### 6.4 ファイル・メソッド責務表
+
+| ファイル | @provides メソッド | 主な責務 | 呼び出し元 |
+|----------|-------------------|----------|------------|
+| **main.html (MainController)** | initApp, pointermoveHandler, toWorld | エントリーポイント、UIイベントの受け口、ワールド座標変換呼び出し | UIManager, DOMイベント |
+| **layer-tool-ui.js (LayerManager)** | createLayer, switchLayer, getActiveLayer | レイヤーの生成・切替・管理 | MainController |
+| **engine-position.js (PositionManager)** | setCamera, getCamera, screenToWorld, worldToScreen | カメラ座標・座標変換の管理 | MainController, DrawingEngine |
+| **drawing-engine.js (DrawingEngine)** | startStroke, updateStroke, endStroke, eraseStroke | ストローク描画・消去処理、world座標に基づく記録 | MainController |
+| **error-service.js (ErrorService)** | logError, notify | エラー収集・通知 | 全ファイル共通 |
+
+### 6.5 禁止ルール
+- Layer.position を直接触る禁止（必ず PositionManager を介する）  
+- stroke 記録は必ず world 座標を使用（screen 座標のまま記録しない）  
 
 ## 7. 座標系辞典
 - Camera: 表示位置・倍率のみ保持

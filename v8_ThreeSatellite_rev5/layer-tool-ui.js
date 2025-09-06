@@ -704,9 +704,12 @@ const LayerToolUI = (() => {
                 break;
                 
             case 'layer-created':
-                // EnginePositionからレイヤー作成通知を受信（改修案対応）
+                // LayerToolUIからの通知を受信してEnginePositionで実際にレイヤーContainer作成（改修案対応）
                 if (event.payload?.layerId !== undefined) {
-                    syncLayerFromEngine(event.payload);
+                    registerLayerContainer(event.payload.layerId);
+                    if (activeLayerId === null) {
+                        setActiveLayer(event.payload.layerId);
+                    }
                 }
                 break;
                 
