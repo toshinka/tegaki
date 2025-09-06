@@ -3,7 +3,7 @@
  * @provides LayerManager, レイヤー管理機能, UI更新
  * @requires DrawingEngine, PIXI.js, MainController API
  * LayerManager衛星 - レイヤー生成/削除/移動、Stage管理
- * 星型分離版 v8rev8 - 修正版（type付きイベント対応）
+ * 星型分離版 v8rev8 - 修正版（循環参照解決・type付きイベント対応）
  */
 
 window.LayerManager = class LayerManager {
@@ -24,10 +24,6 @@ window.LayerManager = class LayerManager {
     
     async register(mainApi) {
         this.mainApi = mainApi;
-        // mainApiにレイヤーマネージャーを登録（衛星登録機能があれば）
-        if (this.mainApi?.registerSatellite) {
-            this.mainApi.registerSatellite('layers', this);
-        }
     }
     
     async initialize() {
@@ -154,15 +150,15 @@ window.LayerManager = class LayerManager {
             this.updateLayerUI();
             this.log(`Deleted layer: ${layerId}`);
             
-            // 削除完了通知（修正: typeを必ず追加、循環参照を避ける）
+            // 削除完了通知（修正: typeを必ず追加、循環参照を完全に避ける）
+            const activeLayer = this.getActiveLayer();
             this.mainApi?.notify({
-                type: 'layer-change',
-                action: 'deleted',
-                layerId: layerId,
+                type: 'layer-deleted',
+                deletedLayerId: layerId,
                 activeLayer: {
-                    id: this.getActiveLayer()?.id,
-                    name: this.getActiveLayer()?.name,
-                    visible: this.getActiveLayer()?.visible
+                    id: activeLayer?.id,
+                    name: activeLayer?.name,
+                    visible: activeLayer?.visible
                 }
             });
             
@@ -182,12 +178,14 @@ window.LayerManager = class LayerManager {
             
             this.log(`Active layer changed to: ${layerId}`);
             
-            // レイヤー変更通知（修正: typeを必ず追加）
+            // レイヤー変更通知（修正: typeを必ず追加、軽量化したデータのみ）
+            const activeLayer = this.getActiveLayer();
             this.mainApi?.notify({
-                type: 'layer-change',
-                action: 'activated',
+                type: 'layer-activated',
                 layerId: layerId,
-                activeLayer: this.getActiveLayer()
+                layerName: activeLayer?.name,
+                layerVisible: activeLayer?.visible,
+                timestamp: Date.now()
             });
         }
     }
@@ -199,6 +197,14 @@ window.LayerManager = class LayerManager {
         layer.visible = !layer.visible;
         layer.container.visible = layer.visible;
         this.updateLayerUI();
+        
+        // 表示切り替え通知（修正: typeを必ず追加、軽量化）
+        this.mainApi?.notify({
+            type: 'layer-visibility-changed',
+            layerId: layerId,
+            visible: layer.visible,
+            layerName: layer.name
+        });
         
         this.log(`Layer ${layerId} visibility: ${layer.visible}`);
     }
@@ -235,6 +241,15 @@ window.LayerManager = class LayerManager {
             this.engine.containers.world.addChildAt(fromContainer, toIndex + 1); // +1 for background layer
             
             this.updateLayerUI();
+            
+            // レイヤー順序変更通知（修正: typeを必ず追加、軽量化）
+            this.mainApi?.notify({
+                type: 'layer-reordered',
+                fromIndex: fromIndex,
+                toIndex: toIndex,
+                layerId: fromLayerId
+            });
+            
             this.log(`Reordered layer from ${fromIndex} to ${toIndex}`);
             
         } catch (error) {
@@ -330,7 +345,7 @@ window.LayerManager = class LayerManager {
         
         const eyeIcon = backgroundLayer.visible ? 
             '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-icon lucide-eye"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>' :
-            '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off-icon lucide-eye-off"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
+            '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off-icon lucide-eye-off"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0 .696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
         
         backgroundItem.innerHTML = `
             <div class="layer-name">${backgroundLayer.name}</div>
@@ -473,7 +488,7 @@ window.LayerManager = class LayerManager {
         };
     }
     
-    // レイヤーデータのシリアライズ
+    // レイヤーデータのシリアライズ（修正: 軽量化、循環参照回避）
     serialize() {
         const data = {
             version: '8.0.8',
@@ -491,6 +506,7 @@ window.LayerManager = class LayerManager {
                 isBackground: layer.isBackground,
                 timestamp: layer.timestamp,
                 pathCount: layer.paths.length
+                // container や graphics オブジェクトは除外
             };
         });
         
@@ -506,6 +522,7 @@ window.LayerManager = class LayerManager {
     }
     
     reportError(code, message, error) {
+        // 修正: typeを必ず追加
         this.mainApi?.notify({
             type: 'error',
             code,
@@ -517,20 +534,44 @@ window.LayerManager = class LayerManager {
         });
     }
     
-    // Public API
+    // Public API（修正: 軽量化されたレスポンス）
     getApi() {
         return {
             createLayer: (name) => this.createLayer(name),
             deleteLayer: (layerId) => this.deleteLayer(layerId),
             setActiveLayer: (layerId) => this.setActiveLayer(layerId),
             toggleLayerVisibility: (layerId) => this.toggleLayerVisibility(layerId),
-            getActiveLayer: () => this.getActiveLayer(),
+            getActiveLayer: () => {
+                // 軽量化されたアクティブレイヤー情報のみ返す
+                const layer = this.getActiveLayer();
+                return layer ? {
+                    id: layer.id,
+                    name: layer.name,
+                    visible: layer.visible,
+                    isBackground: layer.isBackground,
+                    pathCount: layer.paths.length
+                } : null;
+            },
             addPathToActiveLayer: (path) => this.addPathToActiveLayer(path),
             reorderLayers: (fromIndex, toIndex) => this.reorderLayers(fromIndex, toIndex),
             updateBackgroundSize: (width, height) => this.updateBackgroundSize(width, height),
             getStats: () => this.getLayerStats(),
             serialize: () => this.serialize(),
-            getLayers: () => new Map(this.layers)
+            getLayers: () => {
+                // 軽量化されたレイヤー情報のMapを返す
+                const lightweightLayers = new Map();
+                this.layers.forEach((layer, id) => {
+                    lightweightLayers.set(id, {
+                        id: layer.id,
+                        name: layer.name,
+                        visible: layer.visible,
+                        isBackground: layer.isBackground,
+                        pathCount: layer.paths.length,
+                        timestamp: layer.timestamp
+                    });
+                });
+                return lightweightLayers;
+            }
         };
     }
 };

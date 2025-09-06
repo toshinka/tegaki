@@ -3,7 +3,7 @@
  * @provides PositionManager, パン・ズーム機能, 座標変換
  * @requires MainController API, DrawingEngine
  * PositionManager衛星 - パン・ズーム管理、座標変換、ペン対応
- * 星型分離版 v8rev8 - 修正版（PIXI座標系統一・type付きイベント対応）
+ * 星型分離版 v8rev8 - 修正版（構文エラー修正・type付きイベント対応）
  */
 
 window.PositionManager = class PositionManager {
@@ -17,8 +17,7 @@ window.PositionManager = class PositionManager {
             startY: 0,
             pointerId: null,
             pointerType: null
-        }
-};;
+        };
         this.handlers = { move: null, up: null, cancel: null };
         this.updateScheduled = false;
         this.mainApi = null;
@@ -131,6 +130,13 @@ window.PositionManager = class PositionManager {
             this.updateScheduled = true;
             this.updateStatusDisplay();
             
+            // 位置更新通知（修正: typeを必ず追加、軽量化）
+            this.mainApi?.notify({
+                type: 'position-updated',
+                position: { x: this.position.targetX, y: this.position.targetY },
+                zoom: this.zoom.current
+            });
+            
             e.preventDefault();
             
         } catch (error) {
@@ -184,6 +190,14 @@ window.PositionManager = class PositionManager {
             }
             
             this.updateScheduled = true;
+            
+            // ズーム更新通知（修正: typeを必ず追加、軽量化）
+            this.mainApi?.notify({
+                type: 'zoom-updated',
+                zoom: this.zoom.target,
+                position: { x: this.position.targetX, y: this.position.targetY }
+            });
+            
             this.log(`Zoom changed to ${this.zoom.target.toFixed(2)}`);
             
         } catch (error) {
@@ -473,3 +487,4 @@ window.PositionManager = class PositionManager {
             stopPanning: () => this.stopPanning()
         };
     }
+};

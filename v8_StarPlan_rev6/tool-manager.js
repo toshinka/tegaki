@@ -3,7 +3,7 @@
  * @provides ToolManager, ツール管理機能, 描画フロー
  * @requires DrawingEngine, LayerManager, MainController API
  * ToolManager衛星 - ツール登録/選択、描画フロー管理
- * 星型分離版 v8rev8 - 修正版（type付きイベント対応）
+ * 星型分離版 v8rev8 - 修正版（type付きイベント徹底対応）
  */
 
 window.ToolManager = class ToolManager {
@@ -93,7 +93,7 @@ window.ToolManager = class ToolManager {
         
         // ツール変更通知（修正: typeを必ず追加）
         this.mainApi?.notify({
-            type: 'tool-change',
+            type: 'tool-changed',
             oldTool,
             newTool: toolId,
             toolName: tool.name
@@ -123,6 +123,15 @@ window.ToolManager = class ToolManager {
             };
             
             const result = tool.start(x, y, meta);
+            
+            // 描画開始通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
+                type: 'drawing-started',
+                tool: this.currentTool,
+                position: { x, y },
+                settings: meta
+            });
+            
             this.log(`Drawing started with ${this.currentTool} at (${x.toFixed(1)}, ${y.toFixed(1)})`);
             
             return result;
@@ -175,6 +184,13 @@ window.ToolManager = class ToolManager {
                 tool.end(0, 0, meta); // 座標は不要
             }
             
+            // 描画終了通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
+                type: 'drawing-stopped',
+                tool: this.currentTool,
+                timestamp: Date.now()
+            });
+            
             this.log(`Drawing stopped with ${this.currentTool}`);
             
         } catch (error) {
@@ -209,6 +225,13 @@ window.ToolManager = class ToolManager {
                     }
                 }
             }
+            
+            // 描画キャンセル通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
+                type: 'drawing-cancelled',
+                tool: this.currentTool,
+                timestamp: Date.now()
+            });
             
             this.log(`Drawing cancelled with ${this.currentTool}`);
             
@@ -298,6 +321,13 @@ window.ToolManager = class ToolManager {
         const { min, max } = tool.settings.size;
         this.brushSize = Math.max(min, Math.min(max, Math.round(size * 10) / 10));
         
+        // ブラシサイズ変更通知（修正: typeを必ず追加）
+        this.mainApi?.notify({
+            type: 'brush-size-changed',
+            size: this.brushSize,
+            tool: this.currentTool
+        });
+        
         this.log(`Brush size set to ${this.brushSize}`);
         return true;
     }
@@ -311,12 +341,28 @@ window.ToolManager = class ToolManager {
         const { min, max } = tool.settings.opacity;
         this.opacity = Math.max(min, Math.min(max, Math.round(opacity * 1000) / 1000));
         
+        // 不透明度変更通知（修正: typeを必ず追加）
+        this.mainApi?.notify({
+            type: 'opacity-changed',
+            opacity: this.opacity,
+            tool: this.currentTool
+        });
+        
         this.log(`Opacity set to ${this.opacity}`);
         return true;
     }
     
     setBrushColor(color) {
         this.brushColor = color;
+        
+        // 色変更通知（修正: typeを必ず追加）
+        this.mainApi?.notify({
+            type: 'color-changed',
+            color: this.brushColor,
+            colorHex: '0x' + color.toString(16).padStart(6, '0'),
+            tool: this.currentTool
+        });
+        
         this.log(`Brush color set to 0x${color.toString(16).padStart(6, '0')}`);
     }
     
@@ -342,6 +388,13 @@ window.ToolManager = class ToolManager {
             ...toolDefinition
         });
         
+        // ツール登録通知（修正: typeを必ず追加）
+        this.mainApi?.notify({
+            type: 'tool-registered',
+            toolId,
+            toolName: toolDefinition.name
+        });
+        
         this.log(`Custom tool registered: ${toolId}`);
         return true;
     }
@@ -358,31 +411,49 @@ window.ToolManager = class ToolManager {
         
         const result = this.tools.delete(toolId);
         if (result) {
+            // ツール削除通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
+                type: 'tool-unregistered',
+                toolId
+            });
+            
             this.log(`Tool unregistered: ${toolId}`);
         }
         
         return result;
     }
     
-    // ツール情報取得
+    // ツール情報取得（軽量化）
     getToolInfo(toolId = null) {
         if (toolId) {
             const tool = this.tools.get(toolId);
-            return tool ? { id: toolId, ...tool } : null;
+            return tool ? { 
+                id: toolId, 
+                name: tool.name, 
+                cursor: tool.cursor,
+                settings: tool.settings 
+            } : null;
         }
         
         const toolList = [];
         this.tools.forEach((tool, id) => {
-            toolList.push({ id, name: tool.name, cursor: tool.cursor });
+            toolList.push({ 
+                id, 
+                name: tool.name, 
+                cursor: tool.cursor,
+                hasSettings: !!tool.settings 
+            });
         });
         
         return toolList;
     }
     
     getCurrentTool() {
+        const tool = this.tools.get(this.currentTool);
         return {
             id: this.currentTool,
-            tool: this.tools.get(this.currentTool),
+            name: tool?.name || 'Unknown',
+            cursor: tool?.cursor || 'default',
             settings: {
                 brushSize: this.brushSize,
                 brushColor: this.brushColor,
@@ -403,7 +474,7 @@ window.ToolManager = class ToolManager {
         };
     }
     
-    // 設定のシリアライズ
+    // 設定のシリアライズ（軽量化）
     serialize() {
         return {
             version: '8.0.8',
@@ -454,6 +525,7 @@ window.ToolManager = class ToolManager {
     }
     
     reportError(code, message, error) {
+        // 修正: typeを必ず追加
         this.mainApi?.notify({
             type: 'error',
             code,

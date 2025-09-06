@@ -3,7 +3,7 @@
  * @provides ErrorService, エラー処理機能, 復旧処理
  * @requires MainController API
  * ErrorService衛星 - エラーフロー管理、UI通知、復旧処理
- * 星型分離版 v8rev8 - 修正版（type付きイベント対応）
+ * 星型分離版 v8rev8 - 修正版（type付きイベント徹底対応）
  */
 
 window.ErrorService = class ErrorService {
@@ -147,6 +147,15 @@ window.ErrorService = class ErrorService {
         // アプリケーション状態をセーフモードに移行
         this.enterSafeMode(errorData);
         
+        // 外部通知（修正: typeを必ず追加）
+        this.mainApi?.notify({
+            type: 'critical-error-detected',
+            code: errorData.code,
+            message: errorData.message,
+            source: errorData.source,
+            timestamp: errorData.timestamp
+        });
+        
         // エラー報告を外部に送信（本来なら）
         this.reportToExternal(errorData);
     }
@@ -160,6 +169,15 @@ window.ErrorService = class ErrorService {
             `${errorData.code}: ${errorData.message}`,
             'error'
         );
+        
+        // 回復可能エラー通知（修正: typeを必ず追加）
+        this.mainApi?.notify({
+            type: 'recoverable-error-detected',
+            code: errorData.code,
+            message: errorData.message,
+            source: errorData.source,
+            timestamp: errorData.timestamp
+        });
         
         // 自動復旧を試行
         this.attemptRecovery(errorData);
@@ -299,6 +317,13 @@ window.ErrorService = class ErrorService {
                 statusPanel.style.background = '#fff5f5';
             }
             
+            // セーフモード移行通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
+                type: 'safe-mode-entered',
+                reason: errorData.code,
+                timestamp: Date.now()
+            });
+            
         } catch (safeModeError) {
             console.error('Failed to enter safe mode:', safeModeError);
         }
@@ -324,6 +349,12 @@ window.ErrorService = class ErrorService {
             this.suppressedErrors.clear();
             this.errorCounts.clear();
             
+            // セーフモード解除通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
+                type: 'safe-mode-exited',
+                timestamp: Date.now()
+            });
+            
         } catch (exitError) {
             console.error('Failed to exit safe mode:', exitError);
         }
@@ -348,8 +379,23 @@ window.ErrorService = class ErrorService {
                     this.log(`No specific recovery for ${errorData.code}`);
             }
             
+            // 復旧試行通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
+                type: 'recovery-attempted',
+                errorCode: errorData.code,
+                timestamp: Date.now()
+            });
+            
         } catch (recoveryError) {
             this.log('Recovery attempt failed:', recoveryError);
+            
+            // 復旧失敗通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
+                type: 'recovery-failed',
+                errorCode: errorData.code,
+                recoveryError: recoveryError?.message,
+                timestamp: Date.now()
+            });
         }
     }
     
@@ -427,11 +473,16 @@ window.ErrorService = class ErrorService {
         this.log('External error reporting:', errorData);
     }
     
-    // エラー統計の取得
+    // エラー統計の取得（軽量化）
     getErrorStats() {
         const stats = {
             totalErrors: this.errorHistory.length,
-            recentErrors: this.errorHistory.slice(0, 10),
+            recentErrors: this.errorHistory.slice(0, 10).map(error => ({
+                code: error.code,
+                message: error.message,
+                source: error.source,
+                timestamp: error.timestamp
+            })),
             errorCounts: Object.fromEntries(this.errorCounts),
             suppressedErrorCount: this.suppressedErrors.size
         };
@@ -439,12 +490,18 @@ window.ErrorService = class ErrorService {
         return stats;
     }
     
-    // エラー履歴のエクスポート
+    // エラー履歴のエクスポート（軽量化）
     exportErrorHistory() {
         const exportData = {
             version: '8.0.8',
             timestamp: Date.now(),
-            errors: this.errorHistory,
+            errors: this.errorHistory.map(error => ({
+                code: error.code,
+                message: error.message,
+                source: error.source,
+                timestamp: error.timestamp,
+                // stackやcontextは除外して軽量化
+            })),
             stats: this.getErrorStats()
         };
         
@@ -456,6 +513,13 @@ window.ErrorService = class ErrorService {
         this.errorHistory = [];
         this.errorCounts.clear();
         this.suppressedErrors.clear();
+        
+        // 履歴クリア通知（修正: typeを必ず追加）
+        this.mainApi?.notify({
+            type: 'error-history-cleared',
+            timestamp: Date.now()
+        });
+        
         this.log('Error history cleared');
     }
     

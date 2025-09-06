@@ -3,7 +3,7 @@
  * @provides UIManager, UI管理機能, イベントハンドリング
  * @requires ToolManager, DrawingEngine, LayerManager, MainController API
  * UIManager衛星 - DOM生成、ツール通知、ポップアップ操作
- * 星型分離版 v8rev8 - 修正版（type付きイベント対応）
+ * 星型分離版 v8rev8 - 修正版（構文エラー修正・type付きイベント対応）
  */
 
 window.UIManager = class UIManager {
@@ -17,7 +17,6 @@ window.UIManager = class UIManager {
         this.dragState = { active: false, offset: { x: 0, y: 0 } };
         this.initialized = false;
     }
-};
     
     async register(mainApi) {
         this.mainApi = mainApi;
@@ -85,6 +84,7 @@ window.UIManager = class UIManager {
         if (addLayerBtn) {
             addLayerBtn.addEventListener('click', () => {
                 try {
+                    // 修正: typeを必ず追加
                     this.mainApi?.dispatch({
                         type: 'create-layer',
                         name: null // 自動生成
@@ -255,6 +255,7 @@ window.UIManager = class UIManager {
                 const height = parseInt(heightInput.value);
                 
                 if (width >= 100 && width <= 4096 && height >= 100 && height <= 4096) {
+                    // 修正: typeを必ず追加
                     this.mainApi?.dispatch({
                         type: 'resize-canvas',
                         width: width,
@@ -429,6 +430,7 @@ window.UIManager = class UIManager {
     }
     
     reportError(code, message, error) {
+        // 修正: typeを必ず追加
         this.mainApi?.notify({
             type: 'error',
             code,
@@ -451,3 +453,4 @@ window.UIManager = class UIManager {
             handleCoordinatesChange: (event) => this.handleCoordinatesChange(event)
         };
     }
+};

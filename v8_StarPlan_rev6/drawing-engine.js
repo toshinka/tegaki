@@ -3,7 +3,7 @@
  * @provides DrawingEngine, PIXI描画機能, 座標系管理
  * @requires PIXI.js, MainController API
  * DrawingEngine衛星 - PixiJS Application生成、描画フロー管理
- * 星型分離版 v8rev8 - 修正版（type付きイベント対応）
+ * 星型分離版 v8rev8 - 修正版（type付きイベント徹底対応・軽量化）
  */
 
 window.DrawingEngine = class DrawingEngine {
@@ -46,6 +46,16 @@ window.DrawingEngine = class DrawingEngine {
             
             this.initialized = true;
             this.log('DrawingEngine initialized successfully');
+            
+            // 初期化完了通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
+                type: 'drawing-engine-initialized',
+                canvasSize: { 
+                    width: config.canvas?.width || 400, 
+                    height: config.canvas?.height || 400 
+                },
+                timestamp: Date.now()
+            });
             
         } catch (error) {
             this.reportError('ENGINE_INIT_ERROR', 'Failed to initialize drawing engine', error);
@@ -122,7 +132,8 @@ window.DrawingEngine = class DrawingEngine {
                 x: event.global.x,
                 y: event.global.y,
                 pressure: originalEvent.pressure || 1,
-                pointerType: originalEvent.pointerType || 'mouse'
+                pointerType: originalEvent.pointerType || 'mouse',
+                timestamp: Date.now()
             });
             
         } catch (error) {
@@ -138,9 +149,10 @@ window.DrawingEngine = class DrawingEngine {
             
             // 座標情報を常に通知（修正: typeを必ず追加）
             this.mainApi?.notify({
-                type: 'coordinates-change',
+                type: 'coordinates-changed',
                 x: event.global.x,
-                y: event.global.y
+                y: event.global.y,
+                timestamp: Date.now()
             });
             
             if (spacePressed) {
@@ -158,7 +170,8 @@ window.DrawingEngine = class DrawingEngine {
                 x: event.global.x,
                 y: event.global.y,
                 pressure: originalEvent.pressure || 1,
-                pointerType: originalEvent.pointerType || 'mouse'
+                pointerType: originalEvent.pointerType || 'mouse',
+                timestamp: Date.now()
             });
             
         } catch (error) {
@@ -176,7 +189,8 @@ window.DrawingEngine = class DrawingEngine {
                 this.mainApi?.dispatch({
                     type: 'stop-drawing',
                     x: event.global.x,
-                    y: event.global.y
+                    y: event.global.y,
+                    timestamp: Date.now()
                 });
             }
             
@@ -205,6 +219,16 @@ window.DrawingEngine = class DrawingEngine {
             path.points.push({ x, y, size, timestamp: Date.now() });
             
             this.paths.push(path);
+            
+            // パス作成通知（修正: typeを必ず追加、軽量化）
+            this.mainApi?.notify({
+                type: 'path-created',
+                pathId: path.id,
+                startPoint: { x, y },
+                settings: { size, color, opacity },
+                timestamp: path.timestamp
+            });
+            
             this.log(`Created path: ${path.id}`);
             
             return path;
@@ -270,9 +294,10 @@ window.DrawingEngine = class DrawingEngine {
             
             // リサイズ完了通知（修正: typeを必ず追加）
             this.mainApi?.notify({
-                type: 'canvas-change',
+                type: 'canvas-resized',
                 width: newWidth,
-                height: newHeight
+                height: newHeight,
+                timestamp: Date.now()
             });
             
         } catch (error) {
@@ -290,6 +315,13 @@ window.DrawingEngine = class DrawingEngine {
             });
             
             this.paths = [];
+            
+            // キャンバスクリア通知（修正: typeを必ず追加）
+            this.mainApi?.notify({
+                type: 'canvas-cleared',
+                timestamp: Date.now()
+            });
+            
             this.log('Canvas cleared');
             
         } catch (error) {
@@ -312,6 +344,13 @@ window.DrawingEngine = class DrawingEngine {
             
             renderTexture.destroy();
             
+            // スナップショット取得通知（修正: typeを必ず追加、dataURLは含めない）
+            this.mainApi?.notify({
+                type: 'snapshot-taken',
+                size: dataURL.length,
+                timestamp: Date.now()
+            });
+            
             return dataURL;
             
         } catch (error) {
@@ -320,7 +359,7 @@ window.DrawingEngine = class DrawingEngine {
         }
     }
     
-    // パス統計情報
+    // パス統計情報（軽量化）
     getPathStats() {
         const totalPaths = this.paths.length;
         const completePaths = this.paths.filter(p => p.isComplete).length;
@@ -339,11 +378,22 @@ window.DrawingEngine = class DrawingEngine {
     log(message, ...args) {
         const config = this.mainApi?.getConfig();
         if (config?.debug) {
-            console.log(`[DrawingEngine] ${message}`, ...args);
+            // 軽量化：PIXIオブジェクトを直接ログに出力しない
+            const logArgs = args.map(arg => {
+                if (arg && typeof arg === 'object' && arg.constructor && arg.constructor.name) {
+                    // PIXIオブジェクトの場合は軽量化
+                    if (arg.constructor.name.startsWith('PIXI') || arg.constructor.name === 'Container' || arg.constructor.name === 'Graphics') {
+                        return `[${arg.constructor.name}]`;
+                    }
+                }
+                return arg;
+            });
+            console.log(`[DrawingEngine] ${message}`, ...logArgs);
         }
     }
     
     reportError(code, message, error) {
+        // 修正: typeを必ず追加
         this.mainApi?.notify({
             type: 'error',
             code,
@@ -355,7 +405,7 @@ window.DrawingEngine = class DrawingEngine {
         });
     }
     
-    // Public API
+    // Public API（軽量化、循環参照回避）
     getApi() {
         return {
             createPath: (x, y, size, color, opacity) => this.createPath(x, y, size, color, opacity),
@@ -364,8 +414,28 @@ window.DrawingEngine = class DrawingEngine {
             clear: () => this.clear(),
             takeSnapshot: () => this.takeSnapshot(),
             getStats: () => this.getPathStats(),
-            getContainers: () => this.containers,
-            getApp: () => this.app
+            getContainers: () => {
+                // 直接のPIXIオブジェクトではなく、軽量化された情報を返す
+                return {
+                    camera: this.containers.camera,
+                    world: this.containers.world,
+                    ui: this.containers.ui,
+                    // 統計情報も含める
+                    containerInfo: {
+                        cameraChildren: this.containers.camera?.children?.length || 0,
+                        worldChildren: this.containers.world?.children?.length || 0,
+                        uiChildren: this.containers.ui?.children?.length || 0
+                    }
+                };
+            },
+            getApp: () => this.app,
+            // 追加：軽量化された情報取得メソッド
+            getCanvasInfo: () => ({
+                width: this.app?.screen?.width || 0,
+                height: this.app?.screen?.height || 0,
+                initialized: this.initialized,
+                pathCount: this.paths.length
+            })
         };
     }
 };
