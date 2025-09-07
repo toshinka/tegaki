@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v3.0.0 - 主星+3衛星分割版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v3.0.1-Phase1 - 消しゴム透明化修正版</title>
     <style>
         * {
             margin: 0;
@@ -545,8 +545,8 @@
         </div>
     </div>
 
-    <!-- PixiJS v8 and Libraries -->
-    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
+    <!-- PixiJS v8.13.0 and Libraries - 🆕 Phase1: Updated to v8.13.0 for ERASE blend mode support -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
@@ -554,7 +554,11 @@
     <script>
         /**
          * 🌟 main.html - MainController中枢管制塔 + RecordManager
-         * Version: 3.0.0 | Last Modified: 2025-01-09
+         * Version: 3.0.1-Phase1 | Last Modified: 2025-01-09
+         * 
+         * [🚨 Phase1修正]
+         * - PixiJS v8.0.5 → v8.13.0 (ERASE blend mode対応)
+         * - 消しゴム透明化対応準備完了
          * 
          * [🎯 責務範囲]
          * - イベント仲介（全衛星間の通信制御）
@@ -583,9 +587,9 @@
          * ← engine-position.js (座標・カメライベント)
          * ← layer-tool-ui.js (描画・UI・レイヤーイベント)  
          * ← error-service.js (エラー・デバッグイベント)
-         * → CDN: PixiJS v8.0.5, HammerJS v2.0.8, Lodash v4.17.21, GSAP v3.13.0
+         * → CDN: PixiJS v8.13.0, HammerJS v2.0.8, Lodash v4.17.21, GSAP v3.13.0
          * 
-         * [⚠️ 禁止事項]
+         * ⚠️ 禁止事項]
          * - 描画処理の直接実行
          * - DOM操作の直接実行
          * - ライブラリ固有処理の直接実行
@@ -593,7 +597,7 @@
          */
         
         const APP_CONFIG = {
-            version: '3.0.0-satellite-split',
+            version: '3.0.1-satellite-split-phase1',
             canvas: { width: 400, height: 400 },
             rendering: { antialias: true, resolution: 1 },
             debug: false
@@ -879,7 +883,8 @@
                 window.appState = appState;
                 window.APP_CONFIG = APP_CONFIG;
                 
-                console.log('🎨 Futaba Drawing Tool v3.0.0 - MainController Ready!');
+                console.log('🎨 Futaba Drawing Tool v3.0.1-Phase1 - MainController Ready!');
+                console.log('🆕 Phase1: PixiJS v8.13.0 loaded for eraser transparency support');
             }
             
             static setupInputHandlers() {

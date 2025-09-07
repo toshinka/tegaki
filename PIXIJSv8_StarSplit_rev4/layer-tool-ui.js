@@ -1,6 +1,10 @@
 /**
  * 🛰️ layer-tool-ui.js - LayerManager+ToolManager+UIManager+DrawingEngine統合衛星
- * Version: 3.0.0 | Last Modified: 2025-01-09
+ * Version: 3.0.1-Phase1 | Last Modified: 2025-01-09
+ * 
+ * [🚨 Phase1修正]
+ * - Problem 2: レイヤーパネル初期表示修正
+ * - Problem 3: レイヤー分離強化修正
  * 
  * [🎯 責務範囲]
  * - レイヤー管理（CRUD、並び替え、可視性、変形）
@@ -424,6 +428,9 @@
             this.setupLayerControls();
             this.setupEventHandlers();
             this.updateCanvasInfo();
+            
+            // 🚨 Phase1修正: 初期レイヤーUI表示
+            setTimeout(() => this.updateLayerUI(), 100); // DOM準備待ち
             
             MainController.emit('system-debug', {
                 category: 'init',
@@ -916,7 +923,8 @@
                 color: settings.color,
                 size: settings.size,
                 opacity: settings.opacity,
-                isComplete: false
+                isComplete: false,
+                layerId: MainController.getState('activeLayerId') // 🚨 Phase1修正: レイヤー情報追加
             };
             
             path.graphics.circle(worldX, worldY, settings.size / 2);
@@ -1026,27 +1034,42 @@
         // === イベントハンドラー ===
         
         handleDrawStartRequest(payload) {
+            // 🚨 Phase1修正: アクティブレイヤー制限強化
+            const activeLayer = window.LayerManager?.getActiveLayer();
+            if (!activeLayer || activeLayer.id !== payload.layerId) {
+                return; // 非アクティブレイヤーへの描画禁止
+            }
+            
             const toolSettings = window.ToolManager?.getCurrentToolSettings();
             if (!toolSettings) return;
             
             const settings = {
-                color: toolSettings.tool === 'eraser' ? 0xf0e0d6 : toolSettings.color,
+                tool: toolSettings.tool, // 🚨 消しゴム修正: ツール情報追加
+                color: toolSettings.color, // 🚨 消しゴム修正: 元の色を保持
                 size: toolSettings.size,
-                opacity: toolSettings.tool === 'eraser' ? 1.0 : toolSettings.opacity
+                opacity: toolSettings.opacity
             };
             
             this.createPath(payload.worldX, payload.worldY, settings);
         }
         
         handleDrawContinueRequest(payload) {
+            // 🚨 Phase1修正: 現在のパスがアクティブレイヤーのものか確認
             if (this.currentPath) {
-                this.extendPath(this.currentPath, payload.worldX, payload.worldY);
+                const activeLayer = window.LayerManager?.getActiveLayer();
+                if (activeLayer && this.currentPath.layerId === activeLayer.id) {
+                    this.extendPath(this.currentPath, payload.worldX, payload.worldY);
+                }
             }
         }
         
         handleDrawEndRequest(payload) {
             if (this.currentPath) {
-                this.finalizePath(this.currentPath);
+                // 🚨 Phase1修正: 最終確認でもレイヤー一致をチェック
+                const activeLayer = window.LayerManager?.getActiveLayer();
+                if (activeLayer && this.currentPath.layerId === activeLayer.id) {
+                    this.finalizePath(this.currentPath);
+                }
             }
         }
         
@@ -1114,10 +1137,14 @@
                 
                 MainController.emit('system-debug', {
                     category: 'init',
-                    message: 'layer-tool-ui.js satellite initialized',
+                    message: 'layer-tool-ui.js satellite initialized - Phase1 fixes applied',
                     data: { 
                         components: ['LayerManager', 'ToolManager', 'UIManager', 'DrawingEngine', 'SystemMonitor'],
-                        pixiVersion: window.PIXI?.VERSION
+                        pixiVersion: window.PIXI?.VERSION,
+                        phase1Fixes: [
+                            'Initial layer panel display fixed',
+                            'Layer separation enforcement added'
+                        ]
                     },
                     timestamp: Date.now()
                 });

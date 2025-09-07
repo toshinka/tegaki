@@ -1,143 +1,224 @@
-いま起きていること（結論）
+まとめ（結論）
 
-1.キャンバスが出ない主因
-engine-position.js は #canvas-container を getElementById('canvas-container') で取得できなければ initialize() を falseで終了します（そして MainController.emit('system-error', { code: 'CANVAS_CONTAINER_NOT_FOUND', ... }) へ） 
+現象原因：消しゴムが「背景色で上書きしている」挙動 → レイヤーのピクセルのアルファ（透明度）を消していないため。
+
+対策（推奨）：各レイヤーをアルファ付きの RenderTexture（透明背景）で保持し、消しゴム操作はその RenderTexture に対して 「透明ピクセルを書き込む（＝アルファを落とす）」 方式で行う。Pixi の blendMode = ERASE（または同等のブレンド）を使って、描画内容のアルファを“消す”のが自然で高速。
+
+重要ポイント：RenderTexture は作成直後に透明（alpha=0）で初期化しておくこと。古いRT・不透明RTを使うと「背景色で上書き」になる。
+
+Pixi バージョン：最近の v8 系（例：v8.13.x）では erase 関連の不具合修正が入っているため、少なくとも v8.12+/8.13.x へ更新を強く推奨。（erase に関する既知 issue が過去にあり、最新版で改善されています）。
 GitHub
-。
-→ DOM上に id="canvas-container" が無い／描画前タイミング／CSSでゼロサイズ のいずれかで止まっている可能性が高いです。コンソールエラーが出ないのは、例外ではなくイベント発火で済ませているため。
++1
 
-2.レイヤーパネルが出ない副因
-layer-tool-ui.js の初期化（マウント）より前にパネルコンテナが無い、またはスクリプト読込順が逆転している可能性。改修メモにある UIManager.initialize() 内の setTimeout(...forceUpdateLayerPanel...) は“見えない→後から強制更新”の対症療法ですが、最初に mount 対象（例: #layer-panel）が存在しないと何も起こりません。
-（rev5 のファイル構成では engine-position.js が #canvas-container 依存であることは確認できましたが、layer-tool-ui.js のマウント先 ID と読込順が main.html 側で噛み合っていない疑いが濃いです。）
+原因（技術的に何が起きているか）
 
+現在の実装は「消す」処理を背景色で塗ることで見かけ上消している。→ これは不正確で、レイヤーのアルファを操作していない。
 
-・最小パッチ（確実に表示まで持っていく）
-
-下の 3 点を main.html に反映すれば、キャンバスとレイヤーパネルは出ます。
-（ID は下記に合わせてあります。あなた側の命名と違う場合は合わせてください）
-
-1) DOM に必要なコンテナを置く（上部どこでもOK）
-<!-- キャンバス用：engine-position.js が参照 -->
-<div id="canvas-container" style="
-  position:absolute; left:50%; top:50%;
-  transform:translate(-50%, -50%);
-  width:400px; height:400px; 
-  overflow:hidden; 
-  touch-action:none; /* Hammer と pointer の両立 */
-  z-index: 5;
-"></div>
-
-<!-- レイヤーパネル用：LayerToolUI が mount する -->
-<div id="layer-panel" style="
-  position:fixed; right:16px; top:16px;
-  width: 220px; max-height: 70vh; overflow:auto;
-  background:#1e1e1e; color:#fff; border-radius:12px; padding:8px;
-  z-index: 20;
-"></div>
-
-
-engine-position.js は初期化時に #canvas-container を探します。無ければ停止。まずはここで 100% 存在させます。 
+正しい消しゴムは「描かれているピクセルの alpha チャンネルを 0 にする」こと（＝透明にする）で、下位レイヤーを透過して見せる。Pixi では RenderTexture に対して erase ブレンドで描画するか、アルファマスク（別 RT）を管理して合成する方法がある。過去には blendMode = "erase" を RenderTexture に対して使う場合のバグ報告があり、適切に RT を初期化・レンダリングする手順が必要。
 GitHub
+Stack Overflow
 
-2) スクリプトの読込順を固定
-<script src="error-service.js" defer></script>
-<script src="main-controller.js" defer></script> <!-- もし別名なら中枢のファイル -->
-<script src="engine-position.js" defer></script>
-<script src="layer-tool-ui.js" defer></script>
-<script>
-  // DOMReady 後の起動（defer ならこの位置でOK）
-  document.addEventListener('DOMContentLoaded', () => {
-    // ここで UI / Engine の初期化を“順番付き”で呼ぶ
-    if (window.LayerToolUI && document.getElementById('layer-panel')) {
-      LayerToolUI.mount('#layer-panel');     // ← 必須：パネルの実体化
-    }
-    if (window.MainController && window.PositionManager) {
-      // すでに engine-position.js 内で initialize が走る設計でも、
-      // 走っていない場合に備えて明示起動を許す（多重起動は弾く設計に）
-      try { PositionManager.initialize && PositionManager.initialize(); } catch(e){}
-    }
-  });
-</script>
+改修方針（ルールブックに沿って）
+
+MainController の責務は「イベント仲介・状態管理・初期化・非破壊記録（undo/redo 用の差分ログ）」のみに限定する。消しゴムのペン状態やレイヤーの RenderTexture は「衛星（layer モジュール）」に実装。
+
+衛星（layer）同士は直接参照せず、MainController を介して操作要求（例：eraseAt(x,y)）を行う。
+
+透明消しゴム実装はレイヤー単位で完結させる（各レイヤーが自分の RenderTexture と合成ルールを持つ）。
+
+命名・APIを厳密に：例 Layer.createRenderTexture(width,height), Layer.drawPen(path, options), Layer.eraseAt(path, width) 等。
+
+console.log は最小化し、DEBUG フラグで詳細出力を許す。エラーは error-service を通して表示。
+
+Phase-1：具体的改修ステップ（実装手順）
+
+以下は file:// 環境・ES2023（非モジュール）を前提にした、最小変更での導入案です。差分をファイル毎に示します（要点のみ）。実装例は Pixi v8（最新系） API に合わせています。
+
+前提 API（MainController ⇄ Layer）
+
+MainController はレイヤー生成を行い、pointer イベント（pointerdown/move/up）を受け、現在のツール（pen / eraser）に従って該当レイヤーにコマンドを送る。
+
+Layer の公開メソッド（例）
+
+layer.init(app, width, height) — RenderTexture 作成、Sprite 生成、透明初期化
+
+layer.drawPen(graphics) — app.renderer.render({ container: graphics, target: layer.rt, clear: false })
+
+layer.erase(graphics) — graphics.blendMode = PIXI.BLEND_MODES.ERASE（要求が満たされない場合、エラーを返す）
+
+layer.clear() 等
+
+Layer（レイヤー）: RenderTexture 作成（重要）
+// inside layer initialization (engine-position.js or layer-tool-ui.js depending)
+const rt = PIXI.RenderTexture.create({ width: W, height: H, alpha: true });
+// Ensure the RT is cleared to fully transparent once:
+app.renderer.render({ container: new PIXI.Graphics(), target: rt, clear: true });
+// Create sprite to display that RT
+const sprite = new PIXI.Sprite(rt);
+sprite.name = layerName;
+sprite.interactive = true;
+container.addChild(sprite);
+layer.rt = rt;
+layer.sprite = sprite;
 
 
-ポイント
+ポイント：alpha: true と明示的に clear: true で一度透明化することで、以降 erase が効く前提を満たす。
 
-MainController（イベントバス）→engine-position.js→layer-tool-ui.js の依存順を守る
+（出典：RenderTexture の使い方、render API。render に target オプションを渡す現行 v8 の形式を採用）。
+api.pixijs.io
+pixijs.download
 
-パネルは 必ず mount('#layer-panel') を 1 度だけ呼ぶ
+消しゴム（eraser）描画ハンドラ（例）
 
-既存の UIManager.initialize() が内部で forceUpdateLayerPanel() しても、mount が先でないと UI は出ません
+ユーザーの pointer move を受けて eraserGraphics を毎フレーム描く（短命オブジェクト）。描画後に renderer.render(...) で 該当レイヤーの RT に対して描画する。
 
-3) 念のため、初期サイズ通知を 1 回だけ投げる
-<script>
-  // PositionManager のキャンバス境界を UI に知らせる
-  window.addEventListener('load', () => {
-    const el = document.getElementById('canvas-container');
-    if (el && window.MainController) {
-      const w = el.clientWidth || 400;
-      const h = el.clientHeight || 400;
-      MainController.emit('ui-canvas-resize', { width:w, height:h });
-    }
-  });
-</script>
+// create temporary eraser graphics per stroke update
+function strokeEraseToLayer(app, layer, pathPoints, width) {
+  const g = new PIXI.Graphics();
+  // draw stroke (白や何色でも良い — 色はアルファに影響しない)
+  g.lineStyle({ width: width, cap: 'round', join: 'round' });
+  g.moveTo(pathPoints[0].x, pathPoints[0].y);
+  for (let i = 1; i < pathPoints.length; i++) {
+    g.lineTo(pathPoints[i].x, pathPoints[i].y);
+  }
+  // set erase blend mode. Use constant to avoid ambiguous fallback.
+  if (PIXI.BLEND_MODES && PIXI.BLEND_MODES.ERASE !== undefined) {
+    g.blendMode = PIXI.BLEND_MODES.ERASE;
+  } else {
+    // ルールに従い暗黙のフォールバックは避ける -> 明示的にエラーで扱う
+    throw new Error('PIXI.BLEND_MODES.ERASE is not available. Pixi version incompatible.');
+  }
 
+  // Render this graphics into the layer's renderTexture (do NOT clear)
+  app.renderer.render({ container: g, target: layer.rt, clear: false });
 
-engine-position.js は ui-canvas-resize を受けて内部の canvasBounds を更新し、可視境界を通知します。起動直後に 1 回投げておくと、UI 側の状態表示（「Canvas: 400×400px」など）が安定します。 
-GitHub
-
-・追加で直しておくと堅牢になる 3 点
-
-初期化リトライの明示化
-engine-position.js 末尾にある「MainController 準備完了待ち」ループはありますが、DOM存在待ちはしていないので、
-initialize() 冒頭を次のように安全化すると「DOMがまだ無い」ケースを潰せます。
-
-initialize() {
-  // 1) DOM存在チェック（最大 1 秒までリトライ）
-  let tries = 0;
-  const ensureDom = (resolve) => {
-    this.container = document.getElementById('canvas-container');
-    if (this.container) { resolve(true); return; }
-    if (++tries > 20) {
-      MainController.emit('system-error', { code:'CANVAS_CONTAINER_NOT_FOUND', details:{tries} });
-      resolve(false); return;
-    }
-    setTimeout(()=>ensureDom(resolve), 50);
-  };
-  return new Promise((resolve)=>ensureDom(resolve)).then(ok=>{
-    if (!ok) return false;
-    // 2) 以降は今の処理（Hammer, Events, Loop, calibrateInitialPosition）
-    this.setupHammerJS();
-    this.setupPointerEvents();
-    this.setupEventHandlers();
-    this.startUpdateLoop();
-    setTimeout(()=>this.calibrateInitialPosition(), 50);
-    return true;
-  });
+  // cleanup
+  g.destroy({ children: true, texture: true, baseTexture: true });
 }
 
 
-パネルの mount 不足をログで可視化
-layer-tool-ui.js の mount(selector) で、ターゲット未存在時は MainController.emit('system-error', { code:'LAYER_PANEL_NOT_FOUND', ... }) を必ず出す（例外は投げない）。
-→ 「コンソール赤無しで何も出ない」を防ぐ。
+注意点：明示的にフォールバックしない（ルール）ため、ERASE 定義が無い場合は更新を要求（error-service に通す）。
 
-CSS のゼロサイズ事故防止
-グローバル CSS に保険を 1 行：
-
-#canvas-container { min-width: 1px; min-height: 1px; }
-
-
-（flex/grid の副作用で 0×0 になるレイアウト事故を予防）
-
-参考：今回の症状が起きやすい理由
-
-engine-position.js は 存在チェック→無ければ静かに終了という設計（例外ではなくイベント通知）なので、**「エラー無しで真っ黒」**が起きやすい。 
+（参考：erase を RT にレンダリングする手順や sample。過去には erase が RT に効かないバグが報告されていたため、RT の透明初期化と clear:false が重要）。
+Stack Overflow
 GitHub
 
-rev5 改修で calibrateInitialPosition() など 初期位置校正が入り、DOM の実寸やビューポートに依存する処理が増えたため、DOMの生成タイミング/IDずれに敏感になっています。 
+undo/redo（非破壊記録管理）
+
+MainController は layer.rt の snapshot（renderer.extract.pixels や renderer.generateTexture）でフルイメージを保存するのは重い。差分ログ（stroke path + tool + bounds）を取っておく方式を推奨（rulebook の非破壊方針）。必要に応じて定期的なフルスナップショットを取る（メモリ・パフォーマンスのバランスを検討）。
+
+ファイル別：変更提案（概要）
+
+main.html
+
+Pixi CDN を最新 v8.x（8.13.x）に更新（script src を最新版へ）。※バージョン混在禁止のため既存の pixi を置き換える。
+GitHub
+npm
+
+MainController 初期化時に背景レイヤーとレイヤー1を即座に Layer.create(...) で作成・表示する。→ 既に部分実装済とのことなので、Layer の RT 初期化を上の方式に差し替え。
+
+engine-position.js
+
+pointer イベントのハンドリングを MainController に委譲。MainController は現在選択ツールを判定して activeLayer.drawPen() / activeLayer.erase() を呼ぶだけにする（ツール状態は MainController が保持）。
+
+※ 衛星間直接参照禁止：engine-position.js は layer の内部構造に依存しない。MainController.getActiveLayer() のような API 経由でアクセス。
+
+layer-tool-ui.js
+
+「消しゴム選択時」に UI 側でペン幅だけを MainController に渡す。消しゴムの実体は Layer 内で描画→RT にレンダリングする。
+
+初期レイヤー表示ロジック：レイヤー一覧を作る時点で layer.init() を呼ぶ（ボタンを押す前から Sprite が stage に存在する）。
+
+error-service.js
+
+実行時互換チェックを追加：起動時に if (!PIXI.RenderTexture || !PIXI.BLEND_MODES || PIXI.BLEND_MODES.ERASE === undefined) errorService.raise('Pixi incompatible: erase not available.');
+
+ルールに従い、曖昧なフォールバックは行わず明示エラーで制御者に知らせる。
+
+テスト / 検証手順（必須）
+
+Pixi を最新（推奨 v8.13.x）に置き換え、ブラウザで file:// 直開き -> コンソールエラーが無いことを確認。（もし CORS 等で CDN 読み込みに問題があればローカルサーバを推奨）
 GitHub
 
-これで直らなかったら
+起動直後に背景レイヤー＋レイヤー1 が表示されることを確認（透明 RT の sprite が stage にある）。
 
-Network タブの スクリプト 404（特に layer-tool-ui.js）と、Elements で ID の綴りを見てください。
+通常のペンで描画 -> レイヤー上に描ける。undo 差分記録が取られているか確認。
 
-それでも出ない場合は、main.html 全体（head 内の CSS/JS 読込、body の DOM 構造）を貼ってください。依存順を含めて そのまま動く形に組み直します。
+消しゴムツールで消す（同じレイヤー上で） -> 下位レイヤーが透けて見える（つまりアルファが消えている）ことを確認。
+
+エッジケース：レイヤーを複数重ねた時の挙動、RT のサイズ変更、解像度（retina）考慮。
+
+互換チェック：PIXI.BLEND_MODES.ERASE が存在しない Pixi なら起動時に error-service が警告すること。
+
+なぜ Pixi を最新版に上げるべきか（短く）
+
+erase ブレンドなどレンダーテクスチャ周りは過去にバグがあった（issue に記録あり）。最新版で修正や安定化、ドキュメント改善が継続されているため、再発を避けるために更新推奨。ただし「バージョン混在禁止」のルールに従い、ライブラリの置き換えは一括で行うこと。
+GitHub
++1
+
+実装例（最小の差分パッチ） — 消しゴムコア関数（そのまま使える単体）
+<script>
+  // 省略：app = new PIXI.Application({...});
+  function initLayer(app, W, H, layerName) {
+    const container = new PIXI.Container();
+    const rt = PIXI.RenderTexture.create({ width: W, height: H, alpha: true });
+    // clear to transparent once
+    app.renderer.render({ container: new PIXI.Graphics(), target: rt, clear: true });
+    const sprite = new PIXI.Sprite(rt);
+    sprite.name = layerName;
+    app.stage.addChild(sprite);
+    return { rt, sprite, container };
+  }
+
+  function eraseStroke(app, layer, pathPoints, width) {
+    const g = new PIXI.Graphics();
+    g.lineStyle({ width: width, cap: 'round', join: 'round' });
+    g.moveTo(pathPoints[0].x, pathPoints[0].y);
+    for (let i=1;i<pathPoints.length;i++) g.lineTo(pathPoints[i].x, pathPoints[i].y);
+
+    if (!PIXI.BLEND_MODES || PIXI.BLEND_MODES.ERASE === undefined) {
+      throw new Error('ERASE blend mode not available in this Pixi build. Please update to a compatible v8.x.');
+    }
+    g.blendMode = PIXI.BLEND_MODES.ERASE;
+
+    app.renderer.render({ container: g, target: layer.rt, clear: false });
+    g.destroy();
+  }
+</script>
+
+リスクと注意点
+
+古い Pixi（v8 の古いマイナーや v7）だと erase が期待通り動かないケースがある（既報）。動作確認必須。
+GitHub
+
+RenderTexture の初期化忘れで「背景色で塗られる」現象が再発する。必ず clear: true で一度透明化する。
+GitHub
+
+undo の実装を naive にピクセル全体保存するとメモリ爆発するので、差分ログ＋定期スナップショット方式を推奨。
+
+最後に（実行優先順位）
+
+main.html の PixiCDN を最新 v8.13.x に差し替え（厳密なバージョン固定）。
+GitHub
+npm
+
+layer 初期化を RenderTexture + Sprite に変更、RT を透明初期化する。
+
+消しゴムの描画処理を上記 eraseStroke の流れで実装（MainController から呼ぶ）。
+
+起動時に互換チェックを行い、API が揃っていなければ明示的に error-service で通知（フォールバック処理は行わない）。
+
+検証（上のテスト手順）を実施し、問題があれば issue（バグ）として切る。
+
+参照（抜粋）
+
+PixiJS releases & latest v8 series — release notes / npm. 
+GitHub
+npm
+
+Issue: Erase Blend Mode not working when rendering to RenderTexture（既知の報告）。
+GitHub
+
+RenderTexture & renderer.render() usage（v8 API）。
+api.pixijs.io
+pixijs.download
