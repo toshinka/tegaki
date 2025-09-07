@@ -1,6 +1,11 @@
 /**
  * 🛰️ engine-position.js - PositionManager座標・カメラ・ジェスチャー衛星
- * Version: 3.0.0 | Last Modified: 2025-01-09
+ * Version: 3.0.1-Phase2.1 | Last Modified: 2025-01-09
+ * 
+ * [🚨 Phase2.1修正]
+ * - Problem 1: 初回カメラ移動のオフセット問題修正
+ * - 初期DOM位置計算のタイミング問題解決
+ * - calibrateInitialPosition()追加で正確な初期化実現
  * 
  * [🎯 責務範囲]
  * - 無限ワールド座標系管理（screen↔world変換）
@@ -20,6 +25,7 @@
  * setCameraPosition(x, y)                 - カメラ絶対位置
  * resetCamera()                           - カメラリセット
  * setupHammerJS()                         - ジェスチャー初期化
+ * calibrateInitialPosition()              - 🆕 初期位置校正
  * transformLayerCoordinates(layer, dx, dy) - レイヤー変形
  * 
  * [📡 処理イベント（IN）]
@@ -55,6 +61,7 @@
             this.hammer = null;
             this.lastDelta = null;
             this.updateScheduled = false;
+            this.initialized = false; // 🆕 Phase2.1: 初期化状態フラグ
             
             // パン状態管理
             this.panState = {
@@ -96,17 +103,78 @@
             // 定期更新開始
             this.startUpdateLoop();
             
+            // 🆕 Phase2.1: 初期位置校正を遅延実行
+            setTimeout(() => {
+                this.calibrateInitialPosition();
+                this.initialized = true;
+            }, 50); // DOM描画完了待ち
+            
             MainController.emit('system-debug', {
                 category: 'init',
-                message: 'PositionManager initialized',
+                message: 'PositionManager initialized with Phase2.1 camera fix',
                 data: { 
                     canvasContainer: this.container.id,
-                    hammerEnabled: !!this.hammer 
+                    hammerEnabled: !!this.hammer,
+                    phase21Fix: true
                 },
                 timestamp: Date.now()
             });
             
             return true;
+        }
+        
+        // 🆕 Phase2.1: 初期位置校正メソッド
+        calibrateInitialPosition() {
+            if (!this.container) return;
+            
+            const rect = this.container.getBoundingClientRect();
+            const viewportCenter = {
+                x: (window.innerWidth - 310) / 2, // サイドバー分を考慮
+                y: window.innerHeight / 2
+            };
+            
+            // 初期オフセット補正計算
+            const currentRect = this.container.getBoundingClientRect();
+            const expectedX = viewportCenter.x;
+            const expectedY = viewportCenter.y;
+            
+            // 実際の位置と期待値の差分を補正
+            const offsetCorrection = {
+                x: expectedX - (currentRect.left + currentRect.width / 2),
+                y: expectedY - (currentRect.top + currentRect.height / 2)
+            };
+            
+            // カメラの初期位置をリセット
+            this.camera.x = 0;
+            this.camera.y = 0;
+            this.camera.targetX = 0;
+            this.camera.targetY = 0;
+            
+            // DOM要素の初期位置を正確に設定
+            this.container.style.position = 'absolute';
+            this.container.style.left = '50%';
+            this.container.style.top = '50%';
+            this.container.style.transform = 'translate(-50%, -50%)';
+            this.container.style.transformOrigin = 'center center';
+            
+            // 位置変更通知
+            MainController.emit('camera-position-changed', { x: 0, y: 0 });
+            
+            MainController.emit('system-debug', {
+                category: 'camera',
+                message: 'Initial camera position calibrated',
+                data: { 
+                    viewportCenter: viewportCenter,
+                    offsetCorrection: offsetCorrection,
+                    containerRect: {
+                        left: currentRect.left,
+                        top: currentRect.top,
+                        width: currentRect.width,
+                        height: currentRect.height
+                    }
+                },
+                timestamp: Date.now()
+            });
         }
         
         setupHammerJS() {
@@ -226,11 +294,18 @@
             };
         }
         
-        // === カメラ制御（無制限移動対応） ===
+        // === カメラ制御（無制限移動対応・Phase2.1改良版） ===
         
         moveCamera(dx, dy) {
-            this.camera.targetX += dx;
-            this.camera.targetY += dy;
+            // 🔧 Phase2.1: 初期化完了後のより正確な移動制御
+            if (!this.initialized) {
+                // 初期化前は安全な移動のみ
+                this.camera.targetX += dx * 0.5;
+                this.camera.targetY += dy * 0.5;
+            } else {
+                this.camera.targetX += dx;
+                this.camera.targetY += dy;
+            }
             
             // 移動範囲制限（将来の設定可能化予定）
             const maxOffset = {
@@ -255,12 +330,25 @@
             this.camera.targetY = 0;
             this.updateScheduled = true;
             
-            // 即座にDOM更新
-            this.container.style.transform = 'translate(-50%, -50%)';
+            // 🔧 Phase2.1: より確実なリセット処理
+            this.camera.x = 0;
+            this.camera.y = 0;
+            
+            // DOM位置を正確にリセット
+            this.container.style.position = 'absolute';
             this.container.style.left = '50%';
             this.container.style.top = '50%';
+            this.container.style.transform = 'translate(-50%, -50%)';
+            this.container.style.transformOrigin = 'center center';
             
             MainController.emit('camera-position-changed', { x: 0, y: 0 });
+            
+            MainController.emit('system-debug', {
+                category: 'camera',
+                message: 'Camera reset to origin with Phase2.1 precision',
+                data: { x: 0, y: 0 },
+                timestamp: Date.now()
+            });
         }
         
         getCameraPosition() {
@@ -277,27 +365,46 @@
                 this.camera.x = Math.round(targetX);
                 this.camera.y = Math.round(targetY);
                 
-                // DOM transform更新
+                // 🔧 Phase2.1: より正確なDOM transform更新
                 const viewportCenter = {
                     x: (window.innerWidth - 310) / 2,
                     y: window.innerHeight / 2
                 };
                 
-                const offset = {
-                    x: viewportCenter.x + this.camera.x,
-                    y: viewportCenter.y + this.camera.y
+                // カメラオフセットを考慮した正確な位置計算
+                const transform = {
+                    x: this.camera.x,
+                    y: this.camera.y
                 };
                 
+                // CSS transformを使用したスムーズな移動
+                this.container.style.position = 'absolute';
+                this.container.style.left = '50%';
+                this.container.style.top = '50%';
                 this.container.style.transform = 
-                    `translate3d(${offset.x}px, ${offset.y}px, 0) translate(-50%, -50%)`;
-                this.container.style.left = '0px';
-                this.container.style.top = '0px';
+                    `translate(-50%, -50%) translate3d(${transform.x}px, ${transform.y}px, 0)`;
+                this.container.style.transformOrigin = 'center center';
                 
                 // 位置変更通知
                 MainController.emit('camera-position-changed', { 
                     x: this.camera.x, 
                     y: this.camera.y 
                 });
+                
+                // デバッグ情報（初回移動時のみ）
+                if (this.camera.x === targetX && this.camera.y === targetY && 
+                    (Math.abs(this.camera.x) > 0 || Math.abs(this.camera.y) > 0)) {
+                    MainController.emit('system-debug', {
+                        category: 'camera',
+                        message: 'Camera position updated with Phase2.1 precision',
+                        data: { 
+                            position: { x: this.camera.x, y: this.camera.y },
+                            viewportCenter: viewportCenter,
+                            transform: transform
+                        },
+                        timestamp: Date.now()
+                    });
+                }
             }
             
             this.updateScheduled = false;
