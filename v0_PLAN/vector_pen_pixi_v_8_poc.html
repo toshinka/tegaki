@@ -1,0 +1,267 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<title>Vector Pen PoC — Pixi v8</title>
+<style>
+  html,body{height:100%;margin:0;background:#111;color:#ddd;font-family:system-ui,Segoe UI,Roboto,Helvetica,Arial}
+  #app-root{position:fixed;inset:0;display:flex;flex-direction:column}
+  #topbar{height:44px;display:flex;align-items:center;gap:12px;padding:6px 12px;background:linear-gradient(#0f0f0f,#111);box-shadow:0 2px 8px rgba(0,0,0,.6);z-index:20}
+  .btn{background:#222;border:1px solid #333;padding:6px 10px;border-radius:6px;color:#ddd;cursor:pointer}
+  .btn.active{background:#0b84ff}
+  #info{margin-left:auto;font-size:13px;opacity:.9}
+  #tools{display:flex;gap:8px;align-items:center}
+  #canvas-wrap{flex:1;position:relative}
+  #overlay-ui{position:absolute;right:12px;top:60px;z-index:30;background:rgba(0,0,0,.4);backdrop-filter:blur(4px);padding:8px;border-radius:8px}
+  .stat{font-size:13px;margin-bottom:6px}
+  label{font-size:13px}
+  input[type=range]{width:120px}
+</style>
+</head>
+<body>
+<div id="app-root">
+  <div id="topbar">
+    <div id="tools">
+      <button id="tool-pen" class="btn active">Pen (Vector)</button>
+      <button id="tool-eraser" class="btn">Eraser</button>
+      <label style="display:flex;align-items:center;gap:6px;color:#ccc">Size <input id="size" type="range" min="1" max="64" value="12"></label>
+      <button id="clear" class="btn">Clear</button>
+    </div>
+    <div id="info">GPU: <span id="gpu">?</span> · Renderer: <span id="renderer">?</span></div>
+  </div>
+  <div id="canvas-wrap">
+    <!-- Pixi will inject canvas here -->
+    <div id="overlay-ui">
+      <div class="stat">FPS: <span id="fps">0</span></div>
+      <div class="stat">Strokes: <span id="strokes">0</span></div>
+    </div>
+  </div>
+</div>
+
+<!-- Pixi v8 CDN (browser build) -->
+<script src="https://unpkg.com/pixi.js@8.13.0/dist/browser/pixi.min.js"></script>
+<script>
+// Minimal vector-pen PoC using Pixi v8 (single-file, no bundler, no ESM)
+// NOTE: This PoC focuses on: vector-like stroke capture (Catmull-Rom -> Bezier),
+// CPU-based stroke expansion (polyline thick line using Graphics), persistent RenderTexture per layer.
+
+const WIDTH = Math.max(window.innerWidth, 800);
+const HEIGHT = Math.max(window.innerHeight - 44, 600);
+
+const wrapper = document.getElementById('canvas-wrap');
+const fpsEl = document.getElementById('fps');
+const strokesEl = document.getElementById('strokes');
+const gpuEl = document.getElementById('gpu');
+const rendererEl = document.getElementById('renderer');
+
+// Pixi Application
+const app = new PIXI.Application({
+  width: WIDTH,
+  height: HEIGHT,
+  antialias: true,
+  backgroundAlpha: 1,
+  backgroundColor: 0x101010,
+  resolution: window.devicePixelRatio || 1,
+  autoDensity: true,
+});
+wrapper.appendChild(app.view);
+
+// Basic info
+gpuEl.textContent = (navigator.gpu ? 'available' : 'not-available');
+rendererEl.textContent = (app.renderer?.gl ? 'WebGL2' : (app.renderer?.context ? 'Unknown' : 'Canvas'));
+
+// Layers: background and layer1 persistent RT
+function createLayer(name){
+  const rt = PIXI.RenderTexture.create({ width: app.renderer.width, height: app.renderer.height, alpha: true });
+  // clear to transparent once
+  app.renderer.render({ container: new PIXI.Graphics(), target: rt, clear: true });
+  const sprite = new PIXI.Sprite(rt);
+  sprite.name = name;
+  sprite.interactive = true;
+  return { rt, sprite };
+}
+
+const bgLayer = createLayer('background');
+const layer1 = createLayer('layer1');
+
+// background fill on bgLayer
+const bgG = new PIXI.Graphics();
+bgG.beginFill(0x0b1220); bgG.drawRect(0,0,app.renderer.width, app.renderer.height); bgG.endFill();
+app.renderer.render({ container: bgG, target: bgLayer.rt, clear: true });
+
+app.stage.addChild(bgLayer.sprite);
+app.stage.addChild(layer1.sprite);
+
+// Tool state
+let tool = 'pen';
+let size = 12;
+const toolPenBtn = document.getElementById('tool-pen');
+const toolEraserBtn = document.getElementById('tool-eraser');
+const sizeInput = document.getElementById('size');
+const clearBtn = document.getElementById('clear');
+
+toolPenBtn.onclick = ()=>{ tool='pen'; toolPenBtn.classList.add('active'); toolEraserBtn.classList.remove('active'); }
+toolEraserBtn.onclick = ()=>{ tool='eraser'; toolEraserBtn.classList.add('active'); toolPenBtn.classList.remove('active'); }
+sizeInput.oninput = (e)=>{ size = Number(e.target.value); }
+clearBtn.onclick = ()=>{ clearLayer(layer1); strokes.length = 0; updateStats(); }
+
+function clearLayer(layer){
+  app.renderer.render({ container: new PIXI.Graphics(), target: layer.rt, clear: true });
+}
+
+// Stroke storage
+const strokes = [];
+let currentStroke = null;
+
+// Pointer handling on the top sprite (layer1.sprite)
+app.stage.interactive = true;
+let isDown = false;
+
+app.stage.on('pointerdown', (e)=>{
+  isDown = true;
+  const p = e.data.global;
+  currentStroke = { id: Date.now(), points: [{x:p.x,y:p.y,t:performance.now(),p:1}], width: size };
+  strokes.push(currentStroke);
+});
+
+app.stage.on('pointermove', (e)=>{
+  if(!isDown || !currentStroke) return;
+  const p = e.data.global;
+  const last = currentStroke.points[currentStroke.points.length-1];
+  const dx = p.x - last.x, dy = p.y - last.y;
+  if(dx*dx+dy*dy < 4) return; // throttle small moves
+  currentStroke.points.push({x:p.x,y:p.y,t:performance.now(),p:1});
+  // draw a live preview stroke on an overlay Graphics (temporary)
+  renderPreview(currentStroke);
+});
+
+app.stage.on('pointerupoutside', endStroke);
+app.stage.on('pointerup', endStroke);
+
+function endStroke(){
+  if(!currentStroke) return;
+  // finalize: rasterize stroke to layer1.rt
+  commitStrokeToLayer(currentStroke, layer1, tool);
+  currentStroke = null;
+  isDown = false;
+  // clear preview
+  previewG.clear();
+  updateStats();
+}
+
+// Preview graphics (on-stage, not persistent)
+const previewG = new PIXI.Graphics();
+app.stage.addChild(previewG);
+
+function renderPreview(stroke){
+  previewG.clear();
+  const pts = simplifyPath(stroke.points, 2);
+  drawStrokeGraphics(previewG, pts, stroke.width, tool, true);
+}
+
+// Commit stroke to layer: draw into renderTexture for persistence
+function commitStrokeToLayer(stroke, layer, toolName){
+  const g = new PIXI.Graphics();
+  const pts = simplifyPath(stroke.points, 1.2);
+  drawStrokeGraphics(g, pts, stroke.width, toolName, false);
+
+  // For eraser, use ERASE blend mode if available
+  if(toolName === 'eraser'){
+    if(PIXI.BLEND_MODES && PIXI.BLEND_MODES.ERASE !== undefined){
+      g.blendMode = PIXI.BLEND_MODES.ERASE;
+    } else {
+      // fallback: draw with background color (not ideal) — but per rulebook we should avoid ambiguous fallbacks.
+      console.error('ERASE blend mode not available in this Pixi build. Eraser will not be transparent.');
+    }
+  }
+
+  app.renderer.render({ container: g, target: layer.rt, clear: false });
+  g.destroy({ children:true });
+}
+
+// Simplify path (Ramer-Douglas-Peucker-lite) — reduce points for performance
+function simplifyPath(points, minDist){
+  if(points.length<=2) return points.slice();
+  const out = [points[0]];
+  for(let i=1;i<points.length;i++){
+    const a = out[out.length-1];
+    const b = points[i];
+    const dx = a.x-b.x, dy=a.y-b.y;
+    if(dx*dx+dy*dy >= minDist*minDist) out.push(b);
+  }
+  return out;
+}
+
+// Catmull-Rom to Bezier conversion helper
+function catmullRom2bezier(points){
+  // returns array of {start,cp1,cp2,end}
+  const beziers = [];
+  if(points.length < 2) return beziers;
+  // pad endpoints
+  const pts = [points[0]].concat(points).concat(points[points.length-1]);
+  for(let i=1;i<pts.length-2;i++){
+    const p0=pts[i-1], p1=pts[i], p2=pts[i+1], p3=pts[i+2];
+    const cp1 = { x: p1.x + (p2.x - p0.x)/6, y: p1.y + (p2.y - p0.y)/6 };
+    const cp2 = { x: p2.x - (p3.x - p1.x)/6, y: p2.y - (p3.y - p1.y)/6 };
+    beziers.push({ start: p1, cp1, cp2, end: p2 });
+  }
+  return beziers;
+}
+
+// Draw stroke into a Graphics (either preview or commit)
+function drawStrokeGraphics(g, points, widthPx, toolName, isPreview){
+  if(points.length < 2) return;
+  const beziers = catmullRom2bezier(points);
+  g.lineStyle({ width: widthPx, cap: 'round', join: 'round', alignment: 0.5, color: 0xffffff, alpha: 1 });
+  if(toolName === 'eraser'){
+    // for preview emulate eraser by semi-trans background look
+    if(isPreview) g.lineStyle({ width: widthPx, color: 0x000000, alpha: 0.6 });
+    else g.lineStyle({ width: widthPx, color: 0x000000, alpha: 1 });
+  }
+  // draw through beziers
+  g.moveTo(beziers[0].start.x, beziers[0].start.y);
+  for(const b of beziers){
+    g.bezierCurveTo(b.cp1.x, b.cp1.y, b.cp2.x, b.cp2.y, b.end.x, b.end.y);
+  }
+}
+
+// Stats — simple FPS
+let lastTime = performance.now();
+let frames = 0;
+let lastFpsUpdate = lastTime;
+function updateStats(now){
+  frames++;
+  const t = now || performance.now();
+  if(t - lastFpsUpdate >= 250){
+    const fps = Math.round((frames*1000)/(t - lastFpsUpdate));
+    fpsEl.textContent = fps;
+    frames = 0; lastFpsUpdate = t;
+    strokesEl.textContent = strokes.length;
+  }
+}
+
+app.ticker.add((delta)=>{
+  updateStats(performance.now());
+});
+
+// Resize handling
+window.addEventListener('resize', ()=>{
+  const w = Math.max(window.innerWidth,800);
+  const h = Math.max(window.innerHeight-44,600);
+  app.renderer.resize(w,h);
+  // recreate layer RTs with new size (simple approach)
+  // NOTE: for production, you'd want to copy old RT contents into new
+  bgLayer.rt.resize({ width: w, height: h });
+  layer1.rt.resize({ width: w, height: h });
+  // redraw background
+  const bg = new PIXI.Graphics(); bg.beginFill(0x0b1220); bg.drawRect(0,0,w,h); bg.endFill();
+  app.renderer.render({ container: bg, target: bgLayer.rt, clear: true });
+});
+
+// initial stats update
+updateStats(performance.now());
+
+</script>
+</body>
+</html>

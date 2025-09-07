@@ -1,3 +1,12 @@
+現時点での結論まとめ
+方法	内容	ポイント
+@pixi/graphics-smooth	                        v7 向け HHAA アンチエイリアス	        v8 非対応で使えない
+glTF ベクター（pixi-omber-gltf2-vector）	ベクターアートを3Dメッシュで扱う	ペン描画ではなく、静的なアセット向け
+antialias 設定	                                WebGL アプリ全体をアンチエイリアス	パフォーマンスに注意
+GraphicsContext, SVG 等	                        リファクタリング／描画共有に便利	品質改善よりも構造化向け
+
+
+
 フローは少し複雑化してないか確認。 → 入力→描画→記録のシンプル 3 ステップが理想。
 
 車輪の再発明回避 → PixiJS の Graphics や pixi-graphics-smooth を使えばよい。

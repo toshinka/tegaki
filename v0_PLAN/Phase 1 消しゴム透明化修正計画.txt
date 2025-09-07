@@ -1,0 +1,237 @@
+# Phase 1: 消しゴム透明化修正計画
+
+## 🚨 現在の問題
+
+### 現象
+- 消しゴムが「背景色で上書き」している挙動
+- レイヤーのピクセルのアルファ（透明度）を消していない
+- Layer2からLayer1を消しているように見えてしまう
+
+### 原因
+- 現在の実装は背景色 (`0xf0e0d6`) で塗ることで見かけ上消している
+- 正しい消しゴムは「描かれているピクセルのalphaチャンネルを0にする」こと
+- RenderTextureでのerase処理が実装されていない
+
+## 🎯 Phase 1 修正方針
+
+### 1. PixiJS バージョン更新
+- **現在**: v8.0.5 → **修正後**: v8.13.x
+- erase関連のバグ修正が含まれている最新版に更新
+
+### 2. Layer RenderTexture 実装
+- 各レイヤーを `alpha: true` の RenderTexture で保持
+- 透明背景で初期化 (`clear: true` で透明化)
+- Sprite経由でstageに表示
+
+### 3. 消しゴム透明描画実装
+- `PIXI.BLEND_MODES.ERASE` を使用
+- RenderTextureに対してerase blendで描画
+- 色ではなくアルファを操作する
+
+### 4. 互換性チェック強化
+- 起動時に `PIXI.BLEND_MODES.ERASE` 存在確認
+- 非対応時は明示的エラーで制御者に通知
+
+## 📋 実装手順
+
+### Step 1: main.html - PixiJS CDN更新
+```html
+<!-- 変更前 -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
+
+<!-- 変更後 -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+```
+
+### Step 2: layer-tool-ui.js - LayerManager修正
+#### 2.1 レイヤー初期化にRenderTexture実装
+```javascript
+createLayer(name = null) {
+    const layerId = this.nextLayerId++;
+    const layerName = name || `レイヤー${layerId}`;
+    
+    // RenderTexture作成（アルファ付き）
+    const canvasState = MainController.getState('canvas');
+    const rt = PIXI.RenderTexture.create({ 
+        width: canvasState.width, 
+        height: canvasState.height, 
+        alpha: true 
+    });
+    
+    // 透明で初期化
+    this.engine.app.renderer.render({ 
+        container: new PIXI.Graphics(), 
+        target: rt, 
+        clear: true 
+    });
+    
+    // Sprite作成
+    const sprite = new PIXI.Sprite(rt);
+    sprite.name = layerName;
+    
+    const layer = {
+        id: layerId,
+        name: layerName,
+        container: new PIXI.Container(), // 一時描画用
+        renderTexture: rt,              // 🆕 RenderTexture
+        sprite: sprite,                 // 🆕 表示用Sprite
+        visible: true,
+        paths: [],
+        isBackground: false
+    };
+    
+    this.layers.set(layerId, layer);
+    this.engine.containers.world.addChild(sprite); // spriteを追加
+    
+    return layer;
+}
+```
+
+#### 2.2 描画処理をRenderTexture対応に修正
+```javascript
+// DrawingEngine内
+createPath(worldX, worldY, settings) {
+    const path = {
+        id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+        graphics: new PIXI.Graphics(),
+        points: [],
+        tool: settings.tool,  // 🆕 ツール種別保存
+        color: settings.color,
+        size: settings.size,
+        opacity: settings.opacity,
+        isComplete: false,
+        layerId: MainController.getState('activeLayerId')
+    };
+    
+    // 消しゴムの場合はERASEブレンド設定
+    if (settings.tool === 'eraser') {
+        if (!PIXI.BLEND_MODES || PIXI.BLEND_MODES.ERASE === undefined) {
+            throw new Error('PIXI.BLEND_MODES.ERASE is not available. Please update to Pixi v8.13+');
+        }
+        path.graphics.blendMode = PIXI.BLEND_MODES.ERASE;
+        
+        // 消しゴムは白色で描画（色は影響しない）
+        path.graphics.circle(worldX, worldY, settings.size / 2);
+        path.graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+    } else {
+        // 通常ペンは指定色で描画
+        path.graphics.circle(worldX, worldY, settings.size / 2);
+        path.graphics.fill({ color: settings.color, alpha: settings.opacity });
+    }
+    
+    path.points.push({ x: worldX, y: worldY, size: settings.size });
+    
+    // 一時的にコンテナに追加（後でRenderTextureに描画）
+    const activeLayer = window.LayerManager?.getActiveLayer();
+    if (activeLayer) {
+        activeLayer.container.addChild(path.graphics);
+    }
+    
+    this.paths.push(path);
+    this.currentPath = path;
+    
+    return path;
+}
+
+finalizePath(path) {
+    if (!path) return;
+    
+    const activeLayer = window.LayerManager?.getActiveLayer();
+    if (!activeLayer || !activeLayer.renderTexture) return;
+    
+    // RenderTextureに描画
+    this.engine.app.renderer.render({ 
+        container: activeLayer.container, 
+        target: activeLayer.renderTexture, 
+        clear: false  // 🆕 既存内容を保持
+    });
+    
+    // 一時コンテナをクリア
+    activeLayer.container.removeChildren();
+    
+    path.isComplete = true;
+    this.currentPath = null;
+    
+    MainController.recordAction('PATH_CREATE', {
+        pathId: path.id,
+        layerId: activeLayer.id,
+        tool: path.tool,  // 🆕 ツール情報記録
+        pointCount: path.points.length,
+        bounds: this.calculatePathBounds(path)
+    });
+}
+```
+
+### Step 3: error-service.js - 互換性チェック追加
+```javascript
+// ErrorService.initialize() に追加
+checkPixiCompatibility() {
+    const issues = [];
+    
+    if (!window.PIXI) {
+        issues.push('PixiJS not loaded');
+        return issues;
+    }
+    
+    if (!PIXI.RenderTexture) {
+        issues.push('PIXI.RenderTexture not available');
+    }
+    
+    if (!PIXI.BLEND_MODES || PIXI.BLEND_MODES.ERASE === undefined) {
+        issues.push('PIXI.BLEND_MODES.ERASE not available - requires Pixi v8.13+');
+    }
+    
+    if (issues.length > 0) {
+        this.reportError('LIB_001', {
+            message: 'Pixi compatibility issues detected',
+            issues: issues,
+            version: PIXI.VERSION || 'unknown'
+        });
+        
+        this.showErrorDialog({
+            title: 'PixiJS互換性エラー',
+            message: '消しゴム機能に必要なPixiJS機能が利用できません。',
+            details: { issues, currentVersion: PIXI.VERSION },
+            suggestions: [
+                'PixiJS を v8.13.0以降に更新してください',
+                'CDNリンクが正しく読み込まれているか確認してください'
+            ]
+        });
+        
+        return issues;
+    }
+    
+    return [];
+}
+```
+
+### Step 4: テスト手順
+1. **PixiJS更新確認**: ブラウザコンソールで `PIXI.VERSION` が v8.13.x 表示されること
+2. **互換性チェック**: 起動時にERASE関連エラーが出ないこと
+3. **レイヤー透明化**: 消しゴムで消した部分が背景レイヤーが透けて見えること
+4. **エッジケース**: 複数レイヤーでの挙動確認
+
+## 🚧 注意事項
+
+### リスク
+- RenderTexture初期化忘れで背景色塗り現象再発の可能性
+- PixiJS古いバージョンでは期待通り動作しない可能性
+- メモリ使用量増加（RenderTexture分）
+
+### 対策
+- 必ず `clear: true` で透明初期化実行
+- 起動時互換性チェック必須実行
+- メモリ監視とクリーンアップ処理強化
+
+## 📈 期待効果
+
+- ✅ 消しゴムで真の透明化実現
+- ✅ レイヤー分離の正常動作
+- ✅ 下位レイヤー透過表示
+- ✅ 描画パフォーマンス向上（適切なブレンド使用）
+
+---
+
+**実装優先度**: 🔴 最高（Phase1の基幹機能）
+**影響範囲**: DrawingEngine, LayerManager, 互換性チェック
+**テスト必須**: 消しゴム動作、レイヤー透過、複数レイヤー重ね
