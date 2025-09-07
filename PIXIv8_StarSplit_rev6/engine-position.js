@@ -56,6 +56,7 @@
             this.lastDelta = null;
             this.updateScheduled = false;
             this.initialPositionCalibrated = false; // ✅ 新規追加: 初期校正フラグ
+            this.initializationTries = 0; // ✅ 追加: 初期化試行回数
             
             // パン状態管理
             this.panState = {
@@ -74,49 +75,60 @@
             };
         }
         
+        // ✅ 修正: DOM存在チェック強化（GPT5改修案準拠）
         initialize() {
-            this.container = document.getElementById('canvas-container');
-            if (!this.container) {
-                MainController.emit('system-error', {
-                    code: 'CANVAS_CONTAINER_NOT_FOUND',
-                    details: { message: 'Canvas container element not found' },
-                    stack: new Error().stack
+            // 1) DOM存在チェック（最大 1 秒までリトライ）
+            const ensureDom = (resolve) => {
+                this.container = document.getElementById('canvas-container');
+                if (this.container) { 
+                    resolve(true); 
+                    return; 
+                }
+                if (++this.initializationTries > 20) {
+                    MainController.emit('system-error', { 
+                        code: 'CANVAS_CONTAINER_NOT_FOUND', 
+                        details: { tries: this.initializationTries },
+                        stack: new Error().stack
+                    });
+                    resolve(false); 
+                    return;
+                }
+                setTimeout(() => ensureDom(resolve), 50);
+            };
+            
+            return new Promise((resolve) => ensureDom(resolve)).then(ok => {
+                if (!ok) return false;
+                
+                // 2) 以降は今の処理（Hammer, Events, Loop, calibrateInitialPosition）
+                this.setupHammerJS();
+                this.setupPointerEvents();
+                this.setupEventHandlers();
+                this.startUpdateLoop();
+                
+                // ✅ 修正: 初期位置校正
+                setTimeout(() => {
+                    this.calibrateInitialPosition();
+                }, 50); // DOM描画完了待ち
+                
+                MainController.emit('system-debug', {
+                    category: 'init',
+                    message: 'PositionManager initialized',
+                    data: { 
+                        canvasContainer: this.container.id,
+                        hammerEnabled: !!this.hammer,
+                        tries: this.initializationTries
+                    },
+                    timestamp: Date.now()
                 });
-                return false;
-            }
-            
-            // HammerJS初期化
-            this.setupHammerJS();
-            
-            // ポインターイベント初期化
-            this.setupPointerEvents();
-            
-            // イベント監視開始
-            this.setupEventHandlers();
-            
-            // 定期更新開始
-            this.startUpdateLoop();
-            
-            // ✅ 新規追加: 初期位置校正
-            setTimeout(() => {
-                this.calibrateInitialPosition();
-            }, 50); // DOM描画完了待ち
-            
-            MainController.emit('system-debug', {
-                category: 'init',
-                message: 'PositionManager initialized',
-                data: { 
-                    canvasContainer: this.container.id,
-                    hammerEnabled: !!this.hammer 
-                },
-                timestamp: Date.now()
+                
+                return true;
             });
-            
-            return true;
         }
         
-        // ✅ 新規追加: 初期位置校正
+        // ✅ 修正: 初期位置校正
         calibrateInitialPosition() {
+            if (!this.container) return;
+            
             const rect = this.container.getBoundingClientRect();
             const viewportCenter = {
                 x: (window.innerWidth - 310) / 2, // サイドバー50px + レイヤーパネル予約160px
@@ -158,6 +170,7 @@
                 return;
             }
             
+            this.hammer = new Hammer(this.container);
             
             // Pan設定
             this.hammer.get('pan').set({
@@ -299,9 +312,11 @@
             this.updateScheduled = true;
             
             // 即座にDOM更新
-            this.container.style.transform = 'translate(-50%, -50%)';
-            this.container.style.left = '50%';
-            this.container.style.top = '50%';
+            if (this.container) {
+                this.container.style.transform = 'translate(-50%, -50%)';
+                this.container.style.left = '50%';
+                this.container.style.top = '50%';
+            }
             
             // ✅ 修正: カメラ値も即座にリセット
             this.camera.x = 0;
@@ -315,7 +330,7 @@
         }
         
         updateCameraPosition() {
-            if (!this.updateScheduled) return;
+            if (!this.updateScheduled || !this.container) return;
             
             const { x, y } = this.camera;
             const { targetX, targetY } = this.camera;

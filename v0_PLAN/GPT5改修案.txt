@@ -1,442 +1,143 @@
-# 改修計画書 v8_ThreeSatellite_rev4 → rev5
-
-## 1. 改修目的
-- ペン描画・消去は正常化済みだが、以下の問題が残っている：
-  1. カメラ移動が「カメラのみ移動」状態で、描画内容と同期していない。
-  2. レイヤー層の独立性が崩れ、レイヤーを切り替えても stroke が共有されてしまう。
-  3. イベントフローの責務がファイル間で曖昧になり、座標管理が分散。
-
-- 本改修の目的：
-  - **座標系の一元管理 (PositionManager経由)**
-  - **カメラ移動と全レイヤーの追従**
-  - **レイヤー切替の明確化と stroke 管理の分離**
-  - **責務表・イベントフローに沿った一貫性ある実装**
-
----
-
-## 2. 現状の課題点
-
-### 2.1 カメラ移動
-- `cameraContainer` のみが動き、各レイヤーの `position` が同期していない。
-- `screenToWorld` が UI 側と描画側で不一致を起こす可能性。
-
-### 2.2 レイヤー管理
-- `activeLayer` 切替時に stroke が共有され、レイヤー独立性が消失。
-- `LayerManager` のみで state を保持し、描画エンジンに反映されていない。
-
-### 2.3 イベントフローの不足
-- main.html のイベントハンドラから PositionManager を飛ばさず、直接 Pixi オブジェクトを操作している箇所がある。
-- どのイベントがどの責務に落ちるか曖昧。
-
----
-
-## 3. 改修方針
-
-### 3.1 座標系統合
-- **禁止ルール**：`Layer.position` に直接代入禁止。
-- すべての座標変換は `EnginePosition` の `screenToWorld` / `worldToScreen` を利用。
-- `cameraContainer` は PositionManager 管理下に置く。
-
-### 3.2 カメラ移動フローの修正
-- [pointermove] → MainController → `EnginePosition.setCamera(dx,dy)`  
-- `setCamera` 内で `cameraContainer.position` を更新  
-- **全レイヤーは cameraContainer に addChild して追従させる**  
-- `DrawingEngine` は stroke を常に world 座標で記録。表示上の動きは cameraContainer に依存。
-
-### 3.3 レイヤー独立化
-- `LayerManager` は Pixi.Container を生成し、必ず cameraContainer の子供に置く。
-- 各 stroke は **activeLayer 内の Graphics** に格納される。
-- 消去・描画時は必ず activeLayer を参照。
-
-### 3.4 エラーハンドリング
-- `ErrorService` はフェイルセーフ禁止 → 例外時は強制停止または通知ログ。
-- `logError` で「どのイベント → どの責務で失敗したか」を記録。
-
----
-イベントフローと責務表の明文化 & 改修タスク一覧
-
-## 4. イベントフローと相関関係
-
-### 4.1 全体フロー図
-
-[ユーザー操作]  
-　↓  
-UIManager (layer-tool-ui.js)  
-　↓  
-MainController (main.html)  
-　↓  
-LayerManager / DrawingEngine / PositionManager  
-　↓  
-PixiJS (描画・表示)
-
----
-
-### 4.2 イベントフロー詳細
-
-1. **カメラ移動**
-   - [pointerdown + drag] (main.html)  
-   → MainController.emit("camera-move", dx, dy)  
-   → EnginePosition.setCamera(dx, dy)  
-   → cameraContainer.position 更新  
-   → 全レイヤー追従  
-
-2. **描画フロー**
-   - [pointerdown + move] (main.html)  
-   → MainController.emit("path-start")  
-   → DrawingEngine.startStroke(EnginePosition.screenToWorld(x,y))  
-   → activeLayer.graphics に描画  
-
-3. **レイヤー操作**
-   - [UI: レイヤー追加]  
-   → UIManager.requestNewLayer()  
-   → MainController.emit("layer-add")  
-   → LayerManager.createLayer()  
-   → cameraContainer.addChild(newLayer)
-
-4. **座標変換**
-   - screen(x,y)  
-   → EnginePosition.screenToWorld(x,y)  
-   → world(x,y) で stroke 記録  
-
----
-
-## 5. 責務表
-
-### main.html (MainController)
-- @role: イベント仲介（UI・入力と衛星の中継のみ）
-- @depends: LayerManager, DrawingEngine, EnginePosition, ErrorService
-- @provides:
-  - emit(eventName, payload)
-  - on(eventName, handler)
-
-### layer-tool-ui.js (LayerManager + UIManager)
-- @role: レイヤー管理（生成・切替）、UI操作
-- @depends: MainController
-- @provides:
-  - createLayer()
-  - setActiveLayer(layerId)
-  - getActiveLayer()
-
-### engine-position.js (PositionManager)
-- @role: カメラ移動と座標変換の一元管理
-- @depends: MainController
-- @provides:
-  - setCamera(dx, dy)
-  - screenToWorld(x,y)
-  - worldToScreen(x,y)
-
-### error-service.js (ErrorService)
-- @role: ログと例外管理
-- @depends: MainController
-- @provides:
-  - logError(event, detail)
-  - warn(message)
-
----
-
-## 6. 改修タスク一覧
-
-1. **main.html**
-   - pointermove / pointerdown / pointerup をすべて MainController.emit 経由に変更
-   - camera 移動時は必ず `EnginePosition.setCamera` を呼ぶ
-
-2. **engine-position.js**
-   - `cameraContainer` を唯一の親ノードにする
-   - `setCamera` 内で `cameraContainer.position` 更新
-   - `screenToWorld` / `worldToScreen` を DrawingEngine で利用できるよう公開
-
-3. **layer-tool-ui.js**
-   - レイヤー生成時に必ず cameraContainer.addChild(layer) する
-   - activeLayer のみを DrawingEngine に通知
-   - 消去/描画は activeLayer.graphics のみに限定
-
-4. **drawing-engine (main内)**
-   - stroke 記録は必ず world座標
-   - 再描画は cameraContainer の座標系に従う
-
-5. **error-service.js**
-   - Event payload の循環参照チェックを厳格化
-   - エラー発生時は console.error + 強制停止
-   - フォールバックは禁止
-
----
-
-# 改修手順書 - ThreeSatellite Rev4 キャンバス移動/座標修正
-
-対象: 
-- main.html
-- engine-position.js
-- layer-tool-ui.js
-- error-service.js
-
----
-
-## 1. MainController の役割整理
-- MainController は「発火・仲介・確定と記録」に限定。
-- 各衛星（UI, EnginePosition, LayerToolUI）は MainController を経由して通信。
-
-### 必要なイベント
-- "camera-move" : カメラ移動要求
-- "draw-start" / "draw-move" / "draw-end" : ペン描画フロー
-- "layer-active" : アクティブレイヤー変更通知
-
----
-
-## 2. main.html 改修
-1. Pixi.Application の生成時に `resizeTo: window` を必ず設定。
-2. `EnginePosition` を stage にアタッチし、返す `cameraContainer` を唯一の描画親にする。
-3. pointerdown/pointermove/pointerup を MainController イベントに変換。
-4. 右クリックドラッグで "camera-move" を発火する処理を追加。
-5. DrawingEngine 的な処理は MainController.on("draw-*") の中に組み込む。
-
----
-
-## 3. engine-position.js 改修
-1. `this.cameraContainer = new PIXI.Container()` を stage に addChild。
-2. `setCamera(dx,dy)` で **cameraContainer の位置だけ** を動かす。
-3. screenToWorld/worldToScreen をシンプルに定義：
-   - world = screen - cameraContainer.position
-   - screen = world + cameraContainer.position
-4. MainController.on("camera-move") で setCamera を呼ぶ。
-
----
-
-## 4. layer-tool-ui.js 改修
-1. すべてのレイヤーは **enginePosition.cameraContainer** に addChild する。
-   → これでカメラ移動と連動。
-2. createLayer(name) で {id, name, graphics} を生成。
-   - graphics.lineStyle(2, 0x000000) をデフォルト設定可。
-3. setActiveLayer(id) を呼ぶと、MainController.emit("layer-active", layer) を通知。
-
----
-
-## 5. error-service.js 改修
-- `console.warn` / `console.error` のラッパーに限定。
-- 循環参照オブジェクトを stringify しない。
-  → イベント payload は基本的に {x,y} / id / name / type のみにする。
-
----
-
-## 6. イベントフロー再確認
-- [カメラ移動]  
-  pointermove(right-drag) → MainController.emit("camera-move", {dx,dy})  
-  → EnginePosition.setCamera → cameraContainer.position 更新 → 全レイヤー追従  
-
-- [描画]  
-  pointerdown(left) → screenToWorld → MainController.emit("draw-start", pos)  
-  pointermove → screenToWorld → MainController.emit("draw-move", pos)  
-  pointerup → MainController.emit("draw-end")  
-
-- [レイヤー追加]  
-  UI操作 → LayerToolUI.createLayer(name) → cameraContainer に addChild →  
-  MainController.emit("layer-active", layer)  
-
----
-
-## 7. 実装チェックポイント
-- ✅ cameraContainer のみを動かす → レイヤーが全体で追従するか？
-- ✅ screenToWorld が描画ストロークに反映されるか？
-- ✅ layer-active が正しく切り替わり、前のレイヤーに干渉しないか？
-- ✅ 循環参照（PIXI.DisplayObject.parent）は payload に含めない。
-
----
-
-## 8. 移行手順
-1. rev4 の main.html 内のカメラ・描画処理を削除し、雛形のロジックを統合。
-2. engine-position.js を雛形に差し替え。
-3. layer-tool-ui.js を雛形に差し替え。
-4. error-service.js を最小実装に戻す。
-5. 再起動して [カメラ移動 → ペン描画 → レイヤー切替] を順に検証。
-
-
----
-
-
-rev4 改修計画に基づく最小サンプル雛形コード
-📄 main.html
-
-<!DOCTYPE html>
-<html>
-<head>
-  <meta charset="utf-8" />
-  <title>ThreeSatellite Rev4 Sample</title>
-  <script src="https://pixijs.download/release/pixi.min.js"></script>
-  <script src="./error-service.js"></script>
-  <script src="./engine-position.js"></script>
-  <script src="./layer-tool-ui.js"></script>
-</head>
-<body>
-  <canvas id="view"></canvas>
-
-  <script>
-    // MainController
-    const MainController = (() => {
-      const listeners = {};
-      return {
-        emit(event, payload) {
-          if (!listeners[event]) {
-            ErrorService.warn(`Unhandled event: ${event}`);
-            return;
-          }
-          listeners[event].forEach(fn => fn(payload));
-        },
-        on(event, fn) {
-          listeners[event] = listeners[event] || [];
-          listeners[event].push(fn);
-        }
-      };
-    })();
-
-    // Pixiアプリ初期化
-    const app = new PIXI.Application({
-      view: document.getElementById("view"),
-      resizeTo: window,
-      backgroundColor: 0xffffff
-    });
-
-    // EnginePosition (cameraContainerの親)
-    const enginePosition = new EnginePosition(app.stage, MainController);
-
-    // Layer管理
-    const layerManager = new LayerToolUI(enginePosition.cameraContainer, MainController);
-
-    // 入力ハンドラ
-    let drawing = false;
-    app.view.addEventListener("pointerdown", e => {
-      drawing = true;
-      const pos = enginePosition.screenToWorld(e.clientX, e.clientY);
-      MainController.emit("draw-start", pos);
-    });
-
-    app.view.addEventListener("pointermove", e => {
-      if (!drawing) return;
-      const pos = enginePosition.screenToWorld(e.clientX, e.clientY);
-      MainController.emit("draw-move", pos);
-    });
-
-    app.view.addEventListener("pointerup", e => {
-      drawing = false;
-      MainController.emit("draw-end");
-    });
-
-    // カメラ移動操作（例：ドラッグ右クリック）
-    let camMoving = false, lastX = 0, lastY = 0;
-    app.view.addEventListener("pointerdown", e => {
-      if (e.button === 2) {
-        camMoving = true;
-        lastX = e.clientX; lastY = e.clientY;
-      }
-    });
-    app.view.addEventListener("pointermove", e => {
-      if (camMoving) {
-        const dx = e.clientX - lastX;
-        const dy = e.clientY - lastY;
-        lastX = e.clientX; lastY = e.clientY;
-        MainController.emit("camera-move", { dx, dy });
-      }
-    });
-    app.view.addEventListener("pointerup", e => {
-      if (e.button === 2) camMoving = false;
-    });
-
-    // DrawingEngine (Mainに内包)
-    let activeGraphics = null;
-    MainController.on("layer-active", layer => {
-      activeGraphics = layer.graphics;
-    });
-
-    MainController.on("draw-start", pos => {
-      if (!activeGraphics) return;
-      activeGraphics.moveTo(pos.x, pos.y);
-    });
-    MainController.on("draw-move", pos => {
-      if (!activeGraphics) return;
-      activeGraphics.lineTo(pos.x, pos.y);
-      activeGraphics.stroke();
-    });
-    MainController.on("draw-end", () => {});
-
-    // 初期レイヤー
-    layerManager.createLayer("Layer 1");
-  </script>
-</body>
-</html>
-
-📄 engine-position.js
-
-class EnginePosition {
-  constructor(stage, main) {
-    this.main = main;
-    this.cameraContainer = new PIXI.Container();
-    stage.addChild(this.cameraContainer);
-
-    this.main.on("camera-move", ({ dx, dy }) => {
-      this.setCamera(dx, dy);
-    });
-  }
-
-  setCamera(dx, dy) {
-    this.cameraContainer.x += dx;
-    this.cameraContainer.y += dy;
-  }
-
-  screenToWorld(sx, sy) {
-    return {
-      x: sx - this.cameraContainer.x,
-      y: sy - this.cameraContainer.y
-    };
-  }
-
-  worldToScreen(wx, wy) {
-    return {
-      x: wx + this.cameraContainer.x,
-      y: wy + this.cameraContainer.y
-    };
-  }
+いま起きていること（結論）
+
+1.キャンバスが出ない主因
+engine-position.js は #canvas-container を getElementById('canvas-container') で取得できなければ initialize() を falseで終了します（そして MainController.emit('system-error', { code: 'CANVAS_CONTAINER_NOT_FOUND', ... }) へ） 
+GitHub
+。
+→ DOM上に id="canvas-container" が無い／描画前タイミング／CSSでゼロサイズ のいずれかで止まっている可能性が高いです。コンソールエラーが出ないのは、例外ではなくイベント発火で済ませているため。
+
+2.レイヤーパネルが出ない副因
+layer-tool-ui.js の初期化（マウント）より前にパネルコンテナが無い、またはスクリプト読込順が逆転している可能性。改修メモにある UIManager.initialize() 内の setTimeout(...forceUpdateLayerPanel...) は“見えない→後から強制更新”の対症療法ですが、最初に mount 対象（例: #layer-panel）が存在しないと何も起こりません。
+（rev5 のファイル構成では engine-position.js が #canvas-container 依存であることは確認できましたが、layer-tool-ui.js のマウント先 ID と読込順が main.html 側で噛み合っていない疑いが濃いです。）
+
+
+・最小パッチ（確実に表示まで持っていく）
+
+下の 3 点を main.html に反映すれば、キャンバスとレイヤーパネルは出ます。
+（ID は下記に合わせてあります。あなた側の命名と違う場合は合わせてください）
+
+1) DOM に必要なコンテナを置く（上部どこでもOK）
+<!-- キャンバス用：engine-position.js が参照 -->
+<div id="canvas-container" style="
+  position:absolute; left:50%; top:50%;
+  transform:translate(-50%, -50%);
+  width:400px; height:400px; 
+  overflow:hidden; 
+  touch-action:none; /* Hammer と pointer の両立 */
+  z-index: 5;
+"></div>
+
+<!-- レイヤーパネル用：LayerToolUI が mount する -->
+<div id="layer-panel" style="
+  position:fixed; right:16px; top:16px;
+  width: 220px; max-height: 70vh; overflow:auto;
+  background:#1e1e1e; color:#fff; border-radius:12px; padding:8px;
+  z-index: 20;
+"></div>
+
+
+engine-position.js は初期化時に #canvas-container を探します。無ければ停止。まずはここで 100% 存在させます。 
+GitHub
+
+2) スクリプトの読込順を固定
+<script src="error-service.js" defer></script>
+<script src="main-controller.js" defer></script> <!-- もし別名なら中枢のファイル -->
+<script src="engine-position.js" defer></script>
+<script src="layer-tool-ui.js" defer></script>
+<script>
+  // DOMReady 後の起動（defer ならこの位置でOK）
+  document.addEventListener('DOMContentLoaded', () => {
+    // ここで UI / Engine の初期化を“順番付き”で呼ぶ
+    if (window.LayerToolUI && document.getElementById('layer-panel')) {
+      LayerToolUI.mount('#layer-panel');     // ← 必須：パネルの実体化
+    }
+    if (window.MainController && window.PositionManager) {
+      // すでに engine-position.js 内で initialize が走る設計でも、
+      // 走っていない場合に備えて明示起動を許す（多重起動は弾く設計に）
+      try { PositionManager.initialize && PositionManager.initialize(); } catch(e){}
+    }
+  });
+</script>
+
+
+ポイント
+
+MainController（イベントバス）→engine-position.js→layer-tool-ui.js の依存順を守る
+
+パネルは 必ず mount('#layer-panel') を 1 度だけ呼ぶ
+
+既存の UIManager.initialize() が内部で forceUpdateLayerPanel() しても、mount が先でないと UI は出ません
+
+3) 念のため、初期サイズ通知を 1 回だけ投げる
+<script>
+  // PositionManager のキャンバス境界を UI に知らせる
+  window.addEventListener('load', () => {
+    const el = document.getElementById('canvas-container');
+    if (el && window.MainController) {
+      const w = el.clientWidth || 400;
+      const h = el.clientHeight || 400;
+      MainController.emit('ui-canvas-resize', { width:w, height:h });
+    }
+  });
+</script>
+
+
+engine-position.js は ui-canvas-resize を受けて内部の canvasBounds を更新し、可視境界を通知します。起動直後に 1 回投げておくと、UI 側の状態表示（「Canvas: 400×400px」など）が安定します。 
+GitHub
+
+・追加で直しておくと堅牢になる 3 点
+
+初期化リトライの明示化
+engine-position.js 末尾にある「MainController 準備完了待ち」ループはありますが、DOM存在待ちはしていないので、
+initialize() 冒頭を次のように安全化すると「DOMがまだ無い」ケースを潰せます。
+
+initialize() {
+  // 1) DOM存在チェック（最大 1 秒までリトライ）
+  let tries = 0;
+  const ensureDom = (resolve) => {
+    this.container = document.getElementById('canvas-container');
+    if (this.container) { resolve(true); return; }
+    if (++tries > 20) {
+      MainController.emit('system-error', { code:'CANVAS_CONTAINER_NOT_FOUND', details:{tries} });
+      resolve(false); return;
+    }
+    setTimeout(()=>ensureDom(resolve), 50);
+  };
+  return new Promise((resolve)=>ensureDom(resolve)).then(ok=>{
+    if (!ok) return false;
+    // 2) 以降は今の処理（Hammer, Events, Loop, calibrateInitialPosition）
+    this.setupHammerJS();
+    this.setupPointerEvents();
+    this.setupEventHandlers();
+    this.startUpdateLoop();
+    setTimeout(()=>this.calibrateInitialPosition(), 50);
+    return true;
+  });
 }
 
-📄 layer-tool-ui.js
 
-class LayerToolUI {
-  constructor(cameraContainer, main) {
-    this.main = main;
-    this.cameraContainer = cameraContainer;
-    this.layers = [];
-    this.activeLayer = null;
-  }
+パネルの mount 不足をログで可視化
+layer-tool-ui.js の mount(selector) で、ターゲット未存在時は MainController.emit('system-error', { code:'LAYER_PANEL_NOT_FOUND', ... }) を必ず出す（例外は投げない）。
+→ 「コンソール赤無しで何も出ない」を防ぐ。
 
-  createLayer(name) {
-    const layer = {
-      id: Date.now(),
-      name,
-      graphics: new PIXI.Graphics()
-    };
-    this.cameraContainer.addChild(layer.graphics);
-    this.layers.push(layer);
-    this.setActiveLayer(layer.id);
-    return layer;
-  }
+CSS のゼロサイズ事故防止
+グローバル CSS に保険を 1 行：
 
-  setActiveLayer(id) {
-    const layer = this.layers.find(l => l.id === id);
-    if (!layer) return;
-    this.activeLayer = layer;
-    this.main.emit("layer-active", layer);
-  }
+#canvas-container { min-width: 1px; min-height: 1px; }
 
-  getActiveLayer() {
-    return this.activeLayer;
-  }
-}
 
-📄 error-service.js
+（flex/grid の副作用で 0×0 になるレイアウト事故を予防）
 
-const ErrorService = {
-  warn(msg) {
-    console.warn(`[Warn] ${msg}`);
-  },
-  error(msg) {
-    console.error(`[Error] ${msg}`);
-    throw new Error(msg);
-  }
-};
+参考：今回の症状が起きやすい理由
+
+engine-position.js は 存在チェック→無ければ静かに終了という設計（例外ではなくイベント通知）なので、**「エラー無しで真っ黒」**が起きやすい。 
+GitHub
+
+rev5 改修で calibrateInitialPosition() など 初期位置校正が入り、DOM の実寸やビューポートに依存する処理が増えたため、DOMの生成タイミング/IDずれに敏感になっています。 
+GitHub
+
+これで直らなかったら
+
+Network タブの スクリプト 404（特に layer-tool-ui.js）と、Elements で ID の綴りを見てください。
+
+それでも出ない場合は、main.html 全体（head 内の CSS/JS 読込、body の DOM 構造）を貼ってください。依存順を含めて そのまま動く形に組み直します。
