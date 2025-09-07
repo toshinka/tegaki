@@ -1,0 +1,247 @@
+# DrawingTool分離開発ルールブック v1.0
+
+## 📋 プロジェクト概要
+**目的**: PixiJS描画ツールのモジュール分離によるAI改修効率の最大化  
+**基盤**: PixiJS v8 + ES2023 + HTML直開き(file://)  
+**禁止**: Canvas2D, TypeScript, Vite, ESM, bundler, Babel  
+
+## 🏗️ アーキテクチャ方針
+
+### 分離戦略: 機能単位モジュール化
+```
+main.html (Core Engine) - PixiJS初期化・描画エンジン・座標管理
+├── Sidebar-Tools.html    - ペン・消しゴム・選択ツール群
+├── Layer-Panel.html      - レイヤー管理・表示制御  
+└── Canvas-Controller.html - キャンバス移動・ズーム・回転
+```
+
+### 責任分離の原則
+- **1ファイル = 1機能領域**: ツール改修時は対象ファイルのみ変更
+- **自己完結性**: HTML構造 + CSS + JavaScript を同一ファイル内に配置
+- **最小依存**: 他モジュールへの依存を最小限に抑制
+
+## 🔧 ファイル命名規約
+
+### モジュールファイル
+```
+[機能名]-[役割].html
+例: Sidebar-Tools.html, Layer-Panel.html
+```
+
+### グローバル変数
+```
+window.[ProjectName][ModuleName]API
+例: window.DrawingToolAPI, window.SidebarToolsAPI
+```
+
+### 関数命名
+```javascript
+// モジュール内関数: [module][Action][Target]
+function toolsInitializePenTool() {}
+function layerAddNewLayer() {}
+
+// 共通ユーティリティ: [action][Target]
+function createElement(tag, classes) {}
+function bindEventHandler(element, event, handler) {}
+```
+
+## 🌐 モジュール間通信API
+
+### 中央通信ハブ (main.html実装)
+```javascript
+window.DrawingToolAPI = {
+    // Core Canvas管理
+    canvas: {
+        getApp: () => pixiApp,
+        getCurrentLayer: () => activeLayer,
+        addDrawingData: (layerId, data) => {},
+        requestRedraw: () => {}
+    },
+    
+    // ツール状態管理  
+    tools: {
+        setActiveTool: (toolType) => {},
+        getActiveTool: () => currentTool,
+        getToolSettings: (toolType) => {}
+    },
+    
+    // レイヤー操作
+    layers: {
+        createLayer: (name) => {},
+        deleteLayer: (layerId) => {},
+        setLayerVisibility: (layerId, visible) => {},
+        reorderLayers: (fromIndex, toIndex) => {}
+    },
+    
+    // イベント通知
+    events: {
+        subscribe: (eventName, callback) => {},
+        emit: (eventName, data) => {}
+    }
+};
+```
+
+### モジュール初期化パターン
+```javascript
+// 各モジュールで統一
+(function() {
+    'use strict';
+    
+    // API可用性確認
+    if (!window.DrawingToolAPI) {
+        console.error('[ModuleName] DrawingToolAPI not available');
+        return;
+    }
+    
+    // モジュール初期化
+    function initializeModule() {
+        // 初期化処理
+    }
+    
+    // DOM読み込み完了後実行
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeModule);
+    } else {
+        initializeModule();
+    }
+})();
+```
+
+## ⚠️ エラーハンドリング戦略
+
+### 統一エラー報告
+```javascript
+function reportModuleError(moduleName, operation, error, context = {}) {
+    const errorInfo = {
+        timestamp: new Date().toISOString(),
+        module: moduleName,
+        operation: operation,
+        message: error.message,
+        context: context,
+        stack: error.stack
+    };
+    
+    console.error(`[${moduleName}] ${operation} failed:`, errorInfo);
+    
+    // main.htmlのエラーハンドラーに通知
+    if (window.DrawingToolAPI?.events?.emit) {
+        window.DrawingToolAPI.events.emit('module-error', errorInfo);
+    }
+}
+
+// 使用例
+try {
+    // 処理
+} catch (error) {
+    reportModuleError('Sidebar-Tools', 'Tool Switch', error, {
+        fromTool: oldTool,
+        toTool: newTool
+    });
+}
+```
+
+### フォールバック禁止原則
+- **曖昧な動作回復**: ❌ 禁止 - エラー原因を隠蔽する
+- **暗黙的な修復**: ❌ 禁止 - 問題の先送りとなる  
+- **明示的な失敗**: ⭕ 推奨 - AIが問題を特定可能
+
+## 🎨 PixiJS連携パターン
+
+### ツールクラス基底
+```javascript
+class BaseTool {
+    constructor(name, pixiApp) {
+        this.name = name;
+        this.app = pixiApp;
+        this.isActive = false;
+        this.settings = this.getDefaultSettings();
+    }
+    
+    activate() {
+        this.isActive = true;
+        this.onActivate();
+    }
+    
+    deactivate() {
+        this.isActive = false;
+        this.onDeactivate();
+    }
+    
+    // サブクラスで実装
+    onActivate() {}
+    onDeactivate() {}
+    getDefaultSettings() { return {}; }
+    handlePointerDown(event) {}
+    handlePointerMove(event) {}
+    handlePointerUp(event) {}
+}
+```
+
+### レイヤー操作パターン
+```javascript
+// レイヤー作成
+function createDrawingLayer(name, zIndex = 0) {
+    const container = new PIXI.Container();
+    container.name = name;
+    container.zIndex = zIndex;
+    container.sortableChildren = true;
+    
+    // main.htmlのレイヤー管理に登録
+    return window.DrawingToolAPI.layers.registerLayer(container);
+}
+```
+
+## 🚀 開発・テスト指針
+
+### ファイル読み込み順序
+```html
+<script src="main.html"></script>
+<script src="Sidebar-Tools.html"></script>  
+<script src="Layer-Panel.html"></script>
+<script src="Canvas-Controller.html"></script>
+```
+
+### テスト可能性
+```javascript
+// 各モジュールでテストエントリーポイント提供
+window.DevTools = window.DevTools || {};
+window.DevTools.SidebarTools = {
+    forceTool: (toolName) => {}, // 強制ツール切替
+    getToolState: () => {},      // ツール状態取得
+    simulateClick: (toolId) => {} // UI操作シミュレート
+};
+```
+
+### AI改修ガイドライン
+1. **単一ファイル完結**: ツール改修時は対象モジュールのみ変更
+2. **API経由通信**: 直接的なDOM操作・変数参照を避ける
+3. **エラー情報充実**: console.errorに詳細なコンテキスト情報を含める
+4. **命名の一貫性**: 規約に従った命名で検索・特定を容易化
+
+## 📚 用語辞典
+
+**Module**: HTML+CSS+JS一体型の機能単位ファイル  
+**Core Engine**: main.html - PixiJS初期化とモジュール間調整  
+**Tool**: 描画・選択・変形等のユーザー操作機能  
+**Layer**: PixiJS.Container - 描画内容の階層管理単位  
+**API Hub**: モジュール間通信の中央ハブ(window.DrawingToolAPI)  
+
+## 🎯 実装優先順位
+
+### Phase 1: Sidebar-Tools.html分離
+- 既存のツールボタン群を分離
+- ペン・消しゴム・選択ツールの独立化
+- main.htmlとの通信API確立
+
+### Phase 2: Layer-Panel.html分離  
+- レイヤー管理UI の分離
+- レイヤー移動・削除・表示切替の独立化
+
+### Phase 3: Canvas-Controller.html分離
+- キャンバス操作UI（ズーム・移動・回転）
+- 将来の無限キャンバス実装基盤
+
+---
+**Version**: 1.0  
+**Last Updated**: 2025-09-08  
+**Next Review**: Phase 1完了後に実装結果を反映してv1.1作成予定

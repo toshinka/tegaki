@@ -1,0 +1,731 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Sidebar Tools Module</title>
+    <style>
+        /* Sidebar-Tools専用スタイル */
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg {
+            width: 20px;
+            height: 20px;
+            stroke: #800000;
+        }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.active svg {
+            stroke: #ffffff;
+        }
+        
+        .tool-button.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .tool-button.disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        /* ポップアップパネル（ツール設定用） */
+        .popup-panel {
+            position: fixed;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+            padding: 20px;
+            z-index: 2000;
+            backdrop-filter: blur(12px);
+            display: none;
+            user-select: none;
+            min-width: 280px;
+        }
+        
+        .popup-panel.show {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        
+        .popup-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            margin-bottom: 16px;
+            text-align: center;
+            border-bottom: 2px solid var(--futaba-light-medium);
+            padding-bottom: 8px;
+            cursor: move;
+        }
+        
+        .setting-group {
+            margin-bottom: 16px;
+        }
+        
+        .setting-label {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .slider {
+            flex: 1;
+            height: 6px;
+            background: var(--futaba-light-medium);
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .slider-track {
+            height: 100%;
+            background: var(--futaba-maroon);
+            border-radius: 3px;
+            transition: width 0.1s ease;
+        }
+        
+        .slider-handle {
+            width: 16px;
+            height: 16px;
+            background: var(--futaba-maroon);
+            border: 2px solid var(--futaba-background);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .slider-handle:active {
+            cursor: grabbing;
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+        
+        .slider-value {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            min-width: 50px;
+            text-align: right;
+        }
+        
+        .size-input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .size-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            background: var(--futaba-background);
+            font-family: monospace;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .size-input:focus {
+            outline: none;
+            border-color: var(--futaba-maroon);
+        }
+        
+        .size-multiply {
+            color: var(--futaba-maroon);
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .action-button {
+            padding: 10px 16px;
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 8px;
+            background: var(--futaba-background);
+            color: var(--futaba-maroon);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        
+        .action-button:hover {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+    </style>
+</head>
+<body>
+    <!-- Sidebar Tools UI -->
+    <div class="sidebar">
+        <div class="tool-button" id="resize-tool" title="リサイズ">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-scaling-icon lucide-scaling">
+                <path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/>
+                <path d="M14 15H9v-5"/>
+                <path d="M16 3h5v5"/>
+                <path d="M21 3 9 15"/>
+            </svg>
+        </div>
+        
+        <div class="tool-separator"></div>
+               
+        <div class="tool-button active" id="pen-tool" title="ベクターペン (P)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pen-line-icon lucide-pen-line">
+                <path d="M13 21h8"/>
+                <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/>
+            </svg>
+        </div>
+        
+        <div class="tool-button" id="eraser-tool" title="消しゴム (E)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eraser-icon lucide-eraser">
+                <path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/>
+                <path d="m5.082 11.09 8.828 8.828"/>
+            </svg>
+        </div>
+    </div>
+    
+    <!-- ポップアップパネル（ペンツール） -->
+    <div class="popup-panel" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-size-slider">
+                    <div class="slider-track" id="pen-size-track"></div>
+                    <div class="slider-handle" id="pen-size-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-size-value">16.0px</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-opacity-slider">
+                    <div class="slider-track" id="pen-opacity-track"></div>
+                    <div class="slider-handle" id="pen-opacity-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-opacity-value">85.0%</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ポップアップパネル（リサイズ） -->
+    <div class="popup-panel" id="resize-settings" style="left: 60px; top: 150px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバスサイズ</div>
+            <div class="size-input-group">
+                <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                <div class="size-multiply">×</div>
+                <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="action-button" id="apply-resize">適用</div>
+        </div>
+    </div>
+
+    <script>
+        /**
+         * Sidebar-Tools.html
+         * ツール管理モジュール - ルールブックv1.0準拠
+         * 
+         * 責任範囲:
+         * - ツールボタンUI（ペン・消しゴム・リサイズ）
+         * - ツール設定ポップアップ（スライダー・入力フィールド）
+         * - ツール切り替えロジック
+         * - main.htmlとのAPI通信
+         */
+
+        (function() {
+            'use strict';
+
+            // ==== モジュール初期化確認 ====
+            if (!window.DrawingToolAPI) {
+                reportModuleError('Sidebar-Tools', 'Module Initialization', 
+                    new Error('DrawingToolAPI not available'), {
+                        expected: 'window.DrawingToolAPI',
+                        found: typeof window.DrawingToolAPI
+                    });
+                return;
+            }
+
+            // ==== Sidebar Tools Manager ====
+            class SidebarToolsManager {
+                constructor() {
+                    this.activePopup = null;
+                    this.activeTool = 'pen';
+                    this.sliders = new Map();
+                    this.dragState = { active: false, offset: { x: 0, y: 0 } };
+                    this.toolSettings = {
+                        pen: { size: 16.0, opacity: 0.85 },
+                        eraser: { size: 16.0 }
+                    };
+                }
+
+                initialize() {
+                    try {
+                        this.setupEventDelegation();
+                        this.setupSliders();
+                        this.setupResizeControls();
+                        this.setupPopupDragHandling();
+                        this.registerWithMainApp();
+                        
+                        console.log('[Sidebar-Tools] Module initialized successfully');
+                    } catch (error) {
+                        reportModuleError('Sidebar-Tools', 'Initialize', error);
+                    }
+                }
+
+                setupEventDelegation() {
+                    // ツールボタンクリック処理
+                    document.addEventListener('click', (e) => {
+                        const toolButton = e.target.closest('.tool-button');
+                        if (toolButton && !toolButton.classList.contains('disabled')) {
+                            this.handleToolClick(toolButton);
+                            return;
+                        }
+
+                        // ポップアップ外クリックで閉じる
+                        if (!e.target.closest('.popup-panel') && !e.target.closest('.tool-button')) {
+                            this.closeAllPopups();
+                        }
+                    });
+                }
+
+                handleToolClick(button) {
+                    const toolId = button.id;
+                    
+                    try {
+                        const toolActions = {
+                            'pen-tool': () => {
+                                this.activateTool('pen');
+                                this.togglePopup('pen-settings');
+                                this.applyToolSettings('pen');
+                            },
+                            'eraser-tool': () => {
+                                this.activateTool('eraser');
+                                this.closeAllPopups();
+                                this.applyToolSettings('eraser');
+                            },
+                            'resize-tool': () => {
+                                this.togglePopup('resize-settings');
+                                this.loadCurrentCanvasSize();
+                            }
+                        };
+                        
+                        const action = toolActions[toolId];
+                        if (action) {
+                            action();
+                        } else {
+                            throw new Error(`Unknown tool: ${toolId}`);
+                        }
+                    } catch (error) {
+                        reportModuleError('Sidebar-Tools', 'Tool Click', error, { 
+                            toolId, 
+                            buttonElement: button 
+                        });
+                    }
+                }
+
+                activateTool(toolName) {
+                    try {
+                        // UI状態更新
+                        document.querySelectorAll('.tool-button').forEach(btn => {
+                            btn.classList.remove('active');
+                        });
+                        
+                        const toolButton = document.getElementById(toolName + '-tool');
+                        if (toolButton) {
+                            toolButton.classList.add('active');
+                        }
+
+                        this.activeTool = toolName;
+
+                        // main.htmlに通知
+                        if (window.DrawingToolAPI.tools.setActiveTool) {
+                            window.DrawingToolAPI.tools.setActiveTool(toolName);
+                        }
+
+                        // ステータス表示更新
+                        this.updateToolStatus(toolName);
+
+                    } catch (error) {
+                        reportModuleError('Sidebar-Tools', 'Activate Tool', error, { 
+                            toolName 
+                        });
+                    }
+                }
+
+                applyToolSettings(toolName) {
+                    try {
+                        const settings = this.toolSettings[toolName];
+                        if (!settings) return;
+
+                        // main.htmlのDrawingToolsに設定を送信
+                        if (window.DrawingToolAPI.tools.applySettings) {
+                            window.DrawingToolAPI.tools.applySettings(toolName, settings);
+                        }
+
+                    } catch (error) {
+                        reportModuleError('Sidebar-Tools', 'Apply Tool Settings', error, {
+                            toolName,
+                            settings: this.toolSettings[toolName]
+                        });
+                    }
+                }
+
+                updateToolStatus(toolName) {
+                    const toolNames = {
+                        pen: 'ベクターペン',
+                        eraser: '消しゴム',
+                        resize: 'リサイズ'
+                    };
+                    
+                    // main.htmlのステータス表示に通知
+                    if (window.DrawingToolAPI.events.emit) {
+                        window.DrawingToolAPI.events.emit('tool-changed', {
+                            toolName,
+                            displayName: toolNames[toolName] || toolName
+                        });
+                    }
+                }
+
+                togglePopup(popupId) {
+                    try {
+                        const popup = document.getElementById(popupId);
+                        if (!popup) {
+                            throw new Error(`Popup not found: ${popupId}`);
+                        }
+                        
+                        // 他のポップアップを閉じる
+                        if (this.activePopup && this.activePopup !== popup) {
+                            this.activePopup.classList.remove('show');
+                        }
+                        
+                        // 対象ポップアップの表示切替
+                        const isVisible = popup.classList.contains('show');
+                        popup.classList.toggle('show', !isVisible);
+                        this.activePopup = isVisible ? null : popup;
+
+                    } catch (error) {
+                        reportModuleError('Sidebar-Tools', 'Toggle Popup', error, { popupId });
+                    }
+                }
+
+                closeAllPopups() {
+                    document.querySelectorAll('.popup-panel').forEach(popup => {
+                        popup.classList.remove('show');
+                    });
+                    this.activePopup = null;
+                }
+
+                // ==== スライダー制御 ====
+                setupSliders() {
+                    try {
+                        this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
+                            this.toolSettings.pen.size = value;
+                            if (this.activeTool === 'pen') {
+                                this.applyToolSettings('pen');
+                            }
+                            return value.toFixed(1) + 'px';
+                        });
+                        
+                        this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value) => {
+                            this.toolSettings.pen.opacity = value / 100;
+                            if (this.activeTool === 'pen') {
+                                this.applyToolSettings('pen');
+                            }
+                            return value.toFixed(1) + '%';
+                        });
+
+                    } catch (error) {
+                        reportModuleError('Sidebar-Tools', 'Setup Sliders', error);
+                    }
+                }
+
+                createSlider(sliderId, min, max, initial, callback) {
+                    const container = document.getElementById(sliderId);
+                    if (!container) return;
+
+                    const track = container.querySelector('.slider-track');
+                    const handle = container.querySelector('.slider-handle');
+                    const valueDisplay = container.parentNode.querySelector('.slider-value');
+
+                    if (!track || !handle || !valueDisplay) return;
+
+                    const slider = {
+                        value: initial, min, max, callback, 
+                        track, handle, valueDisplay, dragging: false
+                    };
+
+                    this.sliders.set(sliderId, slider);
+
+                    const updateSlider = (value) => {
+                        slider.value = Math.max(min, Math.min(max, value));
+                        const percentage = ((slider.value - min) / (max - min)) * 100;
+                        
+                        track.style.width = percentage + '%';
+                        handle.style.left = percentage + '%';
+                        valueDisplay.textContent = callback(slider.value);
+                    };
+
+                    const getValueFromPosition = (clientX) => {
+                        const rect = container.getBoundingClientRect();
+                        const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                        return min + (percentage * (max - min));
+                    };
+
+                    // イベントハンドラー
+                    container.addEventListener('mousedown', (e) => {
+                        slider.dragging = true;
+                        updateSlider(getValueFromPosition(e.clientX));
+                        e.preventDefault();
+                    });
+
+                    document.addEventListener('mousemove', (e) => {
+                        if (slider.dragging) {
+                            updateSlider(getValueFromPosition(e.clientX));
+                        }
+                    });
+
+                    document.addEventListener('mouseup', () => {
+                        slider.dragging = false;
+                    });
+
+                    updateSlider(initial);
+                }
+
+                // ==== リサイズ制御 ====
+                setupResizeControls() {
+                    const applyButton = document.getElementById('apply-resize');
+                    if (applyButton) {
+                        applyButton.addEventListener('click', () => {
+                            this.applyCanvasResize();
+                        });
+                    }
+                }
+
+                loadCurrentCanvasSize() {
+                    try {
+                        if (window.DrawingToolAPI.canvas.getCanvasSize) {
+                            const { width, height } = window.DrawingToolAPI.canvas.getCanvasSize();
+                            
+                            const widthInput = document.getElementById('canvas-width');
+                            const heightInput = document.getElementById('canvas-height');
+                            
+                            if (widthInput) widthInput.value = width;
+                            if (heightInput) heightInput.value = height;
+                        }
+                    } catch (error) {
+                        reportModuleError('Sidebar-Tools', 'Load Canvas Size', error);
+                    }
+                }
+
+                applyCanvasResize() {
+                    try {
+                        const widthInput = document.getElementById('canvas-width');
+                        const heightInput = document.getElementById('canvas-height');
+
+                        if (!widthInput || !heightInput) {
+                            throw new Error('Canvas size inputs not found');
+                        }
+
+                        const width = parseInt(widthInput.value);
+                        const height = parseInt(heightInput.value);
+
+                        if (width < 100 || width > 4096 || height < 100 || height > 4096) {
+                            throw new Error(`Invalid canvas size: ${width}x${height} (must be 100-4096)`);
+                        }
+
+                        // main.htmlのDrawingEngineに通知
+                        if (window.DrawingToolAPI.canvas.resizeCanvas) {
+                            window.DrawingToolAPI.canvas.resizeCanvas(width, height);
+                            this.closeAllPopups();
+                        }
+
+                    } catch (error) {
+                        reportModuleError('Sidebar-Tools', 'Apply Canvas Resize', error, {
+                            width: document.getElementById('canvas-width')?.value,
+                            height: document.getElementById('canvas-height')?.value
+                        });
+                    }
+                }
+
+                // ==== ポップアップドラッグ制御 ====
+                setupPopupDragHandling() {
+                    document.querySelectorAll('.popup-panel').forEach(popup => {
+                        const title = popup.querySelector('.popup-title');
+                        if (title) {
+                            title.addEventListener('mousedown', (e) => {
+                                this.startPopupDrag(e, popup);
+                            });
+                        }
+                    });
+
+                    document.addEventListener('mousemove', (e) => this.onPopupDrag(e));
+                    document.addEventListener('mouseup', () => this.stopPopupDrag());
+                }
+
+                startPopupDrag(e, popup) {
+                    this.dragState.active = popup;
+                    const rect = popup.getBoundingClientRect();
+                    this.dragState.offset.x = e.clientX - rect.left;
+                    this.dragState.offset.y = e.clientY - rect.top;
+                    e.preventDefault();
+                }
+
+                onPopupDrag(e) {
+                    if (!this.dragState.active) return;
+                    
+                    const x = Math.max(0, Math.min(
+                        e.clientX - this.dragState.offset.x,
+                        window.innerWidth - this.dragState.active.offsetWidth
+                    ));
+                    const y = Math.max(0, Math.min(
+                        e.clientY - this.dragState.offset.y,
+                        window.innerHeight - this.dragState.active.offsetHeight
+                    ));
+                    
+                    this.dragState.active.style.left = x + 'px';
+                    this.dragState.active.style.top = y + 'px';
+                }
+
+                stopPopupDrag() {
+                    this.dragState.active = false;
+                }
+
+                // ==== main.htmlとのAPI連携 ====
+                registerWithMainApp() {
+                    // SidebarTools API をグローバルに登録
+                    window.SidebarToolsAPI = {
+                        activateTool: (toolName) => this.activateTool(toolName),
+                        getActiveToolSettings: () => this.toolSettings[this.activeTool],
+                        updateToolSettings: (toolName, settings) => {
+                            if (this.toolSettings[toolName]) {
+                                Object.assign(this.toolSettings[toolName], settings);
+                            }
+                        }
+                    };
+
+                    // main.htmlのキーボードショートカットに対応
+                    if (window.DrawingToolAPI.events.subscribe) {
+                        window.DrawingToolAPI.events.subscribe('keyboard-shortcut', (data) => {
+                            if (data.action === 'switch-tool') {
+                                this.activateTool(data.toolName);
+                            }
+                        });
+                    }
+                }
+            }
+
+            // ==== エラーレポート関数 ====
+            function reportModuleError(moduleName, operation, error, context = {}) {
+                const errorInfo = {
+                    timestamp: new Date().toISOString(),
+                    module: moduleName,
+                    operation: operation,
+                    message: error.message,
+                    context: context,
+                    stack: error.stack
+                };
+                
+                console.error(`[${moduleName}] ${operation} failed:`, errorInfo);
+                
+                // main.htmlのエラーハンドラーに通知
+                if (window.DrawingToolAPI?.events?.emit) {
+                    window.DrawingToolAPI.events.emit('module-error', errorInfo);
+                }
+            }
+
+            // ==== モジュール初期化 ====
+            function initializeSidebarTools() {
+                try {
+                    const manager = new SidebarToolsManager();
+                    manager.initialize();
+                    
+                    // グローバル参照として保存
+                    window.sidebarToolsManager = manager;
+                    
+                } catch (error) {
+                    reportModuleError('Sidebar-Tools', 'Module Bootstrap', error);
+                }
+            }
+
+            // DOM読み込み完了後に初期化
+            if (document.readyState === 'loading') {
+                document.addEventListener('DOMContentLoaded', initializeSidebarTools);
+            } else {
+                initializeSidebarTools();
+            }
+
+        })();
+    </script>
+</body>
+</html>
