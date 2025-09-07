@@ -1,6 +1,6 @@
 /**
  * 🛰️ engine-position.js - PositionManager座標・カメラ・ジェスチャー衛星
- * Version: 3.0.0 | Last Modified: 2025-09-07
+ * Version: 3.0.0 | Last Modified: 2025-01-09
  * 
  * [🎯 責務範囲]
  * - 無限ワールド座標系管理（screen↔world変換）
@@ -20,7 +20,7 @@
  * setCameraPosition(x, y)                 - カメラ絶対位置
  * resetCamera()                           - カメラリセット
  * setupHammerJS()                         - ジェスチャー初期化
- * calibrateInitialPosition()              - 初期位置校正（新規追加）
+ * transformLayerCoordinates(layer, dx, dy) - レイヤー変形
  * 
  * [📡 処理イベント（IN）]
  * - camera-move-request : カメラ移動要求
@@ -55,8 +55,6 @@
             this.hammer = null;
             this.lastDelta = null;
             this.updateScheduled = false;
-            this.initialPositionCalibrated = false; // ✅ 新規追加: 初期校正フラグ
-            this.initializationTries = 0; // ✅ 追加: 初期化試行回数
             
             // パン状態管理
             this.panState = {
@@ -75,89 +73,40 @@
             };
         }
         
-        // ✅ 修正: DOM存在チェック強化（GPT5改修案準拠）
         initialize() {
-            // 1) DOM存在チェック（最大 1 秒までリトライ）
-            const ensureDom = (resolve) => {
-                this.container = document.getElementById('canvas-container');
-                if (this.container) { 
-                    resolve(true); 
-                    return; 
-                }
-                if (++this.initializationTries > 20) {
-                    MainController.emit('system-error', { 
-                        code: 'CANVAS_CONTAINER_NOT_FOUND', 
-                        details: { tries: this.initializationTries },
-                        stack: new Error().stack
-                    });
-                    resolve(false); 
-                    return;
-                }
-                setTimeout(() => ensureDom(resolve), 50);
-            };
-            
-            return new Promise((resolve) => ensureDom(resolve)).then(ok => {
-                if (!ok) return false;
-                
-                // 2) 以降は今の処理（Hammer, Events, Loop, calibrateInitialPosition）
-                this.setupHammerJS();
-                this.setupPointerEvents();
-                this.setupEventHandlers();
-                this.startUpdateLoop();
-                
-                // ✅ 修正: 初期位置校正
-                setTimeout(() => {
-                    this.calibrateInitialPosition();
-                }, 50); // DOM描画完了待ち
-                
-                MainController.emit('system-debug', {
-                    category: 'init',
-                    message: 'PositionManager initialized',
-                    data: { 
-                        canvasContainer: this.container.id,
-                        hammerEnabled: !!this.hammer,
-                        tries: this.initializationTries
-                    },
-                    timestamp: Date.now()
+            this.container = document.getElementById('canvas-container');
+            if (!this.container) {
+                MainController.emit('system-error', {
+                    code: 'CANVAS_CONTAINER_NOT_FOUND',
+                    details: { message: 'Canvas container element not found' },
+                    stack: new Error().stack
                 });
-                
-                return true;
-            });
-        }
-        
-        // ✅ 修正: 初期位置校正
-        calibrateInitialPosition() {
-            if (!this.container) return;
+                return false;
+            }
             
-            const rect = this.container.getBoundingClientRect();
-            const viewportCenter = {
-                x: (window.innerWidth - 310) / 2, // サイドバー50px + レイヤーパネル予約160px
-                y: window.innerHeight / 2
-            };
+            // HammerJS初期化
+            this.setupHammerJS();
             
-            // 初期オフセット補正
-            this.camera.x = 0;
-            this.camera.y = 0;
-            this.camera.targetX = 0;
-            this.camera.targetY = 0;
+            // ポインターイベント初期化
+            this.setupPointerEvents();
             
-            // DOM位置を正確に設定
-            this.container.style.transform = 'translate(-50%, -50%)';
-            this.container.style.left = '50%';
-            this.container.style.top = '50%';
+            // イベント監視開始
+            this.setupEventHandlers();
             
-            this.initialPositionCalibrated = true;
+            // 定期更新開始
+            this.startUpdateLoop();
             
-            MainController.emit('camera-position-changed', { x: 0, y: 0 });
             MainController.emit('system-debug', {
-                category: 'position',
-                message: 'Initial camera position calibrated',
+                category: 'init',
+                message: 'PositionManager initialized',
                 data: { 
-                    viewportCenter,
-                    containerRect: { width: rect.width, height: rect.height }
+                    canvasContainer: this.container.id,
+                    hammerEnabled: !!this.hammer 
                 },
                 timestamp: Date.now()
             });
+            
+            return true;
         }
         
         setupHammerJS() {
@@ -280,11 +229,6 @@
         // === カメラ制御（無制限移動対応） ===
         
         moveCamera(dx, dy) {
-            // ✅ 修正: 初期校正後のみ移動を許可
-            if (!this.initialPositionCalibrated) {
-                this.calibrateInitialPosition();
-            }
-            
             this.camera.targetX += dx;
             this.camera.targetY += dy;
             
@@ -312,15 +256,9 @@
             this.updateScheduled = true;
             
             // 即座にDOM更新
-            if (this.container) {
-                this.container.style.transform = 'translate(-50%, -50%)';
-                this.container.style.left = '50%';
-                this.container.style.top = '50%';
-            }
-            
-            // ✅ 修正: カメラ値も即座にリセット
-            this.camera.x = 0;
-            this.camera.y = 0;
+            this.container.style.transform = 'translate(-50%, -50%)';
+            this.container.style.left = '50%';
+            this.container.style.top = '50%';
             
             MainController.emit('camera-position-changed', { x: 0, y: 0 });
         }
@@ -330,7 +268,7 @@
         }
         
         updateCameraPosition() {
-            if (!this.updateScheduled || !this.container) return;
+            if (!this.updateScheduled) return;
             
             const { x, y } = this.camera;
             const { targetX, targetY } = this.camera;
@@ -339,9 +277,9 @@
                 this.camera.x = Math.round(targetX);
                 this.camera.y = Math.round(targetY);
                 
-                // ✅ 修正: DOM transform更新（より正確な計算）
+                // DOM transform更新
                 const viewportCenter = {
-                    x: (window.innerWidth - 310) / 2, // サイドバー50px + レイヤーパネル予約160px
+                    x: (window.innerWidth - 310) / 2,
                     y: window.innerHeight / 2
                 };
                 
@@ -350,7 +288,6 @@
                     y: viewportCenter.y + this.camera.y
                 };
                 
-                // ✅ 修正: より正確なDOM位置計算
                 this.container.style.transform = 
                     `translate3d(${offset.x}px, ${offset.y}px, 0) translate(-50%, -50%)`;
                 this.container.style.left = '0px';

@@ -1,13 +1,12 @@
 /**
  * 🛰️ error-service.js - ErrorService エラー処理・デバッグ支援衛星  
- * Version: 3.0.0 | Last Modified: 2025-09-07
+ * Version: 3.0.0 | Last Modified: 2025-01-09
  * 
  * [🎯 責務範囲]
  * - エラー分類・レポート・ダイアログ表示
  * - デバッグログ管理・カテゴリ分類
  * - パフォーマンス監視・FPS計測
  * - イベントペイロード検証
- * - Undo/Redoシステム監視（新規追加）
  * 
  * [🔧 主要メソッド]
  * reportError(code, details, stack)      - エラーレポート
@@ -26,14 +25,11 @@
  * LIB_001-099   : ライブラリ関連エラー
  * UI_001-099    : UI操作エラー
  * SYS_001-099   : システム関連エラー
- * HIST_001-099  : 履歴管理エラー（新規追加）
  * 
  * [📡 処理イベント（IN）]
  * - system-error : エラー発生通知
  * - system-debug : デバッグログ要求
  * - system-performance : パフォーマンス計測
- * - undo-executed / redo-executed : Undo/Redo実行通知
- * - shortcut-triggered : ショートカット実行通知
  * 
  * [📤 発火イベント（OUT）]
  * - error-reported : エラーレポート完了
@@ -53,27 +49,24 @@
 (function() {
     'use strict';
     
-    // エラーコード定義（拡張版）
+    // エラーコード定義
     const ERROR_CODES = {
         // 座標系関連 (COORD_001-099)
         COORDINATE_INVALID: 'COORD_001',
         WORLD_BOUNDS_EXCEEDED: 'COORD_002',
         SCREEN_TO_WORLD_FAILED: 'COORD_003',
-        CAMERA_POSITION_INVALID: 'COORD_004',
         
         // レイヤー関連 (LAYER_001-099)
         LAYER_NOT_FOUND: 'LAYER_001',
         LAYER_CREATE_FAILED: 'LAYER_002',
         LAYER_DELETE_FAILED: 'LAYER_003',
         LAYER_REORDER_FAILED: 'LAYER_004',
-        LAYER_ACTIVATION_FAILED: 'LAYER_005',
         
         // ツール関連 (TOOL_001-099)
         TOOL_INVALID: 'TOOL_001',
         BRUSH_SIZE_INVALID: 'TOOL_002',
         OPACITY_INVALID: 'TOOL_003',
         DRAWING_STATE_INVALID: 'TOOL_004',
-        TOOL_SELECT_FAILED: 'TOOL_005',
         
         // ライブラリ関連 (LIB_001-099)
         PIXI_NOT_LOADED: 'LIB_001',
@@ -87,21 +80,12 @@
         POPUP_SHOW_FAILED: 'UI_002',
         SLIDER_UPDATE_FAILED: 'UI_003',
         CANVAS_RESIZE_FAILED: 'UI_004',
-        LAYER_PANEL_UPDATE_FAILED: 'UI_005',
         
         // システム関連 (SYS_001-099)
         INIT_FAILED: 'SYS_001',
         EVENT_HANDLER_FAILED: 'SYS_002',
         MEMORY_LIMIT_EXCEEDED: 'SYS_003',
-        PERFORMANCE_DEGRADED: 'SYS_004',
-        LIBRARIES_MISSING: 'SYS_005',
-        
-        // ✅ 新規追加: 履歴管理関連 (HIST_001-099)
-        HISTORY_RECORD_FAILED: 'HIST_001',
-        UNDO_FAILED: 'HIST_002',
-        REDO_FAILED: 'HIST_003',
-        PATH_RESTORE_FAILED: 'HIST_004',
-        PATH_REMOVE_FAILED: 'HIST_005'
+        PERFORMANCE_DEGRADED: 'SYS_004'
     };
     
     class ErrorService {
@@ -121,13 +105,6 @@
             // パフォーマンス監視
             this.performanceObserver = null;
             this.lastFPSUpdate = performance.now();
-            
-            // ✅ 新規追加: Undo/Redo統計
-            this.undoRedoStats = {
-                undoCount: 0,
-                redoCount: 0,
-                shortcutUsage: new Map()
-            };
         }
         
         initialize() {
@@ -152,11 +129,6 @@
         setupEventHandlers() {
             MainController.on('system-error', (payload) => this.handleSystemError(payload));
             MainController.on('system-debug', (payload) => this.handleSystemDebug(payload));
-            
-            // ✅ 新規追加: Undo/Redo統計監視
-            MainController.on('undo-executed', (payload) => this.handleUndoExecuted(payload));
-            MainController.on('redo-executed', (payload) => this.handleRedoExecuted(payload));
-            MainController.on('shortcut-triggered', (payload) => this.handleShortcutTriggered(payload));
             
             // グローバルエラーキャッチ
             window.addEventListener('error', (event) => {
@@ -286,8 +258,8 @@
         
         isCriticalError(code) {
             const criticalCodes = [
-                'LIB_001', 'LIB_002', 'SYS_001', 'SYS_002', 'SYS_005',
-                'UI_001', 'LAYER_001', 'COORD_001', 'HIST_002', 'HIST_003'
+                'LIB_001', 'LIB_002', 'SYS_001', 'SYS_002',
+                'UI_001', 'LAYER_001', 'COORD_001'
             ];
             return criticalCodes.includes(code);
         }
@@ -299,13 +271,9 @@
                 'LIB_003': 'Lodash ライブラリが読み込まれていません',
                 'SYS_001': 'システムの初期化に失敗しました',
                 'SYS_002': 'イベントハンドラーでエラーが発生しました',
-                'SYS_005': '必要なライブラリが見つかりません',
                 'UI_001': '必要なDOM要素が見つかりません',
-                'UI_005': 'レイヤーパネルの更新に失敗しました',
                 'LAYER_001': 'レイヤーが見つかりません',
-                'COORD_001': '座標変換でエラーが発生しました',
-                'HIST_002': 'Undo操作に失敗しました',
-                'HIST_003': 'Redo操作に失敗しました'
+                'COORD_001': '座標変換でエラーが発生しました'
             };
             
             const description = codeDescriptions[errorReport.code] || '不明なエラーが発生しました';
@@ -326,11 +294,7 @@
                 'LIB_002': ['HammerJSのCDNリンクを確認してください', 'タッチ操作が無効になる可能性があります'],
                 'LIB_003': ['Lodashライブラリが読み込まれていません', 'パフォーマンス最適化が無効になります'],
                 'SYS_001': ['ページを再読み込みしてください', 'ブラウザのデベロッパーツールでコンソールを確認してください'],
-                'SYS_005': ['すべてのCDNリンクが正常に読み込まれているか確認してください'],
-                'UI_001': ['HTMLの構造が正しいか確認してください', '必要なDOM要素のIDが存在するか確認してください'],
-                'UI_005': ['レイヤーパネルが表示されない場合は、レイヤー追加ボタンを押してみてください'],
-                'HIST_002': ['操作履歴が破損している可能性があります', 'ページを再読み込みしてください'],
-                'HIST_003': ['Redo可能な操作がありません', 'Undoを実行した後でRedo可能になります']
+                'UI_001': ['HTMLの構造が正しいか確認してください', '必要なDOM要素のIDが存在するか確認してください']
             };
             
             return suggestions[code] || ['ページを再読み込みしてみてください'];
@@ -441,10 +405,7 @@
                 'performance': 'warn',
                 'init': 'log',
                 'event': 'log',
-                'ui': 'log',
-                'undo': 'log', // ✅ 新規追加
-                'drawing': 'log', // ✅ 新規追加
-                'position': 'log' // ✅ 新規追加
+                'ui': 'log'
             };
             
             return levels[category] || 'log';
@@ -583,8 +544,7 @@
                 recentErrors: this.errorHistory.slice(-10),
                 criticalErrors: this.errorHistory.filter(e => this.isCriticalError(e.code)).length,
                 resolvedErrors: this.errorHistory.filter(e => e.resolved).length,
-                errorRate: this.calculateErrorRate(),
-                undoRedoStats: { ...this.undoRedoStats } // ✅ 新規追加
+                errorRate: this.calculateErrorRate()
             };
             
             return stats;
@@ -620,45 +580,9 @@
                         hammer: !!window.Hammer,
                         lodash: !!window._,
                         gsap: !!window.gsap
-                    },
-                    features: {
-                        undoRedo: !!window.RecordManager,
-                        layerManagement: !!window.LayerManager,
-                        positionManager: !!window.PositionManager,
-                        drawingEngine: !!window.DrawingEngine
                     }
                 }
             };
-        }
-        
-        // ✅ 新規追加: Undo/Redo統計イベントハンドラー
-        handleUndoExecuted(payload) {
-            this.undoRedoStats.undoCount++;
-            this.logDebug('undo', 'Undo executed', {
-                actionType: payload.actionType,
-                success: payload.success,
-                totalUndos: this.undoRedoStats.undoCount
-            });
-        }
-        
-        handleRedoExecuted(payload) {
-            this.undoRedoStats.redoCount++;
-            this.logDebug('undo', 'Redo executed', {
-                actionType: payload.actionType,
-                success: payload.success,
-                totalRedos: this.undoRedoStats.redoCount
-            });
-        }
-        
-        handleShortcutTriggered(payload) {
-            const count = this.undoRedoStats.shortcutUsage.get(payload.key) || 0;
-            this.undoRedoStats.shortcutUsage.set(payload.key, count + 1);
-            
-            this.logDebug('shortcut', 'Shortcut triggered', {
-                key: payload.key,
-                action: payload.action,
-                totalUsage: count + 1
-            });
         }
         
         // === イベントハンドラー ===
@@ -699,16 +623,6 @@
             this.errorStatistics.clear();
             this.logDebug('cleanup', 'Error history cleared');
         }
-        
-        // ✅ 新規追加: Undo/Redo統計リセット
-        resetUndoRedoStats() {
-            this.undoRedoStats = {
-                undoCount: 0,
-                redoCount: 0,
-                shortcutUsage: new Map()
-            };
-            this.logDebug('cleanup', 'Undo/Redo statistics reset');
-        }
     }
     
     // ErrorService初期化
@@ -733,7 +647,7 @@
         initWhenReady();
     }
     
-    // デバッグ用グローバル関数（拡張版）
+    // デバッグ用グローバル関数
     window.debugApp = {
         getErrors: () => errorService.getErrorStatistics(),
         getLogs: (category, limit) => errorService.getDebugLogs(category, limit),
@@ -742,14 +656,7 @@
         enableVerbose: () => errorService.enableVerboseLogging(),
         disableVerbose: () => errorService.disableVerboseLogging(),
         clearErrors: () => errorService.clearErrorHistory(),
-        clearLogs: (category) => errorService.clearDebugLogs(category),
-        // ✅ 新規追加: Undo/Redo統計
-        getUndoRedoStats: () => errorService.undoRedoStats,
-        resetUndoRedoStats: () => errorService.resetUndoRedoStats(),
-        // 便利なヘルパー
-        testUndo: () => MainController.emit('undo-request', {}),
-        testRedo: () => MainController.emit('redo-request', {}),
-        getHistoryStats: () => window.RecordManager?.getHistoryStats()
+        clearLogs: (category) => errorService.clearDebugLogs(category)
     };
     
 })();

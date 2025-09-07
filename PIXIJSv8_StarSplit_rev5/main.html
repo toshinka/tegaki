@@ -542,7 +542,6 @@
         
         <div class="status-group">
             <div class="status-item">FPS: <span id="fps">60</span></div>
-            <div class="status-item">History: <span id="history-status">-</span></div>
         </div>
     </div>
 
@@ -555,13 +554,13 @@
     <script>
         /**
          * 🌟 main.html - MainController中枢管制塔 + RecordManager
-         * Version: 3.0.0 | Last Modified: 2025-09-07
+         * Version: 3.0.0 | Last Modified: 2025-01-09
          * 
          * [🎯 責務範囲]
          * - イベント仲介（全衛星間の通信制御）
          * - 状態管理（appState、brushSettings、worldBounds）
          * - 初期化制御（ライブラリ・衛星の起動順序）
-         * - 非破壊記録管理（操作履歴、undo/redo完全実装）
+         * - 非破壊記録管理（操作履歴、undo/redo準備）
          * 
          * [🔧 主要API]
          * MainController.emit(type, payload)     - イベント発火
@@ -569,19 +568,16 @@
          * MainController.getState(key)           - 状態取得  
          * MainController.setState(key, value)    - 状態更新
          * MainController.recordAction(type, data) - アクション記録
-         * MainController.undo() / MainController.redo() - アンドゥ/リドゥ実行
          * 
          * [📡 処理イベント（IN）]
          * - system-* : 初期化・エラー・デバッグ
          * - *-request : 全衛星からの処理要求
          * - *-changed : 状態変化通知
-         * - undo-request / redo-request : アンドゥ/リドゥ要求
          * 
          * [📤 発火イベント（OUT）]  
          * - *-request : 衛星への処理依頼
          * - state-changed : 状態変化通知
          * - history-state-changed : 履歴状態更新
-         * - undo-executed / redo-executed : アンドゥ/リドゥ実行完了
          * 
          * [🔗 依存関係]
          * ← engine-position.js (座標・カメライベント)
@@ -608,14 +604,14 @@
             initialized: false,
             spacePressed: false,
             currentTool: 'pen',
-            activeLayerId: 0, // ✅ 修正: 背景レイヤーから開始
+            activeLayerId: 1,
             camera: { x: 0, y: 0 },
             canvas: { width: 400, height: 400 },
             brushSettings: { size: 16.0, opacity: 0.85 },
             worldBounds: { minX: -Infinity, maxX: Infinity, minY: -Infinity, maxY: Infinity }
         };
         
-        // 非破壊記録管理（完全版 - undo/redo実装）
+        // 非破壊記録管理（将来のundo/redo・レイヤー移動対応）
         const RecordManager = {
             history: [],
             currentIndex: -1,
@@ -646,26 +642,322 @@
                 MainController.emit('history-state-changed', {
                     canUndo: this.canUndo(),
                     canRedo: this.canRedo(),
-                    historyLength: this.history.length,
-                    currentIndex: this.currentIndex
+                    historyLength: this.history.length
                 });
             },
             
-            // ✅ 新規追加: Undo機能
-            undo: function() {
-                if (!this.canUndo()) return false;
+            canUndo: function() {
+                return this.currentIndex >= 0;
+            },
+            
+            canRedo: function() {
+                return this.currentIndex < this.history.length - 1;
+            },
+            
+            generateActionId: function() {
+                return `action_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            }
+        };
+        
+        // イベント型定義（完全版）
+        const EVENT_TYPES = {
+            // 入力系（HammerJS統合）
+            'input-pointer-down': { x: 'number', y: 'number', pressure: 'number', pointerType: 'string' },
+            'input-pointer-move': { x: 'number', y: 'number', pressure: 'number', pointerType: 'string' },  
+            'input-pointer-up': { x: 'number', y: 'number' },
+            'input-space-toggle': { pressed: 'boolean' },
+            'input-arrow-key': { direction: 'string', pressed: 'boolean' },
+            
+            // ジェスチャー系（HammerJS）
+            'gesture-pan-start': { centerX: 'number', centerY: 'number', pointerType: 'string' },
+            'gesture-pan-move': { centerX: 'number', centerY: 'number', deltaX: 'number', deltaY: 'number' },
+            'gesture-pan-end': { centerX: 'number', centerY: 'number', velocityX: 'number', velocityY: 'number' },
+            
+            // カメラ系（無限ワールド対応）
+            'camera-move-request': { dx: 'number', dy: 'number' },
+            'camera-position-changed': { x: 'number', y: 'number' },
+            'camera-set-position': { x: 'number', y: 'number' },
+            'camera-reset-request': {},
+            'camera-bounds-updated': { visibleBounds: 'object' },
+            
+            // 描画系（ワールド座標ベース + キャンバス外対応）
+            'draw-start-request': { worldX: 'number', worldY: 'number', layerId: 'number', tool: 'string', inCanvas: 'boolean' },
+            'draw-continue-request': { worldX: 'number', worldY: 'number', inCanvas: 'boolean' },
+            'draw-end-request': { worldX: 'number', worldY: 'number' },
+            'path-created': { pathId: 'string', layerId: 'number', worldBounds: 'object' },
+            'erase-request': { worldX: 'number', worldY: 'number', size: 'number' },
+            
+            // レイヤー系（移動・変形対応）
+            'layer-create-request': { name: 'string' },
+            'layer-created': { layerId: 'number', name: 'string' },
+            'layer-delete-request': { layerId: 'number' },
+            'layer-activate-request': { layerId: 'number' },
+            'layer-reorder-request': { fromIndex: 'number', toIndex: 'number' },
+            'layer-visibility-toggle': { layerId: 'number', visible: 'boolean' },
+            'layer-transform-request': { layerId: 'number', dx: 'number', dy: 'number' },
+            'layer-transform-applied': { layerId: 'number', transformation: 'object' },
+            
+            // 非破壊記録系（将来のundo/redo対応）
+            'record-action': { actionType: 'string', data: 'object', timestamp: 'number' },
+            'undo-request': {},
+            'redo-request': {},
+            'history-state-changed': { canUndo: 'boolean', canRedo: 'boolean' },
+            
+            // ツール系
+            'tool-select-request': { toolName: 'string' },
+            'tool-selected': { toolName: 'string' },
+            'brush-size-change': { size: 'number' },
+            'brush-opacity-change': { opacity: 'number' },
+            
+            // UI系（Lodash最適化）
+            'ui-popup-toggle': { popupId: 'string' },
+            'ui-coordinates-update': { x: 'number', y: 'number' },
+            'ui-canvas-resize': { width: 'number', height: 'number' },
+            'ui-layer-panel-update': {},
+            'ui-status-update': { key: 'string', value: 'any' },
+            
+            // システム系
+            'system-init-complete': {},
+            'system-libraries-loaded': { libraries: 'array' },
+            'system-resize-request': { width: 'number', height: 'number' },
+            'system-error': { code: 'string', details: 'object', stack: 'string' },
+            'system-debug': { category: 'string', message: 'string', data: 'object', timestamp: 'number' }
+        };
+        
+        // MainController - 中枢管制塔
+        const MainController = {
+            eventHandlers: new Map(),
+            
+            // イベント発火
+            emit: function(type, payload = {}) {
+                if (APP_CONFIG.debug) {
+                    console.group(`📡 Event: ${type}`);
+                    console.log('Payload:', payload);
+                    console.log('Stack:', new Error().stack.split('\n').slice(1, 4));
+                    console.groupEnd();
+                }
                 
-                const action = this.history[this.currentIndex];
-                this.executeReverseAction(action);
-                this.currentIndex--;
+                // ペイロード検証
+                if (EVENT_TYPES[type] && APP_CONFIG.debug) {
+                    this.validatePayload(type, payload, EVENT_TYPES[type]);
+                }
                 
-                MainController.emit('history-state-changed', {
-                    canUndo: this.canUndo(),
-                    canRedo: this.canRedo(),
-                    historyLength: this.history.length,
-                    currentIndex: this.currentIndex
+                // イベントハンドラー実行
+                const handlers = this.eventHandlers.get(type) || [];
+                handlers.forEach(handler => {
+                    try {
+                        handler(payload);
+                    } catch (error) {
+                        this.emit('system-error', {
+                            code: 'EVENT_HANDLER_FAILED',
+                            details: { eventType: type, error: error.message },
+                            stack: error.stack
+                        });
+                    }
+                });
+            },
+            
+            // イベント監視
+            on: function(type, handler) {
+                if (!this.eventHandlers.has(type)) {
+                    this.eventHandlers.set(type, []);
+                }
+                this.eventHandlers.get(type).push(handler);
+            },
+            
+            // 状態取得
+            getState: function(key) {
+                return appState[key];
+            },
+            
+            // 状態更新
+            setState: function(key, value) {
+                const oldValue = appState[key];
+                appState[key] = value;
+                
+                if (APP_CONFIG.debug) {
+                    console.log(`[STATE] ${key} = ${value} (was: ${oldValue})`);
+                }
+                
+                // 状態変化通知
+                this.emit('state-changed', { key, value, oldValue });
+            },
+            
+            // アクション記録
+            recordAction: function(actionType, data) {
+                RecordManager.recordAction(actionType, data);
+            },
+            
+            // ペイロード検証
+            validatePayload: function(type, payload, expectedType) {
+                // 基本的な型チェック（将来拡張予定）
+                if (typeof payload !== 'object' || payload === null) {
+                    console.warn(`Invalid payload for ${type}: expected object, got ${typeof payload}`);
+                }
+            }
+        };
+        
+        // ライブラリ存在チェック
+        class AppBootstrap {
+            static checkLibraries() {
+                const required = {
+                    pixi: window.PIXI,
+                    hammer: window.Hammer,
+                    lodash: window._,
+                    gsap: window.gsap
+                };
+                
+                const missing = [];
+                Object.entries(required).forEach(([name, lib]) => {
+                    if (!lib) {
+                        missing.push(name);
+                    }
                 });
                 
-                MainController.emit('undo-executed', {
-                    actionType: action.type,
-                    success
+                if (missing.length > 0) {
+                    MainController.emit('system-error', {
+                        code: 'LIBRARIES_MISSING',
+                        details: { missing },
+                        stack: new Error().stack
+                    });
+                    return false;
+                }
+                
+                MainController.emit('system-libraries-loaded', {
+                    libraries: Object.keys(required)
+                });
+                return true;
+            }
+            
+            static async init() {
+                if (!this.checkLibraries()) {
+                    return false;
+                }
+                
+                try {
+                    // 衛星スクリプトの動的読み込み
+                    await this.loadSatellites();
+                    
+                    // アプリケーション初期化
+                    await this.initializeApp();
+                    
+                    appState.initialized = true;
+                    MainController.emit('system-init-complete', {});
+                    
+                    return true;
+                } catch (error) {
+                    MainController.emit('system-error', {
+                        code: 'INIT_FAILED',
+                        details: { message: error.message },
+                        stack: error.stack
+                    });
+                    return false;
+                }
+            }
+            
+            static async loadSatellites() {
+                const satellites = [
+                    'engine-position.js',
+                    'layer-tool-ui.js', 
+                    'error-service.js'
+                ];
+                
+                // NOTE: ローカル実行のため、衛星JSファイルは同じディレクトリに配置されている前提
+                // 実際の実装では、これらのスクリプトタグを手動でHTMLに追加するか、
+                // 以下のような動的読み込みを使用
+                
+                console.log('🌟 MainController initialized. Satellites should be loaded manually.');
+                console.log('Required files:', satellites);
+            }
+            
+            static async initializeApp() {
+                // 入力ハンドラー設定
+                this.setupInputHandlers();
+                
+                // グローバル参照設定
+                window.MainController = MainController;
+                window.appState = appState;
+                window.APP_CONFIG = APP_CONFIG;
+                
+                console.log('🎨 Futaba Drawing Tool v3.0.0 - MainController Ready!');
+            }
+            
+            static setupInputHandlers() {
+                // スペースキー制御
+                document.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space') {
+                        if (!appState.spacePressed) {
+                            MainController.setState('spacePressed', true);
+                            MainController.emit('input-space-toggle', { pressed: true });
+                        }
+                        e.preventDefault();
+                    }
+                    
+                    // ホームキー - カメラリセット
+                    if (e.code === 'Home') {
+                        MainController.emit('camera-reset-request', {});
+                        e.preventDefault();
+                    }
+                    
+                    // スペース+矢印キー - カメラ移動
+                    if (appState.spacePressed) {
+                        const moveMap = {
+                            'ArrowLeft': [10, 0],
+                            'ArrowRight': [-10, 0],
+                            'ArrowUp': [0, 10],
+                            'ArrowDown': [0, -10]
+                        };
+                        
+                        if (moveMap[e.code]) {
+                            MainController.emit('camera-move-request', { 
+                                dx: moveMap[e.code][0], 
+                                dy: moveMap[e.code][1] 
+                            });
+                            e.preventDefault();
+                        }
+                    }
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    if (e.code === 'Space') {
+                        MainController.setState('spacePressed', false);
+                        MainController.emit('input-space-toggle', { pressed: false });
+                    }
+                });
+                
+                // ウィンドウフォーカス制御
+                window.addEventListener('blur', () => {
+                    MainController.setState('spacePressed', false);
+                    MainController.emit('input-space-toggle', { pressed: false });
+                });
+            }
+        }
+        
+        // システム初期化
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await AppBootstrap.init();
+            } catch (error) {
+                console.error('💥 MainController startup failed:', error);
+                const canvasArea = document.querySelector('.canvas-area');
+                if (canvasArea) {
+                    canvasArea.innerHTML = `
+                        <div style="text-align: center; color: var(--futaba-maroon); font-size: 18px; padding: 40px;">
+                            <div>⚠️ アプリケーションの初期化に失敗しました</div>
+                            <div style="font-size: 14px; margin-top: 10px;">
+                                ブラウザのコンソールでエラー詳細を確認してください<br>
+                                衛星JSファイルが同じディレクトリに配置されていることを確認してください
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        });
+    </script>
+    
+    <!-- NOTE: 以下の3つの衛星JSファイルを同じディレクトリに配置する必要があります -->
+    <script src="engine-position.js"></script>
+    <script src="layer-tool-ui.js"></script>
+    <script src="error-service.js"></script>
+</body>
+</html>
