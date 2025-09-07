@@ -1,4 +1,144 @@
-this.setupEventHandlers();
+/**
+ * 🛰️ error-service.js - ErrorService エラー処理・デバッグ支援衛星  
+ * Version: 3.0.1-Phase1 | Last Modified: 2025-01-09
+ * 
+ * [🚨 Phase1修正 - 消しゴム透明化対応]
+ * - PixiJS v8.13+ ERASE blend mode互換性チェック追加
+ * - RenderTexture互換性チェック強化
+ * - 透明化処理失敗時の詳細エラー報告
+ * - フォールバック処理の完全禁止（明示的エラーで制御）
+ * 
+ * [🎯 責務範囲]
+ * - エラー分類・レポート・ダイアログ表示
+ * - デバッグログ管理・カテゴリ分類
+ * - パフォーマンス監視・FPS計測
+ * - PixiJS互換性チェック（ERASE blend mode対応）
+ * - イベントペイロード検証
+ * 
+ * [🔧 主要メソッド]
+ * reportError(code, details, stack)       - エラーレポート
+ * logDebug(category, message, data)       - デバッグログ
+ * showErrorDialog(message, actions)       - エラーダイアログ
+ * hideErrorDialog()                       - ダイアログ非表示
+ * checkPixiCompatibility() → issues       - 🆕 PixiJS互換性チェック
+ * checkEraseSupport() → boolean           - 🆕 ERASE blend mode対応確認
+ * trackPerformance(category, duration)    - パフォーマンス記録
+ * validateEventPayload(type, payload)     - ペイロード検証
+ * startFPSMonitor()                       - FPS監視開始
+ * getErrorStatistics() → stats            - エラー統計取得
+ * 
+ * [📊 エラーコード分類]
+ * COORD_001-099 : 座標系関連エラー
+ * LAYER_001-099 : レイヤー管理エラー
+ * TOOL_001-099  : ツール関連エラー
+ * LIB_001-099   : ライブラリ関連エラー（🆕 ERASE対応確認含む）
+ * UI_001-099    : UI操作エラー
+ * SYS_001-099   : システム関連エラー
+ * RT_001-099    : 🆕 RenderTexture関連エラー
+ * 
+ * [📡 処理イベント（IN）]
+ * - system-error : エラー発生通知
+ * - system-debug : デバッグログ要求
+ * - system-performance : パフォーマンス計測
+ * - erase-applied : 🆕 透明化処理完了
+ * 
+ * [📤 発火イベント（OUT）]
+ * - error-reported : エラーレポート完了
+ * - error-dialog-shown : ダイアログ表示
+ * - performance-update : パフォーマンス更新
+ * - compatibility-checked : 🆕 互換性チェック完了
+ * 
+ * [🔗 依存関係]
+ * ← MainController (イベント・状態)
+ * → PixiJS v8.13.0 (ERASE blend mode確認)
+ * → DOM要素: .error-dialog, #fps-display
+ * 
+ * [⚠️ 禁止事項]  
+ * - フォールバック処理・エラー隠蔽
+ * - 問題先送り・機能代替実行
+ * - 他衛星の機能代替実行
+ * - 透明化失敗時の背景色塗り代替
+ */
+
+(function() {
+    'use strict';
+    
+    // エラーコード定義（🆕 Phase1追加分含む）
+    const ERROR_CODES = {
+        // 座標系関連 (COORD_001-099)
+        COORDINATE_INVALID: 'COORD_001',
+        WORLD_BOUNDS_EXCEEDED: 'COORD_002',
+        SCREEN_TO_WORLD_FAILED: 'COORD_003',
+        
+        // レイヤー関連 (LAYER_001-099)
+        LAYER_NOT_FOUND: 'LAYER_001',
+        LAYER_CREATE_FAILED: 'LAYER_002',
+        LAYER_DELETE_FAILED: 'LAYER_003',
+        LAYER_REORDER_FAILED: 'LAYER_004',
+        
+        // ツール関連 (TOOL_001-099)
+        TOOL_INVALID: 'TOOL_001',
+        BRUSH_SIZE_INVALID: 'TOOL_002',
+        OPACITY_INVALID: 'TOOL_003',
+        DRAWING_STATE_INVALID: 'TOOL_004',
+        ERASER_TRANSPARENCY_FAILED: 'TOOL_005',  // 🆕
+        
+        // ライブラリ関連 (LIB_001-099)
+        PIXI_NOT_LOADED: 'LIB_001',
+        HAMMER_NOT_LOADED: 'LIB_002',
+        LODASH_NOT_LOADED: 'LIB_003',
+        GSAP_NOT_LOADED: 'LIB_004',
+        LIBRARY_VERSION_MISMATCH: 'LIB_005',
+        PIXI_ERASE_NOT_SUPPORTED: 'LIB_006',     // 🆕
+        RENDER_TEXTURE_NOT_SUPPORTED: 'LIB_007', // 🆕
+        
+        // UI関連 (UI_001-099)
+        DOM_ELEMENT_NOT_FOUND: 'UI_001',
+        POPUP_SHOW_FAILED: 'UI_002',
+        SLIDER_UPDATE_FAILED: 'UI_003',
+        CANVAS_RESIZE_FAILED: 'UI_004',
+        
+        // システム関連 (SYS_001-099)
+        INIT_FAILED: 'SYS_001',
+        EVENT_HANDLER_FAILED: 'SYS_002',
+        MEMORY_LIMIT_EXCEEDED: 'SYS_003',
+        PERFORMANCE_DEGRADED: 'SYS_004',
+        
+        // 🆕 RenderTexture関連 (RT_001-099)
+        RENDER_TEXTURE_CREATE_FAILED: 'RT_001',
+        RENDER_TEXTURE_RENDER_FAILED: 'RT_002',
+        RENDER_TEXTURE_CLEAR_FAILED: 'RT_003'
+    };
+    
+    class ErrorService {
+        constructor() {
+            this.errorHistory = [];
+            this.debugLogs = [];
+            this.performanceMetrics = new Map();
+            this.errorStatistics = new Map();
+            this.maxHistorySize = 1000;
+            this.maxDebugLogs = 500;
+            this.isDialogVisible = false;
+            
+            // デバッグフラグ
+            this.debugEnabled = false;
+            this.verboseLogging = false;
+            
+            // パフォーマンス監視
+            this.performanceObserver = null;
+            this.lastFPSUpdate = performance.now();
+            
+            // 🆕 互換性チェック結果
+            this.compatibilityResults = {
+                pixi: null,
+                eraseSupport: null,
+                renderTextureSupport: null,
+                lastCheck: null
+            };
+        }
+        
+        initialize() {
+            this.setupEventHandlers();
             this.createErrorDialogDOM();
             this.setupPerformanceMonitoring();
             
@@ -747,146 +887,14 @@ this.setupEventHandlers();
             errorService.initialize();
         } else {
             setTimeout(initWhenReady, 10);
-        }/**
- * 🛰️ error-service.js - ErrorService エラー処理・デバッグ支援衛星  
- * Version: 3.0.1-Phase1 | Last Modified: 2025-01-09
- * 
- * [🚨 Phase1修正 - 消しゴム透明化対応]
- * - PixiJS v8.13+ ERASE blend mode互換性チェック追加
- * - RenderTexture互換性チェック強化
- * - 透明化処理失敗時の詳細エラー報告
- * - フォールバック処理の完全禁止（明示的エラーで制御）
- * 
- * [🎯 責務範囲]
- * - エラー分類・レポート・ダイアログ表示
- * - デバッグログ管理・カテゴリ分類
- * - パフォーマンス監視・FPS計測
- * - PixiJS互換性チェック（ERASE blend mode対応）
- * - イベントペイロード検証
- * 
- * [🔧 主要メソッド]
- * reportError(code, details, stack)       - エラーレポート
- * logDebug(category, message, data)       - デバッグログ
- * showErrorDialog(message, actions)       - エラーダイアログ
- * hideErrorDialog()                       - ダイアログ非表示
- * checkPixiCompatibility() → issues       - 🆕 PixiJS互換性チェック
- * checkEraseSupport() → boolean           - 🆕 ERASE blend mode対応確認
- * trackPerformance(category, duration)    - パフォーマンス記録
- * validateEventPayload(type, payload)     - ペイロード検証
- * startFPSMonitor()                       - FPS監視開始
- * getErrorStatistics() → stats            - エラー統計取得
- * 
- * [📊 エラーコード分類]
- * COORD_001-099 : 座標系関連エラー
- * LAYER_001-099 : レイヤー管理エラー
- * TOOL_001-099  : ツール関連エラー
- * LIB_001-099   : ライブラリ関連エラー（🆕 ERASE対応確認含む）
- * UI_001-099    : UI操作エラー
- * SYS_001-099   : システム関連エラー
- * RT_001-099    : 🆕 RenderTexture関連エラー
- * 
- * [📡 処理イベント（IN）]
- * - system-error : エラー発生通知
- * - system-debug : デバッグログ要求
- * - system-performance : パフォーマンス計測
- * - erase-applied : 🆕 透明化処理完了
- * 
- * [📤 発火イベント（OUT）]
- * - error-reported : エラーレポート完了
- * - error-dialog-shown : ダイアログ表示
- * - performance-update : パフォーマンス更新
- * - compatibility-checked : 🆕 互換性チェック完了
- * 
- * [🔗 依存関係]
- * ← MainController (イベント・状態)
- * → PixiJS v8.13.0 (ERASE blend mode確認)
- * → DOM要素: .error-dialog, #fps-display
- * 
- * [⚠️ 禁止事項]  
- * - フォールバック処理・エラー隠蔽
- * - 問題先送り・機能代替実行
- * - 他衛星の機能代替実行
- * - 透明化失敗時の背景色塗り代替
- */
-
-(function() {
-    'use strict';
-    
-    // エラーコード定義（🆕 Phase1追加分含む）
-    const ERROR_CODES = {
-        // 座標系関連 (COORD_001-099)
-        COORDINATE_INVALID: 'COORD_001',
-        WORLD_BOUNDS_EXCEEDED: 'COORD_002',
-        SCREEN_TO_WORLD_FAILED: 'COORD_003',
-        
-        // レイヤー関連 (LAYER_001-099)
-        LAYER_NOT_FOUND: 'LAYER_001',
-        LAYER_CREATE_FAILED: 'LAYER_002',
-        LAYER_DELETE_FAILED: 'LAYER_003',
-        LAYER_REORDER_FAILED: 'LAYER_004',
-        
-        // ツール関連 (TOOL_001-099)
-        TOOL_INVALID: 'TOOL_001',
-        BRUSH_SIZE_INVALID: 'TOOL_002',
-        OPACITY_INVALID: 'TOOL_003',
-        DRAWING_STATE_INVALID: 'TOOL_004',
-        ERASER_TRANSPARENCY_FAILED: 'TOOL_005',  // 🆕
-        
-        // ライブラリ関連 (LIB_001-099)
-        PIXI_NOT_LOADED: 'LIB_001',
-        HAMMER_NOT_LOADED: 'LIB_002',
-        LODASH_NOT_LOADED: 'LIB_003',
-        GSAP_NOT_LOADED: 'LIB_004',
-        LIBRARY_VERSION_MISMATCH: 'LIB_005',
-        PIXI_ERASE_NOT_SUPPORTED: 'LIB_006',     // 🆕
-        RENDER_TEXTURE_NOT_SUPPORTED: 'LIB_007', // 🆕
-        
-        // UI関連 (UI_001-099)
-        DOM_ELEMENT_NOT_FOUND: 'UI_001',
-        POPUP_SHOW_FAILED: 'UI_002',
-        SLIDER_UPDATE_FAILED: 'UI_003',
-        CANVAS_RESIZE_FAILED: 'UI_004',
-        
-        // システム関連 (SYS_001-099)
-        INIT_FAILED: 'SYS_001',
-        EVENT_HANDLER_FAILED: 'SYS_002',
-        MEMORY_LIMIT_EXCEEDED: 'SYS_003',
-        PERFORMANCE_DEGRADED: 'SYS_004',
-        
-        // 🆕 RenderTexture関連 (RT_001-099)
-        RENDER_TEXTURE_CREATE_FAILED: 'RT_001',
-        RENDER_TEXTURE_RENDER_FAILED: 'RT_002',
-        RENDER_TEXTURE_CLEAR_FAILED: 'RT_003'
+        }
     };
     
-    class ErrorService {
-        constructor() {
-            this.errorHistory = [];
-            this.debugLogs = [];
-            this.performanceMetrics = new Map();
-            this.errorStatistics = new Map();
-            this.maxHistorySize = 1000;
-            this.maxDebugLogs = 500;
-            this.isDialogVisible = false;
-            
-            // デバッグフラグ
-            this.debugEnabled = false;
-            this.verboseLogging = false;
-            
-            // パフォーマンス監視
-            this.performanceObserver = null;
-            this.lastFPSUpdate = performance.now();
-            
-            // 🆕 互換性チェック結果
-            this.compatibilityResults = {
-                pixi: null,
-                eraseSupport: null,
-                renderTextureSupport: null,
-                lastCheck: null
-            };
-        }
-        
-        initialize() {
-            this.setupEventHandlers();
-            this.createErrorDialogDOM();
-            this.setupPer
+    // DOM読み込み完了後に初期化
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initWhenReady);
+    } else {
+        initWhenReady();
+    }
+    
+})();

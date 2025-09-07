@@ -2,18 +2,20 @@
  * 🛰️ layer-tool-ui.js - LayerManager+ToolManager+UIManager+DrawingEngine統合衛星
  * Version: 3.0.1-Phase1 | Last Modified: 2025-01-09
  * 
- * [🚨 Phase1修正]
- * - Problem 2: レイヤーパネル初期表示修正
- * - Problem 3: レイヤー分離強化修正
+ * [🚨 Phase1修正 - 消しゴム透明化実装]
+ * - RenderTexture方式でのレイヤー管理実装
+ * - PIXI.BLEND_MODES.ERASE使用による真の透明化
+ * - 互換性チェック強化
+ * - 背景色塗り消去の完全廃止
  * 
  * [🎯 責務範囲]
- * - レイヤー管理（CRUD、並び替え、可視性、変形）
+ * - レイヤー管理（CRUD、並び替え、可視性、RenderTexture対応）
  * - ツール管理（ペン、消しゴム、ブラシ設定）
  * - UI制御（ポップアップ、パネル、ステータス、Lodash最適化）
- * - PixiJS描画エンジン（パス作成・延長・消去、ワールド座標対応）
+ * - PixiJS描画エンジン（パス作成・延長・透明消去、ワールド座標対応）
  * 
  * [🔧 主要メソッド - LayerManager]
- * createLayer(name) → layer               - レイヤー作成
+ * createLayer(name) → layer               - レイヤー作成（RenderTexture対応）
  * deleteLayer(id)                         - レイヤー削除
  * setActiveLayer(id)                      - アクティブ設定
  * reorderLayers(from, to)                 - ドラッグ並び替え
@@ -37,8 +39,8 @@
  * [🔧 主要メソッド - DrawingEngine]
  * createPath(worldX, worldY, settings) → path  - パス作成（ワールド座標）
  * extendPath(path, worldX, worldY)             - パス延長
- * finalizePath(path)                           - パス完成
- * eraseAtPoint(worldX, worldY, size)           - 消去処理
+ * finalizePath(path)                           - パス完成（RenderTexture描画）
+ * eraseAtPoint(worldX, worldY, size)           - 透明消去処理
  * renderToCanvas()                             - キャンバス描画
  * 
  * [📡 処理イベント（IN）]
@@ -56,7 +58,7 @@
  * [🔗 依存関係]
  * ← MainController (イベント・状態)
  * ← PositionManager (座標変換)
- * → PixiJS v8.0.5 (描画エンジン)
+ * → PixiJS v8.13.0 (ERASE blend mode, RenderTexture)
  * → Lodash v4.17.21 (debounce, throttle, cloneDeep)
  * → GSAP v3.13.0 (アニメーション)
  * → DOM要素: #layer-list, .popup-panel, .status-panel
@@ -64,12 +66,13 @@
  * [⚠️ 禁止事項]
  * - 座標計算・カメラ制御の直接実行
  * - HammerJS処理・エラー処理の直接実行
+ * - 背景色での消去代替処理
  */
 
 (function() {
     'use strict';
     
-    // === LayerManager - レイヤー管理衛星 ===
+    // === LayerManager - レイヤー管理衛星（🆕 RenderTexture対応） ===
     class LayerManager {
         constructor() {
             this.layers = new Map();
@@ -87,15 +90,65 @@
         
         initialize(drawingEngine) {
             this.engine = drawingEngine;
+            
+            // 🚨 Phase1: 互換性チェック実行
+            this.checkCompatibility();
+            
             this.createBackgroundLayer();
             this.setupEventHandlers();
             
             MainController.emit('system-debug', {
                 category: 'init',
-                message: 'LayerManager initialized',
+                message: 'LayerManager initialized with Phase1 RenderTexture support',
                 data: { layersCount: this.layers.size },
                 timestamp: Date.now()
             });
+        }
+        
+        // 🆕 互換性チェック（ERASE blend mode必須確認）
+        checkCompatibility() {
+            const issues = [];
+            
+            if (!window.PIXI) {
+                issues.push('PixiJS not loaded');
+                return issues;
+            }
+            
+            if (!PIXI.RenderTexture) {
+                issues.push('PIXI.RenderTexture not available');
+            }
+            
+            if (!PIXI.BLEND_MODES || PIXI.BLEND_MODES.ERASE === undefined) {
+                issues.push('PIXI.BLEND_MODES.ERASE not available - requires Pixi v8.13+');
+                
+                // 🚨 ERASE未対応時は明示的エラーで処理停止
+                MainController.emit('system-error', {
+                    code: 'LIB_006',
+                    details: {
+                        message: 'PIXI.BLEND_MODES.ERASE not available',
+                        currentVersion: PIXI.VERSION || 'unknown',
+                        requiredVersion: 'v8.13.0+',
+                        impact: '消しゴムによる透明化が利用できません'
+                    },
+                    stack: new Error().stack
+                });
+                return issues;
+            }
+            
+            if (issues.length === 0) {
+                MainController.emit('system-debug', {
+                    category: 'compatibility',
+                    message: 'Phase1 compatibility check passed',
+                    data: { 
+                        pixiVersion: PIXI.VERSION,
+                        eraseBlendMode: PIXI.BLEND_MODES.ERASE,
+                        renderTextureSupport: true
+                    },
+                    timestamp: Date.now()
+                });
+            }
+            
+            return issues;
         }
         
         setupEventHandlers() {
@@ -124,6 +177,8 @@
                 id: layerId,
                 name: layerName,
                 container: container,
+                renderTexture: null, // 背景レイヤーはRenderTexture不要
+                sprite: null,
                 visible: true,
                 paths: [],
                 isBackground: true,
@@ -139,25 +194,73 @@
             this.setActiveLayer(1);
         }
         
+        // 🆕 RenderTexture方式でのレイヤー作成
         createLayer(name = null) {
             const layerId = this.nextLayerId++;
             const layerName = name || `レイヤー${layerId}`;
             
+            // 一時描画用コンテナ
             const container = new PIXI.Container();
-            container.name = layerName;
+            container.name = layerName + '_temp';
             container.visible = true;
+            
+            // 🆕 RenderTexture作成（アルファ付き）
+            const canvasState = MainController.getState('canvas');
+            let renderTexture, sprite;
+            
+            try {
+                renderTexture = PIXI.RenderTexture.create({ 
+                    width: canvasState.width, 
+                    height: canvasState.height, 
+                    alpha: true 
+                });
+                
+                // 透明で初期化
+                this.engine.app.renderer.render({ 
+                    container: new PIXI.Graphics(), 
+                    target: renderTexture, 
+                    clear: true 
+                });
+                
+                // 表示用Sprite作成
+                sprite = new PIXI.Sprite(renderTexture);
+                sprite.name = layerName;
+                
+                MainController.emit('system-debug', {
+                    category: 'layer',
+                    message: `RenderTexture layer created: ${layerName}`,
+                    data: { layerId, width: canvasState.width, height: canvasState.height },
+                    timestamp: Date.now()
+                });
+                
+            } catch (error) {
+                MainController.emit('system-error', {
+                    code: 'RT_001',
+                    details: {
+                        message: 'RenderTexture creation failed',
+                        layerName: layerName,
+                        error: error.message
+                    },
+                    stack: error.stack
+                });
+                return null;
+            }
             
             const layer = {
                 id: layerId,
                 name: layerName,
-                container: container,
+                container: container,        // 一時描画用
+                renderTexture: renderTexture, // 🆕 RenderTexture
+                sprite: sprite,              // 🆕 表示用Sprite
                 visible: true,
                 paths: [],
                 isBackground: false
             };
             
             this.layers.set(layerId, layer);
-            this.engine.containers.world.addChild(container);
+            
+            // spriteをワールドに追加（コンテナではなく）
+            this.engine.containers.world.addChild(sprite);
             
             MainController.emit('layer-created', { layerId, name: layerName });
             MainController.recordAction('LAYER_CREATE', { layerId, name: layerName });
@@ -179,9 +282,19 @@
                 }
             });
             
+            // 🆕 RenderTexture関連の破棄
+            if (layer.sprite) {
+                this.engine.containers.world.removeChild(layer.sprite);
+                layer.sprite.destroy();
+            }
+            if (layer.renderTexture) {
+                layer.renderTexture.destroy(true);
+            }
+            
             // コンテナ削除
-            this.engine.containers.world.removeChild(layer.container);
-            layer.container.destroy();
+            if (layer.container) {
+                layer.container.destroy();
+            }
             
             this.layers.delete(layerId);
             
@@ -212,7 +325,13 @@
             if (!layer) return false;
             
             layer.visible = !layer.visible;
-            layer.container.visible = layer.visible;
+            
+            // 🆕 RenderTextureレイヤーの場合はspriteの可視性制御
+            if (layer.sprite) {
+                layer.sprite.visible = layer.visible;
+            } else if (layer.container) {
+                layer.container.visible = layer.visible;
+            }
             
             MainController.emit('layer-visibility-changed', { layerId, visible: layer.visible });
             MainController.recordAction('LAYER_VISIBILITY', { layerId, visible: layer.visible });
@@ -228,11 +347,14 @@
                 fromIndex === toIndex) return false;
             
             const fromLayerId = layerIds[fromIndex];
-            const layerContainers = layerIds.map(id => this.layers.get(id).container);
-            const fromContainer = layerContainers[fromIndex];
+            const fromLayer = this.layers.get(fromLayerId);
             
-            this.engine.containers.world.removeChild(fromContainer);
-            this.engine.containers.world.addChildAt(fromContainer, toIndex + 1); // +1 for background layer
+            // 🆕 RenderTextureレイヤーの場合はspriteを移動
+            const displayObject = fromLayer.sprite || fromLayer.container;
+            if (displayObject) {
+                this.engine.containers.world.removeChild(displayObject);
+                this.engine.containers.world.addChildAt(displayObject, toIndex + 1); // +1 for background layer
+            }
             
             MainController.emit('layer-reordered', { fromIndex, toIndex, layerId: fromLayerId });
             MainController.recordAction('LAYER_REORDER', { fromIndex, toIndex, layerId: fromLayerId });
@@ -252,6 +374,7 @@
             const activeLayer = this.getActiveLayer();
             if (activeLayer && path) {
                 activeLayer.paths.push(path);
+                // 🆕 一時コンテナに追加（後でRenderTextureに描画）
                 activeLayer.container.addChild(path.graphics);
             }
         }
@@ -269,7 +392,9 @@
         
         handleLayerCreateRequest(payload) {
             const layer = this.createLayer(payload.name);
-            this.setActiveLayer(layer.id);
+            if (layer) {
+                this.setActiveLayer(layer.id);
+            }
         }
         
         handleLayerDeleteRequest(payload) {
@@ -346,9 +471,6 @@
             
             this.drawing.active = true;
             this.drawing.lastPoint = { x: worldX, y: worldY };
-            
-            const color = this.currentTool === 'eraser' ? 0xf0e0d6 : this.brushColor;
-            const alpha = this.currentTool === 'eraser' ? 1.0 : this.opacity;
             
             MainController.emit('draw-start-request', {
                 worldX,
@@ -781,7 +903,7 @@
         }
     }
     
-    // === DrawingEngine - PixiJS描画エンジン ===
+    // === DrawingEngine - PixiJS描画エンジン（🆕 Phase1 ERASE対応） ===
     class DrawingEngine {
         constructor() {
             this.app = null;
@@ -807,7 +929,7 @@
             const container = document.getElementById('drawing-canvas');
             if (!container) {
                 MainController.emit('system-error', {
-                    code: 'DRAWING_CANVAS_NOT_FOUND',
+                    code: 'UI_001',
                     details: { message: 'Drawing canvas container not found' },
                     stack: new Error().stack
                 });
@@ -822,10 +944,11 @@
             
             MainController.emit('system-debug', {
                 category: 'init',
-                message: 'DrawingEngine initialized',
+                message: 'DrawingEngine initialized with Phase1 ERASE support',
                 data: { 
                     canvasSize: `${canvasState.width}x${canvasState.height}`,
-                    pixiVersion: PIXI.VERSION 
+                    pixiVersion: PIXI.VERSION,
+                    eraseSupport: PIXI.BLEND_MODES.ERASE !== undefined
                 },
                 timestamp: Date.now()
             });
@@ -915,20 +1038,52 @@
             }
         }
         
+        // 🆕 Phase1: ERASE blend mode対応パス作成
         createPath(worldX, worldY, settings) {
             const path = {
                 id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 graphics: new PIXI.Graphics(),
                 points: [],
+                tool: settings.tool,      // 🆕 ツール種別保存
                 color: settings.color,
                 size: settings.size,
                 opacity: settings.opacity,
                 isComplete: false,
-                layerId: MainController.getState('activeLayerId') // 🚨 Phase1修正: レイヤー情報追加
+                layerId: MainController.getState('activeLayerId')
             };
             
-            path.graphics.circle(worldX, worldY, settings.size / 2);
-            path.graphics.fill({ color: settings.color, alpha: settings.opacity });
+            // 🚨 Phase1修正: 消しゴムの場合はERASEブレンド設定
+            if (settings.tool === 'eraser') {
+                if (!PIXI.BLEND_MODES || PIXI.BLEND_MODES.ERASE === undefined) {
+                    MainController.emit('system-error', {
+                        code: 'LIB_006',
+                        details: {
+                            message: 'PIXI.BLEND_MODES.ERASE is not available',
+                            suggestion: 'Please update to Pixi v8.13+',
+                            tool: settings.tool
+                        },
+                        stack: new Error().stack
+                    });
+                    return null;
+                }
+                
+                path.graphics.blendMode = PIXI.BLEND_MODES.ERASE;
+                
+                // 🆕 消しゴムは白色で描画（色は影響しない）
+                path.graphics.circle(worldX, worldY, settings.size / 2);
+                path.graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+                
+                MainController.emit('system-debug', {
+                    category: 'drawing',
+                    message: 'Eraser path created with ERASE blend mode',
+                    data: { pathId: path.id, blendMode: PIXI.BLEND_MODES.ERASE },
+                    timestamp: Date.now()
+                });
+            } else {
+                // 通常ペンは指定色で描画
+                path.graphics.circle(worldX, worldY, settings.size / 2);
+                path.graphics.fill({ color: settings.color, alpha: settings.opacity });
+            }
             
             path.points.push({ x: worldX, y: worldY, size: settings.size });
             
@@ -939,6 +1094,7 @@
             MainController.emit('path-created', { 
                 pathId: path.id, 
                 layerId: MainController.getState('activeLayerId'),
+                tool: settings.tool,  // 🆕 ツール情報追加
                 worldBounds: this.calculatePathBounds(path)
             });
             
@@ -959,23 +1115,79 @@
                 const px = lastPoint.x + (worldX - lastPoint.x) * t;
                 const py = lastPoint.y + (worldY - lastPoint.y) * t;
                 
-                path.graphics.circle(px, py, path.size / 2);
-                path.graphics.fill({ color: path.color, alpha: path.opacity });
+                // 🆕 消しゴム・ペン両対応
+                if (path.tool === 'eraser') {
+                    path.graphics.circle(px, py, path.size / 2);
+                    path.graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+                } else {
+                    path.graphics.circle(px, py, path.size / 2);
+                    path.graphics.fill({ color: path.color, alpha: path.opacity });
+                }
             }
             
             path.points.push({ x: worldX, y: worldY, size: path.size });
         }
         
+        // 🆕 Phase1: RenderTextureに描画してパス完成
         finalizePath(path) {
-            if (path) {
+            if (!path) return;
+            
+            const activeLayer = window.LayerManager?.getActiveLayer();
+            if (!activeLayer || !activeLayer.renderTexture) {
+                // 背景レイヤーや非RenderTextureレイヤーの場合は通常処理
+                path.isComplete = true;
+                this.currentPath = null;
+                return;
+            }
+            
+            try {
+                // 🆕 RenderTextureに描画
+                this.app.renderer.render({ 
+                    container: activeLayer.container, 
+                    target: activeLayer.renderTexture, 
+                    clear: false  // 🚨 既存内容を保持（透明化のキモ）
+                });
+                
+                // 一時コンテナをクリア
+                activeLayer.container.removeChildren();
+                
                 path.isComplete = true;
                 this.currentPath = null;
                 
+                // 🆕 透明化処理完了通知
+                if (path.tool === 'eraser') {
+                    MainController.emit('erase-applied', {
+                        pathId: path.id,
+                        layerId: activeLayer.id,
+                        bounds: this.calculatePathBounds(path)
+                    });
+                }
+                
                 MainController.recordAction('PATH_CREATE', {
                     pathId: path.id,
-                    layerId: MainController.getState('activeLayerId'),
+                    layerId: activeLayer.id,
+                    tool: path.tool,  // 🆕 ツール情報記録
                     pointCount: path.points.length,
                     bounds: this.calculatePathBounds(path)
+                });
+                
+                MainController.emit('system-debug', {
+                    category: 'drawing',
+                    message: `Path finalized on RenderTexture layer`,
+                    data: { pathId: path.id, tool: path.tool, layerId: activeLayer.id },
+                    timestamp: Date.now()
+                });
+                
+            } catch (error) {
+                MainController.emit('system-error', {
+                    code: 'RT_002',
+                    details: {
+                        message: 'RenderTexture render failed',
+                        pathId: path.id,
+                        layerId: activeLayer.id,
+                        error: error.message
+                    },
+                    stack: error.stack
                 });
             }
         }
@@ -1027,7 +1239,30 @@
             const layers = window.LayerManager?.getAllLayers() || [];
             layers.forEach(layer => {
                 layer.paths = [];
-                layer.container.removeChildren();
+                if (layer.container) {
+                    layer.container.removeChildren();
+                }
+                
+                // 🆕 RenderTextureのクリア
+                if (layer.renderTexture) {
+                    try {
+                        this.app.renderer.render({ 
+                            container: new PIXI.Graphics(), 
+                            target: layer.renderTexture, 
+                            clear: true 
+                        });
+                    } catch (error) {
+                        MainController.emit('system-error', {
+                            code: 'RT_003',
+                            details: {
+                                message: 'RenderTexture clear failed',
+                                layerId: layer.id,
+                                error: error.message
+                            },
+                            stack: error.stack
+                        });
+                    }
+                }
             });
         }
         
@@ -1044,8 +1279,8 @@
             if (!toolSettings) return;
             
             const settings = {
-                tool: toolSettings.tool, // 🚨 消しゴム修正: ツール情報追加
-                color: toolSettings.color, // 🚨 消しゴム修正: 元の色を保持
+                tool: toolSettings.tool,     // 🆕 ツール情報追加
+                color: toolSettings.color,   // 元の色を保持
                 size: toolSettings.size,
                 opacity: toolSettings.opacity
             };
@@ -1137,13 +1372,16 @@
                 
                 MainController.emit('system-debug', {
                     category: 'init',
-                    message: 'layer-tool-ui.js satellite initialized - Phase1 fixes applied',
+                    message: 'layer-tool-ui.js satellite initialized - Phase1 eraser transparency implemented',
                     data: { 
                         components: ['LayerManager', 'ToolManager', 'UIManager', 'DrawingEngine', 'SystemMonitor'],
                         pixiVersion: window.PIXI?.VERSION,
-                        phase1Fixes: [
-                            'Initial layer panel display fixed',
-                            'Layer separation enforcement added'
+                        phase1Features: [
+                            'RenderTexture layer management',
+                            'ERASE blend mode support',
+                            'True eraser transparency',
+                            'Compatibility checking',
+                            'Background color erasure eliminated'
                         ]
                     },
                     timestamp: Date.now()
