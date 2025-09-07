@@ -1,404 +1,4 @@
-/**
- * 🛰️ layer-tool-ui.js - LayerManager+ToolManager+UIManager+DrawingEngine統合衛星
- * Version: 3.0.1-Phase1 | Last Modified: 2025-01-09
- * 
- * [🚨 Phase1修正]
- * - Problem 2: レイヤーパネル初期表示修正
- * - Problem 3: レイヤー分離強化修正
- * 
- * [🎯 責務範囲]
- * - レイヤー管理（CRUD、並び替え、可視性、変形）
- * - ツール管理（ペン、消しゴム、ブラシ設定）
- * - UI制御（ポップアップ、パネル、ステータス、Lodash最適化）
- * - PixiJS描画エンジン（パス作成・延長・消去、ワールド座標対応）
- * 
- * [🔧 主要メソッド - LayerManager]
- * createLayer(name) → layer               - レイヤー作成
- * deleteLayer(id)                         - レイヤー削除
- * setActiveLayer(id)                      - アクティブ設定
- * reorderLayers(from, to)                 - ドラッグ並び替え
- * toggleLayerVisibility(id)               - 表示切替
- * transformLayer(id, dx, dy)              - レイヤー変形（将来機能）
- * 
- * [🔧 主要メソッド - ToolManager]
- * selectTool(toolName)                    - ツール選択
- * setBrushSize(size)                      - ブラシサイズ
- * setOpacity(opacity)                     - 不透明度
- * getCurrentToolSettings() → settings      - 現在設定取得
- * 
- * [🔧 主要メソッド - UIManager] 
- * updateLayerPanel()                      - レイヤーパネル更新（debounce）
- * showPopup(popupId)                      - ポップアップ表示
- * hidePopup(popupId)                      - ポップアップ非表示
- * updateStatusBar(data)                   - ステータス更新（throttle）
- * handleSliderChange(slider, value)       - スライダー操作（throttle）
- * updateCoordinates(x, y)                 - 座標表示更新
- * 
- * [🔧 主要メソッド - DrawingEngine]
- * createPath(worldX, worldY, settings) → path  - パス作成（ワールド座標）
- * extendPath(path, worldX, worldY)             - パス延長
- * finalizePath(path)                           - パス完成
- * eraseAtPoint(worldX, worldY, size)           - 消去処理
- * renderToCanvas()                             - キャンバス描画
- * 
- * [📡 処理イベント（IN）]
- * - layer-*-request : レイヤー操作要求
- * - tool-*-request : ツール操作要求  
- * - draw-*-request : 描画操作要求
- * - ui-*-request : UI操作要求
- * 
- * [📤 発火イベント（OUT）]
- * - layer-created/deleted/activated : レイヤー状態変更
- * - tool-selected : ツール選択変更
- * - path-created : パス作成完了
- * - ui-updated : UI状態更新
- * 
- * [🔗 依存関係]
- * ← MainController (イベント・状態)
- * ← PositionManager (座標変換)
- * → PixiJS v8.0.5 (描画エンジン)
- * → Lodash v4.17.21 (debounce, throttle, cloneDeep)
- * → GSAP v3.13.0 (アニメーション)
- * → DOM要素: #layer-list, .popup-panel, .status-panel
- * 
- * [⚠️ 禁止事項]
- * - 座標計算・カメラ制御の直接実行
- * - HammerJS処理・エラー処理の直接実行
- */
-
-(function() {
-    'use strict';
-    
-    // === LayerManager - レイヤー管理衛星 ===
-    class LayerManager {
-        constructor() {
-            this.layers = new Map();
-            this.activeLayerId = null;
-            this.nextLayerId = 1;
-            this.dragState = {
-                dragging: false,
-                dragItem: null,
-                startY: 0,
-                offset: 0,
-                boundMouseMove: null,
-                boundMouseUp: null
-            };
-        }
-        
-        initialize(drawingEngine) {
-            this.engine = drawingEngine;
-            this.createBackgroundLayer();
-            this.setupEventHandlers();
-            
-            MainController.emit('system-debug', {
-                category: 'init',
-                message: 'LayerManager initialized',
-                data: { layersCount: this.layers.size },
-                timestamp: Date.now()
-            });
-        }
-        
-        setupEventHandlers() {
-            MainController.on('layer-create-request', (payload) => this.handleLayerCreateRequest(payload));
-            MainController.on('layer-delete-request', (payload) => this.handleLayerDeleteRequest(payload));
-            MainController.on('layer-activate-request', (payload) => this.handleLayerActivateRequest(payload));
-            MainController.on('layer-visibility-toggle', (payload) => this.handleLayerVisibilityToggle(payload));
-            MainController.on('layer-reorder-request', (payload) => this.handleLayerReorderRequest(payload));
-        }
-        
-        createBackgroundLayer() {
-            const layerId = 0;
-            const layerName = '背景';
-            
-            const container = new PIXI.Container();
-            container.name = layerName;
-            container.visible = true;
-            
-            // 背景色作成
-            const backgroundGraphics = new PIXI.Graphics();
-            backgroundGraphics.rect(0, 0, MainController.getState('canvas').width, MainController.getState('canvas').height);
-            backgroundGraphics.fill(0xf0e0d6); // futaba-cream color
-            container.addChild(backgroundGraphics);
-            
-            const layer = {
-                id: layerId,
-                name: layerName,
-                container: container,
-                visible: true,
-                paths: [],
-                isBackground: true,
-                backgroundGraphics: backgroundGraphics
-            };
-            
-            this.layers.set(layerId, layer);
-            this.engine.containers.world.addChild(container);
-            this.activeLayerId = layerId;
-            
-            // 最初の透明レイヤー作成
-            this.createLayer('レイヤー1');
-            this.setActiveLayer(1);
-        }
-        
-        createLayer(name = null) {
-            const layerId = this.nextLayerId++;
-            const layerName = name || `レイヤー${layerId}`;
-            
-            const container = new PIXI.Container();
-            container.name = layerName;
-            container.visible = true;
-            
-            const layer = {
-                id: layerId,
-                name: layerName,
-                container: container,
-                visible: true,
-                paths: [],
-                isBackground: false
-            };
-            
-            this.layers.set(layerId, layer);
-            this.engine.containers.world.addChild(container);
-            
-            MainController.emit('layer-created', { layerId, name: layerName });
-            MainController.recordAction('LAYER_CREATE', { layerId, name: layerName });
-            
-            return layer;
-        }
-        
-        deleteLayer(layerId) {
-            if (layerId === 0) return false; // 背景レイヤーは削除不可
-            if (this.layers.size <= 2) return false; // 背景+最低1レイヤーは必要
-            
-            const layer = this.layers.get(layerId);
-            if (!layer || layer.isBackground) return false;
-            
-            // パス破棄
-            layer.paths.forEach(path => {
-                if (path.graphics) {
-                    path.graphics.destroy();
-                }
-            });
-            
-            // コンテナ削除
-            this.engine.containers.world.removeChild(layer.container);
-            layer.container.destroy();
-            
-            this.layers.delete(layerId);
-            
-            // アクティブレイヤー調整
-            if (this.activeLayerId === layerId) {
-                const remainingLayers = Array.from(this.layers.keys()).filter(id => id !== 0);
-                this.activeLayerId = remainingLayers[remainingLayers.length - 1] || 0;
-            }
-            
-            MainController.emit('layer-deleted', { layerId });
-            MainController.recordAction('LAYER_DELETE', { layerId, name: layer.name });
-            
-            return true;
-        }
-        
-        setActiveLayer(layerId) {
-            if (!this.layers.has(layerId)) return false;
-            
-            this.activeLayerId = layerId;
-            MainController.setState('activeLayerId', layerId);
-            MainController.emit('layer-activated', { layerId });
-            
-            return true;
-        }
-        
-        toggleLayerVisibility(layerId) {
-            const layer = this.layers.get(layerId);
-            if (!layer) return false;
-            
-            layer.visible = !layer.visible;
-            layer.container.visible = layer.visible;
-            
-            MainController.emit('layer-visibility-changed', { layerId, visible: layer.visible });
-            MainController.recordAction('LAYER_VISIBILITY', { layerId, visible: layer.visible });
-            
-            return true;
-        }
-        
-        reorderLayers(fromIndex, toIndex) {
-            const layerIds = Array.from(this.layers.keys()).filter(id => id !== 0).reverse();
-            
-            if (fromIndex < 0 || fromIndex >= layerIds.length ||
-                toIndex < 0 || toIndex >= layerIds.length ||
-                fromIndex === toIndex) return false;
-            
-            const fromLayerId = layerIds[fromIndex];
-            const layerContainers = layerIds.map(id => this.layers.get(id).container);
-            const fromContainer = layerContainers[fromIndex];
-            
-            this.engine.containers.world.removeChild(fromContainer);
-            this.engine.containers.world.addChildAt(fromContainer, toIndex + 1); // +1 for background layer
-            
-            MainController.emit('layer-reordered', { fromIndex, toIndex, layerId: fromLayerId });
-            MainController.recordAction('LAYER_REORDER', { fromIndex, toIndex, layerId: fromLayerId });
-            
-            return true;
-        }
-        
-        getActiveLayer() {
-            return this.layers.get(this.activeLayerId);
-        }
-        
-        getAllLayers() {
-            return Array.from(this.layers.values());
-        }
-        
-        addPathToActiveLayer(path) {
-            const activeLayer = this.getActiveLayer();
-            if (activeLayer && path) {
-                activeLayer.paths.push(path);
-                activeLayer.container.addChild(path.graphics);
-            }
-        }
-        
-        updateBackgroundSize(width, height) {
-            const backgroundLayer = this.layers.get(0);
-            if (backgroundLayer && backgroundLayer.backgroundGraphics) {
-                backgroundLayer.backgroundGraphics.clear();
-                backgroundLayer.backgroundGraphics.rect(0, 0, width, height);
-                backgroundLayer.backgroundGraphics.fill(0xf0e0d6);
-            }
-        }
-        
-        // === イベントハンドラー ===
-        
-        handleLayerCreateRequest(payload) {
-            const layer = this.createLayer(payload.name);
-            this.setActiveLayer(layer.id);
-        }
-        
-        handleLayerDeleteRequest(payload) {
-            this.deleteLayer(payload.layerId);
-        }
-        
-        handleLayerActivateRequest(payload) {
-            this.setActiveLayer(payload.layerId);
-        }
-        
-        handleLayerVisibilityToggle(payload) {
-            this.toggleLayerVisibility(payload.layerId);
-        }
-        
-        handleLayerReorderRequest(payload) {
-            this.reorderLayers(payload.fromIndex, payload.toIndex);
-        }
-    }
-    
-    // === ToolManager - ツール管理衛星 ===
-    class ToolManager {
-        constructor() {
-            this.currentTool = 'pen';
-            this.brushSize = 16.0;
-            this.brushColor = 0x800000;
-            this.opacity = 0.85;
-            this.drawing = { active: false, path: null, lastPoint: null };
-        }
-        
-        initialize() {
-            this.setupEventHandlers();
-            
-            MainController.emit('system-debug', {
-                category: 'init',
-                message: 'ToolManager initialized',
-                data: { currentTool: this.currentTool },
-                timestamp: Date.now()
-            });
-        }
-        
-        setupEventHandlers() {
-            MainController.on('tool-select-request', (payload) => this.handleToolSelectRequest(payload));
-            MainController.on('brush-size-change', (payload) => this.handleBrushSizeChange(payload));
-            MainController.on('brush-opacity-change', (payload) => this.handleBrushOpacityChange(payload));
-        }
-        
-        selectTool(toolName) {
-            this.currentTool = toolName;
-            MainController.setState('currentTool', toolName);
-            MainController.emit('tool-selected', { toolName });
-        }
-        
-        setBrushSize(size) {
-            this.brushSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
-            MainController.setState('brushSize', this.brushSize);
-        }
-        
-        setOpacity(opacity) {
-            this.opacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
-            MainController.setState('brushOpacity', this.opacity);
-        }
-        
-        getCurrentToolSettings() {
-            return {
-                tool: this.currentTool,
-                size: this.brushSize,
-                color: this.brushColor,
-                opacity: this.opacity
-            };
-        }
-        
-        startDrawing(worldX, worldY, isPanning) {
-            if (isPanning) return false;
-            
-            this.drawing.active = true;
-            this.drawing.lastPoint = { x: worldX, y: worldY };
-            
-            const color = this.currentTool === 'eraser' ? 0xf0e0d6 : this.brushColor;
-            const alpha = this.currentTool === 'eraser' ? 1.0 : this.opacity;
-            
-            MainController.emit('draw-start-request', {
-                worldX,
-                worldY,
-                layerId: MainController.getState('activeLayerId'),
-                tool: this.currentTool,
-                inCanvas: window.PositionManager?.isPointInCanvas(worldX, worldY) || true
-            });
-            
-            return true;
-        }
-        
-        continueDrawing(worldX, worldY, isPanning) {
-            if (!this.drawing.active || isPanning) return false;
-            
-            MainController.emit('draw-continue-request', {
-                worldX,
-                worldY,
-                inCanvas: window.PositionManager?.isPointInCanvas(worldX, worldY) || true
-            });
-            
-            this.drawing.lastPoint = { x: worldX, y: worldY };
-            return true;
-        }
-        
-        stopDrawing(worldX, worldY) {
-            if (!this.drawing.active) return false;
-            
-            MainController.emit('draw-end-request', { worldX, worldY });
-            
-            this.drawing = { active: false, path: null, lastPoint: null };
-            return true;
-        }
-        
-        // === イベントハンドラー ===
-        
-        handleToolSelectRequest(payload) {
-            this.selectTool(payload.toolName);
-        }
-        
-        handleBrushSizeChange(payload) {
-            this.setBrushSize(payload.size);
-        }
-        
-        handleBrushOpacityChange(payload) {
-            this.setOpacity(payload.opacity);
-        }
-    }
-    
-    // === UIManager - UI制御衛星（Lodash最適化） ===
+// === UIManager - UI制御衛星（Lodash最適化）===
     class UIManager {
         constructor() {
             this.activePopup = null;
@@ -446,10 +46,12 @@
             MainController.on('layer-activated', () => this.updateLayerUI());
             MainController.on('layer-visibility-changed', () => this.updateLayerUI());
             MainController.on('layer-reordered', () => this.updateLayerUI());
+            MainController.on('layer-cleared', () => this.updateLayerUI()); // 🆕 Phase2.2+3.2
             MainController.on('tool-selected', (payload) => this.handleToolSelected(payload));
             MainController.on('camera-position-changed', (payload) => this.handleCameraPositionChanged(payload));
             MainController.on('ui-canvas-resize', (payload) => this.handleCanvasResize(payload));
             MainController.on('ui-coordinates-update', (payload) => this.updateCoordinates(payload.x, payload.y));
+            MainController.on('history-state-changed', (payload) => this.handleHistoryStateChanged(payload)); // 🆕 Phase3.1
         }
         
         setupToolButtons() {
@@ -599,6 +201,7 @@
             }
         }
         
+        // 🚨 Phase2.2: 背景レイヤー対応のレイヤーUI更新
         updateLayerUIInternal() {
             const layerList = document.getElementById('layer-list');
             if (!layerList) return;
@@ -606,29 +209,31 @@
             layerList.innerHTML = '';
             
             const layers = window.LayerManager?.getAllLayers() || [];
-            const layerIds = layers.filter(layer => !layer.isBackground)
-                                  .map(layer => layer.id)
-                                  .reverse();
+            const activeLayerId = MainController.getState('activeLayerId');
             
-            layerIds.forEach((layerId, index) => {
-                const layer = layers.find(l => l.id === layerId);
-                if (!layer) return;
-                
-                const layerItem = this.createLayerItem(layer, index);
+            // 通常レイヤー（逆順で表示）
+            const normalLayers = layers.filter(layer => !layer.isBackground).reverse();
+            normalLayers.forEach((layer, index) => {
+                const layerItem = this.createLayerItem(layer, index, activeLayerId);
                 layerList.appendChild(layerItem);
             });
             
-            // 背景レイヤー追加
+            // 背景レイヤー（最下部）
             const backgroundLayer = layers.find(l => l.isBackground);
             if (backgroundLayer) {
-                const backgroundItem = this.createLayerItem(backgroundLayer, -1);
+                const backgroundItem = this.createLayerItem(backgroundLayer, -1, activeLayerId);
                 layerList.appendChild(backgroundItem);
             }
         }
         
-        createLayerItem(layer, index) {
+        // 🚨 Phase2.2: 背景レイヤー対応のレイヤーアイテム作成
+        createLayerItem(layer, index, activeLayerId) {
             const layerItem = document.createElement('div');
-            layerItem.className = `layer-item ${layer.id === MainController.getState('activeLayerId') ? 'active' : ''}`;
+            const isActive = layer.id === activeLayerId;
+            const isBackground = layer.isBackground;
+            
+            // 🆕 Phase2.2: 背景レイヤー用のCSSクラス
+            layerItem.className = `layer-item ${isActive ? 'active' : ''} ${isBackground ? 'background-editable' : ''}`;
             layerItem.dataset.layerId = layer.id;
             if (index >= 0) layerItem.dataset.layerIndex = index;
             
@@ -636,8 +241,11 @@
                 '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-icon lucide-eye"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>' :
                 '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off-icon lucide-eye-off"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
             
+            // 🆕 Phase2.2: 背景レイヤーの場合は編集可能アイコンを追加
+            const editableIndicator = isBackground ? ' <span style="font-size: 10px; opacity: 0.7;">✏️</span>' : '';
+            
             layerItem.innerHTML = `
-                <div class="layer-name">${layer.name}</div>
+                <div class="layer-name">${layer.name}${editableIndicator}</div>
                 <div class="layer-visibility ${layer.visible ? '' : 'hidden'}" data-action="toggle-visibility">
                     ${eyeIcon}
                 </div>
@@ -648,7 +256,8 @@
                 const action = e.target.closest('[data-action]')?.dataset.action;
                 if (action === 'toggle-visibility') {
                     MainController.emit('layer-visibility-toggle', { layerId: layer.id, visible: !layer.visible });
-                } else if (!layer.isBackground) {
+                } else {
+                    // 🆕 Phase2.2: 背景レイヤーもアクティブ化可能
                     MainController.emit('layer-activate-request', { layerId: layer.id });
                 }
             });
@@ -779,9 +388,25 @@
             if (widthInput) widthInput.value = payload.width;
             if (heightInput) heightInput.value = payload.height;
         }
+        
+        // 🆕 Phase3.1: 履歴状態変更ハンドラー
+        handleHistoryStateChanged(payload) {
+            // 履歴情報の表示は既にRecordManagerで処理済み
+            MainController.emit('system-debug', {
+                category: 'history',
+                message: 'History state updated',
+                data: {
+                    canUndo: payload.canUndo,
+                    canRedo: payload.canRedo,
+                    historyLength: payload.historyLength,
+                    currentIndex: payload.currentIndex
+                },
+                timestamp: Date.now()
+            });
+        }
     }
     
-    // === DrawingEngine - PixiJS描画エンジン ===
+    // === DrawingEngine - PixiJS描画エンジン（Phase2.2対応） ===
     class DrawingEngine {
         constructor() {
             this.app = null;
@@ -822,10 +447,11 @@
             
             MainController.emit('system-debug', {
                 category: 'init',
-                message: 'DrawingEngine initialized',
+                message: 'DrawingEngine initialized with background editing support',
                 data: { 
                     canvasSize: `${canvasState.width}x${canvasState.height}`,
-                    pixiVersion: PIXI.VERSION 
+                    pixiVersion: PIXI.VERSION,
+                    backgroundEditingEnabled: true
                 },
                 timestamp: Date.now()
             });
@@ -1028,6 +654,15 @@
             layers.forEach(layer => {
                 layer.paths = [];
                 layer.container.removeChildren();
+                
+                // 🆕 Phase2.2: 背景レイヤーの場合は背景パスを再作成
+                if (layer.isBackground) {
+                    const backgroundPath = window.LayerManager?.createDefaultBackgroundPath();
+                    if (backgroundPath) {
+                        layer.paths.push(backgroundPath);
+                        layer.container.addChild(backgroundPath.graphics);
+                    }
+                }
             });
         }
         
@@ -1078,7 +713,7 @@
         }
     }
     
-    // === FPS監視 ===
+    // === SystemMonitor - FPS監視（既存コード） ===
     class SystemMonitor {
         constructor() {
             this.frameCount = 0;
@@ -1137,13 +772,20 @@
                 
                 MainController.emit('system-debug', {
                     category: 'init',
-                    message: 'layer-tool-ui.js satellite initialized - Phase1 fixes applied',
+                    message: 'layer-tool-ui.js satellite initialized - Phase2.2+3.2 complete',
                     data: { 
                         components: ['LayerManager', 'ToolManager', 'UIManager', 'DrawingEngine', 'SystemMonitor'],
                         pixiVersion: window.PIXI?.VERSION,
-                        phase1Fixes: [
-                            'Initial layer panel display fixed',
-                            'Layer separation enforcement added'
+                        phase22Features: [
+                            'Editable background layer support',
+                            'Background layer can be selected and drawn on',
+                            'Special background layer styling in UI'
+                        ],
+                        phase32Features: [
+                            'Shortcut-based layer navigation',
+                            'DEL key layer clearing functionality',
+                            'Layer switching with arrow keys',
+                            'Enhanced keyboard workflow'
                         ]
                     },
                     timestamp: Date.now()
@@ -1168,4 +810,665 @@
         initWhenReady();
     }
     
-})();
+})();/**
+ * 🛰️ layer-tool-ui.js - LayerManager+ToolManager+UIManager+DrawingEngine統合衛星
+ * Version: 3.0.2-Phase2.2+3.2 | Last Modified: 2025-01-09
+ * 
+ * [🚨 Phase2.2+3.2修正]
+ * - 背景レイヤー再設計（編集可能な背景レイヤー）
+ * - ショートカット対応（レイヤー切替、消去機能）
+ * - RecordManager連携強化（Undo/Redo対応）
+ * 
+ * [🎯 責務範囲]
+ * - レイヤー管理（CRUD、並び替え、可視性、変形、背景編集対応）
+ * - ツール管理（ペン、消しゴム、ブラシ設定）
+ * - UI制御（ポップアップ、パネル、ステータス、Lodash最適化）
+ * - PixiJS描画エンジン（パス作成・延長・消去、ワールド座標対応）
+ * 
+ * [🔧 主要メソッド - LayerManager]
+ * createLayer(name) → layer               - レイヤー作成
+ * createEditableBackgroundLayer()         - 🆕 編集可能背景レイヤー作成
+ * deleteLayer(id)                         - レイヤー削除
+ * setActiveLayer(id)                      - アクティブ設定
+ * clearActiveLayer()                      - 🆕 アクティブレイヤー消去
+ * navigateLayer(direction)                - 🆕 レイヤー切替（ショートカット用）
+ * reorderLayers(from, to)                 - ドラッグ並び替え
+ * toggleLayerVisibility(id)               - 表示切替
+ * transformLayer(id, dx, dy)              - レイヤー変形（将来機能）
+ * 
+ * [🔧 主要メソッド - ToolManager]
+ * selectTool(toolName)                    - ツール選択
+ * setBrushSize(size)                      - ブラシサイズ
+ * setOpacity(opacity)                     - 不透明度
+ * getCurrentToolSettings() → settings      - 現在設定取得
+ * 
+ * [🔧 主要メソッド - UIManager] 
+ * updateLayerPanel()                      - レイヤーパネル更新（debounce）
+ * showPopup(popupId)                      - ポップアップ表示
+ * hidePopup(popupId)                      - ポップアップ非表示
+ * updateStatusBar(data)                   - ステータス更新（throttle）
+ * handleSliderChange(slider, value)       - スライダー操作（throttle）
+ * updateCoordinates(x, y)                 - 座標表示更新
+ * 
+ * [🔧 主要メソッド - DrawingEngine]
+ * createPath(worldX, worldY, settings) → path  - パス作成（ワールド座標）
+ * extendPath(path, worldX, worldY)             - パス延長
+ * finalizePath(path)                           - パス完成
+ * eraseAtPoint(worldX, worldY, size)           - 消去処理
+ * renderToCanvas()                             - キャンバス描画
+ * 
+ * [📡 処理イベント（IN）]
+ * - layer-*-request : レイヤー操作要求
+ * - tool-*-request : ツール操作要求  
+ * - draw-*-request : 描画操作要求
+ * - ui-*-request : UI操作要求
+ * - shortcut-* : 🆕 ショートカット処理
+ * 
+ * [📤 発火イベント（OUT）]
+ * - layer-created/deleted/activated : レイヤー状態変更
+ * - tool-selected : ツール選択変更
+ * - path-created : パス作成完了
+ * - ui-updated : UI状態更新
+ * 
+ * [🔗 依存関係]
+ * ← MainController (イベント・状態)
+ * ← PositionManager (座標変換)
+ * → PixiJS v8.13.0 (描画エンジン)
+ * → Lodash v4.17.21 (debounce, throttle, cloneDeep)
+ * → GSAP v3.13.0 (アニメーション)
+ * → DOM要素: #layer-list, .popup-panel, .status-panel
+ * 
+ * [⚠️ 禁止事項]
+ * - 座標計算・カメラ制御の直接実行
+ * - HammerJS処理・エラー処理の直接実行
+ */
+
+(function() {
+    'use strict';
+    
+    // === LayerManager - レイヤー管理衛星（Phase2.2対応） ===
+    class LayerManager {
+        constructor() {
+            this.layers = new Map();
+            this.activeLayerId = null;
+            this.nextLayerId = 1;
+            this.layerOrder = []; // 🆕 Phase2.2: レイヤー順序管理
+            this.dragState = {
+                dragging: false,
+                dragItem: null,
+                startY: 0,
+                offset: 0,
+                boundMouseMove: null,
+                boundMouseUp: null
+            };
+        }
+        
+        initialize(drawingEngine) {
+            this.engine = drawingEngine;
+            this.createEditableBackgroundLayer(); // 🚨 Phase2.2: 編集可能背景レイヤー
+            this.setupEventHandlers();
+            
+            MainController.emit('system-debug', {
+                category: 'init',
+                message: 'LayerManager initialized with editable background',
+                data: { layersCount: this.layers.size, backgroundEditable: true },
+                timestamp: Date.now()
+            });
+        }
+        
+        setupEventHandlers() {
+            MainController.on('layer-create-request', (payload) => this.handleLayerCreateRequest(payload));
+            MainController.on('layer-delete-request', (payload) => this.handleLayerDeleteRequest(payload));
+            MainController.on('layer-activate-request', (payload) => this.handleLayerActivateRequest(payload));
+            MainController.on('layer-visibility-toggle', (payload) => this.handleLayerVisibilityToggle(payload));
+            MainController.on('layer-reorder-request', (payload) => this.handleLayerReorderRequest(payload));
+            
+            // 🆕 Phase2.2+3.2: 新機能ハンドラー
+            MainController.on('layer-clear-request', (payload) => this.handleLayerClearRequest(payload));
+            MainController.on('shortcut-layer-navigate', (payload) => this.handleLayerNavigate(payload));
+            MainController.on('background-edit-request', (payload) => this.handleBackgroundEditRequest(payload));
+            
+            // 🆕 Phase3.1: Undo/Redo復元ハンドラー
+            MainController.on('path-restore-request', (payload) => this.handlePathRestore(payload));
+            MainController.on('path-remove-request', (payload) => this.handlePathRemove(payload));
+            MainController.on('layer-restore-request', (payload) => this.handleLayerRestore(payload));
+            MainController.on('layer-paths-restore-request', (payload) => this.handleLayerPathsRestore(payload));
+            MainController.on('background-restore-request', (payload) => this.handleBackgroundRestore(payload));
+        }
+        
+        // 🚨 Phase2.2: 編集可能背景レイヤー作成
+        createEditableBackgroundLayer() {
+            const layerId = 0;
+            const layerName = '背景';
+            
+            const container = new PIXI.Container();
+            container.name = layerName;
+            container.visible = true;
+            
+            // 🆕 Phase2.2: 編集可能な背景パス作成
+            const backgroundPath = this.createDefaultBackgroundPath();
+            container.addChild(backgroundPath.graphics);
+            
+            const layer = {
+                id: layerId,
+                name: layerName,
+                container: container,
+                visible: true,
+                paths: [backgroundPath], // 🆕 編集可能パスとして管理
+                isBackground: true,
+                editable: true, // 🆕 編集許可フラグ
+                backgroundColor: 0xf0e0d6 // futaba-cream
+            };
+            
+            this.layers.set(layerId, layer);
+            this.layerOrder.push(layerId);
+            this.engine.containers.world.addChild(container);
+            this.activeLayerId = layerId; // 🆕 背景から開始
+            
+            // 最初の透明レイヤー作成
+            this.createLayer('レイヤー1');
+            this.setActiveLayer(1); // レイヤー1をアクティブに
+            
+            MainController.emit('system-debug', {
+                category: 'layer',
+                message: 'Editable background layer created',
+                data: { 
+                    backgroundId: layerId, 
+                    paths: layer.paths.length,
+                    editable: layer.editable 
+                },
+                timestamp: Date.now()
+            });
+        }
+        
+        // 🆕 Phase2.2: デフォルト背景パス作成
+        createDefaultBackgroundPath() {
+            const canvasState = MainController.getState('canvas');
+            const path = {
+                id: 'background_fill',
+                graphics: new PIXI.Graphics(),
+                points: [
+                    { x: 0, y: 0, size: canvasState.width },
+                    { x: canvasState.width, y: canvasState.height, size: 1 }
+                ],
+                color: 0xf0e0d6, // futaba-cream
+                size: 1,
+                opacity: 1,
+                isComplete: true,
+                isBackgroundFill: true,
+                layerId: 0
+            };
+            
+            // 背景全体を塗りつぶし
+            path.graphics.rect(0, 0, canvasState.width, canvasState.height);
+            path.graphics.fill({ color: 0xf0e0d6, alpha: 1 });
+            
+            return path;
+        }
+        
+        createLayer(name = null) {
+            const layerId = this.nextLayerId++;
+            const layerName = name || `レイヤー${layerId}`;
+            
+            const container = new PIXI.Container();
+            container.name = layerName;
+            container.visible = true;
+            
+            const layer = {
+                id: layerId,
+                name: layerName,
+                container: container,
+                visible: true,
+                paths: [],
+                isBackground: false,
+                editable: true
+            };
+            
+            this.layers.set(layerId, layer);
+            this.layerOrder.push(layerId);
+            this.engine.containers.world.addChild(container);
+            
+            MainController.emit('layer-created', { layerId, name: layerName });
+            
+            // 🆕 Phase3.1: Record時のskipRecord対応
+            if (!arguments[1] || !arguments[1].skipRecord) {
+                MainController.recordAction('LAYER_CREATE', { layerId, name: layerName });
+            }
+            
+            return layer;
+        }
+        
+        deleteLayer(layerId) {
+            if (layerId === 0) return false; // 背景レイヤーは削除不可
+            if (this.layers.size <= 2) return false; // 背景+最低1レイヤーは必要
+            
+            const layer = this.layers.get(layerId);
+            if (!layer || layer.isBackground) return false;
+            
+            // パス破棄
+            layer.paths.forEach(path => {
+                if (path.graphics) {
+                    path.graphics.destroy();
+                }
+            });
+            
+            // コンテナ削除
+            this.engine.containers.world.removeChild(layer.container);
+            layer.container.destroy();
+            
+            this.layers.delete(layerId);
+            this.layerOrder = this.layerOrder.filter(id => id !== layerId);
+            
+            // アクティブレイヤー調整
+            if (this.activeLayerId === layerId) {
+                const remainingLayers = this.layerOrder.filter(id => id !== 0);
+                this.activeLayerId = remainingLayers[remainingLayers.length - 1] || 0;
+                MainController.setState('activeLayerId', this.activeLayerId);
+            }
+            
+            MainController.emit('layer-deleted', { layerId });
+            
+            // 🆕 Phase3.1: Record時のskipRecord対応
+            if (!arguments[1] || !arguments[1].skipRecord) {
+                MainController.recordAction('LAYER_DELETE', { layerId, name: layer.name });
+            }
+            
+            return true;
+        }
+        
+        // 🆕 Phase2.2+3.2: アクティブレイヤー消去（DELキー対応）
+        clearActiveLayer() {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer || !activeLayer.editable) return false;
+            
+            // パス記録（Undo用）
+            const pathsBackup = activeLayer.paths.map(path => ({
+                id: path.id,
+                graphics: path.graphics,
+                points: [...path.points],
+                color: path.color,
+                size: path.size,
+                opacity: path.opacity,
+                isComplete: path.isComplete
+            }));
+            
+            // パス削除
+            activeLayer.paths.forEach(path => {
+                if (path.graphics && !path.isBackgroundFill) { // 背景塗りつぶしは保持
+                    activeLayer.container.removeChild(path.graphics);
+                    path.graphics.destroy();
+                }
+            });
+            
+            // 背景レイヤーの場合は背景塗りつぶしのみ残す
+            if (activeLayer.isBackground) {
+                const backgroundFill = pathsBackup.find(p => p.isBackgroundFill);
+                activeLayer.paths = backgroundFill ? [backgroundFill] : [];
+            } else {
+                activeLayer.paths = [];
+            }
+            
+            // Record記録
+            MainController.recordAction('LAYER_CLEAR', { 
+                layerId: activeLayer.id, 
+                pathsBackup: pathsBackup 
+            });
+            
+            MainController.emit('layer-cleared', { layerId: activeLayer.id });
+            
+            return true;
+        }
+        
+        // 🆕 Phase3.2: レイヤー切替（ショートカット用）
+        navigateLayer(direction) {
+            const currentIndex = this.layerOrder.indexOf(this.activeLayerId);
+            if (currentIndex === -1) return false;
+            
+            let newIndex;
+            if (direction === 'up') {
+                newIndex = Math.max(0, currentIndex - 1);
+            } else if (direction === 'down') {
+                newIndex = Math.min(this.layerOrder.length - 1, currentIndex + 1);
+            } else {
+                return false;
+            }
+            
+            const newLayerId = this.layerOrder[newIndex];
+            if (newLayerId !== undefined) {
+                this.setActiveLayer(newLayerId);
+                return true;
+            }
+            
+            return false;
+        }
+        
+        setActiveLayer(layerId) {
+            if (!this.layers.has(layerId)) return false;
+            
+            this.activeLayerId = layerId;
+            MainController.setState('activeLayerId', layerId);
+            
+            // 🆕 Phase2.2: 背景レイヤーの場合はステータス更新
+            const layer = this.layers.get(layerId);
+            const layerDisplayName = layer.isBackground ? '背景' : layer.name;
+            MainController.emit('ui-status-update', { 
+                key: 'current-layer', 
+                value: layerDisplayName 
+            });
+            
+            MainController.emit('layer-activated', { layerId });
+            
+            return true;
+        }
+        
+        toggleLayerVisibility(layerId) {
+            const layer = this.layers.get(layerId);
+            if (!layer) return false;
+            
+            layer.visible = !layer.visible;
+            layer.container.visible = layer.visible;
+            
+            MainController.emit('layer-visibility-changed', { layerId, visible: layer.visible });
+            
+            // 🆕 Phase3.1: Record時のskipRecord対応
+            if (!arguments[1] || !arguments[1].skipRecord) {
+                MainController.recordAction('LAYER_VISIBILITY', { layerId, visible: layer.visible });
+            }
+            
+            return true;
+        }
+        
+        reorderLayers(fromIndex, toIndex) {
+            if (fromIndex < 0 || fromIndex >= this.layerOrder.length ||
+                toIndex < 0 || toIndex >= this.layerOrder.length ||
+                fromIndex === toIndex) return false;
+            
+            // 背景レイヤーの移動は禁止
+            const fromLayerId = this.layerOrder[fromIndex];
+            if (fromLayerId === 0) return false;
+            
+            // レイヤー順序更新
+            const [movedLayerId] = this.layerOrder.splice(fromIndex, 1);
+            this.layerOrder.splice(toIndex, 0, movedLayerId);
+            
+            // PixiJS表示順序更新
+            const layer = this.layers.get(movedLayerId);
+            this.engine.containers.world.removeChild(layer.container);
+            this.engine.containers.world.addChildAt(layer.container, toIndex);
+            
+            MainController.emit('layer-reordered', { fromIndex, toIndex, layerId: movedLayerId });
+            MainController.recordAction('LAYER_REORDER', { fromIndex, toIndex, layerId: movedLayerId });
+            
+            return true;
+        }
+        
+        getActiveLayer() {
+            return this.layers.get(this.activeLayerId);
+        }
+        
+        getAllLayers() {
+            // 🆕 Phase2.2: レイヤー順序に従って返却
+            return this.layerOrder.map(id => this.layers.get(id)).filter(Boolean);
+        }
+        
+        addPathToActiveLayer(path) {
+            const activeLayer = this.getActiveLayer();
+            if (activeLayer && path && activeLayer.editable) {
+                activeLayer.paths.push(path);
+                activeLayer.container.addChild(path.graphics);
+                
+                // 🆕 Phase2.2: 背景編集の場合は特別処理
+                if (activeLayer.isBackground && !path.isBackgroundFill) {
+                    MainController.recordAction('BACKGROUND_EDIT', {
+                        layerId: activeLayer.id,
+                        pathData: {
+                            id: path.id,
+                            points: path.points,
+                            color: path.color,
+                            size: path.size,
+                            opacity: path.opacity
+                        }
+                    });
+                }
+            }
+        }
+        
+        updateBackgroundSize(width, height) {
+            const backgroundLayer = this.layers.get(0);
+            if (backgroundLayer && backgroundLayer.paths.length > 0) {
+                const backgroundPath = backgroundLayer.paths.find(p => p.isBackgroundFill);
+                if (backgroundPath) {
+                    backgroundPath.graphics.clear();
+                    backgroundPath.graphics.rect(0, 0, width, height);
+                    backgroundPath.graphics.fill({ color: backgroundLayer.backgroundColor || 0xf0e0d6, alpha: 1 });
+                    
+                    // ポイント更新
+                    backgroundPath.points = [
+                        { x: 0, y: 0, size: width },
+                        { x: width, y: height, size: 1 }
+                    ];
+                }
+            }
+        }
+        
+        // === イベントハンドラー ===
+        
+        handleLayerCreateRequest(payload) {
+            const layer = this.createLayer(payload.name, payload);
+            if (!payload.skipRecord) {
+                this.setActiveLayer(layer.id);
+            }
+        }
+        
+        handleLayerDeleteRequest(payload) {
+            this.deleteLayer(payload.layerId, payload);
+        }
+        
+        handleLayerActivateRequest(payload) {
+            this.setActiveLayer(payload.layerId);
+        }
+        
+        handleLayerVisibilityToggle(payload) {
+            this.toggleLayerVisibility(payload.layerId, payload);
+        }
+        
+        handleLayerReorderRequest(payload) {
+            this.reorderLayers(payload.fromIndex, payload.toIndex);
+        }
+        
+        // 🆕 Phase2.2+3.2: 新機能ハンドラー
+        handleLayerClearRequest(payload) {
+            if (payload.layerId !== undefined) {
+                const previousActive = this.activeLayerId;
+                this.setActiveLayer(payload.layerId);
+                this.clearActiveLayer();
+                this.setActiveLayer(previousActive);
+            } else {
+                this.clearActiveLayer();
+            }
+        }
+        
+        handleLayerNavigate(payload) {
+            this.navigateLayer(payload.direction);
+        }
+        
+        handleBackgroundEditRequest(payload) {
+            // 背景レイヤーをアクティブにして描画開始
+            this.setActiveLayer(0);
+            MainController.emit('draw-start-request', {
+                worldX: payload.worldX,
+                worldY: payload.worldY,
+                layerId: 0,
+                tool: payload.tool,
+                inCanvas: true
+            });
+        }
+        
+        // 🆕 Phase3.1: Undo/Redo復元ハンドラー
+        handlePathRestore(payload) {
+            // パス復元処理（要実装）
+            MainController.emit('system-debug', {
+                category: 'undo',
+                message: 'Path restore requested',
+                data: payload,
+                timestamp: Date.now()
+            });
+        }
+        
+        handlePathRemove(payload) {
+            // パス削除処理（要実装）
+            MainController.emit('system-debug', {
+                category: 'undo',
+                message: 'Path remove requested',
+                data: payload,
+                timestamp: Date.now()
+            });
+        }
+        
+        handleLayerRestore(payload) {
+            // レイヤー復元処理（要実装）
+            MainController.emit('system-debug', {
+                category: 'undo',
+                message: 'Layer restore requested',
+                data: payload,
+                timestamp: Date.now()
+            });
+        }
+        
+        handleLayerPathsRestore(payload) {
+            // レイヤーパス復元処理（要実装）
+            const layerId = payload.layerData.layerId;
+            const layer = this.layers.get(layerId);
+            if (layer && payload.layerData.pathsBackup) {
+                // パス復元
+                layer.paths = payload.layerData.pathsBackup;
+                layer.paths.forEach(path => {
+                    if (path.graphics) {
+                        layer.container.addChild(path.graphics);
+                    }
+                });
+            }
+        }
+        
+        handleBackgroundRestore(payload) {
+            // 背景復元処理（要実装）
+            MainController.emit('system-debug', {
+                category: 'undo',
+                message: 'Background restore requested',
+                data: payload,
+                timestamp: Date.now()
+            });
+        }
+    }
+    
+    // === ToolManager - ツール管理衛星（既存コード） ===
+    class ToolManager {
+        constructor() {
+            this.currentTool = 'pen';
+            this.brushSize = 16.0;
+            this.brushColor = 0x800000;
+            this.opacity = 0.85;
+            this.drawing = { active: false, path: null, lastPoint: null };
+        }
+        
+        initialize() {
+            this.setupEventHandlers();
+            
+            MainController.emit('system-debug', {
+                category: 'init',
+                message: 'ToolManager initialized',
+                data: { currentTool: this.currentTool },
+                timestamp: Date.now()
+            });
+        }
+        
+        setupEventHandlers() {
+            MainController.on('tool-select-request', (payload) => this.handleToolSelectRequest(payload));
+            MainController.on('brush-size-change', (payload) => this.handleBrushSizeChange(payload));
+            MainController.on('brush-opacity-change', (payload) => this.handleBrushOpacityChange(payload));
+        }
+        
+        selectTool(toolName) {
+            this.currentTool = toolName;
+            MainController.setState('currentTool', toolName);
+            MainController.emit('tool-selected', { toolName });
+        }
+        
+        setBrushSize(size) {
+            this.brushSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
+            MainController.setState('brushSize', this.brushSize);
+        }
+        
+        setOpacity(opacity) {
+            this.opacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
+            MainController.setState('brushOpacity', this.opacity);
+        }
+        
+        getCurrentToolSettings() {
+            return {
+                tool: this.currentTool,
+                size: this.brushSize,
+                color: this.brushColor,
+                opacity: this.opacity
+            };
+        }
+        
+        startDrawing(worldX, worldY, isPanning) {
+            if (isPanning) return false;
+            
+            this.drawing.active = true;
+            this.drawing.lastPoint = { x: worldX, y: worldY };
+            
+            const color = this.currentTool === 'eraser' ? 0xf0e0d6 : this.brushColor;
+            const alpha = this.currentTool === 'eraser' ? 1.0 : this.opacity;
+            
+            MainController.emit('draw-start-request', {
+                worldX,
+                worldY,
+                layerId: MainController.getState('activeLayerId'),
+                tool: this.currentTool,
+                inCanvas: window.PositionManager?.isPointInCanvas(worldX, worldY) || true
+            });
+            
+            return true;
+        }
+        
+        continueDrawing(worldX, worldY, isPanning) {
+            if (!this.drawing.active || isPanning) return false;
+            
+            MainController.emit('draw-continue-request', {
+                worldX,
+                worldY,
+                inCanvas: window.PositionManager?.isPointInCanvas(worldX, worldY) || true
+            });
+            
+            this.drawing.lastPoint = { x: worldX, y: worldY };
+            return true;
+        }
+        
+        stopDrawing(worldX, worldY) {
+            if (!this.drawing.active) return false;
+            
+            MainController.emit('draw-end-request', { worldX, worldY });
+            
+            this.drawing = { active: false, path: null, lastPoint: null };
+            return true;
+        }
+        
+        // === イベントハンドラー ===
+        
+        handleToolSelectRequest(payload) {
+            this.selectTool(payload.toolName);
+        }
+        
+        handleBrushSizeChange(payload) {
+            this.setBrushSize(payload.size);
+        }
+        
+        handleBrushOpacityChange(payload) {
+            this.setOpacity(payload.opacity);
+        }
+    }
+    
+    // === UIManager - UI制御衛星（Lodash最適化）===
+    class UIManager {

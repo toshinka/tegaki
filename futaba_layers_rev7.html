@@ -1,0 +1,1734 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev7 - ペン対応+レイヤードラッグ版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg {
+            width: 20px;
+            height: 20px;
+            stroke: #800000;
+        }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.active svg {
+            stroke: #ffffff;
+        }
+        
+        .tool-button.disabled {
+            opacity: 0.4;
+            cursor: not-allowed;
+        }
+        
+        .tool-button.disabled:hover {
+            transform: none;
+            box-shadow: none;
+        }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: visible;
+            display: flex;
+            justify-content: flex-start;
+            align-items: flex-start;
+        }
+        
+        .canvas-container {
+            background: var(--futaba-cream);
+            display: inline-block;
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            position: absolute;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            touch-action: none;
+        }
+        
+        canvas {
+            border: none;
+            display: block;
+            cursor: crosshair;
+            touch-action: none;
+        }
+        
+        .layer-panel-container {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none;
+        }
+        
+        .layer-add-button {
+            width: 36px;
+            height: 36px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.1);
+            pointer-events: all;
+        }
+        
+        .layer-add-button:hover {
+            background: var(--futaba-medium);
+            transform: scale(1.1);
+        }
+        
+        .layer-add-button svg {
+            width: 18px;
+            height: 18px;
+            stroke: #800000;
+        }
+        
+        .layer-panel-items {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: transparent;
+            border-radius: 8px;
+            padding: 8px;
+            pointer-events: all;
+        }
+        
+        .layer-item {
+            width: 140px;
+            height: 48px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 8px;
+            padding: 8px 12px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            user-select: none;
+            position: relative;
+            box-shadow: 0 2px 4px rgba(128, 0, 0, 0.1);
+        }
+        
+        .layer-item:hover {
+            border-color: var(--futaba-medium);
+            background: var(--futaba-background);
+        }
+        
+        .layer-item.active {
+            border-color: var(--futaba-maroon);
+            background: var(--futaba-light-medium);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.2);
+        }
+        
+        .layer-item.dragging {
+            opacity: 0.7;
+            transform: rotate(2deg);
+            z-index: 1000;
+            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.4);
+        }
+        
+        .layer-item.drop-target {
+            border-color: var(--futaba-maroon);
+            background: var(--futaba-medium);
+        }
+        
+        .layer-name {
+            flex: 1;
+            font-size: 12px;
+            color: var(--text-primary);
+            font-weight: 500;
+            margin-right: 8px;
+        }
+        
+        .layer-visibility {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+        }
+        
+        .layer-visibility:hover {
+            background: var(--futaba-light-medium);
+        }
+        
+        .layer-visibility svg {
+            width: 14px;
+            height: 14px;
+            stroke: #800000;
+        }
+        
+        .layer-visibility.hidden svg {
+            opacity: 0.3;
+        }
+        
+        .layer-delete-button {
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 4px;
+            transition: all 0.2s ease;
+            margin-left: 4px;
+        }
+        
+        .layer-delete-button:hover {
+            background: rgba(128, 0, 0, 0.1);
+        }
+        
+        .layer-delete-button svg {
+            width: 12px;
+            height: 12px;
+            stroke: #800000;
+        }
+        
+        .popup-panel {
+            position: fixed;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+            padding: 20px;
+            z-index: 2000;
+            backdrop-filter: blur(12px);
+            display: none;
+            user-select: none;
+            min-width: 280px;
+        }
+        
+        .popup-panel.show {
+            display: block;
+            animation: fadeIn 0.3s ease-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        
+        .popup-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            margin-bottom: 16px;
+            text-align: center;
+            border-bottom: 2px solid var(--futaba-light-medium);
+            padding-bottom: 8px;
+        }
+        
+        .setting-group {
+            margin-bottom: 16px;
+        }
+        
+        .setting-label {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .slider {
+            flex: 1;
+            height: 6px;
+            background: var(--futaba-light-medium);
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .slider-track {
+            height: 100%;
+            background: var(--futaba-maroon);
+            border-radius: 3px;
+            transition: width 0.1s ease;
+        }
+        
+        .slider-handle {
+            width: 16px;
+            height: 16px;
+            background: var(--futaba-maroon);
+            border: 2px solid var(--futaba-background);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .slider-handle:active {
+            cursor: grabbing;
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+        
+        .slider-value {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            min-width: 50px;
+            text-align: right;
+        }
+        
+        .size-input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .size-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            background: var(--futaba-background);
+            font-family: monospace;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .size-input:focus {
+            outline: none;
+            border-color: var(--futaba-maroon);
+        }
+        
+        .size-multiply {
+            color: var(--futaba-maroon);
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .action-button {
+            padding: 10px 16px;
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 8px;
+            background: var(--futaba-background);
+            color: var(--futaba-maroon);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        
+        .action-button:hover {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .action-button.primary {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .action-button.primary:hover {
+            background: var(--futaba-light-maroon);
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+        
+        @media (max-width: 1200px) {
+            .popup-panel {
+                max-width: 90vw;
+            }
+            .layer-panel-container {
+                right: 10px;
+            }
+            .status-panel {
+                right: 170px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button" id="resize-tool" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-scaling-icon lucide-scaling"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M14 15H9v-5"/><path d="M16 3h5v5"/><path d="M21 3 9 15"/></svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button active" id="pen-tool" title="ベクターペン">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-pen-line-icon lucide-pen-line"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eraser-icon lucide-eraser"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg>
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container" id="canvas-container">
+                <div id="drawing-canvas"></div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- 右側中央レイヤーパネル -->
+    <div class="layer-panel-container" id="layer-panel-container">
+        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-copy-plus-icon lucide-copy-plus"><line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        </div>
+        
+        <div class="layer-panel-items" id="layer-list">
+            <!-- レイヤーアイテムが動的に生成される -->
+        </div>
+    </div>
+    
+    <!-- ポップアップパネル（ペンツール） -->
+    <div class="popup-panel" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-size-slider">
+                    <div class="slider-track" id="pen-size-track"></div>
+                    <div class="slider-handle" id="pen-size-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-size-value">16.0px</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-opacity-slider">
+                    <div class="slider-track" id="pen-opacity-track"></div>
+                    <div class="slider-handle" id="pen-opacity-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-opacity-value">85.0%</div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- ポップアップパネル（リサイズ） -->
+    <div class="popup-panel" id="resize-settings" style="left: 60px; top: 150px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバスサイズ</div>
+            <div class="size-input-group">
+                <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                <div class="size-multiply">×</div>
+                <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="action-button" id="apply-resize">適用</div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Layer: <span id="current-layer">背景</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">Camera: <span id="camera-position">x: 0, y: 0</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+        </div>
+    </div>
+
+    <!-- PixiJS v8 and Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/lodash@4.17.21/lodash.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+    
+    <script>
+        /**
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8rev7
+         * PixiJS v8 対応版 - ペン対応キャンバス移動+レイヤードラッグ改修版
+         * 修正版: カメラ移動オフセット問題修正、レイヤーパネル初期表示修正、背景レイヤー仕様変更
+         */
+        
+        const APP_CONFIG = {
+            version: '8.0.7-pen-layer-drag-fixed',
+            canvas: { width: 400, height: 400 },
+            rendering: { antialias: true, resolution: 1 },
+            debug: false
+        };
+        
+        const log = (message, ...args) => {
+            if (APP_CONFIG.debug) console.log(message, ...args);
+        };
+        
+        // ==== AppBootstrap: Library Management ====
+        class AppBootstrap {
+            static checkLibraries() {
+                const required = { 
+                    pixi: window.PIXI, 
+                    gsap: window.gsap,
+                    _: window._,
+                    Hammer: window.Hammer
+                };
+                return Object.entries(required).every(([name, lib]) => {
+                    if (!lib) {
+                        console.error(`❌ Library ${name} not found`);
+                        return false;
+                    }
+                    return true;
+                });
+            }
+            
+            static init() {
+                return this.checkLibraries();
+            }
+        }
+        
+        // ==== LayerManager: Layer System with Drag Ordering ====
+        class LayerManager {
+            constructor(drawingEngine) {
+                this.engine = drawingEngine;
+                this.layers = new Map();
+                this.activeLayerId = null;
+                this.nextLayerId = 1;
+                this.ui = null;
+                this.dragState = {
+                    dragging: false,
+                    dragItem: null,
+                    startY: 0,
+                    offset: 0
+                };
+            }
+            
+            initialize() {
+                // Create background layer with futaba-cream background
+                this.createBackgroundLayer();
+                // Create first transparent layer
+                this.createLayer('レイヤー1');
+                this.setActiveLayer(1);
+                
+                // Update UI immediately after creation
+                setTimeout(() => {
+                    this.updateLayerUI();
+                }, 0);
+            }
+            
+            createBackgroundLayer() {
+                const layerId = 0;
+                const layerName = '背景';
+                
+                const container = new PIXI.Container();
+                container.name = layerName;
+                container.visible = true;
+                
+                // Create background fill
+                const backgroundGraphics = new PIXI.Graphics();
+                backgroundGraphics.rect(0, 0, APP_CONFIG.canvas.width, APP_CONFIG.canvas.height);
+                backgroundGraphics.fill(0xf0e0d6); // futaba-cream color
+                container.addChild(backgroundGraphics);
+                
+                const layer = {
+                    id: layerId,
+                    name: layerName,
+                    container: container,
+                    visible: true,
+                    paths: [],
+                    isBackground: true,
+                    backgroundGraphics: backgroundGraphics
+                };
+                
+                this.layers.set(layerId, layer);
+                this.engine.containers.world.addChild(container);
+                this.activeLayerId = layerId;
+                
+                return layer;
+            }
+            
+            createLayer(name = null) {
+                const layerId = this.nextLayerId++;
+                const layerName = name || `レイヤー${layerId}`;
+                
+                const container = new PIXI.Container();
+                container.name = layerName;
+                container.visible = true;
+                
+                const layer = {
+                    id: layerId,
+                    name: layerName,
+                    container: container,
+                    visible: true,
+                    paths: [],
+                    isBackground: false
+                };
+                
+                this.layers.set(layerId, layer);
+                this.engine.containers.world.addChild(container);
+                
+                this.updateLayerUI();
+                return layer;
+            }
+            
+            deleteLayer(layerId) {
+                // Allow deleting background layer now (it behaves like layer 0)
+                if (this.layers.size <= 1) return; // Must have at least one layer
+                
+                const layer = this.layers.get(layerId);
+                if (!layer) return;
+                
+                layer.paths.forEach(path => {
+                    path.graphics.destroy();
+                });
+                
+                this.engine.containers.world.removeChild(layer.container);
+                layer.container.destroy();
+                
+                this.layers.delete(layerId);
+                
+                if (this.activeLayerId === layerId) {
+                    const remainingLayerIds = Array.from(this.layers.keys());
+                    this.activeLayerId = remainingLayerIds[remainingLayerIds.length - 1] || null;
+                }
+                
+                this.updateLayerUI();
+            }
+            
+            setActiveLayer(layerId) {
+                if (this.layers.has(layerId)) {
+                    this.activeLayerId = layerId;
+                    this.updateLayerUI();
+                    this.updateStatusDisplay();
+                }
+            }
+            
+            toggleLayerVisibility(layerId) {
+                const layer = this.layers.get(layerId);
+                if (!layer) return;
+                
+                layer.visible = !layer.visible;
+                layer.container.visible = layer.visible;
+                this.updateLayerUI();
+            }
+            
+            getActiveLayer() {
+                return this.layers.get(this.activeLayerId);
+            }
+            
+            addPathToActiveLayer(path) {
+                const activeLayer = this.getActiveLayer();
+                if (activeLayer) {
+                    activeLayer.paths.push(path);
+                    activeLayer.container.addChild(path.graphics);
+                }
+            }
+            
+            reorderLayers(fromIndex, toIndex) {
+                const layerIds = Array.from(this.layers.keys()).reverse();
+                
+                if (fromIndex < 0 || fromIndex >= layerIds.length ||
+                    toIndex < 0 || toIndex >= layerIds.length ||
+                    fromIndex === toIndex) return;
+                
+                const fromLayerId = layerIds[fromIndex];
+                const layerContainers = layerIds.map(id => this.layers.get(id).container);
+                const fromContainer = layerContainers[fromIndex];
+                
+                this.engine.containers.world.removeChild(fromContainer);
+                this.engine.containers.world.addChildAt(fromContainer, toIndex);
+                
+                this.updateLayerUI();
+            }
+            
+            updateLayerUI() {
+                if (!this.ui) return;
+                
+                const layerList = document.getElementById('layer-list');
+                if (!layerList) return;
+                
+                layerList.innerHTML = '';
+                
+                // Render all layers in reverse order (top to bottom in UI)
+                const layerIds = Array.from(this.layers.keys()).reverse();
+                
+                layerIds.forEach((layerId, index) => {
+                    const layer = this.layers.get(layerId);
+                    const layerItem = document.createElement('div');
+                    layerItem.className = `layer-item ${layerId === this.activeLayerId ? 'active' : ''}`;
+                    layerItem.dataset.layerId = layerId;
+                    layerItem.dataset.layerIndex = index;
+                    
+                    const eyeIcon = layer.visible ? 
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-icon lucide-eye"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>' :
+                        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off-icon lucide-eye-off"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
+                    
+                    const deleteIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>';
+                    
+                    layerItem.innerHTML = `
+                        <div class="layer-name">${layer.name}</div>
+                        <div class="layer-visibility ${layer.visible ? '' : 'hidden'}" data-action="toggle-visibility">
+                            ${eyeIcon}
+                        </div>
+                        <div class="layer-delete-button" data-action="delete-layer">
+                            ${deleteIcon}
+                        </div>
+                    `;
+                    
+                    // Event handlers
+                    layerItem.addEventListener('click', (e) => {
+                        const action = e.target.closest('[data-action]')?.dataset.action;
+                        if (action === 'toggle-visibility') {
+                            this.toggleLayerVisibility(layerId);
+                            e.stopPropagation();
+                        } else if (action === 'delete-layer') {
+                            this.deleteLayer(layerId);
+                            e.stopPropagation();
+                        } else if (!this.dragState.dragging) {
+                            this.setActiveLayer(layerId);
+                        }
+                    });
+                    
+                    // Layer drag functionality
+                    this.setupLayerDrag(layerItem, index);
+                    
+                    layerList.appendChild(layerItem);
+                });
+            }
+            
+            setupLayerDrag(layerItem, index) {
+                const layerName = layerItem.querySelector('.layer-name');
+                
+                layerName.addEventListener('mousedown', (e) => {
+                    if (e.button !== 0) return;
+                    
+                    this.dragState.dragging = true;
+                    this.dragState.dragItem = layerItem;
+                    this.dragState.startY = e.clientY;
+                    this.dragState.offset = e.clientY - layerItem.getBoundingClientRect().top;
+                    
+                    layerItem.classList.add('dragging');
+                    
+                    const boundMouseMove = this.onLayerDrag.bind(this);
+                    const boundMouseUp = this.onLayerDragEnd.bind(this);
+                    
+                    document.addEventListener('mousemove', boundMouseMove);
+                    document.addEventListener('mouseup', boundMouseUp);
+                    
+                    this.dragState.boundMouseMove = boundMouseMove;
+                    this.dragState.boundMouseUp = boundMouseUp;
+                    
+                    e.preventDefault();
+                    e.stopPropagation();
+                });
+            }
+            
+            onLayerDrag(e) {
+                if (!this.dragState.dragging || !this.dragState.dragItem) return;
+                
+                const layerList = document.getElementById('layer-list');
+                const items = Array.from(layerList.children);
+                
+                const dragItem = this.dragState.dragItem;
+                dragItem.style.position = 'absolute';
+                dragItem.style.top = (e.clientY - this.dragState.offset) + 'px';
+                dragItem.style.zIndex = '1000';
+                
+                items.forEach(item => {
+                    item.classList.remove('drop-target');
+                    if (item !== dragItem) {
+                        const rect = item.getBoundingClientRect();
+                        if (e.clientY >= rect.top && e.clientY <= rect.bottom) {
+                            item.classList.add('drop-target');
+                        }
+                    }
+                });
+                
+                e.preventDefault();
+            }
+            
+            onLayerDragEnd(e) {
+                if (!this.dragState.dragging || !this.dragState.dragItem) return;
+                
+                const layerList = document.getElementById('layer-list');
+                const items = Array.from(layerList.children);
+                const dragItem = this.dragState.dragItem;
+                
+                const dropTarget = items.find(item => 
+                    item !== dragItem && item.classList.contains('drop-target')
+                );
+                
+                if (dropTarget) {
+                    const fromIndex = parseInt(dragItem.dataset.layerIndex);
+                    const toIndex = parseInt(dropTarget.dataset.layerIndex);
+                    this.reorderLayers(fromIndex, toIndex);
+                }
+                
+                // Cleanup
+                dragItem.classList.remove('dragging');
+                dragItem.style.position = '';
+                dragItem.style.top = '';
+                dragItem.style.zIndex = '';
+                
+                items.forEach(item => item.classList.remove('drop-target'));
+                
+                if (this.dragState.boundMouseMove) {
+                    document.removeEventListener('mousemove', this.dragState.boundMouseMove);
+                }
+                if (this.dragState.boundMouseUp) {
+                    document.removeEventListener('mouseup', this.dragState.boundMouseUp);
+                }
+                
+                this.dragState = {
+                    dragging: false,
+                    dragItem: null,
+                    startY: 0,
+                    offset: 0,
+                    boundMouseMove: null,
+                    boundMouseUp: null
+                };
+                
+                setTimeout(() => this.updateLayerUI(), 100);
+            }
+            
+            updateStatusDisplay() {
+                const activeLayer = this.getActiveLayer();
+                const element = document.getElementById('current-layer');
+                if (element && activeLayer) {
+                    element.textContent = activeLayer.name;
+                }
+            }
+        }
+        
+        // ==== DomPositionManager: Canvas Position Control with Pen Support ====
+        class DomPositionManager {
+            constructor() {
+                this.container = document.getElementById('canvas-container');
+                this.position = { x: 0, y: 0, targetX: 0, targetY: 0 };
+                this.state = { 
+                    panning: false, 
+                    startX: 0, 
+                    startY: 0,
+                    pointerId: null,
+                    pointerType: null,
+                    initialized: false
+                };
+                this.handlers = { move: null, up: null, cancel: null };
+                this.updateScheduled = false;
+            }
+            
+            initialize(ticker) {
+                this.ticker = ticker;
+                this.ticker.add(() => this.updatePosition());
+                this.setupPointerEvents();
+                
+                // Fix initial position calculation issue
+                this.ensureInitialPosition();
+                this.state.initialized = true;
+            }
+            
+            ensureInitialPosition() {
+                // Calculate viewport center properly
+                const viewportCenter = {
+                    x: (window.innerWidth - 310) / 2,
+                    y: window.innerHeight / 2
+                };
+                
+                // Set initial transform properly
+                this.container.style.left = '50%';
+                this.container.style.top = '50%';
+                this.container.style.transform = 'translate(-50%, -50%)';
+                
+                this.updateStatusDisplay();
+            }
+            
+            setupPointerEvents() {
+                this.container.addEventListener('pointerdown', (e) => this.onPointerDown(e));
+                
+                this.handlers.move = (e) => this.onPointerMove(e);
+                this.handlers.up = (e) => this.onPointerUp(e);
+                this.handlers.cancel = (e) => this.onPointerCancel(e);
+            }
+            
+            onPointerDown(e) {
+                if (!window.futabaApp.spacePressed) return;
+                
+                if (e.pointerType === 'pen' && e.pressure === 0) {
+                    return;
+                }
+                
+                this.state.panning = true;
+                this.state.startX = e.clientX;
+                this.state.startY = e.clientY;
+                this.state.pointerId = e.pointerId;
+                this.state.pointerType = e.pointerType;
+                
+                this.container.setPointerCapture(e.pointerId);
+                
+                this.container.addEventListener('pointermove', this.handlers.move);
+                this.container.addEventListener('pointerup', this.handlers.up);
+                this.container.addEventListener('pointercancel', this.handlers.cancel);
+                
+                e.preventDefault();
+            }
+            
+            onPointerMove(e) {
+                if (!this.state.panning || e.pointerId !== this.state.pointerId) return;
+                if (!window.futabaApp.spacePressed) return;
+                
+                if (e.pointerType === 'pen' && e.pressure === 0) {
+                    return;
+                }
+                
+                const dx = e.clientX - this.state.startX;
+                const dy = e.clientY - this.state.startY;
+                
+                this.position.targetX += dx;
+                this.position.targetY += dy;
+                
+                const maxOffset = {
+                    x: (window.innerWidth - 310) / 2,
+                    y: window.innerHeight / 2
+                };
+                
+                this.position.targetX = Math.max(-maxOffset.x * 2, Math.min(maxOffset.x * 2, this.position.targetX));
+                this.position.targetY = Math.max(-maxOffset.y * 2, Math.min(maxOffset.y * 2, this.position.targetY));
+                
+                this.state.startX = e.clientX;
+                this.state.startY = e.clientY;
+                this.updateScheduled = true;
+                this.updateStatusDisplay();
+                
+                e.preventDefault();
+            }
+            
+            onPointerUp(e) {
+                if (e.pointerId !== this.state.pointerId) return;
+                this.stopPanning();
+            }
+            
+            onPointerCancel(e) {
+                if (e.pointerId !== this.state.pointerId) return;
+                this.stopPanning();
+            }
+            
+            updatePosition() {
+                if (!this.updateScheduled) return;
+                
+                const { x, y } = this.position;
+                const { targetX, targetY } = this.position;
+                
+                if (x !== targetX || y !== targetY) {
+                    this.position.x = Math.round(targetX);
+                    this.position.y = Math.round(targetY);
+                    
+                    // Fix camera offset calculation
+                    if (this.state.initialized) {
+                        const viewportCenter = {
+                            x: (window.innerWidth - 310) / 2,
+                            y: window.innerHeight / 2
+                        };
+                        
+                        const offset = {
+                            x: viewportCenter.x + this.position.x,
+                            y: viewportCenter.y + this.position.y
+                        };
+                        
+                        this.container.style.transform = 
+                            `translate3d(${offset.x}px, ${offset.y}px, 0) translate(-50%, -50%)`;
+                        this.container.style.left = '0px';
+                        this.container.style.top = '0px';
+                    }
+                }
+                
+                this.updateScheduled = false;
+            }
+            
+            stopPanning() {
+                this.state.panning = false;
+                
+                if (this.state.pointerId && this.container.hasPointerCapture(this.state.pointerId)) {
+                    this.container.releasePointerCapture(this.state.pointerId);
+                }
+                
+                this.container.removeEventListener('pointermove', this.handlers.move);
+                this.container.removeEventListener('pointerup', this.handlers.up);
+                this.container.removeEventListener('pointercancel', this.handlers.cancel);
+                
+                this.state.pointerId = null;
+                this.state.pointerType = null;
+            }
+            
+            moveByArrows(dx, dy) {
+                this.position.targetX += dx;
+                this.position.targetY += dy;
+                
+                const maxOffset = {
+                    x: (window.innerWidth - 310) / 2,
+                    y: window.innerHeight / 2
+                };
+                
+                this.position.targetX = Math.max(-maxOffset.x * 2, Math.min(maxOffset.x * 2, this.position.targetX));
+                this.position.targetY = Math.max(-maxOffset.y * 2, Math.min(maxOffset.y * 2, this.position.targetY));
+                
+                this.updateScheduled = true;
+                this.updateStatusDisplay();
+            }
+            
+            reset() {
+                this.position = { x: 0, y: 0, targetX: 0, targetY: 0 };
+                this.state.panning = false;
+                this.stopPanning();
+                
+                this.container.style.transform = 'translate(-50%, -50%)';
+                this.container.style.left = '50%';
+                this.container.style.top = '50%';
+                
+                this.updateStatusDisplay();
+            }
+            
+            updateStatusDisplay() {
+                const element = document.getElementById('camera-position');
+                if (element) {
+                    element.textContent = `x: ${Math.round(this.position.targetX)}, y: ${Math.round(this.position.targetY)}`;
+                }
+            }
+            
+            screenToWorld(x, y) {
+                return { x: x, y: y };
+            }
+            
+            worldToScreen(x, y) {
+                return { x: x, y: y };
+            }
+        }
+        
+        // ==== DrawingTools: Tool Management ====
+        class DrawingTools {
+            constructor(drawingEngine, layerManager) {
+                this.engine = drawingEngine;
+                this.layers = layerManager;
+                this.currentTool = 'pen';
+                this.brushSize = 16.0;
+                this.brushColor = 0x800000;
+                this.opacity = 0.85;
+                this.drawing = { active: false, path: null, lastPoint: null };
+            }
+            
+            selectTool(tool) {
+                this.currentTool = tool;
+            }
+            
+            setBrushSize(size) {
+                this.brushSize = Math.max(0.1, Math.min(100, Math.round(size * 10) / 10));
+            }
+            
+            setOpacity(opacity) {
+                this.opacity = Math.max(0, Math.min(1, Math.round(opacity * 1000) / 1000));
+            }
+            
+            startDrawing(x, y, isPanning) {
+                if (isPanning) return false;
+                
+                this.drawing.active = true;
+                this.drawing.lastPoint = { x, y };
+                
+                const color = this.currentTool === 'eraser' ? 0xf0e0d6 : this.brushColor;
+                const alpha = this.currentTool === 'eraser' ? 1.0 : this.opacity;
+                
+                this.drawing.path = this.engine.createPath(x, y, this.brushSize, color, alpha);
+                return true;
+            }
+            
+            continueDrawing(x, y, isPanning) {
+                if (!this.drawing.active || !this.drawing.path || isPanning) return;
+                
+                this.engine.extendPath(this.drawing.path, x, y);
+                this.drawing.lastPoint = { x, y };
+            }
+            
+            stopDrawing() {
+                if (this.drawing.path) {
+                    this.drawing.path.isComplete = true;
+                }
+                this.drawing = { active: false, path: null, lastPoint: null };
+            }
+        }
+        
+        // ==== InterfaceManager: UI Control ====
+        class InterfaceManager {
+            constructor(drawingTools, drawingEngine, layerManager) {
+                this.tools = drawingTools;
+                this.engine = drawingEngine;
+                this.layers = layerManager;
+                this.activePopup = null;
+                this.sliders = new Map();
+                this.dragState = { active: false, offset: { x: 0, y: 0 } };
+            }
+            
+            initialize() {
+                this.layers.ui = this;
+                this.setupToolButtons();
+                this.setupPopups();
+                this.setupSliders();
+                this.setupResize();
+                this.setupLayerControls();
+                this.updateCanvasInfo();
+                
+                // Ensure initial layer UI update
+                setTimeout(() => {
+                    this.layers.updateLayerUI();
+                }, 100);
+            }
+            
+            setupToolButtons() {
+                document.querySelectorAll('.tool-button').forEach(btn => {
+                    btn.addEventListener('click', (e) => {
+                        if (btn.classList.contains('disabled')) return;
+                        this.handleToolClick(e.currentTarget);
+                    });
+                });
+            }
+            
+            handleToolClick(button) {
+                const toolId = button.id;
+                
+                if (toolId === 'pen-tool') {
+                    this.activateTool('pen');
+                    this.togglePopup('pen-settings');
+                } else if (toolId === 'eraser-tool') {
+                    this.activateTool('eraser');
+                    this.closeAllPopups();
+                } else if (toolId === 'resize-tool') {
+                    this.togglePopup('resize-settings');
+                }
+            }
+            
+            activateTool(tool) {
+                this.tools.selectTool(tool);
+                
+                document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+                const toolBtn = document.getElementById(tool + '-tool');
+                if (toolBtn) toolBtn.classList.add('active');
+                
+                const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
+                const toolElement = document.getElementById('current-tool');
+                if (toolElement) {
+                    toolElement.textContent = toolNames[tool] || tool;
+                }
+                
+                const canvas = this.engine.app.canvas;
+                canvas.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair';
+            }
+            
+            setupLayerControls() {
+                const addLayerBtn = document.getElementById('add-layer-btn');
+                
+                if (addLayerBtn) {
+                    addLayerBtn.addEventListener('click', () => {
+                        const newLayer = this.layers.createLayer();
+                        this.layers.setActiveLayer(newLayer.id);
+                    });
+                }
+            }
+            
+            togglePopup(popupId) {
+                const popup = document.getElementById(popupId);
+                if (!popup) return;
+                
+                if (this.activePopup && this.activePopup !== popup) {
+                    this.activePopup.classList.remove('show');
+                }
+                
+                const isVisible = popup.classList.contains('show');
+                popup.classList.toggle('show', !isVisible);
+                this.activePopup = isVisible ? null : popup;
+            }
+            
+            setupPopups() {
+                document.querySelectorAll('.popup-panel').forEach(popup => {
+                    const title = popup.querySelector('.popup-title');
+                    if (title) {
+                        title.style.cursor = 'move';
+                        title.addEventListener('mousedown', (e) => this.startDrag(e, popup));
+                    }
+                });
+                
+                document.addEventListener('click', (e) => {
+                    if (!e.target.closest('.popup-panel') && 
+                        !e.target.closest('.tool-button') &&
+                        !e.target.closest('.layer-panel-container')) {
+                        this.closeAllPopups();
+                    }
+                });
+                
+                document.addEventListener('mousemove', (e) => this.onDrag(e));
+                document.addEventListener('mouseup', () => this.stopDrag());
+            }
+            
+            startDrag(e, popup) {
+                this.dragState.active = popup;
+                const rect = popup.getBoundingClientRect();
+                this.dragState.offset.x = e.clientX - rect.left;
+                this.dragState.offset.y = e.clientY - rect.top;
+                e.preventDefault();
+            }
+            
+            onDrag(e) {
+                if (!this.dragState.active) return;
+                
+                const x = Math.max(0, Math.min(e.clientX - this.dragState.offset.x, 
+                    window.innerWidth - this.dragState.active.offsetWidth));
+                const y = Math.max(0, Math.min(e.clientY - this.dragState.offset.y, 
+                    window.innerHeight - this.dragState.active.offsetHeight));
+                
+                this.dragState.active.style.left = x + 'px';
+                this.dragState.active.style.top = y + 'px';
+            }
+            
+            stopDrag() {
+                this.dragState.active = false;
+            }
+            
+            setupSliders() {
+                this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
+                    this.tools.setBrushSize(value);
+                    return value.toFixed(1) + 'px';
+                });
+                
+                this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value) => {
+                    this.tools.setOpacity(value / 100);
+                    return value.toFixed(1) + '%';
+                });
+            }
+            
+            createSlider(sliderId, min, max, initial, callback) {
+                const container = document.getElementById(sliderId);
+                if (!container) return;
+                
+                const track = container.querySelector('.slider-track');
+                const handle = container.querySelector('.slider-handle');
+                const valueDisplay = container.parentNode.querySelector('.slider-value');
+                
+                if (!track || !handle || !valueDisplay) return;
+                
+                const slider = {
+                    value: initial, min, max, callback, track, handle, valueDisplay, dragging: false
+                };
+                
+                this.sliders.set(sliderId, slider);
+                
+                const update = (value) => {
+                    slider.value = Math.max(min, Math.min(max, value));
+                    const percentage = ((slider.value - min) / (max - min)) * 100;
+                    
+                    track.style.width = percentage + '%';
+                    handle.style.left = percentage + '%';
+                    valueDisplay.textContent = callback(slider.value);
+                };
+                
+                const getValue = (clientX) => {
+                    const rect = container.getBoundingClientRect();
+                    const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                    return min + (percentage * (max - min));
+                };
+                
+                container.addEventListener('mousedown', (e) => {
+                    slider.dragging = true;
+                    update(getValue(e.clientX));
+                    e.preventDefault();
+                });
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (slider.dragging) update(getValue(e.clientX));
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    slider.dragging = false;
+                });
+                
+                update(initial);
+            }
+            
+            setupResize() {
+                const applyButton = document.getElementById('apply-resize');
+                if (applyButton) {
+                    applyButton.addEventListener('click', () => this.applyResize());
+                }
+            }
+            
+            applyResize() {
+                const widthInput = document.getElementById('canvas-width');
+                const heightInput = document.getElementById('canvas-height');
+                
+                if (widthInput && heightInput) {
+                    const width = parseInt(widthInput.value);
+                    const height = parseInt(heightInput.value);
+                    
+                    if (width >= 100 && width <= 4096 && height >= 100 && height <= 4096) {
+                        this.engine.resize(width, height);
+                        // Update background layer size for all background layers
+                        this.layers.layers.forEach(layer => {
+                            if (layer.isBackground && layer.backgroundGraphics) {
+                                layer.backgroundGraphics.clear();
+                                layer.backgroundGraphics.rect(0, 0, width, height);
+                                layer.backgroundGraphics.fill(0xf0e0d6);
+                            }
+                        });
+                        this.updateCanvasInfo();
+                        this.closeAllPopups();
+                    }
+                }
+            }
+            
+            updateCanvasInfo() {
+                const element = document.getElementById('canvas-info');
+                if (element) {
+                    element.textContent = `${APP_CONFIG.canvas.width}×${APP_CONFIG.canvas.height}px`;
+                }
+            }
+            
+            updateCoordinates(x, y) {
+                const element = document.getElementById('coordinates');
+                if (element) {
+                    element.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
+                }
+            }
+            
+            closeAllPopups() {
+                document.querySelectorAll('.popup-panel').forEach(popup => {
+                    popup.classList.remove('show');
+                });
+                this.activePopup = null;
+            }
+        }
+        
+        // ==== DrawingEngine: Core Drawing System ====
+        class DrawingEngine {
+            constructor() {
+                this.app = null;
+                this.containers = { camera: null, world: null, ui: null };
+                this.paths = [];
+                this.tools = null;
+                this.positionManager = null;
+                this.layerManager = null;
+            }
+            
+            async initialize() {
+                this.app = new PIXI.Application();
+                await this.app.init({
+                    width: APP_CONFIG.canvas.width,
+                    height: APP_CONFIG.canvas.height,
+                    background: 0xf0e0d6,
+                    backgroundAlpha: 1,
+                    antialias: APP_CONFIG.rendering.antialias,
+                    resolution: APP_CONFIG.rendering.resolution,
+                    autoDensity: false
+                });
+                
+                const container = document.getElementById('drawing-canvas');
+                container.appendChild(this.app.canvas);
+                
+                this.setupContainers();
+                this.setupInteraction();
+                
+                return true;
+            }
+            
+            setupContainers() {
+                this.containers.camera = new PIXI.Container();
+                this.containers.world = new PIXI.Container();
+                this.containers.ui = new PIXI.Container();
+                
+                const maskGraphics = new PIXI.Graphics();
+                maskGraphics.rect(0, 0, APP_CONFIG.canvas.width, APP_CONFIG.canvas.height);
+                maskGraphics.fill(0x000000);
+                this.app.stage.addChild(maskGraphics);
+                this.containers.camera.mask = maskGraphics;
+                
+                this.containers.camera.addChild(this.containers.world);
+                this.app.stage.addChild(this.containers.camera);
+                this.app.stage.addChild(this.containers.ui);
+                
+                this.containers.world.x = 0;
+                this.containers.world.y = 0;
+                this.containers.world.scale.set(1);
+            }
+            
+            setupInteraction() {
+                this.containers.camera.eventMode = "static";
+                this.containers.camera.hitArea = new PIXI.Rectangle(0, 0, APP_CONFIG.canvas.width, APP_CONFIG.canvas.height);
+                
+                this.containers.camera.on('pointerdown', (e) => this.onPointerDown(e));
+                this.containers.camera.on('pointermove', (e) => this.onPointerMove(e));
+                this.containers.camera.on('pointerup', (e) => this.onPointerUp(e));
+                this.containers.camera.on('pointerupoutside', (e) => this.onPointerUp(e));
+                this.containers.camera.on('pointercancel', (e) => this.onPointerUp(e));
+            }
+            
+            onPointerDown(event) {
+                const spacePressed = window.futabaApp.spacePressed;
+                const originalEvent = event.data.originalEvent;
+                
+                if (spacePressed) {
+                    event.stopPropagation();
+                } else {
+                    if (originalEvent.pointerType === 'pen' && originalEvent.pressure === 0) {
+                        return;
+                    }
+                    
+                    this.tools.startDrawing(event.global.x, event.global.y, spacePressed);
+                }
+            }
+            
+            onPointerMove(event) {
+                const spacePressed = window.futabaApp.spacePressed;
+                const originalEvent = event.data.originalEvent;
+                
+                if (spacePressed) {
+                    if (window.futabaApp.ui) {
+                        window.futabaApp.ui.updateCoordinates(event.global.x, event.global.y);
+                    }
+                    return;
+                } else {
+                    if (originalEvent.pointerType === 'pen' && originalEvent.pressure === 0) {
+                        return;
+                    }
+                    
+                    this.tools.continueDrawing(event.global.x, event.global.y, spacePressed);
+                    if (window.futabaApp.ui) {
+                        window.futabaApp.ui.updateCoordinates(event.global.x, event.global.y);
+                    }
+                }
+            }
+            
+            onPointerUp(event) {
+                const spacePressed = window.futabaApp.spacePressed;
+                
+                if (!spacePressed) {
+                    this.tools.stopDrawing();
+                }
+            }
+            
+            createPath(x, y, size, color, opacity) {
+                const path = {
+                    id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    graphics: new PIXI.Graphics(),
+                    points: [],
+                    color, size, opacity,
+                    isComplete: false
+                };
+                
+                path.graphics.circle(x, y, size / 2);
+                path.graphics.fill({ color: path.color, alpha: path.opacity });
+                
+                path.points.push({ x, y, size });
+                
+                this.layerManager.addPathToActiveLayer(path);
+                this.paths.push(path);
+                return path;
+            }
+            
+            extendPath(path, x, y) {
+                if (!path || path.points.length === 0) return;
+                
+                const lastPoint = path.points[path.points.length - 1];
+                const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
+                
+                if (distance < 1.5) return;
+                
+                const steps = Math.max(1, Math.ceil(distance / 1.5));
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    const px = lastPoint.x + (x - lastPoint.x) * t;
+                    const py = lastPoint.y + (y - lastPoint.y) * t;
+                    
+                    path.graphics.circle(px, py, path.size / 2);
+                    path.graphics.fill({ color: path.color, alpha: path.opacity });
+                }
+                
+                path.points.push({ x, y, size: path.size });
+            }
+            
+            resize(newWidth, newHeight) {
+                APP_CONFIG.canvas.width = newWidth;
+                APP_CONFIG.canvas.height = newHeight;
+                
+                this.app.renderer.resize(newWidth, newHeight);
+                
+                if (this.containers.camera.mask) {
+                    this.containers.camera.mask.clear();
+                    this.containers.camera.mask.rect(0, 0, newWidth, newHeight);
+                    this.containers.camera.mask.fill(0x000000);
+                }
+                
+                this.containers.camera.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
+            }
+            
+            clear() {
+                _.forEach(this.paths, path => path.graphics.destroy());
+                this.paths = [];
+                
+                _.forEach(this.layerManager.layers, layer => {
+                    layer.paths = [];
+                    layer.container.removeChildren();
+                });
+            }
+        }
+        
+        // ==== SystemMonitor: Performance Tracking ====
+        class SystemMonitor {
+            constructor() {
+                this.frameCount = 0;
+                this.lastTime = performance.now();
+            }
+            
+            start() {
+                const update = () => {
+                    this.frameCount++;
+                    const currentTime = performance.now();
+                    
+                    if (currentTime - this.lastTime >= 1000) {
+                        const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
+                        const element = document.getElementById('fps');
+                        if (element) {
+                            element.textContent = fps;
+                        }
+                        
+                        this.frameCount = 0;
+                        this.lastTime = currentTime;
+                    }
+                    
+                    requestAnimationFrame(update);
+                };
+                
+                update();
+            }
+        }
+        
+        // ==== AppController: Main Application Logic ====
+        class AppController {
+            constructor() {
+                this.spacePressed = false;
+                this.engine = new DrawingEngine();
+                this.positionManager = new DomPositionManager();
+                this.layerManager = new LayerManager(this.engine);
+                this.tools = new DrawingTools(this.engine, this.layerManager);
+                this.ui = new InterfaceManager(this.tools, this.engine, this.layerManager);
+                this.monitor = new SystemMonitor();
+            }
+            
+            async initialize() {
+                await this.engine.initialize();
+                this.engine.tools = this.tools;
+                this.engine.positionManager = this.positionManager;
+                this.engine.layerManager = this.layerManager;
+                
+                this.layerManager.initialize();
+                this.positionManager.initialize(this.engine.app.ticker);
+                this.ui.initialize();
+                this.monitor.start();
+                
+                this.setupInputHandlers();
+                
+                return true;
+            }
+            
+            setupInputHandlers() {
+                document.addEventListener('keydown', (e) => {
+                    if (e.code === 'Space') {
+                        this.spacePressed = true;
+                        e.preventDefault();
+                    }
+                    
+                    if (e.code === 'Home') {
+                        this.positionManager.reset();
+                        e.preventDefault();
+                    }
+                    
+                    if (this.spacePressed) {
+                        const moveMap = {
+                            'ArrowLeft': [10, 0],
+                            'ArrowRight': [-10, 0],
+                            'ArrowUp': [0, 10],
+                            'ArrowDown': [0, -10]
+                        };
+                        
+                        if (moveMap[e.code]) {
+                            this.positionManager.moveByArrows(...moveMap[e.code]);
+                            e.preventDefault();
+                        }
+                    }
+                });
+                
+                document.addEventListener('keyup', (e) => {
+                    if (e.code === 'Space') {
+                        this.spacePressed = false;
+                        this.positionManager.stopPanning();
+                    }
+                });
+                
+                window.addEventListener('blur', () => {
+                    this.spacePressed = false;
+                    this.positionManager.stopPanning();
+                });
+            }
+        }
+        
+        // ==== Application Bootstrap ====
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                if (!AppBootstrap.init()) {
+                    throw new Error('Library initialization failed');
+                }
+                
+                window.futabaApp = new AppController();
+                await window.futabaApp.initialize();
+                
+                console.log('🎨 Futaba Drawing Tool v8rev7-fixed - Ready!');
+                
+            } catch (error) {
+                console.error('💥 Application startup failed:', error);
+                const canvasArea = document.querySelector('.canvas-area');
+                if (canvasArea) {
+                    canvasArea.innerHTML = `
+                        <div style="text-align: center; color: var(--futaba-maroon); font-size: 18px; padding: 40px;">
+                            <div>⚠️ アプリケーションの初期化に失敗しました</div>
+                            <div style="font-size: 14px; margin-top: 10px;">
+                                ブラウザのコンソールでエラー詳細を確認してください
+                            </div>
+                        </div>
+                    `;
+                }
+            }
+        });
+    </script>
+</body>
+</html>
