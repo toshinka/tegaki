@@ -1,18 +1,20 @@
 /**
  * DrawingEngine.js - Core Drawing Engine
  * PixiJS描画・座標変換・履歴管理を担当
+ * Phase 1: サムネイル生成対応版
  */
 (function() {
     'use strict';
     
     // === ENGINE CONFIGURATION ===
     const ENGINE_CONFIG = {
-        version: '8.0-Phase1',
+        version: '8.0-Phase1-Thumbnail',
         canvas: { width: 400, height: 400 },
         rendering: { antialias: true, resolution: 1 },
         debug: false,
         history: { maxSize: 10, autoSaveInterval: 500 },
-        transform: { minScale: 0.1, maxScale: 5.0, initialScale: 1.0 }
+        transform: { minScale: 0.1, maxScale: 5.0, initialScale: 1.0 },
+        thumbnail: { size: 48, updateDelay: 300 }
     };
     
     const log = (message, ...args) => {
@@ -199,6 +201,98 @@
                 this.viewportTransform = { ...state.viewport };
                 this.applyViewportTransform();
             }
+        }
+    }
+
+    // === THUMBNAIL SYSTEM ===
+    class ThumbnailSystem {
+        constructor(drawingEngine) {
+            this.engine = drawingEngine;
+            this.pendingUpdates = new Set();
+            this.updateTimeout = null;
+            this.isProcessing = false;
+        }
+
+        scheduleThumbnailUpdate(layerId) {
+            this.pendingUpdates.add(layerId);
+            
+            if (this.updateTimeout) {
+                clearTimeout(this.updateTimeout);
+            }
+
+            this.updateTimeout = setTimeout(() => {
+                this.processPendingUpdates();
+            }, ENGINE_CONFIG.thumbnail.updateDelay);
+        }
+
+        async processPendingUpdates() {
+            if (this.isProcessing || this.pendingUpdates.size === 0) return;
+
+            this.isProcessing = true;
+            const layerIds = [...this.pendingUpdates];
+            this.pendingUpdates.clear();
+
+            try {
+                for (const layerId of layerIds) {
+                    await this.generateThumbnail(layerId);
+                }
+            } catch (error) {
+                console.error('[ThumbnailSystem] Error processing updates:', error);
+            } finally {
+                this.isProcessing = false;
+            }
+        }
+
+        async generateThumbnail(layerId) {
+            if (!this.engine?.app?.canvas) return null;
+
+            try {
+                // レンダリング完了を待つ
+                await new Promise(resolve => {
+                    this.engine.app.ticker.addOnce(() => resolve());
+                });
+
+                // サムネイル生成
+                const thumbnailCanvas = document.createElement('canvas');
+                thumbnailCanvas.width = ENGINE_CONFIG.thumbnail.size;
+                thumbnailCanvas.height = ENGINE_CONFIG.thumbnail.size;
+                const ctx = thumbnailCanvas.getContext('2d');
+
+                // 背景色設定
+                ctx.fillStyle = '#f0e0d6';
+                ctx.fillRect(0, 0, ENGINE_CONFIG.thumbnail.size, ENGINE_CONFIG.thumbnail.size);
+
+                // メインキャンバスの内容を縮小描画
+                ctx.drawImage(
+                    this.engine.app.canvas,
+                    0, 0, 
+                    ENGINE_CONFIG.canvas.width, ENGINE_CONFIG.canvas.height,
+                    0, 0, 
+                    ENGINE_CONFIG.thumbnail.size, ENGINE_CONFIG.thumbnail.size
+                );
+
+                const dataUrl = thumbnailCanvas.toDataURL('image/png');
+                
+                // UIに通知
+                if (window.UICallbacks?.onLayerThumbnailUpdated) {
+                    window.UICallbacks.onLayerThumbnailUpdated(layerId, dataUrl);
+                }
+
+                return dataUrl;
+
+            } catch (error) {
+                console.error('[ThumbnailSystem] Thumbnail generation failed:', error);
+                return null;
+            }
+        }
+
+        forceUpdateAll() {
+            if (!engineInstance) return;
+            
+            const layers = engineInstance.layerManager.getLayerList();
+            layers.forEach(layer => {
+                this.scheduleThumbnailUpdate(layer.id);
+            });
         }
     }
 
@@ -439,6 +533,13 @@
                 }, 100);
             }
 
+            // サムネイル生成スケジュール
+            if (this.engine.thumbnailSystem) {
+                setTimeout(() => {
+                    this.engine.thumbnailSystem.scheduleThumbnailUpdate(layer.id);
+                }, 200);
+            }
+
             this._notifyLayerCreated(layer);
             return layer;
         }
@@ -514,6 +615,11 @@
                     }, 100);
                 }
 
+                // サムネイル更新
+                if (this.engine.thumbnailSystem) {
+                    this.engine.thumbnailSystem.scheduleThumbnailUpdate(layerId);
+                }
+
                 this._notifyLayerVisibilityChanged(layerId, layer.visible);
                 return true;
             }
@@ -539,10 +645,17 @@
                 activeLayer.paths.push(path);
                 activeLayer.container.addChild(path.graphics);
 
-                if (path.isComplete && this.historyManager) {
-                    setTimeout(() => {
-                        this.historyManager.createSnapshot('描画', activeLayer.id);
-                    }, ENGINE_CONFIG.history.autoSaveInterval);
+                if (path.isComplete) {
+                    // サムネイル更新スケジュール
+                    if (this.engine.thumbnailSystem) {
+                        this.engine.thumbnailSystem.scheduleThumbnailUpdate(activeLayer.id);
+                    }
+
+                    if (this.historyManager) {
+                        setTimeout(() => {
+                            this.historyManager.createSnapshot('描画', activeLayer.id);
+                        }, ENGINE_CONFIG.history.autoSaveInterval);
+                    }
                 }
             }
         }
@@ -635,11 +748,11 @@
         stopDrawing() {
             if (this.drawing.path) {
                 this.drawing.path.isComplete = true;
-
-                if (this.layers.historyManager) {
-                    setTimeout(() => {
-                        this.layers.historyManager.createSnapshot('描画');
-                    }, ENGINE_CONFIG.history.autoSaveInterval);
+                
+                // 描画完了をレイヤーマネージャーに通知（サムネイル更新のため）
+                const activeLayer = this.layers.getActiveLayer();
+                if (activeLayer) {
+                    this.layers.addPathToActiveLayer(this.drawing.path);
                 }
             }
             this.drawing = { active: false, path: null, lastPoint: null };
@@ -692,6 +805,7 @@
             this.paths = [];
             this.tools = null;
             this.layerManager = null;
+            this.thumbnailSystem = null;
         }
 
         async initialize() {
@@ -708,6 +822,9 @@
 
             this.setupContainers();
             this.setupInteraction();
+
+            // サムネイルシステム初期化
+            this.thumbnailSystem = new ThumbnailSystem(this);
 
             return true;
         }
@@ -797,7 +914,6 @@
 
             path.points.push({ x, y, size });
 
-            this.layerManager.addPathToActiveLayer(path);
             this.paths.push(path);
             return path;
         }
@@ -823,6 +939,16 @@
             path.points.push({ x, y, size: path.size });
         }
 
+        finalizePath(path) {
+            if (path && path.isComplete) {
+                // パス完成時にサムネイル更新をスケジュール
+                const activeLayer = this.layerManager.getActiveLayer();
+                if (activeLayer && this.thumbnailSystem) {
+                    this.thumbnailSystem.scheduleThumbnailUpdate(activeLayer.id);
+                }
+            }
+        }
+
         resize(newWidth, newHeight) {
             ENGINE_CONFIG.canvas.width = newWidth;
             ENGINE_CONFIG.canvas.height = newHeight;
@@ -846,6 +972,13 @@
                 }
             });
 
+            // 全レイヤーのサムネイル更新
+            if (this.thumbnailSystem) {
+                setTimeout(() => {
+                    this.thumbnailSystem.forceUpdateAll();
+                }, 500);
+            }
+
             if (window.UICallbacks?.onCanvasResized) {
                 window.UICallbacks.onCanvasResized(newWidth, newHeight);
             }
@@ -859,6 +992,11 @@
                 layer.paths = [];
                 layer.container.removeChildren();
             });
+
+            // サムネイル更新
+            if (this.thumbnailSystem) {
+                this.thumbnailSystem.forceUpdateAll();
+            }
         }
 
         _notifyCoordinatesUpdated(x, y) {
@@ -917,7 +1055,7 @@
                     systemMonitor
                 };
 
-                log('🎨 DrawingEngine initialized successfully');
+                log('🎨 DrawingEngine initialized successfully (Thumbnail Support)');
                 return true;
 
             } catch (error) {
@@ -1130,6 +1268,29 @@
             }
         },
 
+        // === サムネイル制御 (新規追加) ===
+        updateThumbnail: (layerId) => {
+            if (!engineInstance || !engineInstance.drawingEngine.thumbnailSystem) return false;
+            try {
+                engineInstance.drawingEngine.thumbnailSystem.scheduleThumbnailUpdate(layerId);
+                return true;
+            } catch (error) {
+                console.error('[DrawingEngine] UpdateThumbnail failed:', error.message);
+                return false;
+            }
+        },
+
+        updateAllThumbnails: () => {
+            if (!engineInstance || !engineInstance.drawingEngine.thumbnailSystem) return false;
+            try {
+                engineInstance.drawingEngine.thumbnailSystem.forceUpdateAll();
+                return true;
+            } catch (error) {
+                console.error('[DrawingEngine] UpdateAllThumbnails failed:', error.message);
+                return false;
+            }
+        },
+
         // === Space key状態管理 ===
         setSpacePressed: (pressed) => {
             window.DrawingEngineAPI._spacePressed = pressed;
@@ -1143,10 +1304,12 @@
             getConfig: () => ENGINE_CONFIG,
             forceSnapshot: (name) => engineInstance?.historyManager.createSnapshot(name || 'Debug Snapshot'),
             getLayerData: () => engineInstance?.layerManager.layers,
-            getTransformData: () => engineInstance?.transformSystem.viewportTransform
+            getTransformData: () => engineInstance?.transformSystem.viewportTransform,
+            forceThumbnailUpdate: (layerId) => engineInstance?.drawingEngine.thumbnailSystem.scheduleThumbnailUpdate(layerId),
+            getThumbnailSystem: () => engineInstance?.drawingEngine.thumbnailSystem
         };
     }
 
-    log('🎨 DrawingEngine.js loaded successfully');
+    log('🎨 DrawingEngine.js loaded successfully (Thumbnail Support)');
 
 })();

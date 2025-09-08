@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1 - 分離改修版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1 - サムネイル対応版</title>
     <style>
         * {
             margin: 0;
@@ -173,20 +173,23 @@
             border-radius: 8px;
             padding: 8px;
             pointer-events: all;
+            max-height: 60vh;
+            overflow-y: auto;
         }
         
         .layer-item {
-            width: 140px;
-            height: 48px;
+            width: 180px;
+            height: 64px;
             background: var(--futaba-cream);
             border: 2px solid var(--futaba-light-medium);
             border-radius: 8px;
-            padding: 8px 12px;
+            padding: 4px 8px;
             cursor: pointer;
             transition: all 0.2s ease;
-            display: flex;
+            display: grid;
+            grid-template-columns: 48px 1fr auto;
+            gap: 8px;
             align-items: center;
-            justify-content: space-between;
             user-select: none;
             position: relative;
             box-shadow: 0 2px 4px rgba(128, 0, 0, 0.1);
@@ -203,12 +206,60 @@
             box-shadow: 0 2px 8px rgba(128, 0, 0, 0.2);
         }
         
+        .layer-thumbnail {
+            width: 48px;
+            height: 48px;
+            background: var(--futaba-background);
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .layer-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 3px;
+        }
+        
+        .layer-thumbnail-placeholder {
+            width: 24px;
+            height: 24px;
+            background: var(--futaba-light-medium);
+            border-radius: 2px;
+            opacity: 0.5;
+        }
+        
+        .layer-info {
+            display: flex;
+            flex-direction: column;
+            min-width: 0;
+            gap: 2px;
+        }
+        
         .layer-name {
-            flex: 1;
             font-size: 12px;
             color: var(--text-primary);
             font-weight: 500;
-            margin-right: 8px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        .layer-opacity {
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-family: monospace;
+        }
+        
+        .layer-controls {
+            display: flex;
+            align-items: center;
+            gap: 4px;
         }
         
         .layer-visibility {
@@ -245,7 +296,6 @@
             cursor: pointer;
             border-radius: 4px;
             transition: all 0.2s ease;
-            margin-left: 4px;
         }
         
         .layer-delete-button:hover {
@@ -536,12 +586,13 @@
     <script>
         /**
          * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1
-         * UI Controller - 分離改修版
+         * UI Controller - サムネイル対応版
          * 
-         * 改修内容:
-         * - DrawingEngine.jsとの分離
-         * - UI制御に特化
-         * - API境界による通信
+         * Phase 1改修内容:
+         * - レイヤーアイテム拡張: 180px×64px
+         * - サムネイル表示: 48px×48px
+         * - 不透明度表示: 100%固定
+         * - サムネイル生成システム
          */
         
         // === UTILITIES ===
@@ -549,18 +600,104 @@
             clamp: (value, min, max) => Math.max(min, Math.min(max, value))
         };
 
+        // === THUMBNAIL GENERATOR ===
+        class ThumbnailGenerator {
+            constructor() {
+                this.thumbnailSize = 48;
+                this.cache = new Map();
+                this.updateQueue = new Set();
+                this.processScheduled = false;
+            }
+
+            generateLayerThumbnail(layerId) {
+                try {
+                    const engineInstance = window.DrawingEngineDevTools?.getEngineInstance();
+                    if (!engineInstance) return null;
+
+                    const layer = engineInstance.layerManager.layers.items.find(l => l.id === layerId);
+                    if (!layer || !layer.container) return null;
+
+                    // オフスクリーンキャンバス作成
+                    const thumbnailCanvas = document.createElement('canvas');
+                    thumbnailCanvas.width = this.thumbnailSize;
+                    thumbnailCanvas.height = this.thumbnailSize;
+                    const ctx = thumbnailCanvas.getContext('2d');
+
+                    // 背景塗りつぶし
+                    ctx.fillStyle = '#f0e0d6';
+                    ctx.fillRect(0, 0, this.thumbnailSize, this.thumbnailSize);
+
+                    // メインキャンバスから描画内容を取得
+                    const mainCanvas = engineInstance.drawingEngine.app.canvas;
+                    if (mainCanvas) {
+                        // キャンバス全体を縮小して描画
+                        ctx.drawImage(
+                            mainCanvas,
+                            0, 0, mainCanvas.width, mainCanvas.height,
+                            0, 0, this.thumbnailSize, this.thumbnailSize
+                        );
+                    }
+
+                    const dataUrl = thumbnailCanvas.toDataURL('image/png');
+                    this.cache.set(layerId, dataUrl);
+                    return dataUrl;
+
+                } catch (error) {
+                    console.error('[ThumbnailGenerator] Failed to generate thumbnail:', error);
+                    return null;
+                }
+            }
+
+            queueThumbnailUpdate(layerId) {
+                this.updateQueue.add(layerId);
+                if (!this.processScheduled) {
+                    this.processScheduled = true;
+                    requestAnimationFrame(() => this.processQueue());
+                }
+            }
+
+            processQueue() {
+                this.processScheduled = false;
+                const layersToProcess = [...this.updateQueue];
+                this.updateQueue.clear();
+
+                layersToProcess.forEach(layerId => {
+                    const thumbnailData = this.generateLayerThumbnail(layerId);
+                    if (thumbnailData && window.UICallbacks?.onLayerThumbnailUpdated) {
+                        window.UICallbacks.onLayerThumbnailUpdated(layerId, thumbnailData);
+                    }
+                });
+            }
+
+            getThumbnail(layerId) {
+                return this.cache.get(layerId) || null;
+            }
+
+            clearCache() {
+                this.cache.clear();
+            }
+        }
+
         // === UI CALLBACKS IMPLEMENTATION ===
         window.UICallbacks = {
             // === レイヤー通知 ===
             onLayerCreated: (layerInfo) => {
                 if (window.futabaApp?.ui) {
                     window.futabaApp.ui.updateLayerUI();
+                    // レイヤー作成後にサムネイル生成
+                    setTimeout(() => {
+                        window.futabaApp.thumbnailGenerator.queueThumbnailUpdate(layerInfo.id);
+                    }, 200);
                 }
             },
 
             onLayerDeleted: (layerId) => {
                 if (window.futabaApp?.ui) {
                     window.futabaApp.ui.updateLayerUI();
+                }
+                // キャッシュからサムネイル削除
+                if (window.futabaApp?.thumbnailGenerator) {
+                    window.futabaApp.thumbnailGenerator.cache.delete(layerId);
                 }
             },
 
@@ -580,6 +717,14 @@
             onLayerListUpdated: (layerList) => {
                 if (window.futabaApp?.ui) {
                     window.futabaApp.ui.updateLayerUI();
+                }
+            },
+
+            // === サムネイル通知 ===
+            onLayerThumbnailUpdated: (layerId, thumbnailData) => {
+                const layerItem = document.querySelector(`[data-layer-id="${layerId}"] .layer-thumbnail img`);
+                if (layerItem) {
+                    layerItem.src = thumbnailData;
                 }
             },
 
@@ -608,6 +753,16 @@
                 if (window.futabaApp?.ui) {
                     window.futabaApp.ui.updateStatusDisplay('history-info', `${currentIndex}/${totalCount}`);
                 }
+                
+                // 履歴更新時にアクティブレイヤーのサムネイル更新
+                if (window.futabaApp?.thumbnailGenerator) {
+                    const activeLayer = window.DrawingEngineAPI?.getLayerList()?.find(l => l.isActive);
+                    if (activeLayer) {
+                        setTimeout(() => {
+                            window.futabaApp.thumbnailGenerator.queueThumbnailUpdate(activeLayer.id);
+                        }, 100);
+                    }
+                }
             },
 
             // === パフォーマンス通知 ===
@@ -621,6 +776,14 @@
             onCanvasResized: (width, height) => {
                 if (window.futabaApp?.ui) {
                     window.futabaApp.ui.updateStatusDisplay('canvas-info', `${width}×${height}px`);
+                }
+                
+                // キャンバスサイズ変更時に全レイヤーのサムネイル更新
+                if (window.futabaApp?.thumbnailGenerator) {
+                    const layers = window.DrawingEngineAPI?.getLayerList() || [];
+                    layers.forEach(layer => {
+                        window.futabaApp.thumbnailGenerator.queueThumbnailUpdate(layer.id);
+                    });
                 }
             }
         };
@@ -640,7 +803,6 @@
             }
 
             initialize() {
-                // 少し遅延させてDOM要素が完全に配置されるのを待つ
                 setTimeout(() => {
                     this.setupHammerJS();
                     this.state.initialized = true;
@@ -673,7 +835,6 @@
                 this.state.gestureActive = true;
                 this.state.panStarted = true;
                 
-                // 初回のみdeltaXを0にリセット（HammerJSの累積値問題を回避）
                 this.state.lastDelta.x = 0;
                 this.state.lastDelta.y = 0;
             }
@@ -687,21 +848,17 @@
 
                 const { deltaX, deltaY } = event;
                 
-                // 最初のpanmoveイベントでは前回からの差分を計算
                 let actualDeltaX, actualDeltaY;
                 
                 if (this.state.panStarted) {
-                    // 初回は現在のdeltaをそのまま使用
                     actualDeltaX = deltaX;
                     actualDeltaY = deltaY;
                     this.state.panStarted = false;
                 } else {
-                    // 2回目以降は差分計算
                     actualDeltaX = deltaX - this.state.lastDelta.x;
                     actualDeltaY = deltaY - this.state.lastDelta.y;
                 }
 
-                // 微小な移動は無視
                 if (Math.abs(actualDeltaX) < 0.5 && Math.abs(actualDeltaY) < 0.5) {
                     this.state.lastDelta.x = deltaX;
                     this.state.lastDelta.y = deltaY;
@@ -721,7 +878,6 @@
                 this.state.gestureActive = false;
                 this.state.panStarted = false;
                 
-                // 状態をクリア
                 this.state.lastDelta.x = 0;
                 this.state.lastDelta.y = 0;
             }
@@ -928,7 +1084,6 @@
                     }
                 });
 
-                // Popup drag setup
                 document.querySelectorAll('.popup-panel').forEach(popup => {
                     const title = popup.querySelector('.popup-title');
                     if (title) {
@@ -1133,6 +1288,9 @@
                     layerItem.className = `layer-item ${layer.isActive ? 'active' : ''}`;
                     layerItem.dataset.layerId = layer.id;
 
+                    // サムネイル取得
+                    const thumbnailData = window.futabaApp?.thumbnailGenerator?.getThumbnail(layer.id);
+                    
                     const eyeIcon = layer.visible ? 
                         '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>' :
                         '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
@@ -1140,12 +1298,23 @@
                     const deleteIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>';
 
                     layerItem.innerHTML = `
-                        <div class="layer-name">${layer.name}</div>
-                        <div class="layer-visibility ${layer.visible ? '' : 'hidden'}" data-action="toggle-visibility">
-                            ${eyeIcon}
+                        <div class="layer-thumbnail">
+                            ${thumbnailData ? 
+                                `<img src="${thumbnailData}" alt="レイヤーサムネイル">` :
+                                '<div class="layer-thumbnail-placeholder"></div>'
+                            }
                         </div>
-                        <div class="layer-delete-button" data-action="delete-layer">
-                            ${deleteIcon}
+                        <div class="layer-info">
+                            <div class="layer-name">${layer.name}</div>
+                            <div class="layer-opacity">100%</div>
+                        </div>
+                        <div class="layer-controls">
+                            <div class="layer-visibility ${layer.visible ? '' : 'hidden'}" data-action="toggle-visibility">
+                                ${eyeIcon}
+                            </div>
+                            <div class="layer-delete-button" data-action="delete-layer">
+                                ${deleteIcon}
+                            </div>
                         </div>
                     `;
 
@@ -1164,6 +1333,17 @@
 
                     layerList.appendChild(layerItem);
                 });
+
+                // 初期サムネイル生成をスケジュール
+                if (window.futabaApp?.thumbnailGenerator) {
+                    setTimeout(() => {
+                        layers.forEach(layer => {
+                            if (!window.futabaApp.thumbnailGenerator.getThumbnail(layer.id)) {
+                                window.futabaApp.thumbnailGenerator.queueThumbnailUpdate(layer.id);
+                            }
+                        });
+                    }, 100);
+                }
             }
 
             updateStatusDisplay(elementId, text) {
@@ -1192,10 +1372,10 @@
                 this.ui = new UnifiedUIController();
                 this.positionManager = new HammerJSPositionManager();
                 this.shortcutManager = new ShortcutManager(this);
+                this.thumbnailGenerator = new ThumbnailGenerator();
             }
 
             async initialize() {
-                // ライブラリチェック
                 const requiredLibs = {
                     pixi: window.PIXI,
                     gsap: window.gsap,
@@ -1209,7 +1389,6 @@
                     }
                 }
 
-                // DrawingEngine初期化
                 const canvasContainer = document.getElementById('drawing-canvas');
                 const engineInitialized = await window.DrawingEngineAPI.initialize(canvasContainer);
                 
@@ -1217,17 +1396,43 @@
                     throw new Error('DrawingEngine initialization failed');
                 }
 
-                // UI初期化
                 this.ui.initialize();
                 this.positionManager.initialize();
                 this.shortcutManager.initialize();
 
                 this.setupInputHandlers();
+                this.setupDrawingThumbnailUpdates();
 
-                // 初期レイヤーUI更新
                 setTimeout(() => this.ui.updateLayerUI(), 100);
 
                 return true;
+            }
+
+            setupDrawingThumbnailUpdates() {
+                // 描画完了の検知とサムネイル更新
+                let drawingTimeout = null;
+                
+                const originalSetActiveTool = window.DrawingEngineAPI.setActiveTool;
+                window.DrawingEngineAPI.setActiveTool = (toolType, settings) => {
+                    const result = originalSetActiveTool(toolType, settings);
+                    
+                    // 描画ツールが変更された場合の処理
+                    if (toolType === 'pen' || toolType === 'eraser') {
+                        // 描画完了後のサムネイル更新を準備
+                        if (drawingTimeout) {
+                            clearTimeout(drawingTimeout);
+                        }
+                        
+                        drawingTimeout = setTimeout(() => {
+                            const activeLayer = window.DrawingEngineAPI?.getLayerList()?.find(l => l.isActive);
+                            if (activeLayer) {
+                                this.thumbnailGenerator.queueThumbnailUpdate(activeLayer.id);
+                            }
+                        }, 1000); // 1秒後にサムネイル更新
+                    }
+                    
+                    return result;
+                };
             }
 
             setupInputHandlers() {
@@ -1248,16 +1453,15 @@
         // === APPLICATION BOOTSTRAP ===
         window.addEventListener('DOMContentLoaded', async () => {
             try {
-                // アプリケーション初期化
                 window.futabaApp = new AppController();
                 await window.futabaApp.initialize();
 
-                console.log('🎨 Futaba Drawing Tool v8-Phase1 - 分離改修版完了!');
-                console.log('✅ 分離改修内容:');
-                console.log('  - DrawingEngine.js分離（PixiJS・座標変換・履歴）');
-                console.log('  - main.html UI制御（サイドバー・レイヤーパネル・ポップアップ）');
-                console.log('  - API境界による通信（DrawingEngineAPI ↔ UICallbacks）');
-                console.log('  - 改修効率向上（機能別ファイル分割）');
+                console.log('🎨 Futaba Drawing Tool v8-Phase1 - サムネイル対応版完了!');
+                console.log('✅ Phase 1実装内容:');
+                console.log('  - レイヤーアイテム拡張: 180px×64px');
+                console.log('  - サムネイル表示: 48px×48px');
+                console.log('  - 不透明度表示: 100%固定');
+                console.log('  - サムネイル生成システム');
 
             } catch (error) {
                 console.error('💥 Application startup failed:', error);
