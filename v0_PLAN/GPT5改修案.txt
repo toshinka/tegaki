@@ -1,0 +1,50 @@
+症状（キャンバスもパネルも出ない／アイコンだけ出る）からすると 初期化処理の分離で依存関係が途切れている のが原因です。
+
+特に確認したところ、以下の点が問題になっている可能性が高いです。
+
+🔎 問題点の候補
+
+PixiJS アプリ生成が main.html に埋め込まれたまま
+
+new PIXI.Application(...) の呼び出しが Sidebar や LayerPanel の読み込みより前に行われているが、
+分割後は #canvas-container などの DOM がまだ存在しないためアプリが追加されない。
+
+Sidebar-Tools.js 内のイベント登録が main.js 側に依存
+
+例: document.getElementById("layer-panel") のような取得が null になっている。
+
+本来 HTML 内で生成するはずのパネル DOM が main.html から消えている／まだ生成されていない。
+
+ロード順序の崩壊
+
+main.html で <script src="Sidebar-Tools.js"> を呼んでいるが、その中で PIXI.Application や canvas を参照しており、
+main.js（あるいは初期化スクリプト）が読み込まれる前に動いている可能性。
+
+CSS の切り離し忘れ
+
+レイヤーパネルやツールバーが DOM 上には生成されていても、CSS 適用されず透明／非表示のまま。
+
+💡 改修案
+1. 初期化順序を一本化する
+
+main.html にて 必ず最後に initApp.js のような統合初期化スクリプトを読み込み依存関係を明示的に制御する。
+
+2. DOM 生成を責務ごとに分ける
+
+Sidebar-Tools.js は 自分のUI要素だけを生成し、PixiJS は触らない。
+
+LayerPanel.js は レイヤーUIだけを生成。
+
+PixiApp.js が Pixi.Application のみ管理。
+
+3. ロード確認を追加
+
+console.log("Sidebar loaded") などのログを各ファイルに入れ、順序を確認。
+
+document.getElementById(...) が null なら即エラーを投げて気づけるようにする。
+
+4. CSS の確認
+
+レイヤーパネルが DOM にあるか document.querySelector("#layer-panel") で確認。
+
+display:none や opacity:0 になっていないかを DevTools でチェック。
