@@ -1,0 +1,766 @@
+# 🎨 PixiJS描画ツール分割戦略・改修計画書 v4.0
+## 現実的分離によるAI改修効率化 | PixiJS v8.13完全対応
+
+---
+
+# 📖 目次
+
+## 🔹 1. 分割戦略（Claude改修視点最適化）
+- [基本理念・技術制約](#基本理念技術制約)
+- [分割前実装推奨機能](#分割前実装推奨機能)
+- [ファイル分割計画](#ファイル分割計画)
+
+## 🔹 2. 実装ルールブック（エラー回避重視）
+- [API境界定義](#api境界定義)
+- [読み込み順序・初期化フロー](#読み込み順序初期化フロー)
+- [エラーハンドリング原則](#エラーハンドリング原則)
+
+## 🔹 3. 分割後予定機能（簡易紹介）
+- [将来実装機能一覧](#将来実装機能一覧)
+- [PixiJS v8.13新機能活用計画](#pixijs-v813新機能活用計画)
+
+---
+
+# 🔹 1. 分割戦略（Claude改修視点最適化）
+
+## 基本理念・技術制約
+
+### 🎯 核心目的
+**Claude改修時の認知負荷最小化** - 1回の改修で1ファイルのみ扱う
+
+### 技術仕様（厳格）
+```
+実行環境    : Chrome最新、ローカルHTML直開き（file://）
+技術スタック: PixiJS v8.13（CDN）、ES2023、fetch API、HammerJS v2.0.8、GSAP v3.13.0
+禁止技術   : Canvas2D, TypeScript, Vite, ESM, bundler, Babel
+ファイル数  : 3ファイル構成（main.html + DrawingEngine.js + 追加分割ファイル）
+```
+
+### 🚫 前回失敗の教訓
+- **複数ファイル同時改修**: Claude処理能力を超過→破綻
+- **過度な機能分散**: 依存関係複雑化→デバッグ困難
+- **抽象化過多**: 実装時の判断材料不足→停滞
+
+## 分割前実装推奨機能
+
+### 🥇 最優先: レイヤー階層のドラッグ移動
+**推奨理由**:
+- 現在のレイヤーパネルに直接統合可能
+- PixiJS v8のContainer.zIndex・sortableChildren最適化活用
+- 分割時の独立性が高い（UI操作のみ）
+
+**実装容量**: 既存の30%以内（約200行追加）
+
+### 🥈 次点候補（分割前は避ける）
+- **レイヤー移動・変形**: 座標系統合が必要→分割後が効率的
+- **範囲選択**: 他機能との連携複雑→分割後の独立モジュール化推奨
+
+## ファイル分割計画
+
+### 📁 分割戦略: 2段階アプローチ
+
+#### Phase 1: UI/ツール分離（分割直後）
+```
+main.html
+├── DrawingEngine.js     (現状維持: PixiJS・座標変換・履歴)
+└── LayerUI-Manager.js   (新規: レイヤーUI・ツールUI・ポップアップ)
+```
+
+#### Phase 2: 機能拡張後分離（将来）
+```
+main.html
+├── DrawingEngine.js     (PixiJS・座標変換・履歴)  
+├── LayerUI-Manager.js   (レイヤーUI・ツールUI)
+├── Canvas-Transform.js  (キャンバス操作・レイヤー変形)
+└── Selection-Tool.js    (範囲選択・オブジェクト操作)
+```
+
+---
+
+# 🔹 2. 実装ルールブック（エラー回避重視）
+
+## API境界定義
+
+### 🌟 DrawingEngineAPI（中央管制）
+**責務**: PixiJS・座標管理・履歴・状態管理
+
+```javascript
+window.DrawingEngineAPI = {
+  // === 初期化・破棄 ===
+  initialize: async (containerElement) => boolean,
+  destroy: () => void,
+  
+  // === キャンバス制御 ===  
+  resize: (width, height) => boolean,
+  clear: () => boolean,
+  
+  // === ツール制御 ===
+  setActiveTool: (toolType, settings) => boolean,
+  getActiveTool: () => string,
+  getToolSettings: (toolType) => object,
+  
+  // === レイヤー制御 ===
+  createLayer: (name) => layerId | null,
+  deleteLayer: (layerId) => boolean, 
+  setActiveLayer: (layerId) => boolean,
+  toggleLayerVisibility: (layerId) => boolean,
+  getLayerList: () => array,
+  
+  // === 座標変換 ===
+  screenToWorld: (x, y) => {x, y},
+  worldToScreen: (x, y) => {x, y},
+  resetViewport: () => boolean,
+  moveViewport: (deltaX, deltaY) => boolean,
+  
+  // === 履歴制御 ===
+  undo: () => boolean,
+  redo: () => boolean, 
+  createSnapshot: (actionName) => boolean,
+  
+  // === 状態管理 ===
+  setSpacePressed: (pressed) => void
+};
+```
+
+### 🛰️ UICallbacks（UI通知インターフェース）
+**責務**: DrawingEngine→UI通知チャンネル
+
+```javascript
+window.UICallbacks = {
+  // === レイヤー通知 ===
+  onLayerCreated: (layerInfo) => void,
+  onLayerDeleted: (layerId) => void, 
+  onActiveLayerChanged: (layerId, layerName) => void,
+  onLayerVisibilityChanged: (layerId, visible) => void,
+  onLayerListUpdated: (layerList) => void,
+  
+  // === ツール・状態通知 ===
+  onToolChanged: (toolType, toolName) => void,
+  onTransformUpdated: (transformState) => void,
+  onCoordinatesUpdated: (x, y) => void,
+  onHistoryUpdated: (currentIndex, totalCount) => void,
+  onFPSUpdated: (fps) => void,
+  onCanvasResized: (width, height) => void
+};
+```
+
+## 読み込み順序・初期化フロー
+
+### 📚 CDNライブラリ読み込み順序（厳守）
+```html
+<!-- 1. 基盤ライブラリ -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+
+<!-- 2. 核心描画エンジン -->
+<script src="DrawingEngine.js"></script>
+
+<!-- 3. UI管理モジュール（分割後追加） -->
+<!-- <script src="LayerUI-Manager.js"></script> -->
+
+<!-- 4. main.html内アプリケーション制御 -->
+```
+
+### 🚀 初期化フロー（失敗回避）
+```javascript
+// === STAGE 1: ライブラリ存在確認 ===
+const requiredLibs = {
+  pixi: window.PIXI,
+  gsap: window.gsap, 
+  Hammer: window.Hammer,
+  drawingEngine: window.DrawingEngineAPI
+};
+
+for (const [name, lib] of Object.entries(requiredLibs)) {
+  if (!lib) {
+    throw new Error(`❌ Library ${name} not found - Check CDN loading order`);
+  }
+}
+
+// === STAGE 2: UICallbacks実装確認 ===
+if (!window.UICallbacks) {
+  throw new Error(`❌ UICallbacks not implemented - Check main.html implementation`);
+}
+
+// === STAGE 3: DrawingEngine初期化 ===
+const canvasContainer = document.getElementById('drawing-canvas');
+if (!canvasContainer) {
+  throw new Error(`❌ Canvas container not found - Check DOM structure`);
+}
+
+const engineInitialized = await window.DrawingEngineAPI.initialize(canvasContainer);
+if (!engineInitialized) {
+  throw new Error(`❌ DrawingEngine initialization failed - Check console for details`);
+}
+
+// === STAGE 4: UI初期化 ===
+// main.html内のUI制御クラス初期化
+// 分割後は LayerUI-Manager.js の初期化がここに入る
+
+console.log('✅ Application initialized successfully');
+```
+
+## エラーハンドリング原則
+
+### 🚫 禁止事項（前回失敗要因）
+```javascript
+// ❌ 絶対禁止: フォールバック処理
+function getActiveLayer() {
+  const active = layers.find(l => l.isActive);
+  return active || layers[0]; // NG: 問題を隠蔽
+}
+
+// ❌ 絶対禁止: エラー隠蔽
+try {
+  dangerousOperation();
+} catch (error) {
+  console.log('Error occurred, continuing...'); // NG: 問題先送り
+}
+
+// ❌ 絶対禁止: 架空メソッド・未定義参照
+pixiApp.renderer.unknownMethod(); // NG: 実在しないメソッド
+```
+
+### ✅ 推奨: 明示的エラー処理
+```javascript
+// ✅ 推奨: 明示的失敗
+function getActiveLayer() {
+  const active = layers.find(l => l.isActive);
+  if (!active) {
+    throw new Error(`No active layer found. Available layers: ${layers.length}`);
+  }
+  return active;
+}
+
+// ✅ 推奨: エラー詳細レポート
+function handleDrawingError(operation, error) {
+  console.error(`[DrawingEngine] ${operation} failed:`, {
+    error: error.message,
+    stack: error.stack,
+    context: {
+      activeLayer: getActiveLayerSafe(),
+      currentTool: getCurrentTool(),
+      timestamp: new Date().toISOString()
+    }
+  });
+  throw error; // 再スローして呼び出し元に通知
+}
+```
+
+### 📝 実装時確認チェックリスト
+```
+✅ PixiJS v8.13の実在メソッドのみ使用しているか
+✅ CDN読み込み順序は正しいか
+✅ DOM要素存在確認を行っているか
+✅ API境界を越えた直接アクセスをしていないか
+✅ エラー時にコンソールに詳細情報を出力しているか
+✅ フォールバック・エラー隠蔽をしていないか
+```
+
+---
+
+# 🔹 3. 分割後予定機能（簡易紹介）
+
+## 将来実装機能一覧
+
+### 🎯 Phase 1完了後の追加機能
+```
+📁 LayerUI-Manager.js 分離後
+├── レイヤーの左右フリック削除（HammerJS活用）
+├── レイヤーパネルのサムネイル実装
+├── レイヤーパネル各種設定ポップアップ
+└── レイヤーフォルダ実装
+```
+
+### 🎯 Phase 2: 変形・選択機能
+```
+📁 Canvas-Transform.js 新規作成後
+├── レイヤー移動・反転・回転・拡縮
+├── キャンバス反転・回転・拡縮  
+├── 無限キャンバス実装
+└── キャンバス外描画対応
+
+📁 Selection-Tool.js 新規作成後
+├── 範囲選択移動・各種変形
+├── オブジェクト選択・操作
+└── 複数レイヤー一括操作
+```
+
+### 🎯 Phase 3: アニメーション対応
+```
+📁 Animation-Engine.js 新規作成後（遠い将来）
+├── GIFアニメーション書き出し
+├── LIVE2D/SPINE風モーフィング
+├── ボーンアニメーション
+└── タイムライン管理
+```
+
+## PixiJS v8.13新機能活用計画
+
+### 🚀 現在活用中の機能
+```javascript
+// Container.sortableChildren - レイヤー順序最適化
+container.sortableChildren = true;
+container.sortChildren();
+
+// Graphics最適化 - 描画パフォーマンス向上
+graphics.circle(x, y, radius);
+graphics.fill({ color: 0x800000, alpha: 0.85 });
+
+// Texture最適化 - メモリ効率改善
+```
+
+### 🎯 分割後活用予定の機能
+```javascript
+// Matrix変換 - レイヤー変形時に活用
+const matrix = new PIXI.Matrix();
+matrix.translate(dx, dy);
+matrix.rotate(angle);
+container.transform.setFromMatrix(matrix);
+
+// Assets管理 - サムネイル・アニメーション時に活用
+await PIXI.Assets.load('thumbnail.png');
+
+// Filter効果 - 将来の描画効果拡張
+const blurFilter = new PIXI.BlurFilter();
+container.filters = [blurFilter];
+```
+
+---
+
+## 🎯 このドキュメントの使い方
+
+### 📖 Claude改修時の参照方法
+1. **改修対象機能確認** - 該当セクションを確認
+2. **API境界チェック** - 使用可能なAPI・禁止事項を確認  
+3. **初期化フロー確認** - ライブラリ依存・読み込み順序を確認
+4. **エラーハンドリング** - 明示的エラー処理の実装
+
+### 🔧 分割実行時
+1. **分割前機能実装** - レイヤードラッグ移動を先行実装
+2. **Phase 1分割実行** - LayerUI-Manager.js分離
+3. **機能追加** - 分離後に複数機能を並行開発
+
+### 📋 改修確認事項
+```
+✅ 1ファイルのみの改修に留まっているか
+✅ API境界を越えていないか  
+✅ PixiJS v8.13の実在機能のみ使用しているか
+✅ エラーハンドリングが適切か
+✅ CDN・読み込み順序に問題がないか
+```
+
+---
+
+**🌟 v4.0 - Claude改修効率化・現実的分離戦略**  
+*分割の失敗を教訓とした、実用的で持続可能な開発戦略*
+
+====
+
+📊 分割前実装機能 評点比較表
+評価基準
+
+実装コスト (1-5点, 低いほど良い)
+コードの見通し (1-5点, 高いほど良い)
+分割時の恩恵 (1-5点, 高いほど良い)
+PixiJS v8活用度 (1-5点, 高いほど良い)
+
+           機能                  実装コスト  見通し  分割恩恵  PixiJS活用  総合点  評価
+レイヤー階層のドラッグ移動           2         4        5          3         14      A
+レイヤーの左右フリック削除           2         4        4          2         12      A
+レイヤー移動・反転・回転・拡縮       4         3        5          5         13      A
+レイヤーパネルのサムネイル実装       3         3        4          4         11      B
+レイヤーフォルダの実装               4         2        3          3          8      C
+レイヤーパネルの各種設定ポップアップ 3         2        4          2          7      C
+範囲選択移動・各種変形               5         2        4          5         11      B
+キャンバス 反転・回転・拡縮          3         4        3          5         12      B
+
+🏆 推奨実装順序（分割前）
+1位: レイヤー階層のドラッグ移動 (14点)
+理由:
+
+現在のレイヤーパネルに直接統合可能
+PixiJS v8のContainer.zIndex最適化を活用
+分割時に独立モジュール化の恩恵大
+
+/**
+ * レイヤー階層ドラッグ移動システム - PixiJS v8.13対応
+ * main.htmlに追加するコード
+ */
+
+// === LAYER DRAG MANAGER ===
+class LayerDragManager {
+    constructor(ui) {
+        this.ui = ui;
+        this.dragState = {
+            isDragging: false,
+            draggedLayerId: null,
+            dragElement: null,
+            placeholder: null,
+            startY: 0,
+            currentY: 0,
+            layerItems: []
+        };
+    }
+
+    initialize() {
+        // レイヤーリストにドラッグ機能を追加
+        const layerList = document.getElementById('layer-list');
+        if (layerList) {
+            this.setupDragContainer(layerList);
+        }
+    }
+
+    setupDragContainer(container) {
+        // 既存のレイヤーアイテムにドラッグ機能を追加
+        this.addDragEventsToExistingItems(container);
+        
+        // MutationObserverでレイヤー追加を監視
+        const observer = new MutationObserver((mutations) => {
+            mutations.forEach(mutation => {
+                mutation.addedNodes.forEach(node => {
+                    if (node.nodeType === Node.ELEMENT_NODE && 
+                        node.classList.contains('layer-item')) {
+                        this.makeDraggable(node);
+                    }
+                });
+            });
+        });
+
+        observer.observe(container, { 
+            childList: true, 
+            subtree: true 
+        });
+    }
+
+    addDragEventsToExistingItems(container) {
+        const layerItems = container.querySelectorAll('.layer-item');
+        layerItems.forEach(item => this.makeDraggable(item));
+    }
+
+    makeDraggable(layerItem) {
+        const layerId = layerItem.dataset.layerId;
+        if (!layerId) return;
+
+        // 既存のdraggable属性を削除
+        layerItem.removeAttribute('draggable');
+        
+        // カスタムドラッグイベントを設定
+        layerItem.addEventListener('mousedown', (e) => this.onDragStart(e, layerItem));
+        
+        // レイヤー名部分のみドラッグ可能にする視覚的フィードバック
+        const layerName = layerItem.querySelector('.layer-name');
+        if (layerName) {
+            layerName.style.cursor = 'grab';
+        }
+    }
+
+    onDragStart(e, layerItem) {
+        // ボタン操作（目・削除）の場合はドラッグしない
+        if (e.target.closest('[data-action]')) {
+            return;
+        }
+
+        this.dragState.isDragging = true;
+        this.dragState.draggedLayerId = layerItem.dataset.layerId;
+        this.dragState.dragElement = layerItem;
+        this.dragState.startY = e.clientY;
+        
+        // ドラッグ中の視覚的フィードバック
+        layerItem.style.opacity = '0.5';
+        layerItem.style.transform = 'rotate(2deg)';
+        layerItem.style.pointerEvents = 'none';
+        layerItem.style.zIndex = '1000';
+        
+        // プレースホルダーを作成
+        this.createPlaceholder(layerItem);
+        
+        // 他のレイヤーアイテムリストを取得
+        this.updateLayerItemsList();
+        
+        // グローバルマウスイベントを追加
+        document.addEventListener('mousemove', this.onDragMove);
+        document.addEventListener('mouseup', this.onDragEnd);
+        
+        // レイヤー名のカーソルを変更
+        const layerName = layerItem.querySelector('.layer-name');
+        if (layerName) {
+            layerName.style.cursor = 'grabbing';
+        }
+
+        e.preventDefault();
+    }
+
+    onDragMove = (e) => {
+        if (!this.dragState.isDragging) return;
+
+        this.dragState.currentY = e.clientY;
+        const deltaY = this.dragState.currentY - this.dragState.startY;
+        
+        // ドラッグ要素を移動
+        if (this.dragState.dragElement) {
+            this.dragState.dragElement.style.transform = `translate(10px, ${deltaY}px) rotate(2deg)`;
+        }
+
+        // ドロップ位置を計算
+        this.updateDropPosition(e.clientY);
+    }
+
+    onDragEnd = (e) => {
+        if (!this.dragState.isDragging) return;
+
+        // ドロップを実行
+        this.performDrop();
+        
+        // 状態をリセット
+        this.resetDragState();
+        
+        // イベントリスナーを削除
+        document.removeEventListener('mousemove', this.onDragMove);
+        document.removeEventListener('mouseup', this.onDragEnd);
+    }
+
+    createPlaceholder(draggedElement) {
+        const placeholder = document.createElement('div');
+        placeholder.className = 'layer-drag-placeholder';
+        placeholder.style.cssText = `
+            height: 48px;
+            margin: 4px 0;
+            border: 2px dashed var(--futaba-medium);
+            border-radius: 8px;
+            background: var(--futaba-background);
+            opacity: 0.7;
+            transition: all 0.2s ease;
+        `;
+        
+        draggedElement.parentNode.insertBefore(placeholder, draggedElement);
+        this.dragState.placeholder = placeholder;
+    }
+
+    updateLayerItemsList() {
+        const layerList = document.getElementById('layer-list');
+        if (layerList) {
+            this.dragState.layerItems = Array.from(
+                layerList.querySelectorAll('.layer-item:not([style*="opacity: 0.5"])')
+            );
+        }
+    }
+
+    updateDropPosition(mouseY) {
+        if (!this.dragState.placeholder) return;
+
+        let insertBefore = null;
+        let minDistance = Infinity;
+
+        this.dragState.layerItems.forEach(item => {
+            if (item === this.dragState.dragElement) return;
+            
+            const rect = item.getBoundingClientRect();
+            const itemCenterY = rect.top + rect.height / 2;
+            const distance = Math.abs(mouseY - itemCenterY);
+            
+            if (distance < minDistance && mouseY < itemCenterY) {
+                minDistance = distance;
+                insertBefore = item;
+            }
+        });
+
+        // プレースホルダーを移動
+        const layerList = document.getElementById('layer-list');
+        if (layerList && this.dragState.placeholder) {
+            if (insertBefore) {
+                layerList.insertBefore(this.dragState.placeholder, insertBefore);
+            } else {
+                // 最後に追加
+                layerList.appendChild(this.dragState.placeholder);
+            }
+        }
+    }
+
+    performDrop() {
+        if (!this.dragState.placeholder || !this.dragState.dragElement) return;
+
+        // 新しい位置を計算
+        const layerList = document.getElementById('layer-list');
+        if (!layerList) return;
+
+        const allItems = Array.from(layerList.children);
+        const placeholderIndex = allItems.indexOf(this.dragState.placeholder);
+        const draggedIndex = allItems.indexOf(this.dragState.dragElement);
+
+        // プレースホルダーの位置にドラッグ要素を挿入
+        if (placeholderIndex !== -1) {
+            layerList.insertBefore(this.dragState.dragElement, this.dragState.placeholder);
+        }
+
+        // レイヤー順序をDrawingEngineAPIに反映
+        this.updateLayerOrder(placeholderIndex, draggedIndex);
+        
+        // スナップショット作成
+        window.DrawingEngineAPI?.createSnapshot('レイヤー順序変更');
+    }
+
+    updateLayerOrder(newIndex, oldIndex) {
+        const layers = window.DrawingEngineAPI?.getLayerList() || [];
+        if (layers.length === 0) return;
+
+        // レイヤーリストは表示が逆順なので変換
+        const reversedLayers = [...layers].reverse();
+        
+        if (newIndex < 0 || newIndex >= reversedLayers.length || 
+            oldIndex < 0 || oldIndex >= reversedLayers.length) {
+            return;
+        }
+
+        // PixiJS v8のzIndexを活用してレイヤー順序を更新
+        const movedLayer = reversedLayers[oldIndex];
+        reversedLayers.splice(oldIndex, 1);
+        reversedLayers.splice(newIndex, 0, movedLayer);
+
+        // 新しいzIndexを設定
+        reversedLayers.forEach((layer, index) => {
+            this.updateLayerZIndex(layer.id, index);
+        });
+
+        console.log('🎯 Layer order updated:', { newIndex, oldIndex, layerId: this.dragState.draggedLayerId });
+    }
+
+    updateLayerZIndex(layerId, zIndex) {
+        // DrawingEngineのレイヤーコンテナのzIndexを更新
+        if (window.engineInstance?.layerManager) {
+            const layer = window.engineInstance.layerManager.layers.items.find(l => l.id === layerId);
+            if (layer && layer.container) {
+                layer.container.zIndex = zIndex;
+                
+                // PixiJS v8の最適化されたソート機能を使用
+                if (layer.container.parent && layer.container.parent.sortableChildren) {
+                    layer.container.parent.sortChildren();
+                }
+            }
+        }
+    }
+
+    resetDragState() {
+        if (this.dragState.dragElement) {
+            // 視覚的フィードバックをリセット
+            this.dragState.dragElement.style.opacity = '';
+            this.dragState.dragElement.style.transform = '';
+            this.dragState.dragElement.style.pointerEvents = '';
+            this.dragState.dragElement.style.zIndex = '';
+            
+            // カーソルをリセット
+            const layerName = this.dragState.dragElement.querySelector('.layer-name');
+            if (layerName) {
+                layerName.style.cursor = 'grab';
+            }
+        }
+
+        // プレースホルダーを削除
+        if (this.dragState.placeholder) {
+            this.dragState.placeholder.remove();
+        }
+
+        // 状態をリセット
+        this.dragState = {
+            isDragging: false,
+            draggedLayerId: null,
+            dragElement: null,
+            placeholder: null,
+            startY: 0,
+            currentY: 0,
+            layerItems: []
+        };
+    }
+}
+
+// === LAYER MANAGER拡張 ===
+// DrawingEngine.jsのLayerManagerクラスに以下を追加
+
+// updateLayerZIndex メソッドを LayerManager に追加
+updateLayerZIndex(layerId, zIndex) {
+    const layer = this.layers.items.find(l => l.id === layerId);
+    if (layer && layer.container) {
+        layer.container.zIndex = zIndex;
+        
+        // PixiJS v8のソート最適化機能を使用
+        if (this.engine.containers.world.sortableChildren) {
+            this.engine.containers.world.sortChildren();
+        } else {
+            // sortableChildrenを有効化
+            this.engine.containers.world.sortableChildren = true;
+            this.engine.containers.world.sortChildren();
+        }
+    }
+}
+
+// レイヤー移動APIをDrawingEngineAPIに追加
+moveLayer(layerId, newIndex) {
+    const layerItems = this.layers.items;
+    const layerIndex = layerItems.findIndex(l => l.id === layerId);
+    
+    if (layerIndex === -1 || newIndex < 0 || newIndex >= layerItems.length) {
+        return false;
+    }
+    
+    // 配列内でレイヤーを移動
+    const [movedLayer] = layerItems.splice(layerIndex, 1);
+    layerItems.splice(newIndex, 0, movedLayer);
+    
+    // zIndexを更新
+    layerItems.forEach((layer, index) => {
+        this.updateLayerZIndex(layer.id, index);
+    });
+    
+    this._notifyLayerListUpdated();
+    return true;
+}
+
+// === MAIN.HTML INTEGRATION ===
+// UnifiedUIControllerクラスのinitialize()メソッドに以下を追加:
+
+initialize() {
+    // 既存のコード...
+    
+    // レイヤードラッグ機能を初期化
+    this.layerDragManager = new LayerDragManager(this);
+    this.layerDragManager.initialize();
+    
+    // 既存のコード...
+}
+
+2位: レイヤー移動・反転・回転・拡縮 (13点)
+理由:
+
+PixiJS v8の新Matrix機能とTransform最適化を最大活用
+将来のアニメーション機能の基盤となる
+分割時に変形モジュールとして独立可能
+
+3位: レイヤーの左右フリック削除 (12点)
+理由:
+
+Touch/Hammerライブラリが既に導入済み
+直感的なUI操作でユーザビリティ向上
+実装がシンプルで確実
+
+🚫 分割前は避けるべき機能
+レイヤーフォルダ (8点) - 複雑度高すぎ
+
+現在の容量制限では実装困難
+分割後の独立モジュール化で十分
+
+範囲選択システム (11点) - 依存関係複雑
+
+他システムとの連携が必要
+分割により見通しが大幅改善される機能
+
+🎯 推奨実装プラン
+分割前実装: レイヤー階層ドラッグ移動のみ
+理由:
+
+1.最小リスク: 既存システムへの影響最小
+2.最大効果: 分割時の恩恵が最も高い
+3.PixiJS v8活用: Container.zIndex最適化を実証
+
+分割後は複数機能を並行開発可能になるため、現在は1つの確実な機能に絞ることを強く推奨します。
+上記のドラッグ移動実装コードは、PixiJS v8.13の最適化機能（sortableChildren、zIndex）を活用し、将来の分割にも対応した設計になっています。
