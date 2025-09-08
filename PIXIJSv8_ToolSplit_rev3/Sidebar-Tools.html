@@ -30,6 +30,7 @@
             position: relative;
             z-index: 100;
             height: 100%;
+            width: 100%;
         }
         
         .tool-button {
@@ -223,6 +224,7 @@
             cursor: pointer;
             transition: all 0.2s ease;
             text-align: center;
+            width: 100%;
         }
         
         .action-button:hover {
@@ -237,7 +239,7 @@
             box-shadow: 0 2px 4px rgba(128, 0, 0, 0.2);
         }
 
-        /* ツールチップ（オプション） */
+        /* ツールチップ */
         .tool-button::after {
             content: attr(title);
             position: absolute;
@@ -259,6 +261,16 @@
         
         .tool-button:hover::after {
             opacity: 1;
+        }
+
+        /* アニメーション */
+        @keyframes slideIn {
+            from { transform: translateX(100%); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+        @keyframes slideOut {
+            from { transform: translateX(0); opacity: 1; }
+            to { transform: translateX(100%); opacity: 0; }
         }
     </style>
 </head>
@@ -338,47 +350,48 @@
 
     <script>
         /**
-         * Sidebar-Tools.html - 完全版
-         * ツール管理モジュール（ルールブックv1.0準拠）
+         * Sidebar-Tools.html - 修正版
+         * ツール管理モジュール（問題修正版）
          * 
-         * 完全な機能:
-         * - ツールボタンUI（ペン・消しゴム・リサイズ）
-         * - ツール設定ポップアップ（スライダー・入力）
-         * - ツール切り替えロジック
-         * - main.htmlとの完全API通信
-         * - ドラッグ可能ポップアップ
-         * - キーボードショートカット連携
+         * 修正点:
+         * - API待機ロジック改善
+         * - エラーハンドリング強化
+         * - フォールバック削除
+         * - 確実なAPI連携
          */
 
         (function() {
             'use strict';
 
-            // ==== モジュール初期化確認 ====
-            function waitForDrawingToolAPI() {
+            // ==== API待機関数（改善版） ====
+            function waitForDrawingToolAPI(maxAttempts = 100, interval = 50) {
                 return new Promise((resolve, reject) => {
                     let attempts = 0;
-                    const maxAttempts = 50; // 5秒間待機
                     
                     const checkAPI = () => {
-                        if (window.DrawingToolAPI) {
+                        if (window.DrawingToolAPI && 
+                            window.DrawingToolAPI.tools && 
+                            window.DrawingToolAPI.canvas &&
+                            window.DrawingToolAPI.events) {
+                            console.log(`[Sidebar-Tools] DrawingToolAPI found after ${attempts} attempts`);
                             resolve();
                             return;
                         }
                         
                         attempts++;
                         if (attempts >= maxAttempts) {
-                            reject(new Error('DrawingToolAPI not available after 5 seconds'));
+                            reject(new Error(`DrawingToolAPI not available after ${maxAttempts} attempts (${maxAttempts * interval}ms)`));
                             return;
                         }
                         
-                        setTimeout(checkAPI, 100);
+                        setTimeout(checkAPI, interval);
                     };
                     
                     checkAPI();
                 });
             }
 
-            // ==== Sidebar Tools Manager ====
+            // ==== Sidebar Tools Manager（修正版） ====
             class SidebarToolsManager {
                 constructor() {
                     this.activePopup = null;
@@ -404,9 +417,13 @@
 
                 async initialize() {
                     try {
-                        // DrawingToolAPI の可用性を待機
-                        await waitForDrawingToolAPI();
+                        console.log('[Sidebar-Tools] Starting initialization...');
                         
+                        // API待機
+                        await waitForDrawingToolAPI();
+                        console.log('[Sidebar-Tools] DrawingToolAPI confirmed');
+                        
+                        // 初期化処理
                         this.setupEventDelegation();
                         this.setupSliders();
                         this.setupResizeControls();
@@ -414,13 +431,14 @@
                         this.registerWithMainApp();
                         this.loadCurrentCanvasSize();
                         
-                        // 初期ツールを設定
+                        // 初期ツール設定
                         this.activateTool('pen');
                         
                         console.log('[Sidebar-Tools] Module initialized successfully');
                         
                     } catch (error) {
-                        this.reportError('Initialize', error);
+                        this.reportCriticalError('Initialize', error);
+                        throw error; // 再スロー：初期化失敗を明確に
                     }
                 }
 
@@ -446,6 +464,8 @@
                             this.closeAllPopups();
                         }
                     });
+
+                    console.log('[Sidebar-Tools] Event delegation setup complete');
                 }
 
                 handleToolClick(button) {
@@ -470,6 +490,7 @@
                         const action = toolActions[toolId];
                         if (action) {
                             action();
+                            console.log(`[Sidebar-Tools] Tool clicked: ${toolId}`);
                         } else {
                             throw new Error(`Unknown tool: ${toolId}`);
                         }
@@ -493,11 +514,13 @@
                         this.activeTool = toolName;
                         const settings = this.toolSettings[toolName];
 
-                        // main.htmlのDrawingToolAPIに通知
-                        if (window.DrawingToolAPI) {
-                            window.DrawingToolAPI.tools.setActiveTool(toolName);
-                            window.DrawingToolAPI.tools.updateSettings(settings);
+                        // API経由でmain.htmlに通知
+                        if (!window.DrawingToolAPI) {
+                            throw new Error('DrawingToolAPI not available');
                         }
+
+                        window.DrawingToolAPI.tools.setActiveTool(toolName);
+                        window.DrawingToolAPI.tools.updateSettings(settings);
 
                         console.log(`[Sidebar-Tools] Tool activated: ${toolName}`, settings);
 
@@ -528,6 +551,8 @@
                             this.adjustPopupPosition(popup);
                         }
 
+                        console.log(`[Sidebar-Tools] Popup toggled: ${popupId}, visible: ${!isVisible}`);
+
                     } catch (error) {
                         this.reportError('Toggle Popup', error, { popupId });
                     }
@@ -540,20 +565,17 @@
                         height: window.innerHeight
                     };
 
-                    let left = parseInt(popup.style.left);
-                    let top = parseInt(popup.style.top);
+                    let left = parseInt(popup.style.left) || 60;
+                    let top = parseInt(popup.style.top) || 100;
 
-                    // 右端チェック
+                    // 境界チェック
                     if (left + rect.width > viewport.width - 20) {
                         left = viewport.width - rect.width - 20;
                     }
-
-                    // 下端チェック
                     if (top + rect.height > viewport.height - 20) {
                         top = viewport.height - rect.height - 20;
                     }
 
-                    // 左端・上端チェック
                     left = Math.max(20, left);
                     top = Math.max(20, top);
 
@@ -568,7 +590,7 @@
                     this.activePopup = null;
                 }
 
-                // ==== スライダー制御 ====
+                // ==== スライダー制御（改善版） ====
                 setupSliders() {
                     try {
                         this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
@@ -583,6 +605,8 @@
                             return value.toFixed(1) + '%';
                         });
 
+                        console.log('[Sidebar-Tools] Sliders setup complete');
+
                     } catch (error) {
                         this.reportError('Setup Sliders', error);
                     }
@@ -591,6 +615,7 @@
                 updateToolSettings(toolName) {
                     if (this.activeTool === toolName && window.DrawingToolAPI) {
                         window.DrawingToolAPI.tools.updateSettings(this.toolSettings[toolName]);
+                        console.log(`[Sidebar-Tools] Tool settings updated: ${toolName}`, this.toolSettings[toolName]);
                     }
                 }
 
@@ -632,14 +657,13 @@
                         return min + (percentage * (max - min));
                     };
 
-                    // マウスイベント
+                    // イベントハンドラー
                     container.addEventListener('mousedown', (e) => {
                         slider.dragging = true;
                         updateSlider(getValueFromPosition(e.clientX));
                         e.preventDefault();
                     });
 
-                    // グローバルマウスイベント
                     const handleMouseMove = (e) => {
                         if (slider.dragging) {
                             updateSlider(getValueFromPosition(e.clientX));
@@ -653,7 +677,7 @@
                     document.addEventListener('mousemove', handleMouseMove);
                     document.addEventListener('mouseup', handleMouseUp);
 
-                    // タッチイベント（モバイル対応）
+                    // タッチイベント
                     container.addEventListener('touchstart', (e) => {
                         e.preventDefault();
                         slider.dragging = true;
@@ -686,7 +710,7 @@
                         });
                     }
 
-                    // Enterキーでも適用
+                    // Enterキーで適用
                     const inputs = document.querySelectorAll('#canvas-width, #canvas-height');
                     inputs.forEach(input => {
                         input.addEventListener('keydown', (e) => {
@@ -708,6 +732,8 @@
                             
                             if (widthInput) widthInput.value = width;
                             if (heightInput) heightInput.value = height;
+
+                            console.log(`[Sidebar-Tools] Canvas size loaded: ${width}×${height}`);
                         }
                     } catch (error) {
                         this.reportError('Load Canvas Size', error);
@@ -726,22 +752,25 @@
                         const width = parseInt(widthInput.value);
                         const height = parseInt(heightInput.value);
 
+                        // バリデーション
                         if (isNaN(width) || isNaN(height)) {
-                            throw new Error('Invalid canvas size: must be numbers');
+                            throw new Error('無効なキャンバスサイズ: 数値を入力してください');
                         }
 
                         if (width < 100 || width > 4096 || height < 100 || height > 4096) {
-                            throw new Error(`Invalid canvas size: ${width}×${height} (must be 100-4096)`);
+                            throw new Error(`無効なキャンバスサイズ: ${width}×${height} (100-4096の範囲で入力してください)`);
                         }
 
-                        // main.htmlのDrawingEngineに通知
-                        if (window.DrawingToolAPI?.canvas?.resizeCanvas) {
-                            window.DrawingToolAPI.canvas.resizeCanvas(width, height);
-                            this.closeAllPopups();
-                            
-                            // 成功フィードバック
-                            this.showSuccessMessage('キャンバスサイズを変更しました');
+                        // API経由でリサイズ実行
+                        if (!window.DrawingToolAPI?.canvas?.resizeCanvas) {
+                            throw new Error('DrawingToolAPI.canvas.resizeCanvas not available');
                         }
+
+                        window.DrawingToolAPI.canvas.resizeCanvas(width, height);
+                        this.closeAllPopups();
+                        
+                        console.log(`[Sidebar-Tools] Canvas resized to: ${width}×${height}`);
+                        this.showSuccessMessage(`キャンバスサイズを${width}×${height}に変更しました`);
 
                     } catch (error) {
                         this.reportError('Apply Canvas Resize', error, {
@@ -749,7 +778,6 @@
                             height: document.getElementById('canvas-height')?.value
                         });
                         
-                        // エラーフィードバック
                         this.showErrorMessage(error.message);
                     }
                 }
@@ -797,7 +825,7 @@
                     this.dragState.active = false;
                 }
 
-                // ==== フィードバック機能 ====
+                // ==== メッセージ表示 ====
                 showSuccessMessage(message) {
                     this.showToast(message, 'success');
                 }
@@ -807,7 +835,6 @@
                 }
 
                 showToast(message, type = 'info') {
-                    // 簡易トースト通知
                     const toast = document.createElement('div');
                     toast.style.cssText = `
                         position: fixed;
@@ -837,9 +864,8 @@
                     }, 3000);
                 }
 
-                // ==== main.htmlとのAPI連携 ====
+                // ==== API登録 ====
                 registerWithMainApp() {
-                    // SidebarTools API をグローバルに登録
                     window.SidebarToolsAPI = {
                         switchTool: (toolName) => this.activateTool(toolName),
                         getActiveToolSettings: () => this.toolSettings[this.activeTool],
@@ -856,7 +882,7 @@
                     console.log('[Sidebar-Tools] API registered with main app');
                 }
 
-                // ==== エラーレポート ====
+                // ==== エラー処理 ====
                 reportError(operation, error, context = {}) {
                     const errorInfo = {
                         timestamp: new Date().toISOString(),
@@ -869,49 +895,65 @@
                     
                     console.error(`[Sidebar-Tools] ${operation} failed:`, errorInfo);
                     
-                    // main.htmlのエラーハンドラーに通知
+                    // main.htmlに通知
                     if (window.DrawingToolAPI?.events?.emit) {
                         window.DrawingToolAPI.events.emit('module-error', errorInfo);
                     }
                 }
-            }
 
-            // ==== CSS アニメーション追加 ====
-            const style = document.createElement('style');
-            style.textContent = `
-                @keyframes slideIn {
-                    from { transform: translateX(100%); opacity: 0; }
-                    to { transform: translateX(0); opacity: 1; }
+                reportCriticalError(operation, error, context = {}) {
+                    this.reportError(operation, error, context);
+                    
+                    // 致命的エラーの場合、UIにも表示
+                    this.showErrorMessage(`致命的エラー: ${error.message}`);
                 }
-                @keyframes slideOut {
-                    from { transform: translateX(0); opacity: 1; }
-                    to { transform: translateX(100%); opacity: 0; }
-                }
-            `;
-            document.head.appendChild(style);
+            }
 
             // ==== モジュール初期化 ====
             async function initializeSidebarTools() {
                 try {
+                    console.log('[Sidebar-Tools] Module bootstrap starting...');
+                    
                     const manager = new SidebarToolsManager();
                     await manager.initialize();
                     
                     // グローバル参照として保存
                     window.sidebarToolsManager = manager;
+                    console.log('[Sidebar-Tools] Module bootstrap completed successfully');
                     
                 } catch (error) {
                     console.error('[Sidebar-Tools] Module bootstrap failed:', error);
                     
-                    // フォールバック: 最小限の機能を提供
-                    window.SidebarToolsAPI = {
-                        switchTool: (toolName) => {
-                            console.log('[Sidebar-Tools] Fallback: Switch to', toolName);
-                            if (window.DrawingToolAPI) {
-                                window.DrawingToolAPI.tools.setActiveTool(toolName);
-                            }
-                        },
-                        getActiveToolSettings: () => ({ tool: 'pen', size: 16, color: 0x800000, opacity: 0.85 })
-                    };
+                    // エラー表示
+                    const errorDiv = document.createElement('div');
+                    errorDiv.style.cssText = `
+                        position: fixed;
+                        top: 20px;
+                        right: 20px;
+                        background: #e74c3c;
+                        color: white;
+                        padding: 12px 16px;
+                        border-radius: 8px;
+                        font-size: 14px;
+                        z-index: 3000;
+                        max-width: 350px;
+                        word-wrap: break-word;
+                    `;
+                    errorDiv.textContent = 'サイドバーツール初期化失敗: ' + error.message;
+                    document.body.appendChild(errorDiv);
+
+                    // サイドバー領域にエラー表示
+                    const sidebar = document.querySelector('.sidebar');
+                    if (sidebar) {
+                        sidebar.innerHTML = `
+                            <div style="padding: 20px; text-align: center; color: #e74c3c;">
+                                <div>⚠️ 初期化失敗</div>
+                                <div style="font-size: 12px; margin-top: 8px;">
+                                    ${error.message}
+                                </div>
+                            </div>
+                        `;
+                    }
                 }
             }
 
