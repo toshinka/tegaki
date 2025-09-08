@@ -1,0 +1,242 @@
+# DrawingTool実践的分割ルールブック v2.0
+
+## 📋 実装現状とアプローチ変更
+
+**現状分析**: main.htmlは約800行で、完全なTransform中心設計が完成済み  
+**新戦略**: 既存のクラス構造を活かしつつ、機能的にJavaScript分割でスリム化  
+**対象**: Phase1でSidebar-Tools.jsに分離（HTML構造は残し、ロジックのみ移動）
+
+## 🎯 Phase1 分離対象（Sidebar-Tools.js）
+
+### 分離するクラス・機能
+```javascript
+// main.html → Sidebar-Tools.js
+- UnifiedUIController（UI管理統合版）
+- DrawingTools（Transform対応版） 
+- 関連するユーティリティ関数
+- ツールボタンのイベントハンドリング
+- ポップアップ管理
+- スライダー制御
+- リサイズ機能
+```
+
+### main.htmlに残すコア機能
+```javascript
+// main.htmlに残すコア部分
+- APP_CONFIG（設定定数）
+- TransformSystem（座標変換統一管理）
+- TransformHistoryManager（軽量化された履歴管理）
+- LayerManager（Transform対応版）
+- HammerJSPositionManager（Transform統合版）
+- DrawingEngine（Transform統合版）
+- ShortcutManager（キーボード制御）
+- SystemMonitor（パフォーマンス監視）
+- AppController（メインアプリケーション制御）
+- アプリケーション起動部分
+```
+
+## 🔧 分離手法：JavaScript外部化
+
+### 1. 外部JSファイル読み込み方式
+```html
+<!-- main.html内 -->
+<script src="Sidebar-Tools.js"></script>
+<script>
+    // 既存のコア処理
+</script>
+```
+
+### 2. グローバル名前空間設計
+```javascript
+// Sidebar-Tools.js
+window.FutabaSidebarTools = {
+    UnifiedUIController: UnifiedUIController,
+    DrawingTools: DrawingTools,
+    initialize: function(appController) {
+        // 初期化処理
+    }
+};
+```
+
+### 3. 相互通信API
+```javascript
+// main.html側でのSidebar-Tools.js利用
+const tools = new window.FutabaSidebarTools.DrawingTools(
+    this.engine, 
+    this.layerManager, 
+    this.transformSystem
+);
+const ui = new window.FutabaSidebarTools.UnifiedUIController(
+    tools, 
+    this.engine, 
+    this.layerManager, 
+    this.transformSystem
+);
+```
+
+## 🚨 重要制約・原則
+
+### ❌ やってはいけないこと
+- **HTML構造の移動**: DOM要素・CSS定義はmain.htmlに残す
+- **依存関係の破綻**: TransformSystemなどのコア機能への直接依存は禁止
+- **二重実装**: 機能の重複実装は避ける
+- **グローバル汚染**: 適切な名前空間を使用
+
+### ⭕ 推奨する手法
+- **インターフェース設計**: clear API boundaries
+- **依存注入**: コンストラクタでの依存性注入
+- **エラー伝播**: main.htmlのエラーハンドラーに統一
+- **デバッグ情報**: console出力の統一
+
+## 🏗️ 具体的分離プロセス
+
+### Step 1: UnifiedUIController分離
+```javascript
+// Sidebar-Tools.js 
+class UnifiedUIController {
+    constructor(drawingTools, drawingEngine, layerManager, transformSystem) {
+        // 既存のコンストラクタをそのまま移行
+    }
+    
+    // 全メソッドをそのまま移行
+}
+```
+
+### Step 2: DrawingTools分離
+```javascript
+// Sidebar-Tools.js
+class DrawingTools {
+    constructor(drawingEngine, layerManager, transformSystem) {
+        // 既存のコンストラクタをそのまま移行
+    }
+    
+    // 全メソッドをそのまま移行
+}
+```
+
+### Step 3: AppController調整
+```javascript
+// main.html - AppControllerの変更点
+class AppController {
+    constructor() {
+        // Transform system等は従来通り
+        this.transformSystem = new TransformSystem();
+        this.engine = new DrawingEngine(this.transformSystem);
+        
+        // Sidebar-Tools.jsから取得
+        this.tools = new window.FutabaSidebarTools.DrawingTools(
+            this.engine, this.layerManager, this.transformSystem
+        );
+        this.ui = new window.FutabaSidebarTools.UnifiedUIController(
+            this.tools, this.engine, this.layerManager, this.transformSystem
+        );
+    }
+}
+```
+
+## 🔍 エラーハンドリング戦略
+
+### 外部JS読み込みエラー対応
+```javascript
+// main.html
+function checkSidebarToolsAvailable() {
+    if (!window.FutabaSidebarTools) {
+        console.error('⚠️ Sidebar-Tools.js not loaded or failed to initialize');
+        throw new Error('Required module Sidebar-Tools.js not available');
+    }
+}
+
+// 使用前にチェック
+try {
+    checkSidebarToolsAvailable();
+    const tools = new window.FutabaSidebarTools.DrawingTools(...);
+} catch (error) {
+    // エラー表示ロジック
+}
+```
+
+### デバッグ支援
+```javascript
+// Sidebar-Tools.js - デバッグ情報
+window.FutabaSidebarTools.DEBUG = {
+    version: '1.0',
+    loadedAt: new Date().toISOString(),
+    classes: ['UnifiedUIController', 'DrawingTools'],
+    getStats: () => ({
+        toolInstances: /* 統計情報 */,
+        activeEvents: /* イベント統計 */
+    })
+};
+```
+
+## 🎨 CSS・HTML構造の扱い
+
+### CSS: main.htmlに残す
+```css
+/* main.html内 - すべてのスタイルを維持 */
+.tool-button { /* 既存スタイル */ }
+.popup-panel { /* 既存スタイル */ }
+/* その他すべてのCSS */
+```
+
+### HTML: main.htmlに残す
+```html
+<!-- main.html内 - すべてのHTML構造を維持 -->
+<div class="sidebar">
+    <div class="tool-button" id="pen-tool">...</div>
+    <!-- その他すべてのHTML要素 -->
+</div>
+```
+
+## 📊 分離効果の測定
+
+### ファイルサイズ削減目標
+- **main.html**: 800行 → 約500行（37%削減）
+- **Sidebar-Tools.js**: 約300行（新規作成）
+
+### AI改修しやすさ向上
+- **ツール関連改修**: Sidebar-Tools.jsのみ変更で完結
+- **コア機能改修**: main.htmlのみ変更で完結
+- **デバッグ効率**: 関心事の分離により問題特定が高速化
+
+## 🚀 実装検証項目
+
+### 必須動作確認
+- [ ] ツールボタンクリックでのツール切り替え
+- [ ] ペンツール設定ポップアップ表示・操作
+- [ ] 消しゴムツール動作
+- [ ] リサイズ機能
+- [ ] スライダー操作
+- [ ] ショートカットキー（P, E）
+- [ ] キャンバス描画機能
+- [ ] レイヤー操作
+- [ ] Transform system（移動・拡縮）
+
+### エラーケース対応
+- [ ] Sidebar-Tools.js読み込み失敗時の適切なエラー表示
+- [ ] 依存関係不具合時のデバッグ情報出力
+- [ ] 古いブラウザでの動作確認
+
+## 🔄 将来のPhase2・Phase3展開
+
+### Phase 2候補: Layer-Panel.js
+```javascript
+// 分離対象：LayerManager関連のUI部分
+- レイヤーパネルUI制御
+- レイヤー追加・削除・表示切替UI
+- レイヤー並び替えUI
+```
+
+### Phase 3候補: Canvas-Transform.js
+```javascript
+// 分離対象：キャンバス操作UI
+- HammerJSPositionManager関連UI
+- 拡大縮小・移動UI
+- 将来の回転・無限キャンバス基盤
+```
+
+---
+**Version**: 2.0  
+**Target**: Phase1 - Sidebar-Tools.js分離  
+**Goal**: main.html 37%削減 + AI改修効率向上  
+**技術**: JavaScript外部化（HTML/CSS構造は維持）
