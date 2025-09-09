@@ -1,206 +1,163 @@
-レイヤーパネルのドラッグ移動が滑らかでない
+❌ 問題になりやすい点
 
-入れ替え判定が渋い（スナップが効かない / ドロップの判定が曖昧）
+Pixi の Container 入れ替えによるレンダリング不整合
 
-サムネイルが真っ黒になる
+container.removeChild() → addChildAt() のような処理で階層移動している場合、RenderTexture にバインドされているサムネイル更新処理が切れることがある。
 
-📌 原因と対策案
-1. レイヤーパネルのドラッグ移動が滑らかでない
+これが「サムネイルが真っ黒になる」原因になりやすい。
 
-原因
+サムネイル生成時に描画が同期していない
 
-mousemove の座標更新で clientY をそのまま計算に使っているため、再描画とのズレが発生。
+renderer.render(layer, renderTexture) でサムネイル更新する際、描画フレームと競合して真っ黒のテクスチャが書き込まれることがある。
 
-CSS transform (translateY) を使わずに DOM 再配置しているため、描画コストが高い。
+描画遅延や「ペンの線がワンテンポ遅れて見える」原因にもなる。
 
-対策
+ドラッグ中の要素の参照を壊している
 
-ドラッグ中は DOM の入れ替えを行わず、transform で見た目だけ動かす。
+Pixi の DisplayObject は「同じ親に属するのは一度だけ」なので、DOM的に差し替え→再構築していると参照が切れてイベントが遅延する。
 
-ドロップ時に初めて実際のノードを再配置する。
+✅ 改善アプローチ
+1. データモデルと表示の分離
 
-requestAnimationFrame を使って mousemove の更新頻度を間引き、GPUレンダリングで滑らかに。
+クリスタや Photoshop 風の「レイヤーパネル」は UI側のリスト並べ替えと、実際のPixi Container階層は別にする 方式が堅牢です。
 
-2. 入れ替え判定が渋い
+つまり：
 
-原因
+内部的には layers[] の配列で Z-order を管理する
 
-現状の getBoundingClientRect() による単純な位置判定だと、細かい境界で「上下どちらに吸着するか」が曖昧になる。
+Pixi Container は必要な時だけ addChildAt(layerContainer, newIndex) で再配置
 
-対策
+レイヤーパネルの UI（HTML側）は drag-and-drop ライブラリ（例えば SortableJS
+）で操作し、並び順が変わったら内部の layers 配列を書き換える。
 
-各レイヤー行の中央を基準にして、ドラッグ中のカーソルが上半分なら「上に挿入」、下半分なら「下に挿入」とする。
+2. サムネイル生成の非同期化
 
-判定を「カーソル位置」ではなく「プレースホルダーの高さ/位置」に基づいて計算する。
+requestAnimationFrame の中でサムネイル更新を行い、描画と競合しないようにする。
 
-dragover イベントで preventDefault() を忘れない。
-
-3. サムネイルが真っ黒になる
-
-原因
-
-DrawingEngine.js の getLayerThumbnail() 相当処理で toDataURL() を呼ぶ際、
-
-レイヤーが透明でも背景が黒で初期化されている
-
-renderer.extract.canvas(layer.container) に alpha が効いていない
-
-または renderTexture の中身を正しく更新していない。
-
-対策
-
-PIXI の renderer.extract.base64(container) では transparent:true を指定して生成。
-
-レイヤー単位でサムネイル化する際は renderer.render(layer.container, {renderTexture, clear:true}) を毎回実行してから toDataURL()。
-
-背景に白や透明パターンを敷いた上で縮小すれば Adobe Fresco や Photoshop のように見える。
-
-🚀 改修の方向性（ルールブック v5 に沿って）
-
-UI/UX面 → transform を用いた非破壊的なドラッグ移動 & スナップ判定改善
-
-描画面 → レイヤー単位で renderTexture を正しく更新してからサムネイル化
-
-パフォーマンス → requestAnimationFrame + GPU transform で滑らかに
+function updateThumbnail(layer, renderTexture, renderer) {
+    requestAnimationFrame(() => {
+        renderer.render(layer, { renderTexture, clear: true });
+    });
+}
 
 
+こうすると「黒塗りサムネイル」問題が大幅に減ります。
 
-✅ 改修ポイントまとめ
+3. 遅延描画対策
 
-レイヤーパネルのドラッグ移動
+Pixi v8 の autoRender を使わず、明示的に renderer.render(stage) を呼ぶ。
 
-mousedown → ドラッグ開始時に draggingElement を clone して position:absolute; pointer-events:none; transform で移動。
+特にペンツールのストローク中は「現在のレイヤーだけに描画」→「フルステージ再描画」に分けた方がレスポンスが良い。
 
-mousemove は requestAnimationFrame 経由で処理し、滑らかにする。
+4. よりAI実装向きな方法
 
-mouseup でプレースホルダー位置に差し替え。
+「レイヤーパネル = DOM要素」＋「Pixi = 実描画」という分離方式。
 
-入れ替え判定
+Pixi の DisplayObject 自体をドラッグ移動対象にせず、HTML側の <ul><li> の順番をドラッグ&ドロップで入れ替え、その結果だけ Pixi Container の zIndex を更新。
 
-各レイヤーの getBoundingClientRect() を取得して中央位置で判定。
+container.sortChildren() が使えるので、Pixi 側は child.zIndex = newIndex を付けるだけで済む。
 
-ドラッグ対象のカーソルが「上半分にある → 上に挿入」「下半分にある → 下に挿入」。
+🔧 実装イメージ
+// レイヤーの管理配列
+let layers = [];
 
-サムネイルが真っ黒問題
+// パネルUIはHTML側のSortableJSでドラッグ入れ替え
+Sortable.create(layerPanel, {
+  onEnd: function(evt) {
+    const moved = layers.splice(evt.oldIndex, 1)[0];
+    layers.splice(evt.newIndex, 0, moved);
 
-DrawingEngine.js 内で getLayerThumbnail(layer) を修正。
-
-renderer.render(layer.container, {renderTexture, clear:true}) を先に実行してから renderer.extract.base64(renderTexture) で取得。
-
-
-📝 main.html 側（レイヤーパネルのドラッグ処理）
-// --- レイヤーパネルドラッグ処理 ---
-let draggingEl = null;
-let placeholder = null;
-let offsetY = 0;
-let rafId = null;
-
-document.addEventListener("mousedown", (e) => {
-    const target = e.target.closest(".layer-item");
-    if (!target) return;
-
-    draggingEl = target.cloneNode(true);
-    draggingEl.classList.add("dragging");
-    draggingEl.style.position = "absolute";
-    draggingEl.style.width = target.offsetWidth + "px";
-    draggingEl.style.pointerEvents = "none";
-    draggingEl.style.zIndex = "1000";
-    document.body.appendChild(draggingEl);
-
-    const rect = target.getBoundingClientRect();
-    offsetY = e.clientY - rect.top;
-
-    placeholder = document.createElement("div");
-    placeholder.classList.add("layer-placeholder");
-    placeholder.style.height = rect.height + "px";
-    target.parentNode.insertBefore(placeholder, target);
-    target.style.display = "none";
-
-    moveAt(e.pageX, e.pageY);
-
-    function moveAt(x, y) {
-        if (rafId) cancelAnimationFrame(rafId);
-        rafId = requestAnimationFrame(() => {
-            draggingEl.style.left = rect.left + "px";
-            draggingEl.style.top = (y - offsetY) + "px";
-        });
-    }
-
-    function onMouseMove(e) {
-        moveAt(e.pageX, e.pageY);
-
-        const layers = [...document.querySelectorAll(".layer-item")].filter(l => l !== target);
-        for (let l of layers) {
-            const r = l.getBoundingClientRect();
-            const midY = r.top + r.height / 2;
-            if (e.clientY < midY) {
-                l.parentNode.insertBefore(placeholder, l);
-                break;
-            } else {
-                l.parentNode.insertBefore(placeholder, l.nextSibling);
-            }
-        }
-    }
-
-    function onMouseUp() {
-        placeholder.parentNode.insertBefore(target, placeholder);
-        target.style.display = "";
-        placeholder.remove();
-        draggingEl.remove();
-        draggingEl = null;
-        document.removeEventListener("mousemove", onMouseMove);
-        document.removeEventListener("mouseup", onMouseUp);
-    }
-
-    document.addEventListener("mousemove", onMouseMove);
-    document.addEventListener("mouseup", onMouseUp);
+    // Pixi上のZ順更新
+    layers.forEach((layer, i) => {
+      layer.zIndex = i;
+    });
+    stage.sortChildren();
+  }
 });
 
-
-CSS 例（視認性用）:
-
-.dragging {
-  opacity: 0.7;
-  background: #eee;
-}
-.layer-placeholder {
-  border: 2px dashed #800000;
-  margin: 4px 0;
+// サムネイル更新
+function refreshThumbnails() {
+  layers.forEach(layer => {
+    updateThumbnail(layer, layer.thumbnailRT, renderer);
+  });
 }
 
-📝 DrawingEngine.js 側（サムネイル修正）
-getLayerThumbnail(layer, width = 64, height = 64) {
-    const renderer = this.app.renderer;
+まとめ
 
-    // レイヤーを専用のRenderTextureに描画
-    const renderTexture = PIXI.RenderTexture.create({
-        width: layer.container.width || this.app.screen.width,
-        height: layer.container.height || this.app.screen.height,
-        resolution: 1,
-    });
+原因: Pixi コンテナの直接入れ替え・描画競合でサムネイルが黒くなり、ストロークが遅延して見える。
 
-    renderer.render(layer.container, { renderTexture, clear: true });
+改善策:
 
-    // 縮小用のSpriteを作成
-    const sprite = new PIXI.Sprite(renderTexture);
-    sprite.width = width;
-    sprite.height = height;
+レイヤーパネル操作は HTML 側で行い、Pixi には「結果だけ」を反映。
 
-    const thumbRT = PIXI.RenderTexture.create({ width, height, resolution: 1 });
-    renderer.render(sprite, { renderTexture: thumbRT, clear: true });
+サムネイルは requestAnimationFrame で非同期更新。
 
-    // Base64に変換 (透明維持)
-    const base64 = renderer.extract.base64(thumbRT, "image/png");
-    renderTexture.destroy(true);
-    thumbRT.destroy(true);
-    return base64;
+Pixi の zIndex＋sortChildren() を使って階層移動。
+
+
+💡 起きていること
+
+レイヤー選択イベント
+
+パネルクリック → 「アクティブレイヤー切り替え処理」が走る
+
+そのタイミングで renderer.render(layer, renderTexture) が走る or thumbnailSprite.texture が差し替えられる
+
+Pixi 内部で一度クリア
+
+clear: true を付けている場合、一度真っさらにしてから描画するので「白or黒背景の▣」が一瞬映る
+
+次のフレームで正しい描画
+
+その後 requestAnimationFrame でステージ全体がレンダリングされるので、結果的に「点滅」に見える
+
+✅ 対策案
+1. サムネイル更新を遅延させる
+
+クリック直後に即更新するのではなく、次のフレームで更新。
+
+function safeUpdateThumbnail(layer, renderTexture, renderer) {
+  requestAnimationFrame(() => {
+    renderer.render(layer, { renderTexture, clear: true });
+  });
 }
 
-🎯 これで期待できる効果
 
-レイヤーパネルをドラッグすると GPU transform で滑らかに追従。
+これで「クリック直後のフラッシュ」が消える可能性が高いです。
 
-ドロップ時にだけ DOM 入れ替え → 軽量化 & スナップ判定が明快。
+2. clear: false で前フレームを保持
 
-サムネイルが 透明背景付きの縮小画像 として正しく表示される。
+サムネイル描画のときに clear: true を外すと、「一瞬クリアされる」挙動が無くなる。
 
+renderer.render(layer, { renderTexture, clear: false });
+
+
+ただしこれだと「古い描画が残る」場合があるので、まず renderTexture を一度専用の透明背景で初期化しておく と安心です。
+
+3. 選択インジケータを Pixi に描かせる
+
+もし「▣ 太枠」っぽいのが Pixi の Graphics で描かれているなら、それが選択中レイヤーのインジケータとして毎回出てる可能性あり。
+この場合は：
+
+選択中のレイヤーに outline を描く処理を削るか
+
+CSS 側のパネルUIで「選択枠」を出すように変更する方が自然
+
+4. ダブルバッファ的に一時テクスチャを使う
+
+tmpRenderTexture を作り → そこにまず描画
+
+それをサムネイルスプライトに貼る
+こうすると「更新途中の黒画面」がユーザーに見えない。
+
+📝 まとめ
+
+原因 → 選択時にサムネイル用 renderTexture が一度クリアされ、描画タイミングがずれて一瞬黒（または枠だけ）になる
+
+対策 →
+
+サムネイル更新を requestAnimationFrame で遅延
+
+clear: false を使う（初期化は別途行う）
+
+選択枠の描画は Pixi ではなく HTML 側のUIに任せる

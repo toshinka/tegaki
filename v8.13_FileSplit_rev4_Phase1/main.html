@@ -290,6 +290,7 @@
             height: 100%;
             object-fit: cover;
             border-radius: 3px;
+            transition: opacity 0.2s ease-in-out; /* 点滅防止用フェード効果 */
         }
         
         .layer-thumbnail-placeholder {
@@ -298,6 +299,7 @@
             background: var(--futaba-light-medium);
             border-radius: 2px;
             opacity: 0.5;
+            transition: opacity 0.2s ease-in-out; /* プレースホルダーフェード */
         }
         
         .layer-delete-button {
@@ -1243,6 +1245,7 @@
                     const deleteIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>';
 
                     layerItem.innerHTML = `
+                        <div class="layer-drag-handle"></div>
                         <div class="layer-visibility ${layer.visible ? '' : 'hidden'}" data-action="toggle-visibility">
                             ${eyeIcon}
                         </div>
@@ -1256,7 +1259,13 @@
                         </div>
                     `;
 
+                    // イベント処理改良版
                     layerItem.addEventListener('click', (e) => {
+                        // ドラッグハンドル領域のクリックは無視
+                        if (e.target.closest('.layer-drag-handle')) {
+                            return;
+                        }
+                        
                         const action = e.target.closest('[data-action]')?.dataset.action;
                         if (action === 'toggle-visibility') {
                             window.DrawingEngineAPI?.toggleLayerVisibility(layer.id);
@@ -1264,7 +1273,8 @@
                         } else if (action === 'delete-layer') {
                             window.DrawingEngineAPI?.deleteLayer(layer.id);
                             e.stopPropagation();
-                        } else {
+                        } else if (!e.target.closest('.layer-thumbnail, .layer-delete-button')) {
+                            // サムネイル・削除ボタン以外のクリックでレイヤー選択
                             window.DrawingEngineAPI?.setActiveLayer(layer.id);
                         }
                     });
