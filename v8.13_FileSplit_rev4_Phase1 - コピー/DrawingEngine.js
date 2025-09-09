@@ -1,19 +1,19 @@
 /**
- * DrawingEngine.js - Core Drawing Engine (修正版)
- * Phase A: サムネイル生成修正 + Phase C: リニア描画実装
+ * DrawingEngine.js - Core Drawing Engine (Phase2対応版)
+ * Phase2: レイヤー順序変更API実装 + ペンドラッグ対応
  * 
- * 修正内容:
- * - レイヤー個別サムネイル生成
- * - リアルタイムペン描画
- * - スロットリング付きサムネイル更新
- * - パフォーマンス最適化
+ * 実装内容:
+ * - reorderLayer APIの完全実装
+ * - PixiJS zIndex + sortChildren による描画順序制御
+ * - レイヤー配列とPixiJS表示の完全同期
+ * - サムネイル生成の最適化とリニア描画保持
  */
 (function() {
     'use strict';
     
     // === ENGINE CONFIGURATION ===
     const ENGINE_CONFIG = {
-        version: '8.0-Phase1-Fixed-v2',
+        version: '8.0-Phase2-LayerReorder',
         canvas: { width: 400, height: 400 },
         rendering: { antialias: true, resolution: 1 },
         debug: false,
@@ -21,8 +21,8 @@
         transform: { minScale: 0.1, maxScale: 5.0, initialScale: 1.0 },
         thumbnail: { 
             size: 48, 
-            updateThrottle: 100, // 100ms間隔でサムネイル更新
-            pointDensity: 1.5 // パス点の間隔
+            updateThrottle: 100,
+            pointDensity: 1.5
         }
     };
     
@@ -382,7 +382,9 @@
                 activeLayerId: this.layers.layers.activeId,
                 changedLayers: changedLayerId ? 
                     this.serializeLayer(changedLayerId) : 
-                    this.serializeActiveLayers()
+                    this.serializeActiveLayers(),
+                // Phase2追加: レイヤー順序の保存
+                layerOrder: this.layers.layers.items.map(l => ({ id: l.id, zIndex: l.container.zIndex }))
             };
 
             this.history = this.history.slice(0, this.currentIndex + 1);
@@ -464,6 +466,12 @@
             try {
                 this.transform.restoreTransformState(snapshot.transformState);
                 this.restoreLayersFromSnapshot(snapshot.changedLayers);
+                
+                // Phase2追加: レイヤー順序の復元
+                if (snapshot.layerOrder) {
+                    this.restoreLayerOrder(snapshot.layerOrder);
+                }
+                
                 this.layers.setActiveLayer(snapshot.activeLayerId);
             } finally {
                 this.isPerformingOperation = false;
@@ -488,6 +496,21 @@
 
             if (window.UICallbacks?.onLayerListUpdated) {
                 window.UICallbacks.onLayerListUpdated(this.layers.getLayerList());
+            }
+        }
+
+        // Phase2追加: レイヤー順序復元機能
+        restoreLayerOrder(layerOrder) {
+            layerOrder.forEach(orderData => {
+                const layer = this.layers.layers.items.find(l => l.id === orderData.id);
+                if (layer) {
+                    layer.container.zIndex = orderData.zIndex;
+                }
+            });
+            
+            // PixiJS描画順序更新
+            if (this.layers.engine?.containers?.world) {
+                this.layers.engine.containers.world.sortChildren();
             }
         }
 
@@ -542,7 +565,7 @@
         }
     }
 
-    // === LAYER MANAGER ===
+    // === LAYER MANAGER - Phase2拡張 ===
     class LayerManager {
         constructor(drawingEngine, transformSystem) {
             this.engine = drawingEngine;
@@ -574,6 +597,9 @@
             layer.container.addChild(backgroundGraphics);
             layer.backgroundGraphics = backgroundGraphics;
 
+            // Phase2: 背景レイヤーのzIndex設定
+            layer.container.zIndex = 0;
+
             this.layers.items.push(layer);
             this.engine.containers.world.addChild(layer.container);
             this.layers.activeId = layer.id;
@@ -588,8 +614,14 @@
                 false
             );
 
+            // Phase2: 新レイヤーのzIndex設定（最上位に配置）
+            layer.container.zIndex = this.layers.items.length;
+
             this.layers.items.push(layer);
             this.engine.containers.world.addChild(layer.container);
+            
+            // Phase2: 描画順序更新
+            this.engine.containers.world.sortChildren();
             
             if (this.historyManager) {
                 setTimeout(() => {
@@ -633,6 +665,9 @@
 
             utils.remove(this.layers.items, l => l.id === layerId);
 
+            // Phase2: 削除後のzIndex再計算
+            this._updateAllZIndices();
+
             if (this.layers.activeId === layerId) {
                 const lastLayer = utils.last(this.layers.items);
                 this.layers.activeId = lastLayer ? lastLayer.id : null;
@@ -647,6 +682,62 @@
             this._notifyLayerDeleted(layerId);
             this._notifyActiveLayerChanged();
             return true;
+        }
+
+        /**
+         * Phase2: レイヤー順序変更の核心機能
+         * UI側の配列操作とPixiJS描画順序を完全同期
+         */
+        reorderLayer(layerId, fromIndex, toIndex) {
+            if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return false;
+            if (fromIndex >= this.layers.items.length || toIndex >= this.layers.items.length) return false;
+            
+            log('🔄 Layer reorder request:', { layerId, fromIndex, toIndex });
+
+            // 配列操作: レイヤーを移動
+            const layer = this.layers.items[fromIndex];
+            if (!layer || layer.id !== layerId) {
+                console.error('[LayerManager] Layer ID mismatch in reorder operation');
+                return false;
+            }
+
+            // 配列から削除して新位置に挿入
+            this.layers.items.splice(fromIndex, 1);
+            this.layers.items.splice(toIndex, 0, layer);
+
+            // Phase2: PixiJS zIndex更新（重要: 配列インデックスと同期）
+            this._updateAllZIndices();
+
+            // 描画順序をPixiJSに反映
+            this.engine.containers.world.sortChildren();
+
+            // レイヤーリスト更新通知
+            this._notifyLayerListUpdated();
+
+            // 履歴スナップショット作成
+            if (this.historyManager) {
+                setTimeout(() => {
+                    this.historyManager.createSnapshot(`レイヤー「${layer.name}」順序変更`, layer.id);
+                }, 100);
+            }
+
+            log('✅ Layer reorder completed:', { 
+                layerId, 
+                newOrder: this.layers.items.map(l => ({ id: l.id, zIndex: l.container.zIndex }))
+            });
+
+            return true;
+        }
+
+        /**
+         * Phase2: 全レイヤーのzIndex更新
+         * 配列インデックスをそのままzIndexに設定してPixiJS描画順序制御
+         */
+        _updateAllZIndices() {
+            this.layers.items.forEach((layer, index) => {
+                layer.container.zIndex = index;
+            });
+            log('📊 ZIndex updated:', this.layers.items.map(l => `${l.name}:${l.container.zIndex}`));
         }
 
         setActiveLayer(layerId) {
@@ -740,6 +831,13 @@
         _notifyLayerVisibilityChanged(layerId, visible) {
             if (window.UICallbacks?.onLayerVisibilityChanged) {
                 window.UICallbacks.onLayerVisibilityChanged(layerId, visible);
+            }
+        }
+
+        // Phase2追加: レイヤーリスト更新通知
+        _notifyLayerListUpdated() {
+            if (window.UICallbacks?.onLayerListUpdated) {
+                window.UICallbacks.onLayerListUpdated(this.getLayerList());
             }
         }
     }
@@ -931,6 +1029,9 @@
             this.containers.world = new PIXI.Container();
             this.containers.ui = new PIXI.Container();
 
+            // Phase2: world containerにソート機能を設定
+            this.containers.world.sortableChildren = true;
+
             const maskGraphics = new PIXI.Graphics();
             maskGraphics.rect(0, 0, ENGINE_CONFIG.canvas.width, ENGINE_CONFIG.canvas.height);
             maskGraphics.fill(0x000000);
@@ -1106,7 +1207,7 @@
     // === ENGINE INSTANCE ===
     let engineInstance = null;
 
-    // === API IMPLEMENTATION ===
+    // === API IMPLEMENTATION - Phase2拡張 ===
     window.DrawingEngineAPI = {
         _spacePressed: false,
 
@@ -1152,7 +1253,7 @@
                     systemMonitor
                 };
 
-                log('🎨 DrawingEngine initialized (Fixed-v2)');
+                log('🎨 DrawingEngine initialized (Phase2-LayerReorder)');
                 return true;
 
             } catch (error) {
@@ -1280,6 +1381,23 @@
             } catch (error) {
                 console.error('[DrawingEngine] GetLayerList failed:', error.message);
                 return [];
+            }
+        },
+
+        // === Phase2: レイヤー順序変更API ===
+        reorderLayer: (layerId, fromIndex, toIndex) => {
+            if (!engineInstance) return false;
+            try {
+                const success = engineInstance.layerManager.reorderLayer(layerId, fromIndex, toIndex);
+                
+                if (success && window.UICallbacks?.onLayerListUpdated) {
+                    window.UICallbacks.onLayerListUpdated(engineInstance.layerManager.getLayerList());
+                }
+                
+                return success;
+            } catch (error) {
+                console.error('[DrawingEngine] ReorderLayer failed:', error.message);
+                return false;
             }
         },
 
@@ -1411,10 +1529,28 @@
                 const result = engineInstance?.drawingEngine.thumbnailManager.generateLayerThumbnail(layerId);
                 console.log('Result:', result ? 'SUCCESS' : 'FAILED');
                 return result;
+            },
+            // Phase2追加: レイヤー順序デバッグ
+            debugLayerOrder: () => {
+                console.log('=== LAYER ORDER DEBUG ===');
+                const layers = engineInstance?.layerManager.layers.items || [];
+                layers.forEach((layer, index) => {
+                    console.log(`[${index}] ${layer.name} (ID: ${layer.id}, zIndex: ${layer.container.zIndex})`);
+                });
+                return layers.map(l => ({ name: l.name, id: l.id, zIndex: l.container.zIndex }));
+            },
+            forceReorderTest: (fromIndex, toIndex) => {
+                const layers = engineInstance?.layerManager.layers.items || [];
+                if (layers[fromIndex]) {
+                    const layerId = layers[fromIndex].id;
+                    console.log(`Testing reorder: Layer ${layerId} from ${fromIndex} to ${toIndex}`);
+                    return engineInstance?.layerManager.reorderLayer(layerId, fromIndex, toIndex);
+                }
+                return false;
             }
         };
     }
 
-    log('🎨 DrawingEngine.js loaded (Fixed-v2 - リニア描画&サムネイル修正)');
+    log('🎨 DrawingEngine.js loaded (Phase2 - レイヤー順序変更API実装完了)');
 
 })();
