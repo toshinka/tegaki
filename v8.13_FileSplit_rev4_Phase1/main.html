@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1 - レイヤードラッグ移動実装版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1 - SortableJS対応版</title>
     <style>
         * {
             margin: 0;
@@ -175,7 +175,6 @@
             pointer-events: all;
             max-height: 60vh;
             overflow-y: auto;
-            position: relative;
         }
         
         .layer-item {
@@ -208,24 +207,15 @@
             box-shadow: 0 2px 4px rgba(128, 0, 0, 0.15);
         }
         
-        /* ドラッグ中の視覚効果 */
-        .layer-item.dragging {
-            opacity: 0.8;
-            transform: rotate(2deg) scale(1.05);
-            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.3);
-            z-index: 1000;
-            pointer-events: none;
+        /* SortableJS フィードバック - Phase1追加 */
+        .sortable-ghost {
+            opacity: 0.6;
+            background: rgba(100, 150, 255, 0.1);
+            border: 1px dashed #6496ff;
         }
         
-        /* ドラッグプレースホルダー */
-        .layer-drag-placeholder {
-            height: 64px;
-            margin: 4px 0;
-            border: 2px dashed var(--futaba-maroon);
-            border-radius: 6px;
-            background: var(--futaba-background);
-            opacity: 0.7;
-            transition: all 0.2s ease;
+        .sortable-chosen {
+            background: rgba(100, 150, 255, 0.05);
         }
         
         .layer-visibility {
@@ -277,11 +267,6 @@
             text-overflow: ellipsis;
             align-self: end;
             margin-bottom: 2px;
-            cursor: grab;
-        }
-        
-        .layer-item.dragging .layer-name {
-            cursor: grabbing;
         }
         
         .layer-thumbnail {
@@ -616,6 +601,8 @@
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+    <!-- Phase1追加: SortableJS -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     
     <!-- Core Drawing Engine -->
     <script src="DrawingEngine.js"></script>
@@ -623,13 +610,12 @@
     <script>
         /**
          * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1
-         * UI Controller - レイヤードラッグ移動実装版
+         * UI Controller - SortableJS対応版
          * 
-         * 新規実装内容:
-         * - LayerDragManagerクラス追加（GPUアクセラレーション活用）
-         * - requestAnimationFrame最適化
-         * - 中央位置判定によるスナップ改善
-         * - 描画イベント干渉回避
+         * Phase1実装内容:
+         * - SortableJS による直感的レイヤードラッグ移動
+         * - PixiJS描画順序との完全連動
+         * - 既存機能の完全保持
          */
         
         // === UTILITIES ===
@@ -726,233 +712,6 @@
                 }
             }
         };
-
-        // === LAYER DRAG MANAGER ===
-        class LayerDragManager {
-            constructor(ui) {
-                this.ui = ui;
-                this.dragState = {
-                    isDragging: false,
-                    draggedLayerId: null,
-                    dragElement: null,
-                    placeholder: null,
-                    startY: 0,
-                    offsetY: 0,
-                    rafId: null
-                };
-            }
-
-            initialize() {
-                const layerList = document.getElementById('layer-list');
-                if (layerList) {
-                    this.setupDragContainer(layerList);
-                }
-            }
-
-            setupDragContainer(container) {
-                // MutationObserverでレイヤー追加を監視
-                const observer = new MutationObserver((mutations) => {
-                    mutations.forEach(mutation => {
-                        mutation.addedNodes.forEach(node => {
-                            if (node.nodeType === Node.ELEMENT_NODE && 
-                                node.classList.contains('layer-item')) {
-                                this.makeDraggable(node);
-                            }
-                        });
-                    });
-                });
-
-                observer.observe(container, { 
-                    childList: true, 
-                    subtree: true 
-                });
-            }
-
-            makeDraggable(layerItem) {
-                const layerId = layerItem.dataset.layerId;
-                if (!layerId) return;
-
-                // レイヤー名部分にドラッグイベントを設定
-                const layerName = layerItem.querySelector('.layer-name');
-                if (layerName) {
-                    layerName.addEventListener('mousedown', (e) => this.onDragStart(e, layerItem));
-                }
-            }
-
-            onDragStart(e, layerItem) {
-                // ボタン操作の場合はドラッグしない
-                if (e.target.closest('[data-action]')) return;
-                
-                // 右クリックは無視
-                if (e.button !== 0) return;
-
-                this.dragState.isDragging = true;
-                this.dragState.draggedLayerId = layerItem.dataset.layerId;
-                this.dragState.dragElement = layerItem;
-                
-                const rect = layerItem.getBoundingClientRect();
-                this.dragState.startY = e.clientY;
-                this.dragState.offsetY = e.clientY - rect.top;
-                
-                // ドラッグ中の視覚効果
-                layerItem.classList.add('dragging');
-                
-                // プレースホルダー作成
-                this.createPlaceholder(layerItem);
-                
-                // グローバルイベント追加
-                document.addEventListener('mousemove', this.onDragMove);
-                document.addEventListener('mouseup', this.onDragEnd);
-                
-                e.preventDefault();
-                e.stopPropagation();
-            }
-
-            onDragMove = (e) => {
-                if (!this.dragState.isDragging || !this.dragState.dragElement) return;
-
-                // requestAnimationFrame で最適化
-                if (this.dragState.rafId) {
-                    cancelAnimationFrame(this.dragState.rafId);
-                }
-
-                this.dragState.rafId = requestAnimationFrame(() => {
-                    const deltaY = e.clientY - this.dragState.startY;
-                    
-                    // GPU transform を使用した滑らかな移動
-                    this.dragState.dragElement.style.transform = `translateY(${deltaY}px) rotate(2deg) scale(1.05)`;
-                    
-                    // ドロップ位置更新
-                    this.updateDropPosition(e.clientY);
-                });
-            }
-
-            onDragEnd = (e) => {
-                if (!this.dragState.isDragging) return;
-
-                // ドロップ実行
-                this.performDrop();
-                
-                // 状態リセット
-                this.resetDragState();
-                
-                // イベントリスナー削除
-                document.removeEventListener('mousemove', this.onDragMove);
-                document.removeEventListener('mouseup', this.onDragEnd);
-            }
-
-            createPlaceholder(draggedElement) {
-                const placeholder = document.createElement('div');
-                placeholder.className = 'layer-drag-placeholder';
-                
-                // ドラッグ要素の後に挿入
-                draggedElement.parentNode.insertBefore(placeholder, draggedElement.nextSibling);
-                this.dragState.placeholder = placeholder;
-            }
-
-            updateDropPosition(mouseY) {
-                if (!this.dragState.placeholder || !this.dragState.dragElement) return;
-
-                const layerList = document.getElementById('layer-list');
-                if (!layerList) return;
-
-                const layerItems = Array.from(layerList.querySelectorAll('.layer-item:not(.dragging)'));
-                let insertTarget = null;
-
-                // 中央位置判定でスナップ改善
-                layerItems.forEach(item => {
-                    const rect = item.getBoundingClientRect();
-                    const itemCenterY = rect.top + rect.height / 2;
-                    
-                    if (mouseY < itemCenterY) {
-                        if (!insertTarget) {
-                            insertTarget = item;
-                        }
-                    }
-                });
-
-                // プレースホルダー移動
-                if (insertTarget) {
-                    layerList.insertBefore(this.dragState.placeholder, insertTarget);
-                } else {
-                    // 最後に配置
-                    layerList.appendChild(this.dragState.placeholder);
-                }
-            }
-
-            performDrop() {
-                if (!this.dragState.placeholder || !this.dragState.dragElement) return;
-
-                const layerList = document.getElementById('layer-list');
-                if (!layerList) return;
-
-                // プレースホルダーの位置に要素を移動
-                layerList.insertBefore(this.dragState.dragElement, this.dragState.placeholder);
-                
-                // レイヤー順序をバックエンドに反映
-                this.updateLayerOrder();
-                
-                // スナップショット作成
-                setTimeout(() => {
-                    window.DrawingEngineAPI?.createSnapshot('レイヤー順序変更');
-                }, 100);
-            }
-
-            updateLayerOrder() {
-                const layerList = document.getElementById('layer-list');
-                if (!layerList) return;
-
-                const layerItems = Array.from(layerList.querySelectorAll('.layer-item'));
-                const layers = window.DrawingEngineAPI?.getLayerList() || [];
-                
-                // UI順序（上から下）を PixiJS z-index（下から上）に変換
-                layerItems.forEach((item, index) => {
-                    const layerId = parseInt(item.dataset.layerId);
-                    const layer = layers.find(l => l.id === layerId);
-                    
-                    if (layer && window.engineInstance?.layerManager) {
-                        const layerObj = window.engineInstance.layerManager.layers.items.find(l => l.id === layerId);
-                        if (layerObj && layerObj.container) {
-                            // UI の逆順で z-index を設定
-                            layerObj.container.zIndex = layerItems.length - index;
-                            
-                            // PixiJS v8 の sortableChildren を使用
-                            const worldContainer = window.engineInstance.drawingEngine.containers.world;
-                            if (worldContainer) {
-                                worldContainer.sortableChildren = true;
-                                worldContainer.sortChildren();
-                            }
-                        }
-                    }
-                });
-            }
-
-            resetDragState() {
-                if (this.dragState.rafId) {
-                    cancelAnimationFrame(this.dragState.rafId);
-                    this.dragState.rafId = null;
-                }
-
-                if (this.dragState.dragElement) {
-                    this.dragState.dragElement.classList.remove('dragging');
-                    this.dragState.dragElement.style.transform = '';
-                }
-
-                if (this.dragState.placeholder) {
-                    this.dragState.placeholder.remove();
-                }
-
-                this.dragState = {
-                    isDragging: false,
-                    draggedLayerId: null,
-                    dragElement: null,
-                    placeholder: null,
-                    startY: 0,
-                    offsetY: 0,
-                    rafId: null
-                };
-            }
-        }
 
         // === HAMMER.JS POSITION MANAGER ===
         class HammerJSPositionManager {
@@ -1214,7 +973,7 @@
                 this.activePopup = null;
                 this.sliders = new Map();
                 this.dragState = { active: false, offset: { x: 0, y: 0 } };
-                this.layerDragManager = null;
+                this.sortable = null; // Phase1追加: SortableJS インスタンス
             }
 
             initialize() {
@@ -1222,10 +981,6 @@
                 this.setupSliders();
                 this.setupResize();
                 this.updateCanvasInfo();
-                
-                // レイヤードラッグ機能初期化
-                this.layerDragManager = new LayerDragManager(this);
-                this.layerDragManager.initialize();
             }
 
             setupEventDelegation() {
@@ -1442,6 +1197,31 @@
                 }
             }
 
+            // Phase1 - SortableJS機能追加
+            initializeLayerSortable() {
+                const layerList = document.getElementById('layer-list');
+                if (!layerList || !window.Sortable) return;
+                
+                // 既存のSortableインスタンスがあれば破棄
+                if (this.sortable) {
+                    this.sortable.destroy();
+                    this.sortable = null;
+                }
+                
+                this.sortable = window.Sortable.create(layerList, {
+                    handle: '.layer-item',
+                    ghostClass: 'sortable-ghost',
+                    chosenClass: 'sortable-chosen',
+                    animation: 150,
+                    onEnd: (evt) => {
+                        if (evt.oldIndex !== evt.newIndex) {
+                            const layerId = parseInt(evt.item.dataset.layerId);
+                            window.DrawingEngineAPI?.reorderLayer(layerId, evt.oldIndex, evt.newIndex);
+                        }
+                    }
+                });
+            }
+
             updateLayerUI() {
                 const layerList = document.getElementById('layer-list');
                 if (!layerList) return;
@@ -1490,12 +1270,10 @@
                     });
 
                     layerList.appendChild(layerItem);
-                    
-                    // ドラッグ機能を追加
-                    if (this.layerDragManager) {
-                        this.layerDragManager.makeDraggable(layerItem);
-                    }
                 });
+
+                // Phase1: レイヤーUI更新後にSortable初期化
+                this.initializeLayerSortable();
 
                 // DrawingEngineにサムネイル生成をリクエスト
                 setTimeout(() => {
@@ -1522,6 +1300,13 @@
                 });
                 this.activePopup = null;
             }
+
+            destroy() {
+                if (this.sortable) {
+                    this.sortable.destroy();
+                    this.sortable = null;
+                }
+            }
         }
 
         // === APP CONTROLLER ===
@@ -1538,6 +1323,7 @@
                     pixi: window.PIXI,
                     gsap: window.gsap,
                     Hammer: window.Hammer,
+                    Sortable: window.Sortable, // Phase1追加
                     drawingEngine: window.DrawingEngineAPI
                 };
 
@@ -1575,6 +1361,9 @@
                     if (this.positionManager && this.positionManager.destroy) {
                         this.positionManager.destroy();
                     }
+                    if (this.ui && this.ui.destroy) {
+                        this.ui.destroy();
+                    }
                     window.DrawingEngineAPI?.destroy();
                 });
             }
@@ -1586,7 +1375,7 @@
                 window.futabaApp = new AppController();
                 await window.futabaApp.initialize();
 
-                console.log('🎨 Futaba Drawing Tool v8-Phase1 - レイヤードラッグ移動実装版完了!');
+                console.log('🎨 Futaba Drawing Tool v8-Phase1 - SortableJS対応版完了!');
 
             } catch (error) {
                 console.error('💥 Application startup failed:', error);
