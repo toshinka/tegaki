@@ -51,6 +51,8 @@
 
 **実装容量**: 既存の30%以内（約200行追加）
 
+(同率🥇のキャンバス外描画対応 に関しては後述）
+
 ### 🥈 次点候補（分割前は避ける）
 - **レイヤー移動・変形**: 座標系統合が必要→分割後が効率的
 - **範囲選択**: 他機能との連携複雑→分割後の独立モジュール化推奨
@@ -368,6 +370,7 @@ PixiJS v8活用度 (1-5点, 高いほど良い)
 
            機能                  実装コスト  見通し  分割恩恵  PixiJS活用  総合点  評価
 レイヤー階層のドラッグ移動           2         4        5          3         14      A
+キャンバス外描画対応                 3         4        3          4         14      A  ← 新規追加
 レイヤーの左右フリック削除           2         4        4          2         12      A
 レイヤー移動・反転・回転・拡縮       4         3        5          5         13      A
 レイヤーパネルのサムネイル実装       3         3        4          4         11      B
@@ -383,6 +386,7 @@ PixiJS v8活用度 (1-5点, 高いほど良い)
 現在のレイヤーパネルに直接統合可能
 PixiJS v8のContainer.zIndex最適化を活用
 分割時に独立モジュール化の恩恵大
+
 
 /**
  * レイヤー階層ドラッグ移動システム - PixiJS v8.13対応
@@ -728,6 +732,203 @@ initialize() {
     
     // 既存のコード...
 }
+
+
+🏆1位（同点）: キャンバス外描画対応(14点)
+
+理由: 
+
+クリスタ風の直感的描画体験、PixiJS v8のhitArea・eventMode最適化活用、独立性高い
+
+🎨 キャンバス外描画対応 - 実装コード
+
+/**
+ * キャンバス外描画システム - PixiJS v8.13対応
+ * DrawingEngine.jsのDrawingEngineクラスに追加するコード
+ */
+
+class DrawingEngine {
+    constructor(transformSystem) {
+        // 既存のコンストラクタ...
+        this.extendedDrawingArea = null;
+    }
+
+    setupInteraction() {
+        // === 既存のキャンバス内描画 ===
+        this.containers.camera.eventMode = "static";
+        this.containers.camera.hitArea = new PIXI.Rectangle(0, 0, ENGINE_CONFIG.canvas.width, ENGINE_CONFIG.canvas.height);
+        
+        // === キャンバス外描画エリア拡張 ===
+        this.setupExtendedDrawingArea();
+
+        // イベントリスナー設定
+        this.containers.camera.on('pointerdown', (e) => this.onPointerDown(e));
+        this.containers.camera.on('pointermove', (e) => this.onPointerMove(e));
+        this.containers.camera.on('pointerup', (e) => this.onPointerUp(e));
+        this.containers.camera.on('pointerupoutside', (e) => this.onPointerUp(e));
+        this.containers.camera.on('pointercancel', (e) => this.onPointerUp(e));
+
+        // 拡張エリア用イベント
+        this.extendedDrawingArea.on('pointerdown', (e) => this.onExtendedPointerDown(e));
+        this.extendedDrawingArea.on('pointermove', (e) => this.onExtendedPointerMove(e));
+        this.extendedDrawingArea.on('pointerup', (e) => this.onPointerUp(e));
+        this.extendedDrawingArea.on('pointerupoutside', (e) => this.onPointerUp(e));
+    }
+
+    setupExtendedDrawingArea() {
+        // キャンバス外描画用の拡張エリア作成
+        this.extendedDrawingArea = new PIXI.Container();
+        this.extendedDrawingArea.eventMode = "static";
+        
+        // キャンバスの2倍のサイズで拡張エリアを設定
+        const extendedWidth = ENGINE_CONFIG.canvas.width * 2;
+        const extendedHeight = ENGINE_CONFIG.canvas.height * 2;
+        const offsetX = -ENGINE_CONFIG.canvas.width / 2;
+        const offsetY = -ENGINE_CONFIG.canvas.height / 2;
+        
+        this.extendedDrawingArea.hitArea = new PIXI.Rectangle(
+            offsetX, offsetY, extendedWidth, extendedHeight
+        );
+
+        // 拡張エリアをカメラの下に配置（キャンバスより背面）
+        this.app.stage.addChildAt(this.extendedDrawingArea, 0);
+    }
+
+    onExtendedPointerDown(event) {
+        const spacePressed = window.DrawingEngineAPI._spacePressed;
+        const originalEvent = event.data.originalEvent;
+
+        if (spacePressed) {
+            event.stopPropagation();
+            return;
+        }
+
+        if (originalEvent.pointerType === 'pen' && originalEvent.pressure === 0) {
+            return;
+        }
+
+        // キャンバス外でも描画開始
+        const worldPos = this.globalToCanvasCoordinates(event.global);
+        this.tools.startDrawing(worldPos.x, worldPos.y, spacePressed);
+    }
+
+    onExtendedPointerMove(event) {
+        const spacePressed = window.DrawingEngineAPI._spacePressed;
+        const originalEvent = event.data.originalEvent;
+
+        if (spacePressed) {
+            this._notifyCoordinatesUpdated(event.global.x, event.global.y);
+            return;
+        }
+
+        if (originalEvent.pointerType === 'pen' && originalEvent.pressure === 0) {
+            return;
+        }
+
+        // キャンバス外でも継続描画
+        const worldPos = this.globalToCanvasCoordinates(event.global);
+        this.tools.continueDrawing(worldPos.x, worldPos.y, spacePressed);
+        this._notifyCoordinatesUpdated(worldPos.x, worldPos.y);
+    }
+
+    /**
+     * グローバル座標をキャンバス座標に変換
+     * キャンバス外の点もキャンバス内の座標として扱う
+     */
+    globalToCanvasCoordinates(globalPoint) {
+        const canvasContainer = document.getElementById('canvas-container');
+        if (!canvasContainer) return { x: 0, y: 0 };
+
+        const containerRect = canvasContainer.getBoundingClientRect();
+        const viewport = this.transform.viewportTransform;
+
+        // コンテナ相対座標を計算
+        const containerX = globalPoint.x - containerRect.left;
+        const containerY = globalPoint.y - containerRect.top;
+
+        // ビューポート変換を適用してキャンバス座標に変換
+        const canvasX = (containerX - containerRect.width / 2) / viewport.scale;
+        const canvasY = (containerY - containerRect.height / 2) / viewport.scale;
+
+        // キャンバス範囲外でもクランプせずにそのまま返す
+        return {
+            x: canvasX,
+            y: canvasY
+        };
+    }
+
+    /**
+     * キャンバス座標がキャンバス内かどうかを判定
+     */
+    isPointInCanvas(x, y) {
+        return (
+            x >= 0 && x <= ENGINE_CONFIG.canvas.width &&
+            y >= 0 && y <= ENGINE_CONFIG.canvas.height
+        );
+    }
+
+    /**
+     * パス拡張時にキャンバス内の部分のみを描画
+     */
+    extendPath(path, x, y) {
+        if (!path || path.points.length === 0) return;
+
+        const lastPoint = utils.last(path.points);
+        const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
+
+        if (distance < ENGINE_CONFIG.thumbnail.pointDensity) return;
+
+        // キャンバス外の点も記録するが、描画は制限
+        const steps = Math.max(1, Math.ceil(distance / ENGINE_CONFIG.thumbnail.pointDensity));
+        
+        for (let i = 1; i <= steps; i++) {
+            const t = i / steps;
+            const px = lastPoint.x + (x - lastPoint.x) * t;
+            const py = lastPoint.y + (y - lastPoint.y) * t;
+
+            // 座標を記録（キャンバス外でも）
+            path.points.push({ x: px, y: py, size: path.size });
+
+            // キャンバス内の場合のみ描画
+            if (this.isPointInCanvas(px, py)) {
+                path.graphics.circle(px, py, path.size / 2);
+                path.graphics.fill({ color: path.color, alpha: path.opacity });
+            }
+        }
+    }
+}
+
+---
+
+🎯 実装効果・技術評価
+メリット:
+
+直感的操作: クリスタ風のキャンバス外描画でユーザビリティ向上
+PixiJS v8最適化: hitArea・eventModeの効率的活用
+独立性: 既存描画システムとの干渉最小限
+将来拡張: 無限キャンバス実装の基盤
+
+技術的特長:
+
+グローバル座標からキャンバス座標への正確な変換
+キャンバス外の点も記録し、表示範囲のみ描画制限
+PixiJS v8のコンテナ階層を活用した効率的イベント処理
+
+分割時の恩恵:
+
+Canvas-Transform.jsモジュールとして独立可能
+座標変換ロジックの集約化
+無限キャンバス機能への自然な発展
+
+📊 最終推奨
+同点1位の2機能を両方実装することを推奨:
+
+レイヤー階層のドラッグ移動 - レイヤー操作の基盤
+キャンバス外描画対応 - 描画体験の向上
+
+両機能とも独立性が高く、分割時の恩恵も大きいため、分割前の実装に最適です
+
+---
 
 2位: レイヤー移動・反転・回転・拡縮 (13点)
 理由:
