@@ -6,7 +6,7 @@
 ## 📋 失敗原因分析（根本問題の特定）
 
 ### ❌ Problem 1: 設計思想違反
-**失敗内容**: ThreeSatellitePlan の「衛星は機能提供のみ、状態保持禁止、直接通信禁止」に違反
+**失敗内容**: SatellitePlan の「衛星は機能提供のみ、状態保持禁止、直接通信禁止」に違反
 **具体的違反**:
 ```javascript
 // ❌ 違反例: main.htmlに巨大なLayerDragManagerクラスを追加
@@ -39,7 +39,7 @@ MainController.emit('layer-reorder-request', { layerId, targetIndex });
 
 ---
 
-## 🎯 正しい設計アプローチ（ThreeSatellitePlan準拠）
+## 🎯 正しい設計アプローチ（SatellitePlan準拠）
 
 ### 🌟 基本原則の再確認
 1. **MainController**: イベント仲介・状態管理・履歴記録のみ
@@ -418,4 +418,4 @@ MainController.on('layer-order-changed', (payload) => {
 
 ---
 
-**🌟 この計画により、ThreeSatellitePlan設計思想に完全準拠した、安全で拡張可能なレイヤードラッグ移動機能を実現します。**
+**🌟 この計画により、SatellitePlan設計思想に完全準拠した、安全で拡張可能なレイヤードラッグ移動機能を実現します。**

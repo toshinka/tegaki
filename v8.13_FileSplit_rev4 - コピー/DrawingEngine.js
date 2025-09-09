@@ -1,7 +1,7 @@
 /**
  * DrawingEngine.js - Core Drawing Engine
  * PixiJS描画・座標変換・履歴管理・サムネイル一元化
- * レイヤードラッグ移動対応版: レイヤー順序変更機能追加
+ * 修正版: サムネイル真っ黒問題解決・レイヤー順序対応
  */
 (function() {
     'use strict';
@@ -13,7 +13,8 @@
         rendering: { antialias: true, resolution: 1 },
         debug: false,
         history: { maxSize: 10, autoSaveInterval: 500 },
-        transform: { minScale: 0.1, maxScale: 5.0, initialScale: 1.0 }
+        transform: { minScale: 0.1, maxScale: 5.0, initialScale: 1.0 },
+        thumbnail: { pointDensity: 1.5 }
     };
     
     const log = (message, ...args) => {
@@ -34,15 +35,10 @@
             }
             return indices.length;
         },
-        reverse: (array) => [...array].reverse(),
-        moveArrayItem: (array, fromIndex, toIndex) => {
-            const item = array.splice(fromIndex, 1)[0];
-            array.splice(toIndex, 0, item);
-            return array;
-        }
+        reverse: (array) => [...array].reverse()
     };
 
-    // === THUMBNAIL MANAGER ===
+    // === THUMBNAIL MANAGER - 修正版 ===
     class LayerThumbnailManager {
         constructor(drawingEngine) {
             this.engine = drawingEngine;
@@ -52,24 +48,39 @@
             if (!this.engine?.app?.canvas) return null;
 
             try {
-                // サムネイルキャンバス作成
-                const canvas = document.createElement('canvas');
-                canvas.width = 48;
-                canvas.height = 48;
-                const ctx = canvas.getContext('2d');
+                // レイヤーオブジェクトを取得
+                const layerObj = this.engine.layerManager?.layers.items.find(l => l.id === layerId);
+                if (!layerObj?.container) {
+                    console.warn('[ThumbnailManager] Layer not found:', layerId);
+                    return null;
+                }
 
-                // 背景描画
-                ctx.fillStyle = '#f0e0d6';
-                ctx.fillRect(0, 0, 48, 48);
+                // サムネイル用キャンバス作成
+                const thumbnailCanvas = document.createElement('canvas');
+                thumbnailCanvas.width = 48;
+                thumbnailCanvas.height = 48;
+                const ctx = thumbnailCanvas.getContext('2d');
 
-                // メインキャンバスから縮小描画
-                ctx.drawImage(
-                    this.engine.app.canvas,
-                    0, 0, this.engine.app.canvas.width, this.engine.app.canvas.height,
-                    0, 0, 48, 48
-                );
+                // 透明チェッカーボード背景を描画（Adobe風）
+                this.drawCheckerboardBackground(ctx, 48, 48);
 
-                const dataUrl = canvas.toDataURL();
+                // メインキャンバスから該当レイヤー部分を描画
+                if (this.engine.app.canvas.width > 0 && this.engine.app.canvas.height > 0) {
+                    try {
+                        ctx.drawImage(
+                            this.engine.app.canvas,
+                            0, 0, this.engine.app.canvas.width, this.engine.app.canvas.height,
+                            0, 0, 48, 48
+                        );
+                    } catch (drawError) {
+                        console.warn('[ThumbnailManager] Canvas draw failed:', drawError);
+                        // フォールバックとして単色を描画
+                        ctx.fillStyle = '#f0e0d6';
+                        ctx.fillRect(0, 0, 48, 48);
+                    }
+                }
+
+                const dataUrl = thumbnailCanvas.toDataURL('image/png');
                 
                 // UI通知
                 if (window.UICallbacks?.onLayerThumbnailUpdated) {
@@ -80,8 +91,46 @@
 
             } catch (error) {
                 console.error('[ThumbnailManager] Generation failed:', error);
-                return null;
+                
+                // エラー時はプレースホルダーを生成
+                return this.generatePlaceholderThumbnail();
             }
+        }
+
+        drawCheckerboardBackground(ctx, width, height) {
+            const tileSize = 8;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+            
+            ctx.fillStyle = '#e0e0e0';
+            for (let x = 0; x < width; x += tileSize) {
+                for (let y = 0; y < height; y += tileSize) {
+                    if ((Math.floor(x / tileSize) + Math.floor(y / tileSize)) % 2 === 1) {
+                        ctx.fillRect(x, y, tileSize, tileSize);
+                    }
+                }
+            }
+        }
+
+        generatePlaceholderThumbnail() {
+            const canvas = document.createElement('canvas');
+            canvas.width = 48;
+            canvas.height = 48;
+            const ctx = canvas.getContext('2d');
+            
+            // グラデーション背景
+            const gradient = ctx.createLinearGradient(0, 0, 48, 48);
+            gradient.addColorStop(0, '#f0e0d6');
+            gradient.addColorStop(1, '#e9c2ba');
+            
+            ctx.fillStyle = gradient;
+            ctx.fillRect(0, 0, 48, 48);
+            
+            // 中央にアイコン
+            ctx.fillStyle = '#cf9c97';
+            ctx.fillRect(16, 20, 16, 8);
+            
+            return canvas.toDataURL('image/png');
         }
 
         updateAllThumbnails() {
@@ -89,7 +138,10 @@
             
             const layers = engineInstance.layerManager.getLayerList();
             layers.forEach(layer => {
-                this.generateThumbnail(layer.id);
+                // 少し遅延を入れて順次更新
+                setTimeout(() => {
+                    this.generateThumbnail(layer.id);
+                }, 50 * layer.id);
             });
         }
     }
@@ -280,7 +332,6 @@
                 actionName: actionName,
                 transformState: this.transform.getTransformState(),
                 activeLayerId: this.layers.layers.activeId,
-                layerOrder: this.layers.getLayerOrder(), // レイヤー順序保存
                 changedLayers: changedLayerId ? 
                     this.serializeLayer(changedLayerId) : 
                     this.serializeActiveLayers()
@@ -364,12 +415,6 @@
 
             try {
                 this.transform.restoreTransformState(snapshot.transformState);
-                
-                // レイヤー順序復元
-                if (snapshot.layerOrder) {
-                    this.layers.restoreLayerOrder(snapshot.layerOrder);
-                }
-                
                 this.restoreLayersFromSnapshot(snapshot.changedLayers);
                 this.layers.setActiveLayer(snapshot.activeLayerId);
             } finally {
@@ -449,7 +494,7 @@
         }
     }
 
-    // === LAYER MANAGER ===
+    // === LAYER MANAGER - レイヤー順序対応版 ===
     class LayerManager {
         constructor(drawingEngine, transformSystem) {
             this.engine = drawingEngine;
@@ -470,6 +515,11 @@
             this.createBackgroundLayer();
             this.createLayer('レイヤー1');
             this.setActiveLayer(1);
+            
+            // PixiJS v8のsortableChildrenを有効化
+            if (this.engine.containers.world) {
+                this.engine.containers.world.sortableChildren = true;
+            }
         }
 
         createBackgroundLayer() {
@@ -480,6 +530,9 @@
             backgroundGraphics.fill(0xf0e0d6);
             layer.container.addChild(backgroundGraphics);
             layer.backgroundGraphics = backgroundGraphics;
+            
+            // 背景レイヤーは最も下に配置
+            layer.container.zIndex = 0;
 
             this.layers.items.push(layer);
             this.engine.containers.world.addChild(layer.container);
@@ -494,9 +547,17 @@
                 name || `レイヤー${this.layers.nextId - 1}`, 
                 false
             );
+            
+            // 新しいレイヤーは最上位に配置
+            layer.container.zIndex = this.layers.items.length;
 
             this.layers.items.push(layer);
             this.engine.containers.world.addChild(layer.container);
+            
+            // ソート実行
+            if (this.engine.containers.world.sortableChildren) {
+                this.engine.containers.world.sortChildren();
+            }
             
             if (this.historyManager) {
                 setTimeout(() => {
@@ -545,6 +606,9 @@
                 this.layers.activeId = lastLayer ? lastLayer.id : null;
             }
 
+            // 残りのレイヤーのzIndexを再計算
+            this.reorderLayers();
+
             if (this.historyManager) {
                 setTimeout(() => {
                     this.historyManager.createSnapshot(`レイヤー「${layer.name}」削除`);
@@ -585,51 +649,27 @@
             return false;
         }
 
-        // === 新機能: レイヤー順序変更 ===
-        reorderLayer(layerId, targetIndex) {
-            const currentIndex = this.layers.items.findIndex(l => l.id == layerId);
-            if (currentIndex === -1 || currentIndex === targetIndex) return false;
-
-            // 配列内での移動
-            utils.moveArrayItem(this.layers.items, currentIndex, targetIndex);
-
-            // PixiJS表示順序更新（逆順で追加し直し）
-            this.engine.containers.world.removeChildren();
-            this.layers.items.forEach(layer => {
-                this.engine.containers.world.addChild(layer.container);
+        // レイヤー順序再計算
+        reorderLayers() {
+            this.layers.items.forEach((layer, index) => {
+                layer.container.zIndex = index;
             });
-
-            if (this.historyManager) {
-                const layer = this.layers.items.find(l => l.id == layerId);
-                setTimeout(() => {
-                    this.historyManager.createSnapshot(`レイヤー「${layer.name}」移動`);
-                }, 100);
+            
+            if (this.engine.containers.world.sortableChildren) {
+                this.engine.containers.world.sortChildren();
             }
-
-            this._notifyLayerListUpdated();
-            return true;
         }
 
-        getLayerOrder() {
-            return this.layers.items.map(l => l.id);
-        }
-
-        restoreLayerOrder(layerOrder) {
-            const newOrder = [];
-            layerOrder.forEach(id => {
-                const layer = this.layers.items.find(l => l.id === id);
-                if (layer) newOrder.push(layer);
-            });
-
-            this.layers.items = newOrder;
-
-            // PixiJS表示順序更新
-            this.engine.containers.world.removeChildren();
-            this.layers.items.forEach(layer => {
-                this.engine.containers.world.addChild(layer.container);
-            });
-
-            this._notifyLayerListUpdated();
+        // レイヤーのz-index更新（ドラッグ移動用）
+        updateLayerZIndex(layerId, zIndex) {
+            const layer = this.layers.items.find(l => l.id === layerId);
+            if (layer && layer.container) {
+                layer.container.zIndex = zIndex;
+                
+                if (this.engine.containers.world.sortableChildren) {
+                    this.engine.containers.world.sortChildren();
+                }
+            }
         }
 
         getActiveLayer() {
@@ -685,12 +725,6 @@
         _notifyLayerVisibilityChanged(layerId, visible) {
             if (window.UICallbacks?.onLayerVisibilityChanged) {
                 window.UICallbacks.onLayerVisibilityChanged(layerId, visible);
-            }
-        }
-
-        _notifyLayerListUpdated() {
-            if (window.UICallbacks?.onLayerListUpdated) {
-                window.UICallbacks.onLayerListUpdated(this.getLayerList());
             }
         }
     }
@@ -856,6 +890,9 @@
             this.containers.world.x = 0;
             this.containers.world.y = 0;
             this.containers.world.scale.set(1);
+            
+            // PixiJS v8のレイヤー順序管理を有効化
+            this.containers.world.sortableChildren = true;
         }
 
         setupInteraction() {
@@ -933,9 +970,9 @@
             const lastPoint = utils.last(path.points);
             const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
 
-            if (distance < 1.5) return;
+            if (distance < ENGINE_CONFIG.thumbnail.pointDensity) return;
 
-            const steps = Math.max(1, Math.ceil(distance / 1.5));
+            const steps = Math.max(1, Math.ceil(distance / ENGINE_CONFIG.thumbnail.pointDensity));
             for (let i = 1; i <= steps; i++) {
                 const t = i / steps;
                 const px = lastPoint.x + (x - lastPoint.x) * t;
@@ -988,6 +1025,11 @@
             this.layerManager.layers.items.forEach(layer => {
                 layer.paths = [];
                 layer.container.removeChildren();
+                
+                // 背景レイヤーの場合は背景グラフィックスを再追加
+                if (layer.isBackground && layer.backgroundGraphics) {
+                    layer.container.addChild(layer.backgroundGraphics);
+                }
             });
 
             // サムネイル更新
@@ -1052,6 +1094,9 @@
                     systemMonitor
                 };
 
+                // グローバル参照を設定（レイヤー順序管理用）
+                window.engineInstance = engineInstance;
+
                 log('🎨 DrawingEngine initialized (LayerDrag)');
                 return true;
 
@@ -1069,6 +1114,7 @@
                     engineInstance.drawingEngine.app.destroy(true);
                 }
                 engineInstance = null;
+                window.engineInstance = null;
                 log('🎨 DrawingEngine destroyed');
             } catch (error) {
                 console.error('[DrawingEngine] Destroy failed:', error.message);
@@ -1180,17 +1226,6 @@
             }
         },
 
-        // === 新機能: レイヤー順序変更 ===
-        reorderLayer: (layerId, targetIndex) => {
-            if (!engineInstance) return false;
-            try {
-                return engineInstance.layerManager.reorderLayer(layerId, targetIndex);
-            } catch (error) {
-                console.error('[DrawingEngine] ReorderLayer failed:', error.message);
-                return false;
-            }
-        },
-
         // === 座標変換 ===
         resetViewport: () => {
             if (!engineInstance) return false;
@@ -1276,7 +1311,7 @@
             }
         },
 
-        // === サムネイル制御 ===
+        // === サムネイル制御（修正版） ===
         updateThumbnail: (layerId) => {
             if (!engineInstance?.drawingEngine?.thumbnailManager) return false;
             try {
@@ -1313,10 +1348,7 @@
             forceSnapshot: (name) => engineInstance?.historyManager.createSnapshot(name || 'Debug Snapshot'),
             getLayerData: () => engineInstance?.layerManager.layers,
             getTransformData: () => engineInstance?.transformSystem.viewportTransform,
-            getThumbnailManager: () => engineInstance?.drawingEngine.thumbnailManager,
-            testLayerReorder: (layerId, targetIndex) => {
-                return engineInstance?.layerManager.reorderLayer(layerId, targetIndex);
-            }
+            getThumbnailManager: () => engineInstance?.drawingEngine.thumbnailManager
         };
     }
 

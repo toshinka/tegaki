@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1 - レイヤードラッグ移動対応版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1 - レイヤードラッグ移動実装版</title>
     <style>
         * {
             margin: 0;
@@ -175,6 +175,7 @@
             pointer-events: all;
             max-height: 60vh;
             overflow-y: auto;
+            position: relative;
         }
         
         .layer-item {
@@ -207,33 +208,24 @@
             box-shadow: 0 2px 4px rgba(128, 0, 0, 0.15);
         }
         
-        /* レイヤードラッグ関連スタイル */
+        /* ドラッグ中の視覚効果 */
         .layer-item.dragging {
             opacity: 0.8;
-            transform: scale(1.05);
-            box-shadow: 0 8px 20px rgba(128, 0, 0, 0.3);
-            z-index: 2000;
-            transition: none;
-        }
-        
-        .layer-item.drag-preview {
-            position: fixed;
+            transform: rotate(2deg) scale(1.05);
+            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.3);
+            z-index: 1000;
             pointer-events: none;
-            opacity: 0.9;
-            transform: rotate(-2deg);
-            z-index: 2100;
         }
         
-        .layer-item.drag-target {
-            border-color: var(--futaba-maroon);
-            background: var(--futaba-light-medium);
-            transform: translateY(-2px);
-        }
-        
-        .layer-item.drag-placeholder {
-            opacity: 0.3;
-            border-style: dashed;
-            background: transparent;
+        /* ドラッグプレースホルダー */
+        .layer-drag-placeholder {
+            height: 64px;
+            margin: 4px 0;
+            border: 2px dashed var(--futaba-maroon);
+            border-radius: 6px;
+            background: var(--futaba-background);
+            opacity: 0.7;
+            transition: all 0.2s ease;
         }
         
         .layer-visibility {
@@ -285,6 +277,11 @@
             text-overflow: ellipsis;
             align-self: end;
             margin-bottom: 2px;
+            cursor: grab;
+        }
+        
+        .layer-item.dragging .layer-name {
+            cursor: grabbing;
         }
         
         .layer-thumbnail {
@@ -626,12 +623,13 @@
     <script>
         /**
          * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1
-         * UI Controller - レイヤードラッグ移動対応版
+         * UI Controller - レイヤードラッグ移動実装版
          * 
-         * 新機能:
-         * - レイヤードラッグ移動（リニアな追従）
-         * - 入れ替え判定とアニメーション
-         * - ペン/マウス対応
+         * 新規実装内容:
+         * - LayerDragManagerクラス追加（GPUアクセラレーション活用）
+         * - requestAnimationFrame最適化
+         * - 中央位置判定によるスナップ改善
+         * - 描画イベント干渉回避
          */
         
         // === UTILITIES ===
@@ -731,223 +729,228 @@
 
         // === LAYER DRAG MANAGER ===
         class LayerDragManager {
-            constructor(uiController) {
-                this.ui = uiController;
+            constructor(ui) {
+                this.ui = ui;
                 this.dragState = {
-                    active: false,
-                    layerId: null,
-                    layerElement: null,
-                    preview: null,
+                    isDragging: false,
+                    draggedLayerId: null,
+                    dragElement: null,
+                    placeholder: null,
                     startY: 0,
-                    currentY: 0,
-                    layerItems: [],
-                    insertIndex: -1
+                    offsetY: 0,
+                    rafId: null
                 };
-                this.initialize();
             }
 
             initialize() {
-                document.addEventListener('mousedown', (e) => this.handleMouseDown(e));
-                document.addEventListener('mousemove', (e) => this.handleMouseMove(e));
-                document.addEventListener('mouseup', (e) => this.handleMouseUp(e));
-                
-                // ペン対応
-                document.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
-                document.addEventListener('pointermove', (e) => this.handlePointerMove(e));
-                document.addEventListener('pointerup', (e) => this.handlePointerUp(e));
-            }
-
-            handleMouseDown(e) {
-                this.startDrag(e);
-            }
-
-            handlePointerDown(e) {
-                if (e.pointerType === 'pen' || e.pointerType === 'mouse') {
-                    this.startDrag(e);
+                const layerList = document.getElementById('layer-list');
+                if (layerList) {
+                    this.setupDragContainer(layerList);
                 }
             }
 
-            startDrag(e) {
-                const layerItem = e.target.closest('.layer-item');
-                if (!layerItem) return;
+            setupDragContainer(container) {
+                // MutationObserverでレイヤー追加を監視
+                const observer = new MutationObserver((mutations) => {
+                    mutations.forEach(mutation => {
+                        mutation.addedNodes.forEach(node => {
+                            if (node.nodeType === Node.ELEMENT_NODE && 
+                                node.classList.contains('layer-item')) {
+                                this.makeDraggable(node);
+                            }
+                        });
+                    });
+                });
 
-                // 可視化・削除ボタン以外の部分でのみドラッグ開始
-                if (e.target.closest('.layer-visibility') || e.target.closest('.layer-delete-button')) {
-                    return;
-                }
+                observer.observe(container, { 
+                    childList: true, 
+                    subtree: true 
+                });
+            }
 
-                e.preventDefault();
-
+            makeDraggable(layerItem) {
                 const layerId = layerItem.dataset.layerId;
                 if (!layerId) return;
 
-                this.dragState.active = true;
-                this.dragState.layerId = layerId;
-                this.dragState.layerElement = layerItem;
+                // レイヤー名部分にドラッグイベントを設定
+                const layerName = layerItem.querySelector('.layer-name');
+                if (layerName) {
+                    layerName.addEventListener('mousedown', (e) => this.onDragStart(e, layerItem));
+                }
+            }
+
+            onDragStart(e, layerItem) {
+                // ボタン操作の場合はドラッグしない
+                if (e.target.closest('[data-action]')) return;
+                
+                // 右クリックは無視
+                if (e.button !== 0) return;
+
+                this.dragState.isDragging = true;
+                this.dragState.draggedLayerId = layerItem.dataset.layerId;
+                this.dragState.dragElement = layerItem;
+                
+                const rect = layerItem.getBoundingClientRect();
                 this.dragState.startY = e.clientY;
-                this.dragState.currentY = e.clientY;
-
-                // レイヤーリスト取得
-                this.dragState.layerItems = Array.from(document.querySelectorAll('.layer-item'));
-
-                // ドラッグ開始スタイル適用
+                this.dragState.offsetY = e.clientY - rect.top;
+                
+                // ドラッグ中の視覚効果
                 layerItem.classList.add('dragging');
-                document.body.style.cursor = 'grabbing';
-
-                // プレビュー要素作成
-                this.createDragPreview(layerItem, e.clientX, e.clientY);
-            }
-
-            createDragPreview(originalElement, x, y) {
-                const preview = originalElement.cloneNode(true);
-                preview.classList.add('drag-preview');
-                preview.classList.remove('dragging', 'active');
-                preview.style.left = x + 'px';
-                preview.style.top = y + 'px';
-                preview.style.width = originalElement.offsetWidth + 'px';
-                preview.style.height = originalElement.offsetHeight + 'px';
-
-                document.body.appendChild(preview);
-                this.dragState.preview = preview;
-            }
-
-            handleMouseMove(e) {
-                this.continueDrag(e);
-            }
-
-            handlePointerMove(e) {
-                if (e.pointerType === 'pen' || e.pointerType === 'mouse') {
-                    this.continueDrag(e);
-                }
-            }
-
-            continueDrag(e) {
-                if (!this.dragState.active) return;
-
+                
+                // プレースホルダー作成
+                this.createPlaceholder(layerItem);
+                
+                // グローバルイベント追加
+                document.addEventListener('mousemove', this.onDragMove);
+                document.addEventListener('mouseup', this.onDragEnd);
+                
                 e.preventDefault();
-
-                this.dragState.currentY = e.clientY;
-                const deltaY = e.clientY - this.dragState.startY;
-
-                // プレビュー要素移動（リニアな追従）
-                if (this.dragState.preview) {
-                    this.dragState.preview.style.left = e.clientX + 'px';
-                    this.dragState.preview.style.top = e.clientY + 'px';
-                }
-
-                // 挿入位置計算と視覚フィードバック
-                this.updateDragTarget(e.clientY);
+                e.stopPropagation();
             }
 
-            updateDragTarget(mouseY) {
+            onDragMove = (e) => {
+                if (!this.dragState.isDragging || !this.dragState.dragElement) return;
+
+                // requestAnimationFrame で最適化
+                if (this.dragState.rafId) {
+                    cancelAnimationFrame(this.dragState.rafId);
+                }
+
+                this.dragState.rafId = requestAnimationFrame(() => {
+                    const deltaY = e.clientY - this.dragState.startY;
+                    
+                    // GPU transform を使用した滑らかな移動
+                    this.dragState.dragElement.style.transform = `translateY(${deltaY}px) rotate(2deg) scale(1.05)`;
+                    
+                    // ドロップ位置更新
+                    this.updateDropPosition(e.clientY);
+                });
+            }
+
+            onDragEnd = (e) => {
+                if (!this.dragState.isDragging) return;
+
+                // ドロップ実行
+                this.performDrop();
+                
+                // 状態リセット
+                this.resetDragState();
+                
+                // イベントリスナー削除
+                document.removeEventListener('mousemove', this.onDragMove);
+                document.removeEventListener('mouseup', this.onDragEnd);
+            }
+
+            createPlaceholder(draggedElement) {
+                const placeholder = document.createElement('div');
+                placeholder.className = 'layer-drag-placeholder';
+                
+                // ドラッグ要素の後に挿入
+                draggedElement.parentNode.insertBefore(placeholder, draggedElement.nextSibling);
+                this.dragState.placeholder = placeholder;
+            }
+
+            updateDropPosition(mouseY) {
+                if (!this.dragState.placeholder || !this.dragState.dragElement) return;
+
                 const layerList = document.getElementById('layer-list');
                 if (!layerList) return;
 
-                const rect = layerList.getBoundingClientRect();
-                const relativeY = mouseY - rect.top;
+                const layerItems = Array.from(layerList.querySelectorAll('.layer-item:not(.dragging)'));
+                let insertTarget = null;
 
-                // 既存のハイライト解除
-                this.clearDragTargets();
-
-                let insertIndex = -1;
-                let targetElement = null;
-
-                this.dragState.layerItems.forEach((item, index) => {
-                    if (item === this.dragState.layerElement) return;
-
-                    const itemRect = item.getBoundingClientRect();
-                    const itemRelativeY = itemRect.top - rect.top;
-                    const itemHeight = itemRect.height;
-                    const itemCenter = itemRelativeY + itemHeight / 2;
-
-                    if (relativeY < itemCenter) {
-                        if (insertIndex === -1 || itemRelativeY < insertIndex) {
-                            insertIndex = itemRelativeY;
-                            targetElement = item;
+                // 中央位置判定でスナップ改善
+                layerItems.forEach(item => {
+                    const rect = item.getBoundingClientRect();
+                    const itemCenterY = rect.top + rect.height / 2;
+                    
+                    if (mouseY < itemCenterY) {
+                        if (!insertTarget) {
+                            insertTarget = item;
                         }
                     }
                 });
 
-                if (targetElement) {
-                    targetElement.classList.add('drag-target');
-                    this.dragState.insertIndex = Array.from(layerList.children).indexOf(targetElement);
+                // プレースホルダー移動
+                if (insertTarget) {
+                    layerList.insertBefore(this.dragState.placeholder, insertTarget);
                 } else {
-                    // 最後の位置
-                    this.dragState.insertIndex = this.dragState.layerItems.length;
+                    // 最後に配置
+                    layerList.appendChild(this.dragState.placeholder);
                 }
             }
 
-            clearDragTargets() {
-                document.querySelectorAll('.layer-item.drag-target').forEach(item => {
-                    item.classList.remove('drag-target');
+            performDrop() {
+                if (!this.dragState.placeholder || !this.dragState.dragElement) return;
+
+                const layerList = document.getElementById('layer-list');
+                if (!layerList) return;
+
+                // プレースホルダーの位置に要素を移動
+                layerList.insertBefore(this.dragState.dragElement, this.dragState.placeholder);
+                
+                // レイヤー順序をバックエンドに反映
+                this.updateLayerOrder();
+                
+                // スナップショット作成
+                setTimeout(() => {
+                    window.DrawingEngineAPI?.createSnapshot('レイヤー順序変更');
+                }, 100);
+            }
+
+            updateLayerOrder() {
+                const layerList = document.getElementById('layer-list');
+                if (!layerList) return;
+
+                const layerItems = Array.from(layerList.querySelectorAll('.layer-item'));
+                const layers = window.DrawingEngineAPI?.getLayerList() || [];
+                
+                // UI順序（上から下）を PixiJS z-index（下から上）に変換
+                layerItems.forEach((item, index) => {
+                    const layerId = parseInt(item.dataset.layerId);
+                    const layer = layers.find(l => l.id === layerId);
+                    
+                    if (layer && window.engineInstance?.layerManager) {
+                        const layerObj = window.engineInstance.layerManager.layers.items.find(l => l.id === layerId);
+                        if (layerObj && layerObj.container) {
+                            // UI の逆順で z-index を設定
+                            layerObj.container.zIndex = layerItems.length - index;
+                            
+                            // PixiJS v8 の sortableChildren を使用
+                            const worldContainer = window.engineInstance.drawingEngine.containers.world;
+                            if (worldContainer) {
+                                worldContainer.sortableChildren = true;
+                                worldContainer.sortChildren();
+                            }
+                        }
+                    }
                 });
             }
 
-            handleMouseUp(e) {
-                this.endDrag(e);
-            }
-
-            handlePointerUp(e) {
-                if (e.pointerType === 'pen' || e.pointerType === 'mouse') {
-                    this.endDrag(e);
-                }
-            }
-
-            endDrag(e) {
-                if (!this.dragState.active) return;
-
-                const layerId = this.dragState.layerId;
-                const insertIndex = this.dragState.insertIndex;
-
-                // ドラッグ状態クリア
-                this.clearDragState();
-
-                // レイヤー順序変更処理
-                if (insertIndex !== -1 && layerId) {
-                    this.reorderLayer(layerId, insertIndex);
-                }
-            }
-
-            clearDragState() {
-                if (this.dragState.layerElement) {
-                    this.dragState.layerElement.classList.remove('dragging');
+            resetDragState() {
+                if (this.dragState.rafId) {
+                    cancelAnimationFrame(this.dragState.rafId);
+                    this.dragState.rafId = null;
                 }
 
-                if (this.dragState.preview) {
-                    document.body.removeChild(this.dragState.preview);
+                if (this.dragState.dragElement) {
+                    this.dragState.dragElement.classList.remove('dragging');
+                    this.dragState.dragElement.style.transform = '';
                 }
 
-                this.clearDragTargets();
-
-                document.body.style.cursor = '';
+                if (this.dragState.placeholder) {
+                    this.dragState.placeholder.remove();
+                }
 
                 this.dragState = {
-                    active: false,
-                    layerId: null,
-                    layerElement: null,
-                    preview: null,
+                    isDragging: false,
+                    draggedLayerId: null,
+                    dragElement: null,
+                    placeholder: null,
                     startY: 0,
-                    currentY: 0,
-                    layerItems: [],
-                    insertIndex: -1
+                    offsetY: 0,
+                    rafId: null
                 };
-            }
-
-            reorderLayer(layerId, targetIndex) {
-                const layers = window.DrawingEngineAPI?.getLayerList() || [];
-                const currentIndex = layers.findIndex(l => l.id == layerId);
-                
-                if (currentIndex === -1 || currentIndex === targetIndex) return;
-
-                // エンジンに順序変更を通知
-                if (window.DrawingEngineAPI?.reorderLayer) {
-                    window.DrawingEngineAPI.reorderLayer(layerId, targetIndex);
-                } else {
-                    // フォールバック: UI更新のみ
-                    setTimeout(() => {
-                        this.ui.updateLayerUI();
-                    }, 50);
-                }
             }
         }
 
@@ -1211,7 +1214,7 @@
                 this.activePopup = null;
                 this.sliders = new Map();
                 this.dragState = { active: false, offset: { x: 0, y: 0 } };
-                this.layerDragManager = new LayerDragManager(this);
+                this.layerDragManager = null;
             }
 
             initialize() {
@@ -1219,6 +1222,10 @@
                 this.setupSliders();
                 this.setupResize();
                 this.updateCanvasInfo();
+                
+                // レイヤードラッグ機能初期化
+                this.layerDragManager = new LayerDragManager(this);
+                this.layerDragManager.initialize();
             }
 
             setupEventDelegation() {
@@ -1483,6 +1490,11 @@
                     });
 
                     layerList.appendChild(layerItem);
+                    
+                    // ドラッグ機能を追加
+                    if (this.layerDragManager) {
+                        this.layerDragManager.makeDraggable(layerItem);
+                    }
                 });
 
                 // DrawingEngineにサムネイル生成をリクエスト
@@ -1574,7 +1586,7 @@
                 window.futabaApp = new AppController();
                 await window.futabaApp.initialize();
 
-                console.log('🎨 Futaba Drawing Tool v8-Phase1 - レイヤードラッグ移動対応版完了!');
+                console.log('🎨 Futaba Drawing Tool v8-Phase1 - レイヤードラッグ移動実装版完了!');
 
             } catch (error) {
                 console.error('💥 Application startup failed:', error);

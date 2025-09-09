@@ -1,50 +1,206 @@
-症状（キャンバスもパネルも出ない／アイコンだけ出る）からすると 初期化処理の分離で依存関係が途切れている のが原因です。
+レイヤーパネルのドラッグ移動が滑らかでない
 
-特に確認したところ、以下の点が問題になっている可能性が高いです。
+入れ替え判定が渋い（スナップが効かない / ドロップの判定が曖昧）
 
-🔎 問題点の候補
+サムネイルが真っ黒になる
 
-PixiJS アプリ生成が main.html に埋め込まれたまま
+📌 原因と対策案
+1. レイヤーパネルのドラッグ移動が滑らかでない
 
-new PIXI.Application(...) の呼び出しが Sidebar や LayerPanel の読み込みより前に行われているが、
-分割後は #canvas-container などの DOM がまだ存在しないためアプリが追加されない。
+原因
 
-Sidebar-Tools.js 内のイベント登録が main.js 側に依存
+mousemove の座標更新で clientY をそのまま計算に使っているため、再描画とのズレが発生。
 
-例: document.getElementById("layer-panel") のような取得が null になっている。
+CSS transform (translateY) を使わずに DOM 再配置しているため、描画コストが高い。
 
-本来 HTML 内で生成するはずのパネル DOM が main.html から消えている／まだ生成されていない。
+対策
 
-ロード順序の崩壊
+ドラッグ中は DOM の入れ替えを行わず、transform で見た目だけ動かす。
 
-main.html で <script src="Sidebar-Tools.js"> を呼んでいるが、その中で PIXI.Application や canvas を参照しており、
-main.js（あるいは初期化スクリプト）が読み込まれる前に動いている可能性。
+ドロップ時に初めて実際のノードを再配置する。
 
-CSS の切り離し忘れ
+requestAnimationFrame を使って mousemove の更新頻度を間引き、GPUレンダリングで滑らかに。
 
-レイヤーパネルやツールバーが DOM 上には生成されていても、CSS 適用されず透明／非表示のまま。
+2. 入れ替え判定が渋い
 
-💡 改修案
-1. 初期化順序を一本化する
+原因
 
-main.html にて 必ず最後に initApp.js のような統合初期化スクリプトを読み込み依存関係を明示的に制御する。
+現状の getBoundingClientRect() による単純な位置判定だと、細かい境界で「上下どちらに吸着するか」が曖昧になる。
 
-2. DOM 生成を責務ごとに分ける
+対策
 
-Sidebar-Tools.js は 自分のUI要素だけを生成し、PixiJS は触らない。
+各レイヤー行の中央を基準にして、ドラッグ中のカーソルが上半分なら「上に挿入」、下半分なら「下に挿入」とする。
 
-LayerPanel.js は レイヤーUIだけを生成。
+判定を「カーソル位置」ではなく「プレースホルダーの高さ/位置」に基づいて計算する。
 
-PixiApp.js が Pixi.Application のみ管理。
+dragover イベントで preventDefault() を忘れない。
 
-3. ロード確認を追加
+3. サムネイルが真っ黒になる
 
-console.log("Sidebar loaded") などのログを各ファイルに入れ、順序を確認。
+原因
 
-document.getElementById(...) が null なら即エラーを投げて気づけるようにする。
+DrawingEngine.js の getLayerThumbnail() 相当処理で toDataURL() を呼ぶ際、
 
-4. CSS の確認
+レイヤーが透明でも背景が黒で初期化されている
 
-レイヤーパネルが DOM にあるか document.querySelector("#layer-panel") で確認。
+renderer.extract.canvas(layer.container) に alpha が効いていない
 
-display:none や opacity:0 になっていないかを DevTools でチェック。
+または renderTexture の中身を正しく更新していない。
+
+対策
+
+PIXI の renderer.extract.base64(container) では transparent:true を指定して生成。
+
+レイヤー単位でサムネイル化する際は renderer.render(layer.container, {renderTexture, clear:true}) を毎回実行してから toDataURL()。
+
+背景に白や透明パターンを敷いた上で縮小すれば Adobe Fresco や Photoshop のように見える。
+
+🚀 改修の方向性（ルールブック v5 に沿って）
+
+UI/UX面 → transform を用いた非破壊的なドラッグ移動 & スナップ判定改善
+
+描画面 → レイヤー単位で renderTexture を正しく更新してからサムネイル化
+
+パフォーマンス → requestAnimationFrame + GPU transform で滑らかに
+
+
+
+✅ 改修ポイントまとめ
+
+レイヤーパネルのドラッグ移動
+
+mousedown → ドラッグ開始時に draggingElement を clone して position:absolute; pointer-events:none; transform で移動。
+
+mousemove は requestAnimationFrame 経由で処理し、滑らかにする。
+
+mouseup でプレースホルダー位置に差し替え。
+
+入れ替え判定
+
+各レイヤーの getBoundingClientRect() を取得して中央位置で判定。
+
+ドラッグ対象のカーソルが「上半分にある → 上に挿入」「下半分にある → 下に挿入」。
+
+サムネイルが真っ黒問題
+
+DrawingEngine.js 内で getLayerThumbnail(layer) を修正。
+
+renderer.render(layer.container, {renderTexture, clear:true}) を先に実行してから renderer.extract.base64(renderTexture) で取得。
+
+
+📝 main.html 側（レイヤーパネルのドラッグ処理）
+// --- レイヤーパネルドラッグ処理 ---
+let draggingEl = null;
+let placeholder = null;
+let offsetY = 0;
+let rafId = null;
+
+document.addEventListener("mousedown", (e) => {
+    const target = e.target.closest(".layer-item");
+    if (!target) return;
+
+    draggingEl = target.cloneNode(true);
+    draggingEl.classList.add("dragging");
+    draggingEl.style.position = "absolute";
+    draggingEl.style.width = target.offsetWidth + "px";
+    draggingEl.style.pointerEvents = "none";
+    draggingEl.style.zIndex = "1000";
+    document.body.appendChild(draggingEl);
+
+    const rect = target.getBoundingClientRect();
+    offsetY = e.clientY - rect.top;
+
+    placeholder = document.createElement("div");
+    placeholder.classList.add("layer-placeholder");
+    placeholder.style.height = rect.height + "px";
+    target.parentNode.insertBefore(placeholder, target);
+    target.style.display = "none";
+
+    moveAt(e.pageX, e.pageY);
+
+    function moveAt(x, y) {
+        if (rafId) cancelAnimationFrame(rafId);
+        rafId = requestAnimationFrame(() => {
+            draggingEl.style.left = rect.left + "px";
+            draggingEl.style.top = (y - offsetY) + "px";
+        });
+    }
+
+    function onMouseMove(e) {
+        moveAt(e.pageX, e.pageY);
+
+        const layers = [...document.querySelectorAll(".layer-item")].filter(l => l !== target);
+        for (let l of layers) {
+            const r = l.getBoundingClientRect();
+            const midY = r.top + r.height / 2;
+            if (e.clientY < midY) {
+                l.parentNode.insertBefore(placeholder, l);
+                break;
+            } else {
+                l.parentNode.insertBefore(placeholder, l.nextSibling);
+            }
+        }
+    }
+
+    function onMouseUp() {
+        placeholder.parentNode.insertBefore(target, placeholder);
+        target.style.display = "";
+        placeholder.remove();
+        draggingEl.remove();
+        draggingEl = null;
+        document.removeEventListener("mousemove", onMouseMove);
+        document.removeEventListener("mouseup", onMouseUp);
+    }
+
+    document.addEventListener("mousemove", onMouseMove);
+    document.addEventListener("mouseup", onMouseUp);
+});
+
+
+CSS 例（視認性用）:
+
+.dragging {
+  opacity: 0.7;
+  background: #eee;
+}
+.layer-placeholder {
+  border: 2px dashed #800000;
+  margin: 4px 0;
+}
+
+📝 DrawingEngine.js 側（サムネイル修正）
+getLayerThumbnail(layer, width = 64, height = 64) {
+    const renderer = this.app.renderer;
+
+    // レイヤーを専用のRenderTextureに描画
+    const renderTexture = PIXI.RenderTexture.create({
+        width: layer.container.width || this.app.screen.width,
+        height: layer.container.height || this.app.screen.height,
+        resolution: 1,
+    });
+
+    renderer.render(layer.container, { renderTexture, clear: true });
+
+    // 縮小用のSpriteを作成
+    const sprite = new PIXI.Sprite(renderTexture);
+    sprite.width = width;
+    sprite.height = height;
+
+    const thumbRT = PIXI.RenderTexture.create({ width, height, resolution: 1 });
+    renderer.render(sprite, { renderTexture: thumbRT, clear: true });
+
+    // Base64に変換 (透明維持)
+    const base64 = renderer.extract.base64(thumbRT, "image/png");
+    renderTexture.destroy(true);
+    thumbRT.destroy(true);
+    return base64;
+}
+
+🎯 これで期待できる効果
+
+レイヤーパネルをドラッグすると GPU transform で滑らかに追従。
+
+ドロップ時にだけ DOM 入れ替え → 軽量化 & スナップ判定が明快。
+
+サムネイルが 透明背景付きの縮小画像 として正しく表示される。
+
