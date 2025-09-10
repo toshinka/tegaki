@@ -691,17 +691,30 @@
         }
 
         /**
-         * 削除: DOM同期機能を無効化
-         * レイヤー配列の順序をそのまま使用してシンプル化
+         * GPT5改修案: DOM順序をPixiJSに完全同期
+         * 上にあるDOMほど前面になるように逆順でzIndexを設定
          */
-        // _syncDOMOrderToPixiJS() 機能を削除
+        _syncDOMOrderToPixiJS() {
+            const layerElements = Array.from(document.querySelectorAll('.layer-item'));
+            
+            // DOM要素が上にあるほど前面（高いzIndex）になるよう逆順処理
+            layerElements.reverse().forEach((element, index) => {
+                const layerId = parseInt(element.dataset.layerId);
+                const layer = this.layers.items.find(l => l.id === layerId);
+                if (layer) {
+                    layer.container.zIndex = index;
+                }
+            });
+            
+            log('🔄 DOM/PixiJS sync completed:', layerElements.map((el, i) => `DOM[${i}]:${el.dataset.layerId}`));
+        }
 
         /**
-         * 修正版: UI側からの順序同期（簡素化）
+         * GPT5改修案追加: UI側からの順序同期API
          */
         syncLayerOrderFromUI(layerId, newZIndex) {
             const layer = this.layers.items.find(l => l.id === layerId);
-            if (layer && layer.container.zIndex !== newZIndex) {
+            if (layer) {
                 layer.container.zIndex = newZIndex;
                 this.engine.containers.world.sortChildren();
                 log('🎯 Layer zIndex synced:', { layerId, newZIndex });
@@ -806,28 +819,9 @@
             }
         }
 
-        /**
-         * 完全修正版: レイヤーリスト更新通知
-         * データ変更時のみ呼び出し、UI同期の循環参照を防止
-         */
         _notifyLayerListUpdated() {
             if (window.UICallbacks?.onLayerListUpdated) {
-                // 重要: 現在のデータ状態を正確に通知
-                const currentLayerList = this.getLayerList();
-                log('📢 Layer list updated notification:', currentLayerList);
-                window.UICallbacks.onLayerListUpdated(currentLayerList);
-            }
-        }
-
-        /**
-         * 完全修正版: アクティブレイヤー変更通知
-         * 順序変更を伴わない純粋な選択状態の通知のみ
-         */
-        _notifyActiveLayerChanged() {
-            const activeLayer = this.getActiveLayer();
-            if (activeLayer && window.UICallbacks?.onActiveLayerChanged) {
-                log('📢 Active layer changed notification:', { id: activeLayer.id, name: activeLayer.name });
-                window.UICallbacks.onActiveLayerChanged(activeLayer.id, activeLayer.name);
+                window.UICallbacks.onLayerListUpdated(this.getLayerList());
             }
         }
     }

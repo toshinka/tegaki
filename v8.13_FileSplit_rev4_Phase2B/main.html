@@ -1249,39 +1249,13 @@
                 });
             }
 
-            /**
-             * 新規追加: アクティブレイヤー表示のみ更新
-             * レイヤーリスト全体を再構築せずにアクティブ状態のみ変更
-             */
-            updateActiveLayerDisplay(activeLayerId) {
-                const layerItems = document.querySelectorAll('.layer-item');
-                layerItems.forEach(item => {
-                    const layerId = parseInt(item.dataset.layerId);
-                    if (layerId === activeLayerId) {
-                        item.classList.add('active');
-                    } else {
-                        item.classList.remove('active');
-                    }
-                });
-                console.log('🎨 Active layer display updated:', activeLayerId);
-            }
-
             updateLayerUI() {
                 const layerList = document.getElementById('layer-list');
                 if (!layerList) return;
 
-                console.log('🔄 Full layer UI update starting...');
-
-                // 修正: レイヤー更新中はSortable無効化
-                if (this.sortable) {
-                    this.sortable.option("disabled", true);
-                }
-
                 layerList.innerHTML = '';
 
                 const layers = window.DrawingEngineAPI?.getLayerList() || [];
-                console.log('📊 Current layer data:', layers);
-                
                 const reversedLayers = [...layers].reverse();
 
                 reversedLayers.forEach((layer) => {
@@ -1309,7 +1283,6 @@
                         </div>
                     `;
 
-                    // 修正: レイヤー選択時の処理を最小化
                     layerItem.addEventListener('click', (e) => {
                         const action = e.target.closest('[data-action]')?.dataset.action;
                         if (action === 'toggle-visibility') {
@@ -1319,31 +1292,14 @@
                             window.DrawingEngineAPI?.deleteLayer(layer.id);
                             e.stopPropagation();
                         } else if (!e.target.closest('.layer-thumbnail, .layer-delete-button')) {
-                            // 重要: レイヤー選択時はSortableを無効化してから実行
-                            if (this.sortable) {
-                                this.sortable.option("disabled", true);
-                            }
-                            
-                            console.log('👆 Layer selected:', layer.id, layer.name);
                             window.DrawingEngineAPI?.setActiveLayer(layer.id);
-                            
-                            // 短時間でSortableを再有効化
-                            setTimeout(() => {
-                                if (this.sortable) {
-                                    this.sortable.option("disabled", false);
-                                }
-                            }, 100);
                         }
                     });
 
                     layerList.appendChild(layerItem);
                 });
 
-                // 修正: UI更新完了後にSortable再初期化
-                setTimeout(() => {
-                    this.initializeLayerSortable();
-                    console.log('✅ Layer UI update completed');
-                }, 50);
+                this.initializeLayerSortable();
 
                 setTimeout(() => {
                     layers.forEach(layer => {
