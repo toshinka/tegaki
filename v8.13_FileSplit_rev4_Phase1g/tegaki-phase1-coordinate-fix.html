@@ -1,0 +1,2073 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 Tegaki - 座標変換システム統一版</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg { width: 20px; height: 20px; stroke: #800000; }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.active svg { stroke: #ffffff; }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        .canvas-container {
+            display: inline-block;
+            border-radius: 4px;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            touch-action: none;
+        }
+        
+        canvas {
+            border: none;
+            display: block;
+            cursor: crosshair;
+            touch-action: none;
+        }
+        
+        .layer-panel-container {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none;
+        }
+        
+        .layer-add-button {
+            width: 36px;
+            height: 36px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.1);
+            pointer-events: all;
+        }
+        
+        .layer-add-button:hover {
+            background: var(--futaba-medium);
+            transform: scale(1.1);
+        }
+        
+        .layer-add-button svg { width: 18px; height: 18px; stroke: #800000; }
+        
+        .layer-panel-items {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: transparent;
+            border-radius: 8px;
+            padding: 8px;
+            pointer-events: all;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        
+        .layer-item {
+            width: 180px;
+            height: 64px;
+            background: var(--futaba-cream);
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            padding: 6px 8px;
+            cursor: pointer;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+            display: grid;
+            grid-template-columns: 20px 1fr 48px;
+            grid-template-rows: 1fr 1fr;
+            gap: 4px 8px;
+            align-items: center;
+            user-select: none;
+            position: relative;
+            box-shadow: 0 1px 2px rgba(128, 0, 0, 0.05);
+        }
+        
+        .layer-item:hover {
+            border-color: var(--futaba-medium);
+            background: var(--futaba-background);
+        }
+        
+        .layer-item.active {
+            border-color: var(--futaba-maroon);
+            background: var(--futaba-light-medium);
+            box-shadow: 0 2px 4px rgba(128, 0, 0, 0.15);
+        }
+        
+        .sortable-ghost {
+            opacity: 0.3;
+            background: rgba(100, 150, 255, 0.15) !important;
+            border: 2px dashed #6496ff !important;
+            transform: rotate(2deg);
+        }
+        
+        .sortable-chosen {
+            background: rgba(100, 150, 255, 0.08) !important;
+            border-color: #6496ff !important;
+            box-shadow: 0 4px 12px rgba(100, 150, 255, 0.2) !important;
+        }
+        
+        .layer-visibility {
+            grid-column: 1;
+            grid-row: 1 / 3;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 3px;
+            transition: all 0.2s ease;
+            align-self: center;
+        }
+        
+        .layer-visibility:hover { background: var(--futaba-light-medium); }
+        .layer-visibility svg { width: 16px; height: 16px; stroke: #800000; }
+        .layer-visibility.hidden svg { opacity: 0.3; }
+        
+        .layer-opacity {
+            grid-column: 2;
+            grid-row: 1;
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            align-self: start;
+            margin-top: 2px;
+        }
+        
+        .layer-name {
+            grid-column: 2;
+            grid-row: 2;
+            font-size: 12px;
+            color: var(--text-primary);
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            align-self: end;
+            margin-bottom: 2px;
+        }
+        
+        .layer-thumbnail {
+            grid-column: 3;
+            grid-row: 1 / 3;
+            width: 48px;
+            height: 48px;
+            background: var(--futaba-background);
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            align-self: center;
+        }
+        
+        .layer-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 3px;
+            transition: opacity 0.2s ease;
+        }
+        
+        .layer-thumbnail-placeholder {
+            width: 24px;
+            height: 24px;
+            background: var(--futaba-light-medium);
+            border-radius: 2px;
+            opacity: 0.5;
+        }
+        
+        .layer-delete-button {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 3px;
+            transition: all 0.2s ease;
+            background: rgba(128, 0, 0, 0.1);
+            opacity: 0;
+        }
+        
+        .layer-item:hover .layer-delete-button { opacity: 1; }
+        .layer-delete-button:hover { background: rgba(128, 0, 0, 0.2); }
+        .layer-delete-button svg { width: 10px; height: 10px; stroke: #800000; }
+        
+        .popup-panel {
+            position: fixed;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+            padding: 20px;
+            z-index: 2000;
+            backdrop-filter: blur(12px);
+            display: none;
+            user-select: none;
+            min-width: 280px;
+        }
+        
+        .popup-panel.show { display: block; animation: fadeIn 0.3s ease-out; }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        
+        .popup-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            margin-bottom: 16px;
+            text-align: center;
+            border-bottom: 2px solid var(--futaba-light-medium);
+            padding-bottom: 8px;
+        }
+        
+        .setting-group { margin-bottom: 16px; }
+        
+        .setting-label {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .slider {
+            flex: 1;
+            height: 6px;
+            background: var(--futaba-light-medium);
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .slider-track {
+            height: 100%;
+            background: var(--futaba-maroon);
+            border-radius: 3px;
+            transition: width 0.1s ease;
+        }
+        
+        .slider-handle {
+            width: 16px;
+            height: 16px;
+            background: var(--futaba-maroon);
+            border: 2px solid var(--futaba-background);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .slider-handle:active {
+            cursor: grabbing;
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+        
+        .slider-value {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            min-width: 50px;
+            text-align: right;
+        }
+        
+        .size-input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .size-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            background: var(--futaba-background);
+            font-family: monospace;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .size-input:focus {
+            outline: none;
+            border-color: var(--futaba-maroon);
+        }
+        
+        .size-multiply {
+            color: var(--futaba-maroon);
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .action-button {
+            padding: 10px 16px;
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 8px;
+            background: var(--futaba-background);
+            color: var(--futaba-maroon);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        
+        .action-button:hover {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+
+        /* レイヤー変形パネル */
+        .transform-panel {
+            position: fixed;
+            right: 220px;
+            top: 50%;
+            transform: translateY(-50%);
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 8px;
+            padding: 12px;
+            z-index: 900;
+            opacity: 0;
+            pointer-events: none;
+            transition: opacity 0.3s ease;
+            width: 200px;
+        }
+
+        .transform-panel.show {
+            opacity: 1;
+            pointer-events: all;
+        }
+
+        .transform-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            margin-bottom: 8px;
+            text-align: center;
+        }
+
+        .transform-controls {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .transform-group {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+
+        .transform-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            min-width: 20px;
+        }
+
+        .transform-input {
+            flex: 1;
+            padding: 4px 6px;
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 3px;
+            background: var(--futaba-background);
+            font-family: monospace;
+            font-size: 10px;
+            text-align: center;
+        }
+
+        .transform-buttons {
+            display: flex;
+            gap: 4px;
+            margin-top: 8px;
+        }
+
+        .transform-btn {
+            flex: 1;
+            padding: 4px 6px;
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 3px;
+            background: var(--futaba-background);
+            color: var(--text-primary);
+            cursor: pointer;
+            font-size: 10px;
+            text-align: center;
+            transition: all 0.2s ease;
+        }
+
+        .transform-btn:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-maroon);
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button" id="resize-tool" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M14 15H9v-5"/><path d="M16 3h5v5"/><path d="M21 3 9 15"/></svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button active" id="pen-tool" title="ベクターペン (P)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム (E)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg>
+            </div>
+
+            <div class="tool-separator"></div>
+
+            <div class="tool-button" id="transform-tool" title="変形ツール (T)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M16 3h5v5"/><path d="M8 21H3v-5"/><path d="m21 3-7.5 7.5"/><path d="m3 21 7.5-7.5"/><path d="M9 10 8 9"/><path d="m15 14 1 1"/></svg>
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div class="canvas-container" id="canvas-container">
+                <div id="drawing-canvas"></div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="layer-panel-container" id="layer-panel-container">
+        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        </div>
+        
+        <div class="layer-panel-items" id="layer-list"></div>
+    </div>
+
+    <div class="transform-panel" id="transform-panel">
+        <div class="transform-title">レイヤー変形</div>
+        <div class="transform-controls">
+            <div class="transform-group">
+                <div class="transform-label">X:</div>
+                <input type="number" class="transform-input" id="pos-x" value="0" step="0.1">
+                <div class="transform-label">Y:</div>
+                <input type="number" class="transform-input" id="pos-y" value="0" step="0.1">
+            </div>
+            <div class="transform-group">
+                <div class="transform-label">角度:</div>
+                <input type="number" class="transform-input" id="rotation" value="0" step="1" min="-360" max="360">
+                <div class="transform-label">°</div>
+            </div>
+            <div class="transform-group">
+                <div class="transform-label">ScaleX:</div>
+                <input type="number" class="transform-input" id="scale-x" value="1.0" step="0.1">
+                <div class="transform-label">ScaleY:</div>
+                <input type="number" class="transform-input" id="scale-y" value="1.0" step="0.1">
+            </div>
+            <div class="transform-buttons">
+                <div class="transform-btn" id="flip-h">水平反転</div>
+                <div class="transform-btn" id="flip-v">垂直反転</div>
+            </div>
+            <div class="transform-buttons">
+                <div class="transform-btn" id="reset-transform">リセット</div>
+                <div class="transform-btn" id="apply-transform">適用</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="popup-panel" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-size-slider">
+                    <div class="slider-track" id="pen-size-track"></div>
+                    <div class="slider-handle" id="pen-size-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-size-value">16.0px</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-opacity-slider">
+                    <div class="slider-track" id="pen-opacity-track"></div>
+                    <div class="slider-handle" id="pen-opacity-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-opacity-value">85.0%</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="popup-panel" id="resize-settings" style="left: 60px; top: 150px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバスサイズ</div>
+            <div class="size-input-group">
+                <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                <div class="size-multiply">×</div>
+                <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="action-button" id="apply-resize">適用</div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Layer: <span id="current-layer">背景</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">Transform: <span id="transform-info">scale: 1.0</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+            <div class="status-item">History: <span id="history-info">1/10</span></div>
+        </div>
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    
+    <script>
+(function() {
+    'use strict';
+    
+    // === 設定 ===
+    const CONFIG = {
+        version: '8.2-CoordinateUnified',
+        canvas: { width: 400, height: 400 },
+        rendering: { antialias: true, resolution: 1 },
+        debug: false,
+        history: { maxSize: 10 },
+        thumbnail: { 
+            size: 48, 
+            updateThrottle: 150,
+            quality: 1.0 
+        }
+    };
+
+    const log = (message, ...args) => {
+        if (CONFIG.debug) console.log(`[${CONFIG.version}]`, message, ...args);
+    };
+
+    // === PixiJS v8統一座標変換システム ===
+    class CoordinateSystem {
+        constructor(app) {
+            this.app = app;
+            this.canvasContainer = new PIXI.Container();
+            this.canvasContainer.name = 'canvasContainer';
+            this.canvasContainer.sortableChildren = true;
+            
+            // キャンバス操作用状態
+            this.canvasTransform = {
+                x: 0, y: 0, 
+                scale: 1.0, 
+                rotation: 0
+            };
+            
+            this.setupContainers();
+        }
+
+        setupContainers() {
+            // Stage階層: app.stage -> canvasContainer -> layers
+            this.app.stage.addChild(this.canvasContainer);
+            
+            // キャンバスマスク設定
+            const maskGraphics = new PIXI.Graphics();
+            maskGraphics.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+            maskGraphics.fill(0x000000);
+            this.canvasContainer.addChild(maskGraphics);
+            this.canvasContainer.mask = maskGraphics;
+            
+            // インタラクション設定
+            this.canvasContainer.eventMode = 'static';
+            this.canvasContainer.hitArea = new PIXI.Rectangle(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+            
+            log('Coordinate system initialized');
+        }
+
+        // DOM座標 -> Stage座標 -> Canvas座標変換
+        domToCanvas(domX, domY) {
+            const stagePoint = this.app.renderer.events.pointer.normalizeGlobal(domX, domY);
+            return this.canvasContainer.toLocal(stagePoint);
+        }
+
+        // Canvas座標 -> DOM座標変換
+        canvasToDom(canvasX, canvasY) {
+            const stagePoint = this.canvasContainer.toGlobal(new PIXI.Point(canvasX, canvasY));
+            // Stage座標からDOM座標への変換（簡易版）
+            const canvasRect = this.app.canvas.getBoundingClientRect();
+            return {
+                x: stagePoint.x + canvasRect.left,
+                y: stagePoint.y + canvasRect.top
+            };
+        }
+
+        // キャンバス変形適用
+        applyCanvasTransform() {
+            const ct = this.canvasTransform;
+            this.canvasContainer.position.set(ct.x, ct.y);
+            this.canvasContainer.scale.set(ct.scale, ct.scale);
+            this.canvasContainer.rotation = ct.rotation;
+        }
+
+        // キャンバス移動
+        moveCanvas(deltaX, deltaY) {
+            this.canvasTransform.x += deltaX;
+            this.canvasTransform.y += deltaY;
+            this.applyCanvasTransform();
+        }
+
+        // キャンバス中央リセット
+        resetCanvas() {
+            this.canvasTransform = { x: 0, y: 0, scale: 1.0, rotation: 0 };
+            this.applyCanvasTransform();
+        }
+
+        // キャンバスリサイズ
+        resizeCanvas(newWidth, newHeight) {
+            CONFIG.canvas.width = newWidth;
+            CONFIG.canvas.height = newHeight;
+            
+            this.app.renderer.resize(newWidth, newHeight);
+            
+            // マスク更新
+            if (this.canvasContainer.mask) {
+                this.canvasContainer.mask.clear();
+                this.canvasContainer.mask.rect(0, 0, newWidth, newHeight);
+                this.canvasContainer.mask.fill(0x000000);
+            }
+            
+            this.canvasContainer.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
+            
+            log('Canvas resized to:', newWidth, 'x', newHeight);
+        }
+
+        getTransformInfo() {
+            return {
+                scale: this.canvasTransform.scale.toFixed(2),
+                position: `${this.canvasTransform.x.toFixed(1)}, ${this.canvasTransform.y.toFixed(1)}`
+            };
+        }
+    }
+
+    // === 高速サムネイル生成システム ===
+    class OptimizedThumbnailManager {
+        constructor(app, coordinateSystem) {
+            this.app = app;
+            this.coordinates = coordinateSystem;
+            this.thumbnailTextures = new Map();
+            this.updateQueue = new Set();
+            this.isProcessing = false;
+            this.renderTexture = PIXI.RenderTexture.create({
+                width: CONFIG.thumbnail.size,
+                height: CONFIG.thumbnail.size
+            });
+        }
+
+        // 非同期サムネイル生成要求
+        requestUpdate(layerId) {
+            this.updateQueue.add(layerId);
+            if (!this.isProcessing) {
+                this.scheduleProcess();
+            }
+        }
+
+        scheduleProcess() {
+            this.isProcessing = true;
+            setTimeout(() => {
+                this.processBatch();
+                this.isProcessing = false;
+                
+                if (this.updateQueue.size > 0) {
+                    this.scheduleProcess();
+                }
+            }, CONFIG.thumbnail.updateThrottle);
+        }
+
+        processBatch() {
+            const layerIds = Array.from(this.updateQueue);
+            this.updateQueue.clear();
+            
+            layerIds.forEach(layerId => this.generateThumbnail(layerId));
+        }
+
+        generateThumbnail(layerId) {
+            const layer = window.engineAPI?.getLayer(layerId);
+            if (!layer) return;
+
+            try {
+                // スケール計算
+                const scale = Math.min(
+                    CONFIG.thumbnail.size / CONFIG.canvas.width,
+                    CONFIG.thumbnail.size / CONFIG.canvas.height
+                );
+
+                // 一時的にスケール適用
+                const originalScale = { x: layer.container.scale.x, y: layer.container.scale.y };
+                const originalPosition = { x: layer.container.x, y: layer.container.y };
+                
+                layer.container.scale.set(scale, scale);
+                layer.container.position.set(0, 0);
+
+                // RenderTexture使用で高速化
+                this.app.renderer.render(layer.container, { 
+                    renderTexture: this.renderTexture, 
+                    clear: true 
+                });
+
+                // 元の変形復元
+                layer.container.scale.set(originalScale.x, originalScale.y);
+                layer.container.position.set(originalPosition.x, originalPosition.y);
+
+                // Canvas経由でDataURL生成
+                const canvas = this.app.renderer.extract.canvas(this.renderTexture);
+                const dataUrl = canvas.toDataURL('image/png', CONFIG.thumbnail.quality);
+
+                this.thumbnailTextures.set(layerId, dataUrl);
+                this.updateUI(layerId, dataUrl);
+
+            } catch (error) {
+                console.error('Thumbnail generation failed:', layerId, error);
+            }
+        }
+
+        updateUI(layerId, dataUrl) {
+            const thumbnailContainer = document.querySelector(`[data-layer-id="${layerId}"] .layer-thumbnail`);
+            if (!thumbnailContainer) return;
+
+            let img = thumbnailContainer.querySelector('img');
+            if (!img) {
+                img = document.createElement('img');
+                thumbnailContainer.innerHTML = '';
+                thumbnailContainer.appendChild(img);
+            }
+
+            img.src = dataUrl;
+        }
+
+        clearAll() {
+            this.thumbnailTextures.clear();
+            this.updateQueue.clear();
+        }
+
+        destroy() {
+            this.renderTexture.destroy();
+        }
+    }
+
+    // === レイヤーシステム ===
+    class LayerSystem {
+        constructor(coordinateSystem, thumbnailManager) {
+            this.coordinates = coordinateSystem;
+            this.thumbnailManager = thumbnailManager;
+            this.layers = new Map();
+            this.activeLayerId = null;
+            this.nextId = 1;
+            this.isDragOperation = false;
+        }
+
+        initialize() {
+            this.createBackgroundLayer();
+            this.createLayer('レイヤー1');
+            this.setActiveLayer(1);
+        }
+
+        createBackgroundLayer() {
+            const layer = this.createLayerObject(0, '背景', true);
+            
+            // 背景グラフィック生成
+            const bgGraphics = new PIXI.Graphics();
+            bgGraphics.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+            bgGraphics.fill(0xf0e0d6);
+            layer.container.addChild(bgGraphics);
+            layer.backgroundGraphics = bgGraphics;
+            
+            this.layers.set(0, layer);
+            this.coordinates.canvasContainer.addChild(layer.container);
+            this.activeLayerId = 0;
+            
+            return layer;
+        }
+
+        createLayer(name = null) {
+            const id = this.nextId++;
+            const layer = this.createLayerObject(id, name || `レイヤー${id}`, false);
+            
+            this.layers.set(id, layer);
+            this.coordinates.canvasContainer.addChild(layer.container);
+            this.coordinates.canvasContainer.sortChildren();
+            
+            this.thumbnailManager.requestUpdate(id);
+            
+            if (window.uiController) {
+                window.uiController.updateLayerUI();
+            }
+            
+            return layer;
+        }
+
+        createLayerObject(id, name, isBackground) {
+            const container = new PIXI.Container();
+            container.name = name;
+            container.zIndex = id;
+            container.visible = true;
+
+            return {
+                id, name, container, visible: true, 
+                paths: [], isBackground,
+                // レイヤー固有変形状態
+                transform: {
+                    x: 0, y: 0, rotation: 0, 
+                    scaleX: 1, scaleY: 1,
+                    flipX: false, flipY: false
+                }
+            };
+        }
+
+        deleteLayer(layerId) {
+            if (this.layers.size <= 1) return false;
+            
+            const layer = this.layers.get(layerId);
+            if (!layer) return false;
+
+            // 描画オブジェクト破棄
+            layer.paths.forEach(path => {
+                if (path.graphics) path.graphics.destroy();
+            });
+
+            this.coordinates.canvasContainer.removeChild(layer.container);
+            layer.container.destroy();
+            this.layers.delete(layerId);
+
+            // アクティブレイヤー調整
+            if (this.activeLayerId === layerId) {
+                const layerIds = Array.from(this.layers.keys());
+                this.activeLayerId = layerIds[layerIds.length - 1] || null;
+            }
+
+            if (window.uiController) {
+                window.uiController.updateLayerUI();
+            }
+
+            return true;
+        }
+
+        setActiveLayer(layerId) {
+            if (this.isDragOperation) return false;
+            
+            if (this.layers.has(layerId)) {
+                this.activeLayerId = layerId;
+                if (window.uiController) {
+                    window.uiController.updateLayerUI();
+                    const layer = this.layers.get(layerId);
+                    window.uiController.updateStatus('current-layer', layer.name);
+                }
+                return true;
+            }
+            return false;
+        }
+
+        toggleLayerVisibility(layerId) {
+            const layer = this.layers.get(layerId);
+            if (layer) {
+                layer.visible = !layer.visible;
+                layer.container.visible = layer.visible;
+                
+                if (window.uiController) {
+                    window.uiController.updateLayerUI();
+                }
+                return true;
+            }
+            return false;
+        }
+
+        // レイヤー順序変更（PixiJS zIndex使用）
+        reorderLayer(layerId, fromIndex, toIndex) {
+            if (fromIndex === toIndex) return false;
+            
+            this.isDragOperation = true;
+            
+            const layerArray = Array.from(this.layers.values());
+            const totalLayers = layerArray.length;
+            
+            // DOM順序（上から下）を内部順序（下から上）に変換
+            const internalFromIndex = totalLayers - 1 - fromIndex;
+            const internalToIndex = totalLayers - 1 - toIndex;
+            
+            const layer = layerArray[internalFromIndex];
+            if (!layer || layer.id !== layerId) {
+                this.isDragOperation = false;
+                return false;
+            }
+
+            // zIndex再配置
+            layerArray.splice(internalFromIndex, 1);
+            layerArray.splice(internalToIndex, 0, layer);
+            
+            layerArray.forEach((layer, index) => {
+                layer.container.zIndex = index;
+            });
+            
+            this.coordinates.canvasContainer.sortChildren();
+            
+            setTimeout(() => { this.isDragOperation = false; }, 100);
+            return true;
+        }
+
+        // レイヤー変形適用
+        applyLayerTransform(layerId, transformState) {
+            const layer = this.layers.get(layerId);
+            if (!layer || layer.isBackground) return false;
+
+            const t = transformState;
+            
+            // Matrix使用で複合変形適用
+            const matrix = new PIXI.Matrix();
+            matrix.translate(t.x, t.y);
+            matrix.rotate(t.rotation * Math.PI / 180);
+            matrix.scale(
+                t.scaleX * (t.flipX ? -1 : 1), 
+                t.scaleY * (t.flipY ? -1 : 1)
+            );
+
+            layer.container.transform.setFromMatrix(matrix);
+            layer.transform = { ...t };
+            
+            this.thumbnailManager.requestUpdate(layerId);
+            return true;
+        }
+
+        resetLayerTransform(layerId) {
+            const layer = this.layers.get(layerId);
+            if (!layer || layer.isBackground) return false;
+
+            layer.container.position.set(0, 0);
+            layer.container.rotation = 0;
+            layer.container.scale.set(1, 1);
+            layer.transform = {
+                x: 0, y: 0, rotation: 0, 
+                scaleX: 1, scaleY: 1,
+                flipX: false, flipY: false
+            };
+
+            this.thumbnailManager.requestUpdate(layerId);
+            return true;
+        }
+
+        getActiveLayer() {
+            return this.layers.get(this.activeLayerId);
+        }
+
+        getLayer(layerId) {
+            return this.layers.get(layerId);
+        }
+
+        getLayerList() {
+            return Array.from(this.layers.values()).map(layer => ({
+                id: layer.id,
+                name: layer.name,
+                visible: layer.visible,
+                isActive: layer.id === this.activeLayerId,
+                transform: { ...layer.transform }
+            }));
+        }
+
+        addPathToActiveLayer(path) {
+            const activeLayer = this.getActiveLayer();
+            if (activeLayer) {
+                activeLayer.paths.push(path);
+                activeLayer.container.addChild(path.graphics);
+                this.thumbnailManager.requestUpdate(activeLayer.id);
+            }
+        }
+
+        // キャンバスリサイズ時の背景更新
+        onCanvasResize(newWidth, newHeight) {
+            const backgroundLayer = this.layers.get(0);
+            if (backgroundLayer && backgroundLayer.backgroundGraphics) {
+                backgroundLayer.backgroundGraphics.clear();
+                backgroundLayer.backgroundGraphics.rect(0, 0, newWidth, newHeight);
+                backgroundLayer.backgroundGraphics.fill(0xf0e0d6);
+                
+                this.thumbnailManager.requestUpdate(0);
+            }
+        }
+    }
+
+    // === 描画ツール ===
+    class DrawingTools {
+        constructor(coordinateSystem, layerSystem) {
+            this.coordinates = coordinateSystem;
+            this.layerSystem = layerSystem;
+            this.currentTool = 'pen';
+            this.brushSize = 16.0;
+            this.brushColor = 0x800000;
+            this.opacity = 0.85;
+            this.drawing = { active: false, path: null };
+            this.setupInteraction();
+        }
+
+        setupInteraction() {
+            const container = this.coordinates.canvasContainer;
+            
+            container.on('pointerdown', (e) => this.onPointerDown(e));
+            container.on('pointermove', (e) => this.onPointerMove(e));
+            container.on('pointerup', (e) => this.onPointerUp(e));
+            container.on('pointerupoutside', (e) => this.onPointerUp(e));
+        }
+
+        onPointerDown(event) {
+            if (window.appController.spacePressed) return;
+            
+            const canvasPoint = this.coordinates.domToCanvas(
+                event.data.global.x, event.data.global.y
+            );
+            
+            this.startDrawing(canvasPoint.x, canvasPoint.y);
+        }
+
+        onPointerMove(event) {
+            const canvasPoint = this.coordinates.domToCanvas(
+                event.data.global.x, event.data.global.y
+            );
+            
+            // 座標更新
+            if (window.uiController) {
+                window.uiController.updateStatus('coordinates', 
+                    `x: ${Math.round(canvasPoint.x)}, y: ${Math.round(canvasPoint.y)}`);
+            }
+            
+            if (!window.appController.spacePressed) {
+                this.continueDrawing(canvasPoint.x, canvasPoint.y);
+            }
+        }
+
+        onPointerUp(event) {
+            if (!window.appController.spacePressed) {
+                this.stopDrawing();
+            }
+        }
+
+        startDrawing(canvasX, canvasY) {
+            this.drawing.active = true;
+            
+            const color = this.currentTool === 'eraser' ? 0xf0e0d6 : this.brushColor;
+            const alpha = this.currentTool === 'eraser' ? 1.0 : this.opacity;
+            
+            this.drawing.path = this.createPath(canvasX, canvasY, this.brushSize, color, alpha);
+            this.layerSystem.addPathToActiveLayer(this.drawing.path);
+        }
+
+        continueDrawing(canvasX, canvasY) {
+            if (!this.drawing.active || !this.drawing.path) return;
+            
+            this.extendPath(this.drawing.path, canvasX, canvasY);
+        }
+
+        stopDrawing() {
+            if (this.drawing.path) {
+                this.drawing.path.isComplete = true;
+            }
+            this.drawing = { active: false, path: null };
+        }
+
+        createPath(x, y, size, color, opacity) {
+            const path = {
+                id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                graphics: new PIXI.Graphics(),
+                points: [], color, size, opacity, isComplete: false
+            };
+
+            path.graphics.circle(x, y, size / 2);
+            path.graphics.fill({ color: path.color, alpha: path.opacity });
+            path.points.push({ x, y, size });
+            
+            return path;
+        }
+
+        extendPath(path, x, y) {
+            if (!path || path.points.length === 0) return;
+
+            const lastPoint = path.points[path.points.length - 1];
+            const distance = Math.sqrt((x - lastPoint.x) ** 2 + (y - lastPoint.y) ** 2);
+
+            if (distance < 1.5) return;
+
+            const steps = Math.max(1, Math.ceil(distance / 1.5));
+            for (let i = 1; i <= steps; i++) {
+                const t = i / steps;
+                const px = lastPoint.x + (x - lastPoint.x) * t;
+                const py = lastPoint.y + (y - lastPoint.y) * t;
+
+                path.graphics.circle(px, py, path.size / 2);
+                path.graphics.fill({ color: path.color, alpha: path.opacity });
+                path.points.push({ x: px, y: py, size: path.size });
+            }
+        }
+
+        selectTool(tool) {
+            this.currentTool = tool;
+            if (window.uiController) {
+                const toolNames = { pen: 'ベクターペン', eraser: '消しゴム', transform: '変形ツール' };
+                window.uiController.updateStatus('current-tool', toolNames[tool] || tool);
+            }
+        }
+
+        setBrushSize(size) {
+            this.brushSize = Math.max(0.1, Math.min(100, size));
+        }
+
+        setOpacity(opacity) {
+            this.opacity = Math.max(0, Math.min(1, opacity));
+        }
+
+        getToolSettings() {
+            return {
+                size: this.brushSize,
+                opacity: this.opacity,
+                color: this.brushColor
+            };
+        }
+    }
+
+    // === パン操作管理 ===
+    class PanManager {
+        constructor(coordinateSystem) {
+            this.coordinates = coordinateSystem;
+            this.hammer = null;
+            this.panState = { active: false };
+            this.setupHammerJS();
+        }
+
+        setupHammerJS() {
+            const canvasElement = document.getElementById('canvas-container');
+            if (!canvasElement) return;
+
+            this.hammer = new Hammer(canvasElement);
+            this.hammer.get('pan').set({ 
+                direction: Hammer.DIRECTION_ALL,
+                threshold: 5,
+                pointers: 1
+            });
+
+            this.hammer.on('panstart', (e) => this.onPanStart(e));
+            this.hammer.on('panmove', (e) => this.onPanMove(e));
+            this.hammer.on('panend pancancel', (e) => this.onPanEnd(e));
+        }
+
+        onPanStart(event) {
+            if (!window.appController.spacePressed) return;
+            this.panState = { active: true, lastDelta: { x: 0, y: 0 } };
+        }
+
+        onPanMove(event) {
+            if (!this.panState.active || !window.appController.spacePressed) return;
+
+            const { deltaX, deltaY } = event;
+            const actualDeltaX = deltaX - this.panState.lastDelta.x;
+            const actualDeltaY = deltaY - this.panState.lastDelta.y;
+
+            this.coordinates.moveCanvas(actualDeltaX, actualDeltaY);
+            
+            if (window.uiController) {
+                const transformInfo = this.coordinates.getTransformInfo();
+                window.uiController.updateStatus('transform-info', 
+                    `scale: ${transformInfo.scale}, pos: ${transformInfo.position}`);
+            }
+
+            this.panState.lastDelta = { x: deltaX, y: deltaY };
+        }
+
+        onPanEnd(event) {
+            this.panState = { active: false };
+        }
+
+        destroy() {
+            if (this.hammer) {
+                this.hammer.destroy();
+                this.hammer = null;
+            }
+        }
+    }
+
+    // === システムモニター ===
+    class SystemMonitor {
+        constructor() {
+            this.frameCount = 0;
+            this.lastTime = performance.now();
+            this.active = true;
+        }
+
+        start() {
+            const update = () => {
+                if (!this.active) return;
+                
+                this.frameCount++;
+                const currentTime = performance.now();
+
+                if (currentTime - this.lastTime >= 1000) {
+                    const fps = Math.round((this.frameCount * 1000) / (currentTime - this.lastTime));
+                    
+                    if (window.uiController) {
+                        window.uiController.updateStatus('fps', fps);
+                    }
+
+                    this.frameCount = 0;
+                    this.lastTime = currentTime;
+                }
+
+                requestAnimationFrame(update);
+            };
+            update();
+        }
+
+        stop() {
+            this.active = false;
+        }
+    }
+
+    // === UI コントローラー ===
+    class UIController {
+        constructor() {
+            this.activePopup = null;
+            this.sliders = new Map();
+            this.sortable = null;
+            this.dragInProgress = false;
+            this.transformPanelVisible = false;
+        }
+
+        initialize() {
+            this.setupEventDelegation();
+            this.setupSliders();
+            this.setupTransformPanel();
+            this.updateStatus('canvas-info', '400×400px');
+        }
+
+        setupEventDelegation() {
+            document.addEventListener('click', (e) => {
+                const toolButton = e.target.closest('.tool-button');
+                if (toolButton) {
+                    this.handleToolClick(toolButton);
+                    return;
+                }
+
+                const layerAddBtn = e.target.closest('#add-layer-btn');
+                if (layerAddBtn) {
+                    const layer = window.engineAPI.createLayer();
+                    if (layer) {
+                        window.engineAPI.setActiveLayer(layer.id);
+                    }
+                    return;
+                }
+
+                const applyResize = e.target.closest('#apply-resize');
+                if (applyResize) {
+                    this.applyResize();
+                    return;
+                }
+
+                if (!e.target.closest('.popup-panel, .tool-button, .layer-panel-container, .transform-panel')) {
+                    this.closeAllPopups();
+                }
+            });
+        }
+
+        handleToolClick(button) {
+            const toolId = button.id.replace('-tool', '');
+            
+            if (toolId === 'pen') {
+                window.engineAPI.selectTool('pen');
+                this.updateToolButtons('pen');
+                this.togglePopup('pen-settings');
+                this.hideTransformPanel();
+            } else if (toolId === 'eraser') {
+                window.engineAPI.selectTool('eraser');
+                this.updateToolButtons('eraser');
+                this.closeAllPopups();
+                this.hideTransformPanel();
+            } else if (toolId === 'transform') {
+                window.engineAPI.selectTool('transform');
+                this.updateToolButtons('transform');
+                this.closeAllPopups();
+                this.showTransformPanel();
+            } else if (toolId === 'resize') {
+                this.togglePopup('resize-settings');
+                this.hideTransformPanel();
+            }
+        }
+
+        updateToolButtons(activeTool) {
+            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+            const activeBtn = document.getElementById(activeTool + '-tool');
+            if (activeBtn) activeBtn.classList.add('active');
+        }
+
+        setupTransformPanel() {
+            const inputs = ['pos-x', 'pos-y', 'rotation', 'scale-x', 'scale-y'];
+            inputs.forEach(id => {
+                const input = document.getElementById(id);
+                if (input) {
+                    input.addEventListener('input', () => this.onTransformInputChange());
+                }
+            });
+
+            document.getElementById('flip-h')?.addEventListener('click', () => this.flipLayer(true, false));
+            document.getElementById('flip-v')?.addEventListener('click', () => this.flipLayer(false, true));
+            document.getElementById('reset-transform')?.addEventListener('click', () => this.resetTransform());
+            document.getElementById('apply-transform')?.addEventListener('click', () => this.applyTransform());
+        }
+
+        showTransformPanel() {
+            const panel = document.getElementById('transform-panel');
+            if (panel) {
+                panel.classList.add('show');
+                this.transformPanelVisible = true;
+                this.updateTransformInputs();
+            }
+        }
+
+        hideTransformPanel() {
+            const panel = document.getElementById('transform-panel');
+            if (panel) {
+                panel.classList.remove('show');
+                this.transformPanelVisible = false;
+            }
+        }
+
+        updateTransformInputs() {
+            const activeLayer = window.engineAPI.getActiveLayer();
+            if (!activeLayer || activeLayer.isBackground) return;
+
+            const t = activeLayer.transform;
+            document.getElementById('pos-x').value = t.x.toFixed(1);
+            document.getElementById('pos-y').value = t.y.toFixed(1);
+            document.getElementById('rotation').value = t.rotation.toFixed(0);
+            document.getElementById('scale-x').value = t.scaleX.toFixed(2);
+            document.getElementById('scale-y').value = t.scaleY.toFixed(2);
+        }
+
+        onTransformInputChange() {
+            if (!this.transformPanelVisible) return;
+            
+            const transformState = {
+                x: parseFloat(document.getElementById('pos-x').value) || 0,
+                y: parseFloat(document.getElementById('pos-y').value) || 0,
+                rotation: parseFloat(document.getElementById('rotation').value) || 0,
+                scaleX: parseFloat(document.getElementById('scale-x').value) || 1,
+                scaleY: parseFloat(document.getElementById('scale-y').value) || 1,
+                flipX: false,
+                flipY: false
+            };
+
+            const activeLayer = window.engineAPI.getActiveLayer();
+            if (activeLayer && !activeLayer.isBackground) {
+                window.engineAPI.applyLayerTransform(activeLayer.id, transformState);
+            }
+        }
+
+        flipLayer(flipH, flipV) {
+            const activeLayer = window.engineAPI.getActiveLayer();
+            if (!activeLayer || activeLayer.isBackground) return;
+
+            const currentTransform = activeLayer.transform;
+            if (flipH) currentTransform.flipX = !currentTransform.flipX;
+            if (flipV) currentTransform.flipY = !currentTransform.flipY;
+
+            window.engineAPI.applyLayerTransform(activeLayer.id, currentTransform);
+            this.updateTransformInputs();
+        }
+
+        resetTransform() {
+            const activeLayer = window.engineAPI.getActiveLayer();
+            if (activeLayer && !activeLayer.isBackground) {
+                window.engineAPI.resetLayerTransform(activeLayer.id);
+                this.updateTransformInputs();
+            }
+        }
+
+        applyTransform() {
+            this.onTransformInputChange();
+        }
+
+        setupSliders() {
+            this.createSlider('pen-size-slider', 0.1, 100, 16.0, (value) => {
+                window.engineAPI.setBrushSize(value);
+                return value.toFixed(1) + 'px';
+            });
+            
+            this.createSlider('pen-opacity-slider', 0, 100, 85.0, (value) => {
+                window.engineAPI.setOpacity(value / 100);
+                return value.toFixed(1) + '%';
+            });
+        }
+
+        createSlider(sliderId, min, max, initial, callback) {
+            const container = document.getElementById(sliderId);
+            if (!container) return;
+
+            const track = container.querySelector('.slider-track');
+            const handle = container.querySelector('.slider-handle');
+            const valueDisplay = container.parentNode.querySelector('.slider-value');
+
+            if (!track || !handle || !valueDisplay) return;
+
+            const slider = {
+                value: initial, min, max, callback, track, handle, valueDisplay, dragging: false
+            };
+
+            this.sliders.set(sliderId, slider);
+
+            const update = (value) => {
+                slider.value = Math.max(min, Math.min(max, value));
+                const percentage = ((slider.value - min) / (max - min)) * 100;
+                
+                track.style.width = percentage + '%';
+                handle.style.left = percentage + '%';
+                valueDisplay.textContent = callback(slider.value);
+            };
+
+            const getValue = (clientX) => {
+                const rect = container.getBoundingClientRect();
+                const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                return min + (percentage * (max - min));
+            };
+
+            container.addEventListener('mousedown', (e) => {
+                slider.dragging = true;
+                update(getValue(e.clientX));
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (slider.dragging) update(getValue(e.clientX));
+            });
+
+            document.addEventListener('mouseup', () => {
+                slider.dragging = false;
+            });
+
+            update(initial);
+        }
+
+        togglePopup(popupId) {
+            const popup = document.getElementById(popupId);
+            if (!popup) return;
+            
+            if (this.activePopup && this.activePopup !== popup) {
+                this.activePopup.classList.remove('show');
+            }
+            
+            const isVisible = popup.classList.contains('show');
+            popup.classList.toggle('show', !isVisible);
+            this.activePopup = isVisible ? null : popup;
+        }
+
+        closeAllPopups() {
+            document.querySelectorAll('.popup-panel').forEach(popup => {
+                popup.classList.remove('show');
+            });
+            this.activePopup = null;
+        }
+
+        applyResize() {
+            const widthInput = document.getElementById('canvas-width');
+            const heightInput = document.getElementById('canvas-height');
+
+            if (widthInput && heightInput) {
+                const width = parseInt(widthInput.value);
+                const height = parseInt(heightInput.value);
+
+                if (width >= 100 && width <= 4096 && height >= 100 && height <= 4096) {
+                    window.engineAPI.resizeCanvas(width, height);
+                    this.updateStatus('canvas-info', `${width}×${height}px`);
+                    this.closeAllPopups();
+                }
+            }
+        }
+
+        updateLayerUI() {
+            const layerList = document.getElementById('layer-list');
+            if (!layerList) return;
+
+            layerList.innerHTML = '';
+
+            const layers = window.engineAPI.getLayerList();
+            const reversedLayers = [...layers].reverse(); // DOM表示順序
+
+            reversedLayers.forEach((layer) => {
+                const layerItem = document.createElement('div');
+                layerItem.className = `layer-item ${layer.isActive ? 'active' : ''}`;
+                layerItem.dataset.layerId = layer.id;
+                
+                const eyeIcon = layer.visible ? 
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>' :
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
+
+                const deleteIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>';
+
+                layerItem.innerHTML = `
+                    <div class="layer-visibility ${layer.visible ? '' : 'hidden'}" data-action="toggle-visibility">
+                        ${eyeIcon}
+                    </div>
+                    <div class="layer-opacity">100%</div>
+                    <div class="layer-name">${layer.name}</div>
+                    <div class="layer-thumbnail">
+                        <div class="layer-thumbnail-placeholder"></div>
+                    </div>
+                    <div class="layer-delete-button" data-action="delete-layer">
+                        ${deleteIcon}
+                    </div>
+                `;
+
+                layerItem.addEventListener('click', (e) => {
+                    if (this.dragInProgress) return;
+                    
+                    const action = e.target.closest('[data-action]')?.dataset.action;
+                    if (action === 'toggle-visibility') {
+                        window.engineAPI.toggleLayerVisibility(layer.id);
+                        e.stopPropagation();
+                    } else if (action === 'delete-layer') {
+                        window.engineAPI.deleteLayer(layer.id);
+                        e.stopPropagation();
+                    } else if (!e.target.closest('.layer-thumbnail, .layer-delete-button')) {
+                        window.engineAPI.setActiveLayer(layer.id);
+                        
+                        // 変形パネル更新
+                        if (this.transformPanelVisible) {
+                            setTimeout(() => this.updateTransformInputs(), 50);
+                        }
+                    }
+                });
+
+                layerList.appendChild(layerItem);
+            });
+
+            this.initializeLayerSortable();
+        }
+
+        initializeLayerSortable() {
+            const layerList = document.getElementById('layer-list');
+            if (!layerList || !window.Sortable) return;
+            
+            if (this.sortable) {
+                this.sortable.destroy();
+                this.sortable = null;
+            }
+            
+            this.sortable = window.Sortable.create(layerList, {
+                handle: '.layer-item',
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                animation: 150,
+                
+                onStart: () => {
+                    this.dragInProgress = true;
+                },
+                
+                onEnd: (evt) => {
+                    this.dragInProgress = false;
+                    
+                    if (evt.oldIndex !== evt.newIndex) {
+                        const layerId = parseInt(evt.item.dataset.layerId);
+                        
+                        setTimeout(() => {
+                            window.engineAPI.reorderLayer(layerId, evt.oldIndex, evt.newIndex);
+                        }, 50);
+                    }
+                }
+            });
+        }
+
+        updateStatus(elementId, text) {
+            const element = document.getElementById(elementId);
+            if (element) {
+                element.textContent = text;
+            }
+        }
+
+        destroy() {
+            if (this.sortable) {
+                this.sortable.destroy();
+                this.sortable = null;
+            }
+        }
+    }
+
+    // === ショートカット管理 ===
+    class ShortcutManager {
+        constructor() {
+            this.keyStates = new Set();
+        }
+
+        initialize() {
+            document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+            document.addEventListener('keyup', (e) => this.handleKeyUp(e));
+        }
+
+        handleKeyDown(e) {
+            const keyCombo = this.getKeyCombo(e);
+            if (this.keyStates.has(keyCombo)) return;
+            this.keyStates.add(keyCombo);
+
+            if (this.isInputFocused()) return;
+
+            if (e.code === 'Space') {
+                window.appController.spacePressed = true;
+                e.preventDefault();
+                return;
+            }
+
+            const keyActions = {
+                'KeyP': () => this.switchTool('pen'),
+                'KeyE': () => this.switchTool('eraser'), 
+                'KeyT': () => this.switchTool('transform'),
+                'Home': () => window.engineAPI.resetCanvas()
+            };
+
+            const action = keyActions[e.code];
+            if (action) {
+                action();
+                e.preventDefault();
+            }
+
+            if (window.appController.spacePressed) {
+                const moveActions = {
+                    'ArrowLeft': [20, 0],
+                    'ArrowRight': [-20, 0],
+                    'ArrowUp': [0, 20],
+                    'ArrowDown': [0, -20]
+                };
+
+                const movement = moveActions[e.code];
+                if (movement) {
+                    window.engineAPI.moveCanvas(...movement);
+                    e.preventDefault();
+                }
+            }
+        }
+
+        handleKeyUp(e) {
+            const keyCombo = this.getKeyCombo(e);
+            this.keyStates.delete(keyCombo);
+
+            if (e.code === 'Space') {
+                window.appController.spacePressed = false;
+            }
+        }
+
+        switchTool(toolName) {
+            const button = document.getElementById(toolName + '-tool');
+            if (button && window.uiController) {
+                window.uiController.handleToolClick(button);
+            }
+        }
+
+        getKeyCombo(e) {
+            let combo = '';
+            if (e.ctrlKey) combo += 'ctrl+';
+            if (e.altKey) combo += 'alt+';
+            if (e.shiftKey) combo += 'shift+';
+            combo += e.code.toLowerCase();
+            return combo;
+        }
+
+        isInputFocused() {
+            const activeElement = document.activeElement;
+            return activeElement && (
+                activeElement.tagName === 'INPUT' ||
+                activeElement.tagName === 'TEXTAREA' ||
+                activeElement.contentEditable === 'true'
+            );
+        }
+    }
+
+    // === メインアプリケーション ===
+    class TegakiApp {
+        constructor() {
+            this.app = null;
+            this.coordinateSystem = null;
+            this.layerSystem = null;
+            this.drawingTools = null;
+            this.thumbnailManager = null;
+            this.panManager = null;
+            this.systemMonitor = null;
+            this.spacePressed = false;
+        }
+
+        async initialize() {
+            // PIXI.Application 初期化
+            this.app = new PIXI.Application();
+            await this.app.init({
+                width: CONFIG.canvas.width,
+                height: CONFIG.canvas.height,
+                background: 0xf0e0d6,
+                backgroundAlpha: 1,
+                antialias: CONFIG.rendering.antialias,
+                resolution: CONFIG.rendering.resolution
+            });
+
+            // キャンバス挿入
+            const canvasContainer = document.getElementById('drawing-canvas');
+            canvasContainer.appendChild(this.app.canvas);
+
+            // システム初期化
+            this.coordinateSystem = new CoordinateSystem(this.app);
+            this.thumbnailManager = new OptimizedThumbnailManager(this.app, this.coordinateSystem);
+            this.layerSystem = new LayerSystem(this.coordinateSystem, this.thumbnailManager);
+            this.drawingTools = new DrawingTools(this.coordinateSystem, this.layerSystem);
+            this.panManager = new PanManager(this.coordinateSystem);
+            this.systemMonitor = new SystemMonitor();
+
+            // レイヤー初期化
+            this.layerSystem.initialize();
+            this.systemMonitor.start();
+
+            log('Tegaki application initialized successfully');
+            return true;
+        }
+
+        destroy() {
+            try {
+                if (this.systemMonitor) this.systemMonitor.stop();
+                if (this.panManager) this.panManager.destroy();
+                if (this.thumbnailManager) this.thumbnailManager.destroy();
+                if (this.app) this.app.destroy(true);
+            } catch (error) {
+                console.error('App destruction error:', error);
+            }
+        }
+    }
+
+    // === グローバルAPI ===
+    window.engineAPI = {
+        // レイヤー操作
+        createLayer: (name) => {
+            if (window.tegakiApp?.layerSystem) {
+                const layer = window.tegakiApp.layerSystem.createLayer(name);
+                return layer;
+            }
+            return null;
+        },
+
+        deleteLayer: (layerId) => {
+            return window.tegakiApp?.layerSystem?.deleteLayer(layerId) || false;
+        },
+
+        setActiveLayer: (layerId) => {
+            return window.tegakiApp?.layerSystem?.setActiveLayer(layerId) || false;
+        },
+
+        toggleLayerVisibility: (layerId) => {
+            return window.tegakiApp?.layerSystem?.toggleLayerVisibility(layerId) || false;
+        },
+
+        reorderLayer: (layerId, fromIndex, toIndex) => {
+            return window.tegakiApp?.layerSystem?.reorderLayer(layerId, fromIndex, toIndex) || false;
+        },
+
+        getActiveLayer: () => {
+            return window.tegakiApp?.layerSystem?.getActiveLayer() || null;
+        },
+
+        getLayer: (layerId) => {
+            return window.tegakiApp?.layerSystem?.getLayer(layerId) || null;
+        },
+
+        getLayerList: () => {
+            return window.tegakiApp?.layerSystem?.getLayerList() || [];
+        },
+
+        // 変形操作
+        applyLayerTransform: (layerId, transformState) => {
+            return window.tegakiApp?.layerSystem?.applyLayerTransform(layerId, transformState) || false;
+        },
+
+        resetLayerTransform: (layerId) => {
+            return window.tegakiApp?.layerSystem?.resetLayerTransform(layerId) || false;
+        },
+
+        // 描画ツール
+        selectTool: (tool) => {
+            if (window.tegakiApp?.drawingTools) {
+                window.tegakiApp.drawingTools.selectTool(tool);
+                return true;
+            }
+            return false;
+        },
+
+        setBrushSize: (size) => {
+            if (window.tegakiApp?.drawingTools) {
+                window.tegakiApp.drawingTools.setBrushSize(size);
+                return true;
+            }
+            return false;
+        },
+
+        setOpacity: (opacity) => {
+            if (window.tegakiApp?.drawingTools) {
+                window.tegakiApp.drawingTools.setOpacity(opacity);
+                return true;
+            }
+            return false;
+        },
+
+        // キャンバス操作
+        moveCanvas: (deltaX, deltaY) => {
+            if (window.tegakiApp?.coordinateSystem) {
+                window.tegakiApp.coordinateSystem.moveCanvas(deltaX, deltaY);
+                return true;
+            }
+            return false;
+        },
+
+        resetCanvas: () => {
+            if (window.tegakiApp?.coordinateSystem) {
+                window.tegakiApp.coordinateSystem.resetCanvas();
+                return true;
+            }
+            return false;
+        },
+
+        resizeCanvas: (width, height) => {
+            if (window.tegakiApp?.coordinateSystem && window.tegakiApp?.layerSystem) {
+                window.tegakiApp.coordinateSystem.resizeCanvas(width, height);
+                window.tegakiApp.layerSystem.onCanvasResize(width, height);
+                return true;
+            }
+            return false;
+        }
+    };
+
+    // === アプリケーション起動 ===
+    class AppController {
+        constructor() {
+            this.spacePressed = false;
+        }
+
+        async initialize() {
+            try {
+                // 依存関係チェック
+                const requiredLibs = {
+                    PIXI: window.PIXI,
+                    Hammer: window.Hammer,
+                    Sortable: window.Sortable
+                };
+
+                for (const [name, lib] of Object.entries(requiredLibs)) {
+                    if (!lib) {
+                        throw new Error(`Required library ${name} not found`);
+                    }
+                }
+
+                // アプリケーション初期化
+                window.tegakiApp = new TegakiApp();
+                await window.tegakiApp.initialize();
+
+                // UI・ショートカット初期化
+                window.uiController = new UIController();
+                window.uiController.initialize();
+                
+                const shortcutManager = new ShortcutManager();
+                shortcutManager.initialize();
+
+                // レイヤーUI更新
+                setTimeout(() => {
+                    window.uiController.updateLayerUI();
+                }, 100);
+
+                // ウィンドウイベント
+                window.addEventListener('beforeunload', () => {
+                    window.tegakiApp?.destroy();
+                });
+
+                return true;
+
+            } catch (error) {
+                console.error('App initialization failed:', error);
+                this.displayError(error.message);
+                return false;
+            }
+        }
+
+        displayError(message) {
+            const canvasArea = document.querySelector('.canvas-area');
+            if (canvasArea) {
+                canvasArea.innerHTML = `
+                    <div style="text-align: center; color: var(--futaba-maroon); font-size: 18px; padding: 40px;">
+                        <div>⚠️ 初期化エラー</div>
+                        <div style="font-size: 14px; margin-top: 16px; color: var(--text-secondary);">
+                            ${message}
+                        </div>
+                    </div>
+                `;
+            }
+        }
+    }
+
+    // アプリケーション起動
+    window.addEventListener('DOMContentLoaded', async () => {
+        window.appController = new AppController();
+        const success = await window.appController.initialize();
+        
+        if (success) {
+            console.log('🎨 Tegaki Phase1 - 座標変換システム統一版 起動完了');
+        }
+    });
+
+    log('Tegaki Phase1 coordinate system loaded');
+
+})();
+    </script>
+</body>
+</html>

@@ -1,120 +1,200 @@
-ChatGPT:
+根本原因（高確率）
 
-見えている現象（レイヤー切り替え・ドラッグ時に一瞬「▣（透けたサムネイルの枠だけ）」が表示される）の原因は、
-main.html 内の サムネイル更新処理 と Sortable.js のドラッグ中スタイル が重なっているためです。
+1.DrawingEngine のコンストラクタが重い初期化（this.thumbnailManager.clearCache() など）を行っており、thumbnailManager がまだ生成されていないタイミングで呼ばれている。ファイル内の初期化順序の誤りです（参照ファイル確認済み）。 
+GitHub
 
-原因ポイント
+2.DrawingEngine.initialize() が途中で途切れている／非同期処理を待たずに次の処理へ進んでいるため、他のモジュール（サムネイル、レイヤー、ショートカット登録等）が未初期化のまま使われる。
 
-StableThumbnailManager._updateThumbnailUI
-サムネイルを更新するときに <img> の opacity を一瞬 0 にしてから新しい画像を差し替えている。
-
-thumbnailContainer.innerHTML = `<img src="${dataUrl}" alt="" style="opacity: 0;">`;
-const newImg = thumbnailContainer.querySelector('img');
-setTimeout(() => newImg.style.opacity = '1', 50);
+3.API の初期化フロー（コンストラクタで重い処理 → すぐに外部に公開）は設計ミス。コンストラクタは「軽く」して、実際の作業は async initialize() で順序良く行うべきです（ルールブックの方針とも整合）。 
 
 
-→ この 50ms の間、背景の .layer-thumbnail の枠だけが表示され「▣」に見えている。
+以下、具体的な改修案とそのまま差し替え可能なコード（最小限）を提示します。これで 1〜3 を同時に解消できます。
 
-Sortable.js のドラッグ中スタイル
+1) 原則（設計ルール）
 
-.sortable-ghost {
-    opacity: 0.3;
-    background: rgba(100, 150, 255, 0.15) !important;
-    border: 2px dashed #6496ff !important;
-    transform: rotate(2deg);
-}
+コンストラクタではフィールドの初期化（null や bind）だけにする。重い処理（PIXI.Application 作成、アセット読み込み、レンダリング／サムネイル生成等）は async initialize() で行う。
 
+サムネイル生成は PIXI.RenderTexture を使って Ticker で更新する（ルールブックの推奨）。 
+GitHub
 
-→ ドラッグ中はサムネイル全体が半透明や枠線表示になり、さらに目立ってしまう。
+2) 変更ポイント（要修正）
 
-改修策（いずれかを選べます）
-A. 「▣」を出さない（おすすめ）
+DrawingEngine.constructor から this.thumbnailManager.clearCache() を削除（またはガード + 遅延実行へ移動）。
 
-サムネイル更新時に 即時置換 する。フェードアニメーションをやめる。
+DrawingEngine.initialize() を完全な async フローに実装： renderer/app → containers → layerSystem → thumbnailManager（ここで clearCache()）→ イベント/ショートカット登録 → ready フラグ/resolve Promise。
 
-// StableThumbnailManager._updateThumbnailUI の else 部分を修正
-if (thumbnailContainer) {
-    if (thumbnailImg) {
-        thumbnailImg.src = dataUrl;   // 即時差し替え
-        thumbnailImg.style.opacity = '1';
-    } else {
-        thumbnailContainer.innerHTML = `<img src="${dataUrl}" alt="">`;
+外部から new DrawingEngine() を作るだけで即使用するコードがあれば、await engine.initialize() または engine.readyPromise を使うよう呼びかける。
+
+3) 差し替えサンプルコード（抜粋 — tegaki_canvas_fixed.html 内の該当クラスをこれに差し替えてください）
+// --- DrawingEngine (修正版) ---
+class DrawingEngine {
+  constructor(options = {}) {
+    // 軽い初期化のみ。重い処理は initialize() で。
+    this.options = options;
+    this.app = null;
+    this.canvasContainer = null;
+    this.layerSystem = null;
+    this.thumbnailManager = null;
+    this.history = null;
+    this.ready = false;
+
+    // キーボードハンドラを later に解除できるように束縛しておく
+    this._boundOnKeyDown = this._onKeyDown.bind(this);
+
+    // Promise ベースで初期化の完了を通知できるようにしておく
+    this._readyResolve = null;
+    this.readyPromise = new Promise((resolve) => { this._readyResolve = resolve; });
+  }
+
+  // 外部から await engine.initialize() する想定
+  async initialize({ mountEl = document.body, width = 800, height = 600 } = {}) {
+    // 1) PIXI アプリ生成（非同期なアセットはここで await する）
+    this.app = new PIXI.Application({
+      width, height, backgroundAlpha: 0, antialias: true
+    });
+    // mountEl が DOM にあることを保証する（呼び出し側は DOMContentLoaded 後に）
+    mountEl.appendChild(this.app.view);
+
+    // 2) containers の作成（canvasContainer を中心に）
+    this.canvasContainer = new PIXI.Container();
+    this.app.stage.addChild(this.canvasContainer);
+
+    // 3) layerSystem / managers の初期化（必要なら await）
+    this.layerSystem = new LayerSystem(this.app, this.canvasContainer);
+
+    // 4) サムネイルマネージャの初期化（ここで clearCache を安全に呼べる）
+    this.thumbnailManager = new ThumbnailManager(this.app, this.layerSystem, { thumbSize: 64 });
+    // safe: thumbnailManager が確実に存在するので clearCache を行う
+    this.thumbnailManager.clearCache();
+
+    // 5) ショートカット等の UI イベント登録
+    this._initShortcuts();
+    this._attachPointerEvents();
+
+    // 6) ループや Ticker 登録（必要なら）
+    this.app.ticker.add(() => { /* tick-based updates */ });
+
+    // 7) ready フラグと Promise の解決
+    this.ready = true;
+    if (this._readyResolve) this._readyResolve(this);
+    return this;
+  }
+
+  _initShortcuts() {
+    window.addEventListener('keydown', this._boundOnKeyDown, { passive: false });
+  }
+
+  _onKeyDown(e) {
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (ctrl && e.key.toLowerCase() === 'z') { e.preventDefault(); this._undo(); return; }
+    if (ctrl && (e.key.toLowerCase() === 'y' || (e.shiftKey && e.key.toLowerCase() === 'z'))) {
+      e.preventDefault(); this._redo(); return;
     }
+    // ここにツール切替など
+  }
+
+  destroy() {
+    window.removeEventListener('keydown', this._boundOnKeyDown, { passive: false });
+    this.app?.destroy(true);
+    this.ready = false;
+  }
+
+  // undo/redo 等のダミー
+  _undo() { /* ... */ }
+  _redo() { /* ... */ }
+
+  // pointer イベントの attach（例）
+  _attachPointerEvents() {
+    // 例: this.app.view の pointerdown を登録する等
+  }
 }
 
-B. 「▣」を塗りつぶし（■にする）
+// --- ThumbnailManager（最小実装例）---
+class ThumbnailManager {
+  constructor(app, layerSystem, opts = {}) {
+    this.app = app;
+    this.layerSystem = layerSystem;
+    this.thumbSize = opts.thumbSize || 64;
+    this.cache = new Map();
+    this.needsUpdate = new Set();
+  }
 
-layer-thumbnail に背景色を付けて、画像が消えている間も枠が見えないようにする。
+  clearCache() {
+    this.cache.forEach((tex) => {
+      try { tex.destroy(true); } catch(e) { /* ignore */ }
+    });
+    this.cache.clear();
+  }
 
-.layer-thumbnail {
-    background: var(--futaba-light-medium); /* 枠色と同じ塗りつぶし */
+  scheduleUpdate(layerId) {
+    this.needsUpdate.add(layerId);
+    // Ticker 内でバッチ更新を行う想定
+    this.app.ticker.addOnce(() => this._updateScheduled());
+  }
+
+  _updateScheduled() {
+    for (const layerId of this.needsUpdate) {
+      this.updateLayerThumb(layerId);
+    }
+    this.needsUpdate.clear();
+  }
+
+  updateLayerThumb(layerId) {
+    const layer = this.layerSystem.getLayer(layerId);
+    if (!layer) return;
+    const rt = PIXI.RenderTexture.create({ width: this.thumbSize, height: this.thumbSize });
+    // app.renderer.render を使って高速にサムネイルを作る（ルールブック推奨）
+    this.app.renderer.render(layer, { renderTexture: rt, clear: true });
+    // 既存テクスチャは破棄して置き換え
+    const prev = this.cache.get(layerId);
+    if (prev && prev !== rt) { try { prev.destroy(true); } catch(e){ } }
+    this.cache.set(layerId, rt);
+  }
 }
 
-C. 切り替え時はサムネイル自体を非表示にする
+4) API 初期化フローの改善（呼出し側）
 
-更新時に一瞬 .layer-thumbnail を display:none にして、差し替え後に表示。
+従来（NG）
 
-thumbnailContainer.style.visibility = 'hidden';
-thumbnailContainer.innerHTML = `<img src="${dataUrl}" alt="">`;
-requestAnimationFrame(() => {
-    thumbnailContainer.style.visibility = 'visible';
-});
-
-まとめ
-
-原因は「サムネイル更新時のフェード処理」と「Sortable.jsのゴーストスタイル」。
-
-対応策は3種類：
-
-フェードをやめ即時差し替え（▣が出ない）
-
-背景を塗りつぶす（▣が■に見える）
-
-更新中は非表示にする（完全に消える）
+const engine = new DrawingEngine(); // constructor が即座に重い処理をする
+// すぐに engine を使おうとするコードがエラーになる -> thumbnailManager undefined
 
 
-問題点
+推奨（OK）
 
-resetViewport() は TransformSystem を初期スケール・位置にリセットしますが、
-すでに canvas-container は CSS 側で
-
-left: 50%;
-top: 50%;
-transform: translate(-50%, -50%);
+const engine = new DrawingEngine();
+await engine.initialize({ mountEl: document.getElementById('canvasRoot'), width: 1024, height: 768 });
+// ここから engine を安全に使える
 
 
-が入っているため、二重で中央寄せが適用されます。
+もし既存コードが const engine = new DrawingEngine(); のみで他コードが即アクセスする設計なら、window.drawingEngineReady = engine.readyPromise; のように Promise を公開して await window.drawingEngineReady を呼ぶようにする移行が安全です。
 
-そのため「初回パン開始時に右下へ 150〜200px ほどズレる」という現象が出ます。
+5) 追加のポイント（見落としがちな原因）
 
-2回目以降は firstPanComplete = true になるためリセットが走らず、ズレなくなる。
+スクリプトの実行タイミング：<script> が head にあって DOM（mountEl）がまだ無い場合にエラーになる → DOMContentLoaded 後に initialize() を呼ぶか、スクリプトを </body> の直前に置く。
 
-✅ 対策
-方法 1: 初回リセットを無効化する（もっとも簡単）
-if (!this.state.firstPanComplete) {
-    // window.DrawingEngineAPI?.resetViewport(); ← これを削除/コメントアウト
-    console.log('🔄 [HammerJS] First pan - skipped reset');
-}
+thumbnailManager クラス定義がファイルの後半にあり、コンストラクタで new ThumbnailManager() を呼ぶと定義前の参照になるケース（クラス宣言は巻き上げられない）。必ず new より前にクラス定義が存在するかモジュール化する。
+
+非同期なアセット読み込み（PIXI.Assets.load）を initialize() 内で await する。
+（上記は設計ルール／サムネイル最適化とも整合します）。 
 
 
-→ これで初回パンでも余計なリセットがかからなくなり、ズレは発生しません。
+6) デバッグチェックリスト（素早く確認できる順）
 
-方法 2: 正しい位置に初期化する
+tegaki_canvas_fixed.html 内で clearCache( を grep して呼び出し箇所を特定。
 
-もし「本当に初回だけキャンバスを中央に揃えたい」意図があるなら、
-resetViewport() ではなく recordInitialPosition() の値を使って正しく中央補正するように修正します。
+DrawingEngine の constructor 内にある処理を軽くする（console.log を置いて何が undefined か確認）。
 
-例:
+initialize() の最終行まで到達しているか console.log('init done') を入れて確認。
 
-if (!this.state.firstPanComplete) {
-    const { x, y } = this.initialCanvasPosition;
-    this.container.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
-}
+DOM のマウント要素が存在するか確認（document.getElementById('...') が null になっていないか）。
 
-🎯 結論
+コンソールの最初のエラー行番号をたどる（最初の例外が本質原因であることが多い）。
 
-今回のズレは 「初回パン開始時に resetViewport() を呼んでいる」ことが原因です。
+7) 最後に（まとめ）
 
-ズレをなくしたいだけなら → resetViewport() を消す。
+まずは this.thumbnailManager.clearCache() をコンストラクタから取り除き、initialize() の中で this.thumbnailManager = new ThumbnailManager(...) の直後に呼ぶ（上のサンプル通り）。
 
-中央揃えしたいなら → recordInitialPosition() の値を参照して正しい位置に置く。
+initialize() を async にして、必要な非同期処理を await する。呼び出し側は await engine.initialize() を使うようにする。
+
+サムネイルは PIXI.RenderTexture ベースでバッチ更新（Ticker）にするのがルールブック推奨。 
