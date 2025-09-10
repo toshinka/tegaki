@@ -1693,16 +1693,31 @@ class HammerJSPositionManager {
             initialized: false,
             gestureActive: false,
             lastDelta: { x: 0, y: 0 },
-            panStarted: false
+            panStarted: false,
+            firstPanComplete: false // 初回パン完了フラグ
         };
         this.hammer = null;
+        this.initialCanvasPosition = null; // 初期位置記録
     }
 
     initialize() {
         setTimeout(() => {
             this.setupHammerJS();
+            this.recordInitialPosition();
             this.state.initialized = true;
         }, 100);
+    }
+
+    recordInitialPosition() {
+        // キャンバスの初期位置を記録
+        if (this.container) {
+            const rect = this.container.getBoundingClientRect();
+            this.initialCanvasPosition = {
+                x: rect.left + rect.width / 2,
+                y: rect.top + rect.height / 2
+            };
+            console.log('📍 [HammerJS] Initial canvas position recorded:', this.initialCanvasPosition);
+        }
     }
 
     setupHammerJS() {
@@ -1726,9 +1741,18 @@ class HammerJSPositionManager {
             return;
         }
 
+        console.log('🚀 [HammerJS] Pan start - firstPanComplete:', this.state.firstPanComplete);
+
         this.state.panning = true;
         this.state.gestureActive = true;
         this.state.panStarted = true;
+        
+        // 初回パン時の位置補正
+        if (!this.state.firstPanComplete) {
+            // 初期位置にリセット
+            window.DrawingEngineAPI?.resetViewport();
+            console.log('🔄 [HammerJS] First pan - reset to center');
+        }
         
         this.state.lastDelta.x = 0;
         this.state.lastDelta.y = 0;
@@ -1769,9 +1793,12 @@ class HammerJSPositionManager {
     onPanEnd(event) {
         if (!this.state.panning) return;
 
+        console.log('🏁 [HammerJS] Pan end');
+
         this.state.panning = false;
         this.state.gestureActive = false;
         this.state.panStarted = false;
+        this.state.firstPanComplete = true; // 初回パン完了をマーク
         
         this.state.lastDelta.x = 0;
         this.state.lastDelta.y = 0;

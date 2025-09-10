@@ -1,68 +1,120 @@
-原因は UI 側 (SortableJS のインデックス) とエンジン側 (ImprovedLayerManager) のレイヤー配列順の解釈がズレていることです。
+ChatGPT:
 
-問題点
+見えている現象（レイヤー切り替え・ドラッグ時に一瞬「▣（透けたサムネイルの枠だけ）」が表示される）の原因は、
+main.html 内の サムネイル更新処理 と Sortable.js のドラッグ中スタイル が重なっているためです。
 
-1.エラーメッセージ
+原因ポイント
 
-console.error('[LayerManager] Layer ID mismatch in reorder');
+StableThumbnailManager._updateThumbnailUI
+サムネイルを更新するときに <img> の opacity を一瞬 0 にしてから新しい画像を差し替えている。
 
-ImprovedLayerManager.reorderLayer() のチェックで
-
-if (!layer || layer.id !== layerId) { ... }
-
-
-に引っかかっています。これは fromIndex にあるレイヤーの id が、UI から渡された layerId と一致していないため。
-
-
-2.インデックス不一致
-
-SortableJS (onEnd の evt.oldIndex / evt.newIndex) は DOM 上の順序を返します。
-
-DOM では通常「一番上に見えるレイヤー」が index=0 ですが、
-
-ImprovedLayerManager.layers.items では「背景(下層)が index=0」「上に行くほど大きい index」になるように管理されています。
-
-つまり UI と内部配列の並びが逆転しているため、layerId と fromIndex が食い違い、Layer ID mismatch が出ています。結果、並びも反映されず「上に置いたのに下にある」状態になる。
+thumbnailContainer.innerHTML = `<img src="${dataUrl}" alt="" style="opacity: 0;">`;
+const newImg = thumbnailContainer.querySelector('img');
+setTimeout(() => newImg.style.opacity = '1', 50);
 
 
-改修策
+→ この 50ms の間、背景の .layer-thumbnail の枠だけが表示され「▣」に見えている。
 
-A. インデックスを反転して渡す
+Sortable.js のドラッグ中スタイル
 
-onEnd: (evt) => {
-    this.dragInProgress = false;
-    layerList.classList.remove('drag-disabled');
-
-    if (evt.oldIndex !== evt.newIndex) {
-        const layerId = parseInt(evt.item.dataset.layerId);
-
-        const total = layerList.children.length;
-        // DOMインデックスを内部インデックスに変換
-        const fromIndex = total - 1 - evt.oldIndex;
-        const toIndex   = total - 1 - evt.newIndex;
-
-        setTimeout(() => {
-            window.DrawingEngineAPI?.reorderLayer(layerId, fromIndex, toIndex);
-        }, 50);
-    }
+.sortable-ghost {
+    opacity: 0.3;
+    background: rgba(100, 150, 255, 0.15) !important;
+    border: 2px dashed #6496ff !important;
+    transform: rotate(2deg);
 }
 
 
-B. または updateLayerUI() で DOM を逆順に構築する
+→ ドラッグ中はサムネイル全体が半透明や枠線表示になり、さらに目立ってしまう。
 
-内部配列を reverse() してから描画すれば、Sortable のインデックスと一致する。
+改修策（いずれかを選べます）
+A. 「▣」を出さない（おすすめ）
 
-ただし、この場合 reorderLayer の引数はそのままでよい。
+サムネイル更新時に 即時置換 する。フェードアニメーションをやめる。
 
-おすすめ
+// StableThumbnailManager._updateThumbnailUI の else 部分を修正
+if (thumbnailContainer) {
+    if (thumbnailImg) {
+        thumbnailImg.src = dataUrl;   // 即時差し替え
+        thumbnailImg.style.opacity = '1';
+    } else {
+        thumbnailContainer.innerHTML = `<img src="${dataUrl}" alt="">`;
+    }
+}
 
-**A の「インデックス反転」**の方が影響範囲が小さく安全。
+B. 「▣」を塗りつぶし（■にする）
 
-UI はそのまま「上から下へ並んでいる」見た目を維持できる。
+layer-thumbnail に背景色を付けて、画像が消えている間も枠が見えないようにする。
+
+.layer-thumbnail {
+    background: var(--futaba-light-medium); /* 枠色と同じ塗りつぶし */
+}
+
+C. 切り替え時はサムネイル自体を非表示にする
+
+更新時に一瞬 .layer-thumbnail を display:none にして、差し替え後に表示。
+
+thumbnailContainer.style.visibility = 'hidden';
+thumbnailContainer.innerHTML = `<img src="${dataUrl}" alt="">`;
+requestAnimationFrame(() => {
+    thumbnailContainer.style.visibility = 'visible';
+});
+
+まとめ
+
+原因は「サムネイル更新時のフェード処理」と「Sortable.jsのゴーストスタイル」。
+
+対応策は3種類：
+
+フェードをやめ即時差し替え（▣が出ない）
+
+背景を塗りつぶす（▣が■に見える）
+
+更新中は非表示にする（完全に消える）
 
 
-✅ まとめ:
-エラーの原因は UI (DOM) と内部配列の並び方向の不一致。
-対策は Sortable の oldIndex/newIndex を内部配列用に反転して渡すこと。
+問題点
 
-この修正を UI 側 initializeLayerSortable の onEnd に入れれば改善できそうです。
+resetViewport() は TransformSystem を初期スケール・位置にリセットしますが、
+すでに canvas-container は CSS 側で
+
+left: 50%;
+top: 50%;
+transform: translate(-50%, -50%);
+
+
+が入っているため、二重で中央寄せが適用されます。
+
+そのため「初回パン開始時に右下へ 150〜200px ほどズレる」という現象が出ます。
+
+2回目以降は firstPanComplete = true になるためリセットが走らず、ズレなくなる。
+
+✅ 対策
+方法 1: 初回リセットを無効化する（もっとも簡単）
+if (!this.state.firstPanComplete) {
+    // window.DrawingEngineAPI?.resetViewport(); ← これを削除/コメントアウト
+    console.log('🔄 [HammerJS] First pan - skipped reset');
+}
+
+
+→ これで初回パンでも余計なリセットがかからなくなり、ズレは発生しません。
+
+方法 2: 正しい位置に初期化する
+
+もし「本当に初回だけキャンバスを中央に揃えたい」意図があるなら、
+resetViewport() ではなく recordInitialPosition() の値を使って正しく中央補正するように修正します。
+
+例:
+
+if (!this.state.firstPanComplete) {
+    const { x, y } = this.initialCanvasPosition;
+    this.container.style.transform = `translate(${x}px, ${y}px) translate(-50%, -50%)`;
+}
+
+🎯 結論
+
+今回のズレは 「初回パン開始時に resetViewport() を呼んでいる」ことが原因です。
+
+ズレをなくしたいだけなら → resetViewport() を消す。
+
+中央揃えしたいなら → recordInitialPosition() の値を参照して正しい位置に置く。
