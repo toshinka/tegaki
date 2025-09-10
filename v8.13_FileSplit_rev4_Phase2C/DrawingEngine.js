@@ -1,18 +1,19 @@
 /**
- * DrawingEngine.js - Core Drawing Engine (GPT5改修案完全対応版)
+ * DrawingEngine.js - Core Drawing Engine (GPT5改修案適用版)
  * 
  * 改修内容:
- * - DOM/PixiJS順序完全同期機能
- * - ペン入力完全対応
- * - 破線色問題の根本解決
- * - レイヤー順序変更の安定化
+ * - 単一ソースオブトゥルース（layers配列）による順序管理
+ * - DOM/PixiJS完全同期機能
+ * - レイヤーIDベース追跡
+ * - サムネイルチラつき防止
+ * - クリック/ドラッグ完全分離
  */
 (function() {
     'use strict';
     
     // === ENGINE CONFIGURATION ===
     const ENGINE_CONFIG = {
-        version: '8.0-GPT5-LayerOrderFixed',
+        version: '8.0-GPT5-Fixed',
         canvas: { width: 400, height: 400 },
         rendering: { antialias: true, resolution: 1 },
         debug: false,
@@ -20,7 +21,7 @@
         transform: { minScale: 0.1, maxScale: 5.0, initialScale: 1.0 },
         thumbnail: { 
             size: 48, 
-            updateThrottle: 100,
+            updateThrottle: 200, // GPT5改修案: チラつき防止用に延長
             pointDensity: 1.5
         }
     };
@@ -64,20 +65,29 @@
         }
     };
 
-    // === IMPROVED THUMBNAIL MANAGER ===
+    // === GPT5改修案: IMPROVED THUMBNAIL MANAGER ===
     class LayerThumbnailManager {
         constructor(drawingEngine) {
             this.engine = drawingEngine;
             this.thumbnailCache = new Map();
             this.updateThrottledMap = new Map();
+            this.pendingUpdates = new Set(); // GPT5改修案: 重複更新防止
         }
 
+        /**
+         * GPT5改修案: レイヤー個別のサムネイル生成（チラつき防止）
+         */
         generateLayerThumbnail(layerId) {
-            if (!this.engine?.layerManager) return null;
+            if (!this.engine?.layerManager || this.pendingUpdates.has(layerId)) return null;
+            
+            this.pendingUpdates.add(layerId);
 
             try {
                 const layer = this.engine.layerManager.layers.items.find(l => l.id === layerId);
-                if (!layer) return null;
+                if (!layer) {
+                    this.pendingUpdates.delete(layerId);
+                    return null;
+                }
 
                 const canvas = document.createElement('canvas');
                 canvas.width = ENGINE_CONFIG.thumbnail.size;
@@ -88,6 +98,7 @@
                 const scaleY = ENGINE_CONFIG.thumbnail.size / ENGINE_CONFIG.canvas.height;
                 const scale = Math.min(scaleX, scaleY);
 
+                // 背景描画
                 if (layer.isBackground) {
                     ctx.fillStyle = '#f0e0d6';
                     ctx.fillRect(0, 0, ENGINE_CONFIG.thumbnail.size, ENGINE_CONFIG.thumbnail.size);
@@ -95,6 +106,7 @@
                     ctx.clearRect(0, 0, ENGINE_CONFIG.thumbnail.size, ENGINE_CONFIG.thumbnail.size);
                 }
 
+                // レイヤーのパスを個別に描画
                 if (layer.paths && layer.paths.length > 0) {
                     layer.paths.forEach(path => {
                         this.drawPathToThumbnail(ctx, path, scale);
@@ -104,15 +116,20 @@
                 const dataUrl = canvas.toDataURL();
                 this.thumbnailCache.set(layerId, dataUrl);
 
-                if (window.UICallbacks?.onLayerThumbnailUpdated) {
-                    window.UICallbacks.onLayerThumbnailUpdated(layerId, dataUrl);
-                }
+                // GPT5改修案: 非同期でUI通知（チラつき防止）
+                setTimeout(() => {
+                    if (window.UICallbacks?.onLayerThumbnailUpdated) {
+                        window.UICallbacks.onLayerThumbnailUpdated(layerId, dataUrl);
+                    }
+                    this.pendingUpdates.delete(layerId);
+                }, 50);
 
                 log('📸 Layer thumbnail generated:', layerId);
                 return dataUrl;
 
             } catch (error) {
                 console.error('[ThumbnailManager] Generation failed for layer:', layerId, error);
+                this.pendingUpdates.delete(layerId);
                 return null;
             }
         }
@@ -157,13 +174,17 @@
             if (!this.engine?.layerManager) return;
             
             const layers = this.engine.layerManager.getLayerList();
-            layers.forEach(layer => {
-                this.generateLayerThumbnail(layer.id);
+            layers.forEach((layer, index) => {
+                // GPT5改修案: 順番にサムネイル生成（一度に全部やらない）
+                setTimeout(() => {
+                    this.generateLayerThumbnail(layer.id);
+                }, index * 100);
             });
         }
 
         clearCache() {
             this.thumbnailCache.clear();
+            this.pendingUpdates.clear();
         }
     }
 
@@ -356,7 +377,12 @@
                 changedLayers: changedLayerId ? 
                     this.serializeLayer(changedLayerId) : 
                     this.serializeActiveLayers(),
-                layerOrder: this.layers.layers.items.map(l => ({ id: l.id, zIndex: l.container.zIndex }))
+                // GPT5改修案: レイヤー順序の完全保存
+                layerOrder: this.layers.layers.items.map((l, index) => ({ 
+                    id: l.id, 
+                    arrayIndex: index,
+                    zIndex: l.container.zIndex 
+                }))
             };
 
             this.history = this.history.slice(0, this.currentIndex + 1);
@@ -439,6 +465,7 @@
                 this.transform.restoreTransformState(snapshot.transformState);
                 this.restoreLayersFromSnapshot(snapshot.changedLayers);
                 
+                // GPT5改修案: レイヤー順序の完全復元
                 if (snapshot.layerOrder) {
                     this.restoreLayerOrder(snapshot.layerOrder);
                 }
@@ -470,14 +497,25 @@
             }
         }
 
+        // GPT5改修案: レイヤー順序復元
         restoreLayerOrder(layerOrder) {
-            layerOrder.forEach(orderData => {
-                const layer = this.layers.layers.items.find(l => l.id === orderData.id);
-                if (layer) {
-                    layer.container.zIndex = orderData.zIndex;
-                }
-            });
+            // 配列順序を復元
+            const restoredLayers = [];
+            layerOrder
+                .sort((a, b) => a.arrayIndex - b.arrayIndex)
+                .forEach(orderData => {
+                    const layer = this.layers.layers.items.find(l => l.id === orderData.id);
+                    if (layer) {
+                        layer.container.zIndex = orderData.zIndex;
+                        restoredLayers.push(layer);
+                    }
+                });
             
+            if (restoredLayers.length > 0) {
+                this.layers.layers.items = restoredLayers;
+            }
+            
+            // PixiJS描画順序更新
             if (this.layers.engine?.containers?.world) {
                 this.layers.engine.containers.world.sortChildren();
             }
@@ -534,13 +572,13 @@
         }
     }
 
-    // === LAYER MANAGER - GPT5改修案完全対応 ===
+    // === GPT5改修案: LAYER MANAGER（完全改修版）===
     class LayerManager {
         constructor(drawingEngine, transformSystem) {
             this.engine = drawingEngine;
             this.transform = transformSystem;
             this.layers = {
-                items: [],
+                items: [], // GPT5改修案: 単一ソースオブトゥルース
                 activeId: null,
                 nextId: 1
             };
@@ -566,6 +604,7 @@
             layer.container.addChild(backgroundGraphics);
             layer.backgroundGraphics = backgroundGraphics;
 
+            // GPT5改修案: 背景は常に最背面（zIndex = 0）
             layer.container.zIndex = 0;
 
             this.layers.items.push(layer);
@@ -582,11 +621,13 @@
                 false
             );
 
+            // GPT5改修案: 新レイヤーは配列の最後（最前面）に追加
             layer.container.zIndex = this.layers.items.length;
 
             this.layers.items.push(layer);
             this.engine.containers.world.addChild(layer.container);
             
+            // PixiJS描画順序更新
             this.engine.containers.world.sortChildren();
             
             if (this.historyManager) {
@@ -631,7 +672,8 @@
 
             utils.remove(this.layers.items, l => l.id === layerId);
 
-            this._updateAllZIndices();
+            // GPT5改修案: 削除後のzIndex再構築
+            this._rebuildAllZIndices();
 
             if (this.layers.activeId === layerId) {
                 const lastLayer = utils.last(this.layers.items);
@@ -650,14 +692,14 @@
         }
 
         /**
-         * GPT5改修案: レイヤー順序変更の完全実装
-         * DOM順序とPixiJS描画順序の完全同期を実現
+         * GPT5改修案: レイヤー順序変更の核心機能（完全改修版）
+         * 単一ソースオブトゥルース（layers配列）を基準にした順序管理
          */
         reorderLayer(layerId, fromIndex, toIndex) {
             if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return false;
             if (fromIndex >= this.layers.items.length || toIndex >= this.layers.items.length) return false;
             
-            log('🔄 Layer reorder request:', { layerId, fromIndex, toIndex });
+            log('🔄 Layer reorder start:', { layerId, fromIndex, toIndex });
 
             const layer = this.layers.items[fromIndex];
             if (!layer || layer.id !== layerId) {
@@ -665,69 +707,53 @@
                 return false;
             }
 
-            // 配列操作: レイヤーを移動
+            // GPT5改修案: 配列操作（単一ソースオブトゥルース）
             this.layers.items.splice(fromIndex, 1);
             this.layers.items.splice(toIndex, 0, layer);
 
-            // GPT5改修案: DOM順序をPixiJSのzIndexに正確に同期
-            this._syncDOMOrderToPixiJS();
+            // GPT5改修案: 配列インデックスをそのままzIndexに同期
+            this._rebuildAllZIndices();
 
+            // PixiJS描画順序に反映
             this.engine.containers.world.sortChildren();
 
+            // UI更新通知
             this._notifyLayerListUpdated();
 
+            // 履歴保存
             if (this.historyManager) {
                 setTimeout(() => {
                     this.historyManager.createSnapshot(`レイヤー「${layer.name}」順序変更`, layer.id);
                 }, 100);
             }
 
-            log('✅ Layer reorder completed:', { 
-                layerId, 
-                newOrder: this.layers.items.map(l => ({ id: l.id, zIndex: l.container.zIndex }))
-            });
-
+            log('✅ Layer reorder completed:', this.layers.items.map(l => `${l.name}[${l.container.zIndex}]`));
             return true;
         }
 
         /**
-         * GPT5改修案: DOM順序をPixiJSに完全同期
-         * 上にあるDOMほど前面になるように逆順でzIndexを設定
+         * GPT5改修案: 全レイヤーのzIndex再構築
+         * 配列インデックス = zIndex の単純な関係を維持
          */
-        _syncDOMOrderToPixiJS() {
-            const layerElements = Array.from(document.querySelectorAll('.layer-item'));
-            
-            // DOM要素が上にあるほど前面（高いzIndex）になるよう逆順処理
-            layerElements.reverse().forEach((element, index) => {
-                const layerId = parseInt(element.dataset.layerId);
-                const layer = this.layers.items.find(l => l.id === layerId);
-                if (layer) {
-                    layer.container.zIndex = index;
-                }
+        _rebuildAllZIndices() {
+            this.layers.items.forEach((layer, index) => {
+                layer.container.zIndex = index;
             });
-            
-            log('🔄 DOM/PixiJS sync completed:', layerElements.map((el, i) => `DOM[${i}]:${el.dataset.layerId}`));
+            log('🔧 ZIndex rebuilt:', this.layers.items.map(l => `${l.name}:${l.container.zIndex}`));
         }
 
         /**
-         * GPT5改修案追加: UI側からの順序同期API
+         * GPT5改修案: 外部からのzIndex同期API（UI連携用）
          */
-        syncLayerOrderFromUI(layerId, newZIndex) {
+        syncLayerZIndex(layerId, newZIndex) {
             const layer = this.layers.items.find(l => l.id === layerId);
             if (layer) {
                 layer.container.zIndex = newZIndex;
                 this.engine.containers.world.sortChildren();
-                log('🎯 Layer zIndex synced:', { layerId, newZIndex });
+                log('🎯 ZIndex synced:', { layerId, newZIndex });
                 return true;
             }
             return false;
-        }
-
-        _updateAllZIndices() {
-            this.layers.items.forEach((layer, index) => {
-                layer.container.zIndex = index;
-            });
-            log('📊 ZIndex updated:', this.layers.items.map(l => `${l.name}:${l.container.zIndex}`));
         }
 
         setActiveLayer(layerId) {
@@ -772,13 +798,17 @@
             }));
         }
 
+        /**
+         * GPT5改修案: パスをアクティブレイヤーに追加（チラつき防止）
+         */
         addPathToActiveLayer(path) {
             const activeLayer = this.getActiveLayer();
             if (activeLayer) {
                 activeLayer.paths.push(path);
                 activeLayer.container.addChild(path.graphics);
 
-                if (this.engine.thumbnailManager) {
+                // GPT5改修案: サムネイル更新をより控えめに
+                if (this.engine.thumbnailManager && path.isComplete) {
                     this.engine.thumbnailManager.generateLayerThumbnailThrottled(activeLayer.id);
                 }
 
@@ -861,6 +891,9 @@
             };
         }
 
+        /**
+         * GPT5改修案: 描画開始（リアルタイム描画最適化）
+         */
         startDrawing(canvasX, canvasY, isPanning) {
             if (isPanning) return false;
             
@@ -872,44 +905,43 @@
 
             this.drawing.path = this.engine.createPath(canvasX, canvasY, this.brushSize, color, alpha);
             
+            // 即座にアクティブレイヤーに追加
             const activeLayer = this.layers.getActiveLayer();
             if (activeLayer) {
                 activeLayer.paths.push(this.drawing.path);
                 activeLayer.container.addChild(this.drawing.path.graphics);
-                
-                if (this.engine.thumbnailManager) {
-                    this.engine.thumbnailManager.generateLayerThumbnailThrottled(activeLayer.id);
-                }
             }
             
             return true;
         }
 
+        /**
+         * GPT5改修案: 描画継続（サムネイル更新制限）
+         */
         continueDrawing(canvasX, canvasY, isPanning) {
             if (!this.drawing.active || !this.drawing.path || isPanning) return;
 
             this.engine.extendPath(this.drawing.path, canvasX, canvasY);
-            
-            const activeLayer = this.layers.getActiveLayer();
-            if (activeLayer && this.engine.thumbnailManager) {
-                this.engine.thumbnailManager.generateLayerThumbnailThrottled(activeLayer.id);
-            }
-            
             this.drawing.lastPoint = { x: canvasX, y: canvasY };
         }
 
+        /**
+         * GPT5改修案: 描画終了（サムネイル最適化）
+         */
         stopDrawing() {
             if (this.drawing.path) {
                 this.drawing.path.isComplete = true;
                 
                 const activeLayer = this.layers.getActiveLayer();
                 if (activeLayer) {
+                    // 描画完了時のみサムネイル更新
                     if (this.engine.thumbnailManager) {
                         setTimeout(() => {
                             this.engine.thumbnailManager.generateLayerThumbnail(activeLayer.id);
-                        }, 50);
+                        }, 100);
                     }
                     
+                    // 履歴スナップショット作成
                     if (this.layers.historyManager) {
                         setTimeout(() => {
                             this.layers.historyManager.createSnapshot('描画', activeLayer.id);
@@ -985,6 +1017,7 @@
             this.setupContainers();
             this.setupInteraction();
 
+            // GPT5改修案: チラつき防止サムネイル管理
             this.thumbnailManager = new LayerThumbnailManager(this);
 
             return true;
@@ -995,6 +1028,7 @@
             this.containers.world = new PIXI.Container();
             this.containers.ui = new PIXI.Container();
 
+            // GPT5改修案: ソート機能を確実に有効化
             this.containers.world.sortableChildren = true;
 
             const maskGraphics = new PIXI.Graphics();
@@ -1030,6 +1064,7 @@
             if (spacePressed) {
                 event.stopPropagation();
             } else {
+                // GPT5改修案: ペン入力の完全対応
                 if (originalEvent.pointerType === 'pen' && originalEvent.pressure === 0) {
                     return;
                 }
@@ -1046,6 +1081,7 @@
                 this._notifyCoordinatesUpdated(event.global.x, event.global.y);
                 return;
             } else {
+                // GPT5改修案: ペン入力の完全対応
                 if (originalEvent.pointerType === 'pen' && originalEvent.pressure === 0) {
                     return;
                 }
@@ -1116,6 +1152,7 @@
 
             this.containers.camera.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
 
+            // 背景レイヤー更新
             this.layerManager.layers.items.forEach(layer => {
                 if (layer.isBackground && layer.backgroundGraphics) {
                     layer.backgroundGraphics.clear();
@@ -1124,9 +1161,10 @@
                 }
             });
 
+            // GPT5改修案: サムネイル更新を時間差で実行
             setTimeout(() => {
                 this.thumbnailManager.updateAllThumbnails();
-            }, 200);
+            }, 300);
 
             if (window.UICallbacks?.onCanvasResized) {
                 window.UICallbacks.onCanvasResized(newWidth, newHeight);
@@ -1148,7 +1186,7 @@
             this.thumbnailManager.clearCache();
             setTimeout(() => {
                 this.thumbnailManager.updateAllThumbnails();
-            }, 100);
+            }, 200);
         }
 
         _notifyCoordinatesUpdated(x, y) {
@@ -1161,7 +1199,7 @@
     // === ENGINE INSTANCE ===
     let engineInstance = null;
 
-    // === API IMPLEMENTATION - GPT5改修案完全対応 ===
+    // === GPT5改修案: API IMPLEMENTATION（完全改修版）===
     window.DrawingEngineAPI = {
         _spacePressed: false,
 
@@ -1185,14 +1223,17 @@
                 const historyManager = new TransformHistoryManager(transformSystem, layerManager);
                 const systemMonitor = new SystemMonitor();
 
+                // 相互参照設定
                 drawingEngine.tools = drawingTools;
                 drawingEngine.layerManager = layerManager;
                 layerManager.setHistoryManager(historyManager);
 
+                // 初期化
                 layerManager.initialize();
                 systemMonitor.start();
                 historyManager.initialize();
 
+                // Ticker追加
                 drawingEngine.app.ticker.add(() => transformSystem.updateTransforms());
 
                 engineInstance = {
@@ -1204,7 +1245,7 @@
                     systemMonitor
                 };
 
-                log('🎨 DrawingEngine initialized (GPT5-LayerOrderFixed)');
+                log('🎨 DrawingEngine initialized (GPT5-Fixed)');
                 return true;
 
             } catch (error) {
@@ -1335,7 +1376,7 @@
             }
         },
 
-        // === GPT5改修案: レイヤー順序変更API完全対応 ===
+        // === GPT5改修案: レイヤー順序変更API ===
         reorderLayer: (layerId, fromIndex, toIndex) => {
             if (!engineInstance) return false;
             try {
@@ -1352,13 +1393,13 @@
             }
         },
 
-        // === GPT5改修案追加: UI側からの順序同期API ===
-        syncLayerOrder: (layerId, zIndex) => {
+        // === GPT5改修案: UI連携用zIndex同期API ===
+        syncLayerZIndex: (layerId, zIndex) => {
             if (!engineInstance) return false;
             try {
-                return engineInstance.layerManager.syncLayerOrderFromUI(layerId, zIndex);
+                return engineInstance.layerManager.syncLayerZIndex(layerId, zIndex);
             } catch (error) {
-                console.error('[DrawingEngine] SyncLayerOrder failed:', error.message);
+                console.error('[DrawingEngine] SyncLayerZIndex failed:', error.message);
                 return false;
             }
         },
@@ -1448,7 +1489,7 @@
             }
         },
 
-        // === サムネイル制御 ===
+        // === GPT5改修案: サムネイル制御（チラつき防止）===
         updateThumbnail: (layerId) => {
             if (!engineInstance?.drawingEngine?.thumbnailManager) return false;
             try {
@@ -1477,8 +1518,8 @@
         }
     };
 
-    // === GPT5改修案対応: デバッグ用 DevTools ===
-    if (ENGINE_CONFIG.debug) {
+    // === GPT5改修案: デバッグ用 DevTools ===
+    if (ENGINE_CONFIG.debug || window.location.search.includes('debug=true')) {
         window.DrawingEngineDevTools = {
             getEngineInstance: () => engineInstance,
             getConfig: () => ENGINE_CONFIG,
@@ -1486,51 +1527,200 @@
             getLayerData: () => engineInstance?.layerManager.layers,
             getTransformData: () => engineInstance?.transformSystem.viewportTransform,
             getThumbnailManager: () => engineInstance?.drawingEngine.thumbnailManager,
-            generateThumbnailDebug: (layerId) => {
-                console.log('=== THUMBNAIL DEBUG ===');
-                const result = engineInstance?.drawingEngine.thumbnailManager.generateLayerThumbnail(layerId);
-                console.log('Result:', result ? 'SUCCESS' : 'FAILED');
-                return result;
-            },
+            
             debugLayerOrder: () => {
-                console.log('=== LAYER ORDER DEBUG ===');
+                console.log('=== GPT5 LAYER ORDER DEBUG ===');
                 const layers = engineInstance?.layerManager.layers.items || [];
                 const domElements = Array.from(document.querySelectorAll('.layer-item'));
                 
-                console.log('PixiJS Layers:');
+                console.log('📊 Engine Layers (Single Source of Truth):');
                 layers.forEach((layer, index) => {
-                    console.log(`[${index}] ${layer.name} (ID: ${layer.id}, zIndex: ${layer.container.zIndex})`);
+                    console.log(`  [${index}] ${layer.name} (ID: ${layer.id}, zIndex: ${layer.container.zIndex})`);
                 });
                 
-                console.log('DOM Elements:');
+                console.log('📊 DOM Elements (UI Display Order):');
                 domElements.forEach((el, index) => {
-                    console.log(`[${index}] LayerID: ${el.dataset.layerId}`);
+                    console.log(`  [${index}] LayerID: ${el.dataset.layerId}`);
                 });
                 
-                return { layers, domElements };
+                console.log('📊 PixiJS Container Order:');
+                const worldContainer = engineInstance?.drawingEngine?.containers?.world;
+                if (worldContainer) {
+                    worldContainer.children.forEach((child, index) => {
+                        console.log(`  [${index}] ${child.name} (zIndex: ${child.zIndex})`);
+                    });
+                }
+                
+                return { 
+                    engineLayers: layers.map((l, i) => ({ name: l.name, id: l.id, arrayIndex: i, zIndex: l.container.zIndex })),
+                    domElements: domElements.map((el, i) => ({ domIndex: i, layerId: el.dataset.layerId })),
+                    pixiOrder: worldContainer?.children.map((child, i) => ({ pixiIndex: i, name: child.name, zIndex: child.zIndex })) || []
+                };
             },
-            forceReorderTest: (fromIndex, toIndex) => {
+            
+            testLayerReorder: (fromIndex, toIndex) => {
                 const layers = engineInstance?.layerManager.layers.items || [];
                 if (layers[fromIndex]) {
                     const layerId = layers[fromIndex].id;
-                    console.log(`Testing reorder: Layer ${layerId} from ${fromIndex} to ${toIndex}`);
-                    return engineInstance?.layerManager.reorderLayer(layerId, fromIndex, toIndex);
+                    console.log(`🧪 Testing layer reorder: ${layers[fromIndex].name} (ID: ${layerId}) from ${fromIndex} to ${toIndex}`);
+                    const result = engineInstance?.layerManager.reorderLayer(layerId, fromIndex, toIndex);
+                    console.log(`🧪 Result: ${result ? 'SUCCESS' : 'FAILED'}`);
+                    
+                    // 結果確認
+                    setTimeout(() => {
+                        window.DrawingEngineDevTools.debugLayerOrder();
+                    }, 100);
+                    
+                    return result;
                 }
                 return false;
             },
-            // GPT5改修案追加: DOM/PixiJS同期デバッグ
-            testDOMPixiJSSync: () => {
-                console.log('=== DOM/PixiJS SYNC TEST ===');
+            
+            testThumbnailGeneration: (layerId) => {
+                console.log('🖼️ Testing thumbnail generation for layer:', layerId);
+                const result = engineInstance?.drawingEngine.thumbnailManager.generateLayerThumbnail(layerId);
+                console.log('🖼️ Result:', result ? 'SUCCESS' : 'FAILED');
+                return result;
+            },
+            
+            testFullSync: () => {
+                console.log('🔄 Testing full DOM/PixiJS sync...');
                 const layerManager = engineInstance?.layerManager;
                 if (layerManager) {
-                    layerManager._syncDOMOrderToPixiJS();
-                    return layerManager.debugLayerOrder();
+                    layerManager._rebuildAllZIndices();
+                    layerManager.engine.containers.world.sortChildren();
+                    
+                    setTimeout(() => {
+                        console.log('🔄 Sync completed. Current state:');
+                        window.DrawingEngineDevTools.debugLayerOrder();
+                    }, 100);
+                    
+                    return true;
                 }
                 return false;
+            },
+            
+            measurePerformance: () => {
+                const start = performance.now();
+                const layers = engineInstance?.layerManager.getLayerList() || [];
+                const end = performance.now();
+                
+                console.log('⚡ Performance Metrics:');
+                console.log(`  - Layer count: ${layers.length}`);
+                console.log(`  - getLayerList() time: ${(end - start).toFixed(2)}ms`);
+                console.log(`  - Thumbnail cache size: ${engineInstance?.drawingEngine.thumbnailManager.thumbnailCache.size || 0}`);
+                console.log(`  - Pending updates: ${engineInstance?.drawingEngine.thumbnailManager.pendingUpdates.size || 0}`);
+                
+                return {
+                    layerCount: layers.length,
+                    getLayerListTime: end - start,
+                    thumbnailCacheSize: engineInstance?.drawingEngine.thumbnailManager.thumbnailCache.size || 0,
+                    pendingUpdates: engineInstance?.drawingEngine.thumbnailManager.pendingUpdates.size || 0
+                };
             }
         };
+
+        console.log('🐛 GPT5 Debug tools available: window.DrawingEngineDevTools');
     }
 
-    log('🎨 DrawingEngine.js loaded (GPT5改修案完全対応版)');
+    log('🎨 DrawingEngine.js loaded (GPT5改修案適用完了)');
+
+})();document.querySelectorAll('.layer-item'));
+                
+                console.log('📊 Engine Layers (Single Source of Truth):');
+                layers.forEach((layer, index) => {
+                    console.log(`  [${index}] ${layer.name} (ID: ${layer.id}, zIndex: ${layer.container.zIndex})`);
+                });
+                
+                console.log('📊 DOM Elements (UI Display Order):');
+                domElements.forEach((el, index) => {
+                    console.log(`  [${index}] LayerID: ${el.dataset.layerId}`);
+                });
+                
+                console.log('📊 PixiJS Container Order:');
+                const worldContainer = engineInstance?.drawingEngine?.containers?.world;
+                if (worldContainer) {
+                    worldContainer.children.forEach((child, index) => {
+                        console.log(`  [${index}] ${child.name} (zIndex: ${child.zIndex})`);
+                    });
+                }
+                
+                return { 
+                    engineLayers: layers.map((l, i) => ({ name: l.name, id: l.id, arrayIndex: i, zIndex: l.container.zIndex })),
+                    domElements: domElements.map((el, i) => ({ domIndex: i, layerId: el.dataset.layerId })),
+                    pixiOrder: worldContainer?.children.map((child, i) => ({ pixiIndex: i, name: child.name, zIndex: child.zIndex })) || []
+                };
+            },
+            
+            // GPT5改修案: レイヤー移動テスト
+            testLayerReorder: (fromIndex, toIndex) => {
+                const layers = engineInstance?.layerManager.layers.items || [];
+                if (layers[fromIndex]) {
+                    const layerId = layers[fromIndex].id;
+                    console.log(`🧪 Testing layer reorder: ${layers[fromIndex].name} (ID: ${layerId}) from ${fromIndex} to ${toIndex}`);
+                    const result = engineInstance?.layerManager.reorderLayer(layerId, fromIndex, toIndex);
+                    console.log(`🧪 Result: ${result ? 'SUCCESS' : 'FAILED'}`);
+                    
+                    // 結果確認
+                    setTimeout(() => {
+                        this.debugLayerOrder();
+                    }, 100);
+                    
+                    return result;
+                }
+                return false;
+            },
+            
+            // GPT5改修案: サムネイル生成テスト
+            testThumbnailGeneration: (layerId) => {
+                console.log('🖼️ Testing thumbnail generation for layer:', layerId);
+                const result = engineInstance?.drawingEngine.thumbnailManager.generateLayerThumbnail(layerId);
+                console.log('🖼️ Result:', result ? 'SUCCESS' : 'FAILED');
+                return result;
+            },
+            
+            // GPT5改修案: 完全同期テスト
+            testFullSync: () => {
+                console.log('🔄 Testing full DOM/PixiJS sync...');
+                const layerManager = engineInstance?.layerManager;
+                if (layerManager) {
+                    layerManager._rebuildAllZIndices();
+                    layerManager.engine.containers.world.sortChildren();
+                    
+                    setTimeout(() => {
+                        console.log('🔄 Sync completed. Current state:');
+                        this.debugLayerOrder();
+                    }, 100);
+                    
+                    return true;
+                }
+                return false;
+            },
+            
+            // GPT5改修案: パフォーマンス測定
+            measurePerformance: () => {
+                const start = performance.now();
+                const layers = engineInstance?.layerManager.getLayerList() || [];
+                const end = performance.now();
+                
+                console.log('⚡ Performance Metrics:');
+                console.log(`  - Layer count: ${layers.length}`);
+                console.log(`  - getLayerList() time: ${(end - start).toFixed(2)}ms`);
+                console.log(`  - Thumbnail cache size: ${engineInstance?.drawingEngine.thumbnailManager.thumbnailCache.size || 0}`);
+                console.log(`  - Pending updates: ${engineInstance?.drawingEngine.thumbnailManager.pendingUpdates.size || 0}`);
+                
+                return {
+                    layerCount: layers.length,
+                    getLayerListTime: end - start,
+                    thumbnailCacheSize: engineInstance?.drawingEngine.thumbnailManager.thumbnailCache.size || 0,
+                    pendingUpdates: engineInstance?.drawingEngine.thumbnailManager.pendingUpdates.size || 0
+                };
+            }
+        };
+
+        console.log('🐛 GPT5 Debug tools available: window.DrawingEngineDevTools');
+    }
+
+    log('🎨 DrawingEngine.js loaded (GPT5改修案適用完了)');
 
 })();

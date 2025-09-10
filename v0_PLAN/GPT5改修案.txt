@@ -1,98 +1,212 @@
-🔎 問題の整理
+要点（短く）
 
-レイヤーの順序が逆転する
+症状（あなたの説明）
 
-上にドラッグしたのに最下層へ行ったり、その逆がある。
+パネル内でドラッグしているのに場所が入れ替わったり、レイヤーを押すと入れ替わる（クリックで入れ替わる）。
 
-ただし毎回ではなく、時々は正しく動く。
+背景レイヤーが勝手に一番上に行くことがある。
 
-→ PixiJS の描画スタック（子要素配列）と SortableJS の DOM 順序が逆方向で管理されている可能性が高い。
-（PixiJS は zIndex / children の昇順で描画、DOM は上にあるほどリストの上に表示、これが食い違いやすい）
+主要な原因候補（優先度高→低）
+A. Sortable のイベント（click と drag）の衝突：クリックイベントがドラッグ中/直後に誤発火して順序更新を起こしている。
+B. UI（DOM）順序と内部データモデル（layers 配列）／Pixi の z-order（stage.children の順序）が逆転して同期ミスしている（DOM上の上⇄下 と PIXI 上の上⇄下 の対応が逆のことが多い）。
+C. 順序入れ替え処理で index を oldIndex/newIndex として扱う箇所の誤計算（特に配列 splice 後のインデックス参照ミス）。
+D. レイヤー識別を配列インデックスでしか扱っておらず、クリック・移動でインデックスが変わると「アクティブレイヤー」が別のレイヤーを指してしまう（IDベースで追跡していない）。
+E. Sortable 初期化時のオプション不足（handle 指定・distance/delay が無い）で、短いクリックでドラッグと判定される、またはその逆。
 
-破線の色が茶色・青に変わる
+改修方針（設計原則）
 
-これは SortableJS の ghostClass / chosenClass / dragClass / fallbackClass のスタイル切り替えによるもの。
+DOM順序と Pixi の z-order を**単一のソースオブトゥルース（layers 配列）**で決める。DOMは表示、Pixiは描画、両方を layers 配列で再構築する。直接 DOM だけを信じない。
 
-「どの要素の上に入るか」判定が失敗しているときに違う色になっている可能性がある（DOM の上下判定、invertSwap オプションの影響）。
+レイヤーは固有 id を持たせ、アクティブ状態は activeLayerId で管理する（インデックスではなく ID で追跡）。
 
-ペンでは選択できるがドラッグできない
+Sortable の設定は「ハンドル指定」「drag 判定の閾値（distance または delay）」「onStart/onEnd で model を更新」する。
 
-タッチ／ペン入力が pointerdown → dragstart に変換されていない。
+小さなパッチで追加できるよう、syncPixiLayerOrder() と onSortableEnd() を独立ファイル・関数化する。
 
-SortableJS は touchstart は扱うが、ペン入力（pointerType=pen） を明示的に許可していないケースがある。
+具体的パッチ（貼るだけで動く小関数群）
 
-→ touchStartThreshold や forceFallback: true を設定しないとペン入力でドラッグできない。
+以下は layer-sortable-patch.js というファイルを作って <script src="layer-sortable-patch.js"></script> を main.html のレイヤーパネルを描画するスクリプトの直後（か DrawingEngine の前）に読み込む想定のパッチです。Claude にコピペしてもらいやすいよう、コメント多めで単独で読めるようにしています。
 
-🛠 原因の詳細
-レイヤーの順序逆転
+/* layer-sortable-patch.js
+   - 目的: Sortable のドラッグ/クリック競合を防ぎ、
+     DOM順序 -> layers[] -> PIXI順序 の同期を単純化する。
+   - 使い方: main.html で layersListEl (レイヤーのUL/CONTAINER) と
+     global の `layers` 配列・`app` (PIXI.Application)・`renderLayerPanel` が存在する想定。
+*/
 
-DOM: 上にある要素ほど「前に表示される」ように見える
+(function(){
+  // --- 設定: 必要に応じて変えてください ---
+  const HANDLE_SELECTOR = '.layer-handle'; // レイヤー行のドラッグ用ハンドル要素
+  const DRAG_DELAY_MS = 100;               // クリックとドラッグ判定の分離 (delay 方式)
+  // ----------------------------------------
 
-PixiJS: stage.addChild(layer) → children 配列の後ろが「前面」になる
+  if(typeof Sortable === 'undefined'){
+    console.warn('Sortable is not loaded; layer-sortable-patch.js skipped.');
+    return;
+  }
 
-つまり DOM の順序と PixiJS の描画順序が逆。
+  // layers: [{id, name, displayObject, ...}, ...] を前提とする
+  // activeLayerId: 現在アクティブなレイヤーの id を保持する想定
+  // layersListEl: DOM のレイヤーリスト（Sortable を適用する要素）
 
-ソート後に PixiJS 側で zIndex を再設定してやらないとズレる。
+  // ---- ヘルパー: Pixi と DOM の順序を layers[] に従わせる ----
+  function syncPixiLayerOrder(layers) {
+    // NOTE: UI 上で上に表示される要素を layers[0] とした時の変換例。
+    // PIXI の stage.children は 0 が背面、最後が最前面のことが多いので
+    // layers の並び順を逆順にして setChildIndex する。
+    if(!window.app || !app.stage) return;
+    const stage = app.stage;
+    const n = layers.length;
+    for (let i = 0; i < n; i++) {
+      const layer = layers[i];
+      const desiredIndex = n - 1 - i; // reverse mapping
+      try {
+        if (layer && layer.displayObject && layer.displayObject.parent === stage) {
+          stage.setChildIndex(layer.displayObject, desiredIndex);
+        }
+      } catch (e) {
+        // setChildIndex は例外出るので安全に
+        // （存在しなければ addChildAt 等で挿入する実装にする）
+        console.warn('syncPixiLayerOrder: setChildIndex failed', e);
+      }
+    }
+  }
 
-破線の色
+  // ---- ヘルパー: レイヤーIDで active を復元 ----
+  function restoreActiveLayerById(layers, activeId) {
+    const found = layers.find(l=>l.id === activeId);
+    if(found){
+      window.activeLayer = found;
+    } else if(layers.length){
+      window.activeLayer = layers[0]; // フォールバック
+      window.activeLayerId = layers[0].id;
+    } else {
+      window.activeLayer = null;
+      window.activeLayerId = null;
+    }
+    // UI 側の選択表示更新関数があれば呼ぶ（renderLayerPanel 等）
+    if(typeof renderLayerPanel === 'function') renderLayerPanel();
+  }
 
-SortableJS が insertBefore と insertAfter を内部で切り替える時に、候補位置を示すスタイルが変わる。
+  // ---- Sortable 初期化 ----
+  function initLayerSortable(layersListEl) {
+    if(!layersListEl) {
+      console.warn('initLayerSortable: layersListEl not found');
+      return;
+    }
 
-これは仕様上問題ないが、DOM と Pixi の対応が狂っていると「青のとき正しく動いて、茶色のとき逆に行く」という風に見える。
+    const sortable = Sortable.create(layersListEl, {
+      handle: HANDLE_SELECTOR,
+      animation: 150,
+      ghostClass: 'sortable-ghost',
+      delay: DRAG_DELAY_MS,   // click と drag の分離（短いクリックで並び替わらない）
+      delayOnTouchOnly: false,
+      preventOnFilter: true,
+      onStart(evt){
+        // クリックとドラッグの競合を防ぐためのフラグ
+        sortable._isDragging = true;
+        // optional: visual state
+      },
+      onEnd(evt){
+        sortable._isDragging = false;
+        // oldIndex/newIndex は DOM のインデックス（0 ベース）
+        const oldIndex = evt.oldIndex;
+        const newIndex = evt.newIndex;
+        if(typeof oldIndex !== 'number' || typeof newIndex !== 'number') return;
 
-ペン操作
+        // 安全に layers 配列を移動する（immutable に近い意識）
+        const moved = window.layers.splice(oldIndex, 1)[0];
+        window.layers.splice(newIndex, 0, moved);
 
-SortableJS のデフォルトは touch を mouse に変換して扱うが、pointerType: pen は考慮されない。
+        // 同期: Pixi の z-order を layers[] に合わせる
+        syncPixiLayerOrder(window.layers);
 
-Windows + Chrome のペン入力だと pointerdown が発火するが dragstart に繋がらないため動かない。
+        // アクティブレイヤーを ID で復元（移動で参照がぶれない）
+        if(window.activeLayerId) {
+          restoreActiveLayerById(window.layers, window.activeLayerId);
+        } else {
+          // ないなら新しいインデックスを active にする（必要なら）
+          window.activeLayer = window.layers[newIndex];
+          window.activeLayerId = window.activeLayer && window.activeLayer.id;
+          if(typeof renderLayerPanel === 'function') renderLayerPanel();
+        }
+      },
+      onChoose(evt){
+        // drag 開始前にクリックで active が切り替わるのを防ぐならここで一時記録
+        // evt.item.dataset.layerId などを参照できる想定
+        sortable._chosenId = evt.item && evt.item.dataset && evt.item.dataset.layerId;
+      }
+    });
 
-✅ 改修方法
-1. PixiJS のレイヤー順を DOM と同期させる
+    // クリックとドラッグの競合を完全に避けたい場合
+    // レイヤー行の click ハンドラ内で sortable._isDragging をチェックすること。
+    // 例:
+    layersListEl.addEventListener('click', function(e){
+      // もしドラッグ直後の click イベントなら無視する
+      if(sortable._isDragging) {
+        e.stopImmediatePropagation();
+        return;
+      }
+      // それ以外は既存のクリック処理に任せる
+    }, true);
 
-SortableJS の onEnd に以下を入れる：
+    return sortable;
+  }
 
-onEnd: function (evt) {
-  const layerElements = Array.from(document.querySelectorAll(".layer-item"));
-  // 上にあるDOMほど前面になるように逆順にPixiへ適用
-  layerElements.reverse().forEach((el, index) => {
-    const layerId = el.dataset.layerId;
-    const layer = layerMap[layerId];
-    layer.zIndex = index;
-  });
-  app.stage.sortChildren();
-}
+  // --- エクスポート (global に公開して差し替えやすく) ---
+  window.layerSortablePatch = {
+    init: initLayerSortable,
+    syncPixiLayerOrder,
+    restoreActiveLayerById
+  };
 
-
-こうすることで DOM と Pixi の順序が常に一致する。
-
-2. 破線の色問題
-
-色自体は ghostClass / chosenClass の CSS で制御されているので 無害。
-
-「色によって法則が変わる」と感じたのは、Pixi と DOM の順序が一致していないため。
-
-上記の修正で自然に解決する。
-
-3. ペン入力を有効化
-
-SortableJS 初期化時に以下を追加：
-
-Sortable.create(layerPanel, {
-  animation: 150,
-  forceFallback: true,       // ペンやタッチを強制的に扱う
-  fallbackTolerance: 3,      // 小さな動きでもドラッグ開始
-  touchStartThreshold: 1,    // ペンでもドラッグ扱いに
-  onEnd: function(evt) { /* 上記のzIndex処理 */ }
-});
+})();
 
 
-これでマウス・タッチ・ペン全対応になる。
+設置手順（簡潔）
 
-📌 まとめ
+上の内容を layer-sortable-patch.js として保存。
 
-順序逆転の原因 → DOM と Pixi のレイヤー管理方向が逆。
-→ onEnd で DOM 順序を Pixi の zIndex に正しく反映させれば解決。
+main.html のレイヤーパネルを描画するスクリプト（既存の layer-* スクリプトの直後）に <script src="layer-sortable-patch.js"></script> を追加。
 
-破線の色 → SortableJS の内部状態。Pixi とのズレが原因で「挙動が逆に見える」。
+ページ読み込み後に layerSortablePatch.init(document.querySelector('#layersListElement')) を呼ぶ。※#layersListElement は実際のレイヤーUL/CONTAINER の selector に置き換える。
 
-ペン非対応 → forceFallback: true と touchStartThreshold の設定で対応可能。
+DrawingEngine.js 側で layers 配列・app(PIXI.Application)・renderLayerPanel・activeLayerId を使っている想定で互換性を保つ（必要なら small adapter を追加）。
+
+よくあるミスと簡単チェックリスト（実行前に確認）
+
+ レイヤー各行に data-layer-id（ユニークID）が付与されているか？（無ければ付ける）
+
+ Sortable の handle が指定されているか？(引っ張る場所を限定して誤操作を減らす)
+
+ DOM の「上→下」と Pixi の z-order の「上→下」が逆と思われる場合は syncPixiLayerOrder() 内の reverse ロジックを反転して試す。
+
+ アクティブレイヤーは ID で記憶しているか（インデックスで覚えていると移動で変わる）。
+
+ onEnd 内で layers を更新した直後に UI を再描画しているか（renderLayerPanel 等）。
+
+テスト手順（再現と確認）
+
+レイヤーをドラッグして順序が入れ替わるか確認（パネル内表示が期待通りか）。
+
+ドラッグ直後にクリックしてアクティブを切り替えても順序が狂わないか。
+
+背景（最背面）のレイヤーをドラッグしても勝手に最前面に飛ばされないか。
+
+ペンで描画 → レイヤー重ね替え → 表示が崩れないか（PIXI の表示確認）。
+
+ブラウザのコンソールで layers 配列・activeLayerId をログして期待通りか確認。
+
+追加の小さな改善（推奨）
+
+onEnd で変更前後の layers 配列を console.table() して差分デバッグできるようにしておく（開発時のみ）。
+
+Sortable の fallbackOnBody: true を入れるとドラッグ中の ghost の挙動が安定するケースがあります。
+
+もし DrawingEngine.js がモジュール的に大きくまとまっているなら、上の syncPixiLayerOrder をそこに移植して layers 更新の single source にする（ただし Claude に差し替えしやすい形で）。
+
+なぜこの案で直る可能性が高いのか（短く根拠）
+
+「クリックで入れ替わる」という症状はほぼ常に「ドラッグとクリックの判定競合」か「onClick ハンドラが DOM 再構築を行っている」ことが原因です。Sortable の delay（または distance）を入れることで誤トリガーをほぼ排除できます。
+
+「背景が上に行く」問題は DOM と Pixi の順序概念（どちらが前面を示すか）が混同されているケースが典型で、明示的に layers[] -> stage.setChildIndex(...) の同期を行えば解消します。

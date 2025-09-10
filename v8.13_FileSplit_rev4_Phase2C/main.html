@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1 - SortableJS完全対応版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1 - GPT5改修案適用版</title>
     <style>
         * {
             margin: 0;
@@ -184,7 +184,7 @@
             border: 1px solid var(--futaba-light-medium);
             border-radius: 6px;
             padding: 6px 8px;
-            cursor: grab;
+            cursor: pointer;
             transition: all 0.2s ease;
             display: grid;
             grid-template-columns: 20px 1fr 48px;
@@ -194,10 +194,6 @@
             user-select: none;
             position: relative;
             box-shadow: 0 1px 2px rgba(128, 0, 0, 0.05);
-        }
-        
-        .layer-item:active {
-            cursor: grabbing;
         }
         
         .layer-item:hover {
@@ -211,15 +207,32 @@
             box-shadow: 0 2px 4px rgba(128, 0, 0, 0.15);
         }
         
-        /* SortableJS フィードバック強化 - GPT5改修案対応 */
+        /* GPT5改修案: SortableJS フィードバック強化 */
         .sortable-ghost {
             opacity: 0.6;
             background: rgba(100, 150, 255, 0.1);
-            border: 1px dashed #6496ff;
+            border: 2px dashed #6496ff;
+            transform: rotate(2deg);
         }
         
         .sortable-chosen {
-            background: rgba(100, 150, 255, 0.05);
+            background: rgba(100, 150, 255, 0.08);
+            border-color: #6496ff;
+        }
+        
+        /* GPT5改修案: ドラッグハンドル領域 */
+        .layer-drag-handle {
+            position: absolute;
+            left: 0;
+            top: 0;
+            right: 52px; /* サムネイル領域を除く */
+            bottom: 0;
+            cursor: grab;
+            z-index: 1;
+        }
+        
+        .layer-drag-handle:active {
+            cursor: grabbing;
         }
         
         .layer-visibility {
@@ -234,6 +247,8 @@
             border-radius: 3px;
             transition: all 0.2s ease;
             align-self: center;
+            position: relative;
+            z-index: 2;
         }
         
         .layer-visibility:hover {
@@ -258,6 +273,9 @@
             font-family: monospace;
             align-self: start;
             margin-top: 2px;
+            position: relative;
+            z-index: 2;
+            pointer-events: none;
         }
         
         .layer-name {
@@ -271,6 +289,9 @@
             text-overflow: ellipsis;
             align-self: end;
             margin-bottom: 2px;
+            position: relative;
+            z-index: 2;
+            pointer-events: none;
         }
         
         .layer-thumbnail {
@@ -287,6 +308,8 @@
             align-items: center;
             justify-content: center;
             align-self: center;
+            cursor: pointer;
+            z-index: 2;
         }
         
         .layer-thumbnail img {
@@ -294,7 +317,7 @@
             height: 100%;
             object-fit: cover;
             border-radius: 3px;
-            transition: opacity 0.2s ease-in-out;
+            transition: opacity 0.3s ease-in-out;
         }
         
         .layer-thumbnail-placeholder {
@@ -303,7 +326,7 @@
             background: var(--futaba-light-medium);
             border-radius: 2px;
             opacity: 0.5;
-            transition: opacity 0.2s ease-in-out;
+            transition: opacity 0.3s ease-in-out;
         }
         
         .layer-delete-button {
@@ -320,6 +343,7 @@
             transition: all 0.2s ease;
             background: rgba(128, 0, 0, 0.1);
             opacity: 0;
+            z-index: 3;
         }
         
         .layer-item:hover .layer-delete-button {
@@ -615,12 +639,14 @@
     <script>
         /**
          * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1
-         * UI Controller - SortableJS完全対応版
+         * UI Controller - GPT5改修案適用版（構文エラー修正版）
          * 
-         * GPT5改修案適用:
-         * - DOM/PixiJS順序完全同期
-         * - ペン入力完全対応  
-         * - 破線色問題解決
+         * 改修内容:
+         * - SortableJSのクリック/ドラッグ完全分離
+         * - DOM/PixiJS順序の単一ソースオブトゥルース
+         * - レイヤーIDベースの追跡
+         * - サムネイルのチラつき防止
+         * - レイヤー周りの処理フロー最適化
          */
         
         // === UTILITIES ===
@@ -628,50 +654,128 @@
             clamp: (value, min, max) => Math.max(min, Math.min(max, value))
         };
 
+        // === GLOBAL STATE MANAGER ===
+        class GlobalStateManager {
+            constructor() {
+                this.activeLayerId = null;
+                this.isDragging = false;
+                this.thumbnailUpdateQueue = new Map();
+                this.layerUpdateInProgress = false;
+            }
+
+            setActiveLayer(layerId) {
+                if (this.activeLayerId !== layerId) {
+                    this.activeLayerId = layerId;
+                    console.log('🎯 Active layer changed to:', layerId);
+                }
+            }
+
+            getActiveLayerId() {
+                return this.activeLayerId;
+            }
+
+            setDragging(state) {
+                this.isDragging = state;
+                console.log('🖱️ Dragging state:', state);
+            }
+
+            isDragActive() {
+                return this.isDragging;
+            }
+
+            setLayerUpdateInProgress(state) {
+                this.layerUpdateInProgress = state;
+            }
+
+            isLayerUpdateInProgress() {
+                return this.layerUpdateInProgress;
+            }
+
+            queueThumbnailUpdate(layerId) {
+                if (this.thumbnailUpdateQueue.has(layerId)) {
+                    clearTimeout(this.thumbnailUpdateQueue.get(layerId));
+                }
+                
+                const timeoutId = setTimeout(() => {
+                    if (window.DrawingEngineAPI?.updateThumbnail) {
+                        window.DrawingEngineAPI.updateThumbnail(layerId);
+                    }
+                    this.thumbnailUpdateQueue.delete(layerId);
+                }, 200);
+                
+                this.thumbnailUpdateQueue.set(layerId, timeoutId);
+            }
+
+            clearThumbnailQueue() {
+                for (const [layerId, timeoutId] of this.thumbnailUpdateQueue) {
+                    clearTimeout(timeoutId);
+                }
+                this.thumbnailUpdateQueue.clear();
+            }
+        }
+
+        // グローバル状態インスタンス
+        const globalState = new GlobalStateManager();
+
         // === UI CALLBACKS IMPLEMENTATION ===
         window.UICallbacks = {
             // === レイヤー通知 ===
             onLayerCreated: (layerInfo) => {
-                if (window.futabaApp?.ui) {
+                console.log('📝 Layer created:', layerInfo);
+                if (window.futabaApp?.ui && !globalState.isLayerUpdateInProgress()) {
                     window.futabaApp.ui.updateLayerUI();
                 }
             },
 
             onLayerDeleted: (layerId) => {
-                if (window.futabaApp?.ui) {
+                console.log('🗑️ Layer deleted:', layerId);
+                if (window.futabaApp?.ui && !globalState.isLayerUpdateInProgress()) {
                     window.futabaApp.ui.updateLayerUI();
                 }
             },
 
             onActiveLayerChanged: (layerId, layerName) => {
-                if (window.futabaApp?.ui) {
+                console.log('🎯 Active layer changed:', layerId, layerName);
+                globalState.setActiveLayer(layerId);
+                if (window.futabaApp?.ui && !globalState.isLayerUpdateInProgress()) {
                     window.futabaApp.ui.updateLayerUI();
                     window.futabaApp.ui.updateStatusDisplay('current-layer', layerName);
                 }
             },
 
             onLayerVisibilityChanged: (layerId, visible) => {
-                if (window.futabaApp?.ui) {
+                console.log('👁️ Layer visibility changed:', layerId, visible);
+                if (window.futabaApp?.ui && !globalState.isLayerUpdateInProgress()) {
                     window.futabaApp.ui.updateLayerUI();
                 }
             },
 
             onLayerListUpdated: (layerList) => {
-                if (window.futabaApp?.ui) {
+                console.log('📋 Layer list updated:', layerList.length, 'layers');
+                if (window.futabaApp?.ui && !globalState.isLayerUpdateInProgress()) {
                     window.futabaApp.ui.updateLayerUI();
                 }
             },
 
-            // === サムネイル通知（DrawingEngineから直接受信） ===
+            // === サムネイル通知（改善版：チラつき防止）===
             onLayerThumbnailUpdated: (layerId, thumbnailData) => {
                 const layerItem = document.querySelector(`[data-layer-id="${layerId}"] .layer-thumbnail img`);
                 if (layerItem) {
-                    layerItem.src = thumbnailData;
+                    // 既存の画像を更新
+                    layerItem.style.opacity = '0';
+                    setTimeout(() => {
+                        layerItem.src = thumbnailData;
+                        layerItem.style.opacity = '1';
+                    }, 50);
                 } else {
-                    // img要素がまだない場合は作成
+                    // 新規画像作成
                     const thumbnail = document.querySelector(`[data-layer-id="${layerId}"] .layer-thumbnail`);
                     if (thumbnail) {
-                        thumbnail.innerHTML = `<img src="${thumbnailData}" alt="">`;
+                        thumbnail.innerHTML = `<img src="${thumbnailData}" alt="" style="opacity: 0;">`;
+                        setTimeout(() => {
+                            const img = thumbnail.querySelector('img');
+                            if (img) img.style.opacity = '1';
+                        }, 50);
                     }
                 }
             },
@@ -972,20 +1076,196 @@
             }
         }
 
-        // === UNIFIED UI CONTROLLER ===
+        // === GPT5改修案: LAYER SORTABLE MANAGER（フロー最適化版）===
+        class LayerSortableManager {
+            constructor() {
+                this.sortable = null;
+                this.dragDelayMs = 200; // クリック誤判定防止のため延長
+                this.isInitialized = false;
+                this.lastReorderTime = 0;
+            }
+
+            initialize() {
+                const layerList = document.getElementById('layer-list');
+                if (!layerList || !window.Sortable) {
+                    console.warn('❌ LayerSortable initialization failed - missing elements');
+                    return false;
+                }
+                
+                this.destroy(); // 既存インスタンス破棄
+                
+                console.log('🔧 Initializing LayerSortable...');
+                
+                try {
+                    this.sortable = window.Sortable.create(layerList, {
+                        handle: '.layer-drag-handle',
+                        ghostClass: 'sortable-ghost',
+                        chosenClass: 'sortable-chosen',
+                        animation: 150,
+                        delay: this.dragDelayMs,
+                        delayOnTouchOnly: false,
+                        forceFallback: true,
+                        fallbackTolerance: 5,
+                        
+                        onStart: (evt) => {
+                            console.log('🎯 Sortable drag start:', evt.oldIndex);
+                            globalState.setDragging(true);
+                            globalState.setLayerUpdateInProgress(true);
+                        },
+                        
+                        onEnd: (evt) => {
+                            console.log('🎯 Sortable drag end:', evt.oldIndex, '=>', evt.newIndex);
+                            
+                            const currentTime = Date.now();
+                            this.lastReorderTime = currentTime;
+                            
+                            if (evt.oldIndex !== evt.newIndex) {
+                                const layerId = parseInt(evt.item.dataset.layerId);
+                                console.log('🔄 Processing layer reorder:', { layerId, from: evt.oldIndex, to: evt.newIndex });
+                                
+                                // DrawingEngineに順序変更をリクエスト
+                                const success = window.DrawingEngineAPI?.reorderLayer(layerId, evt.oldIndex, evt.newIndex);
+                                
+                                if (success) {
+                                    console.log('✅ Layer reorder successful');
+                                } else {
+                                    console.error('❌ Layer reorder failed, reverting DOM');
+                                    this.revertDOMOrder(evt);
+                                }
+                            }
+                            
+                            // 状態をクリア（少し遅延を入れてクリック誤判定を防ぐ）
+                            setTimeout(() => {
+                                globalState.setDragging(false);
+                                globalState.setLayerUpdateInProgress(false);
+                            }, 100);
+                        },
+                        
+                        onChoose: (evt) => {
+                            // ドラッグ開始時のレイヤーIDを記録
+                            const layerId = parseInt(evt.item.dataset.layerId);
+                            console.log('🎯 Layer chosen for drag:', layerId);
+                        }
+                    });
+                    
+                    this.setupLayerClickHandling();
+                    this.isInitialized = true;
+                    console.log('✅ LayerSortable initialized successfully');
+                    return true;
+                    
+                } catch (error) {
+                    console.error('❌ LayerSortable initialization error:', error);
+                    return false;
+                }
+            }
+
+            /**
+             * レイヤークリック処理の完全分離
+             */
+            setupLayerClickHandling() {
+                const layerList = document.getElementById('layer-list');
+                if (!layerList) return;
+
+                // 新しいクリックハンドラーを設定
+                layerList.addEventListener('click', (event) => {
+                    // ドラッグ中または直後のクリックは無視
+                    if (globalState.isDragActive()) {
+                        console.log('🚫 Click ignored - dragging active');
+                        event.stopImmediatePropagation();
+                        return;
+                    }
+                    
+                    // 最近reorderが発生した場合もクリックを無視
+                    const timeSinceReorder = Date.now() - this.lastReorderTime;
+                    if (timeSinceReorder < 300) {
+                        console.log('🚫 Click ignored - recent reorder');
+                        event.stopImmediatePropagation();
+                        return;
+                    }
+
+                    this.handleLayerClick(event);
+                }, true);
+            }
+
+            handleLayerClick(event) {
+                const layerItem = event.target.closest('.layer-item');
+                if (!layerItem) return;
+
+                const layerId = parseInt(layerItem.dataset.layerId);
+                const action = event.target.closest('[data-action]')?.dataset.action;
+
+                console.log('🖱️ Layer click:', { layerId, action });
+
+                if (action === 'toggle-visibility') {
+                    window.DrawingEngineAPI?.toggleLayerVisibility(layerId);
+                    event.stopPropagation();
+                } else if (action === 'delete-layer') {
+                    if (confirm('このレイヤーを削除しますか？')) {
+                        window.DrawingEngineAPI?.deleteLayer(layerId);
+                    }
+                    event.stopPropagation();
+                } else if (event.target.closest('.layer-thumbnail')) {
+                    // サムネイルクリック = レイヤー選択
+                    window.DrawingEngineAPI?.setActiveLayer(layerId);
+                    event.stopPropagation();
+                } else if (!event.target.closest('.layer-drag-handle, .layer-delete-button')) {
+                    // その他の領域クリック = レイヤー選択
+                    window.DrawingEngineAPI?.setActiveLayer(layerId);
+                }
+            }
+
+            /**
+             * DOM順序を元に戻す（reorder失敗時のフォールバック）
+             */
+            revertDOMOrder(evt) {
+                try {
+                    const item = evt.item;
+                    const oldParent = evt.from;
+                    
+                    // 元の位置に戻す
+                    if (evt.oldIndex < oldParent.children.length) {
+                        oldParent.insertBefore(item, oldParent.children[evt.oldIndex]);
+                    } else {
+                        oldParent.appendChild(item);
+                    }
+                    console.log('🔄 DOM order reverted successfully');
+                } catch (error) {
+                    console.error('❌ Failed to revert DOM order:', error);
+                }
+            }
+
+            destroy() {
+                if (this.sortable) {
+                    this.sortable.destroy();
+                    this.sortable = null;
+                }
+                this.isInitialized = false;
+                console.log('🗑️ LayerSortable destroyed');
+            }
+
+            isReady() {
+                return this.isInitialized && this.sortable !== null;
+            }
+        }
+
+        // === UNIFIED UI CONTROLLER（フロー最適化版）===
         class UnifiedUIController {
             constructor() {
                 this.activePopup = null;
                 this.sliders = new Map();
                 this.dragState = { active: false, offset: { x: 0, y: 0 } };
-                this.sortable = null;
+                this.layerSortable = new LayerSortableManager();
+                this.lastUIUpdateTime = 0;
+                this.uiUpdateThrottle = 100; // UI更新のスロットリング
             }
 
             initialize() {
+                console.log('🔧 Initializing UI Controller...');
                 this.setupEventDelegation();
                 this.setupSliders();
                 this.setupResize();
                 this.updateCanvasInfo();
+                console.log('✅ UI Controller initialized');
             }
 
             setupEventDelegation() {
@@ -998,6 +1278,7 @@
 
                     const layerAddBtn = e.target.closest('#add-layer-btn');
                     if (layerAddBtn) {
+                        console.log('➕ Add layer button clicked');
                         const layerId = window.DrawingEngineAPI?.createLayer();
                         if (layerId) {
                             window.DrawingEngineAPI?.setActiveLayer(layerId);
@@ -1202,110 +1483,85 @@
                 }
             }
 
-            // === GPT5改修案適用: SortableJS完全対応 ===
-            initializeLayerSortable() {
-                const layerList = document.getElementById('layer-list');
-                if (!layerList || !window.Sortable) return;
-                
-                if (this.sortable) {
-                    this.sortable.destroy();
-                    this.sortable = null;
-                }
-                
-                this.sortable = window.Sortable.create(layerList, {
-                    handle: '.layer-item',
-                    ghostClass: 'sortable-ghost',
-                    chosenClass: 'sortable-chosen',
-                    animation: 150,
-                    // GPT5改修案: ペン入力完全対応
-                    forceFallback: true,
-                    fallbackTolerance: 3,
-                    touchStartThreshold: 1,
-                    onEnd: (evt) => {
-                        if (evt.oldIndex !== evt.newIndex) {
-                            const layerId = parseInt(evt.item.dataset.layerId);
-                            
-                            // GPT5改修案: DOM順序とPixiJS描画順序の完全同期
-                            const success = window.DrawingEngineAPI?.reorderLayer(layerId, evt.oldIndex, evt.newIndex);
-                            
-                            if (success) {
-                                // 順序変更後にPixiJS描画順序を即座に同期
-                                this.syncPixiJSLayerOrder();
-                            }
-                        }
-                    }
-                });
-            }
-
-            // GPT5改修案: PixiJS描画順序とDOMの完全同期
-            syncPixiJSLayerOrder() {
-                const layerElements = Array.from(document.querySelectorAll('.layer-item'));
-                
-                // DOM順序を逆転させてPixiJSのzIndexに適用（上にあるほど前面）
-                layerElements.reverse().forEach((el, index) => {
-                    const layerId = parseInt(el.dataset.layerId);
-                    // DrawingEngineに順序同期をリクエスト
-                    window.DrawingEngineAPI?.syncLayerOrder(layerId, index);
-                });
-            }
-
+            /**
+             * レイヤーUI更新（フロー最適化版）
+             */
             updateLayerUI() {
-                const layerList = document.getElementById('layer-list');
-                if (!layerList) return;
+                // スロットリング処理
+                const currentTime = Date.now();
+                if (currentTime - this.lastUIUpdateTime < this.uiUpdateThrottle) {
+                    return;
+                }
+                this.lastUIUpdateTime = currentTime;
 
+                console.log('🔄 Updating Layer UI...');
+                const layerList = document.getElementById('layer-list');
+                if (!layerList) {
+                    console.warn('❌ Layer list element not found');
+                    return;
+                }
+
+                // 既存のサムネイル更新を停止
+                globalState.clearThumbnailQueue();
+
+                // DOM更新
                 layerList.innerHTML = '';
 
                 const layers = window.DrawingEngineAPI?.getLayerList() || [];
+                console.log('📋 Current layers:', layers.length);
+                
+                // UI表示用に逆順（最後に追加されたレイヤーが上に表示）
                 const reversedLayers = [...layers].reverse();
 
-                reversedLayers.forEach((layer) => {
-                    const layerItem = document.createElement('div');
-                    layerItem.className = `layer-item ${layer.isActive ? 'active' : ''}`;
-                    layerItem.dataset.layerId = layer.id;
-                    
-                    const eyeIcon = layer.visible ? 
-                        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>' :
-                        '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
-
-                    const deleteIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>';
-
-                    layerItem.innerHTML = `
-                        <div class="layer-visibility ${layer.visible ? '' : 'hidden'}" data-action="toggle-visibility">
-                            ${eyeIcon}
-                        </div>
-                        <div class="layer-opacity">100%</div>
-                        <div class="layer-name">${layer.name}</div>
-                        <div class="layer-thumbnail">
-                            <div class="layer-thumbnail-placeholder"></div>
-                        </div>
-                        <div class="layer-delete-button" data-action="delete-layer">
-                            ${deleteIcon}
-                        </div>
-                    `;
-
-                    layerItem.addEventListener('click', (e) => {
-                        const action = e.target.closest('[data-action]')?.dataset.action;
-                        if (action === 'toggle-visibility') {
-                            window.DrawingEngineAPI?.toggleLayerVisibility(layer.id);
-                            e.stopPropagation();
-                        } else if (action === 'delete-layer') {
-                            window.DrawingEngineAPI?.deleteLayer(layer.id);
-                            e.stopPropagation();
-                        } else if (!e.target.closest('.layer-thumbnail, .layer-delete-button')) {
-                            window.DrawingEngineAPI?.setActiveLayer(layer.id);
-                        }
-                    });
-
+                reversedLayers.forEach((layer, index) => {
+                    const layerItem = this.createLayerItemElement(layer);
                     layerList.appendChild(layerItem);
                 });
 
-                this.initializeLayerSortable();
-
+                // SortableJS初期化（DOM更新後）
                 setTimeout(() => {
-                    layers.forEach(layer => {
-                        window.DrawingEngineAPI?.updateThumbnail(layer.id);
-                    });
-                }, 100);
+                    if (this.layerSortable.initialize()) {
+                        console.log('✅ Layer UI updated successfully');
+                        
+                        // サムネイル生成をキューイング（時間差で実行）
+                        layers.forEach((layer, index) => {
+                            setTimeout(() => {
+                                globalState.queueThumbnailUpdate(layer.id);
+                            }, index * 50);
+                        });
+                    } else {
+                        console.error('❌ Failed to initialize SortableJS');
+                    }
+                }, 50);
+            }
+
+            createLayerItemElement(layer) {
+                const layerItem = document.createElement('div');
+                layerItem.className = `layer-item ${layer.isActive ? 'active' : ''}`;
+                layerItem.dataset.layerId = layer.id;
+                
+                const eyeIcon = layer.visible ? 
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>' :
+                    '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-eye-off"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>';
+
+                const deleteIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>';
+
+                layerItem.innerHTML = `
+                    <div class="layer-drag-handle" title="ドラッグで移動"></div>
+                    <div class="layer-visibility ${layer.visible ? '' : 'hidden'}" data-action="toggle-visibility">
+                        ${eyeIcon}
+                    </div>
+                    <div class="layer-opacity">100%</div>
+                    <div class="layer-name">${layer.name}</div>
+                    <div class="layer-thumbnail">
+                        <div class="layer-thumbnail-placeholder"></div>
+                    </div>
+                    <div class="layer-delete-button" data-action="delete-layer">
+                        ${deleteIcon}
+                    </div>
+                `;
+
+                return layerItem;
             }
 
             updateStatusDisplay(elementId, text) {
@@ -1327,10 +1583,9 @@
             }
 
             destroy() {
-                if (this.sortable) {
-                    this.sortable.destroy();
-                    this.sortable = null;
-                }
+                this.layerSortable.destroy();
+                globalState.clearThumbnailQueue();
+                console.log('🗑️ UI Controller destroyed');
             }
         }
 
@@ -1344,6 +1599,8 @@
             }
 
             async initialize() {
+                console.log('🚀 Starting application initialization...');
+                
                 const requiredLibs = {
                     pixi: window.PIXI,
                     gsap: window.gsap,
@@ -1357,22 +1614,35 @@
                         throw new Error(`Library ${name} not found`);
                     }
                 }
+                console.log('✅ All required libraries loaded');
 
                 const canvasContainer = document.getElementById('drawing-canvas');
+                if (!canvasContainer) {
+                    throw new Error('Canvas container not found');
+                }
+
+                console.log('🎨 Initializing drawing engine...');
                 const engineInitialized = await window.DrawingEngineAPI.initialize(canvasContainer);
                 
                 if (!engineInitialized) {
                     throw new Error('DrawingEngine initialization failed');
                 }
+                console.log('✅ Drawing engine initialized');
 
+                console.log('🎛️ Initializing UI components...');
                 this.ui.initialize();
                 this.positionManager.initialize();
                 this.shortcutManager.initialize();
 
                 this.setupInputHandlers();
 
-                setTimeout(() => this.ui.updateLayerUI(), 100);
+                // 初回レイヤーUI更新（遅延実行で確実に）
+                setTimeout(() => {
+                    console.log('🔄 Performing initial layer UI update...');
+                    this.ui.updateLayerUI();
+                }, 300);
 
+                console.log('✅ Application initialization completed');
                 return true;
             }
 
@@ -1383,6 +1653,7 @@
                 });
 
                 window.addEventListener('beforeunload', () => {
+                    console.log('🔄 Cleaning up application...');
                     if (this.positionManager && this.positionManager.destroy) {
                         this.positionManager.destroy();
                     }
@@ -1397,10 +1668,47 @@
         // === APPLICATION BOOTSTRAP ===
         window.addEventListener('DOMContentLoaded', async () => {
             try {
+                console.log('📄 DOM loaded, starting application...');
+                
                 window.futabaApp = new AppController();
                 await window.futabaApp.initialize();
 
-                console.log('🎨 Futaba Drawing Tool v8-Phase1 - SortableJS完全対応版完了!');
+                console.log('🎉 Futaba Drawing Tool v8-Phase1 - GPT5改修案適用完了!');
+                
+                // デバッグモード
+                if (window.location.search.includes('debug=true')) {
+                    console.log('🐛 Debug mode enabled');
+                    window.layerDebug = {
+                        state: () => globalState,
+                        sortable: () => window.futabaApp.ui.layerSortable,
+                        layers: () => window.DrawingEngineAPI?.getLayerList() || [],
+                        testReorder: (from, to) => {
+                            const layers = window.DrawingEngineAPI?.getLayerList() || [];
+                            if (layers[from]) {
+                                console.log(`🧪 Testing reorder: ${layers[from].name} from ${from} to ${to}`);
+                                return window.DrawingEngineAPI?.reorderLayer(layers[from].id, from, to);
+                            }
+                            return false;
+                        },
+                        forceUIUpdate: () => {
+                            console.log('🔄 Forcing UI update...');
+                            window.futabaApp.ui.updateLayerUI();
+                        },
+                        checkState: () => {
+                            console.log('=== DEBUG STATE CHECK ===');
+                            console.log('Global state:', {
+                                activeLayerId: globalState.getActiveLayerId(),
+                                isDragging: globalState.isDragActive(),
+                                layerUpdateInProgress: globalState.isLayerUpdateInProgress(),
+                                thumbnailQueue: globalState.thumbnailUpdateQueue.size
+                            });
+                            console.log('Layers from API:', window.DrawingEngineAPI?.getLayerList());
+                            console.log('DOM layer items:', document.querySelectorAll('.layer-item').length);
+                            console.log('Sortable ready:', window.futabaApp.ui.layerSortable.isReady());
+                        }
+                    };
+                    console.log('🔧 Debug tools available: window.layerDebug');
+                }
 
             } catch (error) {
                 console.error('💥 Application startup failed:', error);
@@ -1409,6 +1717,10 @@
                     canvasArea.innerHTML = `
                         <div style="text-align: center; color: var(--futaba-maroon); font-size: 18px; padding: 40px;">
                             <div>⚠️ アプリケーションの初期化に失敗しました</div>
+                            <div style="font-size: 14px; margin-top: 10px; color: var(--text-secondary);">${error.message}</div>
+                            <div style="font-size: 12px; margin-top: 10px; color: var(--text-secondary);">
+                                ブラウザのコンソールで詳細を確認してください
+                            </div>
                         </div>
                     `;
                 }
