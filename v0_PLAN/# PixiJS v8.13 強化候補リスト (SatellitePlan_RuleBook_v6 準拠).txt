@@ -1,0 +1,335 @@
+# PixiJS v8.13 強化候補リスト (SatellitePlan_RuleBook_v6 準拠)
+
+## 1. キャンバス移動・回転・拡縮・反転
+- **PIXI.Container の transform / rotation / scale**
+  - 効率: ★★★★★
+  - 相性: ★★★★★
+  - 難易度: ★★☆☆☆
+  - 推奨度: ◎
+  - → キャンバス全体の「パン・ズーム・回転・反転」を container に集約。  
+    matrixTransform を使うと一括変換できるので、DOM操作より安定。
+
+- **PIXI.projection (拡張プラグイン)**
+  - 効率: ★★★★☆
+  - 相性: ★★★☆☆
+  - 難易度: ★★★★☆
+  - 推奨度: △
+  - → 2Dだが擬似3D的な perspective / skew が可能。将来の「斜め変形」や「モーフィング」拡張用。
+
+## 2. レイヤーサムネイル生成の高速化
+- **renderer.render(layer, { renderTexture })**
+  - 効率: ★★★★★
+  - 相性: ★★★★★
+  - 難易度: ★★★☆☆
+  - 推奨度: ◎
+  - → レイヤーを renderTexture に直描画し、それを縮小表示。  
+    `generateTexture()` より柔軟で非同期化もしやすい。  
+
+- **WebGL mipmaps + downscale**
+  - 効率: ★★★★☆
+  - 相性: ★★★★☆
+  - 難易度: ★★★☆☆
+  - 推奨度: ○
+  - → サムネイル生成を GPU に投げる。canvas2D の `drawImage` 縮小より高速。
+
+- **OffscreenCanvas (ブラウザAPI)**
+  - 効率: ★★★★☆
+  - 相性: ★★★☆☆
+  - 難易度: ★★★☆☆
+  - 推奨度: ○
+  - → Worker と併用で UI のカクつきを回避可能。PixiJS 自体は worker未対応なのでサブ処理に利用。
+
+## 3. レイヤー移動 + 回転・拡縮・反転
+- **PIXI.Sprite/Container の anchor + scale.x/-1**
+  - 効率: ★★★★★
+  - 相性: ★★★★★
+  - 難易度: ★☆☆☆☆
+  - 推奨度: ◎
+  - → 左右反転は `scale.x = -1`。上下反転は `scale.y = -1`。  
+    anchor を 0.5 にして中央基準で回転拡縮。
+
+- **PIXI.Graphics.hitArea + drag interaction**
+  - 効率: ★★★★☆
+  - 相性: ★★★★★
+  - 難易度: ★★☆☆☆
+  - 推奨度: ◎
+  - → レイヤーごとにドラッグ＆拡縮ハンドルをつける場合に便利。
+
+## 4. 選択範囲系 (今後の拡張)
+- **PIXI.Graphics + mask**
+  - 効率: ★★★★☆
+  - 相性: ★★★★★
+  - 難易度: ★★☆☆☆
+  - 推奨度: ◎
+  - → 選択範囲を mask として適用すれば、移動/変形/クリッピングが非破壊で実現可能。
+
+- **pixi-viewport (外部ライブラリ)**
+  - 効率: ★★★★☆
+  - 相性: ★★★★☆
+  - 難易度: ★★☆☆☆
+  - 推奨度: ○
+  - → 選択範囲やキャンバス全体のドラッグ・ズーム・回転をまとめて管理。  
+    UIと相性次第で導入価値あり。
+
+- **marching-squares (外部アルゴリズム)**
+  - 効率: ★★★★☆
+  - 相性: ★★★☆☆
+  - 難易度: ★★★★☆
+  - 推奨度: △
+  - → 投げ縄・自動選択系に使える。PixiJS単体ではなくアルゴリズム実装が必要。
+
+## 5. その他 基本機能での推奨
+- **PIXI.Assets (v8標準)**
+  - 効率: ★★★★★
+  - 相性: ★★★★★
+  - 難易度: ★☆☆☆☆
+  - 推奨度: ◎
+  - → テクスチャ・UIアイコンなどの非同期ロードを一元化。  
+    今後の拡張に必須。
+
+- **PIXI.Ticker.shared**
+  - 効率: ★★★★★
+  - 相性: ★★★★★
+  - 難易度: ★☆☆☆☆
+  - 推奨度: ◎
+  - → レイヤーサムネイル更新・アニメーションを統一管理。無駄な setInterval を削減。
+
+- **PIXI.CacheAsBitmap (部分利用)**
+  - 効率: ★★★★☆
+  - 相性: ★★★★☆
+  - 難易度: ★★☆☆☆
+  - 推奨度: ○
+  - → レイヤー移動が終わったあとにキャッシュ化 → 描画軽量化。  
+    頻繁に更新する場合は逆効果なので注意。
+
+
+回転拡縮反転 → Container.transform を基本に実装（◎）
+
+レイヤーサムネイル → renderTexture + mipmap 縮小でGPU利用（◎）
+
+選択範囲 → Graphics.mask ベースで非破壊処理（◎）
+
+全体効率化 → Assets/Ticker/CacheAsBitmap を適所利用（◎）
+
+
+# 推奨アプローチ（AI可読性 & 応答性優先）
+
+## キャンバス移動・回転・拡縮・反転
+- **採用: PIXI.Container の transform / rotation / scale**
+  - 理由: APIが直感的でコードが見やすい。transform matrix を直接使う場合も container に一括でまとめられるので改修しやすい。  
+  - 例: `canvasContainer.rotation = Math.PI/4;` / `canvasContainer.scale.set(2, 2);`  
+
+## レイヤー移動・回転・拡縮・反転
+- **採用: Container + anchor + scale**
+  - 理由: scale.x=-1 / scale.y=-1 で反転がシンプルに実現可能。  
+  - 例: `layer.scale.x = -1;` → 左右反転  
+
+## サムネイル遅延解消
+- **採用: renderer.render(layer, { renderTexture })**
+  - 理由: `generateTexture()` よりも制御が明確で、AIが読みやすい。非同期化もやりやすい。  
+  - 追加: mipmap 併用で見た目も改善可。  
+  - 例: `app.renderer.render(layer, { renderTexture: thumbTexture });`  
+
+- **保留: OffscreenCanvas**
+  - 理由: worker併用は応答性は上がるが、Pixiとのやり取りが複雑化してコード見通しが落ちる。必要になったら導入。  
+
+## 選択範囲系
+- **採用: Graphics + mask**
+  - 理由: 非破壊で処理でき、コードも単純。「選択範囲は mask」という一貫性でAIが理解しやすい。  
+  - 例: `layer.mask = selectionGraphics;`  
+
+## 全体効率化
+- **採用: PIXI.Assets**
+  - 理由: リソース管理の統一でコードが整理される。  
+
+- **採用: PIXI.Ticker.shared**
+  - 理由: サムネイル更新やUIのアニメーション管理を一元化 → setIntervalを避ける。  
+
+- **部分採用: CacheAsBitmap**
+  - 理由: 静的レイヤーはキャッシュして応答性向上。ただし更新頻度が高い場合はオフ。  
+
+
+🎯 座標系統一の基本方針
+
+PixiJS v8 では ローカル座標系とグローバル座標系 が明確に分かれています。
+それをうまく使って、以下のように「座標変換のレイヤー」を整理するのがベストです。
+
+[1] ペン入力（スクリーン座標: DOM clientX/Y）
+   ↓
+[2] PixiJS Stage座標（app.stage）
+   ↓
+[3] キャンバス座標（canvasContainer）
+   ↓
+[4] レイヤー座標（layer Container）
+   ↓
+[5] 図形/スプライトのローカル座標
+
+
+stage → UI全体の座標系
+
+canvasContainer → キャンバスの回転・拡縮・反転・パンを一元管理
+
+layer Container → 各レイヤー固有の移動・変形を管理
+
+ローカル座標 → 実際の描画処理（Graphics.lineTo など）
+
+📌 実装に役立つ PixiJS API
+
+toLocal(point, from)
+→ 別の座標系から現在のローカル座標に変換
+
+toGlobal(point)
+→ 現在のローカル座標をグローバル座標に変換
+
+例: 画面外からのペン描画にも対応する場合
+
+// マウス座標（DOM座標）を Pixi stage 座標に変換
+const posStage = app.renderer.events.pointer.normalizeGlobal(e);
+
+// stage → キャンバス座標へ変換
+const posCanvas = canvasContainer.toLocal(posStage);
+
+// キャンバス → 特定レイヤー座標へ変換
+const posLayer = layer.toLocal(posStage, canvasContainer);
+
+// 最終的にレイヤー上で描画
+graphics.lineTo(posLayer.x, posLayer.y);
+
+🚀 メリット
+
+レイヤー移動とキャンバス移動を分離できる
+
+canvasContainer でズーム・回転・パン
+
+各 layer で移動・回転・拡縮
+→ 干渉しないのでバグが減る
+
+選択範囲も同じ仕組みで動く
+
+mask の座標変換を toLocal で処理すれば
+レイヤー移動・キャンバス移動後も破綻しない
+
+画面外ペン描画が可能
+
+stage座標から順に変換するので
+表示範囲外に線を描いても正しくレイヤーに反映できる
+
+⚖️ 推奨ルール化（ルールブック追記イメージ）
+- 座標変換ルール
+  1. 入力座標は常に stage 座標に変換して受け取る。
+  2. キャンバス操作（ズーム・回転・パン）は canvasContainer に集約する。
+  3. レイヤー操作（移動・拡縮・反転）は layer Container に集約する。
+  4. 描画処理は必ず layer のローカル座標系で実行する。
+  5. toLocal/toGlobal を用いて座標系の受け渡しを行う。
+
+
+✅ まとめると：
+
+canvasContainer と layer Container を明確に分けることで、
+「レイヤー移動 vs キャンバス移動 vs ペン入力座標」を整理できる。
+
+toLocal / toGlobal の使い分けをルール化すれば、
+画面外描画・選択範囲・将来のモーフィングも自然に実装可能。
+
+
+🎯 非破壊変形の実装に相性の良い仕組み
+1. Transform 記録方式
+
+PIXI.Container.transform / position / rotation / scale / skew を数値で保持
+
+描画は常に「元画像テクスチャ」をベースにして transform を適用
+
+記憶系として「変形プロパティ履歴」を持つ
+
+// 例: レイヤーの変形状態を保存
+layerState = {
+  x: 100,
+  y: 200,
+  rotation: Math.PI / 6,
+  scaleX: 1.5,
+  scaleY: 0.8,
+  flipX: false,
+  flipY: true
+};
+
+// 再適用
+layer.position.set(layerState.x, layerState.y);
+layer.rotation = layerState.rotation;
+layer.scale.set(layerState.scaleX * (layerState.flipX ? -1 : 1),
+                layerState.scaleY * (layerState.flipY ? -1 : 1));
+
+
+✅ メリット:
+
+コードが見やすくAIに優しい
+
+JSONで履歴管理しやすい
+
+2. Matrix ベース管理
+
+PIXI.Matrix で変形をまとめて管理
+
+JSON化 → undo/redo やモーション補間が容易
+
+const m = new PIXI.Matrix();
+m.translate(100, 200);
+m.rotate(Math.PI / 6);
+m.scale(1.5, 0.8);
+
+layer.transform.setFromMatrix(m);
+
+
+✅ メリット:
+
+座標変換を一元的に扱える
+
+非破壊で回転・拡縮・反転を合成可能
+
+3. RenderTexture + 元データ保持
+
+レイヤー描画内容を「ベースの RenderTexture」に保持
+
+画面表示は transform をかけた Sprite を表示するだけ
+
+変形自体は数値記録 → 再レンダリング時に元データに適用
+
+✅ メリット:
+
+元データを壊さず何度でも再変形可能
+
+サムネイル生成も同じ RenderTexture から可能
+
+4. タイムライン記録（将来アニメ用）
+
+「非破壊変形 = キーフレーム管理」に拡張
+
+transform 値を時間軸に沿って保存 → アニメーション化
+
+JSON例:
+
+{
+  "layerId": 3,
+  "keyframes": [
+    { "t": 0, "x": 100, "y": 200, "scaleX": 1, "scaleY": 1, "rotation": 0 },
+    { "t": 30, "x": 200, "y": 250, "scaleX": 1.2, "scaleY": 0.9, "rotation": 0.5 }
+  ]
+}
+
+📌 推奨ルール化（ルールブック追記例）
+- 非破壊変形ルール
+  1. レイヤーの変形は position / rotation / scale / skew の数値として保持する。
+  2. 反転は scale.x / scale.y の符号で表現する。
+  3. 保存形式は JSON とし、undo/redo に対応可能にする。
+  4. 実描画は元テクスチャに対して transform を適用して行う。
+  5. 将来的なアニメーション対応のため、時間軸付き keyframe 形式を許容する。
+
+🚀 結論
+
+PixiJS v8 の Container.transform（Matrix） と RenderTexture元データ保持 を組み合わせるのが最適。
+
+まずは 数値プロパティ（position/scale/rotation）をJSONで記録 → 非破壊変形。
+
+将来は Matrix管理 or Keyframe拡張 に発展させるとアニメやモーフィングまで自然に進化できる。
+
+
+
