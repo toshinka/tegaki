@@ -1,263 +1,78 @@
-計画書に沿って段階的改修中ですが下記エラーが発生し、ペン描画・キャンバス移動・レイヤーパネルのサムネイル表示不良等が発生してます。その原因究明と改修案をコードブロック形式で提示願います。
+問題点と原因解析
+1. PixiJS アプリの初期化が行われていない
 
-40tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerMove (tegaki-phase1-coordinate-fix.html:1181:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1165:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerMove (EventBoundary.ts:823:64)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerMove (EventSystem.ts:677:31)
-tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerDown (tegaki-phase1-coordinate-fix.html:1173:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1164:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerDown (EventBoundary.ts:690:14)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerDown (EventSystem.ts:654:31)
-68tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerMove (tegaki-phase1-coordinate-fix.html:1181:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1165:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerMove (EventBoundary.ts:823:64)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerMove (EventSystem.ts:677:31)
-tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerDown (tegaki-phase1-coordinate-fix.html:1173:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1164:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerDown (EventBoundary.ts:690:14)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerDown (EventSystem.ts:654:31)
-34tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerMove (tegaki-phase1-coordinate-fix.html:1181:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1165:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerMove (EventBoundary.ts:823:64)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerMove (EventSystem.ts:677:31)
-tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerDown (tegaki-phase1-coordinate-fix.html:1173:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1164:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerDown (EventBoundary.ts:690:14)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerDown (EventSystem.ts:654:31)
-70tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerMove (tegaki-phase1-coordinate-fix.html:1181:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1165:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerMove (EventBoundary.ts:823:64)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerMove (EventSystem.ts:677:31)
-tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerDown (tegaki-phase1-coordinate-fix.html:1173:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1164:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerDown (EventBoundary.ts:690:14)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerDown (EventSystem.ts:654:31)
-13tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerMove (tegaki-phase1-coordinate-fix.html:1181:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1165:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerMove (EventBoundary.ts:823:64)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerMove (EventSystem.ts:677:31)
-tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerDown (tegaki-phase1-coordinate-fix.html:1173:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1164:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerDown (EventBoundary.ts:690:14)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerDown (EventSystem.ts:654:31)
-28tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerMove (tegaki-phase1-coordinate-fix.html:1181:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1165:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerMove (EventBoundary.ts:823:64)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerMove (EventSystem.ts:677:31)
-tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerDown (tegaki-phase1-coordinate-fix.html:1173:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1164:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerDown (EventBoundary.ts:690:14)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerDown (EventSystem.ts:654:31)
-71tegaki-phase1-coordinate-fix.html:741 Uncaught TypeError: this.app.renderer.events.pointer.normalizeGlobal is not a function
-    at CoordinateSystem.domToCanvas (tegaki-phase1-coordinate-fix.html:741:65)
-    at DrawingTools.onPointerMove (tegaki-phase1-coordinate-fix.html:1181:50)
-    at Z.<anonymous> (tegaki-phase1-coordinate-fix.html:1165:53)
-    at Th._notifyListeners (EventBoundary.ts:1472:26)
-    at Th.notifyTarget (EventBoundary.ts:667:18)
-    at Th.propagate (EventBoundary.ts:302:14)
-    at Th.dispatchEvent (EventBoundary.ts:211:14)
-    at Th.mapPointerMove (EventBoundary.ts:823:64)
-    at Th.mapEvent (EventBoundary.ts:232:28)
-    at Lu._onPointerMove (EventSystem.ts:677:31)
-ChatGPT:
+<div id="drawing-canvas"></div> を用意していますが、Pixi の Application を生成して drawing-canvas に app.canvas を追加していません。
 
-なるほど 👍
-いただいたログから原因を整理すると、PixiJS v8 系の イベントシステム API が変わっている ことが主要因です。
+そのため 実際の <canvas> 要素が DOM に存在せず、描画が一切行われない状態になっています。
 
-🔎 原因
+2. レイヤーパネル初期化処理が不足
 
-エラー箇所
+#layer-list に HTML の箱はありますが、JavaScript でレイヤー項目 (.layer-item) を生成する処理がありません。
 
-this.app.renderer.events.pointer.normalizeGlobal
+そのため レイヤーパネルが常に空のままです。
 
+3. ショートカットの定義はあるが、UI・描画と紐付いていない
 
-→ PixiJS v7 以前の API で、v8 では削除されています。
+CanvasTransformSystem などの仕組みは書かれていますが、PixiJS の stage に紐づけていないため、イベントを受けても視覚変化がありません。
 
-v8 では renderer.events.pointer のような低レベル API ではなく、FederatedPointerEvent を通じて event.global が直接使えるようになりました。
+改修案（コード追加例）
 
-そのため、座標変換のフローが旧 API 前提のままになっており、描画ツール・キャンバス移動・サムネイル更新が全部巻き込まれて動かなくなっています。
+以下のコードを <script> 内の末尾（CanvasTransformSystem などのクラス定義の後）に追加してください。
 
-🛠 改修案
-1. CoordinateSystem.domToCanvas の修正
+// === PixiJS Application 初期化 ===
+(async function initCanvas() {
+    const app = new PIXI.Application({
+        width: ENGINE_CONFIG.canvas.width,
+        height: ENGINE_CONFIG.canvas.height,
+        backgroundColor: 0xffffff,
+        antialias: true,
+        resolution: 1,
+    });
+    await app.init();
 
-旧:
+    // DOM に追加
+    document.getElementById("drawing-canvas").appendChild(app.canvas);
 
-domToCanvas(event) {
-    const global = this.app.renderer.events.pointer.normalizeGlobal(event);
-    return this.app.stage.toLocal(global);
+    // メインのコンテナ
+    const canvasContainer = new PIXI.Container();
+    app.stage.addChild(canvasContainer);
+
+    // 仮のレイヤー
+    const baseLayer = new PIXI.Container();
+    canvasContainer.addChild(baseLayer);
+
+    // テスト描画
+    const g = new PIXI.Graphics().rect(50, 50, 100, 100).fill(0xff0000);
+    baseLayer.addChild(g);
+
+    // 状態表示更新（FPS）
+    app.ticker.add(() => {
+        document.getElementById("fps").innerText = Math.round(app.ticker.FPS);
+    });
+
+    // レイヤーパネルに初期レイヤーを追加
+    addLayerItem("背景", true);
+})();
+
+// === レイヤーパネル操作 ===
+function addLayerItem(name, active = false) {
+    const list = document.getElementById("layer-list");
+    const item = document.createElement("div");
+    item.className = "layer-item" + (active ? " active" : "");
+    item.innerHTML = `
+        <div class="layer-visibility"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" stroke-width="2" fill="none"/></svg></div>
+        <div class="layer-opacity">100%</div>
+        <div class="layer-name">${name}</div>
+        <div class="layer-thumbnail"><div class="layer-thumbnail-placeholder"></div></div>
+        <div class="layer-delete-button"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
+    `;
+    list.appendChild(item);
 }
 
+改修効果
 
-新 (PixiJS v8 対応):
+drawing-canvas に Pixi の <canvas> が追加され、赤い四角が表示される → キャンバス表示確認可能。
 
-domToCanvas(event) {
-    // FederatedPointerEvent から直接 global を取得
-    const global = event.global; 
-    // グローバル座標をステージ基準のローカル座標に変換
-    return this.app.stage.toLocal(global);
-}
+layer-list に「背景」レイヤーが追加される → レイヤーパネルが見える。
 
-2. DrawingTools.onPointerMove / onPointerDown の修正
-
-旧:
-
-onPointerMove(e) {
-    const pos = this.coordinateSystem.domToCanvas(e);
-    this.drawLine(pos);
-}
-
-
-新:
-
-onPointerMove(e) {
-    // e は FederatedPointerEvent
-    const pos = this.coordinateSystem.domToCanvas(e);
-    this.drawLine(pos);
-}
-
-
-※ 既存の normalizeGlobal 呼び出しを削除するだけで良い。
-
-3. キャンバス移動処理の修正
-
-もし「スクリーン座標からキャンバス座標へ」の変換をやっている箇所が他にあれば、すべて同じ対応が必要です。
-
-例:
-
-// 旧
-const global = this.app.renderer.events.pointer.normalizeGlobal(e);
-
-// 新
-const global = e.global;
-
-4. レイヤーパネルのサムネイル表示不良
-
-サムネイル生成時に renderer.extract.canvas(layer) のような呼び出しをしている場合、layer が正しくステージに追加されていないと黒塗りになります。
-
-v8 では extract の呼び出しも Promise 化された部分があるため、必要なら await を使う。
-
-例:
-
-// 旧
-const thumbnail = this.app.renderer.extract.canvas(layer);
-
-// 新 (v8)
-const thumbnail = await this.app.renderer.extract.canvasAsync(layer);
-
-✅ 改修まとめコード（抜粋）
-class CoordinateSystem {
-    constructor(app) {
-        this.app = app;
-    }
-
-    domToCanvas(event) {
-        // PixiJS v8: event.global を直接利用
-        const global = event.global;
-        return this.app.stage.toLocal(global);
-    }
-}
-
-class DrawingTools {
-    constructor(app, coordinateSystem) {
-        this.app = app;
-        this.coordinateSystem = coordinateSystem;
-    }
-
-    onPointerDown(e) {
-        const pos = this.coordinateSystem.domToCanvas(e);
-        this.startDrawing(pos);
-    }
-
-    onPointerMove(e) {
-        const pos = this.coordinateSystem.domToCanvas(e);
-        this.continueDrawing(pos);
-    }
-}
-
-
-👉 つまり normalizeGlobal の削除 & event.global への統一置換 が第一段階の修正です。
-その後に サムネイル生成を extract.canvasAsync に差し替え することで、描画・移動・レイヤーパネルが復旧するはずです。
+今後 addLayerItem() をショートカットや #add-layer-btn と連動させれば、追加レイヤーが動的に増える。
