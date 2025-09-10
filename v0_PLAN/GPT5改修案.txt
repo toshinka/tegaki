@@ -1,124 +1,68 @@
-1. DrawingEngine.js:1628 Uncaught SyntaxError: Unexpected token ')'
+原因は UI 側 (SortableJS のインデックス) とエンジン側 (ImprovedLayerManager) のレイヤー配列順の解釈がズレていることです。
 
-これは JavaScript の構文エラーです。
-Unexpected token ')' は「余分な ) がある」または「対応する ( が無い」ケースです。
+問題点
 
-👉 該当ファイルを確認すると、DrawingEngine.js の 1628 行付近に不正な括弧があります。
-たとえば以下のようなパターンが典型的です：
+1.エラーメッセージ
 
-function someFunc() {
-  doSomething();  // ← ここまではOK
-);                // ← 不要な閉じ括弧が残っている
+console.error('[LayerManager] Layer ID mismatch in reorder');
 
+ImprovedLayerManager.reorderLayer() のチェックで
 
-あるいは アロー関数や if 文の閉じ括弧忘れでも出ます：
-
-layers.forEach((layer) => {   // ← { を開いたのに
-    console.log(layer);
-}); )                         // ← } のあとに余分な )
-
-2. Application startup failed: Error: Library drawingEngine not found
-
-これは main.html 内で
-
-const drawingEngine = window.drawingEngine;
-if (!drawingEngine) throw new Error("Library drawingEngine not found");
+if (!layer || layer.id !== layerId) { ... }
 
 
-のようなチェックをしているのに、window.drawingEngine が定義されていないために出ています。
+に引っかかっています。これは fromIndex にあるレイヤーの id が、UI から渡された layerId と一致していないため。
 
-Phase1b のときは DrawingEngine.js が IIFE で window.drawingEngine = { ... } を export していたはずですが、Phase2C で修正時に グローバル登録を削除 / コメントアウトした可能性があります。
 
-改修案
-A. SyntaxError の修正
+2.インデックス不一致
 
-DrawingEngine.js の 1620〜1635 行くらいを開いて、余分な ) を削除してください。
+SortableJS (onEnd の evt.oldIndex / evt.newIndex) は DOM 上の順序を返します。
 
-最も安全なのは、その部分を私に貼ってもらうことですが、パッチ例を出します。
+DOM では通常「一番上に見えるレイヤー」が index=0 ですが、
 
-修正パッチ例：
+ImprovedLayerManager.layers.items では「背景(下層)が index=0」「上に行くほど大きい index」になるように管理されています。
 
-// Before (エラーになる)
-layers.forEach((layer) => {
-   syncLayer(layer);
-}); )
+つまり UI と内部配列の並びが逆転しているため、layerId と fromIndex が食い違い、Layer ID mismatch が出ています。結果、並びも反映されず「上に置いたのに下にある」状態になる。
 
-// After
-layers.forEach((layer) => {
-   syncLayer(layer);
-});
 
-B. drawingEngine not found の修正
+改修策
 
-DrawingEngine.js の最後に以下を追加してください：
+A. インデックスを反転して渡す
 
-// Expose DrawingEngine globally
-if (typeof window !== "undefined") {
-    window.drawingEngine = {
-        init: initDrawingEngine,
-        layers: layers,
-        addLayer: addLayer,
-        removeLayer: removeLayer,
-        setActiveLayer: setActiveLayer,
-        // 必要なAPIをここに列挙
-    };
+onEnd: (evt) => {
+    this.dragInProgress = false;
+    layerList.classList.remove('drag-disabled');
+
+    if (evt.oldIndex !== evt.newIndex) {
+        const layerId = parseInt(evt.item.dataset.layerId);
+
+        const total = layerList.children.length;
+        // DOMインデックスを内部インデックスに変換
+        const fromIndex = total - 1 - evt.oldIndex;
+        const toIndex   = total - 1 - evt.newIndex;
+
+        setTimeout(() => {
+            window.DrawingEngineAPI?.reorderLayer(layerId, fromIndex, toIndex);
+        }, 50);
+    }
 }
 
 
-これで main.html 側から window.drawingEngine が見えるようになります。
+B. または updateLayerUI() で DOM を逆順に構築する
 
-まとめ（修正ポイント）
+内部配列を reverse() してから描画すれば、Sortable のインデックスと一致する。
 
-DrawingEngine.js の 1628行付近の余分な ) を削除。
+ただし、この場合 reorderLayer の引数はそのままでよい。
 
-DrawingEngine.js の末尾に window.drawingEngine = { ... } を追加し、グローバル公開する。
+おすすめ
 
+**A の「インデックス反転」**の方が影響範囲が小さく安全。
 
-設計意図 vs Phase2C の差分ポイント
-1. グローバル公開 (window.drawingEngine) の欠落
-
-意図: main.html から drawingEngine を呼び出せるようにグローバルに登録。
-
-Phase2C: window.drawingEngine が未定義 → 起動失敗。
-👉 修正必須（前回答の末尾パッチでOK）。
-
-2. activeLayer の管理方法
-
-意図: インデックスではなく レイヤー固有ID (layer.id) をキーにして追跡。ドラッグで順序が変わっても参照が壊れない。
-
-Phase2C: activeLayer を配列インデックス依存で扱っている部分が残っている。
-👉 危険ポイント：ドラッグ移動後にアクティブが勝手に別レイヤーに変わることがある。
-
-3. UIとPixiの並び順の同期
-
-意図: DOM順序 → layers[] → Pixi の stage.children に明示的に反映 (setChildIndex)。
-
-Phase2C: DOM順序を直接使う部分が残っている。Pixi の z-order とズレる可能性あり。特に「背景が前面に来る」症状の再発要因。
-
-4. SortableJS のドラッグ設定
-
-意図: handle, delay / distance を設定し、クリックとドラッグを明確に分離。
-
-Phase2C: handle が未指定または全体クリックでドラッグ可能 → レイヤーをクリックすると入れ替えが誤発火する挙動が残る。
-👉 修正推奨。
-
-5. エラー処理とログ
-
-意図: 開発段階なので、console.table(layers) や console.warn でトラブルシュートしやすく。
-
-Phase2C: 多くの場所で無言処理、あるいはエラーを握り潰している。デバッグが難しい。
-👉 小さくても良いのでログ追加を推奨。
-
-結論
-
-致命的に意図と違うのは ①グローバル公開と②アクティブレイヤー管理（インデックス依存が残っている）。
-
-再発の原因になりやすいのは ③UIとPixiの同期の不十分さ。
-
-操作感に直結するのは ④Sortableの設定不足（クリックで入れ替わる問題）。
-
-その他は⑤デバッグ性向上のための改善余地。
-
-💡 つまり「大枠の設計方針は守られているけど、実装細部で Phase1b → Phase2C への移行時に意図が一部削られた／戻ってしまった」状態です。
+UI はそのまま「上から下へ並んでいる」見た目を維持できる。
 
 
+✅ まとめ:
+エラーの原因は UI (DOM) と内部配列の並び方向の不一致。
+対策は Sortable の oldIndex/newIndex を内部配列用に反転して渡すこと。
+
+この修正を UI 側 initializeLayerSortable の onEnd に入れれば改善できそうです。
