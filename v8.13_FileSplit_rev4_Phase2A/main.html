@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase2.5 - SortableJS詳細デバッグ版</title>
+    <title>🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1 - SortableJS完全対応版</title>
     <style>
         * {
             margin: 0;
@@ -184,7 +184,7 @@
             border: 1px solid var(--futaba-light-medium);
             border-radius: 6px;
             padding: 6px 8px;
-            cursor: pointer;
+            cursor: grab;
             transition: all 0.2s ease;
             display: grid;
             grid-template-columns: 20px 1fr 48px;
@@ -194,6 +194,10 @@
             user-select: none;
             position: relative;
             box-shadow: 0 1px 2px rgba(128, 0, 0, 0.05);
+        }
+        
+        .layer-item:active {
+            cursor: grabbing;
         }
         
         .layer-item:hover {
@@ -207,7 +211,7 @@
             box-shadow: 0 2px 4px rgba(128, 0, 0, 0.15);
         }
         
-        /* SortableJS フィードバック - Phase1追加 */
+        /* SortableJS フィードバック強化 - GPT5改修案対応 */
         .sortable-ghost {
             opacity: 0.6;
             background: rgba(100, 150, 255, 0.1);
@@ -290,7 +294,7 @@
             height: 100%;
             object-fit: cover;
             border-radius: 3px;
-            transition: opacity 0.2s ease-in-out; /* 点滅防止用フェード効果 */
+            transition: opacity 0.2s ease-in-out;
         }
         
         .layer-thumbnail-placeholder {
@@ -299,7 +303,7 @@
             background: var(--futaba-light-medium);
             border-radius: 2px;
             opacity: 0.5;
-            transition: opacity 0.2s ease-in-out; /* プレースホルダーフェード */
+            transition: opacity 0.2s ease-in-out;
         }
         
         .layer-delete-button {
@@ -501,38 +505,6 @@
             align-items: center;
             gap: 4px;
         }
-        
-        /* Phase2.5追加: デバッグパネル */
-        .debug-panel {
-            position: fixed;
-            top: 20px;
-            left: 70px;
-            width: 400px;
-            max-height: 200px;
-            background: var(--futaba-cream);
-            border: 2px solid var(--futaba-maroon);
-            border-radius: 8px;
-            padding: 10px;
-            font-family: monospace;
-            font-size: 10px;
-            overflow-y: auto;
-            z-index: 3000;
-            opacity: 0.9;
-        }
-        
-        .debug-title {
-            color: var(--futaba-maroon);
-            font-weight: bold;
-            margin-bottom: 8px;
-            border-bottom: 1px solid var(--futaba-light-medium);
-            padding-bottom: 4px;
-        }
-        
-        .debug-log {
-            color: var(--text-primary);
-            line-height: 1.2;
-            white-space: pre-wrap;
-        }
     </style>
 </head>
 <body>
@@ -558,12 +530,6 @@
                 <div id="drawing-canvas"></div>
             </div>
         </div>
-    </div>
-    
-    <!-- Phase2.5追加: デバッグパネル -->
-    <div class="debug-panel" id="debug-panel">
-        <div class="debug-title">🔍 SortableJS Debug Log</div>
-        <div class="debug-log" id="debug-log">デバッグ情報がここに表示されます...</div>
     </div>
     
     <!-- 右側中央レイヤーパネル -->
@@ -641,7 +607,6 @@
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
-    <!-- Phase1追加: SortableJS -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     
     <!-- Core Drawing Engine -->
@@ -649,13 +614,13 @@
     
     <script>
         /**
-         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase2.5
-         * UI Controller - SortableJS詳細デバッグ版
+         * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1
+         * UI Controller - SortableJS完全対応版
          * 
-         * Phase2.5実装内容:
-         * - SortableJS完全デバッグログ
-         * - UI表示順序とデータ順序の詳細比較
-         * - 問題原因の完全特定
+         * GPT5改修案適用:
+         * - DOM/PixiJS順序完全同期
+         * - ペン入力完全対応  
+         * - 破線色問題解決
          */
         
         // === UTILITIES ===
@@ -663,70 +628,22 @@
             clamp: (value, min, max) => Math.max(min, Math.min(max, value))
         };
 
-        // === Phase2.5追加: デバッグログマネージャー ===
-        class DebugLogManager {
-            constructor() {
-                this.logElement = document.getElementById('debug-log');
-                this.logs = [];
-                this.maxLogs = 20;
-            }
-
-            log(message, data = null) {
-                const timestamp = new Date().toLocaleTimeString();
-                const logEntry = `[${timestamp}] ${message}`;
-                
-                if (data) {
-                    console.log(logEntry, data);
-                    this.logs.push(`${logEntry}\n${JSON.stringify(data, null, 2)}`);
-                } else {
-                    console.log(logEntry);
-                    this.logs.push(logEntry);
-                }
-
-                // 最大ログ数を超えたら古いものを削除
-                if (this.logs.length > this.maxLogs) {
-                    this.logs.shift();
-                }
-
-                this.updateDisplay();
-            }
-
-            updateDisplay() {
-                if (this.logElement) {
-                    this.logElement.textContent = this.logs.join('\n\n');
-                    // 自動スクロール
-                    this.logElement.scrollTop = this.logElement.scrollHeight;
-                }
-            }
-
-            clear() {
-                this.logs = [];
-                this.updateDisplay();
-            }
-        }
-
-        // グローバルデバッグログ
-        window.debugLog = new DebugLogManager();
-
         // === UI CALLBACKS IMPLEMENTATION ===
         window.UICallbacks = {
             // === レイヤー通知 ===
             onLayerCreated: (layerInfo) => {
-                window.debugLog.log('📝 UICallback: onLayerCreated', layerInfo);
                 if (window.futabaApp?.ui) {
                     window.futabaApp.ui.updateLayerUI();
                 }
             },
 
             onLayerDeleted: (layerId) => {
-                window.debugLog.log('🗑️ UICallback: onLayerDeleted', { layerId });
                 if (window.futabaApp?.ui) {
                     window.futabaApp.ui.updateLayerUI();
                 }
             },
 
             onActiveLayerChanged: (layerId, layerName) => {
-                window.debugLog.log('🎯 UICallback: onActiveLayerChanged', { layerId, layerName });
                 if (window.futabaApp?.ui) {
                     window.futabaApp.ui.updateLayerUI();
                     window.futabaApp.ui.updateStatusDisplay('current-layer', layerName);
@@ -734,17 +651,12 @@
             },
 
             onLayerVisibilityChanged: (layerId, visible) => {
-                window.debugLog.log('👁️ UICallback: onLayerVisibilityChanged', { layerId, visible });
                 if (window.futabaApp?.ui) {
                     window.futabaApp.ui.updateLayerUI();
                 }
             },
 
             onLayerListUpdated: (layerList) => {
-                window.debugLog.log('📋 UICallback: onLayerListUpdated', { 
-                    layerCount: layerList.length,
-                    layers: layerList.map(l => ({ id: l.id, name: l.name, isActive: l.isActive }))
-                });
                 if (window.futabaApp?.ui) {
                     window.futabaApp.ui.updateLayerUI();
                 }
@@ -1060,7 +972,7 @@
             }
         }
 
-        // === UNIFIED UI CONTROLLER (Phase2.5デバッグ版) ===
+        // === UNIFIED UI CONTROLLER ===
         class UnifiedUIController {
             constructor() {
                 this.activePopup = null;
@@ -1074,9 +986,6 @@
                 this.setupSliders();
                 this.setupResize();
                 this.updateCanvasInfo();
-                
-                // デバッグパネル初期化
-                window.debugLog.log('🚀 UI Controller initialized');
             }
 
             setupEventDelegation() {
@@ -1098,8 +1007,7 @@
 
                     if (!e.target.closest('.popup-panel') && 
                         !e.target.closest('.tool-button') &&
-                        !e.target.closest('.layer-panel-container') &&
-                        !e.target.closest('.debug-panel')) {
+                        !e.target.closest('.layer-panel-container')) {
                         this.closeAllPopups();
                     }
                 });
@@ -1294,156 +1202,89 @@
                 }
             }
 
-            // Phase2.5: 完全デバッグ版 SortableJS初期化
+            // === GPT5改修案適用: SortableJS完全対応 ===
             initializeLayerSortable() {
                 const layerList = document.getElementById('layer-list');
-                if (!layerList || !window.Sortable) {
-                    window.debugLog.log('❌ SortableJS initialization failed - missing elements');
-                    return;
-                }
+                if (!layerList || !window.Sortable) return;
                 
-                // 既存のSortableインスタンスがあれば破棄
                 if (this.sortable) {
-                    window.debugLog.log('🔄 Destroying existing SortableJS instance');
                     this.sortable.destroy();
                     this.sortable = null;
                 }
-                
-                window.debugLog.log('🎯 Creating new SortableJS instance');
                 
                 this.sortable = window.Sortable.create(layerList, {
                     handle: '.layer-item',
                     ghostClass: 'sortable-ghost',
                     chosenClass: 'sortable-chosen',
                     animation: 150,
-                    onStart: (evt) => {
-                        window.debugLog.log('🚀 SortableJS onStart', {
-                            oldIndex: evt.oldIndex,
-                            item: evt.item.dataset,
-                            target: evt.target.id
-                        });
-                    },
+                    // GPT5改修案: ペン入力完全対応
+                    forceFallback: true,
+                    fallbackTolerance: 3,
+                    touchStartThreshold: 1,
                     onEnd: (evt) => {
-                        window.debugLog.log('🎯 === SortableJS onEnd EVENT START ===');
-                        
-                        // SortableJS イベント詳細
-                        const eventDetails = {
-                            oldIndex: evt.oldIndex,
-                            newIndex: evt.newIndex,
-                            itemLayerId: parseInt(evt.item.dataset.layerId),
-                            itemLayerName: evt.item.querySelector('.layer-name')?.textContent,
-                            totalItems: evt.to.children.length,
-                            from: evt.from.id,
-                            to: evt.to.id
-                        };
-                        window.debugLog.log('📊 SortableJS Event Details:', eventDetails);
-
-                        // DOM状態スナップショット（移動前）
-                        const domLayersBeforeAPI = Array.from(layerList.children).map((item, index) => ({
-                            domIndex: index,
-                            layerId: parseInt(item.dataset.layerId),
-                            layerName: item.querySelector('.layer-name')?.textContent || 'Unknown',
-                            isActive: item.classList.contains('active')
-                        }));
-                        window.debugLog.log('🏠 DOM Layer Order (before API call):', domLayersBeforeAPI);
-
-                        // DrawingEngine状態スナップショット
-                        const engineLayers = window.DrawingEngineAPI?.getLayerList() || [];
-                        window.debugLog.log('⚙️ Engine Layer Order (before API call):', 
-                            engineLayers.map((l, idx) => ({ 
-                                engineIndex: idx, 
-                                id: l.id, 
-                                name: l.name, 
-                                isActive: l.isActive 
-                            }))
-                        );
-
-                        // レイヤー順序変更API呼び出し
                         if (evt.oldIndex !== evt.newIndex) {
-                            window.debugLog.log('🔄 Calling DrawingEngineAPI.reorderLayer...', {
-                                layerId: eventDetails.itemLayerId,
-                                fromIndex: evt.oldIndex,
-                                toIndex: evt.newIndex
-                            });
-
-                            const success = window.DrawingEngineAPI?.reorderLayer(
-                                eventDetails.itemLayerId, 
-                                evt.oldIndex, 
-                                evt.newIndex
-                            );
+                            const layerId = parseInt(evt.item.dataset.layerId);
                             
-                            window.debugLog.log('📋 API Call Result:', { success });
-
-                            // API呼び出し後の状態確認
-                            setTimeout(() => {
-                                const engineLayersAfter = window.DrawingEngineAPI?.getLayerList() || [];
-                                window.debugLog.log('⚙️ Engine Layer Order (after API call):', 
-                                    engineLayersAfter.map((l, idx) => ({ 
-                                        engineIndex: idx, 
-                                        id: l.id, 
-                                        name: l.name, 
-                                        isActive: l.isActive 
-                                    }))
-                                );
-
-                                const domLayersAfterAPI = Array.from(layerList.children).map((item, index) => ({
-                                    domIndex: index,
-                                    layerId: parseInt(item.dataset.layerId),
-                                    layerName: item.querySelector('.layer-name')?.textContent || 'Unknown',
-                                    isActive: item.classList.contains('active')
-                                }));
-                                window.debugLog.log('🏠 DOM Layer Order (after API call):', domLayersAfterAPI);
-
-                                // 整合性チェック
-                                const isConsistent = engineLayersAfter.every((engineLayer, index) => {
-                                    const domLayer = domLayersAfterAPI.find(d => d.domIndex === index);
-                                    return domLayer && domLayer.layerId === engineLayer.id;
-                                });
-                                
-                                window.debugLog.log(isConsistent ? '✅ DOM-Engine Consistency: OK' : '❌ DOM-Engine Consistency: MISMATCH');
-                                
-                            }, 100);
-                        } else {
-                            window.debugLog.log('⏩ Same index, skipping API call');
+                            // GPT5改修案: DOM順序とPixiJS描画順序の完全同期
+                            const success = window.DrawingEngineAPI?.reorderLayer(layerId, evt.oldIndex, evt.newIndex);
+                            
+                            if (success) {
+                                // 順序変更後にPixiJS描画順序を即座に同期
+                                this.syncPixiJSLayerOrder();
+                            }
                         }
-
-                        window.debugLog.log('🎯 === SortableJS onEnd EVENT END ===');
-                    },
-                    onMove: (evt) => {
-                        window.debugLog.log('📦 SortableJS onMove', {
-                            dragged: evt.dragged.dataset.layerId,
-                            related: evt.related?.dataset.layerId,
-                            willInsertAfter: evt.willInsertAfter
-                        });
                     }
                 });
+            }
 
-                window.debugLog.log('✅ SortableJS instance created successfully');
+            // GPT5改修案: PixiJS描画順序とDOMの完全同期
+            syncPixiJSLayerOrder() {
+                const layerElements = Array.from(document.querySelectorAll('.layer-item'));
+                
+                // DOM順序を逆転させてPixiJSのzIndexに適用（上にあるほど前面）
+                layerElements.reverse().forEach((el, index) => {
+                    const layerId = parseInt(el.dataset.layerId);
+                    // DrawingEngineに順序同期をリクエスト
+                    window.DrawingEngineAPI?.syncLayerOrder(layerId, index);
+                });
+            }
+
+            /**
+             * 新規追加: アクティブレイヤー表示のみ更新
+             * レイヤーリスト全体を再構築せずにアクティブ状態のみ変更
+             */
+            updateActiveLayerDisplay(activeLayerId) {
+                const layerItems = document.querySelectorAll('.layer-item');
+                layerItems.forEach(item => {
+                    const layerId = parseInt(item.dataset.layerId);
+                    if (layerId === activeLayerId) {
+                        item.classList.add('active');
+                    } else {
+                        item.classList.remove('active');
+                    }
+                });
+                console.log('🎨 Active layer display updated:', activeLayerId);
             }
 
             updateLayerUI() {
-                window.debugLog.log('🔄 updateLayerUI called');
-                
                 const layerList = document.getElementById('layer-list');
-                if (!layerList) {
-                    window.debugLog.log('❌ Layer list element not found');
-                    return;
+                if (!layerList) return;
+
+                console.log('🔄 Full layer UI update starting...');
+
+                // 修正: レイヤー更新中はSortable無効化
+                if (this.sortable) {
+                    this.sortable.option("disabled", true);
                 }
 
                 layerList.innerHTML = '';
 
                 const layers = window.DrawingEngineAPI?.getLayerList() || [];
-                window.debugLog.log('📋 Current engine layers for UI update:', 
-                    layers.map((l, idx) => ({ index: idx, id: l.id, name: l.name, isActive: l.isActive }))
-                );
-
-                // レイヤー順序: UIでは逆順表示（最上層を上に）
+                console.log('📊 Current layer data:', layers);
+                
                 const reversedLayers = [...layers].reverse();
-                window.debugLog.log('🔄 Reversed layers for UI display:', 
-                    reversedLayers.map((l, idx) => ({ uiIndex: idx, id: l.id, name: l.name, isActive: l.isActive }))
-                );
 
-                reversedLayers.forEach((layer, uiIndex) => {
+                reversedLayers.forEach((layer) => {
                     const layerItem = document.createElement('div');
                     layerItem.className = `layer-item ${layer.isActive ? 'active' : ''}`;
                     layerItem.dataset.layerId = layer.id;
@@ -1455,7 +1296,6 @@
                     const deleteIcon = '<svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-x"><path d="m18 6-12 12"/><path d="m6 6 12 12"/></svg>';
 
                     layerItem.innerHTML = `
-                        <div class="layer-drag-handle"></div>
                         <div class="layer-visibility ${layer.visible ? '' : 'hidden'}" data-action="toggle-visibility">
                             ${eyeIcon}
                         </div>
@@ -1469,13 +1309,8 @@
                         </div>
                     `;
 
-                    // イベント処理改良版
+                    // 修正: レイヤー選択時の処理を最小化
                     layerItem.addEventListener('click', (e) => {
-                        // ドラッグハンドル領域のクリックは無視
-                        if (e.target.closest('.layer-drag-handle')) {
-                            return;
-                        }
-                        
                         const action = e.target.closest('[data-action]')?.dataset.action;
                         if (action === 'toggle-visibility') {
                             window.DrawingEngineAPI?.toggleLayerVisibility(layer.id);
@@ -1484,26 +1319,32 @@
                             window.DrawingEngineAPI?.deleteLayer(layer.id);
                             e.stopPropagation();
                         } else if (!e.target.closest('.layer-thumbnail, .layer-delete-button')) {
-                            // サムネイル・削除ボタン以外のクリックでレイヤー選択
+                            // 重要: レイヤー選択時はSortableを無効化してから実行
+                            if (this.sortable) {
+                                this.sortable.option("disabled", true);
+                            }
+                            
+                            console.log('👆 Layer selected:', layer.id, layer.name);
                             window.DrawingEngineAPI?.setActiveLayer(layer.id);
+                            
+                            // 短時間でSortableを再有効化
+                            setTimeout(() => {
+                                if (this.sortable) {
+                                    this.sortable.option("disabled", false);
+                                }
+                            }, 100);
                         }
                     });
 
                     layerList.appendChild(layerItem);
                 });
 
-                // SortableJS初期化
-                this.initializeLayerSortable();
+                // 修正: UI更新完了後にSortable再初期化
+                setTimeout(() => {
+                    this.initializeLayerSortable();
+                    console.log('✅ Layer UI update completed');
+                }, 50);
 
-                // DOM完成後の確認ログ
-                const finalDomOrder = Array.from(layerList.children).map((item, index) => ({
-                    domIndex: index,
-                    layerId: parseInt(item.dataset.layerId),
-                    layerName: item.querySelector('.layer-name')?.textContent || 'Unknown'
-                }));
-                window.debugLog.log('🏠 Final DOM order after UI update:', finalDomOrder);
-
-                // DrawingEngineにサムネイル生成をリクエスト
                 setTimeout(() => {
                     layers.forEach(layer => {
                         window.DrawingEngineAPI?.updateThumbnail(layer.id);
@@ -1603,12 +1444,10 @@
                 window.futabaApp = new AppController();
                 await window.futabaApp.initialize();
 
-                window.debugLog.log('🎨 Futaba Drawing Tool v8-Phase2.5 - 詳細デバッグ版完了!');
+                console.log('🎨 Futaba Drawing Tool v8-Phase1 - SortableJS完全対応版完了!');
 
             } catch (error) {
                 console.error('💥 Application startup failed:', error);
-                window.debugLog.log('❌ Application startup failed: ' + error.message);
-                
                 const canvasArea = document.querySelector('.canvas-area');
                 if (canvasArea) {
                     canvasArea.innerHTML = `
@@ -1619,16 +1458,6 @@
                 }
             }
         });
-
-        // Phase2.5追加: デバッグ用グローバル関数
-        window.debugClearLog = () => {
-            window.debugLog.clear();
-        };
-
-        window.debugTestReorder = (layerId, fromIndex, toIndex) => {
-            window.debugLog.log('🧪 Manual test reorder', { layerId, fromIndex, toIndex });
-            return window.DrawingEngineAPI?.reorderLayer(layerId, fromIndex, toIndex);
-        };
     </script>
 </body>
 </html>

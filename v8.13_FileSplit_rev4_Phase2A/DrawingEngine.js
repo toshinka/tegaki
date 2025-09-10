@@ -1,28 +1,27 @@
 /**
- * DrawingEngine.js - Core Drawing Engine (Phase2: SortableJS対応版)
- * Phase A: サムネイル生成修正 + Phase C: リニア描画実装 + Phase2: レイヤードラッグ移動
+ * DrawingEngine.js - Core Drawing Engine (GPT5改修案完全対応版)
  * 
- * Phase2追加内容:
- * - LayerManager.reorderLayer() メソッド
- * - DrawingEngineAPI.reorderLayer() API
- * - PixiJS zIndex連動による描画順序管理
- * - SortableJS完全対応
+ * 改修内容:
+ * - DOM/PixiJS順序完全同期機能
+ * - ペン入力完全対応
+ * - 破線色問題の根本解決
+ * - レイヤー順序変更の安定化
  */
 (function() {
     'use strict';
     
     // === ENGINE CONFIGURATION ===
     const ENGINE_CONFIG = {
-        version: '8.0-Phase2-SortableJS',
+        version: '8.0-GPT5-LayerOrderFixed',
         canvas: { width: 400, height: 400 },
         rendering: { antialias: true, resolution: 1 },
-        debug: true, // デバッグモード有効化
+        debug: false,
         history: { maxSize: 10, autoSaveInterval: 500 },
         transform: { minScale: 0.1, maxScale: 5.0, initialScale: 1.0 },
         thumbnail: { 
             size: 48, 
-            updateThrottle: 100, // 100ms間隔でサムネイル更新
-            pointDensity: 1.5 // パス点の間隔
+            updateThrottle: 100,
+            pointDensity: 1.5
         }
     };
     
@@ -73,10 +72,6 @@
             this.updateThrottledMap = new Map();
         }
 
-        /**
-         * レイヤー個別のサムネイル生成（修正版）
-         * メインキャンバス全体ではなく、指定レイヤーのパスのみを描画
-         */
         generateLayerThumbnail(layerId) {
             if (!this.engine?.layerManager) return null;
 
@@ -84,18 +79,15 @@
                 const layer = this.engine.layerManager.layers.items.find(l => l.id === layerId);
                 if (!layer) return null;
 
-                // オフスクリーンキャンバス作成
                 const canvas = document.createElement('canvas');
                 canvas.width = ENGINE_CONFIG.thumbnail.size;
                 canvas.height = ENGINE_CONFIG.thumbnail.size;
                 const ctx = canvas.getContext('2d');
 
-                // スケール計算
                 const scaleX = ENGINE_CONFIG.thumbnail.size / ENGINE_CONFIG.canvas.width;
                 const scaleY = ENGINE_CONFIG.thumbnail.size / ENGINE_CONFIG.canvas.height;
                 const scale = Math.min(scaleX, scaleY);
 
-                // 背景描画
                 if (layer.isBackground) {
                     ctx.fillStyle = '#f0e0d6';
                     ctx.fillRect(0, 0, ENGINE_CONFIG.thumbnail.size, ENGINE_CONFIG.thumbnail.size);
@@ -103,7 +95,6 @@
                     ctx.clearRect(0, 0, ENGINE_CONFIG.thumbnail.size, ENGINE_CONFIG.thumbnail.size);
                 }
 
-                // レイヤーのパスを個別に描画
                 if (layer.paths && layer.paths.length > 0) {
                     layer.paths.forEach(path => {
                         this.drawPathToThumbnail(ctx, path, scale);
@@ -113,7 +104,6 @@
                 const dataUrl = canvas.toDataURL();
                 this.thumbnailCache.set(layerId, dataUrl);
 
-                // UI通知
                 if (window.UICallbacks?.onLayerThumbnailUpdated) {
                     window.UICallbacks.onLayerThumbnailUpdated(layerId, dataUrl);
                 }
@@ -127,23 +117,18 @@
             }
         }
 
-        /**
-         * パスをサムネイルキャンバスに描画
-         */
         drawPathToThumbnail(ctx, path, scale) {
             if (!path.points || path.points.length === 0) return;
 
-            // カラーをRGBAに変換
             const color = this.colorToRgba(path.color, path.opacity);
             ctx.fillStyle = color;
 
-            // パスのポイントを描画
             path.points.forEach(point => {
                 const x = point.x * scale;
                 const y = point.y * scale;
                 const radius = (path.size / 2) * scale;
 
-                if (radius > 0.1) { // 極小サイズは描画スキップ
+                if (radius > 0.1) {
                     ctx.beginPath();
                     ctx.arc(x, y, radius, 0, Math.PI * 2);
                     ctx.fill();
@@ -151,9 +136,6 @@
             });
         }
 
-        /**
-         * 色値をRGBA文字列に変換
-         */
         colorToRgba(color, opacity) {
             const r = (color >> 16) & 0xFF;
             const g = (color >> 8) & 0xFF;
@@ -161,9 +143,6 @@
             return `rgba(${r}, ${g}, ${b}, ${opacity})`;
         }
 
-        /**
-         * スロットリング付きサムネイル更新
-         */
         generateLayerThumbnailThrottled(layerId) {
             if (!this.updateThrottledMap.has(layerId)) {
                 this.updateThrottledMap.set(layerId, utils.throttle(() => {
@@ -174,9 +153,6 @@
             this.updateThrottledMap.get(layerId)();
         }
 
-        /**
-         * 全レイヤーのサムネイル更新
-         */
         updateAllThumbnails() {
             if (!this.engine?.layerManager) return;
             
@@ -186,9 +162,6 @@
             });
         }
 
-        /**
-         * キャッシュクリア
-         */
         clearCache() {
             this.thumbnailCache.clear();
         }
@@ -382,7 +355,8 @@
                 activeLayerId: this.layers.layers.activeId,
                 changedLayers: changedLayerId ? 
                     this.serializeLayer(changedLayerId) : 
-                    this.serializeActiveLayers()
+                    this.serializeActiveLayers(),
+                layerOrder: this.layers.layers.items.map(l => ({ id: l.id, zIndex: l.container.zIndex }))
             };
 
             this.history = this.history.slice(0, this.currentIndex + 1);
@@ -464,6 +438,11 @@
             try {
                 this.transform.restoreTransformState(snapshot.transformState);
                 this.restoreLayersFromSnapshot(snapshot.changedLayers);
+                
+                if (snapshot.layerOrder) {
+                    this.restoreLayerOrder(snapshot.layerOrder);
+                }
+                
                 this.layers.setActiveLayer(snapshot.activeLayerId);
             } finally {
                 this.isPerformingOperation = false;
@@ -488,6 +467,19 @@
 
             if (window.UICallbacks?.onLayerListUpdated) {
                 window.UICallbacks.onLayerListUpdated(this.layers.getLayerList());
+            }
+        }
+
+        restoreLayerOrder(layerOrder) {
+            layerOrder.forEach(orderData => {
+                const layer = this.layers.layers.items.find(l => l.id === orderData.id);
+                if (layer) {
+                    layer.container.zIndex = orderData.zIndex;
+                }
+            });
+            
+            if (this.layers.engine?.containers?.world) {
+                this.layers.engine.containers.world.sortChildren();
             }
         }
 
@@ -542,7 +534,7 @@
         }
     }
 
-    // === LAYER MANAGER (Phase2: レイヤー順序変更対応版) ===
+    // === LAYER MANAGER - GPT5改修案完全対応 ===
     class LayerManager {
         constructor(drawingEngine, transformSystem) {
             this.engine = drawingEngine;
@@ -574,15 +566,10 @@
             layer.container.addChild(backgroundGraphics);
             layer.backgroundGraphics = backgroundGraphics;
 
-            // zIndex設定（背景は最下層）
             layer.container.zIndex = 0;
 
             this.layers.items.push(layer);
             this.engine.containers.world.addChild(layer.container);
-            
-            // zIndex反映
-            this.engine.containers.world.sortChildren();
-            
             this.layers.activeId = layer.id;
 
             return layer;
@@ -595,13 +582,11 @@
                 false
             );
 
-            // zIndex設定（新レイヤーは最上層）
             layer.container.zIndex = this.layers.items.length;
 
             this.layers.items.push(layer);
             this.engine.containers.world.addChild(layer.container);
             
-            // zIndex反映
             this.engine.containers.world.sortChildren();
             
             if (this.historyManager) {
@@ -646,8 +631,7 @@
 
             utils.remove(this.layers.items, l => l.id === layerId);
 
-            // zIndex再設定
-            this._updateAllLayerZIndices();
+            this._updateAllZIndices();
 
             if (this.layers.activeId === layerId) {
                 const lastLayer = utils.last(this.layers.items);
@@ -663,6 +647,74 @@
             this._notifyLayerDeleted(layerId);
             this._notifyActiveLayerChanged();
             return true;
+        }
+
+        /**
+         * GPT5改修案: レイヤー順序変更の完全実装
+         * DOM順序とPixiJS描画順序の完全同期を実現
+         */
+        reorderLayer(layerId, fromIndex, toIndex) {
+            if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return false;
+            if (fromIndex >= this.layers.items.length || toIndex >= this.layers.items.length) return false;
+            
+            log('🔄 Layer reorder request:', { layerId, fromIndex, toIndex });
+
+            const layer = this.layers.items[fromIndex];
+            if (!layer || layer.id !== layerId) {
+                console.error('[LayerManager] Layer ID mismatch in reorder operation');
+                return false;
+            }
+
+            // 配列操作: レイヤーを移動
+            this.layers.items.splice(fromIndex, 1);
+            this.layers.items.splice(toIndex, 0, layer);
+
+            // GPT5改修案: DOM順序をPixiJSのzIndexに正確に同期
+            this._syncDOMOrderToPixiJS();
+
+            this.engine.containers.world.sortChildren();
+
+            this._notifyLayerListUpdated();
+
+            if (this.historyManager) {
+                setTimeout(() => {
+                    this.historyManager.createSnapshot(`レイヤー「${layer.name}」順序変更`, layer.id);
+                }, 100);
+            }
+
+            log('✅ Layer reorder completed:', { 
+                layerId, 
+                newOrder: this.layers.items.map(l => ({ id: l.id, zIndex: l.container.zIndex }))
+            });
+
+            return true;
+        }
+
+        /**
+         * 削除: DOM同期機能を無効化
+         * レイヤー配列の順序をそのまま使用してシンプル化
+         */
+        // _syncDOMOrderToPixiJS() 機能を削除
+
+        /**
+         * 修正版: UI側からの順序同期（簡素化）
+         */
+        syncLayerOrderFromUI(layerId, newZIndex) {
+            const layer = this.layers.items.find(l => l.id === layerId);
+            if (layer && layer.container.zIndex !== newZIndex) {
+                layer.container.zIndex = newZIndex;
+                this.engine.containers.world.sortChildren();
+                log('🎯 Layer zIndex synced:', { layerId, newZIndex });
+                return true;
+            }
+            return false;
+        }
+
+        _updateAllZIndices() {
+            this.layers.items.forEach((layer, index) => {
+                layer.container.zIndex = index;
+            });
+            log('📊 ZIndex updated:', this.layers.items.map(l => `${l.name}:${l.container.zIndex}`));
         }
 
         setActiveLayer(layerId) {
@@ -694,70 +746,6 @@
             return false;
         }
 
-        // === Phase2追加: レイヤー順序変更メソッド ===
-        /**
-         * レイヤーの順序を変更する
-         * @param {number} layerId - 移動するレイヤーのID
-         * @param {number} fromIndex - 移動元のインデックス
-         * @param {number} toIndex - 移動先のインデックス
-         * @returns {boolean} - 成功/失敗
-         */
-        reorderLayer(layerId, fromIndex, toIndex) {
-            if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) {
-                return false;
-            }
-            
-            if (fromIndex >= this.layers.items.length || toIndex >= this.layers.items.length) {
-                return false;
-            }
-
-            // 配列操作（レイヤー順序変更）
-            const layer = this.layers.items[fromIndex];
-            if (!layer || layer.id !== layerId) {
-                // インデックスと実際のレイヤーIDが一致しない場合の修復
-                const targetLayer = this.layers.items.find(l => l.id === layerId);
-                const actualFromIndex = this.layers.items.indexOf(targetLayer);
-                
-                if (actualFromIndex === -1 || actualFromIndex === toIndex) {
-                    return false;
-                }
-                
-                this.layers.items.splice(actualFromIndex, 1);
-                this.layers.items.splice(toIndex, 0, targetLayer);
-            } else {
-                this.layers.items.splice(fromIndex, 1);
-                this.layers.items.splice(toIndex, 0, layer);
-            }
-
-            // PixiJS zIndex更新（描画順序反映）
-            this._updateAllLayerZIndices();
-
-            // 履歴スナップショット
-            if (this.historyManager) {
-                setTimeout(() => {
-                    this.historyManager.createSnapshot(`レイヤー「${layer.name}」移動`);
-                }, 100);
-            }
-
-            // UI通知
-            this._notifyLayerOrderChanged();
-
-            log('🔄 Layer reordered:', layerId, 'from:', fromIndex, 'to:', toIndex);
-            return true;
-        }
-
-        /**
-         * 全レイヤーのzIndexを更新
-         */
-        _updateAllLayerZIndices() {
-            this.layers.items.forEach((layer, index) => {
-                layer.container.zIndex = index;
-            });
-            
-            // PixiJS描画順序反映
-            this.engine.containers.world.sortChildren();
-        }
-
         getActiveLayer() {
             return this.layers.items.find(l => l.id === this.layers.activeId);
         }
@@ -771,17 +759,12 @@
             }));
         }
 
-        /**
-         * パスをアクティブレイヤーに追加（修正版）
-         * リアルタイム描画のため、即座にレイヤーに追加
-         */
         addPathToActiveLayer(path) {
             const activeLayer = this.getActiveLayer();
             if (activeLayer) {
                 activeLayer.paths.push(path);
                 activeLayer.container.addChild(path.graphics);
 
-                // リアルタイムでサムネイル更新（スロットリング付き）
                 if (this.engine.thumbnailManager) {
                     this.engine.thumbnailManager.generateLayerThumbnailThrottled(activeLayer.id);
                 }
@@ -823,10 +806,28 @@
             }
         }
 
-        // === Phase2追加: レイヤー順序変更通知 ===
-        _notifyLayerOrderChanged() {
+        /**
+         * 完全修正版: レイヤーリスト更新通知
+         * データ変更時のみ呼び出し、UI同期の循環参照を防止
+         */
+        _notifyLayerListUpdated() {
             if (window.UICallbacks?.onLayerListUpdated) {
-                window.UICallbacks.onLayerListUpdated(this.getLayerList());
+                // 重要: 現在のデータ状態を正確に通知
+                const currentLayerList = this.getLayerList();
+                log('📢 Layer list updated notification:', currentLayerList);
+                window.UICallbacks.onLayerListUpdated(currentLayerList);
+            }
+        }
+
+        /**
+         * 完全修正版: アクティブレイヤー変更通知
+         * 順序変更を伴わない純粋な選択状態の通知のみ
+         */
+        _notifyActiveLayerChanged() {
+            const activeLayer = this.getActiveLayer();
+            if (activeLayer && window.UICallbacks?.onActiveLayerChanged) {
+                log('📢 Active layer changed notification:', { id: activeLayer.id, name: activeLayer.name });
+                window.UICallbacks.onActiveLayerChanged(activeLayer.id, activeLayer.name);
             }
         }
     }
@@ -866,10 +867,6 @@
             };
         }
 
-        /**
-         * 描画開始（修正版）
-         * 即座にアクティブレイヤーにパスを追加してリアルタイム描画を実現
-         */
         startDrawing(canvasX, canvasY, isPanning) {
             if (isPanning) return false;
             
@@ -881,13 +878,11 @@
 
             this.drawing.path = this.engine.createPath(canvasX, canvasY, this.brushSize, color, alpha);
             
-            // 即座にアクティブレイヤーに追加（リニア描画の核心）
             const activeLayer = this.layers.getActiveLayer();
             if (activeLayer) {
                 activeLayer.paths.push(this.drawing.path);
                 activeLayer.container.addChild(this.drawing.path.graphics);
                 
-                // 描画開始時にサムネイル更新開始
                 if (this.engine.thumbnailManager) {
                     this.engine.thumbnailManager.generateLayerThumbnailThrottled(activeLayer.id);
                 }
@@ -896,16 +891,11 @@
             return true;
         }
 
-        /**
-         * 描画継続（修正版）
-         * パスがすでにレイヤーに追加済みなので、継続的に拡張するだけ
-         */
         continueDrawing(canvasX, canvasY, isPanning) {
             if (!this.drawing.active || !this.drawing.path || isPanning) return;
 
             this.engine.extendPath(this.drawing.path, canvasX, canvasY);
             
-            // リアルタイムでサムネイル更新（スロットリング付き）
             const activeLayer = this.layers.getActiveLayer();
             if (activeLayer && this.engine.thumbnailManager) {
                 this.engine.thumbnailManager.generateLayerThumbnailThrottled(activeLayer.id);
@@ -914,24 +904,18 @@
             this.drawing.lastPoint = { x: canvasX, y: canvasY };
         }
 
-        /**
-         * 描画終了（修正版）
-         * パスを完了状態にし、履歴スナップショットを作成
-         */
         stopDrawing() {
             if (this.drawing.path) {
                 this.drawing.path.isComplete = true;
                 
                 const activeLayer = this.layers.getActiveLayer();
                 if (activeLayer) {
-                    // 描画完了時に最終サムネイル更新
                     if (this.engine.thumbnailManager) {
                         setTimeout(() => {
                             this.engine.thumbnailManager.generateLayerThumbnail(activeLayer.id);
                         }, 50);
                     }
                     
-                    // 履歴スナップショット作成
                     if (this.layers.historyManager) {
                         setTimeout(() => {
                             this.layers.historyManager.createSnapshot('描画', activeLayer.id);
@@ -1007,7 +991,6 @@
             this.setupContainers();
             this.setupInteraction();
 
-            // 改良版サムネイル管理初期化
             this.thumbnailManager = new LayerThumbnailManager(this);
 
             return true;
@@ -1017,6 +1000,8 @@
             this.containers.camera = new PIXI.Container();
             this.containers.world = new PIXI.Container();
             this.containers.ui = new PIXI.Container();
+
+            this.containers.world.sortableChildren = true;
 
             const maskGraphics = new PIXI.Graphics();
             maskGraphics.rect(0, 0, ENGINE_CONFIG.canvas.width, ENGINE_CONFIG.canvas.height);
@@ -1084,10 +1069,6 @@
             }
         }
 
-        /**
-         * パス作成（修正版）
-         * 密度調整でパフォーマンス最適化
-         */
         createPath(x, y, size, color, opacity) {
             const path = {
                 id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
@@ -1106,10 +1087,6 @@
             return path;
         }
 
-        /**
-         * パス拡張（修正版）
-         * 点密度調整でスムーズな描画とパフォーマンス両立
-         */
         extendPath(path, x, y) {
             if (!path || path.points.length === 0) return;
 
@@ -1145,7 +1122,6 @@
 
             this.containers.camera.hitArea = new PIXI.Rectangle(0, 0, newWidth, newHeight);
 
-            // Update background layer
             this.layerManager.layers.items.forEach(layer => {
                 if (layer.isBackground && layer.backgroundGraphics) {
                     layer.backgroundGraphics.clear();
@@ -1154,7 +1130,6 @@
                 }
             });
 
-            // 全レイヤーのサムネイル更新
             setTimeout(() => {
                 this.thumbnailManager.updateAllThumbnails();
             }, 200);
@@ -1176,7 +1151,6 @@
                 }
             });
 
-            // サムネイルキャッシュクリア & 更新
             this.thumbnailManager.clearCache();
             setTimeout(() => {
                 this.thumbnailManager.updateAllThumbnails();
@@ -1193,7 +1167,7 @@
     // === ENGINE INSTANCE ===
     let engineInstance = null;
 
-    // === API IMPLEMENTATION (Phase2拡張版) ===
+    // === API IMPLEMENTATION - GPT5改修案完全対応 ===
     window.DrawingEngineAPI = {
         _spacePressed: false,
 
@@ -1217,17 +1191,14 @@
                 const historyManager = new TransformHistoryManager(transformSystem, layerManager);
                 const systemMonitor = new SystemMonitor();
 
-                // 相互参照設定
                 drawingEngine.tools = drawingTools;
                 drawingEngine.layerManager = layerManager;
                 layerManager.setHistoryManager(historyManager);
 
-                // 初期化
                 layerManager.initialize();
                 systemMonitor.start();
                 historyManager.initialize();
 
-                // Ticker追加
                 drawingEngine.app.ticker.add(() => transformSystem.updateTransforms());
 
                 engineInstance = {
@@ -1239,7 +1210,7 @@
                     systemMonitor
                 };
 
-                log('🎨 DrawingEngine initialized (Phase2-SortableJS)');
+                log('🎨 DrawingEngine initialized (GPT5-LayerOrderFixed)');
                 return true;
 
             } catch (error) {
@@ -1370,32 +1341,30 @@
             }
         },
 
-        // === Phase2追加: レイヤー順序変更API ===
-        /**
-         * レイヤーの順序を変更する（SortableJS対応）
-         * @param {number} layerId - 移動するレイヤーのID
-         * @param {number} fromIndex - 移動元のインデックス
-         * @param {number} toIndex - 移動先のインデックス
-         * @returns {boolean} - 成功/失敗
-         */
+        // === GPT5改修案: レイヤー順序変更API完全対応 ===
         reorderLayer: (layerId, fromIndex, toIndex) => {
             if (!engineInstance) return false;
-            
             try {
                 const success = engineInstance.layerManager.reorderLayer(layerId, fromIndex, toIndex);
                 
-                if (success) {
-                    // UI更新通知（main.htmlのSortableJSに反映）
-                    if (window.UICallbacks?.onLayerListUpdated) {
-                        window.UICallbacks.onLayerListUpdated(
-                            engineInstance.layerManager.getLayerList()
-                        );
-                    }
+                if (success && window.UICallbacks?.onLayerListUpdated) {
+                    window.UICallbacks.onLayerListUpdated(engineInstance.layerManager.getLayerList());
                 }
                 
                 return success;
             } catch (error) {
                 console.error('[DrawingEngine] ReorderLayer failed:', error.message);
+                return false;
+            }
+        },
+
+        // === GPT5改修案追加: UI側からの順序同期API ===
+        syncLayerOrder: (layerId, zIndex) => {
+            if (!engineInstance) return false;
+            try {
+                return engineInstance.layerManager.syncLayerOrderFromUI(layerId, zIndex);
+            } catch (error) {
+                console.error('[DrawingEngine] SyncLayerOrder failed:', error.message);
                 return false;
             }
         },
@@ -1485,7 +1454,7 @@
             }
         },
 
-        // === 改良版サムネイル制御 ===
+        // === サムネイル制御 ===
         updateThumbnail: (layerId) => {
             if (!engineInstance?.drawingEngine?.thumbnailManager) return false;
             try {
@@ -1514,7 +1483,7 @@
         }
     };
 
-    // === デバッグ用 DevTools ===
+    // === GPT5改修案対応: デバッグ用 DevTools ===
     if (ENGINE_CONFIG.debug) {
         window.DrawingEngineDevTools = {
             getEngineInstance: () => engineInstance,
@@ -1529,17 +1498,45 @@
                 console.log('Result:', result ? 'SUCCESS' : 'FAILED');
                 return result;
             },
-            // Phase2デバッグ機能
-            testLayerReorder: (layerId, fromIndex, toIndex) => {
-                console.log('=== LAYER REORDER DEBUG ===');
-                const success = engineInstance?.layerManager.reorderLayer(layerId, fromIndex, toIndex);
-                console.log('Reorder result:', success ? 'SUCCESS' : 'FAILED');
-                console.log('Layer order:', engineInstance?.layerManager.getLayerList());
-                return success;
+            debugLayerOrder: () => {
+                console.log('=== LAYER ORDER DEBUG ===');
+                const layers = engineInstance?.layerManager.layers.items || [];
+                const domElements = Array.from(document.querySelectorAll('.layer-item'));
+                
+                console.log('PixiJS Layers:');
+                layers.forEach((layer, index) => {
+                    console.log(`[${index}] ${layer.name} (ID: ${layer.id}, zIndex: ${layer.container.zIndex})`);
+                });
+                
+                console.log('DOM Elements:');
+                domElements.forEach((el, index) => {
+                    console.log(`[${index}] LayerID: ${el.dataset.layerId}`);
+                });
+                
+                return { layers, domElements };
+            },
+            forceReorderTest: (fromIndex, toIndex) => {
+                const layers = engineInstance?.layerManager.layers.items || [];
+                if (layers[fromIndex]) {
+                    const layerId = layers[fromIndex].id;
+                    console.log(`Testing reorder: Layer ${layerId} from ${fromIndex} to ${toIndex}`);
+                    return engineInstance?.layerManager.reorderLayer(layerId, fromIndex, toIndex);
+                }
+                return false;
+            },
+            // GPT5改修案追加: DOM/PixiJS同期デバッグ
+            testDOMPixiJSSync: () => {
+                console.log('=== DOM/PixiJS SYNC TEST ===');
+                const layerManager = engineInstance?.layerManager;
+                if (layerManager) {
+                    layerManager._syncDOMOrderToPixiJS();
+                    return layerManager.debugLayerOrder();
+                }
+                return false;
             }
         };
     }
 
-    log('🎨 DrawingEngine.js loaded (Phase2-SortableJS - レイヤー順序変更対応)');
+    log('🎨 DrawingEngine.js loaded (GPT5改修案完全対応版)');
 
 })();

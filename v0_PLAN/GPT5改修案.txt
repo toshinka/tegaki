@@ -1,163 +1,98 @@
-❌ 問題になりやすい点
+🔎 問題の整理
 
-Pixi の Container 入れ替えによるレンダリング不整合
+レイヤーの順序が逆転する
 
-container.removeChild() → addChildAt() のような処理で階層移動している場合、RenderTexture にバインドされているサムネイル更新処理が切れることがある。
+上にドラッグしたのに最下層へ行ったり、その逆がある。
 
-これが「サムネイルが真っ黒になる」原因になりやすい。
+ただし毎回ではなく、時々は正しく動く。
 
-サムネイル生成時に描画が同期していない
+→ PixiJS の描画スタック（子要素配列）と SortableJS の DOM 順序が逆方向で管理されている可能性が高い。
+（PixiJS は zIndex / children の昇順で描画、DOM は上にあるほどリストの上に表示、これが食い違いやすい）
 
-renderer.render(layer, renderTexture) でサムネイル更新する際、描画フレームと競合して真っ黒のテクスチャが書き込まれることがある。
+破線の色が茶色・青に変わる
 
-描画遅延や「ペンの線がワンテンポ遅れて見える」原因にもなる。
+これは SortableJS の ghostClass / chosenClass / dragClass / fallbackClass のスタイル切り替えによるもの。
 
-ドラッグ中の要素の参照を壊している
+「どの要素の上に入るか」判定が失敗しているときに違う色になっている可能性がある（DOM の上下判定、invertSwap オプションの影響）。
 
-Pixi の DisplayObject は「同じ親に属するのは一度だけ」なので、DOM的に差し替え→再構築していると参照が切れてイベントが遅延する。
+ペンでは選択できるがドラッグできない
 
-✅ 改善アプローチ
-1. データモデルと表示の分離
+タッチ／ペン入力が pointerdown → dragstart に変換されていない。
 
-クリスタや Photoshop 風の「レイヤーパネル」は UI側のリスト並べ替えと、実際のPixi Container階層は別にする 方式が堅牢です。
+SortableJS は touchstart は扱うが、ペン入力（pointerType=pen） を明示的に許可していないケースがある。
 
-つまり：
+→ touchStartThreshold や forceFallback: true を設定しないとペン入力でドラッグできない。
 
-内部的には layers[] の配列で Z-order を管理する
+🛠 原因の詳細
+レイヤーの順序逆転
 
-Pixi Container は必要な時だけ addChildAt(layerContainer, newIndex) で再配置
+DOM: 上にある要素ほど「前に表示される」ように見える
 
-レイヤーパネルの UI（HTML側）は drag-and-drop ライブラリ（例えば SortableJS
-）で操作し、並び順が変わったら内部の layers 配列を書き換える。
+PixiJS: stage.addChild(layer) → children 配列の後ろが「前面」になる
 
-2. サムネイル生成の非同期化
+つまり DOM の順序と PixiJS の描画順序が逆。
 
-requestAnimationFrame の中でサムネイル更新を行い、描画と競合しないようにする。
+ソート後に PixiJS 側で zIndex を再設定してやらないとズレる。
 
-function updateThumbnail(layer, renderTexture, renderer) {
-    requestAnimationFrame(() => {
-        renderer.render(layer, { renderTexture, clear: true });
-    });
+破線の色
+
+SortableJS が insertBefore と insertAfter を内部で切り替える時に、候補位置を示すスタイルが変わる。
+
+これは仕様上問題ないが、DOM と Pixi の対応が狂っていると「青のとき正しく動いて、茶色のとき逆に行く」という風に見える。
+
+ペン操作
+
+SortableJS のデフォルトは touch を mouse に変換して扱うが、pointerType: pen は考慮されない。
+
+Windows + Chrome のペン入力だと pointerdown が発火するが dragstart に繋がらないため動かない。
+
+✅ 改修方法
+1. PixiJS のレイヤー順を DOM と同期させる
+
+SortableJS の onEnd に以下を入れる：
+
+onEnd: function (evt) {
+  const layerElements = Array.from(document.querySelectorAll(".layer-item"));
+  // 上にあるDOMほど前面になるように逆順にPixiへ適用
+  layerElements.reverse().forEach((el, index) => {
+    const layerId = el.dataset.layerId;
+    const layer = layerMap[layerId];
+    layer.zIndex = index;
+  });
+  app.stage.sortChildren();
 }
 
 
-こうすると「黒塗りサムネイル」問題が大幅に減ります。
+こうすることで DOM と Pixi の順序が常に一致する。
 
-3. 遅延描画対策
+2. 破線の色問題
 
-Pixi v8 の autoRender を使わず、明示的に renderer.render(stage) を呼ぶ。
+色自体は ghostClass / chosenClass の CSS で制御されているので 無害。
 
-特にペンツールのストローク中は「現在のレイヤーだけに描画」→「フルステージ再描画」に分けた方がレスポンスが良い。
+「色によって法則が変わる」と感じたのは、Pixi と DOM の順序が一致していないため。
 
-4. よりAI実装向きな方法
+上記の修正で自然に解決する。
 
-「レイヤーパネル = DOM要素」＋「Pixi = 実描画」という分離方式。
+3. ペン入力を有効化
 
-Pixi の DisplayObject 自体をドラッグ移動対象にせず、HTML側の <ul><li> の順番をドラッグ&ドロップで入れ替え、その結果だけ Pixi Container の zIndex を更新。
+SortableJS 初期化時に以下を追加：
 
-container.sortChildren() が使えるので、Pixi 側は child.zIndex = newIndex を付けるだけで済む。
-
-🔧 実装イメージ
-// レイヤーの管理配列
-let layers = [];
-
-// パネルUIはHTML側のSortableJSでドラッグ入れ替え
 Sortable.create(layerPanel, {
-  onEnd: function(evt) {
-    const moved = layers.splice(evt.oldIndex, 1)[0];
-    layers.splice(evt.newIndex, 0, moved);
-
-    // Pixi上のZ順更新
-    layers.forEach((layer, i) => {
-      layer.zIndex = i;
-    });
-    stage.sortChildren();
-  }
+  animation: 150,
+  forceFallback: true,       // ペンやタッチを強制的に扱う
+  fallbackTolerance: 3,      // 小さな動きでもドラッグ開始
+  touchStartThreshold: 1,    // ペンでもドラッグ扱いに
+  onEnd: function(evt) { /* 上記のzIndex処理 */ }
 });
 
-// サムネイル更新
-function refreshThumbnails() {
-  layers.forEach(layer => {
-    updateThumbnail(layer, layer.thumbnailRT, renderer);
-  });
-}
 
-まとめ
+これでマウス・タッチ・ペン全対応になる。
 
-原因: Pixi コンテナの直接入れ替え・描画競合でサムネイルが黒くなり、ストロークが遅延して見える。
+📌 まとめ
 
-改善策:
+順序逆転の原因 → DOM と Pixi のレイヤー管理方向が逆。
+→ onEnd で DOM 順序を Pixi の zIndex に正しく反映させれば解決。
 
-レイヤーパネル操作は HTML 側で行い、Pixi には「結果だけ」を反映。
+破線の色 → SortableJS の内部状態。Pixi とのズレが原因で「挙動が逆に見える」。
 
-サムネイルは requestAnimationFrame で非同期更新。
-
-Pixi の zIndex＋sortChildren() を使って階層移動。
-
-
-💡 起きていること
-
-レイヤー選択イベント
-
-パネルクリック → 「アクティブレイヤー切り替え処理」が走る
-
-そのタイミングで renderer.render(layer, renderTexture) が走る or thumbnailSprite.texture が差し替えられる
-
-Pixi 内部で一度クリア
-
-clear: true を付けている場合、一度真っさらにしてから描画するので「白or黒背景の▣」が一瞬映る
-
-次のフレームで正しい描画
-
-その後 requestAnimationFrame でステージ全体がレンダリングされるので、結果的に「点滅」に見える
-
-✅ 対策案
-1. サムネイル更新を遅延させる
-
-クリック直後に即更新するのではなく、次のフレームで更新。
-
-function safeUpdateThumbnail(layer, renderTexture, renderer) {
-  requestAnimationFrame(() => {
-    renderer.render(layer, { renderTexture, clear: true });
-  });
-}
-
-
-これで「クリック直後のフラッシュ」が消える可能性が高いです。
-
-2. clear: false で前フレームを保持
-
-サムネイル描画のときに clear: true を外すと、「一瞬クリアされる」挙動が無くなる。
-
-renderer.render(layer, { renderTexture, clear: false });
-
-
-ただしこれだと「古い描画が残る」場合があるので、まず renderTexture を一度専用の透明背景で初期化しておく と安心です。
-
-3. 選択インジケータを Pixi に描かせる
-
-もし「▣ 太枠」っぽいのが Pixi の Graphics で描かれているなら、それが選択中レイヤーのインジケータとして毎回出てる可能性あり。
-この場合は：
-
-選択中のレイヤーに outline を描く処理を削るか
-
-CSS 側のパネルUIで「選択枠」を出すように変更する方が自然
-
-4. ダブルバッファ的に一時テクスチャを使う
-
-tmpRenderTexture を作り → そこにまず描画
-
-それをサムネイルスプライトに貼る
-こうすると「更新途中の黒画面」がユーザーに見えない。
-
-📝 まとめ
-
-原因 → 選択時にサムネイル用 renderTexture が一度クリアされ、描画タイミングがずれて一瞬黒（または枠だけ）になる
-
-対策 →
-
-サムネイル更新を requestAnimationFrame で遅延
-
-clear: false を使う（初期化は別途行う）
-
-選択枠の描画は Pixi ではなく HTML 側のUIに任せる
+ペン非対応 → forceFallback: true と touchStartThreshold の設定で対応可能。
