@@ -640,13 +640,6 @@
         /**
          * 🎨 ふたば☆ちゃんねる風ベクターお絵かきツール v8-Phase1
          * UI Controller - GPT5改修案適用版（構文エラー修正版）
-         * 
-         * 改修内容:
-         * - SortableJSのクリック/ドラッグ完全分離
-         * - DOM/PixiJS順序の単一ソースオブトゥルース
-         * - レイヤーIDベースの追跡
-         * - サムネイルのチラつき防止
-         * - レイヤー周りの処理フロー最適化
          */
         
         // === UTILITIES ===
@@ -697,8 +690,8 @@
                 }
                 
                 const timeoutId = setTimeout(() => {
-                    if (window.DrawingEngineAPI?.updateThumbnail) {
-                        window.DrawingEngineAPI.updateThumbnail(layerId);
+                    if (window.drawingEngine?.updateThumbnail) {
+                        window.drawingEngine.updateThumbnail(layerId);
                     }
                     this.thumbnailUpdateQueue.delete(layerId);
                 }, 200);
@@ -761,14 +754,12 @@
             onLayerThumbnailUpdated: (layerId, thumbnailData) => {
                 const layerItem = document.querySelector(`[data-layer-id="${layerId}"] .layer-thumbnail img`);
                 if (layerItem) {
-                    // 既存の画像を更新
                     layerItem.style.opacity = '0';
                     setTimeout(() => {
                         layerItem.src = thumbnailData;
                         layerItem.style.opacity = '1';
                     }, 50);
                 } else {
-                    // 新規画像作成
                     const thumbnail = document.querySelector(`[data-layer-id="${layerId}"] .layer-thumbnail`);
                     if (thumbnail) {
                         thumbnail.innerHTML = `<img src="${thumbnailData}" alt="" style="opacity: 0;">`;
@@ -898,7 +889,7 @@
                     return;
                 }
 
-                window.DrawingEngineAPI?.moveViewport(actualDeltaX, actualDeltaY);
+                window.drawingEngine?.moveViewport(actualDeltaX, actualDeltaY);
 
                 this.state.lastDelta.x = deltaX;
                 this.state.lastDelta.y = deltaY;
@@ -950,20 +941,20 @@
 
                 if (e.code === 'Space') {
                     this.app.spacePressed = true;
-                    window.DrawingEngineAPI?.setSpacePressed(true);
+                    window.drawingEngine?.setSpacePressed(true);
                     e.preventDefault();
                     return;
                 }
 
                 if ((e.ctrlKey || e.metaKey) && e.key === 'z' && !e.shiftKey) {
-                    window.DrawingEngineAPI?.undo();
+                    window.drawingEngine?.undo();
                     e.preventDefault();
                     return;
                 }
 
                 if ((e.ctrlKey || e.metaKey) && 
                     (e.key === 'y' || (e.key === 'z' && e.shiftKey))) {
-                    window.DrawingEngineAPI?.redo();
+                    window.drawingEngine?.redo();
                     e.preventDefault();
                     return;
                 }
@@ -993,7 +984,7 @@
                 }
 
                 if (e.code === 'Home') {
-                    window.DrawingEngineAPI?.resetViewport();
+                    window.drawingEngine?.resetViewport();
                     e.preventDefault();
                     return;
                 }
@@ -1007,7 +998,7 @@
                     };
 
                     if (moveMap[e.code]) {
-                        window.DrawingEngineAPI?.moveViewport(...moveMap[e.code]);
+                        window.drawingEngine?.moveViewport(...moveMap[e.code]);
                         e.preventDefault();
                     }
                 }
@@ -1019,7 +1010,7 @@
 
                 if (e.code === 'Space') {
                     this.app.spacePressed = false;
-                    window.DrawingEngineAPI?.setSpacePressed(false);
+                    window.drawingEngine?.setSpacePressed(false);
                 }
             }
 
@@ -1056,22 +1047,22 @@
             }
 
             moveLayerUp() {
-                const layers = window.DrawingEngineAPI?.getLayerList() || [];
+                const layers = window.drawingEngine?.getLayerList() || [];
                 const activeIndex = layers.findIndex(l => l.isActive);
 
                 if (activeIndex > 0) {
                     const targetLayer = layers[activeIndex - 1];
-                    window.DrawingEngineAPI?.setActiveLayer(targetLayer.id);
+                    window.drawingEngine?.setActiveLayer(targetLayer.id);
                 }
             }
 
             moveLayerDown() {
-                const layers = window.DrawingEngineAPI?.getLayerList() || [];
+                const layers = window.drawingEngine?.getLayerList() || [];
                 const activeIndex = layers.findIndex(l => l.isActive);
 
                 if (activeIndex < layers.length - 1) {
                     const targetLayer = layers[activeIndex + 1];
-                    window.DrawingEngineAPI?.setActiveLayer(targetLayer.id);
+                    window.drawingEngine?.setActiveLayer(targetLayer.id);
                 }
             }
         }
@@ -1080,7 +1071,7 @@
         class LayerSortableManager {
             constructor() {
                 this.sortable = null;
-                this.dragDelayMs = 200; // クリック誤判定防止のため延長
+                this.dragDelayMs = 300; // GPT5改修案: クリック誤判定防止のため延長
                 this.isInitialized = false;
                 this.lastReorderTime = 0;
             }
@@ -1101,11 +1092,11 @@
                         handle: '.layer-drag-handle',
                         ghostClass: 'sortable-ghost',
                         chosenClass: 'sortable-chosen',
-                        animation: 150,
+                        animation: 200,
                         delay: this.dragDelayMs,
                         delayOnTouchOnly: false,
                         forceFallback: true,
-                        fallbackTolerance: 5,
+                        fallbackTolerance: 8,
                         
                         onStart: (evt) => {
                             console.log('🎯 Sortable drag start:', evt.oldIndex);
@@ -1124,7 +1115,7 @@
                                 console.log('🔄 Processing layer reorder:', { layerId, from: evt.oldIndex, to: evt.newIndex });
                                 
                                 // DrawingEngineに順序変更をリクエスト
-                                const success = window.DrawingEngineAPI?.reorderLayer(layerId, evt.oldIndex, evt.newIndex);
+                                const success = window.drawingEngine?.reorderLayer(layerId, evt.oldIndex, evt.newIndex);
                                 
                                 if (success) {
                                     console.log('✅ Layer reorder successful');
@@ -1138,13 +1129,7 @@
                             setTimeout(() => {
                                 globalState.setDragging(false);
                                 globalState.setLayerUpdateInProgress(false);
-                            }, 100);
-                        },
-                        
-                        onChoose: (evt) => {
-                            // ドラッグ開始時のレイヤーIDを記録
-                            const layerId = parseInt(evt.item.dataset.layerId);
-                            console.log('🎯 Layer chosen for drag:', layerId);
+                            }, 200);
                         }
                     });
                     
@@ -1160,7 +1145,7 @@
             }
 
             /**
-             * レイヤークリック処理の完全分離
+             * GPT5改修案: レイヤークリック処理の完全分離
              */
             setupLayerClickHandling() {
                 const layerList = document.getElementById('layer-list');
@@ -1177,7 +1162,7 @@
                     
                     // 最近reorderが発生した場合もクリックを無視
                     const timeSinceReorder = Date.now() - this.lastReorderTime;
-                    if (timeSinceReorder < 300) {
+                    if (timeSinceReorder < 500) { // GPT5改修案: 延長
                         console.log('🚫 Click ignored - recent reorder');
                         event.stopImmediatePropagation();
                         return;
@@ -1197,20 +1182,20 @@
                 console.log('🖱️ Layer click:', { layerId, action });
 
                 if (action === 'toggle-visibility') {
-                    window.DrawingEngineAPI?.toggleLayerVisibility(layerId);
+                    window.drawingEngine?.toggleLayerVisibility(layerId);
                     event.stopPropagation();
                 } else if (action === 'delete-layer') {
                     if (confirm('このレイヤーを削除しますか？')) {
-                        window.DrawingEngineAPI?.deleteLayer(layerId);
+                        window.drawingEngine?.deleteLayer(layerId);
                     }
                     event.stopPropagation();
                 } else if (event.target.closest('.layer-thumbnail')) {
                     // サムネイルクリック = レイヤー選択
-                    window.DrawingEngineAPI?.setActiveLayer(layerId);
+                    window.drawingEngine?.setActiveLayer(layerId);
                     event.stopPropagation();
                 } else if (!event.target.closest('.layer-drag-handle, .layer-delete-button')) {
                     // その他の領域クリック = レイヤー選択
-                    window.DrawingEngineAPI?.setActiveLayer(layerId);
+                    window.drawingEngine?.setActiveLayer(layerId);
                 }
             }
 
@@ -1256,7 +1241,7 @@
                 this.dragState = { active: false, offset: { x: 0, y: 0 } };
                 this.layerSortable = new LayerSortableManager();
                 this.lastUIUpdateTime = 0;
-                this.uiUpdateThrottle = 100; // UI更新のスロットリング
+                this.uiUpdateThrottle = 150; // GPT5改修案: UI更新のスロットリング調整
             }
 
             initialize() {
@@ -1279,9 +1264,9 @@
                     const layerAddBtn = e.target.closest('#add-layer-btn');
                     if (layerAddBtn) {
                         console.log('➕ Add layer button clicked');
-                        const layerId = window.DrawingEngineAPI?.createLayer();
+                        const layerId = window.drawingEngine?.createLayer();
                         if (layerId) {
-                            window.DrawingEngineAPI?.setActiveLayer(layerId);
+                            window.drawingEngine?.setActiveLayer(layerId);
                         }
                         return;
                     }
@@ -1328,7 +1313,7 @@
 
             activateTool(tool) {
                 const settings = this.getToolSettings(tool);
-                window.DrawingEngineAPI?.setActiveTool(tool, settings);
+                window.drawingEngine?.setActiveTool(tool, settings);
                 
                 this.updateToolButtons(tool);
                 
@@ -1455,9 +1440,9 @@
             }
 
             updateToolSetting(tool, setting, value) {
-                const currentSettings = window.DrawingEngineAPI?.getToolSettings(tool) || {};
+                const currentSettings = window.drawingEngine?.getToolSettings(tool) || {};
                 currentSettings[setting] = value;
-                window.DrawingEngineAPI?.setActiveTool(tool, currentSettings);
+                window.drawingEngine?.setActiveTool(tool, currentSettings);
             }
 
             setupResize() {
@@ -1476,15 +1461,15 @@
                     const height = parseInt(heightInput.value);
 
                     if (width >= 100 && width <= 4096 && height >= 100 && height <= 4096) {
-                        window.DrawingEngineAPI?.resize(width, height);
+                        window.drawingEngine?.resize(width, height);
                         this.closeAllPopups();
-                        window.DrawingEngineAPI?.createSnapshot(`キャンバスを${width}×${height}にリサイズ`);
+                        window.drawingEngine?.createSnapshot(`キャンバスを${width}×${height}にリサイズ`);
                     }
                 }
             }
 
             /**
-             * レイヤーUI更新（フロー最適化版）
+             * GPT5改修案: レイヤーUI更新（フロー最適化版）
              */
             updateLayerUI() {
                 // スロットリング処理
@@ -1507,7 +1492,7 @@
                 // DOM更新
                 layerList.innerHTML = '';
 
-                const layers = window.DrawingEngineAPI?.getLayerList() || [];
+                const layers = window.drawingEngine?.getLayerList() || [];
                 console.log('📋 Current layers:', layers.length);
                 
                 // UI表示用に逆順（最後に追加されたレイヤーが上に表示）
@@ -1527,12 +1512,12 @@
                         layers.forEach((layer, index) => {
                             setTimeout(() => {
                                 globalState.queueThumbnailUpdate(layer.id);
-                            }, index * 50);
+                            }, index * 100);
                         });
                     } else {
                         console.error('❌ Failed to initialize SortableJS');
                     }
-                }, 50);
+                }, 100);
             }
 
             createLayerItemElement(layer) {
@@ -1606,7 +1591,7 @@
                     gsap: window.gsap,
                     Hammer: window.Hammer,
                     Sortable: window.Sortable,
-                    drawingEngine: window.DrawingEngineAPI
+                    drawingEngine: window.drawingEngine
                 };
 
                 for (const [name, lib] of Object.entries(requiredLibs)) {
@@ -1622,7 +1607,7 @@
                 }
 
                 console.log('🎨 Initializing drawing engine...');
-                const engineInitialized = await window.DrawingEngineAPI.initialize(canvasContainer);
+                const engineInitialized = await window.drawingEngine.initialize(canvasContainer);
                 
                 if (!engineInitialized) {
                     throw new Error('DrawingEngine initialization failed');
@@ -1649,7 +1634,7 @@
             setupInputHandlers() {
                 window.addEventListener('blur', () => {
                     this.spacePressed = false;
-                    window.DrawingEngineAPI?.setSpacePressed(false);
+                    window.drawingEngine?.setSpacePressed(false);
                 });
 
                 window.addEventListener('beforeunload', () => {
@@ -1660,7 +1645,7 @@
                     if (this.ui && this.ui.destroy) {
                         this.ui.destroy();
                     }
-                    window.DrawingEngineAPI?.destroy();
+                    window.drawingEngine?.destroy();
                 });
             }
         }
@@ -1681,12 +1666,12 @@
                     window.layerDebug = {
                         state: () => globalState,
                         sortable: () => window.futabaApp.ui.layerSortable,
-                        layers: () => window.DrawingEngineAPI?.getLayerList() || [],
+                        layers: () => window.drawingEngine?.getLayerList() || [],
                         testReorder: (from, to) => {
-                            const layers = window.DrawingEngineAPI?.getLayerList() || [];
+                            const layers = window.drawingEngine?.getLayerList() || [];
                             if (layers[from]) {
                                 console.log(`🧪 Testing reorder: ${layers[from].name} from ${from} to ${to}`);
-                                return window.DrawingEngineAPI?.reorderLayer(layers[from].id, from, to);
+                                return window.drawingEngine?.reorderLayer(layers[from].id, from, to);
                             }
                             return false;
                         },
@@ -1702,7 +1687,7 @@
                                 layerUpdateInProgress: globalState.isLayerUpdateInProgress(),
                                 thumbnailQueue: globalState.thumbnailUpdateQueue.size
                             });
-                            console.log('Layers from API:', window.DrawingEngineAPI?.getLayerList());
+                            console.log('Layers from API:', window.drawingEngine?.getLayerList());
                             console.log('DOM layer items:', document.querySelectorAll('.layer-item').length);
                             console.log('Sortable ready:', window.futabaApp.ui.layerSortable.isReady());
                         }
