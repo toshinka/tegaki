@@ -1,0 +1,163 @@
+(function() {
+    'use strict';
+    
+    if (typeof PIXI === 'undefined') {
+        console.error('PIXI is not loaded');
+        return;
+    }
+    
+    console.log('PixiJS loaded:', PIXI.VERSION);
+    
+    // === シンプル設定 ===
+    const CANVAS_W = 400;
+    const CANVAS_H = 400;
+    const ENGINE_CONFIG = {
+        canvas: { width: CANVAS_W, height: CANVAS_H },
+        pen: { size: 16, opacity: 0.85, color: 0x800000 },
+        transform: { minScale: 0.1, maxScale: 5.0, smoothFactor: 0.15 },
+        debug: true
+    };
+    
+    const log = (...args) => {
+        if (ENGINE_CONFIG.debug) console.log(...args);
+    };
+
+    // === シンプルなPixiJS初期化 ===
+    async function createApp(containerEl) {
+        const app = new PIXI.Application();
+        
+        await app.init({
+            width: CANVAS_W,
+            height: CANVAS_H,
+            backgroundAlpha: 0,
+            resolution: window.devicePixelRatio || 1,
+            antialias: true,
+            eventMode: 'static',
+            eventFeatures: {
+                move: true,
+                globalMove: true,
+                click: true,
+                wheel: true,
+            }
+        });
+        
+        // DOMにマウント
+        containerEl.innerHTML = '';
+        containerEl.appendChild(app.canvas);
+        
+        // CSS表示サイズを統一
+        app.canvas.style.width = `${CANVAS_W}px`;
+        app.canvas.style.height = `${CANVAS_H}px`;
+        
+        // キャンバスコンテナ（中心基準で変形可能）
+        const canvasContainer = new PIXI.Container();
+        canvasContainer.label = 'canvasContainer';
+        // 中心基準にするためpivotを中央に設定
+        canvasContainer.pivot.set(CANVAS_W / 2, CANVAS_H / 2);
+        canvasContainer.position.set(CANVAS_W / 2, CANVAS_H / 2);
+        app.stage.addChild(canvasContainer);
+        
+        // UI層（カメラフレーム等、変形に影響されない）
+        const uiContainer = new PIXI.Container();
+        uiContainer.label = 'uiContainer';
+        uiContainer.sortableChildren = true;
+        app.stage.addChild(uiContainer);
+        
+        // カメラフレーム（固定位置）
+        const cameraFrame = new PIXI.Graphics();
+        cameraFrame.label = 'cameraFrame';
+        cameraFrame.zIndex = 1000;
+        uiContainer.addChild(cameraFrame);
+        
+        function drawCameraFrame(w, h) {
+            cameraFrame.clear();
+            // 画面中央にキャンバスサイズのフレームを描画
+            const x = (app.screen.width - w) / 2;
+            const y = (app.screen.height - h) / 2;
+            cameraFrame.position.set(x, y);
+            cameraFrame.rect(0, 0, w, h);
+            cameraFrame.stroke({ width: 2, color: 0xffffff, alpha: 0.8 });
+        }
+        
+        // 初期フレーム描画
+        drawCameraFrame(CANVAS_W, CANVAS_H);
+        
+        return {
+            app,
+            canvasContainer,
+            uiContainer,
+            cameraFrame,
+            drawCameraFrame
+        };
+    }
+
+    // === レイヤー管理システム ===
+    class LayerManager {
+        constructor() {
+            this.layers = [];
+            this.activeLayerIndex = -1;
+            this.layerCounter = 0;
+            this.thumbnailUpdateQueue = new Set();
+        }
+
+        createLayer(name, isBackground = false) {
+            const layer = new PIXI.Container();
+            const layerId = `layer_${this.layerCounter++}`;
+            
+            layer.label = layerId;
+            layer.layerData = {
+                id: layerId,
+                name: name,
+                visible: true,
+                opacity: 1.0,
+                isBackground: isBackground
+            };
+
+            if (isBackground) {
+                const bg = new PIXI.Graphics();
+                // 中心基準のキャンバスに合わせて、左上から描画
+                bg.rect(-CANVAS_W / 2, -CANVAS_H / 2, CANVAS_W, CANVAS_H);
+                bg.fill(0xf0e0d6);
+                layer.addChild(bg);
+            }
+
+            this.layers.push(layer);
+            return { layer, index: this.layers.length - 1 };
+        }
+
+        setActiveLayer(index) {
+            if (index >= 0 && index < this.layers.length) {
+                this.activeLayerIndex = index;
+                this.updateLayerPanelUI();
+                this.updateStatusDisplay();
+            }
+        }
+
+        getActiveLayer() {
+            return this.activeLayerIndex >= 0 ? this.layers[this.activeLayerIndex] : null;
+        }
+
+        updateLayerPanelUI() {
+            const layerList = document.getElementById('layer-list');
+            if (!layerList) return;
+
+            const items = layerList.querySelectorAll('.layer-item');
+            items.forEach((item, index) => {
+                const reverseIndex = this.layers.length - 1 - index;
+                item.classList.toggle('active', reverseIndex === this.activeLayerIndex);
+            });
+        }
+
+        updateStatusDisplay() {
+            const statusElement = document.getElementById('current-layer');
+            if (statusElement && this.activeLayerIndex >= 0) {
+                const layer = this.layers[this.activeLayerIndex];
+                statusElement.textContent = layer.layerData.name;
+            }
+        }
+
+        requestThumbnailUpdate(layerIndex) {
+            this.thumbnailUpdateQueue.add(layerIndex);
+        }
+
+        processThumbnailUpdates(app

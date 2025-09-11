@@ -1,386 +1,399 @@
-SatellitePlan_RuleBook_v7.txtの改修案
+問題と原因
 
-※これを元にしていてのエラーが多かったため、元の構造は活かしつつ改修すること。
+背景の中心が (0,0) になっている
 
-🔍 点検結果と改善提案
-1. 座標系統一ルールが弱い
+原因：背景レイヤーを通常の表示オブジェクトとして配置してしまい、ワールド座標に対して固定していない。
 
-v7では「Pixiを用いる」ことは明記されていますが、DOM座標・World座標・Layer座標の変換ルールが曖昧です。
+結果：カメラ移動や初期配置で原点を基準にしてしまい、意図通りの枠内塗りができない。
 
-結果として clientX/Y や getBoundingClientRect を直接参照する旧実装が残っていてズレが発生しています。
+サムネイルが (0,0)–(200,200) 領域しか表示しない
 
-👉 改修案
+原因：RenderTexture への描画がビューポート全体ではなく固定矩形領域で切り出されている。
 
-「座標は必ず app.renderer.events.pointer.normalizeGlobal(e) で正規化し、toLocal() を通すこと」と明文化。
+結果：カメラフレームや実際の描画範囲を反映できていない。
 
-禁止事項として offsetX/offsetY・clientX/clientY の直接利用を追加。
+カメラフレームがキャンバス移動で動かない
 
-2. DPR（DevicePixelRatio）・レンダラ解像度の扱いが未規定
+原因：カメラフレームが「ビューポート」ではなく「固定スプライト」として扱われているため。
 
-v7では「キャンバスは400x400」とはあるが、CSSピクセルと物理ピクセルの扱いや renderer.resolution の使い方は未定義。
+結果：キャンバス側だけ動いて、フレームとの相対位置がずれる。
 
-そのため古い「手計算で devicePixelRatio を掛ける」処理が残り、ズレの温床に。
+拡縮・回転・反転がずれる
 
-👉 改修案
+原因：変換基準点（pivot）が「カメラの中心」ではなく「キャンバスの原点」基準になっている。
 
-規則追加：「DPR補正はPixiの renderer.resolution に任せる。手計算で devicePixelRatio を掛けない。」
+結果：キャンバス移動後に処理すると、中心座標がずれて誤差が出る。
 
-サイズ指定ルール：「CSS上のサイズとレンダラの論理サイズを一致させ、renderer.resize() は必ず専用のラッパ関数を通す」。
+対策案
+背景レイヤー（透明＋バケツ塗り対応）
 
-3. pointerup / cancel の取り扱いルールがない
+レイヤー0を背景専用に固定
 
-現行のルールは「描画ツールの開始・終了イベントを実装する」程度。
+PIXI.RenderTexture を1枚作成し、初期化時に #f0e0d6 で塗りつぶし。
 
-しかし実際には pointerup が抜けて「描画が終わらない」問題が出ています。
+消しゴムは α 値を下げるようにして「透明化」する。
 
-👉 改修案
+バケツツールは RenderTexture に直接 flood fill 相当の処理を実装する（GPUでは難しいので CPU 側でピクセル操作→更新、または shader を検討）。
 
-ルール追加：「pointerup/cancel は必ず window または setPointerCapture でグローバルに捕捉すること」。
+サムネイル
 
-「各ツールごとに isDrawing 状態を分離」する設計ルールも明記。
+RenderTexture.capture の領域をカメラフレーム基準にする
 
-4. サムネイル生成基準が未定義
+renderer.render(container, {renderTexture, clear, transform}) の引数で transform に camera の worldTransform を適用。
 
-v7では「サムネイルを作成する」とだけあり、「キャンバス基準」か「描画内容基準」か未決定。
+これでサムネイルがカメラフレームに追従。
 
-現状は描画内容基準だが、UI一貫性の観点から悩みどころ。
+カメラフレームの動作
 
-👉 改修案
+@pixi/viewport を使う
 
-ルールに選択肢を明記：
+PixiJS v8.13 公式互換のカメラライブラリ。
 
-デフォルトは「キャンバス基準（統一スケール）」
+拡縮・移動・回転が「カメラ」座標として自然に適用される。
 
-オプションで「描画内容基準」を切替可能
+既存コードの「canvas移動処理」を viewport に置き換えるとズレが解消。
 
-実装ルール：「renderer.render(container, renderTexture) を用い、generateTexture の直接利用は禁止」
+拡縮・回転・反転の基準点
 
-5. カメラ枠とキャンバスの関係が未定義
+カメラフレームの中心を pivot に設定
 
-v7では「カメラ機能を追加予定」とあるが、座標変換や canvasContainer との階層関係は書かれていない。
+viewport.pivot.set(width/2, height/2) としてから拡縮・回転。
 
-今回の「カメラ枠が固定」問題はその不在が原因。
+反転は scale.x *= -1 のように行えば、中心基準で反転可能。
 
-👉 改修案
+推奨ライブラリ組み合わせ
 
-ルール追加：「カメラ枠は canvasContainer の子要素とする」
+PixiJS v8.13 本体
 
-もしくは「外に置く場合は canvasContainer.transform に追従する処理を必ず書く」
+@pixi/viewport
 
-6. 旧実装の残骸排除ルールが不足
+カメラ移動・拡縮・回転を吸収できる。
 
-v7では「段階的に分割改修する」とあるが、旧処理を見つけた場合にどうするかのガイドラインが無い。
+（必要に応じて）pixi-graphics-smooth
 
-結果として ctx. 系の Canvas2D API や offsetX 参照が残りやすい。
+ベクターベースのペン描画を滑らかにする。
 
-👉 改修案
+（将来的に）pixi-filters
 
-ルール追加：「Pixi導入後は CanvasRenderingContext2D API の直接呼び出しを禁止」
+消しゴム・透明処理の補助にカスタムフィルタが使える。
 
-定期検査項目：「clientX/offsetX/getBoundingClientRect/generateTexture などが残っていないか grep でチェック」
+次の改修ステップ（提案）
 
-📝 改修後ルールブックの例（追記部分のみ）
-## 座標・座標変換ルール
-- 入力座標は必ず `app.renderer.events.pointer.normalizeGlobal(e)` で正規化し、`toLocal()` を経由してレイヤー座標に変換すること。
-- DOMイベントの `clientX/clientY`, `offsetX/offsetY`, `getBoundingClientRect()` を直接利用することを禁止する。
+背景をレイヤー0専用にして RenderTexture で管理
+→ 初期化時に #f0e0d6 塗りつぶし。消しゴムは透明化。
 
-## 解像度・DPR
-- DPR補正は Pixi の `renderer.resolution` に一元化し、devicePixelRatio を手計算で掛けることを禁止する。
-- レンダラのリサイズは専用関数 `resizeRendererToCSS(app, width, height)` を通じて行い、CSSサイズと論理解像度を一致させる。
+viewport を導入
+→ キャンバス移動・ズーム・回転・反転のズレを解消。
 
-## ポインタイベント
-- pointerup/pointercancel は必ず window または setPointerCapture を用いて捕捉する。
-- ツールごとに isDrawing 状態を持ち、他ツールと共有しない。
+サムネイル更新処理を cameraTransform 基準に変更
+→ (0,0,200,200) 固定をやめ、カメラフレームに一致させる。
 
-## サムネイル
-- デフォルトは「キャンバス基準」で生成し、オプションで「描画内容基準」を許容する。
-- サムネイル生成は `renderer.render(container, renderTexture)` を用いる。`generateTexture()` の直接利用は禁止。
+ペイント系（バケツ）を CPU or shader 実装
+→ 小さな範囲なら CPU flood fill で十分。大規模は shader 検討。
 
-## カメラ
-- カメラ枠は canvasContainer の子要素とする。
-- 外部に置く場合は canvasContainer の transform に追従させる処理を必ず実装する。
 
-## 旧実装の禁止
-- CanvasRenderingContext2D API (`ctx.`) の呼び出しは禁止。
-- 以下のコードパターンが残っていないか定期的に grep すること：
-  - `clientX|clientY|getBoundingClientRect|offsetX|offsetY|generateTexture|ctx\.`
+※下記はお手本パッチ。あくまで参考用なので鵜呑みにせずに使えるかどうか吟味すること
 
 
-✅ まとめると：
-ルールブック v7 には「Pixi で描画する」「段階的に改修」などの大枠はありますが、座標変換／DPR／pointerup 捕捉／サムネ生成基準／カメラ枠階層／旧API禁止 が未定義でした。
-今回の不具合はまさにその隙間から発生しているため、これらを v8 ルールとして追記するのが望ましいです。
-
-こちらの修正版ルールを 「SatellitePlan_RuleBook_v8.txt」 として発行しましょうか？
-
-
-
-
-
-****************************************
-
-
-
-1) まずやるべき共通方針（必須）
-
-既存コードの検索（置換候補）を行ってください：
-
-getBoundingClientRect() を直接使って座標を計算している箇所
-
-clientX/clientY に手計算で DPR を掛けている箇所
-
-layer.x / layer.y に直接計算で入れている箇所（toLocal に置き換え）
-
-generateTexture() を使うサムネ処理（後述の高速版に差し替え検討）
-
-上の検索は grep -n "clientX\|getBoundingClientRect\|generateTexture\|toLocal(" などで走らせてください。古い手計算が残っているとズレや倍率バグになります。
-
-2) ポインタ（ペン）入力の統一実装（コピペ可）
-
-以下を pen/interaction モジュール（例：draw/pen-engine.js）に入れて、既存のイベント処理を差し替えてください。ポイントは：
-
-app.renderer.events.pointer.normalizeGlobal(evt) で正規化された global を得ること（ルールブック準拠）
-
-canvasContainer.toLocal(globalPoint) → さらに layer.toLocal() で最終ローカル座標へ
-
-pointerup/ cancel を window / renderer.view で捕まえ、pointer capture も可能なら使う（release漏れ防止）
-
-DPR や renderer.resolution は手計算せず Pixi に任せる
-
-// --- copy/paste: unified pointer handling (pen-engine.js) ---
-function installPenHandlers(app, canvasContainer, getActiveLayer, onStrokeStart, onStrokeMove, onStrokeEnd) {
-  // getActiveLayer: ()=> PIXI.Container (layer) for drawing
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>Tegaki Patch — Viewport + Background Layer 0</title>
+  <style>html,body{height:100%;margin:0;background:#222}#app{width:100%;height:100%;display:block}</style>
+</head>
+<body>
+  <canvas id="app"></canvas>
+
+  <!-- PixiJS v8.13 and pixi-viewport (via unpkg) -->
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+  <script src="https://unpkg.com/pixi-viewport/dist/viewport.min.js"></script>
+
+  <script>
+  // Patch file: integrates @pixi/viewport as camera, creates Layer0 background
+  // with an offscreen canvas for CPU-side fill + eraser, and provides thumbnail
+  // capture based on the current viewport view.
+
+  const appCanvas = document.getElementById('app');
+  const app = new PIXI.Application({
+    view: appCanvas,
+    resizeTo: window,
+    backgroundAlpha: 0,
+    antialias: true,
+  });
+
+  // Stage organization: uiStage is for screen-fixed UI overlays (camera frame)
+  const world = new PIXI.Container();    // all drawing layers live here and are transformed by viewport
+  const uiStage = new PIXI.Container();  // overlays that should not follow camera (camera frame, HUD)
+
+  app.stage.addChild(world);
+  app.stage.addChild(uiStage);
+
+  // Setup viewport (camera) — this will manage pan/zoom/rotate centered on screen
+  const viewport = new window.viewport.Viewport({
+    screenWidth: app.renderer.width,
+    screenHeight: app.renderer.height,
+    worldWidth: 10000,
+    worldHeight: 10000,
+    interaction: app.renderer.plugins.interaction
+  });
+
+  // Add viewport to stage and put world content inside it
+  app.stage.addChild(viewport);
+  viewport.addChild(world);
+
+  // Enable drag, pinch, wheel
+  viewport.drag().pinch().wheel().decelerate();
+
+  // Camera frame (UI overlay) - centered and matches visible area
+  const cameraFrame = new PIXI.Graphics();
+  cameraFrame.lineStyle(2, 0xffffff, 0.6).drawRect(-app.renderer.width/2 + 10, -app.renderer.height/2 + 10, app.renderer.width - 20, app.renderer.height - 20);
+  // we put cameraFrame into uiStage and position center of screen so it doesn't move with world
+  uiStage.addChild(cameraFrame);
+  cameraFrame.x = app.renderer.width/2;
+  cameraFrame.y = app.renderer.height/2;
+
+  // Keep cameraFrame updated on resize
+  function updateCameraFrame() {
+    cameraFrame.clear();
+    cameraFrame.lineStyle(2, 0xffffff, 0.6);
+    cameraFrame.drawRect(-app.renderer.width/2 + 10, -app.renderer.height/2 + 10, app.renderer.width - 20, app.renderer.height - 20);
+    cameraFrame.x = app.renderer.width/2;
+    cameraFrame.y = app.renderer.height/2;
+  }
+  window.addEventListener('resize', () => {
+    viewport.resize(app.renderer.width, app.renderer.height, viewport.worldWidth, viewport.worldHeight);
+    updateCameraFrame();
+  });
+
+  // === Layer 0: Background managed by an offscreen canvas so "eraser" can make transparent ===
+  const bgCanvas = document.createElement('canvas');
+  // Make this large enough for most use-cases; adapt to your document size
+  bgCanvas.width = 5000;
+  bgCanvas.height = 5000;
+  const bgCtx = bgCanvas.getContext('2d');
+
+  // Fill initial background with futaba-cream (#f0e0d6)
+  function initBackground() {
+    bgCtx.clearRect(0,0,bgCanvas.width,bgCanvas.height);
+    bgCtx.fillStyle = '#f0e0d6';
+    bgCtx.fillRect(0,0,bgCanvas.width,bgCanvas.height);
+  }
+  initBackground();
+
+  // Create PIXI sprite that uses the offscreen canvas as a texture
+  let bgTexture = PIXI.Texture.from(bgCanvas);
+  const bgSprite = new PIXI.Sprite(bgTexture);
+  // Position background so document origin (0,0) is in the center of canvas world coordinates if you prefer
+  // Here we place (0,0) at top-left of bgCanvas for simplicity — adapt to your app coordinate conventions
+  bgSprite.x = 0; bgSprite.y = 0;
+  world.addChildAt(bgSprite, 0); // layer 0
+
+  // Eraser: clear a circle on the bgCanvas where user erases. Accepts world coords.
+  function eraseBackgroundAt(worldX, worldY, radius = 20) {
+    // Convert world coords to bgCanvas pixel coords
+    // If bgSprite is positioned at 0,0 and uses 1:1 scaling then it's straightforward
+    const x = Math.round(worldX - bgSprite.x);
+    const y = Math.round(worldY - bgSprite.y);
+    bgCtx.save();
+    bgCtx.globalCompositeOperation = 'destination-out';
+    bgCtx.beginPath();
+    bgCtx.arc(x, y, radius, 0, Math.PI*2);
+    bgCtx.fill();
+    bgCtx.restore();
+    // Update the PIXI texture to reflect canvas changes
+    if (bgTexture.baseTexture) bgTexture.baseTexture.update();
+  }
+
+  // === Example drawing layer on top of background ===
+  const drawLayer = new PIXI.Container();
+  world.addChild(drawLayer);
+
+  // Simple drawing tool for testing — stroke with Graphics
   let drawing = false;
-  let pointerId = null;
+  const pen = new PIXI.Graphics();
+  drawLayer.addChild(pen);
 
-  function normalizedGlobalFromEvent(e) {
-    // Pixi v8 推奨経路：renderer.events.pointer.normalizeGlobal(e)
-    // e は DOM PointerEvent または Pixi interaction event
-    return app.renderer.events.pointer.normalizeGlobal(e);
-  }
-
-  function getLayerLocalPoint(globalPt, layer) {
-    // stage -> canvasContainer -> layer と変換を統一
-    // まず canvas space
-    const canvasPoint = canvasContainer.toLocal(globalPt, app.stage);
-    // 次に layer local
-    return layer.toLocal(canvasPoint, canvasContainer);
-  }
-
-  function onPointerDown(e) {
-    const globalPt = normalizedGlobalFromEvent(e);
-    const layer = getActiveLayer();
-    if (!layer) return;
-    pointerId = e.pointerId ?? null;
+  function startStroke(worldX, worldY) {
     drawing = true;
-
-    // pointer capture if available on the view (helps with lost-up issues)
-    try { e.target && e.target.setPointerCapture && e.target.setPointerCapture(e.pointerId); } catch (err) {}
-
-    const pt = getLayerLocalPoint(globalPt, layer);
-    onStrokeStart(layer, pt, e); // user-supplied handler
+    pen.lineStyle(4, 0x000000, 1);
+    pen.moveTo(worldX, worldY);
   }
-
-  function onPointerMove(e) {
+  function continueStroke(worldX, worldY) {
     if (!drawing) return;
-    const globalPt = normalizedGlobalFromEvent(e);
-    const layer = getActiveLayer();
-    if (!layer) return;
-    const pt = getLayerLocalPoint(globalPt, layer);
-    onStrokeMove(layer, pt, e);
+    pen.lineTo(worldX, worldY);
+    pen.moveTo(worldX, worldY);
   }
-
-  function finishStroke(e) {
-    if (!drawing) return;
-    const globalPt = normalizedGlobalFromEvent(e);
-    const layer = getActiveLayer();
-    if (layer) {
-      const pt = getLayerLocalPoint(globalPt, layer);
-      onStrokeEnd(layer, pt, e);
-    } else {
-      onStrokeEnd(null, null, e);
-    }
+  function endStroke() {
     drawing = false;
-    pointerId = null;
-    try { e.target && e.target.releasePointerCapture && e.target.releasePointerCapture(e.pointerId); } catch (err) {}
   }
 
-  // Attach - use renderer.view (canvas element) for down/move, and window for up/outside
-  const view = app.renderer.view;
-  view.addEventListener('pointerdown', onPointerDown);
-  view.addEventListener('pointermove', onPointerMove);
-  // Catch up/out/cancel globally so we do not miss pointerup outside canvas
-  window.addEventListener('pointerup', finishStroke);
-  window.addEventListener('pointercancel', finishStroke);
-  view.addEventListener('pointerleave', (e) => {
-    // don't finish here; some apps use pointerupoutside. Choose finish or not based on UX.
+  // Map pointer events on the viewport to world coords
+  app.view.addEventListener('pointerdown', (e) => {
+    const rect = app.view.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const worldPos = viewport.toWorld(px, py);
+    if (e.shiftKey) {
+      // Use shift+pointer as eraser on background to demonstrate erasing
+      eraseBackgroundAt(worldPos.x, worldPos.y, 30);
+    } else {
+      startStroke(worldPos.x, worldPos.y);
+    }
   });
+  app.view.addEventListener('pointermove', (e) => {
+    if (e.buttons === 0) return;
+    const rect = app.view.getBoundingClientRect();
+    const px = e.clientX - rect.left;
+    const py = e.clientY - rect.top;
+    const worldPos = viewport.toWorld(px, py);
+    if (e.shiftKey) {
+      eraseBackgroundAt(worldPos.x, worldPos.y, 30);
+    } else {
+      continueStroke(worldPos.x, worldPos.y);
+    }
+  });
+  app.view.addEventListener('pointerup', (e) => { endStroke(); });
 
-  return function uninstall() {
-    view.removeEventListener('pointerdown', onPointerDown);
-    view.removeEventListener('pointermove', onPointerMove);
-    window.removeEventListener('pointerup', finishStroke);
-    window.removeEventListener('pointercancel', finishStroke);
+  // === Thumbnail rendering: capture current visible area of the stage according to viewport ===
+  // Approach: use renderer.extract.canvas(stage) to get full canvas, then crop to viewport visible rect.
+  // This is simple and robust for a developer patch. If performance matters, later switch to partial renderTexture rendering.
+
+  function getViewportVisibleRect() {
+    // Get top-left world point and size of the viewport visible area
+    const topLeft = viewport.toWorld(0, 0);
+    const bottomRight = viewport.toWorld(app.renderer.width, app.renderer.height);
+    const w = Math.abs(bottomRight.x - topLeft.x);
+    const h = Math.abs(bottomRight.y - topLeft.y);
+    return { x: Math.min(topLeft.x, bottomRight.x), y: Math.min(topLeft.y, bottomRight.y), width: w, height: h };
   }
-}
 
+  const thumbCanvas = document.createElement('canvas');
+  thumbCanvas.width = 200; thumbCanvas.height = 200; // thumbnail size
+  const thumbCtx = thumbCanvas.getContext('2d');
 
-期待される効果
+  function updateThumbnail() {
+    // Extract a canvas snapshot of the entire stage (this returns a canvas element)
+    const fullCanvas = app.renderer.extract.canvas(app.stage);
+    const visible = getViewportVisibleRect();
 
-右下でズレる現象の多くは、DOM→Canvas の変換か DPR の二重適用が原因。上実装で Pixi の正規化と toLocal を確実に使うためズレが激減します。
+    // Compute scale between world units and pixels — assume bgSprite at 1:1 for simplicity
+    // Convert world visible rect to pixel coordinates on fullCanvas
+    // Note: In simple setups world coords == pixels. If you use scaling on bgSprite, adapt accordingly.
+    const sx = visible.x;
+    const sy = visible.y;
+    const sw = visible.width;
+    const sh = visible.height;
 
-pointerup が抜けるケースは window で捕まえることで安定します。
+    // Crop and scale to thumbnail size
+    thumbCtx.clearRect(0,0,thumbCanvas.width,thumbCanvas.height);
+    // drawImage(image, sx, sy, sw, sh, dx, dy, dw, dh)
+    thumbCtx.drawImage(fullCanvas, sx, sy, sw, sh, 0, 0, thumbCanvas.width, thumbCanvas.height);
 
-3) DPR（Device Pixel Ratio）／キャンバスサイズ一貫化パッチ
-
-DPR（window.devicePixelRatio）を自前で掛けていると二重掛けなどでズレます。Pixi の app.renderer.resolution と view の CSS サイズを一致させ、描画座標は Pixi に任せます。
-
-// --- copy/paste: ensure renderer resolution / view size correct ---
-function resizeRendererToCSS(app, cssWidth, cssHeight) {
-  const view = app.renderer.view;
-  // set CSS size
-  view.style.width = cssWidth + 'px';
-  view.style.height = cssHeight + 'px';
-  // let Pixi decide backing size via resolution
-  const resolution = window.devicePixelRatio || 1;
-  app.renderer.resolution = resolution;
-  app.renderer.resize(Math.round(cssWidth * resolution), Math.round(cssHeight * resolution));
-  // Important: if using manual draw positions anywhere, do NOT multiply by devicePixelRatio again.
-}
-
-
-使い方：Canvas: 400x400px を表示したいなら resizeRendererToCSS(app, 400, 400) を呼ぶ。既存コード中に * devicePixelRatio や width = view.clientWidth * devicePixelRatio といったものがあれば削除／置換してください。
-
-4) 「ペンを離しても描画が終わらない」原因対策
-
-pointerup を拾えていない（上のグローバル捕捉で対処）
-
-pointercancel / pointercapture の扱い不足 → 上ハンドラで setPointerCapture / releasePointerCapture を試す
-
-内部 state が競合（複数ツールの isDrawing を共有）→ 各ツールごとに isActive を分離
-
-追加チェックログ（デバッグ一時）：
-
-// Quick debug help: dump pointer lifecycle
-function debugPointerLog(msg, e) {
-  console.log(`[PTR] ${msg}`, {
-    id: e?.pointerId,
-    type: e?.type,
-    x: e?.clientX, y: e?.clientY,
-    normalized: e ? app.renderer.events.pointer.normalizeGlobal(e) : null
-  });
-}
-
-5) サムネイル（thumbnail）改修案 — 「基準を決める」 & 高速化
-
-要件が2通りに分かれるため選択肢を用意します。あなたのツール上で UX を決めてください。
-
-A. キャンバス基準（全サムネが同じ拡大率） — レイヤーはキャンバスサイズに合わせて縮小表示
-B. 内容基準（描かれた範囲に合わせて拡縮） — 現状の「内容に合わせて拡縮」
-
-一般的にツールとして 同じ拡大率（A） が分かりやすい（同じスケールで比較できる）。ただし、細部が多いと一部が潰れるため「内容に合わせる」オプションを付けると良い。
-
-高速で安定した生成（RenderTexture） の実装例（キャンバス基準）：
-
-// --- copy/paste: thumbnail generation (canvas-based uniform scale) ---
-function generateThumbnail(app, container, thumbW = 64, thumbH = 64) {
-  // create renderTexture of fixed size
-  const rt = PIXI.RenderTexture.create({ width: thumbW, height: thumbH });
-  // Use a temporary transform so we render the canvasContainer scaled to thumb size
-  // We compute scale from canvas logical size -> thumb size
-  const canvasW = app.renderer.width;    // backing pixels (resolution-applied)
-  const canvasH = app.renderer.height;
-  const scaleX = thumbW / canvasW;
-  const scaleY = thumbH / canvasH;
-  const scale = Math.min(scaleX, scaleY);
-
-  // Save original transform
-  const originalScale = container.scale.clone();
-  const originalPos = { x: container.x, y: container.y };
-
-  // center and scale for render into thumbnail
-  container.scale.set(originalScale.x * scale, originalScale.y * scale);
-  container.position.set(0, 0);
-
-  // render
-  app.renderer.render(container, { renderTexture: rt, clear: true });
-
-  // restore
-  container.scale.copyFrom(originalScale);
-  container.position.set(originalPos.x, originalPos.y);
-
-  // return a base64 or texture depending on needs
-  const sprite = new PIXI.Sprite(rt);
-  return { texture: rt, sprite };
-}
-
-
-注意：上の canvasW/H は Pixi の renderer 背景ピクセル数（app.renderer.width）なので、DPR の扱いも一致します。generateTexture() より renderer.render(..., renderTexture) のほうが高速かつ制御しやすい（ルールブック推奨）。
-
-6) カメラ枠（camera frame）が固定の問題
-
-原因は カメラ枠が canvasContainer の外にあり transform を受けていない か、または canvasContainer の transform を参照して更新していないことです。解決は二択：
-
-カメラ枠（視界の四角）は canvasContainer の子にして、container の transform で一緒に動くようにする
-または
-
-カメラ枠はステージ上に置くが canvasContainer.transform に追従させる（変換を toGlobal / toLocal で計算して位置合わせ）
-
-推奨：カメラ枠を canvasContainer の子にする（一番単純で安全）。
-
-// --- copy/paste: attach camera frame to canvasContainer ---
-function ensureCameraFrameAttached(canvasContainer, cameraFrameGraphics) {
-  if (cameraFrameGraphics.parent !== canvasContainer) {
-    // convert current global pos into container local to preserve screen position
-    const globalPos = cameraFrameGraphics.getGlobalPosition();
-    const local = canvasContainer.toLocal(globalPos, cameraFrameGraphics.parent);
-    cameraFrameGraphics.position.set(local.x, local.y);
-    canvasContainer.addChild(cameraFrameGraphics);
+    // For demo show thumbnail in document body (developer tool)
+    let existing = document.getElementById('thumbPreview');
+    if (!existing) {
+      existing = document.createElement('img');
+      existing.id = 'thumbPreview';
+      existing.style.position = 'fixed';
+      existing.style.right = '8px';
+      existing.style.bottom = '8px';
+      existing.style.border = '2px solid #fff';
+      existing.style.width = '160px';
+      existing.style.height = '160px';
+      document.body.appendChild(existing);
+    }
+    existing.src = thumbCanvas.toDataURL();
   }
-}
 
+  // Update thumbnail periodically or on demand
+  setInterval(updateThumbnail, 500);
 
-もし意図的に分けたいなら、canvasContainer の transform に追従する実装（app.ticker で cameraFrame.position = canvasContainer.position 等）を置くこと。
+  // === Example controls: center, zoom, flip horizontally/vertically anchored to viewport center ===
+  function centerOn(x, y) {
+    viewport.moveCenter(x, y);
+  }
+  function zoomTo(factor) {
+    // zoom toward center of screen
+    viewport.zoomPercent(factor, true);
+  }
+  function flipHorizontally() {
+    // Flip the world container around viewport center
+    // Implementation: translate world so center is at origin, flip scale.x, translate back
+    const worldCenter = viewport.toWorld(app.renderer.width/2, app.renderer.height/2);
+    world.pivot.set(worldCenter.x, worldCenter.y);
+    world.position.set(worldCenter.x, worldCenter.y);
+    world.scale.x *= -1;
+  }
+  function flipVertically() {
+    const worldCenter = viewport.toWorld(app.renderer.width/2, app.renderer.height/2);
+    world.pivot.set(worldCenter.x, worldCenter.y);
+    world.position.set(worldCenter.x, worldCenter.y);
+    world.scale.y *= -1;
+  }
 
-7) 検査（旧実装の残しがないか）のための grep／検索パターン
+  // Demo buttons for controls (simple)
+  const ctrl = document.createElement('div');
+  ctrl.style.position='fixed'; ctrl.style.left='8px'; ctrl.style.bottom='8px'; ctrl.style.zIndex=9999;
+  ctrl.innerHTML = '<button id="btnCenter">Center (0,0)</button> <button id="btnZoomIn">ZoomIn</button> <button id="btnZoomOut">ZoomOut</button> <button id="btnFlipH">FlipH</button>';
+  document.body.appendChild(ctrl);
+  document.getElementById('btnCenter').onclick = ()=> centerOn(200,200);
+  document.getElementById('btnZoomIn').onclick = ()=> zoomTo(1.2);
+  document.getElementById('btnZoomOut').onclick = ()=> zoomTo(0.8);
+  document.getElementById('btnFlipH').onclick = ()=> flipHorizontally();
 
-既存コードベースで次をチェックしてください。見つかったら toLocal / normalizeGlobal を使う実装に置き換えを検討。
+  // === Initialization demo content ===
+  // Draw a test rectangle and some content on drawLayer
+  const rect = new PIXI.Graphics();
+  rect.beginFill(0xff0000, 0.2);
+  rect.drawRect(100,100,400,300);
+  rect.endFill();
+  drawLayer.addChild(rect);
 
-grep -RnE "clientX|clientY|getBoundingClientRect|offsetX|offsetY|window.devicePixelRatio|\* *devicePixelRatio|generateTexture\(|canvas.getContext|ctx\." .
+  // Move viewport to a sensible place
+  viewport.moveCenter(250, 250);
 
-
-特に offsetX/Y を使っている箇所は要注意（イベントターゲットが異なるとズレる）。
-
-8) デバッグ用の短期パッチ（問題箇所特定）
-
-実稼働中に問題箇所を特定したいなら、描画時と input ハンドラで座標ログを出すパッチを一時的に入れてください：
-
-function logCoords(label, e, localPt) {
-  console.log(label, {
-    type: e?.type,
-    client: e ? {x: e.clientX, y: e.clientY} : null,
-    normalized: e ? app.renderer.events.pointer.normalizeGlobal(e) : null,
-    local: localPt
+  // Main ticker
+  app.ticker.add(() => {
+    // nothing heavy here — UI frame kept separate from world so it won't move when viewport pans
   });
-}
 
-9) テスト手順（順番にやってください）
+  // Export small helper to console for further manual testing
+  window.__tegaki_patch = { app, viewport, world, uiStage, bgCanvas, updateThumbnail };
 
-上の DPR レサイズ関数を呼んでレンダラの解像度合わせ（400x400）を強制。既存の手計算を削除。
+  </script>
+</body>
+</html>
 
-ペン入力を上の installPenHandlers に差し替え。pointerdown/move/up のライフサイクルを確認。
+主な変更点（短く）：
 
-右下・斜め方向でズレが残るか確認。残るならログを取って client/normalized/local の差を比較。
+@pixi/viewport を導入して「カメラ（viewport）」を明確化。パン／ズーム／回転／慣性等を viewport に任せることで、移動とカメラ中心に起因するズレを解消します。
 
-pointerup が抜けるケースは window で拾うとほぼ解消。もし残るなら setPointerCapture 関連の例外が起きていないか確認。
+Layer 0（背景）をオフスクリーン canvas で管理し、初期塗り #f0e0d6（futaba-cream）で塗り、Shift+ドラッグで消しゴム（透明化）できるデモを実装。背景はそのまま透過状態に戻せます。
 
-サムネはまず「同じ拡大率（キャンバス基準）」で全サムネ統一→ UX が不満なら「内容基準」オプションを追加。
+サムネイルは renderer.extract.canvas(stage) で全体を取得してから viewport の可視領域を切り出す方式で実装（堅牢だが最適化の余地あり）。
 
-カメラ枠は canvasContainer 配下に移動。ズレが消えるか確認。
+カメラフレーム（UI）は screen 固定レイヤーに置き、viewport の移動に追従しないようにして見た目と動作を分離。
 
-10) まとめ（短く）
+中心基準の拡縮・反転ボタン（簡易）を追加し、反転が viewport の中心基準で動くようにしています。
 
-問題群の根本は 座標系のバラつき（DOM→Pixi 変換が混在）と DPR の二重処理/未処理、および pointerup の取りこぼし です。
+適用方法・確認ポイント：
 
-対処は（A）Pixi の normalizeGlobal() と toLocal() を徹底、（B）renderer.resolution による DPR 統一、（C）pointerup を window で捕る、（D）サムネ処理を RenderTexture に統一してスケール基準を決める、の4本柱で十分です。
+キャンバス（元のプロジェクト）に今回のファイルの内容を差し替えるか、パッチ部分を該当箇所へ移植してください。
 
-上に貼ったコードはそのまま差し替え可能な小パッチです。必要なら既存ファイルの中で**差し替え箇所を直接作ってパッチ形式（diff）**で出します。出力はファイル単位の差分が良ければ今すぐ作ります（どのファイルを差分で欲しいか指示してください）。
+背景の初期塗り・消しゴム（Shift操作）・サムネイルが期待通りに動くか確認してください。
+
+パフォーマンスや既存ツール（バケツ、複雑なレイヤ合成）との統合は要検討 — 必要なら次のパッチで RenderTexture ベースの部分更新や WebGL シェーダ改善を追加します。
+
+希望があれば、次は以下いずれかを優先して進めます（そのまま作業します）：
+
+元の fixed_drawing_app_v4.html に対する 差分パッチ形式（unified diff） を作る
+
+サムネイル処理を RenderTexture を使う高速版 に置き換える
+
+バケツ（塗りつぶし）を オフスクリーン canvas の flood-fill（CPU）→更新 で実装する（大きな領域は要最適化）
+
+消しゴムを GPU ブレンドモード（destination-out 相当）で行うための PIXI フィルタ／RenderTexture に置き換える
+
+
