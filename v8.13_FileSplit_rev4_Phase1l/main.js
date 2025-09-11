@@ -23,11 +23,7 @@
         debug: false
     };
     
-    const log = (...args) => {
-        if (CONFIG.debug) console.log(...args);
-    };
-
-    // === カメラシステム（フレーム連動版） ===
+    // === カメラシステム（フレーム連動版・修正済み） ===
     class CameraSystem {
         constructor(app) {
             this.app = app;
@@ -157,16 +153,28 @@
             }
         }
         
-        // スクリーン座標をキャンバス座標に変換
+        // スクリーン座標をキャンバス座標に変換（修正版）
         screenToCanvas(screenX, screenY) {
-            const globalPoint = { x: screenX, y: screenY };
+            // まずスクリーン座標をグローバル座標に変換
+            const rect = this.app.canvas.getBoundingClientRect();
+            const globalPoint = { 
+                x: screenX - rect.left, 
+                y: screenY - rect.top 
+            };
+            
+            // グローバル座標をキャンバス座標に変換
             return this.canvasContainer.toLocal(globalPoint);
         }
         
         // キャンバス座標をスクリーン座標に変換
         canvasToScreen(canvasX, canvasY) {
             const canvasPoint = { x: canvasX, y: canvasY };
-            return this.canvasContainer.toGlobal(canvasPoint);
+            const globalPoint = this.canvasContainer.toGlobal(canvasPoint);
+            const rect = this.app.canvas.getBoundingClientRect();
+            return {
+                x: globalPoint.x + rect.left,
+                y: globalPoint.y + rect.top
+            };
         }
         
         updateTransformDisplay() {
@@ -188,14 +196,14 @@
         }
     }
 
-    // === レイヤー管理システム ===
+    // === レイヤー管理システム（修正版） ===
     class LayerManager {
         constructor(canvasContainer, app) {
             this.canvasContainer = canvasContainer;
             this.app = app;
             this.layers = [];
             this.activeLayerIndex = -1;
-            this.layerCounter = 0;
+            this.layerCounter = 1; // 1から開始に修正
             this.thumbnailUpdateQueue = new Set();
             
             // レイヤーコンテナ
@@ -206,7 +214,7 @@
 
         createLayer(name, isBackground = false) {
             const layer = new PIXI.Container();
-            const layerId = `layer_${this.layerCounter++}`;
+            const layerId = `layer_${this.layerCounter}`;
             
             layer.label = layerId;
             layer.layerData = {
@@ -218,13 +226,21 @@
                 paths: []
             };
 
+            // レイヤー番号を適切にインクリメント
+            if (!isBackground) {
+                this.layerCounter++;
+            }
+
             if (isBackground) {
-                // 背景はキャンバス全体を覆う
+                // レイヤー0（背景）は初期配置でfutaba-creamに塗られた透明なレイヤー
                 const bg = new PIXI.Graphics();
                 bg.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
                 bg.fill(CONFIG.background.color);
                 layer.addChild(bg);
                 layer.layerData.backgroundGraphics = bg;
+                
+                // 背景レイヤーの名前を「レイヤー0」に設定
+                layer.layerData.name = 'レイヤー0';
             }
 
             this.layers.push(layer);
@@ -260,10 +276,10 @@
         processThumbnailUpdates() {
             if (!this.app?.renderer || this.thumbnailUpdateQueue.size === 0) return;
 
-            this.thumbnailUpdateQueue.forEach(layerIndex => {
-                this.updateThumbnail(layerIndex);
-            });
-            this.thumbnailUpdateQueue.clear();
+            // フレーム毎に1つのサムネイルのみ更新（負荷分散）
+            const layerIndex = this.thumbnailUpdateQueue.values().next().value;
+            this.thumbnailUpdateQueue.delete(layerIndex);
+            this.updateThumbnail(layerIndex);
         }
 
         updateThumbnail(layerIndex) {
@@ -299,7 +315,10 @@
                             }
                         });
                         
-                        this.app.renderer.render(tempContainer, { renderTexture });
+                        this.app.renderer.render({
+                            container: tempContainer,
+                            target: renderTexture
+                        });
                         
                         // Canvas要素として取得してDataURLに変換
                         const canvas = this.app.renderer.extract.canvas(renderTexture);
@@ -378,6 +397,9 @@
                 });
 
                 layerList.appendChild(layerItem);
+                
+                // 各レイヤーのサムネイル更新をリクエスト
+                this.requestThumbnailUpdate(i);
             }
         }
 
@@ -427,7 +449,7 @@
         }
     }
 
-    // === 描画エンジン ===
+    // === 描画エンジン（修正版） ===
     class DrawingEngine {
         constructor(cameraSystem, layerManager) {
             this.cameraSystem = cameraSystem;
@@ -439,20 +461,26 @@
             this.isDrawing = false;
             this.currentPath = null;
             this.lastPoint = null;
+            this.clippingMask = null; // マスクオブジェクト
+            this.initializeClippingMask();
+        }
+        
+        initializeClippingMask() {
+            // カメラフレーム内のみの描画を保証するマスク
+            this.clippingMask = new PIXI.Graphics();
+            this.clippingMask.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+            this.clippingMask.fill(0xffffff); // マスク色
+            this.layerManager.layersContainer.mask = this.clippingMask;
+            this.layerManager.canvasContainer.addChild(this.clippingMask);
         }
 
         startDrawing(screenX, screenY) {
             if (this.isDrawing || this.cameraSystem.spacePressed || this.cameraSystem.isDragging) return;
 
-            // スクリーン座標をキャンバス座標に変換
+            // スクリーン座標をキャンバス座標に変換（修正版）
             const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
             
-            // キャンバス範囲内チェック
-            if (canvasPoint.x < 0 || canvasPoint.x > CONFIG.canvas.width || 
-                canvasPoint.y < 0 || canvasPoint.y > CONFIG.canvas.height) {
-                return;
-            }
-            
+            // 常に描画を開始（カメラフレーム外でも入力受け付け）
             this.isDrawing = true;
             this.lastPoint = canvasPoint;
 
@@ -472,7 +500,7 @@
                 isComplete: false
             };
 
-            // 最初のポイントを描画
+            // 最初のポイントを描画（マスクにより自動的にフレーム内のみ表示）
             this.currentPath.graphics.circle(canvasPoint.x, canvasPoint.y, this.brushSize / 2);
             this.currentPath.graphics.fill({ color: color, alpha: opacity });
 
@@ -492,7 +520,7 @@
 
             if (distance < 1) return;
 
-            // 補間して滑らかな線を描画
+            // 補間して滑らかな線を描画（マスクにより自動的にフレーム内のみ表示）
             const steps = Math.max(1, Math.floor(distance / 1));
             for (let i = 1; i <= steps; i++) {
                 const t = i / steps;
@@ -537,11 +565,12 @@
         }
     }
 
-    // === インタラクション管理 ===
+    // === インタラクション管理（修正版） ===
     class InteractionManager {
-        constructor(app, drawingEngine) {
+        constructor(app, drawingEngine, cameraSystem) {
             this.app = app;
             this.drawingEngine = drawingEngine;
+            this.cameraSystem = cameraSystem;
             this.setupKeyboardEvents();
             this.setupCanvasEvents();
         }
@@ -562,21 +591,20 @@
             this.app.canvas.addEventListener('pointerdown', (e) => {
                 if (e.button !== 0) return; // 左クリックのみ
 
-                const rect = this.app.canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
+                const x = e.clientX;
+                const y = e.clientY;
 
                 this.drawingEngine.startDrawing(x, y);
                 e.preventDefault();
             });
 
             this.app.canvas.addEventListener('pointermove', (e) => {
-                const rect = this.app.canvas.getBoundingClientRect();
-                const x = e.clientX - rect.top;
-                const y = e.clientY - rect.top;
+                const x = e.clientX;
+                const y = e.clientY;
 
-                // 座標表示更新
-                this.updateCoordinates(x, y);
+                // 座標表示更新（スクリーン座標をキャンバス座標に変換して表示）
+                const canvasPoint = this.cameraSystem.screenToCanvas(x, y);
+                this.updateCoordinates(canvasPoint.x, canvasPoint.y);
 
                 this.drawingEngine.continueDrawing(x, y);
             });
@@ -611,8 +639,12 @@
         }
 
         updateCursor() {
-            const tool = this.drawingEngine.currentTool;
-            this.app.canvas.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair';
+            if (this.cameraSystem.spacePressed || this.cameraSystem.isDragging) {
+                this.app.canvas.style.cursor = 'move';
+            } else {
+                const tool = this.drawingEngine.currentTool;
+                this.app.canvas.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair';
+            }
         }
 
         updateCoordinates(x, y) {
@@ -623,12 +655,13 @@
         }
     }
 
-    // === UI制御 ===
+    // === UI制御（修正版） ===
     class UIController {
-        constructor(drawingEngine, layerManager, app) {
+        constructor(drawingEngine, layerManager, app, cameraSystem) {
             this.drawingEngine = drawingEngine;
             this.layerManager = layerManager;
             this.app = app;
+            this.cameraSystem = cameraSystem;
             this.activePopup = null;
             this.setupEventDelegation();
             this.setupSliders();
@@ -645,7 +678,9 @@
 
                 const layerAddBtn = e.target.closest('#add-layer-btn');
                 if (layerAddBtn) {
-                    const { layer, index } = this.layerManager.createLayer(`レイヤー${this.layerManager.layers.length + 1}`);
+                    // レイヤー番号を適切に管理
+                    const layerName = `レイヤー${this.layerManager.layerCounter}`;
+                    const { layer, index } = this.layerManager.createLayer(layerName);
                     this.layerManager.setActiveLayer(index);
                     return;
                 }
@@ -793,8 +828,33 @@
         }
 
         resizeCanvas(newWidth, newHeight) {
+            const oldWidth = CONFIG.canvas.width;
+            const oldHeight = CONFIG.canvas.height;
+            
             CONFIG.canvas.width = newWidth;
             CONFIG.canvas.height = newHeight;
+            
+            // カメラフレーム更新
+            this.cameraSystem.drawCameraFrame();
+            
+            // クリッピングマスク更新
+            if (this.drawingEngine.clippingMask) {
+                this.drawingEngine.clippingMask.clear();
+                this.drawingEngine.clippingMask.rect(0, 0, newWidth, newHeight);
+                this.drawingEngine.clippingMask.fill(0xffffff);
+            }
+            
+            // 背景レイヤーのサイズを更新
+            this.layerManager.layers.forEach(layer => {
+                if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
+                    layer.layerData.backgroundGraphics.clear();
+                    layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
+                    layer.layerData.backgroundGraphics.fill(CONFIG.background.color);
+                }
+            });
+            
+            // カメラを再初期化して新しいキャンバスサイズに合わせる
+            this.cameraSystem.initializeCamera();
             
             // キャンバス情報更新
             const element = document.getElementById('canvas-info');
@@ -802,7 +862,16 @@
                 element.textContent = `${newWidth}×${newHeight}px`;
             }
             
-            console.log(`Canvas resized to ${newWidth}x${newHeight}`);
+            // 入力フィールド更新
+            const widthInput = document.getElementById('canvas-width');
+            const heightInput = document.getElementById('canvas-height');
+            if (widthInput) widthInput.value = newWidth;
+            if (heightInput) heightInput.value = newHeight;
+            
+            // 全レイヤーのサムネイル更新
+            for (let i = 0; i < this.layerManager.layers.length; i++) {
+                this.layerManager.requestThumbnailUpdate(i);
+            }
         }
     }
 
@@ -860,10 +929,9 @@
                 throw new Error('Canvas container not found');
             }
 
-            // PixiJS初期化（DPR対応）
+            // PixiJS初期化（DPR対応・修正版）
             this.pixiApp = new PIXI.Application();
             
-            const dpr = window.devicePixelRatio || 1;
             const screenWidth = window.innerWidth - 50; // サイドバー分を除く
             const screenHeight = window.innerHeight;
             
@@ -893,12 +961,12 @@
             this.cameraSystem = new CameraSystem(this.pixiApp);
             this.layerManager = new LayerManager(this.cameraSystem.canvasContainer, this.pixiApp);
             this.drawingEngine = new DrawingEngine(this.cameraSystem, this.layerManager);
-            this.interactionManager = new InteractionManager(this.pixiApp, this.drawingEngine);
-            this.uiController = new UIController(this.drawingEngine, this.layerManager, this.pixiApp);
+            this.interactionManager = new InteractionManager(this.pixiApp, this.drawingEngine, this.cameraSystem);
+            this.uiController = new UIController(this.drawingEngine, this.layerManager, this.pixiApp, this.cameraSystem);
 
-            // 初期レイヤー作成
-            this.layerManager.createLayer('背景', true);
-            this.layerManager.createLayer('レイヤー1');
+            // 初期レイヤー作成（修正版）
+            this.layerManager.createLayer('レイヤー0', true); // 背景レイヤー
+            this.layerManager.createLayer('レイヤー1'); // 最初の描画レイヤー
             this.layerManager.setActiveLayer(1); // レイヤー1をアクティブに
 
             // UI初期化
@@ -982,7 +1050,7 @@
     // === アプリケーション起動 ===
     window.addEventListener('DOMContentLoaded', async () => {
         try {
-            console.log('Initializing Drawing App...');
+            console.log('Initializing Fixed Drawing App...');
             
             const app = new DrawingApp();
             await app.initialize();
@@ -990,19 +1058,23 @@
             // グローバルアクセス用
             window.drawingApp = app;
 
-            console.log('🎨 Drawing App initialized successfully!');
-            console.log('📋 Features:');
-            console.log('  - Custom camera system with 400x400 frame');
-            console.log('  - Camera frame moves with canvas (frame + canvas unified)');
-            console.log('  - Proper coordinate transformation');
-            console.log('  - Layer management with drag reordering');
-            console.log('  - Thumbnail generation fixed');
-            console.log('  - Right-click/Space+drag camera navigation');
-            console.log('  - Keyboard shortcuts (P=pen, E=eraser)');
-            console.log('  - DPR handling (resolution=1 for size consistency)');
+            console.log('🎨 Fixed Drawing App initialized successfully!');
+            console.log('🔧 Fixed Issues:');
+            console.log('  ✅ Pen drawing coordinate offset fixed');
+            console.log('  ✅ Drawing limited to camera frame with mask');
+            console.log('  ✅ Drawing input accepted from outside frame');
+            console.log('  ✅ Layer numbering fixed (no skipping Layer 2)');
+            console.log('  ✅ Thumbnail generation optimized for all layers');
+            console.log('  ✅ Canvas resize now affects actual canvas size');
+            console.log('  ✅ Background renamed to Layer 0 with futaba-cream color');
+            console.log('📋 Enhanced Features:');
+            console.log('  - Proper coordinate transformation (screenToCanvas)');
+            console.log('  - Clipping mask for frame-constrained drawing');
+            console.log('  - Optimized thumbnail updates (one per frame)');
+            console.log('  - RuleBook v7 compliance improvements');
 
         } catch (error) {
-            console.error('Failed to initialize Drawing App:', error);
+            console.error('Failed to initialize Fixed Drawing App:', error);
         }
     });
 
