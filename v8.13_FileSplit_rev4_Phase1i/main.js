@@ -160,4 +160,19 @@
             this.thumbnailUpdateQueue.add(layerIndex);
         }
 
-        processThumbnailUpdates(app
+        processThumbnailUpdates(app) {
+            if (!app?.renderer || this.thumbnailUpdateQueue.size === 0) return;
+
+            this.thumbnailUpdateQueue.forEach(layerIndex => {
+                this.updateThumbnail(layerIndex, app);
+            });
+            this.thumbnailUpdateQueue.clear();
+        }
+
+        updateThumbnail(layerIndex, app) {
+            if (!app?.renderer || layerIndex < 0 || layerIndex >= this.layers.length) return;
+
+            const layer = this.layers[layerIndex];
+            const layerItems = document.querySelectorAll('.layer-item');
+            
+            const panelIndex = this.layers
