@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 キャンバス移動完成版 - PixiJS v8.13 お絵かきツール</title>
+    <title>🎨 Phase1.5完成版 - PixiJS v8.13 お絵かきツール</title>
     <style>
         * {
             margin: 0;
@@ -29,7 +29,6 @@
             margin: 0;
             height: 100vh;
             overflow: hidden;
-            user-select: none;
         }
         
         .main-layout {
@@ -104,6 +103,7 @@
         #drawing-canvas {
             border: none;
             display: block;
+            cursor: crosshair;
             touch-action: none;
         }
         
@@ -454,27 +454,27 @@
             align-items: center;
             gap: 4px;
         }
-
-        /* キャンバス操作モード表示 */
-        .operation-mode {
+        
+        .operation-mode-display {
             position: fixed;
             top: 20px;
             left: 50%;
             transform: translateX(-50%);
-            background: rgba(128, 0, 0, 0.9);
-            color: white;
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-family: monospace;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 12px;
+            padding: 12px 20px;
+            z-index: 2000;
+            color: var(--futaba-maroon);
+            font-weight: 600;
             font-size: 14px;
-            font-weight: bold;
-            z-index: 1500;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.3);
             opacity: 0;
             transition: opacity 0.2s ease;
             pointer-events: none;
         }
-
-        .operation-mode.show {
+        
+        .operation-mode-display.show {
             opacity: 1;
         }
     </style>
@@ -502,11 +502,9 @@
         </div>
     </div>
     
-    <div class="operation-mode" id="operation-mode">キャンバス移動モード</div>
-    
     <div class="layer-panel-container" id="layer-panel-container">
         <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2 2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
         </div>
         
         <div class="layer-panel-items" id="layer-list"></div>
@@ -555,13 +553,17 @@
         </div>
     </div>
     
+    <div class="operation-mode-display" id="operation-mode">
+        キャンバス移動
+    </div>
+    
     <div class="status-panel">
         <div class="status-group">
             <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
             <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
-            <div class="status-item">Layer: <span id="current-layer">背景</span></div>
+            <div class="status-item">Layer: <span id="current-layer">レイヤー0</span></div>
             <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
-            <div class="status-item">Camera: <span id="camera-info">x:0 y:0 s:1.0 r:0°</span></div>
+            <div class="status-item">Transform: <span id="transform-info">x:0 y:0 s:1.0 r:0°</span></div>
             <div class="status-item">DPR: <span id="dpr-info">1.0</span></div>
         </div>
         
@@ -571,9 +573,13 @@
         </div>
     </div>
 
-    <!-- PixiJS v8.13 読み込み -->
+    <!-- PixiJS v8.13 + 有用なライブラリ読み込み -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+    
+    <!-- UI・インタラクション強化ライブラリ -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
     
     <!-- メインJavaScriptロード -->
     <script src="main.js"></script>
