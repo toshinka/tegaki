@@ -62,60 +62,8 @@
 
 ## 🔄 ロールバック改修計画
 
-### Phase1.5-fix: ビューポート概念の復活
 
-#### A. @pixi/viewport の再導入（推奨）
-```javascript
-// ✅ 正しい構造
-app.stage
-└── viewport (PIXI.Viewport) // カメラ制御
-    └── worldContainer (PIXI.Container) // ワールド座標系
-        ├── canvasBackground (PIXI.Graphics) // キャンバス背景
-        ├── layersContainer (PIXI.Container) // レイヤー群
-        │   ├── layer1 (PIXI.Container)
-        │   └── layer2 (PIXI.Container)
-        └── overlayContainer (PIXI.Container) // オーバーレイ要素
 
-// UI要素（固定）
-app.stage
-└── uiContainer (PIXI.Container) // カメラ枠など
-    └── cameraFrame (PIXI.Graphics)
-```
-
-**利点**:
-- キャンバス外描画が自然に実現
-- カメラ枠とコンテンツが適切に分離
-- 無限キャンバス対応が容易
-- 業界標準のビューポート概念
-
-**欠点**:
-- 外部ライブラリ依存
-- 学習コスト
-
-#### B. 自製ビューポートシステム（代替案）
-```javascript
-// Container.transformではなく、position/scale/rotation を直接制御
-class CustomViewport {
-  constructor(worldContainer) {
-    this.worldContainer = worldContainer;
-    this.camera = {
-      x: 0, y: 0, scale: 1, rotation: 0
-    };
-  }
-  
-  // カメラ移動（worldContainer全体を移動）
-  moveCamera(dx, dy) {
-    this.camera.x += dx;
-    this.camera.y += dy;
-    this.updateWorldTransform();
-  }
-  
-  updateWorldTransform() {
-    this.worldContainer.position.set(this.camera.x, this.camera.y);
-    this.worldContainer.scale.set(this.camera.scale);
-    this.worldContainer.rotation = this.camera.rotation;
-  }
-}
 ```
 
 ### Phase1.5-fix: 座標変換の修正

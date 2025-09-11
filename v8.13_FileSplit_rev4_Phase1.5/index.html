@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 修正版 - PixiJS v8.13 お絵かきツール</title>
+    <title>🎨 キャンバス移動完成版 - PixiJS v8.13 お絵かきツール</title>
     <style>
         * {
             margin: 0;
@@ -29,6 +29,7 @@
             margin: 0;
             height: 100vh;
             overflow: hidden;
+            user-select: none;
         }
         
         .main-layout {
@@ -103,7 +104,6 @@
         #drawing-canvas {
             border: none;
             display: block;
-            cursor: crosshair;
             touch-action: none;
         }
         
@@ -454,6 +454,29 @@
             align-items: center;
             gap: 4px;
         }
+
+        /* キャンバス操作モード表示 */
+        .operation-mode {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: rgba(128, 0, 0, 0.9);
+            color: white;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-family: monospace;
+            font-size: 14px;
+            font-weight: bold;
+            z-index: 1500;
+            opacity: 0;
+            transition: opacity 0.2s ease;
+            pointer-events: none;
+        }
+
+        .operation-mode.show {
+            opacity: 1;
+        }
     </style>
 </head>
 <body>
@@ -478,6 +501,8 @@
             <div id="drawing-canvas"></div>
         </div>
     </div>
+    
+    <div class="operation-mode" id="operation-mode">キャンバス移動モード</div>
     
     <div class="layer-panel-container" id="layer-panel-container">
         <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加">
@@ -536,7 +561,7 @@
             <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
             <div class="status-item">Layer: <span id="current-layer">背景</span></div>
             <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
-            <div class="status-item">Transform: <span id="transform-info">x:0 y:0 s:1.0 r:0°</span></div>
+            <div class="status-item">Camera: <span id="camera-info">x:0 y:0 s:1.0 r:0°</span></div>
             <div class="status-item">DPR: <span id="dpr-info">1.0</span></div>
         </div>
         
@@ -546,14 +571,9 @@
         </div>
     </div>
 
-    <!-- PixiJS v8.13 + 有用なライブラリ読み込み -->
+    <!-- PixiJS v8.13 読み込み -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
-    
-    <!-- UI・インタラクション強化ライブラリ -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@pixi/viewport@8.0.0/dist/viewport.min.js"></script> 
-    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
     
     <!-- メインJavaScriptロード -->
     <script src="main.js"></script>
