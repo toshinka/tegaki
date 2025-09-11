@@ -1,78 +1,193 @@
-問題点と原因解析
-1. PixiJS アプリの初期化が行われていない
+問題点の解析と原因
+1. キャンバス左上に赤い四角がある
 
-<div id="drawing-canvas"></div> を用意していますが、Pixi の Application を生成して drawing-canvas に app.canvas を追加していません。
+原因:
+これは PixiJS が初期化時に Graphics のテスト描画を残しているか、デバッグ用に残した矩形(beginFill(0xFF0000))がシーンルートに残っているもの。
 
-そのため 実際の <canvas> 要素が DOM に存在せず、描画が一切行われない状態になっています。
+確認方法:
+app.stage.addChild(debugRect) のような処理があれば削除。
 
-2. レイヤーパネル初期化処理が不足
+2. ペンが右下に x200 y100 くらいズレる
 
-#layer-list に HTML の箱はありますが、JavaScript でレイヤー項目 (.layer-item) を生成する処理がありません。
+原因:
 
-そのため レイヤーパネルが常に空のままです。
+pointermove で得た event.clientX / clientY をそのまま使っている。
 
-3. ショートカットの定義はあるが、UI・描画と紐付いていない
+ところが Pixi v8 では renderer.events.pointermove の座標は「スクリーン座標」で、描画は worldTransform（カメラ・ズーム・パン適用後のワールド座標）で行う必要がある。
 
-CanvasTransformSystem などの仕組みは書かれていますが、PixiJS の stage に紐づけていないため、イベントを受けても視覚変化がありません。
+改修指針:
+e.global を使って Pixi座標に変換する。
 
-改修案（コード追加例）
+const pos = e.global; // PIXI.Point
+drawLineTo(pos.x, pos.y);
 
-以下のコードを <script> 内の末尾（CanvasTransformSystem などのクラス定義の後）に追加してください。
+3. キャンバス移動すると「カメラ窓」を残して他が動く。初回は x400 y400 くらい動く
 
-// === PixiJS Application 初期化 ===
-(async function initCanvas() {
-    const app = new PIXI.Application({
-        width: ENGINE_CONFIG.canvas.width,
-        height: ENGINE_CONFIG.canvas.height,
-        backgroundColor: 0xffffff,
-        antialias: true,
-        resolution: 1,
-    });
-    await app.init();
+原因:
 
-    // DOM に追加
-    document.getElementById("drawing-canvas").appendChild(app.canvas);
+stage.pivot や stage.position の初期値設定が不完全。
 
-    // メインのコンテナ
-    const canvasContainer = new PIXI.Container();
-    app.stage.addChild(canvasContainer);
+初回ドラッグで一気にズレるのは「直前の保存位置が (0,0) 固定」のため。
 
-    // 仮のレイヤー
-    const baseLayer = new PIXI.Container();
-    canvasContainer.addChild(baseLayer);
+2回目から安定するのは lastPointerPosition が更新されるから。
 
-    // テスト描画
-    const g = new PIXI.Graphics().rect(50, 50, 100, 100).fill(0xff0000);
-    baseLayer.addChild(g);
+改修指針:
 
-    // 状態表示更新（FPS）
-    app.ticker.add(() => {
-        document.getElementById("fps").innerText = Math.round(app.ticker.FPS);
-    });
+初回 mousedown で 現在の stage.position を基準にドラッグ開始座標を保存。
 
-    // レイヤーパネルに初期レイヤーを追加
-    addLayerItem("背景", true);
-})();
+移動は newPos = savedStagePos + (pointerNow - pointerStart) で計算。
 
-// === レイヤーパネル操作 ===
-function addLayerItem(name, active = false) {
-    const list = document.getElementById("layer-list");
-    const item = document.createElement("div");
-    item.className = "layer-item" + (active ? " active" : "");
-    item.innerHTML = `
-        <div class="layer-visibility"><svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="6" stroke-width="2" fill="none"/></svg></div>
-        <div class="layer-opacity">100%</div>
-        <div class="layer-name">${name}</div>
-        <div class="layer-thumbnail"><div class="layer-thumbnail-placeholder"></div></div>
-        <div class="layer-delete-button"><svg viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg></div>
-    `;
-    list.appendChild(item);
+4. レイヤーパネルのサムネイルが描画を反映せず「▣」のまま
+
+原因:
+
+サムネイル更新処理で renderer.extract.image(layer) を呼んでいない。
+
+代わりに background CSS が残っているだけなので枠線と塗りつぶしだけが表示される。
+
+改修指針:
+レイヤー更新時に以下を実行して、<img> に反映する:
+
+const thumb = app.renderer.extract.image(layer.container);
+layerThumbnail.src = thumb.src;
+
+改修案（まとめ）
+
+赤い四角削除
+→ デバッグ矩形を削除。
+
+ペンのズレ修正
+→ pointermove の座標取得を e.global に統一。
+
+app.stage.eventMode = 'static';
+app.stage.on('pointerdown', e => {
+    const pos = e.global;
+    startDrawing(pos.x, pos.y);
+});
+app.stage.on('pointermove', e => {
+    if (!drawing) return;
+    const pos = e.global;
+    continueDrawing(pos.x, pos.y);
+});
+
+
+カメラ移動の初回ジャンプ防止
+→ ドラッグ開始時に stage.position を保存。
+
+let dragging = false;
+let dragStart = null;
+let stageStart = null;
+
+app.stage.on('pointerdown', e => {
+    dragging = true;
+    dragStart = { x: e.global.x, y: e.global.y };
+    stageStart = { x: app.stage.x, y: app.stage.y };
+});
+
+app.stage.on('pointermove', e => {
+    if (!dragging) return;
+    app.stage.x = stageStart.x + (e.global.x - dragStart.x);
+    app.stage.y = stageStart.y + (e.global.y - dragStart.y);
+});
+
+app.stage.on('pointerup', () => dragging = false);
+
+
+サムネイル反映
+→ レイヤー描画完了後に extract.image() を呼んで <img> 更新。
+
+function updateThumbnail(layer) {
+    const image = app.renderer.extract.image(layer.container);
+    layer.thumbnail.src = image.src;
 }
 
-改修効果
+提案する次ステップ
 
-drawing-canvas に Pixi の <canvas> が追加され、赤い四角が表示される → キャンバス表示確認可能。
+今回は 4箇所修正点が分散しているので「パッチ差し込み案内」よりも、
+一括で差し替えやすい関数単位の改修ファイルを用意した方が良いです。
 
-layer-list に「背景」レイヤーが追加される → レイヤーパネルが見える。
+特に pointer座標処理 と カメラ移動処理 は一緒に直さないと不具合が続きます。
 
-今後 addLayerItem() をショートカットや #add-layer-btn と連動させれば、追加レイヤーが動的に増える。
+
+=====
+以下は参考パッチ
+=====
+🔧 パッチ内容
+1. 赤い四角削除
+
+探す:
+
+const graphics = new PIXI.Graphics();
+graphics.beginFill(0xFF0000);
+graphics.drawRect(0, 0, 100, 100);
+graphics.endFill();
+app.stage.addChild(graphics);
+
+
+削除してください（完全に不要なデバッグ描画です）。
+
+2. ペン座標ズレ修正
+
+探す: （例: pointerイベントで event.clientX / clientY を使用している箇所）
+
+const x = e.client.x;  
+const y = e.client.y;  
+drawLineTo(x, y);
+
+
+置換:
+
+const pos = e.global;  
+drawLineTo(pos.x, pos.y);
+
+
+※ すべての pointerdown / pointermove で同様に e.global を使ってください。
+
+3. カメラ移動の初回ジャンプ防止
+
+探す: （stageを直接 += している箇所）
+
+app.stage.x += e.movementX;
+app.stage.y += e.movementY;
+
+
+置換:
+
+let dragging = false;
+let dragStart = null;
+let stageStart = null;
+
+app.stage.eventMode = 'static';
+app.stage.on('pointerdown', e => {
+    dragging = true;
+    dragStart = { x: e.global.x, y: e.global.y };
+    stageStart = { x: app.stage.x, y: app.stage.y };
+});
+
+app.stage.on('pointermove', e => {
+    if (!dragging) return;
+    app.stage.x = stageStart.x + (e.global.x - dragStart.x);
+    app.stage.y = stageStart.y + (e.global.y - dragStart.y);
+});
+
+app.stage.on('pointerup', () => dragging = false);
+
+4. レイヤーパネルのサムネイル更新
+
+探す: （サムネイル更新が ▣ で止まっている箇所）
+
+追加:
+
+function updateThumbnail(layer) {
+    const image = app.renderer.extract.image(layer.container);
+    layer.thumbnail.src = image.src;
+}
+
+
+呼び出し例:
+レイヤーに描画が発生した直後に
+
+updateThumbnail(currentLayer);
+
+
+を追加してください。
