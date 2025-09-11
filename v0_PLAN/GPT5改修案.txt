@@ -1,198 +1,301 @@
-問題の整理
-1. 初期キャンバスサイズがやたら大きい（期待値：400×400でない）
+要点（結論）
 
-表示には400×400と出ているものの、実際にはもっと大きく表示されている様子。
+画面が“800×800に見える/倍化する”
+→ ほとんどの場合 devicePixelRatio（DPR） と canvas の CSS サイズ／実ピクセルサイズの不一致、あるいは二重でスケーリングする処理（旧実装の CSS scale や manual scale の掛け合わせ）が原因です。Pixiの renderer.resize と view.style.width/height を正しく分離して下さい。
 
-背景としては、canvasContainerやUI初期化時に想定外サイズが使われている可能性あり。
+カメラ枠（白）が左上（0,0）基準で、キャンバスは中央基準
+→ canvasContainer の pivot／position の扱いが混在しています。どちらかに統一（トップレフト基準 or 中央基準）し、ルールブックにある canvasContainer を座標の「単一真実（single source of truth）」にしてください。個人的には トップレフト基準（0,0 が左上） を推奨します（DOM座標と整合しやすい）。
 
-2. レイヤーパネルのサムネイルが機能していない
+リサイズがカメラ枠に影響しない
+→ リサイズ処理が canvasContainer や cameraFrame に伝播していない。app.renderer.resize() 後に cameraFrame の描画／mask サイズ、canvasContainer の pivot/position を更新する必要があります。
 
-UIではサムネイル作成が行われているはずだが、表示されない、更新されないなどの不具合と見受けられる。
+キャンバス移動してもカメラ枠が連動しない（表示が消える）
+→ cameraFrame が別の座標空間（例：stage直下）に置かれているか、mask や renderTexture の座標が固定されたまま更新されていません。cameraFrame を同一 container に置くか、toLocal/toGlobal で同期してください（ルールブック準拠）。
 
-3. 拡縮（スケール）や反転操作後、画面が真っ白になる
+レイヤーサムネイルが画面中央のごく一部しか描かない
+→ サムネイル生成時に getLocalBounds() を無視している、または renderTexture にレイヤー全体を正しいオフセットで描画していない可能性。layer.getLocalBounds() を使ってバウンディングに合わせて RenderTexture を作り、レイヤーをオフセットしてから renderer.render(layer, {renderTexture}) する必要があります。generateTexture() は単純で使いやすいが、トランスフォーム無視やスケール問題が起きやすいので RenderTexture + renderer.render を推奨（ルールブックに記載の方針と一致）。
 
-背景色ではなく完全な白表示。canvasやレイヤーが「どこかに飛んでいる」可能性あり。
+改修方針（短い計画）
 
-原因として、カメラ（canvasContainer）のズームや移動と、レイヤーの変形がどこかで干渉していることが考えられる。
+座標ユーティリティを作成（utils/coordinates.js） — 全ての pointer→canvas→layer の変換をここ経由にする。toLocal/toGlobal を必ず使う。
 
-計画書（ルールブック）による仕様とのズレ
+Pixi 初期化を一本化（core/pixi-engine.js） — DPR 対応、renderer.resize、app.view の CSS 幅設定をここだけで行う。
 
-ルールブックでは以下を明確に定義しています：
+canvasContainer を“トップレフト基準”に統一 — pivot を 0,0、position を 0,0。キャンバス内でのカメラ移動は container.position で行う。
 
-Container階層の責任分離：
-app.stage → canvasContainer（キャンバス操作） → layer1, layer2（レイヤー操作） 
-GitHub
+cameraFrame を canvasContainer の子にする（あるいは overlay コンテナで常に canvasContainer の位置に追随させる）。
 
-座標変換ルール徹底：必ず toLocal()／toGlobal() を使用し、直接計算禁止 
-GitHub
+サムネイル生成を renderTexture ベースに書き換え（utils/thumbnail.js）。
 
-サムネイル生成方式：generateTexture()ではなくrenderTexture＋Tickerで非同期更新と最適化 
-GitHub
+旧実装検索と除去 — CSS transform: scale() / JS 側の manual scale 倍加処理 / devicePixelRatio を直接乗算している箇所を grep で洗い出して取り除く。
 
-問題原因と改修提案
-問題	原因候補	改修案
-キャンバスサイズの異常	初期サイズがコード中で明示されていない。UIの入力が反映されてない可能性	- 初期サイズをcanvasContainer初期化時に明示設定
-例：app.renderer.resize(400, 400); canvasContainer.width = 400;など
-- UI変更（リサイズ時）に描画再初期化イベントを追加
-サムネイル非表示	renderTexture方式への切り替えが未反映、またはneedsUpdateフラグ処理が未実装	- renderTexture生成コードに修正
-```js
-const thumb = PIXI.RenderTexture.create({ width: W, height: H });		
-app.renderer.render(layer, { renderTexture: thumb });		
-```
-- 更新トリガーonChangeイベントでneedsUpdate = true;
-- app.ticker.add(() => { if(needsUpdate) updateThumbnails(); needsUpdate = false; });		
-画面が白くなる（拡縮・反転後）	座標系崩れ。ズームや移動（canvasContainer）とレイヤー変形が同じ対象に作用しているかも。toLocal()処理が未統一	- canvasContainerとlayerの変形を明確に分離。CanvasのスケールはcanvasContainerでのみ扱う。
-- レイヤーの反転や回転も個別にレイヤーContainerに適用。
-- 座標変換時はtoLocal()／toGlobal() の使用を徹底し、直接計算を排除。
-- デバッグ時に座標やスケール値をconsole.log()で可視化して異常値検出。
-段階的改修スケジュール案（Phase1 に対応）
-Step A: キャンバスサイズの修正
+すぐ使えるコード例（最小改修セット）
 
-canvasContainerおよびapp.rendererの初期化時に400×400を明示設定。
+以下は pixi 初期化 → canvasContainer基準統一 → DPR対応 → カメラ枠を同一 container にする → サムネイル生成 をまとめたサンプルコードです。fixed_drawing_app.html の既存コードに切り替える箇所だけ置き換えてください。
 
-UI「キャンバスリサイズ」からの入力適切に反映。
+注意：実ファイルが複数に分かれている想定なので、app や canvasWidth/Height 変数名は既存に合わせてください。下のコードは概念的に安全に入れ替えられるようにしてあります。
 
-Step B: サムネイル生成と表示制御の改善
+// core/pixi-engine.js（あるいは <script> 内にまとめて追加）
+// 目的：DPR処理、canvasサイズの実ピクセルとCSSサイズを分離、canvasContainer基準を統一
 
-generateTexture()からrenderTexture＋Ticker方式へリファクタリング。
+const CANVAS_W = 400;
+const CANVAS_H = 400;
 
-サムネイルへの遅延更新を、needsUpdate フラグ＋ ticker で管理。
+function createApp(containerEl) {
+  const DPR = window.devicePixelRatio || 1;
 
-Step C: 座標変換と描画領域制御の統一
-
-canvasContainer をカメラ変形用、layer を描画操作用と明確に分離。
-
-toLocal()／toGlobal() による座標一貫管理を全変形処理で徹底。
-
-デバッグツール：操作後に座標／スケール／rotation状態をログ表示。
-
-Step D: 状態検証／テスト
-
-Chromeのfile://直開き動作確認で、初期サイズ、拡縮、反転、サムネイル動作をチェック。
-
-異常時には明示的な Error をthrowして早期検出／解決を図る。
-
-まとめ
-
-現象の主因：キャンバス初期化・UI反映漏れ、サムネイル更新ロジック未導入、座標系統の混在／一貫性欠如。
-
-改善方針：ルールブックに沿ったContainer構造の再整備、描画周りの非同期制御見直し、座標変換の徹底、ステート可視化でのデバッグ性強化。
-
-改修フェーズ：
-
-初期キャンバスサイズとUI反映修正
-
-サムネイル生成方式の改善
-
-座標変換・変形処理の整理
-
-テストとデバッグによる品質保証
-
-
-※下記はGPT5によるパッチコード例です。あくまで例なのでClaudeの方でも精査し、有効そうであれば使ってください。
-
-
-🔧 パッチコード例
-1. 初期キャンバスサイズ（400×400固定化）
-// app生成後の初期化部分を修正
-const app = new PIXI.Application({
-    width: 400,
-    height: 400,
-    backgroundAlpha: 0, // 背景は透明
+  // Pixi アプリ生成（解像度は 1 にしておき、内部で resize により実ピクセルを設定）
+  const app = new PIXI.Application({
+    width: CANVAS_W,
+    height: CANVAS_H,
+    backgroundAlpha: 0,
+    resolution: 1, // we'll handle DPR on resize
+    autoDensity: false, // we'll manage style + renderer size explicitly
+    resizeTo: null,
     antialias: true
-});
+  });
 
-// stage にキャンバスコンテナを追加
-const canvasContainer = new PIXI.Container();
-app.stage.addChild(canvasContainer);
+  // mount canvas to DOM
+  containerEl.innerHTML = '';
+  containerEl.appendChild(app.view);
 
-// 念のため resize 処理で常に 400x400 に揃える
-function resetCanvasSize() {
-    app.renderer.resize(400, 400);
-    canvasContainer.width = 400;
-    canvasContainer.height = 400;
-}
-resetCanvasSize();
+  // DO NOT set canvas width/height by CSS scale. Use style to set CSS size,
+  // and use renderer.resize(width * DPR, height * DPR) to set backing pixels.
+  function setCanvasSize(cssW, cssH) {
+    // backing pixel size
+    const backingW = Math.round(cssW * DPR);
+    const backingH = Math.round(cssH * DPR);
 
-2. サムネイル生成・更新処理修正
-// レイヤーサムネイル用の RenderTexture を用意
-function createLayerThumbnail(layer) {
-    const rt = PIXI.RenderTexture.create({
-        width: 100,   // サムネイルサイズ
-        height: 100
-    });
-    app.renderer.render(layer, { renderTexture: rt });
-    return new PIXI.Sprite(rt);
-}
+    app.renderer.resize(backingW, backingH);
+    // Set CSS size so the element is shown at logical pixels
+    app.view.style.width = `${cssW}px`;
+    app.view.style.height = `${cssH}px`;
 
-// 更新フラグ管理
-let needsThumbnailUpdate = false;
-
-// レイヤーが更新されたらフラグを立てる
-function markThumbnailDirty() {
-    needsThumbnailUpdate = true;
-}
-
-// 毎フレーム更新チェック
-app.ticker.add(() => {
-    if (needsThumbnailUpdate) {
-        updateThumbnails();
-        needsThumbnailUpdate = false;
+    // Important: set stage scale to normalize coordinate space back to CSS logical pixels
+    // so we can operate in logical coordinate space (0..cssW, 0..cssH)
+    const scaleX = backingW / cssW;
+    const scaleY = backingH / cssH;
+    // Usually both equal DPR; but set stage.scale to 1/DPR so coordinates remain consistent?
+    // Simpler: add a dedicated container with inverse scale so drawing coordinates == logical px
+    if (!app.logicalRoot) {
+      app.logicalRoot = new PIXI.Container();
+      // This container's "display" is scaled down so children use logical pixels
+      app.stage.addChild(app.logicalRoot);
+      // Move current child containers into logicalRoot in existing code. We'll create canvasContainer below.
     }
-});
+    app.logicalRoot.scale.set(1 / DPR, 1 / DPR);
+  }
 
-function updateThumbnails() {
-    layerList.forEach((layer, idx) => {
-        const rt = PIXI.RenderTexture.create({ width: 100, height: 100 });
-        app.renderer.render(layer, { renderTexture: rt });
-        layer.thumbnail.texture = rt;
-    });
+  // central canvas container (where all canvas content lives)
+  const canvasContainer = new PIXI.Container();
+  canvasContainer.name = 'canvasContainer';
+  // Use TOP-LEFT origin: pivot = (0,0), position = (0,0)
+  canvasContainer.pivot.set(0, 0);
+  canvasContainer.position.set(0, 0);
+
+  // create overlay / ui containers as siblings under logicalRoot
+  const uiContainer = new PIXI.Container();
+  uiContainer.name = 'uiContainer';
+  uiContainer.sortableChildren = true;
+
+  // add to logicalRoot (so all are normalized to logical pixels)
+  app.logicalRoot.addChild(canvasContainer);
+  app.logicalRoot.addChild(uiContainer);
+
+  // camera frame (white rectangle representing camera area) as child of uiContainer
+  const cameraFrame = new PIXI.Graphics();
+  cameraFrame.name = 'cameraFrame';
+  uiContainer.addChild(cameraFrame);
+
+  function drawCameraFrame(w, h) {
+    cameraFrame.clear();
+    cameraFrame.lineStyle(2, 0xffffff, 1);
+    cameraFrame.beginFill(0x000000, 0); // transparent fill
+    cameraFrame.drawRect(0, 0, w, h);
+    cameraFrame.endFill();
+    // ensure camera frame sits at same position as canvas (top-left)
+    cameraFrame.position.set(canvasContainer.position.x, canvasContainer.position.y);
+    cameraFrame.zIndex = 1000;
+  }
+
+  // initial sizing
+  setCanvasSize(CANVAS_W, CANVAS_H);
+  drawCameraFrame(CANVAS_W, CANVAS_H);
+
+  // expose useful handles
+  return {
+    app,
+    canvasContainer,
+    uiContainer,
+    cameraFrame,
+    setCanvasSize,
+    drawCameraFrame,
+    DPR
+  };
 }
 
-3. 座標系の分離と拡縮・反転対策
-// キャンバス移動・ズームは canvasContainer にのみ適用
-function setCanvasZoom(scale) {
-    canvasContainer.scale.set(scale);
-}
 
-// レイヤー操作は layer コンテナにのみ適用
-function flipLayerX(layer) {
-    layer.scale.x *= -1; // 反転
-}
+解説ポイント
 
-// 座標変換は必ず toLocal / toGlobal を使用
-function screenToCanvas(point) {
-    return canvasContainer.toLocal(point);
-}
+renderer.resize に渡すのは「バックエンドの実ピクセル数（CSSサイズ × DPR）」です。app.view.style.width/height は CSS 表示サイズ（論理ピクセル）を与えます。これを混同すると「見た目2倍」などが起きます。
 
-4. デバッグログで異常検出
-function logTransformState() {
-    console.log("CanvasContainer", {
-        x: canvasContainer.x,
-        y: canvasContainer.y,
-        scale: canvasContainer.scale.x
-    });
-    layerList.forEach((layer, i) => {
-        console.log("Layer", i, {
-            x: layer.x,
-            y: layer.y,
-            scale: { x: layer.scale.x, y: layer.scale.y }
-        });
-    });
+logicalRoot を作る手法は、DPR が高い環境でもアプリの座標系を「論理ピクセル（400x400）」に保つための一つの方法です。既存コードに autoDensity を使っている場合はそちらに合わせてくださいが、混在は避けるべきです。
+
+カメラとキャンバスの連動（移動/ズーム）
+
+キャンバス（canvasContainer）をパン/ズームしたら、cameraFrame は uiContainer に置くか canvasContainer の子にして、必ず同じ基準で位置更新を行います。簡易例：
+
+// カメラを移動（例: マウスドラッグ）
+function panCanvas(dx, dy) {
+  // canvasContainer の position を更新
+  engine.canvasContainer.position.x += dx;
+  engine.canvasContainer.position.y += dy;
+
+  // cameraFrame を同じ座標に移動させる（if uiContainer used）
+  engine.cameraFrame.position.set(engine.canvasContainer.position.x, engine.canvasContainer.position.y);
 }
 
 
-拡縮／反転後に画面が白くなった場合は、このログを確認してください。
-飛んでいっているのは scale や x/y が暴走している可能性が高いです。
+もしくは cameraFrame を canvasContainer の子にしておけば自動で追随します（ただし cameraFrame の scale や rotation の影響を受ける点に注意）。
 
-🔑 改修ポイントまとめ
+サムネイル生成（問題を起こしにくい実装 — RenderTexture 使用）
 
-初期化：app.renderer.resize(400,400) を必ず呼ぶ。
+サムネイルが中央の小さな部分しか映さない根本原因は「描画対象のバウンディングを取らず、レイヤーのローカルオフセットを無視して render している」ことが多いです。以下は安全な関数：
 
-サムネイル：renderTexture＋needsUpdateフラグ方式に。
+// utils/thumbnail.js
+function generateThumbnail(app, layerContainer, thumbW = 64, thumbH = 64) {
+  // 1) get local bounds of layer
+  const bounds = layerContainer.getLocalBounds();
 
-拡縮／反転：canvasContainer（ズーム・移動担当）とlayer（描画変形担当）を分離。
+  // handle empty layer
+  if (bounds.width === 0 || bounds.height === 0) {
+    // return blank sprite or placeholder
+    const empty = new PIXI.Graphics();
+    empty.beginFill(0x888888);
+    empty.drawRect(0, 0, thumbW, thumbH);
+    empty.endFill();
+    return app.renderer.generateTexture(empty); // cheap placeholder
+  }
 
-デバッグ：座標・スケールをログ出力して異常検知。
+  // 2) create render target sized to bounds (or scaled version)
+  const rt = PIXI.RenderTexture.create({
+    width: Math.ceil(bounds.width),
+    height: Math.ceil(bounds.height)
+  });
+
+  // 3) temporarily offset layer so bounds.x/bounds.y -> 0,0 in RT
+  const originalPos = new PIXI.Point(layerContainer.position.x, layerContainer.position.y);
+  const originalParent = layerContainer.parent;
+  // We'll render a clone or temporarily adjust position.
+  layerContainer.position.x -= bounds.x;
+  layerContainer.position.y -= bounds.y;
+
+  // 4) render into RT
+  app.renderer.render(layerContainer, { renderTexture: rt });
+
+  // 5) restore position
+  layerContainer.position.x = originalPos.x;
+  layerContainer.position.y = originalPos.y;
+
+  // 6) create thumbnail sprite, scale down to thumbW/thumbH
+  const sprite = new PIXI.Sprite(rt);
+  const scale = Math.min(thumbW / bounds.width, thumbH / bounds.height);
+  sprite.width = Math.round(bounds.width * scale);
+  sprite.height = Math.round(bounds.height * scale);
+  return sprite;
+}
 
 
+注意点
+
+generateTexture では layer の transform（pivot/scale）や親 container の transform を無視する場合があります。renderer.render(layer, {renderTexture}) の方が確実です。
+
+getLocalBounds() を必ず使い、bounds.x/bounds.y を考慮してオフセットを掛けること。これをやらないとサムネイルはレイヤーの一部しか写しません。
+
+ショートカット周りの注意（実装バグになりやすい箇所）
+
+keydown を window に登録しているが、入力フィールドにフォーカスがあるときに誤動作する → event.target をチェックしてショートカットを抑止する。
+
+重複登録（モジュールのホットリロードやファイル分割で同じハンドラを複数登録） → 初期化時に既存ハンドラを削除する仕組みを作る。例：window.removeEventListener('keydown', onKeyDown) の呼び出しを入れる。
+
+既存の旧実装（scale *= 2 や CSS transform: scale(2)）が残っていると DPR と掛け合わせて2倍・4倍になる。
+
+簡単なショートカット集中管理例：
+
+// shortcuts.js
+const ignoreInputs = ['INPUT', 'TEXTAREA'];
+
+function onKeyDown(e) {
+  if (ignoreInputs.includes((e.target && e.target.tagName) || '')) return;
+  if (e.ctrlKey && e.key === 'z') {
+    // undo
+    e.preventDefault();
+    undo();
+    return;
+  }
+  // ... 他ショートカット
+}
+
+// init（初期化時に一度だけ）
+function initShortcuts() {
+  window.removeEventListener('keydown', onKeyDown);
+  window.addEventListener('keydown', onKeyDown);
+}
+
+既存コードのチェックリスト（実行してほしい grep / 検索）
+
+下記をプロジェクトルートで検索して、旧実装や二重管理を洗い出してください。
+
+devicePixelRatio
+
+style.transform または transform: scale（HTML/CSS内）
+
+app.renderer.resize(（複数回呼び出しがないか）
+
+pivot.set( / pivot.x / pivot.y（pivot が混在していないか）
+
+generateTexture(（多用されていて問題が出ている箇所がないか）
+
+toLocal( / toGlobal(（使われていない箇所があれば警戒）
+
+canvasContainer（同名の複数定義がないか）
+
+cameraFrame / camera / mask（mask の基準が間違っていないか）
+
+小さなデバッグ用ログ（おすすめ）
+
+座標／サイズ問題を追うため、初期化時に次を一度だけコンソール出力すると原因特定が速いです。
+
+console.log('DPR', engine.DPR);
+console.log('view style', app.view.style.width, app.view.style.height);
+console.log('canvas backing', app.renderer.width, app.renderer.height);
+console.log('canvasContainer pivot/pos', engine.canvasContainer.pivot.x, engine.canvasContainer.pivot.y, engine.canvasContainer.position.x, engine.canvasContainer.position.y);
+console.log('logicalRoot scale', app.logicalRoot.scale.x, app.logicalRoot.scale.y);
+
+リファクタリングプラン（短期 → 中期）
+
+短期（1-2日）
+
+core/pixi-engine.js を作る。DPR 整理、canvasContainer の基準統一。上の初期化コードを置く。
+
+shortcuts.js を集中管理に切り替え。重複登録を排除。
+
+サムネイル生成を utils/thumbnail.js に切り替え（既存の generateTexture 利用箇所のみ差し替え）。
+
+中期（1〜2週）
+
+ルールブックに合わせて layer-system.js と transform-manager.js に分割。layer.transform の JSON 記録を追加。
+
+全ページで toLocal / toGlobal を使っているか grep でチェック。自動テスト（座標整合）を作る。
+
+長期（その後）
+
+サムネイル更新の debounce と GPU バッチ化（Ticker を使った更新管理）。
+
+非破壊変形の履歴化（JSON 保存 + undo/redo）。
+
+まとめ（次のアクション提案）
+
+まずは pixi-engine 初期化コードを上書きして、DPR と CSS / backing-pixel を分離してください（先ほどの createApp を入れて動作確認）。
+
+上書き後、ブラウザコンソールにて出力ログ（DPR / backing / pivot）をコピーして教えてください。僕はそれを元にさらに踏み込んだ指示（既存コード中の具体的な修正箇所）を出します。
