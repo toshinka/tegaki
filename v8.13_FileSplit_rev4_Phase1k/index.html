@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 シンプル構造版 - PixiJS v8.13 お絵かきツール</title>
+    <title>🎨 修正版 - PixiJS v8.13 お絵かきツール</title>
     <style>
         * {
             margin: 0;
@@ -546,10 +546,13 @@
         </div>
     </div>
 
-    <!-- PixiJS v8.13読み込み -->
+    <!-- PixiJS v8.13 + 有用なライブラリ読み込み -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/@pixi/viewport@5.0.2/dist/viewport.min.js"></script>
+    
+    <!-- UI・インタラクション強化ライブラリ -->
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
     
     <!-- メインJavaScriptロード -->
     <script src="main.js"></script>
