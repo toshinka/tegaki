@@ -1,0 +1,2723 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 Phase1.5改修版 - PixiJS v8.13 お絵かきツール</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg { width: 20px; height: 20px; stroke: #800000; }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.active svg { stroke: #ffffff; }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #drawing-canvas {
+            border: none;
+            display: block;
+            cursor: crosshair;
+            touch-action: none;
+        }
+        
+        .layer-panel-container {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none;
+        }
+        
+        .layer-add-button {
+            width: 36px;
+            height: 36px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.1);
+            pointer-events: all;
+        }
+        
+        .layer-add-button:hover {
+            background: var(--futaba-medium);
+            transform: scale(1.1);
+        }
+        
+        .layer-add-button svg { width: 18px; height: 18px; stroke: #800000; }
+        
+        .layer-panel-items {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: transparent;
+            border-radius: 8px;
+            padding: 8px;
+            pointer-events: all;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        
+        .layer-item {
+            width: 180px;
+            height: 64px;
+            background: var(--futaba-cream);
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            padding: 6px 8px;
+            cursor: pointer;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+            display: grid;
+            grid-template-columns: 20px 1fr 48px;
+            grid-template-rows: 1fr 1fr;
+            gap: 4px 8px;
+            align-items: center;
+            user-select: none;
+            position: relative;
+            box-shadow: 0 1px 2px rgba(128, 0, 0, 0.05);
+        }
+        
+        .layer-item:hover {
+            border-color: var(--futaba-medium);
+            background: var(--futaba-background);
+        }
+        
+        .layer-item.active {
+            border-color: var(--futaba-maroon);
+            background: var(--futaba-light-medium);
+            box-shadow: 0 2px 4px rgba(128, 0, 0, 0.15);
+        }
+        
+        .sortable-ghost {
+            opacity: 0.3;
+            background: rgba(100, 150, 255, 0.15) !important;
+            border: 2px dashed #6496ff !important;
+            transform: rotate(2deg);
+        }
+        
+        .sortable-chosen {
+            background: rgba(100, 150, 255, 0.08) !important;
+            border-color: #6496ff !important;
+            box-shadow: 0 4px 12px rgba(100, 150, 255, 0.2) !important;
+        }
+        
+        .layer-visibility {
+            grid-column: 1;
+            grid-row: 1 / 3;
+            width: 20px;
+            height: 20px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 3px;
+            transition: all 0.2s ease;
+            align-self: center;
+        }
+        
+        .layer-visibility:hover { background: var(--futaba-light-medium); }
+        .layer-visibility svg { width: 16px; height: 16px; stroke: #800000; }
+        .layer-visibility.hidden svg { opacity: 0.3; }
+        
+        .layer-opacity {
+            grid-column: 2;
+            grid-row: 1;
+            font-size: 10px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            align-self: start;
+            margin-top: 2px;
+        }
+        
+        .layer-name {
+            grid-column: 2;
+            grid-row: 2;
+            font-size: 12px;
+            color: var(--text-primary);
+            font-weight: 500;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            align-self: end;
+            margin-bottom: 2px;
+        }
+        
+        .layer-thumbnail {
+            grid-column: 3;
+            grid-row: 1 / 3;
+            width: 48px;
+            height: 48px;
+            background: var(--futaba-background);
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 4px;
+            overflow: hidden;
+            position: relative;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            align-self: center;
+        }
+        
+        .layer-thumbnail img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+            border-radius: 3px;
+            transition: opacity 0.2s ease;
+        }
+        
+        .layer-thumbnail-placeholder {
+            width: 24px;
+            height: 24px;
+            background: var(--futaba-light-medium);
+            border-radius: 2px;
+            opacity: 0.5;
+        }
+        
+        .layer-delete-button {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            border-radius: 3px;
+            transition: all 0.2s ease;
+            background: rgba(128, 0, 0, 0.1);
+            opacity: 0;
+        }
+        
+        .layer-item:hover .layer-delete-button { opacity: 1; }
+        .layer-delete-button:hover { background: rgba(128, 0, 0, 0.2); }
+        .layer-delete-button svg { width: 10px; height: 10px; stroke: #800000; }
+        
+        .popup-panel {
+            position: fixed;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 16px;
+            box-shadow: 0 12px 32px rgba(128, 0, 0, 0.3);
+            padding: 20px;
+            z-index: 2000;
+            backdrop-filter: blur(12px);
+            display: none;
+            user-select: none;
+            min-width: 280px;
+        }
+        
+        .popup-panel.show { display: block; animation: fadeIn 0.3s ease-out; }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; transform: scale(0.9); }
+            to   { opacity: 1; transform: scale(1); }
+        }
+        
+        .popup-title {
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            margin-bottom: 16px;
+            text-align: center;
+            border-bottom: 2px solid var(--futaba-light-medium);
+            padding-bottom: 8px;
+        }
+        
+        .setting-group { margin-bottom: 16px; }
+        
+        .setting-label {
+            font-size: 14px;
+            color: var(--text-primary);
+            margin-bottom: 8px;
+            font-weight: 500;
+        }
+        
+        .slider-container {
+            display: flex;
+            align-items: center;
+            gap: 8px;
+            margin-bottom: 8px;
+        }
+        
+        .slider {
+            flex: 1;
+            height: 6px;
+            background: var(--futaba-light-medium);
+            border-radius: 3px;
+            position: relative;
+            cursor: pointer;
+        }
+        
+        .slider-track {
+            height: 100%;
+            background: var(--futaba-maroon);
+            border-radius: 3px;
+            transition: width 0.1s ease;
+        }
+        
+        .slider-handle {
+            width: 16px;
+            height: 16px;
+            background: var(--futaba-maroon);
+            border: 2px solid var(--futaba-background);
+            border-radius: 50%;
+            position: absolute;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            cursor: grab;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+        
+        .slider-handle:active {
+            cursor: grabbing;
+            transform: translate(-50%, -50%) scale(1.2);
+        }
+        
+        .slider-value {
+            font-size: 12px;
+            color: var(--text-secondary);
+            font-family: monospace;
+            min-width: 50px;
+            text-align: right;
+        }
+        
+        .size-input-group {
+            display: flex;
+            gap: 10px;
+            align-items: center;
+            margin-bottom: 16px;
+        }
+        
+        .size-input {
+            flex: 1;
+            padding: 8px 12px;
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            background: var(--futaba-background);
+            font-family: monospace;
+            font-size: 14px;
+            text-align: center;
+        }
+        
+        .size-input:focus {
+            outline: none;
+            border-color: var(--futaba-maroon);
+        }
+        
+        .size-multiply {
+            color: var(--futaba-maroon);
+            font-weight: bold;
+            font-size: 16px;
+        }
+        
+        .action-button {
+            padding: 10px 16px;
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 8px;
+            background: var(--futaba-background);
+            color: var(--futaba-maroon);
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            text-align: center;
+        }
+        
+        .action-button:hover {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+        }
+        
+        /* レイヤー移動モード専用パネル（改修版：横長4セクション） */
+        .layer-transform-panel {
+            position: fixed;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-maroon);
+            border-radius: 12px;
+            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.25);
+            padding: 12px 16px;
+            z-index: 2000;
+            backdrop-filter: blur(12px);
+            display: none;
+            user-select: none;
+            left: 50%;
+            top: 60px;
+            transform: translateX(-50%);
+            cursor: move;
+        }
+        
+        .layer-transform-panel.show { 
+            display: block; 
+            animation: slideDown 0.25s ease-out; 
+        }
+        
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateX(-50%) translateY(-15px) scale(0.95); }
+            to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
+        }
+        
+        .panel-drag-handle {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 8px;
+            cursor: move;
+            background: linear-gradient(90deg, 
+                transparent 45%, 
+                var(--futaba-light-medium) 47%, 
+                var(--futaba-light-medium) 50%, 
+                transparent 52%,
+                transparent 55%,
+                var(--futaba-light-medium) 57%,
+                var(--futaba-light-medium) 60%,
+                transparent 62%
+            );
+            border-radius: 12px 12px 0 0;
+            opacity: 0.6;
+        }
+        
+        .panel-sections {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 16px;
+            align-items: start;
+            min-width: 600px;
+        }
+        
+        .panel-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+        
+        .panel-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            text-align: center;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .compact-slider-group {
+            display: flex;
+            flex-direction: column;
+            gap: 6px;
+        }
+        
+        .compact-slider {
+            display: flex;
+            align-items: center;
+            gap: 6px;
+        }
+        
+        .compact-slider-label {
+            font-size: 10px;
+            color: var(--text-secondary);
+            min-width: 12px;
+            font-weight: 500;
+        }
+        
+        .compact-slider .slider {
+            width: 80px;
+            height: 4px;
+        }
+        
+        .compact-slider .slider-handle {
+            width: 12px;
+            height: 12px;
+        }
+        
+        .compact-slider .slider-value {
+            font-size: 10px;
+            min-width: 35px;
+        }
+        
+        .flip-section {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+        }
+        
+        .flip-button {
+            padding: 2px 6px;
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 4px;
+            background: var(--futaba-background);
+            color: var(--text-primary);
+            font-size: 9px;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            text-align: center;
+            white-space: nowrap;
+            height: 18px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .flip-button:hover {
+            border-color: var(--futaba-maroon);
+        }
+        
+        .flip-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+        }
+        
+        /* 十字サイト（改修版：中央配置・安定表示） */
+        .crosshair-sight {
+            position: fixed;
+            width: 32px;
+            height: 32px;
+            pointer-events: none;
+            z-index: 1500;
+            display: none;
+            left: 50%;
+            top: 50%;
+            transform: translate(-50%, -50%);
+        }
+        
+        .crosshair-sight.show {
+            display: block;
+            animation: crosshairFade 0.2s ease-out;
+        }
+        
+        @keyframes crosshairFade {
+            from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+            to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+        }
+        
+        .crosshair-sight::before,
+        .crosshair-sight::after {
+            content: '';
+            position: absolute;
+            background: var(--futaba-maroon);
+            opacity: 1;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.8), 0 0 4px rgba(128, 0, 0, 0.4);
+        }
+        
+        .crosshair-sight::before {
+            top: 50%;
+            left: 6px;
+            right: 6px;
+            height: 2px;
+            transform: translateY(-50%);
+        }
+        
+        .crosshair-sight::after {
+            left: 50%;
+            top: 6px;
+            bottom: 6px;
+            width: 2px;
+            transform: translateX(-50%);
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button" id="resize-tool" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M14 15H9v-5"/><path d="M16 3h5v5"/><path d="M21 3 9 15"/></svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button active" id="pen-tool" title="ベクターペン (P)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム (E)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg>
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div id="drawing-canvas"></div>
+            <div class="crosshair-sight" id="crosshair-sight"></div>
+        </div>
+    </div>
+    
+    <div class="layer-panel-container" id="layer-panel-container">
+        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        </div>
+        
+        <div class="layer-panel-items" id="layer-list"></div>
+    </div>
+    
+    <div class="popup-panel" id="pen-settings" style="left: 60px; top: 100px;">
+        <div class="popup-title">ベクターペンツール設定</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">サイズ</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-size-slider">
+                    <div class="slider-track" id="pen-size-track"></div>
+                    <div class="slider-handle" id="pen-size-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-size-value">16.0px</div>
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="setting-label">不透明度</div>
+            <div class="slider-container">
+                <div class="slider" id="pen-opacity-slider">
+                    <div class="slider-track" id="pen-opacity-track"></div>
+                    <div class="slider-handle" id="pen-opacity-handle"></div>
+                </div>
+                <div class="slider-value" id="pen-opacity-value">85.0%</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="popup-panel" id="resize-settings" style="left: 60px; top: 150px;">
+        <div class="popup-title">キャンバスリサイズ</div>
+        
+        <div class="setting-group">
+            <div class="setting-label">キャンバスサイズ</div>
+            <div class="size-input-group">
+                <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                <div class="size-multiply">×</div>
+                <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+            </div>
+        </div>
+        
+        <div class="setting-group">
+            <div class="action-button" id="apply-resize">適用</div>
+        </div>
+    </div>
+    
+    <!-- レイヤー移動モード専用パネル（改修版：横長4セクション + ドラッグハンドル） -->
+    <div class="layer-transform-panel" id="layer-transform-panel">
+        <div class="panel-drag-handle"></div>
+        
+        <div class="panel-sections">
+            <!-- 位置セクション -->
+            <div class="panel-section">
+                <div class="panel-section-title">位置</div>
+                <div class="compact-slider-group">
+                    <div class="compact-slider">
+                        <div class="compact-slider-label">X</div>
+                        <div class="slider" id="layer-x-slider">
+                            <div class="slider-track"></div>
+                            <div class="slider-handle"></div>
+                        </div>
+                        <div class="slider-value" id="layer-x-value">0px</div>
+                    </div>
+                    <div class="compact-slider">
+                        <div class="compact-slider-label">Y</div>
+                        <div class="slider" id="layer-y-slider">
+                            <div class="slider-track"></div>
+                            <div class="slider-handle"></div>
+                        </div>
+                        <div class="slider-value" id="layer-y-value">0px</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 回転・拡縮セクション -->
+            <div class="panel-section">
+                <div class="panel-section-title">変形</div>
+                <div class="compact-slider-group">
+                    <div class="compact-slider">
+                        <div class="compact-slider-label">回転</div>
+                        <div class="slider" id="layer-rotation-slider">
+                            <div class="slider-track"></div>
+                            <div class="slider-handle"></div>
+                        </div>
+                        <div class="slider-value" id="layer-rotation-value">0°</div>
+                    </div>
+                    <div class="compact-slider">
+                        <div class="compact-slider-label">拡縮</div>
+                        <div class="slider" id="layer-scale-slider">
+                            <div class="slider-track"></div>
+                            <div class="slider-handle"></div>
+                        </div>
+                        <div class="slider-value" id="layer-scale-value">1.00x</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- 反転セクション -->
+            <div class="panel-section">
+                <div class="panel-section-title">反転</div>
+                <div class="flip-section">
+                    <div class="flip-button" id="flip-horizontal-btn">水平</div>
+                    <div class="flip-button" id="flip-vertical-btn">垂直</div>
+                </div>
+            </div>
+            
+            <!-- 終了ボタンセクション -->
+            <div class="panel-section">
+                <div class="action-button" id="exit-layer-mode-btn" style="padding: 6px 12px; font-size: 12px;">確定</div>
+            </div>
+        </div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Layer: <span id="current-layer">レイヤー0</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">Transform: <span id="transform-info">x:0 y:0 s:1.0 r:0°</span></div>
+            <div class="status-item">DPR: <span id="dpr-info">1.0</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+            <div class="status-item">History: <span id="history-info">1/10</span></div>
+        </div>
+    </div>
+
+    <!-- PixiJS v8.13 + 有用なライブラリ読み込み -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+    
+    <!-- UI・インタラクション強化ライブラリ -->
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+    
+    <!-- メインJavaScript（改修版） -->
+    <script>
+(function() {
+    'use strict';
+    
+    if (typeof PIXI === 'undefined') {
+        console.error('PIXI is not loaded');
+        return;
+    }
+    
+    console.log('PixiJS loaded:', PIXI.VERSION);
+    
+    // === 設定 ===
+    const CONFIG = {
+        canvas: { width: 400, height: 400 },
+        pen: { size: 16, opacity: 0.85, color: 0x800000 },
+        camera: {
+            minScale: 0.1,
+            maxScale: 5.0,
+            initialScale: 1.0,
+            wheelZoomSpeed: 0.1,
+            wheelRotationSpeed: 0.05,
+            keyRotationDegree: 15,
+            keyMoveAmount: 10,
+            dragMoveSpeed: 1.0,
+            dragScaleSpeed: 0.01,
+            dragRotationSpeed: 0.3
+        },
+        layer: {
+            minX: -1000,
+            maxX: 1000,
+            minY: -1000,
+            maxY: 1000,
+            minScale: 0.1,
+            maxScale: 3.0,
+            minRotation: -180,
+            maxRotation: 180
+        },
+        background: { color: 0xf0e0d6 },
+        history: { maxSize: 10, autoSaveInterval: 500 },
+        debug: false
+    };
+    
+    const log = (...args) => {
+        if (CONFIG.debug) console.log(...args);
+    };
+
+    // === カメラシステム（改修版：座標変換修正・ペン描画ズレ対策） ===
+    class CameraSystem {
+        constructor(app) {
+            this.app = app;
+            this.isDragging = false;
+            this.isScaleRotateDragging = false;
+            this.lastPoint = { x: 0, y: 0 };
+            this.panSpeed = CONFIG.camera.dragMoveSpeed;
+            this.zoomSpeed = CONFIG.camera.wheelZoomSpeed;
+            this.rotation = 0;
+            this.horizontalFlipped = false;
+            this.verticalFlipped = false;
+            
+            // 初期状態の記憶（Ctrl+0リセット用）
+            this.initialState = {
+                position: null,
+                scale: CONFIG.camera.initialScale,
+                rotation: 0,
+                horizontalFlipped: false,
+                verticalFlipped: false
+            };
+            
+            this.worldContainer = new PIXI.Container();
+            this.worldContainer.label = 'worldContainer';
+            app.stage.addChild(this.worldContainer);
+            
+            this.canvasContainer = new PIXI.Container();
+            this.canvasContainer.label = 'canvasContainer';
+            this.worldContainer.addChild(this.canvasContainer);
+            
+            this.cameraFrame = new PIXI.Graphics();
+            this.cameraFrame.label = 'cameraFrame';
+            this.worldContainer.addChild(this.cameraFrame);
+            
+            this.canvasMask = new PIXI.Graphics();
+            this.canvasMask.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+            this.canvasMask.fill(0xffffff);
+            this.worldContainer.addChild(this.canvasMask);
+            this.canvasContainer.mask = this.canvasMask;
+            
+            // キー状態管理
+            this.spacePressed = false;
+            this.shiftPressed = false;
+            this.vKeyPressed = false;
+            
+            this.setupEvents();
+            this.initializeCamera();
+            this.drawCameraFrame();
+        }
+        
+        initializeCamera() {
+            const centerX = this.app.screen.width / 2;
+            const centerY = this.app.screen.height / 2;
+            
+            this.canvasContainer.position.set(0, 0);
+            
+            const initialX = centerX - CONFIG.canvas.width / 2;
+            const initialY = centerY - CONFIG.canvas.height / 2;
+            this.worldContainer.position.set(initialX, initialY);
+            this.worldContainer.scale.set(CONFIG.camera.initialScale);
+            
+            this.initialState.position = { x: initialX, y: initialY };
+        }
+        
+        resetCanvas() {
+            this.worldContainer.position.set(
+                this.initialState.position.x,
+                this.initialState.position.y
+            );
+            this.worldContainer.scale.set(this.initialState.scale);
+            this.worldContainer.rotation = 0;
+            
+            this.rotation = 0;
+            this.horizontalFlipped = false;
+            this.verticalFlipped = false;
+            
+            this.updateTransformDisplay();
+        }
+        
+        setupEvents() {
+            this.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+            
+            // === マウス操作 ===
+            this.app.canvas.addEventListener('pointerdown', (e) => {
+                if (this.vKeyPressed) return; // レイヤー操作中は無視
+                
+                if ((e.button === 2 || this.spacePressed) && !this.shiftPressed) {
+                    // Space + ドラッグ: 移動
+                    this.isDragging = true;
+                    this.lastPoint = { x: e.clientX, y: e.clientY };
+                    this.app.canvas.style.cursor = 'move';
+                    e.preventDefault();
+                } else if ((e.button === 2 || this.spacePressed) && this.shiftPressed) {
+                    // Shift + Space + ドラッグ: 拡縮・回転
+                    this.isScaleRotateDragging = true;
+                    this.lastPoint = { x: e.clientX, y: e.clientY };
+                    this.app.canvas.style.cursor = 'grab';
+                    e.preventDefault();
+                }
+            });
+            
+            this.app.canvas.addEventListener('pointermove', (e) => {
+                if (this.isDragging) {
+                    // 移動
+                    const dx = (e.clientX - this.lastPoint.x) * this.panSpeed;
+                    const dy = (e.clientY - this.lastPoint.y) * this.panSpeed;
+                    
+                    this.worldContainer.x += dx;
+                    this.worldContainer.y += dy;
+                    
+                    this.lastPoint = { x: e.clientX, y: e.clientY };
+                    this.updateTransformDisplay();
+                } else if (this.isScaleRotateDragging) {
+                    // 拡縮・回転
+                    const dx = e.clientX - this.lastPoint.x;
+                    const dy = e.clientY - this.lastPoint.y;
+                    
+                    const centerX = CONFIG.canvas.width / 2;
+                    const centerY = CONFIG.canvas.height / 2;
+                    const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                    
+                    if (Math.abs(dx) > Math.abs(dy)) {
+                        // 水平方向優先: 回転
+                        this.rotation += (dx * CONFIG.camera.dragRotationSpeed);
+                        this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
+                        
+                        const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                        this.worldContainer.x += worldCenter.x - newWorldCenter.x;
+                        this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+                    } else {
+                        // 垂直方向優先: 拡縮
+                        const scaleFactor = 1 + (dy * CONFIG.camera.dragScaleSpeed);
+                        const newScale = this.worldContainer.scale.x * scaleFactor;
+                        
+                        if (newScale >= CONFIG.camera.minScale && newScale <= CONFIG.camera.maxScale) {
+                            this.worldContainer.scale.set(newScale);
+                            const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                            this.worldContainer.x += worldCenter.x - newWorldCenter.x;
+                            this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+                        }
+                    }
+                    
+                    this.lastPoint = { x: e.clientX, y: e.clientY };
+                    this.updateTransformDisplay();
+                }
+            });
+            
+            this.app.canvas.addEventListener('pointerup', (e) => {
+                if (this.isDragging && (e.button === 2 || this.spacePressed)) {
+                    this.isDragging = false;
+                    this.updateCursor();
+                }
+                if (this.isScaleRotateDragging && (e.button === 2 || this.spacePressed)) {
+                    this.isScaleRotateDragging = false;
+                    this.updateCursor();
+                }
+            });
+            
+            // === マウスホイール操作 ===
+            this.app.canvas.addEventListener('wheel', (e) => {
+                e.preventDefault();
+                
+                if (this.vKeyPressed) return; // レイヤー操作中は無視
+                
+                const centerX = CONFIG.canvas.width / 2;
+                const centerY = CONFIG.canvas.height / 2;
+                
+                if (this.shiftPressed) {
+                    // Shift + ホイール: 回転
+                    const rotationDelta = e.deltaY < 0 ? 
+                        CONFIG.camera.keyRotationDegree : -CONFIG.camera.keyRotationDegree;
+                    
+                    const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                    
+                    this.rotation += rotationDelta;
+                    this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
+                    
+                    const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                    this.worldContainer.x += worldCenter.x - newWorldCenter.x;
+                    this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+                    
+                } else {
+                    // ホイール: 拡縮
+                    const scaleFactor = e.deltaY < 0 ? 1 + this.zoomSpeed : 1 - this.zoomSpeed;
+                    const newScale = this.worldContainer.scale.x * scaleFactor;
+                    
+                    if (newScale >= CONFIG.camera.minScale && newScale <= CONFIG.camera.maxScale) {
+                        const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                        
+                        this.worldContainer.scale.set(newScale);
+                        
+                        const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                        this.worldContainer.x += worldCenter.x - newWorldCenter.x;
+                        this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+                    }
+                }
+                
+                this.updateTransformDisplay();
+            });
+            
+            // === キーボード操作 ===
+            document.addEventListener('keydown', (e) => {
+                // Ctrl+0: キャンバスリセット
+                if (e.ctrlKey && e.code === 'Digit0') {
+                    this.resetCanvas();
+                    e.preventDefault();
+                    return;
+                }
+                
+                // キー状態更新
+                if (e.code === 'Space') {
+                    this.spacePressed = true;
+                    this.updateCursor();
+                    e.preventDefault();
+                }
+                if (e.shiftKey) this.shiftPressed = true;
+                
+                // 以下、レイヤー操作中（V押下中）は処理しない
+                if (this.vKeyPressed) return;
+                
+                // === キャンバス移動: Space + 方向キー ===
+                if (this.spacePressed && !this.shiftPressed && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+                    const moveAmount = CONFIG.camera.keyMoveAmount;
+                    switch(e.code) {
+                        case 'ArrowDown':    this.worldContainer.y += moveAmount; break;
+                        case 'ArrowUp':  this.worldContainer.y -= moveAmount; break;
+                        case 'ArrowRight':  this.worldContainer.x += moveAmount; break;
+                        case 'ArrowLeft': this.worldContainer.x -= moveAmount; break;
+                    }
+                    this.updateTransformDisplay();
+                    e.preventDefault();
+                }
+                
+                // === キャンバス拡縮・回転: Shift + Space + 方向キー ===
+                if (this.spacePressed && this.shiftPressed && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+                    const centerX = CONFIG.canvas.width / 2;
+                    const centerY = CONFIG.canvas.height / 2;
+                    const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                    
+                    switch(e.code) {
+                        case 'ArrowUp':
+                            const scaleUpFactor = 1 + CONFIG.camera.wheelZoomSpeed;
+                            const newScaleUp = this.worldContainer.scale.x * scaleUpFactor;
+                            if (newScaleUp <= CONFIG.camera.maxScale) {
+                                this.worldContainer.scale.set(newScaleUp);
+                                const newWorldCenterUp = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                                this.worldContainer.x += worldCenter.x - newWorldCenterUp.x;
+                                this.worldContainer.y += worldCenter.y - newWorldCenterUp.y;
+                            }
+                            break;
+                            
+                        case 'ArrowDown':
+                            const scaleDownFactor = 1 - CONFIG.camera.wheelZoomSpeed;
+                            const newScaleDown = this.worldContainer.scale.x * scaleDownFactor;
+                            if (newScaleDown >= CONFIG.camera.minScale) {
+                                this.worldContainer.scale.set(newScaleDown);
+                                const newWorldCenterDown = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                                this.worldContainer.x += worldCenter.x - newWorldCenterDown.x;
+                                this.worldContainer.y += worldCenter.y - newWorldCenterDown.y;
+                            }
+                            break;
+                            
+                        case 'ArrowLeft':
+                            this.rotation -= CONFIG.camera.keyRotationDegree;
+                            this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
+                            const newWorldCenterLeft = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                            this.worldContainer.x += worldCenter.x - newWorldCenterLeft.x;
+                            this.worldContainer.y += worldCenter.y - newWorldCenterLeft.y;
+                            break;
+                            
+                        case 'ArrowRight':
+                            this.rotation += CONFIG.camera.keyRotationDegree;
+                            this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
+                            const newWorldCenterRight = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                            this.worldContainer.x += worldCenter.x - newWorldCenterRight.x;
+                            this.worldContainer.y += worldCenter.y - newWorldCenterRight.y;
+                            break;
+                    }
+                    
+                    this.updateTransformDisplay();
+                    e.preventDefault();
+                }
+                
+                // === キャンバス反転: H / Shift+H（レイヤー操作中以外） ===
+                if (!this.vKeyPressed && e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    const centerX = CONFIG.canvas.width / 2;
+                    const centerY = CONFIG.canvas.height / 2;
+                    const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                    
+                    if (e.shiftKey) {
+                        // Shift+H: 垂直反転
+                        this.verticalFlipped = !this.verticalFlipped;
+                        this.worldContainer.scale.y *= -1;
+                    } else {
+                        // H: 水平反転
+                        this.horizontalFlipped = !this.horizontalFlipped;
+                        this.worldContainer.scale.x *= -1;
+                    }
+                    
+                    const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                    this.worldContainer.x += worldCenter.x - newWorldCenter.x;
+                    this.worldContainer.y += worldCenter.y - newWorldCenter.y;
+                    
+                    this.updateTransformDisplay();
+                    e.preventDefault();
+                }
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                if (e.code === 'Space') {
+                    this.spacePressed = false;
+                    this.updateCursor();
+                }
+                if (!e.shiftKey) this.shiftPressed = false;
+            });
+        }
+        
+        // レイヤー操作システムからの呼び出し用
+        setVKeyPressed(pressed) {
+            this.vKeyPressed = pressed;
+        }
+        
+        updateCursor() {
+            if (this.vKeyPressed) {
+                // レイヤー操作中
+                this.app.canvas.style.cursor = 'grab';
+            } else if (this.isDragging || (this.spacePressed && !this.shiftPressed)) {
+                this.app.canvas.style.cursor = 'move';
+            } else if (this.isScaleRotateDragging || (this.spacePressed && this.shiftPressed)) {
+                this.app.canvas.style.cursor = 'grab';
+            } else {
+                this.app.canvas.style.cursor = 'crosshair';
+            }
+        }
+        
+        // 改修版：ペン描画用のキャンバス座標変換（レイヤー変形を考慮しない）
+        screenToCanvasForDrawing(screenX, screenY) {
+            const globalPoint = { x: screenX, y: screenY };
+            return this.canvasContainer.toLocal(globalPoint);
+        }
+        
+        // レイヤー操作用の座標変換（レイヤー変形を考慮）
+        screenToCanvas(screenX, screenY) {
+            const globalPoint = { x: screenX, y: screenY };
+            return this.canvasContainer.toLocal(globalPoint);
+        }
+        
+        canvasToScreen(canvasX, canvasY) {
+            const canvasPoint = { x: canvasX, y: canvasY };
+            return this.canvasContainer.toGlobal(canvasPoint);
+        }
+        
+        isPointInExtendedCanvas(canvasPoint, margin = 50) {
+            return canvasPoint.x >= -margin && canvasPoint.x <= CONFIG.canvas.width + margin &&
+                   canvasPoint.y >= -margin && canvasPoint.y <= CONFIG.canvas.height + margin;
+        }
+        
+        updateTransformDisplay() {
+            const element = document.getElementById('transform-info');
+            if (element) {
+                const x = Math.round(this.worldContainer.x);
+                const y = Math.round(this.worldContainer.y);
+                const s = Math.abs(this.worldContainer.scale.x).toFixed(2);
+                const r = Math.round(this.rotation % 360);
+                element.textContent = `x:${x} y:${y} s:${s} r:${r}°`;
+            }
+        }
+        
+        drawCameraFrame() {
+            this.cameraFrame.clear();
+            this.cameraFrame.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+            this.cameraFrame.stroke({ width: 2, color: 0xff0000, alpha: 0.5 });
+        }
+    }
+
+    // === レイヤー管理システム（改修版：Vキートグル・パネルドラッグ・確定機能） ===
+    class LayerManager {
+        constructor(canvasContainer, app, cameraSystem) {
+            this.canvasContainer = canvasContainer;
+            this.app = app;
+            this.cameraSystem = cameraSystem;
+            this.layers = [];
+            this.activeLayerIndex = -1;
+            this.layerCounter = 0;
+            this.thumbnailUpdateQueue = new Set();
+            
+            this.layersContainer = new PIXI.Container();
+            this.layersContainer.label = 'layersContainer';
+            this.canvasContainer.addChild(this.layersContainer);
+            
+            // レイヤー移動モード関連（改修版）
+            this.vKeyPressed = false;
+            this.isLayerMoveMode = false;
+            this.isLayerDragging = false;
+            this.layerDragLastPoint = { x: 0, y: 0 };
+            
+            // パネルドラッグ用
+            this.isPanelDragging = false;
+            this.panelDragLastPoint = { x: 0, y: 0 };
+            
+            // UI要素
+            this.layerTransformPanel = null;
+            this.crosshairSight = null;
+            
+            this.setupLayerOperations();
+            this.setupLayerTransformPanel();
+            this.setupPanelDrag();
+        }
+        
+        setupLayerTransformPanel() {
+            this.layerTransformPanel = document.getElementById('layer-transform-panel');
+            this.crosshairSight = document.getElementById('crosshair-sight');
+            
+            if (!this.layerTransformPanel || !this.crosshairSight) return;
+            
+            // スライダー設定
+            this.setupLayerSlider('layer-x-slider', CONFIG.layer.minX, CONFIG.layer.maxX, 0, (value) => {
+                this.updateActiveLayerTransform('x', value);
+                return Math.round(value) + 'px';
+            });
+            
+            this.setupLayerSlider('layer-y-slider', CONFIG.layer.minY, CONFIG.layer.maxY, 0, (value) => {
+                this.updateActiveLayerTransform('y', value);
+                return Math.round(value) + 'px';
+            });
+            
+            this.setupLayerSlider('layer-rotation-slider', CONFIG.layer.minRotation, CONFIG.layer.maxRotation, 0, (value) => {
+                this.updateActiveLayerTransform('rotation', value * Math.PI / 180);
+                return Math.round(value) + '°';
+            });
+            
+            this.setupLayerSlider('layer-scale-slider', CONFIG.layer.minScale, CONFIG.layer.maxScale, 1.0, (value) => {
+                this.updateActiveLayerTransform('scale', value);
+                return value.toFixed(2) + 'x';
+            });
+            
+            // 反転ボタン
+            const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
+            const flipVerticalBtn = document.getElementById('flip-vertical-btn');
+            
+            if (flipHorizontalBtn) {
+                flipHorizontalBtn.addEventListener('click', () => {
+                    this.flipActiveLayer('horizontal');
+                });
+            }
+            
+            if (flipVerticalBtn) {
+                flipVerticalBtn.addEventListener('click', () => {
+                    this.flipActiveLayer('vertical');
+                });
+            }
+            
+            // 確定ボタン
+            const exitBtn = document.getElementById('exit-layer-mode-btn');
+            if (exitBtn) {
+                exitBtn.addEventListener('click', () => {
+                    this.exitLayerMoveMode();
+                });
+            }
+        }
+        
+        // 改修版：パネルドラッグ機能
+        setupPanelDrag() {
+            if (!this.layerTransformPanel) return;
+            
+            const dragHandle = this.layerTransformPanel.querySelector('.panel-drag-handle');
+            if (!dragHandle) return;
+            
+            dragHandle.addEventListener('pointerdown', (e) => {
+                this.isPanelDragging = true;
+                this.panelDragLastPoint = { x: e.clientX, y: e.clientY };
+                dragHandle.style.cursor = 'grabbing';
+                e.preventDefault();
+            });
+            
+            document.addEventListener('pointermove', (e) => {
+                if (!this.isPanelDragging) return;
+                
+                const dx = e.clientX - this.panelDragLastPoint.x;
+                const dy = e.clientY - this.panelDragLastPoint.y;
+                
+                const currentStyle = window.getComputedStyle(this.layerTransformPanel);
+                const currentLeft = parseFloat(currentStyle.left) || 0;
+                const currentTop = parseFloat(currentStyle.top) || 0;
+                
+                this.layerTransformPanel.style.left = (currentLeft + dx) + 'px';
+                this.layerTransformPanel.style.top = (currentTop + dy) + 'px';
+                this.layerTransformPanel.style.transform = 'none'; // translateX(-50%)を無効化
+                
+                this.panelDragLastPoint = { x: e.clientX, y: e.clientY };
+            });
+            
+            document.addEventListener('pointerup', () => {
+                if (this.isPanelDragging) {
+                    this.isPanelDragging = false;
+                    const dragHandle = this.layerTransformPanel.querySelector('.panel-drag-handle');
+                    if (dragHandle) dragHandle.style.cursor = 'move';
+                }
+            });
+        }
+        
+        setupLayerSlider(sliderId, min, max, initial, callback) {
+            const container = document.getElementById(sliderId);
+            if (!container) return;
+
+            const track = container.querySelector('.slider-track');
+            const handle = container.querySelector('.slider-handle');
+            const valueDisplay = container.parentNode.querySelector('.slider-value');
+
+            if (!track || !handle || !valueDisplay) return;
+
+            let value = initial;
+            let dragging = false;
+
+            const update = (newValue, fromSlider = false) => {
+                value = Math.max(min, Math.min(max, newValue));
+                const percentage = ((value - min) / (max - min)) * 100;
+                
+                track.style.width = percentage + '%';
+                handle.style.left = percentage + '%';
+                valueDisplay.textContent = callback(value, fromSlider);
+            };
+
+            const getValue = (clientX) => {
+                const rect = container.getBoundingClientRect();
+                const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                return min + (percentage * (max - min));
+            };
+
+            container.addEventListener('mousedown', (e) => {
+                dragging = true;
+                update(getValue(e.clientX), true);
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (dragging) update(getValue(e.clientX), true);
+            });
+
+            document.addEventListener('mouseup', () => {
+                dragging = false;
+            });
+
+            // 外部からの値更新用
+            container.updateValue = (newValue) => {
+                update(newValue, false);
+            };
+
+            update(initial);
+        }
+        
+        updateActiveLayerTransform(property, value) {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) return;
+            
+            switch(property) {
+                case 'x':
+                    activeLayer.x = value;
+                    break;
+                case 'y':
+                    activeLayer.y = value;
+                    break;
+                case 'rotation':
+                    activeLayer.rotation = value;
+                    break;
+                case 'scale':
+                    const hFlipped = activeLayer.scale.x < 0;
+                    const vFlipped = activeLayer.scale.y < 0;
+                    activeLayer.scale.x = hFlipped ? -value : value;
+                    activeLayer.scale.y = vFlipped ? -value : value;
+                    break;
+            }
+            
+            this.requestThumbnailUpdate(this.activeLayerIndex);
+        }
+        
+        flipActiveLayer(direction) {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) return;
+            
+            const centerX = CONFIG.canvas.width / 2;
+            const centerY = CONFIG.canvas.height / 2;
+            
+            const pivot = { x: centerX, y: centerY };
+            activeLayer.pivot.set(pivot.x, pivot.y);
+            activeLayer.position.set(pivot.x, pivot.y);
+            
+            if (direction === 'horizontal') {
+                activeLayer.scale.x *= -1;
+            } else if (direction === 'vertical') {
+                activeLayer.scale.y *= -1;
+            }
+            
+            this.updateFlipButtons();
+            this.requestThumbnailUpdate(this.activeLayerIndex);
+        }
+        
+        updateFlipButtons() {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) return;
+            
+            const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
+            const flipVerticalBtn = document.getElementById('flip-vertical-btn');
+            
+            if (flipHorizontalBtn) {
+                if (activeLayer.scale.x < 0) {
+                    flipHorizontalBtn.classList.add('active');
+                } else {
+                    flipHorizontalBtn.classList.remove('active');
+                }
+            }
+            
+            if (flipVerticalBtn) {
+                if (activeLayer.scale.y < 0) {
+                    flipVerticalBtn.classList.add('active');
+                } else {
+                    flipVerticalBtn.classList.remove('active');
+                }
+            }
+        }
+        
+        updateLayerTransformPanelValues() {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) return;
+            
+            // X位置スライダー更新
+            const xSlider = document.getElementById('layer-x-slider');
+            if (xSlider && xSlider.updateValue) {
+                xSlider.updateValue(activeLayer.x);
+            }
+            
+            // Y位置スライダー更新
+            const ySlider = document.getElementById('layer-y-slider');
+            if (ySlider && ySlider.updateValue) {
+                ySlider.updateValue(activeLayer.y);
+            }
+            
+            // 回転スライダー更新
+            const rotationSlider = document.getElementById('layer-rotation-slider');
+            if (rotationSlider && rotationSlider.updateValue) {
+                rotationSlider.updateValue(activeLayer.rotation * 180 / Math.PI);
+            }
+            
+            // 拡縮スライダー更新
+            const scaleSlider = document.getElementById('layer-scale-slider');
+            if (scaleSlider && scaleSlider.updateValue) {
+                scaleSlider.updateValue(Math.abs(activeLayer.scale.x));
+            }
+            
+            this.updateFlipButtons();
+        }
+        
+        // 改修版：Vキートグル方式でのレイヤー移動モード
+        toggleLayerMoveMode() {
+            if (this.isLayerMoveMode) {
+                this.exitLayerMoveMode();
+            } else {
+                this.enterLayerMoveMode();
+            }
+        }
+        
+        enterLayerMoveMode() {
+            if (this.isLayerMoveMode) return;
+            
+            this.isLayerMoveMode = true;
+            this.vKeyPressed = true;
+            this.cameraSystem.setVKeyPressed(true);
+            
+            // パネルと十字サイト表示
+            if (this.layerTransformPanel) {
+                this.layerTransformPanel.classList.add('show');
+                this.updateLayerTransformPanelValues();
+            }
+            
+            if (this.crosshairSight) {
+                this.crosshairSight.classList.add('show');
+            }
+            
+            this.updateCursor();
+        }
+        
+        exitLayerMoveMode() {
+            if (!this.isLayerMoveMode) return;
+            
+            this.isLayerMoveMode = false;
+            this.vKeyPressed = false;
+            this.isLayerDragging = false;
+            this.cameraSystem.setVKeyPressed(false);
+            
+            // パネルと十字サイト非表示
+            if (this.layerTransformPanel) {
+                this.layerTransformPanel.classList.remove('show');
+            }
+            
+            if (this.crosshairSight) {
+                this.crosshairSight.classList.remove('show');
+            }
+            
+            this.updateCursor();
+            
+            // 改修版：確定時にレイヤー変形を実際に適用（描画データをベイク）
+            this.confirmLayerTransform();
+        }
+        
+        // 改修版：レイヤー変形の確定処理（ペンズレ対策）
+        confirmLayerTransform() {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) return;
+            
+            // レイヤーのtransformが初期状態でない場合、描画をベイクして初期化
+            if (activeLayer.x !== 0 || activeLayer.y !== 0 || 
+                activeLayer.rotation !== 0 || Math.abs(activeLayer.scale.x) !== 1 || Math.abs(activeLayer.scale.y) !== 1) {
+                
+                try {
+                    // レイヤー内容をRenderTextureに描画
+                    const renderTexture = PIXI.RenderTexture.create({
+                        width: CONFIG.canvas.width,
+                        height: CONFIG.canvas.height,
+                        resolution: 1
+                    });
+                    
+                    this.app.renderer.render(activeLayer, { renderTexture });
+                    
+                    // 既存のコンテンツを削除
+                    activeLayer.removeChildren();
+                    
+                    // RenderTextureをSpriteとして追加
+                    const sprite = new PIXI.Sprite(renderTexture);
+                    activeLayer.addChild(sprite);
+                    
+                    // Transformを初期化
+                    activeLayer.position.set(0, 0);
+                    activeLayer.rotation = 0;
+                    activeLayer.scale.set(1, 1);
+                    activeLayer.pivot.set(0, 0);
+                    
+                    // パスデータもクリア（新しい描画システム用）
+                    if (activeLayer.layerData) {
+                        activeLayer.layerData.paths = [];
+                    }
+                    
+                    // 反転ボタンもリセット
+                    this.updateFlipButtons();
+                    
+                    log('Layer transform confirmed and baked');
+                    
+                } catch (error) {
+                    console.warn('Failed to confirm layer transform:', error);
+                }
+            }
+        }
+        
+        setupLayerOperations() {
+            document.addEventListener('keydown', (e) => {
+                // 改修版：Vキートグル方式
+                if (e.code === 'KeyV' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    this.toggleLayerMoveMode();
+                    e.preventDefault();
+                }
+                
+                // Pキー: ペンツールに切り替え（レイヤー移動モード終了）
+                if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    if (this.isLayerMoveMode) {
+                        this.exitLayerMoveMode();
+                    }
+                    e.preventDefault();
+                }
+                
+                // Eキー: 消しゴムツールに切り替え（レイヤー移動モード終了）
+                if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    if (this.isLayerMoveMode) {
+                        this.exitLayerMoveMode();
+                    }
+                    e.preventDefault();
+                }
+                
+                // === V + 方向キー: アクティブレイヤー移動 ===
+                if (this.vKeyPressed && !e.shiftKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+                    this.moveActiveLayer(e.code);
+                    e.preventDefault();
+                }
+                
+                // === V + Shift + 方向キー: アクティブレイヤー拡縮・回転 ===
+                if (this.vKeyPressed && e.shiftKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+                    this.transformActiveLayer(e.code);
+                    e.preventDefault();
+                }
+                
+                // === V + H / V + Shift + H: アクティブレイヤー反転 ===
+                if (this.vKeyPressed && e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    const activeLayer = this.getActiveLayer();
+                    if (activeLayer) {
+                        const centerX = CONFIG.canvas.width / 2;
+                        const centerY = CONFIG.canvas.height / 2;
+                        
+                        const pivot = { x: centerX, y: centerY };
+                        activeLayer.pivot.set(pivot.x, pivot.y);
+                        activeLayer.position.set(pivot.x, pivot.y);
+                        
+                        if (e.shiftKey) {
+                            // V + Shift + H: 垂直反転
+                            activeLayer.scale.y *= -1;
+                        } else {
+                            // V + H: 水平反転
+                            activeLayer.scale.x *= -1;
+                        }
+                        
+                        this.updateFlipButtons();
+                        this.requestThumbnailUpdate(this.activeLayerIndex);
+                    }
+                    e.preventDefault();
+                }
+            });
+            
+            // === V + ドラッグ: アクティブレイヤー移動・変形 ===
+            this.app.canvas.addEventListener('pointerdown', (e) => {
+                if (this.vKeyPressed && e.button === 0) {
+                    this.isLayerDragging = true;
+                    this.layerDragLastPoint = { x: e.clientX, y: e.clientY };
+                    this.app.canvas.style.cursor = 'move';
+                    e.preventDefault();
+                }
+            });
+            
+            this.app.canvas.addEventListener('pointermove', (e) => {
+                if (this.isLayerDragging && this.vKeyPressed) {
+                    const activeLayer = this.getActiveLayer();
+                    if (activeLayer) {
+                        const dx = e.clientX - this.layerDragLastPoint.x;
+                        const dy = e.clientY - this.layerDragLastPoint.y;
+                        
+                        const worldScale = this.cameraSystem.worldContainer.scale.x;
+                        const adjustedDx = dx / worldScale;
+                        const adjustedDy = dy / worldScale;
+                        
+                        if (e.shiftKey) {
+                            // V + Shift + ドラッグ: 拡縮・回転
+                            if (Math.abs(dx) > Math.abs(dy)) {
+                                // 水平方向優先: 拡縮
+                                const scaleFactor = 1 + (dx * 0.01);
+                                const currentScale = Math.abs(activeLayer.scale.x);
+                                const newScale = Math.max(CONFIG.layer.minScale, Math.min(CONFIG.layer.maxScale, currentScale * scaleFactor));
+                                
+                                activeLayer.scale.x = activeLayer.scale.x < 0 ? -newScale : newScale;
+                                activeLayer.scale.y = activeLayer.scale.y < 0 ? -newScale : newScale;
+                                
+                                // スライダー更新
+                                const scaleSlider = document.getElementById('layer-scale-slider');
+                                if (scaleSlider && scaleSlider.updateValue) {
+                                    scaleSlider.updateValue(newScale);
+                                }
+                            } else {
+                                // 垂直方向優先: 回転
+                                activeLayer.rotation += (dy * 0.02);
+                                
+                                // スライダー更新
+                                const rotationSlider = document.getElementById('layer-rotation-slider');
+                                if (rotationSlider && rotationSlider.updateValue) {
+                                    rotationSlider.updateValue(activeLayer.rotation * 180 / Math.PI);
+                                }
+                            }
+                        } else {
+                            // V + ドラッグ: 移動
+                            activeLayer.x += adjustedDx;
+                            activeLayer.y += adjustedDy;
+                            
+                            // スライダー更新
+                            const xSlider = document.getElementById('layer-x-slider');
+                            const ySlider = document.getElementById('layer-y-slider');
+                            if (xSlider && xSlider.updateValue) {
+                                xSlider.updateValue(activeLayer.x);
+                            }
+                            if (ySlider && ySlider.updateValue) {
+                                ySlider.updateValue(activeLayer.y);
+                            }
+                        }
+                        
+                        this.layerDragLastPoint = { x: e.clientX, y: e.clientY };
+                        this.requestThumbnailUpdate(this.activeLayerIndex);
+                    }
+                }
+            });
+            
+            this.app.canvas.addEventListener('pointerup', (e) => {
+                if (this.isLayerDragging) {
+                    this.isLayerDragging = false;
+                    this.updateCursor();
+                }
+            });
+        }
+        
+        moveActiveLayer(keyCode) {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) return;
+            
+            const moveAmount = 5;
+            switch(keyCode) {
+                case 'ArrowUp':    activeLayer.y -= moveAmount; break;
+                case 'ArrowDown':  activeLayer.y += moveAmount; break;
+                case 'ArrowLeft':  activeLayer.x -= moveAmount; break;
+                case 'ArrowRight': activeLayer.x += moveAmount; break;
+            }
+            
+            // スライダー値更新
+            const xSlider = document.getElementById('layer-x-slider');
+            const ySlider = document.getElementById('layer-y-slider');
+            if (xSlider && xSlider.updateValue) {
+                xSlider.updateValue(activeLayer.x);
+            }
+            if (ySlider && ySlider.updateValue) {
+                ySlider.updateValue(activeLayer.y);
+            }
+            
+            this.requestThumbnailUpdate(this.activeLayerIndex);
+        }
+        
+        transformActiveLayer(keyCode) {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) return;
+            
+            const centerX = CONFIG.canvas.width / 2;
+            const centerY = CONFIG.canvas.height / 2;
+            
+            const pivot = { x: centerX, y: centerY };
+            activeLayer.pivot.set(pivot.x, pivot.y);
+            activeLayer.position.set(pivot.x, pivot.y);
+            
+            switch(keyCode) {
+                case 'ArrowUp': // 拡大
+                    const scaleUpFactor = 1.1;
+                    const currentScaleUp = Math.abs(activeLayer.scale.x);
+                    const newScaleUp = Math.min(CONFIG.layer.maxScale, currentScaleUp * scaleUpFactor);
+                    activeLayer.scale.x = activeLayer.scale.x < 0 ? -newScaleUp : newScaleUp;
+                    activeLayer.scale.y = activeLayer.scale.y < 0 ? -newScaleUp : newScaleUp;
+                    
+                    // スライダー更新
+                    const scaleSliderUp = document.getElementById('layer-scale-slider');
+                    if (scaleSliderUp && scaleSliderUp.updateValue) {
+                        scaleSliderUp.updateValue(newScaleUp);
+                    }
+                    break;
+                    
+                case 'ArrowDown': // 縮小
+                    const scaleDownFactor = 0.9;
+                    const currentScaleDown = Math.abs(activeLayer.scale.x);
+                    const newScaleDown = Math.max(CONFIG.layer.minScale, currentScaleDown * scaleDownFactor);
+                    activeLayer.scale.x = activeLayer.scale.x < 0 ? -newScaleDown : newScaleDown;
+                    activeLayer.scale.y = activeLayer.scale.y < 0 ? -newScaleDown : newScaleDown;
+                    
+                    // スライダー更新
+                    const scaleSliderDown = document.getElementById('layer-scale-slider');
+                    if (scaleSliderDown && scaleSliderDown.updateValue) {
+                        scaleSliderDown.updateValue(newScaleDown);
+                    }
+                    break;
+                    
+                case 'ArrowLeft': // 左回転
+                    activeLayer.rotation -= (15 * Math.PI) / 180; // 15度
+                    
+                    // スライダー更新
+                    const rotationSliderLeft = document.getElementById('layer-rotation-slider');
+                    if (rotationSliderLeft && rotationSliderLeft.updateValue) {
+                        rotationSliderLeft.updateValue(activeLayer.rotation * 180 / Math.PI);
+                    }
+                    break;
+                    
+                case 'ArrowRight': // 右回転
+                    activeLayer.rotation += (15 * Math.PI) / 180; // 15度
+                    
+                    // スライダー更新
+                    const rotationSliderRight = document.getElementById('layer-rotation-slider');
+                    if (rotationSliderRight && rotationSliderRight.updateValue) {
+                        rotationSliderRight.updateValue(activeLayer.rotation * 180 / Math.PI);
+                    }
+                    break;
+            }
+            
+            this.requestThumbnailUpdate(this.activeLayerIndex);
+        }
+        
+        updateCursor() {
+            if (this.vKeyPressed) {
+                this.app.canvas.style.cursor = 'grab';
+            }
+        }
+
+        createLayer(name, isBackground = false) {
+            const layer = new PIXI.Container();
+            const layerId = `layer_${this.layerCounter++}`;
+            
+            layer.label = layerId;
+            layer.layerData = {
+                id: layerId,
+                name: name,
+                visible: true,
+                opacity: 1.0,
+                isBackground: isBackground,
+                paths: []
+            };
+
+            if (isBackground) {
+                const bg = new PIXI.Graphics();
+                bg.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+                bg.fill(CONFIG.background.color);
+                layer.addChild(bg);
+                layer.layerData.backgroundGraphics = bg;
+            }
+
+            this.layers.push(layer);
+            this.layersContainer.addChild(layer);
+            return { layer, index: this.layers.length - 1 };
+        }
+
+        setActiveLayer(index) {
+            if (index >= 0 && index < this.layers.length) {
+                this.activeLayerIndex = index;
+                this.updateLayerPanelUI();
+                this.updateStatusDisplay();
+                
+                // レイヤー移動モードが有効な場合、スライダー値を更新
+                if (this.isLayerMoveMode) {
+                    this.updateLayerTransformPanelValues();
+                }
+            }
+        }
+
+        getActiveLayer() {
+            return this.activeLayerIndex >= 0 ? this.layers[this.activeLayerIndex] : null;
+        }
+
+        addPathToLayer(layerIndex, path) {
+            if (layerIndex >= 0 && layerIndex < this.layers.length) {
+                const layer = this.layers[layerIndex];
+                layer.layerData.paths.push(path);
+                layer.addChild(path.graphics);
+                this.requestThumbnailUpdate(layerIndex);
+            }
+        }
+
+        requestThumbnailUpdate(layerIndex) {
+            this.thumbnailUpdateQueue.add(layerIndex);
+        }
+
+        processThumbnailUpdates() {
+            if (!this.app?.renderer || this.thumbnailUpdateQueue.size === 0) return;
+
+            this.thumbnailUpdateQueue.forEach(layerIndex => {
+                this.updateThumbnail(layerIndex);
+            });
+            this.thumbnailUpdateQueue.clear();
+        }
+
+        updateThumbnail(layerIndex) {
+            if (!this.app?.renderer || layerIndex < 0 || layerIndex >= this.layers.length) return;
+
+            const layer = this.layers[layerIndex];
+            const layerItems = document.querySelectorAll('.layer-item');
+            
+            const panelIndex = this.layers.length - 1 - layerIndex;
+            if (panelIndex >= 0 && panelIndex < layerItems.length) {
+                const thumbnail = layerItems[panelIndex].querySelector('.layer-thumbnail');
+                if (thumbnail) {
+                    try {
+                        const renderTexture = PIXI.RenderTexture.create({
+                            width: 48, 
+                            height: 48,
+                            resolution: 1
+                        });
+                        
+                        const tempContainer = new PIXI.Container();
+                        const scaleX = 48 / CONFIG.canvas.width;
+                        const scaleY = 48 / CONFIG.canvas.height;
+                        const scale = Math.min(scaleX, scaleY);
+                        
+                        const layerClone = new PIXI.Container();
+                        layerClone.position.copyFrom(layer.position);
+                        layerClone.scale.copyFrom(layer.scale);
+                        layerClone.rotation = layer.rotation;
+                        layerClone.pivot.copyFrom(layer.pivot);
+                        
+                        layer.children.forEach(child => {
+                            if (child instanceof PIXI.Graphics) {
+                                const clone = child.clone();
+                                layerClone.addChild(clone);
+                            } else if (child instanceof PIXI.Sprite) {
+                                const clone = new PIXI.Sprite(child.texture);
+                                clone.position.copyFrom(child.position);
+                                clone.scale.copyFrom(child.scale);
+                                clone.rotation = child.rotation;
+                                clone.pivot.copyFrom(child.pivot);
+                                layerClone.addChild(clone);
+                            }
+                        });
+                        
+                        layerClone.scale.x *= scale;
+                        layerClone.scale.y *= scale;
+                        tempContainer.addChild(layerClone);
+                        
+                        this.app.renderer.render(tempContainer, { renderTexture });
+                        
+                        const canvas = this.app.renderer.extract.canvas(renderTexture);
+                        const dataURL = canvas.toDataURL();
+                        
+                        let img = thumbnail.querySelector('img');
+                        if (!img) {
+                            img = document.createElement('img');
+                            thumbnail.innerHTML = '';
+                            thumbnail.appendChild(img);
+                        }
+                        img.src = dataURL;
+                        
+                        renderTexture.destroy();
+                        tempContainer.destroy();
+                        
+                    } catch (error) {
+                        console.warn('Thumbnail update failed:', error);
+                    }
+                }
+            }
+        }
+
+        updateLayerPanelUI() {
+            const layerList = document.getElementById('layer-list');
+            if (!layerList) return;
+
+            layerList.innerHTML = '';
+
+            for (let i = this.layers.length - 1; i >= 0; i--) {
+                const layer = this.layers[i];
+                const layerItem = document.createElement('div');
+                layerItem.className = `layer-item ${i === this.activeLayerIndex ? 'active' : ''}`;
+                layerItem.dataset.layerId = layer.layerData.id;
+                layerItem.dataset.layerIndex = i;
+
+                layerItem.innerHTML = `
+                    <div class="layer-visibility ${layer.layerData.visible ? '' : 'hidden'}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            ${layer.layerData.visible ? 
+                                '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>' :
+                                '<path d="m15 18-.722-3.25"/><path d="m2 2 20 20"/><path d="M6.71 6.71C3.4 8.27 2 12 2 12s3 7 10 7c1.59 0 2.84-.3 3.79-.73"/><path d="m8.5 10.5 7 7"/><path d="M9.677 4.677C10.495 4.06 11.608 4 12 4c7 0 10 7 10 7a13.16 13.16 0 0 1-.64.77"/>'}
+                        </svg>
+                    </div>
+                    <div class="layer-opacity">100%</div>
+                    <div class="layer-name">${layer.layerData.name}</div>
+                    <div class="layer-thumbnail">
+                        <div class="layer-thumbnail-placeholder"></div>
+                    </div>
+                    <div class="layer-delete-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="m18 6-12 12"/><path d="m6 6 12 12"/>
+                        </svg>
+                    </div>
+                `;
+
+                layerItem.addEventListener('click', (e) => {
+                    const target = e.target.closest('[class*="layer-"]');
+                    if (target) {
+                        const action = target.className;
+                        if (action.includes('layer-visibility')) {
+                            this.toggleLayerVisibility(i);
+                            e.stopPropagation();
+                        } else if (action.includes('layer-delete')) {
+                            this.deleteLayer(i);
+                            e.stopPropagation();
+                        } else {
+                            this.setActiveLayer(i);
+                        }
+                    } else {
+                        this.setActiveLayer(i);
+                    }
+                });
+
+                layerList.appendChild(layerItem);
+            }
+            
+            for (let i = 0; i < this.layers.length; i++) {
+                this.requestThumbnailUpdate(i);
+            }
+        }
+
+        toggleLayerVisibility(layerIndex) {
+            if (layerIndex >= 0 && layerIndex < this.layers.length) {
+                const layer = this.layers[layerIndex];
+                layer.layerData.visible = !layer.layerData.visible;
+                layer.visible = layer.layerData.visible;
+                this.updateLayerPanelUI();
+            }
+        }
+
+        deleteLayer(layerIndex) {
+            if (this.layers.length <= 1) return;
+            if (layerIndex < 0 || layerIndex >= this.layers.length) return;
+
+            const layer = this.layers[layerIndex];
+            
+            layer.layerData.paths.forEach(path => {
+                if (path.graphics && path.graphics.destroy) {
+                    path.graphics.destroy();
+                }
+            });
+
+            this.layersContainer.removeChild(layer);
+            layer.destroy();
+            this.layers.splice(layerIndex, 1);
+
+            if (this.activeLayerIndex === layerIndex) {
+                this.activeLayerIndex = Math.min(this.activeLayerIndex, this.layers.length - 1);
+            } else if (this.activeLayerIndex > layerIndex) {
+                this.activeLayerIndex--;
+            }
+
+            this.updateLayerPanelUI();
+            this.updateStatusDisplay();
+        }
+
+        updateStatusDisplay() {
+            const statusElement = document.getElementById('current-layer');
+            if (statusElement && this.activeLayerIndex >= 0) {
+                const layer = this.layers[this.activeLayerIndex];
+                statusElement.textContent = layer.layerData.name;
+            }
+        }
+    }
+
+    // === 描画エンジン（改修版：ペン描画位置ズレ対策） ===
+    class DrawingEngine {
+        constructor(cameraSystem, layerManager) {
+            this.cameraSystem = cameraSystem;
+            this.layerManager = layerManager;
+            this.currentTool = 'pen';
+            this.brushSize = CONFIG.pen.size;
+            this.brushColor = CONFIG.pen.color;
+            this.brushOpacity = CONFIG.pen.opacity;
+            this.isDrawing = false;
+            this.currentPath = null;
+            this.lastPoint = null;
+        }
+
+        startDrawing(screenX, screenY) {
+            if (this.isDrawing || this.cameraSystem.spacePressed || this.cameraSystem.isDragging || 
+                this.layerManager.vKeyPressed) return;
+
+            // 改修版：レイヤー変形を考慮しないキャンバス座標変換を使用
+            const canvasPoint = this.cameraSystem.screenToCanvasForDrawing(screenX, screenY);
+            
+            if (!this.cameraSystem.isPointInExtendedCanvas(canvasPoint)) {
+                return;
+            }
+            
+            this.isDrawing = true;
+            this.lastPoint = canvasPoint;
+
+            const activeLayer = this.layerManager.getActiveLayer();
+            if (!activeLayer) return;
+
+            const color = this.currentTool === 'eraser' ? CONFIG.background.color : this.brushColor;
+            const opacity = this.currentTool === 'eraser' ? 1.0 : this.brushOpacity;
+
+            this.currentPath = {
+                id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                graphics: new PIXI.Graphics(),
+                points: [{ x: canvasPoint.x, y: canvasPoint.y }],
+                color: color,
+                size: this.brushSize,
+                opacity: opacity,
+                isComplete: false
+            };
+
+            this.currentPath.graphics.circle(canvasPoint.x, canvasPoint.y, this.brushSize / 2);
+            this.currentPath.graphics.fill({ color: color, alpha: opacity });
+
+            // 改修版：レイヤーのTransformを考慮して描画位置を調整
+            this.addPathToActiveLayer(this.currentPath);
+        }
+
+        continueDrawing(screenX, screenY) {
+            if (!this.isDrawing || !this.currentPath || this.cameraSystem.spacePressed || 
+                this.cameraSystem.isDragging || this.layerManager.vKeyPressed) return;
+
+            const canvasPoint = this.cameraSystem.screenToCanvasForDrawing(screenX, screenY);
+            const lastPoint = this.lastPoint;
+            
+            const distance = Math.sqrt(
+                Math.pow(canvasPoint.x - lastPoint.x, 2) + 
+                Math.pow(canvasPoint.y - lastPoint.y, 2)
+            );
+
+            if (distance < 1) return;
+
+            const steps = Math.max(1, Math.floor(distance / 1));
+            for (let i = 1; i <= steps; i++) {
+                const t = i / steps;
+                const x = lastPoint.x + (canvasPoint.x - lastPoint.x) * t;
+                const y = lastPoint.y + (canvasPoint.y - lastPoint.y) * t;
+
+                this.currentPath.graphics.circle(x, y, this.brushSize / 2);
+                this.currentPath.graphics.fill({ 
+                    color: this.currentPath.color, 
+                    alpha: this.currentPath.opacity 
+                });
+
+                this.currentPath.points.push({ x, y });
+            }
+
+            this.lastPoint = canvasPoint;
+        }
+
+        stopDrawing() {
+            if (!this.isDrawing) return;
+
+            if (this.currentPath) {
+                this.currentPath.isComplete = true;
+                this.layerManager.requestThumbnailUpdate(this.layerManager.activeLayerIndex);
+            }
+
+            this.isDrawing = false;
+            this.currentPath = null;
+            this.lastPoint = null;
+        }
+        
+        // 改修版：アクティブレイヤーのTransformを考慮してパスを追加
+        addPathToActiveLayer(path) {
+            const activeLayer = this.layerManager.getActiveLayer();
+            if (!activeLayer) return;
+            
+            // レイヤーがtransformされている場合、逆変換を適用
+            if (activeLayer.x !== 0 || activeLayer.y !== 0 || 
+                activeLayer.rotation !== 0 || activeLayer.scale.x !== 1 || activeLayer.scale.y !== 1) {
+                
+                // 逆変換行列を作成
+                const matrix = new PIXI.Matrix();
+                matrix.translate(-activeLayer.x, -activeLayer.y);
+                matrix.rotate(-activeLayer.rotation);
+                matrix.scale(1/activeLayer.scale.x, 1/activeLayer.scale.y);
+                
+                // パスの座標を逆変換
+                const transformedGraphics = new PIXI.Graphics();
+                path.points.forEach((point, index) => {
+                    const transformedPoint = matrix.apply(point);
+                    if (index === 0) {
+                        transformedGraphics.circle(transformedPoint.x, transformedPoint.y, path.size / 2);
+                    } else {
+                        transformedGraphics.circle(transformedPoint.x, transformedPoint.y, path.size / 2);
+                    }
+                    transformedGraphics.fill({ color: path.color, alpha: path.opacity });
+                });
+                
+                path.graphics = transformedGraphics;
+            }
+            
+            activeLayer.layerData.paths.push(path);
+            activeLayer.addChild(path.graphics);
+        }
+
+        setTool(tool) {
+            this.currentTool = tool;
+        }
+
+        setBrushSize(size) {
+            this.brushSize = Math.max(0.1, Math.min(100, size));
+        }
+
+        setBrushOpacity(opacity) {
+            this.brushOpacity = Math.max(0, Math.min(1, opacity));
+        }
+    }
+
+    // === インタラクション管理 ===
+    class InteractionManager {
+        constructor(app, drawingEngine, layerManager) {
+            this.app = app;
+            this.drawingEngine = drawingEngine;
+            this.layerManager = layerManager;
+            this.setupKeyboardEvents();
+            this.setupCanvasEvents();
+        }
+
+        setupKeyboardEvents() {
+            document.addEventListener('keydown', (e) => {
+                if (e.key.toLowerCase() === 'p' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    this.switchTool('pen');
+                    e.preventDefault();
+                }
+                if (e.key.toLowerCase() === 'e' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    this.switchTool('eraser');
+                    e.preventDefault();
+                }
+            });
+        }
+
+        setupCanvasEvents() {
+            this.app.canvas.addEventListener('pointerdown', (e) => {
+                if (e.button !== 0) return;
+
+                const rect = this.app.canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+
+                this.drawingEngine.startDrawing(x, y);
+                e.preventDefault();
+            });
+
+            this.app.canvas.addEventListener('pointermove', (e) => {
+                const rect = this.app.canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+
+                this.updateCoordinates(x, y);
+                this.drawingEngine.continueDrawing(x, y);
+            });
+
+            this.app.canvas.addEventListener('pointerup', (e) => {
+                if (e.button !== 0) return;
+                this.drawingEngine.stopDrawing();
+            });
+
+            this.app.canvas.addEventListener('pointerenter', () => {
+                this.updateCursor();
+            });
+        }
+
+        switchTool(tool) {
+            this.drawingEngine.setTool(tool);
+            
+            // レイヤー移動モードを終了
+            if (this.layerManager.isLayerMoveMode) {
+                this.layerManager.exitLayerMoveMode();
+            }
+            
+            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+            const toolBtn = document.getElementById(tool + '-tool');
+            if (toolBtn) toolBtn.classList.add('active');
+
+            const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
+            const toolElement = document.getElementById('current-tool');
+            if (toolElement) {
+                toolElement.textContent = toolNames[tool] || tool;
+            }
+
+            this.updateCursor();
+        }
+
+        updateCursor() {
+            const tool = this.drawingEngine.currentTool;
+            this.app.canvas.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair';
+        }
+
+        updateCoordinates(x, y) {
+            const element = document.getElementById('coordinates');
+            if (element) {
+                element.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
+            }
+        }
+    }
+
+    // === UI制御（改修版：パネル操作最適化） ===
+    class UIController {
+        constructor(drawingEngine, layerManager, app) {
+            this.drawingEngine = drawingEngine;
+            this.layerManager = layerManager;
+            this.app = app;
+            this.activePopup = null;
+            this.toolbarIconClickMode = false;
+            this.setupEventDelegation();
+            this.setupSliders();
+            this.setupCanvasResize();
+        }
+
+        setupEventDelegation() {
+            document.addEventListener('click', (e) => {
+                const toolButton = e.target.closest('.tool-button');
+                if (toolButton) {
+                    this.toolbarIconClickMode = true;
+                    this.handleToolClick(toolButton);
+                    this.toolbarIconClickMode = false;
+                    return;
+                }
+
+                const layerAddBtn = e.target.closest('#add-layer-btn');
+                if (layerAddBtn) {
+                    const layerCount = this.layerManager.layers.length;
+                    const { layer, index } = this.layerManager.createLayer(`レイヤー${layerCount}`);
+                    this.layerManager.setActiveLayer(index);
+                    return;
+                }
+
+                if (!e.target.closest('.popup-panel') && 
+                    !e.target.closest('.layer-transform-panel') &&
+                    !e.target.closest('.tool-button') &&
+                    !e.target.closest('.layer-panel-container')) {
+                    this.closeAllPopups();
+                }
+            });
+        }
+
+        handleToolClick(button) {
+            const toolId = button.id;
+            
+            const toolMap = {
+                'pen-tool': () => {
+                    this.drawingEngine.setTool('pen');
+                    
+                    // レイヤー移動モードを終了
+                    if (this.layerManager.isLayerMoveMode) {
+                        this.layerManager.exitLayerMoveMode();
+                    }
+                    
+                    if (!this.toolbarIconClickMode) {
+                        this.togglePopup('pen-settings');
+                    }
+                    this.updateToolUI('pen');
+                },
+                'eraser-tool': () => {
+                    this.drawingEngine.setTool('eraser');
+                    
+                    // レイヤー移動モードを終了
+                    if (this.layerManager.isLayerMoveMode) {
+                        this.layerManager.exitLayerMoveMode();
+                    }
+                    
+                    this.closeAllPopups();
+                    this.updateToolUI('eraser');
+                },
+                'resize-tool': () => {
+                    this.togglePopup('resize-settings');
+                }
+            };
+            
+            const handler = toolMap[toolId];
+            if (handler) handler();
+        }
+
+        updateToolUI(tool) {
+            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+            const toolBtn = document.getElementById(tool + '-tool');
+            if (toolBtn) toolBtn.classList.add('active');
+
+            const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
+            const toolElement = document.getElementById('current-tool');
+            if (toolElement) {
+                toolElement.textContent = toolNames[tool] || tool;
+            }
+        }
+
+        togglePopup(popupId) {
+            const popup = document.getElementById(popupId);
+            if (!popup) return;
+            
+            if (this.activePopup && this.activePopup !== popup) {
+                this.activePopup.classList.remove('show');
+            }
+            
+            const isVisible = popup.classList.contains('show');
+            popup.classList.toggle('show', !isVisible);
+            this.activePopup = isVisible ? null : popup;
+        }
+
+        closeAllPopups() {
+            document.querySelectorAll('.popup-panel').forEach(popup => {
+                popup.classList.remove('show');
+            });
+            this.activePopup = null;
+        }
+
+        setupSliders() {
+            this.createSlider('pen-size-slider', 0.1, 100, CONFIG.pen.size, (value) => {
+                this.drawingEngine.setBrushSize(value);
+                return value.toFixed(1) + 'px';
+            });
+            
+            this.createSlider('pen-opacity-slider', 0, 100, CONFIG.pen.opacity * 100, (value) => {
+                this.drawingEngine.setBrushOpacity(value / 100);
+                return value.toFixed(1) + '%';
+            });
+        }
+
+        createSlider(sliderId, min, max, initial, callback) {
+            const container = document.getElementById(sliderId);
+            if (!container) return;
+
+            const track = container.querySelector('.slider-track');
+            const handle = container.querySelector('.slider-handle');
+            const valueDisplay = container.parentNode.querySelector('.slider-value');
+
+            if (!track || !handle || !valueDisplay) return;
+
+            let value = initial;
+            let dragging = false;
+
+            const update = (newValue) => {
+                value = Math.max(min, Math.min(max, newValue));
+                const percentage = ((value - min) / (max - min)) * 100;
+                
+                track.style.width = percentage + '%';
+                handle.style.left = percentage + '%';
+                valueDisplay.textContent = callback(value);
+            };
+
+            const getValue = (clientX) => {
+                const rect = container.getBoundingClientRect();
+                const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+                return min + (percentage * (max - min));
+            };
+
+            container.addEventListener('mousedown', (e) => {
+                dragging = true;
+                update(getValue(e.clientX));
+                e.preventDefault();
+            });
+
+            document.addEventListener('mousemove', (e) => {
+                if (dragging) update(getValue(e.clientX));
+            });
+
+            document.addEventListener('mouseup', () => {
+                dragging = false;
+            });
+
+            update(initial);
+        }
+
+        setupCanvasResize() {
+            const applyBtn = document.getElementById('apply-resize');
+            if (applyBtn) {
+                applyBtn.addEventListener('click', () => {
+                    const widthInput = document.getElementById('canvas-width');
+                    const heightInput = document.getElementById('canvas-height');
+                    
+                    if (widthInput && heightInput) {
+                        const newWidth = parseInt(widthInput.value);
+                        const newHeight = parseInt(heightInput.value);
+                        
+                        if (newWidth > 0 && newHeight > 0) {
+                            this.resizeCanvas(newWidth, newHeight);
+                            this.closeAllPopups();
+                        }
+                    }
+                });
+            }
+        }
+
+        resizeCanvas(newWidth, newHeight) {
+            CONFIG.canvas.width = newWidth;
+            CONFIG.canvas.height = newHeight;
+            
+            const cameraSystem = this.app.cameraSystem;
+            if (cameraSystem && cameraSystem.canvasMask) {
+                cameraSystem.canvasMask.clear();
+                cameraSystem.canvasMask.rect(0, 0, newWidth, newHeight);
+                cameraSystem.canvasMask.fill(0xffffff);
+            }
+            
+            if (cameraSystem) {
+                cameraSystem.drawCameraFrame();
+            }
+            
+            this.layerManager.layers.forEach(layer => {
+                if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
+                    layer.layerData.backgroundGraphics.clear();
+                    layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
+                    layer.layerData.backgroundGraphics.fill(CONFIG.background.color);
+                }
+            });
+            
+            const element = document.getElementById('canvas-info');
+            if (element) {
+                element.textContent = `${newWidth}×${newHeight}px`;
+            }
+            
+            for (let i = 0; i < this.layerManager.layers.length; i++) {
+                this.layerManager.requestThumbnailUpdate(i);
+            }
+            
+            console.log(`Canvas resized to ${newWidth}x${newHeight}`);
+        }
+    }
+
+    // === SortableJS統合 ===
+    function initializeSortable(layerManager) {
+        const layerList = document.getElementById('layer-list');
+        if (layerList && typeof Sortable !== 'undefined') {
+            Sortable.create(layerList, {
+                animation: 150,
+                ghostClass: 'sortable-ghost',
+                chosenClass: 'sortable-chosen',
+                onEnd: function(evt) {
+                    const fromIndex = layerManager.layers.length - 1 - evt.oldIndex;
+                    const toIndex = layerManager.layers.length - 1 - evt.newIndex;
+                    
+                    if (fromIndex !== toIndex) {
+                        const layer = layerManager.layers.splice(fromIndex, 1)[0];
+                        layerManager.layers.splice(toIndex, 0, layer);
+                        
+                        layerManager.layersContainer.removeChild(layer);
+                        layerManager.layersContainer.addChildAt(layer, toIndex);
+                        
+                        if (layerManager.activeLayerIndex === fromIndex) {
+                            layerManager.activeLayerIndex = toIndex;
+                        } else if (layerManager.activeLayerIndex > fromIndex && layerManager.activeLayerIndex <= toIndex) {
+                            layerManager.activeLayerIndex--;
+                        } else if (layerManager.activeLayerIndex < fromIndex && layerManager.activeLayerIndex >= toIndex) {
+                            layerManager.activeLayerIndex++;
+                        }
+                        
+                        layerManager.updateLayerPanelUI();
+                    }
+                }
+            });
+        }
+    }
+
+    // === メインアプリケーション ===
+    class DrawingApp {
+        constructor() {
+            this.pixiApp = null;
+            this.cameraSystem = null;
+            this.layerManager = null;
+            this.drawingEngine = null;
+            this.interactionManager = null;
+            this.uiController = null;
+        }
+
+        async initialize() {
+            const containerEl = document.getElementById('drawing-canvas');
+            if (!containerEl) {
+                throw new Error('Canvas container not found');
+            }
+
+            this.pixiApp = new PIXI.Application();
+            
+            const dpr = window.devicePixelRatio || 1;
+            const screenWidth = window.innerWidth - 50;
+            const screenHeight = window.innerHeight;
+            
+            await this.pixiApp.init({
+                width: screenWidth,
+                height: screenHeight,
+                backgroundAlpha: 0,
+                resolution: 1,
+                antialias: true,
+                eventMode: 'static',
+                eventFeatures: {
+                    move: true,
+                    globalMove: true,
+                    click: true,
+                    wheel: true,
+                }
+            });
+            
+            containerEl.innerHTML = '';
+            containerEl.appendChild(this.pixiApp.canvas);
+
+            this.pixiApp.canvas.style.width = `${screenWidth}px`;
+            this.pixiApp.canvas.style.height = `${screenHeight}px`;
+
+            this.cameraSystem = new CameraSystem(this.pixiApp);
+            this.layerManager = new LayerManager(this.cameraSystem.canvasContainer, this.pixiApp, this.cameraSystem);
+            this.drawingEngine = new DrawingEngine(this.cameraSystem, this.layerManager);
+            this.interactionManager = new InteractionManager(this.pixiApp, this.drawingEngine, this.layerManager);
+            this.uiController = new UIController(this.drawingEngine, this.layerManager, this.pixiApp);
+
+            this.pixiApp.cameraSystem = this.cameraSystem;
+
+            this.layerManager.createLayer('背景', true);
+            this.layerManager.createLayer('レイヤー1');
+            this.layerManager.setActiveLayer(1);
+
+            this.layerManager.updateLayerPanelUI();
+            this.layerManager.updateStatusDisplay();
+
+            initializeSortable(this.layerManager);
+
+            this.pixiApp.ticker.add(() => {
+                this.layerManager.processThumbnailUpdates();
+            });
+
+            this.setupWindowResize();
+            this.updateCanvasInfo();
+            this.updateDPRInfo();
+            this.startFPSMonitor();
+
+            return true;
+        }
+
+        setupWindowResize() {
+            window.addEventListener('resize', () => {
+                const newWidth = window.innerWidth - 50;
+                const newHeight = window.innerHeight;
+                
+                this.pixiApp.renderer.resize(newWidth, newHeight);
+                this.pixiApp.canvas.style.width = `${newWidth}px`;
+                this.pixiApp.canvas.style.height = `${newHeight}px`;
+                
+                this.cameraSystem.initializeCamera();
+                this.cameraSystem.drawCameraFrame();
+            });
+        }
+
+        updateCanvasInfo() {
+            const element = document.getElementById('canvas-info');
+            if (element) {
+                element.textContent = `${CONFIG.canvas.width}×${CONFIG.canvas.height}px`;
+            }
+        }
+
+        updateDPRInfo() {
+            const element = document.getElementById('dpr-info');
+            if (element) {
+                element.textContent = (window.devicePixelRatio || 1).toFixed(1);
+            }
+        }
+
+        startFPSMonitor() {
+            let frameCount = 0;
+            let lastTime = performance.now();
+
+            const updateFPS = () => {
+                frameCount++;
+                const currentTime = performance.now();
+
+                if (currentTime - lastTime >= 1000) {
+                    const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                    const element = document.getElementById('fps');
+                    if (element) {
+                        element.textContent = fps;
+                    }
+
+                    frameCount = 0;
+                    lastTime = currentTime;
+                }
+
+                requestAnimationFrame(updateFPS);
+            };
+
+            updateFPS();
+        }
+    }
+
+    // === アプリケーション起動 ===
+    window.addEventListener('DOMContentLoaded', async () => {
+        try {
+            console.log('Initializing Improved Drawing App...');
+            
+            const app = new DrawingApp();
+            await app.initialize();
+            
+            window.drawingApp = app;
+
+            console.log('🎨 Improved Drawing App initialized successfully!');
+            console.log('📋 改修完了項目:');
+            console.log('  - ✅ 反転ボタンのサイズ調整・パネルスリム化');
+            console.log('  - ✅ 十字サイトの画面中央配置（fixed位置指定）');
+            console.log('  - ✅ 十字サイトの安定した表示（加算＋縁あり）');
+            console.log('  - ✅ レイヤー変形基準の中央統一');
+
+        } catch (error) {
+            console.error('Failed to initialize Improved Drawing App:', error);
+        }
+    });
+
+})();
+    </script>
+</body>
+</html>

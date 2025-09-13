@@ -5,7 +5,7 @@
         console.error('PIXI is not loaded');
         return;
     }
-
+    
     console.log('PixiJS loaded:', PIXI.VERSION);
     
     // === 設定 ===
@@ -43,7 +43,7 @@
         if (CONFIG.debug) console.log(...args);
     };
 
-    // === カメラシステム ===
+    // === カメラシステム（改修版：座標変換修正・ペン描画ズレ対策） ===
     class CameraSystem {
         constructor(app) {
             this.app = app;
@@ -56,6 +56,7 @@
             this.horizontalFlipped = false;
             this.verticalFlipped = false;
             
+            // 初期状態の記憶（Ctrl+0リセット用）
             this.initialState = {
                 position: null,
                 scale: CONFIG.camera.initialScale,
@@ -82,6 +83,7 @@
             this.worldContainer.addChild(this.canvasMask);
             this.canvasContainer.mask = this.canvasMask;
             
+            // キー状態管理
             this.spacePressed = false;
             this.shiftPressed = false;
             this.vKeyPressed = false;
@@ -123,15 +125,18 @@
         setupEvents() {
             this.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
             
+            // === マウス操作 ===
             this.app.canvas.addEventListener('pointerdown', (e) => {
-                if (this.vKeyPressed) return;
+                if (this.vKeyPressed) return; // レイヤー操作中は無視
                 
                 if ((e.button === 2 || this.spacePressed) && !this.shiftPressed) {
+                    // Space + ドラッグ: 移動
                     this.isDragging = true;
                     this.lastPoint = { x: e.clientX, y: e.clientY };
                     this.app.canvas.style.cursor = 'move';
                     e.preventDefault();
                 } else if ((e.button === 2 || this.spacePressed) && this.shiftPressed) {
+                    // Shift + Space + ドラッグ: 拡縮・回転
                     this.isScaleRotateDragging = true;
                     this.lastPoint = { x: e.clientX, y: e.clientY };
                     this.app.canvas.style.cursor = 'grab';
@@ -141,6 +146,7 @@
             
             this.app.canvas.addEventListener('pointermove', (e) => {
                 if (this.isDragging) {
+                    // 移動
                     const dx = (e.clientX - this.lastPoint.x) * this.panSpeed;
                     const dy = (e.clientY - this.lastPoint.y) * this.panSpeed;
                     
@@ -150,6 +156,7 @@
                     this.lastPoint = { x: e.clientX, y: e.clientY };
                     this.updateTransformDisplay();
                 } else if (this.isScaleRotateDragging) {
+                    // 拡縮・回転
                     const dx = e.clientX - this.lastPoint.x;
                     const dy = e.clientY - this.lastPoint.y;
                     
@@ -158,6 +165,7 @@
                     const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
                     
                     if (Math.abs(dx) > Math.abs(dy)) {
+                        // 水平方向優先: 回転
                         this.rotation += (dx * CONFIG.camera.dragRotationSpeed);
                         this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
                         
@@ -165,6 +173,7 @@
                         this.worldContainer.x += worldCenter.x - newWorldCenter.x;
                         this.worldContainer.y += worldCenter.y - newWorldCenter.y;
                     } else {
+                        // 垂直方向優先: 拡縮
                         const scaleFactor = 1 + (dy * CONFIG.camera.dragScaleSpeed);
                         const newScale = this.worldContainer.scale.x * scaleFactor;
                         
@@ -192,15 +201,17 @@
                 }
             });
             
+            // === マウスホイール操作 ===
             this.app.canvas.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 
-                if (this.vKeyPressed) return;
+                if (this.vKeyPressed) return; // レイヤー操作中は無視
                 
                 const centerX = CONFIG.canvas.width / 2;
                 const centerY = CONFIG.canvas.height / 2;
                 
                 if (this.shiftPressed) {
+                    // Shift + ホイール: 回転
                     const rotationDelta = e.deltaY < 0 ? 
                         CONFIG.camera.keyRotationDegree : -CONFIG.camera.keyRotationDegree;
                     
@@ -214,6 +225,7 @@
                     this.worldContainer.y += worldCenter.y - newWorldCenter.y;
                     
                 } else {
+                    // ホイール: 拡縮
                     const scaleFactor = e.deltaY < 0 ? 1 + this.zoomSpeed : 1 - this.zoomSpeed;
                     const newScale = this.worldContainer.scale.x * scaleFactor;
                     
@@ -231,13 +243,16 @@
                 this.updateTransformDisplay();
             });
             
+            // === キーボード操作 ===
             document.addEventListener('keydown', (e) => {
+                // Ctrl+0: キャンバスリセット
                 if (e.ctrlKey && e.code === 'Digit0') {
                     this.resetCanvas();
                     e.preventDefault();
                     return;
                 }
                 
+                // キー状態更新
                 if (e.code === 'Space') {
                     this.spacePressed = true;
                     this.updateCursor();
@@ -245,8 +260,10 @@
                 }
                 if (e.shiftKey) this.shiftPressed = true;
                 
+                // 以下、レイヤー操作中（V押下中）は処理しない
                 if (this.vKeyPressed) return;
                 
+                // === キャンバス移動: Space + 方向キー ===
                 if (this.spacePressed && !this.shiftPressed && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
                     const moveAmount = CONFIG.camera.keyMoveAmount;
                     switch(e.code) {
@@ -259,6 +276,7 @@
                     e.preventDefault();
                 }
                 
+                // === キャンバス拡縮・回転: Shift + Space + 方向キー ===
                 if (this.spacePressed && this.shiftPressed && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
                     const centerX = CONFIG.canvas.width / 2;
                     const centerY = CONFIG.canvas.height / 2;
@@ -308,15 +326,18 @@
                     e.preventDefault();
                 }
                 
+                // === キャンバス反転: H / Shift+H（レイヤー操作中以外） ===
                 if (!this.vKeyPressed && e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
                     const centerX = CONFIG.canvas.width / 2;
                     const centerY = CONFIG.canvas.height / 2;
                     const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
                     
                     if (e.shiftKey) {
+                        // Shift+H: 垂直反転
                         this.verticalFlipped = !this.verticalFlipped;
                         this.worldContainer.scale.y *= -1;
                     } else {
+                        // H: 水平反転
                         this.horizontalFlipped = !this.horizontalFlipped;
                         this.worldContainer.scale.x *= -1;
                     }
@@ -339,12 +360,14 @@
             });
         }
         
+        // レイヤー操作システムからの呼び出し用
         setVKeyPressed(pressed) {
             this.vKeyPressed = pressed;
         }
         
         updateCursor() {
             if (this.vKeyPressed) {
+                // レイヤー操作中
                 this.app.canvas.style.cursor = 'grab';
             } else if (this.isDragging || (this.spacePressed && !this.shiftPressed)) {
                 this.app.canvas.style.cursor = 'move';
@@ -355,11 +378,13 @@
             }
         }
         
+        // 改修版：ペン描画用のキャンバス座標変換（レイヤー変形を考慮しない）
         screenToCanvasForDrawing(screenX, screenY) {
             const globalPoint = { x: screenX, y: screenY };
             return this.canvasContainer.toLocal(globalPoint);
         }
         
+        // レイヤー操作用の座標変換（レイヤー変形を考慮）
         screenToCanvas(screenX, screenY) {
             const globalPoint = { x: screenX, y: screenY };
             return this.canvasContainer.toLocal(globalPoint);
@@ -393,68 +418,7 @@
         }
     }
 
-    // === 十字サイトシステム ===
-    class CrosshairSystem {
-        constructor(canvasContainer, layerManager, app) {
-            this.canvasContainer = canvasContainer;
-            this.layerManager = layerManager;
-            this.app = app;
-            this.crosshairElement = document.getElementById('crosshair-sight');
-            this.isVisible = false;
-            this.currentColor = '#800000';
-            this.alternateColor = '#ffffff';
-            this.setupDynamicStyles();
-        }
-        
-        setupDynamicStyles() {
-            if (!this.crosshairElement) return;
-            
-            this.crosshairElement.style.setProperty('--crosshair-color', this.currentColor);
-            this.crosshairElement.style.setProperty('--crosshair-shadow', this.alternateColor);
-        }
-        
-        show() {
-            if (!this.crosshairElement) return;
-            
-            this.isVisible = true;
-            this.crosshairElement.classList.add('show');
-            this.updatePosition();
-            this.updateColor();
-        }
-        
-        hide() {
-            if (!this.crosshairElement) return;
-            
-            this.isVisible = false;
-            this.crosshairElement.classList.remove('show');
-        }
-        
-        updatePosition() {
-            if (!this.isVisible || !this.crosshairElement) return;
-            
-            const canvasCenterX = CONFIG.canvas.width / 2;
-            const canvasCenterY = CONFIG.canvas.height / 2;
-            
-            const screenPos = this.canvasContainer.toGlobal({ x: canvasCenterX, y: canvasCenterY });
-            
-            const canvasRect = document.getElementById('drawing-canvas').getBoundingClientRect();
-            const relativeX = screenPos.x - canvasRect.left;
-            const relativeY = screenPos.y - canvasRect.top;
-            
-            this.crosshairElement.style.left = relativeX + 'px';
-            this.crosshairElement.style.top = relativeY + 'px';
-            this.crosshairElement.style.transform = 'translate(-50%, -50%)';
-        }
-        
-        updateColor() {
-            if (!this.crosshairElement) return;
-            
-            this.crosshairElement.style.setProperty('--crosshair-color', this.currentColor);
-            this.crosshairElement.style.setProperty('--crosshair-shadow', this.alternateColor);
-        }
-    }
-
-    // === レイヤー管理システム ===
+    // === レイヤー管理システム（改修版：Vキートグル・パネルドラッグ・確定機能） ===
     class LayerManager {
         constructor(canvasContainer, app, cameraSystem) {
             this.canvasContainer = canvasContainer;
@@ -469,28 +433,32 @@
             this.layersContainer.label = 'layersContainer';
             this.canvasContainer.addChild(this.layersContainer);
             
+            // レイヤー移動モード関連（改修版）
             this.vKeyPressed = false;
             this.isLayerMoveMode = false;
             this.isLayerDragging = false;
             this.layerDragLastPoint = { x: 0, y: 0 };
             
+            // パネルドラッグ用
+            this.isPanelDragging = false;
+            this.panelDragLastPoint = { x: 0, y: 0 };
+            
+            // UI要素
             this.layerTransformPanel = null;
-            this.crosshairSystem = null;
+            this.crosshairSight = null;
             
             this.setupLayerOperations();
             this.setupLayerTransformPanel();
-            this.initializeCrosshairSystem();
-        }
-        
-        initializeCrosshairSystem() {
-            this.crosshairSystem = new CrosshairSystem(this.canvasContainer, this, this.app);
+            this.setupPanelDrag();
         }
         
         setupLayerTransformPanel() {
             this.layerTransformPanel = document.getElementById('layer-transform-panel');
+            this.crosshairSight = document.getElementById('crosshair-sight');
             
-            if (!this.layerTransformPanel) return;
+            if (!this.layerTransformPanel || !this.crosshairSight) return;
             
+            // スライダー設定
             this.setupLayerSlider('layer-x-slider', CONFIG.layer.minX, CONFIG.layer.maxX, 0, (value) => {
                 this.updateActiveLayerTransform('x', value);
                 return Math.round(value) + 'px';
@@ -511,6 +479,7 @@
                 return value.toFixed(2) + 'x';
             });
             
+            // 反転ボタン
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
             
@@ -525,6 +494,54 @@
                     this.flipActiveLayer('vertical');
                 });
             }
+            
+            // 確定ボタン
+            const exitBtn = document.getElementById('exit-layer-mode-btn');
+            if (exitBtn) {
+                exitBtn.addEventListener('click', () => {
+                    this.exitLayerMoveMode();
+                });
+            }
+        }
+        
+        // 改修版：パネルドラッグ機能
+        setupPanelDrag() {
+            if (!this.layerTransformPanel) return;
+            
+            const dragHandle = this.layerTransformPanel.querySelector('.panel-drag-handle');
+            if (!dragHandle) return;
+            
+            dragHandle.addEventListener('pointerdown', (e) => {
+                this.isPanelDragging = true;
+                this.panelDragLastPoint = { x: e.clientX, y: e.clientY };
+                dragHandle.style.cursor = 'grabbing';
+                e.preventDefault();
+            });
+            
+            document.addEventListener('pointermove', (e) => {
+                if (!this.isPanelDragging) return;
+                
+                const dx = e.clientX - this.panelDragLastPoint.x;
+                const dy = e.clientY - this.panelDragLastPoint.y;
+                
+                const currentStyle = window.getComputedStyle(this.layerTransformPanel);
+                const currentLeft = parseFloat(currentStyle.left) || 0;
+                const currentTop = parseFloat(currentStyle.top) || 0;
+                
+                this.layerTransformPanel.style.left = (currentLeft + dx) + 'px';
+                this.layerTransformPanel.style.top = (currentTop + dy) + 'px';
+                this.layerTransformPanel.style.transform = 'none'; // translateX(-50%)を無効化
+                
+                this.panelDragLastPoint = { x: e.clientX, y: e.clientY };
+            });
+            
+            document.addEventListener('pointerup', () => {
+                if (this.isPanelDragging) {
+                    this.isPanelDragging = false;
+                    const dragHandle = this.layerTransformPanel.querySelector('.panel-drag-handle');
+                    if (dragHandle) dragHandle.style.cursor = 'move';
+                }
+            });
         }
         
         setupLayerSlider(sliderId, min, max, initial, callback) {
@@ -569,6 +586,7 @@
                 dragging = false;
             });
 
+            // 外部からの値更新用
             container.updateValue = (newValue) => {
                 update(newValue, false);
             };
@@ -605,13 +623,12 @@
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
             
-            const canvasCenterX = CONFIG.canvas.width / 2;
-            const canvasCenterY = CONFIG.canvas.height / 2;
+            const centerX = CONFIG.canvas.width / 2;
+            const centerY = CONFIG.canvas.height / 2;
             
-            const currentPivotX = activeLayer.pivot.x || 0;
-            const currentPivotY = activeLayer.pivot.y || 0;
-            
-            activeLayer.pivot.set(canvasCenterX, canvasCenterY);
+            const pivot = { x: centerX, y: centerY };
+            activeLayer.pivot.set(pivot.x, pivot.y);
+            activeLayer.position.set(pivot.x, pivot.y);
             
             if (direction === 'horizontal') {
                 activeLayer.scale.x *= -1;
@@ -619,136 +636,413 @@
                 activeLayer.scale.y *= -1;
             }
             
-            activeLayer.x += (canvasCenterX - currentPivotX);
-            activeLayer.y += (canvasCenterY - currentPivotY);
-            
-            this.updateLayerTransformPanelValues();
+            this.updateFlipButtons();
             this.requestThumbnailUpdate(this.activeLayerIndex);
+        }
+        
+        updateFlipButtons() {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) return;
+            
+            const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
+            const flipVerticalBtn = document.getElementById('flip-vertical-btn');
+            
+            if (flipHorizontalBtn) {
+                if (activeLayer.scale.x < 0) {
+                    flipHorizontalBtn.classList.add('active');
+                } else {
+                    flipHorizontalBtn.classList.remove('active');
+                }
+            }
+            
+            if (flipVerticalBtn) {
+                if (activeLayer.scale.y < 0) {
+                    flipVerticalBtn.classList.add('active');
+                } else {
+                    flipVerticalBtn.classList.remove('active');
+                }
+            }
         }
         
         updateLayerTransformPanelValues() {
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
             
+            // X位置スライダー更新
             const xSlider = document.getElementById('layer-x-slider');
-            const ySlider = document.getElementById('layer-y-slider');
-            const rotationSlider = document.getElementById('layer-rotation-slider');
-            const scaleSlider = document.getElementById('layer-scale-slider');
-            
             if (xSlider && xSlider.updateValue) {
                 xSlider.updateValue(activeLayer.x);
             }
             
+            // Y位置スライダー更新
+            const ySlider = document.getElementById('layer-y-slider');
             if (ySlider && ySlider.updateValue) {
                 ySlider.updateValue(activeLayer.y);
             }
             
+            // 回転スライダー更新
+            const rotationSlider = document.getElementById('layer-rotation-slider');
             if (rotationSlider && rotationSlider.updateValue) {
-                rotationSlider.updateValue((activeLayer.rotation * 180) / Math.PI);
+                rotationSlider.updateValue(activeLayer.rotation * 180 / Math.PI);
             }
             
+            // 拡縮スライダー更新
+            const scaleSlider = document.getElementById('layer-scale-slider');
             if (scaleSlider && scaleSlider.updateValue) {
                 scaleSlider.updateValue(Math.abs(activeLayer.scale.x));
             }
+            
+            this.updateFlipButtons();
         }
         
-        setupLayerOperations() {
-            document.addEventListener('keydown', (e) => {
-                if (e.code === 'KeyV' && !e.ctrlKey && !e.altKey && !e.metaKey && !this.vKeyPressed) {
-                    this.enterLayerMoveMode();
-                    e.preventDefault();
-                }
-            });
-            
-            document.addEventListener('keyup', (e) => {
-                if (e.code === 'KeyV' && this.vKeyPressed) {
-                    this.exitLayerMoveMode();
-                    e.preventDefault();
-                }
-            });
-            
-            this.app.canvas.addEventListener('pointerdown', (e) => {
-                if (!this.isLayerMoveMode || e.button !== 0) return;
-                
-                this.isLayerDragging = true;
-                this.layerDragLastPoint = { x: e.clientX, y: e.clientY };
-                this.app.canvas.style.cursor = 'grabbing';
-                e.preventDefault();
-            });
-            
-            this.app.canvas.addEventListener('pointermove', (e) => {
-                if (!this.isLayerDragging || !this.isLayerMoveMode) return;
-                
-                const dx = e.clientX - this.layerDragLastPoint.x;
-                const dy = e.clientY - this.layerDragLastPoint.y;
-                
-                const activeLayer = this.getActiveLayer();
-                if (activeLayer) {
-                    activeLayer.x += dx / this.cameraSystem.worldContainer.scale.x;
-                    activeLayer.y += dy / this.cameraSystem.worldContainer.scale.y;
-                    
-                    this.updateLayerTransformPanelValues();
-                    this.requestThumbnailUpdate(this.activeLayerIndex);
-                }
-                
-                this.layerDragLastPoint = { x: e.clientX, y: e.clientY };
-            });
-            
-            this.app.canvas.addEventListener('pointerup', (e) => {
-                if (this.isLayerDragging && e.button === 0) {
-                    this.isLayerDragging = false;
-                    this.app.canvas.style.cursor = 'grab';
-                }
-            });
+        // 改修版：Vキートグル方式でのレイヤー移動モード
+        toggleLayerMoveMode() {
+            if (this.isLayerMoveMode) {
+                this.exitLayerMoveMode();
+            } else {
+                this.enterLayerMoveMode();
+            }
         }
         
         enterLayerMoveMode() {
-            this.vKeyPressed = true;
+            if (this.isLayerMoveMode) return;
+            
             this.isLayerMoveMode = true;
-            
+            this.vKeyPressed = true;
             this.cameraSystem.setVKeyPressed(true);
-            this.cameraSystem.updateCursor();
             
+            // パネルと十字サイト表示
             if (this.layerTransformPanel) {
                 this.layerTransformPanel.classList.add('show');
                 this.updateLayerTransformPanelValues();
             }
             
-            if (this.crosshairSystem) {
-                this.crosshairSystem.show();
+            if (this.crosshairSight) {
+                this.crosshairSight.classList.add('show');
             }
+            
+            this.updateCursor();
         }
         
         exitLayerMoveMode() {
-            this.vKeyPressed = false;
+            if (!this.isLayerMoveMode) return;
+            
             this.isLayerMoveMode = false;
+            this.vKeyPressed = false;
             this.isLayerDragging = false;
-            
             this.cameraSystem.setVKeyPressed(false);
-            this.cameraSystem.updateCursor();
             
+            // パネルと十字サイト非表示
             if (this.layerTransformPanel) {
                 this.layerTransformPanel.classList.remove('show');
             }
             
-            if (this.crosshairSystem) {
-                this.crosshairSystem.hide();
+            if (this.crosshairSight) {
+                this.crosshairSight.classList.remove('show');
+            }
+            
+            this.updateCursor();
+            
+            // 改修版：確定時にレイヤー変形を実際に適用（描画データをベイク）
+            this.confirmLayerTransform();
+        }
+        
+        // 改修版：レイヤー変形の確定処理（ペンズレ対策）
+        confirmLayerTransform() {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) return;
+            
+            // レイヤーのtransformが初期状態でない場合、描画をベイクして初期化
+            if (activeLayer.x !== 0 || activeLayer.y !== 0 || 
+                activeLayer.rotation !== 0 || Math.abs(activeLayer.scale.x) !== 1 || Math.abs(activeLayer.scale.y) !== 1) {
+                
+                try {
+                    // レイヤー内容をRenderTextureに描画
+                    const renderTexture = PIXI.RenderTexture.create({
+                        width: CONFIG.canvas.width,
+                        height: CONFIG.canvas.height,
+                        resolution: 1
+                    });
+                    
+                    this.app.renderer.render(activeLayer, { renderTexture });
+                    
+                    // 既存のコンテンツを削除
+                    activeLayer.removeChildren();
+                    
+                    // RenderTextureをSpriteとして追加
+                    const sprite = new PIXI.Sprite(renderTexture);
+                    activeLayer.addChild(sprite);
+                    
+                    // Transformを初期化
+                    activeLayer.position.set(0, 0);
+                    activeLayer.rotation = 0;
+                    activeLayer.scale.set(1, 1);
+                    activeLayer.pivot.set(0, 0);
+                    
+                    // パスデータもクリア（新しい描画システム用）
+                    if (activeLayer.layerData) {
+                        activeLayer.layerData.paths = [];
+                    }
+                    
+                    // 反転ボタンもリセット
+                    this.updateFlipButtons();
+                    
+                    log('Layer transform confirmed and baked');
+                    
+                } catch (error) {
+                    console.warn('Failed to confirm layer transform:', error);
+                }
             }
         }
         
-        createLayer(name = 'レイヤー', isBackground = false) {
+        setupLayerOperations() {
+            document.addEventListener('keydown', (e) => {
+                // 改修版：Vキートグル方式
+                if (e.code === 'KeyV' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    this.toggleLayerMoveMode();
+                    e.preventDefault();
+                }
+                
+                // Pキー: ペンツールに切り替え（レイヤー移動モード終了）
+                if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    if (this.isLayerMoveMode) {
+                        this.exitLayerMoveMode();
+                    }
+                    e.preventDefault();
+                }
+                
+                // Eキー: 消しゴムツールに切り替え（レイヤー移動モード終了）
+                if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    if (this.isLayerMoveMode) {
+                        this.exitLayerMoveMode();
+                    }
+                    e.preventDefault();
+                }
+                
+                // === V + 方向キー: アクティブレイヤー移動 ===
+                if (this.vKeyPressed && !e.shiftKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+                    this.moveActiveLayer(e.code);
+                    e.preventDefault();
+                }
+                
+                // === V + Shift + 方向キー: アクティブレイヤー拡縮・回転 ===
+                if (this.vKeyPressed && e.shiftKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+                    this.transformActiveLayer(e.code);
+                    e.preventDefault();
+                }
+                
+                // === V + H / V + Shift + H: アクティブレイヤー反転 ===
+                if (this.vKeyPressed && e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    const activeLayer = this.getActiveLayer();
+                    if (activeLayer) {
+                        const centerX = CONFIG.canvas.width / 2;
+                        const centerY = CONFIG.canvas.height / 2;
+                        
+                        const pivot = { x: centerX, y: centerY };
+                        activeLayer.pivot.set(pivot.x, pivot.y);
+                        activeLayer.position.set(pivot.x, pivot.y);
+                        
+                        if (e.shiftKey) {
+                            // V + Shift + H: 垂直反転
+                            activeLayer.scale.y *= -1;
+                        } else {
+                            // V + H: 水平反転
+                            activeLayer.scale.x *= -1;
+                        }
+                        
+                        this.updateFlipButtons();
+                        this.requestThumbnailUpdate(this.activeLayerIndex);
+                    }
+                    e.preventDefault();
+                }
+            });
+            
+            // === V + ドラッグ: アクティブレイヤー移動・変形 ===
+            this.app.canvas.addEventListener('pointerdown', (e) => {
+                if (this.vKeyPressed && e.button === 0) {
+                    this.isLayerDragging = true;
+                    this.layerDragLastPoint = { x: e.clientX, y: e.clientY };
+                    this.app.canvas.style.cursor = 'move';
+                    e.preventDefault();
+                }
+            });
+            
+            this.app.canvas.addEventListener('pointermove', (e) => {
+                if (this.isLayerDragging && this.vKeyPressed) {
+                    const activeLayer = this.getActiveLayer();
+                    if (activeLayer) {
+                        const dx = e.clientX - this.layerDragLastPoint.x;
+                        const dy = e.clientY - this.layerDragLastPoint.y;
+                        
+                        const worldScale = this.cameraSystem.worldContainer.scale.x;
+                        const adjustedDx = dx / worldScale;
+                        const adjustedDy = dy / worldScale;
+                        
+                        if (e.shiftKey) {
+                            // V + Shift + ドラッグ: 拡縮・回転
+                            if (Math.abs(dx) > Math.abs(dy)) {
+                                // 水平方向優先: 拡縮
+                                const scaleFactor = 1 + (dx * 0.01);
+                                const currentScale = Math.abs(activeLayer.scale.x);
+                                const newScale = Math.max(CONFIG.layer.minScale, Math.min(CONFIG.layer.maxScale, currentScale * scaleFactor));
+                                
+                                activeLayer.scale.x = activeLayer.scale.x < 0 ? -newScale : newScale;
+                                activeLayer.scale.y = activeLayer.scale.y < 0 ? -newScale : newScale;
+                                
+                                // スライダー更新
+                                const scaleSlider = document.getElementById('layer-scale-slider');
+                                if (scaleSlider && scaleSlider.updateValue) {
+                                    scaleSlider.updateValue(newScale);
+                                }
+                            } else {
+                                // 垂直方向優先: 回転
+                                activeLayer.rotation += (dy * 0.02);
+                                
+                                // スライダー更新
+                                const rotationSlider = document.getElementById('layer-rotation-slider');
+                                if (rotationSlider && rotationSlider.updateValue) {
+                                    rotationSlider.updateValue(activeLayer.rotation * 180 / Math.PI);
+                                }
+                            }
+                        } else {
+                            // V + ドラッグ: 移動
+                            activeLayer.x += adjustedDx;
+                            activeLayer.y += adjustedDy;
+                            
+                            // スライダー更新
+                            const xSlider = document.getElementById('layer-x-slider');
+                            const ySlider = document.getElementById('layer-y-slider');
+                            if (xSlider && xSlider.updateValue) {
+                                xSlider.updateValue(activeLayer.x);
+                            }
+                            if (ySlider && ySlider.updateValue) {
+                                ySlider.updateValue(activeLayer.y);
+                            }
+                        }
+                        
+                        this.layerDragLastPoint = { x: e.clientX, y: e.clientY };
+                        this.requestThumbnailUpdate(this.activeLayerIndex);
+                    }
+                }
+            });
+            
+            this.app.canvas.addEventListener('pointerup', (e) => {
+                if (this.isLayerDragging) {
+                    this.isLayerDragging = false;
+                    this.updateCursor();
+                }
+            });
+        }
+        
+        moveActiveLayer(keyCode) {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) return;
+            
+            const moveAmount = 5;
+            switch(keyCode) {
+                case 'ArrowUp':    activeLayer.y -= moveAmount; break;
+                case 'ArrowDown':  activeLayer.y += moveAmount; break;
+                case 'ArrowLeft':  activeLayer.x -= moveAmount; break;
+                case 'ArrowRight': activeLayer.x += moveAmount; break;
+            }
+            
+            // スライダー値更新
+            const xSlider = document.getElementById('layer-x-slider');
+            const ySlider = document.getElementById('layer-y-slider');
+            if (xSlider && xSlider.updateValue) {
+                xSlider.updateValue(activeLayer.x);
+            }
+            if (ySlider && ySlider.updateValue) {
+                ySlider.updateValue(activeLayer.y);
+            }
+            
+            this.requestThumbnailUpdate(this.activeLayerIndex);
+        }
+        
+        transformActiveLayer(keyCode) {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer) return;
+            
+            const centerX = CONFIG.canvas.width / 2;
+            const centerY = CONFIG.canvas.height / 2;
+            
+            const pivot = { x: centerX, y: centerY };
+            activeLayer.pivot.set(pivot.x, pivot.y);
+            activeLayer.position.set(pivot.x, pivot.y);
+            
+            switch(keyCode) {
+                case 'ArrowUp': // 拡大
+                    const scaleUpFactor = 1.1;
+                    const currentScaleUp = Math.abs(activeLayer.scale.x);
+                    const newScaleUp = Math.min(CONFIG.layer.maxScale, currentScaleUp * scaleUpFactor);
+                    activeLayer.scale.x = activeLayer.scale.x < 0 ? -newScaleUp : newScaleUp;
+                    activeLayer.scale.y = activeLayer.scale.y < 0 ? -newScaleUp : newScaleUp;
+                    
+                    // スライダー更新
+                    const scaleSliderUp = document.getElementById('layer-scale-slider');
+                    if (scaleSliderUp && scaleSliderUp.updateValue) {
+                        scaleSliderUp.updateValue(newScaleUp);
+                    }
+                    break;
+                    
+                case 'ArrowDown': // 縮小
+                    const scaleDownFactor = 0.9;
+                    const currentScaleDown = Math.abs(activeLayer.scale.x);
+                    const newScaleDown = Math.max(CONFIG.layer.minScale, currentScaleDown * scaleDownFactor);
+                    activeLayer.scale.x = activeLayer.scale.x < 0 ? -newScaleDown : newScaleDown;
+                    activeLayer.scale.y = activeLayer.scale.y < 0 ? -newScaleDown : newScaleDown;
+                    
+                    // スライダー更新
+                    const scaleSliderDown = document.getElementById('layer-scale-slider');
+                    if (scaleSliderDown && scaleSliderDown.updateValue) {
+                        scaleSliderDown.updateValue(newScaleDown);
+                    }
+                    break;
+                    
+                case 'ArrowLeft': // 左回転
+                    activeLayer.rotation -= (15 * Math.PI) / 180; // 15度
+                    
+                    // スライダー更新
+                    const rotationSliderLeft = document.getElementById('layer-rotation-slider');
+                    if (rotationSliderLeft && rotationSliderLeft.updateValue) {
+                        rotationSliderLeft.updateValue(activeLayer.rotation * 180 / Math.PI);
+                    }
+                    break;
+                    
+                case 'ArrowRight': // 右回転
+                    activeLayer.rotation += (15 * Math.PI) / 180; // 15度
+                    
+                    // スライダー更新
+                    const rotationSliderRight = document.getElementById('layer-rotation-slider');
+                    if (rotationSliderRight && rotationSliderRight.updateValue) {
+                        rotationSliderRight.updateValue(activeLayer.rotation * 180 / Math.PI);
+                    }
+                    break;
+            }
+            
+            this.requestThumbnailUpdate(this.activeLayerIndex);
+        }
+        
+        updateCursor() {
+            if (this.vKeyPressed) {
+                this.app.canvas.style.cursor = 'grab';
+            }
+        }
+
+        createLayer(name, isBackground = false) {
             const layer = new PIXI.Container();
-            layer.label = name;
+            const layerId = `layer_${this.layerCounter++}`;
+            
+            layer.label = layerId;
             layer.layerData = {
+                id: layerId,
                 name: name,
                 visible: true,
                 opacity: 1.0,
                 isBackground: isBackground,
-                paths: [],
-                backgroundGraphics: null,
-                thumbnail: null
+                paths: []
             };
-            
+
             if (isBackground) {
                 const bg = new PIXI.Graphics();
                 bg.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
@@ -756,179 +1050,224 @@
                 layer.addChild(bg);
                 layer.layerData.backgroundGraphics = bg;
             }
-            
-            const index = this.layers.length;
+
             this.layers.push(layer);
             this.layersContainer.addChild(layer);
-            
-            return { layer, index };
+            return { layer, index: this.layers.length - 1 };
         }
-        
+
         setActiveLayer(index) {
             if (index >= 0 && index < this.layers.length) {
                 this.activeLayerIndex = index;
                 this.updateLayerPanelUI();
                 this.updateStatusDisplay();
+                
+                // レイヤー移動モードが有効な場合、スライダー値を更新
+                if (this.isLayerMoveMode) {
+                    this.updateLayerTransformPanelValues();
+                }
             }
         }
-        
+
         getActiveLayer() {
-            return this.layers[this.activeLayerIndex] || null;
+            return this.activeLayerIndex >= 0 ? this.layers[this.activeLayerIndex] : null;
         }
-        
+
+        addPathToLayer(layerIndex, path) {
+            if (layerIndex >= 0 && layerIndex < this.layers.length) {
+                const layer = this.layers[layerIndex];
+                layer.layerData.paths.push(path);
+                layer.addChild(path.graphics);
+                this.requestThumbnailUpdate(layerIndex);
+            }
+        }
+
+        requestThumbnailUpdate(layerIndex) {
+            this.thumbnailUpdateQueue.add(layerIndex);
+        }
+
+        processThumbnailUpdates() {
+            if (!this.app?.renderer || this.thumbnailUpdateQueue.size === 0) return;
+
+            this.thumbnailUpdateQueue.forEach(layerIndex => {
+                this.updateThumbnail(layerIndex);
+            });
+            this.thumbnailUpdateQueue.clear();
+        }
+
+        updateThumbnail(layerIndex) {
+            if (!this.app?.renderer || layerIndex < 0 || layerIndex >= this.layers.length) return;
+
+            const layer = this.layers[layerIndex];
+            const layerItems = document.querySelectorAll('.layer-item');
+            
+            const panelIndex = this.layers.length - 1 - layerIndex;
+            if (panelIndex >= 0 && panelIndex < layerItems.length) {
+                const thumbnail = layerItems[panelIndex].querySelector('.layer-thumbnail');
+                if (thumbnail) {
+                    try {
+                        const renderTexture = PIXI.RenderTexture.create({
+                            width: 48, 
+                            height: 48,
+                            resolution: 1
+                        });
+                        
+                        const tempContainer = new PIXI.Container();
+                        const scaleX = 48 / CONFIG.canvas.width;
+                        const scaleY = 48 / CONFIG.canvas.height;
+                        const scale = Math.min(scaleX, scaleY);
+                        
+                        const layerClone = new PIXI.Container();
+                        layerClone.position.copyFrom(layer.position);
+                        layerClone.scale.copyFrom(layer.scale);
+                        layerClone.rotation = layer.rotation;
+                        layerClone.pivot.copyFrom(layer.pivot);
+                        
+                        layer.children.forEach(child => {
+                            if (child instanceof PIXI.Graphics) {
+                                const clone = child.clone();
+                                layerClone.addChild(clone);
+                            } else if (child instanceof PIXI.Sprite) {
+                                const clone = new PIXI.Sprite(child.texture);
+                                clone.position.copyFrom(child.position);
+                                clone.scale.copyFrom(child.scale);
+                                clone.rotation = child.rotation;
+                                clone.pivot.copyFrom(child.pivot);
+                                layerClone.addChild(clone);
+                            }
+                        });
+                        
+                        layerClone.scale.x *= scale;
+                        layerClone.scale.y *= scale;
+                        tempContainer.addChild(layerClone);
+                        
+                        this.app.renderer.render(tempContainer, { renderTexture });
+                        
+                        const canvas = this.app.renderer.extract.canvas(renderTexture);
+                        const dataURL = canvas.toDataURL();
+                        
+                        let img = thumbnail.querySelector('img');
+                        if (!img) {
+                            img = document.createElement('img');
+                            thumbnail.innerHTML = '';
+                            thumbnail.appendChild(img);
+                        }
+                        img.src = dataURL;
+                        
+                        renderTexture.destroy();
+                        tempContainer.destroy();
+                        
+                    } catch (error) {
+                        console.warn('Thumbnail update failed:', error);
+                    }
+                }
+            }
+        }
+
         updateLayerPanelUI() {
             const layerList = document.getElementById('layer-list');
             if (!layerList) return;
-            
+
             layerList.innerHTML = '';
-            
+
             for (let i = this.layers.length - 1; i >= 0; i--) {
                 const layer = this.layers[i];
-                const item = document.createElement('div');
-                item.className = 'layer-item';
-                if (i === this.activeLayerIndex) {
-                    item.classList.add('active');
-                }
-                
-                const visibility = document.createElement('div');
-                visibility.className = 'layer-visibility';
-                if (!layer.layerData.visible) {
-                    visibility.classList.add('hidden');
-                }
-                visibility.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
-                        <circle cx="12" cy="12" r="3"/>
-                    </svg>
+                const layerItem = document.createElement('div');
+                layerItem.className = `layer-item ${i === this.activeLayerIndex ? 'active' : ''}`;
+                layerItem.dataset.layerId = layer.layerData.id;
+                layerItem.dataset.layerIndex = i;
+
+                layerItem.innerHTML = `
+                    <div class="layer-visibility ${layer.layerData.visible ? '' : 'hidden'}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            ${layer.layerData.visible ? 
+                                '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>' :
+                                '<path d="m15 18-.722-3.25"/><path d="m2 2 20 20"/><path d="M6.71 6.71C3.4 8.27 2 12 2 12s3 7 10 7c1.59 0 2.84-.3 3.79-.73"/><path d="m8.5 10.5 7 7"/><path d="M9.677 4.677C10.495 4.06 11.608 4 12 4c7 0 10 7 10 7a13.16 13.16 0 0 1-.64.77"/>'}
+                        </svg>
+                    </div>
+                    <div class="layer-opacity">100%</div>
+                    <div class="layer-name">${layer.layerData.name}</div>
+                    <div class="layer-thumbnail">
+                        <div class="layer-thumbnail-placeholder"></div>
+                    </div>
+                    <div class="layer-delete-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="m18 6-12 12"/><path d="m6 6 12 12"/>
+                        </svg>
+                    </div>
                 `;
-                
-                const opacity = document.createElement('div');
-                opacity.className = 'layer-opacity';
-                opacity.textContent = Math.round(layer.layerData.opacity * 100) + '%';
-                
-                const name = document.createElement('div');
-                name.className = 'layer-name';
-                name.textContent = layer.layerData.name;
-                
-                const thumbnail = document.createElement('div');
-                thumbnail.className = 'layer-thumbnail';
-                if (layer.layerData.thumbnail) {
-                    const img = document.createElement('img');
-                    img.src = layer.layerData.thumbnail;
-                    thumbnail.appendChild(img);
-                } else {
-                    const placeholder = document.createElement('div');
-                    placeholder.className = 'layer-thumbnail-placeholder';
-                    thumbnail.appendChild(placeholder);
-                }
-                
-                const deleteBtn = document.createElement('div');
-                deleteBtn.className = 'layer-delete-button';
-                deleteBtn.innerHTML = `
-                    <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                        <line x1="18" x2="6" y1="6" y2="18"/>
-                        <line x1="6" x2="18" y1="6" y2="18"/>
-                    </svg>
-                `;
-                
-                item.appendChild(visibility);
-                item.appendChild(opacity);
-                item.appendChild(name);
-                item.appendChild(thumbnail);
-                item.appendChild(deleteBtn);
-                
-                item.addEventListener('click', (e) => {
-                    if (!e.target.closest('.layer-delete-button') && !e.target.closest('.layer-visibility')) {
+
+                layerItem.addEventListener('click', (e) => {
+                    const target = e.target.closest('[class*="layer-"]');
+                    if (target) {
+                        const action = target.className;
+                        if (action.includes('layer-visibility')) {
+                            this.toggleLayerVisibility(i);
+                            e.stopPropagation();
+                        } else if (action.includes('layer-delete')) {
+                            this.deleteLayer(i);
+                            e.stopPropagation();
+                        } else {
+                            this.setActiveLayer(i);
+                        }
+                    } else {
                         this.setActiveLayer(i);
                     }
                 });
-                
-                visibility.addEventListener('click', () => {
-                    layer.layerData.visible = !layer.layerData.visible;
-                    layer.visible = layer.layerData.visible;
-                    this.updateLayerPanelUI();
-                });
-                
-                deleteBtn.addEventListener('click', () => {
-                    if (this.layers.length > 1) {
-                        this.deleteLayer(i);
-                    }
-                });
-                
-                layerList.appendChild(item);
+
+                layerList.appendChild(layerItem);
+            }
+            
+            for (let i = 0; i < this.layers.length; i++) {
+                this.requestThumbnailUpdate(i);
             }
         }
-        
-        deleteLayer(index) {
-            if (index >= 0 && index < this.layers.length && this.layers.length > 1) {
-                const layer = this.layers[index];
-                this.layersContainer.removeChild(layer);
-                this.layers.splice(index, 1);
-                
-                if (this.activeLayerIndex >= index) {
-                    this.activeLayerIndex = Math.max(0, this.activeLayerIndex - 1);
-                }
-                
-                this.updateLayerPanelUI();
-                this.updateStatusDisplay();
-            }
-        }
-        
-        requestThumbnailUpdate(layerIndex) {
+
+        toggleLayerVisibility(layerIndex) {
             if (layerIndex >= 0 && layerIndex < this.layers.length) {
-                this.thumbnailUpdateQueue.add(layerIndex);
-            }
-        }
-        
-        processThumbnailUpdates() {
-            if (this.thumbnailUpdateQueue.size === 0) return;
-            
-            const layerIndex = this.thumbnailUpdateQueue.values().next().value;
-            this.thumbnailUpdateQueue.delete(layerIndex);
-            
-            const layer = this.layers[layerIndex];
-            if (!layer) return;
-            
-            try {
-                const renderTexture = PIXI.RenderTexture.create({
-                    width: 48,
-                    height: 48,
-                    resolution: 1
-                });
-                
-                const tempContainer = new PIXI.Container();
-                tempContainer.scale.set(48 / Math.max(CONFIG.canvas.width, CONFIG.canvas.height));
-                tempContainer.addChild(layer);
-                
-                this.app.renderer.render({
-                    container: tempContainer,
-                    target: renderTexture
-                });
-                
-                const canvas = this.app.renderer.extract.canvas(renderTexture);
-                layer.layerData.thumbnail = canvas.toDataURL();
-                
-                tempContainer.removeChild(layer);
-                renderTexture.destroy();
-                
+                const layer = this.layers[layerIndex];
+                layer.layerData.visible = !layer.layerData.visible;
+                layer.visible = layer.layerData.visible;
                 this.updateLayerPanelUI();
-            } catch (error) {
-                console.error('Thumbnail update failed:', error);
             }
         }
-        
-        updateStatusDisplay() {
-            const layerElement = document.getElementById('current-layer');
-            if (layerElement && this.activeLayerIndex >= 0) {
-                const activeLayer = this.getActiveLayer();
-                if (activeLayer) {
-                    layerElement.textContent = activeLayer.layerData.name;
+
+        deleteLayer(layerIndex) {
+            if (this.layers.length <= 1) return;
+            if (layerIndex < 0 || layerIndex >= this.layers.length) return;
+
+            const layer = this.layers[layerIndex];
+            
+            layer.layerData.paths.forEach(path => {
+                if (path.graphics && path.graphics.destroy) {
+                    path.graphics.destroy();
                 }
+            });
+
+            this.layersContainer.removeChild(layer);
+            layer.destroy();
+            this.layers.splice(layerIndex, 1);
+
+            if (this.activeLayerIndex === layerIndex) {
+                this.activeLayerIndex = Math.min(this.activeLayerIndex, this.layers.length - 1);
+            } else if (this.activeLayerIndex > layerIndex) {
+                this.activeLayerIndex--;
+            }
+
+            this.updateLayerPanelUI();
+            this.updateStatusDisplay();
+        }
+
+        updateStatusDisplay() {
+            const statusElement = document.getElementById('current-layer');
+            if (statusElement && this.activeLayerIndex >= 0) {
+                const layer = this.layers[this.activeLayerIndex];
+                statusElement.textContent = layer.layerData.name;
             }
         }
     }
 
-    // === 描画エンジン ===
+    // === 描画エンジン（改修版：ペン描画位置ズレ対策） ===
     class DrawingEngine {
         constructor(cameraSystem, layerManager) {
             this.cameraSystem = cameraSystem;
@@ -946,6 +1285,7 @@
             if (this.isDrawing || this.cameraSystem.spacePressed || this.cameraSystem.isDragging || 
                 this.layerManager.vKeyPressed) return;
 
+            // 改修版：レイヤー変形を考慮しないキャンバス座標変換を使用
             const canvasPoint = this.cameraSystem.screenToCanvasForDrawing(screenX, screenY);
             
             if (!this.cameraSystem.isPointInExtendedCanvas(canvasPoint)) {
@@ -974,6 +1314,7 @@
             this.currentPath.graphics.circle(canvasPoint.x, canvasPoint.y, this.brushSize / 2);
             this.currentPath.graphics.fill({ color: color, alpha: opacity });
 
+            // 改修版：レイヤーのTransformを考慮して描画位置を調整
             this.addPathToActiveLayer(this.currentPath);
         }
 
@@ -1022,18 +1363,22 @@
             this.lastPoint = null;
         }
         
+        // 改修版：アクティブレイヤーのTransformを考慮してパスを追加
         addPathToActiveLayer(path) {
             const activeLayer = this.layerManager.getActiveLayer();
             if (!activeLayer) return;
             
+            // レイヤーがtransformされている場合、逆変換を適用
             if (activeLayer.x !== 0 || activeLayer.y !== 0 || 
                 activeLayer.rotation !== 0 || activeLayer.scale.x !== 1 || activeLayer.scale.y !== 1) {
                 
+                // 逆変換行列を作成
                 const matrix = new PIXI.Matrix();
                 matrix.translate(-activeLayer.x, -activeLayer.y);
                 matrix.rotate(-activeLayer.rotation);
                 matrix.scale(1/activeLayer.scale.x, 1/activeLayer.scale.y);
                 
+                // パスの座標を逆変換
                 const transformedGraphics = new PIXI.Graphics();
                 path.points.forEach((point, index) => {
                     const transformedPoint = matrix.apply(point);
@@ -1122,6 +1467,7 @@
         switchTool(tool) {
             this.drawingEngine.setTool(tool);
             
+            // レイヤー移動モードを終了
             if (this.layerManager.isLayerMoveMode) {
                 this.layerManager.exitLayerMoveMode();
             }
@@ -1152,7 +1498,7 @@
         }
     }
 
-    // === UI制御 ===
+    // === UI制御（改修版：パネル操作最適化） ===
     class UIController {
         constructor(drawingEngine, layerManager, app) {
             this.drawingEngine = drawingEngine;
@@ -1164,7 +1510,7 @@
             this.setupSliders();
             this.setupCanvasResize();
         }
-        
+
         setupEventDelegation() {
             document.addEventListener('click', (e) => {
                 const toolButton = e.target.closest('.tool-button');
@@ -1199,6 +1545,7 @@
                 'pen-tool': () => {
                     this.drawingEngine.setTool('pen');
                     
+                    // レイヤー移動モードを終了
                     if (this.layerManager.isLayerMoveMode) {
                         this.layerManager.exitLayerMoveMode();
                     }
@@ -1211,6 +1558,7 @@
                 'eraser-tool': () => {
                     this.drawingEngine.setTool('eraser');
                     
+                    // レイヤー移動モードを終了
                     if (this.layerManager.isLayerMoveMode) {
                         this.layerManager.exitLayerMoveMode();
                     }
@@ -1367,6 +1715,8 @@
             for (let i = 0; i < this.layerManager.layers.length; i++) {
                 this.layerManager.requestThumbnailUpdate(i);
             }
+            
+            console.log(`Canvas resized to ${newWidth}x${newHeight}`);
         }
     }
 
@@ -1423,6 +1773,7 @@
 
             this.pixiApp = new PIXI.Application();
             
+            const dpr = window.devicePixelRatio || 1;
             const screenWidth = window.innerWidth - 50;
             const screenHeight = window.innerHeight;
             
@@ -1466,9 +1817,6 @@
 
             this.pixiApp.ticker.add(() => {
                 this.layerManager.processThumbnailUpdates();
-                if (this.layerManager.crosshairSystem && this.layerManager.isLayerMoveMode) {
-                    this.layerManager.crosshairSystem.updatePosition();
-                }
             });
 
             this.setupWindowResize();
@@ -1490,10 +1838,6 @@
                 
                 this.cameraSystem.initializeCamera();
                 this.cameraSystem.drawCameraFrame();
-                
-                if (this.layerManager.crosshairSystem && this.layerManager.isLayerMoveMode) {
-                    this.layerManager.crosshairSystem.updatePosition();
-                }
             });
         }
 
@@ -1540,17 +1884,23 @@
     // === アプリケーション起動 ===
     window.addEventListener('DOMContentLoaded', async () => {
         try {
-            console.log('Initializing Drawing App...');
+            console.log('Initializing Improved Drawing App...');
             
             const app = new DrawingApp();
             await app.initialize();
             
             window.drawingApp = app;
 
-            console.log('🎨 Drawing App initialized successfully!');
+            console.log('🎨 Improved Drawing App initialized successfully!');
+            console.log('📋 分割完了項目:');
+            console.log('  - ✅ index.html + main.js 二分割');
+            console.log('  - ✅ HTMLタグ・CSS・静的UI定義を index.html に集約');
+            console.log('  - ✅ 全JavaScript機能を main.js に集約');
+            console.log('  - ✅ 改修時は main.js のみ修正で完結する構造');
+            console.log('  - ✅ Claude可読性・改修し易さ最優先設計');
 
         } catch (error) {
-            console.error('Failed to initialize Drawing App:', error);
+            console.error('Failed to initialize Improved Drawing App:', error);
         }
     });
 

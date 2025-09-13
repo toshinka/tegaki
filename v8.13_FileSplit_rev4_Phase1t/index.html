@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 Phase1.5最終改修版 - PixiJS v8.13 お絵かきツール</title>
+    <title>🎨 Phase1.5改修版 - PixiJS v8.13 お絵かきツール</title>
     <style>
         * {
             margin: 0;
@@ -425,21 +425,22 @@
             color: var(--text-inverse);
         }
         
-        /* レイヤー移動モード専用パネル（改修版：反転ボタンスリム化） */
+        /* レイヤー移動モード専用パネル（改修版：横長4セクション） */
         .layer-transform-panel {
             position: fixed;
-            background: rgba(240, 224, 214, 0.95);
+            background: var(--futaba-cream);
             border: 2px solid var(--futaba-maroon);
             border-radius: 12px;
             box-shadow: 0 8px 24px rgba(128, 0, 0, 0.25);
-            padding: 8px 12px;
+            padding: 12px 16px;
             z-index: 2000;
             backdrop-filter: blur(12px);
             display: none;
             user-select: none;
             left: 50%;
-            top: 20px;
+            top: 60px;
             transform: translateX(-50%);
+            cursor: move;
         }
         
         .layer-transform-panel.show { 
@@ -452,24 +453,55 @@
             to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
         }
         
+        .panel-drag-handle {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 8px;
+            cursor: move;
+            background: linear-gradient(90deg, 
+                transparent 45%, 
+                var(--futaba-light-medium) 47%, 
+                var(--futaba-light-medium) 50%, 
+                transparent 52%,
+                transparent 55%,
+                var(--futaba-light-medium) 57%,
+                var(--futaba-light-medium) 60%,
+                transparent 62%
+            );
+            border-radius: 12px 12px 0 0;
+            opacity: 0.6;
+        }
+        
         .panel-sections {
             display: grid;
-            grid-template-columns: 1fr 1fr auto;
-            gap: 12px;
+            grid-template-columns: 1fr 1fr 1fr auto;
+            gap: 16px;
             align-items: start;
-            min-width: 420px;
+            min-width: 600px;
         }
         
         .panel-section {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 8px;
+        }
+        
+        .panel-section-title {
+            font-size: 11px;
+            font-weight: 600;
+            color: var(--futaba-maroon);
+            text-align: center;
+            margin-bottom: 4px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
         }
         
         .compact-slider-group {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 6px;
         }
         
         .compact-slider {
@@ -503,24 +535,20 @@
         .flip-section {
             display: flex;
             flex-direction: column;
-            gap: 1px;
-            align-items: center;
+            gap: 4px;
         }
         
         .flip-button {
-            padding: 3px 5px;
+            padding: 4px 8px;
             border: 1px solid var(--futaba-light-medium);
-            border-radius: 3px;
+            border-radius: 4px;
             background: var(--futaba-background);
             color: var(--text-primary);
-            font-size: 9px;
-            line-height: 1.1;
+            font-size: 10px;
             cursor: pointer;
             transition: all 0.15s ease;
             text-align: center;
             white-space: nowrap;
-            min-width: auto;
-            width: 50px;
         }
         
         .flip-button:hover {
@@ -533,7 +561,7 @@
             border-color: var(--futaba-maroon);
         }
         
-        /* 十字サイト（改修版：中央固定配置・加算合成効果安定化） */
+        /* 十字サイト（改修版：シンプル化） */
         .crosshair-sight {
             position: absolute;
             top: 50%;
@@ -543,8 +571,6 @@
             pointer-events: none;
             z-index: 1500;
             display: none;
-            --crosshair-color: #800000;
-            --crosshair-shadow: #ffffff;
         }
         
         .crosshair-sight.show {
@@ -561,12 +587,9 @@
         .crosshair-sight::after {
             content: '';
             position: absolute;
-            background: var(--crosshair-color);
-            box-shadow: 
-                0 0 1px var(--crosshair-shadow),
-                0 0 3px var(--crosshair-shadow),
-                inset 0 0 1px rgba(255, 255, 255, 0.8);
-            opacity: 1.0;
+            background: var(--futaba-maroon);
+            opacity: 0.7;
+            box-shadow: 0 0 3px rgba(128, 0, 0, 0.3);
         }
         
         .crosshair-sight::before {
@@ -691,11 +714,14 @@
         </div>
     </div>
     
-    <!-- レイヤー移動モード専用パネル（改修版：反転ボタンスリム化） -->
+    <!-- レイヤー移動モード専用パネル（改修版：横長4セクション + ドラッグハンドル） -->
     <div class="layer-transform-panel" id="layer-transform-panel">
+        <div class="panel-drag-handle"></div>
+        
         <div class="panel-sections">
             <!-- 位置セクション -->
             <div class="panel-section">
+                <div class="panel-section-title">位置</div>
                 <div class="compact-slider-group">
                     <div class="compact-slider">
                         <div class="compact-slider-label">X</div>
@@ -716,8 +742,9 @@
                 </div>
             </div>
             
-            <!-- 変形セクション -->
+            <!-- 回転・拡縮セクション -->
             <div class="panel-section">
+                <div class="panel-section-title">変形</div>
                 <div class="compact-slider-group">
                     <div class="compact-slider">
                         <div class="compact-slider-label">回転</div>
@@ -738,12 +765,18 @@
                 </div>
             </div>
             
-            <!-- 反転セクション（改修版：スリム化） -->
+            <!-- 反転セクション -->
             <div class="panel-section">
+                <div class="panel-section-title">反転</div>
                 <div class="flip-section">
-                    <div class="flip-button" id="flip-horizontal-btn">水平反転</div>
-                    <div class="flip-button" id="flip-vertical-btn">垂直反転</div>
+                    <div class="flip-button" id="flip-horizontal-btn">水平</div>
+                    <div class="flip-button" id="flip-vertical-btn">垂直</div>
                 </div>
+            </div>
+            
+            <!-- 終了ボタンセクション -->
+            <div class="panel-section">
+                <div class="action-button" id="exit-layer-mode-btn" style="padding: 6px 12px; font-size: 12px;">確定</div>
             </div>
         </div>
     </div>
@@ -772,7 +805,7 @@
     <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
     
-    <!-- メインJavaScript読み込み -->
+    <!-- メインJavaScript -->
     <script src="main.js"></script>
 </body>
 </html>
