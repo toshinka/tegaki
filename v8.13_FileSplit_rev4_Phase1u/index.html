@@ -425,31 +425,31 @@
             color: var(--text-inverse);
         }
         
-        /* レイヤー移動モード専用パネル（改修版：横長4セクション） */
+        /* 改修版：レイヤー変形パネル - スリム化・上部配置 */
         .layer-transform-panel {
             position: fixed;
             background: var(--futaba-cream);
             border: 2px solid var(--futaba-maroon);
-            border-radius: 12px;
-            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.25);
-            padding: 12px 16px;
+            border-radius: 8px;
+            box-shadow: 0 6px 18px rgba(128, 0, 0, 0.2);
+            padding: 8px 12px;
             z-index: 2000;
-            backdrop-filter: blur(12px);
+            backdrop-filter: blur(8px);
             display: none;
             user-select: none;
             left: 50%;
-            top: 60px;
+            top: 10px;
             transform: translateX(-50%);
             cursor: move;
         }
         
         .layer-transform-panel.show { 
             display: block; 
-            animation: slideDown 0.25s ease-out; 
+            animation: slideDown 0.2s ease-out; 
         }
         
         @keyframes slideDown {
-            from { opacity: 0; transform: translateX(-50%) translateY(-15px) scale(0.95); }
+            from { opacity: 0; transform: translateX(-50%) translateY(-10px) scale(0.98); }
             to   { opacity: 1; transform: translateX(-50%) translateY(0) scale(1); }
         }
         
@@ -458,7 +458,7 @@
             top: 0;
             left: 0;
             right: 0;
-            height: 8px;
+            height: 6px;
             cursor: move;
             background: linear-gradient(90deg, 
                 transparent 45%, 
@@ -470,81 +470,71 @@
                 var(--futaba-light-medium) 60%,
                 transparent 62%
             );
-            border-radius: 12px 12px 0 0;
+            border-radius: 8px 8px 0 0;
             opacity: 0.6;
         }
         
         .panel-sections {
             display: grid;
-            grid-template-columns: 1fr 1fr 1fr auto;
-            gap: 16px;
+            grid-template-columns: 1fr 1fr 1fr;
+            gap: 12px;
             align-items: start;
-            min-width: 600px;
+            min-width: 420px;
         }
         
         .panel-section {
             display: flex;
             flex-direction: column;
-            gap: 8px;
-        }
-        
-        .panel-section-title {
-            font-size: 11px;
-            font-weight: 600;
-            color: var(--futaba-maroon);
-            text-align: center;
-            margin-bottom: 4px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
+            gap: 6px;
         }
         
         .compact-slider-group {
             display: flex;
             flex-direction: column;
-            gap: 6px;
+            gap: 4px;
         }
         
         .compact-slider {
             display: flex;
             align-items: center;
-            gap: 6px;
+            gap: 4px;
         }
         
         .compact-slider-label {
-            font-size: 10px;
+            font-size: 9px;
             color: var(--text-secondary);
-            min-width: 12px;
+            min-width: 10px;
             font-weight: 500;
         }
         
         .compact-slider .slider {
-            width: 80px;
-            height: 4px;
+            width: 70px;
+            height: 3px;
         }
         
         .compact-slider .slider-handle {
-            width: 12px;
-            height: 12px;
+            width: 10px;
+            height: 10px;
         }
         
         .compact-slider .slider-value {
-            font-size: 10px;
-            min-width: 35px;
+            font-size: 9px;
+            min-width: 30px;
         }
         
         .flip-section {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 3px;
         }
         
         .flip-button {
-            padding: 4px 8px;
+            padding: 3px 6px;
             border: 1px solid var(--futaba-light-medium);
-            border-radius: 4px;
+            border-radius: 3px;
             background: var(--futaba-background);
             color: var(--text-primary);
-            font-size: 10px;
+            font-size: 9px;
             cursor: pointer;
             transition: all 0.15s ease;
             text-align: center;
@@ -561,25 +551,24 @@
             border-color: var(--futaba-maroon);
         }
         
-        /* 十字サイト（改修版：シンプル化） */
+        /* 改修版：十字サイト - 安定表示・加算表示 */
         .crosshair-sight {
             position: absolute;
-            top: 50%;
-            left: 50%;
-            width: 30px;
-            height: 30px;
+            width: 24px;
+            height: 24px;
             pointer-events: none;
             z-index: 1500;
             display: none;
+            transform: translate(-50%, -50%);
         }
         
         .crosshair-sight.show {
             display: block;
-            animation: crosshairFade 0.2s ease-out;
+            animation: crosshairFade 0.15s ease-out;
         }
         
         @keyframes crosshairFade {
-            from { opacity: 0; transform: translate(-50%, -50%) scale(0.8); }
+            from { opacity: 0; transform: translate(-50%, -50%) scale(0.9); }
             to   { opacity: 1; transform: translate(-50%, -50%) scale(1); }
         }
         
@@ -588,8 +577,9 @@
             content: '';
             position: absolute;
             background: var(--futaba-maroon);
-            opacity: 0.7;
-            box-shadow: 0 0 3px rgba(128, 0, 0, 0.3);
+            opacity: 0.8;
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.3);
+            mix-blend-mode: multiply;
         }
         
         .crosshair-sight::before {
@@ -714,14 +704,13 @@
         </div>
     </div>
     
-    <!-- レイヤー移動モード専用パネル（改修版：横長4セクション + ドラッグハンドル） -->
+    <!-- 改修版：レイヤー変形パネル - スリム化・上部配置・確定ボタン削除 -->
     <div class="layer-transform-panel" id="layer-transform-panel">
         <div class="panel-drag-handle"></div>
         
         <div class="panel-sections">
-            <!-- 位置セクション -->
+            <!-- X/Y位置 -->
             <div class="panel-section">
-                <div class="panel-section-title">位置</div>
                 <div class="compact-slider-group">
                     <div class="compact-slider">
                         <div class="compact-slider-label">X</div>
@@ -742,9 +731,8 @@
                 </div>
             </div>
             
-            <!-- 回転・拡縮セクション -->
+            <!-- 回転・拡縮 -->
             <div class="panel-section">
-                <div class="panel-section-title">変形</div>
                 <div class="compact-slider-group">
                     <div class="compact-slider">
                         <div class="compact-slider-label">回転</div>
@@ -765,11 +753,11 @@
                 </div>
             </div>
             
-            <!-- 反転セクション -->
+            <!-- 反転 -->
             <div class="panel-section">
                 <div class="flip-section">
-                    <div class="flip-button" id="flip-horizontal-btn">水平</div>
-                    <div class="flip-button" id="flip-vertical-btn">垂直</div>
+                    <div class="flip-button" id="flip-horizontal-btn">水平反転</div>
+                    <div class="flip-button" id="flip-vertical-btn">垂直反転</div>
                 </div>
             </div>
         </div>
