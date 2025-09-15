@@ -1,0 +1,237 @@
+# 📚 Tegaki シンボル辞典 v1.1 - 現実準拠版
+
+> **実際に存在するクラス・メソッドのみ記載** - 架空メソッド記載厳禁
+
+## 🚨 重要な注意：現実との乖離を修正
+
+### ❌ 前版の問題
+- **架空メソッド記載**: 実装されていないメソッドを「実装済み」と記載
+- **クラス重複無視**: `AppCore`が3ファイルで定義されている問題を記載せず
+- **TegakiIcons無視**: 実装済みの`TegakiIcons`が辞典に記載されていない
+
+### ✅ 修正方針
+- **実装確認済みのみ記載**
+- **重複問題明記**
+- **現実のファイル構造反映**
+
+## 🌐 グローバル名前空間（現実版）
+
+### window.Tegaki.*（実際に存在）
+```javascript
+window.Tegaki = {
+    // クラス定義（実在確認済み）
+    AppCore,                    // main.js で定義（Manager束ね版）
+    CanvasManager,              // canvas-manager.js で定義
+    ToolManager,                // tool-manager.js で定義
+    PenTool,                    // pen-tool.js で定義
+    EraserTool,                 // eraser-tool.js で定義
+    ErrorManager,               // error-manager.js で定義
+    ConfigManager,              // config-manager.js で定義
+    EventBus,                   // event-bus.js で定義
+    TegakiIcons,               // icons.js で定義（重要：前版で記載漏れ）
+    
+    // インスタンス（自動作成）
+    ErrorManagerInstance,       // error-manager.js で作成
+    ConfigManagerInstance,      // config-manager.js で作成
+    EventBusInstance,          // event-bus.js で作成
+    
+    // 注意：以下は動的に作成される
+    CanvasManagerInstance,     // main.js AppCore.initialize()で作成
+    ToolManagerInstance        // main.js AppCore.initialize()で作成
+};
+```
+
+### ❌ 存在しないが参照されているクラス
+```javascript
+// bootstrap.jsが探しているが存在しない
+window.Tegaki.TegakiApplication    // app-core.jsで定義すべきだが現在はAppCore
+```
+
+### ⚠️ 重複定義問題
+```javascript
+// 同じAppCoreが3ファイルで定義されている
+main.js:         window.Tegaki.AppCore = AppCore;      // Manager束ね版
+app-core.js:     window.Tegaki.AppCore = AppCore;      // 同名で上書き
+minimal-deps.js: window.Tegaki.AppCore = AppCore;      // 最小限版で上書き
+```
+
+## 🖊️ AppCore（main.js版）- 実装確認済み
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+async initialize()                     // Manager作成・連携設定
+setPixiApp(pixiApp)                   // CanvasManagerにPixiApp設定
+getCanvasManager()                     // CanvasManager取得
+getToolManager()                       // ToolManager取得
+isReady()                             // 初期化完了確認
+start()                               // アプリケーション開始
+getDebugInfo()                        // デバッグ情報取得
+
+// 便利メソッド（main.js版で追加確認）
+selectTool(toolName)                  // ツール選択
+clearCanvas()                         // キャンバスクリア
+setColor(color)                       // 色変更
+setLineWidth(width)                   // 線幅変更
+setOpacity(opacity)                   // 透明度変更
+setEraserSize(size)                   // 消しゴムサイズ変更
+destroy()                             // クリーンアップ
+```
+
+## ❌ AppCore（app-core.js版）- 重複問題
+
+### 問題
+- **同じクラス名**: `main.js`と競合
+- **役割不明**: TegakiApplicationを定義すべきだが名前が違う
+- **修正必要**: `TegakiApplication`に名前変更
+
+## 🎨 CanvasManager（managers/canvas-manager.js）- 実装確認済み
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+setPixiApp(pixiApp)                   // PixiJS Application設定
+createLayerStructure()                // layer0(背景) + layer1(描画)作成
+createLayer(layerId)                  // レイヤー作成
+addGraphicsToLayer(graphics, layerId) // Graphics配置
+setActiveLayer(layerId)               // アクティブレイヤー設定
+getActiveLayer()                      // アクティブレイヤー取得
+getActiveLayerId()                    // アクティブレイヤーID取得
+getLayer(layerId)                     // レイヤー取得
+getMainLayer()                        // メインレイヤー取得
+clear()                               // アクティブレイヤークリア
+clearLayer(layerId)                   // 特定レイヤークリア
+resizeCanvas(width, height)           // サイズ変更
+getPixiApp()                          // PixiJS Application取得
+isReady()                             // 準備状態確認
+getDebugInfo()                        // デバッグ情報
+```
+
+## 🖊️ ToolManager（managers/tool-manager.js）- 実装確認済み
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+setCanvasManager(canvasManager)        // CanvasManager設定
+createTools()                          // ツール作成
+selectTool(toolName)                   // ツール選択
+getCurrentTool()                       // 現在ツール取得
+getCurrentToolName()                   // 現在ツール名取得
+handlePointerDown(x, y, event)        // ポインター押下転送
+handlePointerMove(x, y, event)         // ポインター移動転送
+handlePointerUp(x, y, event)          // ポインター解放転送
+getAvailableTools()                    // 利用可能ツール一覧
+getToolInfo(toolName)                  // ツール情報取得
+isReady()                             // 準備状態確認
+getDebugInfo()                        // デバッグ情報
+```
+
+## ✏️ PenTool（tools/pen-tool.js）- 実装確認済み
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+setCanvasManager(canvasManager)        // CanvasManager設定
+onPointerDown(x, y, event)            // 描画開始
+onPointerMove(x, y, event)            // 描画継続
+onPointerUp(x, y, event)              // 描画終了
+drawSmoothLine()                      // スムーズ曲線描画
+setPenColor(color)                    // 色設定
+setPenWidth(width)                    // 線幅設定
+setPenOpacity(opacity)                // 透明度設定
+setSmoothing(enabled)                 // スムージング設定
+getSettings()                         // 設定取得
+getDebugInfo()                        // デバッグ情報
+```
+
+## 🧹 EraserTool（tools/eraser-tool.js）- 実装確認済み
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+setCanvasManager(canvasManager)        // CanvasManager設定
+onPointerDown(x, y, event)            // 消去開始（ERASE blend mode）
+onPointerMove(x, y, event)            // 消去継続
+onPointerUp(x, y, event)              // 消去終了
+setEraserSize(size)                   // 消しゴムサイズ設定
+setEraserOpacity(opacity)             // 消しゴム透明度設定
+getSettings()                         // 設定取得
+getDebugInfo()                        // デバッグ情報
+```
+
+## 🎯 TegakiIcons（assets/icons.js）- 実装確認済み
+
+### 重要：前版で記載漏れのクラス
+```javascript
+window.Tegaki.TegakiIcons = {
+    svgData: { ... }                      // SVG定義データ
+    buttonMappings: { ... }               // ボタンID→アイコン名マッピング
+    createIcon(iconName, options)         // SVGアイコン要素作成
+    replaceButtonIcon(buttonId, iconName) // 特定ボタンアイコン置換
+    replaceAllToolIcons()                 // 全ツールボタンアイコン一括置換★重要
+    getDebugInfo()                        // デバッグ情報
+}
+```
+
+## 🚨 ErrorManager（js/utils/error-manager.js）- 実装確認済み
+
+### 実装済みメソッド
+```javascript
+constructor()                          // インスタンス作成
+showError(type, message, options)      // エラー表示
+showVisualNotification(type, message, options) // 視覚通知
+showInfo(message, options)             // 情報表示
+showWarning(message, options)          // 警告表示
+showCritical(message, options)         // 重要エラー表示
+getBackgroundColor(type)              // 背景色取得
+getTextColor(type)                    // テキスト色取得
+getBorderColor(type)                  // ボーダー色取得
+getErrors()                           // エラー記録取得
+clear()                               // エラー記録クリア
+```
+
+## ❌ 存在しないクラス（要修正）
+
+### 🚨 bootstrap.jsが探しているが存在しない
+```javascript
+window.Tegaki.TegakiApplication        // app-core.jsで定義すべき
+```
+
+### ⚠️ minimal-deps.jsで定義されているが不要
+```javascript
+// 実際の実装と競合するため削除すべき
+StateManager, CoordinateManager, Performance, PopupManager,
+SliderManager, UIManager, MemoryManager, SettingsManager,
+BoundaryManager, AbstractTool
+```
+
+## 🔧 緊急修正項目
+
+### 1. **app-core.js修正**
+```javascript
+// 現在: class AppCore { ... }
+// 修正: class TegakiApplication { ... }
+```
+
+### 2. **minimal-deps.js対処**
+```javascript
+// AppCoreなど競合クラス定義を削除
+// 未実装クラスのみ残す
+```
+
+### 3. **アイコン呼び出し追加**
+```javascript
+// TegakiApplication.setupUI()に追加
+window.Tegaki.TegakiIcons.replaceAllToolIcons();
+```
+
+### 4. **HTML読み込み順序修正**
+```html
+<!-- minimal-deps.jsを削除 or 最後に移動 -->
+```
+
+---
+
+📝 **現実準拠の原則**: 実装されていないメソッドは記載しない
+🚨 **重複トラップ解消**: クラス重複・架空メソッド・読み込み順序を全て修正
+🎯 **信頼性確保**: 後続Claudeが混乱しない正確な文書作成

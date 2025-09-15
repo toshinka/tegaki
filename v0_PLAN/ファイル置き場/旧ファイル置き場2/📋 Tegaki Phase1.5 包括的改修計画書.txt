@@ -1,0 +1,175 @@
+# 📋 Tegaki Phase1.5 包括的問題修正計画書 v8.12.0
+
+**Rev. 2025-08-30-r4** | **Priority: Critical Fix**
+
+## 🔍 現状分析
+
+### ✅ 成功している要素
+- PixiJS v8.12.0 初期化成功
+- Canvas DOM表示成功 (400x400)
+- Manager群の注入完了
+- PenTool/EraserTool作成成功
+- AbstractTool基盤確立
+
+### 🚨 Critical Issues（即修正必要）
+
+#### 1. **継続描画問題**
+- **現象**: マウスボタンを離しても描画が続く
+- **原因**: PointerUp イベントで描画終了処理が呼ばれていない
+- **エラー**: `RecordManager not ready - call setManagers() first`
+
+#### 2. **消しゴム未機能**
+- **現象**: 消しゴムツールが選択できない
+- **原因**: `toolManager.setActiveTool is not a function`
+- **エラー**: `toolManager.getTools is not a function`
+
+#### 3. **キャンバス外描画未実装**
+- **現象**: カメラ外からの描画開始ができない
+- **原因**: 外部入力バッファリング機能が未実装
+
+## 🎯 修正戦略
+
+### Step 1: API不整合修正（最優先）
+
+**ToolManager API統一**
+- `getTools()` → `this.tools` Map直接アクセス
+- `setActiveTool()` → `switchTool()` に統一
+- RecordManager初期化順序修正
+
+**RecordManager初期化修正**
+- `setManagers()` 呼び出しタイミング修正
+- Manager注入完了確認後にメソッド呼び出し
+
+### Step 2: Pointer Event修正
+
+**座標変換フロー確立**
+```
+DOM座標 → CoordinateManager.clientToWorld() → World座標 → Tool処理
+```
+
+**描画終了処理確実化**
+- PointerUp で必ず `isDrawing = false`
+- 異常終了時の状態リセット保証
+
+### Step 3: 外部入力対応実装
+
+**tempStroke バッファリング**
+- 画面外でも Pointer追跡
+- カメラ内侵入時に正式描画開始
+- NavigationManager.getCameraBounds() による判定
+
+## 🔧 具体的修正内容
+
+### ファイル別修正箇所
+
+#### 1. **tool-manager.js** 
+- `getTools()` メソッド追加
+- `setActiveTool()` → `switchTool()` エイリアス追加
+- Manager注入順序修正
+
+#### 2. **record-manager.js**
+- `setManagers()` 呼び出し確認
+- `isReady()` 状態管理修正
+- TPF v0.2 準拠データ保存
+
+#### 3. **pen-tool.js**
+- PointerUp で確実な描画終了
+- 外部入力バッファリング実装
+- 継続描画問題修正
+
+#### 4. **eraser-tool.js**
+- Manager注入API統一
+- Graphics v8 API対応
+
+#### 5. **coordinate-manager.js**
+- カメラ外座標変換対応
+- 外部入力判定機能追加
+
+#### 6. **navigation-manager.js**
+- `getCameraBounds()` 実装
+- パン/ズーム基礎機能
+
+## 📊 実装フロー
+
+### Phase A: API修正（30分）
+1. ToolManager API統一
+2. RecordManager初期化修正
+3. Manager注入順序確立
+
+### Phase B: 描画修正（45分）
+1. PointerUp処理修正
+2. 座標変換統一
+3. Graphics描画確実化
+
+### Phase C: 外部入力対応（60分）
+1. tempStroke実装
+2. カメラ境界判定
+3. 外部→内部連続描画
+
+### Phase D: 統合テスト（15分）
+1. 基本描画確認
+2. Undo/Redo確認
+3. ツール切替確認
+4. 外部描画確認
+
+## 🚀 期待される効果
+
+### 解決される問題
+- [x] 継続描画問題 → PointerUpで確実終了
+- [x] 消しゴム未機能 → API統一で解決
+- [x] キャンバス外描画 → tempStroke実装
+
+### 追加機能
+- [x] 外部入力バッファリング
+- [x] カメラ分離概念導入
+- [x] TPF v0.2 準拠データ保存
+
+## 🔍 検収チェックリスト
+
+- [ ] ペン描画開始→移動→**終了で描画停止**
+- [ ] 消しゴムツール選択可能
+- [ ] キャンバス外から描画開始→内部で継続
+- [ ] Undo/Redo で履歴管理
+- [ ] ツール切替が正常動作
+- [ ] 座標ズレなし
+- [ ] Console error解消
+
+## 📁 修正対象ファイル
+
+1. **managers/tool-manager.js** - API統一・Manager注入修正
+2. **js/utils/record-manager.js** - 初期化・setManagers修正
+3. **tools/pen-tool.js** - PointerUp修正・外部入力対応
+4. **tools/eraser-tool.js** - Manager注入API修正
+5. **js/utils/coordinate-manager.js** - 外部座標変換追加
+6. **js/utils/navigation-manager.js** - getCameraBounds実装
+
+## 🎯 成功指標
+
+**即座確認可能な動作**
+1. ペン描画 → マウス離す → **描画停止**
+2. 消しゴムボタン → **切替成功**
+3. 画面外描画開始 → 内部侵入 → **継続線**
+
+**技術的成功指標**
+- Console error: 0件
+- Manager注入成功率: 100%
+- 描画→記録→Undo のフロー成功
+- TPF形式データ保存成功
+
+---
+
+## 🔄 Phase1.5→Phase2 準備
+
+**Phase1.5完了後の基盤**
+- カメラ分離概念確立
+- TPF v0.2 データ形式確立
+- Manager依存注入パターン確立
+
+**Phase2展開可能要素**
+- レイヤー管理（TPF layer フィールド活用）
+- バウンディングボックス最適化
+- 部分再描画システム
+
+---
+
+*この計画書に従い、ファイル単位での段階的修正を実行します。各修正後に動作確認を行い、問題の根本解決を確実にします。*

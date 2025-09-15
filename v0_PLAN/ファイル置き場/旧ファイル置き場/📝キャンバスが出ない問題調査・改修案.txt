@@ -1,0 +1,277 @@
+何が起きているか（原因）
+グローバル参照のミスマッチ
+
+コアのユーティリティは Tegaki 名前空間にインスタンスを公開しています（例：Tegaki.StateManagerInstance）｡ 
+GitHub
+
+しかし ToolManager / UI 層は依然として window.EventBus / window.StateManager / window.ErrorManager を参照する前提で書かれています。window 側にブリッジが無いと、初期化イベント配線やツール登録がスキップされ、描画に至りません（警告ログのみ・もしくは ErrorManager が window 側に無いためログも出ない）。 
+GitHub
++1
+
+ツール登録の不一致
+
+ToolManager はデフォルトツールを window.PenTool / window.EraserTool から探しますが、実装は Tegaki 名前空間に載っている構成（Tegaki.PenTool 等）です。このため「ツールが1つも登録されない → setTool('pen') が内部的に失敗 → 何も描けない」という静かな失敗に陥ります。 
+GitHub
+
+DOM へのマウント/初期化順序
+
+初期化は「_registry に積んでから一括実行」設計ですが、レジストリ実行と window へのブリッジが十分厳密でないと、CanvasManager の生成・マウントや ToolManager のイベント委譲が走りません。
+
+index.html 側は UI 要素が並んでいるのは見えますが、キャンバスを差し込むコンテナの id（例: canvasContainer）が DOM にあるか／CSS で高さ0になっていないかがボトルネックになりがちです（本文からは確認しきれないため、下記パッチで確実に用意します）。 
+GitHub
+
+すぐ効く最小パッチ（Hotfix）
+
+「既存の”window.*”依存を崩さず、Tegaki 側から ブリッジを生やす」方針です。これでエラー無し・静かに何も起きない状態を脱し、キャンバスが出ます。
+
+1) js/main.js にブートストラップ/ブリッジを追加
+
+ファイル末尾（または DOMContentLoaded のタイミング）に追記してください。
+
+<!-- index.html の <script> 群の中で、一番最後に main.js を読み込む前提 -->
+<script src="./js/main.js" defer></script>
+
+// js/main.js 末尾に追記（即時関数で安全に）
+(function bootstrapTegaki() {
+  try {
+    // 1) レジストリ実行（定義済み関数を順に実行）
+    window.Tegaki = window.Tegaki || {};
+    if (Array.isArray(Tegaki._registry)) {
+      Tegaki._registry.forEach(fn => { try { fn && fn(); } catch (e) { console.error('[Registry]', e); } });
+    }
+
+    // 2) グローバルブリッジ（window.* を要求する既存モジュール対策）
+    if (Tegaki.ErrorManagerInstance)  window.ErrorManager  = Tegaki.ErrorManagerInstance;
+    if (Tegaki.EventBusInstance)     window.EventBus     = Tegaki.EventBusInstance;
+    if (Tegaki.StateManagerInstance) window.StateManager = Tegaki.StateManagerInstance;
+    if (Tegaki.ConfigManagerInstance)window.ConfigManager= Tegaki.ConfigManagerInstance;
+
+    // 3) PIXI の存在チェック（pixi-extensions が入っていれば基本OK）
+    if (!window.PIXI) {
+      console.error('[Bootstrap] PIXI が見つかりません。CDNまたは libs/pixi-extensions.js の読込を確認してください。');
+      return;
+    }
+
+    // 4) CanvasManager / CoordinateManager / ToolManager の連携
+    const cm = (Tegaki.CanvasManagerInstance ||= new Tegaki.CanvasManager({ containerId: 'canvasContainer' }));
+    const co = (Tegaki.CoordinateManagerInstance ||= new Tegaki.CoordinateManager(cm));
+    const tm = (Tegaki.ToolManagerInstance ||= new Tegaki.ToolManager());
+
+    tm.initialize(cm, co);
+
+    // 5) ツール登録（Tegaki 名前空間からも探す）
+    const Pen   = window.PenTool    || (Tegaki && Tegaki.PenTool);
+    const Erase = window.EraserTool || (Tegaki && Tegaki.EraserTool);
+    if (Pen)   tm.registerTool('pen',    new Pen());
+    if (Erase) tm.registerTool('eraser', new Erase());
+
+    // 6) 初期ツールを明示的に選択（失敗回避）
+    if (tm.getAvailableTools().length) {
+      tm.setTool('pen');
+    } else {
+      console.warn('[Bootstrap] 登録済みツールがありません（Pen/Eraser の公開名を確認してください）');
+    }
+
+    console.log('[Bootstrap] Tegaki 初期化完了');
+  } catch (e) {
+    console.error('[Bootstrap] 重大な初期化エラー', e);
+  }
+})();
+
+2) managers/tool-manager.js のデフォルトツール探索を拡張
+
+_registerDefaultTools() のクラス解決を Tegaki 名前空間も見るように変更：
+
+- const ToolClass = window[toolInfo.className];
++ const ToolClass = window[toolInfo.className] || (window.Tegaki && window.Tegaki[toolInfo.className]);
+
+
+（これで Tegaki.PenTool / Tegaki.EraserTool 実装でも拾えます。） 
+GitHub
+
+3) index.html にキャンバス用コンテナを確実に設置
+
+UI のどこでも良いので 一箇所だけ以下を配置してください（重複禁止）：
+
+<!-- キャンバス差し込み先 -->
+<div id="canvasContainer" style="width:400px;height:400px;margin:0 auto;display:block;"></div>
+
+
+※ CSS で高さが 0 になっていると 見えません。暫定で inline-styles を入れ、後で css/styles.css に移してください。 
+GitHub
+
+4) PIXI の読込を確認
+
+CDN or libs/pixi-extensions.js で PIXI が **グローバル（window.PIXI）**に居る必要があります。<script src="https://unpkg.com/pixi.js@7/dist/pixi.min.js"></script> を 最上流で読み込むか、pixi-extensions.js 側で window.PIXI ||= PIXI; を入れてください。
+
+正道リファクタ（規約準拠版・推奨）
+
+コーディングルールの「依存は Tegaki.* に統一」に合わせるなら、*window. 参照を全面撤廃**し、以下のようにします（Hotfix 後、段階的に置換可能）：
+
+ToolManager, UIManager, CanvasManager 等の内部参照をすべて
+window.EventBus → Tegaki.EventBusInstance
+window.StateManager → Tegaki.StateManagerInstance
+window.ErrorManager → Tegaki.ErrorManagerInstance
+window.ConfigManager → Tegaki.ConfigManagerInstance
+に統一。
+
+ToolManager のデフォルトツール探索も Tegaki[className] を一次参照に。 
+GitHub
+
+UIManager の依存確認ロジックは window[...] ではなく Tegaki の Instance 存在確認に変更（現状だと window.EventBus を要求するため、Tegaki統一と齟齬）。 
+GitHub
+
+main.js は レジストリ実行のみに簡素化し、ブリッジは不要（設計の最終形）。
+
+すぐ確認できるデバッグ手順（ブラウザコンソール）
+// 1) PIXI が居るか
+!!window.PIXI
+
+// 2) Tegaki の基幹が生成済みか
+Tegaki && Object.keys(Tegaki)
+Tegaki._registry?.length
+!!Tegaki.CanvasManager && !!Tegaki.ToolManager
+
+// 3) インスタンスが作られているか
+!!Tegaki.ErrorManagerInstance
+!!Tegaki.EventBusInstance
+!!Tegaki.StateManagerInstance
+
+// 4) window 側（Hotfix 適用時）
+!!window.EventBus, !!window.StateManager, !!window.ErrorManager
+
+// 5) DOM コンテナが存在しサイズがあるか
+const el = document.getElementById('canvasContainer'); el && el.getBoundingClientRect()
+
+まとめ
+
+主因は「Tegaki.（新）と window.（旧）の参照ズレ」と「レジストリ実行/DOM マウントの穴」。
+
+上記 Hotfix を入れると、エラー無しで何も起きない状態を脱し、キャンバスが出現・描画できるはずです。
+
+その後、規約どおり *Tegaki. に依存を統一**するリファクタを進めれば、window ブリッジは不要になり、設計がクリーンになります。
+
+必要なら、私のほうで パッチ適用済みの main.js／tool-manager.js 差し替え版をまとめて出力します。
+
+📄 js/main.js（パッチ適用済み）
+// js/main.js
+
+(function bootstrapTegaki() {
+  try {
+    window.Tegaki = window.Tegaki || {};
+
+    // 1) レジストリを実行
+    if (Array.isArray(Tegaki._registry)) {
+      Tegaki._registry.forEach(fn => {
+        try { fn && fn(); }
+        catch (e) { console.error('[Registry]', e); }
+      });
+    }
+
+    // 2) グローバルブリッジ（既存 window.* 依存対策）
+    if (Tegaki.ErrorManagerInstance)  window.ErrorManager  = Tegaki.ErrorManagerInstance;
+    if (Tegaki.EventBusInstance)     window.EventBus     = Tegaki.EventBusInstance;
+    if (Tegaki.StateManagerInstance) window.StateManager = Tegaki.StateManagerInstance;
+    if (Tegaki.ConfigManagerInstance)window.ConfigManager= Tegaki.ConfigManagerInstance;
+
+    // 3) PIXI の存在確認
+    if (!window.PIXI) {
+      console.error('[Bootstrap] PIXI が見つかりません。CDN または libs/pixi-extensions.js の読込を確認してください。');
+      return;
+    }
+
+    // 4) CanvasManager / CoordinateManager / ToolManager の連携
+    const cm = (Tegaki.CanvasManagerInstance ||= new Tegaki.CanvasManager({ containerId: 'canvasContainer' }));
+    const co = (Tegaki.CoordinateManagerInstance ||= new Tegaki.CoordinateManager(cm));
+    const tm = (Tegaki.ToolManagerInstance ||= new Tegaki.ToolManager());
+
+    tm.initialize(cm, co);
+
+    // 5) ツール登録（Tegaki 名前空間も考慮）
+    const Pen   = window.PenTool    || (Tegaki && Tegaki.PenTool);
+    const Erase = window.EraserTool || (Tegaki && Tegaki.EraserTool);
+    if (Pen)   tm.registerTool('pen',    new Pen());
+    if (Erase) tm.registerTool('eraser', new Erase());
+
+    // 6) 初期ツールを明示的に選択
+    if (tm.getAvailableTools().length) {
+      tm.setTool('pen');
+    } else {
+      console.warn('[Bootstrap] 登録済みツールがありません（Pen/Eraser の公開名を確認してください）');
+    }
+
+    console.log('[Bootstrap] Tegaki 初期化完了');
+  } catch (e) {
+    console.error('[Bootstrap] 重大な初期化エラー', e);
+  }
+})();
+
+📄 managers/tool-manager.js（パッチ適用済み）
+// managers/tool-manager.js
+
+class ToolManager {
+  constructor() {
+    this.tools = {};
+    this.currentTool = null;
+    this.canvasManager = null;
+    this.coordinateManager = null;
+  }
+
+  initialize(canvasManager, coordinateManager) {
+    this.canvasManager = canvasManager;
+    this.coordinateManager = coordinateManager;
+    this._registerDefaultTools();
+  }
+
+  _registerDefaultTools() {
+    const defaultTools = [
+      { name: 'pen',    className: 'PenTool' },
+      { name: 'eraser', className: 'EraserTool' }
+    ];
+
+    defaultTools.forEach(toolInfo => {
+      // ★ 修正ポイント: window.* が無ければ Tegaki.* を探す
+      const ToolClass =
+        window[toolInfo.className] ||
+        (window.Tegaki && window.Tegaki[toolInfo.className]);
+
+      if (ToolClass) {
+        this.registerTool(toolInfo.name, new ToolClass());
+      } else {
+        console.warn(`[ToolManager] ${toolInfo.className} が見つかりません`);
+      }
+    });
+  }
+
+  registerTool(name, instance) {
+    if (!name || !instance) return;
+    this.tools[name] = instance;
+    if (typeof instance.attach === 'function') {
+      instance.attach(this.canvasManager, this.coordinateManager);
+    }
+    console.log(`[ToolManager] ツール登録: ${name}`);
+  }
+
+  setTool(name) {
+    if (!this.tools[name]) {
+      console.error(`[ToolManager] ツール '${name}' が登録されていません`);
+      return;
+    }
+    this.currentTool = this.tools[name];
+    if (typeof this.currentTool.activate === 'function') {
+      this.currentTool.activate();
+    }
+    console.log(`[ToolManager] 現在のツール: ${name}`);
+  }
+
+  getTool() {
+    return this.currentTool;
+  }
+
+  getAvailableTools() {
+    return Object.keys(this.tools);
+  }
+}
+
+window.Tegaki = window.Tegaki || {};
+window.Tegaki.ToolManager = ToolManager;

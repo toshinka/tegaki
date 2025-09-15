@@ -1,0 +1,325 @@
+# PixiJS v7/v8 拡張ライブラリ導入・改修計画書
+
+## 1. 改修概要
+
+### 1.1 改修目的
+- **車輪の再発明解消**: 独自実装からPixiJSエコシステムライブラリへの移行
+- **コード削減**: 1000行以上のコード削減見込み
+- **AI実装しやすさ向上**: PixiJS標準APIによる予測しやすい実装
+- **保守性向上**: バグ修正・機能追加の効率化
+
+### 1.2 対象機能
+1. **ポップアップ機能** - @pixi/ui導入
+2. **レイヤー機能** - @pixi/layers導入
+3. **非破壊的レイヤー移動/変形** - RenderTexture + @pixi/layers
+4. **GIFアニメ** - @pixi/gif導入
+5. **スムーズ描画** - @pixi/graphics-smooth導入
+6. **追加形状描画** - @pixi/graphics-extras導入
+
+## 2. 責任分界
+
+### 2.1 Rulebook担当範囲
+- **ライブラリ導入指針** の策定
+- **コード構造ガイドライン** の更新
+- **品質保証基準** の設定
+- **段階的移行戦略** の定義
+
+### 2.2 改修計画書担当範囲
+- **具体的改修手順** の詳細化
+- **ファイル別改修内容** の明記
+- **実装ガイドライン** の提供
+- **テスト手順** の策定
+
+## 3. ライブラリ導入計画
+
+### 3.1 Phase1: 基盤ライブラリ導入
+
+#### 3.1.1 npmインストール
+```bash
+# PixiJS v7対応版
+npm install @pixi/ui@^1.0.0 @pixi/layers@^2.0.0 @pixi/gif@^2.0.0
+npm install @pixi/graphics-extras@^7.4.0 @pixi/graphics-smooth@^0.0.31
+```
+
+#### 3.1.2 インポート設定
+**新規ファイル: `libs/pixi-extensions.js`**
+```javascript
+// PixiJS拡張ライブラリ統合インポート
+import { Button, FancyButton, Slider } from '@pixi/ui';
+import { Layer } from '@pixi/layers';
+import { AnimatedGIF } from '@pixi/gif';
+import { SmoothGraphics } from '@pixi/graphics-smooth';
+import '@pixi/graphics-extras';
+
+// グローバル登録（fetch API分割対応）
+window.PixiExtensions = {
+    Button, FancyButton, Slider,
+    Layer, AnimatedGIF, SmoothGraphics
+};
+```
+
+### 3.2 Phase2: 段階的機能移行
+
+#### 3.2.1 優先度高: ポップアップ機能移行
+
+**対象ファイル:**
+- `drawing-tools/ui/components/popup-manager.js` → **削除予定**
+- `drawing-tools/ui/pen-tool-ui.js` → **@pixi/ui使用に改修**
+
+**改修内容:**
+```javascript
+// 従来の独自実装
+class PopupManager {
+    createPopup() {
+        const popup = new PIXI.Container();
+        // 100行以上の独自実装...
+    }
+}
+
+// @pixi/ui使用後
+import { Button } from '@pixi/ui';
+class PenToolUI {
+    createPopup() {
+        const popup = new Container();
+        const button = new Button({ text: 'OK' });
+        popup.addChild(button);
+        return popup; // 5行で完成
+    }
+}
+```
+
+#### 3.2.2 優先度中: スムーズ描画機能移行
+
+**対象ファイル:**
+- `drawing-tools/tools/pen-tool.js` → **@pixi/graphics-smooth使用に改修**
+
+**改修内容:**
+```javascript
+// 従来の独自実装 (applySmoothingFilter)
+applySmoothingFilter(x, y) {
+    // 50行以上の独自スムージング実装...
+}
+
+// @pixi/graphics-smooth使用後
+import { SmoothGraphics } from '@pixi/graphics-smooth';
+// スムージングは自動処理、実装不要
+```
+
+## 4. ファイル別改修詳細
+
+### 4.1 config.js改修
+
+**改修目的:** ライブラリ設定統合
+**参考ファイル:** `v1rev12_Phase2/config.js`
+
+**追加内容:**
+```javascript
+// ライブラリ設定
+LIBRARY_CONFIG: {
+    UI_THEME: 'futaba',
+    LAYER_MAX_COUNT: 10,
+    GIF_MAX_FRAMES: 60,
+    SMOOTH_GRAPHICS_ENABLED: true,
+    GRAPHICS_EXTRAS_ENABLED: true
+}
+```
+
+### 4.2 drawing-tools.js改修
+
+**改修目的:** ライブラリ統合システム構築
+**参考ファイル:** `v1rev12_Phase2/drawing-tools.js`
+
+**改修方針:** 
+- 既存の`DrawingToolsSystemEmergencyFix`を基盤とする
+- ライブラリ依存関数を段階的に追加
+- 互換性維持しながら機能向上
+
+### 4.3 pen-tool.js改修
+
+**改修目的:** @pixi/graphics-smooth導入
+**参考ファイル:** `v1rev12_Phase2/drawing-tools/tools/pen-tool.js`
+
+**改修前後比較:**
+- **削除:** `applySmoothingFilter`メソッド (50行削減)
+- **追加:** `SmoothGraphics`使用 (5行追加)
+- **ネット効果:** 45行削減
+
+### 4.4 popup-manager.js改修
+
+**改修目的:** @pixi/ui導入による大幅簡素化
+**参考ファイル:** `v1rev12_Phase2/drawing-tools/ui/components/popup-manager.js`
+
+**改修前後比較:**
+- **削除:** 独自ポップアップ実装 (200行削減)
+- **追加:** @pixi/ui Button/Slider使用 (30行追加)  
+- **ネット効果:** 170行削減
+
+### 4.5 新規ファイル: layer-manager.js
+
+**改修目的:** @pixi/layers使用のレイヤー機能実装
+**実装場所:** `v1rev12_Phase2/layer-manager.js`
+
+**実装内容:**
+```javascript
+import { Layer } from '@pixi/layers';
+
+class LayerManager {
+    constructor(app) {
+        this.app = app;
+        this.layers = new Map();
+        this.initLayers();
+    }
+    
+    addLayer(name) {
+        const layer = new Layer();
+        this.layers.set(name, layer);
+        this.app.stage.addChild(layer);
+        return layer;
+    }
+    
+    // 非破壊的レイヤー移動
+    moveLayer(layerName, newIndex) {
+        const layer = this.layers.get(layerName);
+        layer.zOrder = newIndex; // @pixi/layersの機能
+    }
+}
+```
+
+## 5. 改修手順
+
+### 5.1 Step 1: ライブラリ環境準備
+1. npmライブラリインストール
+2. `libs/pixi-extensions.js`作成・テスト
+3. index.htmlにインポート追加
+
+### 5.2 Step 2: ポップアップ機能移行  
+1. `drawing-tools/ui/pen-tool-ui.js`の@pixi/ui使用改修
+2. `popup-manager.js`削除
+3. 機能テスト・デバッグ
+
+### 5.3 Step 3: 描画機能移行
+1. `pen-tool.js`の@pixi/graphics-smooth使用改修
+2. スムージング機能テスト
+3. パフォーマンス確認
+
+### 5.4 Step 4: レイヤー機能実装
+1. `layer-manager.js`新規作成
+2. @pixi/layers統合
+3. UI連携実装
+
+### 5.5 Step 5: GIF機能実装
+1. @pixi/gif導入
+2. エクスポート機能実装
+3. アニメーション機能追加
+
+## 6. 品質保証・テスト計画
+
+### 6.1 単体テスト
+- 各ライブラリ機能の動作確認
+- 既存機能の非回帰テスト
+- パフォーマンステスト
+
+### 6.2 統合テスト  
+- ライブラリ間連携テスト
+- UI操作フローテスト
+- エラーハンドリングテスト
+
+### 6.3 AIコード生成テスト
+- 各ライブラリのAI生成しやすさ検証
+- ドキュメント参照によるコード品質確認
+
+## 7. 期待効果・メリット
+
+### 7.1 コード削減効果
+- **popup-manager.js**: 200行 → 削除 (100%削減)
+- **pen-tool.js**: スムージング50行削減  
+- **ui関連**: 独自コンポーネント150行削減
+- **合計**: 400行以上削減見込み
+
+### 7.2 開発効率向上
+- **実装時間**: 50%短縮見込み
+- **バグ修正**: ライブラリ側で自動対応
+- **機能追加**: 標準APIで容易
+
+### 7.3 AI実装支援向上
+- **コード予測性**: PixiJS標準パターンで向上
+- **ドキュメント参照**: 公式ドキュメント活用可能
+- **エラー解決**: StackOverflow等の情報活用可能
+
+## 8. リスク軽減策
+
+### 8.1 段階的移行
+- 一度に全機能移行せず段階的実施
+- 各ステップでの動作確認・ロールバック準備
+- 既存機能の互換性維持
+
+### 8.2 エラー対応
+- ライブラリ読み込み失敗時のフォールバック実装
+- 段階的機能無効化によるグレースフルデグラデーション
+- 詳細エラーログによる問題特定迅速化
+
+### 8.3 パフォーマンス監視
+- ライブラリ導入前後のパフォーマンス比較
+- メモリ使用量監視
+- FPS監視による描画性能確認
+
+## 9. 移行スケジュール案
+
+### 9.1 Phase1 (1-2日)
+- 環境準備・ライブラリインストール
+- 基盤ファイル作成・テスト
+
+### 9.2 Phase2 (2-3日)  
+- ポップアップ機能移行
+- 描画スムージング移行
+
+### 9.3 Phase3 (3-4日)
+- レイヤー機能実装
+- 追加形状描画実装
+
+### 9.4 Phase4 (2-3日)
+- GIF機能実装
+- 統合テスト・最適化
+
+### 9.5 Phase5 (1-2日)
+- ドキュメント更新
+- AI実装テスト・品質確認
+
+**合計所要期間: 9-14日**
+
+## 10. 次作業クライアントへの引き継ぎ事項
+
+### 10.1 作業準備
+- 本計画書とRulebook改修版を参照
+- 段階的移行の徹底（一度に複数機能変更禁止）
+- 各ステップでの動作確認必須
+
+### 10.2 重要注意事項
+- 既存のfetch API分割構造を維持
+- グローバル変数形式でのライブラリ使用
+- エラーハンドリングの強化必須
+
+### 10.3 テスト項目
+- ポップアップ表示・操作確認
+- 描画スムージング動作確認  
+- パフォーマンス比較測定
+- 各ブラウザでの互換性確認
+
+## 11. 成功基準
+
+### 11.1 機能基準
+- 全既存機能の正常動作維持
+- 新機能（レイヤー・GIF）の正常実装
+- UIの操作性向上
+
+### 11.2 品質基準  
+- コード行数400行以上削減
+- AI生成コード品質向上
+- エラー発生率削減
+
+### 11.3 保守性基準
+- 新機能追加の容易さ向上
+- バグ修正時間短縮
+- ドキュメント整備完了
+
+この改修により、PixiJSエコシステムの恩恵を最大限活用し、保守性・拡張性・AI実装しやすさを大幅に向上させる効果を期待します。

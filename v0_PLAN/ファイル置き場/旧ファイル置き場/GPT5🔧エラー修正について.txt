@@ -1,0 +1,87 @@
+1. main.js:43 Unexpected token 'async'
+
+該当箇所を確認しました。
+main.js 43行目に 関数宣言の外で async を書いてしまっている のが原因です。
+
+ブラウザ環境では ES2017 の async 関数は使えますが、宣言位置が誤っていると SyntaxError になります。
+
+例（NGコード）:
+async initializeApp(); // ← これは構文エラー
+修正例（OKコード）:
+
+js
+
+async function initializeApp() {
+    // 初期化処理
+}
+initializeApp();
+
+もしくは 即時実行関数 (IIFE) にする：
+
+(async function() {
+    await initializeApp();
+})();
+
+2. canvas-manager.js:1423 Invalid or unexpected token
+
+こちらは トークン不正（文字コードの混入やコピペ時の誤り） が原因です。
+1423行目あたりを見たところ、コメントや制御構文の途中に 全角記号や不可視文字 が混入している可能性大です。
+
+例（NGコード）:
+
+if (this.app == null) ｛   // ← 全角｛
+    return;
+}
+
+修正例（OKコード）:
+
+if (this.app == null) {   // ← 半角 {}
+    return;
+}
+
+あるいは return; の後に変な改行コード（UTF-8 BOMやゼロ幅スペース）が残っていることもあります。
+
+👉 修正方法：
+
+canvas-manager.js を VSCode などで開き、1423行付近を「不可視文字表示モード」にして確認
+
+全角カッコ、全角スペース、制御文字を半角の {}, () に修正する
+
+文字コードは UTF-8 (BOMなし) に統一
+
+3. キャンバスが出現しない原因
+
+今回の2つの SyntaxError が致命的で、スクリプト全体の実行が止まっています。
+そのため PixiJS の Application 初期化が呼ばれず、キャンバスが生成されていません。
+
+👉 まずは上記2つを修正すればキャンバスは表示されるはずです。
+
+4. ファイル肥大化・エラー防止策の過剰チェックについて
+
+ざっと見た感じ：
+
+ErrorManager / StateManager / CoordinateManager など、責務分割はされていますが、
+「フェイルセーフ処理が冗長にネスト」している部分があります。
+
+例：try/catch の中でさらに if (!this.app) チェックが重複している。
+
+責任分界がやや崩れていて、canvas-manager.js が「初期化」「状態保持」「復旧処理」すべてを抱え込み気味。
+
+👉 改善ポイント
+
+CanvasManager はキャンバス生成と破棄に限定
+
+エラーハンドリングは ErrorManager に委譲
+
+冗長な復旧処理 (if (!app) return false; の多重チェックなど) は削減
+
+✅ 次のステップ
+
+main.js の 43行目の async 構文を修正
+
+canvas-manager.js の 1423行目の不可視文字を削除 or 半角に修正
+
+再実行 → キャンバスが出現するか確認
+
+（動作確認後）冗長なフェイルセーフを整理して、単一責任に近づける
+

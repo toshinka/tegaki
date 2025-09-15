@@ -1,0 +1,23 @@
+【目的】
+ペン描画時に「左上 (0,0) から直線が伸びる」不具合を解消し、ユーザーがクリックした位置から正しく描画を開始できるようにする。
+
+【原因候補】
+1. pointerdown でブラウザ座標 (clientX/clientY) をそのまま使っている
+2. 描画開始点 (moveTo) が常に (0,0) で初期化されている
+3. CoordinateManager の座標変換が適用されていない
+
+【修正手順】
+1. pointerdown イベントで Pixi のグローバル座標を取得する  
+   - `const pos = event.global;`
+   - `this.lastX = pos.x; this.lastY = pos.y;`
+2. pointermove では前回座標から現在座標に向けて線分を描画  
+   - `graphics.moveTo(this.lastX, this.lastY);`
+   - `graphics.lineTo(pos.x, pos.y);`
+   - `this.lastX = pos.x; this.lastY = pos.y;`
+3. CoordinateManager が存在する場合は必ず `CoordinateManager.toCanvasCoordinates(event.global)` を通す
+4. pointerup で描画処理を終了（線が閉じられるのを防止）
+
+【確認方法】
+- 真ん中でクリック → 線の始点がクリック位置から始まる
+- 複数回線を引いても左上から伸びてこない
+- ズーム/リサイズしても座標系が崩れない

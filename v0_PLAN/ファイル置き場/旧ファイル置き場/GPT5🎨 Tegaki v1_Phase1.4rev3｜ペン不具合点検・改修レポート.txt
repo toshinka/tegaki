@@ -1,0 +1,123 @@
+# 🎨 Tegaki v1\_Phase1.4rev3｜点検・改修レポート（更新版 2025-08-22）
+
+## ✅ 点検結果（Phase1.4rev3）
+
+### 1. ベクターペンの実装
+
+* **現状:** `PenTool` は存在し、`startStroke` / `updateStroke` / `endStroke` が呼ばれている。ログも正常に出ている。
+* **問題:** `Pixi.Graphics` への描画命令が抜けており、実際の線が描画されない。
+* **結論:** **ベクターでの座標記録はあるが、描画処理が欠落**している。
+
+### 2. 筆圧の反映
+
+* **現状:** `pressure` 値（0.0〜1.0）は取得できており、ログ上も `pressure: 0.5` 等が記録されている。
+* **問題:** この値を `lineStyle` の線幅や不透明度に反映する処理が存在しない。
+* **結論:** **筆圧はモニターできているが線幅には未反映**。
+
+### 3. 線補正
+
+* **現状:** UI と設定に `smoothing` / `補正` がある。
+* **問題:** One Euro フィルタや補間アルゴリズムが実際に呼ばれている形跡はない。
+* **結論:** **実装は未完了または無効化状態**。
+
+### 4. GPU加速
+
+* **現状:** トグル UI は存在し、`performance.js` に GPU% の出力ロジックがある。
+* **問題:** PixiJS レンダラの再初期化（`powerPreference`, `forceCanvas` 切り替え）が実装されていないため、トグルしても挙動は変わらない。
+* **結論:** **GPU加速トグルはダミー状態**。
+
+### 5. HUD の数値の意味
+
+* **FPS:** `requestAnimationFrame` ベースで実測。
+* **Memory:** `performance.memory` による JS ヒープ使用量（Chrome系限定、VRAMは含まれない）。
+* **GPU%:** 実測ではなく、FPS やメモリからの**推定値**。本当の GPU 使用率ではない。
+
+---
+
+## 🔧 改修案
+
+### A. ペンツールの描画復旧
+
+* `CanvasManager` に Pixi.Graphics を追加:
+
+```js
+this.graphics = new PIXI.Graphics();
+this.app.stage.addChild(this.graphics);
+```
+
+* `ToolManager` で PenTool に渡す:
+
+```js
+this.activeTool.attachGraphics(this.canvasManager.graphics);
+```
+
+* `PenTool` の描画処理追加:
+
+```js
+startStroke(coords, pressure) {
+  this.isDrawing = true;
+  if (this.graphics) {
+    const width = (pressure || 0.5) * 4;
+    this.graphics.lineStyle(width, 0x000000, 1.0);
+    this.graphics.moveTo(coords.x, coords.y);
+  }
+}
+
+updateStroke(coords, pressure) {
+  if (this.isDrawing && this.graphics) {
+    const width = (pressure || 0.5) * 4;
+    this.graphics.lineStyle(width, 0x000000, 1.0);
+    this.graphics.lineTo(coords.x, coords.y);
+    this.graphics.strokePath();
+  }
+}
+```
+
+### B. 筆圧反映
+
+* `pressure` 値を線幅や透明度に適用（例: `lineStyle(baseWidth * pressure, color, alpha)`）。
+
+### C. 線補正の実装
+
+* `CoordinateManager` 内に One Euro フィルタまたは Catmull–Rom 補間を導入。
+* サンプリング点を一定距離ごとにリサンプリングして滑らかな線を描く。
+
+### D. GPU加速トグルの有効化
+
+* `AppCore` or `CanvasManager` にて Pixi.Application を再初期化：
+
+```js
+new PIXI.Application({
+  powerPreference: useHighPerf ? 'high-performance' : 'default',
+  forceCanvas: !useWebGL
+});
+```
+
+### E. HUD の明示
+
+* Tooltip / ヘルプで次を明示:
+
+  * GPU%=推定値
+  * Memory=JSヒープのみ
+
+---
+
+## 📋 移行チェックリスト
+
+* [x] `coordinates.js` → `CoordinateManager` 完全移行
+* [x] `PenTool` に Graphics 描画処理を追加
+* [ ] 筆圧を線幅/不透明度に反映
+* [ ] 線補正アルゴリズムを有効化
+* [ ] GPU加速トグルをレンダラ初期化と連動
+* [ ] HUD に注記を追加
+
+---
+
+## 🎯 まとめ
+
+* **ベクターペンは未完成**（ログは出るが描画命令がない）。
+* **筆圧は取得済みだが未反映**。
+* **線補正とGPU加速はUIのみ存在、機能未実装**。
+* **HUD の Memory/GPU 値は誤解を招くため説明補足が必須**。
+
+改修案を適用することで、**Phase2 移行前にベクター描画・筆圧反映・補正機能・GPU切替の足場が完成**します。

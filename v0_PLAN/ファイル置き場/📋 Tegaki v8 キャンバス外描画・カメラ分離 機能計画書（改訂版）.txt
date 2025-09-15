@@ -1,0 +1,304 @@
+📋 Tegaki v8 キャンバス外描画・カメラ分離 機能計画書（改訂版2）
+
+【目的】
+- キャンバス範囲外からの描画を可能にし、自然なペン挙動を実現する。
+- 非破壊的な記録方式を導入し、アンドゥ・リドゥおよび将来的なレイヤー管理・アニメーション機能に備える。
+- UIはシンプルかつクリーンに保ち、必要以上に複雑化しない。
+
+【基本方針】
+1. **フォールバック禁止・単純設計**
+   - 冗長化・互換性維持を目的とした余計な処理を排除。
+   - ES2023 + 最新 Chrome API に依存。
+
+2. **描画モデル**
+   - **無限キャンバスモデル**を採用。
+   - 実際に描画されるのは「可視領域（カメラ）」に限定。
+   - ペン入力はキャンバス外でも受理 → 可視領域に入った瞬間に描画確定。
+
+3. **カメラ制御**
+   - 現段階ではパン/ズーム機能を提供しない。
+   - 内部的には「カメラ座標」を持つ設計とするが、UIには露出させない。
+   - 将来的なアニメツール化（パン/ティルト/ズーム）に備えた準備。
+
+4. **非破壊記憶（Undo/Redo基盤）**
+   - 描画結果は「履歴スタック」に積み上げる。
+   - 各ストロークはベクトルデータ（座標・筆圧・色）として保持。
+   - Undo/Redoは **ショートカットキーのみ**で操作可能（アイコン無し）。
+   - 履歴スタックは将来、レイヤー移動や編集機能にも流用可能。
+
+5. **UI/UX**
+   - キャンバスはクリーンで最小限。
+   - ショートカット表は別途ポップアップ化予定（現段階では未実装）。
+   - コンソールログは必要最低限のみ出力。
+
+6. **利用ライブラリ**
+   - **pixi.js** : 描画エンジンとして活用。
+   - **構造管理は自前実装**（履歴・カメラ座標など）。
+   - 不要な外部ビルドツールは禁止（Vite/TypeScript/ESM/Webpackは使用しない）。
+
+【将来拡張】
+- レイヤー管理（非破壊移動/編集）
+- アニメーション機能（パン/ティルト/ズームの活用）
+- 設定UIからのショートカット表呼び出し
+
+💡実装したいもの
+
+Undo/Redo
+
+ショートカットのみ
+
+Undo → Ctrl + Z
+
+Redo → Ctrl + Y
+
+UI上のボタンは表示しない → キャンバスはクリーン、シンプル
+
+**分割用の「ショートカット管理領域」**は内部的に確保
+
+将来的にショートカットを追加しても、分割後のモジュールに適切に振り分けやすい
+
+キャンバス外描画
+
+ペンはキャンバス外でもON判定
+
+キャンバス内に入った瞬間に描画確定
+
+非破壊履歴（ストロークデータ）は必ず残す
+
+将来のレイヤー移動・アニメーション機能に対応可能
+
+UI
+
+シンプル・クリーン
+
+ポップアップでショートカット表表示は後から追加可能
+
+過剰機能・アイコン表示は最小限
+
+今後の拡張準備
+
+レイヤー操作（非破壊移動）
+
+アニメーションツール用カメラ（Pan/Tilt/Zoom）
+
+他ショートカットの追加（場所は確保済み）
+
+
+📋 Tegaki v8 キャンバス外描画・非破壊記憶 強化機能計画書（改訂版）
+
+目的
+- クリスタ風：キャンバス外から描画開始→キャンバス内に入ったら描画を"取り込む"挙動を実現する。
+- 非破壊記録を中核とし、Undo/Redo・レイヤー移動（レイヤー内要素を移動しても元データは残る）により
+  「描画の再構築（reconstructable）」を保証する。
+- カメラ（Viewport）はオプション機能とし、現段階では主機能のノイズにならないよう設計する。
+- 実装は素のHTML+<script>（CDN）で完結。ビルド環境・ESMは使用しない。
+
+設計原則（優先順）
+1. 非破壊：画素を直接破壊しない。すべて描画命令（ストローク等）を論理データとして保存する。
+2. 単純責務：描画ロジック、履歴ロジック、UI は独立させる（Container/Manager分離）。
+3. 冗長排除：フォールバックや多重化は極力排除。エラーは検知して可視化（console.warn/console.error 最小限）。
+4. 互換：v8 Pixi を CDN で利用。既存v8実装と共存しない。モジュール分割は内部設計のみ。
+
+推奨外部ライブラリ（CDN、グローバル参照）
+- pixi.js v8 (PIXI)         : 描画基盤
+- pixi-viewport           : カメラ・パン/ズーム（オプション）
+- hammer.min.js           : ジェスチャ／タッチ入力（必要に応じ）
+- rbush (または spatial index) : 大量ストロークの篩い分け（高速検索）
+※ 全て <script src="..."></script> で読み込む（import無し）
+
+基本コンポーネント（責務）
+- App (単一生成)
+  - Stage (PIXI stage)
+    - BackgroundLayer (常に最背面、矩形/無限領域の見た目)
+    - CanvasRoot (描画論理のルート)
+      - Layer[n] (描画単位、順序を持つ)
+        - Element (Stroke / Shape / Image / Group) — 非破壊の描画単位
+    - UILayer (メニュー・ボタン等)
+- Viewport（Optional）: CanvasRoot を包み、パン/ズームを行うが、コア動作は Viewport 非依存に実装する。
+- HistoryManager
+  - undoStack (操作イベントの逆適用情報)
+  - redoStack
+  - checkpoint/savePoint 機能（快適な復元ポイント）
+- StorageManager
+  - シリアライズ / デシリアライズ（JSONベース + minimal binary for images）
+- InputManager
+  - 生座標の正規化（画面→world座標）
+  - ペンON/OFF判定ロジック（キャンバス外開始を含む）
+- RendererManager
+  - Command -> PIXI 描画オブジェクトへ変換し stage に反映
+  - キャッシュ（cacheAsBitmap、レンダリングチャンク）管理
+
+データモデル（論理）
+- Document
+  - meta: { width, height, dpi, created, modified }
+  - layers: [ Layer ]
+  - historyMeta: { ... }
+- Layer
+  - id, name, visible, locked, opacity, transform { x,y,scale,rotation }
+  - elements: [ ElementRef ]  // 要素は参照（immutable ID）
+- Element (immutable once created; transforms kept separate)
+  - id
+  - type: "stroke" | "shape" | "image" | "group"
+  - payload:
+    - stroke: { points: [{x,y,t}], color, width, brushMeta }
+    - image: { srcRef, x,y,w,h }
+    - group: { children: [elementId,...] }
+  - creationTime
+- TransformRecord (非破壊な変換)
+  - targetId (elementId or layerId)
+  - transform: { tx, ty, sx, sy, r }
+  - recordedAt
+- HistoryEvent (undo/redo 単位)
+  - id, type, payload, inversePayload
+  - types: ["addElement","removeElement","transformElement","changeLayerOrder","changeProperty",...]
+
+挙動仕様（キャンバス外描画）
+1) 入力捕捉（InputManager）
+   - pointerdown (画面座標) → world座標変換（viewport の有無に依らず）
+   - ペン状態: PEN_DOWN フラグは画面外／world外でも成立
+   - 転送: startStroke(worldX, worldY, pointerId)
+2) ストローク記録
+   - startStroke: 新 Element (type: stroke) を RAM へ作成（IDを発行）するが、まだ Layer には挿入しない
+   - move events: points を element.payload.stroke.points に追加
+   - endStroke:
+     - 判定: "ストロークがキャンバス矩形に1点でも入ったか？"
+       - yes -> commitStrokeToLayer(elementId, defaultLayerId)
+         - 履歴: push HistoryEvent(type: addElement, payload:{layerId,elementId}, inverse:{removeElement,...})
+       - no -> discard or keep as "orphan stroke" (設計選択) -> recommended: keep as orphan in memory (non-destructive)
+3) キャンバス内への取り込み
+   - orphan stroke がキャンバス内に入る場合（移動やキャンバス領域変化）、App は自動で commit するか UI で提示して commit するかを選べる。
+   - 自動 commit モードの方が UX シンプル（ただし意図しない取り込みを避ける設定を用意）
+
+Undo/Redo と非破壊
+- 全ての "変更" は HistoryEvent として記録する（element の完全削除ではなく removeElement 操作として記録）
+- transformElement は element 自体を書き換えるのではなく TransformRecord を追加するだけ
+  - 描画時は element + TransformRecord を合成してレンダリングする（元データは常に不変）
+- Undo: pop undoStack -> apply inversePayload -> push onto redoStack
+- Redo: pop redoStack -> apply payload -> push onto undoStack
+
+レンダリングパイプライン（高レベル）
+1. RendererManager を呼ぶ（frame loop or on-demand）
+2. For each Layer (visible, in order):
+   - apply layer.transform
+   - for each elementRef in layer.elements:
+     - get element
+     - get any TransformRecord(s) applicable (合成)
+     - if element.type == stroke:
+       - if element.cacheTexture exists AND not stale -> draw sprite
+       - else -> build Graphics from points -> optionally cacheAsBitmap if many children
+3. キャッシュ戦略:
+   - 古い、かつ静的な要素は cacheAsBitmap（または generateTexture）して GPUメモリへ
+   - 大きなドロー（大量点）は chunking: 空間インデックス(RBush)で view に入る要素のみレンダリング
+
+パフォーマンス設計
+- 空間インデックス (rbush) に element のバウンディングを登録。カメラに入る要素のみ逐次レンダリング。
+- cacheAsBitmap を過度に使わない（更新コストに注意）。更新頻度の低い要素に限定。
+- WebGPU/WebGL 切替は PIXI に任せる（自前で固定しない）。
+
+シリアライズ / エクスポート
+- Document -> JSON:
+  - include elements (points arrays), layers, transforms, historyMeta optionally
+- Export PNG/JPEG:
+  - 1) create offscreen render target sized to export rectangle
+  - 2) render stage clipped to rectangle (クリッピングは RendererManager が担当)
+  - 3) readPixels -> toDataURL
+- 保存時は差分（incremental）を検討（巨大要素がある場合）
+
+API 提案（外部呼び出し用）
+- App.createDocument(width,height)
+- App.addLayer(name,options) -> layerId
+- App.startStroke(pointerId, x,y, brush)
+- App.appendStroke(pointerId, x,y,t)
+- App.endStroke(pointerId) -> returns elementId or null
+- App.undo(), App.redo()
+- App.commitElementToLayer(elementId, layerId)
+- App.moveLayer(layerId, newIndex)
+- App.applyTransform(targetId, transform) // 非破壊
+- App.serialize(), App.deserialize(json)
+- App.exportPNG(rect)
+
+UI/UX設計（簡潔）
+- シンプルモード（推奨）:
+  - 「キャンバス外からの描画を許可」 ON/OFF
+  - Undo / Redo ボタン
+  - レイヤーパネル（ドラッグで順序変更；内部は elementRef のみを移動）
+  - オプション: "カメラモード"（Viewport を有効にする）— 初期はOFF
+- 高度モード（将来）:
+  - ミニマップ（ナビゲータ）
+  - ストロークのグルーピング・タグ付け
+
+移行・実装ロードマップ（短中期）
+- M1 (短期・必須): コアデータモデル + InputManager（キャンバス外ストローク対応） + HistoryManager (undo/redo) 実装
+- M2 (短期): RendererManager 簡易実装（全要素を逐次描画）、動作検証
+- M3 (中期): 空間インデックス(RBush)導入 + キャッシュ戦略（cacheAsBitmap）でパフォチューニング
+- M4 (中期): レイヤー移動（非破壊）と TransformRecord の UI 結合
+- M5 (任意): Viewport/Camera をオプション機能として実装（切替可能）
+
+備考（実装上の注意）
+- 「キャンバス外スタートでキャンバス内で取り込む」挙動は InputManager 側で明示的に実装する（単純な pointer イベントだけでは不十分）
+- 非破壊のため、element.payload は不変指向で扱う（更新は新バージョンとして記録）
+- 大量ポイントのストロークは圧縮（自動サンプリング）を検討。保存用にベクトル圧縮アルゴリズムを later に導入可能。
+
+
+擬似実装（シンプルM1の骨格、import無し、PIXI+viewportはCDNで読み込む想定）
+
+// 1) 初期化（PIXI）
+const app = new PIXI.Application({...});
+container.appendChild(app.view);
+
+// 2) コアマネージャ（シングルトン）
+const Document = {
+  layers: [], elementsStore: {}, transforms: {}, history: {undo:[], redo:[]}
+  createLayer(name){...}
+  addElement(element){ elementsStore[element.id]=element; }
+  commitElementToLayer(elementId, layerId){ layers[layerId].elements.push(elementId); pushHistory(...) }
+  applyTransform(targetId, transform){ transforms[targetId] = transforms[targetId] || []; transforms[targetId].push(transform); pushHistory(...) }
+  undo(){ pop & apply inverse }
+  redo(){ ... }
+};
+
+// 3) InputManager: pointer events -> world coords
+let activeStrokes = {}; // pointerId -> tempElement
+canvasElement.addEventListener('pointerdown', (e)=>{
+  const w = screenToWorld(e.clientX,e.clientY);
+  const el = createTempStroke(w.x,w.y,e.pointerId, brushMeta);
+  activeStrokes[e.pointerId] = el;
+});
+canvasElement.addEventListener('pointermove', (e)=>{
+  if(!activeStrokes[e.pointerId]) return;
+  const w = screenToWorld(e.clientX,e.clientY);
+  activeStrokes[e.pointerId].payload.stroke.points.push({x:w.x,y:w.y,t:Date.now()});
+  // optionally render the temp stroke live to a temp Graphics
+});
+canvasElement.addEventListener('pointerup', (e)=>{
+  const temp = activeStrokes[e.pointerId];
+  delete activeStrokes[e.pointerId];
+  if(strokeHasPointInsideCanvas(temp)){ // 判定関数
+    Document.addElement(temp);
+    Document.commitElementToLayer(temp.id, defaultLayerId);
+  } else {
+    // keep as orphan or discard (設計に応じて)
+    Document.addOrphan(temp);
+  }
+});
+
+function strokeHasPointInsideCanvas(element){
+  // element.payload.stroke.points にキャンバス矩形内の点が存在するか走査
+  // true/false を返す
+}
+
+// 4) RendererManager: Document -> PIXI stage
+function render(){
+  // clear or reuse containers
+  for each layer in Document.layers:
+    for each elementId in layer.elements:
+      const el = Document.elementsStore[elementId];
+      if(el.type==='stroke'){
+        drawStrokeToPIXI(el); // Graphics を作る or cache を使う
+      }
+}
+app.ticker.add(render);
+
+
+
+

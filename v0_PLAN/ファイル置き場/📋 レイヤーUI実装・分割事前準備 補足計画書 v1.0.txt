@@ -1,0 +1,550 @@
+# 📋 レイヤーUI実装・分割事前準備 補足計画書 v1.0
+
+## 🎯 目的・背景
+現在の`v8.13_FileSplit_rev2`を、レイヤーUI案.pngに沿ったUIに改修し、さらなる分割に備えた基盤を整備する。
+
+---
+
+## 📊 現状分析
+
+### 🔍 現在のレイヤーUI構造
+```
+右側中央配置:
+├── レイヤー追加ボタン（+アイコン）
+└── レイヤーパネル
+    ├── レイヤー1（アクティブ時: 赤枠）
+    │   ├── 目玉アイコン（表示切替）
+    │   ├── レイヤー名
+    │   └── ×アイコン（削除）
+    └── レイヤー0（背景、削除不可）
+```
+
+### 🎨 レイヤーUI案.png の要求仕様
+```
+[フォルダ1] (上部)
+├── +ボタン（レイヤー追加）
+├── +ボタン（レイヤー追加）← 2つ設置
+└── 目玉アイコン（100%表示）
+
+[フォルダ1配下レイヤー] (中央)
+├── 目玉アイコン（100%表示）
+├── レイヤー1（猫サムネイル付き）
+└── プレビューエリア
+
+[レイヤー0] (下部)
+├── 目玉アイコン（100%表示）
+├── レイヤー0表示
+└── プレビューエリア
+
+特徴:
+- サムネイル表示（描画内容の縮小版）
+- 100%不透明度表示
+- フォルダ構造（将来対応）
+- より大きなプレビューエリア
+```
+
+---
+
+## 🚀 段階別実装計画
+
+### 🎯 Phase 1: 現状UIの改修・拡張 (緊急度: 高)
+**工数**: 2-3時間  
+**目標**: レイヤーUI案.pngに近づける基本機能実装
+
+#### 1.1 レイヤーアイテムの拡張
+```css
+.layer-item {
+    width: 180px;  /* 140px → 180px */
+    height: 64px;  /* 48px → 64px */
+    /* サムネイル領域確保 */
+}
+
+.layer-thumbnail {
+    width: 48px;
+    height: 48px;
+    background: var(--futaba-background);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    margin-right: 8px;
+    position: relative;
+    overflow: hidden;
+}
+
+.layer-thumbnail canvas {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+```
+
+#### 1.2 サムネイル生成システム
+```javascript
+// DrawingEngine.js に追加
+class ThumbnailGenerator {
+    constructor() {
+        this.thumbnailSize = 48;
+        this.cache = new Map();
+    }
+    
+    generateLayerThumbnail(layerId) {
+        const layer = engineInstance.layerManager.layers.items.find(l => l.id === layerId);
+        if (!layer) return null;
+        
+        // オフスクリーンキャンバス作成
+        const thumbnailCanvas = document.createElement('canvas');
+        thumbnailCanvas.width = this.thumbnailSize;
+        thumbnailCanvas.height = this.thumbnailSize;
+        const ctx = thumbnailCanvas.getContext('2d');
+        
+        // レイヤーコンテンツを縮小描画
+        const mainCanvas = engineInstance.drawingEngine.app.canvas;
+        ctx.drawImage(
+            mainCanvas, 
+            0, 0, ENGINE_CONFIG.canvas.width, ENGINE_CONFIG.canvas.height,
+            0, 0, this.thumbnailSize, this.thumbnailSize
+        );
+        
+        this.cache.set(layerId, thumbnailCanvas.toDataURL());
+        return thumbnailCanvas.toDataURL();
+    }
+    
+    updateThumbnail(layerId) {
+        // 描画完了時にサムネイル更新
+        const thumbnailData = this.generateLayerThumbnail(layerId);
+        if (window.UICallbacks?.onLayerThumbnailUpdated) {
+            window.UICallbacks.onLayerThumbnailUpdated(layerId, thumbnailData);
+        }
+    }
+}
+```
+
+#### 1.3 不透明度表示の改善
+```javascript
+// main.html UI Controller に追加
+updateLayerUI() {
+    // 既存処理...
+    
+    layerItem.innerHTML = `
+        <div class="layer-thumbnail">
+            <img src="${thumbnailData || 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iNDgiIGhlaWdodD0iNDgiLz4='}" alt="thumbnail">
+        </div>
+        <div class="layer-info">
+            <div class="layer-name">${layer.name}</div>
+            <div class="layer-opacity">100%</div>
+        </div>
+        <div class="layer-controls">
+            <div class="layer-visibility ${layer.visible ? '' : 'hidden'}" data-action="toggle-visibility">
+                ${eyeIcon}
+            </div>
+            <div class="layer-delete-button" data-action="delete-layer">
+                ${deleteIcon}
+            </div>
+        </div>
+    `;
+}
+```
+
+### 🎯 Phase 2: フォルダ構造準備・API拡張 (緊急度: 中)
+**工数**: 3-4時間  
+**目標**: 将来のフォルダ機能に対応できる設計
+
+#### 2.1 階層データ構造の準備
+```javascript
+// DrawingEngine.js LayerManager に追加
+class LayerHierarchyManager {
+    constructor(layerManager) {
+        this.layerManager = layerManager;
+        this.folders = new Map(); // フォルダ管理
+        this.hierarchy = new Map(); // 親子関係
+    }
+    
+    createFolder(name, parentId = null) {
+        const folderId = `folder_${Date.now()}`;
+        const folder = {
+            id: folderId,
+            name: name,
+            type: 'folder',
+            parentId: parentId,
+            children: [],
+            expanded: true,
+            visible: true
+        };
+        
+        this.folders.set(folderId, folder);
+        if (parentId) {
+            const parent = this.folders.get(parentId);
+            if (parent) parent.children.push(folderId);
+        }
+        
+        return folder;
+    }
+    
+    moveLayerToFolder(layerId, folderId) {
+        this.hierarchy.set(layerId, folderId);
+        const folder = this.folders.get(folderId);
+        if (folder && !folder.children.includes(layerId)) {
+            folder.children.push(layerId);
+        }
+    }
+    
+    getHierarchicalLayerList() {
+        // フラット構造とフォルダ構造の両方に対応
+        const result = [];
+        const processedLayers = new Set();
+        
+        // フォルダを先に処理
+        for (const folder of this.folders.values()) {
+            if (folder.parentId === null) {
+                result.push(folder);
+                folder.children.forEach(childId => {
+                    if (!childId.startsWith('folder_')) {
+                        const layer = this.layerManager.layers.items.find(l => l.id === childId);
+                        if (layer) {
+                            result.push({...layer, parentId: folder.id});
+                            processedLayers.add(childId);
+                        }
+                    }
+                });
+            }
+        }
+        
+        // 未処理のレイヤーを追加
+        this.layerManager.layers.items.forEach(layer => {
+            if (!processedLayers.has(layer.id)) {
+                result.push(layer);
+            }
+        });
+        
+        return result;
+    }
+}
+```
+
+#### 2.2 拡張可能なレイヤーパネル構造
+```css
+.layer-panel-container {
+    /* 既存スタイル... */
+    max-height: 60vh; /* 高さ制限 */
+    overflow-y: auto; /* スクロール対応 */
+}
+
+.layer-folder {
+    background: var(--futaba-medium);
+    border: 2px solid var(--futaba-light-medium);
+    border-radius: 8px;
+    margin-bottom: 4px;
+    padding: 4px;
+}
+
+.layer-folder-header {
+    display: flex;
+    align-items: center;
+    padding: 4px 8px;
+    cursor: pointer;
+}
+
+.layer-folder-toggle {
+    width: 16px;
+    height: 16px;
+    margin-right: 4px;
+}
+
+.layer-folder-children {
+    margin-left: 16px;
+    border-left: 1px dashed var(--futaba-light-medium);
+    padding-left: 8px;
+}
+
+.layer-item.in-folder {
+    margin-left: 0;
+    border-left: none;
+}
+```
+
+### 🎯 Phase 3: 分割準備・アーキテクチャ整備 (緊急度: 中)
+**工数**: 4-5時間  
+**目標**: ThreeSatellitePlan準拠の分割可能な構造
+
+#### 3.1 イベントドリブンアーキテクチャの強化
+```javascript
+// 新しいイベント型定義
+const LAYER_UI_EVENT_TYPES = {
+    // サムネイル関連
+    'thumbnail-generate-request': { layerId: 'number' },
+    'thumbnail-updated': { layerId: 'number', data: 'string' },
+    
+    // フォルダ関連（将来対応）
+    'folder-create-request': { name: 'string', parentId: 'string|null' },
+    'folder-toggle-request': { folderId: 'string' },
+    'layer-move-to-folder': { layerId: 'number', folderId: 'string' },
+    
+    // UI拡張関連
+    'layer-ui-expand': { expanded: 'boolean' },
+    'layer-preview-request': { layerId: 'number' },
+    'layer-opacity-change': { layerId: 'number', opacity: 'number' }
+};
+```
+
+#### 3.2 マイクロサービス化準備
+```javascript
+// 将来の分割ファイル構造準備
+const FUTURE_FILE_STRUCTURE = {
+    'layer-manager.js': {
+        responsibilities: ['レイヤーCRUD', 'レイヤー変形', '階層管理'],
+        dependencies: ['DrawingEngineAPI', 'MainController']
+    },
+    'ui-layer-panel.js': {
+        responsibilities: ['レイヤーパネル描画', 'サムネイル表示', 'ドラッグ&ドロップ'],
+        dependencies: ['LayerManagerAPI', 'MainController']
+    },
+    'thumbnail-service.js': {
+        responsibilities: ['サムネイル生成', 'キャッシュ管理', 'プレビュー更新'],
+        dependencies: ['DrawingEngineAPI', 'OffscreenCanvas']
+    }
+};
+```
+
+### 🎯 Phase 4: パフォーマンス最適化・将来対応 (緊急度: 低)
+**工数**: 2-3時間  
+**目標**: 大量レイヤー対応・メモリ効率改善
+
+#### 4.1 仮想スクロール実装
+```javascript
+// 大量レイヤー対応の仮想スクロール
+class VirtualScrollLayerPanel {
+    constructor(containerHeight = 300) {
+        this.containerHeight = containerHeight;
+        this.itemHeight = 64; // レイヤーアイテム高さ
+        this.visibleCount = Math.ceil(containerHeight / this.itemHeight) + 2;
+        this.scrollPosition = 0;
+    }
+    
+    renderVisibleItems(allLayers) {
+        const startIndex = Math.floor(this.scrollPosition / this.itemHeight);
+        const endIndex = Math.min(startIndex + this.visibleCount, allLayers.length);
+        
+        return allLayers.slice(startIndex, endIndex).map((layer, index) => ({
+            ...layer,
+            renderIndex: startIndex + index,
+            offsetY: (startIndex + index) * this.itemHeight
+        }));
+    }
+}
+```
+
+#### 4.2 レイヤーサムネイル最適化
+```javascript
+// Web Workers利用のサムネイル生成
+class OptimizedThumbnailGenerator {
+    constructor() {
+        this.worker = new Worker(this.createWorkerBlob());
+        this.cache = new Map();
+        this.generateQueue = [];
+        this.processing = false;
+    }
+    
+    createWorkerBlob() {
+        const workerCode = `
+            self.onmessage = function(e) {
+                const { imageData, width, height, targetSize } = e.data;
+                
+                // OffscreenCanvasでサムネイル生成
+                const canvas = new OffscreenCanvas(targetSize, targetSize);
+                const ctx = canvas.getContext('2d');
+                
+                // 画像縮小処理
+                const scaledImageData = scaleImageData(imageData, width, height, targetSize);
+                ctx.putImageData(scaledImageData, 0, 0);
+                
+                canvas.convertToBlob().then(blob => {
+                    const reader = new FileReader();
+                    reader.onload = () => {
+                        self.postMessage({ 
+                            success: true, 
+                            dataUrl: reader.result 
+                        });
+                    };
+                    reader.readAsDataURL(blob);
+                });
+            };
+        `;
+        
+        return new Blob([workerCode], { type: 'application/javascript' });
+    }
+}
+```
+
+---
+
+## 🔧 実装優先度・リスク分析
+
+### ⚡ 高優先度（Phase 1）
+- **サムネイル表示基礎**: 現在のUIに最小限の変更でサムネイル対応
+- **レイヤーアイテム拡大**: レイヤーUI案.pngに近い見た目
+- **不透明度表示**: 100%固定表示から動的表示へ
+
+**リスク**: 低  
+**理由**: 既存構造に追加のみ、破壊的変更なし
+
+### 📊 中優先度（Phase 2-3）
+- **フォルダ構造準備**: データ構造の拡張
+- **階層表示**: ネストしたレイヤー表示
+- **分割アーキテクチャ**: イベントドリブン強化
+
+**リスク**: 中  
+**理由**: データ構造変更、イベントフロー影響の可能性
+
+### 🚀 低優先度（Phase 4）
+- **仮想スクロール**: 大量レイヤー対応
+- **Web Workers**: パフォーマンス改善
+
+**リスク**: 高  
+**理由**: 複雑な実装、既存機能への影響大
+
+---
+
+## 📝 具体的修正箇所
+
+### 🎨 CSS修正項目
+```css
+/* layer-item のサイズ拡張 */
+.layer-item {
+    width: 180px;  /* +40px */
+    height: 64px;  /* +16px */
+    display: grid;
+    grid-template-columns: 48px 1fr auto;
+    gap: 8px;
+    align-items: center;
+}
+
+/* サムネイル領域追加 */
+.layer-thumbnail {
+    width: 48px;
+    height: 48px;
+    background: var(--futaba-background);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+/* 情報部分のレイアウト */
+.layer-info {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.layer-opacity {
+    font-size: 10px;
+    color: var(--text-secondary);
+    font-family: monospace;
+}
+```
+
+### 🧩 JavaScript修正項目
+```javascript
+// main.html - UICallbacks拡張
+window.UICallbacks = {
+    // 既存callbacks...
+    
+    // 新規追加
+    onLayerThumbnailUpdated: (layerId, thumbnailData) => {
+        const layerItem = document.querySelector(`[data-layer-id="${layerId}"] .layer-thumbnail img`);
+        if (layerItem) {
+            layerItem.src = thumbnailData;
+        }
+    },
+    
+    onLayerOpacityChanged: (layerId, opacity) => {
+        const opacityDisplay = document.querySelector(`[data-layer-id="${layerId}"] .layer-opacity`);
+        if (opacityDisplay) {
+            opacityDisplay.textContent = Math.round(opacity * 100) + '%';
+        }
+    }
+};
+```
+
+### ⚙️ DrawingEngine.js 追加項目
+```javascript
+// ThumbnailGenerator クラス追加
+class ThumbnailGenerator {
+    // Phase 1実装内容...
+}
+
+// DrawingEngine 拡張
+class DrawingEngine {
+    constructor(transformSystem) {
+        // 既存処理...
+        this.thumbnailGenerator = new ThumbnailGenerator();
+    }
+    
+    // パス完成時にサムネイル更新
+    finalizePath(path) {
+        if (path && path.isComplete) {
+            const activeLayer = this.layerManager.getActiveLayer();
+            if (activeLayer) {
+                setTimeout(() => {
+                    this.thumbnailGenerator.updateThumbnail(activeLayer.id);
+                }, 100);
+            }
+        }
+    }
+}
+```
+
+---
+
+## ✅ 検証チェックリスト
+
+### Phase 1 完了時チェック項目
+- [ ] レイヤーアイテムが180x64pxに拡大されている
+- [ ] サムネイル領域（48x48px）が表示されている
+- [ ] 不透明度が「100%」で表示されている
+- [ ] 既存のレイヤー操作（作成・削除・表示切替）が正常動作
+- [ ] レイヤー追加時にサムネイルが生成される
+- [ ] 描画完了時にサムネイルが更新される
+
+### Phase 2 完了時チェック項目
+- [ ] フォルダデータ構造が準備されている
+- [ ] 階層表示のHTML/CSS構造が完成している
+- [ ] フォルダ作成APIが動作する（UI未実装でも）
+- [ ] getHierarchicalLayerList()が正常なデータを返す
+
+### Phase 3 完了時チェック項目
+- [ ] イベントドリブンアーキテクチャが強化されている
+- [ ] 分割可能な構造になっている（責務分離明確）
+- [ ] 新しいイベント型が定義・実装されている
+- [ ] 既存機能に影響がない
+
+### Phase 4 完了時チェック項目
+- [ ] 100レイヤー以上でもスムーズに動作
+- [ ] サムネイル生成がメインスレッドをブロックしない
+- [ ] メモリ使用量が適切に管理されている
+
+---
+
+## 🌟 将来拡張への対応力
+
+### 🔮 予想される将来要求
+1. **フォルダ機能**: レイヤーグループ化
+2. **レイヤー効果**: フィルター・ブレンドモード
+3. **レイヤー変形**: 移動・回転・スケール
+4. **アニメーション**: レイヤー単位のキーフレーム
+5. **レイヤー複製・結合**: 高度な編集機能
+
+### 🏗️ 対応準備
+- **データ構造**: 拡張可能な設計（Phase 2で準備）
+- **イベントシステム**: 新機能の追加が容易（Phase 3で強化）
+- **パフォーマンス**: 大量データ対応（Phase 4で基盤整備）
+- **UI拡張性**: コンポーネント化・モジュール化
+
+---
+
+## 🎯 この計画書の活用方法
+
+1. **即座実行**: Phase 1から開始して基本的なサムネイル表示を実現
+2. **段階実装**: Phase 2-3で将来対応の基盤を構築  
+3. **分割準備**: Phase 3完了後にThreeSatellitePlan準拠の分割実行
+4. **最適化**: Phase 4でパフォーマンス改善・大規模対応
+
+**この計画により、レイヤーUI案.pngの実現と、さらなる分割の基盤を両立できます。**

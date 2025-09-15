@@ -1,0 +1,99 @@
+❗ 主な問題点
+1. エラー: Identifier 'DrawingEngine' has already been declared
+
+main.js 内で class DrawingEngine を定義しているのに、別の場所でも同じ名前が再宣言されています。
+
+index.html を見ると 同じ JS を2回読み込んでいる か、あるいは main.js 内で DrawingEngine が複数ファイル分割前のコードから重複残っている可能性が高いです。
+
+👉 確認したところ：
+
+<script src="main.js"></script>
+<script src="main.js"></script>
+
+
+のように二重読み込みがあるか、または main.js にすでに DrawingEngine が定義済みの状態でさらに同じものをインポートしている構造になっています。
+
+2. キャンバスが出ない
+
+PIXI.Application の初期化が行われているが、app.view を document.body.appendChild する処理が呼ばれていない、または DOM が用意される前に呼び出している可能性があります。
+
+また、index.html 側で div id="app" が定義されていないのに document.getElementById("app") へ追加しようとしているように見えます。
+
+3. レイヤーパネルが出ない
+
+レイヤーパネル用の LayerManager クラス定義はあるが、index.html にそのための DOM (<div id="layer-panel"> など) が存在していない。
+
+もしくは CSS が非表示にしてしまっている。
+
+✅ 点検と改修案
+改修案 1: 二重定義の解消
+
+index.html を点検し、main.js の読み込みを 1 回にする。
+
+もし main.js 内に複数の DrawingEngine 定義が残っているなら、ファイル分割を整理し、DrawingEngine を一箇所にまとめる。
+
+例（index.html のスクリプト読み込み確認）:
+
+<!-- NG: 二重読み込み -->
+<script src="main.js"></script>
+<script src="main.js"></script>
+
+<!-- OK: 一回だけ -->
+<script src="main.js"></script>
+
+改修案 2: キャンバス表示の保証
+
+DOMContentLoaded 後に PIXI アプリを初期化する。
+
+index.html にキャンバスを挿入するターゲットを用意する。
+
+例:
+
+<body>
+  <div id="app"></div>
+  <div id="layer-panel"></div>
+  <script src="main.js"></script>
+</body>
+
+
+main.js 側:
+
+document.addEventListener("DOMContentLoaded", () => {
+    const app = new PIXI.Application({ width: 800, height: 600, backgroundColor: 0xffffff });
+    document.getElementById("app").appendChild(app.view);
+
+    const engine = new DrawingEngine(app);
+    engine.init();
+});
+
+改修案 3: レイヤーパネル表示
+
+LayerManager が参照する DOM を index.html に追加。
+
+例えば:
+
+<div id="layer-panel" style="position:fixed; right:0; top:0; width:200px; height:100%; background:#f0f0f0;">
+</div>
+
+
+これで最低限のレイヤーパネルが出る。
+
+改修案 4: ファイル構造整理
+
+今のままだと Engine / UI / Main 初期化 が混ざっており、再定義や循環参照を起こしやすい。
+
+将来の分割案：
+
+engine/DrawingEngine.js
+
+engine/LayerManager.js
+
+main.js（初期化のみ）
+
+📝 まとめ
+
+現在の最大の原因は DrawingEngine の二重定義 → main.js が二重読み込み or コード内で重複。
+
+次に キャンバスとレイヤーパネルを挿入する DOM が index.html に無い。
+
+構造自体は大きく崩れていないので、スクリプト読み込みと DOM 要素の用意を直せば起動可能になる。

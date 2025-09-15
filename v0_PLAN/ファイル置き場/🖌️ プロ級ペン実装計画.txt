@@ -1,0 +1,267 @@
+# 🖌️ プロ級ペンツール実装計画 - Phase1.5拡張版
+
+## 🎯 **実装目標**
+
+### ✨ **プロクリエイト級体験の実現**
+- **筆圧感知**: 0-1.0の精密な筆圧検出・リアルタイム反映
+- **120Hz対応**: 高リフレッシュレート環境での滑らかな描画
+- **線補正**: 手ブレ補正・スムージング・ベジエ曲線近似
+- **レスポンス**: 遅延1フレーム以下の即座反応
+
+### 🚀 **将来拡張基盤**
+- **Spine統合**: 物理演算アニメーション対応基盤
+- **非破壊編集**: ストローク後編集・変形・物理シミュレーション
+- **ブラシエンジン**: テクスチャ・パーティクル・プロシージャル生成
+
+---
+
+## 📋 **Phase1.5拡張: プロペン機能**
+
+### 🔧 **新規Managerクラス**
+
+#### 1. PressureManager（筆圧管理）
+```javascript
+/**
+ * 🖊️ PressureManager - 筆圧感知・正規化・補正
+ * @provides: getPressure(), calibratePressure(), setPressureCurve()
+ * @uses: PointerEvent.pressure, ConfigManagerInstance
+ * @initflow: 1.初期化 → 2.キャリブレーション → 3.イベント登録
+ * @forbids: 💀双方向依存 🚫フォールバック 🚫v7/v8二重管理
+ */
+class PressureManager {
+    // 筆圧データ正規化・デバイス差異吸収
+    // Apple Pencil/Surface Pen/Wacom対応
+    // 感度曲線設定（リニア/二次/カスタム）
+}
+```
+
+#### 2. StrokeEngine（描画エンジン）
+```javascript
+/**
+ * 🎨 StrokeEngine - 高速描画・補正・120Hz対応
+ * @provides: startStroke(), addStrokePoint(), endStroke()
+ * @uses: PressureManager, CanvasManagerInstance
+ * @initflow: 1.エンジン初期化 → 2.バッファ準備 → 3.描画開始
+ * @forbids: 💀双方向依存 🚫フォールバック 🚫直接Pixi操作
+ */
+class StrokeEngine {
+    // WebGPU最適化描画
+    // 線補正・スムージング
+    // バッファリング・予測描画
+}
+```
+
+#### 3. BrushRenderer（ブラシレンダラー）
+```javascript
+/**
+ * 🖌️ BrushRenderer - ブラシ形状・テクスチャ・効果
+ * @provides: setBrushShape(), setTexture(), renderBrushPoint()
+ * @uses: StrokeEngine, TextureManager
+ * @initflow: 1.ブラシ読み込み → 2.シェーダー準備 → 3.レンダー開始
+ * @forbids: 💀双方向依存 🚫重複テクスチャ 🚫メモリリーク
+ */
+class BrushRenderer {
+    // 円形・楕円・カスタム形状
+    // テクスチャブラシ対応
+    // リアルタイム変形
+}
+```
+
+### 🛠️ **既存拡張クラス**
+
+#### PenTool（大幅拡張）
+```javascript
+/**
+ * 🖊️ PenTool - プロ級ペン機能統合
+ * 【新機能】
+ * - 筆圧感知描画
+ * - 120Hz高速レスポンス
+ * - 線補正・スムージング
+ * - 予測描画
+ * - ブラシエンジン統合
+ */
+class PenTool extends AbstractTool {
+    // 筆圧→線幅変換
+    // リアルタイム補正
+    // 高速バッファリング
+}
+```
+
+---
+
+## ⚡ **120Hz対応・高速化戦略**
+
+### 🎯 **レスポンス最適化**
+
+#### 1. 予測描画システム
+```javascript
+/**
+ * 🔮 PredictiveRenderer - 予測描画・遅延削減
+ * - PointerMoveの軌跡から次点を予測
+ * - 予測点での仮描画→確定時に補正
+ * - 体感遅延を大幅削減
+ */
+```
+
+#### 2. 差分更新システム
+```javascript
+/**
+ * 🔄 DeltaRenderer - 差分のみ更新
+ * - 前フレームとの差分領域のみ再描画
+ * - WebGPUテクスチャ部分更新活用
+ * - メモリ・GPU負荷最小化
+ */
+```
+
+#### 3. 高頻度イベント処理
+```javascript
+/**
+ * ⚡ HighFrequencyHandler - 120Hz対応
+ * - requestAnimationFrame + IntersectionObserver
+ * - イベント間引き・バッファリング
+ * - フレーム同期描画
+ */
+```
+
+---
+
+## 🎨 **筆圧・補正アルゴリズム**
+
+### 📊 **筆圧処理パイプライン**
+
+```
+生筆圧値 → デバイス正規化 → 感度曲線 → 線幅/透明度変換 → 描画適用
+  (0-1)      (機種差異吸収)   (ユーザー設定)   (ブラシ設定)      (レンダリング)
+```
+
+### 🔧 **補正アルゴリズム**
+
+#### 1. 座標スムージング
+- **移動平均**: 直近N点の平均で手ブレ除去
+- **ベジエ近似**: 制御点算出で滑らかな曲線
+- **適応フィルター**: 描画速度に応じた補正強度
+
+#### 2. 筆圧スムージング
+- **時系列フィルター**: 急激な筆圧変化を緩和
+- **速度連動**: 描画速度と筆圧の相関補正
+- **予測補間**: 次の筆圧値を予測して滑らか化
+
+---
+
+## 🚀 **Spine統合基盤**
+
+### 🦴 **物理演算準備**
+
+#### 1. スケルトン対応レイヤー
+```javascript
+/**
+ * 🦴 SkeletonLayer - Spine統合準備
+ * - 描画ストローク→ボーン変換
+ * - 物理演算対応データ構造
+ * - アニメーション制御点生成
+ */
+```
+
+#### 2. 非破壊編集基盤
+```javascript
+/**
+ * 🔄 NonDestructiveEditor - 後編集対応
+ * - ストローク分解・再構成
+ * - 制御点操作インターフェース
+ * - リアルタイム変形プレビュー
+ */
+```
+
+#### 3. 物理演算ブリッジ
+```javascript
+/**
+ * 🌊 PhysicsAdapter - Spine物理統合
+ * - 描画→物理オブジェクト変換
+ * - 重力・風・衝突検出
+ * - アニメーション書き出し
+ */
+```
+
+---
+
+## 📦 **依存ライブラリ構成**
+
+### ✅ **必須ライブラリ（CDN）**
+```html
+<!-- PixiJS v8コア -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.0.0/pixi.min.js"></script>
+
+<!-- Spine統合 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/spine-pixi/4.2.89/spine-pixi.min.js"></script>
+
+<!-- 筆圧検出強化 -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pressure.js/2.1.2/pressure.min.js"></script>
+```
+
+### 📚 **カスタムライブラリ**
+```javascript
+// js/engines/pen-engine.js - プロペン統合エンジン
+// js/engines/pressure-processor.js - 筆圧処理専用
+// js/engines/stroke-smoother.js - 線補正専用
+// js/engines/predictive-renderer.js - 予測描画専用
+```
+
+---
+
+## 🔄 **実装フロー（Phase1.5拡張）**
+
+### Step 1: 基盤Manager実装
+```
+PressureManager → StrokeEngine → BrushRenderer → 統合テスト
+```
+
+### Step 2: ペンツール拡張
+```
+PenTool拡張 → 筆圧描画 → 120Hz対応 → 補正機能 → パフォーマンステスト
+```
+
+### Step 3: Spine統合準備
+```
+SkeletonLayer → NonDestructiveEditor → PhysicsAdapter → 基本統合テスト
+```
+
+### Step 4: UI・設定統合
+```
+筆圧設定UI → ブラシ設定UI → ショートカット → 最終統合テスト
+```
+
+---
+
+## ✅ **成功基準**
+
+### 🎯 **定量的目標**
+- **遅延**: 16ms以下（60Hz）、8ms以下（120Hz）
+- **筆圧精度**: 1024段階以上の滑らかな変化
+- **補正効果**: 手ブレ80%以上削減
+- **フレームレート**: 安定60FPS、120Hz環境で120FPS
+
+### 🎨 **定性的目標**
+- **描き心地**: プロクリエイト並みの滑らかさ
+- **筆圧感知**: 自然な強弱表現
+- **レスポンス**: 遅延を感じない反応速度
+- **安定性**: 長時間描画でも性能劣化なし
+
+---
+
+## 🚨 **実装上の注意**
+
+### 💀 **絶対禁止**
+- 筆圧値の直接操作（必ずPressureManager経由）
+- 120Hz環境での同期ミス
+- 予測描画の確定忘れ
+- メモリリーク（テクスチャ・イベント）
+
+### ✅ **必須遵守**
+- 全描画処理のStrokeEngine経由
+- 筆圧・座標の統一API使用
+- エラー時の描画継続（フォールバック禁止だが描画は継続）
+- デバイス差異の自動吸収
+
+---
+
+**🎯 最終目標**: iPadのプロクリエイトに匹敵する描画体験をWebブラウザで実現し、将来的にSpine物理演算アニメーションへの拡張基盤を構築する。

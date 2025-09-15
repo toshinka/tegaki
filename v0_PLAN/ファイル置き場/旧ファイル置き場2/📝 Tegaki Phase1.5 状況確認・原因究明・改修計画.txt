@@ -1,0 +1,246 @@
+# 📝 Tegaki Phase1.5 状況確認・原因究明・改修計画
+## 1. 現状の確認
+### 実装済み（phase1ベース）
+- PixiJS Graphics を利用した「直描画ストローク」
+- CoordinateManager による座標管理
+- RecordManager による記録処理の雛形
+- ToolManager からの Pen/Eraser 切替 UI は一応可能
+
+### 発生している問題
+1. ⚠️ `powerPreference` 警告  
+   → WebGPU/Canvas の環境依存。PixiJS側の仕様で実害なし。  
+
+2. ⚠️ `eraser-tool.js:118 DrawContainer未取得`  
+   → V8 移行後の「描画レイヤー（DrawContainer）」生成が未接続。  
+   → Eraser/Pen 両方で「描画ターゲットが無い」ため線が描画されない。  
+
+3. ⚠️ `index.html:595 TegakiApplication v8.12.0初期化未完了`  
+   → `TegakiApplication.initialize()` 内の依存が解決せずフラグ未更新。  
+   → Manager初期化順の不整合が原因。  
+
+4. キャンバスサイズの問題  
+   → 現状 `CanvasManager` が Pixi.Application のデフォルト生成値（恐らく `800x600`）を利用している。  
+   → HTML 側で `<canvas>` 指定しても Pixi.Application が優先されてリサイズされるため不整合。  
+
+---
+
+## 2. 原因分析
+- **描画されない件**  
+  - PenTool/EraserTool では `this.drawContainer` を参照しているが、`CanvasManager` 側で `stage.addChild(drawContainer)` の流れが未定義。  
+  - そのため「描画ターゲットが空」でストローク処理が発火していない。  
+  - RecordManager も drawContainer とリンクしていないため、Undo/Redo が成立しない。  
+
+- **初期化未完了件**  
+  - index.html で `TegakiApplication.start()` 呼び出し → 内部で Manager 群初期化 → 一部の Manager が他の未初期化 Manager を参照して失敗。  
+  - 特に ToolManager が CanvasManager の `drawContainer` を要求するが、CanvasManager 側がそれを生成していない。  
+  - 依存禁止事項「双方向禁止」に反して半循環依存状態になっている。  
+
+- **キャンバスサイズ問題**  
+  - package内 `CanvasManager` の `new PIXI.Application()` 引数がデフォルトのまま。  
+  - index.html で `<canvas width="400" height="400">` 指定しても Pixi.Application が上書き。  
+
+---
+
+## 3. 改修計画
+### フェーズ分類
+- Phase1（現行基盤）
+  - ✅ PixiJS 直描画の土台あり
+  - ❌ DrawContainer が未接続のため描画機能が死んでいる
+- Phase1.5（直近の重点）
+  - ❌ ストローク保持/UndoRedo/NavigationManager 未接続
+  - ❌ 非破壊編集の基盤なし
+
+### 改修方針
+1. **CanvasManager修正**
+   - `this.app = new PIXI.Application({ width: 400, height: 400, backgroundColor: 0xffffff })`
+   - `this.drawContainer = new PIXI.Container();`
+   - `this.app.stage.addChild(this.drawContainer);`
+   - Manager登録キーに `window.Tegaki.CanvasManagerInstance` を登録（ヘッダー記載済みにする）
+
+2. **ToolManager修正**
+   - PenTool/EraserTool に `canvasManager.getDrawContainer()` を渡す形式へ一本化  
+     （直接参照禁止、依存逆流防止）
+
+3. **PenTool修正**
+   - `pointerdown → new PIXI.Graphics()` を生成して `drawContainer.addChild(graphics)`
+   - `pointermove → graphics.lineTo(...)`
+   - RecordManager にストローク保存（ベクター情報も保持）
+   - Undo/Redo は「RecordManagerからdrawContainerへ再構築」の流れを作成
+
+4. **EraserTool修正**
+   - v8機能制限のエラーを「未対応機能の警告」に昇格  
+   - Phase1.5以降で「ストロークベース削除」に切替予定
+
+5. **初期化順序の修正**
+   - bootstrap.js:  
+     `ConfigManager → EventBus → CanvasManager → ToolManager → Application`  
+   - index.html の初期化フラグ更新を `TegakiApplication.onReady()` で受け取る
+
+---
+
+## 4. 改修チェックリスト（更新版）
+1. **メソッド呼び出し前**: 依存先 Manager の生成を必ず確認  
+2. **ヘッダー記載時**: `✅確認済み` は drawContainer 接続後のみ  
+3. **Manager連携時**: API 統一 → `startOperation` / `endOperation`  
+4. **修正時**: 依存禁止事項を再チェック（双方向禁止/二重管理禁止）  
+5. **キャンバス設定**: Application初期化引数で明示的にサイズ指定  
+
+---
+
+## 5. 次アクション
+- [ ] CanvasManager に `drawContainer` を追加・登録  
+- [ ] PenTool を `drawContainer` に描画する方式に改修  
+- [ ] RecordManager と連動するストローク保存処理を実装（SVG path対応）  
+- [ ] 初期化順序を bootstrap.js で再定義  
+
+**************
+
+# 📝 Tegaki Phase1.5 状況確認・原因究明・改修計画
+
+---
+
+## ⚠️ 現状の問題点
+1. 初期キャンバスサイズが 400×400 に固定されておらず、PixiJS のデフォルト挙動や CSS 依存により想定外の大きさで生成される場合がある。
+2. v7 / v8 両対応による二重管理の危険性が残っている。
+3. Manager 登録に不整合が生じる可能性（window.Tegaki.* が一致しない）。
+4. ファイルヘッダーに提供メソッド一覧・依存関係・初期化順序などが未記載のものがある。
+
+---
+
+## ✅ 原因分析
+- **キャンバスサイズ強制の欠如**  
+  PixiJS.Application の初期化時に width / height がオプション未設定の場合、DOM のスタイルやレンダラ依存でサイズが決まってしまう。  
+- **拡張性不足**  
+  固定 400×400 としてしまうと将来のリサイズ・ズーム機能導入時に大改修が必要になる。
+
+---
+
+## 🎯 改修方針
+### 1. ヘッダー統一ルール
+全ファイルのヘッダーに以下を必ず追記すること。  
+- @provides : 外部公開メソッド・クラス一覧  
+- @uses : 他ファイルから利用しているメソッド一覧  
+- @initflow : 初期化順序 (1. → 2. → 3.)  
+- @forbids : 以下の依存禁止事項を必ず含む  
+  💀 双方向依存禁止  
+  🚫 フォールバック禁止  
+  🚫 フェイルセーフ禁止  
+  🚫 v7/v8 両対応による二重管理禁止  
+- @manager-key : Manager 側キー（例: window.Tegaki.CanvasManagerInstance）  
+
+### 2. キャンバスリサイズ機能導入
+- 初期値は 400×400 とするが、内部的には任意サイズに対応できるようにする。
+- `CanvasManager` に `resize(width, height)` メソッドを追加。  
+  - `app.renderer.resize(width, height)` を呼び出す  
+  - `CoordinateManager` に通知する仕組みを入れる  
+  - 将来的に `RecordManager` に履歴追加できる形に拡張可能とする  
+- `CanvasManager` のコンストラクタで width / height をオプションとして受け取る。
+  ```js
+  this.width = options.width || 400;
+  this.height = options.height || 400;
+
+==================================================
+📝 Tegaki Phase1.5 状況確認・原因究明・改修計画（キャンバス外描画対応版）
+==================================================
+
+■ 前提
+- 対象: Phase1.5（非破壊編集基盤・TPFストローク管理・Undo/Redo・カメラ分離）
+- 目的: ペン機能を中心に、キャンバス外描画・カメラ分離・Pathfinder描画準備を統合
+- 補足: UI・スライダー・ポップアップ等は後続で対応
+
+--------------------------------------------------
+■ 現状確認
+1. CanvasManager初期化
+   - サイズ固定: 400x400（内部リサイズ可能）
+   - DrawContainer取得不可時のエラー発生あり
+2. ToolManager初期化
+   - CanvasManager注入失敗で初期化停止
+3. PenTool描画
+   - Pathfinder描画未使用
+   - Undo/Redo雛形のみ
+4. 外部描画
+   - Pointer入力はカメラ外では反応せず
+   - 仮バッファ／カメラ判定なし
+5. NavigationManager
+   - カメラ範囲管理・ズーム・パン準備中
+6. RecordManager
+   - TPF形式・履歴管理は部分的に実装
+7. EraserTool
+   - DrawContainer未取得で機能制限
+8. レイヤー
+   - アクティブレイヤー1つのみ
+
+--------------------------------------------------
+■ 原因究明
+- CanvasManager.getDrawContainer()取得タイミング不正
+- ToolManager・CanvasManager注入順序の不一致
+- PenTool/RecordManagerの座標系がカメラ依存
+- Pointer入力がカメラ範囲外で無視される
+- Pathfinder描画の呼び出し準備未整備
+
+--------------------------------------------------
+■ 改修方針（Phase1.5中心）
+1. CanvasManager
+   - 内部リサイズ対応（初期400x400）
+   - DrawContainerを必ず取得可能にする
+   - Pathfinder描画用Containerも用意
+2. ToolManager
+   - CanvasManager/RecordManager注入確認
+   - 注入順序の明確化（AppCore経由）
+3. PenTool / EraserTool
+   - TPF形式ストローク完全対応
+   - 仮バッファ＋カメラ判定で外部入力監視
+   - Pathfinder描画切替対応
+4. RecordManager
+   - 外部入力ストロークの仮バッファ対応
+   - Undo/Redo対応
+   - レイヤー座標系で保存
+5. NavigationManager
+   - カメラ範囲・パン・ズーム対応
+   - CanvasManagerとの座標変換統合
+6. LayerManager
+   - 複数レイヤー対応準備
+   - 画面外描画を含めたストローク保持
+7. 外部描画（Pointer入力）
+   - PointerDown/Move/Upをwindowで監視
+   - カメラ外でも仮バッファに蓄積
+   - カメラ内に入った瞬間に正式記録開始
+8. Pathfinder描画導入準備
+   - renderPathfinderStroke() / renderPathfinderErase()
+   - PixiJS Graphicsとのフォールバック保持
+
+--------------------------------------------------
+■ 改修計画（チケット形式）
+--------------------------------------------------
+[Phase1.5 - 優先]
+- Ticket001: CanvasManager初期化・Container整備（DrawContainer + PathfinderContainer）
+- Ticket002: ToolManager注入確認・初期化順序統一
+- Ticket003: PenTool TPF対応 + 仮バッファ + カメラ外描画対応
+- Ticket004: EraserTool 同上
+- Ticket005: RecordManager Undo/Redo + 外部入力対応
+- Ticket006: NavigationManager カメラ範囲・座標変換統合
+- Ticket007: LayerManager 画面外描画保持
+
+[Phase2準備]
+- Ticket008: レイヤー移動・複数レイヤー対応
+- Ticket009: Pathfinder描画統合（PixiJSフォールバック維持）
+- Ticket010: 内部リサイズAPI整備
+
+[Phase3見通し]
+- Ticket011: アニメーション機能対応（タイムライン・カメラワーク分離）
+- Ticket012: GIF出力対応
+- Ticket013: AI補正・PhysicalBrushRenderer統合
+
+--------------------------------------------------
+■ 注意事項
+- Phase1.5中心で作業
+- 外部入力・カメラ分離はPhase1.5で必須
+- Pathfinder描画は準備段階として統合
+- レイヤー/アニメーション/UIはPhase2以降で詳細化
+- 口述計画書2冊（ペンツール計画・キャンバス外描画計画）は別添扱い
+
+==================================================
+
+
+
+

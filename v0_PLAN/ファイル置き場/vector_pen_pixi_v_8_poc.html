@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>Vector Pen Canvas2D Tool</title>
+<style>
+  body {
+    margin:0;
+    display:flex;
+    justify-content:center;
+    align-items:center;
+    height:100vh;
+    background:#111;
+  }
+  canvas {
+    border:1px solid #444;
+    background:#222;
+    cursor:crosshair;
+  }
+</style>
+</head>
+<body>
+
+<canvas id="canvas" width="400" height="400"></canvas>
+
+<script>
+const canvas = document.getElementById('canvas');
+const ctx = canvas.getContext('2d');
+
+// ベクターストローク保持用
+const strokes = [];
+
+let drawing = false;
+let currentStroke = [];
+
+canvas.addEventListener('pointerdown', e => {
+  drawing = true;
+  currentStroke = [{x: e.offsetX, y: e.offsetY}];
+});
+
+canvas.addEventListener('pointermove', e => {
+  if (!drawing) return;
+  const pos = {x: e.offsetX, y: e.offsetY};
+  const last = currentStroke[currentStroke.length - 1];
+  currentStroke.push(pos);
+  // 描画
+  ctx.strokeStyle = '#ffcc00';
+  ctx.lineWidth = 2;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(last.x, last.y);
+  ctx.lineTo(pos.x, pos.y);
+  ctx.stroke();
+});
+
+canvas.addEventListener('pointerup', e => {
+  if (drawing) {
+    strokes.push(currentStroke);
+  }
+  drawing = false;
+  currentStroke = [];
+});
+
+canvas.addEventListener('pointerleave', e => {
+  if (drawing) {
+    strokes.push(currentStroke);
+  }
+  drawing = false;
+  currentStroke = [];
+});
+
+// Undo / Clear / Export も簡単に追加可能
+</script>
+
+</body>
+</html>

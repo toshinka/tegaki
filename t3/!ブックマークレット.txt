@@ -1,0 +1,13 @@
+https://toshinka.github.io/tegaki/Phase3B/ToshinkaTegakiTool.html
+https://toshinka.github.io/tegaki/Phase4A1/ToshinkaTegakiTool.html
+
+
+https://toshinka.github.io/tegaki/log/v1-5/ToshinkaTegakiTool-v1-5rev10.html
+
+
+https://toshinka.github.io/tegaki/
+https://github.com/toshinka/tegaki/blob/main/
+@toshinka/tegaki/files/
+
+javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/t3start/t3start.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
+

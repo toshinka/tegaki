@@ -1,0 +1,494 @@
+============================================================
+📖 1. モジュール辞典（Manager / Service / Engine）
+============================================================
+
+■ main.html
+- 起点。全サービスを初期化し、主星(MainController)として衛星を束ねる。
+
+■ layer-manager.js
+- 提供: createLayer, removeLayer, reorderLayer, getActiveLayer
+- 役割: レイヤー構造を管理。Container単位でPixiJS上に構築。
+
+■ drawing-engine.js
+- 提供: getEngineBridge, drawTemporaryStroke, commitStroke, clearLayer, takeSnapshot
+- 役割: 
+  - PixiJS.Graphics を利用した描画専用エンジン。
+  - Strokeをベクターで保持、変形・拡縮に耐えられる。
+  - Eraserは blendMode=ERASE または Mask/削除方式で実装。
+
+■ position-manager.js
+- 提供: setCamera, moveCamera, zoomCamera, getWorldPosition
+- 役割: カメラ（stage.position, stage.scale）制御。
+  - 無限キャンバス化を可能にする。
+  - マウスやタッチ座標をワールド座標に変換。
+
+■ ui-manager.js
+- 提供: togglePopup, updateToolbar, bindUIEvents
+- 役割: UI制御。ポップアップ/ツールバーが壊れないよう責任を持つ。
+
+■ history-service.js
+- 提供: record, undo, redo, clear
+- 役割: Stroke単位で非破壊履歴を管理。
+  - 記録内容は「{type: stroke, layerId, pathPoints, style}」形式。
+  - Undo時は Graphics を removeChild して復元。
+
+============================================================
+📖 2. フロー辞典（主要な動作）
+============================================================
+
+■ ペン描画フロー
+1. ToolManager → DrawingEngine.drawTemporaryStroke(layerId, points, style)
+2. UIで penUp → DrawingEngine.commitStroke(layerId, strokeData)
+3. HistoryService.record(strokeData)
+
+■ 消しゴムフロー
+1. ToolManager(eraser) → DrawingEngine.drawTemporaryStroke(layerId, points, {tool: 'eraser'})
+   - Graphics.blendMode = ERASE
+2. commit時も同様に strokeData を History に記録
+
+■ レイヤー操作フロー
+1. UI → LayerManager.reorderLayer(...)
+2. LayerManager → WorldContainer 内の childIndex を更新
+3. HistoryService.record({type: layerReorder,...})
+
+■ カメラ操作フロー（Space + Drag / Wheel）
+1. PositionManager.moveCamera(dx,dy) → stage.position 変更
+2. PositionManager.zoomCamera(scale,center) → stage.scale セット
+3. DrawingEngine.getWorldPosition(localX,localY) で座標変換
+
+============================================================
+📖 3. 改修計画（Canvas2D撤廃）
+============================================================
+
+現状問題:
+- 一部フローに CanvasRenderingContext2D が残存
+- erase が「白で上書き」→ペンと同じ挙動になる
+- 履歴がラスターデータ依存 → 非破壊Undoができない
+
+改修指針:
+1. **全描画APIを PixiJS.Graphics に統一**
+   - ctx.moveTo/lineTo/stroke → graphics.moveTo/lineTo/stroke({color,...})
+   - fillStyle = 'white' 方式削除
+2. **消しゴムを PixiJS ネイティブに**
+   - 基本: graphics.blendMode = PIXI.BLEND_MODES.ERASE
+   - 互換性確保: マスク方式 fallback
+3. **履歴フォーマットをパス情報ベースに**
+   - strokeData = {points: [...], style: {...}, layerId}
+   - record/undo/redo は container.children の追加・削除で完結
+4. **PositionManagerをカメラ制御専用に**
+   - world座標系を明確に分離し、UIやツールが座標混乱しないようにする
+5. **UI改修時の注意点**
+   - rev4のUI実装を崩さない
+   - Popup挙動・ToolbarイベントをDrawingEngineに混ぜない
+   - UIManager専責
+
+============================================================
+📖 4. 運用ルール（衛星ヘッダー）
+============================================================
+
+各ファイルの冒頭に必須ヘッダー:
+- @module 名前
+- @role 責務
+- @depends 他に依存するモジュール
+- @provides 外部に公開するメソッド一覧
+- @notes 設計上の注意点
+
+例: drawing-engine.js
+/**
+ * @module DrawingEngine
+ * @role PixiJSベクター描画エンジン
+ * @depends MainController, LayerManager
+ * @provides getEngineBridge, drawTemporaryStroke, commitStroke, takeSnapshot
+ * @notes Canvas2D禁止 / UIロジックを混ぜないこと
+ */
+
+============================================================
+📖 5. 今後の展望
+============================================================
+- WebGPU対応のPixiJS v9が安定したらRenderer差し替えで性能向上
+- ベクターデータのJSON入出力（保存・読み込み機能）も容易になる
+
+
+
+📘 drawing-engine.js（改修後サンプル）
+
+/**
+ * ==========================================================
+ * @module DrawingEngine
+ * @role   PixiJSベクター描画エンジン・EngineBridge提供・描画処理管理
+ * @depends MainController, LayerService
+ * @provides
+ *   - getEngineBridge()
+ *   - drawTemporaryStroke(layerId, strokePoints, style)
+ *   - commitStroke(layerId, strokeData)
+ *   - clearLayer(layerId)
+ *   - takeSnapshot(layerId)
+ * @notes
+ *   - Canvas2D完全排除。PixiJS.Graphics専用。
+ *   - Eraserは blendMode=ERASE を利用。fallback不要。
+ *   - UIロジックは持たない（UIManager専責）。
+ * ==========================================================
+ */
+
+window.MyApp = window.MyApp || {};
+(function(global) {
+
+  class DrawingEngine {
+    constructor() {
+      this.name = "DrawingEngine";
+      this.mainApi = null;
+      this.app = null;
+      this.containers = { world: null, ui: null };
+      this._layers = {}; // {layerId: {container, graphicsList}}
+      this._initialized = false;
+      this.engineBridge = null;
+    }
+
+    register(mainApi) {
+      this.mainApi = mainApi;
+      this._createPixiApp();
+      return true;
+    }
+
+    _createPixiApp() {
+      const container = document.getElementById("drawing-canvas");
+      if (!container) {
+        this._notifyFatal("NO_CANVAS_CONTAINER", "Canvas container not found");
+        return;
+      }
+
+      try {
+        this.app = new PIXI.Application();
+        this.app
+          .init({
+            width: 800,
+            height: 600,
+            backgroundColor: 0xf0e0d6,
+            backgroundAlpha: 1,
+            antialias: true,
+            resolution: 1,
+          })
+          .then(() => {
+            container.appendChild(this.app.canvas);
+            this._setupContainers();
+            this._createEngineBridge();
+            this._initialized = true;
+          });
+      } catch (err) {
+        this._notifyFatal("PIXI_INIT_FAIL", err.message);
+      }
+    }
+
+    _setupContainers() {
+      this.containers.world = new PIXI.Container();
+      this.containers.ui = new PIXI.Container();
+      this.app.stage.addChild(this.containers.world);
+      this.app.stage.addChild(this.containers.ui);
+    }
+
+    _createEngineBridge() {
+      this.engineBridge = {
+        app: this.app,
+        drawTemporaryStroke: (layerId, strokePoints, style) =>
+          this._drawTempStroke(layerId, strokePoints, style),
+        commitStroke: (layerId, strokeData) =>
+          this._commitStroke(layerId, strokeData),
+        clearLayer: (layerId) => this._clearLayer(layerId),
+        takeSnapshot: (layerId) => this._takeSnapshot(layerId),
+      };
+      global.MyApp.DrawingEngineInstance = this;
+    }
+
+    getEngineBridge() {
+      return this.engineBridge;
+    }
+
+    ensureLayerContainer(layerId) {
+      if (!this._layers[layerId]) {
+        const container = new PIXI.Container();
+        container.name = `layer-${layerId}`;
+        this.containers.world.addChild(container);
+        this._layers[layerId] = { container, graphicsList: [] };
+      }
+      return this._layers[layerId].container;
+    }
+
+    _drawTempStroke(layerId, strokePoints, style = {}) {
+      if (!this._initialized) return null;
+      if (!strokePoints || strokePoints.length === 0) return null;
+
+      const container = this.ensureLayerContainer(layerId);
+      const graphics = new PIXI.Graphics();
+
+      const size = style.size || 4;
+      const color = style.color ?? 0x800000;
+      const alpha = style.alpha ?? 1;
+
+      graphics.blendMode =
+        style.tool === "eraser"
+          ? PIXI.BLEND_MODES.ERASE
+          : PIXI.BLEND_MODES.NORMAL;
+
+      graphics.moveTo(strokePoints[0].x, strokePoints[0].y);
+      for (let i = 1; i < strokePoints.length; i++) {
+        graphics.lineTo(strokePoints[i].x, strokePoints[i].y);
+      }
+
+      graphics.stroke({ width: size, color, alpha });
+
+      container.addChild(graphics);
+      this._layers[layerId].graphicsList.push(graphics);
+
+      return graphics;
+    }
+
+    _commitStroke(layerId, strokeData) {
+      if (!this._initialized) return false;
+      if (!strokeData || !strokeData.points) return false;
+
+      const container = this.ensureLayerContainer(layerId);
+      const graphics = new PIXI.Graphics();
+
+      const style = strokeData.style || {};
+      const size = style.size || 4;
+      const color = style.color ?? 0x800000;
+      const alpha = style.alpha ?? 1;
+
+      graphics.blendMode =
+        style.tool === "eraser"
+          ? PIXI.BLEND_MODES.ERASE
+          : PIXI.BLEND_MODES.NORMAL;
+
+      const points = strokeData.points;
+      graphics.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        graphics.lineTo(points[i].x, points[i].y);
+      }
+      graphics.stroke({ width: size, color, alpha });
+
+      container.addChild(graphics);
+      this._layers[layerId].graphicsList.push(graphics);
+
+      return true;
+    }
+
+    _clearLayer(layerId) {
+      const layerData = this._layers[layerId];
+      if (layerData && layerData.container) {
+        layerData.container.removeChildren();
+        layerData.graphicsList = [];
+      }
+    }
+
+    _takeSnapshot(layerId) {
+      const layerData = this._layers[layerId];
+      return {
+        layerId,
+        childCount: layerData?.container?.children.length || 0,
+        timestamp: Date.now(),
+      };
+    }
+
+    resize(width, height) {
+      if (this.app && this._initialized) {
+        try {
+          this.app.renderer.resize(width, height);
+          return true;
+        } catch (err) {
+          this._notifyRecoverable("RESIZE_FAIL", err.message);
+        }
+      }
+      return false;
+    }
+
+    destroy() {
+      if (this.app) {
+        this.app.destroy(true);
+      }
+      this.mainApi = null;
+      this.app = null;
+      this.containers = { world: null, ui: null };
+      this._layers = {};
+    }
+
+    _notifyFatal(code, msg) {
+      this.mainApi?.notify({
+        type: "error.fatal",
+        payload: { code, msg },
+      });
+    }
+
+    _notifyRecoverable(code, msg) {
+      this.mainApi?.notify({
+        type: "error.recoverable",
+        payload: { code, msg },
+      });
+    }
+  }
+
+  global.MyApp.DrawingEngine = DrawingEngine;
+
+})(window);
+
+✅ この改修でのポイント
+
+Canvas2D API完全削除 → PixiJS.Graphics のみ使用
+
+Eraserがペン扱いになる問題を修正
+
+style.tool === "eraser" なら blendMode = ERASE を強制
+
+履歴（HistoryService）は strokeData を保持すれば非破壊Undo対応可能
+
+UIやToolbar処理を DrawingEngine に混ぜない → ui-manager.js に任せる
+
+
+📘 改修後 history-service.js
+
+/**
+ * ==========================================================
+ * @module HistoryService
+ * @role   描画操作の非破壊的記録とUndo/Redo管理
+ * @depends DrawingEngine
+ * @provides
+ *   - recordStroke(layerId, strokeData)
+ *   - undo()
+ *   - redo()
+ *   - clear()
+ *   - getHistoryState()
+ * @notes
+ *   - strokeData は { points:[], style:{} } の純粋データ。
+ *   - Eraserは style.tool="eraser" として保持し、再描画時に blendMode=ERASE を適用。
+ *   - 描画自体は DrawingEngine に委譲。HistoryServiceはデータのみ保持。
+ * ==========================================================
+ */
+
+window.MyApp = window.MyApp || {};
+(function(global) {
+  class HistoryService {
+    constructor(engineBridge) {
+      this.name = "HistoryService";
+      this.engineBridge = engineBridge;
+      this.undoStack = [];
+      this.redoStack = [];
+      this.maxHistory = 100;
+    }
+
+    recordStroke(layerId, strokeData) {
+      if (!strokeData || !strokeData.points) return;
+
+      this.undoStack.push({ layerId, strokeData });
+      if (this.undoStack.length > this.maxHistory) {
+        this.undoStack.shift();
+      }
+      this.redoStack = [];
+    }
+
+    undo() {
+      if (this.undoStack.length === 0) return;
+
+      const last = this.undoStack.pop();
+      this.redoStack.push(last);
+      this._rebuildLayers();
+    }
+
+    redo() {
+      if (this.redoStack.length === 0) return;
+
+      const redoAction = this.redoStack.pop();
+      this.undoStack.push(redoAction);
+      this._rebuildLayers();
+    }
+
+    clear() {
+      this.undoStack = [];
+      this.redoStack = [];
+      this._rebuildLayers();
+    }
+
+    _rebuildLayers() {
+      // 履歴をリプレイして全レイヤーを再描画
+      const all = [...this.undoStack];
+      const layers = [...new Set(all.map(a => a.layerId))];
+
+      layers.forEach(layerId => {
+        this.engineBridge.clearLayer(layerId);
+      });
+
+      all.forEach(action => {
+        this.engineBridge.commitStroke(action.layerId, action.strokeData);
+      });
+    }
+
+    getHistoryState() {
+      return {
+        undoCount: this.undoStack.length,
+        redoCount: this.redoStack.length,
+        max: this.maxHistory,
+      };
+    }
+  }
+
+  global.MyApp.HistoryService = HistoryService;
+})(window);
+
+📘 使用例（main.html などでの統合）
+
+// DrawingEngine初期化
+const engine = new MyApp.DrawingEngine();
+engine.register({
+  notify: (msg) => console.log("Notify:", msg),
+});
+
+// DrawingEngineが内部でPixiJS起動後にBridgeを取得
+setTimeout(() => {
+  const bridge = engine.getEngineBridge();
+  const history = new MyApp.HistoryService(bridge);
+
+  // --- ペンストロークを記録 ---
+  const stroke1 = {
+    points: [{x:10,y:10},{x:100,y:100}],
+    style: { tool: "pen", size: 5, color: 0x0000ff, alpha: 1 }
+  };
+  bridge.commitStroke("layer1", stroke1);
+  history.recordStroke("layer1", stroke1);
+
+  // --- 消しゴムストロークを記録 ---
+  const stroke2 = {
+    points: [{x:50,y:50},{x:120,y:120}],
+    style: { tool: "eraser", size: 20 }
+  };
+  bridge.commitStroke("layer1", stroke2);
+  history.recordStroke("layer1", stroke2);
+
+  // --- Undo/Redoテスト ---
+  setTimeout(() => {
+    console.log("UNDO");
+    history.undo();
+
+    setTimeout(() => {
+      console.log("REDO");
+      history.redo();
+    }, 2000);
+  }, 2000);
+
+}, 1000);
+
+
+✅ この設計のメリット
+
+非破壊Undo/Redo
+→ 描画は全て「データのリプレイ」で再現。Canvasを破壊的に戻す必要なし。
+
+EraserはPixiJS.BLEND_MODES.ERASEで再現
+→ 記録時に tool="eraser" を持たせれば正しく再描画される。
+
+描画・履歴の責務分離
+
+DrawingEngine = 実描画
+
+HistoryService = データ保持とリプレイ
+
+📘 shortcut-manager.js（サンプル）
+
+

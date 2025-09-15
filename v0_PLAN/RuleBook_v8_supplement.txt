@@ -1,0 +1,494 @@
+# RuleBook_v8_supplement.txt
+# GIFアニメーション機能実装ガイド（Claude実装最適化版）
+
+## 🎯 基本方針（A案：シンプル絵コンテ重視）
+- **Storyboarder風UI**：一つの横軸ラインでCUT管理
+- **CUT = レイヤー合成スナップショット**：各CUTで全レイヤー状態を保存
+- **DOM + PixiJS連携**：タイムラインはHTML/CSS、サムネイルはPixiJS RenderTexture
+- **段階実装**：基本CUT管理 → 表示モード拡張 → 二画面化の順序
+
+---
+
+## 📁 ファイル構成（main.js拡張方式）
+
+### Phase1: GIFアニメ機能追加（main.js内拡張）
+```javascript
+// main.js 内に追加するクラス群
+class AnimationManager {
+  // CUT管理・タイムライン制御
+}
+class TimelineUI {
+  // DOM操作・Sortable.js連携
+}
+class AnimationExporter {
+  // GIF書き出し（将来実装）
+}
+```
+
+### Phase2: サテライトファイル分離（必要時）
+```
+index.html
+main.js                    # 中枢制御
+animation/
+├── timeline-data.js      # アニメーションデータ構造定義（参照専用）
+├── cut-templates.js      # CUTテンプレート・初期値（参照専用）
+```
+
+**分割ルール**: main.jsが500行を超える、または機能が安定してから分離
+
+---
+
+## 🏗 データ構造設計
+
+### アニメーションデータ構造
+```javascript
+// メインアニメーションデータ
+const animationData = {
+  id: 'animation_001',
+  name: 'アニメーション1',
+  cuts: [
+    {
+      id: 'cut_1',
+      name: 'CUT1',
+      duration: 0.2,                    // 表示時間（秒）
+      layerStates: [                    // 全レイヤーの状態保存
+        {
+          layerId: 'layer_0',
+          visible: true,
+          opacity: 1.0,
+          transform: { x: 0, y: 0, scale: 1, rotation: 0 },
+          blendMode: 'normal'
+        },
+        {
+          layerId: 'layer_1', 
+          visible: true,
+          opacity: 0.8,
+          transform: { x: 50, y: -20, scale: 1.2, rotation: 0.1 }
+        }
+      ],
+      thumbnail: null,                  // PIXI.RenderTexture（遅延生成）
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }
+  ],
+  totalDuration: 1.2,                  // 全体再生時間
+  fps: 12,                             // フレームレート
+  loop: true,                          // ループ再生
+  currentCutIndex: 0,                  // 現在再生中CUT
+  playbackState: 'stopped'             // 'playing' | 'paused' | 'stopped'
+};
+```
+
+### タイムラインUI要素定義
+```javascript
+// タイムライン表示モード
+const TIMELINE_MODES = {
+  STORYBOARD: 'storyboard',    // 絵コンテモード：1CUT = 1サムネイル
+  DETAILED: 'detailed'         // 詳細モード：1CUT = duration対応フレーム（将来実装）
+};
+
+// 再生制御状態
+const PLAYBACK_STATES = {
+  STOPPED: 'stopped',
+  PLAYING: 'playing', 
+  PAUSED: 'paused'
+};
+```
+
+---
+
+## 🎬 タイムラインUI設計（Storyboarder風）
+
+### HTML構造
+```html
+<!-- サイドバーにアニメボタン追加 -->
+<div class="tool-button" id="animation-tool" title="GIFアニメーション (ALT+A)">
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5">
+    <rect width="18" height="18" x="3" y="3" rx="2"/>
+    <path d="M7 3v18"/><path d="M3 7.5h4"/>
+    <path d="M3 12h18"/><path d="M3 16.5h4"/>
+    <path d="M17 3v18"/><path d="M17 7.5h4"/>
+    <path d="M17 16.5h4"/>
+  </svg>
+</div>
+
+<!-- タイムラインパネル（ポップアップ） -->
+<div class="timeline-panel" id="timeline-panel">
+  <!-- 再生制御バー -->
+  <div class="playback-controls">
+    <button id="prev-cut-btn" title="前CUT (ALT+←)">◀</button>
+    <button id="play-pause-btn" title="再生/停止 (ALT+Space)">⏯️</button>
+    <button id="next-cut-btn" title="次CUT (ALT+→)">▶</button>
+    <button id="loop-btn" title="ループ (ALT+L)">🔄</button>
+    <span class="current-time">00:00.0</span>
+    <label><input type="checkbox" id="onion-skin-toggle"> 👻</label>
+  </div>
+  
+  <!-- タイムラインバー -->
+  <div class="timeline-bar">
+    <div class="timeline-track" id="timeline-track">
+      <!-- ■■□□□□□ タイムライン表示 -->
+    </div>
+    <span class="total-time">00:01.2</span>
+  </div>
+  
+  <!-- CUTリスト -->
+  <div class="cuts-container">
+    <div class="cuts-list" id="cuts-list">
+      <!-- CUTアイテムがSortable.jsで動的生成 -->
+    </div>
+    <button class="add-cut-btn" id="add-cut-btn">[+]</button>
+  </div>
+</div>
+```
+
+### CUTアイテム構造
+```html
+<div class="cut-item" data-cut-id="cut_1">
+  <div class="cut-header">
+    <span class="cut-name">CUT1</span>
+    <input type="number" class="cut-duration" value="0.2" min="0.1" max="10" step="0.1">
+    <span class="duration-unit">s</span>
+  </div>
+  <div class="cut-thumbnail">
+    <!-- PixiJS RenderTextureから生成した画像 -->
+  </div>
+  <div class="cut-controls">
+    <button class="duplicate-cut-btn">📋</button>
+    <button class="delete-cut-btn">🗑️</button>
+  </div>
+</div>
+```
+
+---
+
+## 🔧 主要クラス実装方針
+
+### AnimationManager（アニメーション制御）
+```javascript
+class AnimationManager {
+  constructor(layerManager, app) {
+    this.layerManager = layerManager;
+    this.app = app;
+    this.animationData = this.createDefaultAnimation();
+    this.timelineUI = null;
+    this.playbackTimer = null;
+    this.isAnimationMode = false;
+  }
+  
+  // 必須メソッド
+  toggleAnimationMode() {
+    // アニメーションモード切り替え
+  }
+  
+  createCutFromCurrentLayers() {
+    // 現在のレイヤー状態からCUT作成
+    const cutData = {
+      id: `cut_${Date.now()}`,
+      name: `CUT${this.animationData.cuts.length + 1}`,
+      duration: 0.5,
+      layerStates: this.captureLayerStates(),
+      thumbnail: null
+    };
+    return cutData;
+  }
+  
+  captureLayerStates() {
+    // 全レイヤーの現在状態をキャプチャ
+    return this.layerManager.layers.map(layer => ({
+      layerId: layer.layerData.id,
+      visible: layer.layerData.visible,
+      opacity: layer.layerData.opacity,
+      transform: this.cloneTransform(layer.transform)
+    }));
+  }
+  
+  applyCutToLayers(cutIndex) {
+    // 指定CUTの状態をレイヤーに適用
+  }
+  
+  generateCutThumbnail(cutIndex) {
+    // CUTサムネイル生成（64x48px RenderTexture）
+  }
+  
+  // 再生制御
+  play() {
+    this.animationData.playbackState = 'playing';
+    this.startPlayback();
+  }
+  
+  pause() {
+    this.animationData.playbackState = 'paused';
+    this.stopPlayback();
+  }
+  
+  stop() {
+    this.animationData.playbackState = 'stopped';
+    this.animationData.currentCutIndex = 0;
+    this.stopPlayback();
+  }
+}
+```
+
+### TimelineUI（DOM操作・UI制御）
+```javascript
+class TimelineUI {
+  constructor(animationManager) {
+    this.animationManager = animationManager;
+    this.timelinePanel = null;
+    this.sortable = null;
+    this.setupEventListeners();
+  }
+  
+  show() {
+    // タイムラインパネル表示
+    this.timelinePanel = document.getElementById('timeline-panel');
+    this.timelinePanel.classList.add('show');
+    this.initializeSortable();
+    this.updateUI();
+  }
+  
+  hide() {
+    // タイムラインパネル非表示
+    this.timelinePanel.classList.remove('show');
+    this.destroySortable();
+  }
+  
+  initializeSortable() {
+    // Sortable.js でCUTドラッグ&ドロップ
+    const cutsList = document.getElementById('cuts-list');
+    this.sortable = Sortable.create(cutsList, {
+      animation: 150,
+      onEnd: (evt) => {
+        this.animationManager.reorderCuts(evt.oldIndex, evt.newIndex);
+        this.updateTimelineBar();
+      }
+    });
+  }
+  
+  updateCutsList() {
+    // CUTリスト再描画
+  }
+  
+  updateTimelineBar() {
+    // ■■□□□□□ タイムライン表示更新
+  }
+  
+  updatePlaybackControls() {
+    // 再生制御ボタン状態更新
+  }
+}
+```
+
+---
+
+## 🎮 ショートカットキー設計
+
+### アニメーション専用（ALT+キー）
+```javascript
+// アニメーションモード時のみ有効
+const ANIMATION_SHORTCUTS = {
+  'ALT+A': 'アニメーションモード切り替え',
+  'ALT+Space': '再生/停止',
+  'ALT+ArrowLeft': '前CUT',
+  'ALT+ArrowRight': '次CUT', 
+  'ALT+ArrowUp': '上レイヤー選択',
+  'ALT+ArrowDown': '下レイヤー選択',
+  'ALT+L': 'ループ切り替え',
+  'ALT+Plus': 'CUT追加',
+  'ALT+Delete': 'CUT削除'
+};
+```
+
+### 入力制御
+```javascript
+// 数値入力: 半角数字のみ
+function setupNumericInput(inputElement) {
+  inputElement.addEventListener('input', (e) => {
+    // 全角数字を半角に変換
+    e.target.value = e.target.value.replace(/[０-９]/g, (s) => {
+      return String.fromCharCode(s.charCodeAt(0) - 0xFEE0);
+    });
+  });
+}
+
+// テキスト入力: 全角許可（レイヤー名・CUT名）
+function setupTextInput(inputElement) {
+  // 特別な制限なし、IME対応
+}
+```
+
+---
+
+## 🚀 段階的実装タスク
+
+### Phase1: 基本CUT管理（A案実装）
+- [ ] AnimationManager クラス基盤実装
+- [ ] TimelineUI クラス基盤実装  
+- [ ] CUT作成・削除・並び替え機能
+- [ ] レイヤー状態キャプチャ・復元機能
+- [ ] CUTサムネイル生成（64x48px）
+
+### Phase2: 再生制御実装
+- [ ] 再生・停止・一時停止機能
+- [ ] CUT間の自動切り替え
+- [ ] ループ再生機能
+- [ ] タイムライン表示（■■□□□）
+- [ ] オニオンスキン（前後CUT透過表示）
+
+### Phase3: UI/UX改善
+- [ ] CUT時間編集（数値入力）
+- [ ] ショートカットキー対応（ALT+キー）
+- [ ] CUT複製・テンプレート機能
+- [ ] アニメーション設定（FPS・ループ等）
+
+### Phase4: エクスポート準備
+- [ ] 高解像度レンダリング（GIF用）
+- [ ] フレーム間補間検討
+- [ ] メタデータ保存・読み込み
+
+---
+
+## 🔍 技術的実装注意点
+
+### パフォーマンス最適化
+```javascript
+// サムネイル遅延生成
+class ThumbnailQueue {
+  constructor() {
+    this.queue = new Set();
+    this.processing = false;
+  }
+  
+  requestGeneration(cutIndex) {
+    this.queue.add(cutIndex);
+    if (!this.processing) {
+      this.processQueue();
+    }
+  }
+  
+  async processQueue() {
+    this.processing = true;
+    for (const cutIndex of this.queue) {
+      await this.generateThumbnail(cutIndex);
+      // フレーム分割でUI応答性確保
+      await new Promise(resolve => requestAnimationFrame(resolve));
+    }
+    this.queue.clear();
+    this.processing = false;
+  }
+}
+```
+
+### メモリ管理
+```javascript
+// RenderTexture適切な破棄
+function destroyCutThumbnails(cuts) {
+  cuts.forEach(cut => {
+    if (cut.thumbnail) {
+      cut.thumbnail.destroy();
+      cut.thumbnail = null;
+    }
+  });
+}
+```
+
+### レイヤーパネル連動
+```javascript
+// レイヤー変更時の自動CUT更新
+layerManager.on('layerChanged', () => {
+  if (animationManager.isAnimationMode) {
+    // 現在のCUTを自動更新するか確認ダイアログ
+    animationManager.updateCurrentCut();
+  }
+});
+```
+
+---
+
+## 🎯 将来拡張計画（B案対応）
+
+### 詳細モード実装準備
+```javascript
+// 表示モード切り替え対応
+const DISPLAY_MODES = {
+  SIMPLE: 'simple',        // 1CUT = 1サムネイル（A案）
+  DETAILED: 'detailed'     // 1CUT = 複数フレーム（B案）
+};
+
+// フレーム単位編集用データ構造
+extendedCutData = {
+  ...cutData,
+  frames: [                // 詳細モード用フレームデータ
+    { time: 0.0, layerStates: [...] },
+    { time: 0.1, layerStates: [...] },
+    { time: 0.2, layerStates: [...] }
+  ],
+  interpolation: 'linear'  // フレーム間補間方式
+};
+```
+
+### 二画面化準備
+```javascript
+// 将来のマルチウィンドウ対応
+class MultiWindowManager {
+  openTimelineWindow() {
+    // 別ウィンドウでタイムライン専用UI
+  }
+  
+  syncWithMainWindow() {
+    // メインウィンドウとの状態同期
+  }
+}
+```
+
+---
+
+## ⚠️ 制約事項・禁止項目
+
+### 🚫 実装制約
+- **複雑な補間アニメーション禁止**：Phase1では固定CUT切り替えのみ
+- **リアルタイム再生禁止**：Phase1ではCUT単位の手動切り替え
+- **大量CUT処理禁止**：50CUT超過時は警告表示
+
+### 🚫 UI制約  
+- **複数タイムライン表示禁止**：Phase1では単一ライン
+- **複雑なCUTエディタ禁止**：詳細編集は将来実装
+- **CUT内キーフレーム編集禁止**：Phase1対象外
+
+### 🚫 パフォーマンス制約
+- **全CUT同時サムネイル生成禁止**：遅延生成必須
+- **高頻度状態保存禁止**：CUT作成時のみ状態キャプチャ
+- **メモリ制限超過禁止**：RenderTexture適切な破棄
+
+---
+
+## 📋 Claude実装チェックリスト
+
+### データ構造確認
+- [ ] animationData 構造が正しく定義済み
+- [ ] CUT作成・削除・並び替え機能が動作
+- [ ] レイヤー状態キャプチャ・復元が正常動作
+
+### UI実装確認
+- [ ] タイムラインパネルが適切に表示・非表示
+- [ ] Sortable.js でCUTドラッグ&ドロップ動作
+- [ ] 数値入力で半角強制・全角許可が適切に分離
+
+### パフォーマンス確認
+- [ ] サムネイル遅延生成でUI応答性確保
+- [ ] メモリリーク発生なし（RenderTexture破棄確認）
+- [ ] 50CUT程度まで快適動作
+
+### 将来拡張準備確認
+- [ ] B案（詳細モード）対応可能なデータ構造
+- [ ] 二画面化対応可能なアーキテクチャ
+- [ ] GIFエクスポート用高解像度レンダリング準備済み
+
+---
+
+## 🏁 まとめ
+- **A案重視**：シンプル絵コンテ管理から開始
+- **DOM + PixiJS連携**：タイムラインUI（DOM）+ サムネイル生成（PixiJS）
+- **段階的拡張**：基本機能安定後にB案・二画面化対応
+- **Claude最適化**：main.js中心実装で改修見通し確保

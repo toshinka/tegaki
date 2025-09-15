@@ -1,0 +1,929 @@
+# Tegaki v8 - キャンバス操作改訂版 改修計画（支点・座標系明確化版）
+
+## 目的
+- 背景キャンバスと描画レイヤー（ユーザーが書いた絵）を含むカメラ操作を実装。
+- pixi-viewport 導入でドラッグ／ズーム／回転操作を簡略化。
+- 座標系と支点を明確化し、操作誤動作・反転の問題を防止。
+
+---
+
+## 基本方針
+1. 「キャンバス移動」は **カメラ移動（ビューポート操作）** と定義。
+   - 背景キャンバスと描画レイヤーを同時に移動。
+   - 単なるレイヤー移動ではない。
+2. 操作中心（支点）は **カメラの中心** に統一。
+   - 回転・拡縮・反転もカメラ中心を基準。
+3. 座標系はカメラ基準に統一し、複雑なフローやガイドは設置せず簡潔化。
+4. pixi-viewport を導入すれば、方向判定やドラッグ判定の自前実装を大幅に削減可能。
+5. 拡縮・回転・移動はペン操作と分離し、誤爆防止のためペン離し再操作ルールを維持。
+
+---
+
+## ショートカット割当
+- **移動**
+  - Space + ドラッグ
+  - Space + 方向キー
+- **拡縮・回転**
+  - Shift + Space + ドラッグ
+  - Shift + Space + 方向キー
+- **拡縮・回転（マウスホイール）**
+  - ホイール回転
+  - Shift + ホイール回転
+- **反転**
+  - H（左右反転）
+  - Shift + H（上下反転）
+
+- カメラリセット（位置＋拡縮＋回転）: `Home` キー
+
+## 操作分岐ロジック
+1. ドラッグ開始方向を判定（縦/横）。
+2. 縦方向が先なら拡縮のみ、横方向が先なら回転のみ。
+3. ドラッグ中の方向変更は無視。
+4. ドラッグ終了で操作フラグをリセット。
+
+---
+
+## 背景キャンバス＋描画レイヤー構造
+- cameraContainer / pixi-viewport（カメラ役）
+  - backgroundLayer（背景グリッドや画像）
+  - drawingLayer（ユーザー描画）
+- 親コンテナを操作することで、全レイヤー一括でパン／ズーム／回転可能。
+
+app.stage
+└─ cameraContainer / pixi-viewport
+├─ backgroundLayer
+└─ drawingLayer
+
+
+---
+
+## pixi-viewport 導入案
+- ドラッグ・ホイール・キー操作をライブラリ任せで簡略化
+- 支点はカメラ中心に統一可能
+- 将来的に複数カメラ視点への拡張も容易
+
+---
+
+## 操作・座標管理
+- カメラ中心を origin とした座標系に統一
+- 背景＋描画レイヤーは cameraContainer 内のローカル座標を使用
+- 反転は scale.x / scale.y で瞬間処理、座標系統一で歪み防止
+
+---
+
+## 描画データ・記憶系の注意
+- キャンバス移動（カメラ操作）は描画データに影響しない
+- 線の消失や点のみ残る症状はレイヤー移動や描画履歴系の別問題
+- レイヤー移動実装時に改めて検討
+
+---
+
+## 実装ステップ
+1. 背景キャンバス＋描画レイヤーを cameraContainer に追加
+2. pixi-viewport を導入する場合は container を viewport に置き換え
+3. ドラッグ・ホイール操作を pan / zoom / rotate に割当
+4. 回転・拡縮・反転の支点をカメラ中心に統一
+5. キー操作による微調整（方向キー + Space / Shift）をサポート
+6. Homeキーでカメラリセット
+7. ペン操作とカメラ操作を分離し、誤爆防止ルールを維持
+8. 描画データへの影響はなし
+
+
+この改訂版では、
+
+「カメラ移動＝背景＋描画レイヤーを同時に操作」 を明記
+
+支点をカメラ中心に統一
+
+座標系をカメラ基準で簡潔化
+
+反転・回転・拡縮での歪み防止
+
+描画履歴系への影響を分離して言及
+
+といった点を盛り込みました。
+
+
+※以下はお手本コードで参考用です。importはルール違反なので、そこの流用は禁止。
+
+// ===============================
+// Tegaki v8 - pixi-viewport カメラ移動例
+// ===============================
+
+import * as PIXI from 'pixi.js';
+import { Viewport } from 'pixi-viewport';
+
+// -------------------------------
+// PixiJS アプリ初期化
+// -------------------------------
+const app = new PIXI.Application({
+    width: 800,
+    height: 600,
+    backgroundColor: 0xeeeeee
+});
+document.body.appendChild(app.view);
+
+// -------------------------------
+// pixi-viewport 初期化（カメラ役）
+// -------------------------------
+const viewport = new Viewport({
+    screenWidth: app.view.width,
+    screenHeight: app.view.height,
+    worldWidth: 2000,
+    worldHeight: 2000,
+    interaction: app.renderer.plugins.interaction
+});
+
+// カメラ中心を支点として設定
+viewport.center = { x: app.view.width / 2, y: app.view.height / 2 };
+
+// app.stage に追加
+app.stage.addChild(viewport);
+
+// -------------------------------
+// レイヤー作成
+// -------------------------------
+const backgroundLayer = new PIXI.Container();
+const drawingLayer = new PIXI.Container();
+
+// 背景にグリッド表示（例）
+const bgGraphics = new PIXI.Graphics();
+bgGraphics.lineStyle(1, 0xcccccc);
+for (let x = 0; x < 2000; x += 50) bgGraphics.moveTo(x,0).lineTo(x,2000);
+for (let y = 0; y < 2000; y += 50) bgGraphics.moveTo(0,y).lineTo(2000,y);
+backgroundLayer.addChild(bgGraphics);
+
+// レイヤーを viewport に追加
+viewport.addChild(backgroundLayer);
+viewport.addChild(drawingLayer);
+
+// -------------------------------
+// pixi-viewport 組み込み操作
+// -------------------------------
+viewport
+    .drag({ mouseButtons: 'left' })        // 左ドラッグでパン
+    .pinch()                               // タッチピンチでズーム
+    .wheel({ percent: 0.05 })              // ホイールでズーム
+    .decelerate()                           // 慣性移動
+
+// -------------------------------
+// キーボードショートカット
+// -------------------------------
+window.addEventListener('keydown', (e) => {
+    const moveStep = 10;
+    const rotateStep = 0.05;
+    const zoomStep = 0.05;
+
+    switch (e.code) {
+        case 'Space':
+            // Space キー押下時はドラッグでパン有効
+            viewport.pause = false;
+            break;
+
+        case 'ArrowUp':
+            if (e.shiftKey) {
+                // Shift + 方向キー = 回転または拡縮
+                viewport.rotation -= rotateStep;
+            } else {
+                viewport.y += moveStep;
+            }
+            break;
+
+        case 'ArrowDown':
+            if (e.shiftKey) viewport.rotation += rotateStep;
+            else viewport.y -= moveStep;
+            break;
+
+        case 'ArrowLeft':
+            if (e.shiftKey) viewport.rotation -= rotateStep;
+            else viewport.x += moveStep;
+            break;
+
+        case 'ArrowRight':
+            if (e.shiftKey) viewport.rotation += rotateStep;
+            else viewport.x -= moveStep;
+            break;
+
+        case 'KeyH':
+            if (e.shiftKey) viewport.scale.y *= -1; // 上下反転
+            else viewport.scale.x *= -1;            // 左右反転
+            break;
+
+        case 'Home':
+            // カメラリセット
+            viewport.x = 0;
+            viewport.y = 0;
+            viewport.scale.set(1,1);
+            viewport.rotation = 0;
+            break;
+    }
+});
+
+window.addEventListener('keyup', (e) => {
+    if (e.code === 'Space') viewport.pause = true; // Space 離すとドラッグ一時停止
+});
+
+// -------------------------------
+// カメラ中心支点設定の注意
+// -------------------------------
+// viewport の回転・拡縮はデフォルトで左上原点を基準に行われるため
+// center プロパティや pivot を利用してカメラ中央を支点にする
+viewport.pivot.set(app.view.width/2, app.view.height/2);
+viewport.position.set(app.view.width/2, app.view.height/2);
+
+// -------------------------------
+// 描画Layerへの例：線を追加
+// -------------------------------
+const line = new PIXI.Graphics();
+line.lineStyle(2, 0xff0000);
+line.moveTo(100,100);
+line.lineTo(300,300);
+drawingLayer.addChild(line);
+
+✅ このコードでのポイント
+
+背景 + 描画レイヤーを一括移動
+→ cameraContainer / pixi-viewport 内に両方を配置
+
+カメラ中心を支点にして回転・拡縮
+→ viewport.pivot と viewport.position をカメラ中心に設定
+
+ショートカット対応
+
+Space + ドラッグ = パン
+
+Shift + 方向キー = 回転
+
+H / Shift+H = 左右・上下反転
+
+Home = カメラリセット
+
+pixi-viewport の機能を活用
+
+ドラッグ、慣性、ホイールズーム、タッチピンチなどを簡単にサポート
+
+// ===============================
+// pixi-viewport + Shift+Space判定サンプル
+// ===============================
+import * as PIXI from 'pixi.js';
+import { Viewport } from 'pixi-viewport';
+
+const app = new PIXI.Application({ width: 800, height: 600, backgroundColor: 0xeeeeee });
+document.body.appendChild(app.view);
+
+// -------------------------------
+// pixi-viewport 初期化
+// -------------------------------
+const viewport = new Viewport({
+    screenWidth: app.view.width,
+    screenHeight: app.view.height,
+    worldWidth: 2000,
+    worldHeight: 2000,
+    interaction: app.renderer.plugins.interaction
+});
+app.stage.addChild(viewport);
+
+// カメラ中心を支点
+viewport.pivot.set(app.view.width/2, app.view.height/2);
+viewport.position.set(app.view.width/2, app.view.height/2);
+
+// レイヤー
+const backgroundLayer = new PIXI.Container();
+const drawingLayer = new PIXI.Container();
+viewport.addChild(backgroundLayer);
+viewport.addChild(drawingLayer);
+
+// 背景グリッド例
+const bg = new PIXI.Graphics();
+bg.lineStyle(1,0xcccccc);
+for(let x=0;x<2000;x+=50) bg.moveTo(x,0).lineTo(x,2000);
+for(let y=0;y<2000;y+=50) bg.moveTo(0,y).lineTo(2000,y);
+backgroundLayer.addChild(bg);
+
+// -------------------------------
+// 操作状態管理
+// -------------------------------
+let state = {
+    spacePressed: false,
+    shiftPressed: false,
+    isDragging: false,
+    dragStart: {x:0,y:0},
+    dragMode: null // 'move' | 'scale' | 'rotate'
+};
+
+// -------------------------------
+// キーボード
+// -------------------------------
+window.addEventListener('keydown', e => {
+    if(e.code==='Space') state.spacePressed=true;
+    if(e.shiftKey) state.shiftPressed=true;
+
+    if(e.code==='Home'){
+        viewport.position.set(app.view.width/2, app.view.height/2);
+        viewport.scale.set(1,1);
+        viewport.rotation = 0;
+    }
+
+    if(e.code==='KeyH'){
+        if(state.shiftPressed) viewport.scale.y *= -1;
+        else viewport.scale.x *= -1;
+    }
+});
+
+window.addEventListener('keyup', e => {
+    if(e.code==='Space') state.spacePressed=false;
+    if(!e.shiftKey) state.shiftPressed=false;
+});
+
+// -------------------------------
+// ドラッグ判定
+// -------------------------------
+viewport.on('pointerdown', e => {
+    if(!state.spacePressed) return;
+    state.isDragging = true;
+    const pos = e.data.global;
+    state.dragStart.x = pos.x;
+    state.dragStart.y = pos.y;
+    state.dragMode = null;
+});
+
+viewport.on('pointermove', e => {
+    if(!state.isDragging) return;
+    const pos = e.data.global;
+    const dx = pos.x - state.dragStart.x;
+    const dy = pos.y - state.dragStart.y;
+
+    if(!state.dragMode){
+        if(state.shiftPressed){
+            // Shift+Space: 拡縮/回転縦横判定
+            if(Math.abs(dy) > Math.abs(dx)) state.dragMode = 'scale';
+            else state.dragMode = 'rotate';
+        } else {
+            // Spaceのみ: 移動
+            state.dragMode = 'move';
+        }
+    }
+
+    if(state.dragMode==='move'){
+        viewport.x += dx;
+        viewport.y += dy;
+    } else if(state.dragMode==='scale'){
+        const factor = 1 + dy/200;
+        viewport.scale.x *= factor;
+        viewport.scale.y *= factor;
+    } else if(state.dragMode==='rotate'){
+        viewport.rotation += dx/100;
+    }
+
+    state.dragStart.x = pos.x;
+    state.dragStart.y = pos.y;
+});
+
+viewport.on('pointerup', () => {
+    state.isDragging = false;
+    state.dragMode = null;
+});
+
+// -------------------------------
+// ホイール拡縮/回転
+// -------------------------------
+window.addEventListener('wheel', e => {
+    if(state.shiftPressed) viewport.rotation += e.deltaY*0.01;
+    else {
+        const factor = 1 + e.deltaY*0.001;
+        viewport.scale.x *= factor;
+        viewport.scale.y *= factor;
+    }
+});
+
+// -------------------------------
+// 描画例
+// -------------------------------
+const line = new PIXI.Graphics();
+line.lineStyle(2,0xff0000);
+line.moveTo(100,100);
+line.lineTo(300,300);
+drawingLayer.addChild(line);
+
+✅ このサンプルの特徴
+
+Shift+Spaceドラッグで縦＝拡縮、横＝回転判定
+
+操作途中で方向が変わっても dragMode は固定
+
+Spaceのみで通常パン（移動）
+
+カメラ中心を支点に拡縮・回転
+
+背景＋描画レイヤーを cameraContainer / viewport 内で一括操作
+
+反転とリセットキー（Home/H）対応
+
+
+※方向判定のしきい値・慣性移動対応を追加した微調整版のサンプル
+
+import * as PIXI from 'pixi.js';
+import { Viewport } from 'pixi-viewport';
+
+const app = new PIXI.Application({ width: 800, height: 600, backgroundColor: 0xeeeeee });
+document.body.appendChild(app.view);
+
+// ================================
+// pixi-viewport 初期化
+// ================================
+const viewport = new Viewport({
+    screenWidth: app.view.width,
+    screenHeight: app.view.height,
+    worldWidth: 2000,
+    worldHeight: 2000,
+    interaction: app.renderer.plugins.interaction
+});
+app.stage.addChild(viewport);
+
+// カメラ中心支点
+viewport.pivot.set(app.view.width/2, app.view.height/2);
+viewport.position.set(app.view.width/2, app.view.height/2);
+
+// 背景＋描画レイヤー
+const backgroundLayer = new PIXI.Container();
+const drawingLayer = new PIXI.Container();
+viewport.addChild(backgroundLayer);
+viewport.addChild(drawingLayer);
+
+// 背景グリッド例
+const bg = new PIXI.Graphics();
+bg.lineStyle(1,0xcccccc);
+for(let x=0;x<2000;x+=50) bg.moveTo(x,0).lineTo(x,2000);
+for(let y=0;y<2000;y+=50) bg.moveTo(0,y).lineTo(2000,y);
+backgroundLayer.addChild(bg);
+
+// ================================
+// pixi-viewport 組み込み操作
+// ================================
+viewport.drag({ mouseButtons: 'left' })
+        .pinch()
+        .wheel({ percent: 0.05 })
+        .decelerate({ friction: 0.85 }); // 慣性移動
+
+// ================================
+// 操作状態管理
+// ================================
+let state = {
+    spacePressed: false,
+    shiftPressed: false,
+    isDragging: false,
+    dragStart: {x:0,y:0},
+    dragMode: null, // 'move' | 'scale' | 'rotate'
+    threshold: 5    // 縦横判定しきい値（px）
+};
+
+// ================================
+// キーボード
+// ================================
+window.addEventListener('keydown', e => {
+    if(e.code==='Space') state.spacePressed=true;
+    if(e.shiftKey) state.shiftPressed=true;
+
+    if(e.code==='Home'){
+        viewport.position.set(app.view.width/2, app.view.height/2);
+        viewport.scale.set(1,1);
+        viewport.rotation = 0;
+    }
+
+    if(e.code==='KeyH'){
+        if(state.shiftPressed) viewport.scale.y *= -1;
+        else viewport.scale.x *= -1;
+    }
+});
+
+window.addEventListener('keyup', e => {
+    if(e.code==='Space') viewport.pause = true; // Space離すとドラッグ一時停止
+    state.spacePressed = e.code==='Space' ? false : state.spacePressed;
+    if(!e.shiftKey) state.shiftPressed=false;
+});
+
+// ================================
+// ドラッグ判定（縦横しきい値対応）
+// ================================
+viewport.on('pointerdown', e => {
+    if(!state.spacePressed) return;
+    state.isDragging = true;
+    const pos = e.data.global;
+    state.dragStart.x = pos.x;
+    state.dragStart.y = pos.y;
+    state.dragMode = null;
+});
+
+viewport.on('pointermove', e => {
+    if(!state.isDragging) return;
+    const pos = e.data.global;
+    const dx = pos.x - state.dragStart.x;
+    const dy = pos.y - state.dragStart.y;
+
+    // 縦横判定はしきい値以上で確定
+    if(!state.dragMode){
+        if(state.shiftPressed){
+            if(Math.abs(dx) > state.threshold || Math.abs(dy) > state.threshold){
+                state.dragMode = Math.abs(dy) > Math.abs(dx) ? 'scale' : 'rotate';
+            } else return; // 小さい動きは無視
+        } else {
+            state.dragMode = 'move';
+        }
+    }
+
+    // 操作適用
+    if(state.dragMode==='move'){
+        viewport.x += dx;
+        viewport.y += dy;
+    } else if(state.dragMode==='scale'){
+        const factor = 1 + dy/200;
+        viewport.scale.x *= factor;
+        viewport.scale.y *= factor;
+    } else if(state.dragMode==='rotate'){
+        viewport.rotation += dx/100;
+    }
+
+    state.dragStart.x = pos.x;
+    state.dragStart.y = pos.y;
+});
+
+viewport.on('pointerup', () => {
+    state.isDragging = false;
+    state.dragMode = null;
+});
+
+// ================================
+// ホイール拡縮/回転
+// ================================
+window.addEventListener('wheel', e => {
+    if(state.shiftPressed) viewport.rotation += e.deltaY*0.01;
+    else {
+        const factor = 1 + e.deltaY*0.001;
+        viewport.scale.x *= factor;
+        viewport.scale.y *= factor;
+    }
+});
+
+// ================================
+// 描画例
+// ================================
+const line = new PIXI.Graphics();
+line.lineStyle(2,0xff0000);
+line.moveTo(100,100);
+line.lineTo(300,300);
+drawingLayer.addChild(line);
+
+✅ 改良ポイント
+
+縦横判定しきい値 (threshold) を追加して微小な誤動作を防止
+
+慣性移動 (decelerate) を有効化して、ドラッグ終了後も自然にパン移動
+
+Shift+Space ドラッグで縦＝拡縮、横＝回転 判定維持
+
+カメラ中心を支点 に拡縮・回転・反転・リセット対応
+
+背景＋描画レイヤーを viewport 内で一括操作
+
+import * as PIXI from 'pixi.js';
+import { Viewport } from 'pixi-viewport';
+
+const app = new PIXI.Application({ width: 800, height: 600, backgroundColor: 0xeeeeee });
+document.body.appendChild(app.view);
+
+// ================================
+// pixi-viewport 初期化
+// ================================
+const viewport = new Viewport({
+    screenWidth: app.view.width,
+    screenHeight: app.view.height,
+    worldWidth: 2000,
+    worldHeight: 2000,
+    interaction: app.renderer.plugins.interaction
+});
+app.stage.addChild(viewport);
+
+// カメラ中心支点
+viewport.pivot.set(app.view.width/2, app.view.height/2);
+viewport.position.set(app.view.width/2, app.view.height/2);
+
+// 背景＋描画レイヤー
+const backgroundLayer = new PIXI.Container();
+const drawingLayer = new PIXI.Container();
+viewport.addChild(backgroundLayer);
+viewport.addChild(drawingLayer);
+
+// 背景グリッド例
+const bg = new PIXI.Graphics();
+bg.lineStyle(1,0xcccccc);
+for(let x=0;x<2000;x+=50) bg.moveTo(x,0).lineTo(x,2000);
+for(let y=0;y<2000;y+=50) bg.moveTo(0,y).lineTo(2000,y);
+backgroundLayer.addChild(bg);
+
+// ================================
+// pixi-viewport 組み込み操作
+// ================================
+viewport.drag({ mouseButtons: 'left' })
+        .pinch()
+        .wheel({ percent: 0.05 })
+        .decelerate({ friction: 0.85 }); // 慣性移動
+
+// ================================
+// 操作状態管理
+// ================================
+let state = {
+    spacePressed: false,
+    shiftPressed: false,
+    isDragging: false,
+    dragStart: {x:0,y:0},
+    dragMode: null, // 'move' | 'scale' | 'rotate'
+    threshold: 5    // 縦横判定しきい値（px）
+};
+
+// ================================
+// キーボード
+// ================================
+window.addEventListener('keydown', e => {
+    if(e.code==='Space') state.spacePressed=true;
+    if(e.shiftKey) state.shiftPressed=true;
+
+    if(e.code==='Home'){
+        viewport.position.set(app.view.width/2, app.view.height/2);
+        viewport.scale.set(1,1);
+        viewport.rotation = 0;
+    }
+
+    if(e.code==='KeyH'){
+        if(state.shiftPressed) viewport.scale.y *= -1;
+        else viewport.scale.x *= -1;
+    }
+});
+
+window.addEventListener('keyup', e => {
+    if(e.code==='Space') viewport.pause = true; // Space離すとドラッグ一時停止
+    state.spacePressed = e.code==='Space' ? false : state.spacePressed;
+    if(!e.shiftKey) state.shiftPressed=false;
+});
+
+// ================================
+// ドラッグ判定（縦横しきい値対応）
+// ================================
+viewport.on('pointerdown', e => {
+    if(!state.spacePressed) return;
+    state.isDragging = true;
+    const pos = e.data.global;
+    state.dragStart.x = pos.x;
+    state.dragStart.y = pos.y;
+    state.dragMode = null;
+});
+
+viewport.on('pointermove', e => {
+    if(!state.isDragging) return;
+    const pos = e.data.global;
+    const dx = pos.x - state.dragStart.x;
+    const dy = pos.y - state.dragStart.y;
+
+    // 縦横判定はしきい値以上で確定
+    if(!state.dragMode){
+        if(state.shiftPressed){
+            if(Math.abs(dx) > state.threshold || Math.abs(dy) > state.threshold){
+                state.dragMode = Math.abs(dy) > Math.abs(dx) ? 'scale' : 'rotate';
+            } else return; // 小さい動きは無視
+        } else {
+            state.dragMode = 'move';
+        }
+    }
+
+    // 操作適用
+    if(state.dragMode==='move'){
+        viewport.x += dx;
+        viewport.y += dy;
+    } else if(state.dragMode==='scale'){
+        const factor = 1 + dy/200;
+        viewport.scale.x *= factor;
+        viewport.scale.y *= factor;
+    } else if(state.dragMode==='rotate'){
+        viewport.rotation += dx/100;
+    }
+
+    state.dragStart.x = pos.x;
+    state.dragStart.y = pos.y;
+});
+
+viewport.on('pointerup', () => {
+    state.isDragging = false;
+    state.dragMode = null;
+});
+
+// ================================
+// ホイール拡縮/回転
+// ================================
+window.addEventListener('wheel', e => {
+    if(state.shiftPressed) viewport.rotation += e.deltaY*0.01;
+    else {
+        const factor = 1 + e.deltaY*0.001;
+        viewport.scale.x *= factor;
+        viewport.scale.y *= factor;
+    }
+});
+
+// ================================
+// 描画例
+// ================================
+const line = new PIXI.Graphics();
+line.lineStyle(2,0xff0000);
+line.moveTo(100,100);
+line.lineTo(300,300);
+drawingLayer.addChild(line);
+
+※Shift+Space ドラッグでの縦＝拡縮、横＝回転判定＋速度補正＋慣性移動 を含めたサンプル
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Tegaki v8 Camera Demo</title>
+<style>
+  body { margin:0; overflow:hidden; }
+</style>
+</head>
+<body>
+
+<script src="https://pixijs.download/release/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/pixi-viewport/dist/viewport.min.js"></script>
+<script>
+const app = new PIXI.Application({ width: 800, height: 600, backgroundColor: 0xeeeeee });
+document.body.appendChild(app.view);
+
+// ================================
+// pixi-viewport 初期化
+// ================================
+const viewport = new Viewport.Viewport({
+    screenWidth: app.view.width,
+    screenHeight: app.view.height,
+    worldWidth: 2000,
+    worldHeight: 2000,
+    interaction: app.renderer.plugins.interaction
+});
+app.stage.addChild(viewport);
+
+// カメラ中心支点
+viewport.pivot.set(app.view.width/2, app.view.height/2);
+viewport.position.set(app.view.width/2, app.view.height/2);
+
+// 背景＋描画レイヤー
+const backgroundLayer = new PIXI.Container();
+const drawingLayer = new PIXI.Container();
+viewport.addChild(backgroundLayer);
+viewport.addChild(drawingLayer);
+
+// 背景グリッド例
+const bg = new PIXI.Graphics();
+bg.lineStyle(1,0xcccccc);
+for(let x=0;x<2000;x+=50) bg.moveTo(x,0).lineTo(x,2000);
+for(let y=0;y<2000;y+=50) bg.moveTo(0,y).lineTo(2000,y);
+backgroundLayer.addChild(bg);
+
+// ================================
+// pixi-viewport 組み込み操作
+// ================================
+viewport.drag({ mouseButtons: 'left' })
+        .pinch()
+        .wheel({ percent: 0.05 })
+        .decelerate({ friction: 0.85 }); // 慣性移動
+
+// ================================
+// 操作状態管理
+// ================================
+let state = {
+    spacePressed: false,
+    shiftPressed: false,
+    isDragging: false,
+    dragStart: {x:0,y:0},
+    dragMode: null, // 'move' | 'scale' | 'rotate'
+    threshold: 5,   // 縦横判定しきい値（px）
+    lastMoveTime: 0
+};
+
+// ================================
+// キーボード
+// ================================
+window.addEventListener('keydown', e => {
+    if(e.code==='Space') state.spacePressed=true;
+    if(e.shiftKey) state.shiftPressed=true;
+
+    if(e.code==='Home'){
+        viewport.position.set(app.view.width/2, app.view.height/2);
+        viewport.scale.set(1,1);
+        viewport.rotation = 0;
+    }
+
+    if(e.code==='KeyH'){
+        if(state.shiftPressed) viewport.scale.y *= -1;
+        else viewport.scale.x *= -1;
+    }
+});
+
+window.addEventListener('keyup', e => {
+    if(e.code==='Space') viewport.pause = true;
+    state.spacePressed = e.code==='Space' ? false : state.spacePressed;
+    if(!e.shiftKey) state.shiftPressed=false;
+});
+
+// ================================
+// ドラッグ判定（速度補正付き）
+// ================================
+viewport.on('pointerdown', e => {
+    if(!state.spacePressed) return;
+    state.isDragging = true;
+    const pos = e.data.global;
+    state.dragStart.x = pos.x;
+    state.dragStart.y = pos.y;
+    state.dragMode = null;
+    state.lastMoveTime = performance.now();
+});
+
+viewport.on('pointermove', e => {
+    if(!state.isDragging) return;
+    const pos = e.data.global;
+    const dx = pos.x - state.dragStart.x;
+    const dy = pos.y - state.dragStart.y;
+    const dt = performance.now() - state.lastMoveTime;
+
+    if(!state.dragMode){
+        if(state.shiftPressed){
+            if(Math.abs(dx) > state.threshold || Math.abs(dy) > state.threshold){
+                state.dragMode = Math.abs(dy) > Math.abs(dx) ? 'scale' : 'rotate';
+            } else return;
+        } else {
+            state.dragMode = 'move';
+        }
+    }
+
+    // -------------------------------
+    // マウス速度補正係数
+    // -------------------------------
+    const speedFactor = dt > 0 ? Math.min(5, Math.sqrt(dx*dx+dy*dy)/dt*10) : 1;
+
+    if(state.dragMode==='move'){
+        viewport.x += dx * speedFactor;
+        viewport.y += dy * speedFactor;
+    } else if(state.dragMode==='scale'){
+        const factor = 1 + dy/200*speedFactor;
+        viewport.scale.x *= factor;
+        viewport.scale.y *= factor;
+    } else if(state.dragMode==='rotate'){
+        viewport.rotation += dx/100 * speedFactor;
+    }
+
+    state.dragStart.x = pos.x;
+    state.dragStart.y = pos.y;
+    state.lastMoveTime = performance.now();
+});
+
+viewport.on('pointerup', () => {
+    state.isDragging = false;
+    state.dragMode = null;
+});
+
+// ================================
+// ホイール拡縮/回転（速度補正付き）
+// ================================
+window.addEventListener('wheel', e => {
+    const speedFactor = Math.min(5, Math.abs(e.deltaY)/10);
+    if(state.shiftPressed) viewport.rotation += e.deltaY*0.01*speedFactor;
+    else {
+        const factor = 1 + e.deltaY*0.001*speedFactor;
+        viewport.scale.x *= factor;
+        viewport.scale.y *= factor;
+    }
+});
+
+// ================================
+// 描画例
+// ================================
+const line = new PIXI.Graphics();
+line.lineStyle(2,0xff0000);
+line.moveTo(100,100);
+line.lineTo(300,300);
+drawingLayer.addChild(line);
+</script>
+
+</body>
+</html>
+
+✅ 改良ポイント
+
+Shift+Spaceドラッグで縦＝拡縮、横＝回転判定
+
+ドラッグ速度に応じてパン・回転・拡縮量を動的補正
+
+しきい値判定で微小誤動作を無視
+
+慣性移動（decelerate）対応
+
+カメラ中心支点、反転キー、リセットキー対応
+
+背景＋描画レイヤーを viewport 内で一括操作
+
+

@@ -1,0 +1,312 @@
+DrawingTool分離開発ルールブック v2.0 + AI辞典
+📋 基本方針
+分離戦略: JS+CSS分離方式
+main.html (Core Engine) - PixiJS初期化・描画エンジン・座標管理・レイヤー
+├── Sidebar-Tools.css  - サイドバーUI固定スタイル（隠蔽対象）
+└── Sidebar-Tools.js   - サイドバーロジック・HTML生成・API連携
+AI改修効率化の原則
+
+1ファイル = 1改修目的: スタイル→CSS、機能→JS、コア→HTML
+固定要素隠蔽: 変更頻度の低いCSSは分離して再生産を防止
+API経由通信: 直接DOM操作禁止、必ずDrawingToolAPI経由
+エラー即停止: フォールバック禁止、問題を隠蔽しない
+
+
+🔧 ファイル構成・命名規約
+ファイル命名
+main.html           - コアエンジン
+Sidebar-Tools.css   - サイドバー固定スタイル
+Sidebar-Tools.js    - サイドバーロジック
+グローバル変数命名
+javascriptwindow.DrawingToolAPI    - メイン→モジュール通信
+window.SidebarToolsAPI   - モジュール→メイン通信  
+window.drawingApp        - メインアプリインスタンス
+関数・クラス命名
+javascript// クラス: [Module][Purpose]Manager
+class SidebarToolsManager {}
+class LayerManager {}
+
+// 関数: [action][Target]
+function generateSidebarHTML() {}
+function handleToolClick() {}
+function updateToolSettings() {}
+
+🌐 API通信仕様
+DrawingToolAPI（main.html → モジュール）
+javascriptwindow.DrawingToolAPI = {
+  canvas: {
+    getApp: () => pixiApp,
+    getCanvasSize: () => ({width, height}),
+    resizeCanvas: (width, height) => {}
+  },
+  tools: {
+    setActiveTool: (toolType) => {},
+    getActiveTool: () => currentTool,
+    updateSettings: (settings) => {},
+    getSettings: () => settings
+  },
+  layers: {
+    createLayer: (name) => {},
+    deleteLayer: (layerId) => {},
+    setLayerVisibility: (layerId, visible) => {}
+  },
+  events: {
+    subscribe: (eventName, callback) => {},
+    emit: (eventName, data) => {}
+  }
+};
+SidebarToolsAPI（モジュール → main.html）
+javascriptwindow.SidebarToolsAPI = {
+  switchTool: (toolName) => {},
+  getActiveToolSettings: () => settings,
+  updateToolSettings: (toolName, settings) => {},
+  closePopups: () => {},
+  showPopup: (popupId) => {}
+};
+
+⚠️ エラーハンドリング戦略
+統一エラー報告
+javascriptfunction reportError(module, operation, error, context = {}) {
+  const errorInfo = {
+    timestamp: new Date().toISOString(),
+    module, operation,
+    message: error.message,
+    context, stack: error.stack
+  };
+  console.error(`[${module}] ${operation} failed:`, errorInfo);
+  
+  // API経由でメインに通知
+  if (window.DrawingToolAPI?.events?.emit) {
+    window.DrawingToolAPI.events.emit('module-error', errorInfo);
+  }
+}
+禁止事項
+
+❌ フォールバック処理（問題隠蔽）
+❌ 暗黙的修復（原因不明化）
+❌ 曖昧なエラーメッセージ
+
+
+🎨 HTML/CSS/JS 分離パターン
+CSS隠蔽対象（Sidebar-Tools.css）
+css/* 基本構造 - 変更頻度低 */
+.sidebar { /* レイアウト固定 */ }
+.tool-button { /* 基本スタイル固定 */ }
+.popup-panel { /* ポップアップ基本 */ }
+.slider { /* スライダー基本 */ }
+
+/* アニメーション - 固定 */
+@keyframes popupFadeIn { /* 確定済み */ }
+@keyframes slideIn { /* 確定済み */ }
+JS管理対象（Sidebar-Tools.js）
+javascript// 動的HTML生成（SVG含む）
+function generateSidebarHTML() {
+  return `
+    <div class="sidebar">
+      <div class="tool-button" id="pen-tool">
+        ${getSVG('pen')}
+      </div>
+    </div>
+  `;
+}
+
+// SVG定義
+function getSVG(iconName) {
+  const svgs = {
+    pen: '<svg>...</svg>',
+    eraser: '<svg>...</svg>'
+  };
+  return svgs[iconName];
+}
+
+📚 AI開発辞典
+よく使用するコードパターン
+1. モジュール初期化待機
+javascriptasync function waitForAPI(apiName, maxAttempts = 100) {
+  return new Promise((resolve, reject) => {
+    let attempts = 0;
+    const check = () => {
+      if (window[apiName]) {
+        resolve();
+      } else if (++attempts >= maxAttempts) {
+        reject(new Error(`${apiName} not available`));
+      } else {
+        setTimeout(check, 50);
+      }
+    };
+    check();
+  });
+}
+2. DOM要素動的生成
+javascriptfunction injectHTML(containerId, htmlContent) {
+  const container = document.getElementById(containerId);
+  if (!container) {
+    throw new Error(`Container not found: ${containerId}`);
+  }
+  container.innerHTML = htmlContent;
+}
+3. スライダー制御パターン
+javascriptfunction createSlider(sliderId, min, max, initial, callback) {
+  const container = document.getElementById(sliderId);
+  // バリデーション → 要素取得 → イベント設定 → 初期値
+}
+4. ツール切り替えパターン
+javascriptfunction activateTool(toolName) {
+  // UI更新 → 設定適用 → API通知 → ログ出力
+  document.querySelectorAll('.tool-button').forEach(btn => 
+    btn.classList.remove('active'));
+  document.getElementById(toolName + '-tool')?.classList.add('active');
+  
+  window.DrawingToolAPI.tools.setActiveTool(toolName);
+}
+デバッグ用コマンド
+javascript// 開発者コンソール用
+window.debugSidebar = {
+  getAPI: () => window.SidebarToolsAPI,
+  switchTool: (name) => window.SidebarToolsAPI.switchTool(name),
+  getSettings: () => window.SidebarToolsAPI.getActiveToolSettings()
+};
+座標系変換（Transform関連）
+javascript// Screen座標 ↔ World座標
+const worldPos = transformSystem.screenToWorld({x, y});
+const screenPos = transformSystem.worldToScreen({x, y});
+
+// キャンバス移動
+transformSystem.moveViewport(deltaX, deltaY);
+transformSystem.resetViewport();
+
+🚀 開発フロー
+1. 改修時の判断フローチャート
+改修内容は？
+├─ 見た目・レイアウト → Sidebar-Tools.css
+├─ 機能・ロジック → Sidebar-Tools.js  
+├─ 描画・座標 → main.html
+└─ SVG変更 → Sidebar-Tools.js内のgetSVG()
+2. 新ツール追加フロー
+javascript// 1. Sidebar-Tools.js - getSVG()にアイコン追加
+// 2. Sidebar-Tools.js - generateSidebarHTML()にボタン追加  
+// 3. Sidebar-Tools.js - handleToolClick()に処理追加
+// 4. main.html - DrawingEngine.currentTool対応追加
+3. テスト確認項目
+
+ ツール切り替え動作
+ ポップアップ表示/非表示
+ スライダー操作
+ キャンバスリサイズ
+ API通信（console.logで確認）
+ エラーハンドリング（意図的エラーで確認）
+
+
+分離実装計画書
+🎯 目標
+main.html肥大化問題の解決とAI改修効率の最大化
+📅 実装スケジュール
+Phase 1: CSS分離（最優先）
+目的: 固定スタイル隠蔽による再生産防止
+作業内容:
+1. 現在のmain.html内CSS抽出
+2. Sidebar-Tools.css作成
+3. 動的生成部分をJS移行準備
+4. CSS link追加
+
+成果物:
+- Sidebar-Tools.css（完全版）
+- main.html（CSS削除版）
+
+所要時間: 改修1セッション
+Phase 2: JS分離（コア作業）
+目的: サイドバーロジックの完全分離
+作業内容:
+1. Sidebar-Tools.js作成
+2. HTML生成関数実装
+3. SVG定義実装  
+4. イベントハンドラー移植
+5. API連携実装
+
+成果物:
+- Sidebar-Tools.js（完全版）
+- main.html（サイドバー削除版）
+
+所要時間: 改修2-3セッション
+Phase 3: 統合テスト
+目的: 分離後動作確認と最適化
+作業内容:
+1. 3ファイル統合動作確認
+2. API通信テスト
+3. エラーハンドリングテスト
+4. 座標系統合テスト
+
+成果物:
+- 動作確認済み3ファイル構成
+
+所要時間: 改修1セッション
+🏗️ 詳細実装方針
+main.html 責任範囲（残すもの）
+javascript- PixiJS初期化・描画エンジン
+- TransformSystem（座標変換）
+- LayerManager（レイヤー管理）
+- HammerJS（キャンバス操作）
+- DrawingToolAPI（モジュール通信）
+- 基本レイアウト（サイドバー領域のみ）
+Sidebar-Tools.css 責任範囲
+css- .sidebar基本構造
+- .tool-button共通スタイル
+- .popup-panel共通スタイル
+- スライダー・入力欄スタイル
+- アニメーション定義
+- レスポンシブ調整
+Sidebar-Tools.js 責任範囲
+javascript- サイドバーHTML生成
+- SVG定義管理
+- ツール切り替えロジック
+- ポップアップ制御
+- 設定UI制御（スライダー等）
+- キャンバスリサイズ機能
+- main.htmlとのAPI連携
+🔄 移行戦略
+データ移行
+main.html → Sidebar-Tools.css:
+- サイドバー関連CSS全て
+- ポップアップ関連CSS全て
+- アニメーション定義
+
+main.html → Sidebar-Tools.js:
+- ツールボタンHTML生成
+- イベントハンドラー
+- UI制御ロジック
+- SVGアイコン定義
+API設計
+javascript// main.html側で提供
+window.DrawingToolAPI = {
+  canvas: { resize, getSize },
+  tools: { setActive, updateSettings },
+  layers: { create, delete, toggle },
+  events: { subscribe, emit }
+};
+
+// Sidebar-Tools.js側で提供  
+window.SidebarToolsAPI = {
+  switchTool, getSettings, updateSettings,
+  closePopups, showPopup
+};
+✅ 成功指標
+機能面
+
+ 全ツール動作（ペン・消しゴム・リサイズ）
+ ポップアップ表示・ドラッグ
+ スライダー操作
+ キーボードショートカット
+
+改修効率面
+
+ CSS変更時はSidebar-Tools.cssのみ触る
+ ツール追加時はSidebar-Tools.jsのみ触る
+ main.htmlは座標・描画以外触らない
+
+安定性面
+
+ file://環境で確実動作
+ エラー時の適切な表示
+ API通信の確実性
+
+この計画書に沿って実装することで、AI改修効率を最大化しつつ、機能を損なわない分離が達成できます。

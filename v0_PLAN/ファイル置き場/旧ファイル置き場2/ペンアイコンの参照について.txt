@@ -1,0 +1,52 @@
+問題の構造
+
+assets/icons.js では lucide-static/icons/pencil-line.svg などをツールごとに割り当てています。
+
+でも実際に サイドバーで表示している処理 は tool-manager.js → tegaki-application.js 側で行っていて、そこで参照されているのは lucide-react またはデフォルトの Lucide アイコンセット で、icons.js のマップが使われていません。
+
+具体的に：
+
+icons.js 内の定義はただのオブジェクト（{ pen: "…/pencil-line.svg" }）ですが、UI生成側でこのオブジェクトを見に行っていない。
+
+代わりに <i data-icon="pen"> のような仕掛け、または lucide.createIcons() が HTML 中の data-lucide 属性を見て描画している。
+
+そのため 意図通りのアイコンが出ずに Lucide のデフォルト "Pen" アイコン（別デザインのやつ）が出てしまっている。
+
+原因まとめ
+
+icons.js が UI で参照されていない
+→ tool-manager.js で icon: "pen" のようにツールを登録しても、それが icons.js の "pencil-line.svg" と紐付かない。
+
+Lucide のオートリプレース機能が勝っている
+→ lucide-static を使いたいのに、lucide が HTML の <i data-lucide="pen"> を勝手に差し替えてしまう。
+
+対策案
+
+いずれかで修正できます。
+
+✅ 方法1: icons.js を参照するように修正
+
+tool-manager.js でツール登録する時に icon: icons.pen のように直接読み込む。
+
+サイドバー生成時に <img src=".../pencil-line.svg"> を出す。
+
+Lucide に任せず、自前でSVGを置きに行く方式。
+
+✅ 方法2: Lucide の data 属性を合わせる
+
+icons.js にある "pencil-line" を Lucide が認識できる data-lucide="pencil-line" に統一する。
+
+ただし lucide-static のSVGと lucide のアイコンセットで名前が微妙に違うことがあるので、ここは要確認。
+
+✅ 方法3: Lucide の auto-replace を無効化
+
+bootstrap.js か main.js で lucide.createIcons() を呼んでいるなら、その部分を削除。
+
+全部 icons.js 管理に寄せる。
+
+実運用おすすめ
+
+「ツールバーの見た目を完全に icons.js 側で管理」したいなら 方法1 が一番確実。
+(<img src=icons.jsのパス> で明示的に表示)
+
+Lucide の auto-replace は便利ですが、管理が二重化するので今の状態だと混乱の元です。

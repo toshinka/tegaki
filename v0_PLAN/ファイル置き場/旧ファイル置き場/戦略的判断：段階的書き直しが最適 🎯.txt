@@ -1,0 +1,95 @@
+戦略的判断：段階的書き直しが最適 🎯
+なぜ書き直しが必要か
+1. 実装とドキュメントの乖離が大きい
+
+既存文書：複雑なPhase1.5想定（500行超の詳細仕様）
+現在の実装：シンプルなPhase1（基本描画のみ）
+AIが混乱する原因
+
+2. 責務定義の不整合
+javascript// 既存文書の定義
+CanvasManager {
+  addGraphicsToLayer(graphics, layerId)  // 詳細なレイヤー管理
+  getDiagnosticInfo()                    // 複雑な診断機能
+}
+
+// 現在の実装
+CanvasManager {
+  setPixiApp(pixiApp)                    // シンプルなPixiJS受け皿
+  getLayer(layerId)                      // 基本的なレイヤー取得
+}
+3. 時期尚早な複雑化
+
+既存：Phase2-3の機能まで詳細定義
+現在：「貧弱だが確実」戦略が成功中
+段階的複雑化の妨げになる
+
+推奨する書き直しアプローチ
+Phase 1: 現在特化版（今すぐ作成）
+markdown📋 シンプル・ルールブック v1-Current
+・現在の実装（ペン描画成功）に特化
+・不要な複雑性を排除
+・次のレイヤー実装に最適化
+
+🎯 対象範囲
+・CanvasManager: PixiJS受け皿 + 基本レイヤー
+・PenTool: 基本線描画のみ
+・統一システム: 最小限の実装
+・UI: 基本ツール切り替えのみ
+Phase 2: レイヤー拡張版（レイヤー実装時）
+markdown📋 レイヤー対応・ルールブック v2-Layer
+・レイヤー管理機能を追加定義
+・非破壊編集の基盤を定義
+・オブジェクト指向描画への準備
+Phase 3: GIF対応版（最終段階）
+markdown📋 包括・ルールブック v3-Complete  
+・アニメーション・GIF機能定義
+・全機能統合の規約
+・最終形態のアーキテクチャ
+メソッド・シンボル定義の戦略
+「必要になったら定義」アプローチが最適
+✅ 今定義すべき最小限
+javascript// 現在動作している機能のみ
+CanvasManager {
+  setPixiApp(pixiApp)
+  createLayer(layerId)  
+  addGraphicsToLayer(graphics, layerId)
+}
+
+PenTool {
+  onPointerDown(x, y, event)
+  onPointerMove(x, y, event)  
+  onPointerUp(x, y, event)
+}
+⚠️ 今定義すべきでない複雑機能
+javascript// Phase2以降で定義
+LayerObject, AnimationSequence, GIFExporter
+RecordManager, UndoRedoSystem, AdvancedBrushes
+AI開発における最適解
+段階的ドキュメント更新 = 段階的実装成功
+
+Phase1: 現在動作分のみ文書化
+レイヤー実装時: レイヤー機能を文書追加
+GIF実装時: アニメーション機能を文書追加
+
+メリット
+
+✅ AIが混乱しない（現在の実装と一致）
+✅ 段階的な複雑化（車輪の再発明防止）
+✅ 実装主導（動作するコードが正解）
+
+結論・推奨事項
+🎯 今すぐやること
+
+現在特化版ルールブック作成（30-50行程度）
+シンプル・シンボル辞典作成（現在の実装のみ）
+既存文書はv0_PLAN/archive/に移動
+
+🔄 今後の方針
+
+レイヤー実装時：文書v2に更新
+GIF実装時：文書v3に更新
+実装が先、文書が後の順序厳守
+
+**「今決めない勇気」**が、AI開発における最も効率的なアプローチです！
+現在特化版のルールブック作成から始めましょうか？

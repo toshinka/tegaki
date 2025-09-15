@@ -1,0 +1,155 @@
+# ThreeSatellitePlan_RuleBook_v4 補足計画書
+## 目的
+- rev6 改修で発生した「キャンバス非表示」「レイヤーパネル非表示」問題の再発防止。
+- DOM要素の責務分離を明確にし、UI肥大化を避ける。
+- ルールブック v4 を補完し、実装計画の精度を上げる。
+
+---
+
+## 補足指針
+
+### 1. DOM要素と責務の分離
+- **main.html**
+  - 最低限の構造を保証する：
+    - `<div id="canvas-container"></div>`
+    - `<div id="layer-panel"></div>`
+  - PIXI Application の `app.view` は必ず `canvas-container` に append。
+- **engine-position.js**
+  - 描画・座標管理のみを担当。
+  - DOM生成は行わない（あくまで PIXI の責務に限定）。
+- **layer-tool-ui.js**
+  - 既存 DOM（layer-panel）の中身を操作するだけ。
+  - `document.createElement` は許可されるが、トップレベルの要素生成は禁止。
+  - サイズ・位置・表示切替など UI のみに専念。
+- **error-service.js**
+  - エラー捕捉は行うが、UI側でエラーを隠さずコンソールに明示する。
+
+---
+
+### 2. 初期化シーケンス
+1. main.html ロード
+2. engine-position.js → PIXI.Application 初期化 → `canvas-container` に `app.view` を append
+3. layer-tool-ui.js → `layer-panel` 内にレイヤーUI構築
+4. error-service.js → エラー監視有効化
+
+---
+
+### 3. 過剰実装の禁止
+- UI処理は UI モジュールのみ。描画系と混在禁止。
+- PIXI関連の処理は engine-position.js に限定。
+- error-service.js はエラー出力のみ。UI修正禁止。
+
+---
+
+### 4. 検証・テスト項目
+- [ ] キャンバスが正しく `canvas-container` に表示されるか。
+- [ ] レイヤーパネルが `layer-panel` 内に生成されているか。
+- [ ] Console エラーが発生していないか。
+- [ ] UI初期化と PIXI 初期化の依存が正しく分離されているか。
+
+---
+
+### 5. 知見反映（rev6 からの学び）
+- **肥大化防止**  
+  → UIは必要最小限の責務のみ持つ。  
+- **append抜け防止**  
+  → 初期化手順をドキュメント化し、 `app.view` append を必須項目に。  
+- **DOM整合性**  
+  → main.html に最低限の固定DOMを設置し、JSで生成しない。
+
+---
+
+## 今後の流れ
+- rev4 にロールバックして改修を再開。
+- 本補足計画に従い、モジュールごとの責務分離を徹底。
+- 実装後は必ず「キャンバス表示確認」「レイヤーパネル表示確認」をテスト。
+
+
+
+# PIXIv8_StarSplit_rev4 クリーン改修計画書
+
+## 目的
+- rev4 をベースに再改修し、rev6 で発生した問題を回避。
+- ThreeSatellitePlan_RuleBook_v4 と補足計画書に沿い、責務分離を徹底。
+- キャンバス・レイヤーパネルを安定して表示させる。
+
+---
+
+## 改修方針
+
+### 1. ファイル構成の責務分離
+- **main.html**
+  - 基本 DOM 構造を定義する（最低限の静的要素を置く）。
+  - `canvas-container` と `layer-panel` を HTML 側に設置する。
+  - スクリプト読み込み順序を保証する。
+- **engine-position.js**
+  - PIXI.Application の初期化と座標処理を担当。
+  - `app.view` を必ず `#canvas-container` に append。
+  - レンダリングループ・リサイズ処理もここで行う。
+- **layer-tool-ui.js**
+  - 既存 DOM（`#layer-panel`）の内部構築・更新を担当。
+  - レイヤー追加・削除・切替の UI イベントを管理。
+  - DOM のトップレベル生成は禁止（余計な DIV を追加しない）。
+- **error-service.js**
+  - グローバルエラーを捕捉し、console 出力する。
+  - UI 操作や DOM 操作は一切行わない。
+
+---
+
+### 2. main.html 改修計画
+- `<div id="canvas-container"></div>` を設置。
+- `<div id="layer-panel"></div>` を設置。
+- `<script>` の読み込み順を下記に統一：
+  1. PIXI.js
+  2. error-service.js
+  3. engine-position.js
+  4. layer-tool-ui.js
+
+---
+
+### 3. engine-position.js 改修計画
+- PIXI.Application を初期化：
+  ```js
+  const app = new PIXI.Application({ 
+      width: window.innerWidth,
+      height: window.innerHeight,
+      backgroundColor: 0xffffff
+  });
+  document.getElementById("canvas-container").appendChild(app.view);
+リサイズ対応：
+
+js
+コードをコピーする
+window.addEventListener("resize", () => {
+    app.renderer.resize(window.innerWidth, window.innerHeight);
+});
+app.stage に基本の root コンテナを追加。
+
+4. layer-tool-ui.js 改修計画
+#layer-panel を取得し、その内部に UI を構築する。
+
+UI 操作例：
+
+js
+コードをコピーする
+const panel = document.getElementById("layer-panel");
+const addButton = document.createElement("button");
+addButton.textContent = "レイヤー追加";
+panel.appendChild(addButton);
+レイヤー切替や追加処理は、engine-position.js の API を呼び出す形にする（直接 PIXI.Stage を操作しない）。
+
+5. error-service.js 改修計画
+window.onerror / window.onunhandledrejection を監視。
+
+コンソールにエラー内容を出力。
+
+UI や DOM 操作は行わない。
+
+6. 初期化フロー
+main.html ロード完了
+
+engine-position.js → PIXI.Application 初期化 & キャンバス配置
+
+layer-tool-ui.js → レイヤーパネルを構築
+
+error-service.js → エラー監視開始

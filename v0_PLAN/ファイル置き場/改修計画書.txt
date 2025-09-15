@@ -1,0 +1,457 @@
+【改修計画書】vector_drawing_tool_v8rev6.html カメラ操作対応版
+（通称：ワールドビュー拡張）
+
+---
+
+■ 改修目的
+- ユーザーがキャンバス全体を「掴んで動かす」「拡大・縮小する」「回転させる」「反転する」ことを可能にする。
+- 従来「キャンバス移動」と呼んでいたが、正確には「カメラ（視点）の移動・操作」であり、描画レイヤーや背景を含む world 全体を一括で動かす。
+- ペン描画やカーソル操作の座標は camera を経由して正しく world 座標に変換されるようにし、表示範囲外での描画も保持される。
+
+---
+
+■ 実装方針
+1. **worldContainer 導入**
+   - `backgroundLayer`, `drawingLayer` などすべての描画対象を `worldContainer` にまとめる。
+   - カメラ移動・拡縮・回転・反転は `worldContainer.transform` に対して行う。
+   - UI 要素（ツールバーやカーソル表示など）は `app.stage` に直付けしてカメラの影響を受けない。
+
+2. **カメラ座標制御**
+   - `worldContainer.position` … カメラの移動に対応
+   - `worldContainer.scale` … カメラの拡縮に対応（比率で）
+   - `worldContainer.rotation` … カメラの回転に対応（ラジアン値）
+   - 反転は scale.x *= -1 / scale.y *= -1 によって実現（高速処理）
+
+3. **入力処理**
+   - キー＋マウス／キー＋ドラッグによってカメラ操作をトリガーする。
+   - 操作開始時に「縦移動か横移動か」を判定し、拡縮と回転を同時に起こさない。
+   - 描画系ショートカットとは衝突しないよう、Space キーが押下されている間はペンツールを無効化する。
+
+---
+
+■ ショートカット仕様
+- **移動**: `Space + ドラッグ` | `Space + 方向キー`
+- **拡縮・回転**: `Shift + Space + ドラッグ` | `Shift + 方向キー`
+- **拡縮・回転（マウス）**: `ホイール回転` | `Shift + ホイール回転`
+- **反転**: `H`（左右） | `Shift + H`（上下）
+
+※拡縮／回転の方向決定ルール  
+　- 最初に縦方向入力 → 拡縮モード  
+　- 最初に横方向入力 → 回転モード  
+　- 一度ペンを離して再操作しない限り、同一モードを維持する。
+
+---
+
+■ 座標系ガイドライン
+- すべての描画は world 座標で記録・復元する（カメラに依存しない）。
+- UI 要素は stage に置いてカメラの影響を受けない。
+- `toLocal()` / `toGlobal()` を統一して利用し、pointer 座標は必ず worldContainer に変換してから処理する。
+- カメラ中心を基点に拡縮・回転するため、`worldContainer.pivot` を画面中心に設定する。
+
+---
+
+■ 不具合防止のポイント
+- Undo/Redo では world 座標データを保存するため、カメラ操作後も線が正しい位置に再現される。
+- 画面外からの描画も world に保持されるため消えない。
+- 微小な入力で拡縮＋回転が同時に入らないよう、操作開始方向の判定ロジックを必須とする。
+
+---
+
+■ 簡易サンプルコード（お手本抜粋）
+
+```js
+// ワールドコンテナ作成
+const worldContainer = new PIXI.Container();
+app.stage.addChild(worldContainer);
+
+// レイヤーを格納
+worldContainer.addChild(backgroundLayer);
+worldContainer.addChild(drawingLayer);
+
+// ピボットを画面中心に設定
+worldContainer.pivot.set(app.renderer.width / 2, app.renderer.height / 2);
+worldContainer.position.set(app.renderer.width / 2, app.renderer.height / 2);
+
+// ポインタ座標をワールド系に変換
+function pointerToWorld(e) {
+  const global = new PIXI.Point();
+  app.renderer.plugins.interaction.mapPositionToPoint(global, e.clientX, e.clientY);
+  return worldContainer.toLocal(global);
+}
+
+// カメラ操作（例: Space+ドラッグで移動）
+function moveCamera(dx, dy) {
+  worldContainer.position.x += dx;
+  worldContainer.position.y += dy;
+}
+
+// カメラ操作（例: 拡縮）
+function zoomCamera(scaleDelta) {
+  worldContainer.scale.x *= scaleDelta;
+  worldContainer.scale.y *= scaleDelta;
+}
+
+■ 今後の発展
+
+慣性スクロール・スナップなどの追加
+
+pixi-viewport への置換による高度なカメラ制御（必要であれば）
+
+Spine 導入時にも同じ worldContainer 上で一貫して管理可能
+
+
+---
+
+👉 この改修計画書をベースにすれば、**「カメラ窓が動かない」問題を回避しつつ、world 全体を一括で移動・回転・拡縮・反転できる実装**に進めます。  
+
+※下記はサンプルコードです。参考にしてください
+
+
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8"/>
+<title>v8rev6 — WorldView Camera + Pen (single layer)</title>
+<script src="https://pixijs.download/release/pixi.min.js"></script>
+<style> body{margin:0;overflow:hidden;background:#222;} canvas{display:block;} </style>
+</head>
+<body>
+<script>
+/*
+  WorldView camera + pen sample
+  - worldContainer: all drawing objects go here
+  - pen points saved in layer-local coords (here single layer -> world-local)
+  - Space + drag -> pan
+  - Shift + Space + drag -> vertical -> zoom, horizontal -> rotate (mode decided at start)
+  - Wheel -> zoom, Shift+Wheel -> rotate
+  - H / Shift+H -> flip (scale.x *= -1 / scale.y *= -1)
+  - Home -> reset camera
+  - Undo: Ctrl+Z, Redo: Ctrl+Y
+*/
+
+const app = new PIXI.Application({
+  resizeTo: window,
+  backgroundColor: 0x1e1e1e,
+  antialias: true,
+});
+document.body.appendChild(app.view);
+
+// ---------- world & layers ----------
+const worldContainer = new PIXI.Container();
+worldContainer.name = 'worldContainer';
+app.stage.addChild(worldContainer);
+
+// background (grid) and drawing layer inside worldContainer
+const backgroundLayer = new PIXI.Container();
+const drawingLayer = new PIXI.Container();
+worldContainer.addChild(backgroundLayer);
+worldContainer.addChild(drawingLayer);
+
+// cursor/UI layer not affected by camera
+const uiLayer = new PIXI.Container();
+app.stage.addChild(uiLayer);
+
+// sample grid (background)
+const grid = new PIXI.Graphics();
+grid.clear();
+grid.lineStyle(1, 0x333333);
+const G = 2000;
+for (let x=0; x<=G; x += 50) { grid.moveTo(x,0); grid.lineTo(x,G); }
+for (let y=0; y<=G; y += 50) { grid.moveTo(0,y); grid.lineTo(G,y); }
+backgroundLayer.addChild(grid);
+
+// ---------- camera init (center pivot) ----------
+function resetCamera() {
+  const cx = app.renderer.width / 2;
+  const cy = app.renderer.height / 2;
+  // pivot at center so rotate/scale around screen center
+  worldContainer.pivot.set(cx, cy);
+  worldContainer.position.set(cx, cy);
+  worldContainer.scale.set(1, 1);
+  worldContainer.rotation = 0;
+}
+resetCamera();
+
+// ---------- utility: map pointer -> world-local position ----------
+function getWorldPositionFromEvent(e) {
+  // mapPositionToPoint maps CSS client coords into renderer coordinate space
+  const gp = new PIXI.Point();
+  app.renderer.plugins.interaction.mapPositionToPoint(gp, e.clientX, e.clientY);
+  // convert global point into world-local coordinates (drawingLayer uses that space)
+  return worldContainer.toLocal(gp);
+}
+
+// ---------- drawing state & undo/redo ----------
+let strokes = []; // stack of strokes (each stroke = array of points [{x,y},...])
+let redoStack = [];
+
+let currentStroke = null;
+let drawing = false;
+
+// quick function to draw a stroke object onto drawingLayer (Graphics)
+function drawStrokeToGraphics(stroke) {
+  const g = new PIXI.Graphics();
+  g.lineStyle(stroke.width || 2, stroke.color || 0xff0000, 1);
+  if (stroke.points.length > 0) {
+    g.moveTo(stroke.points[0].x, stroke.points[0].y);
+    for (let i=1; i<stroke.points.length; i++) {
+      g.lineTo(stroke.points[i].x, stroke.points[i].y);
+    }
+  }
+  // store a ref for undo (attach stroke id)
+  g._strokeId = stroke.id;
+  drawingLayer.addChild(g);
+  stroke._graphic = g;
+}
+
+// redraw all strokes (clear and re-add) — use when necessary
+function redrawAllStrokes() {
+  drawingLayer.removeChildren();
+  for (const s of strokes) {
+    drawStrokeToGraphics(s);
+  }
+}
+
+// ---------- pen input (single-layer) ----------
+function startStroke(worldPos) {
+  // create stroke with world-local coords
+  const s = {
+    id: Date.now() + Math.random(),
+    points: [ {x: worldPos.x, y: worldPos.y} ],
+    color: 0xff0000,
+    width: 2,
+    _graphic: null
+  };
+  strokes.push(s);
+  // draw incremental
+  drawStrokeToGraphics(s);
+  currentStroke = s;
+  // clear redo stack on new action
+  redoStack = [];
+}
+
+function extendStroke(worldPos) {
+  if (!currentStroke) return;
+  currentStroke.points.push({x: worldPos.x, y: worldPos.y});
+  // update graphic in-place
+  const g = currentStroke._graphic;
+  g.lineTo(worldPos.x, worldPos.y);
+}
+
+function endStroke() {
+  currentStroke = null;
+}
+
+// ---------- Pointer handling with camera vs draw modes ----------
+let cameraMode = false; // true when Space pressed (camera manipulation)
+let shiftPressed = false;
+
+// camera drag state
+let camDrag = { active:false, startX:0, startY:0, mode:null /* move|scale|rotate */, threshold:6 };
+
+// pointerdown
+app.view.addEventListener('pointerdown', (e) => {
+  // left button only
+  if (e.button !== 0) return;
+
+  // if Space held -> camera manipulation
+  if (cameraMode) {
+    camDrag.active = true;
+    camDrag.startX = e.clientX;
+    camDrag.startY = e.clientY;
+    camDrag.mode = null; // undecided until movement > threshold
+    return;
+  }
+
+  // otherwise start drawing
+  const worldP = getWorldPositionFromEvent(e);
+  drawing = true;
+  startStroke(worldP);
+});
+
+// pointermove
+app.view.addEventListener('pointermove', (e) => {
+  if (camDrag.active) {
+    const dx = e.clientX - camDrag.startX;
+    const dy = e.clientY - camDrag.startY;
+    // decide mode on first significant move
+    if (!camDrag.mode) {
+      if (Math.abs(dx) > camDrag.threshold || Math.abs(dy) > camDrag.threshold) {
+        camDrag.mode = (shiftPressed ? (Math.abs(dy) > Math.abs(dx) ? 'scale' : 'rotate') : 'move');
+      } else {
+        return; // still within jitter threshold
+      }
+    }
+    if (camDrag.mode === 'move') {
+      worldContainer.position.x += dx;
+      worldContainer.position.y += dy;
+    } else if (camDrag.mode === 'scale') {
+      const factor = 1 + dy * 0.002; // tweak sensitivity
+      // limit scale to reasonable range
+      const newScaleX = worldContainer.scale.x * factor;
+      const newScaleY = worldContainer.scale.y * factor;
+      if (newScaleX > 0.05 && newScaleX < 20) {
+        worldContainer.scale.x = newScaleX;
+        worldContainer.scale.y = newScaleY;
+      }
+    } else if (camDrag.mode === 'rotate') {
+      worldContainer.rotation += dx * 0.005;
+    }
+    camDrag.startX = e.clientX;
+    camDrag.startY = e.clientY;
+    return;
+  }
+
+  if (!drawing) return;
+  const worldP = getWorldPositionFromEvent(e);
+  extendStroke(worldP);
+});
+
+// pointerup / pointercancel
+function pointerEndHandler(e) {
+  if (camDrag.active) {
+    camDrag.active = false;
+    camDrag.mode = null;
+    return;
+  }
+  if (drawing) {
+    endStroke();
+    drawing = false;
+  }
+}
+app.view.addEventListener('pointerup', pointerEndHandler);
+app.view.addEventListener('pointercancel', pointerEndHandler);
+app.view.addEventListener('pointerleave', pointerEndHandler);
+
+// ---------- wheel: zoom / rotate ----------
+app.view.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const amp = Math.abs(e.deltaY);
+  if (shiftPressed) {
+    worldContainer.rotation += e.deltaY * 0.0015;
+  } else {
+    const factor = 1 - e.deltaY * 0.001;
+    const newScale = worldContainer.scale.x * factor;
+    if (newScale > 0.05 && newScale < 20) {
+      worldContainer.scale.x = newScale;
+      worldContainer.scale.y = newScale;
+    }
+  }
+}, {passive:false});
+
+// ---------- keyboard: Space, Shift, H, Home, Arrow keys, Undo/Redo ----------
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    cameraMode = true;
+    // when cameraMode active we should prevent page scroll
+    e.preventDefault();
+  }
+  if (e.shiftKey) shiftPressed = true;
+
+  // arrow keys for nudging camera when space held
+  if (cameraMode) {
+    const step = e.shiftKey ? 50 : 10;
+    if (e.code === 'ArrowUp') { worldContainer.position.y -= step; e.preventDefault(); }
+    if (e.code === 'ArrowDown') { worldContainer.position.y += step; e.preventDefault(); }
+    if (e.code === 'ArrowLeft') { worldContainer.position.x -= step; e.preventDefault(); }
+    if (e.code === 'ArrowRight') { worldContainer.position.x += step; e.preventDefault(); }
+  }
+
+  // flip
+  if (e.code === 'KeyH') {
+    if (e.shiftKey) worldContainer.scale.y *= -1;
+    else worldContainer.scale.x *= -1;
+  }
+
+  // Home: reset camera
+  if (e.code === 'Home') {
+    resetCamera();
+  }
+
+  // Undo/Redo
+  if (e.ctrlKey && e.code === 'KeyZ') {
+    // Undo
+    if (strokes.length > 0) {
+      const s = strokes.pop();
+      redoStack.push(s);
+      // remove graphic if exists
+      if (s._graphic) drawingLayer.removeChild(s._graphic);
+    }
+  }
+  if (e.ctrlKey && e.code === 'KeyY') {
+    // Redo
+    if (redoStack.length > 0) {
+      const s = redoStack.pop();
+      strokes.push(s);
+      drawStrokeToGraphics(s);
+    }
+  }
+});
+
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'Space') cameraMode = false;
+  if (!e.shiftKey) shiftPressed = false;
+});
+
+// ---------- debug helper: show current camera transform ----------
+const debugText = new PIXI.Text('', {fontFamily:'monospace', fontSize:12, fill:0xFFFFFF});
+debugText.x = 8; debugText.y = 8;
+uiLayer.addChild(debugText);
+app.ticker.add(() => {
+  debugText.text = `cam pos: ${worldContainer.position.x.toFixed(1)}, ${worldContainer.position.y.toFixed(1)}  scale: ${worldContainer.scale.x.toFixed(3)} rot: ${worldContainer.rotation.toFixed(3)}`;
+});
+
+// ensure drawing still visible after resize: re-center pivot if viewport size changed
+let lastW = app.renderer.width, lastH = app.renderer.height;
+window.addEventListener('resize', () => {
+  const cx = app.renderer.width / 2;
+  const cy = app.renderer.height / 2;
+  // preserve visual center: if pivot was centered previously, keep center
+  worldContainer.pivot.set(cx, cy);
+  // when pivot moves, set position to pivot to keep view consistent
+  worldContainer.position.set(cx, cy);
+  lastW = app.renderer.width; lastH = app.renderer.height;
+});
+
+</script>
+</body>
+</html>
+
+1.必ず getWorldPositionFromEvent(e) を使って描画点を得る（既存の offsetX/Y を使わない）
+
+これが「カメラ移動しても描いた場所がズレない」肝。
+
+2.worldContainer に全ての描画物（背景・線・画像）を入れる
+
+UI（ツールバー、カーソル等）は app.stage に直に置く。これで UI はカメラ移動の影響を受けない。
+
+pivot と position の扱い
+
+3.pivot は画面中心に設定して回転/スケールの支点とする（pivot = center + position = center）。
+
+パン（移動）は position.x/y の加算で行う。pivot をいじると見かけがおかしくなるので「移動は position」、「回転・拡縮は pivot を支点にする」という使い分けを守る。
+
+4.Undo/Redo
+
+ここでは簡易スタックを入れてある。実システムに移す際は stroke にメタ情報（layerId, blendMode 等）を添付すること。
+
+5.しきい値 / 感度の調整
+
+camDrag.threshold / scale sensitivity / rotation sensitivity は UX に合わせ微調整してください。
+
+次にやると良いこと（オプション）：
+
+既存 rev6 の描画コード（特に Undo/Redo・ストローク保存部分）をこの strokes 構造に合わせて置き換える
+
+カメラ移動時に慣性（deceleration）を追加する
+
+
+※資料
+ふたばチャンネルカラー
+--futaba-maroon: #800000;     （アクティブペンカラー：デフォルトペン色）
+--futaba-light-maroon: #aa5a56;
+--futaba-medium: #cf9c97;
+--futaba-light-medium: #e9c2ba;
+--futaba-cream: #f0e0d6;  （キャンバス背景レイヤー0：デフォルト色）
+--futaba-background: #ffffee;
