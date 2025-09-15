@@ -1,0 +1,238 @@
+# Futaba Drawing Tool v8 ルールブック - スター型改修版
+
+## 序文
+
+このルールブックは、Futaba Drawing Tool v8（PixiJS v8ベース）の現状分析と、**スター型アーキテクチャ**への段階的改修方針をまとめたものである。
+
+現在のダブル・スター方式から、**単一の主星Hub + 専門衛星群**に移行し、AI可読性と保守性を向上させる。
+
+---
+
+## 🎯 現状分析
+
+### 現在の問題
+- **主星A（futaba_main.html）**: 4000行超で既に肥大化、DrawingEngine + UI + Bootstrap が混在
+- **主星B（futaba_tools.js）**: LayerManager + DrawingTools + InterfaceManager が混在
+- **状態管理**: レイヤー・履歴・ツール状態が分散し、フロー追跡困難
+
+### AI可読性への課題
+- イベント → 状態 → 描画のフローが複雑化
+- 改修時に複数ファイルを同時に変更する必要
+- 責務境界が曖昧で、依存関係が複雑
+
+---
+
+## 🌟 新方式：スター型アーキテクチャ
+
+```
+      A1 (状態衛星)     A2 (履歴衛星)
+           ↘               ↙
+             主星Hub (統合制御)
+           ↗               ↘
+      B1 (ツール衛星)    B2 (描画衛星)
+```
+
+### 基本設計思想
+1. **単一責務の原則**: 各衛星は1つの明確な責務のみ担当
+2. **依存の一方向化**: 衛星 → 主星Hub の単方向フロー
+3. **状態の一元管理**: 全状態管理はA1衛星で完結
+4. **改修の局所化**: 機能追加・修正は対応衛星のみで完結
+
+---
+
+## 📁 新ファイル構成
+
+### Phase 1（現在）: 肥大化した2ファイル
+```
+📄 futaba_main.html     (4000行超 - 肥大化)
+📄 futaba_tools.js      (3000行超 - 混在)
+```
+
+### Phase 2（改修後）: スター型衛星群
+```
+📄 futaba_hub.html      (主星Hub: 1500行以内)
+📄 A1_state_satellite.js    (状態衛星: レイヤー・ツール・履歴)
+📄 B1_drawing_satellite.js  (描画衛星: PIXI描画処理)
+📄 B2_interface_satellite.js (UI衛星: DOM操作・イベント)
+📄 B3_tools_satellite.js    (ツール衛星: ペン・消しゴム等)
+```
+
+---
+
+## 🛰️ 各衛星の責務定義
+
+### 主星Hub（futaba_hub.html）
+**【唯一の責務】**: 衛星間の調整・ルーティング
+- **含む要素**:
+  - AppBootstrap（ライブラリ初期化）
+  - SatelliteOrchestrator（衛星管理）
+  - EventDispatcher（イベント配信）
+  - 基本DOM構造
+
+### A1_state_satellite.js（状態衛星）
+**【唯一の責務】**: 全状態の一元管理
+- **含む要素**:
+  ```javascript
+  class StateManager {
+    layers: []              // レイヤー配列
+    activeLayerId: number   // 選択中レイヤー
+    currentTool: string     // 選択中ツール
+    toolSettings: {}        // ツール設定
+    undoStack: []          // アンドゥ履歴
+    redoStack: []          // リドゥ履歴
+  }
+  ```
+
+### B1_drawing_satellite.js（描画衛星）
+**【唯一の責務】**: PIXI描画処理
+- **含む要素**:
+  - DrawingEngine（PIXIアプリ管理）
+  - PathRenderer（ベクター描画）
+  - LayerRenderer（レイヤー描画）
+
+### B2_interface_satellite.js（UI衛星）
+**【唯一の責務】**: DOM操作・UI制御
+- **含む要素**:
+  - LayerPanelController
+  - PopupManager
+  - StatusBarController
+
+### B3_tools_satellite.js（ツール衛星）
+**【唯一の責務】**: ツール固有処理
+- **含む要素**:
+  - VectorPenTool
+  - EraserTool
+  - ResizeTool
+
+---
+
+## 🔄 改修手順
+
+### Step 1: A1状態衛星の作成
+1. **現在のレイヤー状態を抽出**
+   - `LayerManager`から状態管理部分のみ切り出し
+   - `layers`, `activeLayerId`, `layerOrder`を移植
+   - 履歴管理（`undoStack`, `redoStack`）を統合
+
+2. **ツール状態を統合**
+   - `currentTool`, `toolSettings`を追加
+   - 一元的な状態更新API提供
+
+3. **主星Hubから呼び出し可能にする**
+
+### Step 2: 主星Hubのスリム化
+1. **futaba_main.html → futaba_hub.html にリネーム**
+2. **不要なクラスを削除**
+   - `DrawingEngine` → B1衛星へ移動
+   - `DomPositionManager` → B2衛星へ移動
+   - `SystemMonitor` → B2衛星へ移動
+
+3. **衛星オーケストレーターを追加**
+
+### Step 3: B系衛星の分離
+1. **B1（描画）**: PIXI関連処理を集約
+2. **B2（UI）**: DOM操作・イベント処理を集約  
+3. **B3（ツール）**: ツール固有ロジックを集約
+
+### Step 4: 依存関係の整理
+1. **一方向フロー確立**: 衛星 → Hub → 他衛星
+2. **状態の一元化**: 全状態はA1経由のみ
+3. **テスト・動作確認**
+
+---
+
+## 📋 命名規則
+
+### ファイル命名
+- **主星Hub**: `futaba_hub.html`
+- **A系衛星**: `A1_state_satellite.js`, `A2_history_satellite.js`...
+- **B系衛星**: `B1_drawing_satellite.js`, `B2_interface_satellite.js`...
+
+### クラス命名  
+- **Managerクラス**: `StateManager`, `LayerManager`, `ToolManager`
+- **Controllerクラス**: `AppController`, `LayerPanelController`
+- **衛星インスタンス**: `stateSatellite`, `drawingSatellite`
+
+### 状態変数命名
+```javascript
+// A1_state_satellite.js内
+const state = {
+  // レイヤー関連
+  layers: [],
+  activeLayerId: null,
+  layerOrder: [],
+  
+  // ツール関連  
+  currentTool: 'pen',
+  toolSettings: { pen: {}, eraser: {} },
+  
+  // 履歴関連
+  undoStack: [],
+  redoStack: []
+};
+```
+
+---
+
+## 🚀 改修による効果
+
+### AI可読性の向上
+- **フロー簡素化**: イベント → A1状態更新 → B系描画
+- **責務明確化**: 各衛星は単一機能のみ
+- **改修局所化**: 1つの衛星のみ変更すれば完了
+
+### 保守性の向上  
+- **ファイルサイズ制限**: 各ファイル1500行以内
+- **テスタビリティ**: 衛星単体でテスト可能
+- **並行開発**: 衛星ごとに独立して開発可能
+
+### 拡張性の向上
+- **新ツール追加**: B3衛星に追加するのみ
+- **アニメーション機能**: B4衛星として独立追加
+- **書き出し機能**: B5衛星として独立追加
+
+---
+
+## 🎯 成功指標
+
+### Phase 2完了時点での指標
+- [ ] 主星Hubが1500行以内
+- [ ] 各衛星が1000行以内  
+- [ ] 状態変更が全てA1経由
+- [ ] フロー追跡が一方向で完結
+- [ ] 1つの機能修正で1つの衛星のみ変更
+
+### AI支援開発の実現
+- [ ] Claude等AIが主星Hubのみで全体構造把握可能
+- [ ] 衛星単位での改修提案が可能
+- [ ] 新機能追加時の影響範囲が明確
+
+---
+
+## 🔮 将来展望
+
+### Phase 3: 高度機能の衛星化
+```
+📄 futaba_hub.html           (主星Hub)
+📄 A1_state_satellite.js     (状態管理)
+📄 B1_drawing_satellite.js   (描画処理)
+📄 B2_interface_satellite.js (UI制御)
+📄 B3_tools_satellite.js     (基本ツール)
+📄 B4_animation_satellite.js (SPINE/Live2D)
+📄 B5_physics_satellite.js   (物理演算)
+📄 B6_export_satellite.js    (書き出し機能)
+```
+
+### 最終目標
+**「AIが主星Hubを見るだけで全体を理解し、適切な衛星への改修提案ができる理想的なスター型アーキテクチャ」**の実現
+
+---
+
+## 📌 改修着手方針
+
+現在の優先度：
+1. **最優先**: A1_state_satellite.js の作成（状態の一元化）
+2. **第2優先**: futaba_hub.html のスリム化（主星の軽量化）  
+3. **第3優先**: B1-B3衛星の分離（機能の専門化）
+
+この方針により、段階的かつ安全に現在の肥大化した構造から理想的なスター型への移行を実現する。

@@ -1,0 +1,675 @@
+# 📚 Tegaki Symbol Dictionary v6 - Phase1.5対応
+
+> **確定API仕様・用語・記号統一定義** - 実装完了後の確定事項のみ記載
+
+## 🌐 グローバル名前空間（確定）
+
+### window.Tegaki.*（必須登録）
+```javascript
+window.Tegaki = {
+    // === Phase1確定クラス ===
+    TegakiApplication,          // app-core.js で定義
+    AppCore,                    // main.js で定義  
+    CanvasManager,              // canvas-manager.js で定義
+    ToolManager,                // tool-manager.js で定義
+    PenTool,                    // pen-tool.js で定義
+    EraserTool,                 // eraser-tool.js で定義
+    AbstractTool,               // abstract-tool.js で定義
+    
+    // === Phase1.5確定クラス ===
+    NavigationManager,          // navigation-manager.js で定義
+    RecordManager,              // record-manager.js で定義
+    CoordinateManager,          // coordinate-manager.js で定義
+    ShortcutManager,            // shortcut-manager.js で定義
+    
+    // === ユーティリティクラス ===
+    ErrorManager,               // error-manager.js で定義
+    ConfigManager,              // config-manager.js で定義
+    EventBus,                   // event-bus.js で定義
+    TegakiIcons,               // icons.js で定義
+    
+    // === インスタンス（自動作成） ===
+    ErrorManagerInstance,       // error-manager.js で作成
+    ConfigManagerInstance,      // config-manager.js で作成
+    EventBusInstance,          // event-bus.js で作成
+    NavigationManagerInstance, // navigation-manager.js で作成
+    RecordManagerInstance,     // record-manager.js で作成
+    CoordinateManagerInstance, // coordinate-manager.js で作成
+    ShortcutManagerInstance,   // shortcut-manager.js で作成
+    
+    // === Phase1-1.5共通インスタンス ===
+    CanvasManagerInstance,     // main.js で作成
+    ToolManagerInstance        // main.js で作成
+};
+
+// デバッグ用グローバル参照
+window.TegakiAppInstance;      // bootstrap.js で作成
+```
+
+## 🎯 TegakiApplication（app-core.js）
+
+### プロパティ（確定）
+```javascript
+class TegakiApplication {
+    initialized: boolean        // 初期化状態
+    pixiApp: PIXI.Application  // PixiJS Application
+    appCore: AppCore           // AppCore インスタンス
+}
+```
+
+### メソッド（実装確定）
+```javascript
+// 初期化系
+constructor()                           // インスタンス化・自動初期化
+async initialize()                      // 基本初期化実行
+async initializeAppCore()              // AppCore作成・初期化
+createCanvas()                         // PixiJS Application作成・DOM配置
+setupUI()                             // UIイベント設定
+
+// イベント処理系
+setupCanvasEvents()                    // キャンバスイベント設定
+setupToolButtons()                     // ツールボタンイベント
+selectTool(toolName: string)           // ツール選択
+updateToolButtons(activeToolName)      // ツールボタンUI更新
+updateStatusDisplay()                  // ステータス表示更新
+
+// ポインターイベント系
+handlePointerDown(e: PointerEvent)     // ポインター押下
+handlePointerMove(e: PointerEvent)     // ポインター移動  
+handlePointerUp(e: PointerEvent)       // ポインター解放
+
+// ユーティリティ系
+showSuccessMessage()                   // 起動完了通知
+getDebugInfo()                        // デバッグ情報取得
+```
+
+## 🖊️ AppCore（main.js）
+
+### プロパティ（確定）
+```javascript
+class AppCore {
+    initialized: boolean       // 初期化状態
+    canvasManager: CanvasManager    // CanvasManager参照
+    toolManager: ToolManager   // ToolManager参照
+}
+```
+
+### メソッド（実装確定）
+```javascript
+// 初期化系
+constructor()                          // インスタンス作成
+async initialize()                     // Manager作成・連携設定
+
+// Manager管理系
+setPixiApp(pixiApp: PIXI.Application) // CanvasManagerにPixiApp設定
+getCanvasManager()                     // CanvasManager取得
+getToolManager()                       // ToolManager取得
+
+// 状態確認系
+isReady(): boolean                     // 初期化完了確認
+performBasicChecks()                   // 基本機能確認
+
+// ライフサイクル系
+start()                               // アプリケーション開始
+destroy()                             // クリーンアップ
+getDebugInfo()                        // デバッグ情報取得
+```
+
+## 🎨 CanvasManager（managers/canvas-manager.js）
+
+### プロパティ（確定）
+```javascript
+class CanvasManager {
+    pixiApp: PIXI.Application          // PixiJS Application参照
+    layers: Map<string, PIXI.Container> // レイヤーMap
+    initialized: boolean               // 初期化状態
+}
+```
+
+### メソッド（実装確定）  
+```javascript
+// PixiJS管理系
+setPixiApp(pixiApp: PIXI.Application) // PixiJS Application設定
+getPixiApp(): PIXI.Application        // PixiJS Application取得
+
+// レイヤー管理系
+createLayer(layerId: string): PIXI.Container    // レイヤー作成
+getLayer(layerId: string): PIXI.Container       // レイヤー取得  
+getMainLayer(): PIXI.Container                  // メインレイヤー取得
+addGraphicsToLayer(graphics, layerId)           // Graphics配置
+
+// キャンバス操作系
+clear()                               // 全レイヤークリア
+clearLayer(layerId: string)           // 特定レイヤークリア
+resizeCanvas(width: number, height: number)     // サイズ変更
+
+// ユーティリティ系
+isReady(): boolean                    // 準備状態確認
+getDebugInfo()                        // デバッグ情報
+```
+
+## 🖊️ ToolManager（managers/tool-manager.js）
+
+### プロパティ（確定）
+```javascript
+class ToolManager {
+    canvasManager: CanvasManager       // CanvasManager参照
+    currentTool: Tool                  // 現在選択ツール
+    currentToolName: string            // 現在ツール名
+    tools: Map<string, Tool>           // ツールMap
+}
+```
+
+### メソッド（実装確定）
+```javascript
+// Manager連携系
+setCanvasManager(canvasManager)        // CanvasManager設定
+
+// ツール管理系
+createTools()                          // ツール作成（内部）
+selectTool(toolName: string)           // ツール選択
+getCurrentTool(): Tool                 // 現在ツール取得
+getCurrentToolName(): string           // 現在ツール名取得
+
+// イベント転送系
+handlePointerDown(x: number, y: number, event) // ポインター押下転送
+handlePointerMove(x: number, y: number, event) // ポインター移動転送  
+handlePointerUp(x: number, y: number, event)   // ポインター解放転送
+
+// ユーティリティ系
+getDebugInfo()                        // デバッグ情報取得
+```
+
+## 🔧 AbstractTool（tools/abstract-tool.js）- Phase1.5基盤
+
+### プロパティ（基底クラス）
+```javascript
+class AbstractTool {
+    canvasManager: CanvasManager       // CanvasManager参照（共通）
+    toolName: string                   // ツール名（個別設定）
+}
+```
+
+### メソッド（基底実装）
+```javascript
+// Manager連携系（共通）
+setCanvasManager(canvasManager)        // CanvasManager設定
+
+// 抽象メソッド（継承先で実装必須）
+onPointerDown(x: number, y: number, event) // ポインター押下処理
+onPointerMove(x: number, y: number, event) // ポインター移動処理
+onPointerUp(x: number, y: number, event)   // ポインター解放処理
+
+// ユーティリティ系（共通）
+validateCanvasManager()               // CanvasManager存在確認
+getDebugInfo()                        // デバッグ情報取得（基底実装）
+```
+
+## ✏️ PenTool（tools/pen-tool.js）
+
+### プロパティ（確定）
+```javascript
+class PenTool extends AbstractTool {
+    isDrawing: boolean                 // 描画状態
+    currentPath: PIXI.Graphics         // 現在の描画パス
+    points: Array<{x, y}>             // 描画点配列
+    
+    // 描画設定
+    color: number                      // 線色（16進数）
+    lineWidth: number                  // 線幅
+    opacity: number                    // 不透明度
+}
+```
+
+### メソッド（実装確定）
+```javascript
+// 描画イベント系（AbstractTool実装）
+onPointerDown(x: number, y: number, event) // 描画開始
+onPointerMove(x: number, y: number, event) // 描画継続
+onPointerUp(x: number, y: number, event)   // 描画終了
+
+// 設定変更系
+setPenColor(color: string|number)      // 色変更
+setPenWidth(width: number)             // 線幅変更  
+setPenOpacity(opacity: number)         // 不透明度変更
+
+// ユーティリティ系
+getSettings()                          // 現在設定取得
+getDebugInfo()                         // デバッグ情報
+```
+
+## 🧹 EraserTool（tools/eraser-tool.js）
+
+### プロパティ（確定）
+```javascript
+class EraserTool extends AbstractTool {
+    isErasing: boolean                 // 消去状態
+    eraserSize: number                 // 消しゴムサイズ
+}
+```
+
+### メソッド（実装状況）
+```javascript
+// Manager連携系（AbstractTool継承）
+setCanvasManager(canvasManager)        // CanvasManager設定
+
+// 消去イベント系（実装状況要確認）
+onPointerDown(x: number, y: number, event) // 消去開始
+onPointerMove(x: number, y: number, event) // 消去継続  
+onPointerUp(x: number, y: number, event)   // 消去終了
+
+// 設定変更系
+setEraserSize(size: number)            // 消しゴムサイズ変更
+
+// ユーティリティ系
+getDebugInfo()                         // デバッグ情報取得
+```
+
+## 🧭 NavigationManager（js/utils/navigation-manager.js）- Phase1.5
+
+### プロパティ（確定）
+```javascript
+class NavigationManager {
+    canvasManager: CanvasManager       // CanvasManager参照
+    transform: Object                  // 変形状態 {x, y, scale, rotation}
+    isDragging: boolean               // ドラッグ状態
+    lastPointerPosition: {x, y}       // 最後のポインター位置
+}
+```
+
+### メソッド（実装確定）
+```javascript
+// Manager連携系
+setCanvasManager(canvasManager)        // CanvasManager設定
+
+// キャンバス変形系
+panCanvas(deltaX: number, deltaY: number)     // パン（移動）
+zoomCanvas(scale: number, centerX?: number, centerY?: number) // ズーム
+rotateCanvas(angle: number, centerX?: number, centerY?: number) // 回転
+resetCanvasTransform()                 // 変形リセット
+
+// 変形状態管理系
+getCanvasTransform(): Object           // 現在の変形状態取得
+setCanvasTransform(transform: Object)  // 変形状態設定
+saveTransformState()                   // 変形状態保存
+restoreTransformState()                // 変形状態復元
+
+// イベント処理系
+handlePanStart(x: number, y: number)   // パン開始
+handlePanMove(x: number, y: number)    // パン移動
+handlePanEnd()                         // パン終了
+handleWheel(event: WheelEvent)         // マウスホイール
+
+// ユーティリティ系
+isReady(): boolean                     // 準備状態確認
+getDebugInfo()                         // デバッグ情報取得
+```
+
+## 📝 RecordManager（js/utils/record-manager.js）- Phase1.5
+
+### プロパティ（確定）
+```javascript
+class RecordManager {
+    canvasManager: CanvasManager       // CanvasManager参照
+    history: Array<OperationRecord>    // 操作履歴
+    currentIndex: number               // 現在位置
+    maxHistorySize: number            // 最大履歴サイズ
+}
+```
+
+### メソッド（実装確定）
+```javascript
+// Manager連携系
+setCanvasManager(canvasManager)        // CanvasManager設定
+
+// 操作記録系
+recordOperation(operation: Object)     // 操作記録
+recordDraw(graphics: PIXI.Graphics, layerId: string) // 描画記録
+recordErase(targetInfo: Object)        // 消去記録
+recordTransform(transformData: Object) // 変形記録
+
+// Undo/Redo系
+canUndo(): boolean                     // Undo可能確認
+canRedo(): boolean                     // Redo可能確認
+undo(): boolean                        // Undo実行
+redo(): boolean                        // Redo実行
+
+// 履歴管理系
+clearHistory()                         // 履歴クリア
+getHistoryInfo(): Object              // 履歴情報取得
+setMaxHistorySize(size: number)       // 最大履歴サイズ設定
+
+// ユーティリティ系
+isReady(): boolean                     // 準備状態確認
+getDebugInfo()                         // デバッグ情報取得
+```
+
+## 📐 CoordinateManager（js/utils/coordinate-manager.js）- Phase1.5
+
+### プロパティ（確定）
+```javascript
+class CoordinateManager {
+    canvasManager: CanvasManager       // CanvasManager参照
+    navigationManager: NavigationManager // NavigationManager参照
+}
+```
+
+### メソッド（実装確定）
+```javascript
+// Manager連携系
+setCanvasManager(canvasManager)        // CanvasManager設定
+setNavigationManager(navigationManager) // NavigationManager設定
+
+// 座標変換系
+screenToCanvas(screenX: number, screenY: number): {x, y} // スクリーン→キャンバス
+canvasToScreen(canvasX: number, canvasY: number): {x, y} // キャンバス→スクリーン
+getCanvasRect(): DOMRect              // キャンバス要素位置取得
+getTransformedCoordinates(x: number, y: number): {x, y} // 変形考慮座標
+
+// イベント座標系
+extractPointerCoordinates(event: PointerEvent): {x, y} // イベント座標抽出
+normalizeCoordinates(x: number, y: number): {x, y} // 座標正規化
+
+// ユーティリティ系
+isReady(): boolean                     // 準備状態確認
+getDebugInfo()                         // デバッグ情報取得
+```
+
+## ⌨️ ShortcutManager（js/utils/shortcut-manager.js）- Phase1.5
+
+### プロパティ（確定）
+```javascript
+class ShortcutManager {
+    shortcuts: Map<string, Function>   // ショートカットMap
+    keyState: Set<string>             // 押下中キー状態
+    enabled: boolean                  // ショートカット有効状態
+}
+```
+
+### メソッド（実装確定）
+```javascript
+// ショートカット登録系
+registerShortcut(key: string, callback: Function) // ショートカット登録
+registerCombo(keys: string[], callback: Function) // 組み合わせ登録
+unregisterShortcut(key: string)       // ショートカット削除
+
+// ショートカット制御系
+enable()                              // ショートカット有効化
+disable()                             // ショートカット無効化
+isEnabled(): boolean                  // 有効状態確認
+
+// イベント処理系
+handleKeyDown(event: KeyboardEvent)   // キー押下処理
+handleKeyUp(event: KeyboardEvent)     // キー解放処理
+
+// デフォルトショートカット系
+registerDefaultShortcuts()            // デフォルト登録
+// Ctrl+Z: Undo, Ctrl+Y: Redo, Space: Pan Mode, +/-: Zoom等
+
+// ユーティリティ系
+getDebugInfo()                        // デバッグ情報取得
+```
+
+## 🚨 ErrorManager（js/utils/error-manager.js）
+
+### プロパティ（確定）
+```javascript
+class ErrorManager {
+    errors: Array<ErrorRecord>         // エラー記録配列
+    maxErrors: number                 // 最大記録数
+}
+```
+
+### メソッド（実装確定）
+```javascript
+// エラー表示系（専任責務）
+showError(type: string, message: string, options?) // エラー表示
+showVisualNotification(type, message, options)     // 視覚通知
+
+// ショートカット系
+showInfo(message: string, options?)    // 情報表示
+showWarning(message: string, options?) // 警告表示
+showCritical(message: string, options?) // 重要エラー表示
+
+// 記録管理系
+getErrors(): Array                     // エラー記録取得
+clear()                               // エラー記録クリア
+setMaxErrors(count: number)           // 最大記録数設定
+
+// 内部処理系（色設定）
+getBackgroundColor(type): string       // 背景色取得
+getTextColor(type): string            // テキスト色取得  
+getBorderColor(type): string          // ボーダー色取得
+
+// ユーティリティ系
+getDebugInfo()                        // デバッグ情報取得
+```
+
+## ⚙️ ConfigManager（js/utils/config-manager.js）
+
+### メソッド（基本実装確定）  
+```javascript
+// 設定管理系
+getCanvasConfig(): Object             // キャンバス設定取得
+getToolConfig(toolName: string): Object // ツール設定取得
+getNavigationConfig(): Object         // ナビゲーション設定取得
+getShortcutConfig(): Object           // ショートカット設定取得
+
+// 設定更新系
+updateCanvasConfig(config: Object)    // キャンバス設定更新
+updateToolConfig(toolName: string, config: Object) // ツール設定更新
+
+// ユーティリティ系
+getDebugInfo()                        // デバッグ情報取得
+```
+
+## 📡 EventBus（js/utils/event-bus.js）
+
+### メソッド（基本実装確定）
+```javascript
+// イベント配信系
+on(eventName: string, callback: Function) // イベント登録
+emit(eventName: string, data?: any)   // イベント発火
+off(eventName: string, callback?: Function) // イベント削除
+once(eventName: string, callback: Function) // 一回限りイベント
+
+// イベント管理系
+listEvents(): string[]                // 登録イベント一覧
+hasListeners(eventName: string): boolean // リスナー存在確認
+clear()                              // 全イベント削除
+
+// ユーティリティ系
+getDebugInfo()                       // デバッグ情報取得
+```
+
+## 🎨 TegakiIcons（assets/icons.js）
+
+### プロパティ（確定）
+```javascript
+TegakiIcons = {
+    svgData: Object                    // SVG定義データ（9アイコン）
+    buttonMappings: Object             // ボタンID→アイコン名マッピング
+}
+```
+
+### メソッド（実装確定）
+```javascript
+// アイコン生成系
+createIcon(iconName: string, options?: Object): SVGElement // SVGアイコン要素作成
+
+// アイコン配置系
+replaceButtonIcon(buttonId: string, iconName: string) // 特定ボタンアイコン置換
+replaceAllToolIcons()              // 全ツールボタン一括置換（メイン機能）
+
+// ユーティリティ系
+getDebugInfo(): Object             // デバッグ情報取得
+```
+
+### 対応アイコン（9種類確定）
+```javascript
+// SVG定義済みアイコン
+'download'   // ダウンロード（@tabler/icons）
+'resize'     // リサイズ（@tabler/icons） 
+'palette'    // カラーパレット（lucide-static）
+'pen'        // ベクターペン（lucide-static）
+'eraser'     // 消しゴム（lucide-static）
+'fill'       // 塗りつぶし（lucide-static）
+'select'     // 範囲選択（lucide-static）
+'layers'     // レイヤー（lucide-static）
+'settings'   // 設定（@tabler/icons）
+```
+
+## 🔄 Phase1.5確定初期化フロー
+
+### 🚀 HTML読み込み順序（確定）
+1. **PixiJS CDN** → PixiJS利用可能
+2. **error-manager.js** → ErrorManagerInstance 作成
+3. **config-manager.js** → ConfigManagerInstance 作成  
+4. **event-bus.js** → EventBusInstance 作成
+5. **coordinate-manager.js** → CoordinateManagerInstance 作成
+6. **navigation-manager.js** → NavigationManagerInstance 作成
+7. **record-manager.js** → RecordManagerInstance 作成
+8. **shortcut-manager.js** → ShortcutManagerInstance 作成
+9. **minimal-deps.js** → 最小依存関係処理
+10. **assets/icons.js** → TegakiIcons 定義・利用可能
+11. **canvas-manager.js** → CanvasManager クラス定義
+12. **tool-manager.js** → ToolManager クラス定義
+13. **abstract-tool.js** → AbstractTool クラス定義
+14. **pen-tool.js** → PenTool クラス定義
+15. **eraser-tool.js** → EraserTool クラス定義
+16. **app-core.js** → TegakiApplication クラス定義
+17. **main.js** → AppCore クラス定義
+18. **bootstrap.js** → TegakiApplication インスタンス化
+
+## 🎮 Phase1.5統合フロー（確定）
+
+### 🔄 Manager連携（確定パターン）
+```javascript
+// AppCore初期化時の連携設定
+const canvasManager = new CanvasManager();
+const toolManager = new ToolManager();
+const navigationManager = window.Tegaki.NavigationManagerInstance;
+const recordManager = window.Tegaki.RecordManagerInstance;
+const coordinateManager = window.Tegaki.CoordinateManagerInstance;
+
+// 相互依存設定
+toolManager.setCanvasManager(canvasManager);
+navigationManager.setCanvasManager(canvasManager);
+recordManager.setCanvasManager(canvasManager);
+coordinateManager.setCanvasManager(canvasManager);
+coordinateManager.setNavigationManager(navigationManager);
+```
+
+### 🖊️ ツールでの非破壊編集連携
+```javascript
+// PenTool描画時の記録連携
+onPointerUp(x, y, event) {
+    if (this.currentPath && this.isDrawing) {
+        // 描画完了をRecordManagerに記録
+        window.Tegaki.RecordManagerInstance.recordDraw(
+            this.currentPath, 
+            'main'
+        );
+        
+        this.finalizePath();
+        this.isDrawing = false;
+    }
+}
+```
+
+## 🚫 Phase1.5対象外（未実装・Phase2以降）
+
+### ❌ レイヤー管理（Phase2）
+```javascript
+// 未実装・呼び出し禁止
+LayerManager, LayerObject, LayerPanel
+MultiLayerManager, LayerTransformTool
+```
+
+### ❌ 高度機能（Phase3）
+```javascript
+// 未実装・呼び出し禁止
+AnimationSequence, FrameManager, GIFExporter
+BrushTool, TextureTool, VectorPath, PhysicalBrushRenderer
+AIStrokeProcessor, PerformanceManager
+```
+
+## 🔧 デバッグ・検証用確定シンボル
+
+### 🚨 実行時確認用
+```javascript
+// Phase1.5グローバル名前空間検証
+console.assert(window.Tegaki.NavigationManagerInstance, 'NavigationManager not available');
+console.assert(window.Tegaki.RecordManagerInstance, 'RecordManager not available');
+console.assert(window.Tegaki.CoordinateManagerInstance, 'CoordinateManager not available');
+console.assert(window.Tegaki.ShortcutManagerInstance, 'ShortcutManager not available');
+
+// 基本機能検証
+const debugInfo = window.TegakiAppInstance.getDebugInfo();
+console.log('🎨 App Debug:', debugInfo);
+
+// Phase1.5機能検証
+const navDebug = window.Tegaki.NavigationManagerInstance.getDebugInfo();
+console.log('🧭 Navigation Debug:', navDebug);
+```
+
+## 📊 デバッグ情報構造（確定フォーマット）
+
+### 🎯 共通デバッグ情報フォーマット
+```javascript
+// 全Manager・Tool共通のgetDebugInfo()戻り値構造
+{
+    className: string,                 // クラス名
+    initialized: boolean,              // 初期化状態
+    hasRequiredDeps: boolean,          // 必要依存関係存在確認
+    itemCount: number,                // 管理アイテム数
+    currentState: string,             // 現在状態
+    lastError: string || null,        // 最後のエラー
+    additionalInfo: Object            // クラス固有情報
+}
+```
+
+## ⚙️ 確定設定構造
+
+### 🎨 キャンバス設定
+```javascript
+// ConfigManager.getCanvasConfig() 戻り値
+{
+    width: 800,
+    height: 600,
+    backgroundColor: 0x1a1a1a,
+    antialias: true,
+    resolution: window.devicePixelRatio || 1
+}
+```
+
+### 🖊️ ツール設定
+```javascript
+// ConfigManager.getToolConfig('pen') 戻り値
+{
+    color: 0x800000,
+    lineWidth: 4,
+    opacity: 1.0,
+    lineCap: 'round',
+    lineJoin: 'round'
+}
+```
+
+### 🧭 ナビゲーション設定
+```javascript
+// ConfigManager.getNavigationConfig() 戻り値
+{
+    panSensitivity: 1.0,
+    zoomSensitivity: 0.1,
+    minZoom: 0.1,
+    maxZoom: 10.0,
+    smoothPan: true,
+    smoothZoom: true
+}
+```
+
+---
+
+📝 **更新方針**: 実装完了後に本辞典に確定事項追加・架空メソッド定義禁止  
+🎯 **検証方法**: 各ファイルで `window.Tegaki.XXX` が存在することを確認  
+💀 **基本原則**: 実装されていないメソッドは定義禁止・二重実装禁止

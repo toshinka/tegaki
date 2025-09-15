@@ -1,0 +1,421 @@
+# 🔧 レイヤードラッグ移動 改修計画書 v2.0
+## 失敗知見分析と正しいアプローチによる段階的実装戦略
+
+---
+
+## 📋 失敗原因分析（根本問題の特定）
+
+### ❌ Problem 1: 設計思想違反
+**失敗内容**: SatellitePlan の「衛星は機能提供のみ、状態保持禁止、直接通信禁止」に違反
+**具体的違反**:
+```javascript
+// ❌ 違反例: main.htmlに巨大なLayerDragManagerクラスを追加
+class LayerDragManager {
+    constructor(uiController) {  // 衛星間直接参照
+        this.ui = uiController;  // 状態保持
+        this.dragState = { ... }; // 複雑な状態管理
+    }
+}
+```
+**正しいアプローチ**: MainControllerがイベント仲介、衛星は単純な機能提供のみ
+
+### ❌ Problem 2: イベント駆動設計無視
+**失敗内容**: 直接メソッド呼び出しでレイヤー操作
+**具体的問題**:
+```javascript
+// ❌ 違反: 直接API呼び出し
+window.DrawingEngineAPI?.reorderLayer(layerId, targetIndex);
+
+// ✅ 正解: イベント経由
+MainController.emit('layer-reorder-request', { layerId, targetIndex });
+```
+
+### ❌ Problem 3: PixiJS描画への直接干渉
+**失敗内容**: PointerイベントとHammerJSの競合、描画システムへの不正な介入
+**根本原因**: レイヤーUIドラッグとキャンバス描画の処理が混在
+
+### ❌ Problem 4: 座標系の混在
+**失敗内容**: レイヤーパネル（fixed座標）とキャンバス（transform座標）の処理を同一クラスで管理
+
+---
+
+## 🎯 正しい設計アプローチ（SatellitePlan準拠）
+
+### 🌟 基本原則の再確認
+1. **MainController**: イベント仲介・状態管理・履歴記録のみ
+2. **layer-tool-ui.js**: UI操作の検出と通知のみ、状態変更は禁止
+3. **DrawingEngine**: 描画処理は一切触らない、レイヤーデータ操作のみ
+4. **engine-position.js**: 座標系処理のみ、UI操作には関与しない
+
+### 📡 正しいイベントフロー設計
+```
+[UI操作検出] → layer-tool-ui.js
+     ↓ emit('layer-drag-start')
+[状態管理] → MainController
+     ↓ emit('layer-reorder-request') 
+[データ変更] → DrawingEngine
+     ↓ emit('layer-order-changed')
+[UI更新] → layer-tool-ui.js
+```
+
+---
+
+## 🚀 段階的実装計画（正しいアプローチ）
+
+## Phase 1: イベント型定義・基盤準備（15分）
+
+### 1.1 新しいイベント型定義（MainController）
+```javascript
+// main.html に追加するイベント型
+const LAYER_DRAG_EVENTS = {
+    // UI → MainController
+    'layer-drag-start': { layerId: 'number', startY: 'number' },
+    'layer-drag-move': { layerId: 'number', currentY: 'number', targetIndex: 'number' },
+    'layer-drag-end': { layerId: 'number', targetIndex: 'number' },
+    'layer-drag-cancel': { layerId: 'number' },
+    
+    // MainController → DrawingEngine
+    'layer-reorder-request': { layerId: 'number', fromIndex: 'number', toIndex: 'number' },
+    
+    // DrawingEngine → UI
+    'layer-order-changed': { layerId: 'number', newIndex: 'number', layerList: 'array' },
+    
+    // UI状態管理
+    'layer-drag-preview-update': { layerId: 'number', x: 'number', y: 'number' },
+    'layer-drag-target-highlight': { targetLayerId: 'number', position: 'string' }
+};
+```
+
+### 1.2 MainControllerに状態管理追加
+```javascript
+// main.html のappState に追加
+const appState = {
+    // 既存状態...
+    layerDrag: {
+        active: false,
+        dragLayerId: null,
+        startIndex: -1,
+        targetIndex: -1
+    }
+};
+```
+
+## Phase 2: UI検出機能実装（layer-tool-ui.js修正）（20分）
+
+### 2.1 最小限のドラッグ検出クラス
+```javascript
+// layer-tool-ui.js に追加（既存UIManagerクラス内）
+class LayerDragDetector {
+    constructor() {
+        this.setupEventListeners();
+    }
+    
+    setupEventListeners() {
+        document.addEventListener('mousedown', (e) => this.handleStart(e));
+        document.addEventListener('mousemove', (e) => this.handleMove(e));
+        document.addEventListener('mouseup', (e) => this.handleEnd(e));
+        
+        // ペン対応
+        document.addEventListener('pointerdown', (e) => {
+            if (e.pointerType === 'pen') this.handleStart(e);
+        });
+        document.addEventListener('pointermove', (e) => {
+            if (e.pointerType === 'pen') this.handleMove(e);
+        });
+        document.addEventListener('pointerup', (e) => {
+            if (e.pointerType === 'pen') this.handleEnd(e);
+        });
+    }
+    
+    handleStart(e) {
+        const layerItem = e.target.closest('.layer-item');
+        if (!layerItem) return;
+        
+        // 特定要素での開始は無視
+        if (e.target.closest('.layer-visibility, .layer-delete-button')) return;
+        
+        const layerId = parseInt(layerItem.dataset.layerId);
+        const startY = e.clientY;
+        
+        // MainControllerに通知のみ
+        MainController.emit('layer-drag-start', { layerId, startY });
+        e.preventDefault();
+    }
+    
+    handleMove(e) {
+        const dragState = MainController.getState('layerDrag');
+        if (!dragState.active) return;
+        
+        // 挿入位置計算
+        const targetIndex = this.calculateTargetIndex(e.clientY);
+        
+        MainController.emit('layer-drag-move', {
+            layerId: dragState.dragLayerId,
+            currentY: e.clientY,
+            targetIndex
+        });
+    }
+    
+    handleEnd(e) {
+        const dragState = MainController.getState('layerDrag');
+        if (!dragState.active) return;
+        
+        MainController.emit('layer-drag-end', {
+            layerId: dragState.dragLayerId,
+            targetIndex: dragState.targetIndex
+        });
+    }
+    
+    calculateTargetIndex(mouseY) {
+        // 単純な挿入位置計算（状態変更なし）
+        const layerList = document.getElementById('layer-list');
+        const items = Array.from(layerList.children);
+        // ... 計算ロジック
+        return targetIndex;
+    }
+}
+```
+
+### 2.2 視覚フィードバック機能（状態受信のみ）
+```javascript
+// UIManager クラスに追加
+updateDragPreview(layerId, x, y) {
+    // プレビュー要素の位置更新のみ（状態変更なし）
+}
+
+highlightDragTarget(targetLayerId, position) {
+    // ハイライト表示のみ（状態変更なし）
+}
+```
+
+## Phase 3: MainController イベント処理実装（15分）
+
+### 3.1 ドラッグ状態管理
+```javascript
+// main.html MainController に追加
+MainController.on('layer-drag-start', (payload) => {
+    const { layerId, startY } = payload;
+    
+    // 状態更新
+    MainController.setState('layerDrag', {
+        active: true,
+        dragLayerId: layerId,
+        startIndex: getCurrentLayerIndex(layerId),
+        targetIndex: -1
+    });
+    
+    // UI更新通知
+    MainController.emit('layer-drag-preview-update', {
+        layerId, x: 0, y: startY
+    });
+    
+    // 履歴記録
+    RecordManager.recordAction('layer-drag-start', { layerId });
+});
+
+MainController.on('layer-drag-move', (payload) => {
+    const { layerId, currentY, targetIndex } = payload;
+    
+    // 状態更新
+    MainController.setState('layerDrag.targetIndex', targetIndex);
+    
+    // UI更新通知（プレビュー移動）
+    MainController.emit('layer-drag-preview-update', {
+        layerId, x: 0, y: currentY
+    });
+    
+    // ターゲットハイライト
+    if (targetIndex !== -1) {
+        MainController.emit('layer-drag-target-highlight', {
+            targetLayerId: getLayerIdAtIndex(targetIndex),
+            position: 'above'
+        });
+    }
+});
+
+MainController.on('layer-drag-end', (payload) => {
+    const { layerId, targetIndex } = payload;
+    const dragState = MainController.getState('layerDrag');
+    
+    if (targetIndex !== dragState.startIndex && targetIndex !== -1) {
+        // DrawingEngineに順序変更要求
+        MainController.emit('layer-reorder-request', {
+            layerId,
+            fromIndex: dragState.startIndex,
+            toIndex: targetIndex
+        });
+    }
+    
+    // ドラッグ状態クリア
+    MainController.setState('layerDrag', {
+        active: false,
+        dragLayerId: null,
+        startIndex: -1,
+        targetIndex: -1
+    });
+    
+    // 履歴記録
+    RecordManager.recordAction('layer-reorder', {
+        layerId, fromIndex: dragState.startIndex, toIndex: targetIndex
+    });
+});
+```
+
+## Phase 4: DrawingEngine レイヤー順序変更実装（20分）
+
+### 4.1 DrawingEngine.js に最小限の変更
+```javascript
+// DrawingEngineAPI に追加
+window.DrawingEngineAPI = {
+    // 既存API...
+    
+    // レイヤー順序変更（データ操作のみ）
+    reorderLayer: (layerId, fromIndex, toIndex) => {
+        if (!engineInstance) return false;
+        try {
+            const success = engineInstance.layerManager.reorderLayer(layerId, fromIndex, toIndex);
+            if (success) {
+                // UI更新通知
+                MainController.emit('layer-order-changed', {
+                    layerId,
+                    newIndex: toIndex,
+                    layerList: engineInstance.layerManager.getLayerList()
+                });
+            }
+            return success;
+        } catch (error) {
+            console.error('[DrawingEngine] ReorderLayer failed:', error.message);
+            return false;
+        }
+    }
+};
+
+// MainController からのイベント監視
+MainController.on('layer-reorder-request', (payload) => {
+    const { layerId, fromIndex, toIndex } = payload;
+    window.DrawingEngineAPI.reorderLayer(layerId, fromIndex, toIndex);
+});
+```
+
+### 4.2 LayerManager に順序変更メソッド追加
+```javascript
+// LayerManager クラスに追加
+reorderLayer(layerId, fromIndex, toIndex) {
+    if (fromIndex === toIndex) return false;
+    
+    // 配列操作（データのみ）
+    const layer = this.layers.items[fromIndex];
+    this.layers.items.splice(fromIndex, 1);
+    this.layers.items.splice(toIndex, 0, layer);
+    
+    // PixiJS表示順序更新
+    this.engine.containers.world.removeChildren();
+    this.layers.items.forEach(layer => {
+        this.engine.containers.world.addChild(layer.container);
+    });
+    
+    return true;
+}
+```
+
+## Phase 5: UI更新・フィードバック実装（15分）
+
+### 5.1 layer-tool-ui.js でイベント受信処理
+```javascript
+// UIManager に追加
+MainController.on('layer-drag-preview-update', (payload) => {
+    this.updateDragPreview(payload.layerId, payload.x, payload.y);
+});
+
+MainController.on('layer-drag-target-highlight', (payload) => {
+    this.highlightDragTarget(payload.targetLayerId, payload.position);
+});
+
+MainController.on('layer-order-changed', (payload) => {
+    // レイヤーリスト全体更新
+    this.updateLayerUI();
+    
+    // サムネイル更新要求
+    setTimeout(() => {
+        window.DrawingEngineAPI.updateAllThumbnails();
+    }, 100);
+});
+```
+
+---
+
+## 🔍 この設計の利点（失敗回避策）
+
+### ✅ 1. 設計思想準拠
+- **MainController**: イベント仲介のみ、肥大化なし
+- **衛星**: 単一機能のみ、状態保持なし
+- **直接通信なし**: 全てMainController経由
+
+### ✅ 2. 描画システム非干渉
+- **PixiJS**: 既存の描画処理に一切触らない
+- **座標系分離**: レイヤーUI（fixed）とキャンバス（transform）完全分離
+- **HammerJS**: 既存のパン操作に影響なし
+
+### ✅ 3. 段階的実装・テスト可能
+- **Phase毎に動作確認**: 各段階で完全に動作する
+- **ロールバック容易**: 問題発生時は前のPhaseに戻せる
+- **影響範囲限定**: 既存機能への影響を最小化
+
+### ✅ 4. 拡張性確保
+- **将来機能対応**: レイヤー回転・縮小・反転への拡張が容易
+- **履歴管理**: Undo/Redo完全対応
+- **デバッグ支援**: 各段階でログ・状態確認可能
+
+---
+
+## 📋 実装チェックリスト
+
+### Phase 1: イベント基盤
+- [ ] LAYER_DRAG_EVENTS 定義追加
+- [ ] appState.layerDrag 追加
+- [ ] 基本的なイベント監視テスト
+
+### Phase 2: UI検出
+- [ ] LayerDragDetector クラス実装
+- [ ] マウス・ペンイベント検出テスト
+- [ ] 可視化・削除ボタン除外テスト
+
+### Phase 3: MainController処理
+- [ ] ドラッグ状態管理実装
+- [ ] イベント仲介処理テスト
+- [ ] 履歴記録テスト
+
+### Phase 4: データ操作
+- [ ] reorderLayer API実装
+- [ ] LayerManager 順序変更テスト
+- [ ] PixiJS表示順序更新テスト
+
+### Phase 5: UI更新
+- [ ] プレビュー表示実装
+- [ ] ターゲットハイライト実装
+- [ ] サムネイル更新テスト
+
+### 統合テスト
+- [ ] 全フロー動作テスト
+- [ ] Undo/Redo動作テスト  
+- [ ] 既存機能（描画・カメラ移動）に影響なし確認
+
+---
+
+## ⚠️ 重要注意事項
+
+### 🚫 絶対に避けるべき実装
+1. **layer-tool-ui.js での状態保持**: dragState等の管理は MainController のみ
+2. **衛星間直接通信**: 全てイベント経由必須
+3. **PixiJS描画処理への介入**: レイヤーデータ操作のみ
+4. **座標系の混在**: UI座標とキャンバス座標を同一処理で扱わない
+
+### 🎯 成功の鍵
+1. **厳格な責務分離**: 各ファイルの役割を絶対に越えない
+2. **イベント駆動徹底**: 直接メソッド呼び出し禁止
+3. **段階的実装**: Phase毎の完全動作確認
+4. **既存機能保護**: 描画・カメラ移動に一切影響しない
+
+---
+
+**🌟 この計画により、SatellitePlan設計思想に完全準拠した、安全で拡張可能なレイヤードラッグ移動機能を実現します。**

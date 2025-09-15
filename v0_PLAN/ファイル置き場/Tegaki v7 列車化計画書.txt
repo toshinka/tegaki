@@ -1,0 +1,479 @@
+Tegaki v8 — トレイン化計画書
+
+（v7rev2 からの再分解・改訂版）
+
+1. 背景と目的
+
+v7rev2 は index.html が多責務化 しており、改修コストが高騰する恐れがある。
+
+v8 では 列車型ファイル構造（トレインアーキテクチャ） を採用し、AIによる局所改修を安全に実現する。
+
+特に UIデザイン（SVG, CSS）を分離 することで、index.html の負担を減らし、再利用性を向上させる。
+
+2. 列車型アーキテクチャの基本ルール
+
+依存関係
+
+車両は「前方の車両」にのみ依存可。横断依存は禁止。
+
+分割と肥大化防止
+
+車両が肥大化したら新しい車両を増設。
+
+A車両 = 基盤、B車両 = UIや拡張。
+
+モジュール化
+
+車両内部はモジュール化し、局所改修を可能にする。
+
+main は統合制御に専念し、多責務を持たない。
+
+改修ルール
+
+ファイル先頭に <!-- File: ファイル名 --> を必ず記載。
+
+header は main に統合され、必ず最初に実行される。
+
+理念
+
+列車は「main が順序を管理し、車両が役割ごとに独立して走る」構造とする。
+
+車両は単体で改修・交換可能な状態を維持する。
+
+3. 車両編成（ファイル構成）
+🚋 A車両（基盤）
+
+A0: header
+
+提供メソッド一覧（@provides）と共通定義。
+
+main に統合され、必ず最初に実行。
+
+A1: core
+
+ロジック基盤、演算処理。
+
+安定性重視で改修頻度は低い。
+
+A2: integration / main
+
+全体制御、車両接続管理。
+
+多責務化を避け、UIやデザインには介入しない。
+
+🚋 B車両（拡張）
+
+B1: UI (tegaki-ui.html)
+
+UI構造（DOM, コンポーネント）。
+
+動的SVGやインタラクションを担当。
+
+B2: styles (tegaki-styles.html) ← 新設
+
+CSSによる装飾・配色・レイアウト。
+
+静的SVG（アイコン・装飾）はここに統合。
+
+UIロジックとは完全に分離。
+
+B3: status / extra
+
+状態管理や追加ツール。
+
+4. 改修指針
+
+UIとデザインの分離
+
+index.html の肥大化を防ぐため、SVGやスタイルは必ず tegaki-styles.html に逃がす。
+
+独立改修の保証
+
+デザイン変更は styles のみで完結。
+
+UI改修は UI 車両を対象とし、干渉を避ける。
+
+エラーハンドリング
+
+フォールバック禁止。責務分担で対応。
+
+console.log は必要最小限。
+
+5. 今後の展望
+
+Phase1.5 では UI + styles の基本構成を完成させる。
+
+Phase2 以降は status 車両や追加ツールを検討。
+
+将来的には styles のテーマ切替や外部SVGライブラリ連携を拡張候補とする。
+
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+※下記は、tegaki-styles.html導入決定前のものです。それ以外の部分はこちらが詳しいので参考にしてください。
+＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝＝
+
+
+# Tegaki v8 — トレイン化計画書（v7rev2 からの再分解）
+
+## 0. 目的と前提
+- v7rev2（単一HTML）を **列車型ファイル構造** に再分解し、**読み込み順の安定**・**責務の明確化**・**局所改修性** を最大化する。
+- 旧 A1 は廃止。**旧A2（Core）を A1 に繰上げ**、以降の番号を詰める。
+- **駅（index.html）を導入**し、必ず最初に参照・実行される「総則ヘッダー＋接続表」を配置する。
+- **ES2023 / 素のHTML+JS**（No bundler, No TS, No import/export）。CDN/ビルド無しで GitHub 上から即動作。
+
+---
+
+## 1. ルールブック・ヘッダー（駅に常設：index.html 冒頭に貼付）
+
+🚉 本指示は「列車型ファイル構造」での改修を徹底するためのルールである。  
+中央集約的なツリー型は人間には見やすいが、AI改修には不向き。  
+AIが安全かつ局所的に改修できるよう、以下を常時適用する。
+
+**⚠️ 列車型アーキテクチャ 改修ルール（常時適用）**
+1. 【依存】  
+   - 車両は「前方の車両」にのみ依存可能。横断依存は禁止。
+2. 【分割と肥大化防止】  
+   - 車両が肥大化したら新しい車両を追加。  
+   - A系＝基盤（core / integration）、B系＝UI/拡張。
+3. 【モジュール化】  
+   - 各車両は内部モジュール化し、局所改修可能に。main は統合制御のみ。
+4. 【改修ルール】  
+   - ヘッダー（総則）は駅に集約。  
+   - 各ファイル先頭に `<!-- File: ファイル名 -->` を必ず記載。
+5. 【B車両】  
+   - B車両（UI/status等）は独立改修・追加可能。A車両は安定重視。
+6. 【理念】  
+   - main が順序を管理し、車両は役割ごとに独立運行。  
+   - main への過度な依存を避け、車両を単体で交換できる状態を維持。
+7. 【v7rev2 からの移植方針】  
+   - **完全移植が原則**。省略・簡略化・仕様削除は禁止。  
+   - 省略が必要な場合は、**駅に差分記録（削除理由・代替案・影響範囲）** を残すこと。
+
+**🚫 原則（フォールバック・フェイルセーフ禁止）**  
+- フォールバックや多重化で誤魔化さず、**エラーは検知し隠蔽せず**、責務分担で対処。  
+- 構造は剛直かつシンプルに保ち、冗長化を避ける。  
+- consoleログは必要最低限（初期化要所＋致命・要因特定に必要な警告のみ）。  
+- セーフ機構はルールブック準拠で **車両分担** により実現。
+
+---
+
+## 2. 車両構成（v7rev2 からの最小列車）
+
+**駅（index.html）** … 総則ヘッダー、接続順、初期DOM、スタイル読込
+
+- **A1 - Core（旧A2）** … Canvas生成・描画基盤・リサイズ・状態基礎
+- **A2 - Integration（旧A3）** … イベント配線 / 依存解決 / 車両間API橋渡し
+- **B1 - UI** … サイドバー・ペンポップアップ等のUI（DOM生成・操作）
+- **B2 - Status** … ステータス領域の更新・FPS/サイズ等表示
+- **Styles** … 共通CSS（駅で `<link>` or `<style>` 取り込み）
+
+> 追加候補：**B3 - Tools**（カラーピッカー、ショートカット管理 等）  
+> ※ B3は必要時に増結。初期はB1内モジュールとしても可（肥大化したら切り出し）。
+
+---
+
+## 3. ファイル一覧・責務・読み込み順
+
+### 3.1 駅（index.html）— 必ず最初に読む入口
+```html
+<!-- File: index.html -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8" />
+  <title>Tegaki v8 Train</title>
+
+  <!-- 総則ヘッダー（§1 をここにそのまま貼付） -->
+
+  <!-- Styles -->
+  <link rel="stylesheet" href="./tegaki-styles.html" />
+</head>
+<body>
+  <!-- 初期DOM（駅が用意）：canvas置場・UI置場・status置場 -->
+  <div id="app">
+    <div id="sidebar"></div>
+    <canvas id="drawing-canvas"></canvas>
+    <div id="status-bar"></div>
+  </div>
+
+  <!-- 列車の順に接続（前 → 後）。最後に main（今回 main を持たない構成、駅が起点） -->
+  <script src="./tegaki-a1-core.html"></script>
+  <script src="./tegaki-a2-integration.html"></script>
+  <script src="./tegaki-b1-ui.html"></script>
+  <script src="./tegaki-b2-status.html"></script>
+
+  <script>
+    // 駅が主導で初期化（ES2023）
+    document.addEventListener("DOMContentLoaded", async () => {
+      console.log("[Station] 🚉 boot");
+      await Tegaki.A1.initCore();
+      await Tegaki.A2.wireUp();
+      await Tegaki.B1.initUI();
+      await Tegaki.B2.initStatus();
+      console.log("[Station] ✅ ready");
+    });
+  </script>
+</body>
+</html>
+3.2 A1-Core（旧A2繰上げ）
+html
+コードをコピーする
+<!-- File: tegaki-a1-core.html -->
+<script>
+  window.Tegaki ??= {};
+  Tegaki.A1 = (() => {
+    "use strict";
+
+    // @provides: Canvas lifecycle, Resize handling, Base state
+    // @depends: Station DOM (app, drawing-canvas)
+    // @role: Core engine
+
+    const state = {
+      canvas: null,
+      ctx: null,
+      size: { w: 0, h: 0 },
+      // v7rev2 機能を **完全移植**（省略禁止）
+    };
+
+    function createCanvasRefs() {
+      const canvas = document.getElementById("drawing-canvas");
+      if (!canvas) throw new Error("[A1] drawing-canvas not found");
+      state.canvas = canvas;
+      state.ctx = canvas.getContext("2d", { alpha: true });
+    }
+
+    function fitCanvasToParent() {
+      const el = state.canvas;
+      const rect = el.getBoundingClientRect();
+      const w = Math.floor(rect.width);
+      const h = Math.floor(rect.height);
+      if (w && h && (w !== state.size.w || h !== state.size.h)) {
+        state.size = { w, h };
+        el.width = w; el.height = h;
+      }
+    }
+
+    function bindResize() {
+      const ro = new ResizeObserver(() => fitCanvasToParent());
+      ro.observe(document.getElementById("app"));
+      window.addEventListener("orientationchange", fitCanvasToParent, { passive: true });
+      fitCanvasToParent();
+    }
+
+    async function initCore() {
+      console.log("[A1] init core");
+      createCanvasRefs();
+      bindResize();
+      // v7rev2: 初期描画・既定ツール状態などを **省略せず** 反映
+    }
+
+    return { initCore, state };
+  })();
+</script>
+3.3 A2-Integration
+html
+コードをコピーする
+<!-- File: tegaki-a2-integration.html -->
+<script>
+  window.Tegaki ??= {};
+  Tegaki.A2 = (() => {
+    "use strict";
+
+    // @provides: Event wiring, Cross-car API binding, Contracts
+    // @depends: A1
+    // @role: Integration layer (前方のみ依存)
+
+    function bindContracts() {
+      // 例：B1 UI → A1 Core への描画API委譲
+      // Tegaki.API.drawLine = (p1, p2, style) => { ...A1のstate.ctx... };
+    }
+
+    async function wireUp() {
+      console.log("[A2] wire up");
+      bindContracts();
+    }
+
+    return { wireUp };
+  })();
+</script>
+3.4 B1-UI
+html
+コードをコピーする
+<!-- File: tegaki-b1-ui.html -->
+<script>
+  window.Tegaki ??= {};
+  Tegaki.B1 = (() => {
+    "use strict";
+
+    // @provides: Sidebar, Pen popup, UI controls
+    // @depends: A1, A2
+    // @role: UI
+
+    function buildSidebar() {
+      const sidebar = document.getElementById("sidebar");
+      if (!sidebar) throw new Error("[B1] sidebar not found");
+      sidebar.innerHTML = `
+        <div class="tool-section">
+          <button id="tool-pen">✎ Pen</button>
+          <div id="pen-popup" hidden>
+            <!-- v7rev2 のポップアップ項目を **完全移植** -->
+            <label>Size<input type="range" id="pen-size" min="1" max="64" value="8"></label>
+            <label>Opacity<input type="range" id="pen-alpha" min="1" max="100" value="100"></label>
+          </div>
+        </div>`;
+    }
+
+    function bindPenPopup() {
+      const btn = document.getElementById("tool-pen");
+      const pop = document.getElementById("pen-popup");
+      btn.addEventListener("click", () => { pop.hidden = !pop.hidden; });
+      // 変更イベント → Tegaki.API へ委譲（A2で結線）
+    }
+
+    async function initUI() {
+      console.log("[B1] init UI");
+      buildSidebar();
+      bindPenPopup();
+    }
+
+    return { initUI };
+  })();
+</script>
+3.5 B2-Status
+html
+コードをコピーする
+<!-- File: tegaki-b2-status.html -->
+<script>
+  window.Tegaki ??= {};
+  Tegaki.B2 = (() => {
+    "use strict";
+
+    // @provides: Status bar updates (size, tool, fps etc.)
+    // @depends: A1
+    // @role: Status
+
+    function renderStatus() {
+      const el = document.getElementById("status-bar");
+      if (!el) throw new Error("[B2] status-bar not found");
+      const { w, h } = Tegaki.A1.state.size;
+      el.textContent = `Canvas: ${w}×${h}`;
+    }
+
+    async function initStatus() {
+      console.log("[B2] init Status");
+      renderStatus();
+      // Resize契機に更新（A1からイベント発火にしても良い）
+      window.addEventListener("resize", renderStatus, { passive: true });
+    }
+
+    return { initStatus, renderStatus };
+  })();
+</script>
+3.6 Styles
+html
+コードをコピーする
+<!-- File: tegaki-styles.html -->
+<style>
+  /* @role: Global styles */
+  html, body, #app { height: 100%; margin: 0; }
+  #app { display: grid; grid-template-columns: 240px 1fr; grid-template-rows: 1fr 28px; }
+  #sidebar { grid-row: 1 / 2; grid-column: 1 / 2; overflow: auto; border-right: 1px solid #ddd; }
+  #drawing-canvas { grid-row: 1 / 2; grid-column: 2 / 3; width: 100%; height: 100%; background: #fff; }
+  #status-bar { grid-row: 2 / 3; grid-column: 1 / 3; padding: 4px 8px; font: 12px/1.4 system-ui; background: #f7f7f8; }
+  .tool-section { padding: 8px; }
+</style>
+4. 読み込み順・初期化フロー
+駅（index.html） が順序を強制する：
+A1(Core) → A2(Integration) → B1(UI) → B2(Status) → init()
+初期化は駅から 同期/逐次 で呼び出す（await で順序保証）。
+main 専用ファイルは不要（駅が main 役を兼務）。
+
+単一列車化（駅が主導）のため 読み込み順の問題と相性良好。
+将来、複数列車（デバッグ列車/本番列車）を走らせる場合は、駅を分ける。
+
+ASCII フロー
+
+css
+コードをコピーする
+[Station boot]
+   ├─ A1.initCore()
+   │     └─ canvas参照/生成, resize監視, 基本状態
+   ├─ A2.wireUp()
+   │     └─ API結線（UI→Core描画）
+   ├─ B1.initUI()
+   │     └─ サイドバー/ペンポップアップ構築・イベント
+   └─ B2.initStatus()
+         └─ サイズ/状態表示, 監視
+[ready]
+5. シンボル辞典（トレイン用 ミニヘッダー辞典）
+@provides … 車両が外部へ提供する機能の列挙（API名/領域）
+
+@depends … 依存先車両（前方のみ）。駅DOM依存は Station DOM と明記
+
+@role … 役割（Core / Integration / UI / Status / Tools / Styles）
+
+@contract … 受け渡すコントラクト（例：Tegaki.API.drawLine(p1,p2,style)）
+
+@note … 暫定・将来の切り出し候補（B3化等）
+
+各ファイルの冒頭コメント内に最小限で記述。駅には総則＋接続表を据置。
+
+6. v7rev2 からの移植チェックリスト（省略禁止）
+ Canvas生成/初期化（サイズ・dpi/scale 対応がある場合は反映）
+
+ リサイズ追従（ResizeObserver / orientationchange）
+
+ サイドバー構造（主要ツール）
+
+ ペンポップアップの項目（サイズ/不透明度/色など：一字一句の省略を避ける）
+
+ 入力イベント（pointerdown/move/up, cancel, leave）
+
+ 描画ループ/バッファ（差分描画の有無もそのまま）
+
+ ステータス表示（サイズ/モード/FPS 等、v7rev2が持つ要素を維持）
+
+ 既定値・初期ツール/スタイル（既定サイズ/色/透明度）
+
+ エラーハンドリング（隠蔽しない。駅のコンソールに致命のみ）
+
+ CSS（UI寸法・余白・フォント等を忠実移植）
+
+変更や削除が必要なときは 駅に差分記録 を追記（理由/影響/代替手段/復旧手順）。
+
+7. テスト計画（最小）
+起動：背景のみ表示にならない（UI・Canvas・Status すべて可視）
+
+リサイズ：ウィンドウ/親要素サイズ変更で Canvas & Status が即時追従
+
+ペン：ポップアップが開閉し、設定変更が描画結果に即反映
+
+依存：B1からA1 APIが叩ける（A2の配線確認）
+
+コンソール：起動シーケンスの 要点のみ ログ（肥大化不可）
+
+8. リスクと対応
+読み込み順逸脱：駅が順序を固定（script順＋await init）
+
+責務混在：@provides/@depends/@role を全ファイルに明記し、横断依存を審査
+
+UI肥大化：B1が膨らんだら B3-Tools 等に切り出し（駅で接続表更新）
+
+省略移植：チェックリスト運用＋差分記録の義務化
+
+9. 運用ルール（実務）
+すべての車両ファイル先頭に ファイル名コメント を記す（例：<!-- File: tegaki-b1-ui.html -->）
+
+変更は 最小差分・局所改修。横断修正は駅で計画化→車両に反映
+
+PR/コミットには「駅の差分記録」への追記を伴う（省略・追加・切り出し）
+
+10. 今回の結論
+v7rev2 からのゼロベース再分解 を採用。
+
+駅（index.html）主導・単一列車化 により読み込み順の不安を解消。
+
+A1（旧A2）への繰上げを行い、A2=Integration、B1=UI、B2=Status の最小編成で出発。
+
+ルールブック・シンボル辞典・チェックリストで 省略移植を抑止。
+
+以上。

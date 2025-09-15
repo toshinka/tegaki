@@ -1,0 +1,123 @@
+Futaba Drawing Tool 分割改修計画
+
+💡ファイル分割案
+futaba_main.html     (DOM構造 + Station基盤)
+futaba_tools.js      (機能群)
+問題のあるシンボル定義とリファクタリング提案
+現状の問題点
+
+・不明確な命名: StationManager → 何の管理か不明
+冗長なクラス名: MainController → 何をコントロールするか不明
+混合責任: CoreEngine → コアとエンジンが重複概念
+曖昧な状態管理: cameraState → DOM位置なのにカメラと命名
+
+💡リファクタリング案
+javascript// 【現在】 → 【改修後】
+StationManager → AppInitializer
+MainController → AppController  
+CoreEngine → DrawingEngine
+CameraManager → DomPositionManager
+UIManager → InterfaceManager
+ToolManager → DrawingTools
+PerformanceMonitor → SystemMonitor
+
+📝シンボル辞典
+シンボル　　　　　　　　　　責任範囲　　　　　　　　　　　　　　主要メソッド　　　　　　　　
+AppBootstrap　　　　　初期化・ライブラリ管理         init(), checkLibraries()
+AppController　　　　 アプリ全体制御init(),          setupInputHandlers()
+DrawingEngine         描画・Canvas管理               createPath(), drawLine(), resize()
+DomPositionManager    DOM位置制御                    startPanning(), updatePosition()
+InterfaceManager      UI状態・ポップアップ           togglePopup(), updateSliders()
+DrawingTools          ツール・描画ロジック           startDrawing(), setBrushSize()
+SystemMonitor         パフォーマンス監視             trackFPS(), updateStats()
+
+※ AppController は将来的に UIController / AnimationController / PhysicsController などへ分割される可能性がある。
+※ 各 Controller は明確な責務単位で命名され、AIが処理対象を容易に把握できるよう配慮される。
+※ 将来的に描画やアニメーションの機能が拡張されても、Controller 名から役割を直感的に理解可能にする
+
+
+◆理想的なフロー設計（拡張対応版）
+
+1. キャンバス表示フロー
+AppInitializer.init() 
+→ PIXI.Application作成
+→ DrawingEngine.setupContainers()
+→ DomPositionManager.updatePosition()  // DOM配置・初期位置調整
+→ DOM配置完了
+※ 将来的に RenderingEngine や AnimationController に接続可能なフックを設置
+
+2. ペン描画フロー
+PointerDown → DrawingTools.startDrawing()
+→ DrawingEngine.createPath()
+→ AnimationController / PhysicsController へ必要に応じて反映
+→ PIXI.Graphics追加
+→ 描画開始
+
+3. 記憶・状態管理フロー
+ユーザー操作 → InterfaceManager.updateState()
+→ DrawingTools.applySettings()  
+→ 状態オブジェクトに集約 this.state
+→ 即座に描画・アニメーション・物理演算に反映
+
+
+◆AI作業性向上のアイデア
+1. コメント構造の統一
+javascript// ==== [クラス名]: [責任範囲] ====
+// 【目的】明確な機能説明
+// 【入力】何を受け取るか
+// 【出力】何を返すか
+// 【副作用】何を変更するか
+2. セクション分離の明確化
+javascript// ---- Public Methods ----
+// ---- Private Methods ----  
+// ---- Event Handlers ----
+// ---- Utility Functions ----
+3. 状態変数の集約
+javascript// 状態はクラス内の単一オブジェクトに集約
+this.state = {
+    isDrawing: false,
+    currentTool: 'pen',
+    brushSize: 16.0
+};
+4. エラー時の単純化指針
+javascript// 複雑な実装を避ける基準:
+// - ネストが3階層を超える場合は分割
+// - 一つのメソッドが50行を超える場合は分割  
+// - ifチェーンが5個を超える場合はswitch文に変更
+
+
+◆ファイル構成詳細
+
+☆futaba_main.html（UI / 統合ハブ）
+
+- HTML構造（UIレイアウト）
+- CSSスタイル（外部化推奨）
+- AppInitializer（初期化）
+- AppController（制御層、将来的に UIController / AnimationController / PhysicsController に細分化可能）
+- DrawingEngine（描画エンジン、将来的に RenderingEngine に拡張）
+- DomPositionManager（DOM制御）
+- SystemMonitor（監視）
+
+★futaba_tools.js（描画ツールハブ）
+
+- DrawingTools（描画ツール群）
+- InterfaceManager（UI管理）
+- 将来拡張用のモジュール枠（レイヤー、ショートカット、アニメーションツール、物理演算ツールなど）
+
+
+・複雑化防止ガイドライン
+
+1.単純優先: 動作する最小実装を選択
+2.依存最小: クラス間の相互参照を避ける
+3.状態集約: 状態変数は各クラス内で完結
+4.エラー処理: try-catchは最上位のみ
+5.デバッグ重視: console.logを積極活用
+
+このガイドラインに従って分割作業を進めることで、AIが理解しやすく保守しやすいコードベースを実現できます。
+
+※ 注意：
+  現在は二分割構成で改修を進めますが、将来的にファイルが肥大化した場合は
+  DoubleStarPlan に移行することを想定しています。
+  これは、中心となる UI/描画の2つのハブを軸に枝ファイルを整理する方式で、
+  ファイル間依存を明確に保ちながら拡張しやすくするためです。
+  詳細な分割は状況に応じて柔軟に決定します。

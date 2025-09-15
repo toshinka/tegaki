@@ -1,0 +1,61 @@
+現時点での結論まとめ
+方法	内容	ポイント
+@pixi/graphics-smooth	                        v7 向け HHAA アンチエイリアス	        v8 非対応で使えない
+glTF ベクター（pixi-omber-gltf2-vector）	ベクターアートを3Dメッシュで扱う	ペン描画ではなく、静的なアセット向け
+antialias 設定	                                WebGL アプリ全体をアンチエイリアス	パフォーマンスに注意
+GraphicsContext, SVG 等	                        リファクタリング／描画共有に便利	品質改善よりも構造化向け
+
+
+
+フローは少し複雑化してないか確認。 → 入力→描画→記録のシンプル 3 ステップが理想。
+
+車輪の再発明回避 → PixiJS の Graphics や pixi-graphics-smooth を使えばよい。
+
+モダンベクターペン → PixiJSの補間＋ベクターパス保持で十分。
+
+📌 推奨ロードマップ
+
+今すぐ描けるベクターペンを実装する
+→ PixiJS.Graphics + pixi-graphics-smooth を使う
+"\node_modules\@pixi\graphics"
+（Pixi がすでに WebGL2 を活用してる）
+
+pixi-graphics-smooth × GSAP → 相性かなり良い（補間制御が楽になる）
+
+
+  <!-- node_modules統合・ローカル読み込み - CORS制限回避 -->
+
+    <!-- PixiJS v7 本体 -->
+    <script src="./node_modules/pixi.js/dist/pixi.min.js"></script>
+    
+    <!-- @pixi/ui: UIコンポーネント -->
+    <script src="./node_modules/@pixi/ui/dist/ui.min.js"></script>
+    
+    <!-- @pixi/ui: レイヤー機能 -->
+    <script src="./node_modules/@pixi/layers/dist/layers.min.js"></script>
+    
+    <!-- @pixi/gif: GIF機能 -->
+    <script src="./node_modules/@pixi/gif/dist/gif.min.js"></script>
+    
+    <!-- GSAP: アニメーション -->
+    <script src="./node_modules/gsap/dist/gsap.min.js"></script>
+
+　　<!-- pixi-graphics-smooth: ペンスムーシング -->
+　　<script src="./node_modules/@pixi/graphics-smooth/dist/pixi-graphics-smooth.js"></script>
+
+
+    "@pixi/gif": "^2.1.1",
+    "@pixi/graphics-smooth": "^1.1.1",
+    "@pixi/layers": "^2.1.0",
+    "@pixi/text-bitmap": "^7.4.3",
+    "@pixi/ui": "^1.2.4",
+    "@tabler/icons": "^3.34.1",
+    "@tabler/icons-webfont": "^3.34.1",
+    "gsap": "^3.13.0",
+    "hammerjs": "^2.0.8",
+    "lodash": "^4.17.21",
+    "lodash-es": "^4.17.21",
+    "lucide-static": "^0.541.0",
+    "pixi-svg": "^3.2.0",
+    "pixi.js": "^7.4.3",
+    "tweedle.js": "^2.1.0"

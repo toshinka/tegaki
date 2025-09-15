@@ -1,0 +1,109 @@
+1. 理想的なキャンバス表示フロー
+
+1.HTML読み込み完了 - index.htmlでDOMContentLoadedイベント発火
+2.Bootstrap起動 - bootstrap.jsが依存関係を順次読み込み
+3.依存関係読み込み - 各Manager/Utilクラスがwindow名前空間に登録
+4.main.js初期化 - TegakiApplicationインスタンス作成
+5.AppCore初期化 - 各Managerの初期化順序制御
+6.ConfigManager設定読み込み - キャンバスサイズ、PIXI設定取得
+7.CanvasManager初期化 - PIXIアプリケーション作成とDOM要素準備
+8.PIXI Stage作成 - レンダラー初期化とキャンバス要素生成
+9.DOM要素挿入 - キャンバス要素をHTMLコンテナに挿入
+10.初期レイヤー作成 - 背景レイヤー、描画レイヤーなど基本構造
+11.ToolManager初期化 - デフォルトツール（ペン）の選択
+12.EventBus接続 - マウス/タッチイベントリスナー登録
+13.UI更新 - ツールパネル、スライダーなどUI要素の状態同期
+14.キャンバス表示完了 - ユーザーが描画可能な状態
+
+
+
+◆GROK4
+
+潜在的な停止箇所: ステップ9 (DOM要素挿入 - キャンバス要素をHTMLコンテナに挿入)理由: CanvasManagerでPIXI.Applicationが作成され、レンダラーが初期化された後、生成されたキャンバス要素（app.view）がindex.html内の特定のコンテナ要素（例: <div id="canvas-container"> など）に追加されるはずです。しかし、この挿入処理が失敗またはスキップされている可能性があります。
+consoleエラーがないことから、明示的なエラー（例: null参照）ではなく、サイレントな失敗（例: コンテナIDのミスマッチ、またはDOM操作のタイミングずれ）が発生していると思われます。
+PIXIのバージョンやブラウザ互換性（例: WebGLサポートの欠如）が原因で、viewが正しく生成されない場合もありますが、エラーなしなのでDOM追加の部分が怪しいです。
+
+確認/修正提案:index.htmlを確認: キャンバスを挿入するコンテナ要素が存在し、正しいIDが指定されているかチェック。もしコンテナがない場合、CanvasManagerのコードでdocument.body.appendChild(app.view)を追加してテスト。
+CanvasManager.jsのinit関数: PIXI.Applicationのviewを挿入する行（例: document.getElementById('canvas-container').appendChild(this.app.view)）が正しく実行されているかログ出力で検証。
+ブラウザのDevToolsでDOMを確認: キャンバス要素が生成されているのに表示されない場合、CSS（styles.css）でvisibility: hiddenやdisplay: noneが適用されていないかチェック。
+
+その他の可能性の高い停止箇所ステップ7 (CanvasManager初期化): ConfigManagerから取得したキャンバスサイズが0や無効値の場合、PIXI.Applicationが無音で失敗。config-manager.jsのデフォルト値（例: width: 400, height: 400）を確認し、強制的に設定してテスト。
+ステップ8 (PIXI Stage作成): pixi-extensions.jsのカスタム拡張がPIXIのレンダラーを破壊している可能性。PIXIのバージョンをpackage.jsonから確認（おそらく古い場合、最新に更新）。
+全体の依存ロード (ステップ2-3): bootstrap.jsでPIXIや他のマネージャが正しくwindowに登録されていない場合、初期化が途中で止まる。libs/pixi-extensions.jsがPIXIをオーバーライドしているので、ロード順序を検証。
+
+追加アドバイスデバッグのため、各マネージャのinit関数にconsole.logを追加してフローをトレース。
+ブラウザ互換性: Chrome/Firefoxでテストし、WebGLが有効か確認（PIXIがCanvas fallbackする場合、表示されない）。
+ツールが正常に動作するよう、PIXIのバージョンを最新（v7+）にアップデートすることをおすすめします。
+
+これでキャンバス表示の問題が解決するはずです。必要に応じてコードの詳細を共有してください！
+
+◆GPT5
+
+何が起きているか（最短要約）
+
+bootstrap.js は起動時に checkPixiAndStart() を呼び、if (window.PIXI) { loadDependencies(); } else { setTimeout(checkPixiAndStart, 100); } と “PIXI 本体がロード済み” を起動条件にしています。
+GitHub
+
+しかし index.html に PixiJS 本体の <script src=".../pixi.min.js"> が見当たらないため、window.PIXI が永遠に undefined のままになり、依存のロード（Managers/Utils → main.js）が始まりません。
+GitHub
+
+従って理想フローの 2 → 3（依存関係読み込み・window.Tegaki.* 登録）で止まっています。main.js も読まれないので、そこにある緊急修復（emergencyCanvasFix）も走りません。
+GitHub
++1
+
+すぐに直すには（最小変更）
+
+index.html に PixiJS 本体 を bootstrap.js より前に追加してください（HTML直開き要件に合わせたローカル参照例）：
+
+<!-- 1) PixiJS 本体を最初に読む -->
+<script src="./node_modules/pixi.js/dist/browser/pixi.min.js"></script>
+<!-- 2) その後に Bootstrap（依存チェーン起動） -->
+<script src="js/bootstrap.js"></script>
+
+
+もし node_modules を丸ごと同梱しているなら上記パスで動くはずです。配置が違う場合は実パスに合わせてください。
+
+これで window.PIXI が真になり、bootstrap.js が Managers/Utils → js/app-core.js → js/main.js の順に読み込みを開始し、CanvasManager が Pixi アプリを作成 → <div id="canvas-container"> に app.view を挿入して表示まで到達します。
+GitHub
+
+確認手順（コンソールで即診断）
+
+上の修正を入れたら、リロード後にコンソールで以下を確認：
+
+ブートストラップの進行ログ
+
+✅ PIXI.js 読み込み確認
+
+✅ [n/…] js/utils/... 読込（依存が順次読み込まれる）
+
+✅ main.js読み込み完了 / ✅ 依存関係完了イベント発火 などが出れば OK。
+GitHub
+
+健全性チェック
+main.js に診断関数が用意されています（読み込み後に使用可）：
+
+window.checkTegakiHealth();
+window.checkCanvasDisplay();
+
+
+healthy: true か、issues が空に近いことを確認。
+GitHub
+
+備考（設計との整合）
+
+ルールにある「HTML直開きで動く」「依存は統一」に沿うなら、Pixi 本体は index.html で最初に 1 スクリプトだけ入れるのが一番シンプルです（bootstrap.js は “依存の順次読み込み” 専任のままにできる）。
+
+代替として、bootstrap.js に Pixi 本体のローダーを入れる設計もあり得ますが、責務分離（依存チェーンはアプリ内部、外部ライブラリ本体は HTML）を考えると HTMLで先に Pixi が無難です。
+
+main.js 側には緊急修復＆診断が多数入っていますが、ルールの「応急処置で肥大化」ポリシーに抵触するなら、ブート連鎖が安定した段階で段階的に削るのが良いです（まずは表示回復を優先）。
+GitHub
+
+まとめ
+
+現状の停止点：Step 2（Bootstrap） で window.PIXI 未定義による待機ループ。
+
+対処：index.html に PixiJS 本体 <script> を追加し、bootstrap.js より前に配置。
+
+確認：ブートログ & window.checkTegakiHealth() / window.checkCanvasDisplay() で OK 判定。
+GitHub
++1

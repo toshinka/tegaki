@@ -1,0 +1,160 @@
+=== 概要 ===
+- vector_drawing_tool_v8rev3_camera.html をベースに、AI改修で安全にカメラ移動を実装
+- UIやペン描画を壊さない
+- ショートカットキーのみでカメラ操作
+- 将来的に Pixi Container方式に移行可能な拡張性を保持
+
+=== 段階 1：ロールバック・安定化 ===
+1. 現行 v8rev3_camera_updated をロールバック
+   - 描画・UI・ツールが正常に動作していた v8rev3_camera を基盤とする
+2. コンソールエラーがないことを確認
+3. 動作確認項目
+   - ペン描画が可能
+   - ツールセレクト・ポップアップが動作
+   - UI が反応する
+
+=== 段階 2：カメラ移動の最小実装（ショートカット運用） ===
+1. Camera オブジェクトを導入（x, y, scale, rotation）
+   - scale, rotation は現時点では未使用
+2. カメラ移動操作はショートカットのみ
+   - Space + ドラッグ → カメラパン
+   - Space + 矢印キー → 微調整移動
+   - Home → カメラ位置リセット
+3. UI / 描画イベントの分離
+   - カメラ操作は Camera / cameraContainer のみで受ける
+   - worldContainer は描画専用イベント
+4. 座標変換の追加
+   - ペン描画時は screen→world 変換を必ず行う
+   - camera.x / camera.y を加味
+
+=== 段階 3：拡張・安定化 ===
+1. カメラ枠サイズ変更対応
+   - デフォルト 400x400
+   - サイズ変更時は mask を再生成
+   - app.renderer.resize を呼ぶ
+2. 将来的な Pixi Container 方式への移行を見据えた構造整理
+   - stage
+     ├─ cameraContainer（マスク付き）
+     │    └─ worldContainer（描画対象）
+     └─ uiContainer（UI）
+3. 拡縮・回転・反転などの高度操作は段階2安定後に追加
+4. レイヤー機能や画面外描画も段階2安定後に組み込む
+
+=== 注意事項 ===
+- UI ボタンは設置せず、ショートカットキー運用のみ
+- pointerイベントの競合を避ける
+- worldContainer.position 変更時、必ず描画座標変換を反映
+
+※下記は参考コード
+
+/**
+ * PixiJS v8 - Camera movement (shortcut only)
+ * 基盤は v8rev3_camera
+ */
+
+// -------------------------
+// アプリ初期化
+// -------------------------
+const app = new PIXI.Application({ width: 400, height: 400, backgroundColor: 0xffffff });
+document.body.appendChild(app.view);
+
+// -------------------------
+// Container構造
+// -------------------------
+const cameraContainer = new PIXI.Container();
+const worldContainer = new PIXI.Container();
+cameraContainer.addChild(worldContainer);
+app.stage.addChild(cameraContainer);
+
+// UI用Container（カメラ影響なし）
+const uiContainer = new PIXI.Container();
+app.stage.addChild(uiContainer);
+
+// -------------------------
+// Cameraオブジェクト
+// -------------------------
+const camera = { x: 0, y: 0, scale: 1, rotation: 0 };
+
+// -------------------------
+// 描画イベント・UIへの影響回避
+// -------------------------
+// cameraContainer はカメラ操作専用
+cameraContainer.interactive = true;
+
+let isPanning = false;
+let lastX = 0, lastY = 0;
+
+// pointerdown
+cameraContainer.on('pointerdown', (e) => {
+  if (e.data.originalEvent.getModifierState("Space")) {
+    isPanning = true;
+    const pos = e.data.global;
+    lastX = pos.x;
+    lastY = pos.y;
+  }
+});
+
+// pointermove
+cameraContainer.on('pointermove', (e) => {
+  if (!isPanning) return;
+  const pos = e.data.global;
+  const dx = pos.x - lastX;
+  const dy = pos.y - lastY;
+  worldContainer.x += dx;
+  worldContainer.y += dy;
+  lastX = pos.x;
+  lastY = pos.y;
+  app.render();
+});
+
+// pointerup / pointerupoutside
+cameraContainer.on('pointerup', () => { isPanning = false; });
+cameraContainer.on('pointerupoutside', () => { isPanning = false; });
+
+// -------------------------
+// Keyboard shortcuts
+// -------------------------
+document.addEventListener("keydown", (e) => {
+  const step = 20;
+
+  // Space押下時に矢印キーで移動
+  if (e.getModifierState("Space")) {
+    switch (e.code) {
+      case "ArrowLeft": worldContainer.x += step; break;
+      case "ArrowRight": worldContainer.x -= step; break;
+      case "ArrowUp": worldContainer.y += step; break;
+      case "ArrowDown": worldContainer.y -= step; break;
+    }
+    app.render();
+  }
+
+  // Homeキーでカメラリセット
+  if (e.code === "Home") {
+    worldContainer.x = 0;
+    worldContainer.y = 0;
+    app.render();
+  }
+});
+
+// -------------------------
+// screen → world 座標変換（ペン描画用）
+// -------------------------
+function screenToWorld(screenX, screenY) {
+  return {
+    x: screenX - worldContainer.x,
+    y: screenY - worldContainer.y
+  };
+}
+
+// -------------------------
+// 描画サンプル（ペン）
+// -------------------------
+/*
+worldContainer に描画する場合は、
+pointerdown / pointermove / pointerup を uiContainer または worldContainer にバインド
+screenToWorld を通して座標補正
+*/
+
+
+
+

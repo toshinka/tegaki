@@ -1,0 +1,105 @@
+📌 目的
+
+本計画書は、Tegakiプロジェクトのファイル構成整理、責務明確化、およびSTEP1/STEP2の作業計画 を示します。
+
+教科書 v12 に基づき、各Manager・ツール・Canvasの責務を明確にした上で、Phaseごとの作業ステップを整理しています。ショートカットは補足として将来拡張のために軽く触れています。
+
+1. 全体アーキテクチャ
+ファイル構成と責務
+
+abstract-tool.js: ツール共通抽象クラス（ストローク管理）
+
+pen-tool.js / eraser-tool.js: ツール固有の描画処理
+
+tool-manager.js: アクティブツール管理、EventBus経由でCanvasManagerへ伝達
+
+canvas-manager.js: 実際の描画、stage.position/scale管理、Pointerイベント処理
+
+memory-manager.js: Undo/Redo管理
+
+state-manager.js: 現在状態管理
+
+settings-manager.js: ユーザー設定管理
+
+boundary-manager.js: 描画範囲管理
+
+ui-manager.js / popup-manager.js / slider-manager.js: UI表示・操作管理
+
+coordinate-manager.js: 入力座標補正、タブレット対応
+
+icon-manager.js: ツール・UIアイコン管理
+
+config-manager.js: 設定値の保存/読み込み
+
+event-bus.js: Manager間疎結合通信
+
+error-manager.js: エラー/例外処理
+
+シンボル定義例
+
+AbstractTool.startStroke(point) / addPoint(point) / endStroke(point)
+
+CanvasManager.pan(dx,dy) / setZoom(scale, centerPoint) / resetView()
+
+EventBusイベント例: tool:change, canvas:pan, shortcut:*
+
+MemoryManager.undo()/redo()/saveSnapshot()
+
+LayerManager（STEP2導入予定）: addLayer() / removeLayer() / moveLayer()
+
+2. ファイル間フロー（ペン描画時）
+
+PointerDown → CanvasManager が受け取る
+
+CanvasManager → ToolManager.activeTool.startStroke(point)
+
+Tool（PenTool）が座標補正 → CanvasManagerに描画命令
+
+PointerMove → Tool.addPoint → CanvasManager描画
+
+PointerUp → Tool.endStroke → MemoryManager.saveSnapshot
+
+UI・状態更新はEventBus経由
+
+3. STEP計画
+STEP1: 基本描画安定化・準備
+
+ペン・消しゴムツールの安定化
+
+CanvasManager整備（position/scale管理）
+
+EventBusによる疎結合設計
+
+ShortcutManagerフックポイント準備（実装は後回し）
+
+座標補正・Pointerイベント処理確認
+
+STEP2: レイヤー実装・操作強化
+
+LayerManager導入
+
+レイヤー単位で描画指示を分離
+
+レイヤー操作ショートカット（↑/↓, 新規/削除など）準備
+
+Canvas操作（拡縮・回転）拡張
+
+ツール切替・プリセット管理の安定化
+
+STEP3以降（補足・将来拡張）
+
+アニメーション・タイムライン機能追加
+
+高度なレイヤー編集（GPU最適化）
+
+ショートカット詳細マッピング実装
+
+カスタマイズ可能なショートカット設定UI
+
+4. 補足: ショートカット
+
+現段階では種としてフックポイントのみ確保
+
+将来Phase2で EventBus を介して各Managerに伝達する設計
+
+Ctrl+Z/Space+Drag/P/E/I など、基本ショートカットは将来マッピング予定

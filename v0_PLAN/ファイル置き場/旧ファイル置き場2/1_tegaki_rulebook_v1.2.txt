@@ -1,0 +1,220 @@
+# 📋 Tegaki 統合ルールブック v1.1 - 現実準拠版
+
+> **現実のコードに基づく正確な指針** - 架空メソッド記載禁止・実装現状反映
+
+## 🎯 基本方針：怪物コード撲滅宣言
+
+### 💀 絶対禁止事項（重大違反）
+1. **try/catch での握りつぶし禁止** - 必ず `throw` か `console.error` + 詳細ログ
+2. **フォールバック・フェイルセーフ禁止** - 正しい構造でのみ動作させる
+3. **架空メソッド呼び出し禁止** - 実装されていないメソッドを呼ぶな
+4. **二重責務禁止** - 1ファイル＝1責務、似た処理のコピペ禁止
+5. **ブラックボックス化禁止** - 全処理に日本語コメント必須
+
+### ✅ 必須遵守事項
+1. **エラーは ErrorManager 経由のみ** - 他ファイルでの直接通知禁止
+2. **名前空間統一** - 全て `window.Tegaki.*` に公開
+3. **初期化順序厳守** - HTML読み込み順序通りの依存関係
+4. **構文完整性確保** - ES2023準拠、後方互換考慮なし
+5. **車輪の再発明禁止** - PixiJS標準機能を最大活用
+
+## 🏗️ 技術スタック・開発環境
+
+### ✅ 使用技術（固定）
+- **PixiJS v7** - 描画・キャンバス基盤（CDN読み込み）
+- **JavaScript ES2023** - モダン構文積極利用
+- **fetch API** - HTTP通信（必要時）
+- **HTML直開き** - ローカルファイル直接実行可能
+
+### 🚫 禁止技術
+- **Vite / TypeScript / ESM** - HTML直開きで動くことが必須
+- **webpack / Babel** - ビルドプロセス禁止
+- **jQuery** - モダン構文で代替
+- **後方互換** - 古いブラウザ考慮なし
+
+## 📦 現実のファイル構造・役割分離（v1_phase1rev4分析結果）
+
+### 🏗️ 実際のファイル構造
+```
+📁 v1_phase1rev4/
+├── 🌐 index.html                          # UI・CSS・スクリプト読み込み順序管理
+├── 🚀 js/bootstrap.js                     # DOMContentLoaded→TegakiApplication起動
+├── 🖊️ js/main.js                          # AppCore定義（Manager束ね専任）
+├── ❌ js/app-core.js                       # AppCore定義（main.jsと重複！）
+├── 🚨 js/utils/error-manager.js            # 全エラー処理専任
+├── ⚙️ js/utils/config-manager.js           # 設定管理
+├── 📡 js/utils/event-bus.js               # イベント配信
+├── ❌ js/utils/minimal-deps.js             # 最小限実装（競合クラス多数定義）
+├── 🎨 managers/canvas-manager.js           # PixiJS・レイヤー管理専任
+├── 🖊️ managers/tool-manager.js            # ツール選択・イベント転送専任
+├── ✏️ tools/pen-tool.js                   # ベクターペン描画専任
+├── 🧹 tools/eraser-tool.js                # 消しゴム専任（一部未実装）
+└── 🎯 assets/icons.js                     # TegakiIcons定義（SVGファクトリー）
+```
+
+### 🚨 発見した重大問題
+
+#### 1. **クラス定義重複問題**
+```javascript
+// ❌ 問題：AppCoreが3箇所で定義されている
+main.js:         class AppCore { ... }           // Manager束ね版
+app-core.js:     class AppCore { ... }           // 同名で競合
+minimal-deps.js: class AppCore { ... }           // 最小限版で競合
+```
+
+#### 2. **存在しないクラス参照問題**
+```javascript
+// ❌ 問題：bootstrap.jsが探しているクラスが存在しない
+bootstrap.js: if (!window.TegakiApplication) {    // 探している
+// しかし、どのファイルも TegakiApplication を定義していない
+```
+
+#### 3. **架空メソッド記載問題**
+```javascript
+// ❌ ルールブック・辞典に記載されているが実装されていない
+class TegakiApplication {
+    async initialize()                     // 記載されているが存在しない
+    createCanvas()                         // 記載されているが存在しない
+    setupUI()                             // 記載されているが存在しない
+}
+```
+
+## 🔧 正しい設計（現実ベース修正版）
+
+### 📋 役割分離ルール（現実準拠）
+
+#### 🖊️ main.js（AppCore定義専任）
+- **責務**: Manager束ね・Manager間連携
+- **禁止**: UI操作・描画処理・エラー処理
+- **実装済みメソッド**:
+  ```javascript
+  constructor()
+  async initialize()
+  setPixiApp(pixiApp)
+  getCanvasManager()
+  getToolManager()
+  isReady()
+  start()
+  getDebugInfo()
+  ```
+
+#### 🎯 app-core.js（修正必要）
+- **現状**: `AppCore`定義（main.jsと重複）
+- **修正後**: `TegakiApplication`定義（UI連携専任）
+- **必要メソッド**:
+  ```javascript
+  constructor()                    # 自動初期化
+  async initialize()               # AppCore作成・キャンバス・UI設定
+  createCanvas()                   # PixiJS Application作成
+  setupUI()                       # イベント・アイコン設定
+  handlePointerDown/Move/Up()      # ポインターイベント処理
+  selectTool(toolName)            # ツール選択・UI更新
+  ```
+
+#### 🚀 bootstrap.js（そのまま）
+- **責務**: `TegakiApplication`インスタンス化のみ
+- **実装**: 完成済み（修正不要）
+
+#### 🎯 assets/icons.js（未活用）
+- **責務**: SVGアイコン生成・配置
+- **実装**: 完成済み（`TegakiIcons.replaceAllToolIcons()`）
+- **問題**: どこからも呼び出されていない
+
+#### ❌ js/utils/minimal-deps.js（問題ファイル）
+- **現状**: 多数クラスの最小限版定義
+- **問題**: 実際の実装と競合・混乱を招く
+- **修正**: 削除 or 未実装クラスのみに限定
+
+## 🔄 正しい初期化フロー（修正版）
+
+### 📋 HTML読み込み順序（修正必要）
+```html
+<!-- 1. PixiJS CDN -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
+
+<!-- 2. Utils（依存なし） -->
+<script src="js/utils/error-manager.js"></script>
+<script src="js/utils/config-manager.js"></script>  
+<script src="js/utils/event-bus.js"></script>
+<!-- minimal-deps.jsは削除 or 最後に移動 -->
+
+<!-- 3. Assets -->
+<script src="assets/icons.js"></script>
+
+<!-- 4. Managers（Utils依存） -->
+<script src="managers/canvas-manager.js"></script>
+<script src="managers/tool-manager.js"></script>
+
+<!-- 5. Tools（Managers依存） -->
+<script src="tools/pen-tool.js"></script>
+<script src="tools/eraser-tool.js"></script>
+
+<!-- 6. App Core（全依存） -->
+<script src="js/main.js"></script>         <!-- AppCore定義 -->
+<script src="js/app-core.js"></script>     <!-- TegakiApplication定義 -->
+
+<!-- 7. Bootstrap（App依存） -->
+<script src="js/bootstrap.js"></script>
+```
+
+### 🎮 修正後の動作フロー
+1. **Bootstrap** → `new TegakiApplication()`
+2. **TegakiApplication** → `new AppCore()` → Manager作成
+3. **Canvas作成** → PixiJS Application → DOM配置
+4. **UI連携** → ツールボタン・イベント設定・**アイコン適用**
+5. **描画** → PointerEvent → ToolManager → PenTool → Graphics作成
+
+## 🧩 実装状況チェック（現実ベース）
+
+### ✅ 実装完了
+- **PixiJS基盤**: canvas-manager.js完成
+- **ツール管理**: tool-manager.js完成
+- **ペン描画**: pen-tool.js完成
+- **エラー処理**: error-manager.js完成
+- **アイコン**: icons.js完成（未使用）
+
+### ⚠️ 部分実装
+- **消しゴム**: eraser-tool.js（メソッド定義済み・動作未確認）
+- **AppCore**: main.js完成、app-core.jsで重複
+- **Bootstrap**: bootstrap.js完成、参照先クラス不在
+
+### ❌ 未実装・問題
+- **TegakiApplication**: どこにも定義されていない
+- **UI連携**: アイコン適用・イベント設定が不完全
+- **設定管理**: config-manager.js基本のみ
+
+## 📝 緊急修正手順
+
+### Step1: クラス定義重複解消
+1. **app-core.js** → `TegakiApplication`定義に変更
+2. **main.js** → `AppCore`のみ残す
+3. **minimal-deps.js** → 競合定義削除
+
+### Step2: 読み込み順序修正
+1. **index.html** → minimal-deps.js削除 or 移動
+2. **icons.js** → managers前に移動
+
+### Step3: UI連携完成
+1. **TegakiApplication** → `setupUI()`でアイコン適用
+2. **消しゴム動作確認** → ERASEブレンドモード
+
+### Step4: 動作確認
+1. **Bootstrap成功** → エラー解消確認
+2. **アイコン表示** → サイドバー正常表示
+3. **描画・消去** → 両ツール正常動作
+
+---
+
+## 🚨 後続Claude向け重要注意
+
+### ⚠️ 文書信頼性問題
+- **現在のルールブック・辞典は不正確**
+- **実装されていないメソッドが「実装済み」と記載**
+- **クラス重複問題について記載なし**
+
+### ✅ 信頼できる情報源
+1. **実際のファイル内容** - GitHub URLから直接確認
+2. **console.logの出力** - 実行時の実際の動作
+3. **ブラウザのエラーメッセージ** - 実際の問題箇所
+
+**修正を開始する前に、この現実と文書の乖離を修正する必要があります。**

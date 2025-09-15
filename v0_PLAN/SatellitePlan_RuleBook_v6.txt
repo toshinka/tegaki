@@ -1,0 +1,329 @@
+# 🚀 SatellitePlan_RuleBook_v6 - レイヤードラッグ移動対応版
+
+## 📋 改修優先度マトリクス
+
+| 優先度 | 機能 | 工数 | 影響度 | 前提条件 |
+|--------|------|------|--------|----------|
+| **🔥 P0** | SortableJS レイヤードラッグ移動 | 30分 | 高 | なし |
+| **🔥 P0** | サムネイル・アスペクト比対応 | 1時間 | 中 | なし |
+| **⚡ P1** | キャンバス外からのペン描画 | 2時間 | 高 | レイヤードラッグ安定化後 |
+| **📂 P2** | ファイル分割（UI部分） | 4-6時間 | 低 | 全機能安定化後 |
+
+---
+
+## 🎯 Phase 1: SortableJS レイヤードラッグ移動実装（30分）
+
+### 1.1 技術選定理由
+- SortableJS は jQuery 不要で modern browsers に対応
+- PixiJS v8.13 との競合リスク最小化
+- 既存PointerEvent競合・サムネイル真黒化・判定シビア問題の完全回避
+
+### 1.2 実装方針
+```html
+<!-- CDN追加（main.html PixiJSの後） -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+```
+
+### 1.3 CSS拡張（main.html）
+```css
+/* SortableJS フィードバック */
+.sortable-ghost {
+    opacity: 0.6;
+    background: rgba(100, 150, 255, 0.1);
+    border: 1px dashed #6496ff;
+}
+.sortable-chosen {
+    background: rgba(100, 150, 255, 0.05);
+}
+```
+
+### 1.4 UnifiedUIController 拡張
+```javascript
+// UnifiedUIController.updateLayerUI() 内に追加
+initializeLayerSortable() {
+    const layerList = document.getElementById('layer-list');
+    if (!layerList || !window.Sortable) return;
+    
+    if (this.sortable) this.sortable.destroy();
+    
+    this.sortable = window.Sortable.create(layerList, {
+        handle: '.layer-item',
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        animation: 150,
+        onEnd: (evt) => {
+            const layerId = parseInt(evt.item.dataset.layerId);
+            window.DrawingEngineAPI?.reorderLayer(layerId, evt.oldIndex, evt.newIndex);
+        }
+    });
+}
+```
+
+### 1.5 DrawingEngine.js API拡張
+```javascript
+// LayerManager クラスに追加
+reorderLayer(layerId, fromIndex, toIndex) {
+    if (fromIndex === toIndex) return false;
+    
+    const layer = this.layers.items[fromIndex];
+    this.layers.items.splice(fromIndex, 1);
+    this.layers.items.splice(toIndex, 0, layer);
+    
+    // PixiJS zIndex更新
+    this.layers.items.forEach((layer, index) => {
+        layer.container.zIndex = index;
+    });
+    
+    return true;
+}
+```
+
+---
+
+## 🖼️ Phase 2: サムネイル・アスペクト比対応（1時間）
+
+### 2.1 改修戦略
+- **現在の一体型ファイルで実装** - 即座実装・分割は後回し
+- DrawingEngine.js の LayerThumbnailManager のみ改修
+- UI側レスポンシブ対応
+
+### 2.2 LayerThumbnailManager 拡張
+```javascript
+// DrawingEngine.js 内
+generateLayerThumbnail(layerId) {
+    const aspectRatio = ENGINE_CONFIG.canvas.width / ENGINE_CONFIG.canvas.height;
+    const maxSize = 48;
+    
+    let canvas_width, canvas_height;
+    if (aspectRatio > 1) { // 横長
+        canvas_width = Math.min(80, maxSize); // 横は80pxまで許可
+        canvas_height = Math.round(canvas_width / aspectRatio);
+    } else { // 縦長・正方形
+        canvas_height = maxSize; // 縦は48px固定
+        canvas_width = Math.round(canvas_height * aspectRatio);
+    }
+    
+    const canvas = document.createElement('canvas');
+    canvas.width = canvas_width;
+    canvas.height = canvas_height;
+    
+    // レイヤー描画処理...
+    
+    // UI通知（寸法情報も含める）
+    if (window.UICallbacks?.onLayerThumbnailUpdated) {
+        window.UICallbacks.onLayerThumbnailUpdated(layerId, canvas.toDataURL());
+    }
+}
+```
+
+### 2.3 CSS レスポンシブ対応（main.html）
+```css
+.layer-thumbnail {
+    width: 48px;
+    height: 48px;
+    /* フレキシブル化 */
+    display: flex;
+    align-items: center;
+    justify-content: center;
+}
+
+.layer-thumbnail img {
+    max-width: 100%;
+    max-height: 100%;
+    object-fit: contain; /* アスペクト比維持 */
+}
+```
+
+### 2.4 リサイズ連動
+```javascript
+// DrawingEngine.js resize() メソッド内に追加
+resize(width, height) {
+    // 既存処理...
+    
+    // 全レイヤーサムネイル更新
+    setTimeout(() => {
+        this.layerManager.layers.items.forEach(layer => {
+            this.thumbnailManager.generateLayerThumbnail(layer.id);
+        });
+    }, 100);
+}
+```
+
+---
+
+## ⚡ Phase 3: キャンバス外からのペン描画（2時間）
+
+### 3.1 実装方針
+- **Phase 1&2安定化後に実装**
+- PixiJS Graphics の bounds 制限を解除
+- 無限キャンバス機能の準備
+
+### 3.2 PenTool 拡張予定
+```javascript
+// DrawingEngine.js PenTool クラス
+class PenTool {
+    onPointerDown(event) {
+        // キャンバス境界チェック削除
+        const canvasPoint = this.getCanvasPoint(event);
+        // 制限なしで描画開始
+        this.startDrawing(canvasPoint);
+    }
+    
+    // キャンバス自動拡張機能
+    expandCanvasIfNeeded(x, y) {
+        const margin = 100;
+        const currentBounds = this.engine.app.stage.getBounds();
+        
+        if (x < currentBounds.left - margin || 
+            x > currentBounds.right + margin ||
+            y < currentBounds.top - margin || 
+            y > currentBounds.bottom + margin) {
+            // キャンバス拡張処理
+            this.expandCanvas(x, y, margin);
+        }
+    }
+}
+```
+
+---
+
+## 📂 Phase 4: ファイル分割（UI部分）（4-6時間）
+
+### 4.1 分割戦略
+- **全機能安定化後に実施**
+- LayerUI-Manager.js vs layer-tool-ui.js の統合
+- SortableJS機能の完全移行
+
+### 4.2 予定ファイル構造
+```
+main.html                    - 基本レイアウト・AppController
+DrawingEngine.js            - 描画エンジン・Layer管理（現状維持）
+LayerUI-Manager.js          - レイヤーUI・SortableJS統合
+```
+
+### 4.3 API境界設計
+```javascript
+window.LayerUIAPI = {
+    // SortableJS関連
+    initializeSortable: () => void,
+    destroySortable: () => void,
+    
+    // UI更新
+    updateLayerList: (layerData) => void,
+    setActiveLayer: (layerId) => void
+};
+
+window.DrawingEngineAPI = {
+    // レイヤー操作（現状維持）
+    reorderLayer: (layerId, fromIndex, toIndex) => boolean,
+    // 追加予定
+    expandCanvas: (newBounds) => void
+};
+```
+
+---
+
+## 🚫 回避すべき実装パターン
+
+### 重複実装禁止
+- SortableJS + 自作ドラッグ実装の混在
+- LayerUI-Manager.js + layer-tool-ui.js の二重管理
+- サムネイル生成の複数箇所実装
+
+### 技術負債要因
+- フォールバック処理による肥大化
+- エラー演出による容量浪費
+- API境界の曖昧な定義
+
+### PixiJS v8.13 競合回避
+- PointerEvent の二重ハンドリング
+- Container zIndex の不整合
+- Graphics bounds の予期しない変更
+
+---
+
+## ✅ Phase別完了条件
+
+### Phase 1 完了条件
+- [ ] レイヤー項目のスムーズドラッグ移動
+- [ ] PixiJS描画順序の正確な連動
+- [ ] ペン描画のリニア動作維持
+- [ ] サムネイル表示の正常性
+- [ ] 既存機能への無干渉
+
+### Phase 2 完了条件
+- [ ] 横長キャンバスで横幅80px以内のサムネイル
+- [ ] 縦長キャンバスで高さ48px固定のサムネイル
+- [ ] リサイズ時のサムネイル連動更新
+- [ ] アスペクト比の正確な維持
+
+### Phase 3 完了条件
+- [ ] キャンバス境界外でのペン描画
+- [ ] 描画領域の自動拡張
+- [ ] 既存レイヤー配置の維持
+- [ ] パフォーマンス劣化なし
+
+### Phase 4 完了条件
+- [ ] UI機能の完全分離
+- [ ] API境界の明確化
+- [ ] 既存機能の完全保持
+- [ ] ファイル間依存の最小化
+
+---
+
+## 🌟 実装効果予測
+
+### 短期効果（Phase 1&2 完了時）
+- レイヤー操作の直感性向上
+- アスペクト比対応による視認性向上
+- 開発効率の向上（ライブラリ活用）
+
+### 中期効果（Phase 3 完了時）
+- クリスタ級のペン描画体験
+- 無限キャンバス機能の基盤確立
+- 創作自由度の大幅向上
+
+### 長期効果（Phase 4 完了時）
+- 保守性・拡張性の確保
+- 新機能追加の高速化
+- コードベース品質の向上
+
+---
+
+## 🎨 将来機能への布石
+
+### 近未来機能
+- レイヤー変形（移動・回転・縮小・反転）
+- 無限キャンバス
+- レイヤーグループ化
+
+### 将来機能
+- GIFアニメーション
+- LIVE2D/SPINE風モーフィング
+- ボーンアニメーション
+
+---
+
+**🚀 この計画により段階的な品質向上を実現し、将来的な大型機能追加の基盤を確立します。**
+
+---
+
+## 🔧 Claude向け改修ガイドライン
+
+### コーディング時の注意事項
+- PixiJS v8.13 API仕様に厳密準拠
+- ES2023記法使用・モジュール機能不使用
+- CDN読み込み形式でのライブラリ活用
+- フォールバック・エラー演出完全排除
+
+### 改修時の判断基準
+1. **機能安定性最優先** - 既存機能への影響を最小化
+2. **段階的実装** - Phase順序の厳守
+3. **ライブラリ活用** - 車輪の再発明回避
+4. **API境界明確化** - 将来分割への配慮
+
+### デバッグ指針
+- コンソールログ最小限
+- エラー情報のAI検索可能性重視
+- 問題の根本原因特定優先
+- 暫定対処・隠蔽処理禁止

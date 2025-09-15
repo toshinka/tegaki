@@ -1,0 +1,252 @@
+==========================================================
+Tegaki v8 Rev4 - DrawingEngine 改修計画書（Pen/Eraser 分離）
+==========================================================
+
+対象ファイル:
+- drawing-engine.js
+
+目的:
+- ペン・消しゴムの描画処理を明確に分離
+- UI/レイヤーポップアップは現状 rev4 を保持
+- 将来的なモジュール切出しを容易にする構造
+- 非破壊履歴・World座標に準拠
+
+1. 現状課題
+----------------------------------------------------------
+- Pen と Eraser が描画フロー内で混在しており、振る舞いが曖昧
+- 描画処理の条件分岐が外部に露出し、将来的切出しが困難
+- 非破壊履歴/World座標管理と統合されていない
+
+2. 改修方針
+----------------------------------------------------------
+- Engine 内に内部クラスまたは名前空間で PenEngine / EraserEngine を定義
+- DrawingEngine は MainController から EngineBridge 経由で描画要求を受ける
+- Tool の種類ごとに start/move/end を振り分け
+- erase 時は Pixi BLEND_MODES.ERASE を使用し、World座標で履歴に記録
+- Pen は通常描画処理で履歴記録、非破壊レイヤー運用
+- EngineBridge は現行の drawTemporaryStroke / commitStroke / clearLayer / takeSnapshot を維持
+- 将来独立モジュール化可能な interface を内部的に確保
+
+3. 内部構造案
+----------------------------------------------------------
+drawing-engine.js
+ ├─ class DrawingEngine
+ │   ├─ constructor(app, mainApi)
+ │   ├─ init(): 初期化、ステージ生成、LayerManager連携
+ │   ├─ drawTemporaryStroke(toolId, strokePoints)
+ │   │   ├─ if toolId == 'pen' → this._penEngine.drawTemp(...)
+ │   │   └─ if toolId == 'eraser' → this._eraserEngine.drawTemp(...)
+ │   ├─ commitStroke(toolId, strokeData)
+ │   │   ├─ if toolId == 'pen' → this._penEngine.commit(...)
+ │   │   └─ if toolId == 'eraser' → this._eraserEngine.commit(...)
+ │   ├─ clearLayer(layerId)
+ │   ├─ takeSnapshot(layerId)
+ │   ├─ _penEngine: 内部 PenEngine クラスインスタンス
+ │   └─ _eraserEngine: 内部 EraserEngine クラスインスタンス
+ │
+ ├─ class PenEngine
+ │   ├─ drawTemp(points)
+ │   └─ commit(strokeData)
+ │
+ └─ class EraserEngine
+     ├─ drawTemp(points)
+     └─ commit(strokeData)
+
+4. メソッドフロー
+----------------------------------------------------------
+- ToolManager → MainController.notify(event)
+- MainController → engineBridge.drawTemporaryStroke / commitStroke
+- DrawingEngine 内部で toolId により PenEngine / EraserEngine に振り分け
+- 履歴用データは World座標で作成し HistoryService.record へ渡す
+- Undo/Redo 時も World座標で再描画
+
+5. 非破壊履歴/座標管理
+----------------------------------------------------------
+- strokeData は { layerId, points:[{x,y}], toolId, worldCoordinates:true } 形式
+- commit 前に LayerService で適用可能な変換を行う
+- Eraser は透明化を適用しつつ履歴には world座標で記録
+- Undo/Redo の際は DrawingEngine 内部で再描画、LayerManager に反映
+
+6. UI/ポップアップへの影響
+----------------------------------------------------------
+- 現行 rev4 の UI/レイヤーポップアップは変更禁止
+- drawTemporaryStroke / commitStroke は Stage コンテナに描画するが、DOMやUI は直接変更しない
+- Tool 切替やポップアップ表示は UIManager に委譲
+
+7. 実装手順（チェックリスト）
+----------------------------------------------------------
+1. DrawingEngine 内に PenEngine / EraserEngine クラス定義
+2. EngineBridge からの drawTemporaryStroke / commitStroke を振り分け
+3. World座標・非破壊履歴対応のデータ作成
+4. LayerService / HistoryService 連携
+5. UIManager は触らず、ポップアップの DOM は rev4 状態維持
+6. テスト: ペン・消しゴム描画、Undo/Redo、World座標反映、UI破壊なし
+
+8. 将来的切出し対応
+----------------------------------------------------------
+- PenEngine / EraserEngine は内部クラスに留めるが、外部 module 化可能な API 構造を維持
+- drawTemp / commit は interface に準拠
+- LayerManager / PositionManager は既存 API を尊重し、依存方向は MainController 経由
+
+==========================================================
+
+
+※下記は、DrawingEngine 内で Pen / Eraser を分離し、World座標・非破壊履歴対応を行ったサンプル改修コードです。参考や叩き台に。
+
+// drawing-engine.js
+// @module DrawingEngine
+// @role Canvas描画の仲介・Pen/Eraser振る舞い管理
+// @depends MainController, LayerManager, PositionManager
+// @provides EngineBridge(drawTemporaryStroke, commitStroke, clearLayer, takeSnapshot)
+// @notes ペンと消しゴムを内部クラスで分離。非破壊履歴・World座標対応。
+
+class DrawingEngine {
+  constructor(app, mainApi) {
+    this.app = app; // PIXI.Application
+    this.mainApi = mainApi;
+    this.stage = app.stage;
+    this._penEngine = new PenEngine(this.stage);
+    this._eraserEngine = new EraserEngine(this.stage);
+  }
+
+  drawTemporaryStroke(toolId, strokePoints) {
+    switch(toolId){
+      case 'pen':
+        this._penEngine.drawTemp(strokePoints);
+        break;
+      case 'eraser':
+        this._eraserEngine.drawTemp(strokePoints);
+        break;
+      default:
+        console.warn(`[DrawingEngine] Unknown toolId: ${toolId}`);
+    }
+  }
+
+  commitStroke(toolId, strokeData){
+    switch(toolId){
+      case 'pen':
+        this._penEngine.commit(strokeData);
+        break;
+      case 'eraser':
+        this._eraserEngine.commit(strokeData);
+        break;
+      default:
+        console.warn(`[DrawingEngine] Unknown toolId: ${toolId}`);
+    }
+    // 履歴に World座標で記録
+    if(this.mainApi && this.mainApi.historyService){
+      const worldStroke = this._convertToWorldCoordinates(strokeData);
+      this.mainApi.historyService.record({
+        type: 'stroke',
+        payload: worldStroke,
+        meta: { requestId: crypto.randomUUID(), origin: 'DrawingEngine' }
+      });
+    }
+  }
+
+  clearLayer(layerId){
+    const layerContainer = this.stage.getChildByName(layerId);
+    if(layerContainer) layerContainer.removeChildren();
+  }
+
+  takeSnapshot(layerId){
+    const layerContainer = this.stage.getChildByName(layerId);
+    return layerContainer ? layerContainer.generateCanvasTexture() : null;
+  }
+
+  _convertToWorldCoordinates(strokeData){
+    // PositionManager を介して canvas→world座標に変換
+    if(!this.mainApi || !this.mainApi.positionManager) return strokeData;
+    const posMgr = this.mainApi.positionManager;
+    return {
+      ...strokeData,
+      points: strokeData.points.map(p => posMgr.canvasToWorld(p))
+    };
+  }
+}
+
+// 内部クラス：PenEngine
+class PenEngine {
+  constructor(stage){
+    this.stage = stage;
+    this.tempGraphics = new PIXI.Graphics();
+    stage.addChild(this.tempGraphics);
+  }
+
+  drawTemp(points){
+    this.tempGraphics.clear();
+    this.tempGraphics.lineStyle(2, 0x000000, 1);
+    if(points.length>0){
+      this.tempGraphics.moveTo(points[0].x, points[0].y);
+      for(let p of points) this.tempGraphics.lineTo(p.x, p.y);
+    }
+  }
+
+  commit(strokeData){
+    const layer = this.stage.getChildByName(strokeData.layerId);
+    if(!layer) return;
+    const g = new PIXI.Graphics();
+    g.lineStyle(2, 0x000000, 1);
+    const pts = strokeData.points;
+    g.moveTo(pts[0].x, pts[0].y);
+    for(let p of pts) g.lineTo(p.x, p.y);
+    layer.addChild(g);
+    this.tempGraphics.clear();
+  }
+}
+
+// 内部クラス：EraserEngine
+class EraserEngine {
+  constructor(stage){
+    this.stage = stage;
+    this.tempGraphics = new PIXI.Graphics();
+    stage.addChild(this.tempGraphics);
+  }
+
+  drawTemp(points){
+    this.tempGraphics.clear();
+    this.tempGraphics.lineStyle(10, 0xffffff, 1);
+    if(points.length>0){
+      this.tempGraphics.moveTo(points[0].x, points[0].y);
+      for(let p of points) this.tempGraphics.lineTo(p.x, p.y);
+    }
+  }
+
+  commit(strokeData){
+    const layer = this.stage.getChildByName(strokeData.layerId);
+    if(!layer) return;
+    const g = new PIXI.Graphics();
+    g.lineStyle(10, 0xffffff, 1);
+    g.blendMode = PIXI.BLEND_MODES.ERASE;
+    const pts = strokeData.points;
+    g.moveTo(pts[0].x, pts[0].y);
+    for(let p of pts) g.lineTo(p.x, p.y);
+    layer.addChild(g);
+    this.tempGraphics.clear();
+  }
+}
+
+// EngineBridge 提供
+function createEngineBridge(app, mainApi){
+  const engine = new DrawingEngine(app, mainApi);
+  return {
+    app: engine.app,
+    drawTemporaryStroke: (toolId, points) => engine.drawTemporaryStroke(toolId, points),
+    commitStroke: (toolId, strokeData) => engine.commitStroke(toolId, strokeData),
+    clearLayer: layerId => engine.clearLayer(layerId),
+    takeSnapshot: layerId => engine.takeSnapshot(layerId)
+  };
+}
+
+ポイント
+
+PenEngine / EraserEngine を内部クラス化して DrawingEngine 内で振る舞い分離
+
+drawTemporaryStroke / commitStroke で toolId に応じて振り分け
+
+履歴は World座標で非破壊記録
+
+UI/ポップアップは rev4 のまま破壊せず
+
+将来的に PenEngine / EraserEngine を独立モジュール化できる構造
+

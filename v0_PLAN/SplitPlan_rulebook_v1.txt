@@ -1,0 +1,392 @@
+# 描画ツール分割改修：ルールブック＆実装ガイド
+
+---
+
+## 📖 ルールブック編
+
+### 技術仕様
+- **実行環境**: Chrome最新、ローカルHTML直開き（file://）
+- **技術スタック**: PixiJS v8.13（CDN）、ES2023（モジュール不使用）
+- **禁止事項**: Canvas2D, TypeScript, Vite, ESM, bundler, Babel
+
+### 開発原則
+- **ライブラリ活用**: 車輪の再発明禁止、PixiJS v8との相性重視
+- **API厳格定義**: 命名規則と境界の明確化
+- **コンソールログ最小限**: デバッグ情報はAI検索可能な形で記録
+
+### 禁止事項（重要）
+🚫 **フォールバック処理**: 曖昧な動作・暗黙修復禁止  
+🚫 **フェイルセーフ**: エラー隠蔽・問題先送り禁止  
+🚫 **バージョン混在**: PixiJS v7/v8同時対応禁止  
+🚫 **ユーザー向けエラー演出**: 開発中の不具合可視化を妨げるため絶対禁止  
+🚫 **冗長化**: 過度なエラーハンドリング・二重管理禁止  
+
+### アーキテクチャ方針
+```
+main.html (UI Controller)
+├── UIController (サイドバー、ポップアップ)
+├── LayerManager (UI連携部分)
+├── HammerJSPositionManager
+└── AppController (全体調整)
+
+DrawingEngine.js (Core Engine)
+├── DrawingEngine (PixiJS描画)
+├── TransformSystem (座標変換)
+├── DrawingTools (描画ロジック)
+├── TransformHistoryManager (履歴)
+└── SystemMonitor (パフォーマンス)
+```
+
+### API設計規約
+
+#### グローバル変数命名
+```javascript
+window.DrawingEngineAPI    // エンジン→UI通信
+window.UICallbacks         // UI→エンジン通信
+```
+
+#### 関数命名規則
+```javascript
+// Public API
+drawingEngine[Action][Target]()
+// 例: drawingEngineCreateLayer(), drawingEngineSetTool()
+
+// Internal functions  
+_[module][Action][Target]()
+// 例: _transformMoveViewport(), _toolsActivatePen()
+```
+
+#### エラーハンドリング
+```javascript
+// エラー報告（冗長化禁止）
+function _reportError(operation, error) {
+    console.error(`[${operation}]`, error.message);
+    // 隠蔽・修復処理は絶対禁止
+}
+```
+
+### 状態管理原則
+- **Single Source of Truth**: 状態の重複管理禁止
+- **Immutable Updates**: 状態変更の追跡可能性確保
+- **Clear Ownership**: 各状態の責任者を明確化
+
+### ファイル構造規約
+```javascript
+// DrawingEngine.js 内部構造
+(function() {
+    'use strict';
+    
+    // === CORE CLASSES ===
+    class TransformSystem { ... }
+    class DrawingEngine { ... }
+    class DrawingTools { ... }
+    
+    // === API EXPORT ===
+    window.DrawingEngineAPI = { ... };
+    
+    // === INITIALIZATION ===
+    // エントリーポイント
+})();
+```
+
+---
+
+## 🔧 改修実装編
+
+### Phase 1: API境界定義
+
+#### 1.1 DrawingEngineAPI設計
+```javascript
+window.DrawingEngineAPI = {
+    // === 初期化 ===
+    initialize: (containerElement) => Promise<boolean>,
+    destroy: () => void,
+    
+    // === キャンバス制御 ===
+    resize: (width, height) => void,
+    clear: () => void,
+    
+    // === ツール制御 ===
+    setActiveTool: (toolType, settings) => void,
+    getActiveTool: () => string,
+    getToolSettings: (toolType) => object,
+    
+    // === レイヤー制御 ===
+    createLayer: (name) => string, // layerId return
+    deleteLayer: (layerId) => boolean,
+    setActiveLayer: (layerId) => boolean,
+    getLayerList: () => Array<LayerInfo>,
+    
+    // === 座標変換 ===
+    resetViewport: () => void,
+    getTransformState: () => TransformState,
+    screenToWorld: (x, y) => Point,
+    worldToScreen: (x, y) => Point,
+    
+    // === 履歴制御 ===
+    undo: () => boolean,
+    redo: () => boolean,
+    createSnapshot: (actionName) => void
+};
+```
+
+#### 1.2 UICallbacks設計
+```javascript
+window.UICallbacks = {
+    // === レイヤー通知 ===
+    onLayerCreated: (layerInfo) => void,
+    onLayerDeleted: (layerId) => void,
+    onActiveLayerChanged: (layerId, layerName) => void,
+    
+    // === ツール通知 ===
+    onToolChanged: (toolType, toolName) => void,
+    onToolSettingsUpdated: (toolType, settings) => void,
+    
+    // === 座標・状態通知 ===
+    onTransformUpdated: (transformState) => void,
+    onCoordinatesUpdated: (x, y) => void,
+    onHistoryUpdated: (currentIndex, totalCount) => void,
+    
+    // === パフォーマンス通知 ===
+    onFPSUpdated: (fps) => void
+};
+```
+
+### Phase 2: 分離対象コードの特定
+
+#### 2.1 DrawingEngine.js移行対象
+```javascript
+// 現在のmain.htmlから移行するクラス
+- TransformSystem (完全移行)
+- DrawingEngine (完全移行) 
+- DrawingTools (完全移行)
+- TransformHistoryManager (完全移行)
+- SystemMonitor (完全移行)
+
+// 移行対象の設定値
+- APP_CONFIG.canvas
+- APP_CONFIG.rendering  
+- APP_CONFIG.transform
+- APP_CONFIG.history
+```
+
+#### 2.2 main.html残留対象
+```javascript
+// UI制御関連クラス
+- UnifiedUIController (完全残留)
+- LayerManager (UI連携部分のみ残留)
+- HammerJSPositionManager (完全残留)
+- ShortcutManager (完全残留)
+- AppController (調整・簡素化)
+
+// DOM関連処理
+- ポップアップ管理
+- サイドバー制御
+- レイヤーパネルUI
+- スライダー制御
+```
+
+### Phase 3: 段階的分離実装
+
+#### 3.1 DrawingEngine.js骨格作成
+```javascript
+(function() {
+    'use strict';
+    
+    // === 設定値 ===
+    const ENGINE_CONFIG = {
+        canvas: { width: 400, height: 400 },
+        rendering: { antialias: true, resolution: 1 },
+        transform: { minScale: 0.1, maxScale: 5.0, initialScale: 1.0 },
+        history: { maxSize: 10, autoSaveInterval: 500 }
+    };
+    
+    // === Native JS utilities ===
+    const utils = {
+        clamp: (value, min, max) => Math.max(min, Math.min(max, value)),
+        last: (array) => array[array.length - 1],
+        remove: (array, predicate) => {
+            const indices = [];
+            for (let i = array.length - 1; i >= 0; i--) {
+                if (predicate(array[i])) {
+                    indices.push(i);
+                    array.splice(i, 1);
+                }
+            }
+            return indices.length;
+        }
+    };
+    
+    // === CORE CLASSES ===
+    // [既存クラスを移植]
+    
+    // === API IMPLEMENTATION ===
+    let engineInstance = null;
+    
+    window.DrawingEngineAPI = {
+        initialize: async (containerElement) => {
+            // 初期化処理
+        },
+        // [其他API实装]
+    };
+})();
+```
+
+#### 3.2 main.html調整
+```javascript
+// AppController簡素化
+class AppController {
+    constructor() {
+        this.spacePressed = false;
+        this.ui = null;
+        this.shortcutManager = null;
+    }
+
+    async initialize() {
+        // DrawingEngineAPI初期化
+        const canvasContainer = document.getElementById('drawing-canvas');
+        await window.DrawingEngineAPI.initialize(canvasContainer);
+        
+        // UI初期化
+        this.ui = new UnifiedUIController();
+        this.shortcutManager = new ShortcutManager(this);
+        
+        this.ui.initialize();
+        this.shortcutManager.initialize();
+        
+        // コールバック設定
+        this._setupCallbacks();
+    }
+    
+    _setupCallbacks() {
+        window.UICallbacks.onLayerCreated = (layerInfo) => {
+            this.ui.updateLayerUI();
+        };
+        // [其他callback设定]
+    }
+}
+```
+
+### Phase 4: 通信インターフェース実装
+
+#### 4.1 レイヤー操作フロー
+```javascript
+// UI側：レイヤー追加ボタンクリック
+addLayerButton.addEventListener('click', () => {
+    const layerId = window.DrawingEngineAPI.createLayer('新レイヤー');
+    if (layerId) {
+        window.DrawingEngineAPI.setActiveLayer(layerId);
+    }
+});
+
+// エンジン側：レイヤー作成通知
+function _notifyLayerCreated(layer) {
+    if (window.UICallbacks?.onLayerCreated) {
+        window.UICallbacks.onLayerCreated({
+            id: layer.id,
+            name: layer.name,
+            visible: layer.visible
+        });
+    }
+}
+```
+
+#### 4.2 ツール切り替えフロー  
+```javascript
+// UI側：ツールボタンクリック
+penButton.addEventListener('click', () => {
+    window.DrawingEngineAPI.setActiveTool('pen', {
+        size: currentSize,
+        opacity: currentOpacity
+    });
+});
+
+// エンジン側：ツール変更通知
+function _notifyToolChanged(toolType) {
+    if (window.UICallbacks?.onToolChanged) {
+        window.UICallbacks.onToolChanged(toolType, TOOL_NAMES[toolType]);
+    }
+}
+```
+
+### Phase 5: 検証・最適化
+
+#### 5.1 動作確認項目
+- [ ] 描画機能（ペン・消しゴム）
+- [ ] レイヤー操作（作成・削除・表示切替）
+- [ ] キャンバス操作（パン・ズーム・リセット）
+- [ ] 履歴機能（Undo・Redo）
+- [ ] ショートカット（P・E・Space等）
+- [ ] リサイズ機能
+
+#### 5.2 パフォーマンス確認
+- [ ] FPS表示正常動作
+- [ ] メモリリーク無し
+- [ ] 描画遅延無し
+
+#### 5.3 API境界確認
+- [ ] DrawingEngineAPI経由でのみエンジン操作
+- [ ] UICallbacks経由でのみUI更新通知
+- [ ] グローバル変数への直接アクセス無し
+
+### Phase 6: 将来拡張準備
+
+#### 6.1 レイヤー変形基盤
+```javascript
+// TransformSystem拡張ポイント
+layerToWorld(layerPoint, layerTransform) {
+    // レイヤー個別変形処理
+    // 回転・縮小・反転対応準備済み
+}
+```
+
+#### 6.2 無限キャンバス基盤
+```javascript
+// TransformSystem拡張ポイント  
+moveViewport(deltaX, deltaY) {
+    // 制限解除で無限キャンバス対応可能
+    // 現在は画面サイズで制限中
+}
+```
+
+#### 6.3 GIFアニメ基盤
+```javascript
+// DrawingEngine拡張ポイント
+class AnimationController {
+    // フレーム管理
+    // タイムライン制御
+    // エクスポート機能
+}
+```
+
+---
+
+## 📝 用語辞典
+
+**DrawingEngine.js**: PixiJS描画・座標変換・履歴を担当するコアエンジンファイル  
+**main.html**: UI制御・イベント処理・レイアウトを担当するUIコントローラーファイル  
+**API境界**: DrawingEngineAPIとUICallbacksによる通信インターフェース  
+**TransformSystem**: 座標変換統一管理システム（Screen↔World↔Layer）  
+**Engine Instance**: DrawingEngine.js内で管理される単一のエンジンインスタンス  
+**UI Callbacks**: エンジンからUIへの状態変更通知メカニズム  
+**Layer Transform**: 将来のレイヤー個別変形機能（回転・縮小・反転）の基盤  
+**Viewport Transform**: キャンバス全体の表示変形（パン・ズーム）  
+
+---
+
+## 🎯 成功指標
+
+### 改修完了の判定基準
+1. **機能維持**: 既存の全機能が正常動作
+2. **API境界遵守**: グローバル変数直接参照無し
+3. **ファイル責任分離**: UI改修→main.html、描画改修→DrawingEngine.js
+4. **将来拡張準備**: レイヤー変形・無限キャンバス・GIFアニメの基盤完備
+
+### Claude改修効率化の確認
+- **認識負荷軽減**: 改修対象ファイルの明確特定
+- **影響範囲限定**: API境界による変更影響の局所化  
+- **デバッグ効率**: エラー発生箇所のファイルレベル特定
+
+---
+
+**改修指針**: エラー隠蔽無し・フォールバック禁止・API境界厳守で見通しの良いアーキテクチャを構築する

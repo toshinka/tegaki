@@ -1,0 +1,115 @@
+📝 シンボルメソッド辞典（Phase1.4stepEX 用）
+utils 層
+ファイル	グローバル公開	主な役割	主要メソッド
+error-manager.js	window.ErrorManager	エラー処理集中管理	handle(error), _logToConsole(msg), capture(error)
+config-manager.js	window.ConfigManager	設定・デバッグ情報管理	get(key), set(key, val), getDebugInfo()
+state-manager.js	window.StateManager	アプリ状態保持	getState(key), setState(key, val), reset()
+event-bus.js	window.EventBus	発行/購読イベント制御	on(event, cb), off(event, cb), emit(event, data)
+coordinate-manager.js	window.CoordinateManager	Pixi座標変換管理	toCanvas(x,y), toScreen(x,y)
+icon-manager.js	window.IconManager	UIアイコンロード	load(name), get(name)
+performance.js	window.PerformanceManager	FPS, メモリ監視	startMonitor(), getStats()
+
+managers 層
+ファイル	グローバル公開	主な役割	主要メソッド
+canvas-manager.js	window.CanvasManager	PixiJS レイヤー・ステージ管理	initialize(container), addLayer(name), getLayer(name)
+tool-manager.js	window.ToolManager	現在の Tool 切替・管理	setTool(name), getTool(), apply(event)
+memory-manager.js	window.MemoryManager	undo/redo バッファ管理	push(state), undo(), redo()
+settings-manager.js	window.SettingsManager	UI 設定保持	get(key), set(key,val)
+boundary-manager.js	window.BoundaryManager	描画範囲制御	isInside(x,y)
+ui-manager.js	window.UIManager	UI要素の生成・操作	initializeUI(), updateToolbar()
+
+tools 層
+ファイル	グローバル公開	主な役割	主要メソッド
+abstract-tool.js	window.AbstractTool	共通 Tool 基底クラス	onPointerDown(), onPointerMove(), onPointerUp()
+pen-tool.js	window.PenTool	ペンツール	onPointerDown(), onPointerMove(), onPointerUp(), drawLine()
+eraser-tool.js	window.EraserTool	消しゴムツール	上記と同等構造、アルファ除去
+
+UI 層
+ファイル	グローバル公開	主な役割	主要メソッド
+popup-manager.js	window.PopupManager	UIポップアップ制御	open(id), close(id)
+slider-manager.js	window.SliderManager	UIスライダー制御	initialize(), setValue(), getValue()
+
+アプリ本体
+ファイル	グローバル公開	主な役割	主要メソッド
+app-core.js	window.AppCore	アプリ初期化基盤	boot(), shutdown()
+main.js	window.TegakiApplication	初期化・エントリーポイント	initialize(), initializeCanvasSystem(), registerTools(), bindEvents()
+
+
+⚒️ 改修手順書（エラー修正込み）
+1. 構文修正
+
+abstract-tool.js の catch {} → catch (e) {} に修正。
+
+2. index.html の修正
+
+<div id="canvas-container"></div> を body 内に必ず配置。
+
+script の読み込み順序を以下に固定：
+
+utils/
+
+managers/
+
+tools/ (abstract-tool.js → pen-tool.js → eraser-tool.js)
+
+app-core.js → main.js
+
+3. 各マネージャを window に公開
+
+例：
+// error-manager.js
+class ErrorManager {
+  handle(error) { console.error("[ErrorManager]", error); }
+  getLastError() { return this.lastError; }
+}
+window.ErrorManager = new ErrorManager();
+
+// config-manager.js
+class ConfigManager {
+  getDebugInfo() { return { version: "Phase1.4EX", mode: "dev" }; }
+}
+window.ConfigManager = new ConfigManager();
+
+4. Tool の依存順序を厳守
+
+pen-tool.js / eraser-tool.js は abstract-tool.js を 必ず読み込み済みにしてから実行。
+
+そうしないと extends AbstractTool で undefined 参照が発生する。
+
+5. main.js 側の初期化エラー対応
+
+TegakiApplication.initializeCanvasSystem() で #canvas-container が必ず存在する前提にする。
+
+ErrorManager.handle() / ConfigManager.getDebugInfo() を呼ぶ箇所は、公開済みの window インスタンスを利用。
+
+🎯 実装フローまとめ（作業順序）
+
+utils 修正：
+
+ErrorManager, ConfigManager を window.* に公開。
+
+catch 文修正。
+
+index.html 整備：
+
+#canvas-container を body に設置。
+
+script のロード順を整理。
+
+tools 整備：
+
+abstract-tool.js → pen-tool.js → eraser-tool.js の順に読み込む。
+
+managers 整備：
+
+CanvasManager.initialize(container) で PixiJS Application を生成。
+
+ToolManager.setTool("pen") → PenTool 動作確認。
+
+main.js 確認：
+
+TegakiApplication.initialize() → 例外時は window.ErrorManager.handle(error) へ送出。
+
+これで 「動く最小修正」＋「シンボル辞典で一目で依存関係が見える」 形になります。
+
+

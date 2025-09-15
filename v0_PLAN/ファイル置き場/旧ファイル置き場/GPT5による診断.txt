@@ -1,0 +1,176 @@
+コード全体の役割分担がルールブックどおりに動作しているかを点検し、「キャンバスが出ない」「灰色の額縁だけ出る」「その後コンソールエラーが出る」現象の原因候補と対処を、最小限のパッチ付きでまとめました。
+
+① アーキテクチャ健全性チェック（要点）
+
+CanvasManager は PIXI.Application を生成し、レイヤーを作って container.appendChild(this.app.view) で DOM に <canvas> を差し込みます。描画ロジックは持たず、レイヤー管理に徹しており、設計意図に合致しています。
+GitHub
+
+ToolManager はツールの登録・切替・イベント配信の責務を持つ構成です（末尾で _registry に自身のインスタンス化処理を積む設計）。
+GitHub
+
+ルールブックの「責務分離」「初期化順序は _registry に積む方式で保証」という方針とは概ね整合しています。
+GitHub
+
+気づき（軽微な不一致）
+一部のファイルが window.EventBus などグローバル参照を使い、別の箇所は Tegaki.EventBusInstance を想定しています。**両者の橋渡し（エイリアス）**が無いと初期化順の差で未定義参照になり得ます。
+GitHub
+
+② 症状別の直接原因と対処
+A. 「灰色の額縁だけで <canvas> が見えない」
+
+最も可能性が高いのは _registry を実行していない／CanvasManager.initialize が呼ばれていない ことです。CanvasManager は 呼ばれない限り <canvas> を DOM に追加しません。
+GitHub
+
+最小パッチ（js/main.js 差し替え）
+
+HTML 直開き前提・ESM不使用・_registry 実行＋依存の橋渡し＋初期化のみを行います（既存実装の上に載せるだけで OK）。
+
+<!-- index.html の最後あたりに必ず読み込む -->
+<script src="js/main.js"></script>
+
+/* js/main.js — Phase1.4stepEX 用ブートストラップ（ES2023/非ESM） */
+(() => {
+  // 名前空間と互換ブリッジ
+  window.Tegaki = window.Tegaki || {};
+  const alias = (globalName, tegakiKey = `${globalName}Instance`) => {
+    const g = window[globalName];
+    const t = window.Tegaki[tegakiKey];
+    if (g && !t) window.Tegaki[tegakiKey] = g;
+    if (!g && t) window[globalName] = t;
+  };
+  ['ErrorManager','EventBus','StateManager','ConfigManager','CoordinateManager']
+    .forEach(alias);
+
+  // _registry を実行（インスタンス生成）
+  const runRegistry = () => {
+    const reg = window.Tegaki._registry || [];
+    for (const fn of reg) {
+      try { typeof fn === 'function' && fn(); }
+      catch (e) { window.ErrorManager?.handleError?.(e, 'RegistryRunner', 'error', true); }
+    }
+  };
+
+  // DOM 準備ができたらキャンバスとツールを初期化
+  window.addEventListener('DOMContentLoaded', () => {
+    if (!window.PIXI) {
+      console.error('[Bootstrap] PIXI が未読込です。先に pixi.js を読み込んでください。');
+      return;
+    }
+    runRegistry();
+
+    // キャンバスを挿すコンテナ（index.html 側の id と必ず一致させる）
+    const container =
+      document.getElementById('canvas-root') ||
+      document.getElementById('app') ||
+      document.querySelector('.canvas-frame') ||
+      document.body;
+
+    // CanvasManager → ToolManager の順で初期化
+    const cm = window.Tegaki.CanvasManagerInstance;
+    const tm = window.Tegaki.ToolManagerInstance;
+    if (!cm || !tm) {
+      console.error('[Bootstrap] Manager の生成に失敗。_registry と読込順を確認してください。');
+      return;
+    }
+    cm.initialize(container, { backgroundColor: 0xffffff });  // ← ここで <canvas> が DOM に追加される
+    tm.initialize(cm);                                        // ← ここでペン等のイベントを配線
+    // 既定ツール（必要なら）
+    tm.setCurrentTool?.('pen');
+
+    console.log('[Bootstrap] Tegaki initialized.');
+  });
+})();
+
+これで 「灰色の額縁だけ」→ <canvas> が確実に挿入される 状態になります。initialize() 内で container.appendChild(this.app.view) を呼ぶためです。
+GitHub
+
+B. 「新たにエラーが出る」ケースの切り分け
+
+典型的な再現パターンと対処を並べます（どれも現行構成で起こり得ます）。
+
+代表メッセージ	主因	対処
+PIXI is not defined	pixi.js の読込順（managers/tools より前に必須）	<script src="https://unpkg.com/pixi.js@7/dist/pixi.min.js"></script> を 最上流に置く
+Cannot read properties of null (reading 'appendChild') @ CanvasManager.initialize	初期化引数 container が null	index.html のコンテナ id と main.js の取得箇所を一致させる
+Cannot read properties of undefined (reading 'view')	CanvasManager 未初期化のまま ToolManager がイベント配線	cm.initialize() → tm.initialize(cm) の順に統一
+Unexpected token ')' @ app-core.js	既存の括弧/カンマ不整合（既知の報告）	当該ファイルの 直近行を修正。**関数引数の末尾カンマ＋余分な)**が典型（本件は構文修正のみでOK）
+
+参考：pixi-extensions.js は読込済みで自己診断ログを出す構成になっており（[PixiExtensions] Initialized など）、pixi 本体が先、ついでに拡張・utils・managers・tools・bootstrap の順にすると安定します。
+
+③ ペンが描けるまでの信号の流れ（理想と現状）
+
+Pointer入力: <canvas> 上の pointerdown/move/up
+
+ToolManager: アクティブツール（例：Pen）へイベントを中継
+
+PenTool: PIXI.Graphics に対し moveTo/lineTo 等で頂点を蓄積
+
+CanvasManager: getLayerForTool('pen') で得たレイヤーに Graphics を配置（非破壊的／オブジェクト単位で保持）
+
+Undo/Redo（将来）: MemoryManager が graphics:added などのイベントをフックして履歴スタックに push
+
+— この責務分離はルールブックの主張と合致しています（描画は Tool、管理は Canvas）。
+GitHub
++1
+
+④ 読み込み順と index.html の最小形（確認用）
+
+以下の順で読み込むと、依存と初期化順の不整合による事故を避けられます。
+
+<!-- 1) ライブラリ -->
+<script src="https://unpkg.com/pixi.js@7/dist/pixi.min.js"></script>
+
+<!-- 2) ライブラリ拡張 -->
+<script src="libs/pixi-extensions.js"></script>
+
+<!-- 3) utils（統一基盤） -->
+<script src="js/utils/error-manager.js"></script>
+<script src="js/utils/event-bus.js"></script>
+<script src="js/utils/state-manager.js"></script>
+<script src="js/utils/config-manager.js"></script>
+<script src="js/utils/coordinate-manager.js"></script>
+
+<!-- 4) managers -->
+<script src="managers/canvas-manager.js"></script>
+<script src="managers/tool-manager.js"></script>
+<script src="managers/memory-manager.js"></script>
+<script src="managers/settings-manager.js"></script>
+<script src="managers/boundary-manager.js"></script>
+<script src="managers/ui-manager.js"></script>
+
+<!-- 5) tools -->
+<script src="tools/abstract-tool.js"></script>
+<script src="tools/pen-tool.js"></script>
+<script src="tools/eraser-tool.js"></script>
+
+<!-- 6) bootstrap -->
+<script src="js/app-core.js"></script> <!-- ここで構文エラーがないことを確認 -->
+<script src="js/main.js"></script>
+
+
+⑤ 非破壊的な記憶（レイヤー＆履歴）
+
+今の設計は、PIXI.Graphics をツールごとのレイヤーに追加する方針なので「ストローク単位で非破壊的」に残せます。
+GitHub
+
+履歴は イベント連携で簡潔に実現できます（例：graphics:added で undoStack.push(graphics)、消去時は removeChild と redoStack へ）。ルールブックの「MemoryManager 連携」方針と整合。
+GitHub
+
+⑥ すぐ確認するチェックリスト
+
+ pixi.min.js が 最初に読み込まれている
+
+ index.html に id="canvas-root" のコンテナがあり、main.js でそれを取得している
+
+ main.js の _registry 実行 → CanvasManager.initialize → ToolManager.initialize の順序になっている
+
+ app-core.js に構文エラーがない（Unexpected token ')' なら末尾カンマ/括弧を修正）
+
+ グローバルと Tegaki.*Instance のエイリアスが効いている（どちらで参照しても未定義にならない）
+
+必要なら、今回の main.js を前提に tool-manager.js / canvas-manager.js の微修正パッチ（命名揺れの是正・イベント配線の堅牢化・ズーム/パンと座標変換の連携強化）まで一気に出せます。まずは上のブートストラップを挿す→読込順と id を合わせる、までを適用してみてください。
+
+
+
+
+
+

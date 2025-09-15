@@ -1,0 +1,288 @@
+==========================================================
+Tegaki v8 星型分離 改修計画書（rev1bベース）
+==========================================================
+
+1. 改修対象と範囲
+----------------------------------------------------------
+- drawing-engine.js
+  - ペン・消しゴム描画フローの明確化
+  - drawTemporaryStroke / commitStroke の分離
+  - World座標変換対応
+- tool-manager.js
+  - activeTool 管理
+  - start/move/end/cancelのフロー整備
+- layer-manager.js
+  - 非破壊レイヤー移動（TransformTool）
+  - reorderLayer / addLayer / removeLayer
+  - 履歴用データ生成（World座標ベース）
+- position-manager.js
+  - canvas<->world座標変換
+  - zoom / pan 管理
+- ui-manager.js
+  - 現状UI維持、ショートカット操作のみ対応
+- error-service.js
+  - 初期化修正（window.ErrorService = ErrorService構文確認）
+  - MainControllerからの通知受付
+
+2. 改修方針
+----------------------------------------------------------
+- 改修は可能な限り「主星＋単一衛星」で完結
+- Tool毎の描画フローはDrawingEngineにまとめ、必要に応じて衛星分離可能
+- ペン／消しゴムの処理は内部で明確に分離
+  - 消しゴムはBLEND_MODE_ERASEを用い、World座標で描画
+- 非破壊レイヤー移動はLayerManagerとPositionManagerの連携で行い、HistoryServiceに差分を記録
+- Canvas2D排除、全てPixiJS Graphicsで描画
+- UIは変更せず、ショートカットで操作
+
+3. 各衛星の責務と改修ポイント
+----------------------------------------------------------
+(1) DrawingEngine
+  - commitStroke / drawTemporaryStroke の分離
+  - World座標変換対応
+  - ペン／消しゴム描画ロジック整理
+  - 将来的にペンと消しゴムを独立Tool衛星化可能な構造にする
+
+(2) ToolManager
+  - activeTool管理、start/move/end/cancelのフローを整理
+  - DrawingEngineとの通信はMainController経由
+  - 将来的にTool追加や削除が容易に
+
+(3) LayerManager
+  - 非破壊移動(transform)と再描画フロー
+  - reorderLayer/addLayer/removeLayerの履歴生成（World座標）
+  - 描画確定時にはMainController経由でHistoryServiceにrecord
+
+(4) PositionManager
+  - canvas<->world変換
+  - zoom/panの管理
+  - 描画/移動時の座標補正
+
+(5) UIManager
+  - 現状維持
+  - ショートカット操作対応（P: Pen / E: Eraser / CTRL+Z: Undo / CTRL+Y: Redo）
+  - 将来的に独立衛星として分離可能な構造
+
+(6) ErrorService
+  - window.ErrorService = ErrorService の初期化確認
+  - MainController経由で全衛星のエラー受信
+
+4. 改修フロー例：ペン描画確定
+----------------------------------------------------------
+1) ToolManager.start(point)
+2) DrawingEngine.drawTemporaryStroke(layerId, points)
+3) LayerManager/PositionManagerにWorld座標で補正
+4) ToolManager.end(point)
+5) DrawingEngine.commitStroke(layerId, strokeData)
+6) MainController.notify({type:'history.record', payload:{action}})
+7) HistoryService.record(action)
+
+5. 改修フロー例：消しゴム描画確定
+----------------------------------------------------------
+1) ToolManager.start(point)
+2) DrawingEngine.drawTemporaryStroke(layerId, points, eraseMode=true)
+3) LayerManager/PositionManagerにWorld座標で補正
+4) ToolManager.end(point)
+5) DrawingEngine.commitStroke(layerId, eraseStrokeData)
+6) MainController.notify({type:'history.record', payload:{action}})
+7) HistoryService.record(action)
+
+6. 改修の注意点
+----------------------------------------------------------
+- 衛星間依存は最小化
+- 描画フローのWorld座標管理を徹底
+- 履歴は非破壊ベースで保存
+- Canvas2Dは排除、PixiJS Graphicsで統一
+- UIは変更せずショートカットのみ対応
+- 将来的にTool衛星を分離可能な構造を保持
+
+7. 改修後の成果物
+----------------------------------------------------------
+- drawing-engine.js：ペン・消しゴムフロー明確化、World座標対応
+- tool-manager.js：activeToolフロー整理、MainController経由
+- layer-manager.js：非破壊移動・履歴管理
+- position-manager.js：canvas<->world座標変換、ズーム／パン対応
+- ui-manager.js：ショートカット対応のみ
+- error-service.js：初期化修正
+
+==========================================================
+
+
+※以下は、Tegaki v8 星型分離 rev1b ベースの改修サンプルコードです。
+
+
+<!-- main.html -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>Tegaki v8 - StarPlan Sample</title>
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.0.5/dist/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+</head>
+<body>
+<div id="canvas-container"></div>
+
+<script src="drawing-engine.js"></script>
+<script src="layer-manager.js"></script>
+<script src="position-manager.js"></script>
+<script src="tool-manager.js"></script>
+<script src="ui-manager.js"></script>
+<script src="error-service.js"></script>
+
+<script>
+const mainController = new MainController({
+  container: document.getElementById('canvas-container')
+});
+mainController.initialize();
+</script>
+</body>
+</html>
+
+// drawing-engine.js
+class DrawingEngine {
+  constructor(app, layerManager, positionManager) {
+    this.app = app;
+    this.layerManager = layerManager;
+    this.positionManager = positionManager;
+  }
+
+  // 一時描画（ペン/消しゴム）
+  drawTemporaryStroke(layerId, points, eraseMode=false) {
+    const layer = this.layerManager.getLayerById(layerId);
+    const g = layer.graphics;
+    const pts = points.map(p => this.positionManager.worldToCanvas(p));
+    g.lineStyle(eraseMode ? 20 : 2, 0x000000, eraseMode ? 0 : 1, false, eraseMode ? PIXI.BLEND_MODES.ERASE : PIXI.BLEND_MODES.NORMAL);
+    g.moveTo(pts[0].x, pts[0].y);
+    pts.slice(1).forEach(pt => g.lineTo(pt.x, pt.y));
+  }
+
+  // 確定描画
+  commitStroke(layerId, strokeData) {
+    const layer = this.layerManager.getLayerById(layerId);
+    layer.commitStroke(strokeData);
+  }
+}
+window.DrawingEngine = DrawingEngine;
+
+// tool-manager.js
+class ToolManager {
+  constructor(drawingEngine, mainController) {
+    this.drawingEngine = drawingEngine;
+    this.mainController = mainController;
+    this.activeTool = 'pen';
+    this.strokePoints = [];
+  }
+
+  setActiveTool(tool) {
+    this.activeTool = tool;
+  }
+
+  start(point) {
+    this.strokePoints = [point];
+  }
+
+  move(point) {
+    this.strokePoints.push(point);
+    this.drawingEngine.drawTemporaryStroke(
+      this.mainController.getActiveLayerId(),
+      this.strokePoints,
+      this.activeTool === 'eraser'
+    );
+  }
+
+  end(point) {
+    this.strokePoints.push(point);
+    this.drawingEngine.commitStroke(
+      this.mainController.getActiveLayerId(),
+      { points: this.strokePoints.slice(), erase: this.activeTool==='eraser' }
+    );
+    this.mainController.notify({
+      type: 'history.record',
+      payload: { action: { type: 'stroke', layerId: this.mainController.getActiveLayerId(), points: this.strokePoints.slice(), erase: this.activeTool==='eraser' } }
+    });
+    this.strokePoints = [];
+  }
+}
+window.ToolManager = ToolManager;
+
+// ui-manager.js
+class UIManager {
+  constructor(toolManager) {
+    this.toolManager = toolManager;
+    this.initShortcuts();
+  }
+
+  initShortcuts() {
+    window.addEventListener('keydown', e => {
+      if (e.ctrlKey && e.key === 'z') {
+        this.toolManager.mainController.history.undo();
+        e.preventDefault();
+      } else if (e.ctrlKey && e.key === 'y') {
+        this.toolManager.mainController.history.redo();
+        e.preventDefault();
+      } else if (e.key.toLowerCase() === 'p') {
+        this.toolManager.setActiveTool('pen');
+      } else if (e.key.toLowerCase() === 'e') {
+        this.toolManager.setActiveTool('eraser');
+      }
+    });
+  }
+}
+window.UIManager = UIManager;
+
+// position-manager.js
+class PositionManager {
+  constructor() {
+    this.offset = { x:0, y:0 };
+    this.scale = 1;
+  }
+  worldToCanvas(p) {
+    return { x: p.x*this.scale+this.offset.x, y: p.y*this.scale+this.offset.y };
+  }
+  canvasToWorld(p) {
+    return { x: (p.x-this.offset.x)/this.scale, y: (p.y-this.offset.y)/this.scale };
+  }
+  setOffset(x,y){ this.offset={x,y}; }
+  setScale(s){ this.scale=s; }
+}
+window.PositionManager = PositionManager;
+
+// layer-manager.js
+class LayerManager {
+  constructor(app) {
+    this.app = app;
+    this.layers = [];
+  }
+  addLayer(id) {
+    const g = new PIXI.Graphics();
+    this.app.stage.addChild(g);
+    this.layers.push({ id, graphics: g });
+  }
+  getLayerById(id) {
+    return this.layers.find(l => l.id===id);
+  }
+  commitStroke({ points, erase }) {
+    // 確定描画の処理、ここではGraphicsにそのまま残す
+  }
+}
+window.LayerManager = LayerManager;
+
+// error-service.js
+class ErrorService {
+  report(error) {
+    console.error('[ErrorService]', error);
+  }
+}
+window.ErrorService = ErrorService;
+
+💡 このサンプルでのポイント：
+
+ペン／消しゴム描画フローをDrawingEngine内で統一
+
+World座標に基づいた描画
+
+UIはショートカットのみ
+
+将来的にToolごとに衛星化しやすい構造
+
+Canvas2Dは排除、PixiJS Graphicsのみ

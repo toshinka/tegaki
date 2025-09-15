@@ -1,0 +1,559 @@
+# 🎨 Tegaki シンボル辞典 v13 - 責任分界・包括統合版
+
+## 📋 役割定義（責任分界）
+
+### 📚 この辞典の役割
+- **用語・記号・APIの統一的定義と意味付けを管理**
+- **全ドキュメント・コードでの一貫性を保証**
+- **Claude改修時の参照基準として機能**
+
+### 🔄 関連ドキュメントとの責任分界
+```markdown
+📖 Rulebook（指針策定）
+├── 構造ガイドライン・品質基準
+├── アーキテクチャ原則・移行戦略
+└── 開発方針・設計思想
+
+📋 シンボル辞典（用語統一）← 本文書
+├── 用語・記号・APIの統一定義
+├── 一貫性保証・意味付け管理
+└── Claude改修時の参照基準
+
+📑 計画書（実装手順）
+├── 具体的手順・ファイル別詳細
+├── 実装ガイド・テスト手順
+└── 段階的改修プロセス
+```
+
+---
+
+## 🗂️ ファイル構造ツリー（Phase1.5対応）
+
+### 📁 現在のプロジェクト構成
+```
+📦 Tegaki v2_Phase1.5/
+├── 📄 index.html                     # HTML構造定義専門
+├── 📄 package.json                   # Node.js依存関係定義
+├── 📄 package-lock.json              # 依存バージョン固定
+├── 📁 css/
+│   └── 📄 styles.css                 # 統合スタイル管理専門
+├── 📁 js/
+│   ├── 📄 bootstrap.js               # 依存関係管理専門
+│   ├── 📄 main.js                    # 初期化統合専門
+│   ├── 📄 app-core.js                # アプリケーション統合管理
+│   └── 📁 utils/                     # 基盤ユーティリティ群
+│       ├── 📄 config-manager.js      # 設定管理統一システム
+│       ├── 📄 error-manager.js       # エラー処理統一システム
+│       ├── 📄 state-manager.js       # 状態管理統一システム
+│       ├── 📄 event-bus.js           # イベント通信統一システム
+│       ├── 📄 coordinate-manager.js  # 座標変換統合管理
+│       ├── 📄 icon-manager.js        # アイコン管理
+│       └── 📄 performance.js         # パフォーマンス監視
+├── 📁 managers/                      # 専門管理システム群
+│   ├── 📄 canvas-manager.js          # レイヤー・キャンバス管理専門
+│   ├── 📄 tool-manager.js            # ツール統合管理
+│   ├── 📄 ui-manager.js              # UI状態管理
+│   ├── 📄 memory-manager.js          # メモリ・リソース管理
+│   ├── 📄 settings-manager.js        # 設定UI管理
+│   └── 📄 boundary-manager.js        # 境界・制限管理
+├── 📁 tools/                         # 描画ツール群
+│   ├── 📄 abstract-tool.js           # 基底ツールクラス
+│   ├── 📄 pen-tool.js                # ペンツール実装
+│   └── 📄 eraser-tool.js             # 消しゴムツール実装
+├── 📁 js/ui/                         # UI専門コンポーネント
+│   ├── 📄 popup-manager.js           # ポップアップ管理
+│   └── 📄 slider-manager.js          # スライダー管理
+└── 📁 libs/                          # ライブラリ拡張
+    └── 📄 pixi-extensions.js         # PixiJS拡張機能
+```
+
+---
+
+## 📊 システム分類・責任境界定義
+
+### 🚀 Phase1.5 REV系責任分界
+
+#### 📁 構造・表示責任（HTML/CSS）
+```javascript
+// HTML構造定義専門
+index.html {
+  RESPONSIBILITY: "DOM構造定義のみ"
+  PROHIBITED: "インラインスタイル・JavaScript・初期化処理"
+  ALLOWED: "基本HTML要素・セマンティック構造・外部リソース参照"
+}
+
+// CSS統合管理専門  
+styles.css {
+  RESPONSIBILITY: "スタイル統合・テーマ管理"
+  PROHIBITED: "JavaScript処理・初期化ロジック"
+  ALLOWED: "CSS変数・レスポンシブ・アニメーション・テーマ"
+}
+```
+
+#### 🚀 Bootstrap系責任（依存関係管理専門）
+```javascript
+// 依存関係管理専門ファイル
+js/bootstrap.js {
+  RESPONSIBILITY: "スクリプト依存関係順序管理・main.js委譲"
+  PROHIBITED: "UI処理・エラー表示・初期化ロジック・描画処理"
+  ALLOWED: "スクリプト読み込み・順序制御・イベント委譲・PIXI確認"
+  
+  // 主要API
+  loadScript(src): Promise             // 単一スクリプト読み込み
+  loadDependencies(): Promise          // 全依存関係順次読み込み
+  checkPixiAndStart(): void            // PIXI確認・開始制御
+  
+  // イベント発火
+  'tegaki:dependencies:loaded'         // 依存関係読み込み完了
+  'tegaki:dependencies:error'          // 依存関係読み込みエラー
+}
+```
+
+#### 🔧 Main初期化系責任（統合専門）
+```javascript
+// 初期化統合専門ファイル  
+js/main.js {
+  RESPONSIBILITY: "アプリケーション初期化統合・統一システム委譲"
+  PROHIBITED: "直接描画・UI操作・スタイル処理・依存関係管理"
+  ALLOWED: "初期化制御・AppCore委譲・統一システム統合・診断機能"
+  
+  // 主要API  
+  TegakiApplication.initialize(): Promise    // アプリケーション初期化
+  setupBootstrapListeners(): void           // Bootstrap依存関係待機
+  checkCanvasContainerReady(): boolean      // キャンバス要素確実性確認
+  tryInitialize(): Promise                  // 初期化条件確認・実行
+  executeInitializationRegistry(): void     // 初期化レジストリ実行
+  initializeAppCore(): Promise              // AppCore初期化委譲
+  getApplicationStatus(): object            // アプリケーション状態取得
+  healthCheck(): object                     // 健全性チェック
+}
+```
+
+---
+
+## 🏗️ 統一システム API定義（4基盤システム）
+
+### 🔧 ConfigManager - 設定管理統一システム
+```javascript
+window.Tegaki.ConfigManagerInstance {
+  RESPONSIBILITY: "全設定の統一管理・テーマ・環境設定"
+  
+  // 基本設定API
+  get(key): any                       // 設定値取得
+  set(key, value): void               // 設定値設定
+  has(key): boolean                   // 設定存在確認
+  save(): void                        // 設定永続化
+  load(): void                        // 設定読み込み
+  
+  // 専門設定API
+  getCanvasConfig(): object           // キャンバス設定取得
+  getPixiConfig(): object             // PixiJS設定取得
+  getToolConfig(toolId): object       // ツール設定取得
+  getThemeConfig(): object            // テーマ設定取得
+  getUIConfig(): object               // UI設定取得
+  
+  // テーマ・色彩API
+  getFutabaTheme(): object            // ふたば☆ちゃんねる風テーマ
+  getColorPalette(): array            // カラーパレット取得
+  getDarkMode(): boolean              // ダークモード判定
+}
+```
+
+### 🚨 ErrorManager - エラー処理統一システム  
+```javascript
+window.Tegaki.ErrorManagerInstance {
+  RESPONSIBILITY: "全エラー処理・ユーザー通知・ログ管理"
+  
+  // エラー表示API
+  showError(type, message, options): void    // エラー表示
+  showWarning(message, options): void        // 警告表示  
+  showInfo(message, options): void           // 情報表示
+  showSuccess(message, options): void        // 成功表示
+  
+  // エラー分類API
+  classifyError(error): string               // エラー分類
+  isRecoverableError(error): boolean         // 回復可能判定
+  shouldShowToUser(error): boolean           // ユーザー表示判定
+  
+  // ログ管理API
+  logError(error, context): void             // エラーログ記録
+  getErrorHistory(): array                   // エラー履歴取得
+  clearErrorHistory(): void                  // エラー履歴クリア
+}
+```
+
+### 📊 StateManager - 状態管理統一システム
+```javascript  
+window.Tegaki.StateManagerInstance {
+  RESPONSIBILITY: "全状態・履歴・Undo/Redo管理"
+  
+  // 状態管理API
+  updateComponentState(component, key, value): void  // コンポーネント状態更新
+  getComponentState(component, key): any             // コンポーネント状態取得  
+  hasComponentState(component, key): boolean         // 状態存在確認
+  
+  // 履歴管理API
+  pushState(state): void                    // 状態履歴追加
+  popState(): object                        // 状態履歴取得
+  canUndo(): boolean                        // Undo可能判定
+  canRedo(): boolean                        // Redo可能判定
+  undo(): boolean                           // Undo実行
+  redo(): boolean                           // Redo実行
+  
+  // 描画履歴API（Phase2準備）
+  recordStroke(strokeData): void            // 描画履歴記録
+  getStrokeHistory(): array                 // 描画履歴取得
+  clearStrokeHistory(): void                // 描画履歴クリア
+}
+```
+
+### 🔄 EventBus - イベント通信統一システム
+```javascript
+window.Tegaki.EventBusInstance {
+  RESPONSIBILITY: "全イベント通信・疎結合制御"
+  
+  // 基本イベントAPI
+  on(eventType, callback): void             // イベントリスナー登録
+  off(eventType, callback): void            // イベントリスナー削除
+  emit(eventType, data): void               // イベント発火
+  safeEmit(eventType, data): void           // 安全なイベント発火
+  
+  // イベント管理API
+  hasListeners(eventType): boolean          // リスナー存在確認
+  getListenerCount(eventType): number       // リスナー数取得
+  clearListeners(eventType): void           // リスナーすべて削除
+  
+  // 標準イベント定義
+  'app:initialized'                         // アプリ初期化完了
+  'canvas:initialized'                      // キャンバス初期化完了
+  'tool:changed'                           // ツール変更
+  'drawing:started'                        // 描画開始  
+  'drawing:ended'                          // 描画終了
+  'error:occurred'                         // エラー発生
+}
+```
+
+---
+
+## 🎨 専門管理システム API定義
+
+### 📐 CoordinateManager - 座標変換統合管理
+```javascript
+window.Tegaki.CoordinateManagerInstance {
+  RESPONSIBILITY: "全座標変換・画面座標・キャンバス座標変換"
+  
+  // 座標変換API（統一・重複排除）
+  extractPointerCoordinates(event, rect, pixiApp): object  // ポインター座標抽出
+  screenToCanvas(x, y): object                             // 画面→キャンバス座標
+  canvasToScreen(x, y): object                             // キャンバス→画面座標
+  
+  // キャンバス情報API
+  updateCanvasSize(width, height): void     // キャンバスサイズ更新
+  getCanvasSize(): object                   // キャンバスサイズ取得
+  
+  // 境界・制限API
+  isWithinBounds(x, y): boolean             // 境界内判定
+  clampToCanvas(x, y): object               // キャンバス内制限
+}
+```
+
+### 🎨 CanvasManager - レイヤー・キャンバス管理専門
+```javascript  
+window.Tegaki.CanvasManagerInstance {
+  RESPONSIBILITY: "レイヤー管理・キャンバス配置・PixiJS Application管理"
+  PROHIBITED: "直接描画処理・ツール処理・座標変換"
+  
+  // 初期化API
+  initialize(options): Promise<boolean>     // CanvasManager初期化
+  
+  // レイヤー管理API（主責務）
+  addLayer(layerId, type, options): PIXI.Container     // レイヤー追加
+  getLayer(layerId): PIXI.Container                    // レイヤー取得
+  removeLayer(layerId): boolean                        // レイヤー削除
+  addGraphicsToLayer(graphics, layerId): boolean       // Graphics配置
+  
+  // キャンバス管理API
+  getPixiApp(): PIXI.Application            // PIXI Application取得
+  getStage(): PIXI.Container                // ステージ取得
+  resize(width, height): boolean            // リサイズ処理
+  clear(): void                             // 全レイヤークリア
+  
+  // 診断API
+  getDiagnosticInfo(): object               // 診断情報取得
+  getCoordinateIntegrationState(): object   // 座標統合状態取得
+}
+```
+
+### 🔧 ToolManager - ツール統合管理
+```javascript
+window.Tegaki.ToolManagerInstance {
+  RESPONSIBILITY: "ツール切り替え・管理・イベント配信"
+  PROHIBITED: "直接描画処理・キャンバス操作・座標計算"
+  
+  // ツール管理API
+  registerTool(toolId, tool): void          // ツール登録
+  setTool(toolId): boolean                  // アクティブツール設定
+  getTool(toolId): AbstractTool             // ツール取得
+  getCurrentTool(): AbstractTool            // 現在ツール取得
+  
+  // イベント配信API
+  handlePointerDown(event): void            // ポインター押下配信
+  handlePointerMove(event): void            // ポインター移動配信
+  handlePointerUp(event): void              // ポインター離上配信
+}
+```
+
+---
+
+## 🎪 UI管理システム API定義
+
+### 🎨 UIManager - UI状態管理
+```javascript
+window.Tegaki.UIManagerInstance {
+  RESPONSIBILITY: "UI状態管理・ボタン状態・パネル制御"
+  
+  // UI状態API
+  updateToolButton(toolId, active): void    // ツールボタン状態更新
+  updateStatusBar(info): void               // ステータスバー更新
+  showPanel(panelId): void                  // パネル表示
+  hidePanel(panelId): void                  // パネル非表示
+  
+  // 設定UI連携API
+  syncWithSettings(): void                  // 設定との同期
+  applyTheme(theme): void                   // テーマ適用
+}
+```
+
+### 🎪 PopupManager - ポップアップ管理専門
+```javascript
+window.Tegaki.PopupManagerInstance {
+  RESPONSIBILITY: "ポップアップ・モーダル・通知管理"
+  
+  // ポップアップAPI
+  showPopup(type, content, options): void   // ポップアップ表示
+  hidePopup(popupId): void                  // ポップアップ非表示
+  hideAllPopups(): void                     // 全ポップアップ非表示
+  
+  // 通知API（ErrorManager連携）
+  showNotification(message, type, duration): void  // 通知表示
+}
+```
+
+---
+
+## 🛠️ ツールシステム API定義
+
+### 🎨 AbstractTool - 基底ツールクラス
+```javascript
+window.Tegaki.AbstractTool {
+  RESPONSIBILITY: "ツール共通インターフェース・座標処理委譲"
+  
+  // 統一インターフェース（継承必須）
+  onPointerDown(event, canvasManager, coordinateManager): void
+  onPointerMove(event, canvasManager, coordinateManager): void  
+  onPointerUp(event, canvasManager, coordinateManager): void
+  
+  // 共通処理API
+  extractCoordinates(event, coordinateManager): object    // 座標取得委譲
+  createStrokeGraphics(options): PIXI.Graphics           // Graphics生成
+  
+  // ツール設定API
+  configure(config): void               // ツール設定
+  getConfig(): object                   // ツール設定取得
+  reset(): void                         // ツール状態リセット
+}
+```
+
+### ✏️ PenTool - ペンツール実装
+```javascript  
+window.Tegaki.PenTool extends AbstractTool {
+  RESPONSIBILITY: "ペン描画・ストローク生成"
+  
+  // ペン専用API
+  setStrokeWidth(width): void           // 線幅設定
+  setStrokeColor(color): void           // 線色設定
+  startStroke(x, y): void               // ストローク開始
+  continueStroke(x, y): void            // ストローク継続
+  endStroke(): void                     // ストローク終了
+  
+  // Graphics作成API
+  createStrokeGraphics(): PIXI.Graphics      // ストローク用Graphics作成
+  applyStrokeStyle(graphics): void           // スタイル適用
+}
+```
+
+### 🧹 EraserTool - 消しゴムツール実装
+```javascript
+window.Tegaki.EraserTool extends AbstractTool {
+  RESPONSIBILITY: "消去処理・Graphics削除"
+  
+  // 消去専用API
+  setEraserSize(size): void             // 消しゴムサイズ設定
+  erase(x, y): void                     // 消去実行
+  getErasedGraphics(x, y): array        // 消去対象Graphics取得
+}
+```
+
+---
+
+## 🔧 拡張・補助システム API定義
+
+### 📊 PerformanceManager - パフォーマンス監視
+```javascript
+window.Tegaki.PerformanceManagerInstance {
+  RESPONSIBILITY: "パフォーマンス測定・最適化・監視"
+  
+  // 測定API
+  measureDrawingPerformance(callback): number     // 描画性能測定
+  measureMemoryUsage(): object                    // メモリ使用量測定
+  getFPS(): number                                // FPS取得
+  
+  // 最適化API
+  optimizeGraphics(graphics): void                // Graphics最適化
+  cleanupMemory(): void                           // メモリクリーンアップ
+}
+```
+
+### 🎨 IconManager - アイコン管理
+```javascript
+window.Tegaki.IconManagerInstance {
+  RESPONSIBILITY: "SVGアイコン管理・動的生成"
+  
+  // アイコンAPI
+  getIcon(iconId): string               // SVGアイコン取得
+  createToolIcon(toolId, active): string        // ツールアイコン作成
+  updateIconState(iconId, state): void           // アイコン状態更新
+}
+```
+
+---
+
+## 🚨 問題発見・修正が必要な項目
+
+### ❌ 重複・矛盾API（修正必要）
+```javascript
+// 1. 座標変換の重複（要統一）
+CoordinateManager.extractPointerCoordinates()  ✅ 正統API
+vs
+PenTool内での直接座標計算                    ❌ 削除必要
+
+// 2. 初期化処理の重複（要統一）  
+AppCore.initialize()                         ✅ 正統API
+vs  
+CanvasManager内での独立初期化                ❌ 委譲必須
+
+// 3. エラー処理の分散（要統一）
+ErrorManager.showError()                     ✅ 正統API
+vs
+各Manager内でのconsole.error()直接実行       ❌ 委譲必須
+```
+
+### 🔄 責任境界違反（修正必要）
+```javascript
+// 1. CanvasManager内の描画処理（削除必要）
+CanvasManager.startDrawing()                 ❌ Tool責務
+CanvasManager.continueDrawing()              ❌ Tool責務
+→ Tool.onPointerDown/Move/Up()に委譲         ✅ 正しい責務
+
+// 2. bootstrap.js内のUI処理（削除必要）
+bootstrap.jsでのエラー表示                   ❌ ErrorManager責務
+→ main.js経由でErrorManager委譲              ✅ 正しい責務
+
+// 3. main.js内の直接描画（削除必要）
+main.js内でのCanvas操作                      ❌ CanvasManager責務
+→ CanvasManager経由での操作                  ✅ 正しい責務
+```
+
+### 📝 命名・定義の曖昧性（明確化必要）
+```javascript
+// 1. initialize()メソッドの引数不統一
+CanvasManager.initialize(options)            ✅ 統一形式
+vs
+他Manager.initialize(param1, param2)        ❌ 不統一
+
+// 2. 状態取得メソッドの命名不統一
+getStatus() vs getState() vs getInfo()      ❌ 不統一
+→ getDiagnosticInfo()に統一                  ✅ 統一形式
+
+// 3. イベント命名の不統一
+'canvas.initialized' vs 'canvas:initialized' ❌ 不統一
+→ ':' コロン形式に統一                       ✅ 統一形式
+```
+
+---
+
+## 📋 Phase2移行準備チェック項目
+
+### ✅ 完了必須項目
+```javascript
+// 基盤システム100%準備
+□ 4統一システム（Config/Error/State/EventBus）完全動作
+□ 座標変換統合（CoordinateManager）100%委譲
+□ キャンバス表示問題100%解決
+
+// 責任分界100%遵守  
+□ CanvasManager: レイヤー管理専門化完了
+□ Tool系: 描画処理完全集約
+□ UI系: 表示・状態管理専門化完了
+□ 重複API・責任違反0件
+
+// アーキテクチャ準備完了
+□ AbstractTool継承体系完成
+□ レイヤーシステム基盤完成  
+□ EventBus疎結合体系完成
+□ 拡張性基盤100%準備
+```
+
+### 🎯 品質目標
+```javascript
+TARGET_CANVAS_DISPLAY_SUCCESS: 100%      // キャンバス表示成功率
+TARGET_API_CONSISTENCY: 100%             // API一貫性
+TARGET_RESPONSIBILITY_SEPARATION: 100%   // 責任分離遵守率
+TARGET_COORDINATE_INTEGRATION: 100%      // 座標統合率
+TARGET_ERROR_HANDLING_UNIFICATION: 100%  // エラー処理統一率
+```
+
+---
+
+## 🔧 診断・デバッグAPI統合
+
+### 🔍 統合診断システム
+```javascript
+// 全体診断API
+window.checkTegakiHealth(): object       // 全体健全性チェック
+window.checkCoordinateIntegration(): object  // 座標統合チェック  
+window.checkPhase2Readiness(): object    // Phase2準備度チェック
+window.debugREVSystem(): object          // REV系統合デバッグ
+
+// 個別診断API  
+AppCore.getDiagnosticInfo(): object      // AppCore診断
+CanvasManager.getDiagnosticInfo(): object    // CanvasManager診断
+各Manager.getDiagnosticInfo(): object    // 各Manager診断
+```
+
+---
+
+## 📚 継続メンテナンス規約
+
+### 🔄 シンボル辞典更新スケジュール
+```javascript
+IMMEDIATE_UPDATE:     重複API発見・責任違反修正時
+WEEKLY_UPDATE:        新API追加・既存API変更時  
+PHASE_TRANSITION:     Phase移行時・大規模改修時
+MAJOR_REVISION:       アーキテクチャ変更時
+```
+
+### 🎯 品質維持責任
+```javascript
+API_CONSISTENCY:      全APIの命名・引数・戻り値統一
+RESPONSIBILITY_GUARD: 責任境界違反の監視・修正
+INTEGRATION_QUALITY:  統一システム活用率100%維持
+DOCUMENTATION_SYNC:   コード・辞典・計画書の一致保証
+```
+
+---
+
+*🎨 シンボル辞典 v13 - 責任分界・包括統合版*  
+*策定日: 2025年8月24日*  
+*対象: Phase1.5完了・キャンバス表示問題解決・Phase2移行準備*  
+*目的: API統一・責任分界・重複排除・Claude改修支援*

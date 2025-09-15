@@ -1,0 +1,67 @@
+1. サイドバーアイコンが v7 と違う
+原因候補
+
+v7 (vector-drawing-tool-v7rev2.html) では lucide-static のアイコンを明示的に読み込んでいたが、v8 では pixi.js 側に統合した際に参照が抜けている。
+
+また、v8 ファイルを確認すると、アイコン定義を icons.js / lucide-react 互換のものに切り替えたが、読み込み方法が揃っていない。結果、デフォルトフォントアイコンや別のSVGが出ている。
+
+改修案
+
+icons.js の import 部分を見直し、lucide-static/icons/*.svg を確実にロードする。
+
+v7 で使われていたアイコンマッピングをそのまま v8 に移植する。
+例：pencil-line.svg → ペンツール、eraser.svg → 消しゴム、など。
+
+2. キャンバスカラーが背景と一緒になっている
+原因候補
+
+v7 では CSS変数 --futaba-cream をキャンバス背景（レイヤー0）に設定していたが、v8 では PixiJS の renderer.background.color がデフォルトの 0xffffff になっている。
+
+ルールブックにも キャンバス背景は --futaba-cream (#f0e0d6) と明記されているのに反映されていない。
+
+改修案
+
+Pixi アプリ初期化時に以下を追加：
+
+app.renderer.background.color = 0xf0e0d6; // Futaba cream
+
+
+もしくは CSSレイヤーとして <canvas> の背面に div を置き、 background: var(--futaba-cream); を指定。
+
+将来的にはルールブックの記載通り「キャンバス背景レイヤー0」をPixiの描画オブジェクトとして定義するのが望ましい。
+
+3. キャンバスサイズが倍になっている
+原因候補
+
+v7 では CSS上のcanvasサイズと内部の描画解像度を区別して処理（デバイスピクセル比に応じて app.renderer.resize を調整）していた。
+
+v8 では Pixi v8 移行時に resolution 設定が抜けていて、結果的に 2倍スケーリングがかかっている可能性。
+
+もしくは app.view.width/height と app.renderer.width/height を二重に設定している。
+
+改修案
+
+PixiJS v8 初期化時に以下を追加：
+
+const app = new PIXI.Application({
+  width: container.clientWidth,
+  height: container.clientHeight,
+  resolution: window.devicePixelRatio || 1,
+  autoDensity: true,
+  backgroundColor: 0xf0e0d6
+});
+
+
+autoDensity: true を忘れずに指定し、CSSで表示サイズと内部解像度を一致させる。
+
+v7 のスケーリング処理（devicePixelRatio対応）を移植するのも確実。
+
+まとめ
+
+v8での不具合は主に「移植漏れ」。
+
+アイコン定義の読み込みが抜けている → v7の icons.js をそのまま反映
+
+キャンバス背景がデフォルト白のまま → Futaba Cream (#f0e0d6) を指定
+
+キャンバスサイズが倍 → resolution と autoDensity 設定を復元

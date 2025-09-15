@@ -1,0 +1,593 @@
+## 🎯 基本方針：怪物コード撲滅宣言
+
+### 💀 絶対禁止事項（重大違反）
+1. **try/catch での握りつぶし禁止** - 必ず `throw` か `console.error` + 詳細ログ
+2. **フォールバック・フェイルセーフ禁止** - 正しい構造でのみ動作させる
+3. **架空メソッド呼び出し禁止** - 実装されていないメソッドを呼ぶな
+4. **二重責務禁止** - 1ファイル＝1責務、似た処理のコピペ禁止
+5. **ブラックボックス化禁止** - 全処理に日本語コメント必須
+
+### ✅ 必須遵守事項
+1. **エラーは ErrorManager 経由のみ** - 他ファイルでの直接通知禁止
+2. **名前空間統一** - 全て `window.Tegaki.*` に公開
+3. **初期化順序厳守** - HTML読み込み順序通りの依存関係
+4. **構文完整性確保** - ES2023準拠、後方互換考慮なし
+5. **車輪の再発明禁止** - PixiJS標準機能を最大活用
+6. **明確な責任分界化** - DRY・SOLID原則を遵守
+
+## 🏗️ 技術スタック・開発環境
+
+### ✅ 使用技術（固定）
+- **PixiJS v7** - 描画・キャンバス基盤（CDN読み込み）
+- **JavaScript ES2023** - モダン構文積極利用
+- **fetch API** - HTTP通信（必要時）
+- **HTML直開き** - ローカルファイル直接実行可能
+
+### 🚫 禁止技術
+- **Vite / TypeScript / ESM** - HTML直開きで動くことが必須
+- **webpack / Babel** - ビルドプロセス禁止
+- **jQuery** - モダン構文で代替
+- **後方互換** - 古いブラウザ考慮なし
+
+
+# 🚀 Tegaki Phase段階進化計画 v2.0 - Phase1.5統合版
+
+> **段階的書き直し戦略** - 実装が先、文書が後の順序厳守
+> **Phase1.5重点:** キャンバス外描画対応・座標統合基盤・非破壊編集準備
+
+## 📋 Rulebook：指針策定・構造ガイドライン・品質基準・移行戦略
+
+### 🎯 「今決めない勇気」の原則
+- **必要になったら定義** - 時期尚早な複雑化を避ける
+- **実装主導** - 動作するコードが正解、文書は後から合わせる
+- **段階的複雑化** - 車輪の再発明防止
+- **AI開発最適化** - 混乱しない文書構造
+
+### 📚 文書更新戦略・責任分界
+```
+📖 Rulebook（指針策定）← 本文書
+├── 構造ガイドライン・品質基準
+├── アーキテクチャ原則・移行戦略
+└── 開発方針・設計思想
+
+📋 シンボル辞典（用語統一）← 別文書
+├── 用語・記号・APIの統一定義
+├── 一貫性保証・意味付け管理
+└── Claude改修時の参照基準
+
+📑 計画書（実装手順）← 本文書
+├── 具体的手順・ファイル別詳細
+├── 実装ガイド・テスト手順
+└── 段階的改修プロセス
+```
+
+### 🏗️ アーキテクチャ原則
+- **単一責任の原則**: 各ファイルは1つの明確な責任のみ
+- **依存性の逆転**: 具象に依存せず抽象に依存
+- **剛直構造**: AI Claudeが理解・修正しやすい予測可能な構造
+- **段階的拡張**: Phase毎に機能を段階的に追加
+
+---
+
+## 🏗️ Phase1-Current（実装完了・最終調整のみ）✅完了
+
+### ✅ 実装済み機能確認
+- **PixiJS基盤**: キャンバス作成・表示・イベント処理 ✅
+- **座標システム**: 座標ズレ問題完全解決済み ✅
+- **ベクターペン**: 基本線描画（直線・円・スムーズ曲線）✅
+- **消しゴムツール**: ERASEブレンドモード実装済み ✅
+- **ツール切り替え**: ペン・消しゴムボタン完全動作 ✅
+- **エラーシステム**: ErrorManager による一元化 ✅
+- **UI基盤**: ふたば風デザイン・ステータス表示・アイコンシステム ✅
+
+### 🔧 最終調整項目
+- **軽微エラー修正**: eraser-tool.js末尾の不正テキスト除去（必要時）
+- **基本設定**: 色・線幅変更UI（簡易版）
+- **安定化**: 描画品質向上・ブラッシュアップ
+
+---
+
+## 📦 Phase1.5-Navigation（実装進行中）⚡最重要
+
+### 🎯 Phase1.5の重要性確認
+Phase1.5は**単なる機能追加ではなく、根幹システムの確立**：
+- **座標系の完成**: キャンバス外描画対応・変形基盤・精密座標管理
+- **非破壊編集の基盤**: Undo/Redo・操作履歴・状態管理システム
+- **拡張性の保証**: Phase2以降の全機能がこの基盤に依存
+
+### ✅ Phase1.5実装済み・確認項目
+
+#### 🆕 coordinate-manager.js（実装完了）
+```javascript
+window.Tegaki.CoordinateManager {
+    // 基本座標変換（実装済み）
+    screenToCanvas(screenX, screenY)      // スクリーン→キャンバス座標
+    canvasToScreen(canvasX, canvasY)      // キャンバス→スクリーン座標
+    clampToDrawableArea(x, y)            // 描画可能エリアに制限
+    isInsideCanvas(x, y)                 // キャンバス内判定
+    isInExtendedDrawArea(x, y)           // キャンバス外描画許可判定
+    
+    // 変形機能（基本実装済み）
+    setTranslation(deltaX, deltaY)       // 平行移動設定
+    setScale(scaleX, scaleY)             // 拡縮設定
+    setRotation(angle)                   // 回転設定
+    resetTransform()                     // 変形リセット
+    
+    // 情報取得（実装済み）
+    getExtendedDrawArea()                // 拡張描画エリア情報
+    getCanvasInfo()                      // キャンバス情報
+    getDebugInfo()                       // デバッグ情報完全版
+}
+```
+
+#### 🔧 app-core.js（CoordinateManager統合済み）
+```javascript
+TegakiApplication {
+    // CoordinateManager統合（実装済み）
+    initializeCoordinateManager()        // CoordinateManager初期化
+    setupCoordinateManager()             // Canvas要素設定
+    getCanvasCoordinates(event)          // 座標取得統合版
+    
+    // イベント処理統合（実装済み）
+    handlePointerDown(event)             // CoordinateManager使用版
+    handlePointerMove(event)             // キャンバス外描画対応
+    handlePointerUp(event)               // 座標統合処理
+}
+```
+
+#### 🎨 pen-tool.js（Phase1.5準備完了）
+```javascript
+PenTool {
+    // ベクターデータ保持（準備完了）
+    strokeHistory                        // ストローク履歴配列
+    currentStroke                        // 現在ストロークデータ
+    
+    // Phase1.5準備機能（実装済み）
+    redrawStroke(strokeData)             // ストローク再描画
+    removeLastStroke()                   // ストローク削除
+    enablePhase15Features()              // Phase1.5機能有効化
+}
+```
+
+### 🚀 Phase1.5残り実装項目
+
+#### ⚡ Step1: ナビゲーション・変形システム（最優先）
+```javascript
+// 🆕 managers/navigation-manager.js（新規作成必要）
+window.Tegaki.NavigationManager {
+    // 基本移動・変形
+    panCanvas(deltaX, deltaY)            // キャンバス移動
+    zoomCanvas(scale, centerX, centerY)  // ズーム（中心指定）
+    rotateCanvas(angle, centerX, centerY) // 回転（中心指定）
+    resetCanvasTransform()               // 変形リセット
+    
+    // ナビゲーション操作
+    startPan(x, y)                       // パン開始
+    updatePan(x, y)                      // パン更新
+    endPan()                             // パン終了
+    
+    // マウス・キーボード操作
+    handleMouseWheelZoom(event)          // ホイールズーム
+    handleMiddleClickPan(event)          // 中ボタンパン
+    handleKeyboardNavigation(event)      // キーボード操作
+    
+    // CoordinateManager連携
+    applyTransformToCoordinateManager()  // 座標系に変形適用
+    syncWithCoordinateManager()          // 座標系同期
+}
+```
+
+#### 🔄 Step2: 非破壊編集基盤（高優先）
+```javascript
+// 🆕 managers/record-manager.js（新規作成必要）
+window.Tegaki.RecordManager {
+    // 操作記録
+    recordOperation(operation)           // 操作記録
+    startOperationGroup(name)            // 操作グループ開始
+    endOperationGroup()                  // 操作グループ終了
+    
+    // Undo/Redo
+    canUndo()                           // Undo可能判定
+    canRedo()                           // Redo可能判定
+    undo()                              // 操作取り消し
+    redo()                              // 操作やり直し
+    
+    // 状態管理
+    saveCurrentState()                  // 現在状態保存
+    restoreState(stateId)               // 状態復元
+    
+    // PenTool連携
+    recordStroke(strokeData)            // ストローク記録
+    undoLastStroke()                    // 最後のストローク取り消し
+}
+```
+
+#### ⌨️ Step3: ショートカット・入力システム（中優先）
+```javascript
+// 🆕 js/utils/shortcut-manager.js（新規作成必要）
+window.Tegaki.ShortcutManager {
+    // ショートカット管理
+    registerShortcut(key, action, context) // ショートカット登録
+    handleKeydown(event)                  // キーボードイベント処理
+    
+    // Phase1.5基本ショートカット
+    setupPhase15Shortcuts() {
+        'Ctrl+Z': this.undo,              // アンドゥ
+        'Ctrl+Y': this.redo,              // リドゥ
+        'P': () => this.selectTool('pen'), // ペンツール
+        'E': () => this.selectTool('eraser'), // 消しゴム
+        'Space': this.startPanMode,       // パンモード開始
+        '[': this.decreaseBrushSize,      // ブラシサイズ縮小
+        ']': this.increaseBrushSize,      // ブラシサイズ拡大
+        'Ctrl+0': this.resetCanvasView,   // ビューリセット
+        'DEL': this.clearActiveLayer,     // レイヤークリア
+    }
+    
+    // NavigationManager・RecordManager連携
+    undo: () => RecordManager.undo(),
+    redo: () => RecordManager.redo(),
+    startPanMode: () => NavigationManager.startPan(),
+    resetCanvasView: () => NavigationManager.resetCanvasTransform(),
+}
+```
+
+### 🎯 Phase1.5実装計画（4週間想定）
+
+#### Week1: NavigationManager実装（座標系統合）
+```
+📋 実装項目:
+├── managers/navigation-manager.js作成
+├── 基本パン・ズーム・回転機能
+├── CoordinateManager変形連携
+├── マウスホイール・中ボタン対応
+└── 変形状態の保存・復元
+
+🎯 完了条件:
+- マウスホイールでスムーズズーム
+- 中ボタンドラッグでパン
+- Space+ドラッグでパンモード
+- Ctrl+0でビューリセット
+```
+
+#### Week2: RecordManager実装（非破壊編集）
+```
+📋 実装項目:
+├── managers/record-manager.js作成
+├── 基本Undo/Redo機能
+├── 操作履歴システム
+├── PenTool・EraserTool連携
+└── 状態管理・メモリ効率化
+
+🎯 完了条件:
+- Ctrl+Z/Ctrl+Yで確実なUndo/Redo
+- ストローク単位での操作記録
+- 最大100操作の履歴保持
+- メモリリークなし
+```
+
+#### Week3: ShortcutManager実装（効率化）
+```
+📋 実装項目:
+├── js/utils/shortcut-manager.js作成
+├── Phase1.5基本ショートカット実装
+├── NavigationManager・RecordManager連携
+├── コンテキスト管理
+└── ブラウザ競合回避
+
+🎯 完了条件:
+- 全Phase1.5ショートカット動作
+- 描画中・UI中での適切な動作分離
+- ブラウザ標準ショートカットとの競合なし
+```
+
+#### Week4: 統合・最適化・Phase2準備
+```
+📋 実装項目:
+├── 全Manager統合・連携テスト
+├── パフォーマンス最適化
+├── メモリ使用量最適化
+├── Phase2基盤準備・レイヤー変形基盤
+└── 統合テスト・バグ修正
+
+🎯 完了条件:
+- 1000回操作でもスムーズ動作
+- 長時間利用での安定性
+- Phase2実装の基盤完成
+```
+
+---
+
+## 📦 Phase2-Layer（レイヤー機能・Phase1.5基盤前提）
+
+### 🎯 Phase1.5基盤活用戦略
+Phase1.5で確立した基盤をフル活用：
+- **CoordinateManager**: レイヤー座標変換・変形処理の基盤
+- **NavigationManager**: レイヤー変形・移動の直接活用
+- **RecordManager**: レイヤー操作のUndo/Redo基盤
+
+### 🔧 Phase2実装計画（6週間想定・Phase1.5完了前提）
+
+#### Week1-2: レイヤー基本機能
+```javascript
+// 🆕 managers/layer-manager.js（新規作成）
+window.Tegaki.LayerManager {
+    // レイヤー管理（基本）
+    createNamedLayer(name, index)        // 名前付きレイヤー作成
+    deleteLayer(layerId)                 // レイヤー削除
+    setLayerVisibility(layerId, visible) // 表示制御
+    moveLayerOrder(layerId, newIndex)    // 順序変更
+    
+    // Phase1.5基盤活用
+    getLayerTransform(layerId)           // NavigationManager経由
+    applyTransformToLayer(layerId, transform) // CoordinateManager活用
+    recordLayerOperation(operation)      // RecordManager連携
+}
+
+// レイヤーパネルUI拡張
+LayerPanelUI {
+    createLayerItem(layer)               // レイヤー項目作成
+    updateLayerOrder()                   // ドラッグ&ドロップ順序変更
+    toggleLayerVisibility(layerId)       // 表示切り替え
+}
+```
+
+#### Week3-4: レイヤー変形機能
+```javascript
+// NavigationManager拡張（レイヤー変形対応）
+NavigationManager {
+    // レイヤー個別変形（新機能）
+    transformLayer(layerId, transform)   // 個別レイヤー変形
+    moveLayerContent(layerId, deltaX, deltaY) // レイヤー内容移動
+    rotateLayerContent(layerId, angle)   // レイヤー内容回転
+    scaleLayerContent(layerId, scale)    // レイヤー内容拡縮
+    flipLayerContent(layerId, axis)      // レイヤー内容反転
+    
+    // Phase1.5基盤活用
+    applyLayerTransform(layerId)         // CoordinateManager連携
+    recordLayerTransform(operation)      // RecordManager連携
+}
+
+// レイヤー変形UI
+TransformUI {
+    createTransformHandles(layer)        // 変形ハンドル作成
+    showTransformPreview(layer, transform) // リアルタイムプレビュー
+    applyTransform(layer, finalTransform) // 変形確定
+}
+```
+
+#### Week5-6: 範囲選択・Phase3準備
+```javascript
+// 🆕 tools/select-tool.js（新規作成）
+window.Tegaki.SelectTool {
+    // 範囲選択（CoordinateManager活用）
+    startSelection(x, y)                 // 選択開始
+    updateSelection(x, y)                // 選択範囲更新
+    endSelection()                       // 選択確定
+    
+    // 選択変形（NavigationManager・RecordManager活用）
+    transformSelection(transform)        // 選択範囲変形
+    moveSelection(deltaX, deltaY)        // 選択範囲移動
+    copySelection()                      // 選択範囲コピー
+    pasteSelection()                     // ペースト
+    deleteSelection()                    // 選択範囲削除
+}
+```
+
+---
+
+## 🎬 Phase3-Complete（アニメーション・GIF・最終最適化）
+
+### 🎯 Phase3実装スコープ
+- **アニメーション**: フレーム管理・再生・プレビュー
+- **GIF出力**: 高品質アニメーションGIF生成
+- **最終UI**: 全機能統合・プロレベルUI
+- **最適化**: 60FPS滑らか動作・メモリ効率化
+
+### 🔧 Phase3実装概要（Phase1.5-2基盤前提）
+
+#### アニメーション基盤
+```javascript
+// 🆕 managers/animation-manager.js
+window.Tegaki.AnimationManager {
+    // フレーム管理
+    createFrame(index)                   // フレーム作成
+    deleteFrame(index)                   // フレーム削除
+    copyFrame(fromIndex, toIndex)        // フレーム複製
+    
+    // 再生制御
+    playAnimation()                      // アニメーション再生
+    pauseAnimation()                     // 再生停止
+    setFrameRate(fps)                    // フレームレート設定
+    
+    // Phase1.5-2基盤活用
+    recordFrameOperation(operation)      // RecordManager連携
+    applyLayerAnimation(layerId, timeline) // LayerManager連携
+}
+```
+
+---
+
+## 🔄 Phase間依存関係・移行戦略
+
+```
+Phase1 → Phase1.5（必須・根幹）→ Phase2 → Phase3
+   ↓         ↓                    ↓        ↓
+基本描画 → 座標系・非破壊基盤 → レイヤー機能 → アニメーション
+   ↓         ↓                    ↓        ↓
+ツール → キャンバス外描画 → 範囲選択 → GIF出力
+   ↓         ↓                    ↓        ↓
+   UI  → ショートカット・ナビ → 変形UI → 最終UI
+```
+
+### ⚠️ Phase1.5の決定的重要性
+**Phase1.5を飛ばすリスク:**
+- Phase2でレイヤー変形実装時に座標系を根本から作り直す必要
+- Undo/Redo無しでの複雑な操作は非現実的
+- 現代的UIには基本ナビゲーション・ショートカットが必須
+
+**Phase1.5実装の利点:**
+- Phase2以降の実装が大幅に簡単になる
+- ユーザビリティが劇的に向上
+- 座標・変形・履歴の一貫した基盤確立
+
+---
+
+## 📅 開発ロードマップ（Phase1.5重点版）
+
+
+### ⚡ Phase1.5実装（4週間・根幹システム確立）
+```
+Week1: NavigationManager（座標系統合）
+├── navigation-manager.js新規作成
+├── パン・ズーム・回転基本機能
+├── CoordinateManager変形連携
+└── マウス・キーボード操作対応
+
+Week2: RecordManager（非破壊編集）
+├── record-manager.js新規作成
+├── Undo/Redo基本機能
+├── PenTool・EraserTool連携
+└── ストローク履歴システム
+
+Week3: ShortcutManager（効率化）
+├── shortcut-manager.js新規作成
+├── Phase1.5基本ショートカット
+├── Manager間連携
+└── コンテキスト管理
+
+Week4: 統合・最適化
+├── 全Manager統合テスト
+├── パフォーマンス最適化
+├── Phase2基盤準備
+└── バグ修正・品質向上
+```
+
+### 📦 Phase2実装（6週間・Phase1.5基盤活用）
+```
+Week1-2: レイヤー基本機能
+├── LayerManager実装
+├── レイヤーパネルUI
+└── Phase1.5基盤活用
+
+Week3-4: レイヤー変形機能
+├── NavigationManager拡張
+├── TransformUI実装
+└── リアルタイムプレビュー
+
+Week5-6: 範囲選択・Phase3準備
+├── SelectTool実装
+├── クリップボード連携
+└── Phase3基盤設計
+```
+
+### 🎬 Phase3実装（8週間・最終完成）
+```
+Week1-3: アニメーション基盤
+├── AnimationManager実装
+├── フレーム管理システム
+└── 再生・プレビュー機能
+
+Week4-6: GIF出力・最適化
+├── 高品質GIF生成
+├── パフォーマンス最適化
+└── メモリ効率化
+
+Week7-8: 最終統合・品質向上
+├── 全機能統合テスト
+├── UI最終調整
+└── プロダクション品質確保
+```
+
+---
+
+## 📋 各Phase成功指標
+
+### Phase1完了指標 ✅
+- [x] 基本描画成功（ペンで線が引ける）
+- [x] 座標精度（ズレ問題解決済み）
+- [x] 消しゴム動作（ERASEブレンドモード）
+- [x] エラーフリー（軽微エラー除去）
+
+### Phase1.5完了指標（最重要・現在目標）
+- [ ] **キャンバス外描画**: 縁付近で自然な描画体験 ✅（実装済み）
+- [ ] **座標系統一**: 全座標処理がCoordinateManager経由 ✅（実装済み）
+- [ ] **パン・ズーム**: マウス・キーボードでの自然な操作（実装必要）
+- [ ] **Undo/Redo**: Ctrl+Z/Ctrl+Y での確実な操作取り消し（実装必要）
+- [ ] **ショートカット**: P(ペン)・E(消しゴム)・Space(パン)等（実装必要）
+- [ ] **パフォーマンス**: 1000回操作でもスムーズ動作
+- [ ] **メモリ管理**: 長時間利用での安定性
+
+### Phase2完了指標
+- [ ] **レイヤー管理**: 作成・削除・順序変更・表示制御
+- [ ] **レイヤー変形**: 移動・回転・拡縮・反転（Phase1.5基盤活用）
+- [ ] **範囲選択**: 矩形・自由選択・選択範囲変形
+- [ ] **UI統合**: レイヤーパネル・変形ツール・選択ツール
+
+### Phase3完了指標
+- [ ] **アニメーション**: フレーム管理・再生・プレビュー
+- [ ] **GIF出力**: 高品質アニメーションGIF生成
+- [ ] **最終UI**: 全機能統合・プロレベルUI
+- [ ] **最適化**: 60FPS滑らか動作・メモリ効率化
+
+---
+
+## 🚨 品質管理・エラー防止
+
+### 💀 怪物コード撲滅継続（Phase1.5対応版）
+
+#### Phase1.5特有の注意事項
+1. **座標変換の複雑化禁止** - CoordinateManagerに集約・シンプル実装
+2. **ナビゲーション状態の散在禁止** - NavigationManagerに一元化
+3. **Undo/Redo実装の複雑化禁止** - RecordManagerに責任集約
+4. **ショートカット処理の散在禁止** - ShortcutManagerに一元化
+5. **Phase2機能の早期実装禁止** - Phase1.5完了まで厳禁
+
+#### AI改修対応設計原則
+- **単一責任**: 各ファイルが1つの明確な責任のみ
+- **予測可能**: AI Claudeが動作を予測・理解可能
+- **修正容易**: バグ修正・機能改善が簡単
+- **拡張安全**: 新機能追加時の既存機能への影響最小
+
+### 🎯 品質基準（Phase1.5）
+```javascript
+TARGET_CANVAS_DISPLAY_SUCCESS: 100%      // キャンバス表示成功率
+TARGET_API_CONSISTENCY: 100%             // API一貫性
+TARGET_COORDINATE_INTEGRATION: 100%      // 座標統合率
+TARGET_NAVIGATION_SMOOTHNESS: 60FPS      // ナビゲーション滑らかさ
+TARGET_UNDO_REDO_RELIABILITY: 100%       // Undo/Redo確実性
+TARGET_SHORTCUT_RESPONSE: <50ms          // ショートカット応答時間
+TARGET_MEMORY_LEAK: 0                    // メモリリークゼロ
+```
+
+---
+
+## 🔧 Phase1.5実装ガイドライン
+
+### 📁 新規ファイル作成ガイド
+
+#### managers/navigation-manager.js作成時
+```javascript
+/**
+ * 🧭 NavigationManager - キャンバス移動・変形・ナビゲーション専門
+ * 📋 RESPONSIBILITY: パン・ズーム・回転・変形状態管理
+ * 🚫 PROHIBITION: 描画処理・ツール処理・UI処理・エラー処理
+ * ✅ PERMISSION: 座標変換・変形計算・CoordinateManager連携・状態保存
+ * 
+ * 🔄 INTEGRATION: CoordinateManager + EventBus + ConfigManager
+ */
+class NavigationManager {
+    constructor() {
+        this.coordinateManager = null;    // CoordinateManager参照
+        this.isPanning = false;           // パン状態
+        this.lastPanPosition = null;      // 最後のパン座標
+        this.zoomLevel = 1.0;             // ズームレベル
+        // ...実装詳細
+    }
+
+
+---
+
+📝 **更新方針**: Phase1.5実装時に本ルールブックに基盤システム追加
+🎯 **検証方法**: コード改修後にチェックリストで確認
+💀 **基本原則**: エラーを隠すな・構造を透けさせろ・素人が読める構造にしろ
+🚀 **発展戦略**: 実装主導・文書後追い・段階的複雑化で確実な成長

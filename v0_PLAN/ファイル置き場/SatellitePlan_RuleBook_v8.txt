@@ -1,0 +1,90 @@
+# SatellitePlan RuleBook v8
+
+## 基本方針
+- PixiJS v8.13 を活用したベクター描画ツール
+- 段階的改修による安定実装
+- 座標系統一とDPR処理の一元化
+- 旧実装の完全排除
+
+## 技術制約
+- 実行環境：Chrome 最新、ローカルHTML（file://）対応
+- 技術スタック：PixiJS v8.13（CDN）、ES2023、fetch API
+- 禁止事項：Canvas2D、TypeScript、Vite、ESM、bundler、Babel 不使用
+- モジュール不使用、単一HTMLファイル構成
+
+## 座標・座標変換ルール【重要】
+- **入力座標は必ず `app.renderer.events.pointer.normalizeGlobal(e)` で正規化し、`toLocal()` を経由してレイヤー座標に変換すること**
+- **DOMイベントの `clientX/clientY`、`offsetX/offsetY`、`getBoundingClientRect()` を直接利用することを禁止する**
+- **座標変換は stage → canvasContainer → layer の順で toLocal() を使用**
+- 手計算による座標補正は一切禁止
+
+## 解像度・DPR処理【重要】
+- **DPR補正は Pixi の `renderer.resolution` に一元化し、devicePixelRatio を手計算で掛けることを禁止する**
+- **レンダラのリサイズは専用関数 `resizeRendererToCSS(app, width, height)` を通じて行い、CSSサイズと論理解像度を一致させる**
+- キャンバスサイズは400x400pxで統一
+- CSS上のサイズとレンダラの論理サイズを一致させること
+
+## ポインタイベント処理【重要】
+- **pointerup/pointercancel は必ず window または setPointerCapture を用いて捕捉する**
+- **ツールごとに isDrawing 状態を持ち、他ツールと共有しない**
+- ポインタキャプチャを活用してポインタ離脱時の処理漏れを防止
+- グローバルイベント捕捉でcanvas外でのpointerup処理を確実に行う
+
+## サムネイル生成
+- **デフォルトは「キャンバス基準」で生成し、オプションで「描画内容基準」を許容する**
+- **サムネイル生成は `renderer.render(container, renderTexture)` を用いる。`generateTexture()` の直接利用は禁止**
+- 統一スケールによる比較可能性を重視
+- 高速で安定したRenderTexture使用
+
+## カメラ・ビューポート
+- **カメラ枠は canvasContainer の子要素とする**
+- **外部に置く場合は canvasContainer の transform に追従させる処理を必ず実装する**
+- World座標とUI座標の分離を徹底
+- ズーム・パンの座標変換を統一
+
+## 旧実装の禁止【重要】
+- **CanvasRenderingContext2D API (`ctx.`) の呼び出しは禁止**
+- **以下のコードパターンが残っていないか定期的に grep すること：**
+  - `clientX|clientY|getBoundingClientRect|offsetX|offsetY|generateTexture|ctx\.`
+- 手動DPR計算コードの完全排除
+- DOM座標直接参照の禁止
+
+## レイヤー管理
+- 各レイヤーはPixi.Containerとして実装
+- レイヤー0は背景レイヤー（futaba-cream: #f0e0d6）
+- レイヤーの階層構造: stage → canvasContainer → layers
+- 非破壊編集に向けた構造設計
+
+## 描画ツール
+- ベクターペンを主体とした実装
+- ショートカット中心の操作体系
+- 120Hz対応を見据えた高速描画
+- クリスタ風のcanvas外描画対応予定
+
+## 品質方針
+- **フォールバック処理・エラー隠蔽・問題先送り禁止**
+- **ユーザー向けエラー演出絶対禁止**
+- **二重実装・冗長化禁止**
+- 曖昧な動作・暗黙修復禁止
+- AIによる検索可能性を重視したコード構造
+
+## 検査項目
+定期的に以下をチェックすること：
+```bash
+grep -RnE "clientX|clientY|getBoundingClientRect|offsetX|offsetY|window.devicePixelRatio|\* *devicePixelRatio|generateTexture\(|canvas.getContext|ctx\." .
+```
+
+## 将来計画
+- 近未来：レイヤー変形（移動・回転・縮小・反転）+ 無限キャンバス
+- 将来：GIFアニメ + LIVE2D/SPINE風モーフィング・ボーンアニメ
+
+## 実装優先順位
+1. 座標系統一とポインタイベント修正
+2. DPR処理一元化
+3. サムネイル処理統一
+4. カメラ枠追従処理
+5. 旧実装完全排除
+6. レイヤー機能拡張
+
+---
+v8 - 2025.09 - 座標系統一・DPR一元化・ポインタ処理強化

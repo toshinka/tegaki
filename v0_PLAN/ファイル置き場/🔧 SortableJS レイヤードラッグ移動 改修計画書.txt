@@ -1,0 +1,218 @@
+# 🔧 SortableJS レイヤードラッグ移動 改修計画書
+
+## 🎯 改修方針
+- **ライブラリ活用**: SortableJSで車輪の再発明を回避
+- **PixiJS非干渉**: DOM操作のみで描画システム保護
+- **SatellitePlan準拠**: イベント駆動でMainController仲介
+- **クリスタ基準**: 実用的な動作、過剰演出なし
+
+---
+
+## 📊 実装スコープ（総工数: 30分）
+
+| 工程 | ファイル | 作業内容 | 時間 |
+|------|----------|----------|------|
+| **Phase 1** | main.html | SortableJS導入・イベント定義 | 10分 |
+| **Phase 2** | layer-tool-ui.js | SortableJS初期化・UI連携 | 10分 |
+| **Phase 3** | DrawingEngine.js | レイヤー順序変更API | 5分 |
+| **Phase 4** | テスト | 動作確認・既存機能保護確認 | 5分 |
+
+---
+
+## 🚀 Phase 1: SortableJS導入・基盤準備（10分）
+
+### 1.1 CDN追加（main.html）
+```html
+<!-- PixiJS CDNの後に追加 -->
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+```
+
+### 1.2 イベント定義追加（MainController）
+```javascript
+// MainController イベント定義に追加
+const LAYER_EVENTS = {
+    'layer-reorder-request': { layerId: 'number', fromIndex: 'number', toIndex: 'number' },
+    'layer-order-changed': { layerList: 'array' }
+};
+```
+
+### 1.3 CSS追加（ドラッグフィードバック）
+```css
+.sortable-ghost {
+    opacity: 0.6;
+    background: rgba(100, 150, 255, 0.1);
+    border: 1px dashed #6496ff;
+}
+.sortable-chosen {
+    background: rgba(100, 150, 255, 0.05);
+}
+.layer-drag-handle {
+    cursor: grab;
+}
+.layer-drag-handle:active {
+    cursor: grabbing;
+}
+```
+
+---
+
+## 🚀 Phase 2: layer-tool-ui.js SortableJS初期化（10分）
+
+### 2.1 UIManager初期化時にSortable追加
+```javascript
+// UIManager.initializeUI() に追加
+initializeLayerSortable() {
+    const layerList = document.getElementById('layer-list');
+    if (!layerList || window.Sortable === undefined) return;
+    
+    this.sortable = window.Sortable.create(layerList, {
+        handle: '.layer-item', // レイヤー項目全体をハンドルに
+        ghostClass: 'sortable-ghost',
+        chosenClass: 'sortable-chosen',
+        animation: 150,
+        onEnd: (evt) => {
+            const layerId = parseInt(evt.item.dataset.layerId);
+            
+            // MainControllerにレイヤー順序変更を通知
+            if (window.MainController) {
+                window.MainController.emit('layer-reorder-request', {
+                    layerId,
+                    fromIndex: evt.oldIndex,
+                    toIndex: evt.newIndex
+                });
+            }
+        }
+    });
+}
+```
+
+### 2.2 レイヤーリスト更新時の対応
+```javascript
+// UIManager.updateLayerUI() 修正
+updateLayerUI() {
+    // 既存のレイヤーリスト更新処理...
+    
+    // SortableJS再初期化（レイヤー追加・削除時）
+    if (this.sortable) {
+        this.sortable.destroy();
+    }
+    this.initializeLayerSortable();
+}
+```
+
+---
+
+## 🚀 Phase 3: DrawingEngine.js レイヤー順序変更API（5分）
+
+### 3.1 LayerManager順序変更メソッド
+```javascript
+// LayerManager クラスに追加
+reorderLayer(layerId, fromIndex, toIndex) {
+    if (fromIndex === toIndex || fromIndex < 0 || toIndex < 0) return false;
+    if (fromIndex >= this.layers.items.length || toIndex >= this.layers.items.length) return false;
+    
+    // 配列操作
+    const layer = this.layers.items[fromIndex];
+    this.layers.items.splice(fromIndex, 1);
+    this.layers.items.splice(toIndex, 0, layer);
+    
+    // PixiJS表示順序更新（zIndexで制御）
+    this.layers.items.forEach((layer, index) => {
+        layer.container.zIndex = index;
+    });
+    
+    return true;
+}
+```
+
+### 3.2 DrawingEngine API拡張
+```javascript
+// window.DrawingEngineAPI に追加
+reorderLayer: (layerId, fromIndex, toIndex) => {
+    if (!engineInstance) return false;
+    
+    const success = engineInstance.layerManager.reorderLayer(layerId, fromIndex, toIndex);
+    
+    if (success && window.MainController) {
+        // UI更新通知
+        window.MainController.emit('layer-order-changed', {
+            layerList: engineInstance.layerManager.layers.items
+        });
+    }
+    
+    return success;
+}
+```
+
+### 3.3 MainControllerイベント監視
+```javascript
+// main.html MainController に追加
+MainController.on('layer-reorder-request', (payload) => {
+    const { layerId, fromIndex, toIndex } = payload;
+    
+    // DrawingEngineに順序変更要求
+    const success = window.DrawingEngineAPI?.reorderLayer(layerId, fromIndex, toIndex);
+    
+    // 履歴記録
+    if (success && window.RecordManager) {
+        window.RecordManager.recordAction('layer-reorder', {
+            layerId, fromIndex, toIndex
+        });
+    }
+});
+```
+
+---
+
+## 🚀 Phase 4: 動作テスト・確認（5分）
+
+### 4.1 動作確認項目
+- [ ] レイヤーパネルでスムーズなドラッグ移動
+- [ ] ドロップ位置の正確な判定
+- [ ] PixiJS描画順序の正しい更新
+- [ ] 既存機能（描画・カメラ移動）に影響なし
+
+### 4.2 不具合修正確認
+- [ ] ペン描画がリニアに動作（PointerEvent競合なし）
+- [ ] サムネイル正常表示（PixiJS非干渉）
+- [ ] スムーズな移動判定（SortableJS精度）
+
+---
+
+## 📝 実装後の完成形
+
+### ✅ 期待される動作
+1. **レイヤー項目をドラッグ**: 半透明化でドラッグ状態表示
+2. **挿入位置表示**: 点線ガイドで挿入位置明示
+3. **ドロップ完了**: アニメーション付きで順序変更
+4. **PixiJS連動**: 描画順序が即座に反映
+
+### 🔄 イベントフロー
+```
+[SortableJS] → ドラッグ検出
+     ↓ onEnd()
+[MainController] → イベント仲介・履歴記録
+     ↓ emit('layer-reorder-request')
+[DrawingEngine] → PixiJS順序変更・データ更新
+     ↓ emit('layer-order-changed')
+[layer-tool-ui.js] → UI再初期化
+```
+
+---
+
+## ⚠️ 重要注意事項
+
+### 🎯 成功の鍵
+1. **SortableJS依存性**: CDN読み込み確認必須
+2. **DOM構造保持**: layer-item要素のdata-layerId属性必須
+3. **イベント駆動徹底**: 直接メソッド呼び出し禁止
+4. **既存機能保護**: PixiJS描画・HammerJSに一切干渉しない
+
+### 🚫 回避すべき実装
+1. **自作座標計算**: SortableJSに全委任
+2. **PixiJS直接操作**: レイヤーデータ変更のみ
+3. **複雑な状態管理**: SortableJSが内部処理
+
+---
+
+**🌟 この計画により、30分で安定したレイヤードラッグ移動機能を実現し、既存不具合を完全解決します。**

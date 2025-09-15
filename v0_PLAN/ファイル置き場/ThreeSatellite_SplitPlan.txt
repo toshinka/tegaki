@@ -1,0 +1,357 @@
+# ⭐ 三分割分割計画書（futaba_layers_rev4.html ベース・星型運用用）
+
+## 1. 基本方針
+- 主星（MainController）は「発火・仲介・確定と記録」のみに責務を限定
+- 衛星は機能提供のみ。直接参照禁止。通信は必ず主星経由
+- 分割は三分割：
+  1. engine-position.js（描画エンジン + 座標管理）
+  2. layer-tool-ui.js（レイヤー管理 + ツール + UI）
+  3. error-service.js（エラーハンドリング・通知サービス）
+- 初期化順序とイベントフローを明確化し、座標系・描画・レイヤーの状態管理を整理
+
+---
+
+## 2. ファイルごとの役割と機能割り当て
+
+### 2.1 主星：main.html / MainController
+- @module   MainController
+- @role     衛星管理・イベント仲介・状態確定・記録
+- @depends  engine-position.js, layer-tool-ui.js, error-service.js
+- @provides イベント受信 / 衛星通知 / 初期化呼び出し
+- @notes    衛星間直接参照禁止、イベント型と payload 形式の統一
+
+#### 主な責務
+- 衛星初期化順序管理
+- イベント仲介：UI操作 → MainController → Layer/Engine/Position
+- Camera / World / Screen 座標変換フローの制御
+- LayerIDやStroke履歴などの一元管理
+
+---
+
+### 2.2 衛星1：engine-position.js
+- @module   EnginePosition
+- @role     描画エンジン + 座標管理
+- @depends  MainController
+- @provides init(canvas), drawStroke(stroke), worldToScreen(point), screenToWorld(point), setCamera(x, y)
+- @notes    Camera/World/Screen座標系を厳格に区別。循環参照禁止
+- @flow     Stroke登録 → World座標で保持 → Screen座標で描画 → MainControllerに通知
+- @memory   Camera位置、World座標履歴、描画ストローク履歴
+
+#### 主な責務
+- PixiJS v8 描画初期化
+- World→Screen 座標変換
+- Camera位置管理・移動
+- Stroke / Path の描画・記録
+
+---
+
+### 2.3 衛星2：layer-tool-ui.js
+- @module   LayerToolUI
+- @role     レイヤー管理 + ツール + UI
+- @depends  MainController
+- @provides init(), createLayer(name?), deleteLayer(id), setActiveLayer(id), onUIButtonClick(event)
+- @notes    Layer ID は安定生成（layer-1, layer-2, …）、UIボタン重複登録禁止、循環参照禁止
+- @flow     レイヤー作成 → LayerManager → MainController → UI更新
+- @memory   レイヤー構造、アクティブレイヤーID、ツール選択状態
+
+#### 主な責務
+- LayerManager: レイヤー作成・削除・順序管理
+- ToolManager: ペン・消しゴム・サイズ変更
+- UIManager: ボタンイベント・スライダー管理
+- MainController にイベント通知（layer-created, stroke-started 等）
+
+---
+
+### 2.4 衛星3：error-service.js
+- @module   ErrorService
+- @role     エラー検知・通知
+- @depends  MainController
+- @provides reportError(code, details), showErrorNotification(msg)
+- @notes    payload に Pixiオブジェクトや循環参照を含めない、全イベント型統一
+- @flow     衛星内部エラー → MainController → UI表示 / ログ
+- @memory   発生済みエラー履歴
+
+#### 主な責務
+- 発生したエラーを一元管理
+- MainController 経由で通知
+- 既知・未知エラーを区別しログに記録
+
+---
+
+## 3. 初期化順序（MainControllerから呼び出す）
+1. ErrorService.init()
+2. EnginePosition.init(canvas)
+3. LayerToolUI.init()
+4. MainController.registerSatellite(EnginePosition, LayerToolUI, ErrorService)
+5. MainController.startApplication()
+
+> この順序で呼ぶことで、座標系や描画・レイヤー管理の依存関係が保証される
+
+---
+
+## 4. イベントフロー例
+
+[ユーザー操作]
+→ UIManager（layer-tool-ui.js）
+→ MainController
+→ LayerManager / DrawingEngine / PositionManager
+→ MainController
+→ UI更新 / Camera反映
+
+
+### 4.1 座標系フロー
+
+Camera移動: PositionManager.setCamera(x,y) → MainController → EnginePosition
+Stroke描画: UI操作 → LayerToolUI → MainController → EnginePosition.drawStroke(worldPoint)
+
+
+---
+
+## 5. 注意事項
+- 循環参照禁止（JSON.stringifyでエラー防止）
+- Camera / World / Screen 座標系を多重化せず統一
+- Layer ID は安定した生成方式を採用
+- 公開APIは必ず MainController 経由で呼ぶ
+- 衛星間直接呼び出し禁止
+- ヘッダーにメソッド辞典・フロー・記憶管理情報を明記
+
+---
+
+## 6. ヘッダー雛形例（各衛星ファイルに共通）
+```js
+/**
+ * @module   EnginePosition
+ * @role     描画エンジン + 座標管理
+ * @depends  MainController
+ * @provides init(canvas), drawStroke(stroke), worldToScreen(point), screenToWorld(point), setCamera(x,y)
+ * @notes    Camera/World/Screen座標系を厳格に区別、循環参照禁止
+ * @flow     Stroke登録→World→Screen→DrawingEngine→MainController通知
+ * @memory   Camera位置、World座標履歴、描画ストローク履歴
+ */
+
+
+**三分割ファイルの初期コード雛形（ヘッダー・公開API・初期化フロー付き）**
+
+1. 主星：main.html（MainController）
+
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>三分割星型運用 - MainController</title>
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@8/dist/pixi.min.js"></script>
+  <script src="engine-position.js"></script>
+  <script src="layer-tool-ui.js"></script>
+  <script src="error-service.js"></script>
+</head>
+<body>
+  <canvas id="mainCanvas" width="800" height="600"></canvas>
+
+  <script>
+  /**
+   * @module   MainController
+   * @role     衛星管理・イベント仲介・状態確定・記録
+   * @depends  engine-position.js, layer-tool-ui.js, error-service.js
+   * @provides registerSatellite(), notifyEvent(), startApplication()
+   * @notes    衛星間直接参照禁止、イベント型/payload統一、座標系管理
+   */
+
+  const MainController = (() => {
+    const satellites = {};
+
+    function registerSatellite(name, module) {
+      satellites[name] = module;
+    }
+
+    function notifyEvent(type, payload) {
+      for (const key in satellites) {
+        if (satellites[key].onEvent) {
+          satellites[key].onEvent({ type, payload });
+        }
+      }
+      console.log("[MainController] Event notified:", type, payload);
+    }
+
+    async function startApplication() {
+      try {
+        // 初期化順序
+        await satellites.errorService.init();
+        await satellites.enginePosition.init(document.getElementById('mainCanvas'));
+        await satellites.layerToolUI.init();
+        console.log("[MainController] Application started.");
+      } catch (err) {
+        satellites.errorService.reportError('APP_START_FAILED', err);
+      }
+    }
+
+    return {
+      registerSatellite,
+      notifyEvent,
+      startApplication
+    };
+  })();
+
+  // 衛星登録
+  MainController.registerSatellite('enginePosition', EnginePosition);
+  MainController.registerSatellite('layerToolUI', LayerToolUI);
+  MainController.registerSatellite('errorService', ErrorService);
+
+  // アプリ起動
+  MainController.startApplication();
+  </script>
+</body>
+</html>
+
+2. 衛星1：engine-position.js
+
+/**
+ * @module   EnginePosition
+ * @role     描画エンジン + 座標管理
+ * @depends  MainController
+ * @provides init(canvas), drawStroke(stroke), worldToScreen(point), screenToWorld(point), setCamera(x,y)
+ * @notes    Camera/World/Screen座標系を厳格に区別、循環参照禁止
+ * @flow     Stroke登録→World→Screen→DrawingEngine→MainController通知
+ * @memory   Camera位置、World座標履歴、描画ストローク履歴
+ */
+
+const EnginePosition = (() => {
+  let app, camera = { x:0, y:0 }, strokes = [];
+
+  async function init(canvas) {
+    app = new PIXI.Application({ view: canvas, width: canvas.width, height: canvas.height });
+    console.log("[EnginePosition] Initialized.");
+  }
+
+  function drawStroke(stroke) {
+    // stroke: { points: [{x,y}], layerId }
+    strokes.push(stroke);
+    // World→Screen変換
+    stroke.points.forEach(p => {
+      p.screenX = p.x - camera.x;
+      p.screenY = p.y - camera.y;
+    });
+    // 簡易描画
+    const g = new PIXI.Graphics();
+    g.lineStyle(2, 0x000000);
+    const pts = stroke.points;
+    if (pts.length>0) g.moveTo(pts[0].screenX, pts[0].screenY);
+    for (let i=1;i<pts.length;i++) g.lineTo(pts[i].screenX, pts[i].screenY);
+    app.stage.addChild(g);
+
+    // MainControllerに通知
+    MainController.notifyEvent('stroke-drawn', { stroke });
+  }
+
+  function worldToScreen(point) {
+    return { x: point.x - camera.x, y: point.y - camera.y };
+  }
+
+  function screenToWorld(point) {
+    return { x: point.x + camera.x, y: point.y + camera.y };
+  }
+
+  function setCamera(x, y) {
+    camera.x = x; camera.y = y;
+    MainController.notifyEvent('camera-moved', { camera: {...camera} });
+  }
+
+  function onEvent(event) {
+    // 例: 受信イベント処理
+    // console.log("[EnginePosition] Event received:", event);
+  }
+
+  return {
+    init, drawStroke, worldToScreen, screenToWorld, setCamera, onEvent
+  };
+})();
+
+
+3. 衛星2：layer-tool-ui.js
+
+/**
+ * @module   LayerToolUI
+ * @role     レイヤー管理 + ツール + UI
+ * @depends  MainController
+ * @provides init(), createLayer(name?), deleteLayer(id), setActiveLayer(id), onUIButtonClick(event)
+ * @notes    Layer ID 安定生成、UIボタン重複禁止、循環参照禁止
+ * @flow     レイヤー作成 → LayerManager → MainController → UI更新
+ * @memory   レイヤー構造、アクティブレイヤーID、ツール選択状態
+ */
+
+const LayerToolUI = (() => {
+  let layers = [], activeLayerId = null;
+
+  async function init() {
+    console.log("[LayerToolUI] Initialized.");
+  }
+
+  function createLayer(name="layer") {
+    const id = `layer-${layers.length+1}`;
+    const layer = { id, name };
+    layers.push(layer);
+    activeLayerId = id;
+    MainController.notifyEvent('layer-created', { layer });
+  }
+
+  function deleteLayer(id) {
+    layers = layers.filter(l=>l.id!==id);
+    if (activeLayerId===id) activeLayerId = layers.length>0?layers[0].id:null;
+    MainController.notifyEvent('layer-deleted', { id });
+  }
+
+  function setActiveLayer(id) {
+    if (layers.find(l=>l.id===id)) {
+      activeLayerId = id;
+      MainController.notifyEvent('layer-activated', { id });
+    }
+  }
+
+  function onUIButtonClick(event) {
+    if (event.type==="add-layer") createLayer();
+  }
+
+  function onEvent(event) {
+    // 例: MainControllerからの通知受信
+    // console.log("[LayerToolUI] Event received:", event);
+  }
+
+  return { init, createLayer, deleteLayer, setActiveLayer, onUIButtonClick, onEvent };
+})();
+
+4. 衛星3：error-service.js
+
+/**
+ * @module   ErrorService
+ * @role     エラー検知・通知
+ * @depends  MainController
+ * @provides reportError(code, details), showErrorNotification(msg)
+ * @notes    payload に Pixiオブジェクトや循環参照を含めない、全イベント型統一
+ * @flow     衛星内部エラー → MainController → UI表示 / ログ
+ * @memory   発生済みエラー履歴
+ */
+
+const ErrorService = (() => {
+  let history = [];
+
+  async function init() {
+    console.log("[ErrorService] Initialized.");
+  }
+
+  function reportError(code, details) {
+    history.push({ code, details, timestamp: Date.now() });
+    showErrorNotification(`[${code}] ${details}`);
+  }
+
+  function showErrorNotification(msg) {
+    console.error("[ErrorService] ", msg);
+    MainController.notifyEvent('error-occurred', { message: msg });
+  }
+
+  function onEvent(event) {
+    // 他衛星からのエラー受信も処理可能
+  }
+
+  return { init, reportError, showErrorNotification, onEvent };
+})();
+
+

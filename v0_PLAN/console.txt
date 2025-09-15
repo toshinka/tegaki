@@ -1,0 +1,34 @@
+position-manager.js:22 Uncaught SyntaxError: Unexpected token '.'
+ui-manager.js:22 Uncaught SyntaxError: Unexpected identifier 'register'
+error-service.js:271 [ERROR] エラーが発生しました: LAYER_INIT_ERROR: Failed to initialize layer manager
+showErrorNotification @ error-service.js:271
+main.html:708 ❌ Failed to register satellite 'layers': TypeError: Converting circular structure to JSON
+    --> starting at object with constructor 'W'
+    |     property 'children' -> object with constructor 'Array'
+    |     index 0 -> object with constructor 'Ue'
+    --- property 'parent' closes the circle
+    at JSON.stringify (<anonymous>)
+    at MainController.notify (main.html:725:70)
+    at Object.notify (main.html:715:45)
+    at LayerManager.setActiveLayer (layer-manager.js:186:27)
+    at LayerManager.createBackgroundLayer (layer-manager.js:78:14)
+    at LayerManager.initialize (layer-manager.js:36:18)
+    at MainController.registerSatellite (main.html:701:41)
+    at async MainController.initialize (main.html:651:21)
+    at async main.html:993:17
+registerSatellite @ main.html:708
+main.html:996 💥 Application startup failed: TypeError: Converting circular structure to JSON
+    --> starting at object with constructor 'W'
+    |     property 'children' -> object with constructor 'Array'
+    |     index 0 -> object with constructor 'Ue'
+    --- property 'parent' closes the circle
+    at JSON.stringify (<anonymous>)
+    at MainController.notify (main.html:725:70)
+    at Object.notify (main.html:715:45)
+    at LayerManager.setActiveLayer (layer-manager.js:186:27)
+    at LayerManager.createBackgroundLayer (layer-manager.js:78:14)
+    at LayerManager.initialize (layer-manager.js:36:18)
+    at MainController.registerSatellite (main.html:701:41)
+    at async MainController.initialize (main.html:651:21)
+    at async main.html:993:17
+(anonymous) @ main.html:996

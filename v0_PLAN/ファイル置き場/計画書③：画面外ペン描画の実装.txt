@@ -1,0 +1,27 @@
+【目的】
+- キャンバス枠外からの描画を許可する
+- ペンストロークがカメラ窓を超えても worldContainer 上に記録されるようにする
+
+【改修内容】
+1. マスクの再設計
+   - cameraContainer の mask は「表示窓」のみを制御
+   - worldContainer 自体はマスクの影響を受けないようにする
+   - 描画ストロークは常に worldContainer に追加される
+
+2. 座標変換
+   - ペン入力時に必ず screenToWorld を通してワールド座標に変換
+   - カメラ枠外の screen座標も変換可能にする
+
+3. 入力イベント
+   - pointerdown / pointermove / pointerup で座標を worldContainer に変換
+   - グローバル→ローカル変換で枠外も正しく記録できる
+
+【参考パッチ案】
+- pointermove時の描画座標：
+  const worldPos = app.stage.toLocal(e.data.global, worldContainer);
+  activeLayer.lineTo(worldPos.x, worldPos.y);
+
+【検証項目】
+- カメラ窓外からストロークを始めても描画できる
+- カメラ移動・拡大縮小後も正しい位置に描画される
+- UIレイヤーやマスク対象外の要素には描画されない

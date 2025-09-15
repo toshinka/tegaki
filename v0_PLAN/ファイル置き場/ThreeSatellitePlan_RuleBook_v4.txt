@@ -1,0 +1,1147 @@
+# 🌟 完全版：分割戦略+改修計画書 v4
+## HammerJS・Lodash統合 | 主星+3衛星構成 | 将来拡張対応
+
+---
+
+# 📖 目次
+
+## 🔹 Part 1: 神様ルール+辞典（不変層）
+- [基本理念・技術仕様](#基本理念技術仕様)
+- [ファイル責務表（厳格定義）](#ファイル責務表厳格定義)
+- [イベント駆動設計（完全網羅）](#イベント駆動設計完全網羅)
+- [コーディング規約（AI解析最適化）](#コーディング規約ai解析最適化)
+- [座標系統一（無限ワールド対応）](#座標系統一無限ワールド対応)
+
+## 🔹 Part 2: 改修計画書（動的層）
+- [分割実行計画](#分割実行計画)
+- [ライブラリ統合戦略](#ライブラリ統合戦略)
+- [将来拡張への対応力](#将来拡張への対応力)
+- [テスト・デバッグ戦略](#テストデバッグ戦略)
+
+## 🔹 Part 3: ファイルヘッダー仕様（最動的層）
+- [各ファイルのヘッダーコメント仕様](#各ファイルのヘッダーコメント仕様)
+- [メソッド・シンボル辞典](#メソッドシンボル辞典)
+- [改修時チェックリスト](#改修時チェックリスト)
+
+---
+
+# 🔹 Part 1: 神様ルール+辞典（不変層）
+
+## 基本理念・技術仕様
+
+### 核心原則
+- **主星（MainController）**: イベント仲介・状態管理・非破壊記録・Undo/Redo制御
+- **衛星**: 機能提供のみ、状態保持禁止、直接通信禁止
+- **背景レイヤー**: 編集可能な特殊レイヤー（削除不可、常時表示）
+- **レイヤー分離**: 完全独立性、他レイヤー干渉禁止
+- **AI改修容易性**: 段階的修正、明示的エラー、検証可能性
+
+### 技術仕様（厳格）
+```
+実行環境    : Chrome最新、ローカルHTML直開き（file://）
+技術スタック: PixiJS v8.0.5（CDN）、HammerJS v2.0.8、Lodash v4.17.21、ES2023、fetch API可
+禁止技術   : Canvas2D, TypeScript, Vite, ESM, bundler, Babel
+ファイル数  : 4ファイル固定（main.html + 3衛星.js）
+```
+
+## ファイル責務表（厳格定義）
+
+### 🌟 main.html (MainController) - 中枢管制塔 + レコード管理
+**単一責務**: イベント仲介・状態管理・初期化制御・非破壊記録管理
+
+```javascript
+// 管理する状態
+const appState = {
+  initialized: false,
+  spacePressed: false,
+  currentTool: 'pen',
+  activeLayerId: 1,
+  camera: { x: 0, y: 0 },
+  canvas: { width: 400, height: 400 },
+  brushSettings: { size: 16.0, opacity: 0.85 },
+  worldBounds: { minX: -Infinity, maxX: Infinity, minY: -Infinity, maxY: Infinity }
+};
+
+// 非破壊記録管理（将来のundo/redo・レイヤー移動対応）
+const recordManager = {
+  history: [],           // 操作履歴
+  currentIndex: -1,      // 現在位置
+  maxHistorySize: 100    // 履歴上限
+};
+
+// 提供するAPI
+MainController.emit(eventType, payload)
+MainController.on(eventType, handler) 
+MainController.getState(key)
+MainController.setState(key, value)
+MainController.recordAction(action, data)  // アクション記録
+MainController.canUndo() / MainController.canRedo()
+```
+
+**禁止事項**: 描画処理、UI操作、座標計算の直接実行、ライブラリ固有処理
+
+### 🛰️ engine-position.js (PositionManager) - 座標・カメラ・ジェスチャー管理
+**単一責務**: 座標系管理・カメラ制御・DOM変換・ワールド座標管理・HammerJS統合
+
+```javascript
+class PositionManager {
+  // 無限ワールド座標系（将来のレイヤー移動対応）
+  screenToWorld(x, y)     // 画面 → ワールド座標変換（無限平面対応）
+  worldToScreen(x, y)     // ワールド → 画面座標変換
+  canvasToWorld(x, y)     // キャンバス → ワールド座標変換
+  worldToCanvas(x, y)     // ワールド → キャンバス座標変換
+  
+  // キャンバス外描画対応
+  isPointInCanvas(worldX, worldY)    // キャンバス範囲判定
+  getVisibleWorldBounds()            // 可視ワールド範囲取得
+  
+  // カメラ制御（無制限移動対応）
+  moveCamera(dx, dy)      // カメラ移動（DOM transform）
+  setCameraPosition(x, y) // カメラ絶対位置設定
+  resetCamera()           // カメラリセット
+  
+  // HammerJS統合（タッチ・ペン対応）
+  setupHammerJS()         // ジェスチャー認識初期化
+  onHammerPanStart(e)     // パン開始
+  onHammerPanMove(e)      // パン中
+  onHammerPanEnd(e)       // パン終了
+  
+  // レイヤー移動対応
+  transformLayerCoordinates(layer, dx, dy)  // レイヤー座標変換
+}
+```
+
+**禁止事項**: UI操作、レイヤー管理、描画内容の変更、ツール設定
+
+### 🛰️ layer-tool-ui.js (LayerManager + UIManager + ToolManager + DrawingEngine) - 統合描画衛星
+**単一責務**: レイヤー管理・ツール管理・UI制御・PixiJS描画・Lodash最適化
+
+```javascript
+class LayerManager {
+  createLayer(name)           // レイヤー作成
+  deleteLayer(id)            // レイヤー削除  
+  setActiveLayer(id)         // アクティブ設定
+  reorderLayers(from, to)    // ドラッグ並び替え（Lodash最適化）
+  transformLayer(id, dx, dy) // レイヤー変形（将来機能）
+}
+
+class ToolManager {
+  selectTool(toolName)       // ツール選択
+  setBrushSize(size)         // ブラシサイズ
+  setOpacity(opacity)        // 不透明度
+}
+
+class UIManager {
+  updateLayerPanel()         // レイヤーパネル更新（Lodashデバウンス）
+  showPopup(popupId)         // ポップアップ表示
+  updateStatusBar()          // ステータス更新
+  handleSliderChange()       // スライダー操作（Lodashスロットル）
+}
+
+class DrawingEngine {
+  createPath(worldX, worldY, settings) // パス作成（ワールド座標）
+  extendPath(path, worldX, worldY)     // パス延長
+  eraseAtPoint(worldX, worldY)         // 消去処理
+  renderToCanvas()                     // キャンバス描画
+}
+```
+
+**禁止事項**: 座標計算、カメラ制御、直接DOM操作、HammerJS処理
+
+### 🛰️ error-service.js (ErrorService) - エラー処理・デバッグ支援
+**単一責務**: エラー処理・ログ管理・パフォーマンス監視
+
+```javascript
+class ErrorService {
+  reportError(code, details)   // エラーレポート
+  logDebug(category, message)  // デバッグログ
+  showErrorDialog(message)     // エラーダイアログ
+  trackPerformance()          // パフォーマンス監視
+  validateEventPayload()       // ペイロード検証
+}
+```
+
+**禁止事項**: フォールバック処理、エラー隠蔽、問題先送り、機能代替実行
+
+## イベント駆動設計（完全網羅）
+
+### イベント型定義（完全版）
+```javascript
+const EVENT_TYPES = {
+  // 入力系（HammerJS統合）
+  'input-pointer-down': { x: 'number', y: 'number', pressure: 'number', pointerType: 'string' },
+  'input-pointer-move': { x: 'number', y: 'number', pressure: 'number', pointerType: 'string' },  
+  'input-pointer-up': { x: 'number', y: 'number' },
+  'input-space-toggle': { pressed: 'boolean' },
+  'input-arrow-key': { direction: 'string', pressed: 'boolean' },
+  
+  // ジェスチャー系（HammerJS）
+  'gesture-pan-start': { centerX: 'number', centerY: 'number', pointerType: 'string' },
+  'gesture-pan-move': { centerX: 'number', centerY: 'number', deltaX: 'number', deltaY: 'number' },
+  'gesture-pan-end': { centerX: 'number', centerY: 'number', velocityX: 'number', velocityY: 'number' },
+  'gesture-pinch-start': { scale: 'number', center: 'object' },
+  'gesture-pinch-move': { scale: 'number', center: 'object' },
+  'gesture-pinch-end': { scale: 'number', center: 'object' },
+  
+  // カメラ系（無限ワールド対応）
+  'camera-move-request': { dx: 'number', dy: 'number' },
+  'camera-position-changed': { x: 'number', y: 'number' },
+  'camera-set-position': { x: 'number', y: 'number' },
+  'camera-reset-request': {},
+  'camera-bounds-updated': { visibleBounds: 'object' },
+  
+  // 描画系（ワールド座標ベース + キャンバス外対応）
+  'draw-start-request': { worldX: 'number', worldY: 'number', layerId: 'number', tool: 'string', inCanvas: 'boolean' },
+  'draw-continue-request': { worldX: 'number', worldY: 'number', inCanvas: 'boolean' },
+  'draw-end-request': { worldX: 'number', worldY: 'number' },
+  'path-created': { pathId: 'string', layerId: 'number', worldBounds: 'object' },
+  'erase-request': { worldX: 'number', worldY: 'number', size: 'number' },
+  
+  // レイヤー系（移動・変形対応）
+  'layer-create-request': { name: 'string' },
+  'layer-created': { layerId: 'number', name: 'string' },
+  'layer-delete-request': { layerId: 'number' },
+  'layer-activate-request': { layerId: 'number' },
+  'layer-reorder-request': { fromIndex: 'number', toIndex: 'number' },
+  'layer-visibility-toggle': { layerId: 'number', visible: 'boolean' },
+  'layer-transform-request': { layerId: 'number', dx: 'number', dy: 'number' },
+  'layer-transform-applied': { layerId: 'number', transformation: 'object' },
+  
+  // 非破壊記録系（将来のundo/redo対応）
+  'record-action': { actionType: 'string', data: 'object', timestamp: 'number' },
+  'undo-request': {},
+  'redo-request': {},
+  'history-state-changed': { canUndo: 'boolean', canRedo: 'boolean' },
+  
+  // ツール系
+  'tool-select-request': { toolName: 'string' },
+  'tool-selected': { toolName: 'string' },
+  'brush-size-change': { size: 'number' },
+  'brush-opacity-change': { opacity: 'number' },
+  
+  // UI系（Lodash最適化）
+  'ui-popup-toggle': { popupId: 'string' },
+  'ui-coordinates-update': { x: 'number', y: 'number' },
+  'ui-canvas-resize': { width: 'number', height: 'number' },
+  'ui-layer-panel-update': {},
+  'ui-status-update': { key: 'string', value: 'any' },
+  
+  // システム系
+  'system-init-complete': {},
+  'system-libraries-loaded': { libraries: 'array' },
+  'system-resize-request': { width: 'number', height: 'number' },
+  'system-error': { code: 'string', details: 'object', stack: 'string' },
+  'system-debug': { category: 'string', message: 'string', data: 'object', timestamp: 'number' }
+};
+```
+
+### イベントフロー（段階明示）
+```
+[段階1: 入力検出] → MainController.emit()
+[段階2: 状態更新] → MainController.setState()  
+[段階3: 処理依頼] → 対象衛星.onEvent()
+[段階4: 結果通知] → MainController.emit()
+[段階5: UI反映] → UI系衛星.onEvent()
+[段階6: 記録保存] → MainController.recordAction()
+```
+
+## コーディング規約（AI解析最適化）
+
+### 関数命名規約
+```javascript
+// イベントハンドラー（必須prefix）
+handle[EventName](payload)        // handleCameraMove(payload)
+on[EventName](payload)            // onPointerDown(payload)
+
+// 状態更新（必須prefix） 
+update[StateName](value)          // updateCameraPosition(x, y)
+set[StateName](value)             // setActiveLayer(id)
+
+// UI操作（必須prefix）
+render[ComponentName]()           // renderLayerList()
+show[ComponentName](data)         // showErrorDialog(message)
+hide[ComponentName]()             // hidePopup()
+
+// 座標変換（必須形式）
+[source]To[target](x, y)          // screenToWorld(x, y)
+
+// 検証・判定（必須形式）
+is[Condition]()                   // isDrawing()
+has[Property]()                   // hasActiveLayer()
+can[Action]()                     // canDeleteLayer(id)
+
+// ライブラリ統合（必須prefix）
+setup[LibraryName]()              // setupHammerJS()
+on[Library][Event]()              // onHammerPanStart()
+```
+
+### エラーハンドリング（フェイルセーフ完全禁止）
+```javascript
+// ❌ 禁止: 暗黙的フォールバック
+function getLayer(id) {
+  return layers.get(id) || layers.get(0); // NG
+}
+
+// ✅ 推奨: 明示的エラー
+function getLayer(id) {
+  const layer = layers.get(id);
+  if (!layer) {
+    MainController.emit('system-error', { 
+      code: 'LAYER_NOT_FOUND', 
+      details: { layerId: id, availableLayers: Array.from(layers.keys()) },
+      stack: new Error().stack
+    });
+    throw new Error(`Layer ${id} not found`);
+  }
+  return layer;
+}
+```
+
+## 座標系統一（無限ワールド対応）
+
+### 無限ワールド座標系（レイヤー移動・キャンバス外描画対応）
+```javascript
+class PositionManager {
+  constructor() {
+    this.camera = { x: 0, y: 0 };
+    this.canvasBounds = { x: 0, y: 0, width: 400, height: 400 };
+    this.worldBounds = { minX: -Infinity, maxX: Infinity, minY: -Infinity, maxY: Infinity };
+    this.hammer = null;
+  }
+  
+  // 座標変換（無限平面対応）
+  screenToWorld(screenX, screenY) {
+    return {
+      x: screenX - this.camera.x,
+      y: screenY - this.camera.y
+    };
+  }
+  
+  worldToScreen(worldX, worldY) {
+    return {
+      x: worldX + this.camera.x,
+      y: worldY + this.camera.y
+    };
+  }
+  
+  canvasToWorld(canvasX, canvasY) {
+    return {
+      x: canvasX + this.canvasBounds.x - this.camera.x,
+      y: canvasY + this.canvasBounds.y - this.camera.y
+    };
+  }
+  
+  worldToCanvas(worldX, worldY) {
+    return {
+      x: worldX - this.canvasBounds.x + this.camera.x,
+      y: worldY - this.canvasBounds.y + this.camera.y
+    };
+  }
+  
+  // HammerJS統合
+  setupHammerJS() {
+    const container = document.getElementById('canvas-container');
+    this.hammer = new Hammer(container);
+    
+    this.hammer.get('pan').set({
+      direction: Hammer.DIRECTION_ALL,
+      threshold: 1
+    });
+    
+    this.hammer.get('pinch').set({ enable: true });
+    
+    this.hammer.on('panstart', (e) => this.onHammerPanStart(e));
+    this.hammer.on('panmove', (e) => this.onHammerPanMove(e));
+    this.hammer.on('panend', (e) => this.onHammerPanEnd(e));
+  }
+  
+  onHammerPanStart(e) {
+    MainController.emit('gesture-pan-start', {
+      centerX: e.center.x,
+      centerY: e.center.y,
+      pointerType: e.pointerType || 'unknown'
+    });
+  }
+}
+```
+
+---
+
+# 🔹 Part 2: 改修計画書（動的層）
+---
+Part 2 パッチ 区切り
+---
+# 🔧 Part 2改修パッチ: 問題検証と改修計画書 v4
+## 現在問題の根本分析と段階的改修戦略
+
+---
+
+# 📋 現在の問題分析（検証済み）
+
+## 🔍 Problem 1: 初回カメラ移動のオフセット問題
+**現象**: キャンバス移動の最初だけ左に50px程度ずれる、2回目からは正常
+**根本原因**: 初期DOM位置計算のタイミング問題
+```javascript
+// engine-position.js Line 180付近
+this.container.style.transform = 'translate(-50%, -50%)';  // 初期値
+// ↓ 初回移動時
+const offset = {
+    x: viewportCenter.x + this.camera.x,  // viewportCenter計算が不正確
+    y: viewportCenter.y + this.camera.y
+};
+```
+**影響度**: 中 - UX阻害、機能には影響なし
+
+## 🔍 Problem 2: レイヤーパネル初期非表示問題
+**現象**: レイヤー+ボタンを押すまで背景・レイヤー1が表示されない
+**根本原因**: UIManager.updateLayerUI() の初期化タイミング問題
+```javascript
+// layer-tool-ui.js Line 285付近
+setupEventHandlers() {
+    // イベント監視のみで、初期UI更新がない
+    MainController.on('layer-created', () => this.updateLayerUI());
+}
+// 初期化時に this.updateLayerUI() の直接呼び出しが不足
+```
+**影響度**: 高 - 基本機能の可視性問題
+
+## 🔍 Problem 3: レイヤー分離不完全問題
+**現象**: レイヤー2がレイヤー1の描画物を消せる（独立性破綻）
+**根本原因**: 消しゴム処理がグローバル座標で全レイヤー対象
+```javascript
+// layer-tool-ui.js DrawingEngine
+// 消しゴム処理で activeLayer 制限が不十分
+extendPath(path, worldX, worldY) {
+    // currentPath のみ対象で、他レイヤーの干渉チェックなし
+}
+```
+**影響度**: 高 - レイヤー機能の根幹問題
+
+## 🔍 Problem 4: 背景レイヤー設計問題
+**現象**: 背景レイヤーが操作不可、futaba-cream固定
+**根本原因**: 背景を Graphics オブジェクトで実装、描画レイヤーとして機能しない
+```javascript
+// layer-tool-ui.js Line 60
+const backgroundGraphics = new PIXI.Graphics();
+backgroundGraphics.rect(0, 0, width, height);
+backgroundGraphics.fill(0xf0e0d6);  // 固定色、編集不可
+```
+**影響度**: 中 - 背景編集機能の不在
+
+## 🔍 Problem 5: RecordManager未実装問題
+**現象**: Ctrl+Z/Ctrl+Y ショートカット未実装
+**根本原因**: RecordManager は構造のみ存在、実際のundo/redo処理未実装
+```javascript
+// main.html Line 180付近
+const RecordManager = {
+    // 履歴保存は動作するが、undo/redo メソッドが未実装
+    canUndo: function() { return this.currentIndex >= 0; },
+    canRedo: function() { return this.currentIndex < this.history.length - 1; }
+    // undo() / redo() メソッドが不足
+};
+```
+**影響度**: 中 - 利便性機能の不在
+
+## 🔍 Problem 6: ショートカット機能未実装
+**現象**: P（ペン）・E（消しゴム）ショートカット未実装
+**根本原因**: キーボードイベント処理がSpace・Home・矢印キーのみ
+**影響度**: 低 - 利便性向上機能
+
+---
+
+# 🚀 段階的改修計画（Phase分割）
+
+## Phase 1: 緊急修正（高影響度問題）- 即座実行推奨
+**対象**: Problem 2, 3
+**工数**: 30分
+**リスク**: 低
+
+### 1.1 レイヤーパネル初期表示修正
+```javascript
+// layer-tool-ui.js UIManager.initialize() に追加
+initialize() {
+    // 既存処理...
+    this.setupEventHandlers();
+    this.updateCanvasInfo();
+    
+    // ✅ 追加: 初期レイヤー表示
+    setTimeout(() => this.updateLayerUI(), 100); // DOM準備待ち
+}
+```
+
+### 1.2 レイヤー分離強化修正
+```javascript
+// layer-tool-ui.js DrawingEngine に追加
+handleDrawStartRequest(payload) {
+    // ✅ 修正: アクティブレイヤー制限
+    const activeLayer = window.LayerManager?.getActiveLayer();
+    if (!activeLayer || activeLayer.id !== payload.layerId) {
+        return; // 非アクティブレイヤーへの描画禁止
+    }
+    
+    // 既存の描画処理...
+}
+```
+
+## Phase 2: 基盤改修（中影響度問題）- 1週間以内推奨
+**対象**: Problem 1, 4
+**工数**: 2時間
+**リスク**: 中
+
+### 2.1 カメラ初期化修正
+```javascript
+// engine-position.js に追加
+initialize() {
+    // 既存処理...
+    
+    // ✅ 追加: 初期位置正確計算
+    setTimeout(() => {
+        this.calibrateInitialPosition();
+    }, 50); // DOM描画完了待ち
+}
+
+calibrateInitialPosition() {
+    const rect = this.container.getBoundingClientRect();
+    const viewportCenter = {
+        x: (window.innerWidth - 310) / 2,
+        y: window.innerHeight / 2
+    };
+    
+    // 初期オフセット補正
+    this.camera.targetX = 0;
+    this.camera.targetY = 0;
+    this.updateScheduled = true;
+}
+```
+
+### 2.2 背景レイヤー再設計
+```javascript
+// layer-tool-ui.js LayerManager に追加
+createBackgroundLayer() {
+    const layerId = 0;
+    const layerName = '背景';
+    
+    // ✅ 変更: 編集可能な背景レイヤー
+    const container = new PIXI.Container();
+    container.name = layerName;
+    container.visible = true;
+    
+    // デフォルト背景パスを作成（編集可能）
+    const backgroundPath = this.createDefaultBackgroundPath();
+    container.addChild(backgroundPath.graphics);
+    
+    const layer = {
+        id: layerId,
+        name: layerName,
+        container: container,
+        visible: true,
+        paths: [backgroundPath],  // ✅ 編集可能パスとして管理
+        isBackground: true,
+        editable: true  // ✅ 編集許可フラグ
+    };
+    
+    // 背景もアクティブレイヤーに設定可能
+    this.layers.set(layerId, layer);
+    this.engine.containers.world.addChild(container);
+    this.activeLayerId = layerId;  // ✅ 背景から開始
+}
+
+createDefaultBackgroundPath() {
+    const canvasState = MainController.getState('canvas');
+    const path = {
+        id: 'background_fill',
+        graphics: new PIXI.Graphics(),
+        points: [
+            { x: 0, y: 0, size: canvasState.width },
+            { x: canvasState.width, y: canvasState.height, size: 1 }
+        ],
+        color: 0xf0e0d6,  // futaba-cream
+        size: 1,
+        opacity: 1,
+        isComplete: true,
+        isBackgroundFill: true
+    };
+    
+    // 背景全体を塗りつぶし
+    path.graphics.rect(0, 0, canvasState.width, canvasState.height);
+    path.graphics.fill({ color: 0xf0e0d6, alpha: 1 });
+    
+    return path;
+}
+```
+
+## Phase 3: 機能拡張（利便性向上）- 2週間以内推奨
+**対象**: Problem 5, 6
+**工数**: 3時間
+**リスク**: 低
+
+### 3.1 RecordManager完全実装
+```javascript
+// main.html RecordManager に追加
+const RecordManager = {
+    // 既存プロパティ...
+    
+    // ✅ 追加: Undo機能
+    undo: function() {
+        if (!this.canUndo()) return false;
+        
+        const action = this.history[this.currentIndex];
+        this.executeReverseAction(action);
+        this.currentIndex--;
+        
+        MainController.emit('history-state-changed', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            historyLength: this.history.length
+        });
+        
+        return true;
+    },
+    
+    // ✅ 追加: Redo機能
+    redo: function() {
+        if (!this.canRedo()) return false;
+        
+        this.currentIndex++;
+        const action = this.history[this.currentIndex];
+        this.executeAction(action);
+        
+        MainController.emit('history-state-changed', {
+            canUndo: this.canUndo(),
+            canRedo: this.canRedo(),
+            historyLength: this.history.length
+        });
+        
+        return true;
+    },
+    
+    // ✅ 追加: アクション実行
+    executeAction: function(action) {
+        switch (action.type) {
+            case 'PATH_CREATE':
+                this.restorePath(action.data);
+                break;
+            case 'LAYER_CREATE':
+                MainController.emit('layer-create-request', { name: action.data.name });
+                break;
+            case 'LAYER_DELETE':
+                MainController.emit('layer-delete-request', { layerId: action.data.layerId });
+                break;
+            // 他のアクションタイプ...
+        }
+    },
+    
+    // ✅ 追加: 逆アクション実行
+    executeReverseAction: function(action) {
+        switch (action.type) {
+            case 'PATH_CREATE':
+                this.removePath(action.data.pathId);
+                break;
+            case 'LAYER_CREATE':
+                MainController.emit('layer-delete-request', { layerId: action.data.layerId });
+                break;
+            case 'LAYER_DELETE':
+                MainController.emit('layer-create-request', { name: action.data.name });
+                break;
+            // 他の逆アクション...
+        }
+    }
+};
+```
+
+### 3.2 ショートカット機能実装
+```javascript
+// main.html AppBootstrap.setupInputHandlers に追加
+setupInputHandlers() {
+    // 既存処理...
+    
+    document.addEventListener('keydown', (e) => {
+        // 既存のSpace・Home・矢印キー処理...
+        
+        // ✅ 追加: Ctrl+Z/Ctrl+Y (Undo/Redo)
+        if (e.ctrlKey || e.metaKey) {  // Mac対応
+            if (e.code === 'KeyZ' && !e.shiftKey) {
+                RecordManager.undo();
+                e.preventDefault();
+            } else if ((e.code === 'KeyY') || (e.code === 'KeyZ' && e.shiftKey)) {
+                RecordManager.redo();
+                e.preventDefault();
+            }
+        }
+        
+        // ✅ 追加: P（ペン）・E（消しゴム）ショートカット
+        if (!e.ctrlKey && !e.metaKey && !e.altKey) {
+            if (e.code === 'KeyP') {
+                MainController.emit('tool-select-request', { toolName: 'pen' });
+                e.preventDefault();
+            } else if (e.code === 'KeyE') {
+                MainController.emit('tool-select-request', { toolName: 'eraser' });
+                e.preventDefault();
+            }
+        }
+    });
+}
+```
+
+## Phase 4: 将来対応（PixiJS更新）- 別途計画推奨
+**対象**: PixiJS v8.0.5 → v8.7.0
+**工数**: 4-6時間
+**リスク**: 高（互換性問題の可能性）
+
+### 4.1 PixiJS更新の利点分析
+- **Layers機能**: 公式レイヤー管理で自作LayerManagerが不要に
+- **Performance**: 描画最適化、メモリ効率改善
+- **New Features**: 新しい描画プリミティブ、フィルター
+
+### 4.2 更新戦略
+1. **Phase 1-3完了後**に実施
+2. **別ブランチ**で検証実装
+3. **段階的移行**: 既存機能保持 → 新機能活用 → 旧機能削除
+
+---
+
+# 📝 Part 3 必要修正
+
+
+## Part 3修正: イベント型追加
+```javascript
+// 新規イベント型定義
+const NEW_EVENT_TYPES = {
+    // Undo/Redo系
+    'undo-executed': { actionType: 'string', success: 'boolean' },
+    'redo-executed': { actionType: 'string', success: 'boolean' },
+    
+    // ショートカット系
+    'shortcut-triggered': { key: 'string', action: 'string' },
+    
+    // 背景編集系
+    'background-edit-request': { worldX: 'number', worldY: 'number', tool: 'string' },
+    'background-cleared': { area: 'object' }
+};
+```
+
+---
+
+# 🎯 改修実行ガイド（他チャットClaude向け）
+
+## 問題 → 解決方法の対応表
+
+| 問題症状 | 原因ファイル:行数 | 修正方法 | 検証方法 |
+|---------|-----------------|---------|---------|
+| 初回カメラ移動ずれ | engine-position.js:180 | `calibrateInitialPosition()`追加 | Space+Dragで初回ずれなし |
+| レイヤーパネル非表示 | layer-tool-ui.js:285 | `setTimeout(() => updateLayerUI(), 100)`追加 | 起動時に背景・レイヤー1表示 |
+| レイヤー分離不完全 | layer-tool-ui.js:handleDrawStartRequest | `activeLayer.id !== payload.layerId`チェック | 他レイヤー描画物に干渉なし |
+| 背景固定問題 | layer-tool-ui.js:createBackgroundLayer | `createDefaultBackgroundPath()`で編集可能化 | 背景レイヤー選択で描画・消去可能 |
+| Undo/Redo未実装 | main.html:RecordManager | `undo()/redo()`メソッド追加 | Ctrl+Z/Ctrl+Y動作 |
+| ショートカット不足 | main.html:setupInputHandlers | P・Eキー処理追加 | P→ペン、E→消しゴム切替 |
+
+## 修正優先度
+1. **緊急**: レイヤーパネル・レイヤー分離（Phase 1）
+2. **重要**: カメラ・背景編集（Phase 2）  
+3. **改善**: Undo/Redo・ショートカット（Phase 3）
+4. **将来**: PixiJS更新（Phase 4、別途計画）
+
+## 検証チェックリスト
+- [ ] 起動時にレイヤーパネル表示
+- [ ] 初回カメラ移動でずれなし
+- [ ] レイヤー1がレイヤー2に干渉しない
+- [ ] 背景レイヤーで描画・消去可能
+- [ ] Ctrl+Z/Ctrl+Yでundo/redo
+- [ ] P/Eキーでツール切替（ポップアップなし）
+
+---
+
+**🌟 このパッチにより、基本機能の安定化と利便性向上を段階的に実現**
+
+---
+Part 2 パッチ 区切り
+---
+Part 3 パッチ 区切り
+---
+# 🔹 Part 3: ファイルヘッダー仕様（最動的層）
+
+## 各ファイルのヘッダーコメント仕様
+
+### main.html ヘッダー
+```javascript
+/**
+ * 🌟 main.html - MainController中枢管制塔 + RecordManager
+ * Version: 3.0.0 | Last Modified: 2025-01-XX
+ * 
+ * [🎯 責務範囲]
+ * - イベント仲介（全衛星間の通信制御）
+ * - 状態管理（appState、brushSettings、worldBounds）
+ * - 初期化制御（ライブラリ・衛星の起動順序）
+ * - 非破壊記録管理（操作履歴、undo/redo準備）
+ * 
+ * [🔧 主要API]
+ * MainController.emit(type, payload)     - イベント発火
+ * MainController.on(type, handler)       - イベント監視
+ * MainController.getState(key)           - 状態取得  
+ * MainController.setState(key, value)    - 状態更新
+ * MainController.recordAction(type, data) - アクション記録
+ * 
+ * [📡 処理イベント（IN）]
+ * - system-* : 初期化・エラー・デバッグ
+ * - *-request : 全衛星からの処理要求
+ * - *-changed : 状態変化通知
+ * 
+ * [📤 発火イベント（OUT）]  
+ * - *-request : 衛星への処理依頼
+ * - state-changed : 状態変化通知
+ * - history-state-changed : 履歴状態更新
+ * 
+ * [🔗 依存関係]
+ * ← engine-position.js (座標・カメライベント)
+ * ← layer-tool-ui.js (描画・UI・レイヤーイベント)  
+ * ← error-service.js (エラー・デバッグイベント)
+ * → CDN: PixiJS v8.0.5, HammerJS v2.0.8, Lodash v4.17.21, GSAP v3.13.0
+ * 
+ * [⚠️ 禁止事項]
+ * - 描画処理の直接実行
+ * - DOM操作の直接実行
+ * - ライブラリ固有処理の直接実行
+ * - 座標計算の直接実行
+ */
+```
+
+### engine-position.js ヘッダー
+```javascript
+/**
+ * 🛰️ engine-position.js - PositionManager座標・カメラ・ジェスチャー衛星
+ * Version: 3.0.0 | Last Modified: 2025-01-XX
+ * 
+ * [🎯 責務範囲]
+ * - 無限ワールド座標系管理（screen↔world変換）
+ * - カメラ制御（DOM transform、無制限移動）
+ * - HammerJS統合（タッチ・ペンジェスチャー）
+ * - キャンバス境界判定（外描画対応）
+ * - レイヤー座標変換（将来のレイヤー移動対応）
+ * 
+ * [🔧 主要メソッド]
+ * screenToWorld(x, y) → {x, y}           - 画面→ワールド座標
+ * worldToScreen(x, y) → {x, y}           - ワールド→画面座標
+ * canvasToWorld(x, y) → {x, y}           - キャンバス→ワールド座標
+ * worldToCanvas(x, y) → {x, y}           - ワールド→キャンバス座標
+ * isPointInCanvas(worldX, worldY) → bool  - キャンバス範囲判定
+ * getVisibleWorldBounds() → bounds        - 可視範囲取得
+ * moveCamera(dx, dy)                      - カメラ移動
+ * setCameraPosition(x, y)                 - カメラ絶対位置
+ * resetCamera()                           - カメラリセット
+ * setupHammerJS()                         - ジェスチャー初期化
+ * transformLayerCoordinates(layer, dx, dy) - レイヤー変形
+ * 
+ * [📡 処理イベント（IN）]
+ * - camera-move-request : カメラ移動要求
+ * - camera-set-position : カメラ位置設定
+ * - camera-reset-request : カメラリセット
+ * - gesture-pan-* : HammerJSジェスチャー
+ * 
+ * [📤 発火イベント（OUT）]
+ * - camera-position-changed : カメラ位置変更
+ * - camera-bounds-updated : 境界情報更新
+ * - gesture-pan-* : ジェスチャー状態変更
+ * 
+ * [🔗 依存関係]
+ * ← MainController (イベント・状態)
+ * → HammerJS v2.0.8 (ジェスチャー認識)
+ * → DOM要素: #canvas-container
+ * 
+ * [⚠️ 禁止事項]
+ * - UI操作・レイヤー管理・描画内容変更
+ * - ツール設定・エラー処理の直接実行
+ */
+```
+
+### layer-tool-ui.js ヘッダー
+```javascript
+/**
+ * 🛰️ layer-tool-ui.js - LayerManager+ToolManager+UIManager+DrawingEngine統合衛星
+ * Version: 3.0.0 | Last Modified: 2025-01-XX
+ * 
+ * [🎯 責務範囲]
+ * - レイヤー管理（CRUD、並び替え、可視性、変形）
+ * - ツール管理（ペン、消しゴム、ブラシ設定）
+ * - UI制御（ポップアップ、パネル、ステータス、Lodash最適化）
+ * - PixiJS描画エンジン（パス作成・延長・消去、ワールド座標対応）
+ * 
+ * [🔧 主要メソッド - LayerManager]
+ * createLayer(name) → layer               - レイヤー作成
+ * deleteLayer(id)                         - レイヤー削除
+ * setActiveLayer(id)                      - アクティブ設定
+ * reorderLayers(from, to)                 - ドラッグ並び替え
+ * toggleLayerVisibility(id)               - 表示切替
+ * transformLayer(id, dx, dy)              - レイヤー変形（将来機能）
+ * 
+ * [🔧 主要メソッド - ToolManager]
+ * selectTool(toolName)                    - ツール選択
+ * setBrushSize(size)                      - ブラシサイズ
+ * setOpacity(opacity)                     - 不透明度
+ * getCurrentToolSettings() → settings      - 現在設定取得
+ * 
+ * [🔧 主要メソッド - UIManager] 
+ * updateLayerPanel()                      - レイヤーパネル更新（debounce）
+ * showPopup(popupId)                      - ポップアップ表示
+ * hidePopup(popupId)                      - ポップアップ非表示
+ * updateStatusBar(data)                   - ステータス更新（throttle）
+ * handleSliderChange(slider, value)       - スライダー操作（throttle）
+ * updateCoordinates(x, y)                 - 座標表示更新
+ * 
+ * [🔧 主要メソッド - DrawingEngine]
+ * createPath(worldX, worldY, settings) → path  - パス作成（ワールド座標）
+ * extendPath(path, worldX, worldY)             - パス延長
+ * finalizePath(path)                           - パス完成
+ * eraseAtPoint(worldX, worldY, size)           - 消去処理
+ * renderToCanvas()                             - キャンバス描画
+ * 
+ * [📡 処理イベント（IN）]
+ * - layer-*-request : レイヤー操作要求
+ * - tool-*-request : ツール操作要求  
+ * - draw-*-request : 描画操作要求
+ * - ui-*-request : UI操作要求
+ * 
+ * [📤 発火イベント（OUT）]
+ * - layer-created/deleted/activated : レイヤー状態変更
+ * - tool-selected : ツール選択変更
+ * - path-created : パス作成完了
+ * - ui-updated : UI状態更新
+ * 
+ * [🔗 依存関係]
+ * ← MainController (イベント・状態)
+ * ← PositionManager (座標変換)
+ * → PixiJS v8.0.5 (描画エンジン)
+ * → Lodash v4.17.21 (debounce, throttle, cloneDeep)
+ * → GSAP v3.13.0 (アニメーション)
+ * → DOM要素: #layer-list, .popup-panel, .status-panel
+ * 
+ * [⚠️ 禁止事項]
+ * - 座標計算・カメラ制御の直接実行
+ * - HammerJS処理・エラー処理の直接実行
+ */
+```
+
+### error-service.js ヘッダー
+```javascript
+/**
+ * 🛰️ error-service.js - ErrorService エラー処理・デバッグ支援衛星  
+ * Version: 3.0.0 | Last Modified: 2025-01-XX
+ * 
+ * [🎯 責務範囲]
+ * - エラー分類・レポート・ダイアログ表示
+ * - デバッグログ管理・カテゴリ分類
+ * - パフォーマンス監視・FPS計測
+ * - イベントペイロード検証
+ * 
+ * [🔧 主要メソッド]
+ * reportError(code, details, stack)      - エラーレポート
+ * logDebug(category, message, data)      - デバッグログ
+ * showErrorDialog(message, actions)      - エラーダイアログ
+ * hideErrorDialog()                      - ダイアログ非表示
+ * trackPerformance(category, duration)   - パフォーマンス記録
+ * validateEventPayload(type, payload)    - ペイロード検証
+ * startFPSMonitor()                      - FPS監視開始
+ * getErrorStatistics() → stats           - エラー統計取得
+ * 
+ * [📊 エラーコード分類]
+ * COORD_001-099 : 座標系関連エラー
+ * LAYER_001-099 : レイヤー管理エラー
+ * TOOL_001-099  : ツール関連エラー
+ * LIB_001-099   : ライブラリ関連エラー
+ * UI_001-099    : UI操作エラー
+ * SYS_001-099   : システム関連エラー
+ * 
+ * [📡 処理イベント（IN）]
+ * - system-error : エラー発生通知
+ * - system-debug : デバッグログ要求
+ * - system-performance : パフォーマンス計測
+ * 
+ * [📤 発火イベント（OUT）]
+ * - error-reported : エラーレポート完了
+ * - error-dialog-shown : ダイアログ表示
+ * - performance-update : パフォーマンス更新
+ * 
+ * [🔗 依存関係]
+ * ← MainController (イベント・状態)
+ * → DOM要素: .error-dialog, #fps-display
+ * 
+ * [⚠️ 禁止事項]  
+ * - フォールバック処理・エラー隠蔽
+ * - 問題先送り・機能代替実行
+ * - 他衛星の機能代替実行
+ */
+```
+---
+Part 3 パッチ 区切り
+---
+メソッド・シンボル辞典 パッチ 区切り
+---
+
+## メソッド・シンボル辞典
+
+### 座標変換メソッド（PositionManager）
+```javascript
+// [基本変換] 必須実装
+screenToWorld(screenX, screenY) → { x: worldX, y: worldY }
+worldToScreen(worldX, worldY) → { x: screenX, y: screenY }
+canvasToWorld(canvasX, canvasY) → { x: worldX, y: worldY }  
+worldToCanvas(worldX, worldY) → { x: canvasX, y: canvasY }
+
+// [判定系] キャンバス外描画対応
+isPointInCanvas(worldX, worldY) → boolean
+isRectInCanvas(worldBounds) → boolean
+getVisibleWorldBounds() → { left, top, right, bottom }
+
+// [カメラ制御] 無制限移動対応
+moveCamera(dx, dy) → void
+setCameraPosition(x, y) → void  
+resetCamera() → void
+getCameraPosition() → { x, y }
+```
+
+### レイヤー管理メソッド（LayerManager）
+```javascript
+// [CRUD操作] 基本機能
+createLayer(name) → layer
+deleteLayer(layerId) → boolean
+getLayer(layerId) → layer | null
+getAllLayers() → layer[]
+setActiveLayer(layerId) → boolean
+
+// [表示制御] 可視性・順序
+toggleLayerVisibility(layerId) → boolean
+reorderLayers(fromIndex, toIndex) → boolean
+getLayerOrder() → layerId[]
+
+// [変形操作] 将来機能準備
+transformLayer(layerId, dx, dy) → transformation
+getLayerBounds(layerId) → bounds
+```
+
+### UI更新メソッド（UIManager）
+```javascript  
+// [パネル更新] Lodash最適化
+updateLayerPanel() → void          // debounce(16ms)
+updateStatusBar(data) → void       // throttle(100ms)
+updateCoordinates(x, y) → void     // throttle(50ms)
+
+// [ポップアップ制御] 表示管理
+showPopup(popupId, position) → void
+hidePopup(popupId) → void
+togglePopup(popupId) → boolean
+closeAllPopups() → void
+
+// [スライダー操作] 入力制御  
+handleSliderChange(sliderId, value) → void  // throttle(50ms)
+updateSliderValue(sliderId, value) → void
+getSliderValue(sliderId) → number
+```
+
+### 描画エンジンメソッド（DrawingEngine）
+```javascript
+// [パス操作] ワールド座標ベース
+createPath(worldX, worldY, settings) → path
+extendPath(path, worldX, worldY) → void
+finalizePath(path) → void
+deletePath(pathId) → boolean
+
+// [消去操作] 範囲指定対応
+eraseAtPoint(worldX, worldY, size) → affectedPaths[]
+eraseInRect(worldBounds) → affectedPaths[]
+
+// [描画制御] PixiJS統合
+renderToCanvas() → void
+clearCanvas() → void  
+redrawLayer(layerId) → void
+```
+---
+メソッド・シンボル辞典 パッチ 区切り
+---
+
+## 改修時チェックリスト
+
+### ✅ 改修前確認（必須）
+```
+□ 対象ファイルの責務がルールに適合しているか
+□ 変更がイベントフローに影響しないか  
+□ 循環参照が発生しないか
+□ ライブラリ依存が適切か（HammerJS/Lodash）
+□ 座標系の一貫性が保たれるか
+□ RecordManager記録対象か
+```
+
+### ✅ 改修中確認（推奨）
+```
+□ イベント型がEVENT_TYPESに定義されているか
+□ エラーハンドリングが適切か（フェイルセーフ禁止）
+□ 命名規約に従っているか
+□ デバッグログが出力されるか
+□ 座標変換が正しく行われているか
+□ UI更新がLodash最適化されているか
+```
+
+### ✅ 改修後確認（必須）
+```
+□ 全イベントフローが動作するか
+□ 座標系の整合性が保たれているか
+□ エラーが適切に報告されるか
+□ パフォーマンスが劣化していないか
+□ HammerJSジェスチャーが正常か
+□ Lodash最適化が効果的か
+□ 将来機能（レイヤー移動・キャンバス外描画）に影響しないか
+```
+
+### ✅ 動作確認項目（全実装後）
+```
+1. 基本描画機能
+   □ ペン描画（左クリック+ドラッグ）
+   □ 消しゴム（ツール切替+使用）
+   □ ブラシサイズ・不透明度変更
+
+2. カメラ・座標系
+   □ カメラ移動（Space+Drag, Space+Arrow）
+   □ タッチジェスチャー（HammerJS）
+   □ 座標表示の正確性
+   □ キャンバス外描画テスト
+
+3. レイヤー管理  
+   □ レイヤー追加・削除・表示切替
+   □ レイヤードラッグ並び替え
+   □ アクティブレイヤー切替
+
+4. UI・パフォーマンス
+   □ ポップアップ表示・ドラッグ
+   □ スライダー操作（Lodashスロットル）
+   □ FPS表示・パフォーマンス監視
+   □ エラーダイアログ表示
+
+5. システム統合
+   □ イベントフローの完全性
+   □ エラーハンドリングの適切性  
+   □ デバッグログの出力
+   □ RecordManager記録確認
+```
+
+---
+
+## 🎯 このドキュメントの使い方
+
+### 🔹 改修時の参照順序
+1. **Part 1（神様ルール）** - 変更禁止の基本原則
+2. **Part 3（ファイルヘッダー）** - 対象ファイルの詳細仕様  
+3. **Part 2（改修計画書）** - 実装戦略とライブラリ統合
+
+### 🔹 新機能追加時
+1. **イベント型定義**に新しいイベントを追加
+2. **対象ファイルのヘッダー**を更新
+3. **改修計画書**に実装戦略を追記
+
+### 🔹 別チャットClaude向け
+このドキュメント1つで完全な改修が可能。
+- 基本原則（不変）
+- 現在の設計（動的）
+- ファイル詳細（最動的）
+が全て含まれているため、追加の質問なしに改修に着手できます。
+
+---
+
+**🌟 v3.0完成版 - HammerJS・Lodash統合、将来拡張完全対応**

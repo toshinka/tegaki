@@ -1,0 +1,217 @@
+1. 改修目的
+
+責任分界の明確化
+index.html の責務を UI 構造定義に限定し、依存関係や初期化処理は bootstrap.js / main.js に分離
+
+スタイル一元化
+HTML インラインスタイルを styles.css に移植し、CSS変数と共通クラスを導入して DRY / SOLID 原則を担保
+
+メンテナンス性向上
+ファイル責務を整理し、フェーズ管理をスリム化
+
+将来的拡張性の確保
+Tabler Icons やテーマ変更、UI改善に備えた柔軟なスタイル基盤を整備
+
+2. 改修対象範囲
+
+index.html
+
+依存関係スクリプトの整理
+
+インラインスタイルの撤廃
+
+css/styles.css
+
+共通クラスと CSS変数の追加
+
+bootstrap.js（新規追加）
+
+スクリプト依存関係ロード管理を一本化
+
+main.js
+
+依存解決済みの環境で初期化のみ実行するよう整理
+
+3. 改修方針
+(A) 責任分界改修
+
+index.html には UI構造定義と bootstrap.js のみ読み込み
+
+bootstrap.js がフェーズ管理・依存関係解決を実施
+
+main.js / app-core.js はアプリ本体初期化専念
+
+(B) スタイル一元化
+
+インラインスタイル → CSSクラス化
+
+CSS変数導入
+
+:root {
+  --futaba-maroon: #800000;
+  --tool-button-size: 36px;
+}
+
+
+動的変更は JS + classList.toggle に統一
+
+4. 作業手順 (REV 体系)
+REV.1: 準備
+
+index.html 内の style 属性 / <style> をリストアップ
+
+依存スクリプトのロード順序を整理（現状の PHASE1〜9 を bootstrap.js へ移植）
+
+REV.2: スタイル移植
+
+共通クラス作成例
+
+.tool-button {
+  width: var(--tool-button-size);
+  height: var(--tool-button-size);
+  border-radius: 4px;
+}
+.futaba-maroon {
+  background-color: var(--futaba-maroon);
+}
+
+
+styles.css に統合
+
+index.html からインラインスタイル削除 → クラス適用
+
+REV.3: bootstrap.js 作成
+
+依存関係をロードする管理スクリプト
+
+// bootstrap.js
+(function(){
+  const scripts = [
+    "js/utils/config-manager.js",
+    "js/utils/error-manager.js",
+    // …略
+    "js/app-core.js",
+    "js/main.js"
+  ];
+  scripts.forEach(src => {
+    const s = document.createElement("script");
+    s.src = src;
+    document.head.appendChild(s);
+  });
+})();
+
+REV.4: main.js / app-core.js 整理
+
+main.js は初期化のみに専念
+
+CanvasManager.initialize 時に canvasElement: document.getElementById("canvas-container") を渡す
+
+デバッグ用に getDiagnosticInfo() を併用
+
+REV.5: 動作確認
+
+レイアウト崩れがないか確認
+
+Tabler Icons が正しく表示されるか確認
+
+JS 動的スタイル変更が classList.toggle ベースで動くか確認
+
+REV.6: 再レビュー
+
+DRY / SOLID の遵守を確認
+
+index.html が構造に専念しているか再確認
+
+5. 補足
+
+初期段階では 固定スタイルのみ CSS に移植
+
+動的部分は classList.toggle に徐々に置換
+
+将来的にはテーマ切替（ライト/ダーク、配色変更）にも対応可能
+
+
+🎯 新ファイル構成時のキャンバス出現までの流れ
+1. index.html
+
+最低限の DOM 要素だけ置く
+
+<body>
+  <div id="canvas-container"></div>
+  <script src="js/bootstrap.js"></script>
+</body>
+
+
+👉 これで「キャンバスを差し込む場所」が保証される。
+
+2. js/bootstrap.js
+
+依存関係を順番にロード
+
+(function(){
+  const scripts = [
+    "js/utils/config-manager.js",
+    "js/utils/error-manager.js",
+    "js/utils/state-manager.js",
+    "js/utils/event-bus.js",
+    "js/utils/coordinate-manager.js",
+    "js/utils/performance.js",
+    "js/utils/icon-manager.js",
+    "js/ui/popup-manager.js",
+    "js/ui/slider-manager.js",
+    "managers/ui-manager.js",
+    "managers/memory-manager.js",
+    "managers/settings-manager.js",
+    "libs/pixi-extensions.js",
+    "managers/canvas-manager.js",
+    "managers/boundary-manager.js",
+    "managers/tool-manager.js",
+    "tools/abstract-tool.js",
+    "tools/pen-tool.js",
+    "tools/eraser-tool.js",
+    "js/app-core.js",
+    "js/main.js"
+  ];
+  scripts.forEach(src => {
+    const s = document.createElement("script");
+    s.src = src;
+    s.defer = false; // 順序重視
+    document.head.appendChild(s);
+  });
+})();
+
+
+👉 これで依存崩れを防ぐ。
+
+3. js/main.js
+
+DOMContentLoaded 後に CanvasManager を初期化
+
+window.addEventListener('DOMContentLoaded', async () => {
+  const cm = window.Tegaki.CanvasManagerInstance;
+
+  await cm.initialize({
+    appCore: window.Tegaki.AppCoreInstance,
+    canvasElement: document.getElementById('canvas-container'),
+    config: { configManager: window.Tegaki.ConfigManagerInstance }
+  });
+
+  console.log("✅ Canvas ready:", cm.getDiagnosticInfo());
+});
+
+
+👉 ここで Pixi.Application が生成され、#canvas-container に app.view (キャンバス) が append される。
+
+✅ これで解決するポイント
+
+キャンバスが出ない問題 → canvasElement を確実に指定 (document.getElementById("canvas-container"))
+
+責任分界 →
+
+index.html = UI骨格
+
+bootstrap.js = 依存ロード
+
+main.js = 初期化とキャンバス出現
+
+📌 つまり、新ファイル導入後は bootstrap.js の導入 + main.js で CanvasManager.initialize に canvasElement を渡す ことで確実にキャンバスが出現するようになります。

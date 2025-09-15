@@ -1,0 +1,130 @@
+左上から直線が伸びるバグ改修ガイド
+🐛 バグの原因
+
+PixiJS の挙動
+
+Graphics.lineTo(x, y) は moveTo がされていないと (0,0) から始まってしまう。
+
+これにより「左上から線が伸びる」現象が出る。
+
+現状コードの問題点
+
+PenTool / EraserTool では pointerdown 時に moveTo をしている。
+
+しかし CanvasManager が CoordinateManager 経由で「pointCount=1 で終了」と扱ってしまい、isDrawing=false になる。
+
+そのため pointermove が「新規 lineTo」として処理され (0,0) → (x,y) の直線が描かれる。
+
+✅ 対策方針
+
+pointerdown（描画開始）
+
+点を置くだけ（moveTo）にする。lineTo は禁止。
+
+pointermove（描画中）
+
+lineTo を発動して描画。
+
+pointerup（描画終了）
+
+isDrawing=false に戻す。
+
+🔧 パッチ内容
+1. pen-tool.js / eraser-tool.js
+
+両方とも同じ修正方針で OK。
+
+// tools/pen-tool.js （eraser-tool.js も同様に修正）
+
+onPointerDown(event) {
+    const pos = this.getCanvasPosition(event);
+
+    this.drawing = true;
+    this.lastX = pos.x;
+    this.lastY = pos.y;
+
+    // ✅ 初回は moveTo のみ
+    this.graphics.moveTo(this.lastX, this.lastY);
+}
+
+onPointerMove(event) {
+    if (!this.drawing) return;
+
+    const pos = this.getCanvasPosition(event);
+
+    if (this.lastX === null || this.lastY === null) {
+        this.graphics.moveTo(pos.x, pos.y);
+    } else {
+        // ✅ pointermove から lineTo を発動
+        this.graphics.lineTo(pos.x, pos.y);
+    }
+
+    this.lastX = pos.x;
+    this.lastY = pos.y;
+}
+
+onPointerUp(event) {
+    this.drawing = false;
+    this.lastX = null;
+    this.lastY = null;
+}
+
+2. canvas-manager.js
+// canvas-manager.js 内 （onPointerDown / onPointerMove / onPointerUp を修正）
+
+onPointerDown(event) {
+    const pos = this.coordinateManager.getCanvasPosition(event);
+
+    this.isDrawing = true;
+    this.lastX = pos.x;
+    this.lastY = pos.y;
+
+    this.currentPath = new PIXI.Graphics();
+    // ✅ 初回は moveTo のみ
+    this.currentPath.moveTo(this.lastX, this.lastY);
+
+    this.addChild(this.currentPath);
+}
+
+onPointerMove(event) {
+    if (!this.isDrawing || !this.currentPath) return;
+
+    const pos = this.coordinateManager.getCanvasPosition(event);
+
+    // ✅ pointermove から lineTo
+    this.currentPath.lineTo(pos.x, pos.y);
+
+    this.lastX = pos.x;
+    this.lastY = pos.y;
+}
+
+onPointerUp(event) {
+    if (!this.isDrawing) return;
+    this.isDrawing = false;
+
+    this.finalizePath();
+}
+
+📝 改修まとめ
+
+PenTool / EraserTool
+
+pointerdown → moveTo
+
+pointermove → lineTo
+
+pointerup → 座標リセット
+
+CanvasManager
+
+pointCount=1 の時に即終了しない
+
+lineTo は pointermove のみ
+
+🎯 効果
+
+左上から直線が伸びるバグが解消。
+
+pointCount=1 でも終了しなくなるので「点で描いたつもりが線になる」問題も防止。
+
+描画フローが「開始 → 移動 → 終了」で統一される。

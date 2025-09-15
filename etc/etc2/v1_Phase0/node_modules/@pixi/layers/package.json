@@ -1,0 +1,39 @@
+{
+  "name": "@pixi/layers",
+  "version": "2.1.0",
+  "description": "PixiJS plugin, allows to change rendering order of containers without changing the scene graph.",
+  "author": "Ivan Popelyshev",
+  "contributors": [
+    "Ivan Popelyshev <ivan.popelyshev@gmail.com>"
+  ],
+  "main": "./lib/index.js",
+  "module": "./lib/index.mjs",
+  "types": "./lib/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./lib/index.mjs",
+      "require": "./lib/index.js",
+      "types": "./lib/index.d.ts"
+    }
+  },
+  "homepage": "http://www.pixijs.com/",
+  "bugs": "https://github.com/pixijs/pixi-layers/issues",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/pixijs/pixi-layers.git"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "files": [
+    "dist/",
+    "lib/",
+    "global.d.ts"
+  ],
+  "peerDependencies": {
+    "@pixi/canvas-renderer": "^7.0.0",
+    "@pixi/core": "^7.0.0",
+    "@pixi/display": "^7.0.0"
+  }
+}

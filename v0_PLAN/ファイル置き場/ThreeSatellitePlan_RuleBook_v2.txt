@@ -1,0 +1,345 @@
+# ⭐ 三分割運用用 AI改修最適化ルールブック v2.0
+
+## 1. 基本理念
+- **主星（MainController）**: イベント仲介・状態管理・初期化制御のみ
+- **衛星**: 機能提供のみ、状態保持禁止、直接通信禁止
+- **AI改修容易性**: 予測可能・追跡可能・デバッグ可能なコード構造を最優先
+
+## 2. 技術仕様（厳格）
+```
+実行環境    : Chrome最新、ローカルHTML直開き（file://）
+技術スタック: PixiJS v8（CDN）、ES2023、fetch API可
+禁止技術   : Canvas2D, TypeScript, Vite, ESM, bundler, Babel
+ファイル数  : 4ファイル固定（main.html + 3衛星.js）
+```
+
+## 3. ファイル責務表（厳格定義）
+
+### main.html (MainController) 
+**単一責務**: イベント仲介・状態管理・初期化
+```javascript
+// 管理する状態
+const appState = {
+  initialized: boolean,
+  spacePressed: boolean,
+  currentTool: string,
+  activeLayerId: number,
+  camera: { x: number, y: number }
+};
+
+// 提供するAPI
+MainController.emit(eventType, payload)
+MainController.on(eventType, handler) 
+MainController.getState(key)
+MainController.setState(key, value)
+```
+**禁止事項**: 描画処理、UI操作、座標計算の直接実行
+
+### engine-position.js (PositionManager)
+**単一責務**: 座標管理・カメラ制御
+```javascript
+// 管理する状態（MainControllerから受信のみ）
+// 提供する機能
+screenToWorld(x, y)
+worldToScreen(x, y) 
+setCamera(dx, dy)
+resetCamera()
+```
+**禁止事項**: UI操作、レイヤー管理、描画内容の変更
+
+### layer-tool-ui.js (LayerManager + UIManager)
+**単一責務**: レイヤー管理・ツール管理・UI制御
+```javascript
+// 提供する機能  
+createLayer(name)
+deleteLayer(id)
+setActiveLayer(id)
+toggleLayerVisibility(id)
+selectTool(toolName)
+updateUI()
+```
+**禁止事項**: 座標計算、カメラ制御、直接描画
+
+### error-service.js (ErrorService)
+**単一責務**: エラー処理・ログ管理
+```javascript
+// 提供する機能
+reportError(code, details)
+logDebug(category, message)
+showErrorDialog(message)
+```
+**禁止事項**: フォールバック処理、エラー隠蔽、問題先送り
+
+## 4. イベント駆動設計（AI追跡最適化）
+
+### イベント型定義（完全網羅）
+```javascript
+const EVENT_TYPES = {
+  // 入力系
+  'input-pointer-down': { x: 'number', y: 'number', pressure: 'number' },
+  'input-pointer-move': { x: 'number', y: 'number', pressure: 'number' },  
+  'input-pointer-up': { x: 'number', y: 'number' },
+  'input-space-press': { pressed: 'boolean' },
+  'input-arrow-key': { direction: 'string', pressed: 'boolean' },
+  
+  // カメラ系
+  'camera-move-request': { dx: 'number', dy: 'number' },
+  'camera-position-changed': { x: 'number', y: 'number' },
+  'camera-reset-request': {},
+  'camera-bounds-check': { x: 'number', y: 'number' },
+  
+  // 描画系  
+  'draw-start-request': { x: 'number', y: 'number', layerId: 'number' },
+  'draw-continue-request': { x: 'number', y: 'number' },
+  'draw-end-request': {},
+  'stroke-created': { strokeId: 'string', layerId: 'number' },
+  
+  // レイヤー系
+  'layer-create-request': { name: 'string' },
+  'layer-created': { layerId: 'number', name: 'string' },
+  'layer-delete-request': { layerId: 'number' },
+  'layer-activate-request': { layerId: 'number' },
+  'layer-visibility-toggle': { layerId: 'number', visible: 'boolean' },
+  
+  // ツール系
+  'tool-select-request': { toolName: 'string' },
+  'tool-selected': { toolName: 'string' },
+  'brush-size-change': { size: 'number' },
+  'brush-opacity-change': { opacity: 'number' },
+  
+  // UI系
+  'ui-popup-toggle': { popupId: 'string' },
+  'ui-coordinates-update': { x: 'number', y: 'number' },
+  'ui-status-update': { key: 'string', value: 'any' },
+  
+  // システム系
+  'system-init-complete': {},
+  'system-resize-request': { width: 'number', height: 'number' },
+  'system-error': { code: 'string', details: 'object' },
+  'system-debug': { category: 'string', message: 'string', data: 'object' }
+};
+```
+
+### イベントフロー（段階明示）
+```
+[段階1: 入力検出] → MainController.emit()
+[段階2: 状態更新] → MainController.setState()  
+[段階3: 処理依頼] → 対象衛星.onEvent()
+[段階4: 結果通知] → MainController.emit()
+[段階5: UI反映] → UI系衛星.onEvent()
+```
+
+## 5. コーディング規約（AI解析最適化）
+
+### 関数命名規約
+```javascript
+// イベントハンドラー（必須prefix）
+handle[EventName](payload) // handleCameraMove(payload)
+
+// 状態更新（必須prefix） 
+update[StateName](value)   // updateCameraPosition(x, y)
+
+// UI操作（必須prefix）
+render[ComponentName]()    // renderLayerList()
+
+// 座標変換（必須形式）
+[source]To[target](x, y)   // screenToWorld(x, y)
+```
+
+### エラーハンドリング（フェイルセーフ完全禁止）
+```javascript
+// ❌ 禁止: 暗黙的フォールバック
+function getLayer(id) {
+  return layers.get(id) || layers.get(0); // NG
+}
+
+// ✅ 推奨: 明示的エラー
+function getLayer(id) {
+  const layer = layers.get(id);
+  if (!layer) {
+    MainController.emit('system-error', { 
+      code: 'LAYER_NOT_FOUND', 
+      details: { layerId: id } 
+    });
+    throw new Error(`Layer ${id} not found`);
+  }
+  return layer;
+}
+```
+
+### 状態管理（MainController集約）
+```javascript
+// ❌ 禁止: 衛星内状態保持
+class LayerManager {
+  constructor() {
+    this.activeLayerId = null; // NG
+  }
+}
+
+// ✅ 推奨: MainController経由
+class LayerManager {
+  getActiveLayerId() {
+    return MainController.getState('activeLayerId'); // OK
+  }
+}
+```
+
+## 6. デバッグ支援（AI追跡強化）
+
+### トレースログ（必須実装）
+```javascript
+// 各処理の開始・終了を記録
+function handleCameraMove(payload) {
+  MainController.emit('system-debug', { 
+    category: 'camera', 
+    message: 'move-start', 
+    data: payload 
+  });
+  
+  // 処理実行
+  const result = this.moveCamera(payload.dx, payload.dy);
+  
+  MainController.emit('system-debug', { 
+    category: 'camera', 
+    message: 'move-end', 
+    data: result 
+  });
+  
+  return result;
+}
+```
+
+### 状態スナップショット
+```javascript
+// 重要な状態変化時にスナップショット
+MainController.setState = function(key, value) {
+  const oldValue = this.state[key];
+  this.state[key] = value;
+  
+  if (APP_CONFIG.debug) {
+    console.log(`State changed: ${key}`, { 
+      from: oldValue, 
+      to: value, 
+      timestamp: Date.now() 
+    });
+  }
+  
+  this.emit('state-changed', { key, oldValue, newValue: value });
+};
+```
+
+## 7. 座標系統一（混在解消）
+
+### DOM座標系ベース採用
+```javascript
+// 基準: DOM要素のclientX, clientY
+// canvas containerのtransformで視覚的移動を実現
+// PixiJS内座標は変換後の値として扱う
+
+class PositionManager {
+  screenToWorld(screenX, screenY) {
+    return {
+      x: screenX - this.camera.x,
+      y: screenY - this.camera.y
+    };
+  }
+  
+  worldToScreen(worldX, worldY) {
+    return {
+      x: worldX + this.camera.x,
+      y: worldY + this.camera.y  
+    };
+  }
+}
+```
+
+## 8. パフォーマンス制約
+
+### 処理時間制限
+- イベント処理: 16ms以内（60fps維持）
+- 座標変換: 1ms以内
+- UI更新: 8ms以内
+
+### メモリ管理
+- 循環参照の完全排除
+- 不要オブジェクトの即座解放
+- WeakMapの活用
+
+## 9. テスト容易性
+
+### 単体テスト支援
+```javascript
+// 各衛星は純粋関数として設計
+// MainController.emitをモック化することで独立テスト可能
+const mockMainController = {
+  emit: jest.fn(),
+  getState: jest.fn(),
+  setState: jest.fn()
+};
+```
+
+### 統合テスト支援  
+```javascript
+// イベントフローの検証
+const eventHistory = [];
+MainController.emit = function(type, payload) {
+  eventHistory.push({ type, payload, timestamp: Date.now() });
+  // 元の処理続行
+};
+```
+
+## 10. AI改修時のチェックリスト
+
+### ✅ 改修前確認
+- [ ] 対象ファイルの責務がルールに適合しているか
+- [ ] 変更がイベントフローに影響しないか  
+- [ ] 循環参照が発生しないか
+
+### ✅ 改修後確認
+- [ ] 全イベント型が定義済みか
+- [ ] エラーハンドリングが適切か
+- [ ] デバッグログが出力されるか
+- [ ] 状態がMainControllerに集約されているか
+
+### ✅ 動作確認項目
+1. カメラ移動（Space+Drag, Space+Arrow）
+2. ペン描画（左クリック+ドラッグ） 
+3. 消しゴム（ツール切替+使用）
+4. レイヤー操作（追加・削除・表示切替・順序変更）
+5. UI操作（ポップアップ・スライダー・リサイズ）
+
+## 11. 禁止パターン（AI判断迷い防止）
+
+### 🚫 絶対禁止
+```javascript
+// 衛星間直接参照
+layerManager.drawingEngine.createPath(); // NG
+
+// try-catch での問題隠蔽  
+try { riskyOperation(); } catch(e) { /* 無視 */ } // NG
+
+// undefinedのデフォルト値設定
+const value = maybeUndefined || defaultValue; // NG
+
+// 非同期処理の暗黙的待機
+setTimeout(() => fixSomething(), 100); // NG
+```
+
+### ✅ 推奨パターン
+```javascript
+// MainController経由の通信
+MainController.emit('draw-request', payload); // OK
+
+// 明示的エラー処理
+if (!isValid) throw new Error('明示的理由'); // OK  
+
+// 厳密な値チェック
+if (value === undefined) handleError(); // OK
+
+// Promise/async-awaitの使用
+await operation(); // OK
+```
+
+---
+
+このルールブックにより、AIは迷わずに改修作業を行え、人間も結果を予測しやすくなります。

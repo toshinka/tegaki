@@ -1,0 +1,84 @@
+# ⭐ 三分割運用用 神様ルールブック（最新版）
+
+## 1. 理念
+- 主星（MainController）は「発火・仲介・確定と記録」のみに責務を限定。
+- 衛星は機能提供のみ。直接通信や状態変更は禁止。主星を介して通信。
+- コード全体の見通し、依存関係の単純化、フロー明確化を最優先。
+
+## 2. 前提条件
+- 実行環境：Chrome 最新、ローカル HTML 直開き（file://）
+- 技術スタック：PixiJS v8（CDN）、ES2023（モジュール不使用）、fetch API可
+- ファイル構成：
+  - main.html（MainController）: 主星・初期化・イベント統括
+  - engine-position.js: 衛星・描画エンジン + 座標管理
+  - layer-tool-ui.js: 衛星・レイヤー管理 + ツール + UI
+  - error-service.js: 衛星・エラーハンドリング（独立可）
+- イベント通信はすべて `{ type, payload }` 形式で統一
+- Camera / World / Screen の座標系を厳格に区別
+
+## 3. 禁止事項
+- 衛星間直接参照禁止（必ず主星経由）
+- Canvas2D, TypeScript, Vite, ESM, bundler, Babel 使用禁止
+- PixiJS v7/v8の二重管理・混在禁止
+- フォールバック処理や暗黙修復、フェイルセーフで問題隠蔽禁止
+- 衛星内での主星依存や循環参照禁止
+- コンソールログは最小限、デバッグフラグで詳細化
+
+## 4. 命名・APIルール
+- Layer ID は安定生成: "layer-1", "layer-2", …
+- Event Type は固定一覧に従う: `coordinates-changed`, `layer-created`, `stroke-started`, `ui-layer-button-clicked`, `error-occurred`
+- Payload に PixiJS オブジェクトや循環参照を含めない
+- 衛星は必ず主星からイベント発火・受信
+
+## 5. ヘッダー用メソッド辞典（例）
+- @module   モジュール名
+- @role     担当責務
+- @depends  依存先（基本は MainController のみ）
+- @provides 公開API（イベント発火、描画登録、座標変換など）
+- @notes    改修注意点、座標系統一、循環参照禁止
+- @flow     動的フロー（例: Stroke → World→Screen → DrawingEngine、レイヤー作成 → LayerManager → MainController → UI更新）
+- @memory   状態・描画履歴保持（Layer構造、Camera位置、描画履歴など）
+
+## 6. イベントフローと責務相関
+
+### 6.1 イベントフロー例
+- [ユーザー操作] → UIManager → MainController → LayerManager / DrawingEngine / PositionManager  
+- [Camera移動] → PositionManager → MainController → DrawingEngine  
+- [レイヤー作成] → LayerManager → MainController → UIManager  
+
+### 6.2 カメラ移動フロー
+- pointermove (main) → EnginePosition.setCamera → cameraContainer.position 更新 → 全レイヤー追従
+
+### 6.3 座標変換フロー
+- screen(x,y) → EnginePosition.screenToWorld → world(x,y) → stroke 記録
+
+### 6.4 ファイル・メソッド責務表
+
+| ファイル | @provides メソッド | 主な責務 | 呼び出し元 |
+|----------|-------------------|----------|------------|
+| **main.html (MainController)** | initApp, pointermoveHandler, toWorld | エントリーポイント、UIイベントの受け口、ワールド座標変換呼び出し | UIManager, DOMイベント |
+| **layer-tool-ui.js (LayerManager)** | createLayer, switchLayer, getActiveLayer | レイヤーの生成・切替・管理 | MainController |
+| **engine-position.js (PositionManager)** | setCamera, getCamera, screenToWorld, worldToScreen | カメラ座標・座標変換の管理 | MainController, DrawingEngine |
+| **drawing-engine.js (DrawingEngine)** | startStroke, updateStroke, endStroke, eraseStroke | ストローク描画・消去処理、world座標に基づく記録 | MainController |
+| **error-service.js (ErrorService)** | logError, notify | エラー収集・通知 | 全ファイル共通 |
+
+### 6.5 禁止ルール
+- Layer.position を直接触る禁止（必ず PositionManager を介する）  
+- stroke 記録は必ず world 座標を使用（screen 座標のまま記録しない）  
+
+## 7. 座標系辞典
+- Camera: 表示位置・倍率のみ保持
+- World座標: 論理上の描画座標
+- Screen座標: Pixiで描画する際の変換後座標
+- Stroke: 描画開始時に World座標で登録 → Screen座標で描画
+
+## 8. 動的・流動的フロー補足
+- 主星は衛星初期化順序を管理
+- 衛星は描画・レイヤー・ツール・UIに専念
+- 微調整や状態変化はヘッダーコメント・簡易計画書で記録
+- Camera/World/Screenの多重化防止、描画・記憶フローの整合性を必ず確認
+
+## 9. 推奨運用
+1. 初期段階は三分割で統合運用
+2. 動作確認、座標系統一、イベントフローの安定化
+3. 安定後、必要に応じて衛星をさらに分割して保守性向上
