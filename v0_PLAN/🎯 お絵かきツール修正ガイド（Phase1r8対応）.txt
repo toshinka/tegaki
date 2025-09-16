@@ -1,0 +1,195 @@
+# 🎯 お絵かきツール修正ガイド（Phase1r8対応）
+
+## 🔍 問題の分析
+
+### 現在の問題点
+1. **サムネイル枠が過度に横長時に縦48pxが小さくならない**
+   - 横2000×縦400の場合、アスペクト比5:1が反映されない
+   - 現状：縦48px固定で横だけ拡大 → パネルをはみ出す
+
+2. **V押下時の中心線がカメラフレーム中央基準になっていない**
+   - 現在は初期正方形時の座標を使用している
+   - 修正必要：CONFIG.canvas.width/2, CONFIG.canvas.height/2を基準に
+
+3. **V押下時の回転・反転がカメラフレーム中央基準になっていない**
+   - pivot設定が不正確
+   - 修正必要：カメラフレーム中央(CONFIG.canvas.width/2, CONFIG.canvas.height/2)基準
+
+4. **V + Shift + ドラッグの操作方向が逆**
+   - 拡大・回転の方向が期待値と逆
+   - ユーザビリティの改善が必要
+
+## 🚀 改修戦略
+
+### Phase 1: サムネイル枠のアスペクト比対応
+**目標**: カメラフレームと同じアスペクト比のサムネイル枠
+
+#### 修正対象ファイル: `main.js`
+**修正箇所**: `updateThumbnail` メソッド（約650行目）
+
+**現在の問題コード**:
+```javascript
+// 修正版：パネルからのはみ出し防止・アスペクト比対応
+const canvasAspectRatio = CONFIG.canvas.width / CONFIG.canvas.height;
+let thumbnailWidth, thumbnailHeight;
+const maxHeight = 48; // 縦サイズの最大値
+const maxWidth = 72;  // 修正：パネルから飛び出さない最大横幅
+
+if (canvasAspectRatio >= 1) {
+    // 横長または正方形
+    thumbnailHeight = maxHeight;
+    thumbnailWidth = Math.min(maxWidth, thumbnailHeight * canvasAspectRatio);
+} else {
+    // 縦長
+    thumbnailWidth = Math.max(24, maxHeight * canvasAspectRatio); // 最小幅24px
+    thumbnailHeight = maxHeight;
+}
+```
+
+**修正後のロジック**:
+```javascript
+// アスペクト比完全対応版
+const canvasAspectRatio = CONFIG.canvas.width / CONFIG.canvas.height;
+const maxHeight = 48;
+const maxWidth = 72;
+
+let thumbnailWidth, thumbnailHeight;
+
+if (canvasAspectRatio >= 1) {
+    // 横長または正方形の場合
+    // 横幅制限を優先し、縦を比例縮小
+    if (maxHeight * canvasAspectRatio <= maxWidth) {
+        thumbnailWidth = maxHeight * canvasAspectRatio;
+        thumbnailHeight = maxHeight;
+    } else {
+        thumbnailWidth = maxWidth;
+        thumbnailHeight = maxWidth / canvasAspectRatio;
+    }
+} else {
+    // 縦長の場合
+    thumbnailWidth = Math.max(24, maxHeight * canvasAspectRatio);
+    thumbnailHeight = maxHeight;
+}
+```
+
+### Phase 2: ガイドライン中央基準修正
+**目標**: カメラフレーム中央にガイドラインを正確配置
+
+#### 修正対象ファイル: `main.js`
+**修正箇所**: `createGuideLines` メソッド（約120行目）
+
+**現在のコード**:
+```javascript
+// 縦線（カメラフレームの中央）
+const verticalLine = new PIXI.Graphics();
+verticalLine.rect(CONFIG.canvas.width / 2 - 0.5, 0, 1, CONFIG.canvas.height);
+verticalLine.fill({ color: 0x800000, alpha: 0.8 });
+this.guideLines.addChild(verticalLine);
+
+// 横線（カメラフレームの中央）
+const horizontalLine = new PIXI.Graphics();
+horizontalLine.rect(0, CONFIG.canvas.height / 2 - 0.5, CONFIG.canvas.width, 1);
+horizontalLine.fill({ color: 0x800000, alpha: 0.8 });
+this.guideLines.addChild(horizontalLine);
+```
+
+**修正内容**: 
+- 既に正しく実装されている
+- **問題は別の場所**: ガイドラインの表示タイミングと座標更新
+
+### Phase 3: レイヤー変形中央基準修正
+**目標**: 全ての変形操作でカメラフレーム中央を基準点に
+
+#### 修正対象ファイル: `main.js`
+**修正箇所**: `updateActiveLayerTransform`, `flipActiveLayer`, `transformActiveLayer` メソッド
+
+**問題の核心**:
+```javascript
+// 現在のコード（正しい）
+const centerX = CONFIG.canvas.width / 2;
+const centerY = CONFIG.canvas.height / 2;
+```
+
+**実際の問題**: 
+- ガイドライン表示のタイミング
+- レイヤー変形パネルの値同期
+- スライダーとドラッグ操作の統合性
+
+### Phase 4: V + Shift + ドラッグの方向修正
+**目標**: 直感的な操作方向に変更
+
+#### 修正対象ファイル: `main.js`
+**修正箇所**: レイヤードラッグイベント処理（約460行目）
+
+**現在の問題コード**:
+```javascript
+if (Math.abs(dx) > Math.abs(dy)) {
+    // 水平方向優先: 拡縮
+    const scaleFactor = 1 + (dx * 0.01);
+    // ...
+} else {
+    // 垂直方向優先: 回転
+    transform.rotation += (dy * 0.02);
+    // ...
+}
+```
+
+**修正方向**:
+- 拡縮: 上ドラッグ→拡大、下ドラッグ→縮小
+- 回転: 右ドラッグ→右回転、左ドラッグ→左回転
+
+## 🔧 実装チェックリスト
+
+### ✅ サムネイル修正
+- [ ] アスペクト比計算の完全対応
+- [ ] 縦サイズの比例縮小実装
+- [ ] パネル幅制限の厳格化
+- [ ] 動的サイズ更新の確認
+
+### ✅ ガイドライン修正
+- [ ] カメラフレーム中央座標の確認
+- [ ] 動的座標更新の実装
+- [ ] 表示タイミングの最適化
+
+### ✅ 変形基準点修正
+- [ ] pivot設定の統一化
+- [ ] position計算の正確性確認
+- [ ] スライダー連動の確認
+
+### ✅ 操作方向修正
+- [ ] ドラッグ方向の反転
+- [ ] 直感性の向上
+- [ ] 操作感の統一
+
+## 🎯 重要な修正ポイント
+
+### 1. 座標系の統一
+- カメラフレーム中央: `(CONFIG.canvas.width/2, CONFIG.canvas.height/2)`
+- 全ての変形操作で統一的に使用
+
+### 2. アスペクト比の完全対応
+- サムネイル枠の縦横比をカメラフレームと一致
+- パネル幅制限との両立
+
+### 3. UI一貫性
+- スライダー操作とドラッグ操作の統一
+- 視覚的フィードバックの改善
+
+### 4. パフォーマンス配慮
+- 不要な再計算の削減
+- レンダリング最適化の維持
+
+## 🚨 注意事項
+
+### 継承必須項目
+- 既存の機能を破綻させない
+- 他のツール（ペン、消しゴム）への影響なし
+- パフォーマンスの維持
+
+### テスト項目
+- 様々なアスペクト比でのサムネイル表示
+- V押下時のガイドライン位置
+- レイヤー変形の基準点確認
+- ドラッグ操作の方向性確認
+
+この改修ガイドに基づいて実装すれば、前回の失敗要因を回避し、確実に問題を解決できます。
