@@ -1,269 +1,208 @@
-💡リファクタリング案
-javascript// 【現在】 → 【改修後】
-StationManager → AppInitializer
-MainController → AppController  
-CoreEngine → DrawingEngine
-CameraManager → DomPositionManager
-UIManager → InterfaceManager
-ToolManager → DrawingTools
-PerformanceMonitor → SystemMonitor
+🎯 非破壊変形の実装に相性の良い仕組み
+1. Transform 記録方式
 
-📝シンボル辞典
-シンボル　　　　　　　　　　責任範囲　　　　　　　　　　　　　　主要メソッド　　　　　　　　
-AppBootstrap　　　　　初期化・ライブラリ管理         init(), checkLibraries()
-AppController　　　　 アプリ全体制御init(),          setupInputHandlers()
-DrawingEngine         描画・Canvas管理               createPath(), drawLine(), resize()
-DomPositionManager    DOM位置制御                    startPanning(), updatePosition()
-InterfaceManager      UI状態・ポップアップ           togglePopup(), updateSliders()
-DrawingTools          ツール・描画ロジック           startDrawing(), setBrushSize()
-SystemMonitor         パフォーマンス監視             trackFPS(), updateStats()
+PIXI.Container.transform / position / rotation / scale / skew を数値で保持
 
-※ AppController は将来的に UIController / AnimationController / PhysicsController などへ分割される可能性がある。
-※ 各 Controller は明確な責務単位で命名され、AIが処理対象を容易に把握できるよう配慮される。
-※ 将来的に描画やアニメーションの機能が拡張されても、Controller 名から役割を直感的に理解可能にする
+描画は常に「元画像テクスチャ」をベースにして transform を適用
+
+記憶系として「変形プロパティ履歴」を持つ
+
+// 例: レイヤーの変形状態を保存
+layerState = {
+  x: 100,
+  y: 200,
+  rotation: Math.PI / 6,
+  scaleX: 1.5,
+  scaleY: 0.8,
+  flipX: false,
+  flipY: true
+};
+
+// 再適用
+layer.position.set(layerState.x, layerState.y);
+layer.rotation = layerState.rotation;
+layer.scale.set(layerState.scaleX * (layerState.flipX ? -1 : 1),
+                layerState.scaleY * (layerState.flipY ? -1 : 1));
 
 
-💡GROK4のスリム案ではWorld座標系を消すことにしてるけど、近い将来のレイヤー移動で必要になるのでハイブリッドで残したい。
+✅ メリット:
 
-1. screenToWorld / worldToScreen の役割
+コードが見やすくAIに優しい
 
-PixiJSや一般的な仮想カメラ系の描画では、
+JSONで履歴管理しやすい
 
-world座標系：キャンバス上の論理的な座標（描画対象が動く空間）
+2. Matrix ベース管理
 
-screen座標系：実際のブラウザ上のピクセル位置
+PIXI.Matrix で変形をまとめて管理
 
-これらを変換する関数が screenToWorld / worldToScreen です。
-例えば、マウス座標からキャンバス上の線を引くとき、マウスの 画面座標 を ワールド座標 に変換して描画する、という用途です。
+JSON化 → undo/redo やモーション補間が容易
 
-2. DOMパン実装（Rev2）の場合
+const m = new PIXI.Matrix();
+m.translate(100, 200);
+m.rotate(Math.PI / 6);
+m.scale(1.5, 0.8);
 
-今回の DOMパンでは、canvas 自体を DOM レベルで移動します。
+layer.transform.setFromMatrix(m);
 
-そのため「マウス座標 = canvas 内の座標」と直接対応させれば描画可能。
 
-Pixi の仮想座標（worldContainer.x/y）での相対計算が不要になるため、 screenToWorld / worldToScreen は使わなくても描画は成立します。
+✅ メリット:
 
-3. 無限キャンバス化との関係
+座標変換を一元的に扱える
 
-無限キャンバスや「ビューに依存しない描画範囲」を作る場合は、世界座標系が必須です。
+非破壊で回転・拡縮・反転を合成可能
 
-例: Canvas 内の任意位置に描画可能
+3. RenderTexture + 元データ保持
 
-スクロールやパンで viewport を動かしても描画内容は正しい座標に残る
+レイヤー描画内容を「ベースの RenderTexture」に保持
 
-現状の DOMパン実装だと、canvas の絶対位置に依存しているため、canvas の外に描画領域を広げるのは難しいです。
+画面表示は transform をかけた Sprite を表示するだけ
 
-つまり、将来的に無限キャンバスや複数レイヤーで拡張する場合は、再び world座標系への変換やコンテナ移動を意識する必要があります。
+変形自体は数値記録 → 再レンダリング時に元データに適用
 
-4. 結論・方針
+✅ メリット:
 
-現状のDOMパン + Rev2のジッター解消には screenToWorld / worldToScreen は不要
+元データを壊さず何度でも再変形可能
 
-将来的な無限キャンバス対応や複雑なレイヤー変形を見据える場合は、残しておくか、将来復活可能な設計にしておくのが望ましい
+サムネイル生成も同じ RenderTexture から可能
 
-☑というわけでハイブリッドで今から仕込無方針で！
+4. タイムライン記録（将来アニメ用）
 
-今のうちに仕込みを入れておく方が無駄な差し戻しが減ります。理由は以下です。
+「非破壊変形 = キーフレーム管理」に拡張
 
-1. 将来的なメリット
+transform 値を時間軸に沿って保存 → アニメーション化
 
-世界座標系の概念を残す
+JSON例:
 
-CoreEngine に screenToWorld / worldToScreen をユーティリティとして保持
-
-DOMパンでも呼ばずに済ませつつ、将来無限キャンバスやレイヤー変形で再利用可能
-
-レイヤー移動・変形対応が容易
-
-回転・拡縮・反転・移動などの操作は、座標系を統一しておくと処理がシンプル
-
-コード分離・ハイブリッド切替がスムーズ
-
-DOMパン用と world座標パン用の切替を簡単に追加可能
-
-将来的に Pixi の Container 移動に戻す場合も影響最小
-
-2. 実装方針例
-
-CoreEngine に座標変換関数を残す（未使用でも OK）
-
-screenToWorld(screenX, screenY) { 
-    // DOMパンなら画面座標をそのまま返す
-    return { x: screenX, y: screenY }; 
+{
+  "layerId": 3,
+  "keyframes": [
+    { "t": 0, "x": 100, "y": 200, "scaleX": 1, "scaleY": 1, "rotation": 0 },
+    { "t": 30, "x": 200, "y": 250, "scaleX": 1.2, "scaleY": 0.9, "rotation": 0.5 }
+  ]
 }
 
-worldToScreen(worldX, worldY) {
-    // DOMパンなら世界座標 = 画面座標
-    return { x: worldX, y: worldY };
-}
+📌 推奨ルール化（ルールブック追記例）
+- 非破壊変形ルール
+  1. レイヤーの変形は position / rotation / scale / skew の数値として保持する。
+  2. 反転は scale.x / scale.y の符号で表現する。
+  3. 保存形式は JSON とし、undo/redo に対応可能にする。
+  4. 実描画は元テクスチャに対して transform を適用して行う。
+  5. 将来的なアニメーション対応のため、時間軸付き keyframe 形式を許容する。
 
-DOMパンでは呼ばず、将来無限キャンバス時に切り替える
+🚀 結論
 
-イベントハンドラや描画関数は「座標系変換を通す前提」にしておくと混乱防止
+PixiJS v8 の Container.transform（Matrix） と RenderTexture元データ保持 を組み合わせるのが最適。
 
-3. 注意点
+まずは 数値プロパティ（position/scale/rotation）をJSONで記録 → 非破壊変形。
 
-今は DOM 依存の実装でも構わないが、変換関数を残しておくかインターフェースだけ作っておく
-
-後から無限キャンバスに切り替える場合のリファクタリングコストを大幅に削減できる
-
-/* ==============================
-   Canvas & Layer Hybrid Design
-   ============================== */
-
-/* ------------------------------
-   CoreEngine: 座標系ユーティリティ
-------------------------------- */
-class CoreEngine {
-    constructor(canvas) {
-        this.canvas = canvas;
-        this.isDomPan = true;   // 現在のパンモード: true=DOMパン, false=Worldパン
-        this.worldOffset = { x: 0, y: 0 }; // World座標オフセット
-    }
-
-    // DOMパン / Worldパン 共通インターフェース
-    screenToWorld(screenX, screenY) {
-        if (this.isDomPan) {
-            // DOMパン時は画面座標 = 世界座標
-            return { x: screenX, y: screenY };
-        } else {
-            // World座標系変換（将来無限キャンバス対応用）
-            return { x: screenX - this.worldOffset.x, y: screenY - this.worldOffset.y };
-        }
-    }
-
-    worldToScreen(worldX, worldY) {
-        if (this.isDomPan) {
-            return { x: worldX, y: worldY };
-        } else {
-            return { x: worldX + this.worldOffset.x, y: worldY + this.worldOffset.y };
-        }
-    }
-}
-
-/* ------------------------------
-   Canvas / DOM Pan Handling
-------------------------------- */
-class PanManager {
-    constructor(coreEngine, container) {
-        this.core = coreEngine;
-        this.container = container; // canvas-container DOM
-        this.isPanning = false;
-        this.start = { x: 0, y: 0 };
-    }
-
-    startPan(screenX, screenY) {
-        this.isPanning = true;
-        this.start.x = screenX;
-        this.start.y = screenY;
-    }
-
-    updatePan(screenX, screenY) {
-        if (!this.isPanning) return;
-        const dx = screenX - this.start.x;
-        const dy = screenY - this.start.y;
-
-        if (this.core.isDomPan) {
-            // DOMパン: canvas-container の left/top を更新
-            const currentLeft = parseFloat(this.container.style.left) || 50;
-            const currentTop = parseFloat(this.container.style.top) || 50;
-            this.container.style.left = `${currentLeft + (dx / window.innerWidth * 100)}%`;
-            this.container.style.top  = `${currentTop + (dy / window.innerHeight * 100)}%`;
-        } else {
-            // Worldパン: CoreEngine 内の worldOffset を更新
-            this.core.worldOffset.x += dx;
-            this.core.worldOffset.y += dy;
-            // Pixi Container に反映
-            this.core.worldContainer.x = -this.core.worldOffset.x;
-            this.core.worldContainer.y = -this.core.worldOffset.y;
-        }
-
-        this.start.x = screenX;
-        this.start.y = screenY;
-    }
-
-    endPan() {
-        this.isPanning = false;
-    }
-
-    reset() {
-        if (this.core.isDomPan) {
-            this.container.style.left = '50%';
-            this.container.style.top  = '50%';
-        } else {
-            this.core.worldOffset = { x: 0, y: 0 };
-            this.core.worldContainer.x = 0;
-            this.core.worldContainer.y = 0;
-        }
-    }
-}
-
-/* ------------------------------
-   Layer / Transformation Handling
-------------------------------- */
-class LayerManager {
-    constructor(coreEngine) {
-        this.core = coreEngine;
-        this.layers = []; // PIXI.Container配列
-    }
-
-    addLayer(layerContainer) {
-        this.layers.push(layerContainer);
-    }
-
-    // 座標変換を考慮した移動
-    moveLayer(layer, dx, dy) {
-        if (this.core.isDomPan) {
-            // DOM座標系で直接移動
-            layer.x += dx;
-            layer.y += dy;
-        } else {
-            // World座標系に合わせて移動
-            layer.x += dx;
-            layer.y += dy;
-        }
-    }
-
-    // 拡縮・回転・反転対応 (transform)
-    transformLayer(layer, options) {
-        if (options.scale !== undefined) layer.scale.set(options.scale);
-        if (options.rotation !== undefined) layer.rotation = options.rotation;
-        if (options.flipX) layer.scale.x *= -1;
-        if (options.flipY) layer.scale.y *= -1;
-    }
-}
-
-/* ------------------------------
-   使用フロー例
-------------------------------- */
-// 1. DOM or Worldパン設定
-coreEngine.isDomPan = true;  // DOMパン優先
-// 2. マウス/タッチイベントで PanManager を呼び出す
-// 3. 描画時は CoreEngine.screenToWorld を通して座標を統一
-// 4. レイヤー変形は LayerManager.transformLayer で統一
+将来は Matrix管理 or Keyframe拡張 に発展させるとアニメやモーフィングまで自然に進化できる。
 
 
 
-DOMパンとWorldパンを切替可能にする
+📝Tegaki v8.13 リファクタリング計画書
+（SatellitePlan_RuleBook_v6 準拠）
 
-CoreEngine.isDomPan で管理
+---
 
-現状は DOMパンでも将来 Worldパンに戻せる
+## 🎯 目的
+- コードの見通しを良くし、AIによる改修・拡張を容易化する。  
+- PixiJS v8 標準APIを活用し、DOM依存処理を削減。  
+- 応答性（サムネイル更新など）を改善し、将来の拡張（アニメ・モーフィング）に対応可能な基盤を整える。  
 
-座標変換関数を残す
+---
 
-screenToWorld / worldToScreen は未使用でも設置
+## 📌 改修対象と方針
 
-無限キャンバスや複雑レイヤーに再利用可能
+### 1. キャンバス移動のリファクタリング
+- **現行**: DOMイベントによる直接移動、回転・拡縮・反転未対応  
+- **改修**:
+  - `canvasContainer (PIXI.Container)` を導入  
+  - `canvasContainer.position / rotation / scale` に一元化  
+  - 座標変換は `toLocal / toGlobal` をルール化  
 
-レイヤー変形・移動も共通インターフェースで統一
+**ゴール:** キャンバス移動・回転・ズーム・反転をシンプルに管理可能にする。  
 
-回転・拡縮・反転も扱いやすく
+---
 
-AI観点
+### 2. レイヤー移動・変形のリファクタリング
+- **現行**: レイヤー移動のみ。回転・反転未対応。  
+- **改修**:
+  - レイヤーを **個別の Container** にまとめる  
+  - `scale.x = -1` / `scale.y = -1` による反転を追加  
+  - **非破壊変形の記憶系** を導入（position/rotation/scale/flipをJSON保存）  
 
-メソッド名・クラス名が直感的で、座標系の意図が明確
+**ゴール:** レイヤー単位で非破壊的に回転・拡縮・反転が可能。  
 
-フローが統一されているので解析しやすい
+---
 
+### 3. サムネイル生成のリファクタリング
+- **現行**: `generateTexture()` に依存 → 遅延発生  
+- **改修**:
+  - `renderer.render(layer, { renderTexture })` へ置き換え  
+  - GPUのmipmapで縮小 → 画質維持 & 高速化  
+  - `PIXI.Ticker.shared` で更新頻度を制御（一定間隔でまとめ更新）  
+
+**ゴール:** サムネイル更新の遅延解消とUI応答性向上。  
+
+---
+
+### 4. 選択範囲処理のリファクタリング
+- **現行**: 未実装、mask利用も未定義  
+- **改修**:
+  - **PIXI.Graphics + mask** に統一  
+  - 投げ縄・自動選択などは後続拡張（marching-squares等）で対応  
+
+**ゴール:** 非破壊マスクによる選択範囲編集を標準化。  
+
+---
+
+### 5. 非破壊変形の記憶系の導入
+- **現行**: レイヤー状態を直接保持、履歴管理なし  
+- **改修**:
+  - 各レイヤーに **transformState JSON** を保持  
+  - undo/redo用の履歴配列に push/pop で管理  
+  - 将来的に **Keyframe方式** に拡張可能に設計  
+
+**ゴール:** レイヤー変形を非破壊で再編集可能にし、履歴やアニメ拡張にも対応。  
+
+---
+
+## 🛠 実施ステップ
+
+1. **基盤整理**
+   - canvasContainer を導入し、DOM依存の移動処理を削除  
+   - toLocal / toGlobal を導入し座標変換ルールを明文化  
+
+2. **レイヤー変形対応**
+   - 各レイヤーを Container でラップ  
+   - position/rotation/scale/flip を JSON で管理  
+
+3. **サムネイル最適化**
+   - generateTexture → renderer.render に置換  
+   - Ticker制御で更新頻度を調整  
+
+4. **選択範囲処理追加**
+   - Graphics.mask を基本にした選択範囲適用を導入  
+   - UI操作から mask に反映する仕組みを構築  
+
+5. **非破壊変形の記憶系導入**
+   - transformState をレイヤーごとに持たせる  
+   - undo/redo 履歴管理を JSON 単位で実装  
+   - Keyframe 拡張の余地を残す  
+
+---
+
+## ⚖️ 評価基準
+
+- **AI実装しやすさ**: transform API と JSON化でコードがシンプル → ◎  
+- **改修難易度**: DOM依存部分を削除する負担はあるが、移行は段階的に可能 → ○  
+- **相性**: PixiJS 標準APIのみで完結 → ◎  
+- **軽量化恩恵**: サムネイル更新のGPU化と非破壊変形の保持で描画効率向上 → ◎  
+
+---
+
+## 🚀 最終ゴール
+- PixiJS v8 の座標変換・変形APIを最大限活用し、  
+  DOM依存や冗長処理を廃止。  
+- **非破壊・履歴可能・拡張可能なレイヤー変形基盤** を確立。  
+- **応答性の高いUI** と **将来のアニメ・モーフィング拡張** に備える。  
