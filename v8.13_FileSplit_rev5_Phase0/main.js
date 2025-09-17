@@ -18,6 +18,206 @@
         if (CONFIG.debug) console.log(...args);
     };
 
+    // === クリップボード管理システム ===
+    class ClipboardSystem {
+        constructor() {
+            this.clipboardData = null;
+            this.setupKeyboardEvents();
+        }
+
+        setupKeyboardEvents() {
+            document.addEventListener('keydown', (e) => {
+                // Ctrl+C: コピー
+                if (e.ctrlKey && e.code === 'KeyC' && !e.altKey && !e.metaKey) {
+                    this.copyActiveLayer();
+                    e.preventDefault();
+                }
+                
+                // Ctrl+V: ペースト
+                if (e.ctrlKey && e.code === 'KeyV' && !e.altKey && !e.metaKey) {
+                    this.pasteLayer();
+                    e.preventDefault();
+                }
+            });
+        }
+
+        copyActiveLayer() {
+            const layerManager = window.drawingApp?.layerManager;
+            if (!layerManager) {
+                console.warn('LayerManager not available');
+                return;
+            }
+
+            const activeLayer = layerManager.getActiveLayer();
+            if (!activeLayer) {
+                console.warn('No active layer to copy');
+                return;
+            }
+
+            try {
+                // レイヤーデータをディープコピー
+                const layerData = activeLayer.layerData;
+                
+                // パスデータのディープコピー
+                const copiedPaths = layerData.paths.map(path => ({
+                    id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // 新しいID
+                    points: [...path.points], // 座標配列をコピー
+                    color: path.color,
+                    size: path.size,
+                    opacity: path.opacity,
+                    isComplete: path.isComplete
+                }));
+
+                // 背景データのコピー（背景レイヤーの場合）
+                let backgroundData = null;
+                if (layerData.isBackground) {
+                    backgroundData = {
+                        isBackground: true,
+                        color: CONFIG.background.color
+                    };
+                }
+
+                // レイヤー変形データのコピー
+                const layerId = layerData.id;
+                const transform = layerManager.layerTransforms.get(layerId);
+                const copiedTransform = transform ? {
+                    x: transform.x,
+                    y: transform.y,
+                    rotation: transform.rotation,
+                    scaleX: transform.scaleX,
+                    scaleY: transform.scaleY
+                } : {
+                    x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+                };
+
+                this.clipboardData = {
+                    layerData: {
+                        name: layerData.name + '_copy',
+                        visible: layerData.visible,
+                        opacity: layerData.opacity,
+                        paths: copiedPaths,
+                        backgroundData: backgroundData
+                    },
+                    transform: copiedTransform,
+                    timestamp: Date.now()
+                };
+
+                console.log('Layer copied to clipboard:', layerData.name);
+                
+            } catch (error) {
+                console.error('Failed to copy layer:', error);
+            }
+        }
+
+        pasteLayer() {
+            const layerManager = window.drawingApp?.layerManager;
+            if (!layerManager) {
+                console.warn('LayerManager not available');
+                return;
+            }
+
+            if (!this.clipboardData) {
+                console.warn('No clipboard data to paste');
+                return;
+            }
+
+            try {
+                const clipData = this.clipboardData;
+                
+                // 新しいレイヤー名を生成
+                const layerCount = layerManager.layers.length;
+                const layerName = clipData.layerData.name.includes('_copy') ? 
+                    clipData.layerData.name : clipData.layerData.name + '_copy';
+
+                // 新規レイヤーを作成
+                const { layer, index } = layerManager.createLayer(layerName, false);
+
+                // 背景データが存在する場合は背景として再構築
+                if (clipData.layerData.backgroundData) {
+                    const bg = new PIXI.Graphics();
+                    bg.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
+                    bg.fill(clipData.layerData.backgroundData.color);
+                    layer.addChild(bg);
+                    layer.layerData.backgroundGraphics = bg;
+                    layer.layerData.isBackground = true;
+                }
+
+                // パスデータを復元
+                clipData.layerData.paths.forEach(pathData => {
+                    if (pathData.points && pathData.points.length > 0) {
+                        // 新しいGraphicsオブジェクトを作成
+                        const graphics = new PIXI.Graphics();
+                        
+                        // パスの点を描画
+                        pathData.points.forEach(point => {
+                            graphics.circle(point.x, point.y, pathData.size / 2);
+                            graphics.fill({ color: pathData.color, alpha: pathData.opacity });
+                        });
+
+                        // パスオブジェクトを再構築
+                        const newPath = {
+                            id: pathData.id,
+                            graphics: graphics,
+                            points: pathData.points,
+                            color: pathData.color,
+                            size: pathData.size,
+                            opacity: pathData.opacity,
+                            isComplete: pathData.isComplete
+                        };
+
+                        layer.layerData.paths.push(newPath);
+                        layer.addChild(graphics);
+                    }
+                });
+
+                // レイヤー変形データを復元
+                const newLayerId = layer.layerData.id;
+                layerManager.layerTransforms.set(newLayerId, {
+                    x: clipData.transform.x,
+                    y: clipData.transform.y,
+                    rotation: clipData.transform.rotation,
+                    scaleX: clipData.transform.scaleX,
+                    scaleY: clipData.transform.scaleY
+                });
+
+                // 変形を適用
+                if (clipData.transform.x !== 0 || clipData.transform.y !== 0 || 
+                    clipData.transform.rotation !== 0 || Math.abs(clipData.transform.scaleX) !== 1 || 
+                    Math.abs(clipData.transform.scaleY) !== 1) {
+                    
+                    const centerX = CONFIG.canvas.width / 2;
+                    const centerY = CONFIG.canvas.height / 2;
+                    
+                    layer.pivot.set(centerX, centerY);
+                    layer.position.set(centerX + clipData.transform.x, centerY + clipData.transform.y);
+                    layer.rotation = clipData.transform.rotation;
+                    layer.scale.set(clipData.transform.scaleX, clipData.transform.scaleY);
+                }
+
+                // レイヤーの可視性と不透明度を復元
+                layer.layerData.visible = clipData.layerData.visible;
+                layer.layerData.opacity = clipData.layerData.opacity;
+                layer.visible = clipData.layerData.visible;
+                layer.alpha = clipData.layerData.opacity;
+
+                // 新しいレイヤーをアクティブに設定
+                layerManager.setActiveLayer(index);
+                
+                // UI更新
+                layerManager.updateLayerPanelUI();
+                layerManager.updateStatusDisplay();
+                
+                // サムネイル更新
+                layerManager.requestThumbnailUpdate(index);
+
+                console.log('Layer pasted:', layerName);
+                
+            } catch (error) {
+                console.error('Failed to paste layer:', error);
+            }
+        }
+    }
+
     // === カメラシステム（改修版：座標変換修正・ペン描画ズレ対策） ===
     class CameraSystem {
         constructor(app) {
@@ -1705,6 +1905,7 @@
             this.drawingEngine = null;
             this.interactionManager = null;
             this.uiController = null;
+            this.clipboardSystem = null;
         }
 
         async initialize() {
@@ -1745,6 +1946,7 @@
             this.drawingEngine = new DrawingEngine(this.cameraSystem, this.layerManager);
             this.interactionManager = new InteractionManager(this.pixiApp, this.drawingEngine, this.layerManager);
             this.uiController = new UIController(this.drawingEngine, this.layerManager, this.pixiApp);
+            this.clipboardSystem = new ClipboardSystem();
 
             // 相互参照の設定
             this.cameraSystem.layerManager = this.layerManager;
@@ -1875,12 +2077,12 @@
             
             window.drawingApp = app;
 
-            console.log('🎨 Split Drawing App Phase1r9 修正版 initialized successfully!');
-            console.log('📋 Phase1r9 完全修正完了:');
-            console.log('  - ✅ 修正1: サムネイル枠のアスペクト比完全対応（横長時の縦縮小対応）');
-            console.log('  - ✅ 修正2: V押下時の中心線をカメラフレーム中央基準に完全修正');
-            console.log('  - ✅ 修正3: V押下時の回転・反転をカメラフレーム中央基準に完全修正');
-            console.log('  - ✅ 修正4: V + Shift + ドラッグの操作方向を直感的に修正');
+            console.log('🎨 Split Drawing App Phase1r10 Copy&Paste版 initialized successfully!');
+            console.log('📋 Phase1r10 新機能追加:');
+            console.log('  - ✅ コピー機能: Ctrl+C でアクティブレイヤーをコピー');
+            console.log('  - ✅ ペースト機能: Ctrl+V でコピー内容から新規レイヤー作成');
+            console.log('  - ✅ レイヤー変形データも含めて完全コピー');
+            console.log('  - ✅ パスデータ・背景データ・変形状態を完全復元');
 
         } catch (error) {
             console.error('Failed to initialize Split Drawing App:', error);
