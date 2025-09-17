@@ -148,44 +148,44 @@ window.TegakiUI = {
             }
         }
 
-        // 修正版：キャンバスリサイズ時にガイドライン再作成を追加
+        // 修正版：統合されたキャンバスリサイズ処理を使用
         resizeCanvas(newWidth, newHeight) {
-            const CONFIG = window.TEGAKI_CONFIG;
-            CONFIG.canvas.width = newWidth;
-            CONFIG.canvas.height = newHeight;
+            console.log('UIController: Requesting canvas resize to', newWidth, 'x', newHeight);
             
-            const cameraSystem = this.app.cameraSystem;
-            if (cameraSystem && cameraSystem.canvasMask) {
-                cameraSystem.canvasMask.clear();
-                cameraSystem.canvasMask.rect(0, 0, newWidth, newHeight);
-                cameraSystem.canvasMask.fill(0xffffff);
-            }
-            
-            if (cameraSystem) {
-                cameraSystem.drawCameraFrame();
-                // 修正4: キャンバスリサイズ時にガイドライン再作成
-                cameraSystem.createGuideLines();
-            }
-            
-            this.layerManager.layers.forEach(layer => {
-                if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
-                    layer.layerData.backgroundGraphics.clear();
-                    layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
-                    layer.layerData.backgroundGraphics.fill(CONFIG.background.color);
+            // DrawingApp側の統合処理を呼び出し
+            if (typeof window.drawingAppResizeCanvas === 'function') {
+                window.drawingAppResizeCanvas(newWidth, newHeight);
+            } else {
+                console.error('DrawingApp resize function not available');
+                // フォールバック（従来処理）
+                const CONFIG = window.TEGAKI_CONFIG;
+                CONFIG.canvas.width = newWidth;
+                CONFIG.canvas.height = newHeight;
+                
+                const cameraSystem = this.app.cameraSystem;
+                if (cameraSystem) {
+                    cameraSystem.resizeCanvas(newWidth, newHeight);
                 }
-            });
-            
-            const element = document.getElementById('canvas-info');
-            if (element) {
-                element.textContent = `${newWidth}×${newHeight}px`;
+                
+                this.layerManager.layers.forEach(layer => {
+                    if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
+                        layer.layerData.backgroundGraphics.clear();
+                        layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
+                        layer.layerData.backgroundGraphics.fill(CONFIG.background.color);
+                    }
+                });
+                
+                const element = document.getElementById('canvas-info');
+                if (element) {
+                    element.textContent = `${newWidth}×${newHeight}px`;
+                }
+                
+                for (let i = 0; i < this.layerManager.layers.length; i++) {
+                    this.layerManager.requestThumbnailUpdate(i);
+                }
             }
             
-            // 修正版：全レイヤーのサムネイル更新をトリガー（アスペクト比対応のため）
-            for (let i = 0; i < this.layerManager.layers.length; i++) {
-                this.layerManager.requestThumbnailUpdate(i);
-            }
-            
-            console.log(`Canvas resized to ${newWidth}x${newHeight}`);
+            console.log('UIController: Canvas resize request completed');
         }
     },
 
