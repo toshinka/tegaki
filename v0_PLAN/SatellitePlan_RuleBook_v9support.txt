@@ -1,0 +1,778 @@
+# GIF実装サポートブック - Claude改修効率化版
+# SatellitePlan_RuleBook_v9 サポート資料
+
+## 🎯 このサポートブックの目的
+- **後続のClaude改修作業を効率化**するための実装ガイド
+- **GIF機能実装**に特化した技術情報・ライブラリ情報・注意点の集約
+- **統合HTMLファイル内実装**での具体的コード例と実装手順
+- **非破壊化 + GIF機能**の同時実装における技術的課題の解決策
+
+---
+
+## 📚 必須ライブラリ情報（2024年12月最新）
+
+### 確定ライブラリ構成
+```html
+<!-- 基盤ライブラリ（既存） -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
+
+<!-- GIF生成専用（新規追加必須） -->
+<script src="https://cdn.jsdelivr.net/npm/gif.js@1.0.0/dist/gif.min.js"></script>
+```
+
+### PixiJS v8.13 GIF機能の制限
+**重要**: PixiJS v8.13内蔵のGIF機能は**読み込み・再生専用**
+```javascript
+// ❌ PixiJS標準では GIF作成不可
+import { GifSprite } from 'pixi.js/gif'; // 読み込み専用
+
+// ✅ GIF作成には別途 gif.js が必須
+const gif = new GIF({ quality: 10, workers: 2 });
+```
+
+### 将来検討ライブラリ（Phase3以降）
+```html
+<!-- ベジエ曲線強化用（ベクター機能拡張時） -->
+<script src="https://cdn.jsdelivr.net/npm/bezier-js@6.1.4/lib/bezier.min.js"></script>
+```
+
+---
+
+## 🏗 GIF機能データ構造（実装必須）
+
+### アニメーションデータ構造
+```javascript
+// 統合HTML内のJavaScript部分に追加
+const animationData = {
+  id: 'animation_001',
+  name: 'アニメーション1',
+  cuts: [
+    {
+      id: 'cut_' + Date.now(),
+      name: 'CUT1',
+      duration: 0.5,                    // 表示時間（秒）
+      layerStates: [                    // 全レイヤーの状態保存
+        {
+          layerId: 'layer_0',
+          visible: true,
+          opacity: 1.0,
+          transform: { 
+            x: 0, y: 0, 
+            scale: 1.0, 
+            rotation: 0,
+            flipH: false, 
+            flipV: false 
+          }
+        }
+      ],
+      thumbnail: null,                  // PIXI.RenderTexture（遅延生成）
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    }
+  ],
+  settings: {
+    fps: 12,                           // フレームレート
+    loop: true,                        // ループ再生
+    exportWidth: 400,                  // GIF出力幅
+    exportHeight: 400,                 // GIF出力高さ
+    quality: 10                        // GIF品質（1-30, 小さいほど高品質）
+  },
+  playback: {
+    currentCutIndex: 0,
+    state: 'stopped',                  // 'playing' | 'paused' | 'stopped'
+    startTime: 0,
+    isAnimationMode: false
+  }
+};
+```
+
+### CUTサムネイル生成用設定
+```javascript
+// サムネイル設定
+const THUMBNAIL_CONFIG = {
+  width: 64,
+  height: 48,
+  resolution: 1,
+  backgroundColor: 0xFFFFEE,          // 統一背景色
+  generateDelay: 100,                 // 生成遅延（ms）
+  maxConcurrent: 3                    // 同時生成数制限
+};
+```
+
+---
+
+## 🎬 GIF機能実装手順（段階的）
+
+### Phase1: 基本CUT管理（最優先実装）
+
+#### 1-A. AnimationManager クラス
+```javascript
+// 統合HTML内のJavaScript部分に追加
+class AnimationManager {
+  constructor(coreEngine) {
+    this.coreEngine = coreEngine;
+    this.animationData = this.createDefaultAnimation();
+    this.thumbnailQueue = new Set();
+    this.isProcessingThumbnails = false;
+  }
+  
+  createDefaultAnimation() {
+    return {
+      ...animationData, // 上記構造を使用
+      cuts: []
+    };
+  }
+  
+  // CUT作成（現在のレイヤー状態から）
+  createCutFromCurrentLayers() {
+    const layerManager = this.coreEngine.getLayerManager();
+    const layers = layerManager.layers;
+    
+    const layerStates = layers.map(layer => ({
+      layerId: layer.layerData.id,
+      visible: layer.layerData.visible,
+      opacity: layer.layerData.opacity,
+      transform: this.cloneTransform(layerManager.layerTransforms.get(layer.layerData.id))
+    }));
+    
+    const cut = {
+      id: 'cut_' + Date.now(),
+      name: `CUT${this.animationData.cuts.length + 1}`,
+      duration: 0.5,
+      layerStates: layerStates,
+      thumbnail: null,
+      createdAt: Date.now(),
+      updatedAt: Date.now()
+    };
+    
+    this.animationData.cuts.push(cut);
+    this.requestThumbnailGeneration(this.animationData.cuts.length - 1);
+    return cut;
+  }
+  
+  // レイヤー状態復元
+  applyCutToLayers(cutIndex) {
+    const cut = this.animationData.cuts[cutIndex];
+    if (!cut) return;
+    
+    const layerManager = this.coreEngine.getLayerManager();
+    
+    cut.layerStates.forEach(state => {
+      const layer = layerManager.getLayerById(state.layerId);
+      if (!layer) return;
+      
+      // 表示状態適用
+      layer.layerData.visible = state.visible;
+      layer.layerData.opacity = state.opacity;
+      layer.visible = state.visible;
+      layer.alpha = state.opacity;
+      
+      // 変形状態適用
+      layerManager.layerTransforms.set(state.layerId, { ...state.transform });
+      this.applyTransformToLayer(layer, state.transform);
+    });
+    
+    layerManager.updateLayerPanelUI();
+  }
+}
+```
+
+#### 1-B. サムネイル生成システム
+```javascript
+// AnimationManager内に追加
+requestThumbnailGeneration(cutIndex) {
+  this.thumbnailQueue.add(cutIndex);
+  if (!this.isProcessingThumbnails) {
+    this.processThumbnailQueue();
+  }
+}
+
+async processThumbnailQueue() {
+  this.isProcessingThumbnails = true;
+  
+  for (const cutIndex of this.thumbnailQueue) {
+    await this.generateCutThumbnail(cutIndex);
+    // フレーム分割でUI応答性確保
+    await new Promise(resolve => requestAnimationFrame(resolve));
+  }
+  
+  this.thumbnailQueue.clear();
+  this.isProcessingThumbnails = false;
+}
+
+async generateCutThumbnail(cutIndex) {
+  const cut = this.animationData.cuts[cutIndex];
+  if (!cut) return;
+  
+  // 現在状態をバックアップ
+  const originalStates = this.backupCurrentLayerStates();
+  
+  // CUT状態を一時適用
+  this.applyCutToLayers(cutIndex);
+  
+  // RenderTexture作成
+  const renderTexture = PIXI.RenderTexture.create({
+    width: THUMBNAIL_CONFIG.width,
+    height: THUMBNAIL_CONFIG.height,
+    resolution: THUMBNAIL_CONFIG.resolution
+  });
+  
+  // レンダリング
+  const layerManager = this.coreEngine.getLayerManager();
+  this.coreEngine.app.renderer.render(layerManager.layersContainer, {
+    renderTexture: renderTexture
+  });
+  
+  // サムネイル保存
+  cut.thumbnail = renderTexture;
+  cut.updatedAt = Date.now();
+  
+  // 元状態復元
+  this.restoreLayerStates(originalStates);
+  
+  // UI更新通知
+  this.notifyThumbnailUpdated(cutIndex);
+}
+```
+
+### Phase2: タイムライン UI実装
+
+#### 2-A. HTML構造追加
+```html
+<!-- 統合HTML内に追加 -->
+<div class="tool-button" id="animation-tool" title="GIFアニメーション (ALT+A)">
+  <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5">
+    <rect width="18" height="18" x="3" y="3" rx="2"/>
+    <path d="M7 3v18"/><path d="M3 7.5h4"/>
+    <path d="M3 12h18"/><path d="M3 16.5h4"/>
+    <path d="M17 3v18"/><path d="M17 7.5h4"/>
+    <path d="M17 16.5h4"/>
+  </svg>
+</div>
+
+<div class="timeline-panel" id="timeline-panel">
+  <div class="timeline-header">
+    <h3>GIFアニメーション</h3>
+    <button class="close-timeline-btn" id="close-timeline-btn">×</button>
+  </div>
+  
+  <div class="playback-controls">
+    <button id="prev-cut-btn" title="前CUT (ALT+←)">◀</button>
+    <button id="play-pause-btn" title="再生/停止 (ALT+Space)">⏯</button>
+    <button id="next-cut-btn" title="次CUT (ALT+→)">▶</button>
+    <button id="loop-btn" title="ループ (ALT+L)">🔄</button>
+    <span class="current-time">00:00.0</span> / <span class="total-time">00:01.2</span>
+  </div>
+  
+  <div class="timeline-settings">
+    <label>FPS: <input type="number" id="animation-fps" min="1" max="60" value="12"></label>
+    <label>品質: <input type="range" id="gif-quality" min="1" max="30" value="10"></label>
+  </div>
+  
+  <div class="cuts-container">
+    <div class="cuts-list" id="cuts-list"></div>
+    <button class="add-cut-btn" id="add-cut-btn">[+ CUT追加]</button>
+  </div>
+  
+  <div class="export-controls">
+    <button class="export-gif-btn" id="export-gif-btn">GIF書き出し</button>
+    <div class="export-progress" id="export-progress" style="display:none;">
+      <div class="progress-bar"><div class="progress-fill"></div></div>
+      <span class="progress-text">0%</span>
+    </div>
+  </div>
+</div>
+```
+
+#### 2-B. CSS スタイル追加
+```css
+/* 統合HTML内のstyle要素に追加 */
+.timeline-panel {
+  position: fixed;
+  bottom: 80px;
+  left: 70px;
+  right: 220px;
+  background: var(--futaba-cream);
+  border: 2px solid var(--futaba-maroon);
+  border-radius: 12px;
+  padding: 16px;
+  z-index: 1500;
+  display: none;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.timeline-panel.show { display: block; animation: slideUp 0.3s ease-out; }
+
+@keyframes slideUp {
+  from { opacity: 0; transform: translateY(20px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+.timeline-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 12px;
+  border-bottom: 1px solid var(--futaba-light-medium);
+  padding-bottom: 8px;
+}
+
+.playback-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+  padding: 8px;
+  background: var(--futaba-background);
+  border-radius: 6px;
+}
+
+.playback-controls button {
+  padding: 4px 8px;
+  border: 1px solid var(--futaba-medium);
+  border-radius: 4px;
+  background: var(--futaba-background);
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.cuts-container {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  overflow-x: auto;
+  padding: 8px 0;
+}
+
+.cuts-list {
+  display: flex;
+  gap: 4px;
+  min-height: 60px;
+}
+
+.cut-item {
+  min-width: 80px;
+  background: var(--futaba-background);
+  border: 2px solid var(--futaba-light-medium);
+  border-radius: 6px;
+  padding: 4px;
+  cursor: pointer;
+  position: relative;
+}
+
+.cut-item.active {
+  border-color: var(--futaba-maroon);
+  background: var(--futaba-light-medium);
+}
+
+.cut-thumbnail {
+  width: 64px;
+  height: 48px;
+  background: var(--futaba-background);
+  border: 1px solid var(--futaba-light-medium);
+  border-radius: 3px;
+  margin-bottom: 4px;
+  overflow: hidden;
+}
+
+.cut-name {
+  font-size: 10px;
+  text-align: center;
+  color: var(--text-primary);
+}
+
+.cut-duration {
+  width: 40px;
+  font-size: 9px;
+  text-align: center;
+  border: 1px solid var(--futaba-light-medium);
+  border-radius: 2px;
+  margin-top: 2px;
+}
+
+.export-controls {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--futaba-light-medium);
+}
+
+.export-gif-btn {
+  padding: 8px 16px;
+  background: var(--futaba-maroon);
+  color: var(--text-inverse);
+  border: none;
+  border-radius: 6px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+.export-progress {
+  margin-top: 8px;
+}
+
+.progress-bar {
+  width: 100%;
+  height: 8px;
+  background: var(--futaba-light-medium);
+  border-radius: 4px;
+  overflow: hidden;
+}
+
+.progress-fill {
+  height: 100%;
+  background: var(--futaba-maroon);
+  width: 0%;
+  transition: width 0.2s ease;
+}
+```
+
+### Phase3: GIF書き出し実装
+
+#### 3-A. GIFExporter クラス
+```javascript
+// 統合HTML内のJavaScript部分に追加
+class GIFExporter {
+  constructor(animationManager) {
+    this.animationManager = animationManager;
+    this.isExporting = false;
+  }
+  
+  async exportGIF() {
+    if (this.isExporting) return;
+    this.isExporting = true;
+    
+    const animation = this.animationManager.animationData;
+    const settings = animation.settings;
+    
+    // GIF.js 初期化
+    const gif = new GIF({
+      workers: 2,
+      quality: settings.quality,
+      width: settings.exportWidth,
+      height: settings.exportHeight,
+      transparent: null,
+      background: '#FFFFEE'  // 背景色
+    });
+    
+    try {
+      // 進捗表示開始
+      this.showProgress(0);
+      
+      // 各CUTをフレームとして追加
+      for (let i = 0; i < animation.cuts.length; i++) {
+        const cut = animation.cuts[i];
+        
+        // 高解像度レンダリング
+        const canvas = await this.renderCutToCanvas(cut, {
+          width: settings.exportWidth,
+          height: settings.exportHeight,
+          resolution: 2  // 高解像度
+        });
+        
+        // フレーム追加
+        gif.addFrame(canvas, {
+          delay: cut.duration * 1000  // ミリ秒変換
+        });
+        
+        // 進捗更新
+        this.updateProgress((i + 1) / animation.cuts.length * 50);
+      }
+      
+      // GIF生成開始
+      gif.on('progress', (progress) => {
+        this.updateProgress(50 + progress * 50);
+      });
+      
+      gif.on('finished', (blob) => {
+        this.downloadGIF(blob, animation.name);
+        this.hideProgress();
+        this.isExporting = false;
+      });
+      
+      gif.render();
+      
+    } catch (error) {
+      console.error('GIF export failed:', error);
+      this.hideProgress();
+      this.isExporting = false;
+      alert('GIF書き出しに失敗しました: ' + error.message);
+    }
+  }
+  
+  async renderCutToCanvas(cut, options) {
+    // 現在状態バックアップ
+    const originalStates = this.animationManager.backupCurrentLayerStates();
+    
+    // CUT状態適用
+    this.animationManager.applyCutToLayers(
+      this.animationManager.animationData.cuts.indexOf(cut)
+    );
+    
+    // 高解像度RenderTexture作成
+    const renderTexture = PIXI.RenderTexture.create({
+      width: options.width,
+      height: options.height,
+      resolution: options.resolution
+    });
+    
+    // レンダリング
+    const layerManager = this.animationManager.coreEngine.getLayerManager();
+    this.animationManager.coreEngine.app.renderer.render(
+      layerManager.layersContainer, 
+      { renderTexture: renderTexture }
+    );
+    
+    // Canvas抽出
+    const canvas = this.animationManager.coreEngine.app.renderer.extract.canvas(renderTexture);
+    
+    // リソース解放
+    renderTexture.destroy();
+    
+    // 状態復元
+    this.animationManager.restoreLayerStates(originalStates);
+    
+    return canvas;
+  }
+  
+  downloadGIF(blob, filename) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = (filename || 'animation') + '.gif';
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  }
+  
+  showProgress(percent) {
+    const progressEl = document.getElementById('export-progress');
+    const fillEl = progressEl.querySelector('.progress-fill');
+    const textEl = progressEl.querySelector('.progress-text');
+    
+    progressEl.style.display = 'block';
+    fillEl.style.width = percent + '%';
+    textEl.textContent = Math.round(percent) + '%';
+  }
+  
+  updateProgress(percent) {
+    this.showProgress(Math.min(percent, 100));
+  }
+  
+  hideProgress() {
+    const progressEl = document.getElementById('export-progress');
+    progressEl.style.display = 'none';
+  }
+}
+```
+
+---
+
+## 🚨 実装時の重要注意点
+
+### 1. メモリ管理（必須対応）
+```javascript
+// RenderTexture適切な破棄
+function destroyCutThumbnails(cuts) {
+  cuts.forEach(cut => {
+    if (cut.thumbnail) {
+      cut.thumbnail.destroy(true);  // baseTexture含む完全破棄
+      cut.thumbnail = null;
+    }
+  });
+}
+
+// GIF書き出し時のメモリ監視
+class MemoryManager {
+  static checkMemoryUsage() {
+    if (performance.memory) {
+      const used = performance.memory.usedJSHeapSize / 1048576; // MB
+      if (used > 512) { // 512MB超過で警告
+        console.warn('High memory usage:', Math.round(used) + 'MB');
+        return false;
+      }
+    }
+    return true;
+  }
+}
+```
+
+### 2. 非破壊化との連携
+```javascript
+// CUT作成時は非破壊状態で保存
+createCutFromCurrentLayers() {
+  // 変形確定前の状態で保存（重要）
+  const layerManager = this.coreEngine.getLayerManager();
+  
+  // 未確定の変形がある場合は一時確定
+  const hasUncommittedTransforms = layerManager.hasUncommittedTransforms();
+  if (hasUncommittedTransforms) {
+    // 非破壊的確定実行
+    layerManager.confirmLayerTransform(false); // 非破壊フラグ
+  }
+  
+  // この状態でCUT保存
+  return this.captureCutData();
+}
+```
+
+### 3. ショートカットキー実装
+```javascript
+// 統合HTML内に追加
+document.addEventListener('keydown', (e) => {
+  if (!animationManager.animationData.playback.isAnimationMode) return;
+  
+  if (e.altKey && !e.ctrlKey && !e.metaKey) {
+    switch(e.key) {
+      case 'a': case 'A':
+        toggleAnimationMode();
+        e.preventDefault();
+        break;
+      case ' ':
+        playPauseAnimation();
+        e.preventDefault();
+        break;
+      case 'ArrowLeft':
+        goToPreviousCut();
+        e.preventDefault();
+        break;
+      case 'ArrowRight':
+        goToNextCut();
+        e.preventDefault();
+        break;
+      case 'l': case 'L':
+        toggleLoop();
+        e.preventDefault();
+        break;
+    }
+  }
+});
+```
+
+---
+
+## 🔧 PixiJS v8.13 最適化活用
+
+### 標準機能の活用
+```javascript
+// 1. Culling APIでタイムライン最適化
+timelineContainer.cullable = true;
+timelineContainer.cullArea = new PIXI.Rectangle(0, 0, viewWidth, viewHeight);
+
+// 2. Deprecation警告制御（開発時）
+PIXI.settings.DEPRECATION_WARNINGS = false;
+
+// 3. テキストキャッシュでUI高速化
+const cutNameStyle = new PIXI.TextStyle({
+  fontFamily: 'monospace',
+  fontSize: 10,
+  fill: 0x2c1810
+}); // 同じスタイル使い回し
+```
+
+---
+
+## 📊 パフォーマンス指標・制限
+
+### 推奨制限値
+```javascript
+const PERFORMANCE_LIMITS = {
+  maxCuts: 50,              // CUT数上限
+  maxThumbnailConcurrent: 3, // 同時サムネイル生成数
+  thumbnailCacheSize: 20,   // サムネイルキャッシュ数
+  exportTimeoutMs: 300000,  // 書き出しタイムアウト（5分）
+  memoryLimitMB: 512        // メモリ使用量上限
+};
+```
+
+### 品質 vs パフォーマンスのバランス
+```javascript
+// GIF品質設定（参考値）
+const GIF_QUALITY_PRESETS = {
+  draft: { quality: 20, resolution: 1 },      // 下書き用
+  normal: { quality: 10, resolution: 1 },     // 通常
+  high: { quality: 5, resolution: 1.5 },     // 高品質
+  ultra: { quality: 1, resolution: 2 }       // 最高品質（重い）
+};
+```
+
+---
+
+## 🐛 よくあるエラーと対処法
+
+### 1. メモリ不足エラー
+```javascript
+// 対処: 段階的リソース解放
+if (!MemoryManager.checkMemoryUsage()) {
+  // 不要なサムネイル破棄
+  this.cleanupOldThumbnails();
+  
+  // ガベージコレクション促進
+  if (window.gc) window.gc();
+  
+  // 解像度を下げて再試行
+  options.resolution = Math.max(0.5, options.resolution * 0.8);
+}
+```
+
+### 2. GIF生成が終わらない
+```javascript
+// 対処: タイムアウト設定
+const exportTimeout = setTimeout(() => {
+  gif.abort();
+  this.hideProgress();
+  this.isExporting = false;
+  alert('書き出しがタイムアウトしました');
+}, PERFORMANCE_LIMITS.exportTimeoutMs);
+
+gif.on('finished', (blob) => {
+  clearTimeout(exportTimeout);
+  // 通常処理...
+});
+```
+
+### 3. サムネイル生成失敗
+```javascript
+// 対処: フォールバック処理
+async generateCutThumbnail(cutIndex) {
+  try {
+    // 通常処理
+    return await this.normalThumbnailGeneration(cutIndex);
+  } catch (error) {
+    console.warn('Thumbnail generation failed:', error);
+    // フォールバックとして空のサムネイル作成
+    return this.createPlaceholderThumbnail();
+  }
+}
+```
+
+---
+
+## 🎯 実装チェックリスト（Claude用）
+
+### 必須実装項目
+- [ ] AnimationManager クラス実装完了
+- [ ] CUT作成・削除・並び替え機能動作
+- [ ] サムネイル生成システム動作
+- [ ] タイムラインUI表示・非表示正常
+- [ ] GIF書き出し基本機能動作
+
+### 品質確認項目
+- [ ] メモリリーク発生なし
+- [ ] 50CUT作成でも動作安定
+- [ ] GIF書き出し時間が許容範囲内
+- [ ] 非破壊化機能との競合なし
+- [ ] ショートカットキー全て動作
+
+### パフォーマンス確認項目
+- [ ] サムネイル生成でUI応答性維持
+- [ ] タイムライン操作60fps維持
+- [ ] 大量CUT時もスクロール滑らか
+- [ ] メモリ使用量が制限内
+- [ ] GIF書き出し進捗表示正常
+
+このサポートブックにより、後続のClaude改修作業が効率化され、GIF機能の確実な実装が可能になります。
