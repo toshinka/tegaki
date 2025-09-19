@@ -1,99 +1,90 @@
-❗ 主な問題点
-1. エラー: Identifier 'DrawingEngine' has already been declared
+🕵️‍♂️ 原因究明
+1. XY移動は正常だが回転・拡縮が壊れる理由
 
-main.js 内で class DrawingEngine を定義しているのに、別の場所でも同じ名前が再宣言されています。
+移動（x, y の変更）は sprite.x, sprite.y のように「ローカル座標」のまま更新しており問題なし。
 
-index.html を見ると 同じ JS を2回読み込んでいる か、あるいは main.js 内で DrawingEngine が複数ファイル分割前のコードから重複残っている可能性が高いです。
+回転・拡縮は sprite.rotation, sprite.scale.set(...) を変更しているが、
+確定処理で transform をリセットまたは座標変換を二重適用している 可能性がある。
 
-👉 確認したところ：
+Pixi v8 は内部的に
 
-<script src="main.js"></script>
-<script src="main.js"></script>
+localTransform（自身の回転・スケール・位置）
 
+worldTransform（親込みで最終的に反映される座標）
+を持っています。
 
-のように二重読み込みがあるか、または main.js にすでに DrawingEngine が定義済みの状態でさらに同じものをインポートしている構造になっています。
+確定処理で getBounds() や toGlobal() / toLocal() を使って 座標をワールド座標に焼き付け → transform 初期化 する方式にしている場合、
+回転や拡縮の情報を飛ばしてしまうと「消えた」「飛んだ」ように見えます。
 
-2. キャンバスが出ない
+2. 想定される壊れパターン
 
-PIXI.Application の初期化が行われているが、app.view を document.body.appendChild する処理が呼ばれていない、または DOM が用意される前に呼び出している可能性があります。
+sprite.setTransform(x, y, 1, 1, 0) のように scale/rotation をリセット してしまっている。
 
-また、index.html 側で div id="app" が定義されていないのに document.getElementById("app") へ追加しようとしているように見えます。
+container.toLocal() で得た座標を直接 sprite.position に代入して scale/rotation が保持されない。
 
-3. レイヤーパネルが出ない
+transform 確定処理が「XY移動専用」で書かれていて、回転・拡縮分を考慮していない。
 
-レイヤーパネル用の LayerManager クラス定義はあるが、index.html にそのための DOM (<div id="layer-panel"> など) が存在していない。
+🛠 改修案
+✅ 1. 確定処理で transform を壊さないようにする
 
-もしくは CSS が非表示にしてしまっている。
+回転や拡縮を適用した後、確定処理では「現在の transform を維持したまま position のみ調整」するように変更。
 
-✅ 点検と改修案
-改修案 1: 二重定義の解消
+function confirmTransform(sprite) {
+    // 現在のワールド座標を基準にローカルへ再設定する
+    const parent = sprite.parent;
 
-index.html を点検し、main.js の読み込みを 1 回にする。
+    // ワールド座標の中心点を取得
+    const worldPos = sprite.getGlobalPosition();
 
-もし main.js 内に複数の DrawingEngine 定義が残っているなら、ファイル分割を整理し、DrawingEngine を一箇所にまとめる。
+    // ローカル座標に変換
+    const localPos = parent.toLocal(worldPos);
 
-例（index.html のスクリプト読み込み確認）:
+    // === 位置だけを更新 ===
+    sprite.position.copyFrom(localPos);
 
-<!-- NG: 二重読み込み -->
-<script src="main.js"></script>
-<script src="main.js"></script>
+    // rotation, scale は壊さない
+    // sprite.rotation, sprite.scale.x, sprite.scale.y はそのまま保持
+}
 
-<!-- OK: 一回だけ -->
-<script src="main.js"></script>
+✅ 2. もし「transform を焼き付けたい」場合
 
-改修案 2: キャンバス表示の保証
+たとえば「回転や縮小を確定して通常の bitmap に戻す」ような動作が必要なら、PixiJS の RenderTexture を使って書き戻す必要があります。
 
-DOMContentLoaded 後に PIXI アプリを初期化する。
+function bakeTransform(sprite, app) {
+    const rt = PIXI.RenderTexture.create({
+        width: sprite.width,
+        height: sprite.height
+    });
 
-index.html にキャンバスを挿入するターゲットを用意する。
+    app.renderer.render(sprite, { renderTexture: rt });
 
-例:
+    const baked = new PIXI.Sprite(rt);
+    baked.position.copyFrom(sprite.position);
+    baked.rotation = 0;
+    baked.scale.set(1);
 
-<body>
-  <div id="app"></div>
-  <div id="layer-panel"></div>
-  <script src="main.js"></script>
-</body>
-
-
-main.js 側:
-
-document.addEventListener("DOMContentLoaded", () => {
-    const app = new PIXI.Application({ width: 800, height: 600, backgroundColor: 0xffffff });
-    document.getElementById("app").appendChild(app.view);
-
-    const engine = new DrawingEngine(app);
-    engine.init();
-});
-
-改修案 3: レイヤーパネル表示
-
-LayerManager が参照する DOM を index.html に追加。
-
-例えば:
-
-<div id="layer-panel" style="position:fixed; right:0; top:0; width:200px; height:100%; background:#f0f0f0;">
-</div>
+    sprite.parent.addChild(baked);
+    sprite.destroy(); // 元を削除
+    return baked;
+}
 
 
-これで最低限のレイヤーパネルが出る。
+ただしこれは「完全な確定焼き付け」で、アクティブレイヤーの transform を保持しなくなるので、普通のペイントソフト的には そのまま transform を残すほうが自然 です。
 
-改修案 4: ファイル構造整理
+✅ 3. 改修ステップ提案
 
-今のままだと Engine / UI / Main 初期化 が混ざっており、再定義や循環参照を起こしやすい。
+core-engine.js で「Vキーで確定する処理」を探す。
+→ おそらく setTransform 系か toLocal() で再配置している部分がある。
 
-将来の分割案：
+その部分を「position のみ更新」に修正。
+scale/rotation は保持する。
 
-engine/DrawingEngine.js
+どうしても焼き付けたい場合は上記の RenderTexture バージョンを別途実装。
 
-engine/LayerManager.js
+🎯 結論
 
-main.js（初期化のみ）
+原因：確定処理で transform（rotation/scale）がリセット or 無視されている。
 
-📝 まとめ
+改修：座標確定では position のみ調整し、scale/rotation を保持するよう修正。
 
-現在の最大の原因は DrawingEngine の二重定義 → main.js が二重読み込み or コード内で重複。
-
-次に キャンバスとレイヤーパネルを挿入する DOM が index.html に無い。
-
-構造自体は大きく崩れていないので、スクリプト読み込みと DOM 要素の用意を直せば起動可能になる。
+代替手段：焼き付ける場合は RenderTexture 経由で新Spriteに変換する。
