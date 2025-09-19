@@ -1,0 +1,39 @@
+Claude改修効率最優先の段階的分割戦略現状の依存関係分析
+
+CameraSystem ↔ LayerManager: 相互依存（座標変換・ガイドライン表示）
+DrawingEngine → CameraSystem: 座標変換依存
+DrawingEngine → LayerManager: レイヤー追加依存
+InteractionManager: 全システムへの依存
+段階的分割計画（Claude最適化）Stage 1: DrawingEngine分離（最安全・最効果的）
+理由: 依存関係が一方向で、描画機能改修時の恩恵が最大分離内容:
+
+DrawingEngineクラス → drawing-engine.js
+InteractionManagerクラス → drawing-engine.js（描画操作と密結合のため）
+API境界:
+javascript// drawing-engine.js
+window.TegakiModules = {
+    DrawingEngine: class DrawingEngine { ... },
+    InteractionManager: class InteractionManager { ... }
+};Claude改修メリット:
+
+ペン描画改良時: drawing-engine.jsのみ修正（約150行）
+ツール追加時: drawing-engine.jsのみ修正
+main.jsが約650行に削減
+Stage 2: レイヤー・カメラ統合分離（相互依存解決）
+理由: 相互依存を無理に分離せず、機能的に結合した状態で分離分離内容:
+
+LayerManagerクラス → layer-camera-system.js
+CameraSystemクラス → layer-camera-system.js
+ClipboardSystemクラス → layer-camera-system.js（レイヤー操作と密結合）
+API境界:
+javascript// layer-camera-system.js
+window.TegakiModules.LayerCameraSystem = {
+    LayerManager: class LayerManager { ... },
+    CameraSystem: class CameraSystem { ... },
+    ClipboardSystem: class ClipboardSystem { ... }
+};Claude改修メリット:
+
+レイヤー機能改修時: layer-camera-system.jsのみ修正（約400行）
+カメラ機能改修時: layer-camera-system.jsのみ修正
+コピペ機能改修時: layer-camera-system.jsのみ修正
+main.jsが約250行に削減
