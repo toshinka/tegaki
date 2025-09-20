@@ -1,90 +1,436 @@
-🕵️‍♂️ 原因究明
-1. XY移動は正常だが回転・拡縮が壊れる理由
+要点まとめ（先に読む用）
 
-移動（x, y の変更）は sprite.x, sprite.y のように「ローカル座標」のまま更新しており問題なし。
+「Vキーの変形モード」で移動後でも回転／拡縮／反転の基準をカメラフレーム中心（または選択範囲中心）に固定するには、表示コンテナの transform を直接使うのではなく、“パス座標そのもの”をカメラ中心（スクリーン中心）を基準に変換する方式が安全です。これでカメラリサイズ／アスペクト変更にも耐えます。
 
-回転・拡縮は sprite.rotation, sprite.scale.set(...) を変更しているが、
-確定処理で transform をリセットまたは座標変換を二重適用している 可能性がある。
+コピー＆ペーストが「新規レイヤー作成だけで中身がコピーされない」問題は、レンダーテクスチャ（ラスタ）をコピーしている／パスデータを保持していないことが原因の可能性が高い。解決は「パスデータ（非破壊データ構造）を深くクローンして新レイヤーに移す」ことです。
 
-Pixi v8 は内部的に
+core-engine.js の肥大化は、関心事（camera / layer / drawing / clipboard / ui）ごとに責務を分離するのが正攻法。ただし分割時は API 境界を明確にしてイベントベースで連携（public API + イベント）すれば「ファイル跨りの重複」や「架空メソッド」リスクを抑えられます。
 
-localTransform（自身の回転・スケール・位置）
+まずは「非破壊化」「コピー＆ペースト修正」「カメラ中心基準での変形」の順で段階実施するのが低リスクかつ効果大です（ルールブックにある方針とも整合）。
 
-worldTransform（親込みで最終的に反映される座標）
-を持っています。
 
-確定処理で getBounds() や toGlobal() / toLocal() を使って 座標をワールド座標に焼き付け → transform 初期化 する方式にしている場合、
-回転や拡縮の情報を飛ばしてしまうと「消えた」「飛んだ」ように見えます。
+1) 問題1：カメラ中心（または選択中心）を基準に回転・拡縮・反転できるようにする — 方針と実装概要
+根本方針（要点）
 
-2. 想定される壊れパターン
+「UI上で見えている変形」は 見かけ上は container.transform で行い、ユーザーが 確定（apply/enter or confirm）するタイミングでパス座標自体に変換を焼き付ける（非破壊的に更新）。
 
-sprite.setTransform(x, y, 1, 1, 0) のように scale/rotation をリセット してしまっている。
+これにより “移動した後もいつでも同じ基準（カメラ中心または選択範囲中心）で回転・拡縮できる” ようになります。
 
-container.toLocal() で得た座標を直接 sprite.position に代入して scale/rotation が保持されない。
+カメラフレームを基準にするなら、変形操作時の基準点（pivot）を常に 画面中心（renderer.screen の中心） にマップしてから計算する。カメラリサイズやアスペクト変更は、スクリーン座標 -> ワールド座標の変換を毎回行えば耐えられます。
 
-transform 確定処理が「XY移動専用」で書かれていて、回転・拡縮分を考慮していない。
+アルゴリズム（簡潔）
 
-🛠 改修案
-✅ 1. 確定処理で transform を壊さないようにする
+変形モードに入った時（V押下）に、基準点を決める：
 
-回転や拡縮を適用した後、確定処理では「現在の transform を維持したまま position のみ調整」するように変更。
+カメラ中心（画面中心）を使うか、選択範囲中心を使うかはツール設定で切替可。
 
-function confirmTransform(sprite) {
-    // 現在のワールド座標を基準にローカルへ再設定する
-    const parent = sprite.parent;
+画面中心（スクリーン座標） → ワールド座標に変換（renderer の interaction/mapPositionToPoint を使う等）。
 
-    // ワールド座標の中心点を取得
-    const worldPos = sprite.getGlobalPosition();
+実際の変形（回転/スケール）を「一時的に container の transform で表現」する（ユーザー操作の連続的なフィードバック用）。
 
-    // ローカル座標に変換
-    const localPos = parent.toLocal(worldPos);
+ユーザーが確定（enter/confirm）したら、全パスの点を基準点まわりに座標変換してパスそのものに焼き付け、container の transform をリセット（position=0, scale=1, rotation=0）して再描画。
 
-    // === 位置だけを更新 ===
-    sprite.position.copyFrom(localPos);
+このとき、各パスの points（{x,y}）を個別に変換する（非破壊） → コピー／ペーストで劣化しない。
 
-    // rotation, scale は壊さない
-    // sprite.rotation, sprite.scale.x, sprite.scale.y はそのまま保持
+実装スニペット（統合HTML内に追加する想定）
+
+以下は index.html の JavaScript 部分に入れる（window.TegakiCore の挙動をパッチする形式がルールブック方針に合うはずです）。コメント多めにしています。
+
+// --- ヘルパ: スクリーン座標 -> ワールド座標（stage 空間） ---
+// app は PIXI.Application のインスタンス
+function screenToWorld(app, screenX, screenY) {
+  // interaction を利用してスクリーン位置をステージ上のPointにマップ
+  const p = app.renderer.plugins.interaction.mapPositionToPoint(new PIXI.Point(), screenX, screenY);
+  return p; // 既にステージ座標（ワールド）として扱える
 }
 
-✅ 2. もし「transform を焼き付けたい」場合
+// --- 点を pivot (world) を基準に回転・拡縮して world で返す ---
+function transformPointAroundPivot_world(ptWorld, pivotWorld, transform) {
+  const dx = ptWorld.x - pivotWorld.x;
+  const dy = ptWorld.y - pivotWorld.y;
+  // scale then rotate (order: translate -> scale -> rotate -> translate back)
+  const sx = transform.scaleX ?? transform.scale ?? 1;
+  const sy = transform.scaleY ?? transform.scale ?? sx;
+  const angle = (transform.rotationDeg ?? 0) * Math.PI/180;
+  // scale
+  let nx = dx * sx;
+  let ny = dy * sy;
+  // rotate
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  const rx = nx * cos - ny * sin;
+  const ry = nx * sin + ny * cos;
+  return { x: pivotWorld.x + rx + (transform.tx ?? 0), y: pivotWorld.y + ry + (transform.ty ?? 0) };
+}
 
-たとえば「回転や縮小を確定して通常の bitmap に戻す」ような動作が必要なら、PixiJS の RenderTexture を使って書き戻す必要があります。
-
-function bakeTransform(sprite, app) {
-    const rt = PIXI.RenderTexture.create({
-        width: sprite.width,
-        height: sprite.height
-    });
-
-    app.renderer.render(sprite, { renderTexture: rt });
-
-    const baked = new PIXI.Sprite(rt);
-    baked.position.copyFrom(sprite.position);
-    baked.rotation = 0;
-    baked.scale.set(1);
-
-    sprite.parent.addChild(baked);
-    sprite.destroy(); // 元を削除
-    return baked;
+// --- パス全点に適用して layer のパスを更新する（非破壊） ---
+function applyTransformToPathsNonDestructive(app, layerContainer, transform, pivotScreen) {
+  // 1) pivotScreen: {x,y} in screen coords (e.g. screen center)
+  const pivotWorld = screenToWorld(app, pivotScreen.x, pivotScreen.y);
+  for (const path of layerContainer.layerData.paths) {
+    // path.points is array of {x,y} in layer-local coords (where they were originally stored)
+    for (let i=0;i<path.points.length;i++){
+      const localPt = path.points[i];
+      // local -> world
+      const worldPt = layerContainer.toGlobal(new PIXI.Point(localPt.x, localPt.y));
+      // apply transform around pivot (in world)
+      const newWorld = transformPointAroundPivot_world(worldPt, pivotWorld, transform);
+      // convert back to layer-local
+      const newLocal = layerContainer.toLocal(new PIXI.Point(newWorld.x, newWorld.y));
+      path.points[i].x = newLocal.x;
+      path.points[i].y = newLocal.y;
+    }
+    // 再作画: rebuild graphics from path.points
+    rebuildPathGraphicsFromPoints(layerContainer, path);
+  }
+  // 2) reset visual transform on container
+  layerContainer.position.set(0,0);
+  layerContainer.rotation = 0;
+  layerContainer.scale.set(1,1);
 }
 
 
-ただしこれは「完全な確定焼き付け」で、アクティブレイヤーの transform を保持しなくなるので、普通のペイントソフト的には そのまま transform を残すほうが自然 です。
+補足：rebuildPathGraphicsFromPoints() は既存の「パス→Graphicsを描く」処理を呼ぶユーティリティです。ルールブックの「非破壊化」方針と一致します（最終的にパスデータ優先）。
+GitHub
 
-✅ 3. 改修ステップ提案
+2) 問題2：コピー＆ペーストがレイヤーの中身を保持しない — 原因と解決策
+原因（想定）
 
-core-engine.js で「Vキーで確定する処理」を探す。
-→ おそらく setTransform 系か toLocal() で再配置している部分がある。
+実装が「レンダーテクスチャ（画像）としてレイヤーを複製」したり、単に空の新規レイヤーだけ作っている。
 
-その部分を「position のみ更新」に修正。
-scale/rotation は保持する。
+あるいは transform を確定してパスを捨て、ラスタ化したスプライトのみを保存している（ルールブックに 'confirmLayerTransform' の破壊的実装が示されている）。
+GitHub
 
-どうしても焼き付けたい場合は上記の RenderTexture バージョンを別途実装。
+解決方針
 
-🎯 結論
+クリップボード（コピーの中間オブジェクト）には 必ずパスデータ（layer.layerData.paths）を第一優先で保持する。
 
-原因：確定処理で transform（rotation/scale）がリセット or 無視されている。
+クリップ時は deep clone（IDは新規生成）して、貼り付け時はパスデータから再構築する（Graphics を rebuild）。
 
-改修：座標確定では position のみ調整し、scale/rotation を保持するよう修正。
+もしパスデータが存在しない（ラスタのみの古いレイヤー）場合はフォールバックで RenderTexture を使うが、出来る限りパスベースを復元可能にする。
 
-代替手段：焼き付ける場合は RenderTexture 経由で新Spriteに変換する。
+実装例（概念コード）
+function deepCloneLayerData(layer) {
+  // layer.layerData を JSON 系で簡便に複製（注意: functions や Graphics は含めない）
+  const clone = JSON.parse(JSON.stringify(layer.layerData));
+  // 新しいIDを振る
+  clone.id = generateNewLayerId();
+  // paths の id も更新
+  clone.paths = clone.paths.map(p => ({ ...p, id: generateNewPathId(), points: p.points.map(pt=>({x:pt.x,y:pt.y})) }));
+  return clone;
+}
+
+// copy handler
+function copyActiveLayerToClipboard(activeLayer) {
+  if (!activeLayer || !activeLayer.layerData) return;
+  window._TegakiClipboard = {
+    layerData: deepCloneLayerData(activeLayer),
+    copiedAt: Date.now()
+  };
+}
+
+// paste handler
+function pasteClipboardAsLayer(app, layerManager) {
+  if (!window._TegakiClipboard) return;
+  const newLayerData = window._TegakiClipboard.layerData;
+  // create new layer container
+  const newLayerContainer = layerManager.createLayerFromData(newLayerData); // implement this to rebuild graphics
+  layerManager.addLayer(newLayerContainer);
+}
+
+
+重要：createLayerFromData() は パスデータから Graphics を作る処理 を呼ぶこと。これで「新規レイヤーができるだけで中身がない」事象は解消します。
+
+3) 現行構造の無駄・改善余地（PixiJS v8.13 を踏まえて）
+気づき（リポジトリ・ルールブックから）
+
+ルールブック自体は「統合HTML中心で修正する」方針が強く、サテライトを参照にしている。これは Claude（あなた）にとって便利だが、core-engine.js の中で責務が混在しているときは修正コストが高い。
+GitHub
+
+PixiJS v8.13 の API（toLocal/toGlobal・RenderTexture.create 等）を正しく使うことで、座標変換や高解像度キャッシュがスマートに書ける（現状それを部分的に使っている様子）。
+GitHub
+
+スマート化の余地（具体）
+
+非破壊パスデータ + レンダリングキャッシュ（再構築可能な RenderTexture） の二層に分ける。
+
+画面表示は RenderTexture にキャッシュ（必要時に再生成）。内部データは常にベクタ（パス）。
+
+座標系ユーティリティ を共通化：screenToWorld, worldToScreen, applyMatrixToPoint など。これで座標バグが大きく減る。
+
+イベント/メッセージバス を導入して subsystems の依存を緩める（例：layer:transform:confirmed を publish -> camera/thumbnail/drawing が subscribe）。
+
+ClipboardSystem を独立させ、deep-clone / import-export / history（undo）を担当させる。
+
+4) core-engine.js をどう分離すべきか（実務的な分割案）
+基本ルール（分割時の指針）
+
+責務単位で分けるが、API 境界は明確に（関数名・イベント名・戻り値フォーマットをきちんと定義）。
+
+同期ポイント（同期的に値を参照する箇所）を最小化し、必ず public API かイベント経由でやり取りする。
+
+まずは「論理的分割（コードの抽出）」だけを行い、外部インターフェースは変えない（内部実装を切り出すだけ） → リファクタでインターフェースを安定させる。
+
+推奨モジュール（責務）
+
+camera-system.js
+
+カメラ transform（pan/zoom/viewport）・スクリーン↔ワールド変換ユーティリティ。
+
+API例：camera.screenToWorld(point), camera.worldToScreen(point), camera.getViewportBounds()。
+
+layer-manager.js
+
+レイヤ列管理、追加/削除/順序変更、アクティブレイヤ取得、サムネイル更新トリガー。
+
+drawing-engine.js
+
+パスの確定・再描画・Graphics構築。パスデータの入出力を担当。
+
+transform-system.js（または transform-utils）
+
+transform の apply・合成・非破壊変換ロジック（applyTransformToPathsNonDestructive 等）。
+
+clipboard-system.js
+
+コピー・カット・ペースト。deep-cloneロジック。undo/redo 連携インタフェース。
+
+ui-panels.js（既存のまま UI 担当）
+
+UI 表示・イベント（これは参照専用の方針を尊重）。
+
+core-engine.js（薄いファサード）
+
+各サブシステムを初期化して結合するファサード。public API を提供。
+
+分割のメリット / デメリット
+
+メリット：各パーツを個別にテストしやすく、可読性が上がる。
+
+デメリット：複数ファイルにまたがる修正時に「どのモジュールに何を実装するか」の同期が必要（→ API 契約を docs に残すことで対策）。
+→ 解決策：分割直後は (1) API 契約をコメント化、(2) 各サブシステムの public API を core-engine 経由で露出し、二重実装を避ける。
+
+実行プラン（段階的・優先順位付き）
+Phase A — 緊急（1〜3日で試せる単位）
+
+A1. confirmLayerTransform() を 非破壊に書き換え（パスに変形を焼き付ける）→ これで「コピーが劣化する」問題を止める。
+
+テスト：複数回コピー＆ペーストしても劣化・ラスタ化しないことを確認。
+
+A2. クリップボードをパスベースに切替（deep clone）し、paste がパス→Graphics を再構築するようにする。
+
+A3. Vモードの変形で「回転/拡縮の基準」を画面中心に固定する UI パッチ（上記 applyTransformToPathsNonDestructive を統合HTMLに貼る）。
+
+Phase B — 中期（1〜2 週間）
+
+B1. camera-system 抽出（screen↔world utility を centralize）。
+
+B2. transform-system（pivot 周りの変換関数群）を作成し、drawing-engine から参照する。
+
+B3. 単体テスト群（簡易）を作る：変換が正しくパスに適用されるか等。
+
+Phase C — 長期（数週間〜）
+
+C1. layer-manager, clipboard-system, drawing-engine をファイル分離し、core-engine を薄いファサードにする。
+
+C2. キャッシュ/サムネイル最適化（RenderTexture再生成ポリシー）。
+
+C3. GIF 機能など追加（ルールブックで想定されている順）。
+
+具体パッチ例（すぐ使える短い手順）
+
+index.html 内の DOMContentLoaded イベントで既存の confirmLayerTransform を上書き（wrap）する。ルールブック方針に沿い、統合HTML内だけで完結できます。
+GitHub
+
+同じく index.html に copyActiveLayerToClipboard / pasteClipboardAsLayer を追加して clipboard を path-first にする。
+
+Vキーモードの変形処理で、変形を「一時 transform（見た目）」→「確定で path に焼き付け」に切り替える。
+
+必要なら、この場で index.html にそのまま貼れる実際の差分（約100〜200行） を作成して提示します。どの範囲で差分を出すか（最小パッチ：confirmLayerTransform の非破壊化のみ、あるいは包括的パッチ：confirm + clipboard + pivot utils）を指示いただければ、即座にパッチ案（具体コード）を書きます — ただしルールブック方針に従い「統合HTML の JavaScript 部分で完結する形」で出します。
+
+チェックリスト（優先度順）
+
+ confirmLayerTransform がパス単位で非破壊に処理する。
+GitHub
+
+ コピーはパスデータ deep-clone、ペーストは path→Graphics の再構築。
+
+ Vモードの回転/拡縮/反転は常にカメラ（画面）中心または選択中心を基準に動作。
+
+ camera utils（screen↔world）を一箇所にまとめる。
+
+ core-engine は薄いファサードにし、camera/layer/drawing/clipboard を分離する方針を文書化。
+
+付録：よくある落とし穴（経験則）
+
+container.toLocal / toGlobal の呼び出しは from 引数（どのオブジェクト基準か）に敏感 → ユーティリティでラップしておく。
+
+RenderTexture に頼りすぎると「劣化の連鎖／undo が難しい」→ 基本はパスデータを一次ソースに。
+
+ファイル分割時は、まず「内部実装を抽出」→ 動作に影響ないインターフェースから refactor する（big-bang 分割は危険）。
+
+
+📌 パッチコード (B案)
+
+以下を index.html の JavaScript 部分（DOMContentLoaded 後に既存の関数やイベントを上書きしている箇所付近）に追加してください。
+
+<script>
+// ===============================
+//  Transform Utilities
+// ===============================
+
+// スクリーン座標 → ワールド座標
+function screenToWorld(app, screenX, screenY) {
+  const p = app.renderer.plugins.interaction.mapPositionToPoint(new PIXI.Point(), screenX, screenY);
+  return p;
+}
+
+// pivotを中心に回転・スケール・平行移動
+function transformPointAroundPivot_world(ptWorld, pivotWorld, transform) {
+  const dx = ptWorld.x - pivotWorld.x;
+  const dy = ptWorld.y - pivotWorld.y;
+
+  const sx = transform.scaleX ?? transform.scale ?? 1;
+  const sy = transform.scaleY ?? transform.scale ?? sx;
+  const angle = (transform.rotationDeg ?? 0) * Math.PI / 180;
+
+  // scale
+  let nx = dx * sx;
+  let ny = dy * sy;
+
+  // rotate
+  const cos = Math.cos(angle), sin = Math.sin(angle);
+  const rx = nx * cos - ny * sin;
+  const ry = nx * sin + ny * cos;
+
+  return { x: pivotWorld.x + rx + (transform.tx ?? 0), y: pivotWorld.y + ry + (transform.ty ?? 0) };
+}
+
+// パス全点に非破壊変換を適用
+function applyTransformToPathsNonDestructive(app, layerContainer, transform, pivotScreen) {
+  const pivotWorld = screenToWorld(app, pivotScreen.x, pivotScreen.y);
+  for (const path of layerContainer.layerData.paths) {
+    for (let i = 0; i < path.points.length; i++) {
+      const localPt = path.points[i];
+      const worldPt = layerContainer.toGlobal(new PIXI.Point(localPt.x, localPt.y));
+      const newWorld = transformPointAroundPivot_world(worldPt, pivotWorld, transform);
+      const newLocal = layerContainer.toLocal(new PIXI.Point(newWorld.x, newWorld.y));
+      path.points[i].x = newLocal.x;
+      path.points[i].y = newLocal.y;
+    }
+    if (window.rebuildPathGraphicsFromPoints) {
+      rebuildPathGraphicsFromPoints(layerContainer, path);
+    }
+  }
+  // container の見た目をリセット
+  layerContainer.position.set(0, 0);
+  layerContainer.rotation = 0;
+  layerContainer.scale.set(1, 1);
+}
+
+// ===============================
+//  confirmLayerTransform (非破壊版)
+// ===============================
+if (window.confirmLayerTransform_original === undefined) {
+  window.confirmLayerTransform_original = window.confirmLayerTransform;
+}
+
+window.confirmLayerTransform = function(app, activeLayer, transform, pivotMode = "camera") {
+  if (!activeLayer) return;
+  const screenCenter = {
+    x: app.renderer.screen.width / 2,
+    y: app.renderer.screen.height / 2
+  };
+  const pivotScreen = (pivotMode === "camera")
+    ? screenCenter
+    : { x: activeLayer.width / 2, y: activeLayer.height / 2 };
+
+  applyTransformToPathsNonDestructive(app, activeLayer, transform, pivotScreen);
+};
+
+// ===============================
+//  Clipboard Deep Clone
+// ===============================
+function generateNewId(prefix="id") {
+  return prefix + "_" + Math.random().toString(36).substr(2, 9);
+}
+
+function deepCloneLayerData(layer) {
+  const clone = JSON.parse(JSON.stringify(layer.layerData));
+  clone.id = generateNewId("layer");
+  clone.paths = clone.paths.map(p => ({
+    ...p,
+    id: generateNewId("path"),
+    points: p.points.map(pt => ({ x: pt.x, y: pt.y }))
+  }));
+  return clone;
+}
+
+// copy
+window.copyActiveLayerToClipboard = function(activeLayer) {
+  if (!activeLayer || !activeLayer.layerData) return;
+  window._TegakiClipboard = {
+    layerData: deepCloneLayerData(activeLayer),
+    copiedAt: Date.now()
+  };
+  console.log("Layer copied:", window._TegakiClipboard.layerData.id);
+};
+
+// paste
+window.pasteClipboardAsLayer = function(app, layerManager) {
+  if (!window._TegakiClipboard) return;
+  const newLayerData = window._TegakiClipboard.layerData;
+
+  // createLayerFromData: layerDataからレイヤーContainerを再構築
+  if (layerManager.createLayerFromData) {
+    const newLayerContainer = layerManager.createLayerFromData(newLayerData);
+    layerManager.addLayer(newLayerContainer);
+    console.log("Layer pasted:", newLayerData.id);
+    return newLayerContainer;
+  } else {
+    console.warn("layerManager.createLayerFromData 未実装です。");
+  }
+};
+
+// ===============================
+//  Key bindings (例: Ctrl+C / Ctrl+V)
+// ===============================
+window.addEventListener("keydown", (e) => {
+  const app = window._TegakiApp;
+  const layerManager = window._LayerManager;
+  const activeLayer = layerManager?.getActiveLayer?.();
+
+  if (e.ctrlKey && e.key === "c") {
+    copyActiveLayerToClipboard(activeLayer);
+    e.preventDefault();
+  }
+  if (e.ctrlKey && e.key === "v") {
+    pasteClipboardAsLayer(app, layerManager);
+    e.preventDefault();
+  }
+});
+</script>
+
+📌 動作仕様
+
+Vモードでの変形
+
+見た目は従来通り container.transform で動作。
+
+確定時 (confirmLayerTransform) に 全パスの点を pivot 周りに変換して「非破壊的」に座標更新 → container はリセット。
+
+デフォルト pivot は「画面中心（カメラ中心）」。
+
+コピー＆ペースト
+
+コピー時は layer.layerData を deep-clone（ID再生成）。
+
+ペースト時は createLayerFromData() を呼んで Graphics を再構築。
+
+Ctrl+C / Ctrl+V でテスト可能。
+
+改修範囲
+
+既存コードにはほぼ影響を与えず、「追加／上書き」方式。
+
+元の confirmLayerTransform は confirmLayerTransform_original に退避してあるため、必要なら復帰可能。
+
