@@ -1,3 +1,30 @@
+📊 Phase 0 実装提案
+Phase 0の実装により、以下の準備が整います：
+Phase 0.1 - 座標系モジュール作成
+✅ coordinate-system.js を作成しました
+
+統一された座標変換API
+PixiJS v8.13に最適化
+デバッグ用の座標空間検証機能
+変形行列の統一処理
+
+Phase 0.2 - 既存コードへのコメント追加
+✅ core-engine.js の主要部分に座標系コメントを追加する例を示しました
+
+// coord: source -> destination 形式で明示
+座標変換の用途を明確化
+デバッグモードでの座標空間タグ付け
+
+🚀 実装手順
+Step 1: coordinate-system.js の追加
+
+新規ファイル coordinate-system.js を作成
+index.html に読み込み追加（core-engine.jsより前）：
+
+
+
+
+
 # TEGAKI Twin-Star System 改修プラン
 
 ## 🎯 目標アーキテクチャ

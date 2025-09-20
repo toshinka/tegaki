@@ -1,0 +1,207 @@
+// ===== core-engine.js Phase 0.2 座標系コメント追加版（主要部分の修正例） =====
+// 全体4000行のうち、座標変換部分のみ抜粋して修正
+
+// === CameraSystem クラス内の修正例 ===
+
+class CameraSystem {
+    // ... 既存コード ...
+    
+    /**
+     * Phase 0.2: 座標変換メソッド統合
+     * screenToCanvasForDrawingとscreenToCanvasを明確に分離
+     */
+    
+    // 改修版：ペン描画用のキャンバス座標変換（レイヤー変形を考慮しない）
+    screenToCanvasForDrawing(screenX, screenY) {
+        // coord: screen -> canvas (for drawing, no layer transform)
+        const globalPoint = { x: screenX, y: screenY };
+        const canvasPoint = this.canvasContainer.toLocal(globalPoint);
+        
+        // Phase 0: デバッグモードで座標空間タグ付け
+        if (window.TEGAKI_CONFIG?.debug && window.CoordinateSystem) {
+            return window.CoordinateSystem.tagCoordSpace(canvasPoint, 'canvas');
+        }
+        return canvasPoint;
+    }
+    
+    // レイヤー操作用の座標変換（レイヤー変形を考慮）
+    screenToCanvas(screenX, screenY) {
+        // coord: screen -> canvas (for layer operations, with transform)
+        const globalPoint = { x: screenX, y: screenY };
+        const canvasPoint = this.canvasContainer.toLocal(globalPoint);
+        
+        // Phase 0: デバッグモードで座標空間タグ付け
+        if (window.TEGAKI_CONFIG?.debug && window.CoordinateSystem) {
+            return window.CoordinateSystem.tagCoordSpace(canvasPoint, 'canvas_transformed');
+        }
+        return canvasPoint;
+    }
+    
+    canvasToScreen(canvasX, canvasY) {
+        // coord: canvas -> screen
+        const canvasPoint = { x: canvasX, y: canvasY };
+        const screenPoint = this.canvasContainer.toGlobal(canvasPoint);
+        
+        // Phase 0: デバッグモードで座標空間タグ付け
+        if (window.TEGAKI_CONFIG?.debug && window.CoordinateSystem) {
+            return window.CoordinateSystem.tagCoordSpace(screenPoint, 'screen');
+        }
+        return screenPoint;
+    }
+    
+    // Phase 0.2: 座標変換の用途別メソッド追加
+    getCanvasCenter() {
+        // coord: canvas space center point
+        return {
+            x: CONFIG.canvas.width / 2,
+            y: CONFIG.canvas.height / 2
+        };
+    }
+    
+    getCameraFrameCenterInScreen() {
+        // coord: canvas center -> screen
+        const center = this.getCanvasCenter();
+        return this.worldContainer.toGlobal(center);
+    }
+    
+    // ... 既存コード ...
+}
+
+// === LayerManager クラス内の修正例 ===
+
+class LayerManager {
+    // ... 既存コード ...
+    
+    /**
+     * Phase 0.2: 座標変換箇所に明示的コメント追加
+     */
+    
+    // 修正版：安全な座標変形処理
+    safeTransformPoints(points, matrix) {
+        const transformedPoints = [];
+        
+        for (let i = 0; i < points.length; i++) {
+            const point = points[i];
+            
+            // 座標の検証
+            if (typeof point.x !== 'number' || typeof point.y !== 'number' ||
+                !isFinite(point.x) || !isFinite(point.y)) {
+                console.warn(`Invalid point at index ${i}:`, point);
+                continue;
+            }
+            
+            try {
+                // coord: layer -> transformed layer
+                const transformed = matrix.apply(point);
+                
+                // 結果の検証
+                if (typeof transformed.x === 'number' && typeof transformed.y === 'number' &&
+                    isFinite(transformed.x) && isFinite(transformed.y)) {
+                    transformedPoints.push({
+                        x: transformed.x,
+                        y: transformed.y
+                    });
+                } else {
+                    console.warn(`Invalid transformed point:`, transformed);
+                }
+                
+            } catch (transformError) {
+                console.warn(`Point transform failed for index ${i}:`, transformError);
+            }
+        }
+        
+        return transformedPoints;
+    }
+    
+    // Phase 0.2: 変形行列作成を統一API使用に準備
+    createTransformMatrix(transform, centerX, centerY) {
+        // coord: create transform matrix with pivot at canvas center
+        
+        // Phase 0: CoordinateSystemが利用可能なら使用
+        if (window.CoordinateSystem) {
+            return window.CoordinateSystem.createTransformMatrix(transform, centerX, centerY);
+        }
+        
+        // フォールバック（従来の実装）
+        const matrix = new PIXI.Matrix();
+        
+        // 変形の順序: 移動 → 回転 → スケール → 移動戻し
+        matrix.translate(centerX + transform.x, centerY + transform.y);
+        matrix.rotate(transform.rotation);
+        matrix.scale(transform.scaleX, transform.scaleY);
+        matrix.translate(-centerX, -centerY);
+        
+        return matrix;
+    }
+    
+    // ... 既存コード ...
+}
+
+// === DrawingEngine クラス内の修正例 ===
+
+class DrawingEngine {
+    // ... 既存コード ...
+    
+    handlePointerDown(e) {
+        if (this.isDrawing || !this.currentLayer) return;
+        
+        // coord: screen -> canvas (for drawing)
+        const canvasPoint = this.cameraSystem.screenToCanvasForDrawing(e.clientX, e.clientY);
+        
+        // Phase 0: 座標空間検証（デバッグモード）
+        if (window.TEGAKI_CONFIG?.debug && window.CoordinateSystem) {
+            window.CoordinateSystem.validateCoordSpace(canvasPoint, 'canvas');
+        }
+        
+        if (this.currentTool === 'pen') {
+            this.startPath(canvasPoint.x, canvasPoint.y);
+        } else if (this.currentTool === 'eraser') {
+            this.startErasing(canvasPoint.x, canvasPoint.y);
+        }
+    }
+    
+    handlePointerMove(e) {
+        // coord: screen -> canvas (for drawing)
+        const canvasPoint = this.cameraSystem.screenToCanvasForDrawing(e.clientX, e.clientY);
+        
+        this.cameraSystem.updateCoordinates(canvasPoint.x, canvasPoint.y);
+        
+        if (this.isDrawing) {
+            if (this.currentTool === 'pen') {
+                this.addPointToPath(canvasPoint.x, canvasPoint.y, e.pressure);
+            } else if (this.currentTool === 'eraser') {
+                this.eraseAt(canvasPoint.x, canvasPoint.y);
+            }
+        }
+    }
+    
+    // ... 既存コード ...
+}
+
+// === Phase 0.2 統合処理の例 ===
+
+// CoreEngine内で座標系モジュールのチェック
+class CoreEngine {
+    initialize() {
+        // Phase 0: 座標系モジュールの利用可能性チェック
+        if (window.CoordinateSystem) {
+            console.log('Phase 0: CoordinateSystem module detected - using unified coordinate API');
+            
+            // デバッグモードで座標変換のロギング
+            if (CONFIG.debug) {
+                console.log('Phase 0: Coordinate space validation enabled in debug mode');
+            }
+        } else {
+            console.log('Phase 0: CoordinateSystem module not found - using legacy coordinate methods');
+        }
+        
+        // 既存の初期化処理
+        this.cameraSystem = new CameraSystem(this.app);
+        this.layerManager = new LayerManager(
+            this.cameraSystem.canvasContainer,
+            this.app,
+            this.cameraSystem
+        );
+        // ... 続く
+    }
+}
