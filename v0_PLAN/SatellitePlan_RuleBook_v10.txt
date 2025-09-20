@@ -1,0 +1,312 @@
+# ====================================
+# TEGAKI ARCHITECTURE RULEBOOK v10
+# Twin-Star System with Coordinate Core
+# ====================================
+# Priority: Claude/AI readability and maintainability
+# Update: 2025-01-XX
+# Status: ACTIVE
+
+SYSTEM_ARCHITECTURE:
+  type: "Twin-Star System"
+  structure:
+    ui_star:
+      main: "index.html"
+      satellites:
+        - "config.js"
+        - "ui-panels.js"
+        - "ui-tools.js"
+    engine_star:
+      main: "core-runtime.js"
+      satellites:
+        - "coordinate-system.js"
+        - "layer-system.js"
+        - "drawing-engine.js"
+        - "transform-utils.js"
+        - "clipboard-system.js"
+
+CRITICAL_RULES:
+  coordinate_system:
+    single_source_of_truth: "coordinate-system.js"
+    forbidden:
+      - "Direct toLocal/toGlobal calls outside coordinate-system"
+      - "Mixed coordinate spaces without explicit conversion"
+      - "Ambiguous pivot references"
+    required:
+      - "All coordinate conversions through CoordinateSystem API"
+      - "Explicit coordinate space naming: screen/world/layer/local"
+      - "Pivot type annotation: pivotScreen/pivotWorld/pivotLayer"
+
+  api_boundaries:
+    pattern: "Facade with explicit exports"
+    ui_to_engine:
+      - "CoreRuntime.camera.*"
+      - "CoreRuntime.layer.*"
+      - "CoreRuntime.transform.*"
+      - "CoreRuntime.draw.*"
+    engine_to_ui:
+      - "Events only (no direct calls)"
+      - "Published via window.TegakiEvents"
+
+  code_style:
+    priority: "AI/Claude comprehension"
+    requirements:
+      - "Explicit type hints in comments"
+      - "No implicit conversions"
+      - "No fallback behaviors"
+      - "No error recovery"
+      - "Fail fast and loud"
+    forbidden:
+      - "try-catch for error hiding"
+      - "|| operator for defaults"
+      - "Automatic corrections"
+      - "User-facing error dialogs"
+
+IMPLEMENTATION_PHASES:
+  phase_0_immediate:
+    duration: "1 day"
+    scope: "Apply GPT5 patch B"
+    tasks:
+      - id: "P0.1"
+        action: "Add non-destructive transform patch to index.html"
+        location: "index.html after DOMContentLoaded"
+        validates: "Path-based transforms preserve data"
+      - id: "P0.2"
+        action: "Add deep-clone clipboard system"
+        location: "index.html global scope"
+        validates: "Copy-paste preserves path data"
+
+  phase_1_coordinate_core:
+    duration: "1 week"
+    scope: "Extract and unify coordinate system"
+    tasks:
+      - id: "P1.1"
+        action: "Create coordinate-system.js"
+        exports:
+          - "screenToWorld(app, x, y) -> {x, y}"
+          - "worldToScreen(app, x, y) -> {x, y}"
+          - "layerToWorld(layer, x, y) -> {x, y}"
+          - "worldToLayer(layer, x, y) -> {x, y}"
+          - "transformPoint(point, matrix) -> {x, y}"
+      - id: "P1.2"
+        action: "Replace all toLocal/toGlobal calls"
+        pattern: "Search: .toLocal( -> Replace: CoordinateSystem.worldToLayer("
+      - id: "P1.3"
+        action: "Add coordinate space validation"
+        implementation: "Assert coordinate space types in all APIs"
+
+  phase_2_engine_star_creation:
+    duration: "3 days"
+    scope: "Create core-runtime.js as engine facade"
+    tasks:
+      - id: "P2.1"
+        action: "Create core-runtime.js"
+        structure: |
+          window.CoreRuntime = {
+            camera: CameraSystem,
+            layer: LayerSystem,
+            transform: TransformUtils,
+            draw: DrawingEngine,
+            coord: CoordinateSystem
+          };
+      - id: "P2.2"
+        action: "Move camera logic from core-engine.js"
+        target: "camera-system.js"
+        api: ["pan", "zoom", "reset", "getViewport", "setViewport"]
+      - id: "P2.3"
+        action: "Update index.html references"
+        pattern: "TegakiCore.* -> CoreRuntime.*"
+
+  phase_3_layer_system_extraction:
+    duration: "1 week"
+    scope: "Path-first layer architecture"
+    tasks:
+      - id: "P3.1"
+        action: "Create layer-system.js"
+        data_model: |
+          Layer = {
+            id: string,
+            paths: Path[],
+            transform: Matrix,
+            visible: boolean,
+            opacity: number,
+            blendMode: string,
+            cache: RenderTexture | null
+          }
+          Path = {
+            id: string,
+            points: Point[],
+            style: StyleData,
+            closed: boolean
+          }
+      - id: "P3.2"
+        action: "Implement non-destructive operations"
+        methods:
+          - "applyTransformToPaths(layer, transform, pivot)"
+          - "mergePaths(layer, otherLayer)"
+          - "splitPath(path, splitPoint)"
+      - id: "P3.3"
+        action: "Cache invalidation system"
+        trigger_on: ["path modification", "transform change", "style change"]
+
+  phase_4_drawing_engine_separation:
+    duration: "3 days"
+    scope: "Separate rendering from data"
+    tasks:
+      - id: "P4.1"
+        action: "Create drawing-engine.js"
+        responsibilities:
+          - "Path to Graphics conversion"
+          - "Brush stroke recording"
+          - "Smoothing algorithms"
+      - id: "P4.2"
+        action: "Implement path rebuilding"
+        signature: "rebuildGraphicsFromPath(path, graphics, style)"
+      - id: "P4.3"
+        action: "Optimize render caching"
+        strategy: "Dirty flag system for selective updates"
+
+  phase_5_final_cleanup:
+    duration: "3 days"
+    scope: "Remove core-engine.js"
+    tasks:
+      - id: "P5.1"
+        action: "Verify all functionality migrated"
+        checklist:
+          - "All methods have new homes"
+          - "No circular dependencies"
+          - "Event system working"
+      - id: "P5.2"
+        action: "Delete core-engine.js"
+        pre_condition: "All tests pass"
+      - id: "P5.3"
+        action: "Update documentation headers"
+        format: "JSDoc with @module annotations"
+
+COORDINATE_SPACE_DEFINITIONS:
+  screen:
+    origin: "top-left of canvas"
+    units: "CSS pixels"
+    usage: "Mouse/touch input, UI positioning"
+  
+  world:
+    origin: "top-left of infinite canvas"
+    units: "Canvas units (affected by camera zoom)"
+    usage: "Layer positioning, camera viewport"
+  
+  layer:
+    origin: "top-left of layer bounds"
+    units: "Layer pixels"
+    usage: "Path points, local transforms"
+  
+  local:
+    origin: "object pivot point"
+    units: "Object units"
+    usage: "Rotation/scale operations"
+
+VALIDATION_RULES:
+  coordinate_conversion:
+    required_annotations:
+      - "// coord: screen"
+      - "// coord: world"
+      - "// coord: layer"
+    forbidden_patterns:
+      - "container.toGlobal without comment"
+      - "Mixed coordinate math without conversion"
+      - "Implicit screen<->world assumptions"
+
+  api_contracts:
+    method_signature:
+      format: "methodName(param1: Type1, param2: Type2): ReturnType"
+      example: "screenToWorld(x: number, y: number): {x: number, y: number}"
+    
+    error_handling:
+      strategy: "throw immediately"
+      format: 'throw new Error("MethodName: specific failure reason");'
+      no_recovery: true
+
+  memory_management:
+    render_textures:
+      - "Always destroy() when replacing"
+      - "Single owner principle"
+      - "Explicit lifecycle methods"
+    
+    event_listeners:
+      - "Named functions only (for removal)"
+      - "Cleanup in symmetric teardown"
+      - "No anonymous handlers"
+
+TESTING_STRATEGY:
+  coordinate_tests:
+    priority: "CRITICAL"
+    cases:
+      - "Round-trip conversions preserve position"
+      - "Camera zoom affects world<->screen correctly"
+      - "Layer transforms compose properly"
+  
+  visual_regression:
+    method: "Manual verification"
+    checkpoints:
+      - "After each phase completion"
+      - "Transform operations"
+      - "Copy/paste operations"
+
+MIGRATION_SAFETY:
+  rollback_points:
+    - "Before Phase 1: Tag 'pre-coordinate-extraction'"
+    - "Before Phase 2: Tag 'pre-engine-star'"
+    - "Before Phase 5: Tag 'pre-cleanup'"
+  
+  compatibility_bridge:
+    during_migration: |
+      // Temporary compatibility layer
+      window.TegakiCore = window.CoreRuntime; // Alias during transition
+    
+    after_migration: |
+      delete window.TegakiCore; // Clean break
+
+FILE_SIZE_LIMITS:
+  hard_limits:
+    "*.js": "1500 lines"
+    "index.html": "500 lines (excluding libs)"
+  
+  split_triggers:
+    - "Method count > 30"
+    - "Responsibility count > 3"
+    - "Coordinate space mixing"
+
+SUCCESS_METRICS:
+  performance:
+    - "Transform operations < 16ms"
+    - "Layer switching < 8ms"
+    - "Coordinate conversion < 1ms"
+  
+  code_quality:
+    - "No coordinate space bugs"
+    - "Clear API boundaries"
+    - "Zero fallback patterns"
+
+FORBIDDEN_PATTERNS:
+  absolute_no:
+    - "try { ... } catch(e) { /* ignore */ }"
+    - "if (someValue || defaultValue)"
+    - "container.toLocal without CoordinateSystem"
+    - "Error modal/dialog/alert"
+    - "Version compatibility checks"
+    - "Automatic repair attempts"
+    - "Silent failures"
+    - "Fallback behaviors"
+
+REQUIRED_PATTERNS:
+  mandatory:
+    - "Explicit coordinate space comments"
+    - "Single responsibility per file"
+    - "Event-based inter-system communication"
+    - "Immutable path operations"
+    - "Explicit disposal/cleanup"
+
+STATUS_TRACKING:
+  current_phase: 0
+  next_milestone: "P0.1 - Apply GPT5 patch"
+  blockers: []
+  
+END_OF_RULEBOOK_V10
