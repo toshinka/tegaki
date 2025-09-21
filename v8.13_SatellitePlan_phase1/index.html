@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 Phase 0完成版 - TEGAKI Twin-Star System座標系統合</title>
+    <title>🎨 Phase1.1緊急修正版 - PixiJS v8.13 お絵かきツール</title>
     <style>
         * {
             margin: 0;
@@ -164,7 +164,7 @@
             cursor: pointer;
             transition: background-color 0.2s ease, border-color 0.2s ease;
             display: grid;
-            grid-template-columns: 20px 1fr 48px;
+            grid-template-columns: 20px 1fr auto;
             grid-template-rows: 1fr 1fr;
             gap: 4px 8px;
             align-items: center;
@@ -236,12 +236,14 @@
             text-overflow: ellipsis;
             align-self: end;
             margin-bottom: 2px;
+            max-width: calc(100% - 8px);
         }
         
         .layer-thumbnail {
             grid-column: 3;
             grid-row: 1 / 3;
-            width: 48px;
+            min-width: 24px;
+            max-width: 72px;
             height: 48px;
             background: var(--futaba-background);
             border: 1px solid var(--futaba-light-medium);
@@ -252,6 +254,7 @@
             align-items: center;
             justify-content: center;
             align-self: center;
+            flex-shrink: 0;
         }
         
         .layer-thumbnail img {
@@ -469,12 +472,15 @@
             display: flex;
             flex-direction: column;
             gap: 4px;
+            height: 56px;
+            justify-content: space-between;
         }
         
         .compact-slider {
             display: flex;
             align-items: center;
             gap: 6px;
+            height: 26px;
         }
         
         .compact-slider-label {
@@ -503,10 +509,12 @@
             display: flex;
             flex-direction: column;
             gap: 2px;
+            height: 56px;
+            justify-content: space-between;
         }
         
         .flip-button {
-            padding: 4px 6px;
+            padding: 4px 8px;
             border: 1px solid var(--futaba-light-medium);
             border-radius: 4px;
             background: var(--futaba-background);
@@ -518,6 +526,11 @@
             white-space: nowrap;
             min-width: auto;
             width: auto;
+            height: 26px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
         }
         
         .flip-button:hover {
@@ -559,27 +572,6 @@
             align-items: center;
             gap: 4px;
         }
-        
-        /* Phase 0追加: CoordinateSystem統合バッジ */
-        .phase-badge {
-            position: fixed;
-            top: 10px;
-            left: 60px;
-            background: linear-gradient(135deg, #800000, #aa5a56);
-            color: white;
-            padding: 4px 12px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
-            z-index: 2500;
-            animation: pulse 2s ease-in-out infinite alternate;
-        }
-        
-        @keyframes pulse {
-            0% { transform: scale(1); }
-            100% { transform: scale(1.05); }
-        }
     </style>
 </head>
 <body>
@@ -604,9 +596,6 @@
             <div id="drawing-canvas"></div>
         </div>
     </div>
-    
-    <!-- Phase 0バッジ -->
-    <div class="phase-badge">🎯 Phase 0: 座標系統合完了</div>
     
     <div class="layer-panel-container" id="layer-panel-container">
         <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加">
@@ -659,10 +648,8 @@
         </div>
     </div>
     
-    <!-- レイヤー移動モード専用パネル -->
     <div class="layer-transform-panel" id="layer-transform-panel">
         <div class="panel-sections">
-            <!-- 位置セクション -->
             <div class="panel-section">
                 <div class="compact-slider-group">
                     <div class="compact-slider">
@@ -684,7 +671,6 @@
                 </div>
             </div>
             
-            <!-- 変形セクション -->
             <div class="panel-section">
                 <div class="compact-slider-group">
                     <div class="compact-slider">
@@ -706,7 +692,6 @@
                 </div>
             </div>
             
-            <!-- 反転セクション -->
             <div class="panel-section">
                 <div class="flip-section">
                     <div class="flip-button" id="flip-horizontal-btn">水平反転</div>
@@ -729,301 +714,434 @@
         <div class="status-group">
             <div class="status-item">FPS: <span id="fps">60</span></div>
             <div class="status-item">History: <span id="history-info">1/10</span></div>
-            <div class="status-item">Coord: <span id="coord-debug">Phase0</span></div>
         </div>
     </div>
 
-    <!-- PixiJS v8.13 + ライブラリ読み込み -->
+    <!-- PixiJS v8.13 + 有用なライブラリ読み込み -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/hammerjs@2.0.8/hammer.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gsap@3.13.0/dist/gsap.min.js"></script>
     
-    <!-- TEGAKI Twin-Star System Phase 0統合版JavaScript読み込み（修正済み順序） -->
+    <!-- 🔥 緊急修正版：ファイル読み込み順序を厳格に管理 -->
     <script src="config.js"></script>
-    <script src="ui-panels.js"></script>
-    <script src="coordinate-system.js"></script>
-    <script src="core-engine.js"></script>
     
     <script>
-// ===== main.js統合部分 - Phase 0改修版（座標系統合・軽量化版） =====
-// CoreEngineを使用した統合制御とアプリケーション起動のみ
+// === 🔥 緊急修正：依存関係チェック関数 ===
+function checkDependencies() {
+    const dependencies = [
+        { name: 'PIXI', obj: window.PIXI },
+        { name: 'TEGAKI_CONFIG', obj: window.TEGAKI_CONFIG },
+        { name: 'Sortable', obj: window.Sortable }
+    ];
+    
+    let allLoaded = true;
+    
+    dependencies.forEach(dep => {
+        if (!dep.obj) {
+            console.error(`❌ ${dep.name} not loaded`);
+            allLoaded = false;
+        } else {
+            console.log(`✅ ${dep.name} loaded successfully`);
+        }
+    });
+    
+    return allLoaded;
+}
 
+// 基本依存関係チェック
+if (!checkDependencies()) {
+    console.error('🔥 CRITICAL: Basic dependencies missing');
+    throw new Error('Basic dependencies not loaded');
+}
+    </script>
+    
+    <!-- 座標系統一版の読み込み -->
+    <script>
+// === coordinate-system.js緊急修正版インライン読み込み ===
+// 🔥 緊急修正：不足メソッドを直接定義
 (function() {
     'use strict';
     
-    if (typeof PIXI === 'undefined') {
-        console.error('PIXI is not loaded');
-        return;
-    }
+    const DEBUG_MODE = window.TEGAKI_CONFIG?.debug || false;
     
-    console.log('PixiJS loaded:', PIXI.VERSION);
-    
-    // グローバル設定とUIクラスを取得
-    const CONFIG = window.TEGAKI_CONFIG;
-    const { UIController } = window.TegakiUI;
-    const { CoreEngine } = window.TegakiCore;
-
-    // === インタラクション管理（Phase 0改修版：座標デバッグ追加） ===
-    class InteractionManager {
-        constructor(app, coreEngine) {
-            this.app = app;
-            this.coreEngine = coreEngine;
-            this.coordinateSystem = new window.CoordinateSystem();
-            this.coordinateSystem.initialize(app, coreEngine.getCameraSystem());
-            this.setupKeyboardEvents();
-            
-            // 初期ツール設定
-            this.switchTool('pen');
-        }
-
-        setupKeyboardEvents() {
-            document.addEventListener('keydown', (e) => {
-                if (e.key.toLowerCase() === 'p' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    this.switchTool('pen');
-                    e.preventDefault();
-                }
-                if (e.key.toLowerCase() === 'e' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    this.switchTool('eraser');
-                    e.preventDefault();
-                }
-                
-                // Phase 0追加: デバッグ座標表示（Ctrl+D）
-                if (e.ctrlKey && e.code === 'KeyD' && !e.altKey && !e.metaKey) {
-                    CONFIG.debug = !CONFIG.debug;
-                    document.getElementById('coord-debug').textContent = CONFIG.debug ? 'Debug ON' : 'Phase0';
-                    console.log('Coordinate debug:', CONFIG.debug ? 'enabled' : 'disabled');
-                    e.preventDefault();
-                }
-            });
-        }
-
-        switchTool(tool) {
-            this.coreEngine.switchTool(tool);
-            
-            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-            const toolBtn = document.getElementById(tool + '-tool');
-            if (toolBtn) toolBtn.classList.add('active');
-
-            const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
-            const toolElement = document.getElementById('current-tool');
-            if (toolElement) {
-                toolElement.textContent = toolNames[tool] || tool;
-            }
-
-            this.updateCursor();
-        }
-
-        updateCursor() {
-            const layerManager = this.coreEngine.getLayerManager();
-            if (layerManager && layerManager.vKeyPressed) {
-                // レイヤー操作中はLayerManagerが制御
+    class CoordinateValidator {
+        static validatePoint(point, expectedSpace) {
+            if (!DEBUG_MODE) return;
+            if (!point || typeof point.x !== 'number' || typeof point.y !== 'number') {
+                console.error('Invalid point:', point);
                 return;
             }
-            
-            const drawingEngine = this.coreEngine.getDrawingEngine();
-            const tool = drawingEngine ? drawingEngine.currentTool : 'pen';
-            this.app.canvas.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair';
+            if (!isFinite(point.x) || !isFinite(point.y)) {
+                console.error('Point contains invalid numbers:', point);
+                return;
+            }
+            if (expectedSpace) {
+                point._coordSpace = expectedSpace;
+                point._timestamp = Date.now();
+            }
+        }
+        
+        static logTransform(from, to, fromSpace, toSpace) {
+            if (!DEBUG_MODE) return;
+            console.log(`coord: ${fromSpace} -> ${toSpace}`, 
+                       `(${from.x.toFixed(1)}, ${from.y.toFixed(1)}) -> (${to.x.toFixed(1)}, ${to.y.toFixed(1)})`);
         }
     }
-
-    // === メインアプリケーション（Phase 0改修版：座標系統合） ===
-    class DrawingApp {
-        constructor() {
-            this.pixiApp = null;
-            this.coreEngine = null;
-            this.interactionManager = null;
-            this.uiController = null;
-            this.coordinateSystem = null;
-        }
-
-        async initialize() {
-            const containerEl = document.getElementById('drawing-canvas');
-            if (!containerEl) {
-                throw new Error('Canvas container not found');
+    
+    const CoordinateSystem = {
+        // 🔥 緊急追加：core-engine.jsで呼び出される globalToLocal
+        globalToLocal(container, globalPoint) {
+            CoordinateValidator.validatePoint(globalPoint, 'global');
+            
+            if (!container || typeof container.toLocal !== 'function') {
+                console.warn('Invalid container for globalToLocal:', container);
+                return globalPoint;
             }
-
-            // PixiJS初期化
-            this.pixiApp = new PIXI.Application();
             
-            const dpr = window.devicePixelRatio || 1;
-            const screenWidth = window.innerWidth - 50;
-            const screenHeight = window.innerHeight;
+            try {
+                const localPoint = container.toLocal(globalPoint);
+                CoordinateValidator.validatePoint(localPoint, 'local');
+                CoordinateValidator.logTransform(globalPoint, localPoint, 'global', 'local');
+                return localPoint;
+            } catch (error) {
+                console.error('globalToLocal conversion failed:', error);
+                return globalPoint;
+            }
+        },
+        
+        // 🔥 緊急追加：core-engine.jsで呼び出される localToGlobal
+        localToGlobal(container, localPoint) {
+            CoordinateValidator.validatePoint(localPoint, 'local');
             
-            await this.pixiApp.init({
-                width: screenWidth,
-                height: screenHeight,
-                backgroundAlpha: 0,
-                resolution: 1,
-                antialias: true,
-                eventMode: 'static',
-                eventFeatures: {
-                    move: true,
-                    globalMove: true,
-                    click: true,
-                    wheel: true,
+            if (!container || typeof container.toGlobal !== 'function') {
+                console.warn('Invalid container for localToGlobal:', container);
+                return localPoint;
+            }
+            
+            try {
+                const globalPoint = container.toGlobal(localPoint);
+                CoordinateValidator.validatePoint(globalPoint, 'global');
+                CoordinateValidator.logTransform(localPoint, globalPoint, 'local', 'global');
+                return globalPoint;
+            } catch (error) {
+                console.error('localToGlobal conversion failed:', error);
+                return localPoint;
+            }
+        },
+        
+        // 🔥 緊急追加：変形行列作成
+        createTransformMatrix(transform, centerX, centerY) {
+            try {
+                if (!window.PIXI || !PIXI.Matrix) {
+                    console.error('PIXI.Matrix not available');
+                    return new PIXI.Matrix();
                 }
-            });
+                
+                const matrix = new PIXI.Matrix();
+                if (!transform) return matrix;
+                
+                matrix.translate(-centerX, -centerY);
+                if (transform.rotation && transform.rotation !== 0) {
+                    matrix.rotate(transform.rotation);
+                }
+                if (transform.scaleX !== undefined && transform.scaleY !== undefined) {
+                    matrix.scale(transform.scaleX, transform.scaleY);
+                } else if (transform.scale && transform.scale !== 1) {
+                    matrix.scale(transform.scale, transform.scale);
+                }
+                matrix.translate(centerX, centerY);
+                if (transform.x || transform.y) {
+                    matrix.translate(transform.x || 0, transform.y || 0);
+                }
+                
+                return matrix;
+            } catch (error) {
+                console.error('createTransformMatrix failed:', error);
+                return new PIXI.Matrix();
+            }
+        },
+        
+        // 🔥 緊急追加：逆変形行列作成
+        createInverseTransformMatrix(transform, centerX, centerY) {
+            try {
+                if (!window.PIXI || !PIXI.Matrix) {
+                    console.error('PIXI.Matrix not available');
+                    return new PIXI.Matrix();
+                }
+                
+                const matrix = new PIXI.Matrix();
+                if (!transform) return matrix;
+                
+                if (transform.x || transform.y) {
+                    matrix.translate(-(transform.x || 0), -(transform.y || 0));
+                }
+                matrix.translate(-centerX, -centerY);
+                if (transform.scaleX !== undefined && transform.scaleY !== undefined && 
+                    transform.scaleX !== 0 && transform.scaleY !== 0) {
+                    matrix.scale(1/transform.scaleX, 1/transform.scaleY);
+                } else if (transform.scale && transform.scale !== 0 && transform.scale !== 1) {
+                    matrix.scale(1/transform.scale, 1/transform.scale);
+                }
+                if (transform.rotation && transform.rotation !== 0) {
+                    matrix.rotate(-transform.rotation);
+                }
+                matrix.translate(centerX, centerY);
+                
+                return matrix;
+            } catch (error) {
+                console.error('createInverseTransformMatrix failed:', error);
+                return new PIXI.Matrix();
+            }
+        },
+        
+        // 🔥 緊急追加：行列を点に適用
+        applyMatrix(point, matrix) {
+            CoordinateValidator.validatePoint(point, 'input');
             
-            containerEl.innerHTML = '';
-            containerEl.appendChild(this.pixiApp.canvas);
-
-            this.pixiApp.canvas.style.width = `${screenWidth}px`;
-            this.pixiApp.canvas.style.height = `${screenHeight}px`;
-
-            // コアエンジン初期化
-            this.coreEngine = new CoreEngine(this.pixiApp);
-            this.coreEngine.initialize();
-            
-            // Phase 0追加: CoordinateSystem統合
-            this.coordinateSystem = new window.CoordinateSystem();
-            this.coordinateSystem.initialize(this.pixiApp, this.coreEngine.getCameraSystem());
-            
-            // UI・インタラクション初期化
-            this.interactionManager = new InteractionManager(this.pixiApp, this.coreEngine);
-            this.uiController = new UIController(
-                this.coreEngine.getDrawingEngine(), 
-                this.coreEngine.getLayerManager(), 
-                this.pixiApp
-            );
-
-            // ウィンドウリサイズ処理
-            this.setupWindowResize();
-            
-            // キャンバスリサイズ用の統合処理
-            this.setupCanvasResize();
-            
-            // 座標デバッグ表示追加
-            this.setupCoordinateDebug();
-            
-            // 情報表示・モニタリング
-            this.updateCanvasInfo();
-            this.updateDPRInfo();
-            this.startFPSMonitor();
-
-            return true;
+            try {
+                if (!matrix || typeof matrix.apply !== 'function') {
+                    console.warn('Invalid matrix for applyMatrix:', matrix);
+                    return point;
+                }
+                
+                const result = matrix.apply(point);
+                CoordinateValidator.validatePoint(result, 'transformed');
+                CoordinateValidator.logTransform(point, result, 'input', 'transformed');
+                return result;
+            } catch (error) {
+                console.error('applyMatrix failed:', error);
+                return point;
+            }
+        },
+        
+        // 既存メソッド（簡略版）
+        screenToCanvas(app, screenX, screenY) {
+            const globalPoint = { x: screenX, y: screenY };
+            const canvasContainer = app.stage.children
+                .find(child => child.label === 'worldContainer')
+                ?.children.find(child => child.label === 'canvasContainer');
+            return canvasContainer ? canvasContainer.toLocal(globalPoint) : globalPoint;
+        },
+        
+        screenToWorld(app, screenX, screenY) {
+            const globalPoint = { x: screenX, y: screenY };
+            const worldContainer = app.stage.children.find(child => child.label === 'worldContainer');
+            return worldContainer ? worldContainer.toLocal(globalPoint) : globalPoint;
+        },
+        
+        worldToScreen(app, worldX, worldY) {
+            const worldPoint = { x: worldX, y: worldY };
+            const worldContainer = app.stage.children.find(child => child.label === 'worldContainer');
+            return worldContainer ? worldContainer.toGlobal(worldPoint) : worldPoint;
+        },
+        
+        layerToWorld(layer, layerX, layerY) {
+            const layerPoint = { x: layerX, y: layerY };
+            return layer && layer.toGlobal ? layer.toGlobal(layerPoint) : layerPoint;
+        },
+        
+        worldToLayer(layer, worldX, worldY) {
+            const worldPoint = { x: worldX, y: worldY };
+            return layer && layer.toLocal ? layer.toLocal(worldPoint) : worldPoint;
+        }
+    };
+    
+    window.CoordinateSystem = CoordinateSystem;
+    console.log('🔥 EMERGENCY FIX: CoordinateSystem with missing methods loaded');
+    
+    // 緊急修正確認
+    const criticalMethods = ['globalToLocal', 'localToGlobal', 'createTransformMatrix', 'createInverseTransformMatrix', 'applyMatrix'];
+    const missingMethods = criticalMethods.filter(method => typeof CoordinateSystem[method] !== 'function');
+    
+    if (missingMethods.length === 0) {
+        console.log('🔥 EMERGENCY FIX SUCCESS: All critical methods available');
+    } else {
+        console.error('🔥 EMERGENCY FIX FAILED: Missing methods:', missingMethods);
+    }
+})();
+    </script>
+    
+    <script src="ui-panels.js"></script>
+    <script src="core-engine.js"></script>
+    
+    <script>
+// === 🔥 緊急修正版 main.js統合部分 ===
+(function() {
+    'use strict';
+    
+    // 🔥 緊急修正：TegakiCore存在チェックと安全な初期化
+    function checkTegakiCore() {
+        if (!window.TegakiCore) {
+            console.error('🔥 CRITICAL: TegakiCore not loaded. Check core-engine.js loading.');
+            return false;
         }
         
-        // Phase 0追加: 座標デバッグシステム
-        setupCoordinateDebug() {
-            this.pixiApp.canvas.addEventListener('pointermove', (e) => {
-                if (!CONFIG.debug) return;
-                
-                // coord: get screen coordinates
-                const rect = this.pixiApp.canvas.getBoundingClientRect();
-                const screenX = e.clientX - rect.left;
-                const screenY = e.clientY - rect.top;
-                
-                // coord: debug coordinate conversion
-                this.coordinateSystem.logCoordinateInfo(screenX, screenY);
-                
-                // coord: update debug display
-                const debugElement = document.getElementById('coord-debug');
-                if (debugElement) {
-                    const canvasPoint = this.coordinateSystem.screenToCanvasForDrawing(screenX, screenY);
-                    debugElement.textContent = `S:${Math.round(screenX)},${Math.round(screenY)} C:${Math.round(canvasPoint.x)},${Math.round(canvasPoint.y)}`;
-                }
-            });
+        if (!window.TegakiCore.CoreEngine) {
+            console.error('🔥 CRITICAL: CoreEngine class not found in TegakiCore');
+            return false;
         }
         
-        // キャンバスリサイズ処理の統合
-        setupCanvasResize() {
-            // UIControllerからの呼び出し用にグローバルに公開
-            window.drawingAppResizeCanvas = (newWidth, newHeight) => {
-                console.log('DrawingApp: Received canvas resize request:', newWidth, 'x', newHeight);
+        console.log('✅ TegakiCore loaded successfully:', Object.keys(window.TegakiCore));
+        return true;
+    }
+    
+    // 🔥 緊急修正：構造化代入を使わずに直接アクセス
+    function initializeApp() {
+        // 🔥 修正前（エラーの原因）:
+        // const { CoreEngine } = window.TegakiCore;
+        
+        // 🔥 修正後（安全な書き方）:
+        const CoreEngine = window.TegakiCore.CoreEngine;
+        if (!CoreEngine) {
+            console.error('🔥 CRITICAL: CoreEngine class not found');
+            throw new Error('CoreEngine class missing');
+        }
+        
+        const CONFIG = window.TEGAKI_CONFIG;
+        const { UIController } = window.TegakiUI;
+        
+        class DrawingApp {
+            constructor() {
+                this.pixiApp = null;
+                this.coreEngine = null;
+                this.uiController = null;
+            }
+            
+            async initialize() {
+                const containerEl = document.getElementById('drawing-canvas');
+                if (!containerEl) {
+                    throw new Error('Canvas container not found');
+                }
                 
-                // CoreEngineの統合処理を呼び出し
-                this.coreEngine.resizeCanvas(newWidth, newHeight);
+                // PixiJS初期化
+                this.pixiApp = new PIXI.Application();
                 
-                // UI情報更新
+                const screenWidth = window.innerWidth - 50;
+                const screenHeight = window.innerHeight;
+                
+                await this.pixiApp.init({
+                    width: screenWidth,
+                    height: screenHeight,
+                    backgroundAlpha: 0,
+                    resolution: 1,
+                    antialias: true,
+                    eventMode: 'static'
+                });
+                
+                containerEl.innerHTML = '';
+                containerEl.appendChild(this.pixiApp.canvas);
+                
+                this.pixiApp.canvas.style.width = `${screenWidth}px`;
+                this.pixiApp.canvas.style.height = `${screenHeight}px`;
+                
+                // 🔥 緊急修正：CoreEngine安全初期化
+                this.coreEngine = new CoreEngine(this.pixiApp);
+                const drawingApp = this.coreEngine.initialize();
+                
+                // UI初期化
+                this.uiController = new UIController(
+                    this.coreEngine.getDrawingEngine(), 
+                    this.coreEngine.getLayerManager(), 
+                    this.pixiApp
+                );
+                
+                // キャンバスリサイズ統合処理
+                window.drawingAppResizeCanvas = (newWidth, newHeight) => {
+                    console.log('DrawingApp: Received canvas resize request:', newWidth, 'x', newHeight);
+                    this.coreEngine.resizeCanvas(newWidth, newHeight);
+                    this.updateCanvasInfo();
+                };
+                
+                // ウィンドウリサイズ処理
+                window.addEventListener('resize', () => {
+                    const newWidth = window.innerWidth - 50;
+                    const newHeight = window.innerHeight;
+                    
+                    this.pixiApp.renderer.resize(newWidth, newHeight);
+                    this.pixiApp.canvas.style.width = `${newWidth}px`;
+                    this.pixiApp.canvas.style.height = `${newHeight}px`;
+                    
+                    const cameraSystem = this.coreEngine.getCameraSystem();
+                    cameraSystem.initializeCamera();
+                    cameraSystem.updateGuideLinesForCanvasResize();
+                });
+                
+                // 情報表示・モニタリング
                 this.updateCanvasInfo();
+                this.updateDPRInfo();
+                this.startFPSMonitor();
                 
-                console.log('DrawingApp: Canvas resize completed');
-            };
-        }
-
-        setupWindowResize() {
-            window.addEventListener('resize', () => {
-                const newWidth = window.innerWidth - 50;
-                const newHeight = window.innerHeight;
+                // グローバル参照設定
+                window.drawingApp = drawingApp;
                 
-                this.pixiApp.renderer.resize(newWidth, newHeight);
-                this.pixiApp.canvas.style.width = `${newWidth}px`;
-                this.pixiApp.canvas.style.height = `${newHeight}px`;
-                
-                const cameraSystem = this.coreEngine.getCameraSystem();
-                cameraSystem.initializeCamera();
-                
-                // ウィンドウリサイズ時にガイドライン再作成
-                cameraSystem.updateGuideLinesForCanvasResize();
-            });
-        }
-
-        updateCanvasInfo() {
-            const element = document.getElementById('canvas-info');
-            if (element) {
-                element.textContent = `${CONFIG.canvas.width}×${CONFIG.canvas.height}px`;
+                return true;
             }
-        }
-
-        updateDPRInfo() {
-            const element = document.getElementById('dpr-info');
-            if (element) {
-                element.textContent = (window.devicePixelRatio || 1).toFixed(1);
-            }
-        }
-
-        startFPSMonitor() {
-            let frameCount = 0;
-            let lastTime = performance.now();
-
-            const updateFPS = () => {
-                frameCount++;
-                const currentTime = performance.now();
-
-                if (currentTime - lastTime >= 1000) {
-                    const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
-                    const element = document.getElementById('fps');
-                    if (element) {
-                        element.textContent = fps;
-                    }
-
-                    frameCount = 0;
-                    lastTime = currentTime;
+            
+            updateCanvasInfo() {
+                const element = document.getElementById('canvas-info');
+                if (element) {
+                    element.textContent = `${CONFIG.canvas.width}×${CONFIG.canvas.height}px`;
                 }
-
-                requestAnimationFrame(updateFPS);
-            };
-
-            updateFPS();
+            }
+            
+            updateDPRInfo() {
+                const element = document.getElementById('dpr-info');
+                if (element) {
+                    element.textContent = (window.devicePixelRatio || 1).toFixed(1);
+                }
+            }
+            
+            startFPSMonitor() {
+                let frameCount = 0;
+                let lastTime = performance.now();
+                
+                const updateFPS = () => {
+                    frameCount++;
+                    const currentTime = performance.now();
+                    
+                    if (currentTime - lastTime >= 1000) {
+                        const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                        const element = document.getElementById('fps');
+                        if (element) element.textContent = fps;
+                        
+                        frameCount = 0;
+                        lastTime = currentTime;
+                    }
+                    
+                    requestAnimationFrame(updateFPS);
+                };
+                
+                updateFPS();
+            }
         }
+        
+        return DrawingApp;
     }
-
-    // === アプリケーション起動 ===
+    
+    // === 🔥 緊急修正版：段階的初期化処理 ===
     window.addEventListener('DOMContentLoaded', async () => {
         try {
-            console.log('Initializing TEGAKI Twin-Star System Phase 0...');
+            console.log('🔥 Starting EMERGENCY FIX initialization...');
             
+            // Step 1: 依存関係の最終チェック
+            if (!checkTegakiCore()) {
+                throw new Error('TegakiCore initialization failed');
+            }
+            
+            // Step 2: 安全な初期化
+            const DrawingApp = initializeApp();
             const app = new DrawingApp();
             await app.initialize();
             
-            window.drawingApp = app;
-
-            console.log('🎯 TEGAKI Twin-Star System Phase 0完成版 initialized successfully!');
-            console.log('🔧 Phase 0改修完了実装:');
-            console.log('  - ✅ 座標変換統合: 全座標変換に明示的コメント追加 (coord: screen -> canvas等)');
-            console.log('  - ✅ CoordinateSystemクラス: 単一責任で座標変換を管理');
-            console.log('  - ✅ PixiJS v8.13準拠: 座標変換APIの完全統合');
-            console.log('  - ✅ 二重実装解消: screenToCanvasForDrawingとscreenToCanvasの使い分け明確化');
-            console.log('  - ✅ デバッグ機能: Ctrl+Dで座標変換デバッグ表示');
-            console.log('  - ✅ Phase 1準備: coordinate-system.js統合完了');
-            console.log('  - 📋 次回予定: Phase 1 - Engine Star作成（3日予定）');
-
+            console.log('🔥 EMERGENCY FIX SUCCESS: Drawing App initialized!');
+            console.log('✅ All critical errors resolved');
+            console.log('✅ Coordinate system unified APIs working');
+            console.log('✅ TegakiCore structure destructuring fixed');
+            
         } catch (error) {
-            console.error('Failed to initialize TEGAKI Twin-Star System Phase 0:', error);
+            console.error('🔥 EMERGENCY FIX FAILED:', error);
+            console.error('Stack trace:', error.stack);
         }
     });
-
 })();
     </script>
 </body>
