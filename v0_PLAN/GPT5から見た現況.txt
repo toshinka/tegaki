@@ -1,0 +1,236 @@
+結論（要点）
+
+Phase1 の 座標系統一（CoordinateSystem） は実装済みで、PixiJS v8.13 の行列（PIXI.Matrix）を使った変形・往復テストなど、設計意図どおりの機能が入っています。
+
+
+グローバル設定（config.js）と UI 側パネル（ui-panels.js）も Phase1 向けに更新されています。
+
+
+
+ただし Engine Star（core-runtime 等）としての分割と実体化 は不完全です。core-engine.js は Phase1 のヘッダー／依存チェックが置かれているものの、実際のファサード実装・各サブモジュール（CameraSystem/LayerSystem/DrawingEngine 等）の分離実体が見当たりません。つまり「座標系モジュールは完成、だが Engine Star はまだ作られていない」状態です。
+
+
+index.html（UI 含む）は Phase1 修正版の表示用プレースホルダがあり、UI→Engine の接続点はいくつか残っています（例：window.drawingAppResizeCanvas を期待）。そのため次フェーズでの「明確な参照経路」の整備が必要です。
+
+
+観察（ファイル別・重要点）
+
+coordinate-system.js
+
+screenToWorld / screenToCanvas / worldToScreen / worldToLayer 等が実装され、PIXI.Matrix ベースの transformPoint と inverseTransformPoint、デバッグ用の検証ロジック／往復テストがある。設計意図に非常によく沿っている。
+
+
+ただし内部で app.stage.children.find( child => child.label === 'worldContainer') のような探索をしているため、子を文字列ラベルで検索する仕組みは脆弱（順序や構造が変わると壊れる）。グローバルに明示的な参照（CoreRuntime.worldContainer 等）を用意した方が安全。
+
+config.js
+
+Canvas／ペン／カメラ等の設定が window.TEGAKI_CONFIG にまとまっており、AI 改修用コメントもあり好ましい。
+
+
+ui-panels.js
+
+UIController が drawingEngine, layerManager, app を受け取る設計で、UI 側から Engine 機能を呼べる形になっている（this.drawingEngine.setTool() 等）。Sortable 組込やサムネイル周りの細かい修正も入っている。
+
+
+ただし現時点で drawingEngine / layerManager の提供元（CoreRuntime）が確立されていない場合、UI と Engine の結合が不明瞭になるため「DI（依存注入）エントリポイント」を必ず作るべき。
+
+core-engine.js
+
+Phase1 の設計文はあるが、実体（CoreRuntime ファサード、CameraSystem 実装、LayerManager 実体、DrawingEngine 実体）は見当たりません。これが Phase2 で作るべき「Engine Star」にあたります。
+
+
+index.html
+
+UI と JS をつなぐためのフック（例: window.drawingAppResizeCanvas）を期待している記述があり、ここへ Engine の公開 API を差し込む必要があります。
+
+
+問題点（優先度つき）
+
+高（必ず対処）
+
+Engine Star の不在：core-engine.js はヘッダーのみで、CameraSystem/LayerSystem/DrawingEngine の実体が無い。UI が依存するエンドポイントを実装して、window.CoreRuntime のような一元公開オブジェクトを作る必要がある。
+
+
+子検索による参照（label検索）の脆弱さ：coordinate-system.js が stage の子を label で探す実装。構造変更に弱く、パフォーマンス上も好ましくない（検索コスト・バグリスク）。
+
+
+中（改善推奨）
+
+coordinate-system.js にレガシー互換ブリッジ（deprecatedアクセサ）が残っているのは移行期として OK だが、長期的には削除あるいは明確な deprecation ログを残すべき。
+
+
+ui-panels.js は drawingEngine/layerManager を期待する実装で良いが、インスタンスの注入ルール（どこで new してどこで set するか）を README / CodeGuide に明示すること。
+
+
+低（将来的に注意）
+
+CoordinateValidator の debug ログは便利だが、プロダクションで不要なログを出さないサイレントモードの確認を。
+
+
+推奨改修（短期 → 中期の順で）
+A. 短期（まずやる：Engine Star の最小実装）
+
+目的：UI が呼べる最小限の CoreRuntime を用意して、既存の CoordinateSystem を安全に参照させる。
+
+core-runtime.js（新規） — 最小ファサード（example）
+
+// core-runtime.js
+(function(){
+  'use strict';
+  // 依存: coordinate-system.js は読み込み済みである前提
+  if (!window.CoordinateSystem) {
+    console.error('coordinate-system missing');
+    return;
+  }
+
+  // 最小の内部参照を保持（明示的に注入されることを期待）
+  const internal = {
+    app: null,
+    worldContainer: null,
+    canvasContainer: null,
+    cameraSystem: null,
+    layerManager: null,
+    drawingEngine: null
+  };
+
+  const CoreRuntime = {
+    // 初期化：index.html の main が呼び出す
+    init({ app, worldContainer, canvasContainer, cameraSystem, layerManager, drawingEngine }) {
+      internal.app = app;
+      internal.worldContainer = worldContainer;
+      internal.canvasContainer = canvasContainer;
+      internal.cameraSystem = cameraSystem;
+      internal.layerManager = layerManager;
+      internal.drawingEngine = drawingEngine;
+      // 便利ハンドルを global に展開（既存コード保護）
+      window.drawingApp = { pixiApp: app };
+      console.log('CoreRuntime initialized');
+    },
+
+    coord: window.CoordinateSystem,
+
+    // カメラ操作（ラッパー）
+    camera: {
+      pan(dx, dy) { return internal.cameraSystem?.pan(dx,dy); },
+      zoom(factor, cx, cy) { return internal.cameraSystem?.zoom(factor,cx,cy); }
+    },
+
+    layer: {
+      getActive() { return internal.layerManager?.getActiveLayer(); },
+      create(name) { return internal.layerManager?.createLayer(name); }
+    },
+
+    draw: {
+      setTool(toolName) { return internal.drawingEngine?.setTool(toolName); }
+    }
+  };
+
+  window.CoreRuntime = CoreRuntime;
+})();
+
+
+これで ui-panels.js の drawingEngine や window.drawingAppResizeCanvas を CoreRuntime 経由で結びつけられます（index.html の main.js で CoreRuntime.init(...) を呼ぶ）。
+
+修正ポイント：
+
+coordinate-system.js の app.stage.children.find(...) を直で使わせず、CoreRuntime.init に worldContainer / canvasContainer などを渡して CoordinateSystem 側で参照可能にする。あるいは CoordinateSystem に setContainers(worldContainer, canvasContainer) を作る。
+
+B. 中期（分割と責務の明確化）
+
+作るファイル（フェーズ名に合わせて）：
+
+camera-system.js — カメラ操作（pan/zoom/resize）、cameraSystem クラス
+
+layer-system.js — Layer データモデル（paths・transform・cache）、dirty フラグ・サムネイル更新
+
+drawing-engine.js — path→Graphics 再構築、ストローク記録・補間
+
+transform-utils.js — 非破壊変形・pivot 処理（CoordinateSystem.transformPoint をラップ）
+
+clipboard-system.js — copy/paste スキーマ
+
+各ファイルは window.CoreRuntime に登録するか、ESM を使わない方針なら window に名前空間で公開してください（既存方針に合わせる）。
+
+インターフェース設計（簡潔に）
+
+LayerManager.createLayer(name) → {id, layerData, container}
+
+DrawingEngine.setTool('pen') / setBrushSize(n) / recordStroke(stroke)
+
+CameraSystem.resizeCanvas(w,h) / pan(dx,dy) / zoom(f, cx,cy)
+
+C. コード品質と運用ルール（プロジェクトルール）
+
+明示的参照を採用：label 検索は使わない。CoreRuntime.init() で必要オブジェクトを渡す。
+
++1
+
+単一責任：各モジュールは 1 つの責務のみ（描画、レイヤー管理、カメラ）。
+
+
+イベントバス（window.EventBus のシンプル実装）を導入して UI と Engine 間の疎結合を確保。
+
+移行ポリシー：レガシー関数は deprecated ログを出してから 2 週間後に削除する（バージョンで管理）
+
+テスト：CoordinateSystem.testCoordinateAccuracy(app) をデバッグビルドで頻繁に実行。
+
+
+具体的な改修案（差分レベル・すぐ貼れる）
+
+coordinate-system.js の開始に container 注入用 API を追加（推奨）
+
+// 既存ファイルの先頭に追記（または別ファイルで呼び出し）
+window.CoordinateSystem.setContainers = function({ worldContainer, canvasContainer }) {
+  this._worldContainer = worldContainer;
+  this._canvasContainer = canvasContainer;
+};
+// 既存内部の children.find(...) の代わりに this._worldContainer / this._canvasContainer を優先して使う
+
+
+index.html 側（main 起動部）に CoreRuntime.init(...) を呼ぶ箇所を追加：
+
+<script>
+  // 既に Pixi アプリと各コンテナを作っている想定
+  CoreRuntime.init({
+    app: pixiApp,
+    worldContainer: worldContainer,
+    canvasContainer: canvasContainer,
+    cameraSystem: cameraSystemInstance,
+    layerManager: layerManagerInstance,
+    drawingEngine: drawingEngineInstance
+  });
+
+  // coordinate-system にもコンテナ注入
+  CoordinateSystem.setContainers({ worldContainer, canvasContainer });
+</script>
+
+Phase2（Engine Star 作成）時の「分割後ファイルのあり方」注意点（チェックリスト）
+
+各ファイルは1500行以下に抑える（目標）。
+
+
+依存注入で初期化（init()）→ グローバルスコープは最小限に。UI は CoreRuntime を参照するだけ。
+
+
+公開 API の安定化：CoreRuntime.api（小さな関数群）を用意して UI がそこだけ呼ぶようにする。
+
+
+座標空間の明示：すべての関数コメントで // coord: source -> destination を必須に。
+
+
+循環依存の回避：ファイル間はイベントバス or コアファサード経由で通信する（直接 require / toLocal を跨がない）。
+
+移行期の互換ブリッジは deprecated ログを出すが最小限に留め、ドキュメント化。
+
+最後に：作業優先順（提案）
+
+core-runtime.js（簡易ファサード）を実装して UI と coordinate system を確実につなぐ。（即日〜）
+
++1
+
+CoordinateSystem.setContainers(...) を追加し、toLocal 等の stage 子探索を置換。（短期）
+
+
+CameraSystem / LayerManager / DrawingEngine の雛形を分割して、それぞれ window.CoreRuntime に登録。（中期）
+
+テスト：CoordinateSystem.testCoordinateAccuracy() を DEBUG モードで通す。誤差が出る箇所があれば個別に精査。（中期
