@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 Phase1.1緊急修正版 - PixiJS v8.13 お絵かきツール</title>
+    <title>🎨 Phase2準備版 - PixiJS v8.13 お絵かきツール</title>
     <style>
         * {
             margin: 0;
@@ -721,11 +721,11 @@
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     
-    <!-- 🔥 緊急修正版：ファイル読み込み順序を厳格に管理 -->
+    <!-- 🔥 Phase2準備版：最適化されたファイル読み込み順序 -->
     <script src="config.js"></script>
     
     <script>
-// === 🔥 緊急修正：依存関係チェック関数 ===
+// === 🔥 Phase2準備版：依存関係チェック関数（簡潔版） ===
 function checkDependencies() {
     const dependencies = [
         { name: 'PIXI', obj: window.PIXI },
@@ -733,269 +733,52 @@ function checkDependencies() {
         { name: 'Sortable', obj: window.Sortable }
     ];
     
-    let allLoaded = true;
+    const missing = dependencies.filter(dep => !dep.obj);
     
-    dependencies.forEach(dep => {
-        if (!dep.obj) {
-            console.error(`❌ ${dep.name} not loaded`);
-            allLoaded = false;
-        } else {
-            console.log(`✅ ${dep.name} loaded successfully`);
-        }
-    });
+    if (missing.length > 0) {
+        console.error('❌ Missing dependencies:', missing.map(d => d.name));
+        throw new Error(`Dependencies not loaded: ${missing.map(d => d.name).join(', ')}`);
+    }
     
-    return allLoaded;
+    console.log('✅ Basic dependencies loaded successfully');
+    return true;
 }
 
 // 基本依存関係チェック
-if (!checkDependencies()) {
-    console.error('🔥 CRITICAL: Basic dependencies missing');
-    throw new Error('Basic dependencies not loaded');
-}
+checkDependencies();
     </script>
     
-    <!-- 座標系統一版の読み込み -->
-    <script>
-// === coordinate-system.js緊急修正版インライン読み込み ===
-// 🔥 緊急修正：不足メソッドを直接定義
-(function() {
-    'use strict';
-    
-    const DEBUG_MODE = window.TEGAKI_CONFIG?.debug || false;
-    
-    class CoordinateValidator {
-        static validatePoint(point, expectedSpace) {
-            if (!DEBUG_MODE) return;
-            if (!point || typeof point.x !== 'number' || typeof point.y !== 'number') {
-                console.error('Invalid point:', point);
-                return;
-            }
-            if (!isFinite(point.x) || !isFinite(point.y)) {
-                console.error('Point contains invalid numbers:', point);
-                return;
-            }
-            if (expectedSpace) {
-                point._coordSpace = expectedSpace;
-                point._timestamp = Date.now();
-            }
-        }
-        
-        static logTransform(from, to, fromSpace, toSpace) {
-            if (!DEBUG_MODE) return;
-            console.log(`coord: ${fromSpace} -> ${toSpace}`, 
-                       `(${from.x.toFixed(1)}, ${from.y.toFixed(1)}) -> (${to.x.toFixed(1)}, ${to.y.toFixed(1)})`);
-        }
-    }
-    
-    const CoordinateSystem = {
-        // 🔥 緊急追加：core-engine.jsで呼び出される globalToLocal
-        globalToLocal(container, globalPoint) {
-            CoordinateValidator.validatePoint(globalPoint, 'global');
-            
-            if (!container || typeof container.toLocal !== 'function') {
-                console.warn('Invalid container for globalToLocal:', container);
-                return globalPoint;
-            }
-            
-            try {
-                const localPoint = container.toLocal(globalPoint);
-                CoordinateValidator.validatePoint(localPoint, 'local');
-                CoordinateValidator.logTransform(globalPoint, localPoint, 'global', 'local');
-                return localPoint;
-            } catch (error) {
-                console.error('globalToLocal conversion failed:', error);
-                return globalPoint;
-            }
-        },
-        
-        // 🔥 緊急追加：core-engine.jsで呼び出される localToGlobal
-        localToGlobal(container, localPoint) {
-            CoordinateValidator.validatePoint(localPoint, 'local');
-            
-            if (!container || typeof container.toGlobal !== 'function') {
-                console.warn('Invalid container for localToGlobal:', container);
-                return localPoint;
-            }
-            
-            try {
-                const globalPoint = container.toGlobal(localPoint);
-                CoordinateValidator.validatePoint(globalPoint, 'global');
-                CoordinateValidator.logTransform(localPoint, globalPoint, 'local', 'global');
-                return globalPoint;
-            } catch (error) {
-                console.error('localToGlobal conversion failed:', error);
-                return localPoint;
-            }
-        },
-        
-        // 🔥 緊急追加：変形行列作成
-        createTransformMatrix(transform, centerX, centerY) {
-            try {
-                if (!window.PIXI || !PIXI.Matrix) {
-                    console.error('PIXI.Matrix not available');
-                    return new PIXI.Matrix();
-                }
-                
-                const matrix = new PIXI.Matrix();
-                if (!transform) return matrix;
-                
-                matrix.translate(-centerX, -centerY);
-                if (transform.rotation && transform.rotation !== 0) {
-                    matrix.rotate(transform.rotation);
-                }
-                if (transform.scaleX !== undefined && transform.scaleY !== undefined) {
-                    matrix.scale(transform.scaleX, transform.scaleY);
-                } else if (transform.scale && transform.scale !== 1) {
-                    matrix.scale(transform.scale, transform.scale);
-                }
-                matrix.translate(centerX, centerY);
-                if (transform.x || transform.y) {
-                    matrix.translate(transform.x || 0, transform.y || 0);
-                }
-                
-                return matrix;
-            } catch (error) {
-                console.error('createTransformMatrix failed:', error);
-                return new PIXI.Matrix();
-            }
-        },
-        
-        // 🔥 緊急追加：逆変形行列作成
-        createInverseTransformMatrix(transform, centerX, centerY) {
-            try {
-                if (!window.PIXI || !PIXI.Matrix) {
-                    console.error('PIXI.Matrix not available');
-                    return new PIXI.Matrix();
-                }
-                
-                const matrix = new PIXI.Matrix();
-                if (!transform) return matrix;
-                
-                if (transform.x || transform.y) {
-                    matrix.translate(-(transform.x || 0), -(transform.y || 0));
-                }
-                matrix.translate(-centerX, -centerY);
-                if (transform.scaleX !== undefined && transform.scaleY !== undefined && 
-                    transform.scaleX !== 0 && transform.scaleY !== 0) {
-                    matrix.scale(1/transform.scaleX, 1/transform.scaleY);
-                } else if (transform.scale && transform.scale !== 0 && transform.scale !== 1) {
-                    matrix.scale(1/transform.scale, 1/transform.scale);
-                }
-                if (transform.rotation && transform.rotation !== 0) {
-                    matrix.rotate(-transform.rotation);
-                }
-                matrix.translate(centerX, centerY);
-                
-                return matrix;
-            } catch (error) {
-                console.error('createInverseTransformMatrix failed:', error);
-                return new PIXI.Matrix();
-            }
-        },
-        
-        // 🔥 緊急追加：行列を点に適用
-        applyMatrix(point, matrix) {
-            CoordinateValidator.validatePoint(point, 'input');
-            
-            try {
-                if (!matrix || typeof matrix.apply !== 'function') {
-                    console.warn('Invalid matrix for applyMatrix:', matrix);
-                    return point;
-                }
-                
-                const result = matrix.apply(point);
-                CoordinateValidator.validatePoint(result, 'transformed');
-                CoordinateValidator.logTransform(point, result, 'input', 'transformed');
-                return result;
-            } catch (error) {
-                console.error('applyMatrix failed:', error);
-                return point;
-            }
-        },
-        
-        // 既存メソッド（簡略版）
-        screenToCanvas(app, screenX, screenY) {
-            const globalPoint = { x: screenX, y: screenY };
-            const canvasContainer = app.stage.children
-                .find(child => child.label === 'worldContainer')
-                ?.children.find(child => child.label === 'canvasContainer');
-            return canvasContainer ? canvasContainer.toLocal(globalPoint) : globalPoint;
-        },
-        
-        screenToWorld(app, screenX, screenY) {
-            const globalPoint = { x: screenX, y: screenY };
-            const worldContainer = app.stage.children.find(child => child.label === 'worldContainer');
-            return worldContainer ? worldContainer.toLocal(globalPoint) : globalPoint;
-        },
-        
-        worldToScreen(app, worldX, worldY) {
-            const worldPoint = { x: worldX, y: worldY };
-            const worldContainer = app.stage.children.find(child => child.label === 'worldContainer');
-            return worldContainer ? worldContainer.toGlobal(worldPoint) : worldPoint;
-        },
-        
-        layerToWorld(layer, layerX, layerY) {
-            const layerPoint = { x: layerX, y: layerY };
-            return layer && layer.toGlobal ? layer.toGlobal(layerPoint) : layerPoint;
-        },
-        
-        worldToLayer(layer, worldX, worldY) {
-            const worldPoint = { x: worldX, y: worldY };
-            return layer && layer.toLocal ? layer.toLocal(worldPoint) : worldPoint;
-        }
-    };
-    
-    window.CoordinateSystem = CoordinateSystem;
-    console.log('🔥 EMERGENCY FIX: CoordinateSystem with missing methods loaded');
-    
-    // 緊急修正確認
-    const criticalMethods = ['globalToLocal', 'localToGlobal', 'createTransformMatrix', 'createInverseTransformMatrix', 'applyMatrix'];
-    const missingMethods = criticalMethods.filter(method => typeof CoordinateSystem[method] !== 'function');
-    
-    if (missingMethods.length === 0) {
-        console.log('🔥 EMERGENCY FIX SUCCESS: All critical methods available');
-    } else {
-        console.error('🔥 EMERGENCY FIX FAILED: Missing methods:', missingMethods);
-    }
-})();
-    </script>
-    
+    <!-- Phase2準備版：最適化されたファイル読み込み -->
+    <script src="coordinate-system.js"></script>
+    <script src="core-runtime.js"></script>
     <script src="ui-panels.js"></script>
     <script src="core-engine.js"></script>
     
     <script>
-// === 🔥 緊急修正版 main.js統合部分 ===
+// === 🔥 Phase2準備版：統合されたmain.js（緊急修正削除・CoreRuntime使用） ===
 (function() {
     'use strict';
     
-    // 🔥 緊急修正：TegakiCore存在チェックと安全な初期化
-    function checkTegakiCore() {
-        if (!window.TegakiCore) {
-            console.error('🔥 CRITICAL: TegakiCore not loaded. Check core-engine.js loading.');
+    // Phase2準備版：CoreRuntime使用の安全な初期化
+    function checkCoreRuntime() {
+        if (!window.CoreRuntime) {
+            console.error('❌ CoreRuntime not loaded - check core-runtime.js loading');
             return false;
         }
         
-        if (!window.TegakiCore.CoreEngine) {
-            console.error('🔥 CRITICAL: CoreEngine class not found in TegakiCore');
+        if (!window.TegakiCore?.CoreEngine) {
+            console.error('❌ TegakiCore.CoreEngine not found - check core-engine.js loading');
             return false;
         }
         
-        console.log('✅ TegakiCore loaded successfully:', Object.keys(window.TegakiCore));
+        console.log('✅ CoreRuntime and TegakiCore loaded successfully');
         return true;
     }
     
-    // 🔥 緊急修正：構造化代入を使わずに直接アクセス
+    // Phase2準備版：アプリケーション初期化（緊急修正なし・CoreRuntime使用）
     function initializeApp() {
-        // 🔥 修正前（エラーの原因）:
-        // const { CoreEngine } = window.TegakiCore;
-        
-        // 🔥 修正後（安全な書き方）:
+        // 安全な参照取得（構造化代入を避ける）
         const CoreEngine = window.TegakiCore.CoreEngine;
-        if (!CoreEngine) {
-            console.error('🔥 CRITICAL: CoreEngine class not found');
-            throw new Error('CoreEngine class missing');
-        }
-        
         const CONFIG = window.TEGAKI_CONFIG;
         const { UIController } = window.TegakiUI;
         
@@ -1033,9 +816,19 @@ if (!checkDependencies()) {
                 this.pixiApp.canvas.style.width = `${screenWidth}px`;
                 this.pixiApp.canvas.style.height = `${screenHeight}px`;
                 
-                // 🔥 緊急修正：CoreEngine安全初期化
+                // CoreEngine初期化
                 this.coreEngine = new CoreEngine(this.pixiApp);
                 const drawingApp = this.coreEngine.initialize();
+                
+                // 🔥 Phase2準備版：CoreRuntime初期化（GPT5指摘対応）
+                CoreRuntime.init({
+                    app: this.pixiApp,
+                    worldContainer: this.coreEngine.getCameraSystem().worldContainer,
+                    canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
+                    cameraSystem: this.coreEngine.getCameraSystem(),
+                    layerManager: this.coreEngine.getLayerManager(),
+                    drawingEngine: this.coreEngine.getDrawingEngine()
+                });
                 
                 // UI初期化
                 this.uiController = new UIController(
@@ -1044,11 +837,10 @@ if (!checkDependencies()) {
                     this.pixiApp
                 );
                 
-                // キャンバスリサイズ統合処理
+                // 🔥 Phase2準備版：CoreRuntime経由でのキャンバスリサイズ統合
                 window.drawingAppResizeCanvas = (newWidth, newHeight) => {
-                    console.log('DrawingApp: Received canvas resize request:', newWidth, 'x', newHeight);
-                    this.coreEngine.resizeCanvas(newWidth, newHeight);
-                    this.updateCanvasInfo();
+                    console.log('DrawingApp: Canvas resize request via CoreRuntime:', newWidth, 'x', newHeight);
+                    return CoreRuntime.api.resizeCanvas(newWidth, newHeight);
                 };
                 
                 // ウィンドウリサイズ処理
@@ -1070,7 +862,7 @@ if (!checkDependencies()) {
                 this.updateDPRInfo();
                 this.startFPSMonitor();
                 
-                // グローバル参照設定
+                // グローバル参照設定（互換性）
                 window.drawingApp = drawingApp;
                 
                 return true;
@@ -1117,28 +909,33 @@ if (!checkDependencies()) {
         return DrawingApp;
     }
     
-    // === 🔥 緊急修正版：段階的初期化処理 ===
+    // === 🔥 Phase2準備版：段階的初期化処理 ===
     window.addEventListener('DOMContentLoaded', async () => {
         try {
-            console.log('🔥 Starting EMERGENCY FIX initialization...');
+            console.log('🔥 Starting Phase2 Preparation initialization...');
             
-            // Step 1: 依存関係の最終チェック
-            if (!checkTegakiCore()) {
-                throw new Error('TegakiCore initialization failed');
+            // Step 1: CoreRuntime依存関係チェック
+            if (!checkCoreRuntime()) {
+                throw new Error('CoreRuntime initialization failed');
             }
             
-            // Step 2: 安全な初期化
+            // Step 2: アプリケーション初期化
             const DrawingApp = initializeApp();
             const app = new DrawingApp();
             await app.initialize();
             
-            console.log('🔥 EMERGENCY FIX SUCCESS: Drawing App initialized!');
-            console.log('✅ All critical errors resolved');
-            console.log('✅ Coordinate system unified APIs working');
-            console.log('✅ TegakiCore structure destructuring fixed');
+            // Step 3: 座標系診断実行
+            const diagnosis = window.CoordinateSystem.diagnoseReferences();
+            console.log('🔍 Coordinate System Diagnosis:', diagnosis);
+            
+            console.log('✅ Phase2 Preparation SUCCESS: Drawing App initialized!');
+            console.log('✅ CoreRuntime facade established');
+            console.log('✅ Safe coordinate references configured');
+            console.log('✅ UI layer binding points ready');
+            console.log('✅ Ready for Phase2 Engine Star separation');
             
         } catch (error) {
-            console.error('🔥 EMERGENCY FIX FAILED:', error);
+            console.error('❌ Phase2 Preparation FAILED:', error);
             console.error('Stack trace:', error.stack);
         }
     });
