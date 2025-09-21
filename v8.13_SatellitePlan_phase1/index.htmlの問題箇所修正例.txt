@@ -1,0 +1,83 @@
+<!-- 🔥 緊急修正：index.htmlの問題箇所修正例 -->
+
+<!-- 
+ERROR: index.html:788 Uncaught TypeError: Cannot destructure property 'CoreEngine' of 'window.TegakiCore' as it is undefined.
+
+修正前（エラーの原因）:
+const { CoreEngine } = window.TegakiCore;
+const coreEngine = new CoreEngine(app);
+
+修正後（安全な書き方）:
+-->
+
+<script>
+// 🔥 緊急修正：構造化代入エラーの修正
+// window.TegakiCoreが確実に読み込まれているかチェック
+if (!window.TegakiCore) {
+    console.error('CRITICAL: TegakiCore not loaded. Check core-engine.js loading.');
+    throw new Error('core-engine.js dependency missing');
+}
+
+// 🔥 修正方法1: 直接アクセス（推奨）
+const CoreEngine = window.TegakiCore.CoreEngine;
+if (!CoreEngine) {
+    console.error('CRITICAL: CoreEngine class not found in TegakiCore');
+    throw new Error('CoreEngine class missing');
+}
+
+// 🔥 修正方法2: 初期化関数を使用（より安全）
+// const coreEngine = window.TegakiCore.initialize(app);
+
+// 従来通りの初期化
+const coreEngine = new CoreEngine(app);
+const drawingApp = coreEngine.initialize();
+
+// グローバル参照を設定（他のコードとの互換性のため）
+window.drawingApp = drawingApp;
+
+console.log('✅ TEGAKI initialization completed successfully (EMERGENCY FIX)');
+</script>
+
+<!-- 
+追加の安全対策（ファイル読み込み順序の確保）:
+
+1. config.js
+2. coordinate-system.js  ← 🔥 緊急修正版を使用
+3. ui-panels.js
+4. core-engine.js       ← 🔥 緊急修正版を使用
+5. main.js（またはindex.html内のスクリプト部分）
+
+各ファイルが確実に読み込まれているかチェック:
+-->
+
+<script>
+// ファイル読み込み確認（デバッグ用）
+const checkDependencies = () => {
+    const dependencies = [
+        { name: 'TEGAKI_CONFIG', obj: window.TEGAKI_CONFIG },
+        { name: 'CoordinateSystem', obj: window.CoordinateSystem },
+        { name: 'UIController', obj: window.UIController },
+        { name: 'TegakiCore', obj: window.TegakiCore }
+    ];
+    
+    let allLoaded = true;
+    
+    dependencies.forEach(dep => {
+        if (!dep.obj) {
+            console.error(`❌ ${dep.name} not loaded`);
+            allLoaded = false;
+        } else {
+            console.log(`✅ ${dep.name} loaded successfully`);
+        }
+    });
+    
+    return allLoaded;
+};
+
+// 初期化前に依存関係をチェック
+if (!checkDependencies()) {
+    console.error('CRITICAL: Some dependencies are missing. Cannot initialize TEGAKI.');
+} else {
+    console.log('🔥 All dependencies loaded successfully - proceeding with EMERGENCY FIX initialization');
+}
+</script>

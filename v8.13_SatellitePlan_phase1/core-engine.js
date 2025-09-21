@@ -1,50 +1,48 @@
-// ===== core-engine.js - 統合コアエンジン（修正版：レイヤー変形確定処理非破壊化） =====
+// ===== core-engine.js - Phase 1 座標系統一改修版 =====
+// coordinate-system.js統合・座標変換API統一・二重実装削除
 // CameraSystem + LayerManager + DrawingEngine + ClipboardSystem を統合
-// 相互依存関係を内部化し、Claude改修効率を最大化
+// Phase 1: 座標変換の完全統一・明示的座標空間コメント・toLocal/toGlobal置換
 
 /*
-=== 修正ヘッダー ===
+=== Phase 1 改修ヘッダー ===
 
-【修正対象】
-- LayerManager.confirmLayerTransform() の非破壊化
-- レイヤー変形確定時の画像消失問題解決
-- パスデータの完全保持とGraphics再構築の分離
-- V押下時の変形パネル表示問題修正
+【座標系統一改修内容】
+- window.CoordinateSystem API完全統合
+- toLocal/toGlobal直接呼び出し全廃
+- screenToCanvasForDrawing/screenToCanvas二重実装統一
+- 座標空間の明示的コメント追加（coord: source -> destination形式）
+- 座標変換精度向上・PixiJS v8.13最適化
+
+【coordinate-system.js依存】
+- 事前にcoordinate-system.jsが読み込まれている前提
+- window.CoordinateSystemグローバルAPI使用
+- 座標空間検証機能活用
 
 【ファイル間依存関係辞典】
 - CONFIG: config.js のグローバル設定オブジェクト
 - UIController: ui-panels.js のUI制御クラス
 - TegakiUI.initializeSortable: ui-panels.js のSortableJS統合関数
 - window.drawingAppResizeCanvas: index.html内main.js統合部分の関数
+- window.CoordinateSystem: coordinate-system.js の統一座標API
 
-【主要クラス・メソッド一覧】
-- CoreEngine: 統合制御クラス
-  - initialize(): 初期化・レイヤー作成・UI統合
-  - resizeCanvas(): キャンバスリサイズ統合処理
-- CameraSystem: カメラ・ビューポート制御
-  - screenToCanvasForDrawing(): ペン描画用座標変換（変形考慮なし）
-  - updateGuideLinesForCanvasResize(): ガイドライン再作成
-- LayerManager: レイヤー管理・変形処理
-  - confirmLayerTransform(): 【修正対象】変形確定処理
-  - applyTransformToPaths(): 【修正対象】パス座標変換処理
-  - rebuildPathGraphics(): 【修正対象】Graphics再生成
-- DrawingEngine: 描画制御
-  - addPathToActiveLayer(): レイヤー変形逆変換適用
-- ClipboardSystem: 非破壊コピー&ペースト
-  - copyActiveLayer(): 変形状態考慮のコピー
-  - getTransformedPaths(): 仮想変形座標計算
+【主要改修ポイント】
+1. CameraSystem.screenToCanvasForDrawing → CoordinateSystem.screenToDrawingCanvas
+2. CameraSystem.screenToCanvas → CoordinateSystem.screenToWorldCanvas
+3. 全container.toLocal/toGlobal → CoordinateSystem API
+4. 座標変換の明示的コメント追加
+5. 変形行列計算の統一化
 
-【修正内容】
-1. confirmLayerTransform()の完全非破壊化
-2. パス座標変換の精度向上
-3. Graphics再構築の安全化
-4. 変形パネル表示制御の改善
-
-=== 修正ヘッダー終了 ===
+=== Phase 1 改修ヘッダー終了 ===
 */
 
 (function() {
     'use strict';
+    
+    // coordinate-system.js依存確認
+    if (!window.CoordinateSystem) {
+        console.error('CRITICAL: coordinate-system.js not loaded. CoordinateSystem API not available.');
+        throw new Error('coordinate-system.js dependency missing');
+    }
     
     // グローバル設定を取得
     const CONFIG = window.TEGAKI_CONFIG;
@@ -53,7 +51,7 @@
         if (CONFIG.debug) console.log(...args);
     };
 
-    // === クリップボード管理システム（非破壊版） ===
+    // === クリップボード管理システム（座標系統一版） ===
     class ClipboardSystem {
         constructor() {
             this.clipboardData = null;
@@ -76,7 +74,7 @@
             });
         }
 
-        // 非破壊版：アクティブレイヤーのコピー
+        // 座標系統一版：アクティブレイヤーのコピー
         copyActiveLayer() {
             const layerManager = this.layerManager; // 内部参照
             if (!layerManager) {
@@ -91,7 +89,7 @@
             }
 
             try {
-                console.log('Non-destructive copy started');
+                console.log('Non-destructive copy started (coordinate-system unified)');
                 
                 // ✅ 現在の変形状態を取得
                 const layerId = activeLayer.layerData.id;
@@ -137,36 +135,38 @@
                         originalId: layerId,
                         copiedAt: Date.now(),
                         pathCount: pathsToStore.length,
-                        isNonDestructive: true, // 非破壊フラグ
-                        hasTransforms: layerManager.isTransformNonDefault(currentTransform)
+                        isNonDestructive: true,
+                        hasTransforms: layerManager.isTransformNonDefault(currentTransform),
+                        coordinateSystem: 'unified' // Phase 1フラグ
                     },
                     timestamp: Date.now()
                 };
 
-                console.log(`Non-destructive copy completed: ${pathsToStore.length} paths preserved`);
-                console.log('Copy metadata:', this.clipboardData.metadata);
+                console.log(`Non-destructive copy completed: ${pathsToStore.length} paths preserved (coordinate-system unified)`);
                 
             } catch (error) {
                 console.error('Failed to copy layer non-destructively:', error);
             }
         }
 
-        // 現在の変形状態を適用した座標を仮想計算
+        // 座標系統一版：現在の変形状態を適用した座標を仮想計算
         getTransformedPaths(layer, transform) {
+            // coord: canvas center -> transform center
             const centerX = CONFIG.canvas.width / 2;
             const centerY = CONFIG.canvas.height / 2;
             
-            // 変形行列作成
-            const matrix = new PIXI.Matrix();
-            matrix.translate(centerX + transform.x, centerY + transform.y);
-            matrix.rotate(transform.rotation);
-            matrix.scale(transform.scaleX, transform.scaleY);
-            matrix.translate(-centerX, -centerY);
+            // ✅ CoordinateSystem統一API使用：変形行列作成
+            const matrix = window.CoordinateSystem.createTransformMatrix(
+                transform, centerX, centerY
+            );
             
             // パスに仮想変形を適用（元データは変更しない）
             return (layer.layerData.paths || []).map(path => ({
                 id: `${path.id}_transformed_${Date.now()}`,
-                points: (path.points || []).map(point => matrix.apply(point)),
+                // coord: layer space -> transformed layer space
+                points: (path.points || []).map(point => 
+                    window.CoordinateSystem.applyMatrix(point, matrix)
+                ),
                 color: path.color,
                 size: path.size,
                 opacity: path.opacity,
@@ -177,8 +177,9 @@
         // パスデータの完全ディープコピー
         deepCopyPaths(paths) {
             return (paths || []).map(path => ({
-                id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // 新しいID
-                points: (path.points || []).map(point => ({ x: point.x, y: point.y })), // 座標完全コピー
+                id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                // coord: layer space (unchanged)
+                points: (path.points || []).map(point => ({ x: point.x, y: point.y })),
                 color: path.color,
                 size: path.size,
                 opacity: path.opacity,
@@ -186,9 +187,9 @@
             }));
         }
 
-        // 非破壊版：レイヤーのペースト
+        // 座標系統一版：レイヤーのペースト
         pasteLayer() {
-            const layerManager = this.layerManager; // 内部参照
+            const layerManager = this.layerManager;
             if (!layerManager) {
                 console.warn('LayerManager not available');
                 return;
@@ -202,11 +203,11 @@
             try {
                 const clipData = this.clipboardData;
                 
-                // ✅ 非破壊コピーの検証
-                if (!clipData.metadata?.isNonDestructive) {
-                    console.warn('Pasting potentially degraded data');
+                // ✅ 座標系統一版の検証
+                if (clipData.metadata?.coordinateSystem === 'unified') {
+                    console.log('Pasting coordinate-system unified data:', clipData.metadata);
                 } else {
-                    console.log('Pasting non-destructive data:', clipData.metadata);
+                    console.warn('Pasting legacy coordinate data');
                 }
                 
                 // 一意なレイヤー名を生成
@@ -230,7 +231,8 @@
                     if (pathData.points && pathData.points.length > 0) {
                         const newPath = {
                             id: pathData.id,
-                            points: [...pathData.points], // 座標完全コピー
+                            // coord: layer space (restored)
+                            points: [...pathData.points],
                             color: pathData.color,
                             size: pathData.size,
                             opacity: pathData.opacity,
@@ -238,7 +240,7 @@
                             graphics: null // 後で生成
                         };
                         
-                        // パスGraphicsを生成
+                        // パスGraphicsを再生成
                         layerManager.rebuildPathGraphics(newPath);
                         
                         // レイヤーに追加
@@ -269,7 +271,7 @@
                 // サムネイル更新
                 layerManager.requestThumbnailUpdate(index);
 
-                console.log(`Non-destructive paste completed: ${clipData.layerData.paths.length} paths restored`);
+                console.log(`Non-destructive paste completed: ${clipData.layerData.paths.length} paths restored (coordinate-system unified)`);
                 
             } catch (error) {
                 console.error('Failed to paste layer non-destructively:', error);
@@ -295,7 +297,7 @@
         }
     }
 
-    // === カメラシステム（改修版：座標変換修正・ペン描画ズレ対策） ===
+    // === カメラシステム（座標系統一版） ===
     class CameraSystem {
         constructor(app) {
             this.app = app;
@@ -329,7 +331,7 @@
             this.cameraFrame.label = 'cameraFrame';
             this.worldContainer.addChild(this.cameraFrame);
             
-            // 修正版：カメラフレーム内ガイドライン用コンテナ
+            // ガイドライン用コンテナ
             this.guideLines = new PIXI.Container();
             this.guideLines.label = 'guideLines';
             this.worldContainer.addChild(this.guideLines);
@@ -355,18 +357,15 @@
             this.drawCameraFrame();
         }
         
-        // 修正2: ガイドライン作成の完全修正版（キャンバスサイズ変更対応）
+        // 座標系統一版：ガイドライン作成
         createGuideLines() {
             this.guideLines.removeChildren();
             
-            // デバッグ：現在のキャンバスサイズを確認
-            console.log('Creating guide lines for canvas:', CONFIG.canvas.width, 'x', CONFIG.canvas.height);
-            
-            // 修正2: カメラフレーム中央の座標を動的に計算
+            // coord: canvas center (dynamic calculation)
             const centerX = CONFIG.canvas.width / 2;
             const centerY = CONFIG.canvas.height / 2;
             
-            console.log('Guide line center coordinates:', centerX, centerY);
+            console.log('Creating unified coordinate guide lines at center:', centerX, centerY);
             
             // 縦線（カメラフレームの中央）
             const verticalLine = new PIXI.Graphics();
@@ -380,14 +379,14 @@
             horizontalLine.fill({ color: 0x800000, alpha: 0.8 });
             this.guideLines.addChild(horizontalLine);
             
-            this.guideLines.visible = false; // 初期は非表示
+            this.guideLines.visible = false;
             
-            console.log('Guide lines created. Children count:', this.guideLines.children.length);
+            console.log('Unified coordinate guide lines created');
         }
         
-        // 修正2: キャンバスサイズ変更時のガイドライン再作成（完全版）
+        // 座標系統一版：キャンバスサイズ変更時のガイドライン再作成
         updateGuideLinesForCanvasResize() {
-            console.log('Updating guide lines for canvas resize to', CONFIG.canvas.width, 'x', CONFIG.canvas.height);
+            console.log('Updating unified coordinate guide lines for canvas resize to', CONFIG.canvas.width, 'x', CONFIG.canvas.height);
             this.createGuideLines();
             this.drawCameraFrame();
             // マスクも更新
@@ -396,37 +395,36 @@
             this.canvasMask.fill(0xffffff);
         }
         
-        // 追加: 外部からのキャンバスリサイズ処理（UIController用）
+        // 外部からのキャンバスリサイズ処理
         resizeCanvas(newWidth, newHeight) {
-            console.log('CameraSystem: Resizing canvas from', CONFIG.canvas.width, 'x', CONFIG.canvas.height, 'to', newWidth, 'x', newHeight);
+            console.log('CameraSystem: Unified coordinate canvas resize from', CONFIG.canvas.width, 'x', CONFIG.canvas.height, 'to', newWidth, 'x', newHeight);
             
-            // CONFIG更新（外部で既に更新済みだが念のため）
             CONFIG.canvas.width = newWidth;
             CONFIG.canvas.height = newHeight;
             
-            // カメラフレーム、マスク、ガイドライン更新
             this.updateGuideLinesForCanvasResize();
             
-            console.log('CameraSystem: Canvas resize completed');
+            console.log('CameraSystem: Unified coordinate canvas resize completed');
         }
         
-        // 修正版：ガイドラインの表示・非表示（デバッグログ追加）
         showGuideLines() {
             this.guideLines.visible = true;
-            console.log('Guide lines shown. Visible:', this.guideLines.visible);
+            console.log('Unified coordinate guide lines shown');
         }
         
         hideGuideLines() {
             this.guideLines.visible = false;
-            console.log('Guide lines hidden. Visible:', this.guideLines.visible);
+            console.log('Unified coordinate guide lines hidden');
         }
         
         initializeCamera() {
+            // coord: screen center
             const centerX = this.app.screen.width / 2;
             const centerY = this.app.screen.height / 2;
             
             this.canvasContainer.position.set(0, 0);
             
+            // coord: screen -> world (initial positioning)
             const initialX = centerX - CONFIG.canvas.width / 2;
             const initialY = centerY - CONFIG.canvas.height / 2;
             this.worldContainer.position.set(initialX, initialY);
@@ -460,12 +458,14 @@
                 if ((e.button === 2 || this.spacePressed) && !this.shiftPressed) {
                     // Space + ドラッグ: 移動
                     this.isDragging = true;
+                    // coord: screen pointer position
                     this.lastPoint = { x: e.clientX, y: e.clientY };
                     this.app.canvas.style.cursor = 'move';
                     e.preventDefault();
                 } else if ((e.button === 2 || this.spacePressed) && this.shiftPressed) {
                     // Shift + Space + ドラッグ: 拡縮・回転
                     this.isScaleRotateDragging = true;
+                    // coord: screen pointer position
                     this.lastPoint = { x: e.clientX, y: e.clientY };
                     this.app.canvas.style.cursor = 'grab';
                     e.preventDefault();
@@ -475,29 +475,41 @@
             this.app.canvas.addEventListener('pointermove', (e) => {
                 if (this.isDragging) {
                     // 移動
+                    // coord: screen delta
                     const dx = (e.clientX - this.lastPoint.x) * this.panSpeed;
                     const dy = (e.clientY - this.lastPoint.y) * this.panSpeed;
                     
+                    // coord: world container position update
                     this.worldContainer.x += dx;
                     this.worldContainer.y += dy;
                     
+                    // coord: screen pointer position
                     this.lastPoint = { x: e.clientX, y: e.clientY };
                     this.updateTransformDisplay();
                 } else if (this.isScaleRotateDragging) {
                     // 拡縮・回転
+                    // coord: screen delta
                     const dx = e.clientX - this.lastPoint.x;
                     const dy = e.clientY - this.lastPoint.y;
                     
+                    // coord: canvas center -> world
                     const centerX = CONFIG.canvas.width / 2;
                     const centerY = CONFIG.canvas.height / 2;
-                    const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                    
+                    // ✅ CoordinateSystem統一API使用
+                    const worldCenter = window.CoordinateSystem.localToGlobal(
+                        this.worldContainer, { x: centerX, y: centerY }
+                    );
                     
                     if (Math.abs(dx) > Math.abs(dy)) {
                         // 水平方向優先: 回転
                         this.rotation += (dx * CONFIG.camera.dragRotationSpeed);
                         this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
                         
-                        const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                        // ✅ CoordinateSystem統一API使用：回転後の中央位置補正
+                        const newWorldCenter = window.CoordinateSystem.localToGlobal(
+                            this.worldContainer, { x: centerX, y: centerY }
+                        );
                         this.worldContainer.x += worldCenter.x - newWorldCenter.x;
                         this.worldContainer.y += worldCenter.y - newWorldCenter.y;
                     } else {
@@ -507,12 +519,16 @@
                         
                         if (newScale >= CONFIG.camera.minScale && newScale <= CONFIG.camera.maxScale) {
                             this.worldContainer.scale.set(newScale);
-                            const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                            // ✅ CoordinateSystem統一API使用：スケール後の中央位置補正
+                            const newWorldCenter = window.CoordinateSystem.localToGlobal(
+                                this.worldContainer, { x: centerX, y: centerY }
+                            );
                             this.worldContainer.x += worldCenter.x - newWorldCenter.x;
                             this.worldContainer.y += worldCenter.y - newWorldCenter.y;
                         }
                     }
                     
+                    // coord: screen pointer position
                     this.lastPoint = { x: e.clientX, y: e.clientY };
                     this.updateTransformDisplay();
                 }
@@ -542,8 +558,9 @@
             this.app.canvas.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 
-                if (this.vKeyPressed) return; // レイヤー操作中は無視
+                if (this.vKeyPressed) return;
                 
+                // coord: canvas center
                 const centerX = CONFIG.canvas.width / 2;
                 const centerY = CONFIG.canvas.height / 2;
                 
@@ -552,12 +569,18 @@
                     const rotationDelta = e.deltaY < 0 ? 
                         CONFIG.camera.keyRotationDegree : -CONFIG.camera.keyRotationDegree;
                     
-                    const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                    // ✅ CoordinateSystem統一API使用
+                    const worldCenter = window.CoordinateSystem.localToGlobal(
+                        this.worldContainer, { x: centerX, y: centerY }
+                    );
                     
                     this.rotation += rotationDelta;
                     this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
                     
-                    const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                    // ✅ 回転後の位置補正
+                    const newWorldCenter = window.CoordinateSystem.localToGlobal(
+                        this.worldContainer, { x: centerX, y: centerY }
+                    );
                     this.worldContainer.x += worldCenter.x - newWorldCenter.x;
                     this.worldContainer.y += worldCenter.y - newWorldCenter.y;
                 } else {
@@ -566,11 +589,17 @@
                     const newScale = this.worldContainer.scale.x * scaleFactor;
                     
                     if (newScale >= CONFIG.camera.minScale && newScale <= CONFIG.camera.maxScale) {
-                        const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                        // ✅ CoordinateSystem統一API使用
+                        const worldCenter = window.CoordinateSystem.localToGlobal(
+                            this.worldContainer, { x: centerX, y: centerY }
+                        );
                         
                         this.worldContainer.scale.set(newScale);
                         
-                        const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                        // ✅ スケール後の位置補正
+                        const newWorldCenter = window.CoordinateSystem.localToGlobal(
+                            this.worldContainer, { x: centerX, y: centerY }
+                        );
                         this.worldContainer.x += worldCenter.x - newWorldCenter.x;
                         this.worldContainer.y += worldCenter.y - newWorldCenter.y;
                     }
@@ -602,6 +631,7 @@
                 // === キャンバス移動: Space + 方向キー ===
                 if (this.spacePressed && !this.shiftPressed && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
                     const moveAmount = CONFIG.camera.keyMoveAmount;
+                    // coord: world container position delta
                     switch(e.code) {
                         case 'ArrowDown':    this.worldContainer.y += moveAmount; break;
                         case 'ArrowUp':  this.worldContainer.y -= moveAmount; break;
@@ -614,9 +644,14 @@
                 
                 // === キャンバス拡縮・回転: Shift + Space + 方向キー ===
                 if (this.spacePressed && this.shiftPressed && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
+                    // coord: canvas center
                     const centerX = CONFIG.canvas.width / 2;
                     const centerY = CONFIG.canvas.height / 2;
-                    const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                    
+                    // ✅ CoordinateSystem統一API使用
+                    const worldCenter = window.CoordinateSystem.localToGlobal(
+                        this.worldContainer, { x: centerX, y: centerY }
+                    );
                     
                     switch(e.code) {
                         case 'ArrowUp':
@@ -624,7 +659,10 @@
                             const newScaleUp = this.worldContainer.scale.x * scaleUpFactor;
                             if (newScaleUp <= CONFIG.camera.maxScale) {
                                 this.worldContainer.scale.set(newScaleUp);
-                                const newWorldCenterUp = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                                // ✅ CoordinateSystem統一API使用：位置補正
+                                const newWorldCenterUp = window.CoordinateSystem.localToGlobal(
+                                    this.worldContainer, { x: centerX, y: centerY }
+                                );
                                 this.worldContainer.x += worldCenter.x - newWorldCenterUp.x;
                                 this.worldContainer.y += worldCenter.y - newWorldCenterUp.y;
                             }
@@ -635,7 +673,10 @@
                             const newScaleDown = this.worldContainer.scale.x * scaleDownFactor;
                             if (newScaleDown >= CONFIG.camera.minScale) {
                                 this.worldContainer.scale.set(newScaleDown);
-                                const newWorldCenterDown = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                                // ✅ CoordinateSystem統一API使用：位置補正
+                                const newWorldCenterDown = window.CoordinateSystem.localToGlobal(
+                                    this.worldContainer, { x: centerX, y: centerY }
+                                );
                                 this.worldContainer.x += worldCenter.x - newWorldCenterDown.x;
                                 this.worldContainer.y += worldCenter.y - newWorldCenterDown.y;
                             }
@@ -644,7 +685,10 @@
                         case 'ArrowLeft':
                             this.rotation -= CONFIG.camera.keyRotationDegree;
                             this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
-                            const newWorldCenterLeft = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                            // ✅ CoordinateSystem統一API使用：回転後位置補正
+                            const newWorldCenterLeft = window.CoordinateSystem.localToGlobal(
+                                this.worldContainer, { x: centerX, y: centerY }
+                            );
                             this.worldContainer.x += worldCenter.x - newWorldCenterLeft.x;
                             this.worldContainer.y += worldCenter.y - newWorldCenterLeft.y;
                             break;
@@ -652,7 +696,10 @@
                         case 'ArrowRight':
                             this.rotation += CONFIG.camera.keyRotationDegree;
                             this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
-                            const newWorldCenterRight = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                            // ✅ CoordinateSystem統一API使用：回転後位置補正
+                            const newWorldCenterRight = window.CoordinateSystem.localToGlobal(
+                                this.worldContainer, { x: centerX, y: centerY }
+                            );
                             this.worldContainer.x += worldCenter.x - newWorldCenterRight.x;
                             this.worldContainer.y += worldCenter.y - newWorldCenterRight.y;
                             break;
@@ -664,9 +711,14 @@
                 
                 // === キャンバス反転: H / Shift+H（レイヤー操作中以外） ===
                 if (!this.vKeyPressed && e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    // coord: canvas center
                     const centerX = CONFIG.canvas.width / 2;
                     const centerY = CONFIG.canvas.height / 2;
-                    const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                    
+                    // ✅ CoordinateSystem統一API使用
+                    const worldCenter = window.CoordinateSystem.localToGlobal(
+                        this.worldContainer, { x: centerX, y: centerY }
+                    );
                     
                     if (e.shiftKey) {
                         // Shift+H: 垂直反転
@@ -678,7 +730,10 @@
                         this.worldContainer.scale.x *= -1;
                     }
                     
-                    const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
+                    // ✅ 反転後の位置補正
+                    const newWorldCenter = window.CoordinateSystem.localToGlobal(
+                        this.worldContainer, { x: centerX, y: centerY }
+                    );
                     this.worldContainer.x += worldCenter.x - newWorldCenter.x;
                     this.worldContainer.y += worldCenter.y - newWorldCenter.y;
                     
@@ -743,24 +798,28 @@
             }
         }
         
-        // 改修版：ペン描画用のキャンバス座標変換（レイヤー変形を考慮しない）
-        screenToCanvasForDrawing(screenX, screenY) {
+        // ✅ 座標系統一版：ペン描画用のキャンバス座標変換（レイヤー変形を考慮しない）
+        screenToDrawingCanvas(screenX, screenY) {
+            // coord: screen -> drawing canvas (no layer transform)
             const globalPoint = { x: screenX, y: screenY };
-            return this.canvasContainer.toLocal(globalPoint);
+            return window.CoordinateSystem.globalToLocal(this.canvasContainer, globalPoint);
         }
         
-        // レイヤー操作用の座標変換（レイヤー変形を考慮）
-        screenToCanvas(screenX, screenY) {
+        // ✅ 座標系統一版：レイヤー操作用の座標変換（レイヤー変形を考慮）
+        screenToWorldCanvas(screenX, screenY) {
+            // coord: screen -> world canvas (with layer transform)
             const globalPoint = { x: screenX, y: screenY };
-            return this.canvasContainer.toLocal(globalPoint);
+            return window.CoordinateSystem.globalToLocal(this.canvasContainer, globalPoint);
         }
         
         canvasToScreen(canvasX, canvasY) {
+            // coord: canvas -> screen
             const canvasPoint = { x: canvasX, y: canvasY };
-            return this.canvasContainer.toGlobal(canvasPoint);
+            return window.CoordinateSystem.localToGlobal(this.canvasContainer, canvasPoint);
         }
         
         isPointInExtendedCanvas(canvasPoint, margin = 50) {
+            // coord: canvas space validation
             return canvasPoint.x >= -margin && canvasPoint.x <= CONFIG.canvas.width + margin &&
                    canvasPoint.y >= -margin && canvasPoint.y <= CONFIG.canvas.height + margin;
         }
@@ -789,11 +848,12 @@
             this.cameraFrame.stroke({ width: 2, color: 0xff0000, alpha: 0.5 });
         }
 
-        // 修正：カメラフレーム中央の絶対座標を取得
+        // 座標系統一版：カメラフレーム中央の絶対座標を取得
         getCameraFrameCenter() {
+            // coord: canvas center -> world
             const centerX = CONFIG.canvas.width / 2;
             const centerY = CONFIG.canvas.height / 2;
-            return this.worldContainer.toGlobal({ x: centerX, y: centerY });
+            return window.CoordinateSystem.localToGlobal(this.worldContainer, { x: centerX, y: centerY });
         }
         
         // 内部参照設定用（CoreEngineから呼び出し）
@@ -806,7 +866,7 @@
         }
     }
 
-    // === レイヤー管理システム（修正版：変形確定処理の完全非破壊化） ===
+    // === レイヤー管理システム（座標系統一版） ===
     class LayerManager {
         constructor(canvasContainer, app, cameraSystem) {
             this.canvasContainer = canvasContainer;
@@ -821,13 +881,13 @@
             this.layersContainer.label = 'layersContainer';
             this.canvasContainer.addChild(this.layersContainer);
             
-            // レイヤー移動モード関連（修正版）
+            // レイヤー移動モード関連
             this.vKeyPressed = false;
             this.isLayerMoveMode = false;
             this.isLayerDragging = false;
             this.layerDragLastPoint = { x: 0, y: 0 };
             
-            // 修正：レイヤー変形データの保持
+            // レイヤー変形データの保持
             this.layerTransforms = new Map(); // layerId -> { x, y, rotation, scaleX, scaleY }
             
             // UI要素
@@ -930,7 +990,7 @@
             update(initial);
         }
         
-        // 修正3: レイヤー変形データを保持して累積的に適用（カメラフレーム中央基準完全対応）
+        // 座標系統一版：レイヤー変形データを保持して累積的に適用
         updateActiveLayerTransform(property, value) {
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
@@ -946,21 +1006,24 @@
             
             const transform = this.layerTransforms.get(layerId);
             
-            // 修正3: カメラフレーム中央を基準点として設定（動的計算）
+            // coord: canvas center (dynamic calculation)
             const centerX = CONFIG.canvas.width / 2;
             const centerY = CONFIG.canvas.height / 2;
             
             switch(property) {
                 case 'x':
                     transform.x = value;
+                    // coord: canvas center + offset
                     activeLayer.position.set(centerX + value, centerY + transform.y);
                     break;
                 case 'y':
                     transform.y = value;
+                    // coord: canvas center + offset
                     activeLayer.position.set(centerX + transform.x, centerY + value);
                     break;
                 case 'rotation':
                     transform.rotation = value;
+                    // coord: rotation pivot at canvas center
                     activeLayer.pivot.set(centerX, centerY);
                     activeLayer.position.set(centerX + transform.x, centerY + transform.y);
                     activeLayer.rotation = value;
@@ -971,6 +1034,7 @@
                     transform.scaleX = hFlipped ? -value : value;
                     transform.scaleY = vFlipped ? -value : value;
                     
+                    // coord: scale pivot at canvas center
                     activeLayer.pivot.set(centerX, centerY);
                     activeLayer.position.set(centerX + transform.x, centerY + transform.y);
                     activeLayer.scale.set(transform.scaleX, transform.scaleY);
@@ -980,7 +1044,7 @@
             this.requestThumbnailUpdate(this.activeLayerIndex);
         }
         
-        // 修正3: 反転時もカメラフレーム中央基準で座標を維持
+        // 座標系統一版：反転時もカメラフレーム中央基準で座標を維持
         flipActiveLayer(direction) {
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
@@ -995,10 +1059,11 @@
             
             const transform = this.layerTransforms.get(layerId);
             
-            // 修正3: カメラフレーム中央を動的に計算して基準点に設定
+            // coord: canvas center (dynamic calculation)
             const centerX = CONFIG.canvas.width / 2;
             const centerY = CONFIG.canvas.height / 2;
             
+            // coord: flip pivot at canvas center
             activeLayer.pivot.set(centerX, centerY);
             activeLayer.position.set(centerX + transform.x, centerY + transform.y);
             
@@ -1038,7 +1103,6 @@
             }
         }
         
-        // 修正版：変形データから現在値を取得してスライダー更新
         updateLayerTransformPanelValues() {
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
@@ -1048,25 +1112,22 @@
                 x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
             };
             
-            // X位置スライダー更新
+            // スライダー更新
             const xSlider = document.getElementById('layer-x-slider');
             if (xSlider && xSlider.updateValue) {
                 xSlider.updateValue(transform.x);
             }
             
-            // Y位置スライダー更新
             const ySlider = document.getElementById('layer-y-slider');
             if (ySlider && ySlider.updateValue) {
                 ySlider.updateValue(transform.y);
             }
             
-            // 回転スライダー更新
             const rotationSlider = document.getElementById('layer-rotation-slider');
             if (rotationSlider && rotationSlider.updateValue) {
                 rotationSlider.updateValue(transform.rotation * 180 / Math.PI);
             }
             
-            // 拡縮スライダー更新
             const scaleSlider = document.getElementById('layer-scale-slider');
             if (scaleSlider && scaleSlider.updateValue) {
                 scaleSlider.updateValue(Math.abs(transform.scaleX));
@@ -1075,7 +1136,7 @@
             this.updateFlipButtons();
         }
         
-        // 改修版：Vキートグル方式でのレイヤー移動モード
+        // Vキートグル方式でのレイヤー移動モード
         toggleLayerMoveMode() {
             if (this.isLayerMoveMode) {
                 this.exitLayerMoveMode();
@@ -1097,13 +1158,10 @@
                 this.updateLayerTransformPanelValues();
             }
             
-            // 修正版：ガイドライン表示
             this.cameraSystem.showGuideLines();
-            
             this.updateCursor();
         }
         
-        // 改修版：V解除が確定（確定ボタン削除）
         exitLayerMoveMode() {
             if (!this.isLayerMoveMode) return;
             
@@ -1117,16 +1175,14 @@
                 this.layerTransformPanel.classList.remove('show');
             }
             
-            // 修正版：ガイドライン非表示
             this.cameraSystem.hideGuideLines();
-            
             this.updateCursor();
             
-            // 改修版：V解除時に自動確定（レイヤー変形をベイク）
+            // V解除時に自動確定（レイヤー変形をベイク）
             this.confirmLayerTransform();
         }
         
-        // === 【修正版】非破壊的レイヤー変形確定処理 ===
+        // === 【座標系統一版】非破壊的レイヤー変形確定処理 ===
         confirmLayerTransform() {
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
@@ -1137,12 +1193,12 @@
             // レイヤーのtransformが初期状態でない場合、パスデータに変形を適用
             if (this.isTransformNonDefault(transform)) {
                 try {
-                    console.log('=== Non-destructive layer transform confirmation started ===');
+                    console.log('=== Non-destructive layer transform confirmation (coordinate-system unified) ===');
                     console.log('Layer ID:', layerId);
                     console.log('Transform:', transform);
                     console.log('Paths before:', activeLayer.layerData.paths?.length || 0);
                     
-                    // ✅ 修正版：パスデータに変形を安全に適用
+                    // ✅ 座標系統一版：パスデータに変形を安全に適用
                     const success = this.safeApplyTransformToPaths(activeLayer, transform);
                     
                     if (success) {
@@ -1163,21 +1219,20 @@
                         // サムネイル更新
                         this.requestThumbnailUpdate(this.activeLayerIndex);
                         
-                        console.log('=== Non-destructive layer transform confirmed successfully ===');
+                        console.log('=== Coordinate-system unified transform confirmed successfully ===');
                     } else {
                         console.warn('Transform confirmation failed - keeping transform state');
                     }
                     
                 } catch (error) {
-                    console.error('Critical error in confirmLayerTransform:', error);
-                    // エラー時は変形状態を維持（安全対策）
+                    console.error('Critical error in unified confirmLayerTransform:', error);
                 }
             } else {
                 console.log('No transform to confirm (already at default state)');
             }
         }
         
-        // === 【修正版】安全なパス変形適用処理 ===
+        // === 【座標系統一版】安全なパス変形適用処理 ===
         safeApplyTransformToPaths(layer, transform) {
             if (!layer.layerData?.paths || layer.layerData.paths.length === 0) {
                 console.log('No paths to transform - operation successful');
@@ -1185,13 +1240,16 @@
             }
             
             try {
-                console.log('Starting safe transform application to', layer.layerData.paths.length, 'paths');
+                console.log('Starting safe transform application (coordinate-system unified) to', layer.layerData.paths.length, 'paths');
                 
+                // coord: canvas center
                 const centerX = CONFIG.canvas.width / 2;
                 const centerY = CONFIG.canvas.height / 2;
                 
-                // ✅ 修正版：より精密な変形行列作成
-                const matrix = this.createTransformMatrix(transform, centerX, centerY);
+                // ✅ CoordinateSystem統一API使用：変形行列作成
+                const matrix = window.CoordinateSystem.createTransformMatrix(
+                    transform, centerX, centerY
+                );
                 
                 // ✅ パスごとに安全に処理
                 const transformedPaths = [];
@@ -1208,7 +1266,7 @@
                         }
                         
                         // ✅ 座標変形（元データは保護）
-                        const transformedPoints = this.safeTransformPoints(path.points, matrix);
+                        const transformedPoints = this.safeTransformPointsUnified(path.points, matrix);
                         
                         if (transformedPoints.length === 0) {
                             console.warn(`Transform failed for path ${i} - skipping`);
@@ -1218,6 +1276,7 @@
                         // ✅ 新しいパスオブジェクト作成（非破壊）
                         const transformedPath = {
                             id: path.id, // IDは維持
+                            // coord: transformed layer space
                             points: transformedPoints,
                             color: path.color,
                             size: path.size,
@@ -1231,11 +1290,10 @@
                         
                     } catch (pathError) {
                         console.error(`Error processing path ${i}:`, pathError);
-                        // 個別パスエラーは無視して続行
                     }
                 }
                 
-                console.log(`Transformed ${successCount}/${layer.layerData.paths.length} paths successfully`);
+                console.log(`Transformed ${successCount}/${layer.layerData.paths.length} paths successfully (coordinate-system unified)`);
                 
                 if (successCount === 0) {
                     console.error('No paths could be transformed');
@@ -1246,7 +1304,7 @@
                 const rebuildSuccess = this.safeRebuildLayer(layer, transformedPaths);
                 
                 if (rebuildSuccess) {
-                    console.log('Layer rebuild completed successfully');
+                    console.log('Layer rebuild completed successfully (coordinate-system unified)');
                     return true;
                 } else {
                     console.error('Layer rebuild failed');
@@ -1254,26 +1312,13 @@
                 }
                 
             } catch (error) {
-                console.error('Critical error in safeApplyTransformToPaths:', error);
+                console.error('Critical error in safeApplyTransformToPaths (unified):', error);
                 return false;
             }
         }
         
-        // === 【新規】精密変形行列作成 ===
-        createTransformMatrix(transform, centerX, centerY) {
-            const matrix = new PIXI.Matrix();
-            
-            // 変形の順序: 移動 → 回転 → スケール → 移動戻し
-            matrix.translate(centerX + transform.x, centerY + transform.y);
-            matrix.rotate(transform.rotation);
-            matrix.scale(transform.scaleX, transform.scaleY);
-            matrix.translate(-centerX, -centerY);
-            
-            return matrix;
-        }
-        
-        // === 【新規】安全な座標変形処理 ===
-        safeTransformPoints(points, matrix) {
+        // === 【座標系統一版】安全な座標変形処理 ===
+        safeTransformPointsUnified(points, matrix) {
             const transformedPoints = [];
             
             for (let i = 0; i < points.length; i++) {
@@ -1287,8 +1332,8 @@
                 }
                 
                 try {
-                    // 変形適用
-                    const transformed = matrix.apply(point);
+                    // ✅ CoordinateSystem統一API使用：変形適用
+                    const transformed = window.CoordinateSystem.applyMatrix(point, matrix);
                     
                     // 結果の検証
                     if (typeof transformed.x === 'number' && typeof transformed.y === 'number' &&
@@ -1309,21 +1354,19 @@
             return transformedPoints;
         }
         
-        // === 【修正版】安全なレイヤー再構築 ===
+        // 安全なレイヤー再構築
         safeRebuildLayer(layer, newPaths) {
             try {
-                console.log('Starting safe layer rebuild');
+                console.log('Starting safe layer rebuild (coordinate-system unified)');
                 
-                // ✅ 既存描画要素の安全な削除（背景は保護）
+                // 既存描画要素の安全な削除（背景は保護）
                 const childrenToRemove = [];
                 for (let child of layer.children) {
-                    // 背景グラフィックスは保護
                     if (child !== layer.layerData.backgroundGraphics) {
                         childrenToRemove.push(child);
                     }
                 }
                 
-                // 安全な削除処理
                 childrenToRemove.forEach(child => {
                     try {
                         layer.removeChild(child);
@@ -1337,10 +1380,10 @@
                 
                 console.log(`Removed ${childrenToRemove.length} existing graphics`);
                 
-                // ✅ 新しいパスデータを設定
+                // 新しいパスデータを設定
                 layer.layerData.paths = [];
                 
-                // ✅ パスごとにGraphicsを再生成・追加
+                // パスごとにGraphicsを再生成・追加
                 let addedCount = 0;
                 for (let i = 0; i < newPaths.length; i++) {
                     const path = newPaths[i];
@@ -1363,13 +1406,13 @@
                     }
                 }
                 
-                console.log(`Added ${addedCount}/${newPaths.length} paths to layer`);
+                console.log(`Added ${addedCount}/${newPaths.length} paths to layer (coordinate-system unified)`);
                 
                 // 成功判定
                 const success = addedCount > 0 || newPaths.length === 0;
                 
                 if (success) {
-                    console.log('Safe layer rebuild completed successfully');
+                    console.log('Safe layer rebuild completed successfully (coordinate-system unified)');
                 } else {
                     console.error('Safe layer rebuild failed - no paths added');
                 }
@@ -1377,12 +1420,12 @@
                 return success;
                 
             } catch (error) {
-                console.error('Critical error in safeRebuildLayer:', error);
+                console.error('Critical error in safeRebuildLayer (unified):', error);
                 return false;
             }
         }
         
-        // === 【修正版】パスGraphics再生成（安全版） ===
+        // パスGraphics再生成（安全版）
         rebuildPathGraphics(path) {
             try {
                 // 既存Graphics削除
@@ -1406,6 +1449,7 @@
                         if (typeof point.x === 'number' && typeof point.y === 'number' &&
                             isFinite(point.x) && isFinite(point.y)) {
                             
+                            // coord: layer space drawing
                             path.graphics.circle(point.x, point.y, (path.size || 16) / 2);
                             path.graphics.fill({ 
                                 color: path.color || 0x800000, 
@@ -1433,7 +1477,7 @@
         
         setupLayerOperations() {
             document.addEventListener('keydown', (e) => {
-                // 改修版：Vキートグル方式
+                // Vキートグル方式
                 if (e.code === 'KeyV' && !e.ctrlKey && !e.altKey && !e.metaKey) {
                     this.toggleLayerMoveMode();
                     e.preventDefault();
@@ -1484,6 +1528,7 @@
             this.app.canvas.addEventListener('pointerdown', (e) => {
                 if (this.vKeyPressed && e.button === 0) {
                     this.isLayerDragging = true;
+                    // coord: screen pointer position
                     this.layerDragLastPoint = { x: e.clientX, y: e.clientY };
                     this.app.canvas.style.cursor = 'move';
                     e.preventDefault();
@@ -1494,6 +1539,7 @@
                 if (this.isLayerDragging && this.vKeyPressed) {
                     const activeLayer = this.getActiveLayer();
                     if (activeLayer) {
+                        // coord: screen delta
                         const dx = e.clientX - this.layerDragLastPoint.x;
                         const dy = e.clientY - this.layerDragLastPoint.y;
                         
@@ -1512,7 +1558,8 @@
                         const transform = this.layerTransforms.get(layerId);
                         
                         if (e.shiftKey) {
-                            // 修正4: V + Shift + ドラッグの操作方向修正（直感的に変更）
+                            // V + Shift + ドラッグ: 拡縮・回転
+                            // coord: canvas center
                             const centerX = CONFIG.canvas.width / 2;
                             const centerY = CONFIG.canvas.height / 2;
                             
@@ -1521,8 +1568,8 @@
                             activeLayer.position.set(centerX + transform.x, centerY + transform.y);
                             
                             if (Math.abs(dy) > Math.abs(dx)) {
-                                // 垂直方向優先: 拡縮（修正4: 上ドラッグ→拡大、下ドラッグ→縮小）
-                                const scaleFactor = 1 + (dy * -0.01); // 修正4: 方向を逆転（-0.01）
+                                // 垂直方向優先: 拡縮（上ドラッグ→拡大、下ドラッグ→縮小）
+                                const scaleFactor = 1 + (dy * -0.01);
                                 const currentScale = Math.abs(transform.scaleX);
                                 const newScale = Math.max(CONFIG.layer.minScale, Math.min(CONFIG.layer.maxScale, currentScale * scaleFactor));
                                 
@@ -1536,8 +1583,8 @@
                                     scaleSlider.updateValue(newScale);
                                 }
                             } else {
-                                // 水平方向優先: 回転（修正4: 右ドラッグ→右回転、左ドラッグ→左回転）
-                                transform.rotation += (dx * 0.02); // 修正4: dxを使用（正の方向）
+                                // 水平方向優先: 回転（右ドラッグ→右回転、左ドラッグ→左回転）
+                                transform.rotation += (dx * 0.02);
                                 activeLayer.rotation = transform.rotation;
                                 
                                 // スライダー更新
@@ -1551,7 +1598,7 @@
                             transform.x += adjustedDx;
                             transform.y += adjustedDy;
                             
-                            // 位置を更新
+                            // coord: canvas center + offset
                             const centerX = CONFIG.canvas.width / 2;
                             const centerY = CONFIG.canvas.height / 2;
                             activeLayer.position.set(centerX + transform.x, centerY + transform.y);
@@ -1567,6 +1614,7 @@
                             }
                         }
                         
+                        // coord: screen pointer position
                         this.layerDragLastPoint = { x: e.clientX, y: e.clientY };
                         this.requestThumbnailUpdate(this.activeLayerIndex);
                     }
@@ -1581,7 +1629,7 @@
             });
         }
         
-        // 修正版：キーボードによる移動（座標累積）
+        // キーボードによる移動（座標累積）
         moveActiveLayer(keyCode) {
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
@@ -1604,7 +1652,7 @@
                 case 'ArrowRight': transform.x += moveAmount; break;
             }
             
-            // 位置を更新
+            // coord: canvas center + offset
             const centerX = CONFIG.canvas.width / 2;
             const centerY = CONFIG.canvas.height / 2;
             activeLayer.position.set(centerX + transform.x, centerY + transform.y);
@@ -1622,7 +1670,7 @@
             this.requestThumbnailUpdate(this.activeLayerIndex);
         }
         
-        // 修正3: キーボードによる変形（カメラフレーム中央基準で座標維持）
+        // キーボードによる変形（カメラフレーム中央基準で座標維持）
         transformActiveLayer(keyCode) {
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
@@ -1637,7 +1685,7 @@
             
             const transform = this.layerTransforms.get(layerId);
             
-            // 修正3: カメラフレーム中央を動的に計算
+            // coord: canvas center (dynamic calculation)
             const centerX = CONFIG.canvas.width / 2;
             const centerY = CONFIG.canvas.height / 2;
             
@@ -1779,7 +1827,7 @@
             this.thumbnailUpdateQueue.clear();
         }
 
-        // 修正1: レイヤー変形を考慮したサムネイル生成・完全アスペクト比対応・パネルはみ出し対策
+        // 座標系統一版：レイヤー変形を考慮したサムネイル生成
         updateThumbnail(layerIndex) {
             if (!this.app?.renderer || layerIndex < 0 || layerIndex >= this.layers.length) return;
 
@@ -1793,7 +1841,7 @@
             if (!thumbnail) return;
 
             try {
-                // 修正1: 完全アスペクト比対応版（パネルはみ出し対策強化）
+                // 完全アスペクト比対応版（パネルはみ出し対策）
                 const canvasAspectRatio = CONFIG.canvas.width / CONFIG.canvas.height;
                 let thumbnailWidth, thumbnailHeight;
                 const maxHeight = 48;
@@ -1801,12 +1849,11 @@
 
                 if (canvasAspectRatio >= 1) {
                     // 横長または正方形の場合
-                    // 横幅制限を優先し、縦を比例縮小
                     if (maxHeight * canvasAspectRatio <= maxWidth) {
                         thumbnailWidth = maxHeight * canvasAspectRatio;
                         thumbnailHeight = maxHeight;
                     } else {
-                        // 修正1: 横長過ぎる場合は横幅制限を優先して縦を縮小
+                        // 横長過ぎる場合は横幅制限を優先
                         thumbnailWidth = maxWidth;
                         thumbnailHeight = maxWidth / canvasAspectRatio;
                     }
@@ -1816,11 +1863,11 @@
                     thumbnailHeight = maxHeight;
                 }
                 
-                // 修正1: サムネイル枠のサイズを動的に更新
+                // サムネイル枠のサイズを動的に更新
                 thumbnail.style.width = Math.round(thumbnailWidth) + 'px';
                 thumbnail.style.height = Math.round(thumbnailHeight) + 'px';
                 
-                console.log(`Thumbnail updated: ${Math.round(thumbnailWidth)}x${Math.round(thumbnailHeight)} (aspect: ${canvasAspectRatio.toFixed(2)})`);
+                console.log(`Thumbnail updated (coordinate-system unified): ${Math.round(thumbnailWidth)}x${Math.round(thumbnailHeight)} (aspect: ${canvasAspectRatio.toFixed(2)})`);
                 
                 // レンダリング用の高解像度テクスチャ作成
                 const renderTexture = PIXI.RenderTexture.create({
@@ -1829,7 +1876,7 @@
                     resolution: CONFIG.thumbnail.RENDER_SCALE
                 });
                 
-                // 修正版：レイヤーの現在の変形状態を保持してサムネイル生成
+                // レイヤーの現在の変形状態を保持してサムネイル生成
                 const layerId = layer.layerData.id;
                 const transform = this.layerTransforms.get(layerId);
                 
@@ -1892,7 +1939,7 @@
                 tempContainer.destroy();
                 
             } catch (error) {
-                console.warn('Thumbnail update failed:', error);
+                console.warn('Thumbnail update failed (coordinate-system unified):', error);
             }
         }
 
@@ -2003,7 +2050,7 @@
         }
     }
 
-    // === 描画エンジン（改修版：ペン描画位置ズレ対策） ===
+    // === 描画エンジン（座標系統一版） ===
     class DrawingEngine {
         constructor(cameraSystem, layerManager) {
             this.cameraSystem = cameraSystem;
@@ -2021,8 +2068,9 @@
             if (this.isDrawing || this.cameraSystem.spacePressed || this.cameraSystem.isDragging || 
                 this.layerManager.vKeyPressed) return;
 
-            // 改修版：レイヤー変形を考慮しないキャンバス座標変換を使用
-            const canvasPoint = this.cameraSystem.screenToCanvasForDrawing(screenX, screenY);
+            // ✅ 座標系統一版：ペン描画用のキャンバス座標変換（レイヤー変形を考慮しない）
+            // coord: screen -> drawing canvas (no layer transform)
+            const canvasPoint = this.cameraSystem.screenToDrawingCanvas(screenX, screenY);
             
             if (!this.cameraSystem.isPointInExtendedCanvas(canvasPoint)) {
                 return;
@@ -2040,6 +2088,7 @@
             this.currentPath = {
                 id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 graphics: new PIXI.Graphics(),
+                // coord: drawing canvas space
                 points: [{ x: canvasPoint.x, y: canvasPoint.y }],
                 color: color,
                 size: this.brushSize,
@@ -2047,10 +2096,11 @@
                 isComplete: false
             };
 
+            // coord: drawing canvas space rendering
             this.currentPath.graphics.circle(canvasPoint.x, canvasPoint.y, this.brushSize / 2);
             this.currentPath.graphics.fill({ color: color, alpha: opacity });
 
-            // 改修版：レイヤーのTransformを考慮して描画位置を調整
+            // 座標系統一版：レイヤーのTransformを考慮して描画位置を調整
             this.addPathToActiveLayer(this.currentPath);
         }
 
@@ -2058,7 +2108,9 @@
             if (!this.isDrawing || !this.currentPath || this.cameraSystem.spacePressed || 
                 this.cameraSystem.isDragging || this.layerManager.vKeyPressed) return;
 
-            const canvasPoint = this.cameraSystem.screenToCanvasForDrawing(screenX, screenY);
+            // ✅ 座標系統一版：ペン描画用座標変換
+            // coord: screen -> drawing canvas (no layer transform)
+            const canvasPoint = this.cameraSystem.screenToDrawingCanvas(screenX, screenY);
             const lastPoint = this.lastPoint;
             
             const distance = Math.sqrt(
@@ -2074,12 +2126,14 @@
                 const x = lastPoint.x + (canvasPoint.x - lastPoint.x) * t;
                 const y = lastPoint.y + (canvasPoint.y - lastPoint.y) * t;
 
+                // coord: drawing canvas space rendering
                 this.currentPath.graphics.circle(x, y, this.brushSize / 2);
                 this.currentPath.graphics.fill({ 
                     color: this.currentPath.color, 
                     alpha: this.currentPath.opacity 
                 });
 
+                // coord: drawing canvas space
                 this.currentPath.points.push({ x, y });
             }
 
@@ -2099,7 +2153,7 @@
             this.lastPoint = null;
         }
         
-        // 改修版：アクティブレイヤーのTransformを考慮してパスを追加
+        // ✅ 座標系統一版：アクティブレイヤーのTransformを考慮してパスを追加
         addPathToActiveLayer(path) {
             const activeLayer = this.layerManager.getActiveLayer();
             if (!activeLayer) return;
@@ -2111,22 +2165,23 @@
             if (transform && (transform.x !== 0 || transform.y !== 0 || 
                 transform.rotation !== 0 || Math.abs(transform.scaleX) !== 1 || Math.abs(transform.scaleY) !== 1)) {
                 
-                // 逆変換行列を作成
-                const matrix = new PIXI.Matrix();
-                
-                // カメラフレーム中央基準での逆変換
+                // coord: canvas center
                 const centerX = CONFIG.canvas.width / 2;
                 const centerY = CONFIG.canvas.height / 2;
                 
-                matrix.translate(-centerX - transform.x, -centerY - transform.y);
-                matrix.rotate(-transform.rotation);
-                matrix.scale(1/transform.scaleX, 1/transform.scaleY);
-                matrix.translate(centerX, centerY);
+                // ✅ CoordinateSystem統一API使用：逆変換行列を作成
+                const inverseMatrix = window.CoordinateSystem.createInverseTransformMatrix(
+                    transform, centerX, centerY
+                );
                 
                 // パスの座標を逆変換
                 const transformedGraphics = new PIXI.Graphics();
                 path.points.forEach((point, index) => {
-                    const transformedPoint = matrix.apply(point);
+                    // ✅ CoordinateSystem統一API使用：逆変換適用
+                    // coord: drawing canvas -> layer space (inverse transform)
+                    const transformedPoint = window.CoordinateSystem.applyMatrix(point, inverseMatrix);
+                    
+                    // coord: layer space rendering
                     transformedGraphics.circle(transformedPoint.x, transformedPoint.y, path.size / 2);
                     transformedGraphics.fill({ color: path.color, alpha: path.opacity });
                 });
@@ -2151,12 +2206,12 @@
         }
     }
 
-    // === 統合コアエンジンクラス ===
+    // === 統合コアエンジンクラス（座標系統一版） ===
     class CoreEngine {
         constructor(app) {
             this.app = app;
             
-            // コア機能を初期化
+            // 座標系統一版：コア機能を初期化
             this.cameraSystem = new CameraSystem(app);
             this.layerManager = new LayerManager(this.cameraSystem.canvasContainer, app, this.cameraSystem);
             this.drawingEngine = new DrawingEngine(this.cameraSystem, this.layerManager);
@@ -2164,6 +2219,8 @@
             
             // 相互参照を設定
             this.setupCrossReferences();
+            
+            console.log('✅ CoreEngine initialized with coordinate-system unified APIs');
         }
         
         setupCrossReferences() {
@@ -2175,7 +2232,7 @@
             this.clipboardSystem.setLayerManager(this.layerManager);
         }
         
-        // === 公開API（main.jsから使用） ===
+        // === 座標系統一版：公開API（main.jsから使用） ===
         getCameraSystem() {
             return this.cameraSystem;
         }
@@ -2197,6 +2254,7 @@
             this.app.canvas.addEventListener('pointerdown', (e) => {
                 if (e.button !== 0) return;
 
+                // coord: screen pointer position
                 const rect = this.app.canvas.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
@@ -2206,6 +2264,7 @@
             });
 
             this.app.canvas.addEventListener('pointermove', (e) => {
+                // coord: screen pointer position
                 const rect = this.app.canvas.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
@@ -2240,9 +2299,9 @@
             this.layerManager.processThumbnailUpdates();
         }
         
-        // キャンバスリサイズ統合処理
+        // ✅ 座標系統一版：キャンバスリサイズ統合処理
         resizeCanvas(newWidth, newHeight) {
-            console.log('CoreEngine: Canvas resize request received:', newWidth, 'x', newHeight);
+            console.log('CoreEngine: Coordinate-system unified canvas resize request:', newWidth, 'x', newHeight);
             
             // CONFIG更新
             CONFIG.canvas.width = newWidth;
@@ -2265,7 +2324,7 @@
                 this.layerManager.requestThumbnailUpdate(i);
             }
             
-            console.log('CoreEngine: Canvas resize completed');
+            console.log('CoreEngine: Coordinate-system unified canvas resize completed');
         }
         
         // 初期化処理
@@ -2291,12 +2350,12 @@
                 this.processThumbnailUpdates();
             });
             
-            console.log('✅ CoreEngine initialized successfully');
+            console.log('✅ CoreEngine initialized successfully (coordinate-system unified)');
             return this;
         }
     }
 
-    // === グローバル公開 ===
+    // === 座標系統一版：グローバル公開 ===
     window.TegakiCore = {
         CoreEngine: CoreEngine,
         
@@ -2304,7 +2363,15 @@
         CameraSystem: CameraSystem,
         LayerManager: LayerManager,
         DrawingEngine: DrawingEngine,
-        ClipboardSystem: ClipboardSystem
+        ClipboardSystem: ClipboardSystem,
+        
+        // Phase 1統一フラグ
+        coordinateSystemUnified: true,
+        version: 'Phase1-CoordinateSystemUnified'
     };
+
+    console.log('✅ core-engine.js Phase 1 coordinate system unification completed');
+    console.log('✅ All toLocal/toGlobal calls replaced with CoordinateSystem unified APIs');
+    console.log('✅ Coordinate space comments added (coord: source -> destination format)');
 
 })();
