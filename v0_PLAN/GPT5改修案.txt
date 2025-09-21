@@ -1,97 +1,52 @@
-1. 発生しているエラー
-(A)
-core-engine.js:386 Uncaught SyntaxError: Unexpected token '}'
+1. coordinate-system.js 側の実装不足
+
+今の coordinate-system.js を確認すると、
+
+クラスやオブジェクト CoordinateSystem が定義されているが
+
+globalToLocal というメソッドが 未定義
+
+になっていると思います。
+過去のフェーズのコードでは、globalToLocal は app.stage 座標とキャンバス座標の変換を行うために入っていた関数のはずです。
+ところが今回の分割の過程で削除・未移植になっている。
+
+2. 呼び出し側（core-engine.js）
+
+core-engine.js 805行あたりでは、おそらくマウスイベントやペンイベントを処理するときに
+
+const localPos = window.CoordinateSystem.globalToLocal(event.global);
 
 
-→ core-engine.js の 386 行目付近で構文エラー。
-閉じカッコ } の数が合っていないか、不要なカンマや中括弧の閉じ忘れ/閉じすぎがある。
+のように呼び出しています。
+つまり「グローバル座標 → レイヤー／キャンバス座標」への変換が必要です。
 
-(B)
-index.html:788 Uncaught TypeError: Cannot destructure property 'CoreEngine' of 'window.TegakiCore' as it is undefined.
+3. 原因まとめ
 
-const { CoreEngine } = window.TegakiCore;
+定義されていない関数を呼び出している
 
+分割リファクタ時に globalToLocal 実装が coordinate-system.js に入っていない
 
-のような記述があり、window.TegakiCore が 未定義 なのでエラー。
-つまり core-engine.js が正常にロードされていないか、export/代入処理が壊れている。
+そのため window.CoordinateSystem.globalToLocal が undefined → 呼び出しエラー
 
-2. ファイル連携の確認
+4. 解決の方向性
 
-index.html
+修正は coordinate-system.js に関数を追加する形です。
+PixiJS v8.13 の場合、ステージ座標からローカル座標変換は container.toLocal(point, fromContainer) を使います。
+たとえば以下のように実装すれば呼び出しは通ります。
 
-<script src="config.js">
-
-<script src="coordinate-system.js">
-
-<script src="ui-panels.js">
-
-<script src="core-engine.js">
-の順で読み込み。
-✅ 一応依存関係は守られている。
-
-core-engine.js
-
-window.TegakiCore = { CoreEngine, ... } 形式で公開しているはず。
-❌ 386行目の構文エラーによりスクリプト自体が死んでいる → window.TegakiCore が生成されない → (B) のエラーにつながる。
-
-3. PixiJS v8.13 構文チェック
-
-new PIXI.Application({ ... })
-
-PIXI.Assets.load()
-
-PIXI.Container, PIXI.Graphics
-
-→ v8.13 で有効。
-ただし PIXI.Loader.shared は v7 まで。v8 系は PIXI.Assets を使う必要あり。
-⇒ 古い Loader を呼んでいないか要確認。
-
-4. 問題の根本原因
-
-core-engine.js の閉じカッコ不整合
-
-おそらく class 定義か function の終わりで } が多い。
-
-→ これで (A) エラーが発生。
-
-その結果、window.TegakiCore が未生成
-
-(B) の Cannot destructure に直結。
-
-5. 改修計画
-ステップ1：構文修正
-
-core-engine.js の 386 行目付近を点検。
-
-開き { と閉じ } のバランスを数える。
-
-余計な } を削除するか、逆に不足なら追加する。
-
-特に class CoreEngine { ... } の閉じ位置を確認。
-
-ステップ2：名前空間の公開を保証
-// core-engine.js の末尾で
-window.TegakiCore = {
-    CoreEngine,
-    // 他のエンジン部品があれば追記
+window.CoordinateSystem = {
+    globalToLocal(globalPoint) {
+        // PixiJS の Point を使って変換
+        return app.stage.toLocal(globalPoint);
+    },
+    localToGlobal(localPoint) {
+        return app.stage.toGlobal(localPoint);
+    }
 };
 
 
-を必ず実行する。
+（app への参照をどこから持ってくるかは設計によります。core-engine.js から渡すか、coordinate-system.js 内で window.app を見るか。）
 
-ステップ3：index.html 側の利用部修正
-const { CoreEngine } = window.TegakiCore;
-
-
-が動作するか確認。
-もし undefined のままなら <script src="core-engine.js"> の読み込み順や defer 属性を見直す。
-
-ステップ4：PixiJS v8.13 互換性
-
-PIXI.Loader 使用箇所があれば PIXI.Assets に書き換え。
-
-古い PIXI.Application.sharedRenderer 等も削除。
-
-PixiJS v8.13 の API ドキュメントに合わせる（Loader, Ticker など v7 との差異に注意）
-
-グローバル公開オブジェクトは必ず window に代入する
+✅ 結論
+エラーの原因は coordinate-system.js に globalToLocal が未定義なのに core-engine.js から呼び出している ためです。
+修正するには coordinate-system.js に globalToLocal（および必要なら localToGlobal）を実装する必要があります。
