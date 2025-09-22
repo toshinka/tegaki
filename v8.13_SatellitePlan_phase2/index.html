@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>TEGAKI - ブラウザお絵かきツール (Phase2分離完了版)</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background: #1a1a1a;
+            color: #ffffff;
+            overflow: hidden;
+        }
+
+        #app-container {
+            display: flex;
+            height: 100vh;
+        }
+
+        #canvas-container {
+            flex: 1;
+            position: relative;
+            background: #2a2a2a;
+        }
+
+        #pixi-canvas {
+            display: block;
+            background: #2a2a2a;
+        }
+
+        .panel {
+            width: 280px;
+            background: #333333;
+            border-right: 1px solid #555555;
+            padding: 20px;
+            overflow-y: auto;
+        }
+
+        .panel h2 {
+            color: #ffffff;
+            margin-bottom: 15px;
+            font-size: 18px;
+            border-bottom: 1px solid #555555;
+            padding-bottom: 8px;
+        }
+
+        .tool-group {
+            margin-bottom: 25px;
+        }
+
+        .tool-button {
+            width: 100%;
+            padding: 12px;
+            margin: 5px 0;
+            background: #444444;
+            border: 1px solid #666666;
+            color: #ffffff;
+            border-radius: 4px;
+            cursor: pointer;
+            transition: background-color 0.2s;
+            font-size: 14px;
+        }
+
+        .tool-button:hover {
+            background: #555555;
+        }
+
+        .tool-button.active {
+            background: #0066cc;
+            border-color: #0088ff;
+        }
+
+        .status-info {
+            background: #222222;
+            padding: 12px;
+            border-radius: 4px;
+            margin-bottom: 15px;
+        }
+
+        .status-item {
+            margin: 5px 0;
+            font-size: 12px;
+            color: #cccccc;
+        }
+
+        .status-value {
+            color: #ffffff;
+            font-weight: bold;
+        }
+
+        .canvas-size-controls {
+            margin-bottom: 20px;
+        }
+
+        .size-input-group {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 10px;
+        }
+
+        .size-input {
+            flex: 1;
+            padding: 8px;
+            background: #444444;
+            border: 1px solid #666666;
+            color: #ffffff;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .size-input:focus {
+            outline: none;
+            border-color: #0088ff;
+        }
+
+        /* レイヤーパネル */
+        .layer-panel {
+            background: #2a2a2a;
+            border-radius: 4px;
+            margin-bottom: 20px;
+        }
+
+        .layer-item {
+            display: flex;
+            align-items: center;
+            padding: 8px;
+            border-bottom: 1px solid #444444;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+
+        .layer-item:hover {
+            background: #3a3a3a;
+        }
+
+        .layer-item.active {
+            background: #0066cc;
+        }
+
+        .layer-visibility {
+            width: 24px;
+            height: 24px;
+            margin-right: 8px;
+            cursor: pointer;
+            color: #cccccc;
+        }
+
+        .layer-visibility:hover {
+            color: #ffffff;
+        }
+
+        .layer-visibility.hidden {
+            color: #666666;
+        }
+
+        .layer-opacity {
+            width: 40px;
+            font-size: 10px;
+            color: #999999;
+            text-align: center;
+            margin-right: 8px;
+        }
+
+        .layer-name {
+            flex: 1;
+            font-size: 12px;
+            color: #ffffff;
+        }
+
+        .layer-thumbnail {
+            width: 48px;
+            height: 48px;
+            background: #444444;
+            border-radius: 2px;
+            margin-right: 8px;
+            position: relative;
+        }
+
+        .layer-thumbnail img {
+            width: 100%;
+            height: 100%;
+            border-radius: 2px;
+        }
+
+        .layer-thumbnail-placeholder {
+            width: 100%;
+            height: 100%;
+            background: #555555;
+            border-radius: 2px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 10px;
+            color: #999999;
+        }
+
+        .layer-delete-button {
+            width: 20px;
+            height: 20px;
+            cursor: pointer;
+            color: #999999;
+        }
+
+        .layer-delete-button:hover {
+            color: #ff4444;
+        }
+
+        /* レイヤー変形パネル */
+        .layer-transform-panel {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: #333333;
+            border: 1px solid #555555;
+            border-radius: 8px;
+            padding: 20px;
+            min-width: 300px;
+            display: none;
+            z-index: 1000;
+        }
+
+        .layer-transform-panel.show {
+            display: block;
+        }
+
+        .transform-control {
+            margin-bottom: 20px;
+        }
+
+        .transform-label {
+            display: block;
+            margin-bottom: 8px;
+            font-size: 12px;
+            color: #cccccc;
+        }
+
+        .slider-container {
+            position: relative;
+            height: 20px;
+            background: #444444;
+            border-radius: 10px;
+            margin-bottom: 5px;
+        }
+
+        .slider-track {
+            height: 100%;
+            background: #0066cc;
+            border-radius: 10px;
+            width: 50%;
+            position: relative;
+        }
+
+        .slider-handle {
+            position: absolute;
+            width: 20px;
+            height: 20px;
+            background: #ffffff;
+            border-radius: 50%;
+            top: 0;
+            left: 50%;
+            transform: translateX(-50%);
+            cursor: pointer;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.3);
+        }
+
+        .slider-value {
+            font-size: 12px;
+            color: #ffffff;
+            text-align: right;
+        }
+
+        .flip-buttons {
+            display: flex;
+            gap: 10px;
+            margin-top: 15px;
+        }
+
+        .flip-button {
+            flex: 1;
+            padding: 8px;
+            background: #444444;
+            border: 1px solid #666666;
+            color: #ffffff;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 12px;
+        }
+
+        .flip-button:hover {
+            background: #555555;
+        }
+
+        .flip-button.active {
+            background: #0066cc;
+        }
+    </style>
+</head>
+<body>
+    <div id="app-container">
+        <!-- 左パネル -->
+        <div class="panel">
+            <!-- ステータス情報 -->
+            <div class="status-info">
+                <div class="status-item">ツール: <span id="current-tool" class="status-value">ベクターペン</span></div>
+                <div class="status-item">レイヤー: <span id="current-layer" class="status-value">レイヤー1</span></div>
+                <div class="status-item">キャンバス: <span id="canvas-info" class="status-value">1024×768px</span></div>
+                <div class="status-item">座標: <span id="coordinates" class="status-value">x: 0, y: 0</span></div>
+                <div class="status-item">変形: <span id="transform-info" class="status-value">x:0 y:0 s:1.00 r:0°</span></div>
+            </div>
+
+            <!-- ツール -->
+            <div class="tool-group">
+                <h2>ツール</h2>
+                <button id="pen-tool" class="tool-button active">ベクターペン (P)</button>
+                <button id="eraser-tool" class="tool-button">消しゴム (E)</button>
+            </div>
+
+            <!-- キャンバスサイズ -->
+            <div class="tool-group">
+                <h2>キャンバス</h2>
+                <div class="canvas-size-controls">
+                    <div class="size-input-group">
+                        <input type="number" id="canvas-width" class="size-input" value="1024" min="100" max="4096" step="1">
+                        <span style="color: #cccccc; align-self: center;">×</span>
+                        <input type="number" id="canvas-height" class="size-input" value="768" min="100" max="4096" step="1">
+                    </div>
+                    <button id="resize-canvas" class="tool-button">サイズ変更</button>
+                </div>
+            </div>
+
+            <!-- レイヤー -->
+            <div class="tool-group">
+                <h2>レイヤー</h2>
+                <div class="layer-panel">
+                    <div id="layer-list"></div>
+                </div>
+                <button id="add-layer" class="tool-button">レイヤー追加</button>
+            </div>
+        </div>
+
+        <!-- メインキャンバス -->
+        <div id="canvas-container">
+            <canvas id="pixi-canvas"></canvas>
+        </div>
+
+        <!-- レイヤー変形パネル -->
+        <div id="layer-transform-panel" class="layer-transform-panel">
+            <h2>レイヤー変形 (V)</h2>
+            
+            <div class="transform-control">
+                <label class="transform-label">位置 X</label>
+                <div id="layer-x-slider" class="slider-container">
+                    <div class="slider-track"></div>
+                    <div class="slider-handle"></div>
+                </div>
+                <div class="slider-value">0px</div>
+            </div>
+            
+            <div class="transform-control">
+                <label class="transform-label">位置 Y</label>
+                <div id="layer-y-slider" class="slider-container">
+                    <div class="slider-track"></div>
+                    <div class="slider-handle"></div>
+                </div>
+                <div class="slider-value">0px</div>
+            </div>
+            
+            <div class="transform-control">
+                <label class="transform-label">回転</label>
+                <div id="layer-rotation-slider" class="slider-container">
+                    <div class="slider-track"></div>
+                    <div class="slider-handle"></div>
+                </div>
+                <div class="slider-value">0°</div>
+            </div>
+            
+            <div class="transform-control">
+                <label class="transform-label">スケール</label>
+                <div id="layer-scale-slider" class="slider-container">
+                    <div class="slider-track"></div>
+                    <div class="slider-handle"></div>
+                </div>
+                <div class="slider-value">1.00x</div>
+            </div>
+            
+            <div class="flip-buttons">
+                <button id="flip-horizontal-btn" class="flip-button">水平反転 (V+H)</button>
+                <button id="flip-vertical-btn" class="flip-button">垂直反転 (V+Shift+H)</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Phase2分離完了版: 分離されたEngineファイルを順次読み込み -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/8.0.4/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@1.15.0/Sortable.min.js"></script>
+    <script src="config.js"></script>
+    <script src="coordinate-system.js"></script>
+    
+    <!-- Phase2分離Engineファイル群 -->
+    <script src="camera-system.js"></script>
+    <script src="layer-system.js"></script>
+    <script src="drawing-engine.js"></script>
+    <script src="clipboard-system.js"></script>
+    
+    <!-- 統合制御 -->
+    <script src="core-engine.js"></script>
+    <script src="core-runtime.js"></script>
+    <script src="ui-panels.js"></script>
+
+    <script>
+        // === メインアプリケーション初期化（Phase2分離完了版） ===
+        (function() {
+            'use strict';
+            
+            console.log('=== TEGAKI Phase2分離完了版 初期化開始 ===');
+            
+            // 依存関係の確認
+            const dependencies = [
+                'TEGAKI_CONFIG',
+                'CoordinateSystem', 
+                'TegakiCameraSystem',
+                'TegakiLayerManager',
+                'TegakiDrawingEngine', 
+                'TegakiClipboardSystem',
+                'TegakiCore',
+                'CoreRuntime',
+                'TegakiUI'
+            ];
+            
+            const missingDeps = dependencies.filter(dep => !window[dep]);
+            if (missingDeps.length > 0) {
+                console.error('CRITICAL: Missing dependencies:', missingDeps);
+                alert('アプリケーションの初期化に失敗しました。ページをリロードしてください。');
+                return;
+            }
+            
+            console.log('✅ All dependencies validated');
+            
+            // PIXIアプリケーション初期化
+            const CONFIG = window.TEGAKI_CONFIG;
+            const canvas = document.getElementById('pixi-canvas');
+            
+            const pixiApp = new PIXI.Application();
+            
+            pixiApp.init({
+                view: canvas,
+                width: window.innerWidth - 280,
+                height: window.innerHeight,
+                backgroundColor: CONFIG.background.color,
+                antialias: true,
+                resolution: window.devicePixelRatio || 1,
+                autoDensity: true
+            }).then(() => {
+                console.log('✅ PIXI Application initialized');
+                
+                // CoreEngine初期化（Phase2分離版）
+                const coreEngine = new window.TegakiCore.CoreEngine(pixiApp);
+                const initializedEngine = coreEngine.initialize();
+                
+                // CoreRuntime初期化（Engine実体注入）
+                window.CoreRuntime.init({
+                    app: pixiApp,
+                    worldContainer: coreEngine.getCameraSystem().worldContainer,
+                    canvasContainer: coreEngine.getCameraSystem().canvasContainer,
+                    cameraSystem: coreEngine.getCameraSystem(),
+                    layerManager: coreEngine.getLayerManager(),
+                    drawingEngine: coreEngine.getDrawingEngine()
+                });
+                
+                // UI初期化
+                window.TegakiUI.initialize();
+                
+                // レガシー互換性
+                window.drawingApp = {
+                    pixiApp: pixiApp,
+                    coreEngine: coreEngine,
+                    cameraSystem: coreEngine.getCameraSystem(),
+                    layerManager: coreEngine.getLayerManager(),
+                    drawingEngine: coreEngine.getDrawingEngine()
+                };
+                
+                // リサイズ処理
+                function handleResize() {
+                    const newWidth = window.innerWidth - 280;
+                    const newHeight = window.innerHeight;
+                    pixiApp.renderer.resize(newWidth, newHeight);
+                }
+                
+                window.addEventListener('resize', handleResize);
+                
+                console.log('✅ TEGAKI Phase2分離完了版 初期化完了');
+                console.log('   - 分離Engineファイル: 4個');
+                console.log('   - 統合制御: core-engine.js');
+                console.log('   - 公開API: core-runtime.js');
+                console.log('   - Phase1.5改修: 完了');
+                console.log('   - 座標変換統一: 完了');
+                console.log('   - 冗長メソッド削除: 完了');
+                
+            }).catch(error => {
+                console.error('CRITICAL: PIXI initialization failed:', error);
+                alert('アプリケーションの初期化に失敗しました。');
+            });
+            
+        })();
+    </script>
+</body>
+</html>
