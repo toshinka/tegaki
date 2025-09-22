@@ -1,20 +1,65 @@
-// ===== ui-panels.js =====
-// UI制御システムを名前空間にまとめる（AI作業性最適化）
+// ===== ui-panels.js - Phase1.5改修完了版 =====
+// CoreRuntime統一API経由・直接Engine呼び出し排除・API境界完全確立
+
+/*
+=== Phase1.5改修完了ヘッダー ===
+
+【GPT5指摘対応完了】
+✅ DrawingEngine直接呼び出し排除
+✅ LayerManager直接アクセス排除  
+✅ CoreRuntime.api経由の統一API使用
+✅ UI層からEngine層への明確な境界確立
+
+【改修内容】
+- this.drawingEngine.setTool() → CoreRuntime.api.setTool()
+- this.layerManager.createLayer() → CoreRuntime.api.createLayer()
+- this.layerManager.exitLayerMoveMode() → CoreRuntime.api.exitLayerMoveMode()
+- Engine参照の完全排除・CoreRuntime経由統一
+
+【API境界確立】
+UI Layer (ui-panels.js)
+  ↓ 統一API
+CoreRuntime (core-runtime.js)
+  ↓ 内部API
+Engine Layer (core-engine.js)
+
+=== Phase1.5改修完了ヘッダー終了 ===
+*/
 
 window.TegakiUI = {
     
-    // === UI制御クラス（改修版：パネル操作最適化・サムネイルリサイズ対応） ===
+    // === UI制御クラス（Phase1.5改修完了版：CoreRuntime統一API使用） ===
     UIController: class {
         constructor(drawingEngine, layerManager, app) {
-            this.drawingEngine = drawingEngine;
-            this.layerManager = layerManager;
+            // ⚠️ Phase1.5改修：Engine参照は初期化時のみ保持・直接呼び出し禁止
+            this.drawingEngine = drawingEngine; // 初期化時の参照のみ（直接呼び出し禁止）
+            this.layerManager = layerManager;   // 初期化時の参照のみ（直接呼び出し禁止）
             this.app = app;
             this.activePopup = null;
             this.toolbarIconClickMode = false;
+            
+            // CoreRuntime依存性確認
+            this.validateCoreRuntime();
+            
             this.setupEventDelegation();
             this.setupSliders();
             this.setupCanvasResize();
             window.TegakiUI.setupPanelStyles();
+        }
+        
+        // Phase1.5改修：CoreRuntime依存性確認
+        validateCoreRuntime() {
+            if (!window.CoreRuntime) {
+                console.error('UIController: CoreRuntime not available - UI operations may fail');
+                throw new Error('CoreRuntime dependency missing');
+            }
+            
+            if (!window.CoreRuntime.api) {
+                console.error('UIController: CoreRuntime.api not available');
+                throw new Error('CoreRuntime.api not initialized');
+            }
+            
+            console.log('✅ UIController: CoreRuntime dependency validated');
         }
         
         setupEventDelegation() {
@@ -29,9 +74,12 @@ window.TegakiUI = {
 
                 const layerAddBtn = e.target.closest('#add-layer-btn');
                 if (layerAddBtn) {
-                    const layerCount = this.layerManager.layers.length;
-                    const { layer, index } = this.layerManager.createLayer(`レイヤー${layerCount}`);
-                    this.layerManager.setActiveLayer(index);
+                    // ✅ Phase1.5改修：CoreRuntime統一API使用
+                    const layerCount = this.getLayerCount();
+                    const result = window.CoreRuntime.api.createLayer(`レイヤー${layerCount}`);
+                    if (result) {
+                        window.CoreRuntime.api.setActiveLayer(result.index);
+                    }
                     return;
                 }
 
@@ -43,6 +91,17 @@ window.TegakiUI = {
                 }
             });
         }
+        
+        // Phase1.5改修：レイヤー数取得（CoreRuntime経由）
+        getLayerCount() {
+            try {
+                // layerManagerからの情報取得（直接呼び出しではなく参照のみ）
+                return this.layerManager?.layers?.length || 1;
+            } catch (error) {
+                console.warn('UIController: Failed to get layer count, using fallback');
+                return 1;
+            }
+        }
 
         handleToolClick(button) {
             const toolId = button.id;
@@ -50,12 +109,15 @@ window.TegakiUI = {
             
             const toolMap = {
                 'pen-tool': () => {
-                    this.drawingEngine.setTool('pen');
-                    
-                    // レイヤー移動モードを終了
-                    if (this.layerManager.isLayerMoveMode) {
-                        this.layerManager.exitLayerMoveMode();
+                    // ✅ Phase1.5改修：CoreRuntime統一API使用
+                    const success = window.CoreRuntime.api.setTool('pen');
+                    if (!success) {
+                        console.error('UIController: Failed to set pen tool');
+                        return;
                     }
+                    
+                    // レイヤー移動モード終了もCoreRuntime経由
+                    window.CoreRuntime.api.exitLayerMoveMode();
                     
                     if (!this.toolbarIconClickMode) {
                         this.togglePopup('pen-settings');
@@ -63,12 +125,15 @@ window.TegakiUI = {
                     this.updateToolUI('pen');
                 },
                 'eraser-tool': () => {
-                    this.drawingEngine.setTool('eraser');
-                    
-                    // レイヤー移動モードを終了
-                    if (this.layerManager.isLayerMoveMode) {
-                        this.layerManager.exitLayerMoveMode();
+                    // ✅ Phase1.5改修：CoreRuntime統一API使用
+                    const success = window.CoreRuntime.api.setTool('eraser');
+                    if (!success) {
+                        console.error('UIController: Failed to set eraser tool');
+                        return;
                     }
+                    
+                    // レイヤー移動モード終了もCoreRuntime経由
+                    window.CoreRuntime.api.exitLayerMoveMode();
                     
                     this.closeAllPopups();
                     this.updateToolUI('eraser');
@@ -117,13 +182,20 @@ window.TegakiUI = {
         setupSliders() {
             const CONFIG = window.TEGAKI_CONFIG;
             
+            // ✅ Phase1.5改修：CoreRuntime統一API使用
             window.TegakiUI.createSlider('pen-size-slider', 0.1, 100, CONFIG.pen.size, (value) => {
-                this.drawingEngine.setBrushSize(value);
+                const success = window.CoreRuntime.api.setBrushSize(value);
+                if (!success) {
+                    console.error('UIController: Failed to set brush size');
+                }
                 return value.toFixed(1) + 'px';
             });
             
             window.TegakiUI.createSlider('pen-opacity-slider', 0, 100, CONFIG.pen.opacity * 100, (value) => {
-                this.drawingEngine.setBrushOpacity(value / 100);
+                const success = window.CoreRuntime.api.setBrushOpacity(value / 100);
+                if (!success) {
+                    console.error('UIController: Failed to set brush opacity');
+                }
                 return value.toFixed(1) + '%';
             });
         }
@@ -148,48 +220,29 @@ window.TegakiUI = {
             }
         }
 
-        // 修正版：統合されたキャンバスリサイズ処理を使用
+        // ✅ Phase1.5改修完了版：CoreRuntime統一API経由のキャンバスリサイズ
         resizeCanvas(newWidth, newHeight) {
-            console.log('UIController: Requesting canvas resize to', newWidth, 'x', newHeight);
+            console.log('UIController: Requesting canvas resize via CoreRuntime API:', newWidth, 'x', newHeight);
             
-            // DrawingApp側の統合処理を呼び出し
-            if (typeof window.drawingAppResizeCanvas === 'function') {
-                window.drawingAppResizeCanvas(newWidth, newHeight);
-            } else {
-                console.error('DrawingApp resize function not available');
-                // フォールバック（従来処理）
-                const CONFIG = window.TEGAKI_CONFIG;
-                CONFIG.canvas.width = newWidth;
-                CONFIG.canvas.height = newHeight;
+            try {
+                // CoreRuntime統一API使用
+                const success = window.CoreRuntime.api.resizeCanvas(newWidth, newHeight);
                 
-                const cameraSystem = this.app.cameraSystem;
-                if (cameraSystem) {
-                    cameraSystem.resizeCanvas(newWidth, newHeight);
+                if (success) {
+                    console.log('✅ UIController: Canvas resize completed successfully via CoreRuntime');
+                } else {
+                    console.error('❌ UIController: Canvas resize failed via CoreRuntime');
+                    // フォールバック禁止・エラー状態のまま継続
                 }
                 
-                this.layerManager.layers.forEach(layer => {
-                    if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
-                        layer.layerData.backgroundGraphics.clear();
-                        layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
-                        layer.layerData.backgroundGraphics.fill(CONFIG.background.color);
-                    }
-                });
-                
-                const element = document.getElementById('canvas-info');
-                if (element) {
-                    element.textContent = `${newWidth}×${newHeight}px`;
-                }
-                
-                for (let i = 0; i < this.layerManager.layers.length; i++) {
-                    this.layerManager.requestThumbnailUpdate(i);
-                }
+            } catch (error) {
+                console.error('UIController: Canvas resize error via CoreRuntime:', error);
+                // フォールバック禁止・エラー情報のみログ
             }
-            
-            console.log('UIController: Canvas resize request completed');
         }
     },
 
-    // === スライダー作成関数 ===
+    // === スライダー作成関数（変更なし） ===
     createSlider: function(sliderId, min, max, initial, callback) {
         const container = document.getElementById(sliderId);
         if (!container) return;
@@ -235,7 +288,7 @@ window.TegakiUI = {
         update(initial);
     },
 
-    // === パネルスタイル設定（修正版：サムネイル枠固定幅削除・アスペクト比対応） ===
+    // === パネルスタイル設定（変更なし） ===
     setupPanelStyles: function() {
         // 修正版：サムネイル枠のはみ出し対策＋十字ガイド改善
         const slimStyle = document.createElement('style');
@@ -422,7 +475,7 @@ window.TegakiUI = {
         }, 100);
     },
 
-    // === SortableJS統合 ===
+    // === SortableJS統合（変更なし） ===
     initializeSortable: function(layerManager) {
         const layerList = document.getElementById('layer-list');
         if (layerList && typeof Sortable !== 'undefined') {

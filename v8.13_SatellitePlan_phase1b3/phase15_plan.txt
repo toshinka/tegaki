@@ -1,0 +1,293 @@
+# Phase1.5 最終改修計画 - Phase2分割前の重要整理
+
+## 🎯 点検結果概要
+
+### ✅ **既に完了している改修**
+- 座標変換API統一（CoordinateSystem使用）
+- core-runtime.jsのファサード確立
+- PixiJS v8.13対応
+- coordinate-system.js安全参照実装済み
+
+### ⚠️ **残存課題と改修が必要な項目**
+
+## 🔧 必要改修項目
+
+### 1. 冗長API統合 🗑️
+**問題**: core-engine.jsに残存する重複メソッド
+**対応**: core-runtime.js経由での統一
+
+#### 具体的な重複箇所
+```javascript
+// core-engine.js 内の重複メソッド（削除対象）
+CameraSystem.screenToDrawingCanvas()    → CoordinateSystem.screenToCanvas()
+CameraSystem.screenToWorldCanvas()      → CoordinateSystem.screenToWorld()
+CameraSystem.canvasToScreen()           → CoordinateSystem.worldToScreen()
+
+// LayerManager内の座標変換メソッド（統一対象）
+直接的なtoLocal/toGlobal呼び出し → CoordinateSystem統一API
+```
+
+### 2. API境界の完全確立 📋
+**問題**: UI層からのcore-engine.js直接アクセス
+**対応**: core-runtime.js経由の完全統一
+
+#### 修正が必要なアクセスパターン
+```javascript
+// ui-panels.js 内（修正前）
+this.drawingEngine.setTool('pen');
+
+// 修正後（CoreRuntime経由）
+CoreRuntime.api.setTool('pen');
+```
+
+### 3. レガシー互換性の整理 🔄
+**問題**: window.drawingApp等の重複参照
+**対応**: CoreRuntime.getEngines()への一本化
+
+## 🚀 改修手順
+
+### Step1: 冗長メソッド削除 (10分)
+1. core-engine.js内のCameraSystem重複座標変換メソッド削除
+2. CoordinateSystem統一API呼び出しに置換
+3. 機能テストで動作確認
+
+### Step2: UI層API統一 (15分)
+1. ui-panels.jsのDrawingEngine直接呼び出しをCoreRuntime.api経由に変更
+2. LayerManager直接アクセスをCoreRuntime.api経由に統一
+3. エラー処理の追加
+
+### Step3: レガシー参照整理 (10分)
+1. window.drawingApp参照の最小化
+2. CoreRuntime.getEngines()推奨への移行準備
+3. Phase2分割準備コメント追加
+
+### Step4: 完全性検証 (10分)
+1. 座標変換精度テスト実行
+2. UI操作の完全動作確認
+3. Phase2分割準備診断実行
+
+## 📊 改修の影響範囲
+
+### 🔴 高優先度（機能影響あり）
+- UI層のツール切り替え処理
+- レイヤー操作のAPI統合
+- 座標変換の完全統一
+
+### 🟡 中優先度（保守性向上）
+- 重複メソッド削除
+- レガシー参照整理
+
+### 🟢 低優先度（Phase2準備）
+- 責務コメント追加
+- 分割準備診断
+
+## ✅ 期待される効果
+
+### 即座の改善
+- **API一貫性**: UI → CoreRuntime → Engine の明確な階層
+- **保守性向上**: 重複コード削除による簡潔化
+- **バグ防止**: 直接アクセスの排除
+
+### Phase2への準備
+- **分割容易性**: 明確な依存関係
+- **テスト容易性**: API境界の明確化
+- **段階的移行**: 安全な分離作業
+
+## 🎯 成功判定基準
+
+1. **API統一性**: UI層からのcore-engine.js直接アクセス0件
+2. **機能継承**: 既存の全機能が正常動作
+3. **座標精度**: 往復変換誤差 < 0.001px
+4. **Phase2準備**: 依存関係の完全可視化
+
+## ⚠️ 注意事項
+
+### 絶対禁止
+- エラー隠蔽・暗黙修復
+- フォールバック処理追加
+- 機能変更・追加
+
+### 必須事項
+- 既存機能の完全継承
+- 座標変換精度の保持
+- UI操作の継続性保証
+
+## 🔧 具体的な修正コード例
+
+### ui-panels.js の修正
+```javascript
+// 修正前
+this.drawingEngine.setTool('pen');
+this.layerManager.createLayer('new');
+
+// 修正後
+CoreRuntime.api.setTool('pen');
+CoreRuntime.api.createLayer('new');
+```
+
+### core-engine.js の重複削除
+```javascript
+// 削除対象メソッド
+screenToDrawingCanvas() { /* 削除 */ }
+screenToWorldCanvas() { /* 削除 */ }
+canvasToScreen() { /* 削除 */ }
+
+// 統一API使用
+window.CoordinateSystem.screenToCanvas()
+window.CoordinateSystem.screenToWorld()
+window.CoordinateSystem.worldToScreen()
+```
+
+## 🎯 完了後の状態
+
+Phase1.5完了により以下が達成されます：
+
+### アーキテクチャの明確化
+```
+UI Layer (index.html, ui-panels.js)
+  ↓ 統一API
+CoreRuntime (core-runtime.js)
+  ↓ 内部API  
+Engine Layer (core-engine.js)
+```
+
+### Phase2分割準備完了
+- camera-system.js 分離準備
+- layer-system.js 分離準備  
+- drawing-engine.js 分離準備
+- transform-utils.js 分離準備
+
+---
+
+**この改修は約45分で完了予定**
+**Phase2の成功率を95%以上に向上させる重要な基盤整理です**
+
+
+# Phase1.5 改修計画 - Phase2分割前の重要整理
+
+## 🎯 目的
+Phase2でのEngine分割をスムーズに行うための基盤整理
+
+## ⚠️ GPT5指摘問題点の確認と対応
+
+### 1. 座標変換の完全統合 🔧
+**問題**: core-engine.js内で直接 toLocal/toGlobal 呼び出しが残存
+**対応**: CoordinateSystem経由への完全置換
+
+**具体的作業**:
+```javascript
+// 変更前（問題のあるコード）
+const canvasPoint = container.toLocal(screenPoint);
+
+// 変更後（統一API）
+const canvasPoint = window.CoordinateSystem.globalToLocal(container, screenPoint);
+```
+
+### 2. 冗長関数の削除 🗑️
+**問題**: screenToCanvasForDrawing と screenToCanvas が分離している
+**対応**: CoordinateSystem.screenToCanvas() に統合
+
+**削除対象**:
+- `screenToCanvasForDrawing()`
+- 重複する座標変換メソッド群
+- core-runtime.js と core-engine.js の重複メソッド
+
+### 3. PixiJS v8.13 完全統一 ⚡
+**問題**: ui-panels.js で古いイベント処理API使用
+**対応**: PixiJS v8.13 の正規APIに統一
+
+**修正例**:
+```javascript
+// 変更前（v6/v7系）
+container.interactive = true;
+
+// 変更後（v8.13系）
+container.eventMode = 'static';
+```
+
+### 4. API責務の明確化 📋
+**問題**: core-engine.js と core-runtime.js で責務競合
+**対応**: core-runtime.js を公開窓口に一本化
+
+## 🚀 実装ステップ
+
+### Step1: 座標変換完全統合 (15分)
+1. core-engine.js 内の全 `toLocal/toGlobal` を検索
+2. CoordinateSystem API に置換
+3. 座標コメント追加
+
+### Step2: 重複API整理 (10分)  
+1. `screenToCanvasForDrawing` 削除
+2. core-runtime.js にAPIを一本化
+3. core-engine.js の直接呼び出し削除
+
+### Step3: PixiJS v8.13統一 (10分)
+1. ui-panels.js のイベント処理更新
+2. 古い `interactive = true` 削除
+3. `eventMode = 'static'` に変更
+
+### Step4: 責務コメント追加 (5分)
+1. core-engine.js に「Phase2分割予定」コメント
+2. core-runtime.js に「公開窓口専用」コメント
+
+## ✅ 期待される効果
+
+### 即座の改善
+- 座標変換バグの根絶
+- パフォーマンス向上（統一API使用）
+- PixiJS v8.13完全対応
+
+### Phase2への準備
+- 責務境界の明確化
+- 分割作業の簡素化
+- API依存の見える化
+
+## 📋 作業優先度
+
+### 🔴 最優先 - 機能継承に影響
+1. 座標変換の完全統合
+2. core-runtime.js API一本化
+
+### 🟡 重要 - Phase2準備
+1. PixiJS v8.13統一
+2. 責務コメント追加
+
+### 🟢 推奨 - 保守性向上
+1. 冗長関数削除
+2. デバッグ情報整理
+
+## ⚠️ 注意事項
+
+### フォールバック処理禁止
+- エラー隠蔽・暗黙修復は一切行わない
+- 問題発生時は明確にエラーログ出力
+
+### 機能継承の保証
+- 既存機能の完全な動作継続
+- UIイベントの正常動作確認
+- レイヤー操作の完全性維持
+
+### Phase2分割準備
+- 明確なAPI境界の確立
+- 循環依存の排除
+- モジュール間の疎結合確保
+
+## 🎯 成功判定基準
+
+1. **座標変換精度**: 往復変換誤差 < 0.001px
+2. **API一貫性**: core-runtime.js経由のみでUI操作完結  
+3. **PixiJS対応**: v8.13 APIのみ使用
+4. **機能継承**: 既存の全機能が正常動作
+
+## 次のPhase2への橋渡し
+
+Phase1.5完了後、以下の分割が可能になります：
+- `camera-system.js` (カメラ操作)
+- `layer-system.js` (レイヤー管理)  
+- `drawing-engine.js` (描画処理)
+- `transform-utils.js` (変形処理)
+
+---
+
+**このPhase1.5は約40分で完了予定です。**
+**Phase2分割作業の成功率を大幅に向上させる重要な基盤整理です。**
