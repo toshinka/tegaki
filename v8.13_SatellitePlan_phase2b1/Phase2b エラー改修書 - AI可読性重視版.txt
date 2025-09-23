@@ -1,0 +1,247 @@
+# Phase2b エラー改修書 - AI可読性重視版
+
+## 🚨 エラー概要と原因
+
+### 1. **camera-system.js:561 - 構文エラー**
+```
+Uncaught SyntaxError: Unexpected token ')'
+```
+**原因**: 561行目付近にある余分な閉じ括弧
+
+### 2. **ui-state.js:66 - 未定義エラー**
+```
+Cannot read properties of undefined (reading 'canvas')
+```
+**原因**: CONFIG参照エラー（window.TegakiConfig が未定義）
+
+### 3. **core-runtime.js:85 - 初期化エラー**
+```
+CRITICAL: Missing required components
+```
+**原因**: CoreRuntimeへのコンポーネント注入が不完全
+
+---
+
+## 📝 改修手順（優先度順）
+
+### 【改修1】camera-system.js - 構文エラー修正
+
+**場所**: 561行目付近（ファイル末尾）
+
+**現在のコード**（誤り）:
+```javascript
+})();Height);  // ← この行が問題！
+            verticalLine.fill({ color: CONFIG.colors.futabaMaroon, alpha: 0.8 });
+            // ... 以下大量の重複コード ...
+})();
+```
+
+**修正後**:
+```javascript
+})();  // ← 正しい閉じ括弧のみ
+```
+
+**⚠️ AI注意点**: 
+- 561行目の `})();Height);` を単に `})();` に修正
+- その後の重複コード（562行目以降）を全て削除
+- ファイルは561行目の `})();` で終了すべき
+
+---
+
+### 【改修2】config.js - グローバル名確認
+
+**確認事項**: config.jsでのグローバル変数名
+
+**期待される定義**:
+```javascript
+window.TegakiConfig = {
+    // 設定内容
+};
+```
+
+**⚠️ AI注意点**:
+- Phase1では `window.TEGAKI_CONFIG` だった可能性
+- Phase2では `window.TegakiConfig` に統一
+- 全ファイルで `const CONFIG = window.TegakiConfig;` を使用
+
+---
+
+### 【改修3】core-runtime.js - CONFIG参照修正
+
+**場所**: 9-17行目付近
+
+**現在のコード**（誤り）:
+```javascript
+const CONFIG = window.TEGAKI_CONFIG;  // ← 古い名前
+```
+
+**修正後**:
+```javascript
+const CONFIG = window.TegakiConfig;  // ← 新しい名前に統一
+```
+
+---
+
+### 【改修4】index.html - 初期化順序確認
+
+**確認項目**:
+
+1. **スクリプト読み込み順序**（重要！）:
+```html
+<!-- 正しい順序 -->
+<script src="config.js"></script>
+<script src="engine/coordinate-system.js"></script>
+<script src="engine/camera-system.js"></script>
+<script src="engine/layer-system.js"></script>
+<script src="engine/drawing-engine.js"></script>
+<script src="ui/ui-state.js"></script>
+<script src="ui/ui-core.js"></script>
+<script src="core-runtime.js"></script>
+```
+
+2. **初期化コード構造**:
+```javascript
+// PIXIアプリ作成
+const app = new PIXI.Application({ /* ... */ });
+
+// CameraSystem作成（coordinate-system依存）
+const cameraSystem = new CameraSystem(app, window.CoordinateSystem);
+
+// LayerSystem作成
+const layerManager = new LayerSystem(/* ... */);
+
+// DrawingEngine作成
+const drawingEngine = new DrawingEngine(/* ... */);
+
+// CoreRuntime初期化（全コンポーネント注入）
+CoreRuntime.init({
+    app: app,
+    worldContainer: cameraSystem.worldContainer,
+    canvasContainer: cameraSystem.canvasContainer,
+    cameraSystem: cameraSystem,
+    layerManager: layerManager,
+    drawingEngine: drawingEngine
+});
+```
+
+---
+
+## 🔍 AI向けチェックリスト
+
+### カメラシステム修正時の確認点:
+- [ ] 561行目の構文エラーを修正
+- [ ] 重複コード（562行目以降）を削除
+- [ ] ファイル全体で閉じ括弧のバランスを確認
+- [ ] `console.log` 文は最小限に
+
+### CONFIG参照の確認点:
+- [ ] 全ファイルで `window.TegakiConfig` に統一
+- [ ] 特に以下のファイルを要確認:
+  - config.js（定義元）
+  - core-runtime.js
+  - ui-state.js
+  - camera-system.js
+  - layer-system.js
+  - drawing-engine.js
+
+### 初期化順序の確認点:
+- [ ] config.js が最初に読み込まれているか
+- [ ] coordinate-system.js が camera-system.js より前か
+- [ ] core-runtime.js が最後に読み込まれているか
+- [ ] 初期化時に全必須コンポーネントが渡されているか
+
+---
+
+## ⚠️ よくあるミスと対策（AI向け）
+
+### 1. **閉じ括弧のアンバランス**
+- **症状**: Unexpected token エラー
+- **対策**: エディタの括弧マッチング機能を使用
+- **確認**: 各ファイルの最後は必ず `})();` で終わる（IIFE形式）
+
+### 2. **CONFIG参照エラー**
+- **症状**: Cannot read properties of undefined
+- **対策**: ファイル冒頭で `const CONFIG = window.TegakiConfig;` を確認
+- **注意**: `TEGAKI_CONFIG`（大文字・アンダースコア）は古い名前
+
+### 3. **初期化順序エラー**
+- **症状**: Missing required components
+- **対策**: HTMLでのスクリプト読み込み順序を確認
+- **重要**: 依存関係の順序を守る（config → coordinate → camera → layer → drawing → ui → runtime）
+
+### 4. **コンポーネント注入漏れ**
+- **症状**: CoreRuntime init failed
+- **対策**: init()に全必須コンポーネントを渡す
+- **必須**: app, worldContainer, canvasContainer, cameraSystem, layerManager, drawingEngine
+
+---
+
+## 📊 機能継承確認表
+
+| 機能 | Phase1b4 | Phase2b | 状態 |
+|------|----------|---------|------|
+| ペン描画 | core-engine.js | drawing-engine.js | 要確認 |
+| 消しゴム | core-engine.js | drawing-engine.js | 要確認 |
+| レイヤー管理 | core-engine.js | layer-system.js | 要確認 |
+| カメラ操作 | core-engine.js | camera-system.js | 要確認 |
+| キャンバス変形 | core-engine.js | camera-system.js | 要確認 |
+| UI操作 | ui-panels.js | ui-core.js + ui-state.js | 要確認 |
+| 座標系 | coordinate-system.js | engine/coordinate-system.js | 要確認 |
+
+---
+
+## 🎯 改修完了基準
+
+1. **全エラーが解消される**
+   - コンソールにエラーが表示されない
+   - アプリケーションが正常に起動する
+
+2. **基本機能が動作する**
+   - ペンツールで描画可能
+   - 消しゴムツールで消去可能
+   - レイヤー作成・切り替え可能
+   - カメラ操作（移動・拡縮・回転）可能
+
+3. **Phase1b4との機能互換性**
+   - すべての主要機能が継承されている
+   - UIが正しく表示される
+   - ショートカットキーが動作する
+
+---
+
+## 💡 デバッグ用コマンド（ブラウザコンソール）
+
+```javascript
+// CONFIG確認
+console.log('TegakiConfig:', window.TegakiConfig);
+
+// CoreRuntime状態確認
+console.log('CoreRuntime initialized:', CoreRuntime.isInitialized());
+console.log('CoreRuntime debug:', CoreRuntime.getDebugInfo());
+
+// コンポーネント確認
+console.log('CameraSystem:', window.CameraSystem);
+console.log('LayerSystem:', window.LayerSystem);
+console.log('DrawingEngine:', window.DrawingEngine);
+```
+
+---
+
+## 📚 参考: Twin-Star Architecture原則
+
+1. **明確な責務分離**
+   - camera-system.js: ビューポート・カメラ管理
+   - layer-system.js: レイヤー管理
+   - drawing-engine.js: 描画エンジン
+   - ui-state.js: UI状態管理
+   - core-runtime.js: 統合・API提供
+
+2. **依存関係の明確化**
+   - 循環依存を避ける
+   - 単方向の依存フロー
+   - 明確なAPI境界
+
+3. **AI可読性の最優先**
+   - 冗長なコメントより明確な命名
+   - フォールバック処理の排除
+   - エラーは即座に表面化
