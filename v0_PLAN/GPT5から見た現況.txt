@@ -1,243 +1,201 @@
-結論（短め）
+改修計画書（分割版 → 元ファイル継承チェック＋是正案）
 
-camera-system.js の Unexpected token ')' は 構文ミス（余分な ) / 不完全な括弧・カンマ）が原因。→ 561行付近を修正すれば即解消します。
+以下は、提示された 問題箇所.txt の指摘内容を踏まえ、分割版（v8.13_SatellitePlan_phase2b4）が 元の動作（v8.13_SatellitePlan_phase1b4）を正しく継承しているかを探索し、発見した問題点とそれを是正するための具体的実装手順・優先度付きタスク一覧 です。出所ファイルは検査済みです（主な参照：問題一覧、分割版の config.js と core-engine 等／元版 core-engine）。
 
-ui-state.js: Cannot read properties of undefined (reading 'canvas') と CoreRuntime init failed: missing app, worldContainer, canvasContainer は 初期化順序の破綻 / コンポーネント登録漏れ / API 名不一致 が原因です。分割で「生成（app や container を作る処理）」と「参照（それらを使う処理）」が別ファイルになり、ロード順や登録プロトコルが壊れています。
+問題箇所
 
-改修は（A）構文の即時修正、（B）CoreRuntime 側に堅牢なコンポーネント・登録／待機機構を入れる、（C）各モジュールをその登録APIで registerComponent するよう修正、（D）index.html の <script> 読み込み順と DOMContentLoaded / PIXI 読み込みの確実化、を行います。
+ 
+GitHub
+ 
+GitHub
+ 
+GitHub
+ 
+GitHub
 
-phase1b4 の継承回復は「phase1b4 で定義していたコンポーネント名・初期化タイミング・API（関数名）を core/runtime 側の契約として復元」することで対応します。
+要約（短く）
 
-以下、証跡付き（手順的）に、実行可能なパッチ案・コード例・確認手順を示します。必要な箇所はそのまま貼って使えるようにしました（ES2023/モジュール無しで動く形）。
+根本原因は「分割により責務・API・座標基準（screen/world/local）とイベント伝播の契約が壊れた」ことに起因します（描画不具合、サムネイル比率崩れ、レイヤー操作での座標ズレ等）。
 
-調査ステップ（優先度高→低）
+問題箇所
 
-エラー行を直接確認（camera-system.js の 561 行あたり）。余分な ) を消す or 閉じ漏れを補う。
+分割版の config.js はグローバル定義の整理が入っており良い改善が見られる一方、coordinate/camera/drawing/layer の各ファイルが空/未実装あるいは API 互換を保てていない箇所が散見されます（実ファイルの中身がほぼ空・最小化されている箇所あり）。これは「継承されているはずの機能が切り離された」主因です。
+GitHub
++2
+GitHub
++2
 
-index.html の <script> 順を確認：Pixi CDN → config → core-runtime → (camera / engine / systems) → ui-* → main/init。CoreRuntime.init() が DOM と PIXI の準備完了後に呼ばれているか確認。
+優先度付き改修フェーズ（実施順）
+Phase 1 — 緊急（最優先）：描画機能復旧（ペンが描けない問題）
 
-コードベース中で app / worldContainer / canvasContainer を作っている箇所（phase1b4 側）を探し、phase2 のファイルに同等の生成か登録呼び出しがあるか確認。無ければ復元。
+目的：ペン描画（ポインター→DrawingSystem→レイヤーへの転写）が最低限動作すること。
+対象ファイル（優先確認順）：core-engine.js（イベント統合）、core-runtime.js（ループ/初期化）、engine/camera-system.js（座標変換）、engine/drawing-engine.js（描画ロジック）
+GitHub
++2
+GitHub
++2
 
-各モジュールが「暗黙的にグローバル変数に依存」していないか（window.app など）。分割後はグローバル依存は壊れやすいので、明示的登録 API に統一する。
+検査チェックリスト（必ず実行）
 
-具体的な改修方針（設計方針）
+ポインターイベントの到達確認
 
-コンポーネント登録API（宣言的）をCoreRuntimeに追加
+window / canvas 上の pointerdown/pointermove/pointerup が CoreEngine に届いているかログ（最小限）で確認。届いていなければ addEventListener の対象や capture/ passive オプションを確認。
 
-CoreRuntime.registerComponent(name, obj)、CoreRuntime.getComponent(name)、CoreRuntime.waitForComponents(names) を実装。
+イベントハンドラのチェーン
 
-各サブシステム（camera, ui-state, drawing-engine 等）は CoreRuntime.getComponent('app') を使う代わりに CoreRuntime.waitForComponents(['app','canvasContainer']).then(...) で初期化する。これで読み込み順が乱れても待ち合わせで整合する。
+CoreEngine → UIController → CameraSystem → DrawingSystem（もしくは EventBus 経由）の伝播順を確認。途中で stopPropagation() 相当をしていないか確認。
 
-初期化の実行フローを DOMContentLoaded + PIXI 読み込み後に限定。index.html では最後に main-init.js か core-runtime.js 側で window.addEventListener('DOMContentLoaded', ()=> CoreRuntime.init()); のように。
+座標系の明確化（最重要）
 
-堅牢なエラーメッセージ：どのコンポーネントが欠けているか、呼び出し元スタックを追えるようにする（console.error は最小にするポリシーだが初期化失敗時は詳細ログを出す）。
+入力：スクリーン（DOMピクセル）座標
 
-API 互換性（phase1b4 継承）：phase1b4 に存在した公開 API（関数名、コンポーネント名）を CoreRuntime の「互換レイヤー」としてラップして復元する（shims）。
+CameraSystem：スクリーン ⇄ ワールド（キャンバス内部）変換を一意に持たせる（screenToWorld(point) / worldToScreen(point)）。DrawingSystem と LayerSystem は常にワールド座標で動くことを契約にする。
 
-すぐ使えるパッチ案（差し込みコード）
+DrawingSystem の受け口を検証
 
-注意：以下は 差し替え/挿入箇所 を明示しています。必ずバックアップを取り、最初はローカルで index.html を file:// で開いて確認してください。
+DrawingSystem が受け取るのは point（ワールド座標） + pressure + toolState であることを保証する。もし分割で API が変わっていたら「ラッパー関数」で互換性を戻す。
 
-1) core-runtime.js — コンポーネント登録機構の追加（挿入）
+具体的修正コード例（概念・差分）
 
-CoreRuntime の定義箇所に以下を追加してください（既存の init 部分を置き換えないように、クラスやオブジェクト定義内に入れること）。
+（実装ファイルに直接貼る形で）スクリーン→ワールド変換ユーティリティ例：
 
-// --- CoreRuntime: component registry + wait API ---
-// 使い方:
-// CoreRuntime.registerComponent('app', app);
-// await CoreRuntime.waitForComponents(['app','canvasContainer']);
-CoreRuntime._components = CoreRuntime._components || {};
-CoreRuntime._waiting = CoreRuntime._waiting || {}; // name -> array of resolvers
-
-CoreRuntime.registerComponent = function(name, obj) {
-  this._components[name] = obj;
-  if (this._waiting[name]) {
-    this._waiting[name].forEach(resolve => resolve(obj));
-    delete this._waiting[name];
-  }
-};
-
-CoreRuntime.getComponent = function(name) {
-  return this._components[name];
-};
-
-CoreRuntime.waitForComponent = function(name) {
-  if (this._components[name]) return Promise.resolve(this._components[name]);
-  return new Promise((resolve) => {
-    this._waiting[name] = this._waiting[name] || [];
-    this._waiting[name].push(resolve);
-  });
-};
-
-CoreRuntime.waitForComponents = function(names) {
-  return Promise.all(names.map(n => this.waitForComponent(n)));
-};
-
-// 改修: init の冒頭で必須コンポーネントが無ければ詳細表示
-CoreRuntime._assertComponents = function(names) {
-  const missing = names.filter(n => !this._components[n]);
-  if (missing.length) {
-    throw new Error('CRITICAL: Missing required components: ' + JSON.stringify(missing));
-  }
+// CameraSystem に追加（もしくは既存の命名に合わせる）
+CameraSystem.screenToWorld = function(screenPoint) {
+  // screenPoint: {x,y} in DOM pixel relative to canvas top-left
+  const canvas = this.app.view; // PIXI view
+  const rect = canvas.getBoundingClientRect();
+  const localX = (screenPoint.x - rect.left) * (canvas.width / rect.width);
+  const localY = (screenPoint.y - rect.top)  * (canvas.height / rect.height);
+  // apply inverse camera transform (scale/rotation/translation)
+  const world = this._inverseTransformPoint({x: localX, y: localY});
+  return world; // {x,y} in world/canvas coords
 };
 
 
-目的：分割で生成順が前後しても waitForComponents を使えば依存解決できる。
+イベントの受け渡し（CoreEngine 側）：
 
-2) app と container の登録（例：index.html を使う場合、または phase1b4 側で app を生成する箇所）
-
-Pixi.Application を作る箇所の直後に必ず登録を行う。例:
-
-// app 作成（既存コード）
-const app = new PIXI.Application({ width: 800, height: 600, antialias: true });
-// canvasContainer / worldContainer 例
-const canvasContainer = new PIXI.Container();
-const worldContainer = new PIXI.Container();
-app.stage.addChild(worldContainer);
-// 登録
-CoreRuntime.registerComponent('app', app);
-CoreRuntime.registerComponent('canvasContainer', canvasContainer);
-CoreRuntime.registerComponent('worldContainer', worldContainer);
-
-
-目的：他モジュールが CoreRuntime.waitForComponents(['app','canvasContainer']) で安全に初期化できる。
-
-3) camera-system.js — 構文エラー修正方針（561行あたり）
-
-Unexpected token ')' は典型的には次のどれかです：
-
-関数呼び出しの終端に余分な ) がある
-
-オブジェクトリテラルの最後に , を置いたあとに ) が続いている（古いトランスパイル問題ではないが確認）
-
-テンプレートリテラル / アロー関数の誤閉じ
-
-対応手順（手で直す）
-
-561 行をエディタで開き、その前後 8〜12 行を確認。括弧 ( )、中括弧 {}、角括弧 [] の対応を数える。
-
-直近で function(...) { ... } ) のような余分な ) がないか探す。もし ).then(...)) のような二重閉じがあるなら片方を削る。
-
-修正後、Chrome コンソールで再読み込みして SyntaxError が消えるか確認。
-
-例（想定ミスの典型例）
-誤:
-
-someArray.forEach(item => {
-  doSomething(item);
-});)   // ← 余分な )
-
-
-正:
-
-someArray.forEach(item => {
-  doSomething(item);
+canvas.addEventListener('pointerdown', e => {
+  const screen = { x: e.clientX, y: e.clientY };
+  const world = CameraSystem.screenToWorld(screen);
+  EventBus.emit('pointer.down', { screen, world, originalEvent: e });
 });
 
 
-もし手元で確認できない場合は、561 行前後の該当ブロックをここに貼っていただければ具体的に直します（ただし今回の方針では先にベストエフォート修正案を提示しました）。
+DrawingSystem は EventBus.on('pointer.move', handler) で world を受けるだけで済むようにします。
 
-4) ui-state.js — reading 'canvas' of undefined の回避（防御的コード）
+Phase 2 — 高（重要）：レイヤーシステムの API 互換化とサムネイル修正
 
-ui-state.js の初期化時に canvas が未登録（CoreRuntime.getComponent('canvasContainer') が undefined）のためエラーが出ています。ui-state.js の初期化を次のように書き換えてください：
+目的：既存（元版）の Layer API を分割版で壊さない。サムネイルがキャンバスのアスペクト比に応じて正しく更新されること。
+対象ファイル：engine/layer-system.js, ui/ui-core.js（サムネイル描画ロジック）
+GitHub
++1
 
-// 旧: const canvas = CoreRuntime.getComponent('canvasContainer'); canvas.doStuff();
-CoreRuntime.waitForComponents(['canvasContainer', 'app']).then(([canvasContainer, app]) => {
-  // ここから初期化
-  const canvas = canvasContainer;
-  // 既存の canvas を使うロジックをここに移動
-  // 例:
-  uiState.canvas = canvas;
-  // ...残りの初期化...
-}).catch(err => {
-  console.error('ui-state init failed:', err);
-});
+主な問題想定と是正方針
 
+問題：Layer が PIXI.Container ベースになった際、古い API（createLayer(id), moveLayer(indexFrom,indexTo), getLayerBounds(id) 等）が消えている。→ 互換レイヤーラッパ を作る。
 
-目的：undefined 読み取りを防ぎ、CoreRuntime の待ち合わせで順序問題を解決する。
+サムネイル比率崩れ：サムネイル生成に canvas.width/height ではなく DOM の CSS サイズや DPR を混用している。
+対処：
 
-5) index.html の <script> 読み込み順（推奨テンプレ）
+サムネイル生成は PIXI.RenderTexture に R = thumbnail.SIZE * RENDER_SCALE でレンダリングし、レイヤーの内容のローカルバウンズ（container.getLocalBounds()) を基に縦横比を維持してリサイズする。
 
-<head> 内で Pixi を CDN 読み込み。</body> に以下順で <script> を置く（順番重要）：
+DPR（devicePixelRatio）を考慮して app.renderer.resize(width * DPR, height * DPR) を一時的に行い、戻す。
 
-pixi CDN
-
-config.js
-
-core-runtime.js
-
-coordinate-system.js
-
-camera-system.js
-
-drawing-engine.js / layer-system.js
-
-ui-core.js / ui-state.js / ui-panels.js
-
-main-init.js（ここで CoreRuntime.init() を呼ぶ。もしくは core-runtime が自分で DOMContentLoaded を listen）
-
-また、<script defer> を使うか DOMContentLoaded で CoreRuntime.init() を呼ぶことを強く推奨します。
-
-phase1b4 継承回復（具体案）
-
-phase1b4 側で app, worldContainer, canvasContainer を生成していた場合、それらを CoreRuntime.registerComponent で登録するように必ず移す。
-
-API 名（例：CoreRuntime.getCanvas() など）があれば shim を用意：
-
-// backward-compat shim
-if (!window.getCanvas && CoreRuntime.getComponent('canvasContainer')) {
-  window.getCanvas = () => CoreRuntime.getComponent('canvasContainer');
+互換ラッパのサンプル（擬似）
+// LayerSystem 内
+createLayerLegacy(id, opts = {}) {
+  const container = this._createPixiContainer(opts);
+  container._legacyId = id;
+  this.layers.push(container);
+  return {
+    id,
+    container,
+    moveTo: (index) => this.moveLayerTo(container, index),
+    getBounds: () => container.getLocalBounds()
+  };
 }
 
+Phase 3 — 中（拡張）：UI とイベントの一元化 / State 管理
 
-既存のイベント名やコールバック（例えば onLayerAdd など）を phase2 にも残すなら、CoreRuntime.eventBus（簡易 Pub/Sub）を実装して互換性のあるイベント名で発行・購読できるようにする。
+目的：UI 側のイベントが二重処理／欠落を起こさないようにし、ツール切替・ショートカットが安定して動くこと。
+対象：ui/ui-core.js, ui/ui-state.js, core-engine.js
+GitHub
++2
+GitHub
++2
 
-テスト・検証チェックリスト（必ず行う）
+要点
 
-camera-system.js の SyntaxError が消え、コンソールに Uncaught SyntaxError が出ないこと。
+EventBus（軽量）を CoreEngine の中央に置く。UI はイベントを直接処理するのではなく EventBus を経由する（テストしやすく、AI 自動改修しやすい）。
 
-ページ読み込み時に CoreRuntime init succeeded 的なログが一度だけ出ること（不要なら後で消す）。
+ショートカットマッピング は config.js（既に統一済み）から読み、ui-state.js は TEGAKI_SHORTCUTS を参照する。
+GitHub
 
-CoreRuntime.getComponent('app') が PIXI.Application のインスタンスを返すこと（コンソールで CoreRuntime.getComponent('app') instanceof PIXI.Application を確認）。
+UI 側は state -> view の単方向フローを維持（副作用は最小化）。
 
-UI が描画され、レイヤー追加・描画が行えること。描画エラー（reading 'canvas' of undefined）が消えていること。
+Phase 4 — 低（最適化）：サムネイル描画最適化、レンダリングパフォーマンス
 
-分割前に動いていた「ショートカット操作」や「レイヤー移動」など、主要機能をいくつか手動で試す。
+目的：サムネイル更新時やキャンバスリサイズ時の余計な再レンダリングを減らす。
+対処：
 
-自動テスト（可能なら）として、index.html を headless で読み込み console 出力をキャプチャし、初期化成功のログが出ることを確認する（ローカルで puppeteer 使えるなら推奨）。
+サムネイルは「差分更新」：レイヤーが変化したレイヤーのみ再生成。
 
-優先度付きタスク一覧（実行順）
+サムネイルレンダリングは RENDER_SCALE を使うが、QUALITY が 'high' でも一時的に app.renderer.plugins.extract.canvas() を使い GPU→CPU転送頻度を下げる。
 
-camera-system.js の構文エラーを直す（高）。→ サイト即死を止める。
+検証（テスト）プラン
 
-core-runtime に先述の登録 / wait API を追加（高）。
+手動受け入れテスト（最低限）
 
-app / canvasContainer / worldContainer を生成箇所で registerComponent 追加（高）。
+キャンバスを開き、ペンで描画できるか（pointerdown/move/upで線形が描ける）。
 
-ui-state.js を waitForComponents ベースに書き換え（中）。
+レイヤーを追加→移動（index入替）→内容がついてくるか（座標ズレ確認）。
 
-index.html のスクリプト順確認と DOMContentLoaded で init（中）。
+サムネイルがキャンバスサイズ変更で縦横比を保って更新されるか。
 
-phase1b4 の API 名／イベントを確認し、必要なら互換 shim を入れる（低→中）。
+自動単体テスト（可能なら）
 
-ログ最小化とリファクタ（低）。
+CameraSystem の screenToWorld と逆変換の単体テスト（座標を round-trip で比較）。
 
-追加の改善（将来的に推奨）
+LayerSystem の moveLayer と getLayerBounds の結果整合性テスト。
 
-各モジュールに init(CoreRuntime) という初期化関数の契約を設け、起動時に CoreRuntime.init() が登録済みモジュールを順に初期化する方式にすると分割に強くなる。
+差分パッチ（作業者向け具体指示）
 
-小さいユニットで CoreRuntime のモックを使う単体テストを用意する（AI が改修する前提ならテストが大事）。
+まず core-engine.js に EventBus を追加（軽量 Pub/Sub）。既存ハンドラの addEventListener を EventBus 経由に移行する。
 
-重要箇所に Type JSDoc を付け、IDE の補完を活用して人手ミスを減らす（TypeScript 禁止のため JSDoc で代替）。
+CameraSystem に screenToWorld / worldToScreen を必ず公開する。これを DrawingSystem と LayerSystem が使うように差し替え。
 
+DrawingSystem は絶対に DOM 座標を直接処理しない。受け取るのは world 座標のみ。もし既に DOM 座標で処理している箇所があればラッパーで変換。
 
+LayerSystem に旧 API ラッパー（createLayer, moveLayer, getLayerById, serialize）を実装。内部は PIXI.Container を使って良いが API は安定させる。
 
-最後に：よくある落とし穴（チェックリスト）
+UI（ui-core.js） はサムネイル更新ロジックを LayerSystem.createThumbnail(layerId, size, scale) の呼び出しに切り出す（責務分離）。
 
-<script> の読み込み順（phase1b4 の生成コードが phase2b より後に読み込まれている）
+config.js の設定（TEGAKI_CONFIG, TEGAKI_SHORTCUTS）を参照する箇所をすべて確認し、参照名が変わっている箇所を修正。
+GitHub
 
-グローバル依存（window.someVar）が分割で消失している点
+ロールバックとリスク管理
 
-非同期初期化（PIXI のロード、フォントロード、DOM 要素取得）を同期扱いしている点
+ロールバック方法：分割前の v8.13_SatellitePlan_phase1b4 を Git ブランチ／zipで即座に復元可能にする（作業前に snapshot を取得）。現在の phase2b4 は分割検証ブランチで作業すること。
+GitHub
 
-構文エラーは他のエラーを隠すので、まずは SyntaxError を完全に消すこと
+リスク：分割ファイルの「空ファイル／未実装」が存在するため、まずは「ファイル存在と中身の検証」を自動化（スクリプト）してから手直しすることを推奨。
+
+具体的な作業スコープ（チェックリスト形式）
+
+ CoreEngine: EventBus 実装 & 全イベントの集約。
+GitHub
+
+ CameraSystem: screenToWorld / worldToScreen 実装と unit test。
+GitHub
+
+ DrawingSystem: world 座標入力化。ペンツールの pressure/size を流す確約。
+
+ LayerSystem: 旧 API 互換ラッパー + thumbnail generator（aspect/DPR 対応）。
+GitHub
+
+ UI: サムネイル更新を LayerSystem API 呼び出しに差替え、ショートカットを TEGAKI_SHORTCUTS で統一。
+GitHub
++1
+
+ 回帰テスト（手動・自動）実行、ログは TEGAKI_UTILS.log を用い最小限に出力。
+GitHub
