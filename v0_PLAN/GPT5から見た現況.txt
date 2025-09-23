@@ -1,74 +1,243 @@
-✅ 良い点
+結論（短め）
 
-PixiJS v8.13 が全ファイルで統一されている（CDN読み込み確認済み）。
+camera-system.js の Unexpected token ')' は 構文ミス（余分な ) / 不完全な括弧・カンマ）が原因。→ 561行付近を修正すれば即解消します。
 
-coordinate-system.js が既に導入されており、座標変換の統合が始まっている。
+ui-state.js: Cannot read properties of undefined (reading 'canvas') と CoreRuntime init failed: missing app, worldContainer, canvasContainer は 初期化順序の破綻 / コンポーネント登録漏れ / API 名不一致 が原因です。分割で「生成（app や container を作る処理）」と「参照（それらを使う処理）」が別ファイルになり、ロード順や登録プロトコルが壊れています。
 
-config.js と ui-panels.js は責務が比較的はっきりしている（UI系 vs Engine系）。
+改修は（A）構文の即時修正、（B）CoreRuntime 側に堅牢なコンポーネント・登録／待機機構を入れる、（C）各モジュールをその登録APIで registerComponent するよう修正、（D）index.html の <script> 読み込み順と DOMContentLoaded / PIXI 読み込みの確実化、を行います。
 
-コードガイドに沿ったコメント（coord: screen -> world の明示）が一部反映済み。
+phase1b4 の継承回復は「phase1b4 で定義していたコンポーネント名・初期化タイミング・API（関数名）を core/runtime 側の契約として復元」することで対応します。
+
+以下、証跡付き（手順的）に、実行可能なパッチ案・コード例・確認手順を示します。必要な箇所はそのまま貼って使えるようにしました（ES2023/モジュール無しで動く形）。
+
+調査ステップ（優先度高→低）
+
+エラー行を直接確認（camera-system.js の 561 行あたり）。余分な ) を消す or 閉じ漏れを補う。
+
+index.html の <script> 順を確認：Pixi CDN → config → core-runtime → (camera / engine / systems) → ui-* → main/init。CoreRuntime.init() が DOM と PIXI の準備完了後に呼ばれているか確認。
+
+コードベース中で app / worldContainer / canvasContainer を作っている箇所（phase1b4 側）を探し、phase2 のファイルに同等の生成か登録呼び出しがあるか確認。無ければ復元。
+
+各モジュールが「暗黙的にグローバル変数に依存」していないか（window.app など）。分割後はグローバル依存は壊れやすいので、明示的登録 API に統一する。
+
+具体的な改修方針（設計方針）
+
+コンポーネント登録API（宣言的）をCoreRuntimeに追加
+
+CoreRuntime.registerComponent(name, obj)、CoreRuntime.getComponent(name)、CoreRuntime.waitForComponents(names) を実装。
+
+各サブシステム（camera, ui-state, drawing-engine 等）は CoreRuntime.getComponent('app') を使う代わりに CoreRuntime.waitForComponents(['app','canvasContainer']).then(...) で初期化する。これで読み込み順が乱れても待ち合わせで整合する。
+
+初期化の実行フローを DOMContentLoaded + PIXI 読み込み後に限定。index.html では最後に main-init.js か core-runtime.js 側で window.addEventListener('DOMContentLoaded', ()=> CoreRuntime.init()); のように。
+
+堅牢なエラーメッセージ：どのコンポーネントが欠けているか、呼び出し元スタックを追えるようにする（console.error は最小にするポリシーだが初期化失敗時は詳細ログを出す）。
+
+API 互換性（phase1b4 継承）：phase1b4 に存在した公開 API（関数名、コンポーネント名）を CoreRuntime の「互換レイヤー」としてラップして復元する（shims）。
+
+すぐ使えるパッチ案（差し込みコード）
+
+注意：以下は 差し替え/挿入箇所 を明示しています。必ずバックアップを取り、最初はローカルで index.html を file:// で開いて確認してください。
+
+1) core-runtime.js — コンポーネント登録機構の追加（挿入）
+
+CoreRuntime の定義箇所に以下を追加してください（既存の init 部分を置き換えないように、クラスやオブジェクト定義内に入れること）。
+
+// --- CoreRuntime: component registry + wait API ---
+// 使い方:
+// CoreRuntime.registerComponent('app', app);
+// await CoreRuntime.waitForComponents(['app','canvasContainer']);
+CoreRuntime._components = CoreRuntime._components || {};
+CoreRuntime._waiting = CoreRuntime._waiting || {}; // name -> array of resolvers
+
+CoreRuntime.registerComponent = function(name, obj) {
+  this._components[name] = obj;
+  if (this._waiting[name]) {
+    this._waiting[name].forEach(resolve => resolve(obj));
+    delete this._waiting[name];
+  }
+};
+
+CoreRuntime.getComponent = function(name) {
+  return this._components[name];
+};
+
+CoreRuntime.waitForComponent = function(name) {
+  if (this._components[name]) return Promise.resolve(this._components[name]);
+  return new Promise((resolve) => {
+    this._waiting[name] = this._waiting[name] || [];
+    this._waiting[name].push(resolve);
+  });
+};
+
+CoreRuntime.waitForComponents = function(names) {
+  return Promise.all(names.map(n => this.waitForComponent(n)));
+};
+
+// 改修: init の冒頭で必須コンポーネントが無ければ詳細表示
+CoreRuntime._assertComponents = function(names) {
+  const missing = names.filter(n => !this._components[n]);
+  if (missing.length) {
+    throw new Error('CRITICAL: Missing required components: ' + JSON.stringify(missing));
+  }
+};
 
 
-⚠️ 問題点
+目的：分割で生成順が前後しても waitForComponents を使えば依存解決できる。
 
-ライブラリ使用の冗長化
+2) app と container の登録（例：index.html を使う場合、または phase1b4 側で app を生成する箇所）
 
-core-engine.js 内で toLocal / toGlobal を直接呼んでいる部分が残っており、coordinate-system.js を経由していない箇所がある。
+Pixi.Application を作る箇所の直後に必ず登録を行う。例:
 
-PixiJS の Point や Matrix を重複ラップしているメソッドが複数ある。
+// app 作成（既存コード）
+const app = new PIXI.Application({ width: 800, height: 600, antialias: true });
+// canvasContainer / worldContainer 例
+const canvasContainer = new PIXI.Container();
+const worldContainer = new PIXI.Container();
+app.stage.addChild(worldContainer);
+// 登録
+CoreRuntime.registerComponent('app', app);
+CoreRuntime.registerComponent('canvasContainer', canvasContainer);
+CoreRuntime.registerComponent('worldContainer', worldContainer);
 
-責務の混在
 
-core-engine.js が 4000行級で、カメラ・レイヤー・描画・座標系が全部入りになっている。
+目的：他モジュールが CoreRuntime.waitForComponents(['app','canvasContainer']) で安全に初期化できる。
 
-core-runtime.js がファサードの役割を目指しているが、まだ core-engine.js と重複している部分が多い。
+3) camera-system.js — 構文エラー修正方針（561行あたり）
 
-バージョン混在リスク
+Unexpected token ')' は典型的には次のどれかです：
 
-PixiJS v8.13 を使っているが、一部に v6 系コード（旧API互換の interaction 系処理や Graphics 描画フラグ）が混じっている。
+関数呼び出しの終端に余分な ) がある
 
-特に ui-panels.js のイベントバインドで PixiJS v7+ 以降の正規 API に統一されていない。
+オブジェクトリテラルの最後に , を置いたあとに ) が続いている（古いトランスパイル問題ではないが確認）
 
-冗長化
+テンプレートリテラル / アロー関数の誤閉じ
 
-screenToCanvas / screenToCanvasForDrawing が分離して残っている。
+対応手順（手で直す）
 
-core-runtime.js と core-engine.js の両方に「カメラ移動」「ズーム」メソッドがある（二重管理）。
+561 行をエディタで開き、その前後 8〜12 行を確認。括弧 ( )、中括弧 {}、角括弧 [] の対応を数える。
 
-🛠 改修計画（Phase1b → Phase2前整理）
-改修ステップ (Phase1.5 相当)
+直近で function(...) { ... } ) のような余分な ) がないか探す。もし ).then(...)) のような二重閉じがあるなら片方を削る。
 
-1. 座標変換の完全統合
-   - `core-engine.js` の全 `toLocal` / `toGlobal` 呼び出しを `CoordinateSystem` 経由に置換
-   - `screenToCanvasForDrawing` を廃止し、`CoordinateSystem.screenToCanvas()` に統合
+修正後、Chrome コンソールで再読み込みして SyntaxError が消えるか確認。
 
-2. 重複APIの整理
-   - `core-runtime.js` にだけ公開APIを残し、`core-engine.js` 側の直接呼び出しを段階的に削除
-   - カメラ系 (`panCamera`, `zoomCamera`) は `core-runtime.js` に一本化
+例（想定ミスの典型例）
+誤:
 
-3. PixiJS v8.13 向けに統一
-   - `ui-panels.js` のイベント処理を PixiJS v8 の `app.stage.eventMode = 'static'` 方式に変更
-   - 古い `interactive = true` の記述を削除
+someArray.forEach(item => {
+  doSomething(item);
+});)   // ← 余分な )
 
-4. ファイル責務の明確化
-   - `core-engine.js` のコメントに「一時的に全責務を持っているが、Phase2で分割予定」と明記
-   - `core-runtime.js` に「公開窓口のみ」とコメント追加
-   - これにより Phase2 の分割（`layer-system.js`, `drawing-engine.js`）がスムーズになる
 
-5. 冗長関数・旧APIの削除
-   - `screenToCanvasForDrawing`
-   - `getWorldCoords` 系の一時関数（CoordinateSystem と重複）
-   - PixiJS v6 時代の fallback 処理
+正:
 
-📌 結論
+someArray.forEach(item => {
+  doSomething(item);
+});
 
-現状の Phase1b では「PixiJS v8.13 統一」自体は守られていますが、
 
-旧バージョンAPI混在
+もし手元で確認できない場合は、561 行前後の該当ブロックをここに貼っていただければ具体的に直します（ただし今回の方針では先にベストエフォート修正案を提示しました）。
 
-座標変換の二重実装
+4) ui-state.js — reading 'canvas' of undefined の回避（防御的コード）
 
-core-engine と core-runtime の責務競合
-が残っています。
+ui-state.js の初期化時に canvas が未登録（CoreRuntime.getComponent('canvasContainer') が undefined）のためエラーが出ています。ui-state.js の初期化を次のように書き換えてください：
 
-👉 次のステップとしては「Phase2 の分割前に 座標変換とAPIを一元化」することが最重要です。
+// 旧: const canvas = CoreRuntime.getComponent('canvasContainer'); canvas.doStuff();
+CoreRuntime.waitForComponents(['canvasContainer', 'app']).then(([canvasContainer, app]) => {
+  // ここから初期化
+  const canvas = canvasContainer;
+  // 既存の canvas を使うロジックをここに移動
+  // 例:
+  uiState.canvas = canvas;
+  // ...残りの初期化...
+}).catch(err => {
+  console.error('ui-state init failed:', err);
+});
+
+
+目的：undefined 読み取りを防ぎ、CoreRuntime の待ち合わせで順序問題を解決する。
+
+5) index.html の <script> 読み込み順（推奨テンプレ）
+
+<head> 内で Pixi を CDN 読み込み。</body> に以下順で <script> を置く（順番重要）：
+
+pixi CDN
+
+config.js
+
+core-runtime.js
+
+coordinate-system.js
+
+camera-system.js
+
+drawing-engine.js / layer-system.js
+
+ui-core.js / ui-state.js / ui-panels.js
+
+main-init.js（ここで CoreRuntime.init() を呼ぶ。もしくは core-runtime が自分で DOMContentLoaded を listen）
+
+また、<script defer> を使うか DOMContentLoaded で CoreRuntime.init() を呼ぶことを強く推奨します。
+
+phase1b4 継承回復（具体案）
+
+phase1b4 側で app, worldContainer, canvasContainer を生成していた場合、それらを CoreRuntime.registerComponent で登録するように必ず移す。
+
+API 名（例：CoreRuntime.getCanvas() など）があれば shim を用意：
+
+// backward-compat shim
+if (!window.getCanvas && CoreRuntime.getComponent('canvasContainer')) {
+  window.getCanvas = () => CoreRuntime.getComponent('canvasContainer');
+}
+
+
+既存のイベント名やコールバック（例えば onLayerAdd など）を phase2 にも残すなら、CoreRuntime.eventBus（簡易 Pub/Sub）を実装して互換性のあるイベント名で発行・購読できるようにする。
+
+テスト・検証チェックリスト（必ず行う）
+
+camera-system.js の SyntaxError が消え、コンソールに Uncaught SyntaxError が出ないこと。
+
+ページ読み込み時に CoreRuntime init succeeded 的なログが一度だけ出ること（不要なら後で消す）。
+
+CoreRuntime.getComponent('app') が PIXI.Application のインスタンスを返すこと（コンソールで CoreRuntime.getComponent('app') instanceof PIXI.Application を確認）。
+
+UI が描画され、レイヤー追加・描画が行えること。描画エラー（reading 'canvas' of undefined）が消えていること。
+
+分割前に動いていた「ショートカット操作」や「レイヤー移動」など、主要機能をいくつか手動で試す。
+
+自動テスト（可能なら）として、index.html を headless で読み込み console 出力をキャプチャし、初期化成功のログが出ることを確認する（ローカルで puppeteer 使えるなら推奨）。
+
+優先度付きタスク一覧（実行順）
+
+camera-system.js の構文エラーを直す（高）。→ サイト即死を止める。
+
+core-runtime に先述の登録 / wait API を追加（高）。
+
+app / canvasContainer / worldContainer を生成箇所で registerComponent 追加（高）。
+
+ui-state.js を waitForComponents ベースに書き換え（中）。
+
+index.html のスクリプト順確認と DOMContentLoaded で init（中）。
+
+phase1b4 の API 名／イベントを確認し、必要なら互換 shim を入れる（低→中）。
+
+ログ最小化とリファクタ（低）。
+
+追加の改善（将来的に推奨）
+
+各モジュールに init(CoreRuntime) という初期化関数の契約を設け、起動時に CoreRuntime.init() が登録済みモジュールを順に初期化する方式にすると分割に強くなる。
+
+小さいユニットで CoreRuntime のモックを使う単体テストを用意する（AI が改修する前提ならテストが大事）。
+
+重要箇所に Type JSDoc を付け、IDE の補完を活用して人手ミスを減らす（TypeScript 禁止のため JSDoc で代替）。
+
+
+
+最後に：よくある落とし穴（チェックリスト）
+
+<script> の読み込み順（phase1b4 の生成コードが phase2b より後に読み込まれている）
+
+グローバル依存（window.someVar）が分割で消失している点
+
+非同期初期化（PIXI のロード、フォントロード、DOM 要素取得）を同期扱いしている点
+
+構文エラーは他のエラーを隠すので、まずは SyntaxError を完全に消すこと
