@@ -96,9 +96,6 @@
             const centerX = CONFIG.canvas.defaultWidth / 2;
             const centerY = CONFIG.canvas.defaultHeight / 2;
             
-            console.log('Creating guide lines for canvas:', CONFIG.canvas.defaultWidth, 'x', CONFIG.canvas.defaultHeight);
-            console.log('Guide line center coordinates:', centerX, centerY);
-            
             // 縦線（カメラフレームの中央）
             const verticalLine = new PIXI.Graphics();
             verticalLine.rect(centerX - 0.5, 0, 1, CONFIG.canvas.defaultHeight);
@@ -112,8 +109,6 @@
             this.guideLines.addChild(horizontalLine);
             
             this.guideLines.visible = false; // 初期は非表示
-            
-            console.log('Guide lines created. Children count:', this.guideLines.children.length);
         }
         
         drawCameraFrame() {
@@ -489,12 +484,10 @@
         
         showGuideLines() {
             this.guideLines.visible = true;
-            console.log('Guide lines shown. Visible:', this.guideLines.visible);
         }
         
         hideGuideLines() {
             this.guideLines.visible = false;
-            console.log('Guide lines hidden. Visible:', this.guideLines.visible);
         }
         
         updateTransformDisplay() {
@@ -517,21 +510,14 @@
         
         // キャンバスリサイズ対応
         resizeCanvas(newWidth, newHeight) {
-            console.log('CameraSystem: Resizing canvas from', CONFIG.canvas.defaultWidth, 'x', CONFIG.canvas.defaultHeight, 'to', newWidth, 'x', newHeight);
-            
-            // CONFIG更新（外部で既に更新済みだが念のため）
             CONFIG.canvas.defaultWidth = newWidth;
             CONFIG.canvas.defaultHeight = newHeight;
             
-            // カメラフレーム、マスク、ガイドライン更新
             this.updateGuideLinesForCanvasResize();
-            
-            console.log('CameraSystem: Canvas resize completed');
         }
         
         // キャンバスサイズ変更時のガイドライン再作成（完全版）
         updateGuideLinesForCanvasResize() {
-            console.log('Updating guide lines for canvas resize to', CONFIG.canvas.defaultWidth, 'x', CONFIG.canvas.defaultHeight);
             this.createGuideLines();
             this.drawCameraFrame();
         }
@@ -550,313 +536,6 @@
         
         setDrawingEngine(drawingEngine) {
             this.drawingEngine = drawingEngine;
-        }
-    }
-    
-    // === グローバル公開 ===
-    window.CameraSystem = CameraSystem;
-    
-    console.log('✅ CameraSystem loaded (Twin-Star Architecture)');
-    
-})();Height);
-            verticalLine.fill({ color: CONFIG.colors.futabaMaroon, alpha: 0.8 });
-            this.guideLines.addChild(verticalLine);
-            
-            // 横線
-            const horizontalLine = new PIXI.Graphics();
-            horizontalLine.rect(0, centerY - 0.5, CONFIG.canvas.defaultWidth, 1);
-            horizontalLine.fill({ color: CONFIG.colors.futabaMaroon, alpha: 0.8 });
-            this.guideLines.addChild(horizontalLine);
-            
-            this.guideLines.visible = false;
-        }
-        
-        drawCameraFrame() {
-            this.cameraFrame.clear();
-            this.cameraFrame.rect(0, 0, CONFIG.canvas.defaultWidth, CONFIG.canvas.defaultHeight);
-            this.cameraFrame.stroke({ width: 2, color: 0xff0000, alpha: 0.5 });
-            
-            // マスク更新
-            this.canvasMask.clear();
-            this.canvasMask.rect(0, 0, CONFIG.canvas.defaultWidth, CONFIG.canvas.defaultHeight);
-            this.canvasMask.fill(0xffffff);
-        }
-        
-        setupEvents() {
-            // マウス操作
-            this.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
-            
-            this.app.canvas.addEventListener('pointerdown', (e) => {
-                if (this.vKeyPressed) return;
-                
-                if ((e.button === 2 || this.spacePressed) && !this.shiftPressed) {
-                    this.isDragging = true;
-                    this.lastPoint = { x: e.clientX, y: e.clientY };
-                    this.app.canvas.style.cursor = 'move';
-                    e.preventDefault();
-                } else if ((e.button === 2 || this.spacePressed) && this.shiftPressed) {
-                    this.isScaleRotateDragging = true;
-                    this.lastPoint = { x: e.clientX, y: e.clientY };
-                    this.app.canvas.style.cursor = 'grab';
-                    e.preventDefault();
-                }
-            });
-            
-            this.app.canvas.addEventListener('pointermove', (e) => {
-                if (this.isDragging) {
-                    const dx = (e.clientX - this.lastPoint.x) * this.panSpeed;
-                    const dy = (e.clientY - this.lastPoint.y) * this.panSpeed;
-                    
-                    this.worldContainer.x += dx;
-                    this.worldContainer.y += dy;
-                    
-                    this.lastPoint = { x: e.clientX, y: e.clientY };
-                    this.updateTransformDisplay();
-                } else if (this.isScaleRotateDragging) {
-                    const dx = e.clientX - this.lastPoint.x;
-                    const dy = e.clientY - this.lastPoint.y;
-                    
-                    const centerX = CONFIG.canvas.defaultWidth / 2;
-                    const centerY = CONFIG.canvas.defaultHeight / 2;
-                    const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-                    
-                    if (Math.abs(dx) > Math.abs(dy)) {
-                        // 回転
-                        this.rotation += (dx * CONFIG.camera.dragRotationSpeed);
-                        this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
-                        
-                        const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-                        this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-                        this.worldContainer.y += worldCenter.y - newWorldCenter.y;
-                    } else {
-                        // 拡縮
-                        const scaleFactor = 1 + (dy * CONFIG.camera.dragScaleSpeed);
-                        const newScale = this.worldContainer.scale.x * scaleFactor;
-                        
-                        if (newScale >= CONFIG.camera.minScale && newScale <= CONFIG.camera.maxScale) {
-                            this.worldContainer.scale.set(newScale);
-                            const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-                            this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-                            this.worldContainer.y += worldCenter.y - newWorldCenter.y;
-                        }
-                    }
-                    
-                    this.lastPoint = { x: e.clientX, y: e.clientY };
-                    this.updateTransformDisplay();
-                }
-            });
-            
-            this.app.canvas.addEventListener('pointerup', (e) => {
-                if (this.isDragging && (e.button === 2 || this.spacePressed)) {
-                    this.isDragging = false;
-                    this.updateCursor();
-                }
-                if (this.isScaleRotateDragging && (e.button === 2 || this.spacePressed)) {
-                    this.isScaleRotateDragging = false;
-                    this.updateCursor();
-                }
-            });
-
-            // ホイール操作
-            this.app.canvas.addEventListener('wheel', (e) => {
-                e.preventDefault();
-                
-                if (this.vKeyPressed) return;
-                
-                const centerX = CONFIG.canvas.defaultWidth / 2;
-                const centerY = CONFIG.canvas.defaultHeight / 2;
-                
-                if (this.shiftPressed) {
-                    // 回転
-                    const rotationDelta = e.deltaY < 0 ? 
-                        CONFIG.camera.keyRotationDegree : -CONFIG.camera.keyRotationDegree;
-                    
-                    const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-                    
-                    this.rotation += rotationDelta;
-                    this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
-                    
-                    const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-                    this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-                    this.worldContainer.y += worldCenter.y - newWorldCenter.y;
-                } else {
-                    // 拡縮
-                    const scaleFactor = e.deltaY < 0 ? 1 + this.zoomSpeed : 1 - this.zoomSpeed;
-                    const newScale = this.worldContainer.scale.x * scaleFactor;
-                    
-                    if (newScale >= CONFIG.camera.minScale && newScale <= CONFIG.camera.maxScale) {
-                        const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-                        
-                        this.worldContainer.scale.set(newScale);
-                        
-                        const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-                        this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-                        this.worldContainer.y += worldCenter.y - newWorldCenter.y;
-                    }
-                }
-                
-                this.updateTransformDisplay();
-            });
-            
-            // キーボード操作
-            document.addEventListener('keydown', (e) => {
-                // Ctrl+0: リセット
-                if (e.ctrlKey && e.code === 'Digit0') {
-                    this.reset();
-                    e.preventDefault();
-                    return;
-                }
-                
-                if (e.code === 'Space') {
-                    this.spacePressed = true;
-                    this.updateCursor();
-                    e.preventDefault();
-                }
-                if (e.shiftKey) this.shiftPressed = true;
-                
-                if (this.vKeyPressed) return;
-                
-                // Space + 方向キー: 移動
-                if (this.spacePressed && !this.shiftPressed && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
-                    const moveAmount = CONFIG.camera.keyMoveAmount;
-                    switch(e.code) {
-                        case 'ArrowDown': this.worldContainer.y += moveAmount; break;
-                        case 'ArrowUp': this.worldContainer.y -= moveAmount; break;
-                        case 'ArrowRight': this.worldContainer.x += moveAmount; break;
-                        case 'ArrowLeft': this.worldContainer.x -= moveAmount; break;
-                    }
-                    this.updateTransformDisplay();
-                    e.preventDefault();
-                }
-                
-                // H: 反転
-                if (!this.vKeyPressed && e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    const centerX = CONFIG.canvas.defaultWidth / 2;
-                    const centerY = CONFIG.canvas.defaultHeight / 2;
-                    const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-                    
-                    if (e.shiftKey) {
-                        // 垂直反転
-                        this.verticalFlipped = !this.verticalFlipped;
-                        this.worldContainer.scale.y *= -1;
-                    } else {
-                        // 水平反転
-                        this.horizontalFlipped = !this.horizontalFlipped;
-                        this.worldContainer.scale.x *= -1;
-                    }
-                    
-                    const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
-                    this.worldContainer.x += worldCenter.x - newWorldCenter.x;
-                    this.worldContainer.y += worldCenter.y - newWorldCenter.y;
-                    
-                    this.updateTransformDisplay();
-                    e.preventDefault();
-                }
-            });
-            
-            document.addEventListener('keyup', (e) => {
-                if (e.code === 'Space') {
-                    this.spacePressed = false;
-                    this.updateCursor();
-                }
-                if (!e.shiftKey) this.shiftPressed = false;
-            });
-        }
-        
-        pan(dx, dy) {
-            this.worldContainer.x += dx / this.zoom;
-            this.worldContainer.y += dy / this.zoom;
-            this.updateTransformDisplay();
-        }
-        
-        zoom(factor, centerX, centerY) {
-            const worldBefore = this.coord.screenToWorld(centerX, centerY);
-            
-            this.zoom = window.TegakiUtils.clamp(this.zoom * factor, CONFIG.camera.minScale, CONFIG.camera.maxScale);
-            
-            const worldAfter = this.coord.screenToWorld(centerX, centerY);
-            
-            this.position.x += worldAfter.x - worldBefore.x;
-            this.position.y += worldAfter.y - worldBefore.y;
-            
-            this.updateTransform();
-        }
-        
-        updateTransform() {
-            this.viewport.scale.set(this.zoom);
-            this.viewport.position.set(
-                this.position.x * this.zoom,
-                this.position.y * this.zoom
-            );
-            this.viewport.rotation = this.rotation;
-        }
-        
-        reset() {
-            this.worldContainer.position.set(
-                this.initialState.position.x,
-                this.initialState.position.y
-            );
-            this.worldContainer.scale.set(this.initialState.scale);
-            this.worldContainer.rotation = 0;
-            
-            this.rotation = 0;
-            this.horizontalFlipped = false;
-            this.verticalFlipped = false;
-            
-            this.updateTransformDisplay();
-        }
-        
-        showGuideLines() {
-            this.guideLines.visible = true;
-        }
-        
-        hideGuideLines() {
-            this.guideLines.visible = false;
-        }
-        
-        setVKeyPressed(pressed) {
-            this.vKeyPressed = pressed;
-        }
-        
-        updateCursor() {
-            if (this.vKeyPressed) {
-                this.app.canvas.style.cursor = 'grab';
-            } else if (this.isDragging || (this.spacePressed && !this.shiftPressed)) {
-                this.app.canvas.style.cursor = 'move';
-            } else if (this.isScaleRotateDragging || (this.spacePressed && this.shiftPressed)) {
-                this.app.canvas.style.cursor = 'grab';
-            } else {
-                this.app.canvas.style.cursor = 'crosshair';
-            }
-        }
-        
-        updateTransformDisplay() {
-            const element = document.getElementById('transform-info');
-            if (element) {
-                const x = Math.round(this.worldContainer.x);
-                const y = Math.round(this.worldContainer.y);
-                const s = Math.abs(this.worldContainer.scale.x).toFixed(2);
-                const r = Math.round(this.rotation % 360);
-                element.textContent = `x:${x} y:${y} s:${s} r:${r}°`;
-            }
-        }
-        
-        updateCoordinates(x, y) {
-            const element = document.getElementById('coordinates');
-            if (element) {
-                element.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
-            }
-        }
-        
-        // キャンバスリサイズ対応
-        resizeCanvas(newWidth, newHeight) {
-            CONFIG.canvas.defaultWidth = newWidth;
-            CONFIG.canvas.defaultHeight = newHeight;
-            
-            this.createGuideLines();
-            this.drawCameraFrame();
-            
-            console.log('CameraSystem: Canvas resized to', newWidth, 'x', newHeight);
         }
     }
     
