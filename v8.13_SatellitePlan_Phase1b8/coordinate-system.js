@@ -1,5 +1,6 @@
-// ===== coordinate-system.js - Phase2準備版：安全参照実装 =====
+// ===== coordinate-system.js - Phase2準備版：安全参照実装 + 互換ラッパー =====
 // GPT5指摘の脆弱なlabel検索を修正・明示的参照による安全化・パフォーマンス最適化
+// + 既存API互換性ラッパー追加
 
 /*
 === Phase2準備版 座標系モジュール ===
@@ -9,6 +10,7 @@
 - 明示的参照による高速化
 - CoreRuntime連携による安定性向上
 - パフォーマンス最適化
+- 既存API互換性ラッパー追加（init静的メソッド）
 
 【修正パターン】
 変更前（脆弱）:
@@ -127,7 +129,7 @@
                 console.warn('CoordinateSystem: Using fallback worldContainer search (performance impact)');
             }
             
-            const worldContainer = this._app?.stage.children.find(child => child.label === 'worldContainer') || null;
+            const worldContainer = this._app?.stage.children.find(child => child.name === 'worldContainer') || null;
             
             // キャッシュ更新
             this._referenceCache.worldContainer = worldContainer;
@@ -160,7 +162,7 @@
             }
             
             const worldContainer = this.getWorldContainer();
-            const canvasContainer = worldContainer?.children.find(child => child.label === 'canvasContainer') || null;
+            const canvasContainer = worldContainer?.children.find(child => child.name === 'canvasContainer') || null;
             
             // キャッシュ更新
             this._referenceCache.canvasContainer = canvasContainer;
@@ -571,32 +573,47 @@
             }
             
             return diagnosis;
-        },
-        
-        // === レガシー互換性ブリッジ ===
-        // 段階的移行のため、既存メソッドにアクセサを提供
-        deprecatedScreenToCanvasForDrawing(app, screenX, screenY) {
-            if (DEBUG_MODE) {
-                console.warn('DEPRECATED: Use CoordinateSystem.screenToCanvas() instead');
-            }
-            
-            // coord: screen -> canvas
-            return this.screenToCanvas(app, screenX, screenY);
         }
     };
+    
+    // === 互換性ラッパー（GPT5案に基づく） ===
+    // 既存のCoordinateSystem.init()呼び出しに対する互換性を提供
+    if (typeof window !== 'undefined') {
+        // init静的メソッドを追加
+        CoordinateSystem.init = function(app, worldContainer) {
+            // 安全参照を設定
+            const canvasContainer = worldContainer?.children.find(child => child.name === 'canvasContainer') || null;
+            
+            CoordinateSystem.setContainers({
+                app: app,
+                worldContainer: worldContainer,
+                canvasContainer: canvasContainer
+            });
+            
+            if (DEBUG_MODE) {
+                console.log('CoordinateSystem.init() compatibility wrapper called');
+                console.log('   - app:', !!app);
+                console.log('   - worldContainer:', !!worldContainer);
+                console.log('   - canvasContainer:', !!canvasContainer);
+            }
+            
+            return CoordinateSystem;
+        };
+    }
     
     // === グローバル公開 ===
     window.CoordinateSystem = CoordinateSystem;
     
     // デバッグモード時の初期化ログ
     if (DEBUG_MODE) {
-        console.log('✅ CoordinateSystem initialized (Safe References Edition)');
+        console.log('✅ CoordinateSystem initialized (Safe References Edition + Compatibility)');
         console.log('   - Safe reference support added');
         console.log('   - Performance cache implemented');  
         console.log('   - Fallback with warnings');
+        console.log('   - init() compatibility wrapper added');
         console.log('Available methods:', Object.keys(CoordinateSystem).filter(key => typeof CoordinateSystem[key] === 'function'));
     } else {
-        console.log('✅ CoordinateSystem initialized (Safe References, Production Mode)');
+        console.log('✅ CoordinateSystem initialized (Safe References + Compatibility, Production Mode)');
     }
     
     // 自動整合性チェック（PixiJS読み込み後）
