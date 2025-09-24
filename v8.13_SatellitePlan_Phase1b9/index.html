@@ -266,7 +266,7 @@
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
 
-    <!-- 設定とライブラリを最初に読み込み -->
+    <!-- 設定とライブラリを依存関係順に読み込み -->
     <script src="config.js"></script>
     <script src="coordinate-system.js"></script>
     <script src="layer-system.js"></script>
@@ -276,12 +276,22 @@
     <script src="core-engine.js"></script>
 
     <script>
+        // デバッグ用：グローバル変数確認
+        console.log('=== Script Loading Verification ===');
+        console.log('CoordinateSystem:', typeof CoordinateSystem, CoordinateSystem);
+        console.log('CoordinateSystem.init:', typeof CoordinateSystem?.init);
+        console.log('LayerSystem:', typeof LayerSystem);
+        console.log('CameraSystem:', typeof CameraSystem);
+        console.log('===================================');
+
         // ===============================
         // Drawing App - メインアプリケーション（修正版）
         // ===============================
         class DrawingApp {
             constructor() {
                 this.initialized = false;
+                this.pixiApp = null;
+                this.worldContainer = null;
             }
 
             async initialize() {
@@ -292,6 +302,17 @@
 
                 try {
                     console.log('🚀 DrawingApp 初期化開始...');
+
+                    // 必要なシステムの存在確認
+                    if (typeof CoordinateSystem === 'undefined' || !CoordinateSystem.init) {
+                        throw new Error('CoordinateSystem is not available or missing init method');
+                    }
+                    if (typeof LayerSystem === 'undefined') {
+                        throw new Error('LayerSystem is not available');
+                    }
+                    if (typeof CameraSystem === 'undefined') {
+                        throw new Error('CameraSystem is not available');
+                    }
 
                     // Step 1: PIXI Application初期化
                     const app = new PIXI.Application();
@@ -318,16 +339,33 @@
                     // WorldContainer作成
                     const worldContainer = new PIXI.Container();
                     worldContainer.name = 'worldContainer';
+                    worldContainer.label = 'worldContainer'; // 互換性のため
                     app.stage.addChild(worldContainer);
 
-                    // Step 2: CoordinateSystem初期化
+                    // CanvasContainer作成
+                    const canvasContainer = new PIXI.Container();
+                    canvasContainer.name = 'canvasContainer';
+                    canvasContainer.label = 'canvasContainer'; // 互換性のため
+                    worldContainer.addChild(canvasContainer);
+
+                    this.pixiApp = app;
+                    this.worldContainer = worldContainer;
+
+                    // Step 2: CoordinateSystem初期化（互換ラッパー使用）
+                    console.log('Initializing CoordinateSystem...');
                     CoordinateSystem.init(app, worldContainer);
 
                     // Step 3: CameraSystem初期化
-                    CameraSystem.init(app, worldContainer);
+                    console.log('Initializing CameraSystem...');
+                    if (CameraSystem.init) {
+                        CameraSystem.init(app, worldContainer);
+                    }
 
                     // Step 4: LayerSystem初期化
-                    await LayerSystem.init({ app, worldContainer });
+                    console.log('Initializing LayerSystem...');
+                    if (LayerSystem.init) {
+                        await LayerSystem.init({ app, worldContainer });
+                    }
 
                     // Step 5: UI初期化
                     this.initializeUI();
@@ -335,11 +373,15 @@
                     // Step 6: イベントリスナー設定
                     this.setupEventListeners(app, worldContainer);
 
+                    // グローバル参照設定（デバッグ用）
+                    window.drawingApp = this;
+
                     this.initialized = true;
                     console.log('✅ DrawingApp initialized successfully');
 
                 } catch (error) {
                     console.error('❌ DrawingApp initialization failed:', error);
+                    console.error('Stack trace:', error.stack);
                     throw error;
                 }
             }
@@ -349,11 +391,14 @@
                 const addLayerBtn = document.getElementById('add-layer-btn');
                 if (addLayerBtn) {
                     addLayerBtn.addEventListener('click', () => {
-                        const id = 'layer_' + Date.now();
-                        LayerSystem.createLayer({ 
-                            id, 
-                            name: `レイヤー${LayerSystem.listLayers().length}` 
-                        });
+                        if (LayerSystem && LayerSystem.createLayer) {
+                            const id = 'layer_' + Date.now();
+                            const layersCount = LayerSystem.listLayers ? LayerSystem.listLayers().length : 0;
+                            LayerSystem.createLayer({ 
+                                id, 
+                                name: `レイヤー${layersCount}` 
+                            });
+                        }
                     });
                 }
 
@@ -405,7 +450,9 @@
                     app.canvas.style.width = `${screenWidth}px`;
                     app.canvas.style.height = `${screenHeight}px`;
                     
-                    CameraSystem.resetView();
+                    if (CameraSystem && CameraSystem.resetView) {
+                        CameraSystem.resetView();
+                    }
                 });
 
                 // マウス座標追跡
@@ -428,19 +475,7 @@
                     }
                 };
 
-                // カメラ変更を監視
-                const observer = new MutationObserver(() => {
-                    updateTransformInfo();
-                });
-                
-                if (worldContainer) {
-                    observer.observe(worldContainer, { 
-                        attributes: true, 
-                        attributeFilter: ['transform'] 
-                    });
-                }
-                
-                // 定期更新も設定
+                // 定期更新
                 setInterval(updateTransformInfo, 100);
             }
 
@@ -488,10 +523,17 @@
         }
 
         // ===============================
-        // アプリケーション開始（修正版）
+        // アプリケーション開始
         // ===============================
         async function initializeApp() {
             console.log('=== Phase2 Preparation Starting ===');
+            
+            // PIXI読み込み確認
+            if (typeof PIXI === 'undefined') {
+                throw new Error('PIXI.js is not loaded');
+            }
+            
+            console.log('PIXI version:', PIXI.VERSION);
             
             try {
                 const app = new DrawingApp();
@@ -499,6 +541,11 @@
                 
                 console.log('✅ Phase2 Preparation SUCCESS');
                 console.log('🎨 Drawing app is ready for use');
+                
+                // 座標系テスト（デバッグモード時のみ）
+                if (window.TEGAKI_CONFIG?.debug && CoordinateSystem.testCoordinateAccuracy) {
+                    CoordinateSystem.testCoordinateAccuracy(app.pixiApp);
+                }
                 
             } catch (error) {
                 console.error('❌ Phase2 Preparation FAILED:', error);
@@ -511,7 +558,8 @@
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initializeApp);
         } else {
-            initializeApp();
+            // 少し待ってからスクリプトが全て読み込まれるのを確認
+            setTimeout(initializeApp, 10);
         }
     </script>
 </body>
