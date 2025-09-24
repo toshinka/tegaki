@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 Phase2準備版 - PixiJS v8.13 お絵かきツール</title>
+    <title>🎨 Phase2統合版 - PixiJS v8.13 お絵かきツール</title>
     <style>
         * {
             margin: 0;
@@ -721,11 +721,9 @@
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     
-    <!-- 🔥 Phase2準備版：最適化されたファイル読み込み順序 -->
-    <script src="config.js"></script>
     
     <script>
-// === 🔥 Phase2準備版：依存関係チェック関数（簡潔版） ===
+// === 🔥 Phase2統合版：依存関係チェック関数（分離システム対応） ===
 function checkDependencies() {
     const dependencies = [
         { name: 'PIXI', obj: window.PIXI },
@@ -736,8 +734,8 @@ function checkDependencies() {
     const missing = dependencies.filter(dep => !dep.obj);
     
     if (missing.length > 0) {
-        console.error('❌ Missing dependencies:', missing.map(d => d.name));
-        throw new Error(`Dependencies not loaded: ${missing.map(d => d.name).join(', ')}`);
+        console.error('❌ Missing basic dependencies:', missing.map(d => d.name));
+        throw new Error(`Basic dependencies not loaded: ${missing.map(d => d.name).join(', ')}`);
     }
     
     console.log('✅ Basic dependencies loaded successfully');
@@ -748,41 +746,57 @@ function checkDependencies() {
 checkDependencies();
     </script>
     
-    <!-- Phase2準備版：最適化されたファイル読み込み -->
-    <script src="coordinate-system.js"></script>
-    <script src="core-runtime.js"></script>
-    <script src="ui-panels.js"></script>
-    <script src="core-engine.js"></script>
+    <!-- Core Scripts（依存関係順） -->
+    <script src="core/config.js"></script>
+    <script src="core/coordinate-system.js"></script>
+    <script src="core/core-runtime.js"></script>
+    <script src="ui/ui-panels.js"></script>
+    
+    <!-- Separated Systems -->
+    <script src="systems/camera-system.js"></script>
+    <script src="systems/layer-system.js"></script>
+    <script src="systems/drawing-clipboard.js"></script>
+    
+    <!-- Main Engine -->
+    <script src="core/core-engine.js"></script>
     
     <script>
-// === 🔥 Phase2準備版：統合されたmain.js（緊急修正削除・CoreRuntime使用） ===
+// === 🔥 Phase2統合版：分離システム統合初期化処理 ===
 (function() {
     'use strict';
     
-    // Phase2準備版：CoreRuntime使用の安全な初期化
-    function checkCoreRuntime() {
-        if (!window.CoreRuntime) {
-            console.error('❌ CoreRuntime not loaded - check core-runtime.js loading');
+    // Phase2統合版：分離システム依存関係チェック
+    function checkSeparatedSystems() {
+        const systems = [
+            { name: 'TegakiCameraSeparated', obj: window.TegakiCameraSeparated },
+            { name: 'TegakiLayerSeparated', obj: window.TegakiLayerSeparated },
+            { name: 'TegakiDrawingClipboardSeparated', obj: window.TegakiDrawingClipboardSeparated },
+            { name: 'TegakiCore.CoreEngine', obj: window.TegakiCore?.CoreEngine }
+        ];
+        
+        const missing = systems.filter(sys => !sys.obj);
+        
+        if (missing.length > 0) {
+            console.error('❌ Missing separated systems:', missing.map(s => s.name));
             return false;
         }
         
-        if (!window.TegakiCore?.CoreEngine) {
-            console.error('❌ TegakiCore.CoreEngine not found - check core-engine.js loading');
-            return false;
-        }
-        
-        console.log('✅ CoreRuntime and TegakiCore loaded successfully');
+        console.log('✅ All separated systems loaded successfully');
+        console.log('   - CameraSystem:', window.TegakiCameraSeparated ? 'OK' : 'MISSING');
+        console.log('   - LayerManager:', window.TegakiLayerSeparated ? 'OK' : 'MISSING');
+        console.log('   - DrawingClipboardSystem:', window.TegakiDrawingClipboardSeparated ? 'OK' : 'MISSING');
+        console.log('   - Integrated CoreEngine:', window.TegakiCore?.CoreEngine ? 'OK' : 'MISSING');
         return true;
     }
     
-    // Phase2準備版：アプリケーション初期化（緊急修正なし・CoreRuntime使用）
-    function initializeApp() {
-        // 安全な参照取得（構造化代入を避ける）
+    // Phase2統合版：アプリケーション初期化（分離システム対応）
+    function initializePhase2IntegratedApp() {
+        // 安全な参照取得
         const CoreEngine = window.TegakiCore.CoreEngine;
         const CONFIG = window.TEGAKI_CONFIG;
         const { UIController } = window.TegakiUI;
         
-        class DrawingApp {
+        class DrawingAppPhase2 {
             constructor() {
                 this.pixiApp = null;
                 this.coreEngine = null;
@@ -795,7 +809,9 @@ checkDependencies();
                     throw new Error('Canvas container not found');
                 }
                 
-                // PixiJS初期化
+                console.log('🚀 Phase2 Integrated App initialization started');
+                
+                // PixiJS初期化（PixiJS v8.13対応）
                 this.pixiApp = new PIXI.Application();
                 
                 const screenWidth = window.innerWidth - 50;
@@ -816,12 +832,17 @@ checkDependencies();
                 this.pixiApp.canvas.style.width = `${screenWidth}px`;
                 this.pixiApp.canvas.style.height = `${screenHeight}px`;
                 
-                // CoreEngine初期化
+                console.log('✅ PixiJS v8.13 initialized');
+                
+                // CoreEngine初期化（Phase2統合版）
                 this.coreEngine = new CoreEngine(this.pixiApp);
                 const drawingApp = this.coreEngine.initialize();
                 
-                // 🔥 Phase2準備版：CoreRuntime初期化（GPT5指摘対応）
-                CoreRuntime.init({
+                console.log('✅ Phase2 CoreEngine integrated and initialized');
+                
+                // 🔥 Phase2統合版：CoreRuntime統合更新
+                window.CoreRuntime.init({
+                    coreEngine: this.coreEngine,
                     app: this.pixiApp,
                     worldContainer: this.coreEngine.getCameraSystem().worldContainer,
                     canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
@@ -830,17 +851,21 @@ checkDependencies();
                     drawingEngine: this.coreEngine.getDrawingEngine()
                 });
                 
-                // UI初期化
+                console.log('✅ CoreRuntime compatibility layer established');
+                
+                // UI初期化（既存UIController使用）
                 this.uiController = new UIController(
                     this.coreEngine.getDrawingEngine(), 
                     this.coreEngine.getLayerManager(), 
                     this.pixiApp
                 );
                 
-                // 🔥 Phase2準備版：CoreRuntime経由でのキャンバスリサイズ統合
+                console.log('✅ UI system integrated');
+                
+                // 🔥 Phase2統合版：CoreEngine経由でのキャンバスリサイズ統合
                 window.drawingAppResizeCanvas = (newWidth, newHeight) => {
-                    console.log('DrawingApp: Canvas resize request via CoreRuntime:', newWidth, 'x', newHeight);
-                    return CoreRuntime.api.resizeCanvas(newWidth, newHeight);
+                    console.log('DrawingApp Phase2: Canvas resize request:', newWidth, 'x', newHeight);
+                    return this.coreEngine.resizeCanvas(newWidth, newHeight);
                 };
                 
                 // ウィンドウリサイズ処理
@@ -865,6 +890,7 @@ checkDependencies();
                 // グローバル参照設定（互換性）
                 window.drawingApp = drawingApp;
                 
+                console.log('🎉 Phase2 Integrated App initialization completed successfully');
                 return true;
             }
             
@@ -906,36 +932,37 @@ checkDependencies();
             }
         }
         
-        return DrawingApp;
+        return DrawingAppPhase2;
     }
     
-    // === 🔥 Phase2準備版：段階的初期化処理 ===
+    // === 🔥 Phase2統合版：段階的初期化処理 ===
     window.addEventListener('DOMContentLoaded', async () => {
         try {
-            console.log('🔥 Starting Phase2 Preparation initialization...');
+            console.log('🔥 Starting Phase2 Integrated initialization...');
             
-            // Step 1: CoreRuntime依存関係チェック
-            if (!checkCoreRuntime()) {
-                throw new Error('CoreRuntime initialization failed');
+            // Step 1: 分離システム依存関係チェック
+            if (!checkSeparatedSystems()) {
+                throw new Error('Separated systems initialization failed');
             }
             
             // Step 2: アプリケーション初期化
-            const DrawingApp = initializeApp();
-            const app = new DrawingApp();
+            const DrawingAppPhase2 = initializePhase2IntegratedApp();
+            const app = new DrawingAppPhase2();
             await app.initialize();
             
             // Step 3: 座標系診断実行
             const diagnosis = window.CoordinateSystem.diagnoseReferences();
             console.log('🔍 Coordinate System Diagnosis:', diagnosis);
             
-            console.log('✅ Phase2 Preparation SUCCESS: Drawing App initialized!');
-            console.log('✅ CoreRuntime facade established');
-            console.log('✅ Safe coordinate references configured');
-            console.log('✅ UI layer binding points ready');
-            console.log('✅ Ready for Phase2 Engine Star separation');
+            console.log('✅ Phase2 Integrated SUCCESS: Drawing App initialized!');
+            console.log('✅ Separated systems integrated: CameraSystem, LayerManager, DrawingClipboardSystem');
+            console.log('✅ API boundaries established with cross-references');
+            console.log('✅ CoreRuntime compatibility layer established');
+            console.log('✅ PixiJS v8.13 compliance maintained across all systems');
+            console.log('✅ Ready for further system enhancements and optimizations');
             
         } catch (error) {
-            console.error('❌ Phase2 Preparation FAILED:', error);
+            console.error('❌ Phase2 Integrated FAILED:', error);
             console.error('Stack trace:', error.stack);
         }
     });
