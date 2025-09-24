@@ -1,0 +1,545 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 TEGAKI Twin-Star Architecture - Fixed</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg { width: 20px; height: 20px; stroke: #800000; }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.active svg { stroke: #ffffff; }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #main-canvas {
+            border: none;
+            display: block;
+            cursor: crosshair;
+            touch-action: none;
+        }
+        
+        .layer-panel-container {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none;
+        }
+        
+        .layer-add-button {
+            width: 36px;
+            height: 36px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.1);
+            pointer-events: all;
+        }
+        
+        .layer-add-button:hover {
+            background: var(--futaba-medium);
+            transform: scale(1.1);
+        }
+        
+        .layer-add-button svg { width: 18px; height: 18px; stroke: #800000; }
+        
+        .layer-panel-items {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: transparent;
+            border-radius: 8px;
+            padding: 8px;
+            pointer-events: all;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        
+        .layer-item {
+            width: 180px;
+            height: 64px;
+            background: var(--futaba-cream);
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            padding: 6px 8px;
+            cursor: pointer;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+            display: grid;
+            grid-template-columns: 20px 1fr auto;
+            grid-template-rows: 1fr 1fr;
+            gap: 4px 8px;
+            align-items: center;
+            user-select: none;
+            position: relative;
+            box-shadow: 0 1px 2px rgba(128, 0, 0, 0.05);
+        }
+        
+        .layer-item:hover {
+            border-color: var(--futaba-medium);
+            background: var(--futaba-background);
+        }
+        
+        .layer-item.active {
+            border-color: var(--futaba-maroon);
+            background: var(--futaba-light-medium);
+            box-shadow: 0 2px 4px rgba(128, 0, 0, 0.15);
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .error-panel {
+            position: fixed;
+            top: 20px;
+            left: 50%;
+            transform: translateX(-50%);
+            background: #ffebee;
+            border: 2px solid #f44336;
+            border-radius: 8px;
+            padding: 16px;
+            max-width: 600px;
+            z-index: 9999;
+            display: none;
+            font-family: monospace;
+            font-size: 12px;
+        }
+        
+        .error-panel.show {
+            display: block;
+        }
+        
+        .error-title {
+            color: #d32f2f;
+            font-weight: bold;
+            margin-bottom: 8px;
+        }
+        
+        .error-message {
+            color: #666;
+            white-space: pre-wrap;
+        }
+    </style>
+</head>
+<body>
+    <div class="error-panel" id="error-panel">
+        <div class="error-title">初期化エラー</div>
+        <div class="error-message" id="error-message"></div>
+    </div>
+
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button" id="resize-tool" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M14 15H9v-5"/><path d="M16 3h5v5"/><path d="M21 3 9 15"/></svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button active" id="pen-tool" title="ベクターペン (P)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム (E)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg>
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <canvas id="main-canvas"></canvas>
+        </div>
+    </div>
+    
+    <div class="layer-panel-container" id="layer-panel-container">
+        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2 2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        </div>
+        <div class="layer-panel-items" id="layer-list"></div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Layer: <span id="current-layer">レイヤー0</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+        </div>
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+            <div class="status-item">Status: <span id="init-status">初期化中...</span></div>
+        </div>
+    </div>
+
+    <!-- PixiJS v8.13 CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+    
+    <!-- 修正版: 正しい読み込み順序でPhase2ファイル読み込み -->
+    <script src="core/config.js"></script>
+    <script src="core/coordinate-system.js"></script>
+    <script src="core/core-runtime.js"></script>
+    <script src="ui/ui-panels.js"></script>
+    <script src="systems/camera-system.js"></script>
+    <script src="systems/layer-system.js"></script>
+    <script src="systems/drawing-clipboard.js"></script>
+    <script src="core/core-engine.js"></script>
+    
+    <!-- 修正版: 初期化処理 -->
+    <script>
+        let coreEngine = null;
+        
+        function showError(title, message) {
+            const errorPanel = document.getElementById('error-panel');
+            const errorTitle = errorPanel.querySelector('.error-title');
+            const errorMessage = document.getElementById('error-message');
+            
+            errorTitle.textContent = title;
+            errorMessage.textContent = message;
+            errorPanel.classList.add('show');
+            
+            // ステータス更新
+            const statusElement = document.getElementById('init-status');
+            if (statusElement) {
+                statusElement.textContent = 'エラー';
+                statusElement.style.color = '#f44336';
+            }
+        }
+        
+        function updateInitStatus(status) {
+            const statusElement = document.getElementById('init-status');
+            if (statusElement) {
+                statusElement.textContent = status;
+            }
+        }
+        
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                console.log('🔥 TEGAKI Twin-Star Architecture initialization (Fixed Version)...');
+                updateInitStatus('初期化中...');
+                
+                // PixiJS読み込み確認
+                if (typeof PIXI === 'undefined') {
+                    throw new Error('PixiJS not loaded');
+                }
+                console.log('✅ PixiJS v' + PIXI.VERSION + ' loaded');
+                
+                // 設定確認
+                if (!window.TEGAKI_CONFIG) {
+                    throw new Error('TEGAKI_CONFIG not loaded');
+                }
+                console.log('✅ TEGAKI_CONFIG loaded');
+                
+                // CoordinateSystem確認
+                if (!window.CoordinateSystem) {
+                    throw new Error('CoordinateSystem not loaded');
+                }
+                console.log('✅ CoordinateSystem loaded');
+                
+                // Canvas element取得
+                const canvas = document.getElementById('main-canvas');
+                if (!canvas) {
+                    throw new Error('Canvas element not found');
+                }
+                console.log('✅ Canvas element found');
+                
+                // CoreEngine確認
+                if (!window.TegakiCore || !window.TegakiCore.CoreEngine) {
+                    throw new Error('CoreEngine not loaded');
+                }
+                console.log('✅ CoreEngine class available');
+                
+                updateInitStatus('CoreEngine初期化中...');
+                
+                // CoreEngine初期化
+                coreEngine = new window.TegakiCore.CoreEngine(canvas);
+                await coreEngine.initialize();
+                
+                updateInitStatus('完了');
+                
+                // 初期化成功後の基本イベント設定
+                setupBasicEvents();
+                
+                console.log('✅ TEGAKI Twin-Star Architecture initialized successfully!');
+                
+                // デバッグ情報出力
+                if (window.TEGAKI_CONFIG?.debug) {
+                    console.log('🔍 Debug Info:', coreEngine.getDebugInfo());
+                }
+                
+            } catch (error) {
+                console.error('❌ Initialization failed:', error);
+                showError('初期化失敗', `エラー: ${error.message}\n\nスタック:\n${error.stack || 'なし'}`);
+            }
+        });
+
+        // 基本イベント設定
+        function setupBasicEvents() {
+            const canvas = document.getElementById('main-canvas');
+            if (!canvas || !coreEngine) return;
+            
+            // 座標表示更新
+            canvas.addEventListener('pointermove', (e) => {
+                if (!coreEngine.isEngineInitialized()) return;
+                
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                
+                // CoordinateSystemを使用して座標変換
+                if (window.CoordinateSystem) {
+                    try {
+                        const canvasPoint = window.CoordinateSystem.screenToCanvas(
+                            coreEngine.getPixiApp(), x, y
+                        );
+                        const coordElement = document.getElementById('coordinates');
+                        if (coordElement) {
+                            coordElement.textContent = `x: ${Math.round(canvasPoint.x)}, y: ${Math.round(canvasPoint.y)}`;
+                        }
+                    } catch (coordError) {
+                        console.warn('Coordinate conversion failed:', coordError);
+                    }
+                }
+            });
+            
+            // ツール切り替え
+            document.addEventListener('keydown', (e) => {
+                if (!coreEngine.isEngineInitialized()) return;
+                
+                switch (e.code) {
+                    case 'KeyP':
+                        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                            setActiveTool('pen');
+                            e.preventDefault();
+                        }
+                        break;
+                    case 'KeyE':
+                        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                            setActiveTool('eraser');
+                            e.preventDefault();
+                        }
+                        break;
+                }
+            });
+            
+            // ツールボタンクリック
+            const penTool = document.getElementById('pen-tool');
+            const eraserTool = document.getElementById('eraser-tool');
+            
+            if (penTool) {
+                penTool.addEventListener('click', () => setActiveTool('pen'));
+            }
+            
+            if (eraserTool) {
+                eraserTool.addEventListener('click', () => setActiveTool('eraser'));
+            }
+        }
+        
+        // アクティブツール設定
+        function setActiveTool(tool) {
+            if (!coreEngine || !coreEngine.isEngineInitialized()) return;
+            
+            // ツールボタンの状態更新
+            document.querySelectorAll('.tool-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            const toolButton = document.getElementById(tool + '-tool');
+            if (toolButton) {
+                toolButton.classList.add('active');
+            }
+            
+            // ステータス表示更新
+            const toolNames = {
+                pen: 'ベクターペン',
+                eraser: '消しゴム'
+            };
+            
+            const toolElement = document.getElementById('current-tool');
+            if (toolElement) {
+                toolElement.textContent = toolNames[tool] || tool;
+            }
+            
+            console.log(`🎨 Tool switched to: ${tool}`);
+        }
+
+        // ウィンドウリサイズ対応
+        window.addEventListener('resize', () => {
+            if (!coreEngine || !coreEngine.isEngineInitialized()) return;
+            
+            try {
+                const newWidth = window.innerWidth - 50;
+                const newHeight = window.innerHeight;
+                
+                const pixiApp = coreEngine.getPixiApp();
+                if (pixiApp && pixiApp.renderer) {
+                    pixiApp.renderer.resize(newWidth, newHeight);
+                    
+                    // カメラシステム更新
+                    const cameraSystem = coreEngine.getCameraSystem();
+                    if (cameraSystem && cameraSystem.updateCamera) {
+                        cameraSystem.updateCamera();
+                    }
+                }
+            } catch (resizeError) {
+                console.warn('Resize failed:', resizeError);
+            }
+        });
+        
+        // FPS監視
+        let lastFrameTime = 0;
+        let frameCount = 0;
+        let fps = 0;
+        
+        function updateFPS() {
+            frameCount++;
+            const now = performance.now();
+            
+            if (now - lastFrameTime >= 1000) {
+                fps = Math.round((frameCount * 1000) / (now - lastFrameTime));
+                frameCount = 0;
+                lastFrameTime = now;
+                
+                const fpsElement = document.getElementById('fps');
+                if (fpsElement) {
+                    fpsElement.textContent = fps;
+                }
+            }
+            
+            requestAnimationFrame(updateFPS);
+        }
+        
+        // FPS監視開始
+        requestAnimationFrame(updateFPS);
+        
+        // グローバルデバッグ関数
+        window.debugTegaki = function() {
+            if (coreEngine) {
+                console.log('🔍 TEGAKI Debug Info:', coreEngine.getDebugInfo());
+                
+                if (window.CoordinateSystem && window.CoordinateSystem.diagnoseReferences) {
+                    window.CoordinateSystem.diagnoseReferences();
+                }
+                
+                if (window.TegakiRuntime && window.TegakiRuntime.debug) {
+                    window.TegakiRuntime.debug();
+                }
+            } else {
+                console.log('❌ CoreEngine not initialized');
+            }
+        };
+        
+        console.log('💡 デバッグ情報確認: debugTegaki() をコンソールで実行してください');
+    </script>
+</body>
+</html>

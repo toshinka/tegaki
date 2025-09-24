@@ -1,309 +1,286 @@
-要約（結論）
+短めに結論→原因→優先修正（実際の差分／パッチ）→検証手順→追加改善案、の順でお送りします。まず結論：
 
-コンソールの TypeError: CoordinateSystem.init is not a function は CoordinateSystem が期待する「静的メソッド init」を持っていないか、CoordinateSystem がグローバル（window）に正しく公開されていない、あるいは coordinate-system.js が index.html より後に読み込まれている のが最も高確率の原因です。
-即効での対処は以下のどちらか（プロジェクト方針に合わせて選択）：
+短い結論（TL;DR）
 
-index.html 側を修正して、CoordinateSystem の新しい API（クラスコンストラクタ）呼びに合わせる。
+Canvas が出ない主原因は（1）PIXI.Application の初期化ミス（this.pixiApp.init(...) を呼んでいる点）で例外が出て初期化が途中で止まること、（2）分割後のグローバル／API 名の不一致（CONFIG / TEGAKI_CONFIG や座標API名の混在など）で checkDependencies() が失敗すること、です。これらを直せばまずキャンバスは表示されます。関連ファイルを確認しました。参考：core-engine.js（Phase2）、CoordinateSystem、Layer, DrawingClipboard。 
+GitHub
++3
+GitHub
++3
+GitHub
++3
 
-coordinate-system.js に互換ラッパ（静的 init）を追加して、既存の呼び出しを生かす。
+1) 発見した問題（要点）
 
-以下に原因候補、確認手順、具体的な修正例（パッチ）、および長期的な改修計画書を提示します。どれでも即座に反映できる内容です。
+以下は実際にソースから確認した問題点の要約です。
 
-1) 優先度付き原因候補（上から確認する）
+PIXI 初期化の誤り
 
-スクリプト読み込み順が不適切
+現在のコードは this.pixiApp = new PIXI.Application(); await this.pixiApp.init({...}) の形になっていますが、Pixi v8 の通常 API では Application に init() の非同期メソッドは存在せず（new PIXI.Application(options) の形を使います）。this.pixiApp.init が undefined → TypeError → initialize() が throw されキャンバスが作られません。実コード箇所確認済み。 
+GitHub
 
-index.html が coordinate-system.js より先に core-runtime 等を読み、CoordinateSystem を使おうとしている。file:// 直開きでも順序は重要。
+グローバル名 / 期待する依存の不一致
 
-coordinate-system.js のエクスポート方法の不整合
+CoreEngine.checkDependencies() が window.CONFIG や window.TegakiRuntime などを探していますが、実際の Phase2 の設定ファイルでは window.TEGAKI_CONFIG や window.TEGAKI_UTILS が使われています（名前の差）。そのため依存チェックで Missing と判定されて init が止まります。具体的には checkDependencies() の期待値と config.js のグローバル名が合っていない。 
+GitHub
++1
 
-以前は window.CoordinateSystem = { init: ... } だったが、新版で class CoordinateSystem { constructor(...) { ... } } に変わり、グローバル変数が上書き/未公開になっている。
+座標APIの呼び方が混在している（API 名の不一致）
 
-名前競合または二重定義
+CoordinateSystem は Phase2 で screenToCanvas, screenToWorld 等を提供していますが、モジュール群のなかで screenToCanvas と screenToCanvasForDrawing や screenToWorld の混用、あるいは誤呼出し（例：描画系が screenToCanvas を期待するところで screenToWorld を使っている、逆に screenToCanvas を使うべきところで screenToCanvas を呼ばない）等の不整合が見られます。これが（表示されても）描画位置ズレやマウス操作不整合の原因になります。具体例：DrawingEngine.screenToWorld が CoordinateSystem.screenToCanvas を呼んでいる — 意図が不明瞭。 
+GitHub
++1
 
-別ファイルで const CoordinateSystem = { ... } が宣言され再代入不可になっているか、他ファイルで let CoordinateSystem を上書きしている。
+レイヤー API の断片化・互換性差
 
-ビルドやES機能の不一致（ESM/モジュール呼び出しミス）
+Phase1 側で使われていたレイヤーデータ構造（layer.layerData 等）と、Phase2 の LayerManager の layer オブジェクト構造が微妙に設計違いです。分割前のコードを引き継ぐ場合、互換アダプタ／shim を用意して旧 API を呼ぶコードに影響を与えないようにする必要があります。 
+GitHub
++1
 
-index.html はノンモジュールで使う前提なのに、coordinate-system.js が export などモジュール専用記法になっている。
+EventBus（またはシステム間通知）の統合が不完全
 
-Type mismatch（関数でなくオブジェクト/クラス）
+分割の目的が各システムの独立化であれば、軽量な EventBus（on/emit/off）を window.TegakiEventBus として用意し、各システムの直接 DOM 参照やグローバル関数呼び出しを減らすべきです。現状は各モジュールが DOM イベントや window.TegakiUI に直接依存していて結合度が高めです。該当箇所は CoreEngine の cross refs や UI 連携部分。 
+GitHub
++1
 
-index.html 側が CoordinateSystem.init(...) を想定しているが、coordinate-system.js が new CoordinateSystem(...) を期待している。
+2) 優先修正（必須） — まずこれを当ててください
 
-名前空間（PI参照、座標基準）やAPI名のリネーム
+下のパッチは core-engine.js の 即効で効く修正（PIXI 初期化、依存名修正、CoordinateSystem への参照設定）です。該当部分を置換してください。
 
-init が initialize 等に変更されたが呼び先が更新されていない。
+A. initializePixiApp() の修正（必須）
+現在（問題）:
 
-2) まず開発者が「今すぐ」確認すべきこと（チェックリスト）
-
- index.html の <script> タグの順序を確認（coordinate-system.js が呼ばれる前にロードされるか）。<script src="coordinate-system.js"></script> は呼び出し側より上にあるか？
-
- coordinate-system.js の冒頭で window.CoordinateSystem を定義しているか確認（あるいは class CoordinateSystem の後で window.CoordinateSystem = CoordinateSystem しているか）。
-
- coordinate-system.js が ES module 構文（export / import）を使っていないか（index.html は module で読み込んでいない前提）。
-
- index.html の該当行（エラーログにある DrawingApp.initialize 呼び出し付近）で CoordinateSystem を console.log して型を確認：
-
-console.log('CoordinateSystem is', CoordinateSystem, typeof CoordinateSystem);
+this.pixiApp = new PIXI.Application();
+await this.pixiApp.init({
+  width: screenWidth, height: screenHeight, backgroundAlpha: 0, resolution: window.devicePixelRatio || 1, antialias: true, eventMode: 'static'
+});
 
 
- repository のブランチ差分を見て、coordinate-system.js のAPI変更（init が削除された/改名された）をチェック。
+修正後（推奨）:
 
- 他ファイル（新しく追加した layer-system.js / camera-system.js / core-engine.js）で CoordinateSystem を再定義していないか grep する。
-
-（上の console.log はデバッグ一時実装 → 削除忘れ注意）
-
-3) 即効修正パターン（そのままコピペ可）
-パターンA — 互換ラッパを coordinate-system.js に追加（既存コードを壊さない最短修正）
-
-もし新しい実装が class CoordinateSystem { ... } で、既存呼び出しが CoordinateSystem.init(...) を期待しているなら、下記を coordinate-system.js の末尾に追加してください。
-
-// 末尾に追加（既に class CoordinateSystem {...} がある前提）
-if (typeof window !== 'undefined') {
-  // 既にグローバルに存在する場合は上書きしないが、
-  // init が無ければ互換 wrapper を提供する
-  if (!window.CoordinateSystem) {
-    // エクスポートされていない場合、クラス名がスコープ内にあるか確認してから公開
-    try {
-      // 'CoordinateSystem' クラスがこのスコープにある場合
-      if (typeof CoordinateSystem === 'function') {
-        window.CoordinateSystem = CoordinateSystem;
-      }
-    } catch (e) {
-      // 無ければフォールバックで空オブジェクト（エラー検出の助け）
-      window.CoordinateSystem = {};
-    }
-  }
-  // もし init が無ければ静的 init 互換を追加
-  if (!window.CoordinateSystem.init) {
-    window.CoordinateSystem.init = function (...args) {
-      // 既存の呼び出しを new に変換してラップ
-      // 例: args = [canvas, config]
-      const instance = new window.CoordinateSystem(...args);
-      // もし初期化メソッドが instance.init や instance.initialize なら呼ぶ
-      if (typeof instance.init === 'function') instance.init();
-      else if (typeof instance.initialize === 'function') instance.initialize();
-      return instance;
-    };
-  }
+// 正しい Pixi v8 の初期化パターン
+this.pixiApp = new PIXI.Application({
+  width: screenWidth,
+  height: screenHeight,
+  backgroundAlpha: 0,
+  resolution: window.devicePixelRatio || 1,
+  antialias: true
+});
+// Pixi v8 の Canvas イベントモードは canvas.eventMode を使う（後で設定）
+this.pixiApp.view.style.display = 'block';
+this.pixiApp.view.style.position = 'absolute';
+this.pixiApp.view.style.top = '0';
+this.pixiApp.view.style.left = '0';
+if (this.canvasElement && this.canvasElement.parentNode) {
+  this.canvasElement.parentNode.replaceChild(this.pixiApp.view, this.canvasElement);
+} else {
+  document.body.appendChild(this.pixiApp.view);
 }
+// stage / world container
+this.worldContainer = new PIXI.Container();
+this.worldContainer.label = 'worldContainer';
+this.worldContainer.eventMode = 'static';
+this.pixiApp.stage.addChild(this.worldContainer);
+// set canvas element ref for other systems
+this.pixiApp.canvas = this.pixiApp.view; // 既存コードが canvas を参照するので互換性確保
+this.setupResize();
+console.log('✅ PixiJS Application initialized (fixed)');
 
 
-このパッチは APIを壊さず、既存 CoordinateSystem.init(...) 呼びを正常化します。まずはこれを入れて動くか確認してください。
+理由：new PIXI.Application(options) が正しい。init() 呼出は未定義で即例外になります。上の修正で pixiApp.view（canvas要素）を this.pixiApp.canvas に割り当て互換も保っています。 
+GitHub
 
-パターンB — index.html 側を新APIに合わせる（よりクリーン）
+B. 依存チェックの修正（checkDependencies()）
+現在 checkDependencies() が探しているキー（window.CONFIG など）を実際の Phase2 名に合わせます。config.js は window.TEGAKI_CONFIG を定義しているので checkDependencies()を以下のように変更してください（抜粋）:
 
-もし coordinate-system.js が class CoordinateSystem { constructor(canvas, config) { ... } } を提供しているなら、index.html（または core-runtime.js 内）での呼び出しを下記のように変えます。
-
-変更前（エラーが出ている想定）:
-
-CoordinateSystem.init(appCanvas, config);
-
-
-変更後:
-
-// 直接インスタンス化して必要ならグローバルに保持
-const coordinateSystem = new CoordinateSystem(appCanvas, config);
-// 既存コードが参照する必要があるなら window に置く
-window.coordinateSystemInstance = coordinateSystem;
-// instance に initialize メソッドがあれば呼ぶ
-if (typeof coordinateSystem.initialize === 'function') coordinateSystem.initialize();
+const required = [
+  { path: 'window.TEGAKI_CONFIG', name: 'TEGAKI_CONFIG' },
+  { path: 'window.CoordinateSystem', name: 'CoordinateSystem' },
+  { path: 'window.TegakiUI', name: 'TegakiUI' }, // ui-panels がこれを出す想定
+  { path: 'window.TegakiCameraSeparated.CameraSystem', name: 'CameraSystem' },
+  { path: 'window.TegakiLayerSeparated.LayerManager', name: 'LayerManager' },
+  { path: 'window.TegakiDrawingClipboardSeparated.DrawingClipboardSystem', name: 'DrawingClipboardSystem' }
+];
 
 
-この方法は型が明確になり、複数インスタンスが必要な設計にも向きます。ただし既存コードの CoordinateSystem.* 呼び出しをすべて coordinateSystemInstance.* に切り替える必要があります（またはグローバルに window.CoordinateSystem = coordinateSystem とする手もある）。
+さらに getNestedObject() が path を window 付きで受け取る実装なので、そのまま使えます（設計上 path を window.SOMETHING の形式に揃えるのが簡潔）。これで不一致による False Negative を防ぎます。 
+GitHub
++1
 
-パターンC — モジュール誤使用の修正（もし export が紛れ込んでいたら）
+C. CoordinateSystem に安全参照を供給（必須）
+CoordinateSystem は setContainers() を持つので、Pixi 初期化後に必ず呼んでおくと安全です。initialize() の setupCrossReferences() 内で以下を入れてください：
 
-coordinate-system.js の先頭や末尾に export / import が使われていたら、index.html の <script type="module"> にするか、逆にモジュールをやめて UMD 互換にする必要があります。あなたの要件では ESM を使わない方針なので、export があれば取り除き、グローバル公開（window.CoordinateSystem = ...）するのが簡単です。
-
-4) 追加で確認すべき“常犯”ポイント（座標系とPI参照等）
-
-座標系の統一：プロジェクト内で world / camera / screen の各座標系の命名と変換関数を一箇所（CoordinateSystem）に集中させる。混在がバグ源。
-
-例 API: worldToScreen(vec), screenToWorld(vec), worldToCamera()
-
-PI 定数参照の不整合：Math.PI を直に使うか、const PI = Math.PI を global constants に集約するか方針を決める。複数定義は危険。
-
-EventBus 整合：複数の system（Layer/Cam/Core/UI）が個別の EventBus を作っていると競合する。EventBus は singleton に統一し、window.EventBus で公開するか CoreEngine.getEventBus() で取得する。
-
-PixiJS 依存：Pixi v8.13 の API を再確認（例えば PIXI.Application の引数や Renderer の生成）。CDN 読込のバージョンと互換性を必ず一致させる。
-
-グローバル vs インスタンス：古いコードで CoordinateSystem をグローバル関数群として使っていたのをクラス化した場合、呼び調整を全体で行う。
-
-5) 改修計画書（AIが直接改修できるレベルでのタスク分解）
-
-以下タスクは優先度つきで列挙。各タスクは「目的」「確認項目」「実装例/方針」「検証方法」を含みます。
-
-タスク A：ブロック1 — 致命エラーの即時修復（最短ルート）
-
-目的：CoordinateSystem.init エラーを消し、アプリを起動させる。
-
-対処案：上のパターンAを適用（互換ラッパ追加）。もし望めばパターンBで index.html 側を変更。
-
-検証：DrawingApp.initialize がエラーなく通ること、コンソールに CoordinateSystem is function/object が期待通りであること。
-
-タスク B：読み込み順と script タグの整備
-
-目的：依存関係順にスクリプトを並べる（coordinate-system → layer-system → camera → core-runtime → core-engine → ui-panels → index.html の init）
-
-実装：index.html の <script> 順序を明示し、重要度の高い依存はコメントで記載。defer 属性を検討する（file:// では注意）。
-
-検証：reload で未定義エラーが出ないこと。
-
-タスク C：API仕様書と型（短いドキュメント）
-
-目的：各 System の公開 API を明文化（CoordinateSystem, LayerSystem, CameraSystem, EventBus）
-
-要点（例）:
-
-CoordinateSystem:
-
-static init(canvas, config) もしくは new CoordinateSystem(canvas, config)
-
-worldToScreen(point), screenToWorld(point), toLocal, toGlobal
-
-LayerSystem:
-
-createLayer(name, options), moveLayer(layerId, targetIndex), rotateLayer(layerId, deg), flipLayer(layerId, axis)
-
-EventBus:
-
-on(event, handler), emit(event, payload), off(event, handler)
-
-検証：ユニットテスト（簡易 JS テスト）で API 呼び出しを実行。
-
-タスク D：座標基準と定数の集約
-
-目的：PI, DPI, DEFAULT_ZOOM, SCREEN_ORIGIN 等、共通定数を config.js に移し、すべての system が参照するようにする。
-
-検証：数値上の微妙なズレ（例：レイヤー描画位置のずれ）が解消されるか。
-
-タスク E：EventBus の統合（singleton化）
-
-目的：イベント連携の混乱を排除。
-
-実装：window.EventBus = new EventBus() または CoreEngine.getEventBus()。既存コードの new EventBus() を撤去・差し替え。
-
-検証：UI 操作 → LayerSystem の反応が期待通りであること。
-
-タスク F：重複実装と未使用ライブラリの整理
-
-目的：再発明を防ぐ。PixiJS の既存 API を利用する（例えばフィルタ、スプライト、コンテナ変換）ことでコードを簡潔化。
-
-実装：コードレビューし、重複する transform / draw / bbox 計算を CoordinateSystem に統一。
-
-タスク G：品質改善（リファクタ）
-
-目的：AI が読みやすく、修正しやすいコードベースにする。
-
-具体策：関数は小さく（max 40行）、一つの責務、JSDoc コメント、明確な命名規則（camelCase、PascalCase の統一）、単一責任の徹底。
-
-検証：レビュー後、AI により自動修正スクリプトが走るときに diff が小さくなるはず。
-
-6) 具体的な差分パッチ例（coordinate-system.js に貼る互換ブロック）
-
-再掲だが、すぐ貼って試す用：
-
-// --- COORDINATE SYSTEM UMD/互換ラッパ ---
-// 既存の class/関数がある前提で、グローバルに公開し、init 互換を付与する。
-(function () {
-  if (typeof window === 'undefined') return;
+// after this.worldContainer and this.pixiApp exist
+if (window.CoordinateSystem && typeof window.CoordinateSystem.setContainers === 'function') {
   try {
-    // もし CoordinateSystem がグローバル関数・クラスならそれを利用
-    if (typeof window.CoordinateSystem === 'undefined') {
-      if (typeof CoordinateSystem === 'function') {
-        window.CoordinateSystem = CoordinateSystem;
-      } else {
-        // もしモジュールスコープのままなら、適宜ここに代入する（必要なら編集）
-        // window.CoordinateSystem = MyExportedCoordinateSystem;
-      }
-    }
+    // canvasContainerがある場合は渡す（Phase1互換で canvasContainer label を使うコードがあるため）
+    const canvasContainer = this.worldContainer.children.find(c => c.label === 'canvasContainer') || null;
+    window.CoordinateSystem.setContainers({ app: this.pixiApp, worldContainer: this.worldContainer, canvasContainer });
   } catch (e) {
-    // 何もしない。最小限のフォールバック
-    window.CoordinateSystem = window.CoordinateSystem || {};
+    console.warn('CoordinateSystem.setContainers failed:', e);
   }
-
-  // init が無ければ互換 wrapper を追加
-  if (!window.CoordinateSystem.init) {
-    window.CoordinateSystem.init = function (...args) {
-      // args に canvas, config が入る前提
-      if (typeof window.CoordinateSystem === 'function') {
-        const instance = new window.CoordinateSystem(...args);
-        if (typeof instance.init === 'function') instance.init();
-        else if (typeof instance.initialize === 'function') instance.initialize();
-        // 既存コードが静的 API を参照している場合への互換としても置く
-        window.coordinateSystemInstance = instance;
-        return instance;
-      } else if (typeof window.coordinateSystemInstance === 'object') {
-        // 既に singleton があるならそれを返す
-        return window.coordinateSystemInstance;
-      }
-      // 最後のフォールバックで空オブジェクトを返す
-      return {};
-    };
-  }
-})();
-
-7) デバッグ用スニペット（index.html の initialize 周りに一時追加して原因特定）
-
-DrawingApp.initialize の冒頭に入れて動作確認：
-
-console.group('DEBUG CoordinateSystem');
-console.log('CoordinateSystem raw:', typeof CoordinateSystem, CoordinateSystem);
-console.log('window.CoordinateSystem:', typeof window.CoordinateSystem, window.CoordinateSystem);
-try {
-  console.log('CoordinateSystem.init exists?', typeof CoordinateSystem.init);
-} catch (e) {
-  console.warn('CoordinateSystem not defined in this scope');
 }
-console.groupEnd();
 
 
-これでコンソール出力から「関数ではない」「undefined」「object」「class」などが判断できます。
+これで座標系の「安全参照」が整い、以降の screenToCanvas 等が安定します。 
+GitHub
 
-8) テスト & 検証フロー（簡潔）
+3) 中期的／追加の修正（推奨）
 
-まず 互換ラッパ（パッチA） を coordinate-system.js に追加 → index.html でエラーが消えるか確認。
+優先度は高→低の順です。
 
-console.log で型と中身を確認。必要なら index.html の呼び方を パターンB に変更。
+座標APIをプロジェクト標準に固定する。
 
-Layer / Camera が正しく座標を受け取っているか（例：マウス座標で線が引けるか）確認。
+推奨：CoordinateSystem.screenToCanvas() を「描画（キャンバス）用」入力で使い、CoordinateSystem.screenToWorld() を「カメラ／レイヤー操作用」に使う。各システムの screenTo* 呼び出しを走査して統一する（DrawingEngine と CameraSystem が混在しているので修正）。該当呼び出しを一覧化して一括修正してください。 
+GitHub
++1
 
-EventBus の挙動を手動操作（レイヤ作成・移動）で検証。
+Layer API の互換 shim を作る
 
-不整合が残る API をドキュメント化して順次リファクタ。
+既存（Phase1）コードが layer.layerData 等を期待するなら、LayerManager.createLayer() の戻りオブジェクトに layer.layerData 等を付けて互換を保つアダプタを作ります。こうすることで Phase1 のロジックをほとんど手直しせずに移行できます。 
+GitHub
++1
 
-9) 推奨方針（設計上の提言）
+軽量 EventBus を導入してシステム間の依存を緩める
 
-API 互換性を優先して段階的にリファクタする（互換ラッパ → 内部クリーン → 外部公開 API 更新）。
+例：
 
-各 System（Coordinate/Layer/Camera/Core/UI）ごとに明確な責務と公開メソッドを宣言し、README に短く書く。
+window.TegakiEventBus = {
+  _map: new Map(),
+  on(k, fn) { if(!this._map.has(k)) this._map.set(k, []); this._map.get(k).push(fn); },
+  off(k, fn) { if(!this._map.has(k)) return; this._map.set(k, this._map.get(k).filter(f=>f!==fn)); },
+  emit(k, ...args) { (this._map.get(k)||[]).forEach(f=>{ try{f(...args);}catch(e){console.error(e);} }); }
+};
 
-EventBus を single source にしてログやデバッグトレースを付与。
 
-PixiJS の機能（Container の transform、Sprite の pivot、フィルタ）を活用し自前計算を減らす。
+各システムは window.TegakiEventBus.on('layer.add', ...) のように subscribe します。これで window.TegakiUI 等の存在チェックを減らせます。
 
-ユニットテスト（node-less でも動く小さなテストファイル）を導入し、座標変換やレイヤ移動などの基本ロジックを自動化で検証。
+ログ／デバッグの整備（最小限）
 
-10) 追加で付けておく「よくある小ミス」チェックリスト
+window.TEGAKI_CONFIG.debug を中心にログを出す仕組みにし、console spam を避ける。重大エラーは CoreEngine.getInitializationError() で可視化できるようにする（既に用意あり）。
 
-script タグに type="module" が誤って付与されていないか。
+4) 具体的な検証手順（実行して確認する順番）
 
-defer / async の使い方で読み込み順が狂っていないか。
+上の A（PIXI 初期化）と B（依存名）と C（CoordinateSystem.setContainers）を core-engine.js に適用する。
 
-ファイルパスの大文字小文字ミス（ローカル file:// では OS に依存）。
+ブラウザで index.html を file:// で直開きし、Console を開く。
 
-const CoordinateSystem = {} として後から書き換えようとして失敗していないか（再代入不可エラー）。
+期待するログ（成功時の抜粋）
 
-同一プロジェクト内に古い coordinate-system.js が残っていないか（キャッシュや別ディレクトリ）。
+✅ core-engine.js loaded (Phase2 integrated)
 
-11) 最後に：今すぐできる最短アクション（優先度順）
+✅ PixiJS Application initialized (fixed)
 
-coordinate-system.js に【互換ラッパ】を貼って保存 → ブラウザでリロード（file://）。ログで CoordinateSystem の型を確認。
+✅ Separated systems initialized
 
-スクリプト順を確認し、coordinate-system.js を core より前に配置。
+✅ CameraSystem initialized　等。 
+GitHub
++1
 
-index.html の DrawingApp.initialize の開始行にデバッグログを入れて型を再確認。
+window.TegakiCore.CoreEngine を確認（console.log(window.TegakiCore.CoreEngine)）してクラスが存在すること。
 
-エラー消えたら Layer/Cam の簡単な操作で挙動確認。
+new window.TegakiCore.CoreEngine(document.getElementById('canvas-placeholder')) を作り .initialize() を呼ぶ（または index の起動処理に従う）。初期化成功後、キャンバスが visible か確認。
+
+マウスで描画してズレや不具合があれば、Console で window.CoordinateSystem.diagnoseReferences() と window.CoordinateSystem.testCoordinateAccuracy(window.drawingApp?.pixiApp)（DEBUG mode の場合）を実行して座標系を検査。 
+GitHub
+
+5) 追加で注意すべき点（設計／運用）
+
+API 名の厳格化：screenToCanvas, screenToWorld, worldToScreen, layerToWorld 等、1つの名に統一してプロジェクト規約をドキュメント化してください。命名が一度ぶれると分割したときに確実にバグの温床になります。
+
+グローバル名の命名規則：window.TEGAKI_CONFIG のように全ファイルで同じキーを参照する。CoreEngine.checkDependencies() はこの規約を参照するように。
+
+テスト用のデバッグモード：TEGAKI_CONFIG.debug = true を一時的に入れ、座標ログを取るとすばやくズレ原因がわかります。
+
+分割方針：システム毎に init(pixiApp, worldContainer, options) を必須化しておくと、CoreEngine が責任をもって依存注入でき、分割後の結合ミスを防げます。
+
+
+最小限 A〜C（Pixi初期化修正／依存チェック修正／CoordinateSystem参照設定） をまとめた短めコード例です。
+
+// === core-engine.js 抜粋 修正版 ===
+window.TegakiCore = window.TegakiCore || {};
+
+class CoreEngine {
+  constructor(canvasElement) {
+    this.canvasElement = canvasElement;
+    this.pixiApp = null;
+    this.worldContainer = null;
+  }
+
+  async initialize() {
+    try {
+      this.initializePixiApp();
+      this.setupCrossReferences();
+      console.log("✅ CoreEngine initialized");
+    } catch (e) {
+      console.error("CoreEngine init failed:", e);
+    }
+  }
+
+  initializePixiApp() {
+    const screenWidth = window.innerWidth;
+    const screenHeight = window.innerHeight;
+
+    // PixiJS v8 正しい初期化
+    this.pixiApp = new PIXI.Application({
+      width: screenWidth,
+      height: screenHeight,
+      backgroundAlpha: 0,
+      resolution: window.devicePixelRatio || 1,
+      antialias: true
+    });
+
+    this.worldContainer = new PIXI.Container();
+    this.worldContainer.label = "worldContainer";
+    this.worldContainer.eventMode = "static";
+    this.pixiApp.stage.addChild(this.worldContainer);
+
+    // view(canvas)をDOMに反映
+    const view = this.pixiApp.view;
+    view.style.position = "absolute";
+    view.style.top = "0";
+    view.style.left = "0";
+    document.body.appendChild(view);
+
+    // 互換性: 他コードが pixiApp.canvas を参照する
+    this.pixiApp.canvas = view;
+  }
+
+  setupCrossReferences() {
+    // CoordinateSystemにPixi参照を渡す
+    if (window.CoordinateSystem?.setContainers) {
+      window.CoordinateSystem.setContainers({
+        app: this.pixiApp,
+        worldContainer: this.worldContainer
+      });
+    }
+  }
+
+  checkDependencies() {
+    const required = [
+      { path: "window.TEGAKI_CONFIG", name: "TEGAKI_CONFIG" },
+      { path: "window.CoordinateSystem", name: "CoordinateSystem" },
+      { path: "window.TegakiUI", name: "TegakiUI" },
+      { path: "window.TegakiCameraSeparated.CameraSystem", name: "CameraSystem" },
+      { path: "window.TegakiLayerSeparated.LayerManager", name: "LayerManager" },
+      { path: "window.TegakiDrawingClipboardSeparated.DrawingClipboardSystem", name: "DrawingClipboardSystem" }
+    ];
+    required.forEach(r => {
+      if (!eval(r.path)) {
+        throw new Error("Missing dependency: " + r.name);
+      }
+    });
+  }
+}
+
+window.TegakiCore.CoreEngine = CoreEngine;
+
+この短縮版コードのポイント
+
+PIXI.Application → init() を削除し、正しい初期化方法に修正。
+
+this.pixiApp.view を canvas として保持（Phase1 互換）。
+
+CoordinateSystem.setContainers() に pixiApp と worldContainer を渡す。
+
+checkDependencies() の依存名を Phase2 のグローバル名に合わせた。
