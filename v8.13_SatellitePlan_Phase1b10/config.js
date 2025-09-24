@@ -1,6 +1,12 @@
 // ===== config.js =====
 // グローバル設定として定義（AI作業性最適化）
 
+// === 共通定数定義（PI参照統一） ===
+const PI = Math.PI;
+const TAU = 2 * PI;
+const DEG_TO_RAD = PI / 180;
+const RAD_TO_DEG = 180 / PI;
+
 window.TEGAKI_CONFIG = {
     canvas: { 
         width: 400, 
@@ -30,8 +36,8 @@ window.TEGAKI_CONFIG = {
         maxY: 1000,
         minScale: 0.1,
         maxScale: 3.0,
-        minRotation: -180,
-        maxRotation: 180
+        minRotation: -PI, // ラジアン統一
+        maxRotation: PI   // ラジアン統一
     },
     background: { 
         color: 0xf0e0d6 
@@ -46,7 +52,14 @@ window.TEGAKI_CONFIG = {
         RENDER_SCALE: 3,    // 高解像度レンダリング倍率
         QUALITY: 'high'     // Canvas APIスムージング品質
     },
-    debug: false
+    debug: false,
+    // 数学定数（統一参照）
+    math: {
+        PI: PI,
+        TAU: TAU,
+        DEG_TO_RAD: DEG_TO_RAD,
+        RAD_TO_DEG: RAD_TO_DEG
+    }
 };
 
 window.TEGAKI_SHORTCUTS = {
@@ -70,5 +83,37 @@ window.TEGAKI_COLORS = {
 window.TEGAKI_UTILS = {
     log: (...args) => {
         if (window.TEGAKI_CONFIG.debug) console.log(...args);
+    },
+    // 数学ユーティリティ（統一参照）
+    degToRad: (degrees) => degrees * DEG_TO_RAD,
+    radToDeg: (radians) => radians * RAD_TO_DEG,
+    clamp: (value, min, max) => Math.min(max, Math.max(min, value)),
+    lerp: (a, b, t) => a + (b - a) * t,
+    // 座標ユーティリティ
+    distance: (x1, y1, x2, y2) => Math.sqrt((x2 - x1) ** 2 + (y2 - y1) ** 2),
+    angle: (x1, y1, x2, y2) => Math.atan2(y2 - y1, x2 - x1),
+    // PixiJS v8.13互換性チェック
+    checkPixiVersion: () => {
+        if (typeof PIXI === 'undefined') {
+            console.error('PixiJS not loaded');
+            return false;
+        }
+        const version = PIXI.VERSION;
+        const majorVersion = parseInt(version.split('.')[0]);
+        if (majorVersion < 8) {
+            console.warn(`PixiJS version ${version} detected. v8.13+ recommended.`);
+        }
+        console.log(`PixiJS version ${version} loaded`);
+        return true;
     }
 };
+
+// 初期化時のバージョンチェック
+if (typeof window !== 'undefined') {
+    window.addEventListener('DOMContentLoaded', () => {
+        // PixiJSロード後にバージョンチェック
+        setTimeout(() => {
+            window.TEGAKI_UTILS.checkPixiVersion();
+        }, 100);
+    });
+}
