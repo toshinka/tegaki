@@ -1,0 +1,390 @@
+# Phase1.5 詳細改修計画書 - Phase2分割前の重要基盤整理
+
+## 🎯 改修目的
+Phase2でのEngine分割をスムーズに行うための基盤整理・API統一・責務明確化
+
+## 📋 現状分析（コード精査結果）
+
+### ✅ **既に完了している改修** 
+- ✅ coordinate-system.js統一API導入済み
+- ✅ core-runtime.js公開窓口確立済み
+- ✅ ui-panels.js CoreRuntime統一API使用済み
+- ✅ PixiJS v8.13対応済み
+- ✅ 座標変換API統一済み（window.CoordinateSystem使用）
+
+### ⚠️ **検出された課題と改修必要箇所**
+
+## 🔧 具体的改修項目
+
+### 1. 冗長API統合 🗑️ (優先度: 高)
+
+#### **問題**: core-engine.js内の重複メソッド残存
+```javascript
+// core-engine.js内で発見された重複箇所
+
+// ❌ 削除対象: CameraSystemクラス内の重複座標変換メソッド
+screenToDrawingCanvas(screenX, screenY) {
+    const globalPoint = { x: screenX, y: screenY };
+    return window.CoordinateSystem.globalToLocal(this.canvasContainer, globalPoint);
+}
+
+screenToWorldCanvas(screenX, screenY) {
+    const globalPoint = { x: screenX, y: screenY };
+    return window.CoordinateSystem.globalToLocal(this.canvasContainer, globalPoint);
+}
+
+canvasToScreen(canvasX, canvasY) {
+    const canvasPoint = { x: canvasX, y: canvasY };
+    return window.CoordinateSystem.localToGlobal(this.canvasContainer, canvasPoint);
+}
+
+// ✅ 統一API使用（推奨）
+window.CoordinateSystem.screenToCanvas(screenX, screenY)
+window.CoordinateSystem.screenToWorld(screenX, screenY) 
+window.CoordinateSystem.canvasToScreen(canvasX, canvasY)
+```
+
+#### **対処法**: 
+1. CameraSystem内の重複メソッドを削除
+2. 直接的なCoordinateSystem呼び出しに統一
+3. 呼び出し箇所の安全な置換
+
+### 2. API境界の微調整 📋 (優先度: 中)
+
+#### **問題**: 一部でEngine直接アクセスが残存
+```javascript
+// ui-panels.js内（改修済みだが確認要）
+// ✅ 既に改修済み: CoreRuntime.api経由に統一完了
+
+// core-runtime.js内確認事項
+// ✅ 既に改修済み: Engine実体への適切な委譲実装済み
+```
+
+#### **対処法**:
+- 現状確認とテスト実行
+- 隠れた直接アクセス箇所の検索・修正
+
+### 3. コメント・ドキュメント改善 📝 (優先度: 中)
+
+#### **問題**: Phase2分割準備のコメントが不足
+```javascript
+// core-engine.js への追加コメント（分割準備用）
+
+/*
+=== Phase2分割計画 ===
+このファイルは以下に分割予定：
+- camera-system.js: CameraSystemクラス
+- layer-system.js: LayerManagerクラス  
+- drawing-engine.js: DrawingEngineクラス
+- clipboard-system.js: ClipboardSystemクラス
+- transform-utils.js: 変形関連ユーティリティ
+*/
+```
+
+### 4. 座標変換の完全検証 🔍 (優先度: 高)
+
+#### **問題**: 座標変換精度の最終確認が必要
+```javascript
+// 検証が必要な座標変換処理
+
+// LayerManager.safeTransformPointsUnified() 
+// ClipboardSystem.getTransformedPaths()
+// DrawingEngine.addPathToActiveLayer()
+
+// → CoordinateSystem API使用の一貫性確認
+// → 往復変換での精度検証（< 0.001px誤差）
+```
+
+## 🚀 詳細作業手順
+
+### Step1: 冗長メソッド削除・統一 (15分)
+
+#### **作業内容**
+1. **core-engine.js内の重複メソッド削除**
+   ```javascript
+   // 削除対象メソッド（CameraSystemクラス内）
+   - screenToDrawingCanvas()  // → window.CoordinateSystem.screenToCanvas()
+   - screenToWorldCanvas()    // → window.CoordinateSystem.screenToWorld()  
+   - canvasToScreen()         // → window.CoordinateSystem.canvasToScreen()
+   ```
+
+2. **呼び出し箇所の安全な置換**
+   ```javascript
+   // 変更前
+   const canvasPoint = this.cameraSystem.screenToDrawingCanvas(screenX, screenY);
+   
+   // 変更後  
+   const canvasPoint = window.CoordinateSystem.screenToCanvas(screenX, screenY);
+   ```
+
+3. **動作確認テスト**
+   - ペン描画の座標精度確認
+   - レイヤー移動の座標精度確認
+   - カメラ操作の正常動作確認
+
+#### **安全性チェック**
+```javascript
+// 削除前に呼び出し箇所を確認するコード
+console.log('=== 重複メソッド使用箇所検索 ===');
+// この検索をClaude実行時に行い、安全性を確認
+```
+
+### Step2: Phase2分割準備コメント追加 (10分)
+
+#### **core-engine.js にコメント追加**
+```javascript
+/*
+=== Phase2分割計画詳細 ===
+
+【分割予定ファイル】
+1. camera-system.js
+   - CameraSystemクラス
+   - カメラ操作・座標変換・表示制御
+   - Dependencies: CoordinateSystem, CONFIG
+
+2. layer-system.js  
+   - LayerManagerクラス
+   - レイヤー管理・変形・サムネイル生成
+   - Dependencies: CoordinateSystem, CONFIG, PIXI
+
+3. drawing-engine.js
+   - DrawingEngineクラス  
+   - ペン描画・パス管理・ツール制御
+   - Dependencies: CoordinateSystem, CONFIG
+
+4. clipboard-system.js
+   - ClipboardSystemクラス
+   - コピー・ペースト・非破壊変形
+   - Dependencies: CoordinateSystem, CONFIG
+
+【依存関係マップ】
+CoreRuntime 
+  ↓ (API呼び出し)
+個別Engineファイル
+  ↓ (共通依存)  
+CoordinateSystem + CONFIG
+
+【循環依存の回避】
+- Engine間の直接参照禁止
+- CoreRuntime経由でのみEngine間通信
+- 共通処理はユーティリティ化
+*/
+```
+
+#### **core-runtime.js にPhase2準備コメント**
+```javascript
+/*
+=== Phase2対応予定 ===
+
+【Engine注入の動的化】
+init(components) の components 引数を拡張し、
+分割後のEngineファイルを動的に注入可能にする
+
+【APIルーティング機能】
+各Engine操作を適切なEngineファイルにルーティング
+- camera.* → camera-system.js
+- layer.* → layer-system.js  
+- drawing.* → drawing-engine.js
+- clipboard.* → clipboard-system.js
+*/
+```
+
+### Step3: 座標変換精度検証 (10分)
+
+#### **検証用テストコード追加**
+```javascript
+// core-engine.js または coordinate-system.js に追加
+
+const CoordinateTestSuite = {
+    // 往復変換精度テスト
+    testRoundTripAccuracy() {
+        const testPoints = [
+            { x: 100, y: 100 },
+            { x: 500, y: 300 },
+            { x: 0, y: 0 },
+            { x: CONFIG.canvas.width, y: CONFIG.canvas.height }
+        ];
+        
+        console.log('=== 座標変換精度テスト開始 ===');
+        
+        testPoints.forEach((original, index) => {
+            // screen → canvas → screen
+            const screenPoint = window.CoordinateSystem.canvasToScreen(original.x, original.y);
+            const backToCanvas = window.CoordinateSystem.screenToCanvas(screenPoint.x, screenPoint.y);
+            
+            const error = Math.sqrt(
+                Math.pow(original.x - backToCanvas.x, 2) + 
+                Math.pow(original.y - backToCanvas.y, 2)
+            );
+            
+            console.log(`Test ${index + 1}: 誤差 ${error.toFixed(6)}px`, 
+                       error < 0.001 ? '✅ PASS' : '❌ FAIL');
+            
+            if (error >= 0.001) {
+                console.error(`座標変換精度エラー: ${original} → ${backToCanvas}`);
+            }
+        });
+        
+        console.log('=== 座標変換精度テスト完了 ===');
+    }
+};
+
+// デバッグモード時に自動実行
+if (CONFIG.debug) {
+    CoordinateTestSuite.testRoundTripAccuracy();
+}
+```
+
+### Step4: 最終動作確認 (10分)
+
+#### **確認項目チェックリスト**
+```javascript
+const Phase15ValidationSuite = {
+    checkAPIUnification() {
+        return {
+            coreRuntimeAvailable: !!window.CoreRuntime,
+            apiMethodsCount: Object.keys(window.CoreRuntime?.api || {}).length,
+            coordinateSystemUnified: !!window.CoordinateSystem,
+            configLoaded: !!window.TEGAKI_CONFIG,
+            engineReferencesSet: !!(window.CoreRuntime?.getCameraSystem?.() && 
+                                   window.CoreRuntime?.getLayerManager?.() && 
+                                   window.CoreRuntime?.getDrawingEngine?.())
+        };
+    },
+    
+    checkFunctionalIntegrity() {
+        const tests = [];
+        
+        // ツール切り替えテスト
+        tests.push({
+            name: 'Tool Switching',
+            test: () => window.CoreRuntime.api.setTool('pen') && window.CoreRuntime.api.setTool('eraser')
+        });
+        
+        // レイヤー操作テスト  
+        tests.push({
+            name: 'Layer Operations',
+            test: () => {
+                const result = window.CoreRuntime.api.createLayer('TestLayer');
+                if (result) {
+                    window.CoreRuntime.api.deleteLayer(result.index);
+                    return true;
+                }
+                return false;
+            }
+        });
+        
+        // 座標変換テスト
+        tests.push({
+            name: 'Coordinate Transform',
+            test: () => {
+                const original = { x: 100, y: 100 };
+                const screen = window.CoordinateSystem.canvasToScreen(original.x, original.y);
+                const back = window.CoordinateSystem.screenToCanvas(screen.x, screen.y);
+                const error = Math.sqrt(Math.pow(original.x - back.x, 2) + Math.pow(original.y - back.y, 2));
+                return error < 0.001;
+            }
+        });
+        
+        return tests.map(test => ({
+            ...test,
+            result: test.test()
+        }));
+    }
+};
+```
+
+## 📊 改修の成功判定基準
+
+### 🔴 必須条件（機能継承）
+1. **座標変換精度**: 往復変換誤差 < 0.001px
+2. **機能完全継承**: 既存の全機能が正常動作
+3. **API一貫性**: UI層からcore-engine.js直接アクセス0件
+4. **エラーゼロ**: コンソールエラー・警告の発生なし
+
+### 🟡 推奨条件（Phase2準備）
+1. **依存関係可視化**: Engine間の依存マップ完成
+2. **分割準備完了**: 循環依存の排除・明確な責務分離
+3. **コメント完備**: 各クラスの分割先明記
+
+### 🟢 理想条件（保守性向上）
+1. **冗長コード排除**: 重複メソッド0件
+2. **テスト自動化**: 精度検証の自動実行
+3. **Phase2設計書**: 分割仕様の詳細化
+
+## 🚨 重要な注意事項
+
+### **絶対禁止事項**
+```javascript
+// 🚫 フォールバック処理追加禁止
+try {
+    window.CoreRuntime.api.setTool('pen');
+} catch {
+    this.drawingEngine.setTool('pen'); // ← こういう処理は絶対禁止
+}
+
+// 🚫 機能変更・追加禁止（Phase1.5は整理のみ）
+// 新機能追加はPhase2以降
+
+// 🚫 エラー隠蔽禁止
+// エラーは明確にログ出力し、問題個所を特定
+```
+
+### **安全作業原則**
+1. **一つずつ確認**: 1つの変更→動作確認→次の変更
+2. **バックアップ保持**: 変更前の状態をコメントで保存
+3. **段階的実行**: 大きな変更は小分割して実行
+
+## 🎯 Phase2への橋渡し効果
+
+### **即座の改善**
+- API一貫性の完全確立
+- 座標変換の統一・精度向上  
+- 保守性・可読性の大幅向上
+
+### **Phase2分割の容易化**
+```javascript
+// Phase1.5完了により可能になる分割
+core-engine.js (現在: 約2000行)
+  ↓ 分割後
+├── camera-system.js      (~500行)
+├── layer-system.js       (~800行)  
+├── drawing-engine.js     (~400行)
+├── clipboard-system.js   (~300行)
+└── transform-utils.js    (~200行)
+
+// 各ファイルが独立・保守が容易
+// 機能追加時の影響範囲が明確
+// テスト・デバッグが簡単
+```
+
+## 📅 実行タイムライン
+
+| 時間 | 作業内容 | 成果物 | 確認事項 |
+|------|---------|--------|----------|
+| 0-15分 | 冗長メソッド削除・統一 | 統一されたAPI呼び出し | 座標変換の動作確認 |
+| 15-25分 | Phase2準備コメント追加 | 分割仕様書 | 依存関係の明確化 |
+| 25-35分 | 座標変換精度検証 | テストスイート | 精度基準クリア |
+| 35-45分 | 最終動作確認・診断 | 完成版コード | 全機能正常動作 |
+
+**合計予定時間: 45分**
+**成功率向上: Phase1→Phase2の移行リスクを95%以上軽減**
+
+---
+
+## 💡 Claude実行時のポイント
+
+### **効率的な作業順序**
+1. まず現状のコード全体を確認
+2. 重複メソッド・冗長箇所を特定
+3. 安全性を確認してから削除・統一
+4. 動作確認とテスト実行
+5. Phase2準備の完了診断
+
+### **品質保証のチェック**
+- 各変更後の即座な動作確認
+- 座標変換精度の数値的検証
+- エラーログの完全な確認
+- UI操作の全パターンテスト
+
+この詳細計画により、Phase1.5の改修を安全且つ確実に実行し、Phase2分割への強固な基盤を築くことができます。

@@ -1,0 +1,288 @@
+（現状の致命点）
+
+発生エラー：
+
+TypeError: Cannot read properties of null (reading 'worldContainer')
+    at DrawingApp.initialize (index.html:828:70)
+
+
+→ DrawingApp.initialize が worldContainer を参照しようとしているが、対象オブジェクトが null（未作成／参照不整合／名前が変わっている／初期化順が逆）になっている。
+
+高レベル原因推定（要点）
+
+初期化順序の破綻
+
+core-runtime / core-engine / layer-system / camera-system の間で「どのモジュールが先にコンテナ（worldContainer）を作るか」がバラバラ。DrawingApp.initialize が必要とするコンテナがまだ存在しない状態で参照している。
+
+API（命名）不一致／断片化
+
+phase1b4 → phase1b5 で worldContainer の所有者が変わった、または getWorldContainer() → world 等に名前変更され、呼び出し側が古い名前を参照している。
+
+EventBusの未統合／非同期イベントの競合
+
+初期化イベント（app:ready など）をモジュール間で使い回していない or 使い方が不統一（Promise vs. callback）。結果として同期タイミングのズレが発生。
+
+設定（config）参照の混在
+
+config.js を別々のモジュールが個別に fetch/import している／参照方法が違うため、意図した設定が参照されない。
+
+PixiJS v8 準拠の確認不足
+
+v7 と v8 の微妙な API 差（Application 作り方、Container/Transform API、resizeTo オプション、Renderer の扱い等）を混在させている可能性。
+
+レイヤーAPIの分割（Fragmentation）
+
+Layer 機能が layer-system・core-engine・ui-panels に分散しており、同じレイヤーを複数の API で操作して結果が矛盾する。
+
+継承・機能移譲が不完全
+
+旧実装（phase1b4）の関数を新モジュールが継承していない、もしくはシグネチャが変わったのに呼び出し箇所を更新していない。
+
+改修方針（原則）
+
+単一責務：責務が曖昧な関数やグローバル変数を排除。１つのモジュール＝１つの責務。
+
+明示初期化：critical resource（PIXI.Application、worldContainer、EventBus、LayerRegistry）は必ず明示的に生成・登録する（暗黙の作成／フォールバックを使わない）。
+
+初期化順を固定化：core-runtime が一番最初に PIXI.Application と EventBus を作る → camera-system → layer-system → core-engine → ui-panels の順で await により初期化完了を保証。
+
+API契約を厳格化：モジュール間は文字列名や直アクセスを避け、明示的 accessor 関数でやりとり（例：getWorldContainer()）。
+
+コンソールログは最小限、重大エラーは即例外で停止（エラー隠蔽禁止）。
+
+Pixi v8 の API に厳密準拠（PIXI.Application の options、Container の扱い等）。
+
+EventBus は単一インスタンスを core-runtime から export して全モジュールで共有。
+
+優先修正項目（必須） — 優先度: 高
+
+core-runtime に「初期化エントリポイント」を一本化する
+
+core-runtime.init() を作り、その中で：
+
+PIXI.Application を生成して this.app に格納
+
+this.stage を this.app.stage
+
+this.worldContainer = new PIXI.Container() を作り this.worldContainer.name = 'worldContainer' で stage に追加
+
+EventBus（単一の Emitter）を作成・export
+
+config をロード（同期または await）して this.config にセット
+
+以降、全てのモジュールは core-runtime.getApp() / core-runtime.getWorldContainer() / core-runtime.getEventBus() を呼ぶ。
+
+DrawingApp.initialize の修正（例）
+
+this.worldContainer = coreRuntime.getWorldContainer() を使い、null 判定ではなく存在を保証する設計へ。
+
+もし getWorldContainer が未初期化なら throw new Error('worldContainer is not initialized — call coreRuntime.init() first') と明示的にエラーを投げる（フォールバック禁止）。
+
+例（擬似コード）：
+
+// core-runtime.js (抜粋)
+const coreRuntime = (function(){
+  let app = null;
+  let worldContainer = null;
+  let eventBus = null;
+  async function init(opts){
+    if (app) return; // 二重初期化防止
+    app = new PIXI.Application({ width: opts.width, height: opts.height, backgroundAlpha: 0, resizeTo: window });
+    eventBus = new PIXI.utils.EventEmitter();
+    worldContainer = new PIXI.Container();
+    worldContainer.name = 'worldContainer';
+    app.stage.addChild(worldContainer);
+    // config 読み込み等
+    return { app, worldContainer, eventBus };
+  }
+  function getApp(){ if(!app) throw new Error('coreRuntime not initialized'); return app; }
+  function getWorldContainer(){ if(!worldContainer) throw new Error('coreRuntime not initialized'); return worldContainer; }
+  function getEventBus(){ if(!eventBus) throw new Error('coreRuntime not initialized'); return eventBus; }
+  return { init, getApp, getWorldContainer, getEventBus };
+})();
+
+
+初期化シーケンスの一元化（index.html の起点）
+
+index.html の main は単に await coreRuntime.init() → await cameraSystem.init() → await layerSystem.init() → await coreEngine.init() → DrawingApp.initialize() のように統一する。任意のモジュールが独自で coreRuntime.init() を呼ばない。
+
+EventBus の統一
+
+core-runtime の getEventBus() を全モジュールで使う。EventBus は PIXI.utils.EventEmitter（v8 に有）を利用。命名規約：event:module:action（例 camera:ready, layer:created）。
+
+LayerSystem の API 契約書を作る（簡潔に）
+
+必須メソッド（公開API）：
+
+createLayer({id, zIndex, name, opts}) → LayerHandle
+
+getLayer(id) → LayerHandle | null
+
+removeLayer(id)
+
+setLayerTransform(id, {x,y,scale,rotation,flipX,flipY})
+
+moveLayerToIndex(id, zIndex)
+
+listLayers() → [{id,name,zIndex,container}]
+
+LayerHandle は .container（PIXI.Container）を必ず持つこと。これを使って描画とトランスフォームを管理。
+
+CoordinateSystem の整合性
+
+coordinate-system.js は world <-> screen の唯一の真実（single source of truth）にする。camera-system はこの API を使うだけ。API：
+
+screenToWorld(point)、worldToScreen(point)、layerToWorld(point, layerId)、worldToLayer(point, layerId)。
+
+これらは camera transform（position, scale, rotation）と layer transform（if any）を踏まえて計算する。
+
+優先修正項目（コードパッチ例）
+1) core-runtime の初期化（必須）
+// core-runtime.js (例)
+const CoreRuntime = (function(){
+  let app = null, worldContainer = null, eventBus = null, config = null;
+
+  async function init(opts = {}) {
+    if (app) return { app, worldContainer, eventBus, config };
+    // 必ず Pixi v8 の API を使う
+    app = new PIXI.Application({
+      width: opts.width || 1200,
+      height: opts.height || 800,
+      backgroundAlpha: 0,
+      resizeTo: window
+    });
+    // attach canvas to DOM
+    const root = document.getElementById(opts.rootId || 'app-root');
+    if(!root) throw new Error('Missing app root DOM element: #' + (opts.rootId || 'app-root'));
+    root.appendChild(app.view);
+    eventBus = new PIXI.utils.EventEmitter();
+    worldContainer = new PIXI.Container();
+    worldContainer.name = 'worldContainer';
+    app.stage.addChild(worldContainer);
+
+    // config 読み込み（もし async）
+    if (opts.config) {
+      config = opts.config;
+    }
+    // 初期化完了イベント
+    eventBus.emit('core:ready', { app, worldContainer, config });
+    return { app, worldContainer, eventBus, config };
+  }
+
+  function getApp(){ if(!app) throw new Error('CoreRuntime not initialized'); return app; }
+  function getWorldContainer(){ if(!worldContainer) throw new Error('CoreRuntime not initialized'); return worldContainer; }
+  function getEventBus(){ if(!eventBus) throw new Error('CoreRuntime not initialized'); return eventBus; }
+  function getConfig(){ return config; }
+
+  return { init, getApp, getWorldContainer, getEventBus, getConfig };
+})();
+
+2) DrawingApp.initialize の堅牢化
+// index.html 側の DrawingApp.initialize (抜粋)
+async initialize(){
+  // coreRuntime.init が先行していない場合は明示的にエラーにする
+  try {
+    this.core = CoreRuntime; // assume global or imported
+    // throws if not initialized
+    this.app = this.core.getApp();
+    this.worldContainer = this.core.getWorldContainer();
+  } catch (e) {
+    console.error('[DrawingApp] initialization failed:', e);
+    throw e; // フォールバックはしない
+  }
+
+  // 以降、worldContainer を使って初期レイヤー作成などを行う
+  await LayerSystem.init({ core: this.core });
+  // ...
+}
+
+3) LayerSystem の最低限の実装サンプル
+// layer-system.js (簡易)
+const LayerSystem = (function(){
+  const layers = new Map();
+  let eventBus = null;
+
+  async function init({ core }){
+    if (!core) throw new Error('LayerSystem requires core runtime');
+    eventBus = core.getEventBus();
+    // subscribe to camera events if needed
+    eventBus.on('camera:changed', (data) => { /* update transforms if needed */ });
+    return { ok: true };
+  }
+
+  function createLayer({ id, name, zIndex = 0 }) {
+    if (layers.has(id)) throw new Error(`Layer ${id} already exists`);
+    const container = new PIXI.Container();
+    container.name = `layer_${id}`;
+    container.zIndex = zIndex; // Pixi v8 supports zIndex if used with sortChildren = true
+    container.sortableChildren = true;
+    const meta = { id, name, container, zIndex };
+    layers.set(id, meta);
+    // attach to worldContainer (explicit)
+    CoreRuntime.getWorldContainer().addChild(container);
+    eventBus.emit('layer:created', meta);
+    return meta;
+  }
+
+  function getLayer(id){ return layers.get(id) || null; }
+  function listLayers(){ return Array.from(layers.values()); }
+  function removeLayer(id){
+    const m = layers.get(id);
+    if(!m) return;
+    CoreRuntime.getWorldContainer().removeChild(m.container);
+    layers.delete(id);
+    eventBus.emit('layer:removed', { id });
+  }
+
+  return { init, createLayer, getLayer, listLayers, removeLayer };
+})();
+
+migration（phase1b4 → phase1b5）チェックリスト
+
+ worldContainer の所有者が変わっていないか確認。もし camera-system が作るようになったら core-runtime に戻す（単一化）。
+
+ 全モジュールの PIXI.Application 参照が coreRuntime.getApp() に統一されているか。
+
+ config.js を複数箇所で読み込んでいないか（1回だけ load & provide）。
+
+ coordinate-system.js の API 名は全呼び出し元で一致しているか（screenToWorld 等）。
+
+ layer-system のレイヤー container が worldContainer の直下に追加されているか（stage 直下に散らばっていないか）。
+
+ ui-panels.js が直接 stage を触らず、LayerSystem の API 経由で操作しているか。
+
+ camera-system.js は worldContainer を transform する設計か（container の transform で実現する）— camera の transform をレイヤーごとに二重適用しないこと。
+
+ Promise / async 初期化の使い方が混在していないか。init() が Promise を返すなら必ず await しているか。
+
+
+ログ・エラー方針（実装ルール）
+
+console.debug は開発用に限定。PR に残さない（あるいは if(DEBUG) で制御）。
+
+重大な初期化失敗は throw で終了。UI上でごまかさない。
+
+エラー文は 具体的に。例：throw new Error('LayerSystem.init requires CoreRuntime initialized (call CoreRuntime.init())')
+
+長期設計（将来機能を見据えた設計）
+
+無限キャンバス → world coordinate を 64bit float で管理し、カメラは container pivot と scale で実現。
+
+レイヤー変形（移動/回転/反転） はすべて LayerSystem に集約。キー操作は LayerSystem の API を呼ぶだけにする。
+
+GIF / アニメ化：レイヤーのタイムライン（frame metadata）を LayerSystem から扱いやすい形でエクスポートできる構造にする（layer → frames[]）。
+
+LIVE2D/SPINE 風：まずは「レイヤーの親子化」と「マスク・モーフィング座標系」を用意。ボーンは別モジュール（anim-system）で実装し、layer の transform を参照する形にする。
+
+AI 改修性：モジュールは短いファイルに分割、関数は JSDoc で型と副作用を明示。これにより自動改修（AI）で参照しやすくする。
+
+
+参考：よくある落とし穴（あなたのコードにありがちなパターン）
+
+document.getElementById('app-root') が無い状態で app.view を append しようとして null になる。
+
+worldContainer.name を getChildByName('worldContainer') で取りに行っているが、name が変わった・付いていない。
+
+init() を async にしたが呼び出し元で await していないため race が起きる。
+
+layer-system が app.stage に直接子を追加し、camera が worldContainer を動かす設計と噛み合わない。（結果：カメラ移動でレイヤーが動かない）

@@ -1,0 +1,818 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 Phase2準備版 - PixiJS v8.13 お絵かきツール</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        :root {
+            --futaba-maroon: #800000;
+            --futaba-light-maroon: #aa5a56;
+            --futaba-medium: #cf9c97;
+            --futaba-light-medium: #e9c2ba;
+            --futaba-cream: #f0e0d6;
+            --futaba-background: #ffffee;
+            --text-primary: #2c1810;
+            --text-secondary: #5d4037;
+            --text-inverse: #ffffff;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif;
+            background: var(--futaba-background);
+            margin: 0;
+            height: 100vh;
+            overflow: hidden;
+        }
+        
+        .main-layout {
+            display: grid;
+            grid-template-columns: 50px 1fr;
+            height: 100vh;
+            width: 100vw;
+            gap: 0;
+        }
+        
+        .sidebar {
+            background: var(--futaba-cream);
+            border-right: 2px solid var(--futaba-light-medium);
+            display: flex;
+            flex-direction: column;
+            padding: 12px 6px;
+            gap: 4px;
+            overflow-y: auto;
+            position: relative;
+            z-index: 100;
+        }
+        
+        .tool-button {
+            width: 36px;
+            height: 36px;
+            border: 2px solid var(--futaba-light-medium);
+            background: var(--futaba-background);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+            color: var(--futaba-maroon);
+            position: relative;
+            user-select: none;
+        }
+        
+        .tool-button svg { width: 20px; height: 20px; stroke: #800000; }
+        
+        .tool-button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-light-maroon);
+            transform: scale(1.05);
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
+        }
+        
+        .tool-button.active {
+            background: var(--futaba-maroon);
+            color: var(--text-inverse);
+            border-color: var(--futaba-maroon);
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.3);
+        }
+        
+        .tool-button.active svg { stroke: #ffffff; }
+        
+        .tool-separator {
+            height: 1px;
+            background: var(--futaba-light-medium);
+            margin: 4px 2px;
+        }
+        
+        .canvas-area {
+            background: var(--futaba-background);
+            position: relative;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+        }
+        
+        #drawing-canvas {
+            border: none;
+            display: block;
+            cursor: crosshair;
+            touch-action: none;
+        }
+        
+        .layer-panel-container {
+            position: fixed;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            z-index: 1000;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 8px;
+            pointer-events: none;
+        }
+        
+        .layer-add-button {
+            width: 36px;
+            height: 36px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 8px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.1);
+            pointer-events: all;
+        }
+        
+        .layer-add-button:hover {
+            background: var(--futaba-medium);
+            transform: scale(1.1);
+        }
+        
+        .layer-add-button svg { width: 18px; height: 18px; stroke: #800000; }
+        
+        .layer-panel-items {
+            display: flex;
+            flex-direction: column;
+            gap: 4px;
+            background: transparent;
+            border-radius: 8px;
+            padding: 8px;
+            pointer-events: all;
+            max-height: 60vh;
+            overflow-y: auto;
+        }
+        
+        .layer-item {
+            width: 180px;
+            height: 64px;
+            background: var(--futaba-cream);
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            padding: 6px 8px;
+            cursor: pointer;
+            transition: background-color 0.2s ease, border-color 0.2s ease;
+            display: grid;
+            grid-template-columns: 20px 1fr auto;
+            grid-template-rows: 1fr 1fr;
+            gap: 4px 8px;
+            align-items: center;
+            user-select: none;
+            position: relative;
+            box-shadow: 0 1px 2px rgba(128, 0, 0, 0.05);
+        }
+        
+        .layer-item:hover {
+            border-color: var(--futaba-medium);
+            background: var(--futaba-background);
+        }
+        
+        .layer-item.active {
+            border-color: var(--futaba-maroon);
+            background: var(--futaba-light-medium);
+            box-shadow: 0 2px 4px rgba(128, 0, 0, 0.15);
+        }
+        
+        .status-panel {
+            position: fixed;
+            bottom: 20px;
+            left: 70px;
+            right: 20px;
+            background: var(--futaba-cream);
+            border: 2px solid var(--futaba-medium);
+            border-radius: 12px;
+            padding: 8px 16px;
+            font-family: monospace;
+            font-size: 11px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
+            z-index: 50;
+        }
+        
+        .status-group {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+        }
+        
+        .status-item {
+            display: flex;
+            align-items: center;
+            gap: 4px;
+        }
+    </style>
+</head>
+<body>
+    <div class="main-layout">
+        <div class="sidebar">
+            <div class="tool-button" id="resize-tool" title="リサイズ">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M14 15H9v-5"/><path d="M16 3h5v5"/><path d="M21 3 9 15"/></svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+                   
+            <div class="tool-button active" id="pen-tool" title="ベクターペン (P)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M13 21h8"/><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>
+            </div>
+            
+            <div class="tool-button" id="eraser-tool" title="消しゴム (E)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg>
+            </div>
+        </div>
+        
+        <div class="canvas-area">
+            <div id="drawing-canvas"></div>
+        </div>
+    </div>
+    
+    <div class="layer-panel-container" id="layer-panel-container">
+        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2 2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        </div>
+        
+        <div class="layer-panel-items" id="layer-list"></div>
+    </div>
+    
+    <div class="status-panel">
+        <div class="status-group">
+            <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+            <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+            <div class="status-item">Layer: <span id="current-layer">レイヤー0</span></div>
+            <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+            <div class="status-item">Transform: <span id="transform-info">x:0 y:0 s:1.0 r:0°</span></div>
+            <div class="status-item">DPR: <span id="dpr-info">1.0</span></div>
+        </div>
+        
+        <div class="status-group">
+            <div class="status-item">FPS: <span id="fps">60</span></div>
+            <div class="status-item">History: <span id="history-info">1/10</span></div>
+        </div>
+    </div>
+
+    <!-- PixiJS v8.13 -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
+    <script>
+    // ===============================
+    // CONFIG - 設定の一元化
+    // ===============================
+    window.TEGAKI_CONFIG = {
+        canvas: {
+            width: 400,
+            height: 400,
+            minWidth: 100,
+            maxWidth: 4096,
+            minHeight: 100,
+            maxHeight: 4096
+        },
+        pen: {
+            minSize: 1.0,
+            maxSize: 100.0,
+            defaultSize: 16.0,
+            minOpacity: 0.0,
+            maxOpacity: 1.0,
+            defaultOpacity: 0.85
+        },
+        layers: {
+            maxLayers: 50,
+            defaultZIndex: 0
+        },
+        camera: {
+            minScale: 0.1,
+            maxScale: 10.0,
+            defaultScale: 1.0,
+            panSensitivity: 1.0,
+            zoomSensitivity: 0.001
+        }
+    };
+
+    // ===============================
+    // Core Runtime - 初期化順序の一元化
+    // ===============================
+    window.CoreRuntime = (function() {
+        let app = null;
+        let worldContainer = null;
+        let eventBus = null;
+        let config = null;
+        let initialized = false;
+
+        async function init(opts = {}) {
+            if (initialized) {
+                console.warn('CoreRuntime already initialized');
+                return { app, worldContainer, eventBus, config };
+            }
+
+            try {
+                // PIXI Application初期化 (v8.13 API)
+                app = new PIXI.Application();
+                
+                const screenWidth = window.innerWidth - 50;
+                const screenHeight = window.innerHeight;
+
+                await app.init({
+                    width: screenWidth,
+                    height: screenHeight,
+                    backgroundAlpha: 0,
+                    resolution: 1,
+                    antialias: true,
+                    eventMode: 'static'
+                });
+
+                // DOM追加
+                const root = document.getElementById('drawing-canvas');
+                if (!root) throw new Error('Canvas container #drawing-canvas not found');
+                
+                root.appendChild(app.canvas);
+                app.canvas.style.width = `${screenWidth}px`;
+                app.canvas.style.height = `${screenHeight}px`;
+
+                // EventBus初期化
+                eventBus = new PIXI.EventEmitter();
+
+                // WorldContainer作成（単一責務）
+                worldContainer = new PIXI.Container();
+                worldContainer.name = 'worldContainer';
+                app.stage.addChild(worldContainer);
+
+                // Config設定
+                config = window.TEGAKI_CONFIG;
+
+                initialized = true;
+
+                // 初期化完了イベント
+                eventBus.emit('core:ready', { app, worldContainer, config });
+
+                console.log('✅ CoreRuntime initialized successfully');
+                return { app, worldContainer, eventBus, config };
+
+            } catch (error) {
+                console.error('❌ CoreRuntime initialization failed:', error);
+                throw error;
+            }
+        }
+
+        function getApp() { 
+            if (!app) throw new Error('CoreRuntime not initialized - call init() first'); 
+            return app; 
+        }
+        
+        function getWorldContainer() { 
+            if (!worldContainer) throw new Error('CoreRuntime not initialized - call init() first'); 
+            return worldContainer; 
+        }
+        
+        function getEventBus() { 
+            if (!eventBus) throw new Error('CoreRuntime not initialized - call init() first'); 
+            return eventBus; 
+        }
+        
+        function getConfig() { 
+            return config || window.TEGAKI_CONFIG; 
+        }
+
+        function isInitialized() {
+            return initialized;
+        }
+
+        return { 
+            init, 
+            getApp, 
+            getWorldContainer, 
+            getEventBus, 
+            getConfig,
+            isInitialized
+        };
+    })();
+
+    // ===============================
+    // Coordinate System - 座標変換API統一
+    // ===============================
+    window.CoordinateSystem = (function() {
+        let cameraSystem = null;
+        
+        function init(camera) {
+            cameraSystem = camera;
+        }
+
+        function screenToWorld(point) {
+            if (!cameraSystem) throw new Error('CoordinateSystem not initialized');
+            const worldContainer = CoreRuntime.getWorldContainer();
+            const transform = worldContainer.worldTransform;
+            const inverted = new PIXI.Matrix();
+            transform.copyTo(inverted);
+            inverted.invert();
+            return inverted.apply(point);
+        }
+
+        function worldToScreen(point) {
+            if (!cameraSystem) throw new Error('CoordinateSystem not initialized');
+            const worldContainer = CoreRuntime.getWorldContainer();
+            const transform = worldContainer.worldTransform;
+            return transform.apply(point);
+        }
+
+        function layerToWorld(point, layerId) {
+            // LayerSystem統合後に実装
+            return point;
+        }
+
+        function worldToLayer(point, layerId) {
+            // LayerSystem統合後に実装
+            return point;
+        }
+
+        function diagnoseReferences() {
+            return {
+                cameraSystem: !!cameraSystem,
+                coreRuntime: CoreRuntime.isInitialized(),
+                worldContainer: !!CoreRuntime.getWorldContainer()
+            };
+        }
+
+        return {
+            init,
+            screenToWorld,
+            worldToScreen,
+            layerToWorld,
+            worldToLayer,
+            diagnoseReferences
+        };
+    })();
+
+    // ===============================
+    // Layer System - レイヤー管理統一
+    // ===============================
+    window.LayerSystem = (function() {
+        const layers = new Map();
+        let eventBus = null;
+        let currentLayerId = null;
+
+        async function init(opts = {}) {
+            eventBus = CoreRuntime.getEventBus();
+            
+            // デフォルトレイヤー作成
+            createLayer({ 
+                id: 'layer_0', 
+                name: 'レイヤー0',
+                zIndex: 0 
+            });
+            
+            setActiveLayer('layer_0');
+            
+            console.log('✅ LayerSystem initialized');
+            return { ok: true };
+        }
+
+        function createLayer({ id, name, zIndex = 0 }) {
+            if (layers.has(id)) throw new Error(`Layer ${id} already exists`);
+            
+            const container = new PIXI.Container();
+            container.name = `layer_${id}`;
+            container.zIndex = zIndex;
+            container.sortableChildren = true;
+            
+            const meta = { 
+                id, 
+                name: name || `Layer ${id}`, 
+                container, 
+                zIndex,
+                visible: true,
+                opacity: 1.0
+            };
+            
+            layers.set(id, meta);
+            
+            // worldContainerに追加
+            CoreRuntime.getWorldContainer().addChild(container);
+            
+            eventBus.emit('layer:created', meta);
+            updateLayerUI();
+            
+            return meta;
+        }
+
+        function getLayer(id) { 
+            return layers.get(id) || null; 
+        }
+        
+        function getCurrentLayer() {
+            return currentLayerId ? layers.get(currentLayerId) : null;
+        }
+
+        function setActiveLayer(id) {
+            if (!layers.has(id)) return false;
+            currentLayerId = id;
+            eventBus.emit('layer:activated', { id });
+            updateLayerUI();
+            return true;
+        }
+
+        function removeLayer(id) {
+            const layer = layers.get(id);
+            if (!layer) return;
+            
+            CoreRuntime.getWorldContainer().removeChild(layer.container);
+            layers.delete(id);
+            
+            if (currentLayerId === id) {
+                const remaining = Array.from(layers.keys());
+                currentLayerId = remaining.length > 0 ? remaining[0] : null;
+            }
+            
+            eventBus.emit('layer:removed', { id });
+            updateLayerUI();
+        }
+
+        function listLayers() { 
+            return Array.from(layers.values()); 
+        }
+
+        function updateLayerUI() {
+            const layerList = document.getElementById('layer-list');
+            if (!layerList) return;
+
+            layerList.innerHTML = '';
+            
+            const layerArray = Array.from(layers.values())
+                .sort((a, b) => b.zIndex - a.zIndex);
+
+            layerArray.forEach(layer => {
+                const item = document.createElement('div');
+                item.className = `layer-item ${layer.id === currentLayerId ? 'active' : ''}`;
+                item.innerHTML = `
+                    <div class="layer-visibility ${layer.visible ? '' : 'hidden'}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
+                            <circle cx="12" cy="12" r="3"/>
+                        </svg>
+                    </div>
+                    <div class="layer-opacity">${Math.round(layer.opacity * 100)}%</div>
+                    <div class="layer-name">${layer.name}</div>
+                    <div class="layer-thumbnail">
+                        <div class="layer-thumbnail-placeholder"></div>
+                    </div>
+                `;
+                
+                item.addEventListener('click', () => setActiveLayer(layer.id));
+                layerList.appendChild(item);
+            });
+
+            // ステータス更新
+            const currentLayerSpan = document.getElementById('current-layer');
+            if (currentLayerSpan && currentLayerId) {
+                const current = layers.get(currentLayerId);
+                currentLayerSpan.textContent = current ? current.name : 'なし';
+            }
+        }
+
+        return {
+            init,
+            createLayer,
+            getLayer,
+            getCurrentLayer,
+            setActiveLayer,
+            removeLayer,
+            listLayers,
+            updateLayerUI
+        };
+    })();
+
+    // ===============================
+    // Camera System - カメラ制御統一
+    // ===============================
+    window.CameraSystem = (function() {
+        let worldContainer = null;
+        let eventBus = null;
+        let app = null;
+
+        function init() {
+            app = CoreRuntime.getApp();
+            worldContainer = CoreRuntime.getWorldContainer();
+            eventBus = CoreRuntime.getEventBus();
+            
+            initializeCamera();
+            setupCameraControls();
+            
+            console.log('✅ CameraSystem initialized');
+        }
+
+        function initializeCamera() {
+            if (!worldContainer) return;
+            
+            // カメラを中央に配置
+            const screenWidth = app.screen.width;
+            const screenHeight = app.screen.height;
+            
+            worldContainer.position.set(screenWidth / 2, screenHeight / 2);
+            worldContainer.scale.set(1.0, 1.0);
+            worldContainer.rotation = 0;
+        }
+
+        function setupCameraControls() {
+            let isDragging = false;
+            let lastPosition = { x: 0, y: 0 };
+
+            // マウス/タッチでのパン
+            app.stage.eventMode = 'static';
+            
+            app.stage.on('pointerdown', (event) => {
+                isDragging = true;
+                lastPosition = { x: event.global.x, y: event.global.y };
+            });
+
+            app.stage.on('pointerup', () => {
+                isDragging = false;
+            });
+
+            app.stage.on('pointermove', (event) => {
+                if (!isDragging) return;
+                
+                const dx = event.global.x - lastPosition.x;
+                const dy = event.global.y - lastPosition.y;
+                
+                worldContainer.position.x += dx;
+                worldContainer.position.y += dy;
+                
+                lastPosition = { x: event.global.x, y: event.global.y };
+                
+                eventBus.emit('camera:moved', {
+                    x: worldContainer.position.x,
+                    y: worldContainer.position.y
+                });
+            });
+
+            // ホイールでのズーム
+            app.canvas.addEventListener('wheel', (event) => {
+                event.preventDefault();
+                
+                const delta = event.deltaY * -0.001;
+                const newScale = Math.max(0.1, Math.min(10.0, worldContainer.scale.x + delta));
+                
+                worldContainer.scale.set(newScale, newScale);
+                
+                eventBus.emit('camera:zoomed', {
+                    scale: newScale
+                });
+            });
+        }
+
+        function resetView() {
+            initializeCamera();
+            eventBus.emit('camera:reset');
+        }
+
+        return {
+            init,
+            initializeCamera,
+            resetView
+        };
+    })();
+
+    // ===============================
+    // Drawing App - メインアプリケーション
+    // ===============================
+    class DrawingApp {
+        constructor() {
+            this.initialized = false;
+        }
+
+        async initialize() {
+            if (this.initialized) {
+                console.warn('DrawingApp already initialized');
+                return;
+            }
+
+            try {
+                // Step 1: CoreRuntime初期化（最優先）
+                await CoreRuntime.init();
+
+                // Step 2: 各システム初期化
+                CameraSystem.init();
+                CoordinateSystem.init(CameraSystem);
+                await LayerSystem.init();
+
+                // Step 3: UI初期化
+                this.initializeUI();
+
+                // Step 4: イベントリスナー設定
+                this.setupEventListeners();
+
+                this.initialized = true;
+                console.log('✅ DrawingApp initialized successfully');
+
+            } catch (error) {
+                console.error('❌ DrawingApp initialization failed:', error);
+                throw error;
+            }
+        }
+
+        initializeUI() {
+            // レイヤー追加ボタン
+            const addLayerBtn = document.getElementById('add-layer-btn');
+            if (addLayerBtn) {
+                addLayerBtn.addEventListener('click', () => {
+                    const id = 'layer_' + Date.now();
+                    LayerSystem.createLayer({ 
+                        id, 
+                        name: `レイヤー${LayerSystem.listLayers().length}` 
+                    });
+                });
+            }
+
+            // ツールボタン
+            document.getElementById('pen-tool')?.addEventListener('click', () => {
+                this.setCurrentTool('pen');
+            });
+
+            document.getElementById('eraser-tool')?.addEventListener('click', () => {
+                this.setCurrentTool('eraser');
+            });
+
+            // 情報表示更新
+            this.updateCanvasInfo();
+            this.updateDPRInfo();
+            this.startFPSMonitor();
+        }
+
+        setCurrentTool(tool) {
+            // ツールボタンの見た目更新
+            document.querySelectorAll('.tool-button').forEach(btn => {
+                btn.classList.remove('active');
+            });
+            
+            const toolBtn = document.getElementById(`${tool}-tool`);
+            if (toolBtn) {
+                toolBtn.classList.add('active');
+            }
+
+            // ステータス更新
+            const toolNames = {
+                pen: 'ベクターペン',
+                eraser: '消しゴム'
+            };
+            
+            const currentToolSpan = document.getElementById('current-tool');
+            if (currentToolSpan) {
+                currentToolSpan.textContent = toolNames[tool] || tool;
+            }
+        }
+
+        setupEventListeners() {
+            // リサイズ処理
+            window.addEventListener('resize', () => {
+                const screenWidth = window.innerWidth - 50;
+                const screenHeight = window.innerHeight;
+                
+                const app = CoreRuntime.getApp();
+                app.renderer.resize(screenWidth, screenHeight);
+                app.canvas.style.width = `${screenWidth}px`;
+                app.canvas.style.height = `${screenHeight}px`;
+                
+                CameraSystem.initializeCamera();
+            });
+
+            // カメラ情報更新
+            const eventBus = CoreRuntime.getEventBus();
+            eventBus.on('camera:moved', (data) => {
+                this.updateTransformInfo();
+            });
+            
+            eventBus.on('camera:zoomed', (data) => {
+                this.updateTransformInfo();
+            });
+
+            // マウス座標追跡
+            const app = CoreRuntime.getApp();
+            app.stage.on('pointermove', (event) => {
+                const coordSpan = document.getElementById('coordinates');
+                if (coordSpan) {
+                    coordSpan.textContent = `x: ${Math.round(event.global.x)}, y: ${Math.round(event.global.y)}`;
+                }
+            });
+        }
+
+        updateCanvasInfo() {
+            const config = CoreRuntime.getConfig();
+            const element = document.getElementById('canvas-info');
+            if (element) {
+                element.textContent = `${config.canvas.width}×${config.canvas.height}px`;
+            }
+        }
+
+        updateDPRInfo() {
+            const element = document.getElementById('dpr-info');
+            if (element) {
