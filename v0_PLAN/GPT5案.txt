@@ -1,87 +1,107 @@
+要点サマリ（1行）
 
-要点（結論・優先対応）
+根本原因は「座標系の混在」と「変形確定（transform の焼き込み）の不整合」。まず座標変換APIを厳格化し、LayerSystem に変形を集約して「パスは常にキャンバス（canonical）座標で保存」する設計に統一します。
 
-主原因候補
+GPT5案
 
-「変形（移動／拡縮／回転）を確定したあとに描画が消える」→ 変形（Container の transform）とパス（path.points）の座標系が一致せず、確定処理が破壊的に行われている／不完全に反映されている 可能性が高い。
+改修方針（設計原則）
 
-「コピー＆ペーストで消える」→ クリップボード実装と Layer の再構築ロジックで、Graphics を生成する際の座標空間（ワールド、キャンバス、レイヤー内部）が誤って扱われ、再生成タイミングで transform が二重適用 or 無視されている 可能性。
+座標系を厳密に定義する（screen / world / canvas / local）— 各APIで入力/出力座標系を必ず注記。
 
-根本方針（これで改修方針を統一する）
+GPT5案
 
-パスデータは常に「キャンバス固定座標（canonical canvas coordinates）」で保存。描画時にCamera/Layerのtransformを組み合わせてスクリーンに投影する。
+パス（path.points）は常に canvas（canonical）座標で保持。描画は Camera/Layer の transform を合成してスクリーンへ投影。
 
-レイヤーの transform（位置・回転・スケール・反転）は LayerSystem の持つ transform オブジェクト に集約。Container の transform は表示のために使うが、変形確定時は path.points に 逆変換をかけて（座標系を焼き込んで） Container の transform をリセットする（＝非破壊でパスを更新）。
+GPT5案
 
-コピー/ペーストは必ず canonical 座標を保存・復元する（＝変形状態はペースト先で初期化する）。
+レイヤー変形は LayerSystem が一元管理。Container の transform は表示のために使うだけ。変形確定（confirm）時は points に焼き込み、Container transform をリセット。
 
-優先度（短期）
+GPT5案
 
-座標変換 API を厳格に定義・実装（screen↔world↔canvas↔local）。
+Clipboard は canonical 座標で copy/paste（変形状態は保存しない／初期化する）。
 
-confirmLayerTransform() を非破壊で確実に行う（パスへ逆行列を適用 → container transform をリセット）。
+GPT5案
 
-Clipboard の copy/paste を canonical 座標に統一（現在の実装は仮想変形を使っているが、再構築時の座標系の扱いを明確化する）。
+イベント同期は EventBus（文字列定義されたイベント）で行う。直接参照の多用は避ける（ただしレガシー参照は残しても可）。
 
-EventBus（または内部参照）の統合不足を修正（Camera, Layer, DrawingEngine 間のイベント契約を明示）。
+GPT5案
 
-詳細：現在の実装で見える問題点（core-engine.js 抜粋を元に）
+範囲（絶対条件）
 
-（A）座標基準が混在している箇所の痕跡
+改修対象は phase2c の下記 4 ファイル内の実装のみ（core-engine.js, systems/camera-system.js, systems/layer-system.js, systems/drawing-clipboard.js）。他ファイル（ui-panels.js, core-runtime.js, config.js など）は触らない。
 
-CameraSystem 側で this.worldContainer → canvasContainer → canvasMask を使っており、ガイドラインやマスクの更新を行っている。ClipboardSystem.getTransformedPaths() は PIXI.Matrix を作って path.points に matrix.apply(point) で適用している。つまり “描画のために世界変換をかける/仮想的にかける” ロジックが混在。
-GitHub
+ただし必要な public API/イベントの追加は core-engine.js（中枢）に追加して外部と整合させる。
 
-（B）「非破壊コピー」を謳うが復元時に座標系があいまい
+成果物（フェーズ別：フェーズ名のみ、時間は提示しない）
 
-コピー時に getTransformedPaths() で仮想変形を適用している（＝“見かけ上の座標”を保存）。復元時 rebuildPathGraphics() で Graphics を生成して layer に追加しているが、rebuild 時にどの座標系（local か world）で Graphics を生成するかの明示がない。これが後続の transform 操作時に二重・不整合を生む。
-GitHub
+フェーズA（必須・最優先）
 
-（C）Layer transform と path.points の同期が不完全
+座標変換 API の明確化・実装（screen↔world↔canvas⇄local の 4 API）
 
-layerManager.layerTransforms に transform を保持しているが、confirmLayerTransform() の「非破壊化」が不十分だと、変形を確定したタイミングで path.points を更新せず container に transform を残す可能性がある（結果：その後の rebuild や paste で見えなくなる）。core ヘッダーが「非破壊化を目的」と書いてあることからも、以前は破壊的に変換を行っていた履歴がある。
-GitHub
+DrawingEngine の入力ルートを screen→canvas に統一（ペン描画が左にズレる問題解消）
 
-（D）EventBus / API の断片化
+LayerSystem.confirmLayerTransform() の非破壊正実装（パスへの焼き込み）
 
-CameraSystem、LayerManager、DrawingEngine、ClipboardSystem が相互参照を持っている（this.layerManager = null のような設定を later に行うパターン）。EventBus 経由で明示的に通知・契約を結んでいないと、タイミングのズレで古い transform を参照する。
-GitHub
+ClipBoard の copy/paste を canonical 化
 
-（E）その他気づき
+フェーズB（中期）
 
-deepCopyPaths() が Date.now() を ID に使っているため、頻繁な複製で ID 衝突は起きにくいが Debug 追跡がしにくい（重箱の隅）。
+rebuildPathGraphics() と path.graphics の position/transform ルールを固定化
 
-ガイドラインやマスク更新で console.log が多く残っている（要削減）。
+EventBus イベント契約の定義と各システムへの配備
 
-仕様提案（API を厳格に定義）
+レイヤーパネルの階層移動 API（レイヤー順序・アクティブ移動）安定化（移動時のアンカー補正）
 
-以下をプロジェクト全体で統一してください。命名は一例。
+フェーズC（拡張・安定化）
 
-座標系（明示）
+キャンバスサイズ変更対応（キャンバス依存レイヤーの扱い、サムネイル更新）
 
-screen — ブラウザのピクセル（マウスイベントの clientX/Y から来る）
+Undo/Redo を変形確定前後で扱えるような履歴インターフェース（必要なら）
 
-world — worldContainer 上の座標（Camera の pan/zoom/rotation を含む）
+テストスイート（単体手順チェックリストの自動化 or manual checklist）
 
-canvas — 実際の「キャンバス内容の論理座標」。パスPoints はこの座標で保存（canonical）
+（上位方針は GPT5案.txt に準拠）。
 
-local — 各 Layer コンテナのローカル座標（通常は canvas と同義に保つが、レイヤー固有の transform がある場合に local が変わる）
+GPT5案
 
-必須 API
+詳細設計（API 定義と重要アルゴリズム）
+座標系の定義（プロジェクト共通）
 
-CameraSystem.screenToWorld(point: {x,y}) -> {x,y}
+screen: ブラウザのクライアントピクセル（mouse event の clientX/Y）。
 
-CameraSystem.worldToCanvas(point) -> {x,y}
+world: worldContainer 上の座標（Camera の pan/zoom/rotation を含む）。
 
-CameraSystem.screenToCanvas(point) -> {x,y}（上２つの合成）
+canvas (canonical): 「キャンバス内容の論理座標」。path.points は常にこの座標で保存。
 
-LayerSystem.applyTransformToPoints(layerId, transform) -> void（パス points に逆行列をかけ、layer transform をリセット）
+local: Layer コンテナのローカル座標（通常 canvas と同義。ただし layer に anchor がある場合は異なる）。
 
-LayerSystem.getLayerCanonicalPaths(layerId) -> Array<Path>（常に canvas 座標の配列を返す）
+すべての関数/メソッドは JSDoc で @input/@output を明示すること（例: @input screen @returns canvas）。
 
-ClipboardSystem.copyLayerCanonical(layerId), ClipboardSystem.pasteAsNewLayer(atPosition?, name?)
+GPT5案
 
-データモデル（Layer）
+CameraSystem（責務）
+
+変換 API を公開：
+
+screenToWorld({x,y}) -> {x,y}
+
+worldToCanvas({x,y}) -> {x,y}
+
+screenToCanvas({x,y}) -> {x,y}（上二つの合成）
+
+canvasToWorld(...), canvasToScreen(...)（逆変換も用意）
+
+getWorldContainer(), getCanvasContainer() は必要時に使えるが、transformの読み書きは避ける（LayerSystem 経由で行う）。
+
+マスク/ビューサイズ更新は camera:resize イベントで通知。
+
+実装注意: DOM の getBoundingClientRect()・CSS scale を考慮してスクリーン→キャンバス変換を行う。
+
+GPT5案
+
+LayerSystem（責務：核）
+
+データモデル（例）
 
 layerData = {
   id: 'layer_001',
@@ -96,130 +116,219 @@ layerData = {
 layerTransform = { x:0, y:0, rotation:0, scaleX:1, scaleY:1, hFlip:false, vFlip:false };
 
 
-変形確定（confirmLayerTransform）の正しい挙動
+公開メソッド（必須）
 
-取得：transform = layerTransforms.get(layerId)
+applyTransformToPoints(layerId, transform)
+→ transform の matrix を作り、すべての path.points に matrix を適用して layerTransform を identity に戻す（＝変形確定）。
 
-if transform is default → nothing
+GPT5案
 
-else:
+getLayerCanonicalPaths(layerId) -> Array<Path>（常に canvas 座標）
 
-build PIXI.Matrix for transform relative to canvas center or layer origin (decide canonical anchor — 推奨：キャンバス中心 or レイヤー固有の anchor を明示)
+rebuildPathGraphics(path)（path.points を canvas 座標として受け取り、Graphics を作る）
 
-for each path.points: p' = matrix.apply(p) → replace path.points
+setLayerOrder(layerId, newIndex)（レイヤー階層移動）
 
-reset layerTransforms[layerId] to identity
+createLayer(initialProps) / removeLayer(layerId) / duplicateLayer(layerId)（UI や Clipboard のために）
 
-update any visible Graphics by rebuildPathGraphics(path) using the new points (no transform on container)
-
-notify UI / thumbnails
-
-具体的な修正手順（優先順。コピペして直せるレベルの擬似コード付き）
-1) 座標変換 API を固める（短期、最優先）
-
-CameraSystem に以下を追加（擬似コード）：
-
-// CameraSystem
-screenToWorld(screenPt){
-  const rect = app.view.getBoundingClientRect();
-  const x = screenPt.x - rect.left;
-  const y = screenPt.y - rect.top;
-  // account for canvas scale / CSS etc if necessary
-  const worldPt = this.worldContainer.toLocal({x, y}, app.stage);
-  return worldPt;
-}
-worldToCanvas(worldPt){
-  // canvasContainer のローカルに変換（world->canvas）
-  return this.canvasContainer.toLocal(worldPt, this.worldContainer);
-}
-screenToCanvas(screenPt){
-  return this.worldToCanvas(this.screenToWorld(screenPt));
-}
-
-
-すべての描画・ペン入力は screenToCanvas() を経由して canonical 座標を得る（DrawingEngine の screenToCanvasForDrawing() をこれに委譲し、内部で座標系の注釈を残す）。
-
-2) confirmLayerTransform() を安全に実装（中期）
-
-擬似実装：
+confirmLayerTransform 実装擬似コード（必須）
 
 // LayerSystem.confirmLayerTransform(layerId)
 const transform = this.layerTransforms.get(layerId);
 if (isIdentity(transform)) return;
 const layer = this.getLayerById(layerId);
-const matrix = buildTransformMatrix(transform, anchor /* e.g. canvas center */);
-// apply inverse or direct? We need to bake transform into points:
-layer.layerData.paths.forEach(path => {
-  path.points = path.points.map(pt => matrix.apply(pt)); // matrix applies transform to canvas points
+const matrix = buildTransformMatrix(transform, anchor /* e.g. canvas center or layer.anchor */);
+layer.layerData.paths.forEach(path=>{
+  path.points = path.points.map(pt => applyMatrix(matrix, pt)); // canvas coords に焼き込む
 });
-// reset container transform to identity
+// リセット
 this.layerTransforms.set(layerId, identityTransform());
-layer.container.setTransform(0,0,1,1,0); // reset container
-// rebuild graphics for each path using points now in canonical coords
-layer.layerData.paths.forEach(p => this.rebuildPathGraphics(p));
-this.updateLayerPanelUI();
+layer.container.setTransform(0,0,1,1,0);
+layer.container.removeChildren(); // or update graphics via rebuildPathGraphics
+layer.layerData.paths.forEach(p=> this.rebuildPathGraphics(p));
+EventBus.emit('layer:transform:confirmed', {layerId});
 
 
-重要：matrix の生成は「レイヤー transform がどのアンカー（中心）でかかっているか」を明示して作る。アンカーが canvas center ならそれで統一するか、レイヤーごとに anchor プロパティを持たせる。
+buildTransformMatrix() はアンカー（中心）を厳密に決めること。アンカーを canvas center に統一するか、レイヤー毎に anchor プロパティを持たせる。
 
-3) Clipboard（copy/paste）の修正（短〜中期）
+GPT5案
 
-コピー：必ず LayerSystem.getLayerCanonicalPaths(layerId) を呼んで canonical パスを保存する（getTransformedPaths() のように「仮想的に見かけ上の座標」を作るのではなく、現在 canonical に見える座標を確保すること）
+注意点
 
-ペースト：復元後にレイヤー transform を (0,0,1,1,0) にしておく。rebuildPathGraphics() は canonical 点列を前提に Graphics を作る。
+Container の transform を残したままだと、rebuild 時に二重適用 / 消失が起きる（これが現象の主因）。必ず焼き込み or 永続的に Container を表示専用にする。
 
-4) rebuildPathGraphics() の明確化（短期）
+GPT5案
 
-rebuildPathGraphics(path) は必ず path.points を canvas 座標として受け取り、path.graphics.position = {0,0} のまま draw を行う（= path.graphics の position に世界/レイヤー transform を持たせない）。もし path.graphics を layer.container に addChild するなら container の transform を identity にしつつ、layer-level transform は別で保持。
+Drawing-Clipboard（責務）
 
-5) EventBus の整理（中期）
+Copy は LayerSystem.getLayerCanonicalPaths(layerId) を呼び、canonical points の深いコピーを作る（transform を適用済みにする、見かけ上の transform を保存してはいけない）。
 
-イベント名とペイロードを定義：
+Paste は新規レイヤーを作り、canonical points をそのまま rebuild する（レイヤー transform は identity）。
 
-'layer:transform:confirmed' {layerId}
+Clipboard 内に「見かけ上の transform」を混ぜない。これで paste 後に消える問題を解消。
 
-'layer:paths:changed' {layerId}
+GPT5案
 
-'camera:resize' {width,height}
+rebuildPathGraphics のルール
 
-CameraSystem / LayerSystem / DrawingEngine / UI はこれらで疎結合にする。直接 this.layerManager = layerManager のような参照は残しても良いが、状態変更は EventBus で通知して同期不整合を避ける。
+rebuildPathGraphics(path) は path.points を canvas 座標系として受け取る。
 
-テスト/検証手順（チェックリスト）
+path.graphics.position を {0,0} にして内部で moveTo/lineTo を実行する（path.graphics に transform を持たせない）。
 
-ペンで描いて → 移動／拡縮／回転 → 描画が消えないか（変形中、確定後ともに検証）
+path.graphics は layer.container に addChild されるが layer.container は常に identity（変形確定後）か、一時的に transform を使うに留める（変形中は transform を使う）。
 
-レイヤーをアクティブ移動（UIで順序変更）→ transform を保持しているか → confirm 後に path が期待通り変換されるか
+GPT5案
 
-Ctrl+C / Ctrl+V（複数回）→ 毎回同じ見た目で復元されるか（transform の初期化確認）
+EventBus（契約例）
 
-サムネイル更新・ステータス表示の整合性（updateStatusDisplay 等）
+イベント名とペイロードを厳密に定義してソースにコメントを残す。
 
-変形確定 → undo/redo（存在する場合）で状態を戻せるか（Undo を設計に含めるなら、変換前の path.points を履歴に残す）
+'layer:transform:confirmed' → {layerId}
 
-レイヤー複製（背景を含む）→ 背景レイヤーはキャンバス幅／高さに依存するため、paste 時にキャンバスサイズ差でズレないか
+'layer:paths:changed' → {layerId}
 
-開発上の運用ルール（チーム向け）
+'camera:resize' → {width,height}
 
-座標系はコードコメントで必ず明示（関数の頭に /* input: screen, returns: canvas */ のように）
+'clipboard:copied' → {layerId}
 
-Matrix.apply を直接使う箇所はレビューを必須にする（座標の壊れやすい箇所）
+'layer:order:changed' → {layerId, newIndex}
 
-layer.container.transform を直接操作する箇所を限定（LayerSystem 内に集約）
+実装注意: EventBus は小さな Pub/Sub オブジェクトで十分。直接的な this.layerManager = ... のような遅延設定は避け、EventBus 経由で初期同期を行う。
 
-console.log・デバッグ出力は CONFIG.debug ガードの下のみ許可
+GPT5案
 
-追加で確認してほしい（現場で実行するチェック）
+具体的な改修手順（コピペで直せるレベルの優先順）
+1) CameraSystem: screen→canvas の確実化（最優先）
 
-Phase2a1 の core-engine.js / camera-system.js / layer-system.js が 実ファイルとして正常に公開されているか（今回 web.run で一部しか読めませんでした。空ファイルや重複ファイル名が混在していると開発時に誤ったファイルを参照するリスクがあります）。※ あなたが既に触っている branch と実行している index.html が参照する path が一致しているかを必ず確認してください。
-GitHub
-+2
-GitHub
-+2
+実装（擬似コード）
 
-最終まとめ（短く）
+// CameraSystem.screenToWorld
+screenToWorld(screenPt){
+  const rect = app.view.getBoundingClientRect();
+  const x = screenPt.x - rect.left;
+  const y = screenPt.y - rect.top;
+  // CSS ピクセルや devicePixelRatio を考慮する場合はここで補正
+  return this.worldContainer.toLocal({x,y}, app.stage);
+}
+screenToCanvas(screenPt){
+  const world = this.screenToWorld(screenPt);
+  return this.canvasContainer.toLocal(world, this.worldContainer);
+}
 
-現象は 「座標系の不一致」＋「変形確定処理の不完全さ」 が主因と推定。
 
-即実行すべきは（1）座標変換 API を統一する、（2）confirmLayerTransform() を「パスに焼き込む」方式で非破壊に確実に行う、（3）Clipboard を canonical 座標に統一する、（4）EventBus でタイミング問題を解消する、の順。
+Drawing input は必ず camera.screenToCanvas() を経由するよう DrawingEngine を書き換える（onPointerMove / onPointerDown で直接 clientX を使わない）。
 
-具体的なコードスニペットと擬似実装方針を上に示しました。まずは 座標系 API の実装と DrawingEngine → LayerSystem → confirmLayerTransform の単体テスト を作ることを強く推奨します。
+GPT5案
+
+2) LayerSystem.confirmLayerTransform（次）
+
+実装擬似コードは上記参照（必ず matrix を作る）。全 path.points に適用後、container transform を reset、rebuild。
+
+GPT5案
+
+3) Clipboard: copy/paste を canonical 化
+
+コピーは getLayerCanonicalPaths() を呼ぶ。paste は新しい layer を作り、paths をそのまま rebuildPathGraphics() で描く（transform は identity）。
+
+GPT5案
+
+4) rebuildPathGraphics の整備
+
+path.graphics の position を 0,0 にして draw。Container 側で transform を与えない（または確実に reset する）。
+
+GPT5案
+
+5) EventBus を導入して同期不整合を防ぐ
+
+各重要操作（confirm、paste、createLayer、resize）でイベント発行。UI はイベント購読して更新。
+
+GPT5案
+
+テストチェックリスト（必ず実行）
+
+ペンで描画 → 見た目通り canvas に保存される（screen→canvas 入力正）
+
+レイヤー選択 → 移動（ドラッグ）→ 確定（confirmLayerTransform）→ 絵が消えないか
+
+移動→確定後に拡縮・回転 → 消えない（前処理で path.points が正しく焼かれている）
+
+コピー（Ctrl+C）→ ペースト（Ctrl+V）→ 見た目同一で復元される（複数回）
+
+レイヤーの階層移動（UI）→ 実際の表示順が変わり、アクティブレイヤー移動が正しく反映される
+
+キャンバスリサイズ → 背景レイヤー/キャンバス依存レイヤーの表示が崩れないか（フェーズC）
+
+サムネイル更新が都度正しい（layer:paths:changed を購読するテスト）
+
+（上の順に従って単体でテスト。自動化は後で追加可能）
+
+GPT5案
+
+AI（Claude 等）向け実装ガイド（チェックリスト形式） — 必ず守らせること
+
+すべての座標変換関数は @input / @output を JSDoc に明記。
+
+Matrix.apply を使う場所は review 必須（座標破壊リスク）。
+
+絶対に path.points を screen/world のまま保存しない（常に canvas）。
+
+confirmLayerTransform は「焼き込み（bake）」方式で行い、Container.transform を残さないこと。残すと将来の rebuild で二重適用される。
+
+GPT5案
+
+Clipboard は表示上の transform（見かけ上の座標）を保存しない。復元側で transform を持たせたい場合は別のメタ領域に記録し、Paste時には初期化する。
+
+レイヤー階層移動（order）を change する際は EventBus で UI と同期。setLayerOrder() 呼び出し後に layer:order:changed を emit させる。
+
+Console.log は CONFIG.debug ガード下のみにする（不要なログは削る）。
+
+PixiJS v8.13 の API に従う（Container.toLocal / toGlobal 等）こと。プロジェクトの既存 index.html が参照するスクリプトパスと編集する branch が一致しているか確認。
+
+GPT5案
+
+よくあるミスと対処（QA）
+
+ミス: confirm せずに container.transform を残す → 結果: 後続の rebuild で消える/二重変換
+対処: confirmLayerTransform で path.points に焼き込むこと。
+
+GPT5案
+
+ミス: Clipboard が「見かけ座標」で copy → paste で座標系不一致
+対処: copy は getLayerCanonicalPaths() の結果のみを deepCopy して保存する。
+
+GPT5案
+
+ミス: DrawingEngine が直接 clientX/Y を path に push する → 左にズレる等
+対処: DrawingEngine は camera.screenToCanvas(event) を使うこと。
+
+GPT5案
+
+レビュー時の重点確認ポイント（PR チェックリスト）
+
+ 各関数に @input/@output の注記あり
+
+ CameraSystem の screenToCanvas が正しく動く（手動で pointer test）
+
+ confirmLayerTransform の実行で layer.container.transform が identity になっている
+
+ Clipboard の paste で新規 layer が identity transform で生成される
+
+ rebuildPathGraphics は path.points を canvas 前提で描いている
+
+ EventBus イベントが適切に発火・購読されている（UI も更新される）
+
+ console.log が CONFIG.debug 下のみである
+
+追加の作業上の注意（運用ルール）
+
+既存 branch のファイルパス（index.html が読み込むファイル）と実際改修するファイルが同じであることを必ず確認する（間違ったファイルを修正しても動作しない）。これは過去に発生している問題で、確認を怠らないでください。
+
+GPT5案
+
+重大な座標修正（confirmLayerTransform 等）は small step で commit & 実行確認 → rollback しやすい commit message をつける。
+
+テストケースを PR に添付し、描画→確定→コピー→ペーストなどの順で manual test を要求する。
+
+最後に（短く）
+
+優先度は座標変換APIの統一 → confirmLayerTransform の非破壊実装 → Clipboard の canonical 化 の順。上に示した API 定義と疑似コードに従えば、現状報告の「左ズレ・消失・階層移動不可・新規レイヤー作成不可・キャンバスリサイズ不可」などの多くは解消されるはずです。
