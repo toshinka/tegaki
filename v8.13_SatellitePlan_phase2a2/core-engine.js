@@ -1,25 +1,20 @@
-// ===== core-engine.js - 改修版：システム分割対応 =====
-// Phase 2対応版：3つのシステムファイルとの統合を管理
-// 既存機能を100%維持しながらアーキテクチャを分散化
+// ===== core-engine.js - 改修版：座標系統一＋非破壊変形確定 =====
+// GPT5案.txt準拠：座標系の不一致とレイヤー変形確定処理の完全修正版
+// システム分割対応、EventBus統一、座標変換API厳格化
 
 (function() {
     'use strict';
     
-    // === Phase 1: グローバル登録システム（TegakiSystems） ===
+    // === グローバルシステム登録 ===
     window.TegakiSystems = window.TegakiSystems || {
         _registry: {},
-        _pending: [],
-        
         Register: function(name, impl) {
             this._registry[name] = impl;
             console.log(`TegakiSystems: Registered ${name}`);
-            if (this._onRegister) this._onRegister(name, impl);
         },
-        
         get: function(name) { 
             return this._registry[name]; 
         },
-        
         waitFor: function(names, callback) {
             const check = () => {
                 const missing = names.filter(n => !this._registry[n]);
@@ -33,46 +28,6 @@
             check();
         }
     };
-
-    // === Phase 1: 動的システムファイル読み込み ===
-    function loadSystemFiles(callback) {
-        const scripts = [
-            'systems/camera-system.js',
-            'systems/layer-system.js', 
-            'systems/drawing-clipboard.js'
-        ];
-        
-        let loaded = 0;
-        const errors = [];
-        
-        console.log('TegakiSystems: Loading system files...');
-        
-        scripts.forEach(src => {
-            const script = document.createElement('script');
-            script.src = src;
-            script.onload = () => {
-                loaded++;
-                console.log(`TegakiSystems: Loaded ${src} (${loaded}/${scripts.length})`);
-                if (loaded === scripts.length) {
-                    if (errors.length > 0) {
-                        console.error('TegakiSystems: Some scripts failed to load:', errors);
-                    } else {
-                        console.log('TegakiSystems: All system files loaded successfully');
-                    }
-                    callback(errors.length === 0);
-                }
-            };
-            script.onerror = (error) => {
-                console.error(`TegakiSystems: Failed to load ${src}:`, error);
-                errors.push(src);
-                loaded++;
-                if (loaded === scripts.length) {
-                    callback(false);
-                }
-            };
-            document.head.appendChild(script);
-        });
-    }
 
     // === EventBus統一実装 ===
     window.Tegaki = window.Tegaki || {};
@@ -98,8 +53,9 @@
         };
     })();
 
-    // === 座標変換API統一 ===
+    // === 座標変換API統一（GPT5案準拠） ===
     window.Tegaki.Coords = {
+        // スクリーン→ワールド変換
         screenToWorld: function(screenPoint) {
             const cameraSystem = window.TegakiSystems.get('CameraSystem');
             if (cameraSystem) {
@@ -109,25 +65,34 @@
             return { x: 0, y: 0 };
         },
         
-        worldToScreen: function(worldPoint) {
+        // ワールド→キャンバス変換
+        worldToCanvas: function(worldPoint) {
             const cameraSystem = window.TegakiSystems.get('CameraSystem');
             if (cameraSystem) {
-                return cameraSystem.worldToScreen(worldPoint);
+                return cameraSystem.worldToCanvas(worldPoint);
             }
-            console.warn('CameraSystem not available for worldToScreen');
+            console.warn('CameraSystem not available for worldToCanvas');
             return { x: 0, y: 0 };
         },
         
-        worldToLocal: function(container, worldPoint) {
-            return container.toLocal(worldPoint);
+        // スクリーン→キャンバス変換（合成）
+        screenToCanvas: function(screenPoint) {
+            const worldPoint = this.screenToWorld(screenPoint);
+            return this.worldToCanvas(worldPoint);
         },
         
-        localToWorld: function(container, localPoint) {
-            return container.toGlobal(localPoint);
+        // キャンバス→ワールド変換
+        canvasToWorld: function(canvasPoint) {
+            const cameraSystem = window.TegakiSystems.get('CameraSystem');
+            if (cameraSystem) {
+                return cameraSystem.canvasToWorld(canvasPoint);
+            }
+            console.warn('CameraSystem not available for canvasToWorld');
+            return { x: 0, y: 0 };
         }
     };
 
-    // === DrawingEngine（描画制御） ===
+    // === DrawingEngine（改修版：座標系統一） ===
     class DrawingEngine {
         constructor(cameraSystem, layerSystem) {
             this.cameraSystem = cameraSystem;
@@ -145,10 +110,10 @@
             if (this.isDrawing || this.cameraSystem.spacePressed || this.cameraSystem.isDragging || 
                 this.layerSystem.vKeyPressed) return;
 
-            const canvasPoint = this.cameraSystem.screenToCanvasForDrawing(screenX, screenY);
+            // GPT5案準拠：canonical座標を取得
+            const canvasPoint = window.Tegaki.Coords.screenToCanvas({ x: screenX, y: screenY });
             
-            if (!this.cameraSystem.isPointInExtendedCanvas || 
-                !this.cameraSystem.isPointInExtendedCanvas(canvasPoint)) {
+            if (!this.cameraSystem.isPointInExtendedCanvas(canvasPoint)) {
                 return;
             }
             
@@ -182,7 +147,7 @@
             if (!this.isDrawing || !this.currentPath || this.cameraSystem.spacePressed || 
                 this.cameraSystem.isDragging || this.layerSystem.vKeyPressed) return;
 
-            const canvasPoint = this.cameraSystem.screenToCanvasForDrawing(screenX, screenY);
+            const canvasPoint = window.Tegaki.Coords.screenToCanvas({ x: screenX, y: screenY });
             const lastPoint = this.lastPoint;
             
             const distance = Math.sqrt(
@@ -204,6 +169,7 @@
                     alpha: this.currentPath.opacity 
                 });
 
+                // GPT5案準拠：パスはcanonical座標で保存
                 this.currentPath.points.push({ x, y });
             }
 
@@ -216,6 +182,12 @@
             if (this.currentPath) {
                 this.currentPath.isComplete = true;
                 this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                
+                // EventBus通知
+                window.Tegaki.EventBus.emit('drawing:completed', {
+                    layerId: this.layerSystem.getActiveLayer().layerData.id,
+                    pathId: this.currentPath.id
+                });
             }
 
             this.isDrawing = false;
@@ -223,42 +195,23 @@
             this.lastPoint = null;
         }
         
+        // GPT5案準拠：パスをcanonical座標でレイヤーに追加
         addPathToActiveLayer(path) {
             const activeLayer = this.layerSystem.getActiveLayer();
             if (!activeLayer) return;
             
-            const layerId = activeLayer.layerData.id;
-            const transform = this.layerSystem.layerTransforms.get(layerId);
-            
-            // レイヤーが変形されている場合、逆変換を適用
-            if (transform && (transform.x !== 0 || transform.y !== 0 || 
-                transform.rotation !== 0 || Math.abs(transform.scaleX) !== 1 || Math.abs(transform.scaleY) !== 1)) {
-                
-                const matrix = new PIXI.Matrix();
-                const centerX = window.TEGAKI_CONFIG.canvas.width / 2;
-                const centerY = window.TEGAKI_CONFIG.canvas.height / 2;
-                
-                matrix.translate(-centerX - transform.x, -centerY - transform.y);
-                matrix.rotate(-transform.rotation);
-                matrix.scale(1/transform.scaleX, 1/transform.scaleY);
-                matrix.translate(centerX, centerY);
-                
-                const transformedGraphics = new PIXI.Graphics();
-                path.points.forEach((point, index) => {
-                    const transformedPoint = matrix.apply(point);
-                    transformedGraphics.circle(transformedPoint.x, transformedPoint.y, path.size / 2);
-                    transformedGraphics.fill({ color: path.color, alpha: path.opacity });
-                });
-                
-                path.graphics = transformedGraphics;
-            }
-            
+            // パスはcanonical座標で保存（変形は後でレイヤーレベルで処理）
             activeLayer.layerData.paths.push(path);
             activeLayer.addChild(path.graphics);
+            
+            console.log('Path added in canonical coordinates:', path.points.slice(0, 3));
         }
 
         setTool(tool) {
             this.currentTool = tool;
+            
+            // EventBus通知
+            window.Tegaki.EventBus.emit('tool:changed', { tool });
         }
 
         setBrushSize(size) {
@@ -270,22 +223,60 @@
         }
     }
 
+    // === システムファイル動的読み込み ===
+    function loadSystemFiles(callback) {
+        const scripts = [
+            'systems/camera-system.js',
+            'systems/layer-system.js', 
+            'systems/drawing-clipboard.js'
+        ];
+        
+        let loaded = 0;
+        const errors = [];
+        
+        console.log('CoreEngine: Loading system files...');
+        
+        scripts.forEach(src => {
+            const script = document.createElement('script');
+            script.src = src;
+            script.onload = () => {
+                loaded++;
+                console.log(`CoreEngine: Loaded ${src} (${loaded}/${scripts.length})`);
+                if (loaded === scripts.length) {
+                    callback(errors.length === 0);
+                }
+            };
+            script.onerror = (error) => {
+                console.error(`CoreEngine: Failed to load ${src}:`, error);
+                errors.push(src);
+                loaded++;
+                if (loaded === scripts.length) {
+                    callback(false);
+                }
+            };
+            document.head.appendChild(script);
+        });
+    }
+
     // === 統合CoreEngine（改修版） ===
     class CoreEngine {
         constructor(app) {
             this.app = app;
             this.CONFIG = window.TEGAKI_CONFIG;
             
-            // システム参照（動的に設定される）
+            // システム参照
             this.cameraSystem = null;
             this.layerSystem = null;
             this.clipboardSystem = null;
             this.drawingEngine = null;
         }
 
-        // === Phase 2: システム統合初期化 ===
+        // 初期化：システム統合とEventBus設定
         initialize() {
-            console.log('CoreEngine: Starting system integration...');
+            console.log('CoreEngine: Starting system integration with EventBus...');
+            
+            // EventBusリスナー設定
+            this.setupEventBusListeners();
             
             // システムファイル読み込み
             loadSystemFiles((success) => {
@@ -302,17 +293,36 @@
             });
         }
 
+        // EventBusリスナー設定
+        setupEventBusListeners() {
+            // レイヤー変形確定時
+            window.Tegaki.EventBus.on('layer:transform:confirmed', (data) => {
+                console.log('Layer transform confirmed:', data.layerId);
+                this.layerSystem.requestThumbnailUpdate(data.layerIndex);
+            });
+
+            // カメラリサイズ時
+            window.Tegaki.EventBus.on('camera:resize', (data) => {
+                console.log('Camera resized:', data.width, 'x', data.height);
+                this.updateBackgroundLayers(data.width, data.height);
+            });
+
+            // レイヤーパス変更時
+            window.Tegaki.EventBus.on('layer:paths:changed', (data) => {
+                console.log('Layer paths changed:', data.layerId);
+                // 必要に応じて追加処理
+            });
+        }
+
         // システム初期化と相互参照設定
         initializeSystems() {
             try {
-                // === CameraSystem初期化 ===
+                // CameraSystem初期化
                 const CameraSystem = window.TegakiSystems.get('CameraSystem');
-                CameraSystem.init({
-                    app: this.app
-                });
+                CameraSystem.init({ app: this.app });
                 this.cameraSystem = CameraSystem;
 
-                // === LayerSystem初期化 ===  
+                // LayerSystem初期化
                 const LayerSystem = window.TegakiSystems.get('LayerSystem');
                 LayerSystem.init({
                     app: this.app,
@@ -320,7 +330,7 @@
                 });
                 this.layerSystem = LayerSystem;
 
-                // === ClipboardSystem初期化 ===
+                // ClipboardSystem初期化
                 const ClipboardSystem = window.TegakiSystems.get('ClipboardSystem');
                 ClipboardSystem.init({
                     app: this.app,
@@ -328,25 +338,25 @@
                 });
                 this.clipboardSystem = ClipboardSystem;
 
-                // === DrawingEngine初期化 ===
+                // DrawingEngine初期化
                 this.drawingEngine = new DrawingEngine(this.cameraSystem, this.layerSystem);
 
-                // === 相互参照設定 ===
+                // 相互参照設定
                 this.setupCrossReferences();
 
-                // === 後方互換API設定 ===
+                // 後方互換API設定
                 this.setupBackwardCompatibility();
 
-                // === キャンバスイベント設定 ===
+                // キャンバスイベント設定
                 this.setupCanvasEvents();
 
-                // === 初期レイヤー作成 ===
+                // 初期レイヤー作成
                 this.createInitialLayers();
 
-                // === UI統合 ===
+                // UI統合
                 this.setupUI();
 
-                // === サムネイル更新ループ ===
+                // サムネイル更新ループ
                 this.setupThumbnailUpdates();
 
                 console.log('✅ CoreEngine: System integration completed successfully');
@@ -356,41 +366,19 @@
             }
         }
 
-        // 相互参照設定
+        // 相互参照設定（EventBus経由で疎結合）
         setupCrossReferences() {
-            // CameraSystem ← LayerSystem, DrawingEngine
             this.cameraSystem.setLayerSystem(this.layerSystem);
             this.cameraSystem.setDrawingEngine(this.drawingEngine);
-
-            // LayerSystem ← CameraSystem, DrawingEngine  
             this.layerSystem.setCameraSystem(this.cameraSystem);
-            this.layerSystem.setDrawingEngine(this.drawingEngine);
-
-            // ClipboardSystem ← CameraSystem, DrawingEngine
-            this.clipboardSystem.setCameraSystem(this.cameraSystem);
-            this.clipboardSystem.setDrawingEngine(this.drawingEngine);
         }
 
-        // 後方互換API設定（既存コードが動作するように）
+        // 後方互換API設定
         setupBackwardCompatibility() {
-            // グローバル参照維持
             window.App = this.app;
             window.Tegaki = window.Tegaki || {};
             window.Tegaki.stage = this.app.stage;
             window.Tegaki.renderer = this.app.renderer;
-
-            // 既存関数ラッパー
-            window.panCamera = (x, y) => {
-                this.cameraSystem.panTo(x, y);
-            };
-
-            window.createLayer = (options) => {
-                return this.layerSystem.createLayer(options.name || 'New Layer', options.isBackground || false);
-            };
-
-            window.switchTool = (tool) => {
-                this.switchTool(tool);
-            };
 
             // キャンバスリサイズ統合
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
@@ -445,7 +433,6 @@
 
         // UI統合
         setupUI() {
-            // SortableJS統合
             if (window.TegakiUI && window.TegakiUI.initializeSortable) {
                 window.TegakiUI.initializeSortable(this.layerSystem);
             }
@@ -458,22 +445,22 @@
             });
         }
 
-        // === 公開API ===
-        getCameraSystem() {
-            return this.cameraSystem;
-        }
-        
-        getLayerManager() {
-            return this.layerSystem;
-        }
-        
-        getDrawingEngine() {
-            return this.drawingEngine;
+        // 背景レイヤー更新
+        updateBackgroundLayers(newWidth, newHeight) {
+            this.layerSystem.layers.forEach(layer => {
+                if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
+                    layer.layerData.backgroundGraphics.clear();
+                    layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
+                    layer.layerData.backgroundGraphics.fill(this.CONFIG.background.color);
+                }
+            });
         }
 
-        getClipboardSystem() {
-            return this.clipboardSystem;
-        }
+        // 公開API
+        getCameraSystem() { return this.cameraSystem; }
+        getLayerManager() { return this.layerSystem; }
+        getDrawingEngine() { return this.drawingEngine; }
+        getClipboardSystem() { return this.clipboardSystem; }
         
         switchTool(tool) {
             this.cameraSystem.switchTool(tool);
@@ -483,7 +470,7 @@
             this.cameraSystem.updateCoordinates(x, y);
         }
         
-        // キャンバスリサイズ統合処理
+        // キャンバスリサイズ統合処理（EventBus対応）
         resizeCanvas(newWidth, newHeight) {
             console.log('CoreEngine: Canvas resize request:', newWidth, 'x', newHeight);
             
@@ -491,17 +478,14 @@
             this.CONFIG.canvas.width = newWidth;
             this.CONFIG.canvas.height = newHeight;
             
-            // 各システムに通知
-            this.cameraSystem.resizeCanvas(newWidth, newHeight);
-            
-            // 背景レイヤー更新
-            this.layerSystem.layers.forEach(layer => {
-                if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
-                    layer.layerData.backgroundGraphics.clear();
-                    layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
-                    layer.layerData.backgroundGraphics.fill(this.CONFIG.background.color);
-                }
+            // EventBus通知
+            window.Tegaki.EventBus.emit('camera:resize', { 
+                width: newWidth, 
+                height: newHeight 
             });
+            
+            // CameraSystem更新
+            this.cameraSystem.resizeCanvas(newWidth, newHeight);
             
             // 全レイヤーのサムネイル更新
             for (let i = 0; i < this.layerSystem.layers.length; i++) {
@@ -512,7 +496,7 @@
         }
     }
 
-    // === グローバル公開（既存APIとの互換性維持） ===
+    // グローバル公開
     window.TegakiCore = {
         CoreEngine: CoreEngine
     };
