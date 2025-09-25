@@ -1,0 +1,225 @@
+
+要点（結論・優先対応）
+
+主原因候補
+
+「変形（移動／拡縮／回転）を確定したあとに描画が消える」→ 変形（Container の transform）とパス（path.points）の座標系が一致せず、確定処理が破壊的に行われている／不完全に反映されている 可能性が高い。
+
+「コピー＆ペーストで消える」→ クリップボード実装と Layer の再構築ロジックで、Graphics を生成する際の座標空間（ワールド、キャンバス、レイヤー内部）が誤って扱われ、再生成タイミングで transform が二重適用 or 無視されている 可能性。
+
+根本方針（これで改修方針を統一する）
+
+パスデータは常に「キャンバス固定座標（canonical canvas coordinates）」で保存。描画時にCamera/Layerのtransformを組み合わせてスクリーンに投影する。
+
+レイヤーの transform（位置・回転・スケール・反転）は LayerSystem の持つ transform オブジェクト に集約。Container の transform は表示のために使うが、変形確定時は path.points に 逆変換をかけて（座標系を焼き込んで） Container の transform をリセットする（＝非破壊でパスを更新）。
+
+コピー/ペーストは必ず canonical 座標を保存・復元する（＝変形状態はペースト先で初期化する）。
+
+優先度（短期）
+
+座標変換 API を厳格に定義・実装（screen↔world↔canvas↔local）。
+
+confirmLayerTransform() を非破壊で確実に行う（パスへ逆行列を適用 → container transform をリセット）。
+
+Clipboard の copy/paste を canonical 座標に統一（現在の実装は仮想変形を使っているが、再構築時の座標系の扱いを明確化する）。
+
+EventBus（または内部参照）の統合不足を修正（Camera, Layer, DrawingEngine 間のイベント契約を明示）。
+
+詳細：現在の実装で見える問題点（core-engine.js 抜粋を元に）
+
+（A）座標基準が混在している箇所の痕跡
+
+CameraSystem 側で this.worldContainer → canvasContainer → canvasMask を使っており、ガイドラインやマスクの更新を行っている。ClipboardSystem.getTransformedPaths() は PIXI.Matrix を作って path.points に matrix.apply(point) で適用している。つまり “描画のために世界変換をかける/仮想的にかける” ロジックが混在。
+GitHub
+
+（B）「非破壊コピー」を謳うが復元時に座標系があいまい
+
+コピー時に getTransformedPaths() で仮想変形を適用している（＝“見かけ上の座標”を保存）。復元時 rebuildPathGraphics() で Graphics を生成して layer に追加しているが、rebuild 時にどの座標系（local か world）で Graphics を生成するかの明示がない。これが後続の transform 操作時に二重・不整合を生む。
+GitHub
+
+（C）Layer transform と path.points の同期が不完全
+
+layerManager.layerTransforms に transform を保持しているが、confirmLayerTransform() の「非破壊化」が不十分だと、変形を確定したタイミングで path.points を更新せず container に transform を残す可能性がある（結果：その後の rebuild や paste で見えなくなる）。core ヘッダーが「非破壊化を目的」と書いてあることからも、以前は破壊的に変換を行っていた履歴がある。
+GitHub
+
+（D）EventBus / API の断片化
+
+CameraSystem、LayerManager、DrawingEngine、ClipboardSystem が相互参照を持っている（this.layerManager = null のような設定を later に行うパターン）。EventBus 経由で明示的に通知・契約を結んでいないと、タイミングのズレで古い transform を参照する。
+GitHub
+
+（E）その他気づき
+
+deepCopyPaths() が Date.now() を ID に使っているため、頻繁な複製で ID 衝突は起きにくいが Debug 追跡がしにくい（重箱の隅）。
+
+ガイドラインやマスク更新で console.log が多く残っている（要削減）。
+
+仕様提案（API を厳格に定義）
+
+以下をプロジェクト全体で統一してください。命名は一例。
+
+座標系（明示）
+
+screen — ブラウザのピクセル（マウスイベントの clientX/Y から来る）
+
+world — worldContainer 上の座標（Camera の pan/zoom/rotation を含む）
+
+canvas — 実際の「キャンバス内容の論理座標」。パスPoints はこの座標で保存（canonical）
+
+local — 各 Layer コンテナのローカル座標（通常は canvas と同義に保つが、レイヤー固有の transform がある場合に local が変わる）
+
+必須 API
+
+CameraSystem.screenToWorld(point: {x,y}) -> {x,y}
+
+CameraSystem.worldToCanvas(point) -> {x,y}
+
+CameraSystem.screenToCanvas(point) -> {x,y}（上２つの合成）
+
+LayerSystem.applyTransformToPoints(layerId, transform) -> void（パス points に逆行列をかけ、layer transform をリセット）
+
+LayerSystem.getLayerCanonicalPaths(layerId) -> Array<Path>（常に canvas 座標の配列を返す）
+
+ClipboardSystem.copyLayerCanonical(layerId), ClipboardSystem.pasteAsNewLayer(atPosition?, name?)
+
+データモデル（Layer）
+
+layerData = {
+  id: 'layer_001',
+  name: 'ink',
+  visible: true,
+  opacity: 1.0,
+  isBackground: false,
+  // paths は常に canvas 座標系（canonical）
+  paths: [{ id: 'p1', points: [{x,y},...], color, size, opacity, isComplete }, ...],
+  metadata: {...}
+};
+layerTransform = { x:0, y:0, rotation:0, scaleX:1, scaleY:1, hFlip:false, vFlip:false };
+
+
+変形確定（confirmLayerTransform）の正しい挙動
+
+取得：transform = layerTransforms.get(layerId)
+
+if transform is default → nothing
+
+else:
+
+build PIXI.Matrix for transform relative to canvas center or layer origin (decide canonical anchor — 推奨：キャンバス中心 or レイヤー固有の anchor を明示)
+
+for each path.points: p' = matrix.apply(p) → replace path.points
+
+reset layerTransforms[layerId] to identity
+
+update any visible Graphics by rebuildPathGraphics(path) using the new points (no transform on container)
+
+notify UI / thumbnails
+
+具体的な修正手順（優先順。コピペして直せるレベルの擬似コード付き）
+1) 座標変換 API を固める（短期、最優先）
+
+CameraSystem に以下を追加（擬似コード）：
+
+// CameraSystem
+screenToWorld(screenPt){
+  const rect = app.view.getBoundingClientRect();
+  const x = screenPt.x - rect.left;
+  const y = screenPt.y - rect.top;
+  // account for canvas scale / CSS etc if necessary
+  const worldPt = this.worldContainer.toLocal({x, y}, app.stage);
+  return worldPt;
+}
+worldToCanvas(worldPt){
+  // canvasContainer のローカルに変換（world->canvas）
+  return this.canvasContainer.toLocal(worldPt, this.worldContainer);
+}
+screenToCanvas(screenPt){
+  return this.worldToCanvas(this.screenToWorld(screenPt));
+}
+
+
+すべての描画・ペン入力は screenToCanvas() を経由して canonical 座標を得る（DrawingEngine の screenToCanvasForDrawing() をこれに委譲し、内部で座標系の注釈を残す）。
+
+2) confirmLayerTransform() を安全に実装（中期）
+
+擬似実装：
+
+// LayerSystem.confirmLayerTransform(layerId)
+const transform = this.layerTransforms.get(layerId);
+if (isIdentity(transform)) return;
+const layer = this.getLayerById(layerId);
+const matrix = buildTransformMatrix(transform, anchor /* e.g. canvas center */);
+// apply inverse or direct? We need to bake transform into points:
+layer.layerData.paths.forEach(path => {
+  path.points = path.points.map(pt => matrix.apply(pt)); // matrix applies transform to canvas points
+});
+// reset container transform to identity
+this.layerTransforms.set(layerId, identityTransform());
+layer.container.setTransform(0,0,1,1,0); // reset container
+// rebuild graphics for each path using points now in canonical coords
+layer.layerData.paths.forEach(p => this.rebuildPathGraphics(p));
+this.updateLayerPanelUI();
+
+
+重要：matrix の生成は「レイヤー transform がどのアンカー（中心）でかかっているか」を明示して作る。アンカーが canvas center ならそれで統一するか、レイヤーごとに anchor プロパティを持たせる。
+
+3) Clipboard（copy/paste）の修正（短〜中期）
+
+コピー：必ず LayerSystem.getLayerCanonicalPaths(layerId) を呼んで canonical パスを保存する（getTransformedPaths() のように「仮想的に見かけ上の座標」を作るのではなく、現在 canonical に見える座標を確保すること）
+
+ペースト：復元後にレイヤー transform を (0,0,1,1,0) にしておく。rebuildPathGraphics() は canonical 点列を前提に Graphics を作る。
+
+4) rebuildPathGraphics() の明確化（短期）
+
+rebuildPathGraphics(path) は必ず path.points を canvas 座標として受け取り、path.graphics.position = {0,0} のまま draw を行う（= path.graphics の position に世界/レイヤー transform を持たせない）。もし path.graphics を layer.container に addChild するなら container の transform を identity にしつつ、layer-level transform は別で保持。
+
+5) EventBus の整理（中期）
+
+イベント名とペイロードを定義：
+
+'layer:transform:confirmed' {layerId}
+
+'layer:paths:changed' {layerId}
+
+'camera:resize' {width,height}
+
+CameraSystem / LayerSystem / DrawingEngine / UI はこれらで疎結合にする。直接 this.layerManager = layerManager のような参照は残しても良いが、状態変更は EventBus で通知して同期不整合を避ける。
+
+テスト/検証手順（チェックリスト）
+
+ペンで描いて → 移動／拡縮／回転 → 描画が消えないか（変形中、確定後ともに検証）
+
+レイヤーをアクティブ移動（UIで順序変更）→ transform を保持しているか → confirm 後に path が期待通り変換されるか
+
+Ctrl+C / Ctrl+V（複数回）→ 毎回同じ見た目で復元されるか（transform の初期化確認）
+
+サムネイル更新・ステータス表示の整合性（updateStatusDisplay 等）
+
+変形確定 → undo/redo（存在する場合）で状態を戻せるか（Undo を設計に含めるなら、変換前の path.points を履歴に残す）
+
+レイヤー複製（背景を含む）→ 背景レイヤーはキャンバス幅／高さに依存するため、paste 時にキャンバスサイズ差でズレないか
+
+開発上の運用ルール（チーム向け）
+
+座標系はコードコメントで必ず明示（関数の頭に /* input: screen, returns: canvas */ のように）
+
+Matrix.apply を直接使う箇所はレビューを必須にする（座標の壊れやすい箇所）
+
+layer.container.transform を直接操作する箇所を限定（LayerSystem 内に集約）
+
+console.log・デバッグ出力は CONFIG.debug ガードの下のみ許可
+
+追加で確認してほしい（現場で実行するチェック）
+
+Phase2a1 の core-engine.js / camera-system.js / layer-system.js が 実ファイルとして正常に公開されているか（今回 web.run で一部しか読めませんでした。空ファイルや重複ファイル名が混在していると開発時に誤ったファイルを参照するリスクがあります）。※ あなたが既に触っている branch と実行している index.html が参照する path が一致しているかを必ず確認してください。
+GitHub
++2
+GitHub
++2
+
+最終まとめ（短く）
+
+現象は 「座標系の不一致」＋「変形確定処理の不完全さ」 が主因と推定。
+
+即実行すべきは（1）座標変換 API を統一する、（2）confirmLayerTransform() を「パスに焼き込む」方式で非破壊に確実に行う、（3）Clipboard を canonical 座標に統一する、（4）EventBus でタイミング問題を解消する、の順。
+
+具体的なコードスニペットと擬似実装方針を上に示しました。まずは 座標系 API の実装と DrawingEngine → LayerSystem → confirmLayerTransform の単体テスト を作ることを強く推奨します。
