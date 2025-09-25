@@ -1,334 +1,482 @@
-要点サマリ（1行）
-
-根本原因は「座標系の混在」と「変形確定（transform の焼き込み）の不整合」。まず座標変換APIを厳格化し、LayerSystem に変形を集約して「パスは常にキャンバス（canonical）座標で保存」する設計に統一します。
-
-GPT5案
-
-改修方針（設計原則）
-
-座標系を厳密に定義する（screen / world / canvas / local）— 各APIで入力/出力座標系を必ず注記。
-
-GPT5案
-
-パス（path.points）は常に canvas（canonical）座標で保持。描画は Camera/Layer の transform を合成してスクリーンへ投影。
-
-GPT5案
-
-レイヤー変形は LayerSystem が一元管理。Container の transform は表示のために使うだけ。変形確定（confirm）時は points に焼き込み、Container transform をリセット。
-
-GPT5案
-
-Clipboard は canonical 座標で copy/paste（変形状態は保存しない／初期化する）。
-
-GPT5案
-
-イベント同期は EventBus（文字列定義されたイベント）で行う。直接参照の多用は避ける（ただしレガシー参照は残しても可）。
-
-GPT5案
-
-範囲（絶対条件）
-
-改修対象は phase2c の下記 4 ファイル内の実装のみ（core-engine.js, systems/camera-system.js, systems/layer-system.js, systems/drawing-clipboard.js）。他ファイル（ui-panels.js, core-runtime.js, config.js など）は触らない。
-
-ただし必要な public API/イベントの追加は core-engine.js（中枢）に追加して外部と整合させる。
-
-成果物（フェーズ別：フェーズ名のみ、時間は提示しない）
-
-フェーズA（必須・最優先）
-
-座標変換 API の明確化・実装（screen↔world↔canvas⇄local の 4 API）
-
-DrawingEngine の入力ルートを screen→canvas に統一（ペン描画が左にズレる問題解消）
-
-LayerSystem.confirmLayerTransform() の非破壊正実装（パスへの焼き込み）
-
-ClipBoard の copy/paste を canonical 化
-
-フェーズB（中期）
-
-rebuildPathGraphics() と path.graphics の position/transform ルールを固定化
-
-EventBus イベント契約の定義と各システムへの配備
-
-レイヤーパネルの階層移動 API（レイヤー順序・アクティブ移動）安定化（移動時のアンカー補正）
-
-フェーズC（拡張・安定化）
-
-キャンバスサイズ変更対応（キャンバス依存レイヤーの扱い、サムネイル更新）
-
-Undo/Redo を変形確定前後で扱えるような履歴インターフェース（必要なら）
-
-テストスイート（単体手順チェックリストの自動化 or manual checklist）
-
-（上位方針は GPT5案.txt に準拠）。
-
-GPT5案
-
-詳細設計（API 定義と重要アルゴリズム）
-座標系の定義（プロジェクト共通）
-
-screen: ブラウザのクライアントピクセル（mouse event の clientX/Y）。
-
-world: worldContainer 上の座標（Camera の pan/zoom/rotation を含む）。
-
-canvas (canonical): 「キャンバス内容の論理座標」。path.points は常にこの座標で保存。
-
-local: Layer コンテナのローカル座標（通常 canvas と同義。ただし layer に anchor がある場合は異なる）。
-
-すべての関数/メソッドは JSDoc で @input/@output を明示すること（例: @input screen @returns canvas）。
-
-GPT5案
-
-CameraSystem（責務）
-
-変換 API を公開：
-
-screenToWorld({x,y}) -> {x,y}
-
-worldToCanvas({x,y}) -> {x,y}
-
-screenToCanvas({x,y}) -> {x,y}（上二つの合成）
-
-canvasToWorld(...), canvasToScreen(...)（逆変換も用意）
-
-getWorldContainer(), getCanvasContainer() は必要時に使えるが、transformの読み書きは避ける（LayerSystem 経由で行う）。
-
-マスク/ビューサイズ更新は camera:resize イベントで通知。
-
-実装注意: DOM の getBoundingClientRect()・CSS scale を考慮してスクリーン→キャンバス変換を行う。
-
-GPT5案
-
-LayerSystem（責務：核）
-
-データモデル（例）
-
-layerData = {
-  id: 'layer_001',
-  name: 'ink',
-  visible: true,
-  opacity: 1.0,
-  isBackground: false,
-  // paths は常に canvas 座標系（canonical）
-  paths: [{ id: 'p1', points: [{x,y},...], color, size, opacity, isComplete }, ...],
-  metadata: {...}
-};
-layerTransform = { x:0, y:0, rotation:0, scaleX:1, scaleY:1, hFlip:false, vFlip:false };
-
-
-公開メソッド（必須）
-
-applyTransformToPoints(layerId, transform)
-→ transform の matrix を作り、すべての path.points に matrix を適用して layerTransform を identity に戻す（＝変形確定）。
-
-GPT5案
-
-getLayerCanonicalPaths(layerId) -> Array<Path>（常に canvas 座標）
-
-rebuildPathGraphics(path)（path.points を canvas 座標として受け取り、Graphics を作る）
-
-setLayerOrder(layerId, newIndex)（レイヤー階層移動）
-
-createLayer(initialProps) / removeLayer(layerId) / duplicateLayer(layerId)（UI や Clipboard のために）
-
-confirmLayerTransform 実装擬似コード（必須）
-
-// LayerSystem.confirmLayerTransform(layerId)
-const transform = this.layerTransforms.get(layerId);
-if (isIdentity(transform)) return;
-const layer = this.getLayerById(layerId);
-const matrix = buildTransformMatrix(transform, anchor /* e.g. canvas center or layer.anchor */);
-layer.layerData.paths.forEach(path=>{
-  path.points = path.points.map(pt => applyMatrix(matrix, pt)); // canvas coords に焼き込む
-});
-// リセット
-this.layerTransforms.set(layerId, identityTransform());
-layer.container.setTransform(0,0,1,1,0);
-layer.container.removeChildren(); // or update graphics via rebuildPathGraphics
-layer.layerData.paths.forEach(p=> this.rebuildPathGraphics(p));
-EventBus.emit('layer:transform:confirmed', {layerId});
-
-
-buildTransformMatrix() はアンカー（中心）を厳密に決めること。アンカーを canvas center に統一するか、レイヤー毎に anchor プロパティを持たせる。
-
-GPT5案
-
-注意点
-
-Container の transform を残したままだと、rebuild 時に二重適用 / 消失が起きる（これが現象の主因）。必ず焼き込み or 永続的に Container を表示専用にする。
-
-GPT5案
-
-Drawing-Clipboard（責務）
-
-Copy は LayerSystem.getLayerCanonicalPaths(layerId) を呼び、canonical points の深いコピーを作る（transform を適用済みにする、見かけ上の transform を保存してはいけない）。
-
-Paste は新規レイヤーを作り、canonical points をそのまま rebuild する（レイヤー transform は identity）。
-
-Clipboard 内に「見かけ上の transform」を混ぜない。これで paste 後に消える問題を解消。
-
-GPT5案
-
-rebuildPathGraphics のルール
-
-rebuildPathGraphics(path) は path.points を canvas 座標系として受け取る。
-
-path.graphics.position を {0,0} にして内部で moveTo/lineTo を実行する（path.graphics に transform を持たせない）。
-
-path.graphics は layer.container に addChild されるが layer.container は常に identity（変形確定後）か、一時的に transform を使うに留める（変形中は transform を使う）。
-
-GPT5案
-
-EventBus（契約例）
-
-イベント名とペイロードを厳密に定義してソースにコメントを残す。
-
-'layer:transform:confirmed' → {layerId}
-
-'layer:paths:changed' → {layerId}
-
-'camera:resize' → {width,height}
-
-'clipboard:copied' → {layerId}
-
-'layer:order:changed' → {layerId, newIndex}
-
-実装注意: EventBus は小さな Pub/Sub オブジェクトで十分。直接的な this.layerManager = ... のような遅延設定は避け、EventBus 経由で初期同期を行う。
-
-GPT5案
-
-具体的な改修手順（コピペで直せるレベルの優先順）
-1) CameraSystem: screen→canvas の確実化（最優先）
-
-実装（擬似コード）
-
-// CameraSystem.screenToWorld
-screenToWorld(screenPt){
-  const rect = app.view.getBoundingClientRect();
-  const x = screenPt.x - rect.left;
-  const y = screenPt.y - rect.top;
-  // CSS ピクセルや devicePixelRatio を考慮する場合はここで補正
-  return this.worldContainer.toLocal({x,y}, app.stage);
-}
-screenToCanvas(screenPt){
-  const world = this.screenToWorld(screenPt);
-  return this.canvasContainer.toLocal(world, this.worldContainer);
-}
-
-
-Drawing input は必ず camera.screenToCanvas() を経由するよう DrawingEngine を書き換える（onPointerMove / onPointerDown で直接 clientX を使わない）。
-
-GPT5案
-
-2) LayerSystem.confirmLayerTransform（次）
-
-実装擬似コードは上記参照（必ず matrix を作る）。全 path.points に適用後、container transform を reset、rebuild。
-
-GPT5案
-
-3) Clipboard: copy/paste を canonical 化
-
-コピーは getLayerCanonicalPaths() を呼ぶ。paste は新しい layer を作り、paths をそのまま rebuildPathGraphics() で描く（transform は identity）。
-
-GPT5案
-
-4) rebuildPathGraphics の整備
-
-path.graphics の position を 0,0 にして draw。Container 側で transform を与えない（または確実に reset する）。
-
-GPT5案
-
-5) EventBus を導入して同期不整合を防ぐ
-
-各重要操作（confirm、paste、createLayer、resize）でイベント発行。UI はイベント購読して更新。
-
-GPT5案
-
-テストチェックリスト（必ず実行）
-
-ペンで描画 → 見た目通り canvas に保存される（screen→canvas 入力正）
-
-レイヤー選択 → 移動（ドラッグ）→ 確定（confirmLayerTransform）→ 絵が消えないか
-
-移動→確定後に拡縮・回転 → 消えない（前処理で path.points が正しく焼かれている）
-
-コピー（Ctrl+C）→ ペースト（Ctrl+V）→ 見た目同一で復元される（複数回）
-
-レイヤーの階層移動（UI）→ 実際の表示順が変わり、アクティブレイヤー移動が正しく反映される
-
-キャンバスリサイズ → 背景レイヤー/キャンバス依存レイヤーの表示が崩れないか（フェーズC）
-
-サムネイル更新が都度正しい（layer:paths:changed を購読するテスト）
-
-（上の順に従って単体でテスト。自動化は後で追加可能）
-
-GPT5案
-
-AI（Claude 等）向け実装ガイド（チェックリスト形式） — 必ず守らせること
-
-すべての座標変換関数は @input / @output を JSDoc に明記。
-
-Matrix.apply を使う場所は review 必須（座標破壊リスク）。
-
-絶対に path.points を screen/world のまま保存しない（常に canvas）。
-
-confirmLayerTransform は「焼き込み（bake）」方式で行い、Container.transform を残さないこと。残すと将来の rebuild で二重適用される。
-
-GPT5案
-
-Clipboard は表示上の transform（見かけ上の座標）を保存しない。復元側で transform を持たせたい場合は別のメタ領域に記録し、Paste時には初期化する。
-
-レイヤー階層移動（order）を change する際は EventBus で UI と同期。setLayerOrder() 呼び出し後に layer:order:changed を emit させる。
-
-Console.log は CONFIG.debug ガード下のみにする（不要なログは削る）。
-
-PixiJS v8.13 の API に従う（Container.toLocal / toGlobal 等）こと。プロジェクトの既存 index.html が参照するスクリプトパスと編集する branch が一致しているか確認。
-
-GPT5案
-
-よくあるミスと対処（QA）
-
-ミス: confirm せずに container.transform を残す → 結果: 後続の rebuild で消える/二重変換
-対処: confirmLayerTransform で path.points に焼き込むこと。
-
-GPT5案
-
-ミス: Clipboard が「見かけ座標」で copy → paste で座標系不一致
-対処: copy は getLayerCanonicalPaths() の結果のみを deepCopy して保存する。
-
-GPT5案
-
-ミス: DrawingEngine が直接 clientX/Y を path に push する → 左にズレる等
-対処: DrawingEngine は camera.screenToCanvas(event) を使うこと。
-
-GPT5案
-
-レビュー時の重点確認ポイント（PR チェックリスト）
-
- 各関数に @input/@output の注記あり
-
- CameraSystem の screenToCanvas が正しく動く（手動で pointer test）
-
- confirmLayerTransform の実行で layer.container.transform が identity になっている
-
- Clipboard の paste で新規 layer が identity transform で生成される
-
- rebuildPathGraphics は path.points を canvas 前提で描いている
-
- EventBus イベントが適切に発火・購読されている（UI も更新される）
-
- console.log が CONFIG.debug 下のみである
-
-追加の作業上の注意（運用ルール）
-
-既存 branch のファイルパス（index.html が読み込むファイル）と実際改修するファイルが同じであることを必ず確認する（間違ったファイルを修正しても動作しない）。これは過去に発生している問題で、確認を怠らないでください。
-
-GPT5案
-
-重大な座標修正（confirmLayerTransform 等）は small step で commit & 実行確認 → rollback しやすい commit message をつける。
-
-テストケースを PR に添付し、描画→確定→コピー→ペーストなどの順で manual test を要求する。
-
-最後に（短く）
-
-優先度は座標変換APIの統一 → confirmLayerTransform の非破壊実装 → Clipboard の canonical 化 の順。上に示した API 定義と疑似コードに従えば、現状報告の「左ズレ・消失・階層移動不可・新規レイヤー作成不可・キャンバスリサイズ不可」などの多くは解消されるはずです。
+要約（短く）
+
+エラー reading 'worldContainer' と Required systems not loaded within timeout：
+システム登録（System ファイル → CoreEngine へ）が正しく伝播しておらず、CoreEngine が worldContainer を作る前に DrawingApp が参照している、または CoreEngine が想定する必須システムが未登録のままタイムアウトしているのが主原因です。
+
+原因パターン：スクリプト読み込み順、グローバル登録API の不一致（Phase1b4 と Phase2e で「どうやって system を CoreEngine に渡すか」が変わっている）、各 system ファイルのエクスポート（グローバル）方法の不統一。
+
+対処方針：CoreEngine に「登録待ち」受け口を実装し、システム側は厳格なシグネチャ（name, required, init(engine), start()）で登録する。さらに CoreEngine は PIXI 存在チェック・バージョンチェック、worldContainer の明確な生成・公開を行う。これで phase1b4 と同等の機能を満たしつつ、分割後の system ファイルでも確実に動く構成にします。
+
+すぐに置き換える（差し替え用）：4 ファイル全文
+
+これらをそのまま core-engine.js、systems/camera-system.js、systems/layer-system.js、systems/drawing-clipboard.js に貼り替えてください（既存を上書き）。
+ES非モジュール（<script>インクルード）前提、window グローバルを使います。PixiJS は index.html で CDN から読み込まれている前提です。
+
+core-engine.js
+/* core-engine.js
+   CoreEngine: シンプルで堅牢なシステム登録・初期化フレームワーク
+   API:
+     CoreEngine.registerSystem(name, systemFactoryOrObject)
+     CoreEngine.initialize(options) -> returns Promise
+   System 要件:
+     - object.name (string)
+     - object.required (array of system-names) optional
+     - object.init(engine) -> sync/async
+     - object.start(engine) -> sync/async optional
+*/
+(function(window){
+  'use strict';
+
+  // PIXI バージョンチェック（任意だが有用）
+  if (!window.PIXI) {
+    console.error('CoreEngine: PIXI not found. Make sure PixiJS is loaded before core-engine.js');
+  } else {
+    try {
+      const v = (PIXI.VERSION || '');
+      if (!v.startsWith('8.13')) {
+        console.warn(`CoreEngine: Expected PixiJS v8.13, found ${v}. Behavior may differ.`);
+      }
+    } catch(e){}
+  }
+
+  // シングルトン CoreEngine
+  const CoreEngine = {
+    _systems: {},           // name -> system instance/object
+    _systemFactories: {},   // name -> factory/object (registered before init)
+    _loaded: false,
+    _engineContext: null,
+    _requiredSystemsList: [],
+
+    registerSystem: function(name, factoryOrObject){
+      if (!name) throw new Error('registerSystem requires name');
+      this._systemFactories[name] = factoryOrObject;
+      // For debug minimal log — keep it small per rule
+      // console.debug(`CoreEngine: system registered: ${name}`);
+    },
+
+    // internal: ingest any pending window.__PENDING_SYSTEMS placed by system files
+    _ingestPendingSystems: function(){
+      if (window.__PENDING_SYSTEMS){
+        for (const k in window.__PENDING_SYSTEMS){
+          if (!this._systemFactories[k]) this._systemFactories[k] = window.__PENDING_SYSTEMS[k];
+        }
+        // clear to avoid duplicate
+        window.__PENDING_SYSTEMS = null;
+      }
+    },
+
+    initialize: async function(options = {}){
+      // minimal options:
+      //   requiredSystems: ['camera','layer', ...]
+      //   pixiApp: existing PIXI.Application instance (optional)
+      //   timeoutMs: how long to wait for required systems registration
+      this._ingestPendingSystems();
+      const timeoutMs = options.timeoutMs || 3000;
+      this._requiredSystemsList = options.requiredSystems || [];
+
+      // create engine context
+      const app = options.pixiApp || this._createPixiAppIfNeeded();
+      const ctx = {
+        app: app,
+        stage: app.stage,
+        renderer: app.renderer,
+        // worldContainer will be created and attached to stage
+        worldContainer: null,
+        systems: this._systems,
+        registerSystem: this.registerSystem.bind(this),
+      };
+      this._engineContext = ctx;
+
+      // create canonical world container and attach to stage
+      ctx.worldContainer = new PIXI.Container();
+      ctx.worldContainer.name = 'worldContainer';
+      ctx.stage.addChild(ctx.worldContainer);
+      this.worldContainer = ctx.worldContainer; // expose on CoreEngine
+
+      // wait for required systems to be registered
+      const self = this;
+      await this._waitForSystemsRegistered(timeoutMs);
+
+      // instantiate systems
+      for (const name in this._systemFactories){
+        // if already instantiated skip
+        if (this._systems[name]) continue;
+        try {
+          const factory = this._systemFactories[name];
+          let instance = (typeof factory === 'function') ? factory() : factory;
+          // allow factory to return an object or require a call to .create()
+          if (typeof instance === 'function') instance = instance();
+          // final guard: ensure has name
+          instance = instance || {};
+          if (!instance.name) instance.name = name;
+          this._systems[name] = instance;
+        } catch (e){
+          console.error('CoreEngine: failed to instantiate system', name, e);
+        }
+      }
+
+      // call init on systems (in any order) but await if returns promise
+      const initPromises = [];
+      for (const name in this._systems){
+        const s = this._systems[name];
+        if (typeof s.init === 'function'){
+          try {
+            const p = s.init(this._engineContext);
+            if (p && typeof p.then === 'function') initPromises.push(p);
+          } catch(e){
+            console.error('CoreEngine: system init error', name, e);
+          }
+        }
+      }
+      await Promise.all(initPromises);
+
+      // start systems (non-blocking, but await if promise returned)
+      for (const name in this._systems){
+        const s = this._systems[name];
+        if (typeof s.start === 'function'){
+          try {
+            const p = s.start(this._engineContext);
+            if (p && typeof p.then === 'function') await p;
+          } catch(e){
+            console.error('CoreEngine: system start error', name, e);
+          }
+        }
+      }
+
+      this._loaded = true;
+      return this._engineContext;
+    },
+
+    _waitForSystemsRegistered: function(timeoutMs){
+      const required = this._requiredSystemsList || [];
+      if (!required.length) return Promise.resolve();
+
+      const self = this;
+      return new Promise(function(resolve, reject){
+        const start = Date.now();
+        (function tick(){
+          let allHere = true;
+          for (let i = 0; i < required.length; ++i){
+            const name = required[i];
+            // registered either in factories or already instantiated
+            if (!self._systemFactories[name] && !self._systems[name]){
+              allHere = false; break;
+            }
+          }
+          if (allHere) return resolve();
+          if (Date.now() - start > timeoutMs){
+            console.error('❌ System loading timeout. Available systems: ', Object.keys(self._systemFactories));
+            return reject(new Error('Required systems not loaded within timeout'));
+          }
+          setTimeout(tick, 50);
+        })();
+      });
+    },
+
+    getSystem: function(name){
+      return this._systems[name] || null;
+    },
+
+    _createPixiAppIfNeeded: function(){
+      if (window._CORE_ENGINE_APP) return window._CORE_ENGINE_APP;
+      // create a minimal PIXI.Application suitable for file:// usage
+      const app = new PIXI.Application({
+        width: 800, height: 600, backgroundAlpha: 0, antialias: true
+      });
+      // attach to body if nothing provided
+      document.body.appendChild(app.view);
+      window._CORE_ENGINE_APP = app;
+      return app;
+    }
+  };
+
+  // expose CoreEngine
+  window.CoreEngine = CoreEngine;
+
+  // If systems were placed into window.__PENDING_SYSTEMS by system files, ingest now
+  CoreEngine._ingestPendingSystems();
+
+})(window);
+
+systems/camera-system.js
+/* camera-system.js
+   シンプルなカメラ（viewport）システム。
+   必要最低限の API:
+     - name: 'camera'
+     - required: []
+     - init(engineContext) -> set up engine.camera and engine.camera.container (a PIXI.Container)
+     - start(engineContext)
+*/
+(function(window){
+  'use strict';
+
+  function createCameraSystem(){
+    return {
+      name: 'camera',
+      required: [],
+      init: function(engine){
+        // engine: { app, stage, renderer, worldContainer, systems }
+        this.engine = engine;
+        // container under worldContainer that will hold drawable layers
+        this.container = new PIXI.Container();
+        this.container.name = 'cameraContainer';
+        // Expose as camera.container so other systems can add children to camera.container
+        if (!engine.worldContainer) {
+          throw new Error('camera-system: engine.worldContainer is not available');
+        }
+        engine.worldContainer.addChild(this.container);
+
+        // camera state
+        this.state = { x:0, y:0, scale:1, rotation:0 };
+        // provide simple API
+        engine.camera = {
+          container: this.container,
+          setPosition: (x,y) => { this.state.x = x; this.container.position.set(x,y); },
+          setScale: (s) => { this.state.scale = s; this.container.scale.set(s); },
+          getState: () => ({...this.state}),
+        };
+
+        // Optional: setup interaction for panning (minimal)
+        const view = engine.app.view;
+        // keep interaction off by default; tools can enable it
+        return Promise.resolve();
+      },
+
+      start: function(engine){
+        // nothing blocking
+      }
+    };
+  }
+
+  // register: try CoreEngine.registerSystem; otherwise place into pending bucket
+  if (window.CoreEngine && typeof window.CoreEngine.registerSystem === 'function'){
+    window.CoreEngine.registerSystem('camera', createCameraSystem);
+  } else {
+    window.__PENDING_SYSTEMS = window.__PENDING_SYSTEMS || {};
+    window.__PENDING_SYSTEMS['camera'] = createCameraSystem;
+  }
+
+})(window);
+
+systems/layer-system.js
+/* layer-system.js
+   レイヤー管理を LayerSystem に集中させる。
+   シンプル API:
+     engine.layerSystem.createLayer({name, width, height})
+     engine.layerSystem.getLayer(nameOrId)
+     engine.layerSystem.reorderLayer(id, newIndex)
+     engine.layerSystem.transformLayer(id, {x,y,rotation,scaleX,scaleY})
+*/
+(function(window){
+  'use strict';
+
+  function createLayerSystem(){
+    return {
+      name: 'layer',
+      required: ['camera'], // camera.container を想定
+      init: function(engine){
+        this.engine = engine;
+        this._layers = []; // ordered list
+        this._map = {}; // id/name -> layer object
+
+        const camera = engine.camera;
+        if (!camera || !camera.container){
+          throw new Error('layer-system: camera.container required');
+        }
+        this.host = camera.container;
+
+        // API exposed to engine
+        engine.layerSystem = {
+          createLayer: this.createLayer.bind(this),
+          getLayer: this.getLayer.bind(this),
+          reorderLayer: this.reorderLayer.bind(this),
+          transformLayer: this.transformLayer.bind(this),
+          list: () => this._layers.slice()
+        };
+      },
+
+      createLayer: function({id, name, width=0, height=0} = {}){
+        const layerId = id || ('layer_' + (Object.keys(this._map).length+1));
+        const layerName = name || layerId;
+        const container = new PIXI.Container();
+        container.name = layerName;
+        container._layerId = layerId;
+
+        // default a transparent Graphics backing if needed for hit test (optional)
+        // const bg = new PIXI.Graphics();
+        // bg.beginFill(0x000000, 0);
+        // bg.drawRect(0,0,width,height);
+        // bg.endFill();
+        // container.addChild(bg);
+
+        this.host.addChild(container);
+        const entry = { id: layerId, name: layerName, container: container };
+        this._layers.push(entry);
+        this._map[layerId] = entry;
+        this._map[layerName] = entry;
+        return entry;
+      },
+
+      getLayer: function(idOrName){
+        return this._map[idOrName] || null;
+      },
+
+      reorderLayer: function(idOrName, newIndex){
+        const entry = this.getLayer(idOrName);
+        if (!entry) return false;
+        const curIndex = this._layers.indexOf(entry);
+        if (curIndex === -1) return false;
+        this._layers.splice(curIndex, 1);
+        this._layers.splice(newIndex, 0, entry);
+        // apply to host display list
+        this.host.removeChild(entry.container);
+        // re-append in order
+        for (let i = 0; i < this._layers.length; ++i){
+          const e = this._layers[i];
+          if (this.host.children.indexOf(e.container) !== i) {
+            // ensure correct index by remove/insert cycle:
+            // Since PIXI doesn't have insertAt, use addChildAt if available
+            if (typeof this.host.addChildAt === 'function'){
+              this.host.addChildAt(e.container, i);
+            } else {
+              this.host.addChild(e.container);
+            }
+          }
+        }
+        return true;
+      },
+
+      transformLayer: function(idOrName, {x,y,rotation,scaleX,scaleY} = {}){
+        const entry = this.getLayer(idOrName);
+        if (!entry) return false;
+        const c = entry.container;
+        if (typeof x === 'number') c.position.x = x;
+        if (typeof y === 'number') c.position.y = y;
+        if (typeof rotation === 'number') c.rotation = rotation;
+        if (typeof scaleX === 'number') c.scale.x = scaleX;
+        if (typeof scaleY === 'number') c.scale.y = scaleY;
+        return true;
+      }
+    };
+  }
+
+  if (window.CoreEngine && typeof window.CoreEngine.registerSystem === 'function'){
+    window.CoreEngine.registerSystem('layer', createLayerSystem);
+  } else {
+    window.__PENDING_SYSTEMS = window.__PENDING_SYSTEMS || {};
+    window.__PENDING_SYSTEMS['layer'] = createLayerSystem;
+  }
+
+})(window);
+
+systems/drawing-clipboard.js
+/* drawing-clipboard.js
+   軽量なクリップボード（レイヤー or PIXI.Container 単位）
+   API:
+     engine.clipboard.copyLayer(idOrName)
+     engine.clipboard.pasteLayer({targetLayerId, newName})
+*/
+(function(window){
+  'use strict';
+
+  function createClipboardSystem(){
+    return {
+      name: 'clipboard',
+      required: ['layer'],
+      init: function(engine){
+        this.engine = engine;
+        this._storage = null; // simple in-memory
+        engine.clipboard = {
+          copyLayer: this.copyLayer.bind(this),
+          pasteLayer: this.pasteLayer.bind(this),
+          getStored: () => this._storage
+        };
+      },
+
+      copyLayer: function(idOrName){
+        const ls = this.engine.layerSystem;
+        if (!ls) throw new Error('clipboard: layerSystem required');
+        const layer = ls.getLayer(idOrName);
+        if (!layer) return false;
+        // simple shallow clone: clone children into a new container
+        const src = layer.container;
+        const clone = new PIXI.Container();
+        clone.name = (layer.name || 'clipboard_clone');
+        // Deep copy basic display objects minimally (Graphics, Sprite)
+        for (let i=0;i<src.children.length;++i){
+          const ch = src.children[i];
+          try {
+            if (ch instanceof PIXI.Sprite){
+              const s = new PIXI.Sprite(ch.texture);
+              s.position.copyFrom(ch.position);
+              s.scale.copyFrom(ch.scale);
+              s.rotation = ch.rotation;
+              clone.addChild(s);
+            } else if (ch instanceof PIXI.Graphics){
+              // graphics cannot be trivially cloned; draw to texture could be used later.
+              // For now we store a reference to graphics (non-destructive)
+              // WARNING: shared reference — editor should treat paste as grouped reference.
+              clone.addChild(ch.clone ? ch.clone() : ch);
+            } else {
+              // fallback: try shallow copy by container serialization if any
+              if (ch.clone) clone.addChild(ch.clone());
+            }
+          } catch(e){
+            // skip problematic children
+            console.warn('clipboard: copy child failed', e);
+          }
+        }
+        this._storage = { layerName: layer.name, container: clone };
+        return true;
+      },
+
+      pasteLayer: function({ targetLayerId, newName } = {}){
+        if (!this._storage) return false;
+        const ls = this.engine.layerSystem;
+        if (!ls) throw new Error('clipboard: layerSystem required for paste');
+        // if target provided, add to that layer, else create a new layer and add
+        let target = targetLayerId ? ls.getLayer(targetLayerId) : null;
+        if (!target){
+          const newLayer = ls.createLayer({ name: newName || `${this._storage.layerName}_paste` });
+          target = newLayer;
+        }
+        // add children of stored container to target.container (clone reference)
+        const src = this._storage.container;
+        // clone children where possible, but if they are shared references we append them (risky)
+        for (let i = 0; i < src.children.length; ++i){
+          const ch = src.children[i];
+          try {
+            if (typeof ch.clone === 'function') {
+              target.container.addChild(ch.clone());
+            } else {
+              target.container.addChild(ch);
+            }
+          } catch(e){
+            console.warn('clipboard: paste child failed', e);
+          }
+        }
+        return true;
+      }
+    };
+  }
+
+  if (window.CoreEngine && typeof window.CoreEngine.registerSystem === 'function'){
+    window.CoreEngine.registerSystem('clipboard', createClipboardSystem);
+  } else {
+    window.__PENDING_SYSTEMS = window.__PENDING_SYSTEMS || {};
+    window.__PENDING_SYSTEMS['clipboard'] = createClipboardSystem;
+  }
+
+})(window);
+
+使い方と確認手順（短い）
+
+上の 4 ファイルをそれぞれ上書き保存。
+
+index.html の <script> 読み込み順は (1) PixiJS CDN → (2) core-engine.js → (3) systems/*.js → (4) その他（core-runtime.js, drawingApp 等） が安全。ただし上の実装は __PENDING_SYSTEMS を吸い上げるので システムファイルを core-engine の後に置いても動きます（CoreEngine が pending を ingest する）。しかし最も確実なのは「Pixi → core-engine → systems → core-runtime / app」。
+
+index.html を開いてコンソールのエラーが消えることを確認してください。CoreEngine が worldContainer を作っているはずです。
+
+動かなければコンソールで Object.keys(CoreEngine._systemFactories) と Object.keys(CoreEngine._systems) を確認してください（登録状況）。
+
+なぜこれで直るのか（
