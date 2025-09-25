@@ -172,6 +172,48 @@
             return this.canvasContainer.toLocal(globalPoint);
         },
 
+        // レイヤー操作用座標変換
+        screenToCanvas: function(screenX, screenY) {
+            const globalPoint = { x: screenX, y: screenY };
+            return this.canvasContainer.toLocal(globalPoint);
+        },
+
+        // キャンバス→スクリーン座標変換
+        canvasToScreen: function(canvasX, canvasY) {
+            const canvasPoint = { x: canvasX, y: canvasY };
+            return this.canvasContainer.toGlobal(canvasPoint);
+        },
+
+        // 拡張キャンバス領域判定
+        isPointInExtendedCanvas: function(canvasPoint, margin = 50) {
+            return canvasPoint.x >= -margin && canvasPoint.x <= this.CONFIG.canvas.width + margin &&
+                   canvasPoint.y >= -margin && canvasPoint.y <= this.CONFIG.canvas.height + margin;
+        },
+
+        // ツール切り替え
+        switchTool: function(tool) {
+            if (this.drawingEngine) {
+                this.drawingEngine.setTool(tool);
+            }
+            
+            // レイヤー移動モード終了
+            if (this.layerSystem && this.layerSystem.isLayerMoveMode) {
+                this.layerSystem.exitLayerMoveMode();
+            }
+            
+            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+            const toolBtn = document.getElementById(tool + '-tool');
+            if (toolBtn) toolBtn.classList.add('active');
+
+            const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
+            const toolElement = document.getElementById('current-tool');
+            if (toolElement) {
+                toolElement.textContent = toolNames[tool] || tool;
+            }
+
+            this.updateCursor();
+        },
+
         // イベント設定
         setupEvents: function() {
             this.app.canvas.addEventListener('contextmenu', (e) => e.preventDefault());
