@@ -1,173 +1,199 @@
-改修計画書
+# 改修計画書 — core-engine 分割によるキャンバス移動不具合調査と対策
 
-対象:
+**対象リポジトリ / ブランチ（参照したファイル）**
 
-system/camera-system.js
+* v8.13_SatellitePlan_phase1e8/core-engine.js
+* v8.13_SatellitePlan_phase1e8/system/camera-system.js
+* v8.13_SatellitePlan_phase1e8/system/layer-system.js
+* v8.13_SatellitePlan_phase1e8/system/drawing-clipboard.js
+* v8.13_SatellitePlan_phase1b4/core-engine.js
+* v8.13_SatellitePlan_phase1b4/config.js
+* v8.13_SatellitePlan_phase1b4/coordinate-system.js
+* v8.13_SatellitePlan_phase1b4/core-runtime.js
+* v8.13_SatellitePlan_phase1b4/ui-panels.js
 
-system/layer-system.js
+(調査は上記公開 raw.githubusercontent.com の各ファイルを参照して実施)
 
-system/drawing-clipboard.js
+---
 
-旧: core-engine.js（v8.13_SatellitePlan_phase1b4版）
+## 1) 概要（ユーザ要望）
 
-1. 背景
+* core-engine.js を分割して軽量化したところ、旧バージョン（phase1b4）と比べて「キャンバス移動（パン／ズーム等）が効かない」現象が発生
+* 調査と原因特定、改修方針・手順、チェックリストの提示を要望
+* 追加でチェックしてほしい点：座標変換APIの不一致、レイヤーAPIの断片化、EventBus統合の不完全性、設定参照の混在、PixiJSバージョン記述、ESM/import 文の混入
 
-core-engine.js が肥大化していたため、カメラ処理・レイヤー管理・クリップボード処理を分離。
+---
 
-しかし、以下の問題が確認されている：
+## 2) 調査で確認した重要ポイント（要約）
 
-座標変換APIの不一致
+* 分割後の `CameraSystem` は `worldContainer` / `canvasContainer` を生成して `app.stage` に追加するコードが存在する（参照: phase1e8/core-engine.js の CameraSystem 実装）。citeturn1view0
+* Clipboard / Camera / Layer 系の責務が分割され、それぞれが内部で `layerManager` や `drawingEngine` を参照する設計になっている（ただし結合点の参照設定が Core 側で確実に行われているかが要確認）。citeturn1view0turn4view0
+* 新旧ファイル群を走査した結果、`import` 文や明示的な ESM 記述は見つからなかった（ローカル file:// 実行前提に整合）。同様に `PIXI` や `EventBus` の未対応・明示的バージョン指定コメントはファイル内に見当たらない。citeturn1view0turn3view0
 
-レイヤーAPIの断片化
+> 注：上記は提供頂いたリモートファイルのスニペット検査結果に基づきます。現場の全ファイル（index.html 等）と結合して実行時の参照がどうなっているかは、ローカルでの実行ログがあればさらに正確な診断が可能です。
 
-EventBus統合の不完全性
+---
 
-設定参照の混在
+## 3) 疑わしい根本原因（優先度順）
 
-PixiJS APIの書き方に揺らぎ
+1. **Core と Camera / Layer / Drawing の接続が未完成（参照注入漏れ）**
 
-ES Module文法の混入（import/export）
+   * 分割後に `CoreEngine` が `CameraSystem` / `LayerManager` / `DrawingEngine` を生成して内部参照（例: `camera.layerManager = layerManager`）しているかが不十分。Camera の worldContainer は生成されるが、実際の "操作対象"（レイヤー群のコンテナ）へイベント伝播や transform の反映がされていないとパンが目に見えなくなる。citeturn1view0
 
-さらに、core-engine.js にあったロジックの一部が新規ファイルに継承されておらず、動作不整合の原因になる可能性あり。
+2. **Pointer / Wheel イベントのバインド先が不適切 or 重複**
 
-2. 現在の問題点（新規3ファイル）
-camera-system.js
+   * 旧実装ではキャンバス（または worldContainer）に直接 pointer/wheel イベントをアタッチしていたが、分割でイベント登録位置が変わり、実際の描画コンテナへの伝播が停止している可能性。これだと UI は応答するが canvas の transform が変わらない。citeturn1view0
 
-問題:
+3. **座標変換 API の不一致（スクリーン→キャンバス変換）**
 
-screenToCanvasForDrawing と screenToCanvas が混在 → API不一致。
+   * Camera 系と描画（DrawingEngine）がそれぞれ `screenToCanvasForDrawing()` 等を持つ/期待するが、実装が分かれているため API 契約が崩れているとペン位置はズレる／パン操作で視覚更新が行われない場合がある。特に変換中心（canvas center）や matrix の適用順序（translate→rotate→scale 等）が違うと、パン動作が見た目で反映されないケースがある。citeturn1view0
 
-PIXI.Matrix.apply(point) の使い方が曖昧。
+4. **レイヤー API の断片化：layerTransforms の管理が散在**
 
-spacePressed/isDragging フラグの定義が散在。
+   * 変形データ（translate/scale/rotation）を `LayerManager` 側と `CameraSystem` 側で別々に保持すると、どちらの変換を最終的に描画に適用するか曖昧になり、結果的に画面が動かない・消える等の不整合が発生する。Clipboard 実装に `layerTransforms` 参照があるため特に注意。citeturn1view0
 
-継承漏れ:
+5. **設定参照の混在（CONFIG の更新がワンソースでない）**
 
-updateCoordinates(screenX, screenY)（マウス追従表示等）未完全。
+   * `CONFIG.canvas.width/height` を CameraSystem が直接 mutation している箇所が見られ、Core 側での一貫した更新パスが無いとマスクやガイドラインの再構築が不一致になる恐れ。citeturn1view0
 
-resizeCanvas の再計算ロジック不足。
+---
 
-CoreEngine 内にあった switchTool(toolName) の一部が欠落。
+## 4) 短期対応（再現してすぐ直せる候補）
 
-layer-system.js
+下のチェックを順に実施して下さい（影響小→中）：
 
-問題:
+1. **Core 側でのインスタンス注入チェック**
 
-createLayer が UI DOM 更新と状態管理を混在（責務分離不足）。
+   * `CoreEngine`（index または core-runtime）が CameraSystem, LayerManager, DrawingEngine, ClipboardSystem を生成した直後に `setLayerManager` / `setDrawingEngine` 等の参照注入を行っているか確認。無ければ追加。例:
 
-layerTransforms の二重管理（PIXI.Container にも transform がある）。
+   ```js
+   const camera = new CameraSystem(app);
+   const layerManager = new LayerManager(app);
+   const drawingEngine = new DrawingEngine(app);
+   camera.layerManager = layerManager;
+   camera.drawingEngine = drawingEngine;
+   clipboard.setLayerManager(layerManager);
+   clipboard.setDrawingEngine(drawingEngine);
+   ```
 
-サムネイル更新 (requestThumbnailUpdate) が毎フレーム呼ばれパフォーマンス懸念。
+2. **イベントバインドの確認（pointer/wheel）**
 
-継承漏れ:
+   * pointerdown/move/up, wheel の登録対象を `app.view` もしくは `worldContainer` に統一する。分割前の実装と同じ DOM/PIXIオブジェクトに登録するのが早い。イベントハンドラで `stopPropagation()` などで阻害していないか確認。
 
-rebuildPathGraphics(pathObj) の PixiJS Graphics API 書き方が v8.13 非互換。
+3. **座標変換の単一化**
 
-isTransformNonDefault の判定が部分的。
+   * `screenToCanvasForDrawing()` 等、スクリーン→キャンバス変換を CameraSystem 側に一本化し、DrawingEngine からは CameraSystem の API を使う。相互に同名関数が複数ある場合は deprecate して参照先を統一。
 
-updateLayerPanelUI / updateStatusDisplay が CoreEngine 依存のまま。
+4. **layerTransforms の真の単一管理**
 
-drawing-clipboard.js
+   * レイヤー個別の transform（レイヤー固有の回転・拡大）は LayerManager が管理し、カメラ（viewport）移動は CameraSystem が管理する。描画時は最終的に `worldContainer` (camera) の transform と `layer` の transform を合成して適用。
 
-問題:
+5. **CONFIG 更新経路の整理**
 
-copyActiveLayer / pasteLayer が浅いコピー → transform/paths の一部が共有参照になる恐れ。
+   * Canvas サイズや camera 設定は必ず Core のリサイズ入口（例: `CoreEngine.resizeCanvas()`）を通るようにして、副作用を最小化。
 
-EventBus 未統合（キーボードショートカットとの連携が弱い）。
+---
 
-継承漏れ:
+## 5) 中期対応（リファクタリング・保守性向上）
 
-CoreEngine 内にあった clipboardSystem.setLayerManager(layerManager) が反映されていない。
+* **イベントバス（EventBus）を導入して結合を緩める**
 
-UI 側に依存（alert, console.log が残存）。
+  * 各システムは `EventBus.emit('camera:moved', state)` のように公開イベントを出し、必要なシステムが subscribe する方式にする。これで依存注入漏れの類を減らす。
+* **座標系ユーティリティモジュールを作成**
 
-3. 改修方針
-共通方針
+  * `coordinate-system.js` を authoritative source にして、すべての変換はこれを経由させる。
+* **レイヤー API の仕様を明文化**
 
-APIの統一
+  * `Layer` の public API を `getTransform()`, `setTransform()`, `toLocalPoints(points)`, `rebuildGraphics()` などで統一。AI が自動改修する際にもマッピングが容易になる。
+* **単体テスト（スナップショット）**
 
-CameraSystem: screenToCanvas を唯一の正規APIに → 描画専用挙動は forDrawing=true フラグで切り替え。
+  * 画面を直接自動検証するのは難しいが、座標変換の入出力ユニットテストは node + headless-pixi で作れる。最小限の API テストを追加。
 
-LayerSystem: 返却する Layer オブジェクト仕様を明確化（必須プロパティ: id, name, paths[], visible, opacity, transform）。
+---
 
-ClipboardSystem: 全レイヤーコピーは deep clone を徹底。
+## 6) 具体的修正案（差分イメージ／コードスニペット）
 
-EventBus 統合
+### A) Core 側での確実な参照注入（推奨）
 
-全 System の init(..., eventBus, CONFIG) に統一。
+`core-runtime.js` や `index.html` の main 初期化箇所に下記を入れる:
 
-CoreEngine で SimpleEventBus を生成して全 System に渡す。
+```js
+// 初期化順
+const app = new PIXI.Application({width: CONFIG.canvas.width, height: CONFIG.canvas.height});
+const layerManager = new LayerManager(app);
+const camera = new CameraSystem(app);
+const drawingEngine = new DrawingEngine(app);
+const clipboard = new ClipboardSystem();
 
-CONFIG の一元化
+// 参照注入
+camera.setLayerManager(layerManager);
+camera.setDrawingEngine(drawingEngine);
+clipboard.setLayerManager(layerManager);
+clipboard.setDrawingEngine(drawingEngine);
+layerManager.setCameraSystem(camera);
 
-window.TEGAKI_CONFIG の直接参照を禁止。
+// 最終: worldContainer を stage にアタッチ（CameraSystem が行う設計なら二重にならないよう配慮）
+app.stage.addChild(camera.worldContainer);
+```
 
-this.config = CONFIG; に格納して参照。
+### B) pointer/wheel イベントの登録先を統一
 
-PixiJS API の標準化
+```js
+// CameraSystem.setupEvents() 内
+const targetView = this.app.view; // もしくは this.app.stage.interactive = true; this.worldContainer.interactive = true;
+this.app.view.addEventListener('wheel', e => this.onWheel(e));
+this.app.view.addEventListener('pointerdown', e => this.onPointerDown(e));
+// 必要であれば passive: false を指定
+```
 
-Graphics は beginFill → drawXxx → endFill に統一。
+### C) 座標変換の単一化（CameraSystem に委譲）
 
-Matrix は (x,y,outPoint) の API 形で利用。
+```js
+CameraSystem.prototype.screenToCanvasPoint = function(screenX, screenY) {
+  // app.renderer.plugins.interaction.mapPositionToPoint を使う等、安全にスクリーン座標を PIXI 内座標へ
+  const point = this.app.renderer.plugins.interaction.mapPositionToPoint(new PIXI.Point(), screenX, screenY);
+  // world->canvas の逆変換を行う
+  return this.canvasContainer.toLocal(point);
+};
+```
 
-責務分離
+---
 
-LayerSystem は 状態と Pixi コンテナ管理専用。
+## 7) チェックリスト（マージ前に必ず）
 
-UI 更新（DOM操作）は ui-panels.js 側に寄せる。
+* [ ] Core 側で Camera / Layer / Drawing / Clipboard の参照注入が行われている
+* [ ] pointer/wheel の登録位置が app.view または worldContainer に統一されている
+* [ ] `screenToCanvas...` 系 API の実装が一箇所にまとまっている
+* [ ] layerTransforms は LayerManager が一元管理し、CameraSystem は viewport 変換のみを管理している
+* [ ] CONFIG の canvas サイズ変更経路が一本化されている（CoreEngine.resizeCanvas）
+* [ ] `import` / ESM の誤記載なし（file:// 実行前提）
+* [ ] PixiJS の読み込みは CDN で v8.13 が明示されている（index.html 側を確認）
 
-4. 改修タスク一覧
-camera-system.js
+---
 
- screenToCanvasForDrawing を screenToCanvas(screenX, screenY, {forDrawing:true}) に統一。
+## 8) リスクと注意点
 
- updateCoordinates を core-engine から移植。
+* 既存のレイヤー変形ロジック（特に confirmLayerTransform の非破壊化）はクリティカルな処理なので、必ず既存のユニット（描画保存／パス再構築）を壊さないように統合テストを行ってください。citeturn4view1
+* EventBus を導入する場合、イベント名の命名規則（`camera:pan` vs `camera:moved`）を早期に決めておかないと結局散在してしまいます。
 
- resizeCanvas の計算を PixiJS v8.13 仕様で再実装。
+---
 
- switchTool(toolName) を core-engine から完全移植。
+## 9) 次のアクション（推奨順）
 
- spacePressed / isDragging の状態管理を CameraSystem 内に集約。
+1. 本番と同じ index.html でローカル起動し、コンソールログ（camera の生成、pointer イベント受信、worldContainer transform 値）を出力して再現手順を確定。
+2. Core に参照注入パッチを当てて動作確認（チェックリストの上から順）。
+3. 動作確認後、座標変換ユーティリティの一本化を行い、DrawingEngine を camera API に切り替え。
+4. EventBus 導入は中期タスクとして計画。
 
-layer-system.js
+---
 
- createLayer を「Pixi Container生成＋layerData登録」に限定し、UI処理は外出し。
+## 10) 参考（今回見たファイルの参照ID）
 
- rebuildPathGraphics を v8.13 準拠に修正（beginFill/drawShape/endFill）。
+* phase1e8/core-engine.js (Camera/Clipboard 等の実装確認) — ref: turn1view0. citeturn1view0
+* phase1e8/system/layer-system.js — ref: turn3view0. citeturn3view0
 
- isTransformNonDefault を core-engine 実装に合わせ移植。
+---
 
- サムネイル更新を throttle 方式に変更。
+以上。追加で「実際に直すためのパッチ（差分）」を作成しますか？
 
- updateLayerPanelUI / updateStatusDisplay を EventBus 経由に。
-
-drawing-clipboard.js
-
- copyActiveLayer / pasteLayer を deep clone 化（paths 配列・transform を複製）。
-
- EventBus 経由で copy/paste イベントを通知 → ショートカットキー処理と連携。
-
- setLayerManager(layerManager) を core-engine と同期。
-
-5. 今後の拡張を見据えた設計ルール
-
-「描画系は DrawingEngine、座標系は CameraSystem、状態管理は LayerSystem」 を厳守。
-
-UI は全て ui-panels.js 側に寄せ、System 側は EventBus でイベント発火のみ。
-
-LayerTransform は Pixi.Container に一元化、layerTransforms はキャッシュ or シリアライズ専用にする。
-
-Clipboard は 非破壊コピー（deep clone） をルール化し、undo/redo 拡張に備える。
-
-6. まとめ
-
-新規3ファイルには core-engine.js からのロジック移植漏れと API 不統一 が散見される。
-
-最優先タスクは API統一・CONFIG/EventBus統一・PixiJS API修正。
-
-その上で、責務分離（UI外出し）とパフォーマンス改善（サムネイル更新）を実施。
-
-完了後は AI が仕様書をもとに安全に改修できる構造 になる。
-
-
-
+* 可能です。ご希望なら Core 側の初期化スニペットを差分形式で用意して、直接貼り込める形にします。
