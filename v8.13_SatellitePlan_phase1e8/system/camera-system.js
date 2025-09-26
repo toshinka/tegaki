@@ -1,6 +1,7 @@
-// ===== system/camera-system.js - カメラ操作専用モジュール（改修版） =====
+// ===== system/camera-system.js - カメラ操作専用モジュール（修正版） =====
 // 座標変換・ズーム・パン・回転等の「カメラ操作」専用
-// PixiJS v8.13 対応・改修計画書対応版
+// PixiJS v8.13 対応・改修計画書完全準拠版
+// 【修正】Spaceキー操作の完全修正・キー状態管理の安定化
 
 (function() {
     'use strict';
@@ -28,7 +29,7 @@
                 verticalFlipped: false
             };
             
-            // キー状態管理
+            // 【修正】キー状態管理の安定化
             this.spacePressed = false;
             this.shiftPressed = false;
             this.vKeyPressed = false;
@@ -58,7 +59,7 @@
             this.initializeCamera();
             this._drawCameraFrame();
             
-            console.log('✅ CameraSystem initialized');
+            console.log('✅ CameraSystem initialized (修正版)');
         }
 
         _createContainers() {
@@ -168,7 +169,7 @@
             // マウス操作
             this._setupMouseEvents(canvas);
             
-            // キーボード操作
+            // 【修正】キーボード操作の安定化
             this._setupKeyboardEvents();
         }
 
@@ -300,8 +301,12 @@
             }
         }
 
+        // 【修正】キーボードイベント処理の完全修正版
         _setupKeyboardEvents() {
             document.addEventListener('keydown', (e) => {
+                // 【修正1】キー状態更新を最優先
+                this._updateKeyStates(e);
+                
                 // Ctrl+0: キャンバスリセット
                 if (e.ctrlKey && e.code === 'Digit0') {
                     this.resetCanvas();
@@ -309,29 +314,60 @@
                     return;
                 }
                 
-                // キー状態更新
+                // 【修正2】Space処理の安定化
                 if (e.code === 'Space') {
                     this.spacePressed = true;
                     this.updateCursor();
                     e.preventDefault();
                 }
-                if (e.shiftKey) this.shiftPressed = true;
                 
                 // 以下、レイヤー操作中（V押下中）は処理しない
                 if (this.vKeyPressed) return;
                 
+                // カメラ操作処理
                 this._handleCameraMoveKeys(e);
                 this._handleCameraTransformKeys(e);
                 this._handleCameraFlipKeys(e);
             });
             
             document.addEventListener('keyup', (e) => {
-                if (e.code === 'Space') {
-                    this.spacePressed = false;
-                    this.updateCursor();
-                }
-                if (!e.shiftKey) this.shiftPressed = false;
+                // 【修正3】keyupでの状態リセット確実化
+                this._resetKeyStates(e);
             });
+            
+            // 【修正4】フォーカス関連の追加処理（ブラウザタブ切り替え対応）
+            window.addEventListener('blur', () => {
+                this._resetAllKeyStates();
+            });
+            
+            window.addEventListener('focus', () => {
+                this._resetAllKeyStates();
+            });
+        }
+
+        // 【新規】キー状態更新の統一処理
+        _updateKeyStates(e) {
+            if (e.shiftKey) this.shiftPressed = true;
+            // spacePressed は keydown の Space 専用処理で更新
+        }
+
+        // 【新規】キー状態リセットの統一処理
+        _resetKeyStates(e) {
+            if (e.code === 'Space') {
+                this.spacePressed = false;
+                this.updateCursor();
+            }
+            if (!e.shiftKey) {
+                this.shiftPressed = false;
+            }
+        }
+
+        // 【新規】全キー状態強制リセット（フォーカス喪失時）
+        _resetAllKeyStates() {
+            this.spacePressed = false;
+            this.shiftPressed = false;
+            // vKeyPressed はレイヤーシステムが管理するのでリセットしない
+            this.updateCursor();
         }
 
         _handleCameraMoveKeys(e) {
@@ -564,10 +600,12 @@
     // グローバル公開
     window.TegakiCameraSystem = CameraSystem;
 
-    console.log('✅ camera-system.js (改修版) loaded successfully');
+    console.log('✅ camera-system.js (修正版) loaded successfully');
+    console.log('   - 【修正】Spaceキー操作完全修正');
+    console.log('   - 【修正】キー状態管理の安定化');
+    console.log('   - 【修正】フォーカス喪失時の状態リセット追加');
     console.log('   - API統一: screenToCanvas(x, y, {forDrawing: boolean})');
     console.log('   - EventBus統合完了');
-    console.log('   - 設定参照統一（this.config）');
     console.log('   - core-engine.js継承メソッド追加');
     
 })();

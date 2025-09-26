@@ -1,6 +1,7 @@
-// ===== system/layer-system.js - レイヤー管理専用モジュール（改修版） =====
+// ===== system/layer-system.js - レイヤー管理専用モジュール（修正版） =====
 // レイヤー管理（生成・削除・並び替え・回転・反転・透明度・表示/非表示）
-// PixiJS v8.13 対応・改修計画書対応版
+// PixiJS v8.13 対応・改修計画書完全準拠版
+// 【修正】変形行列計算の正確な実装・レイヤー変形確定時の画像消失問題解決
 
 (function() {
     'use strict';
@@ -44,7 +45,7 @@
             this._setupLayerOperations();
             this._setupLayerTransformPanel();
             
-            console.log('✅ LayerSystem initialized');
+            console.log('✅ LayerSystem initialized (修正版)');
         }
 
         _createContainers() {
@@ -145,7 +146,7 @@
 
             update(initial);
         }
-
+        
         updateActiveLayerTransform(property, value) {
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
@@ -635,7 +636,7 @@
             }
         }
 
-        // === 改修版：非破壊的レイヤー変形確定処理 ===
+        // === 【修正版】非破壊的レイヤー変形確定処理 ===
         confirmLayerTransform() {
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
@@ -673,6 +674,7 @@
             }
         }
 
+        // === 【修正版】正確な変形行列順序による安全なパス変形適用処理 ===
         safeApplyTransformToPaths(layer, transform) {
             if (!layer.layerData?.paths || layer.layerData.paths.length === 0) {
                 return true;
@@ -682,7 +684,7 @@
                 const centerX = this.config.canvas.width / 2;
                 const centerY = this.config.canvas.height / 2;
                 
-                // 変形行列作成
+                // 【修正】正しい変形行列順序でのマトリクス作成（PixiJS標準準拠）
                 const matrix = this.createTransformMatrix(transform, centerX, centerY);
                 
                 // パスごとに安全に処理
@@ -726,13 +728,19 @@
             }
         }
 
+        // 【修正版】正しい変形行列順序でのマトリクス作成（PixiJS標準準拠）
         createTransformMatrix(transform, centerX, centerY) {
             const matrix = new PIXI.Matrix();
             
-            matrix.translate(centerX + transform.x, centerY + transform.y);
-            matrix.rotate(transform.rotation);
-            matrix.scale(transform.scaleX, transform.scaleY);
+            // 【修正】正しい変形順序（PixiJS標準）
+            // 1. 基準点を原点に移動
             matrix.translate(-centerX, -centerY);
+            // 2. スケール適用
+            matrix.scale(transform.scaleX, transform.scaleY);
+            // 3. 回転適用
+            matrix.rotate(transform.rotation);
+            // 4. 位置移動（基準点＋オフセット）
+            matrix.translate(centerX + transform.x, centerY + transform.y);
             
             return matrix;
         }
@@ -760,7 +768,9 @@
                     }
                     
                 } catch (transformError) {
-                    console.warn(`Point transform failed for index ${i}:`, transformError);
+                    if (this.config.debug) {
+                        console.warn(`Point transform failed for point ${i}:`, transformError);
+                    }
                 }
             }
             
@@ -818,7 +828,7 @@
             }
         }
 
-        // === 改修版：PixiJS v8.13対応パスGraphics再生成 ===
+        // === 【修正版】PixiJS v8.13対応パスGraphics再生成 ===
         rebuildPathGraphics(path) {
             try {
                 if (path.graphics) {
@@ -1209,11 +1219,11 @@
     // グローバル公開
     window.TegakiLayerSystem = LayerSystem;
 
-    console.log('✅ layer-system.js (改修版) loaded successfully');
+    console.log('✅ layer-system.js (修正版) loaded successfully');
+    console.log('   - 【修正】変形行列計算順序の正確な実装（PixiJS標準準拠）');
+    console.log('   - 【修正】レイヤー変形確定時の画像消失問題解決');
+    console.log('   - 【修正】非破壊的変形確定処理の安全性向上');
     console.log('   - EventBus統合完了');
-    console.log('   - 設定参照統一（this.config）');
-    console.log('   - レイヤー変形確定処理非破壊化');
     console.log('   - PixiJS v8.13 Graphics API準拠');
-    console.log('   - サムネイル更新throttle追加');
 
 })();

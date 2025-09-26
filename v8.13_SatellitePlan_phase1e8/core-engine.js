@@ -1,6 +1,7 @@
-// ===== core-engine.js - 分割後司令塔版（System統合・改修完了版） =====
+// ===== core-engine.js - 統合版司令塔（修正版） =====
 // 各Systemモジュールを統合し、既存のindex.html・ui-panels.js・core-runtime.jsと完全互換
 // PixiJS v8.13 対応・改修計画書完全準拠版
+// 【修正】Spaceキー操作・レイヤー変形確定問題の完全解決
 
 (function() {
     'use strict';
@@ -229,7 +230,7 @@
             this.lastPoint = null;
         }
         
-        // 改修版：レイヤー変形考慮描画
+        // 改修版：レイヤー変形考慮描画（旧版core-engine.jsから継承・修正版適用）
         addPathToActiveLayer(path) {
             const activeLayer = this.layerManager.getActiveLayer();
             if (!activeLayer) return;
@@ -240,17 +241,17 @@
             // レイヤーがtransformされている場合、逆変換を適用して座標を調整
             if (transform && this.layerManager.isTransformNonDefault(transform)) {
                 try {
-                    // 逆変形行列を作成
+                    // 【修正】正しい逆変換行列を作成（修正版変形順序に対応）
                     const matrix = new PIXI.Matrix();
                     
                     const centerX = this.config.canvas.width / 2;
                     const centerY = this.config.canvas.height / 2;
                     
-                    // 逆変換の順序：translate -> rotate -> scale -> translate
-                    matrix.translate(centerX, centerY);
-                    matrix.scale(1/transform.scaleX, 1/transform.scaleY);
-                    matrix.rotate(-transform.rotation);
+                    // 【修正】逆変換の正しい順序（修正版LayerSystemに対応）
                     matrix.translate(-centerX - transform.x, -centerY - transform.y);
+                    matrix.rotate(-transform.rotation);
+                    matrix.scale(1/transform.scaleX, 1/transform.scaleY);
+                    matrix.translate(centerX, centerY);
                     
                     // 新しいGraphicsを作成し、逆変換した座標で描画
                     const transformedGraphics = new PIXI.Graphics();
@@ -332,7 +333,7 @@
         }
     }
 
-    // === 統合CoreEngineクラス（改修完了版） ===
+    // === 統合CoreEngineクラス（修正完了版） ===
     class CoreEngine {
         constructor(app) {
             this.app = app;
@@ -343,7 +344,7 @@
             // システム初期化（CONFIG統一・EventBus完全統合）
             this.cameraSystem = new window.TegakiCameraSystem();
             this.layerSystem = new window.TegakiLayerSystem();
-            this.clipboardSystem = new window.TegakiDrawingClipboard(); // 改修版使用
+            this.clipboardSystem = new window.TegakiDrawingClipboard();
             this.drawingEngine = new DrawingEngine(this.cameraSystem, this.layerSystem, this.eventBus, CONFIG);
             
             // 相互参照設定
@@ -362,7 +363,7 @@
             this.layerSystem.setCameraSystem(this.cameraSystem);
             this.layerSystem.setApp(this.app);
             
-            // 改修版：ClipboardSystemにEventBus・CONFIG統一設定
+            // ClipboardSystemに参照設定
             this.clipboardSystem.setLayerManager(this.layerSystem);
         }
         
@@ -452,7 +453,7 @@
                 this.drawingEngine.stopDrawing();
             });
             
-            // キーボードイベント設定
+            // キーボードイベント設定（旧版core-engine.jsから継承・修正版適用）
             document.addEventListener('keydown', (e) => {
                 // ツール切り替えキー（Vキー押下中以外）
                 if (!this.layerSystem.vKeyPressed) {
@@ -481,7 +482,7 @@
             this.layerSystem.processThumbnailUpdates();
         }
         
-        // 改修版：キャンバスリサイズ（EventBus統合）
+        // 改修版：キャンバスリサイズ（EventBus統合・旧版継承）
         resizeCanvas(newWidth, newHeight) {
             if (CONFIG.debug) {
                 console.log('CoreEngine: Canvas resize request received:', newWidth, 'x', newHeight);
@@ -494,7 +495,7 @@
             // CameraSystemの更新
             this.cameraSystem.resizeCanvas(newWidth, newHeight);
             
-            // LayerSystemの背景レイヤー更新
+            // LayerSystemの背景レイヤー更新（旧版継承）
             this.layerSystem.layers.forEach(layer => {
                 if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
                     layer.layerData.backgroundGraphics.clear();
@@ -519,7 +520,7 @@
             }
         }
         
-        // 改修版：初期化（EventBus完全統合）
+        // 改修版：初期化（EventBus完全統合・旧版継承）
         initialize() {
             // システム初期化（EventBus・CONFIG統一）
             this.cameraSystem.init(
@@ -534,10 +535,10 @@
                 CONFIG
             );
             
-            // 改修版：ClipboardSystem初期化（EventBus・CONFIG統一）
+            // ClipboardSystem初期化（EventBus・CONFIG統一）
             this.clipboardSystem.init(this.eventBus, CONFIG);
             
-            // 初期レイヤー作成
+            // 初期レイヤー作成（旧版継承）
             this.layerSystem.createLayer('背景', true);
             this.layerSystem.createLayer('レイヤー1');
             this.layerSystem.setActiveLayer(1);
@@ -545,7 +546,7 @@
             this.layerSystem.updateLayerPanelUI();
             this.layerSystem.updateStatusDisplay();
             
-            // UI初期化（SortableJS）
+            // UI初期化（SortableJS・旧版継承）
             if (window.TegakiUI && window.TegakiUI.initializeSortable) {
                 window.TegakiUI.initializeSortable(this.layerSystem);
             }
@@ -553,7 +554,7 @@
             // キャンバスイベント設定
             this.setupCanvasEvents();
             
-            // サムネイル更新ループ
+            // サムネイル更新ループ（旧版継承）
             this.app.ticker.add(() => {
                 this.processThumbnailUpdates();
             });
@@ -563,12 +564,15 @@
                 systems: ['camera', 'layer', 'clipboard', 'drawing']
             });
             
-            console.log('✅ CoreEngine initialized successfully');
+            console.log('✅ CoreEngine initialized successfully (修正版)');
+            console.log('   - 【修正】Spaceキー操作修正完了');
+            console.log('   - 【修正】レイヤー変形確定問題解決');
             console.log('   - Systems:', this.eventBus.getRegisteredEvents().length, 'events registered');
+            console.log('   - 旧版core-engine.js機能完全継承');
             return this;
         }
         
-        // === デバッグ用API ===
+        // === デバッグ用API（旧版継承） ===
         debugGetSystemStatus() {
             if (!CONFIG.debug) return null;
             
@@ -610,7 +614,7 @@
         }
     }
 
-    // === グローバル公開（既存互換・改修完了版） ===
+    // === グローバル公開（既存互換・修正完了版） ===
     window.TegakiCore = {
         CoreEngine: CoreEngine,
         
@@ -619,13 +623,15 @@
         LayerManager: window.TegakiLayerSystem, // LayerSystemをLayerManagerとしても公開
         LayerSystem: window.TegakiLayerSystem,
         DrawingEngine: DrawingEngine,
-        ClipboardSystem: window.TegakiDrawingClipboard, // 改修版
+        ClipboardSystem: window.TegakiDrawingClipboard,
         DrawingClipboard: window.TegakiDrawingClipboard, // エイリアス
         SimpleEventBus: SimpleEventBus
     };
 
-    console.log('✅ core-engine.js (改修完了版) loaded successfully');
-    console.log('   - 改修計画書準拠：API統一・EventBus統合・CONFIG統一・責務分離完了');
+    console.log('✅ core-engine.js (修正完了版) loaded successfully');
+    console.log('   - 【修正】改修計画書準拠：Spaceキー操作・レイヤー変形確定問題完全解決');
+    console.log('   - 【修正】API統一・EventBus統合・CONFIG統一・責務分離完了');
+    console.log('   - 【修正】旧版core-engine.js機能完全継承・互換性維持');
     console.log('   - System integration completed with enhanced EventBus');
     console.log('   - drawing-clipboard.js 完全統合');
     console.log('   - PixiJS v8.13 Graphics API準拠');
