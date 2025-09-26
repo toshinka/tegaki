@@ -1,6 +1,6 @@
-// ===== systems/layer-system.js - レイヤー管理システム =====
-// レイヤー作成・削除・変形・並べ替えを統合管理
-// PixiJS v8.13準拠・非破壊変形対応
+// ===== systems/layer-system.js - 改修版：GPT5案準拠・非破壊変形確定完全版 =====
+// レイヤー管理・変形・並べ替えを統合管理
+// PixiJS v8.13準拠・座標系統一・EventBus統合・完全非破壊変形対応
 
 (function() {
     'use strict';
@@ -15,6 +15,7 @@
             this.app = opts.app;
             this.CONFIG = window.TEGAKI_CONFIG;
             this.rootContainer = opts.rootContainer;
+            this.cameraSystem = opts.cameraSystem; // 初期化時に直接渡される
             
             // レイヤー管理
             this.layers = [];
@@ -27,7 +28,7 @@
             this.layersContainer.label = 'layersContainer';
             this.rootContainer.addChild(this.layersContainer);
             
-            // レイヤー変形データ
+            // GPT5案準拠：レイヤー変形データ（canonical座標系と分離）
             this.layerTransforms = new Map(); // layerId -> { x, y, rotation, scaleX, scaleY }
             
             // レイヤー移動モード
@@ -37,7 +38,6 @@
             this.layerDragLastPoint = { x: 0, y: 0 };
             
             // 依存システム参照
-            this.cameraSystem = null;
             this.drawingEngine = null;
             
             // UI要素
@@ -45,8 +45,25 @@
             
             this.setupLayerOperations();
             this.setupLayerTransformPanel();
+            this.setupEventBusListeners();
             
             console.log('LayerSystem: Initialized successfully');
+        },
+
+        // EventBusリスナー設定
+        setupEventBusListeners: function() {
+            // 描画完了時のサムネイル更新
+            window.Tegaki.EventBus.on('drawing:completed', (data) => {
+                const layerIndex = this.layers.findIndex(l => l.layerData.id === data.layerId);
+                if (layerIndex >= 0) {
+                    this.requestThumbnailUpdate(layerIndex);
+                }
+            });
+            
+            // カメラリサイズ時の背景レイヤー更新
+            window.Tegaki.EventBus.on('camera:resize', (data) => {
+                this.updateBackgroundLayers(data.width, data.height);
+            });
         },
 
         // レイヤー作成
@@ -61,10 +78,10 @@
                 visible: true,
                 opacity: 1.0,
                 isBackground: isBackground,
-                paths: []
+                paths: [] // GPT5案準拠：常にcanonical座標で保存
             };
 
-            // 変形データを初期化
+            // GPT5案準拠：変形データを初期化（表示用、canonical座標とは分離）
             this.layerTransforms.set(layerId, {
                 x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
             });
@@ -81,19 +98,17 @@
             this.layersContainer.addChild(layer);
             
             // EventBus通知
-            if (window.Tegaki?.EventBus) {
-                window.Tegaki.EventBus.emit('layer.created', {
-                    layerId: layerId,
-                    name: name,
-                    index: this.layers.length - 1
-                });
-            }
+            window.Tegaki.EventBus.emit('layer:created', {
+                layerId: layerId,
+                name: name,
+                index: this.layers.length - 1
+            });
             
             return { layer, index: this.layers.length - 1 };
         },
 
         // レイヤー削除
-        removeLayer: function(layerIndex) {
+        deleteLayer: function(layerIndex) {
             if (this.layers.length <= 1) return false;
             if (layerIndex < 0 || layerIndex >= this.layers.length) return false;
 
@@ -123,62 +138,14 @@
             }
 
             // EventBus通知
-            if (window.Tegaki?.EventBus) {
-                window.Tegaki.EventBus.emit('layer.removed', {
-                    layerId: layerId,
-                    index: layerIndex
-                });
-            }
+            window.Tegaki.EventBus.emit('layer:removed', {
+                layerId: layerId,
+                index: layerIndex
+            });
 
             this.updateLayerPanelUI();
             this.updateStatusDisplay();
             
-            return true;
-        },
-
-        // レイヤー取得
-        getLayer: function(layerId) {
-            return this.layers.find(layer => layer.layerData.id === layerId);
-        },
-
-        // 全レイヤー取得
-        getAllLayers: function() {
-            return this.layers.slice();
-        },
-
-        // レイヤー順序変更
-        moveLayer: function(fromIndex, toIndex) {
-            if (fromIndex < 0 || fromIndex >= this.layers.length) return false;
-            if (toIndex < 0 || toIndex >= this.layers.length) return false;
-            if (fromIndex === toIndex) return false;
-
-            // 配列内で移動
-            const layer = this.layers.splice(fromIndex, 1)[0];
-            this.layers.splice(toIndex, 0, layer);
-
-            // PixiJS Container内で移動
-            this.layersContainer.removeChild(layer);
-            this.layersContainer.addChildAt(layer, toIndex);
-
-            // アクティブインデックス調整
-            if (this.activeLayerIndex === fromIndex) {
-                this.activeLayerIndex = toIndex;
-            } else if (fromIndex < this.activeLayerIndex && toIndex >= this.activeLayerIndex) {
-                this.activeLayerIndex--;
-            } else if (fromIndex > this.activeLayerIndex && toIndex <= this.activeLayerIndex) {
-                this.activeLayerIndex++;
-            }
-
-            // EventBus通知
-            if (window.Tegaki?.EventBus) {
-                window.Tegaki.EventBus.emit('layer.reordered', {
-                    layerId: layer.layerData.id,
-                    fromIndex: fromIndex,
-                    toIndex: toIndex
-                });
-            }
-
-            this.updateLayerPanelUI();
             return true;
         },
 
@@ -195,13 +162,11 @@
                 }
                 
                 // EventBus通知
-                if (window.Tegaki?.EventBus) {
-                    const layer = this.layers[index];
-                    window.Tegaki.EventBus.emit('layer.activeChanged', {
-                        layerId: layer.layerData.id,
-                        index: index
-                    });
-                }
+                const layer = this.layers[index];
+                window.Tegaki.EventBus.emit('layer:activeChanged', {
+                    layerId: layer.layerData.id,
+                    index: index
+                });
             }
         },
 
@@ -210,40 +175,7 @@
             return this.activeLayerIndex >= 0 ? this.layers[this.activeLayerIndex] : null;
         },
 
-        // レイヤー変形
-        transformLayer: function(layerId, transform) {
-            const layer = this.getLayer(layerId);
-            if (!layer) return false;
-
-            // 変形データ更新
-            this.layerTransforms.set(layerId, { ...transform });
-
-            // 表示変形適用
-            this.applyVisualTransform(layer, transform);
-
-            // EventBus通知
-            if (window.Tegaki?.EventBus) {
-                window.Tegaki.EventBus.emit('layer.transformed', {
-                    layerId: layerId,
-                    transform: transform
-                });
-            }
-
-            return true;
-        },
-
-        // 表示変形適用
-        applyVisualTransform: function(layer, transform) {
-            const centerX = this.CONFIG.canvas.width / 2;
-            const centerY = this.CONFIG.canvas.height / 2;
-
-            layer.pivot.set(centerX, centerY);
-            layer.position.set(centerX + transform.x, centerY + transform.y);
-            layer.rotation = transform.rotation;
-            layer.scale.set(transform.scaleX, transform.scaleY);
-        },
-
-        // レイヤー移動モード管理
+        // レイヤー移動モード管理（GPT5案準拠：トグル方式）
         toggleLayerMoveMode: function() {
             if (this.isLayerMoveMode) {
                 this.exitLayerMoveMode();
@@ -258,6 +190,7 @@
             this.isLayerMoveMode = true;
             this.vKeyPressed = true;
             
+            // CameraSystemに通知
             if (this.cameraSystem) {
                 this.cameraSystem.setVKeyPressed(true);
             }
@@ -274,6 +207,7 @@
             }
 
             this.updateCursor();
+            console.log('LayerSystem: Layer move mode entered');
         },
 
         exitLayerMoveMode: function() {
@@ -283,6 +217,7 @@
             this.vKeyPressed = false;
             this.isLayerDragging = false;
             
+            // CameraSystemに通知
             if (this.cameraSystem) {
                 this.cameraSystem.setVKeyPressed(false);
             }
@@ -299,11 +234,12 @@
 
             this.updateCursor();
 
-            // V解除時に自動確定
+            // GPT5案準拠：V解除時に自動確定（レイヤー変形をベイクして canonical座標に統一）
             this.confirmLayerTransform();
+            console.log('LayerSystem: Layer move mode exited');
         },
 
-        // 変形確定（非破壊版）
+        // === GPT5案準拠：非破壊的レイヤー変形確定処理（完全版） ===
         confirmLayerTransform: function() {
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
@@ -311,131 +247,203 @@
             const layerId = activeLayer.layerData.id;
             const transform = this.layerTransforms.get(layerId);
 
+            // レイヤーのtransformが初期状態でない場合、パスデータに変形を適用
             if (this.isTransformNonDefault(transform)) {
                 try {
-                    console.log('LayerSystem: Non-destructive transform confirmation started');
+                    console.log('=== LayerSystem: Non-destructive layer transform confirmation started ===');
+                    console.log('Layer ID:', layerId);
+                    console.log('Transform:', transform);
+                    console.log('Paths before:', activeLayer.layerData.paths?.length || 0);
                     
+                    // GPT5案準拠：パスデータに変形を安全に適用してcanonical座標に統一
                     const success = this.safeApplyTransformToPaths(activeLayer, transform);
                     
                     if (success) {
-                        // 表示transform をリセット
+                        // 表示transformをリセット（視覚的変化なし）
                         activeLayer.position.set(0, 0);
                         activeLayer.rotation = 0;
                         activeLayer.scale.set(1, 1);
                         activeLayer.pivot.set(0, 0);
-
-                        // 変形データクリア
+                        
+                        // 変形データをクリア（確定完了）
                         this.layerTransforms.set(layerId, {
                             x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
                         });
-
+                        
+                        // 反転ボタンもリセット
+                        this.updateFlipButtons();
+                        
+                        // サムネイル更新
                         this.requestThumbnailUpdate(this.activeLayerIndex);
-                        console.log('LayerSystem: Transform confirmed successfully');
+                        
+                        // EventBus通知（GPT5案準拠）
+                        window.Tegaki.EventBus.emit('layer:transform:confirmed', {
+                            layerId: layerId,
+                            layerIndex: this.activeLayerIndex
+                        });
+                        
+                        console.log('=== LayerSystem: Non-destructive layer transform confirmed successfully ===');
+                    } else {
+                        console.warn('LayerSystem: Transform confirmation failed - keeping transform state');
                     }
+                    
                 } catch (error) {
-                    console.error('LayerSystem: Transform confirmation error:', error);
+                    console.error('LayerSystem: Critical error in confirmLayerTransform:', error);
+                    // エラー時は変形状態を維持（安全対策）
                 }
+            } else {
+                console.log('LayerSystem: No transform to confirm (already at default state)');
             }
         },
 
-        // 安全なパス変形適用
+        // === GPT5案準拠：安全なパス変形適用処理（完全版） ===
         safeApplyTransformToPaths: function(layer, transform) {
             if (!layer.layerData?.paths || layer.layerData.paths.length === 0) {
+                console.log('LayerSystem: No paths to transform - operation successful');
                 return true;
             }
 
             try {
+                console.log('LayerSystem: Starting safe transform application to', layer.layerData.paths.length, 'paths');
+                
                 const centerX = this.CONFIG.canvas.width / 2;
                 const centerY = this.CONFIG.canvas.height / 2;
+                
+                // GPT5案準拠：より精密な変形行列作成
                 const matrix = this.createTransformMatrix(transform, centerX, centerY);
-
+                
+                // パスごとに安全に処理
                 const transformedPaths = [];
                 let successCount = 0;
-
+                
                 for (let i = 0; i < layer.layerData.paths.length; i++) {
                     const path = layer.layerData.paths[i];
-
-                    if (!path || !Array.isArray(path.points) || path.points.length === 0) {
-                        continue;
+                    
+                    try {
+                        // パスの安全性チェック
+                        if (!path || !Array.isArray(path.points) || path.points.length === 0) {
+                            console.warn(`LayerSystem: Skipping invalid path at index ${i}`);
+                            continue;
+                        }
+                        
+                        // GPT5案準拠：座標変形（元データは保護）
+                        const transformedPoints = this.safeTransformPoints(path.points, matrix);
+                        
+                        if (transformedPoints.length === 0) {
+                            console.warn(`LayerSystem: Transform failed for path ${i} - skipping`);
+                            continue;
+                        }
+                        
+                        // 新しいパスオブジェクト作成（非破壊）
+                        const transformedPath = {
+                            id: path.id, // IDは維持
+                            points: transformedPoints, // canonical座標で保存
+                            color: path.color,
+                            size: path.size,
+                            opacity: path.opacity,
+                            isComplete: path.isComplete || true,
+                            graphics: null // 後で再生成
+                        };
+                        
+                        transformedPaths.push(transformedPath);
+                        successCount++;
+                        
+                    } catch (pathError) {
+                        console.error(`LayerSystem: Error processing path ${i}:`, pathError);
+                        // 個別パスエラーは無視して続行
                     }
-
-                    const transformedPoints = this.safeTransformPoints(path.points, matrix);
-                    if (transformedPoints.length === 0) continue;
-
-                    const transformedPath = {
-                        id: path.id,
-                        points: transformedPoints,
-                        color: path.color,
-                        size: path.size,
-                        opacity: path.opacity,
-                        isComplete: path.isComplete || true,
-                        graphics: null
-                    };
-
-                    transformedPaths.push(transformedPath);
-                    successCount++;
                 }
-
-                if (successCount === 0) return false;
-
-                return this.safeRebuildLayer(layer, transformedPaths);
+                
+                console.log(`LayerSystem: Transformed ${successCount}/${layer.layerData.paths.length} paths successfully`);
+                
+                if (successCount === 0) {
+                    console.error('LayerSystem: No paths could be transformed');
+                    return false;
+                }
+                
+                // GPT5案準拠：レイヤー再構築（安全版）
+                const rebuildSuccess = this.safeRebuildLayer(layer, transformedPaths);
+                
+                if (rebuildSuccess) {
+                    console.log('LayerSystem: Layer rebuild completed successfully');
+                    return true;
+                } else {
+                    console.error('LayerSystem: Layer rebuild failed');
+                    return false;
+                }
+                
             } catch (error) {
-                console.error('LayerSystem: safeApplyTransformToPaths error:', error);
+                console.error('LayerSystem: Critical error in safeApplyTransformToPaths:', error);
                 return false;
             }
         },
 
-        // 変形行列作成
+        // === GPT5案準拠：精密変形行列作成 ===
         createTransformMatrix: function(transform, centerX, centerY) {
             const matrix = new PIXI.Matrix();
+            
+            // GPT5案準拠：変形の順序: 移動 → 回転 → スケール → 移動戻し
             matrix.translate(centerX + transform.x, centerY + transform.y);
             matrix.rotate(transform.rotation);
             matrix.scale(transform.scaleX, transform.scaleY);
             matrix.translate(-centerX, -centerY);
+            
             return matrix;
         },
 
-        // 安全な座標変形
+        // === GPT5案準拠：安全な座標変形処理 ===
         safeTransformPoints: function(points, matrix) {
             const transformedPoints = [];
-
+            
             for (let i = 0; i < points.length; i++) {
                 const point = points[i];
-
+                
+                // 座標の検証
                 if (typeof point.x !== 'number' || typeof point.y !== 'number' ||
                     !isFinite(point.x) || !isFinite(point.y)) {
+                    console.warn(`LayerSystem: Invalid point at index ${i}:`, point);
                     continue;
                 }
-
+                
                 try {
+                    // 変形適用
                     const transformed = matrix.apply(point);
-
+                    
+                    // 結果の検証
                     if (typeof transformed.x === 'number' && typeof transformed.y === 'number' &&
                         isFinite(transformed.x) && isFinite(transformed.y)) {
+                        // GPT5案準拠：canonical座標として保存
                         transformedPoints.push({
                             x: transformed.x,
                             y: transformed.y
                         });
+                    } else {
+                        console.warn(`LayerSystem: Invalid transformed point:`, transformed);
                     }
+                    
                 } catch (transformError) {
-                    console.warn('LayerSystem: Point transform failed:', transformError);
+                    console.warn(`LayerSystem: Point transform failed for index ${i}:`, transformError);
                 }
             }
-
+            
             return transformedPoints;
         },
 
-        // 安全なレイヤー再構築
+        // === GPT5案準拠：安全なレイヤー再構築 ===
         safeRebuildLayer: function(layer, newPaths) {
             try {
-                // 既存描画要素削除（背景は保護）
+                console.log('LayerSystem: Starting safe layer rebuild');
+                
+                // 既存描画要素の安全な削除（背景は保護）
                 const childrenToRemove = [];
                 for (let child of layer.children) {
+                    // 背景グラフィックスは保護
                     if (child !== layer.layerData.backgroundGraphics) {
                         childrenToRemove.push(child);
                     }
                 }
-
+                
+                // 安全な削除処理
                 childrenToRemove.forEach(child => {
                     try {
                         layer.removeChild(child);
@@ -446,38 +454,58 @@
                         console.warn('LayerSystem: Failed to remove child:', removeError);
                     }
                 });
-
-                // 新しいパスデータ設定
+                
+                console.log(`LayerSystem: Removed ${childrenToRemove.length} existing graphics`);
+                
+                // GPT5案準拠：新しいパスデータを設定（canonical座標）
                 layer.layerData.paths = [];
-
-                // パス再生成・追加
+                
+                // パスごとにGraphicsを再生成・追加
                 let addedCount = 0;
                 for (let i = 0; i < newPaths.length; i++) {
                     const path = newPaths[i];
-
+                    
                     try {
+                        // Graphics再生成
                         const rebuildSuccess = this.rebuildPathGraphics(path);
-
+                        
                         if (rebuildSuccess && path.graphics) {
+                            // canonical座標でレイヤーに追加
                             layer.layerData.paths.push(path);
                             layer.addChild(path.graphics);
                             addedCount++;
+                        } else {
+                            console.warn(`LayerSystem: Failed to rebuild graphics for path ${i}`);
                         }
+                        
                     } catch (pathError) {
-                        console.error('LayerSystem: Error adding path:', pathError);
+                        console.error(`LayerSystem: Error adding path ${i}:`, pathError);
                     }
                 }
-
-                return addedCount > 0 || newPaths.length === 0;
+                
+                console.log(`LayerSystem: Added ${addedCount}/${newPaths.length} paths to layer`);
+                
+                // 成功判定
+                const success = addedCount > 0 || newPaths.length === 0;
+                
+                if (success) {
+                    console.log('LayerSystem: Safe layer rebuild completed successfully');
+                } else {
+                    console.error('LayerSystem: Safe layer rebuild failed - no paths added');
+                }
+                
+                return success;
+                
             } catch (error) {
-                console.error('LayerSystem: safeRebuildLayer error:', error);
+                console.error('LayerSystem: Critical error in safeRebuildLayer:', error);
                 return false;
             }
         },
 
-        // パスGraphics再生成
+        // === GPT5案準拠：パスGraphics再生成（安全版） ===
         rebuildPathGraphics: function(path) {
             try {
+                // 既存Graphics削除
                 if (path.graphics) {
                     try {
                         if (path.graphics.destroy && typeof path.graphics.destroy === 'function') {
@@ -488,67 +516,103 @@
                     }
                     path.graphics = null;
                 }
-
+                
+                // 新しいGraphics作成
                 path.graphics = new PIXI.Graphics();
-
+                
+                // GPT5案準拠：パスの点から描画を再構築（canonical座標使用）
                 if (path.points && Array.isArray(path.points) && path.points.length > 0) {
                     for (let point of path.points) {
                         if (typeof point.x === 'number' && typeof point.y === 'number' &&
                             isFinite(point.x) && isFinite(point.y)) {
-
+                            
+                            // canonical座標でGraphicsを作成
                             path.graphics.circle(point.x, point.y, (path.size || 16) / 2);
-                            path.graphics.fill({
-                                color: path.color || 0x800000,
-                                alpha: path.opacity || 1.0
+                            path.graphics.fill({ 
+                                color: path.color || 0x800000, 
+                                alpha: path.opacity || 1.0 
                             });
                         }
                     }
                 }
-
+                
                 return true;
+                
             } catch (error) {
-                console.error('LayerSystem: rebuildPathGraphics error:', error);
+                console.error('LayerSystem: Error in rebuildPathGraphics:', error);
                 path.graphics = null;
                 return false;
             }
         },
 
-        // 変形が初期状態以外かチェック
+        // GPT5案準拠：変形が初期状態以外かチェック
         isTransformNonDefault: function(transform) {
             if (!transform) return false;
-            return (transform.x !== 0 || transform.y !== 0 ||
+            return (transform.x !== 0 || transform.y !== 0 || 
                     transform.rotation !== 0 || Math.abs(transform.scaleX) !== 1 || Math.abs(transform.scaleY) !== 1);
+        },
+
+        // 背景レイヤー更新（EventBus対応）
+        updateBackgroundLayers: function(newWidth, newHeight) {
+            this.layers.forEach(layer => {
+                if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
+                    layer.layerData.backgroundGraphics.clear();
+                    layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
+                    layer.layerData.backgroundGraphics.fill(this.CONFIG.background.color);
+                }
+            });
         },
 
         // レイヤー操作設定
         setupLayerOperations: function() {
             document.addEventListener('keydown', (e) => {
+                // GPT5案準拠：Vキートグル方式
                 if (e.code === 'KeyV' && !e.ctrlKey && !e.altKey && !e.metaKey) {
                     this.toggleLayerMoveMode();
                     e.preventDefault();
                 }
 
+                // P・Eキー：レイヤー移動モード終了
+                if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    if (this.isLayerMoveMode) {
+                        this.exitLayerMoveMode();
+                    }
+                    e.preventDefault();
+                }
+
+                if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    if (this.isLayerMoveMode) {
+                        this.exitLayerMoveMode();
+                    }
+                    e.preventDefault();
+                }
+
+                // === V + 方向キー: アクティブレイヤー移動 ===
                 if (this.vKeyPressed && !e.shiftKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
                     this.moveActiveLayer(e.code);
                     e.preventDefault();
                 }
 
+                // === V + Shift + 方向キー: アクティブレイヤー拡縮・回転 ===
                 if (this.vKeyPressed && e.shiftKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
                     this.transformActiveLayer(e.code);
                     e.preventDefault();
                 }
 
+                // === V + H / V + Shift + H: アクティブレイヤー反転 ===
                 if (this.vKeyPressed && e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
                     if (e.shiftKey) {
+                        // V + Shift + H: 垂直反転
                         this.flipActiveLayer('vertical');
                     } else {
+                        // V + H: 水平反転
                         this.flipActiveLayer('horizontal');
                     }
                     e.preventDefault();
                 }
             });
 
-            // ドラッグ操作
+            // === V + ドラッグ: アクティブレイヤー移動・変形 ===
             this.app.canvas.addEventListener('pointerdown', (e) => {
                 if (this.vKeyPressed && e.button === 0) {
                     this.isLayerDragging = true;
@@ -585,26 +649,21 @@
             const adjustedDy = dy / worldScale;
 
             const layerId = activeLayer.layerData.id;
-
-            if (!this.layerTransforms.has(layerId)) {
-                this.layerTransforms.set(layerId, {
-                    x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
-                });
-            }
-
-            const transform = this.layerTransforms.get(layerId);
+            const transform = this.getOrCreateTransform(layerId);
 
             if (e.shiftKey) {
                 this.handleShiftDrag(activeLayer, transform, dx, dy);
             } else {
-                // 通常移動
+                // V + ドラッグ: 移動（座標累積）
                 transform.x += adjustedDx;
                 transform.y += adjustedDy;
 
+                // 位置を更新
                 const centerX = this.CONFIG.canvas.width / 2;
                 const centerY = this.CONFIG.canvas.height / 2;
                 activeLayer.position.set(centerX + transform.x, centerY + transform.y);
 
+                // スライダー更新
                 this.updateSliderValue('layer-x-slider', transform.x);
                 this.updateSliderValue('layer-y-slider', transform.y);
             }
@@ -613,7 +672,7 @@
             this.requestThumbnailUpdate(this.activeLayerIndex);
         },
 
-        // Shift+ドラッグ処理
+        // Shift+ドラッグ処理（拡縮・回転）
         handleShiftDrag: function(activeLayer, transform, dx, dy) {
             const centerX = this.CONFIG.canvas.width / 2;
             const centerY = this.CONFIG.canvas.height / 2;
@@ -622,10 +681,11 @@
             activeLayer.position.set(centerX + transform.x, centerY + transform.y);
 
             if (Math.abs(dy) > Math.abs(dx)) {
-                // 拡縮（上ドラッグ→拡大、下ドラッグ→縮小）
+                // 垂直方向優先: 拡縮（上ドラッグ→拡大、下ドラッグ→縮小）
                 const scaleFactor = 1 + (dy * -0.01);
                 const currentScale = Math.abs(transform.scaleX);
-                const newScale = Math.max(this.CONFIG.layer.minScale, Math.min(this.CONFIG.layer.maxScale, currentScale * scaleFactor));
+                const newScale = Math.max(this.CONFIG.layer.minScale, 
+                                        Math.min(this.CONFIG.layer.maxScale, currentScale * scaleFactor));
 
                 transform.scaleX = transform.scaleX < 0 ? -newScale : newScale;
                 transform.scaleY = transform.scaleY < 0 ? -newScale : newScale;
@@ -633,19 +693,11 @@
 
                 this.updateSliderValue('layer-scale-slider', newScale);
             } else {
-                // 回転（右ドラッグ→右回転）
+                // 水平方向優先: 回転（右ドラッグ→右回転）
                 transform.rotation += (dx * 0.02);
                 activeLayer.rotation = transform.rotation;
 
                 this.updateSliderValue('layer-rotation-slider', transform.rotation * 180 / Math.PI);
-            }
-        },
-
-        // スライダー値更新
-        updateSliderValue: function(sliderId, value) {
-            const slider = document.getElementById(sliderId);
-            if (slider && slider.updateValue) {
-                slider.updateValue(value);
             }
         },
 
@@ -920,6 +972,14 @@
             this.updateFlipButtons();
         },
 
+        // スライダー値更新
+        updateSliderValue: function(sliderId, value) {
+            const slider = document.getElementById(sliderId);
+            if (slider && slider.updateValue) {
+                slider.updateValue(value);
+            }
+        },
+
         // 反転ボタン更新
         updateFlipButtons: function() {
             const activeLayer = this.getActiveLayer();
@@ -966,7 +1026,7 @@
             this.thumbnailUpdateQueue.clear();
         },
 
-        // サムネイル更新
+        // サムネイル更新（レイヤー変形状態を考慮）
         updateThumbnail: function(layerIndex) {
             if (!this.app?.renderer || layerIndex < 0 || layerIndex >= this.layers.length) return;
 
@@ -980,6 +1040,7 @@
             if (!thumbnail) return;
 
             try {
+                // アスペクト比計算
                 const canvasAspectRatio = this.CONFIG.canvas.width / this.CONFIG.canvas.height;
                 let thumbnailWidth, thumbnailHeight;
                 const maxHeight = 48;
@@ -1009,9 +1070,6 @@
                 });
 
                 // レイヤーの現在変形状態を保持してサムネイル生成
-                const layerId = layer.layerData.id;
-                const transform = this.layerTransforms.get(layerId);
-
                 const tempContainer = new PIXI.Container();
 
                 // 現在の変形状態を保存
@@ -1144,19 +1202,11 @@
                 this.updateLayerPanelUI();
 
                 // EventBus通知
-                if (window.Tegaki?.EventBus) {
-                    window.Tegaki.EventBus.emit('layer.updated', {
-                        layerId: layer.layerData.id,
-                        property: 'visible',
-                        value: layer.layerData.visible
-                    });
-                }
+                window.Tegaki.EventBus.emit('layer:visibilityChanged', {
+                    layerId: layer.layerData.id,
+                    visible: layer.layerData.visible
+                });
             }
-        },
-
-        // レイヤー削除（UIから）
-        deleteLayer: function(layerIndex) {
-            this.removeLayer(layerIndex);
         },
 
         // ステータス表示更新
@@ -1177,101 +1227,10 @@
                 this.requestThumbnailUpdate(layerIndex);
 
                 // EventBus通知
-                if (window.Tegaki?.EventBus) {
-                    window.Tegaki.EventBus.emit('layer.updated', {
-                        layerId: layer.layerData.id,
-                        property: 'paths',
-                        value: layer.layerData.paths.length
-                    });
-                }
-            }
-        },
-
-        // シリアライズ
-        serialize: function() {
-            return {
-                layers: this.layers.map(layer => ({
-                    id: layer.layerData.id,
-                    name: layer.layerData.name,
-                    visible: layer.layerData.visible,
-                    opacity: layer.layerData.opacity,
-                    isBackground: layer.layerData.isBackground,
-                    paths: layer.layerData.paths.map(path => ({
-                        id: path.id,
-                        points: path.points,
-                        color: path.color,
-                        size: path.size,
-                        opacity: path.opacity,
-                        isComplete: path.isComplete
-                    }))
-                })),
-                activeLayerIndex: this.activeLayerIndex,
-                layerTransforms: Object.fromEntries(this.layerTransforms)
-            };
-        },
-
-        // デシリアライズ
-        deserialize: function(data) {
-            // 既存レイヤーをクリア
-            this.layers.forEach(layer => {
-                this.layersContainer.removeChild(layer);
-                layer.destroy();
-            });
-            this.layers = [];
-            this.layerTransforms.clear();
-            this.layerCounter = 0;
-
-            // レイヤーを復元
-            data.layers.forEach((layerData, index) => {
-                const layer = new PIXI.Container();
-                layer.label = layerData.id;
-                layer.layerData = {
-                    id: layerData.id,
-                    name: layerData.name,
-                    visible: layerData.visible,
-                    opacity: layerData.opacity,
-                    isBackground: layerData.isBackground,
-                    paths: []
-                };
-
-                // 背景レイヤーの場合
-                if (layerData.isBackground) {
-                    const bg = new PIXI.Graphics();
-                    bg.rect(0, 0, this.CONFIG.canvas.width, this.CONFIG.canvas.height);
-                    bg.fill(this.CONFIG.background.color);
-                    layer.addChild(bg);
-                    layer.layerData.backgroundGraphics = bg;
-                }
-
-                // パスを復元
-                layerData.paths.forEach(pathData => {
-                    const path = {
-                        id: pathData.id,
-                        points: pathData.points,
-                        color: pathData.color,
-                        size: pathData.size,
-                        opacity: pathData.opacity,
-                        isComplete: pathData.isComplete,
-                        graphics: null
-                    };
-
-                    this.rebuildPathGraphics(path);
-                    layer.layerData.paths.push(path);
-                    layer.addChild(path.graphics);
+                window.Tegaki.EventBus.emit('layer:paths:changed', {
+                    layerId: layer.layerData.id
                 });
-
-                this.layers.push(layer);
-                this.layersContainer.addChild(layer);
-                this.layerCounter = Math.max(this.layerCounter, parseInt(layerData.id.split('_')[1]) + 1);
-            });
-
-            // 変形データを復元
-            if (data.layerTransforms) {
-                this.layerTransforms = new Map(Object.entries(data.layerTransforms));
             }
-
-            // アクティブレイヤーを設定
-            this.setActiveLayer(data.activeLayerIndex || 0);
         },
 
         // 外部システム参照設定
