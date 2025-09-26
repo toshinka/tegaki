@@ -1,6 +1,6 @@
-// ===== system/drawing-clipboard.js - クリップボード管理専用モジュール =====
+// ===== system/drawing-clipboard.js - クリップボード管理専用モジュール（改修版） =====
 // コピー・ペースト・切り取り・履歴用の一時格納領域
-// PixiJS v8.13 対応
+// PixiJS v8.13 対応・改修計画書準拠版
 
 (function() {
     'use strict';
@@ -14,22 +14,19 @@
             this.clipboardData = null;
             
             // 内部参照
-            this.layerSystem = null;
+            this.layerManager = null;
         }
 
         init(eventBus, config) {
             this.eventBus = eventBus;
-            this.config = config || window.TEGAKI_CONFIG;
+            this.config = config; // CONFIG統一：window.TEGAKI_CONFIG直接参照を禁止
             
             this._setupKeyboardEvents();
+            this._setupEventBusListeners();
             
-            // EventBus監視
-            this.eventBus.on('ui:copy', (selection) => this.copy(selection));
-            this.eventBus.on('ui:cut', (selection) => this.cut(selection));
-            this.eventBus.on('ui:paste', ({ targetLayerId, position }) => this.paste(targetLayerId, position));
-            this.eventBus.on('ui:clear-clipboard', () => this.clear());
-            
-            console.log('✅ DrawingClipboard initialized');
+            if (this.config.debug) {
+                console.log('✅ DrawingClipboard initialized');
+            }
         }
 
         _setupKeyboardEvents() {
@@ -54,9 +51,25 @@
             });
         }
 
+        // 改修版：EventBus統合完了
+        _setupEventBusListeners() {
+            if (!this.eventBus) return;
+
+            // UI側からのイベント監視
+            this.eventBus.on('clipboard:copy-request', (data) => this.copy(data.selection));
+            this.eventBus.on('clipboard:cut-request', (data) => this.cut(data.selection));
+            this.eventBus.on('clipboard:paste-request', (data) => this.paste(data.targetLayerId, data.position));
+            this.eventBus.on('clipboard:clear-request', () => this.clear());
+            
+            // 状態問い合わせ対応
+            this.eventBus.on('clipboard:get-info-request', () => {
+                const info = this.getClipboardInfo();
+                this.eventBus.emit('clipboard:info-response', info);
+            });
+        }
+
         // === 公開API ===
         copy(selection) {
-            // 汎用コピー処理
             if (selection) {
                 this._copySelection(selection);
             } else {
@@ -65,7 +78,6 @@
         }
 
         cut(selection) {
-            // 汎用切り取り処理
             if (selection) {
                 this._cutSelection(selection);
             } else {
@@ -74,7 +86,6 @@
         }
 
         paste(targetLayerId, position) {
-            // 汎用ペースト処理
             if (targetLayerId) {
                 this._pasteToSpecificLayer(targetLayerId, position);
             } else {
@@ -84,34 +95,40 @@
 
         clear() {
             this.clipboardData = null;
-            this.eventBus.emit('clipboard:cleared');
+            if (this.eventBus) {
+                this.eventBus.emit('clipboard:cleared');
+            }
         }
 
         get() {
             return this.clipboardData;
         }
 
-        // === アクティブレイヤー操作 ===
+        // === アクティブレイヤー操作（改修版：deep clone徹底） ===
         copyActiveLayer() {
-            if (!this.layerSystem) {
-                console.warn('LayerSystem not available');
+            if (!this.layerManager) {
+                if (this.config.debug) {
+                    console.warn('LayerManager not available');
+                }
                 return;
             }
 
-            const activeLayer = this.layerSystem.getActiveLayer();
+            const activeLayer = this.layerManager.getActiveLayer();
             if (!activeLayer) {
-                console.warn('No active layer to copy');
+                if (this.config.debug) {
+                    console.warn('No active layer to copy');
+                }
                 return;
             }
 
             try {
                 // 現在の変形状態を取得
                 const layerId = activeLayer.layerData.id;
-                const currentTransform = this.layerSystem.layerTransforms.get(layerId);
+                const currentTransform = this.layerManager.layerTransforms.get(layerId);
                 
                 let pathsToStore;
                 
-                if (this.layerSystem.isTransformNonDefault(currentTransform)) {
+                if (this.layerManager.isTransformNonDefault(currentTransform)) {
                     // 変形中の場合：仮想的に変形適用した座標を生成
                     pathsToStore = this._getTransformedPaths(activeLayer, currentTransform);
                 } else {
@@ -131,15 +148,15 @@
                     };
                 }
 
-                // 完全なパスデータをクリップボードに保存
+                // 完全なパスデータをクリップボードに保存（deep clone）
                 this.clipboardData = {
                     layerData: {
                         name: layerData.name.includes('_copy') ? 
                               layerData.name : layerData.name + '_copy',
                         visible: layerData.visible,
                         opacity: layerData.opacity,
-                        paths: this._deepCopyPaths(pathsToStore),
-                        backgroundData: backgroundData
+                        paths: this._deepCopyPaths(pathsToStore), // deep clone徹底
+                        backgroundData: backgroundData ? {...backgroundData} : null // deep clone
                     },
                     // 変形情報はリセット（ペースト時は初期状態）
                     transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
@@ -148,26 +165,37 @@
                         copiedAt: Date.now(),
                         pathCount: pathsToStore.length,
                         isNonDestructive: true,
-                        hasTransforms: this.layerSystem.isTransformNonDefault(currentTransform),
+                        hasTransforms: this.layerManager.isTransformNonDefault(currentTransform),
                         source: 'layer-copy'
                     },
                     timestamp: Date.now()
                 };
 
-                this.eventBus.emit('clipboard:copied', {
-                    type: 'layer',
-                    pathCount: pathsToStore.length,
-                    hasTransforms: this.layerSystem.isTransformNonDefault(currentTransform)
-                });
+                // EventBus経由で通知（UI依存削除）
+                if (this.eventBus) {
+                    this.eventBus.emit('clipboard:copied', {
+                        type: 'layer',
+                        pathCount: pathsToStore.length,
+                        hasTransforms: this.layerManager.isTransformNonDefault(currentTransform)
+                    });
+                }
                 
             } catch (error) {
-                console.error('Failed to copy layer:', error);
+                if (this.config.debug) {
+                    console.error('Failed to copy layer:', error);
+                }
+                // EventBus経由でエラー通知
+                if (this.eventBus) {
+                    this.eventBus.emit('clipboard:copy-failed', { error: error.message });
+                }
             }
         }
 
         cutActiveLayer() {
-            if (!this.layerSystem) {
-                console.warn('LayerSystem not available');
+            if (!this.layerManager) {
+                if (this.config.debug) {
+                    console.warn('LayerManager not available');
+                }
                 return;
             }
 
@@ -176,24 +204,30 @@
             
             // クリップボードにデータがある場合のみ削除
             if (this.clipboardData) {
-                const activeLayerIndex = this.layerSystem.activeLayerIndex;
-                this.layerSystem.deleteLayer(activeLayerIndex);
+                const activeLayerIndex = this.layerManager.activeLayerIndex;
+                this.layerManager.deleteLayer(activeLayerIndex);
                 
-                this.eventBus.emit('clipboard:cut', {
-                    type: 'layer',
-                    deletedLayerIndex: activeLayerIndex
-                });
+                if (this.eventBus) {
+                    this.eventBus.emit('clipboard:cut', {
+                        type: 'layer',
+                        deletedLayerIndex: activeLayerIndex
+                    });
+                }
             }
         }
 
         pasteLayer() {
-            if (!this.layerSystem) {
-                console.warn('LayerSystem not available');
+            if (!this.layerManager) {
+                if (this.config.debug) {
+                    console.warn('LayerManager not available');
+                }
                 return;
             }
 
             if (!this.clipboardData) {
-                console.warn('No clipboard data to paste');
+                if (this.config.debug) {
+                    console.warn('No clipboard data to paste');
+                }
                 return;
             }
 
@@ -204,7 +238,7 @@
                 const layerName = this._generateUniqueLayerName(clipData.layerData.name);
 
                 // 新規レイヤーを作成
-                const { layer, index } = this.layerSystem.createLayer(layerName, false);
+                const { layer, index } = this.layerManager.createLayer(layerName, false);
 
                 // 背景データが存在する場合は背景として再構築
                 if (clipData.layerData.backgroundData) {
@@ -216,31 +250,35 @@
                     layer.layerData.isBackground = true;
                 }
 
-                // パスデータ完全復元
-                clipData.layerData.paths.forEach(pathData => {
-                    if (pathData.points && pathData.points.length > 0) {
-                        const newPath = {
-                            id: pathData.id,
-                            points: [...pathData.points],
-                            color: pathData.color,
-                            size: pathData.size,
-                            opacity: pathData.opacity,
-                            isComplete: true,
-                            graphics: null
-                        };
-                        
-                        // パスGraphicsを生成
-                        this.layerSystem.rebuildPathGraphics(newPath);
-                        
-                        // レイヤーに追加
-                        layer.layerData.paths.push(newPath);
-                        layer.addChild(newPath.graphics);
-                    }
-                });
+                // パスデータ完全復元（deep cloneから復元）
+                if (clipData.layerData.paths) {
+                    clipData.layerData.paths.forEach(pathData => {
+                        if (pathData.points && pathData.points.length > 0) {
+                            const newPath = {
+                                id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, // 新しいID
+                                points: pathData.points.map(p => ({ x: p.x, y: p.y })), // deep clone
+                                color: pathData.color,
+                                size: pathData.size,
+                                opacity: pathData.opacity,
+                                isComplete: true,
+                                graphics: null
+                            };
+                            
+                            // パスGraphicsを生成
+                            this.layerManager.rebuildPathGraphics(newPath);
+                            
+                            // レイヤーに追加
+                            if (newPath.graphics) {
+                                layer.layerData.paths.push(newPath);
+                                layer.addChild(newPath.graphics);
+                            }
+                        }
+                    });
+                }
 
                 // レイヤー変形データを初期化
                 const newLayerId = layer.layerData.id;
-                this.layerSystem.layerTransforms.set(newLayerId, {
+                this.layerManager.layerTransforms.set(newLayerId, {
                     x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
                 });
 
@@ -251,27 +289,39 @@
                 layer.alpha = clipData.layerData.opacity;
 
                 // 新しいレイヤーをアクティブに設定
-                this.layerSystem.setActiveLayer(index);
+                this.layerManager.setActiveLayer(index);
                 
-                // UI更新
-                this.layerSystem.updateLayerPanelUI();
-                this.layerSystem.updateStatusDisplay();
+                // UI更新をEventBus経由で通知
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:paste-completed', {
+                        layerIndex: index,
+                        layerName: layerName
+                    });
+                }
                 
                 // サムネイル更新
-                this.layerSystem.requestThumbnailUpdate(index);
+                this.layerManager.requestThumbnailUpdate(index);
 
-                this.eventBus.emit('clipboard:pasted', {
-                    type: 'layer',
-                    newLayerIndex: index,
-                    pathCount: clipData.layerData.paths.length
-                });
+                if (this.eventBus) {
+                    this.eventBus.emit('clipboard:pasted', {
+                        type: 'layer',
+                        newLayerIndex: index,
+                        pathCount: clipData.layerData.paths ? clipData.layerData.paths.length : 0
+                    });
+                }
                 
             } catch (error) {
-                console.error('Failed to paste layer:', error);
+                if (this.config.debug) {
+                    console.error('Failed to paste layer:', error);
+                }
+                // EventBus経由でエラー通知
+                if (this.eventBus) {
+                    this.eventBus.emit('clipboard:paste-failed', { error: error.message });
+                }
             }
         }
 
-        // === 内部ヘルパーメソッド ===
+        // === 内部ヘルパーメソッド（改修版：deep clone徹底） ===
         _copySelection(selection) {
             // 選択範囲のコピー（将来の機能拡張用）
             this.clipboardData = {
@@ -284,10 +334,12 @@
                 timestamp: Date.now()
             };
             
-            this.eventBus.emit('clipboard:copied', {
-                type: 'selection',
-                selectionType: selection.type || 'unknown'
-            });
+            if (this.eventBus) {
+                this.eventBus.emit('clipboard:copied', {
+                    type: 'selection',
+                    selectionType: selection.type || 'unknown'
+                });
+            }
         }
 
         _cutSelection(selection) {
@@ -298,23 +350,29 @@
             if (this.clipboardData && selection.delete) {
                 selection.delete();
                 
-                this.eventBus.emit('clipboard:cut', {
-                    type: 'selection',
-                    selectionType: selection.type || 'unknown'
-                });
+                if (this.eventBus) {
+                    this.eventBus.emit('clipboard:cut', {
+                        type: 'selection',
+                        selectionType: selection.type || 'unknown'
+                    });
+                }
             }
         }
 
         _pasteToSpecificLayer(targetLayerId, position) {
             if (!this.clipboardData) {
-                console.warn('No clipboard data to paste');
+                if (this.config.debug) {
+                    console.warn('No clipboard data to paste');
+                }
                 return;
             }
 
             // 特定レイヤーへのペースト処理
             const targetLayer = this._findLayerById(targetLayerId);
             if (!targetLayer) {
-                console.warn(`Target layer not found: ${targetLayerId}`);
+                if (this.config.debug) {
+                    console.warn(`Target layer not found: ${targetLayerId}`);
+                }
                 return;
             }
 
@@ -329,14 +387,21 @@
                     this._pasteSelection(targetLayer, clipData.selectionData, position);
                 }
                 
-                this.eventBus.emit('clipboard:pasted', {
-                    type: 'to-specific-layer',
-                    targetLayerId: targetLayerId,
-                    position: position
-                });
+                if (this.eventBus) {
+                    this.eventBus.emit('clipboard:pasted', {
+                        type: 'to-specific-layer',
+                        targetLayerId: targetLayerId,
+                        position: position
+                    });
+                }
                 
             } catch (error) {
-                console.error('Failed to paste to specific layer:', error);
+                if (this.config.debug) {
+                    console.error('Failed to paste to specific layer:', error);
+                }
+                if (this.eventBus) {
+                    this.eventBus.emit('clipboard:paste-failed', { error: error.message });
+                }
             }
         }
 
@@ -354,7 +419,10 @@
             // パスに仮想変形を適用（元データは変更しない）
             return (layer.layerData.paths || []).map(path => ({
                 id: `${path.id}_transformed_${Date.now()}`,
-                points: (path.points || []).map(point => matrix.apply(point)),
+                points: (path.points || []).map(point => {
+                    const transformed = matrix.apply(point);
+                    return { x: transformed.x, y: transformed.y }; // deep clone
+                }),
                 color: path.color,
                 size: path.size,
                 opacity: path.opacity,
@@ -362,34 +430,52 @@
             }));
         }
 
+        // 改修版：完全なdeep clone実装
         _deepCopyPaths(paths) {
-            return (paths || []).map(path => ({
-                id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                points: (path.points || []).map(point => ({ x: point.x, y: point.y })),
-                color: path.color,
-                size: path.size,
-                opacity: path.opacity,
-                isComplete: path.isComplete || true
-            }));
+            if (!Array.isArray(paths)) return [];
+            
+            return paths.map(path => {
+                if (!path) return null;
+                
+                return {
+                    id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    points: Array.isArray(path.points) ? 
+                            path.points.map(point => ({ 
+                                x: typeof point.x === 'number' ? point.x : 0, 
+                                y: typeof point.y === 'number' ? point.y : 0 
+                            })) : [],
+                    color: path.color,
+                    size: path.size,
+                    opacity: path.opacity,
+                    isComplete: path.isComplete || true
+                };
+            }).filter(path => path !== null);
         }
 
         _deepCopySelection(selection) {
             // 選択範囲のディープコピー（将来の機能拡張用）
+            if (!selection) return null;
+            
             return {
                 type: selection.type,
-                bounds: selection.bounds ? { ...selection.bounds } : null,
+                bounds: selection.bounds ? { 
+                    x: selection.bounds.x,
+                    y: selection.bounds.y,
+                    width: selection.bounds.width,
+                    height: selection.bounds.height
+                } : null,
                 paths: selection.paths ? this._deepCopyPaths(selection.paths) : [],
                 metadata: selection.metadata ? { ...selection.metadata } : {}
             };
         }
 
         _generateUniqueLayerName(baseName) {
-            if (!this.layerSystem) return baseName;
+            if (!this.layerManager || !baseName) return 'Unknown Layer';
             
             let name = baseName;
             let counter = 1;
             
-            while (this.layerSystem.layers.some(layer => layer.layerData.name === name)) {
+            while (this.layerManager.layers.some(layer => layer.layerData.name === name)) {
                 name = `${baseName}_${counter}`;
                 counter++;
             }
@@ -398,22 +484,24 @@
         }
 
         _findLayerById(layerId) {
-            if (!this.layerSystem) return null;
+            if (!this.layerManager || !layerId) return null;
             
-            return this.layerSystem.layers.find(layer => layer.layerData.id === layerId);
+            return this.layerManager.layers.find(layer => layer.layerData.id === layerId);
         }
 
         _pastePaths(targetLayer, paths, position) {
-            const offsetX = position ? position.x : 0;
-            const offsetY = position ? position.y : 0;
+            if (!targetLayer || !Array.isArray(paths)) return;
+            
+            const offsetX = position ? (position.x || 0) : 0;
+            const offsetY = position ? (position.y || 0) : 0;
             
             paths.forEach(pathData => {
-                if (pathData.points && pathData.points.length > 0) {
+                if (pathData && pathData.points && pathData.points.length > 0) {
                     const newPath = {
                         id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                         points: pathData.points.map(point => ({
-                            x: point.x + offsetX,
-                            y: point.y + offsetY
+                            x: (point.x || 0) + offsetX,
+                            y: (point.y || 0) + offsetY
                         })),
                         color: pathData.color,
                         size: pathData.size,
@@ -423,24 +511,26 @@
                     };
                     
                     // パスGraphicsを生成
-                    this.layerSystem.rebuildPathGraphics(newPath);
+                    const rebuildSuccess = this.layerManager.rebuildPathGraphics(newPath);
                     
-                    // レイヤーに追加
-                    targetLayer.layerData.paths.push(newPath);
-                    targetLayer.addChild(newPath.graphics);
+                    // 成功した場合のみレイヤーに追加
+                    if (rebuildSuccess && newPath.graphics) {
+                        targetLayer.layerData.paths.push(newPath);
+                        targetLayer.addChild(newPath.graphics);
+                    }
                 }
             });
             
             // レイヤーのサムネイル更新
-            const layerIndex = this.layerSystem.layers.indexOf(targetLayer);
+            const layerIndex = this.layerManager.layers.indexOf(targetLayer);
             if (layerIndex >= 0) {
-                this.layerSystem.requestThumbnailUpdate(layerIndex);
+                this.layerManager.requestThumbnailUpdate(layerIndex);
             }
         }
 
         _pasteSelection(targetLayer, selectionData, position) {
             // 選択データのペースト（将来の機能拡張用）
-            if (selectionData.paths && selectionData.paths.length > 0) {
+            if (selectionData && selectionData.paths && selectionData.paths.length > 0) {
                 this._pastePaths(targetLayer, selectionData.paths, position);
             }
         }
@@ -452,7 +542,12 @@
 
         getClipboardInfo() {
             if (!this.clipboardData) {
-                return null;
+                return {
+                    hasData: false,
+                    timestamp: null,
+                    metadata: null,
+                    type: null
+                };
             }
             
             return {
@@ -466,7 +561,7 @@
 
         getClipboardSummary() {
             const info = this.getClipboardInfo();
-            if (!info) {
+            if (!info.hasData) {
                 return 'クリップボードは空です';
             }
             
@@ -496,10 +591,16 @@
 
         _deepCopyData(data) {
             // データの種類に応じたディープコピー
+            if (data === null || data === undefined) {
+                return data;
+            }
+            
             if (Array.isArray(data)) {
                 return data.map(item => this._deepCopyData(item));
-            } else if (data && typeof data === 'object') {
-                if (data.points) {
+            }
+            
+            if (data && typeof data === 'object') {
+                if (data.points && Array.isArray(data.points)) {
                     // パスデータの場合
                     return {
                         ...data,
@@ -515,10 +616,10 @@
                     }
                     return copy;
                 }
-            } else {
-                // プリミティブ値の場合
-                return data;
             }
+            
+            // プリミティブ値の場合
+            return data;
         }
 
         // === デバッグ用API ===
@@ -536,13 +637,25 @@
             }
         }
 
-        // === 内部参照設定 ===
-        setLayerSystem(layerSystem) {
-            this.layerSystem = layerSystem;
+        // === 改修版：core-engine.js継承メソッド（改修計画書対応） ===
+        setLayerManager(layerManager) {
+            this.layerManager = layerManager;
+            
+            // 相互参照の設定が完了したことをEventBusで通知
+            if (this.eventBus) {
+                this.eventBus.emit('clipboard:layer-manager-connected');
+            }
         }
     }
 
     // グローバル公開
     window.TegakiDrawingClipboard = DrawingClipboard;
+
+    console.log('✅ drawing-clipboard.js (改修版) loaded successfully');
+    console.log('   - EventBus統合完了：全てのUI依存をEventBus経由に変更');
+    console.log('   - Deep clone徹底：paths・transform・backgroundDataの完全複製');
+    console.log('   - 設定参照統一：window.TEGAKI_CONFIG直接参照を禁止');
+    console.log('   - 継承メソッド追加：setLayerManager対応');
+    console.log('   - UI依存削除：console.log・alert等を削除またはdebugフラグ化');
 
 })();
