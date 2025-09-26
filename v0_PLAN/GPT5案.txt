@@ -1,482 +1,422 @@
-要約（短く）
+改修計画書（core-engine.js 分割）
+1. 分割の目的
 
-エラー reading 'worldContainer' と Required systems not loaded within timeout：
-システム登録（System ファイル → CoreEngine へ）が正しく伝播しておらず、CoreEngine が worldContainer を作る前に DrawingApp が参照している、または CoreEngine が想定する必須システムが未登録のままタイムアウトしているのが主原因です。
+core-engine.js の肥大化を解消し、関心ごとに応じたモジュール化を行う。
 
-原因パターン：スクリプト読み込み順、グローバル登録API の不一致（Phase1b4 と Phase2e で「どうやって system を CoreEngine に渡すか」が変わっている）、各 system ファイルのエクスポート（グローバル）方法の不統一。
+今後の アニメーション化・GIF出力・二画面UI 等の拡張に耐えられるコード構造にする。
 
-対処方針：CoreEngine に「登録待ち」受け口を実装し、システム側は厳格なシグネチャ（name, required, init(engine), start()）で登録する。さらに CoreEngine は PIXI 存在チェック・バージョンチェック、worldContainer の明確な生成・公開を行う。これで phase1b4 と同等の機能を満たしつつ、分割後の system ファイルでも確実に動く構成にします。
+AIによる改修効率を重視し、役割ごとに分離した読みやすいAPI構造を提供する。
 
-すぐに置き換える（差し替え用）：4 ファイル全文
+2. 新設ファイルと役割
+📌 system/camera-system.js
 
-これらをそのまま core-engine.js、systems/camera-system.js、systems/layer-system.js、systems/drawing-clipboard.js に貼り替えてください（既存を上書き）。
-ES非モジュール（<script>インクルード）前提、window グローバルを使います。PixiJS は index.html で CDN から読み込まれている前提です。
+役割: 座標変換・ズーム・パン・回転等の「カメラ操作」専用モジュール。
+
+責務分離: coordinate-system.js は数学的変換を保持し、camera-system.js は「ユーザ入力やビュー制御」と「PixiJSステージ適用」を担当。
+
+ガイドライン:
+
+APIは 画面座標⇔論理座標 の一貫性を保証する。
+
+PixiJS の stage.scale / stage.position の直接操作は必ずここを経由。
+
+例:
+
+CameraSystem.setZoom(level);
+CameraSystem.pan(dx, dy);
+CameraSystem.toWorldCoords(screenX, screenY);
+CameraSystem.toScreenCoords(worldX, worldY);
+
+📌 system/layer-system.js
+
+役割: レイヤー管理（生成・削除・並び替え・回転・反転・透明度・表示/非表示）。
+
+責務分離: 描画は PixiJS DisplayObject に委譲、レイヤーの「集合管理とAPI」を本モジュールに統一。
+
+アニメ化視点: レイヤーごとに時間軸操作が可能な設計を前提。
+
+ガイドライン:
+
+レイヤーは 一意のID で管理（layerId）。
+
+LayerSystem から直接 PixiJS Container を取得できるが、基本は公開API利用。
+
+例:
+
+LayerSystem.createLayer("background");
+LayerSystem.moveLayer(layerId, {dx: 10, dy: 20});
+LayerSystem.rotateLayer(layerId, 45);
+LayerSystem.setVisibility(layerId, true);
+LayerSystem.deleteLayer(layerId);
+
+📌 system/drawing-clipboard.js
+
+役割: コピー・ペースト・切り取り・履歴用の一時格納領域。
+
+責務分離: LayerSystem に直接触らず、内部でクリップデータを保持し操作。
+
+ガイドライン:
+
+データ構造は PixiJS オブジェクトのシリアライズを前提にする（ただし当面は参照コピー可）。
+
+将来Undo/Redoと統合予定 → APIは単純明快に。
+
+例:
+
+DrawingClipboard.copy(selection);
+DrawingClipboard.cut(selection);
+DrawingClipboard.paste(targetLayerId, position);
+DrawingClipboard.clear();
+
+3. 共通設計指針
+EventBus
+
+すべての新モジュールは EventBusを介して疎結合に通信。
+
+例:
+
+camera:changed
+
+layer:created, layer:updated, layer:deleted
+
+clipboard:changed
+
+Config参照
+
+config.js の値は直接参照せず、ConfigAccessor（ヘルパー）関数を用意する。
+
+モジュールごとにConfigをバラバラに読まない。
+
+例:
+
+import { getConfig } from "./config.js";
+const defaultZoom = getConfig("camera.defaultZoom");
+
+命名ルール
+
+APIは SystemName.動詞+対象 の一貫形式。
+
+内部関数は _ プレフィクスで非公開を明示。
+
+PixiJS v8.13 固有のAPIに依存する場合は コメントで明示。
+
+禁止事項
+
+core-engine.js に新しい処理を追加しない。
+→ 必ず system/ の該当モジュールに切り出す。
+
+座標系の直参照・PixiJS Containerへの直接操作は禁止。
+→ 必ず CameraSystem / LayerSystem 経由。
+
+4. 想定リスクと回避策
+
+座標変換の不一致 → CameraSystemとCoordinateSystemの責務境界を文書化。
+
+レイヤーAPI断片化 → すべて LayerSystem に統合し、直接PixiJS操作禁止。
+
+EventBusの未統合 → 先にイベント命名規則を定義。
+
+PixiJSバージョン混在 → すべて core-runtime.js にて明記し、コメントで固定バージョンを表記。
+
+5. 今後の拡張を見据えた提案（追加アイディア）
+
+Undo/Redoシステム: DrawingClipboard を基盤に履歴管理モジュール化。
+
+レイヤーアニメーション化: LayerSystem にタイムライン属性を持たせ、将来 AnimationSystem に分離。
+
+二画面分割対応: CameraSystemを複数インスタンス化可能な設計に。
+
+
+改修計画：分割後の core-engine.js の役割と新3ファイル統合ガイド
+1. core-engine.js の役割（分割後）
+
+core-engine.js は エンジン本体ではなく、各システムをまとめて初期化・接続する「司令塔」 になります。
+
+役割定義
+
+初期化
+
+PixiJS アプリケーションの作成
+
+各 System モジュールの初期化呼び出し
+
+Config 読み込みと初期値反映
+
+EventBus のグローバル登録
+
+システム間の統合
+
+CameraSystem と CoordinateSystem の連携（ズームや座標変換）
+
+LayerSystem と DrawingClipboard の連携（コピー/貼り付け先レイヤー制御）
+
+各システム間のイベント中継
+
+UI との接着
+
+ui-panels.js やショートカット入力からの呼び出しを各 System に振り分ける
+
+直接処理せず、必ず該当 System API を経由する
+
+監督者的制御
+
+「PixiJS依存処理を1か所に留める」ためのゲート役
+
+バージョン固定（PixiJS v8.13）をコメント付きで保持
+
+2. 新3ファイルの統合方法
+📌 CameraSystem
+
+core-engine.js からは 「カメラ関連イベントを一元管理」 するだけ。
+
+統合ガイド:
+
+import { CameraSystem } from "./system/camera-system.js";
+CameraSystem.init(app.stage, EventBus);
+
+EventBus.on("ui:zoom", level => CameraSystem.setZoom(level));
+EventBus.on("ui:pan", ({dx, dy}) => CameraSystem.pan(dx, dy));
+
+📌 LayerSystem
+
+レイヤーは PixiJS Container を持つが、直接触らず必ず LayerSystem を介す。
+
+統合ガイド:
+
+import { LayerSystem } from "./system/layer-system.js";
+LayerSystem.init(app.stage, EventBus);
+
+EventBus.on("ui:create-layer", name => LayerSystem.createLayer(name));
+EventBus.on("clipboard:paste", data => LayerSystem.insertClipboard(data));
+
+📌 DrawingClipboard
+
+単独では動作せず、LayerSystem への「出し入れ窓口」として働く。
+
+統合ガイド:
+
+import { DrawingClipboard } from "./system/drawing-clipboard.js";
+DrawingClipboard.init(EventBus);
+
+EventBus.on("ui:copy", sel => DrawingClipboard.copy(sel));
+EventBus.on("ui:paste", ({targetLayerId, pos}) => {
+  const data = DrawingClipboard.get();
+  LayerSystem.paste(targetLayerId, data, pos);
+});
+
+3. core-engine.js の構造イメージ
+// core-engine.js
+
+// ==== 基本依存関係 ====
+import { EventBus } from "./event-bus.js";
+import { getConfig } from "./config.js";
+
+// ==== System ====
+import { CameraSystem } from "./system/camera-system.js";
+import { LayerSystem } from "./system/layer-system.js";
+import { DrawingClipboard } from "./system/drawing-clipboard.js";
+
+// ==== エンジン初期化 ====
+function initEngine(app) {
+  // Config 読み込み
+  const cfg = getConfig();
+
+  // 各 System 初期化
+  CameraSystem.init(app.stage, EventBus, cfg.camera);
+  LayerSystem.init(app.stage, EventBus, cfg.layer);
+  DrawingClipboard.init(EventBus);
+
+  // UIとシステムを結ぶ
+  bindUIEvents();
+}
+
+// ==== UI連携 ====
+function bindUIEvents() {
+  EventBus.on("ui:zoom", z => CameraSystem.setZoom(z));
+  EventBus.on("ui:create-layer", n => LayerSystem.createLayer(n));
+  EventBus.on("ui:copy", sel => DrawingClipboard.copy(sel));
+  // ... etc
+}
+
+export { initEngine };
+
+4. ガイドラインまとめ
 
 core-engine.js
-/* core-engine.js
-   CoreEngine: シンプルで堅牢なシステム登録・初期化フレームワーク
-   API:
-     CoreEngine.registerSystem(name, systemFactoryOrObject)
-     CoreEngine.initialize(options) -> returns Promise
-   System 要件:
-     - object.name (string)
-     - object.required (array of system-names) optional
-     - object.init(engine) -> sync/async
-     - object.start(engine) -> sync/async optional
-*/
-(function(window){
-  'use strict';
 
-  // PIXI バージョンチェック（任意だが有用）
-  if (!window.PIXI) {
-    console.error('CoreEngine: PIXI not found. Make sure PixiJS is loaded before core-engine.js');
-  } else {
-    try {
-      const v = (PIXI.VERSION || '');
-      if (!v.startsWith('8.13')) {
-        console.warn(`CoreEngine: Expected PixiJS v8.13, found ${v}. Behavior may differ.`);
-      }
-    } catch(e){}
-  }
+PixiJS と UI の 初期化・調停役
 
-  // シングルトン CoreEngine
-  const CoreEngine = {
-    _systems: {},           // name -> system instance/object
-    _systemFactories: {},   // name -> factory/object (registered before init)
-    _loaded: false,
-    _engineContext: null,
-    _requiredSystemsList: [],
+直接ロジックを書かず、各 System に丸投げ
 
-    registerSystem: function(name, factoryOrObject){
-      if (!name) throw new Error('registerSystem requires name');
-      this._systemFactories[name] = factoryOrObject;
-      // For debug minimal log — keep it small per rule
-      // console.debug(`CoreEngine: system registered: ${name}`);
-    },
+EventBus 経由でのみ制御
 
-    // internal: ingest any pending window.__PENDING_SYSTEMS placed by system files
-    _ingestPendingSystems: function(){
-      if (window.__PENDING_SYSTEMS){
-        for (const k in window.__PENDING_SYSTEMS){
-          if (!this._systemFactories[k]) this._systemFactories[k] = window.__PENDING_SYSTEMS[k];
-        }
-        // clear to avoid duplicate
-        window.__PENDING_SYSTEMS = null;
-      }
-    },
+CameraSystem
 
-    initialize: async function(options = {}){
-      // minimal options:
-      //   requiredSystems: ['camera','layer', ...]
-      //   pixiApp: existing PIXI.Application instance (optional)
-      //   timeoutMs: how long to wait for required systems registration
-      this._ingestPendingSystems();
-      const timeoutMs = options.timeoutMs || 3000;
-      this._requiredSystemsList = options.requiredSystems || [];
+画面⇔ワールド座標変換、ズーム/パン/回転の唯一の窓口
 
-      // create engine context
-      const app = options.pixiApp || this._createPixiAppIfNeeded();
-      const ctx = {
-        app: app,
-        stage: app.stage,
-        renderer: app.renderer,
-        // worldContainer will be created and attached to stage
-        worldContainer: null,
-        systems: this._systems,
-        registerSystem: this.registerSystem.bind(this),
-      };
-      this._engineContext = ctx;
+LayerSystem
 
-      // create canonical world container and attach to stage
-      ctx.worldContainer = new PIXI.Container();
-      ctx.worldContainer.name = 'worldContainer';
-      ctx.stage.addChild(ctx.worldContainer);
-      this.worldContainer = ctx.worldContainer; // expose on CoreEngine
+レイヤー（PixiJS Container群）の唯一の管理者
 
-      // wait for required systems to be registered
-      const self = this;
-      await this._waitForSystemsRegistered(timeoutMs);
+並び替え・削除・移動・変形もここ
 
-      // instantiate systems
-      for (const name in this._systemFactories){
-        // if already instantiated skip
-        if (this._systems[name]) continue;
-        try {
-          const factory = this._systemFactories[name];
-          let instance = (typeof factory === 'function') ? factory() : factory;
-          // allow factory to return an object or require a call to .create()
-          if (typeof instance === 'function') instance = instance();
-          // final guard: ensure has name
-          instance = instance || {};
-          if (!instance.name) instance.name = name;
-          this._systems[name] = instance;
-        } catch (e){
-          console.error('CoreEngine: failed to instantiate system', name, e);
-        }
-      }
+DrawingClipboard
 
-      // call init on systems (in any order) but await if returns promise
-      const initPromises = [];
-      for (const name in this._systems){
-        const s = this._systems[name];
-        if (typeof s.init === 'function'){
-          try {
-            const p = s.init(this._engineContext);
-            if (p && typeof p.then === 'function') initPromises.push(p);
-          } catch(e){
-            console.error('CoreEngine: system init error', name, e);
-          }
-        }
-      }
-      await Promise.all(initPromises);
+一時保存とレイヤー連携のみ
 
-      // start systems (non-blocking, but await if promise returned)
-      for (const name in this._systems){
-        const s = this._systems[name];
-        if (typeof s.start === 'function'){
-          try {
-            const p = s.start(this._engineContext);
-            if (p && typeof p.then === 'function') await p;
-          } catch(e){
-            console.error('CoreEngine: system start error', name, e);
-          }
-        }
-      }
+Undo/Redo 拡張もここから
 
-      this._loaded = true;
-      return this._engineContext;
-    },
+5. リスク回避ポイント
 
-    _waitForSystemsRegistered: function(timeoutMs){
-      const required = this._requiredSystemsList || [];
-      if (!required.length) return Promise.resolve();
+PixiJSオブジェクトへの直接操作は禁止
+必ず System API を通す。
 
-      const self = this;
-      return new Promise(function(resolve, reject){
-        const start = Date.now();
-        (function tick(){
-          let allHere = true;
-          for (let i = 0; i < required.length; ++i){
-            const name = required[i];
-            // registered either in factories or already instantiated
-            if (!self._systemFactories[name] && !self._systems[name]){
-              allHere = false; break;
-            }
-          }
-          if (allHere) return resolve();
-          if (Date.now() - start > timeoutMs){
-            console.error('❌ System loading timeout. Available systems: ', Object.keys(self._systemFactories));
-            return reject(new Error('Required systems not loaded within timeout'));
-          }
-          setTimeout(tick, 50);
-        })();
-      });
-    },
+EventBus を必ず使う
+→ 各システムは疎結合を維持。
 
-    getSystem: function(name){
-      return this._systems[name] || null;
-    },
+core-engine.js の役割を増やさない
+あくまで「監督」と「中継」のみ。
 
-    _createPixiAppIfNeeded: function(){
-      if (window._CORE_ENGINE_APP) return window._CORE_ENGINE_APP;
-      // create a minimal PIXI.Application suitable for file:// usage
-      const app = new PIXI.Application({
-        width: 800, height: 600, backgroundAlpha: 0, antialias: true
-      });
-      // attach to body if nothing provided
-      document.body.appendChild(app.view);
-      window._CORE_ENGINE_APP = app;
-      return app;
-    }
-  };
+👉 まとめると：
+分割後の core-engine.js は「PixiJSとUIを統合するだけのオーケストラ指揮者」 にし、
+3つの System ファイルは 専門職人（カメラ・レイヤー・クリップボード） として完全委任する構造が理想です。
 
-  // expose CoreEngine
-  window.CoreEngine = CoreEngine;
+分割手順設計（core-engine.js → system/）
+0. 事前準備
 
-  // If systems were placed into window.__PENDING_SYSTEMS by system files, ingest now
-  CoreEngine._ingestPendingSystems();
+system/ フォルダを作成（camera-system.js, layer-system.js, drawing-clipboard.js を配置予定）。
 
-})(window);
+既存の core-engine.js はすぐ削らず、段階的に移す。
 
-systems/camera-system.js
-/* camera-system.js
-   シンプルなカメラ（viewport）システム。
-   必要最低限の API:
-     - name: 'camera'
-     - required: []
-     - init(engineContext) -> set up engine.camera and engine.camera.container (a PIXI.Container)
-     - start(engineContext)
-*/
-(function(window){
-  'use strict';
+ルール: PixiJS の直接操作は System に移し、core-engine.js は中継役に留める。
 
-  function createCameraSystem(){
-    return {
-      name: 'camera',
-      required: [],
-      init: function(engine){
-        // engine: { app, stage, renderer, worldContainer, systems }
-        this.engine = engine;
-        // container under worldContainer that will hold drawable layers
-        this.container = new PIXI.Container();
-        this.container.name = 'cameraContainer';
-        // Expose as camera.container so other systems can add children to camera.container
-        if (!engine.worldContainer) {
-          throw new Error('camera-system: engine.worldContainer is not available');
-        }
-        engine.worldContainer.addChild(this.container);
+1. 関数分類とタグ付け
 
-        // camera state
-        this.state = { x:0, y:0, scale:1, rotation:0 };
-        // provide simple API
-        engine.camera = {
-          container: this.container,
-          setPosition: (x,y) => { this.state.x = x; this.container.position.set(x,y); },
-          setScale: (s) => { this.state.scale = s; this.container.scale.set(s); },
-          getState: () => ({...this.state}),
-        };
+まず core-engine.js 内の処理を読み取り、以下のカテゴリにタグ付けする：
 
-        // Optional: setup interaction for panning (minimal)
-        const view = engine.app.view;
-        // keep interaction off by default; tools can enable it
-        return Promise.resolve();
-      },
+Camera系
 
-      start: function(engine){
-        // nothing blocking
-      }
-    };
-  }
+座標変換
 
-  // register: try CoreEngine.registerSystem; otherwise place into pending bucket
-  if (window.CoreEngine && typeof window.CoreEngine.registerSystem === 'function'){
-    window.CoreEngine.registerSystem('camera', createCameraSystem);
-  } else {
-    window.__PENDING_SYSTEMS = window.__PENDING_SYSTEMS || {};
-    window.__PENDING_SYSTEMS['camera'] = createCameraSystem;
-  }
+ズーム／パン／回転処理
 
-})(window);
+PixiJS stage.scale, stage.position の制御
 
-systems/layer-system.js
-/* layer-system.js
-   レイヤー管理を LayerSystem に集中させる。
-   シンプル API:
-     engine.layerSystem.createLayer({name, width, height})
-     engine.layerSystem.getLayer(nameOrId)
-     engine.layerSystem.reorderLayer(id, newIndex)
-     engine.layerSystem.transformLayer(id, {x,y,rotation,scaleX,scaleY})
-*/
-(function(window){
-  'use strict';
+Layer系
 
-  function createLayerSystem(){
-    return {
-      name: 'layer',
-      required: ['camera'], // camera.container を想定
-      init: function(engine){
-        this.engine = engine;
-        this._layers = []; // ordered list
-        this._map = {}; // id/name -> layer object
+レイヤー作成・削除
 
-        const camera = engine.camera;
-        if (!camera || !camera.container){
-          throw new Error('layer-system: camera.container required');
-        }
-        this.host = camera.container;
+レイヤー並び替え
 
-        // API exposed to engine
-        engine.layerSystem = {
-          createLayer: this.createLayer.bind(this),
-          getLayer: this.getLayer.bind(this),
-          reorderLayer: this.reorderLayer.bind(this),
-          transformLayer: this.transformLayer.bind(this),
-          list: () => this._layers.slice()
-        };
-      },
+移動／回転／反転／表示非表示
 
-      createLayer: function({id, name, width=0, height=0} = {}){
-        const layerId = id || ('layer_' + (Object.keys(this._map).length+1));
-        const layerName = name || layerId;
-        const container = new PIXI.Container();
-        container.name = layerName;
-        container._layerId = layerId;
+PixiJS Container 管理
 
-        // default a transparent Graphics backing if needed for hit test (optional)
-        // const bg = new PIXI.Graphics();
-        // bg.beginFill(0x000000, 0);
-        // bg.drawRect(0,0,width,height);
-        // bg.endFill();
-        // container.addChild(bg);
+Clipboard系
 
-        this.host.addChild(container);
-        const entry = { id: layerId, name: layerName, container: container };
-        this._layers.push(entry);
-        this._map[layerId] = entry;
-        this._map[layerName] = entry;
-        return entry;
-      },
+コピー／ペースト／切り取り
 
-      getLayer: function(idOrName){
-        return this._map[idOrName] || null;
-      },
+一時データ保持
 
-      reorderLayer: function(idOrName, newIndex){
-        const entry = this.getLayer(idOrName);
-        if (!entry) return false;
-        const curIndex = this._layers.indexOf(entry);
-        if (curIndex === -1) return false;
-        this._layers.splice(curIndex, 1);
-        this._layers.splice(newIndex, 0, entry);
-        // apply to host display list
-        this.host.removeChild(entry.container);
-        // re-append in order
-        for (let i = 0; i < this._layers.length; ++i){
-          const e = this._layers[i];
-          if (this.host.children.indexOf(e.container) !== i) {
-            // ensure correct index by remove/insert cycle:
-            // Since PIXI doesn't have insertAt, use addChildAt if available
-            if (typeof this.host.addChildAt === 'function'){
-              this.host.addChildAt(e.container, i);
-            } else {
-              this.host.addChild(e.container);
-            }
-          }
-        }
-        return true;
-      },
+Undo/Redo の土台
 
-      transformLayer: function(idOrName, {x,y,rotation,scaleX,scaleY} = {}){
-        const entry = this.getLayer(idOrName);
-        if (!entry) return false;
-        const c = entry.container;
-        if (typeof x === 'number') c.position.x = x;
-        if (typeof y === 'number') c.position.y = y;
-        if (typeof rotation === 'number') c.rotation = rotation;
-        if (typeof scaleX === 'number') c.scale.x = scaleX;
-        if (typeof scaleY === 'number') c.scale.y = scaleY;
-        return true;
-      }
-    };
-  }
+残留系 (Engine本体)
 
-  if (window.CoreEngine && typeof window.CoreEngine.registerSystem === 'function'){
-    window.CoreEngine.registerSystem('layer', createLayerSystem);
-  } else {
-    window.__PENDING_SYSTEMS = window.__PENDING_SYSTEMS || {};
-    window.__PENDING_SYSTEMS['layer'] = createLayerSystem;
-  }
+PixiJS アプリ生成
 
-})(window);
+Config読み込み
 
-systems/drawing-clipboard.js
-/* drawing-clipboard.js
-   軽量なクリップボード（レイヤー or PIXI.Container 単位）
-   API:
-     engine.clipboard.copyLayer(idOrName)
-     engine.clipboard.pasteLayer({targetLayerId, newName})
-*/
-(function(window){
-  'use strict';
+EventBus生成
 
-  function createClipboardSystem(){
-    return {
-      name: 'clipboard',
-      required: ['layer'],
-      init: function(engine){
-        this.engine = engine;
-        this._storage = null; // simple in-memory
-        engine.clipboard = {
-          copyLayer: this.copyLayer.bind(this),
-          pasteLayer: this.pasteLayer.bind(this),
-          getStored: () => this._storage
-        };
-      },
+UIイベントのバインド
 
-      copyLayer: function(idOrName){
-        const ls = this.engine.layerSystem;
-        if (!ls) throw new Error('clipboard: layerSystem required');
-        const layer = ls.getLayer(idOrName);
-        if (!layer) return false;
-        // simple shallow clone: clone children into a new container
-        const src = layer.container;
-        const clone = new PIXI.Container();
-        clone.name = (layer.name || 'clipboard_clone');
-        // Deep copy basic display objects minimally (Graphics, Sprite)
-        for (let i=0;i<src.children.length;++i){
-          const ch = src.children[i];
-          try {
-            if (ch instanceof PIXI.Sprite){
-              const s = new PIXI.Sprite(ch.texture);
-              s.position.copyFrom(ch.position);
-              s.scale.copyFrom(ch.scale);
-              s.rotation = ch.rotation;
-              clone.addChild(s);
-            } else if (ch instanceof PIXI.Graphics){
-              // graphics cannot be trivially cloned; draw to texture could be used later.
-              // For now we store a reference to graphics (non-destructive)
-              // WARNING: shared reference — editor should treat paste as grouped reference.
-              clone.addChild(ch.clone ? ch.clone() : ch);
-            } else {
-              // fallback: try shallow copy by container serialization if any
-              if (ch.clone) clone.addChild(ch.clone());
-            }
-          } catch(e){
-            // skip problematic children
-            console.warn('clipboard: copy child failed', e);
-          }
-        }
-        this._storage = { layerName: layer.name, container: clone };
-        return true;
-      },
+2. CameraSystem 分割手順
 
-      pasteLayer: function({ targetLayerId, newName } = {}){
-        if (!this._storage) return false;
-        const ls = this.engine.layerSystem;
-        if (!ls) throw new Error('clipboard: layerSystem required for paste');
-        // if target provided, add to that layer, else create a new layer and add
-        let target = targetLayerId ? ls.getLayer(targetLayerId) : null;
-        if (!target){
-          const newLayer = ls.createLayer({ name: newName || `${this._storage.layerName}_paste` });
-          target = newLayer;
-        }
-        // add children of stored container to target.container (clone reference)
-        const src = this._storage.container;
-        // clone children where possible, but if they are shared references we append them (risky)
-        for (let i = 0; i < src.children.length; ++i){
-          const ch = src.children[i];
-          try {
-            if (typeof ch.clone === 'function') {
-              target.container.addChild(ch.clone());
-            } else {
-              target.container.addChild(ch);
-            }
-          } catch(e){
-            console.warn('clipboard: paste child failed', e);
-          }
-        }
-        return true;
-      }
-    };
-  }
+core-engine.js 内の座標変換関数 (toWorldCoords, toScreenCoords など) を抽出。
 
-  if (window.CoreEngine && typeof window.CoreEngine.registerSystem === 'function'){
-    window.CoreEngine.registerSystem('clipboard', createClipboardSystem);
-  } else {
-    window.__PENDING_SYSTEMS = window.__PENDING_SYSTEMS || {};
-    window.__PENDING_SYSTEMS['clipboard'] = createClipboardSystem;
-  }
+ズーム・パン操作関数を抽出。
 
-})(window);
+PixiJS の stage.scale, stage.position を直接操作している部分を削除し、CameraSystem に移動。
 
-使い方と確認手順（短い）
+camera-system.js に CameraSystem オブジェクトとしてまとめる。
 
-上の 4 ファイルをそれぞれ上書き保存。
+core-engine.js では CameraSystem の初期化 (CameraSystem.init(stage, EventBus)) のみを残す。
 
-index.html の <script> 読み込み順は (1) PixiJS CDN → (2) core-engine.js → (3) systems/*.js → (4) その他（core-runtime.js, drawingApp 等） が安全。ただし上の実装は __PENDING_SYSTEMS を吸い上げるので システムファイルを core-engine の後に置いても動きます（CoreEngine が pending を ingest する）。しかし最も確実なのは「Pixi → core-engine → systems → core-runtime / app」。
+3. LayerSystem 分割手順
 
-index.html を開いてコンソールのエラーが消えることを確認してください。CoreEngine が worldContainer を作っているはずです。
+レイヤー管理関連コード（createLayer, deleteLayer, moveLayer, rotateLayer, setVisibility など）を抽出。
 
-動かなければコンソールで Object.keys(CoreEngine._systemFactories) と Object.keys(CoreEngine._systems) を確認してください（登録状況）。
+PixiJS Container を新規生成する処理を LayerSystem に移動。
 
-なぜこれで直るのか（
+レイヤーIDの一意管理ロジックを追加（Map or Objectで管理）。
+
+layer-system.js に LayerSystem オブジェクトとしてまとめる。
+
+core-engine.js では EventBus 経由で呼び出すだけにする。
+
+4. DrawingClipboard 分割手順
+
+コピー／ペースト／切り取り処理を抽出。
+
+PixiJS オブジェクト参照やシリアライズ処理がある場合は最小限で移行。
+
+内部に _clipboardData を保持するように設計。
+
+drawing-clipboard.js に DrawingClipboard オブジェクトを定義。
+
+core-engine.js 側は EventBus のイベントで呼び出すのみ。
+
+5. core-engine.js の整理
+
+削除: 上記の処理群を削除し、代わりに System.init() の呼び出しを追加。
+
+残す:
+
+PixiJS アプリの生成
+
+Config読み込み
+
+EventBus初期化
+
+UIとSystemの橋渡し（EventBus.on(...) → System.API 呼び出し）
+
+6. 移行後の検証ポイント
+
+座標変換の一貫性
+
+CameraSystem と CoordinateSystem の整合性を確認。
+
+レイヤー管理の統一性
+
+UIや他のコードが直接 PixiJS Container に触っていないかチェック。
+
+EventBusイベント名の統一性
+
+"camera:changed", "layer:created", "clipboard:changed" など規則的に命名。
+
+PixiJS バージョン依存の確認
+
+v8.13 固有の書き方は core-runtime.js に集約。
+
+7. 最終手順の流れまとめ
+
+system/ フォルダを作成。
+
+core-engine.js の処理を Camera / Layer / Clipboard に分類。
+
+各 System ファイルを作成し、該当処理を移動。
+
+core-engine.js を最小限の「初期化＋橋渡し」の形にリファクタ。
+
+EventBusでUIイベントを各Systemに接続。
+
+テスト（ズーム、レイヤー操作、コピー貼り付け）で動作確認。
+
+
+
+
+
+
+
+
+
