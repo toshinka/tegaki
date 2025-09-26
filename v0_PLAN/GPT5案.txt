@@ -1,422 +1,170 @@
-改修計画書（core-engine.js 分割）
-1. 分割の目的
+改修計画書
 
-core-engine.js の肥大化を解消し、関心ごとに応じたモジュール化を行う。
+対象:
 
-今後の アニメーション化・GIF出力・二画面UI 等の拡張に耐えられるコード構造にする。
+system/camera-system.js
 
-AIによる改修効率を重視し、役割ごとに分離した読みやすいAPI構造を提供する。
+system/layer-system.js
 
-2. 新設ファイルと役割
-📌 system/camera-system.js
+system/drawing-clipboard.js
 
-役割: 座標変換・ズーム・パン・回転等の「カメラ操作」専用モジュール。
+旧: core-engine.js（v8.13_SatellitePlan_phase1b4版）
 
-責務分離: coordinate-system.js は数学的変換を保持し、camera-system.js は「ユーザ入力やビュー制御」と「PixiJSステージ適用」を担当。
+1. 背景
 
-ガイドライン:
+core-engine.js が肥大化していたため、カメラ処理・レイヤー管理・クリップボード処理を分離。
 
-APIは 画面座標⇔論理座標 の一貫性を保証する。
+しかし、以下の問題が確認されている：
 
-PixiJS の stage.scale / stage.position の直接操作は必ずここを経由。
+座標変換APIの不一致
 
-例:
+レイヤーAPIの断片化
 
-CameraSystem.setZoom(level);
-CameraSystem.pan(dx, dy);
-CameraSystem.toWorldCoords(screenX, screenY);
-CameraSystem.toScreenCoords(worldX, worldY);
+EventBus統合の不完全性
 
-📌 system/layer-system.js
+設定参照の混在
 
-役割: レイヤー管理（生成・削除・並び替え・回転・反転・透明度・表示/非表示）。
+PixiJS APIの書き方に揺らぎ
 
-責務分離: 描画は PixiJS DisplayObject に委譲、レイヤーの「集合管理とAPI」を本モジュールに統一。
+ES Module文法の混入（import/export）
 
-アニメ化視点: レイヤーごとに時間軸操作が可能な設計を前提。
+さらに、core-engine.js にあったロジックの一部が新規ファイルに継承されておらず、動作不整合の原因になる可能性あり。
 
-ガイドライン:
+2. 現在の問題点（新規3ファイル）
+camera-system.js
 
-レイヤーは 一意のID で管理（layerId）。
+問題:
 
-LayerSystem から直接 PixiJS Container を取得できるが、基本は公開API利用。
+screenToCanvasForDrawing と screenToCanvas が混在 → API不一致。
 
-例:
+PIXI.Matrix.apply(point) の使い方が曖昧。
 
-LayerSystem.createLayer("background");
-LayerSystem.moveLayer(layerId, {dx: 10, dy: 20});
-LayerSystem.rotateLayer(layerId, 45);
-LayerSystem.setVisibility(layerId, true);
-LayerSystem.deleteLayer(layerId);
+spacePressed/isDragging フラグの定義が散在。
 
-📌 system/drawing-clipboard.js
+継承漏れ:
 
-役割: コピー・ペースト・切り取り・履歴用の一時格納領域。
+updateCoordinates(screenX, screenY)（マウス追従表示等）未完全。
 
-責務分離: LayerSystem に直接触らず、内部でクリップデータを保持し操作。
+resizeCanvas の再計算ロジック不足。
 
-ガイドライン:
+CoreEngine 内にあった switchTool(toolName) の一部が欠落。
 
-データ構造は PixiJS オブジェクトのシリアライズを前提にする（ただし当面は参照コピー可）。
+layer-system.js
 
-将来Undo/Redoと統合予定 → APIは単純明快に。
+問題:
 
-例:
+createLayer が UI DOM 更新と状態管理を混在（責務分離不足）。
 
-DrawingClipboard.copy(selection);
-DrawingClipboard.cut(selection);
-DrawingClipboard.paste(targetLayerId, position);
-DrawingClipboard.clear();
+layerTransforms の二重管理（PIXI.Container にも transform がある）。
 
-3. 共通設計指針
-EventBus
+サムネイル更新 (requestThumbnailUpdate) が毎フレーム呼ばれパフォーマンス懸念。
 
-すべての新モジュールは EventBusを介して疎結合に通信。
+継承漏れ:
 
-例:
+rebuildPathGraphics(pathObj) の PixiJS Graphics API 書き方が v8.13 非互換。
 
-camera:changed
+isTransformNonDefault の判定が部分的。
 
-layer:created, layer:updated, layer:deleted
+updateLayerPanelUI / updateStatusDisplay が CoreEngine 依存のまま。
 
-clipboard:changed
+drawing-clipboard.js
 
-Config参照
+問題:
 
-config.js の値は直接参照せず、ConfigAccessor（ヘルパー）関数を用意する。
+copyActiveLayer / pasteLayer が浅いコピー → transform/paths の一部が共有参照になる恐れ。
 
-モジュールごとにConfigをバラバラに読まない。
+EventBus 未統合（キーボードショートカットとの連携が弱い）。
 
-例:
+継承漏れ:
 
-import { getConfig } from "./config.js";
-const defaultZoom = getConfig("camera.defaultZoom");
+CoreEngine 内にあった clipboardSystem.setLayerManager(layerManager) が反映されていない。
 
-命名ルール
+UI 側に依存（alert, console.log が残存）。
 
-APIは SystemName.動詞+対象 の一貫形式。
+3. 改修方針
+共通方針
 
-内部関数は _ プレフィクスで非公開を明示。
+APIの統一
 
-PixiJS v8.13 固有のAPIに依存する場合は コメントで明示。
+CameraSystem: screenToCanvas を唯一の正規APIに → 描画専用挙動は forDrawing=true フラグで切り替え。
 
-禁止事項
+LayerSystem: 返却する Layer オブジェクト仕様を明確化（必須プロパティ: id, name, paths[], visible, opacity, transform）。
 
-core-engine.js に新しい処理を追加しない。
-→ 必ず system/ の該当モジュールに切り出す。
+ClipboardSystem: 全レイヤーコピーは deep clone を徹底。
 
-座標系の直参照・PixiJS Containerへの直接操作は禁止。
-→ 必ず CameraSystem / LayerSystem 経由。
+EventBus 統合
 
-4. 想定リスクと回避策
+全 System の init(..., eventBus, CONFIG) に統一。
 
-座標変換の不一致 → CameraSystemとCoordinateSystemの責務境界を文書化。
+CoreEngine で SimpleEventBus を生成して全 System に渡す。
 
-レイヤーAPI断片化 → すべて LayerSystem に統合し、直接PixiJS操作禁止。
+CONFIG の一元化
 
-EventBusの未統合 → 先にイベント命名規則を定義。
+window.TEGAKI_CONFIG の直接参照を禁止。
 
-PixiJSバージョン混在 → すべて core-runtime.js にて明記し、コメントで固定バージョンを表記。
+this.config = CONFIG; に格納して参照。
 
-5. 今後の拡張を見据えた提案（追加アイディア）
+PixiJS API の標準化
 
-Undo/Redoシステム: DrawingClipboard を基盤に履歴管理モジュール化。
+Graphics は beginFill → drawXxx → endFill に統一。
 
-レイヤーアニメーション化: LayerSystem にタイムライン属性を持たせ、将来 AnimationSystem に分離。
+Matrix は (x,y,outPoint) の API 形で利用。
 
-二画面分割対応: CameraSystemを複数インスタンス化可能な設計に。
+責務分離
 
+LayerSystem は 状態と Pixi コンテナ管理専用。
 
-改修計画：分割後の core-engine.js の役割と新3ファイル統合ガイド
-1. core-engine.js の役割（分割後）
+UI 更新（DOM操作）は ui-panels.js 側に寄せる。
 
-core-engine.js は エンジン本体ではなく、各システムをまとめて初期化・接続する「司令塔」 になります。
+4. 改修タスク一覧
+camera-system.js
 
-役割定義
+ screenToCanvasForDrawing を screenToCanvas(screenX, screenY, {forDrawing:true}) に統一。
 
-初期化
+ updateCoordinates を core-engine から移植。
 
-PixiJS アプリケーションの作成
+ resizeCanvas の計算を PixiJS v8.13 仕様で再実装。
 
-各 System モジュールの初期化呼び出し
+ switchTool(toolName) を core-engine から完全移植。
 
-Config 読み込みと初期値反映
+ spacePressed / isDragging の状態管理を CameraSystem 内に集約。
 
-EventBus のグローバル登録
+layer-system.js
 
-システム間の統合
+ createLayer を「Pixi Container生成＋layerData登録」に限定し、UI処理は外出し。
 
-CameraSystem と CoordinateSystem の連携（ズームや座標変換）
+ rebuildPathGraphics を v8.13 準拠に修正（beginFill/drawShape/endFill）。
 
-LayerSystem と DrawingClipboard の連携（コピー/貼り付け先レイヤー制御）
+ isTransformNonDefault を core-engine 実装に合わせ移植。
 
-各システム間のイベント中継
+ サムネイル更新を throttle 方式に変更。
 
-UI との接着
+ updateLayerPanelUI / updateStatusDisplay を EventBus 経由に。
 
-ui-panels.js やショートカット入力からの呼び出しを各 System に振り分ける
+drawing-clipboard.js
 
-直接処理せず、必ず該当 System API を経由する
+ copyActiveLayer / pasteLayer を deep clone 化（paths 配列・transform を複製）。
 
-監督者的制御
+ EventBus 経由で copy/paste イベントを通知 → ショートカットキー処理と連携。
 
-「PixiJS依存処理を1か所に留める」ためのゲート役
+ setLayerManager(layerManager) を core-engine と同期。
 
-バージョン固定（PixiJS v8.13）をコメント付きで保持
+5. 今後の拡張を見据えた設計ルール
 
-2. 新3ファイルの統合方法
-📌 CameraSystem
+「描画系は DrawingEngine、座標系は CameraSystem、状態管理は LayerSystem」 を厳守。
 
-core-engine.js からは 「カメラ関連イベントを一元管理」 するだけ。
+UI は全て ui-panels.js 側に寄せ、System 側は EventBus でイベント発火のみ。
 
-統合ガイド:
+LayerTransform は Pixi.Container に一元化、layerTransforms はキャッシュ or シリアライズ専用にする。
 
-import { CameraSystem } from "./system/camera-system.js";
-CameraSystem.init(app.stage, EventBus);
+Clipboard は 非破壊コピー（deep clone） をルール化し、undo/redo 拡張に備える。
 
-EventBus.on("ui:zoom", level => CameraSystem.setZoom(level));
-EventBus.on("ui:pan", ({dx, dy}) => CameraSystem.pan(dx, dy));
+6. まとめ
 
-📌 LayerSystem
+新規3ファイルには core-engine.js からのロジック移植漏れと API 不統一 が散見される。
 
-レイヤーは PixiJS Container を持つが、直接触らず必ず LayerSystem を介す。
+最優先タスクは API統一・CONFIG/EventBus統一・PixiJS API修正。
 
-統合ガイド:
+その上で、責務分離（UI外出し）とパフォーマンス改善（サムネイル更新）を実施。
 
-import { LayerSystem } from "./system/layer-system.js";
-LayerSystem.init(app.stage, EventBus);
-
-EventBus.on("ui:create-layer", name => LayerSystem.createLayer(name));
-EventBus.on("clipboard:paste", data => LayerSystem.insertClipboard(data));
-
-📌 DrawingClipboard
-
-単独では動作せず、LayerSystem への「出し入れ窓口」として働く。
-
-統合ガイド:
-
-import { DrawingClipboard } from "./system/drawing-clipboard.js";
-DrawingClipboard.init(EventBus);
-
-EventBus.on("ui:copy", sel => DrawingClipboard.copy(sel));
-EventBus.on("ui:paste", ({targetLayerId, pos}) => {
-  const data = DrawingClipboard.get();
-  LayerSystem.paste(targetLayerId, data, pos);
-});
-
-3. core-engine.js の構造イメージ
-// core-engine.js
-
-// ==== 基本依存関係 ====
-import { EventBus } from "./event-bus.js";
-import { getConfig } from "./config.js";
-
-// ==== System ====
-import { CameraSystem } from "./system/camera-system.js";
-import { LayerSystem } from "./system/layer-system.js";
-import { DrawingClipboard } from "./system/drawing-clipboard.js";
-
-// ==== エンジン初期化 ====
-function initEngine(app) {
-  // Config 読み込み
-  const cfg = getConfig();
-
-  // 各 System 初期化
-  CameraSystem.init(app.stage, EventBus, cfg.camera);
-  LayerSystem.init(app.stage, EventBus, cfg.layer);
-  DrawingClipboard.init(EventBus);
-
-  // UIとシステムを結ぶ
-  bindUIEvents();
-}
-
-// ==== UI連携 ====
-function bindUIEvents() {
-  EventBus.on("ui:zoom", z => CameraSystem.setZoom(z));
-  EventBus.on("ui:create-layer", n => LayerSystem.createLayer(n));
-  EventBus.on("ui:copy", sel => DrawingClipboard.copy(sel));
-  // ... etc
-}
-
-export { initEngine };
-
-4. ガイドラインまとめ
-
-core-engine.js
-
-PixiJS と UI の 初期化・調停役
-
-直接ロジックを書かず、各 System に丸投げ
-
-EventBus 経由でのみ制御
-
-CameraSystem
-
-画面⇔ワールド座標変換、ズーム/パン/回転の唯一の窓口
-
-LayerSystem
-
-レイヤー（PixiJS Container群）の唯一の管理者
-
-並び替え・削除・移動・変形もここ
-
-DrawingClipboard
-
-一時保存とレイヤー連携のみ
-
-Undo/Redo 拡張もここから
-
-5. リスク回避ポイント
-
-PixiJSオブジェクトへの直接操作は禁止
-必ず System API を通す。
-
-EventBus を必ず使う
-→ 各システムは疎結合を維持。
-
-core-engine.js の役割を増やさない
-あくまで「監督」と「中継」のみ。
-
-👉 まとめると：
-分割後の core-engine.js は「PixiJSとUIを統合するだけのオーケストラ指揮者」 にし、
-3つの System ファイルは 専門職人（カメラ・レイヤー・クリップボード） として完全委任する構造が理想です。
-
-分割手順設計（core-engine.js → system/）
-0. 事前準備
-
-system/ フォルダを作成（camera-system.js, layer-system.js, drawing-clipboard.js を配置予定）。
-
-既存の core-engine.js はすぐ削らず、段階的に移す。
-
-ルール: PixiJS の直接操作は System に移し、core-engine.js は中継役に留める。
-
-1. 関数分類とタグ付け
-
-まず core-engine.js 内の処理を読み取り、以下のカテゴリにタグ付けする：
-
-Camera系
-
-座標変換
-
-ズーム／パン／回転処理
-
-PixiJS stage.scale, stage.position の制御
-
-Layer系
-
-レイヤー作成・削除
-
-レイヤー並び替え
-
-移動／回転／反転／表示非表示
-
-PixiJS Container 管理
-
-Clipboard系
-
-コピー／ペースト／切り取り
-
-一時データ保持
-
-Undo/Redo の土台
-
-残留系 (Engine本体)
-
-PixiJS アプリ生成
-
-Config読み込み
-
-EventBus生成
-
-UIイベントのバインド
-
-2. CameraSystem 分割手順
-
-core-engine.js 内の座標変換関数 (toWorldCoords, toScreenCoords など) を抽出。
-
-ズーム・パン操作関数を抽出。
-
-PixiJS の stage.scale, stage.position を直接操作している部分を削除し、CameraSystem に移動。
-
-camera-system.js に CameraSystem オブジェクトとしてまとめる。
-
-core-engine.js では CameraSystem の初期化 (CameraSystem.init(stage, EventBus)) のみを残す。
-
-3. LayerSystem 分割手順
-
-レイヤー管理関連コード（createLayer, deleteLayer, moveLayer, rotateLayer, setVisibility など）を抽出。
-
-PixiJS Container を新規生成する処理を LayerSystem に移動。
-
-レイヤーIDの一意管理ロジックを追加（Map or Objectで管理）。
-
-layer-system.js に LayerSystem オブジェクトとしてまとめる。
-
-core-engine.js では EventBus 経由で呼び出すだけにする。
-
-4. DrawingClipboard 分割手順
-
-コピー／ペースト／切り取り処理を抽出。
-
-PixiJS オブジェクト参照やシリアライズ処理がある場合は最小限で移行。
-
-内部に _clipboardData を保持するように設計。
-
-drawing-clipboard.js に DrawingClipboard オブジェクトを定義。
-
-core-engine.js 側は EventBus のイベントで呼び出すのみ。
-
-5. core-engine.js の整理
-
-削除: 上記の処理群を削除し、代わりに System.init() の呼び出しを追加。
-
-残す:
-
-PixiJS アプリの生成
-
-Config読み込み
-
-EventBus初期化
-
-UIとSystemの橋渡し（EventBus.on(...) → System.API 呼び出し）
-
-6. 移行後の検証ポイント
-
-座標変換の一貫性
-
-CameraSystem と CoordinateSystem の整合性を確認。
-
-レイヤー管理の統一性
-
-UIや他のコードが直接 PixiJS Container に触っていないかチェック。
-
-EventBusイベント名の統一性
-
-"camera:changed", "layer:created", "clipboard:changed" など規則的に命名。
-
-PixiJS バージョン依存の確認
-
-v8.13 固有の書き方は core-runtime.js に集約。
-
-7. 最終手順の流れまとめ
-
-system/ フォルダを作成。
-
-core-engine.js の処理を Camera / Layer / Clipboard に分類。
-
-各 System ファイルを作成し、該当処理を移動。
-
-core-engine.js を最小限の「初期化＋橋渡し」の形にリファクタ。
-
-EventBusでUIイベントを各Systemに接続。
-
-テスト（ズーム、レイヤー操作、コピー貼り付け）で動作確認。
-
-
-
-
-
-
-
-
-
+完了後は AI が仕様書をもとに安全に改修できる構造 になる。
