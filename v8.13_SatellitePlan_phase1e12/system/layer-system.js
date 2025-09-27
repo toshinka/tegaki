@@ -1,7 +1,7 @@
-// ===== system/layer-system.js - レイヤー管理専用モジュール（改修完了版） =====
-// レイヤー管理（生成・削除・並び替え・回転・反転・透明度・表示/非表示）
+// ===== system/layer-system.js - キーバインディング変更版 =====
+// レイヤー管理専用モジュール（改修完了版）
+// 【新規】素の方向キー対応・GIFツール用キー予約
 // PixiJS v8.13 対応・改修計画書完全準拠版
-// 【改修完了】変形行列計算の正確な実装・レイヤー変形確定時の画像消失問題解決
 
 (function() {
     'use strict';
@@ -53,7 +53,7 @@
             this._setupLayerOperations();
             this._setupLayerTransformPanel();
             
-            console.log('✅ LayerSystem initialized (改修完了版)');
+            console.log('✅ LayerSystem initialized (キーバインディング変更版)');
         }
 
         _createContainers() {
@@ -303,59 +303,190 @@
             this.updateFlipButtons();
         }
 
-        // 【改修】安全なレイヤー操作イベント設定
+        // 【新規】キーバインディング変更版：素の方向キー対応・GIFツール用予約
         _setupLayerOperations() {
             document.addEventListener('keydown', (e) => {
-                // Vキートグル方式
-                if (e.code === 'KeyV' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    this.toggleLayerMoveMode();
-                    e.preventDefault();
-                }
+                // キーコンフィグ管理クラス経由でアクション取得
+                const keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
+                const action = keyConfig.getActionForKey(e.code, {
+                    vPressed: this.vKeyPressed,
+                    shiftPressed: e.shiftKey
+                });
                 
-                // Pキー: ペンツールに切り替え（レイヤー移動モード終了）
-                if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    if (this.isLayerMoveMode) {
-                        this.exitLayerMoveMode();
-                    }
-                    e.preventDefault();
-                }
+                if (!action) return;
                 
-                // Eキー: 消しゴムツールに切り替え（レイヤー移動モード終了）
-                if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    if (this.isLayerMoveMode) {
-                        this.exitLayerMoveMode();
-                    }
-                    e.preventDefault();
-                }
-                
-                // V + 方向キー: アクティブレイヤー移動
-                if (this.vKeyPressed && !e.shiftKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
-                    this.moveActiveLayer(e.code);
-                    e.preventDefault();
-                }
-                
-                // V + Shift + 方向キー: アクティブレイヤー拡縮・回転
-                if (this.vKeyPressed && e.shiftKey && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
-                    this.transformActiveLayer(e.code);
-                    e.preventDefault();
-                }
-                
-                // V + H / V + Shift + H: アクティブレイヤー反転
-                if (this.vKeyPressed && e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    if (e.shiftKey) {
-                        this.flipActiveLayer('vertical');
-                    } else {
-                        this.flipActiveLayer('horizontal');
-                    }
-                    e.preventDefault();
+                // アクション実行・重複防止
+                switch(action) {
+                    case 'layerMode':
+                        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                            this.toggleLayerMoveMode();
+                            e.preventDefault();
+                        }
+                        break;
+                        
+                    // ✅ 新規：素の方向キー - レイヤー階層移動（アクティブが変わるだけ）
+                    case 'layerUp':
+                        if (!this.vKeyPressed && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                            this.moveActiveLayerHierarchy('up');
+                            e.preventDefault();
+                        }
+                        break;
+                        
+                    case 'layerDown':
+                        if (!this.vKeyPressed && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                            this.moveActiveLayerHierarchy('down');
+                            e.preventDefault();
+                        }
+                        break;
+                    
+                    // ✅ 新規：素の方向キー - GIFツール用（現在は未実装・コンソールログのみ）
+                    case 'gifPrevFrame':
+                        if (!this.vKeyPressed && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                            console.log('🎞️ GIF Previous Frame (Reserved for future implementation)');
+                            if (this.eventBus) {
+                                this.eventBus.emit('gif:prev-frame-requested');
+                            }
+                            e.preventDefault();
+                        }
+                        break;
+                        
+                    case 'gifNextFrame':
+                        if (!this.vKeyPressed && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                            console.log('🎞️ GIF Next Frame (Reserved for future implementation)');
+                            if (this.eventBus) {
+                                this.eventBus.emit('gif:next-frame-requested');
+                            }
+                            e.preventDefault();
+                        }
+                        break;
+                    
+                    // ツール切り替え（レイヤー移動モード終了）
+                    case 'pen':
+                        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                            if (this.isLayerMoveMode) {
+                                this.exitLayerMoveMode();
+                            }
+                            e.preventDefault();
+                        }
+                        break;
+                        
+                    case 'eraser':
+                        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                            if (this.isLayerMoveMode) {
+                                this.exitLayerMoveMode();
+                            }
+                            e.preventDefault();
+                        }
+                        break;
+                    
+                    // V + 方向キー: アクティブレイヤー移動（キープ）
+                    case 'layerMoveUp':
+                        if (this.vKeyPressed && !e.shiftKey) {
+                            this.moveActiveLayer('ArrowUp');
+                            e.preventDefault();
+                        }
+                        break;
+                        
+                    case 'layerMoveDown':
+                        if (this.vKeyPressed && !e.shiftKey) {
+                            this.moveActiveLayer('ArrowDown');
+                            e.preventDefault();
+                        }
+                        break;
+                        
+                    case 'layerMoveLeft':
+                        if (this.vKeyPressed && !e.shiftKey) {
+                            this.moveActiveLayer('ArrowLeft');
+                            e.preventDefault();
+                        }
+                        break;
+                        
+                    case 'layerMoveRight':
+                        if (this.vKeyPressed && !e.shiftKey) {
+                            this.moveActiveLayer('ArrowRight');
+                            e.preventDefault();
+                        }
+                        break;
+                    
+                    // V + Shift + 方向キー: アクティブレイヤー拡縮・回転（キープ）
+                    case 'layerScaleUp':
+                        if (this.vKeyPressed && e.shiftKey) {
+                            this.transformActiveLayer('ArrowUp');
+                            e.preventDefault();
+                        }
+                        break;
+                        
+                    case 'layerScaleDown':
+                        if (this.vKeyPressed && e.shiftKey) {
+                            this.transformActiveLayer('ArrowDown');
+                            e.preventDefault();
+                        }
+                        break;
+                        
+                    case 'layerRotateLeft':
+                        if (this.vKeyPressed && e.shiftKey) {
+                            this.transformActiveLayer('ArrowLeft');
+                            e.preventDefault();
+                        }
+                        break;
+                        
+                    case 'layerRotateRight':
+                        if (this.vKeyPressed && e.shiftKey) {
+                            this.transformActiveLayer('ArrowRight');
+                            e.preventDefault();
+                        }
+                        break;
+                    
+                    // V + H / V + Shift + H: アクティブレイヤー反転（キープ）
+                    case 'horizontalFlip':
+                        if (this.vKeyPressed && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                            if (e.shiftKey) {
+                                this.flipActiveLayer('vertical');
+                            } else {
+                                this.flipActiveLayer('horizontal');
+                            }
+                            e.preventDefault();
+                        }
+                        break;
                 }
             });
             
-            // V + ドラッグ: アクティブレイヤー移動・変形
+            // V + ドラッグ: アクティブレイヤー移動・変形（キープ）
             this._setupLayerDragEvents();
         }
 
-        // 【改修】安全なドラッグイベント設定
+        // ✅ 新規：レイヤー階層移動（アクティブレイヤーの変更のみ・入れ替えは行わない）
+        moveActiveLayerHierarchy(direction) {
+            if (this.layers.length <= 1) return;
+            
+            const currentIndex = this.activeLayerIndex;
+            let newIndex;
+            
+            if (direction === 'up') {
+                // 上の階層（配列の後ろ側）に移動
+                newIndex = Math.min(currentIndex + 1, this.layers.length - 1);
+            } else if (direction === 'down') {
+                // 下の階層（配列の前側）に移動
+                newIndex = Math.max(currentIndex - 1, 0);
+            } else {
+                return;
+            }
+            
+            if (newIndex !== currentIndex) {
+                this.setActiveLayer(newIndex);
+                console.log(`🔄 Layer hierarchy moved: ${direction} (${currentIndex} → ${newIndex})`);
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:hierarchy-moved', { 
+                        direction, 
+                        oldIndex: currentIndex, 
+                        newIndex 
+                    });
+                }
+            }
+        }
+
+        // 【改修】安全なドラッグイベント設定（変更なし）
         _setupLayerDragEvents() {
             // 【改修】安全なCanvas要素取得
             const canvas = this._getSafeCanvas();
@@ -387,7 +518,7 @@
             });
         }
 
-        // 【改修】安全なCanvas要素取得
+        // 【改修】安全なCanvas要素取得（変更なし）
         _getSafeCanvas() {
             // app参照からcanvas要素を取得
             if (this.app?.canvas) {
@@ -1250,12 +1381,12 @@
     // グローバル公開
     window.TegakiLayerSystem = LayerSystem;
 
-    console.log('✅ layer-system.js (改修完了版) loaded successfully');
-    console.log('   - 【改修】変形行列計算順序の正確な実装（PixiJS標準準拠）');
-    console.log('   - 【改修】レイヤー変形確定時の画像消失問題解決');
-    console.log('   - 【改修】非破壊的変形確定処理の安全性向上');
-    console.log('   - 【改修】安全なCanvas要素取得・レンダラー参照');
-    console.log('   - EventBus統合完了');
-    console.log('   - PixiJS v8.13 Graphics API準拠');
+    console.log('✅ layer-system.js (キーバインディング変更版) loaded successfully');
+    console.log('   - ✅ 素の方向キー↑↓: アクティブレイヤー階層移動');
+    console.log('   - ✅ 素の方向キー←→: GIFツール用予約（コンソールログ出力）');
+    console.log('   - ✅ V + ↑↓←→: レイヤー移動（キープ）');
+    console.log('   - ✅ V + Shift + ↑↓←→: レイヤー変形（キープ）');
+    console.log('   - 🔧 KeyConfig管理クラス経由でアクション取得');
+    console.log('   - EventBus統合・PixiJS v8.13対応完了');
 
 })();
