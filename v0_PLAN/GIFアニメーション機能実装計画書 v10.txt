@@ -1024,3 +1024,9 @@ const animationData = {
     window.TegakiTimelineUI = TimelineUI;
     console.log('✅ timeline-ui.js loaded');
 })();
+
+
+
+
+
+
