@@ -1,0 +1,371 @@
+GIFアニメーション機能実装計画書 v11
+段階的実装ガイド（Phase 0→1→2）
+
+📊 現状分析レポート
+✅ 確認済み項目
+
+PixiJS v8.13: 正しいバージョンがCDNで読み込まれている
+基本構造: ファイル群は作成済みだが、中身が不完全
+座標系: coordinate-system.jsが存在するが、API統一が不完全
+EventBus: 未実装（window.TegakiEventBusが存在しない）
+設定: config.jsは存在するが、animation設定が不足
+
+⚠️ 要修正項目
+
+EventBus未実装: 全システム間の通信基盤が欠落
+AnimationSystem未初期化: core-engine.jsでの初期化コードなし
+TimelineUI未実装: 空ファイル状態
+ステータスパネル位置: 下部表示で競合
+GIF書き出し未実装: gif-exporter.jsが空
+
+
+🎯 Phase 0: 基盤整備（必須・最優先）
+目的
+既存機能を壊さずに、アニメーション機能の土台を作る
+実装ファイル
+1. system/event-bus.js（新規作成）
+
+(function() {
+    'use strict';
+    
+    class EventBus {
+        constructor() {
+            this.events = {};
+        }
+        
+        on(event, callback) {
+            if (!this.events[event]) {
+                this.events[event] = [];
+            }
+            this.events[event].push(callback);
+        }
+        
+        off(event, callback) {
+            if (!this.events[event]) return;
+            this.events[event] = this.events[event].filter(cb => cb !== callback);
+        }
+        
+        emit(event, data) {
+            if (!this.events[event]) return;
+            this.events[event].forEach(callback => {
+                try {
+                    callback(data);
+                } catch (e) {
+                    console.error(`EventBus error in ${event}:`, e);
+                }
+            });
+        }
+    }
+    
+    window.TegakiEventBus = new EventBus();
+})();
+
+
+2. config.js（animation設定追加）
+
+// 既存設定の後に追加
+window.TEGAKI_CONFIG.animation = {
+    defaultFPS: 12,
+    maxCuts: 50,
+    defaultCutDuration: 0.5,
+    exportSettings: {
+        maxWidth: 800,
+        maxHeight: 800,
+        quality: 10,
+        workers: 2
+    }
+};
+
+3. index.html（script読み込み順序修正）
+
+
+<!-- 必ずこの順序で読み込む -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
+
+<!-- 基盤 -->
+<script src="system/event-bus.js"></script>
+<script src="config.js"></script>
+<script src="coordinate-system.js"></script>
+
+<!-- システム -->
+<script src="system/layer-system.js"></script>
+<script src="system/camera-system.js"></script>
+<script src="system/drawing-clipboard.js"></script>
+<script src="system/animation-system.js"></script>
+<script src="system/gif-exporter.js"></script>
+
+<!-- UI -->
+<script src="ui/ui-panels.js"></script>
+<script src="ui/timeline-ui.js"></script>
+
+<!-- コア -->
+<script src="core-runtime.js"></script>
+<script src="core-engine.js"></script>
+
+
+4. ステータスパネル位置修正（index.html内CSS）
+
+
+#status-panel {
+    position: fixed;
+    top: 10px;
+    left: 10px;
+    bottom: auto;
+    z-index: 10000;
+}
+
+チェックリスト
+
+ EventBus動作確認: window.TegakiEventBus.emit('test') でエラーなし
+ config.animation存在確認: window.TEGAKI_CONFIG.animation が定義済み
+ ステータスパネル上部表示確認
+
+
+🔨 Phase 1: AnimationSystemとTimelineUI実装
+
+目的
+基本的なカット管理とタイムラインUIを実装
+実装ファイル
+1. system/animation-system.js（完全実装）
+
+(function() {
+    'use strict';
+    
+    class AnimationSystem {
+        constructor() {
+            this.cuts = [];
+            this.currentCutIndex = 0;
+            this.isPlaying = false;
+            this.fps = window.TEGAKI_CONFIG.animation.defaultFPS;
+        }
+        
+        init(layerSystem, app) {
+            this.layerSystem = layerSystem;
+            this.app = app;
+            window.TegakiEventBus.emit('animation:initialized');
+        }
+        
+        createCut() {
+            const cut = {
+                id: 'cut_' + Date.now(),
+                name: 'CUT' + (this.cuts.length + 1),
+                duration: window.TEGAKI_CONFIG.animation.defaultCutDuration,
+                layerStates: this.captureLayerStates(),
+                thumbnail: null
+            };
+            
+            this.cuts.push(cut);
+            this.generateThumbnail(this.cuts.length - 1);
+            window.TegakiEventBus.emit('animation:cut-created', { cut });
+            return cut;
+        }
+        
+        captureLayerStates() {
+            // LayerSystemから現在の状態を取得
+            const states = [];
+            this.layerSystem.layers.forEach(layer => {
+                states.push({
+                    id: layer.layerData.id,
+                    visible: layer.visible,
+                    opacity: layer.alpha,
+                    transform: {
+                        x: layer.position.x,
+                        y: layer.position.y,
+                        rotation: layer.rotation,
+                        scaleX: layer.scale.x,
+                        scaleY: layer.scale.y
+                    }
+                });
+            });
+            return states;
+        }
+        
+        applyCut(index) {
+            if (!this.cuts[index]) return;
+            
+            const cut = this.cuts[index];
+            this.currentCutIndex = index;
+            
+            // レイヤー状態を復元
+            cut.layerStates.forEach(state => {
+                const layer = this.layerSystem.getLayerById(state.id);
+                if (!layer) return;
+                
+                layer.visible = state.visible;
+                layer.alpha = state.opacity;
+                layer.position.set(state.transform.x, state.transform.y);
+                layer.rotation = state.transform.rotation;
+                layer.scale.set(state.transform.scaleX, state.transform.scaleY);
+            });
+            
+            window.TegakiEventBus.emit('animation:cut-applied', { index });
+        }
+        
+        generateThumbnail(index) {
+            // 64x48pxのサムネイル生成
+            const renderTexture = PIXI.RenderTexture.create({
+                width: 64,
+                height: 48
+            });
+            
+            this.app.renderer.render(
+                this.layerSystem.layersContainer,
+                { renderTexture }
+            );
+            
+            this.cuts[index].thumbnail = renderTexture;
+        }
+        
+        play() {
+            this.isPlaying = true;
+            window.TegakiEventBus.emit('animation:play');
+        }
+        
+        stop() {
+            this.isPlaying = false;
+            this.currentCutIndex = 0;
+            window.TegakiEventBus.emit('animation:stop');
+        }
+    }
+    
+    window.TegakiAnimationSystem = AnimationSystem;
+})();
+
+
+2. ui/timeline-ui.js（基本UI実装）
+
+
+
+(function() {
+    'use strict';
+    
+    class TimelineUI {
+        constructor(animationSystem) {
+            this.animationSystem = animationSystem;
+            this.panel = null;
+            this.isVisible = false;
+        }
+        
+        init() {
+            this.createPanel();
+            this.setupEvents();
+        }
+        
+        createPanel() {
+            const panel = document.createElement('div');
+            panel.className = 'timeline-panel';
+            panel.style.display = 'none';
+            panel.innerHTML = `
+                <div class="timeline-header">
+                    <span>アニメーション</span>
+                    <button class="close-btn">×</button>
+                </div>
+                <div class="timeline-controls">
+                    <button id="tl-add-cut">+ CUT</button>
+                    <button id="tl-play">▶</button>
+                    <button id="tl-stop">■</button>
+                </div>
+                <div class="cuts-container" id="cuts-container"></div>
+                <div class="timeline-settings">
+                    <label>FPS: <input type="number" id="tl-fps" value="12" min="1" max="60"></label>
+                </div>
+            `;
+            
+            document.body.appendChild(panel);
+            this.panel = panel;
+        }
+        
+        setupEvents() {
+            // UIイベント
+            this.panel.querySelector('#tl-add-cut').addEventListener('click', () => {
+                this.animationSystem.createCut();
+                this.updateCutsList();
+            });
+            
+            this.panel.querySelector('#tl-play').addEventListener('click', () => {
+                this.animationSystem.play();
+            });
+            
+            this.panel.querySelector('#tl-stop').addEventListener('click', () => {
+                this.animationSystem.stop();
+            });
+            
+            this.panel.querySelector('.close-btn').addEventListener('click', () => {
+                this.hide();
+            });
+            
+            // EventBus連携
+            window.TegakiEventBus.on('animation:cut-created', () => {
+                this.updateCutsList();
+            });
+            
+            // キーボードショートカット
+            document.addEventListener('keydown', (e) => {
+                if (e.altKey && e.key === 'a') {
+                    this.toggle();
+                }
+            });
+        }
+        
+        updateCutsList() {
+            const container = this.panel.querySelector('#cuts-container');
+            container.innerHTML = '';
+            
+            this.animationSystem.cuts.forEach((cut, index) => {
+                const cutEl = document.createElement('div');
+                cutEl.className = 'cut-item';
+                cutEl.innerHTML = `
+                    <div class="cut-thumbnail"></div>
+                    <div class="cut-name">${cut.name}</div>
+                    <input type="number" class="cut-duration" value="${cut.duration}" step="0.1">
+                `;
+                
+                cutEl.addEventListener('click', () => {
+                    this.animationSystem.applyCut(index);
+                });
+                
+                container.appendChild(cutEl);
+            });
+        }
+        
+        show() {
+            this.panel.style.display = 'block';
+            this.isVisible = true;
+        }
+        
+        hide() {
+            this.panel.style.display = 'none';
+            this.isVisible = false;
+        }
+        
+        toggle() {
+            if (this.isVisible) {
+                this.hide();
+            } else {
+                this.show();
+            }
+        }
+    }
+    
+    window.TegakiTimelineUI = TimelineUI;
+})();
+
+
+3. core-engine.js（初期化追加）
+
+
+// 既存初期化の最後に追加
+if (window.TegakiAnimationSystem && window.TegakiTimelineUI) {
+    const animationSystem = new window.TegakiAnimationSystem();
+    animationSystem.init(window.layerSystem, window.app);
+    
+    const timelineUI = new window.TegakiTimelineUI(animationSystem);
+    timelineUI.init();
+    
+    window.animationSystem = animationSystem;
+    window.timelineUI = timelineUI;
+}
+
+

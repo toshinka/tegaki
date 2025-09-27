@@ -733,10 +733,9 @@
         
         .status-panel {
             position: fixed;
-            top: 10px;
-            left: 60px;
+            bottom: 20px;
+            left: 70px;
             right: 20px;
-            bottom: auto;
             background: var(--futaba-cream);
             border: 2px solid var(--futaba-medium);
             border-radius: 12px;
@@ -959,7 +958,6 @@
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.min.js"></script>
     
     <!-- 🔥 Phase2準備版：最適化されたファイル読み込み順序 -->
-    <script src="system/event-bus.js"></script>
     <script src="config.js"></script>
     
     <script>
@@ -988,15 +986,14 @@ checkDependencies();
     
     <!-- Phase2準備版：最適化されたファイル読み込み -->
     <script src="coordinate-system.js"></script>
-
-    <script src="system/layer-system.js"></script>
+    <script src="core-runtime.js"></script>
+    <script src="ui/ui-panels.js"></script>
+    <script src="ui/timeline-ui.js"></script>
     <script src="system/camera-system.js"></script>
+    <script src="system/layer-system.js"></script>
     <script src="system/drawing-clipboard.js"></script>
     <script src="animation-system.js"></script>
     <script src="gif-exporter.js"></script>
-    <script src="ui/ui-panels.js"></script>
-    <script src="ui/timeline-ui.js"></script>
-    <script src="core-runtime.js"></script>
     <script src="core-engine.js"></script>
     
     <script>
