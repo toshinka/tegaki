@@ -1,0 +1,345 @@
+1) リポジトリ素早くスキャンした結果（要点）
+
+index.html に GIF UI / ステータス表示が既に出るマークアップがあります（現状ステータスが下に表示されている片鱗が見えます）。確認ソース: index.html。 
+GitHub
+
+ほか主要モジュール（core-runtime.js / timeline-ui.js / animation-system.js / layer-system.js 等）はファイルは存在するが中身がほとんど空かプレースホルダです（編集・差替え前提）。例: core-runtime.js / timeline-ui.js / animation-system.js / layer-system.js。 
+GitHub
++3
+GitHub
++3
+GitHub
++3
+
+参照する実装設計（GIF 実装方針・UI 要件）はユーザーがアップロード済みの計画書に詳述されています（改修のベースとして使います）。参照: GIFアニメーション機能実装計画書 v10.txt および GIFアニメUI.txt。
+
+結論：ファイル骨格は作られているが「中身の統合（EventBus・座標API統一・LayerSystem中心化・Timeline UI 挿入・GIF エクスポーター接続）」が未完なので、計画書ベースでClaudeに差し替え/実装してもらうのが最短です。
+
+2) 優先度別改修タスク（Claude が順に実行できる形で）
+最優先（必須・非破壊）
+
+バックアップ
+
+まず現行ファイルを *.bak などでコピー。→ （Claude 実装の最初のステップとして必須）
+
+EventBus を確実に定義して全ファイルが使う単一インスタンスに統一
+
+system/event-bus.js を追加し window.TegakiEventBus を作る（pub/sub）。この名前は計画書中の例と一致させます。
+
+GIFアニメーション機能実装計画書 v10
+
+config（TEGAKI_CONFIG）を一箇所に集約
+
+config.js を確実に定義し、animation セクション（fps, exportSettings 等）を入れる。以後全コードは window.TEGAKI_CONFIG を参照する。
+
+GIFアニメーション機能実装計画書 v10
+
+高優先度（機能追加・結線）
+
+Timeline UI を計画書版に置き換える（ui/timeline-ui.js：完全実装）
+
+GIF UI 要件（サムネイル・カット管理・FPS/ループ・ドラッグ並べ替え等）に合わせて差し替え。UI見た目は GIFアニメUI.txt に合わせる。
+
+GIFアニメUI
+
+AnimationSystem を導入（system/animation-system.js：計画書ベース）
+
+レイヤースナップショット取得/復元、カット作成・適用・再生ループ等を実装。
+
+GIFアニメーション機能実装計画書 v10
+
+GIFExporter を導入（system/gif-exporter.js：計画書ベース）
+
+gif.js を使い、AnimationSystem のカットをフレーム化して出力。
+
+GIFアニメーション機能実装計画書 v10
+
+中程度（構造改善・API統一）
+
+LayerSystem の API を一元化して（移動/回転/反転/不透明度/pathsの復元）アニメ用変形はすべて LayerSystem 経由に移行
+
+public API: getLayer(id), setTransform(id, {x,y,rotation,scaleX,scaleY}), getTransform(id), setVisibility, setOpacity, captureSnapshot(layerId), restoreFromSnapshot(snapshot)。
+
+座標変換 API を厳格に定義（system/coordinate-system.jsの補完）
+
+screenToWorld(x,y), worldToScreen(x,y), applyTransformToLayer(layer, transform) の公開と、ドキュメント化（コメント）を行う。全コードはこれらを使うように修正する（grep で置換）。
+
+core-runtime / core-engine で AnimationSystem と TimelineUI を初期化して結線
+
+new AnimationSystem() → init(layerSystem, cameraSystem, app, window.TegakiEventBus)、new TimelineUI(animationSystem) → init() を呼ぶ。
+
+低優先度（見た目・微調整）
+
+ステータスパネル（現在は下）を一番上に移動（要望）
+
+CSS/DOM を小差分で直す（下節に具体差分を記載）。インライン要素や z-index を上げるだけで非破壊です。
+
+GIF UI の細かな見た目（アイコン・サムネイルサイズ・プログレス）を GIFアニメUI.txt に合わせ調整。
+
+GIFアニメUI
+
+ロギング最小化（console.logはデバッグレベルにまとめ、console.errorは残す。ユーザー向けエラー演出はしない）
+
+3) （そのまま貼れる）主要追加／差し替えコード（Claude にそのままコミットさせる用）
+
+注意：以下は破壊的変更を避けるため必ず既存ファイルを .bak で保存した後に置き換えてください。
+
+A. system/event-bus.js（新規）
+(function(){
+  'use strict';
+  class EventBus {
+    constructor(){ this._h = {}; }
+    on(evt, fn){
+      if(!evt || typeof fn !== 'function') return;
+      (this._h[evt] || (this._h[evt] = [])).push(fn);
+    }
+    off(evt, fn){
+      if(!this._h[evt]) return;
+      if(!fn) { delete this._h[evt]; return; }
+      this._h[evt] = this._h[evt].filter(f => f !== fn);
+    }
+    emit(evt, payload){
+      (this._h[evt] || []).slice().forEach(fn => { try { fn(payload); } catch(e) { console.error('Event handler error', evt, e); } });
+    }
+  }
+  window.TegakiEventBus = new EventBus();
+  console.log('✅ TegakiEventBus ready');
+})();
+
+B. config.js（差し替え/補完） — 必ず window.TEGAKI_CONFIG を定義する
+(function(){
+  'use strict';
+  window.TEGAKI_CONFIG = window.TEGAKI_CONFIG || {};
+  window.TEGAKI_CONFIG.canvas = window.TEGAKI_CONFIG.canvas || { width:400, height:400 };
+  window.TEGAKI_CONFIG.animation = window.TEGAKI_CONFIG.animation || {
+    defaultFPS: 12,
+    maxCuts: 50,
+    defaultCutDuration: 0.5,
+    exportSettings: {
+      maxWidth: 800,
+      maxHeight: 800,
+      quality: 10,
+      workers: 2
+    }
+  };
+  console.log('✅ TEGAKI_CONFIG ready', window.TEGAKI_CONFIG);
+})();
+
+C. system/coordinate-system.js（補完） — 中央で座標変換を定義
+(function(){
+  'use strict';
+  const CS = {
+    screenToWorld: function(app, sx, sy){
+      // app.stage を基準にした変換
+      const point = new PIXI.Point(sx, sy);
+      return app.renderer.plugins.interaction.mapPositionToPoint(point, sx, sy);
+    },
+    worldToScreen: function(app, wx, wy){
+      // simple projection via toGlobal
+      const dummy = new PIXI.Container();
+      dummy.position.set(wx, wy);
+      const gp = dummy.toGlobal(new PIXI.Point());
+      dummy.destroy({children:true});
+      return { x: gp.x, y: gp.y };
+    },
+    applyTransformToLayer: function(layer, transform){
+      if(!layer) return;
+      if(transform.x !== undefined) layer.position.x = transform.x;
+      if(transform.y !== undefined) layer.position.y = transform.y;
+      if(transform.rotation !== undefined) layer.rotation = transform.rotation;
+      if(transform.scaleX !== undefined) layer.scale.x = transform.scaleX;
+      if(transform.scaleY !== undefined) layer.scale.y = transform.scaleY;
+      if(transform.opacity !== undefined) layer.alpha = transform.opacity;
+      if(transform.visible !== undefined) layer.visible = transform.visible;
+    }
+  };
+  window.TegakiCoordinateSystem = CS;
+  console.log('✅ TegakiCoordinateSystem ready');
+})();
+
+
+補足: mapPositionToPoint は Pixi のインタラクションプラグインが提供する API（v8）です。もしローカルテストで問題が出たら app.renderer.plugins.interaction の存在を確認してください。
+
+D. ui/timeline-ui.js（計画書版で丸ごと置換）
+
+（ここは GIFアニメーション機能実装計画書 v10.txt にある TimelineUI 実装をそのまま置き換えてください — ファイル長が大きいのでClaudeに v10.txt の TimelineUI セクションを丸ごとファイルに書き出すよう指示してください。） 
+
+GIFアニメーション機能実装計画書 v10
+
+
+（注：TimelineUI の中では window.TegakiEventBus を使用するので、event-bus.js が先に読み込まれていること。）
+
+実装のポイント（Claude 実装時のチェック）:
+
+updateCutsList() で cut.thumbnailTexture が存在すれば app.renderer.extract.canvas(renderTexture) → toDataURL() を使って <img> を生成する（計画書どおり）。
+
+Sortable.create の使用は許可（既に CDN に入れているなら使える）。
+
+E. system/animation-system.js / system/gif-exporter.js
+
+（これも GIFアニメーション機能実装計画書 v10.txt の AnimationSystem と GIFExporter 実装をそのままコピーしてファイル化してください。） 
+
+GIFアニメーション機能実装計画書 v10
+
+重要：AnimationSystem.init の呼び出しは core-engine.js 側で行う（次節の初期化例参照）。
+
+F. index.html の script 読み込み順（例、必ず event-bus と config を先に）
+
+index.html <head>（末尾）に以下の script 順を追加（順番が重要）:
+
+<!-- PixiJS v8.13 固定 -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+
+<!-- 共通設定 / イベントバス -->
+<script src="system/event-bus.js"></script>
+<script src="config.js"></script>
+<script src="system/coordinate-system.js"></script>
+
+<!-- レイヤー・カメラ等コア -->
+<script src="system/layer-system.js"></script>
+<script src="system/camera-system.js"></script>
+
+<!-- Animation / GIF -->
+<script src="system/animation-system.js"></script>
+<script src="system/gif-exporter.js"></script>
+
+<!-- UI -->
+<script src="ui/ui-panels.js"></script>
+<script src="ui/timeline-ui.js"></script>
+
+<!-- core 実行部 -->
+<script src="core-runtime.js"></script>
+<script src="core-engine.js"></script>
+
+
+既に index.html に Pixi の別バージョンスクリプトがある場合は削除し 8.13 固定にします（バージョン混在禁止）。
+
+G. コア初期化（core-engine.js または core-runtime.js の末尾に追加）
+// 既存の初期化フローの末尾に安全に追加（バックアップ後）
+(function(){
+  'use strict';
+  // 既に app, layerSystem, cameraSystem が作られている前提
+  if (!window.app || !window.TegakiEventBus || !window.LayerSystem) {
+    console.warn('core init skipped: missing core objects');
+    return;
+  }
+
+  // AnimationSystem 初期化
+  window.animationSystem = new window.TegakiAnimationSystem();
+  window.animationSystem.init(window.LayerSystem, window.CameraSystem, window.app, window.TegakiEventBus);
+
+  // TimelineUI 初期化
+  window.timelineUI = new window.TegakiTimelineUI(window.animationSystem);
+  window.timelineUI.init();
+
+  console.log('✅ Animation & Timeline initialized');
+})();
+
+
+注意: 上の window.LayerSystem / window.CameraSystem は system/layer-system.js / system/camera-system.js 内で window.LayerSystem = new ... という形で公開しておいてください。
+
+4) ステータスパネルを「一番上」に移す具体差分（最小修正・非破壊）
+
+やること: 現在ステータスがボトムにあるだけなので CSS を top に変え z-index を十分大きくする。もしステータス DOM に id/class が無ければ id="status-panel" を付与する。
+
+例（ui/ui-panels.js または index.html 内 CSS に追加）
+/* ステータスパネルを上に */
+#status-panel {
+  position: fixed !important;
+  top: 8px !important;
+  left: 8px !important;
+  right: auto !important;
+  bottom: auto !important;
+  z-index: 9999 !important;
+  pointer-events: auto;
+}
+
+DOM のチェック
+
+index.html の該当要素（ステータス）に id="status-panel" が無ければ追加してください（小差分）。UI の重なりは z-index で制御。
+
+5) 変更時の「自動チェック（Claude が実施するコマンド／grep 手順）」 — 修正ミス防止
+
+Claude 実装時に下記検索・置換を行ってください（ローカルで grep or ripgrep）:
+
+grep -R "console.log" | wc -l → ログ量の上限確認（不要ログは debug にまとめる）
+
+grep -R "new .*EventBus" || grep -R "TegakiEventBus" → EventBus の重複定義が無いか
+
+grep -R "PIXI" | grep -i "version\|8\." → Pixi バージョン混在の痕跡
+
+grep -R "window.TEGAKI_CONFIG" -n → 設定参照の散在箇所を検出
+
+grep -R "position\.set\(|rotation\s*=" → 直接座標操作箇所を洗い出し、TegakiCoordinateSystem.applyTransformToLayer に置換候補を作る
+
+grep -R "TegakiTimelineUI\|TegakiAnimationSystem\|TegakiGIFExporter" -n → 結線チェック
+
+6) 動作確認チェックリスト（手順・期待結果）
+
+index.html を file:// で開く（Chrome最新版）
+
+コンソールに TegakiEventBus ready / TEGAKI_CONFIG ready / TegakiCoordinateSystem ready が出ること。
+
+Timeline 表示（Alt + A 等のショートカット／UIボタン）を出す
+
+タイムラインパネルが画面下部（設計どおり）に現れること（ただしステータスは上にある）。
+
+「+ CUT」→ カットが作成され、animation:cut-created イベントが EventBus 経由で発行されること。
+
+GIFアニメーション機能実装計画書 v10
+
+再生（▶）→ AnimationSystem の play() が呼ばれ、animation:playback-started イベントが発行されること。
+
+GIFアニメーション機能実装計画書 v10
+
+GIF 出力 → gif:export-progress イベントが進み、最終的にダウンロードが始まること（ブラウザのダウンロード）。
+
+GIFアニメーション機能実装計画書 v10
+
+7) 注意点・ガイドライン（要守）
+
+フォールバック（曖昧な動作）禁止：失敗は早く出す（console.error を残す）。自動補正で動かす処理は入れない。
+
+フェイルセーフ（エラー隠蔽）禁止：try/catch は範囲限定にし、内部で console.error を出す。
+
+バージョン混在禁止：PixiJS は 8.13.0 に固定。既存に別バージョン読み込みがあれば必ず削除。
+GitHub
+
+二重実装禁止：同機能を複数のファイルで実装しない（例：座標変換は必ず TegakiCoordinateSystem）。
+
+8) Claude に渡すときの指示（そのまま貼ってOK）
+
+リポジトリルートで すべての対象ファイルのバックアップ を作る（.bak）。
+
+system/event-bus.js, config.js, system/coordinate-system.js を追加/上書き（上記コード）。
+
+ui/timeline-ui.js, system/animation-system.js, system/gif-exporter.js は GIFアニメーション機能実装計画書 v10.txt の実装を丸ごとファイルへ書き出して上書き（既存コードを残すべきであれば差分で残すが、現状はプレースホルダなので置換で可）。
+
+GIFアニメーション機能実装計画書 v10
+
+index.html の script 読み込み順を EventBus, config, coordinate-system, layer, camera, animation, gif-exporter, timeline-ui, core-runtime/core-engine の順に修正。
+
+UI の status-panel に id="status-panel" を付与して CSS を上書きし、上部表示に変更。
+
+実装後、上の 動作確認チェックリスト を順に実行し、出力されないイベントや例外があれば即修正（早期にエラーを出すこと）。
+
+実装ログを git commit で分割（機能ごとにコミット）し、差分説明を付ける（例: feat(animation): add AnimationSystem basic implementation）。
+
+9) 最後に — 優先順位まとめ（短く）
+
+EventBus & config 固め（必須）。
+
+GIFアニメーション機能実装計画書 v10
+
+Timeline UI を計画書どおり差し替え（見た目を GIFアニメUI.txt に寄せる）。
+
+GIFアニメUI
+
+AnimationSystem / GIFExporter を入れて core に結線。
+
+GIFアニメーション機能実装計画書 v10
+
+LayerSystem API 強化 & 座標 API 一元化（アニメ用変形は LayerSystem 経由）。
+
+ステータスパネルを上に移動。
+GitHub
