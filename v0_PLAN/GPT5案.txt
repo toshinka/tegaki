@@ -1,199 +1,351 @@
-# 改修計画書 — core-engine 分割によるキャンバス移動不具合調査と対策
+概要（目的）
 
-**対象リポジトリ / ブランチ（参照したファイル）**
+不具合：
 
-* v8.13_SatellitePlan_phase1e8/core-engine.js
-* v8.13_SatellitePlan_phase1e8/system/camera-system.js
-* v8.13_SatellitePlan_phase1e8/system/layer-system.js
-* v8.13_SatellitePlan_phase1e8/system/drawing-clipboard.js
-* v8.13_SatellitePlan_phase1b4/core-engine.js
-* v8.13_SatellitePlan_phase1b4/config.js
-* v8.13_SatellitePlan_phase1b4/coordinate-system.js
-* v8.13_SatellitePlan_phase1b4/core-runtime.js
-* v8.13_SatellitePlan_phase1b4/ui-panels.js
+V（レイヤー移動モード）を 入れることはできるが解除できない（ポップアップが消えない／再度 V 押しで解除されない）
 
-(調査は上記公開 raw.githubusercontent.com の各ファイルを参照して実施)
+ショートカット P（ペン） と E（消しゴム）が 消えている → 復活させる
 
----
+方針：
 
-## 1) 概要（ユーザ要望）
+既存機能を壊さない（必要最小限の修正）
 
-* core-engine.js を分割して軽量化したところ、旧バージョン（phase1b4）と比べて「キャンバス移動（パン／ズーム等）が効かない」現象が発生
-* 調査と原因特定、改修方針・手順、チェックリストの提示を要望
-* 追加でチェックしてほしい点：座標変換APIの不一致、レイヤーAPIの断片化、EventBus統合の不完全性、設定参照の混在、PixiJSバージョン記述、ESM/import 文の混入
+モード切替・UI 表示は 単一の状態管理（LayerSystem または EventBus） に集約
 
----
+Global な KeybindManager（軽量）を導入してショートカットを一元化
 
-## 2) 調査で確認した重要ポイント（要約）
+レイヤーの移動/回転/反転は LayerSystem に集約
 
-* 分割後の `CameraSystem` は `worldContainer` / `canvasContainer` を生成して `app.stage` に追加するコードが存在する（参照: phase1e8/core-engine.js の CameraSystem 実装）。citeturn1view0
-* Clipboard / Camera / Layer 系の責務が分割され、それぞれが内部で `layerManager` や `drawingEngine` を参照する設計になっている（ただし結合点の参照設定が Core 側で確実に行われているかが要確認）。citeturn1view0turn4view0
-* 新旧ファイル群を走査した結果、`import` 文や明示的な ESM 記述は見つからなかった（ローカル file:// 実行前提に整合）。同様に `PIXI` や `EventBus` の未対応・明示的バージョン指定コメントはファイル内に見当たらない。citeturn1view0turn3view0
+コードは ES モジュール（import）を使わない前提（<script>で読み込む従来構成）
 
-> 注：上記は提供頂いたリモートファイルのスニペット検査結果に基づきます。現場の全ファイル（index.html 等）と結合して実行時の参照がどうなっているかは、ローカルでの実行ログがあればさらに正確な診断が可能です。
+PixiJS v8.13 系の CDN を想定（8.13.1 / 8.13.2 推奨）で互換性確認済み。 
+GitHub
++1
 
----
+修正の要点（高レベル）
 
-## 3) 疑わしい根本原因（優先度順）
+V キーのトグル不具合修正
 
-1. **Core と Camera / Layer / Drawing の接続が未完成（参照注入漏れ）**
+原因想定：V 押下で「移動モードに入る」処理はあるが、解除処理（state=false）や popup.close()、およびドラッグハンドラの解除が分散しており、再度押しても解除されない（イベントリスナ重複／状態参照不整合）。
 
-   * 分割後に `CoreEngine` が `CameraSystem` / `LayerManager` / `DrawingEngine` を生成して内部参照（例: `camera.layerManager = layerManager`）しているかが不十分。Camera の worldContainer は生成されるが、実際の "操作対象"（レイヤー群のコンテナ）へイベント伝播や transform の反映がされていないとパンが目に見えなくなる。citeturn1view0
+対策：LayerSystem.toggleMoveMode() を実装 / 修正してenter/exit を必ず双方向で完結させる。ポップアップの show/hide、ドラッグリスナの add/remove、マウスカーソル変更などをここに集約する。
 
-2. **Pointer / Wheel イベントのバインド先が不適切 or 重複**
+P/E のショートカット復活
 
-   * 旧実装ではキャンバス（または worldContainer）に直接 pointer/wheel イベントをアタッチしていたが、分割でイベント登録位置が変わり、実際の描画コンテナへの伝播が停止している可能性。これだと UI は応答するが canvas の transform が変わらない。citeturn1view0
+原因想定：古い Keymap が削除 or UI 側でハードコード解除された可能性。
 
-3. **座標変換 API の不一致（スクリーン→キャンバス変換）**
+対策：KeybindManager を（core-runtime.js か ui-panels.js の起動シーケンス内に）実装し、P→tool:pen、E→tool:eraser を必ず定義。ツール切替イベントは EventBus 経由で伝搬。
 
-   * Camera 系と描画（DrawingEngine）がそれぞれ `screenToCanvasForDrawing()` 等を持つ/期待するが、実装が分かれているため API 契約が崩れているとペン位置はズレる／パン操作で視覚更新が行われない場合がある。特に変換中心（canvas center）や matrix の適用順序（translate→rotate→scale 等）が違うと、パン動作が見た目で反映されないケースがある。citeturn1view0
+EventBus / API 統合
 
-4. **レイヤー API の断片化：layerTransforms の管理が散在**
+現状想定：EventBus が断片化（複数ファイルで個別に new EventTarget／custom emitter）しているため、モード状態/ツール状態の一貫性が取れない。
 
-   * 変形データ（translate/scale/rotation）を `LayerManager` 側と `CameraSystem` 側で別々に保持すると、どちらの変換を最終的に描画に適用するか曖昧になり、結果的に画面が動かない・消える等の不整合が発生する。Clipboard 実装に `layerTransforms` 参照があるため特に注意。citeturn1view0
+対策：core-runtime.js に**単一の global EventBus（小さな実装）**を置き、LayerSystem・UI・CameraSystem・KeybindManager がこれを参照する形に変更（参照渡し。window.AppEventBus などグローバル名を推奨）。モジュール化は行わない（ESM禁止のため）。
 
-5. **設定参照の混在（CONFIG の更新がワンソースでない）**
+座標変換・レイヤー API の点検
 
-   * `CONFIG.canvas.width/height` を CameraSystem が直接 mutation している箇所が見られ、Core 側での一貫した更新パスが無いとマスクやガイドラインの再構築が不一致になる恐れ。citeturn1view0
+座標系（スクリーン <-> 世界 <-> レイヤーローカル）が混在していると、移動時に位置ズレが発生する。coordinate-system.js の API を明文化して toWorld, toScreen, toLocal を用意し、全てのシステムが同 API を使うよう指導。
 
----
+Layer API は LayerSystem に集約（layer.move(dx,dy)・layer.setPosition(x,y)・layer.rotate(angle)・layer.flip(axis) など）。外部からはこれ以外触らせない（カプセル化）。
 
-## 4) 短期対応（再現してすぐ直せる候補）
+コーディング規律
 
-下のチェックを順に実施して下さい（影響小→中）：
+禁止事項順守（no import, no ESM, no bundler）
 
-1. **Core 側でのインスタンス注入チェック**
+console.log は最小（console.debug を dev 用に残す）
 
-   * `CoreEngine`（index または core-runtime）が CameraSystem, LayerManager, DrawingEngine, ClipboardSystem を生成した直後に `setLayerManager` / `setDrawingEngine` 等の参照注入を行っているか確認。無ければ追加。例:
+命名規約、API ドキュメント（簡易）を付与
 
-   ```js
-   const camera = new CameraSystem(app);
-   const layerManager = new LayerManager(app);
-   const drawingEngine = new DrawingEngine(app);
-   camera.layerManager = layerManager;
-   camera.drawingEngine = drawingEngine;
-   clipboard.setLayerManager(layerManager);
-   clipboard.setDrawingEngine(drawingEngine);
-   ```
+具体的な改修手順（工程・優先度付き）
 
-2. **イベントバインドの確認（pointer/wheel）**
+工程は最小破壊で実施。すぐ動かせる順で記載。
 
-   * pointerdown/move/up, wheel の登録対象を `app.view` もしくは `worldContainer` に統一する。分割前の実装と同じ DOM/PIXIオブジェクトに登録するのが早い。イベントハンドラで `stopPropagation()` などで阻害していないか確認。
+1. リファクタリング・準備（30〜60分想定）
 
-3. **座標変換の単一化**
+（a）core-runtime.js にグローバル EventBus を追加（window.AppEventBus = new EventTarget() のような軽量実装）。
 
-   * `screenToCanvasForDrawing()` 等、スクリーン→キャンバス変換を CameraSystem 側に一本化し、DrawingEngine からは CameraSystem の API を使う。相互に同名関数が複数ある場合は deprecate して参照先を統一。
+（b）core-runtime.js の起動順（init）を確認して system/* を EventBus に接続させる。
 
-4. **layerTransforms の真の単一管理**
+（c）ui-panels.js に軽量 KeybindManager を追加（下記コード参照）。この段で P/E/V のデフォルトバインドを登録。
 
-   * レイヤー個別の transform（レイヤー固有の回転・拡大）は LayerManager が管理し、カメラ（viewport）移動は CameraSystem が管理する。描画時は最終的に `worldContainer` (camera) の transform と `layer` の transform を合成して適用。
+2. V トグル修正（最優先）
 
-5. **CONFIG 更新経路の整理**
+変更箇所：ui-panels.js（ポップアップ表示）、system/layer-system.js（実装の主要部分）、core-engine.js（古いキーハンドラがあれば削除または無効化）
 
-   * Canvas サイズや camera 設定は必ず Core のリサイズ入口（例: `CoreEngine.resizeCanvas()`）を通るようにして、副作用を最小化。
+実装：
 
----
+LayerSystem に状態プロパティ movingLayerMode = false を追加
 
-## 5) 中期対応（リファクタリング・保守性向上）
+enterMoveMode(layerId) と exitMoveMode() を実装（必ず removeEventListener を呼ぶ）
 
-* **イベントバス（EventBus）を導入して結合を緩める**
+toggleMoveMode() は enter と exit を確実に呼び分ける
 
-  * 各システムは `EventBus.emit('camera:moved', state)` のように公開イベントを出し、必要なシステムが subscribe する方式にする。これで依存注入漏れの類を減らす。
-* **座標系ユーティリティモジュールを作成**
+ポップアップは UI 側で showMovePopup() / hideMovePopup() を EventBus 経由で受ける
 
-  * `coordinate-system.js` を authoritative source にして、すべての変換はこれを経由させる。
-* **レイヤー API の仕様を明文化**
+テスト：
 
-  * `Layer` の public API を `getTransform()`, `setTransform()`, `toLocalPoints(points)`, `rebuildGraphics()` などで統一。AI が自動改修する際にもマッピングが容易になる。
-* **単体テスト（スナップショット）**
+V 押下：ポップアップ表示、ドラッグでレイヤー移動可能
 
-  * 画面を直接自動検証するのは難しいが、座標変換の入出力ユニットテストは node + headless-pixi で作れる。最小限の API テストを追加。
+再度 V 押下：ポップアップ消える、ドラッグ無効、mousemove リスナが解除される（メモリリーク対策）
 
----
+3. P/E ショートカット復活（並行実装可）
 
-## 6) 具体的修正案（差分イメージ／コードスニペット）
+変更箇所：ui-panels.js（ツールUI）、core-runtime.js（初期登録）
 
-### A) Core 側での確実な参照注入（推奨）
+実装：
 
-`core-runtime.js` や `index.html` の main 初期化箇所に下記を入れる:
+KeybindManager.register('KeyP', ()=>EventBus.dispatch('tool:select','pen')) 等
 
-```js
-// 初期化順
-const app = new PIXI.Application({width: CONFIG.canvas.width, height: CONFIG.canvas.height});
-const layerManager = new LayerManager(app);
-const camera = new CameraSystem(app);
-const drawingEngine = new DrawingEngine(app);
-const clipboard = new ClipboardSystem();
+ToolManager（既存がなければ軽量）で currentTool を管理し、描画イベントで if (currentTool === 'eraser') ...
 
-// 参照注入
-camera.setLayerManager(layerManager);
-camera.setDrawingEngine(drawingEngine);
-clipboard.setLayerManager(layerManager);
-clipboard.setDrawingEngine(drawingEngine);
-layerManager.setCameraSystem(camera);
+テスト：P/E を押して描画モードが切り替わる（ツール名の小さな表示／コンソールで確認）
 
-// 最終: worldContainer を stage にアタッチ（CameraSystem が行う設計なら二重にならないよう配慮）
-app.stage.addChild(camera.worldContainer);
-```
+4. 座標系と Layer API 点検・修正
 
-### B) pointer/wheel イベントの登録先を統一
+変更箇所：coordinate-system.js（最優先で API 明文化）、system/layer-system.js（利用側）
 
-```js
-// CameraSystem.setupEvents() 内
-const targetView = this.app.view; // もしくは this.app.stage.interactive = true; this.worldContainer.interactive = true;
-this.app.view.addEventListener('wheel', e => this.onWheel(e));
-this.app.view.addEventListener('pointerdown', e => this.onPointerDown(e));
-// 必要であれば passive: false を指定
-```
+実装：
 
-### C) 座標変換の単一化（CameraSystem に委譲）
+coordinateSystem に厳密な関数群：
 
-```js
-CameraSystem.prototype.screenToCanvasPoint = function(screenX, screenY) {
-  // app.renderer.plugins.interaction.mapPositionToPoint を使う等、安全にスクリーン座標を PIXI 内座標へ
-  const point = this.app.renderer.plugins.interaction.mapPositionToPoint(new PIXI.Point(), screenX, screenY);
-  // world->canvas の逆変換を行う
-  return this.canvasContainer.toLocal(point);
-};
-```
+toWorld(screenX, screenY, camera)
 
----
+toScreen(worldX, worldY, camera)
 
-## 7) チェックリスト（マージ前に必ず）
+toLocal(worldX, worldY, layer)
 
-* [ ] Core 側で Camera / Layer / Drawing / Clipboard の参照注入が行われている
-* [ ] pointer/wheel の登録位置が app.view または worldContainer に統一されている
-* [ ] `screenToCanvas...` 系 API の実装が一箇所にまとまっている
-* [ ] layerTransforms は LayerManager が一元管理し、CameraSystem は viewport 変換のみを管理している
-* [ ] CONFIG の canvas サイズ変更経路が一本化されている（CoreEngine.resizeCanvas）
-* [ ] `import` / ESM の誤記載なし（file:// 実行前提）
-* [ ] PixiJS の読み込みは CDN で v8.13 が明示されている（index.html 側を確認）
+LayerSystem はこれらで常に変換する（直接 event.clientX を使わない）
+
+テスト：ズーム/パンがある状態でもドラッグ移動が正しく動く
+
+5. EventBus 統合の仕上げ
+
+目的：状態変更／ツール変更／モード切替を EventBus 経由で一貫して通知する
+
+イベント名規約（例）：
+
+layer:move:start / layer:move:end
+
+tool:selected (detail.tool = 'pen'|'eraser'|'select'|'move')
+
+camera:changed (detail.transform)
+
+変更箇所：全システムのイベント購読を見直し
+
+6. 静的チェック（目視）
+
+import 文がないか全ファイル検索（ESM 禁止）
+
+PixiJS の CDN 表記が v8.13.x か確認（package.json があれば参照）
+
+console.log の抑制（console.log を console.debug または削除）
+
+具体コード例（差分・最小パッチ）
+
+※下記は「そのまま貼るだけで動く」ことを目標にした簡潔サンプル。実際はリポジトリの既存関数名・命名に合わせて置換してください。
+
+1) core-runtime.js — EventBus 追加（先頭付近）
+// core-runtime.js — 先頭に追加
+(function(){
+  if (!window.AppEventBus) {
+    window.AppEventBus = new EventTarget();
+    // helper
+    window.AppEventBus.emit = function(name, detail){
+      this.dispatchEvent(new CustomEvent(name, {detail}));
+    };
+    window.AppEventBus.on = function(name, cb){
+      this.addEventListener(name, evt => cb(evt.detail));
+    };
+  }
+})();
+
+2) ui-panels.js — KeybindManager（起動時に一括登録）
+// ui-panels.js — KeybindManager（簡単実装）
+(function(){
+  const keyState = {};
+  const bindings = {};
+  function onKeyDown(e){
+    if (e.repeat) return;
+    const code = e.code || e.key;
+    if (bindings[code]) {
+      bindings[code].forEach(fn => fn(e));
+      e.preventDefault();
+    }
+  }
+  function onKeyUp(e){ /* 必要なら実装 */ }
 
----
+  window.KeybindManager = {
+    register(code, fn){
+      bindings[code] = bindings[code] || [];
+      bindings[code].push(fn);
+    },
+    unregister(code, fn){
+      if (!bindings[code]) return;
+      bindings[code] = bindings[code].filter(f=>f!==fn);
+    }
+  };
+  window.addEventListener('keydown', onKeyDown);
 
-## 8) リスクと注意点
+  // デフォルト登録：P/E/V
+  KeybindManager.register('KeyP', ()=> window.AppEventBus.emit('tool:selected', {tool:'pen'}) );
+  KeybindManager.register('KeyE', ()=> window.AppEventBus.emit('tool:selected', {tool:'eraser'}) );
+  KeybindManager.register('KeyV', ()=> window.AppEventBus.emit('tool:selected', {tool:'move'}) );
+})();
 
-* 既存のレイヤー変形ロジック（特に confirmLayerTransform の非破壊化）はクリティカルな処理なので、必ず既存のユニット（描画保存／パス再構築）を壊さないように統合テストを行ってください。citeturn4view1
-* EventBus を導入する場合、イベント名の命名規則（`camera:pan` vs `camera:moved`）を早期に決めておかないと結局散在してしまいます。
+3) system/layer-system.js — toggleMoveMode の実装（抜粋）
+// layer-system.js — LayerSystem に追加する概念コード
+class LayerSystem {
+  constructor() {
+    this.movingLayerMode = false;
+    this._onPointerMove = this._onPointerMove.bind(this);
+    this.activeLayer = null;
+  }
 
----
+  toggleMoveMode(layerId){
+    if (!this.movingLayerMode) {
+      this.enterMoveMode(layerId);
+    } else {
+      this.exitMoveMode();
+    }
+  }
 
-## 9) 次のアクション（推奨順）
+  enterMoveMode(layerId){
+    this.movingLayerMode = true;
+    this.activeLayer = this.getLayerById(layerId) || this.activeLayer;
+    // attach pointermove on canvas root
+    const canvas = document.querySelector('canvas');
+    canvas.addEventListener('pointermove', this._onPointerMove);
+    // show popup via EventBus
+    window.AppEventBus.emit('layer:move:start', {layerId:this.activeLayer?.id});
+    // show small UI
+    window.AppEventBus.emit('ui:showMovePopup', {layerId:this.activeLayer?.id});
+  }
 
-1. 本番と同じ index.html でローカル起動し、コンソールログ（camera の生成、pointer イベント受信、worldContainer transform 値）を出力して再現手順を確定。
-2. Core に参照注入パッチを当てて動作確認（チェックリストの上から順）。
-3. 動作確認後、座標変換ユーティリティの一本化を行い、DrawingEngine を camera API に切り替え。
-4. EventBus 導入は中期タスクとして計画。
+  exitMoveMode(){
+    this.movingLayerMode = false;
+    const canvas = document.querySelector('canvas');
+    canvas.removeEventListener('pointermove', this._onPointerMove);
+    window.AppEventBus.emit('layer:move:end', {layerId:this.activeLayer?.id});
+    window.AppEventBus.emit('ui:hideMovePopup', {});
+    this.activeLayer = null;
+  }
 
----
+  _onPointerMove(evt){
+    if (!this.movingLayerMode || !this.activeLayer) return;
+    // use coordinate-system API to convert
+    const pos = coordinateSystem.toWorld(evt.clientX, evt.clientY, window.AppCamera);
+    this.activeLayer.setPosition(pos.x, pos.y); // 必ず LayerSystem の API を使う
+  }
 
-## 10) 参考（今回見たファイルの参照ID）
+  // ... 既存メソッド getLayerById, setPosition など
+}
 
-* phase1e8/core-engine.js (Camera/Clipboard 等の実装確認) — ref: turn1view0. citeturn1view0
-* phase1e8/system/layer-system.js — ref: turn3view0. citeturn3view0
+4) ui-panels.js — ポップアップの show/hide を EventBus で受ける（抜粋）
+// ui-panels.js — popup 管理
+window.AppEventBus.on('ui:showMovePopup', ({layerId})=>{
+  const popup = document.getElementById('movePopup') || createMovePopup();
+  popup.style.display = 'block';
+  popup.dataset.layerId = layerId;
+});
+window.AppEventBus.on('ui:hideMovePopup', ()=>{
+  const popup = document.getElementById('movePopup');
+  if (popup) popup.style.display = 'none';
+});
 
----
+テスト手順（受け入れ基準）
 
-以上。追加で「実際に直すためのパッチ（差分）」を作成しますか？
+起動（file:// で index.html を直接開く）してコンソールエラーが出ないこと。
 
-* 可能です。ご希望なら Core 側の初期化スニペットを差分形式で用意して、直接貼り込める形にします。
+V（KeyV）を押す：
+
+ポップアップが表示される
+
+マウス移動／ドラッグでレイヤーが動く
+
+再度 V を押す：
+
+ポップアップが消える
+
+マウス移動でレイヤーが動かなくなる
+
+pointermove リスナが解除されていること（DevTools で確認）
+
+P を押す → 描画がペンに切り替わる（描画で確認）
+
+E を押す → 消しゴムに切り替わる（消去で確認）
+
+ズーム・パンしてもドラッグ移動がワールド座標で正しく動くこと（座標系チェック）
+
+すべての console.log を最小化（リリースモードではログ出力なし）
+
+コード品質チェックリスト（必須確認項目）
+
+ ファイル内に import / export が存在しないか（ESM 禁止） — 全ファイル検索
+
+ PixiJS の CDN が 8.13.x を参照しているか（index.html の <script src="...pixi.js@8.13.x...">）。もし古いバージョンが指定されている場合は 8.13.2 へ更新推奨。 
+pixijs.com
++1
+
+ coordinate-system.js に toWorld / toScreen / toLocal があるか
+
+ LayerSystem に move/setPosition/rotate/flip 等が集約されているか
+
+ EventBus が単一化されているか（複数の new EventTarget() を作っていないか）
+
+ console.log の濫用を排除（console.debug に置換 or 環境判定）
+
+ 外部ライブラリ（pixi-filters 等）を使う場合は CDN のバージョン合わせと互換性確認
+
+ メモリリークチェック（addEventListener/removeEventListener が対になっていること）
+
+小さな運用ルール（チーム向け）
+
+キー処理は KeybindManager に集約。UI 側は KeybindManager を参照せず EventBus で受ける。
+
+LayerSystem の public API は move, rotate, flip, setPosition のみ。直接 PixiJS 表示オブジェクトに触らない。
+
+すべてのシステムは window.AppEventBus を使う（ドキュメント化）。
+
+変更は必ず小さなコミット単位で（例： fix(keybind): add KeybindManager , fix(layer): implement toggleMoveMode など）
+
+追加チェック（ご依頼の項目） — 結果と対処方針
+
+座標変換 API の不一致：高確率で発生。coordinate-system.js の API を統一（toWorld/toScreen/toLocal）して既存呼び出しを修正する必要あり。
+
+レイヤー API の断片化：高確率で発生。LayerSystem に統合し、外部参照をラップする。
+
+EventBus 統合の不完全性：高確率で発生。複数箇所で独自にイベント実装しているなら統合推奨。
+
+設定参照の混在：設定（config.js）を single source にして各ファイルが window.AppConfig を読む形に。重複定義があれば統一。
+
+PixiJS v8.13 以外の表記：ページ内の <script> 表記を全件チェック。もし @8.13.x 以外が混ざっていれば 8.13.2 に統一を推奨（互換性のため最新の patch を採用するのが安全）。 
+GitHub
++1
+
+import 文（ESM）記述：コード全体を grep して import / export を排除。もし見つかったら <script type="module"> を使わない方針のため、即座に差し替えが必要。
+
+推奨優先度（短期→中期）
+
+V トグルの即時修正（重大、すぐユーザが体感） — 高優先
+
+P/E ショートカット復活 — 高優先
+
+EventBus 一元化 + KeybindManager 統合 — 高
+
+座標系 API の明文化 + 全体置換（要注意テスト） — 中
+
+命名規則・ログ整理・ドキュメント小修正 — 低
+
+納品物（提案）
+
+改修差分パッチ（個別ファイルごとの patch / PR 用）
+
+簡易テスト手順書（上記の受け入れ基準）
+
+変更点の短い設計メモ（EventBus イベント一覧、LayerSystem API、KeybindManager API）
+
+（要望があれば）私が差分コードを作成して can で出力します（1コミット分ずつ）
+
+参考（外部情報）
+
+PixiJS v8.13.0 / v8.13.x リリース情報（公式ブログ／GitHub）。新仕様や CDN の URL 確認に利用。

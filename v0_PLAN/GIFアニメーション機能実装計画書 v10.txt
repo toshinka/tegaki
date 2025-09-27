@@ -1,0 +1,1026 @@
+# GIFアニメーション機能実装計画書 v10
+## 現行システム最適化版（PixiJS v8.13 準拠）
+
+### 📋 現状分析と問題点チェック
+
+#### ✅ 解決済みの項目
+- **座標変換API**: CoordinateSystemで統一済み（coordinate-system.js）
+- **レイヤーAPI**: LayerSystemで集約済み（system/layer-system.js）  
+- **EventBus統合**: 各システムで実装済み
+- **設定参照**: TEGAKI_CONFIGで統一済み
+- **PixiJS v8.13**: 正しいバージョンをCDNで読み込み済み
+
+#### ⚠️ 確認された問題点
+- **ES import文**: 使用していない（window経由で正しく実装）
+- **API境界**: CoreRuntimeで統一されているが、GIF機能追加時に整合性維持が必要
+
+---
+
+## 🎯 実装方針（現状システムに最適化）
+
+### 基本戦略
+1. **既存ファイル構造を維持**: 現在の分割構造を活かす
+2. **CoreRuntime経由でのAPI提供**: UI層からの統一アクセス維持
+3. **LayerSystemを拡張**: アニメーション機能をLayerSystemに統合
+4. **gif.jsライブラリ活用**: GIF生成はライブラリに委譲
+
+### ライブラリ選定（PixiJS v8.13との相性考慮）
+```html
+<!-- 既存ライブラリ（維持） -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+
+<!-- GIF機能用追加 -->
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.min.js"></script>
+```
+
+---
+
+## 📁 ファイル構成（現状維持＋拡張）
+
+### 新規追加ファイル
+```
+system/
+├── animation-system.js    # GIFアニメーション管理（新規）
+└── gif-exporter.js       # GIF書き出し処理（新規）
+
+ui/
+└── timeline-ui.js        # タイムラインUI（新規）
+```
+
+### 既存ファイル修正箇所
+- `index.html`: タイムラインUI要素追加、新規スクリプト読み込み
+- `core-runtime.js`: AnimationSystem APIエクスポート追加
+- `core-engine.js`: AnimationSystem初期化追加
+- `config.js`: アニメーション設定追加
+
+---
+
+## 🏗 データ構造設計（シンプル版）
+
+### アニメーションデータ構造
+```javascript
+// TEGAKI_CONFIG に追加
+window.TEGAKI_CONFIG.animation = {
+    defaultFPS: 12,
+    maxCuts: 50,
+    defaultCutDuration: 0.5, // 秒
+    exportSettings: {
+        maxWidth: 800,
+        maxHeight: 800,
+        quality: 10, // 1-30 (小さいほど高品質)
+        workers: 2
+    }
+};
+
+// AnimationSystem内で管理
+const animationData = {
+    cuts: [
+        {
+            id: 'cut_' + Date.now(),
+            name: 'CUT1',
+            duration: 0.5, // 秒
+            layerSnapshots: [
+                {
+                    layerId: 'layer_0',
+                    visible: true,
+                    opacity: 1.0,
+                    transform: { 
+                        x: 0, y: 0, 
+                        rotation: 0,
+                        scaleX: 1, scaleY: 1
+                    },
+                    pathsData: [] // パスデータのディープコピー
+                }
+            ],
+            thumbnailTexture: null // PIXI.RenderTexture
+        }
+    ],
+    settings: {
+        fps: 12,
+        loop: true
+    },
+    playback: {
+        isPlaying: false,
+        currentCutIndex: 0,
+        startTime: 0
+    }
+};
+```
+
+### 4. HTMLスタイル追加（index.html内）
+
+```css
+/* タイムラインパネル */
+.timeline-panel {
+    position: fixed;
+    bottom: 20px;
+    left: 70px;
+    right: 220px;
+    background: var(--futaba-cream);
+    border: 2px solid var(--futaba-maroon);
+    border-radius: 12px;
+    padding: 16px;
+    z-index: 1500;
+    max-height: 280px;
+    display: none;
+    box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
+}
+
+.timeline-panel.show {
+    display: block;
+    animation: slideUp 0.3s ease-out;
+}
+
+@keyframes slideUp {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
+}
+
+.timeline-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+    padding-bottom: 8px;
+    border-bottom: 1px solid var(--futaba-light-medium);
+}
+
+.timeline-controls {
+    display: flex;
+    gap: 8px;
+    margin-bottom: 12px;
+}
+
+.timeline-controls button {
+    padding: 6px 12px;
+    background: var(--futaba-background);
+    border: 1px solid var(--futaba-medium);
+    border-radius: 6px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+.timeline-controls button:hover {
+    background: var(--futaba-medium);
+    border-color: var(--futaba-maroon);
+}
+
+.cuts-container {
+    display: flex;
+    gap: 8px;
+    overflow-x: auto;
+    padding: 8px 0;
+    margin-bottom: 12px;
+    max-height: 120px;
+}
+
+.cut-item {
+    min-width: 80px;
+    background: var(--futaba-background);
+    border: 2px solid var(--futaba-light-medium);
+    border-radius: 8px;
+    padding: 4px;
+    cursor: pointer;
+    position: relative;
+    transition: all 0.2s ease;
+}
+
+.cut-item:hover {
+    border-color: var(--futaba-medium);
+    transform: scale(1.05);
+}
+
+.cut-item.active {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-light-medium);
+}
+
+.cut-thumbnail {
+    width: 72px;
+    height: 54px;
+    background: var(--futaba-background);
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    overflow: hidden;
+    margin-bottom: 4px;
+}
+
+.cut-thumbnail img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+}
+
+.cut-thumbnail-placeholder {
+    width: 100%;
+    height: 100%;
+    background: var(--futaba-light-medium);
+}
+
+.cut-info {
+    text-align: center;
+}
+
+.cut-name {
+    font-size: 10px;
+    color: var(--text-primary);
+    margin-bottom: 2px;
+}
+
+.cut-duration {
+    width: 100%;
+    font-size: 10px;
+    text-align: center;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 3px;
+    padding: 2px;
+}
+
+.delete-cut-btn {
+    position: absolute;
+    top: 2px;
+    right: 2px;
+    width: 16px;
+    height: 16px;
+    background: rgba(128, 0, 0, 0.1);
+    border: 1px solid var(--futaba-maroon);
+    border-radius: 50%;
+    color: var(--futaba-maroon);
+    font-size: 10px;
+    line-height: 1;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+}
+
+.cut-item:hover .delete-cut-btn {
+    opacity: 1;
+}
+
+.timeline-settings {
+    display: flex;
+    gap: 16px;
+    font-size: 12px;
+    padding-top: 8px;
+    border-top: 1px solid var(--futaba-light-medium);
+}
+
+.timeline-settings label {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.timeline-settings input[type="number"] {
+    width: 50px;
+    padding: 2px 4px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 3px;
+}
+
+.export-progress {
+    margin-top: 12px;
+}
+
+.progress-bar {
+    width: 100%;
+    height: 8px;
+    background: var(--futaba-light-medium);
+    border-radius: 4px;
+    overflow: hidden;
+}
+
+.progress-fill {
+    height: 100%;
+    background: var(--futaba-maroon);
+    width: 0%;
+    transition: width 0.3s ease;
+}
+```
+
+---
+
+## 🔧 実装詳細
+
+### 1. AnimationSystem クラス（system/animation-system.js）
+
+```javascript
+(function() {
+    'use strict';
+    
+    class AnimationSystem {
+        constructor() {
+            this.animationData = this.createDefaultAnimation();
+            this.layerSystem = null;
+            this.cameraSystem = null;
+            this.app = null;
+            this.eventBus = null;
+            this.playbackTimer = null;
+            this.isAnimationMode = false;
+        }
+        
+        init(layerSystem, cameraSystem, app, eventBus) {
+            this.layerSystem = layerSystem;
+            this.cameraSystem = cameraSystem;
+            this.app = app;
+            this.eventBus = eventBus;
+            
+            console.log('✅ AnimationSystem initialized');
+        }
+        
+        createDefaultAnimation() {
+            return {
+                cuts: [],
+                settings: {
+                    fps: window.TEGAKI_CONFIG.animation.defaultFPS,
+                    loop: true
+                },
+                playback: {
+                    isPlaying: false,
+                    currentCutIndex: 0,
+                    startTime: 0
+                }
+            };
+        }
+        
+        // CUT作成（現在のレイヤー状態をキャプチャ）
+        createCutFromCurrentState() {
+            const cut = {
+                id: 'cut_' + Date.now(),
+                name: `CUT${this.animationData.cuts.length + 1}`,
+                duration: window.TEGAKI_CONFIG.animation.defaultCutDuration,
+                layerSnapshots: this.captureAllLayerStates(),
+                thumbnailTexture: null
+            };
+            
+            this.animationData.cuts.push(cut);
+            this.generateCutThumbnail(this.animationData.cuts.length - 1);
+            
+            this.eventBus.emit('animation:cut-created', { cutId: cut.id });
+            return cut;
+        }
+        
+        // 全レイヤー状態をキャプチャ
+        captureAllLayerStates() {
+            const snapshots = [];
+            
+            this.layerSystem.layers.forEach(layer => {
+                const layerId = layer.layerData.id;
+                const transform = this.layerSystem.layerTransforms.get(layerId) || {
+                    x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+                };
+                
+                // パスデータのディープコピー（非破壊保存）
+                const pathsData = layer.layerData.paths.map(path => ({
+                    ...path,
+                    points: [...path.points],
+                    graphics: null // Graphicsは再生成するので保存しない
+                }));
+                
+                snapshots.push({
+                    layerId: layerId,
+                    visible: layer.layerData.visible,
+                    opacity: layer.layerData.opacity,
+                    transform: { ...transform },
+                    pathsData: pathsData
+                });
+            });
+            
+            return snapshots;
+        }
+        
+        // CUTを適用（レイヤー状態を復元）
+        applyCutToLayers(cutIndex) {
+            const cut = this.animationData.cuts[cutIndex];
+            if (!cut) return;
+            
+            // 一時的にイベント抑制
+            const originalEmit = this.eventBus.emit;
+            this.eventBus.emit = () => {};
+            
+            cut.layerSnapshots.forEach(snapshot => {
+                const layer = this.layerSystem.layers.find(
+                    l => l.layerData.id === snapshot.layerId
+                );
+                
+                if (!layer) return;
+                
+                // 可視性・透明度適用
+                layer.layerData.visible = snapshot.visible;
+                layer.visible = snapshot.visible;
+                layer.layerData.opacity = snapshot.opacity;
+                layer.alpha = snapshot.opacity;
+                
+                // 変形適用
+                this.layerSystem.layerTransforms.set(
+                    snapshot.layerId, 
+                    { ...snapshot.transform }
+                );
+                
+                // パスデータ復元（非破壊）
+                this.restoreLayerPaths(layer, snapshot.pathsData);
+                
+                // 表示位置更新
+                const centerX = window.TEGAKI_CONFIG.canvas.width / 2;
+                const centerY = window.TEGAKI_CONFIG.canvas.height / 2;
+                layer.position.set(
+                    centerX + snapshot.transform.x,
+                    centerY + snapshot.transform.y
+                );
+                layer.rotation = snapshot.transform.rotation;
+                layer.scale.set(
+                    snapshot.transform.scaleX,
+                    snapshot.transform.scaleY
+                );
+            });
+            
+            // イベント復元
+            this.eventBus.emit = originalEmit;
+            
+            // UI更新
+            this.layerSystem.updateLayerPanelUI();
+            this.eventBus.emit('animation:cut-applied', { cutIndex });
+        }
+        
+        // パスデータから描画を復元
+        restoreLayerPaths(layer, pathsData) {
+            // 既存のGraphicsをクリア
+            layer.children.forEach(child => {
+                if (child !== layer.layerData.backgroundGraphics) {
+                    layer.removeChild(child);
+                    if (child.destroy) child.destroy();
+                }
+            });
+            
+            // パスデータからGraphicsを再生成
+            layer.layerData.paths = pathsData.map(pathData => {
+                const graphics = new PIXI.Graphics();
+                
+                // パス描画
+                pathData.points.forEach(point => {
+                    graphics.circle(point.x, point.y, pathData.size / 2);
+                    graphics.fill({
+                        color: pathData.color,
+                        alpha: pathData.opacity
+                    });
+                });
+                
+                layer.addChild(graphics);
+                
+                return {
+                    ...pathData,
+                    graphics: graphics
+                };
+            });
+        }
+        
+        // サムネイル生成（遅延処理）
+        async generateCutThumbnail(cutIndex) {
+            const cut = this.animationData.cuts[cutIndex];
+            if (!cut) return;
+            
+            // 現在の状態を保存
+            const backupSnapshots = this.captureAllLayerStates();
+            
+            // CUT状態を適用
+            this.applyCutToLayers(cutIndex);
+            
+            // RenderTexture作成（小サイズ）
+            const renderTexture = PIXI.RenderTexture.create({
+                width: 80,
+                height: 60,
+                resolution: 1
+            });
+            
+            // レンダリング
+            this.app.renderer.render(
+                this.layerSystem.layersContainer,
+                { renderTexture }
+            );
+            
+            cut.thumbnailTexture = renderTexture;
+            
+            // 元の状態に戻す（簡易版）
+            // 実際の実装では backupSnapshots を使って完全復元
+            
+            this.eventBus.emit('animation:thumbnail-generated', { cutIndex });
+        }
+        
+        // 再生制御
+        play() {
+            if (this.animationData.cuts.length === 0) return;
+            
+            this.animationData.playback.isPlaying = true;
+            this.animationData.playback.startTime = Date.now();
+            
+            this.startPlaybackLoop();
+            this.eventBus.emit('animation:playback-started');
+        }
+        
+        pause() {
+            this.animationData.playback.isPlaying = false;
+            this.stopPlaybackLoop();
+            this.eventBus.emit('animation:playback-paused');
+        }
+        
+        stop() {
+            this.animationData.playback.isPlaying = false;
+            this.animationData.playback.currentCutIndex = 0;
+            this.stopPlaybackLoop();
+            this.applyCutToLayers(0);
+            this.eventBus.emit('animation:playback-stopped');
+        }
+        
+        startPlaybackLoop() {
+            const fps = this.animationData.settings.fps;
+            const frameTime = 1000 / fps;
+            
+            this.playbackTimer = setInterval(() => {
+                this.updatePlayback();
+            }, frameTime);
+        }
+        
+        stopPlaybackLoop() {
+            if (this.playbackTimer) {
+                clearInterval(this.playbackTimer);
+                this.playbackTimer = null;
+            }
+        }
+        
+        updatePlayback() {
+            const currentCut = this.animationData.cuts[
+                this.animationData.playback.currentCutIndex
+            ];
+            
+            if (!currentCut) return;
+            
+            const elapsed = (Date.now() - this.animationData.playback.startTime) / 1000;
+            
+            if (elapsed >= currentCut.duration) {
+                // 次のCUTへ
+                this.animationData.playback.currentCutIndex++;
+                
+                if (this.animationData.playback.currentCutIndex >= 
+                    this.animationData.cuts.length) {
+                    if (this.animationData.settings.loop) {
+                        this.animationData.playback.currentCutIndex = 0;
+                    } else {
+                        this.stop();
+                        return;
+                    }
+                }
+                
+                this.animationData.playback.startTime = Date.now();
+                this.applyCutToLayers(this.animationData.playback.currentCutIndex);
+            }
+        }
+        
+        // アニメーションモード切り替え
+        toggleAnimationMode() {
+            this.isAnimationMode = !this.isAnimationMode;
+            
+            if (this.isAnimationMode) {
+                this.eventBus.emit('animation:mode-entered');
+            } else {
+                this.eventBus.emit('animation:mode-exited');
+            }
+            
+            return this.isAnimationMode;
+        }
+    }
+    
+    window.TegakiAnimationSystem = AnimationSystem;
+    console.log('✅ animation-system.js loaded');
+})();
+```
+
+### 2. GIF書き出し処理（system/gif-exporter.js）
+
+```javascript
+(function() {
+    'use strict';
+    
+    class GIFExporter {
+        constructor(animationSystem, app) {
+            this.animationSystem = animationSystem;
+            this.app = app;
+            this.isExporting = false;
+        }
+        
+        async exportGIF(options = {}) {
+            if (this.isExporting) {
+                console.warn('GIF export already in progress');
+                return;
+            }
+            
+            const settings = {
+                width: options.width || window.TEGAKI_CONFIG.canvas.width,
+                height: options.height || window.TEGAKI_CONFIG.canvas.height,
+                quality: options.quality || 
+                    window.TEGAKI_CONFIG.animation.exportSettings.quality,
+                workers: window.TEGAKI_CONFIG.animation.exportSettings.workers
+            };
+            
+            // 最大サイズ制限
+            const maxSize = window.TEGAKI_CONFIG.animation.exportSettings;
+            if (settings.width > maxSize.maxWidth) {
+                const ratio = maxSize.maxWidth / settings.width;
+                settings.width = maxSize.maxWidth;
+                settings.height = Math.round(settings.height * ratio);
+            }
+            if (settings.height > maxSize.maxHeight) {
+                const ratio = maxSize.maxHeight / settings.height;
+                settings.height = maxSize.maxHeight;
+                settings.width = Math.round(settings.width * ratio);
+            }
+            
+            this.isExporting = true;
+            
+            try {
+                // gif.js 初期化
+                const gif = new GIF({
+                    workers: settings.workers,
+                    quality: settings.quality,
+                    width: settings.width,
+                    height: settings.height,
+                    workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.min.js'
+                });
+                
+                // 進捗イベント
+                gif.on('progress', (progress) => {
+                    window.TegakiEventBus.emit('gif:export-progress', { 
+                        progress: Math.round(progress * 100) 
+                    });
+                });
+                
+                // 各CUTをフレームとして追加
+                for (let i = 0; i < this.animationSystem.animationData.cuts.length; i++) {
+                    const cut = this.animationSystem.animationData.cuts[i];
+                    
+                    // CUT適用
+                    this.animationSystem.applyCutToLayers(i);
+                    
+                    // 高解像度レンダリング
+                    const renderTexture = PIXI.RenderTexture.create({
+                        width: settings.width,
+                        height: settings.height,
+                        resolution: 2 // 高解像度で生成
+                    });
+                    
+                    // キャンバスコンテナの中央化調整
+                    const tempContainer = new PIXI.Container();
+                    const offsetX = (settings.width - window.TEGAKI_CONFIG.canvas.width) / 2;
+                    const offsetY = (settings.height - window.TEGAKI_CONFIG.canvas.height) / 2;
+                    
+                    // レイヤーコンテナをコピー配置
+                    tempContainer.addChild(this.animationSystem.layerSystem.layersContainer);
+                    tempContainer.position.set(offsetX, offsetY);
+                    
+                    // レンダリング
+                    this.app.renderer.render(tempContainer, { renderTexture });
+                    
+                    // Canvas取得
+                    const canvas = this.app.renderer.extract.canvas(renderTexture);
+                    
+                    // フレーム追加（duration はミリ秒）
+                    gif.addFrame(canvas, { 
+                        delay: cut.duration * 1000 
+                    });
+                    
+                    // クリーンアップ
+                    renderTexture.destroy();
+                    tempContainer.removeChild(this.animationSystem.layerSystem.layersContainer);
+                    this.animationSystem.layerSystem.layersContainer.position.set(0, 0);
+                    
+                    // 進捗更新
+                    window.TegakiEventBus.emit('gif:frame-rendered', { 
+                        frame: i + 1, 
+                        total: this.animationSystem.animationData.cuts.length 
+                    });
+                }
+                
+                // GIF生成完了時
+                gif.on('finished', (blob) => {
+                    this.downloadGIF(blob);
+                    this.isExporting = false;
+                    window.TegakiEventBus.emit('gif:export-completed');
+                });
+                
+                // レンダリング開始
+                gif.render();
+                
+            } catch (error) {
+                console.error('GIF export failed:', error);
+                this.isExporting = false;
+                window.TegakiEventBus.emit('gif:export-failed', { error });
+            }
+        }
+        
+        downloadGIF(blob) {
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `animation_${Date.now()}.gif`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        }
+    }
+    
+    window.TegakiGIFExporter = GIFExporter;
+    console.log('✅ gif-exporter.js loaded');
+})();
+```
+
+### 3. タイムラインUI（ui/timeline-ui.js）
+
+```javascript
+(function() {
+    'use strict';
+    
+    class TimelineUI {
+        constructor(animationSystem) {
+            this.animationSystem = animationSystem;
+            this.timelinePanel = null;
+            this.cutsContainer = null;
+            this.sortable = null;
+            this.isVisible = false;
+        }
+        
+        init() {
+            this.createTimelinePanel();
+            this.setupEventListeners();
+            this.setupKeyboardShortcuts();
+            console.log('✅ TimelineUI initialized');
+        }
+        
+        createTimelinePanel() {
+            // タイムラインパネルHTML作成
+            const panel = document.createElement('div');
+            panel.className = 'timeline-panel';
+            panel.id = 'timeline-panel';
+            panel.innerHTML = `
+                <div class="timeline-header">
+                    <h3>GIFアニメーション</h3>
+                    <button class="close-btn" id="close-timeline">×</button>
+                </div>
+                
+                <div class="timeline-controls">
+                    <button id="play-btn" title="再生 (Space)">▶</button>
+                    <button id="pause-btn" title="一時停止">⏸</button>
+                    <button id="stop-btn" title="停止">⏹</button>
+                    <button id="add-cut-btn" title="CUT追加 (Alt+Plus)">+ CUT</button>
+                    <button id="export-gif-btn" title="GIF書き出し">GIF出力</button>
+                </div>
+                
+                <div class="cuts-container" id="cuts-container">
+                    <!-- CUTアイテムが動的に追加される -->
+                </div>
+                
+                <div class="timeline-settings">
+                    <label>FPS: 
+                        <input type="number" id="fps-input" 
+                               min="1" max="60" value="12">
+                    </label>
+                    <label>
+                        <input type="checkbox" id="loop-checkbox" checked>
+                        ループ再生
+                    </label>
+                </div>
+                
+                <div class="export-progress" id="export-progress" style="display: none;">
+                    <div class="progress-bar">
+                        <div class="progress-fill" id="progress-fill"></div>
+                    </div>
+                    <span id="progress-text">0%</span>
+                </div>
+            `;
+            
+            document.body.appendChild(panel);
+            this.timelinePanel = panel;
+            this.cutsContainer = document.getElementById('cuts-container');
+        }
+        
+        setupEventListeners() {
+            // 再生制御
+            document.getElementById('play-btn').addEventListener('click', () => {
+                this.animationSystem.play();
+            });
+            
+            document.getElementById('pause-btn').addEventListener('click', () => {
+                this.animationSystem.pause();
+            });
+            
+            document.getElementById('stop-btn').addEventListener('click', () => {
+                this.animationSystem.stop();
+            });
+            
+            // CUT追加
+            document.getElementById('add-cut-btn').addEventListener('click', () => {
+                this.animationSystem.createCutFromCurrentState();
+                this.updateCutsList();
+            });
+            
+            // GIF書き出し
+            document.getElementById('export-gif-btn').addEventListener('click', () => {
+                this.exportGIF();
+            });
+            
+            // パネル閉じる
+            document.getElementById('close-timeline').addEventListener('click', () => {
+                this.hide();
+            });
+            
+            // 設定変更
+            document.getElementById('fps-input').addEventListener('change', (e) => {
+                this.animationSystem.animationData.settings.fps = 
+                    parseInt(e.target.value);
+            });
+            
+            document.getElementById('loop-checkbox').addEventListener('change', (e) => {
+                this.animationSystem.animationData.settings.loop = e.target.checked;
+            });
+            
+            // EventBus連携
+            window.TegakiEventBus.on('animation:cut-created', () => {
+                this.updateCutsList();
+            });
+            
+            window.TegakiEventBus.on('gif:export-progress', (data) => {
+                this.updateExportProgress(data.progress);
+            });
+            
+            window.TegakiEventBus.on('gif:export-completed', () => {
+                this.hideExportProgress();
+            });
+        }
+        
+        setupKeyboardShortcuts() {
+            document.addEventListener('keydown', (e) => {
+                // Alt + A: アニメーションパネル表示切り替え
+                if (e.altKey && e.key === 'a') {
+                    this.toggle();
+                    e.preventDefault();
+                }
+                
+                // アニメーションモード時のみ
+                if (this.isVisible) {
+                    // Space: 再生/一時停止
+                    if (e.key === ' ' && !e.ctrlKey && !e.altKey) {
+                        if (this.animationSystem.animationData.playback.isPlaying) {
+                            this.animationSystem.pause();
+                        } else {
+                            this.animationSystem.play();
+                        }
+                        e.preventDefault();
+                    }
+                    
+                    // Alt + Plus: CUT追加
+                    if (e.altKey && e.key === '+') {
+                        this.animationSystem.createCutFromCurrentState();
+                        this.updateCutsList();
+                        e.preventDefault();
+                    }
+                }
+            });
+        }
+        
+        updateCutsList() {
+            this.cutsContainer.innerHTML = '';
+            
+            this.animationSystem.animationData.cuts.forEach((cut, index) => {
+                const cutItem = document.createElement('div');
+                cutItem.className = 'cut-item';
+                cutItem.dataset.cutIndex = index;
+                
+                // サムネイル表示
+                let thumbnailHtml = '<div class="cut-thumbnail-placeholder"></div>';
+                if (cut.thumbnailTexture) {
+                    const canvas = this.animationSystem.app.renderer
+                        .extract.canvas(cut.thumbnailTexture);
+                    thumbnailHtml = `<img src="${canvas.toDataURL()}" />`;
+                }
+                
+                cutItem.innerHTML = `
+                    <div class="cut-thumbnail">${thumbnailHtml}</div>
+                    <div class="cut-info">
+                        <div class="cut-name">${cut.name}</div>
+                        <input type="number" class="cut-duration" 
+                               value="${cut.duration}" 
+                               min="0.1" max="10" step="0.1">
+                    </div>
+                    <button class="delete-cut-btn" data-index="${index}">×</button>
+                `;
+                
+                // CUT選択
+                cutItem.addEventListener('click', (e) => {
+                    if (!e.target.classList.contains('delete-cut-btn') &&
+                        !e.target.classList.contains('cut-duration')) {
+                        this.animationSystem.applyCutToLayers(index);
+                        this.setActiveCut(index);
+                    }
+                });
+                
+                // CUT削除
+                cutItem.querySelector('.delete-cut-btn')
+                    .addEventListener('click', (e) => {
+                        this.deleteCut(index);
+                        e.stopPropagation();
+                    });
+                
+                // 時間変更
+                cutItem.querySelector('.cut-duration')
+                    .addEventListener('change', (e) => {
+                        cut.duration = parseFloat(e.target.value);
+                    });
+                
+                this.cutsContainer.appendChild(cutItem);
+            });
+            
+            // Sortable.js でドラッグ＆ドロップ
+            if (this.sortable) {
+                this.sortable.destroy();
+            }
+            
+            this.sortable = Sortable.create(this.cutsContainer, {
+                animation: 150,
+                onEnd: (evt) => {
+                    this.reorderCuts(evt.oldIndex, evt.newIndex);
+                }
+            });
+        }
+        
+        setActiveCut(index) {
+            document.querySelectorAll('.cut-item').forEach((item, i) => {
+                if (i === index) {
+                    item.classList.add('active');
+                } else {
+                    item.classList.remove('active');
+                }
+            });
+        }
+        
+        deleteCut(index) {
+            this.animationSystem.animationData.cuts.splice(index, 1);
+            this.updateCutsList();
+        }
+        
+        reorderCuts(oldIndex, newIndex) {
+            const cuts = this.animationSystem.animationData.cuts;
+            const [removed] = cuts.splice(oldIndex, 1);
+            cuts.splice(newIndex, 0, removed);
+        }
+        
+        async exportGIF() {
+            const exporter = new window.TegakiGIFExporter(
+                this.animationSystem,
+                this.animationSystem.app
+            );
+            
+            this.showExportProgress();
+            await exporter.exportGIF();
+        }
+        
+        showExportProgress() {
+            document.getElementById('export-progress').style.display = 'block';
+        }
+        
+        updateExportProgress(progress) {
+            document.getElementById('progress-fill').style.width = progress + '%';
+            document.getElementById('progress-text').textContent = progress + '%';
+        }
+        
+        hideExportProgress() {
+            document.getElementById('export-progress').style.display = 'none';
+        }
+        
+        show() {
+            this.timelinePanel.classList.add('show');
+            this.isVisible = true;
+            this.animationSystem.toggleAnimationMode();
+            this.updateCutsList();
+        }
+        
+        hide() {
+            this.timelinePanel.classList.remove('show');
+            this.isVisible = false;
+            if (this.animationSystem.isAnimationMode) {
+                this.animationSystem.toggleAnimationMode();
+            }
+        }
+        
+        toggle() {
+            if (this.isVisible) {
+                this.hide();
+            } else {
+                this.show();
+            }
+        }
+    }
+    
+    window.TegakiTimelineUI = TimelineUI;
+    console.log('✅ timeline-ui.js loaded');
+})();
