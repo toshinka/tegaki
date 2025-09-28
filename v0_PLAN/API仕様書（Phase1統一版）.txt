@@ -1,0 +1,106 @@
+# API仕様書（Phase1統一版）
+
+## EventBus（統一済み）
+```javascript
+// singleton: window.TegakiEventBus
+TegakiEventBus.on(eventName, handler)      // イベント登録
+TegakiEventBus.off(eventName, handler)     // イベント解除
+TegakiEventBus.emit(eventName, payload)    // イベント発火
+```
+
+### 標準イベント名
+- `ui:toggle-timeline` - タイムライン表示切り替え
+- `ui:show-timeline` - タイムライン表示
+- `ui:hide-timeline` - タイムライン非表示
+- `animation:play` - アニメーション再生
+- `animation:stop` - アニメーション停止
+- `animation:loop:set` - ループ設定変更
+- `animation:play-toggle` - 再生/停止切り替え
+- `history:undo` - アンドゥ実行
+- `history:redo` - リドゥ実行
+- `history:record` - 履歴記録
+
+## LayerSystem（統一API）
+```javascript
+LayerSystem.createLayer(options)          // レイヤー作成
+LayerSystem.deleteLayer(id)               // レイヤー削除
+LayerSystem.setActiveLayer(id)            // アクティブレイヤー設定
+LayerSystem.clearLayer(id)                // レイヤー内容消去
+LayerSystem.drawTexture(layerId, texture, opts) // テクスチャ描画
+LayerSystem.applyTransform(layerId, transform)  // 変形適用
+LayerSystem.getLayerBitmap(layerId)       // レイヤー内容取得
+```
+
+## AnimationSystem（2次元構造対応）
+```javascript
+AnimationSystem.play()                    // 再生開始
+AnimationSystem.stop()                    // 再生停止
+AnimationSystem.setLoop(enabled)          // ループ設定
+AnimationSystem.setFPS(fps)               // FPS設定
+AnimationSystem.createNewCutFromCurrentLayers() // CUT作成
+AnimationSystem.createNewEmptyCut()       // 空CUT作成
+AnimationSystem.switchToActiveCut(index) // CUT切り替え
+AnimationSystem.updateCutDuration(index, duration) // CUT時間変更
+AnimationSystem.getAnimationData()       // アニメデータ取得
+```
+
+## CoreRuntime API（UI層専用窓口）
+```javascript
+// ツール操作
+CoreRuntime.api.setTool(toolName)         // ツール切り替え
+CoreRuntime.api.setBrushSize(size)        // ブラシサイズ設定
+CoreRuntime.api.setBrushOpacity(opacity)  // ブラシ不透明度設定
+
+// レイヤー操作
+CoreRuntime.api.createLayer(name)         // レイヤー作成
+CoreRuntime.api.setActiveLayer(index)     // アクティブレイヤー設定
+CoreRuntime.api.deleteLayer(index)        // レイヤー削除
+CoreRuntime.api.exitLayerMoveMode()       // レイヤー移動モード終了
+
+// キャンバス操作
+CoreRuntime.api.resizeCanvas(width, height) // キャンバスリサイズ
+```
+
+## CoordinateSystem（座標変換統一）
+```javascript
+CoordinateSystem.toWorld(localPos)        // ローカル→ワールド変換
+CoordinateSystem.fromWorld(worldPos)      // ワールド→ローカル変換
+CoordinateSystem.localToGlobal(container, pos) // 座標変換
+```
+
+## History（履歴管理）
+```javascript
+History.push(command)                      // コマンド追加
+History.undo()                            // アンドゥ実行
+History.redo()                            // リドゥ実行
+```
+
+### Command構造
+```javascript
+{
+    undo: function() { /* 元に戻す処理 */ },
+    redo: function() { /* やり直す処理 */ },
+    meta: { type: 'operation-type', ... }
+}
+```
+
+## DrawingClipboard（クリップボード操作）
+```javascript
+DrawingClipboard.get()                     // クリップボード内容取得
+DrawingClipboard.pasteToActiveLayer()      // アクティブレイヤーに貼り付け
+DrawingClipboard.pasteAsNewLayer()         // 新規レイヤーに貼り付け
+```
+
+---
+
+## 座標基準統一ルール
+
+### 基本原則
+- **ワールド座標系**: Canvas原点左上（0,0）を基準
+- **変換処理**: CoordinateSystem.toWorld()/fromWorld()のみ使用
+- **レイヤー操作**: LayerSystemは内部でワールド座標を採用
+
+### 禁止事項
+- 直接的な座標計算（CoordinateSystem経由必須）
+- ファイル間での座標基準の混在
+- 独自の座標変換処理実装
