@@ -1596,26 +1596,33 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
 
-    <!-- Phase 1: 基盤ファイル読み込み順序 -->
-    <script src="system/event-bus.js"></script>
+    <!-- 1. 基本設定・API -->
     <script src="config.js"></script>
     <script src="coordinate-system.js"></script>
-
-    <!-- システム -->
-    <script src="system/layer-system.js"></script>
+    
+    <!-- 2. EventBus（最優先） -->
+    <script src="system/event-bus.js"></script>
+    
+    <!-- 3. システム層 -->
     <script src="system/camera-system.js"></script>
+    <script src="system/layer-system.js"></script>
     <script src="system/drawing-clipboard.js"></script>
+    <script src="system/history.js"></script>
+    
+    <!-- 4. 【修正】AnimationSystemとTimelineUI -->
     <script src="system/animation-system.js"></script>
     <script src="system/gif-exporter.js"></script>
-    <script src="system/history.js"></script>
-
-    <!-- UI -->
-    <script src="ui/ui-panels.js"></script>
     <script src="ui/timeline-ui.js"></script>
-
-    <!-- コア -->
+    
+    <!-- 5. UI -->
+    <script src="ui/ui-panels.js"></script>
+    
+    <!-- 6. エンジン層 -->
     <script src="core-runtime.js"></script>
     <script src="core-engine.js"></script>
+    
+    <!-- 7. 診断システム -->
+    <script src="system/diagnostics.js"></script>
     
     <script>
 // Phase 1対応版：依存関係チェック関数
