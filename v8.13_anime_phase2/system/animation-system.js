@@ -1,8 +1,9 @@
-// ===== system/animation-system.js - 構文エラー修正版 =====
+// ===== system/animation-system.js - updateCurrentCutLayer修正版 =====
 // 【修正完了】レイヤー二重表示問題修正
 // 【修正完了】描画位置ズレ問題修正  
 // 【修正完了】タイムライン停止位置修正
 // 【修正完了】構文エラー修正
+// 【修正完了】updateCurrentCutLayer メソッド追加
 // PixiJS v8.13 対応
 
 (function() {
@@ -821,6 +822,82 @@
         
         // === LayerSystem連携メソッド ===
         
+        // 【新規追加】LayerSystemから呼び出される updateCurrentCutLayer メソッド
+        updateCurrentCutLayer(layerIndex, updateData) {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut || !this.layerSystem) {
+                console.warn('No current CUT or LayerSystem available for layer update');
+                return;
+            }
+            
+            // LayerSystemのレイヤー情報を取得
+            const layer = this.layerSystem.layers[layerIndex];
+            if (!layer || !layer.layerData) {
+                console.warn('Invalid layer index or layer data:', layerIndex);
+                return;
+            }
+            
+            const layerId = layer.layerData.id;
+            
+            // 現在CUT内の対応するレイヤーを検索
+            const cutLayerIndex = currentCut.layers.findIndex(cutLayer => cutLayer.id === layerId);
+            
+            if (cutLayerIndex === -1) {
+                console.warn('Layer not found in current CUT:', layerId);
+                return;
+            }
+            
+            // CUT内レイヤーデータを更新
+            const cutLayer = currentCut.layers[cutLayerIndex];
+            
+            if (updateData.transform) {
+                cutLayer.transform = {
+                    x: updateData.transform.x !== undefined ? updateData.transform.x : cutLayer.transform.x,
+                    y: updateData.transform.y !== undefined ? updateData.transform.y : cutLayer.transform.y,
+                    rotation: updateData.transform.rotation !== undefined ? updateData.transform.rotation : cutLayer.transform.rotation,
+                    scaleX: updateData.transform.scaleX !== undefined ? updateData.transform.scaleX : cutLayer.transform.scaleX,
+                    scaleY: updateData.transform.scaleY !== undefined ? updateData.transform.scaleY : cutLayer.transform.scaleY
+                };
+                console.log('🔧 CUT layer transform updated:', layerId, cutLayer.transform);
+            }
+            
+            if (updateData.visible !== undefined) {
+                cutLayer.visible = updateData.visible;
+                console.log('👁️ CUT layer visibility updated:', layerId, cutLayer.visible);
+            }
+            
+            if (updateData.opacity !== undefined) {
+                cutLayer.opacity = updateData.opacity;
+                console.log('🔍 CUT layer opacity updated:', layerId, cutLayer.opacity);
+            }
+            
+            // パス情報も更新（必要に応じて）
+            if (updateData.paths) {
+                cutLayer.paths = updateData.paths;
+                console.log('✏️ CUT layer paths updated:', layerId);
+            }
+            
+            // タイムスタンプ更新
+            cutLayer.timestamp = Date.now();
+            
+            // EventBus通知
+            if (this.eventBus) {
+                this.eventBus.emit('animation:current-cut-layer-updated', {
+                    cutIndex: this.animationData.playback.currentCutIndex,
+                    layerIndex: cutLayerIndex,
+                    layerId: layerId,
+                    updateData: updateData
+                });
+            }
+            
+            // サムネイル更新を遅延実行
+            setTimeout(() => {
+                this.generateCutThumbnail(this.animationData.playback.currentCutIndex);
+            }, 100);
+            
+            return cutLayer;
+        }
+        
         saveLayerTransformToCurrentCut(layerId, transform) {
             const currentCut = this.getCurrentCut();
             if (!currentCut) return;
@@ -1164,7 +1241,7 @@
                 hasInitialized: this.hasInitialized
             };
             
-            console.log('AnimationSystem Debug Info (構文エラー修正版):');
+            console.log('AnimationSystem Debug Info (updateCurrentCutLayer修正版):');
             console.log('- Animation Mode:', info.isAnimationMode);
             console.log('- Cuts Count:', info.cutsCount);
             console.log('- Initial Cut Created:', info.initialCutCreated);
@@ -1184,6 +1261,7 @@
             console.log('- 🔧 Safe CUT Switching: ✅');
             console.log('- 🔧 Timeline Stop Position Fix: ✅');
             console.log('- 🔧 Syntax Error Fixed: ✅');
+            console.log('- 🚀 updateCurrentCutLayer Added: ✅');
             console.log('- Cut Structure:', info.cutStructure);
             
             return info;
@@ -1192,7 +1270,7 @@
     
     // グローバル公開
     window.TegakiAnimationSystem = AnimationSystem;
-    console.log('✅ animation-system.js loaded (構文エラー修正版)');
+    console.log('✅ animation-system.js loaded (updateCurrentCutLayer修正版)');
     console.log('🔧 修正完了:');
     console.log('  - ✅ 構文エラー修正: ファイル完全整理');
     console.log('  - ✅ レイヤー二重表示問題修正: 重複防止フラグ強化');
@@ -1202,6 +1280,7 @@
     console.log('  - ✅ 新規CUT作成時絵消失防止: saveCutLayerStatesBeforeSwitch()');
     console.log('  - ✅ 初期化処理重複防止: hasInitialized フラグ');
     console.log('  - ✅ Shift+N空CUT作成対応: createNewBlankCut()');
+    console.log('  - 🚀 updateCurrentCutLayer実装: LayerSystem連携エラー修正');
     console.log('  - ✅ 座標変換API統一・レイヤーAPI統合・EventBus完全性確保');
     console.log('  - ✅ PixiJS v8.13完全対応・二重実装排除・アーキテクチャ改善');
 
