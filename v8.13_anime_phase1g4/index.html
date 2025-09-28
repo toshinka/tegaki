@@ -142,9 +142,9 @@
         
         .layer-add-button svg { width: 18px; height: 18px; stroke: #800000; }
         
-        /* CUT表示インジケータ - 初期表示対応 */
+        /* 【改修】CUT表示インジケータ - 横並び改善版 */
         .cut-indicator {
-            display: flex; /* 初期状態から表示 */
+            display: flex;
             flex-direction: row;
             align-items: center;
             background: var(--futaba-cream);
@@ -153,15 +153,15 @@
             padding: 4px 8px;
             box-shadow: 0 2px 8px rgba(128, 0, 0, 0.2);
             pointer-events: all;
-            gap: 6px;
+            gap: 8px; /* 間隔拡大 */
             font-size: 11px;
             font-weight: bold;
             margin-bottom: 4px;
         }
         
         .cut-nav-btn {
-            width: 20px;
-            height: 20px;
+            width: 24px; /* サイズ拡大 */
+            height: 24px;
             background: var(--futaba-background);
             border: 1px solid var(--futaba-medium);
             border-radius: 4px;
@@ -169,7 +169,7 @@
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            font-size: 10px;
+            font-size: 12px; /* アイコンサイズ拡大 */
             color: var(--futaba-maroon);
             transition: all 0.2s ease;
         }
@@ -188,7 +188,7 @@
         .cut-display {
             color: var(--futaba-maroon);
             font-weight: bold;
-            min-width: 40px;
+            min-width: 50px; /* 幅拡大 */
             text-align: center;
         }
         
@@ -269,7 +269,7 @@
             grid-column: 2;
             grid-row: 1;
             font-size: 10px;
-            color: var(--futaba-maroon); /* 文字色統一 */
+            color: var(--futaba-maroon);
             font-family: monospace;
             align-self: start;
             margin-top: 2px;
@@ -279,7 +279,7 @@
             grid-column: 2;
             grid-row: 2;
             font-size: 12px;
-            color: var(--futaba-maroon); /* 文字色統一 */
+            color: var(--futaba-maroon);
             font-weight: 500;
             white-space: nowrap;
             overflow: hidden;
@@ -593,7 +593,7 @@
             border-color: var(--futaba-maroon);
         }
 
-        /* タイムラインパネル - 改善版 */
+        /* 【改修】タイムラインパネル - 横並び改善版 */
         .timeline-panel {
             position: fixed;
             bottom: 16px;
@@ -602,9 +602,9 @@
             background: var(--futaba-cream);
             border: 1px solid var(--futaba-medium);
             border-radius: 8px;
-            padding: 8px 12px; /* パディングを少し増やしてスライダー用スペース確保 */
+            padding: 8px 12px;
             z-index: 1500;
-            max-height: 140px; /* 高さを少し増やしてサムネイルスライダー対応 */
+            max-height: 140px;
             display: none;
             box-shadow: 0 4px 16px rgba(128, 0, 0, 0.2);
             backdrop-filter: blur(8px);
@@ -620,38 +620,37 @@
             to   { opacity: 1; transform: translateY(0) scale(1); }
         }
 
-        /* CUTアイテムエリア - 改善版 */
+        /* 【改修】CUTアイテムエリア - 横並び改善版 */
         .cuts-container {
             display: flex;
-            gap: 4px;
+            gap: 6px; /* 間隔拡大 */
             overflow-x: auto;
-            padding: 4px 0 6px 0; /* 底部パディング増加でスライダー用スペース */
+            padding: 4px 0 8px 0;
             margin-bottom: 8px;
-            max-height: 80px; /* 高さを増やしてサムネイル拡張に対応 */
-
+            max-height: 80px;
         }
 
         .cuts-container::-webkit-scrollbar {
-            height: 4px; /* スクロールバーサイズを少し増加 */
+            height: 6px; /* スクロールバーサイズ拡大 */
         }
 
         .cuts-container::-webkit-scrollbar-track {
             background: var(--futaba-light-medium);
-            border-radius: 2px;
+            border-radius: 3px;
         }
 
         .cuts-container::-webkit-scrollbar-thumb {
             background: var(--futaba-maroon);
-            border-radius: 2px;
+            border-radius: 3px;
         }
 
-        /* 改善版CUTアイテム */
+        /* 【改修】CUTアイテム - 横幅拡張版 */
         .cut-item {
-            min-width: 52px; /* 幅を少し拡張 */
+            min-width: 60px; /* 幅拡張 */
             background: var(--futaba-background);
             border: 1px solid var(--futaba-light-medium);
             border-radius: 4px;
-            padding: 2px;
+            padding: 3px;
             cursor: pointer;
             position: relative;
             transition: all 0.2s ease;
@@ -676,13 +675,13 @@
         }
 
         .cut-thumbnail {
-            width: 46px; /* 幅拡張 */
-            height: 34px; /* 高さ拡張 */
+            width: 52px; /* 幅拡張 */
+            height: 36px; /* 高さ拡張 */
             background: var(--futaba-background);
             border: 1px solid var(--futaba-light-medium);
             border-radius: 3px;
             overflow: hidden;
-            margin-bottom: 2px;
+            margin-bottom: 3px;
             position: relative;
         }
 
@@ -704,42 +703,76 @@
             display: flex;
             align-items: center;
             justify-content: center;
-            color: var(--futaba-maroon); /* 文字色統一 */
-            font-size: 7px;
+            color: var(--futaba-maroon);
+            font-size: 8px;
             font-weight: bold;
         }
 
         .cut-name {
-            font-size: 7px; /* フォントサイズを少し拡大 */
-            color: var(--futaba-maroon); /* 文字色統一 */
-            margin-bottom: 2px;
+            font-size: 8px;
+            color: var(--futaba-maroon);
+            margin-bottom: 3px;
             font-weight: 600;
             text-align: center;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
-            max-width: 46px;
+            max-width: 52px;
             line-height: 1.2;
         }
 
-        /* 改善版：表示時間スライダー - 横幅いっぱいに拡張 */
-        .cut-duration {
-            width: 46px; /* 親アイテムと同じ幅で目一杯に */
-            height: 12px; /* 高さを少し増やして視認性向上 */
-            font-size: 7px; /* フォントサイズ拡大 */
-            text-align: center;
+        /* 【改修】表示時間コントロール - 横並び◀▶スタイル */
+        .cut-duration-container {
+            width: 52px;
+            height: 18px; /* 高さ拡大 */
+            display: flex;
+            align-items: center;
             border: 1px solid var(--futaba-light-medium);
             border-radius: 3px;
-            padding: 2px 4px;
             background: var(--futaba-background);
-            font-family: monospace;
-            color: var(--futaba-maroon); /* 文字色統一 */
+            overflow: hidden;
             margin-bottom: 2px;
         }
-
-        .cut-duration:focus {
+        
+        .duration-decrease, .duration-increase {
+            width: 14px; /* ボタン幅拡大 */
+            height: 100%;
+            background: var(--futaba-light-medium);
+            border: none;
+            color: var(--futaba-maroon);
+            font-size: 10px; /* アイコンサイズ拡大 */
+            font-weight: bold;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            line-height: 1;
+        }
+        
+        .duration-decrease:hover, .duration-increase:hover {
+            background: var(--futaba-medium);
+        }
+        
+        .duration-decrease:active, .duration-increase:active {
+            background: var(--futaba-maroon);
+            color: var(--futaba-background);
+        }
+        
+        .cut-duration {
+            flex: 1;
+            height: 100%;
+            border: none;
+            background: transparent;
+            text-align: center;
+            font-size: 8px; /* フォントサイズ拡大 */
+            font-family: monospace;
+            color: var(--futaba-maroon);
+            padding: 0 2px;
             outline: none;
-            border-color: var(--futaba-maroon);
+        }
+        
+        .cut-duration:focus {
             background: var(--futaba-cream);
         }
 
@@ -747,13 +780,13 @@
             position: absolute;
             top: -3px;
             right: -3px;
-            width: 14px;
-            height: 14px;
+            width: 16px; /* サイズ拡大 */
+            height: 16px;
             background: rgba(128, 0, 0, 0.9);
             border: none;
             border-radius: 50%;
             color: white;
-            font-size: 8px;
+            font-size: 10px;
             line-height: 1;
             cursor: pointer;
             opacity: 0;
@@ -773,38 +806,38 @@
             transform: scale(1.1);
         }
 
-        /* 改善版下部コントロール - 一時停止削除、再生ボタン中央 */
+        /* 【改修】改善版下部コントロール - 横並び配置 */
         .timeline-bottom {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            gap: 12px;
-            height: 30px; /* 高さを少し増やす */
+            gap: 16px; /* 間隔拡大 */
+            height: 32px; /* 高さ拡大 */
         }
 
         .timeline-controls {
             display: flex;
-            gap: 4px;
+            gap: 6px; /* 間隔拡大 */
             align-items: center;
             flex: 1;
-            justify-content: center; /* 中央に配置 */
+            justify-content: center;
         }
 
         .timeline-controls button {
-            padding: 4px 8px;
+            padding: 6px 12px; /* パディング拡大 */
             background: var(--futaba-background);
             border: 1px solid var(--futaba-medium);
             border-radius: 4px;
             cursor: pointer;
             transition: all 0.2s ease;
-            font-size: 11px; /* フォントサイズを少し拡大 */
-            color: var(--futaba-maroon); /* 文字色統一 */
-            min-width: 32px; /* ボタンサイズを少し拡張 */
-            height: 24px;
+            font-size: 12px; /* フォントサイズ拡大 */
+            color: var(--futaba-maroon);
+            min-width: 36px; /* ボタン幅拡大 */
+            height: 28px; /* ボタン高さ拡大 */
             display: flex;
             align-items: center;
             justify-content: center;
-            font-weight: 600; /* 太字にして視認性向上 */
+            font-weight: 600;
         }
 
         .timeline-controls button:hover {
@@ -823,7 +856,6 @@
             transform: none;
         }
 
-        /* 再生/停止ボタンの状態切り替え強調 */
         .timeline-controls button#play-btn.playing {
             background: var(--futaba-maroon);
             color: var(--text-inverse);
@@ -832,32 +864,32 @@
 
         .timeline-settings {
             display: flex;
-            gap: 8px;
-            font-size: 10px;
+            gap: 10px; /* 間隔拡大 */
+            font-size: 11px; /* フォントサイズ拡大 */
             align-items: center;
-            color: var(--futaba-maroon); /* 文字色統一 */
+            color: var(--futaba-maroon);
         }
 
         .timeline-settings label {
             display: flex;
             align-items: center;
-            gap: 3px;
+            gap: 4px;
             white-space: nowrap;
-            font-weight: 600; /* 太字にして視認性向上 */
-            color: var(--futaba-maroon); /* 文字色統一 */
+            font-weight: 600;
+            color: var(--futaba-maroon);
         }
 
         .timeline-settings input[type="number"] {
-            width: 36px; /* 幅を少し拡大 */
-            height: 24px; /* 高さを少し拡大 */
-            padding: 2px 4px;
+            width: 42px; /* 幅拡大 */
+            height: 28px; /* 高さ拡大 */
+            padding: 4px 6px; /* パディング拡大 */
             border: 1px solid var(--futaba-light-medium);
             border-radius: 3px;
             background: var(--futaba-background);
             text-align: center;
-            font-size: 10px;
+            font-size: 11px; /* フォントサイズ拡大 */
             font-family: monospace;
-            color: var(--futaba-maroon); /* 文字色統一 */
+            color: var(--futaba-maroon);
         }
 
         .timeline-settings input[type="number"]:focus {
@@ -866,20 +898,20 @@
         }
 
         .timeline-settings input[type="checkbox"] {
-            margin-right: 3px;
-            transform: scale(0.9);
+            margin-right: 4px; /* 間隔拡大 */
+            transform: scale(1.0); /* サイズ正常化 */
         }
 
         .timeline-close {
             background: none;
             border: none;
-            font-size: 14px;
+            font-size: 16px; /* サイズ拡大 */
             color: var(--futaba-maroon);
             cursor: pointer;
-            padding: 3px 6px;
+            padding: 4px 8px; /* パディング拡大 */
             border-radius: 4px;
             transition: background-color 0.2s ease;
-            height: 24px;
+            height: 28px; /* 高さ統一 */
             display: flex;
             align-items: center;
             justify-content: center;
@@ -924,7 +956,7 @@
 
         .export-progress span {
             font-size: 9px;
-            color: var(--futaba-maroon); /* 文字色統一 */
+            color: var(--futaba-maroon);
             font-family: monospace;
             font-weight: 600;
         }
@@ -933,7 +965,6 @@
             margin-bottom: 22px;
         }
         
-        /* ステータスパネル - 文字色統一 */
         .status-panel {
             position: fixed;
             top: 10px;
@@ -948,7 +979,7 @@
             justify-content: space-between;
             align-items: center;
             box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
-            z-index: 10000;
+            z-index: 1000;
             max-width: calc(100vw - 270px);
             flex-wrap: wrap;
             gap: 16px;
@@ -965,11 +996,11 @@
             display: flex;
             align-items: center;
             gap: 4px;
-            color: var(--futaba-maroon); /* 文字色統一 */
+            color: var(--futaba-maroon);
         }
         
         .status-item span {
-            color: var(--futaba-maroon); /* 文字色統一 */
+            color: var(--futaba-maroon);
             font-weight: 500;
         }
     </style>
@@ -1005,21 +1036,21 @@
     </div>
     
     <div class="layer-panel-container" id="layer-panel-container">
-        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加 (Ctrl+Shift+N)">
+        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加 (Shift+N)">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
         </div>
         
         <div class="layer-panel-items" id="layer-list"></div>
     </div>
     
-    <!-- タイムラインパネル - 改善版 -->
+    <!-- 【改修】タイムラインパネル - 横並び改善版 -->
     <div class="timeline-panel" id="timeline-panel">
         <!-- CUTアイテムエリア -->
         <div class="cuts-container" id="cuts-container">
             <!-- CUTアイテムが動的に追加される -->
         </div>
         
-        <!-- コントロールエリア - 一時停止削除、再生ボタン中央配置 -->
+        <!-- 【改修】コントロールエリア - 横並び配置 -->
         <div class="timeline-bottom">
             <div class="timeline-settings">
                 <label>FPS: 
@@ -1179,6 +1210,7 @@
     <script src="system/drawing-clipboard.js"></script>
     <script src="system/animation-system.js"></script>
     <script src="system/gif-exporter.js"></script>
+    <script src="system/history.js"></script>
 
     <!-- UI -->
     <script src="ui/ui-panels.js"></script>
@@ -1206,7 +1238,6 @@ function checkPhase1Dependencies() {
         throw new Error(`Phase 1 Dependencies not loaded: ${missing.map(d => d.name).join(', ')}`);
     }
     
-    // アニメーション設定確認
     if (!window.TEGAKI_CONFIG.animation) {
         console.error('❌ Animation config missing in TEGAKI_CONFIG');
         throw new Error('Animation configuration not found');
@@ -1218,7 +1249,6 @@ function checkPhase1Dependencies() {
     return true;
 }
 
-// Phase 1対応版チェック
 try {
     checkPhase1Dependencies();
 } catch (error) {
@@ -1227,11 +1257,152 @@ try {
     </script>
     
     <script>
-// Phase 1完了版：統合されたmain.js
+// 【改修】ショートカット改善版：Canvas限定キーイベント・Undo/Redo統合
 (function() {
     'use strict';
     
-    // Phase 1: CoreRuntime使用の安全な初期化
+    // 【改修】Canvas限定ショートカット処理
+    function setupImprovedKeyboardShortcuts() {
+        // キーイベントをCanvasに限定
+        let canvas = null;
+        let focusCheckAttempts = 0;
+        const maxAttempts = 10;
+        
+        function waitForCanvas() {
+            canvas = document.querySelector('#drawing-canvas canvas') || 
+                    document.querySelector('canvas');
+            
+            if (canvas && focusCheckAttempts < maxAttempts) {
+                console.log('✅ Canvas found for keyboard shortcuts');
+                setupCanvasKeyEvents();
+            } else if (focusCheckAttempts < maxAttempts) {
+                focusCheckAttempts++;
+                setTimeout(waitForCanvas, 500);
+            } else {
+                console.warn('Canvas not found - using document keyboard events');
+                setupDocumentKeyEvents();
+            }
+        }
+        
+        function setupCanvasKeyEvents() {
+            // Canvasにフォーカス可能にする
+            canvas.tabIndex = 0;
+            canvas.style.outline = 'none';
+            
+            // Canvas限定キーイベント
+            canvas.addEventListener('keydown', handleKeyDown);
+            
+            // アプリ起動時にCanvasにフォーカス
+            setTimeout(() => canvas.focus(), 100);
+            
+            console.log('✅ Canvas-specific keyboard shortcuts enabled');
+        }
+        
+        function setupDocumentKeyEvents() {
+            // フォールバック：document全体でのキーイベント
+            document.addEventListener('keydown', handleKeyDown);
+            console.log('✅ Document keyboard shortcuts enabled (fallback)');
+        }
+        
+        function handleKeyDown(e) {
+            // 【改修】ショートカット改善：ブラウザ競合回避
+            
+            // Ctrl+Z: Undo
+            if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey) {
+                if (window.History && window.History.undo) {
+                    window.History.undo();
+                    e.preventDefault();
+                    console.log('🔄 Undo executed via Ctrl+Z');
+                }
+                return;
+            }
+            
+            // Ctrl+Y: Redo
+            if (e.ctrlKey && e.code === 'KeyY' && !e.shiftKey) {
+                if (window.History && window.History.redo) {
+                    window.History.redo();
+                    e.preventDefault();
+                    console.log('🔄 Redo executed via Ctrl+Y');
+                }
+                return;
+            }
+            
+            // Shift+N: 新規レイヤー作成（ブラウザ競合回避）
+            if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('layer:create-new');
+                    e.preventDefault();
+                    console.log('🆕 New layer requested via Shift+N');
+                }
+                return;
+            }
+            
+            // Shift+C: CUTコピー
+            if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('cut:copy-current');
+                    e.preventDefault();
+                    console.log('📋 CUT copy requested via Shift+C');
+                }
+                return;
+            }
+            
+            // Shift+V: CUT貼り付け
+            if (e.shiftKey && e.code === 'KeyV' && !e.ctrlKey && !e.altKey) {
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('cut:paste-new');
+                    e.preventDefault();
+                    console.log('📋 CUT paste requested via Shift+V');
+                }
+                return;
+            }
+            
+            // Alt+A: GIFアニメーション切り替え
+            if (e.altKey && e.code === 'KeyA' && !e.ctrlKey && !e.shiftKey) {
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('ui:toggle-timeline');
+                    e.preventDefault();
+                    console.log('🎬 Timeline toggle requested via Alt+A');
+                }
+                return;
+            }
+            
+            // Alt+Space: 再生/停止
+            if (e.altKey && e.code === 'Space' && !e.ctrlKey && !e.shiftKey) {
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('animation:play-toggle');
+                    e.preventDefault();
+                    console.log('⏯️ Play/Stop toggle requested via Alt+Space');
+                }
+                return;
+            }
+            
+            // P: ペンツール
+            if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('tool:select', { tool: 'pen' });
+                    e.preventDefault();
+                    console.log('✏️ Pen tool selected via P');
+                }
+                return;
+            }
+            
+            // E: 消しゴムツール
+            if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('tool:select', { tool: 'eraser' });
+                    e.preventDefault();
+                    console.log('🧽 Eraser tool selected via E');
+                }
+                return;
+            }
+        }
+        
+        // 初期化
+        waitForCanvas();
+    }
+    
+    // Phase 1対応版：統合されたmain.js
     function checkCoreRuntime() {
         if (!window.CoreRuntime) {
             console.error('❌ CoreRuntime not loaded - check core-runtime.js loading');
@@ -1247,7 +1418,6 @@ try {
         return true;
     }
     
-    // Phase 1: アプリケーション初期化
     function initializeApp() {
         const CoreEngine = window.TegakiCore.CoreEngine;
         const CONFIG = window.TEGAKI_CONFIG;
@@ -1266,7 +1436,6 @@ try {
                     throw new Error('Canvas container not found');
                 }
                 
-                // PixiJS初期化
                 this.pixiApp = new PIXI.Application();
                 
                 const screenWidth = window.innerWidth - 50;
@@ -1287,11 +1456,9 @@ try {
                 this.pixiApp.canvas.style.width = `${screenWidth}px`;
                 this.pixiApp.canvas.style.height = `${screenHeight}px`;
                 
-                // CoreEngine初期化
                 this.coreEngine = new CoreEngine(this.pixiApp);
                 const drawingApp = this.coreEngine.initialize();
                 
-                // CoreRuntime初期化
                 CoreRuntime.init({
                     app: this.pixiApp,
                     worldContainer: this.coreEngine.getCameraSystem().worldContainer,
@@ -1301,14 +1468,12 @@ try {
                     drawingEngine: this.coreEngine.getDrawingEngine()
                 });
                 
-                // UI初期化
                 this.uiController = new UIController(
                     this.coreEngine.getDrawingEngine(), 
                     this.coreEngine.getLayerManager(), 
                     this.pixiApp
                 );
                 
-                // CoreRuntime経由でのキャンバスリサイズ統合
                 window.drawingAppResizeCanvas = (newWidth, newHeight) => {
                     console.log('DrawingApp: Canvas resize request via CoreRuntime:', newWidth, 'x', newHeight);
                     return CoreRuntime.api.resizeCanvas(newWidth, newHeight);
@@ -1327,6 +1492,9 @@ try {
                     cameraSystem.initializeCamera();
                     cameraSystem.updateGuideLinesForCanvasResize();
                 });
+                
+                // 【改修】改善されたショートカット初期化
+                setupImprovedKeyboardShortcuts();
                 
                 // 情報表示・モニタリング
                 this.updateCanvasInfo();
@@ -1380,6 +1548,30 @@ try {
         return DrawingApp;
     }
     
+    // 【改修】History統合イベントリスナー
+    function setupHistoryIntegration() {
+        if (window.TegakiEventBus && window.History) {
+            // EventBus経由でUndo/Redoイベント処理
+            window.TegakiEventBus.on('history:undo-request', () => {
+                window.History.undo();
+            });
+            
+            window.TegakiEventBus.on('history:redo-request', () => {
+                window.History.redo();
+            });
+            
+            // History状態変更通知
+            window.TegakiEventBus.on('history:changed', (data) => {
+                const historyElement = document.getElementById('history-info');
+                if (historyElement) {
+                    historyElement.textContent = `${data.undoCount}/${window.History.MAX_HISTORY || 50}`;
+                }
+            });
+            
+            console.log('✅ History system integrated with EventBus');
+        }
+    }
+    
     // Phase 1: 段階的初期化処理
     window.addEventListener('DOMContentLoaded', async () => {
         try {
@@ -1395,7 +1587,10 @@ try {
             const app = new DrawingApp();
             await app.initialize();
             
-            // Step 3: 座標系診断実行
+            // Step 3: History統合
+            setupHistoryIntegration();
+            
+            // Step 4: 座標系診断実行
             const diagnosis = window.CoordinateSystem.diagnoseReferences();
             console.log('🔍 Coordinate System Diagnosis:', diagnosis);
             
@@ -1407,6 +1602,14 @@ try {
             console.log('✅ Layer panel CUT indicator added');
             console.log('✅ Play button state switching implemented');
             console.log('✅ Slim timeline layout applied');
+            console.log('🔧 Improved keyboard shortcuts:');
+            console.log('   - Shift+N: New layer (browser-safe)');
+            console.log('   - Shift+C: Copy CUT');
+            console.log('   - Shift+V: Paste CUT');
+            console.log('   - Ctrl+Z: Undo');
+            console.log('   - Ctrl+Y: Redo');
+            console.log('   - Alt+A: Timeline toggle');
+            console.log('   - Alt+Space: Play/Stop toggle');
             console.log('✅ Ready for Phase 2 advanced features');
             
         } catch (error) {

@@ -1,230 +1,243 @@
-結論（要点）
+# 改修計画書 — v8.13_anime_phase1g3 (GIFアニメ実装対応)
 
-「アイコンをクリックしてもタイムラインが出ない」原因は概ね Timeline UI が正しく公開／初期化されていない（= 登録されない or DOM 要素が無い） ためです。タイムライン側の init() が早期 return している箇所が確認できます。
-GitHub
+**対象リポジトリ/ファイル群**
 
-他に「EventBus の二重実装」「座標系 API の参照統一」「ロード順（DOM とスクリプト順）の不一致」「Layer API の表面化不足（期待されるプロパティが揃っているか）」が見られるため、優先的に統合・整理する必要があります。根拠は core-engine / event-bus / animation-system / coordinate-system の実装です。
-GitHub
-+3
-GitHub
-+3
-GitHub
-+3
+* `index.html` (UI・初期化、ショートカットハンドラ、DOM)
+* `system/layer-system.js` (レイヤ管理)
+* `system/camera-system.js` / `coordinate-system.js` (座標変換・カメラ)
+* `system/event-bus.js` (イベント統合)
+* `system/history.js` (Undo/Redo)
+* `ui/timeline-ui.js` (表示時間ボタン等)
+* `system/gif-exporter.js` (GIF出力)
+* `system/drawing-clipboard.js` (CUTコピー/貼付け)
+* `system/diagnostics.js` (診断用)
 
-以下、詳細 → 優先修正案 → 動作確認手順 をそのまま適用できるように提示します。
+> 実行環境：Chrome（file://可）、PixiJS v8.13（CDN）
 
-1) 問題の技術的根拠（短く）
+---
 
-TimelineUI の init() は最初に DOM 要素を取りに行き、見つからないと return しています。つまりタイムライン用の DOM（例：#timeline-panel / #cuts-container）が存在しないか、Timeline クラス自体がグローバルに公開されていないと初期化がスキップされます。該当箇所：if (!this.timelinePanel || !this.cutsContainer) { console.error('Timeline UI elements not found'); return; }。
-GitHub
+## 目的 (概要)
 
-UI 側（ツールアイコン）は EventBus を emit('ui:toggle-timeline') しています → EventBus 側は window.TegakiEventBus が用意されています。が、Timeline が登録されていないため受け取られません。
-GitHub
-+1
+GIFアニメ実装中に発現している下記不具合を原因調査・優先順位を付けて段階的に改修する。
 
-core-engine 側は AnimationSystem と TimelineUI の存在を見て初期化していますが、TimelineUI のグローバル公開 (window.TegakiTimelineUI) が不足またはスクリプトロード順の問題で未定義の可能性があります（core-engine は if (!window.TegakiTimelineUI) { ... timeline UI disabled } を想定）。
-GitHub
+* レイヤーパネルで「レイヤー1」と「背景」が二重に描画される
+* 描画位置ズレ（実際のレイヤーサムネイルは正常）
+* 表示時間ボタンが縦並びで窮屈 → ◀▶アイコンへ、横並びへ変更
+* 新規CUT作成で他CUTの内容が消える
+* `Ctrl+Shift+N` がプライベートウィンドウを出してしまう（ブラウザの既定と競合）
+* `Shift+C` / `Shift+V` でCUTコピー・貼付け、`Shift+N` で空CUT作成
+* `Ctrl+Z` / `Ctrl+Y`（Undo/Redo）が正しく動くか、非破壊か確認・未実装なら実装
 
-さらに core-engine 内に SimpleEventBus 等の類似実装が見られ、EventBus の二重管理になりやすい（設計上の歪み）。
-GitHub
-+1
+改修は**既存機能を壊さない最小改修**を原則とし、AIが改修（自動修正）しやすいよう可読性・API境界を厳格化する。
 
-2) 優先修正案（リスク低・即効性高） — 必ずこの順でやってください
-A. Timeline UI を「グローバルに公開」する（必須）
+---
 
-ui/timeline-ui.js の最後に（IIFE の外へ出すか IIFE の末尾で）必ず以下を追加してください：
+## 初期調査での仮説（優先度高）
 
-// ファイル末尾に追加（または既存の IIFE の末尾に）
-window.TegakiTimelineUI = TimelineUI;
-console.log('✅ ui/timeline-ui.js loaded (TegakiTimelineUI exported)');
+1. **二重描画**: レイヤ生成/表示時に同じ`PIXI.Container`や`DisplayObject`を`addChild`しているか、同一レイヤの描画ループが2回走っている。`layer-system`と`core-runtime`の初期化順序/二重初期化を疑う。
+2. **描画位置ズレ**: `coordinate-system`と`camera-system`で座標系（ワールド / カメラ / レイヤローカル）が一致していない。サムネイルはローカル座標で正しいが、実際描画はカメラ変換を二重適用または未適用している可能性。
+3. **新規CUTで他CUTが消える**: CUTごとのレイヤ配列を管理していない、または新規CUT作成時に全体ステージを`clear()`する実装。
+4. **ショートカット競合**: `keydown`ハンドラで`event.preventDefault()`を呼ばない/呼ぶ条件が不適切で、ブラウザ既定のショートカット（プライベートウィンドウ等）をトリガーしている。
+5. **Undo/Redo不整合**: `system/history.js`が単純なスナップショット実装でなく、破壊的操作（直接state書き換え）を行っているため非破壊性が保てていない。
 
+---
 
-理由：core-engine.initializeAnimationSystem() が new window.TegakiTimelineUI(...) でインスタンス化を試みるため、window.TegakiTimelineUI が定義されている必要があります。現状のファイルで公開代入が見つかりませんでした（未定義の可能性）。
-GitHub
-+1
+## 推奨方針（アーキテクチャ）
 
-B. DOM（タイムライン領域）を index.html に確実に置く（必須）
+* **明確なAPI境界**を定義：
 
-timeline-ui.js は #timeline-panel と #cuts-container を探しているので、index.html の body に 必ず最小限の DOM を置いてください（スクリプトより先に置く or DOMContentLoaded 前に確実に存在すること）:
+  * `LayerSystem` API: `createLayer(meta)`, `removeLayer(id)`, `setActiveLayer(id)`, `moveLayer(id, index)`, `renderLayerToTexture(id)`
+  * `CutSystem` API: `createCut(blank|clone)`, `getCut(id)`, `switchCut(id)`（CUTはレイヤ配列を保持）
+  * `CoordinateSystem` API: `screenToWorld(point)`, `worldToScreen(point)`, `applyCamera(container)`
+  * `EventBus` を通じて各システムは疎結合に通信
+* **Commandパターン**で操作を非破壊にする（Undo/Redo 実装が楽になる）
+* **レンダリング負荷分散**: PixiJSのRendererオプションで`powerPreference: 'high-performance'`、必要箇所を`RenderTexture`にキャッシュしてGPUへオフロード
+* **外部ライブラリ活用（CDN挿入）**:
 
-<!-- index.html の body 内、他 panel と同じ階層に追加 -->
-<div id="timeline-panel" class="timeline-panel" style="display:none; position:fixed; left:10px; bottom:10px; z-index:1500;">
-  <div class="timeline-header">
-    <button id="close-timeline">×</button>
-    <div id="cut-display">CUT1</div>
-  </div>
-  <div class="timeline-body">
-    <div id="cuts-container" class="cuts-container"></div>
-  </div>
-  <div class="timeline-bottom"></div>
-</div>
+  * ショートカット：`Mousetrap`（軽量・CDN）または自前でキー処理（focus制御あり）
+  * カメラ/パン/ズーム：`pixi-viewport`（v4系がv8で動くことを確認の上）
+  * Pixi レイヤ制御：`@pixi/layers` / `pixi-layers`（ただし互換性確認）
 
+> ライブラリ導入は最小・段階的に行い**相性を検証**してからマージする。
 
-ポイント：display:none でよい。timeline-ui.js の init() が DOM を探せる位置に必ず置くこと（スクリプト実行より後に DOM を生成する場合は init を遅らせるか、DOMContentLoaded 後に core.initialize() を呼ぶ）。
-GitHub
+---
 
-C. スクリプト読み込み順＆初期化（最重要）
+## 優先度と同時並行可能性（推奨順）
 
-index.html の <script> は 下の順序で、かつ DOM 完全構築後に CoreEngine.initialize() を呼ぶ こと：
+### フェーズ A (高優先度、最短で直す)
 
-PixiJS（v8.13 の CDN を 1 度だけ）
+並列可: (A1) UI/ショートカット改善、(A2) Timeline UI レイアウト修正
 
-system/event-bus.js（window.TegakiEventBus を作る）
-GitHub
+* A1: **ショートカット改善**
 
-system/coordinate-system.js（window.CoordinateSystem）
-GitHub
+  * 既存の`keydown`ハンドラを調査。グローバルで`Ctrl/Cmd`系が効かないように、`canvas`またはアプリがフォーカスを持つ間のみ`preventDefault()`する。ブラウザ競合が避けられない場合（例：`Ctrl+N`）、代替`Ctrl+ALT+N`を採用。
+  * 新規割当：
 
-system/layer-system.js / system/camera-system.js / system/drawing-clipboard.js
+    * `Shift+N` → 新規ブランクCUT
+    * `Shift+C` → 現在CUT（全レイヤ）をクリップボードにコピー（シリアライズ）
+    * `Shift+V` → クリップボードから新規CUTとして貼付け
+  * テスト：プライベートウィンドウが出ないこと、全主要ブラウザでキャンバスにフォーカスしているときに操作可能であること。
 
-system/animation-system.js（window.TegakiAnimationSystem）
-GitHub
+* A2: **Timeline UI (表示時間ボタン)修正**
 
-ui/timeline-ui.js（ここで window.TegakiTimelineUI を定義） ← 重要
+  * `ui/timeline-ui.js` の縦レイアウトを横並びに変更。テキストの上下ボタンを◀▶に差し替え。
+  * ボタン幅を柔軟化し、アイコンはSVGをインラインか最小SVGスプライトで追加。
 
-ui/ui-panels.js（アイコンクリックが EventBus を送る側）
-GitHub
+### フェーズ B (中優先度、依存：A完了推奨)
 
-core-engine.js（CoreEngine）
-GitHub
+* B1: **座標変換の整合化**
 
-あとで core-runtime.js 等、アプリ起動処理
+  * `coordinate-system.js` と `camera-system.js` を一つの座標APIにまとめる。`screen↔world`の単一実装を導入。
+  * 既存描画コードを`screenToWorld`/`worldToScreen`に置換し、二重変換を取り除く。
+  * テスト：サムネイルと本キャンバスで同じ座標が描かれること（マウス位置→描画点の一致）。
 
-初期化スニペット（index.html） — DOM 生成済みで確実に呼ぶ：
+* B2: **二重描画バグ潰し**
 
-<script>
-document.addEventListener('DOMContentLoaded', () => {
-  // PIXI が読み込まれていることを前提
-  const app = new PIXI.Application({
-    width: window.TEGAKI_CONFIG.canvas.width,
-    height: window.TEGAKI_CONFIG.canvas.height,
-    backgroundColor: window.TEGAKI_CONFIG.background.color
-  });
-  document.getElementById('canvas-container').appendChild(app.view);
+  * `layer-system` の `addChild` / `removeChild` をラップして、同一オブジェクトの重複追加を検出するガードを入れる（開発用に警告ログ、製品では抑制）。
+  * 初期化フローを見直し、`init()` が複数回呼ばれていないか確認。
 
-  // CoreEngine を作成・初期化（animation/timeline は core 内で init 試行）
-  const core = new window.TegakiCore.CoreEngine(app);
-  core.initialize();
-  // 追加：CoordinateSystem に安全参照を渡す（後述）
-  if (window.CoordinateSystem) {
-    window.CoordinateSystem.setContainers({
-      worldContainer: core.cameraSystem?.worldContainer || null,
-      canvasContainer: core.cameraSystem?.canvasContainer || null,
-      app: app
-    });
+### フェーズ C (低〜中優先度、依存：B完了推奨)
+
+* C1: **CUT管理の堅牢化**
+
+  * `CutSystem` を導入し、CUT固有のレイヤ配列を保持。新規CUT作成時は現在のステートを汚染しないよう浅い参照でなく**コピー**する（レイヤのメタのみのコピー + レイヤ描画は必要に応じて再生成）。
+  * 新規CUT作成で既存CUTの描画が消える問題はおそらくここ。
+
+* C2: **Undo/Redo 実装・確認**
+
+  * `system/history.js`をCommandパターンで書き直す（`execute()`, `undo()`, `redo()` を持つコマンド列を管理）。
+  * 描画操作（ペン、変形、レイヤ操作、CUT操作）をコマンド化し、Stateの完全スナップショットより軽量で確実なUndo/Redoを実現。
+  * レイヤ内容のスナップショットは`PIXI.RenderTexture`でラスタを保存（重い場合はメタ差分+描画再現で代替）。
+
+### フェーズ D (GIF出力最適化)
+
+* GIF出力が重い場合はフレームごとに`renderer.extract.pixels()`や`RenderTexture`書き出しを使うより、`gif.js`等のライブラリと連携してWebWorkerでエンコードする。
+* `system/gif-exporter.js` を非同期処理にし、UIをブロックしないようにする。
+
+---
+
+## 開発タスク（具体的ファイル修正候補）
+
+* `index.html`
+
+  * ショートカット初期化部の修正（イベントハンドラを`app.view`またはcanvasに限定）
+  * GIFエクスポート時のRendererオプション確認（`preserveDrawingBuffer` の有無）
+* `system/layer-system.js`
+
+  * add/removeのガードとAPI明文化
+  * レイヤのシリアライズ/デシリアライズ実装（CUT保存用）
+* `coordinate-system.js`, `camera-system.js`
+
+  * 単一座標APIに統合。`screenToWorld` / `worldToScreen` をエクスポート
+* `ui/timeline-ui.js`
+
+  * DOM構造変更とCSS（横並び、アイコン化）
+* `system/history.js`
+
+  * Commandパターンで再実装
+* `system/drawing-clipboard.js`
+
+  * CUT単位のシリアライズ（メタ+レイヤ参照）と復元
+* `system/gif-exporter.js`
+
+  * 非同期WebWorker方式とRenderTextureキャッシュの併用
+
+---
+
+## テスト計画（必須）
+
+1. レイヤ二重表示が発現しないこと（既存プロジェクトをロードして確認）
+2. 描画位置がサムネイルと一致すること（座標テストツールを追加）
+3. 新規CUT作成で既存CUTが消えないこと。CUT切替テスト
+4. `Shift+N/C/V` が正しく動作し、ブラウザの既定ショートカットを発生させないこと
+5. Undo/Redoが非破壊で動作すること（10ステップ以上の操作で確認）
+6. GIF出力がUIをブロックしないこと
+
+---
+
+## 開発・レビューのための補助ツール/ログ
+
+* 開発モードで `diagnostics.js` を有効にして、`LayerSystem` の add/remove 呼び出しをトレース
+* `EventBus` に`DEBUG`チャネルを追加し、初期化/切替イベントをログ出力
+
+---
+
+## 既知の外部ライブラリ候補（CDN挿入）
+
+* Mousetrap (キー割当): `https://cdnjs.cloudflare.com/ajax/libs/mousetrap/1.6.5/mousetrap.min.js`
+* pixi-viewport (カメラ): CDN版（安定性要確認）
+* gif.js（エンコード）: `https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js` 等
+
+---
+
+## 最小パッチ例（ショートカット：index.html内）
+
+```js
+// canvasにのみキーバインドを有効化する例（既存ハンドラ置換用）
+const canvas = document.querySelector('#app-canvas');
+canvas.tabIndex = 0; // フォーカス可能に
+canvas.addEventListener('keydown', (e) => {
+  if (e.shiftKey && e.code === 'KeyN') {
+    e.preventDefault();
+    CutSystem.createBlankCut();
+  }
+  if (e.shiftKey && e.code === 'KeyC') {
+    e.preventDefault();
+    Clipboard.copyCut(CutSystem.getActiveCut());
+  }
+  if (e.shiftKey && e.code === 'KeyV') {
+    e.preventDefault();
+    CutSystem.createFromClipboard();
   }
 });
-</script>
+canvas.focus();
+```
+
+---
+
+## リスクと注意点
+
+* 外部ライブラリ導入は**相性問題**の可能性あり（特にpixiのプラグイン）。段階的に導入し、各PRにて動作検証を必須とする。
+* Undo/RedoでRenderTextureスナップショットを多用するとメモリを大量に消費するため、差分コマンド中心の実装を推奨。
+* ファイルの大規模置換は避け、既存APIをラップして互換を保つ形で段階的リファクタを行う。
+
+---
+
+## 次アクション（即時）
+
+1. 開発環境で`index.html`を開いて再現手順の記録（スクリーンショット+簡易ログ）を残す
+2. `diagnostics.js`を一時的にデバッグレベル最大にして、二重描画・CUT切替の呼び出し順を収集
+3. ショートカットのscopeを`canvas`に限定するパッチを当てて、`Shift+N/C/V` の動作を確認
+
+---
+
+※この計画書は「AIが自動で改修すること」を前提に、可読性・API明確化を重視して作成しました。
+必要であれば、この計画をベースにパッチを作成して直接差分を提出します。
 
 
-意図：TimelineUI.init() は DOM 要素を取るので、CoreEngine の初期化が DOM より前に走ると init() が return してしまいます。DOMContentLoaded 後に core.initialize() を呼ぶのが安全です。
+ここで重要な点だけ手短にまとめ、現時点での最も負荷の高い5点の根拠をソース参照付きで示します（確認用）：
 
-D. EventBus の“二重実装”を整理（中〜高優先）
-
-現状、system/event-bus.js で window.TegakiEventBus が定義されていますが、core-engine.js 内でも SimpleEventBus のような同等クラスが存在しています（混乱/断片化の原因）。
-
-方針：system/event-bus.js の window.TegakiEventBus を唯一の公式 EventBus とし、core-engine.js 内の SimpleEventBus 宣言は削除（またはコメントアウト）してください。core-engine.js のすべての this.eventBus = window.TegakiEventBus; 使用箇所はそのままで OK。
-GitHub
-+1
-
-理由：二重で似た API を持つと「イベントが別のインスタンスに飛んで反応しない」といったバグを誘発します（今回の状況に近い）。
-
-E. CoordinateSystem（座標系）の明示的初期化（推奨）
-
-animation-system / drawingEngine は window.CoordinateSystem を参照しています。CoreEngine.initialize() の中で、CameraSystem の container を CoordinateSystem に渡すコードを必ず追加してください（coordinate-system.js が安全参照を要求しているため）。例：
-
-// core-engine.js の適切な箇所（cameraSystem 初期化後）
-if (window.CoordinateSystem) {
-  window.CoordinateSystem.setContainers({
-    worldContainer: this.cameraSystem.worldContainer,
-    canvasContainer: this.cameraSystem.canvasContainer,
-    app: this.app
-  });
-  console.log('CoordinateSystem containers set by CoreEngine');
-}
-
-
-理由：座標 API の安定性を保証するため（createTransformMatrix 等を Core から直接呼べるように）。
+index.html が UI と初期化・ショートカット周りを保持しているため、ショートカット競合や表示レイアウトの問題はここが起点で起きやすいことを確認しました。
 GitHub
 
-3) 追加でチェックすべき点（短い箇条書き）
-
-index.html に PixiJS が v8.13 の CDN が 1 回だけ読み込まれているか確認（v7/v8 混在は厳禁）。
-
-ui/timeline-ui.js の最後で window.TegakiTimelineUI が存在するか確認（追加したか）。
+system/layer-system.js はレイヤ管理の核（add/removeなど）部分であり、ここで二重追加や初期化の重複が起きると二重描画になる可能性が高いと考えています。
 GitHub
 
-animation-system が layerSystem.layerTransforms / layerSystem.layersContainer 等のプロパティを使うので、layer-system.js がこれらの API を露出しているか確認。もし API 名が違うなら adapter を実装してやる（例を下に示します）。
+ui/timeline-ui.js に表示時間ボタン周りの実装があり、縦並びから横並びへの改修対象であることを確認しました。
 GitHub
 
-フォールバック／暗黙修復を入れない（要件通り） — 見つかった不一致は明示的にエラーにして潰す方針で OK。
-
-4) 最短でタイムラインを「見える化」するための最小パッチ（コピペで動作確認できる）
-
-ui/timeline-ui.js の末尾に下を追加（→ Timeline クラスをグローバルに公開）：
-
-// 追記（ファイル末尾）
-window.TegakiTimelineUI = TimelineUI;
-console.log('✅ TegakiTimelineUI exported');
-
-
-index.html にタイムライン DOM を追加（body 内）：
-
-<div id="timeline-panel" class="timeline-panel" style="display:none;">
-  <div class="timeline-bottom"></div>
-  <div id="cuts-container"></div>
-  <button id="close-timeline">×</button>
-</div>
-
-
-index.html で Core の初期化を DOMContentLoaded 後に行う（上の「スニペット」をそのまま使う）。
-
-core-engine から SimpleEventBus を削除（またはコメント）して window.TegakiEventBus を唯一参照にする。
-
-これで「アイコン押してイベント送る → EventBus 上で通知 → Timeline が受ける」一連が繋がるはずです。
-
-5) 動作確認コマンド（コンソールで試す：順に）
-
-開発者ツールの Console に以下を貼って実行し、値が true になっているか確認してください。
-
-console.log('TegakiEventBus exists? ', !!window.TegakiEventBus);
-console.log('TegakiAnimationSystem exists? ', !!window.TegakiAnimationSystem);
-console.log('TegakiTimelineUI exists? ', !!window.TegakiTimelineUI);
-console.log('timeline DOM elements: ', document.getElementById('timeline-panel'), document.getElementById('cuts-container'));
-
-
-期待される結果：
-
-TegakiEventBus → true. 
+system/diagnostics.js は診断用に使えるログポイントがあるので、二重描画やCUT切替時の呼出し順のトレースに活用可能です（開発用に一時的に有効化推奨）。
 GitHub
 
-TegakiAnimationSystem → true（animation-system.js を読み込んでいれば）。
+system/history.js（Undo/Redo）は存在するものの実装状況を確認してCommandパターン化する必要があるため、非破壊性の保証とUndo/Redoの信頼性向上が必要です。
 GitHub
 
-TegakiTimelineUI → true（上記の export を追加済みなら true）。
-GitHub
+次のステップ（推奨）を即時実行できます：
 
-document.getElementById('timeline-panel') → 要素オブジェクト（null でない）
+まず キャンバスに限定したキーイベントハンドラを適用して Shift+N/C/V を割当て、ブラウザ側ショートカットの誤発火を防ぐパッチを当てる（最もユーザ影響が高いので最優先）。
 
-さらに EventBus の受信テスト（Timeline が存在することが前提）：
+diagnostics.js をデバッグ強化して、レイヤの addChild / CUT切替 の呼び出し履歴を収集する（二重描画とCUT消失の根本原因を特定）。
 
-// 一時的に listener を増やすテスト
-window.TegakiEventBus.on('ui:toggle-timeline', () => console.log('received toggle from test'));
-window.TegakiEventBus.emit('ui:toggle-timeline');
+並列で ui/timeline-ui.js のボタンレイアウトを横並び（◀ ▶）へ変更する軽微パッチを当てる（UI改善は速攻でできる）。
 
 
-もし received toggle from test が出れば EventBus 自体は OK。次に UI のアイコンクリックでタイムラインが表示されるはずです（TimelineUI.show() が呼ばれる）。
-
-6) API 断片化・座標不一致などについて（まとめ）
-
-EventBus: system/event-bus.js を唯一の真の EventBus として統一してください（window.TegakiEventBus）。core-engine 内のローカル SimpleEventBus を残すと二重化します。
-GitHub
-+1
-
-座標系: window.CoordinateSystem が既に用意されているので、CoreEngine 側で setContainers を呼び安全参照を登録してください。animation/drawing 側は window.CoordinateSystem を参照する想定です（同一 API を使わせること）。
-GitHub
-
-Layer API: animation-system.js は layerSystem.layers, layerSystem.layerTransforms, layersContainer 等を期待しています。layer-system にこれらが欠けると断片化バグになります。必要なら アダプタ層 を作って期待インターフェースに合わせてください（例は要望あれば即提供）。
-GitHub
-
-バージョン混在: HTML の <script> を点検し、PixiJS は v8.13 の CDN のみを使ってください（混在は重大な不整合を起こします）。
