@@ -1,16 +1,18 @@
-// ===== ui/ui-panels.js - Phase 0修正版 =====
-// レイヤー追加ボタンイベントハンドリング修正
-// Ctrl + Shift + N ショートカット追加
-// Phase 0対応：既存機能を壊さずに改修
+// ===== ui/ui-panels.js - 段階3改修版: メソッド名不整合修正 =====
+// GIF アニメーション機能 根本改修計画書 段階3実装
+// 【改修完了】UIコントローラーメソッド名不整合修正
+// 【改修完了】LayerSystem API統一対応
+// Phase 0修正版ベース
 
 (function() {
     'use strict';
     
     // UI Controller class
     class UIController {
-        constructor(drawingEngine, layerManager, app) {
+        constructor(drawingEngine, layerSystem, app) {
             this.drawingEngine = drawingEngine;
-            this.layerManager = layerManager;
+            // 【改修】layerManager → layerSystem に統一
+            this.layerSystem = layerSystem;
             this.app = app;
             this.eventBus = window.TegakiEventBus;
             
@@ -26,7 +28,7 @@
             this.setupToolButtons();
             this.setupLayerPanelButtons();
             this.setupPopupPanels();
-            this.setupKeyboardShortcuts(); // 修正版ショートカット
+            this.setupKeyboardShortcuts();
         }
         
         setupToolButtons() {
@@ -59,7 +61,7 @@
                 });
             }
 
-            // Phase 0: GIFアニメーションツール
+            // GIFアニメーションツール
             const gifAnimationTool = document.getElementById('gif-animation-tool');
             if (gifAnimationTool) {
                 gifAnimationTool.addEventListener('click', () => {
@@ -70,7 +72,7 @@
             }
         }
         
-        // 修正版：レイヤーパネルボタン設定
+        // レイヤーパネルボタン設定（API統一版）
         setupLayerPanelButtons() {
             // レイヤー追加ボタン：イベントハンドリング修正
             const addLayerBtn = document.getElementById('add-layer-btn');
@@ -93,29 +95,29 @@
             }
         }
         
-        // 修正版：新規レイヤー追加処理
+        // 【改修】新規レイヤー追加処理（LayerSystem API統一）
         addNewLayer() {
-            if (!this.layerManager) {
-                console.error('❌ LayerManager not available');
+            if (!this.layerSystem) {
+                console.error('❌ LayerSystem not available');
                 return;
             }
             
             try {
-                const layerCount = this.layerManager.layers.length;
+                const layerCount = this.layerSystem.layers.length;
                 const newLayerName = `レイヤー${layerCount}`;
                 
                 console.log(`🔧 Creating new layer: ${newLayerName}`);
                 
                 // LayerSystemのcreateLayer()を呼び出し
-                this.layerManager.createLayer(newLayerName, false);
+                this.layerSystem.createLayer(newLayerName, false);
                 
                 // 新しいレイヤーをアクティブに設定
-                const newLayerIndex = this.layerManager.layers.length - 1;
-                this.layerManager.setActiveLayer(newLayerIndex);
+                const newLayerIndex = this.layerSystem.layers.length - 1;
+                this.layerSystem.setActiveLayer(newLayerIndex);
                 
                 // UI更新
-                this.layerManager.updateLayerPanelUI();
-                this.layerManager.updateStatusDisplay();
+                this.layerSystem.updateLayerPanelUI();
+                this.layerSystem.updateStatusDisplay();
                 
                 // EventBus通知
                 if (this.eventBus) {
@@ -147,7 +149,7 @@
             });
         }
         
-        // 修正版：キーボードショートカット設定（Ctrl+Shift+N追加）
+        // キーボードショートカット設定（Ctrl+Shift+N追加）
         setupKeyboardShortcuts() {
             document.addEventListener('keydown', (e) => {
                 // Ctrl + Shift + N：新規レイヤー追加
@@ -158,7 +160,7 @@
                     return;
                 }
                 
-                // Phase 0: Alt + A：タイムライン表示切り替え（EventBusで統合処理）
+                // Alt + A：タイムライン表示切り替え（EventBusで統合処理）
                 if (e.altKey && e.key === 'a') {
                     if (window.timelineUI) {
                         window.timelineUI.toggle();
@@ -214,6 +216,7 @@
             }
         }
         
+        // 【改修】LayerSystem API統一版：レイヤー変形設定
         setupLayerTransformSettings() {
             if (!document.getElementById('layer-transform-panel')) return;
             
@@ -222,7 +225,10 @@
                 max: 500,
                 value: 0,
                 suffix: 'px',
-                callback: (value) => this.layerManager?.updateLayerTransform('x', value)
+                callback: (value) => {
+                    // 【修正】正しいメソッド名使用
+                    this.layerSystem?.updateActiveLayerTransform('x', value);
+                }
             });
             
             this.setupSlider('layer-y', {
@@ -230,7 +236,10 @@
                 max: 500,
                 value: 0,
                 suffix: 'px',
-                callback: (value) => this.layerManager?.updateLayerTransform('y', value)
+                callback: (value) => {
+                    // 【修正】正しいメソッド名使用
+                    this.layerSystem?.updateActiveLayerTransform('y', value);
+                }
             });
             
             this.setupSlider('layer-rotation', {
@@ -238,7 +247,10 @@
                 max: 180,
                 value: 0,
                 suffix: '°',
-                callback: (value) => this.layerManager?.updateLayerTransform('rotation', value * Math.PI / 180)
+                callback: (value) => {
+                    // 【修正】正しいメソッド名使用
+                    this.layerSystem?.updateActiveLayerTransform('rotation', value * Math.PI / 180);
+                }
             });
             
             this.setupSlider('layer-scale', {
@@ -248,8 +260,8 @@
                 suffix: 'x',
                 decimals: 2,
                 callback: (value) => {
-                    this.layerManager?.updateLayerTransform('scaleX', value);
-                    this.layerManager?.updateLayerTransform('scaleY', value);
+                    // 【修正】正しいメソッド名使用・統一スケール適用
+                    this.layerSystem?.updateActiveLayerTransform('scale', value);
                 }
             });
             
@@ -259,13 +271,15 @@
             
             if (flipHorizontal) {
                 flipHorizontal.addEventListener('click', () => {
-                    this.layerManager?.flipLayerHorizontal();
+                    // 【修正】正しいメソッド名使用
+                    this.layerSystem?.flipActiveLayer('horizontal');
                 });
             }
             
             if (flipVertical) {
                 flipVertical.addEventListener('click', () => {
-                    this.layerManager?.flipLayerVertical();
+                    // 【修正】正しいメソッド名使用
+                    this.layerSystem?.flipActiveLayer('vertical');
                 });
             }
         }
@@ -404,12 +418,13 @@
             });
         }
         
+        // 【改修】LayerSystem API統一版：レイヤー変形値同期
         syncLayerTransformValues() {
-            const activeLayer = this.layerManager?.getActiveLayer();
+            const activeLayer = this.layerSystem?.getActiveLayer();
             if (!activeLayer) return;
             
             const layerId = activeLayer.layerData.id;
-            const transform = this.layerManager.layerTransforms.get(layerId) || 
+            const transform = this.layerSystem.layerTransforms.get(layerId) || 
                             { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
             
             // スライダー値を同期
@@ -429,7 +444,7 @@
             }
             
             if (this.sliders['layer-scale']) {
-                this.sliders['layer-scale'].value = transform.scaleX;
+                this.sliders['layer-scale'].value = Math.abs(transform.scaleX);
                 this.updateSliderDisplay('layer-scale');
             }
         }
@@ -455,8 +470,8 @@
             valueDisplay.textContent = displayValue + config.suffix;
         }
         
-        // SortableJS初期化（レイヤードラッグ＆ドロップ）
-        static initializeSortable(layerManager) {
+        // 【改修】LayerSystem API統一版：SortableJS初期化
+        static initializeSortable(layerSystem) {
             const layerList = document.getElementById('layer-list');
             if (!layerList || !window.Sortable) return;
             
@@ -470,8 +485,13 @@
                 onEnd: (evt) => {
                     document.body.classList.remove('dragging-layer');
                     
-                    if (evt.oldIndex !== evt.newIndex && layerManager) {
-                        layerManager.reorderLayers(evt.oldIndex, evt.newIndex);
+                    if (evt.oldIndex !== evt.newIndex && layerSystem) {
+                        // 【改修】LayerSystemに対応するレイヤー順序変更メソッドがあれば呼び出し
+                        if (typeof layerSystem.reorderLayers === 'function') {
+                            layerSystem.reorderLayers(evt.oldIndex, evt.newIndex);
+                        } else {
+                            console.warn('LayerSystem.reorderLayers method not implemented');
+                        }
                     }
                 }
             });
@@ -479,19 +499,70 @@
             console.log('✅ SortableJS initialized for layer drag & drop');
             return sortable;
         }
+        
+        // 【改修】デバッグ用：LayerSystem API確認
+        debugLayerSystemAPI() {
+            if (!this.layerSystem) {
+                console.log('❌ LayerSystem not available');
+                return { status: 'not_available' };
+            }
+            
+            const apiCheck = {
+                hasLayers: !!this.layerSystem.layers,
+                layerCount: this.layerSystem.layers ? this.layerSystem.layers.length : 0,
+                hasActiveLayer: typeof this.layerSystem.getActiveLayer === 'function',
+                hasCreateLayer: typeof this.layerSystem.createLayer === 'function',
+                hasUpdateActiveLayerTransform: typeof this.layerSystem.updateActiveLayerTransform === 'function',
+                hasFlipActiveLayer: typeof this.layerSystem.flipActiveLayer === 'function',
+                hasLayerTransforms: !!this.layerSystem.layerTransforms,
+                hasUpdateLayerPanelUI: typeof this.layerSystem.updateLayerPanelUI === 'function',
+                hasUpdateStatusDisplay: typeof this.layerSystem.updateStatusDisplay === 'function',
+                hasAnimationSystem: !!this.layerSystem.animationSystem
+            };
+            
+            console.log('UIController LayerSystem API Check:');
+            console.log('- Has Layers:', apiCheck.hasLayers ? '✅' : '❌');
+            console.log('- Layer Count:', apiCheck.layerCount);
+            console.log('- Has getActiveLayer():', apiCheck.hasActiveLayer ? '✅' : '❌');
+            console.log('- Has createLayer():', apiCheck.hasCreateLayer ? '✅' : '❌');
+            console.log('- Has updateActiveLayerTransform():', apiCheck.hasUpdateActiveLayerTransform ? '✅' : '❌');
+            console.log('- Has flipActiveLayer():', apiCheck.hasFlipActiveLayer ? '✅' : '❌');
+            console.log('- Has layerTransforms:', apiCheck.hasLayerTransforms ? '✅' : '❌');
+            console.log('- Has updateLayerPanelUI():', apiCheck.hasUpdateLayerPanelUI ? '✅' : '❌');
+            console.log('- Has updateStatusDisplay():', apiCheck.hasUpdateStatusDisplay ? '✅' : '❌');
+            console.log('- Has AnimationSystem:', apiCheck.hasAnimationSystem ? '✅' : '❌');
+            
+            return apiCheck;
+        }
+        
+        // 【改修】互換性維持：レガシーメソッド名対応
+        get layerManager() {
+            console.warn('⚠️ layerManager is deprecated, use layerSystem instead');
+            return this.layerSystem;
+        }
+        
+        set layerManager(value) {
+            console.warn('⚠️ layerManager is deprecated, use layerSystem instead');
+            this.layerSystem = value;
+        }
     }
     
-    // Phase 0: グローバル公開（既存互換性維持）
+    // グローバル公開（既存互換性維持）
     window.TegakiUI = {
         UIController: UIController,
         initializeSortable: UIController.initializeSortable
     };
     
-    console.log('✅ ui/ui-panels.js loaded (Phase 0修正版)');
-    console.log('   - ✅ レイヤー追加ボタン修正完了');
-    console.log('   - ✅ Ctrl+Shift+N ショートカット追加');
-    console.log('   - ✅ Alt+A タイムライン切り替え');
-    console.log('   - ✅ EventBus統合完了');
-    console.log('   - ✅ 既存機能継承完了');
+    console.log('✅ ui/ui-panels.js loaded (段階3改修版: メソッド名不整合修正)');
+    console.log('🔧 段階3改修完了:');
+    console.log('  - 🔧 layerManager → layerSystem API統一');
+    console.log('  - 🔧 updateLayerTransform → updateActiveLayerTransform 修正');
+    console.log('  - 🔧 flipLayerHorizontal → flipActiveLayer(\'horizontal\') 修正');
+    console.log('  - 🔧 flipLayerVertical → flipActiveLayer(\'vertical\') 修正');
+    console.log('  - 🔧 レイヤー変形スライダー統一スケール適用修正');
+    console.log('  - 🔧 SortableJS LayerSystem API対応');
+    console.log('  - 🔧 レガシー互換性維持（layerManager getter/setter）');
+    console.log('  - ✅ 既存機能継承完了');
+    console.log('  - ✅ EventBus統合完了');
 
 })();

@@ -1,7 +1,8 @@
-// ===== system/layer-system.js - Vキー解除修正完了版 =====
-// レイヤー管理専用モジュール（Vキー移動モード解除不具合修正）
-// 【修正完了】keyupイベントでのVキー解除処理追加・toggleLayerMoveMode正常化
-// PixiJS v8.13 対応・改修計画書完全準拠版
+// ===== system/layer-system.js - 段階2改修版: AnimationSystem統合 =====
+// GIF アニメーション機能 根本改修計画書 段階2実装
+// 【改修完了】LayerSystem統合改修・CUT切り替え対応
+// 【改修完了】レイヤー操作API統一・AnimationSystem連携
+// PixiJS v8.13 対応・Vキー解除修正完了版ベース
 
 (function() {
     'use strict';
@@ -34,16 +35,18 @@
             
             // 内部参照
             this.cameraSystem = null;
+            // 【改修】AnimationSystem参照追加
+            this.animationSystem = null;
         }
 
         init(canvasContainer, eventBus, config) {
-            console.log('LayerSystem: Initializing...');
+            console.log('LayerSystem: Initializing (段階2改修版)...');
             
             this.eventBus = eventBus;
             this.config = config || window.TEGAKI_CONFIG;
             this.canvasContainer = canvasContainer;
             
-            // 【改修】安全な参照確認
+            // 安全な参照確認
             if (!this.canvasContainer || !this.canvasContainer.addChild) {
                 console.error('LayerSystem: Invalid canvasContainer provided');
                 throw new Error('Valid canvasContainer required for LayerSystem');
@@ -53,7 +56,7 @@
             this._setupLayerOperations();
             this._setupLayerTransformPanel();
             
-            console.log('✅ LayerSystem initialized (Vキー解除修正版)');
+            console.log('✅ LayerSystem initialized (段階2改修版: AnimationSystem統合)');
         }
 
         _createContainers() {
@@ -147,7 +150,6 @@
                 dragging = false;
             });
 
-            // 外部からの値更新用
             container.updateValue = (newValue) => {
                 update(newValue, false);
             };
@@ -155,6 +157,7 @@
             update(initial);
         }
         
+        // 【改修】AnimationSystem統合版：レイヤー変形更新
         updateActiveLayerTransform(property, value) {
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
@@ -202,6 +205,14 @@
             }
             
             this.requestThumbnailUpdate(this.activeLayerIndex);
+            
+            // 【改修】AnimationSystemにCUT内レイヤー更新を通知
+            if (this.animationSystem) {
+                this.animationSystem.updateCurrentCutLayer(this.activeLayerIndex, {
+                    transform: { ...transform }
+                });
+            }
+            
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
             }
@@ -221,7 +232,6 @@
             
             const transform = this.layerTransforms.get(layerId);
             
-            // カメラフレーム中央を動的に計算して基準点に設定
             const centerX = this.config.canvas.width / 2;
             const centerY = this.config.canvas.height / 2;
             
@@ -238,6 +248,14 @@
             
             this.updateFlipButtons();
             this.requestThumbnailUpdate(this.activeLayerIndex);
+            
+            // 【改修】AnimationSystemにCUT内レイヤー更新を通知
+            if (this.animationSystem) {
+                this.animationSystem.updateCurrentCutLayer(this.activeLayerIndex, {
+                    transform: { ...transform }
+                });
+            }
+            
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
             }
@@ -303,9 +321,9 @@
             this.updateFlipButtons();
         }
 
-        // 【修正完了】キーバインディング処理（Vキー解除修正版）
+        // キーバインディング処理（Vキー解除修正版維持）
         _setupLayerOperations() {
-            // 【修正完了】keydownイベント処理
+            // keydownイベント処理
             document.addEventListener('keydown', (e) => {
                 // キーコンフィグ管理クラス経由でアクション取得
                 const keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
@@ -320,7 +338,6 @@
                 switch(action) {
                     case 'layerMode':
                         if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                            // 【修正完了】Vキー押下時の処理（enterのみ・toggleしない）
                             if (!this.vKeyPressed) {
                                 this.enterLayerMoveMode();
                             }
@@ -328,7 +345,7 @@
                         }
                         break;
                         
-                    // ✅ 新規：素の方向キー - レイヤー階層移動（アクティブが変わるだけ）
+                    // 素の方向キー - レイヤー階層移動（アクティブが変わるだけ）
                     case 'layerUp':
                         if (!this.vKeyPressed && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
                             this.moveActiveLayerHierarchy('up');
@@ -343,10 +360,13 @@
                         }
                         break;
                     
-                    // ✅ 新規：素の方向キー - GIFツール用（現在は未実装・コンソールログのみ）
+                    // 【改修】素の方向キー - GIFツール用（AnimationSystem連携）
                     case 'gifPrevFrame':
                         if (!this.vKeyPressed && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                            console.log('🎞️ GIF Previous Frame (Reserved for future implementation)');
+                            if (this.animationSystem && this.animationSystem.goToPreviousFrame) {
+                                this.animationSystem.goToPreviousFrame();
+                                console.log('🎞️ GIF Previous Frame');
+                            }
                             if (this.eventBus) {
                                 this.eventBus.emit('gif:prev-frame-requested');
                             }
@@ -356,7 +376,10 @@
                         
                     case 'gifNextFrame':
                         if (!this.vKeyPressed && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                            console.log('🎞️ GIF Next Frame (Reserved for future implementation)');
+                            if (this.animationSystem && this.animationSystem.goToNextFrame) {
+                                this.animationSystem.goToNextFrame();
+                                console.log('🎞️ GIF Next Frame');
+                            }
                             if (this.eventBus) {
                                 this.eventBus.emit('gif:next-frame-requested');
                             }
@@ -383,7 +406,7 @@
                         }
                         break;
                     
-                    // V + 方向キー: アクティブレイヤー移動（キープ）
+                    // V + 方向キー: アクティブレイヤー移動
                     case 'layerMoveUp':
                         if (this.vKeyPressed && !e.shiftKey) {
                             this.moveActiveLayer('ArrowUp');
@@ -412,7 +435,7 @@
                         }
                         break;
                     
-                    // V + Shift + 方向キー: アクティブレイヤー拡縮・回転（キープ）
+                    // V + Shift + 方向キー: アクティブレイヤー拡縮・回転
                     case 'layerScaleUp':
                         if (this.vKeyPressed && e.shiftKey) {
                             this.transformActiveLayer('ArrowUp');
@@ -441,7 +464,7 @@
                         }
                         break;
                     
-                    // V + H / V + Shift + H: アクティブレイヤー反転（キープ）
+                    // V + H / V + Shift + H: アクティブレイヤー反転
                     case 'horizontalFlip':
                         if (this.vKeyPressed && !e.ctrlKey && !e.altKey && !e.metaKey) {
                             if (e.shiftKey) {
@@ -455,7 +478,7 @@
                 }
             });
             
-            // 【修正完了】keyupイベント処理を追加（Vキー解除修正）
+            // keyupイベント処理（Vキー解除修正）
             document.addEventListener('keyup', (e) => {
                 if (e.code === 'KeyV' && this.vKeyPressed) {
                     console.log('🔧 V key released, exiting layer move mode');
@@ -472,11 +495,11 @@
                 }
             });
             
-            // V + ドラッグ: アクティブレイヤー移動・変形（キープ）
+            // V + ドラッグ: アクティブレイヤー移動・変形
             this._setupLayerDragEvents();
         }
 
-        // ✅ 新規：レイヤー階層移動（アクティブレイヤーの変更のみ・入れ替えは行わない）
+        // レイヤー階層移動（アクティブレイヤーの変更のみ）
         moveActiveLayerHierarchy(direction) {
             if (this.layers.length <= 1) return;
             
@@ -507,9 +530,8 @@
             }
         }
 
-        // 【改修】安全なドラッグイベント設定（変更なし）
+        // 安全なドラッグイベント設定
         _setupLayerDragEvents() {
-            // 【改修】安全なCanvas要素取得
             const canvas = this._getSafeCanvas();
             if (!canvas) {
                 console.warn('LayerSystem: Canvas not found for drag events');
@@ -539,7 +561,7 @@
             });
         }
 
-        // 【改修】安全なCanvas要素取得（変更なし）
+        // 安全なCanvas要素取得
         _getSafeCanvas() {
             // app参照からcanvas要素を取得
             if (this.app?.canvas) {
@@ -582,12 +604,11 @@
                 const centerX = this.config.canvas.width / 2;
                 const centerY = this.config.canvas.height / 2;
                 
-                // 基準点をカメラ中央に設定
                 activeLayer.pivot.set(centerX, centerY);
                 activeLayer.position.set(centerX + transform.x, centerY + transform.y);
                 
                 if (Math.abs(dy) > Math.abs(dx)) {
-                    // 垂直方向優先: 拡縮（上ドラッグ→拡大、下ドラッグ→縮小）
+                    // 垂直方向優先: 拡縮
                     const scaleFactor = 1 + (dy * -0.01);
                     const currentScale = Math.abs(transform.scaleX);
                     const newScale = Math.max(this.config.layer.minScale, Math.min(this.config.layer.maxScale, currentScale * scaleFactor));
@@ -602,11 +623,10 @@
                         scaleSlider.updateValue(newScale);
                     }
                 } else {
-                    // 水平方向優先: 回転（右ドラッグ→右回転、左ドラッグ→左回転）
+                    // 水平方向優先: 回転
                     transform.rotation += (dx * 0.02);
                     activeLayer.rotation = transform.rotation;
                     
-                    // スライダー更新
                     const rotationSlider = document.getElementById('layer-rotation-slider');
                     if (rotationSlider && rotationSlider.updateValue) {
                         rotationSlider.updateValue(transform.rotation * 180 / Math.PI);
@@ -617,7 +637,6 @@
                 transform.x += adjustedDx;
                 transform.y += adjustedDy;
                 
-                // 位置を更新
                 const centerX = this.config.canvas.width / 2;
                 const centerY = this.config.canvas.height / 2;
                 activeLayer.position.set(centerX + transform.x, centerY + transform.y);
@@ -635,12 +654,20 @@
             
             this.layerDragLastPoint = { x: e.clientX, y: e.clientY };
             this.requestThumbnailUpdate(this.activeLayerIndex);
+            
+            // 【改修】AnimationSystemにCUT内レイヤー更新を通知
+            if (this.animationSystem) {
+                this.animationSystem.updateCurrentCutLayer(this.activeLayerIndex, {
+                    transform: { ...transform }
+                });
+            }
+            
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
             }
         }
 
-        // 【修正完了】toggleLayerMoveMode修正（適切なトグル動作）
+        // toggleLayerMoveMode修正（適切なトグル動作）
         toggleLayerMoveMode() {
             if (this.vKeyPressed) {
                 this.exitLayerMoveMode();
@@ -661,7 +688,6 @@
                 this.cameraSystem.showGuideLines();
             }
             
-            // パネル表示
             if (this.layerTransformPanel) {
                 this.layerTransformPanel.classList.add('show');
                 this.updateLayerTransformPanelValues();
@@ -686,7 +712,6 @@
                 this.cameraSystem.hideGuideLines();
             }
             
-            // 【修正完了】パネル非表示（ポップアップウィンドウ消去修正）
             if (this.layerTransformPanel) {
                 this.layerTransformPanel.classList.remove('show');
             }
@@ -722,7 +747,6 @@
                 case 'ArrowRight': transform.x += moveAmount; break;
             }
             
-            // 位置を更新
             const centerX = this.config.canvas.width / 2;
             const centerY = this.config.canvas.height / 2;
             activeLayer.position.set(centerX + transform.x, centerY + transform.y);
@@ -738,6 +762,14 @@
             }
             
             this.requestThumbnailUpdate(this.activeLayerIndex);
+            
+            // 【改修】AnimationSystemにCUT内レイヤー更新を通知
+            if (this.animationSystem) {
+                this.animationSystem.updateCurrentCutLayer(this.activeLayerIndex, {
+                    transform: { ...transform }
+                });
+            }
+            
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
             }
@@ -757,11 +789,9 @@
             
             const transform = this.layerTransforms.get(layerId);
             
-            // カメラフレーム中央を動的に計算
             const centerX = this.config.canvas.width / 2;
             const centerY = this.config.canvas.height / 2;
             
-            // 基準点とポジションを設定
             activeLayer.pivot.set(centerX, centerY);
             activeLayer.position.set(centerX + transform.x, centerY + transform.y);
             
@@ -795,7 +825,7 @@
                     break;
                     
                 case 'ArrowLeft': // 左回転
-                    transform.rotation -= (15 * Math.PI) / 180; // 15度
+                    transform.rotation -= (15 * Math.PI) / 180;
                     activeLayer.rotation = transform.rotation;
                     
                     const rotationSliderLeft = document.getElementById('layer-rotation-slider');
@@ -805,7 +835,7 @@
                     break;
                     
                 case 'ArrowRight': // 右回転
-                    transform.rotation += (15 * Math.PI) / 180; // 15度
+                    transform.rotation += (15 * Math.PI) / 180;
                     activeLayer.rotation = transform.rotation;
                     
                     const rotationSliderRight = document.getElementById('layer-rotation-slider');
@@ -816,12 +846,20 @@
             }
             
             this.requestThumbnailUpdate(this.activeLayerIndex);
+            
+            // 【改修】AnimationSystemにCUT内レイヤー更新を通知
+            if (this.animationSystem) {
+                this.animationSystem.updateCurrentCutLayer(this.activeLayerIndex, {
+                    transform: { ...transform }
+                });
+            }
+            
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
             }
         }
 
-        // === 【改修版】非破壊的レイヤー変形確定処理 ===
+        // === 非破壊的レイヤー変形確定処理 ===
         confirmLayerTransform() {
             const activeLayer = this.getActiveLayer();
             if (!activeLayer) return;
@@ -829,7 +867,6 @@
             const layerId = activeLayer.layerData.id;
             const transform = this.layerTransforms.get(layerId);
             
-            // レイヤーのtransformが初期状態でない場合、パスデータに変形を適用
             if (this.isTransformNonDefault(transform)) {
                 try {
                     const success = this.safeApplyTransformToPaths(activeLayer, transform);
@@ -848,6 +885,12 @@
                         
                         this.updateFlipButtons();
                         this.requestThumbnailUpdate(this.activeLayerIndex);
+                        
+                        // 【改修】AnimationSystemにCUT内レイヤー更新を通知
+                        if (this.animationSystem) {
+                            this.animationSystem.saveCutLayerStates();
+                        }
+                        
                         if (this.eventBus) {
                             this.eventBus.emit('layer:transform-confirmed', { layerId });
                         }
@@ -859,7 +902,7 @@
             }
         }
 
-        // === 【改修版】正確な変形行列順序による安全なパス変形適用処理 ===
+        // 正確な変形行列順序による安全なパス変形適用処理
         safeApplyTransformToPaths(layer, transform) {
             if (!layer.layerData?.paths || layer.layerData.paths.length === 0) {
                 return true;
@@ -869,10 +912,8 @@
                 const centerX = this.config.canvas.width / 2;
                 const centerY = this.config.canvas.height / 2;
                 
-                // 【改修】正しい変形行列順序でのマトリクス作成（PixiJS標準準拠）
                 const matrix = this.createTransformMatrix(transform, centerX, centerY);
                 
-                // パスごとに安全に処理
                 const transformedPaths = [];
                 
                 for (let i = 0; i < layer.layerData.paths.length; i++) {
@@ -882,14 +923,12 @@
                         continue;
                     }
                     
-                    // 座標変形
                     const transformedPoints = this.safeTransformPoints(path.points, matrix);
                     
                     if (transformedPoints.length === 0) {
                         continue;
                     }
                     
-                    // 新しいパスオブジェクト作成
                     const transformedPath = {
                         id: path.id,
                         points: transformedPoints,
@@ -903,7 +942,6 @@
                     transformedPaths.push(transformedPath);
                 }
                 
-                // レイヤー再構築
                 const rebuildSuccess = this.safeRebuildLayer(layer, transformedPaths);
                 return rebuildSuccess;
                 
@@ -913,18 +951,14 @@
             }
         }
 
-        // 【改修版】正しい変形行列順序でのマトリクス作成（PixiJS標準準拠）
+        // 正しい変形行列順序でのマトリクス作成（PixiJS標準準拠）
         createTransformMatrix(transform, centerX, centerY) {
             const matrix = new PIXI.Matrix();
             
-            // 【改修】正しい変形順序（PixiJS標準）
-            // 1. 基準点を原点に移動
+            // 正しい変形順序（PixiJS標準）
             matrix.translate(-centerX, -centerY);
-            // 2. スケール適用
             matrix.scale(transform.scaleX, transform.scaleY);
-            // 3. 回転適用
             matrix.rotate(transform.rotation);
-            // 4. 位置移動（基準点＋オフセット）
             matrix.translate(centerX + transform.x, centerY + transform.y);
             
             return matrix;
@@ -964,7 +998,6 @@
 
         safeRebuildLayer(layer, newPaths) {
             try {
-                // 既存描画要素の削除（背景は保護）
                 const childrenToRemove = [];
                 for (let child of layer.children) {
                     if (child !== layer.layerData.backgroundGraphics) {
@@ -983,10 +1016,8 @@
                     }
                 });
                 
-                // 新しいパスデータを設定
                 layer.layerData.paths = [];
                 
-                // パスごとにGraphicsを再生成・追加
                 let addedCount = 0;
                 for (let i = 0; i < newPaths.length; i++) {
                     const path = newPaths[i];
@@ -1013,7 +1044,7 @@
             }
         }
 
-        // === 【改修版】PixiJS v8.13対応パスGraphics再生成 ===
+        // PixiJS v8.13対応パスGraphics再生成
         rebuildPathGraphics(path) {
             try {
                 if (path.graphics) {
@@ -1067,7 +1098,7 @@
             }
         }
 
-        // === レイヤー管理API（改修版：EventBus統合） ===
+        // === 【改修】レイヤー管理API：AnimationSystem統合版 ===
         createLayer(name, isBackground = false) {
             const layer = new PIXI.Container();
             const layerId = `layer_${this.layerCounter++}`;
@@ -1097,6 +1128,22 @@
 
             this.layers.push(layer);
             this.layersContainer.addChild(layer);
+            
+            // 【改修】AnimationSystemにCUT内レイヤー追加を通知
+            if (this.animationSystem && this.animationSystem.getCurrentCut()) {
+                const layerData = {
+                    id: layerId,
+                    name: name,
+                    visible: true,
+                    opacity: 1.0,
+                    isBackground: isBackground,
+                    transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
+                    paths: [],
+                    timestamp: Date.now()
+                };
+                
+                this.animationSystem.addLayerToCurrentCut(layerData);
+            }
             
             if (this.eventBus) {
                 this.eventBus.emit('layer:created', { layerId, name, isBackground });
@@ -1128,6 +1175,11 @@
                 this.activeLayerIndex = Math.min(this.activeLayerIndex, this.layers.length - 1);
             } else if (this.activeLayerIndex > layerIndex) {
                 this.activeLayerIndex--;
+            }
+
+            // 【改修】AnimationSystemにCUT内レイヤー削除を通知
+            if (this.animationSystem) {
+                this.animationSystem.saveCutLayerStates();
             }
 
             this.updateLayerPanelUI();
@@ -1162,6 +1214,14 @@
                 const layer = this.layers[layerIndex];
                 layer.layerData.visible = !layer.layerData.visible;
                 layer.visible = layer.layerData.visible;
+                
+                // 【改修】AnimationSystemにCUT内レイヤー更新を通知
+                if (this.animationSystem) {
+                    this.animationSystem.updateCurrentCutLayer(layerIndex, {
+                        visible: layer.layerData.visible
+                    });
+                }
+                
                 this.updateLayerPanelUI();
                 if (this.eventBus) {
                     this.eventBus.emit('layer:visibility-changed', { layerIndex, visible: layer.layerData.visible });
@@ -1169,22 +1229,35 @@
             }
         }
 
+        // 【改修】AnimationSystem統合版：パス追加
         addPathToLayer(layerIndex, path) {
             if (layerIndex >= 0 && layerIndex < this.layers.length) {
                 const layer = this.layers[layerIndex];
                 layer.layerData.paths.push(path);
                 layer.addChild(path.graphics);
                 this.requestThumbnailUpdate(layerIndex);
+                
+                // 【改修】AnimationSystemにCUT内レイヤー更新を通知
+                if (this.animationSystem) {
+                    this.animationSystem.saveCutLayerStates();
+                }
+                
                 if (this.eventBus) {
                     this.eventBus.emit('layer:path-added', { layerIndex, pathId: path.id });
                 }
             }
         }
 
-        // 改修版：core-engine.jsから継承されたメソッド
+        // 【改修】AnimationSystem統合版：アクティブレイヤーにパス追加
+        addPathToActiveLayer(path) {
+            if (this.activeLayerIndex >= 0) {
+                this.addPathToLayer(this.activeLayerIndex, path);
+            }
+        }
+
+        // core-engine.jsから継承されたメソッド
         insertClipboard(data) {
             // クリップボードからのペースト処理
-            // drawing-clipboard.js から呼び出される
             if (this.eventBus) {
                 this.eventBus.emit('layer:clipboard-inserted', data);
             }
@@ -1194,7 +1267,7 @@
             this.thumbnailUpdateQueue.add(layerIndex);
         }
 
-        // 改修版：throttle処理追加でパフォーマンス向上
+        // throttle処理追加でパフォーマンス向上
         processThumbnailUpdates() {
             if (this.thumbnailUpdateQueue.size === 0) return;
 
@@ -1206,7 +1279,7 @@
             });
         }
 
-        // 【改修】安全なレンダラー参照でのサムネイル更新
+        // 安全なレンダラー参照でのサムネイル更新
         updateThumbnail(layerIndex) {
             if (!this.app || !this.app.renderer || layerIndex < 0 || layerIndex >= this.layers.length) return;
 
@@ -1315,7 +1388,7 @@
             }
         }
 
-        // 改修版：EventBus経由でのUI更新
+        // EventBus経由でのUI更新
         updateLayerPanelUI() {
             const layerList = document.getElementById('layer-list');
             if (!layerList) return;
@@ -1376,7 +1449,7 @@
             }
         }
 
-        // 改修版：EventBus経由でのステータス更新
+        // EventBus経由でのステータス更新
         updateStatusDisplay() {
             const statusElement = document.getElementById('current-layer');
             if (statusElement && this.activeLayerIndex >= 0) {
@@ -1392,6 +1465,26 @@
             }
         }
 
+        // 【改修】AnimationSystemアクティブCUT設定（LayerSystem側統合処理）
+        setActiveCut(cutIndex) {
+            if (!this.animationSystem) {
+                console.warn('AnimationSystem not available for setActiveCut');
+                return;
+            }
+            
+            // AnimationSystemのsetActiveCut呼び出し（双方向統合）
+            this.animationSystem.setActiveCut(cutIndex);
+            
+            // UI更新
+            this.updateLayerPanelUI();
+            this.updateStatusDisplay();
+            
+            // レイヤー変形パネル更新
+            if (this.isLayerMoveMode) {
+                this.updateLayerTransformPanelValues();
+            }
+        }
+
         // 内部参照設定
         setCameraSystem(cameraSystem) {
             this.cameraSystem = cameraSystem;
@@ -1400,21 +1493,57 @@
         setApp(app) {
             this.app = app;
         }
+
+        // 【改修】AnimationSystem参照設定
+        setAnimationSystem(animationSystem) {
+            this.animationSystem = animationSystem;
+            console.log('✅ LayerSystem: AnimationSystem reference set');
+        }
+
+        // 【改修】デバッグ情報：AnimationSystem統合状態確認
+        debugAnimationIntegration() {
+            const info = {
+                hasAnimationSystem: !!this.animationSystem,
+                currentCutIndex: this.animationSystem ? this.animationSystem.getCurrentCutIndex() : 'N/A',
+                cutCount: this.animationSystem ? this.animationSystem.getCutCount() : 'N/A',
+                layerCount: this.layers.length,
+                activeLayerIndex: this.activeLayerIndex,
+                layerTransformCount: this.layerTransforms.size
+            };
+            
+            console.log('LayerSystem Animation Integration Debug:');
+            console.log('- Has AnimationSystem:', info.hasAnimationSystem ? '✅' : '❌');
+            console.log('- Current Cut Index:', info.currentCutIndex);
+            console.log('- Cut Count:', info.cutCount);
+            console.log('- Layer Count:', info.layerCount);
+            console.log('- Active Layer Index:', info.activeLayerIndex);
+            console.log('- Layer Transform Count:', info.layerTransformCount);
+            
+            if (this.animationSystem) {
+                const currentCut = this.animationSystem.getCurrentCut();
+                if (currentCut) {
+                    console.log('- Current Cut Name:', currentCut.name);
+                    console.log('- Current Cut Layer Count:', currentCut.layers ? currentCut.layers.length : 0);
+                }
+            }
+            
+            return info;
+        }
     }
 
     // グローバル公開
     window.TegakiLayerSystem = LayerSystem;
 
-    console.log('✅ layer-system.js (Vキー解除修正完了版) loaded successfully');
-    console.log('   - 🔧 Vキー解除修正：keyupイベントでexitLayerMoveMode()実行');
-    console.log('   - 🔧 ポップアップウィンドウ消去修正：パネル非表示処理追加');
-    console.log('   - 🔧 toggleLayerMoveMode()適切なトグル動作修正');
-    console.log('   - 🔧 フォーカス制御追加：ウィンドウblur時にVキー状態リセット');
-    console.log('   - ✅ 素の方向キー↑↓: アクティブレイヤー階層移動');
-    console.log('   - ✅ 素の方向キー←→: GIFツール用予約（コンソールログ出力）');
-    console.log('   - ✅ V + ↑↓←→: レイヤー移動（キープ）');
-    console.log('   - ✅ V + Shift + ↑↓←→: レイヤー変形（キープ）');
-    console.log('   - 🔧 KeyConfig管理クラス経由でアクション取得');
-    console.log('   - EventBus統合・PixiJS v8.13対応完了');
+    console.log('✅ layer-system.js loaded (段階2改修版: AnimationSystem統合)');
+    console.log('🔧 段階2改修完了:');
+    console.log('  - 🆕 AnimationSystem双方向参照統合');
+    console.log('  - 🆕 レイヤー操作時にCUT内データ自動更新');
+    console.log('  - 🆕 GIF フレーム移動：AnimationSystem連携');
+    console.log('  - 🆕 setActiveCut(): CUT切り替え対応');
+    console.log('  - 🆕 addPathToActiveLayer(): CUT内レイヤー追加統合');
+    console.log('  - 🔧 レイヤー変形・可視性変更時のCUT同期');
+    console.log('  - 🔧 レイヤー作成・削除時のCUT連携');
+    console.log('  - ✅ Vキー解除修正版ベース維持');
+    console.log('  - ✅ API統一・参照整合性確保');
 
 })();

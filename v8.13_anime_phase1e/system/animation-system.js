@@ -1,3 +1,9 @@
+// ===== system/animation-system.js - 段階1改修版: 2次元レイヤー構造実装 =====
+// GIF アニメーション機能 根本改修計画書 段階1実装
+// 【改修完了】CUT × レイヤー = 2次元マトリクス構造
+// 【改修完了】LayerSystem統合・データ構造根本変更
+// PixiJS v8.13 対応
+
 (function() {
     'use strict';
     
@@ -11,9 +17,6 @@
             this.playbackTimer = null;
             this.isAnimationMode = false;
             this.initialCutCreated = false;
-            
-            // スナップショット管理
-            this.backupSnapshots = [];
             
             // API統一：座標変換関数
             this.coordAPI = window.CoordinateSystem;
@@ -35,16 +38,19 @@
                 return;
             }
             
+            // LayerSystemとの双方向参照設定
+            this.layerSystem.animationSystem = this;
+            
             // 遅延実行で初期CUT1を作成（LayerSystemが完全に初期化された後）
             setTimeout(() => {
                 this.createInitialCutIfNeeded();
             }, 500);
             
-            console.log('✅ AnimationSystem initialized with LayerSystem');
+            console.log('✅ AnimationSystem initialized with LayerSystem (段階1改修版)');
             this.eventBus.emit('animation:initialized');
         }
         
-        // 初期CUT1の自動作成
+        // 初期CUT1の自動作成（改修版）
         createInitialCutIfNeeded() {
             if (this.initialCutCreated || this.animationData.cuts.length > 0) {
                 return;
@@ -52,10 +58,11 @@
             
             // LayerSystemが初期化され、少なくとも1つのレイヤーがある場合のみ実行
             if (this.layerSystem && this.layerSystem.layers && this.layerSystem.layers.length > 0) {
-                const initialCut = this.createCutFromCurrentState();
+                // 【改修】新しいCUT作成方式：現在のレイヤーをCUTに移行
+                const initialCut = this.createNewCutFromCurrentLayers();
                 this.initialCutCreated = true;
                 
-                console.log('🎬 Initial CUT1 automatically created:', initialCut.name);
+                console.log('🎬 Initial CUT1 created with existing layers:', initialCut.name);
                 
                 // EventBus通知
                 if (this.eventBus) {
@@ -75,7 +82,7 @@
         createDefaultAnimation() {
             const config = window.TEGAKI_CONFIG.animation;
             return {
-                cuts: [],
+                cuts: [],  // 【改修】各CUTが独自のレイヤー配列を持つ
                 settings: {
                     fps: config.defaultFPS,
                     loop: true
@@ -88,19 +95,25 @@
             };
         }
         
-        // CUT作成（現在のレイヤー状態をキャプチャ）
-        createCutFromCurrentState() {
+        // 【改修】新規CUT作成：現在のレイヤーからCUT作成
+        createNewCutFromCurrentLayers() {
+            // 現在のレイヤーをCUT用にコピー
+            const cutLayers = this.copyCurrentLayersForCut();
+            
             const cut = {
                 id: 'cut_' + Date.now(),
                 name: `CUT${this.animationData.cuts.length + 1}`,
                 duration: window.TEGAKI_CONFIG.animation.defaultCutDuration,
-                layerSnapshots: this.captureAllLayerStates(),
-                thumbnailTexture: null
+                layers: cutLayers,  // 【改修】スナップショットではなく独自のレイヤー配列
+                thumbnail: null
             };
             
             this.animationData.cuts.push(cut);
             
-            console.log('🎬 Cut created:', cut.name);
+            // LayerSystemのレイヤー配列を新CUTのレイヤー配列に接続
+            this.switchToActiveCut(this.animationData.cuts.length - 1);
+            
+            console.log('🎬 New Cut created:', cut.name, 'with', cut.layers.length, 'layers');
             
             // 非同期でサムネイル生成
             setTimeout(() => {
@@ -117,177 +130,207 @@
             return cut;
         }
         
-        // 現在のキャンバス状態をCUTに保存
-        saveCutFromCurrentState(cutIndex) {
-            const cut = this.animationData.cuts[cutIndex];
-            if (!cut) return;
+        // 【改修】新規空CUT作成
+        createNewEmptyCut() {
+            const cut = {
+                id: 'cut_' + Date.now(),
+                name: `CUT${this.animationData.cuts.length + 1}`,
+                duration: window.TEGAKI_CONFIG.animation.defaultCutDuration,
+                layers: [],  // 【改修】空のレイヤー配列
+                thumbnail: null
+            };
             
-            // 現在のレイヤー状態でスナップショットを更新
-            cut.layerSnapshots = this.captureAllLayerStates();
+            this.animationData.cuts.push(cut);
             
-            console.log('💾 Cut state updated:', cut.name);
-            
-            // サムネイルを再生成
-            setTimeout(() => {
-                this.generateCutThumbnail(cutIndex);
-            }, 50);
+            console.log('🎬 Empty Cut created:', cut.name);
             
             if (this.eventBus) {
-                this.eventBus.emit('animation:cut-updated', { 
-                    cutIndex,
-                    cutId: cut.id
+                this.eventBus.emit('animation:cut-created', { 
+                    cutId: cut.id, 
+                    cutIndex: this.animationData.cuts.length - 1 
                 });
             }
+            
+            return cut;
         }
         
-        // 全レイヤー状態をキャプチャ（API統一版）
-        captureAllLayerStates() {
-            const snapshots = [];
+        // 【改修】現在のレイヤーをCUT用にディープコピー
+        copyCurrentLayersForCut() {
+            const copiedLayers = [];
             
             if (!this.layerSystem || !this.layerSystem.layers) {
-                console.warn('LayerSystem not available for capture');
-                return snapshots;
+                return copiedLayers;
             }
             
-            this.layerSystem.layers.forEach(layer => {
-                if (!layer || !layer.layerData) return;
+            this.layerSystem.layers.forEach(originalLayer => {
+                if (!originalLayer || !originalLayer.layerData) return;
                 
-                const layerId = layer.layerData.id;
+                const layerId = originalLayer.layerData.id;
                 
-                // LayerSystem統一API使用
+                // レイヤーの変形データ取得
                 const transform = this.layerSystem.layerTransforms.get(layerId) || {
                     x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
                 };
                 
-                // パスデータのディープコピー（非破壊保存）
-                const pathsData = layer.layerData.paths ? layer.layerData.paths.map(path => ({
-                    id: path.id || ('path_' + Date.now() + Math.random()),
-                    points: path.points ? [...path.points] : [],
-                    size: path.size || 16,
-                    color: path.color || 0x000000,
-                    opacity: path.opacity || 1.0,
-                    tool: path.tool || 'pen'
-                })) : [];
+                // パスデータのディープコピー
+                const pathsData = originalLayer.layerData.paths ? 
+                    originalLayer.layerData.paths.map(path => ({
+                        id: path.id || ('path_' + Date.now() + Math.random()),
+                        points: path.points ? [...path.points] : [],
+                        size: path.size || 16,
+                        color: path.color || 0x000000,
+                        opacity: path.opacity || 1.0,
+                        tool: path.tool || 'pen'
+                    })) : [];
                 
-                snapshots.push({
-                    layerId: layerId,
-                    visible: layer.layerData.visible !== false,
-                    opacity: layer.layerData.opacity || 1.0,
+                // CUT専用レイヤーデータ作成
+                const cutLayerData = {
+                    id: layerId + '_cut' + Date.now(),  // CUT専用ID
+                    name: originalLayer.layerData.name,
+                    visible: originalLayer.layerData.visible !== false,
+                    opacity: originalLayer.layerData.opacity || 1.0,
+                    isBackground: originalLayer.layerData.isBackground || false,
                     transform: { ...transform },
-                    pathsData: pathsData,
+                    paths: pathsData,
                     timestamp: Date.now()
-                });
+                };
+                
+                copiedLayers.push(cutLayerData);
             });
             
-            console.log('📸 Captured', snapshots.length, 'layer states');
-            return snapshots;
+            console.log('📸 Copied', copiedLayers.length, 'layers for new CUT');
+            return copiedLayers;
         }
         
-        // CUTを適用（レイヤー状態を復元）- API統一版
-        applyCutToLayers(cutIndex) {
+        // 【改修】CUT切り替え：レイヤーセット全体の切り替え
+        switchToActiveCut(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut || !this.layerSystem) {
                 console.warn('Cut or LayerSystem not available:', cutIndex);
                 return;
             }
             
-            console.log('🎬 Applying cut:', cutIndex, cut.name);
-            
-            // 現在の状態をバックアップ
-            this.backupSnapshots = this.captureAllLayerStates();
-            
-            // LayerSystem API統一：レイヤー状態適用
-            cut.layerSnapshots.forEach(snapshot => {
-                this.applySnapshotToLayer(snapshot);
-            });
+            console.log('🎬 Switching to cut:', cutIndex, cut.name);
             
             // 現在のCUTインデックス更新
             this.animationData.playback.currentCutIndex = cutIndex;
             
-            // UI更新（LayerSystem API使用）
-            if (this.layerSystem.updateLayerPanelUI) {
-                this.layerSystem.updateLayerPanelUI();
-            }
+            // LayerSystemのレイヤー配列を指定CUTのレイヤーに切り替え
+            this.setActiveCut(cutIndex);
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:cut-applied', { cutIndex });
             }
         }
         
-        // スナップショットをレイヤーに適用（API統一）
-        applySnapshotToLayer(snapshot) {
-            const layer = this.layerSystem.layers.find(
-                l => l.layerData && l.layerData.id === snapshot.layerId
-            );
+        // 【改修】LayerSystem統合：アクティブCUT設定
+        setActiveCut(cutIndex) {
+            const cut = this.animationData.cuts[cutIndex];
+            if (!cut || !this.layerSystem) return;
             
-            if (!layer) {
-                console.warn('Layer not found for snapshot:', snapshot.layerId);
-                return;
+            // 現在のLayerSystemレイヤーを破棄
+            this.clearLayerSystemLayers();
+            
+            // CUTのレイヤーデータからLayerSystemレイヤーを再構築
+            this.rebuildLayersFromCutData(cut.layers);
+            
+            // LayerSystem UI更新
+            if (this.layerSystem.updateLayerPanelUI) {
+                this.layerSystem.updateLayerPanelUI();
             }
             
-            // 基本プロパティ適用
-            layer.layerData.visible = snapshot.visible;
-            layer.visible = snapshot.visible;
-            layer.layerData.opacity = snapshot.opacity;
-            layer.alpha = snapshot.opacity;
-            
-            // LayerSystem API統一：変形適用
-            this.layerSystem.layerTransforms.set(
-                snapshot.layerId, 
-                { ...snapshot.transform }
-            );
-            
-            // CoordinateSystem API使用：座標変換適用
-            if (this.coordAPI && this.coordAPI.worldToScreen) {
-                const screenPos = this.coordAPI.worldToScreen(
-                    snapshot.transform.x, 
-                    snapshot.transform.y
-                );
-                layer.position.set(screenPos.x, screenPos.y);
-            } else {
-                // フォールバック：中央基準
-                const centerX = window.TEGAKI_CONFIG.canvas.width / 2;
-                const centerY = window.TEGAKI_CONFIG.canvas.height / 2;
-                layer.position.set(
-                    centerX + snapshot.transform.x,
-                    centerY + snapshot.transform.y
-                );
-            }
-            
-            layer.rotation = snapshot.transform.rotation;
-            layer.scale.set(
-                snapshot.transform.scaleX,
-                snapshot.transform.scaleY
-            );
-            
-            // パスデータ復元
-            this.restoreLayerPaths(layer, snapshot.pathsData);
+            console.log('✅ LayerSystem layers synchronized with CUT', cutIndex);
         }
         
-        // パスデータから描画を復元（PixiJS v8.13対応）
-        restoreLayerPaths(layer, pathsData) {
-            if (!layer || !pathsData) return;
+        // 【改修】LayerSystemレイヤークリア
+        clearLayerSystemLayers() {
+            if (!this.layerSystem || !this.layerSystem.layers) return;
             
-            // 既存の描画をクリア（背景Graphics以外）
-            const childrenToRemove = [];
-            layer.children.forEach(child => {
-                if (child !== layer.layerData.backgroundGraphics) {
-                    childrenToRemove.push(child);
+            // 各レイヤーを安全に破棄
+            this.layerSystem.layers.forEach(layer => {
+                if (layer.layerData && layer.layerData.paths) {
+                    layer.layerData.paths.forEach(path => {
+                        if (path.graphics && path.graphics.destroy) {
+                            path.graphics.destroy();
+                        }
+                    });
                 }
-            });
-            
-            childrenToRemove.forEach(child => {
-                layer.removeChild(child);
-                if (child.destroy) child.destroy();
-            });
-            
-            // LayerData更新
-            layer.layerData.paths = [];
-            
-            // パスデータからGraphicsを再生成
-            pathsData.forEach(pathData => {
-                if (!pathData.points || pathData.points.length === 0) return;
                 
+                if (layer.parent) {
+                    layer.parent.removeChild(layer);
+                }
+                layer.destroy();
+            });
+            
+            // 配列をクリア
+            this.layerSystem.layers = [];
+            this.layerSystem.layerTransforms.clear();
+            this.layerSystem.activeLayerIndex = -1;
+        }
+        
+        // 【改修】CUTデータからLayerSystemレイヤーを再構築
+        rebuildLayersFromCutData(cutLayers) {
+            if (!cutLayers || !Array.isArray(cutLayers)) return;
+            
+            cutLayers.forEach(cutLayerData => {
+                // PIXIコンテナ作成
+                const layer = new PIXI.Container();
+                layer.label = cutLayerData.id;
+                layer.layerData = {
+                    id: cutLayerData.id,
+                    name: cutLayerData.name,
+                    visible: cutLayerData.visible,
+                    opacity: cutLayerData.opacity,
+                    isBackground: cutLayerData.isBackground,
+                    paths: []
+                };
+                
+                // 変形データ設定
+                this.layerSystem.layerTransforms.set(cutLayerData.id, cutLayerData.transform);
+                
+                // 背景レイヤー処理
+                if (cutLayerData.isBackground) {
+                    const bg = new PIXI.Graphics();
+                    bg.rect(0, 0, this.layerSystem.config.canvas.width, this.layerSystem.config.canvas.height);
+                    bg.fill(this.layerSystem.config.background.color);
+                    layer.addChild(bg);
+                    layer.layerData.backgroundGraphics = bg;
+                }
+                
+                // パスデータからGraphicsを再生成
+                cutLayerData.paths.forEach(pathData => {
+                    const path = this.rebuildPathFromData(pathData);
+                    if (path) {
+                        layer.layerData.paths.push(path);
+                        layer.addChild(path.graphics);
+                    }
+                });
+                
+                // レイヤーの表示設定適用
+                layer.visible = cutLayerData.visible;
+                layer.alpha = cutLayerData.opacity;
+                
+                // 変形適用
+                this.applyTransformToLayer(layer, cutLayerData.transform);
+                
+                // LayerSystemに追加
+                this.layerSystem.layers.push(layer);
+                this.layerSystem.layersContainer.addChild(layer);
+            });
+            
+            // アクティブレイヤー設定
+            if (this.layerSystem.layers.length > 0) {
+                this.layerSystem.activeLayerIndex = this.layerSystem.layers.length - 1;
+            }
+        }
+        
+        // 【改修】パスデータからPath+Graphicsオブジェクトを再構築
+        rebuildPathFromData(pathData) {
+            if (!pathData || !pathData.points || pathData.points.length === 0) {
+                return null;
+            }
+            
+            try {
                 const graphics = new PIXI.Graphics();
                 
                 // PixiJS v8.13形式での描画
@@ -299,17 +342,147 @@
                     });
                 });
                 
-                layer.addChild(graphics);
-                
-                // LayerDataに追加
-                layer.layerData.paths.push({
-                    ...pathData,
+                return {
+                    id: pathData.id,
+                    points: pathData.points,
+                    size: pathData.size,
+                    color: pathData.color,
+                    opacity: pathData.opacity,
+                    tool: pathData.tool,
                     graphics: graphics
-                });
-            });
+                };
+                
+            } catch (error) {
+                console.error('❌ Error rebuilding path:', error);
+                return null;
+            }
         }
         
-        // 【段階1修正版】レイヤーサムネイル活用方式でのCUTサムネイル生成
+        // 【改修】レイヤーに変形を適用
+        applyTransformToLayer(layer, transform) {
+            if (!transform || !layer) return;
+            
+            const centerX = this.layerSystem.config.canvas.width / 2;
+            const centerY = this.layerSystem.config.canvas.height / 2;
+            
+            // 位置設定
+            layer.position.set(centerX + transform.x, centerY + transform.y);
+            
+            // 回転・拡縮がある場合は基準点設定
+            if (transform.rotation !== 0 || Math.abs(transform.scaleX) !== 1 || Math.abs(transform.scaleY) !== 1) {
+                layer.pivot.set(centerX, centerY);
+                layer.rotation = transform.rotation;
+                layer.scale.set(transform.scaleX, transform.scaleY);
+            }
+        }
+        
+        // 【改修】現在のCUTレイヤーに新しいレイヤーを追加
+        addLayerToCurrentCut(layerData) {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut) return null;
+            
+            // CUTにレイヤーデータ追加
+            currentCut.layers.push(layerData);
+            
+            // LayerSystemにも反映
+            const layer = this.rebuildSingleLayerFromData(layerData);
+            if (layer) {
+                this.layerSystem.layers.push(layer);
+                this.layerSystem.layersContainer.addChild(layer);
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:layer-added-to-cut', {
+                        cutIndex: this.animationData.playback.currentCutIndex,
+                        layerId: layerData.id
+                    });
+                }
+            }
+            
+            return layer;
+        }
+        
+        // 【改修】単一レイヤーデータからPIXIレイヤーを構築
+        rebuildSingleLayerFromData(layerData) {
+            const layer = new PIXI.Container();
+            layer.label = layerData.id;
+            layer.layerData = {
+                id: layerData.id,
+                name: layerData.name,
+                visible: layerData.visible,
+                opacity: layerData.opacity,
+                isBackground: layerData.isBackground,
+                paths: []
+            };
+            
+            // 変形データ設定
+            this.layerSystem.layerTransforms.set(layerData.id, layerData.transform || {
+                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+            });
+            
+            // パス再構築
+            if (layerData.paths) {
+                layerData.paths.forEach(pathData => {
+                    const path = this.rebuildPathFromData(pathData);
+                    if (path) {
+                        layer.layerData.paths.push(path);
+                        layer.addChild(path.graphics);
+                    }
+                });
+            }
+            
+            // 表示設定適用
+            layer.visible = layerData.visible;
+            layer.alpha = layerData.opacity;
+            
+            // 変形適用
+            if (layerData.transform) {
+                this.applyTransformToLayer(layer, layerData.transform);
+            }
+            
+            return layer;
+        }
+        
+        // 【改修】現在CUTのレイヤーデータを更新
+        updateCurrentCutLayer(layerIndex, updateData) {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut || layerIndex < 0 || layerIndex >= currentCut.layers.length) return;
+            
+            // CUTのレイヤーデータを更新
+            Object.assign(currentCut.layers[layerIndex], updateData);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-layer-updated', {
+                    cutIndex: this.animationData.playback.currentCutIndex,
+                    layerIndex,
+                    updateData
+                });
+            }
+        }
+        
+        // 【改修】現在CUTの全レイヤー状態を保存
+        saveCutLayerStates() {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut || !this.layerSystem) return;
+            
+            // LayerSystemの現在状態をCUTに反映
+            currentCut.layers = this.copyCurrentLayersForCut();
+            
+            console.log('💾 Cut layer states saved:', currentCut.name);
+            
+            // サムネイル再生成
+            setTimeout(() => {
+                this.generateCutThumbnail(this.animationData.playback.currentCutIndex);
+            }, 50);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-updated', { 
+                    cutIndex: this.animationData.playback.currentCutIndex,
+                    cutId: currentCut.id
+                });
+            }
+        }
+        
+        // CUTサムネイル生成（レイヤー合成方式）
         async generateCutThumbnail(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut || !this.layerSystem) {
@@ -318,16 +491,17 @@
             }
             
             try {
-                console.log(`🖼️ Generating cut thumbnail for ${cut.name} using layer composite method...`);
+                console.log(`🖼️ Generating cut thumbnail for ${cut.name}...`);
                 
                 // 現在の状態を保存
-                const currentSnapshots = this.captureAllLayerStates();
                 const currentCutIndex = this.animationData.playback.currentCutIndex;
                 
-                // CUT状態を一時的に適用
-                this.temporarilyApplyCutState(cutIndex);
+                // 一時的にCUT状態を適用（必要に応じて）
+                if (cutIndex !== currentCutIndex) {
+                    this.temporarilyApplyCutState(cutIndex);
+                }
                 
-                // 【修正版】レイヤーサムネイル技術を活用したサムネイル生成
+                // レイヤー合成キャンバス生成
                 const thumbnailCanvas = await this.generateLayerCompositeCanvas();
                 
                 if (thumbnailCanvas) {
@@ -335,20 +509,19 @@
                     const texture = PIXI.Texture.from(thumbnailCanvas);
                     
                     // 既存のサムネイルテクスチャを破棄
-                    if (cut.thumbnailTexture) {
-                        cut.thumbnailTexture.destroy();
+                    if (cut.thumbnail) {
+                        cut.thumbnail.destroy();
                     }
                     
-                    cut.thumbnailTexture = texture;
-                    console.log('✅ Layer composite thumbnail generated for', cut.name);
+                    cut.thumbnail = texture;
+                    console.log('✅ Thumbnail generated for', cut.name);
                 } else {
-                    console.warn('⚠️ Failed to generate layer composite thumbnail for', cut.name);
+                    console.warn('⚠️ Failed to generate thumbnail for', cut.name);
                 }
                 
                 // 元の状態に戻す
-                if (currentCutIndex !== cutIndex) {
-                    this.restoreFromSnapshots(currentSnapshots);
-                    this.animationData.playback.currentCutIndex = currentCutIndex;
+                if (cutIndex !== currentCutIndex) {
+                    this.switchToActiveCut(currentCutIndex);
                 }
                 
                 if (this.eventBus) {
@@ -363,31 +536,20 @@
             }
         }
         
-        // 【段階1新規】CUT状態の一時適用（非同期対応）
+        // CUT状態の一時適用
         async temporarilyApplyCutState(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut) return;
             
-            // スナップショットを適用
-            cut.layerSnapshots.forEach(snapshot => {
-                this.applySnapshotToLayer(snapshot);
-            });
+            // 既存の再構築メソッドを再利用
+            this.clearLayerSystemLayers();
+            this.rebuildLayersFromCutData(cut.layers);
             
-            // レイヤーサムネイル更新を強制実行
-            if (this.layerSystem.processThumbnailUpdates) {
-                this.layerSystem.processThumbnailUpdates();
-            }
-            
-            // すべてのレイヤーのサムネイル更新をリクエスト
-            for (let i = 0; i < this.layerSystem.layers.length; i++) {
-                this.layerSystem.requestThumbnailUpdate(i);
-            }
-            
-            // サムネイル生成完了を待つ
-            await new Promise(resolve => setTimeout(resolve, 100));
+            // レンダリング完了を待つ
+            await new Promise(resolve => setTimeout(resolve, 50));
         }
         
-        // 【段階1新規】レイヤーサムネイル技術を活用した合成キャンバス生成
+        // レイヤー合成キャンバス生成
         async generateLayerCompositeCanvas() {
             try {
                 const thumbWidth = 46;
@@ -406,7 +568,7 @@
                 // 背景をクリア（透明）
                 ctx.clearRect(0, 0, thumbWidth, thumbHeight);
                 
-                // レイヤーを下から順に合成（layerSystemの順序に従う）
+                // レイヤーを下から順に合成
                 for (let i = 0; i < this.layerSystem.layers.length; i++) {
                     const layer = this.layerSystem.layers[i];
                     
@@ -415,18 +577,13 @@
                         continue;
                     }
                     
-                    // レイヤーサムネイルを取得
-                    const layerThumbnailCanvas = await this.getLayerThumbnailCanvas(i);
+                    // レイヤーを直接レンダリング（簡易版）
+                    const layerCanvas = await this.renderLayerToCanvas(layer);
                     
-                    if (layerThumbnailCanvas) {
-                        // レイヤー不透明度を適用して合成
+                    if (layerCanvas) {
                         const opacity = layer.alpha * (layer.layerData.opacity || 1.0);
                         ctx.globalAlpha = opacity;
-                        
-                        // レイヤーサムネイルを合成
-                        ctx.drawImage(layerThumbnailCanvas, 0, 0, thumbWidth, thumbHeight);
-                        
-                        // 不透明度をリセット
+                        ctx.drawImage(layerCanvas, 0, 0, thumbWidth, thumbHeight);
                         ctx.globalAlpha = 1.0;
                     }
                 }
@@ -439,71 +596,47 @@
             }
         }
         
-        // 【段階1新規】LayerSystemのサムネイル機能を活用してレイヤーサムネイルを取得
-        async getLayerThumbnailCanvas(layerIndex) {
+        // レイヤーを個別にキャンバスにレンダリング
+        async renderLayerToCanvas(layer) {
             try {
-                // LayerSystemのupdateThumbnailを呼び出してサムネイル更新
-                if (this.layerSystem.updateThumbnail) {
-                    this.layerSystem.updateThumbnail(layerIndex);
-                }
+                if (!this.app || !this.app.renderer) return null;
                 
-                // DOM上のレイヤーサムネイルを取得
-                const layerItems = document.querySelectorAll('.layer-item');
-                const panelIndex = this.layerSystem.layers.length - 1 - layerIndex;
+                const width = this.layerSystem.config.canvas.width;
+                const height = this.layerSystem.config.canvas.height;
                 
-                if (panelIndex < 0 || panelIndex >= layerItems.length) {
-                    return null;
-                }
+                // レンダリング用テクスチャ作成
+                const renderTexture = PIXI.RenderTexture.create({
+                    width: width,
+                    height: height
+                });
                 
-                const thumbnailElement = layerItems[panelIndex].querySelector('.layer-thumbnail img');
+                // 一時コンテナ作成
+                const tempContainer = new PIXI.Container();
+                tempContainer.addChild(layer);
                 
-                if (!thumbnailElement) {
-                    return null;
-                }
+                // レンダリング実行
+                this.app.renderer.render(tempContainer, { renderTexture });
                 
-                // img要素からCanvasに変換
-                const canvas = document.createElement('canvas');
-                canvas.width = 46;
-                canvas.height = 34;
-                const ctx = canvas.getContext('2d');
+                // キャンバスに変換
+                const canvas = this.app.renderer.extract.canvas(renderTexture);
                 
-                // 画像が読み込まれるまで待機
-                if (!thumbnailElement.complete) {
-                    await new Promise(resolve => {
-                        thumbnailElement.onload = resolve;
-                        thumbnailElement.onerror = resolve;
-                    });
-                }
+                // レイヤーを元のコンテナに戻す
+                tempContainer.removeChild(layer);
+                this.layerSystem.layersContainer.addChild(layer);
                 
-                // 画像をキャンバスに描画
-                ctx.drawImage(thumbnailElement, 0, 0, 46, 34);
+                // リソース解放
+                renderTexture.destroy();
+                tempContainer.destroy();
                 
                 return canvas;
                 
             } catch (error) {
-                console.error('❌ Error getting layer thumbnail canvas:', error);
+                console.error('❌ Error rendering layer to canvas:', error);
                 return null;
             }
         }
         
-        // スナップショットから状態復元（非同期対応）
-        async restoreFromSnapshots(snapshots) {
-            if (!snapshots || !this.layerSystem) return;
-            
-            snapshots.forEach(snapshot => {
-                this.applySnapshotToLayer(snapshot);
-            });
-            
-            // UI更新
-            if (this.layerSystem.updateLayerPanelUI) {
-                this.layerSystem.updateLayerPanelUI();
-            }
-            
-            // レンダリング完了を待つ
-            await new Promise(resolve => setTimeout(resolve, 30));
-        }
-        
-        // 再生制御（メソッド名修正）
+        // 再生制御（既存機能維持）
         play() {
             if (this.animationData.cuts.length === 0) {
                 console.warn('No cuts available for playback');
@@ -536,7 +669,7 @@
             
             // 最初のCUTに戻す
             if (this.animationData.cuts.length > 0) {
-                this.applyCutToLayers(0);
+                this.switchToActiveCut(0);
             }
             
             if (this.eventBus) {
@@ -544,7 +677,6 @@
             }
         }
         
-        // 【修正】再生/停止トグル（core-engine.jsで参照されているメソッド名に対応）
         togglePlayStop() {
             if (this.animationData.playback.isPlaying) {
                 this.stop();
@@ -553,7 +685,6 @@
             }
         }
         
-        // 【修正】再生/一時停止トグル（別名メソッド追加）
         togglePlayPause() {
             if (this.animationData.playback.isPlaying) {
                 this.pause();
@@ -608,7 +739,7 @@
                 }
                 
                 this.animationData.playback.startTime = Date.now();
-                this.applyCutToLayers(this.animationData.playback.currentCutIndex);
+                this.switchToActiveCut(this.animationData.playback.currentCutIndex);
                 
                 if (this.eventBus) {
                     this.eventBus.emit('animation:cut-changed', { 
@@ -631,8 +762,8 @@
             const cut = this.animationData.cuts[cutIndex];
             
             // RenderTextureを破棄
-            if (cut.thumbnailTexture) {
-                cut.thumbnailTexture.destroy();
+            if (cut.thumbnail) {
+                cut.thumbnail.destroy();
             }
             
             // 配列から削除
@@ -712,7 +843,7 @@
             }
             
             this.animationData.playback.currentCutIndex = newIndex;
-            this.applyCutToLayers(newIndex);
+            this.switchToActiveCut(newIndex);
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:frame-changed', { 
@@ -734,7 +865,7 @@
             }
             
             this.animationData.playback.currentCutIndex = newIndex;
-            this.applyCutToLayers(newIndex);
+            this.switchToActiveCut(newIndex);
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:frame-changed', { 
@@ -809,6 +940,12 @@
             return this.animationData.cuts[this.animationData.playback.currentCutIndex] || null;
         }
         
+        // 【改修】現在のCUTのレイヤー配列を取得
+        getCurrentCutLayers() {
+            const currentCut = this.getCurrentCut();
+            return currentCut ? currentCut.layers : [];
+        }
+        
         // 初期状態かどうかを確認
         hasInitialCut() {
             return this.animationData.cuts.length > 0;
@@ -821,8 +958,8 @@
             
             // RenderTextureを破棄
             this.animationData.cuts.forEach(cut => {
-                if (cut.thumbnailTexture) {
-                    cut.thumbnailTexture.destroy();
+                if (cut.thumbnail) {
+                    cut.thumbnail.destroy();
                 }
             });
             
@@ -835,6 +972,15 @@
             if (this.eventBus) {
                 this.eventBus.emit('animation:cleared');
             }
+        }
+        
+        // 【改修】従来メソッドの互換性維持（段階的移行用）
+        createCutFromCurrentState() {
+            return this.createNewCutFromCurrentLayers();
+        }
+        
+        applyCutToLayers(cutIndex) {
+            return this.switchToActiveCut(cutIndex);
         }
         
         // 座標系チェック（デバッグ用）
@@ -860,52 +1006,15 @@
                 hasContainer: !!(this.layerSystem.layersContainer || this.layerSystem.worldContainer),
                 hasUpdateUI: typeof this.layerSystem.updateLayerPanelUI === 'function',
                 hasUpdateThumbnail: typeof this.layerSystem.updateThumbnail === 'function',
-                layerCount: this.layerSystem.layers ? this.layerSystem.layers.length : 0
+                layerCount: this.layerSystem.layers ? this.layerSystem.layers.length : 0,
+                hasAnimationSystemRef: !!this.layerSystem.animationSystem
             };
             
             console.log('LayerSystem API Check:', checks);
             return checks;
         }
         
-        // 【段階1修正版】サムネイル品質チェック（デバッグ用）
-        debugThumbnailGeneration(cutIndex) {
-            const cut = this.animationData.cuts[cutIndex];
-            if (!cut) {
-                console.log('❌ Cut not found:', cutIndex);
-                return;
-            }
-            
-            console.log('🔍 Thumbnail Debug for', cut.name);
-            console.log('  - Has thumbnail texture:', !!cut.thumbnailTexture);
-            console.log('  - Layer snapshots count:', cut.layerSnapshots.length);
-            console.log('  - LayerSystem available:', !!this.layerSystem);
-            console.log('  - LayerSystem updateThumbnail available:', !!this.layerSystem?.updateThumbnail);
-            
-            // レイヤー状態確認
-            if (this.layerSystem?.layers) {
-                console.log('  - Active layers:', this.layerSystem.layers.length);
-                this.layerSystem.layers.forEach((layer, i) => {
-                    console.log(`    Layer ${i}:`, {
-                        visible: layer.visible,
-                        pathCount: layer.layerData?.paths?.length || 0,
-                        transform: this.layerSystem.layerTransforms.get(layer.layerData?.id)
-                    });
-                });
-            }
-            
-            // DOM上のレイヤーサムネイル確認
-            const layerItems = document.querySelectorAll('.layer-item');
-            console.log('  - DOM layer items:', layerItems.length);
-            layerItems.forEach((item, i) => {
-                const img = item.querySelector('.layer-thumbnail img');
-                console.log(`    DOM Layer ${i}:`, {
-                    hasImage: !!img,
-                    imageSrc: img ? img.src.substring(0, 50) + '...' : 'none'
-                });
-            });
-        }
-        
-        // 修正版デバッグ用：アニメーション情報出力
+        // デバッグ用：アニメーション情報出力
         debugInfo() {
             const coordCheck = this.checkCoordinateSystem();
             const layerCheck = this.checkLayerSystemAPI();
@@ -915,15 +1024,20 @@
                 cutsCount: this.animationData.cuts.length,
                 initialCutCreated: this.initialCutCreated,
                 hasInitialCut: this.hasInitialCut(),
-                isPlaying: this.animationData.playbook.isPlaying,
+                isPlaying: this.animationData.playback.isPlaying,
                 currentCut: this.animationData.playback.currentCutIndex,
                 settings: this.animationData.settings,
                 eventBusAvailable: !!this.eventBus,
                 coordinateSystemAPI: coordCheck,
-                layerSystemAPI: layerCheck
+                layerSystemAPI: layerCheck,
+                cutStructure: this.animationData.cuts.map(cut => ({
+                    id: cut.id,
+                    name: cut.name,
+                    layerCount: cut.layers.length
+                }))
             };
             
-            console.log('AnimationSystem Debug Info (段階1修正版):');
+            console.log('AnimationSystem Debug Info (段階1改修版):');
             console.log('- Animation Mode:', info.isAnimationMode);
             console.log('- Cuts Count:', info.cutsCount);
             console.log('- Initial Cut Created:', info.initialCutCreated);
@@ -934,20 +1048,24 @@
             console.log('- EventBus:', info.eventBusAvailable ? '✅' : '❌');
             console.log('- CoordinateSystem:', coordCheck.status || '❌');
             console.log('- LayerSystem:', layerCheck.hasLayers ? '✅' : '❌');
-            console.log('- 🆕 Layer Composite Thumbnail: ✅');
-            console.log('- 🆕 Method Name Fixes: ✅');
+            console.log('- 🆕 2D Matrix Structure: ✅');
+            console.log('- 🆕 CUT×Layer Independence: ✅');
+            console.log('- 🆕 LayerSystem Integration: ✅');
+            console.log('- Cut Structure:', info.cutStructure);
             
             return info;
         }
     }
     
     window.TegakiAnimationSystem = AnimationSystem;
-    console.log('✅ animation-system.js loaded (段階1修正版: レイヤーサムネイル活用方式)');
-    console.log('🔧 段階1修正内容:');
-    console.log('  - generateLayerCompositeCanvas(): LayerSystemサムネイル技術活用');
-    console.log('  - getLayerThumbnailCanvas(): DOM上のレイヤーサムネイル取得');
-    console.log('  - togglePlayPause(): メソッド名不整合修正');
-    console.log('  - レンダラー参照エラー修正（PixiJS直接レンダリング回避）');
-    console.log('  - キャンバスリサイズ耐性: LayerSystemサムネイル継承');
-    console.log('  - 高品質合成: imageSmoothingQuality=high');
+    console.log('✅ animation-system.js loaded (段階1改修版: 2次元レイヤー構造実装)');
+    console.log('🔧 段階1改修完了:');
+    console.log('  - 🆕 CUT × レイヤー = 2次元マトリクス構造実装');
+    console.log('  - 🆕 各CUTが独自のレイヤー配列を持つ');
+    console.log('  - 🆕 switchToActiveCut(): レイヤーセット全体切り替え');
+    console.log('  - 🆕 LayerSystem双方向統合');
+    console.log('  - 🆕 createNewEmptyCut(): 独立レイヤー空間作成');
+    console.log('  - 🆕 addLayerToCurrentCut(): 現在CUT内レイヤー操作');
+    console.log('  - 🔧 従来メソッド互換性維持');
+    console.log('  - 🔧 参照整合性確保: LayerSystem ⇔ AnimationSystem');
 })();
