@@ -1,22 +1,7 @@
-// ===== ui/timeline-ui.js - 構造的問題修正版: グローバル公開対応 =====
-// CHG: window.TegakiTimelineUI グローバル公開追加
-
-/*
-=== 構造的問題修正ヘッダー ===
-
-【修正内容】
-✅ window.TegakiTimelineUI グローバル公開追加
-✅ DOM要素安全確認処理強化
-✅ EventBus接続確認処理追加
-✅ 初期化フローの安全性向上
-
-【変更箇所】
-- ファイル末尾にwindow.TegakiTimelineUI = TimelineUI追加
-- init()メソッドにDOM要素確認強化
-- setupEventListeners()にEventBus接続確認追加
-
-=== 構造的問題修正ヘッダー終了 ===
-*/
+// ===== ui/timeline-ui.js - サムネイル改善版: 不要ボタン削除・表示時間UI改善 =====
+// 【修正完了】サムネイル上の不要な◀▶ボタン削除
+// 【修正完了】表示時間入力を◀▶スタイルに変更
+// 【修正完了】タイムラインUI窮屈さ解消
 
 (function() {
     'use strict';
@@ -33,18 +18,15 @@
             this.isPlaying = false;
             this.isLooping = true;
             
-            // CHG: EventBus取得安全化
             this.eventBus = window.TegakiEventBus;
             if (!this.eventBus) {
                 console.error('TimelineUI: TegakiEventBus not available');
             }
         }
         
-        // CHG: 構造的問題修正版 - DOM要素確認強化
         init() {
             console.log('🎬 TimelineUI initialization starting...');
             
-            // CHG: DOM要素の安全確認（待機処理追加）
             this.timelinePanel = document.getElementById('timeline-panel');
             this.cutsContainer = document.getElementById('cuts-container');
             
@@ -53,7 +35,6 @@
                 console.error('  - timeline-panel:', !!this.timelinePanel);
                 console.error('  - cuts-container:', !!this.cutsContainer);
                 
-                // CHG: DOM準備待ち処理追加
                 if (document.readyState !== 'complete') {
                     console.log('🎬 Waiting for DOM ready...');
                     document.addEventListener('DOMContentLoaded', () => {
@@ -62,7 +43,6 @@
                     return;
                 }
                 
-                // CHG: DOM要素作成フォールバック（緊急対応）
                 this.createTimelineDOM();
             }
             
@@ -77,9 +57,9 @@
                 );
             }
             
-            // UI レイアウト変更実行（Phase3から継続）
-            this.updateTimelineLayout();
-            this.addTimelineCSS();
+            // 【修正】改善されたタイムラインレイアウト適用
+            this.updateTimelineLayoutImproved();
+            this.addImprovedTimelineCSS();
             
             this.setupEventListeners();
             this.setupKeyboardShortcuts();
@@ -87,14 +67,12 @@
             this.createLayerPanelCutIndicator();
             this.ensureInitialCut();
             
-            console.log('✅ TimelineUI initialized (構造的問題修正版)');
+            console.log('✅ TimelineUI initialized (サムネイル改善版)');
         }
         
-        // CHG: 構造的問題修正版 - DOM要素作成フォールバック
         createTimelineDOM() {
             console.log('🎬 Creating timeline DOM elements as fallback...');
             
-            // timeline-panel作成
             if (!this.timelinePanel) {
                 this.timelinePanel = document.createElement('div');
                 this.timelinePanel.id = 'timeline-panel';
@@ -127,7 +105,6 @@
                 console.log('✅ Timeline panel DOM created');
             }
             
-            // cuts-container確認
             if (!this.cutsContainer) {
                 this.cutsContainer = document.getElementById('cuts-container') || 
                     this.timelinePanel.querySelector('#cuts-container');
@@ -141,21 +118,20 @@
             console.log('✅ Timeline DOM elements ready');
         }
         
-        // CHG: 構造的問題修正版 - 初期化リトライ処理
         retryInit() {
             console.log('🎬 Retrying TimelineUI initialization...');
             this.timelinePanel = document.getElementById('timeline-panel');
             this.cutsContainer = document.getElementById('cuts-container');
             
             if (this.timelinePanel && this.cutsContainer) {
-                this.init(); // 再初期化実行
+                this.init(); 
             } else {
                 console.error('Timeline DOM elements still not available after retry');
             }
         }
         
-        // Phase3改修継続：タイムラインレイアウト更新
-        updateTimelineLayout() {
+        // 【修正】改善されたタイムラインレイアウト
+        updateTimelineLayoutImproved() {
             const timelineBottom = this.timelinePanel.querySelector('.timeline-bottom');
             if (!timelineBottom) {
                 console.error('Timeline bottom container not found');
@@ -163,7 +139,7 @@
             }
             
             timelineBottom.innerHTML = `
-                <!-- 左側：FPS設定 -->
+                <!-- 左側：FPS設定とCUT追加 -->
                 <div class="timeline-settings">
                     <label>FPS: 
                         <input type="number" id="fps-input" min="1" max="60" value="12">
@@ -183,7 +159,6 @@
                         </svg>
                     </button>
                     
-                    <!-- CHG: Phase5改修 - タイトル更新 -->
                     <button id="play-btn" title="再生/停止 (Space / Alt+Space)">▶</button>
                 </div>
                 
@@ -195,14 +170,14 @@
                 <button class="timeline-close" id="close-timeline">×</button>
             `;
             
-            console.log('✅ Timeline layout updated - shortcut info updated');
+            console.log('✅ Timeline layout updated (改善版)');
         }
         
-        // Phase3改修継続：タイムライン用CSS追加
-        addTimelineCSS() {
+        // 【修正】改善されたタイムライン用CSS
+        addImprovedTimelineCSS() {
             const style = document.createElement('style');
             style.textContent = `
-                /* Phase3改修継続：新しいタイムラインレイアウト用CSS */
+                /* 【修正】改善されたタイムラインCSS - サムネイル不要ボタン削除・表示時間UI改善 */
                 
                 .timeline-loop-btn {
                     padding: 4px 8px !important;
@@ -302,75 +277,196 @@
                     transform: translateY(-1px) !important;
                 }
                 
-                .cut-thumbnail {
+                /* 【修正】改善されたCUTアイテムレイアウト - サムネイル不要ボタン削除 */
+                .cut-item {
+                    min-width: 52px !important;
+                    background: var(--futaba-background) !important;
+                    border: 1px solid var(--futaba-light-medium) !important;
+                    border-radius: 4px !important;
+                    padding: 3px !important;
+                    cursor: pointer !important;
                     position: relative !important;
+                    transition: all 0.2s ease !important;
+                    flex-shrink: 0 !important;
+                    display: flex !important;
+                    flex-direction: column !important;
+                    align-items: center !important;
+                    box-shadow: 0 1px 3px rgba(128, 0, 0, 0.1) !important;
+                }
+
+                .cut-item:hover {
+                    border-color: var(--futaba-medium) !important;
+                    transform: translateY(-1px) !important;
+                    box-shadow: 0 2px 6px rgba(128, 0, 0, 0.15) !important;
+                }
+
+                .cut-item.active {
+                    border-color: var(--futaba-maroon) !important;
+                    background: var(--futaba-light-medium) !important;
+                    box-shadow: 0 0 0 2px rgba(128, 0, 0, 0.3) !important;
+                    transform: translateY(-1px) !important;
+                }
+
+                .cut-thumbnail {
+                    width: 46px !important;
+                    height: 34px !important;
+                    background: var(--futaba-background) !important;
+                    border: 1px solid var(--futaba-light-medium) !important;
+                    border-radius: 3px !important;
+                    overflow: hidden !important;
+                    margin-bottom: 2px !important;
+                    position: relative !important;
+                    /* 【修正】サムネイルナビゲーションボタンを削除 */
+                }
+
+                .cut-thumbnail img {
+                    width: 100% !important;
+                    height: 100% !important;
+                    object-fit: cover !important;
+                }
+
+                .cut-thumbnail-placeholder {
+                    width: 100% !important;
+                    height: 100% !important;
+                    background: linear-gradient(45deg, var(--futaba-light-medium) 25%, transparent 25%), 
+                                linear-gradient(-45deg, var(--futaba-light-medium) 25%, transparent 25%), 
+                                linear-gradient(45deg, transparent 75%, var(--futaba-light-medium) 75%), 
+                                linear-gradient(-45deg, transparent 75%, var(--futaba-light-medium) 75%) !important;
+                    background-size: 6px 6px !important;
+                    background-position: 0 0, 0 3px, 3px -3px, -3px 0px !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    color: var(--futaba-maroon) !important;
+                    font-size: 7px !important;
+                    font-weight: bold !important;
+                }
+
+                .cut-name {
+                    font-size: 8px !important;
+                    color: var(--futaba-maroon) !important;
+                    margin-bottom: 2px !important;
+                    font-weight: 600 !important;
+                    text-align: center !important;
+                    white-space: nowrap !important;
+                    overflow: hidden !important;
+                    text-overflow: ellipsis !important;
+                    max-width: 46px !important;
+                    line-height: 1.2 !important;
+                }
+
+                /* 【修正】改善された表示時間入力 - ◀▶スタイル */
+                .cut-duration-container {
+                    width: 46px !important;
+                    height: 16px !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    border: 1px solid var(--futaba-light-medium) !important;
+                    border-radius: 3px !important;
+                    background: var(--futaba-background) !important;
+                    overflow: hidden !important;
+                    margin-bottom: 2px !important;
                 }
                 
-                .thumb-nav-btn {
-                    position: absolute !important;
-                    top: 50% !important;
-                    transform: translateY(-50%) !important;
-                    width: 16px !important;
-                    height: 16px !important;
-                    font-size: 10px !important;
-                    background: rgba(128, 0, 0, 0.8) !important;
-                    color: white !important;
+                .duration-decrease, .duration-increase {
+                    width: 12px !important;
+                    height: 100% !important;
+                    background: var(--futaba-light-medium) !important;
                     border: none !important;
-                    border-radius: 2px !important;
+                    color: var(--futaba-maroon) !important;
+                    font-size: 8px !important;
+                    font-weight: bold !important;
+                    cursor: pointer !important;
+                    transition: all 0.15s ease !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    line-height: 1 !important;
+                }
+                
+                .duration-decrease:hover, .duration-increase:hover {
+                    background: var(--futaba-medium) !important;
+                    color: var(--futaba-maroon) !important;
+                }
+                
+                .duration-decrease:active, .duration-increase:active {
+                    background: var(--futaba-maroon) !important;
+                    color: var(--futaba-background) !important;
+                }
+                
+                .cut-duration {
+                    flex: 1 !important;
+                    height: 100% !important;
+                    border: none !important;
+                    background: transparent !important;
+                    text-align: center !important;
+                    font-size: 7px !important;
+                    font-family: monospace !important;
+                    color: var(--futaba-maroon) !important;
+                    padding: 0 1px !important;
+                    outline: none !important;
+                }
+                
+                .cut-duration:focus {
+                    background: var(--futaba-cream) !important;
+                }
+
+                .delete-cut-btn {
+                    position: absolute !important;
+                    top: -3px !important;
+                    right: -3px !important;
+                    width: 14px !important;
+                    height: 14px !important;
+                    background: rgba(128, 0, 0, 0.9) !important;
+                    border: none !important;
+                    border-radius: 50% !important;
+                    color: white !important;
+                    font-size: 8px !important;
+                    line-height: 1 !important;
                     cursor: pointer !important;
                     opacity: 0 !important;
                     transition: all 0.2s ease !important;
                     display: flex !important;
                     align-items: center !important;
                     justify-content: center !important;
-                    font-weight: bold !important;
-                    line-height: 1 !important;
-                    z-index: 10 !important;
+                    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.3) !important;
                 }
-                
-                .cut-item:hover .thumb-nav-btn {
+
+                .cut-item:hover .delete-cut-btn {
                     opacity: 1 !important;
                 }
-                
-                .thumb-nav-btn:hover {
+
+                .delete-cut-btn:hover {
                     background: rgba(128, 0, 0, 1) !important;
-                    transform: translateY(-50%) scale(1.1) !important;
+                    transform: scale(1.1) !important;
                 }
                 
-                .thumb-nav-left {
-                    left: 2px !important;
-                }
-                
-                .thumb-nav-right {
-                    right: 2px !important;
-                }
+                /* 【削除】サムネイルナビゲーションボタン関連のCSS削除 */
+                /* .thumb-nav-btn, .thumb-nav-left, .thumb-nav-right は削除 */
             `;
             
             document.head.appendChild(style);
-            console.log('✅ Timeline CSS added');
+            console.log('✅ Improved Timeline CSS added (サムネイル改善版)');
         }
         
         ensureInitialCut() {
             const animData = this.animationSystem.getAnimationData();
             if (animData.cuts.length === 0) {
                 this.animationSystem.createNewCutFromCurrentLayers();
-                console.log('🎬 Initial CUT1 created with new structure');
+                console.log('🎬 Initial CUT1 created with improved structure');
             }
             
             this.updateLayerPanelIndicator();
         }
         
-        // CHG: 構造的問題修正版 - EventBus受信処理強化
         setupEventListeners() {
             console.log('🎬 Setting up TimelineUI event listeners...');
             
-            // CHG: EventBus接続確認
             if (!this.eventBus) {
                 console.error('TimelineUI: Cannot setup event listeners - EventBus not available');
                 return;
             }
             
-            // タイムライン表示切り替えイベント受信
             this.eventBus.on('ui:toggle-timeline', () => {
                 console.log('🎬 Received ui:toggle-timeline event');
                 this.toggle();
@@ -386,14 +482,13 @@
                 this.hide();
             });
             
-            // 新しいボタンのイベントリスナー設定
-            this.setupNewButtonListeners();
+            this.setupImprovedButtonListeners();
             
             console.log('✅ TimelineUI event listeners setup completed');
         }
         
-        // 新しいボタンレイアウト用イベントリスナー（Phase3から継続）
-        setupNewButtonListeners() {
+        // 【修正】改善されたボタンリスナー
+        setupImprovedButtonListeners() {
             // ループボタン
             const loopBtn = document.getElementById('loop-btn');
             if (loopBtn) {
@@ -448,7 +543,6 @@
             }
         }
         
-        // CHG: Phase5改修 - 再生/停止切り替えメソッド統一
         togglePlayStop() {
             if (this.isPlaying) {
                 this.animationSystem.stop();
@@ -457,7 +551,6 @@
             }
         }
         
-        // ループ切り替え機能（Phase3から継続）
         toggleLoop() {
             this.isLooping = !this.isLooping;
             this.updateLoopButtonState();
@@ -479,7 +572,6 @@
             }
         }
         
-        // CHG: 構造的問題修正版 - 表示制御メソッド強化
         toggle() {
             if (this.isVisible) {
                 this.hide();
@@ -531,17 +623,14 @@
             }
         }
         
-        // CHG: Phase5改修 - キーボードショートカット更新
         setupKeyboardShortcuts() {
             document.addEventListener('keydown', (e) => {
-                // タイムライン非表示時はショートカット無効
                 if (!this.isVisible) return;
                 
                 switch (e.code) {
                     case 'Space':
-                        // CHG: Phase5改修 - Space単体はタイムライン表示時のみ有効
                         if (!e.ctrlKey && !e.altKey) {
-                            this.togglePlayStop(); // CHG: 統一メソッド使用
+                            this.togglePlayStop();
                             e.preventDefault();
                         }
                         break;
@@ -572,11 +661,9 @@
             console.log('   - ALT+Space: Global play/stop toggle (via CoreRuntime)');
         }
         
-        // CHG: Phase5改修 - アニメーションイベント追加
         setupAnimationEvents() {
             if (!this.eventBus) return;
             
-            // CHG: Phase5改修 - ALT+Spaceからの再生切り替えイベント受信
             this.eventBus.on('animation:play-toggle', () => {
                 console.log('🎬 Received animation:play-toggle event from ALT+Space');
                 this.togglePlayStop();
@@ -619,7 +706,6 @@
                 this.updateLayerPanelIndicator();
             });
             
-            // GIF書き出しイベント
             this.eventBus.on('gif:export-progress', (data) => {
                 this.updateExportProgress(data.progress);
             });
@@ -634,9 +720,6 @@
             });
         }
         
-        // === その他の既存メソッド（継続） ===
-        
-        // レイヤーパネル上部にCUT表示を追加
         createLayerPanelCutIndicator() {
             const layerContainer = document.getElementById('layer-panel-container');
             if (!layerContainer) return;
@@ -716,7 +799,7 @@
             this.cutsContainer.innerHTML = '';
             
             animData.cuts.forEach((cut, index) => {
-                const cutItem = this.createCutItem(cut, index);
+                const cutItem = this.createImprovedCutItem(cut, index);
                 this.cutsContainer.appendChild(cutItem);
             });
             
@@ -734,8 +817,8 @@
             }
         }
         
-        // CUTアイテム作成（サムネイル左右ボタン追加）
-        createCutItem(cut, index) {
+        // 【修正】改善されたCUTアイテム作成（サムネイルナビゲーションボタン削除）
+        createImprovedCutItem(cut, index) {
             const cutItem = document.createElement('div');
             cutItem.className = 'cut-item';
             cutItem.dataset.cutIndex = index;
@@ -745,14 +828,17 @@
             cutItem.innerHTML = `
                 <div class="cut-thumbnail" data-cut-index="${index}">
                     ${thumbnailHtml}
-                    <button class="thumb-nav-btn thumb-nav-left" data-cut-index="${index}" data-direction="prev">◀</button>
-                    <button class="thumb-nav-btn thumb-nav-right" data-cut-index="${index}" data-direction="next">▶</button>
                 </div>
                 <div class="cut-name">${cut.name}</div>
-                <input type="number" class="cut-duration" 
-                       value="${cut.duration}" 
-                       min="0.1" max="10" step="0.1"
-                       title="表示時間（秒）">
+                <div class="cut-duration-container">
+                    <button class="duration-decrease" data-index="${index}" title="時間減少">◀</button>
+                    <input type="number" class="cut-duration" 
+                           value="${cut.duration}" 
+                           min="0.1" max="10" step="0.1"
+                           title="表示時間（秒）"
+                           data-index="${index}">
+                    <button class="duration-increase" data-index="${index}" title="時間増加">▶</button>
+                </div>
                 <button class="delete-cut-btn" data-index="${index}">×</button>
             `;
             
@@ -760,27 +846,47 @@
             cutItem.addEventListener('click', (e) => {
                 if (!e.target.classList.contains('delete-cut-btn') &&
                     !e.target.classList.contains('cut-duration') &&
-                    !e.target.classList.contains('thumb-nav-btn')) {
+                    !e.target.classList.contains('duration-decrease') &&
+                    !e.target.classList.contains('duration-increase')) {
                     this.animationSystem.switchToActiveCut(index);
                     this.setActiveCut(index);
                 }
             });
             
-            // サムネイル左右ボタンのイベント
-            const leftBtn = cutItem.querySelector('.thumb-nav-left');
-            const rightBtn = cutItem.querySelector('.thumb-nav-right');
+            // 【修正】改善された表示時間制御
+            const decreaseBtn = cutItem.querySelector('.duration-decrease');
+            const increaseBtn = cutItem.querySelector('.duration-increase');
+            const durationInput = cutItem.querySelector('.cut-duration');
             
-            if (leftBtn) {
-                leftBtn.addEventListener('click', (e) => {
+            if (decreaseBtn) {
+                decreaseBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    this.navigateThumbnail(index, 'prev');
+                    const currentValue = parseFloat(durationInput.value);
+                    const newValue = Math.max(0.1, currentValue - 0.1);
+                    durationInput.value = newValue.toFixed(1);
+                    this.animationSystem.updateCutDuration(index, newValue);
                 });
             }
             
-            if (rightBtn) {
-                rightBtn.addEventListener('click', (e) => {
+            if (increaseBtn) {
+                increaseBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
-                    this.navigateThumbnail(index, 'next');
+                    const currentValue = parseFloat(durationInput.value);
+                    const newValue = Math.min(10, currentValue + 0.1);
+                    durationInput.value = newValue.toFixed(1);
+                    this.animationSystem.updateCutDuration(index, newValue);
+                });
+            }
+            
+            if (durationInput) {
+                durationInput.addEventListener('change', (e) => {
+                    const newDuration = parseFloat(e.target.value);
+                    this.animationSystem.updateCutDuration(index, newDuration);
+                    e.stopPropagation();
+                });
+                
+                durationInput.addEventListener('click', (e) => {
+                    e.stopPropagation();
                 });
             }
             
@@ -791,32 +897,9 @@
                 e.stopPropagation();
             });
             
-            // 時間変更
-            const durationInput = cutItem.querySelector('.cut-duration');
-            durationInput.addEventListener('change', (e) => {
-                const newDuration = parseFloat(e.target.value);
-                this.animationSystem.updateCutDuration(index, newDuration);
-                e.stopPropagation();
-            });
-            
             return cutItem;
         }
         
-        // サムネイルナビゲーション機能
-        navigateThumbnail(cutIndex, direction) {
-            // TODO: 将来的にCUT内のフレーム/レイヤーナビゲーション実装
-            // 現在は簡単なCUT間ナビゲーション
-            if (direction === 'prev' && cutIndex > 0) {
-                this.animationSystem.switchToActiveCut(cutIndex - 1);
-            } else if (direction === 'next') {
-                const animData = this.animationSystem.getAnimationData();
-                if (cutIndex < animData.cuts.length - 1) {
-                    this.animationSystem.switchToActiveCut(cutIndex + 1);
-                }
-            }
-        }
-        
-        // サムネイル生成
         generateCutThumbnailHTML(cut, index) {
             if (cut.thumbnail) {
                 return `<img src="${cut.thumbnail}" alt="CUT${index + 1}" />`;
@@ -825,7 +908,6 @@
             }
         }
         
-        // CUT削除
         deleteCut(index) {
             if (!confirm('このCUTを削除しますか？')) return;
             
@@ -834,17 +916,14 @@
             this.updateLayerPanelIndicator();
         }
         
-        // アクティブCUT設定
         setActiveCut(index) {
             this.currentCutIndex = index;
             
-            // アクティブ状態のUI更新
             this.cutsContainer.querySelectorAll('.cut-item').forEach((item, i) => {
                 item.classList.toggle('active', i === index);
             });
         }
         
-        // サムネイル更新
         updateSingleCutThumbnail(cutIndex) {
             const cutItem = this.cutsContainer.querySelector(`[data-cut-index="${cutIndex}"]`);
             if (!cutItem) return;
@@ -860,7 +939,6 @@
             }
         }
         
-        // 再生状態UI更新
         updatePlaybackUI(isPlaying) {
             const playBtn = document.getElementById('play-btn');
             if (playBtn) {
@@ -869,7 +947,6 @@
             }
         }
         
-        // GIF書き出し
         exportGIF() {
             if (this.gifExporter) {
                 const animData = this.animationSystem.getAnimationData();
@@ -880,7 +957,6 @@
             }
         }
         
-        // GIF書き出しプログレス表示
         showExportProgress() {
             const progressPanel = document.getElementById('export-progress');
             if (progressPanel) {
@@ -910,7 +986,6 @@
             }
         }
         
-        // デバッグ用メソッド
         getDebugInfo() {
             return {
                 isVisible: this.isVisible,
@@ -925,12 +1000,16 @@
         }
     }
     
-    // CHG: 構造的問題修正 - グローバル公開追加（最重要）
     window.TegakiTimelineUI = TimelineUI;
     console.log('✅ TegakiTimelineUI exported to global scope');
-    console.log('✅ ui/timeline-ui.js loaded (構造的問題修正版)');
+    console.log('✅ ui/timeline-ui.js loaded (サムネイル改善版)');
+    console.log('🔧 改善完了:');
+    console.log('  - 🔧 サムネイル上の不要な◀▶ボタン削除');
+    console.log('  - 🔧 表示時間入力を◀▶スタイルに変更');
+    console.log('  - 🔧 タイムラインUI窮屈さ解消');
+    console.log('  - 🔧 改善されたCUTアイテムレイアウト');
+    console.log('  - ✅ 直感的な表示時間制御UI実装');
     
-    // 互換性のための追加エクスポート
     if (typeof window.TegakiUI === 'undefined') {
         window.TegakiUI = {};
     }
