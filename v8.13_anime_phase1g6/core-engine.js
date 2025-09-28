@@ -624,7 +624,7 @@
             });
         }
         
-        // CHG: 構造的問題修正版 - AnimationSystemとTimelineUI初期化強化
+// CHG: 構造的問題修正版 - AnimationSystemとTimelineUI初期化強化
         initializeAnimationSystem() {
             console.log('🎬 Initializing AnimationSystem and TimelineUI...');
             
@@ -644,11 +644,11 @@
             try {
                 // AnimationSystem作成
                 this.animationSystem = new window.TegakiAnimationSystem();
+                
+                // 【修正】引数を正しく渡す: layerSystem, app のみ
                 this.animationSystem.init(
-                    this.layerSystem, 
-                    this.cameraSystem, 
-                    this.app, 
-                    this.eventBus
+                    this.layerSystem,
+                    this.app
                 );
                 
                 // TimelineUI作成
@@ -669,11 +669,14 @@
                 
             } catch (error) {
                 console.error('❌ Failed to initialize AnimationSystem/TimelineUI:', error);
+                console.error('   Error details:', error.message);
+                console.error('   Stack:', error.stack);
                 // 初期化失敗時もアプリケーションは継続
                 this.animationSystem = null;
                 this.timelineUI = null;
             }
         }
+
         
         // CHG: 構造的問題修正版 - CoordinateSystem安全参照設定
         setupCoordinateSystemReferences() {
