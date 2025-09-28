@@ -173,7 +173,7 @@
                 
                 .timeline-panel {
                     position: fixed !important;
-                    bottom: 16px !important;
+                    bottom: 12px !important;
                     left: 70px !important;
                     right: 220px !important;
                     background: var(--futaba-cream) !important;
@@ -293,7 +293,7 @@
                 .cut-name {
                     font-size: 10px !important;
                     color: var(--futaba-maroon) !important;
-                    margin-bottom: 4px !important;  /* 間隔縮小 */
+                    margin-bottom: 2px !important;  /* 間隔縮小 */
                     font-weight: 600 !important;
                     text-align: center !important;
                     white-space: nowrap !important;
@@ -429,10 +429,10 @@
                     border-radius: 8px !important;
                     cursor: pointer !important;
                     transition: all 0.2s ease !important;
-                    font-size: 14px !important;
+                    font-size: 12px !important;
                     color: var(--futaba-maroon) !important;
-                    min-width: 50px !important;
-                    height: 36px !important;
+                    min-width: 45px !important;
+                    height: 18px !important;
                     display: flex !important;
                     align-items: center !important;
                     justify-content: center !important;
