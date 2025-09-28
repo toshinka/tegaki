@@ -1,0 +1,201 @@
+# GIFアニメーション機能 根本改修計画書 - 2次元レイヤー構造対応版
+
+## 🔍 根本問題の分析
+
+### 現在の誤った理解
+- CUTは「現在のレイヤー状態のスナップショット」として実装されている
+- CUT切り替え時に既存レイヤーの内容を上書きしている
+- レイヤーとCUTの関係が1次元的（時系列のみ）
+
+### 正しい構造理解
+- **CUT × レイヤー = 2次元マトリクス構造**
+- CUT1レイヤー1とCUT2レイヤー1は完全に独立した描画領域
+- CUT切り替えは「レイヤーセット全体の切り替え」
+- 各CUTは独自のレイヤー構成を持つ
+
+## 🏗️ 正しいデータ構造設計
+
+### AnimationData構造（改修版）
+```javascript
+animationData = {
+    cuts: [
+        {
+            id: 'cut_1',
+            name: 'CUT1',
+            duration: 1.0,
+            layers: [  // 各CUTが独自のレイヤー配列を持つ
+                {
+                    id: 'cut1_layer1',
+                    name: 'レイヤー1',
+                    visible: true,
+                    opacity: 1.0,
+                    paths: [...],
+                    transform: {...}
+                }
+            ],
+            thumbnail: null // CUT全体のサムネイル
+        }
+    ],
+    settings: { fps: 12, loop: true },
+    playback: { ... }
+}
+```
+
+### LayerSystem統合（改修版）
+```javascript
+// 現在のアクティブCUT専用のレイヤー管理
+layerSystem.setActiveCut(cutIndex) {
+    // 現在のCUTレイヤーをlayerSystem.layersに設定
+    this.layers = animationData.cuts[cutIndex].layers;
+    this.updateLayerPanelUI();
+}
+```
+
+## 🔧 段階別改修計画
+
+### 段階1: データ構造根本改修（最重要）
+**ファイル**: `system/animation-system.js`
+**目的**: 2次元レイヤー構造の実装
+
+#### 改修内容
+1. **CUT作成処理改修**
+   - 新規CUT作成時に空のレイヤー配列を用意
+   - 既存CUTの複製ではなく独立したレイヤー空間として作成
+
+2. **CUT切り替え処理改修**  
+   - `applyCutToLayers()` → `switchToActiveCut()`に名称・処理変更
+   - LayerSystemのレイヤー配列を丸ごと入れ替え
+
+3. **レイヤー操作の統合**
+   - 描画・変形・削除は常に「現在アクティブなCUTのレイヤー」に対して実行
+   - LayerSystemとAnimationSystemの完全統合
+
+#### 後続Claude向けガイド
+```javascript
+// 改修対象メソッド群
+// createCutFromCurrentState() → createNewEmptyCut()
+// applyCutToLayers() → switchToActiveCut()  
+// captureAllLayerStates() → saveCutLayerStates()
+
+// 重要：レイヤー参照の統一
+// this.layerSystem.layers ⇔ this.animationData.cuts[currentCut].layers
+// 常に同期を保つこと
+```
+
+### 段階2: LayerSystem統合改修
+**ファイル**: `system/layer-system.js`
+**目的**: CUT切り替え対応とAPI統合
+
+#### 改修内容
+1. **アクティブCUT連携**
+   - LayerSystemがAnimationSystemから現在CUTを参照
+   - レイヤー操作時にAnimationSystemのCUTデータを更新
+
+2. **レイヤー作成・削除の統合**
+   - LayerSystem.createLayer() → AnimationSystem経由でCUT内レイヤー作成
+   - 削除・移動も同様に統合
+
+#### 後続Claude向けガイド
+```javascript
+// 改修対象: LayerSystem.createLayer()
+// 現在: this.layers.push(layer)
+// 改修後: this.animationSystem.addLayerToCurrentCut(layer)
+
+// レイヤー参照の統一
+// this.layers = this.animationSystem.getCurrentCutLayers()
+```
+
+### 段階3: UIコントローラー修正
+**ファイル**: `ui/ui-panels.js`  
+**目的**: メソッド名不整合の修正
+
+#### 改修内容
+```javascript
+// エラー修正：this.layerManager?.updateLayerTransform
+// 正しい参照：this.layerSystem?.updateActiveLayerTransform
+```
+
+### 段階4: サムネイル生成統合
+**ファイル**: `ui/timeline-ui.js`
+**目的**: CUTサムネイル表示の実装
+
+#### 改修内容
+1. **CUT全体サムネイル生成**
+   - AnimationSystemからCUT内全レイヤーの合成サムネイルを取得
+   - timeline-ui.js内でサムネイル表示処理
+
+2. **サムネイル更新トリガー**
+   - CUT内レイヤーに変更があった際の自動更新
+   - レイヤー描画・変形・可視性変更時の連携
+
+## 🔄 データフロー設計
+
+### CUT作成フロー
+```
+1. ユーザー「+CUT」クリック
+2. AnimationSystem.createNewEmptyCut()
+3. 新しい空のレイヤー配列を持つCUTを作成  
+4. LayerSystem.setActiveCut(newCutIndex)
+5. UI更新（空のレイヤーパネル表示）
+```
+
+### CUT切り替えフロー  
+```
+1. ユーザーCUTアイテムクリック
+2. AnimationSystem.switchToActiveCut(cutIndex)
+3. LayerSystem.layers = cuts[cutIndex].layers
+4. LayerSystem.updateLayerPanelUI()
+5. キャンバス描画更新
+```
+
+### 描画操作フロー
+```
+1. ユーザーペンで描画
+2. DrawingEngine → LayerSystem.addPathToActiveLayer()
+3. LayerSystem → AnimationSystem.updateCurrentCutLayer()
+4. CUT内レイヤーデータ更新
+5. サムネイル更新トリガー
+```
+
+## ⚠️ 重要な注意点
+
+### 参照整合性の維持
+- `layerSystem.layers`と`animationData.cuts[current].layers`は常に同一オブジェクトを参照
+- 片方の変更が自動的にもう片方に反映される設計
+
+### メモリ管理
+- CUT削除時のレイヤー内Graphics要素の適切な破棄
+- サムネイルテクスチャのメモリリーク防止
+
+### パフォーマンス
+- CUT切り替え時のレンダリング負荷最小化
+- 大量のCUT・レイヤーでもスムーズな動作
+
+## 🧪 検証項目
+
+### 段階1完了後
+- [ ] CUT1作成後、CUT2作成でキャンバスが空白になる
+- [ ] CUT1に描画後、CUT2切り替えで空白、CUT1復帰で描画復活
+- [ ] CUT1レイヤー1とCUT2レイヤー1が独立している
+
+### 段階2完了後  
+- [ ] レイヤー作成・削除がアクティブCUT内で動作
+- [ ] レイヤー変形がCUT固有の状態として保存される
+
+### 段階3完了後
+- [ ] UIコントローラーエラーが解消される
+- [ ] レイヤー変形パネルが正常動作する
+
+### 段階4完了後
+- [ ] CUTサムネイルにレイヤー合成結果が表示される
+- [ ] CUT内容変更時にサムネイル自動更新される
+
+## 🚨 破壊的変更への対応
+
+この改修は既存のデータ構造を根本的に変更するため、以下が必要：
+
+1. **既存CUTデータの移行処理**
+2. **LayerSystemとAnimationSystemの完全統合**  
+3. **全てのレイヤー操作のリダイレクト**
+
+段階的改修により、各段階で動作確認を行いながら進めることを強く推奨します。
