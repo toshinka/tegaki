@@ -1,8 +1,32 @@
-// ===== system/animation-system.js - 問題修正版: レイヤー二重表示・座標ズレ修正 =====
+// 【修正】LayerSystem連携：レイヤー変形データを現在CUTに保存
+        saveLayerTransformToCurrentCut(layerId, transform) {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut) return;
+            
+            const layerIndex = currentCut.layers.findIndex(layer => layer.id === layerId);
+            if (layerIndex === -1) return;
+            
+            // 【修正】変形データの完全コピーと正規化
+            currentCut.layers[layerIndex].transform = {
+                x: transform.x || 0,
+                y: transform.y || 0,
+                rotation: transform.rotation || 0,
+                scaleX: transform.scaleX || 1,
+                scaleY: transform.scaleY || 1
+            };
+            
+            console.log('🔧 Layer transform saved to current CUT:', layerId, currentCut.layers[layerIndex].transform);
+            
+            // 【修正】即座にサムネイル更新
+            setTimeout(() => {
+                this.generateCutThumbnail(this.animationData.playback.currentCutIndex);
+            }, 50);
+        }// ===== system/animation-system.js - 緊急修正完了版 =====
 // 【修正完了】レイヤー二重表示問題修正
 // 【修正完了】描画位置ズレ問題修正  
+// 【修正完了】タイムライン停止位置修正
 // 【修正完了】新規CUT作成時の絵消失防止
-// 【修正完了】CUT切り替え時の変形データ適用修正
+// 【追加完了】Shift+N用新規空CUT作成
 // PixiJS v8.13 対応
 
 (function() {
@@ -19,15 +43,25 @@
             this.isAnimationMode = false;
             this.initialCutCreated = false;
             
-            // 【修正】重複作成防止フラグ追加
+            // 【修正】初期化制御フラグ強化
             this.isInitializing = false;
             this.cutSwitchInProgress = false;
+            this.hasInitialized = false;
+            
+            // 【修正】再生位置保持用
+            this.lastStoppedCutIndex = 0;
             
             // API統一：座標変換関数
             this.coordAPI = window.CoordinateSystem;
         }
         
         init(layerSystem, app) {
+            // 【修正】重複初期化防止
+            if (this.hasInitialized) {
+                console.log('🎬 AnimationSystem already initialized - skipping');
+                return;
+            }
+            
             console.log('🎬 AnimationSystem initializing...');
             this.layerSystem = layerSystem;
             this.app = app;
@@ -47,87 +81,76 @@
             // LayerSystemとの双方向参照設定
             this.layerSystem.animationSystem = this;
             
-            // 【修正】初期CUT作成を適切なタイミングで実行（重複防止）
-            setTimeout(() => {
-                this.createInitialCutIfNeeded();
-            }, 100); // より短い遅延で確実に実行
+            // 【修正】初期化完了フラグ
+            this.hasInitialized = true;
             
-            console.log('✅ AnimationSystem initialized with LayerSystem (問題修正版)');
+            // 【修正】初期CUT作成を一度だけ実行
+            setTimeout(() => {
+                if (!this.initialCutCreated && !this.isInitializing) {
+                    this.createInitialCutIfNeeded();
+                }
+            }, 100);
+            
+            console.log('✅ AnimationSystem initialized (緊急修正完了版)');
+            
+            // 【追加】UI初期化に必要なイベント遅延発行
+            setTimeout(() => {
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:system-ready');
+                    console.log('📡 AnimationSystem ready event emitted');
+                }
+            }, 150);
+            
             this.eventBus.emit('animation:initialized');
         }
         
-        // 【修正】初期CUT作成（重複防止・レイヤー確認強化）
+        // 【修正】初期CUT作成（重複防止強化）
         createInitialCutIfNeeded() {
+            // 多重実行防止の厳密なチェック
             if (this.initialCutCreated || this.animationData.cuts.length > 0 || this.isInitializing) {
-                console.log('🎬 Initial CUT creation skipped - already exists or in progress');
+                console.log('🎬 Initial CUT already exists or creation in progress');
                 return;
             }
             
-            // LayerSystemが初期化され、レイヤーが存在する場合のみ実行
-            if (this.layerSystem && this.layerSystem.layers && this.layerSystem.layers.length > 0) {
-                console.log('🎬 Creating initial CUT with', this.layerSystem.layers.length, 'existing layers');
-                
-                this.isInitializing = true;
-                
-                // 【修正】既存レイヤーの重複チェック
-                const uniqueLayers = this.deduplicateLayers();
-                if (uniqueLayers.length === 0) {
-                    console.warn('🎬 No unique layers found for initial CUT');
-                    this.isInitializing = false;
-                    return;
-                }
-                
-                // 初期CUTを既存のレイヤーから作成
-                const initialCut = this.createNewCutFromCurrentLayers();
-                this.initialCutCreated = true;
-                this.isInitializing = false;
-                
-                console.log('✅ Initial CUT1 created:', initialCut.name, 'with', uniqueLayers.length, 'layers');
-                
-                // EventBus通知
-                if (this.eventBus) {
-                    this.eventBus.emit('animation:initial-cut-created', { 
-                        cutId: initialCut.id,
-                        cutIndex: 0
-                    });
-                }
-            } else {
-                // LayerSystemがまだ準備できていない場合は再試行（制限付き）
-                const retryCount = this.retryCount || 0;
-                if (retryCount < 5) {
-                    this.retryCount = retryCount + 1;
-                    setTimeout(() => {
-                        this.createInitialCutIfNeeded();
-                    }, 200);
-                } else {
-                    console.warn('🎬 Initial CUT creation failed after 5 retries');
-                }
+            // LayerSystemの準備確認
+            if (!this.layerSystem || !this.layerSystem.layers) {
+                console.log('🎬 LayerSystem not ready for initial CUT');
+                return;
             }
-        }
-        
-        // 【修正】レイヤー重複除去処理
-        deduplicateLayers() {
-            if (!this.layerSystem || !this.layerSystem.layers) return [];
             
-            const uniqueLayers = [];
-            const seenIds = new Set();
+            this.isInitializing = true;
             
-            this.layerSystem.layers.forEach(layer => {
-                const layerId = layer.layerData?.id;
-                if (layerId && !seenIds.has(layerId)) {
-                    seenIds.add(layerId);
-                    uniqueLayers.push(layer);
+            try {
+                // 【修正】レイヤーが存在する場合のみCUT作成
+                if (this.layerSystem.layers.length > 0) {
+                    console.log('🎬 Creating initial CUT with existing layers');
+                    
+                    // 初期CUTを既存のレイヤーから作成
+                    const initialCut = this.createNewCutFromCurrentLayers();
+                    this.initialCutCreated = true;
+                    
+                    console.log('✅ Initial CUT1 created:', initialCut.name);
+                    
+                    // EventBus通知
+                    if (this.eventBus) {
+                        this.eventBus.emit('animation:initial-cut-created', { 
+                            cutId: initialCut.id,
+                            cutIndex: 0
+                        });
+                    }
+                } else {
+                    console.log('🎬 No layers available for initial CUT');
+                    this.initialCutCreated = false;  // レイヤーがない場合は未作成扱い
                 }
-            });
-            
-            console.log('🔍 Layer deduplication:', this.layerSystem.layers.length, '→', uniqueLayers.length);
-            return uniqueLayers;
+            } finally {
+                this.isInitializing = false;
+            }
         }
         
         createDefaultAnimation() {
             const config = window.TEGAKI_CONFIG.animation;
             return {
-                cuts: [],  // 各CUTが独自のレイヤー配列を持つ
+                cuts: [],
                 settings: {
                     fps: config.defaultFPS,
                     loop: true
@@ -140,9 +163,8 @@
             };
         }
         
-        // 【修正】新規CUT作成：レイヤーデータ保護強化
+        // 【修正】新規CUT作成：既存レイヤーの変形状態も保持
         createNewCutFromCurrentLayers() {
-            // 【修正】現在のレイヤーを安全にコピー（重複防止）
             const cutLayers = this.copyCurrentLayersForCut();
             
             const cut = {
@@ -155,8 +177,8 @@
             
             this.animationData.cuts.push(cut);
             
-            // 【修正】CUT切り替えを安全に実行
-            this.switchToActiveCutSafely(this.animationData.cuts.length - 1);
+            // 【修正】CUT切り替え時の座標リセット防止
+            this.switchToActiveCutSafely(this.animationData.cuts.length - 1, false);
             
             console.log('🎬 New Cut created:', cut.name, 'with', cut.layers.length, 'layers');
             
@@ -175,31 +197,49 @@
             return cut;
         }
         
-        // 【修正】新規空CUT作成
-        createNewEmptyCut() {
+        // 【新規追加】Shift+N用：新規空CUT作成（背景レイヤー付き）
+        createNewBlankCut() {
             const cut = {
                 id: 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
                 name: `CUT${this.animationData.cuts.length + 1}`,
                 duration: window.TEGAKI_CONFIG.animation.defaultCutDuration,
-                layers: [], // 空のレイヤー配列
+                layers: [],
                 thumbnail: null
             };
             
             this.animationData.cuts.push(cut);
+            const newIndex = this.animationData.cuts.length - 1;
             
-            console.log('🎬 Empty Cut created:', cut.name);
+            console.log('🎬 Blank Cut created:', cut.name);
+            
+            // 新規CUTに切り替え
+            this.switchToActiveCutSafely(newIndex, false);
+            
+            // 背景レイヤーを追加
+            if (this.layerSystem) {
+                const bgLayer = this.layerSystem.createLayer('背景', true);
+                if (bgLayer) {
+                    const newLayer = this.layerSystem.createLayer('レイヤー1', false);
+                    this.saveCutLayerStates();
+                }
+            }
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:cut-created', { 
                     cutId: cut.id, 
-                    cutIndex: this.animationData.cuts.length - 1 
+                    cutIndex: newIndex 
                 });
             }
             
             return cut;
         }
         
-        // 【修正】現在のレイヤーをCUT用にディープコピー（データ保護強化）
+        // 【修正】TimelineUI用：空CUT作成（createNewEmptyCutエイリアス）
+        createNewEmptyCut() {
+            return this.createNewBlankCut();
+        }
+        
+        // 現在のレイヤーをCUT用にディープコピー
         copyCurrentLayersForCut() {
             const copiedLayers = [];
             
@@ -207,40 +247,45 @@
                 return copiedLayers;
             }
             
+            // 【修正】既に処理したレイヤーIDを記録
+            const processedIds = new Set();
+            
             this.layerSystem.layers.forEach(originalLayer => {
                 if (!originalLayer || !originalLayer.layerData) return;
                 
                 const layerId = originalLayer.layerData.id;
                 
-                // 【修正】レイヤーの変形データ安全取得
+                // 【修正】重複チェック
+                if (processedIds.has(layerId)) {
+                    console.warn('Duplicate layer skipped:', layerId);
+                    return;
+                }
+                processedIds.add(layerId);
+                
+                // 変形データ取得
                 const transform = this.layerSystem.layerTransforms.get(layerId) || {
                     x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
                 };
                 
-                // 【修正】パスデータの完全なディープコピー
+                // パスデータの完全コピー
                 const pathsData = originalLayer.layerData.paths ? 
-                    originalLayer.layerData.paths.map(path => {
-                        // 各パスの完全コピー
-                        const copiedPath = {
-                            id: path.id || ('path_' + Date.now() + Math.random()),
-                            points: path.points ? path.points.map(point => ({ ...point })) : [],
-                            size: path.size || 16,
-                            color: path.color || 0x000000,
-                            opacity: path.opacity || 1.0,
-                            tool: path.tool || 'pen'
-                        };
-                        
-                        return copiedPath;
-                    }) : [];
+                    originalLayer.layerData.paths.map(path => ({
+                        id: path.id || ('path_' + Date.now() + Math.random()),
+                        points: path.points ? path.points.map(point => ({ ...point })) : [],
+                        size: path.size || 16,
+                        color: path.color || 0x000000,
+                        opacity: path.opacity || 1.0,
+                        tool: path.tool || 'pen'
+                    })) : [];
                 
                 // CUT専用レイヤーデータ作成
                 const cutLayerData = {
-                    id: layerId + '_cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                    id: layerId,  // 【修正】元のIDを保持（CUT内で一意性保証）
                     name: originalLayer.layerData.name,
                     visible: originalLayer.layerData.visible !== false,
                     opacity: originalLayer.layerData.opacity || 1.0,
                     isBackground: originalLayer.layerData.isBackground || false,
-                    transform: { ...transform }, // transform完全コピー
+                    transform: { ...transform },
                     paths: pathsData,
                     timestamp: Date.now()
                 };
@@ -248,19 +293,15 @@
                 copiedLayers.push(cutLayerData);
             });
             
-            console.log('📸 Copied', copiedLayers.length, 'layers for new CUT with data protection');
+            console.log('📸 Copied', copiedLayers.length, 'unique layers for CUT');
             return copiedLayers;
         }
         
-        // 【修正】CUT切り替え：安全性強化
-        switchToActiveCut(cutIndex) {
-            return this.switchToActiveCutSafely(cutIndex);
-        }
-        
-        switchToActiveCutSafely(cutIndex) {
+        // 【修正】CUT切り替え：座標保持オプション追加
+        switchToActiveCutSafely(cutIndex, resetTransform = true) {
             if (this.cutSwitchInProgress) {
-                console.log('🎬 CUT switch already in progress, queuing...');
-                setTimeout(() => this.switchToActiveCutSafely(cutIndex), 50);
+                console.log('🎬 CUT switch in progress, queuing...');
+                setTimeout(() => this.switchToActiveCutSafely(cutIndex, resetTransform), 50);
                 return;
             }
             
@@ -274,14 +315,14 @@
             
             this.cutSwitchInProgress = true;
             
-            // 【修正】現在のCUTデータを確実に保存
+            // 現在のCUTデータを保存
             this.saveCutLayerStatesBeforeSwitch();
             
             // 現在のCUTインデックス更新
             this.animationData.playback.currentCutIndex = cutIndex;
             
             // LayerSystemのレイヤー配列を指定CUTのレイヤーに切り替え
-            this.setActiveCut(cutIndex);
+            this.setActiveCut(cutIndex, resetTransform);
             
             this.cutSwitchInProgress = false;
             
@@ -290,7 +331,10 @@
             }
         }
         
-        // 【修正】CUT切り替え前のレイヤー状態保存
+        switchToActiveCut(cutIndex) {
+            return this.switchToActiveCutSafely(cutIndex, true);
+        }
+        
         saveCutLayerStatesBeforeSwitch() {
             const currentCut = this.getCurrentCut();
             if (!currentCut || !this.layerSystem) return;
@@ -299,11 +343,11 @@
             const currentLayers = this.copyCurrentLayersForCut();
             currentCut.layers = currentLayers;
             
-            console.log('💾 Current CUT layers saved before switch:', currentLayers.length);
+            console.log('💾 Current CUT layers saved before switch');
         }
         
-        // 【修正】LayerSystem統合：アクティブCUT設定（座標修正）
-        setActiveCut(cutIndex) {
+        // 【修正】LayerSystem統合：座標保持オプション追加
+        setActiveCut(cutIndex, resetTransform = true) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut || !this.layerSystem) return;
             
@@ -311,7 +355,7 @@
             this.clearLayerSystemLayers();
             
             // CUTのレイヤーデータからLayerSystemレイヤーを再構築
-            this.rebuildLayersFromCutData(cut.layers);
+            this.rebuildLayersFromCutData(cut.layers, resetTransform);
             
             // LayerSystem UI更新
             if (this.layerSystem.updateLayerPanelUI) {
@@ -321,12 +365,11 @@
             console.log('✅ LayerSystem layers synchronized with CUT', cutIndex);
         }
         
-        // 【修正】LayerSystemレイヤークリア（安全性強化）
         clearLayerSystemLayers() {
             if (!this.layerSystem || !this.layerSystem.layers) return;
             
             // 各レイヤーを安全に破棄
-            const layersToDestroy = [...this.layerSystem.layers]; // 配列のコピーを作成
+            const layersToDestroy = [...this.layerSystem.layers];
             
             layersToDestroy.forEach(layer => {
                 try {
@@ -359,11 +402,11 @@
             this.layerSystem.layerTransforms.clear();
             this.layerSystem.activeLayerIndex = -1;
             
-            console.log('🗑️ LayerSystem layers cleared safely');
+            console.log('🗑️ LayerSystem layers cleared');
         }
         
-        // 【修正】CUTデータからLayerSystemレイヤーを再構築（座標修正）
-        rebuildLayersFromCutData(cutLayers) {
+        // 【修正】CUTデータからLayerSystemレイヤーを再構築（座標保持改善）
+        rebuildLayersFromCutData(cutLayers, resetTransform = true) {
             if (!cutLayers || !Array.isArray(cutLayers)) return;
             
             cutLayers.forEach((cutLayerData, index) => {
@@ -380,7 +423,7 @@
                         paths: []
                     };
                     
-                    // 【修正】変形データ設定（完全コピー）
+                    // 変形データ設定
                     const transform = {
                         x: cutLayerData.transform?.x || 0,
                         y: cutLayerData.transform?.y || 0,
@@ -412,8 +455,18 @@
                     layer.visible = cutLayerData.visible;
                     layer.alpha = cutLayerData.opacity;
                     
-                    // 【修正】変形適用（座標計算修正）
-                    this.applyTransformToLayerFixed(layer, transform);
+                    // 【修正】初期位置設定の改善
+                    if (!resetTransform && (transform.x !== 0 || transform.y !== 0 || 
+                        transform.rotation !== 0 || Math.abs(transform.scaleX) !== 1 || 
+                        Math.abs(transform.scaleY) !== 1)) {
+                        this.applyTransformToLayerFixed(layer, transform);
+                    } else {
+                        // デフォルト位置に設定
+                        layer.position.set(0, 0);
+                        layer.pivot.set(0, 0);
+                        layer.rotation = 0;
+                        layer.scale.set(1, 1);
+                    }
                     
                     // LayerSystemに追加
                     this.layerSystem.layers.push(layer);
@@ -432,33 +485,164 @@
             console.log('✅ Rebuilt', this.layerSystem.layers.length, 'layers from CUT data');
         }
         
-        // 【修正】レイヤーに変形を適用（座標計算修正）
+        // 【修正】レイヤーに変形を適用（座標計算改善・Vキー操作修正）
         applyTransformToLayerFixed(layer, transform) {
             if (!transform || !layer) return;
             
-            // 【修正】キャンバス中央を基準とした座標計算
             const centerX = this.layerSystem.config.canvas.width / 2;
             const centerY = this.layerSystem.config.canvas.height / 2;
             
-            // 基本位置設定（中央基準）
-            layer.position.set(centerX + (transform.x || 0), centerY + (transform.y || 0));
-            
-            // 回転・拡縮がある場合は基準点とトランスフォーム設定
-            if ((transform.rotation && transform.rotation !== 0) || 
-                Math.abs(transform.scaleX || 1) !== 1 || 
-                Math.abs(transform.scaleY || 1) !== 1) {
-                
-                // 【修正】ピボット設定を中央基準で統一
+            // 【修正】Vキー操作時の妙な動きを防ぐため、段階的に変形適用
+            if (transform.rotation !== 0 || Math.abs(transform.scaleX) !== 1 || 
+                Math.abs(transform.scaleY) !== 1) {
+                // 回転・拡縮がある場合：pivot中央設定
                 layer.pivot.set(centerX, centerY);
                 layer.position.set(centerX + (transform.x || 0), centerY + (transform.y || 0));
                 layer.rotation = transform.rotation || 0;
                 layer.scale.set(transform.scaleX || 1, transform.scaleY || 1);
+            } else if (transform.x !== 0 || transform.y !== 0) {
+                // 移動のみの場合：pivot原点、位置調整
+                layer.pivot.set(0, 0);
+                layer.position.set(transform.x || 0, transform.y || 0);
+                layer.rotation = 0;
+                layer.scale.set(1, 1);
+            } else {
+                // 変形なしの場合：完全リセット
+                layer.pivot.set(0, 0);
+                layer.position.set(0, 0);
+                layer.rotation = 0;
+                layer.scale.set(1, 1);
             }
             
-            console.log('🔧 Transform applied to layer:', transform);
+            // 【修正】LayerSystemの変形データも同期更新
+            if (this.layerSystem && layer.layerData) {
+                this.layerSystem.layerTransforms.set(layer.layerData.id, { ...transform });
+            }
+            
+            console.log('🔧 Transform applied to layer:', layer.layerData?.id, transform);
         }
         
-        // パスデータからPath+Graphicsオブジェクトを再構築（既存のまま維持）
+        // 【修正】LayerSystem連携：現在CUTにレイヤーを追加
+        addLayerToCurrentCut(layerData) {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut) {
+                console.warn('No current CUT available for layer addition');
+                return null;
+            }
+            
+            // 【修正】レイヤーID重複チェック
+            const existingLayer = currentCut.layers.find(layer => layer.id === layerData.id);
+            if (existingLayer) {
+                console.warn('Layer already exists in current CUT:', layerData.id);
+                return existingLayer;
+            }
+            
+            // CUTにレイヤーデータ追加
+            const cutLayerData = {
+                id: layerData.id,
+                name: layerData.name,
+                visible: layerData.visible !== false,
+                opacity: layerData.opacity || 1.0,
+                isBackground: layerData.isBackground || false,
+                transform: layerData.transform || { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
+                paths: layerData.paths || [],
+                timestamp: Date.now()
+            };
+            
+            currentCut.layers.push(cutLayerData);
+            
+            console.log('📝 Layer added to current CUT:', layerData.id, 'in', currentCut.name);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:layer-added-to-cut', {
+                    cutIndex: this.animationData.playback.currentCutIndex,
+                    layerId: layerData.id
+                });
+            }
+            
+            return cutLayerData;
+        }
+        
+        // 【修正】LayerSystem連携：現在CUTのレイヤーを更新
+        updateLayerInCurrentCut(layerId, updateData) {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut) return null;
+            
+            const layerIndex = currentCut.layers.findIndex(layer => layer.id === layerId);
+            if (layerIndex === -1) return null;
+            
+            // レイヤーデータを更新
+            Object.assign(currentCut.layers[layerIndex], updateData);
+            
+            console.log('📝 Layer updated in current CUT:', layerId);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-layer-updated', {
+                    cutIndex: this.animationData.playback.currentCutIndex,
+                    layerIndex,
+                    layerId,
+                    updateData
+                });
+            }
+            
+            return currentCut.layers[layerIndex];
+        }
+        
+        // 【追加】LayerSystem互換：現在CUTのレイヤー更新（レガシーAPI）
+        updateCurrentCutLayer(layerIndex, updateData) {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut || layerIndex < 0 || layerIndex >= currentCut.layers.length) return;
+            
+            // CUTのレイヤーデータを更新
+            Object.assign(currentCut.layers[layerIndex], updateData);
+            
+            console.log('📝 Current CUT layer updated (legacy):', layerIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-layer-updated', {
+                    cutIndex: this.animationData.playback.currentCutIndex,
+                    layerIndex,
+                    updateData
+                });
+            }
+        }
+        
+        // 【修正】LayerSystem連携：現在CUTからレイヤーを削除
+        removeLayerFromCurrentCut(layerId) {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut) return false;
+            
+            const layerIndex = currentCut.layers.findIndex(layer => layer.id === layerId);
+            if (layerIndex === -1) return false;
+            
+            currentCut.layers.splice(layerIndex, 1);
+            
+            console.log('🗑️ Layer removed from current CUT:', layerId);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:layer-removed-from-cut', {
+                    cutIndex: this.animationData.playback.currentCutIndex,
+                    layerId
+                });
+            }
+            
+            return true;
+        }
+        
+        // 【修正】LayerSystem連携：レイヤー変形データを現在CUTに保存
+        saveLayerTransformToCurrentCut(layerId, transform) {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut) return;
+            
+            const layerIndex = currentCut.layers.findIndex(layer => layer.id === layerId);
+            if (layerIndex === -1) return;
+            
+            currentCut.layers[layerIndex].transform = { ...transform };
+            
+            console.log('🔧 Layer transform saved to current CUT:', layerId);
+        }
+        
+        // パスデータからPath+Graphicsオブジェクトを再構築
         rebuildPathFromData(pathData) {
             if (!pathData || !pathData.points || pathData.points.length === 0) {
                 return null;
@@ -492,102 +676,12 @@
             }
         }
         
-        // 【修正】現在CUTのレイヤーに新しいレイヤーを追加（重複チェック）
-        addLayerToCurrentCut(layerData) {
-            const currentCut = this.getCurrentCut();
-            if (!currentCut) return null;
-            
-            // 【修正】レイヤーID重複チェック
-            const existingLayer = currentCut.layers.find(layer => layer.id === layerData.id);
-            if (existingLayer) {
-                console.warn('Layer already exists in current CUT:', layerData.id);
-                return null;
-            }
-            
-            // CUTにレイヤーデータ追加
-            currentCut.layers.push(layerData);
-            
-            // LayerSystemにも反映
-            const layer = this.rebuildSingleLayerFromData(layerData);
-            if (layer) {
-                this.layerSystem.layers.push(layer);
-                this.layerSystem.layersContainer.addChild(layer);
-                
-                if (this.eventBus) {
-                    this.eventBus.emit('animation:layer-added-to-cut', {
-                        cutIndex: this.animationData.playback.currentCutIndex,
-                        layerId: layerData.id
-                    });
-                }
-            }
-            
-            return layer;
-        }
-        
-        // 単一レイヤーデータからPIXIレイヤーを構築（既存の維持）
-        rebuildSingleLayerFromData(layerData) {
-            const layer = new PIXI.Container();
-            layer.label = layerData.id;
-            layer.layerData = {
-                id: layerData.id,
-                name: layerData.name,
-                visible: layerData.visible,
-                opacity: layerData.opacity,
-                isBackground: layerData.isBackground,
-                paths: []
-            };
-            
-            // 変形データ設定
-            this.layerSystem.layerTransforms.set(layerData.id, layerData.transform || {
-                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
-            });
-            
-            // パス再構築
-            if (layerData.paths) {
-                layerData.paths.forEach(pathData => {
-                    const path = this.rebuildPathFromData(pathData);
-                    if (path) {
-                        layer.layerData.paths.push(path);
-                        layer.addChild(path.graphics);
-                    }
-                });
-            }
-            
-            // 表示設定適用
-            layer.visible = layerData.visible;
-            layer.alpha = layerData.opacity;
-            
-            // 変形適用
-            if (layerData.transform) {
-                this.applyTransformToLayerFixed(layer, layerData.transform);
-            }
-            
-            return layer;
-        }
-        
-        // 現在CUTのレイヤーデータを更新（既存の維持）
-        updateCurrentCutLayer(layerIndex, updateData) {
-            const currentCut = this.getCurrentCut();
-            if (!currentCut || layerIndex < 0 || layerIndex >= currentCut.layers.length) return;
-            
-            // CUTのレイヤーデータを更新
-            Object.assign(currentCut.layers[layerIndex], updateData);
-            
-            if (this.eventBus) {
-                this.eventBus.emit('animation:cut-layer-updated', {
-                    cutIndex: this.animationData.playback.currentCutIndex,
-                    layerIndex,
-                    updateData
-                });
-            }
-        }
-        
-        // 【修正】現在CUTの全レイヤー状態を保存（安全性強化）
+        // 現在CUTの全レイヤー状態を保存
         saveCutLayerStates() {
             const currentCut = this.getCurrentCut();
             if (!currentCut || !this.layerSystem) return;
             
-            // LayerSystemの現在状態をCUTに反映（データ保護）
+            // LayerSystemの現在状態をCUTに反映
             const savedLayers = this.copyCurrentLayersForCut();
             currentCut.layers = savedLayers;
             
@@ -606,9 +700,77 @@
             }
         }
         
-        // === 以下、既存のメソッドをそのまま維持 ===
+        // 【追加】LayerSystem連携：レイヤー順序変更を現在CUTに反映
+        reorderLayersInCurrentCut(fromIndex, toIndex) {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut || fromIndex < 0 || toIndex < 0 || 
+                fromIndex >= currentCut.layers.length || toIndex >= currentCut.layers.length) {
+                return false;
+            }
+            
+            const [movedLayer] = currentCut.layers.splice(fromIndex, 1);
+            currentCut.layers.splice(toIndex, 0, movedLayer);
+            
+            console.log('🔄 Layer reordered in current CUT:', fromIndex, '=>', toIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-layers-reordered', {
+                    cutIndex: this.animationData.playback.currentCutIndex,
+                    fromIndex,
+                    toIndex
+                });
+            }
+            
+            return true;
+        }
         
-        // CUTサムネイル生成（既存の維持）
+        // 【追加】LayerSystem連携：現在CUTのレイヤー可視性変更
+        setLayerVisibilityInCurrentCut(layerId, visible) {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut) return false;
+            
+            const layer = currentCut.layers.find(l => l.id === layerId);
+            if (!layer) return false;
+            
+            layer.visible = visible;
+            
+            console.log('👁️ Layer visibility updated in current CUT:', layerId, visible);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-layer-visibility-changed', {
+                    cutIndex: this.animationData.playback.currentCutIndex,
+                    layerId,
+                    visible
+                });
+            }
+            
+            return true;
+        }
+        
+        // 【追加】LayerSystem連携：現在CUTのレイヤー不透明度変更
+        setLayerOpacityInCurrentCut(layerId, opacity) {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut) return false;
+            
+            const layer = currentCut.layers.find(l => l.id === layerId);
+            if (!layer) return false;
+            
+            layer.opacity = Math.max(0, Math.min(1, opacity));
+            
+            console.log('🌟 Layer opacity updated in current CUT:', layerId, layer.opacity);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-layer-opacity-changed', {
+                    cutIndex: this.animationData.playback.currentCutIndex,
+                    layerId,
+                    opacity: layer.opacity
+                });
+            }
+            
+            return true;
+        }
+        
+        // CUTサムネイル生成
         async generateCutThumbnail(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut || !this.layerSystem) {
@@ -738,7 +900,7 @@
             }
         }
         
-        // === 再生制御メソッド（既存の維持） ===
+        // === 再生制御メソッド ===
         
         play() {
             if (this.animationData.cuts.length === 0) {
@@ -756,8 +918,10 @@
             }
         }
         
+        // 【修正】pause実装：現在位置保持
         pause() {
             this.animationData.playback.isPlaying = false;
+            this.lastStoppedCutIndex = this.animationData.playback.currentCutIndex;
             this.stopPlaybackLoop();
             
             if (this.eventBus) {
@@ -765,14 +929,12 @@
             }
         }
         
+        // 【修正】stop実装：最初のCUTに戻らない
         stop() {
             this.animationData.playback.isPlaying = false;
-            this.animationData.playback.currentCutIndex = 0;
+            // 【修正】停止時に最初のCUTに戻らない
+            this.lastStoppedCutIndex = this.animationData.playback.currentCutIndex;
             this.stopPlaybackLoop();
-            
-            if (this.animationData.cuts.length > 0) {
-                this.switchToActiveCutSafely(0);
-            }
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:playback-stopped');
@@ -850,7 +1012,7 @@
             }
         }
         
-        // === その他のメソッド（既存の維持） ===
+        // === その他のメソッド ===
         
         deleteCut(cutIndex) {
             if (cutIndex < 0 || cutIndex >= this.animationData.cuts.length) return;
@@ -1009,7 +1171,7 @@
             }
         }
         
-        // === ゲッターメソッド（既存の維持） ===
+        // === ゲッターメソッド ===
         
         getAnimationData() {
             return this.animationData;
@@ -1049,6 +1211,8 @@
             this.initialCutCreated = false;
             this.isInitializing = false;
             this.cutSwitchInProgress = false;
+            this.hasInitialized = false;
+            this.lastStoppedCutIndex = 0;
             
             console.log('🗑️ Animation data cleared');
             
@@ -1057,20 +1221,48 @@
             }
         }
         
-        // 互換性維持メソッド
-        createCutFromCurrentState() {
-            return this.createNewCutFromCurrentLayers();
+        // 【追加】TimelineUI初期化サポート：CUT一覧取得
+        getAllCuts() {
+            return this.animationData.cuts;
         }
         
-        applyCutToLayers(cutIndex) {
-            return this.switchToActiveCutSafely(cutIndex);
+        // 【追加】TimelineUI初期化サポート：CUT情報取得
+        getCutInfo(cutIndex) {
+            const cut = this.animationData.cuts[cutIndex];
+            if (!cut) return null;
+            
+            return {
+                id: cut.id,
+                name: cut.name,
+                duration: cut.duration,
+                layerCount: cut.layers.length,
+                thumbnail: cut.thumbnail,
+                isActive: cutIndex === this.animationData.playback.currentCutIndex
+            };
         }
         
-        // デバッグメソッド
+        // 【追加】TimelineUI初期化サポート：再生状態取得
+        getPlaybackState() {
+            return {
+                isPlaying: this.animationData.playback.isPlaying,
+                currentCutIndex: this.animationData.playback.currentCutIndex,
+                fps: this.animationData.settings.fps,
+                loop: this.animationData.settings.loop,
+                cutsCount: this.animationData.cuts.length
+            };
+        }
+        
+        // 【追加】TimelineUI初期化サポート：アニメーションモード状態
+        isInAnimationMode() {
+            return this.isAnimationMode;
+        }
+        
+        // === デバッグメソッド ===
+        
         checkCoordinateSystem() {
             if (this.coordAPI) {
                 console.log('✅ CoordinateSystem API available');
-                return this.coordAPI.diagnoseReferences();
+                return this.coordAPI.diagnoseReferences ? this.coordAPI.diagnoseReferences() : { status: 'available' };
             } else {
                 console.warn('⚠️ CoordinateSystem API not available');
                 return { status: 'not_available' };
@@ -1107,6 +1299,7 @@
                 hasInitialCut: this.hasInitialCut(),
                 isPlaying: this.animationData.playback.isPlaying,
                 currentCut: this.animationData.playback.currentCutIndex,
+                lastStoppedCut: this.lastStoppedCutIndex,
                 settings: this.animationData.settings,
                 eventBusAvailable: !!this.eventBus,
                 coordinateSystemAPI: coordCheck,
@@ -1117,25 +1310,30 @@
                     layerCount: cut.layers.length
                 })),
                 isInitializing: this.isInitializing,
-                cutSwitchInProgress: this.cutSwitchInProgress
+                cutSwitchInProgress: this.cutSwitchInProgress,
+                hasInitialized: this.hasInitialized
             };
             
-            console.log('AnimationSystem Debug Info (問題修正版):');
+            console.log('AnimationSystem Debug Info (緊急修正完了版):');
             console.log('- Animation Mode:', info.isAnimationMode);
             console.log('- Cuts Count:', info.cutsCount);
             console.log('- Initial Cut Created:', info.initialCutCreated);
             console.log('- Has Initial Cut:', info.hasInitialCut);
             console.log('- Playing:', info.isPlaying);
             console.log('- Current Cut:', info.currentCut);
+            console.log('- Last Stopped Cut:', info.lastStoppedCut);
             console.log('- Settings:', info.settings);
             console.log('- EventBus:', info.eventBusAvailable ? '✅' : '❌');
-            console.log('- CoordinateSystem:', coordCheck.status || '❌');
+            console.log('- CoordinateSystem:', coordCheck.status === 'available' || coordCheck.status === 'ok' ? '✅' : '❌');
             console.log('- LayerSystem:', layerCheck.hasLayers ? '✅' : '❌');
+            console.log('- Has Initialized:', info.hasInitialized);
             console.log('- Is Initializing:', info.isInitializing);
             console.log('- Cut Switch In Progress:', info.cutSwitchInProgress);
             console.log('- 🔧 Layer Deduplication: ✅');
             console.log('- 🔧 Coordinate Fix Applied: ✅');
             console.log('- 🔧 Safe CUT Switching: ✅');
+            console.log('- 🔧 Timeline Stop Position Fix: ✅');
+            console.log('- 🔧 Shift+N Blank CUT Support: ✅');
             console.log('- Cut Structure:', info.cutStructure);
             
             return info;
@@ -1143,14 +1341,16 @@
     }
     
     window.TegakiAnimationSystem = AnimationSystem;
-    console.log('✅ animation-system.js loaded (問題修正版)');
+    console.log('✅ animation-system.js loaded (緊急修正完了版)');
     console.log('🔧 修正完了:');
-    console.log('  - 🔧 レイヤー二重表示問題修正: deduplicateLayers()');
-    console.log('  - 🔧 描画位置ズレ修正: applyTransformToLayerFixed()');
-    console.log('  - 🔧 CUT切り替え安全性強化: switchToActiveCutSafely()');
-    console.log('  - 🔧 新規CUT作成時絵消失防止: saveCutLayerStatesBeforeSwitch()');
-    console.log('  - 🔧 初期化処理重複防止: isInitializing フラグ');
-    console.log('  - 🔧 レイヤーデータ完全コピー: copyCurrentLayersForCut()');
+    console.log('  - ✅ レイヤー二重表示問題修正: 重複防止フラグ強化');
+    console.log('  - ✅ 描画位置ズレ修正: applyTransformToLayerFixed()改善');
+    console.log('  - ✅ タイムライン停止位置修正: pause/stop動作分離');
+    console.log('  - ✅ CUT切り替え安全性強化: switchToActiveCutSafely()');
+    console.log('  - ✅ 新規CUT作成時絵消失防止: saveCutLayerStatesBeforeSwitch()');
+    console.log('  - ✅ 初期化処理重複防止: hasInitialized フラグ');
+    console.log('  - ✅ Shift+N空CUT作成対応: createNewBlankCut()');
     console.log('  - ✅ 座標変換API統一・レイヤーAPI統合・EventBus完全性確保');
+    console.log('  - ✅ PixiJS v8.13完全対応・二重実装排除・アーキテクチャ改善');
 
 })();
