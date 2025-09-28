@@ -1,9 +1,10 @@
-// ===== system/animation-system.js - updateCurrentCutLayer修正版 =====
+// ===== system/animation-system.js - Phase 3機能補完版 =====
+// 【Phase 3実装完了】CUTコピー・ペースト機能実装
 // 【修正完了】レイヤー二重表示問題修正
 // 【修正完了】描画位置ズレ問題修正  
 // 【修正完了】タイムライン停止位置修正
-// 【修正完了】構文エラー修正
 // 【修正完了】updateCurrentCutLayer メソッド追加
+// 【Phase 3新機能】copyCut()、pasteCut()、クリップボード管理実装
 // PixiJS v8.13 対応
 
 (function() {
@@ -27,6 +28,13 @@
             
             // 【修正】再生位置保持用
             this.lastStoppedCutIndex = 0;
+            
+            // 【Phase 3新機能】CUTクリップボード管理
+            this.cutClipboard = {
+                cutData: null,
+                timestamp: null,
+                sourceId: null
+            };
             
             // API統一：座標変換関数
             this.coordAPI = window.CoordinateSystem;
@@ -58,6 +66,9 @@
             // LayerSystemとの双方向参照設定
             this.layerSystem.animationSystem = this;
             
+            // 【Phase 3】CUTコピー・ペーストイベント登録
+            this.setupCutClipboardEvents();
+            
             // 【修正】初期化完了フラグ
             this.hasInitialized = true;
             
@@ -79,6 +90,219 @@
             }, 150);
             
             this.eventBus.emit('animation:initialized');
+        }
+        
+        // 【Phase 3新機能】CUTクリップボードイベント登録
+        setupCutClipboardEvents() {
+            if (!this.eventBus) return;
+            
+            // アクティブCUTコピー（Shift+C用）
+            this.eventBus.on('cut:copy-current', () => {
+                this.copyCurrent();
+            });
+            
+            // 右隣に貼り付け（Shift+C用）
+            this.eventBus.on('cut:paste-right-adjacent', () => {
+                this.pasteRightAdjacent();
+            });
+            
+            // 独立貼り付け（Shift+V用）
+            this.eventBus.on('cut:paste-new', () => {
+                this.pasteAsNew();
+            });
+            
+            console.log('✅ CUT clipboard events registered (Phase 3)');
+        }
+        
+        // 【Phase 3新機能】現在のCUTをコピー
+        copyCurrent() {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut) {
+                console.warn('No current CUT to copy');
+                return false;
+            }
+            
+            // 現在のLayerSystem状態を保存
+            this.saveCutLayerStatesBeforeSwitch();
+            
+            // CUTデータの完全コピー
+            const copiedCutData = this.deepCopyCutData(currentCut);
+            
+            this.cutClipboard.cutData = copiedCutData;
+            this.cutClipboard.timestamp = Date.now();
+            this.cutClipboard.sourceId = currentCut.id;
+            
+            console.log('📋 CUT copied to clipboard:', currentCut.name);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('cut:copied', {
+                    cutId: currentCut.id,
+                    cutName: currentCut.name,
+                    clipboardData: this.getCutClipboardInfo()
+                });
+            }
+            
+            return true;
+        }
+        
+        // 【Phase 3新機能】右隣に貼り付け（Shift+C用）
+        pasteRightAdjacent() {
+            if (!this.cutClipboard.cutData) {
+                console.warn('No CUT data in clipboard for right adjacent paste');
+                return false;
+            }
+            
+            const currentCutIndex = this.animationData.playback.currentCutIndex;
+            const insertIndex = currentCutIndex + 1;
+            
+            // クリップボードからCUTデータを復元
+            const pastedCut = this.createCutFromClipboard(this.cutClipboard.cutData);
+            if (!pastedCut) {
+                console.error('Failed to create CUT from clipboard data');
+                return false;
+            }
+            
+            // 指定位置に挿入
+            this.animationData.cuts.splice(insertIndex, 0, pastedCut);
+            
+            // 新しいCUTに切り替え
+            this.switchToActiveCutSafely(insertIndex, false);
+            
+            console.log('📋 CUT pasted as right adjacent:', pastedCut.name, 'at index', insertIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('cut:pasted-right-adjacent', {
+                    cutId: pastedCut.id,
+                    cutIndex: insertIndex,
+                    cutName: pastedCut.name
+                });
+            }
+            
+            return true;
+        }
+        
+        // 【Phase 3新機能】独立貼り付け（Shift+V用）
+        pasteAsNew() {
+            if (!this.cutClipboard.cutData) {
+                console.warn('No CUT data in clipboard for new paste');
+                return false;
+            }
+            
+            // クリップボードからCUTデータを復元
+            const pastedCut = this.createCutFromClipboard(this.cutClipboard.cutData);
+            if (!pastedCut) {
+                console.error('Failed to create CUT from clipboard data');
+                return false;
+            }
+            
+            // 最後に追加
+            this.animationData.cuts.push(pastedCut);
+            const newIndex = this.animationData.cuts.length - 1;
+            
+            // 新しいCUTに切り替え
+            this.switchToActiveCutSafely(newIndex, false);
+            
+            console.log('📋 CUT pasted as new:', pastedCut.name, 'at index', newIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('cut:pasted-new', {
+                    cutId: pastedCut.id,
+                    cutIndex: newIndex,
+                    cutName: pastedCut.name
+                });
+            }
+            
+            return true;
+        }
+        
+        // 【Phase 3新機能】CUTデータの完全コピー
+        deepCopyCutData(cutData) {
+            if (!cutData) return null;
+            
+            const copiedLayers = cutData.layers ? cutData.layers.map(layerData => ({
+                id: layerData.id,
+                name: layerData.name,
+                visible: layerData.visible,
+                opacity: layerData.opacity,
+                isBackground: layerData.isBackground,
+                transform: layerData.transform ? { ...layerData.transform } : { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
+                paths: layerData.paths ? layerData.paths.map(pathData => ({
+                    id: pathData.id,
+                    points: pathData.points ? pathData.points.map(point => ({ ...point })) : [],
+                    size: pathData.size,
+                    color: pathData.color,
+                    opacity: pathData.opacity,
+                    tool: pathData.tool
+                })) : [],
+                timestamp: layerData.timestamp
+            })) : [];
+            
+            return {
+                name: cutData.name,
+                duration: cutData.duration,
+                layers: copiedLayers,
+                thumbnail: null, // サムネイルは再生成が必要
+                originalId: cutData.id,
+                copyTimestamp: Date.now()
+            };
+        }
+        
+        // 【Phase 3新機能】クリップボードからCUT作成
+        createCutFromClipboard(clipboardData) {
+            if (!clipboardData || !clipboardData.layers) {
+                console.error('Invalid clipboard data for CUT creation');
+                return null;
+            }
+            
+            const cut = {
+                id: 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                name: clipboardData.name + '_copy',
+                duration: clipboardData.duration,
+                layers: clipboardData.layers.map(layerData => {
+                    // レイヤーIDを新規生成（重複防止）
+                    return {
+                        ...layerData,
+                        id: layerData.id + '_copy_' + Date.now() + '_' + Math.random().toString(36).substr(2, 5),
+                        timestamp: Date.now()
+                    };
+                }),
+                thumbnail: null
+            };
+            
+            // サムネイル生成を遅延実行
+            setTimeout(() => {
+                const cutIndex = this.animationData.cuts.findIndex(c => c.id === cut.id);
+                if (cutIndex !== -1) {
+                    this.generateCutThumbnail(cutIndex);
+                }
+            }, 200);
+            
+            return cut;
+        }
+        
+        // 【Phase 3新機能】クリップボード情報取得
+        getCutClipboardInfo() {
+            return {
+                hasCutData: !!this.cutClipboard.cutData,
+                timestamp: this.cutClipboard.timestamp,
+                sourceId: this.cutClipboard.sourceId,
+                cutName: this.cutClipboard.cutData?.name,
+                layerCount: this.cutClipboard.cutData?.layers?.length || 0,
+                ageMs: this.cutClipboard.timestamp ? Date.now() - this.cutClipboard.timestamp : 0
+            };
+        }
+        
+        // 【Phase 3新機能】クリップボードクリア
+        clearCutClipboard() {
+            this.cutClipboard.cutData = null;
+            this.cutClipboard.timestamp = null;
+            this.cutClipboard.sourceId = null;
+            
+            console.log('🗑️ CUT clipboard cleared');
+            
+            if (this.eventBus) {
+                this.eventBus.emit('cut:clipboard-cleared');
+            }
         }
         
         // 【修正】初期CUT作成（重複防止強化）
@@ -1177,6 +1401,9 @@
             this.hasInitialized = false;
             this.lastStoppedCutIndex = 0;
             
+            // 【Phase 3】クリップボードもクリア
+            this.clearCutClipboard();
+            
             console.log('🗑️ Animation data cleared');
             
             if (this.eventBus) {
@@ -1218,6 +1445,7 @@
         debugInfo() {
             const coordCheck = this.checkCoordinateSystem();
             const layerCheck = this.checkLayerSystemAPI();
+            const clipboardInfo = this.getCutClipboardInfo();
             
             const info = {
                 isAnimationMode: this.isAnimationMode,
@@ -1231,6 +1459,7 @@
                 eventBusAvailable: !!this.eventBus,
                 coordinateSystemAPI: coordCheck,
                 layerSystemAPI: layerCheck,
+                cutClipboard: clipboardInfo,
                 cutStructure: this.animationData.cuts.map(cut => ({
                     id: cut.id,
                     name: cut.name,
@@ -1241,7 +1470,7 @@
                 hasInitialized: this.hasInitialized
             };
             
-            console.log('AnimationSystem Debug Info (updateCurrentCutLayer修正版):');
+            console.log('AnimationSystem Debug Info (Phase 3機能補完版):');
             console.log('- Animation Mode:', info.isAnimationMode);
             console.log('- Cuts Count:', info.cutsCount);
             console.log('- Initial Cut Created:', info.initialCutCreated);
@@ -1256,12 +1485,14 @@
             console.log('- Has Initialized:', info.hasInitialized);
             console.log('- Is Initializing:', info.isInitializing);
             console.log('- Cut Switch In Progress:', info.cutSwitchInProgress);
+            console.log('- CUT Clipboard:', clipboardInfo.hasCutData ? '✅' : '❌', `(${clipboardInfo.layerCount} layers)`);
             console.log('- 🔧 Layer Deduplication: ✅');
             console.log('- 🔧 Coordinate Fix Applied: ✅');
             console.log('- 🔧 Safe CUT Switching: ✅');
             console.log('- 🔧 Timeline Stop Position Fix: ✅');
             console.log('- 🔧 Syntax Error Fixed: ✅');
             console.log('- 🚀 updateCurrentCutLayer Added: ✅');
+            console.log('- 🆕 Phase 3 CUT Copy/Paste: ✅');
             console.log('- Cut Structure:', info.cutStructure);
             
             return info;
@@ -1270,7 +1501,7 @@
     
     // グローバル公開
     window.TegakiAnimationSystem = AnimationSystem;
-    console.log('✅ animation-system.js loaded (updateCurrentCutLayer修正版)');
+    console.log('✅ animation-system.js loaded (Phase 3機能補完版)');
     console.log('🔧 修正完了:');
     console.log('  - ✅ 構文エラー修正: ファイル完全整理');
     console.log('  - ✅ レイヤー二重表示問題修正: 重複防止フラグ強化');
@@ -1281,7 +1512,23 @@
     console.log('  - ✅ 初期化処理重複防止: hasInitialized フラグ');
     console.log('  - ✅ Shift+N空CUT作成対応: createNewBlankCut()');
     console.log('  - 🚀 updateCurrentCutLayer実装: LayerSystem連携エラー修正');
+    console.log('🆕 Phase 3機能補完実装完了:');
+    console.log('  - ✅ CUTコピー機能: copyCurrent()');
+    console.log('  - ✅ 右隣貼り付け: pasteRightAdjacent() (Shift+C用)');
+    console.log('  - ✅ 独立貼り付け: pasteAsNew() (Shift+V用)');
+    console.log('  - ✅ CUTクリップボード管理: cutClipboard オブジェクト');
+    console.log('  - ✅ 完全CUTデータコピー: deepCopyCutData()');
+    console.log('  - ✅ クリップボードからCUT作成: createCutFromClipboard()');
+    console.log('  - ✅ EventBus統合: cut:copy-current, cut:paste-right-adjacent, cut:paste-new');
+    console.log('  - ✅ レイヤーID重複防止: 新規ID生成システム');
+    console.log('  - ✅ サムネイル自動再生成: 貼り付け後の表示更新');
+    console.log('  - ✅ デバッグ情報拡張: クリップボード状態表示');
     console.log('  - ✅ 座標変換API統一・レイヤーAPI統合・EventBus完全性確保');
     console.log('  - ✅ PixiJS v8.13完全対応・二重実装排除・アーキテクチャ改善');
+    console.log('🎯 Phase 3 CUTコピー・ペーストショートカット:');
+    console.log('  - Shift+C: アクティブCUTコピー + 右隣に貼り付け');
+    console.log('  - Shift+V: CUT独立貼り付け');
+    console.log('  - クリップボード管理: 完全なCUTデータ保持');
+    console.log('  - レイヤー変形・パス・サムネイル完全保持');
 
 })();
