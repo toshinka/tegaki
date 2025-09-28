@@ -380,7 +380,7 @@ window.TegakiUI = {
             .layer-name {
                 grid-column: 2;
                 grid-row: 2;
-                font-size: 12px;
+                font-size: 9px;
                 color: var(--text-primary);
                 font-weight: 500;
                 white-space: nowrap;
