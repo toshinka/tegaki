@@ -9,9 +9,11 @@
             this.sortable = null;
             this.isVisible = false;
             this.gifExporter = null;
+            this.currentCutIndex = 0;
+            this.isPlaying = false;
             
-            // EventBus取得（グローバル）
-            this.eventBus = window.TegakiEventBus || this.createSimpleEventBus();
+            // EventBus取得
+            this.eventBus = window.TegakiEventBus;
         }
         
         init() {
@@ -24,27 +26,34 @@
             }
             
             // GIF Exporter初期化
-            this.gifExporter = new window.TegakiGIFExporter(
-                this.animationSystem, 
-                this.animationSystem.app
-            );
+            if (window.TegakiGIFExporter) {
+                this.gifExporter = new window.TegakiGIFExporter(
+                    this.animationSystem, 
+                    this.animationSystem.app
+                );
+            }
             
             this.setupEventListeners();
             this.setupKeyboardShortcuts();
             this.setupAnimationEvents();
+            this.createLayerPanelCutIndicator(); // 新機能：レイヤーパネル連動
             
-            console.log('✅ TimelineUI initialized');
+            console.log('✅ TimelineUI initialized (Slim & Layer-linked)');
         }
         
         setupEventListeners() {
-            // 再生制御
+            // 再生制御 - 状態切り替え対応
             const playBtn = document.getElementById('play-btn');
             const pauseBtn = document.getElementById('pause-btn');
             const stopBtn = document.getElementById('stop-btn');
             
             if (playBtn) {
                 playBtn.addEventListener('click', () => {
-                    this.animationSystem.play();
+                    if (this.isPlaying) {
+                        this.animationSystem.pause();
+                    } else {
+                        this.animationSystem.play();
+                    }
                 });
             }
             
@@ -103,35 +112,31 @@
         
         setupKeyboardShortcuts() {
             document.addEventListener('keydown', (e) => {
-                // アニメーションモード時のみ有効
                 if (!this.isVisible) return;
                 
-                const keyConfig = window.TEGAKI_KEYCONFIG;
-                const action = window.TEGAKI_KEYCONFIG_MANAGER.getActionForKey(e.code, {
-                    vPressed: false,
-                    shiftPressed: e.shiftKey,
-                    altPressed: e.altKey
-                });
-                
-                switch (action) {
-                    case 'gifPlayPause':
-                        if (e.code === 'Space' && !e.ctrlKey && !e.altKey) {
-                            this.animationSystem.togglePlayPause();
+                switch (e.code) {
+                    case 'Space':
+                        if (!e.ctrlKey && !e.altKey) {
+                            if (this.isPlaying) {
+                                this.animationSystem.pause();
+                            } else {
+                                this.animationSystem.play();
+                            }
                             e.preventDefault();
                         }
                         break;
                         
-                    case 'gifPrevFrame':
+                    case 'ArrowLeft':
                         this.animationSystem.goToPreviousFrame();
                         e.preventDefault();
                         break;
                         
-                    case 'gifNextFrame':
+                    case 'ArrowRight':
                         this.animationSystem.goToNextFrame();
                         e.preventDefault();
                         break;
                         
-                    case 'gifAddCut':
+                    case 'Equal': // Plus key
                         if (e.altKey) {
                             this.animationSystem.createCutFromCurrentState();
                             e.preventDefault();
@@ -142,13 +147,16 @@
         }
         
         setupAnimationEvents() {
-            // AnimationSystemからのイベント監視
+            if (!this.eventBus) return;
+            
             this.eventBus.on('animation:cut-created', () => {
                 this.updateCutsList();
+                this.updateLayerPanelIndicator();
             });
             
             this.eventBus.on('animation:cut-applied', (data) => {
                 this.setActiveCut(data.cutIndex);
+                this.updateLayerPanelIndicator();
             });
             
             this.eventBus.on('animation:thumbnail-generated', () => {
@@ -156,20 +164,26 @@
             });
             
             this.eventBus.on('animation:playback-started', () => {
+                this.isPlaying = true;
                 this.updatePlaybackUI(true);
             });
             
             this.eventBus.on('animation:playback-paused', () => {
+                this.isPlaying = false;
                 this.updatePlaybackUI(false);
             });
             
             this.eventBus.on('animation:playback-stopped', () => {
+                this.isPlaying = false;
                 this.updatePlaybackUI(false);
                 this.setActiveCut(0);
+                this.updateLayerPanelIndicator();
             });
             
             this.eventBus.on('animation:cut-changed', (data) => {
+                this.currentCutIndex = data.cutIndex;
                 this.setActiveCut(data.cutIndex);
+                this.updateLayerPanelIndicator();
             });
             
             // GIF書き出しイベント
@@ -187,6 +201,86 @@
             });
         }
         
+        // 新機能：レイヤーパネル上部にCUT表示を追加
+        createLayerPanelCutIndicator() {
+            const layerContainer = document.getElementById('layer-panel-container');
+            if (!layerContainer) return;
+            
+            // 既存のインジケータを削除
+            const existingIndicator = layerContainer.querySelector('.cut-indicator');
+            if (existingIndicator) {
+                existingIndicator.remove();
+            }
+            
+            // 新しいインジケータを作成
+            const cutIndicator = document.createElement('div');
+            cutIndicator.className = 'cut-indicator';
+            cutIndicator.innerHTML = `
+                <button class="cut-nav-btn" id="cut-prev-btn">◀</button>
+                <span class="cut-display" id="cut-display">CUT1</span>
+                <button class="cut-nav-btn" id="cut-next-btn">▶</button>
+            `;
+            
+            // レイヤー追加ボタンの後に挿入
+            const addButton = layerContainer.querySelector('.layer-add-button');
+            if (addButton) {
+                layerContainer.insertBefore(cutIndicator, addButton.nextSibling);
+            }
+            
+            // イベントリスナー設定
+            document.getElementById('cut-prev-btn')?.addEventListener('click', () => {
+                this.goToPreviousCut();
+            });
+            
+            document.getElementById('cut-next-btn')?.addEventListener('click', () => {
+                this.goToNextCut();
+            });
+            
+            this.updateLayerPanelIndicator();
+        }
+        
+        // 新機能：レイヤーパネルのCUT表示を更新
+        updateLayerPanelIndicator() {
+            const cutDisplay = document.getElementById('cut-display');
+            const prevBtn = document.getElementById('cut-prev-btn');
+            const nextBtn = document.getElementById('cut-next-btn');
+            
+            if (!cutDisplay) return;
+            
+            const animData = this.animationSystem.getAnimationData();
+            const totalCuts = animData.cuts.length;
+            
+            if (totalCuts === 0) {
+                cutDisplay.textContent = 'NO CUT';
+                if (prevBtn) prevBtn.disabled = true;
+                if (nextBtn) nextBtn.disabled = true;
+                return;
+            }
+            
+            const currentCutName = animData.cuts[this.currentCutIndex]?.name || `CUT${this.currentCutIndex + 1}`;
+            cutDisplay.textContent = currentCutName;
+            
+            if (prevBtn) prevBtn.disabled = this.currentCutIndex <= 0;
+            if (nextBtn) nextBtn.disabled = this.currentCutIndex >= totalCuts - 1;
+        }
+        
+        // 新機能：CUT間のナビゲーション
+        goToPreviousCut() {
+            const animData = this.animationSystem.getAnimationData();
+            if (this.currentCutIndex > 0) {
+                const newIndex = this.currentCutIndex - 1;
+                this.animationSystem.applyCutToLayers(newIndex);
+            }
+        }
+        
+        goToNextCut() {
+            const animData = this.animationSystem.getAnimationData();
+            if (this.currentCutIndex < animData.cuts.length - 1) {
+                const newIndex = this.currentCutIndex + 1;
+                this.animationSystem.applyCutToLayers(newIndex);
+            }
+        }
+        
         updateCutsList() {
             const animData = this.animationSystem.getAnimationData();
             this.cutsContainer.innerHTML = '';
@@ -201,12 +295,14 @@
                 this.sortable.destroy();
             }
             
-            this.sortable = Sortable.create(this.cutsContainer, {
-                animation: 150,
-                onEnd: (evt) => {
-                    this.animationSystem.reorderCuts(evt.oldIndex, evt.newIndex);
-                }
-            });
+            if (window.Sortable) {
+                this.sortable = Sortable.create(this.cutsContainer, {
+                    animation: 150,
+                    onEnd: (evt) => {
+                        this.animationSystem.reorderCuts(evt.oldIndex, evt.newIndex);
+                    }
+                });
+            }
         }
         
         createCutItem(cut, index) {
@@ -215,7 +311,7 @@
             cutItem.dataset.cutIndex = index;
             
             // サムネイル表示
-            let thumbnailHtml = '<div class="cut-thumbnail-placeholder"></div>';
+            let thumbnailHtml = '<div class="cut-thumbnail-placeholder">CUT</div>';
             if (cut.thumbnailTexture) {
                 try {
                     const canvas = this.animationSystem.app.renderer.extract.canvas(cut.thumbnailTexture);
@@ -227,12 +323,10 @@
             
             cutItem.innerHTML = `
                 <div class="cut-thumbnail">${thumbnailHtml}</div>
-                <div class="cut-info">
-                    <div class="cut-name">${cut.name}</div>
-                    <input type="number" class="cut-duration" 
-                           value="${cut.duration}" 
-                           min="0.1" max="10" step="0.1">
-                </div>
+                <div class="cut-name">${cut.name}</div>
+                <input type="number" class="cut-duration" 
+                       value="${cut.duration}" 
+                       min="0.1" max="10" step="0.1">
                 <button class="delete-cut-btn" data-index="${index}">×</button>
             `;
             
@@ -264,6 +358,8 @@
         }
         
         setActiveCut(index) {
+            this.currentCutIndex = index;
+            
             document.querySelectorAll('.cut-item').forEach((item, i) => {
                 if (i === index) {
                     item.classList.add('active');
@@ -271,24 +367,37 @@
                     item.classList.remove('active');
                 }
             });
+            
+            this.updateLayerPanelIndicator();
         }
         
         deleteCut(index) {
             this.animationSystem.deleteCut(index);
             this.updateCutsList();
+            this.updateLayerPanelIndicator();
         }
         
+        // 修正版：再生ボタンの状態切り替え
         updatePlaybackUI(isPlaying) {
             const playBtn = document.getElementById('play-btn');
             const pauseBtn = document.getElementById('pause-btn');
             const stopBtn = document.getElementById('stop-btn');
             
-            if (playBtn) playBtn.disabled = isPlaying;
+            if (playBtn) {
+                playBtn.textContent = isPlaying ? '⏹' : '▶';
+                playBtn.title = isPlaying ? '停止 (Space)' : '再生 (Space)';
+            }
+            
             if (pauseBtn) pauseBtn.disabled = !isPlaying;
             if (stopBtn) stopBtn.disabled = !isPlaying;
         }
         
         async exportGIF() {
+            if (!this.gifExporter) {
+                console.warn('GIF Exporter not available');
+                return;
+            }
+            
             const canExport = this.gifExporter.canExport();
             if (!canExport.canExport) {
                 console.warn('Cannot export GIF:', canExport.reason);
@@ -312,6 +421,7 @@
             const progressEl = document.getElementById('export-progress');
             if (progressEl) {
                 progressEl.style.display = 'block';
+                this.timelinePanel.classList.add('exporting');
                 this.updateExportProgress(0);
             }
         }
@@ -324,7 +434,7 @@
                 progressFill.style.width = progress + '%';
             }
             if (progressText) {
-                progressText.textContent = progress + '%';
+                progressText.textContent = Math.round(progress) + '%';
             }
         }
         
@@ -332,6 +442,7 @@
             const progressEl = document.getElementById('export-progress');
             if (progressEl) {
                 progressEl.style.display = 'none';
+                this.timelinePanel.classList.remove('exporting');
             }
         }
         
@@ -346,6 +457,7 @@
             
             // 初回表示時はCUTリスト更新
             this.updateCutsList();
+            this.updateLayerPanelIndicator();
             
             // 設定値をUIに反映
             this.updateSettingsUI();
@@ -361,6 +473,12 @@
             if (this.animationSystem.isAnimationMode) {
                 this.animationSystem.toggleAnimationMode();
             }
+            
+            // レイヤーパネルのインジケータを隠す
+            const cutIndicator = document.querySelector('.cut-indicator');
+            if (cutIndicator) {
+                cutIndicator.style.display = 'none';
+            }
         }
         
         toggle() {
@@ -368,6 +486,11 @@
                 this.hide();
             } else {
                 this.show();
+                // レイヤーパネルのインジケータを表示
+                const cutIndicator = document.querySelector('.cut-indicator');
+                if (cutIndicator) {
+                    cutIndicator.style.display = 'flex';
+                }
             }
         }
         
@@ -385,31 +508,12 @@
             }
         }
         
-        // 簡易EventBus実装（フォールバック）
-        createSimpleEventBus() {
-            const events = {};
-            return {
-                emit: (event, data) => {
-                    if (events[event]) {
-                        events[event].forEach(callback => callback(data));
-                    }
-                },
-                on: (event, callback) => {
-                    if (!events[event]) events[event] = [];
-                    events[event].push(callback);
-                },
-                off: (event, callback) => {
-                    if (events[event]) {
-                        events[event] = events[event].filter(cb => cb !== callback);
-                    }
-                }
-            };
-        }
-        
         // デバッグ用
         debugInfo() {
             console.log('TimelineUI Debug Info:');
             console.log('- Visible:', this.isVisible);
+            console.log('- Playing:', this.isPlaying);
+            console.log('- Current Cut:', this.currentCutIndex);
             console.log('- Panel:', !!this.timelinePanel);
             console.log('- Container:', !!this.cutsContainer);
             console.log('- Sortable:', !!this.sortable);
@@ -417,6 +521,8 @@
             
             return {
                 isVisible: this.isVisible,
+                isPlaying: this.isPlaying,
+                currentCutIndex: this.currentCutIndex,
                 hasPanel: !!this.timelinePanel,
                 hasContainer: !!this.cutsContainer,
                 hasSortable: !!this.sortable,
@@ -426,5 +532,5 @@
     }
     
     window.TegakiTimelineUI = TimelineUI;
-    console.log('✅ timeline-ui.js loaded');
+    console.log('✅ timeline-ui.js loaded (Slim & Layer-linked version)');
 })();
