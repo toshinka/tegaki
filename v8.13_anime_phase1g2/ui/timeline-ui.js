@@ -1,194 +1,21 @@
-}
-        
-        // レイヤーパネル上部にCUT表示を追加
-        createLayerPanelCutIndicator() {
-            const layerContainer = document.getElementById('layer-panel-container');
-            if (!layerContainer) return;
-            
-            const existingIndicator = layerContainer.querySelector('.cut-indicator');
-            if (existingIndicator) {
-                existingIndicator.remove();
-            }
-            
-            const cutIndicator = document.createElement('div');
-            cutIndicator.className = 'cut-indicator';
-            cutIndicator.innerHTML = `
-                <button class="cut-nav-btn" id="cut-prev-btn">◀</button>
-                <span class="cut-display" id="cut-display">CUT1</span>
-                <button class="cut-nav-btn" id="cut-next-btn">▶</button>
-            `;
-            
-            const addButton = layerContainer.querySelector('.layer-add-button');
-            if (addButton) {
-                layerContainer.insertBefore(cutIndicator, addButton.nextSibling);
-            }
-            
-            document.getElementById('cut-prev-btn')?.addEventListener('click', () => {
-                this.goToPreviousCut();
-            });
-            
-            document.getElementById('cut-next-btn')?.addEventListener('click', () => {
-                this.goToNextCut();
-            });
-            
-            this.updateLayerPanelIndicator();
-            console.log('✅ Layer panel CUT indicator created');
-        }
-        
-        updateLayerPanelIndicator() {
-            const cutDisplay = document.getElementById('cut-display');
-            const prevBtn = document.getElementById('cut-prev-btn');
-            const nextBtn = document.getElementById('cut-next-btn');
-            
-            if (!cutDisplay) return;
-            
-            const animData = this.animationSystem.getAnimationData();
-            const totalCuts = animData.cuts.length;
-            
-            if (totalCuts === 0) {
-                cutDisplay.textContent = 'NO CUT';
-                if (prevBtn) prevBtn.disabled = true;
-                if (nextBtn) nextBtn.disabled = true;
-                return;
-            }
-            
-            const currentCutName = animData.cuts[this.currentCutIndex]?.name || `CUT${this.currentCutIndex + 1}`;
-            cutDisplay.textContent = currentCutName;
-            
-            if (prevBtn) prevBtn.disabled = this.currentCutIndex <= 0;
-            if (nextBtn) nextBtn.disabled = this.currentCutIndex >= totalCuts - 1;
-        }
-        
-        goToPreviousCut() {
-            const animData = this.animationSystem.getAnimationData();
-            if (this.currentCutIndex > 0) {
-                const newIndex = this.currentCutIndex - 1;
-                this.animationSystem.switchToActiveCut(newIndex);
-            }
-        }
-        
-        goToNextCut() {
-            const animData = this.animationSystem.getAnimationData();
-            if (this.currentCutIndex < animData.cuts.length - 1) {
-                const newIndex = this.currentCutIndex + 1;
-                this.animationSystem.switchToActiveCut(newIndex);
-            }
-        }
-        
-        updateCutsList() {
-            const animData = this.animationSystem.getAnimationData();
-            this.cutsContainer.innerHTML = '';
-            
-            animData.cuts.forEach((cut, index) => {
-                const cutItem = this.createCutItem(cut, index);
-                this.cutsContainer.appendChild(cutItem);
-            });
-            
-            if (this.sortable) {
-                this.sortable.destroy();
-            }
-            
-            if (window.Sortable) {
-                this.sortable = Sortable.create(this.cutsContainer, {
-                    animation: 150,
-                    onEnd: (evt) => {
-                        this.animationSystem.reorderCuts(evt.oldIndex, evt.newIndex);
-                    }
-                });
-            }
-        }
-        
-        // CUTアイテム作成（サムネイル左右ボタン追加）
-        createCutItem(cut, index) {
-            const cutItem = document.createElement('div');
-            cutItem.className = 'cut-item';
-            cutItem.dataset.cutIndex = index;
-            
-            const thumbnailHtml = this.generateCutThumbnailHTML(cut, index);
-            
-            cutItem.innerHTML = `
-                <div class="cut-thumbnail" data-cut-index="${index}">
-                    ${thumbnailHtml}
-                    <button class="thumb-nav-btn thumb-nav-left" data-cut-index="${index}" data-direction="prev">◀</button>
-                    <button class="thumb-nav-btn thumb-nav-right" data-cut-index="${index}" data-direction="next">▶</button>
-                </div>
-                <div class="cut-name">${cut.name}</div>
-                <input type="number" class="cut-duration" 
-                       value="${cut.duration}" 
-                       min="0.1" max="10" step="0.1"
-                       title="表示時間（秒）">
-                <button class="delete-cut-btn" data-index="${index}">×</button>
-            `;
-            
-            // CUT選択
-            cutItem.addEventListener('click', (e) => {
-                if (!e.target.classList.contains('delete-cut-btn') &&
-                    !e.target.classList.contains('cut-duration') &&
-                    !e.target.classList.contains('thumb-nav-btn')) {
-                    this.animationSystem.switchToActiveCut(index);
-                    this.setActiveCut(index);
-                }
-            });
-            
-            // サムネイル左右ボタンのイベント
-            const leftBtn = cutItem.querySelector('.thumb-nav-left');
-            const rightBtn = cutItem.querySelector('.thumb-nav-right');
-            
-            if (leftBtn) {
-                leftBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.navigateThumbnail(index, 'prev');
-                });
-            }
-            
-            if (rightBtn) {
-                rightBtn.addEventListener('click', (e) => {
-                    e.stopPropagation();
-                    this.navigateThumbnail(index, 'next');
-                });
-            }
-            
-            // CUT削除
-            const deleteBtn = cutItem.querySelector('.delete-cut-btn');
-            deleteBtn.addEventListener('click', (e) => {
-                this.deleteCut(index);
-                e.stopPropagation();
-            });
-            
-            // 時間変更
-            const durationInput = cutItem.querySelector('.cut-duration');
-            durationInput.addEventListener('change', (e) => {
-                const newDuration = parseFloat(e.target.value);
-                this.animationSystem.updateCutDuration(index, newDuration);
-                e.stopPropagation();
-            });
-            
-            return cutItem;
-        }
-        
-        // サムネイルナビゲーション機能
-        navigateThumbnail(cutIndex, direction) {
-            // TODO: 将来的にCUT内のフレーム/レイヤーナビゲーション実装
-            // 現在は簡単なCUT間ナビゲーション
-            if (direction === 'prev' && cutIndex > 0) {
-                this.animationSystem.switchToActiveCut(cutIndex - 1);
-            }// ===== ui/timeline-ui.js - Phase5改修版: ショートカット更新 =====
-// CHG: ALT+Spaceショートカット対応・Spaceキー処理更新
+// ===== ui/timeline-ui.js - 構造的問題修正版: グローバル公開対応 =====
+// CHG: window.TegakiTimelineUI グローバル公開追加
 
 /*
-=== Phase5改修完了ヘッダー ===
+=== 構造的問題修正ヘッダー ===
 
-【改修内容】
-✅ setupKeyboardShortcuts内のSpace処理更新
-✅ animation:play-toggleイベント受信処理追加
-✅ ALT+Space処理はcore-runtime.jsに委譲
-✅ Spaceキー単体はタイムライン表示時のみ有効
+【修正内容】
+✅ window.TegakiTimelineUI グローバル公開追加
+✅ DOM要素安全確認処理強化
+✅ EventBus接続確認処理追加
+✅ 初期化フローの安全性向上
 
 【変更箇所】
-- setupAnimationEvents内にanimation:play-toggleイベント処理追加
-- setupKeyboardShortcuts内のSpaceキー処理説明更新
+- ファイル末尾にwindow.TegakiTimelineUI = TimelineUI追加
+- init()メソッドにDOM要素確認強化
+- setupEventListeners()にEventBus接続確認追加
 
-=== Phase5改修完了ヘッダー終了 ===
+=== 構造的問題修正ヘッダー終了 ===
 */
 
 (function() {
@@ -206,17 +33,37 @@
             this.isPlaying = false;
             this.isLooping = true;
             
-            // EventBus取得
+            // CHG: EventBus取得安全化
             this.eventBus = window.TegakiEventBus;
+            if (!this.eventBus) {
+                console.error('TimelineUI: TegakiEventBus not available');
+            }
         }
         
+        // CHG: 構造的問題修正版 - DOM要素確認強化
         init() {
+            console.log('🎬 TimelineUI initialization starting...');
+            
+            // CHG: DOM要素の安全確認（待機処理追加）
             this.timelinePanel = document.getElementById('timeline-panel');
             this.cutsContainer = document.getElementById('cuts-container');
             
             if (!this.timelinePanel || !this.cutsContainer) {
-                console.error('Timeline UI elements not found');
-                return;
+                console.error('Timeline UI elements not found - DOM may not be ready');
+                console.error('  - timeline-panel:', !!this.timelinePanel);
+                console.error('  - cuts-container:', !!this.cutsContainer);
+                
+                // CHG: DOM準備待ち処理追加
+                if (document.readyState !== 'complete') {
+                    console.log('🎬 Waiting for DOM ready...');
+                    document.addEventListener('DOMContentLoaded', () => {
+                        setTimeout(() => this.retryInit(), 100);
+                    });
+                    return;
+                }
+                
+                // CHG: DOM要素作成フォールバック（緊急対応）
+                this.createTimelineDOM();
             }
             
             this.isVisible = this.timelinePanel.classList.contains('show');
@@ -240,7 +87,71 @@
             this.createLayerPanelCutIndicator();
             this.ensureInitialCut();
             
-            console.log('✅ TimelineUI initialized (Phase5改修版: ショートカット更新)');
+            console.log('✅ TimelineUI initialized (構造的問題修正版)');
+        }
+        
+        // CHG: 構造的問題修正版 - DOM要素作成フォールバック
+        createTimelineDOM() {
+            console.log('🎬 Creating timeline DOM elements as fallback...');
+            
+            // timeline-panel作成
+            if (!this.timelinePanel) {
+                this.timelinePanel = document.createElement('div');
+                this.timelinePanel.id = 'timeline-panel';
+                this.timelinePanel.className = 'timeline-panel';
+                this.timelinePanel.style.cssText = 'display:none; position:fixed; left:10px; bottom:10px; z-index:1500;';
+                
+                const timelineHeader = document.createElement('div');
+                timelineHeader.className = 'timeline-header';
+                timelineHeader.innerHTML = `
+                    <button id="close-timeline">×</button>
+                    <div id="cut-display">CUT1</div>
+                `;
+                
+                const timelineBody = document.createElement('div');
+                timelineBody.className = 'timeline-body';
+                
+                const cutsContainer = document.createElement('div');
+                cutsContainer.id = 'cuts-container';
+                cutsContainer.className = 'cuts-container';
+                timelineBody.appendChild(cutsContainer);
+                
+                const timelineBottom = document.createElement('div');
+                timelineBottom.className = 'timeline-bottom';
+                
+                this.timelinePanel.appendChild(timelineHeader);
+                this.timelinePanel.appendChild(timelineBody);
+                this.timelinePanel.appendChild(timelineBottom);
+                
+                document.body.appendChild(this.timelinePanel);
+                console.log('✅ Timeline panel DOM created');
+            }
+            
+            // cuts-container確認
+            if (!this.cutsContainer) {
+                this.cutsContainer = document.getElementById('cuts-container') || 
+                    this.timelinePanel.querySelector('#cuts-container');
+            }
+            
+            if (!this.cutsContainer) {
+                console.error('Failed to create cuts-container');
+                return;
+            }
+            
+            console.log('✅ Timeline DOM elements ready');
+        }
+        
+        // CHG: 構造的問題修正版 - 初期化リトライ処理
+        retryInit() {
+            console.log('🎬 Retrying TimelineUI initialization...');
+            this.timelinePanel = document.getElementById('timeline-panel');
+            this.cutsContainer = document.getElementById('cuts-container');
+            
+            if (this.timelinePanel && this.cutsContainer) {
+                this.init(); // 再初期化実行
+            } else {
+                console.error('Timeline DOM elements still not available after retry');
+            }
         }
         
         // Phase3改修継続：タイムラインレイアウト更新
@@ -449,28 +360,36 @@
             this.updateLayerPanelIndicator();
         }
         
-        // EventBus受信処理（Phase2から継続）
+        // CHG: 構造的問題修正版 - EventBus受信処理強化
         setupEventListeners() {
-            // タイムライン表示切り替えイベント受信
-            if (this.eventBus) {
-                this.eventBus.on('ui:toggle-timeline', () => {
-                    console.log('🎬 Received ui:toggle-timeline event');
-                    this.toggle();
-                });
-                
-                this.eventBus.on('ui:show-timeline', () => {
-                    console.log('🎬 Received ui:show-timeline event');
-                    this.show();
-                });
-                
-                this.eventBus.on('ui:hide-timeline', () => {
-                    console.log('🎬 Received ui:hide-timeline event');
-                    this.hide();
-                });
+            console.log('🎬 Setting up TimelineUI event listeners...');
+            
+            // CHG: EventBus接続確認
+            if (!this.eventBus) {
+                console.error('TimelineUI: Cannot setup event listeners - EventBus not available');
+                return;
             }
+            
+            // タイムライン表示切り替えイベント受信
+            this.eventBus.on('ui:toggle-timeline', () => {
+                console.log('🎬 Received ui:toggle-timeline event');
+                this.toggle();
+            });
+            
+            this.eventBus.on('ui:show-timeline', () => {
+                console.log('🎬 Received ui:show-timeline event');
+                this.show();
+            });
+            
+            this.eventBus.on('ui:hide-timeline', () => {
+                console.log('🎬 Received ui:hide-timeline event');
+                this.hide();
+            });
             
             // 新しいボタンのイベントリスナー設定
             this.setupNewButtonListeners();
+            
+            console.log('✅ TimelineUI event listeners setup completed');
         }
         
         // 新しいボタンレイアウト用イベントリスナー（Phase3から継続）
@@ -560,7 +479,7 @@
             }
         }
         
-        // 表示制御メソッド（Phase2から継続）
+        // CHG: 構造的問題修正版 - 表示制御メソッド強化
         toggle() {
             if (this.isVisible) {
                 this.hide();
@@ -714,3 +633,307 @@
                 console.error('GIF export failed:', data.error);
             });
         }
+        
+        // === その他の既存メソッド（継続） ===
+        
+        // レイヤーパネル上部にCUT表示を追加
+        createLayerPanelCutIndicator() {
+            const layerContainer = document.getElementById('layer-panel-container');
+            if (!layerContainer) return;
+            
+            const existingIndicator = layerContainer.querySelector('.cut-indicator');
+            if (existingIndicator) {
+                existingIndicator.remove();
+            }
+            
+            const cutIndicator = document.createElement('div');
+            cutIndicator.className = 'cut-indicator';
+            cutIndicator.innerHTML = `
+                <button class="cut-nav-btn" id="cut-prev-btn">◀</button>
+                <span class="cut-display" id="cut-display">CUT1</span>
+                <button class="cut-nav-btn" id="cut-next-btn">▶</button>
+            `;
+            
+            const addButton = layerContainer.querySelector('.layer-add-button');
+            if (addButton) {
+                layerContainer.insertBefore(cutIndicator, addButton.nextSibling);
+            }
+            
+            document.getElementById('cut-prev-btn')?.addEventListener('click', () => {
+                this.goToPreviousCut();
+            });
+            
+            document.getElementById('cut-next-btn')?.addEventListener('click', () => {
+                this.goToNextCut();
+            });
+            
+            this.updateLayerPanelIndicator();
+            console.log('✅ Layer panel CUT indicator created');
+        }
+        
+        updateLayerPanelIndicator() {
+            const cutDisplay = document.getElementById('cut-display');
+            const prevBtn = document.getElementById('cut-prev-btn');
+            const nextBtn = document.getElementById('cut-next-btn');
+            
+            if (!cutDisplay) return;
+            
+            const animData = this.animationSystem.getAnimationData();
+            const totalCuts = animData.cuts.length;
+            
+            if (totalCuts === 0) {
+                cutDisplay.textContent = 'NO CUT';
+                if (prevBtn) prevBtn.disabled = true;
+                if (nextBtn) nextBtn.disabled = true;
+                return;
+            }
+            
+            const currentCutName = animData.cuts[this.currentCutIndex]?.name || `CUT${this.currentCutIndex + 1}`;
+            cutDisplay.textContent = currentCutName;
+            
+            if (prevBtn) prevBtn.disabled = this.currentCutIndex <= 0;
+            if (nextBtn) nextBtn.disabled = this.currentCutIndex >= totalCuts - 1;
+        }
+        
+        goToPreviousCut() {
+            const animData = this.animationSystem.getAnimationData();
+            if (this.currentCutIndex > 0) {
+                const newIndex = this.currentCutIndex - 1;
+                this.animationSystem.switchToActiveCut(newIndex);
+            }
+        }
+        
+        goToNextCut() {
+            const animData = this.animationSystem.getAnimationData();
+            if (this.currentCutIndex < animData.cuts.length - 1) {
+                const newIndex = this.currentCutIndex + 1;
+                this.animationSystem.switchToActiveCut(newIndex);
+            }
+        }
+        
+        updateCutsList() {
+            const animData = this.animationSystem.getAnimationData();
+            this.cutsContainer.innerHTML = '';
+            
+            animData.cuts.forEach((cut, index) => {
+                const cutItem = this.createCutItem(cut, index);
+                this.cutsContainer.appendChild(cutItem);
+            });
+            
+            if (this.sortable) {
+                this.sortable.destroy();
+            }
+            
+            if (window.Sortable) {
+                this.sortable = Sortable.create(this.cutsContainer, {
+                    animation: 150,
+                    onEnd: (evt) => {
+                        this.animationSystem.reorderCuts(evt.oldIndex, evt.newIndex);
+                    }
+                });
+            }
+        }
+        
+        // CUTアイテム作成（サムネイル左右ボタン追加）
+        createCutItem(cut, index) {
+            const cutItem = document.createElement('div');
+            cutItem.className = 'cut-item';
+            cutItem.dataset.cutIndex = index;
+            
+            const thumbnailHtml = this.generateCutThumbnailHTML(cut, index);
+            
+            cutItem.innerHTML = `
+                <div class="cut-thumbnail" data-cut-index="${index}">
+                    ${thumbnailHtml}
+                    <button class="thumb-nav-btn thumb-nav-left" data-cut-index="${index}" data-direction="prev">◀</button>
+                    <button class="thumb-nav-btn thumb-nav-right" data-cut-index="${index}" data-direction="next">▶</button>
+                </div>
+                <div class="cut-name">${cut.name}</div>
+                <input type="number" class="cut-duration" 
+                       value="${cut.duration}" 
+                       min="0.1" max="10" step="0.1"
+                       title="表示時間（秒）">
+                <button class="delete-cut-btn" data-index="${index}">×</button>
+            `;
+            
+            // CUT選択
+            cutItem.addEventListener('click', (e) => {
+                if (!e.target.classList.contains('delete-cut-btn') &&
+                    !e.target.classList.contains('cut-duration') &&
+                    !e.target.classList.contains('thumb-nav-btn')) {
+                    this.animationSystem.switchToActiveCut(index);
+                    this.setActiveCut(index);
+                }
+            });
+            
+            // サムネイル左右ボタンのイベント
+            const leftBtn = cutItem.querySelector('.thumb-nav-left');
+            const rightBtn = cutItem.querySelector('.thumb-nav-right');
+            
+            if (leftBtn) {
+                leftBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.navigateThumbnail(index, 'prev');
+                });
+            }
+            
+            if (rightBtn) {
+                rightBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    this.navigateThumbnail(index, 'next');
+                });
+            }
+            
+            // CUT削除
+            const deleteBtn = cutItem.querySelector('.delete-cut-btn');
+            deleteBtn.addEventListener('click', (e) => {
+                this.deleteCut(index);
+                e.stopPropagation();
+            });
+            
+            // 時間変更
+            const durationInput = cutItem.querySelector('.cut-duration');
+            durationInput.addEventListener('change', (e) => {
+                const newDuration = parseFloat(e.target.value);
+                this.animationSystem.updateCutDuration(index, newDuration);
+                e.stopPropagation();
+            });
+            
+            return cutItem;
+        }
+        
+        // サムネイルナビゲーション機能
+        navigateThumbnail(cutIndex, direction) {
+            // TODO: 将来的にCUT内のフレーム/レイヤーナビゲーション実装
+            // 現在は簡単なCUT間ナビゲーション
+            if (direction === 'prev' && cutIndex > 0) {
+                this.animationSystem.switchToActiveCut(cutIndex - 1);
+            } else if (direction === 'next') {
+                const animData = this.animationSystem.getAnimationData();
+                if (cutIndex < animData.cuts.length - 1) {
+                    this.animationSystem.switchToActiveCut(cutIndex + 1);
+                }
+            }
+        }
+        
+        // サムネイル生成
+        generateCutThumbnailHTML(cut, index) {
+            if (cut.thumbnail) {
+                return `<img src="${cut.thumbnail}" alt="CUT${index + 1}" />`;
+            } else {
+                return `<div class="cut-thumbnail-placeholder">CUT${index + 1}</div>`;
+            }
+        }
+        
+        // CUT削除
+        deleteCut(index) {
+            if (!confirm('このCUTを削除しますか？')) return;
+            
+            this.animationSystem.deleteCut(index);
+            this.updateCutsList();
+            this.updateLayerPanelIndicator();
+        }
+        
+        // アクティブCUT設定
+        setActiveCut(index) {
+            this.currentCutIndex = index;
+            
+            // アクティブ状態のUI更新
+            this.cutsContainer.querySelectorAll('.cut-item').forEach((item, i) => {
+                item.classList.toggle('active', i === index);
+            });
+        }
+        
+        // サムネイル更新
+        updateSingleCutThumbnail(cutIndex) {
+            const cutItem = this.cutsContainer.querySelector(`[data-cut-index="${cutIndex}"]`);
+            if (!cutItem) return;
+            
+            const thumbnail = cutItem.querySelector('.cut-thumbnail');
+            if (!thumbnail) return;
+            
+            const animData = this.animationSystem.getAnimationData();
+            const cut = animData.cuts[cutIndex];
+            
+            if (cut && cut.thumbnail) {
+                thumbnail.innerHTML = `<img src="${cut.thumbnail}" alt="CUT${cutIndex + 1}" />`;
+            }
+        }
+        
+        // 再生状態UI更新
+        updatePlaybackUI(isPlaying) {
+            const playBtn = document.getElementById('play-btn');
+            if (playBtn) {
+                playBtn.textContent = isPlaying ? '⏸' : '▶';
+                playBtn.classList.toggle('playing', isPlaying);
+            }
+        }
+        
+        // GIF書き出し
+        exportGIF() {
+            if (this.gifExporter) {
+                const animData = this.animationSystem.getAnimationData();
+                this.gifExporter.export(animData);
+                this.showExportProgress();
+            } else {
+                console.error('GIF Exporter not available');
+            }
+        }
+        
+        // GIF書き出しプログレス表示
+        showExportProgress() {
+            const progressPanel = document.getElementById('export-progress');
+            if (progressPanel) {
+                progressPanel.style.display = 'block';
+                this.timelinePanel.classList.add('exporting');
+            }
+        }
+        
+        updateExportProgress(progress) {
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            
+            if (progressFill) {
+                progressFill.style.width = progress + '%';
+            }
+            
+            if (progressText) {
+                progressText.textContent = Math.round(progress) + '%';
+            }
+        }
+        
+        hideExportProgress() {
+            const progressPanel = document.getElementById('export-progress');
+            if (progressPanel) {
+                progressPanel.style.display = 'none';
+                this.timelinePanel.classList.remove('exporting');
+            }
+        }
+        
+        // デバッグ用メソッド
+        getDebugInfo() {
+            return {
+                isVisible: this.isVisible,
+                isPlaying: this.isPlaying,
+                isLooping: this.isLooping,
+                currentCutIndex: this.currentCutIndex,
+                hasEventBus: !!this.eventBus,
+                hasAnimationSystem: !!this.animationSystem,
+                hasTimelinePanel: !!this.timelinePanel,
+                hasCutsContainer: !!this.cutsContainer
+            };
+        }
+    }
+    
+    // CHG: 構造的問題修正 - グローバル公開追加（最重要）
+    window.TegakiTimelineUI = TimelineUI;
+    console.log('✅ TegakiTimelineUI exported to global scope');
+    console.log('✅ ui/timeline-ui.js loaded (構造的問題修正版)');
+    
+    // 互換性のための追加エクスポート
+    if (typeof window.TegakiUI === 'undefined') {
+        window.TegakiUI = {};
+    }
+    window.TegakiUI.TimelineUI = TimelineUI;
+
+})();
