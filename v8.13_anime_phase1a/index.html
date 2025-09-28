@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 Phase0修正版 - PixiJS v8.13 お絵かきツール</title>
+    <title>🎨 Phase 0完了版 - PixiJS v8.13 お絵かきツール</title>
     <style>
         * {
             margin: 0;
@@ -425,7 +425,7 @@
         
         .action-button:hover {
             background: var(--futaba-maroon);
-            color: var(--futaba-maroon);
+            color: var(--text-inverse);
         }
         
         .layer-transform-panel {
@@ -539,11 +539,11 @@
         
         .flip-button.active {
             background: var(--futaba-maroon);
-            color: var(--futaba-maroon);
+            color: var(--text-inverse);
             border-color: var(--futaba-maroon);
         }
 
-        /* タイムラインパネル */
+        /* タイムラインパネル - スリム化版 */
         .timeline-panel {
             position: fixed;
             bottom: 20px;
@@ -551,12 +551,12 @@
             right: 220px;
             background: var(--futaba-cream);
             border: 2px solid var(--futaba-maroon);
-            border-radius: 12px;
-            padding: 16px;
+            border-radius: 8px;
+            padding: 8px 12px;
             z-index: 1500;
-            max-height: 280px;
+            max-height: 140px;
             display: none;
-            box-shadow: 0 8px 24px rgba(128, 0, 0, 0.15);
+            box-shadow: 0 4px 16px rgba(128, 0, 0, 0.15);
         }
 
         .timeline-panel.show {
@@ -565,77 +565,71 @@
         }
 
         @keyframes slideUp {
-            from { opacity: 0; transform: translateY(20px); }
+            from { opacity: 0; transform: translateY(15px); }
             to   { opacity: 1; transform: translateY(0); }
         }
 
-        .timeline-header {
+        /* 上部：CUTアイテムエリア */
+        .cuts-container {
             display: flex;
-            justify-content: space-between;
-            align-items: center;
-            margin-bottom: 12px;
-            padding-bottom: 8px;
+            gap: 4px;
+            overflow-x: auto;
+            padding: 4px 0 8px 0;
+            margin-bottom: 8px;
+            max-height: 70px;
+            scrollbar-width: thin;
             border-bottom: 1px solid var(--futaba-light-medium);
         }
 
-        .timeline-controls {
-            display: flex;
-            gap: 8px;
-            margin-bottom: 12px;
+        .cuts-container::-webkit-scrollbar {
+            height: 4px;
         }
 
-        .timeline-controls button {
-            padding: 6px 12px;
-            background: var(--futaba-background);
-            border: 1px solid var(--futaba-medium);
-            border-radius: 6px;
-            cursor: pointer;
-            transition: all 0.2s ease;
+        .cuts-container::-webkit-scrollbar-track {
+            background: var(--futaba-light-medium);
+            border-radius: 2px;
         }
 
-        .timeline-controls button:hover {
-            background: var(--futaba-medium);
-            border-color: var(--futaba-maroon);
-        }
-
-        .cuts-container {
-            display: flex;
-            gap: 8px;
-            overflow-x: auto;
-            padding: 8px 0;
-            margin-bottom: 12px;
-            max-height: 120px;
+        .cuts-container::-webkit-scrollbar-thumb {
+            background: var(--futaba-maroon);
+            border-radius: 2px;
         }
 
         .cut-item {
-            min-width: 80px;
+            min-width: 48px;
             background: var(--futaba-background);
-            border: 2px solid var(--futaba-light-medium);
-            border-radius: 8px;
-            padding: 4px;
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 4px;
+            padding: 2px;
             cursor: pointer;
             position: relative;
             transition: all 0.2s ease;
+            flex-shrink: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
         }
 
         .cut-item:hover {
             border-color: var(--futaba-medium);
-            transform: scale(1.05);
+            transform: scale(1.02);
         }
 
         .cut-item.active {
             border-color: var(--futaba-maroon);
             background: var(--futaba-light-medium);
+            box-shadow: 0 1px 4px rgba(128, 0, 0, 0.2);
         }
 
         .cut-thumbnail {
-            width: 72px;
-            height: 54px;
+            width: 44px;
+            height: 33px;
             background: var(--futaba-background);
             border: 1px solid var(--futaba-light-medium);
-            border-radius: 4px;
+            border-radius: 2px;
             overflow: hidden;
-            margin-bottom: 4px;
+            margin-bottom: 2px;
+            position: relative;
         }
 
         .cut-thumbnail img {
@@ -648,80 +642,185 @@
             width: 100%;
             height: 100%;
             background: var(--futaba-light-medium);
-        }
-
-        .cut-info {
-            text-align: center;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            color: var(--text-secondary);
+            font-size: 8px;
         }
 
         .cut-name {
-            font-size: 10px;
+            font-size: 8px;
             color: var(--text-primary);
-            margin-bottom: 2px;
+            margin-bottom: 1px;
+            font-weight: 500;
+            text-align: center;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            max-width: 44px;
         }
 
         .cut-duration {
-            width: 100%;
-            font-size: 10px;
+            width: 30px;
+            font-size: 8px;
             text-align: center;
             border: 1px solid var(--futaba-light-medium);
-            border-radius: 3px;
-            padding: 2px;
+            border-radius: 2px;
+            padding: 1px 2px;
+            background: var(--futaba-background);
+        }
+
+        .cut-duration:focus {
+            outline: none;
+            border-color: var(--futaba-maroon);
         }
 
         .delete-cut-btn {
             position: absolute;
-            top: 2px;
-            right: 2px;
-            width: 16px;
-            height: 16px;
-            background: rgba(128, 0, 0, 0.1);
-            border: 1px solid var(--futaba-maroon);
+            top: -2px;
+            right: -2px;
+            width: 12px;
+            height: 12px;
+            background: rgba(128, 0, 0, 0.9);
+            border: none;
             border-radius: 50%;
-            color: var(--futaba-maroon);
-            font-size: 10px;
+            color: white;
+            font-size: 8px;
             line-height: 1;
             cursor: pointer;
             opacity: 0;
             transition: opacity 0.2s ease;
+            display: flex;
+            align-items: center;
+            justify-content: center;
         }
 
         .cut-item:hover .delete-cut-btn {
             opacity: 1;
         }
 
+        .delete-cut-btn:hover {
+            background: rgba(128, 0, 0, 1);
+            transform: scale(1.1);
+        }
+
+        /* 下部：コントロールエリア - 1行にまとめる */
+        .timeline-bottom {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            gap: 12px;
+            height: 32px;
+        }
+
+        .timeline-controls {
+            display: flex;
+            gap: 4px;
+            align-items: center;
+        }
+
+        .timeline-controls button {
+            padding: 4px 8px;
+            background: var(--futaba-background);
+            border: 1px solid var(--futaba-medium);
+            border-radius: 4px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            font-size: 11px;
+            color: var(--text-primary);
+            min-width: 32px;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .timeline-controls button:hover {
+            background: var(--futaba-medium);
+            border-color: var(--futaba-maroon);
+        }
+
+        .timeline-controls button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
         .timeline-settings {
             display: flex;
-            gap: 16px;
-            font-size: 12px;
-            padding-top: 8px;
-            border-top: 1px solid var(--futaba-light-medium);
+            gap: 8px;
+            font-size: 10px;
+            align-items: center;
+            color: var(--text-primary);
         }
 
         .timeline-settings label {
             display: flex;
             align-items: center;
-            gap: 4px;
+            gap: 3px;
+            white-space: nowrap;
         }
 
         .timeline-settings input[type="number"] {
-            width: 50px;
-            padding: 2px 4px;
+            width: 35px;
+            height: 20px;
+            padding: 1px 4px;
             border: 1px solid var(--futaba-light-medium);
+            border-radius: 2px;
+            background: var(--futaba-background);
+            text-align: center;
+            font-size: 10px;
+        }
+
+        .timeline-settings input[type="number"]:focus {
+            outline: none;
+            border-color: var(--futaba-maroon);
+        }
+
+        .timeline-settings input[type="checkbox"] {
+            margin-right: 2px;
+            transform: scale(0.8);
+        }
+
+        .timeline-close {
+            background: none;
+            border: none;
+            font-size: 14px;
+            color: var(--futaba-maroon);
+            cursor: pointer;
+            padding: 2px 6px;
             border-radius: 3px;
+            transition: background-color 0.2s ease;
+            height: 24px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .timeline-close:hover {
+            background: var(--futaba-light-medium);
         }
 
         .export-progress {
-            margin-top: 12px;
+            position: absolute;
+            bottom: -20px;
+            left: 0;
+            right: 0;
+            background: var(--futaba-cream);
+            border: 1px solid var(--futaba-medium);
+            border-radius: 0 0 6px 6px;
+            padding: 4px 8px;
             display: none;
+            z-index: 1501;
         }
 
         .progress-bar {
             width: 100%;
-            height: 8px;
+            height: 4px;
             background: var(--futaba-light-medium);
-            border-radius: 4px;
+            border-radius: 2px;
             overflow: hidden;
+            margin-bottom: 2px;
         }
 
         .progress-fill {
@@ -729,6 +828,17 @@
             background: var(--futaba-maroon);
             width: 0%;
             transition: width 0.3s ease;
+            border-radius: 2px;
+        }
+
+        .export-progress span {
+            font-size: 9px;
+            color: var(--text-secondary);
+        }
+
+        /* プログレス表示時はパネル下部に余白 */
+        .timeline-panel.exporting {
+            margin-bottom: 24px;
         }
         
         /* ステータスパネル位置修正：上部左に移動 */
@@ -736,7 +846,6 @@
             position: fixed;
             top: 10px;
             left: 70px;
-            bottom: auto;
             background: var(--futaba-cream);
             border: 2px solid var(--futaba-medium);
             border-radius: 12px;
@@ -764,6 +873,12 @@
             display: flex;
             align-items: center;
             gap: 4px;
+            color: var(--text-primary);
+        }
+        
+        .status-item span {
+            color: var(--text-secondary);
+            font-weight: 500;
         }
     </style>
 </head>
@@ -798,40 +913,41 @@
     </div>
     
     <div class="layer-panel-container" id="layer-panel-container">
-        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2 2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加 (Ctrl+Shift+N)">
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
         </div>
         
         <div class="layer-panel-items" id="layer-list"></div>
     </div>
     
-    <!-- タイムラインパネル -->
+    <!-- タイムラインパネル - スリム化版 -->
     <div class="timeline-panel" id="timeline-panel">
-        <div class="timeline-header">
-            <h3>GIFアニメーション</h3>
-            <button class="close-btn" id="close-timeline">×</button>
-        </div>
-        
-        <div class="timeline-controls">
-            <button id="play-btn" title="再生 (Space)">▶</button>
-            <button id="pause-btn" title="一時停止">⏸</button>
-            <button id="stop-btn" title="停止">⏹</button>
-            <button id="add-cut-btn" title="CUT追加 (Alt+Plus)">+ CUT</button>
-            <button id="export-gif-btn" title="GIF書き出し">GIF出力</button>
-        </div>
-        
+        <!-- 上部：CUTアイテムエリア -->
         <div class="cuts-container" id="cuts-container">
             <!-- CUTアイテムが動的に追加される -->
         </div>
         
-        <div class="timeline-settings">
-            <label>FPS: 
-                <input type="number" id="fps-input" min="1" max="60" value="12">
-            </label>
-            <label>
-                <input type="checkbox" id="loop-checkbox" checked>
-                ループ再生
-            </label>
+        <!-- 下部：コントロールエリア -->
+        <div class="timeline-bottom">
+            <div class="timeline-controls">
+                <button id="play-btn" title="再生 (Space)">▶</button>
+                <button id="pause-btn" title="一時停止">⏸</button>
+                <button id="stop-btn" title="停止">⏹</button>
+                <button id="add-cut-btn" title="CUT追加 (Alt+Plus)">+ CUT</button>
+                <button id="export-gif-btn" title="GIF書き出し">GIF出力</button>
+            </div>
+            
+            <div class="timeline-settings">
+                <label>FPS: 
+                    <input type="number" id="fps-input" min="1" max="60" value="12">
+                </label>
+                <label>
+                    <input type="checkbox" id="loop-checkbox" checked>
+                    ループ
+                </label>
+            </div>
+            
+            <button class="timeline-close" id="close-timeline">×</button>
         </div>
         
         <div class="export-progress" id="export-progress">
@@ -954,7 +1070,7 @@
         </div>
     </div>
 
-    <!-- PixiJS v8.13 + ライブラリ読み込み -->
+    <!-- PixiJS v8.13 + ライブラリ読み込み（Phase 0修正版） -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
@@ -980,7 +1096,7 @@
     <script src="core-engine.js"></script>
     
     <script>
-// Phase 0 基盤整備：依存関係チェック関数
+// Phase 0基盤整備完了版：依存関係チェック関数
 function checkPhase0Dependencies() {
     const dependencies = [
         { name: 'PIXI', obj: window.PIXI },
@@ -1009,7 +1125,7 @@ function checkPhase0Dependencies() {
     return true;
 }
 
-// Phase 0 基盤整備チェック
+// Phase 0基盤整備完了版チェック
 try {
     checkPhase0Dependencies();
 } catch (error) {
@@ -1018,7 +1134,7 @@ try {
     </script>
     
     <script>
-// Phase 0 準備版：統合されたmain.js
+// Phase 0完了版：統合されたmain.js
 (function() {
     'use strict';
     
@@ -1174,7 +1290,7 @@ try {
     // Phase 0: 段階的初期化処理
     window.addEventListener('DOMContentLoaded', async () => {
         try {
-            console.log('🔥 Starting Phase 0 基盤整備 initialization...');
+            console.log('🔥 Starting Phase 0基盤整備完了版 initialization...');
             
             // Step 1: CoreRuntime依存関係チェック
             if (!checkCoreRuntime()) {
@@ -1190,15 +1306,20 @@ try {
             const diagnosis = window.CoordinateSystem.diagnoseReferences();
             console.log('🔍 Coordinate System Diagnosis:', diagnosis);
             
-            console.log('✅ Phase 0 基盤整備 SUCCESS: Drawing App initialized!');
+            console.log('✅ Phase 0基盤整備完了版 SUCCESS: Drawing App initialized!');
             console.log('✅ EventBus established:', !!window.TegakiEventBus);
             console.log('✅ Animation config loaded:', !!window.TEGAKI_CONFIG.animation);
+            console.log('✅ AnimationSystem initialized:', !!window.animationSystem);
+            console.log('✅ TimelineUI initialized:', !!window.timelineUI);
             console.log('✅ Status panel repositioned to top-left');
             console.log('✅ Script loading order corrected');
+            console.log('✅ Layer add button event handling fixed');
+            console.log('✅ Ctrl+Shift+N shortcut added');
+            console.log('✅ Timeline styling updated (Storyboarder-inspired)');
             console.log('✅ Ready for Phase 1 AnimationSystem implementation');
             
         } catch (error) {
-            console.error('❌ Phase 0 基盤整備 FAILED:', error);
+            console.error('❌ Phase 0基盤整備完了版 FAILED:', error);
             console.error('Stack trace:', error.stack);
         }
     });
