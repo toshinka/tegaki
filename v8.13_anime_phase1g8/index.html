@@ -5,6 +5,9 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎨 Phase 2完成版 - PixiJS v8.13 お絵かきツール</title>
     <style>
+        /* ===== 責任分界明確化: index.htmlは基本レイアウトのみ担当 ===== */
+        /* ⚠️ TIMELINE関連CSS削除: timeline-ui.jsが完全責任を持つ */
+        
         * {
             margin: 0;
             padding: 0;
@@ -142,15 +145,15 @@
         
         .layer-add-button svg { width: 18px; height: 18px; stroke: #800000; }
         
-        /* 【Phase2改修】CUT表示インジケータ - 最終改良版 */
+        /* CUT表示インジケータ - レイヤーパネル連動 */
         .cut-indicator {
             display: flex;
             flex-direction: row;
             align-items: center;
             background: var(--futaba-cream);
-            border: 2px solid var(--futaba-light-maroon);
+            border: 1px solid var(--futaba-light-maroon);
             border-radius: 10px;
-            padding: 8px 12px;
+            padding: 2px 12px;
             box-shadow: 0 3px 12px rgba(128, 0, 0, 0.25);
             pointer-events: all;
             gap: 15px;
@@ -604,394 +607,8 @@
             border-color: var(--futaba-maroon);
         }
 
-        /* 【Phase2最終改修】タイムラインパネル - 完成版 */
-        .timeline-panel {
-            position: fixed;
-            bottom: 16px;
-            left: 70px;
-            right: 220px;
-            background: var(--futaba-cream);
-            border: 2px solid var(--futaba-medium);
-            border-radius: 12px;
-            padding: 12px 16px;
-            z-index: 1500;
-            max-height: 180px;
-            display: none;
-            box-shadow: 0 6px 24px rgba(128, 0, 0, 0.25);
-            backdrop-filter: blur(12px);
-            background: rgba(240, 224, 214, 0.95);
-        }
-
-        .timeline-panel.show {
-            display: block;
-            animation: slideUp 0.35s ease-out;
-        }
-
-        @keyframes slideUp {
-            from { opacity: 0; transform: translateY(25px) scale(0.96); }
-            to   { opacity: 1; transform: translateY(0) scale(1); }
-        }
-
-        /* 【Phase2最終改修】CUTアイテムエリア - 完成版 */
-        .cuts-container {
-            display: flex;
-            gap: 10px;
-            overflow-x: auto;
-            padding: 6px 0 12px 0;
-            margin-bottom: 12px;
-            max-height: 100px;
-        }
-
-        .cuts-container::-webkit-scrollbar {
-            height: 10px;
-        }
-
-        .cuts-container::-webkit-scrollbar-track {
-            background: var(--futaba-light-medium);
-            border-radius: 5px;
-        }
-
-        .cuts-container::-webkit-scrollbar-thumb {
-            background: var(--futaba-maroon);
-            border-radius: 5px;
-        }
-
-        .cuts-container::-webkit-scrollbar-thumb:hover {
-            background: var(--futaba-light-maroon);
-        }
-
-        /* 【Phase2最終改修】CUTアイテム - 窮屈さ解消完成版 */
-        .cut-item {
-            min-width: 75px;
-            background: var(--futaba-background);
-            border: 2px solid var(--futaba-light-medium);
-            border-radius: 8px;
-            padding: 6px;
-            cursor: pointer;
-            position: relative;
-            transition: all 0.25s ease;
-            flex-shrink: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            box-shadow: 0 2px 6px rgba(128, 0, 0, 0.12);
-            user-select: none;
-        }
-
-        .cut-item:hover {
-            border-color: var(--futaba-medium);
-            transform: translateY(-2px) scale(1.02);
-            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2);
-        }
-
-        .cut-item.active {
-            border-color: var(--futaba-maroon);
-            background: var(--futaba-light-medium);
-            box-shadow: 0 0 0 3px rgba(128, 0, 0, 0.3);
-            transform: translateY(-2px) scale(1.02);
-        }
-
-        .cut-thumbnail {
-            width: 60px;
-            height: 42px;
-            background: var(--futaba-background);
-            border: 1px solid var(--futaba-light-medium);
-            border-radius: 6px;
-            overflow: hidden;
-            margin-bottom: 4px;
-            position: relative;
-        }
-
-        .cut-thumbnail img {
-            width: 100%;
-            height: 100%;
-            object-fit: cover;
-        }
-
-        .cut-thumbnail-placeholder {
-            width: 100%;
-            height: 100%;
-            background: linear-gradient(45deg, var(--futaba-light-medium) 25%, transparent 25%), 
-                        linear-gradient(-45deg, var(--futaba-light-medium) 25%, transparent 25%), 
-                        linear-gradient(45deg, transparent 75%, var(--futaba-light-medium) 75%), 
-                        linear-gradient(-45deg, transparent 75%, var(--futaba-light-medium) 75%);
-            background-size: 8px 8px;
-            background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            color: var(--futaba-maroon);
-            font-size: 9px;
-            font-weight: bold;
-        }
-
-        .cut-name {
-            font-size: 10px;
-            color: var(--futaba-maroon);
-            margin-bottom: 4px;
-            font-weight: 600;
-            text-align: center;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            max-width: 60px;
-            line-height: 1.3;
-        }
-
-        /* 【Phase2最終改修】表示時間コントロール - 窮屈さ解消◀▶スタイル */
-        .cut-duration-container {
-            width: 60px;
-            height: 24px;
-            display: flex;
-            align-items: center;
-            border: 2px solid var(--futaba-light-medium);
-            border-radius: 6px;
-            background: var(--futaba-background);
-            overflow: hidden;
-            margin-bottom: 3px;
-            box-shadow: 0 1px 3px rgba(128, 0, 0, 0.1);
-        }
-        
-        .duration-decrease, .duration-increase {
-            width: 18px;
-            height: 100%;
-            background: var(--futaba-light-medium);
-            border: none;
-            color: var(--futaba-maroon);
-            font-size: 12px;
-            font-weight: bold;
-            cursor: pointer;
-            transition: all 0.15s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            line-height: 1;
-            user-select: none;
-        }
-        
-        .duration-decrease:hover, .duration-increase:hover {
-            background: var(--futaba-medium);
-            color: var(--futaba-maroon);
-            transform: scale(1.1);
-        }
-        
-        .duration-decrease:active, .duration-increase:active {
-            background: var(--futaba-maroon);
-            color: var(--futaba-background);
-        }
-        
-        .cut-duration {
-            flex: 1;
-            height: 100%;
-            border: none;
-            background: transparent;
-            text-align: center;
-            font-size: 9px;
-            font-family: monospace;
-            color: var(--futaba-maroon);
-            padding: 0 2px;
-            outline: none;
-            font-weight: bold;
-        }
-        
-        .cut-duration:focus {
-            background: var(--futaba-cream);
-        }
-
-        .delete-cut-btn {
-            position: absolute;
-            top: -4px;
-            right: -4px;
-            width: 18px;
-            height: 18px;
-            background: rgba(128, 0, 0, 0.9);
-            border: none;
-            border-radius: 50%;
-            color: white;
-            font-size: 10px;
-            line-height: 1;
-            cursor: pointer;
-            opacity: 0;
-            transition: all 0.25s ease;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-            font-weight: bold;
-        }
-
-        .cut-item:hover .delete-cut-btn {
-            opacity: 1;
-        }
-
-        .delete-cut-btn:hover {
-            background: rgba(128, 0, 0, 1);
-            transform: scale(1.15);
-        }
-
-        /* 【Phase2最終改修】下部コントロール - 窮屈さ解消完成版 */
-        .timeline-bottom {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            gap: 25px;
-            height: 40px;
-            padding: 0 4px;
-        }
-
-        .timeline-controls {
-            display: flex;
-            gap: 12px;
-            align-items: center;
-            flex: 1;
-            justify-content: center;
-        }
-
-        .timeline-controls button {
-            padding: 10px 16px;
-            background: var(--futaba-background);
-            border: 2px solid var(--futaba-medium);
-            border-radius: 8px;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            font-size: 14px;
-            color: var(--futaba-maroon);
-            min-width: 50px;
-            height: 36px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: 600;
-            box-shadow: 0 2px 4px rgba(128, 0, 0, 0.08);
-        }
-
-        .timeline-controls button:hover {
-            background: var(--futaba-medium);
-            border-color: var(--futaba-maroon);
-            transform: translateY(-1px);
-            box-shadow: 0 4px 8px rgba(128, 0, 0, 0.18);
-        }
-
-        .timeline-controls button:active {
-            transform: translateY(0);
-        }
-
-        .timeline-controls button:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-            transform: none;
-        }
-
-        .timeline-controls button#play-btn.playing {
-            background: var(--futaba-maroon);
-            color: var(--text-inverse);
-            border-color: var(--futaba-maroon);
-        }
-
-        .timeline-settings {
-            display: flex;
-            gap: 15px;
-            font-size: 13px;
-            align-items: center;
-            color: var(--futaba-maroon);
-        }
-
-        .timeline-settings label {
-            display: flex;
-            align-items: center;
-            gap: 8px;
-            white-space: nowrap;
-            font-weight: 600;
-            color: var(--futaba-maroon);
-        }
-
-        .timeline-settings input[type="number"] {
-            width: 55px;
-            height: 36px;
-            padding: 8px 10px;
-            border: 2px solid var(--futaba-light-medium);
-            border-radius: 6px;
-            background: var(--futaba-background);
-            text-align: center;
-            font-size: 13px;
-            font-family: monospace;
-            color: var(--futaba-maroon);
-            font-weight: 600;
-        }
-
-        .timeline-settings input[type="number"]:focus {
-            outline: none;
-            border-color: var(--futaba-light-maroon);
-        }
-
-        .timeline-settings input[type="checkbox"] {
-            margin-right: 6px;
-            transform: scale(1.2);
-        }
-
-        .timeline-close {
-            background: none;
-            border: none;
-            font-size: 20px;
-            color: var(--futaba-maroon);
-            cursor: pointer;
-            padding: 8px 12px;
-            border-radius: 8px;
-            transition: background-color 0.2s ease;
-            height: 36px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            font-weight: bold;
-            min-width: 36px;
-        }
-
-        .timeline-close:hover {
-            background: var(--futaba-light-medium);
-        }
-
-        /* GIF書き出しプログレス */
-        .export-progress {
-            position: absolute;
-            bottom: -26px;
-            left: 0;
-            right: 0;
-            background: var(--futaba-cream);
-            border: 2px solid var(--futaba-medium);
-            border-radius: 0 0 12px 12px;
-            padding: 8px 12px;
-            display: none;
-            z-index: 1501;
-            backdrop-filter: blur(8px);
-        }
-
-        .progress-bar {
-            width: 100%;
-            height: 8px;
-            background: var(--futaba-light-medium);
-            border-radius: 4px;
-            overflow: hidden;
-            margin-bottom: 6px;
-        }
-
-        .progress-fill {
-            height: 100%;
-            background: linear-gradient(90deg, var(--futaba-light-maroon), var(--futaba-maroon));
-            width: 0%;
-            transition: width 0.3s ease;
-            border-radius: 4px;
-        }
-
-        .export-progress span {
-            font-size: 11px;
-            color: var(--futaba-maroon);
-            font-family: monospace;
-            font-weight: 600;
-        }
-
-        .timeline-panel.exporting {
-            margin-bottom: 32px;
-        }
+        /* ⚠️ 重要: タイムライン関連CSS削除完了 */
+        /* timeline-ui.jsが完全責任を持つため、重複定義を排除 */
         
         .status-panel {
             position: fixed;
@@ -1249,51 +866,15 @@ try {
         <div class="layer-panel-items" id="layer-list"></div>
     </div>
     
-    <!-- 【Phase2最終改修】タイムラインパネル - 窮屈さ解消完成版 -->
-    <div class="timeline-panel" id="timeline-panel">
-        <!-- CUTアイテムエリア -->
-        <div class="cuts-container" id="cuts-container">
-            <!-- CUTアイテムが動的に追加される -->
-        </div>
-        
-        <!-- 【Phase2最終改修】コントロールエリア - 窮屈さ解消完成版 -->
-        <div class="timeline-bottom">
-            <div class="timeline-settings">
-                <label>FPS: 
-                    <input type="number" id="fps-input" min="1" max="60" value="12">
-                </label>
-            </div>
-            
-            <div class="timeline-controls">
-                <button id="play-btn" title="再生/停止 (Space)">▶</button>
-                <button id="add-cut-btn" title="CUT追加 (Alt+Plus)">+CUT</button>
-                <button id="export-gif-btn" title="GIF書き出し">GIF</button>
-            </div>
-            
-            <div class="timeline-settings">
-                <label>
-                    <input type="checkbox" id="loop-checkbox" checked>
-                    ループ
-                </label>
-            </div>
-            
-            <button class="timeline-close" id="close-timeline">×</button>
-        </div>
-        
-        <div class="export-progress" id="export-progress">
-            <div class="progress-bar">
-                <div class="progress-fill" id="progress-fill"></div>
-            </div>
-            <span id="progress-text">0%</span>
-        </div>
-    </div>
+    <!-- ⚠️ 重要: タイムラインパネルHTML削除完了 -->
+    <!-- timeline-ui.jsが動的生成で完全責任を持つ -->
 
     <script>
-// 【Phase2改修完了】Canvas限定ショートカット・Undo/Redo統合・ブラウザ競合回避版
+// 【責任分界明確化】Canvas限定ショートカット・Undo/Redo統合・ブラウザ競合回避版
 (function() {
     'use strict';
     
-    // 【Phase2改修】Canvas限定ショートカット処理
+    // Canvas限定ショートカット処理
     function setupImprovedKeyboardShortcuts() {
         let canvas = null;
         let focusCheckAttempts = 0;
@@ -1341,7 +922,7 @@ try {
         }
         
         function handleKeyDown(e) {
-            // 【Phase2改修完了】ショートカット改善：ブラウザ競合回避
+            // ブラウザ競合回避ショートカット
             
             // Ctrl+Z: Undo
             if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey) {
@@ -1536,7 +1117,7 @@ try {
                     cameraSystem.updateGuideLinesForCanvasResize();
                 });
                 
-                // 【Phase2改修完了】改善されたショートカット初期化
+                // 改善されたショートカット初期化
                 setupImprovedKeyboardShortcuts();
                 
                 // 情報表示・モニタリング
@@ -1591,7 +1172,7 @@ try {
         return DrawingApp;
     }
     
-    // 【Phase2改修完了】History統合イベントリスナー
+    // History統合イベントリスナー
     function setupHistoryIntegration() {
         if (window.TegakiEventBus && window.History) {
             // EventBus経由でUndo/Redoイベント処理
@@ -1628,7 +1209,7 @@ try {
         }
     }
     
-    // 【Phase2改修完了】レイヤーパネル二重描画修正
+    // レイヤーパネル二重描画修正
     function setupLayerPanelDuplicationFix() {
         if (window.TegakiEventBus) {
             // レイヤー作成時の重複チェック
@@ -1657,7 +1238,7 @@ try {
     // Phase 2: 段階的初期化処理
     window.addEventListener('DOMContentLoaded', async () => {
         try {
-            console.log('🔥 Starting Phase 2完成版 initialization...');
+            console.log('🔥 Starting Phase 2完成版 - タイムライン二重実装解消版 initialization...');
             
             // Step 1: CoreRuntime依存関係チェック
             if (!checkCoreRuntime()) {
@@ -1700,14 +1281,18 @@ try {
             console.log('✅ AnimationSystem initialized:', !!window.animationSystem);
             console.log('✅ TimelineUI initialized:', !!window.timelineUI);
             console.log('✅ History system integrated:', !!window.History);
-            console.log('🔧 Phase 2改修完了:');
+            console.log('🔧 Phase 2.5改修完了: タイムライン二重実装解消');
+            console.log('   - ✅ Timeline HTML削除: index.htmlから重複要素完全排除');
+            console.log('   - ✅ Timeline CSS削除: 重複定義完全排除');
+            console.log('   - ✅ 責任分界明確化: timeline-ui.jsが完全責任を持つ');
+            console.log('   - ✅ ▶ボタン二重表示解消: 動的生成統一化');
             console.log('   - ✅ 表示時間UI改善: 窮屈さ解消・◀▶スタイル完成');
             console.log('   - ✅ ショートカット改善: Canvas限定・ブラウザ競合回避');
             console.log('   - ✅ Timeline UI改善: サムネイル不要ボタン削除');
             console.log('   - ✅ Undo/Redo統合: Ctrl+Z/Ctrl+Y対応');
             console.log('   - ✅ レイヤーパネル二重描画修正');
             console.log('   - ✅ 座標変換API統一化');
-            console.log('🎯 Phase 2 改善済みキーボードショートカット:');
+            console.log('🎯 Phase 2.5 改善済みキーボードショートカット:');
             console.log('   - Shift+N: 新規レイヤー作成 (browser-safe)');
             console.log('   - Shift+C: CUTコピー');
             console.log('   - Shift+V: CUT貼り付け');
@@ -1717,10 +1302,10 @@ try {
             console.log('   - Space: 再生/停止 (タイムライン表示時のみ)');
             console.log('   - P: ペンツール');
             console.log('   - E: 消しゴムツール');
-            console.log('✅ Phase 2 UI改善完了 - 直感的なアニメーション制作環境準備完了!');
+            console.log('✅ Phase 2.5 タイムライン二重実装解消完了 - 単一責任原則実現!');
             
         } catch (error) {
-            console.error('❌ Phase 2完成版 FAILED:', error);
+            console.error('❌ Phase 2.5完成版 FAILED:', error);
             console.error('Stack trace:', error.stack);
         }
     });
