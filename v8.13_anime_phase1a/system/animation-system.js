@@ -7,29 +7,44 @@
             this.layerSystem = null;
             this.cameraSystem = null;
             this.app = null;
-            this.eventBus = null;
+            this.eventBus = window.TegakiEventBus; // グローバルEventBusを直接参照
             this.playbackTimer = null;
             this.isAnimationMode = false;
             
             // スナップショット管理
             this.backupSnapshots = [];
+            
+            // API統一：座標変換関数
+            this.coordAPI = window.CoordinateSystem;
         }
         
-        init(layerSystem, cameraSystem, app, eventBus) {
+        init(layerSystem, app) {
             this.layerSystem = layerSystem;
-            this.cameraSystem = cameraSystem;
             this.app = app;
-            this.eventBus = eventBus;
             
-            console.log('✅ AnimationSystem initialized');
+            // EventBusが利用可能か確認
+            if (!this.eventBus) {
+                console.error('❌ EventBus not available in AnimationSystem');
+                return;
+            }
+            
+            // LayerSystemのAPI確認
+            if (!this.layerSystem || !this.layerSystem.layers) {
+                console.error('❌ LayerSystem not properly initialized');
+                return;
+            }
+            
+            console.log('✅ AnimationSystem initialized with LayerSystem');
+            this.eventBus.emit('animation:initialized');
         }
         
         createDefaultAnimation() {
+            const config = window.TEGAKI_CONFIG.animation;
             return {
                 cuts: [],
                 settings: {
-                    fps: window.TEGAKI_CONFIG.animation.defaultFPS,
-                    loop: window.TEGAKI_CONFIG.animation.playback.loopByDefault
+                    fps: config.defaultFPS,
+                    loop: true // デフォルトでループオン
                 },
                 playback: {
                     isPlaying: false,
@@ -51,120 +66,152 @@
             
             this.animationData.cuts.push(cut);
             
+            console.log('🎬 Cut created:', cut.name);
+            
             // 非同期でサムネイル生成
             setTimeout(() => {
                 this.generateCutThumbnail(this.animationData.cuts.length - 1);
             }, 100);
             
-            this.eventBus.emit('animation:cut-created', { 
-                cutId: cut.id, 
-                cutIndex: this.animationData.cuts.length - 1 
-            });
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-created', { 
+                    cutId: cut.id, 
+                    cutIndex: this.animationData.cuts.length - 1 
+                });
+            }
             
             return cut;
         }
         
-        // 全レイヤー状態をキャプチャ
+        // 全レイヤー状態をキャプチャ（API統一版）
         captureAllLayerStates() {
             const snapshots = [];
             
-            if (!this.layerSystem.layers) return snapshots;
+            if (!this.layerSystem || !this.layerSystem.layers) {
+                console.warn('LayerSystem not available for capture');
+                return snapshots;
+            }
             
             this.layerSystem.layers.forEach(layer => {
+                if (!layer || !layer.layerData) return;
+                
                 const layerId = layer.layerData.id;
+                
+                // LayerSystem統一API使用
                 const transform = this.layerSystem.layerTransforms.get(layerId) || {
                     x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
                 };
                 
                 // パスデータのディープコピー（非破壊保存）
                 const pathsData = layer.layerData.paths ? layer.layerData.paths.map(path => ({
-                    ...path,
-                    points: [...path.points],
-                    graphics: null // Graphicsは再生成するので保存しない
+                    id: path.id || ('path_' + Date.now() + Math.random()),
+                    points: path.points ? [...path.points] : [],
+                    size: path.size || 16,
+                    color: path.color || 0x000000,
+                    opacity: path.opacity || 1.0,
+                    tool: path.tool || 'pen'
                 })) : [];
                 
                 snapshots.push({
                     layerId: layerId,
-                    visible: layer.layerData.visible,
-                    opacity: layer.layerData.opacity,
+                    visible: layer.layerData.visible !== false,
+                    opacity: layer.layerData.opacity || 1.0,
                     transform: { ...transform },
-                    pathsData: pathsData
+                    pathsData: pathsData,
+                    timestamp: Date.now()
                 });
             });
             
+            console.log('📸 Captured', snapshots.length, 'layer states');
             return snapshots;
         }
         
-        // CUTを適用（レイヤー状態を復元）
+        // CUTを適用（レイヤー状態を復元）- API統一版
         applyCutToLayers(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
-            if (!cut) return;
-            
-            console.log('Applying cut:', cutIndex, cut.name);
-            
-            // 現在の状態をバックアップ（元に戻すため）
-            this.backupSnapshots = this.captureAllLayerStates();
-            
-            // 一時的にイベント抑制
-            const originalEmit = this.eventBus.emit;
-            this.eventBus.emit = () => {};
-            
-            try {
-                cut.layerSnapshots.forEach(snapshot => {
-                    const layer = this.layerSystem.layers.find(
-                        l => l.layerData.id === snapshot.layerId
-                    );
-                    
-                    if (!layer) return;
-                    
-                    // 可視性・透明度適用
-                    layer.layerData.visible = snapshot.visible;
-                    layer.visible = snapshot.visible;
-                    layer.layerData.opacity = snapshot.opacity;
-                    layer.alpha = snapshot.opacity;
-                    
-                    // 変形適用
-                    this.layerSystem.layerTransforms.set(
-                        snapshot.layerId, 
-                        { ...snapshot.transform }
-                    );
-                    
-                    // パスデータ復元（非破壊）
-                    this.restoreLayerPaths(layer, snapshot.pathsData);
-                    
-                    // 表示位置更新
-                    const centerX = window.TEGAKI_CONFIG.canvas.width / 2;
-                    const centerY = window.TEGAKI_CONFIG.canvas.height / 2;
-                    layer.position.set(
-                        centerX + snapshot.transform.x,
-                        centerY + snapshot.transform.y
-                    );
-                    layer.rotation = snapshot.transform.rotation;
-                    layer.scale.set(
-                        snapshot.transform.scaleX,
-                        snapshot.transform.scaleY
-                    );
-                });
-                
-                // 現在のCUTインデックス更新
-                this.animationData.playback.currentCutIndex = cutIndex;
-                
-            } finally {
-                // イベント復元
-                this.eventBus.emit = originalEmit;
+            if (!cut || !this.layerSystem) {
+                console.warn('Cut or LayerSystem not available:', cutIndex);
+                return;
             }
             
-            // UI更新
+            console.log('🎬 Applying cut:', cutIndex, cut.name);
+            
+            // 現在の状態をバックアップ
+            this.backupSnapshots = this.captureAllLayerStates();
+            
+            // LayerSystem API統一：レイヤー状態適用
+            cut.layerSnapshots.forEach(snapshot => {
+                this.applySnapshotToLayer(snapshot);
+            });
+            
+            // 現在のCUTインデックス更新
+            this.animationData.playback.currentCutIndex = cutIndex;
+            
+            // UI更新（LayerSystem API使用）
             if (this.layerSystem.updateLayerPanelUI) {
                 this.layerSystem.updateLayerPanelUI();
             }
             
-            this.eventBus.emit('animation:cut-applied', { cutIndex });
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-applied', { cutIndex });
+            }
         }
         
-        // パスデータから描画を復元
+        // スナップショットをレイヤーに適用（API統一）
+        applySnapshotToLayer(snapshot) {
+            const layer = this.layerSystem.layers.find(
+                l => l.layerData && l.layerData.id === snapshot.layerId
+            );
+            
+            if (!layer) {
+                console.warn('Layer not found for snapshot:', snapshot.layerId);
+                return;
+            }
+            
+            // 基本プロパティ適用
+            layer.layerData.visible = snapshot.visible;
+            layer.visible = snapshot.visible;
+            layer.layerData.opacity = snapshot.opacity;
+            layer.alpha = snapshot.opacity;
+            
+            // LayerSystem API統一：変形適用
+            this.layerSystem.layerTransforms.set(
+                snapshot.layerId, 
+                { ...snapshot.transform }
+            );
+            
+            // CoordinateSystem API使用：座標変換適用
+            if (this.coordAPI) {
+                const screenPos = this.coordAPI.worldToScreen(
+                    snapshot.transform.x, 
+                    snapshot.transform.y
+                );
+                layer.position.set(screenPos.x, screenPos.y);
+            } else {
+                // フォールバック：中央基準
+                const centerX = window.TEGAKI_CONFIG.canvas.width / 2;
+                const centerY = window.TEGAKI_CONFIG.canvas.height / 2;
+                layer.position.set(
+                    centerX + snapshot.transform.x,
+                    centerY + snapshot.transform.y
+                );
+            }
+            
+            layer.rotation = snapshot.transform.rotation;
+            layer.scale.set(
+                snapshot.transform.scaleX,
+                snapshot.transform.scaleY
+            );
+            
+            // パスデータ復元
+            this.restoreLayerPaths(layer, snapshot.pathsData);
+        }
+        
+        // パスデータから描画を復元（PixiJS v8.13対応）
         restoreLayerPaths(layer, pathsData) {
-            // 既存のGraphicsをクリア（背景Graphics以外）
+            if (!layer || !pathsData) return;
+            
+            // 既存の描画をクリア（背景Graphics以外）
             const childrenToRemove = [];
             layer.children.forEach(child => {
                 if (child !== layer.layerData.backgroundGraphics) {
@@ -177,11 +224,16 @@
                 if (child.destroy) child.destroy();
             });
             
+            // LayerData更新
+            layer.layerData.paths = [];
+            
             // パスデータからGraphicsを再生成
-            layer.layerData.paths = pathsData.map(pathData => {
+            pathsData.forEach(pathData => {
+                if (!pathData.points || pathData.points.length === 0) return;
+                
                 const graphics = new PIXI.Graphics();
                 
-                // パス描画（PixiJS v8.13形式）
+                // PixiJS v8.13形式での描画
                 pathData.points.forEach(point => {
                     graphics.circle(point.x, point.y, pathData.size / 2);
                     graphics.fill({
@@ -192,31 +244,32 @@
                 
                 layer.addChild(graphics);
                 
-                return {
+                // LayerDataに追加
+                layer.layerData.paths.push({
                     ...pathData,
                     graphics: graphics
-                };
+                });
             });
         }
         
-        // サムネイル生成（遅延処理）
+        // サムネイル生成（改良版）
         async generateCutThumbnail(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
-            if (!cut) return;
+            if (!cut || !this.app) return;
             
             try {
                 // 現在の状態を保存
                 const currentSnapshots = this.captureAllLayerStates();
                 
-                // CUT状態を適用
+                // CUT状態を一時的に適用
                 this.applyCutToLayers(cutIndex);
                 
-                // 少し待ってからレンダリング
+                // レンダリング処理を遅延実行
                 setTimeout(() => {
                     try {
-                        // RenderTexture作成（小サイズ）
-                        const thumbWidth = window.TEGAKI_CONFIG.animation.timeline.cutThumbnailWidth;
-                        const thumbHeight = window.TEGAKI_CONFIG.animation.timeline.cutThumbnailHeight;
+                        const config = window.TEGAKI_CONFIG.animation;
+                        const thumbWidth = 44; // CSSと一致
+                        const thumbHeight = 33;
                         
                         const renderTexture = PIXI.RenderTexture.create({
                             width: thumbWidth,
@@ -224,24 +277,32 @@
                             resolution: 1
                         });
                         
-                        // レンダリング
-                        if (this.layerSystem.layersContainer) {
+                        // LayerSystem API使用：レイヤーコンテナ取得
+                        const container = this.layerSystem.layersContainer || 
+                                        this.layerSystem.worldContainer;
+                        
+                        if (container) {
                             this.app.renderer.render({
-                                container: this.layerSystem.layersContainer,
+                                container: container,
                                 target: renderTexture
                             });
+                            
+                            cut.thumbnailTexture = renderTexture;
+                            console.log('📸 Thumbnail generated for', cut.name);
                         }
-                        
-                        cut.thumbnailTexture = renderTexture;
                         
                         // 元の状態に戻す
                         this.restoreFromSnapshots(currentSnapshots);
                         
-                        this.eventBus.emit('animation:thumbnail-generated', { cutIndex });
+                        if (this.eventBus) {
+                            this.eventBus.emit('animation:thumbnail-generated', { cutIndex });
+                        }
                         
                     } catch (error) {
                         console.error('Thumbnail generation failed:', error);
-                        this.eventBus.emit('animation:thumbnail-failed', { cutIndex, error });
+                        if (this.eventBus) {
+                            this.eventBus.emit('animation:thumbnail-failed', { cutIndex, error });
+                        }
                     }
                 }, 50);
                 
@@ -252,60 +313,42 @@
         
         // スナップショットから状態復元
         restoreFromSnapshots(snapshots) {
-            if (!snapshots) return;
+            if (!snapshots || !this.layerSystem) return;
             
             snapshots.forEach(snapshot => {
-                const layer = this.layerSystem.layers.find(
-                    l => l.layerData.id === snapshot.layerId
-                );
-                
-                if (!layer) return;
-                
-                // 可視性・透明度復元
-                layer.layerData.visible = snapshot.visible;
-                layer.visible = snapshot.visible;
-                layer.layerData.opacity = snapshot.opacity;
-                layer.alpha = snapshot.opacity;
-                
-                // 変形復元
-                this.layerSystem.layerTransforms.set(
-                    snapshot.layerId,
-                    { ...snapshot.transform }
-                );
-                
-                // パスデータ復元
-                this.restoreLayerPaths(layer, snapshot.pathsData);
-                
-                // 表示位置復元
-                const centerX = window.TEGAKI_CONFIG.canvas.width / 2;
-                const centerY = window.TEGAKI_CONFIG.canvas.height / 2;
-                layer.position.set(
-                    centerX + snapshot.transform.x,
-                    centerY + snapshot.transform.y
-                );
-                layer.rotation = snapshot.transform.rotation;
-                layer.scale.set(
-                    snapshot.transform.scaleX,
-                    snapshot.transform.scaleY
-                );
+                this.applySnapshotToLayer(snapshot);
             });
+            
+            // UI更新
+            if (this.layerSystem.updateLayerPanelUI) {
+                this.layerSystem.updateLayerPanelUI();
+            }
         }
         
         // 再生制御
         play() {
-            if (this.animationData.cuts.length === 0) return;
+            if (this.animationData.cuts.length === 0) {
+                console.warn('No cuts available for playback');
+                return;
+            }
             
             this.animationData.playback.isPlaying = true;
             this.animationData.playback.startTime = Date.now();
             
             this.startPlaybackLoop();
-            this.eventBus.emit('animation:playback-started');
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:playback-started');
+            }
         }
         
         pause() {
             this.animationData.playback.isPlaying = false;
             this.stopPlaybackLoop();
-            this.eventBus.emit('animation:playback-paused');
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:playback-paused');
+            }
         }
         
         stop() {
@@ -318,10 +361,16 @@
                 this.applyCutToLayers(0);
             }
             
-            this.eventBus.emit('animation:playback-stopped');
+            if (this.eventBus) {
+                this.eventBus.emit('animation:playback-stopped');
+            }
         }
         
         startPlaybackLoop() {
+            if (this.playbackTimer) {
+                clearInterval(this.playbackTimer);
+            }
+            
             const fps = this.animationData.settings.fps;
             const frameTime = 1000 / fps;
             
@@ -338,6 +387,8 @@
         }
         
         updatePlayback() {
+            if (!this.animationData.playback.isPlaying) return;
+            
             const currentCut = this.animationData.cuts[
                 this.animationData.playback.currentCutIndex
             ];
@@ -363,9 +414,11 @@
                 this.animationData.playback.startTime = Date.now();
                 this.applyCutToLayers(this.animationData.playback.currentCutIndex);
                 
-                this.eventBus.emit('animation:cut-changed', { 
-                    cutIndex: this.animationData.playback.currentCutIndex 
-                });
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:cut-changed', { 
+                        cutIndex: this.animationData.playback.currentCutIndex 
+                    });
+                }
             }
         }
         
@@ -390,12 +443,18 @@
                 );
             }
             
-            this.eventBus.emit('animation:cut-deleted', { cutIndex });
+            console.log('🗑️ Cut deleted:', cutIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-deleted', { cutIndex });
+            }
         }
         
         // CUT順序変更
         reorderCuts(oldIndex, newIndex) {
-            if (oldIndex === newIndex) return;
+            if (oldIndex === newIndex || 
+                oldIndex < 0 || oldIndex >= this.animationData.cuts.length ||
+                newIndex < 0 || newIndex >= this.animationData.cuts.length) return;
             
             const cuts = this.animationData.cuts;
             const [movedCut] = cuts.splice(oldIndex, 1);
@@ -412,7 +471,11 @@
                 this.animationData.playback.currentCutIndex++;
             }
             
-            this.eventBus.emit('animation:cuts-reordered', { oldIndex, newIndex });
+            console.log('🔄 Cuts reordered:', oldIndex, '=>', newIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cuts-reordered', { oldIndex, newIndex });
+            }
         }
         
         // CUT時間変更
@@ -422,10 +485,14 @@
             
             cut.duration = Math.max(0.1, Math.min(10, duration));
             
-            this.eventBus.emit('animation:cut-duration-changed', { 
-                cutIndex, 
-                duration: cut.duration 
-            });
+            console.log('⏱️ Cut duration updated:', cut.name, cut.duration + 's');
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-duration-changed', { 
+                    cutIndex, 
+                    duration: cut.duration 
+                });
+            }
         }
         
         // フレーム移動（キーボード操作用）
@@ -443,10 +510,12 @@
             this.animationData.playback.currentCutIndex = newIndex;
             this.applyCutToLayers(newIndex);
             
-            this.eventBus.emit('animation:frame-changed', { 
-                cutIndex: newIndex, 
-                direction: 'previous' 
-            });
+            if (this.eventBus) {
+                this.eventBus.emit('animation:frame-changed', { 
+                    cutIndex: newIndex, 
+                    direction: 'previous' 
+                });
+            }
         }
         
         goToNextFrame() {
@@ -463,10 +532,12 @@
             this.animationData.playback.currentCutIndex = newIndex;
             this.applyCutToLayers(newIndex);
             
-            this.eventBus.emit('animation:frame-changed', { 
-                cutIndex: newIndex, 
-                direction: 'next' 
-            });
+            if (this.eventBus) {
+                this.eventBus.emit('animation:frame-changed', { 
+                    cutIndex: newIndex, 
+                    direction: 'next' 
+                });
+            }
         }
         
         // 再生/一時停止トグル
@@ -482,14 +553,20 @@
         toggleAnimationMode() {
             this.isAnimationMode = !this.isAnimationMode;
             
+            console.log('🎬 Animation mode:', this.isAnimationMode ? 'ON' : 'OFF');
+            
             if (this.isAnimationMode) {
-                this.eventBus.emit('animation:mode-entered');
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:mode-entered');
+                }
             } else {
                 // アニメーションモード終了時は再生停止
                 if (this.animationData.playback.isPlaying) {
                     this.stop();
                 }
-                this.eventBus.emit('animation:mode-exited');
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:mode-exited');
+                }
             }
             
             return this.isAnimationMode;
@@ -497,20 +574,41 @@
         
         // アニメーション設定更新
         updateSettings(settings) {
+            if (!settings) return;
+            
             Object.assign(this.animationData.settings, settings);
             
             // 再生中の場合、タイマーを再開
-            if (this.animationData.playback.isPlaying) {
+            if (this.animationData.playback.isPlaying && settings.fps) {
                 this.stopPlaybackLoop();
                 this.startPlaybackLoop();
             }
             
-            this.eventBus.emit('animation:settings-updated', { settings });
+            console.log('⚙️ Animation settings updated:', settings);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:settings-updated', { settings });
+            }
         }
         
         // 現在のアニメーションデータを取得
         getAnimationData() {
             return this.animationData;
+        }
+        
+        // 現在のCUTインデックスを取得
+        getCurrentCutIndex() {
+            return this.animationData.playback.currentCutIndex;
+        }
+        
+        // CUT総数を取得
+        getCutCount() {
+            return this.animationData.cuts.length;
+        }
+        
+        // 現在のCUT情報を取得
+        getCurrentCut() {
+            return this.animationData.cuts[this.animationData.playback.currentCutIndex] || null;
         }
         
         // アニメーションデータをクリア
@@ -528,28 +626,72 @@
             // データリセット
             this.animationData = this.createDefaultAnimation();
             
-            this.eventBus.emit('animation:cleared');
+            console.log('🗑️ Animation data cleared');
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cleared');
+            }
+        }
+        
+        // 座標系チェック（デバッグ用）
+        checkCoordinateSystem() {
+            if (this.coordAPI) {
+                console.log('✅ CoordinateSystem API available');
+                return this.coordAPI.diagnoseReferences();
+            } else {
+                console.warn('⚠️ CoordinateSystem API not available');
+                return { status: 'not_available' };
+            }
+        }
+        
+        // LayerSystem連携チェック（デバッグ用）
+        checkLayerSystemAPI() {
+            if (!this.layerSystem) {
+                return { status: 'not_available', message: 'LayerSystem not initialized' };
+            }
+            
+            const checks = {
+                hasLayers: !!this.layerSystem.layers,
+                hasTransforms: !!this.layerSystem.layerTransforms,
+                hasContainer: !!(this.layerSystem.layersContainer || this.layerSystem.worldContainer),
+                hasUpdateUI: typeof this.layerSystem.updateLayerPanelUI === 'function',
+                layerCount: this.layerSystem.layers ? this.layerSystem.layers.length : 0
+            };
+            
+            console.log('LayerSystem API Check:', checks);
+            return checks;
         }
         
         // デバッグ用：アニメーション情報出力
         debugInfo() {
-            console.log('AnimationSystem Debug Info:');
-            console.log('- Animation Mode:', this.isAnimationMode);
-            console.log('- Cuts Count:', this.animationData.cuts.length);
-            console.log('- Playing:', this.animationData.playback.isPlaying);
-            console.log('- Current Cut:', this.animationData.playback.currentCutIndex);
-            console.log('- Settings:', this.animationData.settings);
+            const coordCheck = this.checkCoordinateSystem();
+            const layerCheck = this.checkLayerSystemAPI();
             
-            return {
+            const info = {
                 isAnimationMode: this.isAnimationMode,
                 cutsCount: this.animationData.cuts.length,
                 isPlaying: this.animationData.playback.isPlaying,
                 currentCut: this.animationData.playback.currentCutIndex,
-                settings: this.animationData.settings
+                settings: this.animationData.settings,
+                eventBusAvailable: !!this.eventBus,
+                coordinateSystemAPI: coordCheck,
+                layerSystemAPI: layerCheck
             };
+            
+            console.log('AnimationSystem Debug Info:');
+            console.log('- Animation Mode:', info.isAnimationMode);
+            console.log('- Cuts Count:', info.cutsCount);
+            console.log('- Playing:', info.isPlaying);
+            console.log('- Current Cut:', info.currentCut);
+            console.log('- Settings:', info.settings);
+            console.log('- EventBus:', info.eventBusAvailable ? '✅' : '❌');
+            console.log('- CoordinateSystem:', coordCheck.status || '❌');
+            console.log('- LayerSystem:', layerCheck.hasLayers ? '✅' : '❌');
+            
+            return info;
         }
     }
     
     window.TegakiAnimationSystem = AnimationSystem;
-    console.log('✅ animation-system.js loaded');
+    console.log('✅ animation-system.js loaded (API統一版)');
 })();
