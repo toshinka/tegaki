@@ -859,7 +859,7 @@ try {
     </script>
     
     <div class="layer-panel-container" id="layer-panel-container">
-        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加 (Shift+N)">
+        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加 (Ctrl+L)">
             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
         </div>
         
@@ -870,11 +870,11 @@ try {
     <!-- timeline-ui.jsが動的生成で完全責任を持つ -->
 
     <script>
-// 【責任分界明確化】Canvas限定ショートカット・Undo/Redo統合・ブラウザ競合回避版
+// 【Phase 2-2完成版】ブラウザ競合回避・CUTコピー統合版ショートカット
 (function() {
     'use strict';
     
-    // Canvas限定ショートカット処理
+    // Canvas限定ショートカット処理 - Phase 2-2改修版
     function setupImprovedKeyboardShortcuts() {
         let canvas = null;
         let focusCheckAttempts = 0;
@@ -922,10 +922,10 @@ try {
         }
         
         function handleKeyDown(e) {
-            // ブラウザ競合回避ショートカット
+            // Phase 2-2: ブラウザ競合回避ショートカット完全版
             
             // Ctrl+Z: Undo
-            if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey) {
+            if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
                 if (window.History && typeof window.History.undo === 'function') {
                     const success = window.History.undo();
                     if (success) {
@@ -937,7 +937,7 @@ try {
             }
             
             // Ctrl+Y: Redo
-            if (e.ctrlKey && e.code === 'KeyY' && !e.shiftKey) {
+            if (e.ctrlKey && e.code === 'KeyY' && !e.shiftKey && !e.altKey) {
                 if (window.History && typeof window.History.redo === 'function') {
                     const success = window.History.redo();
                     if (success) {
@@ -948,27 +948,32 @@ try {
                 return;
             }
             
-            // Shift+N: 新規レイヤー作成（ブラウザ競合回避）
-            if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
+            // 【Phase 2-2実装】Ctrl+L: 新規レイヤー作成（改修計画書指定）
+            if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('layer:create-new');
                     e.preventDefault();
-                    console.log('🆕 New layer requested via Shift+N');
+                    console.log('🆕 New layer requested via Ctrl+L (Phase 2-2)');
                 }
                 return;
             }
             
-            // Shift+C: CUTコピー
+            // 【Phase 2-2実装】Shift+C: アクティブCUTコピー+右隣にコピーCUT貼り付け（改修計画書指定）
             if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
                 if (window.TegakiEventBus) {
+                    // アクティブCUTコピー
                     window.TegakiEventBus.emit('cut:copy-current');
+                    // 即座に右隣に貼り付け
+                    setTimeout(() => {
+                        window.TegakiEventBus.emit('cut:paste-right-adjacent');
+                    }, 10);
                     e.preventDefault();
-                    console.log('📋 CUT copy requested via Shift+C');
+                    console.log('📋 CUT copy + paste right adjacent via Shift+C (Phase 2-2)');
                 }
                 return;
             }
             
-            // Shift+V: CUT貼り付け
+            // Shift+V: CUT独立貼り付け
             if (e.shiftKey && e.code === 'KeyV' && !e.ctrlKey && !e.altKey) {
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('cut:paste-new');
@@ -1238,7 +1243,7 @@ try {
     // Phase 2: 段階的初期化処理
     window.addEventListener('DOMContentLoaded', async () => {
         try {
-            console.log('🔥 Starting Phase 2完成版 - タイムライン二重実装解消版 initialization...');
+            console.log('🔥 Starting Phase 2-2完成版 - ショートカット改善版 initialization...');
             
             // Step 1: CoreRuntime依存関係チェック
             if (!checkCoreRuntime()) {
@@ -1275,37 +1280,33 @@ try {
                 }, 1000);
             }
             
-            console.log('✅ Phase 2完成版 SUCCESS: Drawing App initialized!');
+            console.log('✅ Phase 2-2完成版 SUCCESS: Drawing App initialized!');
             console.log('✅ EventBus established:', !!window.TegakiEventBus);
             console.log('✅ Animation config loaded:', !!window.TEGAKI_CONFIG.animation);
             console.log('✅ AnimationSystem initialized:', !!window.animationSystem);
             console.log('✅ TimelineUI initialized:', !!window.timelineUI);
             console.log('✅ History system integrated:', !!window.History);
-            console.log('🔧 Phase 2.5改修完了: タイムライン二重実装解消');
-            console.log('   - ✅ Timeline HTML削除: index.htmlから重複要素完全排除');
-            console.log('   - ✅ Timeline CSS削除: 重複定義完全排除');
-            console.log('   - ✅ 責任分界明確化: timeline-ui.jsが完全責任を持つ');
-            console.log('   - ✅ ▶ボタン二重表示解消: 動的生成統一化');
-            console.log('   - ✅ 表示時間UI改善: 窮屈さ解消・◀▶スタイル完成');
-            console.log('   - ✅ ショートカット改善: Canvas限定・ブラウザ競合回避');
-            console.log('   - ✅ Timeline UI改善: サムネイル不要ボタン削除');
-            console.log('   - ✅ Undo/Redo統合: Ctrl+Z/Ctrl+Y対応');
-            console.log('   - ✅ レイヤーパネル二重描画修正');
-            console.log('   - ✅ 座標変換API統一化');
-            console.log('🎯 Phase 2.5 改善済みキーボードショートカット:');
-            console.log('   - Shift+N: 新規レイヤー作成 (browser-safe)');
-            console.log('   - Shift+C: CUTコピー');
-            console.log('   - Shift+V: CUT貼り付け');
+            console.log('🚀 Phase 2-2改修完了: ショートカット改善実装');
+            console.log('   - ✅ Ctrl+L: 新規レイヤー作成 (改修計画書指定)');
+            console.log('   - ✅ Shift+C: アクティブCUTコピー+右隣にコピーCUT貼り付け (改修計画書指定)');
+            console.log('   - ✅ ブラウザ競合回避処理強化');
+            console.log('   - ✅ 元の機能保持: 既存ショートカット維持');
+            console.log('   - ✅ UI整合性: レイヤー追加ボタンtooltip更新');
+            console.log('   - ✅ EventBus統合: CUTコピー・ペースト機能');
+            console.log('🎯 Phase 2-2 完成版キーボードショートカット:');
+            console.log('   - Ctrl+L: 新規レイヤー作成 (改修計画書指定)');
+            console.log('   - Shift+C: CUTコピー+右隣に貼り付け (改修計画書指定)');
+            console.log('   - Shift+V: CUT独立貼り付け');
             console.log('   - Ctrl+Z: Undo (History system)');
             console.log('   - Ctrl+Y: Redo (History system)');
             console.log('   - Alt+A: タイムライン切り替え');
             console.log('   - Space: 再生/停止 (タイムライン表示時のみ)');
             console.log('   - P: ペンツール');
             console.log('   - E: 消しゴムツール');
-            console.log('✅ Phase 2.5 タイムライン二重実装解消完了 - 単一責任原則実現!');
+            console.log('✅ Phase 2-2 ショートカット改善完了!');
             
         } catch (error) {
-            console.error('❌ Phase 2.5完成版 FAILED:', error);
+            console.error('❌ Phase 2-2完成版 FAILED:', error);
             console.error('Stack trace:', error.stack);
         }
     });
