@@ -1,6 +1,8 @@
-// ===== ui/timeline-ui.js - 完全責任化版: 二重実装解消・単一責任原則実現 =====
-// 【責任分界明確化】TimelineUIが完全責任を持つ - index.htmlからの重複排除完了
-// 【Phase 2.5改修完了】▶ボタン二重表示解消・表示時間UI改善・窮屈さ解消
+// ===== ui/timeline-ui.js - サムネイル改修版: 重複機能削除・リピート機能追加 =====
+// 【改修内容】
+// - 灰色の上下矢印削除（◀▶と重複機能排除）
+// - 時間表示枠の短縮（▶ボタンとの被り解消）
+// - リピートアイコン追加（再生ボタンの左側配置・色反転ON/OFF）
 
 (function() {
     'use strict';
@@ -26,20 +28,15 @@
         }
         
         init() {
-            console.log('🎬 TimelineUI initialization starting (完全責任化版)...');
+            console.log('🎬 TimelineUI initialization starting (サムネイル改修版)...');
             
             if (this.isInitialized) {
                 console.warn('TimelineUI already initialized, skipping duplicate init');
                 return;
             }
             
-            // 【Phase 2.5改修】既存要素の完全チェック・重複削除
             this.removeExistingTimelineElements();
-            
-            // 【Phase 2.5改修】完全な動的生成
             this.createCompleteTimelineStructure();
-            
-            // 【Phase 2.5改修】完全なCSS定義注入
             this.injectCompleteTimelineCSS();
             
             // GIF Exporter初期化
@@ -57,14 +54,12 @@
             this.ensureInitialCut();
             
             this.isInitialized = true;
-            console.log('✅ TimelineUI initialized (完全責任化版) - 二重実装解消完了');
+            console.log('✅ TimelineUI initialized (サムネイル改修版) - 重複機能削除・リピート機能追加完了');
         }
         
-        // 【Phase 2.5改修】既存タイムライン要素の完全削除
         removeExistingTimelineElements() {
             console.log('🧹 Removing existing timeline elements to prevent duplication...');
             
-            // index.html由来の重複要素を完全削除
             const existingElements = [
                 'timeline-panel',
                 'cuts-container', 
@@ -76,13 +71,11 @@
             existingElements.forEach(id => {
                 const element = document.getElementById(id);
                 if (element && !element.dataset.source) {
-                    // index.html由来の要素（dataset.sourceなし）を削除
                     console.log(`🧹 Removing duplicate element: ${id}`);
                     element.remove();
                 }
             });
             
-            // CSS重複も除去
             const existingStyles = document.querySelectorAll('style[data-timeline]');
             existingStyles.forEach(style => {
                 if (style.dataset.timeline !== 'timeline-ui') {
@@ -94,29 +87,26 @@
             console.log('✅ Existing timeline elements cleanup completed');
         }
         
-        // 【Phase 2.5改修】完全なタイムライン構造生成
+        // 【改修】リピートボタン追加・タイムライン構造更新
         createCompleteTimelineStructure() {
-            console.log('🏗️ Creating complete timeline structure with full responsibility...');
+            console.log('🏗️ Creating complete timeline structure with repeat feature...');
             
             if (this.domCreated) {
                 console.warn('Timeline DOM already created, skipping duplicate creation');
                 return;
             }
             
-            // メインタイムラインパネル作成
             this.timelinePanel = document.createElement('div');
             this.timelinePanel.id = 'timeline-panel';
             this.timelinePanel.className = 'timeline-panel';
-            this.timelinePanel.dataset.source = 'timeline-ui'; // 責任明示
+            this.timelinePanel.dataset.source = 'timeline-ui';
             this.timelinePanel.style.display = 'none';
             
-            // CUTコンテナ作成
             this.cutsContainer = document.createElement('div');
             this.cutsContainer.id = 'cuts-container';
             this.cutsContainer.className = 'cuts-container';
             this.cutsContainer.dataset.source = 'timeline-ui';
             
-            // タイムラインボトムコントロール作成
             const timelineBottom = document.createElement('div');
             timelineBottom.className = 'timeline-bottom';
             timelineBottom.dataset.source = 'timeline-ui';
@@ -128,22 +118,22 @@
                 </div>
                 
                 <div class="timeline-controls">
+                    <button id="repeat-btn" title="リピート ON/OFF (R)" class="repeat-active">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="m17 2 4 4-4 4"/>
+                            <path d="M3 11v-1a4 4 0 0 1 4-4h14"/>
+                            <path d="m7 22-4-4 4-4"/>
+                            <path d="M21 13v1a4 4 0 0 1-4 4H3"/>
+                        </svg>
+                    </button>
                     <button id="play-btn" title="再生/停止 (Space)">▶</button>
                     <button id="add-cut-btn" title="CUT追加 (Alt+Plus)">+CUT</button>
                     <button id="export-gif-btn" title="GIF書き出し">GIF</button>
                 </div>
                 
-                <div class="timeline-settings">
-                    <label>
-                        <input type="checkbox" id="loop-checkbox" checked>
-                        ループ
-                    </label>
-                </div>
-                
                 <button class="timeline-close" id="close-timeline">×</button>
             `;
             
-            // エクスポートプログレス作成
             const exportProgress = document.createElement('div');
             exportProgress.className = 'export-progress';
             exportProgress.id = 'export-progress';
@@ -156,23 +146,20 @@
                 <span id="progress-text">0%</span>
             `;
             
-            // 構造組み立て
             this.timelinePanel.appendChild(this.cutsContainer);
             this.timelinePanel.appendChild(timelineBottom);
             this.timelinePanel.appendChild(exportProgress);
             
-            // DOM追加
             document.body.appendChild(this.timelinePanel);
             
             this.domCreated = true;
-            console.log('✅ Complete timeline structure created with full responsibility');
+            console.log('✅ Complete timeline structure created with repeat feature');
         }
         
-        // 【Phase 2.5改修】完全なタイムライン用CSS注入
+        // 【改修】CSS更新 - 重複機能削除・短縮表示・リピートボタンスタイル
         injectCompleteTimelineCSS() {
-            console.log('🎨 Injecting complete timeline CSS with full responsibility...');
+            console.log('🎨 Injecting complete timeline CSS with improvements...');
             
-            // 既存のtimeline-ui用スタイルをチェック
             const existingStyle = document.querySelector('style[data-timeline="timeline-ui"]');
             if (existingStyle) {
                 console.log('Timeline CSS already injected, skipping duplicate injection');
@@ -182,10 +169,8 @@
             const style = document.createElement('style');
             style.dataset.timeline = 'timeline-ui';
             style.textContent = `
-                /* ===== TimelineUI完全責任CSS - 二重実装解消版 ===== */
-                /* 責任分界: timeline-ui.jsが完全責任を持つ */
+                /* ===== TimelineUI改修CSS - 重複機能削除・リピート機能追加版 ===== */
                 
-                /* タイムラインパネル - 完成版 */
                 .timeline-panel {
                     position: fixed !important;
                     bottom: 16px !important;
@@ -213,14 +198,13 @@
                     to   { opacity: 1; transform: translateY(0) scale(1); }
                 }
 
-                /* CUTアイテムエリア - 完成版 */
                 .cuts-container {
                     display: flex !important;
                     gap: 10px !important;
                     overflow-x: auto !important;
-                    padding: 6px 0 12px 0 !important;
-                    margin-bottom: 12px !important;
-                    max-height: 100px !important;
+                    padding: 3px 0 8px 0 !important;
+                    margin-bottom: 8px !important;
+                    max-height: 110px !important;
                 }
 
                 .cuts-container::-webkit-scrollbar {
@@ -241,7 +225,7 @@
                     background: var(--futaba-light-maroon) !important;
                 }
 
-                /* CUTアイテム - 窮屈さ解消完成版 */
+                /* 【改修】CUTアイテム - 重複機能削除版 */
                 .cut-item {
                     min-width: 75px !important;
                     background: var(--futaba-background) !important;
@@ -309,7 +293,7 @@
                 .cut-name {
                     font-size: 10px !important;
                     color: var(--futaba-maroon) !important;
-                    margin-bottom: 4px !important;
+                    margin-bottom: 6px !important;
                     font-weight: 600 !important;
                     text-align: center !important;
                     white-space: nowrap !important;
@@ -319,65 +303,35 @@
                     line-height: 1.3 !important;
                 }
 
-                /* 表示時間コントロール - 窮屈さ解消◀▶スタイル */
-                .cut-duration-container {
-                    width: 60px !important;
-                    height: 24px !important;
-                    display: flex !important;
-                    align-items: center !important;
-                    border: 2px solid var(--futaba-light-medium) !important;
-                    border-radius: 6px !important;
+                /* 【改修】表示時間コントロール - 直接入力版（▶被り解消） */
+                .cut-duration-input {
+                    width: 45px !important;
+                    height: 20px !important;
+                    border: 1px solid var(--futaba-light-medium) !important;
+                    border-radius: 4px !important;
                     background: var(--futaba-background) !important;
-                    overflow: hidden !important;
-                    margin-bottom: 3px !important;
-                    box-shadow: 0 1px 3px rgba(128, 0, 0, 0.1) !important;
-                }
-                
-                .duration-decrease, .duration-increase {
-                    width: 18px !important;
-                    height: 100% !important;
-                    background: var(--futaba-light-medium) !important;
-                    border: none !important;
-                    color: var(--futaba-maroon) !important;
-                    font-size: 12px !important;
-                    font-weight: bold !important;
-                    cursor: pointer !important;
-                    transition: all 0.15s ease !important;
-                    display: flex !important;
-                    align-items: center !important;
-                    justify-content: center !important;
-                    line-height: 1 !important;
-                    user-select: none !important;
-                }
-                
-                .duration-decrease:hover, .duration-increase:hover {
-                    background: var(--futaba-medium) !important;
-                    color: var(--futaba-maroon) !important;
-                    transform: scale(1.1) !important;
-                }
-                
-                .duration-decrease:active, .duration-increase:active {
-                    background: var(--futaba-maroon) !important;
-                    color: var(--futaba-background) !important;
-                }
-                
-                .cut-duration {
-                    flex: 1 !important;
-                    height: 100% !important;
-                    border: none !important;
-                    background: transparent !important;
-                    text-align: center !important;
-                    font-size: 9px !important;
+                    font-size: 8px !important;
                     font-family: monospace !important;
                     color: var(--futaba-maroon) !important;
-                    padding: 0 2px !important;
-                    outline: none !important;
                     font-weight: bold !important;
+                    text-align: center !important;
+                    margin-bottom: 3px !important;
+                    outline: none !important;
+                    transition: all 0.15s ease !important;
                 }
-                
-                .cut-duration:focus {
+
+                .cut-duration-input:hover {
+                    border-color: var(--futaba-medium) !important;
+                    background: var(--futaba-light-medium) !important;
+                }
+
+                .cut-duration-input:focus {
+                    border-color: var(--futaba-maroon) !important;
                     background: var(--futaba-cream) !important;
                 }
+
+                /* 削除された要素：.cut-duration-container, .duration-decrease, .duration-increase */
+                /* 理由：◀▶ボタンと機能重複のため削除 */
 
                 .delete-cut-btn {
                     position: absolute !important;
@@ -410,7 +364,6 @@
                     transform: scale(1.15) !important;
                 }
 
-                /* 下部コントロール - 窮屈さ解消完成版 */
                 .timeline-bottom {
                     display: flex !important;
                     justify-content: space-between !important;
@@ -420,9 +373,10 @@
                     padding: 0 4px !important;
                 }
 
+                /* 【改修】タイムラインコントロール - リピートボタン追加 */
                 .timeline-controls {
                     display: flex !important;
-                    gap: 12px !important;
+                    gap: 8px !important;
                     align-items: center !important;
                     flex: 1 !important;
                     justify-content: center !important;
@@ -461,6 +415,38 @@
                     opacity: 0.5 !important;
                     cursor: not-allowed !important;
                     transform: none !important;
+                }
+
+                /* 【改修】リピートボタンスタイル - 色反転ON/OFF */
+                #repeat-btn {
+                    min-width: 40px !important;
+                    padding: 8px !important;
+                }
+
+                #repeat-btn.repeat-active {
+                    background: var(--futaba-maroon) !important;
+                    color: var(--futaba-background) !important;
+                    border-color: var(--futaba-maroon) !important;
+                }
+
+                #repeat-btn.repeat-inactive {
+                    background: var(--futaba-background) !important;
+                    color: var(--futaba-maroon) !important;
+                    border-color: var(--futaba-medium) !important;
+                    opacity: 0.6 !important;
+                }
+
+                #repeat-btn:hover.repeat-active {
+                    background: var(--futaba-light-maroon) !important;
+                }
+
+                #repeat-btn:hover.repeat-inactive {
+                    background: var(--futaba-light-medium) !important;
+                }
+
+                #repeat-btn svg {
+                    width: 16px !important;
+                    height: 16px !important;
                 }
 
                 .timeline-controls button#play-btn.playing {
@@ -503,11 +489,6 @@
                 .timeline-settings input[type="number"]:focus {
                     outline: none !important;
                     border-color: var(--futaba-light-maroon) !important;
-                }
-
-                .timeline-settings input[type="checkbox"] {
-                    margin-right: 6px !important;
-                    transform: scale(1.2) !important;
                 }
 
                 .timeline-close {
@@ -576,7 +557,7 @@
             `;
             
             document.head.appendChild(style);
-            console.log('✅ Complete timeline CSS injected with full responsibility');
+            console.log('✅ Complete timeline CSS injected with improvements');
         }
         
         ensureInitialCut() {
@@ -617,8 +598,16 @@
             console.log('✅ TimelineUI event listeners setup completed');
         }
         
-        // 改善されたボタンリスナー - 完全責任化
+        // 【改修】リピートボタン機能追加
         setupImprovedButtonListeners() {
+            // リピートボタン
+            const repeatBtn = document.getElementById('repeat-btn');
+            if (repeatBtn) {
+                repeatBtn.addEventListener('click', () => {
+                    this.toggleRepeat();
+                });
+            }
+            
             // 再生/停止ボタン
             const playBtn = document.getElementById('play-btn');
             if (playBtn) {
@@ -662,21 +651,29 @@
                     this.animationSystem.updateSettings({ fps: fps });
                 });
             }
+        }
+        
+        // 【新機能】リピート機能の切り替え
+        toggleRepeat() {
+            this.isLooping = !this.isLooping;
+            this.animationSystem.updateSettings({ loop: this.isLooping });
             
-            // ループチェックボックス
-            const loopCheckbox = document.getElementById('loop-checkbox');
-            if (loopCheckbox) {
-                loopCheckbox.addEventListener('change', (e) => {
-                    this.isLooping = e.target.checked;
-                    this.animationSystem.updateSettings({ loop: this.isLooping });
-                    
-                    if (this.eventBus) {
-                        this.eventBus.emit('animation:loop:set', this.isLooping);
-                    }
-                    
-                    console.log('🔄 Loop toggled:', this.isLooping ? 'ON' : 'OFF');
-                });
+            const repeatBtn = document.getElementById('repeat-btn');
+            if (repeatBtn) {
+                if (this.isLooping) {
+                    repeatBtn.classList.remove('repeat-inactive');
+                    repeatBtn.classList.add('repeat-active');
+                } else {
+                    repeatBtn.classList.remove('repeat-active');
+                    repeatBtn.classList.add('repeat-inactive');
+                }
             }
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:loop:set', this.isLooping);
+            }
+            
+            console.log('🔄 Repeat toggled:', this.isLooping ? 'ON' : 'OFF');
         }
         
         togglePlayStop() {
@@ -750,6 +747,13 @@
                         }
                         break;
                         
+                    case 'KeyR':
+                        if (!e.ctrlKey && !e.altKey) {
+                            this.toggleRepeat();
+                            e.preventDefault();
+                        }
+                        break;
+                        
                     case 'ArrowLeft':
                         this.animationSystem.goToPreviousFrame();
                         e.preventDefault();
@@ -771,7 +775,7 @@
                 }
             });
             
-            console.log('✅ Timeline keyboard shortcuts updated');
+            console.log('✅ Timeline keyboard shortcuts updated with repeat toggle (R key)');
         }
         
         setupAnimationEvents() {
@@ -930,7 +934,15 @@
             }
         }
         
-        // 改善されたCUTアイテム作成（二重実装解消・表示時間UI改善）
+        // 【改修】CUTアイテム作成 - maroon◀▶ボタン配置版
+        createImprovedCutItem(cut, index) {
+            const cutItem = document.createElement('div');
+            cutItem.className = 'cut-item';
+            cutItem.dataset.cutIndex = index;
+            
+            const thumbnailHtml = this.generateCutThumbnailHTML(cut, index);
+            
+   // 改善されたCUTアイテム作成（二重実装解消・表示時間UI改善）
         createImprovedCutItem(cut, index) {
             const cutItem = document.createElement('div');
             cutItem.className = 'cut-item';
@@ -958,18 +970,17 @@
             // CUT選択
             cutItem.addEventListener('click', (e) => {
                 if (!e.target.classList.contains('delete-cut-btn') &&
-                    !e.target.classList.contains('cut-duration') &&
-                    !e.target.classList.contains('duration-decrease') &&
-                    !e.target.classList.contains('duration-increase')) {
+                    !e.target.classList.contains('cut-duration-input') &&
+                    !e.target.classList.contains('duration-nav-btn')) {
                     this.animationSystem.switchToActiveCut(index);
                     this.setActiveCut(index);
                 }
             });
             
-            // 改善された表示時間制御 - ◀▶スタイル
+            // 時間増減ボタン
             const decreaseBtn = cutItem.querySelector('.duration-decrease');
             const increaseBtn = cutItem.querySelector('.duration-increase');
-            const durationInput = cutItem.querySelector('.cut-duration');
+            const durationInput = cutItem.querySelector('.cut-duration-input');
             
             if (decreaseBtn) {
                 decreaseBtn.addEventListener('click', (e) => {
@@ -991,10 +1002,14 @@
                 });
             }
             
+            // 直接入力対応
             if (durationInput) {
                 durationInput.addEventListener('change', (e) => {
                     const newDuration = parseFloat(e.target.value);
-                    this.animationSystem.updateCutDuration(index, newDuration);
+                    if (!isNaN(newDuration) && newDuration > 0) {
+                        this.animationSystem.updateCutDuration(index, newDuration);
+                        console.log(`🎬 CUT${index + 1} duration updated to ${newDuration}s`);
+                    }
                     e.stopPropagation();
                 });
                 
@@ -1118,16 +1133,14 @@
     // グローバル export
     window.TegakiTimelineUI = TimelineUI;
     console.log('✅ TegakiTimelineUI exported to global scope');
-    console.log('✅ ui/timeline-ui.js loaded (完全責任化版)');
-    console.log('🔧 Phase 2.5改修完了: タイムライン二重実装解消');
-    console.log('  - ✅ 責任分界明確化: TimelineUIが完全責任を持つ');
-    console.log('  - ✅ 既存要素削除: index.html重複要素完全排除');
-    console.log('  - ✅ 動的生成統一: 完全なDOM・CSS生成');
-    console.log('  - ✅ ▶ボタン二重表示解消: 単一責任原則実現');
-    console.log('  - ✅ 表示時間UI改善: ◀▶スタイル・窮屈さ解消');
-    console.log('  - ✅ アーキテクチャ整合性: 重複実装完全排除');
-    console.log('  - ✅ 構文エラー修正: JavaScriptパース問題解消');
-    console.log('  - ✅ グローバルexport確保: window.TegakiTimelineUI正常化');
+    console.log('✅ ui/timeline-ui.js loaded (サムネイル改修版)');
+    console.log('🔧 改修完了: サムネイル機能改善');
+    console.log('  - ✅ 重複機能削除: 灰色上下矢印削除（◀▶と重複排除）');
+    console.log('  - ✅ 表示枠短縮: 時間表示を短くし▶ボタンとの被り解消');
+    console.log('  - ✅ リピート機能: SVGアイコン追加・再生ボタン左側配置');
+    console.log('  - ✅ 色反転ON/OFF: repeat-active/repeat-inactiveクラス実装');
+    console.log('  - ✅ キーボード対応: Rキーでリピート切り替え追加');
+    console.log('  - ✅ 機能統合: 元の機能維持・アーキテクチャ整合性確保');
     
     if (typeof window.TegakiUI === 'undefined') {
         window.TegakiUI = {};
