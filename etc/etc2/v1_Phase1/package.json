@@ -1,7 +1,0 @@
-{
-  "dependencies": {
-    "@pixi/gif": "^2.1.1",
-    "@pixi/layers": "^2.1.0",
-    "@pixi/ui": "^1.2.4"
-  }
-}
