@@ -1,7 +1,6 @@
-// ===== core-engine.js - P・Eショートカット復活修正版 =====
-// 各Systemモジュールを統合し、既存のindex.html・ui-panels.js・core-runtime.jsと完全互換
-// 【修正完了】P・Eショートカット優先処理・レイヤーモード強制解除対応
-// PixiJS v8.13 対応・改修計画書完全準拠版
+// ===== core-engine.js - Phase 0修正版：AnimationSystem統合 =====
+// Phase 0: 既存機能を壊さずに、アニメーション機能の土台を作る
+// AnimationSystemとTimelineUIの初期化を追加
 
 (function() {
     'use strict';
@@ -22,11 +21,23 @@
         throw new Error('system/drawing-clipboard.js is required');
     }
     
+    // Phase 0: EventBus依存確認
+    if (!window.TegakiEventBus) {
+        console.error('❌ TegakiEventBus not found - load system/event-bus.js');
+        throw new Error('system/event-bus.js is required for Phase 0');
+    }
+    
     // 設定取得（CONFIG統一）
     const CONFIG = window.TEGAKI_CONFIG;
     if (!CONFIG) {
         console.error('❌ TEGAKI_CONFIG not found - load config.js');
         throw new Error('config.js is required');
+    }
+
+    // Phase 0: アニメーション設定確認
+    if (!CONFIG.animation) {
+        console.error('❌ Animation config not found in TEGAKI_CONFIG');
+        throw new Error('Animation configuration is required for Phase 0');
     }
 
     // KeyConfig管理クラス依存確認
@@ -99,7 +110,7 @@
             this.cameraSystem = cameraSystem;
             this.layerManager = layerManager;
             this.eventBus = eventBus;
-            this.config = config; // CONFIG統一
+            this.config = config;
             
             this.currentTool = 'pen';
             this.brushSize = this.config.pen.size;
@@ -339,11 +350,12 @@
 
     // === 【修正完了】統合キーハンドラー（P・Eショートカット優先処理版） ===
     class UnifiedKeyHandler {
-        constructor(cameraSystem, layerSystem, drawingEngine, eventBus) {
+        constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
             this.cameraSystem = cameraSystem;
             this.layerSystem = layerSystem;
             this.drawingEngine = drawingEngine;
             this.eventBus = eventBus;
+            this.animationSystem = animationSystem; // Phase 0: AnimationSystem追加
             
             this.keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
             
@@ -382,7 +394,8 @@
             // KeyConfig管理経由でアクション取得
             const action = this.keyConfig.getActionForKey(e.code, {
                 vPressed: this.layerSystem.vKeyPressed,
-                shiftPressed: e.shiftKey
+                shiftPressed: e.shiftKey,
+                altPressed: e.altKey
             });
             
             // 特殊キー処理（アクション以外）
@@ -423,16 +436,50 @@
                     }
                     break;
                 
+                // Phase 0: GIFアニメーション操作追加
+                case 'gifToggleAnimation':
+                    if (e.altKey && window.timelineUI) {
+                        window.timelineUI.toggle();
+                        e.preventDefault();
+                    }
+                    break;
+                
+                case 'gifAddCut':
+                    if (e.altKey && this.animationSystem) {
+                        this.animationSystem.createCutFromCurrentState();
+                        e.preventDefault();
+                    }
+                    break;
+                
+                case 'gifPlayPause':
+                    if (e.code === 'Space' && this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
+                        this.animationSystem.togglePlayPause();
+                        e.preventDefault();
+                    }
+                    break;
+                
+                case 'gifPrevFrame':
+                    if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
+                        this.animationSystem.goToPreviousFrame();
+                        e.preventDefault();
+                    }
+                    break;
+                
+                case 'gifNextFrame':
+                    if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
+                        this.animationSystem.goToNextFrame();
+                        e.preventDefault();
+                    }
+                    break;
+                
                 // Vキー：レイヤーモードトグル（LayerSystemが処理）
                 case 'layerMode':
                     // LayerSystemが処理するため、ここでは何もしない
                     break;
                 
-                // 素の方向キー：レイヤー階層移動＆GIF操作（LayerSystemが処理）
+                // 素の方向キー：レイヤー階層移動（LayerSystemが処理）
                 case 'layerUp':
                 case 'layerDown':
-                case 'gifPrevFrame':
-                case 'gifNextFrame':
                     // LayerSystemが処理するため、ここでは何もしない
                     break;
                 
@@ -533,13 +580,13 @@
         }
     }
 
-    // === 統合CoreEngineクラス（P・Eショートカット修正対応版） ===
+    // === Phase 0修正版：CoreEngineクラス（AnimationSystem統合） ===
     class CoreEngine {
         constructor(app) {
             this.app = app;
             
-            // EventBus作成（System間連携強化版）
-            this.eventBus = new SimpleEventBus();
+            // Phase 0: グローバルEventBusを使用（統一化）
+            this.eventBus = window.TegakiEventBus;
             
             // 【改修】システム初期化（完全参照注入版）
             this.cameraSystem = new window.TegakiCameraSystem();
@@ -547,7 +594,11 @@
             this.clipboardSystem = new window.TegakiDrawingClipboard();
             this.drawingEngine = new DrawingEngine(this.cameraSystem, this.layerSystem, this.eventBus, CONFIG);
             
-            // 【修正完了】統合キーハンドラー（P・Eショートカット修正版）
+            // Phase 0: AnimationSystemとTimelineUI初期化
+            this.animationSystem = null;
+            this.timelineUI = null;
+            
+            // 【修正完了】統合キーハンドラー（AnimationSystem対応版）
             this.keyHandler = null; // 初期化後に作成
             
             // 【改修】相互参照設定（完全版）
@@ -597,13 +648,17 @@
                 console.log(`🔧 Tool switched to: ${data.tool} (UI updated)`);
             });
             
-            // GIF操作通知（将来実装用）
-            this.eventBus.on('gif:prev-frame-requested', () => {
-                console.log('🎞️ GIF Previous Frame requested (reserved)');
+            // Phase 0: GIF操作通知統合
+            this.eventBus.on('animation:cut-created', (data) => {
+                console.log('📹 Animation cut created:', data.cutId);
             });
             
-            this.eventBus.on('gif:next-frame-requested', () => {
-                console.log('🎞️ GIF Next Frame requested (reserved)');
+            this.eventBus.on('animation:playback-started', () => {
+                console.log('📹 Animation playback started');
+            });
+            
+            this.eventBus.on('animation:playback-stopped', () => {
+                console.log('📹 Animation playback stopped');
             });
             
             // エラー処理統合
@@ -618,6 +673,39 @@
                     console.error('Clipboard paste failed:', data.error);
                 }
             });
+        }
+        
+        // Phase 0: AnimationSystemとTimelineUI初期化
+        initializeAnimationSystem() {
+            // AnimationSystem初期化確認
+            if (!window.TegakiAnimationSystem) {
+                console.warn('⚠️ TegakiAnimationSystem not found - animation features disabled');
+                return;
+            }
+            
+            if (!window.TegakiTimelineUI) {
+                console.warn('⚠️ TegakiTimelineUI not found - timeline UI disabled');
+                return;
+            }
+            
+            // AnimationSystem作成
+            this.animationSystem = new window.TegakiAnimationSystem();
+            this.animationSystem.init(
+                this.layerSystem, 
+                this.cameraSystem, 
+                this.app, 
+                this.eventBus
+            );
+            
+            // TimelineUI作成
+            this.timelineUI = new window.TegakiTimelineUI(this.animationSystem);
+            this.timelineUI.init();
+            
+            // グローバル参照設定（互換性）
+            window.animationSystem = this.animationSystem;
+            window.timelineUI = this.timelineUI;
+            
+            console.log('✅ Phase 0: AnimationSystem and TimelineUI initialized');
         }
         
         // === 既存互換API ===
@@ -635,6 +723,15 @@
         
         getClipboardSystem() {
             return this.clipboardSystem;
+        }
+        
+        // Phase 0: AnimationSystem取得API
+        getAnimationSystem() {
+            return this.animationSystem;
+        }
+        
+        getTimelineUI() {
+            return this.timelineUI;
         }
         
         // 【修正完了】統合キーハンドラー取得
@@ -754,9 +851,9 @@
             }
         }
         
-        // 【修正完了】初期化（P・Eショートカット修正版）
+        // 【Phase 0修正版】初期化（AnimationSystem統合）
         initialize() {
-            console.log('=== CoreEngine initialization started ===');
+            console.log('=== CoreEngine Phase 0 initialization started ===');
             
             // 【改修】システム初期化（EventBus・CONFIG統一・安全な参照注入）
             this.cameraSystem.init(
@@ -774,12 +871,16 @@
             // ClipboardSystem初期化（EventBus・CONFIG統一）
             this.clipboardSystem.init(this.eventBus, CONFIG);
             
-            // 【修正完了】統合キーハンドラー初期化（P・Eショートカット修正版）
+            // Phase 0: AnimationSystemとTimelineUI初期化
+            this.initializeAnimationSystem();
+            
+            // 【Phase 0修正版】統合キーハンドラー初期化（AnimationSystem対応）
             this.keyHandler = new UnifiedKeyHandler(
                 this.cameraSystem,
                 this.layerSystem,
                 this.drawingEngine,
-                this.eventBus
+                this.eventBus,
+                this.animationSystem  // Phase 0: AnimationSystem追加
             );
             
             // 初期レイヤー作成
@@ -803,21 +904,21 @@
                 this.processThumbnailUpdates();
             });
             
-            // 初期化完了通知
+            // Phase 0: 初期化完了通知
             this.eventBus.emit('core:initialized', {
-                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler']
+                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation']
             });
             
-            console.log('✅ CoreEngine initialized successfully (P・Eショートカット修正版)');
-            console.log('   - 🔧 P・Eショートカット修正完了：最優先処理・レイヤーモード強制解除');
-            console.log('   - 🔧 ツール切り替えUI更新完了：activeクラス・ステータス表示');
-            console.log('   - ✅ UnifiedKeyHandler統合完了');
-            console.log('   - ✅ System間キー処理重複完全回避');
-            console.log('   - ✅ KeyConfig管理クラス連携');
-            console.log('   - ✅ 素の方向キー↑↓: レイヤー階層移動');
-            console.log('   - ✅ 素の方向キー←→: GIF操作予約');
-            console.log('   - ✅ V + 方向キー: レイヤー変形（キープ）');
-            console.log('   - 🔧 完全な参照注入・EventBus統合');
+            console.log('✅ CoreEngine Phase 0 initialized successfully');
+            console.log('   - 🔧 P・Eショートカット対応済み');
+            console.log('   - ✅ EventBus統合完了');
+            console.log('   - ✅ AnimationSystem統合完了');
+            console.log('   - ✅ TimelineUI統合完了');
+            console.log('   - ✅ GIFアニメーション操作キー対応');
+            console.log('   - ✅ Alt+A: タイムライン表示切り替え');
+            console.log('   - ✅ Alt+Plus: CUT追加');
+            console.log('   - ✅ Space: 再生/停止（アニメーション時）');
+            console.log('   - ✅ ←→: フレーム移動（アニメーション時）');
             console.log('   - Systems:', this.eventBus.getRegisteredEvents().length, 'events registered');
             console.log('   - 既存機能完全継承・互換性維持');
             
@@ -850,6 +951,11 @@
                 drawing: {
                     currentTool: this.drawingEngine.currentTool,
                     isDrawing: this.drawingEngine.isDrawing
+                },
+                animation: {
+                    initialized: !!this.animationSystem,
+                    cutsCount: this.animationSystem ? this.animationSystem.getAnimationData().cuts.length : 0,
+                    timelineVisible: this.timelineUI ? this.timelineUI.isVisible : false
                 },
                 keyHandler: {
                     initialized: !!this.keyHandler,
@@ -895,7 +1001,7 @@
         }
     }
 
-    // === グローバル公開（P・Eショートカット修正対応版） ===
+    // === グローバル公開（Phase 0対応版） ===
     window.TegakiCore = {
         CoreEngine: CoreEngine,
         
@@ -906,22 +1012,20 @@
         DrawingEngine: DrawingEngine,
         ClipboardSystem: window.TegakiDrawingClipboard,
         DrawingClipboard: window.TegakiDrawingClipboard,
+        AnimationSystem: window.TegakiAnimationSystem, // Phase 0追加
+        TimelineUI: window.TegakiTimelineUI, // Phase 0追加
         SimpleEventBus: SimpleEventBus,
-        UnifiedKeyHandler: UnifiedKeyHandler // 修正版
+        UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (P・Eショートカット復活修正版) loaded successfully');
-    console.log('   - 🔧 P・Eショートカット修正完了：最優先処理・UI更新統合');
-    console.log('   - 🔧 レイヤーモード強制解除：ツール切り替え時にexitLayerMoveMode()');
-    console.log('   - 🔧 ツールボタンactiveクラス切り替え修正');
-    console.log('   - 🔧 ステータス表示更新修正');
-    console.log('   - ✅ UnifiedKeyHandler実装完了');
-    console.log('   - ✅ System間キー処理重複完全排除');
-    console.log('   - ✅ KeyConfig管理クラス統合');
-    console.log('   - ✅ 素の方向キー処理の新規実装');
-    console.log('   - ✅ GIF操作用キー予約完了');
-    console.log('   - 🔧 System integration with enhanced EventBus');
-    console.log('   - PixiJS v8.13 Graphics API準拠');
-    console.log('   - Existing compatibility maintained');
+    console.log('✅ core-engine.js (Phase 0修正版) loaded successfully');
+    console.log('   - 🔧 Phase 0: 基盤整備完了');
+    console.log('   - ✅ EventBus統合：window.TegakiEventBus使用');
+    console.log('   - ✅ AnimationSystem統合：初期化・キーハンドラー対応');
+    console.log('   - ✅ TimelineUI統合：Alt+A切り替え対応');
+    console.log('   - ✅ GIF操作キー統合：Alt+Plus, Space, ←→');
+    console.log('   - ✅ P・Eショートカット継承');
+    console.log('   - ✅ 既存機能完全保持・互換性維持');
+    console.log('   - 🔧 Ready for Phase 1 implementation');
 
 })();

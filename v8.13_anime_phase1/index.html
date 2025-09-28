@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 Phase2準備版 - PixiJS v8.13 お絵かきツール</title>
+    <title>🎨 Phase0修正版 - PixiJS v8.13 お絵かきツール</title>
     <style>
         * {
             margin: 0;
@@ -731,11 +731,12 @@
             transition: width 0.3s ease;
         }
         
+        /* ステータスパネル位置修正：上部左に移動 */
         .status-panel {
             position: fixed;
-            bottom: 20px;
+            top: 10px;
             left: 70px;
-            right: 20px;
+            bottom: auto;
             background: var(--futaba-cream);
             border: 2px solid var(--futaba-medium);
             border-radius: 12px;
@@ -746,13 +747,17 @@
             justify-content: space-between;
             align-items: center;
             box-shadow: 0 4px 16px rgba(128, 0, 0, 0.1);
-            z-index: 50;
+            z-index: 10000;
+            max-width: calc(100vw - 270px);
+            flex-wrap: wrap;
+            gap: 16px;
         }
         
         .status-group {
             display: flex;
             align-items: center;
             gap: 16px;
+            flex-wrap: wrap;
         }
         
         .status-item {
@@ -836,8 +841,6 @@
             <span id="progress-text">0%</span>
         </div>
     </div>
-
-
 
     <div class="popup-panel" id="pen-settings" style="left: 60px; top: 100px;">
         <div class="popup-title">ベクターペンツール設定</div>
@@ -951,57 +954,75 @@
         </div>
     </div>
 
-    <!-- PixiJS v8.13 + 有用なライブラリ読み込み -->
+    <!-- PixiJS v8.13 + ライブラリ読み込み -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.min.js"></script>
-    
-    <!-- 🔥 Phase2準備版：最適化されたファイル読み込み順序 -->
+
+    <!-- Phase 0: 基盤ファイル読み込み順序修正 -->
+    <script src="system/event-bus.js"></script>
     <script src="config.js"></script>
+    <script src="coordinate-system.js"></script>
+
+    <!-- システム -->
+    <script src="system/layer-system.js"></script>
+    <script src="system/camera-system.js"></script>
+    <script src="system/drawing-clipboard.js"></script>
+    <script src="system/animation-system.js"></script>
+    <script src="system/gif-exporter.js"></script>
+
+    <!-- UI -->
+    <script src="ui/ui-panels.js"></script>
+    <script src="ui/timeline-ui.js"></script>
+
+    <!-- コア -->
+    <script src="core-runtime.js"></script>
+    <script src="core-engine.js"></script>
     
     <script>
-// === 🔥 Phase2準備版：依存関係チェック関数（簡潔版） ===
-function checkDependencies() {
+// Phase 0 基盤整備：依存関係チェック関数
+function checkPhase0Dependencies() {
     const dependencies = [
         { name: 'PIXI', obj: window.PIXI },
         { name: 'TEGAKI_CONFIG', obj: window.TEGAKI_CONFIG },
-        { name: 'Sortable', obj: window.Sortable }
+        { name: 'TegakiEventBus', obj: window.TegakiEventBus },
+        { name: 'Sortable', obj: window.Sortable },
+        { name: 'GIF', obj: window.GIF }
     ];
     
     const missing = dependencies.filter(dep => !dep.obj);
     
     if (missing.length > 0) {
-        console.error('❌ Missing dependencies:', missing.map(d => d.name));
-        throw new Error(`Dependencies not loaded: ${missing.map(d => d.name).join(', ')}`);
+        console.error('❌ Phase 0 Missing dependencies:', missing.map(d => d.name));
+        throw new Error(`Phase 0 Dependencies not loaded: ${missing.map(d => d.name).join(', ')}`);
     }
     
-    console.log('✅ Basic dependencies loaded successfully');
+    // アニメーション設定確認
+    if (!window.TEGAKI_CONFIG.animation) {
+        console.error('❌ Animation config missing in TEGAKI_CONFIG');
+        throw new Error('Animation configuration not found');
+    }
+    
+    console.log('✅ Phase 0 Dependencies loaded successfully');
+    console.log('   - EventBus:', !!window.TegakiEventBus);
+    console.log('   - Animation config:', !!window.TEGAKI_CONFIG.animation);
     return true;
 }
 
-// 基本依存関係チェック
-checkDependencies();
+// Phase 0 基盤整備チェック
+try {
+    checkPhase0Dependencies();
+} catch (error) {
+    console.error('Phase 0 基盤整備失敗:', error);
+}
     </script>
     
-    <!-- Phase2準備版：最適化されたファイル読み込み -->
-    <script src="coordinate-system.js"></script>
-    <script src="core-runtime.js"></script>
-    <script src="ui/ui-panels.js"></script>
-    <script src="ui/timeline-ui.js"></script>
-    <script src="system/camera-system.js"></script>
-    <script src="system/layer-system.js"></script>
-    <script src="system/drawing-clipboard.js"></script>
-    <script src="animation-system.js"></script>
-    <script src="gif-exporter.js"></script>
-    <script src="core-engine.js"></script>
-    
     <script>
-// === 🔥 Phase2準備版：統合されたmain.js（緊急修正削除・CoreRuntime使用） ===
+// Phase 0 準備版：統合されたmain.js
 (function() {
     'use strict';
     
-    // Phase2準備版：CoreRuntime使用の安全な初期化
+    // Phase 0: CoreRuntime使用の安全な初期化
     function checkCoreRuntime() {
         if (!window.CoreRuntime) {
             console.error('❌ CoreRuntime not loaded - check core-runtime.js loading');
@@ -1017,9 +1038,8 @@ checkDependencies();
         return true;
     }
     
-    // Phase2準備版：アプリケーション初期化（緊急修正なし・CoreRuntime使用）
+    // Phase 0: アプリケーション初期化
     function initializeApp() {
-        // 安全な参照取得（構造化代入を避ける）
         const CoreEngine = window.TegakiCore.CoreEngine;
         const CONFIG = window.TEGAKI_CONFIG;
         const { UIController } = window.TegakiUI;
@@ -1062,7 +1082,7 @@ checkDependencies();
                 this.coreEngine = new CoreEngine(this.pixiApp);
                 const drawingApp = this.coreEngine.initialize();
                 
-                // 🔥 Phase2準備版：CoreRuntime初期化（GPT5指摘対応）
+                // CoreRuntime初期化
                 CoreRuntime.init({
                     app: this.pixiApp,
                     worldContainer: this.coreEngine.getCameraSystem().worldContainer,
@@ -1079,7 +1099,7 @@ checkDependencies();
                     this.pixiApp
                 );
                 
-                // 🔥 Phase2準備版：CoreRuntime経由でのキャンバスリサイズ統合
+                // CoreRuntime経由でのキャンバスリサイズ統合
                 window.drawingAppResizeCanvas = (newWidth, newHeight) => {
                     console.log('DrawingApp: Canvas resize request via CoreRuntime:', newWidth, 'x', newHeight);
                     return CoreRuntime.api.resizeCanvas(newWidth, newHeight);
@@ -1104,7 +1124,7 @@ checkDependencies();
                 this.updateDPRInfo();
                 this.startFPSMonitor();
                 
-                // グローバル参照設定（互換性）
+                // グローバル参照設定
                 window.drawingApp = drawingApp;
                 
                 return true;
@@ -1151,10 +1171,10 @@ checkDependencies();
         return DrawingApp;
     }
     
-    // === 🔥 Phase2準備版：段階的初期化処理 ===
+    // Phase 0: 段階的初期化処理
     window.addEventListener('DOMContentLoaded', async () => {
         try {
-            console.log('🔥 Starting Phase2 Preparation initialization...');
+            console.log('🔥 Starting Phase 0 基盤整備 initialization...');
             
             // Step 1: CoreRuntime依存関係チェック
             if (!checkCoreRuntime()) {
@@ -1170,14 +1190,15 @@ checkDependencies();
             const diagnosis = window.CoordinateSystem.diagnoseReferences();
             console.log('🔍 Coordinate System Diagnosis:', diagnosis);
             
-            console.log('✅ Phase2 Preparation SUCCESS: Drawing App initialized!');
-            console.log('✅ CoreRuntime facade established');
-            console.log('✅ Safe coordinate references configured');
-            console.log('✅ UI layer binding points ready');
-            console.log('✅ Ready for Phase2 Engine Star separation');
+            console.log('✅ Phase 0 基盤整備 SUCCESS: Drawing App initialized!');
+            console.log('✅ EventBus established:', !!window.TegakiEventBus);
+            console.log('✅ Animation config loaded:', !!window.TEGAKI_CONFIG.animation);
+            console.log('✅ Status panel repositioned to top-left');
+            console.log('✅ Script loading order corrected');
+            console.log('✅ Ready for Phase 1 AnimationSystem implementation');
             
         } catch (error) {
-            console.error('❌ Phase2 Preparation FAILED:', error);
+            console.error('❌ Phase 0 基盤整備 FAILED:', error);
             console.error('Stack trace:', error.stack);
         }
     });
