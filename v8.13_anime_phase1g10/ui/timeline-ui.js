@@ -119,7 +119,7 @@
                 
                 <div class="timeline-controls">
                     <button id="repeat-btn" title="リピート ON/OFF (R)" class="repeat-active">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="m17 2 4 4-4 4"/>
                             <path d="M3 11v-1a4 4 0 0 1 4-4h14"/>
                             <path d="m7 22-4-4 4-4"/>
@@ -179,11 +179,11 @@
                     background: var(--futaba-cream) !important;
                     border: 2px solid var(--futaba-medium) !important;
                     border-radius: 12px !important;
-                    padding: 12px 16px !important;
+                    padding: 8px 10px !important;
                     z-index: 1500 !important;
                     max-height: 180px !important;
                     display: none !important;
-                    box-shadow: 0 6px 24px rgba(128, 0, 0, 0.25) !important;
+                    box-shadow: 0 6px 16px rgba(128, 0, 0, 0.25) !important;
                     backdrop-filter: blur(12px) !important;
                     background: rgba(240, 224, 214, 0.95) !important;
                 }
@@ -200,11 +200,11 @@
 
                 .cuts-container {
                     display: flex !important;
-                    gap: 10px !important;
+                    gap: 6px !important;  /* 間隔を少し縮小 */
                     overflow-x: auto !important;
                     padding: 3px 0 8px 0 !important;
                     margin-bottom: 8px !important;
-                    max-height: 110px !important;
+                    max-height: 140px !important;  /* 高さを拡大 */
                 }
 
                 .cuts-container::-webkit-scrollbar {
@@ -225,13 +225,13 @@
                     background: var(--futaba-light-maroon) !important;
                 }
 
-                /* 【改修】CUTアイテム - 重複機能削除版 */
+                /* 【改修】CUTアイテム - サムネイル縦幅拡大版 */
                 .cut-item {
-                    min-width: 75px !important;
+                    min-width: 85px !important;  /* 幅を少し拡大 */
                     background: var(--futaba-background) !important;
                     border: 2px solid var(--futaba-light-medium) !important;
                     border-radius: 8px !important;
-                    padding: 6px !important;
+                    padding: 2px !important;  /* パディング縮小 */
                     cursor: pointer !important;
                     position: relative !important;
                     transition: all 0.25s ease !important;
@@ -257,13 +257,13 @@
                 }
 
                 .cut-thumbnail {
-                    width: 60px !important;
-                    height: 42px !important;
+                    width: 72px !important;   /* サムネイル幅拡大 */
+                    height: 54px !important;  /* サムネイル高さ拡大 */
                     background: var(--futaba-background) !important;
                     border: 1px solid var(--futaba-light-medium) !important;
                     border-radius: 6px !important;
                     overflow: hidden !important;
-                    margin-bottom: 4px !important;
+                    margin-bottom: 3px !important;  /* 間隔縮小 */
                     position: relative !important;
                 }
 
@@ -293,31 +293,39 @@
                 .cut-name {
                     font-size: 10px !important;
                     color: var(--futaba-maroon) !important;
-                    margin-bottom: 6px !important;
+                    margin-bottom: 4px !important;  /* 間隔縮小 */
                     font-weight: 600 !important;
                     text-align: center !important;
                     white-space: nowrap !important;
                     overflow: hidden !important;
                     text-overflow: ellipsis !important;
-                    max-width: 60px !important;
+                    max-width: 72px !important;  /* サムネイル幅に合わせる */
                     line-height: 1.3 !important;
                 }
 
-                /* 【改修】表示時間コントロール - 直接入力版（▶被り解消） */
+                /* 【改修】表示時間コントロール - ブラウザスピンボタン削除版 */
+                .cut-duration-container {
+                    display: flex !important;
+                    align-items: center !important;
+                    gap: 2px !important;
+                    margin-bottom: 3px !important;
+                }
+
                 .cut-duration-input {
-                    width: 45px !important;
-                    height: 20px !important;
+                    width: 30px !important;
+                    height: 18px !important;
                     border: 1px solid var(--futaba-light-medium) !important;
-                    border-radius: 4px !important;
+                    border-radius: 3px !important;
                     background: var(--futaba-background) !important;
                     font-size: 8px !important;
                     font-family: monospace !important;
                     color: var(--futaba-maroon) !important;
                     font-weight: bold !important;
                     text-align: center !important;
-                    margin-bottom: 3px !important;
                     outline: none !important;
                     transition: all 0.15s ease !important;
+                    padding: 0 !important;
+                    -moz-appearance: textfield !important; /* Firefox: スピンボタン削除 */
                 }
 
                 .cut-duration-input:hover {
@@ -330,8 +338,40 @@
                     background: var(--futaba-cream) !important;
                 }
 
-                /* 削除された要素：.cut-duration-container, .duration-decrease, .duration-increase */
-                /* 理由：◀▶ボタンと機能重複のため削除 */
+                /* Chrome/Safari/Edge: スピンボタン削除 */
+                .cut-duration-input::-webkit-outer-spin-button,
+                .cut-duration-input::-webkit-inner-spin-button {
+                    -webkit-appearance: none !important;
+                    margin: 0 !important;
+                }
+
+                .duration-nav-btn {
+                    width: 16px !important;
+                    height: 16px !important;
+                    background: var(--futaba-medium) !important;
+                    border: none !important;
+                    border-radius: 2px !important;
+                    color: var(--futaba-background) !important;
+                    font-size: 10px !important;
+                    line-height: 1 !important;
+                    cursor: pointer !important;
+                    transition: all 0.15s ease !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    font-weight: bold !important;
+                    padding: 0 !important;
+                    user-select: none !important;
+                }
+
+                .duration-nav-btn:hover {
+                    background: var(--futaba-light-maroon) !important;
+                    transform: scale(1.1) !important;
+                }
+
+                .duration-nav-btn:active {
+                    transform: scale(0.95) !important;
+                }
 
                 .delete-cut-btn {
                     position: absolute !important;
@@ -942,27 +982,19 @@
             
             const thumbnailHtml = this.generateCutThumbnailHTML(cut, index);
             
-   // 改善されたCUTアイテム作成（二重実装解消・表示時間UI改善）
-        createImprovedCutItem(cut, index) {
-            const cutItem = document.createElement('div');
-            cutItem.className = 'cut-item';
-            cutItem.dataset.cutIndex = index;
-            
-            const thumbnailHtml = this.generateCutThumbnailHTML(cut, index);
-            
             cutItem.innerHTML = `
                 <div class="cut-thumbnail" data-cut-index="${index}">
                     ${thumbnailHtml}
                 </div>
                 <div class="cut-name">${cut.name}</div>
                 <div class="cut-duration-container">
-                    <button class="duration-decrease" data-index="${index}" title="時間減少">◀</button>
-                    <input type="number" class="cut-duration" 
+                    <button class="duration-nav-btn duration-decrease" data-index="${index}" title="時間減少">◀</button>
+                    <input type="number" class="cut-duration-input" 
                            value="${cut.duration}" 
                            min="0.1" max="10" step="0.1"
                            title="表示時間（秒）"
                            data-index="${index}">
-                    <button class="duration-increase" data-index="${index}" title="時間増加">▶</button>
+                    <button class="duration-nav-btn duration-increase" data-index="${index}" title="時間増加">▶</button>
                 </div>
                 <button class="delete-cut-btn" data-index="${index}">×</button>
             `;
