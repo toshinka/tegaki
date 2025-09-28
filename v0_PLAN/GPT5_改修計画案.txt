@@ -1,343 +1,230 @@
-改修計画書 — PixiJS v8.13 ブラウザお絵かきツール（GIFアニメ/タイムライン改修 + ショートカット/履歴調査）
+結論（要点）
 
-以下は Claude（改修AI） が直接編集することを前提に、ファイル横断での定義違いを最小化しつつ安全に実装できる順序化された手順と、各ファイルごとの具体的改修指示・チェックリストです。
-目的は「最小の変更で既存機能を失わせず、可読性と改修しやすさを高める」ことです。作業は 変更範囲を限定 し、後続AIがミスしないように「何を触るか」「どの関数を期待するか」「入出力（イベント/API）仕様」を明確に示します。
+「アイコンをクリックしてもタイムラインが出ない」原因は概ね Timeline UI が正しく公開／初期化されていない（= 登録されない or DOM 要素が無い） ためです。タイムライン側の init() が早期 return している箇所が確認できます。
+GitHub
 
-全体方針（絶対遵守）
+他に「EventBus の二重実装」「座標系 API の参照統一」「ロード順（DOM とスクリプト順）の不一致」「Layer API の表面化不足（期待されるプロパティが揃っているか）」が見られるため、優先的に統合・整理する必要があります。根拠は core-engine / event-bus / animation-system / coordinate-system の実装です。
+GitHub
++3
+GitHub
++3
+GitHub
++3
 
-PixiJS は v8.13 固定。ファイル内に v7/v8 混在記述や互換処理を入れない。もし古い記述があれば その行だけ明確に差し替え。
+以下、詳細 → 優先修正案 → 動作確認手順 をそのまま適用できるように提示します。
 
-グローバル変数の乱用禁止。既存の singleton 風オブジェクト（LayerSystem, EventBus, CoordinateSystem 等）を使うか、なければファイル内で明示的に single-export 風オブジェクトを作る。
+1) 問題の技術的根拠（短く）
 
-変更は「最小限の差分」で。UI位置や文言以外は既存の処理フローを壊さない。
+TimelineUI の init() は最初に DOM 要素を取りに行き、見つからないと return しています。つまりタイムライン用の DOM（例：#timeline-panel / #cuts-container）が存在しないか、Timeline クラス自体がグローバルに公開されていないと初期化がスキップされます。該当箇所：if (!this.timelinePanel || !this.cutsContainer) { console.error('Timeline UI elements not found'); return; }。
+GitHub
 
-コンソールログは最小限。（デバッグ情報は diagnostics.js 経由で出力すること）
+UI 側（ツールアイコン）は EventBus を emit('ui:toggle-timeline') しています → EventBus 側は window.TegakiEventBus が用意されています。が、Timeline が登録されていないため受け取られません。
+GitHub
++1
 
-フォールバック・暗黙の自動修復は入れない。エラーは明示的に投げる or diagnostics.warn() を使う。
+core-engine 側は AnimationSystem と TimelineUI の存在を見て初期化していますが、TimelineUI のグローバル公開 (window.TegakiTimelineUI) が不足またはスクリプトロード順の問題で未定義の可能性があります（core-engine は if (!window.TegakiTimelineUI) { ... timeline UI disabled } を想定）。
+GitHub
 
-変更の前に必ず該当関数の現在のシグネチャを確認してから差替え。変更点はコメントでマーキング（// CHG: ...）。
+さらに core-engine 内に SimpleEventBus 等の類似実装が見られ、EventBus の二重管理になりやすい（設計上の歪み）。
+GitHub
++1
 
-優先順位（効率順）
+2) 優先修正案（リスク低・即効性高） — 必ずこの順でやってください
+A. Timeline UI を「グローバルに公開」する（必須）
 
-アーキテクチャ整備（短い API 仕様書を作成） — これにより以降の変更で定義違いを防ぐ。
+ui/timeline-ui.js の最後に（IIFE の外へ出すか IIFE の末尾で）必ず以下を追加してください：
 
-EventBus の検証・統合（発火／受信の命名統一） — タイムライン出現不具合の多くはイベント周り。
+// ファイル末尾に追加（または既存の IIFE の末尾に）
+window.TegakiTimelineUI = TimelineUI;
+console.log('✅ ui/timeline-ui.js loaded (TegakiTimelineUI exported)');
 
-タイムライン表示問題の修正（アニメアイコン→タイムライン表示） — UIの基本動作回復。
 
-タイムラインの UI 変更（アイコン差替え・配列変更・配置） — 見た目と配置の定着。
+理由：core-engine.initializeAnimationSystem() が new window.TegakiTimelineUI(...) でインスタンス化を試みるため、window.TegakiTimelineUI が定義されている必要があります。現状のファイルで公開代入が見つかりませんでした（未定義の可能性）。
+GitHub
++1
 
-GIF書き出しと+CUT移動（メニュー配置の移動） — UI上の配置変更と機能フック。
+B. DOM（タイムライン領域）を index.html に確実に置く（必須）
 
-CTRL+V 貼付け先変更実装（drawing-clipboard.js / layer-system.js） — レイヤ操作。
+timeline-ui.js は #timeline-panel と #cuts-container を探しているので、index.html の body に 必ず最小限の DOM を置いてください（スクリプトより先に置く or DOMContentLoaded 前に確実に存在すること）:
 
-ショートカット変更 ALT+Space、キーイベントの衝突チェック — キーバインド整理。
+<!-- index.html の body 内、他 panel と同じ階層に追加 -->
+<div id="timeline-panel" class="timeline-panel" style="display:none; position:fixed; left:10px; bottom:10px; z-index:1500;">
+  <div class="timeline-header">
+    <button id="close-timeline">×</button>
+    <div id="cut-display">CUT1</div>
+  </div>
+  <div class="timeline-body">
+    <div id="cuts-container" class="cuts-container"></div>
+  </div>
+  <div class="timeline-bottom"></div>
+</div>
 
-アンドゥ/リドゥ（CTRL+Z / CTRL+Y）確認 & 必要なら実装 — 非破壊の履歴管理を担保。
 
-横断チェック（座標変換API、レイヤAPI断片化、Pixiバージョン記述確認） — 最終レビュー。
+ポイント：display:none でよい。timeline-ui.js の init() が DOM を探せる位置に必ず置くこと（スクリプト実行より後に DOM を生成する場合は init を遅らせるか、DOMContentLoaded 後に core.initialize() を呼ぶ）。
+GitHub
 
-各ステップは「実施前チェック → 実装（小さな差分）→ 単体確認 → 次へ」を順守すること。
+C. スクリプト読み込み順＆初期化（最重要）
 
-ファイル別改修項目（詳細・ガイド）
+index.html の <script> は 下の順序で、かつ DOM 完全構築後に CoreEngine.initialize() を呼ぶ こと：
 
-以降「ファイル名：修正ポイント（関数名やイベント）」という形式で列挙します。必ず該当箇所の既存シグネチャを確認してから置き換えること。差し替え時は // CHG コメントを入れてください。
+PixiJS（v8.13 の CDN を 1 度だけ）
 
-1) system/event-bus.js
+system/event-bus.js（window.TegakiEventBus を作る）
+GitHub
 
-役割（期待する API）
+system/coordinate-system.js（window.CoordinateSystem）
+GitHub
 
-// singleton EventBus
-EventBus.on(eventName, handler)
-EventBus.off(eventName, handler)
-EventBus.emit(eventName, payload)
+system/layer-system.js / system/camera-system.js / system/drawing-clipboard.js
 
+system/animation-system.js（window.TegakiAnimationSystem）
+GitHub
 
-改修内容
+ui/timeline-ui.js（ここで window.TegakiTimelineUI を定義） ← 重要
 
-既に同様の API があれば命名を上記に統一（小文字 on/off/emit）。
+ui/ui-panels.js（アイコンクリックが EventBus を送る側）
+GitHub
 
-タイムライン表示のトリガー名を明示：'ui:toggle-timeline', 'ui:show-timeline', 'ui:hide-timeline', 'animation:play', 'animation:stop'。
+core-engine.js（CoreEngine）
+GitHub
 
-emit は同期で OK（UI即時反応が必要）。ただしエラーは投げるのではなく diagnostics.error()。
-チェック
+あとで core-runtime.js 等、アプリ起動処理
 
-他ファイルで異なるイベント名を使っていないか grep で確認。すべて EventBus に集約する。
+初期化スニペット（index.html） — DOM 生成済みで確実に呼ぶ：
 
-2) ui/ui-panels.js / ui/timeline-ui.js
-
-目的
-
-アニメアイコン押下でタイムラインを出す実装修正。
-
-タイムライン UI のアイコン差替え・配置変更。
-
-改修手順（timeline 表示バグ修正）
-
-イベントハンドラ接続
-
-アニメアイコンのクリックハンドラが EventBus.emit('ui:show-timeline') するように統一。
-
-ui-panels.js でアニメアイコンの DOM / PIXI ボタンを生成する箇所を検索（例：buttonAnimation）。そこに button.on('pointertap', () => EventBus.emit('ui:toggle-timeline')) を入れる。
-
-timeline のインジェクトポイント
-
-timeline-ui.js に TimelineUI.show() / TimelineUI.hide() / TimelineUI.toggle() を実装する。内部は単純に container.visible = true/false。
-
-初期化時に EventBus.on('ui:toggle-timeline', TimelineUI.toggle) を登録する。
-
-表示されない場合の典型原因
-
-TimelineUI.container が stage に追加されていない → init() 時 app.stage.addChild(container) を確認。
-
-container.visible = false のまま → toggle() 呼ばれているかログで確認（diagnostics）。
-
-Z-order により背面に回されている → app.stage.addChildAt(container, app.stage.children.length-1)。
-
-UI 変更（ループアイコン）
-
-変更するアイコンはユーザ差替えSVGを渡しているようなので、timeline-ui.js 内で使うアイコン定義を差し替える（SVG → innerHTML か PIXI.Texture.from()で扱う方式に合わせる）。
-
-仕様
-
-アイコン名：repeat-icon（提供 SVG を使用）
-
-ON/OFF 表示：チェックではなく「反転点灯」→ 実装は iconSprite.tint = 0xffffff と iconSprite.tint = 0x800000 の切替（Pixi スプライトの場合）。
-
-位置： ▶️ の左隣りに1マス空けて配置（具体的に x 値を playButton.x - (cellWidth * 2) など）。
-
-ON時は EventBus.emit('animation:loop:set', true)、OFF時は ...false 。
-
-タイムライン内ボタン（サムネ時間）
-
-現状上下配置で重なっている → レイアウトを左右に変更。
-
-ボタンを prevThumbBtn / nextThumbBtn に置き換え、アイコンは ◀ / ▶ （テキストまたは小さなSVG）。
-
-配置はサムネイル領域の左右（left / right）にし、縦重なりを無くす。
-
-DOM/PIXI の配置単位は cellWidth を基準に横配置。
-
-GIF書き出しと +CUT の移動
-
-現在の「ループ」UI の位置（つまりハードコード位置）を探し、その DOM/PIXI ノードを 削除せず移動 する。
-
-GIF書き出しボタンの ID を gif-export-btn と統一し、timeline-ui.js からループの場所へ移動（DOM操作か container の移動）。
-
-+CUT は fpsControl の右隣へ移動。配置変更は UI の初期化順で対応する（順番で決める）。
-
-3) core-runtime.js / core-engine.js
-
-目的
-
-タイムライン起動経路の最終受け口、キーバインド（スペース → ALT+Space変更）、Undo/Redo フック確認。
-
-改修内容
-
-キーイベント管理を一本化：core-runtime.js 側に KeyManager（あるいは既存のキー処理部分）を一本化して onKeyDown を集中させる。
-
-EventBus.emit('input:play-toggle') を飛ばしていた箇所を EventBus 経由で TimelineUI へ伝播させる（ただし新しいショートカットは ALT+Space にする）。
-
-実装例（擬似）：
-
-window.addEventListener('keydown', (e) => {
-  if (e.altKey && e.code === 'Space') {
-     e.preventDefault();
-     EventBus.emit('ui:toggle-timeline-play');
+<script>
+document.addEventListener('DOMContentLoaded', () => {
+  // PIXI が読み込まれていることを前提
+  const app = new PIXI.Application({
+    width: window.TEGAKI_CONFIG.canvas.width,
+    height: window.TEGAKI_CONFIG.canvas.height,
+    backgroundColor: window.TEGAKI_CONFIG.background.color
+  });
+  document.getElementById('canvas-container').appendChild(app.view);
+
+  // CoreEngine を作成・初期化（animation/timeline は core 内で init 試行）
+  const core = new window.TegakiCore.CoreEngine(app);
+  core.initialize();
+  // 追加：CoordinateSystem に安全参照を渡す（後述）
+  if (window.CoordinateSystem) {
+    window.CoordinateSystem.setContainers({
+      worldContainer: core.cameraSystem?.worldContainer || null,
+      canvasContainer: core.cameraSystem?.canvasContainer || null,
+      app: app
+    });
   }
-  if (e.ctrlKey && e.code === 'KeyZ') EventBus.emit('history:undo');
-  if (e.ctrlKey && e.code === 'KeyY') EventBus.emit('history:redo');
 });
+</script>
 
 
-注意：Space 単体が他で使われている可能性あり（ツール内／ブラウザ）。e.preventDefault() を使う場合は影響範囲を事前に確認。
+意図：TimelineUI.init() は DOM 要素を取るので、CoreEngine の初期化が DOM より前に走ると init() が return してしまいます。DOMContentLoaded 後に core.initialize() を呼ぶのが安全です。
 
-4) system/drawing-clipboard.js
+D. EventBus の“二重実装”を整理（中〜高優先）
 
-目的
+現状、system/event-bus.js で window.TegakiEventBus が定義されていますが、core-engine.js 内でも SimpleEventBus のような同等クラスが存在しています（混乱/断片化の原因）。
 
-CTRL+V の挙動を「新規レイヤーへ貼付け」→「コピー先のアクティブレイヤーに貼付け（元画像を消す）」に変更。
+方針：system/event-bus.js の window.TegakiEventBus を唯一の公式 EventBus とし、core-engine.js 内の SimpleEventBus 宣言は削除（またはコメントアウト）してください。core-engine.js のすべての this.eventBus = window.TegakiEventBus; 使用箇所はそのままで OK。
+GitHub
++1
 
-改修手順
+理由：二重で似た API を持つと「イベントが別のインスタンスに飛んで反応しない」といったバグを誘発します（今回の状況に近い）。
 
-API 仕様（期待）
+E. CoordinateSystem（座標系）の明示的初期化（推奨）
 
-DrawingClipboard.get() → コピーした ImageData / Texture オブジェクトを返す。
+animation-system / drawingEngine は window.CoordinateSystem を参照しています。CoreEngine.initialize() の中で、CameraSystem の container を CoordinateSystem に渡すコードを必ず追加してください（coordinate-system.js が安全参照を要求しているため）。例：
 
-DrawingClipboard.pasteTo(layerId) → 指定レイヤーに貼り付け（既存画像を上書き）。
+// core-engine.js の適切な箇所（cameraSystem 初期化後）
+if (window.CoordinateSystem) {
+  window.CoordinateSystem.setContainers({
+    worldContainer: this.cameraSystem.worldContainer,
+    canvasContainer: this.cameraSystem.canvasContainer,
+    app: this.app
+  });
+  console.log('CoordinateSystem containers set by CoreEngine');
+}
 
-変更点
 
-既存 pasteAsNewLayer() があれば残しつつ、pasteToActiveLayer() を実装。CTRL+V のキーハンドラをこの新関数に接続する。
+理由：座標 API の安定性を保証するため（createTransformMatrix 等を Core から直接呼べるように）。
+GitHub
 
-動作は 破壊的上書き：対象レイヤーの内容を完全に消去（LayerSystem.clear(layerId)）してから LayerSystem.drawTexture(layerId, clipboardTexture)。
+3) 追加でチェックすべき点（短い箇条書き）
 
-安全対策
+index.html に PixiJS が v8.13 の CDN が 1 回だけ読み込まれているか確認（v7/v8 混在は厳禁）。
 
-履歴（undo）に載せること：貼付け前のレイヤー状態を History.push({type:'replace-layer', layerId, previousBitmap}) のように保存。
+ui/timeline-ui.js の最後で window.TegakiTimelineUI が存在するか確認（追加したか）。
+GitHub
 
-5) system/layer-system.js
+animation-system が layerSystem.layerTransforms / layerSystem.layersContainer 等のプロパティを使うので、layer-system.js がこれらの API を露出しているか確認。もし API 名が違うなら adapter を実装してやる（例を下に示します）。
+GitHub
 
-目的
+フォールバック／暗黙修復を入れない（要件通り） — 見つかった不一致は明示的にエラーにして潰す方針で OK。
 
-Layer 操作（移動・回転・反転）を一元化し、アニメーションでの利用を容易にする。
+4) 最短でタイムラインを「見える化」するための最小パッチ（コピペで動作確認できる）
 
-改修指示
+ui/timeline-ui.js の末尾に下を追加（→ Timeline クラスをグローバルに公開）：
 
-明確な API を用意（名前と挙動を固定）：
+// 追記（ファイル末尾）
+window.TegakiTimelineUI = TimelineUI;
+console.log('✅ TegakiTimelineUI exported');
 
-LayerSystem.createLayer({name, width, height})
 
-LayerSystem.deleteLayer(id)
+index.html にタイムライン DOM を追加（body 内）：
 
-LayerSystem.setActiveLayer(id)
+<div id="timeline-panel" class="timeline-panel" style="display:none;">
+  <div class="timeline-bottom"></div>
+  <div id="cuts-container"></div>
+  <button id="close-timeline">×</button>
+</div>
 
-LayerSystem.clearLayer(id)
 
-LayerSystem.drawTexture(layerId, texture, opts)
+index.html で Core の初期化を DOMContentLoaded 後に行う（上の「スニペット」をそのまま使う）。
 
-LayerSystem.applyTransform(layerId, {x,y,rotation,scaleX,scaleY})
+core-engine から SimpleEventBus を削除（またはコメント）して window.TegakiEventBus を唯一参照にする。
 
-座標系：LayerSystem は内部で**ワールド座標系（canvas 原点左上）**を採用し、CoordinateSystem による変換は CoordinateSystem.toWorld() / fromWorld() のみを使う。ファイル間で座標基準が曖昧な箇所があれば // TODO: convert coords via CoordinateSystem コメントを残す。
+これで「アイコン押してイベント送る → EventBus 上で通知 → Timeline が受ける」一連が繋がるはずです。
 
-履歴連携：レイヤー破壊的操作（clear, delete, replace）では必ず EventBus.emit('history:record', { ... }) を呼ぶ。
+5) 動作確認コマンド（コンソールで試す：順に）
 
-6) system/diagnostics.js
+開発者ツールの Console に以下を貼って実行し、値が true になっているか確認してください。
 
-目的
+console.log('TegakiEventBus exists? ', !!window.TegakiEventBus);
+console.log('TegakiAnimationSystem exists? ', !!window.TegakiAnimationSystem);
+console.log('TegakiTimelineUI exists? ', !!window.TegakiTimelineUI);
+console.log('timeline DOM elements: ', document.getElementById('timeline-panel'), document.getElementById('cuts-container'));
 
-変更時のログ出力はここ経由で。diagnostics.warn/info/error() を使って問題箇所を明示する。
-改修
 
-もし未実装なら diagnostics.enabled フラグを追加して開発時のみ出力する。
+期待される結果：
 
-7) system/animation-system.js / system/gif-exporter.js
+TegakiEventBus → true. 
+GitHub
 
-目的
+TegakiAnimationSystem → true（animation-system.js を読み込んでいれば）。
+GitHub
 
-GIF 書き出しトリガーの移動・FPS制御の近接配置、ループフラグの使用場所を明確にする。
+TegakiTimelineUI → true（上記の export を追加済みなら true）。
+GitHub
 
-改修指示
+document.getElementById('timeline-panel') → 要素オブジェクト（null でない）
 
-animation-system は play(), stop(), setLoop(bool), setFPS(n), renderFrame() をエクスポートする。gif-exporter は exportGIF({from, to, fps, loop}) を提供。
+さらに EventBus の受信テスト（Timeline が存在することが前提）：
 
-UI からは EventBus.emit('animation:export-gif', {range, fps, loop}) を投げる。gif-exporter はこのイベントを on して処理する。
+// 一時的に listener を増やすテスト
+window.TegakiEventBus.on('ui:toggle-timeline', () => console.log('received toggle from test'));
+window.TegakiEventBus.emit('ui:toggle-timeline');
 
-+CUT は EventBus.emit('timeline:add-cut', {time}) のようなイベントを投げ、animation-system が frames を管理。
 
-8) 履歴（Undo/Redo） — 未実装 or 評価必要
+もし received toggle from test が出れば EventBus 自体は OK。次に UI のアイコンクリックでタイムラインが表示されるはずです（TimelineUI.show() が呼ばれる）。
 
-確認項目
+6) API 断片化・座標不一致などについて（まとめ）
 
-まず grep で undo / redo / history を検索。実装が既にあれば、非破壊（＝元状態が残る）かを確認する（履歴スタックに以前の bitmap/texture を入れているか）。
-実装（必要なら）
+EventBus: system/event-bus.js を唯一の真の EventBus として統一してください（window.TegakiEventBus）。core-engine 内のローカル SimpleEventBus を残すと二重化します。
+GitHub
++1
 
-軽量で確実な Command パターンを推奨。最小実装：
+座標系: window.CoordinateSystem が既に用意されているので、CoreEngine 側で setContainers を呼び安全参照を登録してください。animation/drawing 側は window.CoordinateSystem を参照する想定です（同一 API を使わせること）。
+GitHub
 
-History.push(command) — command は {undo: fn, redo: fn, meta}
+Layer API: animation-system.js は layerSystem.layers, layerSystem.layerTransforms, layersContainer 等を期待しています。layer-system にこれらが欠けると断片化バグになります。必要なら アダプタ層 を作って期待インターフェースに合わせてください（例は要望あれば即提供）。
+GitHub
 
-History.undo() → pop latest and call undo()
-
-History.redo() → call redo()
-
-画像データコピーはメモリ高騰の元なので、差分 が無理な場合は ImageBitmap や Canvas を toBlob() で保存しておく（ただしローカル開発で一時的）。
-
-CTRL+Z / CTRL+Y は EventBus.emit('history:undo') / 'history:redo' に変換し、History が処理する。
-
-テストケース（各ステップ後に必ず実施）
-
-タイムライン表示
-
-アニメアイコンをクリック → EventBus に 'ui:toggle-timeline' が emit され、TimelineUI.container.visible が true になる。
-
-もし visible が変わらない場合、diagnostics.warn に呼び出し履歴を出す。
-
-ループアイコン
-
-クリックで animation:loop:set が true/false で発火。animation-system がループフラグを反映する。視覚は iconSprite.tint で変える。
-
-GIF書き出し移動
-
-タイムラインで GIF export ボタンを押すと animation:export-gif が発火し、gif-exporter が受信して動作する。
-
-サムネボタン重なり
-
-左右矢印でサムネを移動できること（Tab順やキーボード操作も確認）。
-
-CTRL+V 貼り付け
-
-CTRL+C でコピー、CTRL+V でアクティブレイヤーが置換される。History にエントリが残る。
-
-Alt+Space 動作
-
-Alt+Space でタイムライン再生/停止がトグル。ブラウザとの衝突がないことを確認。
-
-Undo/Redo
-
-CTRL+Z 後、変化が元に戻る。CTRL+Y でやり直せる。画像置換も元に戻る。
-
-横断チェックリスト（必ず実行）
-
- Pixi の読み込みタグが v8.13 の CDN になっている（HTML を確認）。
-
- ファイル中に v7 や PIXI.v7 の文言がないか検索。あれば報告して差し替えのみ行う。
-
- 座標 API の一貫性：CoordinateSystem の toWorld() / fromWorld() が exist するか。無ければ短く実装して各所からそれを使わせる。
-
- EventBus が複数実装されていないか（重複定義）。重複があれば一つに統合し、古い定義は // DEPR: replaced by EventBus を付けて残す。
-
- LayerSystem 関数群が断片化していないか。applyTransform 等はここに集中。
-
- 設定参照が複数個所で行われていないか（例：config.loop を core-engine.js と timeline-ui.js 両方で参照している）→ 参照は読み取り専用にし EventBus 経由で変更を配信。
-
- 二重実装（同じ機能が複数ファイルで別々の名前で実装）を発見したら、どちらを残すか明記してから一方を削除。
-
-変更時のドキュメント（必須）
-
-変更差分ごとに短い「変更理由コメント」をコミットメッセージに入れる（例：CHG: make CTRL+V paste to active layer; push history entry）。
-
-各ファイル冒頭に「変更履歴ブロック」を残し、手を入れた関数に // CHG by Claude: yyyy-mm-dd を入れる。
-
-最低限の API 定義ファイル（docs/API.md）を作成し、EventBus / LayerSystem / CoordinateSystem / History / AnimationSystem のシグネチャを記載する（短くても良い）。
-
-実装メモ（コード例：Undo/Redo の核）
-
-必ず既存の形を確認してから統合。もし既に History があればそれを使う。
-
-// system/history.js (新規 or 既存を統合)
-const History = (() => {
-  const undoStack = [];
-  const redoStack = [];
-  return {
-    push(cmd) { undoStack.push(cmd); redoStack.length = 0; EventBus.emit('history:changed'); },
-    undo() {
-      const cmd = undoStack.pop(); if (!cmd) return;
-      cmd.undo(); redoStack.push(cmd); EventBus.emit('history:changed');
-    },
-    redo() {
-      const cmd = redoStack.pop(); if (!cmd) return;
-      cmd.redo(); undoStack.push(cmd); EventBus.emit('history:changed');
-    }
-  };
-})();
-
-
-使用例（レイヤー置換）：
-
-// copyBefore is ImageBitmap or dataURL or canvas
-History.push({
-  undo() { LayerSystem.drawBitmap(layerId, copyBefore); },
-  redo() { LayerSystem.drawBitmap(layerId, newBitmap); },
-});
-
-最後に：納品／検査ポイント（AIへ）
-
-各変更は小さいコミット単位で行う（1つのコミット = 1つの目的）。
-
-変更箇所を必ず // CHG でマーキング。
-
-実装後、上記テストケース全件を手で実行して報告する（成功/失敗とログスニペット）。
-
-もし既存の API と衝突が見つかったら勝手に破壊せず、それを issue にして一覧化してから段階的に修正を行う。
-
-「改修AI がミスしないように」の観点から、イベント名とAPI シグネチャは変更せずに統一して使うこと（一覧化を忘れない）。
+バージョン混在: HTML の <script> を点検し、PixiJS は v8.13 の CDN のみを使ってください（混在は重大な不整合を起こします）。
