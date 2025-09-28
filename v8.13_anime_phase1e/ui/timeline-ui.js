@@ -1,3 +1,9 @@
+// ===== ui/timeline-ui.js - 段階4改修版: CUTサムネイル表示統合 =====
+// GIF アニメーション機能 根本改修計画書 段階4実装
+// 【改修完了】CUTサムネイル表示統合・AnimationSystem連携
+// 【改修完了】レイヤー合成サムネイル表示対応
+// 改修版ベース（一時停止削除、初期CUT1対応）
+
 (function() {
     'use strict';
     
@@ -37,45 +43,46 @@
             this.setupKeyboardShortcuts();
             this.setupAnimationEvents();
             this.createLayerPanelCutIndicator();
-            this.ensureInitialCut(); // 新機能：初期CUT1を確保
+            this.ensureInitialCut();
             
-            console.log('✅ TimelineUI initialized (改修版: 一時停止削除、初期CUT1対応)');
+            console.log('✅ TimelineUI initialized (段階4改修版: CUTサムネイル統合)');
         }
         
-        // 新機能：初期状態でCUT1を作成
+        // 初期状態でCUT1を作成
         ensureInitialCut() {
             const animData = this.animationSystem.getAnimationData();
             if (animData.cuts.length === 0) {
-                // 初期CUT1を作成
-                this.animationSystem.createCutFromCurrentState();
-                console.log('🎬 Initial CUT1 created');
+                // 【改修】段階1の新メソッド使用
+                this.animationSystem.createNewCutFromCurrentLayers();
+                console.log('🎬 Initial CUT1 created with new structure');
             }
             
-            // レイヤーパネルのインジケータを初期化時から表示
             this.updateLayerPanelIndicator();
         }
         
         setupEventListeners() {
-            // 改修版：再生/停止ボタン統合（一時停止削除）
+            // 再生/停止ボタン統合（一時停止削除）
             const playBtn = document.getElementById('play-btn');
             
             if (playBtn) {
                 playBtn.addEventListener('click', () => {
                     if (this.isPlaying) {
-                        // 再生中なら停止
                         this.animationSystem.stop();
                     } else {
-                        // 停止中なら再生開始
                         this.animationSystem.play();
                     }
                 });
             }
             
-            // CUT追加
+            // 【改修】CUT追加：新構造対応
             const addCutBtn = document.getElementById('add-cut-btn');
             if (addCutBtn) {
                 addCutBtn.addEventListener('click', () => {
-                    this.animationSystem.createCutFromCurrentState();
+                    // 空のCUTを作成してそこに切り替え
+                    const newCut = this.animationSystem.createNewEmptyCut();
+                    const newCutIndex = this.animationSystem.getCutCount() - 1;
+                    this.animationSystem.switchToActiveCut(newCutIndex);
+                    console.log('🎬 New empty CUT created and switched');
                 });
             }
             
@@ -119,7 +126,6 @@
                 switch (e.code) {
                     case 'Space':
                         if (!e.ctrlKey && !e.altKey) {
-                            // 改修版：再生/停止の統合
                             if (this.isPlaying) {
                                 this.animationSystem.stop();
                             } else {
@@ -141,7 +147,10 @@
                         
                     case 'Equal': // Plus key
                         if (e.altKey) {
-                            this.animationSystem.createCutFromCurrentState();
+                            // 【改修】新構造対応
+                            const newCut = this.animationSystem.createNewEmptyCut();
+                            const newCutIndex = this.animationSystem.getCutCount() - 1;
+                            this.animationSystem.switchToActiveCut(newCutIndex);
                             e.preventDefault();
                         }
                         break;
@@ -162,8 +171,9 @@
                 this.updateLayerPanelIndicator();
             });
             
-            this.eventBus.on('animation:thumbnail-generated', () => {
-                this.updateCutsList();
+            // 【改修】サムネイル生成完了時のUI更新
+            this.eventBus.on('animation:thumbnail-generated', (data) => {
+                this.updateSingleCutThumbnail(data.cutIndex);
             });
             
             this.eventBus.on('animation:playback-started', () => {
@@ -204,7 +214,7 @@
             });
         }
         
-        // 改修版：レイヤーパネル上部にCUT表示を追加（初期表示対応）
+        // レイヤーパネル上部にCUT表示を追加
         createLayerPanelCutIndicator() {
             const layerContainer = document.getElementById('layer-panel-container');
             if (!layerContainer) return;
@@ -239,13 +249,12 @@
                 this.goToNextCut();
             });
             
-            // 初期表示設定
             this.updateLayerPanelIndicator();
             
-            console.log('✅ Layer panel CUT indicator created (初期表示対応)');
+            console.log('✅ Layer panel CUT indicator created');
         }
         
-        // 改修版：レイヤーパネルのCUT表示を更新（初期CUT1対応）
+        // レイヤーパネルのCUT表示を更新
         updateLayerPanelIndicator() {
             const cutDisplay = document.getElementById('cut-display');
             const prevBtn = document.getElementById('cut-prev-btn');
@@ -275,7 +284,8 @@
             const animData = this.animationSystem.getAnimationData();
             if (this.currentCutIndex > 0) {
                 const newIndex = this.currentCutIndex - 1;
-                this.animationSystem.applyCutToLayers(newIndex);
+                // 【改修】新メソッド使用
+                this.animationSystem.switchToActiveCut(newIndex);
             }
         }
         
@@ -283,7 +293,8 @@
             const animData = this.animationSystem.getAnimationData();
             if (this.currentCutIndex < animData.cuts.length - 1) {
                 const newIndex = this.currentCutIndex + 1;
-                this.animationSystem.applyCutToLayers(newIndex);
+                // 【改修】新メソッド使用
+                this.animationSystem.switchToActiveCut(newIndex);
             }
         }
         
@@ -311,24 +322,17 @@
             }
         }
         
+        // 【改修】段階4：CUTサムネイル表示統合
         createCutItem(cut, index) {
             const cutItem = document.createElement('div');
             cutItem.className = 'cut-item';
             cutItem.dataset.cutIndex = index;
             
-            // サムネイル表示
-            let thumbnailHtml = '<div class="cut-thumbnail-placeholder">CUT</div>';
-            if (cut.thumbnailTexture) {
-                try {
-                    const canvas = this.animationSystem.app.renderer.extract.canvas(cut.thumbnailTexture);
-                    thumbnailHtml = `<img src="${canvas.toDataURL()}" alt="${cut.name}" />`;
-                } catch (error) {
-                    console.warn('Failed to generate thumbnail for cut:', index);
-                }
-            }
+            // 【改修】AnimationSystemの統合サムネイル表示
+            const thumbnailHtml = this.generateCutThumbnailHTML(cut, index);
             
             cutItem.innerHTML = `
-                <div class="cut-thumbnail">${thumbnailHtml}</div>
+                <div class="cut-thumbnail" data-cut-index="${index}">${thumbnailHtml}</div>
                 <div class="cut-name">${cut.name}</div>
                 <input type="number" class="cut-duration" 
                        value="${cut.duration}" 
@@ -341,7 +345,8 @@
             cutItem.addEventListener('click', (e) => {
                 if (!e.target.classList.contains('delete-cut-btn') &&
                     !e.target.classList.contains('cut-duration')) {
-                    this.animationSystem.applyCutToLayers(index);
+                    // 【改修】新メソッド使用
+                    this.animationSystem.switchToActiveCut(index);
                     this.setActiveCut(index);
                 }
             });
@@ -364,221 +369,45 @@
             return cutItem;
         }
         
-        setActiveCut(index) {
-            this.currentCutIndex = index;
-            
-            document.querySelectorAll('.cut-item').forEach((item, i) => {
-                if (i === index) {
-                    item.classList.add('active');
-                } else {
-                    item.classList.remove('active');
+        // 【改修】段階4：CUTサムネイルHTML生成
+        generateCutThumbnailHTML(cut, index) {
+            // AnimationSystemの段階1改修で実装されたサムネイル機能を使用
+            if (cut.thumbnail && cut.thumbnail.valid) {
+                try {
+                    // PIXIテクスチャからCanvas要素を生成
+                    const canvas = this.animationSystem.app.renderer.extract.canvas(cut.thumbnail);
+                    return `<img src="${canvas.toDataURL()}" alt="${cut.name}" class="cut-thumbnail-img" />`;
+                } catch (error) {
+                    console.warn('Failed to generate thumbnail HTML for cut:', index, error);
+                    return this.generatePlaceholderThumbnailHTML(cut, index);
                 }
-            });
-            
-            this.updateLayerPanelIndicator();
-        }
-        
-        deleteCut(index) {
-            const animData = this.animationSystem.getAnimationData();
-            if (animData.cuts.length <= 1) {
-                console.warn('Cannot delete the last remaining cut');
-                return;
-            }
-            
-            this.animationSystem.deleteCut(index);
-            this.updateCutsList();
-            this.updateLayerPanelIndicator();
-        }
-        
-        // 改修版：再生/停止ボタンの状態切り替え
-        updatePlaybackUI(isPlaying) {
-            const playBtn = document.getElementById('play-btn');
-            
-            if (playBtn) {
-                if (isPlaying) {
-                    playBtn.textContent = '⏹';
-                    playBtn.title = '停止 (Space)';
-                    playBtn.classList.add('playing');
-                } else {
-                    playBtn.textContent = '▶';
-                    playBtn.title = '再生 (Space)';
-                    playBtn.classList.remove('playing');
-                }
-            }
-        }
-        
-        async exportGIF() {
-            if (!this.gifExporter) {
-                console.warn('GIF Exporter not available');
-                return;
-            }
-            
-            const canExport = this.gifExporter.canExport();
-            if (!canExport.canExport) {
-                console.warn('Cannot export GIF:', canExport.reason);
-                return;
-            }
-            
-            this.showExportProgress();
-            
-            try {
-                await this.gifExporter.exportGIF({
-                    width: window.TEGAKI_CONFIG.canvas.width,
-                    height: window.TEGAKI_CONFIG.canvas.height
-                });
-            } catch (error) {
-                console.error('GIF export failed:', error);
-                this.hideExportProgress();
-            }
-        }
-        
-        showExportProgress() {
-            const progressEl = document.getElementById('export-progress');
-            if (progressEl) {
-                progressEl.style.display = 'block';
-                this.timelinePanel.classList.add('exporting');
-                this.updateExportProgress(0);
-            }
-        }
-        
-        updateExportProgress(progress) {
-            const progressFill = document.getElementById('progress-fill');
-            const progressText = document.getElementById('progress-text');
-            
-            if (progressFill) {
-                progressFill.style.width = progress + '%';
-            }
-            if (progressText) {
-                progressText.textContent = Math.round(progress) + '%';
-            }
-        }
-        
-        hideExportProgress() {
-            const progressEl = document.getElementById('export-progress');
-            if (progressEl) {
-                progressEl.style.display = 'none';
-                this.timelinePanel.classList.remove('exporting');
-            }
-        }
-        
-        show() {
-            if (!this.timelinePanel) return;
-            
-            this.timelinePanel.classList.add('show');
-            this.isVisible = true;
-            
-            // アニメーションモードに切り替え
-            this.animationSystem.toggleAnimationMode();
-            
-            // 初期CUT1確保（タイムライン表示時にもチェック）
-            this.ensureInitialCut();
-            
-            // CUTリスト更新
-            this.updateCutsList();
-            this.updateLayerPanelIndicator();
-            
-            // 設定値をUIに反映
-            this.updateSettingsUI();
-            
-            // レイヤーパネルのインジケータを表示
-            const cutIndicator = document.querySelector('.cut-indicator');
-            if (cutIndicator) {
-                cutIndicator.style.display = 'flex';
-            }
-            
-            console.log('🎬 Timeline UI shown with initial CUT1');
-        }
-        
-        hide() {
-            if (!this.timelinePanel) return;
-            
-            this.timelinePanel.classList.remove('show');
-            this.isVisible = false;
-            
-            // アニメーション停止
-            if (this.isPlaying) {
-                this.animationSystem.stop();
-            }
-            
-            // アニメーションモード終了
-            if (this.animationSystem.isAnimationMode) {
-                this.animationSystem.toggleAnimationMode();
-            }
-            
-            // レイヤーパネルのインジケータを隠す（完全には消さない）
-            const cutIndicator = document.querySelector('.cut-indicator');
-            if (cutIndicator) {
-                cutIndicator.style.display = 'none';
-            }
-        }
-        
-        toggle() {
-            if (this.isVisible) {
-                this.hide();
             } else {
-                this.show();
+                // サムネイルが未生成の場合はプレースホルダー表示
+                return this.generatePlaceholderThumbnailHTML(cut, index);
             }
         }
         
-        updateSettingsUI() {
-            const animData = this.animationSystem.getAnimationData();
-            
-            const fpsInput = document.getElementById('fps-input');
-            if (fpsInput) {
-                fpsInput.value = animData.settings.fps;
-            }
-            
-            const loopCheckbox = document.getElementById('loop-checkbox');
-            if (loopCheckbox) {
-                loopCheckbox.checked = animData.settings.loop;
-            }
+        // 【改修】段階4：プレースホルダーサムネイルHTML生成
+        generatePlaceholderThumbnailHTML(cut, index) {
+            const layerCount = cut.layers ? cut.layers.length : 0;
+            return `
+                <div class="cut-thumbnail-placeholder" data-cut-index="${index}">
+                    <div class="cut-placeholder-name">${cut.name}</div>
+                    <div class="cut-placeholder-info">${layerCount} layers</div>
+                </div>
+            `;
         }
         
-        // キャンバスとサムネイルの連動確認
-        syncCanvasToThumbnail() {
-            const animData = this.animationSystem.getAnimationData();
-            const currentCut = animData.cuts[this.currentCutIndex];
-            
-            if (currentCut) {
-                // 現在のレイヤー状態をCUTに保存
-                this.animationSystem.saveCutFromCurrentState(this.currentCutIndex);
-                
-                // サムネイル更新
-                this.updateCutsList();
-                
-                console.log(`🔄 Canvas synced to CUT${this.currentCutIndex + 1} thumbnail`);
-            }
-        }
-        
-        // デバッグ用
-        debugInfo() {
-            console.log('TimelineUI Debug Info (改修版):');
-            console.log('- Visible:', this.isVisible);
-            console.log('- Playing:', this.isPlaying);
-            console.log('- Current Cut:', this.currentCutIndex);
-            console.log('- Panel:', !!this.timelinePanel);
-            console.log('- Container:', !!this.cutsContainer);
-            console.log('- Sortable:', !!this.sortable);
-            console.log('- GIF Exporter:', !!this.gifExporter);
+        // 【改修】段階4：個別CUTサムネイル更新
+        updateSingleCutThumbnail(cutIndex) {
+            const cutThumbnail = document.querySelector(`[data-cut-index="${cutIndex}"] .cut-thumbnail`);
+            if (!cutThumbnail) return;
             
             const animData = this.animationSystem.getAnimationData();
-            console.log('- Total Cuts:', animData.cuts.length);
-            console.log('- Initial CUT1 exists:', animData.cuts.length > 0);
+            const cut = animData.cuts[cutIndex];
             
-            return {
-                isVisible: this.isVisible,
-                isPlaying: this.isPlaying,
-                currentCutIndex: this.currentCutIndex,
-                hasPanel: !!this.timelinePanel,
-                hasContainer: !!this.cutsContainer,
-                hasSortable: !!this.sortable,
-                hasGIFExporter: !!this.gifExporter,
-                totalCuts: animData.cuts.length,
-                hasInitialCut: animData.cuts.length > 0
-            };
-        }
-    }
-    
-    window.TegakiTimelineUI = TimelineUI;
-    console.log('✅ timeline-ui.js loaded (改修版: 一時停止削除、初期CUT1対応、文字色統一)');
-})();
+            if (!cut) return;
+            
+            // サムネイルHTML再生成
+            const newThumbnailHTML = this.generateCutThumbnailHTML(cut, cutIndex);
+            cutThumbnail.innerHTML = newThumbnailHTML;
