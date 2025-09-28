@@ -1,8 +1,8 @@
-// ===== ui/timeline-ui.js - サムネイル改修版: 重複機能削除・リピート機能追加 =====
-// 【改修内容】
-// - 灰色の上下矢印削除（◀▶と重複機能排除）
-// - 時間表示枠の短縮（▶ボタンとの被り解消）
-// - リピートアイコン追加（再生ボタンの左側配置・色反転ON/OFF）
+// ===== ui/timeline-ui.js - CUTコピペボタン追加・方向キー修正版 =====
+// 【修正内容】
+// - CUTコピー・ペーストボタン追加（+CUTの隣に+C&P）
+// - 方向キー左右の動作修正（左右の方向が逆→正常化）
+// - レイヤー消失問題修正（単純なアクティブCUT移動に変更）
 
 (function() {
     'use strict';
@@ -28,7 +28,7 @@
         }
         
         init() {
-            console.log('🎬 TimelineUI initialization starting (サムネイル改修版)...');
+            console.log('🎬 TimelineUI initialization starting (CUTコピペボタン追加・方向キー修正版)...');
             
             if (this.isInitialized) {
                 console.warn('TimelineUI already initialized, skipping duplicate init');
@@ -54,7 +54,7 @@
             this.ensureInitialCut();
             
             this.isInitialized = true;
-            console.log('✅ TimelineUI initialized (サムネイル改修版) - 重複機能削除・リピート機能追加完了');
+            console.log('✅ TimelineUI initialized (CUTコピペボタン追加・方向キー修正版)');
         }
         
         removeExistingTimelineElements() {
@@ -87,9 +87,9 @@
             console.log('✅ Existing timeline elements cleanup completed');
         }
         
-        // 【改修】リピートボタン追加・タイムライン構造更新
+        // 【修正】CUTコピー・ペーストボタン追加版タイムライン構造
         createCompleteTimelineStructure() {
-            console.log('🏗️ Creating complete timeline structure with repeat feature...');
+            console.log('🏗️ Creating complete timeline structure with CUT copy/paste buttons...');
             
             if (this.domCreated) {
                 console.warn('Timeline DOM already created, skipping duplicate creation');
@@ -119,7 +119,7 @@
                 
                 <div class="timeline-controls">
                     <button id="repeat-btn" title="リピート ON/OFF (R)" class="repeat-active">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="m17 2 4 4-4 4"/>
                             <path d="M3 11v-1a4 4 0 0 1 4-4h14"/>
                             <path d="m7 22-4-4 4-4"/>
@@ -128,6 +128,7 @@
                     </button>
                     <button id="play-btn" title="再生/停止 (Space)">▶</button>
                     <button id="add-cut-btn" title="CUT追加 (Alt+Plus)">+CUT</button>
+                    <button id="copy-paste-cut-btn" title="CUTコピー・ペースト (Shift+C)" class="copy-paste-btn">+C&P</button>
                     <button id="export-gif-btn" title="GIF書き出し">GIF</button>
                 </div>
                 
@@ -153,12 +154,12 @@
             document.body.appendChild(this.timelinePanel);
             
             this.domCreated = true;
-            console.log('✅ Complete timeline structure created with repeat feature');
+            console.log('✅ Complete timeline structure created with CUT copy/paste buttons');
         }
         
-        // 【改修】CSS更新 - 重複機能削除・短縮表示・リピートボタンスタイル
+        // 【修正】CSS更新 - CUTコピー・ペーストボタンスタイル追加
         injectCompleteTimelineCSS() {
-            console.log('🎨 Injecting complete timeline CSS with improvements...');
+            console.log('🎨 Injecting complete timeline CSS with copy/paste button styles...');
             
             const existingStyle = document.querySelector('style[data-timeline="timeline-ui"]');
             if (existingStyle) {
@@ -169,21 +170,21 @@
             const style = document.createElement('style');
             style.dataset.timeline = 'timeline-ui';
             style.textContent = `
-                /* ===== TimelineUI改修CSS - 重複機能削除・リピート機能追加版 ===== */
+                /* ===== TimelineUI修正CSS - CUTコピペボタン追加・方向キー修正版 ===== */
                 
                 .timeline-panel {
                     position: fixed !important;
-                    bottom: 16px !important;
+                    bottom: 12px !important;
                     left: 70px !important;
                     right: 220px !important;
                     background: var(--futaba-cream) !important;
                     border: 2px solid var(--futaba-medium) !important;
                     border-radius: 12px !important;
-                    padding: 12px 16px !important;
+                    padding: 8px 10px !important;
                     z-index: 1500 !important;
                     max-height: 180px !important;
                     display: none !important;
-                    box-shadow: 0 6px 24px rgba(128, 0, 0, 0.25) !important;
+                    box-shadow: 0 6px 16px rgba(128, 0, 0, 0.25) !important;
                     backdrop-filter: blur(12px) !important;
                     background: rgba(240, 224, 214, 0.95) !important;
                 }
@@ -200,11 +201,11 @@
 
                 .cuts-container {
                     display: flex !important;
-                    gap: 10px !important;
+                    gap: 6px !important;
                     overflow-x: auto !important;
-                    padding: 4px 0 10px 0 !important;
-                    margin-bottom: 10px !important;
-                    max-height: 115px !important;
+                    padding: 3px 0 8px 0 !important;
+                    margin-bottom: 8px !important;
+                    max-height: 140px !important;
                 }
 
                 .cuts-container::-webkit-scrollbar {
@@ -225,13 +226,12 @@
                     background: var(--futaba-light-maroon) !important;
                 }
 
-                /* 【改修】CUTアイテム - 重複機能削除版 */
                 .cut-item {
-                    min-width: 75px !important;
+                    min-width: 85px !important;
                     background: var(--futaba-background) !important;
                     border: 2px solid var(--futaba-light-medium) !important;
                     border-radius: 8px !important;
-                    padding: 6px !important;
+                    padding: 2px !important;
                     cursor: pointer !important;
                     position: relative !important;
                     transition: all 0.25s ease !important;
@@ -257,13 +257,13 @@
                 }
 
                 .cut-thumbnail {
-                    width: 60px !important;
-                    height: 42px !important;
+                    width: 72px !important;
+                    height: 54px !important;
                     background: var(--futaba-background) !important;
                     border: 1px solid var(--futaba-light-medium) !important;
                     border-radius: 6px !important;
                     overflow: hidden !important;
-                    margin-bottom: 4px !important;
+                    margin-bottom: 3px !important;
                     position: relative !important;
                 }
 
@@ -293,31 +293,38 @@
                 .cut-name {
                     font-size: 10px !important;
                     color: var(--futaba-maroon) !important;
-                    margin-bottom: 6px !important;
+                    margin-bottom: 2px !important;
                     font-weight: 600 !important;
                     text-align: center !important;
                     white-space: nowrap !important;
                     overflow: hidden !important;
                     text-overflow: ellipsis !important;
-                    max-width: 60px !important;
+                    max-width: 72px !important;
                     line-height: 1.3 !important;
                 }
 
-                /* 【改修】表示時間コントロール - 直接入力版（▶被り解消） */
+                .cut-duration-container {
+                    display: flex !important;
+                    align-items: center !important;
+                    gap: 2px !important;
+                    margin-bottom: 3px !important;
+                }
+
                 .cut-duration-input {
-                    width: 45px !important;
-                    height: 20px !important;
+                    width: 30px !important;
+                    height: 18px !important;
                     border: 1px solid var(--futaba-light-medium) !important;
-                    border-radius: 4px !important;
+                    border-radius: 3px !important;
                     background: var(--futaba-background) !important;
                     font-size: 8px !important;
                     font-family: monospace !important;
                     color: var(--futaba-maroon) !important;
                     font-weight: bold !important;
                     text-align: center !important;
-                    margin-bottom: 3px !important;
                     outline: none !important;
                     transition: all 0.15s ease !important;
+                    padding: 0 !important;
+                    -moz-appearance: textfield !important;
                 }
 
                 .cut-duration-input:hover {
@@ -330,8 +337,39 @@
                     background: var(--futaba-cream) !important;
                 }
 
-                /* 削除された要素：.cut-duration-container, .duration-decrease, .duration-increase */
-                /* 理由：◀▶ボタンと機能重複のため削除 */
+                .cut-duration-input::-webkit-outer-spin-button,
+                .cut-duration-input::-webkit-inner-spin-button {
+                    -webkit-appearance: none !important;
+                    margin: 0 !important;
+                }
+
+                .duration-nav-btn {
+                    width: 16px !important;
+                    height: 16px !important;
+                    background: var(--futaba-medium) !important;
+                    border: none !important;
+                    border-radius: 2px !important;
+                    color: var(--futaba-background) !important;
+                    font-size: 10px !important;
+                    line-height: 1 !important;
+                    cursor: pointer !important;
+                    transition: all 0.15s ease !important;
+                    display: flex !important;
+                    align-items: center !important;
+                    justify-content: center !important;
+                    font-weight: bold !important;
+                    padding: 0 !important;
+                    user-select: none !important;
+                }
+
+                .duration-nav-btn:hover {
+                    background: var(--futaba-light-maroon) !important;
+                    transform: scale(1.1) !important;
+                }
+
+                .duration-nav-btn:active {
+                    transform: scale(0.95) !important;
+                }
 
                 .delete-cut-btn {
                     position: absolute !important;
@@ -373,10 +411,10 @@
                     padding: 0 4px !important;
                 }
 
-                /* 【改修】タイムラインコントロール - リピートボタン追加 */
+                /* 【修正】タイムラインコントロール - CUTコピー・ペーストボタン追加 */
                 .timeline-controls {
                     display: flex !important;
-                    gap: 8px !important;
+                    gap: 6px !important;  /* ボタン間隔を縮小 */
                     align-items: center !important;
                     flex: 1 !important;
                     justify-content: center !important;
@@ -389,10 +427,10 @@
                     border-radius: 8px !important;
                     cursor: pointer !important;
                     transition: all 0.2s ease !important;
-                    font-size: 14px !important;
+                    font-size: 12px !important;
                     color: var(--futaba-maroon) !important;
-                    min-width: 50px !important;
-                    height: 36px !important;
+                    min-width: 45px !important;
+                    height: 18px !important;
                     display: flex !important;
                     align-items: center !important;
                     justify-content: center !important;
@@ -417,7 +455,28 @@
                     transform: none !important;
                 }
 
-                /* 【改修】リピートボタンスタイル - 色反転ON/OFF */
+                /* 【新機能】CUTコピー・ペーストボタンスタイル */
+                .copy-paste-btn {
+                    background: var(--futaba-light-medium) !important;
+                    color: var(--futaba-maroon) !important;
+                    border-color: var(--futaba-medium) !important;
+                    font-size: 11px !important;
+                    font-weight: 700 !important;
+                    min-width: 50px !important;
+                }
+
+                .copy-paste-btn:hover {
+                    background: var(--futaba-maroon) !important;
+                    color: var(--futaba-background) !important;
+                    border-color: var(--futaba-maroon) !important;
+                    transform: translateY(-2px) scale(1.05) !important;
+                    box-shadow: 0 6px 12px rgba(128, 0, 0, 0.3) !important;
+                }
+
+                .copy-paste-btn:active {
+                    transform: translateY(-1px) scale(1.02) !important;
+                }
+
                 #repeat-btn {
                     min-width: 40px !important;
                     padding: 8px !important;
@@ -557,7 +616,7 @@
             `;
             
             document.head.appendChild(style);
-            console.log('✅ Complete timeline CSS injected with improvements');
+            console.log('✅ Complete timeline CSS injected with CUT copy/paste button styles');
         }
         
         ensureInitialCut() {
@@ -598,7 +657,7 @@
             console.log('✅ TimelineUI event listeners setup completed');
         }
         
-        // 【改修】リピートボタン機能追加
+        // 【修正】CUTコピー・ペーストボタン機能追加
         setupImprovedButtonListeners() {
             // リピートボタン
             const repeatBtn = document.getElementById('repeat-btn');
@@ -624,6 +683,14 @@
                     const newCutIndex = this.animationSystem.getCutCount() - 1;
                     this.animationSystem.switchToActiveCut(newCutIndex);
                     console.log('🎬 New empty CUT created and switched');
+                });
+            }
+            
+            // 【新機能】CUTコピー・ペーストボタン
+            const copyPasteBtn = document.getElementById('copy-paste-cut-btn');
+            if (copyPasteBtn) {
+                copyPasteBtn.addEventListener('click', () => {
+                    this.executeCutCopyPaste();
                 });
             }
             
@@ -653,7 +720,24 @@
             }
         }
         
-        // 【新機能】リピート機能の切り替え
+        // 【新機能】CUTコピー・ペースト実行（Shift+Cと同じ動作）
+        executeCutCopyPaste() {
+            if (this.eventBus) {
+                // アクティブCUTをコピー
+                this.eventBus.emit('cut:copy-current');
+                // 即座に右隣に貼り付け
+                setTimeout(() => {
+                    this.eventBus.emit('cut:paste-right-adjacent');
+                    // CUT一覧とインジケーターを更新
+                    setTimeout(() => {
+                        this.updateCutsList();
+                        this.updateLayerPanelIndicator();
+                    }, 100);
+                }, 50);
+                console.log('📋 CUT copy + paste right adjacent executed via +C&P button');
+            }
+        }
+        
         toggleRepeat() {
             this.isLooping = !this.isLooping;
             this.animationSystem.updateSettings({ loop: this.isLooping });
@@ -735,6 +819,7 @@
             }
         }
         
+        // 【修正】キーボードショートカット - 方向キー修正版
         setupKeyboardShortcuts() {
             document.addEventListener('keydown', (e) => {
                 if (!this.isVisible) return;
@@ -754,13 +839,16 @@
                         }
                         break;
                         
+                    // 【修正】方向キー左右の動作修正（左右方向正常化・レイヤー消失問題解決）
                     case 'ArrowLeft':
-                        this.animationSystem.goToPreviousFrame();
+                        // 左キー：前のCUTに移動（単純なアクティブCUT切り替え）
+                        this.goToPreviousCutSafe();
                         e.preventDefault();
                         break;
                         
                     case 'ArrowRight':
-                        this.animationSystem.goToNextFrame();
+                        // 右キー：次のCUTに移動（単純なアクティブCUT切り替え）
+                        this.goToNextCutSafe();
                         e.preventDefault();
                         break;
                         
@@ -775,7 +863,69 @@
                 }
             });
             
-            console.log('✅ Timeline keyboard shortcuts updated with repeat toggle (R key)');
+            console.log('✅ Timeline keyboard shortcuts updated - 方向キー左右修正完了');
+        }
+        
+        // 【修正】安全な前のCUT移動（レイヤー消失問題解決）
+        goToPreviousCutSafe() {
+            const animData = this.animationSystem.getAnimationData();
+            if (animData.cuts.length === 0) return;
+            
+            let newIndex = this.currentCutIndex - 1;
+            if (newIndex < 0) {
+                newIndex = animData.cuts.length - 1; // 最後のCUTに循環
+            }
+            
+            // 【修正】単純なアクティブCUT切り替え（レイヤー状態を破壊しない）
+            this.currentCutIndex = newIndex;
+            this.animationSystem.animationData.playback.currentCutIndex = newIndex;
+            
+            // 安全なCUT切り替え（resetTransform = false でレイヤー状態保持）
+            this.animationSystem.switchToActiveCutSafely(newIndex, false);
+            
+            // UI更新
+            this.setActiveCut(newIndex);
+            this.updateLayerPanelIndicator();
+            
+            console.log('⬅️ Previous CUT (safe):', newIndex, animData.cuts[newIndex]?.name);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-changed', { 
+                    cutIndex: newIndex, 
+                    direction: 'previous' 
+                });
+            }
+        }
+        
+        // 【修正】安全な次のCUT移動（レイヤー消失問題解決）
+        goToNextCutSafe() {
+            const animData = this.animationSystem.getAnimationData();
+            if (animData.cuts.length === 0) return;
+            
+            let newIndex = this.currentCutIndex + 1;
+            if (newIndex >= animData.cuts.length) {
+                newIndex = 0; // 最初のCUTに循環
+            }
+            
+            // 【修正】単純なアクティブCUT切り替え（レイヤー状態を破壊しない）
+            this.currentCutIndex = newIndex;
+            this.animationSystem.animationData.playback.currentCutIndex = newIndex;
+            
+            // 安全なCUT切り替え（resetTransform = false でレイヤー状態保持）
+            this.animationSystem.switchToActiveCutSafely(newIndex, false);
+            
+            // UI更新
+            this.setActiveCut(newIndex);
+            this.updateLayerPanelIndicator();
+            
+            console.log('➡️ Next CUT (safe):', newIndex, animData.cuts[newIndex]?.name);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-changed', { 
+                    cutIndex: newIndex, 
+                    direction: 'next' 
+                });
+            }
         }
         
         setupAnimationEvents() {
@@ -796,6 +946,14 @@
                 this.updateLayerPanelIndicator();
             });
             
+            // 【修正】CUTコピー・ペースト後のUI更新
+            this.eventBus.on('cut:pasted-right-adjacent', (data) => {
+                this.currentCutIndex = data.cutIndex;
+                this.updateCutsList();
+                this.updateLayerPanelIndicator();
+                console.log('📋 CUT pasted - UI updated');
+            });
+            
             this.eventBus.on('animation:thumbnail-generated', (data) => {
                 this.updateSingleCutThumbnail(data.cutIndex);
             });
@@ -813,7 +971,8 @@
             this.eventBus.on('animation:playback-stopped', () => {
                 this.isPlaying = false;
                 this.updatePlaybackUI(false);
-                this.setActiveCut(0);
+                // 【修正】停止時に最初のCUTに戻らない
+                // this.setActiveCut(0); // この行を削除
                 this.updateLayerPanelIndicator();
             });
             
@@ -859,16 +1018,17 @@
                 layerContainer.insertBefore(cutIndicator, addButton.nextSibling);
             }
             
+            // 【修正】レイヤーパネルのCUT移動も安全版に変更
             document.getElementById('cut-prev-btn')?.addEventListener('click', () => {
-                this.goToPreviousCut();
+                this.goToPreviousCutSafe();
             });
             
             document.getElementById('cut-next-btn')?.addEventListener('click', () => {
-                this.goToNextCut();
+                this.goToNextCutSafe();
             });
             
             this.updateLayerPanelIndicator();
-            console.log('✅ Layer panel CUT indicator created');
+            console.log('✅ Layer panel CUT indicator created with safe navigation');
         }
         
         updateLayerPanelIndicator() {
@@ -891,25 +1051,12 @@
             const currentCutName = animData.cuts[this.currentCutIndex]?.name || `CUT${this.currentCutIndex + 1}`;
             cutDisplay.textContent = currentCutName;
             
-            if (prevBtn) prevBtn.disabled = this.currentCutIndex <= 0;
-            if (nextBtn) nextBtn.disabled = this.currentCutIndex >= totalCuts - 1;
+            // 【修正】循環ナビゲーションなのでボタンは常に有効
+            if (prevBtn) prevBtn.disabled = false;
+            if (nextBtn) nextBtn.disabled = false;
         }
         
-        goToPreviousCut() {
-            const animData = this.animationSystem.getAnimationData();
-            if (this.currentCutIndex > 0) {
-                const newIndex = this.currentCutIndex - 1;
-                this.animationSystem.switchToActiveCut(newIndex);
-            }
-        }
-        
-        goToNextCut() {
-            const animData = this.animationSystem.getAnimationData();
-            if (this.currentCutIndex < animData.cuts.length - 1) {
-                const newIndex = this.currentCutIndex + 1;
-                this.animationSystem.switchToActiveCut(newIndex);
-            }
-        }
+        // 【削除】goToPreviousCut, goToNextCut を削除（安全版に置き換え済み）
         
         updateCutsList() {
             const animData = this.animationSystem.getAnimationData();
@@ -934,7 +1081,6 @@
             }
         }
         
-        // 【改修】CUTアイテム作成 - maroon◀▶ボタン配置版
         createImprovedCutItem(cut, index) {
             const cutItem = document.createElement('div');
             cutItem.className = 'cut-item';
@@ -942,20 +1088,19 @@
             
             const thumbnailHtml = this.generateCutThumbnailHTML(cut, index);
             
-            // 【改修】maroon◀▶ボタンを表示時間パネルの左右に配置
             cutItem.innerHTML = `
                 <div class="cut-thumbnail" data-cut-index="${index}">
                     ${thumbnailHtml}
                 </div>
                 <div class="cut-name">${cut.name}</div>
                 <div class="cut-duration-container">
-                    <button class="duration-nav-btn duration-decrease" data-index="${index}">◀</button>
+                    <button class="duration-nav-btn duration-decrease" data-index="${index}" title="時間減少">◀</button>
                     <input type="number" class="cut-duration-input" 
                            value="${cut.duration}" 
                            min="0.1" max="10" step="0.1"
                            title="表示時間（秒）"
                            data-index="${index}">
-                    <button class="duration-nav-btn duration-increase" data-index="${index}">▶</button>
+                    <button class="duration-nav-btn duration-increase" data-index="${index}" title="時間増加">▶</button>
                 </div>
                 <button class="delete-cut-btn" data-index="${index}">×</button>
             `;
@@ -965,8 +1110,8 @@
                 if (!e.target.classList.contains('delete-cut-btn') &&
                     !e.target.classList.contains('cut-duration-input') &&
                     !e.target.classList.contains('duration-nav-btn')) {
-                    this.animationSystem.switchToActiveCut(index);
-                    this.setActiveCut(index);
+                    // 【修正】CUT選択も安全版に変更
+                    this.selectCutSafely(index);
                 }
             });
             
@@ -1019,6 +1164,21 @@
             });
             
             return cutItem;
+        }
+        
+        // 【新機能】安全なCUT選択（レイヤー消失問題解決）
+        selectCutSafely(index) {
+            this.currentCutIndex = index;
+            this.animationSystem.animationData.playback.currentCutIndex = index;
+            
+            // 安全なCUT切り替え（resetTransform = false でレイヤー状態保持）
+            this.animationSystem.switchToActiveCutSafely(index, false);
+            
+            // UI更新
+            this.setActiveCut(index);
+            this.updateLayerPanelIndicator();
+            
+            console.log('🎯 CUT selected (safe):', index);
         }
         
         generateCutThumbnailHTML(cut, index) {
@@ -1126,15 +1286,22 @@
     // グローバル export
     window.TegakiTimelineUI = TimelineUI;
     console.log('✅ TegakiTimelineUI exported to global scope');
-    console.log('✅ ui/timeline-ui.js loaded (サムネイル改修版)');
-    console.log('🔧 改修完了: サムネイル機能改善');
-    console.log('  - ✅ 重複機能削除: 灰色上下矢印削除（◀▶と重複排除）');
-    console.log('  - ✅ 表示枠短縮: 時間表示を短くし▶ボタンとの被り解消');
-    console.log('  - ✅ リピート機能: SVGアイコン追加・再生ボタン左側配置');
-    console.log('  - ✅ 色反転ON/OFF: repeat-active/repeat-inactiveクラス実装');
-    console.log('  - ✅ キーボード対応: Rキーでリピート切り替え追加');
-    console.log('  - ✅ 機能統合: 元の機能維持・アーキテクチャ整合性確保');
-    console.log('  - ✅ 画像通り調整: 64×64サムネイル・#800000ボタン・タイト配置');
+    console.log('✅ ui/timeline-ui.js loaded (CUTコピペボタン追加・方向キー修正版)');
+    console.log('🔧 修正完了:');
+    console.log('  - ✅ CUTコピー・ペーストボタン追加: +C&Pボタン (+CUTの隣に配置)');
+    console.log('  - ✅ Shift+Cと同じ動作: アクティブCUTコピー + 右隣に貼り付け');
+    console.log('  - ✅ 方向キー左右修正: 左右の方向を正常化 (左←前のCUT、右→次のCUT)');
+    console.log('  - ✅ レイヤー消失問題解決: switchToActiveCutSafely(index, false) で状態保持');
+    console.log('  - ✅ 単純なアクティブCUT移動: レイヤー状態を破壊しない安全なナビゲーション');
+    console.log('  - ✅ 循環ナビゲーション: 最初/最後のCUTで循環移動');
+    console.log('  - ✅ UI更新統合: CUTコピー・ペースト後の表示更新');
+    console.log('  - ✅ レイヤーパネル連携: CUTインジケーター安全ナビゲーション');
+    console.log('🎯 操作改善:');
+    console.log('  - +C&Pボタン: ワンクリックでCUTコピー・ペースト');
+    console.log('  - ←キー: 前のCUTに移動（レイヤー状態保持）');
+    console.log('  - →キー: 次のCUTに移動（レイヤー状態保持）');
+    console.log('  - CUTクリック: 安全な選択（レイヤー消失なし）');
+    console.log('  - レイヤーパネル◀▶: 安全ナビゲーション');
     
     if (typeof window.TegakiUI === 'undefined') {
         window.TegakiUI = {};
