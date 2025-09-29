@@ -1,7 +1,7 @@
-// ===== ui/timeline-ui.js - Canvas直接使用+CSS動的調整版 =====
-// 【改修完了】Canvas.toDataURL()直接使用（Texture往復排除）
-// 【改修完了】CSS動的調整でキャンバス比率対応
-// 【改修完了】構文エラー修正・PixiJS v8.13完全対応
+// ===== ui/timeline-ui.js - 初期CUT作成タイミング改善版 =====
+// FIX: ensureInitialCut() - レイヤー存在確認強化
+// FIX: 空レイヤーの場合は空CUT作成、描画済みなら現在状態からCUT作成
+// 【維持】Canvas直接使用・CSS動的調整・PixiJS v8.13対応
 
 (function() {
     'use strict';
@@ -41,10 +41,12 @@
             this.setupKeyboardShortcuts();
             this.setupAnimationEvents();
             this.createLayerPanelCutIndicator();
+            
+            // FIX: 初期CUT作成タイミング改善
             this.ensureInitialCut();
             
             this.isInitialized = true;
-            console.log('✅ TimelineUI: Canvas直接使用+CSS動的調整版 初期化完了');
+            console.log('✅ TimelineUI: 初期CUT作成タイミング改善版 初期化完了');
         }
         
         removeExistingTimelineElements() {
@@ -212,11 +214,42 @@
             document.head.appendChild(style);
         }
         
+        // FIX: 初期CUT作成タイミング改善
         ensureInitialCut() {
             const animData = this.animationSystem.getAnimationData();
-            if (animData.cuts.length === 0) {
-                this.animationSystem.createNewCutFromCurrentLayers();
+            
+            // 既にCUTが存在する場合は何もしない
+            if (animData.cuts.length > 0) {
+                this.updateLayerPanelIndicator();
+                return;
             }
+            
+            // レイヤーシステムの確認
+            if (!this.animationSystem.layerSystem?.layers || 
+                this.animationSystem.layerSystem.layers.length === 0) {
+                console.log('⚠️ No layers available, skipping initial CUT creation');
+                return;
+            }
+            
+            // レイヤーに描画内容があるかチェック
+            let hasDrawnContent = false;
+            for (const layer of this.animationSystem.layerSystem.layers) {
+                if (layer.layerData?.paths && layer.layerData.paths.length > 0) {
+                    hasDrawnContent = true;
+                    break;
+                }
+            }
+            
+            // 描画内容がある場合は現在状態からCUT作成
+            if (hasDrawnContent) {
+                console.log('✅ Creating initial CUT from current drawn layers');
+                this.animationSystem.createNewCutFromCurrentLayers();
+            } else {
+                // 描画内容が無い場合は空CUT作成
+                console.log('✅ Creating initial blank CUT (no drawn content)');
+                this.animationSystem.createNewBlankCut();
+            }
+            
             this.updateLayerPanelIndicator();
         }
         
@@ -720,10 +753,12 @@
     }
     window.TegakiUI.TimelineUI = TimelineUI;
     
-    console.log('✅ timeline-ui.js loaded (Canvas直接使用+CSS動的調整版)');
+    console.log('✅ timeline-ui.js loaded (初期CUT作成タイミング改善版)');
     console.log('🔧 改修完了:');
-    console.log('  - Canvas.toDataURL()直接使用（Texture往復排除）');
-    console.log('  - applyCutThumbnailAspectRatio()でキャンバス比率対応');
-    console.log('  - 構文エラー修正・PixiJS v8.13完全対応');
+    console.log('  - ✅ ensureInitialCut(): レイヤー存在確認強化');
+    console.log('  - ✅ 空レイヤー時は空CUT作成、描画済みなら現在状態からCUT作成');
+    console.log('  - ✅ Canvas.toDataURL()直接使用（Texture往復排除維持）');
+    console.log('  - ✅ applyCutThumbnailAspectRatio()でキャンバス比率対応維持');
+    console.log('  - ✅ PixiJS v8.13完全対応');
 
 })();
