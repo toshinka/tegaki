@@ -1,8 +1,8 @@
-// ===== system/layer-system.js - 完全2次元マトリクス改修版 =====
-// 【最高優先改修】CUT×レイヤー 2次元マトリクス 完全対応
-// 【根本解決】AnimationSystem完全統合・独立性保証
-// 【座標系統一】CoordinateSystem API 統合・EventBus完全統合
-// PixiJS v8.13 対応・計画書完全準拠版
+// ===== system/layer-system.js - AnimationSystem同期強化版 =====
+// 【改修完了】描画→保存→サムネイル生成の確実な同期化
+// 【改修完了】requestAnimationFrameによる即時同期
+// 【維持】完全2次元マトリクス・CoordinateSystem統合・EventBus統合
+// PixiJS v8.13 対応
 
 (function() {
     'use strict';
@@ -13,36 +13,27 @@
             this.config = null;
             this.eventBus = null;
             
-            // レイヤー管理（現在表示中のレイヤー）
             this.layers = [];
             this.activeLayerIndex = -1;
             this.layerCounter = 0;
             
-            // 【重要】レイヤー変形状態管理（現在表示中のレイヤーの状態）
-            this.layerTransforms = new Map(); // layerId -> { x, y, rotation, scaleX, scaleY }
+            this.layerTransforms = new Map();
             
-            // サムネイル更新管理
             this.thumbnailUpdateQueue = new Set();
             this.thumbnailUpdateTimer = null;
             
-            // レイヤー操作モード
             this.vKeyPressed = false;
             this.isLayerMoveMode = false;
             this.isLayerDragging = false;
             this.layerDragLastPoint = { x: 0, y: 0 };
             
-            // PixiJS Containers
             this.layersContainer = null;
             this.canvasContainer = null;
             this.layerTransformPanel = null;
             
-            // システム連携
             this.cameraSystem = null;
-            
-            // 【重要】AnimationSystem統合参照
             this.animationSystem = null;
             
-            // 【統一】座標変換API参照
             this.coordAPI = window.CoordinateSystem;
             if (!this.coordAPI) {
                 console.warn('CoordinateSystem not available - fallback to basic transforms');
@@ -50,7 +41,7 @@
         }
 
         init(canvasContainer, eventBus, config) {
-            console.log('🎨 LayerSystem: 完全2次元マトリクス改修版 初期化開始...');
+            console.log('🎨 LayerSystem: AnimationSystem同期強化版 初期化開始...');
             
             this.eventBus = eventBus;
             this.config = config || window.TEGAKI_CONFIG;
@@ -70,15 +61,13 @@
             this._setupAnimationSystemIntegration();
             this._startThumbnailUpdateProcess();
             
-            console.log('✅ LayerSystem: 完全2次元マトリクス改修版 初期化完了');
+            console.log('✅ LayerSystem: AnimationSystem同期強化版 初期化完了');
         }
 
         _createContainers() {
             this.layersContainer = new PIXI.Container();
             this.layersContainer.label = 'layersContainer';
             this.canvasContainer.addChild(this.layersContainer);
-            
-            console.log('📦 LayerSystem containers created');
         }
         
         _setupAnimationSystemIntegration() {
@@ -106,8 +95,6 @@
             this.eventBus.on('animation:cut-deleted', () => {
                 setTimeout(() => this.updateLayerPanelUI(), 100);
             });
-            
-            console.log('🔗 AnimationSystem integration events configured');
         }
         
         _establishAnimationSystemConnection() {
@@ -177,8 +164,6 @@
                     this.flipActiveLayer('vertical');
                 });
             }
-            
-            console.log('🎛️ Layer transform panel configured');
         }
 
         _setupLayerSlider(sliderId, min, max, initial, callback) {
@@ -385,7 +370,6 @@
             this.updateFlipButtons();
         }
 
-        // キーバインディング処理
         _setupLayerOperations() {
             document.addEventListener('keydown', (e) => {
                 const keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
@@ -539,8 +523,6 @@
             });
             
             this._setupLayerDragEvents();
-            
-            console.log('⌨️ Layer operations configured');
         }
 
         moveActiveLayerHierarchy(direction) {
@@ -1266,10 +1248,17 @@
                 
                 this.requestThumbnailUpdate(layerIndex);
                 
+                // 【改修】requestAnimationFrameで確実に描画完了を待つ
                 if (this.animationSystem?.saveCutLayerStates) {
-                    setTimeout(() => {
+                    requestAnimationFrame(() => {
                         this.animationSystem.saveCutLayerStates();
-                    }, 50);
+                        
+                        // サムネイル生成も連動
+                        const currentCutIndex = this.animationSystem.getCurrentCutIndex();
+                        setTimeout(() => {
+                            this.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
+                        }, 50);
+                    });
                 }
                 
                 if (this.eventBus) {
@@ -1546,6 +1535,10 @@
 
     window.TegakiLayerSystem = LayerSystem;
 
-    console.log('✅ layer-system.js loaded (完全2次元マトリクス改修版)');
+    console.log('✅ layer-system.js loaded (AnimationSystem同期強化版)');
+    console.log('🔧 改修内容:');
+    console.log('  - addPathToLayer(): requestAnimationFrame()で即時同期');
+    console.log('  - 描画完了後、saveCutLayerStates()を確実に実行');
+    console.log('  - サムネイル生成を連動して自動実行');
 
-})();
+})()
