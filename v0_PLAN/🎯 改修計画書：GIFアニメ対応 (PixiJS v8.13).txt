@@ -1,0 +1,147 @@
+🎯 改修計画書：GIFアニメ対応 (PixiJS v8.13)
+1. 目的
+
+現在のブラウザお絵描きツールに GIFアニメーションをレイヤーとして取り込み・再生 できるようにする。
+
+重いGIFでも破綻しないように CPUとGPUの責務分担を明確化。
+
+外部CDNライブラリのみ使用（ビルド不要）。
+
+2. 推奨ライブラリ（CDN）
+ライブラリ	用途	CDN例
+gifuct-js	GIFをCPU側でデコードしてフレーム単位のImageDataを得る	https://cdn.jsdelivr.net/npm/gifuct-js@4.0.2/dist/gifuct.min.js
+
+PixiJS v8.13	GPU描画・テクスチャ管理	既存CDN利用
+（オプション）pixi-gif	Pixi用ラッパーだが、更新停止気味。柔軟性が低いため今回は不推奨。	-
+
+👉 結論：gifuct-js を使い、自前でPixiJSテクスチャ化するのがモダンで柔軟。
+
+3. ファイル改修方針
+(A) index.html
+
+ライブラリ追加
+
+<script src="https://cdn.jsdelivr.net/npm/gifuct-js@4.0.2/dist/gifuct.min.js"></script>
+
+
+GIFレイヤー追加用のボタン/UIを準備。
+例：
+
+<input type="file" id="gif-loader" accept="image/gif" />
+
+(B) system/layer-system.js
+
+拡張: GIF専用のレイヤークラス GifLayer を追加
+
+class GifLayer {
+  constructor(arrayBuffer) {
+    this.frames = [];
+    this.currentFrame = 0;
+    this.isLoaded = false;
+
+    const gif = new window.gifuctjs.Gif(new Uint8Array(arrayBuffer));
+    gif.decompressFrames(true).then(frames => {
+      this.frames = frames.map(f => {
+        const imageData = new ImageData(
+          new Uint8ClampedArray(f.patch),
+          f.dims.width,
+          f.dims.height
+        );
+        return PIXI.Texture.from(imageData);
+      });
+      this.isLoaded = true;
+    });
+  }
+
+  update(delta) {
+    if (!this.isLoaded) return;
+    this.currentFrame = (this.currentFrame + delta) % this.frames.length;
+  }
+
+  getTexture() {
+    if (!this.isLoaded) return PIXI.Texture.EMPTY;
+    return this.frames[Math.floor(this.currentFrame)];
+  }
+}
+
+
+追加：LayerSystem に GIF レイヤーの登録・管理機能を生やす。
+
+(C) system/core-engine.js（または render-system.js）
+
+update() 内で GIFレイヤーのアニメーション更新処理を追加
+
+function update(delta) {
+  for (const layer of this.layers) {
+    if (layer instanceof GifLayer) {
+      layer.update(delta * 0.1); // 再生速度調整
+    }
+  }
+  this.renderer.render(this.stage);
+}
+
+(D) config.js
+
+レイヤー種別の定義に "gif" を追加。
+
+const LAYER_TYPES = {
+  DRAW: "draw",
+  IMAGE: "image",
+  GIF: "gif"
+};
+
+(E) 新規ファイル（オプション）：system/gif-loader.js
+
+責務を分離するなら、GifLoader を専用クラスとして切り出す。
+gifuct-js を使って GifLayer に返す役割。
+これにより layer-system.js の肥大化を防げる。
+
+4. ワークフロー（処理の流れ）
+
+ユーザーがGIFを選択（input[type=file]）。
+
+gif-loader.js で arrayBuffer を取得。
+
+GifLayer を生成して layer-system.js に追加。
+
+各フレームは CPUでデコード → GPUテクスチャ化 → VRAM保持。
+
+core-engine.js の update() でフレーム進行。
+
+GPU上の RenderTexture で高速再生。
+
+5. メリット
+
+CPU/GPUの責務分担
+
+CPU = デコードのみ（初回ロード時）。
+
+GPU = 再生・合成（ランタイム）。
+
+差分更新不要
+
+全フレームをテクスチャ化済みなので、再生は Texture の切替だけ。
+
+PixiJSの強みを活用
+
+他のレイヤーと同様にブレンド・回転・拡大縮小が可能。
+
+6. 想定リスク & 対策
+
+重いGIF = フレーム数が多い = VRAM圧迫
+→ 対策：frames を全読み込みせず「ストリーミング再生（必要な部分だけGPU転送）」にする設定を検討。
+
+古いブラウザでの挙動
+→ gifuct-jsは Web Worker でも動くので、分離してCPU負荷を軽減可能。
+
+7. 次ステップ（実装手順）
+
+index.html に gifuct-js CDNを追加。
+
+layer-system.js に GifLayer クラスを追加。
+
+core-engine.js に update() 拡張で再生制御を組み込む。
+
+（必要なら）gif-loader.js を作成して責務を分離。
+
+小さめのGIFでテスト → 大きいGIF（500〜1000フレーム）でストレステスト。
