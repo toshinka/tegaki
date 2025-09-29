@@ -1,6 +1,5 @@
 // ===== system/animation-system.js - Phase 1/2改修版 =====
 // CUT・レイヤー2次元マトリクス修正計画書 Phase 1/2実装
-// 【改修完了】CUT独立性確保・サムネイル生成最適化
 // PixiJS v8.13 対応
 
 (function() {
@@ -22,16 +21,13 @@
             this.hasInitialized = false;
             this.lastStoppedCutIndex = 0;
             
-            // Phase 3: CUTクリップボード
             this.cutClipboard = {
                 cutData: null,
                 timestamp: null,
                 sourceId: null
             };
             
-            // 【Phase 1改修】CUT毎の独立レイヤーIDカウンター
-            this.cutLayerIdCounters = new Map(); // cutId -> layerIdCounter
-            
+            this.cutLayerIdCounters = new Map();
             this.coordAPI = window.CoordinateSystem;
         }
         
@@ -73,7 +69,6 @@
             this.eventBus.on('cut:paste-new', () => this.pasteAsNew());
         }
         
-        // Phase 3: CUTコピー
         copyCurrent() {
             const currentCut = this.getCurrentCut();
             if (!currentCut) return false;
@@ -92,7 +87,6 @@
             return true;
         }
         
-        // Phase 3: 右隣貼り付け
         pasteRightAdjacent() {
             if (!this.cutClipboard.cutData) return false;
             
@@ -112,7 +106,6 @@
             return true;
         }
         
-        // Phase 3: 独立貼り付け
         pasteAsNew() {
             if (!this.cutClipboard.cutData) return false;
             
@@ -166,7 +159,6 @@
             
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             
-            // 【Phase 1改修】CUT独立レイヤーID生成
             const cut = {
                 id: cutId,
                 name: clipboardData.name + '_copy',
@@ -178,7 +170,6 @@
                 thumbnail: null
             };
             
-            // 【Phase 2改修】サムネイル遅延生成
             setTimeout(() => {
                 const cutIndex = this.animationData.cuts.findIndex(c => c.id === cut.id);
                 if (cutIndex !== -1) {
@@ -250,7 +241,6 @@
             };
         }
         
-        // 【Phase 1改修】CUT独立レイヤーID生成
         generateUniqueCutLayerId(cutId) {
             if (!this.cutLayerIdCounters.has(cutId)) {
                 this.cutLayerIdCounters.set(cutId, 0);
@@ -260,7 +250,6 @@
             return `${cutId}_layer_${counter}`;
         }
         
-        // 【Phase 1改修】CUT作成：完全独立レイヤーID
         createNewCutFromCurrentLayers() {
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             const cutLayers = this.copyCurrentLayersForCutIndependent(cutId);
@@ -276,7 +265,6 @@
             this.animationData.cuts.push(cut);
             this.switchToActiveCutSafely(this.animationData.cuts.length - 1, false);
             
-            // 【Phase 2改修】サムネイル生成最適化
             setTimeout(() => {
                 this.generateCutThumbnailOptimized(this.animationData.cuts.length - 1);
             }, 100);
@@ -329,7 +317,6 @@
             return this.createNewBlankCut();
         }
         
-        // 【Phase 1改修】完全独立レイヤーコピー
         copyCurrentLayersForCutIndependent(cutId) {
             const copiedLayers = [];
             
@@ -338,7 +325,6 @@
             this.layerSystem.layers.forEach(originalLayer => {
                 if (!originalLayer?.layerData) return;
                 
-                // 【Phase 1改修】CUT専用の新規レイヤーID生成
                 const newLayerId = this.generateUniqueCutLayerId(cutId);
                 
                 const transform = this.layerSystem.layerTransforms.get(originalLayer.layerData.id) || {
@@ -356,7 +342,7 @@
                     })) : [];
                 
                 const cutLayerData = {
-                    id: newLayerId,  // 【Phase 1改修】完全独立ID
+                    id: newLayerId,
                     name: originalLayer.layerData.name,
                     visible: originalLayer.layerData.visible !== false,
                     opacity: originalLayer.layerData.opacity || 1.0,
@@ -371,7 +357,6 @@
             return copiedLayers;
         }
         
-        // 【旧版互換】通常コピー（念のため保持）
         copyCurrentLayersForCut() {
             const cutId = 'temp_' + Date.now();
             return this.copyCurrentLayersForCutIndependent(cutId);
@@ -573,8 +558,6 @@
             }
         }
         
-        // ===== 再生制御 =====
-        
         play() {
             if (this.animationData.cuts.length === 0) return;
             
@@ -674,8 +657,6 @@
             }
         }
         
-        // ===== ゲッター =====
-        
         getAnimationData() { return this.animationData; }
         getCurrentCutIndex() { return this.animationData.playback.currentCutIndex; }
         getCutCount() { return this.animationData.cuts.length; }
@@ -734,8 +715,6 @@
             return this.isAnimationMode;
         }
         
-        // ===== その他 =====
-        
         deleteCut(cutIndex) {
             if (cutIndex < 0 || cutIndex >= this.animationData.cuts.length) return;
             if (this.animationData.cuts.length <= 1) return false;
@@ -746,9 +725,7 @@
                 cut.thumbnail.destroy();
             }
             
-            // 【Phase 1改修】CUT削除時にレイヤーIDカウンターもクリア
             this.cutLayerIdCounters.delete(cut.id);
-            
             this.animationData.cuts.splice(cutIndex, 1);
             
             if (this.animationData.playback.currentCutIndex >= cutIndex) {
@@ -822,8 +799,6 @@
             }
         }
         
-        // ===== LayerSystem連携 =====
-        
         updateCurrentCutLayer(layerIndex, updateData) {
             const currentCut = this.getCurrentCut();
             if (!currentCut || !this.layerSystem) return;
@@ -868,7 +843,6 @@
                 });
             }
             
-            // 【Phase 2改修】サムネイル更新最適化
             setTimeout(() => {
                 this.generateCutThumbnailOptimized(this.animationData.playback.currentCutIndex);
             }, 100);
@@ -903,7 +877,6 @@
             const existingLayer = currentCut.layers.find(layer => layer.id === layerData.id);
             if (existingLayer) return existingLayer;
             
-            // 【Phase 1改修】CUT専用レイヤーIDに変換
             const cutLayerId = this.generateUniqueCutLayerId(currentCut.id);
             
             const cutLayerData = {
@@ -955,7 +928,6 @@
             const savedLayers = this.copyCurrentLayersForCutIndependent(currentCut.id);
             currentCut.layers = savedLayers;
             
-            // 【Phase 2改修】サムネイル再生成
             setTimeout(() => {
                 this.generateCutThumbnailOptimized(this.animationData.playback.currentCutIndex);
             }, 100);
@@ -968,8 +940,6 @@
             }
         }
         
-        // ===== 【Phase 2改修】サムネイル生成最適化 =====
-        
         async generateCutThumbnailOptimized(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut || !this.layerSystem) return;
@@ -977,12 +947,10 @@
             try {
                 const currentCutIndex = this.animationData.playback.currentCutIndex;
                 
-                // 一時的にCUT状態を適用
                 if (cutIndex !== currentCutIndex) {
                     await this.temporarilyApplyCutState(cutIndex);
                 }
                 
-                // 【Phase 2改修】LayerSystemサムネイル機能を活用
                 const thumbnailCanvas = await this.generateLayerCompositeCanvasOptimized();
                 
                 if (thumbnailCanvas) {
@@ -995,7 +963,6 @@
                     cut.thumbnail = texture;
                 }
                 
-                // 元のCUTに戻す
                 if (cutIndex !== currentCutIndex) {
                     this.switchToActiveCutSafely(currentCutIndex);
                 }
@@ -1021,7 +988,6 @@
             await new Promise(resolve => setTimeout(resolve, 50));
         }
         
-        // 【Phase 2改修】LayerSystem機能を活用した高速サムネイル生成
         async generateLayerCompositeCanvasOptimized() {
             try {
                 const thumbWidth = 46;
@@ -1036,7 +1002,6 @@
                 ctx.imageSmoothingQuality = 'high';
                 ctx.clearRect(0, 0, thumbWidth, thumbHeight);
                 
-                // 可視レイヤーのみレンダリング
                 for (let i = 0; i < this.layerSystem.layers.length; i++) {
                     const layer = this.layerSystem.layers[i];
                     
@@ -1086,8 +1051,6 @@
             }
         }
         
-        // ===== システム =====
-        
         updateSettings(settings) {
             if (!settings) return;
             
@@ -1119,17 +1082,13 @@
             this.hasInitialized = false;
             this.lastStoppedCutIndex = 0;
             
-            // 【Phase 1改修】カウンタークリア
             this.cutLayerIdCounters.clear();
-            
             this.clearCutClipboard();
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:cleared');
             }
         }
-        
-        // ===== デバッグ =====
         
         checkCoordinateSystem() {
             if (this.coordAPI) {
@@ -1164,33 +1123,11 @@
                 cutLayerIdCountersSize: this.cutLayerIdCounters.size
             };
             
-            console.log('AnimationSystem Debug (Phase 1/2改修版):');
-            console.log('- Cuts:', info.cutsCount);
-            console.log('- Current:', info.currentCut);
-            console.log('- Playing:', info.isPlaying);
-            console.log('- Clipboard:', info.cutClipboard.hasCutData ? '✅' : '❌');
-            console.log('- CUT Layer ID Counters:', info.cutLayerIdCountersSize);
-            console.log('✅ Phase 1: CUT独立性確保完了');
-            console.log('✅ Phase 2: サムネイル生成最適化完了');
-            
             return info;
         }
     }
     
     window.TegakiAnimationSystem = AnimationSystem;
     console.log('✅ animation-system.js loaded (Phase 1/2改修版)');
-    console.log('🔧 Phase 1改修完了:');
-    console.log('  - ✅ CUT独立レイヤーID生成システム');
-    console.log('  - ✅ generateUniqueCutLayerId(): CUT毎の完全独立ID');
-    console.log('  - ✅ copyCurrentLayersForCutIndependent(): 独立コピー');
-    console.log('  - ✅ cutLayerIdCounters管理: ID衝突防止');
-    console.log('🔧 Phase 2改修完了:');
-    console.log('  - ✅ generateCutThumbnailOptimized(): 最適化版');
-    console.log('  - ✅ LayerSystem機能活用: 重複排除');
-    console.log('  - ✅ 高速サムネイル生成: Canvas合成最適化');
-    console.log('🎯 改修効果:');
-    console.log('  - CUT間描画独立性: 完全保証');
-    console.log('  - サムネイル生成: 高速化・簡素化');
-    console.log('  - コード肥大化: 抑制（既存機能活用）');
 
 })();

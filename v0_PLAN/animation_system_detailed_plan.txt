@@ -1,0 +1,497 @@
+
+
+# CUT・レイヤー2次元マトリクス改修計画書 詳細版
+
+## 🚨 現状の問題（再確認）
+
+### 問題1: CUT毎の独立性がない
+**症状**: 新規CUT作成後、全CUTに描画が反映される
+**原因**: `animation-system.js`の描画反映ロジックが全CUTに波及している
+
+### 問題2: サムネイル表示されない
+**症状**: CUT毎のキャンバス合成画像が表示されない
+**原因**: サムネイル生成後、timeline-ui.jsへの反映処理が不完全
+
+### 問題3: 2次元マトリクス構造が実現できていない
+**症状**: CUT切り替え時にレイヤー状態が正しく復元されない
+**原因**: レイヤー状態の保存・復元フローが不完全
+
+---
+
+## 📊 期待される動作フロー（理想形）
+
+```
+【CUT作成時】
+1. ユーザーがAlt+Plus押下
+2. timeline-ui.js: createCutButton クリックイベント発火
+3. eventBus.emit('animation:create-cut')
+4. animation-system.js: createNewCutFromCurrentLayers() 実行
+   ├─ 現在のLayerSystemの全レイヤー状態をキャプチャ
+   ├─ 新規CUT用に完全独立したレイヤーIDを生成
+   ├─ cuts配列に追加
+   └─ generateCutThumbnailOptimized() 実行
+5. eventBus.emit('animation:cut-created', { cutIndex })
+6. timeline-ui.js: 'animation:cut-created' リスナーが反応
+7. timeline-ui.js: renderCutsList() でUI更新
+   └─ cut.thumbnail を <img> タグで表示
+
+【CUT切り替え時】
+1. ユーザーがCUTアイテムをクリック
+2. timeline-ui.js: switchToActiveCutSafely(cutIndex) 呼び出し
+3. animation-system.js: 
+   ├─ 現在のCUTの状態を保存（saveCutLayerStatesBeforeSwitch）
+   ├─ 新しいCUTの状態を読み込み（setActiveCut）
+   │  ├─ clearLayerSystemLayers() - 既存レイヤー削除
+   │  └─ rebuildLayersFromCutData() - CUTのレイヤー復元
+   └─ LayerSystemのレイヤーパネルUI更新
+4. eventBus.emit('animation:cut-applied', { cutIndex })
+5. 画面に選択したCUTの描画内容が表示される
+
+【描画時】
+1. ユーザーがペンで描画
+2. drawing-engine.js: startDrawing() → continueDrawing() → stopDrawing()
+3. layer-system.js: パスデータをアクティブレイヤーに追加
+4. eventBus.emit('layer:path-added')
+5. animation-system.js: onLayerChanged() リスナーが反応
+6. animation-system.js: saveCutLayerStates() 実行
+   └─ 現在のアクティブCUTのレイヤー状態のみ更新
+7. generateCutThumbnailOptimized() でサムネイル再生成
+8. eventBus.emit('animation:thumbnail-generated', { cutIndex })
+9. timeline-ui.js: サムネイル表示を更新
+```
+
+---
+
+## 📋 ファイル別メソッド・定義辞典
+
+### animation-system.js
+
+#### クラス: AnimationSystem
+
+**プロパティ**
+```javascript
+this.animationData = {
+    cuts: [
+        {
+            id: String,              // 'cut_1234567890_abc123'
+            name: String,            // 'CUT1', 'CUT2', ...
+            duration: Number,        // 0.5 (秒)
+            layers: [                // CUT専用レイヤーデータ配列
+                {
+                    id: String,      // 'cut_xxx_layer_0'
+                    name: String,    // 'レイヤー1'
+                    visible: Boolean,
+                    opacity: Number,
+                    isBackground: Boolean,
+                    transform: { x, y, rotation, scaleX, scaleY },
+                    paths: [         // パスデータ配列
+                        {
+                            id: String,
+                            points: [{x, y}, ...],
+                            size: Number,
+                            color: Number,
+                            opacity: Number,
+                            tool: String
+                        }
+                    ]
+                }
+            ],
+            thumbnail: PIXI.Texture  // サムネイル画像
+        }
+    ],
+    settings: { fps: 12, loop: true },
+    playback: { isPlaying: false, currentCutIndex: 0, startTime: 0 }
+}
+
+this.layerSystem = LayerSystem        // 参照
+this.app = PIXI.Application           // 参照
+this.eventBus = TegakiEventBus        // 参照
+this.cutLayerIdCounters = Map<cutId, counter>  // CUT毎のレイヤーIDカウンター
+```
+
+**メソッド一覧**
+
+| メソッド名 | 引数 | 戻り値 | 説明 | 呼び出し元 |
+|-----------|------|--------|------|-----------|
+| `init(layerSystem, app)` | LayerSystem, PIXI.App | void | システム初期化 | core-engine.js |
+| `createNewCutFromCurrentLayers()` | なし | Cut | 現在のレイヤー状態から新規CUT作成 | timeline-ui.js, EventBus |
+| `createNewBlankCut()` | なし | Cut | 空の新規CUT作成 | timeline-ui.js |
+| `switchToActiveCutSafely(cutIndex, resetTransform)` | Number, Boolean | void | CUT切り替え（安全版） | timeline-ui.js, 内部 |
+| `saveCutLayerStatesBeforeSwitch()` | なし | void | CUT切り替え前に現在の状態を保存 | 内部 |
+| `setActiveCut(cutIndex, resetTransform)` | Number, Boolean | void | 指定CUTをアクティブ化 | 内部 |
+| `clearLayerSystemLayers()` | なし | void | LayerSystemの全レイヤー削除 | 内部 |
+| `rebuildLayersFromCutData(cutLayers, resetTransform)` | Array, Boolean | void | CUTデータからレイヤー再構築 | 内部 |
+| `copyCurrentLayersForCutIndependent(cutId)` | String | Array | 現在のレイヤーをCUT専用に独立コピー | 内部 |
+| `generateUniqueCutLayerId(cutId)` | String | String | CUT専用の一意なレイヤーID生成 | 内部 |
+| `generateCutThumbnailOptimized(cutIndex)` | Number | Promise | サムネイル生成（最適化版） | 内部, timeline-ui.js |
+| `temporarilyApplyCutState(cutIndex)` | Number | Promise | 一時的にCUT状態を適用 | 内部 |
+| `generateLayerCompositeCanvasOptimized()` | なし | Promise<Canvas> | レイヤー合成Canvas生成 | 内部 |
+| `renderLayerToCanvasOptimized(layer)` | PIXI.Container | Promise<Canvas> | レイヤーをCanvasにレンダリング | 内部 |
+| `saveCutLayerStates()` | なし | void | 現在のアクティブCUTの状態を保存 | EventBusリスナー |
+| `deleteCut(cutIndex)` | Number | Boolean | CUT削除 | timeline-ui.js |
+| `getCurrentCut()` | なし | Cut | 現在のアクティブCUTを取得 | 各所 |
+| `getAnimationData()` | なし | Object | アニメーションデータ全体を取得 | timeline-ui.js |
+
+**EventBusリスナー（setupCutClipboardEvents内）**
+- `'cut:copy-current'` → `copyCurrent()`
+- `'cut:paste-right-adjacent'` → `pasteRightAdjacent()`
+- `'cut:paste-new'` → `pasteAsNew()`
+
+**EventBus発行イベント**
+- `'animation:initialized'` - 初期化完了
+- `'animation:cut-created'` - CUT作成完了
+- `'animation:cut-applied'` - CUT切り替え完了
+- `'animation:thumbnail-generated'` - サムネイル生成完了
+- `'animation:cut-updated'` - CUT更新完了
+
+---
+
+### timeline-ui.js
+
+#### クラス: TimelineUI
+
+**プロパティ**
+```javascript
+this.animationSystem = AnimationSystem  // 参照
+this.container = HTMLElement            // タイムラインDOM要素
+this.cutsContainer = HTMLElement        // CUTリストDOM要素
+this.isVisible = Boolean                // 表示状態
+```
+
+**メソッド一覧**
+
+| メソッド名 | 引数 | 戻り値 | 説明 | 呼び出し元 |
+|-----------|------|--------|------|-----------|
+| `init()` | なし | void | UI初期化 | core-engine.js |
+| `renderCutsList()` | なし | void | CUTリストUI全体を再描画 | 内部, EventBusリスナー |
+| `createCutElement(cut, index)` | Cut, Number | HTMLElement | 単一CUT要素を生成 | renderCutsList() |
+| `updateSingleCutThumbnail(cutIndex)` | Number | void | 指定CUTのサムネイル表示を更新 | EventBusリスナー |
+| `ensureInitialCut()` | なし | void | 初回CUT作成を保証 | init() |
+| `toggle()` | なし | void | タイムライン表示/非表示切り替え | EventBus, ショートカット |
+
+**EventBusリスナー（setupEventListeners内）**
+- `'animation:cut-created'` → `renderCutsList()`
+- `'animation:cut-deleted'` → `renderCutsList()`
+- `'animation:thumbnail-generated'` → `updateSingleCutThumbnail(cutIndex)`
+- `'animation:cut-applied'` → アクティブCUT強調表示更新
+
+**期待されるDOM構造**
+```html
+<div class="timeline-container">
+  <div class="cuts-container">
+    <div class="cut-item" data-cut-index="0">
+      <div class="cut-thumbnail">
+        <img src="data:image/png;base64,..." /> <!-- ← ここが表示されない -->
+      </div>
+      <div class="cut-info">CUT1 (0.5s)</div>
+    </div>
+    <div class="cut-item" data-cut-index="1">...</div>
+  </div>
+</div>
+```
+
+---
+
+### layer-system.js
+
+#### 重要なメソッド（AnimationSystemとの連携）
+
+| メソッド名 | 説明 | AnimationSystemからの呼び出し |
+|-----------|------|----------------------------|
+| `createLayer(name, isBackground)` | レイヤー作成 | createNewBlankCut() |
+| `redrawLayer(layerIndex)` | レイヤー再描画 | - |
+| `updateLayerPanelUI()` | レイヤーパネルUI更新 | setActiveCut() |
+| `captureLayerSnapshot()` | レイヤースナップショット生成 | ❌ 未使用（要確認） |
+
+**プロパティ**
+```javascript
+this.layers = [PIXI.Container, ...]           // レイヤー配列
+this.layerTransforms = Map<layerId, transform> // レイヤー変形状態
+this.layersContainer = PIXI.Container         // レイヤーコンテナ
+this.animationSystem = AnimationSystem        // 逆参照
+```
+
+---
+
+## 🔍 問題の根本原因分析
+
+### 原因1: サムネイル生成タイミングの問題
+
+**現在の実装**
+```javascript
+// animation-system.js: createNewCutFromCurrentLayers()
+setTimeout(() => {
+    this.generateCutThumbnailOptimized(this.animationData.cuts.length - 1);
+}, 100);
+```
+
+**問題点**
+- 非同期処理後にEventBus通知がない
+- timeline-ui.jsがサムネイル生成完了を検知できない
+
+**正しいフロー**
+```javascript
+async createNewCutFromCurrentLayers() {
+    // ... CUT作成処理 ...
+    
+    // 即座にサムネイル生成
+    await this.generateCutThumbnailOptimized(newIndex);
+    
+    // 生成完了後にEventBus通知
+    this.eventBus.emit('animation:cut-created', { 
+        cutId: cut.id, 
+        cutIndex: newIndex 
+    });
+}
+```
+
+### 原因2: timeline-ui.jsのサムネイル表示ロジック不備
+
+**timeline-ui.js内の問題箇所（推測）**
+```javascript
+// createCutElement() 内
+if (cut.thumbnail) {
+    // PIXI.Textureをどうやって<img>に変換している？
+    // この実装が不完全な可能性
+}
+```
+
+**必要な実装**
+```javascript
+createCutElement(cut, index) {
+    const cutItem = document.createElement('div');
+    cutItem.className = 'cut-item';
+    
+    const thumbnail = document.createElement('div');
+    thumbnail.className = 'cut-thumbnail';
+    
+    if (cut.thumbnail) {
+        // PIXI.Texture → Canvas → DataURL
+        const canvas = this.animationSystem.app.renderer.extract.canvas(cut.thumbnail);
+        const img = document.createElement('img');
+        img.src = canvas.toDataURL();
+        thumbnail.appendChild(img);
+    } else {
+        thumbnail.textContent = 'No Image';
+    }
+    
+    cutItem.appendChild(thumbnail);
+    return cutItem;
+}
+```
+
+### 原因3: CUT独立性の問題
+
+**現在の実装の懸念点**
+```javascript
+// animation-system.js: saveCutLayerStates()
+saveCutLayerStates() {
+    const currentCut = this.getCurrentCut();
+    if (!currentCut || !this.layerSystem) return;
+    
+    const savedLayers = this.copyCurrentLayersForCutIndependent(currentCut.id);
+    currentCut.layers = savedLayers;  // ← これで本当に独立している？
+}
+```
+
+**確認すべき点**
+1. `copyCurrentLayersForCutIndependent()` が本当にディープコピーしているか
+2. `rebuildLayersFromCutData()` が正しくレイヤーを復元しているか
+3. LayerSystemの `layers` 配列と AnimationSystemの `cut.layers` が完全に分離されているか
+
+---
+
+## 🛠️ 改修アクションプラン
+
+### Step 1: timeline-ui.jsのサムネイル表示修正（最優先）
+
+**ファイル**: `ui/timeline-ui.js`
+
+**修正内容**:
+1. `createCutElement()` メソッドの完全実装
+2. `updateSingleCutThumbnail()` メソッドの完全実装
+3. PIXI.Texture → Canvas → img.src 変換の実装
+
+**期待される結果**:
+- CUT作成時にサムネイルが即座に表示される
+- サムネイル更新時に画像が正しく更新される
+
+### Step 2: サムネイル生成タイミングの修正
+
+**ファイル**: `system/animation-system.js`
+
+**修正内容**:
+1. `createNewCutFromCurrentLayers()` を async/await に変更
+2. サムネイル生成完了を待ってから EventBus 通知
+3. `generateCutThumbnailOptimized()` の戻り値を保証
+
+**期待される結果**:
+- サムネイル生成が確実に完了してから UI 更新される
+- 非同期処理の競合がなくなる
+
+### Step 3: CUT独立性の検証・修正
+
+**ファイル**: `system/animation-system.js`
+
+**検証項目**:
+1. `copyCurrentLayersForCutIndependent()` のディープコピー確認
+2. `rebuildLayersFromCutData()` の復元ロジック確認
+3. レイヤーID衝突がないか確認
+
+**修正内容**:
+1. パスデータの完全なディープコピー
+2. レイヤーコンテナの完全な再構築
+3. デバッグログの追加（一時的）
+
+**期待される結果**:
+- CUT1で描画 → CUT2作成 → CUT1に戻る → 描画が残っている
+- CUT2で描画 → CUT1に戻る → CUT2の描画が見えない
+
+### Step 4: EventBus通知フローの整備
+
+**ファイル**: 全ファイル
+
+**修正内容**:
+1. イベント発行タイミングの統一
+2. イベントペイロードの標準化
+3. リスナーの実装漏れチェック
+
+---
+
+## 📝 自己評価チェックリスト
+
+### 設計面
+- [ ] 2次元マトリクス構造が明確に定義されているか？
+- [ ] CUT間の完全な独立性が保証されているか？
+- [ ] サムネイル生成フローが明確か？
+- [ ] EventBus通知フローが一貫しているか？
+
+### 実装面
+- [ ] timeline-ui.jsのサムネイル表示ロジックは完全か？
+- [ ] animation-system.jsのCUT管理ロジックは完全か？
+- [ ] 非同期処理の競合対策は十分か？
+- [ ] メモリリーク対策は十分か？
+
+### テスト面
+- [ ] CUT作成→サムネイル表示のフローは確認済みか？
+- [ ] CUT切り替え→描画独立性は確認済みか？
+- [ ] 描画→サムネイル更新のフローは確認済みか？
+- [ ] 大量CUT作成時のパフォーマンスは確認済みか？
+
+---
+
+## 🎯 改修優先順位
+
+### 最優先（即座に対応）
+1. **timeline-ui.jsのサムネイル表示修正**
+   - 理由: これがないと何も見えない
+   - 影響範囲: timeline-ui.js のみ
+   - 難易度: 低
+
+### 高優先（次に対応）
+2. **サムネイル生成タイミングの修正**
+   - 理由: 非同期処理の競合を解消
+   - 影響範囲: animation-system.js
+   - 難易度: 中
+
+### 中優先（検証後に対応）
+3. **CUT独立性の検証・修正**
+   - 理由: 根本的な機能の確認
+   - 影響範囲: animation-system.js
+   - 難易度: 中〜高
+
+### 低優先（余裕があれば）
+4. **EventBus通知フローの整備**
+   - 理由: 既存機能の改善
+   - 影響範囲: 全ファイル
+   - 難易度: 低
+
+---
+
+## 💡 次のアクション
+
+### 今すぐ実施すること
+1. timeline-ui.jsの現在の実装を確認
+2. サムネイル表示ロジックの完全実装
+3. 動作確認
+
+### 確認が必要なこと
+1. `cut.thumbnail` に PIXI.Texture が正しく保存されているか？
+2. timeline-ui.jsの `createCutElement()` は存在するか？
+3. `updateSingleCutThumbnail()` は存在するか？
+
+---
+
+## 📌 重要な注意事項
+
+### PixiJS v8.13 の制約
+- `renderer.extract.canvas()` の使用方法
+- `PIXI.Texture.from()` の引数
+- RenderTexture の破棄タイミング
+
+### ブラウザAPI制約
+- `localStorage` 使用禁止（確認済み）
+- Canvas の toDataURL() は同期処理
+- 大量のDataURLはメモリを圧迫する可能性
+
+### パフォーマンス考慮
+- サムネイル生成は重い処理
+- 大量CUT作成時の遅延対策
+- メモリリーク対策（Texture破棄）
+
+---
+
+この計画書をベースに、まず **timeline-ui.js の現状確認** から始めることを推奨します。
+
+---
+ **timeline-ui.js の現状確認**
+🚨 サムネイル表示されない根本原因
+問題箇所: generateCutThumbnailHTML() メソッド（line 1048-1054付近）
+
+generateCutThumbnailHTML(cut, index) {
+    if (cut.thumbnail) {
+        // ❌ 問題: cut.thumbnail は PIXI.Texture なのに直接src属性に代入している
+        return `<img src="${cut.thumbnail}" alt="CUT${index + 1}" />`;
+    } else {
+        return `<div class="cut-thumbnail-placeholder">CUT${index + 1}</div>`;
+    }
+}
+
+現状の問題:
+
+cut.thumbnail は PIXI.Texture オブジェクト
+<img src="[object Object]"> のような状態になっている
+PIXI.Texture → Canvas → DataURL への変換が欠落
+
+正しい実装:
+generateCutThumbnailHTML(cut, index) {
+    if (cut.thumbnail && this.animationSystem?.app?.renderer) {
+        // PIXI.Texture → Canvas → DataURL に変換
+        try {
+            const canvas = this.animationSystem.app.renderer.extract.canvas(cut.thumbnail);
+            const dataUrl = canvas.toDataURL('image/png');
+            return `<img src="${dataUrl}" alt="CUT${index + 1}" />`;
+        } catch (error) {
+            console.error('Thumbnail conversion failed:', error);
+            return `<div class="cut-thumbnail-placeholder">ERR</div>`;
+        }
+    } else {
+        return `<div class="cut-thumbnail-placeholder">CUT${index + 1}</div>`;
+    }
+}
+
+
+📋 その他の問題点
+問題2: updateSingleCutThumbnail() も同様の問題
+
+// line 1071-1082付近
+updateSingleCutThumbnail(cutIndex) {
+    // ... 省略 ...
+    if (cut && cut.thumbnail) {
+        // ❌ 同じ問題: PIXI.Texture を直接使用
+        thumbnail.innerHTML = `<img src="${cut.thumbnail}" alt="CUT${cutIndex + 1}" />`;
+    }
+}
+
+
+
