@@ -1,0 +1,263 @@
+1) まず短い結論（原因の推定）
+
+CUT（フレーム）ごとのサムネイルが反映されない
+→ タイムライン側が「各CUTの独立したレンダリング結果（RenderTexture）」を作っていない、または作っていてもキャンバス比率（width×height）を正しく取ってレンダリングしていないため。タイムラインに渡す画像は 実際のフレーム解像度でレンダリング→縮小 する必要があるが、現状は「同じ表示コンテナを逐次キャプチャ（もしくは同じRenderTextureを再利用）」している疑いがあります。
+GitHub
+
+キャンバス比率が反映されない
+→ 生成するサムネイルやエクスポートのRenderTexture作成時に、プロジェクト設定（config）のキャンバスサイズ／アスペクト比を参照していない、あるいはDPR（devicePixelRatio）を考慮していない。また「キャンバスの見た目（CSS）と内部レンダラー解像度（ピクセル）を分離していない」ことが原因になりやすい。
+GitHub
+
+CUT1のレイヤー1に描くとCUT2のレイヤー1にも同じ描画が出る（独立性がない）
+→ レイヤーのデータモデルが “CUT × レイヤー” の二次元（マトリクス） を保持していない。現在は単一の Layer オブジェクト群（Container/Graphics）を全CUTで共有していて、タイムラインで表示する際に「表示するCUTを切り替えても同じLayer実体を表示している」状態。結果、描画は全CUTに見える。解決は 各CUTごとに独立したLayerインスタンス（またはピクセルデータ）を保持すること。
+GitHub
+
+加えてチェックすべき点（要点）
+
+座標変換APIの不一致（世界座標／ローカル座標のAPIがバラバラ）
+
+Layer APIの断片化（LayerSystem外で直接コンテナを操作している）
+
+EventBusが完全に統合されていない（イベントが直接DOM→各モジュールに飛んでいる）
+
+設定参照が混在（configをグローバルで参照しているが各システムがローカルコピーを使う）
+
+Pixiのバージョン記述がコード内に埋め込まれているか、別のバージョン用コードが混在していないか（チェック要）
+
+二重実装（同じ機能を複数の場所で実装している） — これらは改修中に潰すべき。
+GitHub
++1
+
+2) 改修方針（高レベル）
+
+単一責務・明確なAPI境界：LayerSystemはレイヤーの作成／複製／削除／描画ターゲットの切替／変換（移動・回転・反転）を一手に担う。描画ツール（ペン等）は「現在のアクティブLayer」にのみ書き込む。ツールはLayer内部構造を知らない。
+
+データモデルを二次元化：project.cuts（frames）配下に layers[] を置く。各要素は Layer オブジェクト（または LayerState referencing RenderTexture/Container）を持つ。UI（タイムライン）はこの project.cuts をソースにする。
+
+レンダリングのルールを統一：サムネイル作成・GIF出力・画面描画はすべて「Render pipeline」関数（例：RendererUtils.renderCutToTexture(cutIndex, width, height)）を通す。これによりアスペクト比・DPRを一箇所で正しく扱える。
+
+EventBusを真に中心化：DOMイベント → EventBus → 各System（LayerSystem, AnimationSystem, UI）で処理。直接的なグローバル参照や横断的アクセスを削減する。
+
+設定は読み取り専用オブジェクトで参照：config は初期化時に読み込み、変更は明示的なAPI経由で行う（Config.setCanvasSize()等）。
+
+3) 変更ファイル一覧（優先度順）と要作業（抜粋）
+
+優先度A（必須: 問題解決に直結）
+
+system/layer-system.js — データモデルをCUT×レイヤーに変更。Layerの生成／複製メソッド追加。アクティブCUT切替API。ツール用の getActiveLayer() を実装。
+GitHub
+
+ui/timeline-ui.js — サムネイル生成を RenderTexture経由に変更。RenderTexture生成時に config.canvasWidth/Height を参照しDPRを掛ける。サムネイル用に縮小（Canvas drawImage 等 or renderer.extract.base64）して表示。
+GitHub
+
+system/gif-exporter.js — GIF出力時に RendererUtils.renderCutToTexture を使うように修正（各フレームの独立コンテンツを正確に取得）。
+GitHub
+
+優先度B（構造改善）
+
+core-runtime.js / core-engine.js — project 構造（cuts/layers）を中心に据える。イベントバス登録の整理。レンダリングループを RendererUtils に委譲。
+GitHub
++1
+
+system/event-bus.js — イベント命名規約を定め、subscribe/unsubscribeを厳格に。cut:changed, layer:changed, canvas:resized 等を定義。
+GitHub
+
+優先度C（検査・文書化）
+
+coordinate-system.js — world/local API をドキュメント化し、CameraSystemとLayerSystemで同一実装を参照する。
+GitHub
+
+system/history.js — undo/redoをCUT×レイヤーに対応させる（履歴エントリに cutIndex を持たせる）。
+
+4) 変更の具体コード（重要な抜粋：概念実装）
+
+※このまま直接貼ると大きいので、要点だけ示します。実装はPixiJS v8.13のAPIに合わせてください。
+
+LayerSystem：データモデル（概念）
+// data model
+const Project = {
+  cuts: [
+    {
+      id: 'cut-0',
+      name: 'CUT 1',
+      duration: 1, // フレーム数 or 秒（仕様に合わせる）
+      layers: [ LayerState, LayerState, ... ]
+    },
+    ...
+  ],
+  activeCutIndex: 0
+};
+
+// LayerState の例
+function createLayerState(name, width, height) {
+  const container = new PIXI.Container();
+  // ここに描画用の子（Graphics / Sprites）を入れる
+  return {
+    id: 'layer-'+Date.now(),
+    name,
+    visible: true,
+    opacity: 1,
+    container, // 実体
+    transform: { x:0, y:0, scale:1, rotation:0, flipX:false, flipY:false }
+  };
+}
+
+切替 API（必須）
+// LayerSystem methods
+function setActiveCut(index) {
+  project.activeCutIndex = index;
+  // 画面表示用ルートを差し替える
+  const cut = project.cuts[index];
+  stage.removeChildren(); // or stageLayersContainer.removeChildren();
+  cut.layers.forEach(ls => {
+    stage.addChild(ls.container);
+  });
+  EventBus.emit('cut:changed', { index, cut });
+}
+
+function getActiveLayer(layerIndex=0) {
+  return project.cuts[project.activeCutIndex].layers[layerIndex];
+}
+
+サムネイル生成（timeline-ui 側）
+async function createThumbnailForCut(index, thumbW, thumbH) {
+  const cut = project.cuts[index];
+  // 新規RenderTextureを作る（指定したアスペクト比・DPR考慮）
+  const rt = PIXI.RenderTexture.create({ 
+    width: config.canvasWidth * config.dpr, 
+    height: config.canvasHeight * config.dpr,
+    scaleMode: PIXI.SCALE_MODES.LINEAR
+  });
+  // 一時的に stage に該当cut.layersコンテナを追加してレンダリング
+  const tmpContainer = new PIXI.Container();
+  cut.layers.forEach(l => tmpContainer.addChild(l.container));
+  renderer.render(tmpContainer, { renderTexture: rt, clear: true });
+  // サムネ縮小はCanvas/Blob経由で行う（ブラウザのCanvasで縮小してDataURL作成）
+  const canvas = renderer.extract.canvas(rt);
+  // create scaled canvas for thumbnail:
+  const thumbCanvas = document.createElement('canvas');
+  thumbCanvas.width = thumbW; thumbCanvas.height = thumbH;
+  const ctx = thumbCanvas.getContext('2d');
+  ctx.drawImage(canvas, 0, 0, thumbW, thumbH);
+  return thumbCanvas.toDataURL('image/png');
+}
+
+
+ポイント：RenderTexture.create にプロジェクトのキャンバスサイズを掛けて作ればアスペクト比が守られる。縮小はブラウザのCanvasで行うと品質も安定します。
+
+5) API 辞典（各ファイルで定義すべきメソッド／定数の最小セット）
+system/layer-system.js
+
+LayerSystem.init(renderer, rootContainer)
+
+LayerSystem.createLayer(name, width, height) → LayerState
+
+LayerSystem.cloneLayerForCut(srcLayerState) → LayerState（deep copyを提供）
+
+LayerSystem.insertLayerAt(cutIndex, layerIndex, layerState)
+
+LayerSystem.removeLayer(cutIndex, layerIndex)
+
+LayerSystem.setActiveCut(index)
+
+LayerSystem.getActiveLayer(layerIndex)
+
+LayerSystem.applyTransform(cutIndex, layerIndex, transform)
+
+LayerSystem.renderCutToRenderTexture(cutIndex, {width, height, dpr}) → RenderTexture
+
+ui/timeline-ui.js
+
+TimelineUI.init(eventBus, domRoot)
+
+TimelineUI.createThumbnail(cutIndex) → Promise<dataURL>
+
+TimelineUI.onCutSelect(index)
+
+TimelineUI.updateThumb(cutIndex)
+
+system/event-bus.js
+
+EventBus.on(eventName, handler)
+
+EventBus.off(eventName, handler)
+
+EventBus.emit(eventName, payload)
+
+標準イベント名（定義）: cut:changed, layer:changed, canvas:resize, tool:stroke, history:push
+
+core-runtime.js / core-engine.js
+
+Project.load(config)
+
+Project.newCut() / Project.duplicateCut(srcIndex)
+
+Project.save() / Project.exportGif()（gif-exporterへ委譲）
+
+6) テスト項目（改修後に必ずチェック）
+
+新規CUT作成 → CUT1に描画 → CUT2に切り替え → CUT2に描画 → CUT1に戻るとCUT1の絵が残っている（独立）
+
+タイムラインのサムネイルがCUTごとに異なる（同一ではない）
+
+タイムラインのサムネイルの縦横比がプロジェクトのキャンバス比と一致している
+
+GIFエクスポートで各フレームが正しくレンダリングされている（タイムラインの絵と比較）
+
+camera/transform（移動・回転・反転）をLayerSystemのAPIで行った場合、サムネイル・エクスポートに同様に反映される
+
+undo/redo（history）がCUT毎に動作する（履歴エントリにcutIndexがあること）
+
+7) チェックリスト：ご依頼の点を網羅する検査（実際に手で/自動で確認）
+
+座標変換APIの不一致：coordinate-system.js の export と camera-system / layer-system の使用箇所を grep（worldToLocal/toLocal の使い方）で比較。必要なら一本化。
+GitHub
+
+レイヤーAPIの断片化：stage.addChild を直接使っている箇所を列挙（LayerSystem経由に移す）。
+GitHub
+
+EventBus統合の不完全性：DOMイベントから直接システムオブジェクトを呼んでいる箇所（document.getElementById(...).addEventListener等）を列挙し、EventBusを通す。
+GitHub
+
+設定参照の混在：config.js の値を各所で import（ない場合はグローバル変数参照）しているかを確認。変更は必ず ConfigAPI を用いる。
+GitHub
+
+Pixiバージョンの混在：index.html のCDN参照を確認し、コード中に if (PIXI.VERSION !== '8.13.0') のような条件分岐がないか確認。
+GitHub
+
+二重実装：同じ機能（例：サムネ生成）が ui/timeline-ui.js と他の場所に実装されていないか grep で確認。
+GitHub
+
+8) 優先度付き実作業ステップ（短期〜中期、具体的）
+フェーズA（1日〜数日で終わる想定）
+
+LayerModel の再設計（LayerSystem修正） — cuts配列を実装して、setActiveCut と getActiveLayer を用いるように各ツールを置換。
+
+タイムラインのサムネイル修正 — createThumbnailForCut を上の RenderTexture ベースに書き換え。
+
+レンダリングユーティリティ実装 — RendererUtils.renderCutToRenderTexture() を作る（DPR・アスペクト管理）。
+
+単体テスト：上の「テスト項目」を手動で実施。
+
+フェーズB（安定化）
+
+history を CUT 対応に変更（undo/redoの安定化）。
+
+gif-exporter を RenderTexture ベースにして GIF を正確に作る。
+
+EventBus によるイベント整理。
+
+フェーズC（ドキュメント／リファクタ）
+
+APIドキュメント（今回作った辞典をコード内JSDoc化）。
+
+小さなリファクタ（命名規約統一、デバッグログ削減）。
+
+9) 追加の実装メモ（Pixi v8.13 向けの注意）
+
+PIXI.RenderTexture.create({ width, height, scaleMode }) を使う（v8系）。renderer.extract.canvas(renderTexture) でキャンバスを取得可能。縮小はブラウザCanvasで行うと早い。
+
+DPI（DPR）を考慮する場合、内部レンダリング解像度 = config.canvasWidth * dpr とする。UI表示はCSSで縮小する。
+
+Container の scale.x/scale.y で反転を表現できる（反転は -1 を使うが transformの原点に注意）。LayerSystemで transform を管理して stage に適用すること。
+（v8.13 固有のメソッド呼び出しはコードで厳密に合わせます）
