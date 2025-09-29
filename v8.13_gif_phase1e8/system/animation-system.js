@@ -1,8 +1,8 @@
-// ===== system/animation-system.js - Canvas直接保存改修版 =====
-// 【改修完了】cut.thumbnailCanvas: Canvas形式で直接保存
-// 【改修完了】Texture往復を完全排除
-// 【改修完了】キャンバス比率対応サムネイル生成
-// 【維持】完全2次元マトリクス・CUT独立性・座標系統一
+// ===== system/animation-system.js - 確実な同期化改修版 =====
+// 【改修完了】generateCutThumbnailOptimized: PixiJSレンダリング完了待機
+// 【改修完了】不確実なsetTimeoutの排除
+// 【改修完了】Promise ベース同期化チェーン
+// 【維持】Canvas直接保存・完全2次元マトリクス・CUT独立性・座標系統一
 // PixiJS v8.13 対応
 
 (function() {
@@ -43,7 +43,7 @@
         init(layerSystem, app) {
             if (this.hasInitialized) return;
             
-            console.log('🎬 AnimationSystem: Canvas直接保存改修版 初期化開始...');
+            console.log('🎬 AnimationSystem: 確実な同期化改修版 初期化開始...');
             
             this.layerSystem = layerSystem;
             this.app = app;
@@ -73,14 +73,15 @@
                 }
             }, 200);
             
-            console.log('✅ AnimationSystem: Canvas直接保存改修版 初期化完了');
+            console.log('✅ AnimationSystem: 確実な同期化改修版 初期化完了');
         }
         
+        // 【改修】不確実なsetTimeoutを排除
         setupLayerChangeListener() {
             if (!this.eventBus) return;
             
             this.eventBus.on('layer:path-added', () => {
-                this.saveCutLayerStates();
+                // layer-system.jsで既に同期処理されているため、ここでは不要
             });
             
             this.eventBus.on('layer:updated', () => {
@@ -91,11 +92,9 @@
                 this.saveCutLayerStates();
             });
             
-            this.eventBus.on('drawing:stroke-completed', () => {
-                setTimeout(() => {
-                    this.saveCutLayerStates();
-                    this.generateCutThumbnailOptimized(this.animationData.playback.currentCutIndex);
-                }, 50);
+            // 【改修】drawing:stroke-completedでの二重処理を排除
+            this.eventBus.on('drawing:stroke-completed', async () => {
+                // layer-system.jsで既に処理済み
             });
         }
         
@@ -137,7 +136,7 @@
                 name: `CUT${this.animationData.cuts.length + 1}`,
                 duration: window.TEGAKI_CONFIG?.animation?.defaultCutDuration || 0.5,
                 layers: independentLayers,
-                thumbnailCanvas: null // Canvas形式で保存
+                thumbnailCanvas: null
             };
             
             this.animationData.cuts.push(cut);
@@ -147,6 +146,7 @@
             
             this.switchToActiveCutSafely(newCutIndex, false);
             
+            // 【改修】Promise ベースの同期化
             setTimeout(async () => {
                 await this.generateCutThumbnailOptimized(newCutIndex);
                 
@@ -512,6 +512,7 @@
             }
         }
         
+        // 【改修】不確実なsetTimeoutを排除、内部でgenerateCutThumbnailOptimizedを呼ばない
         saveCutLayerStates() {
             const currentCut = this.getCurrentCut();
             if (!currentCut || !this.layerSystem) return;
@@ -521,10 +522,6 @@
             
             this.cutLayerStates.set(currentCut.id, this.deepCloneCutLayers(currentState));
             
-            setTimeout(() => {
-                this.generateCutThumbnailOptimized(this.animationData.playback.currentCutIndex);
-            }, 100);
-            
             if (this.eventBus) {
                 this.eventBus.emit('animation:cut-updated', { 
                     cutIndex: this.animationData.playback.currentCutIndex,
@@ -533,7 +530,7 @@
             }
         }
         
-        // 【改修完了】サムネイル生成 - Canvas直接保存
+        // 【改修完了】サムネイル生成 - PixiJSレンダリング完了待機
         async generateCutThumbnailOptimized(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut || !this.layerSystem || !this.app?.renderer) return;
@@ -547,11 +544,13 @@
                     await this.temporarilyApplyCutStateForThumbnail(cutIndex);
                 }
                 
+                // 【改修】PixiJSレンダリング完了を確実に待機
+                await this._waitForRendererReady();
+                
                 // Canvas直接生成
                 const thumbnailCanvas = await this.generateLayerCompositeCanvasOptimized();
                 
                 if (thumbnailCanvas) {
-                    // Canvas形式で保存（Texture化しない）
                     cut.thumbnailCanvas = thumbnailCanvas;
                 }
                 
@@ -570,6 +569,25 @@
                     this.eventBus.emit('animation:thumbnail-failed', { cutIndex, error: error.message });
                 }
             }
+        }
+        
+        // 【新規】PixiJSレンダリング完了待機
+        async _waitForRendererReady() {
+            if (!this.app?.renderer || !this.layerSystem?.layersContainer) {
+                return;
+            }
+            
+            return new Promise(resolve => {
+                requestAnimationFrame(() => {
+                    try {
+                        this.app.renderer.render(this.layerSystem.layersContainer);
+                        requestAnimationFrame(() => resolve());
+                    } catch (err) {
+                        console.error('Renderer wait error:', err);
+                        resolve();
+                    }
+                });
+            });
         }
         
         async temporarilyApplyCutStateForThumbnail(cutIndex) {
@@ -599,7 +617,7 @@
             await new Promise(resolve => setTimeout(resolve, 50));
         }
         
-        // 【改修完了】Canvas合成 - キャンバス比率対応
+        // Canvas合成 - キャンバス比率対応
         async generateLayerCompositeCanvasOptimized() {
             try {
                 if (!this.layerSystem?.layers || this.layerSystem.layers.length === 0) {
@@ -1345,12 +1363,13 @@
     
     window.TegakiAnimationSystem = AnimationSystem;
     
-    console.log('✅ animation-system.js loaded (Canvas直接保存改修版)');
+    console.log('✅ animation-system.js loaded (確実な同期化改修版)');
     console.log('🔧 改修完了項目:');
-    console.log('  🆕 cut.thumbnailCanvas: Canvas形式で直接保存');
-    console.log('  🆕 Texture往復を完全排除');
-    console.log('  🆕 generateLayerCompositeCanvasOptimized(): キャンバス比率対応');
-    console.log('  ✅ 完全2次元マトリクス・CUT独立性維持');
+    console.log('  🆕 generateCutThumbnailOptimized: PixiJSレンダリング完了待機');
+    console.log('  🆕 _waitForRendererReady: 確実なレンダリング待機');
+    console.log('  ❌ setupLayerChangeListener: 不確実なsetTimeout排除');
+    console.log('  ❌ saveCutLayerStates: サムネイル自動生成を排除');
+    console.log('  ✅ Canvas直接保存・完全2次元マトリクス維持');
     console.log('  ✅ CoordinateSystem API統合');
     console.log('  ✅ EventBus完全統合');
     console.log('  ✅ PixiJS v8.13 完全対応');
