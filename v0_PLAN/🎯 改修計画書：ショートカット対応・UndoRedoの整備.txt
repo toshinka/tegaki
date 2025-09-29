@@ -1,0 +1,201 @@
+🎯 改修計画書：ショートカット対応・Undo/Redoの整備
+1. ブラウザショートカット競合回避
+方法
+
+keydown イベントで event.preventDefault() を適切に使う。
+
+ただし 全キーで無効化するのは危険（ユーザーがブラウザ機能を使えなくなる）。
+→ ツールで必要なショートカットだけをキャンセルし、それ以外はブラウザに渡す。
+
+実装例（event-bus.jsに統合推奨）
+
+
+document.addEventListener("keydown", (e) => {
+    const key = e.key.toLowerCase();
+    const ctrl = e.ctrlKey || e.metaKey;
+
+    // Ctrl+Z → Undo
+    if (ctrl && key === "z") {
+        e.preventDefault();
+        EventBus.emit("history:undo");
+    }
+    // Ctrl+Y or Ctrl+Shift+Z → Redo
+    if ((ctrl && key === "y") || (ctrl && e.shiftKey && key === "z")) {
+        e.preventDefault();
+        EventBus.emit("history:redo");
+    }
+    // Ctrl+S → ツール内保存
+    if (ctrl && key === "s") {
+        e.preventDefault();
+        EventBus.emit("file:save");
+    }
+    // 必要に応じて他のショートカット追加
+});
+
+👉 ポイント：
+
+明示的に割り振ったものだけ preventDefault する。
+
+EventBus を介して HistorySystem / LayerSystem / FileSystem に通知する設計にすると拡張しやすい。
+
+
+2. Undo / Redo の確認
+
+対象ファイル：
+
+history.js
+
+event-bus.js
+
+現状チェックポイント
+
+history.js が履歴スタックを持っているか？
+
+undo() / redo() が「非破壊操作」（履歴を積み増しする形）か「破壊操作」（Canvasを直接巻き戻す）か？
+
+event-bus.js で Ctrl+Z / Ctrl+Y のバインディングがあるか？
+
+👉 現在の history.js を確認した限りでは、スタック形式で履歴管理しているが、UIショートカットとの結合が弱い。
+→ CTRL+Z / CTRL+Y が確実に割り当てられていない可能性が高い。
+
+
+3. 改修内容
+追加・修正タスク
+
+ショートカット統合層の新設
+
+system/shortcut-manager.js を新規追加。
+
+event-bus.js に分散しているショートカット処理を整理し、可読性を高める。
+
+Undo/Redo の EventBus 統合
+
+EventBus.emit("history:undo") / EventBus.emit("history:redo") を標準化。
+
+history.js 内で EventBus を listen して動作するようにする。
+
+非破壊確認
+
+履歴を「差分適用型」（レイヤーや操作単位で記録）に寄せる。
+
+ImageData 丸ごと保存だと重いので、将来的には「操作ログ方式」も検討。
+
+ショートカット割り当て表を作成
+
+CTRL+Z → Undo
+
+CTRL+Y / CTRL+SHIFT+Z → Redo
+
+CTRL+Shift+N　→　新規レイヤー作成
+
+ALT+Space　→　アニメ再生/停止
+
+ALT+C　→　アクティブCUTのコピー＆右隣に新規CUTを作成とコピー内容のペースト（+C&Pボタンと一緒）
+
+ALT+N　→　新規CUTの作成。（+CUTボタンと一緒）
+
+CTRL+S → 保存（内部保存 or エクスポート）
+
+CTRL+SHIFT+S → 別名保存（将来用）
+
+CTRL+O → 読み込み（将来用）
+
+DELETE → アクティブレイヤー削除
+
+ALT+DELETE → アクティブCUTデリート
+
+4. 改修の進め方（段階的）
+
+ショートカット競合制御の導入
+
+event.preventDefault() を導入し、既存の event-bus.js に最小限追加。
+
+Undo/Redo の EventBus 連携強化
+
+history.js が確実に呼ばれるように改修。
+
+shortcut-manager.js の導入
+
+ショートカット処理を集約して可読性を上げる。
+
+動作確認
+
+CTRL+Z / CTRL+Y がブラウザ動作を潰さずに、ツール内部だけに効くことを確認。
+
+履歴が正しく積まれて非破壊動作になっているか確認。
+
+
+⚠shortcut-manager.js分離案が出たが、event-bus.js のファイル量が少ないので一括化で良い。
+
+以下は サンプル改修コード（追加部分のみ） です。
+Undo / Redo を中心に、競合しやすいショートカットを例として入れてあります。
+
+// event-bus.js
+
+// === EventBus 基本実装（既存部分は省略） ===
+const EventBus = {
+    events: {},
+    on(event, handler) {
+        if (!this.events[event]) this.events[event] = [];
+        this.events[event].push(handler);
+    },
+    emit(event, payload) {
+        if (this.events[event]) {
+            this.events[event].forEach(handler => handler(payload));
+        }
+    }
+};
+
+// === ショートカット管理 ===
+// TODO: 将来的に shortcut-manager.js へ分離する可能性あり
+document.addEventListener("keydown", (e) => {
+    const key = e.key.toLowerCase();
+    const ctrl = e.ctrlKey || e.metaKey;
+
+    // Undo: Ctrl+Z
+    if (ctrl && key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        EventBus.emit("history:undo");
+    }
+
+    // Redo: Ctrl+Y または Ctrl+Shift+Z
+    if ((ctrl && key === "y") || (ctrl && e.shiftKey && key === "z")) {
+        e.preventDefault();
+        EventBus.emit("history:redo");
+    }
+
+    // Save: Ctrl+S
+    if (ctrl && key === "s") {
+        e.preventDefault();
+        EventBus.emit("file:save");
+    }
+
+    // Open: Ctrl+O
+    if (ctrl && key === "o") {
+        e.preventDefault();
+        EventBus.emit("file:open");
+    }
+
+    // Delete: レイヤー削除
+    if (key === "delete") {
+        e.preventDefault();
+        EventBus.emit("layer:delete");
+    }
+});
+
+// === 他システムが EventBus を購読して動作する例 ===
+EventBus.on("history:undo", () => {
+    console.log("Undo triggered");
+    // history.js 内の undo() を呼び出す
+});
+
+EventBus.on("history:redo", () => {
+    console.log("Redo triggered");
+    // history.js 内の redo() を呼び出す
+});
+
+
+
+
+
+
