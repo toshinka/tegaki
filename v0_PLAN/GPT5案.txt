@@ -1,179 +1,147 @@
-要点（短く）
+現状の問題点
 
-1.原因想定: 現状は「レイヤ配列がプロジェクト全体で1つだけ」になっていて、CUT（シーン・コマ）を切り替えても同じレイヤ配列に描き込まれている。よって CUT1 のレイヤ1 の絵が CUT2 のレイヤ1 にも表示される。
+タイムラインのサムネイルが反映されない
 
-2.設計方針: LayerSystem が cutIndex × layerIndex の 2次元データを持つ（あるいは frames[cut][layer] = コンテナ/RenderTexture）にする。
+各CUTの「代表画像」となるべきものが正しく生成・更新されていない。
 
-3.タイムラインのサムネイル: 各（cut, layer）を renderer.render(container, renderTexture) でレンダーして、canvas/base64 を timeline のサムネイル img に設定する。
+現状はレイヤーとCUTの関係が曖昧で、サムネイル更新処理が破綻している。
 
-4.短期対応: 既存の API を壊さないために LayerSystem に ensureFrame(cut, layer) と setActiveCut(cut) を追加する。既存呼び出しはほぼ変えずに内部だけ2Dに変換できる。
+CUT間でレイヤーが共有されてしまう
 
-テスト: CUTを切替えて描画→timelineサムネイル生成→CUT切替再表示でオリジナルが残ることを確認。
+CUT1 Layer1 に描いた絵が CUT2 Layer1 にも反映される。
 
-具体的な変更（概念設計 → すぐコピペできるコード例）
+レイヤー実体が共有されている可能性が高い（参照コピーになっている）。
 
-以下は system/layer-system.js を置き換える（または主要ロジック差し替え）例です。注意：あなたの既存コードの命名（LayerSystem の呼び出し方）に合わせて細かな調整が必要ですが、方針はこれで動きます。
-
-// system/layer-system.js
-// PixiJS v8 前提、モジュール無しで読み込めるように UMD-ish にしておく
-
-(function(global){
-  // LayerSystem コンストラクタ
-  function LayerSystem(app, options = {}) {
-    this.app = app; // PIXI.Application
-    this.renderer = app.renderer;
-    this.defaultCanvasSize = options.canvasSize || {width: 400, height: 400};
-
-    // frames[cutIndex] = [ layer0Container, layer1Container, ... ]
-    // 各 layerContainer は PIXI.Container（表示用）
-    this.frames = []; 
-
-    // 管理用の "activeCut" と "activeLayerIndex"
-    this.activeCut = 0;
-    this.activeLayer = 0;
-
-    // 履歴や undo 用に binary snapshot を残すなら別途
-  }
-
-  LayerSystem.prototype.ensureCut = function(cutIndex) {
-    if (!this.frames[cutIndex]) {
-      this.frames[cutIndex] = [];
-    }
-  };
-
-  LayerSystem.prototype.ensureLayer = function(cutIndex, layerIndex) {
-    this.ensureCut(cutIndex);
-    const cut = this.frames[cutIndex];
-    if (!cut[layerIndex]) {
-      // 新しいレイヤはコンテナと、描画保持用の RenderTexture を持たせる
-      const container = new PIXI.Container();
-      container.name = `cut${cutIndex}_layer${layerIndex}_container`;
-      // 位置や変換は container に設定する（LayerSystem が管理）
-      cut[layerIndex] = {
-        container: container,
-        // optional: renderTexture を持っておけばサムネ作成が速い
-        renderTexture: PIXI.RenderTexture.create({
-          width: this.defaultCanvasSize.width,
-          height: this.defaultCanvasSize.height
-        })
-      };
-    }
-  };
-
-  // アクティブ CUT を切り替える
-  LayerSystem.prototype.setActiveCut = function(cutIndex) {
-    this.activeCut = cutIndex;
-    this.ensureCut(cutIndex);
-    // ここでステージ（app.stage）への差し替えを行う
-    // まず既存のレイヤ表示を全部外す
-    this._clearStageLayers();
-    // 次に activeCut の全レイヤ container を app.stage に追加（順序保持）
-    const cut = this.frames[cutIndex];
-    for (let i = 0; i < (cut ? cut.length : 0); i++) {
-      if (cut[i] && cut[i].container) {
-        this.app.stage.addChild(cut[i].container);
-      }
-    }
-  };
-
-  LayerSystem.prototype._clearStageLayers = function() {
-    // ここは app.stage の中でレイヤ関連だけを除去するルールにする
-    // 例えば全 child を走査し name に 'cut' が含まれているものを外す
-    const stage = this.app.stage;
-    for (let i = stage.children.length - 1; i >= 0; i--) {
-      const c = stage.children[i];
-      if (c.name && c.name.startsWith('cut')) {
-        stage.removeChildAt(i);
-      }
-    }
-  };
-
-  // 新規レイヤを作る（現在の activeCut に）
-  LayerSystem.prototype.createLayer = function(layerIndex) {
-    const cut = this.activeCut;
-    this.ensureLayer(cut, layerIndex);
-    const layerObj = this.frames[cut][layerIndex];
-    // 既にstageに入っていなければ追加
-    if (!this.app.stage.children.includes(layerObj.container)) {
-      this.app.stage.addChild(layerObj.container);
-    }
-    return layerObj;
-  };
-
-  // 描画系は layerObj.container に Graphics / Sprite を追加していく
-  // ここでは簡易 API を示す
-  LayerSystem.prototype.drawStroke = function(cutIndex, layerIndex, pixiDisplayObject) {
-    this.ensureLayer(cutIndex, layerIndex);
-    const layerObj = this.frames[cutIndex][layerIndex];
-    layerObj.container.addChild(pixiDisplayObject);
-  };
-
-  // サムネイル作成：layer の現在表示を renderTexture にレンダーして dataURL を返す
-  LayerSystem.prototype.generateThumbnailDataURL = function(cutIndex, layerIndex) {
-    this.ensureLayer(cutIndex, layerIndex);
-    const layerObj = this.frames[cutIndex][layerIndex];
-    // render to layerObj.renderTexture
-    this.renderer.render(layerObj.container, { renderTexture: layerObj.renderTexture, clear: true });
-    // コピーして canvas にする
-    const canvas = this.renderer.extract.canvas(layerObj.renderTexture);
-    return canvas.toDataURL('image/png');
-  };
-
-  // 既存 API を上書きせずに互換性を保つために global に展開
-  global.LayerSystem = LayerSystem;
-})(window);
-
-timeline-ui 側（変更点）
-
-タイムライン側は「サムネ取得時に LayerSystem.generateThumbnailDataURL(cut, layer) を呼ぶ」ように変更します。既存の timeline の列が cut、行が layer なら、サムネ画像要素の src を上記の dataURL に差し替えます。
-
-// ui/timeline-ui.js の該当箇所（サムネ生成部の例）
-function updateThumbnail(cutIndex, layerIndex) {
-  const thumbnailImgEl = document.querySelector(`#thumb-cut${cutIndex}-layer${layerIndex}`);
-  if (!thumbnailImgEl) return;
-  const dataURL = window.layerSystem.generateThumbnailDataURL(cutIndex, layerIndex);
-  thumbnailImgEl.src = dataURL;
-}
-
-// 例：CUT を作る・切り替え時に全レイヤ分サムネを更新する
-function refreshTimelineForCut(cutIndex) {
-  const layerCount = getLayerCountSomehow(); // 既存 API から取得
-  for (let li = 0; li < layerCount; li++) {
-    updateThumbnail(cutIndex, li);
-  }
-}
+提案する新しいモデル（CUTフォルダ方式）
+データ構造
+ProjectRoot
+ ├─ CUT1 (Container)
+ │   ├─ 背景Layer (Graphics or Sprite Container)
+ │   ├─ Layer1
+ │   └─ Layer2
+ ├─ CUT2 (Container)
+ │   ├─ 背景Layer
+ │   ├─ Layer1
+ │   └─ Layer2
+ ...
 
 
-ポイント: getLayerCountSomehow() は既存の UI が持つレイヤ数取得 API を使ってください。なければ LayerSystem に getLayerCount(cutIndex) を追加してください。
+各CUTを Pixi.Container (または自前のCutクラス) でラップ。
 
-バグの典型 — どこを探すか
+CUT内部にレイヤー群を持つため、「CUTを切り替える＝Containerの切り替え」として自然に扱える。
 
-LayerSystem が single array (this.layers = []) を使っていて、CUT切替時に this.layers を差し替えていない（または差し替え不能）。→ frames 未導入。
+サムネイルは「CUTコンテナ全体をレンダリング → 背景＋Layer1など合成 → canvas化」すればよい。
 
-描画時に activeCut を参照せず this.layers[layerIndex] を直接追加している（つまり常に同じ container に描画）。
+実装難易度について
 
-Timeline のサムネ作成が「現在 stage の順序の snapshot を取っている」実装になっていて、CUTの切替になおさら同期していない。→ サムネは frames[cut][layer].renderTexture を直接描画する方針で独立させる。
+AIから見て難易度は下がります。理由：
 
-レイヤ移動 / 変換（回転・スケール）を app.stage の transform にしていると、stage差し替え時に想定外の影響を受ける（各レイヤ container に transform を持たせるべき）。
+今までの「CUT×Layerの2次元マトリクス管理」は複雑で参照ミスが起きやすい。
 
-マイグレーション手順（実際の作業順・短）
+「CUTを単なるフォルダ(Container)としてレイヤーを保持」する方がPixiJSの仕組みに沿っている。
 
-LayerSystem に frames を追加し、ensureCut / ensureLayer / setActiveCut を実装。上のコードをベースに。
+サムネイル生成も renderer.render(cutContainer) で済むので、管理が直感的。
 
-core-engine や描画処理がレイヤを参照する箇所を検索して、getCurrentLayerContainer() を経由するように置換（直接 layers[...] 参照がないかチェック）。
+さらにこの仕組みを「レイヤーフォルダ」にも流用できるため、拡張性が高い。
 
-Timeline UI を generateThumbnailDataURL(cut,layer) 呼び出しに切替。
 
-GIF エクスポートは gif-exporter 側で for each cut: for each layer: render layerObj.container → collect frame の順でレンダーするように修正。
 
-テスト：CUT1 に線を描く → サムネ反映 → CUT2 切替 → サムネが異なること確認 → GIF エクスポートで各カットが個別に出てるか確認。
 
-追加の注意点（実践的）
+改修計画書（ドラフト）
+1. データ構造整理
 
-座標基準の統一：coordinate-system.js（既にあるはず）に world <-> layer container local の変換関数を集中させる。描画イベントは必ず「マウス座標→world→layer-local」に変換して描くこと。これで CUT 切替／レイヤ移動でのずれを防げます。
+現行:
+CUTとレイヤーを独立に管理し、インデックス参照で紐づけしている。
 
-メモリ：RenderTexture をカット数×レイヤ数分作るとメモリを食います。必要なら「非表示のカットは renderTexture を free する / 小さいサムネ用に縮小レンダーする」戦略をとる。
+改修後:
 
-互換性：一度に大量のカットがあるなら frames を sparse object にして必要な cut だけ allocate する。frames = Object.create(null) でもOK。
+CUT = Container
 
-API 命名：LayerSystem.createLayer(cut, layerIndex) や LayerSystem.getLayerContainer(cut, layerIndex)、LayerSystem.setActiveCut(cut) の命名を推奨します。AI での改修を前提に、API を小さく限定するのが楽です。
+CUT.children = [背景Layer, Layer1, Layer2…]
+
+各CUTごとに独立したレイヤーインスタンスを持つ。
+
+現在のレイヤー操作UIは、選択中CUT内のレイヤー配列を対象にする。
+
+2. レイヤー操作
+
+新規レイヤー追加 → currentCut.addChild(newLayer)
+
+レイヤー削除 → currentCut.removeChild(targetLayer)
+
+表示順変更 → currentCut.setChildIndex(layer, newIndex)
+
+3. CUT操作
+
+新規CUT追加 → new PIXI.Container() を生成、初期レイヤーを複製（空orテンプレ）。
+
+CUT切り替え → stage.removeChild(oldCut); stage.addChild(newCut);
+
+コピー → Containerごとcloneする仕組みを用意。
+
+4. サムネイル生成
+
+サムネイルは各CUT単位で生成する。
+
+方法：
+
+const renderTexture = PIXI.RenderTexture.create({ width, height });
+renderer.render(cutContainer, { renderTexture });
+const sprite = new PIXI.Sprite(renderTexture);
+// canvas.toDataURL() でUIサムネイル化
+
+
+サムネイル更新タイミング：
+
+レイヤー変更後
+
+CUT切り替え時（必要なら）
+
+5. 既存システムとの接続
+
+timeline-ui.js
+
+CUT単位でサムネイルを持つよう改修。
+
+レイヤーUIは「選択中CUTの子供」だけを対象にする。
+
+layer-system.js
+
+グローバル配列管理をやめ、CUT内レイヤー配列にアクセスするよう変更。
+
+gif-exporter.js
+
+各CUTを順番に描画してフレーム化。
+
+6. 拡張計画
+
+レイヤーフォルダも Container化 して階層管理を統一。
+
+UIで「フォルダ」を作成 → Containerを作るだけ。
+
+改修ステップ
+
+最低限のCUTフォルダ導入
+
+CUTをContainer化して切替可能に。
+
+レイヤーをその子として保持。
+
+タイムライン改修
+
+各CUTサムネイルをレンダリングして表示。
+
+レイヤーUIとの接続
+
+選択CUT内でのレイヤー操作を保証。
+
+GIF出力の修正
+
+CUTごとにフレーム化。
+
+レイヤーフォルダ化拡張
+
+CUT方式をレイヤーフォルダに流用。
+
+✅ まとめると：
+CUTをContainerとして扱う方式はPixiJSの構造に沿っており、実装難易度は確実に下がります。サムネイルやレイヤーの独立性問題も解決でき、後のフォルダ機能にも流用可能です。
