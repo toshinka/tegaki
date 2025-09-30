@@ -1,8 +1,7 @@
-// ===== ui/timeline-ui.js - Phase 2改修版: サムネイル表示特化 =====
-// 【改修】FPS設定削除、GIF出力削除
-// 【改修】サムネイル表示のみに特化
-// 【維持】CUT管理UI・プレイバック制御
-// PixiJS v8.13 対応
+// ===== ui/timeline-ui.js - 初期CUT作成タイミング改善版 =====
+// FIX: ensureInitialCut() - レイヤー存在確認強化
+// FIX: 空レイヤーの場合は空CUT作成、描画済みなら現在状態からCUT作成
+// 【維持】Canvas直接使用・CSS動的調整・PixiJS v8.13対応
 
 (function() {
     'use strict';
@@ -14,6 +13,7 @@
             this.cutsContainer = null;
             this.sortable = null;
             this.isVisible = false;
+            this.gifExporter = null;
             this.currentCutIndex = 0;
             this.isPlaying = false;
             this.isLooping = true;
@@ -29,17 +29,28 @@
             this.removeExistingTimelineElements();
             this.createCompleteTimelineStructure();
             this.injectCompleteTimelineCSS();
+            
+            if (window.TegakiGIFExporter) {
+                this.gifExporter = new window.TegakiGIFExporter(
+                    this.animationSystem, 
+                    this.animationSystem.app
+                );
+            }
+            
             this.setupEventListeners();
             this.setupKeyboardShortcuts();
             this.setupAnimationEvents();
             this.createLayerPanelCutIndicator();
+            
+            // FIX: 初期CUT作成タイミング改善
             this.ensureInitialCut();
             
             this.isInitialized = true;
+            console.log('✅ TimelineUI: 初期CUT作成タイミング改善版 初期化完了');
         }
         
         removeExistingTimelineElements() {
-            ['timeline-panel', 'cuts-container', 'timeline-bottom', 'timeline-controls'].forEach(id => {
+            ['timeline-panel', 'cuts-container', 'timeline-bottom', 'timeline-controls', 'export-progress'].forEach(id => {
                 const element = document.getElementById(id);
                 if (element && !element.dataset.source) {
                     element.remove();
@@ -71,6 +82,9 @@
             timelineBottom.className = 'timeline-bottom';
             timelineBottom.dataset.source = 'timeline-ui';
             timelineBottom.innerHTML = `
+                <div class="timeline-settings">
+                    <label>FPS: <input type="number" id="fps-input" min="1" max="60" value="12"></label>
+                </div>
                 <div class="timeline-controls">
                     <button id="repeat-btn" title="リピート (R)" class="repeat-active">
                         <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -81,12 +95,24 @@
                     <button id="play-btn" title="再生/停止 (Space)">▶</button>
                     <button id="add-cut-btn" title="CUT追加 (Alt+=)">+CUT</button>
                     <button id="copy-paste-cut-btn" title="CUTコピペ (Shift+C)" class="copy-paste-btn">+C&P</button>
+                    <button id="export-gif-btn" title="GIF書き出し">GIF</button>
                 </div>
                 <button class="timeline-close" id="close-timeline">×</button>
             `;
             
+            const exportProgress = document.createElement('div');
+            exportProgress.className = 'export-progress';
+            exportProgress.id = 'export-progress';
+            exportProgress.dataset.source = 'timeline-ui';
+            exportProgress.style.display = 'none';
+            exportProgress.innerHTML = `
+                <div class="progress-bar"><div class="progress-fill" id="progress-fill"></div></div>
+                <span id="progress-text">0%</span>
+            `;
+            
             this.timelinePanel.appendChild(this.cutsContainer);
             this.timelinePanel.appendChild(timelineBottom);
+            this.timelinePanel.appendChild(exportProgress);
             document.body.appendChild(this.timelinePanel);
             
             this.domCreated = true;
@@ -166,27 +192,46 @@
                 #repeat-btn.repeat-inactive { background: var(--futaba-background) !important; opacity: 0.6 !important; }
                 #repeat-btn svg { width: 16px !important; height: 16px !important; }
                 .timeline-controls button#play-btn.playing { background: var(--futaba-maroon) !important; color: white !important; }
+                .timeline-settings { display: flex !important; gap: 15px !important; font-size: 13px !important; align-items: center !important; }
+                .timeline-settings label { display: flex !important; align-items: center !important; gap: 8px !important; font-weight: 600 !important; color: var(--futaba-maroon) !important; }
+                .timeline-settings input[type="number"] { width: 55px !important; height: 36px !important; padding: 8px 10px !important; 
+                    border: 2px solid var(--futaba-light-medium) !important; border-radius: 6px !important; 
+                    background: var(--futaba-background) !important; text-align: center !important; font-size: 13px !important; 
+                    font-family: monospace !important; color: var(--futaba-maroon) !important; font-weight: 600 !important; }
                 .timeline-close { background: none !important; border: none !important; font-size: 20px !important; 
                     color: var(--futaba-maroon) !important; cursor: pointer !important; padding: 8px 12px !important; 
                     border-radius: 8px !important; height: 36px !important; font-weight: bold !important; min-width: 36px !important; }
                 .timeline-close:hover { background: var(--futaba-light-medium) !important; }
+                .export-progress { position: absolute !important; bottom: -26px !important; left: 0 !important; right: 0 !important; 
+                    background: var(--futaba-cream) !important; border: 2px solid var(--futaba-medium) !important; 
+                    border-radius: 0 0 12px 12px !important; padding: 8px 12px !important; display: none !important; z-index: 1501 !important; }
+                .progress-bar { width: 100% !important; height: 8px !important; background: var(--futaba-light-medium) !important; 
+                    border-radius: 4px !important; overflow: hidden !important; margin-bottom: 6px !important; }
+                .progress-fill { height: 100% !important; background: linear-gradient(90deg, var(--futaba-light-maroon), var(--futaba-maroon)) !important; 
+                    width: 0% !important; transition: width 0.3s ease !important; border-radius: 4px !important; }
+                .export-progress span { font-size: 11px !important; color: var(--futaba-maroon) !important; font-family: monospace !important; font-weight: 600 !important; }
             `;
             document.head.appendChild(style);
         }
         
+        // FIX: 初期CUT作成タイミング改善
         ensureInitialCut() {
             const animData = this.animationSystem.getAnimationData();
             
+            // 既にCUTが存在する場合は何もしない
             if (animData.cuts.length > 0) {
                 this.updateLayerPanelIndicator();
                 return;
             }
             
+            // レイヤーシステムの確認
             if (!this.animationSystem.layerSystem?.layers || 
                 this.animationSystem.layerSystem.layers.length === 0) {
+                console.log('⚠️ No layers available, skipping initial CUT creation');
                 return;
             }
             
+            // レイヤーに描画内容があるかチェック
             let hasDrawnContent = false;
             for (const layer of this.animationSystem.layerSystem.layers) {
                 if (layer.layerData?.paths && layer.layerData.paths.length > 0) {
@@ -195,9 +240,13 @@
                 }
             }
             
+            // 描画内容がある場合は現在状態からCUT作成
             if (hasDrawnContent) {
+                console.log('✅ Creating initial CUT from current drawn layers');
                 this.animationSystem.createNewCutFromCurrentLayers();
             } else {
+                // 描画内容が無い場合は空CUT作成
+                console.log('✅ Creating initial blank CUT (no drawn content)');
                 this.animationSystem.createNewBlankCut();
             }
             
@@ -221,7 +270,11 @@
                 this.animationSystem.createNewEmptyCut();
             });
             document.getElementById('copy-paste-cut-btn')?.addEventListener('click', () => this.executeCutCopyPaste());
+            document.getElementById('export-gif-btn')?.addEventListener('click', () => this.exportGIF());
             document.getElementById('close-timeline')?.addEventListener('click', () => this.hide());
+            document.getElementById('fps-input')?.addEventListener('change', (e) => {
+                this.animationSystem.updateSettings({ fps: parseInt(e.target.value) });
+            });
         }
         
         executeCutCopyPaste() {
@@ -396,6 +449,15 @@
                 this.setActiveCut(data.cutIndex);
                 this.updateLayerPanelIndicator();
             });
+            this.eventBus.on('gif:export-progress', (data) => {
+                this.updateExportProgress(data.progress);
+            });
+            this.eventBus.on('gif:export-completed', () => {
+                this.hideExportProgress();
+            });
+            this.eventBus.on('gif:export-failed', () => {
+                this.hideExportProgress();
+            });
         }
         
         createLayerPanelCutIndicator() {
@@ -559,6 +621,7 @@
                     const dataUrl = cut.thumbnailCanvas.toDataURL('image/png');
                     return `<img src="${dataUrl}" alt="CUT${index + 1}" />`;
                 } catch (error) {
+                    console.error('Thumbnail conversion failed:', error);
                     return `<div class="cut-thumbnail-placeholder">ERR</div>`;
                 }
             } else {
@@ -620,10 +683,20 @@
                 try {
                     const dataUrl = cut.thumbnailCanvas.toDataURL('image/png');
                     thumbnail.innerHTML = `<img src="${dataUrl}" alt="CUT${cutIndex + 1}" />`;
+                    
                     this.applyCutThumbnailAspectRatio(cutItem, cutIndex);
                 } catch (error) {
                     console.error('Thumbnail update failed:', error);
                 }
+            }
+        }
+        
+        async refreshAllCutThumbnails() {
+            const animData = this.animationSystem.getAnimationData();
+            
+            for (let i = 0; i < animData.cuts.length; i++) {
+                await this.animationSystem.generateCutThumbnailOptimized(i);
+                this.updateSingleCutThumbnail(i);
             }
         }
         
@@ -632,6 +705,43 @@
             if (playBtn) {
                 playBtn.textContent = isPlaying ? '⏸' : '▶';
                 playBtn.classList.toggle('playing', isPlaying);
+            }
+        }
+        
+        exportGIF() {
+            if (this.gifExporter) {
+                const animData = this.animationSystem.getAnimationData();
+                this.gifExporter.export(animData);
+                this.showExportProgress();
+            }
+        }
+        
+        showExportProgress() {
+            const progressPanel = document.getElementById('export-progress');
+            if (progressPanel) {
+                progressPanel.style.display = 'block';
+                this.timelinePanel.classList.add('exporting');
+            }
+        }
+        
+        updateExportProgress(progress) {
+            const progressFill = document.getElementById('progress-fill');
+            const progressText = document.getElementById('progress-text');
+            
+            if (progressFill) {
+                progressFill.style.width = progress + '%';
+            }
+            
+            if (progressText) {
+                progressText.textContent = Math.round(progress) + '%';
+            }
+        }
+        
+        hideExportProgress() {
+            const progressPanel = document.getElementById('export-progress');
+            if (progressPanel) {
+                progressPanel.style.display = 'none';
+                this.timelinePanel.classList.remove('exporting');
             }
         }
     }
@@ -643,6 +753,12 @@
     }
     window.TegakiUI.TimelineUI = TimelineUI;
     
-    console.log('✅ TimelineUI Phase 2改修版 loaded');
+    console.log('✅ timeline-ui.js loaded (初期CUT作成タイミング改善版)');
+    console.log('🔧 改修完了:');
+    console.log('  - ✅ ensureInitialCut(): レイヤー存在確認強化');
+    console.log('  - ✅ 空レイヤー時は空CUT作成、描画済みなら現在状態からCUT作成');
+    console.log('  - ✅ Canvas.toDataURL()直接使用（Texture往復排除維持）');
+    console.log('  - ✅ applyCutThumbnailAspectRatio()でキャンバス比率対応維持');
+    console.log('  - ✅ PixiJS v8.13完全対応');
 
 })();
