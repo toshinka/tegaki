@@ -1,263 +1,374 @@
-1) まず短い結論（原因の推定）
+結論（短く）
 
-CUT（フレーム）ごとのサムネイルが反映されない
-→ タイムライン側が「各CUTの独立したレンダリング結果（RenderTexture）」を作っていない、または作っていてもキャンバス比率（width×height）を正しく取ってレンダリングしていないため。タイムラインに渡す画像は 実際のフレーム解像度でレンダリング→縮小 する必要があるが、現状は「同じ表示コンテナを逐次キャプチャ（もしくは同じRenderTextureを再利用）」している疑いがあります。
-GitHub
+原因仮説：現在のデータモデルが「レイヤー単位でグローバルなPIXIオブジェクト／テクスチャ」を共有しており、CUT（カット）ごとのレイヤー独立領域（描画ターゲット）が実装されていないため、あるカットへ描いた内容が別カットにも見えてしまう。また、サムネ生成部分が常に同一レンダーツリー／テクスチャを参照している（＝CUTを切り替えたタイミングでサムネ更新処理が走らない／レンダリングソースが間違っている）ため、サムネが正しく反映されない。さらに「新規CUT作成時にアクティブにしない」「キャンバスサイズ反映が不安定」はCUT作成・切替・レンダリング・サイズ更新が責務分離されていない実装に起因します。
 
-キャンバス比率が反映されない
-→ 生成するサムネイルやエクスポートのRenderTexture作成時に、プロジェクト設定（config）のキャンバスサイズ／アスペクト比を参照していない、あるいはDPR（devicePixelRatio）を考慮していない。また「キャンバスの見た目（CSS）と内部レンダラー解像度（ピクセル）を分離していない」ことが原因になりやすい。
-GitHub
+改修方針（設計要点・絶対ルール）
 
-CUT1のレイヤー1に描くとCUT2のレイヤー1にも同じ描画が出る（独立性がない）
-→ レイヤーのデータモデルが “CUT × レイヤー” の二次元（マトリクス） を保持していない。現在は単一の Layer オブジェクト群（Container/Graphics）を全CUTで共有していて、タイムラインで表示する際に「表示するCUTを切り替えても同じLayer実体を表示している」状態。結果、描画は全CUTに見える。解決は 各CUTごとに独立したLayerインスタンス（またはピクセルデータ）を保持すること。
-GitHub
+データモデルを明確にする（最優先）：Project → Cuts[] → 各 Cut が Layers[] を所有する（完全な独立性）。PIXIオブジェクト（Container / RenderTexture等）は 必ずCut内に紐付ける。グローバルな表示用Container（stage）には「現在アクティブなCutのContainer」を差し込むだけにする。
 
-加えてチェックすべき点（要点）
+API（メソッド命名）を厳格化：createCut, switchCut(cutId), createLayer(cutId), drawStroke(cutId, layerId, stroke), renderThumbnail(cutId), updateCanvasSize(width,height) 等を公開。命名は英語＋lowerCamelCaseで統一。
 
-座標変換APIの不一致（世界座標／ローカル座標のAPIがバラバラ）
+責務分離：LayerSystemはレイヤーのデータ構造とトランスフォームを持ち、Cut管理はCut固有の描画ターゲット（RenderTexture/Container）を持つ。UIはイベントを発行するだけで実処理はシステムが受け取る（event-bus 経由）。
 
-Layer APIの断片化（LayerSystem外で直接コンテナを操作している）
+レンダリングの一貫性：サムネ生成・GIFエクスポート等は renderer.render(cut.container, renderTexture) → renderer.extract.canvas(renderTexture) のように explicitなレンダターゲット を使う（暗黙のread-from-screenは禁止）。
 
-EventBusが完全に統合されていない（イベントが直接DOM→各モジュールに飛んでいる）
+不変の禁止ルール：フォールバック・暗黙修復・エラー隠蔽は禁止（要件どおり）。代わりに失敗時はイベントでUI/ログに明示（ただしUI演出は最小）。
 
-設定参照が混在（configをグローバルで参照しているが各システムがローカルコピーを使う）
+全体動作フロー（高信頼・実装手順）
 
-Pixiのバージョン記述がコード内に埋め込まれているか、別のバージョン用コードが混在していないか（チェック要）
+アプリ起動
 
-二重実装（同じ機能を複数の場所で実装している） — これらは改修中に潰すべき。
-GitHub
-+1
+Project 初期化。デフォルトで cuts[0] を作成し activeCutId = cuts[0].id にする。
 
-2) 改修方針（高レベル）
+レイヤー作成/操作
 
-単一責務・明確なAPI境界：LayerSystemはレイヤーの作成／複製／削除／描画ターゲットの切替／変換（移動・回転・反転）を一手に担う。描画ツール（ペン等）は「現在のアクティブLayer」にのみ書き込む。ツールはLayer内部構造を知らない。
+LayerSystem.createLayer(cutId, opts)：Cutの layers[] に Layer を追加（各Layerは id, name, container, visible, transform を持つ）。containerはPIXI.ContainerorPIXI.Sprite`（ベクタはGraphics）で持つ。
 
-データモデルを二次元化：project.cuts（frames）配下に layers[] を置く。各要素は Layer オブジェクト（または LayerState referencing RenderTexture/Container）を持つ。UI（タイムライン）はこの project.cuts をソースにする。
+描画（ツール）
 
-レンダリングのルールを統一：サムネイル作成・GIF出力・画面描画はすべて「Render pipeline」関数（例：RendererUtils.renderCutToTexture(cutIndex, width, height)）を通す。これによりアスペクト比・DPRを一箇所で正しく扱える。
+描画は activeCutId と activeLayerId を参照して、必ず cut.layers[layerIndex].container に描画。ツールは LayerSystem.drawOnLayer(cutId, layerId, strokeData) を呼ぶ。
 
-EventBusを真に中心化：DOMイベント → EventBus → 各System（LayerSystem, AnimationSystem, UI）で処理。直接的なグローバル参照や横断的アクセスを削減する。
+CUT切替
 
-設定は読み取り専用オブジェクトで参照：config は初期化時に読み込み、変更は明示的なAPI経由で行う（Config.setCanvasSize()等）。
+TimelineSystem.switchCut(newCutId) は activeCutId を更新し、ステージの子を差し替える処理（現在のCut Container を stage から外し、新Cut.container を stage に addChild）を行う。これにより表示は常に「アクティブCutのみ」になる。
 
-3) 変更ファイル一覧（優先度順）と要作業（抜粋）
+サムネ生成
 
-優先度A（必須: 問題解決に直結）
+TimelineSystem.renderThumbnail(cutId)：renderer.render(cuts[cutId].container, renderTexture) → renderer.extract.base64(renderTexture) または toDataURL を取得。生成は非同期で良いが、生成タイミングはCUT作成・切替・レイヤ変更・レイヤサイズ変更の各所で明示的に呼ぶ。
 
-system/layer-system.js — データモデルをCUT×レイヤーに変更。Layerの生成／複製メソッド追加。アクティブCUT切替API。ツール用の getActiveLayer() を実装。
-GitHub
+新規CUT作成（+CUT）
 
-ui/timeline-ui.js — サムネイル生成を RenderTexture経由に変更。RenderTexture生成時に config.canvasWidth/Height を参照しDPRを掛ける。サムネイル用に縮小（Canvas drawImage 等 or renderer.extract.base64）して表示。
-GitHub
+TimelineSystem.createCut(options)：新しい Cut を作る。レイヤは既存カットを複製するか空で作るかをオプション化（デフォルト：空レイヤーを既定数だけ作る）。作成直後に activeCut を新Cut に設定し、stageの差し替えとサムネ生成を行う。
 
-system/gif-exporter.js — GIF出力時に RendererUtils.renderCutToTexture を使うように修正（各フレームの独立コンテンツを正確に取得）。
-GitHub
+キャンバスサイズ変更
 
-優先度B（構造改善）
+CameraSystem.updateCanvasSize(w,h)：Project.canvasSize を更新し、すべての Cut の render target（RenderTexture）を再生成して、各Cutの表示Containerのスケール/マスクを更新。タイムラインのサムネイル更新もここで呼ぶ。
 
-core-runtime.js / core-engine.js — project 構造（cuts/layers）を中心に据える。イベントバス登録の整理。レンダリングループを RendererUtils に委譲。
-GitHub
-+1
+GIFエクスポート
 
-system/event-bus.js — イベント命名規約を定め、subscribe/unsubscribeを厳格に。cut:changed, layer:changed, canvas:resized 等を定義。
-GitHub
+GifExporter は for each frameCut → renderer.render(cut.container, renderTexture) でフレームのピクセルを取り、GIFライブラリへ渡す（フレーム順は Timeline の順番）。
 
-優先度C（検査・文書化）
+ファイル別改修指示（Claude向け・逐一実装可能）
 
-coordinate-system.js — world/local API をドキュメント化し、CameraSystemとLayerSystemで同一実装を参照する。
-GitHub
+以下は各ファイルに対する 変更点・責務・キー関数。実装は差分パッチ的に行えるよう具体的に示します。
 
-system/history.js — undo/redoをCUT×レイヤーに対応させる（履歴エントリに cutIndex を持たせる）。
+1) system/layer-system.js（主要修正）
 
-4) 変更の具体コード（重要な抜粋：概念実装）
+目的：Layerを「Cutに属する独立オブジェクト」にモデル化し、描画の入口を明確化する。
 
-※このまま直接貼ると大きいので、要点だけ示します。実装はPixiJS v8.13のAPIに合わせてください。
+新しいデータ構造（提案）
 
-LayerSystem：データモデル（概念）
-// data model
-const Project = {
-  cuts: [
-    {
-      id: 'cut-0',
-      name: 'CUT 1',
-      duration: 1, // フレーム数 or 秒（仕様に合わせる）
-      layers: [ LayerState, LayerState, ... ]
-    },
-    ...
-  ],
-  activeCutIndex: 0
-};
-
-// LayerState の例
-function createLayerState(name, width, height) {
-  const container = new PIXI.Container();
-  // ここに描画用の子（Graphics / Sprites）を入れる
-  return {
-    id: 'layer-'+Date.now(),
-    name,
-    visible: true,
-    opacity: 1,
-    container, // 実体
-    transform: { x:0, y:0, scale:1, rotation:0, flipX:false, flipY:false }
-  };
+// Layer object (per Cut)
+{
+  id: string,
+  name: string,
+  type: 'vector'|'bitmap'|'group',
+  container: PIXI.Container, // owns Graphics/Sprite children for rendering
+  visible: true,
+  opacity: 1.0,
+  transform: {x,y,scale,rotation,flipX,flipY}
 }
 
-切替 API（必須）
-// LayerSystem methods
-function setActiveCut(index) {
-  project.activeCutIndex = index;
-  // 画面表示用ルートを差し替える
-  const cut = project.cuts[index];
-  stage.removeChildren(); // or stageLayersContainer.removeChildren();
-  cut.layers.forEach(ls => {
-    stage.addChild(ls.container);
-  });
-  EventBus.emit('cut:changed', { index, cut });
+// Cut object
+{
+  id: string,
+  name: string,
+  width: number,
+  height: number,
+  dpi: number,
+  layers: [ Layer, ... ],
+  container: PIXI.Container, // top-level container for that cut (contains layers' containers)
+  renderTexture: PIXI.RenderTexture // for thumbnail / export
 }
 
-function getActiveLayer(layerIndex=0) {
-  return project.cuts[project.activeCutIndex].layers[layerIndex];
+必須API（実装する関数）
+
+LayerSystem.init(renderer, projectState) — renderer と Project を受け取る初期化。
+
+LayerSystem.createLayer(cutId, opts = {}) — レイヤ作成（戻り：layerId）。
+
+LayerSystem.removeLayer(cutId, layerId)
+
+LayerSystem.getLayer(cutId, layerId) — レイヤ参照。
+
+LayerSystem.drawStroke(cutId, layerId, strokeData) — 描画操作。絶対に activeCut を参照しない。渡された cutId・layerId にのみ描画。
+
+LayerSystem.setLayerTransform(cutId, layerId, transform)
+
+LayerSystem.cloneLayersToNewCut(sourceCutId, targetCutId) — オプションで既存レイヤの複製（RenderTextureのコピーではなく、Graphics のパスデータを複製する実装を推奨）。
+
+実装ポイント
+
+PIXI.Container を直接共有しない（切替時に表示が二重になる原因となる）。
+
+container の子（Graphicsオブジェクト）は layer.container が持つ。stage には常に activeCut.container を addChild するだけにする。
+
+サムネやエクスポート用に cut.renderTexture を持たせ、renderer.render(cut.container, cut.renderTexture) で静的に描画を取る。
+
+(参照: 現行layer-system.js を確認。要修正。)
+
+
+) ui/timeline-ui.js
+
+問題：+CUT 作成時にアクティブにしていない・サムネ取得が間違っている。
+
+変更点（実装手順）
+
+onPlusCutClick()（現行）を
+
+newCut = TimelineSystem.createCut(opts) を呼ぶ
+
+TimelineSystem.switchCut(newCut.id) を呼び、即座に project.activeCutId = newCut.id
+
+TimelineSystem.renderThumbnail(newCut.id) を呼ぶ（同期的に renderTexture を作る）
+
+UI上のサムネDOMを thumbnailDataURL で即更新する
+
+renderThumbnail 実装は 必ず renderer.extract / toDataURL を使わず、renderTexture を経由する。理由：file:// でも安定動作、クロスオリジン問題がない。
+
+API呼び出し例
+
+// timeline-ui.js
+const newCut = eventBus.emitSync('timeline:createCut',{options}); // or await
+eventBus.emit('timeline:switchCut', {cutId:newCut.id});
+eventBus.emit('timeline:requestThumbnail', {cutId:newCut.id});
+
+(参照: 現行 timeline-ui.js を確認。)
+
+3) core-engine.js / core-runtime.js
+
+目的：アプリのグローバルstateと renderer の管理をより厳密に。
+
+変更点
+
+Project オブジェクトを1つ用意：
+
+Project = {
+  canvasSize: {w,h},
+  DPR: number,
+  renderer: PIXI.Renderer,
+  cuts: [],
+  activeCutId: null,
+  layersDefault: [...],
 }
 
-サムネイル生成（timeline-ui 側）
-async function createThumbnailForCut(index, thumbW, thumbH) {
-  const cut = project.cuts[index];
-  // 新規RenderTextureを作る（指定したアスペクト比・DPR考慮）
-  const rt = PIXI.RenderTexture.create({ 
-    width: config.canvasWidth * config.dpr, 
-    height: config.canvasHeight * config.dpr,
-    scaleMode: PIXI.SCALE_MODES.LINEAR
-  });
-  // 一時的に stage に該当cut.layersコンテナを追加してレンダリング
-  const tmpContainer = new PIXI.Container();
-  cut.layers.forEach(l => tmpContainer.addChild(l.container));
-  renderer.render(tmpContainer, { renderTexture: rt, clear: true });
-  // サムネ縮小はCanvas/Blob経由で行う（ブラウザのCanvasで縮小してDataURL作成）
-  const canvas = renderer.extract.canvas(rt);
-  // create scaled canvas for thumbnail:
-  const thumbCanvas = document.createElement('canvas');
-  thumbCanvas.width = thumbW; thumbCanvas.height = thumbH;
-  const ctx = thumbCanvas.getContext('2d');
-  ctx.drawImage(canvas, 0, 0, thumbW, thumbH);
-  return thumbCanvas.toDataURL('image/png');
+core-engine は Project のライフサイクル（init, save, load）を持ち、LayerSystem / TimelineSystem / CameraSystem / GifExporter に Project を注入する。
+
+core-runtime は主にループ（FPS管理）と renderer.update を担当。renderは activeCut.container のみをレンダリング（ただしGifエクスポート時は任意のcutのrenderTextureへレンダリングする）。
+
+4) system/gif-exporter.js
+
+注意点：エクスポートは Cut 単位の renderTexture を使い、フレーム作成時に cut.renderTexture を再描画してからピクセルを取る。
+
+実装要点
+
+GifExporter.exportSequence(cutIdArray, options):
+
+for each cutId:
+
+renderer.render(cuts[cutId].container, cuts[cutId].renderTexture);
+
+const frameCanvas = renderer.extract.canvas(cuts[cutId].renderTexture);
+
+push to GIF encoder.
+
+エンコーダは gif.js など軽量ライブラリを選定して CDN で読み込む（要互換性確認）。ただし要件の通りライブラリは慎重に。
+
+(参照: 現行 gif-exporter.js は要確認) 
+GitHub
+
+5) system/camera-system.js
+
+目的：キャンバス比率・サイズの一貫した更新。現在「CUT増でサイズ反映」「レイヤパネルリサイズで即反映」といった不整合が起きているため、サイズ変更は 中央の単一API で行う。
+
+API
+
+CameraSystem.updateCanvasSize(width, height):
+
+更新時に Project.canvasSize = {w,h} を保存
+
+全Cutsの renderTexture を再作成（PIXI.RenderTexture.create({width: w*dpr, height: h*dpr})）
+
+各 cut.container の scale/position を再設定
+
+eventBus.emit('camera:resized') を発行（UIがサムネ更新等を行う）
+
+(参照: 現行 camera-system.js)
+
+6) system/drawing-clipboard.js / system/history.js
+
+目的：作業履歴・アンドゥ用に Cut と Layer のスナップショットを取る。履歴は Cut/Layer の差分を正しく区分して保存する（グローバルレイヤー状態を保存していると切替で矛盾が発生する）。
+
+実装要点
+
+履歴エントリのスキーマに cutId を含める。
+
+undo/redo は LayerSystem.applySnapshot(snapshot) で復元する（snapshot は該当Cutのレイヤー内容のみ）。
+
+「辞典」：各ファイルで使用する主なメソッドと定義（Claude向け、実装そのまま写せる）
+
+以下は作業AIがすぐ実装できるメソッド一覧（短い説明付き）。
+
+Project レイヤ
+
+Project.createCut(opts) → cut
+
+Project.getActiveCut() → cut
+
+Project.setActiveCut(cutId) → void
+
+Cut オブジェクト
+
+cut.createLayer(opts) → layer
+
+cut.getLayer(layerId) → layer
+
+cut.renderToTexture() → Promise<RenderTexture> （内部で renderer.render）
+
+LayerSystem
+
+init(renderer, project)
+
+createLayer(cutId, opts)
+
+drawStroke(cutId, layerId, strokeData)
+
+setLayerVisible(cutId, layerId, visible)
+
+applyLayerTransform(cutId, layerId, transform)
+
+TimelineSystem / UI
+
+createCut(options)
+
+switchCut(cutId)
+
+renderThumbnail(cutId) → returns base64 or blob
+
+deleteCut(cutId)
+
+CameraSystem
+
+updateCanvasSize(w,h)
+
+getCanvasSize() → {w,h}
+
+GifExporter
+
+exportCutsAsGIF(cutIds, {fps,loop}) → blob / download
+
+History
+
+pushSnapshot(cutId, layerId, snapshot)
+
+undo()
+
+redo()
+
+Event-bus（既存）
+
+eventBus.emit(eventName, payload) — 非同期で良い
+
+eventBus.on(eventName, handler)
+
+具体的なパッチ例（抜粋・最重要箇所・擬似コード）
+
+a. 切替時 stage 替え（必須修正）
+
+
+// core-runtime.js (render loop / stage management)
+function switchCut(stage, oldCut, newCut) {
+  if (oldCut && oldCut.container.parent === stage) stage.removeChild(oldCut.container);
+  stage.addChild(newCut.container);
+  project.activeCutId = newCut.id;
+  // update transform (scale/pos) according to camera
+  CameraSystem.applyTransformToContainer(newCut.container);
+}
+
+b. サムネ生成（TimelineSystem）
+
+async function renderThumbnail(cutId) {
+  const cut = project.cuts.find(c=>c.id===cutId);
+  if (!cut) throw new Error('cut not found');
+  // ensure renderTexture size matches canvasSize * DPR
+  cut.renderTexture = PIXI.RenderTexture.create({width: project.canvasSize.w*project.DPR, height: project.canvasSize.h*project.DPR});
+  renderer.render(cut.container, cut.renderTexture);
+  // extract canvas (synchronous)
+  const canvas = renderer.extract.canvas(cut.renderTexture);
+  return canvas.toDataURL('image/png');
+}
+
+c. 描画の入口（LayerSystem.drawStroke）
+
+function drawStroke(cutId, layerId, stroke) {
+  const cut = project.getCut(cutId);
+  const layer = cut.getLayer(layerId);
+  // stroke is a polyline => draw on layer.container's Graphics child
+  layer.graphics.moveTo(...); // PIXI.Graphics path drawing
+  // after drawing: mark dirty and request thumbnail update
+  cut.needsThumbnailUpdate = true;
+  eventBus.emit('layer:changed', {cutId, layerId});
 }
 
 
-ポイント：RenderTexture.create にプロジェクトのキャンバスサイズを掛けて作ればアスペクト比が守られる。縮小はブラウザのCanvasで行うと品質も安定します。
+テストケース（作業AIが実行する手順）
 
-5) API 辞典（各ファイルで定義すべきメソッド／定数の最小セット）
-system/layer-system.js
+起動後、デフォルト1CUTあり → 描画 → 別CUT作成（+CUT） → 切替 → 元のCUTへ戻る。各CUTで描いた絵が独立していることを確認する。
 
-LayerSystem.init(renderer, rootContainer)
+サムネ：描画直後と切替直後にサムネが即更新されるか確認する（renderThumbnailを呼ぶトリガーは描画完了イベントと切替ハンドラ）。
 
-LayerSystem.createLayer(name, width, height) → LayerState
+キャンバスサイズ変更：サイズ変更を2回以上行い、renderTexture が正しく再生成されサムネおよび表示に反映することを確認。
 
-LayerSystem.cloneLayerForCut(srcLayerState) → LayerState（deep copyを提供）
++CUT を押すと新CUTが 自動アクティブ になり、レイヤーパネル・キャンバス共に新CUTの状態（空）を示すことを確認。
 
-LayerSystem.insertLayerAt(cutIndex, layerIndex, layerState)
+GIFエクスポート：複数CUTを順にエクスポートして、各フレームが正しいCUTの表示であることを確認。
 
-LayerSystem.removeLayer(cutIndex, layerIndex)
+実装優先度（最短で直る順）
 
-LayerSystem.setActiveCut(index)
+Layer/Cut データモデル分離（LayerSystem の改修） — 高優先、これで「描いたものが他CUTに反映される」問題は解決するはずです。
 
-LayerSystem.getActiveLayer(layerIndex)
+切替時の stage 差し替え実装（core-runtime） — 切替で表示が変わるようにする。
 
-LayerSystem.applyTransform(cutIndex, layerIndex, transform)
++CUT ボタン→自動アクティブ化（timeline-ui） — UXの即時改善。
 
-LayerSystem.renderCutToRenderTexture(cutIndex, {width, height, dpr}) → RenderTexture
+サムネ生成を renderTexture 経由に統一（timeline-ui / layer-system） — サムネ不整合の解消。
 
-ui/timeline-ui.js
+キャンバスサイズ変更フローの一本化（camera-system） — サイズ反映不整合の解消。
 
-TimelineUI.init(eventBus, domRoot)
+履歴／クリップボード／GIFエクスポートは上が安定してから微調整。
 
-TimelineUI.createThumbnail(cutIndex) → Promise<dataURL>
+注意点・落とし穴（実装時のチェックリスト）
 
-TimelineUI.onCutSelect(index)
+RenderTexture の再生成はメモリに影響する。destroy(true) を呼び古いRTを解放すること。
 
-TimelineUI.updateThumb(cutIndex)
+PIXI.Renderer.extract の API は使用環境（file://）で問題が出にくいが、テストを必ず行う。
 
-system/event-bus.js
+DPR（devicePixelRatio）を取り扱うとき、RenderTexture のサイズ計算をミスするとサムネがぼやける。必ず Math.round(w*DPR) で整数化する。
 
-EventBus.on(eventName, handler)
+レイヤ複製は「ピクセルコピー（texture copy）」と「ベクタ/パスデータコピー」は意味が違う。アニメ用途ならパスデータ（ベクタ）をコピーできるようにする。
 
-EventBus.off(eventName, handler)
+全ての描画入口は cutId を受け取る形に改める（暗黙の activeCut 参照は徐々に廃止）。
 
-EventBus.emit(eventName, payload)
+追加提案（将来の設計に向けて）
 
-標準イベント名（定義）: cut:changed, layer:changed, canvas:resize, tool:stroke, history:push
+Cut に「参照フレーム（keyframe）」メタを持たせ、タイムラインでの複製・差分補間を容易にする。
 
-core-runtime.js / core-engine.js
+レイヤーの種類を拡張（reference / onion-skin / guide）して、アニメ制作機能を段階的に追加。
 
-Project.load(config)
+単一ファイル（index.html）直開き運用のため、外部CDNライブラリは最小限に。PixiJS v8.13 はCDNで固定読み込み。
 
-Project.newCut() / Project.duplicateCut(srcIndex)
+まとめ（やることリスト・そのままClaudeに渡せる）
 
-Project.save() / Project.exportGif()（gif-exporterへ委譲）
+LayerSystem を Cut 属に書き換え（新データ構造導入）→ 実装済みの関数を新APIにマップし直す。
 
-6) テスト項目（改修後に必ずチェック）
+core-runtime に switchCut 実装（stage 子の差し替え）。
 
-新規CUT作成 → CUT1に描画 → CUT2に切り替え → CUT2に描画 → CUT1に戻るとCUT1の絵が残っている（独立）
+timeline-ui の +CUT ハンドラを修正（作成→アクティブ化→サムネ生成）。
 
-タイムラインのサムネイルがCUTごとに異なる（同一ではない）
+CameraSystem.updateCanvasSize を実装し、全CutのRenderTexture再生成ロジックを追加。
 
-タイムラインのサムネイルの縦横比がプロジェクトのキャンバス比と一致している
+GifExporter を renderTexture 経由に一本化。
 
-GIFエクスポートで各フレームが正しくレンダリングされている（タイムラインの絵と比較）
+単体テスト：上のテストケースを順に実行、バグが残ればログとイベントを追跡。
 
-camera/transform（移動・回転・反転）をLayerSystemのAPIで行った場合、サムネイル・エクスポートに同様に反映される
 
-undo/redo（history）がCUT毎に動作する（履歴エントリにcutIndexがあること）
-
-7) チェックリスト：ご依頼の点を網羅する検査（実際に手で/自動で確認）
-
-座標変換APIの不一致：coordinate-system.js の export と camera-system / layer-system の使用箇所を grep（worldToLocal/toLocal の使い方）で比較。必要なら一本化。
-GitHub
-
-レイヤーAPIの断片化：stage.addChild を直接使っている箇所を列挙（LayerSystem経由に移す）。
-GitHub
-
-EventBus統合の不完全性：DOMイベントから直接システムオブジェクトを呼んでいる箇所（document.getElementById(...).addEventListener等）を列挙し、EventBusを通す。
-GitHub
-
-設定参照の混在：config.js の値を各所で import（ない場合はグローバル変数参照）しているかを確認。変更は必ず ConfigAPI を用いる。
-GitHub
-
-Pixiバージョンの混在：index.html のCDN参照を確認し、コード中に if (PIXI.VERSION !== '8.13.0') のような条件分岐がないか確認。
-GitHub
-
-二重実装：同じ機能（例：サムネ生成）が ui/timeline-ui.js と他の場所に実装されていないか grep で確認。
-GitHub
-
-8) 優先度付き実作業ステップ（短期〜中期、具体的）
-フェーズA（1日〜数日で終わる想定）
-
-LayerModel の再設計（LayerSystem修正） — cuts配列を実装して、setActiveCut と getActiveLayer を用いるように各ツールを置換。
-
-タイムラインのサムネイル修正 — createThumbnailForCut を上の RenderTexture ベースに書き換え。
-
-レンダリングユーティリティ実装 — RendererUtils.renderCutToRenderTexture() を作る（DPR・アスペクト管理）。
-
-単体テスト：上の「テスト項目」を手動で実施。
-
-フェーズB（安定化）
-
-history を CUT 対応に変更（undo/redoの安定化）。
-
-gif-exporter を RenderTexture ベースにして GIF を正確に作る。
-
-EventBus によるイベント整理。
-
-フェーズC（ドキュメント／リファクタ）
-
-APIドキュメント（今回作った辞典をコード内JSDoc化）。
-
-小さなリファクタ（命名規約統一、デバッグログ削減）。
-
-9) 追加の実装メモ（Pixi v8.13 向けの注意）
-
-PIXI.RenderTexture.create({ width, height, scaleMode }) を使う（v8系）。renderer.extract.canvas(renderTexture) でキャンバスを取得可能。縮小はブラウザCanvasで行うと早い。
-
-DPI（DPR）を考慮する場合、内部レンダリング解像度 = config.canvasWidth * dpr とする。UI表示はCSSで縮小する。
-
-Container の scale.x/scale.y で反転を表現できる（反転は -1 を使うが transformの原点に注意）。LayerSystemで transform を管理して stage に適用すること。
-（v8.13 固有のメソッド呼び出しはコードで厳密に合わせます）
