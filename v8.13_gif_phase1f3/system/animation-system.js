@@ -1,7 +1,7 @@
-// ===== system/animation-system.js - Phase 2改修版: 簡潔化とCUT独立性強化 =====
-// 【改修】サムネイル生成簡潔化、不要なconsole.log削除
-// 【改修】過剰なtry-catch削除、エラーは早期return
-// 【維持】CUT管理・Layer保存・座標系統一
+// ===== system/animation-system.js - Phase 1: CUT独立性確立 =====
+// 【改修】Deep Copy徹底化で完全なCUT独立性を実現
+// 【改修】Layer ID生成をCUT毎に完全分離
+// 【改修】saveCutLayerStates()でDeep Copy確実実行
 // PixiJS v8.13 対応
 
 (function() {
@@ -75,6 +75,10 @@
             this.eventBus.on('layer:visibility-changed', () => {
                 this.saveCutLayerStates();
             });
+            
+            this.eventBus.on('layer:path-added', () => {
+                this.saveCutLayerStates();
+            });
         }
         
         setupCutClipboardEvents() {
@@ -103,6 +107,8 @@
             };
         }
         
+        // ===== CUT作成 =====
+        
         createNewCutFromCurrentLayers() {
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             const independentLayers = this.copyCurrentLayersToIndependentState(cutId);
@@ -117,7 +123,10 @@
             
             this.animationData.cuts.push(cut);
             const newCutIndex = this.animationData.cuts.length - 1;
+            
+            // ★Deep Copy保存
             this.cutLayerStates.set(cutId, this.deepCloneCutLayers(independentLayers));
+            
             this.switchToActiveCutSafely(newCutIndex, false);
             
             setTimeout(async () => {
@@ -136,23 +145,47 @@
         createNewBlankCut() {
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             
+            // ★空CUTの初期Layer構造をCUT毎に生成
+            const initialLayers = [
+                {
+                    id: `${cutId}_layer_bg_${Date.now()}`,
+                    name: '背景',
+                    visible: true,
+                    opacity: 1.0,
+                    isBackground: true,
+                    transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
+                    paths: [],
+                    createdAt: Date.now(),
+                    cutId: cutId
+                },
+                {
+                    id: `${cutId}_layer_01_${Date.now() + 1}`,
+                    name: 'レイヤー1',
+                    visible: true,
+                    opacity: 1.0,
+                    isBackground: false,
+                    transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
+                    paths: [],
+                    createdAt: Date.now(),
+                    cutId: cutId
+                }
+            ];
+            
             const cut = {
                 id: cutId,
                 name: `CUT${this.animationData.cuts.length + 1}`,
                 duration: window.TEGAKI_CONFIG?.animation?.defaultCutDuration || 0.5,
-                layers: [],
+                layers: initialLayers,
                 thumbnailCanvas: null
             };
             
             this.animationData.cuts.push(cut);
             const newIndex = this.animationData.cuts.length - 1;
-            this.cutLayerStates.set(cutId, []);
-            this.switchToActiveCutSafely(newIndex, false);
             
-            if (this.layerSystem) {
-                this.layerSystem.createLayer('背景', true);
-                this.layerSystem.createLayer('レイヤー1', false);
-            }
+            // ★Deep Copy保存
+            this.cutLayerStates.set(cutId, this.deepCloneCutLayers(initialLayers));
+            
+            this.switchToActiveCutSafely(newIndex, false);
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:cut-created', { 
@@ -168,6 +201,12 @@
             return this.createNewBlankCut();
         }
         
+        // ===== Deep Copy関連 =====
+        
+        /**
+         * LayerSystemの現在状態からCUT独立のLayerデータを生成
+         * ★paths配列を完全にコピー
+         */
         copyCurrentLayersToIndependentState(cutId) {
             const independentLayers = [];
             
@@ -183,8 +222,10 @@
                     x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
                 };
                 
+                // ★paths配列をDeep Copy
                 const independentPaths = originalLayer.layerData.paths ? 
                     originalLayer.layerData.paths.map(originalPath => {
+                        // ★points配列もDeep Copy
                         const independentPoints = originalPath.points ? 
                             originalPath.points.map(point => ({
                                 x: Number(point.x),
@@ -193,7 +234,7 @@
                         
                         return {
                             id: 'path_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-                            points: independentPoints,
+                            points: independentPoints,  // ★新しい配列
                             size: originalPath.size || 16,
                             color: originalPath.color || 0x800000,
                             opacity: originalPath.opacity || 1.0,
@@ -215,7 +256,7 @@
                         scaleX: Number(originalTransform.scaleX) || 1,
                         scaleY: Number(originalTransform.scaleY) || 1
                     },
-                    paths: independentPaths,
+                    paths: independentPaths,  // ★新しいpaths配列
                     createdAt: Date.now(),
                     cutId: cutId
                 };
@@ -224,6 +265,42 @@
             });
             
             return independentLayers;
+        }
+        
+        /**
+         * CUT Layer配列のDeep Clone
+         * ★全ての階層で新しいオブジェクト・配列を生成
+         */
+        deepCloneCutLayers(cutLayers) {
+            if (!cutLayers || !Array.isArray(cutLayers)) return [];
+            
+            return cutLayers.map(layer => ({
+                id: layer.id,
+                name: layer.name,
+                visible: layer.visible,
+                opacity: layer.opacity,
+                isBackground: layer.isBackground,
+                transform: {
+                    x: Number(layer.transform?.x) || 0,
+                    y: Number(layer.transform?.y) || 0,
+                    rotation: Number(layer.transform?.rotation) || 0,
+                    scaleX: Number(layer.transform?.scaleX) || 1,
+                    scaleY: Number(layer.transform?.scaleY) || 1
+                },
+                // ★paths配列を新規作成
+                paths: layer.paths ? layer.paths.map(path => ({
+                    id: path.id,
+                    // ★points配列も新規作成
+                    points: path.points ? path.points.map(p => ({ x: p.x, y: p.y })) : [],
+                    size: path.size || 16,
+                    color: path.color || 0x800000,
+                    opacity: path.opacity || 1.0,
+                    tool: path.tool || 'pen',
+                    isComplete: path.isComplete || true
+                })) : [],
+                createdAt: layer.createdAt || Date.now(),
+                cutId: layer.cutId
+            }));
         }
         
         generateUniqueCutLayerId(cutId) {
@@ -237,6 +314,8 @@
             return `${cutId}_layer_${counter}_${Date.now()}`;
         }
         
+        // ===== CUT切替 =====
+        
         switchToActiveCutSafely(cutIndex, resetTransform = false) {
             if (this.cutSwitchInProgress) {
                 setTimeout(() => this.switchToActiveCutSafely(cutIndex, resetTransform), 50);
@@ -248,7 +327,9 @@
             
             this.cutSwitchInProgress = true;
             
+            // ★切替前に現在CUTを保存
             this.saveCutLayerStatesBeforeSwitch();
+            
             this.animationData.playback.currentCutIndex = cutIndex;
             this.setActiveCut(cutIndex, resetTransform);
             
@@ -259,21 +340,64 @@
             this.cutSwitchInProgress = false;
         }
         
+        /**
+         * CUT切替前の状態保存
+         * ★Deep Copyで完全独立保存
+         */
         saveCutLayerStatesBeforeSwitch() {
             const currentCut = this.getCurrentCut();
             if (!currentCut || !this.layerSystem) return;
             
+            // ★LayerSystemから現在状態を取得してDeep Copy
             const currentIndependentState = this.copyCurrentLayersToIndependentState(currentCut.id);
-            currentCut.layers = currentIndependentState;
+            
+            // ★CUTに保存（参照ではなくコピー）
+            currentCut.layers = this.deepCloneCutLayers(currentIndependentState);
+            
+            // ★Mapにも保存（二重保存で安全性確保）
             this.cutLayerStates.set(currentCut.id, this.deepCloneCutLayers(currentIndependentState));
         }
         
+        /**
+         * CUT状態の保存（描画時などに呼ばれる）
+         * ★Deep Copyで完全独立保存
+         */
+        saveCutLayerStates() {
+            const currentCut = this.getCurrentCut();
+            if (!currentCut || !this.layerSystem) return;
+            
+            // ★LayerSystemから現在状態を取得してDeep Copy
+            const currentState = this.copyCurrentLayersToIndependentState(currentCut.id);
+            
+            // ★CUTに保存（参照ではなくコピー）
+            currentCut.layers = this.deepCloneCutLayers(currentState);
+            
+            // ★Mapにも保存
+            this.cutLayerStates.set(currentCut.id, this.deepCloneCutLayers(currentState));
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cut-updated', { 
+                    cutIndex: this.animationData.playback.currentCutIndex,
+                    cutId: currentCut.id
+                });
+            }
+        }
+        
+        /**
+         * CUTデータからLayerSystemを再構築
+         * ★完全にクリアして再構築
+         */
         setActiveCut(cutIndex, resetTransform = false) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut || !this.layerSystem) return;
             
+            // ★LayerSystemを完全クリア
             this.clearLayerSystemLayers();
+            
+            // ★Mapから取得（より新しい状態）
             const cutLayers = this.cutLayerStates.get(cut.id) || cut.layers || [];
+            
+            // ★再構築（Deep Copyされたデータから）
             this.rebuildLayersFromCutData(cutLayers, resetTransform);
             
             if (this.layerSystem.updateLayerPanelUI) {
@@ -309,6 +433,10 @@
             this.layerSystem.activeLayerIndex = -1;
         }
         
+        /**
+         * CUTデータからPIXI Layerを再構築
+         * ★新しいPIXI.Containerと新しいlayerDataを作成
+         */
         rebuildLayersFromCutData(cutLayers, resetTransform = false) {
             if (!cutLayers || !Array.isArray(cutLayers) || cutLayers.length === 0) {
                 return;
@@ -318,13 +446,14 @@
                 const layer = new PIXI.Container();
                 layer.label = cutLayerData.id;
                 
+                // ★新しいlayerDataオブジェクトを作成（参照を持たない）
                 layer.layerData = {
                     id: cutLayerData.id,
                     name: cutLayerData.name || `レイヤー${index + 1}`,
                     visible: cutLayerData.visible !== false,
                     opacity: cutLayerData.opacity || 1.0,
                     isBackground: cutLayerData.isBackground || false,
-                    paths: []
+                    paths: []  // ★空から開始
                 };
                 
                 const transform = cutLayerData.transform || {
@@ -351,6 +480,7 @@
                     layer.layerData.backgroundGraphics = bg;
                 }
                 
+                // ★paths再構築（新しいgraphicsを生成）
                 if (cutLayerData.paths && Array.isArray(cutLayerData.paths)) {
                     cutLayerData.paths.forEach(pathData => {
                         const reconstructedPath = this.rebuildPathFromData(pathData);
@@ -402,7 +532,7 @@
             
             return {
                 id: pathData.id || ('path_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
-                points: [...pathData.points],
+                points: [...pathData.points],  // ★配列コピー
                 size: pathData.size || 16,
                 color: pathData.color || 0x800000,
                 opacity: pathData.opacity || 1.0,
@@ -455,23 +585,8 @@
             }
         }
         
-        saveCutLayerStates() {
-            const currentCut = this.getCurrentCut();
-            if (!currentCut || !this.layerSystem) return;
-            
-            const currentState = this.copyCurrentLayersToIndependentState(currentCut.id);
-            currentCut.layers = currentState;
-            this.cutLayerStates.set(currentCut.id, this.deepCloneCutLayers(currentState));
-            
-            if (this.eventBus) {
-                this.eventBus.emit('animation:cut-updated', { 
-                    cutIndex: this.animationData.playback.currentCutIndex,
-                    cutId: currentCut.id
-                });
-            }
-        }
+        // ===== サムネイル生成 =====
         
-        // 【改修】サムネイル生成簡潔化
         async generateCutThumbnailOptimized(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut || !this.layerSystem || !this.app?.renderer) return;
@@ -637,36 +752,6 @@
             tempContainer.destroy();
             
             return canvas;
-        }
-        
-        deepCloneCutLayers(cutLayers) {
-            if (!cutLayers || !Array.isArray(cutLayers)) return [];
-            
-            return cutLayers.map(layer => ({
-                id: layer.id,
-                name: layer.name,
-                visible: layer.visible,
-                opacity: layer.opacity,
-                isBackground: layer.isBackground,
-                transform: {
-                    x: Number(layer.transform?.x) || 0,
-                    y: Number(layer.transform?.y) || 0,
-                    rotation: Number(layer.transform?.rotation) || 0,
-                    scaleX: Number(layer.transform?.scaleX) || 1,
-                    scaleY: Number(layer.transform?.scaleY) || 1
-                },
-                paths: layer.paths ? layer.paths.map(path => ({
-                    id: path.id,
-                    points: path.points ? path.points.map(p => ({ x: p.x, y: p.y })) : [],
-                    size: path.size || 16,
-                    color: path.color || 0x800000,
-                    opacity: path.opacity || 1.0,
-                    tool: path.tool || 'pen',
-                    isComplete: path.isComplete || true
-                })) : [],
-                createdAt: layer.createdAt || Date.now(),
-                cutId: layer.cutId
-            }));
         }
         
         // ===== CUT クリップボード =====
@@ -872,7 +957,7 @@
                 clearInterval(this.playbackTimer);
             }
             
-            const frameTime = 1000 / 12; // Fixed 12 FPS for simplicity
+            const frameTime = 1000 / 12;
             
             this.playbackTimer = setInterval(() => {
                 this.updatePlayback();
@@ -1127,6 +1212,6 @@
     }
     
     window.TegakiAnimationSystem = AnimationSystem;
-    console.log('✅ AnimationSystem Phase 2改修版 loaded');
+    console.log('✅ AnimationSystem Phase 1: CUT独立性確立版 loaded');
 
 })();
