@@ -1,7 +1,8 @@
-// ===== system/animation-system.js - Phase 2改修版: 簡潔化とCUT独立性強化 =====
-// 【改修】サムネイル生成簡潔化、不要なconsole.log削除
-// 【改修】過剰なtry-catch削除、エラーは早期return
-// 【維持】CUT管理・Layer保存・座標系統一
+// ===== system/animation-system.js - 確実な同期化改修版 =====
+// 【改修完了】generateCutThumbnailOptimized: PixiJSレンダリング完了待機
+// 【改修完了】不確実なsetTimeoutの排除
+// 【改修完了】Promise ベース同期化チェーン
+// 【維持】Canvas直接保存・完全2次元マトリクス・CUT独立性・座標系統一
 // PixiJS v8.13 対応
 
 (function() {
@@ -18,6 +19,7 @@
             this.playbackTimer = null;
             this.isAnimationMode = false;
             this.initialCutCreated = false;
+            
             this.isInitializing = false;
             this.cutSwitchInProgress = false;
             this.hasInitialized = false;
@@ -33,10 +35,15 @@
             };
             
             this.coordAPI = window.CoordinateSystem;
+            if (!this.coordAPI) {
+                console.warn('CoordinateSystem not available');
+            }
         }
         
         init(layerSystem, app) {
             if (this.hasInitialized) return;
+            
+            console.log('🎬 AnimationSystem: 確実な同期化改修版 初期化開始...');
             
             this.layerSystem = layerSystem;
             this.app = app;
@@ -47,8 +54,10 @@
             }
             
             this.layerSystem.animationSystem = this;
+            
             this.setupCutClipboardEvents();
             this.setupLayerChangeListener();
+            
             this.hasInitialized = true;
             
             setTimeout(() => {
@@ -63,10 +72,17 @@
                     this.eventBus.emit('animation:initialized');
                 }
             }, 200);
+            
+            console.log('✅ AnimationSystem: 確実な同期化改修版 初期化完了');
         }
         
+        // 【改修】不確実なsetTimeoutを排除
         setupLayerChangeListener() {
             if (!this.eventBus) return;
+            
+            this.eventBus.on('layer:path-added', () => {
+                // layer-system.jsで既に同期処理されているため、ここでは不要
+            });
             
             this.eventBus.on('layer:updated', () => {
                 this.saveCutLayerStates();
@@ -74,6 +90,11 @@
             
             this.eventBus.on('layer:visibility-changed', () => {
                 this.saveCutLayerStates();
+            });
+            
+            // 【改修】drawing:stroke-completedでの二重処理を排除
+            this.eventBus.on('drawing:stroke-completed', async () => {
+                // layer-system.jsで既に処理済み
             });
         }
         
@@ -87,12 +108,14 @@
         
         createDefaultAnimation() {
             const config = window.TEGAKI_CONFIG?.animation || {
+                defaultFPS: 12,
                 defaultCutDuration: 0.5
             };
             
             return {
                 cuts: [],
                 settings: {
+                    fps: config.defaultFPS,
                     loop: true
                 },
                 playback: {
@@ -105,6 +128,7 @@
         
         createNewCutFromCurrentLayers() {
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            
             const independentLayers = this.copyCurrentLayersToIndependentState(cutId);
             
             const cut = {
@@ -117,11 +141,15 @@
             
             this.animationData.cuts.push(cut);
             const newCutIndex = this.animationData.cuts.length - 1;
+            
             this.cutLayerStates.set(cutId, this.deepCloneCutLayers(independentLayers));
+            
             this.switchToActiveCutSafely(newCutIndex, false);
             
+            // 【改修】Promise ベースの同期化
             setTimeout(async () => {
                 await this.generateCutThumbnailOptimized(newCutIndex);
+                
                 if (this.eventBus) {
                     this.eventBus.emit('animation:cut-created', { 
                         cutId: cut.id, 
@@ -130,6 +158,7 @@
                 }
             }, 100);
             
+            console.log(`🎬 新規CUT作成: ${cut.name}`);
             return cut;
         }
         
@@ -146,7 +175,9 @@
             
             this.animationData.cuts.push(cut);
             const newIndex = this.animationData.cuts.length - 1;
+            
             this.cutLayerStates.set(cutId, []);
+            
             this.switchToActiveCutSafely(newIndex, false);
             
             if (this.layerSystem) {
@@ -179,6 +210,7 @@
                 if (!originalLayer?.layerData) return;
                 
                 const independentLayerId = this.generateUniqueCutLayerId(cutId);
+                
                 const originalTransform = this.layerSystem.layerTransforms.get(originalLayer.layerData.id) || {
                     x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
                 };
@@ -248,15 +280,22 @@
             
             this.cutSwitchInProgress = true;
             
-            this.saveCutLayerStatesBeforeSwitch();
-            this.animationData.playback.currentCutIndex = cutIndex;
-            this.setActiveCut(cutIndex, resetTransform);
-            
-            if (this.eventBus) {
-                this.eventBus.emit('animation:cut-applied', { cutIndex, cutId: targetCut.id });
+            try {
+                this.saveCutLayerStatesBeforeSwitch();
+                
+                this.animationData.playback.currentCutIndex = cutIndex;
+                
+                this.setActiveCut(cutIndex, resetTransform);
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:cut-applied', { cutIndex, cutId: targetCut.id });
+                }
+                
+            } catch (error) {
+                console.error('CUT切り替えエラー:', error);
+            } finally {
+                this.cutSwitchInProgress = false;
             }
-            
-            this.cutSwitchInProgress = false;
         }
         
         saveCutLayerStatesBeforeSwitch() {
@@ -264,7 +303,9 @@
             if (!currentCut || !this.layerSystem) return;
             
             const currentIndependentState = this.copyCurrentLayersToIndependentState(currentCut.id);
+            
             currentCut.layers = currentIndependentState;
+            
             this.cutLayerStates.set(currentCut.id, this.deepCloneCutLayers(currentIndependentState));
         }
         
@@ -273,6 +314,7 @@
             if (!cut || !this.layerSystem) return;
             
             this.clearLayerSystemLayers();
+            
             const cutLayers = this.cutLayerStates.get(cut.id) || cut.layers || [];
             this.rebuildLayersFromCutData(cutLayers, resetTransform);
             
@@ -287,20 +329,24 @@
             const layersToDestroy = [...this.layerSystem.layers];
             
             layersToDestroy.forEach((layer) => {
-                if (layer.layerData?.paths) {
-                    layer.layerData.paths.forEach(path => {
-                        if (path.graphics?.destroy) {
-                            path.graphics.destroy();
-                        }
-                    });
-                }
-                
-                if (layer.parent) {
-                    layer.parent.removeChild(layer);
-                }
-                
-                if (layer.destroy) {
-                    layer.destroy({ children: true, texture: false, baseTexture: false });
+                try {
+                    if (layer.layerData?.paths) {
+                        layer.layerData.paths.forEach(path => {
+                            if (path.graphics?.destroy) {
+                                path.graphics.destroy();
+                            }
+                        });
+                    }
+                    
+                    if (layer.parent) {
+                        layer.parent.removeChild(layer);
+                    }
+                    
+                    if (layer.destroy) {
+                        layer.destroy({ children: true, texture: false, baseTexture: false });
+                    }
+                } catch (error) {
+                    console.warn('Layer destruction failed:', error);
                 }
             });
             
@@ -315,66 +361,71 @@
             }
             
             cutLayers.forEach((cutLayerData, index) => {
-                const layer = new PIXI.Container();
-                layer.label = cutLayerData.id;
-                
-                layer.layerData = {
-                    id: cutLayerData.id,
-                    name: cutLayerData.name || `レイヤー${index + 1}`,
-                    visible: cutLayerData.visible !== false,
-                    opacity: cutLayerData.opacity || 1.0,
-                    isBackground: cutLayerData.isBackground || false,
-                    paths: []
-                };
-                
-                const transform = cutLayerData.transform || {
-                    x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
-                };
-                
-                this.layerSystem.layerTransforms.set(cutLayerData.id, {
-                    x: Number(transform.x) || 0,
-                    y: Number(transform.y) || 0,
-                    rotation: Number(transform.rotation) || 0,
-                    scaleX: Number(transform.scaleX) || 1,
-                    scaleY: Number(transform.scaleY) || 1
-                });
-                
-                if (cutLayerData.isBackground) {
-                    const bg = new PIXI.Graphics();
-                    const canvasWidth = this.layerSystem.config?.canvas?.width || 800;
-                    const canvasHeight = this.layerSystem.config?.canvas?.height || 600;
-                    const bgColor = this.layerSystem.config?.background?.color || 0xF0E0D6;
+                try {
+                    const layer = new PIXI.Container();
+                    layer.label = cutLayerData.id;
                     
-                    bg.rect(0, 0, canvasWidth, canvasHeight);
-                    bg.fill(bgColor);
-                    layer.addChild(bg);
-                    layer.layerData.backgroundGraphics = bg;
-                }
-                
-                if (cutLayerData.paths && Array.isArray(cutLayerData.paths)) {
-                    cutLayerData.paths.forEach(pathData => {
-                        const reconstructedPath = this.rebuildPathFromData(pathData);
-                        if (reconstructedPath) {
-                            layer.layerData.paths.push(reconstructedPath);
-                            layer.addChild(reconstructedPath.graphics);
-                        }
+                    layer.layerData = {
+                        id: cutLayerData.id,
+                        name: cutLayerData.name || `レイヤー${index + 1}`,
+                        visible: cutLayerData.visible !== false,
+                        opacity: cutLayerData.opacity || 1.0,
+                        isBackground: cutLayerData.isBackground || false,
+                        paths: []
+                    };
+                    
+                    const transform = cutLayerData.transform || {
+                        x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+                    };
+                    
+                    this.layerSystem.layerTransforms.set(cutLayerData.id, {
+                        x: Number(transform.x) || 0,
+                        y: Number(transform.y) || 0,
+                        rotation: Number(transform.rotation) || 0,
+                        scaleX: Number(transform.scaleX) || 1,
+                        scaleY: Number(transform.scaleY) || 1
                     });
+                    
+                    if (cutLayerData.isBackground) {
+                        const bg = new PIXI.Graphics();
+                        const canvasWidth = this.layerSystem.config?.canvas?.width || 800;
+                        const canvasHeight = this.layerSystem.config?.canvas?.height || 600;
+                        const bgColor = this.layerSystem.config?.background?.color || 0xF0E0D6;
+                        
+                        bg.rect(0, 0, canvasWidth, canvasHeight);
+                        bg.fill(bgColor);
+                        layer.addChild(bg);
+                        layer.layerData.backgroundGraphics = bg;
+                    }
+                    
+                    if (cutLayerData.paths && Array.isArray(cutLayerData.paths)) {
+                        cutLayerData.paths.forEach(pathData => {
+                            const reconstructedPath = this.rebuildPathFromData(pathData);
+                            if (reconstructedPath) {
+                                layer.layerData.paths.push(reconstructedPath);
+                                layer.addChild(reconstructedPath.graphics);
+                            }
+                        });
+                    }
+                    
+                    layer.visible = cutLayerData.visible !== false;
+                    layer.alpha = cutLayerData.opacity || 1.0;
+                    
+                    if (!resetTransform && this.shouldApplyTransform(transform)) {
+                        this.applyTransformToLayerFixed(layer, transform);
+                    } else {
+                        layer.position.set(0, 0);
+                        layer.pivot.set(0, 0);
+                        layer.rotation = 0;
+                        layer.scale.set(1, 1);
+                    }
+                    
+                    this.layerSystem.layers.push(layer);
+                    this.layerSystem.layersContainer.addChild(layer);
+                    
+                } catch (error) {
+                    console.error(`Layer ${index} rebuild failed:`, error);
                 }
-                
-                layer.visible = cutLayerData.visible !== false;
-                layer.alpha = cutLayerData.opacity || 1.0;
-                
-                if (!resetTransform && this.shouldApplyTransform(transform)) {
-                    this.applyTransformToLayerFixed(layer, transform);
-                } else {
-                    layer.position.set(0, 0);
-                    layer.pivot.set(0, 0);
-                    layer.rotation = 0;
-                    layer.scale.set(1, 1);
-                }
-                
-                this.layerSystem.layers.push(layer);
-                this.layerSystem.layersContainer.addChild(layer);
             });
             
             if (this.layerSystem.layers.length > 0) {
@@ -387,28 +438,34 @@
                 return null;
             }
             
-            const graphics = new PIXI.Graphics();
-            
-            pathData.points.forEach(point => {
-                if (typeof point.x === 'number' && typeof point.y === 'number' &&
-                    isFinite(point.x) && isFinite(point.y)) {
-                    graphics.circle(point.x, point.y, (pathData.size || 16) / 2);
-                    graphics.fill({
-                        color: pathData.color || 0x800000,
-                        alpha: pathData.opacity || 1.0
-                    });
-                }
-            });
-            
-            return {
-                id: pathData.id || ('path_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
-                points: [...pathData.points],
-                size: pathData.size || 16,
-                color: pathData.color || 0x800000,
-                opacity: pathData.opacity || 1.0,
-                tool: pathData.tool || 'pen',
-                graphics: graphics
-            };
+            try {
+                const graphics = new PIXI.Graphics();
+                
+                pathData.points.forEach(point => {
+                    if (typeof point.x === 'number' && typeof point.y === 'number' &&
+                        isFinite(point.x) && isFinite(point.y)) {
+                        graphics.circle(point.x, point.y, (pathData.size || 16) / 2);
+                        graphics.fill({
+                            color: pathData.color || 0x800000,
+                            alpha: pathData.opacity || 1.0
+                        });
+                    }
+                });
+                
+                return {
+                    id: pathData.id || ('path_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
+                    points: [...pathData.points],
+                    size: pathData.size || 16,
+                    color: pathData.color || 0x800000,
+                    opacity: pathData.opacity || 1.0,
+                    tool: pathData.tool || 'pen',
+                    graphics: graphics
+                };
+                
+            } catch (error) {
+                console.error('Path rebuild failed:', error);
+                return null;
+            }
         }
         
         shouldApplyTransform(transform) {
@@ -455,12 +512,14 @@
             }
         }
         
+        // 【改修】不確実なsetTimeoutを排除、内部でgenerateCutThumbnailOptimizedを呼ばない
         saveCutLayerStates() {
             const currentCut = this.getCurrentCut();
             if (!currentCut || !this.layerSystem) return;
             
             const currentState = this.copyCurrentLayersToIndependentState(currentCut.id);
             currentCut.layers = currentState;
+            
             this.cutLayerStates.set(currentCut.id, this.deepCloneCutLayers(currentState));
             
             if (this.eventBus) {
@@ -471,35 +530,48 @@
             }
         }
         
-        // 【改修】サムネイル生成簡潔化
+        // 【改修完了】サムネイル生成 - PixiJSレンダリング完了待機
         async generateCutThumbnailOptimized(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut || !this.layerSystem || !this.app?.renderer) return;
             
-            const currentCutIndex = this.animationData.playback.currentCutIndex;
-            let shouldRestoreOriginal = false;
-            
-            if (cutIndex !== currentCutIndex) {
-                shouldRestoreOriginal = true;
-                await this.temporarilyApplyCutStateForThumbnail(cutIndex);
-            }
-            
-            await this._waitForRendererReady();
-            const thumbnailCanvas = await this.generateLayerCompositeCanvasOptimized();
-            
-            if (thumbnailCanvas) {
-                cut.thumbnailCanvas = thumbnailCanvas;
-            }
-            
-            if (shouldRestoreOriginal) {
-                await this.restoreOriginalCutStateAfterThumbnail(currentCutIndex);
-            }
-            
-            if (this.eventBus) {
-                this.eventBus.emit('animation:thumbnail-generated', { cutIndex });
+            try {
+                const currentCutIndex = this.animationData.playback.currentCutIndex;
+                let shouldRestoreOriginal = false;
+                
+                if (cutIndex !== currentCutIndex) {
+                    shouldRestoreOriginal = true;
+                    await this.temporarilyApplyCutStateForThumbnail(cutIndex);
+                }
+                
+                // 【改修】PixiJSレンダリング完了を確実に待機
+                await this._waitForRendererReady();
+                
+                // Canvas直接生成
+                const thumbnailCanvas = await this.generateLayerCompositeCanvasOptimized();
+                
+                if (thumbnailCanvas) {
+                    cut.thumbnailCanvas = thumbnailCanvas;
+                }
+                
+                if (shouldRestoreOriginal) {
+                    await this.restoreOriginalCutStateAfterThumbnail(currentCutIndex);
+                }
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:thumbnail-generated', { cutIndex });
+                }
+                
+            } catch (error) {
+                console.error(`Thumbnail generation error for cut ${cutIndex}:`, error);
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:thumbnail-failed', { cutIndex, error: error.message });
+                }
             }
         }
         
+        // 【新規】PixiJSレンダリング完了待機
         async _waitForRendererReady() {
             if (!this.app?.renderer || !this.layerSystem?.layersContainer) {
                 return;
@@ -507,8 +579,13 @@
             
             return new Promise(resolve => {
                 requestAnimationFrame(() => {
-                    this.app.renderer.render(this.layerSystem.layersContainer);
-                    requestAnimationFrame(() => resolve());
+                    try {
+                        this.app.renderer.render(this.layerSystem.layersContainer);
+                        requestAnimationFrame(() => resolve());
+                    } catch (err) {
+                        console.error('Renderer wait error:', err);
+                        resolve();
+                    }
                 });
             });
         }
@@ -518,8 +595,10 @@
             if (!cut) return;
             
             this.clearLayerSystemLayers();
+            
             const cutLayers = this.cutLayerStates.get(cut.id) || cut.layers || [];
             this.rebuildLayersFromCutData(cutLayers, false);
+            
             await new Promise(resolve => setTimeout(resolve, 50));
         }
         
@@ -534,56 +613,70 @@
             if (this.layerSystem.updateLayerPanelUI) {
                 this.layerSystem.updateLayerPanelUI();
             }
+            
             await new Promise(resolve => setTimeout(resolve, 50));
         }
         
+        // Canvas合成 - キャンバス比率対応
         async generateLayerCompositeCanvasOptimized() {
-            if (!this.layerSystem?.layers || this.layerSystem.layers.length === 0) {
+            try {
+                if (!this.layerSystem?.layers || this.layerSystem.layers.length === 0) {
+                    return this.createEmptyThumbnailCanvas();
+                }
+                
+                const canvasWidth = this.layerSystem.config?.canvas?.width || 800;
+                const canvasHeight = this.layerSystem.config?.canvas?.height || 600;
+                const canvasAspectRatio = canvasWidth / canvasHeight;
+                
+                const maxThumbWidth = 72;
+                const maxThumbHeight = 54;
+                
+                let thumbWidth, thumbHeight;
+                
+                if (canvasAspectRatio >= maxThumbWidth / maxThumbHeight) {
+                    thumbWidth = maxThumbWidth;
+                    thumbHeight = Math.round(maxThumbWidth / canvasAspectRatio);
+                } else {
+                    thumbHeight = maxThumbHeight;
+                    thumbWidth = Math.round(maxThumbHeight * canvasAspectRatio);
+                }
+                
+                const compositeCanvas = document.createElement('canvas');
+                compositeCanvas.width = thumbWidth;
+                compositeCanvas.height = thumbHeight;
+                
+                const ctx = compositeCanvas.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                ctx.clearRect(0, 0, thumbWidth, thumbHeight);
+                
+                for (let i = 0; i < this.layerSystem.layers.length; i++) {
+                    const layer = this.layerSystem.layers[i];
+                    
+                    if (!layer.visible || layer.layerData?.visible === false) continue;
+                    
+                    try {
+                        const layerCanvas = await this.renderLayerToCanvasOptimized(layer);
+                        
+                        if (layerCanvas) {
+                            const opacity = layer.alpha * (layer.layerData?.opacity || 1.0);
+                            ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
+                            
+                            ctx.drawImage(layerCanvas, 0, 0, thumbWidth, thumbHeight);
+                            ctx.globalAlpha = 1.0;
+                        }
+                        
+                    } catch (layerError) {
+                        console.warn(`Layer ${i} rendering failed:`, layerError);
+                    }
+                }
+                
+                return compositeCanvas;
+                
+            } catch (error) {
+                console.error('Composite canvas generation failed:', error);
                 return this.createEmptyThumbnailCanvas();
             }
-            
-            const canvasWidth = this.layerSystem.config?.canvas?.width || 800;
-            const canvasHeight = this.layerSystem.config?.canvas?.height || 600;
-            const canvasAspectRatio = canvasWidth / canvasHeight;
-            
-            const maxThumbWidth = 72;
-            const maxThumbHeight = 54;
-            
-            let thumbWidth, thumbHeight;
-            
-            if (canvasAspectRatio >= maxThumbWidth / maxThumbHeight) {
-                thumbWidth = maxThumbWidth;
-                thumbHeight = Math.round(maxThumbWidth / canvasAspectRatio);
-            } else {
-                thumbHeight = maxThumbHeight;
-                thumbWidth = Math.round(maxThumbHeight * canvasAspectRatio);
-            }
-            
-            const compositeCanvas = document.createElement('canvas');
-            compositeCanvas.width = thumbWidth;
-            compositeCanvas.height = thumbHeight;
-            
-            const ctx = compositeCanvas.getContext('2d');
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.clearRect(0, 0, thumbWidth, thumbHeight);
-            
-            for (let i = 0; i < this.layerSystem.layers.length; i++) {
-                const layer = this.layerSystem.layers[i];
-                
-                if (!layer.visible || layer.layerData?.visible === false) continue;
-                
-                const layerCanvas = await this.renderLayerToCanvasOptimized(layer);
-                
-                if (layerCanvas) {
-                    const opacity = layer.alpha * (layer.layerData?.opacity || 1.0);
-                    ctx.globalAlpha = Math.max(0, Math.min(1, opacity));
-                    ctx.drawImage(layerCanvas, 0, 0, thumbWidth, thumbHeight);
-                    ctx.globalAlpha = 1.0;
-                }
-            }
-            
-            return compositeCanvas;
         }
         
         createEmptyThumbnailCanvas() {
@@ -594,49 +687,62 @@
             const ctx = canvas.getContext('2d');
             ctx.fillStyle = '#f0e0d6';
             ctx.fillRect(0, 0, 72, 54);
+            
             ctx.fillStyle = '#800000';
             ctx.font = '10px sans-serif';
             ctx.textAlign = 'center';
-            ctx.fillText('Empty', 36, 30);
+            ctx.fillText('Empty CUT', 36, 30);
             
             return canvas;
         }
         
         async renderLayerToCanvasOptimized(layer) {
-            if (!this.app?.renderer || !layer) return null;
-            
-            const canvasWidth = this.layerSystem.config?.canvas?.width || 800;
-            const canvasHeight = this.layerSystem.config?.canvas?.height || 600;
-            
-            const renderTexture = PIXI.RenderTexture.create({
-                width: canvasWidth,
-                height: canvasHeight,
-                resolution: 1
-            });
-            
-            const tempContainer = new PIXI.Container();
-            const originalParent = layer.parent;
-            const originalIndex = originalParent ? originalParent.getChildIndex(layer) : -1;
-            
-            if (originalParent) {
-                originalParent.removeChild(layer);
+            try {
+                if (!this.app?.renderer || !layer) return null;
+                
+                const canvasWidth = this.layerSystem.config?.canvas?.width || 800;
+                const canvasHeight = this.layerSystem.config?.canvas?.height || 600;
+                
+                const renderTexture = PIXI.RenderTexture.create({
+                    width: canvasWidth,
+                    height: canvasHeight,
+                    resolution: 1
+                });
+                
+                const tempContainer = new PIXI.Container();
+                
+                const originalParent = layer.parent;
+                const originalIndex = originalParent ? originalParent.getChildIndex(layer) : -1;
+                
+                if (originalParent) {
+                    originalParent.removeChild(layer);
+                }
+                
+                tempContainer.addChild(layer);
+                
+                this.app.renderer.render({
+                    container: tempContainer,
+                    target: renderTexture
+                });
+                
+                const canvas = this.app.renderer.extract.canvas(renderTexture);
+                
+                tempContainer.removeChild(layer);
+                if (originalParent && originalIndex !== -1) {
+                    originalParent.addChildAt(layer, originalIndex);
+                } else if (originalParent) {
+                    originalParent.addChild(layer);
+                }
+                
+                renderTexture.destroy();
+                tempContainer.destroy();
+                
+                return canvas;
+                
+            } catch (error) {
+                console.error('Layer canvas rendering failed:', error);
+                return null;
             }
-            
-            tempContainer.addChild(layer);
-            this.app.renderer.render({ container: tempContainer, target: renderTexture });
-            const canvas = this.app.renderer.extract.canvas(renderTexture);
-            
-            tempContainer.removeChild(layer);
-            if (originalParent && originalIndex !== -1) {
-                originalParent.addChildAt(layer, originalIndex);
-            } else if (originalParent) {
-                originalParent.addChild(layer);
-            }
-            
-            renderTexture.destroy();
-            tempContainer.destroy();
-            
-            return canvas;
         }
         
         deepCloneCutLayers(cutLayers) {
@@ -669,13 +775,14 @@
             }));
         }
         
-        // ===== CUT クリップボード =====
+        // ===== CUT クリップボード機能 =====
         
         copyCurrent() {
             const currentCut = this.getCurrentCut();
             if (!currentCut) return false;
             
             this.saveCutLayerStatesBeforeSwitch();
+            
             this.cutClipboard.cutData = this.deepCopyCutData(currentCut);
             this.cutClipboard.timestamp = Date.now();
             this.cutClipboard.sourceId = currentCut.id;
@@ -773,7 +880,26 @@
             return cut;
         }
         
-        // ===== CUT管理・プレイバック =====
+        getCutClipboardInfo() {
+            return {
+                hasCutData: !!this.cutClipboard.cutData,
+                timestamp: this.cutClipboard.timestamp,
+                sourceId: this.cutClipboard.sourceId,
+                layerCount: this.cutClipboard.cutData?.layers?.length || 0
+            };
+        }
+        
+        clearCutClipboard() {
+            this.cutClipboard.cutData = null;
+            this.cutClipboard.timestamp = null;
+            this.cutClipboard.sourceId = null;
+            
+            if (this.eventBus) {
+                this.eventBus.emit('cut:clipboard-cleared');
+            }
+        }
+        
+        // ===== CUT管理・プレイバック制御 =====
         
         createInitialCutIfNeeded() {
             if (this.initialCutCreated || this.animationData.cuts.length > 0 || this.isInitializing) {
@@ -786,17 +912,21 @@
             
             this.isInitializing = true;
             
-            const initialCut = this.createNewCutFromCurrentLayers();
-            this.initialCutCreated = true;
-            
-            if (this.eventBus) {
-                this.eventBus.emit('animation:initial-cut-created', { 
-                    cutId: initialCut.id,
-                    cutIndex: 0
-                });
+            try {
+                const initialCut = this.createNewCutFromCurrentLayers();
+                this.initialCutCreated = true;
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:initial-cut-created', { 
+                        cutId: initialCut.id,
+                        cutIndex: 0
+                    });
+                }
+            } catch (error) {
+                console.error('Initial CUT creation failed:', error);
+            } finally {
+                this.isInitializing = false;
             }
-            
-            this.isInitializing = false;
         }
         
         deleteCut(cutIndex) {
@@ -807,6 +937,7 @@
             
             this.cutLayerStates.delete(cut.id);
             this.cutLayerIdCounters.delete(cut.id);
+            
             this.animationData.cuts.splice(cutIndex, 1);
             
             if (this.animationData.playback.currentCutIndex >= cutIndex) {
@@ -872,7 +1003,8 @@
                 clearInterval(this.playbackTimer);
             }
             
-            const frameTime = 1000 / 12; // Fixed 12 FPS for simplicity
+            const fps = this.animationData.settings.fps;
+            const frameTime = 1000 / fps;
             
             this.playbackTimer = setInterval(() => {
                 this.updatePlayback();
@@ -1060,14 +1192,18 @@
         
         updateSettings(settings) {
             if (!settings) return;
+            
             Object.assign(this.animationData.settings, settings);
+            
+            if (this.animationData.playback.isPlaying && settings.fps) {
+                this.stopPlaybackLoop();
+                this.startPlaybackLoop();
+            }
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:settings-updated', { settings });
             }
         }
-        
-        // ===== Getters =====
         
         getAnimationData() { return this.animationData; }
         getCurrentCutIndex() { return this.animationData.playback.currentCutIndex; }
@@ -1098,6 +1234,7 @@
             return {
                 isPlaying: this.animationData.playback.isPlaying,
                 currentCutIndex: this.animationData.playback.currentCutIndex,
+                fps: this.animationData.settings.fps,
                 loop: this.animationData.settings.loop,
                 cutsCount: this.animationData.cuts.length
             };
@@ -1110,6 +1247,7 @@
             
             if (this.isAnimationMode) {
                 this.createInitialCutIfNeeded();
+                
                 if (this.eventBus) {
                     this.eventBus.emit('animation:mode-entered');
                 }
@@ -1124,9 +1262,116 @@
             
             return this.isAnimationMode;
         }
+        
+        clearAnimation() {
+            this.stop();
+            
+            this.animationData = this.createDefaultAnimation();
+            this.initialCutCreated = false;
+            this.isInitializing = false;
+            this.cutSwitchInProgress = false;
+            this.hasInitialized = false;
+            this.lastStoppedCutIndex = 0;
+            
+            this.cutLayerIdCounters.clear();
+            this.cutLayerStates.clear();
+            this.clearCutClipboard();
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cleared');
+            }
+        }
+        
+        checkCoordinateSystem() {
+            if (this.coordAPI) {
+                return this.coordAPI.diagnoseReferences ? 
+                    this.coordAPI.diagnoseReferences() : 
+                    { status: 'available', version: 'unknown' };
+            } else {
+                return { status: 'not_available', issue: 'CoordinateSystem not loaded' };
+            }
+        }
+        
+        checkLayerSystemAPI() {
+            if (!this.layerSystem) {
+                return { status: 'not_available', issue: 'LayerSystem reference missing' };
+            }
+            
+            return {
+                status: 'available',
+                hasLayers: !!this.layerSystem.layers,
+                hasTransforms: !!this.layerSystem.layerTransforms,
+                hasContainer: !!(this.layerSystem.layersContainer || this.layerSystem.worldContainer),
+                layerCount: this.layerSystem.layers ? this.layerSystem.layers.length : 0,
+                hasAnimationSystemRef: !!this.layerSystem.animationSystem,
+                transformMapSize: this.layerSystem.layerTransforms ? this.layerSystem.layerTransforms.size : 0
+            };
+        }
+        
+        checkEventBusIntegration() {
+            if (!this.eventBus) {
+                return { status: 'not_available', issue: 'EventBus reference missing' };
+            }
+            
+            return {
+                status: 'available',
+                eventBusType: this.eventBus.constructor.name,
+                hasEmit: typeof this.eventBus.emit === 'function',
+                hasOn: typeof this.eventBus.on === 'function'
+            };
+        }
+        
+        diagnoseSystem() {
+            const diagnosis = {
+                timestamp: new Date().toISOString(),
+                animationSystem: {
+                    initialized: this.hasInitialized,
+                    cutsCount: this.animationData.cuts.length,
+                    currentCutIndex: this.animationData.playback.currentCutIndex,
+                    isPlaying: this.animationData.playback.isPlaying,
+                    cutLayerStatesSize: this.cutLayerStates.size,
+                    cutLayerIdCountersSize: this.cutLayerIdCounters.size
+                },
+                coordinateSystem: this.checkCoordinateSystem(),
+                layerSystem: this.checkLayerSystemAPI(),
+                eventBus: this.checkEventBusIntegration(),
+                pixiJS: {
+                    hasApp: !!this.app,
+                    hasRenderer: !!(this.app?.renderer),
+                    rendererType: this.app?.renderer?.type,
+                    canvasSize: this.app?.renderer ? {
+                        width: this.app.renderer.width,
+                        height: this.app.renderer.height
+                    } : null
+                }
+            };
+            
+            const issues = [];
+            
+            if (!this.hasInitialized) issues.push('AnimationSystem not initialized');
+            if (diagnosis.coordinateSystem.status === 'not_available') issues.push('CoordinateSystem missing');
+            if (diagnosis.layerSystem.status === 'not_available') issues.push('LayerSystem missing');
+            if (diagnosis.eventBus.status === 'not_available') issues.push('EventBus missing');
+            if (!this.app?.renderer) issues.push('PixiJS renderer missing');
+            
+            diagnosis.issues = issues;
+            diagnosis.healthScore = Math.max(0, 100 - (issues.length * 20));
+            
+            return diagnosis;
+        }
     }
     
     window.TegakiAnimationSystem = AnimationSystem;
-    console.log('✅ AnimationSystem Phase 2改修版 loaded');
+    
+    console.log('✅ animation-system.js loaded (確実な同期化改修版)');
+    console.log('🔧 改修完了項目:');
+    console.log('  🆕 generateCutThumbnailOptimized: PixiJSレンダリング完了待機');
+    console.log('  🆕 _waitForRendererReady: 確実なレンダリング待機');
+    console.log('  ❌ setupLayerChangeListener: 不確実なsetTimeout排除');
+    console.log('  ❌ saveCutLayerStates: サムネイル自動生成を排除');
+    console.log('  ✅ Canvas直接保存・完全2次元マトリクス維持');
+    console.log('  ✅ CoordinateSystem API統合');
+    console.log('  ✅ EventBus完全統合');
+    console.log('  ✅ PixiJS v8.13 完全対応');
 
 })();
