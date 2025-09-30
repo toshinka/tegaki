@@ -618,6 +618,253 @@ clonePath(sourcePath) {
 
 ---
 
+## 🔍 デバッグ・検証方法
+
+### CUT独立性の確認
+
+```javascript
+// コンソールでの確認コマンド
+
+// 1. CUT構造の確認
+console.log('CutsContainer:', animationSystem.cutsContainer);
+console.log('CUT数:', animationSystem.cutsContainer.children.length);
+console.log('Metadata数:', animationSystem.cutMetadata.length);
+
+// 2. 各CUTの内容確認
+animationSystem.cutMetadata.forEach((cutData, i) => {
+  console.log(`CUT${i+1}:`, {
+    name: cutData.name,
+    layerCount: cutData.cutContainer.children.length,
+    layers: cutData.cutContainer.children.map(l => ({
+      name: l.layerData?.name,
+      pathCount: l.layerData?.paths?.length || 0
+    }))
+  });
+});
+
+// 3. アクティブCUTの確認
+console.log('Active CUT Index:', animationSystem.activeCutIndex);
+console.log('LayerSystem.layersContainer === Active CUT?', 
+  layerSystem.layersContainer === animationSystem.cutMetadata[animationSystem.activeCutIndex].cutContainer
+);
+
+// 4. 独立性テスト
+// CUT1で描画 → CUT2に切替 → CUT1に戻る → 描画が残っているか確認
+function testCutIndependence() {
+  console.log('=== CUT独立性テスト開始 ===');
+  
+  // CUT1のLayer1のPath数を記録
+  const cut1 = animationSystem.cutMetadata[0];
+  const cut1Layer1 = cut1.cutContainer.children[1]; // Layer1
+  const initialPathCount = cut1Layer1.layerData.paths.length;
+  console.log('CUT1 Layer1 初期Path数:', initialPathCount);
+  
+  // CUT2に切替
+  animationSystem.switchToActiveCut(1);
+  console.log('CUT2に切替完了');
+  
+  // CUT2のLayer1のPath数確認
+  const cut2 = animationSystem.cutMetadata[1];
+  const cut2Layer1 = cut2.cutContainer.children[1];
+  const cut2PathCount = cut2Layer1.layerData.paths.length;
+  console.log('CUT2 Layer1 Path数:', cut2PathCount);
+  
+  // CUT1に戻る
+  animationSystem.switchToActiveCut(0);
+  console.log('CUT1に戻る');
+  
+  // CUT1のPath数が変わっていないか確認
+  const finalPathCount = cut1Layer1.layerData.paths.length;
+  console.log('CUT1 Layer1 最終Path数:', finalPathCount);
+  
+  if (initialPathCount === finalPathCount) {
+    console.log('✅ テスト成功: CUTは独立している');
+  } else {
+    console.error('❌ テスト失敗: Path数が変化した');
+  }
+}
+
+// 5. メモリリーク確認
+function checkMemoryLeaks() {
+  console.log('=== メモリリーク確認 ===');
+  
+  // CUT削除前のContainer数
+  const beforeCount = animationSystem.cutsContainer.children.length;
+  console.log('削除前CUT数:', beforeCount);
+  
+  // CUT削除
+  const deletedCutId = animationSystem.cutMetadata[1].cutId;
+  animationSystem.deleteCut(1);
+  
+  // 削除後のContainer数
+  const afterCount = animationSystem.cutsContainer.children.length;
+  console.log('削除後CUT数:', afterCount);
+  
+  // cutsContainerに削除したCUTが残っていないか確認
+  const leaked = animationSystem.cutsContainer.children.find(c => c.label === deletedCutId);
+  
+  if (!leaked && afterCount === beforeCount - 1) {
+    console.log('✅ メモリリーク無し: CUTは完全に削除された');
+  } else {
+    console.error('❌ メモリリーク検出: CUTが残っている');
+  }
+}
+```
+
+---
+
+## ⚠️ 重要な実装注意事項
+
+### 1. cutsContainer の配置
+
+```javascript
+// ❌ NG: ステージに直接追加すると全CUTがレンダリングされる
+app.stage.addChild(this.cutsContainer);
+this.cutsContainer.visible = true;  // 全CUT描画でパフォーマンス低下
+
+// ✅ OK: cutsContainerは非表示領域に配置
+app.stage.addChild(this.cutsContainer);
+this.cutsContainer.visible = false;  // レンダリング対象外
+this.cutsContainer.position.set(-999999, -999999);  // 画面外
+
+// ✅ アクティブなCUTのみをcanvasContainerに配置
+canvasContainer.addChild(activeCutContainer);
+activeCutContainer.visible = true;  // これだけレンダリング
+```
+
+**理由**: すべてのCUTを常時レンダリングするとGPUメモリとCPU負荷が増大
+
+---
+
+### 2. LayerSystem.layers getter の実装
+
+```javascript
+// ❌ NG: 配列をキャッシュすると参照が古くなる
+get layers() {
+  if (!this._cachedLayers) {
+    this._cachedLayers = Array.from(this.layersContainer.children);
+  }
+  return this._cachedLayers;
+}
+
+// ✅ OK: 常に最新のchildrenを返す
+get layers() {
+  return this.layersContainer ? Array.from(this.layersContainer.children) : [];
+}
+```
+
+**理由**: CUT切替時に自動的に新しいchildrenが取得される
+
+---
+
+### 3. Transform情報の管理
+
+```javascript
+// ★★★ layerTransforms Mapのキーは「cutId_layerId」★★★
+const transformKey = `${cutData.cutId}_${layer.layerData.id}`;
+this.layerTransforms.set(transformKey, {
+  x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+});
+
+// CUT切替時、Transform復元
+const transform = this.layerTransforms.get(transformKey);
+if (transform) {
+  layer.position.set(transform.x, transform.y);
+  layer.rotation = transform.rotation;
+  layer.scale.set(transform.scaleX, transform.scaleY);
+}
+```
+
+**理由**: 同じLayerでもCUTごとに異なるTransformを持つ可能性がある
+
+---
+
+### 4. サムネイル生成のタイミング
+
+```javascript
+// ✅ CUT作成直後
+createNewCut(sourceType) {
+  // ... CUT作成処理 ...
+  
+  const newIndex = this.cutMetadata.length - 1;
+  
+  // 次フレームでサムネイル生成（レンダリング待機）
+  requestAnimationFrame(() => {
+    this.generateCutThumbnail(newIndex);
+  });
+}
+
+// ✅ 描画完了後
+LayerSystem.addPathToActiveLayer(path) {
+  // ... Path追加処理 ...
+  
+  // AnimationSystemに通知
+  if (this.eventBus) {
+    this.eventBus.emit('layer:path-added', {
+      cutIndex: this.animationSystem.activeCutIndex
+    });
+  }
+}
+
+// AnimationSystemで受信
+this.eventBus.on('layer:path-added', (data) => {
+  // デバウンス処理（100ms以内の連続描画はまとめる）
+  clearTimeout(this.thumbnailDebounceTimer);
+  this.thumbnailDebounceTimer = setTimeout(() => {
+    this.generateCutThumbnail(data.cutIndex);
+  }, 100);
+});
+```
+
+**理由**: 毎ストロークでサムネイル生成するとパフォーマンス低下
+
+---
+
+### 5. CUT削除時のクリーンアップ
+
+```javascript
+deleteCut(cutIndex) {
+  const cutData = this.cutMetadata[cutIndex];
+  const cutContainer = cutData.cutContainer;
+  
+  // ★★★ Step 1: 子要素から順に破棄 ★★★
+  cutContainer.children.forEach(layer => {
+    // Graphics破棄
+    layer.children.forEach(child => {
+      if (child.destroy) {
+        child.destroy({ children: true, texture: false, baseTexture: false });
+      }
+    });
+    
+    // Layer破棄
+    layer.destroy({ children: true, texture: false, baseTexture: false });
+  });
+  
+  // ★★★ Step 2: Container破棄 ★★★
+  if (cutContainer.parent) {
+    cutContainer.parent.removeChild(cutContainer);
+  }
+  cutContainer.destroy({ children: true, texture: false, baseTexture: false });
+  
+  // ★★★ Step 3: Metadata削除 ★★★
+  this.cutMetadata.splice(cutIndex, 1);
+  
+  // ★★★ Step 4: Transform情報削除 ★★★
+  // cutId に紐づく Transform を全削除
+  const cutId = cutData.cutId;
+  for (let key of this.layerSystem.layerTransforms.keys()) {
+    if (key.startsWith(cutId + '_')) {
+      this.layerSystem.layerTransforms.delete(key);
+    }
+  }
+  
+  // ★★★ Step 5: サムネイルCanvas削除 ★★★
+  cutData.thumbnailCanvas = null;
+}
+```
+
+**理由**: メモリリークを防ぐための完全なクリーンアップ
+
 ---
 
 ## 📊 パフォーマンス最適化
@@ -703,6 +950,68 @@ eventBus.on('animation:cut-applied', () => {
 
 ---
 
+## 🎨 将来のレイヤーフォルダ実装への拡張
+
+### 現在の構造
+```
+CUT (PIXI.Container)
+├─ Layer1 (PIXI.Container)
+├─ Layer2 (PIXI.Container)
+└─ Layer3 (PIXI.Container)
+```
+
+### フォルダ実装後
+```
+CUT (PIXI.Container)
+├─ Folder1 (PIXI.Container)  ← type: 'folder'
+│   ├─ Layer1 (PIXI.Container)
+│   └─ Layer2 (PIXI.Container)
+├─ Layer3 (PIXI.Container)
+└─ Folder2 (PIXI.Container)  ← type: 'folder'
+    └─ Layer4 (PIXI.Container)
+```
+
+### 実装方法
+
+```javascript
+// Container に type を追加
+container.containerType = 'folder';  // or 'layer'
+
+// フォルダ判定
+function isFolder(container) {
+  return container.containerType === 'folder';
+}
+
+// 再帰的なレンダリング
+function renderLayerTree(container, indent = 0) {
+  if (isFolder(container)) {
+    console.log('  '.repeat(indent) + '📁 ' + container.layerData.name);
+    container.children.forEach(child => {
+      renderLayerTree(child, indent + 1);
+    });
+  } else {
+    console.log('  '.repeat(indent) + '📄 ' + container.layerData.name);
+  }
+}
+
+// フォルダサムネイル = 子Layer合成
+function generateFolderThumbnail(folderContainer) {
+  // フォルダ全体をレンダリング（子Layerすべて含む）
+  const renderTexture = PIXI.RenderTexture.create({...});
+  app.renderer.render({
+    container: folderContainer,  // フォルダごとレンダリング
+    target: renderTexture
+  });
+  return app.renderer.extract.canvas(renderTexture);
+}
+```
+
+**利点**: 
+- CUTもフォルダも同じContainer構造
+- 既存のクローン・削除・レンダリング処理がそのまま使える
+- 階層構造が自然に表現される
+
+---
 
 ## 🚀 移行ステップ（段階的実装）
 
@@ -763,7 +1072,167 @@ eventBus.on('animation:cut-applied', () => {
 
 ---
 
-#
+## 📝 完全なコード例（抜粋）
+
+### AnimationSystem.switchToActiveCut()
+
+```javascript
+switchToActiveCut(newIndex) {
+  // 同じCUTなら何もしない
+  if (this.activeCutIndex === newIndex) return;
+  
+  // 範囲チェック
+  if (newIndex < 0 || newIndex >= this.cutMetadata.length) return;
+  
+  const oldCutData = this.cutMetadata[this.activeCutIndex];
+  const newCutData = this.cutMetadata[newIndex];
+  
+  // ★★★ Step 1: 旧CUTを非表示領域へ戻す ★★★
+  if (oldCutData.cutContainer.parent === this.canvasContainer) {
+    this.canvasContainer.removeChild(oldCutData.cutContainer);
+    this.cutsContainer.addChild(oldCutData.cutContainer);
+    oldCutData.cutContainer.visible = false;
+    oldCutData.cutContainer.renderable = false;
+  }
+  
+  // ★★★ Step 2: 新CUTを表示領域へ移動 ★★★
+  if (newCutData.cutContainer.parent === this.cutsContainer) {
+    this.cutsContainer.removeChild(newCutData.cutContainer);
+    this.canvasContainer.addChild(newCutData.cutContainer);
+    newCutData.cutContainer.visible = true;
+    newCutData.cutContainer.renderable = true;
+    newCutData.cutContainer.position.set(0, 0);
+  }
+  
+  // ★★★ Step 3: LayerSystemの参照先を切替 ★★★
+  this.layerSystem.switchToCutContainer(newCutData.cutContainer);
+  
+  // ★★★ Step 4: Index更新 ★★★
+  this.activeCutIndex = newIndex;
+  
+  // ★★★ Step 5: UI更新 ★★★
+  this.layerSystem.updateLayerPanelUI();
+  
+  if (this.eventBus) {
+    this.eventBus.emit('animation:cut-applied', {
+      cutIndex: newIndex,
+      cutId: newCutData.cutId
+    });
+  }
+}
+```
+
+---
+
+### LayerSystem.switchToCutContainer()
+
+```javascript
+switchToCutContainer(newCutContainer) {
+  // ★★★ 参照先を切り替えるだけ（コピー不要） ★★★
+  this.layersContainer = newCutContainer;
+  
+  // activeLayerIndex調整
+  if (this.activeLayerIndex >= this.layers.length) {
+    this.activeLayerIndex = Math.max(0, this.layers.length - 1);
+  }
+  
+  // UI更新
+  this.updateLayerPanelUI();
+  this.updateStatusDisplay();
+  
+  if (this.eventBus) {
+    this.eventBus.emit('layer:container-switched', {
+      layerCount: this.layers.length
+    });
+  }
+}
+```
+
+---
+
+### AnimationSystem.cloneCutContainer()
+
+```javascript
+cloneCutContainer(sourceCutContainer) {
+  const cloned = new PIXI.Container();
+  cloned.label = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+  
+  // 子Layer全複製
+  sourceCutContainer.children.forEach(sourceLayer => {
+    const clonedLayer = this.cloneLayer(sourceLayer);
+    cloned.addChild(clonedLayer);
+  });
+  
+  // Transform継承
+  cloned.position.set(sourceCutContainer.position.x, sourceCutContainer.position.y);
+  cloned.scale.set(sourceCutContainer.scale.x, sourceCutContainer.scale.y);
+  cloned.rotation = sourceCutContainer.rotation;
+  cloned.alpha = sourceCutContainer.alpha;
+  cloned.visible = false;  // 非表示領域で作成
+  cloned.renderable = false;
+  
+  return cloned;
+}
+```
+
+---
+
+## ✅ 改修完了チェックリスト
+
+### AnimationSystem
+- [ ] `cutsContainer` 作成・非表示領域配置
+- [ ] `cutMetadata` 配列実装
+- [ ] `createInitialCut()` 実装
+- [ ] `createNewCut(sourceType)` 実装
+- [ ] `cloneCutContainer()` / `cloneLayer()` / `clonePath()` 実装
+- [ ] `switchToActiveCut()` 実装（Container親子関係変更）
+- [ ] `deleteCut()` 実装（完全クリーンアップ）
+- [ ] `generateCutThumbnail()` 実装
+
+### LayerSystem
+- [ ] `this.layers` 削除 → `get layers()` getter実装
+- [ ] `switchToCutContainer()` 実装
+- [ ] `updateLayerPanelUI()` をgetter対応に修正
+- [ ] `addPathToActiveLayer()` でEventBus通知
+
+### 統合テスト
+- [ ] CUT1で描画 → CUT2で空白 → CUT1に戻ると描画が残る
+- [ ] CUTコピーで完全に独立したCUT作成
+- [ ] CUT削除でメモリリーク無し
+- [ ] サムネイルが正しく表示される
+- [ ] プレイバックでCUTが順番に切り替わる
+
+---
+
+## 🎯 まとめ: なぜこのアプローチが成功するのか
+
+### 1. **シンプルさ**
+- Container = フォルダという直感的な構造
+- 参照管理のみ（コピー処理が最小限）
+
+### 2. **確実性**
+- PIXI.Containerの親子関係で管理
+- 参照漏れが原理的に発生しない
+
+### 3. **拡張性**
+- レイヤーフォルダと統一的な扱い
+- 階層構造の自然な表現
+
+### 4. **パフォーマンス**
+- アクティブなCUTのみレンダリング
+- Container切替は高速
+
+### 5. **デバッグ性**
+- Container構造がそのままデータ構造
+- Chrome DevToolsで可視化可能
+
+---
+
+**改修方針**: B案（CUT = アニメ用大フォルダ）を採用  
+**理由**: A案の二桁の試行錯誤を経て、参照管理の複雑さが本質的な問題と判明  
+**コアコンセプト**: Container = 真実、LayerSystem = View  
+**成功の鍵**: コピー処理を最小化し、参照の明確化を徹底
+
 ---
 
 ## 📚 参考: PIXI.Container API要点
@@ -795,3 +1264,6 @@ container.renderable = false;  // レンダリング対象外
 
 ---
 
+**作成日**: 2025-09-30  
+**対象バージョン**: v8.13_gif_phase2_folder  
+**改修担当AI**: Claude Sonnet 4.5

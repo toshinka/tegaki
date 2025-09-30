@@ -1,0 +1,449 @@
+レイヤーフォルダ & CUT分離システム 改修計画書
+📋 改修概要
+
+目的: CUT間のデータ完全分離 + レイヤーフォルダ機能の実装
+アプローチ: 各CUTに独立したLayerSystemインスタンスを持たせ、レイヤーフォルダは内部整理機能として実装
+🏗️ アーキテクチャ設計
+データ構造
+javascript
+
+AnimationSystem
+├─ cuts: Cut[]
+│   └─ Cut
+│       ├─ id: string
+│       ├─ name: string
+│       ├─ layerSystem: LayerSystem (独立インスタンス)
+│       └─ frames: Frame[]
+├─ currentCutIndex: number
+└─ currentCut: Cut (getter)
+
+LayerSystem (CUT毎に独立)
+├─ layers: Array<Layer | LayerFolder>
+├─ selectedLayer: Layer | LayerFolder
+└─ _container: PIXI.Container
+
+LayerFolder (新規)
+├─ id: string
+├─ name: string
+├─ type: 'folder'
+├─ isOpen: boolean
+├─ children: Layer[]
+├─ visible: boolean
+└─ opacity: number
+
+Layer (既存 - type追加)
+├─ type: 'layer'
+└─ (既存プロパティ)
+
+📁 ファイル別改修内容
+1. system/animation-system.js - CUT管理の中核
+新規追加メソッド
+javascript
+
+class AnimationSystem {
+  constructor(app, coordinateSystem, eventBus) {
+    this.cuts = [];
+    this.currentCutIndex = 0;
+    this._initializeDefaultCut();
+  }
+
+  // CUT操作
+  createCut(name = `CUT${this.cuts.length + 1}`) {
+    // 新しいLayerSystemインスタンスを生成
+    // cutsに追加
+  }
+
+  switchCut(index) {
+    // 現在のCUTを保存
+    // LayerSystemインスタンスを切り替え
+    // UIを更新
+    // eventBus.emit('cut:switched')
+  }
+
+  deleteCut(index) {
+    // LayerSystemをdispose
+    // cutsから削除
+  }
+
+  getCut(index) {
+    return this.cuts[index];
+  }
+
+  get currentCut() {
+    return this.cuts[this.currentCutIndex];
+  }
+
+  get currentLayerSystem() {
+    return this.currentCut.layerSystem;
+  }
+}
+
+重要な実装ポイント
+
+    各CUTは完全に独立したLayerSystemを持つ
+    CUT切り替え時はapp.stageの子を入れ替える
+    既存のlayerSystem参照はanimationSystem.currentLayerSystemに変更
+
+2. system/layer-system.js - フォルダ機能追加
+新規追加メソッド
+javascript
+
+class LayerSystem {
+  // フォルダ作成
+  createFolder(name = '新規フォルダ', index = 0) {
+    const folder = {
+      id: crypto.randomUUID(),
+      name,
+      type: 'folder',
+      isOpen: true,
+      children: [],
+      visible: true,
+      opacity: 1
+    };
+    this.layers.splice(index, 0, folder);
+    return folder;
+  }
+
+  // レイヤーをフォルダに追加
+  addLayerToFolder(layerId, folderId) {
+    const layer = this._findLayer(layerId);
+    const folder = this._findFolder(folderId);
+    // layersから削除してfolder.childrenに追加
+  }
+
+  // フォルダからレイヤーを取り出し
+  removeLayerFromFolder(layerId, folderId) {
+    const folder = this._findFolder(folderId);
+    // folder.childrenから削除してlayersに追加
+  }
+
+  // フォルダ開閉
+  toggleFolder(folderId) {
+    const folder = this._findFolder(folderId);
+    folder.isOpen = !folder.isOpen;
+  }
+
+  // フォルダ内全レイヤー取得
+  getLayersInFolder(folderId) {
+    const folder = this._findFolder(folderId);
+    return folder ? folder.children : [];
+  }
+
+  // 全レイヤーをフラットに取得 (描画順用)
+  getAllLayersFlat() {
+    const result = [];
+    for (const item of this.layers) {
+      if (item.type === 'folder') {
+        result.push(...item.children);
+      } else {
+        result.push(item);
+      }
+    }
+    return result;
+  }
+
+  // 内部ヘルパー
+  _findFolder(id) {
+    return this.layers.find(item => item.type === 'folder' && item.id === id);
+  }
+
+  _findLayer(id) {
+    // layers内とfolder.children内を探索
+  }
+}
+
+既存メソッド修正
+javascript
+
+// selectLayer() - フォルダも選択可能に
+selectLayer(id) {
+  const item = this._findLayer(id) || this._findFolder(id);
+  this.selectedLayer = item;
+}
+
+// render() - フラット化したレイヤーで描画
+render() {
+  const flatLayers = this.getAllLayersFlat();
+  // 既存の描画ロジック
+}
+
+3. ui/ui-panels.js - レイヤーパネルUI
+UI構造変更
+
+[レイヤーパネル]
+  ┌─────────────────────────┐
+  │ ◀ CUT1 ▶        │ ← CUT切り替えエリア
+  ├─────────────────────────┤
+  │ [➕Layer] [📁➕Folder]   │ ← 追加ボタン
+  ├─────────────────────────┤
+  │ 📁 キャラクター [▼]     │ ← フォルダ (開)
+  │   └─ 🖼️ レイヤー1       │
+  │   └─ 🖼️ レイヤー2       │
+  │ 📁 背景 [▶]             │ ← フォルダ (閉)
+  │ 🖼️ 下絵                 │ ← 通常レイヤー
+  └─────────────────────────┘
+
+新規追加メソッド
+javascript
+
+class UIPanel {
+  _createCutControls() {
+    // CUT切り替えUI
+    // ◀ CUT名 ▶ + [CUT+]ボタン
+  }
+
+  _createFolderButton() {
+    // 📁+ ボタン作成
+    // クリックでlayerSystem.createFolder()
+  }
+
+  _renderLayerItem(item, depth = 0) {
+    // itemがfolderならフォルダUI
+    // itemがlayerなら既存レイヤーUI
+    // depthでインデント調整
+  }
+
+  _createFolderUI(folder, depth) {
+    const div = document.createElement('div');
+    div.style.marginLeft = `${depth * 20}px`;
+    
+    // フォルダアイコン (開閉で切り替え)
+    const icon = folder.isOpen 
+      ? '<svg>...folder-open...</svg>' 
+      : '<svg>...folder...</svg>';
+    
+    // サムネイル: folder.children全レイヤーの合成画像
+    const thumbnail = this._generateFolderThumbnail(folder);
+    
+    return div;
+  }
+
+  _generateFolderThumbnail(folder) {
+    // Canvas2D使用許可
+    // folder.children内の全レイヤーを合成
+    const canvas = document.createElement('canvas');
+    const ctx = canvas.getContext('2d');
+    // 各レイヤーのテクスチャを描画
+    return canvas;
+  }
+
+  updateLayerList() {
+    // animationSystem.currentLayerSystem.layersを走査
+    // フォルダとレイヤーを階層表示
+  }
+}
+
+SVGアイコン定義
+javascript
+
+const ICONS = {
+  FOLDER: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5"><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`,
+  
+  FOLDER_OPEN: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5"><path d="m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2"/></svg>`,
+  
+  FOLDER_PLUS: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>`
+};
+
+4. ui/timeline-ui.js - タイムライン連携
+修正ポイント
+javascript
+
+class TimelineUI {
+  updateTimeline() {
+    // animationSystem.currentCut.framesを表示
+    // CUT切り替え時に自動更新
+  }
+
+  _generateThumbnail(frameIndex) {
+    // animationSystem.currentLayerSystem.layersから生成
+    // フォルダ内レイヤーも含める (getAllLayersFlat使用)
+  }
+}
+
+5. core-engine.js - 初期化とイベント統合
+修正内容
+javascript
+
+class DrawingApp {
+  async init() {
+    // AnimationSystemを先に初期化
+    this.animationSystem = new AnimationSystem(this.app, this.coordinateSystem, this.eventBus);
+    
+    // LayerSystemは参照のみ (AnimationSystemが管理)
+    this.layerSystem = this.animationSystem.currentLayerSystem;
+    
+    // イベント登録
+    this.eventBus.on('cut:switched', () => {
+      this.layerSystem = this.animationSystem.currentLayerSystem;
+      this._updateAllUI();
+    });
+  }
+
+  _updateAllUI() {
+    this.uiPanel.updateLayerList();
+    this.timelineUI.updateTimeline();
+  }
+}
+
+🔄 動作フロー
+CUT切り替えフロー
+
+1. ユーザーが◀▶ボタンクリック
+   ↓
+2. AnimationSystem.switchCut(newIndex)
+   ↓
+3. app.stage.removeChildren()
+   ↓
+4. newCut.layerSystem._containerをstageに追加
+   ↓
+5. eventBus.emit('cut:switched', { cutIndex, cutName })
+   ↓
+6. UIPanel.updateLayerList()
+7. TimelineUI.updateTimeline()
+
+フォルダ開閉フロー
+
+1. ユーザーがフォルダアイコンクリック
+   ↓
+2. LayerSystem.toggleFolder(folderId)
+   ↓
+3. folder.isOpenを反転
+   ↓
+4. eventBus.emit('folder:toggled', { folderId, isOpen })
+   ↓
+5. UIPanel.updateLayerList()
+   (子レイヤーの表示/非表示切り替え)
+
+レイヤー描画フロー
+
+1. ユーザーが描画ツールで描く
+   ↓
+2. animationSystem.currentLayerSystem.selectedLayer取得
+   ↓
+3. 該当レイヤーのgraphicsに描画
+   ↓
+4. LayerSystem.render() (フラット化して描画)
+   ↓
+5. TimelineUI._generateThumbnail() (フォルダ内レイヤー含む)
+
+⚠️ 重要な実装注意点
+1. LayerSystem参照の更新
+
+変更前:
+javascript
+
+this.layerSystem.selectLayer(id);
+
+変更後:
+javascript
+
+this.animationSystem.currentLayerSystem.selectLayer(id);
+
+2. CUT切り替え時のクリーンアップ
+javascript
+
+switchCut(index) {
+  // 現在のCUTの状態を保存
+  this.currentCut.layerSystem.saveState();
+  
+  // Containerを切り替え
+  this.app.stage.removeChildren();
+  this.currentCutIndex = index;
+  this.app.stage.addChild(this.currentCut.layerSystem._container);
+  
+  // カメラ位置はCUT間で共有 (coordinate-system)
+}
+
+3. フォルダサムネイル生成
+javascript
+
+_generateFolderThumbnail(folder) {
+  const canvas = document.createElement('canvas');
+  canvas.width = 60;
+  canvas.height = 60;
+  const ctx = canvas.getContext('2d');
+  
+  // folder.childrenを下から順に描画
+  for (const layer of folder.children) {
+    if (!layer.visible) continue;
+    
+    // PixiJS TextureからCanvas2Dへ変換
+    const texture = layer.graphics.texture;
+    // ... 描画処理
+  }
+  
+  return canvas.toDataURL();
+}
+
+4. History対応
+javascript
+
+// system/history.js
+class History {
+  pushState(state) {
+    // CUT情報を含める
+    const snapshot = {
+      cutIndex: this.animationSystem.currentCutIndex,
+      layerSystemState: this.animationSystem.currentLayerSystem.serialize(),
+      timestamp: Date.now()
+    };
+  }
+}
+
+🎯 改修優先順位
+Phase 1: CUT分離 (最優先)
+
+    AnimationSystemにCut配列追加
+    CUT切り替え機能実装
+    UIにCUT操作UI追加
+    全てのlayerSystem参照をcurrentLayerSystemに変更
+
+Phase 2: レイヤーフォルダ
+
+    LayerFolderデータ構造追加
+    LayerSystem.createFolder/toggleFolder実装
+    UIにフォルダUI追加
+    フォルダサムネイル生成
+
+Phase 3: 統合テスト
+
+    CUT間データ分離確認
+    フォルダ内レイヤー描画確認
+    タイムラインサムネイル確認
+    History動作確認
+
+🧪 テストポイント
+CUT分離テスト
+
+    CUT1で描画→CUT2に切り替え→CUT1の絵が消えている
+    CUT2で描画→CUT1に切り替え→CUT2の絵が見えない
+    各CUTのレイヤー数が独立している
+
+フォルダ機能テスト
+
+    フォルダ作成→レイヤー追加→開閉動作
+    フォルダサムネイルに子レイヤーが合成表示
+    フォルダ内レイヤーへの描画が正常動作
+
+タイムライン連携テスト
+
+    CUT切り替え時にタイムライン更新
+    フォルダ内レイヤーがサムネイルに反映
+
+📝 補足事項
+なぜこのアーキテクチャか
+
+    CUT = LayerSystemインスタンスにより完全データ分離
+    フォルダは表示管理のみでデータ構造をシンプル化
+    フラット化メソッドで描画処理の複雑化を回避
+    EventBusでCUT切り替え時の自動UI更新
+
+AI改修者への配慮
+
+    メソッド名に役割を明記 (getAllLayersFlat, currentLayerSystem)
+    データフローを一方向に統一 (AnimationSystem → LayerSystem → UI)
+    各システムの責務を明確化 (CUT管理/レイヤー管理/UI表示)
+
+以上で改修計画書は完了です。Phase 1から順に実装してください。🚀
+
+
