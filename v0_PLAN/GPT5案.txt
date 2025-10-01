@@ -1,196 +1,226 @@
-要点（短く）
+改修計画書：タイムラインサムネイル即時更新
+改修目的
 
-リポジトリの分割後、レイヤー操作のコア関数（探索、再配置、親子設定、順序反映）が layer-utils.js に移される想定だったが、実体が無い／切り出し漏れで UI と LayerSystem の接続が切断されている。
-GitHub
-+1
+現在は「新規レイヤー複製時」にのみタイムラインサムネイルが反映される。
 
-結果：レイヤーパネルの階層移動（ドラッグ＆ドロップや上下移動コマンド）は内部データモデルを更新していない、または Pixi の display list を更新していないため画面に反映されない。
+ユーザーがレイヤーに描画を確定（筆跡を終了、またはレイヤー操作を適用）した際に、即座に該当フレームのサムネイルを更新する。
 
-対処方針：layer-utils.js に必須のユーティリティを復活／実装し、layer-system.js が明確な API（moveLayer, reparent, setLayerIndex, getLayerTree など）をエクスポート、UI 側（ui-panels.js）をその API に合わせて呼び出す。さらに変更イベントを event-bus 経由で通知してパネルを再描画する。
+UIのリアクティブ性を高め、アニメーション編集時のフィードバックを改善する。
 
-どう確認するか（再現手順）
+改修対象ファイル
 
-デベロッパーツールの Console を開く。パネル内でレイヤーを上下移動したときにエラーが出ていないか確認（undefined や TypeError）。
+system/layer-system.js
+レイヤー描画確定のイベント発火ポイントを定義する。
 
-window.LayerSystem（またはプロジェクトで使っているグローバル名）をコンソールで調べ、期待する関数が存在するか確認。例：console.log(window.LayerSystem.moveLayer) が undefined なら接続切れ。
+ui/timeline-ui.js
+サムネイル描画を外部から呼び出せる API を追加し、LayerSystemから呼び出せるようにする。
 
-UI 操作で内部データ（layers配列／ツリー）が更新されているか確認。console.log(LayerSystem._layers) など（実装に合わせて）。
+system/event-bus.js
+イベント定義を一元化し、DRAW_COMMITイベントを追加する。
 
-Pixi のシーンで container の順序が変わっているか（parent.getChildIndex(sprite) や parent.children の順序）を確認。
+実装方針
 
-確認コマンド例（DevTools）
-console.log(typeof window.LayerSystem, window.LayerSystem && Object.keys(window.LayerSystem))
+1. EventBus の拡張
 
-具体的な改修案（最小パッチ）
+event-bus.js
 
-以下は「責任分界を明確にする」「UI→LayerSystem の呼び出しで不足している部分を補う」ための最小例です。既存コードの命名規約に合わせて微調整してください。
-
-1) system/layer-utils.js — 必須ユーティリティ（新規／上書き）
-/* layer-utils.js
-   レイヤー探索／再配置／同期用ユーティリティをここに置く
-   依存: LayerSystem (グローバル) と eventBus (グローバルまたは import 的に available)
-*/
-
-(function(global){
-  const utils = {};
-
-  // search layer by id in a tree or array
-  utils.findLayerById = function(layers, id) {
-    if (!layers) return null;
-    for (let i=0;i<layers.length;i++){
-      const l = layers[i];
-      if (l.id === id) return {layer: l, parent: null, index: i};
-      if (l.children) {
-        const res = utils._findRecursive(l, id, l, i);
-        if (res) return res;
-      }
-    }
-    return null;
-  };
-
-  utils._findRecursive = function(node, id, parent, parentIndex){
-    if (!node.children) return null;
-    for (let i=0;i<node.children.length;i++){
-      const c = node.children[i];
-      if (c.id === id) return {layer: c, parent: node, index: i};
-      const deeper = utils._findRecursive(c, id, node, i);
-      if (deeper) return deeper;
-    }
-    return null;
-  };
-
-  // move layer to a new parent and index within parent's children
-  // Accepts layerId, newParentId (null for root), newIndex
-  utils.reparentLayer = function(rootLayers, layerId, newParentId, newIndex) {
-    // remove from old location
-    const found = utils.findLayerById(rootLayers, layerId);
-    if (!found) return false;
-    const {layer, parent: oldParent, index: oldIndex} = found;
-    const srcArray = oldParent ? oldParent.children : rootLayers;
-    srcArray.splice(oldIndex, 1);
-
-    // insert to new location
-    const targetParent = newParentId ? utils.findLayerById(rootLayers, newParentId).layer : null;
-    const dstArray = targetParent ? (targetParent.children = targetParent.children || []) : rootLayers;
-    if (newIndex == null || newIndex > dstArray.length) newIndex = dstArray.length;
-    dstArray.splice(newIndex, 0, layer);
-
-    return true;
-  };
-
-  // sync the Pixi container z-order according to the tree
-  // expects each layer has .container (PIXI.Container)
-  utils.syncDisplayOrder = function(rootLayers, stageContainer){
-    // flatten tree to array in desired z-order (e.g. root order -> children appended)
-    const flat = [];
-    function walk(nodes){
-      for (let n of nodes){
-        flat.push(n);
-        if (n.children) walk(n.children);
-      }
-    }
-    walk(rootLayers);
-
-    // For each flat item, ensure its container is a child of stageContainer, and order matches
-    flat.forEach((layer, idx) => {
-      if (!layer.container) return;
-      if (layer.container.parent !== stageContainer) {
-        stageContainer.addChild(layer.container);
-      }
-      // ensure child index
-      const currentIndex = stageContainer.getChildIndex(layer.container);
-      if (currentIndex !== idx) {
-        stageContainer.setChildIndex(layer.container, idx);
-      }
-    });
-  };
-
-  // expose
-  global.LayerUtils = utils;
-})(window);
+// 新規イベント定義
+const Events = {
+  LAYER_ADDED: "layer:added",
+  LAYER_REMOVED: "layer:removed",
+  LAYER_UPDATED: "layer:updated", // ← 既存用途
+  DRAW_COMMIT: "draw:commit",     // ← 新規：描画確定時
+  TIMELINE_REFRESH: "timeline:refresh"
+};
 
 
-理由／ポイント
+2. LayerSystem 側で描画確定時にイベント発火
 
-findLayerById と reparentLayer は UI の “階層移動” 操作に必須。
+layer-system.js
 
-syncDisplayOrder は Pixi の display list（見た目の重なり順）をモデルに合わせるために必要。
+function commitDrawing(layerId) {
+  const layer = layers[layerId];
+  if (!layer) return;
 
-layer.container（各レイヤーに紐づく PIXI.Container）が無ければ UI 反映されないので、LayerSystem 側で必ずセットすること。
+  // レイヤーの状態を確定（バッファ適用や表示更新）
+  layer.texture.update(); 
 
-2) system/layer-system.js — API 層（抜粋/追加）
-
-layer-system はデータの単一の正しいソース（single source of truth）として下記 API を公開します。既にあるコードに以下を追加またはつなげてください。
-
-// LayerSystem (既存オブジェクトに追加するイメージ)
-window.LayerSystem = window.LayerSystem || {};
-
-(function(LS, bus, utils){
-  // layers: 配列（ルートレイヤー群）
-  LS.layers = LS.layers || [];
-
-  LS.getLayers = function(){ return LS.layers; };
-
-  LS.moveLayer = function(layerId, toParentId, toIndex){
-    const ok = utils.reparentLayer(LS.layers, layerId, toParentId, toIndex);
-    if (!ok) {
-      console.warn('LayerSystem.moveLayer failed', layerId, toParentId, toIndex);
-      return false;
-    }
-    // after model change, re-sync display order
-    const stage = LS.stageContainer || window.app.stage; // 実運用の参照に合わせる
-    utils.syncDisplayOrder(LS.layers, stage);
-    // notify
-    if (bus && bus.emit) bus.emit('layers.changed', {layers: LS.layers});
-    return true;
-  };
-
-  LS.setStageContainer = function(container){
-    LS.stageContainer = container;
-  };
-
-})(window.LayerSystem, window.EventBus, window.LayerUtils);
-
-
-注意点
-
-window.EventBus（event-bus.js）があるなら emit('layers.changed') を投げてパネルを再描画させる設計が扱いやすいです。ui-panels.js 側で bus.on('layers.changed', refreshPanel) を受けてください。
-GitHub
-
-3) ui/ui-panels.js の修正（呼び出し側）
-
-パネルのドラッグドロップや上下移動ボタンのハンドラで、DOM / UI 内で順序を変えるだけでなく必ず LayerSystem.moveLayer(...) を呼ぶようにしてください。例：
-
-// ドラッグ終了時の処理（疑似コード）
-function onLayerDrop(draggedId, targetParentId, insertIndex){
-  const ok = window.LayerSystem.moveLayer(draggedId, targetParentId, insertIndex);
-  if (!ok) {
-    // フォールバック: パネルの表示を再ロードして整合性を確認
-    refreshLayerPanel();
-  }
+  // 新イベントを発火
+  EventBus.emit("draw:commit", { layerId });
 }
 
-// 登録: レイヤー変更イベントでパネル更新
-window.EventBus.on('layers.changed', () => {
-  refreshLayerPanel();
+
+3. TimelineUI 側で即時サムネイル更新
+
+timeline-ui.js
+
+// サムネイル更新用の公開APIを追加
+function refreshThumbnail(layerId) {
+  const frameElem = document.querySelector(`[data-layer-id="${layerId}"] canvas`);
+  if (!frameElem) return;
+
+  const layer = LayerSystem.getLayer(layerId);
+  if (!layer) return;
+
+  const ctx = frameElem.getContext("2d");
+  ctx.clearRect(0, 0, frameElem.width, frameElem.height);
+  ctx.drawImage(layer.sprite.texture.baseTexture.resource.source, 0, 0,
+                frameElem.width, frameElem.height);
+}
+
+// EventBus購読
+EventBus.on("draw:commit", ({ layerId }) => {
+  refreshThumbnail(layerId);
 });
 
-テスト手順（改修後）
 
-ブラウザでページを開き DevTools を開く。console.log(window.LayerSystem) で API が存在することを確認。
+4. DrawingEngine または CoreEngine 側から呼び出す
 
-レイヤーパネルで階層移動を実施 → layers.changed イベントが発火しているか確認。
+ペンツールの描画終了時（mouseup / touchend）
 
-Pixi の表示順が更新されるかを確認（オブジェクトが前後に移動する）。
+移動や変形ツールで「確定」した直後
 
-さらに Undo/Redo があるなら履歴（history）システムに move 操作の記録を追加する。
+// 例: DrawingEngine.js 内で描画終了時に
+LayerSystem.commitDrawing(activeLayerId);
 
-追加の注意点（実務的なポイント）
 
-ID 一意性：レイヤーには必ず一意の id（文字列）を持たせてください。数値でインデックス管理すると破綻します。
+アーキテクチャ上の整理
 
-モデルとビューの同期責任：LayerSystem（モデル）→ UI（ビュー）はイベントで同期、UI→LayerSystem は API 呼び出しのみ。DOM 側の順序操作はモデル反映が完了するまで行わない運用が堅牢です。
+EventBus基盤を使って疎結合化することで、LayerSystemとTimelineUIを直結させない。
 
-座標系の一貫性：レイヤー回転・反転・移動ロジックは LayerSystem に寄せる（ユーザルールより優先）。
+Timeline更新ロジックはUIレイヤーに集約、LayerSystemはあくまでイベント通知に徹する。
 
-console.log の抑制：エラー以外の過剰ログは抑えてください（ルールに従う）。
+既存の layer:updated イベントとは用途を分ける（更新は位置・回転・透明度なども含むため、描画確定専用イベントを分離）。
+
+
+メリット
+
+即時性：ユーザーが描いた内容がサムネイルにすぐ反映。
+
+可読性：イベント名 draw:commit で目的が明確。
+
+改修容易性：TimelineUIにrefreshThumbnailを集約 → 将来「差分更新」「GPUベースの縮小」などへ拡張しやすい。
+
+次ステップ
+
+event-bus.js に DRAW_COMMIT を追加
+
+layer-system.js に commitDrawing API 実装
+
+timeline-ui.js に refreshThumbnail API 実装 + EventBus購読
+
+DrawingEngine または CoreEngine 内の描画終了フックで commitDrawing 呼び出し
+
+---
+
+改修計画書（拡張版）：確定操作すべてでタイムラインサムネイル即時更新
+改修目的
+
+描画だけでなく、**レイヤーに対するすべての「確定操作」**でサムネイルが最新状態になるようにする。
+
+アニメーション制作を見据えて「確定操作 = 1フレームの見た目が固まったタイミング」でUI反映する仕組みを統一。
+
+改修対象
+
+event-bus.js
+→ 「確定操作」を表すイベントを 一元管理。
+
+layer-system.js
+→ すべての操作確定時にイベント発火。
+
+timeline-ui.js
+→ イベント購読してサムネイル更新。
+
+イベント設計
+
+event-bus.js
+
+const Events = {
+  LAYER_ADDED: "layer:added",
+  LAYER_REMOVED: "layer:removed",
+  LAYER_UPDATED: "layer:updated",   // 値の変化があった瞬間（中間も含む）
+  OPERATION_COMMIT: "operation:commit", // ← 新規：確定操作全般
+  DRAW_COMMIT: "draw:commit",       // ← 既存の描画確定（内部的にOPERATION_COMMITを呼ぶ）
+  TIMELINE_REFRESH: "timeline:refresh"
+};
+
+
+ポイント：
+
+DRAW_COMMIT はペンツール専用のイベントだが、内部で OPERATION_COMMIT を呼び出すようにする。
+
+変形や移動、フィルタ適用も OPERATION_COMMIT に統一することで、Timeline側は1種類のイベントを購読するだけで済む。
+
+LayerSystem 側の改修
+
+layer-system.js
+
+function commitDrawing(layerId) {
+  const layer = layers[layerId];
+  if (!layer) return;
+  layer.texture.update();
+
+  // 専用イベントと統合イベントの両方を発火
+  EventBus.emit("draw:commit", { layerId });
+  EventBus.emit("operation:commit", { layerId, type: "draw" });
+}
+
+function commitTransform(layerId) {
+  const layer = layers[layerId];
+  if (!layer) return;
+
+  // transform の適用（座標・回転・スケールなど）
+  layer.sprite.updateTransform();
+
+  EventBus.emit("operation:commit", { layerId, type: "transform" });
+}
+
+function commitFilter(layerId) {
+  const layer = layers[layerId];
+  if (!layer) return;
+
+  // フィルタ確定（PixiJSのフィルタ適用後に再描画）
+  layer.sprite.filters = [...layer.pendingFilters];
+
+  EventBus.emit("operation:commit", { layerId, type: "filter" });
+}
+
+TimelineUI 側
+
+timeline-ui.js
+
+function refreshThumbnail(layerId) {
+  const frameElem = document.querySelector(`[data-layer-id="${layerId}"] canvas`);
+  if (!frameElem) return;
+
+  const layer = LayerSystem.getLayer(layerId);
+  if (!layer) return;
+
+  const ctx = frameElem.getContext("2d");
+  ctx.clearRect(0, 0, frameElem.width, frameElem.height);
+
+  // spriteから元のHTMLImageElement/Canvasを描画
+  const base = layer.sprite.texture.baseTexture.resource.source;
+  ctx.drawImage(base, 0, 0, frameElem.width, frameElem.height);
+}
+
+// すべての確定操作を監視
+EventBus.on("operation:commit", ({ layerId }) => {
+  refreshThumbnail(layerId);
+});
+
+呼び出し側（DrawingEngine, CameraSystem など）
+
+ペンツール → LayerSystem.commitDrawing(id)
+
+移動/回転/反転/スケール → LayerSystem.commitTransform(id)
+
+フィルタ適用完了 → LayerSystem.commitFilter(id)
+
+メリット
+
+一元化された仕組み：Timelineは operation:commit だけ購読すればよい。
+
+拡張しやすい：将来的に「物理シミュレーション結果を確定」といったケースも operation:commit で対応可能。
+
+AI可読性：操作の確定ポイントが commit○○ に統一され、関数名から意図が明確に分かる。
