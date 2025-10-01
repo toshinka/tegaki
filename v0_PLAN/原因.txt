@@ -1,0 +1,27 @@
+原因
+animation-system.jsのcopyCurrentLayersToIndependentState()メソッドで、PathデータのDeep Copyは行われているものの、LayerSystemとAnimationSystemの間でLayerオブジェクト自体が共有されていることが問題です。
+具体的には:
+
+ペン描画時にlayer.layerData.paths.push(path)でpathを追加
+saveCutLayerStates()が呼ばれてCUTに保存
+しかし、LayerSystemのlayers配列内のLayerオブジェクトが全CUT間で共有されている可能性
+
+もう一つの可能性として、core-engine.jsのaddPathToActiveLayer()が問題です:
+javascriptactiveLayer.layerData.paths.push(path);  // ← これが直接参照を追加
+activeLayer.addChild(path.graphics);
+このpathオブジェクトがAnimationSystemにコピーされる際、同じ参照が使われている可能性があります。
+
+
+改修版を提供core-engine.js (サムネイル即時反映対応版)コード ∙ バージョン2         addPathToActiveLayer(path) {
+            const activeLayer = this.layerManager.getActiveLayer();
+            if (!activeLayer) return;
+            
+            const layerId = activeLayer.layerData.id;
+            const transform = this.layerしかし、これだけでは不十分かもしれません。layer-system.jsのaddPathToLayerも確認する必要があります。https://raw.githubusercontent.com/toshinka/tegaki/refs/heads/main/v8.13_gif_phase1h2/system/layer-system.jsを取得しましたgithubusercontent.comlayer-system.jsのaddPathToLayer()も同じ問題があります。ここでもpathを直接pushしています。
+さらに致命的な問題を発見しました：
+_syncLayersContainerFromAnimationSystem()が問題の根本原因です！
+javascriptcurrentLayers.forEach((layerData, index) => {
+    const layer = new PIXI.Container();
+    layer.label = layerData.id;
+    layer.layerData = layerData;  // ← ★★★ ここで参照を直接代入！ ★★★
+layer.layerData = layerData で AnimationSystem のデータへの直接参照を代入しているため、LayerSystemで描画したpathが AnimationSystemの全CUTに反映されてしまいます！
