@@ -1,0 +1,110 @@
+📋 LayerSystem 分割改修計画書
+🎯 改修目的
+現状: layer-system.js にレイヤー構造定義・座標系処理・描画ユーティリティが混在
+目標: 座標系基盤とユーティリティを分離し、CUTフォルダ方式のサムネイル生成に備える
+📐 分割方針
+現行: layer-system.js (1000+ lines)
+  ├─ レイヤー構造定義
+  ├─ 座標系直結処理
+  ├─ レイヤー操作ユーティリティ
+  └─ 描画補助関数
+  
+改修後:
+  ├─ layer-system.js (600 lines)
+  │   ├─ レイヤー構造定義（backgroundLayer, drawingLayer等）
+  │   ├─ Pixi Container階層管理
+  │   ├─ CameraSystem連携
+  │   └─ 初期化/破棄処理
+  │
+  └─ layer-utils.js (300 lines) ★新規
+      ├─ レイヤー操作（追加/削除/可視性）
+      ├─ 座標系変換補助
+      ├─ レイヤークリア/検索
+      └─ Transform補助関数
+🗂️ ファイル構成
+新規作成: system/layer-utils.js
+javascript/**
+ * LayerUtils - レイヤー操作ユーティリティ
+ * 座標系変換・レイヤー操作の補助関数群
+ * LayerSystemから分離し、再利用性を向上
+ */
+window.LayerUtils = {
+    // レイヤー操作
+    clearLayer(layer) { /*...*/ },
+    addGraphicsToLayer(layer, graphics) { /*...*/ },
+    removeGraphicsFromLayer(layer, graphics) { /*...*/ },
+    
+    // 座標系変換
+    toLocalCoordinates(layer, globalX, globalY) { /*...*/ },
+    toGlobalCoordinates(layer, localX, localY) { /*...*/ },
+    
+    // レイヤー制御
+    setLayerVisibility(layer, visible) { /*...*/ },
+    setLayerOpacity(layer, alpha) { /*...*/ },
+    
+    // 検索・取得
+    findLayerByLabel(container, label) { /*...*/ },
+    getAllDrawableLayers(container) { /*...*/ }
+};
+改修: system/layer-system.js
+
+削除: ユーティリティ関数群
+追加: LayerUtils への依存
+保持: レイヤー構造定義、CameraSystem連携
+
+
+📚 メソッド辞典
+🆕 LayerUtils（新規作成）
+レイヤー操作系
+メソッド説明引数戻り値clearLayer(layer)レイヤー内の全描画オブジェクトを削除PIXI.ContainervoidaddGraphicsToLayer(layer, graphics)Graphicsをレイヤーに追加Container, GraphicsvoidremoveGraphicsFromLayer(layer, graphics)Graphicsをレイヤーから削除Container, Graphicsboolean
+座標系変換
+メソッド説明引数戻り値toLocalCoordinates(layer, globalX, globalY)グローバル座標→ローカル座標Container, number, number{x, y}toGlobalCoordinates(layer, localX, localY)ローカル座標→グローバル座標Container, number, number{x, y}screenToLayerCoordinates(layer, screenX, screenY, renderer)スクリーン座標→レイヤー座標Container, number, number, Renderer{x, y}
+レイヤー制御
+メソッド説明引数戻り値setLayerVisibility(layer, visible)レイヤー可視性設定Container, booleanvoidsetLayerOpacity(layer, alpha)レイヤー不透明度設定Container, numbervoidtoggleLayerVisibility(layer)レイヤー可視性トグルContainerboolean
+検索・取得
+メソッド説明引数戻り値findLayerByLabel(container, label)ラベルでレイヤー検索Container, stringContainer | nullgetAllDrawableLayers(container)描画可能レイヤー一覧取得ContainerArray<Container>getLayerAtIndex(container, index)インデックスでレイヤー取得Container, numberContainer | null
+Transform補助
+メソッド説明引数戻り値getLayerTransform(layer)レイヤーTransform取得Container{x, y, rotation, scaleX, scaleY}setLayerTransform(layer, transform)レイヤーTransform設定Container, ObjectvoidresetLayerTransform(layer)レイヤーTransformリセットContainervoid
+
+🔄 LayerSystem（改修）
+継承メソッド（変更なし）
+メソッド説明状態setupLayers(stage, config)レイヤー階層初期化継承getDrawingLayer()描画レイヤー取得継承getUILayer()UIレイヤー取得継承getOverlayLayer()オーバーレイレイヤー取得継承destroy()レイヤーシステム破棄継承
+改修メソッド（LayerUtils呼び出しに変更）
+メソッド変更内容clearDrawingLayer()内部でLayerUtils.clearLayer()呼び出しaddToDrawingLayer(obj)内部でLayerUtils.addGraphicsToLayer()呼び出しscreenToDrawingCoords(x, y)内部でLayerUtils.screenToLayerCoordinates()呼び出し
+新規追加（CUTフォルダ対応）
+メソッド説明引数戻り値setCurrentCutContainer(cutContainer)アクティブCUT設定ContainervoidgetCurrentCutContainer()現在のCUT取得なしContainer
+
+🔄 動作フロー
+初期化フロー
+1. index.html
+   ↓ <script src="system/layer-utils.js"></script>
+   ↓ <script src="system/layer-system.js"></script>
+   
+2. LayerUtils がグローバルに登録
+   window.LayerUtils = { ... }
+   
+3. LayerSystem 初期化時
+   setupLayers(stage, config) {
+       this.backgroundLayer = new PIXI.Container();
+       // ユーティリティ利用例
+       LayerUtils.setLayerVisibility(this.backgroundLayer, true);
+   }
+CUT切り替えフロー（今後のサムネイル対応）
+1. AnimationSystem.switchToActiveCut(cutIndex)
+   ↓
+2. LayerSystem.setCurrentCutContainer(cut.container)
+   ↓
+3. LayerUtils.getAllDrawableLayers(cut.container)
+   → レイヤー一覧取得
+   ↓
+4. UI更新
+   → レイヤーパネル表示
+座標変換フロー
+1. ユーザーがマウス移動（スクリーン座標）
+   ↓
+2. LayerUtils.screenToLayerCoordinates(layer, x, y, renderer)
+   ↓ 内部処理
+   - renderer.events.pointer でグローバル座標取得
+   - layer.toLocal() でローカル座標変換
+   ↓
+3. 描画システムに渡す
