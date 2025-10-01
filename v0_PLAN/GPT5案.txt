@@ -1,226 +1,266 @@
-改修計画書：タイムラインサムネイル即時更新
-改修目的
+問題（まとめ）
 
-現在は「新規レイヤー複製時」にのみタイムラインサムネイルが反映される。
+レイヤー描画確定時にタイムラインのサムネイルが、ペン描画中／直後に反映されない
 
-ユーザーがレイヤーに描画を確定（筆跡を終了、またはレイヤー操作を適用）した際に、即座に該当フレームのサムネイルを更新する。
+レイヤー削除時に出る「レイヤー 'レイヤー1' を削除しますか？」の確認ダイアログを廃止したい（現状は確認あり）
 
-UIのリアクティブ性を高め、アニメーション編集時のフィードバックを改善する。
+レイヤーパネルの階層（順序）移動が反映されない／一度動かすと二度と動かせない（UI とモデルの整合性不良）
 
-改修対象ファイル
+前提（コードベース観察に基づく想定）
+
+提供されたファイル群（layer-system.js, layer-utils.js, event-bus.js, timeline-ui.js, ui-panels.js, core-engine.js, core-runtime.js 等）から推測すると、アーキテクチャは以下のパターン：
+
+中央に layer-system（モデル配列）
+
+UI は DOM/パネルを直接更新している（DOM の index = 配列 index に依存）
+
+描画操作（ペン）は PIXI レイヤー（Graphics / RenderTexture）へ直接描く
+
+タイムラインのサムネイル更新処理は「レイヤーが確定されたとき」や「レイヤーが切り替わったとき」にのみ呼ばれている（＝描画途中／直後を監視していない）
+
+確認ダイアログはUI側（ui-panels.js）が confirm() を使っているか、あるいは history の処理と混ざっている
+
+根本原因（各問題ごと）
+1) サムネイルが描画直後に更新されない
+
+推定原因
+
+サムネイル生成/書き込み処理が「レイヤーアクティベート」「コピー」「新規作成」などのイベントハンドラでしか呼ばれておらず、描画イベント（stroke end / frame buffer 更新）に紐づいていない。
+
+ペンは PIXI.RenderTexture や Graphics に連続的に描いているが、タイムライン側へ「レイヤーが変更された」ことを通知していない。
+
+パフォーマンス対策で「高頻度更新を避ける」意図があるか、あるいは無名関数で直結しておらずデータフローが切れている。
+
+2) 削除時の確認ポップアップが出る
+
+推定原因
+
+ui-panels.js（またはレイヤー UI）の削除処理に if (!confirm(...)) return; のような直接 confirm() がある。
+
+仕様では UX を軽くするために削除即実行で良いが、履歴（undo）対応が存在するため、開発者が保険で確認を入れてしまった可能性が高い。
+
+3) レイヤー階層の反映不良 / 一度動かすと動かなくなる
+
+推定原因
+
+UI が配列 index に依存して DOM 要素の data-index を参照しているが、レイヤー移動で配列を再構築しても DOM の dataset 更新が正しく行われていない（あるいは逆）。
+
+レイヤーに一意 ID が付与されておらず、移動操作や再描画時の差分検知が index ベースで壊れる。
+
+イベントリスナ（ドラッグハンドラ等）が DOM 要素に直接バインドされていて、再レンダリング／再生成で古いリスナが解除されず、二度目以降の操作が無効化される（ガーベジ・リスナ破綻）。
+
+さらに「移動操作中に同一配列を mutate してイベントループの外で参照している」などの同期問題がある可能性。
+
+改修方針（設計哲学）
+
+モデル（layer-system）を単一ソースにする：UI はモデルに対するビュー。UI は常に event-bus を通じて最新モデルを再描画する。
+
+レイヤーには必ず一意 ID を持たせる（例：layer.id = 'L-xxxx'）。インデックスは表示のためのもので、識別に使わない。
+
+イベントベース：描画の終端（stroke end / pointerup）で event-bus.emit('layer:dirty', {id, frame, thumbnailNeeded:true}) を出し、timeline-ui はそれを受けてサムネイル更新（デバウンス付き）を行う。
+
+不要な confirm() を削除し、履歴（history）を使った undo を代替安全策とする。もしユーザーが誤操作したら Ctrl+Z/履歴で戻せる。
+
+**UI は常に layers:changed を受けて DOM を完全再描画（差分で良いがまずは確実な全描画）**し、DOM 要素にリスナを再バインドする。これにより「一度しか動かない」問題を回避。
+
+具体的改修計画（優先度付き）
+優先度高（即座に体感改善するもの）
+A. サムネイル即時反映（ペン描画時）
+
+変更対象（主要）
 
 system/layer-system.js
-レイヤー描画確定のイベント発火ポイントを定義する。
-
-ui/timeline-ui.js
-サムネイル描画を外部から呼び出せる API を追加し、LayerSystemから呼び出せるようにする。
 
 system/event-bus.js
-イベント定義を一元化し、DRAW_COMMITイベントを追加する。
 
-実装方針
+ui/timeline-ui.js
 
-1. EventBus の拡張
+system/drawing-clipboard.js（または描画処理を行うファイル）
 
-event-bus.js
+実装ステップ
 
-// 新規イベント定義
-const Events = {
-  LAYER_ADDED: "layer:added",
-  LAYER_REMOVED: "layer:removed",
-  LAYER_UPDATED: "layer:updated", // ← 既存用途
-  DRAW_COMMIT: "draw:commit",     // ← 新規：描画確定時
-  TIMELINE_REFRESH: "timeline:refresh"
+layer オブジェクトに markDirty(frame) メソッドを追加（もしくは layer.dirtyFrames 管理）。
+
+ペン描画処理（pointerup / pointercancel / stroke-end）で eventBus.emit('layer:stroke:end', { layerId, frame }) を発行。サンプル:
+
+// event-bus.js (既存に統一API)
+const EventBus = {
+  on: (k, h) => document.addEventListener(k, h),
+  emit: (k, detail) => document.dispatchEvent(new CustomEvent(k, {detail})),
 };
+// 使用例: 描画終了時
+EventBus.emit('layer:stroke:end', { layerId: activeLayer.id, frame: currentFrame });
 
 
-2. LayerSystem 側で描画確定時にイベント発火
+timeline-ui.js はこのイベントを受け、**デバウンス（例えば 200–300ms）**してサムネイル更新処理を呼ぶ。
 
-layer-system.js
+サムネイル更新は PIXI.RenderTexture の renderer.extract.canvas(rootDisplayObject)（Pixi の extract）等で取得 → 小さい <canvas> に drawImage → 既存のサムネイル格納ロジックへ渡す。
 
-function commitDrawing(layerId) {
-  const layer = layers[layerId];
-  if (!layer) return;
+高頻度で重くなる場合は「初回 stroke-end で即更新」「以降は 500ms 間隔で更新（throttle）」というハイブリッドにする。
 
-  // レイヤーの状態を確定（バッファ適用や表示更新）
-  layer.texture.update(); 
+簡易コード断片（timeline-ui 側 listener）
 
-  // 新イベントを発火
-  EventBus.emit("draw:commit", { layerId });
-}
+let thumbnailUpdateTimer = null;
+document.addEventListener('layer:stroke:end', (e) => {
+  const {layerId, frame} = e.detail;
+  // すぐ更新する（低レイテンシ体感）
+  updateThumbnail(layerId, frame);
 
-
-3. TimelineUI 側で即時サムネイル更新
-
-timeline-ui.js
-
-// サムネイル更新用の公開APIを追加
-function refreshThumbnail(layerId) {
-  const frameElem = document.querySelector(`[data-layer-id="${layerId}"] canvas`);
-  if (!frameElem) return;
-
-  const layer = LayerSystem.getLayer(layerId);
-  if (!layer) return;
-
-  const ctx = frameElem.getContext("2d");
-  ctx.clearRect(0, 0, frameElem.width, frameElem.height);
-  ctx.drawImage(layer.sprite.texture.baseTexture.resource.source, 0, 0,
-                frameElem.width, frameElem.height);
-}
-
-// EventBus購読
-EventBus.on("draw:commit", ({ layerId }) => {
-  refreshThumbnail(layerId);
+  // さらに高頻度を抑える throttle 例（保険）
+  if (thumbnailUpdateTimer) clearTimeout(thumbnailUpdateTimer);
+  thumbnailUpdateTimer = setTimeout(() => {
+    updateThumbnail(layerId, frame);
+    thumbnailUpdateTimer = null;
+  }, 300);
 });
 
 
-4. DrawingEngine または CoreEngine 側から呼び出す
+注意点
 
-ペンツールの描画終了時（mouseup / touchend）
+renderer.extract は Pixi の renderer インスタンスが必要。core-runtime.js や core-engine.js から extract 関数を公開しておく（CoreRenderer.extractCanvas(root) のように）。
 
-移動や変形ツールで「確定」した直後
+ファイル I/O（サムネイルの永続化）は既存ルールに合わせる。
 
-// 例: DrawingEngine.js 内で描画終了時に
-LayerSystem.commitDrawing(activeLayerId);
+優先度中（UX の修正）
+B. 削除確認の削除（confirm() 廃止）
 
+変更対象
 
-アーキテクチャ上の整理
+ui/ui-panels.js（想定）または system/layer-system.js の delete handler
 
-EventBus基盤を使って疎結合化することで、LayerSystemとTimelineUIを直結させない。
+実装ステップ
 
-Timeline更新ロジックはUIレイヤーに集約、LayerSystemはあくまでイベント通知に徹する。
+confirm() を呼んでいるコードを見つけて削除。直接削除関数を呼ぶように置換：
 
-既存の layer:updated イベントとは用途を分ける（更新は位置・回転・透明度なども含むため、描画確定専用イベントを分離）。
-
-
-メリット
-
-即時性：ユーザーが描いた内容がサムネイルにすぐ反映。
-
-可読性：イベント名 draw:commit で目的が明確。
-
-改修容易性：TimelineUIにrefreshThumbnailを集約 → 将来「差分更新」「GPUベースの縮小」などへ拡張しやすい。
-
-次ステップ
-
-event-bus.js に DRAW_COMMIT を追加
-
-layer-system.js に commitDrawing API 実装
-
-timeline-ui.js に refreshThumbnail API 実装 + EventBus購読
-
-DrawingEngine または CoreEngine 内の描画終了フックで commitDrawing 呼び出し
-
----
-
-改修計画書（拡張版）：確定操作すべてでタイムラインサムネイル即時更新
-改修目的
-
-描画だけでなく、**レイヤーに対するすべての「確定操作」**でサムネイルが最新状態になるようにする。
-
-アニメーション制作を見据えて「確定操作 = 1フレームの見た目が固まったタイミング」でUI反映する仕組みを統一。
-
-改修対象
-
-event-bus.js
-→ 「確定操作」を表すイベントを 一元管理。
-
-layer-system.js
-→ すべての操作確定時にイベント発火。
-
-timeline-ui.js
-→ イベント購読してサムネイル更新。
-
-イベント設計
-
-event-bus.js
-
-const Events = {
-  LAYER_ADDED: "layer:added",
-  LAYER_REMOVED: "layer:removed",
-  LAYER_UPDATED: "layer:updated",   // 値の変化があった瞬間（中間も含む）
-  OPERATION_COMMIT: "operation:commit", // ← 新規：確定操作全般
-  DRAW_COMMIT: "draw:commit",       // ← 既存の描画確定（内部的にOPERATION_COMMITを呼ぶ）
-  TIMELINE_REFRESH: "timeline:refresh"
-};
+// 旧
+if (!confirm(`レイヤー "${name}" を削除しますか？`)) return;
+// 新（そのまま削除）
+layerSystem.removeLayer(layerId);
+// 履歴追加
+history.push({ type: 'layer_remove', layerSnapshot });
 
 
-ポイント：
+削除は history へ snapshot を push して undo を可能にしておく（履歴処理が既にあるならそれを利用）。
 
-DRAW_COMMIT はペンツール専用のイベントだが、内部で OPERATION_COMMIT を呼び出すようにする。
+UI には小さなトーストは不要（ルールで演出控えめ）。
 
-変形や移動、フィルタ適用も OPERATION_COMMIT に統一することで、Timeline側は1種類のイベントを購読するだけで済む。
+注意点
 
-LayerSystem 側の改修
+削除即実行によって直感的な UX 向上。ただし重大なデータ損失を懸念する場合は「長押しで削除」や「Ctrl+Backspace」などショートカットに割り当てる選択肢を残す（設計段階で検討）。
 
-layer-system.js
+優先度高（整合性の根本修正）
+C. レイヤー階層移動の不具合修正（モデルとビューの分離）
 
-function commitDrawing(layerId) {
-  const layer = layers[layerId];
-  if (!layer) return;
-  layer.texture.update();
+変更対象
 
-  // 専用イベントと統合イベントの両方を発火
-  EventBus.emit("draw:commit", { layerId });
-  EventBus.emit("operation:commit", { layerId, type: "draw" });
+system/layer-system.js
+
+system/layer-utils.js
+
+ui/ui-panels.js（レイヤーパネル描画・ドラッグ処理）
+
+system/event-bus.js
+
+実装ステップ
+
+レイヤーに id を付与（ユニーク文字列）。既存の配列 index に依存する箇所をすべて id ベースに置換。
+例: layer.id = 'L-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,6);
+
+layer-system に API を整備：
+
+getLayers() → 配列（順序保つ）
+
+moveLayer(id, toIndex) → 内部で splice を行い emit('layers:changed')
+
+removeLayer(id) → splice + emit
+
+addLayer(layer, toIndex) → emit
+
+UI (ui-panels) はドラッグ終了で layerSystem.moveLayer(draggedId, newIndex) を呼ぶだけ。UI 自身は moveLayer を呼んだ後に layers:changed イベントを受け取り フル再描画する。
+
+DOM の差分更新（最初はフル再描画で確実に）。再描画時は古い DOM を完全削除して新しく作ることで古いイベントリスナ残留を防止する。
+
+再描画後、各 DOM 要素に対して必要なイベントリスナ（クリック・ドラッグハンドラ）を再バインドする。
+
+ドラッグハンドラは DOM に直接長く貼るのではなく、UI のレンダリングルーチン中でハンドラを再付与することで「二度と動かせなくなる」問題を解消。
+
+重要な設計ルール
+
+常に layerSystem が single source of truth。UI は参照のみ。UI の DOM dataset に index を書き込むときは、必ず layerSystem.getLayers() の順序でセットする。
+
+小さなコード例（moveLayer）
+
+// layer-system.js
+function moveLayer(layerId, toIndex) {
+  const idx = layers.findIndex(l => l.id === layerId);
+  if (idx === -1) return;
+  const [layer] = layers.splice(idx, 1);
+  layers.splice(Math.max(0, Math.min(toIndex, layers.length)), 0, layer);
+  EventBus.emit('layers:changed', { layers: getLayers() });
 }
 
-function commitTransform(layerId) {
-  const layer = layers[layerId];
-  if (!layer) return;
+テスト項目（受け入れ条件）
 
-  // transform の適用（座標・回転・スケールなど）
-  layer.sprite.updateTransform();
+各修正後、以下を必ず手動で検証する（自動テストは今は不要）：
 
-  EventBus.emit("operation:commit", { layerId, type: "transform" });
-}
+サムネイル更新
 
-function commitFilter(layerId) {
-  const layer = layers[layerId];
-  if (!layer) return;
+ペンで1ストローク描いて pointerup → タイムラインサムネイルが数百ms以内に更新される。
 
-  // フィルタ確定（PixiJSのフィルタ適用後に再描画）
-  layer.sprite.filters = [...layer.pendingFilters];
+細かい連続描画でも UI が重くならない（30FPS以下のドロップが酷ければ throttle 値を上げる）。
 
-  EventBus.emit("operation:commit", { layerId, type: "filter" });
-}
+レイヤー削除
 
-TimelineUI 側
+レイヤー削除操作で確認ダイアログが表示されない。
 
-timeline-ui.js
+削除後、undo（履歴の戻し）が正しくレイヤーを復元する（レイヤー内容も含め復元できること）。
 
-function refreshThumbnail(layerId) {
-  const frameElem = document.querySelector(`[data-layer-id="${layerId}"] canvas`);
-  if (!frameElem) return;
+レイヤー移動
 
-  const layer = LayerSystem.getLayer(layerId);
-  if (!layer) return;
+レイヤーを上下に移動 → パネル順序・描画順序ともに即反映。
 
-  const ctx = frameElem.getContext("2d");
-  ctx.clearRect(0, 0, frameElem.width, frameElem.height);
+何度でも（10回以上）移動しても壊れない。
 
-  // spriteから元のHTMLImageElement/Canvasを描画
-  const base = layer.sprite.texture.baseTexture.resource.source;
-  ctx.drawImage(base, 0, 0, frameElem.width, frameElem.height);
-}
+DOM 再描画後にイベント（選択／ドラッグ）が再び動作すること。
 
-// すべての確定操作を監視
-EventBus.on("operation:commit", ({ layerId }) => {
-  refreshThumbnail(layerId);
-});
+その他（回帰）
 
-呼び出し側（DrawingEngine, CameraSystem など）
+既存の「レイヤー作成」「コピー」「アクティブ切替」機能が壊れていないか確認。
 
-ペンツール → LayerSystem.commitDrawing(id)
+画面を local file (file://) で直接開いた環境でも問題なく動くか確認（fetch の制約等）。
 
-移動/回転/反転/スケール → LayerSystem.commitTransform(id)
+実装マイルストーン（作業ブロック）
 
-フィルタ適用完了 → LayerSystem.commitFilter(id)
+EventBus 安定化（共通 API を統一） — system/event-bus.js をコアに。
 
-メリット
+layer-system の API 整備 & id 付与 — system/layer-system.js の修正。
 
-一元化された仕組み：Timelineは operation:commit だけ購読すればよい。
+描画終了イベントを起点とした thumbnail 更新パス実装 — system/drawing-clipboard.js（あるいは core の描画処理） + ui/timeline-ui.js。
 
-拡張しやすい：将来的に「物理シミュレーション結果を確定」といったケースも operation:commit で対応可能。
+削除 confirm 削除 & history 統合 — ui/ui-panels.js の削除処理修正。
 
-AI可読性：操作の確定ポイントが commit○○ に統一され、関数名から意図が明確に分かる。
+UI 側の完全再描画実装（layers:changed リスナ） — ui/ui-panels.js。
+
+総合テスト（上のテスト項目を実施）+ バグ修正。
+
+パフォーマンス調整（thumbnail throttle 値の調整、requestAnimationFrame でのキュー）
+
+リスクと回避策
+
+パフォーマンス：描画中にサムネイル更新を頻繁に行うと重くなる → デバウンス/スロットリングで回避。まずは即時更新（stroke end）＋ 300ms throttle を推奨。
+
+互換性：既存コードが index ベースで深く結びついている場合は、id 移行で手作業の置換が必要。最初は影響箇所を grep で洗い出して patch を適用する。
+
+history の整合性：即削除にしても undo snapshot を忘れるとデータ喪失に見える → 削除前に完全 snapshot を history に push すること（layer とその renderTexture を含む）。
+
+最終ノート（すぐやれる最短パッチ）
+
+もし「とにかく今すぐ体感を改善したい」なら、まず下記最低限の１パッチを当ててください（レイヤー削除 confirm 削除 + ストローク終了イベントから thumbnail を一度更新）：
+
+ui/ui-panels.js の削除処理から confirm() を削る（上に示したコード）。
+
+system/event-bus.js を整備して layer:stroke:end を emit できるようにする（pointerup ハンドラに一行追加）。
+
+ui/timeline-ui.js に document.addEventListener('layer:stroke:end', handler) を追加し、updateThumbnail(layerId, frame) を一回呼ぶだけにする。
+
+これだけでユーザーが一番気にしている「描いてもサムネイル変わらない」「毎回確認出てウザい」は劇的に改善します。残り（階層移動の根本）は同時に進めるべきですが、優先度は下げても UX 的には許容できるはずです。
