@@ -1,5 +1,7 @@
-// ===== ui/timeline-ui.js - Phase 2改修版: サムネイル表示特化 =====
-// 【改修】サムネイル表示のみに特化
+// ===== ui/timeline-ui.js - 即時サムネイル反映版 =====
+// 【改修】描画確定後の即時サムネイル更新
+// 【改修】タイムラインパネル左端10px拡張 (left: 60px)
+// 【改修】時間変更ボタンを赤茶色矢印に変更（四角排除）
 // 【維持】CUT管理UI・プレイバック制御
 // PixiJS v8.13 対応
 
@@ -20,6 +22,9 @@
             this.domCreated = false;
             
             this.eventBus = window.TegakiEventBus;
+            
+            // 【新規】サムネイル更新防止フラグ
+            this.thumbnailUpdateInProgress = false;
         }
         
         init() {
@@ -34,7 +39,74 @@
             this.createLayerPanelCutIndicator();
             this.ensureInitialCut();
             
+            // 【新規】描画確定イベントでサムネイル更新
+            this.setupThumbnailAutoUpdate();
+            
             this.isInitialized = true;
+        }
+        
+        // 【新規】描画確定時の自動サムネイル更新
+        setupThumbnailAutoUpdate() {
+            if (!this.eventBus) return;
+            
+            // 描画完了イベント（ペン・消しゴム確定時）
+            this.eventBus.on('layer:updated', () => {
+                this.requestThumbnailUpdate();
+            });
+            
+            // パス追加完了
+            this.eventBus.on('layer:path-added', () => {
+                this.requestThumbnailUpdate();
+            });
+            
+            // レイヤー可視性変更
+            this.eventBus.on('layer:visibility-changed', () => {
+                this.requestThumbnailUpdate();
+            });
+            
+            // レイヤー不透明度変更
+            this.eventBus.on('layer:opacity-changed', () => {
+                this.requestThumbnailUpdate();
+            });
+        }
+        
+        // 【新規】サムネイル更新リクエスト（デバウンス処理付き）
+        requestThumbnailUpdate() {
+            if (this.thumbnailUpdateInProgress) return;
+            
+            // 連続描画時のパフォーマンス対策: 150ms待機
+            if (this.thumbnailUpdateTimer) {
+                clearTimeout(this.thumbnailUpdateTimer);
+            }
+            
+            this.thumbnailUpdateTimer = setTimeout(() => {
+                this.updateCurrentCutThumbnail();
+            }, 150);
+        }
+        
+        // 【新規】現在のCUTサムネイルを即時更新
+        async updateCurrentCutThumbnail() {
+            if (this.thumbnailUpdateInProgress) return;
+            
+            const currentCutIndex = this.animationSystem.animationData.playback.currentCutIndex;
+            
+            if (currentCutIndex < 0 || currentCutIndex >= this.animationSystem.animationData.cuts.length) {
+                return;
+            }
+            
+            this.thumbnailUpdateInProgress = true;
+            
+            try {
+                // AnimationSystem経由でサムネイル生成
+                await this.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
+                
+                // UI更新
+                this.updateSingleCutThumbnail(currentCutIndex);
+            } catch (error) {
+                console.error('Thumbnail update failed:', error);
+            } finally {
+                this.thumbnailUpdateInProgress = false;
+            }
         }
         
         removeExistingTimelineElements() {
@@ -97,9 +169,10 @@
             const style = document.createElement('style');
             style.dataset.timeline = 'timeline-ui';
             style.textContent = `
-                .timeline-panel { position: fixed !important; bottom: 12px !important; left: 70px !important; right: 220px !important; 
+                /* 【改修】left: 60pxに拡張、左パディング追加で切れ対策 */
+                .timeline-panel { position: fixed !important; bottom: 12px !important; left: 60px !important; right: 220px !important; 
                     background: rgba(240, 224, 214, 0.95) !important; border: 2px solid var(--futaba-medium) !important; 
-                    border-radius: 12px !important; padding: 8px 10px !important; z-index: 1500 !important; max-height: 180px !important; 
+                    border-radius: 12px !important; padding: 8px 10px 8px 14px !important; z-index: 1500 !important; max-height: 180px !important; 
                     display: none !important; box-shadow: 0 6px 16px rgba(128, 0, 0, 0.25) !important; backdrop-filter: blur(12px) !important; }
                 .timeline-panel.show { display: block !important; animation: slideUp 0.35s ease-out !important; }
                 @keyframes slideUp { from { opacity: 0; transform: translateY(25px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
@@ -138,11 +211,16 @@
                     font-family: monospace !important; color: var(--futaba-maroon) !important; font-weight: bold !important; 
                     text-align: center !important; outline: none !important; padding: 0 !important; -moz-appearance: textfield !important; }
                 .cut-duration-input::-webkit-outer-spin-button, .cut-duration-input::-webkit-inner-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
-                .duration-nav-btn { width: 16px !important; height: 16px !important; background: var(--futaba-medium) !important; 
-                    border: none !important; border-radius: 2px !important; color: var(--futaba-background) !important; 
-                    font-size: 10px !important; cursor: pointer !important; display: flex !important; align-items: center !important; 
-                    justify-content: center !important; font-weight: bold !important; padding: 0 !important; }
-                .duration-nav-btn:hover { background: var(--futaba-light-maroon) !important; transform: scale(1.1) !important; }
+                
+                /* 【改修】時間変更ボタン: 赤茶色矢印に変更、四角排除 */
+                .duration-nav-btn { width: 16px !important; height: 16px !important; 
+                    background: transparent !important; 
+                    border: none !important; 
+                    color: var(--futaba-maroon) !important; 
+                    font-size: 11px !important; cursor: pointer !important; display: flex !important; align-items: center !important; 
+                    justify-content: center !important; font-weight: bold !important; padding: 0 !important; transition: all 0.15s ease !important; }
+                .duration-nav-btn:hover { color: var(--futaba-light-maroon) !important; transform: scale(1.2) !important; }
+                
                 .delete-cut-btn { position: absolute !important; top: -4px !important; right: -4px !important; width: 18px !important; 
                     height: 18px !important; background: rgba(128, 0, 0, 0.9) !important; border: none !important; border-radius: 50% !important; 
                     color: white !important; font-size: 10px !important; cursor: pointer !important; opacity: 0 !important; 
@@ -642,6 +720,6 @@
     }
     window.TegakiUI.TimelineUI = TimelineUI;
     
-    console.log('✅ TimelineUI Phase 2改修版 loaded');
+    console.log('✅ TimelineUI 即時サムネイル反映版 loaded');
 
 })();
