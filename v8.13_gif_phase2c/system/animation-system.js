@@ -1,7 +1,7 @@
-// ===== system/animation-system.js - CUTフォルダ方式 Phase 1 =====
-// 【改修】CUT = PIXI.Container方式への完全移行
-// 【改修】Cutクラス導入でCUT独立性を確立
-// 【改修】レイヤーはCUT.container.childrenで管理
+// ===== system/animation-system.js - CUT分離修正版 =====
+// 【修正】新規CUT作成時に「レイヤー1+背景」を作成
+// 【修正】初期CUT作成時に「レイヤー1+背景」を作成
+// 【修正】CUT切り替え時のレイヤー消失問題を解決
 // PixiJS v8.13 対応
 
 (function() {
@@ -17,14 +17,12 @@
             // ★CUTフォルダとしてのContainer
             this.container = new PIXI.Container();
             this.container.label = `cut_${id}`;
-            this.container.sortableChildren = true;  // zIndex有効化
+            this.container.sortableChildren = true;
             
             this.thumbnailCanvas = null;
             this.createdAt = Date.now();
             this.config = config;
         }
-        
-        // ===== レイヤー操作API =====
         
         getLayers() {
             return this.container.children;
@@ -48,8 +46,6 @@
         getLayerCount() {
             return this.container.children.length;
         }
-        
-        // ===== シリアライズ（保存用） =====
         
         serialize() {
             return {
@@ -87,8 +83,6 @@
             };
         }
         
-        // ===== デシリアライズ（復元用） =====
-        
         static deserialize(data, config) {
             const cut = new Cut(data.id, data.name, config);
             cut.duration = data.duration;
@@ -118,7 +112,6 @@
                 paths: []
             };
             
-            // Transform復元
             if (layerData.transform) {
                 layer.position.set(layerData.transform.x || 0, layerData.transform.y || 0);
                 layer.rotation = layerData.transform.rotation || 0;
@@ -126,11 +119,9 @@
                 layer.pivot.set(layerData.transform.pivotX || 0, layerData.transform.pivotY || 0);
             }
             
-            // 可視性・透明度
             layer.visible = layerData.visible !== false;
             layer.alpha = layerData.opacity || 1.0;
             
-            // 背景グラフィックス
             if (layerData.isBackground) {
                 const bg = new PIXI.Graphics();
                 const canvasWidth = this.config?.canvas?.width || 800;
@@ -143,7 +134,6 @@
                 layer.layerData.backgroundGraphics = bg;
             }
             
-            // paths復元
             if (layerData.paths && Array.isArray(layerData.paths)) {
                 layerData.paths.forEach(pathData => {
                     const path = this._rebuildPath(pathData);
@@ -228,36 +218,24 @@
             
             this.layerSystem.animationSystem = this;
             
-            // ★LayerSystemの一時的なContainerをStageに追加
-            if (this.stage && this.layerSystem.currentCutContainer) {
-                this.stage.addChild(this.layerSystem.currentCutContainer);
-                console.log('✅ Temporary CUT container added to stage');
-            }
-            
             this.setupCutClipboardEvents();
             this.setupLayerChangeListener();
             this.hasInitialized = true;
             
-            setTimeout(() => {
-                if (!this.initialCutCreated && !this.isInitializing) {
-                    this.createInitialCutIfNeeded();
-                }
-            }, 150);
+            // 【修正】即座に初期CUT作成
+            this.createInitialCutWithLayers();
             
-            setTimeout(() => {
-                if (this.eventBus) {
-                    this.eventBus.emit('animation:system-ready');
-                    this.eventBus.emit('animation:initialized');
-                }
-            }, 200);
+            // 【修正】イベント発行を同期的に
+            if (this.eventBus) {
+                this.eventBus.emit('animation:system-ready');
+                this.eventBus.emit('animation:initialized');
+            }
+            
+            console.log('✅ AnimationSystem initialized with initial CUT');
         }
         
         setupLayerChangeListener() {
             if (!this.eventBus) return;
-            
-            this.eventBus.on('layer:updated', () => {
-                // CUTフォルダ方式では自動保存不要（Container直接管理）
-            });
             
             this.eventBus.on('layer:path-added', () => {
                 const currentCut = this.getCurrentCut();
@@ -279,7 +257,7 @@
         
         createDefaultAnimation() {
             return {
-                cuts: [],  // Cut[]
+                cuts: [],
                 settings: {
                     loop: true
                 },
@@ -291,13 +269,59 @@
             };
         }
         
+        // 【新規】初期CUT作成（レイヤー1+背景）
+        createInitialCutWithLayers() {
+            if (this.initialCutCreated || this.animationData.cuts.length > 0 || this.isInitializing) {
+                return;
+            }
+            
+            this.isInitializing = true;
+            
+            const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const cut = new Cut(cutId, 'CUT1', this.config);
+            
+            // ★背景レイヤー作成
+            const bgLayer = this._createBackgroundLayer(cutId);
+            cut.addLayer(bgLayer);
+            
+            // ★レイヤー1作成
+            const layer1 = this._createBlankLayer(cutId, 'レイヤー1', 1);
+            cut.addLayer(layer1);
+            
+            this.animationData.cuts.push(cut);
+            this.animationData.playback.currentCutIndex = 0;
+            
+            // ★【修正】StageではなくLayerSystemに通知
+            // StageへのaddChildはLayerSystemが行う
+            
+            // ★LayerSystemにCUT Containerを設定（layersContainerの子として配置される）
+            if (this.layerSystem) {
+                this.layerSystem.setCurrentCutContainer(cut.container);
+            }
+            
+            this.initialCutCreated = true;
+            this.isInitializing = false;
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:initial-cut-created', { 
+                    cutId: cut.id,
+                    cutIndex: 0
+                });
+            }
+            
+            setTimeout(() => {
+                this.generateCutThumbnail(0);
+            }, 200);
+            
+            console.log('✅ Initial CUT created with レイヤー1 + 背景');
+        }
+        
         // ===== CUT作成 =====
         
         createNewCutFromCurrentLayers() {
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             const cut = new Cut(cutId, `CUT${this.animationData.cuts.length + 1}`, this.config);
             
-            // ★現在のLayerSystemのレイヤーをCUT Containerにコピー
             if (this.layerSystem?.currentCutContainer) {
                 const currentLayers = this.layerSystem.currentCutContainer.children;
                 
@@ -310,11 +334,7 @@
             this.animationData.cuts.push(cut);
             const newCutIndex = this.animationData.cuts.length - 1;
             
-            // ★StageにCUT Container追加
-            if (this.stage) {
-                this.stage.addChild(cut.container);
-                cut.container.visible = false;  // 初期は非表示
-            }
+            // ★【削除】Stageへの直接追加は不要（LayerSystemが管理）
             
             this.switchToActiveCut(newCutIndex);
             
@@ -331,25 +351,23 @@
             return cut;
         }
         
+        // 【修正】新規ブランクCUT作成（レイヤー1+背景）
         createNewBlankCut() {
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             const cut = new Cut(cutId, `CUT${this.animationData.cuts.length + 1}`, this.config);
             
-            // ★初期レイヤーをCUT Container内に作成
+            // ★背景レイヤー作成
             const bgLayer = this._createBackgroundLayer(cutId);
-            const layer1 = this._createBlankLayer(cutId, 'レイヤー1');
-            
             cut.addLayer(bgLayer);
+            
+            // ★レイヤー1作成
+            const layer1 = this._createBlankLayer(cutId, 'レイヤー1', 1);
             cut.addLayer(layer1);
             
             this.animationData.cuts.push(cut);
             const newIndex = this.animationData.cuts.length - 1;
             
-            // ★StageにCUT Container追加
-            if (this.stage) {
-                this.stage.addChild(cut.container);
-                cut.container.visible = false;  // 初期は非表示
-            }
+            // ★【削除】Stageへの直接追加は不要（LayerSystemが管理）
             
             this.switchToActiveCut(newIndex);
             
@@ -360,6 +378,7 @@
                 });
             }
             
+            console.log(`✅ New blank CUT created with レイヤー1 + 背景: ${cut.id}`);
             return cut;
         }
         
@@ -372,6 +391,7 @@
         _createBackgroundLayer(cutId) {
             const layer = new PIXI.Container();
             layer.label = `${cutId}_layer_bg`;
+            layer.zIndex = 0;
             layer.layerData = {
                 id: `${cutId}_layer_bg_${Date.now()}`,
                 name: '背景',
@@ -390,9 +410,10 @@
             return layer;
         }
         
-        _createBlankLayer(cutId, name) {
+        _createBlankLayer(cutId, name, zIndex = 1) {
             const layer = new PIXI.Container();
             layer.label = `${cutId}_layer_${Date.now()}`;
+            layer.zIndex = zIndex;
             layer.layerData = {
                 id: layer.label,
                 name: name,
@@ -409,7 +430,6 @@
             const layer = new PIXI.Container();
             layer.label = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             
-            // ★layerDataを完全コピー
             layer.layerData = {
                 id: layer.label,
                 name: originalLayer.layerData?.name || 'Layer',
@@ -419,15 +439,14 @@
                 paths: []
             };
             
-            // Transform復元
             layer.position.copyFrom(originalLayer.position);
             layer.rotation = originalLayer.rotation;
             layer.scale.copyFrom(originalLayer.scale);
             layer.pivot.copyFrom(originalLayer.pivot);
             layer.visible = originalLayer.visible;
             layer.alpha = originalLayer.alpha;
+            layer.zIndex = originalLayer.zIndex || 0;
             
-            // 背景グラフィックス
             if (originalLayer.layerData?.isBackground) {
                 const bg = new PIXI.Graphics();
                 bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
@@ -436,7 +455,6 @@
                 layer.layerData.backgroundGraphics = bg;
             }
             
-            // ★paths完全コピー
             if (originalLayer.layerData?.paths) {
                 originalLayer.layerData.paths.forEach(originalPath => {
                     const copiedPath = this._deepCopyPath(originalPath);
@@ -454,8 +472,6 @@
             if (!originalPath?.points || originalPath.points.length === 0) return null;
             
             const graphics = new PIXI.Graphics();
-            
-            // ★points配列を完全コピー
             const copiedPoints = originalPath.points.map(p => ({ x: p.x, y: p.y }));
             
             copiedPoints.forEach(point => {
@@ -468,7 +484,7 @@
             
             return {
                 id: 'path_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
-                points: copiedPoints,  // ★新しい配列
+                points: copiedPoints,
                 size: originalPath.size || 16,
                 color: originalPath.color || 0x800000,
                 opacity: originalPath.opacity || 1.0,
@@ -490,15 +506,7 @@
             
             this.cutSwitchInProgress = true;
             
-            // ★全CUT Containerを非表示
-            this.animationData.cuts.forEach(cut => {
-                cut.container.visible = false;
-            });
-            
-            // ★選択CUT Containerを表示
-            targetCut.container.visible = true;
-            
-            // ★LayerSystemにCUT Containerを設定
+            // ★LayerSystemにCUT Containerを設定（layersContainerの子として配置）
             this.layerSystem.setCurrentCutContainer(targetCut.container);
             
             this.animationData.playback.currentCutIndex = cutIndex;
@@ -523,11 +531,9 @@
             const canvasWidth = this.config.canvas.width;
             const canvasHeight = this.config.canvas.height;
             
-            // ★一時的に表示状態にする
             const wasVisible = cut.container.visible;
             cut.container.visible = true;
             
-            // ★CUT Containerを直接レンダリング
             const renderTexture = PIXI.RenderTexture.create({
                 width: canvasWidth,
                 height: canvasHeight,
@@ -540,11 +546,8 @@
             });
             
             const canvas = this.app.renderer.extract.canvas(renderTexture);
-            
-            // 元の表示状態に戻す
             cut.container.visible = wasVisible;
             
-            // サムネイルサイズにリサイズ
             const aspectRatio = canvasWidth / canvasHeight;
             const maxWidth = 72;
             const maxHeight = 54;
@@ -568,7 +571,6 @@
             ctx.drawImage(canvas, 0, 0, thumbWidth, thumbHeight);
             
             cut.thumbnailCanvas = thumbCanvas;
-            
             renderTexture.destroy();
             
             if (this.eventBus) {
@@ -586,7 +588,6 @@
             const currentCut = this.getCurrentCut();
             if (!currentCut) return false;
             
-            // ★CUT Container全体をシリアライズ
             this.cutClipboard.cutData = currentCut.serialize();
             this.cutClipboard.timestamp = Date.now();
             this.cutClipboard.sourceId = currentCut.id;
@@ -610,10 +611,7 @@
             
             this.animationData.cuts.splice(insertIndex, 0, pastedCut);
             
-            // ★StageにCUT Container追加
-            if (this.stage) {
-                this.stage.addChild(pastedCut.container);
-            }
+            // ★【削除】Stageへの直接追加は不要（LayerSystemが管理）
             
             this.switchToActiveCut(insertIndex);
             
@@ -636,10 +634,7 @@
             this.animationData.cuts.push(pastedCut);
             const newIndex = this.animationData.cuts.length - 1;
             
-            // ★StageにCUT Container追加
-            if (this.stage) {
-                this.stage.addChild(pastedCut.container);
-            }
+            // ★【削除】Stageへの直接追加は不要（LayerSystemが管理）
             
             this.switchToActiveCut(newIndex);
             
@@ -676,78 +671,15 @@
         
         // ===== CUT管理 =====
         
-        createInitialCutIfNeeded() {
-            if (this.initialCutCreated || this.animationData.cuts.length > 0 || this.isInitializing) {
-                return;
-            }
-            
-            if (!this.layerSystem?.currentCutContainer) {
-                return;
-            }
-            
-            this.isInitializing = true;
-            
-            // ★一時的なContainerからCutを作成
-            const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            const cut = new Cut(cutId, 'CUT1', this.config);
-            
-            // 一時的なContainerのレイヤーを正式なCUT Containerにコピー
-            const tempLayers = this.layerSystem.currentCutContainer.children;
-            tempLayers.forEach(tempLayer => {
-                const copiedLayer = this._deepCopyLayer(tempLayer);
-                cut.addLayer(copiedLayer);
-            });
-            
-            this.animationData.cuts.push(cut);
-            
-            // ★StageにCUT Container追加
-            if (this.stage) {
-                // 一時的なContainerを削除
-                if (this.layerSystem.currentCutContainer.parent === this.stage) {
-                    this.stage.removeChild(this.layerSystem.currentCutContainer);
-                }
-                
-                this.stage.addChild(cut.container);
-                cut.container.visible = true;
-            }
-            
-            // ★LayerSystemに正式なCUT Containerを設定
-            this.layerSystem.setCurrentCutContainer(cut.container);
-            
-            this.animationData.playback.currentCutIndex = 0;
-            this.initialCutCreated = true;
-            
-            if (this.eventBus) {
-                this.eventBus.emit('animation:initial-cut-created', { 
-                    cutId: cut.id,
-                    cutIndex: 0
-                });
-            }
-            
-            // サムネイル生成
-            setTimeout(() => {
-                this.generateCutThumbnail(0);
-            }, 200);
-            
-            this.isInitializing = false;
-            
-            console.log('✅ Initial CUT created from temporary container');
-        }
-        
         deleteCut(cutIndex) {
             if (cutIndex < 0 || cutIndex >= this.animationData.cuts.length) return false;
             if (this.animationData.cuts.length <= 1) return false;
             
             const cut = this.animationData.cuts[cutIndex];
             
-            // ★StageからCUT Container削除
-            if (this.stage && cut.container.parent === this.stage) {
-                this.stage.removeChild(cut.container);
-            }
-            
-            // Container破棄
+            // ★【削除】Stageからの削除は不要（LayerSystemが管理）
+            // Container破棄のみ実行
             cut.container.destroy({ children: true, texture: false, baseTexture: false });
-            
             this.animationData.cuts.splice(cutIndex, 1);
             
             if (this.animationData.playback.currentCutIndex >= cutIndex) {
@@ -996,7 +928,9 @@
             this.isAnimationMode = !this.isAnimationMode;
             
             if (this.isAnimationMode) {
-                this.createInitialCutIfNeeded();
+                if (!this.initialCutCreated) {
+                    this.createInitialCutWithLayers();
+                }
                 if (this.eventBus) {
                     this.eventBus.emit('animation:mode-entered');
                 }
@@ -1028,25 +962,20 @@
         }
         
         updateCurrentCutLayer(layerIndex, updateData) {
-            // CUTフォルダ方式では不要（Container直接管理のため）
             return this.getCurrentCut();
         }
         
         saveCutLayerStates() {
-            // CUTフォルダ方式では不要（Container直接管理のため）
         }
     }
     
     window.TegakiAnimationSystem = AnimationSystem;
     window.TegakiCut = Cut;
     
-    console.log('✅ AnimationSystem CUTフォルダ方式 Phase 1 loaded');
-    console.log('🔧 改修内容:');
-    console.log('  ✅ Cutクラス導入: CUT = PIXI.Container');
-    console.log('  ✅ レイヤー管理: CUT.container.children');
-    console.log('  ✅ CUT独立性: Container分離により参照混在不可能');
-    console.log('  ✅ サムネイル生成: renderer.render(cutContainer)');
-    console.log('  ✅ Deep Copy完全実装: _deepCopyLayer, _deepCopyPath');
-    console.log('  ✅ シリアライズ機能: serialize/deserialize');
+    console.log('✅ AnimationSystem CUT分離修正版 loaded');
+    console.log('🔧 修正内容:');
+    console.log('  ✅ 初期CUT: レイヤー1 + 背景を作成');
+    console.log('  ✅ 新規CUT: レイヤー1 + 背景を作成');
+    console.log('  ✅ CUT切替時のレイヤー消失問題を解決');
 
 })();
