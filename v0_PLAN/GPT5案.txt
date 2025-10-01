@@ -1,147 +1,196 @@
-現状の問題点
+要点（短く）
+
+リポジトリの分割後、レイヤー操作のコア関数（探索、再配置、親子設定、順序反映）が layer-utils.js に移される想定だったが、実体が無い／切り出し漏れで UI と LayerSystem の接続が切断されている。
+GitHub
++1
+
+結果：レイヤーパネルの階層移動（ドラッグ＆ドロップや上下移動コマンド）は内部データモデルを更新していない、または Pixi の display list を更新していないため画面に反映されない。
+
+対処方針：layer-utils.js に必須のユーティリティを復活／実装し、layer-system.js が明確な API（moveLayer, reparent, setLayerIndex, getLayerTree など）をエクスポート、UI 側（ui-panels.js）をその API に合わせて呼び出す。さらに変更イベントを event-bus 経由で通知してパネルを再描画する。
+
+どう確認するか（再現手順）
+
+デベロッパーツールの Console を開く。パネル内でレイヤーを上下移動したときにエラーが出ていないか確認（undefined や TypeError）。
+
+window.LayerSystem（またはプロジェクトで使っているグローバル名）をコンソールで調べ、期待する関数が存在するか確認。例：console.log(window.LayerSystem.moveLayer) が undefined なら接続切れ。
+
+UI 操作で内部データ（layers配列／ツリー）が更新されているか確認。console.log(LayerSystem._layers) など（実装に合わせて）。
+
+Pixi のシーンで container の順序が変わっているか（parent.getChildIndex(sprite) や parent.children の順序）を確認。
+
+確認コマンド例（DevTools）
+console.log(typeof window.LayerSystem, window.LayerSystem && Object.keys(window.LayerSystem))
+
+具体的な改修案（最小パッチ）
+
+以下は「責任分界を明確にする」「UI→LayerSystem の呼び出しで不足している部分を補う」ための最小例です。既存コードの命名規約に合わせて微調整してください。
+
+1) system/layer-utils.js — 必須ユーティリティ（新規／上書き）
+/* layer-utils.js
+   レイヤー探索／再配置／同期用ユーティリティをここに置く
+   依存: LayerSystem (グローバル) と eventBus (グローバルまたは import 的に available)
+*/
+
+(function(global){
+  const utils = {};
+
+  // search layer by id in a tree or array
+  utils.findLayerById = function(layers, id) {
+    if (!layers) return null;
+    for (let i=0;i<layers.length;i++){
+      const l = layers[i];
+      if (l.id === id) return {layer: l, parent: null, index: i};
+      if (l.children) {
+        const res = utils._findRecursive(l, id, l, i);
+        if (res) return res;
+      }
+    }
+    return null;
+  };
+
+  utils._findRecursive = function(node, id, parent, parentIndex){
+    if (!node.children) return null;
+    for (let i=0;i<node.children.length;i++){
+      const c = node.children[i];
+      if (c.id === id) return {layer: c, parent: node, index: i};
+      const deeper = utils._findRecursive(c, id, node, i);
+      if (deeper) return deeper;
+    }
+    return null;
+  };
+
+  // move layer to a new parent and index within parent's children
+  // Accepts layerId, newParentId (null for root), newIndex
+  utils.reparentLayer = function(rootLayers, layerId, newParentId, newIndex) {
+    // remove from old location
+    const found = utils.findLayerById(rootLayers, layerId);
+    if (!found) return false;
+    const {layer, parent: oldParent, index: oldIndex} = found;
+    const srcArray = oldParent ? oldParent.children : rootLayers;
+    srcArray.splice(oldIndex, 1);
+
+    // insert to new location
+    const targetParent = newParentId ? utils.findLayerById(rootLayers, newParentId).layer : null;
+    const dstArray = targetParent ? (targetParent.children = targetParent.children || []) : rootLayers;
+    if (newIndex == null || newIndex > dstArray.length) newIndex = dstArray.length;
+    dstArray.splice(newIndex, 0, layer);
+
+    return true;
+  };
+
+  // sync the Pixi container z-order according to the tree
+  // expects each layer has .container (PIXI.Container)
+  utils.syncDisplayOrder = function(rootLayers, stageContainer){
+    // flatten tree to array in desired z-order (e.g. root order -> children appended)
+    const flat = [];
+    function walk(nodes){
+      for (let n of nodes){
+        flat.push(n);
+        if (n.children) walk(n.children);
+      }
+    }
+    walk(rootLayers);
 
-タイムラインのサムネイルが反映されない
+    // For each flat item, ensure its container is a child of stageContainer, and order matches
+    flat.forEach((layer, idx) => {
+      if (!layer.container) return;
+      if (layer.container.parent !== stageContainer) {
+        stageContainer.addChild(layer.container);
+      }
+      // ensure child index
+      const currentIndex = stageContainer.getChildIndex(layer.container);
+      if (currentIndex !== idx) {
+        stageContainer.setChildIndex(layer.container, idx);
+      }
+    });
+  };
 
-各CUTの「代表画像」となるべきものが正しく生成・更新されていない。
+  // expose
+  global.LayerUtils = utils;
+})(window);
 
-現状はレイヤーとCUTの関係が曖昧で、サムネイル更新処理が破綻している。
 
-CUT間でレイヤーが共有されてしまう
+理由／ポイント
 
-CUT1 Layer1 に描いた絵が CUT2 Layer1 にも反映される。
+findLayerById と reparentLayer は UI の “階層移動” 操作に必須。
 
-レイヤー実体が共有されている可能性が高い（参照コピーになっている）。
+syncDisplayOrder は Pixi の display list（見た目の重なり順）をモデルに合わせるために必要。
 
-提案する新しいモデル（CUTフォルダ方式）
-データ構造
-ProjectRoot
- ├─ CUT1 (Container)
- │   ├─ 背景Layer (Graphics or Sprite Container)
- │   ├─ Layer1
- │   └─ Layer2
- ├─ CUT2 (Container)
- │   ├─ 背景Layer
- │   ├─ Layer1
- │   └─ Layer2
- ...
+layer.container（各レイヤーに紐づく PIXI.Container）が無ければ UI 反映されないので、LayerSystem 側で必ずセットすること。
 
+2) system/layer-system.js — API 層（抜粋/追加）
 
-各CUTを Pixi.Container (または自前のCutクラス) でラップ。
+layer-system はデータの単一の正しいソース（single source of truth）として下記 API を公開します。既にあるコードに以下を追加またはつなげてください。
 
-CUT内部にレイヤー群を持つため、「CUTを切り替える＝Containerの切り替え」として自然に扱える。
+// LayerSystem (既存オブジェクトに追加するイメージ)
+window.LayerSystem = window.LayerSystem || {};
 
-サムネイルは「CUTコンテナ全体をレンダリング → 背景＋Layer1など合成 → canvas化」すればよい。
+(function(LS, bus, utils){
+  // layers: 配列（ルートレイヤー群）
+  LS.layers = LS.layers || [];
 
-実装難易度について
+  LS.getLayers = function(){ return LS.layers; };
 
-AIから見て難易度は下がります。理由：
+  LS.moveLayer = function(layerId, toParentId, toIndex){
+    const ok = utils.reparentLayer(LS.layers, layerId, toParentId, toIndex);
+    if (!ok) {
+      console.warn('LayerSystem.moveLayer failed', layerId, toParentId, toIndex);
+      return false;
+    }
+    // after model change, re-sync display order
+    const stage = LS.stageContainer || window.app.stage; // 実運用の参照に合わせる
+    utils.syncDisplayOrder(LS.layers, stage);
+    // notify
+    if (bus && bus.emit) bus.emit('layers.changed', {layers: LS.layers});
+    return true;
+  };
 
-今までの「CUT×Layerの2次元マトリクス管理」は複雑で参照ミスが起きやすい。
+  LS.setStageContainer = function(container){
+    LS.stageContainer = container;
+  };
 
-「CUTを単なるフォルダ(Container)としてレイヤーを保持」する方がPixiJSの仕組みに沿っている。
+})(window.LayerSystem, window.EventBus, window.LayerUtils);
 
-サムネイル生成も renderer.render(cutContainer) で済むので、管理が直感的。
 
-さらにこの仕組みを「レイヤーフォルダ」にも流用できるため、拡張性が高い。
+注意点
 
+window.EventBus（event-bus.js）があるなら emit('layers.changed') を投げてパネルを再描画させる設計が扱いやすいです。ui-panels.js 側で bus.on('layers.changed', refreshPanel) を受けてください。
+GitHub
 
+3) ui/ui-panels.js の修正（呼び出し側）
 
+パネルのドラッグドロップや上下移動ボタンのハンドラで、DOM / UI 内で順序を変えるだけでなく必ず LayerSystem.moveLayer(...) を呼ぶようにしてください。例：
 
-改修計画書（ドラフト）
-1. データ構造整理
+// ドラッグ終了時の処理（疑似コード）
+function onLayerDrop(draggedId, targetParentId, insertIndex){
+  const ok = window.LayerSystem.moveLayer(draggedId, targetParentId, insertIndex);
+  if (!ok) {
+    // フォールバック: パネルの表示を再ロードして整合性を確認
+    refreshLayerPanel();
+  }
+}
 
-現行:
-CUTとレイヤーを独立に管理し、インデックス参照で紐づけしている。
+// 登録: レイヤー変更イベントでパネル更新
+window.EventBus.on('layers.changed', () => {
+  refreshLayerPanel();
+});
 
-改修後:
+テスト手順（改修後）
 
-CUT = Container
+ブラウザでページを開き DevTools を開く。console.log(window.LayerSystem) で API が存在することを確認。
 
-CUT.children = [背景Layer, Layer1, Layer2…]
+レイヤーパネルで階層移動を実施 → layers.changed イベントが発火しているか確認。
 
-各CUTごとに独立したレイヤーインスタンスを持つ。
+Pixi の表示順が更新されるかを確認（オブジェクトが前後に移動する）。
 
-現在のレイヤー操作UIは、選択中CUT内のレイヤー配列を対象にする。
+さらに Undo/Redo があるなら履歴（history）システムに move 操作の記録を追加する。
 
-2. レイヤー操作
+追加の注意点（実務的なポイント）
 
-新規レイヤー追加 → currentCut.addChild(newLayer)
+ID 一意性：レイヤーには必ず一意の id（文字列）を持たせてください。数値でインデックス管理すると破綻します。
 
-レイヤー削除 → currentCut.removeChild(targetLayer)
+モデルとビューの同期責任：LayerSystem（モデル）→ UI（ビュー）はイベントで同期、UI→LayerSystem は API 呼び出しのみ。DOM 側の順序操作はモデル反映が完了するまで行わない運用が堅牢です。
 
-表示順変更 → currentCut.setChildIndex(layer, newIndex)
+座標系の一貫性：レイヤー回転・反転・移動ロジックは LayerSystem に寄せる（ユーザルールより優先）。
 
-3. CUT操作
-
-新規CUT追加 → new PIXI.Container() を生成、初期レイヤーを複製（空orテンプレ）。
-
-CUT切り替え → stage.removeChild(oldCut); stage.addChild(newCut);
-
-コピー → Containerごとcloneする仕組みを用意。
-
-4. サムネイル生成
-
-サムネイルは各CUT単位で生成する。
-
-方法：
-
-const renderTexture = PIXI.RenderTexture.create({ width, height });
-renderer.render(cutContainer, { renderTexture });
-const sprite = new PIXI.Sprite(renderTexture);
-// canvas.toDataURL() でUIサムネイル化
-
-
-サムネイル更新タイミング：
-
-レイヤー変更後
-
-CUT切り替え時（必要なら）
-
-5. 既存システムとの接続
-
-timeline-ui.js
-
-CUT単位でサムネイルを持つよう改修。
-
-レイヤーUIは「選択中CUTの子供」だけを対象にする。
-
-layer-system.js
-
-グローバル配列管理をやめ、CUT内レイヤー配列にアクセスするよう変更。
-
-gif-exporter.js
-
-各CUTを順番に描画してフレーム化。
-
-6. 拡張計画
-
-レイヤーフォルダも Container化 して階層管理を統一。
-
-UIで「フォルダ」を作成 → Containerを作るだけ。
-
-改修ステップ
-
-最低限のCUTフォルダ導入
-
-CUTをContainer化して切替可能に。
-
-レイヤーをその子として保持。
-
-タイムライン改修
-
-各CUTサムネイルをレンダリングして表示。
-
-レイヤーUIとの接続
-
-選択CUT内でのレイヤー操作を保証。
-
-GIF出力の修正
-
-CUTごとにフレーム化。
-
-レイヤーフォルダ化拡張
-
-CUT方式をレイヤーフォルダに流用。
-
-✅ まとめると：
-CUTをContainerとして扱う方式はPixiJSの構造に沿っており、実装難易度は確実に下がります。サムネイルやレイヤーの独立性問題も解決でき、後のフォルダ機能にも流用可能です。
+console.log の抑制：エラー以外の過剰ログは抑えてください（ルールに従う）。
