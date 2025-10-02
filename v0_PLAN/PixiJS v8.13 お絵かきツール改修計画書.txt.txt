@@ -1,6 +1,7 @@
+PixiJS v8.13 お絵かきツール改修計画書
 CUT独立化・タイムラインサムネイル最適化対応
-
-📋 目次
+================================================================================
+目次
 
 現状分析と問題の根本原因
 改修アプローチと設計方針
@@ -11,182 +12,188 @@ CUT独立化・タイムラインサムネイル最適化対応
 改修の優先順位と手順
 検証項目
 
+================================================================================
 
-1. 現状分析と問題の根本原因
-🔴 問題A: 全CUTに同じ絵が描画される
-原因
+現状分析と問題の根本原因
+================================================================================
 
-現状のlayer-system.jsでは、全CUTが同一のContainerインスタンスを参照している可能性が高い
-CUT切り替え時に「Container の参照を切り替える」のではなく、「Container の中身を入れ替えている」ため、GPU上では同一テクスチャを全CUTが共有
+【問題A: 全CUTに同じ絵が描画される】
+■ 原因
 
-証跡
+現状のlayer-system.jsでは、全CUTが同一のContainerインスタンスを参照している
+可能性が高い
+CUT切り替え時に「Containerの参照を切り替える」のではなく、「Containerの
+中身を入れ替えている」ため、GPU上では同一テクスチャを全CUTが共有
+
+■ 証跡
 
 レイヤーパネルでは正常 → レイヤー自体は独立
 Timeline切り替え時に全CUTが同期 → CUTレベルでの分離が未実装
 
-🔴 問題B: 描画時のチラつきと左上キャンバス出現
-原因
+【問題B: 描画時のチラつきと左上キャンバス出現】
+■ 原因
 
-timeline-ui.jsのupdateCutThumbnail()が描画イベント毎にextract.canvas()を呼び出している
-extract.canvas()は内部的にGPU→CPU転送を行うため、描画のたびにレンダリングパイプラインが中断
+timeline-ui.jsのupdateCutThumbnail()が描画イベント毎にextract.canvas()を
+呼び出している
+extract.canvas()は内部的にGPU→CPU転送を行うため、描画のたびに
+レンダリングパイプラインが中断
 抽出したCanvasが一瞬DOM上の別要素として現れる（位置指定不足）
 
-証跡
+■ 証跡
 
 レイヤーパネルではスムーズ → レイヤーサムネイルは適切に差分更新されている
 Timelineのみチラつく → Timeline固有の更新ロジックに問題
 
-
+================================================================================
 2. 改修アプローチと設計方針
-🎯 核心となる設計変更
-A. CUTを「独立したRenderTextureを持つコンテナ」として実装
+【核心となる設計変更】
+■ A. CUTを「独立したRenderTextureを持つコンテナ」として実装
 従来の構造（問題あり）:
 ├─ Stage (Container)
-    └─ layersContainer (Container) ← 全CUTで共有
-        ├─ Layer1 (Graphics)
-        └─ Layer2 (Graphics)
-
+└─ layersContainer (Container) ← 全CUTで共有
+├─ Layer1 (Graphics)
+└─ Layer2 (Graphics)
 新しい構造:
 ├─ Stage (Container)
-    ├─ Cut1 (Container) + RenderTexture1
-    │   ├─ Layer1-1 (Graphics)
-    │   └─ Layer1-2 (Graphics)
-    └─ Cut2 (Container) + RenderTexture2
-        ├─ Layer2-1 (Graphics)
-        └─ Layer2-2 (Graphics)
-B. RenderTextureの役割
+├─ Cut1 (Container) + RenderTexture1
+│   ├─ Layer1-1 (Graphics)
+│   └─ Layer1-2 (Graphics)
+└─ Cut2 (Container) + RenderTexture2
+├─ Layer2-1 (Graphics)
+└─ Layer2-2 (Graphics)
+■ B. RenderTextureの役割
 
 GPU上の独立したフレームバッファとして機能
 各CUTの全レイヤーを合成した最終画像を保持
 Timeline表示時はRenderTexture → Canvas2Dの変換を必要時のみ実行
 
-C. レイヤーフォルダとの設計統一
+■ C. レイヤーフォルダとの設計統一
 CUTは「最上位の特殊なレイヤーフォルダ」として実装:
 
 type: 'cut'を持つレイヤーオブジェクト
 子要素として通常レイヤーを持つ
 将来的なレイヤーフォルダ実装と構造を共通化
 
-
+================================================================================
 3. データ構造の再設計
-3.1 CUTオブジェクト定義
-javascript{
-  id: 'cut_1728000000000',
-  type: 'cut',
-  name: 'Cut 1',
-  duration: 1000,           // ミリ秒
-  container: Container,      // Pixi.Container instance
-  renderTexture: RenderTexture, // GPU上の描画結果
-  layers: [],               // 子レイヤーの配列
-  activeLayerId: 'layer_xxx',
-  visible: true,
-  locked: false,
-  thumbnailCache: null,     // Canvas2D thumbnail cache
-  thumbnailDirty: true      // 再生成フラグ
+【3.1 CUTオブジェクト定義】
+{
+id: 'cut_1728000000000',          // 一意のID
+type: 'cut',                       // オブジェクトタイプ
+name: 'Cut 1',                     // 表示名
+duration: 1000,                    // 再生時間（ミリ秒）
+container: Container,              // Pixi.Container instance
+renderTexture: RenderTexture,      // GPU上の描画結果
+layers: [],                        // 子レイヤーの配列
+activeLayerId: 'layer_xxx',        // アクティブレイヤーID
+visible: true,                     // 表示状態
+locked: false,                     // ロック状態
+thumbnailCache: null,              // Canvas2D thumbnail cache
+thumbnailDirty: true               // 再生成フラグ
 }
-3.2 レイヤーオブジェクト定義（変更なし）
-javascript{
-  id: 'layer_1728000000001',
-  type: 'raster',           // 'raster' | 'vector' | 'folder'
-  name: 'Layer 1',
-  parentId: 'cut_xxx',      // 親CUT or フォルダID
-  container: Container,
-  graphics: Graphics,
-  visible: true,
-  opacity: 1.0,
-  locked: false,
-  blendMode: 'normal'
+【3.2 レイヤーオブジェクト定義（変更なし）】
+{
+id: 'layer_1728000000001',        // 一意のID
+type: 'raster',                    // 'raster' | 'vector' | 'folder'
+name: 'Layer 1',                   // 表示名
+parentId: 'cut_xxx',               // 親CUT or フォルダID
+container: Container,              // Pixi.Container instance
+graphics: Graphics,                // Pixi.Graphics instance
+visible: true,                     // 表示状態
+opacity: 1.0,                      // 不透明度
+locked: false,                     // ロック状態
+blendMode: 'normal'                // ブレンドモード
 }
-3.3 LayerSystem内部状態
-javascript{
-  cuts: Map<id, CutObject>,        // 全CUT
-  layers: Map<id, LayerObject>,    // 全レイヤー（フラット）
-  activeCutId: 'cut_xxx',
-  cutOrder: ['cut_1', 'cut_2'],   // 表示順序
+【3.3 LayerSystem内部状態】
+{
+cuts: Map<id, CutObject>,          // 全CUT
+layers: Map<id, LayerObject>,      // 全レイヤー（フラット構造）
+activeCutId: 'cut_xxx',            // 現在アクティブなCUT
+cutOrder: ['cut_1', 'cut_2'],     // 表示順序配列
 }
-
+================================================================================
 4. 動作フロー詳細
-4.1 初期化フロー
+【4.1 初期化フロー】
 core-engine.js: initPixiApp()
-  ↓
+↓
 layer-system.js: initialize()
-  ├─ createCut('cut_default')
-  │   ├─ new Container()
-  │   ├─ RenderTexture.create({ width, height })
-  │   └─ createLayer(cutId, 'Layer 1')
-  └─ setActiveCut('cut_default')
-  ↓
+├─ createCut('cut_default')
+│   ├─ new Container()
+│   ├─ RenderTexture.create({ width, height })
+│   └─ createLayer(cutId, 'Layer 1')
+└─ setActiveCut('cut_default')
+↓
 animation-system.js: initialize()
-  └─ registerCut('cut_default')
-  ↓
+└─ registerCut('cut_default')
+↓
 timeline-ui.js: initialize()
-  └─ refreshTimeline()
-4.2 描画フロー（ペンツール使用時）
+└─ refreshTimeline()
+【4.2 描画フロー（ペンツール使用時）】
 user: mousedown on canvas
-  ↓
+↓
 core-runtime.js: handleDrawingStart()
-  ↓
+↓
 layer-system.js: getActiveLayer(activeCutId)
-  ↓ 返り値: activeLayer
-  ↓
+↓ 返り値: activeLayer
+↓
 core-runtime.js: graphics.moveTo(x, y)
-  ↓
+↓
 user: mousemove
-  ↓
+↓
 core-runtime.js: graphics.lineTo(x, y)
-  ↓ (毎フレーム自動レンダリング)
-  ↓
+↓ (毎フレーム自動レンダリング)
+↓
 user: mouseup
-  ↓
+↓
 layer-system.js: renderCutToTexture(activeCutId)
-  ├─ renderer.render(cutContainer, { renderTexture })
-  └─ markThumbnailDirty(cutId)
-  ↓
+├─ renderer.render(cutContainer, { renderTexture })
+└─ markThumbnailDirty(cutId)
+↓
 EventBus.emit('cut:updated', { cutId })
-  ↓
+↓
 timeline-ui.js: onCutUpdated({ cutId })
-  └─ scheduleThrottledUpdate(cutId)
-4.3 CUT切り替えフロー
+└─ scheduleThrottledUpdate(cutId)
+【4.3 CUT切り替えフロー】
 user: click on timeline cut
-  ↓
+↓
 timeline-ui.js: handleCutClick(cutId)
-  ↓
+↓
 animation-system.js: gotoCut(cutId)
-  ↓
+↓
 layer-system.js: setActiveCut(cutId)
-  ├─ 旧CUT: cutContainer.visible = false
-  ├─ 新CUT: cutContainer.visible = true
-  └─ EventBus.emit('cut:changed', { cutId })
-  ↓
+├─ 旧CUT: cutContainer.visible = false
+├─ 新CUT: cutContainer.visible = true
+└─ EventBus.emit('cut:changed', { cutId })
+↓
 ui-panels.js: refreshLayerPanel(cutId)
-4.4 Timelineサムネイル更新フロー（最適化版）
+【4.4 Timelineサムネイル更新フロー（最適化版）】
 EventBus.on('cut:updated', { cutId })
-  ↓
+↓
 timeline-ui.js: scheduleThrottledUpdate(cutId)
-  ├─ throttle: 300ms
-  └─ dirtyFlags.add(cutId)
-  ↓
+├─ throttle: 300ms
+└─ dirtyFlags.add(cutId)
+↓
 timeline-ui.js: processDirtyThumbnails()
-  └─ for each dirtyCutId:
-      updateCutThumbnail(dirtyCutId)
-        ├─ if (cut.thumbnailDirty === false) return
-        ├─ const canvas = extract.canvas(cutContainer)
-        ├─ const dataURL = canvas.toDataURL()
-        ├─ imgElement.src = dataURL
-        ├─ cut.thumbnailCache = canvas
-        └─ cut.thumbnailDirty = false
-
+└─ for each dirtyCutId:
+updateCutThumbnail(dirtyCutId)
+├─ if (cut.thumbnailDirty === false) return
+├─ const canvas = extract.canvas(cutContainer)
+├─ const dataURL = canvas.toDataURL()
+├─ imgElement.src = dataURL
+├─ cut.thumbnailCache = canvas
+└─ cut.thumbnailDirty = false
+================================================================================
 5. ファイル別改修仕様
-5.1 system/layer-system.js
-責務
+【5.1 system/layer-system.js】
+■ 責務
 
 CUT/レイヤーの作成・削除・取得
 CUTごとのRenderTexture管理
 描画内容のテクスチャへの反映
 
-改修内容
-新規追加
-javascriptclass LayerSystem {
+■ 改修内容
+▼ 新規追加メソッド
+class LayerSystem {
   constructor(app) {
     this.app = app;
     this.renderer = app.renderer;
@@ -198,36 +205,37 @@ javascriptclass LayerSystem {
   }
 
   // CUT管理
-  createCut(options = {}) { /* 実装 */ }
-  getCut(id) { /* 実装 */ }
-  setActiveCut(id) { /* 実装 */ }
-  deleteCut(id) { /* 実装 */ }
+  createCut(options = {})
+  getCut(id)
+  setActiveCut(id)
+  deleteCut(id)
   
   // RenderTexture管理
-  renderCutToTexture(cutId) { /* 実装 */ }
-  markThumbnailDirty(cutId) { /* 実装 */ }
+  renderCutToTexture(cutId)
+  markThumbnailDirty(cutId)
   
   // レイヤー管理（既存を改修）
-  createLayer(cutId, options) { /* parentId対応 */ }
-  getActiveLayer(cutId) { /* CUT指定版 */ }
+  createLayer(cutId, options)
+  getActiveLayer(cutId)
 }
-改修対象の既存メソッド
+▼ 改修対象の既存メソッド
+- createLayer()
+変更点: parentIdパラメータを追加（cutId必須化）
+- deleteLayer()
+  変更点: 親CUTのthumbnailDirtyフラグを立てる
 
-createLayer(): parentIdパラメータを追加（cutId必須化）
-deleteLayer(): 親CUTのthumbnailDirtyフラグを立てる
-setLayerVisibility(): 同上
-
-
-5.2 system/animation-system.js
-責務
+- setLayerVisibility()
+  変更点: 親CUTのthumbnailDirtyフラグを立てる
+【5.2 system/animation-system.js】
+■ 責務
 
 CUTの登録・順序管理
 再生/停止制御
 CUT間の遷移
 
-改修内容
-新規追加
-javascriptclass AnimationSystem {
+■ 改修内容
+▼ 新規追加メソッド
+class AnimationSystem {
   constructor(layerSystem) {
     this.layerSystem = layerSystem;
     this.isPlaying = false;
@@ -235,31 +243,40 @@ javascriptclass AnimationSystem {
     this.animationId = null;
   }
 
-  addCut(options) { /* layerSystem.createCut()を呼び出し */ }
-  removeCut(cutId) { /* layerSystem.deleteCut()を呼び出し */ }
-  gotoCut(cutId) { /* layerSystem.setActiveCut()を呼び出し */ }
+  addCut(options)
+    説明: layerSystem.createCut()を呼び出し
   
-  playAnimation() { /* 実装 */ }
-  pauseAnimation() { /* 実装 */ }
-  nextCut() { /* 実装 */ }
-  prevCut() { /* 実装 */ }
+  removeCut(cutId)
+    説明: layerSystem.deleteCut()を呼び出し
+  
+  gotoCut(cutId)
+    説明: layerSystem.setActiveCut()を呼び出し
+  
+  playAnimation()
+    説明: CUT順次再生
+  
+  pauseAnimation()
+    説明: 再生停止
+  
+  nextCut()
+    説明: 次のCUTへ移動
+  
+  prevCut()
+    説明: 前のCUTへ移動
 }
-既存からの変更
-
-CUT管理の責務をlayer-system.jsに移譲
-animation-system.jsは再生制御に専念
-
-
-5.3 ui/timeline-ui.js
-責務
+▼ 既存からの変更
+- CUT管理の責務をlayer-system.jsに移譲
+- animation-system.jsは再生制御に専念
+【5.3 ui/timeline-ui.js】
+■ 責務
 
 Timeline UIの描画
 CUTサムネイルの生成・更新
 ユーザーインタラクション処理
 
-改修内容
-新規追加
-javascriptclass TimelineUI {
+■ 改修内容
+▼ 新規追加メソッド
+class TimelineUI {
   constructor(layerSystem, animationSystem) {
     this.layerSystem = layerSystem;
     this.animationSystem = animationSystem;
@@ -268,19 +285,28 @@ javascriptclass TimelineUI {
   }
 
   // サムネイル更新（最適化）
-  scheduleThrottledUpdate(cutId) { /* 300ms throttle */ }
-  processDirtyThumbnails() { /* バッチ処理 */ }
-  updateCutThumbnail(cutId) { /* extract.canvas()を呼ぶ */ }
+  scheduleThrottledUpdate(cutId)
+    説明: 300ms throttleで更新予約
+  
+  processDirtyThumbnails()
+    説明: 予約済み更新をバッチ処理
+  
+  updateCutThumbnail(cutId)
+    説明: extract.canvas()を呼び、サムネイル生成
   
   // Timeline描画
-  refreshTimeline() { /* 全CUTのUI再構築 */ }
-  renderCutElement(cut) { /* 個別CUT要素生成 */ }
+  refreshTimeline()
+    説明: 全CUTのUI再構築
+  
+  renderCutElement(cut)
+    説明: 個別CUT要素のHTML生成
   
   // イベント
-  bindTimelineEvents() { /* クリック等 */ }
+  bindTimelineEvents()
+    説明: クリック等のイベントリスナー登録
 }
-重要な最適化ポイント
-javascriptupdateCutThumbnail(cutId) {
+▼ 重要な最適化ポイント
+updateCutThumbnail(cutId) {
   const cut = this.layerSystem.getCut(cutId);
   
   // 差分チェック
@@ -300,48 +326,51 @@ javascriptupdateCutThumbnail(cutId) {
   cut.thumbnailCache = canvas;
   cut.thumbnailDirty = false;
 }
-
-5.4 system/history.js
-責務
+【5.4 system/history.js】
+■ 責務
 
 Undo/Redo履歴管理
 CUT単位での履歴分離
 
-改修内容
-データ構造変更
-javascript// 従来: 単一の履歴配列
-histories: []
+■ 改修内容
+▼ データ構造変更
+従来: 単一の履歴配列
+  histories: []
 
-// 改修後: CUT別の履歴Map
-histories: Map<cutId, HistoryEntry[]>
-新規追加
-javascriptclass HistorySystem {
+改修後: CUT別の履歴Map
+  histories: Map<cutId, HistoryEntry[]>
+▼ 新規追加メソッド
+class HistorySystem {
   constructor(layerSystem) {
     this.layerSystem = layerSystem;
     this.histories = new Map(); // cutId -> []
     this.historyIndices = new Map(); // cutId -> index
   }
 
-  pushState(cutId, action, data) { /* CUT別に追加 */ }
-  undo(cutId) { /* 指定CUTのみ */ }
-  redo(cutId) { /* 指定CUTのみ */ }
-  clearHistory(cutId) { /* CUT削除時 */ }
+  pushState(cutId, action, data)
+    説明: CUT別に履歴追加
+  
+  undo(cutId)
+    説明: 指定CUTのみUndo
+  
+  redo(cutId)
+    説明: 指定CUTのみRedo
+  
+  clearHistory(cutId)
+    説明: CUT削除時の履歴クリア
 }
-既存からの変更
-
-グローバルな履歴 → CUT別の履歴に変更
-undo()/redo()にcutIdパラメータ追加
-
-
-5.5 system/gif-exporter.js
-責務
+▼ 既存からの変更
+- グローバルな履歴 → CUT別の履歴に変更
+- undo()/redo()にcutIdパラメータ追加
+【5.5 system/gif-exporter.js】
+■ 責務
 
 全CUTのRenderTexture→PNG変換
 GIF生成・ダウンロード
 
-改修内容
-新規追加
-javascriptclass GifExporter {
+■ 改修内容
+▼ 新規追加メソッド
+class GifExporter {
   constructor(layerSystem, animationSystem) {
     this.layerSystem = layerSystem;
     this.animationSystem = animationSystem;
@@ -355,7 +384,8 @@ javascriptclass GifExporter {
       const cut = this.layerSystem.getCut(cutId);
       
       // RenderTextureから直接Canvas取得
-      const canvas = this.layerSystem.renderer.extract.canvas(cut.renderTexture);
+      const canvas = this.layerSystem.renderer.extract
+                          .canvas(cut.renderTexture);
       frames.push({
         canvas: canvas,
         delay: cut.duration
@@ -365,25 +395,25 @@ javascriptclass GifExporter {
     return frames;
   }
 
-  async exportGIF(frames) { /* gif.js使用 */ }
-  downloadGIF(blob, filename) { /* Blob保存 */ }
+  async exportGIF(frames)
+    説明: gif.js使用してGIF生成
+  
+  downloadGIF(blob, filename)
+    説明: Blob形式で保存
 }
-最適化ポイント
-
-renderTextureから直接抽出（再レンダリング不要）
-非同期処理でUI凍結を防止
-
-
-5.6 core-engine.js
-責務
+▼ 最適化ポイント
+- renderTextureから直接抽出（再レンダリング不要）
+- 非同期処理でUI凍結を防止
+【5.6 core-engine.js】
+■ 責務
 
 PixiJSアプリケーション初期化
 各システムのインスタンス生成
 グローバル参照の管理
 
-改修内容
-初期化順序の明確化
-javascriptasync function initPixiApp() {
+■ 改修内容
+▼ 初期化順序の明確化
+async function initPixiApp() {
   // 1. PixiJS Application
   const app = new PIXI.Application();
   await app.init({ /* options */ });
@@ -409,7 +439,7 @@ javascriptasync function initPixiApp() {
   
   return app;
 }
-
+================================================================================
 6. メソッド辞典
 【6.1 LayerSystem】
 ■ createCut()
@@ -580,136 +610,142 @@ javascriptasync function initPixiApp() {
 説明: GIFダウンロード
 パラメータ: blob, filename
 戻り値: void
-
+================================================================================
 7. 改修の優先順位と手順
-Phase 1: CUT独立化（最優先）
+【Phase 1: CUT独立化（最優先）】
 目的: 全CUTに同じ絵が描画される問題の解決
-
-layer-system.js改修
+■ 1. layer-system.js改修
 
 createCut()実装: Container + RenderTexture生成
 setActiveCut()実装: Container切り替え
 renderCutToTexture()実装: 描画後のテクスチャ更新
 
-
-animation-system.js改修
+■ 2. animation-system.js改修
 
 CUT管理ロジックをlayerSystemに委譲
 gotoCut()でlayerSystem.setActiveCut()を呼ぶ
 
-
-検証
+■ 3. 検証
 
 CUT間で絵が独立していることを確認
 CUT切り替え時に正しいレイヤーが表示されることを確認
 
-
-
-Phase 2: Timelineサムネイル最適化
+【Phase 2: Timelineサムネイル最適化】
 目的: チラつきと左上キャンバス出現の解消
-
-layer-system.js拡張
+■ 1. layer-system.js拡張
 
 markThumbnailDirty()実装
 thumbnailDirtyフラグ管理
 
-
-timeline-ui.js改修
+■ 2. timeline-ui.js改修
 
 scheduleThrottledUpdate()実装（300ms throttle）
 updateCutThumbnail()を差分更新版に書き換え
 EventBus連携（cut:updatedイベント受信）
 
-
-検証
+■ 3. 検証
 
 描画時のチラつきが消えることを確認
 サムネイル更新が適切なタイミングで行われることを確認
 
-
-
-Phase 3: 履歴のCUT単位対応
+【Phase 3: 履歴のCUT単位対応】
 目的: Undo/RedoがCUT別に動作する
-
-history.js改修
+■ 1. history.js改修
 
 historiesをMap化
 pushState(), undo(), redo()にcutId追加
 
-
-core-runtime.js調整
+■ 2. core-runtime.js調整
 
 描画終了時にhistorySystem.pushState(activeCutId, ...)を呼ぶ
 
-
-検証
+■ 3. 検証
 
 CUT1でUndo → CUT2に影響しないことを確認
 
-
-
-Phase 4: GIF Export最適化
+【Phase 4: GIF Export最適化】
 目的: RenderTextureから高速エクスポート
-
-gif-exporter.js改修
+■ 1. gif-exporter.js改修
 
 renderCutFrames()をRenderTexture使用版に書き換え
 
-
-検証
+■ 2. 検証
 
 全CUTが正しくGIFに含まれることを確認
 エクスポート速度の向上を確認
 
-
-
-
+================================================================================
 8. 検証項目
-機能検証
-項目検証内容期待結果CUT独立性CUT1に描画→CUT2に移動→CUT1に戻るCUT1の絵が残っているTimeline切替CUT切替時の表示正しいCUTのレイヤーが表示されるサムネイル更新描画時のチラつきチラつきなし、左上に何も出ないサムネイル正確性Timeline画像実際の描画内容と一致Undo/RedoCUT別の履歴他CUTに影響しないGIF Export全CUT出力各CUTが独立したフレームとして出力
-パフォーマンス検証
-項目測定方法目標値描画レスポンスrequestAnimationFrameのfps60fps維持サムネイル更新頻度console.time測定300ms以下の間隔GIF Export時間10CUTのエクスポート時間5秒以内
-互換性検証
-項目確認内容既存レイヤー機能レイヤー作成・削除・可視性が動作カメラ操作Pan/Zoomが全CUTで機能ショートカットCtrl+Z等が正常動作
+【機能検証】
+■ CUT独立性
+検証内容: CUT1に描画→CUT2に移動→CUT1に戻る
+期待結果: CUT1の絵が残っている
+■ Timeline切替
+検証内容: CUT切替時の表示
+期待結果: 正しいCUTのレイヤーが表示される
+■ サムネイル更新
+検証内容: 描画時のチラつき
+期待結果: チラつきなし、左上に何も出ない
+■ サムネイル正確性
+検証内容: Timeline画像
+期待結果: 実際の描画内容と一致
+■ Undo/Redo
+検証内容: CUT別の履歴
+期待結果: 他CUTに影響しない
+■ GIF Export
+検証内容: 全CUT出力
+期待結果: 各CUTが独立したフレームとして出力
+【パフォーマンス検証】
+■ 描画レスポンス
+測定方法: requestAnimationFrameのfps
+目標値: 60fps維持
+■ サムネイル更新頻度
+測定方法: console.time測定
+目標値: 300ms以下の間隔
+■ GIF Export時間
+測定方法: 10CUTのエクスポート時間
+目標値: 5秒以内
+【互換性検証】
+■ 既存レイヤー機能
+確認内容: レイヤー作成・削除・可視性が動作
+■ カメラ操作
+確認内容: Pan/Zoomが全CUTで機能
+■ ショートカット
+確認内容: Ctrl+Z等が正常動作
+================================================================================
+重要な設計判断
+【なぜRenderTextureを使うのか？】
 
-📌 重要な設計判断
-なぜRenderTextureを使うのか？
+GPU上での独立性
+各CUTが独自のGPUメモリ領域を持つ
+描画効率
+毎フレーム全レイヤーを再合成せず、RenderTextureをそのまま表示
+Extract最適化
+RenderTextureから直接Canvas抽出可能
 
-GPU上での独立性: 各CUTが独自のGPUメモリ領域を持つ
-描画効率: 毎フレーム全レイヤーを再合成せず、RenderTextureをそのまま表示
-Extract最適化: RenderTextureから直接Canvas抽出可能
+【なぜCUTとレイヤーフォルダを同じ構造にするのか？】
 
-なぜCUTとレイヤーフォルダを同じ構造にするのか？
+将来の拡張性
+レイヤーフォルダ実装時にコードを再利用できる
+一貫性
+階層構造の扱いが統一される
+理解しやすさ
+AI改修時の認知負荷が減る
 
-将来の拡張性: レイヤーフォルダ実装時にコードを再利用できる
-一貫性: 階層構造の扱いが統一される
-理解しやすさ: AI改修時の認知負荷が減る
-
-throttle 300msの根拠
+【throttle 300msの根拠】
 
 人間の知覚: 100ms以下の遅延は気づかれない
 描画頻度: 60fpsでも16.7ms間隔なので、300msは十分な間引き
 GPU負荷: extract.canvas()は重い処理なので、過度な呼び出しを防ぐ
 
-
-🚨 注意事項
-localStorage禁止
+================================================================================
+注意事項
+【localStorage禁止】
 
 PixiJS v8.13環境では使用不可
 全てメモリ上で管理（Session終了で消える設計）
 
-Canvas2D使用箇所の限定
-
-サムネイル生成時のextract.canvas()のみ許可
-描画本体は必ずPixiJS（WebGL）を使用
-
-座標系の一貫性
-
-全ての座標はcoordinate-system.js経由で変換
-Container間の親子関係に注意（CUT→Layer）
-
-
-所の限定】
+【Canvas2D使用箇再試行Claudeは現在、生成したコードを実行する機能を持っていません。も続ける編集所の限定】
 
 サムネイル生成時のextract.canvas()のみ許可
 描画本体は必ずPixiJS（WebGL）を使用
@@ -1114,11 +1150,3 @@ Phase 4実装後:
 □ パフォーマンスが60fps維持
 □ メモリ使用量が適切
 □ コードの可読性が高い
-================================================================================
-終わりに
-本改修計画書は、AIが改修作業を行う際の完全なガイドとして機能することを
-目的としています。
-各フェーズは独立しており、段階的な実装とテストが可能です。
-問題が発生した場合は、本書の「改修時の注意点とトラブルシューティング」
-セクションを参照してください。
-改修完了後は、全ての検証項目をクリアしていることを確認してください。再試行Claudeは現在、生成したコードを実行する機能を持っていません。

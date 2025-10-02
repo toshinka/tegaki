@@ -1,6 +1,8 @@
-// ===== system/layer-system.js - RenderTexture管理追加 Phase 1 =====
-// 【改修】RenderTexture管理機能追加
-// 【維持】CUTフォルダ方式・Transform管理・EventBus統合・CoordinateSystem統合・全既存機能
+// ===== system/layer-system.js - Phase 2 Step 2.2完了版: 描画専用化・単方向データフロー =====
+// 【新規】mountFrame(): AnimationSystemからフレームをマウント
+// 【新規】extractDirtyState(): 変更差分を抽出
+// 【改修】_syncLayersContainerFromAnimationSystem() → mountFrame()に統合
+// 【維持】originalPoints対応・Transform確定・CUT独立性
 // PixiJS v8.13 対応
 
 (function() {
@@ -12,15 +14,15 @@
             this.config = null;
             this.eventBus = null;
             
-            // ★CUTフォルダ方式: 現在アクティブなCUT Container
-            this.currentCutContainer = null;
+            // 描画インスタンス管理
+            this.layers = []; // 描画用PIXI.Container配列
             this.activeLayerIndex = -1;
+            this.layerTransforms = new Map(); // Transform状態管理
             
-            // ★新規追加: RenderTexture管理
-            this.cutRenderTextures = new Map(); // cutId -> RenderTexture
-            this.cutThumbnailDirty = new Map(); // cutId -> boolean
-            
-            this.layerTransforms = new Map(); // layerIdをキーとするTransform保存
+            // マウント状態管理
+            this.mountedCutId = null;
+            this.mountedFrameIndex = null;
+            this.dirtyLayers = new Set(); // 変更されたlayerIndexの集合
             
             this.thumbnailUpdateQueue = new Set();
             this.thumbnailUpdateTimer = null;
@@ -30,6 +32,8 @@
             this.isLayerDragging = false;
             this.layerDragLastPoint = { x: 0, y: 0 };
             
+            this.layersContainer = null;
+            this.canvasContainer = null;
             this.layerTransformPanel = null;
             
             this.cameraSystem = null;
@@ -42,210 +46,34 @@
         }
 
         init(canvasContainer, eventBus, config) {
-            console.log('🎨 LayerSystem: RenderTexture管理追加 Phase 1 初期化開始...');
-            
             this.eventBus = eventBus;
             this.config = config || window.TEGAKI_CONFIG;
+            this.canvasContainer = canvasContainer;
+            
+            if (!this.canvasContainer?.addChild) {
+                throw new Error('Valid PIXI.Container required for LayerSystem');
+            }
             
             if (!this.eventBus) {
                 throw new Error('EventBus required for LayerSystem');
             }
             
-            // ★初期CUT Container作成（AnimationSystemが初期化される前の一時的なContainer）
-            this._createTemporaryCutContainer();
-            
+            this._createContainers();
             this._setupLayerOperations();
             this._setupLayerTransformPanel();
             this._setupAnimationSystemIntegration();
             this._startThumbnailUpdateProcess();
-            
-            console.log('✅ LayerSystem: RenderTexture管理追加 Phase 1 初期化完了');
-        }
-        
-        /**
-         * AnimationSystemが初期化される前に描画可能にするための一時的なContainer
-         */
-        _createTemporaryCutContainer() {
-            this.currentCutContainer = new PIXI.Container();
-            this.currentCutContainer.label = 'temporary_cut_container';
-            
-            // 背景レイヤーを作成
-            const bgLayer = new PIXI.Container();
-            bgLayer.label = 'temp_layer_bg';
-            bgLayer.layerData = {
-                id: 'temp_layer_bg_' + Date.now(),
-                name: '背景',
-                visible: true,
-                opacity: 1.0,
-                isBackground: true,
-                paths: []
-            };
-            
-            const bg = new PIXI.Graphics();
-            bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
-            bg.fill(this.config.background.color);
-            bgLayer.addChild(bg);
-            bgLayer.layerData.backgroundGraphics = bg;
-            
-            this.currentCutContainer.addChild(bgLayer);
-            
-            // レイヤー1を作成
-            const layer1 = new PIXI.Container();
-            layer1.label = 'temp_layer_1';
-            layer1.layerData = {
-                id: 'temp_layer_1_' + Date.now(),
-                name: 'レイヤー1',
-                visible: true,
-                opacity: 1.0,
-                isBackground: false,
-                paths: []
-            };
-            
-            this.currentCutContainer.addChild(layer1);
-            
-            this.activeLayerIndex = 1;
-            
-            console.log('✅ Temporary CUT container created with 2 layers');
         }
 
-        // ===== CUT Container設定 =====
-        
-        /**
-         * AnimationSystemから呼ばれる: CUT切り替え時の設定
-         */
-        setCurrentCutContainer(cutContainer) {
-            this.currentCutContainer = cutContainer;
-            
-            // アクティブレイヤーを最上位に設定
-            const layers = this.getLayers();
-            this.activeLayerIndex = Math.max(0, layers.length - 1);
-            
-            this.updateLayerPanelUI();
-            this.updateStatusDisplay();
-            
-            if (this.isLayerMoveMode) {
-                this.updateLayerTransformPanelValues();
-            }
+        _createContainers() {
+            this.layersContainer = new PIXI.Container();
+            this.layersContainer.label = 'layersContainer';
+            this.canvasContainer.addChild(this.layersContainer);
         }
         
-        // ===== RenderTexture管理（新規追加） =====
-        
-        /**
-         * CUT用のRenderTextureを作成
-         * @param {string} cutId - CUT識別子
-         * @returns {PIXI.RenderTexture}
-         */
-        createCutRenderTexture(cutId) {
-            if (!this.app?.renderer) {
-                console.error('Renderer not available');
-                return null;
-            }
-            
-            const renderTexture = PIXI.RenderTexture.create({
-                width: this.config.canvas.width,
-                height: this.config.canvas.height
-            });
-            
-            this.cutRenderTextures.set(cutId, renderTexture);
-            this.cutThumbnailDirty.set(cutId, true);
-            
-            return renderTexture;
-        }
-        
-        /**
-         * CUTをRenderTextureに描画
-         * @param {string} cutId - CUT識別子
-         * @param {PIXI.Container} cutContainer - CUT Container
-         */
-        renderCutToTexture(cutId, cutContainer) {
-            if (!this.app?.renderer) return;
-            
-            const renderTexture = this.cutRenderTextures.get(cutId);
-            if (!renderTexture) {
-                console.warn(`RenderTexture not found for cut: ${cutId}`);
-                return;
-            }
-            
-            const container = cutContainer || this.currentCutContainer;
-            if (!container) return;
-            
-            // CUTのContainerをRenderTextureに描画
-            this.app.renderer.render({
-                container: container,
-                target: renderTexture,
-                clear: true
-            });
-            
-            // サムネイル更新フラグを立てる
-            this.markCutThumbnailDirty(cutId);
-        }
-        
-        /**
-         * CUTサムネイル再生成フラグを設定
-         * @param {string} cutId - CUT識別子
-         */
-        markCutThumbnailDirty(cutId) {
-            this.cutThumbnailDirty.set(cutId, true);
-            
-            if (this.eventBus) {
-                this.eventBus.emit('cut:updated', { cutId: cutId });
-            }
-        }
-        
-        /**
-         * RenderTextureを取得
-         * @param {string} cutId - CUT識別子
-         * @returns {PIXI.RenderTexture}
-         */
-        getCutRenderTexture(cutId) {
-            return this.cutRenderTextures.get(cutId);
-        }
-        
-        /**
-         * RenderTextureを破棄
-         * @param {string} cutId - CUT識別子
-         */
-        destroyCutRenderTexture(cutId) {
-            const renderTexture = this.cutRenderTextures.get(cutId);
-            if (renderTexture) {
-                renderTexture.destroy(true);
-                this.cutRenderTextures.delete(cutId);
-                this.cutThumbnailDirty.delete(cutId);
-            }
-        }
-        
-        /**
-         * サムネイルが更新必要か確認
-         * @param {string} cutId - CUT識別子
-         * @returns {boolean}
-         */
-        isCutThumbnailDirty(cutId) {
-            return this.cutThumbnailDirty.get(cutId) || false;
-        }
-        
-        /**
-         * サムネイル更新フラグをクリア
-         * @param {string} cutId - CUT識別子
-         */
-        clearCutThumbnailDirty(cutId) {
-            this.cutThumbnailDirty.set(cutId, false);
-        }
-        
-        // ===== レイヤー取得API =====
-        
-        /**
-         * 現在のCUT Containerからレイヤー配列を取得
-         */
-        getLayers() {
-            return this.currentCutContainer ? this.currentCutContainer.children : [];
-        }
-        
-        getActiveLayer() {
-            const layers = this.getLayers();
-            return this.activeLayerIndex >= 0 ? layers[this.activeLayerIndex] : null;
-        }
-        
-        // ===== AnimationSystem統合 =====
+        // ========================================
+        // Phase 2 Step 2.2: AnimationSystem統合
+        // ========================================
         
         _setupAnimationSystemIntegration() {
             if (!this.eventBus) return;
@@ -254,26 +82,40 @@
                 this._establishAnimationSystemConnection();
             });
             
+            // CUT切り替え時: AnimationSystemからフレームを取得してマウント
             this.eventBus.on('animation:cut-applied', (data) => {
+                if (!this.animationSystem) return;
+                
+                const frame = this.animationSystem.getFrame(data.cutId, data.frameIndex);
+                if (frame) {
+                    this.mountFrame(frame, data.cutId, data.frameIndex);
+                }
+            });
+            
+            // CUT作成時
+            this.eventBus.on('animation:cut-created', (data) => {
+                if (!this.animationSystem) return;
+                
                 setTimeout(() => {
-                    this.updateLayerPanelUI();
-                    this.updateStatusDisplay();
-                    
-                    if (this.isLayerMoveMode) {
-                        this.updateLayerTransformPanelValues();
+                    const frame = this.animationSystem.getFrame(data.cutId, 0);
+                    if (frame) {
+                        this.mountFrame(frame, data.cutId, 0);
                     }
                 }, 100);
             });
             
-            this.eventBus.on('animation:cut-created', () => {
-                setTimeout(() => {
-                    this.updateLayerPanelUI();
-                }, 100);
-            });
-            
+            // CUT削除時
             this.eventBus.on('animation:cut-deleted', () => {
+                if (!this.animationSystem) return;
+                
                 setTimeout(() => {
-                    this.updateLayerPanelUI();
+                    const currentCutId = this.animationSystem.getCurrentCutId();
+                    const currentFrameIndex = this.animationSystem.getCurrentFrameIndex();
+                    const frame = this.animationSystem.getFrame(currentCutId, currentFrameIndex);
+                    
+                    if (frame) {
+                        this.mountFrame(frame, currentCutId, currentFrameIndex);
+                    }
                 }, 100);
             });
         }
@@ -293,23 +135,536 @@
                     }
                 }
                 
-                if (this.animationSystem) {
-                    console.log('✅ AnimationSystem connection established');
+                if (this.animationSystem && this.animationSystem.layerSystem !== this) {
+                    this.animationSystem.layerSystem = this;
+                }
+            }
+        }
+
+        // ========================================
+        // Phase 2 Step 2.2: 単方向データフロー
+        // ========================================
+
+        /**
+         * AnimationSystemからFrameをマウント（読み取り専用）
+         * Phase 2 Step 2.2の中核機能
+         * 
+         * @param {Object} frame - AnimationSystemから取得したFrame（deep clone済み）
+         * @param {string} cutId - マウント元のCUT ID
+         * @param {number} frameIndex - マウント元のフレームインデックス
+         */
+        mountFrame(frame, cutId, frameIndex) {
+            if (!frame || !frame.layers) {
+                console.warn('mountFrame: Invalid frame data');
+                return;
+            }
+            
+            // 既存インスタンスをクリア
+            this._clearLayerInstances();
+            
+            // マウント状態記録
+            this.mountedCutId = cutId;
+            this.mountedFrameIndex = frameIndex;
+            this.dirtyLayers.clear();
+            
+            // frameはAnimationSystemから既にdeep clone済みと想定
+            // さらに描画用に独立したコピーを作成
+            const clonedFrame = window.DataUtils ? 
+                window.DataUtils.deepClone(frame) : 
+                JSON.parse(JSON.stringify(frame));
+            
+            // 各レイヤーを描画インスタンスとして生成
+            clonedFrame.layers.forEach((layerState, index) => {
+                const instance = this._createLayerInstance(layerState, index);
+                this.layers.push(instance);
+                this.layersContainer.addChild(instance);
+            });
+            
+            // アクティブレイヤーの調整
+            if (this.layers.length > 0) {
+                this.activeLayerIndex = Math.max(0, Math.min(this.activeLayerIndex, this.layers.length - 1));
+            } else {
+                this.activeLayerIndex = -1;
+            }
+            
+            // UI更新
+            this.updateLayerPanelUI();
+            this.updateStatusDisplay();
+            
+            if (this.isLayerMoveMode) {
+                this.updateLayerTransformPanelValues();
+            }
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:frame-mounted', { cutId, frameIndex, layerCount: this.layers.length });
+            }
+        }
+
+        /**
+         * 既存レイヤーインスタンスをクリア
+         */
+        _clearLayerInstances() {
+            // PIXI Containerから全て削除
+            while (this.layersContainer.children.length > 0) {
+                const child = this.layersContainer.children[0];
+                this.layersContainer.removeChild(child);
+                
+                if (child.destroy) {
+                    child.destroy({ children: true, texture: false, baseTexture: false });
+                }
+            }
+            
+            // 配列クリア
+            this.layers = [];
+            
+            // Transform状態クリア
+            this.layerTransforms.clear();
+        }
+
+        /**
+         * LayerStateから描画インスタンスを生成
+         * 
+         * @param {Object} layerState - AnimationSystemのLayerState
+         * @param {number} index - レイヤーインデックス
+         * @returns {PIXI.Container} 描画インスタンス
+         */
+        _createLayerInstance(layerState, index) {
+            const layer = new PIXI.Container();
+            layer.label = layerState.id;
+            
+            // layerDataとして完全なコピーを保持
+            layer.layerData = {
+                id: layerState.id,
+                name: layerState.name || `レイヤー${index + 1}`,
+                visible: layerState.visible !== false,
+                opacity: layerState.opacity || 1.0,
+                isBackground: layerState.isBackground || false,
+                transform: layerState.transform ? { ...layerState.transform } : {
+                    x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+                },
+                paths: []
+            };
+            
+            // Transform状態を保存
+            this.layerTransforms.set(layerState.id, {
+                x: layer.layerData.transform.x,
+                y: layer.layerData.transform.y,
+                rotation: layer.layerData.transform.rotation,
+                scaleX: layer.layerData.transform.scaleX,
+                scaleY: layer.layerData.transform.scaleY
+            });
+            
+            // Transform適用
+            if (layerState.transform) {
+                this._applyTransformToLayerFromData(layer, layerState.transform);
+            }
+            
+            // 背景レイヤーの場合
+            if (layerState.isBackground) {
+                const bg = new PIXI.Graphics();
+                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+                bg.fill(this.config.background.color);
+                layer.addChild(bg);
+                layer.layerData.backgroundGraphics = bg;
+            }
+            
+            // パスを再構築
+            if (layerState.paths && Array.isArray(layerState.paths)) {
+                layerState.paths.forEach(pathData => {
+                    const path = this._rebuildPathFromData(pathData);
+                    if (path) {
+                        layer.layerData.paths.push(path);
+                        layer.addChild(path.graphics);
+                    }
+                });
+            }
+            
+            // 可視性・不透明度設定
+            layer.visible = layer.layerData.visible;
+            layer.alpha = layer.layerData.opacity;
+            
+            return layer;
+        }
+
+        /**
+         * 変更されたレイヤーの状態を抽出（差分のみ）
+         * Phase 2 Step 2.2の中核機能
+         * 
+         * @returns {Array} 変更されたLayerStateの配列
+         */
+        extractDirtyState() {
+            if (this.dirtyLayers.size === 0) {
+                return [];
+            }
+            
+            const dirtyStates = [];
+            
+            this.dirtyLayers.forEach(layerIndex => {
+                if (layerIndex >= 0 && layerIndex < this.layers.length) {
+                    const layer = this.layers[layerIndex];
+                    const layerState = {
+                        id: layer.layerData.id,
+                        name: layer.layerData.name,
+                        visible: layer.layerData.visible,
+                        opacity: layer.layerData.opacity,
+                        isBackground: layer.layerData.isBackground,
+                        transform: { ...layer.layerData.transform },
+                        paths: layer.layerData.paths.map(path => ({
+                            id: path.id,
+                            points: [...path.points],
+                            originalPoints: path.originalPoints ? [...path.originalPoints] : [...path.points],
+                            size: path.size,
+                            color: path.color,
+                            opacity: path.opacity,
+                            tool: path.tool,
+                            isComplete: path.isComplete || true
+                        }))
+                    };
                     
-                    if (this.animationSystem.layerSystem !== this) {
-                        this.animationSystem.layerSystem = this;
+                    dirtyStates.push({
+                        layerIndex,
+                        layerState
+                    });
+                }
+            });
+            
+            return dirtyStates;
+        }
+
+        /**
+         * 変更をAnimationSystemにコミット
+         * Phase 2 Step 2.2の中核機能
+         */
+        commitChanges() {
+            if (!this.animationSystem || this.dirtyLayers.size === 0) {
+                return;
+            }
+            
+            const dirtyStates = this.extractDirtyState();
+            
+            dirtyStates.forEach(({ layerIndex, layerState }) => {
+                this.animationSystem.updateLayerInFrame(
+                    this.mountedCutId,
+                    this.mountedFrameIndex,
+                    layerIndex,
+                    layerState
+                );
+            });
+            
+            // dirty flagクリア
+            this.dirtyLayers.clear();
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:changes-committed', {
+                    cutId: this.mountedCutId,
+                    frameIndex: this.mountedFrameIndex,
+                    changedLayerCount: dirtyStates.length
+                });
+            }
+        }
+
+        /**
+         * レイヤーをdirtyとしてマーク
+         * 
+         * @param {number} layerIndex - 変更されたレイヤーのインデックス
+         */
+        _markLayerDirty(layerIndex) {
+            if (layerIndex >= 0 && layerIndex < this.layers.length) {
+                this.dirtyLayers.add(layerIndex);
+            }
+        }
+
+        _applyTransformToLayerFromData(layer, transform) {
+            if (!transform) return;
+            
+            const centerX = this.config.canvas.width / 2;
+            const centerY = this.config.canvas.height / 2;
+            
+            if (this.coordAPI?.applyLayerTransform) {
+                this.coordAPI.applyLayerTransform(layer, transform, centerX, centerY);
+            } else {
+                this._applyTransformDirect(layer, transform, centerX, centerY);
+            }
+        }
+
+        /**
+         * PathデータからPath再構築（originalPoints保持）
+         * Phase 2 Step 2.1対応
+         */
+        _rebuildPathFromData(pathData) {
+            if (!pathData?.points || !Array.isArray(pathData.points) || pathData.points.length === 0) {
+                return null;
+            }
+            
+            try {
+                const graphics = new PIXI.Graphics();
+                
+                pathData.points.forEach(point => {
+                    if (typeof point.x === 'number' && typeof point.y === 'number' &&
+                        isFinite(point.x) && isFinite(point.y)) {
+                        graphics.circle(point.x, point.y, (pathData.size || 16) / 2);
+                        graphics.fill({
+                            color: pathData.color || 0x800000,
+                            alpha: pathData.opacity || 1.0
+                        });
+                    }
+                });
+                
+                return {
+                    id: pathData.id || ('path_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9)),
+                    points: [...pathData.points],
+                    originalPoints: pathData.originalPoints ? [...pathData.originalPoints] : [...pathData.points],
+                    size: pathData.size || 16,
+                    color: pathData.color || 0x800000,
+                    opacity: pathData.opacity || 1.0,
+                    tool: pathData.tool || 'pen',
+                    graphics: graphics,
+                    isComplete: pathData.isComplete || true
+                };
+            } catch (error) {
+                console.error('Path rebuild failed:', error);
+                return null;
+            }
+        }
+
+        // ========================================
+        // Transform確定処理 - Phase 2 Step 2.1対応
+        // ========================================
+
+        confirmLayerTransform() {
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer?.layerData) return;
+            
+            const layerId = activeLayer.layerData.id;
+            const transform = this.layerTransforms.get(layerId);
+            
+            if (this.isTransformNonDefault(transform)) {
+                const success = this.safeApplyTransformToPaths(activeLayer, transform);
+                
+                if (success) {
+                    activeLayer.position.set(0, 0);
+                    activeLayer.rotation = 0;
+                    activeLayer.scale.set(1, 1);
+                    activeLayer.pivot.set(0, 0);
+                    
+                    this.layerTransforms.set(layerId, {
+                        x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+                    });
+                    
+                    activeLayer.layerData.transform = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
+                    
+                    this.updateFlipButtons();
+                    this.requestThumbnailUpdate(this.activeLayerIndex);
+                    
+                    // dirtyマーク
+                    this._markLayerDirty(this.activeLayerIndex);
+                    
+                    // 即座にコミット
+                    this.commitChanges();
+                    
+                    if (this.eventBus) {
+                        this.eventBus.emit('layer:transform-confirmed', { layerId });
                     }
                 }
             }
         }
 
-        // ===== Layer Transform Panel =====
-        
+        /**
+         * Transform確定時のPath変換（非破壊的）
+         * Phase 2 Step 2.1: originalPoints対応
+         */
+        safeApplyTransformToPaths(layer, transform) {
+            if (!layer.layerData?.paths || layer.layerData.paths.length === 0) {
+                return true;
+            }
+            
+            try {
+                const centerX = this.config.canvas.width / 2;
+                const centerY = this.config.canvas.height / 2;
+                
+                const matrix = this.createTransformMatrix(transform, centerX, centerY);
+                
+                const transformedPaths = [];
+                
+                for (let i = 0; i < layer.layerData.paths.length; i++) {
+                    const path = layer.layerData.paths[i];
+                    
+                    if (!path?.points || !Array.isArray(path.points) || path.points.length === 0) {
+                        continue;
+                    }
+                    
+                    const basePoints = path.originalPoints || path.points;
+                    const transformedPoints = this.safeTransformPoints(basePoints, matrix);
+                    
+                    if (transformedPoints.length === 0) {
+                        continue;
+                    }
+                    
+                    const transformedPath = {
+                        id: path.id,
+                        points: transformedPoints,
+                        originalPoints: transformedPoints,
+                        color: path.color,
+                        size: path.size,
+                        opacity: path.opacity,
+                        tool: path.tool,
+                        isComplete: path.isComplete || true,
+                        graphics: null
+                    };
+                    
+                    transformedPaths.push(transformedPath);
+                }
+                
+                const rebuildSuccess = this.safeRebuildLayer(layer, transformedPaths);
+                return rebuildSuccess;
+                
+            } catch (error) {
+                console.error('Error in safeApplyTransformToPaths:', error);
+                return false;
+            }
+        }
+
+        createTransformMatrix(transform, centerX, centerY) {
+            const matrix = new PIXI.Matrix();
+            
+            matrix.translate(-centerX, -centerY);
+            matrix.scale(transform.scaleX, transform.scaleY);
+            matrix.rotate(transform.rotation);
+            matrix.translate(centerX + transform.x, centerY + transform.y);
+            
+            return matrix;
+        }
+
+        safeTransformPoints(points, matrix) {
+            const transformedPoints = [];
+            
+            for (let i = 0; i < points.length; i++) {
+                const point = points[i];
+                
+                if (typeof point.x !== 'number' || typeof point.y !== 'number' ||
+                    !isFinite(point.x) || !isFinite(point.y)) {
+                    continue;
+                }
+                
+                try {
+                    const transformed = matrix.apply(point);
+                    
+                    if (typeof transformed.x === 'number' && typeof transformed.y === 'number' &&
+                        isFinite(transformed.x) && isFinite(transformed.y)) {
+                        transformedPoints.push({
+                            x: transformed.x,
+                            y: transformed.y
+                        });
+                    }
+                    
+                } catch (transformError) {
+                    continue;
+                }
+            }
+            
+            return transformedPoints;
+        }
+
+        safeRebuildLayer(layer, newPaths) {
+            try {
+                const childrenToRemove = [];
+                for (let child of layer.children) {
+                    if (child !== layer.layerData.backgroundGraphics) {
+                        childrenToRemove.push(child);
+                    }
+                }
+                
+                childrenToRemove.forEach(child => {
+                    try {
+                        layer.removeChild(child);
+                        if (child.destroy && typeof child.destroy === 'function') {
+                            child.destroy({ children: true, texture: false, baseTexture: false });
+                        }
+                    } catch (removeError) {
+                        console.warn('Failed to remove child:', removeError);
+                    }
+                });
+                
+                layer.layerData.paths = [];
+                
+                let addedCount = 0;
+                for (let i = 0; i < newPaths.length; i++) {
+                    const path = newPaths[i];
+                    
+                    try {
+                        const rebuildSuccess = this.rebuildPathGraphics(path);
+                        
+                        if (rebuildSuccess && path.graphics) {
+                            layer.layerData.paths.push(path);
+                            layer.addChild(path.graphics);
+                            addedCount++;
+                        }
+                        
+                    } catch (pathError) {
+                        console.error(`Error adding path ${i}:`, pathError);
+                    }
+                }
+                
+                return addedCount > 0 || newPaths.length === 0;
+                
+            } catch (error) {
+                console.error('Error in safeRebuildLayer:', error);
+                return false;
+            }
+        }
+
+        rebuildPathGraphics(path) {
+            try {
+                if (path.graphics) {
+                    try {
+                        if (path.graphics.destroy && typeof path.graphics.destroy === 'function') {
+                            path.graphics.destroy();
+                        }
+                    } catch (destroyError) {
+                        console.warn('Graphics destroy failed:', destroyError);
+                    }
+                    path.graphics = null;
+                }
+                
+                path.graphics = new PIXI.Graphics();
+                
+                if (path.points && Array.isArray(path.points) && path.points.length > 0) {
+                    for (let point of path.points) {
+                        if (typeof point.x === 'number' && typeof point.y === 'number' &&
+                            isFinite(point.x) && isFinite(point.y)) {
+                            
+                            path.graphics.circle(point.x, point.y, (path.size || 16) / 2);
+                            path.graphics.fill({ 
+                                color: path.color || 0x800000, 
+                                alpha: path.opacity || 1.0 
+                            });
+                        }
+                    }
+                }
+                
+                return true;
+                
+            } catch (error) {
+                console.error('Error in rebuildPathGraphics:', error);
+                path.graphics = null;
+                return false;
+            }
+        }
+
+        isTransformNonDefault(transform) {
+            if (!transform) return false;
+            return (transform.x !== 0 || transform.y !== 0 || 
+                    transform.rotation !== 0 || Math.abs(transform.scaleX) !== 1 || Math.abs(transform.scaleY) !== 1);
+        }
+
+        // ========================================
+        // Layer Transform Panel（既存機能維持）
+        // ========================================
+
         _setupLayerTransformPanel() {
             this.layerTransformPanel = document.getElementById('layer-transform-panel');
             
             if (!this.layerTransformPanel) {
-                console.warn('Layer transform panel not found in DOM');
                 return;
             }
             
@@ -439,7 +794,13 @@
                 this._applyTransformDirect(activeLayer, transform, centerX, centerY);
             }
             
+            // layerData.transformも更新
+            activeLayer.layerData.transform = { ...transform };
+            
             this.requestThumbnailUpdate(this.activeLayerIndex);
+            
+            // dirtyマーク
+            this._markLayerDirty(this.activeLayerIndex);
             
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
@@ -495,8 +856,12 @@
                 this._applyTransformDirect(activeLayer, transform, centerX, centerY);
             }
             
+            activeLayer.layerData.transform = { ...transform };
+            
             this.updateFlipButtons();
             this.requestThumbnailUpdate(this.activeLayerIndex);
+            
+            this._markLayerDirty(this.activeLayerIndex);
             
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
@@ -541,8 +906,10 @@
             this.updateFlipButtons();
         }
 
-        // ===== Layer Operations =====
-        
+        // ========================================
+        // Layer Operations（既存機能維持）
+        // ========================================
+
         _setupLayerOperations() {
             document.addEventListener('keydown', (e) => {
                 const keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
@@ -699,14 +1066,13 @@
         }
 
         moveActiveLayerHierarchy(direction) {
-            const layers = this.getLayers();
-            if (layers.length <= 1) return;
+            if (this.layers.length <= 1) return;
             
             const currentIndex = this.activeLayerIndex;
             let newIndex;
             
             if (direction === 'up') {
-                newIndex = Math.min(currentIndex + 1, layers.length - 1);
+                newIndex = Math.min(currentIndex + 1, this.layers.length - 1);
             } else if (direction === 'down') {
                 newIndex = Math.max(currentIndex - 1, 0);
             } else {
@@ -729,7 +1095,6 @@
         _setupLayerDragEvents() {
             const canvas = this._getSafeCanvas();
             if (!canvas) {
-                console.warn('LayerSystem: Canvas not found for drag events');
                 return;
             }
             
@@ -748,7 +1113,7 @@
                 }
             });
             
-            canvas.addEventListener('pointerup', (e) => {
+            canvas.addEventListener('pointerup', () => {
                 if (this.isLayerDragging) {
                     this.isLayerDragging = false;
                     this.updateCursor();
@@ -841,8 +1206,12 @@
                 if (ySlider?.updateValue) ySlider.updateValue(transform.y);
             }
             
+            activeLayer.layerData.transform = { ...transform };
+            
             this.layerDragLastPoint = { x: e.clientX, y: e.clientY };
             this.requestThumbnailUpdate(this.activeLayerIndex);
+            
+            this._markLayerDirty(this.activeLayerIndex);
             
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
@@ -891,6 +1260,28 @@
             this.updateCursor();
             this.confirmLayerTransform();
             
+            if (this.activeLayerIndex >= 0 && this.eventBus) {
+                const layer = this.layers[this.activeLayerIndex];
+                if (layer) {
+                    this.eventBus.emit('transform:commit', { 
+                        layerIndex: this.activeLayerIndex, 
+                        layerId: layer.layerData.id 
+                    });
+                    this.eventBus.emit('operation:commit', { 
+                        layerIndex: this.activeLayerIndex, 
+                        layerId: layer.layerData.id, 
+                        type: 'transform' 
+                    });
+                    
+                    if (this.animationSystem?.generateCutThumbnailOptimized) {
+                        const currentCutIndex = this.animationSystem.getCurrentCutIndex();
+                        setTimeout(() => {
+                            this.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
+                        }, 100);
+                    }
+                }
+            }
+            
             if (this.eventBus) {
                 this.eventBus.emit('layer:move-mode-exited');
             }
@@ -927,12 +1318,16 @@
                 activeLayer.position.set(centerX + transform.x, centerY + transform.y);
             }
             
+            activeLayer.layerData.transform = { ...transform };
+            
             const xSlider = document.getElementById('layer-x-slider');
             const ySlider = document.getElementById('layer-y-slider');
             if (xSlider?.updateValue) xSlider.updateValue(transform.x);
             if (ySlider?.updateValue) ySlider.updateValue(transform.y);
             
             this.requestThumbnailUpdate(this.activeLayerIndex);
+            
+            this._markLayerDirty(this.activeLayerIndex);
             
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
@@ -1007,231 +1402,15 @@
                 this._applyTransformDirect(activeLayer, transform, centerX, centerY);
             }
             
+            activeLayer.layerData.transform = { ...transform };
+            
             this.requestThumbnailUpdate(this.activeLayerIndex);
+            
+            this._markLayerDirty(this.activeLayerIndex);
             
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
             }
-        }
-
-        confirmLayerTransform() {
-            const activeLayer = this.getActiveLayer();
-            if (!activeLayer?.layerData) return;
-            
-            const layerId = activeLayer.layerData.id;
-            const transform = this.layerTransforms.get(layerId);
-            
-            if (this.isTransformNonDefault(transform)) {
-                const success = this.safeApplyTransformToPaths(activeLayer, transform);
-                
-                if (success) {
-                    activeLayer.position.set(0, 0);
-                    activeLayer.rotation = 0;
-                    activeLayer.scale.set(1, 1);
-                    activeLayer.pivot.set(0, 0);
-                    
-                    this.layerTransforms.set(layerId, {
-                        x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
-                    });
-                    
-                    this.updateFlipButtons();
-                    this.requestThumbnailUpdate(this.activeLayerIndex);
-                    
-                    // CUTサムネイル更新
-                    if (this.animationSystem?.generateCutThumbnail) {
-                        const cutIndex = this.animationSystem.getCurrentCutIndex();
-                        setTimeout(() => {
-                            this.animationSystem.generateCutThumbnail(cutIndex);
-                        }, 100);
-                    }
-                    
-                    if (this.eventBus) {
-                        this.eventBus.emit('layer:transform-confirmed', { layerId });
-                    }
-                }
-            }
-        }
-
-        safeApplyTransformToPaths(layer, transform) {
-            if (!layer.layerData?.paths || layer.layerData.paths.length === 0) {
-                return true;
-            }
-            
-            try {
-                const centerX = this.config.canvas.width / 2;
-                const centerY = this.config.canvas.height / 2;
-                
-                const matrix = this.createTransformMatrix(transform, centerX, centerY);
-                
-                const transformedPaths = [];
-                
-                for (let i = 0; i < layer.layerData.paths.length; i++) {
-                    const path = layer.layerData.paths[i];
-                    
-                    if (!path?.points || !Array.isArray(path.points) || path.points.length === 0) {
-                        continue;
-                    }
-                    
-                    const transformedPoints = this.safeTransformPoints(path.points, matrix);
-                    
-                    if (transformedPoints.length === 0) {
-                        continue;
-                    }
-                    
-                    const transformedPath = {
-                        id: path.id,
-                        points: transformedPoints,
-                        color: path.color,
-                        size: path.size,
-                        opacity: path.opacity,
-                        tool: path.tool,
-                        isComplete: path.isComplete || true,
-                        graphics: null
-                    };
-                    
-                    transformedPaths.push(transformedPath);
-                }
-                
-                const rebuildSuccess = this.safeRebuildLayer(layer, transformedPaths);
-                return rebuildSuccess;
-                
-            } catch (error) {
-                console.error('Error in safeApplyTransformToPaths:', error);
-                return false;
-            }
-        }
-
-        createTransformMatrix(transform, centerX, centerY) {
-            const matrix = new PIXI.Matrix();
-            
-            matrix.translate(-centerX, -centerY);
-            matrix.scale(transform.scaleX, transform.scaleY);
-            matrix.rotate(transform.rotation);
-            matrix.translate(centerX + transform.x, centerY + transform.y);
-            
-            return matrix;
-        }
-
-        safeTransformPoints(points, matrix) {
-            const transformedPoints = [];
-            
-            for (let i = 0; i < points.length; i++) {
-                const point = points[i];
-                
-                if (typeof point.x !== 'number' || typeof point.y !== 'number' ||
-                    !isFinite(point.x) || !isFinite(point.y)) {
-                    continue;
-                }
-                
-                try {
-                    const transformed = matrix.apply(point);
-                    
-                    if (typeof transformed.x === 'number' && typeof transformed.y === 'number' &&
-                        isFinite(transformed.x) && isFinite(transformed.y)) {
-                        transformedPoints.push({
-                            x: transformed.x,
-                            y: transformed.y
-                        });
-                    }
-                    
-                } catch (transformError) {
-                    continue;
-                }
-            }
-            
-            return transformedPoints;
-        }
-
-        safeRebuildLayer(layer, newPaths) {
-            try {
-                const childrenToRemove = [];
-                for (let child of layer.children) {
-                    if (child !== layer.layerData.backgroundGraphics) {
-                        childrenToRemove.push(child);
-                    }
-                }
-                
-                childrenToRemove.forEach(child => {
-                    try {
-                        layer.removeChild(child);
-                        if (child.destroy && typeof child.destroy === 'function') {
-                            child.destroy({ children: true, texture: false, baseTexture: false });
-                        }
-                    } catch (removeError) {
-                        console.warn('Failed to remove child:', removeError);
-                    }
-                });
-                
-                layer.layerData.paths = [];
-                
-                let addedCount = 0;
-                for (let i = 0; i < newPaths.length; i++) {
-                    const path = newPaths[i];
-                    
-                    try {
-                        const rebuildSuccess = this.rebuildPathGraphics(path);
-                        
-                        if (rebuildSuccess && path.graphics) {
-                            layer.layerData.paths.push(path);
-                            layer.addChild(path.graphics);
-                            addedCount++;
-                        }
-                        
-                    } catch (pathError) {
-                        console.error(`Error adding path ${i}:`, pathError);
-                    }
-                }
-                
-                return addedCount > 0 || newPaths.length === 0;
-                
-            } catch (error) {
-                console.error('Error in safeRebuildLayer:', error);
-                return false;
-            }
-        }
-
-        rebuildPathGraphics(path) {
-            try {
-                if (path.graphics) {
-                    try {
-                        if (path.graphics.destroy && typeof path.graphics.destroy === 'function') {
-                            path.graphics.destroy();
-                        }
-                    } catch (destroyError) {
-                        console.warn('Graphics destroy failed:', destroyError);
-                    }
-                    path.graphics = null;
-                }
-                
-                path.graphics = new PIXI.Graphics();
-                
-                if (path.points && Array.isArray(path.points) && path.points.length > 0) {
-                    for (let point of path.points) {
-                        if (typeof point.x === 'number' && typeof point.y === 'number' &&
-                            isFinite(point.x) && isFinite(point.y)) {
-                            
-                            path.graphics.circle(point.x, point.y, (path.size || 16) / 2);
-                            path.graphics.fill({ 
-                                color: path.color || 0x800000, 
-                                alpha: path.opacity || 1.0 
-                            });
-                        }
-                    }
-                }
-                
-                return true;
-                
-            } catch (error) {
-                console.error('Error in rebuildPathGraphics:', error);
-                path.graphics = null;
-                return false;
-            }
-        }
-
-        isTransformNonDefault(transform) {
-            if (!transform) return false;
-            return (transform.x !== 0 || transform.y !== 0 || 
-                    transform.rotation !== 0 || Math.abs(transform.scaleX) !== 1 || Math.abs(transform.scaleY) !== 1);
         }
 
         updateCursor() {
@@ -1245,14 +1424,11 @@
             }
         }
 
-        // ===== Layer CRUD =====
-        
+        // ========================================
+        // Layer Management（既存機能維持）
+        // ========================================
+
         createLayer(name, isBackground = false) {
-            if (!this.currentCutContainer) {
-                console.error('No active CUT container');
-                return null;
-            }
-            
             const layerCounter = Date.now();
             const layer = new PIXI.Container();
             const layerId = `layer_${layerCounter}`;
@@ -1260,10 +1436,11 @@
             layer.label = layerId;
             layer.layerData = {
                 id: layerId,
-                name: name || `レイヤー${this.currentCutContainer.children.length + 1}`,
+                name: name || `レイヤー${this.layers.length + 1}`,
                 visible: true,
                 opacity: 1.0,
                 isBackground: isBackground,
+                transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
                 paths: []
             };
 
@@ -1279,10 +1456,25 @@
                 layer.layerData.backgroundGraphics = bg;
             }
 
-            this.currentCutContainer.addChild(layer);
+            this.layers.push(layer);
+            this.layersContainer.addChild(layer);
             
-            const layers = this.getLayers();
-            this.setActiveLayer(layers.length - 1);
+            this.setActiveLayer(this.layers.length - 1);
+            
+            // AnimationSystemに即座に追加
+            if (this.animationSystem?.addLayerToCurrentCut) {
+                const layerData = {
+                    id: layerId,
+                    name: name || `レイヤー${this.layers.length}`,
+                    visible: true,
+                    opacity: 1.0,
+                    isBackground: isBackground,
+                    transform: { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 },
+                    paths: []
+                };
+                
+                this.animationSystem.addLayerToCurrentCut(layerData);
+            }
             
             if (this.eventBus) {
                 this.eventBus.emit('layer:created', { layerId, name, isBackground });
@@ -1291,22 +1483,19 @@
             this.updateLayerPanelUI();
             this.updateStatusDisplay();
             
-            return { layer, index: layers.length - 1 };
+            return { layer, index: this.layers.length - 1 };
         }
 
         deleteLayer(layerIndex) {
-            const layers = this.getLayers();
-            if (layers.length <= 1) {
-                console.warn('Cannot delete last remaining layer');
+            if (this.layers.length <= 1) {
                 return false;
             }
             
-            if (layerIndex < 0 || layerIndex >= layers.length) {
-                console.warn(`Invalid layer index for deletion: ${layerIndex}`);
+            if (layerIndex < 0 || layerIndex >= this.layers.length) {
                 return false;
             }
 
-            const layer = layers[layerIndex];
+            const layer = this.layers[layerIndex];
             const layerId = layer.layerData.id;
             
             if (layer.layerData.paths) {
@@ -1319,13 +1508,19 @@
 
             this.layerTransforms.delete(layerId);
 
-            this.currentCutContainer.removeChild(layer);
+            this.layersContainer.removeChild(layer);
             layer.destroy({ children: true, texture: false, baseTexture: false });
+            this.layers.splice(layerIndex, 1);
 
             if (this.activeLayerIndex === layerIndex) {
-                this.activeLayerIndex = Math.min(this.activeLayerIndex, layers.length - 2);
+                this.activeLayerIndex = Math.min(this.activeLayerIndex, this.layers.length - 1);
             } else if (this.activeLayerIndex > layerIndex) {
                 this.activeLayerIndex--;
+            }
+
+            // AnimationSystemにも反映
+            if (this.animationSystem?.saveCutLayerStates) {
+                this.animationSystem.saveCutLayerStates();
             }
 
             this.updateLayerPanelUI();
@@ -1339,8 +1534,7 @@
         }
 
         setActiveLayer(index) {
-            const layers = this.getLayers();
-            if (index >= 0 && index < layers.length) {
+            if (index >= 0 && index < this.layers.length) {
                 const oldIndex = this.activeLayerIndex;
                 this.activeLayerIndex = index;
                 
@@ -1355,18 +1549,24 @@
                     this.eventBus.emit('layer:activated', { 
                         layerIndex: index, 
                         oldIndex: oldIndex,
-                        layerId: layers[index]?.layerData?.id
+                        layerId: this.layers[index]?.layerData?.id
                     });
                 }
             }
         }
 
+        getActiveLayer() {
+            return this.activeLayerIndex >= 0 ? this.layers[this.activeLayerIndex] : null;
+        }
+
         toggleLayerVisibility(layerIndex) {
-            const layers = this.getLayers();
-            if (layerIndex >= 0 && layerIndex < layers.length) {
-                const layer = layers[layerIndex];
+            if (layerIndex >= 0 && layerIndex < this.layers.length) {
+                const layer = this.layers[layerIndex];
                 layer.layerData.visible = !layer.layerData.visible;
                 layer.visible = layer.layerData.visible;
+                
+                this._markLayerDirty(layerIndex);
+                this.commitChanges();
                 
                 this.updateLayerPanelUI();
                 this.requestThumbnailUpdate(layerIndex);
@@ -1382,22 +1582,40 @@
         }
 
         addPathToLayer(layerIndex, path) {
-            const layers = this.getLayers();
-            if (layerIndex >= 0 && layerIndex < layers.length) {
-                const layer = layers[layerIndex];
+            if (layerIndex >= 0 && layerIndex < this.layers.length) {
+                const layer = this.layers[layerIndex];
                 
                 layer.layerData.paths.push(path);
                 layer.addChild(path.graphics);
                 
                 this.requestThumbnailUpdate(layerIndex);
                 
-                // CUTサムネイル更新
-                if (this.animationSystem?.generateCutThumbnail) {
-                    const cutIndex = this.animationSystem.getCurrentCutIndex();
-                    setTimeout(() => {
-                        this.animationSystem.generateCutThumbnail(cutIndex);
-                    }, 100);
-                }
+                // dirtyマーク
+                this._markLayerDirty(layerIndex);
+                
+                // 描画完了時にコミット
+                requestAnimationFrame(() => {
+                    this.commitChanges();
+                    
+                    if (this.eventBus) {
+                        this.eventBus.emit('draw:commit', { 
+                            layerIndex, 
+                            layerId: layer.layerData.id 
+                        });
+                        this.eventBus.emit('operation:commit', { 
+                            layerIndex, 
+                            layerId: layer.layerData.id, 
+                            type: 'draw' 
+                        });
+                    }
+                    
+                    if (this.animationSystem?.generateCutThumbnailOptimized) {
+                        const currentCutIndex = this.animationSystem.getCurrentCutIndex();
+                        setTimeout(() => {
+                            this.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
+                        }, 50);
+                    }
+                });
                 
                 if (this.eventBus) {
                     this.eventBus.emit('layer:path-added', { 
@@ -1421,11 +1639,12 @@
             }
         }
 
-        // ===== Thumbnail =====
-        
+        // ========================================
+        // Thumbnail Management（既存機能維持）
+        // ========================================
+
         requestThumbnailUpdate(layerIndex) {
-            const layers = this.getLayers();
-            if (layerIndex >= 0 && layerIndex < layers.length) {
+            if (layerIndex >= 0 && layerIndex < this.layers.length) {
                 this.thumbnailUpdateQueue.add(layerIndex);
                 
                 if (!this.thumbnailUpdateTimer) {
@@ -1456,14 +1675,13 @@
         }
 
         updateThumbnail(layerIndex) {
-            if (!this.app?.renderer) return;
-            
-            const layers = this.getLayers();
-            if (layerIndex < 0 || layerIndex >= layers.length) return;
+            if (!this.app?.renderer || layerIndex < 0 || layerIndex >= this.layers.length) {
+                return;
+            }
 
-            const layer = layers[layerIndex];
+            const layer = this.layers[layerIndex];
             const layerItems = document.querySelectorAll('.layer-item');
-            const panelIndex = layers.length - 1 - layerIndex;
+            const panelIndex = this.layers.length - 1 - layerIndex;
             
             if (panelIndex < 0 || panelIndex >= layerItems.length) return;
             
@@ -1527,7 +1745,7 @@
                 layer.pivot.set(originalState.pivot.x, originalState.pivot.y);
                 
                 tempContainer.removeChild(layer);
-                this.currentCutContainer.addChildAt(layer, layerIndex);
+                this.layersContainer.addChildAt(layer, layerIndex);
                 
                 const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
                 const targetCanvas = document.createElement('canvas');
@@ -1560,14 +1778,14 @@
 
         updateLayerPanelUI() {
             const layerList = document.getElementById('layer-list');
-            if (!layerList) return;
+            if (!layerList) {
+                return;
+            }
 
             layerList.innerHTML = '';
-            
-            const layers = this.getLayers();
 
-            for (let i = layers.length - 1; i >= 0; i--) {
-                const layer = layers[i];
+            for (let i = this.layers.length - 1; i >= 0; i--) {
+                const layer = this.layers[i];
                 const isActive = (i === this.activeLayerIndex);
                 
                 const layerItem = document.createElement('div');
@@ -1603,9 +1821,7 @@
                             this.toggleLayerVisibility(i);
                             e.stopPropagation();
                         } else if (action.includes('layer-delete')) {
-                            if (confirm(`レイヤー "${layer.layerData.name}" を削除しますか？`)) {
-                                this.deleteLayer(i);
-                            }
+                            this.deleteLayer(i);
                             e.stopPropagation();
                         } else {
                             this.setActiveLayer(i);
@@ -1618,32 +1834,43 @@
                 layerList.appendChild(layerItem);
             }
             
-            for (let i = 0; i < layers.length; i++) {
+            for (let i = 0; i < this.layers.length; i++) {
                 this.requestThumbnailUpdate(i);
             }
         }
 
         updateStatusDisplay() {
             const statusElement = document.getElementById('current-layer');
-            const layers = this.getLayers();
-            
             if (statusElement && this.activeLayerIndex >= 0) {
-                const layer = layers[this.activeLayerIndex];
+                const layer = this.layers[this.activeLayerIndex];
                 statusElement.textContent = layer.layerData.name;
             }
             
             if (this.eventBus) {
                 this.eventBus.emit('ui:status-updated', {
                     currentLayer: this.activeLayerIndex >= 0 ? 
-                        layers[this.activeLayerIndex].layerData.name : 'なし',
-                    layerCount: layers.length,
+                        this.layers[this.activeLayerIndex].layerData.name : 'なし',
+                    layerCount: this.layers.length,
                     activeIndex: this.activeLayerIndex
                 });
             }
         }
 
-        // ===== Setters =====
-        
+        setActiveCut(cutIndex) {
+            if (!this.animationSystem) {
+                return;
+            }
+            
+            setTimeout(() => {
+                this.updateLayerPanelUI();
+                this.updateStatusDisplay();
+                
+                if (this.isLayerMoveMode) {
+                    this.updateLayerTransformPanelValues();
+                }
+            }, 50);
+        }
+
         setCameraSystem(cameraSystem) {
             this.cameraSystem = cameraSystem;
         }
@@ -1662,12 +1889,4 @@
     }
 
     window.TegakiLayerSystem = LayerSystem;
-
-    console.log('✅ layer-system.js loaded (RenderTexture管理追加 Phase 1)');
-    console.log('🔧 改修内容:');
-    console.log('  ✅ RenderTexture管理機能追加');
-    console.log('  ✅ CUT単位でのGPUテクスチャ独立性保証');
-    console.log('  ✅ サムネイル更新フラグ管理追加');
-    console.log('  ✅ 既存機能完全維持: CUTフォルダ方式・Transform管理・EventBus統合');
-
 })();
