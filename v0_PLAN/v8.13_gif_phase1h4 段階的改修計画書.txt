@@ -1,0 +1,785 @@
+# v8.13_gif_phase1h4 段階的改修計画書
+
+**作成日**: 2025-10-02  
+**対象バージョン**: v8.13_gif_phase1h4  
+**目的**: データ所有権の明確化とCUT独立性の確保
+
+---
+
+## 📋 目次
+
+1. [現状分析](#現状分析)
+2. [根本原因](#根本原因)
+3. [改修方針](#改修方針)
+4. [データモデル設計](#データモデル設計)
+5. [段階的作業計画](#段階的作業計画)
+6. [各ステップ詳細](#各ステップ詳細)
+7. [検証方法](#検証方法)
+
+---
+
+## 現状分析
+
+### 🐛 観察された症状
+
+1. **CUT間でのデータ共有**: 1つのCUTで描画すると他のCUTにも反映される
+2. **データの二重管理**: `LayerSystem`と`AnimationSystem`の両方がレイヤーデータを保持
+3. **同期タイミングの不明確さ**: deep copyのタイミングが不明確
+4. **データ劣化**: 同期往復でpoints配列の精度低下やNaN発生
+5. **Transform破壊**: `core-engine.js`がpoints配列を直接書き換え
+
+### 📁 現在のファイル構造
+
+```
+v8.13_gif_phase1h4/
+├── index.html              # メインHTML
+├── config.js               # 設定ファイル
+├── coordinate-system.js    # 座標系API
+├── system/
+│   ├── event-bus.js        # イベント通信
+│   ├── layer-system.js     # レイヤー管理（描画インスタンス）
+│   ├── animation-system.js # アニメーション管理（永続データ）
+│   ├── camera-system.js    # カメラ制御
+│   ├── drawing-clipboard.js
+│   ├── gif-exporter.js
+│   └── history.js
+├── ui/
+│   ├── ui-panels.js
+│   └── timeline-ui.js
+├── core-runtime.js         # ランタイムAPI
+└── core-engine.js          # 描画エンジン
+```
+
+---
+
+## 根本原因
+
+### 1. 所有権の不明確さ（最優先）
+
+- `LayerSystem`と`AnimationSystem`が同一オブジェクトへの参照を共有
+- どちらが「正」のデータか不明
+- 変更がどちらで発生したか追跡不可能
+
+### 2. 浅いコピーによる参照共有
+
+```javascript
+// ❌ 問題のあるコード例
+currentLayers.forEach((layerData, index) => {
+    const layer = new PIXI.Container();
+    layer.layerData = layerData; // 参照を共有
+    // layerData.pathsも参照共有されている
+});
+```
+
+### 3. 循環的な同期
+
+```
+LayerSystem → AnimationSystem → LayerSystem → ...
+   ↓              ↓                ↓
+ 精度低下      参照破壊        データ不整合
+```
+
+### 4. Transform適用時の破壊
+
+```javascript
+// ❌ core-engine.jsでの問題
+path.points.forEach(point => {
+    point.x = transformed.x; // 元データを破壊
+    point.y = transformed.y;
+});
+```
+
+---
+
+## 改修方針
+
+### 設計原則
+
+1. **Single Source of Truth (SSoT)**
+   - `AnimationSystem`がプロジェクトデータの唯一の所有者
+   - `LayerSystem`は描画用の一時インスタンスのみ管理
+
+2. **不可変データ（Immutable Data）**
+   - 読み取りは常にdeep copyを返す
+   - 変更はcopy-on-writeで新しいオブジェクトを生成
+
+3. **単方向データフロー**
+   ```
+   AnimationSystem (SSoT)
+        ↓ getFrame() → deep clone
+   LayerSystem (描画インスタンス)
+        ↓ extractState() → 差分のみ
+   AnimationSystem (SSoT更新)
+   ```
+
+4. **Transform非破壊**
+   - `originalPoints`を保持
+   - Transform結果は別キーに格納
+   - 描画時のみ変換を適用
+
+5. **検証機構の導入**
+   - 同期前後でハッシュ比較
+   - NaN/Infinity検出
+   - points配列長の変化監視
+
+---
+
+## データモデル設計
+
+### AnimationSystem (SSoT)
+
+```javascript
+Project {
+  id: string,
+  cuts: Map<cutId, Cut>
+}
+
+Cut {
+  id: string,
+  name: string,
+  frames: Frame[], // フレームの配列
+  thumbnail?: string
+}
+
+Frame {
+  index: number,
+  layers: LayerState[] // immutable
+}
+
+LayerState {
+  id: string,
+  name: string,
+  visible: boolean,
+  opacity: number,
+  isBackground: boolean,
+  transform: {
+    x: number,
+    y: number,
+    rotation: number,
+    scaleX: number,
+    scaleY: number
+  },
+  paths: Path[]
+}
+
+Path {
+  id: string,
+  points: Point[],      // 描画用（Transform適用後）
+  originalPoints: Point[], // 元データ（Transform前）
+  size: number,
+  color: number,
+  opacity: number,
+  tool: string,
+  isComplete: boolean
+}
+
+Point {
+  x: number,
+  y: number
+}
+```
+
+### LayerSystem (描画インスタンス)
+
+```javascript
+// PIXI.Containerのラッパー
+LayerInstance {
+  container: PIXI.Container,
+  layerData: {
+    id: string, // AnimationSystemのLayerState.idと対応
+    // その他はローカルキャッシュ
+  },
+  isDirty: boolean // 変更フラグ
+}
+```
+
+---
+
+## 段階的作業計画
+
+### 全体スケジュール（推定10-12日）
+
+```
+Phase 1: 基盤強化（3日）
+  ↓
+Phase 2: データ分離（4日）
+  ↓
+Phase 3: 同期改善（3日）
+  ↓
+Phase 4: 検証・最適化（2日）
+```
+
+### 各Phaseの概要
+
+| Phase | 作業内容 | 所要日数 | 優先度 |
+|-------|---------|---------|--------|
+| Phase 1 | 基盤強化・検証機構 | 3日 | 最高 |
+| Phase 2 | データモデル分離 | 4日 | 高 |
+| Phase 3 | 同期プロトコル改善 | 3日 | 高 |
+| Phase 4 | 検証・最適化 | 2日 | 中 |
+
+---
+
+## 各ステップ詳細
+
+### Phase 1: 基盤強化（3日）
+
+#### Step 1.1: Deep Clone実装（0.5日）
+
+**目的**: 信頼できるdeep clone関数の導入
+
+**作業内容**:
+1. `system/data-utils.js`を新規作成
+2. `structuredClone`のpolyfillを実装
+3. データ検証関数を実装
+
+**成果物**:
+```javascript
+// system/data-utils.js
+class DataUtils {
+    static deepClone(obj) {
+        // structuredClone利用可能ならそれを使用
+        if (typeof structuredClone === 'function') {
+            return structuredClone(obj);
+        }
+        // fallback実装
+        return JSON.parse(JSON.stringify(obj));
+    }
+    
+    static validateLayerState(layerState) {
+        // NaN/Infinity検出
+        // 必須フィールド確認
+        return { valid: boolean, errors: string[] };
+    }
+    
+    static hashObject(obj) {
+        // 簡易ハッシュ生成
+        return JSON.stringify(obj).length;
+    }
+}
+```
+
+**検証**:
+- 単体テスト（ブラウザコンソール）
+- 循環参照のテスト
+- パフォーマンステスト
+
+---
+
+#### Step 1.2: AnimationSystem API整理（1日）
+
+**目的**: SSoTとしてのAPI契約を明確化
+
+**改修箇所**: `system/animation-system.js`
+
+**追加メソッド**:
+```javascript
+// 読み取り専用（deep cloneを返す）
+getFrame(cutId, frameIndex) {
+    const frame = this._cuts.get(cutId).frames[frameIndex];
+    return DataUtils.deepClone(frame);
+}
+
+// 更新（copy-on-write）
+updateFrame(cutId, frameIndex, patch) {
+    const oldFrame = this._cuts.get(cutId).frames[frameIndex];
+    const newFrame = {
+        ...DataUtils.deepClone(oldFrame),
+        ...patch
+    };
+    this._cuts.get(cutId).frames[frameIndex] = newFrame;
+    this._eventBus.emit('animation:frame:updated', {
+        cutId, frameIndex, newFrame
+    });
+    return newFrame;
+}
+
+// レイヤー操作
+updateLayerInFrame(cutId, frameIndex, layerIndex, patch) {
+    // 部分更新
+}
+
+deleteLayerFromFrame(cutId, frameIndex, layerIndex) {
+    // レイヤー削除
+}
+```
+
+**検証**:
+- `getFrame()`が元データを変更しないことを確認
+- `updateFrame()`が新しいオブジェクトを返すことを確認
+
+---
+
+#### Step 1.3: 検証機構導入（1.5日）
+
+**目的**: データ劣化を早期発見
+
+**作業内容**:
+1. `system/data-validator.js`を新規作成
+2. 同期前後の検証を自動化
+
+**成果物**:
+```javascript
+class DataValidator {
+    static validateSync(before, after) {
+        const beforeHash = DataUtils.hashObject(before);
+        const afterHash = DataUtils.hashObject(after);
+        
+        // points配列長の変化
+        const beforePointsCount = this._countPoints(before);
+        const afterPointsCount = this._countPoints(after);
+        
+        if (beforePointsCount !== afterPointsCount) {
+            console.warn('Points count changed:', 
+                beforePointsCount, '→', afterPointsCount);
+        }
+        
+        // NaN検出
+        const hasNaN = this._detectNaN(after);
+        if (hasNaN) {
+            console.error('NaN detected in data!');
+        }
+        
+        return {
+            valid: !hasNaN && (beforePointsCount === afterPointsCount),
+            beforeHash,
+            afterHash,
+            pointsCountChanged: beforePointsCount !== afterPointsCount
+        };
+    }
+    
+    static _countPoints(data) {
+        // 再帰的にpoints配列をカウント
+    }
+    
+    static _detectNaN(data) {
+        // NaN/Infinityを検出
+    }
+}
+```
+
+---
+
+### Phase 2: データモデル分離（4日）
+
+#### Step 2.1: LayerState構造変更（1.5日）
+
+**目的**: `originalPoints`を導入してTransform非破壊化
+
+**改修箇所**: `system/animation-system.js`
+
+**変更内容**:
+```javascript
+// 既存のPath構造に追加
+Path {
+    points: Point[],         // Transform適用後（描画用）
+    originalPoints: Point[], // Transform前（永続データ）
+    // ... 既存フィールド
+}
+```
+
+**マイグレーション**:
+```javascript
+// 既存データのマイグレーション関数
+migratePathData(path) {
+    if (!path.originalPoints) {
+        path.originalPoints = DataUtils.deepClone(path.points);
+    }
+    return path;
+}
+```
+
+---
+
+#### Step 2.2: LayerSystem描画インスタンス化（2日）
+
+**目的**: LayerSystemを描画専用にする
+
+**改修箇所**: `system/layer-system.js`
+
+**主要変更**:
+```javascript
+class LayerSystem {
+    constructor() {
+        this.layerInstances = []; // 描画用インスタンス
+        this.mountedFrameId = null; // マウント中のFrame ID
+    }
+    
+    // AnimationSystemからFrameをマウント
+    mountFrame(frame) {
+        // 既存インスタンスをクリア
+        this._clearInstances();
+        
+        // deep cloneして描画インスタンス作成
+        const clonedFrame = DataUtils.deepClone(frame);
+        
+        clonedFrame.layers.forEach(layerState => {
+            const instance = this._createLayerInstance(layerState);
+            this.layerInstances.push(instance);
+        });
+        
+        this.mountedFrameId = frame.id;
+        this._render();
+    }
+    
+    // 変更を差分として抽出
+    extractDirtyState() {
+        const dirtyLayers = this.layerInstances
+            .filter(inst => inst.isDirty)
+            .map(inst => ({
+                id: inst.layerData.id,
+                paths: inst.layerData.paths
+            }));
+        
+        return dirtyLayers;
+    }
+    
+    _createLayerInstance(layerState) {
+        const container = new PIXI.Container();
+        container.label = layerState.id;
+        
+        // deep cloneしたデータを保持
+        const instance = {
+            container,
+            layerData: layerState, // これはもうclone済み
+            isDirty: false
+        };
+        
+        this._buildGraphics(instance);
+        
+        return instance;
+    }
+}
+```
+
+---
+
+#### Step 2.3: Transform非破壊化（0.5日）
+
+**目的**: Transform適用時に元データを保護
+
+**改修箇所**: `core-engine.js`, `system/layer-system.js`
+
+**変更内容**:
+```javascript
+// Transform適用関数の改修
+applyTransformToPath(path, transform) {
+    // originalPointsを基準に変換
+    const basePoints = path.originalPoints || path.points;
+    
+    // 新しいpoints配列を生成（非破壊）
+    const transformedPoints = basePoints.map(point => ({
+        x: point.x * transform.scaleX + transform.x,
+        y: point.y * transform.scaleY + transform.y
+    }));
+    
+    // 描画用pointsのみ更新
+    return {
+        ...path,
+        points: transformedPoints,
+        originalPoints: basePoints // 保持
+    };
+}
+```
+
+---
+
+### Phase 3: 同期プロトコル改善（3日）
+
+#### Step 3.1: 単方向データフロー実装（1.5日）
+
+**目的**: 双方向同期を廃止
+
+**改修箇所**: `system/layer-system.js`, `system/animation-system.js`
+
+**同期プロトコル**:
+```javascript
+// ① AnimationSystem → LayerSystem（読み取り）
+// LayerSystem側
+onCutChange(cutId, frameIndex) {
+    const frame = this.animationSystem.getFrame(cutId, frameIndex);
+    this.mountFrame(frame); // deep cloneして描画
+}
+
+// ② LayerSystem → AnimationSystem（書き込み）
+// LayerSystem側
+commitChanges() {
+    const dirtyState = this.extractDirtyState();
+    
+    dirtyState.forEach(layerPatch => {
+        this.animationSystem.updateLayerInFrame(
+            this.currentCutId,
+            this.currentFrameIndex,
+            layerPatch.layerIndex,
+            { paths: layerPatch.paths }
+        );
+    });
+    
+    // dirty flagクリア
+    this._clearDirtyFlags();
+}
+```
+
+---
+
+#### Step 3.2: イベント駆動同期（1日）
+
+**目的**: 明示的なタイミングで同期
+
+**作業内容**:
+```javascript
+// EventBus経由の同期イベント定義
+eventBus.on('animation:frame:updated', (data) => {
+    // AnimationSystemが更新したらLayerSystemに通知
+    layerSystem.mountFrame(data.newFrame);
+});
+
+eventBus.on('layer:commit-requested', () => {
+    // UI操作完了時に明示的にcommit
+    layerSystem.commitChanges();
+});
+```
+
+**トリガータイミング**:
+- フレーム切り替え時
+- CUT切り替え時
+- 描画完了時（`pointerup`）
+- Vキー解放時（Transform確定）
+- アンドゥ/リドゥ時
+
+---
+
+#### Step 3.3: 同期の検証（0.5日）
+
+**目的**: 同期の正しさを確認
+
+**検証項目**:
+```javascript
+// 同期テストヘルパー
+class SyncTester {
+    testRoundTrip() {
+        // 1. AnimationSystemからgetFrame
+        const frame1 = animationSystem.getFrame(cutId, 0);
+        
+        // 2. LayerSystemにマウント
+        layerSystem.mountFrame(frame1);
+        
+        // 3. LayerSystemで変更
+        // (描画操作をシミュレート)
+        
+        // 4. commitして戻す
+        layerSystem.commitChanges();
+        
+        // 5. 再度取得
+        const frame2 = animationSystem.getFrame(cutId, 0);
+        
+        // 6. データ整合性検証
+        const validation = DataValidator.validateSync(frame1, frame2);
+        console.log('Sync validation:', validation);
+    }
+}
+```
+
+---
+
+### Phase 4: 検証・最適化（2日）
+
+#### Step 4.1: 統合テスト（1日）
+
+**テストシナリオ**:
+1. CUT作成 → 描画 → CUT切り替え → 元CUTに戻る
+2. レイヤー追加 → 描画 → Transform → 確定
+3. 複数CUTでの独立性確認
+4. アンドゥ/リドゥの動作確認
+5. GIFエクスポートの動作確認
+
+**検証スクリプト**:
+```javascript
+// 手動実行用テストスクリプト
+class IntegrationTest {
+    async testCutIndependence() {
+        // CUT1で描画
+        animationSystem.createCut();
+        layerSystem.addPathToActiveLayer(testPath);
+        layerSystem.commitChanges();
+        
+        // CUT2作成
+        animationSystem.createCut();
+        
+        // CUT1に戻る
+        animationSystem.setCurrentCut(0);
+        
+        // CUT1のデータが保持されているか確認
+        const frame = animationSystem.getFrame(0, 0);
+        assert(frame.layers[0].paths.length > 0);
+    }
+}
+```
+
+---
+
+#### Step 4.2: パフォーマンス最適化（1日）
+
+**最適化項目**:
+1. Deep cloneの頻度削減
+   - マウント時のみclone
+   - commit時は差分のみ
+2. サムネイル生成の最適化
+   - 遅延評価
+   - キャッシュ活用
+3. 不要なイベント削減
+   - debounce導入
+
+**パフォーマンス計測**:
+```javascript
+class PerformanceMonitor {
+    measureSync() {
+        const start = performance.now();
+        layerSystem.commitChanges();
+        const end = performance.now();
+        console.log('Commit time:', end - start, 'ms');
+    }
+    
+    measureMount() {
+        const start = performance.now();
+        layerSystem.mountFrame(frame);
+        const end = performance.now();
+        console.log('Mount time:', end - start, 'ms');
+    }
+}
+```
+
+---
+
+## 検証方法
+
+### ユニットテスト
+
+```javascript
+// ブラウザコンソールで実行
+function testDeepClone() {
+    const original = {
+        id: 'test',
+        paths: [{ points: [{ x: 10, y: 20 }] }]
+    };
+    
+    const cloned = DataUtils.deepClone(original);
+    cloned.paths[0].points[0].x = 999;
+    
+    console.assert(original.paths[0].points[0].x === 10, 
+        'Deep clone failed');
+}
+```
+
+### 統合テスト
+
+```javascript
+// 手動実行テストシート
+const testSuite = {
+    test1_cutIndependence: async () => {
+        // CUT独立性テスト
+    },
+    test2_transformNonDestructive: async () => {
+        // Transform非破壊テスト
+    },
+    test3_undoRedo: async () => {
+        // Undo/Redoテスト
+    }
+};
+
+// 全テスト実行
+Object.keys(testSuite).forEach(async testName => {
+    console.log(`Running ${testName}...`);
+    await testSuite[testName]();
+});
+```
+
+---
+
+## 移行計画
+
+### バージョニング
+
+- `v8.13_gif_phase1h4` (現行)
+- `v8.13_gif_phase1h5_step1` (Phase 1完了)
+- `v8.13_gif_phase1h5_step2` (Phase 2完了)
+- `v8.13_gif_phase1h5_step3` (Phase 3完了)
+- `v8.13_gif_phase1h5` (全Phase完了)
+
+### 各バージョンの動作保証
+
+- 各ステップ完了時点で動作確認
+- 既存機能の回帰テスト
+- 新機能の動作確認
+
+---
+
+## リスク管理
+
+### 高リスク項目
+
+1. **Deep cloneのパフォーマンス**: 大量データで遅延の可能性
+   - **対策**: プロファイリング、最適化
+2. **既存データの互換性**: 古いデータ構造の扱い
+   - **対策**: マイグレーション関数の実装
+3. **EventBusのタイミング競合**: 複数イベントの同時発火
+   - **対策**: イベントキューイング
+
+### 中リスク項目
+
+1. **Transform確定タイミングの変更**: UIの挙動変化
+   - **対策**: ユーザーテスト
+2. **サムネイル生成の遅延**: UI応答性低下
+   - **対策**: 非同期処理、プログレス表示
+
+---
+
+## 成果物チェックリスト
+
+### Phase 1
+- [ ] `system/data-utils.js` 作成完了
+- [ ] `system/data-validator.js` 作成完了
+- [ ] AnimationSystem API整理完了
+- [ ] 単体テスト完了
+
+### Phase 2
+- [ ] `originalPoints`導入完了
+- [ ] LayerSystem描画専用化完了
+- [ ] Transform非破壊化完了
+- [ ] マイグレーション関数完成
+
+### Phase 3
+- [ ] 単方向データフロー実装完了
+- [ ] イベント駆動同期完了
+- [ ] 同期検証完了
+
+### Phase 4
+- [ ] 統合テスト完了
+- [ ] パフォーマンス最適化完了
+- [ ] ドキュメント更新完了
+
+---
+
+## 次のClaudeへの引き継ぎ方法
+
+この計画書と以下の情報を提供してください:
+
+1. **現在のPhase**: 例: "Phase 2 Step 2.2まで完了"
+2. **完了した作業**: 例: "data-utils.js実装済み"
+3. **現在の問題**: 例: "deep cloneが遅い"
+4. **次の作業**: 例: "Phase 2 Step 2.3から開始"
+
+---
+
+## 補足: AIによる改修のベストプラクティス
+
+1. **一度に1ファイルのみ改修**: 影響範囲を最小化
+2. **変更前にバックアップ**: 既存コードをコメントで保存
+3. **段階的な検証**: 各ステップごとに動作確認
+4. **明確なコミットメッセージ**: 変更内容を簡潔に記述
+
+---
+
+**作成者**: Claude (Anthropic)  
+**レビュー**: AI改修専門設計  
+**最終更新**: 2025-10-02
