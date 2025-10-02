@@ -1,0 +1,291 @@
+# Phase 2 Step 2.1 - originalPoints導入計画
+
+## 🎯 目的
+
+Transform適用時に元のpoints配列を保護し、非破壊的な変換を実現する。
+
+---
+
+## 📊 現在の問題
+
+### 問題1: Transformが元データを破壊
+
+```javascript
+// ❌ 現在の実装（破壊的）
+function applyTransform(path, transform) {
+    path.points.forEach(point => {
+        point.x = point.x * transform.scaleX + transform.x;
+        point.y = point.y * transform.scaleY + transform.y;
+    });
+    // 元のpointsが失われる！
+}
+```
+
+### 問題2: Transform解除時に元に戻せない
+
+```javascript
+// ❌ 元の座標が失われているため復元不可能
+function resetTransform(path) {
+    // どうやって元に戻す？
+}
+```
+
+---
+
+## ✅ 解決策: originalPoints導入
+
+### 新しいPath構造
+
+```javascript
+Path {
+    id: string,
+    points: Point[],         // Transform適用後（描画用）
+    originalPoints: Point[], // Transform前（永続データ）
+    size: number,
+    color: number,
+    opacity: number,
+    tool: string,
+    isComplete: boolean
+}
+```
+
+### 動作原理
+
+```javascript
+// ✅ 非破壊的なTransform適用
+function applyTransform(path, transform) {
+    // originalPointsを基準に変換
+    const basePoints = path.originalPoints || path.points;
+    
+    // 新しいpoints配列を生成
+    const transformedPoints = basePoints.map(p => ({
+        x: p.x * transform.scaleX + transform.x,
+        y: p.y * transform.scaleY + transform.y
+    }));
+    
+    return {
+        ...path,
+        points: transformedPoints,      // 描画用
+        originalPoints: basePoints      // 保持
+    };
+}
+```
+
+---
+
+## 🔧 実装内容
+
+### 1. AnimationSystemの改修
+
+#### 1-1. Path生成時にoriginalPointsを設定
+
+```javascript
+// copyCurrentLayersToIndependentState()内
+const independentPaths = originalLayer.layerData.paths.map(path => {
+    const points = DataUtils.deepClone(path.points);
+    
+    return {
+        id: 'path_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+        points: points,
+        originalPoints: DataUtils.deepClone(points), // ★追加
+        size: path.size || 16,
+        color: path.color || 0x800000,
+        opacity: path.opacity || 1.0,
+        tool: path.tool || 'pen',
+        isComplete: true
+    };
+});
+```
+
+#### 1-2. Path再構築時にoriginalPointsを保持
+
+```javascript
+// rebuildPathFromData()内
+return {
+    id: pathData.id,
+    points: DataUtils.deepClone(pathData.points),
+    originalPoints: DataUtils.deepClone(pathData.originalPoints || pathData.points), // ★追加
+    size: pathData.size || 16,
+    color: pathData.color || 0x800000,
+    opacity: pathData.opacity || 1.0,
+    tool: pathData.tool || 'pen',
+    graphics: graphics
+};
+```
+
+### 2. LayerSystemの改修
+
+#### 2-1. Path追加時にoriginalPointsを設定
+
+描画エンジンから渡されるpathにoriginalPointsを追加する必要があります。
+これは次のStep 2.2で`core-engine.js`を改修する際に対応します。
+
+#### 2-2. Transform確定時にoriginalPointsを更新
+
+```javascript
+// safeApplyTransformToPaths()内
+// Transform確定時は、transformedPointsを新しいoriginalPointsとして保存
+const transformedPath = {
+    id: path.id,
+    points: transformedPoints,
+    originalPoints: transformedPoints, // ★確定時は同じ値
+    size: path.size,
+    color: path.color,
+    opacity: path.opacity,
+    tool: path.tool,
+    isComplete: path.isComplete || true,
+    graphics: null
+};
+```
+
+### 3. マイグレーション関数
+
+既存データ用のマイグレーション関数を追加：
+
+```javascript
+/**
+ * 既存Pathデータのマイグレーション
+ */
+migratePathData(path) {
+    if (!path.originalPoints && path.points) {
+        path.originalPoints = DataUtils.deepClone(path.points);
+    }
+    return path;
+}
+
+/**
+ * CUT全体のマイグレーション
+ */
+migrateCutData(cut) {
+    if (!cut || !cut.layers) return cut;
+    
+    cut.layers.forEach(layer => {
+        if (layer.paths && Array.isArray(layer.paths)) {
+            layer.paths = layer.paths.map(path => this.migratePathData(path));
+        }
+    });
+    
+    return cut;
+}
+```
+
+---
+
+## 📝 改修が必要なメソッド一覧
+
+### AnimationSystem
+- [x] `copyCurrentLayersToIndependentState()` - originalPoints追加
+- [x] `rebuildPathFromData()` - originalPoints保持
+- [x] `migratePathData()` - 新規追加
+- [x] `migrateCutData()` - 新規追加
+
+### LayerSystem
+- [ ] `addPathToLayer()` - 次のStepで対応
+- [x] `safeApplyTransformToPaths()` - originalPoints更新
+
+### CoreEngine（次のStepで対応）
+- [ ] 描画完了時のPath生成でoriginalPoints追加
+
+---
+
+## 🧪 テスト方法
+
+### テスト1: マイグレーション
+
+```javascript
+// 既存データ（originalPointsなし）
+const oldPath = {
+    id: 'path1',
+    points: [{ x: 10, y: 20 }, { x: 30, y: 40 }],
+    size: 16
+};
+
+// マイグレーション実行
+const migrated = animationSystem.migratePathData(oldPath);
+
+console.assert(
+    migrated.originalPoints.length === migrated.points.length,
+    'Migration failed'
+);
+console.log('✅ Migration test passed');
+```
+
+### テスト2: Transform非破壊
+
+```javascript
+// Transform適用
+const path = {
+    points: [{ x: 10, y: 20 }],
+    originalPoints: [{ x: 10, y: 20 }]
+};
+
+const transform = { x: 5, y: 5, scaleX: 2, scaleY: 2 };
+const transformed = applyTransform(path, transform);
+
+// originalPointsは変更されていない
+console.assert(
+    transformed.originalPoints[0].x === 10,
+    'originalPoints was modified'
+);
+
+// pointsは変換されている
+console.assert(
+    transformed.points[0].x === 25, // 10 * 2 + 5
+    'Transform not applied'
+);
+
+console.log('✅ Non-destructive transform test passed');
+```
+
+---
+
+## ⚠️ 注意事項
+
+### 1. メモリ使用量の増加
+
+`originalPoints`を保持するため、メモリ使用量が約2倍になります。
+
+**対策**: 
+- Transformしていないpathは`originalPoints`を省略可能
+- 確定時は`originalPoints`を削除可能
+
+### 2. 既存データの互換性
+
+既存のCUTデータには`originalPoints`がありません。
+
+**対策**:
+- マイグレーション関数を用意
+- 読み込み時に自動マイグレーション
+
+### 3. 描画エンジンとの整合性
+
+描画完了時に生成されるpathに`originalPoints`を追加する必要があります。
+
+**対策**:
+- Phase 2 Step 2.3で`core-engine.js`を改修
+
+---
+
+## 🎯 次のステップ
+
+Step 2.1完了後、以下を確認：
+
+1. ✅ AnimationSystemにoriginalPoints対応追加
+2. ✅ マイグレーション関数追加
+3. ⏳ LayerSystem Transform確定処理の改修（このStep内）
+4. ⏳ 描画エンジン対応（次のStep）
+
+---
+
+## 📋 Step 2.1 実装チェックリスト
+
+- [ ] AnimationSystemにマイグレーション関数追加
+- [ ] Path生成時にoriginalPoints設定
+- [ ] Path再構築時にoriginalPoints保持
+- [ ] LayerSystem Transform確定時の処理改修
+- [ ] テスト実行
+- [ ] 既存CUTのマイグレーション確認
+
+---
+
+次のartifactで実装コードを提供します。
