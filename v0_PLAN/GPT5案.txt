@@ -1,276 +1,104 @@
-# v8.13_gif_phase1h4 — 改修計画書
+# 改修計画書（PixiJS v8.13 お絵かきツール / タイムライン独立化対応）
 
-**目的**
+## 1. 改修方針フロー
 
-* 現行コード群（index.html, config.js, coordinate-system.js, system/*, ui/*, core-*）における「一つのCUTの絵を描くと全てのCUTに反映される」等の不具合について、根本原因を明確化し、AIが読みやすく・メンテしやすい改修設計と段階的作業計画を提示する。
+### 現状の問題点
+- CUT が独立せず「同じキャンバスを参照」してしまう → 全 CUT に同じ絵が出る  
+- Timeline サムネイル更新で「毎描画ごとに Extract」してしまい → 左上に一瞬キャンバスが見える & チラつきが発生  
+- レイヤーパネルでは正常動作 → Timeline 側の設計が原因  
 
----
+### 新しい処理フロー
+1. **CUT（タイムラインの最上位単位）を独立した RenderTexture で保持**
+   - 各 CUT は「独立したレイヤーフォルダ」として管理  
+   - 共有参照ではなく CUT ごとに GPU メモリ上の RenderTexture を割当  
 
-## 1. 現状まとめ（観察された症状）
+2. **描画時の流れ**
+   - ペンで描く → 現在の CUT の「アクティブレイヤー」に描画  
+   - 描画が完了したら：  
+     a. GPU 上の RenderTexture を更新  
+     b. Timeline サムネイルを再生成（必要時のみ Extract → Canvas2D）  
 
-* 1つのCUTでの描画が他CUTにも反映される（期待はCUTごとに独立したフレーム群）
-* `LayerSystem` と `AnimationSystem` が二重管理しており、どちらがデータを『所有』しているか不明
-* 同期タイミングや深いコピー（deep copy）／参照共有の判断が不明瞭
-* `LayerSystem ⇄ AnimationSystem` 間の往復でデータが徐々に劣化（points配列の精度や参照破壊）
-* `core-engine.js` の Transform 適用中に元の `points` を上書きしてしまい Graphics の描画が壊れる可能性あり
-* `animation-system.js` の Deep Copy 実装が不十分な疑い
-* `_syncLayersContainerFromAnimationSystem()` と `saveCutLayerStates()` の相互作用で往復毎に状態が変化している
-
----
-
-## 2. 根本原因候補（優先順位つき）
-
-1. **所有権の不明瞭さ（Single Source of Truth 不在）**
-
-   * `LayerSystem` と `AnimationSystem` が同じオブジェクトを参照して変更を行うことで、どちらの変更が“正”か不明になる。
-2. **浅いコピー（参照コピー）と不適切な deep copy の混在**
-
-   * 配列やオブジェクトが参照として共有され、どこかで in-place 変更されると全体に波及する。
-3. **循環的データフロー**
-
-   * 同期関数が双方向に状態を書き戻すことで、ノイズや丸め誤差が累積する。
-4. **Transform 適用で元データが破壊される**
-
-   * `core-engine.js` が描画用の points を直接書き換える設計になっている。
-5. **同期ロジックのタイミング競合**
-
-   * フレーム切替やアンドゥ操作、エクスポート時などで複数の同期処理が同時に走る。
+3. **サムネイル更新の最適化**
+   - `timeline-ui.js` で更新は **差分検知**して最小限に抑える  
+   - `extract.base64()` や `extract.canvas()` を呼ぶのは「表示用サムネイル更新の直後のみ」  
 
 ---
 
-## 3. 改修設計方針（原則）
+## 2. ファイルごとの責務とメソッド定義
 
-1. **Single Source of Truth（SSoT）を明確化する**
-
-   * *AnimationSystem* がプロジェクトのフレーム（CUT）単位の永続データ（モデル）を所有する。*LayerSystem* は描画用インスタンスを所有するが、モデルの編集は AnimationSystem のAPI経由で行う。
-2. **不可変データ／差分書き込みを採用する**
-
-   * モデル（LayerState, FrameData等）は原則 immutable とし、変更は copy-on-write で新しいオブジェクトを返す。
-3. **同期は単方向（pull/push の一貫したプロトコル）**
-
-   * 明確な `exportToCanvas()` / `commitFromCanvas()` API を用意し、双方向で即書き戻すような設計はしない。
-4. **deep copy は信頼できる手段で行う**
-
-   * `structuredClone()`（利用可能なら）やカスタム deepClone を用いる。`JSON.parse(JSON.stringify(...))` は関数や一部データに弱いので限定的に。
-5. **transform は元データを破壊しない**
-
-   * Transform 適用は "副作用無し" にするか、元 points を `originalPoints` など別キーで保持する。
-6. **バージョン／スナップショットと検査を導入**
-
-   * 同期の前後でハッシュやシリアライズ比較を行い、劣化（ポイント数の変化やNaN発生）を検出する。
-7. **API と名前を厳格化する**
-
-   * `LayerSystem.getLayerInstance(id)`, `AnimationSystem.getFrame(cutId, frameIndex)`, `AnimationSystem.updateFrame(cutId, frameIndex, newFrame)` 等の契約を明確に。
+### system/layer-system.js
+- **責務**: CUT/レイヤー管理（データ構造＋Pixi.Container＋RenderTexture対応）
+- **主要メソッド**
+  - `createCut(id)` : 新しい CUT を生成、RenderTexture を割当
+  - `getCut(id)` : CUT を取得
+  - `setActiveCut(id)` : アクティブ CUT を切替
+  - `createLayer(cutId, options)` : CUT 内に新規レイヤーを作成
+  - `getActiveLayer(cutId)` : アクティブレイヤーを返す
+  - `renderCutToTexture(cutId)` : CUT 全体を RenderTexture に再描画  
 
 ---
 
-## 4. 提案データモデル（サマリ）
-
-```js
-// もっとも単純な形
-Project {
-  id: string,
-  cuts: { [cutId]: Cut }
-}
-Cut {
-  id: string,
-  frames: Frame[]
-}
-Frame {
-  index: number,
-  layers: LayerState[] // immutable-ish
-}
-LayerState {
-  id: string,
-  name: string,
-  visible: boolean,
-  opacity: number,
-  blendMode: string,
-  drawings: Drawing[] // 各Drawingはpoints等を持つ
-  metadata: { transform?, originalPointsHash? }
-}
-Drawing {
-  id: string,
-  type: 'stroke'|'fill'|'sprite',
-  points: [ {x,y}, ... ],
-  originalPoints?: [ {x,y}, ... ] // Transform前を保持
-}
-```
+### system/animation-system.js
+- **責務**: タイムラインと CUT の進行管理
+- **主要メソッド**
+  - `addCut()` : 新しい CUT を追加
+  - `removeCut(cutId)` : CUT を削除
+  - `gotoCut(cutId)` : 指定 CUT に移動
+  - `playAnimation()` : CUT を順にレンダリングして再生
+  - `pauseAnimation()` : 再生を停止
 
 ---
 
-## 5. LayerSystem / AnimationSystem API 契約（要約）
-
-### AnimationSystem（SSoT）
-
-* `getCut(cutId)` -> immutable Cut object (読み取り専用)
-* `getFrame(cutId, frameIndex)` -> immutable Frame object
-* `updateFrame(cutId, frameIndex, patch)` -> returns new Frame, internally replaces reference in project model
-* `createLayerInFrame(cutId, frameIndex, layerTemplate)`
-* `deleteLayerFromFrame(cutId, frameIndex, layerId)`
-* `serializeCut(cutId)` -> json
-
-### LayerSystem（描画インスタンス管理）
-
-* `mountFrame(frame)` -> canvas上に描画（内部で deep clone した描画インスタンスを作る）
-* `extractCanvasState()` -> 描画中の一時 state を AnimationSystem に渡す用（必要最小限の差分のみ）
-* `applyTransformToDrawing(layerId, drawingId, transformParams)` -> *描画インスタンスにのみ作用*（同期は明示的に AnimationSystem に commit する）
-
-**重要**: `mountFrame()` は渡された Frame オブジェクトを直接変更してはならない（コピーして扱う）。
+### ui/timeline-ui.js
+- **責務**: CUT のサムネイル表示と更新
+- **主要メソッド**
+  - `refreshTimeline()` : 全 CUT サムネイルを再生成
+  - `updateCutThumbnail(cutId)` : 特定 CUT のサムネイルを更新
+    - 内部処理: `layer-system.renderCutToTexture()` → `extract.canvas()` → `<img>` に反映
+  - `bindTimelineEvents()` : クリックや CUT 選択イベントを UI にバインド
 
 ---
 
-## 6. 同期プロトコル（具体例）
-
-1. **切替（ユーザーが CUT / frame を切り替えた時）**
-
-   * UI が `AnimationSystem.getFrame(cut, idx)` を呼ぶ
-   * 戻り値の Frame を `LayerSystem.mountFrame(frame)` に渡す（LayerSystem は deep clone を作る）
-2. **ユーザーがキャンバスで描画/移動した時**
-
-   * 変更はまず LayerSystem の内部インスタンスに適用される（即時描画）
-   * ユーザーの「保存」「フレーム確定」「自動保存トリガ」等のイベントで `LayerSystem.extractCanvasState()` を呼び、差分 patch を `AnimationSystem.updateFrame()` に渡す
-3. **外部イベント（タイムライン操作・アンドゥ等）**
-
-   * `AnimationSystem` がモデルを更新したら、**必ず**イベント `animation:frame:updated` を emit する。LayerSystem はこれを受け取り再マウントする（ただし現在の編集中か否かによって取り扱いを分ける）
+### system/history.js
+- **責務**: Undo/Redo 履歴管理
+- **主要メソッド**
+  - `pushState(cutId, layerId, action)` : 履歴追加
+  - `undo()` : 一つ前の状態に戻す
+  - `redo()` : 一つ先に進める
+- CUT 単位で履歴を分離して保持すること（全 CUT 共通でなく独立管理）
 
 ---
 
-## 7. 既存関数の具体的な改修ポイント
-
-### A. `core-engine.js` — Transform の適用
-
-* 現行問題: Transform 適用処理が `points` を in-place で上書きしている
-* 対策:
-
-  * Transform は `drawing.originalPoints` を参照し `drawing.points` は描画用キャッシュとして使う（`points` は UI用キャッシュ、`originalPoints` は SSoTとして保持）
-  * あるいは transform の結果を新しい drawing オブジェクトとして返す設計にする
-
-**サンプル**
-
-```js
-function applyTransformToPoints(drawing, transform) {
-  const base = drawing.originalPoints ?? structuredClone(drawing.points);
-  const transformed = base.map(p=> ({ x: p.x*transform.sx + transform.tx, y: p.y*transform.sy + transform.ty }));
-  return { ...drawing, points: transformed, originalPoints: base };
-}
-```
-
-### B. `animation-system.js` — deep copy と変更の一元化
-
-* 現行問題: shallow copy による参照共有
-* 対策:
-
-  * `getFrame()` は読み取り専用の shallow freeze（Object.freeze）または structuredClone を返す
-  * `updateFrame()` は `structuredClone` で新しい Frame を作成して差分を適用し、内部参照を差し替える
-
-**注意点**: `structuredClone` が環境で使えない場合は、信頼できる helper `deepClone(obj)` を導入する。
-
-### C. `_syncLayersContainerFromAnimationSystem()` と `saveCutLayerStates()`
-
-* 現行問題: 双方向でフルコピーを行い、往復ごとに精度低下（float丸め、参照整合性喪失）
-* 対策:
-
-  * `_syncLayersContainerFromAnimationSystem()` は**読み取り専用**の snapshot を LayerSystem に渡すのみ
-  * `saveCutLayerStates()` は LayerSystem の `extractCanvasState()` が返す**差分パッチ**を受け取り `AnimationSystem.updateFrame()` を呼ぶ
-  * この2つは同じイベントループ内で呼ばれないようキュー化（microtask 次の tick にする等）
+### system/gif-exporter.js
+- **責務**: CUT を連番画像化し GIF にまとめる
+- **主要メソッド**
+  - `renderCutFrames()` : 全 CUT を RenderTexture から PNG に変換
+  - `exportGIF()` : PNG 連番を GIF に変換
+  - `downloadGIF()` : Blob として保存
 
 ---
 
-## 8. 劣化検出ロジック（品質チェック）
-
-* 同期前後で `sha256(JSON.stringify(frame.layers.map(l=>l.drawings.length)))` のような簡易チェックを行う
-* `points` 配列内に `NaN` や `undefined`、`Infinity` がないか確認
-* 変化が許容範囲を超える場合は同期を拒否しログ出力（開発モードのみ）
-
----
-
-## 9. マイグレーションと段階的作業計画（チケット）
-
-**目的**: 一度に大改修は避け、リスクを下げる。最低限のインクリメンタル改修でバグを潰す。
-
-### ステップ0 — 安全網の構築（1日）
-
-* モジュール毎に現在の `get` / `set` API をドキュメント化（既存コードを読み取り）。
-* 単体で動く小さなユニットテスト（pointsのapplyTransformが in-place かどうか 等）を簡易に作成。
-
-### ステップ1 — SSoT 宣言と読み取り専用 API（2日）
-
-* `AnimationSystem` に `getFrame()` を追加/改修して `Object.freeze` または `structuredClone` を返す
-* `LayerSystem.mountFrame()` が渡された Frame を直接変更しないよう防御的コピーを追加
-
-### ステップ2 — Transform 不変化へ（2日）
-
-* `core-engine.js` の transform 関数を改修して `originalPoints` を保持し、in-place 書き換えを止める
-* 軽微な描画差分を確認
-
-### ステップ3 — 同期プロトコルの分離（3日）
-
-* `_syncLayersContainerFromAnimationSystem()` を読み取り系に、`saveCutLayerStates()` を差分適用系に改修
-* イベント名を `animation:frame:updated`, `layers:canvas:committed` 等に整理
-
-### ステップ4 — Deep copy の整備と検査導入（2日）
-
-* `structuredClone` の利用（fallback 実装含む）
-* 同期前後の整合性チェックを入れる
-
-### ステップ5 — テスト運用とバグ潰し（継続）
-
-* 実運用でのケースを再現するテストシナリオを作る（CUT切替、描画、簡易エクスポート、Undo/Redo）
-
-合計: 10日程度（概算、並行作業で短縮可）
+### core-engine.js
+- **責務**: PixiJS アプリケーションの起動、システム初期化
+- **主要メソッド**
+  - `initPixiApp()` : PixiJS.Application の生成
+  - `initSystems()` : 各 system の初期化呼び出し
+  - `startRenderLoop()` : メインループ開始
 
 ---
 
-## 10. 具体的なパッチ/差分イメージ（例）
+## 3. 改修の優先順位
+1. **CUT 独立化**  
+   - layer-system.js で CUT ごとに RenderTexture 管理を導入  
+   - timeline-ui.js で CUT ごとにサムネイルを GPU → Canvas2D 変換  
 
-* `animation-system.js`:
+2. **Timeline サムネイル最適化**  
+   - Extract の呼び出しを差分更新に制御  
 
-  * `getFrame` を `return structuredClone(this._frames[cutId][index]);`
-  * `updateFrame` を `this._frames[cutId][index] = structuredClone(newFrame);`
+3. **履歴（history.js）の CUT 単位対応**  
+   - 全 CUT 共通 → 各 CUT 独立に修正  
 
-* `core-engine.js`:
-
-  * transform を in-place にしない。`graphics` 更新は `renderPoints = computeTransformedPoints(originalPoints, transform)` のようにキャッシュを生成して使う
-
----
-
-## 11. 開発時のチェックリスト（レビュー項目）
-
-* [ ] どの関数がオブジェクトを in-place で書き換えるか一覧化
-* [ ] `structuredClone` 又は `deepClone` の導入状況
-* [ ] LayerSystem はモデルを直接 mutate していないか
-* [ ] Transform 後の `points` に NaN/Infinity が無いか
-* [ ] 同期イベントの命名が一貫しているか
+4. **GIF Export の RenderTexture 対応**  
+   - 高速で安定したエクスポートを実現  
 
 ---
-
-## 12. 最後に — 優先度の高い短期修正（まずやるべき3点）
-
-1. `core-engine.js` の Transform が in-place で points を上書きしている箇所を不変化へ直す（これは描画崩壊防止で最重要）
-2. `AnimationSystem.getFrame()` を読み取り専用の clone を返すようにして参照共有を断つ
-3. `_syncLayersContainerFromAnimationSystem()` を読み取り専用に、`saveCutLayerStates()` は差分パッチしか送らないように分離する
-
----
-
-### 添付: 参考サンプル関数（deepClone fallback）
-
-```js
-function deepClone(obj) {
-  // structuredClone があれば使う
-  if (typeof structuredClone === 'function') return structuredClone(obj);
-  // 簡易 fallback （関数や特殊オブジェクトを含めない前提）
-  return JSON.parse(JSON.stringify(obj));
-}
-```
-
----
-
-**備考**
-
-* この計画は「AI がコードを編集する」運用基準に合わせて可読性・明快さを最優先に設計したものです。
-* 既存のファイル構造や命名規則はできる限り踏襲しますが、API 名だけは整理することを推奨します。
-
----
-
-*作成: ChatGPT — v8.13_gif_phase1h4 改修草案*
