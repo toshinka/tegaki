@@ -1,4 +1,5 @@
-// ===== system/animation-system.js - サムネイルアスペクト比完全修正版 =====
+// ===== system/animation-system.js - サムネイルアスペクト比完全修正版 + リサイズ対応 =====
+// 【改修】キャンバスリサイズ時の全カットサムネイル更新対応
 // 【完全修正】サムネイルサイズ動的計算＋timeline-thumbnail-utils.js完全活用
 // 【維持】全既存機能（リサイズ対応+再生時間+RETIME+座標系修正+CUTフォルダ方式）
 // PixiJS v8.13 対応
@@ -173,7 +174,7 @@
         }
     }
     
-    // ===== AnimationSystem: サムネイル完全修正版 =====
+    // ===== AnimationSystem: サムネイル完全修正版 + リサイズ対応 =====
     
     class AnimationSystem {
         constructor() {
@@ -201,6 +202,40 @@
             };
             
             this.coordAPI = window.CoordinateSystem;
+            
+            this.setupCanvasResizeListener();
+        }
+        
+        setupCanvasResizeListener() {
+            if (!this.eventBus) return;
+            
+            this.eventBus.on('camera:resized', (data) => {
+                this.handleCanvasResize(data.width, data.height);
+            });
+        }
+        
+        handleCanvasResize(newWidth, newHeight) {
+            if (!this.animationData?.cuts || this.animationData.cuts.length === 0) return;
+            
+            setTimeout(() => {
+                this.regenerateAllThumbnails();
+            }, 200);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:thumbnails-need-update');
+            }
+        }
+        
+        async regenerateAllThumbnails() {
+            if (!this.animationData?.cuts) return;
+            
+            for (let i = 0; i < this.animationData.cuts.length; i++) {
+                await this.generateCutThumbnail(i);
+                
+                if (i < this.animationData.cuts.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+            }
         }
         
         init(layerSystem, app, cameraSystem) {
@@ -290,30 +325,24 @@
             };
         }
         
-        // ===== 【重要】サムネイルサイズ計算（動的） =====
         calculateThumbnailSize(canvasWidth, canvasHeight) {
             const aspectRatio = canvasWidth / canvasHeight;
             
-            // タイムラインUI内の最大表示サイズ（CSSピクセル）
             const MAX_THUMB_WIDTH = 72;
             const MAX_THUMB_HEIGHT = 54;
             
             let thumbDisplayW, thumbDisplayH;
             
             if (aspectRatio >= MAX_THUMB_WIDTH / MAX_THUMB_HEIGHT) {
-                // 横長: 幅を最大値に合わせる
                 thumbDisplayW = MAX_THUMB_WIDTH;
                 thumbDisplayH = Math.round(MAX_THUMB_WIDTH / aspectRatio);
             } else {
-                // 縦長: 高さを最大値に合わせる
                 thumbDisplayH = MAX_THUMB_HEIGHT;
                 thumbDisplayW = Math.round(MAX_THUMB_HEIGHT * aspectRatio);
             }
             
             return { thumbDisplayW, thumbDisplayH };
         }
-        
-        // ===== CUT作成 =====
         
         createNewCutFromCurrentLayers() {
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -497,8 +526,6 @@
             };
         }
         
-        // ===== CUT切り替え =====
-        
         switchToActiveCut(cutIndex) {
             if (this.cutSwitchInProgress) {
                 setTimeout(() => this.switchToActiveCut(cutIndex), 50);
@@ -527,17 +554,14 @@
             this.cutSwitchInProgress = false;
         }
         
-        switchToActiveCutSafely(cutIndex, resetTransform = false) {
+        switchToActiveCutSafely(cutIndex, resetTransform) {
             this.switchToActiveCut(cutIndex);
         }
-        
-        // ===== 【完全修正】サムネイル生成 =====
         
         async generateCutThumbnail(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut || !this.layerSystem || !this.app?.renderer) return;
             
-            // LayerSystemのRenderTexture取得（最新状態を保証）
             if (this.layerSystem.renderCutToTexture) {
                 this.layerSystem.renderCutToTexture(cut.id, cut.container);
             }
@@ -545,21 +569,16 @@
             const renderTexture = this.layerSystem?.getCutRenderTexture?.(cut.id);
             if (!renderTexture) return;
             
-            // 【重要】動的にキャンバスサイズを取得
             const canvasSize = this.getCurrentCanvasSize();
             
-            // 【重要】サムネイルサイズを動的計算
             const { thumbDisplayW, thumbDisplayH } = this.calculateThumbnailSize(
                 canvasSize.width, 
                 canvasSize.height
             );
             
-            // timeline-thumbnail-utils.jsを使用してサムネイル生成
             if (window.TegakiThumbnailUtils?.resizeCanvasWithAspect) {
-                // RenderTextureをCanvasに変換
                 const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
                 
-                // アスペクト比保持＋高品質リサイズ
                 const thumbCanvas = window.TegakiThumbnailUtils.resizeCanvasWithAspect(
                     sourceCanvas, 
                     thumbDisplayW, 
@@ -568,7 +587,6 @@
                 
                 cut.thumbnailCanvas = thumbCanvas;
             } else {
-                // フォールバック: 手動アスペクト比保持リサイズ
                 const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
                 
                 const thumbCanvas = document.createElement('canvas');
@@ -579,19 +597,16 @@
                 ctx.imageSmoothingEnabled = true;
                 ctx.imageSmoothingQuality = 'high';
                 
-                // アスペクト比保持計算
                 const srcAspect = sourceCanvas.width / sourceCanvas.height;
                 const dstAspect = thumbDisplayW / thumbDisplayH;
                 
                 let drawW, drawH, offsetX = 0, offsetY = 0;
                 
                 if (srcAspect > dstAspect) {
-                    // 横長: 幅基準
                     drawW = thumbDisplayW;
                     drawH = thumbDisplayW / srcAspect;
                     offsetY = (thumbDisplayH - drawH) / 2;
                 } else {
-                    // 縦長: 高さ基準
                     drawH = thumbDisplayH;
                     drawW = thumbDisplayH * srcAspect;
                     offsetX = (thumbDisplayW - drawW) / 2;
@@ -622,8 +637,6 @@
         async generateCutThumbnailOptimized(cutIndex) {
             return this.generateCutThumbnail(cutIndex);
         }
-        
-        // ===== CUT クリップボード =====
         
         copyCurrent() {
             const currentCut = this.getCurrentCut();
@@ -737,8 +750,6 @@
             
             return cut;
         }
-        
-        // ===== CUT管理 =====
         
         createInitialCutIfNeeded() {
             if (this.initialCutCreated || this.animationData.cuts.length > 0 || this.isInitializing) {
@@ -901,8 +912,6 @@
             }
         }
         
-        // ===== プレイバック制御 =====
-        
         play() {
             if (this.animationData.cuts.length === 0) return;
             
@@ -1046,18 +1055,34 @@
             }
         }
         
-        // ===== Getters =====
+        getAnimationData() { 
+            return this.animationData; 
+        }
         
-        getAnimationData() { return this.animationData; }
-        getCurrentCutIndex() { return this.animationData.playback.currentCutIndex; }
-        getCutCount() { return this.animationData.cuts.length; }
-        getCurrentCut() { return this.animationData.cuts[this.animationData.playback.currentCutIndex] || null; }
+        getCurrentCutIndex() { 
+            return this.animationData.playback.currentCutIndex; 
+        }
+        
+        getCutCount() { 
+            return this.animationData.cuts.length; 
+        }
+        
+        getCurrentCut() { 
+            return this.animationData.cuts[this.animationData.playback.currentCutIndex] || null; 
+        }
+        
         getCurrentCutLayers() {
             const currentCut = this.getCurrentCut();
             return currentCut ? currentCut.getLayers() : [];
         }
-        hasInitialCut() { return this.animationData.cuts.length > 0; }
-        getAllCuts() { return this.animationData.cuts; }
+        
+        hasInitialCut() { 
+            return this.animationData.cuts.length > 0; 
+        }
+        
+        getAllCuts() { 
+            return this.animationData.cuts; 
+        }
         
         getCutInfo(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
@@ -1097,7 +1122,9 @@
             };
         }
         
-        isInAnimationMode() { return this.isAnimationMode; }
+        isInAnimationMode() { 
+            return this.isAnimationMode; 
+        }
         
         toggleAnimationMode() {
             this.isAnimationMode = !this.isAnimationMode;
@@ -1119,8 +1146,6 @@
             return this.isAnimationMode;
         }
         
-        // ===== 互換性メソッド（LayerSystem用） =====
-        
         addLayerToCurrentCut(layerData) {
             const currentCut = this.getCurrentCut();
             if (!currentCut) return null;
@@ -1135,10 +1160,12 @@
         }
         
         updateCurrentCutLayer(layerIndex, updateData) {
-            return this.getCurrentCut();
+            const currentCut = this.getCurrentCut();
+            return currentCut;
         }
         
         saveCutLayerStates() {
+            // 互換性のため空実装
         }
     }
     
