@@ -1,7 +1,7 @@
-// ===== system/animation-system.js - 座標系修正版 =====
-// 【修正】CUT.containerをcanvasContainer配下に配置し、座標系のズレを解消
-// 【維持】LayerSystemのRenderTexture機能を活用
-// 【維持】CUTフォルダ方式・全既存機能
+// ===== system/animation-system.js - サムネイルアスペクト比完全修正版 + リサイズ対応 =====
+// 【改修】キャンバスリサイズ時の全カットサムネイル更新対応
+// 【完全修正】サムネイルサイズ動的計算＋timeline-thumbnail-utils.js完全活用
+// 【維持】全既存機能（リサイズ対応+再生時間+RETIME+座標系修正+CUTフォルダ方式）
 // PixiJS v8.13 対応
 
 (function() {
@@ -14,7 +14,6 @@
             this.name = name || `CUT${Date.now()}`;
             this.duration = config?.animation?.defaultCutDuration || 0.5;
             
-            // ★CUTフォルダとしてのContainer
             this.container = new PIXI.Container();
             this.container.label = `cut_${id}`;
             this.container.sortableChildren = true;
@@ -175,7 +174,7 @@
         }
     }
     
-    // ===== AnimationSystem: 座標系修正版 =====
+    // ===== AnimationSystem: サムネイル完全修正版 + リサイズ対応 =====
     
     class AnimationSystem {
         constructor() {
@@ -184,7 +183,7 @@
             this.cameraSystem = null;
             this.app = null;
             this.stage = null;
-            this.canvasContainer = null; // 【追加】CameraSystemのcanvasContainer参照
+            this.canvasContainer = null;
             this.eventBus = window.TegakiEventBus;
             this.config = window.TEGAKI_CONFIG;
             
@@ -203,6 +202,40 @@
             };
             
             this.coordAPI = window.CoordinateSystem;
+            
+            this.setupCanvasResizeListener();
+        }
+        
+        setupCanvasResizeListener() {
+            if (!this.eventBus) return;
+            
+            this.eventBus.on('camera:resized', (data) => {
+                this.handleCanvasResize(data.width, data.height);
+            });
+        }
+        
+        handleCanvasResize(newWidth, newHeight) {
+            if (!this.animationData?.cuts || this.animationData.cuts.length === 0) return;
+            
+            setTimeout(() => {
+                this.regenerateAllThumbnails();
+            }, 200);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:thumbnails-need-update');
+            }
+        }
+        
+        async regenerateAllThumbnails() {
+            if (!this.animationData?.cuts) return;
+            
+            for (let i = 0; i < this.animationData.cuts.length; i++) {
+                await this.generateCutThumbnail(i);
+                
+                if (i < this.animationData.cuts.length - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 50));
+                }
+            }
         }
         
         init(layerSystem, app, cameraSystem) {
@@ -211,33 +244,16 @@
             this.layerSystem = layerSystem;
             this.app = app;
             this.stage = app?.stage;
-            
-            // 【修正】CameraSystemを引数から取得
             this.cameraSystem = cameraSystem;
             
-            // 【デバッグ】CameraSystemの状態を確認
-            if (!this.cameraSystem) {
-                console.error('❌ CameraSystem is null/undefined');
-                return;
-            }
-            
-            if (!this.cameraSystem.canvasContainer) {
-                console.error('❌ CameraSystem.canvasContainer not available');
-                console.error('CameraSystem properties:', Object.keys(this.cameraSystem));
-                console.error('CameraSystem.worldContainer:', this.cameraSystem.worldContainer);
-                return;
-            }
+            if (!this.cameraSystem?.canvasContainer) return;
             
             this.canvasContainer = this.cameraSystem.canvasContainer;
             
-            if (!this.eventBus || !this.layerSystem) {
-                console.error('Required dependencies not available');
-                return;
-            }
+            if (!this.eventBus || !this.layerSystem) return;
             
             this.layerSystem.animationSystem = this;
             
-            // 【修正】LayerSystemの一時的なContainerをcanvasContainerに追加
             if (this.canvasContainer && this.layerSystem.currentCutContainer) {
                 this.canvasContainer.addChild(this.layerSystem.currentCutContainer);
             }
@@ -295,7 +311,38 @@
             };
         }
         
-        // ===== CUT作成 =====
+        getCurrentCanvasSize() {
+            if (this.layerSystem?.config?.canvas) {
+                return {
+                    width: this.layerSystem.config.canvas.width,
+                    height: this.layerSystem.config.canvas.height
+                };
+            }
+            
+            return {
+                width: this.config?.canvas?.width || 800,
+                height: this.config?.canvas?.height || 600
+            };
+        }
+        
+        calculateThumbnailSize(canvasWidth, canvasHeight) {
+            const aspectRatio = canvasWidth / canvasHeight;
+            
+            const MAX_THUMB_WIDTH = 72;
+            const MAX_THUMB_HEIGHT = 54;
+            
+            let thumbDisplayW, thumbDisplayH;
+            
+            if (aspectRatio >= MAX_THUMB_WIDTH / MAX_THUMB_HEIGHT) {
+                thumbDisplayW = MAX_THUMB_WIDTH;
+                thumbDisplayH = Math.round(MAX_THUMB_WIDTH / aspectRatio);
+            } else {
+                thumbDisplayH = MAX_THUMB_HEIGHT;
+                thumbDisplayW = Math.round(MAX_THUMB_HEIGHT * aspectRatio);
+            }
+            
+            return { thumbDisplayW, thumbDisplayH };
+        }
         
         createNewCutFromCurrentLayers() {
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
@@ -313,13 +360,11 @@
             this.animationData.cuts.push(cut);
             const newCutIndex = this.animationData.cuts.length - 1;
             
-            // 【修正】canvasContainerに追加
             if (this.canvasContainer) {
                 this.canvasContainer.addChild(cut.container);
                 cut.container.visible = false;
             }
             
-            // ★RenderTexture作成
             if (this.layerSystem?.createCutRenderTexture) {
                 this.layerSystem.createCutRenderTexture(cutId);
             }
@@ -352,13 +397,11 @@
             this.animationData.cuts.push(cut);
             const newIndex = this.animationData.cuts.length - 1;
             
-            // 【修正】canvasContainerに追加
             if (this.canvasContainer) {
                 this.canvasContainer.addChild(cut.container);
                 cut.container.visible = false;
             }
             
-            // ★RenderTexture作成
             if (this.layerSystem?.createCutRenderTexture) {
                 this.layerSystem.createCutRenderTexture(cutId);
             }
@@ -391,8 +434,9 @@
                 paths: []
             };
             
+            const canvasSize = this.getCurrentCanvasSize();
             const bg = new PIXI.Graphics();
-            bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+            bg.rect(0, 0, canvasSize.width, canvasSize.height);
             bg.fill(this.config.background.color);
             layer.addChild(bg);
             layer.layerData.backgroundGraphics = bg;
@@ -436,8 +480,9 @@
             layer.alpha = originalLayer.alpha;
             
             if (originalLayer.layerData?.isBackground) {
+                const canvasSize = this.getCurrentCanvasSize();
                 const bg = new PIXI.Graphics();
-                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+                bg.rect(0, 0, canvasSize.width, canvasSize.height);
                 bg.fill(this.config.background.color);
                 layer.addChild(bg);
                 layer.layerData.backgroundGraphics = bg;
@@ -481,8 +526,6 @@
             };
         }
         
-        // ===== CUT切り替え =====
-        
         switchToActiveCut(cutIndex) {
             if (this.cutSwitchInProgress) {
                 setTimeout(() => this.switchToActiveCut(cutIndex), 50);
@@ -511,69 +554,89 @@
             this.cutSwitchInProgress = false;
         }
         
-        switchToActiveCutSafely(cutIndex, resetTransform = false) {
+        switchToActiveCutSafely(cutIndex, resetTransform) {
             this.switchToActiveCut(cutIndex);
         }
         
-        // ===== サムネイル生成（RenderTexture版） =====
-        
         async generateCutThumbnail(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
-            if (!cut || !this.layerSystem) return;
+            if (!cut || !this.layerSystem || !this.app?.renderer) return;
             
-            // ★LayerSystemのRenderTextureに描画
             if (this.layerSystem.renderCutToTexture) {
                 this.layerSystem.renderCutToTexture(cut.id, cut.container);
             }
             
-            // ★RenderTextureからサムネイル生成
             const renderTexture = this.layerSystem?.getCutRenderTexture?.(cut.id);
-            if (!renderTexture || !this.app?.renderer) return;
+            if (!renderTexture) return;
             
-            const canvas = this.app.renderer.extract.canvas(renderTexture);
+            const canvasSize = this.getCurrentCanvasSize();
             
-            // サムネイルサイズにリサイズ
-            const canvasWidth = this.config.canvas.width;
-            const canvasHeight = this.config.canvas.height;
-            const aspectRatio = canvasWidth / canvasHeight;
-            const maxWidth = 72;
-            const maxHeight = 54;
-            let thumbWidth, thumbHeight;
+            const { thumbDisplayW, thumbDisplayH } = this.calculateThumbnailSize(
+                canvasSize.width, 
+                canvasSize.height
+            );
             
-            if (aspectRatio >= maxWidth / maxHeight) {
-                thumbWidth = maxWidth;
-                thumbHeight = Math.round(maxWidth / aspectRatio);
+            if (window.TegakiThumbnailUtils?.resizeCanvasWithAspect) {
+                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
+                
+                const thumbCanvas = window.TegakiThumbnailUtils.resizeCanvasWithAspect(
+                    sourceCanvas, 
+                    thumbDisplayW, 
+                    thumbDisplayH
+                );
+                
+                cut.thumbnailCanvas = thumbCanvas;
             } else {
-                thumbHeight = maxHeight;
-                thumbWidth = Math.round(maxHeight * aspectRatio);
+                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
+                
+                const thumbCanvas = document.createElement('canvas');
+                thumbCanvas.width = thumbDisplayW;
+                thumbCanvas.height = thumbDisplayH;
+                
+                const ctx = thumbCanvas.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                
+                const srcAspect = sourceCanvas.width / sourceCanvas.height;
+                const dstAspect = thumbDisplayW / thumbDisplayH;
+                
+                let drawW, drawH, offsetX = 0, offsetY = 0;
+                
+                if (srcAspect > dstAspect) {
+                    drawW = thumbDisplayW;
+                    drawH = thumbDisplayW / srcAspect;
+                    offsetY = (thumbDisplayH - drawH) / 2;
+                } else {
+                    drawH = thumbDisplayH;
+                    drawW = thumbDisplayH * srcAspect;
+                    offsetX = (thumbDisplayW - drawW) / 2;
+                }
+                
+                ctx.clearRect(0, 0, thumbDisplayW, thumbDisplayH);
+                ctx.drawImage(
+                    sourceCanvas, 
+                    0, 0, sourceCanvas.width, sourceCanvas.height,
+                    offsetX, offsetY, drawW, drawH
+                );
+                
+                cut.thumbnailCanvas = thumbCanvas;
             }
             
-            const thumbCanvas = document.createElement('canvas');
-            thumbCanvas.width = thumbWidth;
-            thumbCanvas.height = thumbHeight;
-            
-            const ctx = thumbCanvas.getContext('2d');
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(canvas, 0, 0, thumbWidth, thumbHeight);
-            
-            cut.thumbnailCanvas = thumbCanvas;
-            
-            // ★サムネイル更新フラグをクリア
             if (this.layerSystem.clearCutThumbnailDirty) {
                 this.layerSystem.clearCutThumbnailDirty(cut.id);
             }
             
             if (this.eventBus) {
-                this.eventBus.emit('animation:thumbnail-generated', { cutIndex });
+                this.eventBus.emit('animation:thumbnail-generated', { 
+                    cutIndex,
+                    thumbSize: { width: thumbDisplayW, height: thumbDisplayH }
+                });
             }
         }
         
         async generateCutThumbnailOptimized(cutIndex) {
             return this.generateCutThumbnail(cutIndex);
         }
-        
-        // ===== CUT クリップボード =====
         
         copyCurrent() {
             const currentCut = this.getCurrentCut();
@@ -602,12 +665,10 @@
             
             this.animationData.cuts.splice(insertIndex, 0, pastedCut);
             
-            // 【修正】canvasContainerに追加
             if (this.canvasContainer) {
                 this.canvasContainer.addChild(pastedCut.container);
             }
             
-            // ★RenderTexture作成
             if (this.layerSystem?.createCutRenderTexture) {
                 this.layerSystem.createCutRenderTexture(pastedCut.id);
             }
@@ -633,12 +694,10 @@
             this.animationData.cuts.push(pastedCut);
             const newIndex = this.animationData.cuts.length - 1;
             
-            // 【修正】canvasContainerに追加
             if (this.canvasContainer) {
                 this.canvasContainer.addChild(pastedCut.container);
             }
             
-            // ★RenderTexture作成
             if (this.layerSystem?.createCutRenderTexture) {
                 this.layerSystem.createCutRenderTexture(pastedCut.id);
             }
@@ -658,10 +717,26 @@
         createCutFromClipboard(clipboardData) {
             if (!clipboardData) return null;
             
+            const baseName = clipboardData.name.replace(/_copy$/, '').replace(/\(\d+\)$/, '');
+            
+            let copyCount = 0;
+            for (const cut of this.animationData.cuts) {
+                const cutBaseName = cut.name.replace(/\(\d+\)$/, '');
+                if (cutBaseName === baseName) {
+                    const match = cut.name.match(/\((\d+)\)$/);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (num > copyCount) copyCount = num;
+                    }
+                }
+            }
+            
+            const newName = `${baseName}(${copyCount + 1})`;
+            
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             const cut = Cut.deserialize({
                 id: cutId,
-                name: clipboardData.name + '_copy',
+                name: newName,
                 duration: clipboardData.duration,
                 layers: clipboardData.layers
             }, this.config);
@@ -675,8 +750,6 @@
             
             return cut;
         }
-        
-        // ===== CUT管理 =====
         
         createInitialCutIfNeeded() {
             if (this.initialCutCreated || this.animationData.cuts.length > 0 || this.isInitializing) {
@@ -700,7 +773,6 @@
             
             this.animationData.cuts.push(cut);
             
-            // 【修正】一時的なContainerを削除し、CUT.containerをcanvasContainerに追加
             if (this.canvasContainer) {
                 if (this.layerSystem.currentCutContainer.parent === this.canvasContainer) {
                     this.canvasContainer.removeChild(this.layerSystem.currentCutContainer);
@@ -710,7 +782,6 @@
                 cut.container.visible = true;
             }
             
-            // ★RenderTexture作成
             if (this.layerSystem.createCutRenderTexture) {
                 this.layerSystem.createCutRenderTexture(cutId);
             }
@@ -740,12 +811,10 @@
             
             const cut = this.animationData.cuts[cutIndex];
             
-            // ★RenderTexture破棄
             if (this.layerSystem?.destroyCutRenderTexture) {
                 this.layerSystem.destroyCutRenderTexture(cut.id);
             }
             
-            // 【修正】canvasContainerから削除
             if (this.canvasContainer && cut.container.parent === this.canvasContainer) {
                 this.canvasContainer.removeChild(cut.container);
             }
@@ -799,11 +868,23 @@
             }
         }
         
+        renameCutsSequentially() {
+            if (!this.animationData.cuts || this.animationData.cuts.length === 0) return;
+            
+            this.animationData.cuts.forEach((cut, index) => {
+                cut.name = `CUT${index + 1}`;
+            });
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cuts-renamed-sequentially');
+            }
+        }
+        
         updateCutDuration(cutIndex, duration) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut) return;
             
-            cut.duration = Math.max(0.1, Math.min(10, duration));
+            cut.duration = Math.max(0.01, Math.min(10, duration));
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:cut-duration-changed', { 
@@ -813,7 +894,23 @@
             }
         }
         
-        // ===== プレイバック制御 =====
+        retimeAllCuts(newDuration) {
+            if (!this.animationData.cuts || this.animationData.cuts.length === 0) return;
+            if (isNaN(newDuration) || newDuration <= 0) return;
+            
+            const clampedDuration = Math.max(0.01, Math.min(10, newDuration));
+            
+            this.animationData.cuts.forEach(cut => {
+                cut.duration = clampedDuration;
+            });
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:all-cuts-retimed', {
+                    newDuration: clampedDuration,
+                    cutCount: this.animationData.cuts.length
+                });
+            }
+        }
         
         play() {
             if (this.animationData.cuts.length === 0) return;
@@ -958,18 +1055,34 @@
             }
         }
         
-        // ===== Getters =====
+        getAnimationData() { 
+            return this.animationData; 
+        }
         
-        getAnimationData() { return this.animationData; }
-        getCurrentCutIndex() { return this.animationData.playback.currentCutIndex; }
-        getCutCount() { return this.animationData.cuts.length; }
-        getCurrentCut() { return this.animationData.cuts[this.animationData.playback.currentCutIndex] || null; }
+        getCurrentCutIndex() { 
+            return this.animationData.playback.currentCutIndex; 
+        }
+        
+        getCutCount() { 
+            return this.animationData.cuts.length; 
+        }
+        
+        getCurrentCut() { 
+            return this.animationData.cuts[this.animationData.playback.currentCutIndex] || null; 
+        }
+        
         getCurrentCutLayers() {
             const currentCut = this.getCurrentCut();
             return currentCut ? currentCut.getLayers() : [];
         }
-        hasInitialCut() { return this.animationData.cuts.length > 0; }
-        getAllCuts() { return this.animationData.cuts; }
+        
+        hasInitialCut() { 
+            return this.animationData.cuts.length > 0; 
+        }
+        
+        getAllCuts() { 
+            return this.animationData.cuts; 
+        }
         
         getCutInfo(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
@@ -985,6 +1098,21 @@
             };
         }
         
+        getPlaybackTime() {
+            if (!this.animationData.playback.isPlaying) {
+                return 0;
+            }
+            
+            const elapsed = (Date.now() - this.animationData.playback.startTime) / 1000;
+            
+            let totalTime = 0;
+            for (let i = 0; i < this.animationData.playback.currentCutIndex; i++) {
+                totalTime += this.animationData.cuts[i]?.duration || 0;
+            }
+            
+            return totalTime + elapsed;
+        }
+        
         getPlaybackState() {
             return {
                 isPlaying: this.animationData.playback.isPlaying,
@@ -994,7 +1122,9 @@
             };
         }
         
-        isInAnimationMode() { return this.isAnimationMode; }
+        isInAnimationMode() { 
+            return this.isAnimationMode; 
+        }
         
         toggleAnimationMode() {
             this.isAnimationMode = !this.isAnimationMode;
@@ -1016,8 +1146,6 @@
             return this.isAnimationMode;
         }
         
-        // ===== 互換性メソッド（LayerSystem用） =====
-        
         addLayerToCurrentCut(layerData) {
             const currentCut = this.getCurrentCut();
             if (!currentCut) return null;
@@ -1032,21 +1160,16 @@
         }
         
         updateCurrentCutLayer(layerIndex, updateData) {
-            return this.getCurrentCut();
+            const currentCut = this.getCurrentCut();
+            return currentCut;
         }
         
         saveCutLayerStates() {
+            // 互換性のため空実装
         }
     }
     
     window.TegakiAnimationSystem = AnimationSystem;
     window.TegakiCut = Cut;
-    
-    console.log('✅ AnimationSystem 座標系修正版 loaded');
-    console.log('🔧 改修内容:');
-    console.log('  ✅ CUT.containerをcanvasContainer配下に配置');
-    console.log('  ✅ 座標系のズレを解消（カメラフレームと描画座標を統一）');
-    console.log('  ✅ LayerSystemのRenderTexture機能を活用');
-    console.log('  ✅ 既存機能完全維持: CUTフォルダ方式・Deep Copy・シリアライズ');
 
 })();

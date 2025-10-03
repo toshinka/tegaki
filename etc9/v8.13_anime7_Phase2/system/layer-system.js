@@ -1,6 +1,6 @@
-// ===== system/layer-system.js - 元機能完全維持版 =====
-// PixiJS v8.13 対応
-// 元ファイルの全機能を継承、一時CUT作成は削除
+// ===== system/layer-system.js - Phase1改修版: レイヤー階層移動完全修正 =====
+// 🔧 Phase1改修: reorderLayersメソッド追加 + updateLayerPanelUI改善
+// ✅ 改修内容: レイヤー順序変更API、Sortable再初期化統合
 
 (function() {
     'use strict';
@@ -11,11 +11,9 @@
             this.config = null;
             this.eventBus = null;
             
-            // CUTフォルダ方式: 現在アクティブなCUT Container
             this.currentCutContainer = null;
             this.activeLayerIndex = -1;
             
-            // RenderTexture管理
             this.cutRenderTextures = new Map();
             this.cutThumbnailDirty = new Map();
             
@@ -50,11 +48,9 @@
                 throw new Error('EventBus required for LayerSystem');
             }
             
-            // 一時的なCUT Containerを作成（AnimationSystemが初期CUTを作成するまでの橋渡し）
             this.currentCutContainer = new PIXI.Container();
             this.currentCutContainer.label = 'temporary_cut_container';
             
-            // 背景レイヤーを作成
             const bgLayer = new PIXI.Container();
             bgLayer.label = 'temp_layer_bg';
             bgLayer.layerData = {
@@ -74,7 +70,6 @@
             
             this.currentCutContainer.addChild(bgLayer);
             
-            // レイヤー1を作成
             const layer1 = new PIXI.Container();
             layer1.label = 'temp_layer_1';
             layer1.layerData = {
@@ -88,7 +83,6 @@
             
             this.currentCutContainer.addChild(layer1);
             
-            // レイヤー1をアクティブに設定
             this.activeLayerIndex = 1;
             
             this._setupLayerOperations();
@@ -99,12 +93,64 @@
             console.log('✅ LayerSystem: 初期化完了（一時Container作成済み）');
         }
 
+        // ===== 🔧 Phase1改修: レイヤー順序変更API =====
+        
+        reorderLayers(fromIndex, toIndex) {
+            const layers = this.getLayers();
+            
+            // バリデーション
+            if (fromIndex < 0 || fromIndex >= layers.length || 
+                toIndex < 0 || toIndex >= layers.length || 
+                fromIndex === toIndex) {
+                console.warn(`Invalid reorder indices: ${fromIndex} → ${toIndex}`);
+                return false;
+            }
+            
+            try {
+                // 🔧 改修1: 配列から移動
+                const [movedLayer] = layers.splice(fromIndex, 1);
+                layers.splice(toIndex, 0, movedLayer);
+                
+                // 🔧 改修2: Pixiコンテナの階層も同期
+                this.currentCutContainer.removeChild(movedLayer);
+                this.currentCutContainer.addChildAt(movedLayer, toIndex);
+                
+                // 🔧 改修3: アクティブインデックスの調整
+                if (this.activeLayerIndex === fromIndex) {
+                    // 移動したレイヤーがアクティブ → 新しい位置に追従
+                    this.activeLayerIndex = toIndex;
+                } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
+                    // アクティブレイヤーが移動範囲内（下方向移動時）
+                    this.activeLayerIndex--;
+                } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
+                    // アクティブレイヤーが移動範囲内（上方向移動時）
+                    this.activeLayerIndex++;
+                }
+                
+                // 🔧 改修4: イベント発行
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:reordered', { 
+                        fromIndex, 
+                        toIndex, 
+                        activeIndex: this.activeLayerIndex,
+                        movedLayerId: movedLayer.layerData?.id
+                    });
+                }
+                
+                console.log(`✅ Layers reordered: ${fromIndex} → ${toIndex}, active: ${this.activeLayerIndex}`);
+                return true;
+                
+            } catch (error) {
+                console.error('❌ Layer reorder failed:', error);
+                return false;
+            }
+        }
+
         // ===== CUT Container設定 =====
         
         setCurrentCutContainer(cutContainer) {
             this.currentCutContainer = cutContainer;
             
-            // アクティブレイヤーを最上位に設定 (新規作成レイヤーがアクティブになる)
             const layers = this.getLayers();
             if (layers.length > 0) {
                 this.activeLayerIndex = layers.length - 1;
@@ -1509,6 +1555,7 @@
             }
         }
 
+        // 🔧 Phase1改修: updateLayerPanelUI改善版（Sortable再初期化統合）
         updateLayerPanelUI() {
             const layerList = document.getElementById('layer-list');
             if (!layerList) return;
@@ -1569,8 +1616,16 @@
                 layerList.appendChild(layerItem);
             }
             
+            // サムネイル更新
             for (let i = 0; i < layers.length; i++) {
                 this.requestThumbnailUpdate(i);
+            }
+            
+            // 🔧 Phase1改修: Sortable再初期化（重要）
+            if (window.TegakiUI?.initializeSortable) {
+                setTimeout(() => {
+                    window.TegakiUI.initializeSortable(this);
+                }, 50);
             }
         }
 
@@ -1614,6 +1669,6 @@
 
     window.TegakiLayerSystem = LayerSystem;
 
-    console.log('✅ layer-system.js loaded (元機能完全維持版)');
+    console.log('✅ layer-system.js loaded (Phase1改修版: レイヤー階層移動完全修正)');
 
 })();
