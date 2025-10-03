@@ -1,7 +1,6 @@
-// ===== system/layer-system.js - RenderTexture管理追加 Phase 1 =====
-// 【改修】RenderTexture管理機能追加
-// 【維持】CUTフォルダ方式・Transform管理・EventBus統合・CoordinateSystem統合・全既存機能
+// ===== system/layer-system.js - 元機能完全維持版 =====
 // PixiJS v8.13 対応
+// 元ファイルの全機能を継承、一時CUT作成は削除
 
 (function() {
     'use strict';
@@ -12,15 +11,15 @@
             this.config = null;
             this.eventBus = null;
             
-            // ★CUTフォルダ方式: 現在アクティブなCUT Container
+            // CUTフォルダ方式: 現在アクティブなCUT Container
             this.currentCutContainer = null;
             this.activeLayerIndex = -1;
             
-            // ★新規追加: RenderTexture管理
-            this.cutRenderTextures = new Map(); // cutId -> RenderTexture
-            this.cutThumbnailDirty = new Map(); // cutId -> boolean
+            // RenderTexture管理
+            this.cutRenderTextures = new Map();
+            this.cutThumbnailDirty = new Map();
             
-            this.layerTransforms = new Map(); // layerIdをキーとするTransform保存
+            this.layerTransforms = new Map();
             
             this.thumbnailUpdateQueue = new Set();
             this.thumbnailUpdateTimer = null;
@@ -42,7 +41,7 @@
         }
 
         init(canvasContainer, eventBus, config) {
-            console.log('🎨 LayerSystem: RenderTexture管理追加 Phase 1 初期化開始...');
+            console.log('🎨 LayerSystem: 初期化開始...');
             
             this.eventBus = eventBus;
             this.config = config || window.TEGAKI_CONFIG;
@@ -51,21 +50,7 @@
                 throw new Error('EventBus required for LayerSystem');
             }
             
-            // ★初期CUT Container作成（AnimationSystemが初期化される前の一時的なContainer）
-            this._createTemporaryCutContainer();
-            
-            this._setupLayerOperations();
-            this._setupLayerTransformPanel();
-            this._setupAnimationSystemIntegration();
-            this._startThumbnailUpdateProcess();
-            
-            console.log('✅ LayerSystem: RenderTexture管理追加 Phase 1 初期化完了');
-        }
-        
-        /**
-         * AnimationSystemが初期化される前に描画可能にするための一時的なContainer
-         */
-        _createTemporaryCutContainer() {
+            // 一時的なCUT Containerを作成（AnimationSystemが初期CUTを作成するまでの橋渡し）
             this.currentCutContainer = new PIXI.Container();
             this.currentCutContainer.label = 'temporary_cut_container';
             
@@ -103,22 +88,27 @@
             
             this.currentCutContainer.addChild(layer1);
             
+            // レイヤー1をアクティブに設定
             this.activeLayerIndex = 1;
             
-            console.log('✅ Temporary CUT container created with 2 layers');
+            this._setupLayerOperations();
+            this._setupLayerTransformPanel();
+            this._setupAnimationSystemIntegration();
+            this._startThumbnailUpdateProcess();
+            
+            console.log('✅ LayerSystem: 初期化完了（一時Container作成済み）');
         }
 
         // ===== CUT Container設定 =====
         
-        /**
-         * AnimationSystemから呼ばれる: CUT切り替え時の設定
-         */
         setCurrentCutContainer(cutContainer) {
             this.currentCutContainer = cutContainer;
             
-            // アクティブレイヤーを最上位に設定
+            // アクティブレイヤーを最上位に設定 (新規作成レイヤーがアクティブになる)
             const layers = this.getLayers();
-            this.activeLayerIndex = Math.max(0, layers.length - 1);
+            if (layers.length > 0) {
+                this.activeLayerIndex = layers.length - 1;
+            }
             
             this.updateLayerPanelUI();
             this.updateStatusDisplay();
@@ -128,13 +118,8 @@
             }
         }
         
-        // ===== RenderTexture管理（新規追加） =====
+        // ===== RenderTexture管理 =====
         
-        /**
-         * CUT用のRenderTextureを作成
-         * @param {string} cutId - CUT識別子
-         * @returns {PIXI.RenderTexture}
-         */
         createCutRenderTexture(cutId) {
             if (!this.app?.renderer) {
                 console.error('Renderer not available');
@@ -152,11 +137,6 @@
             return renderTexture;
         }
         
-        /**
-         * CUTをRenderTextureに描画
-         * @param {string} cutId - CUT識別子
-         * @param {PIXI.Container} cutContainer - CUT Container
-         */
         renderCutToTexture(cutId, cutContainer) {
             if (!this.app?.renderer) return;
             
@@ -169,21 +149,15 @@
             const container = cutContainer || this.currentCutContainer;
             if (!container) return;
             
-            // CUTのContainerをRenderTextureに描画
             this.app.renderer.render({
                 container: container,
                 target: renderTexture,
                 clear: true
             });
             
-            // サムネイル更新フラグを立てる
             this.markCutThumbnailDirty(cutId);
         }
         
-        /**
-         * CUTサムネイル再生成フラグを設定
-         * @param {string} cutId - CUT識別子
-         */
         markCutThumbnailDirty(cutId) {
             this.cutThumbnailDirty.set(cutId, true);
             
@@ -192,19 +166,10 @@
             }
         }
         
-        /**
-         * RenderTextureを取得
-         * @param {string} cutId - CUT識別子
-         * @returns {PIXI.RenderTexture}
-         */
         getCutRenderTexture(cutId) {
             return this.cutRenderTextures.get(cutId);
         }
         
-        /**
-         * RenderTextureを破棄
-         * @param {string} cutId - CUT識別子
-         */
         destroyCutRenderTexture(cutId) {
             const renderTexture = this.cutRenderTextures.get(cutId);
             if (renderTexture) {
@@ -214,28 +179,16 @@
             }
         }
         
-        /**
-         * サムネイルが更新必要か確認
-         * @param {string} cutId - CUT識別子
-         * @returns {boolean}
-         */
         isCutThumbnailDirty(cutId) {
             return this.cutThumbnailDirty.get(cutId) || false;
         }
         
-        /**
-         * サムネイル更新フラグをクリア
-         * @param {string} cutId - CUT識別子
-         */
         clearCutThumbnailDirty(cutId) {
             this.cutThumbnailDirty.set(cutId, false);
         }
         
         // ===== レイヤー取得API =====
         
-        /**
-         * 現在のCUT Containerからレイヤー配列を取得
-         */
         getLayers() {
             return this.currentCutContainer ? this.currentCutContainer.children : [];
         }
@@ -1037,7 +990,6 @@
                     this.updateFlipButtons();
                     this.requestThumbnailUpdate(this.activeLayerIndex);
                     
-                    // CUTサムネイル更新
                     if (this.animationSystem?.generateCutThumbnail) {
                         const cutIndex = this.animationSystem.getCurrentCutIndex();
                         setTimeout(() => {
@@ -1391,7 +1343,6 @@
                 
                 this.requestThumbnailUpdate(layerIndex);
                 
-                // CUTサムネイル更新
                 if (this.animationSystem?.generateCutThumbnail) {
                     const cutIndex = this.animationSystem.getCurrentCutIndex();
                     setTimeout(() => {
@@ -1663,11 +1614,6 @@
 
     window.TegakiLayerSystem = LayerSystem;
 
-    console.log('✅ layer-system.js loaded (RenderTexture管理追加 Phase 1)');
-    console.log('🔧 改修内容:');
-    console.log('  ✅ RenderTexture管理機能追加');
-    console.log('  ✅ CUT単位でのGPUテクスチャ独立性保証');
-    console.log('  ✅ サムネイル更新フラグ管理追加');
-    console.log('  ✅ 既存機能完全維持: CUTフォルダ方式・Transform管理・EventBus統合');
+    console.log('✅ layer-system.js loaded (元機能完全維持版)');
 
 })();

@@ -1,51 +1,46 @@
-// ===== core-engine.js - サムネイル即時反映対応版 =====
-// 【改修】ペン描画確定時にタイムラインサムネイルを即時更新
-// 【維持】CoordinateSystem参照修正・EventBus統一・既存機能
+// ===== core-engine.js - 初期化修正版 =====
+// 【改修】AnimationSystemの初期CUT作成を優先
+// 【維持】既存機能完全維持
 
 (function() {
     'use strict';
     
-    // システム依存チェック
     if (!window.TegakiCameraSystem) {
-        console.error('❌ TegakiCameraSystem not found - load system/camera-system.js');
+        console.error('❌ TegakiCameraSystem not found');
         throw new Error('system/camera-system.js is required');
     }
     
     if (!window.TegakiLayerSystem) {
-        console.error('❌ TegakiLayerSystem not found - load system/layer-system.js');
+        console.error('❌ TegakiLayerSystem not found');
         throw new Error('system/layer-system.js is required');
     }
     
     if (!window.TegakiDrawingClipboard) {
-        console.error('❌ TegakiDrawingClipboard not found - load system/drawing-clipboard.js');
+        console.error('❌ TegakiDrawingClipboard not found');
         throw new Error('system/drawing-clipboard.js is required');
     }
     
     if (!window.TegakiEventBus) {
-        console.error('❌ TegakiEventBus not found - load system/event-bus.js');
-        throw new Error('system/event-bus.js is required for EventBus unification');
+        console.error('❌ TegakiEventBus not found');
+        throw new Error('system/event-bus.js is required');
     }
     
-    // 設定取得
     const CONFIG = window.TEGAKI_CONFIG;
     if (!CONFIG) {
-        console.error('❌ TEGAKI_CONFIG not found - load config.js');
+        console.error('❌ TEGAKI_CONFIG not found');
         throw new Error('config.js is required');
     }
 
-    // アニメーション設定確認
     if (!CONFIG.animation) {
-        console.error('❌ Animation config not found in TEGAKI_CONFIG');
+        console.error('❌ Animation config not found');
         throw new Error('Animation configuration is required');
     }
 
-    // KeyConfig管理クラス依存確認
     if (!window.TEGAKI_KEYCONFIG_MANAGER) {
-        console.error('❌ TEGAKI_KEYCONFIG_MANAGER not found - load config.js');
+        console.error('❌ TEGAKI_KEYCONFIG_MANAGER not found');
         throw new Error('KeyConfig manager is required');
     }
 
-    // === DrawingEngine ===
     class DrawingEngine {
         constructor(cameraSystem, layerManager, eventBus, config) {
             this.cameraSystem = cameraSystem;
@@ -165,13 +160,10 @@
             if (this.currentPath) {
                 this.currentPath.isComplete = true;
                 
-                // 【改修】レイヤーサムネイル即時更新
                 this.layerManager.requestThumbnailUpdate(this.layerManager.activeLayerIndex);
                 
-                // 【改修】AnimationSystemのCUTサムネイル即時更新を明示的にトリガー
                 if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
                     const currentCutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
-                    // 少し遅延を入れてレイヤーサムネイル更新後に実行
                     setTimeout(() => {
                         this.layerManager.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
                     }, 150);
@@ -219,17 +211,11 @@
                                 transformedGraphics.fill({ color: path.color, alpha: path.opacity });
                             }
                         } catch (transformError) {
-                            if (this.config.debug) {
-                                console.warn(`Point transform failed for point ${index}:`, transformError);
-                            }
                         }
                     });
                     
                     path.graphics = transformedGraphics;
                 } catch (error) {
-                    if (this.config.debug) {
-                        console.error('Transform application failed, using original graphics:', error);
-                    }
                 }
             }
             
@@ -286,7 +272,6 @@
         }
     }
 
-    // === UnifiedKeyHandler ===
     class UnifiedKeyHandler {
         constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
             this.cameraSystem = cameraSystem;
@@ -440,14 +425,13 @@
         }
     }
 
-    // === CoreEngineクラス ===
     class CoreEngine {
         constructor(app) {
             this.app = app;
             
             this.eventBus = window.TegakiEventBus;
             if (!this.eventBus) {
-                throw new Error('window.TegakiEventBus is required for CoreEngine initialization');
+                throw new Error('window.TegakiEventBus is required');
             }
             
             this.cameraSystem = new window.TegakiCameraSystem();
@@ -485,12 +469,12 @@
         
         initializeAnimationSystem() {
             if (!window.TegakiAnimationSystem) {
-                console.warn('⚠️ TegakiAnimationSystem not found - animation features disabled');
+                console.warn('⚠️ TegakiAnimationSystem not found');
                 return;
             }
             
             if (!window.TegakiTimelineUI) {
-                console.warn('⚠️ TegakiTimelineUI not found - timeline UI disabled');
+                console.warn('⚠️ TegakiTimelineUI not found');
                 return;
             }
             
@@ -504,12 +488,10 @@
                 window.animationSystem = this.animationSystem;
                 window.timelineUI = this.timelineUI;
                 
-                console.log('✅ AnimationSystem and TimelineUI initialized successfully');
-                
                 this.setupCoordinateSystemReferences();
                 
             } catch (error) {
-                console.error('❌ Failed to initialize AnimationSystem/TimelineUI:', error);
+                console.error('❌ Failed to initialize AnimationSystem:', error);
                 this.animationSystem = null;
                 this.timelineUI = null;
             }
@@ -529,10 +511,7 @@
                     if (typeof window.CoordinateSystem.setAnimationSystem === 'function' && this.animationSystem) {
                         window.CoordinateSystem.setAnimationSystem(this.animationSystem);
                     }
-                    
-                    console.log('✅ CoordinateSystem references set by CoreEngine');
                 } catch (error) {
-                    console.warn('⚠️ Failed to set CoordinateSystem references:', error);
                 }
             }
         }
@@ -603,7 +582,8 @@
             
             this.cameraSystem.resizeCanvas(newWidth, newHeight);
             
-            this.layerSystem.layers.forEach(layer => {
+            const layers = this.layerSystem.getLayers();
+            layers.forEach(layer => {
                 if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
                     layer.layerData.backgroundGraphics.clear();
                     layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
@@ -611,7 +591,7 @@
                 }
             });
             
-            for (let i = 0; i < this.layerSystem.layers.length; i++) {
+            for (let i = 0; i < layers.length; i++) {
                 this.layerSystem.requestThumbnailUpdate(i);
             }
             
@@ -619,8 +599,6 @@
         }
         
         initialize() {
-            console.log('=== CoreEngine サムネイル即時反映対応版 initialization ===');
-            
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
             this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
             this.clipboardSystem.init(this.eventBus, CONFIG);
@@ -635,12 +613,10 @@
                 this.animationSystem
             );
             
-            this.layerSystem.createLayer('背景', true);
-            this.layerSystem.createLayer('レイヤー1');
-            this.layerSystem.setActiveLayer(1);
-            
-            this.layerSystem.updateLayerPanelUI();
-            this.layerSystem.updateStatusDisplay();
+            this.eventBus.on('animation:initial-cut-created', () => {
+                this.layerSystem.updateLayerPanelUI();
+                this.layerSystem.updateStatusDisplay();
+            });
             
             if (window.TegakiUI && window.TegakiUI.initializeSortable) {
                 window.TegakiUI.initializeSortable(this.layerSystem);
@@ -656,16 +632,10 @@
                 systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation']
             });
             
-            console.log('✅ CoreEngine initialized (サムネイル即時反映対応版)');
-            console.log('   - ✅ ペン描画確定時のタイムラインサムネイル即時更新対応');
-            console.log('   - ✅ AnimationSystem generateCutThumbnailOptimized 連携');
-            console.log('   - ✅ 既存機能完全維持');
-            
             return this;
         }
     }
 
-    // === グローバル公開 ===
     window.TegakiCore = {
         CoreEngine: CoreEngine,
         CameraSystem: window.TegakiCameraSystem,
@@ -678,9 +648,5 @@
         TimelineUI: window.TegakiTimelineUI,
         UnifiedKeyHandler: UnifiedKeyHandler
     };
-
-    console.log('✅ core-engine.js loaded (サムネイル即時反映対応版)');
-    console.log('   - ✅ ペン描画stopDrawing時にCUTサムネイル即時更新');
-    console.log('   - ✅ レイヤーサムネイル更新との適切な順序制御');
 
 })();
