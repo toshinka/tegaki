@@ -1,4 +1,5 @@
-// ===== ui/timeline-ui.js - 改修完了版 =====
+// ===== ui/timeline-ui.js - CUT表示配置修正版 =====
+// 【改修E】レイヤーパネルのCUT表示を最上部に確実に配置
 // 【改修A】×ボタンを右端に移動、パネル左寄せ
 // 【改修B】再生時間表示追加（M:SS:XX形式）
 // 【改修C】RETIMEボタン追加（全カット時間一括変更）
@@ -174,7 +175,6 @@
             this.timelinePanel.dataset.source = 'timeline-ui';
             this.timelinePanel.style.display = 'none';
             
-            // 【改修A,B】ヘッダー行：コントロール左・×ボタン右・時間表示
             const timelineHeader = document.createElement('div');
             timelineHeader.className = 'timeline-header';
             timelineHeader.dataset.source = 'timeline-ui';
@@ -191,8 +191,10 @@
                     <button id="add-cut-btn" title="CUT追加 (Alt+=)">+CUT</button>
                     <button id="copy-paste-cut-btn" title="CUTコピペ (Shift+C)" class="copy-paste-btn">+C&P</button>
                     <button id="rename-cuts-btn" title="CUTリネーム" class="rename-btn">RENAME</button>
-                    <button id="retime-cuts-btn" title="全カット時間変更" class="retime-btn">RETIME</button>
-                    <input type="number" id="retime-input" class="retime-input" value="0.5" min="0.01" max="10" step="0.01" title="全カット時間">
+                    <div class="retime-container">
+                        <button id="retime-cuts-btn" title="全カット時間変更" class="retime-btn">RETIME</button>
+                        <input type="number" id="retime-input" class="retime-input" value="0.5" min="0.01" max="10" step="0.01" title="全カット時間">
+                    </div>
                 </div>
                 <button class="timeline-close" id="close-timeline" title="タイムラインを閉じる">×</button>
             `;
@@ -222,12 +224,10 @@
                 .timeline-panel.show { display: block !important; animation: slideUp 0.35s ease-out !important; }
                 @keyframes slideUp { from { opacity: 0; transform: translateY(25px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
                 
-                /* 【改修A】ヘッダー配置：左にコントロール、右に×ボタン */
                 .timeline-header { display: flex !important; align-items: center !important; justify-content: space-between !important; 
                     height: 32px !important; padding: 4px 6px !important; margin-bottom: 6px !important; 
                     border-bottom: 1px solid var(--futaba-light-medium) !important; }
                 
-                /* 【改修A】×ボタン右端配置 */
                 .timeline-close { background: none !important; border: none !important; font-size: 18px !important; 
                     color: var(--futaba-maroon) !important; cursor: pointer !important; padding: 4px 8px !important; 
                     border-radius: 6px !important; height: 28px !important; min-width: 28px !important; font-weight: bold !important; 
@@ -268,7 +268,6 @@
                     font-weight: 600 !important; text-align: center !important; white-space: nowrap !important; overflow: hidden !important; 
                     text-overflow: ellipsis !important; max-width: 72px !important; line-height: 1.3 !important; }
                 
-                /* 【改修D】時間入力0.01秒単位対応 */
                 .cut-duration-container { display: flex !important; align-items: center !important; gap: 2px !important; margin-bottom: 3px !important; }
                 .cut-duration-input { width: 35px !important; height: 18px !important; border: 1px solid var(--futaba-light-medium) !important; 
                     border-radius: 3px !important; background: var(--futaba-background) !important; font-size: 8px !important; 
@@ -291,7 +290,6 @@
                 .cut-item:hover .delete-cut-btn { opacity: 1 !important; }
                 .delete-cut-btn:hover { background: rgba(128, 0, 0, 1) !important; transform: scale(1.15) !important; }
                 
-                /* 【改修A】コントロール左寄せ */
                 .timeline-controls { display: flex !important; gap: 4px !important; align-items: center !important; order: 1 !important; }
                 .timeline-controls button { padding: 4px 12px !important; background: var(--futaba-background) !important; 
                     border: 2px solid var(--futaba-medium) !important; border-radius: 6px !important; cursor: pointer !important; 
@@ -301,7 +299,6 @@
                 .timeline-controls button:hover { background: var(--futaba-medium) !important; border-color: var(--futaba-maroon) !important; 
                     transform: translateY(-1px) !important; }
                 
-                /* 【改修B】再生時間表示 */
                 .playback-time { font-family: monospace !important; font-size: 11px !important; font-weight: bold !important; 
                     color: var(--futaba-maroon) !important; padding: 0 8px !important; min-width: 60px !important; 
                     text-align: center !important; height: 28px !important; display: flex !important; align-items: center !important; 
@@ -314,16 +311,24 @@
                 .rename-btn { background: var(--futaba-light-medium) !important; font-size: 10px !important; font-weight: 700 !important; min-width: 60px !important; }
                 .rename-btn:hover { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; transform: translateY(-2px) scale(1.05) !important; }
                 
-                /* 【改修C】RETIMEボタンと入力欄 */
-                .retime-btn { background: var(--futaba-light-medium) !important; font-size: 10px !important; font-weight: 700 !important; min-width: 60px !important; }
-                .retime-btn:hover { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; transform: translateY(-2px) scale(1.05) !important; }
+                /* 【改修C+E】RETIMEボタンと入力欄を一体化したデザイン */
+                .retime-container { display: flex !important; align-items: center !important; gap: 0 !important; 
+                    background: var(--futaba-light-medium) !important; border: 2px solid var(--futaba-medium) !important; 
+                    border-radius: 6px !important; overflow: hidden !important; height: 28px !important; 
+                    transition: all 0.2s ease !important; }
+                .retime-container:hover { border-color: var(--futaba-maroon) !important; }
                 
-                .retime-input { width: 45px !important; height: 28px !important; border: 2px solid var(--futaba-medium) !important; 
-                    border-radius: 6px !important; background: var(--futaba-background) !important; font-size: 11px !important; 
+                .retime-btn { background: transparent !important; border: none !important; border-right: 1px solid var(--futaba-medium) !important; 
+                    border-radius: 0 !important; font-size: 10px !important; font-weight: 700 !important; min-width: 60px !important; 
+                    height: 24px !important; margin: 0 !important; padding: 4px 8px !important; }
+                .retime-btn:hover { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; transform: none !important; }
+                
+                .retime-input { width: 50px !important; height: 24px !important; border: none !important; 
+                    border-radius: 0 !important; background: var(--futaba-background) !important; font-size: 11px !important; 
                     font-family: monospace !important; color: var(--futaba-maroon) !important; font-weight: bold !important; 
-                    text-align: center !important; outline: none !important; padding: 0 4px !important; -moz-appearance: textfield !important; }
+                    text-align: center !important; outline: none !important; padding: 0 6px !important; -moz-appearance: textfield !important; }
                 .retime-input::-webkit-outer-spin-button, .retime-input::-webkit-inner-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
-                .retime-input:focus { border-color: var(--futaba-maroon) !important; }
+                .retime-input:focus { background: white !important; }
                 
                 #repeat-btn { min-width: 34px !important; padding: 6px !important; }
                 #repeat-btn.repeat-active { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; }
@@ -382,10 +387,7 @@
             });
             document.getElementById('copy-paste-cut-btn')?.addEventListener('click', () => this.executeCutCopyPaste());
             document.getElementById('rename-cuts-btn')?.addEventListener('click', () => this.executeRenameCuts());
-            
-            // 【改修C】RETIMEボタン
             document.getElementById('retime-cuts-btn')?.addEventListener('click', () => this.executeRetimeCuts());
-            
             document.getElementById('close-timeline')?.addEventListener('click', () => this.hide());
         }
         
@@ -408,7 +410,6 @@
             this.updateLayerPanelIndicator();
         }
         
-        // 【改修C】全カット時間一括変更
         executeRetimeCuts() {
             if (!this.animationSystem) return;
             
@@ -445,7 +446,6 @@
             }
         }
         
-        // 【改修B】再生時間更新ループ
         startPlaybackTimeUpdate() {
             const updateTime = () => {
                 if (!this.isPlaying) return;
@@ -466,7 +466,6 @@
             }
         }
         
-        // 【改修B】時間表示更新（M:SS:XX形式）
         updatePlaybackTimeDisplay(timeInSeconds) {
             const timeDisplay = document.getElementById('playback-time');
             if (!timeDisplay) return;
@@ -627,13 +626,16 @@
             });
         }
         
+        // 【改修E】レイヤーパネルのCUT表示を確実に最上部に配置
         createLayerPanelCutIndicator() {
             const layerContainer = document.getElementById('layer-panel-container');
             if (!layerContainer) return;
             
+            // 既存のCUT表示を削除
             const existingIndicator = layerContainer.querySelector('.cut-indicator');
             if (existingIndicator) existingIndicator.remove();
             
+            // 新しいCUT表示を作成
             const cutIndicator = document.createElement('div');
             cutIndicator.className = 'cut-indicator';
             cutIndicator.innerHTML = `
@@ -642,11 +644,10 @@
                 <button class="cut-nav-btn" id="cut-next-btn">▶</button>
             `;
             
-            const addButton = layerContainer.querySelector('.layer-add-button');
-            if (addButton) {
-                layerContainer.insertBefore(cutIndicator, addButton.nextSibling);
-            }
+            // 【修正】レイヤーパネルコンテナの最初の子要素として挿入
+            layerContainer.insertBefore(cutIndicator, layerContainer.firstChild);
             
+            // イベントリスナー設定
             document.getElementById('cut-prev-btn')?.addEventListener('click', () => this.goToPreviousCutSafe());
             document.getElementById('cut-next-btn')?.addEventListener('click', () => this.goToNextCutSafe());
             
@@ -704,7 +705,6 @@
             
             const thumbnailHtml = this.generateCutThumbnailHTML(cut, index);
             
-            // 【改修D】step="0.01"に変更
             cutItem.innerHTML = `
                 <div class="cut-thumbnail" data-cut-index="${index}">${thumbnailHtml}</div>
                 <div class="cut-name">${cut.name}</div>

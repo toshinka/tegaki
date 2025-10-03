@@ -110,102 +110,50 @@
             touch-action: none;
         }
         
+        /* 🔧 Phase2改修: レイアウト詰め版 */
         .layer-panel-container {
             position: fixed;
-            right: 20px;
+            right: 12px;
             top: 50%;
             transform: translateY(-50%);
             z-index: 1000;
             display: flex;
             flex-direction: column;
             align-items: center;
-            gap: 8px;
+            gap: 2px;
             pointer-events: none;
         }
         
-        /* 🔧 Phase2追加: レイヤーコントロール行 */
-        .layer-controls-row {
-            display: flex;
-            flex-direction: row;
-            gap: 8px;
-            background: transparent;
-            pointer-events: all;
-            justify-content: center;
-            padding: 4px 8px;
-            margin-bottom: 8px;
-        }
-        
-        .layer-add-button,
-        .folder-add-button {
-            width: 36px;
-            height: 36px;
-            background: var(--futaba-cream);
-            border: 2px solid var(--futaba-light-medium);
-            border-radius: 8px;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            cursor: pointer;
-            transition: all 0.2s ease;
-            box-shadow: 0 2px 8px rgba(128, 0, 0, 0.1);
-            pointer-events: all;
-        }
-        
-        .layer-add-button:hover {
-            background: var(--futaba-medium);
-            transform: scale(1.1);
-        }
-        
-        .layer-add-button svg,
-        .folder-add-button svg { 
-            width: 18px; 
-            height: 18px; 
-            stroke: #800000; 
-        }
-        
-        /* 🔧 Phase2追加: フォルダボタン（準備中スタイル） */
-        .folder-add-button {
-            opacity: 0.6;
-            cursor: not-allowed;
-        }
-        
-        .folder-add-button:hover {
-            opacity: 0.7;
-            transform: none;
-        }
-        
-        /* CUT表示インジケータ - レイヤーパネル連動 */
+        /* 🔧 CUTインジケータ - 大きな枠デザイン */
         .cut-indicator {
             display: flex;
             flex-direction: row;
             align-items: center;
-            background: var(--futaba-cream);
-            border: 1px solid var(--futaba-light-maroon);
-            border-radius: 10px;
-            padding: 2px 12px;
-            box-shadow: 0 3px 12px rgba(128, 0, 0, 0.25);
+            background: var(--futaba-background);
+            border: 1px solid var(--futaba-maroon);
+            border-radius: 8px;
+            padding: 4px 8px;
+            box-shadow: 0 2px 6px rgba(128, 0, 0, 0.15);
             pointer-events: all;
-            gap: 15px;
-            font-size: 13px;
+            gap: 8px;
+            font-size: 11px;
             font-weight: bold;
-            margin-bottom: 8px;
-            backdrop-filter: blur(8px);
-            background: rgba(240, 224, 214, 0.95);
+            margin-bottom: 4px;
         }
         
         .cut-nav-btn {
-            width: 32px;
-            height: 32px;
+            width: 28px;
+            height: 28px;
             background: var(--futaba-background);
-            border: 2px solid var(--futaba-medium);
-            border-radius: 8px;
+            border: 0px solid var(--futaba-maroon);
+            border-radius: 6px;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
             font-size: 16px;
             color: var(--futaba-maroon);
-            transition: all 0.2s ease;
+            transition: all 0.15s ease;
             font-weight: bold;
             user-select: none;
         }
@@ -213,57 +161,106 @@
         .cut-nav-btn:hover {
             background: var(--futaba-medium);
             transform: scale(1.08);
-            box-shadow: 0 3px 8px rgba(128, 0, 0, 0.25);
         }
         
         .cut-nav-btn:disabled {
-            opacity: 0.4;
+            opacity: 0.3;
             cursor: not-allowed;
             transform: none;
-            box-shadow: none;
         }
         
         .cut-display {
             color: var(--futaba-maroon);
             font-weight: bold;
-            min-width: 70px;
+            min-width: 52px;
             text-align: center;
             font-size: 12px;
             background: var(--futaba-background);
-            padding: 4px 8px;
+            padding: 4px 10px;
             border-radius: 6px;
+            border: 0px solid var(--futaba-light-medium);
+        }
+        
+        /* 🔧 レイヤーコントロール行 - 詰め版 */
+        .layer-controls-row {
+            display: flex;
+            flex-direction: row;
+            gap: 4px;
+            background: transparent;
+            pointer-events: all;
+            justify-content: center;
+            padding: 0;
+            margin-bottom: 4px;
+        }
+        
+        .layer-add-button,
+        .folder-add-button {
+            width: 32px;
+            height: 32px;
+            background: var(--futaba-cream);
             border: 1px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.15s ease;
+            box-shadow: 0 1px 3px rgba(128, 0, 0, 0.08);
+            pointer-events: all;
+        }
+        
+        .layer-add-button:hover {
+            background: var(--futaba-medium);
+            transform: scale(1.08);
+        }
+        
+        .layer-add-button svg,
+        .folder-add-button svg { 
+            width: 16px; 
+            height: 16px; 
+            stroke: #800000; 
+        }
+        
+        .folder-add-button {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+        
+        .folder-add-button:hover {
+            opacity: 0.6;
+            transform: none;
         }
         
         .layer-panel-items {
             display: flex;
             flex-direction: column;
-            gap: 4px;
+            gap: 3px;
             background: transparent;
-            border-radius: 8px;
-            padding: 8px;
+            border-radius: 6px;
+            padding: 4px;
             pointer-events: all;
             max-height: 60vh;
             overflow-y: auto;
         }
         
+        /* 🔧 レイヤーアイテム - 詰め版 */
         .layer-item {
-            width: 180px;
-            height: 64px;
+            width: 170px;
+            height: 56px;
             background: var(--futaba-cream);
             border: 1px solid var(--futaba-light-medium);
-            border-radius: 6px;
-            padding: 6px 8px;
+            border-radius: 4px;
+            padding: 4px 6px;
             cursor: pointer;
-            transition: background-color 0.2s ease, border-color 0.2s ease;
+            transition: background-color 0.15s ease, border-color 0.15s ease;
             display: grid;
-            grid-template-columns: 20px 1fr auto;
+            grid-template-columns: 18px 1fr auto;
             grid-template-rows: 1fr 1fr;
-            gap: 4px 8px;
+            gap: 3px 6px;
             align-items: center;
             user-select: none;
             position: relative;
-            box-shadow: 0 1px 2px rgba(128, 0, 0, 0.05);
+            box-shadow: 0 1px 2px rgba(128, 0, 0, 0.04);
         }
         
         .layer-item:hover {
@@ -274,7 +271,7 @@
         .layer-item.active {
             border-color: var(--futaba-maroon);
             background: var(--futaba-light-medium);
-            box-shadow: 0 2px 4px rgba(128, 0, 0, 0.15);
+            box-shadow: 0 1px 3px rgba(128, 0, 0, 0.12);
         }
         
         .sortable-ghost {
@@ -293,54 +290,54 @@
         .layer-visibility {
             grid-column: 1;
             grid-row: 1 / 3;
-            width: 20px;
-            height: 20px;
+            width: 18px;
+            height: 18px;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            border-radius: 3px;
-            transition: all 0.2s ease;
+            border-radius: 2px;
+            transition: all 0.15s ease;
             align-self: center;
         }
         
         .layer-visibility:hover { background: var(--futaba-light-medium); }
-        .layer-visibility svg { width: 16px; height: 16px; stroke: #800000; }
+        .layer-visibility svg { width: 14px; height: 14px; stroke: #800000; }
         .layer-visibility.hidden svg { opacity: 0.3; }
         
         .layer-opacity {
             grid-column: 2;
             grid-row: 1;
-            font-size: 10px;
+            font-size: 9px;
             color: var(--futaba-maroon);
             font-family: monospace;
             align-self: start;
-            margin-top: 2px;
+            margin-top: 1px;
         }
         
         .layer-name {
             grid-column: 2;
             grid-row: 2;
-            font-size: 12px;
+            font-size: 11px;
             color: var(--futaba-maroon);
             font-weight: 500;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
             align-self: end;
-            margin-bottom: 2px;
-            max-width: calc(100% - 8px);
+            margin-bottom: 1px;
+            max-width: calc(100% - 6px);
         }
         
         .layer-thumbnail {
             grid-column: 3;
             grid-row: 1 / 3;
-            min-width: 24px;
-            max-width: 72px;
-            height: 48px;
+            min-width: 20px;
+            max-width: 64px;
+            height: 44px;
             background: var(--futaba-background);
             border: 1px solid var(--futaba-light-medium);
-            border-radius: 4px;
+            border-radius: 3px;
             overflow: hidden;
             position: relative;
             display: flex;
@@ -354,37 +351,37 @@
             width: 100%;
             height: 100%;
             object-fit: cover;
-            border-radius: 3px;
-            transition: opacity 0.2s ease;
+            border-radius: 2px;
+            transition: opacity 0.15s ease;
         }
         
         .layer-thumbnail-placeholder {
-            width: 24px;
-            height: 24px;
+            width: 20px;
+            height: 20px;
             background: var(--futaba-light-medium);
             border-radius: 2px;
-            opacity: 0.5;
+            opacity: 0.4;
         }
         
         .layer-delete-button {
             position: absolute;
-            top: 4px;
-            right: 4px;
-            width: 16px;
-            height: 16px;
+            top: 3px;
+            right: 3px;
+            width: 14px;
+            height: 14px;
             display: flex;
             align-items: center;
             justify-content: center;
             cursor: pointer;
-            border-radius: 3px;
-            transition: all 0.2s ease;
-            background: rgba(128, 0, 0, 0.1);
+            border-radius: 2px;
+            transition: all 0.15s ease;
+            background: rgba(128, 0, 0, 0.08);
             opacity: 0;
         }
         
         .layer-item:hover .layer-delete-button { opacity: 1; }
-        .layer-delete-button:hover { background: rgba(128, 0, 0, 0.2); }
-        .layer-delete-button svg { width: 10px; height: 10px; stroke: #800000; }
+        .layer-delete-button:hover { background: rgba(128, 0, 0, 0.18); }
+        .layer-delete-button svg { width: 9px; height: 9px; stroke: #800000; }
         
         .popup-panel {
             position: fixed;
@@ -678,7 +675,7 @@
 <body>
     <div class="main-layout">
         <div class="sidebar">
-            <!-- 🆕 Phase2追加: アルバム保管アイコン -->
+            <!-- 🆕 Phase3: アルバム保管アイコン -->
             <div class="tool-button" id="library-tool" title="アルバム保管 (準備中)">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <rect width="8" height="18" x="3" y="3" rx="1"/>
@@ -687,7 +684,7 @@
                 </svg>
             </div>
             
-            <!-- 🆕 Phase2追加: 画像・アニメ出力アイコン -->
+            <!-- 🆕 Phase3: 画像・アニメ出力アイコン -->
             <div class="tool-button" id="export-tool" title="画像・アニメ出力 (準備中)">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10l-3.1-3.1a2 2 0 0 0-2.814.014L6 21"/>
@@ -864,6 +861,7 @@
     
     <!-- 5. UI -->
     <script src="ui/ui-panels.js"></script>
+    <script src="ui/timeline-thumbnail-utils.js"></script>
     
     <!-- 6. エンジン層 -->
     <script src="core-runtime.js"></script>
@@ -905,16 +903,11 @@ try {
 }
     </script>
     
-    <!-- 🔧 Phase2改修: レイヤーパネル構造変更 -->
+    <!-- 🔧 Phase2改修: レイヤーパネル構造（詰め版） -->
     <div class="layer-panel-container" id="layer-panel-container">
-        <!-- CUTインジケータ（最上部） -->
-        <div class="cut-indicator">
-            <div class="cut-nav-btn" id="prev-cut-btn">◀</div>
-            <div class="cut-display" id="cut-display">CUT1</div>
-            <div class="cut-nav-btn" id="next-cut-btn">▶</div>
-        </div>
+        <!-- CUTインジケータはtimeline-ui.jsが動的生成 -->
         
-        <!-- 🔧 Phase2追加: レイヤー+/フォルダ+ボタン横並び -->
+        <!-- 🔧 Phase2: レイヤー+/フォルダ+ボタン横並び（詰め版） -->
         <div class="layer-controls-row">
             <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加 (Ctrl+L)">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -923,7 +916,7 @@ try {
                 </svg>
             </div>
             
-            <!-- 🆕 Phase2追加: フォルダ追加ボタン -->
+            <!-- 🆕 Phase2: フォルダ追加ボタン -->
             <div class="folder-add-button" id="add-folder-btn" title="フォルダ追加（準備中）">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <path d="M12 10v6"/>
@@ -1266,7 +1259,7 @@ try {
     
     window.addEventListener('DOMContentLoaded', async () => {
         try {
-            console.log('🔥 Starting Phase2改修版 initialization...');
+            console.log('🔥 Starting Phase2改修版（レイアウト詰め）initialization...');
             
             if (!checkCoreRuntime()) {
                 throw new Error('CoreRuntime initialization failed');
@@ -1296,11 +1289,12 @@ try {
                 }, 1000);
             }
             
-            console.log('✅ Phase2改修版 SUCCESS: Drawing App initialized!');
-            console.log('🎯 Phase2改修完了:');
+            console.log('✅ Phase2改修版（レイアウト詰め）SUCCESS!');
+            console.log('🎯 改修完了内容:');
             console.log('   - ✅ レイヤーパネル階層移動修正');
-            console.log('   - ✅ CUTインジケータ最上部配置');
-            console.log('   - ✅ レイヤー+/フォルダ+ボタン横並び');
+            console.log('   - ✅ CUTインジケータ装飾削減＆詰め版');
+            console.log('   - ✅ レイヤー+/フォルダ+ボタン詰め版');
+            console.log('   - ✅ レイヤーアイテム詰め版（170px×56px）');
             console.log('   - ✅ サイドバーアイコン追加（アルバム・出力）');
             
         } catch (error) {
