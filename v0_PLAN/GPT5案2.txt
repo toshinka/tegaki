@@ -1,0 +1,161 @@
+・レイヤー入れ替えがUI上だけで終わる問題を解消し、**モデル配列 + Pixi の表示順（コンテナの子インデックス）**を同期させる。
+
+・一度入れ替えると動かせなくなる不具合は、イベントリスンや参照の不整合（古いインデックス参照）が原因になりやすいので、入れ替え後にUIを再構築／イベント再結合する方式で対処。
+
+・パネルの上部の順序を入れ替え、レイヤー＋の隣に フォルダ＋ を追加（将来のフォルダ実装のためのプレースホルダ）。
+
+・元ファイル構造を残し、既存関数を拡張／追加する形で継承や既存呼び出しを壊さない変更に留める。
+
+まず、参照した現行ファイル（修正箇所の出発点）：ui-panels.js, system/layer-system.js, core-engine.js, index.html。これらに対して差分を入れます。
+
+
+1) 根本原因（要点）
+
+UI上で並べ替えられているが、データモデル（layers 配列）と Pixi の stage/container 内の子順が更新されていない場合、見た目は変わっても描画順・操作順は変わらない。
+
+一度動かせなくなるのは、入れ替えで DOM/UI とモデルの参照IDやインデックスがズレ、イベントハンドラが古い要素に紐づいているため発生するパターンが多い。
+
+対策は「入れ替え操作 → モデル配列の入れ替え → Pixi container の setChildIndex（もしくは swapChildren）で実際の描画順を揃える → UI を再構築／イベント再バインド」の流れです。
+
+2) layer-system.js：最小追加パッチ（モデル同期＋Pixi順序反映）
+
+system/layer-system.js に次のユーティリティ関数を追加してください（既存のエクスポート方式に合わせて global オブジェクトに追加するなど、既存スタイルに合わせてください）。これは既存関数を上書きしない追加です。
+
+/* 追加関数: レイヤー配列とPixi表示順を同期して入れ替える */
+function swapLayersByIndex(layersArray, container, fromIndex, toIndex) {
+  if (fromIndex === toIndex) return;
+
+  // bounds check
+  const n = layersArray.length;
+  if (fromIndex < 0 || fromIndex >= n || toIndex < 0 || toIndex >= n) return;
+
+  // 1) モデル配列の入れ替え
+  const [moved] = layersArray.splice(fromIndex, 1);
+  layersArray.splice(toIndex, 0, moved);
+
+  // 2) Pixi コンテナ内の順序を合わせる
+  // container は layers が保持する PIXI.Container か PIXI.DisplayObject の親を指す
+  try {
+    // moved.pixiDisplay は各レイヤーが保持する PIXI.DisplayObject（慣習に合わせて調整）
+    const pixiChild = moved.pixiDisplay;
+    if (pixiChild && container.setChildIndex) {
+      // 新しいインデックスを計算（Pixi は 0 が下層）
+      // layersArray の index に合わせて setChildIndex
+      const newIndex = toIndex;
+      container.setChildIndex(pixiChild, newIndex);
+    }
+  } catch (e) {
+    console.warn('swapLayersByIndex: setChildIndex failed', e);
+  }
+}
+
+
+注意点 / 適応箇所：
+
+layersArray：あなたのコードでレイヤー情報を保っている配列（例 layerSystem.layers 等）を渡す。
+
+container：実際に表示している PIXI.Container（例 app.stage や layerContainer）。
+
+moved.pixiDisplay：各レイヤーオブジェクトが Pixi 表示オブジェクトを参照しているプロパティ名に合わせてください（例 layer.sprite layer.container 等）。もし現在参照フィールドが無ければ、レイヤー作成時に layer.pixiDisplay = createdDisplayObject; を保持するように軽く追加してください。
+
+この関数を「UI で並べ替えを受け取ったあと」に呼ぶことで、UIの変化 → モデル更新 → Pixi表現更新の一貫性が保てます。
+GitHub
+
+3) ui-panels.js：UI の順序変更とフォルダ＋追加（DOM／イベント部分のパッチ）
+
+ui-panels.js の「レイヤーパネル上部」を出力している箇所を見つけ、現在の順序を
+
+◀CUT1▶
+　+
+レイヤー１
+背景
+
+
+の形に強制するため、該当 HTML 生成部を次のスニペットに置き換えてください（既存の CSS/クラス名は踏襲してください）。この置換は破壊的に全体を書き換えないで、該当のパネルヘッダ生成ブロックのみ差し替えることを推奨します。
+
+<!-- レイヤーパネル ヘッダ（例: createLayerPanelHeader() 出力部に差し替え） -->
+<div class="layer-panel-header" role="toolbar" aria-label="Layer controls">
+  <div class="cut-fixed">◀CUT1▶</div>
+
+  <div class="layer-buttons">
+    <!-- レイヤー追加ボタン -->
+    <button id="layer-add-btn" title="レイヤーを追加">＋</button>
+
+    <!-- フォルダ追加ボタン（隣に配置） -->
+    <button id="folder-add-btn" title="フォルダを追加 (未実装: プレースホルダ)">
+      <!-- SVG：あなたが指定した lucide フォルダ+ アイコン -->
+      <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round" class="lucide-folder-plus-icon">
+        <path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
+      </svg>
+    </button>
+  </div>
+</div>
+
+
+さらに、folder-add-btn のクリックハンドラを追加（プレースホルダ動作でOK）：
+
+document.getElementById('folder-add-btn')?.addEventListener('click', () => {
+  // 将来のフォルダ作成ロジックのプレースホルダ
+  const newFolder = {
+    id: generateLayerId(), // 既存のID生成ユーティリティを使ってください
+    type: 'folder',
+    name: '新規フォルダ',
+    children: [],
+    // pixiDisplay はフォルダ用に null か Container を作るならそれを保持
+    pixiDisplay: null
+  };
+  // レイヤー配列に追加（UI とモデルの整合のため）
+  layerSystem.layers.unshift(newFolder); // 例: 上に追加
+  uiPanels.refreshLayerList(); // UI 再生成関数を呼ぶ（存在するならそれ）
+});
+
+
+既存コードで layer-add-btn にイベントが付いているなら、そのすぐ横に folder-add-btn を差し込むだけで済みます。UI 再構築関数名は既存に合わせてください（例: renderLayerPanel() / rebuildLayerPanel() 等）。
+GitHub
+
+4) UI の並べ替え操作を受け取る箇所（ドラッグ／ドロップ・ボタン入れ替え）への接続例
+
+UI 側でドラッグ＆ドロップや上下ボタンで並べ替えを処理しているハンドラの最後に、必ず下記を呼ぶようにします（関数名は既存に合わせてください）：
+
+// fromIndex, toIndex は UI 側で算出した古いインデックス／新しいインデックス
+swapLayersByIndex(layerSystem.layers, layerContainer, fromIndex, toIndex);
+
+// UI を再生成してイベントを付け直す（イベントの古い参照を切るため）
+uiPanels.rebuildLayerList(); // 既存の関数名に合わせてください
+
+// 必要ならPixiの再描画を強制
+if (app && app.renderer) {
+  app.renderer.render(app.stage);
+}
+
+
+ポイント：rebuildLayerList()（UI側のリスト再描画）は、既存の DOM を一度破棄して再生成する方法が最もバグが少ないです（イベントハンドラの二重付与や古い参照の残存を防げる）。ただし、描画コストが気になる場合は差分更新を検討しますが、まずは「確実動作」を優先してください。
+
+5) 一度入れ替えると動かなくなる不具合への追加対策
+
+並べ替え完了後に、全レイヤー要素の dataset（データ属性）や index を UI 側とモデル側で再同期する。例：li.dataset.layerIndex = i; を再設定。
+
+DOM 要素へのイベントは rebuildLayerList() 内で毎回新しく addEventListener する（removeEventListener を使うより確実）。
+
+ドラッグライブラリを使っている場合（もし使っていれば）、drag context の参照を再初期化する（destroy → init）。
+
+6) テスト手順（最小チェックリスト）
+
+ローカルで index.html を開く（file:// 前提）。
+
+レイヤーパネル上部が ◀CUT1▶ → ＋（レイヤー） → フォルダ＋ の順になっているか確認。
+
+レイヤーをドラッグして上下入れ替え → 描画順（前景 / 背景の重なり）が変わるか確認。
+
+同じ操作を何度も繰り返し、二度目以降も動かせることを確認。
+
+ブラウザのコンソールに swapLayersByIndex の警告や例外が出ていないか確認（console.warn は設置した場合のみ）。
+
+7) 実装上の注意（あなたのルールに合わせて）
+
+ES2023（モジュール不使用）ルールに合わせ、追加関数は既存グローバル名前空間（例 layerSystem.swapLayersByIndex = ...）に置くか、既存ファイル内に直接追加してください。
+
+Canvas2D禁止などのルールは守っています。Pixi の setChildIndex は v8.13 で有効な API です。
+
+
+console.log は最小限にとどめ、例外検知は console.warn のみにしています。
