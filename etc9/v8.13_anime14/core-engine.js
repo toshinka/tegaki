@@ -1,5 +1,6 @@
-// ===== core-engine.js - AnimationSystem初期化修正版 =====
-// 【修正】AnimationSystemにCameraSystemを渡すよう修正
+// ===== core-engine.js - Undo/Redo機能追加版 =====
+// 【改修】DrawingEngine.stopDrawing()にHistory.saveState()追加
+// 【改修】Delete キー対応追加
 // 【維持】既存機能完全維持
 
 (function() {
@@ -87,6 +88,11 @@
             
             if (!this.cameraSystem.isPointInExtendedCanvas(canvasPoint)) {
                 return;
+            }
+            
+            // 🔧 改修: 描画開始前に現在状態を保存
+            if (window.History && typeof window.History.saveState === 'function') {
+                window.History.saveState();
             }
             
             this.isDrawing = true;
@@ -458,6 +464,45 @@
         }
         
         setupSystemEventIntegration() {
+            // 🔧 改修: レイヤー消去イベント追加
+            this.eventBus.on('layer:clear-active', () => {
+                const activeLayer = this.layerSystem.getActiveLayer();
+                if (!activeLayer || !activeLayer.layerData) return;
+                
+                // 背景レイヤーは消去不可
+                if (activeLayer.layerData.isBackground) {
+                    return;
+                }
+                
+                // 現在状態を保存
+                if (window.History && typeof window.History.saveState === 'function') {
+                    window.History.saveState();
+                }
+                
+                // パスをクリア
+                if (activeLayer.layerData.paths) {
+                    activeLayer.layerData.paths.forEach(path => {
+                        if (path.graphics) {
+                            activeLayer.removeChild(path.graphics);
+                            if (path.graphics.destroy) {
+                                path.graphics.destroy();
+                            }
+                        }
+                    });
+                    activeLayer.layerData.paths = [];
+                }
+                
+                // サムネイル更新
+                this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                
+                if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {
+                    const currentCutIndex = this.layerSystem.animationSystem.getCurrentCutIndex();
+                    setTimeout(() => {
+                        this.layerSystem.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
+                    }, 100);
+                }
+            });
+            
             this.eventBus.on('layer:activated', (data) => {
                 this.eventBus.emit('clipboard:get-info-request');
             });
@@ -480,7 +525,6 @@
             
             try {
                 this.animationSystem = new window.TegakiAnimationSystem();
-                // 【修正】CameraSystemを第3引数として渡す
                 this.animationSystem.init(this.layerSystem, this.app, this.cameraSystem);
                 
                 this.timelineUI = new window.TegakiTimelineUI(this.animationSystem);
@@ -604,6 +648,12 @@
             this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
             this.clipboardSystem.init(this.eventBus, CONFIG);
             
+            // 🔧 改修: LayerSystem初期化完了後にHistory接続
+            if (window.History && typeof window.History.setLayerSystem === 'function') {
+                window.History.setLayerSystem(this.layerSystem);
+                console.log('✅ History system connected to LayerSystem');
+            }
+            
             this.initializeAnimationSystem();
             
             this.keyHandler = new UnifiedKeyHandler(
@@ -630,7 +680,7 @@
             });
             
             this.eventBus.emit('core:initialized', {
-                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation']
+                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history']
             });
             
             return this;
@@ -650,7 +700,9 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (AnimationSystem初期化修正版) loaded');
-    console.log('  - 🔧 AnimationSystem.init()にCameraSystemを渡すよう修正');
+    console.log('✅ core-engine.js (Undo/Redo機能追加版) loaded');
+    console.log('  - 🔧 DrawingEngine.startDrawing()に履歴保存追加');
+    console.log('  - 🔧 Delete キー対応追加（layer:clear-active）');
+    console.log('  - 🔧 History.setLayerSystem()接続追加');
 
 })();

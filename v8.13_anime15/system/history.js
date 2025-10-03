@@ -1,7 +1,8 @@
 // ================================================================================
-// system/history.js - Undo/Redo管理（TegakiEventBus対応版）
+// system/history.js - Undo/Redo管理（AnimationSystem統合強化版）
 // ================================================================================
-// 【改修】window.TegakiEventBus使用、History状態管理改善
+// 【改修】AnimationSystem経由での確実なCUT取得
+// 【改修】レイヤー復元後の確実なUI更新
 // 【維持】既存のUndo/Redo機能完全継承
 
 (function() {
@@ -28,6 +29,7 @@
         
         setLayerSystem(layerSystem) {
             this.layerSystem = layerSystem;
+            console.log('✅ History: LayerSystem connected');
         }
         
         _setupEventListeners() {
@@ -71,8 +73,21 @@
         _captureState() {
             if (!this.layerSystem) return null;
             
-            const currentCut = this.layerSystem.animationSystem?.getCurrentCut();
-            if (!currentCut) return null;
+            // 🔧 改修: AnimationSystem経由での確実なCUT取得
+            const animationSystem = this.layerSystem.animationSystem || 
+                                   window.animationSystem || 
+                                   window.TegakiAnimationSystem;
+            
+            if (!animationSystem) {
+                console.warn('⚠️ AnimationSystem not available for history capture');
+                return null;
+            }
+            
+            const currentCut = animationSystem.getCurrentCut?.();
+            if (!currentCut) {
+                console.warn('⚠️ No active CUT for history capture');
+                return null;
+            }
             
             const layers = currentCut.getLayers();
             if (!layers || layers.length === 0) return null;
@@ -80,6 +95,7 @@
             return {
                 timestamp: Date.now(),
                 cutId: currentCut.id,
+                cutIndex: animationSystem.getCurrentCutIndex?.() ?? 0,
                 layers: layers.map(layer => this._captureLayerState(layer)),
                 activeLayerId: this.layerSystem.activeLayer?.layerData?.id || null
             };
@@ -173,8 +189,21 @@
         _restoreState(state) {
             if (!state || !this.layerSystem) return;
             
-            const currentCut = this.layerSystem.animationSystem?.getCurrentCut();
-            if (!currentCut) return;
+            // 🔧 改修: AnimationSystem経由での確実なCUT取得
+            const animationSystem = this.layerSystem.animationSystem || 
+                                   window.animationSystem || 
+                                   window.TegakiAnimationSystem;
+            
+            if (!animationSystem) {
+                console.warn('⚠️ AnimationSystem not available for restore');
+                return;
+            }
+            
+            const currentCut = animationSystem.getCurrentCut?.();
+            if (!currentCut) {
+                console.warn('⚠️ No active CUT for restore');
+                return;
+            }
             
             // 既存レイヤーをクリア
             const existingLayers = currentCut.getLayers().slice();
@@ -200,26 +229,27 @@
                     l => l.layerData?.id === state.activeLayerId
                 );
                 if (activeLayerIndex !== -1) {
-                    this.layerSystem.setActiveLayerByIndex(activeLayerIndex);
+                    this.layerSystem.setActiveLayerByIndex?.(activeLayerIndex) || 
+                    this.layerSystem.setActiveLayer(activeLayerIndex);
                 }
             }
             
-            // UI更新
-            if (this.layerSystem.updateLayerPanelUI) {
-                this.layerSystem.updateLayerPanelUI();
-            }
-            
-            if (this.layerSystem.updateStatusDisplay) {
-                this.layerSystem.updateStatusDisplay();
-            }
-            
-            // サムネイル更新
-            if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {
-                const currentCutIndex = this.layerSystem.animationSystem.getCurrentCutIndex();
-                setTimeout(() => {
-                    this.layerSystem.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
-                }, 100);
-            }
+            // 🔧 改修: UI更新の確実な実行
+            setTimeout(() => {
+                if (this.layerSystem.updateLayerPanelUI) {
+                    this.layerSystem.updateLayerPanelUI();
+                }
+                
+                if (this.layerSystem.updateStatusDisplay) {
+                    this.layerSystem.updateStatusDisplay();
+                }
+                
+                // サムネイル更新
+                if (animationSystem.generateCutThumbnailOptimized) {
+                    const currentCutIndex = animationSystem.getCurrentCutIndex?.() ?? 0;
+                    animationSystem.generateCutThumbnailOptimized(currentCutIndex);
+                }
+            }, 50);
         }
         
         _restoreLayer(layerData) {
@@ -359,10 +389,22 @@
                 historyManager.setLayerSystem(data.layerSystem);
             }
         });
+        
+        // AnimationSystem初期化時にも接続を試みる
+        window.TegakiEventBus.on('animation:system-ready', () => {
+            if (historyManager.layerSystem) {
+                const animationSystem = window.animationSystem || window.TegakiAnimationSystem;
+                if (animationSystem && historyManager.layerSystem.animationSystem !== animationSystem) {
+                    historyManager.layerSystem.animationSystem = animationSystem;
+                    console.log('✅ History: AnimationSystem connection established');
+                }
+            }
+        });
     }
     
-    console.log('✅ system/history.js (TegakiEventBus対応版) loaded');
+    console.log('✅ system/history.js (AnimationSystem統合強化版) loaded');
     console.log('  - Undo/Redo stack management');
     console.log('  - Max history: ' + MAX_HISTORY);
+    console.log('  - AnimationSystem統合強化');
     
 })();

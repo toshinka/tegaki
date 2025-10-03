@@ -909,7 +909,7 @@ try {
         
         <!-- 🔧 Phase2: レイヤー+/フォルダ+ボタン横並び（詰め版） -->
         <div class="layer-controls-row">
-            <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加 (Ctrl+L)">
+            <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加 (Ctrl+Shift+N)">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="12" x2="12" y1="5" y2="19"/>
                     <line x1="5" x2="19" y1="12" y2="12"/>
@@ -931,378 +931,380 @@ try {
     </div>
 
     <script>
+// ===== 🔧 統一ショートカットシステム =====
 (function() {
     'use strict';
     
-    function setupImprovedKeyboardShortcuts() {
-        let canvas = null;
-        let focusCheckAttempts = 0;
-        const maxAttempts = 10;
+    // ブラウザデフォルト動作を抑制（F11/F12以外）
+    function preventBrowserDefaults(e) {
+        // F11（全画面）とF12（開発者ツール）は許可
+        if (e.key === 'F11' || e.key === 'F12') {
+            return;
+        }
         
-        function waitForCanvas() {
-            canvas = document.querySelector('#drawing-canvas canvas') || 
-                    document.querySelector('canvas');
+        // それ以外のファンクションキーを抑制
+        if (e.key.startsWith('F') && e.key.length <= 3) {
+            e.preventDefault();
+            return;
+        }
+        
+        // Ctrl系ショートカット（ブラウザデフォルトを抑制）
+        if (e.ctrlKey || e.metaKey) {
+            const key = e.code || e.key;
             
-            if (canvas && focusCheckAttempts < maxAttempts) {
-                console.log('✅ Canvas found for keyboard shortcuts');
-                setupCanvasKeyEvents();
-            } else if (focusCheckAttempts < maxAttempts) {
-                focusCheckAttempts++;
-                setTimeout(waitForCanvas, 500);
-            } else {
-                console.warn('⚠️ Canvas not found - using document keyboard events');
-                setupDocumentKeyEvents();
+            // Ctrl+Z, Ctrl+Y, Ctrl+Shift+N のみ許可
+            if (key === 'KeyZ' || key === 'KeyY') {
+                e.preventDefault();
+                return;
+            }
+            
+            if (e.shiftKey && key === 'KeyN') {
+                e.preventDefault();
+                return;
+            }
+            
+            // それ以外のCtrl系は抑制
+            if (key.startsWith('Key') || key.startsWith('Digit')) {
+                e.preventDefault();
             }
         }
-        
-        function setupCanvasKeyEvents() {
-            canvas.tabIndex = 0;
-            canvas.style.outline = 'none';
-            canvas.addEventListener('keydown', handleKeyDown);
+    }
+    
+    function setupUnifiedKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            preventBrowserDefaults(e);
             
-            setTimeout(() => {
-                if (canvas) {
-                    canvas.focus();
-                    console.log('🎯 Canvas focused for keyboard shortcuts');
-                }
-            }, 100);
+            const eventBus = window.TegakiEventBus;
+            if (!eventBus) return;
             
-            console.log('✅ Canvas-specific keyboard shortcuts enabled');
-        }
-        
-        function setupDocumentKeyEvents() {
-            document.addEventListener('keydown', handleKeyDown);
-            console.log('✅ Document keyboard shortcuts enabled (fallback)');
-        }
-        
-        function handleKeyDown(e) {
+            // Ctrl+Z: Undo
             if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
                 if (window.History && typeof window.History.undo === 'function') {
-                    const success = window.History.undo();
-                    if (success) {
-                        e.preventDefault();
-                    }
+                    window.History.undo();
+                    e.preventDefault();
                 }
                 return;
             }
             
+            // Ctrl+Y: Redo
             if (e.ctrlKey && e.code === 'KeyY' && !e.shiftKey && !e.altKey) {
                 if (window.History && typeof window.History.redo === 'function') {
-                    const success = window.History.redo();
-                    if (success) {
-                        e.preventDefault();
-                    }
-                }
-                return;
-            }
-            
-            if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
-                if (window.TegakiEventBus) {
-                    window.TegakiEventBus.emit('layer:create-new');
-                    e.preventDefault();
-                }
-                return;
-            }
-            
-            if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
-                if (window.TegakiEventBus) {
-                    window.TegakiEventBus.emit('cut:copy-current');
-                    setTimeout(() => {
-                        window.TegakiEventBus.emit('cut:paste-right-adjacent');
-                    }, 10);
-                    e.preventDefault();
-                }
-                return;
-            }
-            
-            if (e.shiftKey && e.code === 'KeyV' && !e.ctrlKey && !e.altKey) {
-                if (window.TegakiEventBus) {
-                    window.TegakiEventBus.emit('cut:paste-new');
-                    e.preventDefault();
-                }
-                return;
-            }
-            
-            if (e.altKey && e.code === 'KeyA' && !e.ctrlKey && !e.shiftKey) {
-                if (window.TegakiEventBus) {
-                    window.TegakiEventBus.emit('ui:toggle-timeline');
-                    e.preventDefault();
-                }
-                return;
-            }
-            
-            if (e.code === 'Space' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-                const timelinePanel = document.getElementById('timeline-panel');
-                if (timelinePanel && timelinePanel.classList.contains('show')) {
-                    if (window.TegakiEventBus) {
-                        window.TegakiEventBus.emit('animation:play-toggle');
-                        e.preventDefault();
-                    }
-                }
-                return;
-            }
-            
-            if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-                if (window.TegakiEventBus) {
-                    window.TegakiEventBus.emit('tool:select', { tool: 'pen' });
-                    e.preventDefault();
-                }
-                return;
-            }
-            
-            if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-                if (window.TegakiEventBus) {
-                    window.TegakiEventBus.emit('tool:select', { tool: 'eraser' });
-                    e.preventDefault();
-                }
-                return;
-            }
-        }
-        
-        waitForCanvas();
-    }
-    
-    function checkCoreRuntime() {
-        if (!window.CoreRuntime) {
-            console.error('❌ CoreRuntime not loaded');
-            return false;
-        }
-        
-        if (!window.TegakiCore?.CoreEngine) {
-            console.error('❌ TegakiCore.CoreEngine not found');
-            return false;
-        }
-        
-        console.log('✅ CoreRuntime and TegakiCore loaded successfully');
-        return true;
-    }
-    
-    function initializeApp() {
-        const CoreEngine = window.TegakiCore.CoreEngine;
-        const CONFIG = window.TEGAKI_CONFIG;
-        const { UIController } = window.TegakiUI;
-        
-        class DrawingApp {
-            constructor() {
-                this.pixiApp = null;
-                this.coreEngine = null;
-                this.uiController = null;
-            }
-            
-            async initialize() {
-                const containerEl = document.getElementById('drawing-canvas');
-                if (!containerEl) {
-                    throw new Error('Canvas container not found');
-                }
-                
-                this.pixiApp = new PIXI.Application();
-                
-                const screenWidth = window.innerWidth - 50;
-                const screenHeight = window.innerHeight;
-                
-                await this.pixiApp.init({
-                    width: screenWidth,
-                    height: screenHeight,
-                    backgroundAlpha: 0,
-                    resolution: 1,
-                    antialias: true,
-                    eventMode: 'static'
-                });
-                
-                containerEl.innerHTML = '';
-                containerEl.appendChild(this.pixiApp.canvas);
-                
-                this.pixiApp.canvas.style.width = `${screenWidth}px`;
-                this.pixiApp.canvas.style.height = `${screenHeight}px`;
-                
-                this.coreEngine = new CoreEngine(this.pixiApp);
-                const drawingApp = this.coreEngine.initialize();
-                
-                CoreRuntime.init({
-                    app: this.pixiApp,
-                    worldContainer: this.coreEngine.getCameraSystem().worldContainer,
-                    canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
-                    cameraSystem: this.coreEngine.getCameraSystem(),
-                    layerManager: this.coreEngine.getLayerManager(),
-                    drawingEngine: this.coreEngine.getDrawingEngine()
-                });
-                
-                this.uiController = new UIController(
-                    this.coreEngine.getDrawingEngine(), 
-                    this.coreEngine.getLayerManager(), 
-                    this.pixiApp
-                );
-                
-                window.drawingAppResizeCanvas = (newWidth, newHeight) => {
-                    return CoreRuntime.api.resizeCanvas(newWidth, newHeight);
-                };
-                
-                window.addEventListener('resize', () => {
-                    const newWidth = window.innerWidth - 50;
-                    const newHeight = window.innerHeight;
-                    
-                    this.pixiApp.renderer.resize(newWidth, newHeight);
-                    this.pixiApp.canvas.style.width = `${newWidth}px`;
-                    this.pixiApp.canvas.style.height = `${newHeight}px`;
-                    
-                    const cameraSystem = this.coreEngine.getCameraSystem();
-                    cameraSystem.initializeCamera();
-                    cameraSystem.updateGuideLinesForCanvasResize();
-                });
-                
-                setupImprovedKeyboardShortcuts();
-                
-                this.updateCanvasInfo();
-                this.updateDPRInfo();
-                this.startFPSMonitor();
-                
-                window.drawingApp = drawingApp;
-                
-                return true;
-            }
-            
-            updateCanvasInfo() {
-                const element = document.getElementById('canvas-info');
-                if (element) {
-                    element.textContent = `${CONFIG.canvas.width}×${CONFIG.canvas.height}px`;
-                }
-            }
-            
-            updateDPRInfo() {
-                const element = document.getElementById('dpr-info');
-                if (element) {
-                    element.textContent = (window.devicePixelRatio || 1).toFixed(1);
-                }
-            }
-            
-            startFPSMonitor() {
-                let frameCount = 0;
-                let lastTime = performance.now();
-                
-                const updateFPS = () => {
-                    frameCount++;
-                    const currentTime = performance.now();
-                    
-                    if (currentTime - lastTime >= 1000) {
-                        const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
-                        const element = document.getElementById('fps');
-                        if (element) element.textContent = fps;
-                        
-                        frameCount = 0;
-                        lastTime = currentTime;
-                    }
-                    
-                    requestAnimationFrame(updateFPS);
-                };
-                
-                updateFPS();
-            }
-        }
-        
-        return DrawingApp;
-    }
-    
-    function setupHistoryIntegration() {
-        if (window.TegakiEventBus && window.History) {
-            window.TegakiEventBus.on('history:undo-request', () => {
-                if (typeof window.History.undo === 'function') {
-                    window.History.undo();
-                }
-            });
-            
-            window.TegakiEventBus.on('history:redo-request', () => {
-                if (typeof window.History.redo === 'function') {
                     window.History.redo();
+                    e.preventDefault();
                 }
-            });
-            
-            window.TegakiEventBus.on('history:changed', (data) => {
-                const historyElement = document.getElementById('history-info');
-                if (historyElement && data) {
-                    historyElement.textContent = `${data.undoCount || 0}/${window.History.MAX_HISTORY || 50}`;
-                }
-            });
-            
-            if (window.History.getHistoryInfo) {
-                const info = window.History.getHistoryInfo();
-                const historyElement = document.getElementById('history-info');
-                if (historyElement) {
-                    historyElement.textContent = `${info.undoCount}/${info.maxHistory}`;
-                }
+                return;
             }
             
-            console.log('✅ History system integrated with EventBus');
-        }
+            // Delete: アクティブレイヤー内容消去
+            if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                eventBus.emit('layer:clear-active');
+                e.preventDefault();
+                return;
+            }
+            
+            // Ctrl+Shift+N: レイヤー追加
+            if (e.ctrlKey && e.shiftKey && e.code === 'KeyN' && !e.altKey) {
+                eventBus.emit('layer:create-new');
+                e.preventDefault();
+                return;
+            }
+            
+            // Alt+A: タイムライン表示切替
+            if (e.altKey && e.code === 'KeyA' && !e.ctrlKey && !e.shiftKey) {
+                eventBus.emit('ui:toggle-timeline');
+                e.preventDefault();
+                return;
+            }
+            
+            // Ctrl+Space: アニメ再生/停止
+            if (e.ctrlKey && e.code === 'Space' && !e.altKey && !e.shiftKey) {
+                eventBus.emit('animation:play-toggle');
+                e.preventDefault();
+                return;
+            }
+            
+            // Shift+C: 現在のCUTを複製→右隣に貼り付け
+            if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
+                eventBus.emit('cut:copy-current');
+                setTimeout(() => {
+                    eventBus.emit('cut:paste-right-adjacent');
+                }, 10);
+                e.preventDefault();
+                return;
+            }
+            
+            // P: ペンツール
+            if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+                eventBus.emit('tool:select', { tool: 'pen' });
+                e.preventDefault();
+                return;
+            }
+            
+            // E: 消しゴムツール
+            if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
+                eventBus.emit('tool:select', { tool: 'eraser' });
+                e.preventDefault();
+                return;
+            }
+        });
+        
+        console.log('✅ 統一ショートカットシステム有効化');
+        console.log('  - Ctrl+Z: Undo');
+        console.log('  - Ctrl+Y: Redo');
+        console.log('  - Delete: アクティブレイヤー消去');
+        console.log('  - Ctrl+Shift+N: レイヤー追加');
+        console.log('  - Alt+A: タイムライン表示切替');
+        console.log('  - Ctrl+Space: アニメ再生/停止');
+        console.log('  - Shift+C: CUT複製→右隣貼付');
+        console.log('  - P: ペンツール');
+        console.log('  - E: 消しゴムツール');
     }
     
-    function setupLayerPanelDuplicationFix() {
-        if (window.TegakiEventBus) {
-            window.TegakiEventBus.on('layer:created', (data) => {
-                setTimeout(() => {
-                    if (window.layerSystem && typeof window.layerSystem.updateLayerPanelUI === 'function') {
-                        window.layerSystem.updateLayerPanelUI();
-                    }
-                }, 50);
-            });
-            
-            window.TegakiEventBus.on('layer:deleted', (data) => {
-                setTimeout(() => {
-                    if (window.layerSystem && typeof window.layerSystem.updateLayerPanelUI === 'function') {
-                        window.layerSystem.updateLayerPanelUI();
-                    }
-                }, 50);
-            });
-            
-            console.log('✅ Layer panel duplication fix applied');
-        }
+    // DOMContentLoaded前に実行（早期バインド）
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupUnifiedKeyboardShortcuts);
+    } else {
+        setupUnifiedKeyboardShortcuts();
     }
-    
-    window.addEventListener('DOMContentLoaded', async () => {
-        try {
-            console.log('🔥 Starting Phase2改修版（レイアウト詰め）initialization...');
-            
-            if (!checkCoreRuntime()) {
-                throw new Error('CoreRuntime initialization failed');
-            }
-            
-            const DrawingApp = initializeApp();
-            const app = new DrawingApp();
-            await app.initialize();
-            
-            setupHistoryIntegration();
-            setupLayerPanelDuplicationFix();
-            
-            if (window.CoordinateSystem && typeof window.CoordinateSystem.diagnoseReferences === 'function') {
-                const diagnosis = window.CoordinateSystem.diagnoseReferences();
-                console.log('🔍 Coordinate System Diagnosis:', diagnosis);
-            }
-            
-            if (window.SystemDiagnostics) {
-                setTimeout(() => {
-                    try {
-                        const diagnostics = new window.SystemDiagnostics();
-                        const results = diagnostics.runFullDiagnostics();
-                        console.log('🔍 System diagnostics completed');
-                    } catch (diagError) {
-                        console.warn('⚠️ System diagnostics failed:', diagError);
-                    }
-                }, 1000);
-            }
-            
-            console.log('✅ Phase2改修版（レイアウト詰め）SUCCESS!');
-            console.log('🎯 改修完了内容:');
-            console.log('   - ✅ レイヤーパネル階層移動修正');
-            console.log('   - ✅ CUTインジケータ装飾削減＆詰め版');
-            console.log('   - ✅ レイヤー+/フォルダ+ボタン詰め版');
-            console.log('   - ✅ レイヤーアイテム詰め版（170px×56px）');
-            console.log('   - ✅ サイドバーアイコン追加（アルバム・出力）');
-            
-        } catch (error) {
-            console.error('❌ Phase2改修版 FAILED:', error);
-            console.error('Stack trace:', error.stack);
-        }
-    });
 })();
+
+function checkCoreRuntime() {
+    if (!window.CoreRuntime) {
+        console.error('❌ CoreRuntime not loaded');
+        return false;
+    }
+    
+    if (!window.TegakiCore?.CoreEngine) {
+        console.error('❌ TegakiCore.CoreEngine not found');
+        return false;
+    }
+    
+    console.log('✅ CoreRuntime and TegakiCore loaded successfully');
+    return true;
+}
+
+function initializeApp() {
+    const CoreEngine = window.TegakiCore.CoreEngine;
+    const CONFIG = window.TEGAKI_CONFIG;
+    const { UIController } = window.TegakiUI;
+    
+    class DrawingApp {
+        constructor() {
+            this.pixiApp = null;
+            this.coreEngine = null;
+            this.uiController = null;
+        }
+        
+        async initialize() {
+            const containerEl = document.getElementById('drawing-canvas');
+            if (!containerEl) {
+                throw new Error('Canvas container not found');
+            }
+            
+            this.pixiApp = new PIXI.Application();
+            
+            const screenWidth = window.innerWidth - 50;
+            const screenHeight = window.innerHeight;
+            
+            await this.pixiApp.init({
+                width: screenWidth,
+                height: screenHeight,
+                backgroundAlpha: 0,
+                resolution: 1,
+                antialias: true,
+                eventMode: 'static'
+            });
+            
+            containerEl.innerHTML = '';
+            containerEl.appendChild(this.pixiApp.canvas);
+            
+            this.pixiApp.canvas.style.width = `${screenWidth}px`;
+            this.pixiApp.canvas.style.height = `${screenHeight}px`;
+            
+            this.coreEngine = new CoreEngine(this.pixiApp);
+            const drawingApp = this.coreEngine.initialize();
+            
+            CoreRuntime.init({
+                app: this.pixiApp,
+                worldContainer: this.coreEngine.getCameraSystem().worldContainer,
+                canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
+                cameraSystem: this.coreEngine.getCameraSystem(),
+                layerManager: this.coreEngine.getLayerManager(),
+                drawingEngine: this.coreEngine.getDrawingEngine()
+            });
+            
+            this.uiController = new UIController(
+                this.coreEngine.getDrawingEngine(), 
+                this.coreEngine.getLayerManager(), 
+                this.pixiApp
+            );
+            
+            window.drawingAppResizeCanvas = (newWidth, newHeight) => {
+                return CoreRuntime.api.resizeCanvas(newWidth, newHeight);
+            };
+            
+            window.addEventListener('resize', () => {
+                const newWidth = window.innerWidth - 50;
+                const newHeight = window.innerHeight;
+                
+                this.pixiApp.renderer.resize(newWidth, newHeight);
+                this.pixiApp.canvas.style.width = `${newWidth}px`;
+                this.pixiApp.canvas.style.height = `${newHeight}px`;
+                
+                const cameraSystem = this.coreEngine.getCameraSystem();
+                cameraSystem.initializeCamera();
+                cameraSystem.updateGuideLinesForCanvasResize();
+            });
+            
+            this.updateCanvasInfo();
+            this.updateDPRInfo();
+            this.startFPSMonitor();
+            
+            window.drawingApp = drawingApp;
+            
+            return true;
+        }
+        
+        updateCanvasInfo() {
+            const element = document.getElementById('canvas-info');
+            if (element) {
+                element.textContent = `${CONFIG.canvas.width}×${CONFIG.canvas.height}px`;
+            }
+        }
+        
+        updateDPRInfo() {
+            const element = document.getElementById('dpr-info');
+            if (element) {
+                element.textContent = (window.devicePixelRatio || 1).toFixed(1);
+            }
+        }
+        
+        startFPSMonitor() {
+            let frameCount = 0;
+            let lastTime = performance.now();
+            
+            const updateFPS = () => {
+                frameCount++;
+                const currentTime = performance.now();
+                
+                if (currentTime - lastTime >= 1000) {
+                    const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                    const element = document.getElementById('fps');
+                    if (element) element.textContent = fps;
+                    
+                    frameCount = 0;
+                    lastTime = currentTime;
+                }
+                
+                requestAnimationFrame(updateFPS);
+            };
+            
+            updateFPS();
+        }
+    }
+    
+    return DrawingApp;
+}
+
+function setupHistoryIntegration() {
+    if (window.TegakiEventBus && window.History) {
+        window.TegakiEventBus.on('history:undo-request', () => {
+            if (typeof window.History.undo === 'function') {
+                window.History.undo();
+            }
+        });
+        
+        window.TegakiEventBus.on('history:redo-request', () => {
+            if (typeof window.History.redo === 'function') {
+                window.History.redo();
+            }
+        });
+        
+        window.TegakiEventBus.on('history:changed', (data) => {
+            const historyElement = document.getElementById('history-info');
+            if (historyElement && data) {
+                historyElement.textContent = `${data.undoCount || 0}/${window.History.MAX_HISTORY || 50}`;
+            }
+        });
+        
+        if (window.History.getHistoryInfo) {
+            const info = window.History.getHistoryInfo();
+            const historyElement = document.getElementById('history-info');
+            if (historyElement) {
+                historyElement.textContent = `${info.undoCount}/${info.maxHistory}`;
+            }
+        }
+        
+        console.log('✅ History system integrated with EventBus');
+    }
+}
+
+function setupLayerPanelDuplicationFix() {
+    if (window.TegakiEventBus) {
+        window.TegakiEventBus.on('layer:created', (data) => {
+            setTimeout(() => {
+                if (window.layerSystem && typeof window.layerSystem.updateLayerPanelUI === 'function') {
+                    window.layerSystem.updateLayerPanelUI();
+                }
+            }, 50);
+        });
+        
+        window.TegakiEventBus.on('layer:deleted', (data) => {
+            setTimeout(() => {
+                if (window.layerSystem && typeof window.layerSystem.updateLayerPanelUI === 'function') {
+                    window.layerSystem.updateLayerPanelUI();
+                }
+            }, 50);
+        });
+        
+        console.log('✅ Layer panel duplication fix applied');
+    }
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+    try {
+        console.log('🔥 Starting Phase2改修版（ショートカット統一+Undo/Redo修正）initialization...');
+        
+        if (!checkCoreRuntime()) {
+            throw new Error('CoreRuntime initialization failed');
+        }
+        
+        const DrawingApp = initializeApp();
+        const app = new DrawingApp();
+        await app.initialize();
+        
+        setupHistoryIntegration();
+        setupLayerPanelDuplicationFix();
+        
+        if (window.CoordinateSystem && typeof window.CoordinateSystem.diagnoseReferences === 'function') {
+            const diagnosis = window.CoordinateSystem.diagnoseReferences();
+            console.log('🔍 Coordinate System Diagnosis:', diagnosis);
+        }
+        
+        if (window.SystemDiagnostics) {
+            setTimeout(() => {
+                try {
+                    const diagnostics = new window.SystemDiagnostics();
+                    const results = diagnostics.runFullDiagnostics();
+                    console.log('🔍 System diagnostics completed');
+                } catch (diagError) {
+                    console.warn('⚠️ System diagnostics failed:', diagError);
+                }
+            }, 1000);
+        }
+        
+        console.log('✅ Phase2改修版（ショートカット統一+Undo/Redo修正）SUCCESS!');
+        console.log('🎯 改修完了内容:');
+        console.log('   - ✅ ショートカット統一（Ctrl+Shift+N, Ctrl+Space等）');
+        console.log('   - ✅ ブラウザデフォルト抑制（F11/F12以外）');
+        console.log('   - ✅ 不要ショートカット削除（Shift+V, Alt+Space等）');
+        console.log('   - 🔧 Undo/Redo機能修正（次ファイルで完了）');
+        
+    } catch (error) {
+        console.error('❌ Phase2改修版 FAILED:', error);
+        console.error('Stack trace:', error.stack);
+    }
+});
     </script>
 </body>
 </html>
