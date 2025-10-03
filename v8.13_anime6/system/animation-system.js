@@ -1,5 +1,8 @@
-// ===== system/animation-system.js - リサイズ対応改修版 =====
+// ===== system/animation-system.js - リサイズ対応+再生時間+RETIME改修版 =====
 // 【改修】リサイズ時のサムネイル生成でキャンバスサイズを動的取得
+// 【追加B】getPlaybackTime() メソッド追加（M:SS:XX形式用）
+// 【追加C】retimeAllCuts() メソッド追加（全カット時間一括変更）
+// 【追加D】updateCutDuration() の最小値を0.01秒に変更
 // 【維持】座標系修正版の全機能
 // 【維持】CUT.containerをcanvasContainer配下に配置
 // 【維持】CUTフォルダ方式・全既存機能
@@ -178,7 +181,7 @@
         }
     }
     
-    // ===== AnimationSystem: リサイズ対応改修版 =====
+    // ===== AnimationSystem: リサイズ対応+再生時間+RETIME改修版 =====
     
     class AnimationSystem {
         constructor() {
@@ -819,16 +822,36 @@
             }
         }
         
+        // 【改修D】最小値を0.01秒に変更
         updateCutDuration(cutIndex, duration) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut) return;
             
-            cut.duration = Math.max(0.1, Math.min(10, duration));
+            cut.duration = Math.max(0.01, Math.min(10, duration));
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:cut-duration-changed', { 
                     cutIndex, 
                     duration: cut.duration 
+                });
+            }
+        }
+        
+        // 【追加C】全カット時間一括変更（RETIME機能）
+        retimeAllCuts(newDuration) {
+            if (!this.animationData.cuts || this.animationData.cuts.length === 0) return;
+            if (isNaN(newDuration) || newDuration <= 0) return;
+            
+            const clampedDuration = Math.max(0.01, Math.min(10, newDuration));
+            
+            this.animationData.cuts.forEach(cut => {
+                cut.duration = clampedDuration;
+            });
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:all-cuts-retimed', {
+                    newDuration: clampedDuration,
+                    cutCount: this.animationData.cuts.length
                 });
             }
         }
@@ -1005,6 +1028,22 @@
             };
         }
         
+        // 【追加B】再生時間取得メソッド（M:SS:XX形式用）
+        getPlaybackTime() {
+            if (!this.animationData.playback.isPlaying) {
+                return 0;
+            }
+            
+            const elapsed = (Date.now() - this.animationData.playback.startTime) / 1000;
+            
+            let totalTime = 0;
+            for (let i = 0; i < this.animationData.playback.currentCutIndex; i++) {
+                totalTime += this.animationData.cuts[i]?.duration || 0;
+            }
+            
+            return totalTime + elapsed;
+        }
+        
         getPlaybackState() {
             return {
                 isPlaying: this.animationData.playback.isPlaying,
@@ -1061,15 +1100,5 @@
     
     window.TegakiAnimationSystem = AnimationSystem;
     window.TegakiCut = Cut;
-    
-    console.log('✅ AnimationSystem リサイズ対応改修版 loaded');
-    console.log('🔧 改修内容:');
-    console.log('  ✅ getCurrentCanvasSize() メソッド追加');
-    console.log('  ✅ リサイズ時のサムネイル生成で動的にキャンバスサイズ取得');
-    console.log('  ✅ アスペクト比計算が常に最新のキャンバスサイズを反映');
-    console.log('  ✅ 既存機能完全維持: CUT.containerをcanvasContainer配下に配置');
-    console.log('  ✅ 既存機能完全維持: CUTフォルダ方式・Deep Copy・シリアライズ');
-    console.log('  ✅ 既存機能完全維持: CUTコピー時の命名「CUT1(1)」形式');
-    console.log('  ✅ 既存機能完全維持: RENAME機能');
 
 })();
