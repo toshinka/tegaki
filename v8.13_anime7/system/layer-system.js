@@ -1,6 +1,8 @@
-// ===== system/layer-system.js - 元機能完全維持版 =====
+// ===== system/layer-system.js - リサイズ対応修正版 =====
+// 【修正】createCutRenderTexture: 動的キャンバスサイズ取得に変更
+// 【追加】recreateAllCutRenderTextures: リサイズ時の再作成メソッド
+// 【維持】元機能完全維持
 // PixiJS v8.13 対応
-// 元ファイルの全機能を継承、一時CUT作成は削除
 
 (function() {
     'use strict';
@@ -95,6 +97,7 @@
             this._setupLayerTransformPanel();
             this._setupAnimationSystemIntegration();
             this._startThumbnailUpdateProcess();
+            this._setupResizeListener();
             
             console.log('✅ LayerSystem: 初期化完了（一時Container作成済み）');
         }
@@ -118,17 +121,38 @@
             }
         }
         
-        // ===== RenderTexture管理 =====
+        // ===== 【修正】RenderTexture管理 =====
         
+        // 【修正】動的キャンバスサイズ取得
+        getCurrentCanvasSize() {
+            // configが更新されている場合はそれを使用
+            if (this.config?.canvas) {
+                return {
+                    width: this.config.canvas.width,
+                    height: this.config.canvas.height
+                };
+            }
+            
+            // フォールバック
+            return {
+                width: 800,
+                height: 600
+            };
+        }
+        
+        // 【修正】動的サイズでレンダーテクスチャ作成
         createCutRenderTexture(cutId) {
             if (!this.app?.renderer) {
                 console.error('Renderer not available');
                 return null;
             }
             
+            // 動的にキャンバスサイズを取得
+            const canvasSize = this.getCurrentCanvasSize();
+            
             const renderTexture = PIXI.RenderTexture.create({
-                width: this.config.canvas.width,
-                height: this.config.canvas.height
+                width: canvasSize.width,
+                height: canvasSize.height
             });
             
             this.cutRenderTextures.set(cutId, renderTexture);
@@ -137,10 +161,43 @@
             return renderTexture;
         }
         
+        // 【追加】全レンダーテクスチャ再作成（リサイズ時用）
+        recreateAllCutRenderTextures() {
+            if (!this.animationSystem?.animationData?.cuts) {
+                return;
+            }
+            
+            const cuts = this.animationSystem.animationData.cuts;
+            
+            cuts.forEach(cut => {
+                // 既存のレンダーテクスチャを破棄
+                this.destroyCutRenderTexture(cut.id);
+                
+                // 新しいサイズで再作成
+                this.createCutRenderTexture(cut.id);
+            });
+            
+            // サムネイル更新をリクエスト
+            if (this.eventBus) {
+                this.eventBus.emit('animation:thumbnails-need-update');
+            }
+        }
+        
         renderCutToTexture(cutId, cutContainer) {
             if (!this.app?.renderer) return;
             
-            const renderTexture = this.cutRenderTextures.get(cutId);
+            let renderTexture = this.cutRenderTextures.get(cutId);
+            
+            // レンダーテクスチャのサイズチェック
+            const canvasSize = this.getCurrentCanvasSize();
+            if (renderTexture && 
+                (renderTexture.width !== canvasSize.width || 
+                 renderTexture.height !== canvasSize.height)) {
+                // サイズが異なる場合は再作成
+                this.destroyCutRenderTexture(cutId);
+                renderTexture = this.createCutRenderTexture(cutId);
+            }
+            
             if (!renderTexture) {
                 console.warn(`RenderTexture not found for cut: ${cutId}`);
                 return;
@@ -185,6 +242,31 @@
         
         clearCutThumbnailDirty(cutId) {
             this.cutThumbnailDirty.set(cutId, false);
+        }
+        
+        // ===== 【追加】リサイズイベントリスナー =====
+        
+        _setupResizeListener() {
+            if (!this.eventBus) return;
+            
+            // camera:resized イベントを監視
+            this.eventBus.on('camera:resized', (data) => {
+                // configを更新
+                if (data.width && data.height) {
+                    if (!this.config) {
+                        this.config = window.TEGAKI_CONFIG || {};
+                    }
+                    if (!this.config.canvas) {
+                        this.config.canvas = {};
+                    }
+                    
+                    this.config.canvas.width = data.width;
+                    this.config.canvas.height = data.height;
+                    
+                    // レンダーテクスチャを再作成
+                    this.recreateAllCutRenderTextures();
+                }
+            });
         }
         
         // ===== レイヤー取得API =====
@@ -365,8 +447,9 @@
             
             const transform = this.layerTransforms.get(layerId);
             
-            const centerX = this.config.canvas.width / 2;
-            const centerY = this.config.canvas.height / 2;
+            const canvasSize = this.getCurrentCanvasSize();
+            const centerX = canvasSize.width / 2;
+            const centerY = canvasSize.height / 2;
             
             switch(property) {
                 case 'x':
@@ -433,8 +516,9 @@
             
             const transform = this.layerTransforms.get(layerId);
             
-            const centerX = this.config.canvas.width / 2;
-            const centerY = this.config.canvas.height / 2;
+            const canvasSize = this.getCurrentCanvasSize();
+            const centerX = canvasSize.width / 2;
+            const centerY = canvasSize.height / 2;
             
             if (direction === 'horizontal') {
                 transform.scaleX *= -1;
@@ -627,6 +711,187 @@
                             if (e.shiftKey) {
                                 this.flipActiveLayer('vertical');
                             } else {
+                    thumbnailWidth = Math.max(24, maxHeight * canvasAspectRatio);
+                    thumbnailHeight = maxHeight;
+                }
+                
+                thumbnail.style.width = Math.round(thumbnailWidth) + 'px';
+                thumbnail.style.height = Math.round(thumbnailHeight) + 'px';
+                
+                const renderScale = this.config.thumbnail?.RENDER_SCALE || 2;
+                const renderTexture = PIXI.RenderTexture.create({
+                    width: canvasSize.width * renderScale,
+                    height: canvasSize.height * renderScale,
+                    resolution: renderScale
+                });
+                
+                const tempContainer = new PIXI.Container();
+                
+                const originalState = {
+                    pos: { x: layer.position.x, y: layer.position.y },
+                    scale: { x: layer.scale.x, y: layer.scale.y },
+                    rotation: layer.rotation,
+                    pivot: { x: layer.pivot.x, y: layer.pivot.y }
+                };
+                
+                layer.position.set(0, 0);
+                layer.scale.set(1, 1);
+                layer.rotation = 0;
+                layer.pivot.set(0, 0);
+                
+                tempContainer.addChild(layer);
+                tempContainer.scale.set(renderScale);
+                
+                this.app.renderer.render({
+                    container: tempContainer,
+                    target: renderTexture
+                });
+                
+                layer.position.set(originalState.pos.x, originalState.pos.y);
+                layer.scale.set(originalState.scale.x, originalState.scale.y);
+                layer.rotation = originalState.rotation;
+                layer.pivot.set(originalState.pivot.x, originalState.pivot.y);
+                
+                tempContainer.removeChild(layer);
+                this.currentCutContainer.addChildAt(layer, layerIndex);
+                
+                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
+                const targetCanvas = document.createElement('canvas');
+                targetCanvas.width = Math.round(thumbnailWidth);
+                targetCanvas.height = Math.round(thumbnailHeight);
+                
+                const ctx = targetCanvas.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = this.config.thumbnail?.QUALITY || 'high';
+                ctx.drawImage(sourceCanvas, 0, 0, Math.round(thumbnailWidth), Math.round(thumbnailHeight));
+                
+                let img = thumbnail.querySelector('img');
+                if (!img) {
+                    img = document.createElement('img');
+                    thumbnail.innerHTML = '';
+                    thumbnail.appendChild(img);
+                }
+                img.src = targetCanvas.toDataURL();
+                img.style.width = '100%';
+                img.style.height = '100%';
+                img.style.objectFit = 'cover';
+                
+                renderTexture.destroy();
+                tempContainer.destroy();
+                
+            } catch (error) {
+                console.warn(`Thumbnail update failed for layer ${layerIndex}:`, error);
+            }
+        }
+
+        updateLayerPanelUI() {
+            const layerList = document.getElementById('layer-list');
+            if (!layerList) return;
+
+            layerList.innerHTML = '';
+            
+            const layers = this.getLayers();
+
+            for (let i = layers.length - 1; i >= 0; i--) {
+                const layer = layers[i];
+                const isActive = (i === this.activeLayerIndex);
+                
+                const layerItem = document.createElement('div');
+                layerItem.className = `layer-item ${isActive ? 'active' : ''}`;
+                layerItem.dataset.layerId = layer.layerData.id;
+                layerItem.dataset.layerIndex = i;
+
+                layerItem.innerHTML = `
+                    <div class="layer-visibility ${layer.layerData.visible ? '' : 'hidden'}">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            ${layer.layerData.visible ? 
+                                '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>' :
+                                '<path d="m15 18-.722-3.25"/><path d="m2 2 20 20"/><path d="M6.71 6.71C3.4 8.27 2 12 2 12s3 7 10 7c1.59 0 2.84-.3 3.79-.73"/><path d="m8.5 10.5 7 7"/><path d="M9.677 4.677C10.495 4.06 11.608 4 12 4c7 0 10 7 10 7a13.16 13.16 0 0 1-.64.77"/>'}
+                        </svg>
+                    </div>
+                    <div class="layer-opacity">${Math.round((layer.layerData.opacity || 1.0) * 100)}%</div>
+                    <div class="layer-name">${layer.layerData.name}</div>
+                    <div class="layer-thumbnail">
+                        <div class="layer-thumbnail-placeholder"></div>
+                    </div>
+                    <div class="layer-delete-button">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                            <path d="m18 6-12 12"/><path d="m6 6 12 12"/>
+                        </svg>
+                    </div>
+                `;
+
+                layerItem.addEventListener('click', (e) => {
+                    const target = e.target.closest('[class*="layer-"]');
+                    if (target) {
+                        const action = target.className;
+                        if (action.includes('layer-visibility')) {
+                            this.toggleLayerVisibility(i);
+                            e.stopPropagation();
+                        } else if (action.includes('layer-delete')) {
+                            if (confirm(`レイヤー "${layer.layerData.name}" を削除しますか？`)) {
+                                this.deleteLayer(i);
+                            }
+                            e.stopPropagation();
+                        } else {
+                            this.setActiveLayer(i);
+                        }
+                    } else {
+                        this.setActiveLayer(i);
+                    }
+                });
+
+                layerList.appendChild(layerItem);
+            }
+            
+            for (let i = 0; i < layers.length; i++) {
+                this.requestThumbnailUpdate(i);
+            }
+        }
+
+        updateStatusDisplay() {
+            const statusElement = document.getElementById('current-layer');
+            const layers = this.getLayers();
+            
+            if (statusElement && this.activeLayerIndex >= 0) {
+                const layer = layers[this.activeLayerIndex];
+                statusElement.textContent = layer.layerData.name;
+            }
+            
+            if (this.eventBus) {
+                this.eventBus.emit('ui:status-updated', {
+                    currentLayer: this.activeLayerIndex >= 0 ? 
+                        layers[this.activeLayerIndex].layerData.name : 'なし',
+                    layerCount: layers.length,
+                    activeIndex: this.activeLayerIndex
+                });
+            }
+        }
+
+        // ===== Setters =====
+        
+        setCameraSystem(cameraSystem) {
+            this.cameraSystem = cameraSystem;
+        }
+
+        setApp(app) {
+            this.app = app;
+        }
+
+        setAnimationSystem(animationSystem) {
+            this.animationSystem = animationSystem;
+            
+            if (animationSystem && animationSystem.layerSystem !== this) {
+                animationSystem.layerSystem = this;
+            }
+        }
+    }
+
+    window.TegakiLayerSystem = LayerSystem;
+
+    console.log('✅ layer-system.js loaded (リサイズ対応修正版)');
+
+})();
                                 this.flipActiveLayer('horizontal');
                             }
                             e.preventDefault();
@@ -743,10 +1008,11 @@
             }
             
             const transform = this.layerTransforms.get(layerId);
+            const canvasSize = this.getCurrentCanvasSize();
             
             if (e.shiftKey) {
-                const centerX = this.config.canvas.width / 2;
-                const centerY = this.config.canvas.height / 2;
+                const centerX = canvasSize.width / 2;
+                const centerY = canvasSize.height / 2;
                 
                 if (Math.abs(dy) > Math.abs(dx)) {
                     const scaleFactor = 1 + (dy * -0.01);
@@ -779,8 +1045,8 @@
                 transform.x += adjustedDx;
                 transform.y += adjustedDy;
                 
-                const centerX = this.config.canvas.width / 2;
-                const centerY = this.config.canvas.height / 2;
+                const centerX = canvasSize.width / 2;
+                const centerY = canvasSize.height / 2;
                 
                 if (this.coordAPI?.applyLayerTransform) {
                     this.coordAPI.applyLayerTransform(activeLayer, transform, centerX, centerY);
@@ -871,8 +1137,9 @@
                 case 'ArrowRight': transform.x += moveAmount; break;
             }
             
-            const centerX = this.config.canvas.width / 2;
-            const centerY = this.config.canvas.height / 2;
+            const canvasSize = this.getCurrentCanvasSize();
+            const centerX = canvasSize.width / 2;
+            const centerY = canvasSize.height / 2;
             
             if (this.coordAPI?.applyLayerTransform) {
                 this.coordAPI.applyLayerTransform(activeLayer, transform, centerX, centerY);
@@ -905,8 +1172,9 @@
             }
             
             const transform = this.layerTransforms.get(layerId);
-            const centerX = this.config.canvas.width / 2;
-            const centerY = this.config.canvas.height / 2;
+            const canvasSize = this.getCurrentCanvasSize();
+            const centerX = canvasSize.width / 2;
+            const centerY = canvasSize.height / 2;
             
             switch(keyCode) {
                 case 'ArrowUp':
@@ -1010,8 +1278,9 @@
             }
             
             try {
-                const centerX = this.config.canvas.width / 2;
-                const centerY = this.config.canvas.height / 2;
+                const canvasSize = this.getCurrentCanvasSize();
+                const centerX = canvasSize.width / 2;
+                const centerY = canvasSize.height / 2;
                 
                 const matrix = this.createTransformMatrix(transform, centerX, centerY);
                 
@@ -1224,8 +1493,9 @@
             });
 
             if (isBackground) {
+                const canvasSize = this.getCurrentCanvasSize();
                 const bg = new PIXI.Graphics();
-                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+                bg.rect(0, 0, canvasSize.width, canvasSize.height);
                 bg.fill(this.config.background.color);
                 layer.addChild(bg);
                 layer.layerData.backgroundGraphics = bg;
@@ -1422,7 +1692,8 @@
             if (!thumbnail) return;
 
             try {
-                const canvasAspectRatio = this.config.canvas.width / this.config.canvas.height;
+                const canvasSize = this.getCurrentCanvasSize();
+                const canvasAspectRatio = canvasSize.width / canvasSize.height;
                 let thumbnailWidth, thumbnailHeight;
                 const maxHeight = 48;
                 const maxWidth = 72;
@@ -1436,184 +1707,3 @@
                         thumbnailHeight = maxWidth / canvasAspectRatio;
                     }
                 } else {
-                    thumbnailWidth = Math.max(24, maxHeight * canvasAspectRatio);
-                    thumbnailHeight = maxHeight;
-                }
-                
-                thumbnail.style.width = Math.round(thumbnailWidth) + 'px';
-                thumbnail.style.height = Math.round(thumbnailHeight) + 'px';
-                
-                const renderScale = this.config.thumbnail?.RENDER_SCALE || 2;
-                const renderTexture = PIXI.RenderTexture.create({
-                    width: this.config.canvas.width * renderScale,
-                    height: this.config.canvas.height * renderScale,
-                    resolution: renderScale
-                });
-                
-                const tempContainer = new PIXI.Container();
-                
-                const originalState = {
-                    pos: { x: layer.position.x, y: layer.position.y },
-                    scale: { x: layer.scale.x, y: layer.scale.y },
-                    rotation: layer.rotation,
-                    pivot: { x: layer.pivot.x, y: layer.pivot.y }
-                };
-                
-                layer.position.set(0, 0);
-                layer.scale.set(1, 1);
-                layer.rotation = 0;
-                layer.pivot.set(0, 0);
-                
-                tempContainer.addChild(layer);
-                tempContainer.scale.set(renderScale);
-                
-                this.app.renderer.render({
-                    container: tempContainer,
-                    target: renderTexture
-                });
-                
-                layer.position.set(originalState.pos.x, originalState.pos.y);
-                layer.scale.set(originalState.scale.x, originalState.scale.y);
-                layer.rotation = originalState.rotation;
-                layer.pivot.set(originalState.pivot.x, originalState.pivot.y);
-                
-                tempContainer.removeChild(layer);
-                this.currentCutContainer.addChildAt(layer, layerIndex);
-                
-                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
-                const targetCanvas = document.createElement('canvas');
-                targetCanvas.width = Math.round(thumbnailWidth);
-                targetCanvas.height = Math.round(thumbnailHeight);
-                
-                const ctx = targetCanvas.getContext('2d');
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = this.config.thumbnail?.QUALITY || 'high';
-                ctx.drawImage(sourceCanvas, 0, 0, Math.round(thumbnailWidth), Math.round(thumbnailHeight));
-                
-                let img = thumbnail.querySelector('img');
-                if (!img) {
-                    img = document.createElement('img');
-                    thumbnail.innerHTML = '';
-                    thumbnail.appendChild(img);
-                }
-                img.src = targetCanvas.toDataURL();
-                img.style.width = '100%';
-                img.style.height = '100%';
-                img.style.objectFit = 'cover';
-                
-                renderTexture.destroy();
-                tempContainer.destroy();
-                
-            } catch (error) {
-                console.warn(`Thumbnail update failed for layer ${layerIndex}:`, error);
-            }
-        }
-
-        updateLayerPanelUI() {
-            const layerList = document.getElementById('layer-list');
-            if (!layerList) return;
-
-            layerList.innerHTML = '';
-            
-            const layers = this.getLayers();
-
-            for (let i = layers.length - 1; i >= 0; i--) {
-                const layer = layers[i];
-                const isActive = (i === this.activeLayerIndex);
-                
-                const layerItem = document.createElement('div');
-                layerItem.className = `layer-item ${isActive ? 'active' : ''}`;
-                layerItem.dataset.layerId = layer.layerData.id;
-                layerItem.dataset.layerIndex = i;
-
-                layerItem.innerHTML = `
-                    <div class="layer-visibility ${layer.layerData.visible ? '' : 'hidden'}">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            ${layer.layerData.visible ? 
-                                '<path d="M2 12s3-7 10-7 10 7 10 7-3 7-10 7-10-7-10-7Z"/><circle cx="12" cy="12" r="3"/>' :
-                                '<path d="m15 18-.722-3.25"/><path d="m2 2 20 20"/><path d="M6.71 6.71C3.4 8.27 2 12 2 12s3 7 10 7c1.59 0 2.84-.3 3.79-.73"/><path d="m8.5 10.5 7 7"/><path d="M9.677 4.677C10.495 4.06 11.608 4 12 4c7 0 10 7 10 7a13.16 13.16 0 0 1-.64.77"/>'}
-                        </svg>
-                    </div>
-                    <div class="layer-opacity">${Math.round((layer.layerData.opacity || 1.0) * 100)}%</div>
-                    <div class="layer-name">${layer.layerData.name}</div>
-                    <div class="layer-thumbnail">
-                        <div class="layer-thumbnail-placeholder"></div>
-                    </div>
-                    <div class="layer-delete-button">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                            <path d="m18 6-12 12"/><path d="m6 6 12 12"/>
-                        </svg>
-                    </div>
-                `;
-
-                layerItem.addEventListener('click', (e) => {
-                    const target = e.target.closest('[class*="layer-"]');
-                    if (target) {
-                        const action = target.className;
-                        if (action.includes('layer-visibility')) {
-                            this.toggleLayerVisibility(i);
-                            e.stopPropagation();
-                        } else if (action.includes('layer-delete')) {
-                            if (confirm(`レイヤー "${layer.layerData.name}" を削除しますか？`)) {
-                                this.deleteLayer(i);
-                            }
-                            e.stopPropagation();
-                        } else {
-                            this.setActiveLayer(i);
-                        }
-                    } else {
-                        this.setActiveLayer(i);
-                    }
-                });
-
-                layerList.appendChild(layerItem);
-            }
-            
-            for (let i = 0; i < layers.length; i++) {
-                this.requestThumbnailUpdate(i);
-            }
-        }
-
-        updateStatusDisplay() {
-            const statusElement = document.getElementById('current-layer');
-            const layers = this.getLayers();
-            
-            if (statusElement && this.activeLayerIndex >= 0) {
-                const layer = layers[this.activeLayerIndex];
-                statusElement.textContent = layer.layerData.name;
-            }
-            
-            if (this.eventBus) {
-                this.eventBus.emit('ui:status-updated', {
-                    currentLayer: this.activeLayerIndex >= 0 ? 
-                        layers[this.activeLayerIndex].layerData.name : 'なし',
-                    layerCount: layers.length,
-                    activeIndex: this.activeLayerIndex
-                });
-            }
-        }
-
-        // ===== Setters =====
-        
-        setCameraSystem(cameraSystem) {
-            this.cameraSystem = cameraSystem;
-        }
-
-        setApp(app) {
-            this.app = app;
-        }
-
-        setAnimationSystem(animationSystem) {
-            this.animationSystem = animationSystem;
-            
-            if (animationSystem && animationSystem.layerSystem !== this) {
-                animationSystem.layerSystem = this;
-            }
-        }
-    }
-
-    window.TegakiLayerSystem = LayerSystem;
-
-    console.log('✅ layer-system.js loaded (元機能完全維持版)');
-
-})();
