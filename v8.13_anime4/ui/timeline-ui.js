@@ -1,12 +1,9 @@
-// ===== ui/timeline-ui.js - リサイズ即時反映版 + 改修 =====
-// 【改修】リサイズ時のタイムラインサムネイル即座更新
+// ===== ui/timeline-ui.js - 改修完了版 =====
+// 【改修1】コントロールボタンをヘッダー行に移動（×ボタンと同列）
+// 【改修2】CUTコンテナ左padding拡張（影枠欠け防止）
+// 【改修3】リサイズ時のサムネイル即座更新
 // 【維持】即時サムネイル反映 & 削除確認削除版
-// 【維持】タイムラインパネル左端10px拡張 (left: 60px)
-// 【維持】時間変更ボタン赤茶色矢印
 // 【維持】CUT管理UI・プレイバック制御
-// 【改修】CUTパネル左側padding拡張（影枠欠け防止）
-// 【改修】×ボタンを右上に配置
-// 【改修】RENAMEボタン追加
 // PixiJS v8.13 対応
 
 (function() {
@@ -154,7 +151,7 @@
         }
         
         removeExistingTimelineElements() {
-            ['timeline-panel', 'cuts-container', 'timeline-bottom', 'timeline-controls'].forEach(id => {
+            ['timeline-panel', 'cuts-container', 'timeline-bottom', 'timeline-controls', 'timeline-header'].forEach(id => {
                 const element = document.getElementById(id);
                 if (element && !element.dataset.source) {
                     element.remove();
@@ -177,16 +174,12 @@
             this.timelinePanel.dataset.source = 'timeline-ui';
             this.timelinePanel.style.display = 'none';
             
-            this.cutsContainer = document.createElement('div');
-            this.cutsContainer.id = 'cuts-container';
-            this.cutsContainer.className = 'cuts-container';
-            this.cutsContainer.dataset.source = 'timeline-ui';
-            
-            // 【改修】×ボタンを右上に配置 + RENAMEボタン追加
-            const timelineBottom = document.createElement('div');
-            timelineBottom.className = 'timeline-bottom';
-            timelineBottom.dataset.source = 'timeline-ui';
-            timelineBottom.innerHTML = `
+            // 【改修1】ヘッダー行作成（×ボタン + コントロール）
+            const timelineHeader = document.createElement('div');
+            timelineHeader.className = 'timeline-header';
+            timelineHeader.dataset.source = 'timeline-ui';
+            timelineHeader.innerHTML = `
+                <button class="timeline-close" id="close-timeline" title="タイムラインを閉じる">×</button>
                 <div class="timeline-controls">
                     <button id="repeat-btn" title="リピート (R)" class="repeat-active">
                         <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -201,16 +194,13 @@
                 </div>
             `;
             
-            // 【改修】×ボタンを右上に独立配置
-            const closeButton = document.createElement('button');
-            closeButton.className = 'timeline-close';
-            closeButton.id = 'close-timeline';
-            closeButton.textContent = '×';
-            closeButton.title = 'タイムラインを閉じる';
+            this.cutsContainer = document.createElement('div');
+            this.cutsContainer.id = 'cuts-container';
+            this.cutsContainer.className = 'cuts-container';
+            this.cutsContainer.dataset.source = 'timeline-ui';
             
-            this.timelinePanel.appendChild(closeButton);
+            this.timelinePanel.appendChild(timelineHeader);
             this.timelinePanel.appendChild(this.cutsContainer);
-            this.timelinePanel.appendChild(timelineBottom);
             document.body.appendChild(this.timelinePanel);
             
             this.domCreated = true;
@@ -224,12 +214,26 @@
             style.textContent = `
                 .timeline-panel { position: fixed !important; bottom: 12px !important; left: 60px !important; right: 220px !important; 
                     background: rgba(240, 224, 214, 0.95) !important; border: 2px solid var(--futaba-medium) !important; 
-                    border-radius: 12px !important; padding: 8px 10px 8px 14px !important; z-index: 1500 !important; max-height: 180px !important; 
+                    border-radius: 12px !important; padding: 8px 10px 10px 10px !important; z-index: 1500 !important; max-height: 180px !important; 
                     display: none !important; box-shadow: 0 6px 16px rgba(128, 0, 0, 0.25) !important; backdrop-filter: blur(12px) !important; }
                 .timeline-panel.show { display: block !important; animation: slideUp 0.35s ease-out !important; }
                 @keyframes slideUp { from { opacity: 0; transform: translateY(25px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
-                .cuts-container { display: flex !important; gap: 6px !important; overflow-x: auto !important; padding: 3px 0 8px 0 !important; 
-                    margin-bottom: 8px !important; max-height: 140px !important; margin-top: 28px !important; }
+                
+                /* 【改修1】ヘッダー行スタイル */
+                .timeline-header { display: flex !important; align-items: center !important; justify-content: space-between !important; 
+                    height: 32px !important; padding: 4px 6px !important; margin-bottom: 6px !important; 
+                    border-bottom: 1px solid var(--futaba-light-medium) !important; }
+                
+                /* 【改修1】×ボタンスタイル調整 */
+                .timeline-close { background: none !important; border: none !important; font-size: 18px !important; 
+                    color: var(--futaba-maroon) !important; cursor: pointer !important; padding: 4px 8px !important; 
+                    border-radius: 6px !important; height: 28px !important; min-width: 28px !important; font-weight: bold !important; 
+                    flex-shrink: 0 !important; transition: all 0.2s ease !important; }
+                .timeline-close:hover { background: var(--futaba-light-medium) !important; }
+                
+                /* 【改修2】CUTコンテナ左padding拡張（影枠欠け防止） */
+                .cuts-container { display: flex !important; gap: 6px !important; overflow-x: auto !important; 
+                    padding: 3px 0 8px 12px !important; margin-bottom: 8px !important; max-height: 105px !important; }
                 .cuts-container::-webkit-scrollbar { height: 10px !important; }
                 .cuts-container::-webkit-scrollbar-track { background: var(--futaba-light-medium) !important; border-radius: 5px !important; }
                 .cuts-container::-webkit-scrollbar-thumb { background: var(--futaba-maroon) !important; border-radius: 5px !important; }
@@ -284,34 +288,27 @@
                 .cut-item:hover .delete-cut-btn { opacity: 1 !important; }
                 .delete-cut-btn:hover { background: rgba(128, 0, 0, 1) !important; transform: scale(1.15) !important; }
                 
-                .timeline-bottom { display: flex !important; justify-content: space-between !important; align-items: center !important; 
-                    gap: 25px !important; height: 40px !important; padding: 0 4px !important; }
-                .timeline-controls { display: flex !important; gap: 6px !important; align-items: center !important; flex: 1 !important; justify-content: center !important; }
-                .timeline-controls button { padding: 10px 16px !important; background: var(--futaba-background) !important; 
-                    border: 2px solid var(--futaba-medium) !important; border-radius: 8px !important; cursor: pointer !important; 
-                    font-size: 12px !important; color: var(--futaba-maroon) !important; min-width: 45px !important; height: 18px !important; 
-                    display: flex !important; align-items: center !important; justify-content: center !important; font-weight: 600 !important; }
+                /* 【改修1】コントロールボタンの高さ統一 */
+                .timeline-controls { display: flex !important; gap: 4px !important; align-items: center !important; flex: 1 !important; justify-content: flex-end !important; }
+                .timeline-controls button { padding: 4px 12px !important; background: var(--futaba-background) !important; 
+                    border: 2px solid var(--futaba-medium) !important; border-radius: 6px !important; cursor: pointer !important; 
+                    font-size: 11px !important; color: var(--futaba-maroon) !important; min-width: 40px !important; height: 28px !important; 
+                    display: flex !important; align-items: center !important; justify-content: center !important; font-weight: 600 !important; 
+                    transition: all 0.2s ease !important; }
                 .timeline-controls button:hover { background: var(--futaba-medium) !important; border-color: var(--futaba-maroon) !important; 
                     transform: translateY(-1px) !important; }
                 
-                .copy-paste-btn { background: var(--futaba-light-medium) !important; font-size: 11px !important; font-weight: 700 !important; min-width: 50px !important; }
+                .copy-paste-btn { background: var(--futaba-light-medium) !important; font-size: 10px !important; font-weight: 700 !important; min-width: 50px !important; }
                 .copy-paste-btn:hover { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; transform: translateY(-2px) scale(1.05) !important; }
                 
                 .rename-btn { background: var(--futaba-light-medium) !important; font-size: 10px !important; font-weight: 700 !important; min-width: 60px !important; }
                 .rename-btn:hover { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; transform: translateY(-2px) scale(1.05) !important; }
                 
-                #repeat-btn { min-width: 40px !important; padding: 8px !important; }
+                #repeat-btn { min-width: 34px !important; padding: 6px !important; }
                 #repeat-btn.repeat-active { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; }
                 #repeat-btn.repeat-inactive { background: var(--futaba-background) !important; opacity: 0.6 !important; }
-                #repeat-btn svg { width: 16px !important; height: 16px !important; }
+                #repeat-btn svg { width: 14px !important; height: 14px !important; }
                 .timeline-controls button#play-btn.playing { background: var(--futaba-maroon) !important; color: white !important; }
-                
-                .timeline-close { position: absolute !important; top: 8px !important; right: 10px !important; 
-                    background: none !important; border: none !important; font-size: 20px !important; 
-                    color: var(--futaba-maroon) !important; cursor: pointer !important; padding: 4px 8px !important; 
-                    border-radius: 8px !important; height: 28px !important; font-weight: bold !important; min-width: 28px !important; 
-                    z-index: 10 !important; }
-                .timeline-close:hover { background: var(--futaba-light-medium) !important; }
             `;
             document.head.appendChild(style);
         }
@@ -794,12 +791,11 @@
     }
     window.TegakiUI.TimelineUI = TimelineUI;
     
-    console.log('✅ TimelineUI リサイズ即時反映版 + 改修 loaded');
-    console.log('  ✅ camera:resized イベント対応');
-    console.log('  ✅ 全CUTサムネイル一括更新機能');
-    console.log('  ✅ 既存の即時反映機能維持');
-    console.log('  ✅ CUTパネル左側padding拡張（影枠欠け防止）');
-    console.log('  ✅ ×ボタンを右上に配置');
-    console.log('  ✅ RENAMEボタン追加');
+    console.log('✅ TimelineUI 改修完了版 loaded');
+    console.log('  ✅ 改修1: コントロールボタンをヘッダー行に移動（×ボタンと同列）');
+    console.log('  ✅ 改修2: CUTコンテナ左padding拡張（影枠欠け防止）');
+    console.log('  ✅ 改修3: リサイズ時のサムネイル即座更新機能維持');
+    console.log('  ✅ ボタン高さ統一: 全て28pxに調整');
+    console.log('  ✅ スマートなUI: コンパクトで見やすいレイアウト');
 
 })();

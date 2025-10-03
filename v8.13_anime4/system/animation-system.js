@@ -1,10 +1,10 @@
-// ===== system/animation-system.js - 座標系修正版 + 改修 =====
-// 【修正】CUT.containerをcanvasContainer配下に配置し、座標系のズレを解消
-// 【維持】LayerSystemのRenderTexture機能を活用
+// ===== system/animation-system.js - リサイズ対応改修版 =====
+// 【改修】リサイズ時のサムネイル生成でキャンバスサイズを動的取得
+// 【維持】座標系修正版の全機能
+// 【維持】CUT.containerをcanvasContainer配下に配置
 // 【維持】CUTフォルダ方式・全既存機能
-// 【改修】CUTコピー時の命名を「CUT1(1)」形式に変更
-// 【改修】サムネイルアスペクト比を正しく反映
-// 【追加】RENAME機能（全CUTを順番にリネーム）
+// 【維持】CUTコピー時の命名「CUT1(1)」形式
+// 【維持】RENAME機能
 // PixiJS v8.13 対応
 
 (function() {
@@ -178,7 +178,7 @@
         }
     }
     
-    // ===== AnimationSystem: 座標系修正版 =====
+    // ===== AnimationSystem: リサイズ対応改修版 =====
     
     class AnimationSystem {
         constructor() {
@@ -281,6 +281,23 @@
             };
         }
         
+        // 【改修】現在のキャンバスサイズを動的取得
+        getCurrentCanvasSize() {
+            // 優先順位: LayerSystem > Config
+            if (this.layerSystem?.config?.canvas) {
+                return {
+                    width: this.layerSystem.config.canvas.width,
+                    height: this.layerSystem.config.canvas.height
+                };
+            }
+            
+            // フォールバック
+            return {
+                width: this.config?.canvas?.width || 800,
+                height: this.config?.canvas?.height || 600
+            };
+        }
+        
         // ===== CUT作成 =====
         
         createNewCutFromCurrentLayers() {
@@ -373,8 +390,9 @@
                 paths: []
             };
             
+            const canvasSize = this.getCurrentCanvasSize();
             const bg = new PIXI.Graphics();
-            bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+            bg.rect(0, 0, canvasSize.width, canvasSize.height);
             bg.fill(this.config.background.color);
             layer.addChild(bg);
             layer.layerData.backgroundGraphics = bg;
@@ -418,8 +436,9 @@
             layer.alpha = originalLayer.alpha;
             
             if (originalLayer.layerData?.isBackground) {
+                const canvasSize = this.getCurrentCanvasSize();
                 const bg = new PIXI.Graphics();
-                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+                bg.rect(0, 0, canvasSize.width, canvasSize.height);
                 bg.fill(this.config.background.color);
                 layer.addChild(bg);
                 layer.layerData.backgroundGraphics = bg;
@@ -497,8 +516,7 @@
             this.switchToActiveCut(cutIndex);
         }
         
-        // ===== サムネイル生成（RenderTexture版） =====
-        // 【改修】アスペクト比を正しく反映するように修正
+        // ===== サムネイル生成（リサイズ対応改修版） =====
         
         async generateCutThumbnail(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
@@ -513,10 +531,9 @@
             
             const canvas = this.app.renderer.extract.canvas(renderTexture);
             
-            // 【改修】アスペクト比を正しく計算
-            const canvasWidth = this.config.canvas.width;
-            const canvasHeight = this.config.canvas.height;
-            const aspectRatio = canvasWidth / canvasHeight;
+            // 【改修】動的にキャンバスサイズを取得
+            const canvasSize = this.getCurrentCanvasSize();
+            const aspectRatio = canvasSize.width / canvasSize.height;
             const maxWidth = 72;
             const maxHeight = 54;
             let thumbWidth, thumbHeight;
@@ -537,7 +554,7 @@
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
             
-            // 【改修】元画像のアスペクト比を維持してリサイズ
+            // アスペクト比を維持してリサイズ
             ctx.clearRect(0, 0, thumbWidth, thumbHeight);
             ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, thumbWidth, thumbHeight);
             
@@ -634,13 +651,11 @@
             return true;
         }
         
-        // 【改修】CUTコピー時の命名を「CUT1(1)」形式に変更
         createCutFromClipboard(clipboardData) {
             if (!clipboardData) return null;
             
             const baseName = clipboardData.name.replace(/_copy$/, '').replace(/\(\d+\)$/, '');
             
-            // 同名CUTの数をカウント
             let copyCount = 0;
             for (const cut of this.animationData.cuts) {
                 const cutBaseName = cut.name.replace(/\(\d+\)$/, '');
@@ -792,7 +807,6 @@
             }
         }
         
-        // 【追加】全CUTを順番にリネーム (RENAME機能)
         renameCutsSequentially() {
             if (!this.animationData.cuts || this.animationData.cuts.length === 0) return;
             
@@ -1048,14 +1062,14 @@
     window.TegakiAnimationSystem = AnimationSystem;
     window.TegakiCut = Cut;
     
-    console.log('✅ AnimationSystem 座標系修正版 + 改修 loaded');
+    console.log('✅ AnimationSystem リサイズ対応改修版 loaded');
     console.log('🔧 改修内容:');
-    console.log('  ✅ CUT.containerをcanvasContainer配下に配置');
-    console.log('  ✅ 座標系のズレを解消（カメラフレームと描画座標を統一）');
-    console.log('  ✅ LayerSystemのRenderTexture機能を活用');
+    console.log('  ✅ getCurrentCanvasSize() メソッド追加');
+    console.log('  ✅ リサイズ時のサムネイル生成で動的にキャンバスサイズ取得');
+    console.log('  ✅ アスペクト比計算が常に最新のキャンバスサイズを反映');
+    console.log('  ✅ 既存機能完全維持: CUT.containerをcanvasContainer配下に配置');
     console.log('  ✅ 既存機能完全維持: CUTフォルダ方式・Deep Copy・シリアライズ');
-    console.log('  ✅ CUTコピー時の命名を「CUT1(1)」形式に変更');
-    console.log('  ✅ サムネイルアスペクト比を正しく反映');
-    console.log('  ✅ RENAME機能追加（全CUTを順番にリネーム）');
+    console.log('  ✅ 既存機能完全維持: CUTコピー時の命名「CUT1(1)」形式');
+    console.log('  ✅ 既存機能完全維持: RENAME機能');
 
 })();
