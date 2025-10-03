@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 Phase 2完成版 - PixiJS v8.13 お絵かきツール</title>
+    <title>🎨 Phase 2改修版 - PixiJS v8.13 お絵かきツール</title>
     <style>
         /* ===== 責任分界明確化: index.htmlは基本レイアウトのみ担当 ===== */
         /* ⚠️ TIMELINE関連CSS削除: timeline-ui.jsが完全責任を持つ */
@@ -123,7 +123,20 @@
             pointer-events: none;
         }
         
-        .layer-add-button {
+        /* 🔧 Phase2追加: レイヤーコントロール行 */
+        .layer-controls-row {
+            display: flex;
+            flex-direction: row;
+            gap: 8px;
+            background: transparent;
+            pointer-events: all;
+            justify-content: center;
+            padding: 4px 8px;
+            margin-bottom: 8px;
+        }
+        
+        .layer-add-button,
+        .folder-add-button {
             width: 36px;
             height: 36px;
             background: var(--futaba-cream);
@@ -143,7 +156,23 @@
             transform: scale(1.1);
         }
         
-        .layer-add-button svg { width: 18px; height: 18px; stroke: #800000; }
+        .layer-add-button svg,
+        .folder-add-button svg { 
+            width: 18px; 
+            height: 18px; 
+            stroke: #800000; 
+        }
+        
+        /* 🔧 Phase2追加: フォルダボタン（準備中スタイル） */
+        .folder-add-button {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        .folder-add-button:hover {
+            opacity: 0.7;
+            transform: none;
+        }
         
         /* CUT表示インジケータ - レイヤーパネル連動 */
         .cut-indicator {
@@ -606,9 +635,6 @@
             color: var(--text-inverse);
             border-color: var(--futaba-maroon);
         }
-
-        /* ⚠️ 重要: タイムライン関連CSS削除完了 */
-        /* timeline-ui.jsが完全責任を持つため、重複定義を排除 */
         
         .status-panel {
             position: fixed;
@@ -652,6 +678,27 @@
 <body>
     <div class="main-layout">
         <div class="sidebar">
+            <!-- 🆕 Phase2追加: アルバム保管アイコン -->
+            <div class="tool-button" id="library-tool" title="アルバム保管 (準備中)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <rect width="8" height="18" x="3" y="3" rx="1"/>
+                    <path d="M7 3v18"/>
+                    <path d="M20.4 18.9c.2.5-.1 1.1-.6 1.3l-1.9.7c-.5.2-1.1-.1-1.3-.6L11.1 5.1c-.2-.5.1-1.1.6-1.3l1.9-.7c.5-.2 1.1.1 1.3.6Z"/>
+                </svg>
+            </div>
+            
+            <!-- 🆕 Phase2追加: 画像・アニメ出力アイコン -->
+            <div class="tool-button" id="export-tool" title="画像・アニメ出力 (準備中)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M10.3 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2v10l-3.1-3.1a2 2 0 0 0-2.814.014L6 21"/>
+                    <path d="m14 19 3 3v-5.5"/>
+                    <path d="m17 22 3-3"/>
+                    <circle cx="9" cy="9" r="2"/>
+                </svg>
+            </div>
+            
+            <div class="tool-separator"></div>
+        
             <div class="tool-button" id="resize-tool" title="リサイズ">
                 <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3H5a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M14 15H9v-5"/><path d="M16 3h5v5"/><path d="M21 3 9 15"/></svg>
             </div>
@@ -801,7 +848,6 @@
     <!-- 2. EventBus（最優先） -->
     <script src="system/event-bus.js"></script>
 
-    <!-- ★ 新規追加 ★ -->
     <script src="system/data-utils.js"></script>
     <script src="system/data-validator.js"></script>
 
@@ -811,7 +857,7 @@
     <script src="system/drawing-clipboard.js"></script>
     <script src="system/history.js"></script>
     
-    <!-- 4. 【修正】AnimationSystemとTimelineUI -->
+    <!-- 4. AnimationSystemとTimelineUI -->
     <script src="system/animation-system.js"></script>
     <script src="system/gif-exporter.js"></script>
     <script src="ui/timeline-ui.js"></script>
@@ -827,7 +873,6 @@
     <script src="system/diagnostics.js"></script>
     
     <script>
-// Phase 1対応版：依存関係チェック関数
 function checkPhase1Dependencies() {
     const dependencies = [
         { name: 'PIXI', obj: window.PIXI },
@@ -850,8 +895,6 @@ function checkPhase1Dependencies() {
     }
     
     console.log('✅ Phase 1 Dependencies loaded successfully');
-    console.log('   - EventBus:', !!window.TegakiEventBus);
-    console.log('   - Animation config:', !!window.TEGAKI_CONFIG.animation);
     return true;
 }
 
@@ -862,23 +905,42 @@ try {
 }
     </script>
     
+    <!-- 🔧 Phase2改修: レイヤーパネル構造変更 -->
     <div class="layer-panel-container" id="layer-panel-container">
-        <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加 (Ctrl+L)">
-            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+        <!-- CUTインジケータ（最上部） -->
+        <div class="cut-indicator">
+            <div class="cut-nav-btn" id="prev-cut-btn">◀</div>
+            <div class="cut-display" id="cut-display">CUT1</div>
+            <div class="cut-nav-btn" id="next-cut-btn">▶</div>
         </div>
         
+        <!-- 🔧 Phase2追加: レイヤー+/フォルダ+ボタン横並び -->
+        <div class="layer-controls-row">
+            <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加 (Ctrl+L)">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="12" x2="12" y1="5" y2="19"/>
+                    <line x1="5" x2="19" y1="12" y2="12"/>
+                </svg>
+            </div>
+            
+            <!-- 🆕 Phase2追加: フォルダ追加ボタン -->
+            <div class="folder-add-button" id="add-folder-btn" title="フォルダ追加（準備中）">
+                <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                    <path d="M12 10v6"/>
+                    <path d="M9 13h6"/>
+                    <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/>
+                </svg>
+            </div>
+        </div>
+        
+        <!-- レイヤーリスト -->
         <div class="layer-panel-items" id="layer-list"></div>
     </div>
-    
-    <!-- ⚠️ 重要: タイムラインパネルHTML削除完了 -->
-    <!-- timeline-ui.jsが動的生成で完全責任を持つ -->
 
     <script>
-// 【Phase 2-2完成版】ブラウザ競合回避・CUTコピー統合版ショートカット
 (function() {
     'use strict';
     
-    // Canvas限定ショートカット処理 - Phase 2-2改修版
     function setupImprovedKeyboardShortcuts() {
         let canvas = null;
         let focusCheckAttempts = 0;
@@ -901,14 +963,10 @@ try {
         }
         
         function setupCanvasKeyEvents() {
-            // Canvasにフォーカス可能にする
             canvas.tabIndex = 0;
             canvas.style.outline = 'none';
-            
-            // Canvas限定キーイベント
             canvas.addEventListener('keydown', handleKeyDown);
             
-            // アプリ起動時にCanvasにフォーカス
             setTimeout(() => {
                 if (canvas) {
                     canvas.focus();
@@ -920,130 +978,105 @@ try {
         }
         
         function setupDocumentKeyEvents() {
-            // フォールバック：document全体でのキーイベント
             document.addEventListener('keydown', handleKeyDown);
             console.log('✅ Document keyboard shortcuts enabled (fallback)');
         }
         
         function handleKeyDown(e) {
-            // Phase 2-2: ブラウザ競合回避ショートカット完全版
-            
-            // Ctrl+Z: Undo
             if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
                 if (window.History && typeof window.History.undo === 'function') {
                     const success = window.History.undo();
                     if (success) {
                         e.preventDefault();
-                        console.log('🔄 Undo executed via Ctrl+Z');
                     }
                 }
                 return;
             }
             
-            // Ctrl+Y: Redo
             if (e.ctrlKey && e.code === 'KeyY' && !e.shiftKey && !e.altKey) {
                 if (window.History && typeof window.History.redo === 'function') {
                     const success = window.History.redo();
                     if (success) {
                         e.preventDefault();
-                        console.log('🔄 Redo executed via Ctrl+Y');
                     }
                 }
                 return;
             }
             
-            // 【Phase 2-2実装】Ctrl+L: 新規レイヤー作成（改修計画書指定）
             if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('layer:create-new');
                     e.preventDefault();
-                    console.log('🆕 New layer requested via Ctrl+L (Phase 2-2)');
                 }
                 return;
             }
             
-            // 【Phase 2-2実装】Shift+C: アクティブCUTコピー+右隣にコピーCUT貼り付け（改修計画書指定）
             if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
                 if (window.TegakiEventBus) {
-                    // アクティブCUTコピー
                     window.TegakiEventBus.emit('cut:copy-current');
-                    // 即座に右隣に貼り付け
                     setTimeout(() => {
                         window.TegakiEventBus.emit('cut:paste-right-adjacent');
                     }, 10);
                     e.preventDefault();
-                    console.log('📋 CUT copy + paste right adjacent via Shift+C (Phase 2-2)');
                 }
                 return;
             }
             
-            // Shift+V: CUT独立貼り付け
             if (e.shiftKey && e.code === 'KeyV' && !e.ctrlKey && !e.altKey) {
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('cut:paste-new');
                     e.preventDefault();
-                    console.log('📋 CUT paste requested via Shift+V');
                 }
                 return;
             }
             
-            // Alt+A: GIFアニメーション切り替え
             if (e.altKey && e.code === 'KeyA' && !e.ctrlKey && !e.shiftKey) {
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('ui:toggle-timeline');
                     e.preventDefault();
-                    console.log('🎬 Timeline toggle requested via Alt+A');
                 }
                 return;
             }
             
-            // Space: 再生/停止（タイムライン表示時のみ）
             if (e.code === 'Space' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 const timelinePanel = document.getElementById('timeline-panel');
                 if (timelinePanel && timelinePanel.classList.contains('show')) {
                     if (window.TegakiEventBus) {
                         window.TegakiEventBus.emit('animation:play-toggle');
                         e.preventDefault();
-                        console.log('⏯️ Play/Stop toggle via Space (timeline mode)');
                     }
                 }
                 return;
             }
             
-            // P: ペンツール
             if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('tool:select', { tool: 'pen' });
                     e.preventDefault();
-                    console.log('✏️ Pen tool selected via P');
                 }
                 return;
             }
             
-            // E: 消しゴムツール
             if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('tool:select', { tool: 'eraser' });
                     e.preventDefault();
-                    console.log('🧽 Eraser tool selected via E');
                 }
                 return;
             }
         }
         
-        // 初期化
         waitForCanvas();
     }
     
-    // Phase 2対応版：統合されたmain.js
     function checkCoreRuntime() {
         if (!window.CoreRuntime) {
-            console.error('❌ CoreRuntime not loaded - check core-runtime.js loading');
+            console.error('❌ CoreRuntime not loaded');
             return false;
         }
         
         if (!window.TegakiCore?.CoreEngine) {
-            console.error('❌ TegakiCore.CoreEngine not found - check core-engine.js loading');
+            console.error('❌ TegakiCore.CoreEngine not found');
             return false;
         }
         
@@ -1108,11 +1141,9 @@ try {
                 );
                 
                 window.drawingAppResizeCanvas = (newWidth, newHeight) => {
-                    console.log('DrawingApp: Canvas resize request via CoreRuntime:', newWidth, 'x', newHeight);
                     return CoreRuntime.api.resizeCanvas(newWidth, newHeight);
                 };
                 
-                // ウィンドウリサイズ処理
                 window.addEventListener('resize', () => {
                     const newWidth = window.innerWidth - 50;
                     const newHeight = window.innerHeight;
@@ -1126,15 +1157,12 @@ try {
                     cameraSystem.updateGuideLinesForCanvasResize();
                 });
                 
-                // 改善されたショートカット初期化
                 setupImprovedKeyboardShortcuts();
                 
-                // 情報表示・モニタリング
                 this.updateCanvasInfo();
                 this.updateDPRInfo();
                 this.startFPSMonitor();
                 
-                // グローバル参照設定
                 window.drawingApp = drawingApp;
                 
                 return true;
@@ -1181,10 +1209,8 @@ try {
         return DrawingApp;
     }
     
-    // History統合イベントリスナー
     function setupHistoryIntegration() {
         if (window.TegakiEventBus && window.History) {
-            // EventBus経由でUndo/Redoイベント処理
             window.TegakiEventBus.on('history:undo-request', () => {
                 if (typeof window.History.undo === 'function') {
                     window.History.undo();
@@ -1197,7 +1223,6 @@ try {
                 }
             });
             
-            // History状態変更通知
             window.TegakiEventBus.on('history:changed', (data) => {
                 const historyElement = document.getElementById('history-info');
                 if (historyElement && data) {
@@ -1205,7 +1230,6 @@ try {
                 }
             });
             
-            // 初期状態表示
             if (window.History.getHistoryInfo) {
                 const info = window.History.getHistoryInfo();
                 const historyElement = document.getElementById('history-info');
@@ -1218,12 +1242,9 @@ try {
         }
     }
     
-    // レイヤーパネル二重描画修正
     function setupLayerPanelDuplicationFix() {
         if (window.TegakiEventBus) {
-            // レイヤー作成時の重複チェック
             window.TegakiEventBus.on('layer:created', (data) => {
-                // 二重描画を防ぐため、少し遅延してからUI更新
                 setTimeout(() => {
                     if (window.layerSystem && typeof window.layerSystem.updateLayerPanelUI === 'function') {
                         window.layerSystem.updateLayerPanelUI();
@@ -1231,7 +1252,6 @@ try {
                 }, 50);
             });
             
-            // レイヤー削除時の整合性確保
             window.TegakiEventBus.on('layer:deleted', (data) => {
                 setTimeout(() => {
                     if (window.layerSystem && typeof window.layerSystem.updateLayerPanelUI === 'function') {
@@ -1244,34 +1264,26 @@ try {
         }
     }
     
-    // Phase 2: 段階的初期化処理
     window.addEventListener('DOMContentLoaded', async () => {
         try {
-            console.log('🔥 Starting Phase 2-2完成版 - ショートカット改善版 initialization...');
+            console.log('🔥 Starting Phase2改修版 initialization...');
             
-            // Step 1: CoreRuntime依存関係チェック
             if (!checkCoreRuntime()) {
                 throw new Error('CoreRuntime initialization failed');
             }
             
-            // Step 2: アプリケーション初期化
             const DrawingApp = initializeApp();
             const app = new DrawingApp();
             await app.initialize();
             
-            // Step 3: History統合
             setupHistoryIntegration();
-            
-            // Step 4: レイヤーパネル二重描画修正
             setupLayerPanelDuplicationFix();
             
-            // Step 5: 座標系診断実行
             if (window.CoordinateSystem && typeof window.CoordinateSystem.diagnoseReferences === 'function') {
                 const diagnosis = window.CoordinateSystem.diagnoseReferences();
                 console.log('🔍 Coordinate System Diagnosis:', diagnosis);
             }
             
-            // Step 6: システム診断実行
             if (window.SystemDiagnostics) {
                 setTimeout(() => {
                     try {
@@ -1284,33 +1296,15 @@ try {
                 }, 1000);
             }
             
-            console.log('✅ Phase 2-2完成版 SUCCESS: Drawing App initialized!');
-            console.log('✅ EventBus established:', !!window.TegakiEventBus);
-            console.log('✅ Animation config loaded:', !!window.TEGAKI_CONFIG.animation);
-            console.log('✅ AnimationSystem initialized:', !!window.animationSystem);
-            console.log('✅ TimelineUI initialized:', !!window.timelineUI);
-            console.log('✅ History system integrated:', !!window.History);
-            console.log('🚀 Phase 2-2改修完了: ショートカット改善実装');
-            console.log('   - ✅ Ctrl+L: 新規レイヤー作成 (改修計画書指定)');
-            console.log('   - ✅ Shift+C: アクティブCUTコピー+右隣にコピーCUT貼り付け (改修計画書指定)');
-            console.log('   - ✅ ブラウザ競合回避処理強化');
-            console.log('   - ✅ 元の機能保持: 既存ショートカット維持');
-            console.log('   - ✅ UI整合性: レイヤー追加ボタンtooltip更新');
-            console.log('   - ✅ EventBus統合: CUTコピー・ペースト機能');
-            console.log('🎯 Phase 2-2 完成版キーボードショートカット:');
-            console.log('   - Ctrl+L: 新規レイヤー作成 (改修計画書指定)');
-            console.log('   - Shift+C: CUTコピー+右隣に貼り付け (改修計画書指定)');
-            console.log('   - Shift+V: CUT独立貼り付け');
-            console.log('   - Ctrl+Z: Undo (History system)');
-            console.log('   - Ctrl+Y: Redo (History system)');
-            console.log('   - Alt+A: タイムライン切り替え');
-            console.log('   - Space: 再生/停止 (タイムライン表示時のみ)');
-            console.log('   - P: ペンツール');
-            console.log('   - E: 消しゴムツール');
-            console.log('✅ Phase 2-2 ショートカット改善完了!');
+            console.log('✅ Phase2改修版 SUCCESS: Drawing App initialized!');
+            console.log('🎯 Phase2改修完了:');
+            console.log('   - ✅ レイヤーパネル階層移動修正');
+            console.log('   - ✅ CUTインジケータ最上部配置');
+            console.log('   - ✅ レイヤー+/フォルダ+ボタン横並び');
+            console.log('   - ✅ サイドバーアイコン追加（アルバム・出力）');
             
         } catch (error) {
-            console.error('❌ Phase 2-2完成版 FAILED:', error);
+            console.error('❌ Phase2改修版 FAILED:', error);
             console.error('Stack trace:', error.stack);
         }
     });

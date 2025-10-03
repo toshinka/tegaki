@@ -1,34 +1,18 @@
-// ===== ui-panels.js - Phase2改修版: タイムライン表示修正 =====
-// CHG: アニメアイコン → タイムライン表示イベント発火機能追加
-
-/*
-=== Phase2改修完了ヘッダー ===
-
-【改修内容】
-✅ gif-animation-toolクリック → ui:toggle-timelineイベント発火
-✅ タイムライン表示トリガー実装
-✅ 既存機能の非破壊的改修
-
-【変更箇所】
-- handleToolClick内のgif-animation-tool処理にEventBus発火追加
-- updateToolUI内のgif-animationツール認識追加
-
-=== Phase2改修完了ヘッダー終了 ===
-*/
+// ===== ui-panels.js - Phase1改修版: レイヤー階層移動完全修正 =====
+// 🔧 Phase1改修: SortableJS統合改善 + レイヤー順序管理修正
+// ✅ 改修内容: Sortableインスタンス再初期化、LayerSystem統合API使用
 
 window.TegakiUI = {
     
-    // === UI制御クラス（Phase2改修版：タイムライン表示修正） ===
+    // === UI制御クラス（Phase1改修版：レイヤー階層移動修正） ===
     UIController: class {
         constructor(drawingEngine, layerManager, app) {
-            // ⚠️ Phase1.5改修：Engine参照は初期化時のみ保持・直接呼び出し禁止
-            this.drawingEngine = drawingEngine; // 初期化時の参照のみ（直接呼び出し禁止）
-            this.layerManager = layerManager;   // 初期化時の参照のみ（直接呼び出し禁止）
+            this.drawingEngine = drawingEngine;
+            this.layerManager = layerManager;
             this.app = app;
             this.activePopup = null;
             this.toolbarIconClickMode = false;
             
-            // CoreRuntime依存性確認
             this.validateCoreRuntime();
             
             this.setupEventDelegation();
@@ -37,7 +21,6 @@ window.TegakiUI = {
             window.TegakiUI.setupPanelStyles();
         }
         
-        // Phase1.5改修：CoreRuntime依存性確認
         validateCoreRuntime() {
             if (!window.CoreRuntime) {
                 console.error('UIController: CoreRuntime not available - UI operations may fail');
@@ -64,12 +47,18 @@ window.TegakiUI = {
 
                 const layerAddBtn = e.target.closest('#add-layer-btn');
                 if (layerAddBtn) {
-                    // ✅ Phase1.5改修：CoreRuntime統一API使用
                     const layerCount = this.getLayerCount();
                     const result = window.CoreRuntime.api.createLayer(`レイヤー${layerCount}`);
                     if (result) {
                         window.CoreRuntime.api.setActiveLayer(result.index);
                     }
+                    return;
+                }
+                
+                // 🆕 Phase1改修: フォルダ追加ボタン（プレースホルダー）
+                const folderAddBtn = e.target.closest('#add-folder-btn');
+                if (folderAddBtn) {
+                    alert('フォルダ機能は準備中です');
                     return;
                 }
 
@@ -82,10 +71,8 @@ window.TegakiUI = {
             });
         }
         
-        // Phase1.5改修：レイヤー数取得（CoreRuntime経由）
         getLayerCount() {
             try {
-                // layerManagerからの情報取得（直接呼び出しではなく参照のみ）
                 return this.layerManager?.layers?.length || 1;
             } catch (error) {
                 console.warn('UIController: Failed to get layer count, using fallback');
@@ -93,21 +80,18 @@ window.TegakiUI = {
             }
         }
 
-        // CHG: Phase2改修 - タイムライン表示機能追加
         handleToolClick(button) {
             const toolId = button.id;
             const CONFIG = window.TEGAKI_CONFIG;
             
             const toolMap = {
                 'pen-tool': () => {
-                    // ✅ Phase1.5改修：CoreRuntime統一API使用
                     const success = window.CoreRuntime.api.setTool('pen');
                     if (!success) {
                         console.error('UIController: Failed to set pen tool');
                         return;
                     }
                     
-                    // レイヤー移動モード終了もCoreRuntime経由
                     window.CoreRuntime.api.exitLayerMoveMode();
                     
                     if (!this.toolbarIconClickMode) {
@@ -116,14 +100,12 @@ window.TegakiUI = {
                     this.updateToolUI('pen');
                 },
                 'eraser-tool': () => {
-                    // ✅ Phase1.5改修：CoreRuntime統一API使用
                     const success = window.CoreRuntime.api.setTool('eraser');
                     if (!success) {
                         console.error('UIController: Failed to set eraser tool');
                         return;
                     }
                     
-                    // レイヤー移動モード終了もCoreRuntime経由
                     window.CoreRuntime.api.exitLayerMoveMode();
                     
                     this.closeAllPopups();
@@ -132,9 +114,7 @@ window.TegakiUI = {
                 'resize-tool': () => {
                     this.togglePopup('resize-settings');
                 },
-                // CHG: Phase2改修 - GIFアニメーションツール→タイムライン表示
                 'gif-animation-tool': () => {
-                    // CHG: タイムライン表示イベント発火
                     if (window.TegakiEventBus) {
                         window.TegakiEventBus.emit('ui:toggle-timeline');
                         console.log('🎬 Timeline toggle event emitted');
@@ -144,6 +124,15 @@ window.TegakiUI = {
                     
                     this.closeAllPopups();
                     this.updateToolUI('gif-animation');
+                },
+                // 🆕 Phase3先行実装: サイドバーアイコン
+                'library-tool': () => {
+                    alert('アルバム保管機能は準備中です\n\n今後の実装予定:\n- ブラウザ内保存（localStorage/IndexedDB）\n- レイヤー構造含む復元\n- サムネイル表示\n- 削除機能');
+                    this.closeAllPopups();
+                },
+                'export-tool': () => {
+                    alert('画像・アニメ出力機能は準備中です\n\n対応予定フォーマット:\n- PNG（静止画）\n- APNG（アニメーション）\n- GIF（優先実装）\n- WEBP（アニメーション）\n- MP4（動画）\n- PDF（ドキュメント）');
+                    this.closeAllPopups();
                 }
             };
             
@@ -151,17 +140,15 @@ window.TegakiUI = {
             if (handler) handler();
         }
 
-        // CHG: Phase2改修 - gif-animationツール認識追加
         updateToolUI(tool) {
             document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
             const toolBtn = document.getElementById(tool + '-tool');
             if (toolBtn) toolBtn.classList.add('active');
 
-            // CHG: gif-animationツール名追加
             const toolNames = { 
                 pen: 'ベクターペン', 
                 eraser: '消しゴム', 
-                'gif-animation': 'GIFアニメーション' // CHG: 追加
+                'gif-animation': 'GIFアニメーション'
             };
             const toolElement = document.getElementById('current-tool');
             if (toolElement) {
@@ -192,7 +179,6 @@ window.TegakiUI = {
         setupSliders() {
             const CONFIG = window.TEGAKI_CONFIG;
             
-            // ✅ Phase1.5改修：CoreRuntime統一API使用
             window.TegakiUI.createSlider('pen-size-slider', 0.1, 100, CONFIG.pen.size, (value) => {
                 const success = window.CoreRuntime.api.setBrushSize(value);
                 if (!success) {
@@ -230,24 +216,20 @@ window.TegakiUI = {
             }
         }
 
-        // ✅ Phase1.5改修完了版：CoreRuntime統一API経由のキャンバスリサイズ
         resizeCanvas(newWidth, newHeight) {
             console.log('UIController: Requesting canvas resize via CoreRuntime API:', newWidth, 'x', newHeight);
             
             try {
-                // CoreRuntime統一API使用
                 const success = window.CoreRuntime.api.resizeCanvas(newWidth, newHeight);
                 
                 if (success) {
                     console.log('✅ UIController: Canvas resize completed successfully via CoreRuntime');
                 } else {
                     console.error('❌ UIController: Canvas resize failed via CoreRuntime');
-                    // フォールバック禁止・エラー状態のまま継続
                 }
                 
             } catch (error) {
                 console.error('UIController: Canvas resize error via CoreRuntime:', error);
-                // フォールバック禁止・エラー情報のみログ
             }
         }
     },
@@ -300,13 +282,11 @@ window.TegakiUI = {
 
     // === パネルスタイル設定（変更なし） ===
     setupPanelStyles: function() {
-        // 修正版：サムネイル枠のはみ出し対策＋十字ガイド改善
         const slimStyle = document.createElement('style');
         slimStyle.textContent = `
-            /* 反転ボタンスリム化：隣のスライダー2つ分の縦幅に合わせる */
             .flip-section {
                 gap: 2px !important;
-                height: 56px; /* スライダー2つ分の高さ：28px × 2 */
+                height: 56px;
                 display: flex !important;
                 flex-direction: column !important;
                 justify-content: space-between !important;
@@ -318,16 +298,15 @@ window.TegakiUI = {
                 white-space: nowrap !important;
                 min-width: auto !important;
                 width: auto !important;
-                height: 26px !important; /* スライダー1つ分の高さに近づける */
+                height: 26px !important;
                 display: flex !important;
                 align-items: center !important;
                 justify-content: center !important;
                 line-height: 1 !important;
             }
             
-            /* 修正版：レイヤーアイテム全体の幅をパネルに合わせて調整 */
             .layer-item {
-                width: 180px; /* パネル幅に合わせて固定 */
+                width: 180px;
                 height: 64px;
                 background: var(--futaba-cream);
                 border: 1px solid var(--futaba-light-medium);
@@ -336,25 +315,23 @@ window.TegakiUI = {
                 cursor: pointer;
                 transition: background-color 0.2s ease, border-color 0.2s ease;
                 display: grid;
-                grid-template-columns: 20px 1fr auto; /* 3列目を auto に変更 */
+                grid-template-columns: 20px 1fr auto;
                 grid-template-rows: 1fr 1fr;
                 gap: 4px 8px;
                 align-items: center;
                 user-select: none;
                 position: relative;
                 box-shadow: 0 1px 2px rgba(128, 0, 0, 0.05);
-                min-width: 180px; /* 最小幅を保証 */
-                max-width: 180px; /* 最大幅を制限 */
+                min-width: 180px;
+                max-width: 180px;
             }
             
-            /* 修正1: サムネイル枠のアスペクト比対応（固定幅削除） */
             .layer-thumbnail {
                 grid-column: 3;
                 grid-row: 1 / 3;
-                min-width: 24px; /* 縦長時の最小幅 */
-                max-width: 72px; /* 横長時の最大幅（パネルから出ない範囲） */
-                /* width: 48px; 修正1: 固定幅を削除してJavaScript制御に委譲 */
-                height: 48px; /* 高さは固定 */
+                min-width: 24px;
+                max-width: 72px;
+                height: 48px;
                 background: var(--futaba-background);
                 border: 1px solid var(--futaba-light-medium);
                 border-radius: 4px;
@@ -365,7 +342,7 @@ window.TegakiUI = {
                 justify-content: center;
                 align-self: center;
                 transition: width 0.2s ease;
-                flex-shrink: 0; /* 縮小を防ぐ */
+                flex-shrink: 0;
             }
             
             .layer-thumbnail img {
@@ -376,7 +353,6 @@ window.TegakiUI = {
                 transition: opacity 0.2s ease;
             }
             
-            /* レイヤー名の調整：サムネイルサイズに応じて幅を調整 */
             .layer-name {
                 grid-column: 2;
                 grid-row: 2;
@@ -388,15 +364,13 @@ window.TegakiUI = {
                 text-overflow: ellipsis;
                 align-self: end;
                 margin-bottom: 2px;
-                max-width: calc(100% - 8px); /* サムネイル幅に応じて動的に調整 */
+                max-width: calc(100% - 8px);
             }
             
-            /* 修正版：十字ガイドを削除し、カメラフレーム内のガイドライン表示 */
             .crosshair-sight {
-                display: none !important; /* 十字サイトを無効化 */
+                display: none !important;
             }
             
-            /* カメラフレーム内ガイドライン用のスタイル */
             .camera-guide-lines {
                 position: absolute;
                 pointer-events: none;
@@ -461,14 +435,14 @@ window.TegakiUI = {
             }
             
             .compact-slider-group {
-                height: 56px; /* 反転ボタンと同じ高さ */
+                height: 56px;
                 display: flex !important;
                 flex-direction: column !important;
                 justify-content: space-between !important;
             }
             
             .compact-slider {
-                height: 26px; /* 反転ボタン1つと同じ高さ */
+                height: 26px;
                 display: flex !important;
                 align-items: center !important;
                 gap: 6px !important;
@@ -476,7 +450,6 @@ window.TegakiUI = {
         `;
         document.head.appendChild(slimStyle);
         
-        // 反転ボタンのテキストを確実に設定
         setTimeout(() => {
             const flipHBtn = document.getElementById('flip-horizontal-btn');
             const flipVBtn = document.getElementById('flip-vertical-btn');
@@ -485,37 +458,53 @@ window.TegakiUI = {
         }, 100);
     },
 
-    // === SortableJS統合（変更なし） ===
+    // === 🔧 Phase1改修: SortableJS統合完全修正版 ===
     initializeSortable: function(layerManager) {
         const layerList = document.getElementById('layer-list');
-        if (layerList && typeof Sortable !== 'undefined') {
-            Sortable.create(layerList, {
-                animation: 150,
-                ghostClass: 'sortable-ghost',
-                chosenClass: 'sortable-chosen',
-                onEnd: function(evt) {
-                    const fromIndex = layerManager.layers.length - 1 - evt.oldIndex;
-                    const toIndex = layerManager.layers.length - 1 - evt.newIndex;
+        if (!layerList || typeof Sortable === 'undefined') {
+            return;
+        }
+        
+        // 🔧 改修1: 既存Sortableインスタンス破棄
+        if (layerList.sortableInstance) {
+            layerList.sortableInstance.destroy();
+            layerList.sortableInstance = null;
+        }
+        
+        // 🔧 改修2: 新規Sortableインスタンス作成
+        layerList.sortableInstance = Sortable.create(layerList, {
+            animation: 150,
+            ghostClass: 'sortable-ghost',
+            chosenClass: 'sortable-chosen',
+            handle: '.layer-item', // ドラッグハンドルを明示
+            onEnd: function(evt) {
+                // UI上のインデックス（上から下）
+                const uiOldIndex = evt.oldIndex;
+                const uiNewIndex = evt.newIndex;
+                
+                // LayerSystem配列インデックス（下から上）
+                const layers = layerManager.getLayers();
+                const fromIndex = layers.length - 1 - uiOldIndex;
+                const toIndex = layers.length - 1 - uiNewIndex;
+                
+                if (fromIndex !== toIndex) {
+                    // 🔧 改修3: LayerSystemの統一APIを使用
+                    const success = layerManager.reorderLayers(fromIndex, toIndex);
                     
-                    if (fromIndex !== toIndex) {
-                        const layer = layerManager.layers.splice(fromIndex, 1)[0];
-                        layerManager.layers.splice(toIndex, 0, layer);
+                    if (success) {
+                        console.log(`✅ Layer reordered: ${fromIndex} → ${toIndex}`);
                         
-                        layerManager.layersContainer.removeChild(layer);
-                        layerManager.layersContainer.addChildAt(layer, toIndex);
-                        
-                        if (layerManager.activeLayerIndex === fromIndex) {
-                            layerManager.activeLayerIndex = toIndex;
-                        } else if (layerManager.activeLayerIndex > fromIndex && layerManager.activeLayerIndex <= toIndex) {
-                            layerManager.activeLayerIndex--;
-                        } else if (layerManager.activeLayerIndex < fromIndex && layerManager.activeLayerIndex >= toIndex) {
-                            layerManager.activeLayerIndex++;
-                        }
-                        
+                        // 🔧 改修4: UI更新（サムネイル更新含む）
+                        layerManager.updateLayerPanelUI();
+                    } else {
+                        console.error('❌ Layer reorder failed');
+                        // 失敗時はUI戻す
                         layerManager.updateLayerPanelUI();
                     }
                 }
-            });
-        }
+            }
+        });
+        
+        console.log('✅ Sortable initialized for layer panel');
     }
 };
