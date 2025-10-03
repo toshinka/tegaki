@@ -1,11 +1,6 @@
-// ===== system/animation-system.js - サムネイルアスペクト比修正版 =====
-// 【修正】generateCutThumbnail()でtimeline-thumbnail-utils.jsを使用
-// 【維持】リサイズ対応+再生時間+RETIME機能
-// 【維持】座標系修正版の全機能
-// 【維持】CUT.containerをcanvasContainer配下に配置
-// 【維持】CUTフォルダ方式・全既存機能
-// 【維持】CUTコピー時の命名「CUT1(1)」形式
-// 【維持】RENAME機能
+// ===== system/animation-system.js - サムネイルアスペクト比完全修正版 =====
+// 【完全修正】サムネイルサイズ動的計算＋timeline-thumbnail-utils.js完全活用
+// 【維持】全既存機能（リサイズ対応+再生時間+RETIME+座標系修正+CUTフォルダ方式）
 // PixiJS v8.13 対応
 
 (function() {
@@ -18,7 +13,6 @@
             this.name = name || `CUT${Date.now()}`;
             this.duration = config?.animation?.defaultCutDuration || 0.5;
             
-            // ★CUTフォルダとしてのContainer
             this.container = new PIXI.Container();
             this.container.label = `cut_${id}`;
             this.container.sortableChildren = true;
@@ -179,7 +173,7 @@
         }
     }
     
-    // ===== AnimationSystem: サムネイル修正版 =====
+    // ===== AnimationSystem: サムネイル完全修正版 =====
     
     class AnimationSystem {
         constructor() {
@@ -294,6 +288,29 @@
                 width: this.config?.canvas?.width || 800,
                 height: this.config?.canvas?.height || 600
             };
+        }
+        
+        // ===== 【重要】サムネイルサイズ計算（動的） =====
+        calculateThumbnailSize(canvasWidth, canvasHeight) {
+            const aspectRatio = canvasWidth / canvasHeight;
+            
+            // タイムラインUI内の最大表示サイズ（CSSピクセル）
+            const MAX_THUMB_WIDTH = 72;
+            const MAX_THUMB_HEIGHT = 54;
+            
+            let thumbDisplayW, thumbDisplayH;
+            
+            if (aspectRatio >= MAX_THUMB_WIDTH / MAX_THUMB_HEIGHT) {
+                // 横長: 幅を最大値に合わせる
+                thumbDisplayW = MAX_THUMB_WIDTH;
+                thumbDisplayH = Math.round(MAX_THUMB_WIDTH / aspectRatio);
+            } else {
+                // 縦長: 高さを最大値に合わせる
+                thumbDisplayH = MAX_THUMB_HEIGHT;
+                thumbDisplayW = Math.round(MAX_THUMB_HEIGHT * aspectRatio);
+            }
+            
+            return { thumbDisplayW, thumbDisplayH };
         }
         
         // ===== CUT作成 =====
@@ -514,13 +531,13 @@
             this.switchToActiveCut(cutIndex);
         }
         
-        // ===== サムネイル生成（修正版 - timeline-thumbnail-utils.js使用） =====
+        // ===== 【完全修正】サムネイル生成 =====
         
         async generateCutThumbnail(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut || !this.layerSystem || !this.app?.renderer) return;
             
-            // LayerSystemのRenderTexture取得
+            // LayerSystemのRenderTexture取得（最新状態を保証）
             if (this.layerSystem.renderCutToTexture) {
                 this.layerSystem.renderCutToTexture(cut.id, cut.container);
             }
@@ -528,29 +545,21 @@
             const renderTexture = this.layerSystem?.getCutRenderTexture?.(cut.id);
             if (!renderTexture) return;
             
-            // 動的にキャンバスサイズを取得
+            // 【重要】動的にキャンバスサイズを取得
             const canvasSize = this.getCurrentCanvasSize();
-            const aspectRatio = canvasSize.width / canvasSize.height;
             
-            // サムネイル表示サイズ計算（CSSピクセル）
-            const maxWidth = 72;
-            const maxHeight = 54;
-            let thumbDisplayW, thumbDisplayH;
+            // 【重要】サムネイルサイズを動的計算
+            const { thumbDisplayW, thumbDisplayH } = this.calculateThumbnailSize(
+                canvasSize.width, 
+                canvasSize.height
+            );
             
-            if (aspectRatio >= maxWidth / maxHeight) {
-                thumbDisplayW = maxWidth;
-                thumbDisplayH = Math.round(maxWidth / aspectRatio);
-            } else {
-                thumbDisplayH = maxHeight;
-                thumbDisplayW = Math.round(maxHeight * aspectRatio);
-            }
-            
-            // 【修正】timeline-thumbnail-utils.jsを使用
+            // timeline-thumbnail-utils.jsを使用してサムネイル生成
             if (window.TegakiThumbnailUtils?.resizeCanvasWithAspect) {
                 // RenderTextureをCanvasに変換
                 const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
                 
-                // アスペクト比保持リサイズ
+                // アスペクト比保持＋高品質リサイズ
                 const thumbCanvas = window.TegakiThumbnailUtils.resizeCanvasWithAspect(
                     sourceCanvas, 
                     thumbDisplayW, 
@@ -559,7 +568,7 @@
                 
                 cut.thumbnailCanvas = thumbCanvas;
             } else {
-                // フォールバック（utils未ロード時）
+                // フォールバック: 手動アスペクト比保持リサイズ
                 const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
                 
                 const thumbCanvas = document.createElement('canvas');
@@ -577,18 +586,23 @@
                 let drawW, drawH, offsetX = 0, offsetY = 0;
                 
                 if (srcAspect > dstAspect) {
+                    // 横長: 幅基準
                     drawW = thumbDisplayW;
                     drawH = thumbDisplayW / srcAspect;
                     offsetY = (thumbDisplayH - drawH) / 2;
                 } else {
+                    // 縦長: 高さ基準
                     drawH = thumbDisplayH;
                     drawW = thumbDisplayH * srcAspect;
                     offsetX = (thumbDisplayW - drawW) / 2;
                 }
                 
                 ctx.clearRect(0, 0, thumbDisplayW, thumbDisplayH);
-                ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height,
-                              offsetX, offsetY, drawW, drawH);
+                ctx.drawImage(
+                    sourceCanvas, 
+                    0, 0, sourceCanvas.width, sourceCanvas.height,
+                    offsetX, offsetY, drawW, drawH
+                );
                 
                 cut.thumbnailCanvas = thumbCanvas;
             }
@@ -598,7 +612,10 @@
             }
             
             if (this.eventBus) {
-                this.eventBus.emit('animation:thumbnail-generated', { cutIndex });
+                this.eventBus.emit('animation:thumbnail-generated', { 
+                    cutIndex,
+                    thumbSize: { width: thumbDisplayW, height: thumbDisplayH }
+                });
             }
         }
         
