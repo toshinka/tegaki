@@ -1,8 +1,6 @@
-// ===== system/animation-system.js - リサイズ対応+再生時間+RETIME改修版 =====
-// 【改修】リサイズ時のサムネイル生成でキャンバスサイズを動的取得
-// 【追加B】getPlaybackTime() メソッド追加（M:SS:XX形式用）
-// 【追加C】retimeAllCuts() メソッド追加（全カット時間一括変更）
-// 【追加D】updateCutDuration() の最小値を0.01秒に変更
+// ===== system/animation-system.js - サムネイルアスペクト比修正版 =====
+// 【修正】generateCutThumbnail()でtimeline-thumbnail-utils.jsを使用
+// 【維持】リサイズ対応+再生時間+RETIME機能
 // 【維持】座標系修正版の全機能
 // 【維持】CUT.containerをcanvasContainer配下に配置
 // 【維持】CUTフォルダ方式・全既存機能
@@ -181,7 +179,7 @@
         }
     }
     
-    // ===== AnimationSystem: リサイズ対応+再生時間+RETIME改修版 =====
+    // ===== AnimationSystem: サムネイル修正版 =====
     
     class AnimationSystem {
         constructor() {
@@ -284,9 +282,7 @@
             };
         }
         
-        // 【改修】現在のキャンバスサイズを動的取得
         getCurrentCanvasSize() {
-            // 優先順位: LayerSystem > Config
             if (this.layerSystem?.config?.canvas) {
                 return {
                     width: this.layerSystem.config.canvas.width,
@@ -294,7 +290,6 @@
                 };
             }
             
-            // フォールバック
             return {
                 width: this.config?.canvas?.width || 800,
                 height: this.config?.canvas?.height || 600
@@ -519,49 +514,84 @@
             this.switchToActiveCut(cutIndex);
         }
         
-        // ===== サムネイル生成（リサイズ対応改修版） =====
+        // ===== サムネイル生成（修正版 - timeline-thumbnail-utils.js使用） =====
         
         async generateCutThumbnail(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
-            if (!cut || !this.layerSystem) return;
+            if (!cut || !this.layerSystem || !this.app?.renderer) return;
             
+            // LayerSystemのRenderTexture取得
             if (this.layerSystem.renderCutToTexture) {
                 this.layerSystem.renderCutToTexture(cut.id, cut.container);
             }
             
             const renderTexture = this.layerSystem?.getCutRenderTexture?.(cut.id);
-            if (!renderTexture || !this.app?.renderer) return;
+            if (!renderTexture) return;
             
-            const canvas = this.app.renderer.extract.canvas(renderTexture);
-            
-            // 【改修】動的にキャンバスサイズを取得
+            // 動的にキャンバスサイズを取得
             const canvasSize = this.getCurrentCanvasSize();
             const aspectRatio = canvasSize.width / canvasSize.height;
+            
+            // サムネイル表示サイズ計算（CSSピクセル）
             const maxWidth = 72;
             const maxHeight = 54;
-            let thumbWidth, thumbHeight;
+            let thumbDisplayW, thumbDisplayH;
             
             if (aspectRatio >= maxWidth / maxHeight) {
-                thumbWidth = maxWidth;
-                thumbHeight = Math.round(maxWidth / aspectRatio);
+                thumbDisplayW = maxWidth;
+                thumbDisplayH = Math.round(maxWidth / aspectRatio);
             } else {
-                thumbHeight = maxHeight;
-                thumbWidth = Math.round(maxHeight * aspectRatio);
+                thumbDisplayH = maxHeight;
+                thumbDisplayW = Math.round(maxHeight * aspectRatio);
             }
             
-            const thumbCanvas = document.createElement('canvas');
-            thumbCanvas.width = thumbWidth;
-            thumbCanvas.height = thumbHeight;
-            
-            const ctx = thumbCanvas.getContext('2d');
-            ctx.imageSmoothingEnabled = true;
-            ctx.imageSmoothingQuality = 'high';
-            
-            // アスペクト比を維持してリサイズ
-            ctx.clearRect(0, 0, thumbWidth, thumbHeight);
-            ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, thumbWidth, thumbHeight);
-            
-            cut.thumbnailCanvas = thumbCanvas;
+            // 【修正】timeline-thumbnail-utils.jsを使用
+            if (window.TegakiThumbnailUtils?.resizeCanvasWithAspect) {
+                // RenderTextureをCanvasに変換
+                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
+                
+                // アスペクト比保持リサイズ
+                const thumbCanvas = window.TegakiThumbnailUtils.resizeCanvasWithAspect(
+                    sourceCanvas, 
+                    thumbDisplayW, 
+                    thumbDisplayH
+                );
+                
+                cut.thumbnailCanvas = thumbCanvas;
+            } else {
+                // フォールバック（utils未ロード時）
+                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
+                
+                const thumbCanvas = document.createElement('canvas');
+                thumbCanvas.width = thumbDisplayW;
+                thumbCanvas.height = thumbDisplayH;
+                
+                const ctx = thumbCanvas.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                
+                // アスペクト比保持計算
+                const srcAspect = sourceCanvas.width / sourceCanvas.height;
+                const dstAspect = thumbDisplayW / thumbDisplayH;
+                
+                let drawW, drawH, offsetX = 0, offsetY = 0;
+                
+                if (srcAspect > dstAspect) {
+                    drawW = thumbDisplayW;
+                    drawH = thumbDisplayW / srcAspect;
+                    offsetY = (thumbDisplayH - drawH) / 2;
+                } else {
+                    drawH = thumbDisplayH;
+                    drawW = thumbDisplayH * srcAspect;
+                    offsetX = (thumbDisplayW - drawW) / 2;
+                }
+                
+                ctx.clearRect(0, 0, thumbDisplayW, thumbDisplayH);
+                ctx.drawImage(sourceCanvas, 0, 0, sourceCanvas.width, sourceCanvas.height,
+                              offsetX, offsetY, drawW, drawH);
+                
+                cut.thumbnailCanvas = thumbCanvas;
+            }
             
             if (this.layerSystem.clearCutThumbnailDirty) {
                 this.layerSystem.clearCutThumbnailDirty(cut.id);
@@ -822,7 +852,6 @@
             }
         }
         
-        // 【改修D】最小値を0.01秒に変更
         updateCutDuration(cutIndex, duration) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut) return;
@@ -837,7 +866,6 @@
             }
         }
         
-        // 【追加C】全カット時間一括変更（RETIME機能）
         retimeAllCuts(newDuration) {
             if (!this.animationData.cuts || this.animationData.cuts.length === 0) return;
             if (isNaN(newDuration) || newDuration <= 0) return;
@@ -1028,7 +1056,6 @@
             };
         }
         
-        // 【追加B】再生時間取得メソッド（M:SS:XX形式用）
         getPlaybackTime() {
             if (!this.animationData.playback.isPlaying) {
                 return 0;
