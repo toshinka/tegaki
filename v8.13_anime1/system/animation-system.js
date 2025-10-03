@@ -1,6 +1,6 @@
-// ===== system/animation-system.js - RenderTexture統合版 =====
-// 【改修】LayerSystemのRenderTexture機能を活用
-// 【改修】サムネイル生成をRenderTextureベースに変更
+// ===== system/animation-system.js - 座標系修正版 =====
+// 【修正】CUT.containerをcanvasContainer配下に配置し、座標系のズレを解消
+// 【維持】LayerSystemのRenderTexture機能を活用
 // 【維持】CUTフォルダ方式・全既存機能
 // PixiJS v8.13 対応
 
@@ -175,7 +175,7 @@
         }
     }
     
-    // ===== AnimationSystem: RenderTexture統合版 =====
+    // ===== AnimationSystem: 座標系修正版 =====
     
     class AnimationSystem {
         constructor() {
@@ -184,6 +184,7 @@
             this.cameraSystem = null;
             this.app = null;
             this.stage = null;
+            this.canvasContainer = null; // 【追加】CameraSystemのcanvasContainer参照
             this.eventBus = window.TegakiEventBus;
             this.config = window.TEGAKI_CONFIG;
             
@@ -204,12 +205,30 @@
             this.coordAPI = window.CoordinateSystem;
         }
         
-        init(layerSystem, app) {
+        init(layerSystem, app, cameraSystem) {
             if (this.hasInitialized) return;
             
             this.layerSystem = layerSystem;
             this.app = app;
             this.stage = app?.stage;
+            
+            // 【修正】CameraSystemを引数から取得
+            this.cameraSystem = cameraSystem;
+            
+            // 【デバッグ】CameraSystemの状態を確認
+            if (!this.cameraSystem) {
+                console.error('❌ CameraSystem is null/undefined');
+                return;
+            }
+            
+            if (!this.cameraSystem.canvasContainer) {
+                console.error('❌ CameraSystem.canvasContainer not available');
+                console.error('CameraSystem properties:', Object.keys(this.cameraSystem));
+                console.error('CameraSystem.worldContainer:', this.cameraSystem.worldContainer);
+                return;
+            }
+            
+            this.canvasContainer = this.cameraSystem.canvasContainer;
             
             if (!this.eventBus || !this.layerSystem) {
                 console.error('Required dependencies not available');
@@ -218,10 +237,9 @@
             
             this.layerSystem.animationSystem = this;
             
-            // ★LayerSystemの一時的なContainerをStageに追加
-            if (this.stage && this.layerSystem.currentCutContainer) {
-                this.stage.addChild(this.layerSystem.currentCutContainer);
-                console.log('✅ Temporary CUT container added to stage');
+            // 【修正】LayerSystemの一時的なContainerをcanvasContainerに追加
+            if (this.canvasContainer && this.layerSystem.currentCutContainer) {
+                this.canvasContainer.addChild(this.layerSystem.currentCutContainer);
             }
             
             this.setupCutClipboardEvents();
@@ -295,8 +313,9 @@
             this.animationData.cuts.push(cut);
             const newCutIndex = this.animationData.cuts.length - 1;
             
-            if (this.stage) {
-                this.stage.addChild(cut.container);
+            // 【修正】canvasContainerに追加
+            if (this.canvasContainer) {
+                this.canvasContainer.addChild(cut.container);
                 cut.container.visible = false;
             }
             
@@ -333,8 +352,9 @@
             this.animationData.cuts.push(cut);
             const newIndex = this.animationData.cuts.length - 1;
             
-            if (this.stage) {
-                this.stage.addChild(cut.container);
+            // 【修正】canvasContainerに追加
+            if (this.canvasContainer) {
+                this.canvasContainer.addChild(cut.container);
                 cut.container.visible = false;
             }
             
@@ -582,8 +602,9 @@
             
             this.animationData.cuts.splice(insertIndex, 0, pastedCut);
             
-            if (this.stage) {
-                this.stage.addChild(pastedCut.container);
+            // 【修正】canvasContainerに追加
+            if (this.canvasContainer) {
+                this.canvasContainer.addChild(pastedCut.container);
             }
             
             // ★RenderTexture作成
@@ -612,8 +633,9 @@
             this.animationData.cuts.push(pastedCut);
             const newIndex = this.animationData.cuts.length - 1;
             
-            if (this.stage) {
-                this.stage.addChild(pastedCut.container);
+            // 【修正】canvasContainerに追加
+            if (this.canvasContainer) {
+                this.canvasContainer.addChild(pastedCut.container);
             }
             
             // ★RenderTexture作成
@@ -678,13 +700,13 @@
             
             this.animationData.cuts.push(cut);
             
-            if (this.stage) {
-                // ★一時的なContainerを削除
-                if (this.layerSystem.currentCutContainer.parent === this.stage) {
-                    this.stage.removeChild(this.layerSystem.currentCutContainer);
+            // 【修正】一時的なContainerを削除し、CUT.containerをcanvasContainerに追加
+            if (this.canvasContainer) {
+                if (this.layerSystem.currentCutContainer.parent === this.canvasContainer) {
+                    this.canvasContainer.removeChild(this.layerSystem.currentCutContainer);
                 }
                 
-                this.stage.addChild(cut.container);
+                this.canvasContainer.addChild(cut.container);
                 cut.container.visible = true;
             }
             
@@ -710,8 +732,6 @@
             }, 200);
             
             this.isInitializing = false;
-            
-            console.log('✅ Initial CUT created from temporary container');
         }
         
         deleteCut(cutIndex) {
@@ -725,8 +745,9 @@
                 this.layerSystem.destroyCutRenderTexture(cut.id);
             }
             
-            if (this.stage && cut.container.parent === this.stage) {
-                this.stage.removeChild(cut.container);
+            // 【修正】canvasContainerから削除
+            if (this.canvasContainer && cut.container.parent === this.canvasContainer) {
+                this.canvasContainer.removeChild(cut.container);
             }
             
             cut.container.destroy({ children: true, texture: false, baseTexture: false });
@@ -1021,11 +1042,11 @@
     window.TegakiAnimationSystem = AnimationSystem;
     window.TegakiCut = Cut;
     
-    console.log('✅ AnimationSystem RenderTexture統合版 loaded');
+    console.log('✅ AnimationSystem 座標系修正版 loaded');
     console.log('🔧 改修内容:');
+    console.log('  ✅ CUT.containerをcanvasContainer配下に配置');
+    console.log('  ✅ 座標系のズレを解消（カメラフレームと描画座標を統一）');
     console.log('  ✅ LayerSystemのRenderTexture機能を活用');
-    console.log('  ✅ サムネイル生成をRenderTextureベースに変更');
-    console.log('  ✅ CUT作成・削除時にRenderTexture管理を統合');
     console.log('  ✅ 既存機能完全維持: CUTフォルダ方式・Deep Copy・シリアライズ');
 
 })();
