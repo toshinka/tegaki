@@ -1,9 +1,8 @@
 // ===== ui/timeline-ui.js - 改修完了版 =====
-// 【改修1】コントロールボタンをヘッダー行に移動（×ボタンと同列）
-// 【改修2】CUTコンテナ左padding拡張（影枠欠け防止）
-// 【改修3】リサイズ時のサムネイル即座更新
-// 【維持】即時サムネイル反映 & 削除確認削除版
-// 【維持】CUT管理UI・プレイバック制御
+// 【改修A】×ボタンを右端に移動、パネル左寄せ
+// 【改修B】再生時間表示追加（M:SS:XX形式）
+// 【改修C】RETIMEボタン追加（全カット時間一括変更）
+// 【改修D】カット時間入力0.01秒単位対応
 // PixiJS v8.13 対応
 
 (function() {
@@ -25,6 +24,7 @@
             this.eventBus = window.TegakiEventBus;
             
             this.thumbnailUpdateInProgress = false;
+            this.playbackTimeUpdateRAF = null;
         }
         
         init() {
@@ -174,12 +174,11 @@
             this.timelinePanel.dataset.source = 'timeline-ui';
             this.timelinePanel.style.display = 'none';
             
-            // 【改修1】ヘッダー行作成（×ボタン + コントロール）
+            // 【改修A,B】ヘッダー行：コントロール左・×ボタン右・時間表示
             const timelineHeader = document.createElement('div');
             timelineHeader.className = 'timeline-header';
             timelineHeader.dataset.source = 'timeline-ui';
             timelineHeader.innerHTML = `
-                <button class="timeline-close" id="close-timeline" title="タイムラインを閉じる">×</button>
                 <div class="timeline-controls">
                     <button id="repeat-btn" title="リピート (R)" class="repeat-active">
                         <svg xmlns="http://www.w3.org/2000/svg" width="8" height="8" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
@@ -188,10 +187,14 @@
                         </svg>
                     </button>
                     <button id="play-btn" title="再生/停止 (Space)">▶</button>
+                    <span id="playback-time" class="playback-time">0:00:00</span>
                     <button id="add-cut-btn" title="CUT追加 (Alt+=)">+CUT</button>
                     <button id="copy-paste-cut-btn" title="CUTコピペ (Shift+C)" class="copy-paste-btn">+C&P</button>
                     <button id="rename-cuts-btn" title="CUTリネーム" class="rename-btn">RENAME</button>
+                    <button id="retime-cuts-btn" title="全カット時間変更" class="retime-btn">RETIME</button>
+                    <input type="number" id="retime-input" class="retime-input" value="0.5" min="0.01" max="10" step="0.01" title="全カット時間">
                 </div>
+                <button class="timeline-close" id="close-timeline" title="タイムラインを閉じる">×</button>
             `;
             
             this.cutsContainer = document.createElement('div');
@@ -219,19 +222,18 @@
                 .timeline-panel.show { display: block !important; animation: slideUp 0.35s ease-out !important; }
                 @keyframes slideUp { from { opacity: 0; transform: translateY(25px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
                 
-                /* 【改修1】ヘッダー行スタイル */
+                /* 【改修A】ヘッダー配置：左にコントロール、右に×ボタン */
                 .timeline-header { display: flex !important; align-items: center !important; justify-content: space-between !important; 
                     height: 32px !important; padding: 4px 6px !important; margin-bottom: 6px !important; 
                     border-bottom: 1px solid var(--futaba-light-medium) !important; }
                 
-                /* 【改修1】×ボタンスタイル調整 */
+                /* 【改修A】×ボタン右端配置 */
                 .timeline-close { background: none !important; border: none !important; font-size: 18px !important; 
                     color: var(--futaba-maroon) !important; cursor: pointer !important; padding: 4px 8px !important; 
                     border-radius: 6px !important; height: 28px !important; min-width: 28px !important; font-weight: bold !important; 
-                    flex-shrink: 0 !important; transition: all 0.2s ease !important; }
+                    flex-shrink: 0 !important; transition: all 0.2s ease !important; order: 2 !important; }
                 .timeline-close:hover { background: var(--futaba-light-medium) !important; }
                 
-                /* 【改修2】CUTコンテナ左padding拡張（影枠欠け防止） */
                 .cuts-container { display: flex !important; gap: 6px !important; overflow-x: auto !important; 
                     padding: 3px 0 8px 12px !important; margin-bottom: 8px !important; max-height: 105px !important; }
                 .cuts-container::-webkit-scrollbar { height: 10px !important; }
@@ -266,8 +268,9 @@
                     font-weight: 600 !important; text-align: center !important; white-space: nowrap !important; overflow: hidden !important; 
                     text-overflow: ellipsis !important; max-width: 72px !important; line-height: 1.3 !important; }
                 
+                /* 【改修D】時間入力0.01秒単位対応 */
                 .cut-duration-container { display: flex !important; align-items: center !important; gap: 2px !important; margin-bottom: 3px !important; }
-                .cut-duration-input { width: 30px !important; height: 18px !important; border: 1px solid var(--futaba-light-medium) !important; 
+                .cut-duration-input { width: 35px !important; height: 18px !important; border: 1px solid var(--futaba-light-medium) !important; 
                     border-radius: 3px !important; background: var(--futaba-background) !important; font-size: 8px !important; 
                     font-family: monospace !important; color: var(--futaba-maroon) !important; font-weight: bold !important; 
                     text-align: center !important; outline: none !important; padding: 0 !important; -moz-appearance: textfield !important; }
@@ -288,8 +291,8 @@
                 .cut-item:hover .delete-cut-btn { opacity: 1 !important; }
                 .delete-cut-btn:hover { background: rgba(128, 0, 0, 1) !important; transform: scale(1.15) !important; }
                 
-                /* 【改修1】コントロールボタンの高さ統一 */
-                .timeline-controls { display: flex !important; gap: 4px !important; align-items: center !important; flex: 1 !important; justify-content: flex-end !important; }
+                /* 【改修A】コントロール左寄せ */
+                .timeline-controls { display: flex !important; gap: 4px !important; align-items: center !important; order: 1 !important; }
                 .timeline-controls button { padding: 4px 12px !important; background: var(--futaba-background) !important; 
                     border: 2px solid var(--futaba-medium) !important; border-radius: 6px !important; cursor: pointer !important; 
                     font-size: 11px !important; color: var(--futaba-maroon) !important; min-width: 40px !important; height: 28px !important; 
@@ -298,11 +301,29 @@
                 .timeline-controls button:hover { background: var(--futaba-medium) !important; border-color: var(--futaba-maroon) !important; 
                     transform: translateY(-1px) !important; }
                 
+                /* 【改修B】再生時間表示 */
+                .playback-time { font-family: monospace !important; font-size: 11px !important; font-weight: bold !important; 
+                    color: var(--futaba-maroon) !important; padding: 0 8px !important; min-width: 60px !important; 
+                    text-align: center !important; height: 28px !important; display: flex !important; align-items: center !important; 
+                    justify-content: center !important; background: var(--futaba-light-medium) !important; 
+                    border-radius: 4px !important; }
+                
                 .copy-paste-btn { background: var(--futaba-light-medium) !important; font-size: 10px !important; font-weight: 700 !important; min-width: 50px !important; }
                 .copy-paste-btn:hover { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; transform: translateY(-2px) scale(1.05) !important; }
                 
                 .rename-btn { background: var(--futaba-light-medium) !important; font-size: 10px !important; font-weight: 700 !important; min-width: 60px !important; }
                 .rename-btn:hover { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; transform: translateY(-2px) scale(1.05) !important; }
+                
+                /* 【改修C】RETIMEボタンと入力欄 */
+                .retime-btn { background: var(--futaba-light-medium) !important; font-size: 10px !important; font-weight: 700 !important; min-width: 60px !important; }
+                .retime-btn:hover { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; transform: translateY(-2px) scale(1.05) !important; }
+                
+                .retime-input { width: 45px !important; height: 28px !important; border: 2px solid var(--futaba-medium) !important; 
+                    border-radius: 6px !important; background: var(--futaba-background) !important; font-size: 11px !important; 
+                    font-family: monospace !important; color: var(--futaba-maroon) !important; font-weight: bold !important; 
+                    text-align: center !important; outline: none !important; padding: 0 4px !important; -moz-appearance: textfield !important; }
+                .retime-input::-webkit-outer-spin-button, .retime-input::-webkit-inner-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
+                .retime-input:focus { border-color: var(--futaba-maroon) !important; }
                 
                 #repeat-btn { min-width: 34px !important; padding: 6px !important; }
                 #repeat-btn.repeat-active { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; }
@@ -361,6 +382,10 @@
             });
             document.getElementById('copy-paste-cut-btn')?.addEventListener('click', () => this.executeCutCopyPaste());
             document.getElementById('rename-cuts-btn')?.addEventListener('click', () => this.executeRenameCuts());
+            
+            // 【改修C】RETIMEボタン
+            document.getElementById('retime-cuts-btn')?.addEventListener('click', () => this.executeRetimeCuts());
+            
             document.getElementById('close-timeline')?.addEventListener('click', () => this.hide());
         }
         
@@ -381,6 +406,20 @@
             this.animationSystem.renameCutsSequentially();
             this.updateCutsList();
             this.updateLayerPanelIndicator();
+        }
+        
+        // 【改修C】全カット時間一括変更
+        executeRetimeCuts() {
+            if (!this.animationSystem) return;
+            
+            const retimeInput = document.getElementById('retime-input');
+            if (!retimeInput) return;
+            
+            const newDuration = parseFloat(retimeInput.value);
+            if (isNaN(newDuration) || newDuration <= 0) return;
+            
+            this.animationSystem.retimeAllCuts(newDuration);
+            this.updateCutsList();
         }
         
         toggleRepeat() {
@@ -404,6 +443,41 @@
             } else {
                 this.animationSystem.play();
             }
+        }
+        
+        // 【改修B】再生時間更新ループ
+        startPlaybackTimeUpdate() {
+            const updateTime = () => {
+                if (!this.isPlaying) return;
+                
+                const playbackTime = this.animationSystem.getPlaybackTime();
+                this.updatePlaybackTimeDisplay(playbackTime);
+                
+                this.playbackTimeUpdateRAF = requestAnimationFrame(updateTime);
+            };
+            
+            updateTime();
+        }
+        
+        stopPlaybackTimeUpdate() {
+            if (this.playbackTimeUpdateRAF) {
+                cancelAnimationFrame(this.playbackTimeUpdateRAF);
+                this.playbackTimeUpdateRAF = null;
+            }
+        }
+        
+        // 【改修B】時間表示更新（M:SS:XX形式）
+        updatePlaybackTimeDisplay(timeInSeconds) {
+            const timeDisplay = document.getElementById('playback-time');
+            if (!timeDisplay) return;
+            
+            const totalMs = Math.floor(timeInSeconds * 1000);
+            const minutes = Math.floor(totalMs / 60000);
+            const seconds = Math.floor((totalMs % 60000) / 1000);
+            const centiseconds = Math.floor((totalMs % 1000) / 10);
+            
+            const formatted = `${minutes}:${seconds.toString().padStart(2, '0')}:${centiseconds.toString().padStart(2, '0')}`;
+            timeDisplay.textContent = formatted;
         }
         
         toggle() {
@@ -528,14 +602,18 @@
             this.eventBus.on('animation:playback-started', () => {
                 this.isPlaying = true;
                 this.updatePlaybackUI(true);
+                this.startPlaybackTimeUpdate();
             });
             this.eventBus.on('animation:playback-paused', () => {
                 this.isPlaying = false;
                 this.updatePlaybackUI(false);
+                this.stopPlaybackTimeUpdate();
             });
             this.eventBus.on('animation:playback-stopped', () => {
                 this.isPlaying = false;
                 this.updatePlaybackUI(false);
+                this.stopPlaybackTimeUpdate();
+                this.updatePlaybackTimeDisplay(0);
                 this.updateLayerPanelIndicator();
             });
             this.eventBus.on('animation:cut-changed', (data) => {
@@ -626,12 +704,13 @@
             
             const thumbnailHtml = this.generateCutThumbnailHTML(cut, index);
             
+            // 【改修D】step="0.01"に変更
             cutItem.innerHTML = `
                 <div class="cut-thumbnail" data-cut-index="${index}">${thumbnailHtml}</div>
                 <div class="cut-name">${cut.name}</div>
                 <div class="cut-duration-container">
                     <button class="duration-nav-btn duration-decrease" data-index="${index}">◀</button>
-                    <input type="number" class="cut-duration-input" value="${cut.duration}" min="0.1" max="10" step="0.1" data-index="${index}">
+                    <input type="number" class="cut-duration-input" value="${cut.duration.toFixed(2)}" min="0.01" max="10" step="0.01" data-index="${index}">
                     <button class="duration-nav-btn duration-increase" data-index="${index}">▶</button>
                 </div>
                 <button class="delete-cut-btn" data-index="${index}">×</button>
@@ -655,8 +734,8 @@
                 decreaseBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const currentValue = parseFloat(durationInput.value);
-                    const newValue = Math.max(0.1, currentValue - 0.1);
-                    durationInput.value = newValue.toFixed(1);
+                    const newValue = Math.max(0.01, currentValue - 0.01);
+                    durationInput.value = newValue.toFixed(2);
                     this.animationSystem.updateCutDuration(index, newValue);
                 });
             }
@@ -665,8 +744,8 @@
                 increaseBtn.addEventListener('click', (e) => {
                     e.stopPropagation();
                     const currentValue = parseFloat(durationInput.value);
-                    const newValue = Math.min(10, currentValue + 0.1);
-                    durationInput.value = newValue.toFixed(1);
+                    const newValue = Math.min(10, currentValue + 0.01);
+                    durationInput.value = newValue.toFixed(2);
                     this.animationSystem.updateCutDuration(index, newValue);
                 });
             }
@@ -676,6 +755,7 @@
                     const newDuration = parseFloat(e.target.value);
                     if (!isNaN(newDuration) && newDuration > 0) {
                         this.animationSystem.updateCutDuration(index, newDuration);
+                        e.target.value = newDuration.toFixed(2);
                     }
                     e.stopPropagation();
                 });
@@ -790,12 +870,4 @@
         window.TegakiUI = {};
     }
     window.TegakiUI.TimelineUI = TimelineUI;
-    
-    console.log('✅ TimelineUI 改修完了版 loaded');
-    console.log('  ✅ 改修1: コントロールボタンをヘッダー行に移動（×ボタンと同列）');
-    console.log('  ✅ 改修2: CUTコンテナ左padding拡張（影枠欠け防止）');
-    console.log('  ✅ 改修3: リサイズ時のサムネイル即座更新機能維持');
-    console.log('  ✅ ボタン高さ統一: 全て28pxに調整');
-    console.log('  ✅ スマートなUI: コンパクトで見やすいレイアウト');
-
 })();

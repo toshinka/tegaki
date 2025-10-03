@@ -1,104 +1,231 @@
-# 改修計画書（PixiJS v8.13 お絵かきツール / タイムライン独立化対応）
+タイムラインのサムネイルが伸びる現象 - 調査・改修計画書（txt）
+1. 問題（現象）
 
-## 1. 改修方針フロー
+キャンバスサイズを 344×135 から 400×400 に変更したとき、タイムラインパネルのサムネイルだけが縦横比を崩して引き伸ばされたように表示される。
+（右側レイヤーパネルのサムネイルは正常表示）
 
-### 現状の問題点
-- CUT が独立せず「同じキャンバスを参照」してしまう → 全 CUT に同じ絵が出る  
-- Timeline サムネイル更新で「毎描画ごとに Extract」してしまい → 左上に一瞬キャンバスが見える & チラつきが発生  
-- レイヤーパネルでは正常動作 → Timeline 側の設計が原因  
+2. 既知の前提条件
 
-### 新しい処理フロー
-1. **CUT（タイムラインの最上位単位）を独立した RenderTexture で保持**
-   - 各 CUT は「独立したレイヤーフォルダ」として管理  
-   - 共有参照ではなく CUT ごとに GPU メモリ上の RenderTexture を割当  
+実行環境：Chrome（file:// で直接開ける）
 
-2. **描画時の流れ**
-   - ペンで描く → 現在の CUT の「アクティブレイヤー」に描画  
-   - 描画が完了したら：  
-     a. GPU 上の RenderTexture を更新  
-     b. Timeline サムネイルを再生成（必要時のみ Extract → Canvas2D）  
+PixiJS v8.13 を CDN で読み込み、ES2023（モジュール未使用）
 
-3. **サムネイル更新の最適化**
-   - `timeline-ui.js` で更新は **差分検知**して最小限に抑える  
-   - `extract.base64()` や `extract.canvas()` を呼ぶのは「表示用サムネイル更新の直後のみ」  
+禁止：TypeScript / bundler / ESM / Canvas2D（サムネはOK）
 
----
+既存コードをなるべく壊さない（継承・呼び出し形を残す）
 
-## 2. ファイルごとの責務とメソッド定義
+3. 初期の原因仮説（優先度順）
 
-### system/layer-system.js
-- **責務**: CUT/レイヤー管理（データ構造＋Pixi.Container＋RenderTexture対応）
-- **主要メソッド**
-  - `createCut(id)` : 新しい CUT を生成、RenderTexture を割当
-  - `getCut(id)` : CUT を取得
-  - `setActiveCut(id)` : アクティブ CUT を切替
-  - `createLayer(cutId, options)` : CUT 内に新規レイヤーを作成
-  - `getActiveLayer(cutId)` : アクティブレイヤーを返す
-  - `renderCutToTexture(cutId)` : CUT 全体を RenderTexture に再描画  
+サムネイル生成時の「出力サイズ（ピクセル）」と「描画スケール（CSS/UIサイズ）」の不一致
 
----
+タイムライン用のサムネ生成処理が、生成したレンダーテクスチャや canvas のピクセル幅・高さ（内部サイズ）を正しく設定せず、後で CSS 的に幅/高さを合わせようとした結果、アスペクト比が不正に扱われる。
 
-### system/animation-system.js
-- **責務**: タイムラインと CUT の進行管理
-- **主要メソッド**
-  - `addCut()` : 新しい CUT を追加
-  - `removeCut(cutId)` : CUT を削除
-  - `gotoCut(cutId)` : 指定 CUT に移動
-  - `playAnimation()` : CUT を順にレンダリングして再生
-  - `pauseAnimation()` : 再生を停止
+サムネ生成処理で使用する基準サイズ（元キャンバス幅/高さ）を古い初期値に固定している
 
----
+canvas のリサイズ（344×135 → 400×400）で、タイムライン生成関数が参照する「元サイズ（描画領域の論理サイズ）」が更新されておらず、サムネのスケール計算が誤る。
 
-### ui/timeline-ui.js
-- **責務**: CUT のサムネイル表示と更新
-- **主要メソッド**
-  - `refreshTimeline()` : 全 CUT サムネイルを再生成
-  - `updateCutThumbnail(cutId)` : 特定 CUT のサムネイルを更新
-    - 内部処理: `layer-system.renderCutToTexture()` → `extract.canvas()` → `<img>` に反映
-  - `bindTimelineEvents()` : クリックや CUT 選択イベントを UI にバインド
+抽出・縮小処理（extract / drawImage / generateTexture / RenderTexture 作成）の解像度（devicePixelRatio や resolution）考慮不足
 
----
+HiDPI（devicePixelRatio）や PixiJS の resolution を考慮していないため、ピクセル数と表示サイズが食い違う。
 
-### system/history.js
-- **責務**: Undo/Redo 履歴管理
-- **主要メソッド**
-  - `pushState(cutId, layerId, action)` : 履歴追加
-  - `undo()` : 一つ前の状態に戻す
-  - `redo()` : 一つ先に進める
-- CUT 単位で履歴を分離して保持すること（全 CUT 共通でなく独立管理）
+レイヤーパネルとタイムラインで別実装（片方は正しく scale を使って、片方は単純に width/height を変えている）
 
----
+右のレイヤーパネルは「テクスチャを元にサイズを保って描画」しており、タイムラインは「別の方法（レンダリング→canvas縮小→img領域に貼る）」を使っているため差が出る。
 
-### system/gif-exporter.js
-- **責務**: CUT を連番画像化し GIF にまとめる
-- **主要メソッド**
-  - `renderCutFrames()` : 全 CUT を RenderTexture から PNG に変換
-  - `exportGIF()` : PNG 連番を GIF に変換
-  - `downloadGIF()` : Blob として保存
+4. 調査手順（再現／原因特定）
 
----
+再現確認
 
-### core-engine.js
-- **責務**: PixiJS アプリケーションの起動、システム初期化
-- **主要メソッド**
-  - `initPixiApp()` : PixiJS.Application の生成
-  - `initSystems()` : 各 system の初期化呼び出し
-  - `startRenderLoop()` : メインループ開始
+ブラウザで index.html を開き、キャンバス初期サイズを 344×135 にしてサムネを確認 → 400×400 に変更して差分を確認。
 
----
+コード探索
 
-## 3. 改修の優先順位
-1. **CUT 独立化**  
-   - layer-system.js で CUT ごとに RenderTexture 管理を導入  
-   - timeline-ui.js で CUT ごとにサムネイルを GPU → Canvas2D 変換  
+ui/timeline-ui.js を最初に確認。タイムラインサムネを生成している関数（例: makeThumbnail / createTimelineThumb / updateFramePreview 等）を特定。
 
-2. **Timeline サムネイル最適化**  
-   - Extract の呼び出しを差分更新に制御  
+キーワード検索：generateTexture, extract.canvas, drawImage, toDataURL, RenderTexture.create, renderer.render(, canvas.getContext('2d'), width =, height =。
 
-3. **履歴（history.js）の CUT 単位対応**  
-   - 全 CUT 共通 → 各 CUT 独立に修正  
+実際の生成プロセスをログで確認（調査のみ）
 
-4. **GIF Export の RenderTexture 対応**  
-   - 高速で安定したエクスポートを実現  
+該当関数の冒頭に（最小限）一時ログを入れて「元の描画オブジェクトのサイズ」「生成する renderTexture/canvas の width/height」「結果として UI に渡す width/height（CSSやDOM） 」を確認。
 
----
+端的に console.log({srcW, srcH, rtW, rtH, thumbStyleW, thumbStyleH, devicePixelRatio})
+
+比較
+
+同じ生成関数がレイヤーパネルのサムネ生成とどう違うか比較。差のある箇所（解像度扱い・scale計算・転送方法）を特定。
+
+5. 改修方針（非破壊）
+
+既存の API 呼び出しやイベントフローは維持し、タイムラインのサムネ生成ロジックのみを明確に分離・置換する。
+
+新しいサムネ生成関数 createThumbnail(renderer, displayObject, thumbW, thumbH) を作り、常にサムネのピクセル解像度（内部サイズ）を明確に指定してからレンダリングする。
+
+devicePixelRatio を考慮し、ピクセルサイズ＝表示サイズ × devicePixelRatio に揃える。
+
+既存コード呼び出し箇所は、新関数を使うように差し替える（イベントフローは変更しない）。
+
+6. 具体的修正案（コードスニペット：PixiJS v8 互換の想定）
+
+変更対象ファイル（想定）: ui/timeline-ui.js（タイムライン用サムネ生成関数を差し替え）
+既存関数名が異なる場合は、その関数を検索して下記 createThumbnail の呼び出しに差し替えてください。
+
+追加するユーティリティ関数（plain JS, Pixi v8）
+
+// timeline-thumbnail-utils.js (推奨：小さいユーティリティとして分離、もしくは timeline-ui.js 内に追加)
+function createThumbnail(renderer, displayObject, thumbDisplayW, thumbDisplayH) {
+  // thumbDisplayW/H は「UI上の表示ピクセル幅/高さ（CSSピクセル）」を渡す
+  const dpr = window.devicePixelRatio || 1;
+
+  // 内部レンダリングサイズ（ピクセル）を決定
+  const rtWidth  = Math.max(1, Math.round(thumbDisplayW * dpr));
+  const rtHeight = Math.max(1, Math.round(thumbDisplayH * dpr));
+
+  // RenderTexture を作成（解像度 = 1、ピクセルサイズを直接指定）
+  const renderTexture = PIXI.RenderTexture.create({
+    width: rtWidth,
+    height: rtHeight,
+    scaleMode: PIXI.SCALE_MODES.LINEAR,
+    multisample: PIXI.MSAA_QUALITY.NONE,
+  });
+
+  // 保存する前に、表示オブジェクトを「サムネ領域に合わせて正しくスケーリングして描画」する
+  // 1) オフスクリーンに描くためのコンテナを作る（元の表示をコピーしないで transform だけ合わせる方法）
+  //    ここでは簡潔のため、renderer.render に transform を与えてレンダリングします。
+  // 2) 元の displayObject のサイズを確認して scale を計算する
+  const bounds = displayObject.getLocalBounds(); // 論理サイズ（ピクセル単位）
+  const srcW = bounds.width || 1;
+  const srcH = bounds.height || 1;
+
+  // preserve aspect ratio: fit into thumbDisplayW/thumbDisplayH
+  const srcAspect = srcW / srcH;
+  const dstAspect = thumbDisplayW / thumbDisplayH;
+  let scale;
+  if (srcAspect > dstAspect) {
+    scale = (rtWidth / dpr) / srcW;
+  } else {
+    scale = (rtHeight / dpr) / srcH;
+  }
+
+  // 描画時の transform を設定
+  const matrix = new PIXI.Matrix();
+  // まずは中央に寄せるためのオフセット
+  const scaledW = srcW * scale;
+  const scaledH = srcH * scale;
+  const offsetX = ( (thumbDisplayW) - scaledW ) / 2;
+  const offsetY = ( (thumbDisplayH) - scaledH ) / 2;
+
+  // 注意: renderer.render の transform はピクセルではなくラスタライズ位置に効く場合があるため
+  // 安全策として一時コンテナに clone を置く方法が確実（最小限のコード例を以下に示す）
+
+  const tmpContainer = new PIXI.Container();
+  // clone style: create a sprite from the displayObject's texture if possible,
+  // otherwise add the displayObject temporarily (be careful to not mutate original parent)
+  // >> simplest: add displayObject as child then restore parent afterwards (if acceptable)
+  // To avoid side-effects, we convert displayObject to sprite if it has texture:
+  let childToRender = displayObject;
+  if (displayObject.texture) {
+    childToRender = new PIXI.Sprite(displayObject.texture);
+  } else {
+    // fallback: create a snapshot of displayObject using renderer.generateTexture (small resolution)
+    // but to keep atomic, we will add as-is — caller must ensure displayObject can be temporarily moved.
+  }
+
+  childToRender.transform = new PIXI.Transform();
+  childToRender.position.set(offsetX * dpr, offsetY * dpr); // move into rt pixel space
+  childToRender.scale.set(scale * dpr, scale * dpr);
+
+  tmpContainer.addChild(childToRender);
+
+  // Render to the renderTexture
+  renderer.render(tmpContainer, { renderTexture: renderTexture, clear: true });
+
+  // Extract an HTMLCanvasElement (if needed) or create a base64/dataURL or PIXI.Sprite
+  // Example: return a PIXI.Texture that can be used as thumbnail image source
+  const thumbTexture = renderTexture; // RenderTexture is acceptable for PIXI.Sprite
+
+  // Clean up
+  tmpContainer.removeChild(childToRender);
+  // Note: Do NOT destroy renderTexture here if caller wants to keep it; caller responsible.
+
+  return { renderTexture: thumbTexture, rtWidth, rtHeight, dpr };
+}
+
+
+呼び出し側（timeline-ui 内での使い方例）
+
+// 例：UI に img 要素として貼る場合
+const { renderTexture, rtWidth, rtHeight, dpr } = createThumbnail(renderer, targetDisplayObject, 80, 60); // 80x60 UI px
+const base64canvas = renderer.plugins.extract.canvas(renderTexture);
+const dataUrl = base64canvas.toDataURL("image/png");
+thumbnailImgElement.src = dataUrl;
+
+
+補足：
+
+renderer.plugins.extract.canvas(renderTexture) → Pixi の Extract プラグインはテクスチャ/RenderTexture から canvas を返せます（v8系での関数名・挙動は実装差があるので該当関数呼び出し部は要確認）。もし extract.canvas に直接 RenderTexture を渡せない場合は renderer.extract.canvas(new PIXI.Sprite(renderTexture)) のように経由することがある点に注意。
+
+重要なのは「UI に渡す画像の内部ピクセル寸法 = UI表示寸法 × devicePixelRatio」としてレンダリングすること。これで縮小時のジャギーやアスペクト比崩れが防止できる。
+
+7. 差し替え方（既存コードを壊さないための手順）
+
+ui/timeline-ui.js（もしくはサムネ生成しているファイル）をバックアップ（コピー）する。
+
+例: cp ui/timeline-ui.js ui/timeline-ui.js.bak
+
+サムネ生成部分を見つける（generateTexture / drawImage / extract.canvas を含む関数）。関数名・ファイル先頭にコメントを残す。
+
+上の createThumbnail をユーティリティとして追加（別ファイル ui/timeline-thumbnail-utils.js を作るか、timeline-ui.js のトップに挿入）。
+
+元の生成呼び出しを下のように差し替える（元コードのロジックを乱さない範囲で）：
+
+const thumb = oldMakeThumb(...); → const { renderTexture } = createThumbnail(renderer, displayObject, desiredW, desiredH);
+
+その renderTexture から extract.canvas で dataURL を作るか、直接 Pixi Sprite を timeline 内に配置する実装へ。
+
+キャンバスの resize イベント（または camera-system.js のリサイズハンドラ）で、タイムライン生成に使われる「元描画サイズ」キャッシュを更新する処理があるか確認。あればサムネ更新ロジックでも参照するように修正。
+
+8. テスト項目（必ず確認）
+
+ キャンバス初期サイズ 344×135 でタイムライン（元）サムネが正常か確認。
+
+ キャンバスを 400×400 にリサイズ（設定変更）→ タイムラインの各フレームサムネが縦横比を保っているか確認。
+
+ 右レイヤーパネルのサムネとタイムラインのサムネが視覚的に同じ内容・同じアスペクト比で一致するか確認。
+
+ devicePixelRatio を様々に変更して（例：DPR=1、2）目視で崩れないか確認。
+
+ サムネ生成にかかる時間（特にフレーム数の多いタイムライン）を測定。レンダリング負荷が高い場合は「キャッシュ（RenderTexture を保持）」の方針を検討する。
+
+9. パフォーマンス／運用上の注意点
+
+毎フレーム・毎イテレーションで毎回 RenderTexture を作って破棄するとコストが高くなる。**頻繁に更新する場合は RenderTexture を再利用（プール）**する実装にする。
+
+サムネは UI 上小さいため scaleMode = LINEAR や NEAREST の選択は画質要件に応じて。スムーズ縮小が欲しければ LINEAR。
+
+大きなタイムライン（枚数多数）の場合は「必要な範囲のみ生成／遅延生成（visible 範囲）」を行う。
+
+10. 実装優先度（短期 → 長期）
+
+短期（今すぐ）: createThumbnail を導入してタイムラインサムネの生成を置き換え、アスペクト崩れを修正。
+
+中期: RenderTexture プール実装、生成頻度削減。
+
+長期: レイヤーパネルとタイムラインのサムネ生成を共通ユーティリティにまとめる（API 化）。
+
+11. 参考：現場でよくある間違い（チェックリスト）
+
+UI 要素の CSS 幅/高さ（style.width/height px）を Canvas の実サイズ（canvas.width/canvas.height）と混同している。
+
+drawImage(sourceCanvas, 0,0, srcW, srcH, 0,0, dstW, dstH) を呼ぶとき、src と dst のアスペクト比を保たないまま dst に入れてしまう。
+
+devicePixelRatio を無視してレンダリングし、結果として縮小・拡大時に細長くなる。
+
+12. 最後に（推奨する最短修正手順）
+
+ui/timeline-ui.js を開く。サムネを作っている関数を探す。
+
+上記 createThumbnail を同ファイルに追加（まずはテスト目的でインライン追加）。
+
+元の生成呼び出しを createThumbnail ベースに置き換え、renderer.plugins.extract.canvas 経由で <img> に流す。
+
+確認（344×135 と 400×400 の両方で目視）。OK ならコミット。NG ならログ情報（console.log）を確認して srcW/srcH/rtW/rtH/dpr を調査。
