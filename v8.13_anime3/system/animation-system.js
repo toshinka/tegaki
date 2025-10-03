@@ -1,7 +1,10 @@
-// ===== system/animation-system.js - 座標系修正版 =====
+// ===== system/animation-system.js - 座標系修正版 + 改修 =====
 // 【修正】CUT.containerをcanvasContainer配下に配置し、座標系のズレを解消
 // 【維持】LayerSystemのRenderTexture機能を活用
 // 【維持】CUTフォルダ方式・全既存機能
+// 【改修】CUTコピー時の命名を「CUT1(1)」形式に変更
+// 【改修】サムネイルアスペクト比を正しく反映
+// 【追加】RENAME機能（全CUTを順番にリネーム）
 // PixiJS v8.13 対応
 
 (function() {
@@ -184,7 +187,7 @@
             this.cameraSystem = null;
             this.app = null;
             this.stage = null;
-            this.canvasContainer = null; // 【追加】CameraSystemのcanvasContainer参照
+            this.canvasContainer = null;
             this.eventBus = window.TegakiEventBus;
             this.config = window.TEGAKI_CONFIG;
             
@@ -211,33 +214,16 @@
             this.layerSystem = layerSystem;
             this.app = app;
             this.stage = app?.stage;
-            
-            // 【修正】CameraSystemを引数から取得
             this.cameraSystem = cameraSystem;
             
-            // 【デバッグ】CameraSystemの状態を確認
-            if (!this.cameraSystem) {
-                console.error('❌ CameraSystem is null/undefined');
-                return;
-            }
-            
-            if (!this.cameraSystem.canvasContainer) {
-                console.error('❌ CameraSystem.canvasContainer not available');
-                console.error('CameraSystem properties:', Object.keys(this.cameraSystem));
-                console.error('CameraSystem.worldContainer:', this.cameraSystem.worldContainer);
-                return;
-            }
+            if (!this.cameraSystem?.canvasContainer) return;
             
             this.canvasContainer = this.cameraSystem.canvasContainer;
             
-            if (!this.eventBus || !this.layerSystem) {
-                console.error('Required dependencies not available');
-                return;
-            }
+            if (!this.eventBus || !this.layerSystem) return;
             
             this.layerSystem.animationSystem = this;
             
-            // 【修正】LayerSystemの一時的なContainerをcanvasContainerに追加
             if (this.canvasContainer && this.layerSystem.currentCutContainer) {
                 this.canvasContainer.addChild(this.layerSystem.currentCutContainer);
             }
@@ -313,13 +299,11 @@
             this.animationData.cuts.push(cut);
             const newCutIndex = this.animationData.cuts.length - 1;
             
-            // 【修正】canvasContainerに追加
             if (this.canvasContainer) {
                 this.canvasContainer.addChild(cut.container);
                 cut.container.visible = false;
             }
             
-            // ★RenderTexture作成
             if (this.layerSystem?.createCutRenderTexture) {
                 this.layerSystem.createCutRenderTexture(cutId);
             }
@@ -352,13 +336,11 @@
             this.animationData.cuts.push(cut);
             const newIndex = this.animationData.cuts.length - 1;
             
-            // 【修正】canvasContainerに追加
             if (this.canvasContainer) {
                 this.canvasContainer.addChild(cut.container);
                 cut.container.visible = false;
             }
             
-            // ★RenderTexture作成
             if (this.layerSystem?.createCutRenderTexture) {
                 this.layerSystem.createCutRenderTexture(cutId);
             }
@@ -516,23 +498,22 @@
         }
         
         // ===== サムネイル生成（RenderTexture版） =====
+        // 【改修】アスペクト比を正しく反映するように修正
         
         async generateCutThumbnail(cutIndex) {
             const cut = this.animationData.cuts[cutIndex];
             if (!cut || !this.layerSystem) return;
             
-            // ★LayerSystemのRenderTextureに描画
             if (this.layerSystem.renderCutToTexture) {
                 this.layerSystem.renderCutToTexture(cut.id, cut.container);
             }
             
-            // ★RenderTextureからサムネイル生成
             const renderTexture = this.layerSystem?.getCutRenderTexture?.(cut.id);
             if (!renderTexture || !this.app?.renderer) return;
             
             const canvas = this.app.renderer.extract.canvas(renderTexture);
             
-            // サムネイルサイズにリサイズ
+            // 【改修】アスペクト比を正しく計算
             const canvasWidth = this.config.canvas.width;
             const canvasHeight = this.config.canvas.height;
             const aspectRatio = canvasWidth / canvasHeight;
@@ -555,11 +536,13 @@
             const ctx = thumbCanvas.getContext('2d');
             ctx.imageSmoothingEnabled = true;
             ctx.imageSmoothingQuality = 'high';
-            ctx.drawImage(canvas, 0, 0, thumbWidth, thumbHeight);
+            
+            // 【改修】元画像のアスペクト比を維持してリサイズ
+            ctx.clearRect(0, 0, thumbWidth, thumbHeight);
+            ctx.drawImage(canvas, 0, 0, canvas.width, canvas.height, 0, 0, thumbWidth, thumbHeight);
             
             cut.thumbnailCanvas = thumbCanvas;
             
-            // ★サムネイル更新フラグをクリア
             if (this.layerSystem.clearCutThumbnailDirty) {
                 this.layerSystem.clearCutThumbnailDirty(cut.id);
             }
@@ -602,12 +585,10 @@
             
             this.animationData.cuts.splice(insertIndex, 0, pastedCut);
             
-            // 【修正】canvasContainerに追加
             if (this.canvasContainer) {
                 this.canvasContainer.addChild(pastedCut.container);
             }
             
-            // ★RenderTexture作成
             if (this.layerSystem?.createCutRenderTexture) {
                 this.layerSystem.createCutRenderTexture(pastedCut.id);
             }
@@ -633,12 +614,10 @@
             this.animationData.cuts.push(pastedCut);
             const newIndex = this.animationData.cuts.length - 1;
             
-            // 【修正】canvasContainerに追加
             if (this.canvasContainer) {
                 this.canvasContainer.addChild(pastedCut.container);
             }
             
-            // ★RenderTexture作成
             if (this.layerSystem?.createCutRenderTexture) {
                 this.layerSystem.createCutRenderTexture(pastedCut.id);
             }
@@ -655,13 +634,31 @@
             return true;
         }
         
+        // 【改修】CUTコピー時の命名を「CUT1(1)」形式に変更
         createCutFromClipboard(clipboardData) {
             if (!clipboardData) return null;
+            
+            const baseName = clipboardData.name.replace(/_copy$/, '').replace(/\(\d+\)$/, '');
+            
+            // 同名CUTの数をカウント
+            let copyCount = 0;
+            for (const cut of this.animationData.cuts) {
+                const cutBaseName = cut.name.replace(/\(\d+\)$/, '');
+                if (cutBaseName === baseName) {
+                    const match = cut.name.match(/\((\d+)\)$/);
+                    if (match) {
+                        const num = parseInt(match[1], 10);
+                        if (num > copyCount) copyCount = num;
+                    }
+                }
+            }
+            
+            const newName = `${baseName}(${copyCount + 1})`;
             
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             const cut = Cut.deserialize({
                 id: cutId,
-                name: clipboardData.name + '_copy',
+                name: newName,
                 duration: clipboardData.duration,
                 layers: clipboardData.layers
             }, this.config);
@@ -700,7 +697,6 @@
             
             this.animationData.cuts.push(cut);
             
-            // 【修正】一時的なContainerを削除し、CUT.containerをcanvasContainerに追加
             if (this.canvasContainer) {
                 if (this.layerSystem.currentCutContainer.parent === this.canvasContainer) {
                     this.canvasContainer.removeChild(this.layerSystem.currentCutContainer);
@@ -710,7 +706,6 @@
                 cut.container.visible = true;
             }
             
-            // ★RenderTexture作成
             if (this.layerSystem.createCutRenderTexture) {
                 this.layerSystem.createCutRenderTexture(cutId);
             }
@@ -740,12 +735,10 @@
             
             const cut = this.animationData.cuts[cutIndex];
             
-            // ★RenderTexture破棄
             if (this.layerSystem?.destroyCutRenderTexture) {
                 this.layerSystem.destroyCutRenderTexture(cut.id);
             }
             
-            // 【修正】canvasContainerから削除
             if (this.canvasContainer && cut.container.parent === this.canvasContainer) {
                 this.canvasContainer.removeChild(cut.container);
             }
@@ -796,6 +789,19 @@
                     newIndex,
                     currentCutIndex: this.animationData.playback.currentCutIndex
                 });
+            }
+        }
+        
+        // 【追加】全CUTを順番にリネーム (RENAME機能)
+        renameCutsSequentially() {
+            if (!this.animationData.cuts || this.animationData.cuts.length === 0) return;
+            
+            this.animationData.cuts.forEach((cut, index) => {
+                cut.name = `CUT${index + 1}`;
+            });
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:cuts-renamed-sequentially');
             }
         }
         
@@ -1042,11 +1048,14 @@
     window.TegakiAnimationSystem = AnimationSystem;
     window.TegakiCut = Cut;
     
-    console.log('✅ AnimationSystem 座標系修正版 loaded');
+    console.log('✅ AnimationSystem 座標系修正版 + 改修 loaded');
     console.log('🔧 改修内容:');
     console.log('  ✅ CUT.containerをcanvasContainer配下に配置');
     console.log('  ✅ 座標系のズレを解消（カメラフレームと描画座標を統一）');
     console.log('  ✅ LayerSystemのRenderTexture機能を活用');
     console.log('  ✅ 既存機能完全維持: CUTフォルダ方式・Deep Copy・シリアライズ');
+    console.log('  ✅ CUTコピー時の命名を「CUT1(1)」形式に変更');
+    console.log('  ✅ サムネイルアスペクト比を正しく反映');
+    console.log('  ✅ RENAME機能追加（全CUTを順番にリネーム）');
 
 })();

@@ -1,9 +1,12 @@
-// ===== ui/timeline-ui.js - リサイズ即時反映版 =====
+// ===== ui/timeline-ui.js - リサイズ即時反映版 + 改修 =====
 // 【改修】リサイズ時のタイムラインサムネイル即座更新
 // 【維持】即時サムネイル反映 & 削除確認削除版
 // 【維持】タイムラインパネル左端10px拡張 (left: 60px)
 // 【維持】時間変更ボタン赤茶色矢印
 // 【維持】CUT管理UI・プレイバック制御
+// 【改修】CUTパネル左側padding拡張（影枠欠け防止）
+// 【改修】×ボタンを右上に配置
+// 【改修】RENAMEボタン追加
 // PixiJS v8.13 対応
 
 (function() {
@@ -24,7 +27,6 @@
             
             this.eventBus = window.TegakiEventBus;
             
-            // サムネイル更新防止フラグ
             this.thumbnailUpdateInProgress = false;
         }
         
@@ -40,37 +42,25 @@
             this.createLayerPanelCutIndicator();
             this.ensureInitialCut();
             
-            // 描画確定イベントでサムネイル更新
             this.setupThumbnailAutoUpdate();
-            
-            // 【改修】リサイズイベント対応
             this.setupResizeEventListener();
             
             this.isInitialized = true;
         }
         
-        // 【改修】リサイズイベントリスナー
         setupResizeEventListener() {
             if (!this.eventBus) return;
             
-            // camera:resized イベントを監視
             this.eventBus.on('camera:resized', (data) => {
-                console.log('Timeline: リサイズ検知', data.width, 'x', data.height);
-                
-                // 全サムネイルの更新をリクエスト
                 this.requestAllThumbnailsUpdate();
             });
             
-            // animation:thumbnails-need-update イベントを監視
             this.eventBus.on('animation:thumbnails-need-update', () => {
-                console.log('Timeline: サムネイル一括更新要求');
                 this.updateAllCutThumbnails();
             });
         }
         
-        // 【改修】全CUTサムネイル更新リクエスト
         requestAllThumbnailsUpdate() {
-            // デバウンス処理
             if (this.allThumbnailUpdateTimer) {
                 clearTimeout(this.allThumbnailUpdateTimer);
             }
@@ -80,7 +70,6 @@
             }, 300);
         }
         
-        // 【改修】全CUTサムネイル即時更新
         async updateAllCutThumbnails() {
             if (this.thumbnailUpdateInProgress) return;
             if (!this.animationSystem?.animationData?.cuts) return;
@@ -91,66 +80,50 @@
                 const cuts = this.animationSystem.animationData.cuts;
                 
                 for (let i = 0; i < cuts.length; i++) {
-                    // AnimationSystem経由でサムネイル生成
                     await this.animationSystem.generateCutThumbnailOptimized(i);
-                    
-                    // UI更新
                     this.updateSingleCutThumbnail(i);
                     
-                    // 負荷分散のため少し待機
                     if (i < cuts.length - 1) {
                         await new Promise(resolve => setTimeout(resolve, 50));
                     }
                 }
-                
-                console.log('✅ Timeline: 全サムネイル更新完了');
             } catch (error) {
-                console.error('Timeline: サムネイル一括更新エラー', error);
             } finally {
                 this.thumbnailUpdateInProgress = false;
             }
         }
         
-        // 描画確定時の自動サムネイル更新
         setupThumbnailAutoUpdate() {
             if (!this.eventBus) return;
             
-            // 描画完了イベント（ペン・消しゴム確定時）
             this.eventBus.on('layer:updated', () => {
                 this.requestThumbnailUpdate();
             });
             
-            // パス追加完了
             this.eventBus.on('layer:path-added', () => {
                 this.requestThumbnailUpdate();
             });
             
-            // レイヤー可視性変更
             this.eventBus.on('layer:visibility-changed', () => {
                 this.requestThumbnailUpdate();
             });
             
-            // レイヤー不透明度変更
             this.eventBus.on('layer:opacity-changed', () => {
                 this.requestThumbnailUpdate();
             });
             
-            // 描画エンジン完了イベント
             this.eventBus.on('drawing:path-completed', () => {
                 this.requestThumbnailUpdate();
             });
             
-            // 消しゴム完了イベント
             this.eventBus.on('drawing:erase-completed', () => {
                 this.requestThumbnailUpdate();
             });
         }
         
-        // サムネイル更新リクエスト（デバウンス処理付き）
         requestThumbnailUpdate() {
             if (this.thumbnailUpdateInProgress) return;
             
-            // 連続描画時のパフォーマンス対策: 150ms待機
             if (this.thumbnailUpdateTimer) {
                 clearTimeout(this.thumbnailUpdateTimer);
             }
@@ -160,7 +133,6 @@
             }, 150);
         }
         
-        // 現在のCUTサムネイルを即時更新
         async updateCurrentCutThumbnail() {
             if (this.thumbnailUpdateInProgress) return;
             
@@ -173,13 +145,9 @@
             this.thumbnailUpdateInProgress = true;
             
             try {
-                // AnimationSystem経由でサムネイル生成
                 await this.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
-                
-                // UI更新
                 this.updateSingleCutThumbnail(currentCutIndex);
             } catch (error) {
-                console.error('Thumbnail update failed:', error);
             } finally {
                 this.thumbnailUpdateInProgress = false;
             }
@@ -214,6 +182,7 @@
             this.cutsContainer.className = 'cuts-container';
             this.cutsContainer.dataset.source = 'timeline-ui';
             
+            // 【改修】×ボタンを右上に配置 + RENAMEボタン追加
             const timelineBottom = document.createElement('div');
             timelineBottom.className = 'timeline-bottom';
             timelineBottom.dataset.source = 'timeline-ui';
@@ -228,10 +197,18 @@
                     <button id="play-btn" title="再生/停止 (Space)">▶</button>
                     <button id="add-cut-btn" title="CUT追加 (Alt+=)">+CUT</button>
                     <button id="copy-paste-cut-btn" title="CUTコピペ (Shift+C)" class="copy-paste-btn">+C&P</button>
+                    <button id="rename-cuts-btn" title="CUTリネーム" class="rename-btn">RENAME</button>
                 </div>
-                <button class="timeline-close" id="close-timeline">×</button>
             `;
             
+            // 【改修】×ボタンを右上に独立配置
+            const closeButton = document.createElement('button');
+            closeButton.className = 'timeline-close';
+            closeButton.id = 'close-timeline';
+            closeButton.textContent = '×';
+            closeButton.title = 'タイムラインを閉じる';
+            
+            this.timelinePanel.appendChild(closeButton);
             this.timelinePanel.appendChild(this.cutsContainer);
             this.timelinePanel.appendChild(timelineBottom);
             document.body.appendChild(this.timelinePanel);
@@ -252,12 +229,14 @@
                 .timeline-panel.show { display: block !important; animation: slideUp 0.35s ease-out !important; }
                 @keyframes slideUp { from { opacity: 0; transform: translateY(25px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
                 .cuts-container { display: flex !important; gap: 6px !important; overflow-x: auto !important; padding: 3px 0 8px 0 !important; 
-                    margin-bottom: 8px !important; max-height: 140px !important; }
+                    margin-bottom: 8px !important; max-height: 140px !important; margin-top: 28px !important; }
                 .cuts-container::-webkit-scrollbar { height: 10px !important; }
                 .cuts-container::-webkit-scrollbar-track { background: var(--futaba-light-medium) !important; border-radius: 5px !important; }
                 .cuts-container::-webkit-scrollbar-thumb { background: var(--futaba-maroon) !important; border-radius: 5px !important; }
+                
                 .cut-item { min-width: 85px !important; background: var(--futaba-background) !important; 
-                    border: 2px solid var(--futaba-light-medium) !important; border-radius: 8px !important; padding: 2px !important; 
+                    border: 2px solid var(--futaba-light-medium) !important; border-radius: 8px !important; 
+                    padding: 2px 2px 2px 6px !important; 
                     cursor: pointer !important; position: relative !important; transition: all 0.25s ease !important; flex-shrink: 0 !important; 
                     display: flex !important; flex-direction: column !important; align-items: center !important; 
                     box-shadow: 0 2px 6px rgba(128, 0, 0, 0.12) !important; user-select: none !important; }
@@ -265,6 +244,7 @@
                     box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2) !important; }
                 .cut-item.active { border-color: var(--futaba-maroon) !important; background: var(--futaba-light-medium) !important; 
                     box-shadow: 0 0 0 3px rgba(128, 0, 0, 0.3) !important; transform: translateY(-2px) scale(1.02) !important; }
+                
                 .cut-thumbnail { background: var(--futaba-background) !important; border: 1px solid var(--futaba-light-medium) !important; 
                     border-radius: 6px !important; overflow: hidden !important; margin-bottom: 3px !important; position: relative !important; 
                     display: flex !important; align-items: center !important; justify-content: center !important; }
@@ -277,9 +257,11 @@
                     background-size: 8px 8px !important; background-position: 0 0, 0 4px, 4px -4px, -4px 0px !important; 
                     display: flex !important; align-items: center !important; justify-content: center !important; 
                     color: var(--futaba-maroon) !important; font-size: 9px !important; font-weight: bold !important; }
+                
                 .cut-name { font-size: 10px !important; color: var(--futaba-maroon) !important; margin-bottom: 2px !important; 
                     font-weight: 600 !important; text-align: center !important; white-space: nowrap !important; overflow: hidden !important; 
                     text-overflow: ellipsis !important; max-width: 72px !important; line-height: 1.3 !important; }
+                
                 .cut-duration-container { display: flex !important; align-items: center !important; gap: 2px !important; margin-bottom: 3px !important; }
                 .cut-duration-input { width: 30px !important; height: 18px !important; border: 1px solid var(--futaba-light-medium) !important; 
                     border-radius: 3px !important; background: var(--futaba-background) !important; font-size: 8px !important; 
@@ -301,6 +283,7 @@
                     display: flex !important; align-items: center !important; justify-content: center !important; font-weight: bold !important; }
                 .cut-item:hover .delete-cut-btn { opacity: 1 !important; }
                 .delete-cut-btn:hover { background: rgba(128, 0, 0, 1) !important; transform: scale(1.15) !important; }
+                
                 .timeline-bottom { display: flex !important; justify-content: space-between !important; align-items: center !important; 
                     gap: 25px !important; height: 40px !important; padding: 0 4px !important; }
                 .timeline-controls { display: flex !important; gap: 6px !important; align-items: center !important; flex: 1 !important; justify-content: center !important; }
@@ -310,16 +293,24 @@
                     display: flex !important; align-items: center !important; justify-content: center !important; font-weight: 600 !important; }
                 .timeline-controls button:hover { background: var(--futaba-medium) !important; border-color: var(--futaba-maroon) !important; 
                     transform: translateY(-1px) !important; }
+                
                 .copy-paste-btn { background: var(--futaba-light-medium) !important; font-size: 11px !important; font-weight: 700 !important; min-width: 50px !important; }
                 .copy-paste-btn:hover { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; transform: translateY(-2px) scale(1.05) !important; }
+                
+                .rename-btn { background: var(--futaba-light-medium) !important; font-size: 10px !important; font-weight: 700 !important; min-width: 60px !important; }
+                .rename-btn:hover { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; transform: translateY(-2px) scale(1.05) !important; }
+                
                 #repeat-btn { min-width: 40px !important; padding: 8px !important; }
                 #repeat-btn.repeat-active { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; }
                 #repeat-btn.repeat-inactive { background: var(--futaba-background) !important; opacity: 0.6 !important; }
                 #repeat-btn svg { width: 16px !important; height: 16px !important; }
                 .timeline-controls button#play-btn.playing { background: var(--futaba-maroon) !important; color: white !important; }
-                .timeline-close { background: none !important; border: none !important; font-size: 20px !important; 
-                    color: var(--futaba-maroon) !important; cursor: pointer !important; padding: 8px 12px !important; 
-                    border-radius: 8px !important; height: 36px !important; font-weight: bold !important; min-width: 36px !important; }
+                
+                .timeline-close { position: absolute !important; top: 8px !important; right: 10px !important; 
+                    background: none !important; border: none !important; font-size: 20px !important; 
+                    color: var(--futaba-maroon) !important; cursor: pointer !important; padding: 4px 8px !important; 
+                    border-radius: 8px !important; height: 28px !important; font-weight: bold !important; min-width: 28px !important; 
+                    z-index: 10 !important; }
                 .timeline-close:hover { background: var(--futaba-light-medium) !important; }
             `;
             document.head.appendChild(style);
@@ -372,6 +363,7 @@
                 this.animationSystem.createNewEmptyCut();
             });
             document.getElementById('copy-paste-cut-btn')?.addEventListener('click', () => this.executeCutCopyPaste());
+            document.getElementById('rename-cuts-btn')?.addEventListener('click', () => this.executeRenameCuts());
             document.getElementById('close-timeline')?.addEventListener('click', () => this.hide());
         }
         
@@ -385,6 +377,13 @@
                     this.updateLayerPanelIndicator();
                 }, 100);
             }, 50);
+        }
+        
+        executeRenameCuts() {
+            if (!this.animationSystem) return;
+            this.animationSystem.renameCutsSequentially();
+            this.updateCutsList();
+            this.updateLayerPanelIndicator();
         }
         
         toggleRepeat() {
@@ -545,6 +544,10 @@
             this.eventBus.on('animation:cut-changed', (data) => {
                 this.currentCutIndex = data.cutIndex;
                 this.setActiveCut(data.cutIndex);
+                this.updateLayerPanelIndicator();
+            });
+            this.eventBus.on('animation:cuts-renamed-sequentially', () => {
+                this.updateCutsList();
                 this.updateLayerPanelIndicator();
             });
         }
@@ -771,7 +774,6 @@
                     thumbnail.innerHTML = `<img src="${dataUrl}" alt="CUT${cutIndex + 1}" />`;
                     this.applyCutThumbnailAspectRatio(cutItem, cutIndex);
                 } catch (error) {
-                    console.error('Thumbnail update failed:', error);
                 }
             }
         }
@@ -792,9 +794,12 @@
     }
     window.TegakiUI.TimelineUI = TimelineUI;
     
-    console.log('✅ TimelineUI リサイズ即時反映版 loaded');
+    console.log('✅ TimelineUI リサイズ即時反映版 + 改修 loaded');
     console.log('  ✅ camera:resized イベント対応');
     console.log('  ✅ 全CUTサムネイル一括更新機能');
     console.log('  ✅ 既存の即時反映機能維持');
+    console.log('  ✅ CUTパネル左側padding拡張（影枠欠け防止）');
+    console.log('  ✅ ×ボタンを右上に配置');
+    console.log('  ✅ RENAMEボタン追加');
 
 })();
