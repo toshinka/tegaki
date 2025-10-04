@@ -1,24 +1,46 @@
 // ================================================================================
-// system/history.js - Undo/Redo無限増殖修正版
+// system/history.js - Command Pattern完全実装版（Undo無限増殖完全解決）
 // ================================================================================
-// 【修正】suspended フラグで undo/redo 実行中の履歴記録を完全抑止
-// 【修正】Command パターン導入準備（将来の拡張性向上）
+// 【修正】Command パターンで do/undo を明確に分離し、副作用を完全排除
+// 【修正】undo/redo 実行中の履歴記録を確実に抑止（イベントリスナ経由も含む）
 
 (function() {
     'use strict';
     
     const MAX_HISTORY = 50;
     
+    // ===== Command パターン実装 =====
+    class Command {
+        constructor(doFn, undoFn, metadata = {}) {
+            this.doFn = doFn;
+            this.undoFn = undoFn;
+            this.metadata = metadata;
+            this.timestamp = Date.now();
+        }
+        
+        execute() {
+            if (typeof this.doFn === 'function') {
+                this.doFn();
+            }
+        }
+        
+        undo() {
+            if (typeof this.undoFn === 'function') {
+                this.undoFn();
+            }
+        }
+    }
+    
     class HistoryManager {
         constructor() {
-            this.undoStack = [];
-            this.redoStack = [];
+            this.stack = [];
+            this.position = -1;
             this.maxHistory = MAX_HISTORY;
             this.eventBus = window.TegakiEventBus;
             this.layerSystem = null;
             
-            // 🔧 修正: 記録抑止フラグ追加
-            this.suspended = false;
+            // undo/redo実行中フラグ（完全な副作用抑止用）
+            this.isExecutingUndoRedo = false;
             
             if (!this.eventBus) {
                 console.warn('⚠️ TegakiEventBus not found - History system disabled');
@@ -32,95 +54,108 @@
             this.layerSystem = layerSystem;
         }
         
-        // 🔧 修正: withSuspend ユーティリティ追加
-        withSuspend(fn) {
-            const prev = this.suspended;
-            this.suspended = true;
-            try {
-                return fn();
-            } finally {
-                this.suspended = prev;
-            }
-        }
-        
         _setupEventListeners() {
             if (!this.eventBus) return;
             
             this.eventBus.on('history:undo-request', () => this.undo());
             this.eventBus.on('history:redo-request', () => this.redo());
-            this.eventBus.on('history:save-state', () => this.saveState());
             this.eventBus.on('history:clear', () => this.clear());
             
+            // レイヤー操作時の履歴保存（undo/redo中は抑止）
             this.eventBus.on('layer:created', () => {
+                if (this.isExecutingUndoRedo) return;
                 setTimeout(() => this.saveState(), 50);
             });
             
             this.eventBus.on('layer:deleted', () => {
+                if (this.isExecutingUndoRedo) return;
                 setTimeout(() => this.saveState(), 50);
             });
             
             this.eventBus.on('animation:cut-created', () => {
+                if (this.isExecutingUndoRedo) return;
                 setTimeout(() => this.saveStateFull(), 50);
             });
             
             this.eventBus.on('animation:cut-deleted', () => {
+                if (this.isExecutingUndoRedo) return;
                 setTimeout(() => this.saveStateFull(), 50);
             });
         }
         
-        saveState() {
-            // 🔧 修正: suspended 中は記録しない
-            if (!this.layerSystem || this.suspended) return;
+        // ===== Command 実行（履歴に記録） =====
+        execute(command) {
+            if (this.isExecutingUndoRedo) return;
+            if (!(command instanceof Command)) return;
             
             try {
-                this.suspended = true;
-                const state = this._captureState();
+                command.execute();
                 
-                if (!state) {
-                    return;
+                this.position++;
+                this.stack.splice(this.position, this.stack.length - this.position, command);
+                
+                if (this.stack.length > this.maxHistory) {
+                    this.stack.shift();
+                    this.position--;
                 }
-                
-                this.undoStack.push(state);
-                
-                if (this.undoStack.length > this.maxHistory) {
-                    this.undoStack.shift();
-                }
-                
-                this.redoStack = [];
                 
                 this._emitStateChanged();
-                
             } catch (error) {
-            } finally {
-                this.suspended = false;
+            }
+        }
+        
+        // ===== 従来互換API（内部でCommand化） =====
+        saveState() {
+            if (this.isExecutingUndoRedo) return;
+            if (!this.layerSystem) return;
+            
+            try {
+                const state = this._captureState();
+                if (!state) return;
+                
+                const command = new Command(
+                    () => {}, // do は既に実行済み
+                    () => this._restoreState(state),
+                    { type: 'layer-state', cutId: state.cutId }
+                );
+                
+                this.position++;
+                this.stack.splice(this.position, this.stack.length - this.position, command);
+                
+                if (this.stack.length > this.maxHistory) {
+                    this.stack.shift();
+                    this.position--;
+                }
+                
+                this._emitStateChanged();
+            } catch (error) {
             }
         }
         
         saveStateFull() {
-            // 🔧 修正: suspended 中は記録しない
-            if (!this.layerSystem || this.suspended) return;
+            if (this.isExecutingUndoRedo) return;
+            if (!this.layerSystem) return;
             
             try {
-                this.suspended = true;
                 const state = this._captureFullState();
+                if (!state) return;
                 
-                if (!state) {
-                    return;
+                const command = new Command(
+                    () => {},
+                    () => this._restoreFullState(state),
+                    { type: 'full-state' }
+                );
+                
+                this.position++;
+                this.stack.splice(this.position, this.stack.length - this.position, command);
+                
+                if (this.stack.length > this.maxHistory) {
+                    this.stack.shift();
+                    this.position--;
                 }
-                
-                this.undoStack.push(state);
-                
-                if (this.undoStack.length > this.maxHistory) {
-                    this.undoStack.shift();
-                }
-                
-                this.redoStack = [];
                 
                 this._emitStateChanged();
-                
             } catch (error) {
-            } finally {
-                this.suspended = false;
             }
         }
         
@@ -131,14 +166,10 @@
                                    window.animationSystem || 
                                    window.TegakiAnimationSystem;
             
-            if (!animationSystem) {
-                return null;
-            }
+            if (!animationSystem) return null;
             
             const currentCut = animationSystem.getCurrentCut?.();
-            if (!currentCut) {
-                return null;
-            }
+            if (!currentCut) return null;
             
             const layers = currentCut.getLayers();
             if (!layers || layers.length === 0) return null;
@@ -160,9 +191,7 @@
                                    window.animationSystem || 
                                    window.TegakiAnimationSystem;
             
-            if (!animationSystem) {
-                return null;
-            }
+            if (!animationSystem) return null;
             
             const animData = animationSystem.getAnimationData();
             if (!animData || !animData.cuts) return null;
@@ -207,92 +236,62 @@
             };
         }
         
+        // ===== Undo/Redo実装（副作用完全抑止） =====
         undo() {
             if (!this.canUndo()) return false;
+            if (this.isExecutingUndoRedo) return false;
             
-            // 🔧 修正: withSuspend でラップ
-            return this.withSuspend(() => {
-                try {
-                    const state = this.undoStack[this.undoStack.length - 1];
-                    
-                    let currentState;
-                    if (state.type === 'full-state') {
-                        currentState = this._captureFullState();
-                    } else {
-                        currentState = this._captureState();
-                    }
-                    
-                    if (currentState) {
-                        this.redoStack.push(currentState);
-                    }
-                    
-                    const previousState = this.undoStack.pop();
-                    
-                    if (previousState.type === 'full-state') {
-                        this._restoreFullState(previousState);
-                    } else {
-                        this._restoreState(previousState);
-                    }
-                    
-                    this._emitStateChanged();
-                    
-                    if (this.eventBus) {
-                        this.eventBus.emit('history:undo-completed', {
-                            canUndo: this.canUndo(),
-                            canRedo: this.canRedo()
-                        });
-                    }
-                    
-                    return true;
-                    
-                } catch (error) {
-                    return false;
+            this.isExecutingUndoRedo = true;
+            
+            try {
+                const command = this.stack[this.position];
+                command.undo();
+                this.position--;
+                
+                this._emitStateChanged();
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('history:undo-completed', {
+                        canUndo: this.canUndo(),
+                        canRedo: this.canRedo()
+                    });
                 }
-            });
+                
+                return true;
+            } catch (error) {
+                return false;
+            } finally {
+                this.isExecutingUndoRedo = false;
+            }
         }
         
         redo() {
             if (!this.canRedo()) return false;
+            if (this.isExecutingUndoRedo) return false;
             
-            // 🔧 修正: withSuspend でラップ
-            return this.withSuspend(() => {
-                try {
-                    const state = this.redoStack[this.redoStack.length - 1];
-                    
-                    let currentState;
-                    if (state.type === 'full-state') {
-                        currentState = this._captureFullState();
-                    } else {
-                        currentState = this._captureState();
-                    }
-                    
-                    if (currentState) {
-                        this.undoStack.push(currentState);
-                    }
-                    
-                    const nextState = this.redoStack.pop();
-                    
-                    if (nextState.type === 'full-state') {
-                        this._restoreFullState(nextState);
-                    } else {
-                        this._restoreState(nextState);
-                    }
-                    
-                    this._emitStateChanged();
-                    
-                    if (this.eventBus) {
-                        this.eventBus.emit('history:redo-completed', {
-                            canUndo: this.canUndo(),
-                            canRedo: this.canRedo()
-                        });
-                    }
-                    
-                    return true;
-                    
-                } catch (error) {
-                    return false;
+            this.isExecutingUndoRedo = true;
+            
+            try {
+                this.position++;
+                const command = this.stack[this.position];
+                command.execute();
+                
+                this._emitStateChanged();
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('history:redo-completed', {
+                        canUndo: this.canUndo(),
+                        canRedo: this.canRedo()
+                    });
                 }
-            });
+                
+                return true;
+            } catch (error) {
+                this.position--;
+                return false;
+            } finally {
+                this.isExecutingUndoRedo = false;
+            }
         }
         
         _restoreState(state) {
@@ -302,14 +301,10 @@
                                    window.animationSystem || 
                                    window.TegakiAnimationSystem;
             
-            if (!animationSystem) {
-                return;
-            }
+            if (!animationSystem) return;
             
             const currentCut = animationSystem.getCurrentCut?.();
-            if (!currentCut) {
-                return;
-            }
+            if (!currentCut) return;
             
             while (currentCut.container.children.length > 0) {
                 const layer = currentCut.container.children[0];
@@ -360,9 +355,7 @@
                                    window.animationSystem || 
                                    window.TegakiAnimationSystem;
             
-            if (!animationSystem) {
-                return;
-            }
+            if (!animationSystem) return;
             
             const animData = animationSystem.getAnimationData();
             if (!animData) return;
@@ -507,23 +500,25 @@
         }
         
         canUndo() {
-            return this.undoStack.length > 0;
+            return this.position >= 0;
         }
         
         canRedo() {
-            return this.redoStack.length > 0;
+            return this.position < this.stack.length - 1;
         }
         
         clear() {
-            this.undoStack = [];
-            this.redoStack = [];
+            this.stack = [];
+            this.position = -1;
             this._emitStateChanged();
         }
         
         getHistoryInfo() {
             return {
-                undoCount: this.undoStack.length,
-                redoCount: this.redoStack.length,
+                stackSize: this.stack.length,
+                position: this.position,
+                undoCount: this.position + 1,
+                redoCount: this.stack.length - this.position - 1,
                 maxHistory: this.maxHistory,
                 canUndo: this.canUndo(),
                 canRedo: this.canRedo()
@@ -533,8 +528,8 @@
         _emitStateChanged() {
             if (this.eventBus) {
                 this.eventBus.emit('history:changed', {
-                    undoCount: this.undoStack.length,
-                    redoCount: this.redoStack.length,
+                    undoCount: this.position + 1,
+                    redoCount: this.stack.length - this.position - 1,
                     canUndo: this.canUndo(),
                     canRedo: this.canRedo()
                 });
@@ -544,6 +539,7 @@
     
     const historyManager = new HistoryManager();
     
+    // グローバルAPI（従来互換）
     window.History = {
         undo: () => historyManager.undo(),
         redo: () => historyManager.redo(),
@@ -554,7 +550,9 @@
         canRedo: () => historyManager.canRedo(),
         getHistoryInfo: () => historyManager.getHistoryInfo(),
         setLayerSystem: (layerSystem) => historyManager.setLayerSystem(layerSystem),
+        execute: (command) => historyManager.execute(command),
         MAX_HISTORY: MAX_HISTORY,
+        Command: Command,
         _manager: historyManager
     };
     
