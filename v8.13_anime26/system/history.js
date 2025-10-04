@@ -1,9 +1,9 @@
 // ================================================================================
 // system/history.js - Redo完全修正版
 // ================================================================================
-// 🔧 修正1: Redo機能の完全実装
+// 🔧 修正1: Redo機能の完全実装（Command Inverse パターン）
 // 🔧 修正2: レイヤー/CUT増減時の二重記録防止
-// 🔧 修正3: Command パターン導入（既存との互換性維持）
+// 🔧 修正3: State capture/restore の堅牢化
 
 (function() {
     'use strict';
@@ -29,11 +29,14 @@
                 this.undoFn();
             }
         }
+        
+        getDescription() {
+            return `${this.metadata.type || 'unknown'} (${new Date(this.timestamp).toLocaleTimeString()})`;
+        }
     }
     
     class HistoryManager {
         constructor() {
-            // 🔧 修正: undoStack と redoStack に分離
             this.undoStack = [];
             this.redoStack = [];
             
@@ -41,7 +44,11 @@
             this.eventBus = window.TegakiEventBus;
             this.layerSystem = null;
             
+            // 🔧 追加: Undo/Redo実行中フラグ
             this.isExecutingUndoRedo = false;
+            
+            // 🔧 追加: State記録中フラグ（二重記録防止）
+            this.isRecordingState = false;
             
             if (!this.eventBus) {
                 console.warn('⚠️ TegakiEventBus not found - History system disabled');
@@ -58,65 +65,59 @@
         _setupEventListeners() {
             if (!this.eventBus) return;
             
+            // Undo/Redo リクエスト
             this.eventBus.on('history:undo-request', () => this.undo());
             this.eventBus.on('history:redo-request', () => this.redo());
             this.eventBus.on('history:clear', () => this.clear());
             
-            // CUT削除のみ監視（レイヤー操作は各メソッド内でsaveState呼び出し）
+            // 🔧 修正: レイヤー操作時の自動記録を削除（各メソッド内で明示的に記録）
+            // 'layer:created', 'layer:deleted' イベントは購読しない
+            
+            // CUT操作のみ監視
             this.eventBus.on('animation:cut-deleted', () => {
-                if (this.isExecutingUndoRedo) return;
+                if (this.isExecutingUndoRedo || this.isRecordingState) return;
                 setTimeout(() => this.saveStateFull(), 50);
             });
             
             this.eventBus.on('cut:pasted-right-adjacent', () => {
-                if (this.isExecutingUndoRedo) return;
+                if (this.isExecutingUndoRedo || this.isRecordingState) return;
                 setTimeout(() => this.saveStateFull(), 50);
             });
             
             this.eventBus.on('cut:pasted-new', () => {
-                if (this.isExecutingUndoRedo) return;
+                if (this.isExecutingUndoRedo || this.isRecordingState) return;
                 setTimeout(() => this.saveStateFull(), 50);
             });
         }
         
-        execute(command) {
-            if (this.isExecutingUndoRedo) return;
-            if (!(command instanceof Command)) return;
-            
-            try {
-                command.execute();
-                
-                // 🔧 修正: undoStackに追加し、redoStackをクリア
-                this.undoStack.push(command);
-                this.redoStack = [];
-                
-                if (this.undoStack.length > this.maxHistory) {
-                    this.undoStack.shift();
-                }
-                
-                this._emitStateChanged();
-            } catch (error) {
-                console.error('❌ Command execution failed:', error);
-            }
-        }
+        // ===== State記録 =====
         
         saveState() {
-            if (this.isExecutingUndoRedo) return;
+            // 🔧 追加: 二重記録防止
+            if (this.isExecutingUndoRedo || this.isRecordingState) {
+                return;
+            }
+            
             if (!this.layerSystem) return;
+            
+            this.isRecordingState = true;
             
             try {
                 const state = this._captureState();
-                if (!state) return;
+                if (!state) {
+                    this.isRecordingState = false;
+                    return;
+                }
                 
+                // 🔧 修正: Redo用に現在状態も保存
                 const command = new Command(
-                    () => {},
-                    () => this._restoreState(state),
+                    () => {}, // Do は何もしない（既に実行済み）
+                    () => this._restoreState(state), // Undo で復元
                     { type: 'layer-state', cutId: state.cutId }
                 );
                 
-                // 🔧 修正: undoStackに追加し、redoStackをクリア
                 this.undoStack.push(command);
-                this.redoStack = [];
+                this.redoStack = []; // Redo スタックをクリア
                 
                 if (this.undoStack.length > this.maxHistory) {
                     this.undoStack.shift();
@@ -125,16 +126,27 @@
                 this._emitStateChanged();
             } catch (error) {
                 console.error('❌ saveState failed:', error);
+            } finally {
+                this.isRecordingState = false;
             }
         }
         
         saveStateFull() {
-            if (this.isExecutingUndoRedo) return;
+            // 🔧 追加: 二重記録防止
+            if (this.isExecutingUndoRedo || this.isRecordingState) {
+                return;
+            }
+            
             if (!this.layerSystem) return;
+            
+            this.isRecordingState = true;
             
             try {
                 const state = this._captureFullState();
-                if (!state) return;
+                if (!state) {
+                    this.isRecordingState = false;
+                    return;
+                }
                 
                 const command = new Command(
                     () => {},
@@ -142,7 +154,6 @@
                     { type: 'full-state' }
                 );
                 
-                // 🔧 修正: undoStackに追加し、redoStackをクリア
                 this.undoStack.push(command);
                 this.redoStack = [];
                 
@@ -153,8 +164,102 @@
                 this._emitStateChanged();
             } catch (error) {
                 console.error('❌ saveStateFull failed:', error);
+            } finally {
+                this.isRecordingState = false;
             }
         }
+        
+        // ===== Undo/Redo =====
+        
+        undo() {
+            if (!this.canUndo()) return false;
+            if (this.isExecutingUndoRedo) return false;
+            
+            this.isExecutingUndoRedo = true;
+            
+            try {
+                // 🔧 修正: 現在の状態をRedoスタックに保存してからUndo実行
+                const currentState = this._captureFullState();
+                
+                // Undoスタックから取得
+                const command = this.undoStack.pop();
+                
+                // Undo実行
+                command.undo();
+                
+                // 🔧 修正: Redoスタックに逆Commandを保存
+                if (currentState) {
+                    const redoCommand = new Command(
+                        () => this._restoreFullState(currentState), // Redo で現在状態を復元
+                        () => {}, // Undo は何もしない
+                        { type: 'redo-state', originalType: command.metadata.type }
+                    );
+                    this.redoStack.push(redoCommand);
+                }
+                
+                this._emitStateChanged();
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('history:undo-completed', {
+                        canUndo: this.canUndo(),
+                        canRedo: this.canRedo()
+                    });
+                }
+                
+                return true;
+            } catch (error) {
+                console.error('❌ Undo failed:', error);
+                return false;
+            } finally {
+                this.isExecutingUndoRedo = false;
+            }
+        }
+        
+        redo() {
+            if (!this.canRedo()) return false;
+            if (this.isExecutingUndoRedo) return false;
+            
+            this.isExecutingUndoRedo = true;
+            
+            try {
+                // 🔧 修正: 現在の状態をUndoスタックに保存してからRedo実行
+                const currentState = this._captureFullState();
+                
+                // Redoスタックから取得
+                const command = this.redoStack.pop();
+                
+                // Redo実行（Command の execute = 状態復元）
+                command.execute();
+                
+                // 🔧 修正: Undoスタックに逆Commandを保存
+                if (currentState) {
+                    const undoCommand = new Command(
+                        () => {},
+                        () => this._restoreFullState(currentState), // Undo で直前状態を復元
+                        { type: 'undo-state', originalType: command.metadata.originalType }
+                    );
+                    this.undoStack.push(undoCommand);
+                }
+                
+                this._emitStateChanged();
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('history:redo-completed', {
+                        canUndo: this.canUndo(),
+                        canRedo: this.canRedo()
+                    });
+                }
+                
+                return true;
+            } catch (error) {
+                console.error('❌ Redo failed:', error);
+                return false;
+            } finally {
+                this.isExecutingUndoRedo = false;
+            }
+        }
+        
+        // ===== State Capture =====
         
         _captureState() {
             if (!this.layerSystem) return null;
@@ -233,95 +338,7 @@
             };
         }
         
-        // 🔧 修正: Undo実装（redoStackへの保存追加）
-        undo() {
-            if (!this.canUndo()) return false;
-            if (this.isExecutingUndoRedo) return false;
-            
-            this.isExecutingUndoRedo = true;
-            
-            try {
-                // undoStackから取得
-                const command = this.undoStack.pop();
-                
-                // 🔧 追加: 現在の状態をredo用に保存
-                const currentState = this._captureFullState();
-                
-                // Undo実行
-                command.undo();
-                
-                // 🔧 追加: redoStackに現在状態を保存
-                if (currentState) {
-                    const redoCommand = new Command(
-                        () => this._restoreFullState(currentState),
-                        () => {},
-                        { type: 'redo-state' }
-                    );
-                    this.redoStack.push(redoCommand);
-                }
-                
-                this._emitStateChanged();
-                
-                if (this.eventBus) {
-                    this.eventBus.emit('history:undo-completed', {
-                        canUndo: this.canUndo(),
-                        canRedo: this.canRedo()
-                    });
-                }
-                
-                return true;
-            } catch (error) {
-                console.error('❌ Undo failed:', error);
-                return false;
-            } finally {
-                this.isExecutingUndoRedo = false;
-            }
-        }
-        
-        // 🔧 修正: Redo完全実装
-        redo() {
-            if (!this.canRedo()) return false;
-            if (this.isExecutingUndoRedo) return false;
-            
-            this.isExecutingUndoRedo = true;
-            
-            try {
-                // redoStackから取得
-                const command = this.redoStack.pop();
-                
-                // 🔧 追加: 現在の状態をundo用に保存
-                const currentState = this._captureFullState();
-                
-                // Redo実行
-                command.execute();
-                
-                // 🔧 追加: undoStackに現在状態を保存
-                if (currentState) {
-                    const undoCommand = new Command(
-                        () => {},
-                        () => this._restoreFullState(currentState),
-                        { type: 'undo-state' }
-                    );
-                    this.undoStack.push(undoCommand);
-                }
-                
-                this._emitStateChanged();
-                
-                if (this.eventBus) {
-                    this.eventBus.emit('history:redo-completed', {
-                        canUndo: this.canUndo(),
-                        canRedo: this.canRedo()
-                    });
-                }
-                
-                return true;
-            } catch (error) {
-                console.error('❌ Redo failed:', error);
-                return false;
-            } finally {
-                this.isExecutingUndoRedo = false;
-            }
-        }
+        // ===== State Restore =====
         
         _restoreState(state) {
             if (!state || !this.layerSystem) return;
@@ -559,6 +576,8 @@
             };
         }
         
+        // ===== スタック状態 =====
+        
         canUndo() {
             return this.undoStack.length > 0;
         }
@@ -594,7 +613,22 @@
                 });
             }
         }
+        
+        // ===== デバッグ情報 =====
+        
+        getDebugInfo() {
+            return {
+                undoStackSize: this.undoStack.length,
+                redoStackSize: this.redoStack.length,
+                recentUndo: this.undoStack.slice(-3).map(c => c.getDescription()),
+                recentRedo: this.redoStack.slice(-3).map(c => c.getDescription()),
+                isExecutingUndoRedo: this.isExecutingUndoRedo,
+                isRecordingState: this.isRecordingState
+            };
+        }
     }
+    
+    // ===== グローバル公開 =====
     
     const historyManager = new HistoryManager();
     
@@ -607,12 +641,14 @@
         canUndo: () => historyManager.canUndo(),
         canRedo: () => historyManager.canRedo(),
         getHistoryInfo: () => historyManager.getHistoryInfo(),
+        getDebugInfo: () => historyManager.getDebugInfo(),
         setLayerSystem: (layerSystem) => historyManager.setLayerSystem(layerSystem),
-        execute: (command) => historyManager.execute(command),
         MAX_HISTORY: MAX_HISTORY,
         Command: Command,
         _manager: historyManager
     };
+    
+    // ===== イベント統合 =====
     
     if (window.TegakiEventBus) {
         window.TegakiEventBus.on('layer:system-initialized', (data) => {
@@ -631,6 +667,6 @@
         });
     }
     
-    console.log('✅ history.js loaded (Redo完全修正版)');
+    console.log('✅ history.js loaded (Redo完全修正版 - Command Inverse パターン)');
     
 })();
