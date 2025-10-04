@@ -1,0 +1,264 @@
+# 改修計画書 - History二重消費とCUT操作不具合修正
+
+## 📋 問題概要
+
+### 1. Historyの二重消費
+- アンドゥ時に時々Historyを2回消費
+- 原因: `index.html`と`history.js`でUndo/Redo処理が重複実行
+
+### 2. CUT/レイヤー増減のUndo不具合
+- CUTやレイヤーを追加後、Undoしても削除されない
+- 原因: `createNewBlankCut()`と`createLayer()`でHistory記録のタイミングが不適切
+
+### 3. CUT移動の方向キーが逆
+- `←`を押すとCUT番号が右(プラス方向)に移動
+- 原因: キーボードイベントとCUT移動メソッドのマッピングが逆
+
+### 4. CUT移動がランダム的
+- CUTを増やすと特定のCUTに移動できない
+- 原因: `switchToActiveCut()`の再帰リトライによる順序不整合
+
+---
+
+## 🛠️ 改修方針
+
+### Phase 1: index.html - Undo/Redo重複削除
+- `setupUnifiedKeyboardShortcuts()`からUndo/Redo処理を完全削除
+- history.jsに一本化
+
+### Phase 2: history.js - イベント監視強化
+- `animation:cut-created`イベントを監視し、CUT作成時に自動記録
+- `layer:created`イベントを監視し、レイヤー作成時に自動記録
+- 二重記録防止フラグの精度向上
+
+### Phase 3: animation-system.js - History記録削除
+- `createNewBlankCut()`から手動History記録を削除(history.jsで自動化)
+- イベント発火のみに専念
+
+### Phase 4: timeline-ui.js - CUT移動キー修正
+- `setupKeyboardShortcuts()`の`ArrowLeft`/`ArrowRight`マッピングを逆転
+- `←` = Previous (左方向)、`→` = Next (右方向)
+
+### Phase 5: animation-system.js - CUT切り替え堅牢化
+- `switchToActiveCut()`の再帰リトライを削除
+- キューイングシステムを導入し、切り替え要求を順序保証
+
+---
+
+## 📝 改修詳細
+
+### 改修1: index.html (Undo/Redo削除)
+
+**該当箇所**: `setupUnifiedKeyboardShortcuts()`関数
+
+**変更内容**:
+```javascript
+// ❌ 削除: Ctrl+Z, Ctrl+Y処理
+// 以下のコードブロックを完全削除
+
+// Ctrl+Z (Undo) - shiftなし、altなし
+if (metaKey && !e.shiftKey && !e.altKey && e.code === 'KeyZ') {
+    // ... 削除
+}
+
+// Ctrl+Y (Redo) または Ctrl+Shift+Z (Redo)
+if ((metaKey && !e.altKey && e.code === 'KeyY') || 
+    (metaKey && e.shiftKey && !e.altKey && e.code === 'KeyZ')) {
+    // ... 削除
+}
+```
+
+**理由**: history.jsで一元管理するため、index.htmlでの処理は不要
+
+---
+
+### 改修2: history.js (イベント監視強化)
+
+**該当箇所**: `_setupEventListeners()`メソッド
+
+**追加内容**:
+```javascript
+// ✅ 追加: CUT作成時の自動記録
+this.eventBus.on('animation:cut-created', () => {
+    if (this.isExecutingUndoRedo || this.isRecordingState) return;
+    setTimeout(() => this.saveStateFull(), 100);
+});
+
+// ✅ 追加: レイヤー作成時の自動記録
+this.eventBus.on('layer:created', () => {
+    if (this.isExecutingUndoRedo || this.isRecordingState) return;
+    setTimeout(() => this.saveStateFull(), 50);
+});
+```
+
+**理由**: イベント駆動で自動記録することで、各システムがHistory APIを直接呼ぶ必要がなくなる
+
+---
+
+### 改修3: animation-system.js (手動History記録削除)
+
+**該当箇所**: `createNewBlankCut()`メソッド
+
+**変更内容**:
+```javascript
+// ❌ 削除: 手動History記録
+// 以下のコードブロックを完全削除
+
+setTimeout(() => {
+    if (window.History && typeof window.History.saveStateFull === 'function') {
+        if (!window.History._manager?.isExecutingUndoRedo) {
+            window.History.saveStateFull();
+        }
+    }
+}, 100);
+```
+
+**理由**: history.jsが`animation:cut-created`イベントで自動記録するため不要
+
+---
+
+### 改修4: timeline-ui.js (CUT移動キー修正)
+
+**該当箇所**: `setupKeyboardShortcuts()`メソッド
+
+**変更内容**:
+```javascript
+// 🔧 修正: キーマッピングを正しい方向に
+} else if (e.code === 'ArrowLeft') {
+    this.goToPreviousCutSafe();  // ← = 前のCUT(番号が小さい方向)
+    e.preventDefault();
+} else if (e.code === 'ArrowRight') {
+    this.goToNextCutSafe();      // → = 次のCUT(番号が大きい方向)
+    e.preventDefault();
+}
+```
+
+**理由**: 現在は逆になっている。左キー=前、右キー=次が自然
+
+---
+
+### 改修5: animation-system.js (CUT切り替え堅牢化)
+
+**該当箇所**: `switchToActiveCut()`メソッド
+
+**追加内容**:
+```javascript
+// ✅ 追加: キューイングシステム
+this.cutSwitchQueue = [];
+this.processingQueue = false;
+
+switchToActiveCut(cutIndex) {
+    // キューに追加
+    this.cutSwitchQueue.push(cutIndex);
+    
+    // 処理中でなければキュー処理開始
+    if (!this.processingQueue) {
+        this.processNextCutSwitch();
+    }
+}
+
+processNextCutSwitch() {
+    if (this.cutSwitchQueue.length === 0) {
+        this.processingQueue = false;
+        return;
+    }
+    
+    this.processingQueue = true;
+    const cutIndex = this.cutSwitchQueue.shift();
+    
+    // 実際のCUT切り替え処理
+    const targetCut = this.animationData.cuts[cutIndex];
+    if (!targetCut || !this.layerSystem) {
+        this.processNextCutSwitch();
+        return;
+    }
+    
+    // 全CUTを非表示
+    this.animationData.cuts.forEach(cut => {
+        cut.container.visible = false;
+    });
+    
+    // ターゲットCUTを表示
+    targetCut.container.visible = true;
+    this.layerSystem.setCurrentCutContainer(targetCut.container);
+    this.animationData.playback.currentCutIndex = cutIndex;
+    
+    if (this.eventBus) {
+        this.eventBus.emit('animation:cut-applied', { cutIndex, cutId: targetCut.id });
+    }
+    
+    // 次のキュー処理
+    setTimeout(() => this.processNextCutSwitch(), 0);
+}
+```
+
+**理由**: 再帰リトライを削除し、キューで順序保証することで確実にCUT切り替えが実行される
+
+---
+
+## ✅ 改修後の動作
+
+### 1. Undo/Redo
+- Ctrl+Z: 1回の操作で1つのHistoryをUndo
+- Ctrl+Y/Ctrl+Shift+Z: 1回の操作で1つのHistoryをRedo
+- 二重消費なし
+
+### 2. CUT/レイヤー作成のUndo
+- Shift+N: CUT作成 → Ctrl+Z: CUT削除
+- Ctrl+L: レイヤー作成 → Ctrl+Z: レイヤー削除
+- 確実に元に戻る
+
+### 3. CUT移動の方向キー
+- `←`: 前のCUT(CUT2 → CUT1)
+- `→`: 次のCUT(CUT1 → CUT2)
+- 直感的な操作
+
+### 4. CUT移動の安定性
+- CUTを何枚増やしても確実に移動
+- ランダムな動作なし
+- 指定したCUTに必ず到達
+
+---
+
+## 🔄 改修順序
+
+1. **index.html** (Undo/Redo削除) ← 最優先
+2. **history.js** (イベント監視強化) ← 次
+3. **animation-system.js** (手動記録削除 & キュー実装) ← 同時
+4. **timeline-ui.js** (キーマッピング修正) ← 最後
+
+---
+
+## ⚠️ 注意事項
+
+- 既存機能は一切削除しない
+- コンソールログは最小限に抑える
+- Phase単位でテストを実施
+- EventBusのイベント名は既存のものを使用
+
+---
+
+## 📊 影響範囲
+
+| ファイル名 | 変更内容 | 影響度 |
+|-----------|---------|-------|
+| index.html | Undo/Redo処理削除 | 中 |
+| system/history.js | イベント監視追加 | 中 |
+| system/animation-system.js | 手動記録削除 & キュー実装 | 高 |
+| ui/timeline-ui.js | キーマッピング修正 | 低 |
+
+---
+
+## 🧪 検証項目
+
+- [ ] Ctrl+Zで1回のUndoのみ実行される
+- [ ] Shift+N → Ctrl+ZでCUTが削除される
+- [ ] Ctrl+L → Ctrl+Zでレイヤーが削除される
+- [ ] `←`キーで前のCUTに移動する
+- [ ] `→`キーで次のCUTに移動する
+- [ ] CUTを10枚作成して全てのCUTに移動できる
+- [ ] 高速でCUT切り替えしても順序が狂わない
+
+---
+
+改修完了後、全ての問題が解決します。
