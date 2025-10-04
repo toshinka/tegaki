@@ -1,9 +1,8 @@
 // ================================================================================
-// system/history.js - Undo/Redo管理（レイヤー増殖不具合修正版）
+// system/history.js - Undo/Redo無限増殖修正版
 // ================================================================================
-// 【修正】アンドゥ実行時にレイヤーが増える不具合を完全修正
-// 【原因】Cut.removeLayer()はPixi階層からしか削除せず、データモデルと同期していなかった
-// 【解決】レイヤー削除時に確実にContainer.childrenを空にし、復元後にUIを更新
+// 【修正】suspended フラグで undo/redo 実行中の履歴記録を完全抑止
+// 【修正】Command パターン導入準備（将来の拡張性向上）
 
 (function() {
     'use strict';
@@ -17,7 +16,9 @@
             this.maxHistory = MAX_HISTORY;
             this.eventBus = window.TegakiEventBus;
             this.layerSystem = null;
-            this.isCapturing = false;
+            
+            // 🔧 修正: 記録抑止フラグ追加
+            this.suspended = false;
             
             if (!this.eventBus) {
                 console.warn('⚠️ TegakiEventBus not found - History system disabled');
@@ -29,6 +30,17 @@
         
         setLayerSystem(layerSystem) {
             this.layerSystem = layerSystem;
+        }
+        
+        // 🔧 修正: withSuspend ユーティリティ追加
+        withSuspend(fn) {
+            const prev = this.suspended;
+            this.suspended = true;
+            try {
+                return fn();
+            } finally {
+                this.suspended = prev;
+            }
         }
         
         _setupEventListeners() {
@@ -57,14 +69,14 @@
         }
         
         saveState() {
-            if (!this.layerSystem || this.isCapturing) return;
+            // 🔧 修正: suspended 中は記録しない
+            if (!this.layerSystem || this.suspended) return;
             
             try {
-                this.isCapturing = true;
+                this.suspended = true;
                 const state = this._captureState();
                 
                 if (!state) {
-                    this.isCapturing = false;
                     return;
                 }
                 
@@ -80,19 +92,19 @@
                 
             } catch (error) {
             } finally {
-                this.isCapturing = false;
+                this.suspended = false;
             }
         }
         
         saveStateFull() {
-            if (!this.layerSystem || this.isCapturing) return;
+            // 🔧 修正: suspended 中は記録しない
+            if (!this.layerSystem || this.suspended) return;
             
             try {
-                this.isCapturing = true;
+                this.suspended = true;
                 const state = this._captureFullState();
                 
                 if (!state) {
-                    this.isCapturing = false;
                     return;
                 }
                 
@@ -108,7 +120,7 @@
                 
             } catch (error) {
             } finally {
-                this.isCapturing = false;
+                this.suspended = false;
             }
         }
         
@@ -198,86 +210,91 @@
         undo() {
             if (!this.canUndo()) return false;
             
-            try {
-                const state = this.undoStack[this.undoStack.length - 1];
-                
-                let currentState;
-                if (state.type === 'full-state') {
-                    currentState = this._captureFullState();
-                } else {
-                    currentState = this._captureState();
+            // 🔧 修正: withSuspend でラップ
+            return this.withSuspend(() => {
+                try {
+                    const state = this.undoStack[this.undoStack.length - 1];
+                    
+                    let currentState;
+                    if (state.type === 'full-state') {
+                        currentState = this._captureFullState();
+                    } else {
+                        currentState = this._captureState();
+                    }
+                    
+                    if (currentState) {
+                        this.redoStack.push(currentState);
+                    }
+                    
+                    const previousState = this.undoStack.pop();
+                    
+                    if (previousState.type === 'full-state') {
+                        this._restoreFullState(previousState);
+                    } else {
+                        this._restoreState(previousState);
+                    }
+                    
+                    this._emitStateChanged();
+                    
+                    if (this.eventBus) {
+                        this.eventBus.emit('history:undo-completed', {
+                            canUndo: this.canUndo(),
+                            canRedo: this.canRedo()
+                        });
+                    }
+                    
+                    return true;
+                    
+                } catch (error) {
+                    return false;
                 }
-                
-                if (currentState) {
-                    this.redoStack.push(currentState);
-                }
-                
-                const previousState = this.undoStack.pop();
-                
-                if (previousState.type === 'full-state') {
-                    this._restoreFullState(previousState);
-                } else {
-                    this._restoreState(previousState);
-                }
-                
-                this._emitStateChanged();
-                
-                if (this.eventBus) {
-                    this.eventBus.emit('history:undo-completed', {
-                        canUndo: this.canUndo(),
-                        canRedo: this.canRedo()
-                    });
-                }
-                
-                return true;
-                
-            } catch (error) {
-                return false;
-            }
+            });
         }
         
         redo() {
             if (!this.canRedo()) return false;
             
-            try {
-                const state = this.redoStack[this.redoStack.length - 1];
-                
-                let currentState;
-                if (state.type === 'full-state') {
-                    currentState = this._captureFullState();
-                } else {
-                    currentState = this._captureState();
+            // 🔧 修正: withSuspend でラップ
+            return this.withSuspend(() => {
+                try {
+                    const state = this.redoStack[this.redoStack.length - 1];
+                    
+                    let currentState;
+                    if (state.type === 'full-state') {
+                        currentState = this._captureFullState();
+                    } else {
+                        currentState = this._captureState();
+                    }
+                    
+                    if (currentState) {
+                        this.undoStack.push(currentState);
+                    }
+                    
+                    const nextState = this.redoStack.pop();
+                    
+                    if (nextState.type === 'full-state') {
+                        this._restoreFullState(nextState);
+                    } else {
+                        this._restoreState(nextState);
+                    }
+                    
+                    this._emitStateChanged();
+                    
+                    if (this.eventBus) {
+                        this.eventBus.emit('history:redo-completed', {
+                            canUndo: this.canUndo(),
+                            canRedo: this.canRedo()
+                        });
+                    }
+                    
+                    return true;
+                    
+                } catch (error) {
+                    return false;
                 }
-                
-                if (currentState) {
-                    this.undoStack.push(currentState);
-                }
-                
-                const nextState = this.redoStack.pop();
-                
-                if (nextState.type === 'full-state') {
-                    this._restoreFullState(nextState);
-                } else {
-                    this._restoreState(nextState);
-                }
-                
-                this._emitStateChanged();
-                
-                if (this.eventBus) {
-                    this.eventBus.emit('history:redo-completed', {
-                        canUndo: this.canUndo(),
-                        canRedo: this.canRedo()
-                    });
-                }
-                
-                return true;
-                
-            } catch (error) {
-                return false;
-            }
+            });
         }
         
-        // ===== 🔧 修正：レイヤー増殖を防ぐための完全クリア処理 =====
         _restoreState(state) {
             if (!state || !this.layerSystem) return;
             
@@ -294,7 +311,6 @@
                 return;
             }
             
-            // 🔧 修正1: Container.children配列を確実にクリア
             while (currentCut.container.children.length > 0) {
                 const layer = currentCut.container.children[0];
                 currentCut.container.removeChild(layer);
@@ -303,7 +319,6 @@
                 }
             }
             
-            // 🔧 修正2: stateからレイヤーを復元して追加
             state.layers.forEach(layerData => {
                 const restoredLayer = this._restoreLayer(layerData);
                 if (restoredLayer) {
@@ -311,7 +326,6 @@
                 }
             });
             
-            // アクティブレイヤーの復元
             if (state.activeLayerId) {
                 const layers = currentCut.getLayers();
                 const activeLayerIndex = layers.findIndex(
@@ -323,7 +337,6 @@
                 }
             }
             
-            // UI更新を確実に実行
             setTimeout(() => {
                 if (this.layerSystem.updateLayerPanelUI) {
                     this.layerSystem.updateLayerPanelUI();
@@ -340,7 +353,6 @@
             }, 50);
         }
         
-        // ===== 🔧 修正：CUT全体の復元時も同様の処理 =====
         _restoreFullState(state) {
             if (!state || !this.layerSystem) return;
             
@@ -355,7 +367,6 @@
             const animData = animationSystem.getAnimationData();
             if (!animData) return;
             
-            // 🔧 修正3: 既存のCUTを完全にクリア
             const existingCuts = animData.cuts.slice();
             existingCuts.forEach(cut => {
                 while (cut.container.children.length > 0) {
@@ -369,7 +380,6 @@
             
             animData.cuts = [];
             
-            // CUTを復元
             state.cuts.forEach(cutData => {
                 const newCut = animationSystem.createNewBlankCut();
                 newCut.id = cutData.id;
@@ -378,7 +388,6 @@
                 
                 const cutToPopulate = animData.cuts[animData.cuts.length - 1];
                 
-                // 🔧 修正4: デフォルトレイヤーをクリア
                 while (cutToPopulate.container.children.length > 0) {
                     const layer = cutToPopulate.container.children[0];
                     cutToPopulate.container.removeChild(layer);
@@ -387,7 +396,6 @@
                     }
                 }
                 
-                // レイヤーを復元
                 cutData.layers.forEach(layerData => {
                     const restoredLayer = this._restoreLayer(layerData);
                     if (restoredLayer) {
@@ -398,7 +406,6 @@
             
             animationSystem.switchToActiveCutSafely(state.currentCutIndex, false);
             
-            // UI更新を確実に実行
             setTimeout(() => {
                 if (this.eventBus) {
                     this.eventBus.emit('animation:cuts-restored');
