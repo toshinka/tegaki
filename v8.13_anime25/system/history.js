@@ -1,9 +1,9 @@
 // ================================================================================
-// system/history.js - 完全動作版
+// system/history.js - Redo完全修正版
 // ================================================================================
-// 【修正1】レイヤー作成時の二重記録を完全排除
-// 【修正2】_restoreFullStateの致命的バグ修正（createNewBlankCut使用禁止）
-// 【修正3】_restoreState後のundefined参照エラー修正
+// 🔧 修正1: Redo機能の完全実装
+// 🔧 修正2: レイヤー/CUT増減時の二重記録防止
+// 🔧 修正3: Command パターン導入（既存との互換性維持）
 
 (function() {
     'use strict';
@@ -33,8 +33,10 @@
     
     class HistoryManager {
         constructor() {
-            this.stack = [];
-            this.position = -1;
+            // 🔧 修正: undoStack と redoStack に分離
+            this.undoStack = [];
+            this.redoStack = [];
+            
             this.maxHistory = MAX_HISTORY;
             this.eventBus = window.TegakiEventBus;
             this.layerSystem = null;
@@ -60,16 +62,12 @@
             this.eventBus.on('history:redo-request', () => this.redo());
             this.eventBus.on('history:clear', () => this.clear());
             
-            // 🔥 修正: レイヤー操作は監視しない（描画完了時のみ記録）
-            // createLayer/deleteLayerが内部でsaveStateを呼ぶため、ここでは監視不要
-            
-            // CUT削除のみ監視
+            // CUT削除のみ監視（レイヤー操作は各メソッド内でsaveState呼び出し）
             this.eventBus.on('animation:cut-deleted', () => {
                 if (this.isExecutingUndoRedo) return;
                 setTimeout(() => this.saveStateFull(), 50);
             });
             
-            // コピペ時のHistory記録
             this.eventBus.on('cut:pasted-right-adjacent', () => {
                 if (this.isExecutingUndoRedo) return;
                 setTimeout(() => this.saveStateFull(), 50);
@@ -88,12 +86,12 @@
             try {
                 command.execute();
                 
-                this.position++;
-                this.stack.splice(this.position, this.stack.length - this.position, command);
+                // 🔧 修正: undoStackに追加し、redoStackをクリア
+                this.undoStack.push(command);
+                this.redoStack = [];
                 
-                if (this.stack.length > this.maxHistory) {
-                    this.stack.shift();
-                    this.position--;
+                if (this.undoStack.length > this.maxHistory) {
+                    this.undoStack.shift();
                 }
                 
                 this._emitStateChanged();
@@ -116,12 +114,12 @@
                     { type: 'layer-state', cutId: state.cutId }
                 );
                 
-                this.position++;
-                this.stack.splice(this.position, this.stack.length - this.position, command);
+                // 🔧 修正: undoStackに追加し、redoStackをクリア
+                this.undoStack.push(command);
+                this.redoStack = [];
                 
-                if (this.stack.length > this.maxHistory) {
-                    this.stack.shift();
-                    this.position--;
+                if (this.undoStack.length > this.maxHistory) {
+                    this.undoStack.shift();
                 }
                 
                 this._emitStateChanged();
@@ -144,12 +142,12 @@
                     { type: 'full-state' }
                 );
                 
-                this.position++;
-                this.stack.splice(this.position, this.stack.length - this.position, command);
+                // 🔧 修正: undoStackに追加し、redoStackをクリア
+                this.undoStack.push(command);
+                this.redoStack = [];
                 
-                if (this.stack.length > this.maxHistory) {
-                    this.stack.shift();
-                    this.position--;
+                if (this.undoStack.length > this.maxHistory) {
+                    this.undoStack.shift();
                 }
                 
                 this._emitStateChanged();
@@ -235,6 +233,7 @@
             };
         }
         
+        // 🔧 修正: Undo実装（redoStackへの保存追加）
         undo() {
             if (!this.canUndo()) return false;
             if (this.isExecutingUndoRedo) return false;
@@ -242,9 +241,24 @@
             this.isExecutingUndoRedo = true;
             
             try {
-                const command = this.stack[this.position];
+                // undoStackから取得
+                const command = this.undoStack.pop();
+                
+                // 🔧 追加: 現在の状態をredo用に保存
+                const currentState = this._captureFullState();
+                
+                // Undo実行
                 command.undo();
-                this.position--;
+                
+                // 🔧 追加: redoStackに現在状態を保存
+                if (currentState) {
+                    const redoCommand = new Command(
+                        () => this._restoreFullState(currentState),
+                        () => {},
+                        { type: 'redo-state' }
+                    );
+                    this.redoStack.push(redoCommand);
+                }
                 
                 this._emitStateChanged();
                 
@@ -264,6 +278,7 @@
             }
         }
         
+        // 🔧 修正: Redo完全実装
         redo() {
             if (!this.canRedo()) return false;
             if (this.isExecutingUndoRedo) return false;
@@ -271,9 +286,24 @@
             this.isExecutingUndoRedo = true;
             
             try {
-                this.position++;
-                const command = this.stack[this.position];
+                // redoStackから取得
+                const command = this.redoStack.pop();
+                
+                // 🔧 追加: 現在の状態をundo用に保存
+                const currentState = this._captureFullState();
+                
+                // Redo実行
                 command.execute();
+                
+                // 🔧 追加: undoStackに現在状態を保存
+                if (currentState) {
+                    const undoCommand = new Command(
+                        () => {},
+                        () => this._restoreFullState(currentState),
+                        { type: 'undo-state' }
+                    );
+                    this.undoStack.push(undoCommand);
+                }
                 
                 this._emitStateChanged();
                 
@@ -287,7 +317,6 @@
                 return true;
             } catch (error) {
                 console.error('❌ Redo failed:', error);
-                this.position--;
                 return false;
             } finally {
                 this.isExecutingUndoRedo = false;
@@ -323,7 +352,7 @@
                 }
             });
             
-            // 🔥 修正: アクティブレイヤーの安全な復元
+            // アクティブレイヤーの復元
             const layers = currentCut.getLayers();
             if (state.activeLayerId && layers.length > 0) {
                 const activeLayerIndex = layers.findIndex(
@@ -332,11 +361,9 @@
                 if (activeLayerIndex !== -1) {
                     this.layerSystem.activeLayerIndex = activeLayerIndex;
                 } else {
-                    // 見つからない場合は最後のレイヤーをアクティブに
                     this.layerSystem.activeLayerIndex = layers.length - 1;
                 }
             } else {
-                // デフォルトは最後のレイヤー
                 this.layerSystem.activeLayerIndex = layers.length > 0 ? layers.length - 1 : -1;
             }
             
@@ -369,20 +396,17 @@
             const animData = animationSystem.getAnimationData();
             if (!animData) return;
             
-            // 🔥 修正: 既存CUTを完全削除
+            // 既存CUTを完全削除
             const existingCuts = animData.cuts.slice();
             existingCuts.forEach(cut => {
-                // RenderTextureを削除
                 if (this.layerSystem?.destroyCutRenderTexture) {
                     this.layerSystem.destroyCutRenderTexture(cut.id);
                 }
                 
-                // Containerから削除
                 if (animationSystem.canvasContainer && cut.container.parent === animationSystem.canvasContainer) {
                     animationSystem.canvasContainer.removeChild(cut.container);
                 }
                 
-                // レイヤーを削除
                 while (cut.container.children.length > 0) {
                     const layer = cut.container.children[0];
                     cut.container.removeChild(layer);
@@ -391,16 +415,14 @@
                     }
                 }
                 
-                // Container自体を破棄
                 if (cut.container.destroy) {
                     cut.container.destroy({ children: true });
                 }
             });
             
-            // CUT配列をクリア
             animData.cuts = [];
             
-            // 🔥 修正: Cut クラスを直接インスタンス化（createNewBlankCut使用禁止）
+            // Cut クラスを直接インスタンス化
             const Cut = window.TegakiCut;
             if (!Cut) {
                 console.error('❌ TegakiCut class not found');
@@ -408,11 +430,9 @@
             }
             
             state.cuts.forEach((cutData, index) => {
-                // Cut インスタンスを直接作成
                 const newCut = new Cut(cutData.id, cutData.name, this.layerSystem.config || window.TEGAKI_CONFIG);
                 newCut.duration = cutData.duration;
                 
-                // レイヤーを復元
                 cutData.layers.forEach(layerData => {
                     const restoredLayer = this._restoreLayer(layerData);
                     if (restoredLayer) {
@@ -420,16 +440,13 @@
                     }
                 });
                 
-                // CUT配列に追加
                 animData.cuts.push(newCut);
                 
-                // Containerに追加
                 if (animationSystem.canvasContainer) {
                     animationSystem.canvasContainer.addChild(newCut.container);
                     newCut.container.visible = false;
                 }
                 
-                // RenderTextureを作成
                 if (this.layerSystem?.createCutRenderTexture) {
                     this.layerSystem.createCutRenderTexture(newCut.id);
                 }
@@ -459,7 +476,6 @@
                     }
                 }
                 
-                // サムネイル再生成
                 animData.cuts.forEach((cut, index) => {
                     if (animationSystem.generateCutThumbnailOptimized) {
                         animationSystem.generateCutThumbnailOptimized(index);
@@ -544,25 +560,24 @@
         }
         
         canUndo() {
-            return this.position >= 0;
+            return this.undoStack.length > 0;
         }
         
         canRedo() {
-            return this.position < this.stack.length - 1;
+            return this.redoStack.length > 0;
         }
         
         clear() {
-            this.stack = [];
-            this.position = -1;
+            this.undoStack = [];
+            this.redoStack = [];
             this._emitStateChanged();
         }
         
         getHistoryInfo() {
             return {
-                stackSize: this.stack.length,
-                position: this.position,
-                undoCount: this.stack.length,
-                redoCount: this.stack.length - this.position - 1,
+                stackSize: this.undoStack.length + this.redoStack.length,
+                undoCount: this.undoStack.length,
+                redoCount: this.redoStack.length,
                 maxHistory: this.maxHistory,
                 canUndo: this.canUndo(),
                 canRedo: this.canRedo()
@@ -572,8 +587,8 @@
         _emitStateChanged() {
             if (this.eventBus) {
                 this.eventBus.emit('history:changed', {
-                    undoCount: this.stack.length,
-                    redoCount: this.stack.length - this.position - 1,
+                    undoCount: this.undoStack.length,
+                    redoCount: this.redoStack.length,
                     canUndo: this.canUndo(),
                     canRedo: this.canRedo()
                 });
@@ -616,6 +631,6 @@
         });
     }
     
-    console.log('✅ history.js loaded (完全動作版)');
+    console.log('✅ history.js loaded (Redo完全修正版)');
     
 })();

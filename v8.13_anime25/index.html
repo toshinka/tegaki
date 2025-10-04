@@ -846,19 +846,30 @@
         </div>
     </div>
 
+    <!-- ===== ライブラリ読み込み ===== -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
 
+    <!-- ===== 既存システム ===== -->
     <script src="config.js"></script>
     <script src="coordinate-system.js"></script>
     <script src="system/event-bus.js"></script>
-    <script src="system/data-utils.js"></script>
-    <script src="system/data-validator.js"></script>
+    
+    <!-- ===== 🔧 Phase1-2: 新規ファイル追加 ===== -->
+    <script src="system/state-manager.js"></script>
+    <script src="system/command-base.js"></script>
+    <script src="system/layer-commands.js"></script>
+    <script src="system/history-manager-v2.js"></script>
+    
+    <!-- ===== 既存システム（続き） ===== -->
     <script src="system/camera-system.js"></script>
     <script src="system/layer-system.js"></script>
     <script src="system/drawing-clipboard.js"></script>
+    
+    <!-- ===== 🔧 History修正版を使用 ===== -->
     <script src="system/history.js"></script>
+    
     <script src="system/animation-system.js"></script>
     <script src="system/gif-exporter.js"></script>
     <script src="ui/timeline-ui.js"></script>
@@ -867,7 +878,7 @@
     <script src="core-runtime.js"></script>
     <script src="core-engine.js"></script>
     <script src="system/diagnostics.js"></script>
-    
+
     <script>
 (function() {
     'use strict';
