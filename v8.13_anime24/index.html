@@ -884,6 +884,7 @@
         
         if (e.ctrlKey || e.metaKey) {
             const key = e.code || e.key;
+            // 🔧 修正: Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z はブラウザデフォルトを抑止
             if (key === 'KeyZ' || key === 'KeyY' || key === 'KeyL' || key === 'Space') {
                 e.preventDefault();
                 return;
@@ -895,6 +896,8 @@
     }
     
     function setupUnifiedKeyboardShortcuts() {
+        let undoRedoHandled = false; // 🔧 追加: 二重処理防止フラグ
+        
         document.addEventListener('keydown', (e) => {
             preventBrowserDefaults(e);
             
@@ -910,28 +913,45 @@
                 return;
             }
             
-            if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
-                if (window.History && typeof window.History.undo === 'function') {
-                    window.History.undo();
+            // 🔧 修正: Undo/Redo処理を最優先で処理（core-engine.jsの処理より前に）
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const metaKey = isMac ? e.metaKey : e.ctrlKey;
+            
+            // Ctrl+Z (Undo) - shiftなし、altなし
+            if (metaKey && !e.shiftKey && !e.altKey && e.code === 'KeyZ') {
+                if (!undoRedoHandled) {
+                    undoRedoHandled = true;
+                    if (window.History && typeof window.History.undo === 'function') {
+                        window.History.undo();
+                    }
                     e.preventDefault();
+                    setTimeout(() => { undoRedoHandled = false; }, 100);
                 }
                 return;
             }
             
-            if (e.ctrlKey && e.shiftKey && e.code === 'KeyZ' && !e.altKey) {
-                if (window.History && typeof window.History.redo === 'function') {
-                    window.History.redo();
+            // 🔧 修正: Ctrl+Y (Redo) または Ctrl+Shift+Z (Redo)
+            if ((metaKey && !e.altKey && e.code === 'KeyY') || 
+                (metaKey && e.shiftKey && !e.altKey && e.code === 'KeyZ')) {
+                if (!undoRedoHandled) {
+                    undoRedoHandled = true;
+                    if (window.History && typeof window.History.redo === 'function') {
+                        window.History.redo();
+                    }
                     e.preventDefault();
+                    setTimeout(() => { undoRedoHandled = false; }, 100);
                 }
                 return;
             }
             
+            // Delete キー (レイヤークリア)
             if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
                 eventBus.emit('layer:clear-active');
                 e.preventDefault();
                 return;
             }
             
+            // Ctrl+L (レイヤー追加)
             if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
                 if (window.drawingApp?.layerManager) {
                     const layerSystem = window.drawingApp.layerManager;
@@ -943,6 +963,7 @@
                 return;
             }
             
+            // Shift+N (新規CUT作成)
             if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
                 const animationSystem = window.animationSystem;
                 if (animationSystem) {
@@ -953,12 +974,14 @@
                 return;
             }
             
+            // Shift+A (タイムライン表示切替)
             if (e.shiftKey && e.code === 'KeyA' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('ui:toggle-timeline');
                 e.preventDefault();
                 return;
             }
             
+            // Ctrl+Space (再生/停止)
             if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
                 const timelineUI = window.timelineUI;
                 if (timelineUI && timelineUI.isVisible) {
@@ -968,6 +991,7 @@
                 return;
             }
             
+            // Shift+C (CUTコピー&ペースト)
             if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('cut:copy-current');
                 setTimeout(() => {
@@ -977,9 +1001,10 @@
                 return;
             }
             
+            // P (ペンツール)
             if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'pen' });
-                e.preventDefault();
+                e.preventDefault
                 return;
             }
             

@@ -160,13 +160,20 @@
             this.lastPoint = canvasPoint;
         }
 
-        stopDrawing() {
-            if (!this.isDrawing) return;
+stopDrawing() {
+    if (!this.isDrawing) return;
 
-            if (this.currentPath) {
-                this.currentPath.isComplete = true;
-                
-                this.layerManager.requestThumbnailUpdate(this.layerManager.activeLayerIndex);
+    if (this.currentPath) {
+        this.currentPath.isComplete = true;
+        
+        // 🔥 修正: 描画完了時に履歴保存（Undo/Redo実行中はスキップ）
+        if (window.History && typeof window.History.saveState === 'function') {
+            if (!window.History._manager?.isExecutingUndoRedo) {
+                window.History.saveState();
+            }
+        }
+        
+        this.layerManager.requestThumbnailUpdate(this.layerManager.activeLayerIndex);
                 
                 if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
                     const currentCutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
@@ -278,158 +285,176 @@
         }
     }
 
-    class UnifiedKeyHandler {
-        constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
-            this.cameraSystem = cameraSystem;
-            this.layerSystem = layerSystem;
-            this.drawingEngine = drawingEngine;
-            this.eventBus = eventBus || window.TegakiEventBus;
-            this.animationSystem = animationSystem;
-            
-            this.keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
-            this.keyHandlingActive = true;
-            
-            this.setupKeyHandling();
-        }
+class UnifiedKeyHandler {
+    constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
+        this.cameraSystem = cameraSystem;
+        this.layerSystem = layerSystem;
+        this.drawingEngine = drawingEngine;
+        this.eventBus = eventBus || window.TegakiEventBus;
+        this.animationSystem = animationSystem;
         
-        setupKeyHandling() {
-            document.addEventListener('keydown', (e) => {
-                if (!this.keyHandlingActive) return;
-                this.handleKeyDown(e);
-            });
-            
-            document.addEventListener('keyup', (e) => {
-                if (!this.keyHandlingActive) return;
-                this.handleKeyUp(e);
-            });
-            
-            window.addEventListener('blur', () => {
-                this.resetAllKeyStates();
-            });
-            
-            window.addEventListener('focus', () => {
-                this.resetAllKeyStates();
-            });
-        }
+        this.keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
+        this.keyHandlingActive = true;
         
-        handleKeyDown(e) {
-            const action = this.keyConfig.getActionForKey(e.code, {
-                vPressed: this.layerSystem.vKeyPressed,
-                shiftPressed: e.shiftKey,
-                altPressed: e.altKey
-            });
+        // 🔧 削除: _undoRedoHandlerInstalled と setupUndoRedoHandling()
+        // index.htmlで処理するため、ここでは処理しない
+        
+        this.setupKeyHandling();
+    }
+    
+    setupKeyHandling() {
+        document.addEventListener('keydown', (e) => {
+            if (!this.keyHandlingActive) return;
             
-            if (this.handleSpecialKeys(e)) {
-                return;
+            // 🔧 修正: Undo/Redo系キーはindex.htmlで処理するのでスキップ
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const metaKey = isMac ? e.metaKey : e.ctrlKey;
+            if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
+                return; // index.htmlに処理を任せる
             }
             
-            if (!action) return;
-            
-            switch(action) {
-                case 'pen':
-                    if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.switchTool('pen');
-                        if (this.layerSystem.isLayerMoveMode) {
-                            this.layerSystem.exitLayerMoveMode();
-                        }
-                        e.preventDefault();
-                    }
-                    break;
-                    
-                case 'eraser':
-                    if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.switchTool('eraser');
-                        if (this.layerSystem.isLayerMoveMode) {
-                            this.layerSystem.exitLayerMoveMode();
-                        }
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifToggleAnimation':
-                    if (e.altKey && window.timelineUI) {
-                        window.timelineUI.toggle();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifAddCut':
-                    if (e.altKey && this.animationSystem) {
-                        this.animationSystem.createCutFromCurrentState();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifPlayPause':
-                    if (e.code === 'Space' && this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                        this.animationSystem.togglePlayPause();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifPrevFrame':
-                    if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                        this.animationSystem.goToPreviousFrame();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifNextFrame':
-                    if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                        this.animationSystem.goToNextFrame();
-                        e.preventDefault();
-                    }
-                    break;
-            }
+            this.handleKeyDown(e);
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if (!this.keyHandlingActive) return;
+            this.handleKeyUp(e);
+        });
+        
+        window.addEventListener('blur', () => {
+            this.resetAllKeyStates();
+        });
+        
+        window.addEventListener('focus', () => {
+            this.resetAllKeyStates();
+        });
+    }
+    
+    handleKeyDown(e) {
+        const action = this.keyConfig.getActionForKey(e.code, {
+            vPressed: this.layerSystem.vKeyPressed,
+            shiftPressed: e.shiftKey,
+            altPressed: e.altKey
+        });
+        
+        if (this.handleSpecialKeys(e)) {
+            return;
         }
         
-        handleKeyUp(e) {
-        }
+        if (!action) return;
         
-        handleSpecialKeys(e) {
-            if (e.ctrlKey && e.code === 'Digit0') {
-                return false;
-            }
+        switch(action) {
+            case 'pen':
+                if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                    this.switchTool('pen');
+                    if (this.layerSystem.isLayerMoveMode) {
+                        this.layerSystem.exitLayerMoveMode();
+                    }
+                    e.preventDefault();
+                }
+                break;
+                
+            case 'eraser':
+                if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                    this.switchTool('eraser');
+                    if (this.layerSystem.isLayerMoveMode) {
+                        this.layerSystem.exitLayerMoveMode();
+                    }
+                    e.preventDefault();
+                }
+                break;
             
-            if (e.code === 'Space') {
-                return false;
-            }
+            case 'gifToggleAnimation':
+                if (e.altKey && window.timelineUI) {
+                    window.timelineUI.toggle();
+                    e.preventDefault();
+                }
+                break;
             
+            case 'gifAddCut':
+                if (e.altKey && this.animationSystem) {
+                    this.animationSystem.createCutFromCurrentState();
+                    e.preventDefault();
+                }
+                break;
+            
+            case 'gifPlayPause':
+                if (e.code === 'Space' && this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
+                    this.animationSystem.togglePlayPause();
+                    e.preventDefault();
+                }
+                break;
+            
+            case 'gifPrevFrame':
+                if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
+                    this.animationSystem.goToPreviousFrame();
+                    e.preventDefault();
+                }
+                break;
+            
+            case 'gifNextFrame':
+                if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
+                    this.animationSystem.goToNextFrame();
+                    e.preventDefault();
+                }
+                break;
+            
+            case 'delete':
+                if (e.code === 'Delete' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    this.eventBus.emit('layer:clear-active');
+                    e.preventDefault();
+                }
+                break;
+        }
+    }
+    
+    handleKeyUp(e) {
+    }
+    
+    handleSpecialKeys(e) {
+        if (e.ctrlKey && e.code === 'Digit0') {
             return false;
         }
         
-        switchTool(tool) {
-            this.drawingEngine.setTool(tool);
-            
-            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-            const toolBtn = document.getElementById(tool + '-tool');
-            if (toolBtn) {
-                toolBtn.classList.add('active');
-            }
+        if (e.code === 'Space') {
+            return false;
+        }
+        
+        return false;
+    }
+    
+    switchTool(tool) {
+        this.drawingEngine.setTool(tool);
+        
+        document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+        const toolBtn = document.getElementById(tool + '-tool');
+        if (toolBtn) {
+            toolBtn.classList.add('active');
+        }
 
-            const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
-            const toolElement = document.getElementById('current-tool');
-            if (toolElement) {
-                toolElement.textContent = toolNames[tool] || tool;
-            }
-            
-            this.cameraSystem.updateCursor();
-            
-            if (this.eventBus) {
-                this.eventBus.emit('key:tool-switched', { tool });
-            }
+        const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
+        const toolElement = document.getElementById('current-tool');
+        if (toolElement) {
+            toolElement.textContent = toolNames[tool] || tool;
         }
         
-        resetAllKeyStates() {
-            if (this.cameraSystem._resetAllKeyStates) {
-                this.cameraSystem._resetAllKeyStates();
-            }
-        }
+        this.cameraSystem.updateCursor();
         
-        setKeyHandlingActive(active) {
-            this.keyHandlingActive = active;
+        if (this.eventBus) {
+            this.eventBus.emit('key:tool-switched', { tool });
         }
     }
+    
+    resetAllKeyStates() {
+        if (this.cameraSystem._resetAllKeyStates) {
+            this.cameraSystem._resetAllKeyStates();
+        }
+    }
+    
+    setKeyHandlingActive(active) {
+        this.keyHandlingActive = active;
+    }
+}
 
     class CoreEngine {
         constructor(app) {

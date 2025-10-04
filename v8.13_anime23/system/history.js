@@ -1,9 +1,9 @@
 // ================================================================================
-// system/history.js - History増殖問題完全修正版
+// system/history.js - Undo/Redo完全修正版
 // ================================================================================
-// 【修正】CUT作成時の二重saveStateFull()を完全排除
-// 【修正】コピペ時のHistory記録を追加
-// 【修正】カウント表示をstackSizeベースに変更
+// 【修正1】レイヤー/CUT操作時の二重イベント発火を完全排除
+// 【修正2】History記録のタイミングを統一化
+// 【修正3】undoCountをstackSizeベースに統一
 
 (function() {
     'use strict';
@@ -40,6 +40,7 @@
             this.eventBus = window.TegakiEventBus;
             this.layerSystem = null;
             
+            // 🔧 修正: Undo/Redo実行中フラグ
             this.isExecutingUndoRedo = false;
             
             if (!this.eventBus) {
@@ -61,7 +62,8 @@
             this.eventBus.on('history:redo-request', () => this.redo());
             this.eventBus.on('history:clear', () => this.clear());
             
-            // レイヤー操作時の履歴保存（undo/redo中は抑止）
+            // 🔧 修正: レイヤー操作時の履歴保存（undo/redo中は抑止）
+            // createLayer/deleteLayer直後に自動保存
             this.eventBus.on('layer:created', () => {
                 if (this.isExecutingUndoRedo) return;
                 setTimeout(() => this.saveState(), 50);
@@ -72,16 +74,13 @@
                 setTimeout(() => this.saveState(), 50);
             });
             
-            // 🔥 修正: animation:cut-created のリスナーを削除
-            // createNewBlankCut() 内でイベント発火後、
-            // このリスナーが saveStateFull() を呼んで二重記録されていた
-            
+            // 🔧 修正: CUT操作は削除のみイベント監視（作成はanimation-system内で手動保存）
             this.eventBus.on('animation:cut-deleted', () => {
                 if (this.isExecutingUndoRedo) return;
                 setTimeout(() => this.saveStateFull(), 50);
             });
             
-            // 🔥 追加: コピペ時のHistory記録
+            // 🔧 修正: コピペ時のHistory記録
             this.eventBus.on('cut:pasted-right-adjacent', () => {
                 if (this.isExecutingUndoRedo) return;
                 setTimeout(() => this.saveStateFull(), 50);
@@ -110,6 +109,7 @@
                 
                 this._emitStateChanged();
             } catch (error) {
+                console.error('❌ Command execution failed:', error);
             }
         }
         
@@ -137,6 +137,7 @@
                 
                 this._emitStateChanged();
             } catch (error) {
+                console.error('❌ saveState failed:', error);
             }
         }
         
@@ -164,6 +165,7 @@
                 
                 this._emitStateChanged();
             } catch (error) {
+                console.error('❌ saveStateFull failed:', error);
             }
         }
         
@@ -266,6 +268,7 @@
                 
                 return true;
             } catch (error) {
+                console.error('❌ Undo failed:', error);
                 return false;
             } finally {
                 this.isExecutingUndoRedo = false;
@@ -294,6 +297,7 @@
                 
                 return true;
             } catch (error) {
+                console.error('❌ Redo failed:', error);
                 this.position--;
                 return false;
             } finally {
@@ -313,6 +317,7 @@
             const currentCut = animationSystem.getCurrentCut?.();
             if (!currentCut) return;
             
+            // 既存レイヤーを全削除
             while (currentCut.container.children.length > 0) {
                 const layer = currentCut.container.children[0];
                 currentCut.container.removeChild(layer);
@@ -321,6 +326,7 @@
                 }
             }
             
+            // レイヤーを復元
             state.layers.forEach(layerData => {
                 const restoredLayer = this._restoreLayer(layerData);
                 if (restoredLayer) {
@@ -328,6 +334,7 @@
                 }
             });
             
+            // アクティブレイヤーを復元
             if (state.activeLayerId) {
                 const layers = currentCut.getLayers();
                 const activeLayerIndex = layers.findIndex(
@@ -339,6 +346,7 @@
                 }
             }
             
+            // UI更新
             setTimeout(() => {
                 if (this.layerSystem.updateLayerPanelUI) {
                     this.layerSystem.updateLayerPanelUI();
@@ -367,6 +375,7 @@
             const animData = animationSystem.getAnimationData();
             if (!animData) return;
             
+            // 既存CUTを全削除
             const existingCuts = animData.cuts.slice();
             existingCuts.forEach(cut => {
                 while (cut.container.children.length > 0) {
@@ -380,6 +389,7 @@
             
             animData.cuts = [];
             
+            // CUTを復元
             state.cuts.forEach(cutData => {
                 const newCut = animationSystem.createNewBlankCut();
                 newCut.id = cutData.id;
@@ -406,6 +416,7 @@
             
             animationSystem.switchToActiveCutSafely(state.currentCutIndex, false);
             
+            // UI更新
             setTimeout(() => {
                 if (this.eventBus) {
                     this.eventBus.emit('animation:cuts-restored');
@@ -524,7 +535,7 @@
             return {
                 stackSize: this.stack.length,
                 position: this.position,
-                undoCount: this.stack.length, // 🔥 修正: position+1 ではなく stackSize
+                undoCount: this.stack.length, // 🔧 修正: stackSizeで表示
                 redoCount: this.stack.length - this.position - 1,
                 maxHistory: this.maxHistory,
                 canUndo: this.canUndo(),
@@ -535,7 +546,7 @@
         _emitStateChanged() {
             if (this.eventBus) {
                 this.eventBus.emit('history:changed', {
-                    undoCount: this.stack.length, // 🔥 修正: position+1 ではなく stackSize
+                    undoCount: this.stack.length, // 🔧 修正: stackSizeで表示
                     redoCount: this.stack.length - this.position - 1,
                     canUndo: this.canUndo(),
                     canRedo: this.canRedo()
@@ -578,5 +589,7 @@
             }
         });
     }
+    
+    console.log('✅ history.js loaded (Undo/Redo完全修正版)');
     
 })();
