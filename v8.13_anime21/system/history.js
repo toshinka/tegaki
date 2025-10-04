@@ -1,8 +1,9 @@
 // ================================================================================
-// system/history.js - Command Pattern完全実装版（Undo無限増殖完全解決）
+// system/history.js - History増殖問題完全修正版
 // ================================================================================
-// 【修正】Command パターンで do/undo を明確に分離し、副作用を完全排除
-// 【修正】undo/redo 実行中の履歴記録を確実に抑止（イベントリスナ経由も含む）
+// 【修正】CUT作成時の二重saveStateFull()を完全排除
+// 【修正】コピペ時のHistory記録を追加
+// 【修正】カウント表示をstackSizeベースに変更
 
 (function() {
     'use strict';
@@ -39,7 +40,6 @@
             this.eventBus = window.TegakiEventBus;
             this.layerSystem = null;
             
-            // undo/redo実行中フラグ（完全な副作用抑止用）
             this.isExecutingUndoRedo = false;
             
             if (!this.eventBus) {
@@ -72,18 +72,27 @@
                 setTimeout(() => this.saveState(), 50);
             });
             
-            this.eventBus.on('animation:cut-created', () => {
-                if (this.isExecutingUndoRedo) return;
-                setTimeout(() => this.saveStateFull(), 50);
-            });
+            // 🔥 修正: animation:cut-created のリスナーを削除
+            // createNewBlankCut() 内でイベント発火後、
+            // このリスナーが saveStateFull() を呼んで二重記録されていた
             
             this.eventBus.on('animation:cut-deleted', () => {
                 if (this.isExecutingUndoRedo) return;
                 setTimeout(() => this.saveStateFull(), 50);
             });
+            
+            // 🔥 追加: コピペ時のHistory記録
+            this.eventBus.on('cut:pasted-right-adjacent', () => {
+                if (this.isExecutingUndoRedo) return;
+                setTimeout(() => this.saveStateFull(), 50);
+            });
+            
+            this.eventBus.on('cut:pasted-new', () => {
+                if (this.isExecutingUndoRedo) return;
+                setTimeout(() => this.saveStateFull(), 50);
+            });
         }
         
-        // ===== Command 実行（履歴に記録） =====
         execute(command) {
             if (this.isExecutingUndoRedo) return;
             if (!(command instanceof Command)) return;
@@ -104,7 +113,6 @@
             }
         }
         
-        // ===== 従来互換API（内部でCommand化） =====
         saveState() {
             if (this.isExecutingUndoRedo) return;
             if (!this.layerSystem) return;
@@ -114,7 +122,7 @@
                 if (!state) return;
                 
                 const command = new Command(
-                    () => {}, // do は既に実行済み
+                    () => {},
                     () => this._restoreState(state),
                     { type: 'layer-state', cutId: state.cutId }
                 );
@@ -236,7 +244,6 @@
             };
         }
         
-        // ===== Undo/Redo実装（副作用完全抑止） =====
         undo() {
             if (!this.canUndo()) return false;
             if (this.isExecutingUndoRedo) return false;
@@ -517,7 +524,7 @@
             return {
                 stackSize: this.stack.length,
                 position: this.position,
-                undoCount: this.position + 1,
+                undoCount: this.stack.length, // 🔥 修正: position+1 ではなく stackSize
                 redoCount: this.stack.length - this.position - 1,
                 maxHistory: this.maxHistory,
                 canUndo: this.canUndo(),
@@ -528,7 +535,7 @@
         _emitStateChanged() {
             if (this.eventBus) {
                 this.eventBus.emit('history:changed', {
-                    undoCount: this.position + 1,
+                    undoCount: this.stack.length, // 🔥 修正: position+1 ではなく stackSize
                     redoCount: this.stack.length - this.position - 1,
                     canUndo: this.canUndo(),
                     canRedo: this.canRedo()
@@ -539,7 +546,6 @@
     
     const historyManager = new HistoryManager();
     
-    // グローバルAPI（従来互換）
     window.History = {
         undo: () => historyManager.undo(),
         redo: () => historyManager.redo(),
