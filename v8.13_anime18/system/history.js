@@ -1,11 +1,9 @@
 // ================================================================================
-// system/history.js - Undo/Redo管理（レイヤー・CUT操作完全対応版）
+// system/history.js - Undo/Redo管理（レイヤー増殖不具合修正版）
 // ================================================================================
-// 【改修G】レイヤー新規作成・削除のUndo/Redo対応
-// 【改修H】CUT新規作成・削除のUndo/Redo対応
-// 【改修】AnimationSystem経由での確実なCUT取得
-// 【改修】レイヤー復元後の確実なUI更新
-// 【維持】既存のUndo/Redo機能完全継承
+// 【修正】アンドゥ実行時にレイヤーが増える不具合を完全修正
+// 【原因】Cut.removeLayer()はPixi階層からしか削除せず、データモデルと同期していなかった
+// 【解決】レイヤー削除時に確実にContainer.childrenを空にし、復元後にUIを更新
 
 (function() {
     'use strict';
@@ -279,6 +277,7 @@
             }
         }
         
+        // ===== 🔧 修正：レイヤー増殖を防ぐための完全クリア処理 =====
         _restoreState(state) {
             if (!state || !this.layerSystem) return;
             
@@ -295,21 +294,24 @@
                 return;
             }
             
-            const existingLayers = currentCut.getLayers().slice();
-            existingLayers.forEach(layer => {
-                currentCut.removeLayer(layer);
+            // 🔧 修正1: Container.children配列を確実にクリア
+            while (currentCut.container.children.length > 0) {
+                const layer = currentCut.container.children[0];
+                currentCut.container.removeChild(layer);
                 if (layer.destroy) {
                     layer.destroy({ children: true });
                 }
-            });
+            }
             
+            // 🔧 修正2: stateからレイヤーを復元して追加
             state.layers.forEach(layerData => {
                 const restoredLayer = this._restoreLayer(layerData);
                 if (restoredLayer) {
-                    currentCut.addLayer(restoredLayer);
+                    currentCut.container.addChild(restoredLayer);
                 }
             });
             
+            // アクティブレイヤーの復元
             if (state.activeLayerId) {
                 const layers = currentCut.getLayers();
                 const activeLayerIndex = layers.findIndex(
@@ -321,6 +323,7 @@
                 }
             }
             
+            // UI更新を確実に実行
             setTimeout(() => {
                 if (this.layerSystem.updateLayerPanelUI) {
                     this.layerSystem.updateLayerPanelUI();
@@ -337,6 +340,7 @@
             }, 50);
         }
         
+        // ===== 🔧 修正：CUT全体の復元時も同様の処理 =====
         _restoreFullState(state) {
             if (!state || !this.layerSystem) return;
             
@@ -351,19 +355,21 @@
             const animData = animationSystem.getAnimationData();
             if (!animData) return;
             
+            // 🔧 修正3: 既存のCUTを完全にクリア
             const existingCuts = animData.cuts.slice();
             existingCuts.forEach(cut => {
-                const layers = cut.getLayers().slice();
-                layers.forEach(layer => {
-                    cut.removeLayer(layer);
+                while (cut.container.children.length > 0) {
+                    const layer = cut.container.children[0];
+                    cut.container.removeChild(layer);
                     if (layer.destroy) {
                         layer.destroy({ children: true });
                     }
-                });
+                }
             });
             
             animData.cuts = [];
             
+            // CUTを復元
             state.cuts.forEach(cutData => {
                 const newCut = animationSystem.createNewBlankCut();
                 newCut.id = cutData.id;
@@ -372,16 +378,27 @@
                 
                 const cutToPopulate = animData.cuts[animData.cuts.length - 1];
                 
+                // 🔧 修正4: デフォルトレイヤーをクリア
+                while (cutToPopulate.container.children.length > 0) {
+                    const layer = cutToPopulate.container.children[0];
+                    cutToPopulate.container.removeChild(layer);
+                    if (layer.destroy) {
+                        layer.destroy({ children: true });
+                    }
+                }
+                
+                // レイヤーを復元
                 cutData.layers.forEach(layerData => {
                     const restoredLayer = this._restoreLayer(layerData);
                     if (restoredLayer) {
-                        cutToPopulate.addLayer(restoredLayer);
+                        cutToPopulate.container.addChild(restoredLayer);
                     }
                 });
             });
             
             animationSystem.switchToActiveCutSafely(state.currentCutIndex, false);
             
+            // UI更新を確実に実行
             setTimeout(() => {
                 if (this.eventBus) {
                     this.eventBus.emit('animation:cuts-restored');

@@ -1,4 +1,5 @@
-// ===== ui/timeline-ui.js - SVGアイコン変更版 =====
+// ===== ui/timeline-ui.js - RETIME UI完全修正版 =====
+// 【修正②】全カット時間変更ボタンとinput枠を一体化（角丸なしでピッタリくっつける）
 // 【改修F】+CUT, +C&P, RENAME, RETIMEボタンのSVGアイコン変更
 // 【改修E】レイヤーパネルのCUT表示を最上部に確実に配置
 // 【改修A】×ボタンを右端に移動、パネル左寄せ
@@ -187,7 +188,7 @@
                             <path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>
                         </svg>
                     </button>
-                    <button id="play-btn" title="再生/停止 (Space)">▶</button>
+                    <button id="play-btn" title="再生/停止 (K)">▶</button>
                     <span id="playback-time" class="playback-time">0:00:00</span>
                     <button id="add-cut-btn" title="CUT追加 (Alt+=)" class="icon-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -339,24 +340,64 @@
                     justify-content: center !important; background: var(--futaba-light-medium) !important; 
                     border-radius: 4px !important; }
                 
-                .retime-container { display: flex !important; align-items: center !important; gap: 0 !important; 
-                    background: var(--futaba-light-medium) !important; border: 2px solid var(--futaba-medium) !important; 
-                    border-radius: 6px !important; overflow: hidden !important; height: 28px !important; 
-                    transition: all 0.2s ease !important; }
+                /* 🔧 修正②：RETIME UI一体化（角丸なしでピッタリくっつける） */
+                .retime-container { 
+                    display: flex !important; 
+                    align-items: stretch !important; 
+                    gap: 0 !important; 
+                    height: 28px !important; 
+                    border: 2px solid var(--futaba-medium) !important; 
+                    border-radius: 6px !important; 
+                    overflow: hidden !important; 
+                    background: var(--futaba-background) !important; 
+                    transition: all 0.2s ease !important; 
+                }
                 .retime-container:hover { border-color: var(--futaba-maroon) !important; }
                 
-                .retime-btn { background: transparent !important; border: none !important; border-right: 1px solid var(--futaba-medium) !important; 
-                    border-radius: 0 !important; font-size: 10px !important; font-weight: 700 !important; min-width: 32px !important; 
-                    height: 24px !important; margin: 0 !important; padding: 4px 6px !important; display: flex !important; align-items: center !important; justify-content: center !important; }
-                .retime-btn:hover { background: var(--futaba-maroon) !important; transform: none !important; }
+                .retime-btn { 
+                    background: var(--futaba-background) !important; 
+                    border: none !important; 
+                    border-right: 1px solid var(--futaba-medium) !important; 
+                    border-radius: 0 !important; 
+                    font-size: 10px !important; 
+                    font-weight: 700 !important; 
+                    min-width: 28px !important; 
+                    height: 100% !important; 
+                    margin: 0 !important; 
+                    padding: 0 6px !important; 
+                    display: flex !important; 
+                    align-items: center !important; 
+                    justify-content: center !important; 
+                    cursor: pointer !important; 
+                    transition: background 0.15s ease !important; 
+                }
+                .retime-btn:hover { 
+                    background: var(--futaba-maroon) !important; 
+                    transform: none !important; 
+                }
                 .retime-btn:hover svg { stroke: white !important; }
-                .retime-btn svg { width: 14px !important; height: 14px !important; }
+                .retime-btn svg { width: 14px !important; height: 14px !important; stroke: #800000 !important; }
                 
-                .retime-input { width: 50px !important; height: 24px !important; border: none !important; 
-                    border-radius: 0 !important; background: var(--futaba-background) !important; font-size: 11px !important; 
-                    font-family: monospace !important; color: var(--futaba-maroon) !important; font-weight: bold !important; 
-                    text-align: center !important; outline: none !important; padding: 0 6px !important; -moz-appearance: textfield !important; }
-                .retime-input::-webkit-outer-spin-button, .retime-input::-webkit-inner-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
+                .retime-input { 
+                    width: 50px !important; 
+                    height: 100% !important; 
+                    border: none !important; 
+                    border-radius: 0 !important; 
+                    background: var(--futaba-background) !important; 
+                    font-size: 11px !important; 
+                    font-family: monospace !important; 
+                    color: var(--futaba-maroon) !important; 
+                    font-weight: bold !important; 
+                    text-align: center !important; 
+                    outline: none !important; 
+                    padding: 0 6px !important; 
+                    -moz-appearance: textfield !important; 
+                }
+                .retime-input::-webkit-outer-spin-button, 
+                .retime-input::-webkit-inner-spin-button { 
+                    -webkit-appearance: none !important; 
+                    margin: 0 !important; 
+                }
                 .retime-input:focus { background: white !important; }
                 
                 #repeat-btn { min-width: 34px !important; padding: 6px !important; }
@@ -552,7 +593,7 @@
             document.addEventListener('keydown', (e) => {
                 if (!this.isVisible) return;
                 
-                if (e.code === 'Space' && !e.ctrlKey && !e.altKey) {
+                if (e.code === 'Space' && e.shiftKey && !e.ctrlKey && !e.altKey) {
                     this.togglePlayStop();
                     e.preventDefault();
                 } else if (e.code === 'KeyR' && !e.ctrlKey && !e.altKey) {

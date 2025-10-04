@@ -854,7 +854,7 @@
     <script src="system/diagnostics.js"></script>
     
     <script>
-// ===== 🔧 統一ショートカットシステム =====
+// ===== 🔧 統一ショートカットシステム（修正版：Shift+Space対応） =====
 (function() {
     'use strict';
     
@@ -938,7 +938,8 @@
                 return;
             }
             
-            if (e.ctrlKey && e.code === 'Space' && !e.altKey && !e.shiftKey) {
+            // 🔧 修正③：Shift+Spaceに変更（Spaceとの重複解消）
+            if (e.shiftKey && e.code === 'Space' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('animation:play-toggle');
                 e.preventDefault();
                 return;
