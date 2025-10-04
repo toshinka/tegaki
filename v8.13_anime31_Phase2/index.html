@@ -850,24 +850,37 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
 
-    <script src="config.js"></script>
-    <script src="coordinate-system.js"></script>
-    <script src="system/event-bus.js"></script>
-    <script src="system/state-manager.js"></script>
-    <script src="system/command-base.js"></script>
-    <script src="system/layer-commands.js"></script>
-    <script src="system/camera-system.js"></script>
-    <script src="system/layer-system.js"></script>
-    <script src="system/drawing-clipboard.js"></script>
-    <script src="system/history.js"></script>
-    <script src="system/animation-system.js"></script>
-    <script src="system/gif-exporter.js"></script>
-    <script src="ui/timeline-ui.js"></script>
-    <script src="ui/ui-panels.js"></script>
-    <script src="ui/timeline-thumbnail-utils.js"></script>
-    <script src="core-runtime.js"></script>
-    <script src="core-engine.js"></script>
-    <script src="system/diagnostics.js"></script>
+<!-- Phase 2/3: 読み込み順序を厳守 -->
+<script src="config.js"></script>
+<script src="coordinate-system.js"></script>
+
+<!-- システムコア -->
+<script src="system/event-bus.js"></script>
+<script src="system/state-manager.js"></script>        <!-- Phase 2強化版 -->
+<script src="system/command-base.js"></script>
+
+<!-- Commands -->
+<script src="system/layer-commands.js"></script>       <!-- Phase 2拡張版 -->
+<script src="system/animation-commands.js"></script>   <!-- 新規追加 -->
+
+<!-- History (Commandsの後) -->
+<script src="system/history.js"></script>              <!-- Phase 2/3統合版 -->
+
+<!-- その他のシステム -->
+<script src="system/camera-system.js"></script>
+<script src="system/layer-system.js"></script>
+<script src="system/drawing-clipboard.js"></script>
+<script src="system/animation-system.js"></script>
+<script src="system/gif-exporter.js"></script>
+
+<!-- UI -->
+<script src="ui/timeline-ui.js"></script>
+<script src="ui/ui-panels.js"></script>
+<script src="ui/timeline-thumbnail-utils.js"></script>
+
+<!-- エンジン -->
+<script src="core-engine.js"></script>
+<script src="core-runtime.js"></script>
 
     <script>
 (function() {
