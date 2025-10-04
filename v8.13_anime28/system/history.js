@@ -1,9 +1,8 @@
 // ================================================================================
-// system/history.js - Redo完全修正版
+// system/history.js - イベント監視強化版（改修計画書準拠）
 // ================================================================================
-// 🔧 修正1: Redo機能の完全実装（Command Inverse パターン）
-// 🔧 修正2: レイヤー/CUT増減時の二重記録防止
-// 🔧 修正3: State capture/restore の堅牢化
+// 🔧 Phase 2: animation:cut-created と layer:created イベントを監視
+// 🔧 二重記録防止フラグの精度向上
 
 (function() {
     'use strict';
@@ -44,10 +43,7 @@
             this.eventBus = window.TegakiEventBus;
             this.layerSystem = null;
             
-            // 🔧 追加: Undo/Redo実行中フラグ
             this.isExecutingUndoRedo = false;
-            
-            // 🔧 追加: State記録中フラグ（二重記録防止）
             this.isRecordingState = false;
             
             if (!this.eventBus) {
@@ -65,15 +61,22 @@
         _setupEventListeners() {
             if (!this.eventBus) return;
             
-            // Undo/Redo リクエスト
             this.eventBus.on('history:undo-request', () => this.undo());
             this.eventBus.on('history:redo-request', () => this.redo());
             this.eventBus.on('history:clear', () => this.clear());
             
-            // 🔧 修正: レイヤー操作時の自動記録を削除（各メソッド内で明示的に記録）
-            // 'layer:created', 'layer:deleted' イベントは購読しない
+            // 🔧 Phase 2: CUT作成時の自動記録
+            this.eventBus.on('animation:cut-created', () => {
+                if (this.isExecutingUndoRedo || this.isRecordingState) return;
+                setTimeout(() => this.saveStateFull(), 100);
+            });
             
-            // CUT操作のみ監視
+            // 🔧 Phase 2: レイヤー作成時の自動記録
+            this.eventBus.on('layer:created', () => {
+                if (this.isExecutingUndoRedo || this.isRecordingState) return;
+                setTimeout(() => this.saveStateFull(), 50);
+            });
+            
             this.eventBus.on('animation:cut-deleted', () => {
                 if (this.isExecutingUndoRedo || this.isRecordingState) return;
                 setTimeout(() => this.saveStateFull(), 50);
@@ -93,7 +96,6 @@
         // ===== State記録 =====
         
         saveState() {
-            // 🔧 追加: 二重記録防止
             if (this.isExecutingUndoRedo || this.isRecordingState) {
                 return;
             }
@@ -109,15 +111,14 @@
                     return;
                 }
                 
-                // 🔧 修正: Redo用に現在状態も保存
                 const command = new Command(
-                    () => {}, // Do は何もしない（既に実行済み）
-                    () => this._restoreState(state), // Undo で復元
+                    () => {},
+                    () => this._restoreState(state),
                     { type: 'layer-state', cutId: state.cutId }
                 );
                 
                 this.undoStack.push(command);
-                this.redoStack = []; // Redo スタックをクリア
+                this.redoStack = [];
                 
                 if (this.undoStack.length > this.maxHistory) {
                     this.undoStack.shift();
@@ -125,14 +126,12 @@
                 
                 this._emitStateChanged();
             } catch (error) {
-                console.error('❌ saveState failed:', error);
             } finally {
                 this.isRecordingState = false;
             }
         }
         
         saveStateFull() {
-            // 🔧 追加: 二重記録防止
             if (this.isExecutingUndoRedo || this.isRecordingState) {
                 return;
             }
@@ -163,7 +162,6 @@
                 
                 this._emitStateChanged();
             } catch (error) {
-                console.error('❌ saveStateFull failed:', error);
             } finally {
                 this.isRecordingState = false;
             }
@@ -178,20 +176,15 @@
             this.isExecutingUndoRedo = true;
             
             try {
-                // 🔧 修正: 現在の状態をRedoスタックに保存してからUndo実行
                 const currentState = this._captureFullState();
-                
-                // Undoスタックから取得
                 const command = this.undoStack.pop();
                 
-                // Undo実行
                 command.undo();
                 
-                // 🔧 修正: Redoスタックに逆Commandを保存
                 if (currentState) {
                     const redoCommand = new Command(
-                        () => this._restoreFullState(currentState), // Redo で現在状態を復元
-                        () => {}, // Undo は何もしない
+                        () => this._restoreFullState(currentState),
+                        () => {},
                         { type: 'redo-state', originalType: command.metadata.type }
                     );
                     this.redoStack.push(redoCommand);
@@ -208,7 +201,6 @@
                 
                 return true;
             } catch (error) {
-                console.error('❌ Undo failed:', error);
                 return false;
             } finally {
                 this.isExecutingUndoRedo = false;
@@ -222,20 +214,15 @@
             this.isExecutingUndoRedo = true;
             
             try {
-                // 🔧 修正: 現在の状態をUndoスタックに保存してからRedo実行
                 const currentState = this._captureFullState();
-                
-                // Redoスタックから取得
                 const command = this.redoStack.pop();
                 
-                // Redo実行（Command の execute = 状態復元）
                 command.execute();
                 
-                // 🔧 修正: Undoスタックに逆Commandを保存
                 if (currentState) {
                     const undoCommand = new Command(
                         () => {},
-                        () => this._restoreFullState(currentState), // Undo で直前状態を復元
+                        () => this._restoreFullState(currentState),
                         { type: 'undo-state', originalType: command.metadata.originalType }
                     );
                     this.undoStack.push(undoCommand);
@@ -252,7 +239,6 @@
                 
                 return true;
             } catch (error) {
-                console.error('❌ Redo failed:', error);
                 return false;
             } finally {
                 this.isExecutingUndoRedo = false;
@@ -352,7 +338,6 @@
             const currentCut = animationSystem.getCurrentCut?.();
             if (!currentCut) return;
             
-            // 既存レイヤーを全削除
             while (currentCut.container.children.length > 0) {
                 const layer = currentCut.container.children[0];
                 currentCut.container.removeChild(layer);
@@ -361,7 +346,6 @@
                 }
             }
             
-            // レイヤーを復元
             state.layers.forEach(layerData => {
                 const restoredLayer = this._restoreLayer(layerData);
                 if (restoredLayer) {
@@ -369,7 +353,6 @@
                 }
             });
             
-            // アクティブレイヤーの復元
             const layers = currentCut.getLayers();
             if (state.activeLayerId && layers.length > 0) {
                 const activeLayerIndex = layers.findIndex(
@@ -384,7 +367,6 @@
                 this.layerSystem.activeLayerIndex = layers.length > 0 ? layers.length - 1 : -1;
             }
             
-            // UI更新
             setTimeout(() => {
                 if (this.layerSystem.updateLayerPanelUI) {
                     this.layerSystem.updateLayerPanelUI();
@@ -413,7 +395,6 @@
             const animData = animationSystem.getAnimationData();
             if (!animData) return;
             
-            // 既存CUTを完全削除
             const existingCuts = animData.cuts.slice();
             existingCuts.forEach(cut => {
                 if (this.layerSystem?.destroyCutRenderTexture) {
@@ -439,10 +420,8 @@
             
             animData.cuts = [];
             
-            // Cut クラスを直接インスタンス化
             const Cut = window.TegakiCut;
             if (!Cut) {
-                console.error('❌ TegakiCut class not found');
                 return;
             }
             
@@ -469,13 +448,11 @@
                 }
             });
             
-            // アクティブCUTに切り替え
             const targetIndex = Math.min(state.currentCutIndex, animData.cuts.length - 1);
             if (targetIndex >= 0) {
                 animationSystem.switchToActiveCutSafely(targetIndex, false);
             }
             
-            // UI更新
             setTimeout(() => {
                 if (this.eventBus) {
                     this.eventBus.emit('animation:cuts-restored');
@@ -614,8 +591,6 @@
             }
         }
         
-        // ===== デバッグ情報 =====
-        
         getDebugInfo() {
             return {
                 undoStackSize: this.undoStack.length,
@@ -628,9 +603,46 @@
         }
     }
     
-    // ===== グローバル公開 =====
-    
     const historyManager = new HistoryManager();
+    
+    // 🔧 Phase 1: キーボードショートカット追加（index.htmlから移管）
+    function setupHistoryKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            const activeElement = document.activeElement;
+            if (activeElement && (
+                activeElement.tagName === 'INPUT' ||
+                activeElement.tagName === 'TEXTAREA' ||
+                activeElement.isContentEditable
+            )) {
+                return;
+            }
+            
+            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+            const metaKey = isMac ? e.metaKey : e.ctrlKey;
+            
+            // Ctrl+Z (Undo) - shiftなし、altなし
+            if (metaKey && !e.shiftKey && !e.altKey && e.code === 'KeyZ') {
+                historyManager.undo();
+                e.preventDefault();
+                return;
+            }
+            
+            // Ctrl+Y (Redo) または Ctrl+Shift+Z (Redo)
+            if ((metaKey && !e.altKey && e.code === 'KeyY') || 
+                (metaKey && e.shiftKey && !e.altKey && e.code === 'KeyZ')) {
+                historyManager.redo();
+                e.preventDefault();
+                return;
+            }
+        });
+    }
+    
+    // DOMContentLoadedで初期化
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupHistoryKeyboardShortcuts);
+    } else {
+        setupHistoryKeyboardShortcuts();
+    }
     
     window.History = {
         undo: () => historyManager.undo(),
@@ -647,8 +659,6 @@
         Command: Command,
         _manager: historyManager
     };
-    
-    // ===== イベント統合 =====
     
     if (window.TegakiEventBus) {
         window.TegakiEventBus.on('layer:system-initialized', (data) => {
@@ -667,6 +677,6 @@
         });
     }
     
-    console.log('✅ history.js loaded (Redo完全修正版 - Command Inverse パターン)');
+    console.log('✅ history.js loaded - Phase 1+2: キーボードショートカット統合版');
     
 })();

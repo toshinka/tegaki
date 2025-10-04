@@ -846,30 +846,21 @@
         </div>
     </div>
 
-    <!-- ===== ライブラリ読み込み ===== -->
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
 
-    <!-- ===== 既存システム ===== -->
     <script src="config.js"></script>
     <script src="coordinate-system.js"></script>
     <script src="system/event-bus.js"></script>
-    
-    <!-- ===== 🔧 Phase1-2: 新規ファイル追加 ===== -->
     <script src="system/state-manager.js"></script>
     <script src="system/command-base.js"></script>
     <script src="system/layer-commands.js"></script>
     <script src="system/history-manager-v2.js"></script>
-    
-    <!-- ===== 既存システム（続き） ===== -->
     <script src="system/camera-system.js"></script>
     <script src="system/layer-system.js"></script>
     <script src="system/drawing-clipboard.js"></script>
-    
-    <!-- ===== 🔧 History修正版を使用 ===== -->
     <script src="system/history.js"></script>
-    
     <script src="system/animation-system.js"></script>
     <script src="system/gif-exporter.js"></script>
     <script src="ui/timeline-ui.js"></script>
@@ -895,7 +886,6 @@
         
         if (e.ctrlKey || e.metaKey) {
             const key = e.code || e.key;
-            // 🔧 修正: Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z はブラウザデフォルトを抑止
             if (key === 'KeyZ' || key === 'KeyY' || key === 'KeyL' || key === 'Space') {
                 e.preventDefault();
                 return;
@@ -907,8 +897,6 @@
     }
     
     function setupUnifiedKeyboardShortcuts() {
-        let undoRedoHandled = false; // 🔧 追加: 二重処理防止フラグ
-        
         document.addEventListener('keydown', (e) => {
             preventBrowserDefaults(e);
             
@@ -924,36 +912,8 @@
                 return;
             }
             
-            // 🔧 修正: Undo/Redo処理を最優先で処理（core-engine.jsの処理より前に）
-            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-            const metaKey = isMac ? e.metaKey : e.ctrlKey;
-            
-            // Ctrl+Z (Undo) - shiftなし、altなし
-            if (metaKey && !e.shiftKey && !e.altKey && e.code === 'KeyZ') {
-                if (!undoRedoHandled) {
-                    undoRedoHandled = true;
-                    if (window.History && typeof window.History.undo === 'function') {
-                        window.History.undo();
-                    }
-                    e.preventDefault();
-                    setTimeout(() => { undoRedoHandled = false; }, 100);
-                }
-                return;
-            }
-            
-            // 🔧 修正: Ctrl+Y (Redo) または Ctrl+Shift+Z (Redo)
-            if ((metaKey && !e.altKey && e.code === 'KeyY') || 
-                (metaKey && e.shiftKey && !e.altKey && e.code === 'KeyZ')) {
-                if (!undoRedoHandled) {
-                    undoRedoHandled = true;
-                    if (window.History && typeof window.History.redo === 'function') {
-                        window.History.redo();
-                    }
-                    e.preventDefault();
-                    setTimeout(() => { undoRedoHandled = false; }, 100);
-                }
-                return;
-            }
+            // ❌ 削除: Undo/Redo処理はhistory.jsに一本化
+            // index.htmlではUndo/Redoを処理しない
             
             // Delete キー (レイヤークリア)
             if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
@@ -1015,10 +975,11 @@
             // P (ペンツール)
             if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'pen' });
-                e.preventDefault
+                e.preventDefault();
                 return;
             }
             
+            // E (消しゴムツール)
             if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'eraser' });
                 e.preventDefault();
