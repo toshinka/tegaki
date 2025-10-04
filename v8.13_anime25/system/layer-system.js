@@ -1628,7 +1628,71 @@ createLayer(name, isBackground = false) {
                 animationSystem.layerSystem = this;
             }
         }
+deleteLayer(layerIndex) {
+    const layers = this.getLayers();
+    
+    if (layerIndex < 0 || layerIndex >= layers.length) {
+        console.warn(`Invalid layer index: ${layerIndex}`);
+        return false;
     }
+    
+    const layer = layers[layerIndex];
+    const layerId = layer.layerData?.id;
+    
+    if (layer.layerData?.isBackground) {
+        console.warn('Cannot delete background layer');
+        return false;
+    }
+    
+    try {
+        // 🔧 History記録
+        if (window.History && typeof window.History.saveState === 'function') {
+            if (!window.History._manager?.isExecutingUndoRedo) {
+                window.History.saveState();
+            }
+        }
+        
+        this.currentCutContainer.removeChild(layer);
+        
+        if (layer.destroy) {
+            layer.destroy({ children: true });
+        }
+        
+        if (layerId) {
+            this.layerTransforms.delete(layerId);
+        }
+        
+        const remainingLayers = this.getLayers();
+        if (remainingLayers.length === 0) {
+            this.activeLayerIndex = -1;
+        } else if (this.activeLayerIndex >= remainingLayers.length) {
+            this.activeLayerIndex = remainingLayers.length - 1;
+        }
+        
+        if (this.eventBus) {
+            this.eventBus.emit('layer:deleted', { layerId, layerIndex });
+        }
+        
+        this.updateLayerPanelUI();
+        this.updateStatusDisplay();
+        
+        if (this.animationSystem?.generateCutThumbnail) {
+            const cutIndex = this.animationSystem.getCurrentCutIndex();
+            setTimeout(() => {
+                this.animationSystem.generateCutThumbnail(cutIndex);
+            }, 100);
+        }
+        
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Layer deletion failed:', error);
+        return false;
+    }
+}
+    }
+
+
 
     window.TegakiLayerSystem = LayerSystem;
 
