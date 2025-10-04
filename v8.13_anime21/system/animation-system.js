@@ -1,13 +1,10 @@
-// ===== system/animation-system.js - サムネイルアスペクト比完全修正版 + リサイズ対応 =====
-// 【改修】キャンバスリサイズ時の全カットサムネイル更新対応
-// 【完全修正】サムネイルサイズ動的計算＋timeline-thumbnail-utils.js完全活用
-// 【維持】全既存機能（リサイズ対応+再生時間+RETIME+座標系修正+CUTフォルダ方式）
-// PixiJS v8.13 対応
+// ===== system/animation-system.js - CUT作成時履歴記録修正版 =====
+// 【修正】createNewBlankCut()でイベント発火後、手動でsaveStateFull()を呼ぶ
+// 【維持】全既存機能
 
 (function() {
     'use strict';
     
-    // ===== Cutクラス: CUTフォルダの実体 =====
     class Cut {
         constructor(id, name, config) {
             this.id = id;
@@ -173,8 +170,6 @@
             };
         }
     }
-    
-    // ===== AnimationSystem: サムネイル完全修正版 + リサイズ対応 =====
     
     class AnimationSystem {
         constructor() {
@@ -408,12 +403,20 @@
             
             this.switchToActiveCut(newIndex);
             
+            // 🔥 修正: イベント発火後、手動でHistory記録
             if (this.eventBus) {
                 this.eventBus.emit('animation:cut-created', { 
                     cutId: cut.id, 
                     cutIndex: newIndex 
                 });
             }
+            
+            // 🔥 追加: 手動でHistory記録（history.jsのリスナーを削除したため）
+            setTimeout(() => {
+                if (window.History && typeof window.History.saveStateFull === 'function') {
+                    window.History.saveStateFull();
+                }
+            }, 100);
             
             return cut;
         }
