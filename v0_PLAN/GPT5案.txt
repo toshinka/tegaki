@@ -1,263 +1,307 @@
-重要：調査で参照した現行実装（history の改訂版）が既に「重複保存の排除」「redo の実装」「イベント発火周りの調整」を含むことを確認しました（該当箇所をそのまま使う/更に安定化する方向で進めます）。参照：system/history.js。
-GitHub
+改修計画書：Undo / Redo（統一履歴管理）調査・設計・実装プラン
+===============================================================================
+対象リポジトリ（参照ファイル）
+- index.html
+- config.js
+- coordinate-system.js
+- system/event-bus.js
+- system/camera-system.js
+- system/layer-system.js
+- system/drawing-clipboard.js
+- system/history.js         ← 現状履歴関連（調査する起点）
+- system/animation-system.js
+- system/gif-exporter.js
+- ui/timeline-ui.js
+- ui/ui-panels.js
+- ui/timeline-thumbnail-utils.js
+- core-runtime.js
+- core-engine.js
 
-1) 調査サマリ（現状把握）
+目的
+- 「絵（ストローク・ピクセル）」「CUT（タイムラインのカット構造）」「レイヤー」など複数ドメインにまたがる操作のUndo/Redoを1箇所で一貫して扱えるようにする。
+- 二重実装や責務分散による不整合を解消し、可読性と保守性を高める。
+- パフォーマンス上の現実的配慮（大きなビットマップのコピーをむやみにやらない）を取り入れる。
 
-症状 A：Ctrl+Y（リドゥ）が動作しない／未実装。
+設計方針（高レベル）
+- 単一の履歴管理（HistoryManager）を採用する。UIや各サブシステムは全てこのManagerに対してコマンドを送る/コマンドを実行させる。
+- コマンドパターン（Command）を用いる：各操作は "execute()" と "undo()" を持つ自己完結型オブジェクトとして表現する。コマンドは直列に積まれ、undo/redoはそのスタック/ポインタで制御する。
+- データ所有権の明確化：どのモジュールがどのデータの“ソース・オブ・トゥルース”（truth）を保つかを定義する（例：LayerSystem がレイヤーオブジェクトを所有、AnimationSystem がCUT構造を所有、Drawing 系はストロークデータを所有）。
+- 「差分（Delta）保存」優先：可能な限り軽量な差分（例：ストロークオブジェクト、レイヤーメタの変更）を保存する。ビットマップそのものの差分保存が不可避な場合は、参照式（Texture ID）＋最小バイナリ保存戦略を採る。
+- シンプルで可検証なAPI：HistoryManager は (1) applyCommand(command) (2) undo() (3) redo() (4) clear() だけを公開する。
+- event-bus と統合：既存の event-bus を通じて各種サブシステムが "command" を HistoryManager に渡す。UI は直接状態を書き換えない（※例外：読み取り系/表示系）。
 
-症状 B：レイヤー／CUT を追加した後に Undo しても「増やした分が減らない」、History が大幅に増える、挙動不審になる。
+用語定義
+- Command：execute()/undo() を持つオブジェクト（serialize可能推奨）。例：DrawStrokeCommand, CreateLayerCommand, DeleteLayerCommand, MoveCutCommand
+- HistoryEntry：コマンド + メタ（タイムスタンプ, 作者, undoable:true/false）
+- State Owner：データの単一所有者（例：layerSystem.layers[] は LayerSystem が sole owner）
+- Snapshot：大きな操作（例：全レイヤー削除）の安全対策として使う（全体状態の薄いスナップショット or 圧縮差分）
 
-確認したこと：リポジトリの system/history.js 中に「二重 saveStateFull 発生を抑止する修正」や redo() の実装、イベントリスナー整理が含まれる版が存在するのを確認。History は window.History として公開されており history:undo-request / history:redo-request イベントを購読している。
-GitHub
+実装案（APIとサンプルコード：ES2023、モジュール無し、PixiJS 環境前提）
+（注）実運用では既存 system/history.js をリファクタして HistoryManager を統合することを勧める。
 
-2) 根本原因の仮説（まとめ）
-
-二重保存（double-save）
-
-CUT 作成・レイヤー作成のフローの中で 同じ操作をトリガーするイベントが複数箇所で発火 しており、それぞれが History に snapshot を保存している → 履歴が想定より増える／重複する。
-
-history 側で animation:cut-created 等のリスナーが saveStateFull() を呼んでいたり、生成側（layer/animation system）でも saveStateFull() を触っていたため二重記録になっているケースがある（history.js 内の注釈にも該当箇所の修正痕跡あり）。
-GitHub
-
-コマンドパターンの未整備 or スナップショット戦略の不一致
-
-追加系（create layer / create cut / paste）を単に「状態スナップショット」で記録している部分と、明確な Command(do,undo) オブジェクトで扱う場所が混在している。結果、Undo 時に「復元ロジック(or restore)」が意図通り働かないパスがある。
-
-Undo/Redo 実行中の副作用抑止が不十分
-
-Undo/Redo 実行中にイベントが発火して history に再度 push されるとエラーや無限ループ同様の挙動になる。history.js では isExecutingUndoRedo フラグを使い抑止する実装があるが、イベントを発火する側（layer/animation/cut 作成コード）で適切に考慮されていない箇所が残っている。
-
-キーボードハンドラの紐付け不足
-
-Ctrl+Z の Undo 呼び出しは実装済みでも、Ctrl+Y が UI 側で登録されていない（あるいは eventBus を経由して history:redo-request を emit していない）ため Redo が動かない。
-
-3) 改修方針（設計方針）
-
-基本方針：既存ファイルの「追加修正（patch）」で済むように最小侵襲で対応。history.js の良い実装（Command パターン・二重記録対策・フラグ抑止）を活かし、イベント発行側（layer-system / animation-system / ui）を整合させる。
-
-命名規約：イベント名は verb:object[-detail] を維持（例：layer:created / animation:cut-created）。ただし同一操作で複数イベント発火させない。
-
-操作単位：可能な限り「操作単位で Command を作成」する（例：CreateLayerCommand、DeleteLayerCommand、CreateCutCommand）。ただし重コストの操作は snapshot（saveStateFull）で扱う。
-
-Undo/Redo中はイベント抑止：window.History._manager.isExecutingUndoRedo を読んで発火を抑止するか eventBus 経由で抑止フラグを設ける。history.js 側ですでにフラグはあるので、発火元のコードを少修正してチェックする。
-GitHub
-
-4) 具体的改修項目（ファイル別・差分案／コードスニペット付き）
-
-重要：以下は「既存のコードを壊さない最小パッチ」の提案です。system/history.js の現在の実装（Command / isExecutingUndoRedo / saveStateFull の整理）が前提になっています。
-GitHub
-
-4.1 system/history.js —（確認・微調整）
-
-目的：既にかなりの修正が入っている版を基に、外部から確実に使える API（History.saveState() / History.saveStateFull() / History.redo()）が正しく機能することを保証する。
-
-やること：
-
-History.setLayerSystem(layerSystem) 呼び出しが layer-system 初期化直後に行われているか確認。もし初期化順の問題があれば layer:system-initialized イベントの発火を確実にする（下記で対応）。
-GitHub
-
-saveState() / saveStateFull() は 非同期に複数回呼ばれても重複登録しない ロジック（現在の実装は splice/position 管理によりある程度対処済み）を検証。もし race が起きる場面が残るなら内部に short debounce（例：同一 tick 内の同一 type の save は無視）を追加する。
-
-※既にある改善点（history.js 内）：
-
-animation:cut-created の二重 save 排除コメントがあり、layer:created のリスナーは setTimeout(()=>saveState(),50) で少し遅延させている実装を確認。
-GitHub
-
-直接ファイル差分は小さく、まずは「発火元側」を直すことで多くの問題が解決します。
-
-4.2 system/layer-system.js —（修正案）
-
-目的：レイヤー作成／削除の際に 不要なイベント重複発火 を止め、History 側に正しいタイミングで一回だけ snapshot/command を登録させる。
-
-修正ポイント（擬似パッチ）：
-
-// レイヤー作成処理の例（抜粋）
-function createLayer(options = {}) {
-  // 1) internal create (no history)
-  const layer = _internalCreateLayer(options); // 既存関数
-
-  // 2) emit only one event, and let History decide snapshot
-  //    but DO NOT call History.saveStateFull() directly from here.
-  if (!window.History?._manager?.isExecutingUndoRedo) {
-    window.TegakiEventBus.emit('layer:created', { layerId: layer.layerData.id });
-  }
-
-  return layer;
+1) Command interface（抽象）
+```js
+// Command インターフェイスの雛形（要実装）
+function Command(name) {
+  this.name = name || 'unnamed';
 }
+Command.prototype.execute = function() { throw new Error('execute not implemented'); };
+Command.prototype.undo = function() { throw new Error('undo not implemented'); };
+// optional: serialize/deserialize for persistence
+Command.prototype.serialize = function() { return { name: this.name }; };
 
 
-注意：
+2.HistoryManager（単一インスタンスで管理）
 
-ここで window.History.saveState() を直接呼ばない（history 側で購読して1回だけ保存する戦略に揃える）。
-
-createLayer() の中で他の内部処理が layer:created を再発火していないか（例えば UI 更新関数が再度 emit していないか）をレビューし、重複箇所は一つにまとめる。
-
-4.3 system/animation-system.js（CUT 関連） —（修正案）
-
-目的：CUT 作成・貼り付け時の二重 save を排除。createNewBlankCut() 等は イベント発火はするが、history に直接 save を要求しない。history が受け取って1回だけ snapshot を登録するようにする。
-
-修正ポイント（擬似パッチ）：
-
-function createNewBlankCut() {
-  // existing creation logic...
-  const cut = _internalCreateCut();
-
-  // emit single 'animation:cut-created' AFTER creation complete
-  if (!window.History?._manager?.isExecutingUndoRedo) {
-    window.TegakiEventBus.emit('animation:cut-created', { cutId: cut.id });
-  }
-
-  return cut;
+// HistoryManager（単純実装）
+function HistoryManager(maxEntries = 200) {
+  this.past = [];   // 実行済みコマンド（undo 用）
+  this.future = []; // 取り消したコマンド（redo 用）
+  this.maxEntries = maxEntries;
+  this.onChange = null; // UI 更新コールバック (optional)
 }
+HistoryManager.prototype.applyCommand = function(command) {
+  // command: must implement execute() and undo()
+  command.execute();
+  this.past.push(command);
+  if (this.past.length > this.maxEntries) this.past.shift();
+  this.future = []; // 新コマンド実行で redo 履歴クリア
+  if (this.onChange) this.onChange();
+};
+HistoryManager.prototype.undo = function() {
+  if (!this.past.length) return false;
+  var cmd = this.past.pop();
+  cmd.undo();
+  this.future.push(cmd);
+  if (this.onChange) this.onChange();
+  return true;
+};
+HistoryManager.prototype.redo = function() {
+  if (!this.future.length) return false;
+  var cmd = this.future.pop();
+  cmd.execute();
+  this.past.push(cmd);
+  if (this.onChange) this.onChange();
+  return true;
+};
+HistoryManager.prototype.clear = function() {
+  this.past = [];
+  this.future = [];
+  if (this.onChange) this.onChange();
+};
 
 
-補足：history.js では animation:cut-deleted に対し saveStateFull() を呼ぶリスナーが残っているので、create 側で saveStateFull() を呼ばないようにする（或いは cut-created → history.saveStateFull(), cut-deleted → history.saveStateFull() のように一元化する）。
+3.具体的コマンド例（ストローク）
 
-4.4 ui/core-runtime.js または ui/timeline-ui.js —（Ctrl+Y: redo のキーマッピング）
-
-目的：ユーザー操作で Ctrl+Y（または Ctrl+Shift+Z）を押したときに History.redo() を呼ぶ実装を追加。
-
-コードスニペット（推奨）：
-
-// core-runtime または UI 初期化時に一度だけ登録
-window.addEventListener('keydown', (ev) => {
-  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-  const metaKey = isMac ? ev.metaKey : ev.ctrlKey;
-
-  if (metaKey && ev.key.toLowerCase() === 'z' && ev.shiftKey) {
-    // Ctrl+Shift+Z -> redo (some users expect this)
-    ev.preventDefault();
-    if (window.History && typeof window.History.redo === 'function') {
-      window.History.redo();
-    }
-  } else if (metaKey && !ev.shiftKey && ev.key.toLowerCase() === 'y') {
-    // Ctrl+Y -> redo
-    ev.preventDefault();
-    if (window.History && typeof window.History.redo === 'function') {
-      window.History.redo();
-    }
-  } else if (metaKey && !ev.shiftKey && ev.key.toLowerCase() === 'z') {
-    // Ctrl+Z -> undo (既にある場合は重複確認)
-    ev.preventDefault();
-    if (window.History && typeof window.History.undo === 'function') {
-      window.History.undo();
-    }
-  }
-});
+// ストロークを保持する方針（ベクタデータ推奨）
+// drawSystem.addStroke(stroke) / removeStroke(strokeId)
+function DrawStrokeCommand(drawSystem, stroke) {
+  this.name = 'DrawStroke';
+  this.drawSystem = drawSystem;
+  this.stroke = stroke; // 可能な限りオブジェクト参照（serialize可能にする）
+}
+DrawStrokeCommand.prototype.execute = function() {
+  this.drawSystem.addStroke(this.stroke);
+};
+DrawStrokeCommand.prototype.undo = function() {
+  this.drawSystem.removeStroke(this.stroke.id);
+};
+DrawStrokeCommand.prototype.serialize = function() {
+  return { name:this.name, stroke: this.stroke };
+};
 
 
-注：既に同様の keydown が他で登録されている場合は重複を避けるためフラグで一回だけ登録する（例： window._tegaki_keybind_installed = true）。
+4.レイヤー操作コマンド例
 
-4.5 Command 化推奨（中〜長期、ただし優先度は中）
+function CreateLayerCommand(layerSystem, layerData) {
+  this.name = 'CreateLayer';
+  this.layerSystem = layerSystem;
+  this.layerId = null;
+  this.layerData = layerData;
+}
+CreateLayerCommand.prototype.execute = function() {
+  var layer = this.layerSystem.createLayer(this.layerData);
+  this.layerId = layer.id;
+};
+CreateLayerCommand.prototype.undo = function() {
+  this.layerSystem.deleteLayer(this.layerId);
+};
 
-目的：create/delete/paste のような操作単位で Command インスタンスを作成し History.execute(command) に投げる。これにより Undo/Redo の粒度とロジックが明確になり、スナップショットに頼りすぎない安定した挙動が得られる。
 
-備考：history.js は Command クラスを提供しているため、既存の Command を利用して下のようにするだけで良い（例）：
+5.CUT（タイムライン）操作コマンド例
 
-// CreateLayerCommand の例（簡略）
-const cmd = new History.Command(
-  () => { /* do: 実際に layer を create して UI 更新 */ },
-  () => { /* undo: その layer を削除して UI 更新 */ },
-  { type: 'create-layer', layerId: '...' }
-);
-window.History.execute(cmd);
+// cutData は最小限のメタ情報（index, length 等）
+function CreateCutCommand(animationSystem, cutData) {
+  this.name = 'CreateCut';
+  this.animationSystem = animationSystem;
+  this.cutData = cutData;
+  this.cutId = null;
+}
+CreateCutCommand.prototype.execute = function() {
+  this.cutId = this.animationSystem.createCut(this.cutData);
+};
+CreateCutCommand.prototype.undo = function() {
+  this.animationSystem.deleteCut(this.cutId);
+};
 
-5) テスト項目（動作確認リスト）
+データ戦略（設計上の判断）
 
-各テストは「クリーンなページを file:// で直接開き（または local server）」「DevTools のコンソールで window.History.getHistoryInfo() を観察」して実施
+描画（ストローク主体）：
 
-基本 Undo/Redo
+ベクタ（ストロークオブジェクト）を履歴に保存 → 再レンダリングでラスタ描画（Pixi RenderTexture を使う）
 
-操作：何か線を描く（path 追加）→ Ctrl+Z（Undo）→ Ctrl+Y（Redo）
+既にラスタ（ピクセル）編集が多用される場合は、レイヤーごとの局所的スナップショットを採用（例：そのフレームのTextureのコピーをHistoryEntryに格納）。ただしメモリ増大に注意。
 
-期待：Undo で直前の描画が消える、Redo で再表示される。History.getHistoryInfo() の canUndo/canRedo の状態遷移が正しい。
+レイヤー / CUT / メタ：
 
-レイヤー作成→Undo
+小さいJSON差分（追加・削除・プロパティ変更）をコマンドで持つ。image dataが必要ならTexture IDやBlob参照を持つ。
 
-操作：レイヤーを追加 → window.History.getHistoryInfo() を確認 → Ctrl+Z
+大きな破壊的操作（例：全レイヤー削除、全フレーム置換）：
 
-期待：追加したレイヤーが消える、履歴スタックは 1 件増えて 1 件減る。
+Optional: "SnapshotCommand" を用意し、実行時に最小圧縮スナップを取る（例：各レイヤーのメタ＋重要テクスチャのBlob URL）。但し滅多に使わない操作だけに限定。
 
-CUT 作成 / 削除
+既存コードとの統合ポイント
 
-操作：新しい CUT を作成 → Undo → Redo
+system/history.js：現在の履歴ロジックを読み取り、責務が分散している箇所（複数のundo実装）を特定する。ここを改名/置換して HistoryManager をエクスポートする。
 
-期待：CUT の数が正しく戻る・進む。history の重複登録がない（stackSize が想定より膨らまない）。
+system/drawing-clipboard.js：クリップボード関連の copy/paste 操作は、ClipboardCommand を通す。Clipboard 実行は履歴に残す/残さないを明示 (例：paste は undoable)。
 
-連続複数操作（レイヤー＋CUT）
+system/layer-system.js：レイヤーのcreate/delete/move/merge API を最小で提供し、コマンドはそのAPIを叩く。レイヤーAPIは副作用を持たない（状態は LayerSystem が内包）。
 
-操作：CUT 作成 → レイヤー作成 ×2 → Undo ×3 → Redo ×3
+system/animation-system.js（CUT）：CUT の追加・削除・並べ替えはすべて Command 経由にする。
 
-期待：逐次元通りに遡り、履歴が整合する（履歴件数の急増が無い）。
+ui/timeline-ui.js, ui-panels.js：UI のイベントハンドラは直接 Model を変更せず、Command を生成して HistoryManager.applyCommand(cmd) を呼ぶ。UI は onChange で履歴状態を反映（Undo ボタン活性等）。
 
-コピー＆ペースト（右隣 or new）
+移行手順（ステップ・バイ・ステップ）
 
-操作：レイヤー or CUT をコピーして隣にペースト（cut:pasted-right-adjacent / cut:pasted-new のイベント）
+調査フェーズ（1日）
 
-期待：history に 1 回だけ snapshot が追加される（history.js はこれらのイベントで saveStateFull() を呼ぶ実装があるので、イベントが一つだけ発生することを確認）。
-GitHub
+system/history.js の全コードと、他ファイル内で "undo"/"redo" を呼んでいる箇所をgrepで抽出。
 
-Undo/Redo 実行中のイベント抑止
+二重実装（複数箇所で状態を revert している）パターンを列挙。
 
-操作：複雑な undo (CUT restore 等) を行いながら eventBus のログを見る
+各操作（ストローク追加、レイヤー作成、CUT変更、パラメタ変更、消しゴム適用など）がどのモジュールでどのように実装されているかを一覧化。
 
-期待：undo 実行中に layer/animation 系のイベントで history に再登録されない（isExecutingUndoRedo が機能すること）。
+設計・合意（0.5日）
 
-6) 実施手順（短く、順序通り）
+上記設計方針をチーム内で確認。特に「ベクタ保存へ移行するか」「ラスタをそのまま保存するか」を決定。
 
-system/history.js の最新版をプロジェクトに取り込み（既にあるならそのまま適用）し、window.History の公開 API を確認。
-GitHub
+最小リファクタ（1-2日）
 
-layer-system.js の create/delete 部分をパッチし、「発火は1回」「History に直接 saveState を呼ばない」の方針に変更（上記スニペット参照）。
+HistoryManager の骨格を system/history.js に実装（applyCommand/undo/redo/clear）。
 
-animation-system.js（CUT 関連）を同様に整理。createNewBlankCut()等が saveStateFull() を直接呼んでいないことを確認。
+既存の undo 呼び出しをすべて HistoryManager 経由に差し替える（UI 側から直接 state 変更している箇所を Command 化）。
 
-UI 側（core-runtime または timeline-ui）に Ctrl+Y / Ctrl+Shift+Z のキーバインドを追加（上記スニペット）。既存 keydown 処理と重複しないようガードを入れる。
+event-bus を介してコマンド登録ができるようにする（例：eventBus.emit('command.apply', cmd)）。
 
-上のテスト項目を順に実施。問題が出た個所は history の Command 化を優先して対処する（Create/Delete 操作用に Command を作る）。
+コマンド実装（2-4日）
 
-テスト OK なら軽いコードレビュー＆コメント追加（誰が見ても分かるように）→ master へマージ。
+代表的なコマンドを実装・テスト（DrawStrokeCommand, EraseStrokeCommand, CreateLayerCommand, DeleteLayerCommand, MoveLayerCommand, CreateCutCommand, DeleteCutCommand）。
 
-7) 追加の注意点・落とし穴
+各コマンドは小さな単位で実装→テスト→マージ。
 
-イベント設計の一貫性：発火元を複数箇所に分散させると二重登録リスクが高い。発火は「状態を変えた直後の 1 箇所」に限定すること。
+互換レイヤ（1日）
 
-非同期タイミング：setTimeout(...,50) のような遅延を入れている箇所がいくつかあることを確認。これは race を避けるための暫定対処なので、最終的には同期的に History 登録を行うべき（ただし UI/描画の都合により非同期が必要な場合もある）。
+既存履歴データや過去エントリがある場合の互換ロジックを実装（旧 API 呼び出しをラップして新 Command を呼ぶ）。
 
-大きなリファクタ：Command パターンへ全面移行が最も堅牢だが工数大。まずはイベントの重複排除→キーバインド追加→Command 化（段階的）を推奨。
+ベンチ＆メモリ改善（1-2日）
 
-8) 回帰時のチェックリスト（リリース直前）
+大きい操作のメモリ使用を測定。必要に応じて差分圧縮や参照の導入（Blob URL / offscreen storage）を検討。
 
- Undo/Redo の基本ケース全部パス（描画 / レイヤー / CUT / paste）。
+総合テスト（1-2日）
 
- History.stack の肥大化が解消（大量に同じ snapshot が追加されない）。
+Undo/Redo のシーケンステスト（複合操作：ストローク→レイヤー移動→CUT挿入→Undo×3→Redo×2 など）
 
- Undo 実行中に新たな history push が発生していない。
+保存→読み込みでHistoryの互換性テスト（必要なら履歴は保存しないと決める）
 
- Ctrl+Y / Ctrl+Shift+Z が全ブラウザで期待通り動作。
+ドキュメント化（0.5日）
 
- コンソールに冗長なログが残っていない（デバッグログは削除または guarded by DEBUG flag）。
+履歴の設計図、API一覧、Command 作り方のテンプレートを README 等に記載。
 
-9) 提案：最小パッチ（今すぐ入れるべき変更）
+ファイル差分（概略）
 
-layer-system.js／animation-system.js の 「直接 History API 呼び出し」 を削除して eventBus.emit('layer:created') / emit('animation:cut-created') のみにまとめる。
+system/history.js : 既存を整理 → HistoryManager 実装 + export
 
-core-runtime.js（もしくは timeline-ui.js）へ Ctrl+Y / Ctrl+Shift+Z ハンドラを追加。
+system/event-bus.js : 'command.apply' 等イベントを統一して受け渡し可能に
 
-system/history.js の saveState() と saveStateFull() に 簡単な debounce（100ms） を追加して、短時間に同種の保存が複数回呼ばれても一つに纏める（副次的に二重 push を防ぐ）。
+system/layer-system.js : create/delete/move/merge の明確API（副作用はここだけ）
 
-（history.js の現行版には既に二重防止のロジックやイベント整理コメントが入っているため、1/2 の変更で多くは直るはずです）。
-GitHub
+system/drawing-clipboard.js : クリップボード関連コマンド化
 
-10) 参考（調査で確認した主要箇所）
+ui/timeline-ui.js / ui-panels.js : 直接 state 書換え部分をコマンド経由に置換
 
-system/history.js（現行改修版。Command 実装・redo 実装・二重 save 排除/イベントリスナー整理あり）。
-GitHub
+core-runtime.js / core-engine.js : 起動時に HistoryManager を初期化し、UI へ参照を渡す
 
-最後に（要点まとめ）
+ベストプラクティス / 注意点
 
-まずは**「発火元（layer/animation）での二重イベント発火を潰す」 + 「UI 側で Ctrl+Y を登録」**を最優先で実施してください。
+UI は状態を直接書き換えない：必ず Command を通す。読み取りだけは直接OK。
 
-それで症状が消えなければ（または不整合が残るなら）次に 操作単位の Command 化 を段階的に導入します。
+イベント発火は idempotent（副作用が一度だけ起こる）にする。Command の execute() は副作用が1回のみ起きる事を守る。
 
-既に system/history.js の良い実装があるため、出来るだけそれをそのまま使い、発火元を整えるだけで問題の多くは解消されます。
+重いビットマップコピーは避け、替わりに「参照（textureId）」＋「必要時に再生成」を多用する。
+
+Command の undo は必ず execute の逆作用を行うこと（エッジケース：execute が非同期処理を伴う場合は Promise 統一が必要）。
+
+非undoable操作（例：ログ収集など）を履歴に入れないフラグを用意すること。
+
+リスクと対応策
+
+メモリ急増（ビットマップコピーが多い）→ 差分化／上限（maxEntries）を厳格に設定。重要な状態のみ保存。
+
+非同期処理中のUndo/Redo競合→ コマンドを同期化するか、Promiseベースで完了を待つ設計にする（ただし UI ブロッキングは最小化）。
+
+既存コードが密結合で分離困難→ 段階的リファクタ（ラッパー関数で一旦吸収）を行い、徐々に置換。
+
+テストケース（最小必須）
+
+単純描画を1本描き、undo→レイヤー上から消える。redo→復活する。
+
+レイヤー作成→ストローク描画→レイヤー削除→undoでレイヤーとストローク両方復元。
+
+CUTの挿入/削除/順序変更を行い、複合的にundo/redoして整合性が保たれること。
+
+大量コマンド（>1000）を実行してもメモリ上限でクラッシュしない（maxEntries の効果）。
+
+クリップボード paste → undo で元に戻る（クリップの参照が壊れない）。
+
+移行チェックリスト（作業時）
+
+ 全ての UI イベントハンドラをスキャンし、直接状態変更している箇所をリスト化したか
+
+ system/history.js の既存関数を保ちつつ新 HistoryManager を導入したか（段階的移行）
+
+ Command の命名規則ドキュメント（CreateXCommand 等）を用意したか
+
+ ストロークは可能ならベクタで保存する方針に移行したか（短期で難しければラスタ参照戦略で暫定対応）
+
+ undo/redo ボタンの状態（enable/disable）は HistoryManager.onChange で一元更新しているか
+
+実装テンプレート（最小・現場で使えるスニペット）
+
+// グローバル初期化（core-runtime.js 等）
+window.APP = window.APP || {};
+APP.history = new HistoryManager(300);
+APP.eventBus = EventBus.get(); // 既存の event-bus
+// UI ボタンと紐づけ
+document.getElementById('btnUndo').addEventListener('click', function(){ APP.history.undo(); });
+document.getElementById('btnRedo').addEventListener('click', function(){ APP.history.redo(); });
+APP.history.onChange = function(){ updateUndoRedoUI(APP.history); };
+
+
+運用方針（開発中）
+
+開発中は maxEntries を小さく（50）にして挙動確認 → 本番向けに調整。
+
+重大な操作（例：レイヤー結合やフルエクスポート）はユーザ確認ダイアログを必須にしてからコマンドを適用。
+
+将来的に「履歴保存（セッション復元）」をする場合は、Command の serialize/deserialize を実装して JSON に変換できること（ただしセキュリティ考慮）。
+
+まとめ（推奨）
+
+これはリファクタ（中〜大規模）案件：現状の二重実装や責務分散を放置すると将来的なバグコストが大きくなる。段階的な移行でリスクを抑えつつ、まずは HistoryManager の骨格と「UI → Command → HistoryManager → Owner」フローを確立することを強く推奨する。
+
+「どのデータを差分で保存するか」の決定（ストロークはベクタ／ラスタ保存のどちらか）は最初の設計合意で即決する。これが運用コストを大きく左右する。
+
+
+---
+

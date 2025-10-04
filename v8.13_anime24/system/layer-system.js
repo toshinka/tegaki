@@ -1245,97 +1245,60 @@
 
         // ===== Layer CRUD =====
         
-        createLayer(name, isBackground = false) {
-            if (!this.currentCutContainer) {
-                console.error('No active CUT container');
-                return null;
-            }
-            
-            const layerCounter = Date.now();
-            const layer = new PIXI.Container();
-            const layerId = `layer_${layerCounter}`;
-            
-            layer.label = layerId;
-            layer.layerData = {
-                id: layerId,
-                name: name || `レイヤー${this.currentCutContainer.children.length + 1}`,
-                visible: true,
-                opacity: 1.0,
-                isBackground: isBackground,
-                paths: []
-            };
+createLayer(name, isBackground = false) {
+    if (!this.currentCutContainer) {
+        console.error('No active CUT container');
+        return null;
+    }
+    
+    const layerCounter = Date.now();
+    const layer = new PIXI.Container();
+    const layerId = `layer_${layerCounter}`;
+    
+    layer.label = layerId;
+    layer.layerData = {
+        id: layerId,
+        name: name || `レイヤー${this.currentCutContainer.children.length + 1}`,
+        visible: true,
+        opacity: 1.0,
+        isBackground: isBackground,
+        paths: []
+    };
 
-            this.layerTransforms.set(layerId, {
-                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
-            });
+    this.layerTransforms.set(layerId, {
+        x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+    });
 
-            if (isBackground) {
-                const bg = new PIXI.Graphics();
-                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
-                bg.fill(this.config.background.color);
-                layer.addChild(bg);
-                layer.layerData.backgroundGraphics = bg;
-            }
+    if (isBackground) {
+        const bg = new PIXI.Graphics();
+        bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+        bg.fill(this.config.background.color);
+        layer.addChild(bg);
+        layer.layerData.backgroundGraphics = bg;
+    }
 
-            this.currentCutContainer.addChild(layer);
-            
-            const layers = this.getLayers();
-            this.setActiveLayer(layers.length - 1);
-            
-            if (this.eventBus) {
-                this.eventBus.emit('layer:created', { layerId, name, isBackground });
-            }
-            
-            this.updateLayerPanelUI();
-            this.updateStatusDisplay();
-            
-            return { layer, index: layers.length - 1 };
+    this.currentCutContainer.addChild(layer);
+    
+    const layers = this.getLayers();
+    this.setActiveLayer(layers.length - 1);
+    
+    // 🔥 修正: イベント発火前にHistory記録
+    // これにより createLayer → History記録 → イベント発火 の順序になる
+    if (window.History && typeof window.History.saveState === 'function') {
+        if (!window.History._manager?.isExecutingUndoRedo) {
+            window.History.saveState();
         }
-
-        deleteLayer(layerIndex) {
-            const layers = this.getLayers();
-            if (layers.length <= 1) {
-                console.warn('Cannot delete last remaining layer');
-                return false;
-            }
-            
-            if (layerIndex < 0 || layerIndex >= layers.length) {
-                console.warn(`Invalid layer index for deletion: ${layerIndex}`);
-                return false;
-            }
-
-            const layer = layers[layerIndex];
-            const layerId = layer.layerData.id;
-            
-            if (layer.layerData.paths) {
-                layer.layerData.paths.forEach(path => {
-                    if (path.graphics?.destroy) {
-                        path.graphics.destroy();
-                    }
-                });
-            }
-
-            this.layerTransforms.delete(layerId);
-
-            this.currentCutContainer.removeChild(layer);
-            layer.destroy({ children: true, texture: false, baseTexture: false });
-
-            if (this.activeLayerIndex === layerIndex) {
-                this.activeLayerIndex = Math.min(this.activeLayerIndex, layers.length - 2);
-            } else if (this.activeLayerIndex > layerIndex) {
-                this.activeLayerIndex--;
-            }
-
-            this.updateLayerPanelUI();
-            this.updateStatusDisplay();
-            
-            if (this.eventBus) {
-                this.eventBus.emit('layer:deleted', { layerId, layerIndex });
-            }
-            
-            return true;
-        }
-
+    }
+    
+    if (this.eventBus) {
+        this.eventBus.emit('layer:created', { layerId, name, isBackground });
+    }
+    
+    this.updateLayerPanelUI();
+    this.updateStatusDisplay();
+    
+    return { layer, index: layers.length - 1 };
+}
         setActiveLayer(index) {
             const layers = this.getLayers();
             if (index >= 0 && index < layers.length) {

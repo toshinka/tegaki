@@ -379,47 +379,52 @@
             return cut;
         }
         
-        createNewBlankCut() {
-            const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            const cut = new Cut(cutId, `CUT${this.animationData.cuts.length + 1}`, this.config);
-            
-            const bgLayer = this._createBackgroundLayer(cutId);
-            const layer1 = this._createBlankLayer(cutId, 'レイヤー1');
-            
-            cut.addLayer(bgLayer);
-            cut.addLayer(layer1);
-            
-            this.animationData.cuts.push(cut);
-            const newIndex = this.animationData.cuts.length - 1;
-            
-            if (this.canvasContainer) {
-                this.canvasContainer.addChild(cut.container);
-                cut.container.visible = false;
+createNewBlankCut() {
+    const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const cut = new Cut(cutId, `CUT${this.animationData.cuts.length + 1}`, this.config);
+    
+    const bgLayer = this._createBackgroundLayer(cutId);
+    const layer1 = this._createBlankLayer(cutId, 'レイヤー1');
+    
+    cut.addLayer(bgLayer);
+    cut.addLayer(layer1);
+    
+    this.animationData.cuts.push(cut);
+    const newIndex = this.animationData.cuts.length - 1;
+    
+    if (this.canvasContainer) {
+        this.canvasContainer.addChild(cut.container);
+        cut.container.visible = false;
+    }
+    
+    if (this.layerSystem?.createCutRenderTexture) {
+        this.layerSystem.createCutRenderTexture(cutId);
+    }
+    
+    this.switchToActiveCut(newIndex);
+    
+    // 🔧 修正: イベント発火（history.jsでは監視しない）
+    if (this.eventBus) {
+        this.eventBus.emit('animation:cut-created', { 
+            cutId: cut.id, 
+            cutIndex: newIndex 
+        });
+    }
+    
+    // 🔧 重要: CUT作成後に手動でHistory記録
+    // history.jsの'animation:cut-created'リスナーは削除されているため、
+    // ここで明示的にsaveStateFull()を呼ぶ
+    setTimeout(() => {
+        if (window.History && typeof window.History.saveStateFull === 'function') {
+            // isExecutingUndoRedoフラグを確認してから保存
+            if (!window.History._manager?.isExecutingUndoRedo) {
+                window.History.saveStateFull();
             }
-            
-            if (this.layerSystem?.createCutRenderTexture) {
-                this.layerSystem.createCutRenderTexture(cutId);
-            }
-            
-            this.switchToActiveCut(newIndex);
-            
-            // 🔥 修正: イベント発火後、手動でHistory記録
-            if (this.eventBus) {
-                this.eventBus.emit('animation:cut-created', { 
-                    cutId: cut.id, 
-                    cutIndex: newIndex 
-                });
-            }
-            
-            // 🔥 追加: 手動でHistory記録（history.jsのリスナーを削除したため）
-            setTimeout(() => {
-                if (window.History && typeof window.History.saveStateFull === 'function') {
-                    window.History.saveStateFull();
-                }
-            }, 100);
-            
-            return cut;
         }
+    }, 100);
+    
+    return cut;
+}
         
         createNewEmptyCut() {
             return this.createNewBlankCut();

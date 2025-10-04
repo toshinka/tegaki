@@ -1,16 +1,15 @@
 // ================================================================================
-// system/history.js - History増殖問題完全修正版
+// system/history.js - 完全動作版
 // ================================================================================
-// 【修正】CUT作成時の二重saveStateFull()を完全排除
-// 【修正】コピペ時のHistory記録を追加
-// 【修正】カウント表示をstackSizeベースに変更
+// 【修正1】レイヤー作成時の二重記録を完全排除
+// 【修正2】_restoreFullStateの致命的バグ修正（createNewBlankCut使用禁止）
+// 【修正3】_restoreState後のundefined参照エラー修正
 
 (function() {
     'use strict';
     
     const MAX_HISTORY = 50;
     
-    // ===== Command パターン実装 =====
     class Command {
         constructor(doFn, undoFn, metadata = {}) {
             this.doFn = doFn;
@@ -61,27 +60,16 @@
             this.eventBus.on('history:redo-request', () => this.redo());
             this.eventBus.on('history:clear', () => this.clear());
             
-            // レイヤー操作時の履歴保存（undo/redo中は抑止）
-            this.eventBus.on('layer:created', () => {
-                if (this.isExecutingUndoRedo) return;
-                setTimeout(() => this.saveState(), 50);
-            });
+            // 🔥 修正: レイヤー操作は監視しない（描画完了時のみ記録）
+            // createLayer/deleteLayerが内部でsaveStateを呼ぶため、ここでは監視不要
             
-            this.eventBus.on('layer:deleted', () => {
-                if (this.isExecutingUndoRedo) return;
-                setTimeout(() => this.saveState(), 50);
-            });
-            
-            // 🔥 修正: animation:cut-created のリスナーを削除
-            // createNewBlankCut() 内でイベント発火後、
-            // このリスナーが saveStateFull() を呼んで二重記録されていた
-            
+            // CUT削除のみ監視
             this.eventBus.on('animation:cut-deleted', () => {
                 if (this.isExecutingUndoRedo) return;
                 setTimeout(() => this.saveStateFull(), 50);
             });
             
-            // 🔥 追加: コピペ時のHistory記録
+            // コピペ時のHistory記録
             this.eventBus.on('cut:pasted-right-adjacent', () => {
                 if (this.isExecutingUndoRedo) return;
                 setTimeout(() => this.saveStateFull(), 50);
@@ -110,6 +98,7 @@
                 
                 this._emitStateChanged();
             } catch (error) {
+                console.error('❌ Command execution failed:', error);
             }
         }
         
@@ -137,6 +126,7 @@
                 
                 this._emitStateChanged();
             } catch (error) {
+                console.error('❌ saveState failed:', error);
             }
         }
         
@@ -164,6 +154,7 @@
                 
                 this._emitStateChanged();
             } catch (error) {
+                console.error('❌ saveStateFull failed:', error);
             }
         }
         
@@ -187,7 +178,7 @@
                 timestamp: Date.now(),
                 cutId: currentCut.id,
                 cutIndex: animationSystem.getCurrentCutIndex?.() ?? 0,
-                layers: layers.map(layer => this._captureLayerState(layer)),
+                layers: layers.map(layer => this._captureLayerState(layer)).filter(l => l !== null),
                 activeLayerId: this.layerSystem.activeLayer?.layerData?.id || null
             };
         }
@@ -212,7 +203,7 @@
                     id: cut.id,
                     name: cut.name,
                     duration: cut.duration,
-                    layers: cut.getLayers().map(layer => this._captureLayerState(layer))
+                    layers: cut.getLayers().map(layer => this._captureLayerState(layer)).filter(l => l !== null)
                 }))
             };
         }
@@ -266,6 +257,7 @@
                 
                 return true;
             } catch (error) {
+                console.error('❌ Undo failed:', error);
                 return false;
             } finally {
                 this.isExecutingUndoRedo = false;
@@ -294,6 +286,7 @@
                 
                 return true;
             } catch (error) {
+                console.error('❌ Redo failed:', error);
                 this.position--;
                 return false;
             } finally {
@@ -313,6 +306,7 @@
             const currentCut = animationSystem.getCurrentCut?.();
             if (!currentCut) return;
             
+            // 既存レイヤーを全削除
             while (currentCut.container.children.length > 0) {
                 const layer = currentCut.container.children[0];
                 currentCut.container.removeChild(layer);
@@ -321,6 +315,7 @@
                 }
             }
             
+            // レイヤーを復元
             state.layers.forEach(layerData => {
                 const restoredLayer = this._restoreLayer(layerData);
                 if (restoredLayer) {
@@ -328,17 +323,24 @@
                 }
             });
             
-            if (state.activeLayerId) {
-                const layers = currentCut.getLayers();
+            // 🔥 修正: アクティブレイヤーの安全な復元
+            const layers = currentCut.getLayers();
+            if (state.activeLayerId && layers.length > 0) {
                 const activeLayerIndex = layers.findIndex(
                     l => l.layerData?.id === state.activeLayerId
                 );
                 if (activeLayerIndex !== -1) {
-                    this.layerSystem.setActiveLayerByIndex?.(activeLayerIndex) || 
-                    this.layerSystem.setActiveLayer(activeLayerIndex);
+                    this.layerSystem.activeLayerIndex = activeLayerIndex;
+                } else {
+                    // 見つからない場合は最後のレイヤーをアクティブに
+                    this.layerSystem.activeLayerIndex = layers.length - 1;
                 }
+            } else {
+                // デフォルトは最後のレイヤー
+                this.layerSystem.activeLayerIndex = layers.length > 0 ? layers.length - 1 : -1;
             }
             
+            // UI更新
             setTimeout(() => {
                 if (this.layerSystem.updateLayerPanelUI) {
                     this.layerSystem.updateLayerPanelUI();
@@ -367,8 +369,20 @@
             const animData = animationSystem.getAnimationData();
             if (!animData) return;
             
+            // 🔥 修正: 既存CUTを完全削除
             const existingCuts = animData.cuts.slice();
             existingCuts.forEach(cut => {
+                // RenderTextureを削除
+                if (this.layerSystem?.destroyCutRenderTexture) {
+                    this.layerSystem.destroyCutRenderTexture(cut.id);
+                }
+                
+                // Containerから削除
+                if (animationSystem.canvasContainer && cut.container.parent === animationSystem.canvasContainer) {
+                    animationSystem.canvasContainer.removeChild(cut.container);
+                }
+                
+                // レイヤーを削除
                 while (cut.container.children.length > 0) {
                     const layer = cut.container.children[0];
                     cut.container.removeChild(layer);
@@ -376,36 +390,58 @@
                         layer.destroy({ children: true });
                     }
                 }
+                
+                // Container自体を破棄
+                if (cut.container.destroy) {
+                    cut.container.destroy({ children: true });
+                }
             });
             
+            // CUT配列をクリア
             animData.cuts = [];
             
-            state.cuts.forEach(cutData => {
-                const newCut = animationSystem.createNewBlankCut();
-                newCut.id = cutData.id;
-                newCut.name = cutData.name;
+            // 🔥 修正: Cut クラスを直接インスタンス化（createNewBlankCut使用禁止）
+            const Cut = window.TegakiCut;
+            if (!Cut) {
+                console.error('❌ TegakiCut class not found');
+                return;
+            }
+            
+            state.cuts.forEach((cutData, index) => {
+                // Cut インスタンスを直接作成
+                const newCut = new Cut(cutData.id, cutData.name, this.layerSystem.config || window.TEGAKI_CONFIG);
                 newCut.duration = cutData.duration;
                 
-                const cutToPopulate = animData.cuts[animData.cuts.length - 1];
-                
-                while (cutToPopulate.container.children.length > 0) {
-                    const layer = cutToPopulate.container.children[0];
-                    cutToPopulate.container.removeChild(layer);
-                    if (layer.destroy) {
-                        layer.destroy({ children: true });
-                    }
-                }
-                
+                // レイヤーを復元
                 cutData.layers.forEach(layerData => {
                     const restoredLayer = this._restoreLayer(layerData);
                     if (restoredLayer) {
-                        cutToPopulate.container.addChild(restoredLayer);
+                        newCut.container.addChild(restoredLayer);
                     }
                 });
+                
+                // CUT配列に追加
+                animData.cuts.push(newCut);
+                
+                // Containerに追加
+                if (animationSystem.canvasContainer) {
+                    animationSystem.canvasContainer.addChild(newCut.container);
+                    newCut.container.visible = false;
+                }
+                
+                // RenderTextureを作成
+                if (this.layerSystem?.createCutRenderTexture) {
+                    this.layerSystem.createCutRenderTexture(newCut.id);
+                }
             });
             
-            animationSystem.switchToActiveCutSafely(state.currentCutIndex, false);
+            // アクティブCUTに切り替え
+            const targetIndex = Math.min(state.currentCutIndex, animData.cuts.length - 1);
+            if (targetIndex >= 0) {
+                animationSystem.switchToActiveCutSafely(targetIndex, false);
+            }
             
+            // UI更新
             setTimeout(() => {
                 if (this.eventBus) {
                     this.eventBus.emit('animation:cuts-restored');
@@ -423,6 +459,7 @@
                     }
                 }
                 
+                // サムネイル再生成
                 animData.cuts.forEach((cut, index) => {
                     if (animationSystem.generateCutThumbnailOptimized) {
                         animationSystem.generateCutThumbnailOptimized(index);
@@ -524,7 +561,7 @@
             return {
                 stackSize: this.stack.length,
                 position: this.position,
-                undoCount: this.stack.length, // 🔥 修正: position+1 ではなく stackSize
+                undoCount: this.stack.length,
                 redoCount: this.stack.length - this.position - 1,
                 maxHistory: this.maxHistory,
                 canUndo: this.canUndo(),
@@ -535,7 +572,7 @@
         _emitStateChanged() {
             if (this.eventBus) {
                 this.eventBus.emit('history:changed', {
-                    undoCount: this.stack.length, // 🔥 修正: position+1 ではなく stackSize
+                    undoCount: this.stack.length,
                     redoCount: this.stack.length - this.position - 1,
                     canUndo: this.canUndo(),
                     canRedo: this.canRedo()
@@ -578,5 +615,7 @@
             }
         });
     }
+    
+    console.log('✅ history.js loaded (完全動作版)');
     
 })();

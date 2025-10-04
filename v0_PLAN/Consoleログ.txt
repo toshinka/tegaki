@@ -1,0 +1,144 @@
+config.js:355 ✅ config.js (GIFアニメーション機能統合版) loaded successfully
+config.js:356    - ✅ 素の方向キー↑↓: レイヤー階層移動対応
+config.js:357    - ✅ 素の方向キー←→: GIF操作対応
+config.js:358    - ✅ Alt+A: GIFパネル切替
+config.js:359    - ✅ Space: GIF再生/停止
+config.js:360    - ✅ Alt+Plus: CUT追加
+config.js:361    - ✅ V + 方向キー: レイヤー移動（キープ）
+config.js:362    - ✅ V + Shift + 方向キー: レイヤー変形（キープ）
+config.js:363    - 🔧 GIFアニメーション設定統合完了
+config.js:364    - 🔧 KeyConfig管理クラス完全実装
+config.js:365    - 🔧 将来のUI設定パネル対応準備完了
+config.js:366    - 互換性維持・既存機能保持
+coordinate-system.js:32 🧭 CoordinateSystem: システム統合改修版 初期化
+coordinate-system.js:730 ✅ coordinate-system.js loaded (システム統合改修版)
+coordinate-system.js:731 🔧 改修完了項目:
+coordinate-system.js:732   🆕 applyLayerTransform(): 統一レイヤー変形API
+coordinate-system.js:733   🆕 normalizeTransform(): 変形データ正規化
+coordinate-system.js:734   🆕 combineTransforms(): 変形合成
+coordinate-system.js:735   🆕 screenToWorld/worldToScreen(): キャッシュ対応座標変換
+coordinate-system.js:736   🆕 localToWorld/worldToLocal(): レイヤー座標変換
+coordinate-system.js:737   🆕 getLayerBounds(): 統一境界取得
+coordinate-system.js:738   🆕 distance/angle/normalizeAngle(): 数学関数統合
+coordinate-system.js:739   🆕 normalizeVector/dotProduct/crossProduct(): ベクトル計算
+coordinate-system.js:740   🆕 diagnoseReferences(): システム統合診断
+coordinate-system.js:741   🆕 runTransformTests(): 座標変換テスト
+coordinate-system.js:742   🆕 runPerformanceTest(): パフォーマンス測定
+coordinate-system.js:743   🔧 EventBus完全統合・キャッシュシステム
+coordinate-system.js:744   🔧 LayerSystem/CameraSystem/AnimationSystem参照統合
+coordinate-system.js:745   🔧 座標系混在問題・API断片化解消
+coordinate-system.js:746   ✅ PixiJS v8.13 完全対応
+coordinate-system.js:747   ✅ システム間連携強化
+event-bus.js:82 ✅ system/event-bus.js loaded (Phase 0 ready + commit events)
+data-utils.js:385 ✅ data-utils.js loaded - Phase 1 Step 1.1
+data-utils.js:386    - deepClone() with structuredClone support
+data-utils.js:387    - validateLayerState() for data integrity
+data-utils.js:388    - hashObject() for sync verification
+data-utils.js:389    - countPoints() for data tracking
+data-utils.js:390    - detectInvalidNumbers() for NaN/Infinity detection
+data-validator.js:478 ✅ data-validator.js loaded - Phase 1 Step 1.3
+data-validator.js:479    - validateSync() for sync verification
+data-validator.js:480    - validateCutSwitch() for cut transitions
+data-validator.js:481    - validateTransformApplication() for transforms
+data-validator.js:482    - validateDrawingCommit() for drawing operations
+data-validator.js:483    - Validation history tracking
+camera-system.js:654 ✅ camera-system.js (キーバインディング変更対応版) loaded successfully
+camera-system.js:655    - ✅ LayerSystemとの連携強化・キー処理重複回避
+camera-system.js:656    - ✅ 素の方向キー処理をLayerSystemに委譲
+camera-system.js:657    - ✅ Space + 方向キー: カメラ操作専用に限定
+camera-system.js:658    - ✅ V + H反転処理の協調動作
+camera-system.js:659    - 🔧 キー衝突の完全回避・責務分離明確化
+camera-system.js:660    - EventBus統合・API統一完了
+layer-system.js:1672 ✅ layer-system.js loaded (Phase1改修版: レイヤー階層移動完全修正)
+drawing-clipboard.js:603 ✅ drawing-clipboard.js Phase4改修版+確定イベント loaded
+drawing-clipboard.js:604    - ✅ CTRL+V behavior: overwrite active layer
+drawing-clipboard.js:605    - ✅ Commit events: paste:commit, operation:commit
+drawing-clipboard.js:606    - ✅ Thumbnail auto-update on paste
+gif-exporter.js:323 ✅ gif-exporter.js loaded
+core-runtime.js:463 ✅ core-runtime.js リサイズ即時反映+背景塗り版 loaded
+core-runtime.js:464   ✅ 背景レイヤー余白自動塗り (#f0e0d6)
+core-runtime.js:465   ✅ タイムラインサムネイル即時更新
+core-runtime.js:466   ✅ レイヤーパネル即時反映
+core-runtime.js:467   ✅ 既存機能完全維持
+core-engine.js:721 ✅ core-engine.js (Undo/Redo機能追加版) loaded
+core-engine.js:722   - 🔧 DrawingEngine.startDrawing()に履歴保存追加
+core-engine.js:723   - 🔧 Delete キー対応追加（layer:clear-active）
+core-engine.js:724   - 🔧 History.setLayerSystem()接続追加
+diagnostics.js:857 ✅ system-diagnostics.js loaded
+diagnostics.js:858 Usage: new SystemDiagnostics().runFullDiagnostics()
+diagnostics.js:859 Auto-run: Add ?autodiag=true to URL
+coordinate-system.js:63 🔗 CoordinateSystem EventBus integration configured
+coordinate-system.js:47 ✅ CoordinateSystem initialized with canvas: 344x135
+coordinate-system.js:757 🔄 CoordinateSystem auto-initialized
+camera-system.js:50 CameraSystem: Initializing...
+camera-system.js:76 CameraSystem: Creating containers...
+camera-system.js:101 ✅ CameraSystem containers created
+camera-system.js:194 ✅ CameraSystem events setup completed
+camera-system.js:71 ✅ CameraSystem initialized (キーバインディング変更対応版)
+layer-system.js:42 🎨 LayerSystem: 初期化開始...
+layer-system.js:93 ✅ LayerSystem: 初期化完了（一時Container作成済み）
+drawing-clipboard.js:19 DrawingClipboard: Initializing...
+drawing-clipboard.js:26 ✅ DrawingClipboard initialized (Phase4改修版 + 確定イベント)
+core-engine.js:672 ✅ History system connected to LayerSystem
+coordinate-system.js:75 🔗 CameraSystem reference set in CoordinateSystem
+coordinate-system.js:70 🔗 LayerSystem reference set in CoordinateSystem
+coordinate-system.js:80 🔗 AnimationSystem reference set in CoordinateSystem
+ui-panels.js:508 ✅ Sortable initialized for layer panel
+core-runtime.js:44 === CoreRuntime リサイズ即時反映版 初期化開始 ===
+core-runtime.js:109 ✅ CUT作成: CUT1 (344x135)
+core-runtime.js:137 🔄 CUT切替: CUT1
+core-runtime.js:58 ✅ CoreRuntime 初期化完了
+ui-panels.js:35 ✅ UIController: CoreRuntime dependency validated
+2ui-panels.js:508 ✅ Sortable initialized for layer panel
+diagnostics.js:15 🔍 Starting System Diagnostics (Phase 1)...
+diagnostics.js:645 
+🔍 ========== SYSTEM DIAGNOSTICS REPORT ==========
+diagnostics.js:646 Timestamp: 2025-10-04T06:10:38.406Z
+diagnostics.js:647 Phase: Phase 1 - Slim Timeline & Layer Integration
+diagnostics.js:648 ================================================
+
+diagnostics.js:652 ✅ PixiJS Version Check
+diagnostics.js:661    ✅ All checks passed
+diagnostics.js:664 
+diagnostics.js:652 ❌ Coordinate System API
+diagnostics.js:656    ⚠️  Missing methods: canvasToWorld, worldToCanvas
+diagnostics.js:664 
+diagnostics.js:652 ✅ EventBus Integration
+diagnostics.js:661    ✅ All checks passed
+diagnostics.js:664 
+diagnostics.js:652 ❌ LayerSystem API
+diagnostics.js:656    ⚠️  LayerSystem instance not found
+diagnostics.js:664 
+diagnostics.js:652 ❓ AnimationSystem Integration
+diagnostics.js:664 
+diagnostics.js:652 ❌ Configuration Consistency
+diagnostics.js:656    ⚠️  Missing config section: drawing
+diagnostics.js:664 
+diagnostics.js:652 ⚠️ Timeline Integration (Phase 1)
+diagnostics.js:656    ⚠️  Missing UI elements: export-gif-btn
+diagnostics.js:664 
+diagnostics.js:652 ✅ Dependencies
+diagnostics.js:661    ✅ All checks passed
+diagnostics.js:664 
+diagnostics.js:673 ========== SUMMARY ==========
+diagnostics.js:674 ✅ OK: 3
+diagnostics.js:675 ⚠️  Warnings: 1
+diagnostics.js:676 ❌ Errors: 3
+diagnostics.js:683 
+❌ System has critical errors - needs attention
+diagnostics.js:686 ===============================
+
+5ui-panels.js:508 ✅ Sortable initialized for layer panel
+ui-panels.js:120 🎬 Timeline toggle event emitted
+21ui-panels.js:508 ✅ Sortable initialized for layer panel （←CUTを生成した後にアンドゥを押すと増える。新規CUTはアンドゥで消えない）
+layer-system.js:1638 Uncaught TypeError: Cannot read properties of undefined (reading 'layerData')
+updateStatusDisplay @ layer-system.js:1638
+(anonymous) @ history.js:348
+setTimeout
+_restoreState @ history.js:342
+Command.type @ history.js:126
+undo @ history.js:30
+undo @ history.js:255
+undo @ history.js:550
+(anonymous) @ index.html:925
+ui-panels.js:508 ✅ Sortable initialized for layer panel
