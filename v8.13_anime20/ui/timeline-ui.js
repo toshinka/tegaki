@@ -1,11 +1,6 @@
-// ===== ui/timeline-ui.js - RETIME UI完全修正版 =====
-// 【修正②】全カット時間変更ボタンとinput枠を一体化（角丸なしでピッタリくっつける）
-// 【改修F】+CUT, +C&P, RENAME, RETIMEボタンのSVGアイコン変更
-// 【改修E】レイヤーパネルのCUT表示を最上部に確実に配置
-// 【改修A】×ボタンを右端に移動、パネル左寄せ
-// 【改修B】再生時間表示追加（M:SS:XX形式）
-// 【改修C】RETIMEボタン追加（全カット時間一括変更）
-// 【改修D】カット時間入力0.01秒単位対応
+// ===== ui/timeline-ui.js - RETIME UI完全分離版 =====
+// 【修正】全カット時間変更UI を独立した要素として左右並列配置
+// 【維持】全既存機能（サムネイル更新+再生時間+CUT操作+SVGアイコン）
 // PixiJS v8.13 対応
 
 (function() {
@@ -216,7 +211,9 @@
                             <path d="M10 18h4"/>
                         </svg>
                     </button>
-                    <div class="retime-container">
+                    <div class="retime-group">
+                        <label class="retime-label">全カット時間</label>
+                        <input type="number" id="retime-input" class="retime-input" value="0.5" min="0.01" max="10" step="0.01" title="秒数">
                         <button id="retime-cuts-btn" title="全カット時間変更" class="retime-btn">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M5 22h14"/>
@@ -225,7 +222,6 @@
                                 <path d="M7 2v4.172a2 2 0 0 0 .586 1.414L12 12l4.414-4.414A2 2 0 0 0 17 6.172V2"/>
                             </svg>
                         </button>
-                        <input type="number" id="retime-input" class="retime-input" value="0.5" min="0.01" max="10" step="0.01" title="全カット時間">
                     </div>
                 </div>
                 <button class="timeline-close" id="close-timeline" title="タイムラインを閉じる">×</button>
@@ -322,7 +318,7 @@
                 .cut-item:hover .delete-cut-btn { opacity: 1 !important; }
                 .delete-cut-btn:hover { background: rgba(128, 0, 0, 1) !important; transform: scale(1.15) !important; }
                 
-                .timeline-controls { display: flex !important; gap: 4px !important; align-items: center !important; order: 1 !important; }
+                .timeline-controls { display: flex !important; gap: 6px !important; align-items: center !important; order: 1 !important; }
                 .timeline-controls button { padding: 4px 12px !important; background: var(--futaba-background) !important; 
                     border: 2px solid var(--futaba-medium) !important; border-radius: 6px !important; cursor: pointer !important; 
                     font-size: 11px !important; color: var(--futaba-maroon) !important; min-width: 40px !important; height: 28px !important; 
@@ -340,49 +336,31 @@
                     justify-content: center !important; background: var(--futaba-light-medium) !important; 
                     border-radius: 4px !important; }
                 
-                /* 🔧 修正②：RETIME UI一体化（角丸なしでピッタリくっつける） */
-                .retime-container { 
-                    display: flex !important; 
-                    align-items: stretch !important; 
-                    gap: 0 !important; 
-                    height: 28px !important; 
-                    border: 2px solid var(--futaba-medium) !important; 
-                    border-radius: 6px !important; 
-                    overflow: hidden !important; 
-                    background: var(--futaba-background) !important; 
-                    transition: all 0.2s ease !important; 
-                }
-                .retime-container:hover { border-color: var(--futaba-maroon) !important; }
-                
-                .retime-btn { 
-                    background: var(--futaba-background) !important; 
-                    border: none !important; 
-                    border-right: 1px solid var(--futaba-medium) !important; 
-                    border-radius: 0 !important; 
-                    font-size: 10px !important; 
-                    font-weight: 700 !important; 
-                    min-width: 28px !important; 
-                    height: 100% !important; 
-                    margin: 0 !important; 
-                    padding: 0 6px !important; 
+                .retime-group { 
                     display: flex !important; 
                     align-items: center !important; 
-                    justify-content: center !important; 
-                    cursor: pointer !important; 
-                    transition: background 0.15s ease !important; 
+                    gap: 4px !important; 
+                    border: 2px solid var(--futaba-medium) !important; 
+                    border-radius: 6px !important; 
+                    padding: 4px 8px !important; 
+                    background: var(--futaba-background) !important; 
+                    transition: border-color 0.2s ease !important; 
                 }
-                .retime-btn:hover { 
-                    background: var(--futaba-maroon) !important; 
-                    transform: none !important; 
+                .retime-group:hover { border-color: var(--futaba-maroon) !important; }
+                
+                .retime-label { 
+                    font-size: 10px !important; 
+                    font-weight: 600 !important; 
+                    color: var(--futaba-maroon) !important; 
+                    white-space: nowrap !important; 
+                    flex-shrink: 0 !important; 
                 }
-                .retime-btn:hover svg { stroke: white !important; }
-                .retime-btn svg { width: 14px !important; height: 14px !important; stroke: #800000 !important; }
                 
                 .retime-input { 
                     width: 50px !important; 
-                    height: 100% !important; 
-                    border: none !important; 
-                    border-radius: 0 !important; 
+                    height: 20px !important; 
+                    border: 1px solid var(--futaba-light-medium) !important; 
+                    border-radius: 4px !important; 
                     background: var(--futaba-background) !important; 
                     font-size: 11px !important; 
                     font-family: monospace !important; 
@@ -390,15 +368,36 @@
                     font-weight: bold !important; 
                     text-align: center !important; 
                     outline: none !important; 
-                    padding: 0 6px !important; 
+                    padding: 0 4px !important; 
                     -moz-appearance: textfield !important; 
+                    flex-shrink: 0 !important; 
                 }
                 .retime-input::-webkit-outer-spin-button, 
                 .retime-input::-webkit-inner-spin-button { 
                     -webkit-appearance: none !important; 
                     margin: 0 !important; 
                 }
-                .retime-input:focus { background: white !important; }
+                .retime-input:focus { background: white !important; box-shadow: 0 0 0 2px rgba(128, 0, 0, 0.2) !important; }
+                
+                .retime-btn { 
+                    background: transparent !important; 
+                    border: none !important; 
+                    padding: 2px 4px !important; 
+                    cursor: pointer !important; 
+                    display: flex !important; 
+                    align-items: center !important; 
+                    justify-content: center !important; 
+                    transition: all 0.2s ease !important; 
+                    border-radius: 4px !important; 
+                    min-width: 24px !important; 
+                    height: 20px !important; 
+                    flex-shrink: 0 !important; 
+                }
+                .retime-btn:hover { 
+                    background: var(--futaba-maroon) !important; 
+                }
+                .retime-btn:hover svg { stroke: white !important; }
+                .retime-btn svg { width: 14px !important; height: 14px !important; stroke: #800000 !important; transition: stroke 0.2s ease !important; }
                 
                 #repeat-btn { min-width: 34px !important; padding: 6px !important; }
                 #repeat-btn.repeat-active { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; }

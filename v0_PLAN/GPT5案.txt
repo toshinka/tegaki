@@ -1,234 +1,297 @@
-要点（先に結論）
+まとめ（先に結論）
 
-①（History が増え続ける）原因推定
-Undo/Redo 実行時に「元に戻す」処理がさらに History に新規 push を発生させている（＝undo の副作用を履歴に記録している）。典型的には「履歴登録関数が操作の起点/undo/redo を区別できていない」か「イベント発火で二重に push される」問題です。
+①（History/Undo の異常増加）
+原因（高確度推定）：History スタックの設計がコマンド（操作）単位で分離されておらず、undo 実行中に副作用として「新しい CUT（またはUT）」を生成する処理が混入している／同じ操作が複数回 push されている（イベントの重複登録・コールバックの二重呼び出し）。
+改修方針：Command パターン（do()/undo()）で操作を明確に分離し、History は純粋に命令の push/pop のみ担当。副作用（UI再描画・サムネ生成等）はコマンドの外で行うか、コマンド内でも「undo時は push しないフラグ」を厳格に扱う。イベントリスナ重複は一箇所で防ぐ。
 
-対策（必須）
-History 層に「記録抑止フラグ（suspend/recording）」を入れる。Undo/Redo 実行中は push を無効化する。あるいはコマンドパターン（Command オブジェクト）にして undo/redo の実行は履歴の push を呼ばないようにする。
+②（全カット時間変更アイコンの重なり）
+原因（高確度推定）：timeline のコントロール要素を同じ親 container 内で絶対配置／重ね書きしている。DOM/CSS のレイアウトが固定幅に依存しているため、数値入力枠の内側にアイコン群が重なっている。
+改修方針：DOM を構造的に分離（左：数値入力 / 中央：数値 / 右：アイコン列）し、CSS は柔軟な display:flex を採用。PixiDOM（HTML UI）なら DOM 側で再レイアウト。アイコンは独立要素として左右並列にする。
 
-②（全カット時間変更アイコン重なり）対策
-UI 側でアイコンと数値入力を独立した要素（左右それぞれ）にして display:flex 相当（Pixi なら Container で位置を固定）で左右並べる。添付図のように左：アイコン、右：数値入力、アイコンは数値の外枠の内側に重ならないように余白を確保。
+詳細原因（想定されるコードパターンと問題箇所）
 
-③（再生ショートカット Shift+Space が効かない）
-競合の可能性があるため keydown ハンドラは e.code === 'Space' と e.shiftKey / e.ctrlKey を正確に判定し、e.preventDefault() を呼ぶ。ブラウザや他ライブラリに捕られている場合は別キー（例：Ctrl+Space）へ移行。
+① History 増加が止まらない — よくあるパターン
 
-④（Shift+Ctrl+N がシークレットと競合）
-ブラウザ（Chrome）の Ctrl+Shift+N (シークレット) はブラウザ側で優先され、ページスクリプトから確実にキャンセルできない。同様に Ctrl+N（新規ウィンドウ）も上位にある。したがってブラウザ予約ショートカットを“キャンセル”することは原則不可。代替案として Alt+Shift+N や Ctrl+Alt+N を推奨（競合が少ない）。
+history.push(state) を呼ぶ箇所が多く、undo 中のロジックにも無条件で push している。→ undo をやっても新しい push がされるためスタックが増える。
 
-⑤（CUT追加を Shift+N にする）
-実装は簡単。ショートカット管理ロジックで e.shiftKey && e.code === 'KeyN' を捕まえて追加処理を呼ぶ。ただし Shift+N が OS/IME による影響を受けないか試験要。
+イベントバインドが複数回されている（例：timeline のリセットやレンダラ更新時に同じ onClick を addEventListener している）。結果、1回の操作で複数回 push。
 
-具体的改修プラン（優先度付き）
+Undo実行時に UI 再構築のため CUT を再生成する処理が走り、その再生成でまた history.push が呼ばれる（循環副作用）。
 
-優先度は「致命度／再現性／簡単さ」を勘案しています。
+② UI 重なり — よくあるパターン
 
-優先度★（最重要） — history.js（①修正）
+アイコン群が position:absolute / 親 container の相対位置内に配置され、親の幅が狭まると重なる。
 
-目的：Undo/Redo 実行中に history.push が入らないようにする。
+数値入力を入れる枠（inner box）が overflow:hidden でアイコンを隠したり、逆に上書きしたりしている。
 
-変更方針
+DOM 構造が「数値レイヤ」と「アイコンレイヤ」を同じ要素で表現している（分離不足）。
 
-history オブジェクトに suspended（boolean） と withSuspend(fn) ユーティリティを追加。
+改修計画（優先度順・実施手順・担当ファイル付き）
+A. 緊急（必須） — History の修正（blocker）
 
-push() 実行時は if (this.suspended) return;
+目的：undo 時に history カウントが増え続ける不具合を解消する。
+ファイル：system/history.js, system/animation-system.js（該当する操作呼び出し部）, ui/timeline-ui.js（イベント登録チェック）
+手順（実作業）：
 
-undo() と redo() の内部で withSuspend(() => { /* 実処理 */ }) を使う。
+History を Command パターンに置換（段階的）
 
-パッチ例（history.js）
+既存 history.push(state) 型をすべて検索（find）して、直接 push する呼び出しを一旦ラップする History.execute(command) を作る。
 
-// --- history.js ---
-const History = {
-  entries: [],
-  index: -1, // 現在位置
-  suspended: false,
+command は以下の形（擬似）に統一する：
 
-  withSuspend(fn) {
-    const prev = this.suspended;
-    this.suspended = true;
-    try { return fn(); } finally { this.suspended = prev; }
-  },
+// system/history.js 追加（シンプル実装）
+const History = (function(){
+  const stack = [];
+  let pos = -1;
+  return {
+    execute(command){
+      // command: { do: fn, undo: fn, meta: {...} }
+      // 実行中に history に push されないよう、ここでのみ push を行う
+      command.do();
+      pos++;
+      stack.splice(pos, stack.length - pos, command);
+    },
+    undo(){
+      if(pos < 0) return;
+      const cmd = stack[pos];
+      if(cmd && typeof cmd.undo === 'function') {
+        // undo 実行中に別の箇所が History.execute を呼ばないこと
+        cmd.undo();
+        pos--;
+      }
+    },
+    redo(){
+      if(pos + 1 >= stack.length) return;
+      pos++;
+      const cmd = stack[pos];
+      cmd.do();
+    },
+    // debug / getState
+  };
+})();
 
-  push(entry) {
-    if (this.suspended) return; // ← 重要: undo/redo 中は記録しない
-    // 切り詰め
-    this.entries = this.entries.slice(0, this.index + 1);
-    this.entries.push(entry);
-    this.index++;
-    // optional: cap length
-    if (this.entries.length > 1000) this.entries.shift(), this.index--;
-  },
 
-  undo() {
-    if (this.index < 0) return;
-    const entry = this.entries[this.index];
-    // entry は {undo: fn, redo: fn, meta: {...}} という形推奨
-    this.withSuspend(() => {
-      if (entry && typeof entry.undo === 'function') entry.undo();
-      this.index--;
-    });
-    // 注意：undo によって layer-system 等が自身で push しないよう併せて修正
-  },
+目的：do() と undo() の中で 直接 History.execute を呼ばない ルールを守れば、undo 中に別の push が発生しない。
 
-  redo() {
-    if (this.index + 1 >= this.entries.length) return;
-    const entry = this.entries[this.index + 1];
-    this.withSuspend(() => {
-      if (entry && typeof entry.redo === 'function') entry.redo();
-      this.index++;
-    });
+既存の「state シリアライズ push」を Command に変換
+
+例：CUT を追加する処理は、AddCutCommand = { do: addCut, undo: removeCut } にして History.execute(new AddCutCommand(...)) を呼ぶ。
+
+既存コードは段階的にラップしていき、すべての UI 操作（CUT追加、UT追加、時間変更、レイヤ追加など）をコマンド化する。
+
+イベントリスナの重複防止
+
+ui/timeline-ui.js の初期化関数は idempotent（何度呼んでも副作用が無い） にする。
+
+element.removeEventListener(...); element.addEventListener(...); で必ず remove を行うか、once オプション、もしくは初期化を一回だけ行うフラグ initialized = true を持つ。
+
+例：
+
+function initTimelineUI(){
+  if(window._timelineInitDone) return;
+  window._timelineInitDone = true;
+  // ... bind listeners
+}
+
+
+undo 実行時の副作用切り分け
+
+undo/redo 中は「サムネ再生成」「外部 API 呼び出し（gif-exporter 等）」を suppress するフラグ History.isUndoing を導入し、外部処理側はそのフラグを尊重して push をしない／重い処理を行わないようにする。
+
+ただしこれは暫定手段。根本は「History.execute の外で副作用を発生させないこと」。
+
+メモリ参照のコピー
+
+History にオブジェクト参照を push している場合、将来の状態変更で History 内の過去 state が変化する問題がある（参照渡し）。必ず deep clone で保存する（ただしサイズ注意）。Command パターンでは undo() に必要最小限の情報だけ保持するため clone を小さく出来る。
+
+実施サンプルパッチ（抜粋）
+system/history.js を上書きする形で下記を入れる（簡易実装）：
+
+// system/history.js (simple command stack)
+const History = (function(){
+  const stack = [];
+  let pos = -1;
+  return {
+    execute(command){
+      // command: { do:fn, undo:fn, meta:object }
+      if(typeof command.do !== 'function') throw new Error('command must have do()');
+      command.do();
+      pos++;
+      stack.splice(pos, stack.length - pos, command);
+    },
+    canUndo(){ return pos >= 0; },
+    canRedo(){ return pos + 1 < stack.length; },
+    undo(){
+      if(pos < 0) return;
+      const cmd = stack[pos];
+      if(cmd && typeof cmd.undo === 'function'){
+        cmd.undo();
+        pos--;
+      }
+    },
+    redo(){
+      if(pos + 1 >= stack.length) return;
+      pos++;
+      const cmd = stack[pos];
+      if(cmd && typeof cmd.do === 'function') cmd.do();
+    },
+    clear(){ stack.length = 0; pos = -1; },
+    getStack(){ return stack.slice(); }
+  };
+})();
+
+
+AddCut の呼び出しは以下のように置き換え：
+
+// 旧: addCut(cutData); historyPush(...)
+const addCutCmd = {
+  do: () => addCut(cutData),
+  undo: () => removeCutById(cutData.id)
+};
+History.execute(addCutCmd);
+
+
+補足：addCut と removeCutById は 副作用を持たない純粋なデータ操作 にする。UI 更新は呼び出し元で行う。
+
+B. UI 修正（中優先）
+
+目的：全カット時間変更アイコン群を重ならないように独立配置して左右並べにする。
+ファイル：ui/timeline-ui.js, ui/timeline-thumbnail-utils.js（関係するDOM生成箇所）
+手順：
+
+DOM 構造を下記のように変更（HTML 想定）：
+
+<div class="time-control">
+  <div class="time-input-wrap"> <!-- 左寄せ -->
+    <label>全カット時間</label>
+    <input type="number" class="time-input" />
+  </div>
+  <div class="time-value-wrap"> <!-- 中央（必要なら）-->
+    <input type="number" class="time-value" />
+  </div>
+  <div class="time-action-wrap"> <!-- 右寄せ：アイコン等 -->
+    <button class="icon-btn set-all">Set</button>
+    <button class="icon-btn reset-all">Reset</button>
+  </div>
+</div>
+
+
+CSS（シンプル、flex）：
+
+.time-control {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  padding: 4px;
+}
+.time-input-wrap { flex: 0 0 auto; display:flex; gap:6px; align-items:center; }
+.time-value-wrap { flex: 1 1 auto; display:flex; }
+.time-action-wrap { flex: 0 0 auto; display:flex; gap:6px; }
+.icon-btn { min-width:28px; height:28px; border-radius:4px; }
+
+
+ポイント：flex にすることで、親幅が狭くなっても横並びを維持。必要ならレスポンシブで列に落とす。
+
+JavaScript 側では DOM を直接編集しているなら、構造変更に対応する。timeline-ui.js の生成コードを置き換え、既存の絶対配置スタイルを削除。
+
+簡易パッチ（timeline-ui.js）抜粋
+
+function createGlobalTimeControl(){
+  const wrapper = document.createElement('div');
+  wrapper.className = 'time-control';
+
+  const left = document.createElement('div');
+  left.className = 'time-input-wrap';
+  left.innerHTML = '<label>全カット時間</label>';
+  const input = document.createElement('input');
+  input.type = 'number';
+  input.className = 'time-input';
+  left.appendChild(input);
+
+  const center = document.createElement('div');
+  center.className = 'time-value-wrap';
+  // add center elements if needed
+
+  const right = document.createElement('div');
+  right.className = 'time-action-wrap';
+  const setBtn = document.createElement('button'); setBtn.className='icon-btn set-all'; setBtn.textContent='Set';
+  const resetBtn = document.createElement('button'); resetBtn.className='icon-btn reset-all'; resetBtn.textContent='Reset';
+  right.appendChild(setBtn); right.appendChild(resetBtn);
+
+  wrapper.appendChild(left);
+  wrapper.appendChild(center);
+  wrapper.appendChild(right);
+
+  return wrapper;
+}
+
+C. 追加の設計改善（長期、推奨）
+
+命令合成（バッチ）：複数の低レベル変更（例：複数 CUT に対する時間変更）を一つの BatchCommand にまとめ、do と undo を一度で行えるようにする。UI で「全カットに適用」等を押すと履歴が一つになる（これで undo 回数が増えすぎる問題を抑止）。
+
+イベントハブの見直し：system/event-bus.js で event 名を厳密化し、リスナが重複登録されないよう、on / off の API を整備する。
+
+History のサイズとメモリ：deep clone を避けるため Command に必要最小限の差分データだけ持たせる（例：oldValue/newValue）。
+
+テスト用ユニットシナリオ：自動化は難しくても、手順化した再現テストケースを tests/history-tests.md のように作る。
+
+検証手順（再現性のあるテストケース）
+
+検証1（History）
+
+ツール起動 → 新規 CUT を追加（UTも追加） → History スタックが 1 つ増えることを確認（History.getStack().length）。
+
+追加した CUT に対して undo を 1 回実行 → CUT が削除される。History.getStack().length が減っていることを確認。
+
+同じ操作を何回か繰り返す（追加→undo→redo→add別のCUT）して、stack が不自然に増えないこと。
+
+複数 UT を増やした後、undo を数回実行し History カウントが戻る（増え続けない）。
+
+UI で操作する際、コンソールに history.push を呼ぶ箇所が無いか確認（不要な push は無くなっている）。
+
+検証2（UI レイアウト）
+
+画面幅を狭める／広げる → 全カット時間のアイコンが重ならず左→中央→右に並ぶ。
+
+アイコンを押したときのクリック領域とツールチップが正しく動く。
+
+開発注意点（あなたの改修ルールに合わせた運用）
+
+PixiJS のレンダリングと UI（DOM）は明確に分離する。タッチイベントやドラッグは Pixi のイベントを使い、フォームやアイコン等の細かい UI は HTML DOM に置く（今回の timeline コントロールは DOM 側で良い）。
+
+「曖昧な動作・自動修復」は禁止とのことなので、undo の副作用 suppression は明確に History の中で制御し、他の箇所が勝手に history.execute を呼べないアーキテクチャにする。
+
+console.log は最小限に。検証情報は dev-only フラグで出す設計にする。
+
+細かい差分（すぐ入れられる最小修正：hotfix）
+
+もし今すぐ最小限の修正を入れたい（リスク低、まず試すべき）なら下記 2 点を行ってください。
+
+system/history.js に「undo 実行中フラグ」を導入（短時間でできる、既存コードの侵襲少）：
+
+// 既存 history オブジェクトに追加
+History._isUndoing = false;
+History.undo = function(){
+  if(this._isUndoing) return;
+  this._isUndoing = true;
+  try {
+    // 既存 undo 処理
+  } finally {
+    this._isUndoing = false;
   }
 };
 
 
-補足
+そして他所の push 実行箇所を if(History._isUndoing) return; でガードする。
 
-entry は単にスナップショットではなくコマンド（undo/redo を持つ）にすることを強く推奨。スナップショット方式なら undo の実行前に状態を差し替えるが、その際も withSuspend で push を抑制する。
+ui/timeline-ui.js のアイコン要素を absolute => flex に変える（短い CSS 差し替え）。前述 CSS をぶち込むだけでレイアウトは改善する。
 
-layer-system や animation-system で state 変更時に history.push() を呼んでいる箇所を全部見つけ、「外部からの undo/redo 実行時は push を行わない」 仕様に整合させる（つまり push を呼ぶ前に if (History.suspended) return; でも OK）。
+これらは 暫定的 で、最終的にはコマンドパターンへの移行を強く推奨します。
 
-優先度★★ — layer-system.js / コマンド化（防御的）
+リスクと注意点
 
-目的：レイヤー/CUT の作成・削除・時間変更などを 必ず Command オブジェクト経由で行う。これにより undo/redo の副作用を局所化できる。
+History の設計変更はツール全体に影響するため段階的に移行する。まずは「既知の操作（CUT/UT の追加・削除・時間変更）」から Command 化してテストを回す。
 
-サンプル Command パターン
+Deep clone を乱用するとメモリ消費が大きくなる（大きな画像など）。Command は「差分」を保持するスタイルが理想。
 
-function createLayerCommand(layerProps) {
-  let layerId;
-  return {
-    redo() {
-      layerId = LayerSystem.create(layerProps); // 実際の create は id を返す
-    },
-    undo() {
-      LayerSystem.remove(layerId);
-    }
-  };
-}
-
-// 呼び出し例
-const cmd = createLayerCommand({name:'L1'});
-cmd.redo();
-History.push(cmd);
-
-
-理由
-
-どの操作がどの undo/redo と対応するか明確。
-
-undo/redo 実行時に push が呼ばれなくなる（History.withSuspend と合わせる）。
-
-優先度★★ — timeline-ui.js（② レイアウト修正）
-
-目的：全カット時間変更 UI のアイコンと数値入力が重ならないように並べる。
-
-実装案（Pixi 上）
-
-const container = new PIXI.Container();
-
-const timeInput = createNumberInput(...); （既存）
-
-const leftIcon = createIconSprite('clock-left');
-
-const rightIcon = createIconSprite('clock-right');
-
-レイアウト：leftIcon.x = 0; timeInput.x = leftIcon.x + leftIcon.width + padding; rightIcon.x = timeInput.x + timeInput.width + padding;
-
-全体幅を container.width にして、必要なら container.pivot で中央揃え。
-
-HTML/CSS（もしDOM要素を使っているなら）
-
-<div class="cut-duration-row">
-  <button class="icon left">⏷</button>
-  <input class="duration-input" type="number" />
-  <button class="icon right">⏵</button>
-</div>
-
-.cut-duration-row { display: flex; gap: 8px; align-items: center; }
-.duration-input { width: 60px; }
-
-
-ポイント
-
-「数字入力の大枠（枠線）」と「アイコン」は別要素にする（重ねない）。
-
-アイコンのクリック処理はそれぞれ独立にバインド。
-
-優先度★★ — キーバインド実装修正（③/④/⑤）
-
-目的：ショートカットの安定化とブラウザ予約ショートカット回避案提示。
-
-汎用キーハンドラ（window）
-
-window.addEventListener('keydown', (e) => {
-  // 再生/停止: Ctrl+Space (推奨)
-  if (e.ctrlKey && e.code === 'Space') {
-    e.preventDefault();
-    togglePlayPause();
-    return;
-  }
-
-  // 新規レイヤー: Ctrl+Alt+N (代替: Ctrl+Alt でブラウザ予約回避)
-  if (e.ctrlKey && e.altKey && e.code === 'KeyN') {
-    e.preventDefault();
-    LayerSystem.createNewLayer();
-    return;
-  }
-
-  // CUT追加: Shift+N
-  if (e.shiftKey && !e.ctrlKey && !e.altKey && e.code === 'KeyN') {
-    e.preventDefault();
-    CutSystem.addCutAtCurrent();
-    return;
-  }
-
-  // undo/redo: Ctrl+Z / Ctrl+Shift+Z
-  if (e.ctrlKey && e.code === 'KeyZ') {
-    e.preventDefault();
-    if (e.shiftKey) History.redo(); else History.undo();
-    return;
-  }
-});
-
-
-ブラウザ予約ショートカットについて（重要）
-
-Ctrl+Shift+N（シークレット）や Ctrl+N（新規ウィンドウ）はブラウザが優先するため、ページスクリプトから確実に抑止することはできません。ユーザー側（あなた）には 予約されていないキー を割り当てることを推奨します（例：Ctrl+Alt+N、Alt+Shift+N、F2 など）。
-
-企業向けアプリや Electron の場合はブラウザ外で変更可能ですが、純ブラウザ環境では不可。
-
-改修工程（ファイル／作業リスト）
-
-system/history.js — suspended フラグ実装 + withSuspend + push/undo/redo 修正。（必須）
-
-system/layer-system.js — レイヤー作成/削除を Command 化 or push 呼び出し箇所に if (History.suspended) return; を追加。（必須）
-
-system/animation-system.js / system/gif-exporter.js — animation/timechange の履歴記録箇所を確認・修正。（推奨）
-
-ui/timeline-ui.js — 全カット時間変更 UI を左右独立化してレイアウトを調整。添付図を再現する。（推奨）
-
-core-runtime.js or core-engine.js — キーイベントの集中管理を作成（上で示した汎用ハンドラを採用）。既存の複数箇所に keydown が散らばっているなら統合する。（重要）
-
-ドキュメント更新：README に「ショートカット一覧」「history のコマンド仕様」を明記。（必須）
-
-テスト項目（検証手順）
-
-（各変更後に必ず行う）
-
-新規レイヤー作成 → Undo を何回か実行 → レイヤー数が正しく増減し、History.entries.length が不必要に増えないことを確認。
-
-CUT 追加（Shift+N）/削除 → Undo/Redo を複数回 → 同上。
-
-再生/停止（Ctrl+Space）を押す → 競合なく再生状態が toggle されること。既存の Shift+Space は無効化しておく。
-
-ブラウザのシークレット（Ctrl+Shift+N）を押してもブラウザ側が優先されることを確認（＝ページで抑止できないことを確認して代替ショートカットをデフォルトに設定）。
-
-タイムラインの「全カット時間」UI がアイコンと数値入力で左右分離され、どの画面幅でも重ならないこと。
-
-追加アドバイス（可読性／将来改修しやすくするため）
-
-履歴は Command（undo/redo メソッドを持つオブジェクト）で統一すると、複雑な state も安定して扱える。push は History.push(command) だけに限定。
-
-イベントバスを使っているなら（system/event-bus.js）、History に関するイベントは 単方向（操作 → 履歴） に限定し、undo/redo は直接 History.undo() を呼ぶだけにする。イベント発火で二重記録されないように。
-
-キー定義は設定可能に。ハードコードせず、ユーザー設定（JSON）で keyBindings を読み込むと将来便利。
-
-console.log を減らす（要件どおり）。ただし history のトレース用に開発ビルドでのみ出るデバッグフラグは残すとデバッグしやすい。
+DOM/CSS 変更は他 UI に影響する可能性があるため、既存の UI コンポーネントで CSS クラス名が被らないよう名前空間を付ける（例：.tgk-time-control のように接頭辞）。
