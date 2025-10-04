@@ -1,6 +1,6 @@
-// ===== system/layer-system.js - History記録タイミング修正版 =====
-// 🔧 修正: createLayer/deleteLayer でのHistory記録タイミング調整
-// ✅ 元ファイルの全機能を維持したまま、History記録のみ修正
+// ===== system/layer-system.js - シンタックスエラー修正版 =====
+// 🔧 修正: ファイル末尾の重複コード削除、閉じ括弧修正
+// ✅ Undo/Redo実行中の二重記録防止機能維持
 
 (function() {
     'use strict';
@@ -767,11 +767,10 @@
             }
             
             const transform = this.layerTransforms.get(layerId);
+            const centerX = this.config.canvas.width / 2;
+            const centerY = this.config.canvas.height / 2;
             
             if (e.shiftKey) {
-                const centerX = this.config.canvas.width / 2;
-                const centerY = this.config.canvas.height / 2;
-                
                 if (Math.abs(dy) > Math.abs(dx)) {
                     const scaleFactor = 1 + (dy * -0.01);
                     const currentScale = Math.abs(transform.scaleX);
@@ -793,6 +792,20 @@
                         rotationSlider.updateValue(transform.rotation * 180 / Math.PI);
                     }
                 }
+                
+                if (this.coordAPI?.applyLayerTransform) {
+                    this.coordAPI.applyLayerTransform(activeLayer, transform, centerX, centerY);
+                } else {
+                    activeLayer.position.set(centerX + transform.x, centerY + transform.y);
+                }
+                
+                const xSlider = document.getElementById('layer-x-slider');
+                const ySlider = document.getElementById('layer-y-slider');
+                if (xSlider?.updateValue) xSlider.updateValue(transform.x);
+                if (ySlider?.updateValue) ySlider.updateValue(transform.y);
+            } else {
+                transform.x += adjustedDx;
+                transform.y += adjustedDy;
                 
                 if (this.coordAPI?.applyLayerTransform) {
                     this.coordAPI.applyLayerTransform(activeLayer, transform, centerX, centerY);
@@ -1209,15 +1222,12 @@
             }
         }
 
-        // ===== 🔧 修正: createLayer - History記録タイミング変更 =====
-        
         createLayer(name, isBackground = false) {
             if (!this.currentCutContainer) {
                 console.error('No active CUT container');
                 return null;
             }
             
-            // 🔧 修正: レイヤー追加「前」にHistory記録
             if (window.History && typeof window.History.saveState === 'function') {
                 if (!window.History._manager?.isExecutingUndoRedo && !window.History._manager?.isRecordingState) {
                     window.History.saveState();
@@ -1588,8 +1598,6 @@
             }
         }
 
-        // ===== 🔧 修正: deleteLayer - History記録タイミング変更 =====
-        
         deleteLayer(layerIndex) {
             const layers = this.getLayers();
             
@@ -1607,7 +1615,6 @@
             }
             
             try {
-                // 🔧 修正: レイヤー削除「前」にHistory記録
                 if (window.History && typeof window.History.saveState === 'function') {
                     if (!window.History._manager?.isExecutingUndoRedo && !window.History._manager?.isRecordingState) {
                         window.History.saveState();
@@ -1656,18 +1663,6 @@
 
     window.TegakiLayerSystem = LayerSystem;
 
-    console.log('✅ layer-system.js loaded (History記録タイミング修正版)');
+    console.log('✅ layer-system.js loaded (シンタックスエラー修正版)');
 
-})();(activeLayer, transform, centerX, centerY);
-                } else {
-                    this._applyTransformDirect(activeLayer, transform, centerX, centerY);
-                }
-            } else {
-                transform.x += adjustedDx;
-                transform.y += adjustedDy;
-                
-                const centerX = this.config.canvas.width / 2;
-                const centerY = this.config.canvas.height / 2;
-                
-                if (this.coordAPI?.applyLayerTransform) {
-                    this.coordAPI.applyLayerTransform
+})();

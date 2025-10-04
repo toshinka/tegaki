@@ -1,7 +1,7 @@
-// ===== core-engine.js - Undo/Redo機能追加版 =====
-// 【改修】DrawingEngine.stopDrawing()にHistory.saveState()追加
-// 【改修】Delete キー対応追加
-// 【維持】既存機能完全維持
+// ===== core-engine.js - History二重記録修正版 =====
+// 🔧 修正1: startDrawing()のHistory記録を削除（stopDrawing()のみに統一）
+// 🔧 修正2: レイヤー操作の二重記録防止
+// ✅ 既存機能完全維持
 
 (function() {
     'use strict';
@@ -90,10 +90,7 @@
                 return;
             }
             
-            // 🔧 改修: 描画開始前に現在状態を保存
-            if (window.History && typeof window.History.saveState === 'function') {
-                window.History.saveState();
-            }
+            // 🔥 修正: startDrawing()でのHistory記録を削除（stopDrawing()で一括記録）
             
             this.isDrawing = true;
             this.lastPoint = canvasPoint;
@@ -160,20 +157,21 @@
             this.lastPoint = canvasPoint;
         }
 
-stopDrawing() {
-    if (!this.isDrawing) return;
+        stopDrawing() {
+            if (!this.isDrawing) return;
 
-    if (this.currentPath) {
-        this.currentPath.isComplete = true;
-        
-        // 🔥 修正: 描画完了時に履歴保存（Undo/Redo実行中はスキップ）
-        if (window.History && typeof window.History.saveState === 'function') {
-            if (!window.History._manager?.isExecutingUndoRedo) {
-                window.History.saveState();
-            }
-        }
-        
-        this.layerManager.requestThumbnailUpdate(this.layerManager.activeLayerIndex);
+            if (this.currentPath) {
+                this.currentPath.isComplete = true;
+                
+                // 🔥 修正: 描画完了時のみHistory記録（Undo/Redo実行中はスキップ）
+                if (window.History && typeof window.History.saveState === 'function') {
+                    if (!window.History._manager?.isExecutingUndoRedo && 
+                        !window.History._manager?.isRecordingState) {
+                        window.History.saveState();
+                    }
+                }
+                
+                this.layerManager.requestThumbnailUpdate(this.layerManager.activeLayerIndex);
                 
                 if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
                     const currentCutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
@@ -285,176 +283,173 @@ stopDrawing() {
         }
     }
 
-class UnifiedKeyHandler {
-    constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
-        this.cameraSystem = cameraSystem;
-        this.layerSystem = layerSystem;
-        this.drawingEngine = drawingEngine;
-        this.eventBus = eventBus || window.TegakiEventBus;
-        this.animationSystem = animationSystem;
-        
-        this.keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
-        this.keyHandlingActive = true;
-        
-        // 🔧 削除: _undoRedoHandlerInstalled と setupUndoRedoHandling()
-        // index.htmlで処理するため、ここでは処理しない
-        
-        this.setupKeyHandling();
-    }
-    
-    setupKeyHandling() {
-        document.addEventListener('keydown', (e) => {
-            if (!this.keyHandlingActive) return;
+    class UnifiedKeyHandler {
+        constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
+            this.cameraSystem = cameraSystem;
+            this.layerSystem = layerSystem;
+            this.drawingEngine = drawingEngine;
+            this.eventBus = eventBus || window.TegakiEventBus;
+            this.animationSystem = animationSystem;
             
-            // 🔧 修正: Undo/Redo系キーはindex.htmlで処理するのでスキップ
-            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-            const metaKey = isMac ? e.metaKey : e.ctrlKey;
-            if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
-                return; // index.htmlに処理を任せる
+            this.keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
+            this.keyHandlingActive = true;
+            
+            this.setupKeyHandling();
+        }
+        
+        setupKeyHandling() {
+            document.addEventListener('keydown', (e) => {
+                if (!this.keyHandlingActive) return;
+                
+                // Undo/Redo系キーはindex.htmlで処理するのでスキップ
+                const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+                const metaKey = isMac ? e.metaKey : e.ctrlKey;
+                if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
+                    return;
+                }
+                
+                this.handleKeyDown(e);
+            });
+            
+            document.addEventListener('keyup', (e) => {
+                if (!this.keyHandlingActive) return;
+                this.handleKeyUp(e);
+            });
+            
+            window.addEventListener('blur', () => {
+                this.resetAllKeyStates();
+            });
+            
+            window.addEventListener('focus', () => {
+                this.resetAllKeyStates();
+            });
+        }
+        
+        handleKeyDown(e) {
+            const action = this.keyConfig.getActionForKey(e.code, {
+                vPressed: this.layerSystem.vKeyPressed,
+                shiftPressed: e.shiftKey,
+                altPressed: e.altKey
+            });
+            
+            if (this.handleSpecialKeys(e)) {
+                return;
             }
             
-            this.handleKeyDown(e);
-        });
-        
-        document.addEventListener('keyup', (e) => {
-            if (!this.keyHandlingActive) return;
-            this.handleKeyUp(e);
-        });
-        
-        window.addEventListener('blur', () => {
-            this.resetAllKeyStates();
-        });
-        
-        window.addEventListener('focus', () => {
-            this.resetAllKeyStates();
-        });
-    }
-    
-    handleKeyDown(e) {
-        const action = this.keyConfig.getActionForKey(e.code, {
-            vPressed: this.layerSystem.vKeyPressed,
-            shiftPressed: e.shiftKey,
-            altPressed: e.altKey
-        });
-        
-        if (this.handleSpecialKeys(e)) {
-            return;
-        }
-        
-        if (!action) return;
-        
-        switch(action) {
-            case 'pen':
-                if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                    this.switchTool('pen');
-                    if (this.layerSystem.isLayerMoveMode) {
-                        this.layerSystem.exitLayerMoveMode();
+            if (!action) return;
+            
+            switch(action) {
+                case 'pen':
+                    if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                        this.switchTool('pen');
+                        if (this.layerSystem.isLayerMoveMode) {
+                            this.layerSystem.exitLayerMoveMode();
+                        }
+                        e.preventDefault();
                     }
-                    e.preventDefault();
-                }
-                break;
+                    break;
+                    
+                case 'eraser':
+                    if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                        this.switchTool('eraser');
+                        if (this.layerSystem.isLayerMoveMode) {
+                            this.layerSystem.exitLayerMoveMode();
+                        }
+                        e.preventDefault();
+                    }
+                    break;
                 
-            case 'eraser':
-                if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                    this.switchTool('eraser');
-                    if (this.layerSystem.isLayerMoveMode) {
-                        this.layerSystem.exitLayerMoveMode();
+                case 'gifToggleAnimation':
+                    if (e.altKey && window.timelineUI) {
+                        window.timelineUI.toggle();
+                        e.preventDefault();
                     }
-                    e.preventDefault();
-                }
-                break;
-            
-            case 'gifToggleAnimation':
-                if (e.altKey && window.timelineUI) {
-                    window.timelineUI.toggle();
-                    e.preventDefault();
-                }
-                break;
-            
-            case 'gifAddCut':
-                if (e.altKey && this.animationSystem) {
-                    this.animationSystem.createCutFromCurrentState();
-                    e.preventDefault();
-                }
-                break;
-            
-            case 'gifPlayPause':
-                if (e.code === 'Space' && this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                    this.animationSystem.togglePlayPause();
-                    e.preventDefault();
-                }
-                break;
-            
-            case 'gifPrevFrame':
-                if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                    this.animationSystem.goToPreviousFrame();
-                    e.preventDefault();
-                }
-                break;
-            
-            case 'gifNextFrame':
-                if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                    this.animationSystem.goToNextFrame();
-                    e.preventDefault();
-                }
-                break;
-            
-            case 'delete':
-                if (e.code === 'Delete' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    this.eventBus.emit('layer:clear-active');
-                    e.preventDefault();
-                }
-                break;
+                    break;
+                
+                case 'gifAddCut':
+                    if (e.altKey && this.animationSystem) {
+                        this.animationSystem.createCutFromCurrentState();
+                        e.preventDefault();
+                    }
+                    break;
+                
+                case 'gifPlayPause':
+                    if (e.code === 'Space' && this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
+                        this.animationSystem.togglePlayPause();
+                        e.preventDefault();
+                    }
+                    break;
+                
+                case 'gifPrevFrame':
+                    if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
+                        this.animationSystem.goToPreviousFrame();
+                        e.preventDefault();
+                    }
+                    break;
+                
+                case 'gifNextFrame':
+                    if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
+                        this.animationSystem.goToNextFrame();
+                        e.preventDefault();
+                    }
+                    break;
+                
+                case 'delete':
+                    if (e.code === 'Delete' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                        this.eventBus.emit('layer:clear-active');
+                        e.preventDefault();
+                    }
+                    break;
+            }
         }
-    }
-    
-    handleKeyUp(e) {
-    }
-    
-    handleSpecialKeys(e) {
-        if (e.ctrlKey && e.code === 'Digit0') {
+        
+        handleKeyUp(e) {
+        }
+        
+        handleSpecialKeys(e) {
+            if (e.ctrlKey && e.code === 'Digit0') {
+                return false;
+            }
+            
+            if (e.code === 'Space') {
+                return false;
+            }
+            
             return false;
         }
         
-        if (e.code === 'Space') {
-            return false;
-        }
-        
-        return false;
-    }
-    
-    switchTool(tool) {
-        this.drawingEngine.setTool(tool);
-        
-        document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-        const toolBtn = document.getElementById(tool + '-tool');
-        if (toolBtn) {
-            toolBtn.classList.add('active');
-        }
+        switchTool(tool) {
+            this.drawingEngine.setTool(tool);
+            
+            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
+            const toolBtn = document.getElementById(tool + '-tool');
+            if (toolBtn) {
+                toolBtn.classList.add('active');
+            }
 
-        const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
-        const toolElement = document.getElementById('current-tool');
-        if (toolElement) {
-            toolElement.textContent = toolNames[tool] || tool;
+            const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
+            const toolElement = document.getElementById('current-tool');
+            if (toolElement) {
+                toolElement.textContent = toolNames[tool] || tool;
+            }
+            
+            this.cameraSystem.updateCursor();
+            
+            if (this.eventBus) {
+                this.eventBus.emit('key:tool-switched', { tool });
+            }
         }
         
-        this.cameraSystem.updateCursor();
+        resetAllKeyStates() {
+            if (this.cameraSystem._resetAllKeyStates) {
+                this.cameraSystem._resetAllKeyStates();
+            }
+        }
         
-        if (this.eventBus) {
-            this.eventBus.emit('key:tool-switched', { tool });
+        setKeyHandlingActive(active) {
+            this.keyHandlingActive = active;
         }
     }
-    
-    resetAllKeyStates() {
-        if (this.cameraSystem._resetAllKeyStates) {
-            this.cameraSystem._resetAllKeyStates();
-        }
-    }
-    
-    setKeyHandlingActive(active) {
-        this.keyHandlingActive = active;
-    }
-}
 
     class CoreEngine {
         constructor(app) {
@@ -489,22 +484,23 @@ class UnifiedKeyHandler {
         }
         
         setupSystemEventIntegration() {
-            // 🔧 改修: レイヤー消去イベント追加
+            // レイヤー消去イベント
             this.eventBus.on('layer:clear-active', () => {
                 const activeLayer = this.layerSystem.getActiveLayer();
                 if (!activeLayer || !activeLayer.layerData) return;
                 
-                // 背景レイヤーは消去不可
                 if (activeLayer.layerData.isBackground) {
                     return;
                 }
                 
-                // 現在状態を保存
+                // 🔥 修正: History記録を一度だけ
                 if (window.History && typeof window.History.saveState === 'function') {
-                    window.History.saveState();
+                    if (!window.History._manager?.isExecutingUndoRedo && 
+                        !window.History._manager?.isRecordingState) {
+                        window.History.saveState();
+                    }
                 }
                 
-                // パスをクリア
                 if (activeLayer.layerData.paths) {
                     activeLayer.layerData.paths.forEach(path => {
                         if (path.graphics) {
@@ -517,7 +513,6 @@ class UnifiedKeyHandler {
                     activeLayer.layerData.paths = [];
                 }
                 
-                // サムネイル更新
                 this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
                 
                 if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {
@@ -673,10 +668,8 @@ class UnifiedKeyHandler {
             this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
             this.clipboardSystem.init(this.eventBus, CONFIG);
             
-            // 🔧 改修: LayerSystem初期化完了後にHistory接続
             if (window.History && typeof window.History.setLayerSystem === 'function') {
                 window.History.setLayerSystem(this.layerSystem);
-                console.log('✅ History system connected to LayerSystem');
             }
             
             this.initializeAnimationSystem();
@@ -725,9 +718,9 @@ class UnifiedKeyHandler {
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (Undo/Redo機能追加版) loaded');
-    console.log('  - 🔧 DrawingEngine.startDrawing()に履歴保存追加');
-    console.log('  - 🔧 Delete キー対応追加（layer:clear-active）');
-    console.log('  - 🔧 History.setLayerSystem()接続追加');
+    console.log('✅ core-engine.js (History二重記録修正版) loaded');
+    console.log('  - 🔥 startDrawing()のHistory記録削除');
+    console.log('  - 🔥 stopDrawing()でのみHistory記録（一筆一回）');
+    console.log('  - 🔥 レイヤー消去のHistory記録最適化');
 
 })();
