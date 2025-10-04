@@ -1,231 +1,234 @@
-タイムラインのサムネイルが伸びる現象 - 調査・改修計画書（txt）
-1. 問題（現象）
+要点（先に結論）
 
-キャンバスサイズを 344×135 から 400×400 に変更したとき、タイムラインパネルのサムネイルだけが縦横比を崩して引き伸ばされたように表示される。
-（右側レイヤーパネルのサムネイルは正常表示）
+①（History が増え続ける）原因推定
+Undo/Redo 実行時に「元に戻す」処理がさらに History に新規 push を発生させている（＝undo の副作用を履歴に記録している）。典型的には「履歴登録関数が操作の起点/undo/redo を区別できていない」か「イベント発火で二重に push される」問題です。
 
-2. 既知の前提条件
+対策（必須）
+History 層に「記録抑止フラグ（suspend/recording）」を入れる。Undo/Redo 実行中は push を無効化する。あるいはコマンドパターン（Command オブジェクト）にして undo/redo の実行は履歴の push を呼ばないようにする。
 
-実行環境：Chrome（file:// で直接開ける）
+②（全カット時間変更アイコン重なり）対策
+UI 側でアイコンと数値入力を独立した要素（左右それぞれ）にして display:flex 相当（Pixi なら Container で位置を固定）で左右並べる。添付図のように左：アイコン、右：数値入力、アイコンは数値の外枠の内側に重ならないように余白を確保。
 
-PixiJS v8.13 を CDN で読み込み、ES2023（モジュール未使用）
+③（再生ショートカット Shift+Space が効かない）
+競合の可能性があるため keydown ハンドラは e.code === 'Space' と e.shiftKey / e.ctrlKey を正確に判定し、e.preventDefault() を呼ぶ。ブラウザや他ライブラリに捕られている場合は別キー（例：Ctrl+Space）へ移行。
 
-禁止：TypeScript / bundler / ESM / Canvas2D（サムネはOK）
+④（Shift+Ctrl+N がシークレットと競合）
+ブラウザ（Chrome）の Ctrl+Shift+N (シークレット) はブラウザ側で優先され、ページスクリプトから確実にキャンセルできない。同様に Ctrl+N（新規ウィンドウ）も上位にある。したがってブラウザ予約ショートカットを“キャンセル”することは原則不可。代替案として Alt+Shift+N や Ctrl+Alt+N を推奨（競合が少ない）。
 
-既存コードをなるべく壊さない（継承・呼び出し形を残す）
+⑤（CUT追加を Shift+N にする）
+実装は簡単。ショートカット管理ロジックで e.shiftKey && e.code === 'KeyN' を捕まえて追加処理を呼ぶ。ただし Shift+N が OS/IME による影響を受けないか試験要。
 
-3. 初期の原因仮説（優先度順）
+具体的改修プラン（優先度付き）
 
-サムネイル生成時の「出力サイズ（ピクセル）」と「描画スケール（CSS/UIサイズ）」の不一致
+優先度は「致命度／再現性／簡単さ」を勘案しています。
 
-タイムライン用のサムネ生成処理が、生成したレンダーテクスチャや canvas のピクセル幅・高さ（内部サイズ）を正しく設定せず、後で CSS 的に幅/高さを合わせようとした結果、アスペクト比が不正に扱われる。
+優先度★（最重要） — history.js（①修正）
 
-サムネ生成処理で使用する基準サイズ（元キャンバス幅/高さ）を古い初期値に固定している
+目的：Undo/Redo 実行中に history.push が入らないようにする。
 
-canvas のリサイズ（344×135 → 400×400）で、タイムライン生成関数が参照する「元サイズ（描画領域の論理サイズ）」が更新されておらず、サムネのスケール計算が誤る。
+変更方針
 
-抽出・縮小処理（extract / drawImage / generateTexture / RenderTexture 作成）の解像度（devicePixelRatio や resolution）考慮不足
+history オブジェクトに suspended（boolean） と withSuspend(fn) ユーティリティを追加。
 
-HiDPI（devicePixelRatio）や PixiJS の resolution を考慮していないため、ピクセル数と表示サイズが食い違う。
+push() 実行時は if (this.suspended) return;
 
-レイヤーパネルとタイムラインで別実装（片方は正しく scale を使って、片方は単純に width/height を変えている）
+undo() と redo() の内部で withSuspend(() => { /* 実処理 */ }) を使う。
 
-右のレイヤーパネルは「テクスチャを元にサイズを保って描画」しており、タイムラインは「別の方法（レンダリング→canvas縮小→img領域に貼る）」を使っているため差が出る。
+パッチ例（history.js）
 
-4. 調査手順（再現／原因特定）
+// --- history.js ---
+const History = {
+  entries: [],
+  index: -1, // 現在位置
+  suspended: false,
 
-再現確認
+  withSuspend(fn) {
+    const prev = this.suspended;
+    this.suspended = true;
+    try { return fn(); } finally { this.suspended = prev; }
+  },
 
-ブラウザで index.html を開き、キャンバス初期サイズを 344×135 にしてサムネを確認 → 400×400 に変更して差分を確認。
+  push(entry) {
+    if (this.suspended) return; // ← 重要: undo/redo 中は記録しない
+    // 切り詰め
+    this.entries = this.entries.slice(0, this.index + 1);
+    this.entries.push(entry);
+    this.index++;
+    // optional: cap length
+    if (this.entries.length > 1000) this.entries.shift(), this.index--;
+  },
 
-コード探索
+  undo() {
+    if (this.index < 0) return;
+    const entry = this.entries[this.index];
+    // entry は {undo: fn, redo: fn, meta: {...}} という形推奨
+    this.withSuspend(() => {
+      if (entry && typeof entry.undo === 'function') entry.undo();
+      this.index--;
+    });
+    // 注意：undo によって layer-system 等が自身で push しないよう併せて修正
+  },
 
-ui/timeline-ui.js を最初に確認。タイムラインサムネを生成している関数（例: makeThumbnail / createTimelineThumb / updateFramePreview 等）を特定。
-
-キーワード検索：generateTexture, extract.canvas, drawImage, toDataURL, RenderTexture.create, renderer.render(, canvas.getContext('2d'), width =, height =。
-
-実際の生成プロセスをログで確認（調査のみ）
-
-該当関数の冒頭に（最小限）一時ログを入れて「元の描画オブジェクトのサイズ」「生成する renderTexture/canvas の width/height」「結果として UI に渡す width/height（CSSやDOM） 」を確認。
-
-端的に console.log({srcW, srcH, rtW, rtH, thumbStyleW, thumbStyleH, devicePixelRatio})
-
-比較
-
-同じ生成関数がレイヤーパネルのサムネ生成とどう違うか比較。差のある箇所（解像度扱い・scale計算・転送方法）を特定。
-
-5. 改修方針（非破壊）
-
-既存の API 呼び出しやイベントフローは維持し、タイムラインのサムネ生成ロジックのみを明確に分離・置換する。
-
-新しいサムネ生成関数 createThumbnail(renderer, displayObject, thumbW, thumbH) を作り、常にサムネのピクセル解像度（内部サイズ）を明確に指定してからレンダリングする。
-
-devicePixelRatio を考慮し、ピクセルサイズ＝表示サイズ × devicePixelRatio に揃える。
-
-既存コード呼び出し箇所は、新関数を使うように差し替える（イベントフローは変更しない）。
-
-6. 具体的修正案（コードスニペット：PixiJS v8 互換の想定）
-
-変更対象ファイル（想定）: ui/timeline-ui.js（タイムライン用サムネ生成関数を差し替え）
-既存関数名が異なる場合は、その関数を検索して下記 createThumbnail の呼び出しに差し替えてください。
-
-追加するユーティリティ関数（plain JS, Pixi v8）
-
-// timeline-thumbnail-utils.js (推奨：小さいユーティリティとして分離、もしくは timeline-ui.js 内に追加)
-function createThumbnail(renderer, displayObject, thumbDisplayW, thumbDisplayH) {
-  // thumbDisplayW/H は「UI上の表示ピクセル幅/高さ（CSSピクセル）」を渡す
-  const dpr = window.devicePixelRatio || 1;
-
-  // 内部レンダリングサイズ（ピクセル）を決定
-  const rtWidth  = Math.max(1, Math.round(thumbDisplayW * dpr));
-  const rtHeight = Math.max(1, Math.round(thumbDisplayH * dpr));
-
-  // RenderTexture を作成（解像度 = 1、ピクセルサイズを直接指定）
-  const renderTexture = PIXI.RenderTexture.create({
-    width: rtWidth,
-    height: rtHeight,
-    scaleMode: PIXI.SCALE_MODES.LINEAR,
-    multisample: PIXI.MSAA_QUALITY.NONE,
-  });
-
-  // 保存する前に、表示オブジェクトを「サムネ領域に合わせて正しくスケーリングして描画」する
-  // 1) オフスクリーンに描くためのコンテナを作る（元の表示をコピーしないで transform だけ合わせる方法）
-  //    ここでは簡潔のため、renderer.render に transform を与えてレンダリングします。
-  // 2) 元の displayObject のサイズを確認して scale を計算する
-  const bounds = displayObject.getLocalBounds(); // 論理サイズ（ピクセル単位）
-  const srcW = bounds.width || 1;
-  const srcH = bounds.height || 1;
-
-  // preserve aspect ratio: fit into thumbDisplayW/thumbDisplayH
-  const srcAspect = srcW / srcH;
-  const dstAspect = thumbDisplayW / thumbDisplayH;
-  let scale;
-  if (srcAspect > dstAspect) {
-    scale = (rtWidth / dpr) / srcW;
-  } else {
-    scale = (rtHeight / dpr) / srcH;
+  redo() {
+    if (this.index + 1 >= this.entries.length) return;
+    const entry = this.entries[this.index + 1];
+    this.withSuspend(() => {
+      if (entry && typeof entry.redo === 'function') entry.redo();
+      this.index++;
+    });
   }
+};
 
-  // 描画時の transform を設定
-  const matrix = new PIXI.Matrix();
-  // まずは中央に寄せるためのオフセット
-  const scaledW = srcW * scale;
-  const scaledH = srcH * scale;
-  const offsetX = ( (thumbDisplayW) - scaledW ) / 2;
-  const offsetY = ( (thumbDisplayH) - scaledH ) / 2;
 
-  // 注意: renderer.render の transform はピクセルではなくラスタライズ位置に効く場合があるため
-  // 安全策として一時コンテナに clone を置く方法が確実（最小限のコード例を以下に示す）
+補足
 
-  const tmpContainer = new PIXI.Container();
-  // clone style: create a sprite from the displayObject's texture if possible,
-  // otherwise add the displayObject temporarily (be careful to not mutate original parent)
-  // >> simplest: add displayObject as child then restore parent afterwards (if acceptable)
-  // To avoid side-effects, we convert displayObject to sprite if it has texture:
-  let childToRender = displayObject;
-  if (displayObject.texture) {
-    childToRender = new PIXI.Sprite(displayObject.texture);
-  } else {
-    // fallback: create a snapshot of displayObject using renderer.generateTexture (small resolution)
-    // but to keep atomic, we will add as-is — caller must ensure displayObject can be temporarily moved.
-  }
+entry は単にスナップショットではなくコマンド（undo/redo を持つ）にすることを強く推奨。スナップショット方式なら undo の実行前に状態を差し替えるが、その際も withSuspend で push を抑制する。
 
-  childToRender.transform = new PIXI.Transform();
-  childToRender.position.set(offsetX * dpr, offsetY * dpr); // move into rt pixel space
-  childToRender.scale.set(scale * dpr, scale * dpr);
+layer-system や animation-system で state 変更時に history.push() を呼んでいる箇所を全部見つけ、「外部からの undo/redo 実行時は push を行わない」 仕様に整合させる（つまり push を呼ぶ前に if (History.suspended) return; でも OK）。
 
-  tmpContainer.addChild(childToRender);
+優先度★★ — layer-system.js / コマンド化（防御的）
 
-  // Render to the renderTexture
-  renderer.render(tmpContainer, { renderTexture: renderTexture, clear: true });
+目的：レイヤー/CUT の作成・削除・時間変更などを 必ず Command オブジェクト経由で行う。これにより undo/redo の副作用を局所化できる。
 
-  // Extract an HTMLCanvasElement (if needed) or create a base64/dataURL or PIXI.Sprite
-  // Example: return a PIXI.Texture that can be used as thumbnail image source
-  const thumbTexture = renderTexture; // RenderTexture is acceptable for PIXI.Sprite
+サンプル Command パターン
 
-  // Clean up
-  tmpContainer.removeChild(childToRender);
-  // Note: Do NOT destroy renderTexture here if caller wants to keep it; caller responsible.
-
-  return { renderTexture: thumbTexture, rtWidth, rtHeight, dpr };
+function createLayerCommand(layerProps) {
+  let layerId;
+  return {
+    redo() {
+      layerId = LayerSystem.create(layerProps); // 実際の create は id を返す
+    },
+    undo() {
+      LayerSystem.remove(layerId);
+    }
+  };
 }
 
-
-呼び出し側（timeline-ui 内での使い方例）
-
-// 例：UI に img 要素として貼る場合
-const { renderTexture, rtWidth, rtHeight, dpr } = createThumbnail(renderer, targetDisplayObject, 80, 60); // 80x60 UI px
-const base64canvas = renderer.plugins.extract.canvas(renderTexture);
-const dataUrl = base64canvas.toDataURL("image/png");
-thumbnailImgElement.src = dataUrl;
+// 呼び出し例
+const cmd = createLayerCommand({name:'L1'});
+cmd.redo();
+History.push(cmd);
 
 
-補足：
+理由
 
-renderer.plugins.extract.canvas(renderTexture) → Pixi の Extract プラグインはテクスチャ/RenderTexture から canvas を返せます（v8系での関数名・挙動は実装差があるので該当関数呼び出し部は要確認）。もし extract.canvas に直接 RenderTexture を渡せない場合は renderer.extract.canvas(new PIXI.Sprite(renderTexture)) のように経由することがある点に注意。
+どの操作がどの undo/redo と対応するか明確。
 
-重要なのは「UI に渡す画像の内部ピクセル寸法 = UI表示寸法 × devicePixelRatio」としてレンダリングすること。これで縮小時のジャギーやアスペクト比崩れが防止できる。
+undo/redo 実行時に push が呼ばれなくなる（History.withSuspend と合わせる）。
 
-7. 差し替え方（既存コードを壊さないための手順）
+優先度★★ — timeline-ui.js（② レイアウト修正）
 
-ui/timeline-ui.js（もしくはサムネ生成しているファイル）をバックアップ（コピー）する。
+目的：全カット時間変更 UI のアイコンと数値入力が重ならないように並べる。
 
-例: cp ui/timeline-ui.js ui/timeline-ui.js.bak
+実装案（Pixi 上）
 
-サムネ生成部分を見つける（generateTexture / drawImage / extract.canvas を含む関数）。関数名・ファイル先頭にコメントを残す。
+const container = new PIXI.Container();
 
-上の createThumbnail をユーティリティとして追加（別ファイル ui/timeline-thumbnail-utils.js を作るか、timeline-ui.js のトップに挿入）。
+const timeInput = createNumberInput(...); （既存）
 
-元の生成呼び出しを下のように差し替える（元コードのロジックを乱さない範囲で）：
+const leftIcon = createIconSprite('clock-left');
 
-const thumb = oldMakeThumb(...); → const { renderTexture } = createThumbnail(renderer, displayObject, desiredW, desiredH);
+const rightIcon = createIconSprite('clock-right');
 
-その renderTexture から extract.canvas で dataURL を作るか、直接 Pixi Sprite を timeline 内に配置する実装へ。
+レイアウト：leftIcon.x = 0; timeInput.x = leftIcon.x + leftIcon.width + padding; rightIcon.x = timeInput.x + timeInput.width + padding;
 
-キャンバスの resize イベント（または camera-system.js のリサイズハンドラ）で、タイムライン生成に使われる「元描画サイズ」キャッシュを更新する処理があるか確認。あればサムネ更新ロジックでも参照するように修正。
+全体幅を container.width にして、必要なら container.pivot で中央揃え。
 
-8. テスト項目（必ず確認）
+HTML/CSS（もしDOM要素を使っているなら）
 
- キャンバス初期サイズ 344×135 でタイムライン（元）サムネが正常か確認。
+<div class="cut-duration-row">
+  <button class="icon left">⏷</button>
+  <input class="duration-input" type="number" />
+  <button class="icon right">⏵</button>
+</div>
 
- キャンバスを 400×400 にリサイズ（設定変更）→ タイムラインの各フレームサムネが縦横比を保っているか確認。
+.cut-duration-row { display: flex; gap: 8px; align-items: center; }
+.duration-input { width: 60px; }
 
- 右レイヤーパネルのサムネとタイムラインのサムネが視覚的に同じ内容・同じアスペクト比で一致するか確認。
 
- devicePixelRatio を様々に変更して（例：DPR=1、2）目視で崩れないか確認。
+ポイント
 
- サムネ生成にかかる時間（特にフレーム数の多いタイムライン）を測定。レンダリング負荷が高い場合は「キャッシュ（RenderTexture を保持）」の方針を検討する。
+「数字入力の大枠（枠線）」と「アイコン」は別要素にする（重ねない）。
 
-9. パフォーマンス／運用上の注意点
+アイコンのクリック処理はそれぞれ独立にバインド。
 
-毎フレーム・毎イテレーションで毎回 RenderTexture を作って破棄するとコストが高くなる。**頻繁に更新する場合は RenderTexture を再利用（プール）**する実装にする。
+優先度★★ — キーバインド実装修正（③/④/⑤）
 
-サムネは UI 上小さいため scaleMode = LINEAR や NEAREST の選択は画質要件に応じて。スムーズ縮小が欲しければ LINEAR。
+目的：ショートカットの安定化とブラウザ予約ショートカット回避案提示。
 
-大きなタイムライン（枚数多数）の場合は「必要な範囲のみ生成／遅延生成（visible 範囲）」を行う。
+汎用キーハンドラ（window）
 
-10. 実装優先度（短期 → 長期）
+window.addEventListener('keydown', (e) => {
+  // 再生/停止: Ctrl+Space (推奨)
+  if (e.ctrlKey && e.code === 'Space') {
+    e.preventDefault();
+    togglePlayPause();
+    return;
+  }
 
-短期（今すぐ）: createThumbnail を導入してタイムラインサムネの生成を置き換え、アスペクト崩れを修正。
+  // 新規レイヤー: Ctrl+Alt+N (代替: Ctrl+Alt でブラウザ予約回避)
+  if (e.ctrlKey && e.altKey && e.code === 'KeyN') {
+    e.preventDefault();
+    LayerSystem.createNewLayer();
+    return;
+  }
 
-中期: RenderTexture プール実装、生成頻度削減。
+  // CUT追加: Shift+N
+  if (e.shiftKey && !e.ctrlKey && !e.altKey && e.code === 'KeyN') {
+    e.preventDefault();
+    CutSystem.addCutAtCurrent();
+    return;
+  }
 
-長期: レイヤーパネルとタイムラインのサムネ生成を共通ユーティリティにまとめる（API 化）。
+  // undo/redo: Ctrl+Z / Ctrl+Shift+Z
+  if (e.ctrlKey && e.code === 'KeyZ') {
+    e.preventDefault();
+    if (e.shiftKey) History.redo(); else History.undo();
+    return;
+  }
+});
 
-11. 参考：現場でよくある間違い（チェックリスト）
 
-UI 要素の CSS 幅/高さ（style.width/height px）を Canvas の実サイズ（canvas.width/canvas.height）と混同している。
+ブラウザ予約ショートカットについて（重要）
 
-drawImage(sourceCanvas, 0,0, srcW, srcH, 0,0, dstW, dstH) を呼ぶとき、src と dst のアスペクト比を保たないまま dst に入れてしまう。
+Ctrl+Shift+N（シークレット）や Ctrl+N（新規ウィンドウ）はブラウザが優先するため、ページスクリプトから確実に抑止することはできません。ユーザー側（あなた）には 予約されていないキー を割り当てることを推奨します（例：Ctrl+Alt+N、Alt+Shift+N、F2 など）。
 
-devicePixelRatio を無視してレンダリングし、結果として縮小・拡大時に細長くなる。
+企業向けアプリや Electron の場合はブラウザ外で変更可能ですが、純ブラウザ環境では不可。
 
-12. 最後に（推奨する最短修正手順）
+改修工程（ファイル／作業リスト）
 
-ui/timeline-ui.js を開く。サムネを作っている関数を探す。
+system/history.js — suspended フラグ実装 + withSuspend + push/undo/redo 修正。（必須）
 
-上記 createThumbnail を同ファイルに追加（まずはテスト目的でインライン追加）。
+system/layer-system.js — レイヤー作成/削除を Command 化 or push 呼び出し箇所に if (History.suspended) return; を追加。（必須）
 
-元の生成呼び出しを createThumbnail ベースに置き換え、renderer.plugins.extract.canvas 経由で <img> に流す。
+system/animation-system.js / system/gif-exporter.js — animation/timechange の履歴記録箇所を確認・修正。（推奨）
 
-確認（344×135 と 400×400 の両方で目視）。OK ならコミット。NG ならログ情報（console.log）を確認して srcW/srcH/rtW/rtH/dpr を調査。
+ui/timeline-ui.js — 全カット時間変更 UI を左右独立化してレイアウトを調整。添付図を再現する。（推奨）
+
+core-runtime.js or core-engine.js — キーイベントの集中管理を作成（上で示した汎用ハンドラを採用）。既存の複数箇所に keydown が散らばっているなら統合する。（重要）
+
+ドキュメント更新：README に「ショートカット一覧」「history のコマンド仕様」を明記。（必須）
+
+テスト項目（検証手順）
+
+（各変更後に必ず行う）
+
+新規レイヤー作成 → Undo を何回か実行 → レイヤー数が正しく増減し、History.entries.length が不必要に増えないことを確認。
+
+CUT 追加（Shift+N）/削除 → Undo/Redo を複数回 → 同上。
+
+再生/停止（Ctrl+Space）を押す → 競合なく再生状態が toggle されること。既存の Shift+Space は無効化しておく。
+
+ブラウザのシークレット（Ctrl+Shift+N）を押してもブラウザ側が優先されることを確認（＝ページで抑止できないことを確認して代替ショートカットをデフォルトに設定）。
+
+タイムラインの「全カット時間」UI がアイコンと数値入力で左右分離され、どの画面幅でも重ならないこと。
+
+追加アドバイス（可読性／将来改修しやすくするため）
+
+履歴は Command（undo/redo メソッドを持つオブジェクト）で統一すると、複雑な state も安定して扱える。push は History.push(command) だけに限定。
+
+イベントバスを使っているなら（system/event-bus.js）、History に関するイベントは 単方向（操作 → 履歴） に限定し、undo/redo は直接 History.undo() を呼ぶだけにする。イベント発火で二重記録されないように。
+
+キー定義は設定可能に。ハードコードせず、ユーザー設定（JSON）で keyBindings を読み込むと将来便利。
+
+console.log を減らす（要件どおり）。ただし history のトレース用に開発ビルドでのみ出るデバッグフラグは残すとデバッグしやすい。
