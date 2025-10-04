@@ -853,8 +853,9 @@
     <script src="config.js"></script>
     <script src="coordinate-system.js"></script>
     <script src="system/event-bus.js"></script>
-    <script src="system/data-utils.js"></script>
-    <script src="system/data-validator.js"></script>
+    <script src="system/state-manager.js"></script>
+    <script src="system/command-base.js"></script>
+    <script src="system/layer-commands.js"></script>
     <script src="system/camera-system.js"></script>
     <script src="system/layer-system.js"></script>
     <script src="system/drawing-clipboard.js"></script>
@@ -867,7 +868,7 @@
     <script src="core-runtime.js"></script>
     <script src="core-engine.js"></script>
     <script src="system/diagnostics.js"></script>
-    
+
     <script>
 (function() {
     'use strict';
@@ -910,28 +911,17 @@
                 return;
             }
             
-            if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
-                if (window.History && typeof window.History.undo === 'function') {
-                    window.History.undo();
-                    e.preventDefault();
-                }
-                return;
-            }
+            // ❌ 削除: Undo/Redo処理はhistory.jsに一本化
+            // index.htmlではUndo/Redoを処理しない
             
-            if (e.ctrlKey && e.shiftKey && e.code === 'KeyZ' && !e.altKey) {
-                if (window.History && typeof window.History.redo === 'function') {
-                    window.History.redo();
-                    e.preventDefault();
-                }
-                return;
-            }
-            
+            // Delete キー (レイヤークリア)
             if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
                 eventBus.emit('layer:clear-active');
                 e.preventDefault();
                 return;
             }
             
+            // Ctrl+L (レイヤー追加)
             if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
                 if (window.drawingApp?.layerManager) {
                     const layerSystem = window.drawingApp.layerManager;
@@ -943,6 +933,7 @@
                 return;
             }
             
+            // Shift+N (新規CUT作成)
             if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
                 const animationSystem = window.animationSystem;
                 if (animationSystem) {
@@ -953,12 +944,14 @@
                 return;
             }
             
+            // Shift+A (タイムライン表示切替)
             if (e.shiftKey && e.code === 'KeyA' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('ui:toggle-timeline');
                 e.preventDefault();
                 return;
             }
             
+            // Ctrl+Space (再生/停止)
             if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
                 const timelineUI = window.timelineUI;
                 if (timelineUI && timelineUI.isVisible) {
@@ -968,6 +961,7 @@
                 return;
             }
             
+            // Shift+C (CUTコピー&ペースト)
             if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('cut:copy-current');
                 setTimeout(() => {
@@ -977,12 +971,14 @@
                 return;
             }
             
+            // P (ペンツール)
             if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'pen' });
                 e.preventDefault();
                 return;
             }
             
+            // E (消しゴムツール)
             if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'eraser' });
                 e.preventDefault();

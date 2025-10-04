@@ -184,7 +184,7 @@
                     </button>
                     <button id="play-btn" title="再生/停止 (K)">▶</button>
                     <span id="playback-time" class="playback-time">0:00:00</span>
-                    <button id="add-cut-btn" title="CUT追加 (Alt+=)" class="icon-btn">
+                    <button id="add-cut-btn" title="新CUT追加 (Shift+N)" class="icon-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                             <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
                             <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
@@ -192,7 +192,7 @@
                             <path d="M12 17v-6"/>
                         </svg>
                     </button>
-                    <button id="copy-paste-cut-btn" title="CUTコピペ (Shift+C)" class="icon-btn">
+                    <button id="copy-paste-cut-btn" title="右にコピペ (Shift+C)" class="icon-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M11 14h10"/>
                             <path d="M16 4h2a2 2 0 0 1 2 2v1.344"/>
@@ -201,7 +201,7 @@
                             <rect x="8" y="2" width="8" height="4" rx="1"/>
                         </svg>
                     </button>
-                    <button id="rename-cuts-btn" title="CUTリナンバー" class="icon-btn">
+                    <button id="rename-cuts-btn" title="CUT番号整理" class="icon-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/>
                             <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
@@ -243,169 +243,169 @@
             
             const style = document.createElement('style');
             style.dataset.timeline = 'timeline-ui';
-            style.textContent = `
-                .timeline-panel { position: fixed !important; bottom: 12px !important; left: 60px !important; right: 220px !important; 
-                    background: rgba(240, 224, 214, 0.95) !important; border: 2px solid var(--futaba-medium) !important; 
-                    border-radius: 12px !important; padding: 8px 10px 10px 10px !important; z-index: 1500 !important; max-height: 180px !important; 
-                    display: none !important; box-shadow: 0 6px 16px rgba(128, 0, 0, 0.25) !important; backdrop-filter: blur(12px) !important; }
-                .timeline-panel.show { display: block !important; animation: slideUp 0.35s ease-out !important; }
-                @keyframes slideUp { from { opacity: 0; transform: translateY(25px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
-                
-                .timeline-header { display: flex !important; align-items: center !important; justify-content: space-between !important; 
-                    height: 32px !important; padding: 4px 6px !important; margin-bottom: 6px !important; 
-                    border-bottom: 1px solid var(--futaba-light-medium) !important; }
-                
-                .timeline-close { background: none !important; border: none !important; font-size: 18px !important; 
-                    color: var(--futaba-maroon) !important; cursor: pointer !important; padding: 4px 8px !important; 
-                    border-radius: 6px !important; height: 28px !important; min-width: 28px !important; font-weight: bold !important; 
-                    flex-shrink: 0 !important; transition: all 0.2s ease !important; order: 2 !important; }
-                .timeline-close:hover { background: var(--futaba-light-medium) !important; }
-                
-                .cuts-container { display: flex !important; gap: 6px !important; overflow-x: auto !important; 
-                    padding: 3px 0 8px 12px !important; margin-bottom: 8px !important; max-height: 200px !important; }
-                .cuts-container::-webkit-scrollbar { height: 10px !important; }
-                .cuts-container::-webkit-scrollbar-track { background: var(--futaba-light-medium) !important; border-radius: 5px !important; }
-                .cuts-container::-webkit-scrollbar-thumb { background: var(--futaba-maroon) !important; border-radius: 5px !important; }
-                
-                .cut-item { min-width: 85px !important; background: var(--futaba-background) !important; 
-                    border: 2px solid var(--futaba-light-medium) !important; border-radius: 8px !important; 
-                    padding: 2px 2px 2px 6px !important; 
-                    cursor: pointer !important; position: relative !important; transition: all 0.25s ease !important; flex-shrink: 0 !important; 
-                    display: flex !important; flex-direction: column !important; align-items: center !important; 
-                    box-shadow: 0 2px 6px rgba(128, 0, 0, 0.12) !important; user-select: none !important; }
-                .cut-item:hover { border-color: var(--futaba-medium) !important; transform: translateY(-2px) scale(1.02) !important; 
-                    box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2) !important; }
-                .cut-item.active { border-color: var(--futaba-maroon) !important; background: var(--futaba-light-medium) !important; 
-                    box-shadow: 0 0 0 3px rgba(128, 0, 0, 0.3) !important; transform: translateY(-2px) scale(1.02) !important; }
-                
-                .cut-thumbnail { background: var(--futaba-background) !important; border: 1px solid var(--futaba-light-medium) !important; 
-                    border-radius: 6px !important; overflow: hidden !important; margin-bottom: 3px !important; position: relative !important; 
-                    display: flex !important; align-items: center !important; justify-content: center !important; }
-                .cut-thumbnail img { width: 100% !important; height: 100% !important; object-fit: contain !important; }
-                .cut-thumbnail-placeholder { width: 100% !important; height: 100% !important; 
-                    background: linear-gradient(45deg, var(--futaba-light-medium) 25%, transparent 25%), 
-                                linear-gradient(-45deg, var(--futaba-light-medium) 25%, transparent 25%), 
-                                linear-gradient(45deg, transparent 75%, var(--futaba-light-medium) 75%), 
-                                linear-gradient(-45deg, transparent 75%, var(--futaba-light-medium) 75%) !important; 
-                    background-size: 8px 8px !important; background-position: 0 0, 0 4px, 4px -4px, -4px 0px !important; 
-                    display: flex !important; align-items: center !important; justify-content: center !important; 
-                    color: var(--futaba-maroon) !important; font-size: 9px !important; font-weight: bold !important; }
-                
-                .cut-name { font-size: 10px !important; color: var(--futaba-maroon) !important; margin-bottom: 2px !important; 
-                    font-weight: 600 !important; text-align: center !important; white-space: nowrap !important; overflow: hidden !important; 
-                    text-overflow: ellipsis !important; max-width: 72px !important; line-height: 1.3 !important; }
-                
-                .cut-duration-container { display: flex !important; align-items: center !important; gap: 2px !important; margin-bottom: 3px !important; }
-                .cut-duration-input { width: 35px !important; height: 18px !important; border: 1px solid var(--futaba-light-medium) !important; 
-                    border-radius: 3px !important; background: var(--futaba-background) !important; font-size: 8px !important; 
-                    font-family: monospace !important; color: var(--futaba-maroon) !important; font-weight: bold !important; 
-                    text-align: center !important; outline: none !important; padding: 0 !important; -moz-appearance: textfield !important; }
-                .cut-duration-input::-webkit-outer-spin-button, .cut-duration-input::-webkit-inner-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
-                
-                .duration-nav-btn { width: 16px !important; height: 16px !important; 
-                    background: transparent !important; 
-                    border: none !important; 
-                    color: var(--futaba-maroon) !important; 
-                    font-size: 11px !important; cursor: pointer !important; display: flex !important; align-items: center !important; 
-                    justify-content: center !important; font-weight: bold !important; padding: 0 !important; transition: all 0.15s ease !important; }
-                .duration-nav-btn:hover { color: var(--futaba-light-maroon) !important; transform: scale(1.2) !important; }
-                
-                .delete-cut-btn { position: absolute !important; top: -4px !important; right: -4px !important; width: 18px !important; 
-                    height: 18px !important; background: rgba(128, 0, 0, 0.9) !important; border: none !important; border-radius: 50% !important; 
-                    color: white !important; font-size: 10px !important; cursor: pointer !important; opacity: 0 !important; 
-                    display: flex !important; align-items: center !important; justify-content: center !important; font-weight: bold !important; }
-                .cut-item:hover .delete-cut-btn { opacity: 1 !important; }
-                .delete-cut-btn:hover { background: rgba(128, 0, 0, 1) !important; transform: scale(1.15) !important; }
-                
-                .timeline-controls { display: flex !important; gap: 6px !important; align-items: center !important; order: 1 !important; }
-                .timeline-controls button { padding: 4px 12px !important; background: var(--futaba-background) !important; 
-                    border: 2px solid var(--futaba-medium) !important; border-radius: 6px !important; cursor: pointer !important; 
-                    font-size: 11px !important; color: var(--futaba-maroon) !important; min-width: 40px !important; height: 28px !important; 
-                    display: flex !important; align-items: center !important; justify-content: center !important; font-weight: 600 !important; 
-                    transition: all 0.2s ease !important; }
-                .timeline-controls button:hover { background: var(--futaba-medium) !important; border-color: var(--futaba-maroon) !important; 
-                    transform: translateY(-1px) !important; }
-                
-                .icon-btn { padding: 4px 8px !important; min-width: 32px !important; }
-                .icon-btn svg { width: 14px !important; height: 14px !important; }
-                
-                .playback-time { font-family: monospace !important; font-size: 11px !important; font-weight: bold !important; 
-                    color: var(--futaba-maroon) !important; padding: 0 8px !important; min-width: 60px !important; 
-                    text-align: center !important; height: 28px !important; display: flex !important; align-items: center !important; 
-                    justify-content: center !important; background: var(--futaba-light-medium) !important; 
-                    border-radius: 4px !important; }
-                
-                .retime-group { 
-                    display: flex !important; 
-                    align-items: center !important; 
-                    gap: 3px !important; 
-                    border: 2px solid var(--futaba-medium) !important; 
-                    border-radius: 6px !important; 
-                    padding: 2px 6px !important; 
-                    background: var(--futaba-background) !important; 
-                    transition: border-color 0.2s ease !important; 
-                    height: 28px !important; 
-                }
-                .retime-group:hover { border-color: var(--futaba-maroon) !important; }
-                
-                .retime-label { 
-                    font-size: 9px !important; 
-                    font-weight: 600 !important; 
-                    color: var(--futaba-maroon) !important; 
-                    white-space: nowrap !important; 
-                    flex-shrink: 0 !important; 
-                    line-height: 1 !important; 
-                }
-                
-                .retime-input { 
-                    width: 48px !important; 
-                    height: 20px !important; 
-                    border: 1px solid var(--futaba-light-medium) !important; 
-                    border-radius: 4px !important; 
-                    background: var(--futaba-background) !important; 
-                    font-size: 10px !important; 
-                    font-family: monospace !important; 
-                    color: var(--futaba-maroon) !important; 
-                    font-weight: bold !important; 
-                    text-align: center !important; 
-                    outline: none !important; 
-                    padding: 0 4px !important; 
-                    -moz-appearance: textfield !important; 
-                    flex-shrink: 0 !important; 
-                }
-                .retime-input::-webkit-outer-spin-button, 
-                .retime-input::-webkit-inner-spin-button { 
-                    -webkit-appearance: none !important; 
-                    margin: 0 !important; 
-                }
-                .retime-input:focus { background: white !important; box-shadow: 0 0 0 2px rgba(128, 0, 0, 0.2) !important; }
-                
-                .retime-btn { 
-                    background: transparent !important; 
-                    border: none !important; 
-                    padding: 2px 4px !important; 
-                    cursor: pointer !important; 
-                    display: flex !important; 
-                    align-items: center !important; 
-                    justify-content: center !important; 
-                    transition: all 0.2s ease !important; 
-                    border-radius: 4px !important; 
-                    min-width: 20px !important; 
-                    height: 20px !important; 
-                    flex-shrink: 0 !important; 
-                }
-                .retime-btn:hover { 
-                    background: var(--futaba-maroon) !important; 
-                }
-                .retime-btn:hover svg { stroke: white !important; }
-                .retime-btn svg { width: 12px !important; height: 12px !important; stroke: #800000 !important; transition: stroke 0.2s ease !important; }
-                
-                #repeat-btn { min-width: 34px !important; padding: 6px !important; }
-                #repeat-btn.repeat-active { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; }
-                #repeat-btn.repeat-inactive { background: var(--futaba-background) !important; opacity: 0.6 !important; }
-                #repeat-btn svg { width: 14px !important; height: 14px !important; }
-                .timeline-controls button#play-btn.playing { background: var(--futaba-maroon) !important; color: white !important; }
-            `;
+
+style.textContent = `
+        .timeline-panel { position: fixed !important; bottom: 12px !important; left: 60px !important; right: 220px !important; 
+            background: rgba(255, 255, 238, 0.1) !important; border: 2px solid var(--futaba-medium) !important; 
+            border-radius: 12px !important; padding: 8px 10px 10px 10px !important; z-index: 1500 !important; max-height: 180px !important; 
+            display: none !important; box-shadow: 0 6px 16px rgba(128, 0, 0, 0.25) !important; backdrop-filter: blur(12px) !important; }
+        .timeline-panel.show { display: block !important; animation: slideUp 0.35s ease-out !important; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(25px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
+        
+        .timeline-header { display: flex !important; align-items: center !important; justify-content: space-between !important; 
+            height: 32px !important; padding: 4px 6px !important; margin-bottom: 6px !important; 
+            border-bottom: 1px solid var(--futaba-light-medium) !important; }
+        
+        .timeline-close { background: none !important; border: none !important; font-size: 18px !important; 
+            color: var(--futaba-maroon) !important; cursor: pointer !important; padding: 4px 8px !important; 
+            border-radius: 6px !important; height: 28px !important; min-width: 28px !important; font-weight: bold !important; 
+            flex-shrink: 0 !important; transition: all 0.2s ease !important; order: 2 !important; }
+        .timeline-close:hover { background: var(--futaba-light-medium) !important; }
+        
+        .cuts-container { display: flex !important; gap: 6px !important; overflow-x: auto !important; 
+            padding: 3px 0 8px 12px !important; margin-bottom: 8px !important; max-height: 200px !important; }
+        .cuts-container::-webkit-scrollbar { height: 10px !important; }
+        .cuts-container::-webkit-scrollbar-track { background: var(--futaba-light-medium) !important; border-radius: 5px !important; }
+        .cuts-container::-webkit-scrollbar-thumb { background: var(--futaba-maroon) !important; border-radius: 5px !important; }
+        
+        .cut-item { min-width: 85px !important; background: #ffffee !important; 
+            border: 2px solid var(--futaba-light-medium) !important; border-radius: 8px !important; 
+            padding: 2px 2px 2px 6px !important; 
+            cursor: pointer !important; position: relative !important; transition: all 0.25s ease !important; flex-shrink: 0 !important; 
+            display: flex !important; flex-direction: column !important; align-items: center !important; 
+            box-shadow: 0 2px 6px rgba(128, 0, 0, 0.12) !important; user-select: none !important; }
+        .cut-item:hover { border-color: var(--futaba-medium) !important; transform: translateY(-2px) scale(1.02) !important; 
+            box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2) !important; }
+        .cut-item.active { border-color: var(--futaba-maroon) !important; background: #ffffee !important; 
+            box-shadow: 0 0 0 3px rgba(128, 0, 0, 0.3) !important; transform: translateY(-2px) scale(1.02) !important; }
+        
+        .cut-thumbnail { background: #ffffee !important; border: 1px solid var(--futaba-light-medium) !important; 
+            border-radius: 6px !important; overflow: hidden !important; margin-bottom: 3px !important; position: relative !important; 
+            display: flex !important; align-items: center !important; justify-content: center !important; }
+        .cut-thumbnail img { width: 100% !important; height: 100% !important; object-fit: contain !important; }
+        .cut-thumbnail-placeholder { width: 100% !important; height: 100% !important; 
+            background: linear-gradient(45deg, var(--futaba-light-medium) 25%, transparent 25%), 
+                        linear-gradient(-45deg, var(--futaba-light-medium) 25%, transparent 25%), 
+                        linear-gradient(45deg, transparent 75%, var(--futaba-light-medium) 75%), 
+                        linear-gradient(-45deg, transparent 75%, var(--futaba-light-medium) 75%) !important; 
+            background-size: 8px 8px !important; background-position: 0 0, 0 4px, 4px -4px, -4px 0px !important; 
+            display: flex !important; align-items: center !important; justify-content: center !important; 
+            color: var(--futaba-maroon) !important; font-size: 9px !important; font-weight: bold !important; }
+        
+        .cut-name { font-size: 10px !important; color: var(--futaba-maroon) !important; margin-bottom: 2px !important; 
+            font-weight: 600 !important; text-align: center !important; white-space: nowrap !important; overflow: hidden !important; 
+            text-overflow: ellipsis !important; max-width: 72px !important; line-height: 1.3 !important; }
+        
+        .cut-duration-container { display: flex !important; align-items: center !important; gap: 2px !important; margin-bottom: 3px !important; }
+        .cut-duration-input { width: 35px !important; height: 18px !important; border: 1px solid var(--futaba-light-medium) !important; 
+            border-radius: 3px !important; background: #ffffee !important; font-size: 8px !important; 
+            font-family: monospace !important; color: var(--futaba-maroon) !important; font-weight: bold !important; 
+            text-align: center !important; outline: none !important; padding: 0 !important; -moz-appearance: textfield !important; }
+        .cut-duration-input::-webkit-outer-spin-button, .cut-duration-input::-webkit-inner-spin-button { -webkit-appearance: none !important; margin: 0 !important; }
+        
+        .duration-nav-btn { width: 16px !important; height: 16px !important; 
+            background: transparent !important; 
+            border: none !important; 
+            color: var(--futaba-maroon) !important; 
+            font-size: 11px !important; cursor: pointer !important; display: flex !important; align-items: center !important; 
+            justify-content: center !important; font-weight: bold !important; padding: 0 !important; transition: all 0.15s ease !important; }
+        .duration-nav-btn:hover { color: var(--futaba-light-maroon) !important; transform: scale(1.2) !important; }
+        
+        .delete-cut-btn { position: absolute !important; top: -4px !important; right: -4px !important; width: 18px !important; 
+            height: 18px !important; background: rgba(128, 0, 0, 0.9) !important; border: none !important; border-radius: 50% !important; 
+            color: white !important; font-size: 10px !important; cursor: pointer !important; opacity: 0 !important; 
+            display: flex !important; align-items: center !important; justify-content: center !important; font-weight: bold !important; }
+        .cut-item:hover .delete-cut-btn { opacity: 1 !important; }
+        .delete-cut-btn:hover { background: rgba(128, 0, 0, 1) !important; transform: scale(1.15) !important; }
+        
+        .timeline-controls { display: flex !important; gap: 6px !important; align-items: center !important; order: 1 !important; }
+        .timeline-controls button { padding: 4px 12px !important; background: #ffffee !important; 
+            border: 2px solid var(--futaba-medium) !important; border-radius: 6px !important; cursor: pointer !important; 
+            font-size: 11px !important; color: var(--futaba-maroon) !important; min-width: 40px !important; height: 28px !important; 
+            display: flex !important; align-items: center !important; justify-content: center !important; font-weight: 600 !important; 
+            transition: all 0.2s ease !important; }
+        .timeline-controls button:hover { background: var(--futaba-medium) !important; border-color: var(--futaba-maroon) !important; 
+            transform: translateY(-1px) !important; }
+        
+        .icon-btn { padding: 4px 8px !important; min-width: 32px !important; }
+        .icon-btn svg { width: 14px !important; height: 14px !important; }
+        
+        .playback-time { font-family: monospace !important; font-size: 11px !important; font-weight: bold !important; 
+            color: var(--futaba-maroon) !important; padding: 0 8px !important; min-width: 60px !important; 
+            text-align: center !important; height: 28px !important; display: flex !important; align-items: center !important; 
+            justify-content: center !important; background: var(--futaba-light-medium) !important; 
+            border-radius: 4px !important; }
+        
+        .retime-group { 
+            display: flex !important; 
+            align-items: center !important; 
+            gap: 3px !important; 
+            border: none !important; 
+            border-radius: 6px !important; 
+            padding: 2px 6px !important; 
+            background: transparent !important; 
+            transition: none !important; 
+            height: 28px !important; 
+        }
+        
+        .retime-label { 
+            font-size: 9px !important; 
+            font-weight: 600 !important; 
+            color: var(--futaba-maroon) !important; 
+            white-space: nowrap !important; 
+            flex-shrink: 0 !important; 
+            line-height: 1 !important; 
+        }
+        
+        .retime-input { 
+            width: 48px !important; 
+            height: 20px !important; 
+            border: 1px solid var(--futaba-light-medium) !important; 
+            border-radius: 4px !important; 
+            background: #ffffee !important; 
+            font-size: 10px !important; 
+            font-family: monospace !important; 
+            color: var(--futaba-maroon) !important; 
+            font-weight: bold !important; 
+            text-align: center !important; 
+            outline: none !important; 
+            padding: 0 4px !important; 
+            -moz-appearance: textfield !important; 
+            flex-shrink: 0 !important; 
+        }
+        .retime-input::-webkit-outer-spin-button, 
+        .retime-input::-webkit-inner-spin-button { 
+            -webkit-appearance: none !important; 
+            margin: 0 !important; 
+        }
+        .retime-input:focus { background: white !important; box-shadow: 0 0 0 2px rgba(128, 0, 0, 0.2) !important; }
+        
+        .retime-btn { 
+            background: transparent !important; 
+            border: none !important; 
+            padding: 2px 4px !important; 
+            cursor: pointer !important; 
+            display: flex !important; 
+            align-items: center !important; 
+            justify-content: center !important; 
+            transition: all 0.2s ease !important; 
+            border-radius: 4px !important; 
+            min-width: 20px !important; 
+            height: 20px !important; 
+            flex-shrink: 0 !important; 
+        }
+        .retime-btn:hover { 
+            background: var(--futaba-maroon) !important; 
+        }
+        .retime-btn:hover svg { stroke: white !important; }
+        .retime-btn svg { width: 12px !important; height: 12px !important; stroke: #800000 !important; transition: stroke 0.2s ease !important; }
+        
+        #repeat-btn { min-width: 34px !important; padding: 6px !important; }
+        #repeat-btn.repeat-active { background: var(--futaba-maroon) !important; color: var(--futaba-background) !important; }
+        #repeat-btn.repeat-inactive { background: #ffffee !important; opacity: 0.6 !important; }
+        #repeat-btn svg { width: 14px !important; height: 14px !important; }
+        .timeline-controls button#play-btn.playing { background: var(--futaba-maroon) !important; color: white !important; }
+    `;
             document.head.appendChild(style);
         }
         

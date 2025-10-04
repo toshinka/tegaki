@@ -1,7 +1,7 @@
-// ===== core-engine.js - Undo/Redo機能追加版 =====
-// 【改修】DrawingEngine.stopDrawing()にHistory.saveState()追加
-// 【改修】Delete キー対応追加
-// 【維持】既存機能完全維持
+// ===== core-engine.js - History二重記録修正版 =====
+// 🔧 修正1: startDrawing()のHistory記録を削除（stopDrawing()のみに統一）
+// 🔧 修正2: レイヤー操作の二重記録防止
+// ✅ 既存機能完全維持
 
 (function() {
     'use strict';
@@ -90,10 +90,7 @@
                 return;
             }
             
-            // 🔧 改修: 描画開始前に現在状態を保存
-            if (window.History && typeof window.History.saveState === 'function') {
-                window.History.saveState();
-            }
+            // 🔥 修正: startDrawing()でのHistory記録を削除（stopDrawing()で一括記録）
             
             this.isDrawing = true;
             this.lastPoint = canvasPoint;
@@ -165,6 +162,14 @@
 
             if (this.currentPath) {
                 this.currentPath.isComplete = true;
+                
+                // 🔥 修正: 描画完了時のみHistory記録（Undo/Redo実行中はスキップ）
+                if (window.History && typeof window.History.saveState === 'function') {
+                    if (!window.History._manager?.isExecutingUndoRedo && 
+                        !window.History._manager?.isRecordingState) {
+                        window.History.saveState();
+                    }
+                }
                 
                 this.layerManager.requestThumbnailUpdate(this.layerManager.activeLayerIndex);
                 
@@ -295,6 +300,14 @@
         setupKeyHandling() {
             document.addEventListener('keydown', (e) => {
                 if (!this.keyHandlingActive) return;
+                
+                // Undo/Redo系キーはindex.htmlで処理するのでスキップ
+                const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+                const metaKey = isMac ? e.metaKey : e.ctrlKey;
+                if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
+                    return;
+                }
+                
                 this.handleKeyDown(e);
             });
             
@@ -377,6 +390,13 @@
                 case 'gifNextFrame':
                     if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
                         this.animationSystem.goToNextFrame();
+                        e.preventDefault();
+                    }
+                    break;
+                
+                case 'delete':
+                    if (e.code === 'Delete' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                        this.eventBus.emit('layer:clear-active');
                         e.preventDefault();
                     }
                     break;
@@ -464,22 +484,23 @@
         }
         
         setupSystemEventIntegration() {
-            // 🔧 改修: レイヤー消去イベント追加
+            // レイヤー消去イベント
             this.eventBus.on('layer:clear-active', () => {
                 const activeLayer = this.layerSystem.getActiveLayer();
                 if (!activeLayer || !activeLayer.layerData) return;
                 
-                // 背景レイヤーは消去不可
                 if (activeLayer.layerData.isBackground) {
                     return;
                 }
                 
-                // 現在状態を保存
+                // 🔥 修正: History記録を一度だけ
                 if (window.History && typeof window.History.saveState === 'function') {
-                    window.History.saveState();
+                    if (!window.History._manager?.isExecutingUndoRedo && 
+                        !window.History._manager?.isRecordingState) {
+                        window.History.saveState();
+                    }
                 }
                 
-                // パスをクリア
                 if (activeLayer.layerData.paths) {
                     activeLayer.layerData.paths.forEach(path => {
                         if (path.graphics) {
@@ -492,7 +513,6 @@
                     activeLayer.layerData.paths = [];
                 }
                 
-                // サムネイル更新
                 this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
                 
                 if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {
@@ -648,10 +668,8 @@
             this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
             this.clipboardSystem.init(this.eventBus, CONFIG);
             
-            // 🔧 改修: LayerSystem初期化完了後にHistory接続
             if (window.History && typeof window.History.setLayerSystem === 'function') {
                 window.History.setLayerSystem(this.layerSystem);
-                console.log('✅ History system connected to LayerSystem');
             }
             
             this.initializeAnimationSystem();
@@ -700,9 +718,9 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (Undo/Redo機能追加版) loaded');
-    console.log('  - 🔧 DrawingEngine.startDrawing()に履歴保存追加');
-    console.log('  - 🔧 Delete キー対応追加（layer:clear-active）');
-    console.log('  - 🔧 History.setLayerSystem()接続追加');
+    console.log('✅ core-engine.js (History二重記録修正版) loaded');
+    console.log('  - 🔥 startDrawing()のHistory記録削除');
+    console.log('  - 🔥 stopDrawing()でのみHistory記録（一筆一回）');
+    console.log('  - 🔥 レイヤー消去のHistory記録最適化');
 
 })();
