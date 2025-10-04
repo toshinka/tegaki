@@ -262,7 +262,7 @@
                 .timeline-close:hover { background: var(--futaba-light-medium) !important; }
                 
                 .cuts-container { display: flex !important; gap: 6px !important; overflow-x: auto !important; 
-                    padding: 3px 0 8px 12px !important; margin-bottom: 8px !important; max-height: 105px !important; }
+                    padding: 3px 0 8px 12px !important; margin-bottom: 8px !important; max-height: 200px !important; }
                 .cuts-container::-webkit-scrollbar { height: 10px !important; }
                 .cuts-container::-webkit-scrollbar-track { background: var(--futaba-light-medium) !important; border-radius: 5px !important; }
                 .cuts-container::-webkit-scrollbar-thumb { background: var(--futaba-maroon) !important; border-radius: 5px !important; }
