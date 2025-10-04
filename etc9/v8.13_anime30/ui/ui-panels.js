@@ -308,7 +308,8 @@ window.TegakiUI = {
             .layer-item {
                 width: 180px;
                 height: 64px;
-                background: var(--futaba-cream);
+                background:  var(--futaba-background);
+                opacity: 0.7;  
                 border: 1px solid var(--futaba-light-medium);
                 border-radius: 6px;
                 padding: 6px 8px;

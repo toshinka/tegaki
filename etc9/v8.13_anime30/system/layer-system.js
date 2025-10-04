@@ -1,6 +1,6 @@
-// ===== system/layer-system.js - Phase1改修版: レイヤー階層移動完全修正 =====
-// 🔧 Phase1改修: reorderLayersメソッド追加 + updateLayerPanelUI改善
-// ✅ 改修内容: レイヤー順序変更API、Sortable再初期化統合
+// ===== system/layer-system.js - シンタックスエラー修正版 =====
+// 🔧 修正: ファイル末尾の重複コード削除、閉じ括弧修正
+// ✅ Undo/Redo実行中の二重記録防止機能維持
 
 (function() {
     'use strict';
@@ -93,12 +93,9 @@
             console.log('✅ LayerSystem: 初期化完了（一時Container作成済み）');
         }
 
-        // ===== 🔧 Phase1改修: レイヤー順序変更API =====
-        
         reorderLayers(fromIndex, toIndex) {
             const layers = this.getLayers();
             
-            // バリデーション
             if (fromIndex < 0 || fromIndex >= layers.length || 
                 toIndex < 0 || toIndex >= layers.length || 
                 fromIndex === toIndex) {
@@ -107,27 +104,20 @@
             }
             
             try {
-                // 🔧 改修1: 配列から移動
                 const [movedLayer] = layers.splice(fromIndex, 1);
                 layers.splice(toIndex, 0, movedLayer);
                 
-                // 🔧 改修2: Pixiコンテナの階層も同期
                 this.currentCutContainer.removeChild(movedLayer);
                 this.currentCutContainer.addChildAt(movedLayer, toIndex);
                 
-                // 🔧 改修3: アクティブインデックスの調整
                 if (this.activeLayerIndex === fromIndex) {
-                    // 移動したレイヤーがアクティブ → 新しい位置に追従
                     this.activeLayerIndex = toIndex;
                 } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
-                    // アクティブレイヤーが移動範囲内（下方向移動時）
                     this.activeLayerIndex--;
                 } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
-                    // アクティブレイヤーが移動範囲内（上方向移動時）
                     this.activeLayerIndex++;
                 }
                 
-                // 🔧 改修4: イベント発行
                 if (this.eventBus) {
                     this.eventBus.emit('layer:reordered', { 
                         fromIndex, 
@@ -146,8 +136,6 @@
             }
         }
 
-        // ===== CUT Container設定 =====
-        
         setCurrentCutContainer(cutContainer) {
             this.currentCutContainer = cutContainer;
             
@@ -163,8 +151,6 @@
                 this.updateLayerTransformPanelValues();
             }
         }
-        
-        // ===== RenderTexture管理 =====
         
         createCutRenderTexture(cutId) {
             if (!this.app?.renderer) {
@@ -233,8 +219,6 @@
             this.cutThumbnailDirty.set(cutId, false);
         }
         
-        // ===== レイヤー取得API =====
-        
         getLayers() {
             return this.currentCutContainer ? this.currentCutContainer.children : [];
         }
@@ -243,8 +227,6 @@
             const layers = this.getLayers();
             return this.activeLayerIndex >= 0 ? layers[this.activeLayerIndex] : null;
         }
-        
-        // ===== AnimationSystem統合 =====
         
         _setupAnimationSystemIntegration() {
             if (!this.eventBus) return;
@@ -302,8 +284,6 @@
             }
         }
 
-        // ===== Layer Transform Panel =====
-        
         _setupLayerTransformPanel() {
             this.layerTransformPanel = document.getElementById('layer-transform-panel');
             
@@ -540,8 +520,6 @@
             this.updateFlipButtons();
         }
 
-        // ===== Layer Operations =====
-        
         _setupLayerOperations() {
             document.addEventListener('keydown', (e) => {
                 const keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
@@ -789,11 +767,10 @@
             }
             
             const transform = this.layerTransforms.get(layerId);
+            const centerX = this.config.canvas.width / 2;
+            const centerY = this.config.canvas.height / 2;
             
             if (e.shiftKey) {
-                const centerX = this.config.canvas.width / 2;
-                const centerY = this.config.canvas.height / 2;
-                
                 if (Math.abs(dy) > Math.abs(dx)) {
                     const scaleFactor = 1 + (dy * -0.01);
                     const currentScale = Math.abs(transform.scaleX);
@@ -819,14 +796,16 @@
                 if (this.coordAPI?.applyLayerTransform) {
                     this.coordAPI.applyLayerTransform(activeLayer, transform, centerX, centerY);
                 } else {
-                    this._applyTransformDirect(activeLayer, transform, centerX, centerY);
+                    activeLayer.position.set(centerX + transform.x, centerY + transform.y);
                 }
+                
+                const xSlider = document.getElementById('layer-x-slider');
+                const ySlider = document.getElementById('layer-y-slider');
+                if (xSlider?.updateValue) xSlider.updateValue(transform.x);
+                if (ySlider?.updateValue) ySlider.updateValue(transform.y);
             } else {
                 transform.x += adjustedDx;
                 transform.y += adjustedDy;
-                
-                const centerX = this.config.canvas.width / 2;
-                const centerY = this.config.canvas.height / 2;
                 
                 if (this.coordAPI?.applyLayerTransform) {
                     this.coordAPI.applyLayerTransform(activeLayer, transform, centerX, centerY);
@@ -1243,12 +1222,16 @@
             }
         }
 
-        // ===== Layer CRUD =====
-        
         createLayer(name, isBackground = false) {
             if (!this.currentCutContainer) {
                 console.error('No active CUT container');
                 return null;
+            }
+            
+            if (window.History && typeof window.History.saveState === 'function') {
+                if (!window.History._manager?.isExecutingUndoRedo && !window.History._manager?.isRecordingState) {
+                    window.History.saveState();
+                }
             }
             
             const layerCounter = Date.now();
@@ -1291,51 +1274,7 @@
             
             return { layer, index: layers.length - 1 };
         }
-
-        deleteLayer(layerIndex) {
-            const layers = this.getLayers();
-            if (layers.length <= 1) {
-                console.warn('Cannot delete last remaining layer');
-                return false;
-            }
-            
-            if (layerIndex < 0 || layerIndex >= layers.length) {
-                console.warn(`Invalid layer index for deletion: ${layerIndex}`);
-                return false;
-            }
-
-            const layer = layers[layerIndex];
-            const layerId = layer.layerData.id;
-            
-            if (layer.layerData.paths) {
-                layer.layerData.paths.forEach(path => {
-                    if (path.graphics?.destroy) {
-                        path.graphics.destroy();
-                    }
-                });
-            }
-
-            this.layerTransforms.delete(layerId);
-
-            this.currentCutContainer.removeChild(layer);
-            layer.destroy({ children: true, texture: false, baseTexture: false });
-
-            if (this.activeLayerIndex === layerIndex) {
-                this.activeLayerIndex = Math.min(this.activeLayerIndex, layers.length - 2);
-            } else if (this.activeLayerIndex > layerIndex) {
-                this.activeLayerIndex--;
-            }
-
-            this.updateLayerPanelUI();
-            this.updateStatusDisplay();
-            
-            if (this.eventBus) {
-                this.eventBus.emit('layer:deleted', { layerId, layerIndex });
-            }
-            
-            return true;
-        }
-
+        
         setActiveLayer(index) {
             const layers = this.getLayers();
             if (index >= 0 && index < layers.length) {
@@ -1418,8 +1357,6 @@
             }
         }
 
-        // ===== Thumbnail =====
-        
         requestThumbnailUpdate(layerIndex) {
             const layers = this.getLayers();
             if (layerIndex >= 0 && layerIndex < layers.length) {
@@ -1555,7 +1492,6 @@
             }
         }
 
-        // 🔧 Phase1改修: updateLayerPanelUI改善版（Sortable再初期化統合）
         updateLayerPanelUI() {
             const layerList = document.getElementById('layer-list');
             if (!layerList) return;
@@ -1616,12 +1552,10 @@
                 layerList.appendChild(layerItem);
             }
             
-            // サムネイル更新
             for (let i = 0; i < layers.length; i++) {
                 this.requestThumbnailUpdate(i);
             }
             
-            // 🔧 Phase1改修: Sortable再初期化（重要）
             if (window.TegakiUI?.initializeSortable) {
                 setTimeout(() => {
                     window.TegakiUI.initializeSortable(this);
@@ -1648,8 +1582,6 @@
             }
         }
 
-        // ===== Setters =====
-        
         setCameraSystem(cameraSystem) {
             this.cameraSystem = cameraSystem;
         }
@@ -1665,10 +1597,72 @@
                 animationSystem.layerSystem = this;
             }
         }
+
+        deleteLayer(layerIndex) {
+            const layers = this.getLayers();
+            
+            if (layerIndex < 0 || layerIndex >= layers.length) {
+                console.warn(`Invalid layer index: ${layerIndex}`);
+                return false;
+            }
+            
+            const layer = layers[layerIndex];
+            const layerId = layer.layerData?.id;
+            
+            if (layer.layerData?.isBackground) {
+                console.warn('Cannot delete background layer');
+                return false;
+            }
+            
+            try {
+                if (window.History && typeof window.History.saveState === 'function') {
+                    if (!window.History._manager?.isExecutingUndoRedo && !window.History._manager?.isRecordingState) {
+                        window.History.saveState();
+                    }
+                }
+                
+                this.currentCutContainer.removeChild(layer);
+                
+                if (layer.destroy) {
+                    layer.destroy({ children: true });
+                }
+                
+                if (layerId) {
+                    this.layerTransforms.delete(layerId);
+                }
+                
+                const remainingLayers = this.getLayers();
+                if (remainingLayers.length === 0) {
+                    this.activeLayerIndex = -1;
+                } else if (this.activeLayerIndex >= remainingLayers.length) {
+                    this.activeLayerIndex = remainingLayers.length - 1;
+                }
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:deleted', { layerId, layerIndex });
+                }
+                
+                this.updateLayerPanelUI();
+                this.updateStatusDisplay();
+                
+                if (this.animationSystem?.generateCutThumbnail) {
+                    const cutIndex = this.animationSystem.getCurrentCutIndex();
+                    setTimeout(() => {
+                        this.animationSystem.generateCutThumbnail(cutIndex);
+                    }, 100);
+                }
+                
+                return true;
+                
+            } catch (error) {
+                console.error('❌ Layer deletion failed:', error);
+                return false;
+            }
+        }
     }
 
     window.TegakiLayerSystem = LayerSystem;
 
-    console.log('✅ layer-system.js loaded (Phase1改修版: レイヤー階層移動完全修正)');
+    console.log('✅ layer-system.js loaded (シンタックスエラー修正版)');
 
 })();

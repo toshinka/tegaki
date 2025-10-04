@@ -1,6 +1,6 @@
-// ===== system/animation-system.js - CUT作成時履歴記録修正版 =====
-// 【修正】createNewBlankCut()でイベント発火後、手動でsaveStateFull()を呼ぶ
-// 【維持】全既存機能
+// ===== system/animation-system.js - Phase 3: 手動History記録削除版 =====
+// 🔧 Phase 3: createNewBlankCut()から手動History記録を削除
+// history.jsが'animation:cut-created'イベントで自動記録するため不要
 
 (function() {
     'use strict';
@@ -403,20 +403,14 @@
             
             this.switchToActiveCut(newIndex);
             
-            // 🔥 修正: イベント発火後、手動でHistory記録
+            // 🔧 Phase 3: イベント発火のみ（手動History記録を削除）
+            // history.jsが'animation:cut-created'イベントを監視して自動記録
             if (this.eventBus) {
                 this.eventBus.emit('animation:cut-created', { 
                     cutId: cut.id, 
                     cutIndex: newIndex 
                 });
             }
-            
-            // 🔥 追加: 手動でHistory記録（history.jsのリスナーを削除したため）
-            setTimeout(() => {
-                if (window.History && typeof window.History.saveStateFull === 'function') {
-                    window.History.saveStateFull();
-                }
-            }, 100);
             
             return cut;
         }
@@ -1168,7 +1162,6 @@
         }
         
         saveCutLayerStates() {
-            // 互換性のため空実装
         }
     }
     
