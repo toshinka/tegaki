@@ -856,15 +856,15 @@
 
 <!-- システムコア -->
 <script src="system/event-bus.js"></script>
-<script src="system/state-manager.js"></script>        <!-- Phase 2強化版 -->
+<script src="system/state-manager.js"></script>
 <script src="system/command-base.js"></script>
 
 <!-- Commands -->
-<script src="system/layer-commands.js"></script>       <!-- Phase 2拡張版 -->
-<script src="system/animation-commands.js"></script>   <!-- 新規追加 -->
+<script src="system/layer-commands.js"></script>
+<script src="system/animation-commands.js"></script>
 
 <!-- History (Commandsの後) -->
-<script src="system/history.js"></script>              <!-- Phase 2/3統合版 -->
+<script src="system/history.js"></script>
 
 <!-- その他のシステム -->
 <script src="system/camera-system.js"></script>
@@ -883,241 +883,6 @@
 <script src="core-runtime.js"></script>
 
     <script>
-(function() {
-    'use strict';
-    
-    function preventBrowserDefaults(e) {
-        if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') {
-            return;
-        }
-        
-        if (e.key.startsWith('F') && e.key.length <= 3) {
-            e.preventDefault();
-            return;
-        }
-        
-        if (e.ctrlKey || e.metaKey) {
-            const key = e.code || e.key;
-            if (key === 'KeyZ' || key === 'KeyY' || key === 'KeyL' || key === 'Space') {
-                e.preventDefault();
-                return;
-            }
-            if (key.startsWith('Key') || key.startsWith('Digit')) {
-                e.preventDefault();
-            }
-        }
-    }
-    
-    function setupUnifiedKeyboardShortcuts() {
-        document.addEventListener('keydown', (e) => {
-            preventBrowserDefaults(e);
-            
-            const eventBus = window.TegakiEventBus;
-            if (!eventBus) return;
-            
-            const activeElement = document.activeElement;
-            if (activeElement && (
-                activeElement.tagName === 'INPUT' ||
-                activeElement.tagName === 'TEXTAREA' ||
-                activeElement.isContentEditable
-            )) {
-                return;
-            }
-            
-            // ❌ 削除: Undo/Redo処理はhistory.jsに一本化
-            // index.htmlではUndo/Redoを処理しない
-            
-            // Delete キー (レイヤークリア)
-            if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-                eventBus.emit('layer:clear-active');
-                e.preventDefault();
-                return;
-            }
-            
-            // Ctrl+L (レイヤー追加)
-            if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
-                if (window.drawingApp?.layerManager) {
-                    const layerSystem = window.drawingApp.layerManager;
-                    const newLayerIndex = layerSystem.layers.length + 1;
-                    layerSystem.createLayer(`L${newLayerIndex}`, false);
-                    eventBus.emit('layer:created-by-shortcut', { index: newLayerIndex });
-                }
-                e.preventDefault();
-                return;
-            }
-            
-            // Shift+N (新規CUT作成)
-            if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
-                const animationSystem = window.animationSystem;
-                if (animationSystem) {
-                    animationSystem.createNewEmptyCut();
-                    eventBus.emit('cut:created-by-shortcut');
-                }
-                e.preventDefault();
-                return;
-            }
-            
-            // Shift+A (タイムライン表示切替)
-            if (e.shiftKey && e.code === 'KeyA' && !e.ctrlKey && !e.altKey) {
-                eventBus.emit('ui:toggle-timeline');
-                e.preventDefault();
-                return;
-            }
-            
-            // Ctrl+Space (再生/停止)
-            if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
-                const timelineUI = window.timelineUI;
-                if (timelineUI && timelineUI.isVisible) {
-                    timelineUI.togglePlayStop();
-                }
-                e.preventDefault();
-                return;
-            }
-            
-            // Shift+C (CUTコピー&ペースト)
-            if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
-                eventBus.emit('cut:copy-current');
-                setTimeout(() => {
-                    eventBus.emit('cut:paste-right-adjacent');
-                }, 10);
-                e.preventDefault();
-                return;
-            }
-            
-            // P (ペンツール)
-            if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-                eventBus.emit('tool:select', { tool: 'pen' });
-                e.preventDefault();
-                return;
-            }
-            
-            // E (消しゴムツール)
-            if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-                eventBus.emit('tool:select', { tool: 'eraser' });
-                e.preventDefault();
-                return;
-
-// ================================================================================
-// index.html内 setupUnifiedKeyboardShortcuts()関数に追加する部分
-// Phase 1-2: Undo/Redoキー処理の復活
-// ================================================================================
-
-// 既存のsetupUnifiedKeyboardShortcuts()関数内、
-// document.addEventListener('keydown', (e) => { の中に以下を追加:
-
-function setupUnifiedKeyboardShortcuts() {
-    document.addEventListener('keydown', (e) => {
-        preventBrowserDefaults(e);
-        
-        const eventBus = window.TegakiEventBus;
-        if (!eventBus) return;
-        
-        const activeElement = document.activeElement;
-        if (activeElement && (
-            activeElement.tagName === 'INPUT' ||
-            activeElement.tagName === 'TEXTAREA' ||
-            activeElement.isContentEditable
-        )) {
-            return;
-        }
-        
-        // ✅ Phase 1-2追加: Ctrl+Z (Undo)
-        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
-            if (window.History && typeof window.History.undo === 'function') {
-                window.History.undo();
-            }
-            e.preventDefault();
-            return;
-        }
-        
-        // ✅ Phase 1-2追加: Ctrl+Y / Ctrl+Shift+Z (Redo)
-        if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-            if (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey)) {
-                if (window.History && typeof window.History.redo === 'function') {
-                    window.History.redo();
-                }
-                e.preventDefault();
-                return;
-            }
-        }
-        
-        // Delete キー (レイヤークリア)
-        if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-            eventBus.emit('layer:clear-active');
-            e.preventDefault();
-            return;
-        }
-        
-        // Ctrl+L (レイヤー追加)
-        if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
-            if (window.drawingApp?.layerManager) {
-                const layerSystem = window.drawingApp.layerManager;
-                const newLayerIndex = layerSystem.layers.length + 1;
-                layerSystem.createLayer(`L${newLayerIndex}`, false);
-                eventBus.emit('layer:created-by-shortcut', { index: newLayerIndex });
-            }
-            e.preventDefault();
-            return;
-        }
-        
-        // Shift+N (新規CUT作成)
-        if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
-            const animationSystem = window.animationSystem;
-            if (animationSystem) {
-                animationSystem.createNewEmptyCut();
-                eventBus.emit('cut:created-by-shortcut');
-            }
-            e.preventDefault();
-            return;
-        }
-        
-        // Shift+A (タイムライン表示切替)
-        if (e.shiftKey && e.code === 'KeyA' && !e.ctrlKey && !e.altKey) {
-            eventBus.emit('ui:toggle-timeline');
-            e.preventDefault();
-            return;
-        }
-        
-        // Ctrl+Space (再生/停止)
-        if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
-            const timelineUI = window.timelineUI;
-            if (timelineUI && timelineUI.isVisible) {
-                timelineUI.togglePlayStop();
-            }
-            e.preventDefault();
-            return;
-        }
-        
-        // Shift+C (CUTコピー&ペースト)
-        if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
-            eventBus.emit('cut:copy-current');
-            setTimeout(() => {
-                eventBus.emit('cut:paste-right-adjacent');
-            }, 10);
-            e.preventDefault();
-            return;
-        }
-        
-        // P (ペンツール)
-        if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-            eventBus.emit('tool:select', { tool: 'pen' });
-            e.preventDefault();
-            return;
-        }
-        
-        // E (消しゴムツール)
-        if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-            eventBus.emit('tool:select', { tool: 'eraser' });
-            e.preventDefault();
-            return;
-        }
-    });
-}
-
-// ================================================================================
-// 完全なindex.html用コード（既存のsetupUnifiedKeyboardShortcuts関数を置き換え）
-// ================================================================================
-
 (function() {
     'use strict';
     
@@ -1258,7 +1023,6 @@ function setupUnifiedKeyboardShortcuts() {
         setupUnifiedKeyboardShortcuts();
     }
 })();
-
 
 function checkPhase1Dependencies() {
     const dependencies = [

@@ -1,9 +1,10 @@
 // ================================================================================
-// system/layer-system.js - Phase 2: StateManager統合版
+// system/layer-system.js - Phase 2b-3完全修正版
 // ================================================================================
 // 🎯 StateManagerからデータを読み取り専用で取得
 // ✅ Command経由でのみデータ変更
 // ✅ Pixi描画とUIのみ担当
+// 🔧 createLayer/deleteLayerメソッド復活（Command経由）
 
 (function() {
     'use strict';
@@ -164,6 +165,9 @@
             const layer = new PIXI.Container();
             layer.label = layerData.id;
             
+            // データ参照を保持（描画用のみ）
+            layer.layerData = layerData;
+            
             // Transform適用
             if (layerData.transform) {
                 layer.position.set(layerData.transform.x, layerData.transform.y);
@@ -217,6 +221,57 @@
             return graphics;
         }
 
+        // ===== レイヤー作成・削除（Command経由）=====
+        
+        createLayer(name, isBackground = false) {
+            const layerData = {
+                id: `layer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                name: name,
+                visible: true,
+                opacity: 1.0,
+                isBackground: isBackground,
+                transform: {
+                    x: 0, y: 0,
+                    rotation: 0,
+                    scaleX: 1, scaleY: 1,
+                    pivotX: 0, pivotY: 0
+                },
+                paths: []
+            };
+            
+            // Command経由で実行
+            const command = new window.CreateLayerCommand(
+                this.stateManager,
+                this.eventBus,
+                this.stateManager.getCurrentCutIndex(),
+                layerData
+            );
+            
+            window.History.executeCommand(command);
+            
+            return layerData.id;
+        }
+        
+        deleteLayer(layerIndex) {
+            const layers = this.getLayers();
+            
+            if (layerIndex < 0 || layerIndex >= layers.length) {
+                return false;
+            }
+            
+            // Command経由で実行
+            const command = new window.DeleteLayerCommand(
+                this.stateManager,
+                this.eventBus,
+                this.stateManager.getCurrentCutIndex(),
+                layerIndex
+            );
+            
+            window.History.executeCommand(command);
+            
+            return true;
+        }
+
         // ===== レイヤー取得（後方互換性のため保持）=====
         
         getLayers() {
@@ -227,6 +282,11 @@
         getActiveLayer() {
             const layers = this.getLayers();
             return this.activeLayerIndex >= 0 ? layers[this.activeLayerIndex] : null;
+        }
+        
+        // layers配列（後方互換性のため）
+        get layers() {
+            return this.getLayers();
         }
 
         // ===== レイヤー選択 =====
@@ -374,6 +434,22 @@
             if (this.isLayerMoveMode) {
                 this.updateLayerTransformPanelValues();
             }
+        }
+
+        // ===== 初期化メソッド（CoreEngineから呼ばれる）=====
+        
+        init(canvasContainer, eventBus, config) {
+            this.currentCutContainer = canvasContainer;
+            this.eventBus = eventBus || this.eventBus;
+            this.config = config || this.config;
+        }
+        
+        setApp(app) {
+            this.app = app;
+        }
+        
+        setCameraSystem(cameraSystem) {
+            this.cameraSystem = cameraSystem;
         }
 
         // ===== CUTレンダーテクスチャ管理 =====
@@ -1493,16 +1569,8 @@
                         if (action.includes('layer-visibility')) {
                             this.toggleLayerVisibility(i);
                             e.stopPropagation();
-                        } else if (action.includes('layer-delete')) {
-                            if (confirm(`レイヤー "${layerData.name}" を削除しますか？`)) {
-                                const command = new window.DeleteLayerCommand(
-                                    this.stateManager,
-                                    this.eventBus,
-                                    this.stateManager.getCurrentCutIndex(),
-                                    i
-                                );
-                                window.History.executeCommand(command);
-                            }
+                        } else if (action.includes('layer-delete-button')) {
+                            this.deleteLayer(i);
                             e.stopPropagation();
                         } else {
                             this.setActiveLayer(i);
@@ -1513,41 +1581,31 @@
                 });
 
                 layerList.appendChild(layerItem);
-            }
-            
-            for (let i = 0; i < layers.length; i++) {
-                this.requestThumbnailUpdate(i);
-            }
-            
-            if (window.TegakiUI?.initializeSortable) {
+                
                 setTimeout(() => {
-                    window.TegakiUI.initializeSortable(this);
-                }, 50);
+                    this.updateThumbnail(i);
+                }, 50 * (currentLayers.length - i));
             }
         }
 
         updateStatusDisplay() {
-            const statusElement = document.getElementById('current-layer');
-            const currentLayers = this.stateManager.getCurrentLayers();
-            
-            if (statusElement && this.activeLayerIndex >= 0) {
-                const layer = currentLayers[this.activeLayerIndex];
-                statusElement.textContent = layer.name;
-            }
-            
-            if (this.eventBus) {
-                this.eventBus.emit('ui:status-updated', {
-                    currentLayer: this.activeLayerIndex >= 0 ? 
-                        currentLayers[this.activeLayerIndex].name : 'なし',
-                    layerCount: currentLayers.length,
-                    activeIndex: this.activeLayerIndex
-                });
-            }
-        }
+            const activeLayer = this.getActiveLayer();
+            if (!activeLayer || !activeLayer.layerData) return;
 
-        insertClipboard(data) {
-            if (this.eventBus) {
-                this.eventBus.emit('layer:clipboard-inserted', data);
+            const layerNameElement = document.getElementById('current-layer');
+            if (layerNameElement) {
+                layerNameElement.textContent = activeLayer.layerData.name;
+            }
+
+            const transformElement = document.getElementById('transform-info');
+            if (transformElement) {
+                const pos = activeLayer.position;
+                const scale = activeLayer.scale;
+                const rotation = activeLayer.rotation;
+                
+                transformElement.textContent = 
+                    `x:${Math.round(pos.x)} y:${Math.round(pos.y)} ` +
+                    `s:${scale.x.toFixed(1)} r:${Math.round(rotation * 180 / Math.PI)}°`;
             }
         }
     }
@@ -1556,6 +1614,13 @@
     
     window.TegakiLayerSystem = LayerSystem;
     
-    console.log('✅ layer-system.js loaded (Phase 2)');
+    // 後方互換性: 既存のlayerSystemが存在しない場合のみ設定
+    if (!window.layerSystem) {
+        window.layerSystem = null;
+    }
 
+    console.log('✅ layer-system.js loaded (Phase 2b-3完全修正版)');
+    console.log('  - 🔥 createLayer/deleteLayerメソッド復活');
+    console.log('  - 🔥 Command経由で実行');
+    
 })();
