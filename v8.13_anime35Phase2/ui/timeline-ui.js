@@ -211,7 +211,7 @@
                         </svg>
                     </button>
                     <div class="retime-group">
-                        <label class="retime-label">全カット時間</label>
+                        <label class="retime-label">AllCutTime</label>
                         <input type="number" id="retime-input" class="retime-input" value="0.5" min="0.01" max="10" step="0.01" title="秒数">
                         <button id="retime-cuts-btn" title="全カット時間変更" class="retime-btn">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">

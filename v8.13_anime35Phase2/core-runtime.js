@@ -1,19 +1,65 @@
-// ===== core-runtime.js - リサイズ即時反映+背景塗り版 =====
-// 【改修】リサイズ時のタイムラインサムネイル即時更新
-// 【改修】背景レイヤーの余白を#f0e0d6で自動塗りつぶし
-// 【維持】全既存機能・CUT独立性
-// PixiJS v8.13 対応
+// ===== core-runtime.js - Phase 1-B修正版 =====
+// 🔧 Phase 1-B: setupLegacyCompatibility削除、構造明確化
 
 (function() {
     'use strict';
     
     // 依存確認
     if (!window.CoordinateSystem) {
-        throw new Error('coordinate-system.js dependency missing');
+        console.error('CoreRuntime: coordinate-system.js dependency missing');
+        return;
     }
     const CONFIG = window.TEGAKI_CONFIG;
     if (!CONFIG) {
-        throw new Error('config.js dependency missing');
+        console.error('CoreRuntime: config.js dependency missing');
+        return;
+    }
+    
+    // === 循環参照チェック関数 ===
+    function isAncestor(potentialAncestor, child) {
+        let cur = potentialAncestor;
+        let depth = 0;
+        const MAX_DEPTH = 100;
+        
+        while (cur && depth < MAX_DEPTH) {
+            if (cur === child) return true;
+            cur = cur.parent;
+            depth++;
+        }
+        
+        if (depth >= MAX_DEPTH) {
+            console.error('isAncestor: MAX_DEPTH exceeded - possible infinite loop');
+            return true;
+        }
+        
+        return false;
+    }
+    
+    function safeAddChild(parent, child) {
+        if (!parent || !child) {
+            console.error('safeAddChild: invalid arguments', { parent, child });
+            return false;
+        }
+        
+        if (parent === child) {
+            console.error('safeAddChild: cannot add container to itself');
+            return false;
+        }
+        
+        if (isAncestor(child, parent)) {
+            console.error('safeAddChild: circular reference detected');
+            console.error('  parent:', parent.label || parent.name || parent);
+            console.error('  child:', child.label || child.name || child);
+            return false;
+        }
+        
+        try {
+            parent.addChild(child);
+            return true;
+        } catch (error) {
+            console.error('safeAddChild: addChild failed', error);
+            return false;
+        }
     }
     
     // === CoreRuntime: Project/CUT管理とCUT切替機能 ===
@@ -28,7 +74,7 @@
             activeCutId: null
         },
         
-        // 内部参照（既存システムとの互換性）
+        // 内部参照
         internal: {
             app: null,
             worldContainer: null,
@@ -41,7 +87,20 @@
         
         // === 初期化 ===
         init(options) {
-            console.log('=== CoreRuntime リサイズ即時反映版 初期化開始 ===');
+            if (!options || !options.app) {
+                console.error('CoreRuntime.init: Invalid options. Required: app');
+                return false;
+            }
+            
+            if (!options.worldContainer || !options.canvasContainer) {
+                console.error('CoreRuntime.init: worldContainer and canvasContainer are required');
+                return false;
+            }
+            
+            if (!options.cameraSystem || !options.layerManager || !options.drawingEngine) {
+                console.error('CoreRuntime.init: cameraSystem, layerManager, and drawingEngine are required');
+                return false;
+            }
             
             Object.assign(this.internal, options);
             this.project.renderer = options.app?.renderer;
@@ -53,34 +112,22 @@
             const defaultCut = this.createCut({ name: 'CUT1' });
             this.switchCut(defaultCut.id);
             
-            this.setupLegacyCompatibility();
+            // === Phase 1-B: setupLegacyCompatibility削除 ===
+            // window.drawingApp の管理は index.html に一元化
+            // レガシー互換のための window.drawingAppResizeCanvas は index.html で設定
             
-            console.log('✅ CoreRuntime 初期化完了');
-            
-            return this;
+            console.log('✅ CoreRuntime initialized (Phase 1-B)');
+            return true;
         },
         
         setupCoordinateSystem() {
-            if (window.CoordinateSystem.setContainers) {
+            if (window.CoordinateSystem?.setContainers) {
                 window.CoordinateSystem.setContainers({
                     worldContainer: this.internal.worldContainer,
                     canvasContainer: this.internal.canvasContainer,
                     app: this.internal.app
                 });
             }
-        },
-        
-        setupLegacyCompatibility() {
-            window.drawingApp = {
-                pixiApp: this.internal.app,
-                cameraSystem: this.internal.cameraSystem,
-                layerManager: this.internal.layerManager,
-                drawingEngine: this.internal.drawingEngine
-            };
-            
-            window.drawingAppResizeCanvas = (w, h) => {
-                return this.updateCanvasSize(w, h);
-            };
         },
         
         // === CUT作成 ===
@@ -106,35 +153,47 @@
             cut.container.label = cutId;
             this.project.cuts.push(cut);
             
-            console.log(`✅ CUT作成: ${cut.name} (${w}x${h})`);
             return cut;
         },
         
-        // === CUT切替（stage差し替え） ===
+        // === CUT切替 ===
         switchCut(cutId) {
             const newCut = this.getCutById(cutId);
             if (!newCut) {
-                console.error('CUT not found:', cutId);
+                console.error('switchCut: Cut not found', cutId);
                 return false;
             }
             
             const oldCut = this.getActiveCut();
             
             if (oldCut && this.project.stage) {
-                this.project.stage.removeChild(oldCut.container);
+                try {
+                    this.project.stage.removeChild(oldCut.container);
+                } catch (error) {
+                    console.error('switchCut: Failed to remove old cut', error);
+                }
             }
             
             if (this.project.stage) {
-                this.project.stage.addChild(newCut.container);
+                const success = safeAddChild(this.project.stage, newCut.container);
+                if (!success) {
+                    console.error('switchCut: Failed to add new cut (circular reference?)');
+                    if (oldCut) {
+                        safeAddChild(this.project.stage, oldCut.container);
+                    }
+                    return false;
+                }
             }
             
             this.project.activeCutId = cutId;
             
             if (window.TegakiEventBus) {
-                window.TegakiEventBus.emit('cut:switched', { cutId, cutName: newCut.name });
+                window.TegakiEventBus.emit('cut:switched', { 
+                    cutId, 
+                    cutName: newCut.name 
+                });
             }
             
-            console.log(`🔄 CUT切替: ${newCut.name}`);
             return true;
         },
         
@@ -181,14 +240,12 @@
             }
         },
         
-        // === 【改修】背景レイヤー更新ヘルパー ===
+        // === 背景レイヤー更新ヘルパー ===
         updateBackgroundLayerSize(layer, width, height) {
             if (!layer?.layerData?.isBackground) return false;
             if (!layer.layerData.backgroundGraphics) return false;
             
             const bg = layer.layerData.backgroundGraphics;
-            
-            // 既存のGraphicsをクリアして再描画
             bg.clear();
             bg.rect(0, 0, width, height);
             bg.fill(CONFIG.background.color || 0xF0E0D6);
@@ -196,17 +253,13 @@
             return true;
         },
         
-        // === 【改修】キャンバスサイズ変更 ===
+        // === キャンバスサイズ変更 ===
         updateCanvasSize(w, h) {
-            console.log('CoreRuntime: キャンバスサイズ変更:', w, 'x', h);
-            
             this.project.canvasSize = { w, h };
             
-            // 【改修1】AnimationSystemからアクティブCUTを取得
             const animationSystem = window.animationSystem || window.TegakiAnimationSystem;
             const currentCutIndex = animationSystem?.getCurrentCutIndex?.() ?? 0;
             
-            // 全CUTのrenderTextureを再作成
             this.project.cuts.forEach(cut => {
                 if (cut.renderTexture) {
                     cut.renderTexture.destroy(true);
@@ -221,7 +274,6 @@
                 cut.needsThumbnailUpdate = true;
             });
             
-            // 【改修2】AnimationSystemの全CUTの背景レイヤーを更新
             if (animationSystem?.animationData?.cuts) {
                 animationSystem.animationData.cuts.forEach((cut, cutIndex) => {
                     if (cut.container && cut.container.children) {
@@ -232,12 +284,10 @@
                         });
                     }
                     
-                    // 【改修3】各CUTのRenderTextureを即座に更新
                     if (this.internal.layerManager?.renderCutToTexture) {
                         this.internal.layerManager.renderCutToTexture(cut.id, cut.container);
                     }
                     
-                    // 【改修4】サムネイル即時生成（アクティブCUTを優先）
                     if (cutIndex === currentCutIndex) {
                         setTimeout(() => {
                             if (animationSystem.generateCutThumbnail) {
@@ -254,35 +304,25 @@
                 });
             }
             
-            // EventBus通知
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.emit('camera:resized', { width: w, height: h });
-                
-                // 【改修5】タイムラインUIへの即時更新通知
                 setTimeout(() => {
                     window.TegakiEventBus.emit('animation:thumbnails-need-update');
                 }, 200);
             }
             
-            // CONFIG更新
             CONFIG.canvas.width = w;
             CONFIG.canvas.height = h;
             
-            // 既存システムへの反映
             if (this.internal.cameraSystem?.resizeCanvas) {
                 this.internal.cameraSystem.resizeCanvas(w, h);
             }
             
-            // 【改修6】レイヤーパネルの即時更新
             if (this.internal.layerManager?.updateLayerPanelUI) {
                 setTimeout(() => {
                     this.internal.layerManager.updateLayerPanelUI();
                 }, 100);
             }
-            
-            console.log('✅ 全CUTのRenderTexture再生成完了');
-            console.log('✅ 背景レイヤー自動塗り完了');
-            console.log('✅ タイムラインサムネイル更新開始');
             
             return true;
         },
@@ -303,7 +343,7 @@
             });
         },
         
-        // === 描画完了通知（レイヤーから呼ばれる） ===
+        // === 描画完了通知 ===
         markCutDirty(cutId) {
             const cut = cutId ? this.getCutById(cutId) : this.getActiveCut();
             if (cut) {
@@ -328,7 +368,7 @@
             };
         },
         
-        // === 既存API互換性（統合実装は次フェーズ） ===
+        // === 既存API互換性 ===
         api: {
             setTool(toolName) {
                 if (CoreRuntime.internal.drawingEngine?.setTool) {
@@ -460,9 +500,7 @@
     
     window.CoreRuntime = CoreRuntime;
     
-    console.log('✅ core-runtime.js リサイズ即時反映+背景塗り版 loaded');
-    console.log('  ✅ 背景レイヤー余白自動塗り (#f0e0d6)');
-    console.log('  ✅ タイムラインサムネイル即時更新');
-    console.log('  ✅ レイヤーパネル即時反映');
-    console.log('  ✅ 既存機能完全維持');
+    console.log('✅ core-runtime.js (Phase 1-B修正版) loaded');
+    console.log('  - setupLegacyCompatibility削除');
+    console.log('  - window.drawingApp管理はindex.htmlに一元化');
 })();
