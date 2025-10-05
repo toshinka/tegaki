@@ -1,6 +1,6 @@
-// ===== core-engine.js - Phase 1-2: layer:clear-activeイベント追加 =====
-// 🔧 Phase 1-2: レイヤークリア時に'layer:cleared'イベントを追加
-// ✅ history.jsがこのイベントで自動記録
+// ===== core-engine.js - Phase 1-C修正版 =====
+// 🔧 Phase 1-C: UnifiedKeyHandlerからUndo/Redo/方向キー処理を削除
+// キーボード処理は index.html に一元化
 
 (function() {
     'use strict';
@@ -169,7 +169,6 @@
                     }, 150);
                 }
                 
-                // 描画完了イベント → history.jsが自動記録
                 if (this.eventBus) {
                     this.eventBus.emit('drawing:completed', {
                         pathId: this.currentPath.id,
@@ -273,6 +272,8 @@
         }
     }
 
+    // === Phase 1-C: UnifiedKeyHandler簡素化 ===
+    // Undo/Redo/方向キーは index.html で処理
     class UnifiedKeyHandler {
         constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
             this.cameraSystem = cameraSystem;
@@ -291,11 +292,22 @@
             document.addEventListener('keydown', (e) => {
                 if (!this.keyHandlingActive) return;
                 
-                // Undo/Redo系キーはindex.htmlで処理するのでスキップ
+                // === Phase 1-C: Undo/Redo/方向キーはスキップ ===
+                // これらは index.html の統合キーハンドラで処理
                 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
                 const metaKey = isMac ? e.metaKey : e.ctrlKey;
+                
+                // Undo/Redo系
                 if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
                     return;
+                }
+                
+                // 方向キー（修飾キーなし）
+                if (!metaKey && !e.shiftKey && !e.altKey) {
+                    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || 
+                        e.code === 'ArrowUp' || e.code === 'ArrowDown') {
+                        return;
+                    }
                 }
                 
                 this.handleKeyDown(e);
@@ -474,7 +486,6 @@
         }
         
         setupSystemEventIntegration() {
-            // 🔧 Phase 1-2: レイヤー消去イベント
             this.eventBus.on('layer:clear-active', () => {
                 const activeLayer = this.layerSystem.getActiveLayer();
                 if (!activeLayer || !activeLayer.layerData) return;
@@ -504,7 +515,6 @@
                     }, 100);
                 }
                 
-                // レイヤークリア完了イベント → history.jsが自動記録
                 this.eventBus.emit('layer:cleared', {
                     layerId: activeLayer.layerData.id,
                     layerIndex: this.layerSystem.activeLayerIndex
@@ -689,6 +699,7 @@
                 systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history']
             });
             
+            // === Phase 1-A: 戻り値をthisに変更（不要だが互換性のため維持） ===
             return this;
         }
     }
@@ -706,8 +717,8 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (Phase 1-2修正版) loaded');
-    console.log('  - 🔥 layer:cleared イベント追加');
-    console.log('  - 🔥 history.jsが自動記録');
+    console.log('✅ core-engine.js (Phase 1-C修正版) loaded');
+    console.log('  - UnifiedKeyHandlerからUndo/Redo/方向キー処理削除');
+    console.log('  - キーボード処理はindex.htmlに一元化');
 
 })();

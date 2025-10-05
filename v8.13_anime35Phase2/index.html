@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 Phase 2改修版 - PixiJS v8.13 お絵かきツール</title>
+    <title>🎨 Phase 1修正版 - PixiJS v8.13 お絵かきツール</title>
     <style>
         * {
             margin: 0;
@@ -759,14 +759,6 @@
                     <div class="panel-section">
                         <div class="compact-slider-group">
                             <div class="compact-slider">
-                                <div class="compact-slider-label">X</div>
-                                <div class="slider" id="layer-x-slider">
-                                    <div class="slider-track"></div>
-                                    <div class="slider-handle"></div>
-                                </div>
-                                <div class="slider-value" id="layer-x-value">0px</div>
-                            </div>
-                            <div class="compact-slider">
                                 <div class="compact-slider-label">Y</div>
                                 <div class="slider" id="layer-y-slider">
                                     <div class="slider-track"></div>
@@ -850,400 +842,181 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
 
-<!-- Phase 2/3: 読み込み順序を厳守 -->
-<script src="config.js"></script>
-<script src="coordinate-system.js"></script>
+    <script src="config.js"></script>
+    <script src="coordinate-system.js"></script>
 
-<!-- システムコア -->
-<script src="system/event-bus.js"></script>
-<script src="system/state-manager.js"></script>        <!-- Phase 2強化版 -->
-<script src="system/command-base.js"></script>
+    <script src="system/event-bus.js"></script>
+    <script src="system/state-manager.js"></script>
+    <script src="system/command-base.js"></script>
+    <script src="system/layer-commands.js"></script>
+    <script src="system/animation-commands.js"></script>
+    <script src="system/history.js"></script>
+    <script src="system/camera-system.js"></script>
+    <script src="system/layer-system.js"></script>
+    <script src="system/drawing-clipboard.js"></script>
+    <script src="system/animation-system.js"></script>
+    <script src="system/gif-exporter.js"></script>
 
-<!-- Commands -->
-<script src="system/layer-commands.js"></script>       <!-- Phase 2拡張版 -->
-<script src="system/animation-commands.js"></script>   <!-- 新規追加 -->
+    <script src="ui/timeline-ui.js"></script>
+    <script src="ui/ui-panels.js"></script>
+    <script src="ui/timeline-thumbnail-utils.js"></script>
 
-<!-- History (Commandsの後) -->
-<script src="system/history.js"></script>              <!-- Phase 2/3統合版 -->
-
-<!-- その他のシステム -->
-<script src="system/camera-system.js"></script>
-<script src="system/layer-system.js"></script>
-<script src="system/drawing-clipboard.js"></script>
-<script src="system/animation-system.js"></script>
-<script src="system/gif-exporter.js"></script>
-
-<!-- UI -->
-<script src="ui/timeline-ui.js"></script>
-<script src="ui/ui-panels.js"></script>
-<script src="ui/timeline-thumbnail-utils.js"></script>
-
-<!-- エンジン -->
-<script src="core-engine.js"></script>
-<script src="core-runtime.js"></script>
+    <script src="core-engine.js"></script>
+    <script src="core-runtime.js"></script>
 
     <script>
+// ===== Phase 1修正版: 統合キーボードハンドラ =====
 (function() {
     'use strict';
     
-    function preventBrowserDefaults(e) {
-        if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') {
-            return;
-        }
-        
-        if (e.key.startsWith('F') && e.key.length <= 3) {
-            e.preventDefault();
-            return;
-        }
-        
-        if (e.ctrlKey || e.metaKey) {
-            const key = e.code || e.key;
-            if (key === 'KeyZ' || key === 'KeyY' || key === 'KeyL' || key === 'Space') {
+    function setupUnifiedKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            // ブラウザデフォルト動作の制御
+            if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
+            if (e.key.startsWith('F') && e.key.length <= 3) {
                 e.preventDefault();
                 return;
             }
-            if (key.startsWith('Key') || key.startsWith('Digit')) {
-                e.preventDefault();
-            }
-        }
-    }
-    
-    function setupUnifiedKeyboardShortcuts() {
-        document.addEventListener('keydown', (e) => {
-            preventBrowserDefaults(e);
             
             const eventBus = window.TegakiEventBus;
             if (!eventBus) return;
             
+            // 入力フィールドでは無効化
             const activeElement = document.activeElement;
             if (activeElement && (
                 activeElement.tagName === 'INPUT' ||
                 activeElement.tagName === 'TEXTAREA' ||
                 activeElement.isContentEditable
-            )) {
-                return;
-            }
+            )) return;
             
-            // ❌ 削除: Undo/Redo処理はhistory.jsに一本化
-            // index.htmlではUndo/Redoを処理しない
+            // === Phase 1-C: Undo/Redo修正 ===
             
-            // Delete キー (レイヤークリア)
-            if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-                eventBus.emit('layer:clear-active');
-                e.preventDefault();
-                return;
-            }
-            
-            // Ctrl+L (レイヤー追加)
-            if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
-                if (window.drawingApp?.layerManager) {
-                    const layerSystem = window.drawingApp.layerManager;
-                    const newLayerIndex = layerSystem.layers.length + 1;
-                    layerSystem.createLayer(`L${newLayerIndex}`, false);
-                    eventBus.emit('layer:created-by-shortcut', { index: newLayerIndex });
-                }
-                e.preventDefault();
-                return;
-            }
-            
-            // Shift+N (新規CUT作成)
-            if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
-                const animationSystem = window.animationSystem;
-                if (animationSystem) {
-                    animationSystem.createNewEmptyCut();
-                    eventBus.emit('cut:created-by-shortcut');
-                }
-                e.preventDefault();
-                return;
-            }
-            
-            // Shift+A (タイムライン表示切替)
-            if (e.shiftKey && e.code === 'KeyA' && !e.ctrlKey && !e.altKey) {
-                eventBus.emit('ui:toggle-timeline');
-                e.preventDefault();
-                return;
-            }
-            
-            // Ctrl+Space (再生/停止)
-            if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
-                const timelineUI = window.timelineUI;
-                if (timelineUI && timelineUI.isVisible) {
-                    timelineUI.togglePlayStop();
-                }
-                e.preventDefault();
-                return;
-            }
-            
-            // Shift+C (CUTコピー&ペースト)
-            if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
-                eventBus.emit('cut:copy-current');
-                setTimeout(() => {
-                    eventBus.emit('cut:paste-right-adjacent');
-                }, 10);
-                e.preventDefault();
-                return;
-            }
-            
-            // P (ペンツール)
-            if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-                eventBus.emit('tool:select', { tool: 'pen' });
-                e.preventDefault();
-                return;
-            }
-            
-            // E (消しゴムツール)
-            if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-                eventBus.emit('tool:select', { tool: 'eraser' });
-                e.preventDefault();
-                return;
-
-// ================================================================================
-// index.html内 setupUnifiedKeyboardShortcuts()関数に追加する部分
-// Phase 1-2: Undo/Redoキー処理の復活
-// ================================================================================
-
-// 既存のsetupUnifiedKeyboardShortcuts()関数内、
-// document.addEventListener('keydown', (e) => { の中に以下を追加:
-
-function setupUnifiedKeyboardShortcuts() {
-    document.addEventListener('keydown', (e) => {
-        preventBrowserDefaults(e);
-        
-        const eventBus = window.TegakiEventBus;
-        if (!eventBus) return;
-        
-        const activeElement = document.activeElement;
-        if (activeElement && (
-            activeElement.tagName === 'INPUT' ||
-            activeElement.tagName === 'TEXTAREA' ||
-            activeElement.isContentEditable
-        )) {
-            return;
-        }
-        
-        // ✅ Phase 1-2追加: Ctrl+Z (Undo)
-        if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
-            if (window.History && typeof window.History.undo === 'function') {
-                window.History.undo();
-            }
-            e.preventDefault();
-            return;
-        }
-        
-        // ✅ Phase 1-2追加: Ctrl+Y / Ctrl+Shift+Z (Redo)
-        if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-            if (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey)) {
-                if (window.History && typeof window.History.redo === 'function') {
-                    window.History.redo();
-                }
-                e.preventDefault();
-                return;
-            }
-        }
-        
-        // Delete キー (レイヤークリア)
-        if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-            eventBus.emit('layer:clear-active');
-            e.preventDefault();
-            return;
-        }
-        
-        // Ctrl+L (レイヤー追加)
-        if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
-            if (window.drawingApp?.layerManager) {
-                const layerSystem = window.drawingApp.layerManager;
-                const newLayerIndex = layerSystem.layers.length + 1;
-                layerSystem.createLayer(`L${newLayerIndex}`, false);
-                eventBus.emit('layer:created-by-shortcut', { index: newLayerIndex });
-            }
-            e.preventDefault();
-            return;
-        }
-        
-        // Shift+N (新規CUT作成)
-        if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
-            const animationSystem = window.animationSystem;
-            if (animationSystem) {
-                animationSystem.createNewEmptyCut();
-                eventBus.emit('cut:created-by-shortcut');
-            }
-            e.preventDefault();
-            return;
-        }
-        
-        // Shift+A (タイムライン表示切替)
-        if (e.shiftKey && e.code === 'KeyA' && !e.ctrlKey && !e.altKey) {
-            eventBus.emit('ui:toggle-timeline');
-            e.preventDefault();
-            return;
-        }
-        
-        // Ctrl+Space (再生/停止)
-        if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
-            const timelineUI = window.timelineUI;
-            if (timelineUI && timelineUI.isVisible) {
-                timelineUI.togglePlayStop();
-            }
-            e.preventDefault();
-            return;
-        }
-        
-        // Shift+C (CUTコピー&ペースト)
-        if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
-            eventBus.emit('cut:copy-current');
-            setTimeout(() => {
-                eventBus.emit('cut:paste-right-adjacent');
-            }, 10);
-            e.preventDefault();
-            return;
-        }
-        
-        // P (ペンツール)
-        if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-            eventBus.emit('tool:select', { tool: 'pen' });
-            e.preventDefault();
-            return;
-        }
-        
-        // E (消しゴムツール)
-        if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-            eventBus.emit('tool:select', { tool: 'eraser' });
-            e.preventDefault();
-            return;
-        }
-    });
-}
-
-// ================================================================================
-// 完全なindex.html用コード（既存のsetupUnifiedKeyboardShortcuts関数を置き換え）
-// ================================================================================
-
-(function() {
-    'use strict';
-    
-    function preventBrowserDefaults(e) {
-        if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') {
-            return;
-        }
-        
-        if (e.key.startsWith('F') && e.key.length <= 3) {
-            e.preventDefault();
-            return;
-        }
-        
-        if (e.ctrlKey || e.metaKey) {
-            const key = e.code || e.key;
-            if (key === 'KeyZ' || key === 'KeyY' || key === 'KeyL' || key === 'Space') {
-                e.preventDefault();
-                return;
-            }
-            if (key.startsWith('Key') || key.startsWith('Digit')) {
-                e.preventDefault();
-            }
-        }
-    }
-    
-    function setupUnifiedKeyboardShortcuts() {
-        document.addEventListener('keydown', (e) => {
-            preventBrowserDefaults(e);
-            
-            const eventBus = window.TegakiEventBus;
-            if (!eventBus) return;
-            
-            const activeElement = document.activeElement;
-            if (activeElement && (
-                activeElement.tagName === 'INPUT' ||
-                activeElement.tagName === 'TEXTAREA' ||
-                activeElement.isContentEditable
-            )) {
-                return;
-            }
-            
-            // ✅ Ctrl+Z (Undo)
-            if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
-                if (window.History && typeof window.History.undo === 'function') {
+            // Ctrl+Z: Undo（Shiftなし）
+            if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
+                if (window.History?.undo) {
                     window.History.undo();
                 }
                 e.preventDefault();
                 return;
             }
             
-            // ✅ Ctrl+Y / Ctrl+Shift+Z (Redo)
-            if ((e.ctrlKey || e.metaKey) && !e.altKey) {
-                if (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey)) {
-                    if (window.History && typeof window.History.redo === 'function') {
-                        window.History.redo();
-                    }
-                    e.preventDefault();
-                    return;
+            // Ctrl+Y: Redo
+            if (e.ctrlKey && e.code === 'KeyY' && !e.shiftKey && !e.altKey) {
+                if (window.History?.redo) {
+                    window.History.redo();
                 }
+                e.preventDefault();
+                return;
             }
             
-            // Delete キー (レイヤークリア)
+            // Ctrl+Shift+Z: Redo（代替）
+            if (e.ctrlKey && e.code === 'KeyZ' && e.shiftKey && !e.altKey) {
+                if (window.History?.redo) {
+                    window.History.redo();
+                }
+                e.preventDefault();
+                return;
+            }
+            
+            // === Phase 1-C: 方向キー修正 ===
+            
+            // ←: 前のCUTへ移動（修飾キーなし）
+            if (e.code === 'ArrowLeft' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                if (window.animationSystem?.goToNextCut) {
+                    window.animationSystem.goToNextCut();
+                }
+                e.preventDefault();
+                return;
+            }
+            
+            // →: 次のCUTへ移動（修飾キーなし）
+            if (e.code === 'ArrowRight' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                if (window.animationSystem?.goToPreviousCut) {
+                    window.animationSystem.goToPreviousCut();
+                }
+                e.preventDefault();
+                return;
+            }
+            
+            // ↑: レイヤー階層を上へ（修飾キーなし）
+            if (e.code === 'ArrowUp' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                if (window.drawingApp?.layerManager) {
+                    window.drawingApp.layerManager.moveActiveLayerHierarchy('up');
+                }
+                e.preventDefault();
+                return;
+            }
+            
+            // ↓: レイヤー階層を下へ（修飾キーなし）
+            if (e.code === 'ArrowDown' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                if (window.drawingApp?.layerManager) {
+                    window.drawingApp.layerManager.moveActiveLayerHierarchy('down');
+                }
+                e.preventDefault();
+                return;
+            }
+            
+            // === その他のショートカット ===
+            
+            // Delete: レイヤークリア
             if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
                 eventBus.emit('layer:clear-active');
                 e.preventDefault();
                 return;
             }
             
-            // Ctrl+L (レイヤー追加)
+            // Ctrl+L: 新規レイヤー作成
             if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
                 if (window.drawingApp?.layerManager) {
                     const layerSystem = window.drawingApp.layerManager;
                     const newLayerIndex = layerSystem.layers.length + 1;
                     layerSystem.createLayer(`L${newLayerIndex}`, false);
-                    eventBus.emit('layer:created-by-shortcut', { index: newLayerIndex });
                 }
                 e.preventDefault();
                 return;
             }
             
-            // Shift+N (新規CUT作成)
+            // Shift+N: 新規CUT作成
             if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
-                const animationSystem = window.animationSystem;
-                if (animationSystem) {
-                    animationSystem.createNewEmptyCut();
-                    eventBus.emit('cut:created-by-shortcut');
+                if (window.animationSystem) {
+                    window.animationSystem.createNewEmptyCut();
                 }
                 e.preventDefault();
                 return;
             }
             
-            // Shift+A (タイムライン表示切替)
+            // Shift+A: タイムライン表示切替
             if (e.shiftKey && e.code === 'KeyA' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('ui:toggle-timeline');
                 e.preventDefault();
                 return;
             }
             
-            // Ctrl+Space (再生/停止)
+            // Ctrl+Space: 再生/停止
             if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
-                const timelineUI = window.timelineUI;
-                if (timelineUI && timelineUI.isVisible) {
-                    timelineUI.togglePlayStop();
+                if (window.timelineUI?.isVisible) {
+                    window.timelineUI.togglePlayStop();
                 }
                 e.preventDefault();
                 return;
             }
             
-            // Shift+C (CUTコピー&ペースト)
+            // Shift+C: CUTコピー&ペースト
             if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('cut:copy-current');
-                setTimeout(() => {
-                    eventBus.emit('cut:paste-right-adjacent');
-                }, 10);
+                setTimeout(() => eventBus.emit('cut:paste-right-adjacent'), 10);
                 e.preventDefault();
                 return;
             }
             
-            // P (ペンツール)
+            // P: ペンツール
             if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'pen' });
                 e.preventDefault();
                 return;
             }
             
-            // E (消しゴムツール)
+            // E: 消しゴムツール
             if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'eraser' });
                 e.preventDefault();
@@ -1259,7 +1032,6 @@ function setupUnifiedKeyboardShortcuts() {
     }
 })();
 
-
 function checkPhase1Dependencies() {
     const dependencies = [
         { name: 'PIXI', obj: window.PIXI },
@@ -1270,27 +1042,22 @@ function checkPhase1Dependencies() {
     ];
     
     const missing = dependencies.filter(dep => !dep.obj);
-    
     if (missing.length > 0) {
-        throw new Error(`Phase 1 Dependencies not loaded: ${missing.map(d => d.name).join(', ')}`);
+        console.error('Dependencies not loaded:', missing.map(d => d.name).join(', '));
+        return false;
     }
     
     if (!window.TEGAKI_CONFIG.animation) {
-        throw new Error('Animation configuration not found');
+        console.error('Animation configuration not found');
+        return false;
     }
     
     return true;
 }
 
 function checkCoreRuntime() {
-    if (!window.CoreRuntime) {
-        return false;
-    }
-    
-    if (!window.TegakiCore?.CoreEngine) {
-        return false;
-    }
-    
+    if (!window.CoreRuntime) return false;
+    if (!window.TegakiCore?.CoreEngine) return false;
     return true;
 }
 
@@ -1309,7 +1076,8 @@ function initializeApp() {
         async initialize() {
             const containerEl = document.getElementById('drawing-canvas');
             if (!containerEl) {
-                throw new Error('Canvas container not found');
+                console.error('Canvas container not found');
+                return false;
             }
             
             this.pixiApp = new PIXI.Application();
@@ -1332,10 +1100,22 @@ function initializeApp() {
             this.pixiApp.canvas.style.width = `${screenWidth}px`;
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
+            // === Phase 1-A: CoreEngine初期化（修正版） ===
             this.coreEngine = new CoreEngine(this.pixiApp);
-            const drawingApp = this.coreEngine.initialize();
+            this.coreEngine.initialize();
             
-            CoreRuntime.init({
+            // === Phase 1-A: 正しい構造でwindow.drawingAppを作成 ===
+            window.drawingApp = {
+                pixiApp: this.pixiApp,
+                coreEngine: this.coreEngine,
+                cameraSystem: this.coreEngine.getCameraSystem(),
+                layerManager: this.coreEngine.getLayerManager(),
+                drawingEngine: this.coreEngine.getDrawingEngine(),
+                uiController: null  // 後で設定
+            };
+            
+            // === Phase 1-A: CoreRuntime初期化（パラメータ確認） ===
+            const runtimeSuccess = CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
                 canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
@@ -1344,16 +1124,31 @@ function initializeApp() {
                 drawingEngine: this.coreEngine.getDrawingEngine()
             });
             
+            if (!runtimeSuccess) {
+                console.error('❌ CoreRuntime initialization failed');
+                return false;
+            }
+            
+            // システム初期化完了イベント発火
+            if (window.TegakiEventBus) {
+                window.TegakiEventBus.emit('system:ready');
+            }
+            
+            // UIコントローラ作成
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
                 this.coreEngine.getLayerManager(), 
                 this.pixiApp
             );
             
+            window.drawingApp.uiController = this.uiController;
+            
+            // レガシー互換性
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
                 return CoreRuntime.api.resizeCanvas(newWidth, newHeight);
             };
             
+            // リサイズ処理
             window.addEventListener('resize', () => {
                 const newWidth = window.innerWidth - 50;
                 const newHeight = window.innerHeight;
@@ -1370,8 +1165,6 @@ function initializeApp() {
             this.updateCanvasInfo();
             this.updateDPRInfo();
             this.startFPSMonitor();
-            
-            window.drawingApp = drawingApp;
             
             return true;
         }
@@ -1420,15 +1213,11 @@ function initializeApp() {
 function setupHistoryIntegration() {
     if (window.TegakiEventBus && window.History) {
         window.TegakiEventBus.on('history:undo-request', () => {
-            if (typeof window.History.undo === 'function') {
-                window.History.undo();
-            }
+            if (window.History.undo) window.History.undo();
         });
         
         window.TegakiEventBus.on('history:redo-request', () => {
-            if (typeof window.History.redo === 'function') {
-                window.History.redo();
-            }
+            if (window.History.redo) window.History.redo();
         });
         
         window.TegakiEventBus.on('history:changed', (data) => {
@@ -1450,17 +1239,17 @@ function setupHistoryIntegration() {
 
 function setupLayerPanelDuplicationFix() {
     if (window.TegakiEventBus) {
-        window.TegakiEventBus.on('layer:created', (data) => {
+        window.TegakiEventBus.on('layer:created', () => {
             setTimeout(() => {
-                if (window.layerSystem && typeof window.layerSystem.updateLayerPanelUI === 'function') {
+                if (window.layerSystem?.updateLayerPanelUI) {
                     window.layerSystem.updateLayerPanelUI();
                 }
             }, 50);
         });
         
-        window.TegakiEventBus.on('layer:deleted', (data) => {
+        window.TegakiEventBus.on('layer:deleted', () => {
             setTimeout(() => {
-                if (window.layerSystem && typeof window.layerSystem.updateLayerPanelUI === 'function') {
+                if (window.layerSystem?.updateLayerPanelUI) {
                     window.layerSystem.updateLayerPanelUI();
                 }
             }, 50);
@@ -1469,42 +1258,49 @@ function setupLayerPanelDuplicationFix() {
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
-    try {
-        checkPhase1Dependencies();
-        
-        if (!checkCoreRuntime()) {
-            throw new Error('CoreRuntime initialization failed');
-        }
-        
-        const DrawingApp = initializeApp();
-        const app = new DrawingApp();
-        await app.initialize();
-        
-        setupHistoryIntegration();
-        setupLayerPanelDuplicationFix();
-        
-        if (window.CoordinateSystem && typeof window.CoordinateSystem.diagnoseReferences === 'function') {
-            window.CoordinateSystem.diagnoseReferences();
-        }
-        
-        if (window.SystemDiagnostics) {
-            setTimeout(() => {
-                try {
-                    const diagnostics = new window.SystemDiagnostics();
-                    diagnostics.runFullDiagnostics();
-                } catch (diagError) {
-                }
-            }, 1000);
-        }
-        
-    } catch (error) {
+    console.log('=== Phase 1修正版: アプリ起動開始 ===');
+    
+    if (!checkPhase1Dependencies()) {
+        console.error('❌ Dependencies check failed');
+        return;
     }
+    
+    if (!checkCoreRuntime()) {
+        console.error('❌ CoreRuntime not initialized');
+        return;
+    }
+    
+    const DrawingApp = initializeApp();
+    const app = new DrawingApp();
+    const success = await app.initialize();
+    
+    if (!success) {
+        console.error('❌ App initialization failed');
+        return;
+    }
+    
+    // === Phase 1-A: 構造確認ログ ===
+    console.log('✅ App initialization successful');
+    console.log('✅ window.drawingApp.layerManager:', window.drawingApp.layerManager);
+    console.log('✅ typeof layerManager:', typeof window.drawingApp.layerManager);
+    
+    setupHistoryIntegration();
+    setupLayerPanelDuplicationFix();
+    
+    if (window.CoordinateSystem?.diagnoseReferences) {
+        window.CoordinateSystem.diagnoseReferences();
+    }
+    
+    console.log('=== Phase 1修正版: アプリ起動完了 ===');
 });
-
-try {
-    checkPhase1Dependencies();
-} catch (error) {
-}
     </script>
 </body>
-</html>
+</html>="compact-slider-label">X</div>
+                                <div class="slider" id="layer-x-slider">
+                                    <div class="slider-track"></div>
+                                    <div class="slider-handle"></div>
+                                </div>
+                                <div class="slider-value" id="layer-x-value">0px</div>
+                            </div>
+                            <div class="compact-slider">
+                                <div class

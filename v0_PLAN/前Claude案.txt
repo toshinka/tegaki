@@ -1,650 +1,532 @@
-=== tegaki v8.13 緊急改修計画書 (ベーシック版) ===
-作成日: 2025-10-05
-形式: プレーンテキスト (.txt)
-対象: PixiJS v8.13 お絵かきツール
+================================================================================
+Phase 2 診断結果と改修計画書
+================================================================================
+診断日時: 2025-10-05
+対象: Phase 1修正後の残存問題
 
-========================================
-【1】問題の原因究明
-========================================
+================================================================================
+1. 現象の確認
+================================================================================
 
-■ 1-A. getGlobalBounds スタックオーバーフロー
---------------------------------------
-原因: CoreRuntime.switchCut() でのコンテナ追加時の循環参照
+[報告された問題]
+✗ Ctrl+Z/Y でCUT移動が発生する（本来はUndo/Redo）
+✗ 方向キー←→でのCUT移動が一つ飛ばしになることがある（不安定）
+✗ キャンバスとレイヤーパネルが表示されない（Phase 1で修正したはずが未解決）
 
-検出箇所:
-  - core-runtime.js:99-111 (switchCut メソッド)
-  
-具体的問題:
-  1) oldCut.container を stage から removeChild する
-  2) 直後に newCut.container を stage に addChild する
-  3) この時、newCut.container の parent チェーンに自身または
-     祖先が含まれている可能性がある
-  4) PixiJS v8.13 の getGlobalBounds が parent を辿る際に
-     無限ループに陥りスタックオーバーフローが発生
+[正常動作している部分]
+✓ 方向キーの左右の方向性は修正済み
+✓ タイムラインは表示される
 
-根本原因:
-  - addChild 前に parent チェーンの循環参照チェックが無い
-  - container.parent === container の自己参照状態が発生
+================================================================================
+2. 根本原因の特定
+================================================================================
 
+[原因A: AnimationSystemのメソッド名不一致]
 
-■ 1-B. レイヤーパネル未表示
---------------------------------------
-原因: CoreRuntime.init での layerManager 参照が未設定
+**問題:**
+index.html で呼び出しているメソッド名と、実際のメソッド名が異なる
 
-検出箇所:
-  - core-runtime.js:61-77 (init メソッド)
-  - layer-system.js:35-55 (コンストラクタ)
-
-具体的問題:
-  1) CoreRuntime.init で internal.layerManager に値を代入
-  2) しかし LayerSystem のコンストラクタは CoreRuntime.init より
-     先に実行されるため、初期化タイミングが不整合
-  3) LayerSystem.updateLayerPanelUI() が呼ばれても
-     stateManager が null のため処理が中断される
-  4) レイヤーパネルの DOM 要素が生成されない
-
-
-■ 1-C. キー割り当ての誤動作
---------------------------------------
-原因: index.html のキーイベントハンドラの条件分岐の誤り
-
-検出箇所:
-  - index.html:552-625 (setupUnifiedKeyboardShortcuts 関数)
-
-具体的問題:
-  1) CTRL+Z の処理が event.code === 'KeyZ' で正しく分岐
-  2) しかし CTRL+Y の処理が event.code === 'KeyY' のみで
-     !e.altKey の条件が無い
-  3) 方向キー ArrowLeft/ArrowRight の処理に event.ctrlKey の
-     条件チェックが無い
-  4) 結果として CTRL+Z が別の動作にマップされ、
-     方向キーが効かない
-
-根本原因:
-  - キーイベント処理の条件分岐が不完全
-  - 修飾キー (Ctrl, Shift, Alt) のチェック漏れ
-
-
-■ 1-D. History (Undo/Redo) の未実装
---------------------------------------
-原因: Command パターンの不完全な実装
-
-検出箇所:
-  - system/layer-commands.js (CreateLayerCommand など)
-  - system/history.js (History.executeCommand)
-
-具体的問題:
-  1) CreateLayerCommand の undo メソッドが
-     StateManager からレイヤーを削除するだけで
-     PixiJS の DisplayObject を削除していない
-  2) 新規 CUT 作成の Command が存在しない
-  3) ペン描画の Command は動作するが、レイヤー/CUT の
-     作成/削除が History に記録されない
-
-
-========================================
-【2】高優先度修正 (必須・即適用)
-========================================
-
-■ 2-A. 循環参照チェックの実装
---------------------------------------
-目的: getGlobalBounds のスタックオーバーフローを防止
-
-実装箇所: core-runtime.js (新規ユーティリティ関数追加)
-
-追加コード:
-
+index.html (修正版):
 ```javascript
-// core-runtime.js の先頭 (即時関数の中) に追加
+// ←: 前のCUTへ移動
+window.animationSystem.goToNextCut();  // ← このメソッドは存在しない
 
-function isAncestor(potentialAncestor, child) {
-    let cur = potentialAncestor;
-    let depth = 0;
-    const MAX_DEPTH = 100;
-    
-    while (cur && depth < MAX_DEPTH) {
-        if (cur === child) return true;
-        cur = cur.parent;
-        depth++;
-    }
-    
-    if (depth >= MAX_DEPTH) {
-        console.error('isAncestor: MAX_DEPTH exceeded');
-        return true;
-    }
-    
-    return false;
-}
-
-function safeAddChild(parent, child) {
-    if (!parent || !child) {
-        console.error('safeAddChild: invalid arguments');
-        return false;
-    }
-    
-    if (parent === child) {
-        console.error('safeAddChild: cannot add container to itself');
-        return false;
-    }
-    
-    if (isAncestor(child, parent)) {
-        console.error('safeAddChild: circular reference detected');
-        return false;
-    }
-    
-    parent.addChild(child);
-    return true;
-}
+// →: 次のCUTへ移動
+window.animationSystem.goToPreviousCut();  // ← このメソッドは存在しない
 ```
 
-修正箇所: core-runtime.js:99-111 (switchCut メソッド)
-
-変更前:
+animation-system.js (実際):
 ```javascript
-if (this.project.stage) {
-    this.project.stage.addChild(newCut.container);
-}
+goToPreviousFrame() { ... }  // ← 正しいメソッド名
+goToNextFrame() { ... }      // ← 正しいメソッド名
 ```
 
-変更後:
-```javascript
-if (this.project.stage) {
-    safeAddChild(this.project.stage, newCut.container);
-}
-```
+**影響:**
+- 方向キーを押してもメソッドが見つからず、エラーが発生
+- エラーがキャッチされずに無視され、「一つ飛ばし」のような不安定な動作に見える
+- 実際には何も実行されていない可能性が高い
 
+[原因B: Ctrl+Z/YがCUT移動してしまう問題]
 
-■ 2-B. CoreRuntime 初期化順序の修正
---------------------------------------
-目的: layerManager の確実な初期化
+**問題の所在を特定:**
+index.html の統合キーハンドラを確認すると、Ctrl+Z/Y の処理は正しく実装されている。
+しかし、他の場所（layer-system.js や core-engine.js）でも方向キーやCtrl+Z/Yを
+処理している可能性がある。
 
-実装箇所: index.html:757-791 (initializeApp 関数)
+**確認が必要な箇所:**
+1. layer-system.js: _setupLayerOperations() メソッド
+   - 方向キーの処理が重複している可能性
+2. core-engine.js: UnifiedKeyHandler
+   - Phase 1-Cで削除したはずだが、他の処理が残っている可能性
+3. animation-system.js: 独自のキーハンドラ
+   - 独立したキーイベントリスナーがある可能性
+
+[原因C: レイヤーパネル・キャンバスが表示されない]
+
+**Phase 1で修正したはずが...**
+window.drawingApp.layerManager の構造は修正済みのはず。
+しかし、まだ表示されないということは：
+
+**可能性1: ファイルの置き換えミス**
+- 修正した index.html が正しく配置されていない
+- ブラウザキャッシュが残っている
+
+**可能性2: 初期化タイミングの問題**
+- window.drawingApp.layerManager は存在するが、UIの初期化が失敗している
+- updateLayerPanelUI() が呼ばれていない
+
+**可能性3: StateManagerの未初期化**
+- LayerSystemが StateManager に依存している
+- StateManager が正しく初期化されていない場合、レイヤーパネルが空になる
+
+================================================================================
+3. 詳細診断
+================================================================================
+
+[A. メソッド名不一致の影響範囲]
+
+影響を受けるファイル:
+- index.html: 統合キーハンドラ（←→の処理）
 
 修正内容:
-1) CoreRuntime.init 呼び出し前に全てのサブシステムを生成
-2) init 成功確認後に UI イベントを発火
-
-変更後のコード:
-
 ```javascript
-async initialize() {
-    // PixiJS アプリ作成
-    this.pixiApp = new PIXI.Application();
-    await this.pixiApp.init({ /* options */ });
-    
-    // CoreEngine 初期化
-    this.coreEngine = new CoreEngine(this.pixiApp);
-    const drawingApp = this.coreEngine.initialize();
-    
-    // CRITICAL: CoreRuntime.init を確実に実行
-    const runtimeSuccess = CoreRuntime.init({
-        app: this.pixiApp,
-        worldContainer: this.coreEngine.getCameraSystem().worldContainer,
-        canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
-        cameraSystem: this.coreEngine.getCameraSystem(),
-        layerManager: this.coreEngine.getLayerManager(),
-        drawingEngine: this.coreEngine.getDrawingEngine()
-    });
-    
-    if (!runtimeSuccess) {
-        console.error('CoreRuntime initialization failed');
-        return false;
-    }
-    
-    // システム初期化完了イベント発火
-    if (window.TegakiEventBus) {
-        window.TegakiEventBus.emit('system:ready');
-    }
-    
-    // UI コントローラ作成
-    this.uiController = new UIController(
-        this.coreEngine.getDrawingEngine(), 
-        this.coreEngine.getLayerManager(), 
-        this.pixiApp
-    );
-    
-    return true;
-}
+// 修正前（間違い）
+window.animationSystem.goToNextCut();
+window.animationSystem.goToPreviousCut();
+
+// 修正後（正しい）
+window.animationSystem.goToNextFrame();
+window.animationSystem.goToPreviousFrame();
 ```
 
+[B. キーイベントの重複処理]
 
-■ 2-C. キーイベントハンドラの修正
---------------------------------------
-目的: Ctrl+Z/Ctrl+Y と方向キーの正しい動作
-
-実装箇所: index.html:552-625 (setupUnifiedKeyboardShortcuts)
-
-修正内容: 全てのキー処理に修飾キーチェックを追加
-
-変更後のコード:
+**layer-system.js の問題:**
+行1188-1215: _setupLayerOperations() 内で方向キーを処理
 
 ```javascript
-document.addEventListener('keydown', (e) => {
-    preventBrowserDefaults(e);
-    
-    const eventBus = window.TegakiEventBus;
-    if (!eventBus) return;
-    
-    // 入力フィールドでは無効化
-    const activeElement = document.activeElement;
-    if (activeElement && (
-        activeElement.tagName === 'INPUT' ||
-        activeElement.tagName === 'TEXTAREA' ||
-        activeElement.isContentEditable
-    )) return;
-    
-    // UNDO: Ctrl+Z (Shift なし)
-    if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
-        if (window.History?.undo) window.History.undo();
+case 'gifPrevFrame':
+    if (!this.vKeyPressed && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (this.animationSystem?.goToPreviousFrame) {
+            this.animationSystem.goToPreviousFrame();
+        }
         e.preventDefault();
-        return;
     }
-    
-    // REDO: Ctrl+Y または Ctrl+Shift+Z
-    if (e.ctrlKey && !e.altKey) {
-        if (e.code === 'KeyY' && !e.shiftKey) {
-            if (window.History?.redo) window.History.redo();
-            e.preventDefault();
-            return;
-        }
-        if (e.code === 'KeyZ' && e.shiftKey) {
-            if (window.History?.redo) window.History.redo();
-            e.preventDefault();
-            return;
-        }
-    }
-    
-    // 方向キー: 修飾キー無しでのみ動作
-    if (!e.ctrlKey && !e.shiftKey && !e.altKey) {
-        if (e.code === 'ArrowLeft') {
-            eventBus.emit('timeline:move-left');
-            e.preventDefault();
-            return;
-        }
-        if (e.code === 'ArrowRight') {
-            eventBus.emit('timeline:move-right');
-            e.preventDefault();
-            return;
-        }
-        if (e.code === 'ArrowUp') {
-            eventBus.emit('layer:move-up');
-            e.preventDefault();
-            return;
-        }
-        if (e.code === 'ArrowDown') {
-            eventBus.emit('layer:move-down');
-            e.preventDefault();
-            return;
-        }
-    }
-    
-    // 他のショートカット (既存のまま)
-});
+    break;
 ```
 
+**問題:**
+- index.html の統合キーハンドラと重複している
+- 両方が実行されるため、「二重実行」→「一つ飛ばし」に見える
 
-========================================
-【3】中期修正 (推奨)
-========================================
-
-■ 3-A. History Command の拡張
---------------------------------------
-目的: レイヤー/CUT 作成の Undo/Redo 対応
-
-実装箇所:
-  - system/layer-commands.js (CreateLayerCommand の修正)
-  - system/animation-commands.js (新規 CreateCutCommand 追加)
-
-CreateLayerCommand の修正:
+**core-engine.js: UnifiedKeyHandler の残存処理:**
+Phase 1-Cで削除したはずだが、以下が残っている可能性：
 
 ```javascript
-class CreateLayerCommand {
-    constructor(stateManager, eventBus, cutIndex, layerData) {
-        this.stateManager = stateManager;
-        this.eventBus = eventBus;
-        this.cutIndex = cutIndex;
-        this.layerData = layerData;
-        this.layerIndex = -1;
-        this.pixiLayer = null;
-    }
-    
-    execute() {
-        // StateManager にレイヤーを追加
-        const result = this.stateManager.addLayer(
-            this.cutIndex, 
-            this.layerData
-        );
-        
-        if (!result) return false;
-        
-        this.layerIndex = result.layerIndex;
-        
-        // PixiJS DisplayObject を生成
-        const layerSystem = window.layerSystem;
-        if (layerSystem) {
-            this.pixiLayer = layerSystem.createPixiLayerFromData(
-                this.layerData
-            );
-            layerSystem.currentCutContainer.addChild(this.pixiLayer);
-        }
-        
-        // UI 更新
-        if (this.eventBus) {
-            this.eventBus.emit('layer:created', { 
-                cutIndex: this.cutIndex,
-                layerIndex: this.layerIndex 
-            });
-        }
-        
-        return true;
-    }
-    
-    undo() {
-        // PixiJS DisplayObject を削除
-        if (this.pixiLayer) {
-            const layerSystem = window.layerSystem;
-            if (layerSystem?.currentCutContainer) {
-                layerSystem.currentCutContainer.removeChild(this.pixiLayer);
-                this.pixiLayer.destroy({ children: true });
-            }
-        }
-        
-        // StateManager からレイヤーを削除
-        this.stateManager.removeLayer(this.cutIndex, this.layerIndex);
-        
-        // UI 更新
-        if (this.eventBus) {
-            this.eventBus.emit('layer:deleted', { 
-                cutIndex: this.cutIndex,
-                layerIndex: this.layerIndex 
-            });
-        }
-        
-        return true;
-    }
-    
-    redo() {
-        return this.execute();
-    }
-}
+case 'gifPrevFrame':
+case 'gifNextFrame':
+    // この処理が残っている場合、三重実行になる
 ```
 
-CreateCutCommand の実装 (新規):
+[C. レイヤーパネル未表示の原因]
+
+**Console確認コマンド:**
+```javascript
+// Step 1: window.drawingAppの構造確認
+console.log('drawingApp:', window.drawingApp);
+console.log('layerManager:', window.drawingApp?.layerManager);
+console.log('typeof:', typeof window.drawingApp?.layerManager);
+
+// Step 2: StateManager確認
+console.log('StateManager:', window.StateManager);
+console.log('stateManager instance:', window.drawingApp?.layerManager?.stateManager);
+
+// Step 3: レイヤーパネル要素確認
+console.log('layer-list element:', document.getElementById('layer-list'));
+console.log('layer-panel-container:', document.getElementById('layer-panel-container'));
+
+// Step 4: LayerSystemの初期化状態確認
+console.log('currentCutContainer:', window.drawingApp?.layerManager?.currentCutContainer);
+console.log('layers:', window.drawingApp?.layerManager?.getLayers());
+```
+
+**期待される結果:**
+- layerManager: TegakiLayerSystem オブジェクト
+- stateManager: StateManager インスタンス（または null）
+- currentCutContainer: PIXI.Container オブジェクト
+- layers: 配列（少なくとも1つのレイヤー）
+
+**問題のパターン:**
+1. layerManager が undefined → Phase 1-A修正が未反映
+2. stateManager が undefined → StateManagerの初期化失敗
+3. currentCutContainer が null → AnimationSystemとの連携失敗
+4. layers が空配列 → 初期レイヤーが作成されていない
+
+================================================================================
+4. 改修計画
+================================================================================
+
+[Phase 2-A: メソッド名修正（CRITICAL）]
+
+優先度: 🔥 CRITICAL
+対象ファイル: index.html
+
+修正箇所:
+行113-124: 方向キーのCUT移動処理
 
 ```javascript
-// system/animation-commands.js に追加
-
-class CreateCutCommand {
-    constructor(animationSystem, cutData) {
-        this.animationSystem = animationSystem;
-        this.cutData = cutData;
-        this.cutIndex = -1;
+// 修正前
+if (e.code === 'ArrowLeft' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+    if (window.animationSystem?.goToNextCut) {
+        window.animationSystem.goToNextCut();  // ← 存在しないメソッド
     }
-    
-    execute() {
-        const result = this.animationSystem.createCutInternal(this.cutData);
-        
-        if (!result) return false;
-        
-        this.cutIndex = result.cutIndex;
-        
-        if (window.TegakiEventBus) {
-            window.TegakiEventBus.emit('cut:created', { 
-                cutIndex: this.cutIndex 
-            });
-        }
-        
-        return true;
-    }
-    
-    undo() {
-        this.animationSystem.deleteCutInternal(this.cutIndex);
-        
-        if (window.TegakiEventBus) {
-            window.TegakiEventBus.emit('cut:deleted', { 
-                cutIndex: this.cutIndex 
-            });
-        }
-        
-        return true;
-    }
-    
-    redo() {
-        return this.execute();
-    }
+    e.preventDefault();
+    return;
 }
 
-window.CreateCutCommand = CreateCutCommand;
-```
-
-
-========================================
-【4】低優先度 (品質改善)
-========================================
-
-■ 4-A. DisplayObject の深さ制限ガード
---------------------------------------
-目的: getGlobalBounds の再帰深度制限
-
-実装箇所: coordinate-system.js (デバッグ用)
-
-追加コード:
-
-```javascript
-// coordinate-system.js に追加 (デバッグ用)
-
-function checkParentChainDepth(obj, maxDepth = 50) {
-    let cur = obj;
-    let depth = 0;
-    
-    while (cur && depth < maxDepth) {
-        cur = cur.parent;
-        depth++;
+if (e.code === 'ArrowRight' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+    if (window.animationSystem?.goToPreviousCut) {
+        window.animationSystem.goToPreviousCut();  // ← 存在しないメソッド
     }
-    
-    if (depth >= maxDepth) {
-        console.warn('checkParentChainDepth: MAX_DEPTH exceeded', obj);
-        return false;
-    }
-    
-    return true;
+    e.preventDefault();
+    return;
 }
 
-// getGlobalBounds を呼ぶ前に使用
-if (!checkParentChainDepth(displayObject)) {
-    console.error('Invalid parent chain detected');
-    return null;
+// 修正後
+if (e.code === 'ArrowLeft' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+    if (window.animationSystem?.goToNextFrame) {
+        window.animationSystem.goToNextFrame();  // ← 正しいメソッド名
+    }
+    e.preventDefault();
+    return;
+}
+
+if (e.code === 'ArrowRight' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+    if (window.animationSystem?.goToPreviousFrame) {
+        window.animationSystem.goToPreviousFrame();  // ← 正しいメソッド名
+    }
+    e.preventDefault();
+    return;
 }
 ```
 
+期待される結果:
+✓ 方向キー←→が安定して動作
+✓ 一つ飛ばしの問題が解消
 
-■ 4-B. UI 初期化イベントの整備
---------------------------------------
-目的: 依存関係の明確化
+[Phase 2-B: キーイベント重複削除（CRITICAL）]
 
-実装箇所: layer-system.js, ui-panels.js
+優先度: 🔥 CRITICAL
+対象ファイル: layer-system.js
+
+修正箇所:
+行1188-1330: _setupLayerOperations() メソッド
+
+**方針:**
+layer-system.js からは以下のキー処理を完全削除：
+- Ctrl+Z / Ctrl+Y（Undo/Redo）
+- 方向キー←→（修飾キーなし）でのCUT移動
+- 方向キー↑↓（修飾キーなし）でのレイヤー階層移動
+
+**残すべき処理:**
+- V キー（レイヤー移動モード）
+- V キー押下中の方向キー（レイヤー位置移動・回転・拡縮）
+- V キー押下中の F キー（反転）
 
 修正内容:
-1) 'system:ready' イベントを受信してから UI を描画
-2) layerManager が null の場合は UI を描画しない
-
 ```javascript
-// layer-system.js のコンストラクタに追加
-
-if (this.eventBus) {
-    this.eventBus.on('system:ready', () => {
-        this.updateLayerPanelUI();
-        this.updateStatusDisplay();
+_setupLayerOperations() {
+    document.addEventListener('keydown', (e) => {
+        const keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
+        if (!keyConfig) return;
+        
+        const action = keyConfig.getActionForKey(e.code, {
+            vPressed: this.vKeyPressed,
+            shiftPressed: e.shiftKey
+        });
+        
+        if (!action) return;
+        
+        switch(action) {
+            // === Phase 2-B: 以下のケースを削除 ===
+            // case 'gifPrevFrame':  // ← 削除
+            // case 'gifNextFrame':  // ← 削除
+            // case 'layerUp':       // ← 削除
+            // case 'layerDown':     // ← 削除
+            
+            // === 残す処理 ===
+            case 'layerMode':  // V キー
+                if (!e.ctrlKey && !e.altKey && !e.metaKey) {
+                    if (!this.vKeyPressed) {
+                        this.enterLayerMoveMode();
+                    }
+                    e.preventDefault();
+                }
+                break;
+            
+            // V キー押下中の処理のみ残す
+            case 'layerMoveUp':
+            case 'layerMoveDown':
+            case 'layerMoveLeft':
+            case 'layerMoveRight':
+            case 'layerScaleUp':
+            case 'layerScaleDown':
+            case 'layerRotateLeft':
+            case 'layerRotateRight':
+            case 'horizontalFlip':
+                // これらは this.vKeyPressed === true の時のみ動作
+                // 処理内容は変更なし
+                break;
+        }
     });
+    
+    // ... 以降のコードは変更なし
 }
 ```
 
+期待される結果:
+✓ キーイベントの重複実行が解消
+✓ Ctrl+Z/Y がUndo/Redoのみになる
+✓ 方向キーが安定動作
 
-========================================
-【5】テスト & 検証手順
-========================================
+[Phase 2-C: レイヤーパネル表示問題の診断と修正（HIGH）]
 
-■ ステップ 1: DevTools 例外検証
---------------------------------------
-1) Chrome DevTools を開く
-2) Sources タブで "Pause on exceptions" を有効化
-3) アプリを起動
-4) 例外発生時に call stack を確認
-5) parent チェーンを追跡 (console で printParentChain 実行)
+優先度: 🔥 HIGH
+対象: 複数ファイル
 
+**ステップ1: ブラウザキャッシュクリア**
+1. Ctrl+Shift+Delete でキャッシュクリア
+2. ハードリロード（Ctrl+Shift+R）
+3. DevToolsのApplication → Clear storage → Clear site data
 
-■ ステップ 2: safeAddChild の動作確認
---------------------------------------
-1) safeAddChild を実装
-2) CUT 切替操作を実行
-3) console に循環参照エラーが出ないことを確認
-4) getGlobalBounds エラーが消えることを確認
+**ステップ2: Console診断**
+以下のコマンドをConsoleで実行：
 
-
-■ ステップ 3: キー操作の検証
---------------------------------------
-1) Ctrl+Z を押す → Undo が実行される
-2) Ctrl+Y を押す → Redo が実行される
-3) ← キーを押す → タイムライン左移動
-4) → キーを押す → タイムライン右移動
-5) ↑ キーを押す → レイヤー上移動
-6) ↓ キーを押す → レイヤー下移動
-
-
-■ ステップ 4: レイヤーパネルの表示確認
---------------------------------------
-1) アプリ起動
-2) 右側にレイヤーパネルが表示される
-3) 既定レイヤー (L0) が表示される
-4) Ctrl+L でレイヤー追加 → パネルに表示される
-
-
-■ ステップ 5: History の検証
---------------------------------------
-1) 新規レイヤー作成
-2) Ctrl+Z を押す → レイヤーが消える
-3) Ctrl+Y を押す → レイヤーが復元される
-4) ペン描画を実行
-5) Ctrl+Z を押す → 描画が消える
-6) Ctrl+Y を押す → 描画が復元される
-
-
-========================================
-【6】影響範囲とリスク
-========================================
-
-■ 影響範囲
---------------------------------------
-- core-runtime.js: switchCut メソッドの変更
-- index.html: キーイベントハンドラの全面修正
-- layer-commands.js: CreateLayerCommand の拡張
-- animation-commands.js: CreateCutCommand の新規追加
-
-■ リスク
---------------------------------------
-LOW: safeAddChild の導入
-  - 既存の循環参照を検出して停止するため、
-    意図しない動作が明示的に防止される
-
-MEDIUM: キーイベントハンドラの修正
-  - 全てのショートカットの動作が変わる可能性
-  - 十分なテストが必要
-
-HIGH: Command パターンの拡張
-  - History の動作が変わるため、
-    既存の Undo/Redo が影響を受ける
-  - 段階的な導入が推奨される
-
-
-========================================
-【7】作業優先順位
-========================================
-
-Phase 1 (即時):
-  1) safeAddChild の実装と適用
-  2) CoreRuntime.init の呼び出し確認
-  3) キーイベントハンドラの修正
-
-Phase 2 (短期):
-  4) CreateLayerCommand の修正
-  5) CreateCutCommand の実装
-  6) UI イベント整備
-
-Phase 3 (中期):
-  7) テスト自動化
-  8) ドキュメント整備
-
-
-========================================
-【8】デバッグ用ユーティリティ
-========================================
-
-■ 親チェーン追跡 (console で実行)
---------------------------------------
 ```javascript
-function printParentChain(obj) {
-    const seen = new Set();
-    let cur = obj;
-    let depth = 0;
-    
-    while (cur && !seen.has(cur) && depth < 100) {
-        console.log(`[${depth}]`, cur.label || cur.name || cur);
-        seen.add(cur);
-        cur = cur.parent;
-        depth++;
-    }
-    
-    if (cur && seen.has(cur)) {
-        console.warn('Cycle detected at:', cur.label || cur.name || cur);
-    }
-    
-    if (depth >= 100) {
-        console.warn('MAX_DEPTH exceeded');
-    }
-}
+// === 診断スクリプト ===
+console.group('🔍 Phase 2 診断');
 
-// 使用例
-printParentChain(window.CoreRuntime.getActiveCut().container);
+// A. window.drawingApp確認
+console.log('A. drawingApp:', window.drawingApp);
+console.log('   layerManager:', window.drawingApp?.layerManager);
+console.log('   typeof:', typeof window.drawingApp?.layerManager);
+
+// B. StateManager確認
+console.log('B. StateManager class:', window.StateManager);
+console.log('   stateManager instance:', window.drawingApp?.layerManager?.stateManager);
+
+// C. AnimationSystem確認
+console.log('C. animationSystem:', window.animationSystem);
+console.log('   getCurrentCut:', typeof window.animationSystem?.getCurrentCut);
+
+// D. レイヤー確認
+console.log('D. currentCutContainer:', window.drawingApp?.layerManager?.currentCutContainer);
+console.log('   layers count:', window.drawingApp?.layerManager?.getLayers()?.length);
+console.log('   layers:', window.drawingApp?.layerManager?.getLayers());
+
+// E. DOM要素確認
+console.log('E. layer-list:', document.getElementById('layer-list'));
+console.log('   layer-panel-container:', document.getElementById('layer-panel-container'));
+
+// F. 初期化状態確認
+console.log('F. initialCutCreated:', window.animationSystem?.initialCutCreated);
+console.log('   hasInitialized:', window.animationSystem?.hasInitialized);
+
+console.groupEnd();
 ```
 
+**ステップ3: 問題パターン別の修正**
 
-========================================
-【9】補足: PixiJS v8.13 での注意点
-========================================
+**パターン1: layerManager が undefined**
+→ index.html の Phase 1-A修正が反映されていない
+→ ファイルを再配置し、キャッシュクリア
 
-■ getGlobalBounds の挙動
---------------------------------------
-PixiJS v8.13 では getGlobalBounds が内部で parent チェーンを
-辿る際に、循環参照があると無限ループに陥る。
-parent を null にするか、parent チェーンを事前に検証する必要がある。
+**パターン2: stateManager が null**
+→ StateManagerが初期化されていない
+→ state-manager.js の読み込み確認
 
-■ Container.addChild の仕様
---------------------------------------
-PixiJS v8.13 では addChild 時に自動的な循環参照チェックは
-行われない。アプリケーション側で検証する必要がある。
+**パターン3: layers が空配列**
+→ 初期レイヤーが作成されていない
+→ animation-system.js の createInitialCutIfNeeded() が失敗している
 
-■ RenderTexture の破棄
---------------------------------------
-RenderTexture.destroy(true) を呼ぶ際、baseTexture も
-同時に破棄される。複数の Sprite で共有している場合は注意。
+修正方法（パターン3の場合）:
+animation-system.js の初期化タイミングを調整
 
+**パターン4: DOM要素が null**
+→ HTML構造の問題
+→ index.html の layer-panel-container 確認
 
-========================================
-【10】最終チェックリスト
-========================================
+[Phase 2-D: StateManager統合確認（MEDIUM）]
 
-□ safeAddChild を実装した
-□ CoreRuntime.init の引数を確認した
-□ キーイベントハンドラを修正した
-□ Ctrl+Z で Undo が動作する
-□ Ctrl+Y で Redo が動作する
-□ ← → キーでタイムライン移動できる
-□ ↑ ↓ キーでレイヤー移動できる
-□ レイヤーパネルが表示される
-□ getGlobalBounds エラーが出ない
-□ CreateLayerCommand が Undo/Redo できる
-□ 新規レイヤー作成が History に記録される
+優先度: 🟡 MEDIUM
+対象: state-manager.js, layer-system.js
 
-========================================
-End of Document
-========================================
+LayerSystemが StateManager に正しく依存しているか確認：
+
+```javascript
+// layer-system.js: constructor
+constructor(pixiApp, config, stateManager, eventBus) {
+    this.stateManager = stateManager || null;  // ← これが null の場合
+}
+```
+
+**問題:**
+StateManager が渡されていない場合、レイヤー操作が全て失敗する
+
+**修正方針:**
+1. CoreEngine で StateManager を初期化
+2. LayerSystem に StateManager を渡す
+
+修正箇所: core-engine.js
+
+```javascript
+class CoreEngine {
+    constructor(app) {
+        // ... 既存コード
+        
+        // StateManager初期化
+        this.stateManager = window.StateManager ? new window.StateManager() : null;
+        
+        // LayerSystem初期化時に渡す
+        this.layerSystem = new window.TegakiLayerSystem(
+            app,
+            CONFIG,
+            this.stateManager,  // ← 追加
+            this.eventBus
+        );
+    }
+}
+```
+
+================================================================================
+5. 実装順序
+================================================================================
+
+[最優先: Phase 2-A]
+1. index.html: goToNextCut → goToNextFrame に修正
+2. index.html: goToPreviousCut → goToPreviousFrame に修正
+   → 方向キーの安定動作を確保
+
+[次優先: Phase 2-B]
+3. layer-system.js: _setupLayerOperations() から重複処理削除
+   → キーイベントの三重実行を防止
+
+[診断: Phase 2-C]
+4. ブラウザでConsole診断を実施
+5. 問題パターンを特定
+6. パターン別の修正を適用
+
+[補足: Phase 2-D]
+7. StateManager統合確認（必要に応じて）
+
+================================================================================
+6. 検証項目
+================================================================================
+
+[Phase 2-A完了後]
+□ 方向キー← でCUTが右に移動（安定）
+□ 方向キー→ でCUTが左に移動（安定）
+□ 一つ飛ばしの現象が発生しない
+□ Console にエラーが出ない
+
+[Phase 2-B完了後]
+□ Ctrl+Z でUndo（CUT移動しない）
+□ Ctrl+Y でRedo（CUT移動しない）
+□ 方向キー←→ が一度だけ実行される
+□ 方向キー↑↓ でレイヤー階層移動（一度だけ）
+
+[Phase 2-C完了後]
+□ レイヤーパネルが画面右側に表示される
+□ レイヤー追加ボタン（+）が表示される
+□ 初期レイヤーが1つ表示される
+□ キャンバスが中央に表示される
+□ ペンで描画できる
+
+================================================================================
+7. Console検証コマンド（修正後）
+================================================================================
+
+```javascript
+// === 修正確認スクリプト ===
+console.group('✅ Phase 2 修正確認');
+
+// 1. メソッド存在確認
+console.log('1. goToPreviousFrame:', typeof window.animationSystem?.goToPreviousFrame);
+console.log('   goToNextFrame:', typeof window.animationSystem?.goToNextFrame);
+console.log('   goToPreviousCut:', typeof window.animationSystem?.goToPreviousCut);  // undefined であるべき
+console.log('   goToNextCut:', typeof window.animationSystem?.goToNextCut);  // undefined であるべき
+
+// 2. LayerManager確認
+console.log('2. layerManager:', typeof window.drawingApp?.layerManager);
+console.log('   stateManager:', window.drawingApp?.layerManager?.stateManager);
+
+// 3. レイヤー確認
+console.log('3. layers:', window.drawingApp?.layerManager?.getLayers());
+
+// 4. DOM確認
+console.log('4. layer-list:', document.getElementById('layer-list'));
+console.log('   innerHTML length:', document.getElementById('layer-list')?.innerHTML.length);
+
+console.groupEnd();
+```
+
+**期待される出力:**
+```
+✅ Phase 2 修正確認
+  1. goToPreviousFrame: "function"
+     goToNextFrame: "function"
+     goToPreviousCut: "undefined"
+     goToNextCut: "undefined"
+  2. layerManager: "object"
+     stateManager: StateManager {...}
+  3. layers: [Container {...}]
+  4. layer-list: <div id="layer-list">...</div>
+     innerHTML length: > 0
+```
+
+================================================================================
+8. リスク分析
+================================================================================
+
+[Phase 2-A: メソッド名修正]
+リスク: 🟢 LOW
+理由: 単純な名前変更のみ
+
+[Phase 2-B: キーイベント重複削除]
+リスク: 🟡 MEDIUM
+理由: layer-system.js のキーハンドラを部分削除
+対策: V キー関連の処理は必ず残す
+
+[Phase 2-C: レイヤーパネル表示]
+リスク: 🟡 MEDIUM
+理由: 根本原因が不明確（診断が必要）
+対策: Console診断で原因を特定してから修正
+
+[Phase 2-D: StateManager統合]
+リスク: 🟢 LOW
+理由: 既存の設計に従った修正
+
+================================================================================
+9. 完了判定基準
+================================================================================
+
+[Phase 2完了の条件]
+✓ 方向キー←→が安定してCUT移動（一つ飛ばしなし）
+✓ Ctrl+Z/Y がUndo/Redoのみ（CUT移動しない）
+✓ レイヤーパネルが表示される
+✓ キャンバスが表示される
+✓ 描画機能が動作する
+✓ Console にエラーが出ない
+
+================================================================================
+10. 次のステップ
+================================================================================
+
+Phase 2完了後:
+1. 新規レイヤー/CUT作成のアンドゥ動作を検証
+2. CUTナビゲーション◀▶の動作確認
+3. 全体的な安定性テスト
+
+================================================================================
+以上
+================================================================================
