@@ -914,9 +914,6 @@
                 return;
             }
             
-            // ❌ 削除: Undo/Redo処理をindex.htmlから完全削除
-            // history.jsで一本化
-            
             // Delete キー (レイヤークリア)
             if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
                 eventBus.emit('layer:clear-active');
@@ -954,7 +951,7 @@
                 return;
             }
             
-            // Ctrl+Space (再生/停止) - 一本化
+            // Ctrl+Space (再生/停止)
             if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
                 const timelineUI = window.timelineUI;
                 if (timelineUI && timelineUI.isVisible) {

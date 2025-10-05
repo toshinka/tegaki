@@ -1,0 +1,202 @@
+📋 現在のショートカット一覧（洗い出し）
+index.html
+
+Delete: レイヤークリア
+Ctrl+L: レイヤー追加
+Shift+N: 新規CUT作成
+Shift+A: タイムライン表示切替
+Ctrl+Space: 再生/停止
+Shift+C: CUTコピー&ペースト
+P: ペンツール
+E: 消しゴムツール
+
+history.js
+
+Ctrl+Z / Cmd+Z: Undo
+Ctrl+Y / Cmd+Shift+Z: Redo
+
+layer-system.js
+
+V: レイヤー移動モードトグル
+V+H: 水平反転
+V+Shift+H: 垂直反転
+V+矢印: レイヤー移動
+V+Shift+矢印: レイヤー変形
+
+矢印　上: レイヤー階層上げ
+矢印　下: レイヤー階層下げ
+矢印　左: 前フレーム
+矢印　右: 次フレーム
+
+drawing-clipboard.js
+
+Ctrl+C: コピー
+Ctrl+V: ペースト
+🎯 推奨する理由
+1. 単一責任の原則
+javascript// ❌ 現状: layer-system.jsが実キーを直接判定
+if (e.code === 'KeyV' && !e.repeat) { ... }
+if (e.code === 'KeyH' && !e.ctrlKey) { ... }
+
+// ✅ 理想: 代数的な"アクション"のみ判定
+if (action === 'LAYER_MOVE_MODE_TOGGLE') { ... }
+if (action === 'LAYER_FLIP_HORIZONTAL') { ... }
+2. AIによる改修が劇的に楽になる
+javascript// config.jsで一元管理
+const KEYMAP = {
+    'KeyV': 'LAYER_MOVE_MODE_TOGGLE',
+    'KeyH': { 
+        default: 'LAYER_FLIP_HORIZONTAL',
+        shift: 'LAYER_FLIP_VERTICAL'
+    },
+    'KeyW': 'LAYER_HIERARCHY_UP',
+    'KeyS': 'LAYER_HIERARCHY_DOWN'
+};
+
+// layer-system.jsはアクションだけ処理
+switch(action) {
+    case 'LAYER_MOVE_MODE_TOGGLE':
+        this.toggleLayerMoveMode();
+        break;
+    case 'LAYER_FLIP_HORIZONTAL':
+        this.flipActiveLayer('horizontal');
+        break;
+}
+3. 変更時の影響範囲が明確
+
+キー変更 → config.jsのみ修正
+機能変更 → 各システムファイルのみ修正
+現状は両方がごちゃまぜで、AIが追跡困難
+
+4. ユーザーカスタマイズが可能
+javascript// 将来的にUIで変更可能
+window.TEGAKI_CONFIG.keymap = {
+    'LAYER_MOVE_MODE_TOGGLE': 'KeyM', // Vから変更
+    'UNDO': 'KeyZ',
+    'REDO': 'KeyY'
+};
+📋 具体的な設計案
+config.js
+javascriptwindow.TEGAKI_KEYMAP = {
+    // アクション定義
+    actions: {
+        LAYER_MOVE_MODE_TOGGLE: {
+            key: 'KeyV',
+            ctrl: false,
+            shift: false,
+            alt: false,
+            repeat: false
+        },
+        LAYER_FLIP_HORIZONTAL: {
+            key: 'KeyH',
+            vMode: true,
+            shift: false
+        },
+        LAYER_FLIP_VERTICAL: {
+            key: 'KeyH',
+            vMode: true,
+            shift: true
+        },
+        LAYER_HIERARCHY_UP: {
+            key: 'KeyW',
+            vMode: false
+        },
+        LAYER_HIERARCHY_DOWN: {
+            key: 'KeyS',
+            vMode: false
+        },
+        UNDO: {
+            key: 'KeyZ',
+            ctrl: true
+        },
+        REDO: [
+            { key: 'KeyY', ctrl: true },
+            { key: 'KeyZ', ctrl: true, shift: true }
+        ]
+    },
+    
+    // 逆引き用（パフォーマンス最適化）
+    _reverseMap: null,
+    
+    getAction(e, context = {}) {
+        // e.code, e.ctrl, e.shift, context.vMode から action を返す
+    }
+};
+layer-system.js (簡潔に)
+javascript_setupLayerOperations() {
+    document.addEventListener('keydown', (e) => {
+        const context = { vMode: this.vKeyPressed };
+        const action = window.TEGAKI_KEYMAP.getAction(e, context);
+        
+        if (!action) return;
+        
+        switch(action) {
+            case 'LAYER_MOVE_MODE_TOGGLE':
+                this.toggleLayerMoveMode();
+                e.preventDefault();
+                break;
+            case 'LAYER_FLIP_HORIZONTAL':
+                this.flipActiveLayer('horizontal');
+                e.preventDefault();
+                break;
+            // ... 他のアクション
+        }
+    });
+}
+⚠️ 注意点
+デメリット
+
+初期実装コスト: 既存コードの大幅リファクタリングが必要
+間接参照: 実キーが見えにくくなる（ドキュメント重要）
+デバッグ難度: アクション名から実キーを逆引きする必要
+
+対策
+javascript// デバッグ用ヘルパー
+window.TEGAKI_KEYMAP.debugShowMapping = () => {
+    console.table(
+        Object.entries(window.TEGAKI_KEYMAP.actions)
+            .map(([action, config]) => ({
+                Action: action,
+                Key: config.key,
+                Modifiers: [
+                    config.ctrl && 'Ctrl',
+                    config.shift && 'Shift',
+                    config.alt && 'Alt'
+                ].filter(Boolean).join('+') || 'none'
+            }))
+    );
+};
+🚀 段階的移行プラン
+Phase 1: config.jsにマッピング定義
+javascript// 既存コードはそのまま、マッピングだけ追加
+window.TEGAKI_KEYMAP = { /* ... */ };
+Phase 2: layer-system.js のみ移行
+javascript// 最も複雑なファイルから着手
+const action = window.TEGAKI_KEYMAP.getAction(e, context);
+Phase 3: history.js, index.html も移行
+javascript// 全ショートカットを統一
+Phase 4: UI設定画面追加（将来）
+javascript// ユーザーがキーカスタマイズ可能に
+💡 結論
+今すぐ移行すべきか？
+今すぐ移行すべきか？
+
+YES（推奨）: 今回のHistory修正と同時に実施
+
+理由: どうせ大規模修正するなら、ついでに根本から直す
+AIの改修コストも今なら最小限
+
+
+NO（保守的）: 今回は見送り、次回に実施
+
+理由: 今回の修正範囲が広がりすぎる
+リスク管理を優先
+
+
+
+個人的にはYES推奨です。理由：
+
+現状のショートカット分散が根本原因
+今直さないと、次回も同じ問題が再発
+config.js一元管理は、初心者コーダーにも優しい
+AIによる将来の改修が10倍楽になる

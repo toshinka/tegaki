@@ -1,10 +1,10 @@
 // ================================================================================
-// system/history.js - 改修版（イベント駆動削減・Undo/Redo一本化）
+// system/history.js - TEGAKI_KEYMAP対応版
 // ================================================================================
 // 改修内容：
-// - イベント監視を削減（animation:cut-created, layer:createdを削除）
-// - 操作完了時に各モジュールから直接saveState/saveStateFullを呼ぶ方式に変更
-// - Undo/Redoショートカットをhistory.jsに一本化（index.htmlから削除）
+// - TEGAKI_KEYMAPを使用したアクション中心のショートカット処理
+// - イベント駆動History記録削減（既存の改修を維持）
+// - Undo/Redoショートカット一本化（既存の改修を維持）
 
 (function() {
     'use strict';
@@ -66,9 +66,6 @@
             this.eventBus.on('history:undo-request', () => this.undo());
             this.eventBus.on('history:redo-request', () => this.redo());
             this.eventBus.on('history:clear', () => this.clear());
-            
-            // 削除：animation:cut-created, layer:createdの自動記録
-            // 理由：各システムが操作完了時に明示的にsaveState/saveStateFullを呼ぶ
             
             this.eventBus.on('animation:cut-deleted', () => {
                 if (this.isExecutingUndoRedo || this.isRecordingState) return;
@@ -598,7 +595,9 @@
     
     const historyManager = new HistoryManager();
     
-    // キーボードショートカット（history.jsに一本化）
+    // =============================================================================
+    // 🎯 TEGAKI_KEYMAP対応のキーボードショートカット
+    // =============================================================================
     function setupHistoryKeyboardShortcuts() {
         document.addEventListener('keydown', (e) => {
             const activeElement = document.activeElement;
@@ -610,22 +609,41 @@
                 return;
             }
             
-            const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-            const metaKey = isMac ? e.metaKey : e.ctrlKey;
-            
-            // Ctrl+Z (Undo) - shiftなし、altなし
-            if (metaKey && !e.shiftKey && !e.altKey && e.code === 'KeyZ') {
-                historyManager.undo();
-                e.preventDefault();
+            // TEGAKI_KEYMAPが利用可能かチェック
+            if (!window.TEGAKI_KEYMAP) {
+                // フォールバック：レガシー処理
+                const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+                const metaKey = isMac ? e.metaKey : e.ctrlKey;
+                
+                if (metaKey && !e.shiftKey && !e.altKey && e.code === 'KeyZ') {
+                    historyManager.undo();
+                    e.preventDefault();
+                    return;
+                }
+                
+                if ((metaKey && !e.altKey && e.code === 'KeyY') || 
+                    (metaKey && e.shiftKey && !e.altKey && e.code === 'KeyZ')) {
+                    historyManager.redo();
+                    e.preventDefault();
+                    return;
+                }
                 return;
             }
             
-            // Ctrl+Y (Redo) または Ctrl+Shift+Z (Redo)
-            if ((metaKey && !e.altKey && e.code === 'KeyY') || 
-                (metaKey && e.shiftKey && !e.altKey && e.code === 'KeyZ')) {
-                historyManager.redo();
-                e.preventDefault();
-                return;
+            // TEGAKI_KEYMAPを使用したアクション取得
+            const action = window.TEGAKI_KEYMAP.getAction(e, {});
+            
+            if (!action) return;
+            
+            switch(action) {
+                case 'UNDO':
+                    historyManager.undo();
+                    e.preventDefault();
+                    break;
+                case 'REDO':
+                    historyManager.redo();
+                    e.preventDefault();
+                    break;
             }
         });
     }
@@ -670,8 +688,9 @@
         });
     }
     
-    console.log('✅ history.js 改修版 loaded');
-    console.log('   - イベント駆動History記録削減');
-    console.log('   - Undo/Redoショートカット一本化');
+    console.log('✅ history.js TEGAKI_KEYMAP対応版 loaded');
+    console.log('   - アクション中心のショートカット処理');
+    console.log('   - UNDO/REDOアクション対応');
+    console.log('   - レガシーフォールバック実装済み');
     
 })();
