@@ -855,13 +855,12 @@
 
     <script src="system/event-bus.js"></script>
     <script src="system/state-manager.js"></script>
-    <script src="system/command-base.js"></script>
+  
     <script src="system/layer-commands.js"></script>
-    <script src="system/animation-commands.js"></script>
-    <script src="system/history.js"></script>
     <script src="system/camera-system.js"></script>
     <script src="system/layer-system.js"></script>
     <script src="system/drawing-clipboard.js"></script>
+    <script src="system/history.js"></script>
     <script src="system/animation-system.js"></script>
     <script src="system/gif-exporter.js"></script>
 
@@ -869,27 +868,24 @@
     <script src="ui/ui-panels.js"></script>
     <script src="ui/timeline-thumbnail-utils.js"></script>
 
-    <script src="core-engine.js"></script>
     <script src="core-runtime.js"></script>
+    <script src="core-engine.js"></script>
+    <script src="system/diagnostics.js"></script>
 
     <script>
-// ===== Phase 1: キーイベントハンドラ全面修正版 =====
-// 🔧 Ctrl+Z/Ctrl+Y と方向キーの正しい動作を実装
-
 (function() {
     'use strict';
     
     function preventBrowserDefaults(e) {
-        // F5, F11, F12 は許可
-        if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
+        if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') {
+            return;
+        }
         
-        // その他のファンクションキーはブロック
         if (e.key.startsWith('F') && e.key.length <= 3) {
             e.preventDefault();
             return;
         }
         
-        // Ctrl/Meta キーとの組み合わせをブロック
         if (e.ctrlKey || e.metaKey) {
             const key = e.code || e.key;
             if (key === 'KeyZ' || key === 'KeyY' || key === 'KeyL' || key === 'Space') {
@@ -909,91 +905,26 @@
             const eventBus = window.TegakiEventBus;
             if (!eventBus) return;
             
-            // 入力フィールドでは無効化
             const activeElement = document.activeElement;
             if (activeElement && (
                 activeElement.tagName === 'INPUT' ||
                 activeElement.tagName === 'TEXTAREA' ||
                 activeElement.isContentEditable
-            )) return;
-            
-            // === Phase 1: Undo/Redo 修正（最優先） ===
-            
-            // UNDO: Ctrl+Z (Shift なし、Alt なし)
-            if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
-                if (window.History?.undo) {
-                    window.History.undo();
-                }
-                e.preventDefault();
+            )) {
                 return;
             }
             
-            // REDO: Ctrl+Y (Shift なし、Alt なし)
-            if (e.ctrlKey && e.code === 'KeyY' && !e.shiftKey && !e.altKey) {
-                if (window.History?.redo) {
-                    window.History.redo();
-                }
-                e.preventDefault();
-                return;
-            }
+            // ❌ 削除: Undo/Redo処理をindex.htmlから完全削除
+            // history.jsで一本化
             
-            // REDO: Ctrl+Shift+Z (代替)
-            if (e.ctrlKey && e.code === 'KeyZ' && e.shiftKey && !e.altKey) {
-                if (window.History?.redo) {
-                    window.History.redo();
-                }
-                e.preventDefault();
-                return;
-            }
-            
-            // === Phase 1: 方向キー修正（修飾キーなしでのみ動作） ===
-            
-            // 左キー: タイムライン左移動（修飾キーなし）
-            if (e.code === 'ArrowLeft' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-                if (window.animationSystem?.goToPreviousCut) {
-                    window.animationSystem.goToPreviousCut();
-                }
-                e.preventDefault();
-                return;
-            }
-            
-            // 右キー: タイムライン右移動（修飾キーなし）
-            if (e.code === 'ArrowRight' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-                if (window.animationSystem?.goToNextCut) {
-                    window.animationSystem.goToNextCut();
-                }
-                e.preventDefault();
-                return;
-            }
-            
-            // 上キー: レイヤー上移動（修飾キーなし）
-            if (e.code === 'ArrowUp' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-                if (window.drawingApp?.layerManager) {
-                    window.drawingApp.layerManager.moveActiveLayerHierarchy('up');
-                }
-                e.preventDefault();
-                return;
-            }
-            
-            // 下キー: レイヤー下移動（修飾キーなし）
-            if (e.code === 'ArrowDown' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-                if (window.drawingApp?.layerManager) {
-                    window.drawingApp.layerManager.moveActiveLayerHierarchy('down');
-                }
-                e.preventDefault();
-                return;
-            }
-            
-            // === その他のショートカット ===
-            
-            // Delete: レイヤークリア
+            // Delete キー (レイヤークリア)
             if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
                 eventBus.emit('layer:clear-active');
                 e.preventDefault();
                 return;
             }
             
-            // Ctrl+L: 新規レイヤー作成
+            // Ctrl+L (レイヤー追加)
             if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
                 if (window.drawingApp?.layerManager) {
                     const layerSystem = window.drawingApp.layerManager;
@@ -1005,48 +936,52 @@
                 return;
             }
             
-            // Shift+N: 新規CUT作成
+            // Shift+N (新規CUT作成)
             if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
-                if (window.animationSystem) {
-                    window.animationSystem.createNewEmptyCut();
+                const animationSystem = window.animationSystem;
+                if (animationSystem) {
+                    animationSystem.createNewEmptyCut();
                     eventBus.emit('cut:created-by-shortcut');
                 }
                 e.preventDefault();
                 return;
             }
             
-            // Shift+A: タイムライン表示切替
+            // Shift+A (タイムライン表示切替)
             if (e.shiftKey && e.code === 'KeyA' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('ui:toggle-timeline');
                 e.preventDefault();
                 return;
             }
             
-            // Ctrl+Space: 再生/停止
+            // Ctrl+Space (再生/停止) - 一本化
             if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
-                if (window.timelineUI?.isVisible) {
-                    window.timelineUI.togglePlayStop();
+                const timelineUI = window.timelineUI;
+                if (timelineUI && timelineUI.isVisible) {
+                    timelineUI.togglePlayStop();
                 }
                 e.preventDefault();
                 return;
             }
             
-            // Shift+C: CUTコピー&ペースト
+            // Shift+C (CUTコピー&ペースト)
             if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('cut:copy-current');
-                setTimeout(() => eventBus.emit('cut:paste-right-adjacent'), 10);
+                setTimeout(() => {
+                    eventBus.emit('cut:paste-right-adjacent');
+                }, 10);
                 e.preventDefault();
                 return;
             }
             
-            // P: ペンツール
+            // P (ペンツール)
             if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'pen' });
                 e.preventDefault();
                 return;
             }
             
-            // E: 消しゴムツール
+            // E (消しゴムツール)
             if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'eraser' });
                 e.preventDefault();
@@ -1060,12 +995,6 @@
     } else {
         setupUnifiedKeyboardShortcuts();
     }
-    
-    console.log('✅ Phase 1: キーイベントハンドラ修正完了');
-    console.log('  - Ctrl+Z: Undo');
-    console.log('  - Ctrl+Y: Redo');
-    console.log('  - ←→: CUT移動');
-    console.log('  - ↑↓: レイヤー移動');
 })();
 
 function checkPhase1Dependencies() {
@@ -1078,22 +1007,27 @@ function checkPhase1Dependencies() {
     ];
     
     const missing = dependencies.filter(dep => !dep.obj);
+    
     if (missing.length > 0) {
-        console.error('Dependencies not loaded:', missing.map(d => d.name).join(', '));
-        return false;
+        throw new Error(`Phase 1 Dependencies not loaded: ${missing.map(d => d.name).join(', ')}`);
     }
     
     if (!window.TEGAKI_CONFIG.animation) {
-        console.error('Animation configuration not found');
-        return false;
+        throw new Error('Animation configuration not found');
     }
     
     return true;
 }
 
 function checkCoreRuntime() {
-    if (!window.CoreRuntime) return false;
-    if (!window.TegakiCore?.CoreEngine) return false;
+    if (!window.CoreRuntime) {
+        return false;
+    }
+    
+    if (!window.TegakiCore?.CoreEngine) {
+        return false;
+    }
+    
     return true;
 }
 
@@ -1112,8 +1046,7 @@ function initializeApp() {
         async initialize() {
             const containerEl = document.getElementById('drawing-canvas');
             if (!containerEl) {
-                console.error('Canvas container not found');
-                return false;
+                throw new Error('Canvas container not found');
             }
             
             this.pixiApp = new PIXI.Application();
@@ -1136,12 +1069,10 @@ function initializeApp() {
             this.pixiApp.canvas.style.width = `${screenWidth}px`;
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
-            // === Phase 1: CoreEngine初期化 ===
             this.coreEngine = new CoreEngine(this.pixiApp);
             const drawingApp = this.coreEngine.initialize();
             
-            // === Phase 1: CoreRuntime初期化（最優先・必須パラメータ確認） ===
-            const runtimeSuccess = CoreRuntime.init({
+            CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
                 canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
@@ -1150,32 +1081,16 @@ function initializeApp() {
                 drawingEngine: this.coreEngine.getDrawingEngine()
             });
             
-            if (!runtimeSuccess) {
-                console.error('❌ CoreRuntime initialization failed');
-                return false;
-            }
-            
-            console.log('✅ CoreRuntime initialized:', CoreRuntime.internal.initialized);
-            
-            // === Phase 1: システム初期化完了イベント発火 ===
-            if (window.TegakiEventBus) {
-                window.TegakiEventBus.emit('system:ready');
-                console.log('✅ system:ready event emitted');
-            }
-            
-            // UIコントローラ作成
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
                 this.coreEngine.getLayerManager(), 
                 this.pixiApp
             );
             
-            // レガシー互換性
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
                 return CoreRuntime.api.resizeCanvas(newWidth, newHeight);
             };
             
-            // リサイズ処理
             window.addEventListener('resize', () => {
                 const newWidth = window.innerWidth - 50;
                 const newHeight = window.innerHeight;
@@ -1241,84 +1156,52 @@ function initializeApp() {
 
 function setupHistoryIntegration() {
     if (window.TegakiEventBus && window.History) {
-        window.TegakiEventBus.on('history:undo-request', () => {
-            if (window.History.undo) window.History.undo();
-        });
-        
-        window.TegakiEventBus.on('history:redo-request', () => {
-            if (window.History.redo) window.History.redo();
-        });
-        
         window.TegakiEventBus.on('history:changed', (data) => {
             const historyElement = document.getElementById('history-info');
             if (historyElement && data) {
-                historyElement.textContent = `${data.undoCount || 0}/${window.History.MAX_HISTORY || 50}`;
+                const undoCount = data.canUndo ? 1 : 0;
+                historyElement.textContent = `${undoCount}/50`;
             }
-        });
-        
-        if (window.History.getHistoryInfo) {
-            const info = window.History.getHistoryInfo();
-            const historyElement = document.getElementById('history-info');
-            if (historyElement) {
-                historyElement.textContent = `${info.undoCount}/${info.maxHistory}`;
-            }
-        }
-    }
-}
-
-function setupLayerPanelDuplicationFix() {
-    if (window.TegakiEventBus) {
-        window.TegakiEventBus.on('layer:created', () => {
-            setTimeout(() => {
-                if (window.layerSystem?.updateLayerPanelUI) {
-                    window.layerSystem.updateLayerPanelUI();
-                }
-            }, 50);
-        });
-        
-        window.TegakiEventBus.on('layer:deleted', () => {
-            setTimeout(() => {
-                if (window.layerSystem?.updateLayerPanelUI) {
-                    window.layerSystem.updateLayerPanelUI();
-                }
-            }, 50);
         });
     }
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
-    console.log('=== Phase 1: アプリ起動開始 ===');
-    
-    if (!checkPhase1Dependencies()) {
-        console.error('❌ Dependencies check failed');
-        return;
+    try {
+        checkPhase1Dependencies();
+        
+        if (!checkCoreRuntime()) {
+            throw new Error('CoreRuntime initialization failed');
+        }
+        
+        const DrawingApp = initializeApp();
+        const app = new DrawingApp();
+        await app.initialize();
+        
+        setupHistoryIntegration();
+        
+        if (window.CoordinateSystem && typeof window.CoordinateSystem.diagnoseReferences === 'function') {
+            window.CoordinateSystem.diagnoseReferences();
+        }
+        
+        if (window.SystemDiagnostics) {
+            setTimeout(() => {
+                try {
+                    const diagnostics = new window.SystemDiagnostics();
+                    diagnostics.runFullDiagnostics();
+                } catch (diagError) {
+                }
+            }, 1000);
+        }
+        
+    } catch (error) {
     }
-    
-    if (!checkCoreRuntime()) {
-        console.error('❌ CoreRuntime not initialized');
-        return;
-    }
-    
-    const DrawingApp = initializeApp();
-    const app = new DrawingApp();
-    const success = await app.initialize();
-    
-    if (!success) {
-        console.error('❌ App initialization failed');
-        return;
-    }
-    
-    console.log('✅ App initialization successful');
-    
-    setupHistoryIntegration();
-    setupLayerPanelDuplicationFix();
-    
-    if (window.CoordinateSystem?.diagnoseReferences) {
-        window.CoordinateSystem.diagnoseReferences();
-    }
-    
-    console.log('=== Phase 1: アプリ起動完了 ===');
 });
+
+try {
+    checkPhase1Dependencies();
+} catch (error) {
+}
     </script>
 </body>
 </html>
