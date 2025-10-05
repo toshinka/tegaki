@@ -1,8 +1,10 @@
 // ================================================================================
-// system/history.js - イベント監視強化版（改修計画書準拠）
+// system/history.js - 改修版（イベント駆動削減・Undo/Redo一本化）
 // ================================================================================
-// 🔧 Phase 2: animation:cut-created と layer:created イベントを監視
-// 🔧 二重記録防止フラグの精度向上
+// 改修内容：
+// - イベント監視を削減（animation:cut-created, layer:createdを削除）
+// - 操作完了時に各モジュールから直接saveState/saveStateFullを呼ぶ方式に変更
+// - Undo/Redoショートカットをhistory.jsに一本化（index.htmlから削除）
 
 (function() {
     'use strict';
@@ -65,17 +67,8 @@
             this.eventBus.on('history:redo-request', () => this.redo());
             this.eventBus.on('history:clear', () => this.clear());
             
-            // 🔧 Phase 2: CUT作成時の自動記録
-            this.eventBus.on('animation:cut-created', () => {
-                if (this.isExecutingUndoRedo || this.isRecordingState) return;
-                setTimeout(() => this.saveStateFull(), 100);
-            });
-            
-            // 🔧 Phase 2: レイヤー作成時の自動記録
-            this.eventBus.on('layer:created', () => {
-                if (this.isExecutingUndoRedo || this.isRecordingState) return;
-                setTimeout(() => this.saveStateFull(), 50);
-            });
+            // 削除：animation:cut-created, layer:createdの自動記録
+            // 理由：各システムが操作完了時に明示的にsaveState/saveStateFullを呼ぶ
             
             this.eventBus.on('animation:cut-deleted', () => {
                 if (this.isExecutingUndoRedo || this.isRecordingState) return;
@@ -605,7 +598,7 @@
     
     const historyManager = new HistoryManager();
     
-    // 🔧 Phase 1: キーボードショートカット追加（index.htmlから移管）
+    // キーボードショートカット（history.jsに一本化）
     function setupHistoryKeyboardShortcuts() {
         document.addEventListener('keydown', (e) => {
             const activeElement = document.activeElement;
@@ -677,6 +670,8 @@
         });
     }
     
-    console.log('✅ history.js loaded - Phase 1+2: キーボードショートカット統合版');
+    console.log('✅ history.js 改修版 loaded');
+    console.log('   - イベント駆動History記録削減');
+    console.log('   - Undo/Redoショートカット一本化');
     
 })();

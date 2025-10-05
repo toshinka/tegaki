@@ -1,0 +1,203 @@
+================================================================================
+改修計画書（プレーンテキスト）
+対象ツール：ブラウザお絵かきツール（PixiJS v8.13）
+作成日：2025-10-05
+出力形式：.txt（Claude改修用・そのままコピペ可）
+================================================================================
+
+--- 概要 ---
+
+【報告された問題】
+1) Undoが「何もしていないのにHistoryを1消費する」→2画で描いたものを1回しか戻せない
+2) レイヤー新規作成でHistoryが2個増える
+3) ショートカットが分散（Shift+Spaceが二重で再生/停止を持つ）
+4) V（アクティブレイヤー移動）押下が「押しっぱなしで忙しない」→トグル方式に変更希望
+5) Vモードで垂直・水平ボタンやショートカット（V+H, V+Shift+H）が効かない
+
+【目的】
+- Historyの正確さ・一貫性を取り戻す（UX・心理的満足度向上）
+- ショートカット割当を集中させ、衝突を防ぐ
+- Vキーをトグル方式（1回押してON、再度押してOFF）に変更
+- Vモード内の垂直・水平操作ショートカットを確実に動作させる
+- 全体のAPI・命名整備、暗黙の状態依存を減らす
+
+--- 原因調査結果（実コード精査） ---
+
+【A. History問題の根本原因】
+1) history.jsで複数のイベント監視があり、同じ操作で重複してsaveStateが呼ばれている
+   - 'animation:cut-created' → setTimeout 100ms後にsaveStateFull()
+   - 'layer:created' → setTimeout 50ms後にsaveStateFull()
+   - layer-system.jsのcreateLayer()内でも直接saveState()を呼んでいる
+   
+2) drawing-clipboard.jsでペースト時に複数のイベント発火
+   - 'paste:commit' + 'operation:commit' + 'layer:content-changed'
+   - これらが個別にHistory記録を誘発する可能性
+
+3) index.htmlにUndo/Redoショートカットが実装されているが、
+   history.js内にも同じショートカットが実装されている（二重実装）
+
+4) drawing-clipboard.jsやlayer-system.jsで直接History.saveState()を呼んでいるが、
+   isExecutingUndoRedoフラグのチェックが不完全
+
+【B. ショートカット分散問題】
+1) index.htmlにショートカット処理が実装されている
+2) history.jsにもショートカット処理が実装されている
+3) layer-system.jsにもショートカット処理が実装されている
+4) 結果：同じキー（Ctrl+Z等）が複数箇所で処理され、二重実行の可能性
+
+【C. Vキー押しっぱなし問題】
+1) layer-system.jsの_setupLayerOperations()で：
+   - keydown: enterLayerMoveMode()
+   - keyup: exitLayerMoveMode()
+   という実装になっている
+2) キーリピートによりenterLayerModeが連続呼び出しされる
+3) トグル方式の実装が存在しない
+
+【D. Vモードでボタン・ショートカットが効かない問題】
+1) layer-system.js内の処理が正しく実装されているように見えるが、
+   UIボタンからの呼び出しコードが確認できない
+2) ui-panels.jsやtimeline-ui.jsとの連携が不完全の可能性
+
+--- 改修方針（優先順位付き） ---
+
+【優先度A：History統合（必須・UX直結）】
+✓ 複数箇所でのHistory記録を一本化
+✓ イベント駆動のHistory記録を廃止し、操作の最終段階でのみ記録
+✓ トランザクション機能は導入せず、シンプルな「操作完了時に1回記録」方式
+✓ index.htmlのUndo/Redoショートカットを削除し、history.jsに一本化
+
+【優先度B：ショートカット集中（必須・再発防止）】
+✓ index.htmlからショートカット処理を削除
+✓ config.jsのTEGAKI_KEYCONFIGを活用
+✓ 各モジュールは内部でショートカット処理を完結させる
+✓ history.js、layer-system.jsでショートカットを統合管理
+
+【優先度C：Vキートグル化（操作性改善）】
+✓ layer-system.jsでトグル方式を実装
+✓ e.repeatをチェックしてキーリピートを無視
+✓ vKeyPressedフラグをトグルで管理
+
+【優先度D：Vモード内操作の修正（中）】
+✓ UI-panelsとの連携を確認・修正
+✓ 水平・垂直ボタンのイベントハンドラを実装
+
+--- 具体的改修内容 ---
+
+【1. history.js】
+変更点：
+- index.htmlで処理していたUndo/Redoは削除し、history.js内のショートカットのみに統一
+- イベントリスナーを削減：
+  * 'animation:cut-created'を削除（AnimationSystemが直接記録）
+  * 'layer:created'を削除（LayerSystemが直接記録）
+  * イベント駆動のHistory記録を最小化
+- saveState/saveStateFullの呼び出しを慎重に管理
+
+【2. index.html】
+変更点：
+- setupUnifiedKeyboardShortcuts()内のUndo/Redo処理を完全削除
+- Delete、Ctrl+L、Shift+N、Shift+A、Ctrl+Space、Shift+C、P、Eのみ残す
+- History関連の処理は一切記述しない
+
+【3. layer-system.js】
+変更点：
+- Vキーをトグル方式に変更：
+  * keydownでe.repeatをチェック
+  * 初回押下でenterLayerMoveMode()
+  * 2回目押下でexitLayerMoveMode()
+  * vKeyPressedフラグをトグルで管理
+- createLayer()内のHistory.saveState()呼び出しをフラグチェック強化
+- deleteLayer()内のHistory.saveState()呼び出しをフラグチェック強化
+- moveActiveLayerHierarchy()にHistory記録を追加
+
+【4. drawing-clipboard.js】
+変更点：
+- pasteToActiveLayer()とpasteLayer()でHistory記録を確実に実行
+- イベント発火を整理（paste:commitとoperation:commitを統合検討）
+
+【5. ui-panels.js（確認・修正）】
+変更点：
+- 水平・垂直ボタンのイベントハンドラを実装
+- layerSystem.moveActiveLayer()を呼び出すように修正
+
+--- ファイル別改修タスク ---
+
+□ system/history.js
+  ✓ イベントリスナー削減（cut-created、layer-createdを削除）
+  ✓ キーボードショートカット維持（Ctrl+Z, Ctrl+Y）
+  ✓ isExecutingUndoRedoフラグの厳格化
+
+□ index.html
+  ✓ Undo/Redo処理を完全削除
+  ✓ setupHistoryIntegration()を削除
+  ✓ その他のショートカットは維持
+
+□ system/layer-system.js
+  ✓ Vキーをトグル方式に変更
+  ✓ enterLayerMoveMode/exitLayerMoveMode にトグルロジック追加
+  ✓ e.repeatチェック追加
+  ✓ createLayer/deleteLayerでのHistory記録フラグチェック強化
+  ✓ moveActiveLayerHierarchy()にHistory記録追加
+
+□ system/drawing-clipboard.js
+  ✓ History記録の確実な実行
+  ✓ イベント発火の整理
+
+□ ui/ui-panels.js（確認が必要）
+  ✓ 水平・垂直ボタンの実装確認
+  ✓ LayerSystemとの連携確認
+
+--- テスト計画 ---
+
+【優先度順】
+1) 描画1ストローク → Undo 1回で戻る / Redo で再現
+2) 描画2ストローク → Undo 2回で両方戻る
+3) レイヤー新規作成 → History +1 だけ増える
+4) Shift+Spaceを複数押下 → 再生/停止が二重にならない
+5) V 押下でモードON、再押下でOFF（長押しで複数トグルしない）
+6) V モード中に H キー（および Shift+H）で水平移動が動く
+7) UI ボタン（垂直/水平）を押したときに正しく動作
+
+--- リスク ---
+
+1) イベント駆動のHistory記録を削除することで、一部の操作でHistory記録漏れが発生する可能性
+   → 対策：各操作の完了時に明示的にHistory.saveState()を呼ぶ
+
+2) Vキーのトグル方式変更により、既存の操作感が変わる
+   → 対策：ユーザーフィードバック後に微調整
+
+3) ショートカット統合により、既存の動作が変わる可能性
+   → 対策：テスト段階で全ショートカットを検証
+
+--- 作業工数見積（Claude改修） ---
+
+- history.js修正：30分
+- index.html修正：20分
+- layer-system.js修正：40分
+- drawing-clipboard.js修正：20分
+- ui-panels.js確認・修正：20分
+- テスト：30分
+合計：2.5時間
+
+--- 変更ファイル一覧 ---
+
+優先度高：
+- system/history.js
+- index.html
+- system/layer-system.js
+
+優先度中：
+- system/drawing-clipboard.js
+- ui/ui-panels.js
+
+--- 補足 ---
+
+今回の改修は「シンプル化」を重視します。
+- トランザクション機能は導入しません
+- KeybindingManagerクラスも新規作成しません
+- 既存のconfig.jsとTEGAKI_KEYCONFIGを最大限活用
+- 各モジュール内でショートカットを完結させる
+- イベント駆動のHistory記録を最小化し、操作完了時に記録
+
+この方針により、コードの複雑性を増やさず、問題を解決します。
+
+以上

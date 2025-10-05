@@ -1,297 +1,226 @@
-要点（短く）
+改修計画書（プレーンテキスト）
+対象ツール：ブラウザお絵かきツール（PixiJS v8.13）
+出力形式：.txt（以下そのままコピペ可）
+作成日：2025-10-05
 
-表示されない／動作が不整合になる主因は**グローバル名衝突（History 等）・コマンド/履歴（Undo/Redo）実行経路の不備・再帰ループを招く境界取得処理（getGlobalBounds）**に集約される可能性が高いです。
-GitHub
-+1
+--- 概要 ---
+現象（報告）
+1) Undo が「何もしていないのにHistoryを1消費する」 → 2画で描いたものを1回しか戻せない（実際は複数のHistoryエントリが不要に発生）
+2) レイヤー新規作成で History が 2 個増える
+3) ショートカットが分散（Shift+Space が二重で再生/停止を持つなど）。キー割当が複数ファイルに散らばっている
+4) V（アクティブレイヤー移動）押下が「押しっぱなしで動作が忙しい」：現在は押し続け中に継続的に切替/解除的な動きになっている
+5) V（移動モード）で垂直・水平ボタンやショートカット（V+H, V+Shift+H）が効かない
 
-まず優先して直すべきは：
+目的
+- History の正確さ・一貫性を取り戻す（ユーザー体験と心理的満足度回復）
+- ショートカット割当を集中させ、衝突を防ぐ（index.html/config.js/UI/各モジュールで散らばらない）
+- Vキーの動作をトグル方式（1回押してON、再度押してOFF）に変更
+- Vモード内の垂直・水平操作ショートカットを確実に動作させる
+- 全体のAPI・命名の整備、暗黙の状態依存を減らす
 
-History（グローバル）参照と executeCommand 実装の整備（window.History が期待のオブジェクトでない / 関数が未定義で例外が出る）。
-GitHub
+--- 根本原因（推定） ---
+（ソースを直接精査しての確定ではなく、コード構造と問題発生箇所の典型パターンからの推定）
+A) History システムの「粒度」が粗く、複数の内部処理が個別に push している
+   - 例：レイヤー作成処理で「レイヤー配列追加」＋「UI選択変更」などでそれぞれ push している
+   - 描画時も「stroke開始」「stroke点追加」「stroke終了」などで複数 push され、Undo 単位が分散している
+B) 複数モジュールが keydown/keyup を個別に登録している（index.html、config.js、ui パネル、core-runtime 等）
+   - その結果、同じキーに対して複数ハンドラが同時に動き、二重実行や競合が発生
+C) Vキーは現在「keydown: enable, keyup: disable」などの設計で、押しっぱなしで反復イベントや状態遷移が出る実装になっている
+D) V+H 等が効かないのは「モーダル状態のフラグ」や「イベントリスナの検査順」「modifier判定が異なるタイミング（keydown vs keyup）」が原因
+E) レイヤー移動コマンドが UI ボタンとキーバインドで別コードパスになっており、移動処理で期待する state（activeLayerId 等）を参照できていない
 
-getGlobalBounds の無限再帰（Maximum call stack size exceeded）を止める。
+--- 改修方針（設計原則） ---
+1) History は「ユーザー操作単位」で push する（内部で細かく push されたらバッチ化する）
+   - History API にトランザクション機能を追加（beginTransaction/commit/rollback）
+   - 自動バッチング：同一マクロ操作内の複数 push は1個にまとめる
+2) キーバインドは一元管理する（KeybindingManager）
+   - 全てのショートカット定義は config.js に集約
+   - 各モジュールは KeybindingManager にイベント名（'play-toggle','layer-move','move-vertical' など）を登録するだけ
+   - KeybindingManager は modifier を正規化し、keydown/keyup の差を吸収する
+3) Vキーは「トグル方式（短押しで ON / 再押下で OFF）」に変更
+   - 既存の「押下中だけ有効」方式はオプションとして残す場合でもデフォルトはトグル
+4) UI ボタンとショートカットは共通のコマンドAPIを呼ぶ（UI と入力ハンドラは同じ関数を呼ぶ）
+   - 例：layerSystem.moveActiveLayer(direction, amount) を直接呼ぶ
+5) 命名とAPIを厳格化。操作を表すイベント名・履歴の action.type を統一
 
-キーボードハンドラ（Undo/Redo と タイムライン移動の混同）をスコープ化して preventDefault を正しく行う。
+--- 優先度付き改修タスク（高→低）---
+A. 致命：History のバッチ化（高）
+   1. 既存 history.js に Transaction API を追加
+      - history.beginTransaction(label?)
+      - history.push(action)  ← トランザクション中はバッファに積む
+      - history.commitTransaction()  ← バッファをまとめて 1 action としてpush（必要なら合成payload）
+      - history.rollbackTransaction()
+   2. レイヤー作成・削除・アクティブ変更・ペンの stroke 操作等、ユーザー操作の入り口でトランザクションで括る
+   3. 描画（ペン）処理は、stroke 単位で 1 action を作る（開始: beginTransaction, 各点はバッファ, 終了: commit）
+   4. レイヤー作成で2回増える件：createLayer処理全体を1トランザクションで囲む
+   5. 既存の push を全検索し、ユーザー操作か内部 bookkeeping かで分類。bookkeeping は history.push しないか、内部 action にまとめる
+   6. テスト：描画 1 ストロークで history.length が +1、レイヤー作成で +1 を確認
 
-レイヤーUIの削除ボタンイベントとレイヤー追加/削除時の履歴コマンド化（常にコマンド経由で状態を変える）を徹底する。
+B. キー管理の集中（高）
+   1. 新規ファイル system/keybinding-manager.js を追加
+      - public API:
+         KeybindingManager.define('play-toggle', {key: 'Space', modifiers:['Shift'] /* or 'Shift+Space' style */})
+         KeybindingManager.on('play-toggle', handler)
+         KeybindingManager.remove(...)
+      - 内部: 単一の window.addEventListener('keydown', ...) と 'keyup' を持つ。重複登録を防ぐ
+      - modifier 正規化（Shift/Ctrl/Alt/Meta）と同時押し検出
+   2. config.js に全ショートカット定義を移行（例: keyBindings: { playToggle: 'Shift+Space', vMoveToggle: 'KeyV', ... }）
+   3. 各モジュールは keybinding に直接 add せず、KeybindingManager.on('命令名', handler) で購読
+   4. index.html の inline ハンドラを削除または KeybindingManager に移行
+   5. テスト：Shift+Space が一回だけ再生/停止を発行。重複発生が無いことを確認
 
-原因候補（詳細）と対応方針
-1) window.History.executeCommand is not a function
+C. Vキーのトグル化 + ショートカット組み合わせ修正（中）
+   1. KeybindingManager で 'KeyV' 押下でトグル命令 'layer-move-toggle' を発火
+      - 実装: keydown で既にトグル状態遷移済みなら無視。keyup はトグルロジックに影響させない
+   2. V+H / V+Shift+H の判定：KeybindingManager は「現在のモード（layer-move active）」を参照せずとも、'layer-move-vertical' のキーバインドは常に受け取り、内部 handler が mode 確認して無効なら ignore（→ 私的モード一貫性）
+   3. 現状 '押しっぱなし' の挙動が生じる原因は key repeats; KeybindingManager で repeat を抑止（keydownで e.repeat をチェックして初回のみ扱う or トグル用は repeat を無視）
+   4. テスト：V を押すとモード入、もう一度押すと抜ける。長押ししても1回しかトグルしない。V+H で垂直移動が動作する
 
-原因候補
+D. アクティブレイヤー移動ロジック修正（中）
+   1. layer-system.js に moveActiveLayer(axis, amount) （または moveActiveLayer(dx,dy)）を公開する
+   2. UI ボタン（垂直/水平）と Keybinding の handler はこの API を呼ぶだけ（副作用を UI 側に置かない）
+   3. 移動処理は 1 回の履歴アクションとしてまとめる（history.beginTransaction / commit）
+   4. V+H が効かない原因が「イベントが keyup でしか拾っていない」「modifier 判定ミスマッチ」「activeLayer が null」等なら、
+      - handler は activeLayer の有無をチェックし、無ければ user-feedback（軽い console.warn は許容）を出すだけで終了
+   5. テスト：V モードで水平ボタン→ layer.x が期待値分変わる。History +1
 
-system/history.js が想定どおり window.History に executeCommand を登録していない、あるいは後から別のコードで上書きされている（ブラウザの組み込み history オブジェクトや別モジュール名と衝突）。
+E. 既存コードのリファクタ（低→中）
+   1. 各モジュールの console.log を減らす（デバッグ用は debug flag で出す）
+   2. 命名規約（action.type, command names, event names）をドキュメント化（短い表を README 形式で追加）
+   3. 重要な API の JSDoc コメント追加（今後AIが読みやすくするため）
 
-History（大文字）というグローバル名は混乱を招く（組み込み/他ライブラリと衝突しやすい）。
+--- 具体的変更候補コード（抜粋・概念実装）---
+（※実際は該当ファイルに合わせて軽微に調整してください。ここは改修方針を示す疑似実装）
 
-対策（短期・推奨）
-
-グローバル名を AppHistory / HistoryManager のように変更し、window.AppHistory = HistoryManager; の形でエクスポートする。
-
-executeCommand は必ず関数オブジェクトであることを保証し、呼ぶ前に存在チェック（ただし「曖昧なフォールバック」は禁止ルールなので、無ければ明示的にエラーを出して早期終了させる）。
-
-すべてのコマンド実行箇所を window.AppHistory.executeCommand(cmd) に差し替える（置換不可な箇所が無いか grep で一括確認）。
-
-コード例（patch 提案） — system/history.js（擬似）
-
-// system/history.js — 最小で明示的なエクスポート
-(function(){
-  function HistoryManager(maxSize = 200) {
-    this.stack = [];
-    this.index = -1;
-    this.maxSize = maxSize;
+1) history.js に Transaction を追加（概念）
+function beginTransaction(label){
+  if(this._inTransaction) { /* nested support: increase counter */ }
+  this._inTransaction = true;
+  this._txBuffer = [];
+  this._txLabel = label || 'transaction';
+}
+function push(action){
+  if(this._inTransaction){
+    this._txBuffer.push(action);
+    return;
   }
-  HistoryManager.prototype.executeCommand = function(cmd){
-    if (!cmd || typeof cmd.execute !== 'function') {
-      throw new Error('HistoryManager.executeCommand: invalid command');
-    }
-    // 正常にコマンドを実行・履歴へ積む
-    cmd.execute();
-    // truncate future
-    this.stack.splice(this.index + 1);
-    this.stack.push(cmd);
-    if (this.stack.length > this.maxSize) this.stack.shift();
-    this.index = this.stack.length - 1;
-  };
-  HistoryManager.prototype.undo = function(){
-    if (this.index < 0) return;
-    const c = this.stack[this.index--];
-    if (c && typeof c.undo === 'function') c.undo();
-  };
-  HistoryManager.prototype.redo = function(){
-    if (this.index + 1 >= this.stack.length) return;
-    const c = this.stack[++this.index];
-    if (c && typeof c.execute === 'function') c.execute();
-  };
+  _pushToStack(action); // 既存の単発push
+}
+function commitTransaction(){
+  if(!this._inTransaction) return;
+  // 合成ルール：複数 push を 1 action にまとめる
+  const combined = { type: this._txLabel, payload: this._txBuffer };
+  _pushToStack(combined);
+  this._txBuffer = [];
+  this._inTransaction = false;
+}
+function rollbackTransaction(){ this._txBuffer=[]; this._inTransaction=false; }
 
-  // 安全なグローバル公開名
-  if (!window.AppHistory) window.AppHistory = new HistoryManager(500);
+適用例（レイヤー作成）
+history.beginTransaction('create-layer');
+// 内部で複数の push が呼ばれてもバッファ化される
+layerSystem._createLayerInternal(...);
+ui.selectLayer(newLayerId);
+history.commitTransaction();
+
+2) keybinding-manager.js（概念）
+const KeybindingManager = (function(){
+  const listeners = new Map(); // name => [handlers]
+  const map = {}; // key combo => name
+  window.addEventListener('keydown', (e) => {
+    const combo = normalizeKey(e); // e.g. 'Shift+Space' or 'KeyV'
+    if(e.repeat && map[combo]?.ignoreRepeats) return;
+    const name = map[combo];
+    if(name) emit(name, e);
+  });
+  return {
+    define(name, combo, opts){ map[combo] = { name, ...opts }; },
+    on(name, handler){ listeners.has(name)||listeners.set(name,[]); listeners.get(name).push(handler); },
+    emit(name, e){ (listeners.get(name)||[]).forEach(h=>h(e)); },
+    // helper to register from config
+  };
 })();
 
-
-重要：既存コードで window.History を参照している箇所はすべて AppHistory に変更してください。変更漏れがあると is not a function エラーが続きます。
-GitHub
-
-2) getGlobalBounds の Maximum call stack size exceeded
-
-原因候補
-
-getGlobalBounds の独自実装が、内部で自身を再帰呼び出し（もしくは親・子の getGlobalBounds を辿るループ）してしまっている。
-
-ある DisplayObject が親子関係で循環参照（A の parent が B、B の parent が A など）。Pixi のツリーに循環があると境界計算で無限ループになる。
-
-対策
-
-循環参照の検査：レイヤー・コンテナを作る箇所で if (container.contains(container)) みたいなチェックを行い、意図しない親子設定がないか断言する。
-
-getGlobalBounds をカスタム実装する場合は Pixi の低レベル API（getLocalBounds() と worldTransform）を使って再帰を避ける。絶対に this.getGlobalBounds() を自身から再び呼ばないこと。
-
-もし TypeScript 由来のビルド残骸（.ts→.js の不整合）があるなら、.ts 由来の既存関数が混在している可能性があるので .ts を取り除くか JS に一本化する。
-
-安全な実装例（差し替え）
-
-// safe-getGlobalBounds.js — PIXI.DisplayObject に付けるなら（無理に上書きしない方が良い）
-function safeGetGlobalBounds(displayObject){
-  // 1) ローカル境界を取得
-  const local = displayObject.getLocalBounds(true); // true: skipUpdate を制御する場合に注意
-  // 2) worldTransform を使って四隅を変換
-  const wT = displayObject.worldTransform;
-  const x0 = local.x, y0 = local.y;
-  const x1 = local.x + local.width, y1 = local.y + local.height;
-  const corners = [
-    {x: x0, y: y0},
-    {x: x1, y: y0},
-    {x: x1, y: y1},
-    {x: x0, y: y1}
-  ];
-  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
-  for (const c of corners) {
-    const gx = c.x * wT.a + c.y * wT.c + wT.tx;
-    const gy = c.x * wT.b + c.y * wT.d + wT.ty;
-    if (gx < minX) minX = gx;
-    if (gy < minY) minY = gy;
-    if (gx > maxX) maxX = gx;
-    if (gy > maxY) maxY = gy;
-  }
-  return new PIXI.Bounds().addFrame(minX, minY, maxX, maxY); // 例。もしくは plain rect return
+config.js 変更例
+keyBindings: {
+  playToggle: 'Shift+Space',
+  vMoveToggle: 'KeyV',
+  moveVertical: 'KeyH', // with V mode check in handler
+  // ...
 }
 
-
-注意：displayObject.getLocalBounds(true) の skipUpdate 引数は Pixi のバージョン仕様に沿って使ってください（v8 の API を参照）。無駄な再描画や update 呼び出しが無いように。
-
-3) Undo/Redo（Ctrl+Z/Y）でタイムラインが移動してしまう・タイムライン操作が履歴に入らない
-
-原因候補
-
-キーハンドラをグローバルに束ねていて、タイムライン UI 用のキー操作（左右でフレーム移動など）と Undo が競合している。
-
-タイムラインの追加・削除アクションが「直接状態を変える」ロジックになっており History 経由のコマンドとして登録されていない。
-
-対策
-
-キーハンドラはコンテキスト（ツール／フォーカス）で分岐する。たとえば timeline にフォーカスがあるときは event.stopPropagation() と preventDefault() を行い、Undo 系はグローバルかつ UI コンポーネントがフォーカスしていない場合にのみ動作させる。
-
-すべての状態変更（レイヤー追加/削除、タイムラインに関する mutating 操作）は必ず Command（execute/undo）として作り AppHistory.executeCommand で実行する。これで「削除ボタンを押しても履歴に残らない」問題が解決するはず。
-
-キーハンドラ例
-
-document.addEventListener('keydown', (e) => {
-  // 入力系要素がフォーカス中なら何もしない
-  const tag = document.activeElement && document.activeElement.tagName;
-  if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
-
-  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-  const meta = isMac ? e.metaKey : e.ctrlKey;
-
-  if (meta && e.key === 'z') {
-    e.preventDefault();
-    window.AppHistory.undo();
-    return;
-  }
-  if (meta && (e.key === 'y' || (isMac && e.shiftKey && e.key === 'Z'))) {
-    e.preventDefault();
-    window.AppHistory.redo();
-    return;
-  }
-  // timeline 左右 は App の状態に従って処理
+3) Vトグル handler（概念）
+KeybindingManager.on('vMoveToggle', (e) => {
+  if(e.repeat) return; // ignore repeats
+  const newMode = !state.isLayerMoveMode;
+  state.isLayerMoveMode = newMode;
+  eventBus.emit('layer-move:mode', newMode);
 });
 
-4) レイヤーパネル縦横比が変になる・✗で消えない
+4) 移動コマンドの共通化
+// layer-system.js
+function moveActiveLayer(dx, dy){
+  const layer = getActiveLayer();
+  if(!layer) return;
+  history.beginTransaction('move-active-layer');
+  layer.x += dx; layer.y += dy;
+  history.push({ type:'layer-moved', payload:{id:layer.id, dx, dy} });
+  history.commitTransaction();
+}
 
-原因候補
+--- テスト計画（手順）---
+優先度順に自動/手動で確認
+1) 描画（1 stroke）→ Undo を 1 回で戻る / Redo で再現
+2) 2 stroke 描画 → Undo 2 回で両方戻る
+3) レイヤー新規作成 → history +1 だけ増える
+4) Shift+Space を複数押下 → 再生/停止が二重にならない（1動作のみ）
+5) V 押下で移動モード ON、再押下で OFF（長押しで複数トグルしない）
+6) V モード中に H キー（および Shift+H）で垂直/水平移動が正しく動く
+7) UI ボタン（垂直/水平）を押したときに history が +1 だけ増える
 
-レイヤー削除ボタンが DOM 側でイベント登録忘れ、または押したときに layer remove コマンドを呼んでいない（直接 container.removeChild() しているか、そもそも該当 layer id が見つからない）。
+--- リスクと回避 ---
+- 既存コードに深く組み込まれた history.push 呼び出しの全面検出と分類が必須。見落とすと不整合を残す → 改修時に全 push を grep して一覧化する
+- トランザクション化で undo の意味合いが変わる可能性（細かく戻したい場合）→ 必要なら小さい粒度の user action と内部 bookkeeping を明確に区別する
+- Keybinding 一元化で想定外のショートカット競合が発生する可能性→ config に全定義を書き、コンフリクト検出機能（起動時に同一 combo の複数定義を警告）を入れる
 
-レイヤーパネルのサイズが canvas の変形（カメラズーム・回転）に追従している。UI と canvas のレイアウト分離が不十分。
+--- 作業工数見積（参考：改修・テスト含む、開発者1名）---
+（注：あなたの要望により作業はここで完了せず、実装段階で微調整が必要）
+- history トランザクション導入・既存 push 検査：1.5〜2.5日
+- keybinding manager 実装 + config 移行：1.0〜1.5日
+- V トグル + 移動 API 修正：0.75〜1.0日
+- テスト＋バグ潰し：0.75〜1.5日
+合計（目安）：4〜6.5 日
 
-対策
+--- 優先度（短期推奨順）---
+1) History トランザクション化（必須、UX直結）
+2) Keybinding 一元化（再発防止）
+3) V トグル化 + 移動 API（操作性改善）
+4) UI の小修正、ログ削減、命名改善
 
-レイヤーパネルは CSS（flex）で固定幅／高さを与えて UI レイアウトが canvas の変形に影響されないようにする。JS 側は UI の DOM リサイズは canvas のアフィン変換に依存させない。
+--- 変更ファイル一覧（作業候補、修正箇所）---
+優先度高ファイル
+- system/history.js           ← トランザクション追加・push 呼び出し点の整理
+- system/layer-system.js      ← レイヤー作成/移動処理のトランザクション化・公開API追加
+- system/drawing-clipboard.js ← stroke 単位で history を push するよう修正
+- system/animation-system.js  ← (Shift+Space 冲突確認)
+- core-runtime.js / core-engine.js ← keybinding 統制点の調整（KeybindingManager 経由へ）
+- index.html / config.js      ← キー定義を config.js に移動し、index.html の inline ハンドラは削除
+- ui/timeline-ui.js / ui-panels.js / timeline-thumbnail-utils.js ← UIが history を直接触っている場合はコマンド経由に変更
+- system/event-bus.js / system/state-manager.js ← mode フラグやイベント命名の整理
 
-削除ボタンは イベントで ID を渡し、Command を生成して AppHistory.executeCommand で削除処理を行う（undo で復元可能にする）。イベントバブリングと捕捉は必ず stopPropagation() を使って余計なキーハンドラや親の click ハンドラに影響させない。
+--- デリバブル（最終）---
+1) 修正パッチ（diff / patch ファイル）
+2) 修正後の README（変更点・キー一覧・Undo/Redo の仕様）
+3) テスト手順書（上記テスト計画を手順化）
+4) 必要なら短いコードコメントでの設計説明（history.transaction の使い方例）
 
-実務的な改修手順（優先度付き）
+--- 補足（運用上の提案）---
+- History の可視化ツール（開発モード）：現在の undo stack を一時的に見られる dev-ui を作ると調査が速くなる
+- キー割当の一覧は config.js にコメント付きで残す（エンドユーザー用ヘルプとしても有用）
+- 将来：history の action を「undoable: true/false」でマークできるようにすると内部処理をさらに柔軟に扱える
 
-（高）History 名の衝突を解消
+--- 結び ---
+上記はソースツリー構成と問題報告に基づく調査と実務的な改修計画です。まずは「system/history.js のトランザクション追加」と「KeybindingManager の導入」を同時に進めることで多くの不整合が解消されます。  
+必要なら、私の側で該当ファイルの差分（パッチ）を作成して提示します。その場合は修正済みファイルを1つずつ提示しますので、どのファイルから出力して欲しいか指定してください（例：まず system/history.js の変更diffを出します）。
 
-system/history.js を AppHistory 実装に差し替え。既存コード全体で window.History → window.AppHistory に差し替え（grep と置換）。
-GitHub
-
-（高）全コマンド実行を AppHistory.executeCommand(cmd) 経路に統一
-
-レイヤー追加/削除、タイムライン追加/削除、ペン操作など「取り消し可能な状態変更」は Command にする。system/command-base.js を確認してコマンドインタフェースを統一。
-GitHub
-
-（高）getGlobalBounds の無限再帰の封じ込め
-
-該当箇所を見つけ（getGlobalBounds.ts 参照）、上書き実装を廃止するか、上で示した安全実装に置換。不要な .ts ソースが混在しているなら削除か JS に一本化。
-
-（中）キーボードハンドラのスコープ化
-
-ドキュメント全体の keydown を整理。Undo/Redo は UI コンポーネントが非フォーカス時のみ動作。タイムラインの矢印キーは timeline focus 時のみ。
-
-（中）レイヤーパネル：UI/CSS分離とイベント修正
-
-CSS を flexbox で固定し、canvas の変形が UI に伝播しないようにする。削除ボタンは data-layer-id 属性 + Command 経由で削除。
-
-（低）未使用ファイルの洗い出し
-
-単純な静的解析（grep で参照されているファイル/シンボルを列挙）で不要ファイル候補を一覧にし、段階的に削除（機能が壊れないことを確認）する。
-
-追加チェックリスト（テスト項目）
-
- AppHistory がページロード時に存在し、executeCommand/undo/redo が関数であること（コンソール断言）。
-
- Ctrl/Cmd+Z で AppHistory.undo() が呼ばれる（イベント発火時に preventDefault される）。
-
- レイヤーの追加/削除を行い、Undo で復元、Redo で再実行できる。
-
- getGlobalBounds エラーが消え、コンソールに Maximum call stack size exceeded が出ないこと。
-
- レイヤーパネル UI の縦横比がキー操作で崩れない。
-
- ✗ ボタンでレイヤーが消え、Undo で復元する。
-
-プレーンな改修計画書（.txt）
-
-以下は要求どおりプレーンテキスト（コードブロック）での改修計画書です。リリース／レビュー手順、優先度、想定差分の概要を含めています。プロジェクト管理にそのまま貼れます。
-
-=== 改修計画書: PixiJS v8.13 お絵かきツール (v8.13_anime37) ===
-作成日: 2025-10-05
-作成者: AI (改修提案)
-
-目的:
-- 表示不具合、Undo/Redo 問題、レイヤーパネルの不整合、ボタン未動作、そして getGlobalBounds 関連の例外を解消する。
-
-優先度一覧:
-  P0 (即時対応)
-    1) History グローバル名衝突の解消と安定実装
-       - 影響範囲: 全ての undo/redo を担う部分
-       - 対応: window.History → window.AppHistory へ統一。history モジュールを再実装。
-    2) getGlobalBounds の無限再帰を停止
-       - 影響範囲: 画面表示、bounds 計算、スタックオーバーフロー
-       - 対応: カスタム上書きを廃止または安全実装へ置換。循環参照のチェックを追加。
-
-  P1 (高)
-    3) 全ての状態変更を Command パターンで統一する
-       - 対応: command-base を基準に、レイヤー追加/削除、タイムライン変更をコマンド化。AppHistory 経由で実行。
-    4) キーハンドラのスコープ化
-       - 対応: Document レベルの keydown を整理。入力フォーカス時は無効化。Undo/Redo は global、タイムライン移動は timeline focus のみ。
-
-  P2 (中)
-    5) レイヤーパネルの UI レイアウト分離
-       - 対応: CSS を flexbox に修正し canvas の変形が UI に影響しないようにする。DOM 操作は最小限に。
-    6) レイヤー削除ボタンのイベント確実化
-       - 対応: data属性で layer id 管理、削除は Command 経由で実行し undo を可能にする。
-
-  P3 (低)
-    7) 未使用ファイルの静的解析とフェーズ削除
-       - 対応: grep で参照を調べ、候補を段階的に削除。
-
-改修手順（ステップ実行）
-  STEP A: ブランチ作成
-    - ブランチ名: fix/history-bounds-keyboard-YYYYMMDD
-
-  STEP B: History モジュール差し替え（P0-1）
-    - file: system/history.js を差し替え。global 名は window.AppHistory。
-    - 置換: repo 内の window.History を一括検索して window.AppHistory に変更。
-    - テスト: ページロード後、コンソールで `typeof window.AppHistory.executeCommand === 'function'` を確認。
-
-  STEP C: getGlobalBounds 修正（P0-2）
-    - file: getGlobalBounds.ts (存在する場合) を JS 実装に差し替え or 削除。
-    - 追加: safeGetGlobalBounds util を実装し、必要箇所だけそちらを呼ぶ。
-    - テスト: bounds 関連のエラー（Maximum call stack）確認。
-
-  STEP D: コマンド統一（P1-3）
-    - file: system/command-base.js, system/layer-commands.js, system/animation-commands.js を確認。
-    - 対応: すべての状態変更処理で `AppHistory.executeCommand(new Command(...))` で実行するように修正。
-    - テスト: レイヤーの追加→Ctrl+Zで undo、Ctrl+Y で redo。
-
-  STEP E: キーハンドラ整理（P1-4）
-    - file: core-runtime.js や ui/timeline-ui.js 内の keydown ハンドラを修正。
-    - 実装: フォーカス判定、preventDefault を必ず行う。
-    - テスト: タイムライン操作と Undo の競合が無いこと。
-
-  STEP F: UI レイアウト修正（P2）
-    - file: ui/*.js, index.html の CSS
-    - 実装: レイヤーパネルに固定レイアウト（flexbox）。canvas transform を UI に適用しない。
-    - テスト: 矢印キーや Ctrl 操作で縦長になる現象が消えるか確認。
-
-  STEP G: リファクタと不要ファイル削除（P3）
-    - grep で参照されないファイル列挙 -> チェックリスト化 -> 段階削除。
-
-リスクと留意点:
-- `window` 名の置換は慎重に。外部ライブラリやブラウザ組み込みと衝突している箇所を潰す。
-- getGlobalBounds の変更で描画結果に微差が出る可能性あり（特に透過や回転時）。復帰用のテストカバーを用意する。
-- コマンド統一は破壊力があるため、段階的に (レイヤー→タイムライン→アニメ関連) と進める。
-
-デバッグ & テスト方法:
-- Chrome local file:// 実行を前提に、devtools で break-on-exception を有効にしてから修正を当てる。
-- 重要な断言を入れる（例: `if (!window.AppHistory) throw new Error('AppHistory missing');`）。
-- 単体: レイヤー add/remove、タイムライン操作、undo/redo を自動テスト的に手順書化（手順/期待値）して実行。
-
-成果物:
-- 修正ブランチ上にパッチを投入（PR 作成）。PR 説明には上のチェックリストと差分の一覧を添付。
-- 修正済みビルドで `Maximum call stack size exceeded` と `executeCommand is not a function` が出ないことを確認。
-
---- End of plan
+以上
