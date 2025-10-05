@@ -1,0 +1,199 @@
+========================================
+お絵かきツール問題分析および改修計画書
+========================================
+
+作成日：2024年12月
+対象バージョン：v8.13_anime36
+PixiJS バージョン：8.13
+
+========================================
+【1. 重大問題の分析】
+========================================
+
+1.1 キャンバスとレイヤーパネルが表示されない
+--------------------------------------
+[原因]
+- camera-system.js の初期化で app.stage が正しく設定されていない
+- core-runtime.js で stage への container 追加に失敗している可能性
+- layer-system.js の currentCutContainer が正しく初期化されていない
+
+[詳細]
+camera-system.js の _createContainers() で:
+- this.app.stage.addChild(this.worldContainer) が失敗
+- stage 参照が { stage: stage } として設定されるが、実際の stage オブジェクトが正しくない
+
+1.2 Ctrl+Z/Y の挙動不具合
+--------------------------------------
+[原因]
+- index.html のキーボードハンドラで History.undo/redo を呼び出しているが、History モジュールが未初期化
+- system/history.js が正しく読み込まれていない可能性
+- StateManager との連携が不完全
+
+1.3 方向キーの動作不安定
+--------------------------------------
+[原因]
+- animation-system.js の goToPreviousFrame/goToNextFrame メソッドが存在しない
+- 実際は moveToPreviousCut/moveToNextCut である可能性
+- 一段とばしはインデックス管理の問題
+
+========================================
+【2. ファイル依存関係の問題】
+========================================
+
+2.1 循環参照の可能性
+--------------------------------------
+- camera-system.js ← layer-system.js ← camera-system.js の相互参照
+- animation-system.js が layer-system と相互参照
+
+2.2 未使用ファイルの可能性
+--------------------------------------
+確認が必要なファイル:
+- system/command-base.js
+- system/layer-commands.js
+- system/animation-commands.js
+- ui/timeline-thumbnail-utils.js
+
+========================================
+【3. アンドゥシステムの問題】
+========================================
+
+3.1 Command パターンの不整合
+--------------------------------------
+- layer-system.js で CreateLayerCommand, DeleteLayerCommand などを使用しているが、
+  これらのコマンドクラスの実装が system/layer-commands.js に存在するか不明
+- History モジュールの初期化タイミングが不適切
+
+3.2 StateManager の初期化問題
+--------------------------------------
+- core-engine.js で StateManager を初期化しているが、
+  window.StateManager が存在しない可能性
+- state-manager.js が正しく読み込まれているか確認必要
+
+========================================
+【4. 改修計画】
+========================================
+
+Phase 1: 表示問題の修正（最優先）
+--------------------------------------
+1. camera-system.js の修正:
+   - init メソッドで stage 参照を修正
+   - app オブジェクトの構造を適切に設定
+
+2. core-runtime.js の修正:
+   - switchCut での container 追加処理を修正
+   - safeAddChild のエラーハンドリング改善
+
+3. layer-system.js の修正:
+   - currentCutContainer の初期化を確実に行う
+   - setCurrentCutContainer の呼び出しタイミング修正
+
+Phase 2: キー操作の修正
+--------------------------------------
+1. index.html の修正:
+   - goToPreviousFrame → moveToPreviousCut
+   - goToNextFrame → moveToNextCut
+
+2. History システムの確認:
+   - system/history.js の初期化確認
+   - StateManager との連携確認
+
+3. animation-system.js のメソッド確認:
+   - 正しいメソッド名の使用
+
+Phase 3: アンドゥシステムの安定化
+--------------------------------------
+1. Command パターンの完全実装:
+   - 各コマンドクラスの実装確認
+   - History への登録フロー確認
+
+2. StateManager の改善:
+   - 初期化タイミングの修正
+   - リスナー登録の確認
+
+========================================
+【5. 即時対応が必要な修正】
+========================================
+
+5.1 camera-system.js の init メソッド修正
+--------------------------------------
+変更前:
+```javascript
+if (stage && stage.addChild) {
+    this.app = { stage: stage };
+}
+```
+
+変更後:
+```javascript
+if (stage && stage.addChild) {
+    this.app = stage.parent || { stage: stage };
+    if (!this.app.stage) {
+        this.app.stage = stage;
+    }
+}
+```
+
+5.2 index.html のキーボードハンドラ修正
+--------------------------------------
+変更前:
+```javascript
+if (window.animationSystem?.goToPreviousFrame) {
+    window.animationSystem.goToPreviousFrame();
+}
+```
+
+変更後:
+```javascript
+if (window.animationSystem?.moveToPreviousCut) {
+    window.animationSystem.moveToPreviousCut();
+}
+```
+
+5.3 core-engine.js の初期化順序修正
+--------------------------------------
+1. StateManager の存在確認を追加
+2. History の初期化タイミング調整
+3. AnimationSystem の初期化後に layer-system の currentCutContainer 設定
+
+========================================
+【6. デバッグ手順】
+========================================
+
+1. ブラウザコンソールで以下を確認:
+   - window.drawingApp の構造
+   - window.drawingApp.cameraSystem.worldContainer の存在
+   - window.drawingApp.layerManager.currentCutContainer の存在
+   - window.animationSystem のメソッド一覧
+   - window.History の存在と初期化状態
+
+2. 初期化順序の確認:
+   - camera-system → layer-system → animation-system の順序
+   - 各システムの init メソッドの戻り値確認
+
+3. イベント発火の確認:
+   - 'system:ready' イベント
+   - 'animation:initial-cut-created' イベント
+   - 'core:initialized' イベント
+
+========================================
+【7. 推奨される実装順序】
+========================================
+
+1. まず表示問題を解決（Phase 1）
+2. 表示確認後、キー操作を修正（Phase 2）
+3. 基本機能確認後、アンドゥシステムを安定化（Phase 3）
+
+各フェーズ完了後に動作確認を行い、
+問題がないことを確認してから次のフェーズへ進むこと。
+
+========================================
+【8. 注意事項】
+========================================
+
+- PixiJS v8.13 の API 変更に注意
+- ES2023 準拠（モジュール不使用）
+- フォールバック処理は追加しない
+- エラー演出は追加しない
+- 冗長なログ出力は避ける
+
+========================================
