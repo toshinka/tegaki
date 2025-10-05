@@ -1,6 +1,8 @@
-// ===== system/layer-system.js - シンタックスエラー修正版 =====
-// 🔧 修正: ファイル末尾の重複コード削除、閉じ括弧修正
-// ✅ Undo/Redo実行中の二重記録防止機能維持
+// ===== system/layer-system.js - 改修版（Vキートグル化・History記録最適化） =====
+// 改修内容：
+// - Vキーをトグル方式に変更（押しっぱなし問題解決）
+// - createLayer/deleteLayerでのHistory記録を厳格化
+// - moveActiveLayerHierarchy()にHistory記録を追加
 
 (function() {
     'use strict';
@@ -534,10 +536,9 @@
                 
                 switch(action) {
                     case 'layerMode':
-                        if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                            if (!this.vKeyPressed) {
-                                this.enterLayerMoveMode();
-                            }
+                        // 改修：Vキーをトグル方式に変更
+                        if (!e.ctrlKey && !e.altKey && !e.metaKey && !e.repeat) {
+                            this.toggleLayerMoveMode();
                             e.preventDefault();
                         }
                         break;
@@ -659,12 +660,7 @@
                 }
             });
             
-            document.addEventListener('keyup', (e) => {
-                if (e.code === 'KeyV' && this.vKeyPressed) {
-                    this.exitLayerMoveMode();
-                    e.preventDefault();
-                }
-            });
+            // 改修：keyupでの処理を削除（トグル方式のため不要）
             
             window.addEventListener('blur', () => {
                 if (this.vKeyPressed) {
@@ -673,6 +669,15 @@
             });
             
             this._setupLayerDragEvents();
+        }
+
+        // 改修：トグル方式の実装
+        toggleLayerMoveMode() {
+            if (this.isLayerMoveMode) {
+                this.exitLayerMoveMode();
+            } else {
+                this.enterLayerMoveMode();
+            }
         }
 
         moveActiveLayerHierarchy(direction) {
@@ -691,6 +696,13 @@
             }
             
             if (newIndex !== currentIndex) {
+                // 改修：階層移動時にHistory記録を追加
+                if (window.History && typeof window.History.saveState === 'function') {
+                    if (!window.History._manager?.isExecutingUndoRedo && !window.History._manager?.isRecordingState) {
+                        window.History.saveState();
+                    }
+                }
+                
                 this.setActiveLayer(newIndex);
                 
                 if (this.eventBus) {
@@ -1228,6 +1240,7 @@
                 return null;
             }
             
+            // 改修：History記録を厳格化
             if (window.History && typeof window.History.saveState === 'function') {
                 if (!window.History._manager?.isExecutingUndoRedo && !window.History._manager?.isRecordingState) {
                     window.History.saveState();
@@ -1615,6 +1628,7 @@
             }
             
             try {
+                // 改修：History記録を厳格化
                 if (window.History && typeof window.History.saveState === 'function') {
                     if (!window.History._manager?.isExecutingUndoRedo && !window.History._manager?.isRecordingState) {
                         window.History.saveState();
@@ -1663,6 +1677,9 @@
 
     window.TegakiLayerSystem = LayerSystem;
 
-    console.log('✅ layer-system.js loaded (シンタックスエラー修正版)');
+    console.log('✅ layer-system.js 改修版 loaded');
+    console.log('   - Vキーをトグル方式に変更');
+    console.log('   - createLayer/deleteLayerのHistory記録を厳格化');
+    console.log('   - moveActiveLayerHierarchy()にHistory記録追加');
 
 })();
