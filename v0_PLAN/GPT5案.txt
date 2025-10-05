@@ -1,93 +1,198 @@
-現状の問題点の共通項
+結論（短く）
 
-レイヤー作成／カット作成の履歴管理が不安定
+最もありそうな原因は スクリプトの依存関係（読み込み順）による即時例外で初期化処理が止まっている ことです。core-runtime.js が window.CoordinateSystem や TEGAKI_CONFIG を先に確認して throw しているため、以降のUI生成コードが実行されません。実際に core-runtime.js に if (!window.CoordinateSystem) { throw new Error('coordinate-system.js dependency missing'); } とあります。
+GitHub
 
-1操作でHistoryに2カウントされる
+対処は（A）まずコンソールの初期エラーを確認して（B）スクリプトの読み込み順を config.js → coordinate-system.js → 各 system/*.js → core-engine/core-runtime.js の順に固定、そして（C）初期化を DOMContentLoaded / 明示的 init 呼び出しで遅延させる、の3点が最優先です。関連ファイルは index.html と core-runtime の初期化ロジックです（該当箇所を参照）。
+GitHub
++1
 
-Undoするときに効かない／二度押しでようやく消える
+以下、詳細（診断方法・具体パッチ・改修計画）をそのまま実行できる形で書きます。
 
-新規レイヤー作成後の最初のペン描画で挙動がおかしい
+1) 即時確認（3コマンド — ブラウザでやる）
 
-「操作登録のトランザクション境界」が不明確
+まず本当に依存性エラーで止まっているか確かめます（コピー＆ペーストでOK）。
 
-→ つまり「どのシステムが履歴を持つか」「どのタイミングで履歴に記録するか」が曖昧になっている。
+コンソールに以下を貼って実行（開発者ツール → Console）：
 
-所有権の見直しポイント
+// 1) 依存グローバルの有無
+console.log('CoordinateSystem:', !!window.CoordinateSystem);
+console.log('TEGAKI_CONFIG:', !!window.TEGAKI_CONFIG);
+console.log('CoreRuntime defined:', !!window.CoreRuntime);
 
-Historyは「操作単位」で持つべき
-→ LayerSystem, AnimationSystem など各サブシステムがバラバラに履歴を push すると多重登録が起こる。
+// 2) エラー履歴の先頭（あれば最も有用）
+console.warn('最近のError.stack（最初の数行）を確認してください');
+// 既に発生したエラーがあるか確認（Chromeなら Console の Errors タブで見る）
 
-状態の実データを一元管理する場所が必要
 
-state-manager.js が既にあるけれど、中途半端に責務が散っているように見える。
+false が出れば、その依存ファイルが まだ読み込まれていない or 読み込み時例外で定義されなかった ことが確定します（core-runtime.js は明示的に throw する実装があります）。
+GitHub
 
-Undo/Redoのためには「全ての変更対象オブジェクト」が一元的に参照される必要がある。
+2) 根本原因（なぜキャンバス・パネルが出ないか）
 
-Commandパターンの徹底化
+根拠と共に要点だけ：
 
-command-base.js や layer-commands.js があるが、今は半分だけ導入されていて「直接状態変更」＋「履歴push」が混ざっている。
+core-runtime.js の冒頭で if (!window.CoordinateSystem) { throw new Error('coordinate-system.js dependency missing'); } としており、依存グローバルが無ければ即座に例外を投げる。この例外でスクリプト実行が止まり、以降の UI 初期化やサイドバー hookup が行われない（結果：キャンバスもレイヤーパネルもボタンも無反応）。
+GitHub
 
-改修の選択肢
-A. 現行ファイル構造を維持しつつ修正
+同じく TEGAKI_CONFIG（config.js）も必須チェックされます。これらが未定義だと同様に初期化不能。
+GitHub
++1
 
-layer-commands.js, animation-system.js などから 直接 History に push しないようにする。
+したがって index.html のスクリプトタグ順、あるいはファイルの読み込みで例外が起きている（file:// での差異、相対パスミス、CSPやブラウザのブロックは稀だが排除要）ことが最も高確率です。該当 index の UI 表示部は確認できましたが、スクリプト実行が途中で止まっている形跡があります。
+GitHub
 
-すべての操作は必ず CommandBase を継承したクラス経由で行い、History に登録。
+3) すぐできる修正（最短パッチ）
 
-state-manager.js を「唯一のデータ所有者」に寄せて、layer-system.js や animation-system.js はあくまで 表示や補助ロジックに専念。
+目的：依存が揃ってから CoreRuntime を初期化する
+index.html の <script> を次の順に配置してください（ファイルがローカルにある想定）：
 
-メリット:
+pixijs CDN（v8.13）
 
-既存のファイル構造は保てる → Claude が今後も改修しやすい
+config.js（必ず先に）
 
-修正範囲が限定的
+coordinate-system.js
 
-デメリット:
+system/*.js（state-manager, layer-system, event-bus, ...）── 依存関係に応じた順序で
 
-state-manager.js が肥大化しやすい
+core-engine.js（エンジン本体）
 
-過去に直書きしている部分を全てCommand経由に書き直す必要あり
+core-runtime.js（最終）
 
-B. ファイル統合・再設計（History中心に再編）
+最後に初期化呼び出し（下に例）
 
-history.js を中心に据え、以下の役割を分割
+index.html に追加する“安全な初期化”コード例（</body>直前に置く）：
 
-state-manager.js → 単なるデータストア（documentモデル）
+<script>
+  window.addEventListener('DOMContentLoaded', function() {
+    // 簡易チェック（開発段階では console.log を許容）
+    if (!window.TEGAKI_CONFIG) { console.error('config.js が読み込まれていません'); return; }
+    if (!window.CoordinateSystem) { console.error('coordinate-system.js が読み込まれていません'); return; }
+    if (!window.CoreRuntime) { console.error('core-runtime.js が読み込まれていません'); return; }
 
-command-*.js → 操作単位のクラス群
+    // 既存の app 初期化処理がある場合はそれを流用
+    // 例：App を作る処理
+    const app = new PIXI.Application({ width: TEGAKI_CONFIG.canvas.width, height: TEGAKI_CONFIG.canvas.height, backgroundAlpha: 0 });
+    document.getElementById('canvas-root')?.appendChild(app.view);
 
-history.js → Commandを記録してUndo/Redo
+    // 必要なコンテナ群を作る（CoreRuntime.init が期待する shape）
+    const options = {
+      app: app,
+      worldContainer: new PIXI.Container(),
+      canvasContainer: new PIXI.Container(),
+      cameraSystem: window.cameraSystem || null,
+      layerManager: window.layerManager || null,
+      drawingEngine: window.drawingEngine || null
+    };
 
-layer-system.js などのサブシステムは 絶対に状態を持たず、必ず state-manager 経由で更新
+    // attach containers if not already
+    app.stage.addChild(options.worldContainer);
+    options.worldContainer.addChild(options.canvasContainer);
 
-メリット:
+    try {
+      window.CoreRuntime.init(options);
+      console.log('CoreRuntime 初期化呼び出し成功');
+    } catch (e) {
+      console.error('CoreRuntime.init で例外:', e);
+    }
+  });
+</script>
 
-Undo/Redoが一貫して堅牢になる
 
-所有権が明確になり、「誰がデータを持つか」が迷子にならない
+理由：直接 CoreRuntime がロード直後に即実行（例：ファイル内で即実行 init）される設計だと依存が揃っていないタイミングで例外が出ます。DOMContentLoaded まで遅延させることで、相対パスのロード遅延や file:// の読み込み順問題を回避できます。
 
-拡張（例えば「Redo後に新しい操作したら枝分かれを管理する」など）がしやすい
+4) 安全にするための core-runtime 改修提案（推奨）
 
-デメリット:
+core-runtime.js の冒頭で throw している箇所を 即例外にする設計はデバッグ時に有効だが本運用では致命的。運用を楽にするため、明示的 init 呼び出しのみで初期化するように変更を推奨します（つまり auto-init を止める）。
 
-構造を大きく見直すため、Claudeへの依頼時に手間が増える
+差分イメージ（修正例）：
 
-開発途中のコード量が増えているので、一度リファクタリング期間が必要
+- if (!window.CoordinateSystem) { throw new Error('coordinate-system.js dependency missing'); }
+- const CONFIG = window.TEGAKI_CONFIG; if (!CONFIG) { throw new Error('config.js dependency missing'); }
++ // 依存は init 時にチェックする（呼び出し側で明示的に初期化を行う）
++ // （デバッグしやすくするため console.error に留める）
++ const CONFIG = window.TEGAKI_CONFIG;
++ if (!window.CoordinateSystem) { console.error('coordinate-system.js 未ロード: CoreRuntime.init 呼び出し前に読み込んでください'); }
++ if (!CONFIG) { console.error('config.js 未ロード: CoreRuntime.init 呼び出し前に読み込んでください'); }
 
-GPT視点でのおすすめ
 
-B案（History中心への再設計）を軽く導入する形が良いと思います。
-→ 完全に再設計すると大掛かりなので、まずは **「全操作をCommand経由に通す」**ルールを徹底。
-→ その後、必要に応じてstate-managerを「唯一の所有者」として整理。
+そして init(options) の先頭に依存チェックを入れて、足りない場合は return false / 明確なエラーオブジェクトを返す形にします。これにより「なぜ表示されないか」が分かりやすくなります（ログが出る→次の修正がとれる）。
 
-次のステップ提案
+（注：現在の core-runtime.js の中で throw している箇所を確認しました。）
+GitHub
 
-どこでHistoryにpushしているかを調査（layer-commands.js、animation-system.js など）
+5) 追加のチェックポイント（必ず見る）
 
-Commandパターンの一本化ルールを決める
+ブラウザ Console の最初のエラーを必ずスクショ／コピペ。最初の例外で後続が止まります。
 
-「状態更新は必ずCommand経由」
+スクリプトタグの src が**相対パス（./system/...）**になっているか。file:// だと ../ の解釈ミスが起きやすい。
 
-「Commandは必ずHistoryにpushされる」
+pixi の CDN が正しく読み込まれているか（v8.13）。PIXI が未定義だとアプリが死にます。
 
-その上で、state-manager.jsを「単なる状態保持のストア」として整理していく
+core-engine.js / core-runtime.js 内で 即時実行（IIFE） と init の呼び出しが混在していないか。自動で init() を呼んでいる箇所があると順序問題が再発します。
+
+6) 優先度付き改修計画（短期→中期→長期）
+フェーズA（今日〜数時間, 優先度: 高）
+
+1-1. ブラウザ Console の最初のエラーを取得（ユーザー作業）。
+
+1-2. index.html の <script> を「順序固定＋DOMContentLoadedによる初期化」に変更（上のサンプルを貼る）。
+
+1-3. core-runtime の冒頭の throw を一時的に console.error に置換して明示ログに（デバッグ容易化）。
+GitHub
+
+成果物：キャンバス表示・サイドバーの初期 hookup が復活するはず。
+
+フェーズB（数日, 優先度: 中）
+
+2-1. 依存関係のドキュメント化（README） — ファイルロード順、グローバル変数、init API。
+
+2-2. 各 system/*.js に 明示的な register() 関数 を追加して CoreRuntime 側から順に初期化できるようにする（依存注入化）。
+
+2-3. エラーハンドリング改善：UIに「初期化エラー」バナー（最小限）を出す（ただし過度な演出は不要とのこと）。
+
+フェーズC（将来、優先度: 低）
+
+3-1. モジュール的な読み込み管理（軽量な loader：手作りで window.Loader.load(['config.js','coordinate-system.js',...], cb) を作る）を実装。
+
+3-2. E2E テスト（ヘッドレスブラウザ）でスクリプト順問題を回帰検出。※現ルールで Node/bundler 禁止なので軽量な Phantom-like テストを検討。
+
+7) 修正パッチ（すぐ貼れる）
+
+A. index.html の script 順例（抜粋）
+
+<!-- 1) Pixi -->
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/browser/pixi.min.js"></script>
+
+<!-- 2) Config -->
+<script src="./config.js"></script>
+
+<!-- 3) Coordinate system -->
+<script src="./coordinate-system.js"></script>
+
+<!-- 4) system/（依存順に） -->
+<script src="./system/event-bus.js"></script>
+<script src="./system/state-manager.js"></script>
+<script src="./system/layer-system.js"></script>
+<!-- ... 他 system/*.js ... -->
+
+<!-- 5) core-engine, core-runtime -->
+<script src="./core-engine.js"></script>
+<script src="./core-runtime.js"></script>
+
+<!-- 6) 最後に遅延初期化（上で示した DOMContentLoaded ブロックをここに） -->
+
+
+B. core-runtime.js の init チェック追加（抜粋）
+
+init(options) {
+  if (!window.CoordinateSystem) {
+    console.error('CoreRuntime.init: CoordinateSystem が見つかりません。coordinate-system.js を先に読み込んでください');
+    return false;
+  }
+  if (!window.TEGAKI_CONFIG) {
+    console.error('CoreRuntime.init: TEGAKI_CONFIG が見つかりません。config.js を先に読み込んでください');
+    return false;
+  }
+  // 以降は既存処理...
+}
