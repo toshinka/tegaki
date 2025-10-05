@@ -1,5 +1,5 @@
 // ================================================================================
-// system/layer-system.js - Phase 2b-3完全修正版（依存チェック追加）
+// system/layer-system.js - Phase 2-B完全修正版（キーイベント重複削除）
 // ================================================================================
 
 (function() {
@@ -45,14 +45,14 @@
             // 座標システム
             this.coordAPI = window.CoordinateSystem;
             
-            // StateManager変更監視（存在確認）
+            // StateManager変更監視
             if (this.stateManager && typeof this.stateManager.addListener === 'function') {
                 this.stateManager.addListener((state, source) => {
                     this.onStateChanged(state, source);
                 });
             }
             
-            // 初期化は遅延実行（config確実にロード後）
+            // 初期化は遅延実行
             if (typeof requestAnimationFrame !== 'undefined') {
                 requestAnimationFrame(() => {
                     this._setupLayerOperations();
@@ -802,7 +802,7 @@
             this.updateFlipButtons();
         }
 
-        // ===== レイヤー操作（キーボード）=====
+        // ===== Phase 2-B: レイヤー操作（キーイベント重複削除版）=====
         
         _setupLayerOperations() {
             document.addEventListener('keydown', (e) => {
@@ -817,6 +817,7 @@
                 if (!action) return;
                 
                 switch(action) {
+                    // === V キー: レイヤー移動モード ===
                     case 'layerMode':
                         if (!e.ctrlKey && !e.altKey && !e.metaKey) {
                             if (!this.vKeyPressed) {
@@ -825,39 +826,15 @@
                             e.preventDefault();
                         }
                         break;
-                        
-                    case 'gifPrevFrame':
-                        if (!this.vKeyPressed && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                            if (this.animationSystem?.goToPreviousFrame) {
-                                this.animationSystem.goToPreviousFrame();
-                            }
-                            e.preventDefault();
-                        }
-                        break;
-                        
-                    case 'gifNextFrame':
-                        if (!this.vKeyPressed && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                            if (this.animationSystem?.goToNextFrame) {
-                                this.animationSystem.goToNextFrame();
-                            }
-                            e.preventDefault();
-                        }
-                        break;
                     
-                    case 'layerUp':
-                        if (!this.vKeyPressed && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                            this.moveActiveLayerHierarchy('up');
-                            e.preventDefault();
-                        }
-                        break;
-                        
-                    case 'layerDown':
-                        if (!this.vKeyPressed && !e.shiftKey && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                            this.moveActiveLayerHierarchy('down');
-                            e.preventDefault();
-                        }
-                        break;
+                    // === Phase 2-B: 以下のケースを削除（index.htmlで処理） ===
+                    // - gifPrevFrame (方向キー←)
+                    // - gifNextFrame (方向キー→)
+                    // - layerUp (方向キー↑)
+                    // - layerDown (方向キー↓)
+                    // - Ctrl+Z / Ctrl+Y (Undo/Redo)
                     
+                    // === ツール切り替えでレイヤー移動モード解除 ===
                     case 'pen':
                     case 'eraser':
                         if (!e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -868,6 +845,7 @@
                         }
                         break;
                     
+                    // === V キー押下中の方向キー: レイヤー位置移動 ===
                     case 'layerMoveUp':
                         if (this.vKeyPressed && !e.shiftKey) {
                             this.moveActiveLayer('ArrowUp');
@@ -896,6 +874,7 @@
                         }
                         break;
                     
+                    // === V + Shift + 方向キー: 回転・拡縮 ===
                     case 'layerScaleUp':
                         if (this.vKeyPressed && e.shiftKey) {
                             this.transformActiveLayer('ArrowUp');
@@ -924,6 +903,7 @@
                         }
                         break;
                     
+                    // === V + F: 反転 ===
                     case 'horizontalFlip':
                         if (this.vKeyPressed && !e.ctrlKey && !e.altKey && !e.metaKey) {
                             if (e.shiftKey) {

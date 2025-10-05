@@ -1,6 +1,8 @@
-// ===== core-engine.js - Phase 1-C修正版 =====
-// 🔧 Phase 1-C: UnifiedKeyHandlerからUndo/Redo/方向キー処理を削除
-// キーボード処理は index.html に一元化
+// ===== core-engine.js - Phase 2完全修正版 =====
+// 🔧 Phase 2: 
+// - UnifiedKeyHandlerから方向キー/Undo/Redo完全削除
+// - StateManager初期化追加
+// - キーボード処理は index.html に完全一元化
 
 (function() {
     'use strict';
@@ -272,8 +274,7 @@
         }
     }
 
-    // === Phase 1-C: UnifiedKeyHandler簡素化 ===
-    // Undo/Redo/方向キーは index.html で処理
+    // === Phase 2: UnifiedKeyHandler最小化（ツール切り替えのみ） ===
     class UnifiedKeyHandler {
         constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
             this.cameraSystem = cameraSystem;
@@ -292,23 +293,8 @@
             document.addEventListener('keydown', (e) => {
                 if (!this.keyHandlingActive) return;
                 
-                // === Phase 1-C: Undo/Redo/方向キーはスキップ ===
-                // これらは index.html の統合キーハンドラで処理
-                const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-                const metaKey = isMac ? e.metaKey : e.ctrlKey;
-                
-                // Undo/Redo系
-                if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
-                    return;
-                }
-                
-                // 方向キー（修飾キーなし）
-                if (!metaKey && !e.shiftKey && !e.altKey) {
-                    if (e.code === 'ArrowLeft' || e.code === 'ArrowRight' || 
-                        e.code === 'ArrowUp' || e.code === 'ArrowDown') {
-                        return;
-                    }
-                }
+                // === Phase 2: すべてのキー処理を index.html に委譲 ===
+                // ここでは何も処理しない（将来的な拡張用のみ）
                 
                 this.handleKeyDown(e);
             });
@@ -328,96 +314,12 @@
         }
         
         handleKeyDown(e) {
-            const action = this.keyConfig.getActionForKey(e.code, {
-                vPressed: this.layerSystem.vKeyPressed,
-                shiftPressed: e.shiftKey,
-                altPressed: e.altKey
-            });
-            
-            if (this.handleSpecialKeys(e)) {
-                return;
-            }
-            
-            if (!action) return;
-            
-            switch(action) {
-                case 'pen':
-                    if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.switchTool('pen');
-                        if (this.layerSystem.isLayerMoveMode) {
-                            this.layerSystem.exitLayerMoveMode();
-                        }
-                        e.preventDefault();
-                    }
-                    break;
-                    
-                case 'eraser':
-                    if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.switchTool('eraser');
-                        if (this.layerSystem.isLayerMoveMode) {
-                            this.layerSystem.exitLayerMoveMode();
-                        }
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifToggleAnimation':
-                    if (e.altKey && window.timelineUI) {
-                        window.timelineUI.toggle();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifAddCut':
-                    if (e.altKey && this.animationSystem) {
-                        this.animationSystem.createCutFromCurrentState();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifPlayPause':
-                    if (e.code === 'Space' && this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                        this.animationSystem.togglePlayPause();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifPrevFrame':
-                    if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                        this.animationSystem.goToPreviousFrame();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifNextFrame':
-                    if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                        this.animationSystem.goToNextFrame();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'delete':
-                    if (e.code === 'Delete' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.eventBus.emit('layer:clear-active');
-                        e.preventDefault();
-                    }
-                    break;
-            }
+            // Phase 2: キー処理は index.html で完全に処理
+            // ここでは特殊な処理のみ（現在はなし）
         }
         
         handleKeyUp(e) {
-        }
-        
-        handleSpecialKeys(e) {
-            if (e.ctrlKey && e.code === 'Digit0') {
-                return false;
-            }
-            
-            if (e.code === 'Space') {
-                return false;
-            }
-            
-            return false;
+            // Phase 2: キー処理は index.html で完全に処理
         }
         
         switchTool(tool) {
@@ -462,8 +364,22 @@
                 throw new Error('window.TegakiEventBus is required');
             }
             
+            // === Phase 2: StateManager初期化追加 ===
+            this.stateManager = null;
+            if (window.StateManager) {
+                this.stateManager = new window.StateManager();
+            }
+            
             this.cameraSystem = new window.TegakiCameraSystem();
-            this.layerSystem = new window.TegakiLayerSystem();
+            
+            // === Phase 2: StateManagerをLayerSystemに渡す ===
+            this.layerSystem = new window.TegakiLayerSystem(
+                app,
+                CONFIG,
+                this.stateManager,  // ← 追加
+                this.eventBus
+            );
+            
             this.clipboardSystem = new window.TegakiDrawingClipboard();
             this.drawingEngine = new DrawingEngine(this.cameraSystem, this.layerSystem, this.eventBus, CONFIG);
             
@@ -587,6 +503,7 @@
         getTimelineUI() { return this.timelineUI; }
         getKeyHandler() { return this.keyHandler; }
         getEventBus() { return this.eventBus; }
+        getStateManager() { return this.stateManager; }
         
         setupCanvasEvents() {
             const canvas = this.app.canvas || this.app.view;
@@ -699,7 +616,6 @@
                 systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history']
             });
             
-            // === Phase 1-A: 戻り値をthisに変更（不要だが互換性のため維持） ===
             return this;
         }
     }
@@ -717,8 +633,9 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (Phase 1-C修正版) loaded');
-    console.log('  - UnifiedKeyHandlerからUndo/Redo/方向キー処理削除');
-    console.log('  - キーボード処理はindex.htmlに一元化');
+    console.log('✅ core-engine.js (Phase 2完全修正版) loaded');
+    console.log('  - UnifiedKeyHandlerから全キー処理削除');
+    console.log('  - StateManager初期化追加');
+    console.log('  - キーボード処理は100% index.htmlに委譲');
 
 })();

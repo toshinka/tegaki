@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 Phase 1修正版 - PixiJS v8.13 お絵かきツール</title>
+    <title>🎨 Phase 2完全修正版 - PixiJS v8.13 お絵かきツール</title>
     <style>
         * {
             margin: 0;
@@ -759,6 +759,14 @@
                     <div class="panel-section">
                         <div class="compact-slider-group">
                             <div class="compact-slider">
+                                <div class="compact-slider-label">X</div>
+                                <div class="slider" id="layer-x-slider">
+                                    <div class="slider-track"></div>
+                                    <div class="slider-handle"></div>
+                                </div>
+                                <div class="slider-value" id="layer-x-value">0px</div>
+                            </div>
+                            <div class="compact-slider">
                                 <div class="compact-slider-label">Y</div>
                                 <div class="slider" id="layer-y-slider">
                                     <div class="slider-track"></div>
@@ -865,7 +873,7 @@
     <script src="core-runtime.js"></script>
 
     <script>
-// ===== Phase 1修正版: 統合キーボードハンドラ =====
+// ===== Phase 2完全修正版: 統合キーボードハンドラ =====
 (function() {
     'use strict';
     
@@ -889,7 +897,7 @@
                 activeElement.isContentEditable
             )) return;
             
-            // === Phase 1-C: Undo/Redo修正 ===
+            // === Phase 2: Undo/Redo（重複防止） ===
             
             // Ctrl+Z: Undo（Shiftなし）
             if (e.ctrlKey && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
@@ -918,21 +926,21 @@
                 return;
             }
             
-            // === Phase 1-C: 方向キー修正 ===
+            // === Phase 2-A: 方向キー（メソッド名修正・方向性修正） ===
             
-            // ←: 前のCUTへ移動（修飾キーなし）
+            // ←: 前のCUTへ移動（修飾キーなし）- goToPreviousFrame()を使用
             if (e.code === 'ArrowLeft' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-                if (window.animationSystem?.goToNextCut) {
-                    window.animationSystem.goToNextCut();
+                if (window.animationSystem?.goToPreviousFrame) {
+                    window.animationSystem.goToPreviousFrame();
                 }
                 e.preventDefault();
                 return;
             }
             
-            // →: 次のCUTへ移動（修飾キーなし）
+            // →: 次のCUTへ移動（修飾キーなし）- goToNextFrame()を使用
             if (e.code === 'ArrowRight' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-                if (window.animationSystem?.goToPreviousCut) {
-                    window.animationSystem.goToPreviousCut();
+                if (window.animationSystem?.goToNextFrame) {
+                    window.animationSystem.goToNextFrame();
                 }
                 e.preventDefault();
                 return;
@@ -992,8 +1000,9 @@
                 return;
             }
             
-            // Ctrl+Space: 再生/停止
-            if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
+            // === Phase 2-C: 再生/停止を「K」キーに変更 ===
+            // K: 再生/停止
+            if (e.code === 'KeyK' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
                 if (window.timelineUI?.isVisible) {
                     window.timelineUI.togglePlayStop();
                 }
@@ -1100,21 +1109,21 @@ function initializeApp() {
             this.pixiApp.canvas.style.width = `${screenWidth}px`;
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
-            // === Phase 1-A: CoreEngine初期化（修正版） ===
+            // CoreEngine初期化
             this.coreEngine = new CoreEngine(this.pixiApp);
             this.coreEngine.initialize();
             
-            // === Phase 1-A: 正しい構造でwindow.drawingAppを作成 ===
+            // window.drawingAppの構造作成
             window.drawingApp = {
                 pixiApp: this.pixiApp,
                 coreEngine: this.coreEngine,
                 cameraSystem: this.coreEngine.getCameraSystem(),
                 layerManager: this.coreEngine.getLayerManager(),
                 drawingEngine: this.coreEngine.getDrawingEngine(),
-                uiController: null  // 後で設定
+                uiController: null
             };
             
-            // === Phase 1-A: CoreRuntime初期化（パラメータ確認） ===
+            // CoreRuntime初期化
             const runtimeSuccess = CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
@@ -1258,7 +1267,7 @@ function setupLayerPanelDuplicationFix() {
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
-    console.log('=== Phase 1修正版: アプリ起動開始 ===');
+    console.log('=== Phase 2完全修正版: アプリ起動開始 ===');
     
     if (!checkPhase1Dependencies()) {
         console.error('❌ Dependencies check failed');
@@ -1279,10 +1288,7 @@ window.addEventListener('DOMContentLoaded', async () => {
         return;
     }
     
-    // === Phase 1-A: 構造確認ログ ===
     console.log('✅ App initialization successful');
-    console.log('✅ window.drawingApp.layerManager:', window.drawingApp.layerManager);
-    console.log('✅ typeof layerManager:', typeof window.drawingApp.layerManager);
     
     setupHistoryIntegration();
     setupLayerPanelDuplicationFix();
@@ -1291,16 +1297,8 @@ window.addEventListener('DOMContentLoaded', async () => {
         window.CoordinateSystem.diagnoseReferences();
     }
     
-    console.log('=== Phase 1修正版: アプリ起動完了 ===');
+    console.log('=== Phase 2完全修正版: アプリ起動完了 ===');
 });
     </script>
 </body>
-</html>="compact-slider-label">X</div>
-                                <div class="slider" id="layer-x-slider">
-                                    <div class="slider-track"></div>
-                                    <div class="slider-handle"></div>
-                                </div>
-                                <div class="slider-value" id="layer-x-value">0px</div>
-                            </div>
-                            <div class="compact-slider">
-                                <div class
+</html>
