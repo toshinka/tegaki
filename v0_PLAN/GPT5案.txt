@@ -1,215 +1,297 @@
-=== 修正版改修計画書（ベーシック） - tegaki (PixiJS v8.13) ===
-提出形式: プレーンテキスト（.txt）
-作成日: 2025-10-05
-目的:
-  - getGlobalBounds による "Maximum call stack size exceeded" を原因究明・修正
-  - レイヤーパネル（layer panel）非表示問題の解決
-  - キー割当（CTRL+Z / CTRL+Y / ←→キー）誤動作の修正
-  - アンドゥで「ペン描画」「新規レイヤー」「新規CUT」の状態が完全にロールバックされる履歴設計
+要点（短く）
 
-前提ルール（開発ルールの遵守）
-  - Chrome 最新、file:// 実行
-  - PixiJS v8.13（CDN読み込み）
-  - ES2023（モジュール無し）
-  - Canvas2D 使用禁止（ただしサムネは例外）
-  - フォールバック・曖昧な自動修復は行わない
-  - ログは最小限。デバッグは一時的に例外時に限定。
+表示されない／動作が不整合になる主因は**グローバル名衝突（History 等）・コマンド/履歴（Undo/Redo）実行経路の不備・再帰ループを招く境界取得処理（getGlobalBounds）**に集約される可能性が高いです。
+GitHub
++1
 
-----------------------------------------------------------------------
-1) 現象の整理（ユーザー報告より）
-  - カメラフレーム枠、タイムライン、サイドアイコンは出る。
-  - 描画用キャンバス（描画レイヤ）やレイヤーパネルは表示されない。
-  - CTRL+Z が「CUT移動（左）」、CTRL+Y が「CUT移動（右）」に誤マップ。
-  - ← と → キーが効かず、↑↓ は「レイヤ移動モード」挙動（だがパネルが無いので目視不可）。
-  - エラー: getGlobalBounds.ts:135 Uncaught RangeError: Maximum call stack size exceeded
+まず優先して直すべきは：
 
-----------------------------------------------------------------------
-2) 高優先度（必須）修正方針 - 原因推定と対処（要即適用）
-  A. スタックオーバーフロー（getGlobalBounds）
-    - 概要原因（推定）:
-      1) PixiJS の getGlobalBounds / getBounds 系の呼び出しで、親→子→親 .. の循環参照が発生している。
-         - 具体的には、Container/DisplayObject の parent が自分自身を含む（自己参照）か、
-           いずれかの container の ancestor がその container に再び参照を作る操作がある。
-      2) もしくは getGlobalBounds を上書きしているカスタム実装が再帰を止められていない。
-    - すぐやること（デバッグ手順）:
-      1) Chrome DevTools の Sources で "Pause on exceptions" を有効にして例外発生時に停止する。
-         - 発生時の call stack を展開し、最初にループしている関数（/getGlobalBounds/ を呼んでいる箇所）を特定。
-      2) call stack に出る DisplayObject の id/label/名前をコンソールに出して、親子関係を追跡する。
-         - 例: `let cur = obj; while(cur){ console.log(cur.name || cur.label || cur); cur = cur.parent; if (seen[cur]) break; }`
-      3) 検出できない場合は getGlobalBounds 呼び出し直前に一時防御コードを入れて guard を行う（下にサンプル）。
-    - 短期パッチ（コード差分案: CHECK を入れる）
-      - 目的: Container へ child を add する前に循環参照を検出・阻止する。
-      - サンプルユーティリティ（追加ファイルまたは既存 addChild 呼び出し前に利用）:
-        ```js
-        // utils/scene-guards.js (簡潔実装)
-        function isAncestor(potentialAncestor, child) {
-          let cur = potentialAncestor;
-          while (cur) {
-            if (cur === child) return true;
-            cur = cur.parent;
-          }
-          return false;
-        }
-        // addChild 前に呼ぶ
-        function safeAddChild(parent, child) {
-          if (parent === child) {
-            console.error('safeAddChild: attempt to add container to itself', parent);
-            return false;
-          }
-          if (isAncestor(child, parent)) {
-            console.error('safeAddChild: would create cyclical parent-child', parent, child);
-            return false;
-          }
-          parent.addChild(child);
-          return true;
-        }
-        ```
-      - 適用箇所候補:
-        - CoreRuntime.switchCut, any code that `addChild(...)` to cut.container or to worldContainer
-        - layer-system のレイヤ生成 / コンテナ結合箇所
-      - 期待効果: 循環参照が根本原因なら即消える。スタックオーバーフロー回避。
+History（グローバル）参照と executeCommand 実装の整備（window.History が期待のオブジェクトでない / 関数が未定義で例外が出る）。
+GitHub
 
-  B. レイヤーパネル未表示 / internal.layerManager が未初期化の疑い
-    - 概要原因（推定）:
-      - CoreRuntime.init に与える `options` に layerManager や drawingEngine, cameraSystem の参照が渡されていない、または initの呼び出し順で UI パネル作成より初期化が遅れている。
-    - すぐやること:
-      1) CoreRuntime.init 呼び出し箇所（index.html もしくは core-engine）を検索し、渡している `options` を確認する。
-         - 必要なキー: `app`, `worldContainer`, `canvasContainer`, `cameraSystem`, `layerManager`, `drawingEngine`
-      2) CoreRuntime.init 成功時に `CoreRuntime.internal.initialized === true` を確認するログ（短期）を配置し、未初期化なら UI 作成を待つロジックにする。
-    - 短期パッチ（起動順序の保護）:
-      - index.html / 起動スクリプトにて、すべてのサブシステム生成後に `CoreRuntime.init({ app, worldContainer, canvasContainer, cameraSystem, layerManager, drawingEngine })` を呼ぶこと。
-      - もしレイヤーパネル生成がイベントベースなら、`TegakiEventBus.emit('system:ready')` を発行し、UI側はそれを受けて初期描画する（遅延初期化）。
-    - 期待効果: layerManager が無ければ UI を描画しない振る舞いを統一し、未表示を解消。
+getGlobalBounds の無限再帰（Maximum call stack size exceeded）を止める。
 
-  C. キー割当の誤動作（CTRL+Z / CTRL+Y）
-    - 概要原因（推定）:
-      - キーイベント処理が `event.keyCode` / `event.key` / `event.code` を混在して使用している、かつ条件分岐順序が誤っている（例: `if (event.ctrlKey && event.key === 'ArrowLeft')` 等の間違い）。
-      - また `preventDefault()` の扱いが漏れているか、keydown ハンドラが複数登録されている（重複）。
-    - すぐやること:
-      1) キーイベントハンドラを一本化（centralKeyHandler）し、使用は `event.code` と `event.ctrlKey` の組み合わせで判断する。`keyCode` は避ける。
-      2) Undo/Redo は必ず `Ctrl+Z` / `Ctrl+Y` で履歴 API（history.undo()/redo()）を呼ぶように実装。方向キーの単体処理は `event.code === 'ArrowLeft'` などで分岐。
-    - 具体パッチ（単純な例）:
-      ```js
-      // input/key-handler.js
-      window.addEventListener('keydown', (ev) => {
-        const code = ev.code;
-        if (ev.ctrlKey && code === 'KeyZ') { ev.preventDefault(); History.undo(); return; }
-        if (ev.ctrlKey && code === 'KeyY') { ev.preventDefault(); History.redo(); return; }
-        if (!ev.ctrlKey && code === 'ArrowLeft') { /* timeline: left */ return; }
-        if (!ev.ctrlKey && code === 'ArrowRight') { /* timeline: right */ return; }
-        if (!ev.ctrlKey && code === 'ArrowUp') { /* layer move up */ return; }
-        if (!ev.ctrlKey && code === 'ArrowDown') { /* layer move down */ return; }
-      });
-      ```
-    - 期待効果: CTRL+Z が切替動作にマップされる誤りを解消。
+キーボードハンドラ（Undo/Redo と タイムライン移動の混同）をスコープ化して preventDefault を正しく行う。
 
-----------------------------------------------------------------------
-3) 中期修正（推奨） - 履歴（History）とコマンド体系の強化
-  - 目的: 1) ペン描画だけでなく「新規レイヤー」「新規CUT」操作も Undo/Redo で元に戻ること。
-  - 方針: Command パターンを厳格に適用（既に command-base.js / layer-commands.js がある様子なので拡張）。
-    - すべきこと:
-      1) 各操作（ペン描画 stroke、レイヤ作成、CUT作成、レイヤ削除、レイヤ移動）を Command オブジェクト化する（execute/undo/redo）。
-      2) History はコマンドスタックを持ち、undo はスタック順にコマンド.undo() を呼ぶ。
-      3) レイヤ追加時は Command の undo で `container.removeChild(layer)` と内部データ（layer list）更新を行う。CUT 追加時は stage から remove してProject.cuts から削除する。
-      4) Command 実行時に UI 更新イベント（TegakiEventBus.emit('layer:changed') 等）を必ず発火させる。
-  - 注意点:
-    - レイヤ削除 undo 時にレイヤの DisplayObject を保管しておく（参照保持）こと。DOM の再作成は最小限に。
-    - 履歴容量は既定 (e.g. 50) を設け、安全に破棄する。
-  - テスト:
-    - 作成 → undo（ペン/レイヤ/CUT）→ redo を手動確認。
+レイヤーUIの削除ボタンイベントとレイヤー追加/削除時の履歴コマンド化（常にコマンド経由で状態を変える）を徹底する。
 
-----------------------------------------------------------------------
-4) 低優先（推奨） - コード品質改善 / 安全網
-  - a) addChild/removeChild 等の操作で例外を吐かないようガード関数を導入（上記 safeAddChild）。
-  - b) getGlobalBounds 等を呼ぶ箇所に「深さ制限ガード」を入れる。例: bounds 計算を自前でラップして 50 回以上の再帰があったら abort する（デバッグ用にのみ）。
-  - c) UI の生成は必ず system:ready イベントで行い、依存が整っていないなら描画しない。
-  - d) 重要な内部参照（layerManager, cameraSystem 等）は必ず `CoreRuntime.internal` にコピーしておく。null 判定があること。
+原因候補（詳細）と対応方針
+1) window.History.executeCommand is not a function
 
-----------------------------------------------------------------------
-5) 具体的差分例（パッチ候補） — 直接貼れるミニパッチ（検討用）
-  1) safeAddChild の追加（utils フォルダ or layer-system の先頭へ）
-     (上記 short-patch を参照)
-  2) キーハンドラの一本化（input/key-handler.js）
-     (上記 key handler を参照)
-  3) CoreRuntime.init 呼び出し確認（index.html 側）
-     - index.html の起動スクリプト末尾で:
-       ```js
-       // すべての subsystems を作った後で呼ぶ
-       CoreRuntime.init({
-         app: pixiApp,
-         worldContainer: worldContainer,
-         canvasContainer: canvasContainer,
-         cameraSystem: cameraSystem,
-         layerManager: layerManager,
-         drawingEngine: drawingEngine
-       });
-       window.TegakiEventBus?.emit('system:ready');
-       ```
-  4) History / Command: レイヤ作成コマンド（雛形）
-     ```js
-     class CreateLayerCommand {
-       constructor(layerManager, layerData) {
-         this.layerManager = layerManager;
-         this.layerData = layerData;
-         this.layerRef = null;
-       }
-       execute() {
-         this.layerRef = this.layerManager._createLayerInternal(this.layerData); // internal API
-         this.layerManager.updateLayerPanelUI();
-       }
-       undo() {
-         if (!this.layerRef) return;
-         this.layerManager._removeLayerInternal(this.layerRef);
-         this.layerManager.updateLayerPanelUI();
-       }
-     }
-     ```
-     - 注: `_createLayerInternal` / `_removeLayerInternal` は副作用を最小にする内部メソッドとして実装する（外部からは触らない）。
+原因候補
 
-----------------------------------------------------------------------
-6) テスト & 検証手順（エンジニア向け）
-  - ステップ1: DevTools を開き "Pause on exceptions" を有効にしてアプリを起動。例外発生時に callstack を確認する。
-  - ステップ2: 例外 stack 上のオブジェクトをコンソールで inspect。parent chain を辿って循環があるか確認。
-  - ステップ3: safeAddChild を導入し、例外が出ていた操作（CUT 切替 / レイヤ生成 等）を再実行。例外が消えることを確認。
-  - ステップ4: キー処理を一本化して Ctrl+Z / Ctrl+Y / Arrow keys の動作を確認。
-  - ステップ5: History のコマンド化を追加し、作成・削除・描画操作の undo/redo を検証（ペン描画、新規レイヤー、新規CUT）。
+system/history.js が想定どおり window.History に executeCommand を登録していない、あるいは後から別のコードで上書きされている（ブラウザの組み込み history オブジェクトや別モジュール名と衝突）。
 
-----------------------------------------------------------------------
-7) 影響範囲・リスク
-  - safeAddChild を導入すると、既存で「循環を作っていた（意図しない）箇所」が明示的に止まる → 必要に応じて呼び出し元を修正する必要あり。
-  - 履歴の Command 化は API 変更を伴う（既存コードのリファクタリングが必要）。
-  - 一時的な防御ガード（深さ制限）はデバッグ用に留め、本番では root cause を潰すこと。
+History（大文字）というグローバル名は混乱を招く（組み込み/他ライブラリと衝突しやすい）。
 
-----------------------------------------------------------------------
-8) 追加推奨（運用 / 長期）
-  - 例外発生時の最小ロギング（例: どの DisplayObject が例外を誘発したか）を記録。だがログは冗長にしない。
-  - unit tests: layer create/delete, cut create/switch, undo/redo の統合テストを用意（headless でも動く簡易テストを検討）。
-  - ドキュメント: CoreRuntime.init の contract（必須 options リスト）を README に明記。
+対策（短期・推奨）
 
-----------------------------------------------------------------------
-9) 優先度別作業順（短期-中期）
-  - すぐ：DevTools でのスタックトレース取得と safeAddChild の導入（最小パッチ）
-  - 次：キーイベントの一本化（Ctrl+Z/Ctrl+Y 修正）
-  - 次：CoreRuntime.init 引数・呼び出し順の確認と system:ready イベント整備
-  - 次：History の Command 化（レイヤ・CUT を含む）
-  - 最後：テスト自動化 / ドキュメント整備
+グローバル名を AppHistory / HistoryManager のように変更し、window.AppHistory = HistoryManager; の形でエクスポートする。
 
-----------------------------------------------------------------------
-10) 参考（調査メモ）
-  - getGlobalBounds による stack overflow は通常「親子の循環参照」か「カスタム getGlobalBounds の再帰」で起きる。
-  - 対処は「循環参照を作らないチェック」を最初に導入するのが最も確実で軽量。
+executeCommand は必ず関数オブジェクトであることを保証し、呼ぶ前に存在チェック（ただし「曖昧なフォールバック」は禁止ルールなので、無ければ明示的にエラーを出して早期終了させる）。
 
-----------------------------------------------------------------------
-付録: デバッグ用ワンライナー（例外発生時の親チェーントレース）
-  (console で実行)
-  ```js
-  function printParentChain(obj){
-    const seen = new Set();
-    let cur = obj;
-    while(cur && !seen.has(cur)){
-      console.log(cur.name || cur.label || cur);
-      seen.add(cur);
-      cur = cur.parent;
-    }
-    if (cur) console.warn('cycle detected at', cur);
+すべてのコマンド実行箇所を window.AppHistory.executeCommand(cmd) に差し替える（置換不可な箇所が無いか grep で一括確認）。
+
+コード例（patch 提案） — system/history.js（擬似）
+
+// system/history.js — 最小で明示的なエクスポート
+(function(){
+  function HistoryManager(maxSize = 200) {
+    this.stack = [];
+    this.index = -1;
+    this.maxSize = maxSize;
   }
+  HistoryManager.prototype.executeCommand = function(cmd){
+    if (!cmd || typeof cmd.execute !== 'function') {
+      throw new Error('HistoryManager.executeCommand: invalid command');
+    }
+    // 正常にコマンドを実行・履歴へ積む
+    cmd.execute();
+    // truncate future
+    this.stack.splice(this.index + 1);
+    this.stack.push(cmd);
+    if (this.stack.length > this.maxSize) this.stack.shift();
+    this.index = this.stack.length - 1;
+  };
+  HistoryManager.prototype.undo = function(){
+    if (this.index < 0) return;
+    const c = this.stack[this.index--];
+    if (c && typeof c.undo === 'function') c.undo();
+  };
+  HistoryManager.prototype.redo = function(){
+    if (this.index + 1 >= this.stack.length) return;
+    const c = this.stack[++this.index];
+    if (c && typeof c.execute === 'function') c.execute();
+  };
+
+  // 安全なグローバル公開名
+  if (!window.AppHistory) window.AppHistory = new HistoryManager(500);
+})();
+
+
+重要：既存コードで window.History を参照している箇所はすべて AppHistory に変更してください。変更漏れがあると is not a function エラーが続きます。
+GitHub
+
+2) getGlobalBounds の Maximum call stack size exceeded
+
+原因候補
+
+getGlobalBounds の独自実装が、内部で自身を再帰呼び出し（もしくは親・子の getGlobalBounds を辿るループ）してしまっている。
+
+ある DisplayObject が親子関係で循環参照（A の parent が B、B の parent が A など）。Pixi のツリーに循環があると境界計算で無限ループになる。
+
+対策
+
+循環参照の検査：レイヤー・コンテナを作る箇所で if (container.contains(container)) みたいなチェックを行い、意図しない親子設定がないか断言する。
+
+getGlobalBounds をカスタム実装する場合は Pixi の低レベル API（getLocalBounds() と worldTransform）を使って再帰を避ける。絶対に this.getGlobalBounds() を自身から再び呼ばないこと。
+
+もし TypeScript 由来のビルド残骸（.ts→.js の不整合）があるなら、.ts 由来の既存関数が混在している可能性があるので .ts を取り除くか JS に一本化する。
+
+安全な実装例（差し替え）
+
+// safe-getGlobalBounds.js — PIXI.DisplayObject に付けるなら（無理に上書きしない方が良い）
+function safeGetGlobalBounds(displayObject){
+  // 1) ローカル境界を取得
+  const local = displayObject.getLocalBounds(true); // true: skipUpdate を制御する場合に注意
+  // 2) worldTransform を使って四隅を変換
+  const wT = displayObject.worldTransform;
+  const x0 = local.x, y0 = local.y;
+  const x1 = local.x + local.width, y1 = local.y + local.height;
+  const corners = [
+    {x: x0, y: y0},
+    {x: x1, y: y0},
+    {x: x1, y: y1},
+    {x: x0, y: y1}
+  ];
+  let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+  for (const c of corners) {
+    const gx = c.x * wT.a + c.y * wT.c + wT.tx;
+    const gy = c.x * wT.b + c.y * wT.d + wT.ty;
+    if (gx < minX) minX = gx;
+    if (gy < minY) minY = gy;
+    if (gx > maxX) maxX = gx;
+    if (gy > maxY) maxY = gy;
+  }
+  return new PIXI.Bounds().addFrame(minX, minY, maxX, maxY); // 例。もしくは plain rect return
+}
+
+
+注意：displayObject.getLocalBounds(true) の skipUpdate 引数は Pixi のバージョン仕様に沿って使ってください（v8 の API を参照）。無駄な再描画や update 呼び出しが無いように。
+
+3) Undo/Redo（Ctrl+Z/Y）でタイムラインが移動してしまう・タイムライン操作が履歴に入らない
+
+原因候補
+
+キーハンドラをグローバルに束ねていて、タイムライン UI 用のキー操作（左右でフレーム移動など）と Undo が競合している。
+
+タイムラインの追加・削除アクションが「直接状態を変える」ロジックになっており History 経由のコマンドとして登録されていない。
+
+対策
+
+キーハンドラはコンテキスト（ツール／フォーカス）で分岐する。たとえば timeline にフォーカスがあるときは event.stopPropagation() と preventDefault() を行い、Undo 系はグローバルかつ UI コンポーネントがフォーカスしていない場合にのみ動作させる。
+
+すべての状態変更（レイヤー追加/削除、タイムラインに関する mutating 操作）は必ず Command（execute/undo）として作り AppHistory.executeCommand で実行する。これで「削除ボタンを押しても履歴に残らない」問題が解決するはず。
+
+キーハンドラ例
+
+document.addEventListener('keydown', (e) => {
+  // 入力系要素がフォーカス中なら何もしない
+  const tag = document.activeElement && document.activeElement.tagName;
+  if (tag === 'INPUT' || tag === 'TEXTAREA' || document.activeElement?.isContentEditable) return;
+
+  const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
+  const meta = isMac ? e.metaKey : e.ctrlKey;
+
+  if (meta && e.key === 'z') {
+    e.preventDefault();
+    window.AppHistory.undo();
+    return;
+  }
+  if (meta && (e.key === 'y' || (isMac && e.shiftKey && e.key === 'Z'))) {
+    e.preventDefault();
+    window.AppHistory.redo();
+    return;
+  }
+  // timeline 左右 は App の状態に従って処理
+});
+
+4) レイヤーパネル縦横比が変になる・✗で消えない
+
+原因候補
+
+レイヤー削除ボタンが DOM 側でイベント登録忘れ、または押したときに layer remove コマンドを呼んでいない（直接 container.removeChild() しているか、そもそも該当 layer id が見つからない）。
+
+レイヤーパネルのサイズが canvas の変形（カメラズーム・回転）に追従している。UI と canvas のレイアウト分離が不十分。
+
+対策
+
+レイヤーパネルは CSS（flex）で固定幅／高さを与えて UI レイアウトが canvas の変形に影響されないようにする。JS 側は UI の DOM リサイズは canvas のアフィン変換に依存させない。
+
+削除ボタンは イベントで ID を渡し、Command を生成して AppHistory.executeCommand で削除処理を行う（undo で復元可能にする）。イベントバブリングと捕捉は必ず stopPropagation() を使って余計なキーハンドラや親の click ハンドラに影響させない。
+
+実務的な改修手順（優先度付き）
+
+（高）History 名の衝突を解消
+
+system/history.js を AppHistory 実装に差し替え。既存コード全体で window.History → window.AppHistory に差し替え（grep と置換）。
+GitHub
+
+（高）全コマンド実行を AppHistory.executeCommand(cmd) 経路に統一
+
+レイヤー追加/削除、タイムライン追加/削除、ペン操作など「取り消し可能な状態変更」は Command にする。system/command-base.js を確認してコマンドインタフェースを統一。
+GitHub
+
+（高）getGlobalBounds の無限再帰の封じ込め
+
+該当箇所を見つけ（getGlobalBounds.ts 参照）、上書き実装を廃止するか、上で示した安全実装に置換。不要な .ts ソースが混在しているなら削除か JS に一本化。
+
+（中）キーボードハンドラのスコープ化
+
+ドキュメント全体の keydown を整理。Undo/Redo は UI コンポーネントが非フォーカス時のみ動作。タイムラインの矢印キーは timeline focus 時のみ。
+
+（中）レイヤーパネル：UI/CSS分離とイベント修正
+
+CSS を flexbox で固定し、canvas の変形が UI に伝播しないようにする。削除ボタンは data-layer-id 属性 + Command 経由で削除。
+
+（低）未使用ファイルの洗い出し
+
+単純な静的解析（grep で参照されているファイル/シンボルを列挙）で不要ファイル候補を一覧にし、段階的に削除（機能が壊れないことを確認）する。
+
+追加チェックリスト（テスト項目）
+
+ AppHistory がページロード時に存在し、executeCommand/undo/redo が関数であること（コンソール断言）。
+
+ Ctrl/Cmd+Z で AppHistory.undo() が呼ばれる（イベント発火時に preventDefault される）。
+
+ レイヤーの追加/削除を行い、Undo で復元、Redo で再実行できる。
+
+ getGlobalBounds エラーが消え、コンソールに Maximum call stack size exceeded が出ないこと。
+
+ レイヤーパネル UI の縦横比がキー操作で崩れない。
+
+ ✗ ボタンでレイヤーが消え、Undo で復元する。
+
+プレーンな改修計画書（.txt）
+
+以下は要求どおりプレーンテキスト（コードブロック）での改修計画書です。リリース／レビュー手順、優先度、想定差分の概要を含めています。プロジェクト管理にそのまま貼れます。
+
+=== 改修計画書: PixiJS v8.13 お絵かきツール (v8.13_anime37) ===
+作成日: 2025-10-05
+作成者: AI (改修提案)
+
+目的:
+- 表示不具合、Undo/Redo 問題、レイヤーパネルの不整合、ボタン未動作、そして getGlobalBounds 関連の例外を解消する。
+
+優先度一覧:
+  P0 (即時対応)
+    1) History グローバル名衝突の解消と安定実装
+       - 影響範囲: 全ての undo/redo を担う部分
+       - 対応: window.History → window.AppHistory へ統一。history モジュールを再実装。
+    2) getGlobalBounds の無限再帰を停止
+       - 影響範囲: 画面表示、bounds 計算、スタックオーバーフロー
+       - 対応: カスタム上書きを廃止または安全実装へ置換。循環参照のチェックを追加。
+
+  P1 (高)
+    3) 全ての状態変更を Command パターンで統一する
+       - 対応: command-base を基準に、レイヤー追加/削除、タイムライン変更をコマンド化。AppHistory 経由で実行。
+    4) キーハンドラのスコープ化
+       - 対応: Document レベルの keydown を整理。入力フォーカス時は無効化。Undo/Redo は global、タイムライン移動は timeline focus のみ。
+
+  P2 (中)
+    5) レイヤーパネルの UI レイアウト分離
+       - 対応: CSS を flexbox に修正し canvas の変形が UI に影響しないようにする。DOM 操作は最小限に。
+    6) レイヤー削除ボタンのイベント確実化
+       - 対応: data属性で layer id 管理、削除は Command 経由で実行し undo を可能にする。
+
+  P3 (低)
+    7) 未使用ファイルの静的解析とフェーズ削除
+       - 対応: grep で参照を調べ、候補を段階的に削除。
+
+改修手順（ステップ実行）
+  STEP A: ブランチ作成
+    - ブランチ名: fix/history-bounds-keyboard-YYYYMMDD
+
+  STEP B: History モジュール差し替え（P0-1）
+    - file: system/history.js を差し替え。global 名は window.AppHistory。
+    - 置換: repo 内の window.History を一括検索して window.AppHistory に変更。
+    - テスト: ページロード後、コンソールで `typeof window.AppHistory.executeCommand === 'function'` を確認。
+
+  STEP C: getGlobalBounds 修正（P0-2）
+    - file: getGlobalBounds.ts (存在する場合) を JS 実装に差し替え or 削除。
+    - 追加: safeGetGlobalBounds util を実装し、必要箇所だけそちらを呼ぶ。
+    - テスト: bounds 関連のエラー（Maximum call stack）確認。
+
+  STEP D: コマンド統一（P1-3）
+    - file: system/command-base.js, system/layer-commands.js, system/animation-commands.js を確認。
+    - 対応: すべての状態変更処理で `AppHistory.executeCommand(new Command(...))` で実行するように修正。
+    - テスト: レイヤーの追加→Ctrl+Zで undo、Ctrl+Y で redo。
+
+  STEP E: キーハンドラ整理（P1-4）
+    - file: core-runtime.js や ui/timeline-ui.js 内の keydown ハンドラを修正。
+    - 実装: フォーカス判定、preventDefault を必ず行う。
+    - テスト: タイムライン操作と Undo の競合が無いこと。
+
+  STEP F: UI レイアウト修正（P2）
+    - file: ui/*.js, index.html の CSS
+    - 実装: レイヤーパネルに固定レイアウト（flexbox）。canvas transform を UI に適用しない。
+    - テスト: 矢印キーや Ctrl 操作で縦長になる現象が消えるか確認。
+
+  STEP G: リファクタと不要ファイル削除（P3）
+    - grep で参照されないファイル列挙 -> チェックリスト化 -> 段階削除。
+
+リスクと留意点:
+- `window` 名の置換は慎重に。外部ライブラリやブラウザ組み込みと衝突している箇所を潰す。
+- getGlobalBounds の変更で描画結果に微差が出る可能性あり（特に透過や回転時）。復帰用のテストカバーを用意する。
+- コマンド統一は破壊力があるため、段階的に (レイヤー→タイムライン→アニメ関連) と進める。
+
+デバッグ & テスト方法:
+- Chrome local file:// 実行を前提に、devtools で break-on-exception を有効にしてから修正を当てる。
+- 重要な断言を入れる（例: `if (!window.AppHistory) throw new Error('AppHistory missing');`）。
+- 単体: レイヤー add/remove、タイムライン操作、undo/redo を自動テスト的に手順書化（手順/期待値）して実行。
+
+成果物:
+- 修正ブランチ上にパッチを投入（PR 作成）。PR 説明には上のチェックリストと差分の一覧を添付。
+- 修正済みビルドで `Maximum call stack size exceeded` と `executeCommand is not a function` が出ないことを確認。
+
+--- End of plan
