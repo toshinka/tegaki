@@ -1,10 +1,9 @@
 // ================================================================================
-// system/history.js - Phase 1-1: History統一化とCommand基盤整備
+// system/history.js - GPT5案対応改修版
 // ================================================================================
-// 🎯 全Commandの実行・記録を一元管理
-// ✅ Undo/Redoスタックの管理
-// ✅ 状態復元時の二重記録防止
-// ✅ イベント監視による自動記録
+// 🎯 executeCommand実装追加
+// ✅ Command-Based Architecture完全対応
+// ✅ グローバル名window.Historyのまま維持（衝突なし確認済み）
 
 (function() {
     'use strict';
@@ -23,13 +22,13 @@
             // 実行制御フラグ
             this.isExecutingUndoRedo = false;
             this.isRecordingState = false;
+            this.isExecutingCommand = false; // 🔧 追加: Command実行中フラグ
             
             // 初期化待機
             this.isInitialized = false;
             
             if (!this.eventBus) {
-                console.error('❌ TegakiEventBus not found');
-                return;
+                throw new Error('TegakiEventBus not found');
             }
             
             // 初期化完了を待つ
@@ -53,7 +52,7 @@
                     this.eventBus
                 );
             } else {
-                console.warn('⚠️ StateManager not available yet');
+                console.warn('StateManager not available yet');
                 return;
             }
             
@@ -62,8 +61,35 @@
             
             // 初期状態を保存
             this.saveState();
+        }
+        
+        // ===== 🔧 新規: executeCommand実装 =====
+        
+        executeCommand(command) {
+            if (!command) {
+                throw new Error('HistoryManager.executeCommand: command is required');
+            }
             
-            console.log('✅ HistoryManager initialized');
+            if (typeof command.execute !== 'function') {
+                throw new Error('HistoryManager.executeCommand: command.execute must be a function');
+            }
+            
+            // Command実行中フラグをセット
+            this.isExecutingCommand = true;
+            
+            try {
+                // Commandを実行
+                command.execute();
+                
+                // 現在の状態を保存
+                this.saveState();
+                
+            } catch (error) {
+                console.error('executeCommand failed:', error);
+                throw error;
+            } finally {
+                this.isExecutingCommand = false;
+            }
         }
         
         // ===== イベント監視による自動記録 =====
@@ -73,68 +99,66 @@
             
             // レイヤー作成完了 → 自動記録
             this.eventBus.on('layer:created', (data) => {
-                if (!this.isExecutingUndoRedo && !this.isRecordingState) {
+                if (!this.isExecutingUndoRedo && !this.isRecordingState && !this.isExecutingCommand) {
                     this.saveState();
                 }
             });
             
             // レイヤー削除完了 → 自動記録
             this.eventBus.on('layer:deleted', (data) => {
-                if (!this.isExecutingUndoRedo && !this.isRecordingState) {
+                if (!this.isExecutingUndoRedo && !this.isRecordingState && !this.isExecutingCommand) {
                     this.saveState();
                 }
             });
             
             // レイヤー並び替え完了 → 自動記録
             this.eventBus.on('layer:reordered', (data) => {
-                if (!this.isExecutingUndoRedo && !this.isRecordingState) {
+                if (!this.isExecutingUndoRedo && !this.isRecordingState && !this.isExecutingCommand) {
                     this.saveState();
                 }
             });
             
             // 描画完了 → 自動記録
             this.eventBus.on('drawing:completed', (data) => {
-                if (!this.isExecutingUndoRedo && !this.isRecordingState) {
+                if (!this.isExecutingUndoRedo && !this.isRecordingState && !this.isExecutingCommand) {
                     this.saveState();
                 }
             });
             
             // CUT作成完了 → 自動記録
             this.eventBus.on('animation:cut-created', (data) => {
-                if (!this.isExecutingUndoRedo && !this.isRecordingState) {
+                if (!this.isExecutingUndoRedo && !this.isRecordingState && !this.isExecutingCommand) {
                     this.saveState();
                 }
             });
             
             // CUT削除完了 → 自動記録
             this.eventBus.on('animation:cut-deleted', (data) => {
-                if (!this.isExecutingUndoRedo && !this.isRecordingState) {
+                if (!this.isExecutingUndoRedo && !this.isRecordingState && !this.isExecutingCommand) {
                     this.saveState();
                 }
             });
             
             // CUT並び替え完了 → 自動記録
             this.eventBus.on('animation:cuts-reordered', (data) => {
-                if (!this.isExecutingUndoRedo && !this.isRecordingState) {
+                if (!this.isExecutingUndoRedo && !this.isRecordingState && !this.isExecutingCommand) {
                     this.saveState();
                 }
             });
             
-            // レイヤークリア完了 → 自動記録（layer:clear-activeイベント後）
+            // レイヤークリア完了 → 自動記録
             this.eventBus.on('layer:cleared', (data) => {
-                if (!this.isExecutingUndoRedo && !this.isRecordingState) {
+                if (!this.isExecutingUndoRedo && !this.isRecordingState && !this.isExecutingCommand) {
                     this.saveState();
                 }
             });
             
             // レイヤートランスフォーム確定 → 自動記録
             this.eventBus.on('layer:transform-confirmed', (data) => {
-                if (!this.isExecutingUndoRedo && !this.isRecordingState) {
+                if (!this.isExecutingUndoRedo && !this.isRecordingState && !this.isExecutingCommand) {
                     this.saveState();
                 }
             });
-            
-            console.log('✅ History event listeners registered');
         }
         
         // ===== 状態の保存 =====
@@ -144,8 +168,8 @@
                 return;
             }
             
-            // Undo/Redo実行中または記録中はスキップ
-            if (this.isExecutingUndoRedo || this.isRecordingState) {
+            // Undo/Redo実行中、記録中、Command実行中はスキップ
+            if (this.isExecutingUndoRedo || this.isRecordingState || this.isExecutingCommand) {
                 return;
             }
             
@@ -168,14 +192,14 @@
                     this.undoStack.shift();
                 }
                 
-                // Redoスタックをクリア（新しい操作が行われたため）
+                // Redoスタックをクリア
                 this.redoStack = [];
                 
                 // UI更新通知
                 this.notifyHistoryChanged();
                 
             } catch (error) {
-                console.error('❌ Failed to save state:', error);
+                console.error('Failed to save state:', error);
             } finally {
                 this.isRecordingState = false;
             }
@@ -185,7 +209,6 @@
         
         captureCurrentState() {
             if (!this.layerSystem) {
-                // LayerSystemの取得を試みる
                 this.layerSystem = window.drawingApp?.layerManager || 
                                    window.layerSystem ||
                                    window.TegakiCoreEngine?.layerSystem;
@@ -283,10 +306,8 @@
                 // UI更新通知
                 this.notifyHistoryChanged();
                 
-                console.log(`✅ Undo executed (stack: ${this.undoStack.length})`);
-                
             } catch (error) {
-                console.error('❌ Undo failed:', error);
+                console.error('Undo failed:', error);
             } finally {
                 this.isExecutingUndoRedo = false;
             }
@@ -321,10 +342,8 @@
                 // UI更新通知
                 this.notifyHistoryChanged();
                 
-                console.log(`✅ Redo executed (stack: ${this.redoStack.length})`);
-                
             } catch (error) {
-                console.error('❌ Redo failed:', error);
+                console.error('Redo failed:', error);
             } finally {
                 this.isExecutingUndoRedo = false;
             }
@@ -540,7 +559,7 @@
             };
         }
         
-        // ===== LayerSystem設定（外部から設定） =====
+        // ===== LayerSystem設定 =====
         
         setLayerSystem(layerSystem) {
             this.layerSystem = layerSystem;
@@ -555,6 +574,7 @@
                 redoStackSize: this.redoStack.length,
                 isExecutingUndoRedo: this.isExecutingUndoRedo,
                 isRecordingState: this.isRecordingState,
+                isExecutingCommand: this.isExecutingCommand,
                 hasStateManager: !!this.stateManager,
                 hasLayerSystem: !!this.layerSystem
             };
@@ -563,12 +583,14 @@
     
     // ===== グローバル公開 =====
     
-    // シングルトンインスタンス
     const historyManager = new HistoryManager();
     
-    // 後方互換性のため、旧形式のAPIも提供
+    // 🔧 GPT5案対応: window.Historyのまま維持（衝突なし）
     window.History = {
         _manager: historyManager,
+        
+        // 🔧 追加: executeCommand実装
+        executeCommand: (command) => historyManager.executeCommand(command),
         
         undo: () => historyManager.undo(),
         redo: () => historyManager.redo(),
@@ -577,7 +599,6 @@
         getHistoryInfo: () => historyManager.getHistoryInfo(),
         setLayerSystem: (layerSystem) => historyManager.setLayerSystem(layerSystem),
         
-        // フラグへのアクセス（他のファイルから参照用）
         get isExecutingUndoRedo() {
             return historyManager.isExecutingUndoRedo;
         },
@@ -590,6 +611,6 @@
     
     window.TegakiHistory = historyManager;
     
-    console.log('✅ history.js loaded (Phase 1-1)');
+    console.log('✅ history.js loaded (GPT5案対応・executeCommand実装済み)');
     
 })();
