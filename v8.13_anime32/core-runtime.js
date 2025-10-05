@@ -1,19 +1,18 @@
 // ===== core-runtime.js - リサイズ即時反映+背景塗り版 =====
-// 【改修】リサイズ時のタイムラインサムネイル即時更新
-// 【改修】背景レイヤーの余白を#f0e0d6で自動塗りつぶし
-// 【維持】全既存機能・CUT独立性
-// PixiJS v8.13 対応
+// 依存関係チェック改善版
 
 (function() {
     'use strict';
     
-    // 依存確認
+    // 依存確認（エラー時は console.error のみ）
     if (!window.CoordinateSystem) {
-        throw new Error('coordinate-system.js dependency missing');
+        console.error('CoreRuntime: coordinate-system.js dependency missing');
+        return;
     }
     const CONFIG = window.TEGAKI_CONFIG;
     if (!CONFIG) {
-        throw new Error('config.js dependency missing');
+        console.error('CoreRuntime: config.js dependency missing');
+        return;
     }
     
     // === CoreRuntime: Project/CUT管理とCUT切替機能 ===
@@ -41,7 +40,10 @@
         
         // === 初期化 ===
         init(options) {
-            console.log('=== CoreRuntime リサイズ即時反映版 初期化開始 ===');
+            if (!options || !options.app) {
+                console.error('CoreRuntime.init: Invalid options. Required: app');
+                return false;
+            }
             
             Object.assign(this.internal, options);
             this.project.renderer = options.app?.renderer;
@@ -55,9 +57,7 @@
             
             this.setupLegacyCompatibility();
             
-            console.log('✅ CoreRuntime 初期化完了');
-            
-            return this;
+            return true;
         },
         
         setupCoordinateSystem() {
@@ -106,17 +106,13 @@
             cut.container.label = cutId;
             this.project.cuts.push(cut);
             
-            console.log(`✅ CUT作成: ${cut.name} (${w}x${h})`);
             return cut;
         },
         
         // === CUT切替（stage差し替え） ===
         switchCut(cutId) {
             const newCut = this.getCutById(cutId);
-            if (!newCut) {
-                console.error('CUT not found:', cutId);
-                return false;
-            }
+            if (!newCut) return false;
             
             const oldCut = this.getActiveCut();
             
@@ -134,7 +130,6 @@
                 window.TegakiEventBus.emit('cut:switched', { cutId, cutName: newCut.name });
             }
             
-            console.log(`🔄 CUT切替: ${newCut.name}`);
             return true;
         },
         
@@ -181,14 +176,12 @@
             }
         },
         
-        // === 【改修】背景レイヤー更新ヘルパー ===
+        // === 背景レイヤー更新ヘルパー ===
         updateBackgroundLayerSize(layer, width, height) {
             if (!layer?.layerData?.isBackground) return false;
             if (!layer.layerData.backgroundGraphics) return false;
             
             const bg = layer.layerData.backgroundGraphics;
-            
-            // 既存のGraphicsをクリアして再描画
             bg.clear();
             bg.rect(0, 0, width, height);
             bg.fill(CONFIG.background.color || 0xF0E0D6);
@@ -196,17 +189,13 @@
             return true;
         },
         
-        // === 【改修】キャンバスサイズ変更 ===
+        // === キャンバスサイズ変更 ===
         updateCanvasSize(w, h) {
-            console.log('CoreRuntime: キャンバスサイズ変更:', w, 'x', h);
-            
             this.project.canvasSize = { w, h };
             
-            // 【改修1】AnimationSystemからアクティブCUTを取得
             const animationSystem = window.animationSystem || window.TegakiAnimationSystem;
             const currentCutIndex = animationSystem?.getCurrentCutIndex?.() ?? 0;
             
-            // 全CUTのrenderTextureを再作成
             this.project.cuts.forEach(cut => {
                 if (cut.renderTexture) {
                     cut.renderTexture.destroy(true);
@@ -221,7 +210,6 @@
                 cut.needsThumbnailUpdate = true;
             });
             
-            // 【改修2】AnimationSystemの全CUTの背景レイヤーを更新
             if (animationSystem?.animationData?.cuts) {
                 animationSystem.animationData.cuts.forEach((cut, cutIndex) => {
                     if (cut.container && cut.container.children) {
@@ -232,12 +220,10 @@
                         });
                     }
                     
-                    // 【改修3】各CUTのRenderTextureを即座に更新
                     if (this.internal.layerManager?.renderCutToTexture) {
                         this.internal.layerManager.renderCutToTexture(cut.id, cut.container);
                     }
                     
-                    // 【改修4】サムネイル即時生成（アクティブCUTを優先）
                     if (cutIndex === currentCutIndex) {
                         setTimeout(() => {
                             if (animationSystem.generateCutThumbnail) {
@@ -254,35 +240,25 @@
                 });
             }
             
-            // EventBus通知
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.emit('camera:resized', { width: w, height: h });
-                
-                // 【改修5】タイムラインUIへの即時更新通知
                 setTimeout(() => {
                     window.TegakiEventBus.emit('animation:thumbnails-need-update');
                 }, 200);
             }
             
-            // CONFIG更新
             CONFIG.canvas.width = w;
             CONFIG.canvas.height = h;
             
-            // 既存システムへの反映
             if (this.internal.cameraSystem?.resizeCanvas) {
                 this.internal.cameraSystem.resizeCanvas(w, h);
             }
             
-            // 【改修6】レイヤーパネルの即時更新
             if (this.internal.layerManager?.updateLayerPanelUI) {
                 setTimeout(() => {
                     this.internal.layerManager.updateLayerPanelUI();
                 }, 100);
             }
-            
-            console.log('✅ 全CUTのRenderTexture再生成完了');
-            console.log('✅ 背景レイヤー自動塗り完了');
-            console.log('✅ タイムラインサムネイル更新開始');
             
             return true;
         },
@@ -328,7 +304,7 @@
             };
         },
         
-        // === 既存API互換性（統合実装は次フェーズ） ===
+        // === 既存API互換性 ===
         api: {
             setTool(toolName) {
                 if (CoreRuntime.internal.drawingEngine?.setTool) {
@@ -459,10 +435,4 @@
     };
     
     window.CoreRuntime = CoreRuntime;
-    
-    console.log('✅ core-runtime.js リサイズ即時反映+背景塗り版 loaded');
-    console.log('  ✅ 背景レイヤー余白自動塗り (#f0e0d6)');
-    console.log('  ✅ タイムラインサムネイル即時更新');
-    console.log('  ✅ レイヤーパネル即時反映');
-    console.log('  ✅ 既存機能完全維持');
 })();

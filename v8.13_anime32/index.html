@@ -850,52 +850,39 @@
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
 
-<!-- Phase 2/3: 読み込み順序を厳守 -->
-<script src="config.js"></script>
-<script src="coordinate-system.js"></script>
+    <!-- 依存関係の厳格化: 必ず順序を守る -->
+    <script src="config.js"></script>
+    <script src="coordinate-system.js"></script>
 
-<!-- システムコア -->
-<script src="system/event-bus.js"></script>
-<script src="system/state-manager.js"></script>
-<script src="system/command-base.js"></script>
+    <script src="system/event-bus.js"></script>
+    <script src="system/state-manager.js"></script>
+    <script src="system/command-base.js"></script>
+    <script src="system/layer-commands.js"></script>
+    <script src="system/animation-commands.js"></script>
+    <script src="system/history.js"></script>
+    <script src="system/camera-system.js"></script>
+    <script src="system/layer-system.js"></script>
+    <script src="system/drawing-clipboard.js"></script>
+    <script src="system/animation-system.js"></script>
+    <script src="system/gif-exporter.js"></script>
 
-<!-- Commands -->
-<script src="system/layer-commands.js"></script>
-<script src="system/animation-commands.js"></script>
+    <script src="ui/timeline-ui.js"></script>
+    <script src="ui/ui-panels.js"></script>
+    <script src="ui/timeline-thumbnail-utils.js"></script>
 
-<!-- History (Commandsの後) -->
-<script src="system/history.js"></script>
-
-<!-- その他のシステム -->
-<script src="system/camera-system.js"></script>
-<script src="system/layer-system.js"></script>
-<script src="system/drawing-clipboard.js"></script>
-<script src="system/animation-system.js"></script>
-<script src="system/gif-exporter.js"></script>
-
-<!-- UI -->
-<script src="ui/timeline-ui.js"></script>
-<script src="ui/ui-panels.js"></script>
-<script src="ui/timeline-thumbnail-utils.js"></script>
-
-<!-- エンジン -->
-<script src="core-engine.js"></script>
-<script src="core-runtime.js"></script>
+    <script src="core-engine.js"></script>
+    <script src="core-runtime.js"></script>
 
     <script>
 (function() {
     'use strict';
     
     function preventBrowserDefaults(e) {
-        if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') {
-            return;
-        }
-        
+        if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
         if (e.key.startsWith('F') && e.key.length <= 3) {
             e.preventDefault();
             return;
         }
-        
         if (e.ctrlKey || e.metaKey) {
             const key = e.code || e.key;
             if (key === 'KeyZ' || key === 'KeyY' || key === 'KeyL' || key === 'Space') {
@@ -920,38 +907,28 @@
                 activeElement.tagName === 'INPUT' ||
                 activeElement.tagName === 'TEXTAREA' ||
                 activeElement.isContentEditable
-            )) {
-                return;
-            }
+            )) return;
             
-            // ✅ Ctrl+Z (Undo)
             if ((e.ctrlKey || e.metaKey) && e.code === 'KeyZ' && !e.shiftKey && !e.altKey) {
-                if (window.History && typeof window.History.undo === 'function') {
-                    window.History.undo();
-                }
+                if (window.History?.undo) window.History.undo();
                 e.preventDefault();
                 return;
             }
             
-            // ✅ Ctrl+Y / Ctrl+Shift+Z (Redo)
             if ((e.ctrlKey || e.metaKey) && !e.altKey) {
                 if (e.code === 'KeyY' || (e.code === 'KeyZ' && e.shiftKey)) {
-                    if (window.History && typeof window.History.redo === 'function') {
-                        window.History.redo();
-                    }
+                    if (window.History?.redo) window.History.redo();
                     e.preventDefault();
                     return;
                 }
             }
             
-            // Delete キー (レイヤークリア)
             if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
                 eventBus.emit('layer:clear-active');
                 e.preventDefault();
                 return;
             }
             
-            // Ctrl+L (レイヤー追加)
             if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
                 if (window.drawingApp?.layerManager) {
                     const layerSystem = window.drawingApp.layerManager;
@@ -963,52 +940,42 @@
                 return;
             }
             
-            // Shift+N (新規CUT作成)
             if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
-                const animationSystem = window.animationSystem;
-                if (animationSystem) {
-                    animationSystem.createNewEmptyCut();
+                if (window.animationSystem) {
+                    window.animationSystem.createNewEmptyCut();
                     eventBus.emit('cut:created-by-shortcut');
                 }
                 e.preventDefault();
                 return;
             }
             
-            // Shift+A (タイムライン表示切替)
             if (e.shiftKey && e.code === 'KeyA' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('ui:toggle-timeline');
                 e.preventDefault();
                 return;
             }
             
-            // Ctrl+Space (再生/停止)
             if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
-                const timelineUI = window.timelineUI;
-                if (timelineUI && timelineUI.isVisible) {
-                    timelineUI.togglePlayStop();
+                if (window.timelineUI?.isVisible) {
+                    window.timelineUI.togglePlayStop();
                 }
                 e.preventDefault();
                 return;
             }
             
-            // Shift+C (CUTコピー&ペースト)
             if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('cut:copy-current');
-                setTimeout(() => {
-                    eventBus.emit('cut:paste-right-adjacent');
-                }, 10);
+                setTimeout(() => eventBus.emit('cut:paste-right-adjacent'), 10);
                 e.preventDefault();
                 return;
             }
             
-            // P (ペンツール)
             if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'pen' });
                 e.preventDefault();
                 return;
             }
             
-            // E (消しゴムツール)
             if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'eraser' });
                 e.preventDefault();
@@ -1034,27 +1001,22 @@ function checkPhase1Dependencies() {
     ];
     
     const missing = dependencies.filter(dep => !dep.obj);
-    
     if (missing.length > 0) {
-        throw new Error(`Phase 1 Dependencies not loaded: ${missing.map(d => d.name).join(', ')}`);
+        console.error('Dependencies not loaded:', missing.map(d => d.name).join(', '));
+        return false;
     }
     
     if (!window.TEGAKI_CONFIG.animation) {
-        throw new Error('Animation configuration not found');
+        console.error('Animation configuration not found');
+        return false;
     }
     
     return true;
 }
 
 function checkCoreRuntime() {
-    if (!window.CoreRuntime) {
-        return false;
-    }
-    
-    if (!window.TegakiCore?.CoreEngine) {
-        return false;
-    }
-    
+    if (!window.CoreRuntime) return false;
+    if (!window.TegakiCore?.CoreEngine) return false;
     return true;
 }
 
@@ -1073,7 +1035,8 @@ function initializeApp() {
         async initialize() {
             const containerEl = document.getElementById('drawing-canvas');
             if (!containerEl) {
-                throw new Error('Canvas container not found');
+                console.error('Canvas container not found');
+                return false;
             }
             
             this.pixiApp = new PIXI.Application();
@@ -1099,7 +1062,7 @@ function initializeApp() {
             this.coreEngine = new CoreEngine(this.pixiApp);
             const drawingApp = this.coreEngine.initialize();
             
-            CoreRuntime.init({
+            const runtimeSuccess = CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
                 canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
@@ -1107,6 +1070,11 @@ function initializeApp() {
                 layerManager: this.coreEngine.getLayerManager(),
                 drawingEngine: this.coreEngine.getDrawingEngine()
             });
+            
+            if (!runtimeSuccess) {
+                console.error('CoreRuntime initialization failed');
+                return false;
+            }
             
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
@@ -1184,15 +1152,11 @@ function initializeApp() {
 function setupHistoryIntegration() {
     if (window.TegakiEventBus && window.History) {
         window.TegakiEventBus.on('history:undo-request', () => {
-            if (typeof window.History.undo === 'function') {
-                window.History.undo();
-            }
+            if (window.History.undo) window.History.undo();
         });
         
         window.TegakiEventBus.on('history:redo-request', () => {
-            if (typeof window.History.redo === 'function') {
-                window.History.redo();
-            }
+            if (window.History.redo) window.History.redo();
         });
         
         window.TegakiEventBus.on('history:changed', (data) => {
@@ -1214,17 +1178,17 @@ function setupHistoryIntegration() {
 
 function setupLayerPanelDuplicationFix() {
     if (window.TegakiEventBus) {
-        window.TegakiEventBus.on('layer:created', (data) => {
+        window.TegakiEventBus.on('layer:created', () => {
             setTimeout(() => {
-                if (window.layerSystem && typeof window.layerSystem.updateLayerPanelUI === 'function') {
+                if (window.layerSystem?.updateLayerPanelUI) {
                     window.layerSystem.updateLayerPanelUI();
                 }
             }, 50);
         });
         
-        window.TegakiEventBus.on('layer:deleted', (data) => {
+        window.TegakiEventBus.on('layer:deleted', () => {
             setTimeout(() => {
-                if (window.layerSystem && typeof window.layerSystem.updateLayerPanelUI === 'function') {
+                if (window.layerSystem?.updateLayerPanelUI) {
                     window.layerSystem.updateLayerPanelUI();
                 }
             }, 50);
@@ -1233,42 +1197,25 @@ function setupLayerPanelDuplicationFix() {
 }
 
 window.addEventListener('DOMContentLoaded', async () => {
-    try {
-        checkPhase1Dependencies();
-        
-        if (!checkCoreRuntime()) {
-            throw new Error('CoreRuntime initialization failed');
-        }
-        
-        const DrawingApp = initializeApp();
-        const app = new DrawingApp();
-        await app.initialize();
-        
-        setupHistoryIntegration();
-        setupLayerPanelDuplicationFix();
-        
-        if (window.CoordinateSystem && typeof window.CoordinateSystem.diagnoseReferences === 'function') {
-            window.CoordinateSystem.diagnoseReferences();
-        }
-        
-        if (window.SystemDiagnostics) {
-            setTimeout(() => {
-                try {
-                    const diagnostics = new window.SystemDiagnostics();
-                    diagnostics.runFullDiagnostics();
-                } catch (diagError) {
-                }
-            }, 1000);
-        }
-        
-    } catch (error) {
+    if (!checkPhase1Dependencies()) return;
+    if (!checkCoreRuntime()) {
+        console.error('CoreRuntime not initialized');
+        return;
+    }
+    
+    const DrawingApp = initializeApp();
+    const app = new DrawingApp();
+    const success = await app.initialize();
+    
+    if (!success) return;
+    
+    setupHistoryIntegration();
+    setupLayerPanelDuplicationFix();
+    
+    if (window.CoordinateSystem?.diagnoseReferences) {
+        window.CoordinateSystem.diagnoseReferences();
     }
 });
-
-try {
-    checkPhase1Dependencies();
-} catch (error) {
-}
     </script>
 </body>
 </html>

@@ -1,10 +1,6 @@
 // ================================================================================
-// system/layer-system.js - Phase 2b-3完全修正版
+// system/layer-system.js - Phase 2b-3完全修正版（依存チェック追加）
 // ================================================================================
-// 🎯 StateManagerからデータを読み取り専用で取得
-// ✅ Command経由でのみデータ変更
-// ✅ Pixi描画とUIのみ担当
-// 🔧 createLayer/deleteLayerメソッド復活（Command経由）
 
 (function() {
     'use strict';
@@ -49,351 +45,8 @@
             // 座標システム
             this.coordAPI = window.CoordinateSystem;
             
-            // StateManager変更監視
-            this.stateManager.addListener((state, source) => {
-                this.onStateChanged(state, source);
-            });
-            
-            this._setupLayerOperations();
-            this._setupLayerTransformPanel();
-            this._setupAnimationSystemIntegration();
-            this._startThumbnailUpdateProcess();
-        }
-
-        // ===== StateManager変更監視 =====
-        
-        onStateChanged(state, source) {
-            // History Undo/Redo時は完全再構築
-            if (source === 'history:undo' || source === 'history:redo') {
-                this.rebuildFromState(state);
-                return;
-            }
-            
-            // レイヤー追加
-            if (source === 'layer:added') {
-                this.syncLayersFromState(state);
-                this.updateLayerPanelUI();
-                return;
-            }
-            
-            // レイヤー削除
-            if (source === 'layer:removed') {
-                this.syncLayersFromState(state);
-                this.updateLayerPanelUI();
-                return;
-            }
-            
-            // レイヤー並び替え
-            if (source === 'layer:reordered') {
-                this.syncLayersFromState(state);
-                this.updateLayerPanelUI();
-                return;
-            }
-            
-            // CUT切り替え
-            if (source === 'active-cut:changed') {
-                this.rebuildFromState(state);
-                return;
-            }
-            
-            // Pathクリア
-            if (source === 'paths:cleared') {
-                this.syncLayersFromState(state);
-                this.updateLayerPanelUI();
-                return;
-            }
-        }
-
-        rebuildFromState(state) {
-            if (!this.currentCutContainer) {
-                this.currentCutContainer = new PIXI.Container();
-            }
-            
-            // 既存レイヤーを全削除
-            while (this.currentCutContainer.children.length > 0) {
-                const child = this.currentCutContainer.children[0];
-                this.currentCutContainer.removeChild(child);
-                child.destroy({ children: true });
-            }
-            
-            const currentCut = state.cuts[state.currentCutIndex];
-            if (!currentCut) return;
-            
-            // Stateからレイヤーを再構築
-            currentCut.layers.forEach((layerData) => {
-                const pixiLayer = this.createPixiLayerFromData(layerData);
-                this.currentCutContainer.addChild(pixiLayer);
-            });
-            
-            // アクティブレイヤー更新
-            this.activeLayerIndex = Math.min(
-                state.currentLayerIndex,
-                currentCut.layers.length - 1
-            );
-            
-            this.updateLayerPanelUI();
-            this.updateStatusDisplay();
-        }
-
-        syncLayersFromState(state) {
-            if (!this.currentCutContainer) return;
-            
-            const currentCut = state.cuts[state.currentCutIndex];
-            if (!currentCut) return;
-            
-            // 既存のレイヤーを全削除
-            while (this.currentCutContainer.children.length > 0) {
-                const child = this.currentCutContainer.children[0];
-                this.currentCutContainer.removeChild(child);
-                child.destroy({ children: true });
-            }
-            
-            // Stateからレイヤーを再構築
-            currentCut.layers.forEach((layerData) => {
-                const pixiLayer = this.createPixiLayerFromData(layerData);
-                this.currentCutContainer.addChild(pixiLayer);
-            });
-            
-            // アクティブレイヤー更新
-            this.activeLayerIndex = Math.min(
-                state.currentLayerIndex,
-                currentCut.layers.length - 1
-            );
-        }
-
-        createPixiLayerFromData(layerData) {
-            const layer = new PIXI.Container();
-            layer.label = layerData.id;
-            
-            // データ参照を保持（描画用のみ）
-            layer.layerData = layerData;
-            
-            // Transform適用
-            if (layerData.transform) {
-                layer.position.set(layerData.transform.x, layerData.transform.y);
-                layer.rotation = layerData.transform.rotation;
-                layer.scale.set(layerData.transform.scaleX, layerData.transform.scaleY);
-                layer.pivot.set(layerData.transform.pivotX, layerData.transform.pivotY);
-            }
-            
-            layer.visible = layerData.visible;
-            layer.alpha = layerData.opacity;
-            
-            // 背景レイヤー
-            if (layerData.isBackground) {
-                const bg = new PIXI.Graphics();
-                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
-                bg.fill(this.config.background.color);
-                layer.addChild(bg);
-            }
-            
-            // Pathsを描画
-            if (layerData.paths && Array.isArray(layerData.paths)) {
-                layerData.paths.forEach(pathData => {
-                    const graphics = this.createGraphicsFromPath(pathData);
-                    if (graphics) {
-                        layer.addChild(graphics);
-                    }
-                });
-            }
-            
-            return layer;
-        }
-
-        createGraphicsFromPath(pathData) {
-            if (!pathData || !pathData.points || pathData.points.length === 0) {
-                return null;
-            }
-            
-            const graphics = new PIXI.Graphics();
-            
-            pathData.points.forEach(point => {
-                if (typeof point.x === 'number' && typeof point.y === 'number' &&
-                    isFinite(point.x) && isFinite(point.y)) {
-                    graphics.circle(point.x, point.y, (pathData.size || 16) / 2);
-                    graphics.fill({
-                        color: pathData.color || 0x800000,
-                        alpha: pathData.opacity || 1.0
-                    });
-                }
-            });
-            
-            return graphics;
-        }
-
-        // ===== レイヤー作成・削除（Command経由）=====
-        
-        createLayer(name, isBackground = false) {
-            const layerData = {
-                id: `layer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                name: name,
-                visible: true,
-                opacity: 1.0,
-                isBackground: isBackground,
-                transform: {
-                    x: 0, y: 0,
-                    rotation: 0,
-                    scaleX: 1, scaleY: 1,
-                    pivotX: 0, pivotY: 0
-                },
-                paths: []
-            };
-            
-            // Command経由で実行
-            const command = new window.CreateLayerCommand(
-                this.stateManager,
-                this.eventBus,
-                this.stateManager.getCurrentCutIndex(),
-                layerData
-            );
-            
-            window.History.executeCommand(command);
-            
-            return layerData.id;
-        }
-        
-        deleteLayer(layerIndex) {
-            const layers = this.getLayers();
-            
-            if (layerIndex < 0 || layerIndex >= layers.length) {
-                return false;
-            }
-            
-            // Command経由で実行
-            const command = new window.DeleteLayerCommand(
-                this.stateManager,
-                this.eventBus,
-                this.stateManager.getCurrentCutIndex(),
-                layerIndex
-            );
-            
-            window.History.executeCommand(command);
-            
-            return true;
-        }
-
-        // ===== レイヤー取得（後方互換性のため保持）=====
-        
-        getLayers() {
-            if (!this.currentCutContainer) return [];
-            return this.currentCutContainer.children;
-        }
-        
-        getActiveLayer() {
-            const layers = this.getLayers();
-            return this.activeLayerIndex >= 0 ? layers[this.activeLayerIndex] : null;
-        }
-        
-        // layers配列（後方互換性のため）
-        get layers() {
-            return this.getLayers();
-        }
-
-        // ===== レイヤー選択 =====
-        
-        setActiveLayer(index) {
-            const currentLayers = this.stateManager.getCurrentLayers();
-            
-            if (index < 0 || index >= currentLayers.length) {
-                return;
-            }
-            
-            const oldIndex = this.activeLayerIndex;
-            this.activeLayerIndex = index;
-            
-            // StateManagerを更新
-            this.stateManager.setActiveLayer(
-                this.stateManager.getCurrentCutIndex(),
-                index
-            );
-            
-            this.updateLayerPanelUI();
-            this.updateStatusDisplay();
-            
-            if (this.isLayerMoveMode) {
-                this.updateLayerTransformPanelValues();
-            }
-        }
-
-        // ===== レイヤー並び替え =====
-        
-        reorderLayers(fromIndex, toIndex) {
-            const layers = this.getLayers();
-            
-            if (fromIndex < 0 || fromIndex >= layers.length || 
-                toIndex < 0 || toIndex >= layers.length || 
-                fromIndex === toIndex) {
-                return false;
-            }
-            
-            // Command経由で実行
-            const command = new window.ReorderLayersCommand(
-                this.stateManager,
-                this.eventBus,
-                this.stateManager.getCurrentCutIndex(),
-                fromIndex,
-                toIndex
-            );
-            
-            window.History.executeCommand(command);
-            return true;
-        }
-
-        // ===== レイヤー可視性切り替え =====
-        
-        toggleLayerVisibility(layerIndex) {
-            const currentLayers = this.stateManager.getCurrentLayers();
-            
-            if (layerIndex < 0 || layerIndex >= currentLayers.length) {
-                return;
-            }
-            
-            const layer = currentLayers[layerIndex];
-            
-            // Command経由で更新
-            const command = new window.UpdateLayerCommand(
-                this.stateManager,
-                this.eventBus,
-                this.stateManager.getCurrentCutIndex(),
-                layerIndex,
-                { visible: !layer.visible }
-            );
-            
-            window.History.executeCommand(command);
-            
-            this.requestThumbnailUpdate(layerIndex);
-        }
-
-        // ===== レイヤー階層移動 =====
-        
-        moveActiveLayerHierarchy(direction) {
-            const layers = this.getLayers();
-            if (layers.length <= 1) return;
-            
-            const currentIndex = this.activeLayerIndex;
-            let newIndex;
-            
-            if (direction === 'up') {
-                newIndex = Math.min(currentIndex + 1, layers.length - 1);
-            } else if (direction === 'down') {
-                newIndex = Math.max(currentIndex - 1, 0);
-            } else {
-                return;
-            }
-            
-            if (newIndex !== currentIndex) {
-                this.setActiveLayer(newIndex);
-            }
-        }
-
-        // ===== Pathをレイヤーに追加 =====
-        
-        addPathToLayer(layerIndex, path) {
-            const currentCutIndex = this.stateManager.getCurrentCutIndex();
-            const pathId = this.stateManager.addPath(currentCutIndex, layerIndex, path);
-            
+            // StateManager変更監視（存在確認）
             if (pathId) {
-                // Pixi側に描画を追加
                 const layers = this.getLayers();
                 if (layerIndex >= 0 && layerIndex < layers.length) {
                     const pixiLayer = layers[layerIndex];
@@ -436,7 +89,7 @@
             }
         }
 
-        // ===== 初期化メソッド（CoreEngineから呼ばれる）=====
+        // ===== 初期化メソッド =====
         
         init(canvasContainer, eventBus, config) {
             this.currentCutContainer = canvasContainer;
@@ -455,9 +108,7 @@
         // ===== CUTレンダーテクスチャ管理 =====
         
         createCutRenderTexture(cutId) {
-            if (!this.app?.renderer) {
-                return null;
-            }
+            if (!this.app?.renderer) return null;
             
             const renderTexture = PIXI.RenderTexture.create({
                 width: this.config.canvas.width,
@@ -578,9 +229,7 @@
         _setupLayerTransformPanel() {
             this.layerTransformPanel = document.getElementById('layer-transform-panel');
             
-            if (!this.layerTransformPanel) {
-                return;
-            }
+            if (!this.layerTransformPanel) return;
             
             this._setupLayerSlider('layer-x-slider', this.config.layer.minX, this.config.layer.maxX, 0, (value) => {
                 this.updateActiveLayerTransform('x', value);
@@ -955,9 +604,7 @@
 
         _setupLayerDragEvents() {
             const canvas = this._getSafeCanvas();
-            if (!canvas) {
-                return;
-            }
+            if (!canvas) return;
             
             canvas.addEventListener('pointerdown', (e) => {
                 if (this.vKeyPressed && e.button === 0) {
@@ -983,16 +630,10 @@
         }
 
         _getSafeCanvas() {
-            if (this.app?.canvas) {
-                return this.app.canvas;
-            }
-            if (this.app?.view) {
-                return this.app.view;
-            }
+            if (this.app?.canvas) return this.app.canvas;
+            if (this.app?.view) return this.app.view;
             const canvasElements = document.querySelectorAll('canvas');
-            if (canvasElements.length > 0) {
-                return canvasElements[0];
-            }
+            if (canvasElements.length > 0) return canvasElements[0];
             return null;
         }
 
@@ -1267,6 +908,8 @@
         }
 
         safeApplyTransformToPaths(layer, transform) {
+            if (!this.stateManager) return true;
+            
             const currentCutIndex = this.stateManager.getCurrentCutIndex();
             const layerIndex = this.activeLayerIndex;
             const layerData = this.stateManager.getLayer(currentCutIndex, layerIndex);
@@ -1308,16 +951,17 @@
                     transformedPaths.push(transformedPath);
                 }
                 
-                // StateManagerを更新
-                const command = new window.UpdateLayerCommand(
-                    this.stateManager,
-                    this.eventBus,
-                    currentCutIndex,
-                    layerIndex,
-                    { paths: transformedPaths }
-                );
-                
-                window.History.executeCommand(command);
+                if (window.History && window.UpdateLayerCommand) {
+                    const command = new window.UpdateLayerCommand(
+                        this.stateManager,
+                        this.eventBus,
+                        currentCutIndex,
+                        layerIndex,
+                        { paths: transformedPaths }
+                    );
+                    
+                    window.History.executeCommand(command);
+                }
                 
                 return true;
                 
@@ -1530,6 +1174,8 @@
 
             layerList.innerHTML = '';
             
+            if (!this.stateManager) return;
+            
             const currentLayers = this.stateManager.getCurrentLayers();
             const layers = this.getLayers();
 
@@ -1614,13 +1260,342 @@
     
     window.TegakiLayerSystem = LayerSystem;
     
-    // 後方互換性: 既存のlayerSystemが存在しない場合のみ設定
     if (!window.layerSystem) {
         window.layerSystem = null;
     }
 
-    console.log('✅ layer-system.js loaded (Phase 2b-3完全修正版)');
-    console.log('  - 🔥 createLayer/deleteLayerメソッド復活');
-    console.log('  - 🔥 Command経由で実行');
-    
-})();
+})(); (this.stateManager && typeof this.stateManager.addListener === 'function') {
+                this.stateManager.addListener((state, source) => {
+                    this.onStateChanged(state, source);
+                });
+            }
+            
+            this._setupLayerOperations();
+            this._setupLayerTransformPanel();
+            this._setupAnimationSystemIntegration();
+            this._startThumbnailUpdateProcess();
+        }
+
+        // ===== StateManager変更監視 =====
+        
+        onStateChanged(state, source) {
+            if (source === 'history:undo' || source === 'history:redo') {
+                this.rebuildFromState(state);
+                return;
+            }
+            
+            if (source === 'layer:added') {
+                this.syncLayersFromState(state);
+                this.updateLayerPanelUI();
+                return;
+            }
+            
+            if (source === 'layer:removed') {
+                this.syncLayersFromState(state);
+                this.updateLayerPanelUI();
+                return;
+            }
+            
+            if (source === 'layer:reordered') {
+                this.syncLayersFromState(state);
+                this.updateLayerPanelUI();
+                return;
+            }
+            
+            if (source === 'active-cut:changed') {
+                this.rebuildFromState(state);
+                return;
+            }
+            
+            if (source === 'paths:cleared') {
+                this.syncLayersFromState(state);
+                this.updateLayerPanelUI();
+                return;
+            }
+        }
+
+        rebuildFromState(state) {
+            if (!this.currentCutContainer) {
+                this.currentCutContainer = new PIXI.Container();
+            }
+            
+            while (this.currentCutContainer.children.length > 0) {
+                const child = this.currentCutContainer.children[0];
+                this.currentCutContainer.removeChild(child);
+                child.destroy({ children: true });
+            }
+            
+            const currentCut = state.cuts[state.currentCutIndex];
+            if (!currentCut) return;
+            
+            currentCut.layers.forEach((layerData) => {
+                const pixiLayer = this.createPixiLayerFromData(layerData);
+                this.currentCutContainer.addChild(pixiLayer);
+            });
+            
+            this.activeLayerIndex = Math.min(
+                state.currentLayerIndex,
+                currentCut.layers.length - 1
+            );
+            
+            this.updateLayerPanelUI();
+            this.updateStatusDisplay();
+        }
+
+        syncLayersFromState(state) {
+            if (!this.currentCutContainer) return;
+            
+            const currentCut = state.cuts[state.currentCutIndex];
+            if (!currentCut) return;
+            
+            while (this.currentCutContainer.children.length > 0) {
+                const child = this.currentCutContainer.children[0];
+                this.currentCutContainer.removeChild(child);
+                child.destroy({ children: true });
+            }
+            
+            currentCut.layers.forEach((layerData) => {
+                const pixiLayer = this.createPixiLayerFromData(layerData);
+                this.currentCutContainer.addChild(pixiLayer);
+            });
+            
+            this.activeLayerIndex = Math.min(
+                state.currentLayerIndex,
+                currentCut.layers.length - 1
+            );
+        }
+
+        createPixiLayerFromData(layerData) {
+            const layer = new PIXI.Container();
+            layer.label = layerData.id;
+            layer.layerData = layerData;
+            
+            if (layerData.transform) {
+                layer.position.set(layerData.transform.x, layerData.transform.y);
+                layer.rotation = layerData.transform.rotation;
+                layer.scale.set(layerData.transform.scaleX, layerData.transform.scaleY);
+                layer.pivot.set(layerData.transform.pivotX, layerData.transform.pivotY);
+            }
+            
+            layer.visible = layerData.visible;
+            layer.alpha = layerData.opacity;
+            
+            if (layerData.isBackground) {
+                const bg = new PIXI.Graphics();
+                bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+                bg.fill(this.config.background.color);
+                layer.addChild(bg);
+            }
+            
+            if (layerData.paths && Array.isArray(layerData.paths)) {
+                layerData.paths.forEach(pathData => {
+                    const graphics = this.createGraphicsFromPath(pathData);
+                    if (graphics) {
+                        layer.addChild(graphics);
+                    }
+                });
+            }
+            
+            return layer;
+        }
+
+        createGraphicsFromPath(pathData) {
+            if (!pathData || !pathData.points || pathData.points.length === 0) {
+                return null;
+            }
+            
+            const graphics = new PIXI.Graphics();
+            
+            pathData.points.forEach(point => {
+                if (typeof point.x === 'number' && typeof point.y === 'number' &&
+                    isFinite(point.x) && isFinite(point.y)) {
+                    graphics.circle(point.x, point.y, (pathData.size || 16) / 2);
+                    graphics.fill({
+                        color: pathData.color || 0x800000,
+                        alpha: pathData.opacity || 1.0
+                    });
+                }
+            });
+            
+            return graphics;
+        }
+
+        // ===== レイヤー作成・削除（Command経由）=====
+        
+        createLayer(name, isBackground = false) {
+            const layerData = {
+                id: `layer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                name: name,
+                visible: true,
+                opacity: 1.0,
+                isBackground: isBackground,
+                transform: {
+                    x: 0, y: 0,
+                    rotation: 0,
+                    scaleX: 1, scaleY: 1,
+                    pivotX: 0, pivotY: 0
+                },
+                paths: []
+            };
+            
+            if (window.History && window.CreateLayerCommand && this.stateManager) {
+                const command = new window.CreateLayerCommand(
+                    this.stateManager,
+                    this.eventBus,
+                    this.stateManager.getCurrentCutIndex(),
+                    layerData
+                );
+                
+                window.History.executeCommand(command);
+            }
+            
+            return layerData.id;
+        }
+        
+        deleteLayer(layerIndex) {
+            const layers = this.getLayers();
+            
+            if (layerIndex < 0 || layerIndex >= layers.length) {
+                return false;
+            }
+            
+            if (window.History && window.DeleteLayerCommand && this.stateManager) {
+                const command = new window.DeleteLayerCommand(
+                    this.stateManager,
+                    this.eventBus,
+                    this.stateManager.getCurrentCutIndex(),
+                    layerIndex
+                );
+                
+                window.History.executeCommand(command);
+            }
+            
+            return true;
+        }
+
+        // ===== レイヤー取得 =====
+        
+        getLayers() {
+            if (!this.currentCutContainer) return [];
+            return this.currentCutContainer.children;
+        }
+        
+        getActiveLayer() {
+            const layers = this.getLayers();
+            return this.activeLayerIndex >= 0 ? layers[this.activeLayerIndex] : null;
+        }
+        
+        get layers() {
+            return this.getLayers();
+        }
+
+        // ===== レイヤー選択 =====
+        
+        setActiveLayer(index) {
+            if (!this.stateManager) return;
+            
+            const currentLayers = this.stateManager.getCurrentLayers();
+            
+            if (index < 0 || index >= currentLayers.length) {
+                return;
+            }
+            
+            this.activeLayerIndex = index;
+            
+            this.stateManager.setActiveLayer(
+                this.stateManager.getCurrentCutIndex(),
+                index
+            );
+            
+            this.updateLayerPanelUI();
+            this.updateStatusDisplay();
+            
+            if (this.isLayerMoveMode) {
+                this.updateLayerTransformPanelValues();
+            }
+        }
+
+        // ===== レイヤー並び替え =====
+        
+        reorderLayers(fromIndex, toIndex) {
+            const layers = this.getLayers();
+            
+            if (fromIndex < 0 || fromIndex >= layers.length || 
+                toIndex < 0 || toIndex >= layers.length || 
+                fromIndex === toIndex) {
+                return false;
+            }
+            
+            if (window.History && window.ReorderLayersCommand && this.stateManager) {
+                const command = new window.ReorderLayersCommand(
+                    this.stateManager,
+                    this.eventBus,
+                    this.stateManager.getCurrentCutIndex(),
+                    fromIndex,
+                    toIndex
+                );
+                
+                window.History.executeCommand(command);
+            }
+            return true;
+        }
+
+        // ===== レイヤー可視性切り替え =====
+        
+        toggleLayerVisibility(layerIndex) {
+            if (!this.stateManager) return;
+            
+            const currentLayers = this.stateManager.getCurrentLayers();
+            
+            if (layerIndex < 0 || layerIndex >= currentLayers.length) {
+                return;
+            }
+            
+            const layer = currentLayers[layerIndex];
+            
+            if (window.History && window.UpdateLayerCommand) {
+                const command = new window.UpdateLayerCommand(
+                    this.stateManager,
+                    this.eventBus,
+                    this.stateManager.getCurrentCutIndex(),
+                    layerIndex,
+                    { visible: !layer.visible }
+                );
+                
+                window.History.executeCommand(command);
+            }
+            
+            this.requestThumbnailUpdate(layerIndex);
+        }
+
+        // ===== レイヤー階層移動 =====
+        
+        moveActiveLayerHierarchy(direction) {
+            const layers = this.getLayers();
+            if (layers.length <= 1) return;
+            
+            const currentIndex = this.activeLayerIndex;
+            let newIndex;
+            
+            if (direction === 'up') {
+                newIndex = Math.min(currentIndex + 1, layers.length - 1);
+            } else if (direction === 'down') {
+                newIndex = Math.max(currentIndex - 1, 0);
+            } else {
+                return;
+            }
+            
+            if (newIndex !== currentIndex) {
+                this.setActiveLayer(newIndex);
+            }
+        }
+
+        // ===== Pathをレイヤーに追加 =====
+        
+        addPathToLayer(layerIndex, path) {
+            if (!this.stateManager) return;
+            
+            const currentCutIndex = this.stateManager.getCurrentCutIndex();
+            const pathId = this.stateManager.addPath(currentCutIndex, layerIndex, path);
+            
+            if (pathId)
