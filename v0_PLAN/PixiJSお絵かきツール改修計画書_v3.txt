@@ -1,0 +1,194 @@
+# PixiJSお絵かきツール改修計画書 v3（確定版）
+
+**対象ツール**: ブラウザお絵かきツール（PixiJS v8.13）  
+**作成日**: 2025-10-05  
+**改修方針**: シンプル化・History統合・ショートカット集中・Vキートグル化
+
+---
+
+## 📋 報告された問題
+
+### 優先度A（必須・UX直結）
+1. **Undoが「何もしていないのにHistoryを1消費する」** → 2画で描いたものを1回しか戻せない
+2. **レイヤー新規作成でHistoryが2個増える**
+
+### 優先度B（必須・再発防止）
+3. **ショートカットが分散**（Shift+Spaceが二重で再生/停止を持つ）
+4. **index.htmlにまだUndo/Redoのコメントが残っている**
+
+### 優先度C（操作性改善）
+5. **V（アクティブレイヤー移動）押下が「押しっぱなしで忙しない」** → トグル方式に変更希望
+
+### 優先度D（中）
+6. **Vモードで垂直・水平ボタンやショートカット（V+H, V+Shift+H）が効かない**
+
+---
+
+## 🔍 原因調査結果（実コード精査）
+
+### A. History問題の根本原因
+
+**問題**:
+- `history.js`で複数のイベント監視があり、同じ操作で重複して`saveState`が呼ばれている
+  - `'animation:cut-created'` → `setTimeout 100ms`後に`saveStateFull()`
+  - `'layer:created'` → `setTimeout 50ms`後に`saveStateFull()`
+  - `layer-system.js`の`createLayer()`内でも直接`saveState()`を呼んでいる
+
+**結果**: レイヤー作成時に2〜3回History記録が実行される
+
+**確認済みの状況**:
+- `history.js`: イベントリスナー削減済み（`cut-created`, `layer-created`を削除）
+- `layer-system.js`: `createLayer()`内で`saveState()`を呼ぶ際、`isExecutingUndoRedo`と`isRecordingState`のフラグチェック実装済み
+- `index.html`: Undo/Redo処理は削除済み（コメントも整理が必要）
+
+### B. ショートカット分散問題
+
+**問題**:
+- `index.html`, `history.js`, `layer-system.js`の3箇所にショートカット処理が実装されている
+- 結果：同じキー（Ctrl+Z等）が複数箇所で処理され、二重実行の可能性
+
+**確認済みの状況**:
+- `index.html`: Undo/Redo処理は削除済み
+- `history.js`: Undo/Redoショートカット実装済み
+- `layer-system.js`: Vキー関連ショートカット実装済み
+
+### C. Vキー押しっぱなし問題
+
+**問題**:
+- `layer-system.js`の`_setupLayerOperations()`で、`keydown: enterLayerMoveMode()`, `keyup: exitLayerMoveMode()`という実装
+- キーリピートにより`enterLayerMoveMode`が連続呼び出しされる
+
+**確認済みの状況**:
+- トグル方式実装済み: `toggleLayerMoveMode()`
+- `e.repeat`チェックによるキーリピート無視実装済み
+
+### D. Vモードでボタン・ショートカットが効かない問題
+
+**問題**:
+- `layer-system.js`内の`flipActiveLayer()`は実装されているが、Vモード中のショートカット処理が不完全
+- `KeyH`（水平反転）と`Shift+H`（垂直反転）が`config.js`では`horizontalFlip`として定義されているが、実際の処理分岐が複雑
+
+**修正が必要な箇所**:
+1. `layer-system.js`の`_setupLayerOperations()`内で`'horizontalFlip'`アクションの処理が以下のように実装されている:
+```javascript
+case 'horizontalFlip':
+    if (this.vKeyPressed && !e.ctrlKey && !e.altKey && !e.metaKey) {
+        if (e.shiftKey) {
+            this.flipActiveLayer('vertical');
+        } else {
+            this.flipActiveLayer('horizontal');
+        }
+        e.preventDefault();
+    }
+    break;
+```
+この実装自体は正しいが、`config.js`の`TEGAKI_KEYCONFIG`で`KeyH`が`vKeyPressed: true`条件下でのみ反応するように設定されていることを確認する必要がある。
+
+2. **UIボタンからの呼び出し**: `ui-panels.js`で`flip-horizontal-btn`と`flip-vertical-btn`のイベントハンドラが存在するか確認が必要
+
+---
+
+## 🎯 改修方針（優先順位付き）
+
+### 優先度A：History統合（必須・UX直結）
+✅ 複数箇所でのHistory記録を一本化  
+✅ イベント駆動のHistory記録を廃止し、操作の最終段階でのみ記録  
+✅ トランザクション機能は導入せず、シンプルな「操作完了時に1回記録」方式  
+✅ `index.html`のUndo/Redoショートカットを削除し、`history.js`に一本化
+
+### 優先度B：ショートカット集中（必須・再発防止）
+✅ `index.html`からショートカット処理を削除  
+✅ `config.js`の`TEGAKI_KEYCONFIG`を活用  
+✅ 各モジュールは内部でショートカット処理を完結させる  
+✅ `history.js`、`layer-system.js`でショートカットを統合管理
+
+### 優先度C：Vキートグル化（操作性改善）
+✅ `layer-system.js`でトグル方式を実装  
+✅ `e.repeat`をチェックしてキーリピートを無視  
+✅ `vKeyPressed`フラグをトグルで管理
+
+### 優先度D：Vモード内操作の修正（中）
+🔧 Vモード中の`H`キー（水平反転）と`Shift+H`（垂直反転）が確実に動作するよう確認  
+🔧 `ui-panels.js`で水平・垂直ボタンのイベントハンドラを確認・実装
+
+---
+
+## 🛠️ 具体的改修内容
+
+### 1. index.html
+**変更点**:
+- `setupUnifiedKeyboardShortcuts()`内のコメントを整理
+- Undo/Redo関連の削除済みコードのコメントも完全削除
+
+### 2. history.js
+**状態**: ✅ 改修完了
+- イベントリスナー削減済み
+- Undo/Redoショートカット一本化済み
+
+### 3. layer-system.js
+**状態**: ✅ 改修完了（一部確認が必要）
+- Vキートグル方式実装済み
+- `createLayer/deleteLayer`でのHistory記録フラグチェック強化済み
+- `moveActiveLayerHierarchy()`にHistory記録追加済み
+- **確認事項**: Vモード中の反転ショートカット（`KeyH`, `Shift+H`）が正しく動作するか
+
+### 4. ui-panels.js
+**状態**: 🔧 確認が必要
+- 水平・垂直ボタン（`flip-horizontal-btn`, `flip-vertical-btn`）のイベントハンドラ実装状況を確認
+- `layer-system.js`の`flipActiveLayer()`を呼び出しているか確認
+
+---
+
+## ✅ テスト計画
+
+### 優先度順
+1. 描画1ストローク → Undo 1回で戻る / Redo で再現
+2. 描画2ストローク → Undo 2回で両方戻る
+3. レイヤー新規作成 → History +1 だけ増える
+4. `Shift+Space`を複数押下 → 再生/停止が二重にならない
+5. `V`押下でモードON、再押下でOFF（長押しで複数トグルしない）
+6. Vモード中に`H`キー（および`Shift+H`）で水平/垂直反転が動く
+7. UIボタン（垂直/水平）を押したときに正しく動作
+
+---
+
+## ⚠️ リスク
+
+1. **イベント駆動のHistory記録を削除することで、一部の操作でHistory記録漏れが発生する可能性**  
+   → **対策**: 各操作の完了時に明示的に`History.saveState()`を呼ぶ
+
+2. **Vキーのトグル方式変更により、既存の操作感が変わる**  
+   → **対策**: ユーザーフィードバック後に微調整
+
+3. **ショートカット統合により、既存の動作が変わる可能性**  
+   → **対策**: テスト段階で全ショートカットを検証
+
+---
+
+## 📦 変更ファイル一覧
+
+### 優先度高
+- ✅ `system/history.js` → 改修完了
+- 🔧 `index.html` → コメント整理が必要
+- ✅ `system/layer-system.js` → 改修完了（反転ショートカット確認が必要）
+
+### 優先度中
+- 🔧 `ui/ui-panels.js` → 水平・垂直ボタンの実装確認が必要
+
+---
+
+## 📝 補足
+
+今回の改修は**シンプル化**を重視します。
+
+- ❌ トランザクション機能は導入しません
+- ❌ KeybindingManagerクラスも新規作成しません
+- ✅ 既存の`config.js`と`TEGAKI_KEYCONFIG`を最大限活用
+- ✅ 各モジュール内でショートカットを完結させる
+- ✅ イベント駆動のHistory記録を最小化し、操作完了時に記録
+
+この方針により、コードの複雑性を増やさず、問題を解決します。
+
+---
+
+**以上**
