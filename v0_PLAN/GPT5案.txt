@@ -1,198 +1,215 @@
-結論（短く）
+=== 修正版改修計画書（ベーシック） - tegaki (PixiJS v8.13) ===
+提出形式: プレーンテキスト（.txt）
+作成日: 2025-10-05
+目的:
+  - getGlobalBounds による "Maximum call stack size exceeded" を原因究明・修正
+  - レイヤーパネル（layer panel）非表示問題の解決
+  - キー割当（CTRL+Z / CTRL+Y / ←→キー）誤動作の修正
+  - アンドゥで「ペン描画」「新規レイヤー」「新規CUT」の状態が完全にロールバックされる履歴設計
 
-最もありそうな原因は スクリプトの依存関係（読み込み順）による即時例外で初期化処理が止まっている ことです。core-runtime.js が window.CoordinateSystem や TEGAKI_CONFIG を先に確認して throw しているため、以降のUI生成コードが実行されません。実際に core-runtime.js に if (!window.CoordinateSystem) { throw new Error('coordinate-system.js dependency missing'); } とあります。
-GitHub
+前提ルール（開発ルールの遵守）
+  - Chrome 最新、file:// 実行
+  - PixiJS v8.13（CDN読み込み）
+  - ES2023（モジュール無し）
+  - Canvas2D 使用禁止（ただしサムネは例外）
+  - フォールバック・曖昧な自動修復は行わない
+  - ログは最小限。デバッグは一時的に例外時に限定。
 
-対処は（A）まずコンソールの初期エラーを確認して（B）スクリプトの読み込み順を config.js → coordinate-system.js → 各 system/*.js → core-engine/core-runtime.js の順に固定、そして（C）初期化を DOMContentLoaded / 明示的 init 呼び出しで遅延させる、の3点が最優先です。関連ファイルは index.html と core-runtime の初期化ロジックです（該当箇所を参照）。
-GitHub
-+1
+----------------------------------------------------------------------
+1) 現象の整理（ユーザー報告より）
+  - カメラフレーム枠、タイムライン、サイドアイコンは出る。
+  - 描画用キャンバス（描画レイヤ）やレイヤーパネルは表示されない。
+  - CTRL+Z が「CUT移動（左）」、CTRL+Y が「CUT移動（右）」に誤マップ。
+  - ← と → キーが効かず、↑↓ は「レイヤ移動モード」挙動（だがパネルが無いので目視不可）。
+  - エラー: getGlobalBounds.ts:135 Uncaught RangeError: Maximum call stack size exceeded
 
-以下、詳細（診断方法・具体パッチ・改修計画）をそのまま実行できる形で書きます。
+----------------------------------------------------------------------
+2) 高優先度（必須）修正方針 - 原因推定と対処（要即適用）
+  A. スタックオーバーフロー（getGlobalBounds）
+    - 概要原因（推定）:
+      1) PixiJS の getGlobalBounds / getBounds 系の呼び出しで、親→子→親 .. の循環参照が発生している。
+         - 具体的には、Container/DisplayObject の parent が自分自身を含む（自己参照）か、
+           いずれかの container の ancestor がその container に再び参照を作る操作がある。
+      2) もしくは getGlobalBounds を上書きしているカスタム実装が再帰を止められていない。
+    - すぐやること（デバッグ手順）:
+      1) Chrome DevTools の Sources で "Pause on exceptions" を有効にして例外発生時に停止する。
+         - 発生時の call stack を展開し、最初にループしている関数（/getGlobalBounds/ を呼んでいる箇所）を特定。
+      2) call stack に出る DisplayObject の id/label/名前をコンソールに出して、親子関係を追跡する。
+         - 例: `let cur = obj; while(cur){ console.log(cur.name || cur.label || cur); cur = cur.parent; if (seen[cur]) break; }`
+      3) 検出できない場合は getGlobalBounds 呼び出し直前に一時防御コードを入れて guard を行う（下にサンプル）。
+    - 短期パッチ（コード差分案: CHECK を入れる）
+      - 目的: Container へ child を add する前に循環参照を検出・阻止する。
+      - サンプルユーティリティ（追加ファイルまたは既存 addChild 呼び出し前に利用）:
+        ```js
+        // utils/scene-guards.js (簡潔実装)
+        function isAncestor(potentialAncestor, child) {
+          let cur = potentialAncestor;
+          while (cur) {
+            if (cur === child) return true;
+            cur = cur.parent;
+          }
+          return false;
+        }
+        // addChild 前に呼ぶ
+        function safeAddChild(parent, child) {
+          if (parent === child) {
+            console.error('safeAddChild: attempt to add container to itself', parent);
+            return false;
+          }
+          if (isAncestor(child, parent)) {
+            console.error('safeAddChild: would create cyclical parent-child', parent, child);
+            return false;
+          }
+          parent.addChild(child);
+          return true;
+        }
+        ```
+      - 適用箇所候補:
+        - CoreRuntime.switchCut, any code that `addChild(...)` to cut.container or to worldContainer
+        - layer-system のレイヤ生成 / コンテナ結合箇所
+      - 期待効果: 循環参照が根本原因なら即消える。スタックオーバーフロー回避。
 
-1) 即時確認（3コマンド — ブラウザでやる）
+  B. レイヤーパネル未表示 / internal.layerManager が未初期化の疑い
+    - 概要原因（推定）:
+      - CoreRuntime.init に与える `options` に layerManager や drawingEngine, cameraSystem の参照が渡されていない、または initの呼び出し順で UI パネル作成より初期化が遅れている。
+    - すぐやること:
+      1) CoreRuntime.init 呼び出し箇所（index.html もしくは core-engine）を検索し、渡している `options` を確認する。
+         - 必要なキー: `app`, `worldContainer`, `canvasContainer`, `cameraSystem`, `layerManager`, `drawingEngine`
+      2) CoreRuntime.init 成功時に `CoreRuntime.internal.initialized === true` を確認するログ（短期）を配置し、未初期化なら UI 作成を待つロジックにする。
+    - 短期パッチ（起動順序の保護）:
+      - index.html / 起動スクリプトにて、すべてのサブシステム生成後に `CoreRuntime.init({ app, worldContainer, canvasContainer, cameraSystem, layerManager, drawingEngine })` を呼ぶこと。
+      - もしレイヤーパネル生成がイベントベースなら、`TegakiEventBus.emit('system:ready')` を発行し、UI側はそれを受けて初期描画する（遅延初期化）。
+    - 期待効果: layerManager が無ければ UI を描画しない振る舞いを統一し、未表示を解消。
 
-まず本当に依存性エラーで止まっているか確かめます（コピー＆ペーストでOK）。
+  C. キー割当の誤動作（CTRL+Z / CTRL+Y）
+    - 概要原因（推定）:
+      - キーイベント処理が `event.keyCode` / `event.key` / `event.code` を混在して使用している、かつ条件分岐順序が誤っている（例: `if (event.ctrlKey && event.key === 'ArrowLeft')` 等の間違い）。
+      - また `preventDefault()` の扱いが漏れているか、keydown ハンドラが複数登録されている（重複）。
+    - すぐやること:
+      1) キーイベントハンドラを一本化（centralKeyHandler）し、使用は `event.code` と `event.ctrlKey` の組み合わせで判断する。`keyCode` は避ける。
+      2) Undo/Redo は必ず `Ctrl+Z` / `Ctrl+Y` で履歴 API（history.undo()/redo()）を呼ぶように実装。方向キーの単体処理は `event.code === 'ArrowLeft'` などで分岐。
+    - 具体パッチ（単純な例）:
+      ```js
+      // input/key-handler.js
+      window.addEventListener('keydown', (ev) => {
+        const code = ev.code;
+        if (ev.ctrlKey && code === 'KeyZ') { ev.preventDefault(); History.undo(); return; }
+        if (ev.ctrlKey && code === 'KeyY') { ev.preventDefault(); History.redo(); return; }
+        if (!ev.ctrlKey && code === 'ArrowLeft') { /* timeline: left */ return; }
+        if (!ev.ctrlKey && code === 'ArrowRight') { /* timeline: right */ return; }
+        if (!ev.ctrlKey && code === 'ArrowUp') { /* layer move up */ return; }
+        if (!ev.ctrlKey && code === 'ArrowDown') { /* layer move down */ return; }
+      });
+      ```
+    - 期待効果: CTRL+Z が切替動作にマップされる誤りを解消。
 
-コンソールに以下を貼って実行（開発者ツール → Console）：
+----------------------------------------------------------------------
+3) 中期修正（推奨） - 履歴（History）とコマンド体系の強化
+  - 目的: 1) ペン描画だけでなく「新規レイヤー」「新規CUT」操作も Undo/Redo で元に戻ること。
+  - 方針: Command パターンを厳格に適用（既に command-base.js / layer-commands.js がある様子なので拡張）。
+    - すべきこと:
+      1) 各操作（ペン描画 stroke、レイヤ作成、CUT作成、レイヤ削除、レイヤ移動）を Command オブジェクト化する（execute/undo/redo）。
+      2) History はコマンドスタックを持ち、undo はスタック順にコマンド.undo() を呼ぶ。
+      3) レイヤ追加時は Command の undo で `container.removeChild(layer)` と内部データ（layer list）更新を行う。CUT 追加時は stage から remove してProject.cuts から削除する。
+      4) Command 実行時に UI 更新イベント（TegakiEventBus.emit('layer:changed') 等）を必ず発火させる。
+  - 注意点:
+    - レイヤ削除 undo 時にレイヤの DisplayObject を保管しておく（参照保持）こと。DOM の再作成は最小限に。
+    - 履歴容量は既定 (e.g. 50) を設け、安全に破棄する。
+  - テスト:
+    - 作成 → undo（ペン/レイヤ/CUT）→ redo を手動確認。
 
-// 1) 依存グローバルの有無
-console.log('CoordinateSystem:', !!window.CoordinateSystem);
-console.log('TEGAKI_CONFIG:', !!window.TEGAKI_CONFIG);
-console.log('CoreRuntime defined:', !!window.CoreRuntime);
+----------------------------------------------------------------------
+4) 低優先（推奨） - コード品質改善 / 安全網
+  - a) addChild/removeChild 等の操作で例外を吐かないようガード関数を導入（上記 safeAddChild）。
+  - b) getGlobalBounds 等を呼ぶ箇所に「深さ制限ガード」を入れる。例: bounds 計算を自前でラップして 50 回以上の再帰があったら abort する（デバッグ用にのみ）。
+  - c) UI の生成は必ず system:ready イベントで行い、依存が整っていないなら描画しない。
+  - d) 重要な内部参照（layerManager, cameraSystem 等）は必ず `CoreRuntime.internal` にコピーしておく。null 判定があること。
 
-// 2) エラー履歴の先頭（あれば最も有用）
-console.warn('最近のError.stack（最初の数行）を確認してください');
-// 既に発生したエラーがあるか確認（Chromeなら Console の Errors タブで見る）
+----------------------------------------------------------------------
+5) 具体的差分例（パッチ候補） — 直接貼れるミニパッチ（検討用）
+  1) safeAddChild の追加（utils フォルダ or layer-system の先頭へ）
+     (上記 short-patch を参照)
+  2) キーハンドラの一本化（input/key-handler.js）
+     (上記 key handler を参照)
+  3) CoreRuntime.init 呼び出し確認（index.html 側）
+     - index.html の起動スクリプト末尾で:
+       ```js
+       // すべての subsystems を作った後で呼ぶ
+       CoreRuntime.init({
+         app: pixiApp,
+         worldContainer: worldContainer,
+         canvasContainer: canvasContainer,
+         cameraSystem: cameraSystem,
+         layerManager: layerManager,
+         drawingEngine: drawingEngine
+       });
+       window.TegakiEventBus?.emit('system:ready');
+       ```
+  4) History / Command: レイヤ作成コマンド（雛形）
+     ```js
+     class CreateLayerCommand {
+       constructor(layerManager, layerData) {
+         this.layerManager = layerManager;
+         this.layerData = layerData;
+         this.layerRef = null;
+       }
+       execute() {
+         this.layerRef = this.layerManager._createLayerInternal(this.layerData); // internal API
+         this.layerManager.updateLayerPanelUI();
+       }
+       undo() {
+         if (!this.layerRef) return;
+         this.layerManager._removeLayerInternal(this.layerRef);
+         this.layerManager.updateLayerPanelUI();
+       }
+     }
+     ```
+     - 注: `_createLayerInternal` / `_removeLayerInternal` は副作用を最小にする内部メソッドとして実装する（外部からは触らない）。
 
+----------------------------------------------------------------------
+6) テスト & 検証手順（エンジニア向け）
+  - ステップ1: DevTools を開き "Pause on exceptions" を有効にしてアプリを起動。例外発生時に callstack を確認する。
+  - ステップ2: 例外 stack 上のオブジェクトをコンソールで inspect。parent chain を辿って循環があるか確認。
+  - ステップ3: safeAddChild を導入し、例外が出ていた操作（CUT 切替 / レイヤ生成 等）を再実行。例外が消えることを確認。
+  - ステップ4: キー処理を一本化して Ctrl+Z / Ctrl+Y / Arrow keys の動作を確認。
+  - ステップ5: History のコマンド化を追加し、作成・削除・描画操作の undo/redo を検証（ペン描画、新規レイヤー、新規CUT）。
 
-false が出れば、その依存ファイルが まだ読み込まれていない or 読み込み時例外で定義されなかった ことが確定します（core-runtime.js は明示的に throw する実装があります）。
-GitHub
+----------------------------------------------------------------------
+7) 影響範囲・リスク
+  - safeAddChild を導入すると、既存で「循環を作っていた（意図しない）箇所」が明示的に止まる → 必要に応じて呼び出し元を修正する必要あり。
+  - 履歴の Command 化は API 変更を伴う（既存コードのリファクタリングが必要）。
+  - 一時的な防御ガード（深さ制限）はデバッグ用に留め、本番では root cause を潰すこと。
 
-2) 根本原因（なぜキャンバス・パネルが出ないか）
+----------------------------------------------------------------------
+8) 追加推奨（運用 / 長期）
+  - 例外発生時の最小ロギング（例: どの DisplayObject が例外を誘発したか）を記録。だがログは冗長にしない。
+  - unit tests: layer create/delete, cut create/switch, undo/redo の統合テストを用意（headless でも動く簡易テストを検討）。
+  - ドキュメント: CoreRuntime.init の contract（必須 options リスト）を README に明記。
 
-根拠と共に要点だけ：
+----------------------------------------------------------------------
+9) 優先度別作業順（短期-中期）
+  - すぐ：DevTools でのスタックトレース取得と safeAddChild の導入（最小パッチ）
+  - 次：キーイベントの一本化（Ctrl+Z/Ctrl+Y 修正）
+  - 次：CoreRuntime.init 引数・呼び出し順の確認と system:ready イベント整備
+  - 次：History の Command 化（レイヤ・CUT を含む）
+  - 最後：テスト自動化 / ドキュメント整備
 
-core-runtime.js の冒頭で if (!window.CoordinateSystem) { throw new Error('coordinate-system.js dependency missing'); } としており、依存グローバルが無ければ即座に例外を投げる。この例外でスクリプト実行が止まり、以降の UI 初期化やサイドバー hookup が行われない（結果：キャンバスもレイヤーパネルもボタンも無反応）。
-GitHub
+----------------------------------------------------------------------
+10) 参考（調査メモ）
+  - getGlobalBounds による stack overflow は通常「親子の循環参照」か「カスタム getGlobalBounds の再帰」で起きる。
+  - 対処は「循環参照を作らないチェック」を最初に導入するのが最も確実で軽量。
 
-同じく TEGAKI_CONFIG（config.js）も必須チェックされます。これらが未定義だと同様に初期化不能。
-GitHub
-+1
-
-したがって index.html のスクリプトタグ順、あるいはファイルの読み込みで例外が起きている（file:// での差異、相対パスミス、CSPやブラウザのブロックは稀だが排除要）ことが最も高確率です。該当 index の UI 表示部は確認できましたが、スクリプト実行が途中で止まっている形跡があります。
-GitHub
-
-3) すぐできる修正（最短パッチ）
-
-目的：依存が揃ってから CoreRuntime を初期化する
-index.html の <script> を次の順に配置してください（ファイルがローカルにある想定）：
-
-pixijs CDN（v8.13）
-
-config.js（必ず先に）
-
-coordinate-system.js
-
-system/*.js（state-manager, layer-system, event-bus, ...）── 依存関係に応じた順序で
-
-core-engine.js（エンジン本体）
-
-core-runtime.js（最終）
-
-最後に初期化呼び出し（下に例）
-
-index.html に追加する“安全な初期化”コード例（</body>直前に置く）：
-
-<script>
-  window.addEventListener('DOMContentLoaded', function() {
-    // 簡易チェック（開発段階では console.log を許容）
-    if (!window.TEGAKI_CONFIG) { console.error('config.js が読み込まれていません'); return; }
-    if (!window.CoordinateSystem) { console.error('coordinate-system.js が読み込まれていません'); return; }
-    if (!window.CoreRuntime) { console.error('core-runtime.js が読み込まれていません'); return; }
-
-    // 既存の app 初期化処理がある場合はそれを流用
-    // 例：App を作る処理
-    const app = new PIXI.Application({ width: TEGAKI_CONFIG.canvas.width, height: TEGAKI_CONFIG.canvas.height, backgroundAlpha: 0 });
-    document.getElementById('canvas-root')?.appendChild(app.view);
-
-    // 必要なコンテナ群を作る（CoreRuntime.init が期待する shape）
-    const options = {
-      app: app,
-      worldContainer: new PIXI.Container(),
-      canvasContainer: new PIXI.Container(),
-      cameraSystem: window.cameraSystem || null,
-      layerManager: window.layerManager || null,
-      drawingEngine: window.drawingEngine || null
-    };
-
-    // attach containers if not already
-    app.stage.addChild(options.worldContainer);
-    options.worldContainer.addChild(options.canvasContainer);
-
-    try {
-      window.CoreRuntime.init(options);
-      console.log('CoreRuntime 初期化呼び出し成功');
-    } catch (e) {
-      console.error('CoreRuntime.init で例外:', e);
+----------------------------------------------------------------------
+付録: デバッグ用ワンライナー（例外発生時の親チェーントレース）
+  (console で実行)
+  ```js
+  function printParentChain(obj){
+    const seen = new Set();
+    let cur = obj;
+    while(cur && !seen.has(cur)){
+      console.log(cur.name || cur.label || cur);
+      seen.add(cur);
+      cur = cur.parent;
     }
-  });
-</script>
-
-
-理由：直接 CoreRuntime がロード直後に即実行（例：ファイル内で即実行 init）される設計だと依存が揃っていないタイミングで例外が出ます。DOMContentLoaded まで遅延させることで、相対パスのロード遅延や file:// の読み込み順問題を回避できます。
-
-4) 安全にするための core-runtime 改修提案（推奨）
-
-core-runtime.js の冒頭で throw している箇所を 即例外にする設計はデバッグ時に有効だが本運用では致命的。運用を楽にするため、明示的 init 呼び出しのみで初期化するように変更を推奨します（つまり auto-init を止める）。
-
-差分イメージ（修正例）：
-
-- if (!window.CoordinateSystem) { throw new Error('coordinate-system.js dependency missing'); }
-- const CONFIG = window.TEGAKI_CONFIG; if (!CONFIG) { throw new Error('config.js dependency missing'); }
-+ // 依存は init 時にチェックする（呼び出し側で明示的に初期化を行う）
-+ // （デバッグしやすくするため console.error に留める）
-+ const CONFIG = window.TEGAKI_CONFIG;
-+ if (!window.CoordinateSystem) { console.error('coordinate-system.js 未ロード: CoreRuntime.init 呼び出し前に読み込んでください'); }
-+ if (!CONFIG) { console.error('config.js 未ロード: CoreRuntime.init 呼び出し前に読み込んでください'); }
-
-
-そして init(options) の先頭に依存チェックを入れて、足りない場合は return false / 明確なエラーオブジェクトを返す形にします。これにより「なぜ表示されないか」が分かりやすくなります（ログが出る→次の修正がとれる）。
-
-（注：現在の core-runtime.js の中で throw している箇所を確認しました。）
-GitHub
-
-5) 追加のチェックポイント（必ず見る）
-
-ブラウザ Console の最初のエラーを必ずスクショ／コピペ。最初の例外で後続が止まります。
-
-スクリプトタグの src が**相対パス（./system/...）**になっているか。file:// だと ../ の解釈ミスが起きやすい。
-
-pixi の CDN が正しく読み込まれているか（v8.13）。PIXI が未定義だとアプリが死にます。
-
-core-engine.js / core-runtime.js 内で 即時実行（IIFE） と init の呼び出しが混在していないか。自動で init() を呼んでいる箇所があると順序問題が再発します。
-
-6) 優先度付き改修計画（短期→中期→長期）
-フェーズA（今日〜数時間, 優先度: 高）
-
-1-1. ブラウザ Console の最初のエラーを取得（ユーザー作業）。
-
-1-2. index.html の <script> を「順序固定＋DOMContentLoadedによる初期化」に変更（上のサンプルを貼る）。
-
-1-3. core-runtime の冒頭の throw を一時的に console.error に置換して明示ログに（デバッグ容易化）。
-GitHub
-
-成果物：キャンバス表示・サイドバーの初期 hookup が復活するはず。
-
-フェーズB（数日, 優先度: 中）
-
-2-1. 依存関係のドキュメント化（README） — ファイルロード順、グローバル変数、init API。
-
-2-2. 各 system/*.js に 明示的な register() 関数 を追加して CoreRuntime 側から順に初期化できるようにする（依存注入化）。
-
-2-3. エラーハンドリング改善：UIに「初期化エラー」バナー（最小限）を出す（ただし過度な演出は不要とのこと）。
-
-フェーズC（将来、優先度: 低）
-
-3-1. モジュール的な読み込み管理（軽量な loader：手作りで window.Loader.load(['config.js','coordinate-system.js',...], cb) を作る）を実装。
-
-3-2. E2E テスト（ヘッドレスブラウザ）でスクリプト順問題を回帰検出。※現ルールで Node/bundler 禁止なので軽量な Phantom-like テストを検討。
-
-7) 修正パッチ（すぐ貼れる）
-
-A. index.html の script 順例（抜粋）
-
-<!-- 1) Pixi -->
-<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/browser/pixi.min.js"></script>
-
-<!-- 2) Config -->
-<script src="./config.js"></script>
-
-<!-- 3) Coordinate system -->
-<script src="./coordinate-system.js"></script>
-
-<!-- 4) system/（依存順に） -->
-<script src="./system/event-bus.js"></script>
-<script src="./system/state-manager.js"></script>
-<script src="./system/layer-system.js"></script>
-<!-- ... 他 system/*.js ... -->
-
-<!-- 5) core-engine, core-runtime -->
-<script src="./core-engine.js"></script>
-<script src="./core-runtime.js"></script>
-
-<!-- 6) 最後に遅延初期化（上で示した DOMContentLoaded ブロックをここに） -->
-
-
-B. core-runtime.js の init チェック追加（抜粋）
-
-init(options) {
-  if (!window.CoordinateSystem) {
-    console.error('CoreRuntime.init: CoordinateSystem が見つかりません。coordinate-system.js を先に読み込んでください');
-    return false;
+    if (cur) console.warn('cycle detected at', cur);
   }
-  if (!window.TEGAKI_CONFIG) {
-    console.error('CoreRuntime.init: TEGAKI_CONFIG が見つかりません。config.js を先に読み込んでください');
-    return false;
-  }
-  // 以降は既存処理...
-}
