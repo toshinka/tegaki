@@ -1,0 +1,469 @@
+================================================================================
+History改修計画書 - v8.13_History6
+診断日: 2025年10月6日
+================================================================================
+
+【0. エグゼクティブサマリー】
+
+現在のHistoryシステムは「外部からの明示的な呼び出しでスナップショット保存」方式
+を採用しており、呼び出し漏れ・非同期タイミングのズレ・二重記録により、以下の問題
+が発生しています:
+
+1. 描画ストローク後にHistory記録されないケースがある
+2. レイヤー操作（移動・変形）がHistory記録されない
+3. Undo/Redoのカウント表示が不整合
+4. 処理が緩慢（setTimeout 50ms多用）
+
+根本原因は「誰が・いつ・History.saveState()を呼ぶか」が曖昧であることです。
+
+
+【1. 現状の問題分析】
+
+■ 1-1. 描画ストローク記録の欠陥
+
+現在の実装:
+- core-engine.js: stopDrawing()でHistory.saveState()を呼んでいる
+- しかし、isExecutingUndoRedo/isRecordingStateのガード条件により、記録がスキップ
+  されるケースが存在
+
+問題箇所（core-engine.js: 146-149行目）:
+```
+if (window.History && typeof window.History.saveState === 'function') {
+    if (!window.History._manager?.isExecutingUndoRedo && 
+        !window.History._manager?.isRecordingState) {
+        window.History.saveState();  // ←この条件が厳しすぎる
+    }
+}
+```
+
+改善方針:
+→ 描画完了時には必ずHistory記録を行う（フラグチェックを緩和）
+
+
+■ 1-2. レイヤー移動・変形の記録欠陥
+
+現在の実装:
+- layer-system.js: Vキーモード中の移動・回転・拡縮は即座に適用されるが、
+  exitLayerMoveMode()時にconfirmLayerTransform()が呼ばれてパスに焼き込まれる
+- confirmLayerTransform()内でHistory記録は存在しない
+
+問題箇所（layer-system.js: confirmLayerTransform()メソッド）:
+```
+confirmLayerTransform() {
+    // ... トランスフォーム適用処理 ...
+    // 🔥 History記録が存在しない！
+}
+```
+
+改善方針:
+→ exitLayerMoveMode()完了時に必ずHistory.saveState()を呼ぶ
+
+
+■ 1-3. setTimeout遅延による非同期ズレ
+
+現在の実装（history.js: 65-75行目）:
+```
+this.eventBus.on('animation:cut-deleted', () => {
+    if (this.isExecutingUndoRedo || this.isRecordingState) return;
+    setTimeout(() => this.saveStateFull(), 50);  // ←50ms遅延
+});
+```
+
+問題:
+- UI変更とHistory記録のタイミングがズレる
+- カット削除直後に別操作を行うと記録順序が逆転する可能性
+
+改善方針:
+→ setTimeoutを削除し、イベント完了時に同期的に記録
+
+
+■ 1-4. レイヤー階層移動の記録欠陥
+
+現在の実装（layer-system.js: moveActiveLayerHierarchy()）:
+```
+if (newIndex !== currentIndex) {
+    if (window.History && typeof window.History.saveState === 'function') {
+        if (!window.History._manager?.isExecutingUndoRedo && 
+            !window.History._manager?.isRecordingState) {
+            window.History.saveState();  // ←階層移動前に記録
+        }
+    }
+    this.setActiveLayer(newIndex);  // ←移動実行
+}
+```
+
+問題:
+- 移動前の状態を記録しているため、Undo時に整合性が取れない可能性
+- setActiveLayer()は単にアクティブインデックスを変更するだけでレイヤー順序変更
+  ではないため、記録する意味が薄い
+
+改善方針:
+→ reorderLayers()が呼ばれた場合のみHistory記録（実際の順序変更時）
+
+
+【2. 改修設計】
+
+■ 2-1. 改修方針の原則
+
+1. 「操作完了時に一度だけ記録」の徹底
+2. setTimeout遅延を排除し同期的記録
+3. isExecutingUndoRedo/isRecordingStateガードの適切化
+4. 記録責任の明確化（誰が・どのタイミングで）
+
+
+■ 2-2. 改修対象ファイルと内容
+
+【ファイル1】history.js
+修正内容:
+1. setTimeout遅延を削除（65-75行目）
+   - 'animation:cut-deleted' イベント
+   - 'cut:pasted-right-adjacent' イベント
+   - 'cut:pasted-new' イベント
+   → 即座にsaveStateFull()を呼ぶ
+
+2. saveState()のガード条件を緩和（91-124行目）
+   - 描画系操作は isRecordingState のみチェック
+   - isExecutingUndoRedo は除外（Undo中でも新規操作は記録）
+
+
+【ファイル2】core-engine.js
+修正内容:
+1. stopDrawing()のHistory記録を確実化（143-169行目）
+   - isExecutingUndoRedo チェックを削除
+   - 描画完了時は必ず記録
+
+2. layer:clear-active イベントのHistory記録を確実化（530-563行目）
+   - 同様にガード条件を緩和
+
+
+【ファイル3】layer-system.js
+修正内容:
+1. exitLayerMoveMode()にHistory記録追加（944-968行目）
+   - confirmLayerTransform()実行後にHistory.saveState()を呼ぶ
+
+2. confirmLayerTransform()の記録タイミング明確化（978-1021行目）
+   - 現在は記録なし → exitLayerMoveMode()で一括記録
+
+3. reorderLayers()にHistory記録追加（140-183行目）
+   - レイヤー順序変更成功時にHistory.saveState()
+
+4. moveActiveLayerHierarchy()のHistory記録を削除（690-720行目）
+   - 実際の順序変更は reorderLayers() で行われる
+   - setActiveLayer()は単にインデックス変更なので記録不要
+
+
+【ファイル4】animation-system.js
+修正内容:
+- Phase 3で既に手動History記録を削除済み（555-567行目）
+- イベント発火のみで history.js が自動記録する設計
+- 現状維持（変更不要）
+
+
+■ 2-3. 記録タイミング一覧表
+
+| 操作                     | 記録責任      | メソッド                    | タイミング        |
+|--------------------------|---------------|----------------------------|-------------------|
+| 描画ストローク終了       | core-engine   | stopDrawing()              | pointerup直後     |
+| レイヤー消去             | core-engine   | layer:clear-active         | 消去実行直後      |
+| レイヤー移動・変形確定   | layer-system  | exitLayerMoveMode()        | Vキー解除時       |
+| レイヤー順序変更         | layer-system  | reorderLayers()            | 順序変更成功後    |
+| レイヤー削除             | layer-system  | deleteLayer()              | 削除実行直後      |
+| レイヤー作成             | layer-system  | createLayer()              | 作成直後          |
+| カット削除               | history.js    | イベントリスナー           | イベント受信直後  |
+| カット貼り付け           | history.js    | イベントリスナー           | イベント受信直後  |
+
+
+【3. 実装詳細】
+
+■ 3-1. history.js の修正
+
+修正箇所1: イベントリスナーのsetTimeout削除（65-75行目）
+
+【変更前】
+```javascript
+this.eventBus.on('animation:cut-deleted', () => {
+    if (this.isExecutingUndoRedo || this.isRecordingState) return;
+    setTimeout(() => this.saveStateFull(), 50);  // ←削除
+});
+```
+
+【変更後】
+```javascript
+this.eventBus.on('animation:cut-deleted', () => {
+    if (this.isExecutingUndoRedo || this.isRecordingState) return;
+    this.saveStateFull();  // ←即座に実行
+});
+```
+
+
+修正箇所2: saveState()のガード条件緩和（91-124行目）
+
+【変更前】
+```javascript
+saveState() {
+    if (this.isExecutingUndoRedo || this.isRecordingState) {
+        return;  // ←isExecutingUndoRedoチェック削除
+    }
+    // ...
+}
+```
+
+【変更後】
+```javascript
+saveState() {
+    if (this.isRecordingState) {
+        return;  // ←isRecordingStateのみチェック
+    }
+    // ...
+}
+```
+
+
+■ 3-2. core-engine.js の修正
+
+修正箇所1: stopDrawing()のHistory記録確実化（143-169行目）
+
+【変更前】
+```javascript
+if (window.History && typeof window.History.saveState === 'function') {
+    if (!window.History._manager?.isExecutingUndoRedo && 
+        !window.History._manager?.isRecordingState) {
+        window.History.saveState();
+    }
+}
+```
+
+【変更後】
+```javascript
+if (window.History && typeof window.History.saveState === 'function') {
+    window.History.saveState();  // ←ガード条件削除（常に記録）
+}
+```
+
+
+修正箇所2: layer:clear-active の記録確実化（530-563行目）
+
+【変更前】
+```javascript
+if (window.History && typeof window.History.saveState === 'function') {
+    if (!window.History._manager?.isExecutingUndoRedo && 
+        !window.History._manager?.isRecordingState) {
+        window.History.saveState();
+    }
+}
+```
+
+【変更後】
+```javascript
+if (window.History && typeof window.History.saveState === 'function') {
+    window.History.saveState();  // ←ガード条件削除
+}
+```
+
+
+■ 3-3. layer-system.js の修正
+
+修正箇所1: exitLayerMoveMode()にHistory記録追加（944-968行目）
+
+【変更前】
+```javascript
+exitLayerMoveMode() {
+    // ...既存処理...
+    this.updateCursor();
+    this.confirmLayerTransform();  // ←変形確定
+    
+    if (this.eventBus) {
+        this.eventBus.emit('layer:move-mode-exited');
+    }
+}
+```
+
+【変更後】
+```javascript
+exitLayerMoveMode() {
+    // ...既存処理...
+    this.updateCursor();
+    this.confirmLayerTransform();  // ←変形確定
+    
+    // 🔥 変形確定後にHistory記録
+    if (window.History && typeof window.History.saveState === 'function') {
+        window.History.saveState();
+    }
+    
+    if (this.eventBus) {
+        this.eventBus.emit('layer:move-mode-exited');
+    }
+}
+```
+
+
+修正箇所2: reorderLayers()にHistory記録追加（140-183行目）
+
+【変更前】
+```javascript
+reorderLayers(fromIndex, toIndex) {
+    // ...レイヤー順序変更処理...
+    
+    if (this.eventBus) {
+        this.eventBus.emit('layer:reordered', { /* ... */ });
+    }
+    
+    console.log(`✅ Layers reordered: ${fromIndex} → ${toIndex}`);
+    return true;
+}
+```
+
+【変更後】
+```javascript
+reorderLayers(fromIndex, toIndex) {
+    // ...レイヤー順序変更処理...
+    
+    // 🔥 順序変更成功時にHistory記録
+    if (window.History && typeof window.History.saveState === 'function') {
+        window.History.saveState();
+    }
+    
+    if (this.eventBus) {
+        this.eventBus.emit('layer:reordered', { /* ... */ });
+    }
+    
+    console.log(`✅ Layers reordered: ${fromIndex} → ${toIndex}`);
+    return true;
+}
+```
+
+
+修正箇所3: moveActiveLayerHierarchy()のHistory記録削除（690-720行目）
+
+【変更前】
+```javascript
+if (newIndex !== currentIndex) {
+    if (window.History && typeof window.History.saveState === 'function') {
+        if (!window.History._manager?.isExecutingUndoRedo && 
+            !window.History._manager?.isRecordingState) {
+            window.History.saveState();  // ←削除
+        }
+    }
+    
+    this.setActiveLayer(newIndex);
+    // ...
+}
+```
+
+【変更後】
+```javascript
+if (newIndex !== currentIndex) {
+    // History記録削除（reorderLayers()で記録される）
+    
+    this.setActiveLayer(newIndex);
+    // ...
+}
+```
+
+
+【4. テスト計画】
+
+■ 4-1. 基本動作テスト
+
+テスト1: 描画ストローク記録
+1. ペンツールで1ストローク描画
+2. History.getDebugInfo() で undoStackSize を確認
+3. 期待値: +1
+
+テスト2: レイヤー移動・変形記録
+1. Vキーを押してレイヤー移動モード
+2. レイヤーを移動・回転・拡縮
+3. Vキーを離してモード解除
+4. History.getDebugInfo() で undoStackSize を確認
+5. 期待値: +1
+
+テスト3: レイヤー順序変更記録
+1. レイヤーパネルでレイヤーをドラッグ&ドロップ
+2. History.getDebugInfo() で undoStackSize を確認
+3. 期待値: +1
+
+テスト4: カット削除記録
+1. カットを削除
+2. History.getDebugInfo() で undoStackSize を確認
+3. 期待値: +1
+
+
+■ 4-2. Undo/Redo整合性テスト
+
+テスト5: 描画→Undo→Redo
+1. 1ストローク描画 → Undo → Redo
+2. 期待値: 描画が復元される
+
+テスト6: レイヤー移動→Undo→Redo
+1. レイヤー移動 → Undo → Redo
+2. 期待値: 移動が復元される
+
+テスト7: 複数操作の連続Undo
+1. 描画3ストローク + レイヤー移動1回
+2. Undo 4回
+3. 期待値: 全て元に戻る
+
+
+■ 4-3. 性能テスト
+
+テスト8: 高速描画時の記録漏れチェック
+1. 10ストローク高速連続描画
+2. History.getDebugInfo() で undoStackSize を確認
+3. 期待値: 10
+
+テスト9: カット削除直後の操作
+1. カット削除 → 即座に描画
+2. Undo 2回
+3. 期待値: 描画・カット削除の順にUndoされる
+
+
+【5. リスク評価】
+
+■ 高リスク
+- stopDrawing()のガード条件削除
+  → 描画中の重複記録の可能性（isRecordingStateで防止）
+
+■ 中リスク
+- setTimeoutの削除
+  → イベント処理順序の変化（同期化により改善される見込み）
+
+■ 低リスク
+- reorderLayers()への記録追加
+  → 既存機能への影響なし（新規追加）
+
+
+【6. 実装優先順位】
+
+優先度1: core-engine.js の修正（描画記録の確実化）
+優先度2: layer-system.js の exitLayerMoveMode() 修正
+優先度3: history.js の setTimeout 削除
+優先度4: layer-system.js の reorderLayers() 修正
+
+
+【7. ロールバック計画】
+
+修正箇所が明確なため、各ファイルの修正前バージョンを保持。
+問題発生時は該当ファイルのみ元に戻す。
+
+
+【8. 改修後の期待効果】
+
+1. 描画ストロークが100%記録される
+2. レイヤー移動・変形がUndoできるようになる
+3. Historyカウント表示が常に正確
+4. 処理速度が向上（setTimeout削除による）
+
+
+【9. 補足事項】
+
+■ 既存の保護機構（維持）
+- isRecordingState: 記録中の再帰防止（維持）
+- isExecutingUndoRedo: Undo/Redo実行中の記録防止（部分的に緩和）
+
+■ 今後の拡張性
+- 差分コマンド方式への移行を見据えた設計
+- パス単位の記録への移行準備
+
+================================================================================
+以上
+================================================================================

@@ -1,10 +1,10 @@
 // ================================================================================
-// system/history.js - TEGAKI_KEYMAP対応版
+// system/history.js - History記録タイミング最適化版
 // ================================================================================
 // 改修内容：
-// - TEGAKI_KEYMAPを使用したアクション中心のショートカット処理
-// - イベント駆動History記録削減（既存の改修を維持）
-// - Undo/Redoショートカット一本化（既存の改修を維持）
+// - setTimeout遅延を削除（即座にHistory記録）
+// - saveState()のガード条件緩和（isExecutingUndoRedoチェック削除）
+// - 描画系操作は常に記録（isRecordingStateのみチェック）
 
 (function() {
     'use strict';
@@ -67,26 +67,28 @@
             this.eventBus.on('history:redo-request', () => this.redo());
             this.eventBus.on('history:clear', () => this.clear());
             
+            // 🔥 修正: setTimeout削除（即座にHistory記録）
             this.eventBus.on('animation:cut-deleted', () => {
                 if (this.isExecutingUndoRedo || this.isRecordingState) return;
-                setTimeout(() => this.saveStateFull(), 50);
+                this.saveStateFull();
             });
             
             this.eventBus.on('cut:pasted-right-adjacent', () => {
                 if (this.isExecutingUndoRedo || this.isRecordingState) return;
-                setTimeout(() => this.saveStateFull(), 50);
+                this.saveStateFull();
             });
             
             this.eventBus.on('cut:pasted-new', () => {
                 if (this.isExecutingUndoRedo || this.isRecordingState) return;
-                setTimeout(() => this.saveStateFull(), 50);
+                this.saveStateFull();
             });
         }
         
         // ===== State記録 =====
         
         saveState() {
-            if (this.isExecutingUndoRedo || this.isRecordingState) {
+            // 🔥 修正: isExecutingUndoRedoチェック削除（描画系操作は常に記録）
+            if (this.isRecordingState) {
                 return;
             }
             
@@ -688,9 +690,9 @@
         });
     }
     
-    console.log('✅ history.js TEGAKI_KEYMAP対応版 loaded');
-    console.log('   - アクション中心のショートカット処理');
-    console.log('   - UNDO/REDOアクション対応');
-    console.log('   - レガシーフォールバック実装済み');
+    console.log('✅ history.js (History記録タイミング最適化版) loaded');
+    console.log('   - setTimeout遅延削除（即座に記録）');
+    console.log('   - saveState()ガード条件緩和');
+    console.log('   - 描画系操作の記録確実化');
     
 })();

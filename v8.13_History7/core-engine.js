@@ -1,6 +1,6 @@
-// ===== core-engine.js - History二重記録修正版 =====
-// 🔧 修正1: startDrawing()のHistory記録を削除（stopDrawing()のみに統一）
-// 🔧 修正2: レイヤー操作の二重記録防止
+// ===== core-engine.js - History記録確実化版 =====
+// 🔧 修正1: stopDrawing()のガード条件削除（常にHistory記録）
+// 🔧 修正2: layer:clear-activeのガード条件削除
 // ✅ 既存機能完全維持
 
 (function() {
@@ -90,8 +90,6 @@
                 return;
             }
             
-            // 🔥 修正: startDrawing()でのHistory記録を削除（stopDrawing()で一括記録）
-            
             this.isDrawing = true;
             this.lastPoint = canvasPoint;
 
@@ -163,12 +161,9 @@
             if (this.currentPath) {
                 this.currentPath.isComplete = true;
                 
-                // 🔥 修正: 描画完了時のみHistory記録（Undo/Redo実行中はスキップ）
+                // 🔥 修正: 描画完了時に必ずHistory記録（ガード条件削除）
                 if (window.History && typeof window.History.saveState === 'function') {
-                    if (!window.History._manager?.isExecutingUndoRedo && 
-                        !window.History._manager?.isRecordingState) {
-                        window.History.saveState();
-                    }
+                    window.History.saveState();
                 }
                 
                 this.layerManager.requestThumbnailUpdate(this.layerManager.activeLayerIndex);
@@ -493,12 +488,9 @@
                     return;
                 }
                 
-                // 🔥 修正: History記録を一度だけ
+                // 🔥 修正: History記録を必ず実行（ガード条件削除）
                 if (window.History && typeof window.History.saveState === 'function') {
-                    if (!window.History._manager?.isExecutingUndoRedo && 
-                        !window.History._manager?.isRecordingState) {
-                        window.History.saveState();
-                    }
+                    window.History.saveState();
                 }
                 
                 if (activeLayer.layerData.paths) {
@@ -718,9 +710,9 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (History二重記録修正版) loaded');
-    console.log('  - 🔥 startDrawing()のHistory記録削除');
-    console.log('  - 🔥 stopDrawing()でのみHistory記録（一筆一回）');
-    console.log('  - 🔥 レイヤー消去のHistory記録最適化');
+    console.log('✅ core-engine.js (History記録確実化版) loaded');
+    console.log('  - 🔥 stopDrawing()のガード条件削除（常に記録）');
+    console.log('  - 🔥 layer:clear-activeのガード条件削除');
+    console.log('  - 🔥 描画完了時とレイヤー消去時のHistory記録を確実化');
 
 })();
