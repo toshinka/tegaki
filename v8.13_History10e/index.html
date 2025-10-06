@@ -232,14 +232,93 @@ function initializeApp() {
             return true;
         }
         
+        setupExportSystemWhenReady() {
+            console.log('📋 Setting up Export System initialization...');
+            
+            const tryInitialize = () => {
+                if (window.animationSystem && window.animationSystem.hasInitialized) {
+                    console.log('✓ AnimationSystem ready, initializing Export System');
+                    this.initializeExportSystem();
+                    return true;
+                }
+                console.log('⏳ AnimationSystem not ready yet...');
+                return false;
+            };
+            
+            if (tryInitialize()) {
+                return;
+            }
+            
+            if (window.TegakiEventBus) {
+                console.log('📡 Registering event listeners for Export System...');
+                
+                window.TegakiEventBus.on('animation:system-ready', () => {
+                    console.log('🎬 Received animation:system-ready event');
+                    if (!this.exportManager) {
+                        this.initializeExportSystem();
+                    }
+                });
+                
+                window.TegakiEventBus.on('animation:initialized', () => {
+                    console.log('🎬 Received animation:initialized event');
+                    if (!this.exportManager) {
+                        setTimeout(() => {
+                            this.initializeExportSystem();
+                        }, 100);
+                    }
+                });
+                
+                window.TegakiEventBus.on('animation:initial-cut-created', () => {
+                    console.log('🎬 Received animation:initial-cut-created event');
+                    if (!this.exportManager) {
+                        setTimeout(() => {
+                            this.initializeExportSystem();
+                        }, 200);
+                    }
+                });
+            }
+            
+            setTimeout(() => {
+                if (!this.exportManager) {
+                    console.log('⏰ 500ms timeout: trying Export System initialization');
+                    tryInitialize();
+                }
+            }, 500);
+            
+            setTimeout(() => {
+                if (!this.exportManager) {
+                    console.log('⏰ 1000ms timeout: trying Export System initialization');
+                    tryInitialize();
+                }
+            }, 1000);
+            
+            setTimeout(() => {
+                if (!this.exportManager) {
+                    console.log('⚠️ 1500ms timeout: Export System still not initialized');
+                    console.log('   AnimationSystem status:', {
+                        exists: !!window.animationSystem,
+                        hasInitialized: window.animationSystem?.hasInitialized
+                    });
+                }
+            }, 1500);
+        }
+        
         initializeExportSystem() {
             if (!window.ExportManager || !window.PNGExporter || !window.GIFExporter) {
+                console.warn('⚠️ Export classes not loaded');
                 return;
             }
             
             if (!window.animationSystem) {
+                console.warn('⚠️ AnimationSystem not ready');
                 return;
             }
+            
+            if (this.exportManager) {
+                return;
+            }
+            
+            console.log('🎨 Initializing Export System...');
             
             this.exportManager = new window.ExportManager(
                 this.pixiApp,
@@ -268,6 +347,7 @@ function initializeApp() {
             }
             
             window.exportManager = this.exportManager;
+            console.log('✅ Export System initialized successfully');
         }
         
         updateCanvasInfo() {
@@ -335,7 +415,16 @@ window.addEventListener('DOMContentLoaded', async () => {
         const app = new DrawingApp();
         await app.initialize();
         
+        window.drawingAppInstance = app;
+        
         setupHistoryIntegration();
+        
+        setTimeout(() => {
+            if (!window.exportManager && window.animationSystem) {
+                console.log('🔄 Attempting manual Export System initialization...');
+                app.initializeExportSystem();
+            }
+        }, 800);
         
         if (window.CoordinateSystem && typeof window.CoordinateSystem.diagnoseReferences === 'function') {
             window.CoordinateSystem.diagnoseReferences();
