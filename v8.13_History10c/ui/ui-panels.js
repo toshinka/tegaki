@@ -1,12 +1,10 @@
-// ===== ui-panels.js - 水平・垂直反転ボタン実装完了版 =====
+// ===== ui-panels.js - エクスポート機能統合版 =====
 // 🎯 改修内容：
-// - flip-horizontal-btn, flip-vertical-btnのイベントハンドラ実装
-// - layer-system.jsのflipActiveLayer()を呼び出し
-// - SortableJS統合改善維持
+// - export-tool イベントハンドラ実装
+// - ExportPopup連携
 
 window.TegakiUI = {
     
-    // === UI制御クラス（水平・垂直反転ボタン実装版） ===
     UIController: class {
         constructor(drawingEngine, layerManager, app) {
             this.drawingEngine = drawingEngine;
@@ -20,22 +18,18 @@ window.TegakiUI = {
             this.setupEventDelegation();
             this.setupSliders();
             this.setupCanvasResize();
-            this.setupFlipButtons(); // 🆕 反転ボタンセットアップ
+            this.setupFlipButtons();
             window.TegakiUI.setupPanelStyles();
         }
         
         validateCoreRuntime() {
             if (!window.CoreRuntime) {
-                console.error('UIController: CoreRuntime not available - UI operations may fail');
                 throw new Error('CoreRuntime dependency missing');
             }
             
             if (!window.CoreRuntime.api) {
-                console.error('UIController: CoreRuntime.api not available');
                 throw new Error('CoreRuntime.api not initialized');
             }
-            
-            console.log('✅ UIController: CoreRuntime dependency validated');
         }
         
         setupEventDelegation() {
@@ -77,22 +71,17 @@ window.TegakiUI = {
             try {
                 return this.layerManager?.layers?.length || 1;
             } catch (error) {
-                console.warn('UIController: Failed to get layer count, using fallback');
                 return 1;
             }
         }
 
         handleToolClick(button) {
             const toolId = button.id;
-            const CONFIG = window.TEGAKI_CONFIG;
             
             const toolMap = {
                 'pen-tool': () => {
                     const success = window.CoreRuntime.api.setTool('pen');
-                    if (!success) {
-                        console.error('UIController: Failed to set pen tool');
-                        return;
-                    }
+                    if (!success) return;
                     
                     window.CoreRuntime.api.exitLayerMoveMode();
                     
@@ -103,10 +92,7 @@ window.TegakiUI = {
                 },
                 'eraser-tool': () => {
                     const success = window.CoreRuntime.api.setTool('eraser');
-                    if (!success) {
-                        console.error('UIController: Failed to set eraser tool');
-                        return;
-                    }
+                    if (!success) return;
                     
                     window.CoreRuntime.api.exitLayerMoveMode();
                     
@@ -119,9 +105,6 @@ window.TegakiUI = {
                 'gif-animation-tool': () => {
                     if (window.TegakiEventBus) {
                         window.TegakiEventBus.emit('ui:toggle-timeline');
-                        console.log('🎬 Timeline toggle event emitted');
-                    } else {
-                        console.error('UIController: TegakiEventBus not available');
                     }
                     
                     this.closeAllPopups();
@@ -132,7 +115,11 @@ window.TegakiUI = {
                     this.closeAllPopups();
                 },
                 'export-tool': () => {
-                    alert('画像・アニメ出力機能は準備中です\n\n対応予定フォーマット:\n- PNG（静止画）\n- APNG（アニメーション）\n- GIF（優先実装）\n- WEBP（アニメーション）\n- MP4（動画）\n- PDF（ドキュメント）');
+                    if (window.exportPopup) {
+                        window.exportPopup.show();
+                    } else {
+                        alert('エクスポートシステムが初期化されていません');
+                    }
                     this.closeAllPopups();
                 }
             };
@@ -182,17 +169,11 @@ window.TegakiUI = {
             
             window.TegakiUI.createSlider('pen-size-slider', 0.1, 100, CONFIG.pen.size, (value) => {
                 const success = window.CoreRuntime.api.setBrushSize(value);
-                if (!success) {
-                    console.error('UIController: Failed to set brush size');
-                }
                 return value.toFixed(1) + 'px';
             });
             
             window.TegakiUI.createSlider('pen-opacity-slider', 0, 100, CONFIG.pen.opacity * 100, (value) => {
                 const success = window.CoreRuntime.api.setBrushOpacity(value / 100);
-                if (!success) {
-                    console.error('UIController: Failed to set brush opacity');
-                }
                 return value.toFixed(1) + '%';
             });
         }
@@ -217,7 +198,6 @@ window.TegakiUI = {
             }
         }
 
-        // 🆕 水平・垂直反転ボタンのイベントハンドラ設定
         setupFlipButtons() {
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
@@ -226,48 +206,27 @@ window.TegakiUI = {
                 flipHorizontalBtn.addEventListener('click', () => {
                     if (this.layerManager && typeof this.layerManager.flipActiveLayer === 'function') {
                         this.layerManager.flipActiveLayer('horizontal');
-                        console.log('✅ Horizontal flip executed via UI button');
-                    } else {
-                        console.error('❌ UIController: LayerManager.flipActiveLayer not available');
                     }
                 });
-            } else {
-                console.warn('UIController: flip-horizontal-btn not found in DOM');
             }
             
             if (flipVerticalBtn) {
                 flipVerticalBtn.addEventListener('click', () => {
                     if (this.layerManager && typeof this.layerManager.flipActiveLayer === 'function') {
                         this.layerManager.flipActiveLayer('vertical');
-                        console.log('✅ Vertical flip executed via UI button');
-                    } else {
-                        console.error('❌ UIController: LayerManager.flipActiveLayer not available');
                     }
                 });
-            } else {
-                console.warn('UIController: flip-vertical-btn not found in DOM');
             }
         }
 
         resizeCanvas(newWidth, newHeight) {
-            console.log('UIController: Requesting canvas resize via CoreRuntime API:', newWidth, 'x', newHeight);
-            
             try {
                 const success = window.CoreRuntime.api.resizeCanvas(newWidth, newHeight);
-                
-                if (success) {
-                    console.log('✅ UIController: Canvas resize completed successfully via CoreRuntime');
-                } else {
-                    console.error('❌ UIController: Canvas resize failed via CoreRuntime');
-                }
-                
             } catch (error) {
-                console.error('UIController: Canvas resize error via CoreRuntime:', error);
             }
         }
     },
 
-    // === スライダー作成関数 ===
     createSlider: function(sliderId, min, max, initial, callback) {
         const container = document.getElementById(sliderId);
         if (!container) return;
@@ -313,7 +272,6 @@ window.TegakiUI = {
         update(initial);
     },
 
-    // === パネルスタイル設定 ===
     setupPanelStyles: function() {
         const slimStyle = document.createElement('style');
         slimStyle.textContent = `
@@ -492,7 +450,6 @@ window.TegakiUI = {
         }, 100);
     },
 
-    // === SortableJS統合完全修正版 ===
     initializeSortable: function(layerManager) {
         const layerList = document.getElementById('layer-list');
         if (!layerList || typeof Sortable === 'undefined') {
@@ -521,20 +478,14 @@ window.TegakiUI = {
                     const success = layerManager.reorderLayers(fromIndex, toIndex);
                     
                     if (success) {
-                        console.log(`✅ Layer reordered: ${fromIndex} → ${toIndex}`);
                         layerManager.updateLayerPanelUI();
                     } else {
-                        console.error('❌ Layer reorder failed');
                         layerManager.updateLayerPanelUI();
                     }
                 }
             }
         });
-        
-        console.log('✅ Sortable initialized for layer panel');
     }
 };
 
-console.log('✅ ui-panels.js 水平・垂直反転ボタン実装完了版 loaded');
-console.log('   - flip-horizontal-btn, flip-vertical-btnのイベントハンドラ実装');
-console.log('   - layer-system.jsのflipActiveLayer()を呼び出し');
+console.log('✅ ui-panels.js エクスポート機能統合版 loaded');
