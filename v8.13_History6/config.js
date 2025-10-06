@@ -1,6 +1,7 @@
 // ===== config.js - キーマッピング完全一元管理版 =====
 // 🎯 改修内容: すべてのショートカットをアクション中心の設計に統一
 // 🎯 目的: AI改修性・保守性・拡張性の最大化
+// 🎯 カメラ反転とレイヤー反転の協調動作対応
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -215,18 +216,40 @@ window.TEGAKI_KEYMAP = {
             description: 'レイヤー右回転'
         },
         
+        // === カメラ反転（通常時：V非押下） ===
+        CAMERA_FLIP_HORIZONTAL: {
+            key: 'KeyH',
+            vMode: false,
+            shift: false,
+            ctrl: false,
+            alt: false,
+            description: 'キャンバス水平反転'
+        },
+        CAMERA_FLIP_VERTICAL: {
+            key: 'KeyH',
+            vMode: false,
+            shift: true,
+            ctrl: false,
+            alt: false,
+            description: 'キャンバス垂直反転'
+        },
+        
         // === レイヤー反転（Vモード時） ===
         LAYER_FLIP_HORIZONTAL: {
             key: 'KeyH',
             vMode: true,
             shift: false,
-            description: '水平反転'
+            ctrl: false,
+            alt: false,
+            description: 'レイヤー水平反転'
         },
         LAYER_FLIP_VERTICAL: {
             key: 'KeyH',
             vMode: true,
             shift: true,
-            description: '垂直反転'
+            ctrl: false,
+            alt: false,
+            description: 'レイヤー垂直反転'
         },
         
         // === GIF/アニメーション操作 ===
@@ -387,6 +410,7 @@ window.TEGAKI_KEYMAP = {
             'レイヤー移動モード': ['LAYER_MOVE_MODE_TOGGLE'],
             'レイヤー移動': ['LAYER_MOVE_UP', 'LAYER_MOVE_DOWN', 'LAYER_MOVE_LEFT', 'LAYER_MOVE_RIGHT'],
             'レイヤー変形': ['LAYER_SCALE_UP', 'LAYER_SCALE_DOWN', 'LAYER_ROTATE_LEFT', 'LAYER_ROTATE_RIGHT'],
+            'カメラ反転': ['CAMERA_FLIP_HORIZONTAL', 'CAMERA_FLIP_VERTICAL'],
             'レイヤー反転': ['LAYER_FLIP_HORIZONTAL', 'LAYER_FLIP_VERTICAL'],
             'GIF/アニメーション': ['GIF_PREV_FRAME', 'GIF_NEXT_FRAME', 'GIF_PLAY_PAUSE', 'GIF_TOGGLE_TIMELINE', 'GIF_CREATE_CUT', 'GIF_COPY_CUT']
         };
@@ -475,6 +499,7 @@ window.TEGAKI_KEYCONFIG_MANAGER = {
             'LAYER_SCALE_DOWN': 'layerScaleDown',
             'LAYER_ROTATE_LEFT': 'layerRotateLeft',
             'LAYER_ROTATE_RIGHT': 'layerRotateRight',
+            'CAMERA_FLIP_HORIZONTAL': 'horizontalFlip',
             'LAYER_FLIP_HORIZONTAL': 'horizontalFlip'
         };
         
@@ -512,6 +537,9 @@ window.TEGAKI_UTILS = {
 console.log('✅ config.js (キーマッピング完全一元管理版) loaded');
 console.log('   🎯 アクション中心設計: すべてのショートカットをTEGAKI_KEYMAPで管理');
 console.log('   🎯 コンテキスト対応: vMode, Ctrl, Shift, Alt を柔軟に処理');
+console.log('   🎯 カメラ反転 vs レイヤー反転: Vモードで自動切り替え');
+console.log('   🎯 H: キャンバス水平反転 / V+H: レイヤー水平反転');
+console.log('   🎯 Shift+H: キャンバス垂直反転 / V+Shift+H: レイヤー垂直反転');
 console.log('   🎯 レガシー互換: 既存コードとの後方互換性を維持');
 console.log('   🎯 デバッグ支援: window.TEGAKI_KEYMAP.debugShowMapping() でマッピング一覧表示');
 console.log('   🎯 UI準備完了: getUIConfigData() で設定画面用データ取得可能');
