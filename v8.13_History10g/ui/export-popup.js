@@ -1,6 +1,6 @@
 // ==================================================
 // ui/export-popup.js
-// エクスポートUI管理
+// エクスポートUI管理 - setupUI実装・セレクタ修正版
 // ==================================================
 window.ExportPopup = (function() {
     'use strict';
@@ -9,7 +9,53 @@ window.ExportPopup = (function() {
         constructor(exportManager) {
             this.manager = exportManager;
             this.selectedFormat = 'png';
+            this.setupUI();
             this.setupEventListeners();
+        }
+        
+        setupUI() {
+            let popup = document.getElementById('export-popup');
+            
+            if (!popup) {
+                popup = document.createElement('div');
+                popup.id = 'export-popup';
+                popup.className = 'popup-panel';
+                popup.style.left = '60px';
+                popup.style.top = '200px';
+                popup.style.minWidth = '420px';
+                
+                popup.innerHTML = `
+                    <div class="popup-title">画像・アニメ出力</div>
+                    <div class="format-selection">
+                        <button class="format-btn selected" data-format="png">PNG</button>
+                        <button class="format-btn" data-format="gif">GIF</button>
+                        <button class="format-btn disabled" data-format="apng">APNG</button>
+                        <button class="format-btn disabled" data-format="webp">WEBP</button>
+                        <button class="format-btn disabled" data-format="mp4">MP4</button>
+                        <button class="format-btn disabled" data-format="pdf">PDF</button>
+                    </div>
+                    <div class="export-options" id="export-options">
+                        <div class="setting-label">PNG静止画出力</div>
+                        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
+                            現在のキャンバス状態をPNG画像として出力します。
+                        </div>
+                    </div>
+                    <div class="export-progress" id="export-progress" style="display: none;">
+                        <div class="progress-bar">
+                            <div class="progress-fill"></div>
+                        </div>
+                        <div class="progress-text">0%</div>
+                    </div>
+                    <div class="export-actions">
+                        <button class="action-button" id="export-execute">出力開始</button>
+                        <button class="action-button secondary" id="export-cancel">キャンセル</button>
+                    </div>
+                `;
+                
+                document.body.appendChild(popup);
+            }
+            
+            this.updateOptionsUI(this.selectedFormat);
         }
         
         setupEventListeners() {
@@ -43,6 +89,12 @@ window.ExportPopup = (function() {
                 window.TegakiEventBus.on('export:failed', (data) => {
                     this.onExportFailed(data);
                 });
+                
+                window.TegakiEventBus.on('export:aborted', () => {
+                    const progressEl = document.getElementById('export-progress');
+                    if (progressEl) progressEl.style.display = 'none';
+                    this.resetProgress();
+                });
             }
         }
         
@@ -60,19 +112,24 @@ window.ExportPopup = (function() {
             const optionsEl = document.getElementById('export-options');
             if (!optionsEl) return;
             
+            const canvasWidth = window.TEGAKI_CONFIG?.canvas.width || 400;
+            const canvasHeight = window.TEGAKI_CONFIG?.canvas.height || 400;
+            const cutCount = this.manager?.animationSystem?.getAnimationData?.()?.cuts?.length || 0;
+            const quality = window.TEGAKI_CONFIG?.animation?.exportSettings?.quality || 10;
+            
             const optionsMap = {
                 'png': `
                     <div class="setting-label">PNG静止画出力</div>
                     <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
                         現在のキャンバス状態をPNG画像として出力します。<br>
-                        サイズ: ${window.TEGAKI_CONFIG.canvas.width}×${window.TEGAKI_CONFIG.canvas.height}px
+                        サイズ: ${canvasWidth}×${canvasHeight}px
                     </div>
                 `,
                 'gif': `
                     <div class="setting-label">GIFアニメーション出力</div>
                     <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
                         全てのCUTをGIFアニメーションとして出力します。<br>
-                        品質: ${window.TEGAKI_CONFIG.animation.exportSettings.quality} / フレーム数: ${this.manager.animationSystem?.getAnimationData().cuts.length || 0}
+                        品質: ${quality} / フレーム数: ${cutCount}
                     </div>
                 `,
                 'apng': `
@@ -125,22 +182,25 @@ window.ExportPopup = (function() {
                 await this.manager.export(this.selectedFormat, {});
             } catch (error) {
                 alert(`エクスポート失敗: ${error.message}`);
+                if (progressEl) progressEl.style.display = 'none';
+                if (executeBtn) executeBtn.disabled = false;
+                this.resetProgress();
             }
         }
         
         updateProgress(data) {
-            const progressBar = document.querySelector('.progress-fill');
-            const progressText = document.querySelector('.progress-text');
+            const progressFill = document.querySelector('#export-progress .progress-fill');
+            const progressText = document.querySelector('#export-progress .progress-text');
             
             let percent = 0;
             
             if (data.progress !== undefined) {
-                percent = data.progress;
+                percent = Math.round(data.progress * 100);
             } else if (data.current && data.total) {
                 percent = Math.round((data.current / data.total) * 100);
             }
             
-            if (progressBar) progressBar.style.width = `${percent}%`;
+            if (progressFill) progressFill.style.width = `${percent}%`;
             if (progressText) progressText.textContent = `${percent}%`;
         }
         
@@ -169,10 +229,10 @@ window.ExportPopup = (function() {
         }
         
         resetProgress() {
-            const progressBar = document.querySelector('.progress-fill');
-            const progressText = document.querySelector('.progress-text');
+            const progressFill = document.querySelector('#export-progress .progress-fill');
+            const progressText = document.querySelector('#export-progress .progress-text');
             
-            if (progressBar) progressBar.style.width = '0%';
+            if (progressFill) progressFill.style.width = '0%';
             if (progressText) progressText.textContent = '0%';
         }
         

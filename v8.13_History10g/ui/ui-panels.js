@@ -1,7 +1,7 @@
-// ===== ui-panels.js - エクスポート機能統合版 =====
+// ===== ui-panels.js - ExportPopup参照修正版 =====
 // 🎯 改修内容：
 // - export-tool イベントハンドラ実装
-// - ExportPopup連携
+// - ExportPopup正しい参照 (window.TEGAKI_EXPORT_POPUP)
 
 window.TegakiUI = {
     
@@ -115,12 +115,22 @@ window.TegakiUI = {
                     this.closeAllPopups();
                 },
                 'export-tool': () => {
-                    if (window.exportPopup) {
+                    console.log('[ExportUI] export-tool clicked');
+                    
+                    // まず他のポップアップを閉じる
+                    this.closeAllPopups();
+                    
+                    // 次にエクスポートポップアップを表示
+                    if (window.TEGAKI_EXPORT_POPUP) {
+                        console.log('[ExportUI] Opening export popup...');
+                        window.TEGAKI_EXPORT_POPUP.show();
+                    } else if (window.exportPopup) {
+                        console.log('[ExportUI] Using fallback exportPopup');
                         window.exportPopup.show();
                     } else {
+                        console.error('[ExportUI] ExportPopup not found');
                         alert('エクスポートシステムが初期化されていません');
                     }
-                    this.closeAllPopups();
                 }
             };
             
@@ -158,8 +168,11 @@ window.TegakiUI = {
         }
 
         closeAllPopups() {
+            // エクスポートポップアップ以外を閉じる
             document.querySelectorAll('.popup-panel').forEach(popup => {
-                popup.classList.remove('show');
+                if (popup.id !== 'export-popup') {
+                    popup.classList.remove('show');
+                }
             });
             this.activePopup = null;
         }
@@ -488,4 +501,4 @@ window.TegakiUI = {
     }
 };
 
-console.log('✅ ui-panels.js エクスポート機能統合版 loaded');
+console.log('✅ ui-panels.js ExportPopup参照修正版 loaded');
