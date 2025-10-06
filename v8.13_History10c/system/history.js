@@ -1,6 +1,6 @@
 // system/history.js
 // ================================================================================
-// Phase 1: コマンドパターン完全移行
+// Phase 1: コマンドパターン完全移行 + 後方互換性
 // ================================================================================
 
 (function() {
@@ -12,6 +12,11 @@
             this.index = -1;
             this.isApplying = false;
             this.maxSize = 500;
+            
+            // ========== Phase 1: 後方互換性追加 START ==========
+            // 既存コード（layer-system.js等）が window.History._manager.isApplying を参照しているため
+            this._manager = this; // this._manager.isApplying で this.isApplying を参照できるように
+            // ========== Phase 1: 後方互換性追加 END ==========
         }
 
         push(command) {
@@ -143,7 +148,6 @@
         }
     }
 
-    // グローバルインスタンス生成 (既存を上書き)
     window.History = new HistoryManager();
 
 })();
