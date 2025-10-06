@@ -255,7 +255,6 @@
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/UPNG-js/2.1.0/UPNG.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/UPNG-js/2.1.0/UPNG.js"></script>
 
     <script src="config.js"></script>
     <script src="coordinate-system.js"></script>
@@ -421,8 +420,6 @@ function initializeApp() {
             this.pixiApp = null;
             this.coreEngine = null;
             this.uiController = null;
-            this.exportManager = null;
-            this.exportPopup = null;
         }
         
         async initialize() {
@@ -465,8 +462,6 @@ function initializeApp() {
                 this.pixiApp
             );
             
-            this.setupExportSystem();
-            
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
                 return CoreRuntime.api.resizeCanvas(newWidth, newHeight);
             };
@@ -488,55 +483,6 @@ function initializeApp() {
             
             window.drawingApp = drawingApp;
             return true;
-        }
-        
-        setupExportSystem() {
-            if (window.TegakiEventBus) {
-                window.TegakiEventBus.on('animation:system-ready', () => {
-                    if (!this.exportManager) this.initializeExportSystem();
-                });
-                
-                window.TegakiEventBus.on('animation:initialized', () => {
-                    if (!this.exportManager) {
-                        setTimeout(() => this.initializeExportSystem(), 100);
-                    }
-                });
-            }
-            
-            setTimeout(() => {
-                if (!this.exportManager && window.animationSystem) {
-                    this.initializeExportSystem();
-                }
-            }, 500);
-        }
-        
-        initializeExportSystem() {
-            if (!window.ExportManager || !window.PNGExporter || !window.GIFExporter) return;
-            if (!window.animationSystem) return;
-            if (this.exportManager) return;
-            
-            this.exportManager = new window.ExportManager(
-                this.pixiApp,
-                this.coreEngine.getLayerManager(),
-                window.animationSystem,
-                this.coreEngine.getCameraSystem()
-            );
-            
-            this.exportManager.registerExporter('png', new window.PNGExporter(this.exportManager));
-            this.exportManager.registerExporter('gif', new window.GIFExporter(this.exportManager));
-            
-            if (window.ExportPopup) {
-                this.exportPopup = new window.ExportPopup(this.exportManager);
-            }
-            
-            const exportToolBtn = document.getElementById('export-tool');
-            if (exportToolBtn && this.exportPopup) {
-                exportToolBtn.addEventListener('click', () => {
-                    this.exportPopup.show();
-                });
-            }
-            
-            window.exportManager = this.exportManager;
         }
         
         updateCanvasInfo() {
@@ -604,6 +550,45 @@ window.addEventListener('DOMContentLoaded', async () => {
         window.drawingAppInstance = app;
         
         setupHistoryIntegration();
+        
+        // === 【改修】確実なExportSystem初期化 ===
+        const initExportWithRetry = () => {
+            let retryCount = 0;
+            const maxRetries = 10;
+            
+            const tryInit = () => {
+                if (window.animationSystem && window.CoreRuntime) {
+                    const success = window.CoreRuntime.initializeExportSystem(
+                        app.pixiApp,
+                        () => {
+                            console.log('✅ ExportSystem初期化成功');
+                        }
+                    );
+                    
+                    if (success) {
+                        return;
+                    }
+                }
+                
+                retryCount++;
+                if (retryCount < maxRetries) {
+                    setTimeout(tryInit, 200);
+                } else {
+                    console.error('[ExportInit] 初期化タイムアウト - animationSystemが準備できません');
+                }
+            };
+            
+            tryInit();
+        };
+        
+        // EventBusで初期化トリガー
+        if (window.TegakiEventBus) {
+            window.TegakiEventBus.on('animation:system-ready', initExportWithRetry);
+            window.TegakiEventBus.on('animation:initialized', initExportWithRetry);
+        }
+        
+        // タイマーでも初期化を試行（フォールバック）
+        setTimeout(initExportWithRetry, 500);
         
         if (window.CoordinateSystem?.diagnoseReferences) {
             window.CoordinateSystem.diagnoseReferences();
