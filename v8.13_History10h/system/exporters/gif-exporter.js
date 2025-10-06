@@ -1,12 +1,15 @@
 // ==================================================
 // system/exporters/gif-exporter.js
-// GIFアニメーションエクスポーター (ExportManager統合版)
+// GIFアニメーションエクスポーター - バリデーション強化版
 // ==================================================
 window.GIFExporter = (function() {
     'use strict';
     
     class GIFExporter {
         constructor(exportManager) {
+            if (!exportManager) {
+                throw new Error('GIFExporter: exportManager is required');
+            }
             this.manager = exportManager;
             this.isExporting = false;
         }
@@ -16,8 +19,24 @@ window.GIFExporter = (function() {
                 throw new Error('GIF export already in progress');
             }
             
+            if (!this.manager || !this.manager.animationSystem) {
+                throw new Error('GIFExporter: manager or animationSystem not available');
+            }
+            
+            if (!this.manager.animationSystem.captureAllLayerStates) {
+                throw new Error('GIFExporter: required method captureAllLayerStates missing in AnimationSystem');
+            }
+            
+            if (!this.manager.animationSystem.restoreFromSnapshots) {
+                throw new Error('GIFExporter: required method restoreFromSnapshots missing in AnimationSystem');
+            }
+            
+            if (!this.manager.animationSystem.applyCutToLayers) {
+                throw new Error('GIFExporter: required method applyCutToLayers missing in AnimationSystem');
+            }
+            
             const animData = this.manager.animationSystem.getAnimationData();
-            if (animData.cuts.length === 0) {
+            if (!animData || !animData.cuts || animData.cuts.length === 0) {
                 throw new Error('アニメーションにCUTが含まれていません');
             }
             
@@ -44,41 +63,50 @@ window.GIFExporter = (function() {
             
             try {
                 window.TegakiEventBus?.emit('export:started', { format: 'gif' });
+                console.log('[GIF Export] Starting GIF export with', animData.cuts.length, 'cuts');
                 
                 const gif = new GIF({
-                    workers: settings.workers,
+                    workers: 0,
                     quality: settings.quality,
                     width: settings.width,
                     height: settings.height,
-                    workerScript: 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.min.js'
+                    workerScript: undefined
                 });
+                
+                console.log('[GIF Export] GIF instance created');
                 
                 gif.on('progress', (progress) => {
                     const progressPercent = Math.round(progress * 100);
+                    console.log('[GIF Export] Progress:', progressPercent + '%');
                     window.TegakiEventBus?.emit('export:progress', { 
                         format: 'gif',
                         progress: progressPercent 
                     });
                 });
                 
+                console.log('[GIF Export] Capturing initial state');
                 const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
+                console.log('[GIF Export] State captured, processing', animData.cuts.length, 'frames');
                 
                 for (let i = 0; i < animData.cuts.length; i++) {
                     const cut = animData.cuts[i];
+                    console.log(`[GIF Export] Processing frame ${i + 1}/${animData.cuts.length}`);
                     
                     this.manager.animationSystem.applyCutToLayers(i);
                     await this.waitFrame();
                     
                     try {
                         const canvas = await this.renderCutToCanvas(settings);
+                        console.log(`[GIF Export] Frame ${i + 1} rendered:`, canvas ? 'success' : 'failed');
                         
                         if (canvas) {
                             gif.addFrame(canvas, { 
                                 delay: Math.round(cut.duration * 1000)
                             });
+                            console.log(`[GIF Export] Frame ${i + 1} added to GIF`);
                         }
                     } catch (frameError) {
-                        console.error(`Error processing cut ${i + 1}:`, frameError);
+                        console.error(`[GIF Export] Error processing cut ${i + 1}:`, frameError);
                     }
                     
                     window.TegakiEventBus?.emit('export:frame-rendered', { 
@@ -87,10 +115,13 @@ window.GIFExporter = (function() {
                     });
                 }
                 
+                console.log('[GIF Export] All frames added, restoring state');
                 this.manager.animationSystem.restoreFromSnapshots(backupSnapshots);
+                console.log('[GIF Export] Starting GIF render');
                 
                 return new Promise((resolve, reject) => {
                     gif.on('finished', (blob) => {
+                        console.log('[GIF Export] GIF render finished, blob size:', blob.size);
                         try {
                             const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
                             const filename = `tegaki_animation_${timestamp}.gif`;
@@ -148,7 +179,14 @@ window.GIFExporter = (function() {
                 const offsetX = (settings.width - window.TEGAKI_CONFIG.canvas.width) / 2;
                 const offsetY = (settings.height - window.TEGAKI_CONFIG.canvas.height) / 2;
                 
-                const layersContainer = this.manager.animationSystem.layerSystem.layersContainer;
+                // layersContainerまたはcurrentCutContainerを取得
+                const layersContainer = this.manager.animationSystem.layerSystem.layersContainer || 
+                                       this.manager.animationSystem.layerSystem.currentCutContainer;
+                
+                if (!layersContainer) {
+                    throw new Error('layersContainer not found');
+                }
+                
                 const originalParent = layersContainer.parent;
                 const originalPosition = { x: layersContainer.x, y: layersContainer.y };
                 
@@ -196,4 +234,4 @@ window.GIFExporter = (function() {
     return GIFExporter;
 })();
 
-console.log('✅ gif-exporter.js (統合版) loaded');
+console.log('✅ gif-exporter.js (バリデーション強化版) loaded');

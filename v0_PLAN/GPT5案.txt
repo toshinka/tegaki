@@ -1,270 +1,217 @@
-========================================
-エクスポート機能拡張 — 問題切り分けと改修計画書（修正版）
-作成日: 2025-10-07
-対象: PixiJS v8.13 お絵かきツール（現行ブランチ: v8.13_History10f に基づく）
-参照: エクスポート機能拡張 改修計画書 (改訂版).txt, Consoleログ.txt
-      (参照ファイル確認済み). 
-      改訂計画書の元実装とロードログは確認済み。:contentReference[oaicite:2]{index=2} :contentReference[oaicite:3]{index=3}
-========================================
+【概要】
+このドキュメントは、v8.13_Based ブランチ（v8.13_History10g）で「PNG/GIF エクスポートが失敗する」問題の原因調査結果と、Claude（後続AI）が素早く改修できるようにした改修計画書です。
 
-1) 現象（ユーザー報告）
-----------------------------------------
-- 「エクスポートシステムが初期化されません」
-- エクスポートポップアップからエクスポート処理が発火しない
+要点（先に結論）
 
-2) まず確認した事実（ログ / 計画書より）
-----------------------------------------
-- 関連スクリプトはロード済み（ログに "export-manager.js loaded", "export-popup.js loaded" 等あり）。しかしロード＝インスタンス化ではない。:contentReference[oaicite:4]{index=4}
-- 改修計画書は ExportManager/Exporter/ExportPopup を定義しているが、ExportPopup.setupUI が「省略」となっており、DOM の生成/確実な要素確保や初期化フローが不明。:contentReference[oaicite:5]{index=5}
-- ExportPopup 内の updateProgress 内で document.querySelector('.progress-bar::after') のように無効／間違ったセレクタを参照している箇所がある（疑い）。これでは進捗表示が動作しない。:contentReference[oaicite:6]{index=6}
+* GIFエクスポートの致命エラー：`this.manager.animationSystem.captureAllLayerStates is not a function`
+  → animation-system に GIF exporter が期待する公開 API（captureAllLayerStates / restoreFromSnapshots / applyCutToLayers / getAnimationData / getCurrentCutIndex / generateCutThumbnail 等）が実装されていないか、アサインされているオブジェクトが想定の AnimationSystem インスタンスではない。
 
-3) 推定される主因（優先度順）
-----------------------------------------
-A. ExportManager と各 Exporter は定義されているが「インスタンス化（初期化）」が行われていない／呼ばれていない。
-   - スクリプト読み込みだけで new ExportManager(...) をしていない可能性が高い。
-   - 結果として ExportPopup に渡す manager が undefined、または popup が DOM に存在していないのでイベント未登録。
+* PNGエクスポートの致命エラー：`Cannot read properties of undefined (reading 'updateLocalTransform')`
+  → Pixi のレンダラーが渡された `container` オブジェクトに対して `updateLocalTransform` を呼び出そうとしたが、`container` が undefined か、Pixi の DisplayObject（Container等）ではない。具体的には `ExportManager.renderToCanvas()` が参照する `layerSystem.layersContainer` が未定義、または初期化順序が不正で ExportManager 作成時に正しい参照が渡されていない。
 
-B. ExportPopup の UI が DOM に存在しない（setupUI 未実装 or index.html に HTML を追加していない）。
-   - setupEventListeners が要素取得に失敗し、クリックハンドラが登録されない。
+設計方針（ユーザーの制約準拠）
 
-C. 不正確な DOM セレクタ／実装ミス（例: '.progress-bar::after' の参照）は動作不良を招く（進捗更新が何も変化しない）。
+* PixiJS v8.13 固有 API に合わせる。
+* ES2023、モジュール無し、ローカル file:// で動く形で修正。
+* ベクターペン主体なのでデータ所有権（layerData 等）は触りすぎない。API と命名を厳格に定義する。
+* フェイルセーフでの暗黙修復は禁止。明確なバリデーションとエラーを出す。
+* コンソールログは最小限（重要なエラー / 開発用 WARN のみ）。
 
-D. 初期化の順序（EventBus / app / LayerSystem 等の依存関係）により、インスタンス化が「見かけ上行われていない」ように見えるケース。
+改修サマリ（ファイル毎）
 
-4) 改修方針（制約）
-----------------------------------------
-- PixiJS v8.13 環境下での動作を最優先。
-- ESモジュール不使用、file://での直接開き動作を意識。
-- UIは最小・機能重視（装飾や演出は控える）。
-- コンソールログは最小限（エラー時のみ明確に出す）。
-- フェイルセーフで曖昧に動かすのは避け、依存性不足なら明確なエラーメッセージを出す。
+1. system/animation-system.js — 必須公開 API を実装
 
-5) 具体的改修（差分パッチ／挿入コード） — 必須箇所
-----------------------------------------
-- 要点:
-  1) export-manager を確実にインスタンス化して window に露出
-  2) 各 exporter を登録
-  3) ExportPopup の setupUI を必ず実装して DOM 要素を生成（index.html に依存せず安全に動く）
-  4) ExportPopup の updateProgress のセレクタ修正
-  5) 初期化時に必要依存（window.app 等）が無ければ明確にエラーを出す（自動待ちや勝手なフェイルバックはしない）
+* 目的: GIFエクスポーターが期待する API を提供する。
 
-- 5.1 core-runtime.js（DOMContentLoaded 内・初期化ブロックに以下を追加）
-  - 既存のDOMContentLoaded 部分に追記する想定です（file:// 環境で追加）。
-  - **注意**: 既に同等の初期化が実装されているか確認し、重複しないように統合してください。
+* 追加（必須）メソッド（名前／シグニチャ）：
 
-  挿入コード（core-runtime.js の DOMContentLoaded の最後付近に追加）:
-  --------------------------------------------------------------------
-  (function initExportSystem() {
-    try {
-      // 明示的依存チェック（欠落時は明確にエラー出力）
-      if (!window.app || !window.LayerSystem || !window.AnimationSystem || !window.CameraSystem) {
-        console.error('[ExportInit] missing dependency: app/LayerSystem/AnimationSystem/CameraSystem');
-        // 依存不足を EventBus に通知（存在すれば）
-        if (window.TegakiEventBus && typeof window.TegakiEventBus.emit === 'function') {
-          window.TegakiEventBus.emit('export:init:failed', { reason: 'missing-deps' });
-        }
-        return;
-      }
+  * captureAllLayerStates() → Array<Snapshot>
+  * restoreFromSnapshots(snapshots) → void
+  * applyCutToLayers(cutIndex) → void
+  * getAnimationData() → { cuts: [...] }
+  * getCurrentCutIndex() → number
+  * generateCutThumbnail(cutIndex) → void  (UI 呼び出し用は既に利用箇所あり)
 
-      // ExportManager のインスタンス化（グローバル配置）
-      if (!window.TEGAKI_EXPORT_MANAGER) {
-        window.TEGAKI_EXPORT_MANAGER = new window.ExportManager(
-          window.app,
-          window.LayerSystem,
-          window.AnimationSystem,
-          window.CameraSystem
-        );
-      }
+* 実装方針（簡潔）:
 
-      const mgr = window.TEGAKI_EXPORT_MANAGER;
+  * Snapshot は「非破壊」で十分な情報のみを保持する。例: { layerId, visible, alpha, x, y, scaleX, scaleY, rotation }
+  * captureAllLayerStates は layerSystem.getLayers()（または layerSystem 内の公開 API）を使って各レイヤーの状態を取得して返す。
+  * restoreFromSnapshots は snapshot を受け取り layerSystem のレイヤーに一括で適用する（破壊的にレイヤーを削る/作るのではなく、表示状態と transform を復元する）。
+  * applyCutToLayers は animation data（cut の定義: 各 cut が保持する layer state）を layerSystem に適用する。animationSystem 内で cut -> layer のマッピングが必要。
+  * getAnimationData は animator の内部データ構造をそのまま返す（ただし参照渡しは避け、必要なら shallow copy を返す）。
 
-      // エクスポーター登録（存在チェックを行う）
-      if (window.PNGExporter) mgr.registerExporter('png', new window.PNGExporter(mgr));
-      if (window.GIFExporter) mgr.registerExporter('gif', new window.GIFExporter(mgr));
-      if (window.APNGExporter) mgr.registerExporter('apng', new window.APNGExporter(mgr));
-      if (window.WEBPExporter) mgr.registerExporter('webp', new window.WEBPExporter(mgr));
+* サンプル実装（抜粋: 追加コード）:
 
-      // ExportPopup の生成（ExportManager を渡す）
-      if (!window.TEGAKI_EXPORT_POPUP) {
-        window.TEGAKI_EXPORT_POPUP = new window.ExportPopup(mgr);
-      }
+```javascript
+// animation-system.js — 追加メソッドの例（簡易、安全第一）
+AnimationSystem.prototype.captureAllLayerStates = function() {
+  if (!this.layerSystem) throw new Error('AnimationSystem: layerSystem is not assigned');
+  const layers = this.layerSystem.getLayers();
+  return layers.map(layer => ({
+    layerId: layer.layerData?.id ?? null,
+    visible: !!layer.layerData?.visible,
+    alpha: typeof layer.alpha === 'number' ? layer.alpha : (layer.layerData?.opacity ?? 1.0),
+    x: layer.x ?? 0,
+    y: layer.y ?? 0,
+    scaleX: layer.scale?.x ?? 1,
+    scaleY: layer.scale?.y ?? 1,
+    rotation: layer.rotation ?? 0
+  }));
+};
 
-      // UI を開くための基本ハンドラ（既存UIにボタン id="btn-open-export" があれば接続）
-      const openBtn = document.getElementById('btn-open-export');
-      if (openBtn) {
-        openBtn.addEventListener('click', () => window.TEGAKI_EXPORT_POPUP.show());
-      } else {
-        // ショートカットキー（例: E）登録は既存のキーマップ経由で行うことを推奨
-        if (window.TEGAKI_KEYMAP && typeof window.TEGAKI_KEYMAP.bind === 'function') {
-          window.TEGAKI_KEYMAP.bind('KeyE', () => window.TEGAKI_EXPORT_POPUP.show());
-        }
-      }
+AnimationSystem.prototype.restoreFromSnapshots = function(snapshots) {
+  if (!this.layerSystem) throw new Error('AnimationSystem: layerSystem is not assigned');
+  const layers = this.layerSystem.getLayers();
+  // レイヤー順が同一である前提。ただし layerId があれば照合して当てる
+  snapshots.forEach(snap => {
+    const layer = layers.find(l => (l.layerData?.id ?? null) === snap.layerId) || layers.shift();
+    if (!layer) return; // 無ければ無視
+    if (typeof snap.visible === 'boolean') layer.visible = snap.visible;
+    if (typeof snap.alpha === 'number') layer.alpha = snap.alpha;
+    if (typeof snap.x === 'number') layer.x = snap.x;
+    if (typeof snap.y === 'number') layer.y = snap.y;
+    if (typeof snap.scaleX === 'number') layer.scale.x = snap.scaleX;
+    if (typeof snap.scaleY === 'number') layer.scale.y = snap.scaleY;
+    if (typeof snap.rotation === 'number') layer.rotation = snap.rotation;
+  });
+};
 
-      // 初期化完了イベント
-      if (window.TegakiEventBus && typeof window.TegakiEventBus.emit === 'function') {
-        window.TegakiEventBus.emit('export:manager:initialized', { timestamp: Date.now() });
-      }
-      // 最小限の情報ログ
-      console.info('[ExportInit] ExportManager initialized');
-    } catch (e) {
-      console.error('[ExportInit] unexpected error:', e);
-    }
-  })();
-  --------------------------------------------------------------------
+AnimationSystem.prototype.getAnimationData = function() {
+  // 内部データ構造（this.animData など）を返す。参照渡しは避ける。
+  return this.animData ? JSON.parse(JSON.stringify(this.animData)) : { cuts: [] };
+};
 
-- 5.2 ui/export-popup.js（必須修正）
-  - setupUI が省略されているため、**確実に DOM を生成**する実装を書きます。
-  - また updateProgress が無効なセレクタを使っている点を修正します。
+AnimationSystem.prototype.getCurrentCutIndex = function() {
+  return typeof this.currentCutIndex === 'number' ? this.currentCutIndex : 0;
+};
 
-  置換／追加するメソッド（ExportPopup 内）:
-  --------------------------------------------------------------------
-  // setupUI: DOM が未定義なら生成（軽量・最小UI）
-  setupUI() {
-    let popup = document.getElementById('export-popup');
-    if (!popup) {
-      popup = document.createElement('div');
-      popup.id = 'export-popup';
-      popup.className = 'popup-panel';
-      popup.innerHTML = ''
-        + '<div class="popup-inner" style="padding:12px;max-width:360px;">'
-        + '  <div class="formats" style="margin-bottom:8px;">'
-        + '    <button class="format-btn selected" data-format="png">PNG</button>'
-        + '    <button class="format-btn" data-format="gif">GIF</button>'
-        + '    <button class="format-btn" data-format="apng">APNG</button>'
-        + '    <button class="format-btn" data-format="webp">WEBP</button>'
-        + '  </div>'
-        + '  <div id="export-options" style="margin-bottom:8px;"></div>'
-        + '  <div id="export-progress" style="display:none;margin-bottom:8px;">'
-        + '    <div class="progress-text">0%</div>'
-        + '    <div class="progress-bar" style="background:#eee;height:8px;border-radius:4px;overflow:hidden;">'
-        + '      <div class="progress-fill" style="width:0%;height:100%;"></div>'
-        + '    </div>'
-        + '  </div>'
-        + '  <div class="popup-actions" style="display:flex;gap:8px;justify-content:flex-end;">'
-        + '    <button id="export-execute">Export</button>'
-        + '    <button id="export-cancel">Cancel</button>'
-        + '  </div>'
-        + '</div>';
-      document.body.appendChild(popup);
-    }
-    // フォーマットボタンは setupEventListeners でも拾えるが、ここで選択初期化だけ確保
-    this.updateOptionsUI(this.selectedFormat);
-  }
+AnimationSystem.prototype.applyCutToLayers = function(cutIndex) {
+  const animData = this.getAnimationData();
+  const cut = animData.cuts[cutIndex];
+  if (!cut) throw new Error(`AnimationSystem: cut ${cutIndex} not found`);
+  // cut.layers : [{layerId, visible, alpha, x,y, ...}] 等を想定
+  if (!cut.layers || !Array.isArray(cut.layers)) return;
+  const layers = this.layerSystem.getLayers();
+  cut.layers.forEach(layerState => {
+    const layer = layers.find(l => (l.layerData?.id ?? null) === layerState.layerId);
+    if (!layer) return;
+    if (typeof layerState.visible === 'boolean') layer.visible = layerState.visible;
+    if (typeof layerState.alpha === 'number') layer.alpha = layerState.alpha;
+    if (typeof layerState.x === 'number') layer.x = layerState.x;
+    if (typeof layerState.y === 'number') layer.y = layerState.y;
+    // scale/rotation 等も同様
+  });
+};
+```
 
-  // updateProgress: 無効なセレクタ '.progress-bar::after' を使っていたため修正
-  updateProgress(data) {
-    const progressFill = document.querySelector('#export-progress .progress-fill');
-    const progressText = document.querySelector('#export-progress .progress-text');
+※ この実装は「既存の layerSystem.getLayers() が正しく Pixi Container を返す」ことを前提にしています。
 
-    if (data && data.current && data.total) {
-      const percent = Math.round((data.current / data.total) * 100);
-      if (progressFill) progressFill.style.width = `${percent}%`;
-      if (progressText) progressText.textContent = `${percent}%`;
-    } else if (typeof data.progress === 'number') {
-      // 単一進捗数値が来た場合（拡張対応）
-      const p = Math.round(data.progress * 100);
-      if (progressFill) progressFill.style.width = `${p}%`;
-      if (progressText) progressText.textContent = `${p}%`;
-    }
-  }
+2. system/export-manager.js / system/exporters/png-exporter.js / system/gif-exporter.js — 明確な入力バリデーションを追加
 
-  // setupEventListeners: EventBus の存在確認を厳密に行う
-  setupEventListeners() {
-    // format buttons: イベントデリゲートで堅牢に
-    document.addEventListener('click', (ev) => {
-      const btn = ev.target;
-      if (btn && btn.classList && btn.classList.contains('format-btn')) {
-        if (btn.classList.contains('disabled')) return;
-        this.selectFormat(btn.dataset.format);
-      }
-      if (btn && btn.id === 'export-execute') {
-        ev.preventDefault();
-        this.executeExport();
-      }
-      if (btn && btn.id === 'export-cancel') {
-        ev.preventDefault();
-        this.hide();
-      }
-    });
+* 目的: 早期に原因を検出し、わかりやすいエラーに置き換える（暗黙の回復はしない）。
 
-    // イベントバス登録（存在チェックしてから）
-    if (window.TegakiEventBus && typeof window.TegakiEventBus.on === 'function') {
-      window.TegakiEventBus.on('export:progress', (data) => {
-        this.updateProgress(data);
-      });
-      window.TegakiEventBus.on('export:completed', () => {
-        this.hide();
-      });
-      window.TegakiEventBus.on('export:aborted', () => {
-        // 取消時 UI 復帰
-        const progressEl = document.getElementById('export-progress');
-        if (progressEl) progressEl.style.display = 'none';
-      });
-    }
-  }
-  --------------------------------------------------------------------
+* 追加方針:
 
-  - 補足: ExportPopup.constructor の中で setupUI() → setupEventListeners() の順で呼ぶこと。
-    （既存コードはその順になっているが、setupUI が省略されていたため要注意）
+  * renderToCanvas の最初で `if (!container || typeof container.updateLocalTransform !== 'function') throw new Error('ExportManager.renderToCanvas: invalid container');`
+  * PNGExporter.export と GIFExporter.exportGIF の冒頭で `if (!this.manager || !this.manager.layerSystem) throw new Error('...')`
+  * GIF の backupSnapshots 呼び出しは `if (typeof this.animationSystem.captureAllLayerStates !== 'function') throw new Error('AnimationSystem.captureAllLayerStates missing')`
 
-- 5.3 小さなバグ修正（ExportManager.renderToCanvas の呼び出し安全性）
-  - renderToCanvas が this.layerSystem.layersContainer を直接参照しているため layerSystem が undefined の場合に throw する。
-  - 既に init コードで依存チェックを入れているため問題は小さいが、念のため renderToCanvas の冒頭で明示的チェックを行うことを推奨。
+* サンプル修正（ExportManager.renderToCanvas）:
 
-  例（renderToCanvas の先頭に追加）:
-  --------------------------------------------------------------------
-    renderToCanvas(options = {}) {
-      if (!this.app || !this.layerSystem || !this.layerSystem.layersContainer) {
-        throw new Error('ExportManager.renderToCanvas: missing app or layerSystem.layersContainer');
-      }
-      // ... 既存処理 ...
-    }
-  --------------------------------------------------------------------
+```javascript
+renderToCanvas(options = {}) {
+  const container = options.container || this.layerSystem?.layersContainer;
+  if (!container) throw new Error('ExportManager: layers container is not available. Ensure ExportManager was constructed after LayerSystem initialization and that layerSystem.layersContainer is a PIXI.Container.');
+  if (typeof container.updateLocalTransform !== 'function') throw new Error('ExportManager: provided container is not a PIXI DisplayObject');
+  // ... 以降は既存処理
+}
+```
 
-6) フロー（誰が何を行うか）
-----------------------------------------
-- 起動順序（推奨）:
-  1. system/event-bus.js を最初にロード
-  2. core 系（app 初期化）をロードし window.app と各 System を確定
-  3. export-manager.js / exporters/*.js をロード（定義のみ）
-  4. export-popup.js をロード（定義のみ）
-  5. DOMContentLoaded 内で initExportSystem() を実行し、ExportManager を new -> exporter登録 -> ExportPopup を new
-  6. ユーザーが UI（既存ボタンかショートカット）で exportPopup.show() を呼び出す
-  7. ExportPopup.executeExport -> ExportManager.export -> exporter.export 実行 -> ファイル出力
+* GIFExporter 側でも同様に早期検査:
 
-7) テスト手順（改修後の検証）
-----------------------------------------
-1) ブラウザで index.html を file:// で開く
-2) コンソールに "[ExportInit] ExportManager initialized" が出ているか確認
-   - 出ていない場合、console.error を読み原因（missing dependency 等）に従って修正
-3) export ボタン（btn-open-export が存在するならそれ）を押すか、KeyE を押してポップアップが表示されるか確認
-4) ポップアップで PNG を選び Export を押す -> ファイルがダウンロードされるか確認
-5) GIF（既存ロジック）も同様に確認
-6) 進捗バーが動くか確認（GIF / APNG の長尺フレーム処理で確認）
+```javascript
+if (!this.animationSystem) throw new Error('GIFExporter: animationSystem not assigned');
+if (typeof this.animationSystem.captureAllLayerStates !== 'function') throw new Error('GIFExporter: required method captureAllLayerStates missing in AnimationSystem');
+```
 
-8) べクターペン注意点（運用ルール）
-----------------------------------------
-- 出力時にレイヤーやベクタ情報を DOM／Blob に含めない（PNG, GIF はラスタ化出力なので問題なし）。
-- データの所有権・編集権限は LayerSystem 側で一元管理し、ExportManager は読み取り専用で snapshot を取るのみ。
-- ExportManager は書き換え機能を持たせない（安全のため）。
+3. core-runtime.js / core-engine.js — 初期化順序の明確化と責務分離ドキュメントを追記
 
-9) 備考（確認済みログ）
-----------------------------------------
-- ロードログに export-manager.js / png-exporter.js / gif-exporter.js / export-popup.js が "loaded" と記録されているが、インスタンス化ログは無かったため「ロードのみ」で止まっていたことを意味する可能性が高い。:contentReference[oaicite:7]{index=7}
-- ExportPopup.setupUI が未実装（計画書に「省略」と明記）だったため、DOM が無いケースに備え完全自立型の setupUI を実装することを強く推奨。:contentReference[oaicite:8]{index=8}
+* 目的: ExportManager や UI が未初期化のオブジェクトを参照してしまう初期化順序不備を排除。
 
-10) 追加的改善（将来的・オプション）
-----------------------------------------
-- ExportManager に簡易的な状態監視 API（isReady / status）を追加し、UI から確実に状態を参照できるようにする。
-- テスト用に（デバッグビルド）最小限の console.log を残すが、プロダクションでは非表示化する設定を用意する。
+* 方針:
 
-11) 変更ファイル一覧（まとめ）
-----------------------------------------
-- core-runtime.js ・・・ 初期化追加（initExportSystem）
-- ui/export-popup.js ・・・ setupUI 実装、updateProgress 修正、setupEventListeners 改良
-- system/export-manager.js ・・・ renderToCanvas 冒頭チェック（推奨）
-- index.html（ある場合）・・・ btn-open-export（任意）追加、script 読込順確認（event-bus -> core -> export-manager -> exporters -> export-popup -> core-runtime init）
+  * コア初期化フローを一箇所（core-runtime.js）に集約し、順序を明記する（例: 1. EventBus, 2. StateManager, 3. LayerSystem, 4. AnimationSystem, 5. CameraSystem, 6. ExportManager, 7. UI）。
+  * ExportManager は layerSystem, animationSystem をコンストラクタで受け取るが、受け取り時点で未初期化の可能性があるなら setLayerSystem/setAnimationSystem を持たせ、`validate()` を呼ぶ設計を採る（ただし暗黙の遅延初期化は最小限）。
 
-========================================
-END OF DOCUMENT
-========================================
+* 追加ドキュメント例（core-runtime.js の最上部コメント形式）:
+
+```
+Initialization order (must be preserved):
+1. EventBus
+2. StateManager
+3. LayerSystem (provides getLayers(), layersContainer)
+4. AnimationSystem (depends on LayerSystem)
+5. CameraSystem
+6. ExportManager (depends on LayerSystem & AnimationSystem)
+7. UI
+```
+
+4. system/layer-system.js — layersContainer の公開性を確認
+
+* 目的: レンダリング用 root container を必ず `layersContainer` として公開する契約を明確化。
+* チェック: `this.layersContainer` が `PIXI.Container`（もしくは DisplayObject）であるか、`getLayers()` が期待する配列を返すか。
+* 変更点: ファイル先頭に small API doc-comment を追記。
+
+追加検査＆テスト手順（実務）
+
+1. 開発ブランチで unit-like quick check を行う:
+
+   * console で `window.TegakiLayerSystem` / `window.TegakiAnimationSystem` / `window.ExportManager` が定義済みか確認。
+   * `typeof window.TegakiAnimationSystem.captureAllLayerStates` が 'function' であることを確認。
+   * `window.TegakiLayerSystem.layersContainer instanceof PIXI.Container` を確認。
+2. エクスポート試験（手順）:
+
+   * PNG: UI から PNG を選択 -> 失敗時はエラーメッセージをそのまま表示（詳細は DevTools）。
+   * GIF: UI から GIF を選択 -> 同上。
+3. もし上の関数が未だ無ければ、animation-system.js に上記サンプルを追加し再試行。
+
+改修の優先順位（短期→中期）
+
+* 優先 (1-2日): ExportManager の入力バリデーション追加、GIFExporter の存在チェック、PNG エラー原因の早期検出メッセージ化。
+* 優先 (2-4日): animation-system に capture/restore/applyCut 系の最小実装を追加（UI やアセットの壊滅を避けるために浅いコピーで実装）。
+* 中期 (4-7日): core-runtime の初期化フローを明文化し、コンストラクタで渡すオブジェクトの「契約」をJS Doc 化。
+* 改善 (任意): animationSystem の単体テスト（簡易 smoke test）追加。
+
+付録: 具体的パッチ案（差分スタイル）
+
+* animation-system.js に以下を追加する（ファイル末尾に diff で貼る想定）:
+
+```diff
++ // === GIF/Png Exporter 用の互換 API ===
++ AnimationSystem.prototype.captureAllLayerStates = function() { ... }
++ AnimationSystem.prototype.restoreFromSnapshots = function(snapshots) { ... }
++ AnimationSystem.prototype.applyCutToLayers = function(cutIndex) { ... }
++ AnimationSystem.prototype.getAnimationData = function() { ... }
++ AnimationSystem.prototype.getCurrentCutIndex = function() { ... }
++
+```
+
+* export-manager.js の renderToCanvas 先頭に以下挿入:
+
+```diff
++ const container = options.container || this.layerSystem?.layersContainer;
++ if (!container) throw new Error('ExportManager.renderToCanvas: layers container missing. Ensure LayerSystem initialized before ExportManager.');
++ if (typeof container.updateLocalTransform !== 'function') throw new Error('ExportManager.renderToCanvas: container is not a PIXI display object');
+```
+
+最後に（実装時のヒント）
+
+* 既存コードは UI/History 側で `window.History._manager.isApplying` 等の後方互換アクセサを使っているため、既存の public surface を壊さない範囲で実装すること。
+* Snapshot の保存は軽量に。GIF 作成時に大量のデータコピーを行うとメモリが爆発するため、必要最小限のプロパティに絞る。
+* `restoreFromSnapshots` は、存在しないレイヤー参照を無視して安全に復元する。
+
+---
+
+このドキュメントは .txt での納品を前提としています。実際のパッチ（差分）を作る場合は、上記のサンプルをベースに小さなコミット単位で作業してください。変更時は必ず `core-runtime.js` の初期化順を確認の上、Export 関連を再検証してください。
+
+以上です。必要ならこのまま具体的な `animation-system.js` への差分パッチ（完全なコード）を作成します。
