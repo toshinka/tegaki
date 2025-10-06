@@ -717,10 +717,6 @@
                 <div class="setting-group">
                     <div class="setting-label">サイズ</div>
                     <div class="slider-container">
-                        <div class="slider" id="pen-size-slider">
-                            <div class="slider-track" id="pen-size-track"></div>
-                            <div class="slider-handle" id="pen-size-handle"></div>
-                        </div>
                         <div class="slider-value" id="pen-size-value">16.0px</div>
                     </div>
                 </div>
@@ -914,14 +910,12 @@
                 return;
             }
             
-            // Delete キー (レイヤークリア)
             if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
                 eventBus.emit('layer:clear-active');
                 e.preventDefault();
                 return;
             }
             
-            // Ctrl+L (レイヤー追加)
             if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
                 if (window.drawingApp?.layerManager) {
                     const layerSystem = window.drawingApp.layerManager;
@@ -933,7 +927,6 @@
                 return;
             }
             
-            // Shift+N (新規CUT作成)
             if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
                 const animationSystem = window.animationSystem;
                 if (animationSystem) {
@@ -944,14 +937,12 @@
                 return;
             }
             
-            // Shift+A (タイムライン表示切替)
             if (e.shiftKey && e.code === 'KeyA' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('ui:toggle-timeline');
                 e.preventDefault();
                 return;
             }
             
-            // Ctrl+Space (再生/停止)
             if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
                 const timelineUI = window.timelineUI;
                 if (timelineUI && timelineUI.isVisible) {
@@ -961,7 +952,6 @@
                 return;
             }
             
-            // Shift+C (CUTコピー&ペースト)
             if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
                 eventBus.emit('cut:copy-current');
                 setTimeout(() => {
@@ -971,14 +961,12 @@
                 return;
             }
             
-            // P (ペンツール)
             if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'pen' });
                 e.preventDefault();
                 return;
             }
             
-            // E (消しゴムツール)
             if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
                 eventBus.emit('tool:select', { tool: 'eraser' });
                 e.preventDefault();
@@ -1201,4 +1189,8 @@ try {
 }
     </script>
 </body>
-</html>
+</html>="slider" id="pen-size-slider">
+                            <div class="slider-track" id="pen-size-track"></div>
+                            <div class="slider-handle" id="pen-size-handle"></div>
+                        </div>
+                        <div class
