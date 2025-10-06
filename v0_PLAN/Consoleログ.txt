@@ -1,35 +1,35 @@
-config.js:537 ✅ config.js (キーマッピング完全一元管理版) loaded
-config.js:538    🎯 アクション中心設計: すべてのショートカットをTEGAKI_KEYMAPで管理
-config.js:539    🎯 コンテキスト対応: vMode, Ctrl, Shift, Alt を柔軟に処理
-config.js:540    🎯 カメラ反転 vs レイヤー反転: Vモードで自動切り替え
-config.js:541    🎯 H: キャンバス水平反転 / V+H: レイヤー水平反転
-config.js:542    🎯 Shift+H: キャンバス垂直反転 / V+Shift+H: レイヤー垂直反転
-config.js:543    🎯 レガシー互換: 既存コードとの後方互換性を維持
-config.js:544    🎯 デバッグ支援: window.TEGAKI_KEYMAP.debugShowMapping() でマッピング一覧表示
-config.js:545    🎯 UI準備完了: getUIConfigData() で設定画面用データ取得可能
-coordinate-system.js:32 🧭 CoordinateSystem: システム統合改修版 初期化
-coordinate-system.js:730 ✅ coordinate-system.js loaded (システム統合改修版)
-coordinate-system.js:731 🔧 改修完了項目:
-coordinate-system.js:732   🆕 applyLayerTransform(): 統一レイヤー変形API
-coordinate-system.js:733   🆕 normalizeTransform(): 変形データ正規化
-coordinate-system.js:734   🆕 combineTransforms(): 変形合成
-coordinate-system.js:735   🆕 screenToWorld/worldToScreen(): キャッシュ対応座標変換
-coordinate-system.js:736   🆕 localToWorld/worldToLocal(): レイヤー座標変換
-coordinate-system.js:737   🆕 getLayerBounds(): 統一境界取得
-coordinate-system.js:738   🆕 distance/angle/normalizeAngle(): 数学関数統合
-coordinate-system.js:739   🆕 normalizeVector/dotProduct/crossProduct(): ベクトル計算
-coordinate-system.js:740   🆕 diagnoseReferences(): システム統合診断
-coordinate-system.js:741   🆕 runTransformTests(): 座標変換テスト
-coordinate-system.js:742   🆕 runPerformanceTest(): パフォーマンス測定
-coordinate-system.js:743   🔧 EventBus完全統合・キャッシュシステム
-coordinate-system.js:744   🔧 LayerSystem/CameraSystem/AnimationSystem参照統合
-coordinate-system.js:745   🔧 座標系混在問題・API断片化解消
-coordinate-system.js:746   ✅ PixiJS v8.13 完全対応
-coordinate-system.js:747   ✅ システム間連携強化
-event-bus.js:143 ✅ system/event-bus.js Phase 2: 優先度機能追加版 loaded
-state-manager.js:291 ✅ state-manager.js (Export Manager対応版) loaded
-camera-system.js:654 ✅ camera-system.js (キーバインディング変更対応版) loaded successfully
-camera-system.js:655    - ✅ LayerSystemとの連携強化・キー処理重複回避
+ ✅ config.js (キーマッピング完全一元管理版) loaded
+    🎯 アクション中心設計: すべてのショートカットをTEGAKI_KEYMAPで管理
+    🎯 コンテキスト対応: vMode, Ctrl, Shift, Alt を柔軟に処理
+    🎯 カメラ反転 vs レイヤー反転: Vモードで自動切り替え
+    🎯 H: キャンバス水平反転 / V+H: レイヤー水平反転
+    🎯 Shift+H: キャンバス垂直反転 / V+Shift+H: レイヤー垂直反転
+    🎯 レガシー互換: 既存コードとの後方互換性を維持
+    🎯 デバッグ支援: window.TEGAKI_KEYMAP.debugShowMapping() でマッピング一覧表示
+    🎯 UI準備完了: getUIConfigData() で設定画面用データ取得可能
+ 🧭 CoordinateSystem: システム統合改修版 初期化
+ ✅ coordinate-system.js loaded (システム統合改修版)
+ 🔧 改修完了項目:
+   🆕 applyLayerTransform(): 統一レイヤー変形API
+   🆕 normalizeTransform(): 変形データ正規化
+   🆕 combineTransforms(): 変形合成
+   🆕 screenToWorld/worldToScreen(): キャッシュ対応座標変換
+   🆕 localToWorld/worldToLocal(): レイヤー座標変換
+   🆕 getLayerBounds(): 統一境界取得
+   🆕 distance/angle/normalizeAngle(): 数学関数統合
+   🆕 normalizeVector/dotProduct/crossProduct(): ベクトル計算
+   🆕 diagnoseReferences(): システム統合診断
+   🆕 runTransformTests(): 座標変換テスト
+   🆕 runPerformanceTest(): パフォーマンス測定
+   🔧 EventBus完全統合・キャッシュシステム
+   🔧 LayerSystem/CameraSystem/AnimationSystem参照統合
+   🔧 座標系混在問題・API断片化解消
+   ✅ PixiJS v8.13 完全対応
+   ✅ システム間連携強化
+ ✅ system/event-bus.js Phase 2: 優先度機能追加版 loaded
+ ✅ state-manager.js (Export Manager対応版) loaded
+ ✅ camera-system.js (キーバインディング変更対応版) loaded successfully
+    - ✅ LayerSystemとの連携強化・キー処理重複回避
 camera-system.js:656    - ✅ 素の方向キー処理をLayerSystemに委譲
 camera-system.js:657    - ✅ Space + 方向キー: カメラ操作専用に限定
 camera-system.js:658    - ✅ V + H反転処理の協調動作
@@ -49,10 +49,6 @@ core-runtime.js:464   ✅ 背景レイヤー余白自動塗り (#f0e0d6)
 core-runtime.js:465   ✅ タイムラインサムネイル即時更新
 core-runtime.js:466   ✅ レイヤーパネル即時反映
 core-runtime.js:467   ✅ 既存機能完全維持
-core-engine.js:713 ✅ core-engine.js (History記録確実化版) loaded
-core-engine.js:714   - 🔥 stopDrawing()のガード条件削除（常に記録）
-core-engine.js:715   - 🔥 layer:clear-activeのガード条件削除
-core-engine.js:716   - 🔥 描画完了時とレイヤー消去時のHistory記録を確実化
 coordinate-system.js:63 🔗 CoordinateSystem EventBus integration configured
 coordinate-system.js:47 ✅ CoordinateSystem initialized with canvas: 344x135
 coordinate-system.js:757 🔄 CoordinateSystem auto-initialized
