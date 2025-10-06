@@ -1,5 +1,6 @@
 // ==================================================
-// export-manager.js - PixiJS v8.13対応エクスポート統合管理
+// system/export-manager.js
+// エクスポート統合管理システム
 // ==================================================
 window.ExportManager = (function() {
     'use strict';
@@ -22,10 +23,6 @@ window.ExportManager = (function() {
             const exporter = this.exporters[format];
             if (!exporter) {
                 throw new Error(`Unsupported format: ${format}`);
-            }
-            
-            if (this.currentExport) {
-                throw new Error('Export already in progress');
             }
             
             this.currentExport = { format, progress: 0 };
