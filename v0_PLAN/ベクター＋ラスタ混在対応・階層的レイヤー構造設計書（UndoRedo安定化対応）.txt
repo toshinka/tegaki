@@ -1,0 +1,257 @@
+========================================
+【設計書】ベクター＋ラスタ混在対応・階層的レイヤー構造計画書（Undo/Redo安定化対応）
+========================================
+
+【目的】
+本計画は、PixiJSベースのブラウザお絵描きツールにおいて、
+ベクター描画とラスタ描画を混在可能にしつつ、
+Undo/Redoの不整合を根本的に解消するための「階層的state構造」への再設計を行うものである。
+
+本構造は後にAVIUTL2や他ツールへの出力互換（.aup2変換等）を実現する基盤ともなる。
+現段階では出力よりも内部状態の階層化・整合性維持を最優先とする。
+
+----------------------------------------
+【背景と現状の問題点】
+----------------------------------------
+
+現状（v8.13_History9系）の構造では、
+各システムファイルがPixiJSオブジェクトを直接操作し、状態を局所的に保持しているため、
+次の問題が発生している：
+
+1. Undo/Redo時にPixiオブジェクトの再構築とstateの同期がずれる  
+2. レイヤーごとのデータ形式が統一されておらず、ベクター/ラスタ混在が不安定  
+3. History管理が操作ログ的（procedural）であり、状態差分管理になっていない  
+4. Claude等のAI支援がstate構造を誤認しやすく、改修提案が全体破壊的になる
+
+これを解決するため、データ構造を「timeline → frame → layer → stroke」の階層構造へ明示的に整理し、
+全stateを`stateManager`が一元管理する方式に移行する。
+
+----------------------------------------
+【新state構造設計】
+----------------------------------------
+
+stateは次の4階層構造を持つ：
+
+timeline
+ └─ frames[]
+      └─ layers[]
+           └─ strokes[]  （ベクター）
+           └─ bitmap[]   （ラスタ）
+
+※frames, layersはそれぞれIDベースで参照される。
+※全stateはJSONシリアライズ可能で、Undo/Redo時は階層スナップショットを使用。
+
+----------------------------------------
+【state-manager.js】
+----------------------------------------
+
+責務：
+- グローバルstateの保持・更新
+- Undo/Redo履歴の管理（状態差分方式）
+- PixiJSへのstate同期トリガー発火
+
+主要メソッド：
+
+```js
+const state = {
+  timeline: {
+    frames: [
+      {
+        id: "frame_001",
+        layers: [
+          {
+            id: "layer_001",
+            type: "vector", // "raster"の場合bitmap配列を持つ
+            visible: true,
+            opacity: 1.0,
+            strokes: [
+              {
+                id: "stroke_001",
+                tool: "pen",
+                color: "#ff0000",
+                width: 2,
+                points: [{x:0, y:0}, {x:50, y:20}]
+              }
+            ],
+            bitmap: [] // ラスター描画を保持するピクセルデータ or ImageBitmap参照
+          }
+        ]
+      }
+    ]
+  },
+  history: {
+    stack: [],
+    pointer: -1
+  }
+};
+
+// state更新
+function setState(newState, pushToHistory = true) {
+  if (pushToHistory) pushHistory(state);
+  Object.assign(state, structuredClone(newState));
+  eventBus.emit("state:updated", state);
+}
+
+// Undo/Redo処理
+function pushHistory(snapshot) {
+  state.history.stack.splice(state.history.pointer + 1);
+  state.history.stack.push(JSON.stringify(snapshot));
+  state.history.pointer = state.history.stack.length - 1;
+}
+
+function undo() {
+  if (state.history.pointer > 0) {
+    state.history.pointer--;
+    const prev = JSON.parse(state.history.stack[state.history.pointer]);
+    Object.assign(state, prev);
+    eventBus.emit("state:updated", state);
+  }
+}
+
+function redo() {
+  if (state.history.pointer < state.history.stack.length - 1) {
+    state.history.pointer++;
+    const next = JSON.parse(state.history.stack[state.history.pointer]);
+    Object.assign(state, next);
+    eventBus.emit("state:updated", state);
+  }
+}
+
+【layer-system.js】
+
+責務：
+
+レイヤー生成・削除・切り替え
+
+type（vector/raster）に応じたPixiコンテナ構築
+
+描画内容のstate同期
+
+主要メソッド：
+
+function createLayer(frameId, type="vector") {
+  const frame = findFrame(frameId);
+  const newLayer = {
+    id: generateId("layer"),
+    type,
+    visible: true,
+    opacity: 1.0,
+    strokes: [],
+    bitmap: []
+  };
+  frame.layers.push(newLayer);
+  eventBus.emit("layer:created", newLayer);
+  setState(state);
+}
+
+function drawStroke(layerId, strokeData) {
+  const layer = findLayer(layerId);
+  if (layer.type === "vector") {
+    layer.strokes.push(strokeData);
+  } else {
+    layer.bitmap.push(rasterizeStroke(strokeData));
+  }
+  setState(state);
+}
+
+【history.js】
+
+責務：
+
+state-managerの履歴構造を利用して差分を蓄積
+
+layer単位またはframe単位でスナップショットを取る
+
+“差分Undo”が可能
+
+主要メソッド：
+
+function captureSnapshot(level="frame", targetId=null) {
+  const snapshot = JSON.stringify(state.timeline);
+  stateManager.pushHistory(snapshot);
+}
+
+
+【timeline-ui.js】
+
+責務：
+
+UI上でframe/layerの追加・削除・選択を行う
+
+state更新をイベント経由で通知
+
+主要メソッド：
+
+function addFrame() {
+  const newFrame = {
+    id: generateId("frame"),
+    layers: []
+  };
+  state.timeline.frames.push(newFrame);
+  setState(state);
+  eventBus.emit("frame:added", newFrame);
+}
+
+
+【core-engine.js】
+
+責務：
+
+stateに基づきPixiJSオブジェクトを構築・再描画
+
+state:updated イベントで再構成する
+
+主要メソッド：
+
+function rebuildSceneFromState(state) {
+  clearPixiContainers();
+  for (const frame of state.timeline.frames) {
+    for (const layer of frame.layers) {
+      if (layer.type === "vector") {
+        renderVectorLayer(layer);
+      } else {
+        renderRasterLayer(layer);
+      }
+    }
+  }
+}
+eventBus.on("state:updated", rebuildSceneFromState);
+
+【Claude向け開発メモ】
+
+本構造では、AIが「timeline → frame → layer → stroke」の階層を理解することで、
+Undo/Redoや描画再構成のスコープを明確に判断できる。
+
+Claudeに修正を依頼する際は、
+「frame単位でUndoを管理してほしい」「layer追加時にstate更新をトリガーする」
+のように階層を明示すると、誤解なく改修提案できる。
+
+PixiJS側ではContainer構造をこの階層構造と一致させること。
+
+【今後の拡張】
+
+各frame/layerを外部JSONとして保存し、軽量Undoを実現
+
+layer.type=="raster" の場合はImageBitmapキャッシュ利用
+
+timeline構造をAVIUTL2用にエクスポート（将来フェーズ）
+
+frame/layer単位のメモリ管理（不要データ破棄）
+
+【まとめ】
+
+本階層構造化により、
+
+Undo/Redoの一貫性向上
+
+ベクター＋ラスタ混在の安定化
+
+Claude等AI支援での改修精度向上
+
+将来のAVIUTL2や他アニメーションツールとの互換化
+
+が同時に実現できる。
+現段階では出力互換よりもこの構造安定化を最優先とする。
+
+
+
