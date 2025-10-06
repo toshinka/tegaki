@@ -1,220 +1,270 @@
-=== 改修計画書（Plain text）===
-目的：
-  - Undo/Redo（以下、History）の不安定動作を根本的に修正し、
-    「操作ごとに1つの履歴が確実に残る」「Undo/Redoの応答が即時で一貫する」状態を実現する。
+========================================
+エクスポート機能拡張 — 問題切り分けと改修計画書（修正版）
+作成日: 2025-10-07
+対象: PixiJS v8.13 お絵かきツール（現行ブランチ: v8.13_History10f に基づく）
+参照: エクスポート機能拡張 改修計画書 (改訂版).txt, Consoleログ.txt
+      (参照ファイル確認済み). 
+      改訂計画書の元実装とロードログは確認済み。:contentReference[oaicite:2]{index=2} :contentReference[oaicite:3]{index=3}
+========================================
 
-現象（まとめ）：
-  1. 描画・レイヤー操作・CUT作成・アクティブレイヤー移動後にHistoryのカウントが増えない操作がある。
-  2. Undo を押した最初の一回目で「history pointer の値だけ変わるが画面復元が起きない」ことがある（2回目で復元される）。
-  3. 複数サブシステム（レイヤー、カメラ、タイムライン）の同時変更時に履歴が分割される、あるいは逆に合成されずに状態不整合を起こす。
+1) 現象（ユーザー報告）
+----------------------------------------
+- 「エクスポートシステムが初期化されません」
+- エクスポートポップアップからエクスポート処理が発火しない
 
-推定原因（優先度つき）：
-  A. 履歴実装のポインタ管理ミス（off-by-one）：push / undo / redo で pointer の意味が曖昧。
-     - currentIndex を「最後に適用済みのインデックス」とするのか「次にapplyすべきインデックス(=size)」にするか混在。
-  B. 操作のコミットタイミングが不統一（描画は strokeend でコミットすべきところ、mousemove毎に分割／未コミットのまま次処理）。
-  C. 複合操作のトランザクション化不足：複数の低レベル変更が個別履歴として入るため、Undo時に中間状態が存在する。
-  D. 一部のサブシステムが直接データを変更しており、History API を経由していない（＝履歴に記録されない変更）。
-  E. 非同期処理・遅延描画（requestAnimationFrameや画像読み込み等）と履歴同期が取れていない。
-  F. EventBus の発火順やハンドラで副作用があり、undo時の再適用順序が狂う。
+2) まず確認した事実（ログ / 計画書より）
+----------------------------------------
+- 関連スクリプトはロード済み（ログに "export-manager.js loaded", "export-popup.js loaded" 等あり）。しかしロード＝インスタンス化ではない。:contentReference[oaicite:4]{index=4}
+- 改修計画書は ExportManager/Exporter/ExportPopup を定義しているが、ExportPopup.setupUI が「省略」となっており、DOM の生成/確実な要素確保や初期化フローが不明。:contentReference[oaicite:5]{index=5}
+- ExportPopup 内の updateProgress 内で document.querySelector('.progress-bar::after') のように無効／間違ったセレクタを参照している箇所がある（疑い）。これでは進捗表示が動作しない。:contentReference[oaicite:6]{index=6}
 
-設計方針（基本ルール）：
-  1. History の単一真理（single source of truth）を確立する。すべての状態変更は「State Manager」経由またはHistory APIを通して行う。
-  2. History はコマンドパターン（do/undo を持つオブジェクト）で実装。状態スナップショット方式は巨大化を避けるため最小差分／コマンド推奨。
-  3. currentIndex の定義を厳格にする：
-     - history.entries : array of Entry
-     - history.index : number, 「最後に適用済みのエントリのインデックス」。初期値 -1（何も適用されていない）。
-     - push(entry) は history.index をインクリメントし、その index に entry を設置・entry.do() を呼ぶ。
-     - undo() は entry.undo() を呼び、history.index--。
-     - redo() は history.index+1 の entry.do() を呼び、history.index++。
-     - push() の前に index < entries.length-1 の場合は future を切り捨てる（truncate）。
-  4. 操作は「原子的（atomic）」に記録する。複数のサブ操作を含む場合は CompositeEntry を使って一つの履歴として登録する。
-  5. UIイベント（mousemoveなど）やレンダリングループは履歴を直接触らない。履歴はユーザー操作の完了時（stroke end, drop end, layer move end, cut create end）にのみコミットする。
-  6. 非同期処理は明示的に同期化（例えば、画像の読み込みは load完了後にstateを更新してから履歴にpushする）。
-  7. state-manager.js を「履歴を通す唯一の書き換えポイント」にする。直接 mutable なグローバルオブジェクトを避ける。
-  8. Event-bus の発火順は「pre-change -> change -> post-change」に統一し、undo/redo 実行時は post-change をブロック（再帰発火防止）する。
+3) 推定される主因（優先度順）
+----------------------------------------
+A. ExportManager と各 Exporter は定義されているが「インスタンス化（初期化）」が行われていない／呼ばれていない。
+   - スクリプト読み込みだけで new ExportManager(...) をしていない可能性が高い。
+   - 結果として ExportPopup に渡す manager が undefined、または popup が DOM に存在していないのでイベント未登録。
 
-必須API（History）— 提案インターフェース：
-  - History.init(options)
-  - History.push(entry: HistoryEntry)  // entry.do() を呼ぶ。pushは必ず現在の状態上に「適用済み」として格納する
-  - History.undo() -> boolean (成功/失敗)
-  - History.redo() -> boolean
-  - History.clear()
-  - History.canUndo(), History.canRedo()
-  - History.getIndex(), History.getLength()
-  - History.createComposite(name, entries[]) -> CompositeEntry
-  - HistoryEntry interface:
-      - { name: string, do: ()=>void, undo: ()=>void, meta?:object }
-  - CompositeEntry implements HistoryEntry: do() は各 child.do() を順次実行、undo() は逆順で実行
+B. ExportPopup の UI が DOM に存在しない（setupUI 未実装 or index.html に HTML を追加していない）。
+   - setupEventListeners が要素取得に失敗し、クリックハンドラが登録されない。
 
-ファイル別改修指示（優先順）：
+C. 不正確な DOM セレクタ／実装ミス（例: '.progress-bar::after' の参照）は動作不良を招く（進捗更新が何も変化しない）。
 
-1) system/history.js  —— 最重要
-  - 目的：History の単一実装。現在のコードを全面見直し。
-  - 実装方針：
-    - 上記 API を実装。history.index を -1 から開始する。
-    - push(entry) の内部で try/catch。失敗時はロールバック（entry.do() が例外を投げたら、entry.undo() を呼ぶか、state を前の状態に戻す）。
-    - push は entry.do() を実行してから entries.splice(index+1) を切り詰め、entries[++index] = entry。
-    - undo() は entries[index].undo(); index--。undo() 実行中は再入禁止フラグを設定（isApplying）。
-    - redo() は entries[index+1].do(); index++。同様に再入禁止。
-    - isApplying フラグを使用して、undo/redo 実行中の event-bus 発火を必要最小限に抑える（詳細は下記）。
-  - ログ/検査用のデバッグフラグ（最小限）：
-    - debugHistoryTrace()（開発時のみ有効にする）
-  - テストケース（実装後必須）：
-    - 単一push → undo → redo の循環
-    - Composite push（複数操作まとめ）→ undo が中間を経ないこと
-    - push 中に例外発生時の不変条件
+D. 初期化の順序（EventBus / app / LayerSystem 等の依存関係）により、インスタンス化が「見かけ上行われていない」ように見えるケース。
 
-2) system/state-manager.js
-  - 目的：アプリの状態更新はここを通す。History と結合し state の一貫性を保つ。
-  - 実装方針：
-    - 直接オブジェクトを変更する関数は廃止（または内部限定）。外部からは「commit(action)」経由のみで変更する。
-    - commit(action) は action を受け取り、History.push(actionHistoryEntry) を行う。action は以下を含む：
-        { name, do: ()=>{ mutate state }, undo: ()=>{ revert state }, meta }
-    - GUI からの変更はまず stateManager.prepareChange() → 低レベル mutate を実行（ただし実行は commit 内で行う）。
-    - レンダリングは stateManager の state変更通知（イベント）に基づいて行う。stateManager は event-bus を通じて "state:changed" を発火する。ただし undo/redo 実行中は "state:changed" を発火させるが、UI側は isApplying フラグに応じた扱いをする（時間差の2重描画問題回避）。
-  - 重要：mutation は不可逆的にするのではなく、undo 用の逆操作（関数）を用意する。例：layer insert -> undo は layer remove、layer move -> undo は move back。
+4) 改修方針（制約）
+----------------------------------------
+- PixiJS v8.13 環境下での動作を最優先。
+- ESモジュール不使用、file://での直接開き動作を意識。
+- UIは最小・機能重視（装飾や演出は控える）。
+- コンソールログは最小限（エラー時のみ明確に出す）。
+- フェイルセーフで曖昧に動かすのは避け、依存性不足なら明確なエラーメッセージを出す。
 
-3) system/event-bus.js
-  - 目的：イベント発火の順序と再入制御を明示化。
-  - 改修：
-    - 発火テンプレート： emitPre(event, payload) -> doChange() -> emitPost(event, payload)
-    - undo/redo 実行時は emitPost を止めるのではなく payload に {internal:true} を入れる。UI/サブシステムは internal フラグを見て副作用を抑える。
-    - イベントハンドラは idempotent（何度呼ばれても状態が破壊されない）に設計する。
-  - 追加：イベントハンドラ登録時に priority を付け、依存関係の順序管理が可能にする（例：state更新 -> layer更新 -> renderer 更新）。
+5) 具体的改修（差分パッチ／挿入コード） — 必須箇所
+----------------------------------------
+- 要点:
+  1) export-manager を確実にインスタンス化して window に露出
+  2) 各 exporter を登録
+  3) ExportPopup の setupUI を必ず実装して DOM 要素を生成（index.html に依存せず安全に動く）
+  4) ExportPopup の updateProgress のセレクタ修正
+  5) 初期化時に必要依存（window.app 等）が無ければ明確にエラーを出す（自動待ちや勝手なフェイルバックはしない）
 
-4) system/drawing-clipboard.js（および描画系）
-  - 目的：筆圧/ストローク系は「開始（pointerdown）→描画→終了（pointerup）」で一つの履歴エントリとして記録。
-  - 改修：
-    - strokeStart(): create transient stroke object（まだ push しない）
-    - strokeUpdate(): transient に点を追加（ここでは履歴に影響させない）
-    - strokeEnd(): commit stroke を finalize して History.push( strokeEntry )
-      - strokeEntry.do() -> add stroke to layer data and renderer
-      - strokeEntry.undo() -> remove stroke from layer data and renderer
-  - 注意：mousemoveごとにpushしない。undoの分割や大量履歴を防ぐ。
+- 5.1 core-runtime.js（DOMContentLoaded 内・初期化ブロックに以下を追加）
+  - 既存のDOMContentLoaded 部分に追記する想定です（file:// 環境で追加）。
+  - **注意**: 既に同等の初期化が実装されているか確認し、重複しないように統合してください。
 
-5) system/layer-system.js
-  - 目的：レイヤーの追加・削除・順序移動・アクティブ変更等を全て History を通す。
-  - 改修：
-    - API 例：
-        addLayer(params) -> stateManager.commit({name:'add-layer', do:..., undo:...})
-        removeLayer(id) -> commit(...)
-        moveLayer(id, toIndex) -> commit(...)
-        setActiveLayer(id) -> commit(...)  // ただし setActiveLayer は短い操作でも一つの履歴として扱う
-    - moveLayer はトランザクション化：dragstart で beginComposite(); dragend で endComposite() して１エントリにまとめる。
-    - レイヤー変更により renderer のz-order を直接変更するのではなく、state の変化により renderer が再構築される流れにする（単純で可検査）。
-
-6) system/camera-system.js
-  - 目的：カメラ移動やズームも履歴化（必要であれば）。
-  - 改修：
-    - カメラドラッグなどで多数のイベントが起きる場合は、インタラクションの完了（pointerup）で履歴にコミットする。
-    - または、短時間の操作は throttle して合成エントリにする。
-
-7) system/history.js と UI/timeline関連（ui/timeline-ui.js, ui/timeline-thumbnail-utils.js）
-  - 目的：タイムライン上のCUT追加・フレーム挿入・サムネ縮小等を History 経由で一貫処理する。
-  - 改修：
-    - CUTの作成／削除は一つのCompositeEntryにする（関連する layer データ、timeline データ、thumbnail の更新を含む）。
-    - サムネイル作成は非同期処理だが、thumbnail 画像生成自体は履歴化対象外。thumbnail の参照切替を履歴に含める。
-
-8) core-engine.js / core-runtime.js
-  - 目的：レンダリングループとイベントハンドリングの整合性を取る。
-  - 改修：
-    - core-engine は stateManager の state 変化を読みレンダリングするだけに限定する。状態変更は決して core-engine が直接行わない。
-    - Undo/redo の実行は core-engine がトリガーしない（button/shortcut ハンドラが History を呼ぶ）。core-engine は isApplying を考慮して差分レンダリングする。
-
-具体的な修正サンプル（擬似コード、history の核）：
-  - （history.js の重要ロジック）
-  const History = {
-    entries: [],
-    index: -1,
-    isApplying: false,
-
-    push(entry) {
-      if (this.isApplying) throw new Error('Cannot push during apply');
-      // truncate future
-      if (this.index < this.entries.length - 1) {
-        this.entries.length = this.index + 1;
+  挿入コード（core-runtime.js の DOMContentLoaded の最後付近に追加）:
+  --------------------------------------------------------------------
+  (function initExportSystem() {
+    try {
+      // 明示的依存チェック（欠落時は明確にエラー出力）
+      if (!window.app || !window.LayerSystem || !window.AnimationSystem || !window.CameraSystem) {
+        console.error('[ExportInit] missing dependency: app/LayerSystem/AnimationSystem/CameraSystem');
+        // 依存不足を EventBus に通知（存在すれば）
+        if (window.TegakiEventBus && typeof window.TegakiEventBus.emit === 'function') {
+          window.TegakiEventBus.emit('export:init:failed', { reason: 'missing-deps' });
+        }
+        return;
       }
-      // apply
-      try {
-        this.isApplying = true;
-        entry.do();
-        this.entries.push(entry);
-        this.index++;
-      } catch (e) {
-        // attempt rollback if possible
-        try { entry.undo?.(); } catch (e2) {}
-        throw e;
-      } finally {
-        this.isApplying = false;
+
+      // ExportManager のインスタンス化（グローバル配置）
+      if (!window.TEGAKI_EXPORT_MANAGER) {
+        window.TEGAKI_EXPORT_MANAGER = new window.ExportManager(
+          window.app,
+          window.LayerSystem,
+          window.AnimationSystem,
+          window.CameraSystem
+        );
       }
-    },
 
-    undo() {
-      if (this.isApplying) return false;
-      if (this.index < 0) return false;
-      const entry = this.entries[this.index];
-      try {
-        this.isApplying = true;
-        entry.undo();
-        this.index--;
-        return true;
-      } finally {
-        this.isApplying = false;
+      const mgr = window.TEGAKI_EXPORT_MANAGER;
+
+      // エクスポーター登録（存在チェックを行う）
+      if (window.PNGExporter) mgr.registerExporter('png', new window.PNGExporter(mgr));
+      if (window.GIFExporter) mgr.registerExporter('gif', new window.GIFExporter(mgr));
+      if (window.APNGExporter) mgr.registerExporter('apng', new window.APNGExporter(mgr));
+      if (window.WEBPExporter) mgr.registerExporter('webp', new window.WEBPExporter(mgr));
+
+      // ExportPopup の生成（ExportManager を渡す）
+      if (!window.TEGAKI_EXPORT_POPUP) {
+        window.TEGAKI_EXPORT_POPUP = new window.ExportPopup(mgr);
       }
-    },
 
-    redo() {
-      if (this.isApplying) return false;
-      if (this.index >= this.entries.length - 1) return false;
-      const entry = this.entries[this.index + 1];
-      try {
-        this.isApplying = true;
-        entry.do();
-        this.index++;
-        return true;
-      } finally {
-        this.isApplying = false;
+      // UI を開くための基本ハンドラ（既存UIにボタン id="btn-open-export" があれば接続）
+      const openBtn = document.getElementById('btn-open-export');
+      if (openBtn) {
+        openBtn.addEventListener('click', () => window.TEGAKI_EXPORT_POPUP.show());
+      } else {
+        // ショートカットキー（例: E）登録は既存のキーマップ経由で行うことを推奨
+        if (window.TEGAKI_KEYMAP && typeof window.TEGAKI_KEYMAP.bind === 'function') {
+          window.TEGAKI_KEYMAP.bind('KeyE', () => window.TEGAKI_EXPORT_POPUP.show());
+        }
       }
-    },
-    ...
-  };
 
-エッジケースと設計上の注意点：
-  - index と entries の不整合：push を行う前に truncate と apply の順序を誤ると pointer がずれる。上記の順序（apply → push array → index++）で明確化。
-  - 一時オブジェクトの参照（transient stroke）は undo 時に確実に削除できるように ID を付与しておく。
-  - 非同期処理（画像読み込みなど）は、load が完了して state に反映 → push の順で履歴化する。load開始時点で push してしまわない。
-  - undo/redo 実行時は UI が再度イベントを発火して二重履歴を作らないように isApplying チェックをUI側にも入れる。
-  - ショートカット（Ctrl+Z 等）は History.undo() をラップするのみ。UI側は状態変更を引き起こさない。
+      // 初期化完了イベント
+      if (window.TegakiEventBus && typeof window.TegakiEventBus.emit === 'function') {
+        window.TegakiEventBus.emit('export:manager:initialized', { timestamp: Date.now() });
+      }
+      // 最小限の情報ログ
+      console.info('[ExportInit] ExportManager initialized');
+    } catch (e) {
+      console.error('[ExportInit] unexpected error:', e);
+    }
+  })();
+  --------------------------------------------------------------------
 
-移行プラン（ステップ実行・リスク最小化）：
-  1. history.js を上記 API で全面書き換え（テスト済みの小さなエントリで動作確認）。
-  2. state-manager の commit 周りを実装し、既存の変更箇所を段階的に commit 経由に切り替える。
-  3. 描画（drawing-clipboard）を strokeEnd で commit するよう改修。旧APIを残す場合は deprecation 警告を出す。
-  4. layer-system の add/remove/move を commit 経由に変更。drag系は beginComposite()/endComposite() で一つのエントリにまとめる。
-  5. camera/timeline/animation 系を順次 commit 経由にする。各ステップでユニットテスト（手動操作でのundo/redo）を実施。
-  6. 全体統合テスト：複合操作（例：レイヤー入れ替え→描画→CUT作成）を行い履歴が期待通りに復元されるか確認する。
-  7. 不具合が出た箇所は最小単位でロールバックできるように git ブランチ戦略を使う。
+- 5.2 ui/export-popup.js（必須修正）
+  - setupUI が省略されているため、**確実に DOM を生成**する実装を書きます。
+  - また updateProgress が無効なセレクタを使っている点を修正します。
 
-テストチェックリスト（必須）：
-  - [ ] 描画1 stroke -> undo -> redo が即時に動作する
-  - [ ] レイヤー移動（ドラッグ） -> undo が一発で元に戻る（中間状態が残らない）
-  - [ ] CUT作成（複数レイヤーを含む一連操作） -> undo が一発で消える
-  - [ ] アクティブレイヤー変更 -> undo により以前のアクティブに戻る
-  - [ ] Undo を最初に押した時点で pointer と画面状態が乖離しない（つまり1回で戻る）
-  - [ ] 非同期画像読み込み後の state push が確実に履歴に乗る
-  - [ ] Ctrl+Z/Ctrl+Y のショートカットで History の状態とUIの整合性が保たれる
+  置換／追加するメソッド（ExportPopup 内）:
+  --------------------------------------------------------------------
+  // setupUI: DOM が未定義なら生成（軽量・最小UI）
+  setupUI() {
+    let popup = document.getElementById('export-popup');
+    if (!popup) {
+      popup = document.createElement('div');
+      popup.id = 'export-popup';
+      popup.className = 'popup-panel';
+      popup.innerHTML = ''
+        + '<div class="popup-inner" style="padding:12px;max-width:360px;">'
+        + '  <div class="formats" style="margin-bottom:8px;">'
+        + '    <button class="format-btn selected" data-format="png">PNG</button>'
+        + '    <button class="format-btn" data-format="gif">GIF</button>'
+        + '    <button class="format-btn" data-format="apng">APNG</button>'
+        + '    <button class="format-btn" data-format="webp">WEBP</button>'
+        + '  </div>'
+        + '  <div id="export-options" style="margin-bottom:8px;"></div>'
+        + '  <div id="export-progress" style="display:none;margin-bottom:8px;">'
+        + '    <div class="progress-text">0%</div>'
+        + '    <div class="progress-bar" style="background:#eee;height:8px;border-radius:4px;overflow:hidden;">'
+        + '      <div class="progress-fill" style="width:0%;height:100%;"></div>'
+        + '    </div>'
+        + '  </div>'
+        + '  <div class="popup-actions" style="display:flex;gap:8px;justify-content:flex-end;">'
+        + '    <button id="export-execute">Export</button>'
+        + '    <button id="export-cancel">Cancel</button>'
+        + '  </div>'
+        + '</div>';
+      document.body.appendChild(popup);
+    }
+    // フォーマットボタンは setupEventListeners でも拾えるが、ここで選択初期化だけ確保
+    this.updateOptionsUI(this.selectedFormat);
+  }
 
-追加提案（品質向上）：
-  - minimal debug mode を提供して history.entries を簡易的に可視化する、（開発時のみ）。
-  - 各 HistoryEntry に human-readable な name を付けて undo/redo の履歴表示を可能にする（UIは簡素でよい）。
-  - 履歴の最大長 maxHistory を設定してメモリ枯渇対策（古い履歴を切る）。
-  - 変更点ごとにユニットテスト（node を使う必要なし。簡易テストフレームワークを作ってブラウザで走らせる）。
+  // updateProgress: 無効なセレクタ '.progress-bar::after' を使っていたため修正
+  updateProgress(data) {
+    const progressFill = document.querySelector('#export-progress .progress-fill');
+    const progressText = document.querySelector('#export-progress .progress-text');
 
-最後に（まとめ）：
-  - 根本的原因は「履歴ポインタ定義の曖昧さ」「コミットタイミングのばらつき」「サブシステムがHistoryを経由していない」の混合と推定。まず system/history.js を単一の正しい実装に置き換え、state-manager を経由した変更フローに統一することで一気に改善が見込めます。
-  - 進め方は段階的にファイルを置き換え（history -> state-manager -> drawing -> layer -> others）し、各段階で手動テストを必須にすること。Composite（合成）履歴を導入すればドラッグやCUT作成での中間不整合は解消します。
+    if (data && data.current && data.total) {
+      const percent = Math.round((data.current / data.total) * 100);
+      if (progressFill) progressFill.style.width = `${percent}%`;
+      if (progressText) progressText.textContent = `${percent}%`;
+    } else if (typeof data.progress === 'number') {
+      // 単一進捗数値が来た場合（拡張対応）
+      const p = Math.round(data.progress * 100);
+      if (progressFill) progressFill.style.width = `${p}%`;
+      if (progressText) progressText.textContent = `${p}%`;
+    }
+  }
 
-添付：軽微なサンプルユニット（擬似）
-  - push undo redo の単体テストを system/history.js に組み込み、ブラウザのコンソールで実行して検証するスクリプトを用意すること（本番では無効化）。
+  // setupEventListeners: EventBus の存在確認を厳密に行う
+  setupEventListeners() {
+    // format buttons: イベントデリゲートで堅牢に
+    document.addEventListener('click', (ev) => {
+      const btn = ev.target;
+      if (btn && btn.classList && btn.classList.contains('format-btn')) {
+        if (btn.classList.contains('disabled')) return;
+        this.selectFormat(btn.dataset.format);
+      }
+      if (btn && btn.id === 'export-execute') {
+        ev.preventDefault();
+        this.executeExport();
+      }
+      if (btn && btn.id === 'export-cancel') {
+        ev.preventDefault();
+        this.hide();
+      }
+    });
 
-=== end of document ===
+    // イベントバス登録（存在チェックしてから）
+    if (window.TegakiEventBus && typeof window.TegakiEventBus.on === 'function') {
+      window.TegakiEventBus.on('export:progress', (data) => {
+        this.updateProgress(data);
+      });
+      window.TegakiEventBus.on('export:completed', () => {
+        this.hide();
+      });
+      window.TegakiEventBus.on('export:aborted', () => {
+        // 取消時 UI 復帰
+        const progressEl = document.getElementById('export-progress');
+        if (progressEl) progressEl.style.display = 'none';
+      });
+    }
+  }
+  --------------------------------------------------------------------
+
+  - 補足: ExportPopup.constructor の中で setupUI() → setupEventListeners() の順で呼ぶこと。
+    （既存コードはその順になっているが、setupUI が省略されていたため要注意）
+
+- 5.3 小さなバグ修正（ExportManager.renderToCanvas の呼び出し安全性）
+  - renderToCanvas が this.layerSystem.layersContainer を直接参照しているため layerSystem が undefined の場合に throw する。
+  - 既に init コードで依存チェックを入れているため問題は小さいが、念のため renderToCanvas の冒頭で明示的チェックを行うことを推奨。
+
+  例（renderToCanvas の先頭に追加）:
+  --------------------------------------------------------------------
+    renderToCanvas(options = {}) {
+      if (!this.app || !this.layerSystem || !this.layerSystem.layersContainer) {
+        throw new Error('ExportManager.renderToCanvas: missing app or layerSystem.layersContainer');
+      }
+      // ... 既存処理 ...
+    }
+  --------------------------------------------------------------------
+
+6) フロー（誰が何を行うか）
+----------------------------------------
+- 起動順序（推奨）:
+  1. system/event-bus.js を最初にロード
+  2. core 系（app 初期化）をロードし window.app と各 System を確定
+  3. export-manager.js / exporters/*.js をロード（定義のみ）
+  4. export-popup.js をロード（定義のみ）
+  5. DOMContentLoaded 内で initExportSystem() を実行し、ExportManager を new -> exporter登録 -> ExportPopup を new
+  6. ユーザーが UI（既存ボタンかショートカット）で exportPopup.show() を呼び出す
+  7. ExportPopup.executeExport -> ExportManager.export -> exporter.export 実行 -> ファイル出力
+
+7) テスト手順（改修後の検証）
+----------------------------------------
+1) ブラウザで index.html を file:// で開く
+2) コンソールに "[ExportInit] ExportManager initialized" が出ているか確認
+   - 出ていない場合、console.error を読み原因（missing dependency 等）に従って修正
+3) export ボタン（btn-open-export が存在するならそれ）を押すか、KeyE を押してポップアップが表示されるか確認
+4) ポップアップで PNG を選び Export を押す -> ファイルがダウンロードされるか確認
+5) GIF（既存ロジック）も同様に確認
+6) 進捗バーが動くか確認（GIF / APNG の長尺フレーム処理で確認）
+
+8) べクターペン注意点（運用ルール）
+----------------------------------------
+- 出力時にレイヤーやベクタ情報を DOM／Blob に含めない（PNG, GIF はラスタ化出力なので問題なし）。
+- データの所有権・編集権限は LayerSystem 側で一元管理し、ExportManager は読み取り専用で snapshot を取るのみ。
+- ExportManager は書き換え機能を持たせない（安全のため）。
+
+9) 備考（確認済みログ）
+----------------------------------------
+- ロードログに export-manager.js / png-exporter.js / gif-exporter.js / export-popup.js が "loaded" と記録されているが、インスタンス化ログは無かったため「ロードのみ」で止まっていたことを意味する可能性が高い。:contentReference[oaicite:7]{index=7}
+- ExportPopup.setupUI が未実装（計画書に「省略」と明記）だったため、DOM が無いケースに備え完全自立型の setupUI を実装することを強く推奨。:contentReference[oaicite:8]{index=8}
+
+10) 追加的改善（将来的・オプション）
+----------------------------------------
+- ExportManager に簡易的な状態監視 API（isReady / status）を追加し、UI から確実に状態を参照できるようにする。
+- テスト用に（デバッグビルド）最小限の console.log を残すが、プロダクションでは非表示化する設定を用意する。
+
+11) 変更ファイル一覧（まとめ）
+----------------------------------------
+- core-runtime.js ・・・ 初期化追加（initExportSystem）
+- ui/export-popup.js ・・・ setupUI 実装、updateProgress 修正、setupEventListeners 改良
+- system/export-manager.js ・・・ renderToCanvas 冒頭チェック（推奨）
+- index.html（ある場合）・・・ btn-open-export（任意）追加、script 読込順確認（event-bus -> core -> export-manager -> exporters -> export-popup -> core-runtime init）
+
+========================================
+END OF DOCUMENT
+========================================
