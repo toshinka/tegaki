@@ -1,308 +1,220 @@
-改修計画書（プレーンテキスト）
-対象ツール：ブラウザお絵かきツール（PixiJS v8.13）
-目的：Undo/Redoの不整合、Historyカウント異常、CUT作成→UndoでCUTデータが別CUTへ“コピペ”される問題、動作緩慢の原因究明と改修計画
+=== 改修計画書（Plain text）===
+目的：
+  - Undo/Redo（以下、History）の不安定動作を根本的に修正し、
+    「操作ごとに1つの履歴が確実に残る」「Undo/Redoの応答が即時で一貫する」状態を実現する。
 
---------------------------------------------------------------------------------
-1) 概要サマリ（短く）
---------------------------------------------------------------------------------
-現象：
-- Undo/Redoが「出来たり出来なかったり」、Historyスタックのカウントが行動と一致しない。
-- 新規CUT作成後にUndoすると、CUT1のデータが新規CUT2へコピーされたようになる（元のCUT作成前の状態へ戻らない）。
-- UI操作で動作が緩慢（遅延、フレーム落ち、サムネイル更新の遅さなど）。
+現象（まとめ）：
+  1. 描画・レイヤー操作・CUT作成・アクティブレイヤー移動後にHistoryのカウントが増えない操作がある。
+  2. Undo を押した最初の一回目で「history pointer の値だけ変わるが画面復元が起きない」ことがある（2回目で復元される）。
+  3. 複数サブシステム（レイヤー、カメラ、タイムライン）の同時変更時に履歴が分割される、あるいは逆に合成されずに状態不整合を起こす。
 
-推定原因（要点）：
-- Stateの共有（参照）による「浅いコピー」問題：historyに保存したオブジェクトが後でミューテートされている。
-- 所有権（どのモジュールがデータの“真の所有者”か）が不明瞭で、layer/cut/stateが複数箇所から直接修正されている。
-- History管理の設計が“スナップショット”と“コマンド”の混在で一貫性がない。push/undo/redo APIが原子（トランザクション）で保証されていない。
-- 新規CUT作成フローでID発行/参照更新が不整合（例えば、新規CUTのオブジェクトをhistoryへpushする前に参照が差し替わる）。
-- レンダリング関連：毎フレームフルリレンダや高コストテクスチャ生成をしている可能性、サムネイル生成が重い。
-- イベントバスやasync処理の順序（タイミング）問題：非同期処理がstate変更と噛み合っていない。
+推定原因（優先度つき）：
+  A. 履歴実装のポインタ管理ミス（off-by-one）：push / undo / redo で pointer の意味が曖昧。
+     - currentIndex を「最後に適用済みのインデックス」とするのか「次にapplyすべきインデックス(=size)」にするか混在。
+  B. 操作のコミットタイミングが不統一（描画は strokeend でコミットすべきところ、mousemove毎に分割／未コミットのまま次処理）。
+  C. 複合操作のトランザクション化不足：複数の低レベル変更が個別履歴として入るため、Undo時に中間状態が存在する。
+  D. 一部のサブシステムが直接データを変更しており、History API を経由していない（＝履歴に記録されない変更）。
+  E. 非同期処理・遅延描画（requestAnimationFrameや画像読み込み等）と履歴同期が取れていない。
+  F. EventBus の発火順やハンドラで副作用があり、undo時の再適用順序が狂う。
 
-改修方針（高レベル）：
-1. 明確な所有権ルールを定義（state-managerが単一の真の状態を持ち、他は参照/コピーのみ）。
-2. Historyは「Commandパターン」または「イミュータブルスナップショット（structuredClone）」で一貫管理。混在禁止。
-3. すべての変更は「トランザクション単位」でhistoryへpush。CUT作成など複数操作は単一historyエントリにまとめる。
-4. 参照渡しを禁止、必要なら深いコピー（structuredClone）を使う。mutable shared objectsは全面見直し。
-5. パフォーマンス改善：レンダリングの最適化（rAF制御、テクスチャ/スプライト再利用、サムネイルの遅延更新 or 非同期バッチ更新）。
-6. APIと命名を厳格化、ログは最小限かつ可観測性のための計測点のみ残す。
+設計方針（基本ルール）：
+  1. History の単一真理（single source of truth）を確立する。すべての状態変更は「State Manager」経由またはHistory APIを通して行う。
+  2. History はコマンドパターン（do/undo を持つオブジェクト）で実装。状態スナップショット方式は巨大化を避けるため最小差分／コマンド推奨。
+  3. currentIndex の定義を厳格にする：
+     - history.entries : array of Entry
+     - history.index : number, 「最後に適用済みのエントリのインデックス」。初期値 -1（何も適用されていない）。
+     - push(entry) は history.index をインクリメントし、その index に entry を設置・entry.do() を呼ぶ。
+     - undo() は entry.undo() を呼び、history.index--。
+     - redo() は history.index+1 の entry.do() を呼び、history.index++。
+     - push() の前に index < entries.length-1 の場合は future を切り捨てる（truncate）。
+  4. 操作は「原子的（atomic）」に記録する。複数のサブ操作を含む場合は CompositeEntry を使って一つの履歴として登録する。
+  5. UIイベント（mousemoveなど）やレンダリングループは履歴を直接触らない。履歴はユーザー操作の完了時（stroke end, drop end, layer move end, cut create end）にのみコミットする。
+  6. 非同期処理は明示的に同期化（例えば、画像の読み込みは load完了後にstateを更新してから履歴にpushする）。
+  7. state-manager.js を「履歴を通す唯一の書き換えポイント」にする。直接 mutable なグローバルオブジェクトを避ける。
+  8. Event-bus の発火順は「pre-change -> change -> post-change」に統一し、undo/redo 実行時は post-change をブロック（再帰発火防止）する。
 
---------------------------------------------------------------------------------
-2) 優先度付き改修リスト（即着手順）
---------------------------------------------------------------------------------
-優先度高（即修正必須）
-A. history.js の全面見直し（Commandパターン導入 or イミュータブルスナップショットで一貫）
-B. state-manager.js に「所有権ルール」と「変更API」を導入（直接mutation禁止）
-C. CUT作成フロー修正（ID付与・参照更新の順序保証、トランザクション化）
-D. deepCloneユーティリティを全域で統一（structuredClone利用。クローム対象なので利用可）
+必須API（History）— 提案インターフェース：
+  - History.init(options)
+  - History.push(entry: HistoryEntry)  // entry.do() を呼ぶ。pushは必ず現在の状態上に「適用済み」として格納する
+  - History.undo() -> boolean (成功/失敗)
+  - History.redo() -> boolean
+  - History.clear()
+  - History.canUndo(), History.canRedo()
+  - History.getIndex(), History.getLength()
+  - History.createComposite(name, entries[]) -> CompositeEntry
+  - HistoryEntry interface:
+      - { name: string, do: ()=>void, undo: ()=>void, meta?:object }
+  - CompositeEntry implements HistoryEntry: do() は各 child.do() を順次実行、undo() は逆順で実行
 
-優先度中（並行して）
-E. layer-system.js / drawing-clipboard.js の参照取り扱いを見直し（参照漏れの洗い出し）
-F. timeline-thumbnail-utils.js のサムネイル生成をバッチ化/キャンセル可能に
-G. event-bus.js のイベント発火順序を明確にし、同期/非同期イベントを区別する
+ファイル別改修指示（優先順）：
 
-優先度低（リリース準備後）
-H. perf測定ポイントの追加（軽量なメトリクス）
-I. 単体テスト／統合テスト自動化（historyの帰着テスト）
-J. ドキュメントと命名規約の整備
+1) system/history.js  —— 最重要
+  - 目的：History の単一実装。現在のコードを全面見直し。
+  - 実装方針：
+    - 上記 API を実装。history.index を -1 から開始する。
+    - push(entry) の内部で try/catch。失敗時はロールバック（entry.do() が例外を投げたら、entry.undo() を呼ぶか、state を前の状態に戻す）。
+    - push は entry.do() を実行してから entries.splice(index+1) を切り詰め、entries[++index] = entry。
+    - undo() は entries[index].undo(); index--。undo() 実行中は再入禁止フラグを設定（isApplying）。
+    - redo() は entries[index+1].do(); index++。同様に再入禁止。
+    - isApplying フラグを使用して、undo/redo 実行中の event-bus 発火を必要最小限に抑える（詳細は下記）。
+  - ログ/検査用のデバッグフラグ（最小限）：
+    - debugHistoryTrace()（開発時のみ有効にする）
+  - テストケース（実装後必須）：
+    - 単一push → undo → redo の循環
+    - Composite push（複数操作まとめ）→ undo が中間を経ないこと
+    - push 中に例外発生時の不変条件
 
---------------------------------------------------------------------------------
-3) 詳細設計と修正方針（ファイル別）
---------------------------------------------------------------------------------
-（共通）
-- 全モジュールで「stateは不変で扱う」「変更は stateManager.applyChange(change) を通す」を徹底する。
-- change は小さな命令（commands）に分割する。複合操作はtransaction wrapperで一つにまとめる。
-- deep clone は structuredClone(obj) を第一選択。structuredClone が使えない箇所は明示的に JSON.parse(JSON.stringify(...)) の代替を記載（ただし関数/循環参照は不可なので構造を避ける）。
+2) system/state-manager.js
+  - 目的：アプリの状態更新はここを通す。History と結合し state の一貫性を保つ。
+  - 実装方針：
+    - 直接オブジェクトを変更する関数は廃止（または内部限定）。外部からは「commit(action)」経由のみで変更する。
+    - commit(action) は action を受け取り、History.push(actionHistoryEntry) を行う。action は以下を含む：
+        { name, do: ()=>{ mutate state }, undo: ()=>{ revert state }, meta }
+    - GUI からの変更はまず stateManager.prepareChange() → 低レベル mutate を実行（ただし実行は commit 内で行う）。
+    - レンダリングは stateManager の state変更通知（イベント）に基づいて行う。stateManager は event-bus を通じて "state:changed" を発火する。ただし undo/redo 実行中は "state:changed" を発火させるが、UI側は isApplying フラグに応じた扱いをする（時間差の2重描画問題回避）。
+  - 重要：mutation は不可逆的にするのではなく、undo 用の逆操作（関数）を用意する。例：layer insert -> undo は layer remove、layer move -> undo は move back。
 
-A) system/history.js
-目的：Undo/Redoを正しくかつ確実に扱うための実装置換（既存のpush/popベースが参照問題を招いていると仮定）
+3) system/event-bus.js
+  - 目的：イベント発火の順序と再入制御を明示化。
+  - 改修：
+    - 発火テンプレート： emitPre(event, payload) -> doChange() -> emitPost(event, payload)
+    - undo/redo 実行時は emitPost を止めるのではなく payload に {internal:true} を入れる。UI/サブシステムは internal フラグを見て副作用を抑える。
+    - イベントハンドラは idempotent（何度呼ばれても状態が破壊されない）に設計する。
+  - 追加：イベントハンドラ登録時に priority を付け、依存関係の順序管理が可能にする（例：state更新 -> layer更新 -> renderer 更新）。
 
-設計（要点）：
-- Historyエントリは以下の形を持つ（必須）：
-  {
-    id: string,              // 一意の履歴ID（UUID）
-    type: "snapshot"|"command",
-    timestamp: number,
-    payload: any,            // snapshotならstructuredCloneされた状態、commandなら{ do(), undo() }のシリアライズ可能な指示
-    meta: { description, cutId?, transactionId?}
-  }
-- 推奨：まずは snapshot モードに切り替え（簡潔確実）：
-  - pushSnapshot(label) が stateManager.getSnapshot() を deepClone して保存
-  - undo: pop current, restore previous snapshot（restoreはstateManager.applySnapshot）
-  - redo: push/pop方式
-- 進化形：コマンドパターンに移行（メモリ効率や差分適用を後日追加）
+4) system/drawing-clipboard.js（および描画系）
+  - 目的：筆圧/ストローク系は「開始（pointerdown）→描画→終了（pointerup）」で一つの履歴エントリとして記録。
+  - 改修：
+    - strokeStart(): create transient stroke object（まだ push しない）
+    - strokeUpdate(): transient に点を追加（ここでは履歴に影響させない）
+    - strokeEnd(): commit stroke を finalize して History.push( strokeEntry )
+      - strokeEntry.do() -> add stroke to layer data and renderer
+      - strokeEntry.undo() -> remove stroke from layer data and renderer
+  - 注意：mousemoveごとにpushしない。undoの分割や大量履歴を防ぐ。
 
-必須API（history.js）：
-- history.init({maxStackSize})
-- history.pushSnapshot(label)            // 内部で structuredClone(stateManager.getState())
-- history.pushTransaction(label, fn)     // fn() 内で複数の stateManager.applyChange() を行い、一連を一つの履歴として保存
-- history.undo()
-- history.redo()
-- history.getCount()
+5) system/layer-system.js
+  - 目的：レイヤーの追加・削除・順序移動・アクティブ変更等を全て History を通す。
+  - 改修：
+    - API 例：
+        addLayer(params) -> stateManager.commit({name:'add-layer', do:..., undo:...})
+        removeLayer(id) -> commit(...)
+        moveLayer(id, toIndex) -> commit(...)
+        setActiveLayer(id) -> commit(...)  // ただし setActiveLayer は短い操作でも一つの履歴として扱う
+    - moveLayer はトランザクション化：dragstart で beginComposite(); dragend で endComposite() して１エントリにまとめる。
+    - レイヤー変更により renderer のz-order を直接変更するのではなく、state の変化により renderer が再構築される流れにする（単純で可検査）。
 
-実装注意点：
-- pushSnapshot の際は「参照を残さない」こと。structuredClone を必ず使う。
-- pushTransaction 中に例外が出た場合はロールバックして、履歴に何も残さない。
-- undo/redo 中に UI イベント（二重発火）を発生させないため、stateManager は復元中フラグを持つ（isRestoring = true）を設け、他イベントを無視する。
+6) system/camera-system.js
+  - 目的：カメラ移動やズームも履歴化（必要であれば）。
+  - 改修：
+    - カメラドラッグなどで多数のイベントが起きる場合は、インタラクションの完了（pointerup）で履歴にコミットする。
+    - または、短時間の操作は throttle して合成エントリにする。
 
-B) system/state-manager.js
-目的：アプリの単一の真の状態を管理し、変更はこのAPI経由でのみ行う。
+7) system/history.js と UI/timeline関連（ui/timeline-ui.js, ui/timeline-thumbnail-utils.js）
+  - 目的：タイムライン上のCUT追加・フレーム挿入・サムネ縮小等を History 経由で一貫処理する。
+  - 改修：
+    - CUTの作成／削除は一つのCompositeEntryにする（関連する layer データ、timeline データ、thumbnail の更新を含む）。
+    - サムネイル作成は非同期処理だが、thumbnail 画像生成自体は履歴化対象外。thumbnail の参照切替を履歴に含める。
 
-設計（要点）：
-- stateManager.getState() は「参照渡ししない」。呼び出し側が読み取りだけする想定なら readonly の軽いラッパーを返す。
-- stateManager.applyChange(changeObject) のみで状態遷移させる。
-- changeObject = {type: 'cut.create'|'cut.update'|'layer.add'|..., payload: {...}}
-- applyChange 内でバリデーションとID発行（CUT作成時は UUID を付与）を行う。
-- stateManager.applySnapshot(snapshot) で復元。復元時は isRestoring フラグを立てる。
+8) core-engine.js / core-runtime.js
+  - 目的：レンダリングループとイベントハンドリングの整合性を取る。
+  - 改修：
+    - core-engine は stateManager の state 変化を読みレンダリングするだけに限定する。状態変更は決して core-engine が直接行わない。
+    - Undo/redo の実行は core-engine がトリガーしない（button/shortcut ハンドラが History を呼ぶ）。core-engine は isApplying を考慮して差分レンダリングする。
 
-C) system/layer-system.js / drawing-clipboard.js
-- これらのモジュールは「stateのビュー/操作ラッパー」に限定する（絶対に直接 state オブジェクトをミューテートしない）。
-- もし内部でオブジェクトを保持する場合は独自の clone-on-write を採用する。
-- Clipboard の paste 時は常に deepClone を行う（元オブジェクト参照を貼らない）。
+具体的な修正サンプル（擬似コード、history の核）：
+  - （history.js の重要ロジック）
+  const History = {
+    entries: [],
+    index: -1,
+    isApplying: false,
 
-D) system/event-bus.js
-- イベントは同期イベントと非同期イベントを区別する（命名規約例: 'ui:click' は同期、 'thumbnail:ready' は非同期）。
-- Undo/Redoなど状態復元系は必ず同期イベント（あるいは復元プロセスが完了してから非同期通知）で扱う。
-- event-bus は購読中の handler が副作用で state を直接変更するときは警告する（開発時のみ console.warn を出す）。
-
-E) ui/timeline-ui.js / timeline-thumbnail-utils.js
-- サムネイル生成は「ラジオボタン式」ではなく「キュー／バッチ方式」にする。短時間に複数サムネイル要求があった場合、古いリクエストはキャンセルして最新だけ処理する。
-- サムネイルは可能ならCanvas2Dで一度だけ描画してテクスチャを使い回す（ただしCanvas2Dはサムネイル用途のみ許可）。
-- サムネイル生成は rAF に詰める、またはウェブワーカーで非同期化（まずは遅延/バッチ更新で十分）。
-
---------------------------------------------------------------------------------
-4) 具体的なコード例（重要箇所のサンプル実装案）
---------------------------------------------------------------------------------
-（注）以下はプレーンなサンプル。実装はプロジェクト構造に合わせて細部調整すること。
-
---- utils/deep-clone.js ---
-function deepClone(obj) {
-  // Chrome 最新のみ想定 -> structuredClone を最優先
-  if (typeof structuredClone !== 'undefined') return structuredClone(obj);
-  // フォールバック（注意：関数や循環参照は不可）
-  return JSON.parse(JSON.stringify(obj));
-}
-
---- system/history.js (抜粋) ---
-const history = (function() {
-  let stack = [];
-  let pointer = -1;
-  const maxSize = 200;
-  let isRestoring = false;
-
-  function pushSnapshot(label, snapshot) {
-    // snapshot は呼び出し側で deepClone 済みであることを期待する
-    // truncate redo stack
-    if (pointer < stack.length - 1) stack = stack.slice(0, pointer + 1);
-    stack.push({ id: crypto.randomUUID(), type: 'snapshot', timestamp: Date.now(), payload: snapshot, meta: {label} });
-    pointer = stack.length - 1;
-    if (stack.length > maxSize) stack.shift(), pointer--;
-  }
-
-  function undo() {
-    if (isRestoring) return;
-    if (pointer <= 0) return; // nothing to undo
-    isRestoring = true;
-    const prev = stack[pointer - 1];
-    if (!prev) { isRestoring = false; return; }
-    stateManager.applySnapshot(prev.payload);
-    pointer -= 1;
-    isRestoring = false;
-  }
-
-  function redo() {
-    if (isRestoring) return;
-    if (pointer >= stack.length - 1) return;
-    isRestoring = true;
-    const next = stack[pointer + 1];
-    stateManager.applySnapshot(next.payload);
-    pointer += 1;
-    isRestoring = false;
-  }
-
-  function getCount() { return {undo: pointer, redo: stack.length - 1 - pointer}; }
-
-  return { pushSnapshot, undo, redo, getCount };
-})();
-
---- system/state-manager.js (抜粋) ---
-const stateManager = (function() {
-  let state = { cuts: [], activeCutId: null, ... };
-  let isRestoring = false;
-
-  function getStateReadonly() {
-    // return shallow copy to avoid callers mutating internals
-    return { ...state };
-  }
-
-  function getSnapshot() {
-    return deepClone(state);
-  }
-
-  function applySnapshot(snapshot) {
-    isRestoring = true;
-    // replace root state atomically
-    state = deepClone(snapshot);
-    // emit event once restore finished
-    eventBus.emit('state:restored', { snapshotId: snapshot.id });
-    isRestoring = false;
-  }
-
-  function applyChange(change) {
-    if (isRestoring) return;
-    // change = {type, payload}
-    switch (change.type) {
-      case 'cut.create': {
-        const id = crypto.randomUUID();
-        const cut = { id, createdAt: Date.now(), layers: change.payload.layers || [] };
-        // deepClone layers to avoid shared refs
-        cut.layers = deepClone(cut.layers);
-        state.cuts.push(cut);
-        state.activeCutId = id;
-        break;
+    push(entry) {
+      if (this.isApplying) throw new Error('Cannot push during apply');
+      // truncate future
+      if (this.index < this.entries.length - 1) {
+        this.entries.length = this.index + 1;
       }
-      case 'cut.update': {
-        const cut = state.cuts.find(c => c.id === change.payload.id);
-        if (!cut) throw new Error('cut not found');
-        Object.assign(cut, deepClone(change.payload.updates));
-        break;
+      // apply
+      try {
+        this.isApplying = true;
+        entry.do();
+        this.entries.push(entry);
+        this.index++;
+      } catch (e) {
+        // attempt rollback if possible
+        try { entry.undo?.(); } catch (e2) {}
+        throw e;
+      } finally {
+        this.isApplying = false;
       }
-      // ... 他の change タイプ
-    }
-    eventBus.emit('state:changed', { changeType: change.type });
-  }
+    },
 
-  return { getStateReadonly, getSnapshot, applySnapshot, applyChange };
-})();
+    undo() {
+      if (this.isApplying) return false;
+      if (this.index < 0) return false;
+      const entry = this.entries[this.index];
+      try {
+        this.isApplying = true;
+        entry.undo();
+        this.index--;
+        return true;
+      } finally {
+        this.isApplying = false;
+      }
+    },
 
---- 使用例（CUT作成トランザクション） ---
-function createNewCutTransaction(payload) {
-  // トランザクション開始
-  const pre = stateManager.getSnapshot();
-  try {
-    stateManager.applyChange({ type: 'cut.create', payload });
-    const post = stateManager.getSnapshot();
-    history.pushSnapshot('create-cut', deepClone(post));
-  } catch (e) {
-    // ロールバック
-    stateManager.applySnapshot(pre);
-    throw e;
-  }
-}
+    redo() {
+      if (this.isApplying) return false;
+      if (this.index >= this.entries.length - 1) return false;
+      const entry = this.entries[this.index + 1];
+      try {
+        this.isApplying = true;
+        entry.do();
+        this.index++;
+        return true;
+      } finally {
+        this.isApplying = false;
+      }
+    },
+    ...
+  };
 
---------------------------------------------------------------------------------
-5) テスト／検証ケース（必須）
---------------------------------------------------------------------------------
-- ケース1：単一の筆記操作（線を引く）→ pushSnapshot → undo → redo が正しく復元されるか
-- ケース2：新規CUT作成 → pushSnapshot → undo → 元のCUTセットに戻るか。CUTが別のCUTに“コピペ”されないか
-- ケース3：複数操作（CUT生成、レイヤー追加、描画）をトランザクションでまとめて履歴登録 → undoで全部戻るか
-- ケース4：短時間に大量のサムネイル更新要求 → キュー処理で最後だけ処理されるか、メモリ増大しないか
-- ケース5：メモリ使用量の監視（数十CUT/レイヤーでメモリリークが無いか）
-- 自動テスト：history push/pop の単体テストを作成する（期待状態をスナップショット比較）
+エッジケースと設計上の注意点：
+  - index と entries の不整合：push を行う前に truncate と apply の順序を誤ると pointer がずれる。上記の順序（apply → push array → index++）で明確化。
+  - 一時オブジェクトの参照（transient stroke）は undo 時に確実に削除できるように ID を付与しておく。
+  - 非同期処理（画像読み込みなど）は、load が完了して state に反映 → push の順で履歴化する。load開始時点で push してしまわない。
+  - undo/redo 実行時は UI が再度イベントを発火して二重履歴を作らないように isApplying チェックをUI側にも入れる。
+  - ショートカット（Ctrl+Z 等）は History.undo() をラップするのみ。UI側は状態変更を引き起こさない。
 
---------------------------------------------------------------------------------
-6) ロールアウト手順（安全に適用するために）
---------------------------------------------------------------------------------
-1) ブランチ作成 feature/history-refactor
-2) history.js と state-manager.js を先に置き換え（snapshot モードで）
-3) CI/手動で上記テストケースを実施（特に CUT 作成→Undo）
-4) 問題なければ UI モジュールを段階的に切り替え（eventBus の変更は小さな互換レイヤーを用意）
-5) パフォーマンス監視（軽量計測ログ）を有効化して本番リリース
-6) 以後、コマンド差分や差分ストレージへ段階的に最適化
+移行プラン（ステップ実行・リスク最小化）：
+  1. history.js を上記 API で全面書き換え（テスト済みの小さなエントリで動作確認）。
+  2. state-manager の commit 周りを実装し、既存の変更箇所を段階的に commit 経由に切り替える。
+  3. 描画（drawing-clipboard）を strokeEnd で commit するよう改修。旧APIを残す場合は deprecation 警告を出す。
+  4. layer-system の add/remove/move を commit 経由に変更。drag系は beginComposite()/endComposite() で一つのエントリにまとめる。
+  5. camera/timeline/animation 系を順次 commit 経由にする。各ステップでユニットテスト（手動操作でのundo/redo）を実施。
+  6. 全体統合テスト：複合操作（例：レイヤー入れ替え→描画→CUT作成）を行い履歴が期待通りに復元されるか確認する。
+  7. 不具合が出た箇所は最小単位でロールバックできるように git ブランチ戦略を使う。
 
---------------------------------------------------------------------------------
-7) パフォーマンス最適化（短め）
---------------------------------------------------------------------------------
-- 毎フレームで行っている重い処理（サムネイル再生成、テクスチャ生成、toDataURL 等）を排除/遅延化。
-- 可能な限り PIXI.Texture/PIXI.Sprite を再利用。テクスチャは毎回生成しない。
-- 描画更新は必ず requestAnimationFrame に登録し、頻度制限（デバウンス/スロットリング）する。
-- 大きな履歴スナップショットは圧縮や差分化を検討（メモリ問題が出るなら次段階で導入）。
+テストチェックリスト（必須）：
+  - [ ] 描画1 stroke -> undo -> redo が即時に動作する
+  - [ ] レイヤー移動（ドラッグ） -> undo が一発で元に戻る（中間状態が残らない）
+  - [ ] CUT作成（複数レイヤーを含む一連操作） -> undo が一発で消える
+  - [ ] アクティブレイヤー変更 -> undo により以前のアクティブに戻る
+  - [ ] Undo を最初に押した時点で pointer と画面状態が乖離しない（つまり1回で戻る）
+  - [ ] 非同期画像読み込み後の state push が確実に履歴に乗る
+  - [ ] Ctrl+Z/Ctrl+Y のショートカットで History の状態とUIの整合性が保たれる
 
---------------------------------------------------------------------------------
-8) 命名規約・ルール提案（要約）
---------------------------------------------------------------------------------
-- stateManager.applyChange() を唯一の“書き換え”APIにする。
-- event 名は 'domain:action'（例： 'state:changed' , 'timeline:thumbnail-ready' ）で一貫。
-- history エントリは必ず id と timestamp を持つ。
-- 参照を受け渡す API は禁止、常に deepClone を行う（getSnapshot/getStateReadonly を使用）。
+追加提案（品質向上）：
+  - minimal debug mode を提供して history.entries を簡易的に可視化する、（開発時のみ）。
+  - 各 HistoryEntry に human-readable な name を付けて undo/redo の履歴表示を可能にする（UIは簡素でよい）。
+  - 履歴の最大長 maxHistory を設定してメモリ枯渇対策（古い履歴を切る）。
+  - 変更点ごとにユニットテスト（node を使う必要なし。簡易テストフレームワークを作ってブラウザで走らせる）。
 
---------------------------------------------------------------------------------
-9) 開発時のデバッグ支援（短め）
---------------------------------------------------------------------------------
-- 開発ビルドのみで有効な軽量ログポイント（履歴 push/undo/redo と snapshot サイズ）を残す。
-- isRestoring フラグを追加して、復元中に起こる再入（re-entrancy）を検出する。
-- 重大な不整合を検出したら（例えば undo 後に activeCutId が存在しない等）即座に stateManager.applySnapshot(pre) でロールバックし、最小限のユーザ破壊を避ける。
+最後に（まとめ）：
+  - 根本的原因は「履歴ポインタ定義の曖昧さ」「コミットタイミングのばらつき」「サブシステムがHistoryを経由していない」の混合と推定。まず system/history.js を単一の正しい実装に置き換え、state-manager を経由した変更フローに統一することで一気に改善が見込めます。
+  - 進め方は段階的にファイルを置き換え（history -> state-manager -> drawing -> layer -> others）し、各段階で手動テストを必須にすること。Composite（合成）履歴を導入すればドラッグやCUT作成での中間不整合は解消します。
 
---------------------------------------------------------------------------------
-10) 検討/次フェーズ（将来）
---------------------------------------------------------------------------------
-- メモリ効率化のため Commandパターンへ移行（差分のみ保存）。
-- 履歴の永続化（IndexedDB）と復元機能。
-- 大規模データでの部分復元（例えば各CUT単位でスナップショットを分割保存）。
+添付：軽微なサンプルユニット（擬似）
+  - push undo redo の単体テストを system/history.js に組み込み、ブラウザのコンソールで実行して検証するスクリプトを用意すること（本番では無効化）。
 
---------------------------------------------------------------------------------
-11) まとめ（最短優先作業）
---------------------------------------------------------------------------------
-1) deepClone ユーティリティを導入（structuredClone を明文化）
-2) history を snapshot ベースで一貫化（pushSnapshot / undo / redo 実装）
-3) stateManager を唯一の書換APIに強制し、CUT作成は transaction として履歴登録
-4) timeline サムネイルはバッチ/キャンセル方式にして負荷を軽減
-5) テストケースを用意して回帰防止
-
---------------------------------------------------------------------------------
-付録：最重要チェックリスト（プルリク前）
---------------------------------------------------------------------------------
-- [ ] structuredClone を使って全履歴保存を行っている
-- [ ] undo/redo 実行中に state を二重変更するイベントがない
-- [ ] CUT作成→undoで cut list が元に戻ることを確認済み
-- [ ] サムネイル生成はキャンセル可能／バッチ化されている
-- [ ] パフォーマンス（FPS低下）を示す Hot path をidentify済み
-- [ ] 単体テスト（history）, 手動E2E（CUT作成/undo/red o）を通す
-
---------------------------------------------------------------------------------
-備考（お願い）
---------------------------------------------------------------------------------
-- まずは「history を snapshot モードで安定させる」変更を提案しました。これでまず不整合は解消されるはずです。
-- もし既存コードが差分保存（commandベース）に強く依存している場合は、その旨を言ってください。代替案（commandパターンでの設計）を即座に提示します。
-- 具体的なコード差分（patch）を希望する場合は、該当ファイル（history.js, state-manager.js, timeline-thumbnail-utils.js）を指定していただければ、そのまま差分のパッチ（修正ファイル内容）を作成します。
-
-以上
+=== end of document ===
