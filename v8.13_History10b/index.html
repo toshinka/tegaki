@@ -662,6 +662,116 @@
             color: var(--futaba-maroon);
             font-weight: 600;
         }
+
+.format-selection {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
+    margin-bottom: 16px;
+}
+
+.format-btn {
+    padding: 12px 8px;
+    border: 2px solid var(--futaba-light-medium);
+    border-radius: 8px;
+    background: var(--futaba-background);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-primary);
+    text-align: center;
+}
+
+.format-btn:hover:not(.disabled) {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-medium);
+    transform: translateY(-2px);
+    box-shadow: 0 4px 8px rgba(128, 0, 0, 0.15);
+}
+
+.format-btn.selected {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-maroon);
+    color: var(--text-inverse);
+}
+
+.format-btn.disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+    background: var(--futaba-light-medium);
+}
+
+.format-btn.disabled:hover {
+    transform: none;
+    box-shadow: none;
+}
+
+.export-options {
+    margin: 16px 0;
+    padding: 12px;
+    background: var(--futaba-background);
+    border-radius: 8px;
+    border: 1px solid var(--futaba-light-medium);
+    min-height: 80px;
+}
+
+.export-progress {
+    margin: 16px 0;
+    display: none;
+}
+
+.progress-bar {
+    height: 12px;
+    background: var(--futaba-light-medium);
+    border-radius: 6px;
+    overflow: hidden;
+    position: relative;
+    margin-bottom: 8px;
+}
+
+.progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, var(--futaba-maroon), var(--futaba-light-maroon));
+    width: 0%;
+    transition: width 0.3s ease;
+    border-radius: 6px;
+}
+
+.progress-text {
+    text-align: center;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--futaba-maroon);
+    font-family: monospace;
+}
+
+.export-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 16px;
+}
+
+.export-actions .action-button {
+    flex: 1;
+}
+
+.action-button.secondary {
+    background: var(--futaba-cream);
+    color: var(--text-primary);
+    border-color: var(--futaba-light-medium);
+}
+
+.action-button.secondary:hover {
+    background: var(--futaba-light-medium);
+    color: var(--text-primary);
+}
+
+.action-button:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+}
+
     </style>
 </head>
 <body>
@@ -745,6 +855,40 @@
                     </div>
                 </div>
                 
+<div class="popup-panel" id="export-popup" style="left: 60px; top: 200px; min-width: 420px;">
+    <div class="popup-title">画像・アニメ出力</div>
+    
+    <div class="format-selection">
+        <button class="format-btn selected" data-format="png">PNG</button>
+        <button class="format-btn" data-format="gif">GIF</button>
+        <button class="format-btn disabled" data-format="apng">APNG</button>
+        <button class="format-btn disabled" data-format="webp">WEBP</button>
+        <button class="format-btn disabled" data-format="mp4">MP4</button>
+        <button class="format-btn disabled" data-format="pdf">PDF</button>
+    </div>
+    
+    <div class="export-options" id="export-options">
+        <div class="setting-label">PNG静止画出力</div>
+        <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
+            現在のキャンバス状態をPNG画像として出力します。
+        </div>
+    </div>
+    
+    <div class="export-progress" id="export-progress">
+        <div class="progress-bar">
+            <div class="progress-fill"></div>
+        </div>
+        <div class="progress-text">0%</div>
+    </div>
+    
+    <div class="export-actions">
+        <button class="action-button" id="export-execute">出力開始</button>
+        <button class="action-button secondary" id="export-cancel">キャンセル</button>
+    </div>
+</div>
+
+
+
                 <div class="setting-group">
                     <div class="action-button" id="apply-resize">適用</div>
                 </div>
@@ -845,6 +989,9 @@
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/UPNG-js/2.1.0/UPNG.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
 
     <script src="config.js"></script>
     <script src="coordinate-system.js"></script>
@@ -858,6 +1005,10 @@
     <script src="system/drawing-clipboard.js"></script>
     <script src="system/history.js"></script>
     <script src="system/animation-system.js"></script>
+    <script src="system/export-manager.js"></script>
+    <script src="system/exporters/png-exporter.js"></script>
+    <script src="system/exporters/gif-exporter.js"></script>
+    <script src="ui/export-popup.js"></script>
     <script src="system/gif-exporter.js"></script>
 
     <script src="ui/timeline-ui.js"></script>

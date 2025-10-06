@@ -1,0 +1,534 @@
+========================================
+エクスポート機能拡張 改修計画書 (改訂版)
+========================================
+作成日: 2025-10-06
+対象システム: PixiJS v8.13 お絵かきツール
+改修目的: 画像・アニメーション出力機能の実装
+優先順位: PNG・GIF優先、APNG・WEBP次段階
+
+========================================
+1. 概要
+========================================
+GPT5見解を踏まえた改訂:
+- PixiJS v8.13の renderer.extract.canvas() 活用
+- file://環境対応(ESM禁止、グローバル名前空間)
+- ライブラリはCDN読み込みのみ
+- Canvas2Dは出力抽出のみ許可
+
+対応フォーマット:
+  Phase1: PNG, GIF (既存機能活用)
+  Phase2: APNG (UPNG.js), WEBP (webp-encoder)
+  Phase3: MP4 (MediaRecorder), PDF (jsPDF)
+
+========================================
+2. アーキテクチャ設計 (改訂)
+========================================
+
+【ファイル構造】
+system/
+  ├ export-manager.js        [新規] 統一エクスポートAPI
+  │
+  └ exporters/               [新規ディレクトリ]
+      ├ png-exporter.js      [新規] PNG静止画
+      ├ gif-exporter.js      [移動] 既存GIF (統合)
+      ├ apng-exporter.js     [Phase2] UPNG.js使用
+      ├ webp-exporter.js     [Phase2] webp-encoder使用
+      ├ mp4-exporter.js      [Phase3] MediaRecorder使用
+      └ pdf-exporter.js      [Phase3] jsPDF使用
+
+ui/
+  └ export-popup.js          [新規] フォーマット選択UI
+
+index.html
+  └ CDNライブラリ追加、UI追加、イベント接続
+
+========================================
+3. 技術スタック詳細 (GPT5推奨反映)
+========================================
+
+【PixiJS v8.13 抽出API】
+  app.renderer.extract.canvas(target) → HTMLCanvasElement
+  canvas.toDataURL('image/png')       → Base64 PNG
+  canvas.toBlob(callback, 'image/png') → Blob
+
+【外部ライブラリ (CDN)】
+  UPNG.js:
+    https://cdnjs.cloudflare.com/ajax/libs/UPNG-js/2.1.0/UPNG.js
+    用途: APNG生成
+    
+  webp-encoder (または代替):
+    検討: ブラウザ標準APIでWebP対応確認
+    fallback: canvas.toBlob(callback, 'image/webp')
+    
+  jsPDF:
+    https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js
+    用途: PDF生成
+    
+  GIF.js: (既存)
+    https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js
+
+【MediaRecorder (MP4/WebM)】
+  canvas.captureStream(fps)
+  MediaRecorder(stream, {mimeType: 'video/webm'})
+  ※ file://環境で動作確認必須
+
+========================================
+4. 実装仕様詳細 (改訂)
+========================================
+
+─────────────────────────
+4.1 ExportManager (system/export-manager.js)
+─────────────────────────
+GPT5方式採用: グローバル名前空間、即時関数
+
+window.ExportManager = (function() {
+  'use strict';
+  
+  class ExportManager {
+    constructor(app, layerSystem, animationSystem, cameraSystem) {
+      this.app = app;
+      this.layerSystem = layerSystem;
+      this.animationSystem = animationSystem;
+      this.cameraSystem = cameraSystem;
+      this.exporters = {};
+      this.currentExport = null;
+    }
+    
+    registerExporter(format, exporter) {
+      this.exporters[format] = exporter;
+    }
+    
+    async export(format, options = {}) {
+      const exporter = this.exporters[format];
+      if (!exporter) throw new Error(`Unsupported format: ${format}`);
+      
+      this.currentExport = { format, progress: 0 };
+      
+      try {
+        const result = await exporter.export(options);
+        this.currentExport = null;
+        return result;
+      } catch (error) {
+        this.currentExport = null;
+        throw error;
+      }
+    }
+    
+    // 共通レンダリング処理 (PixiJS v8.13対応)
+    renderToCanvas(options = {}) {
+      const width = options.width || window.TEGAKI_CONFIG.canvas.width;
+      const height = options.height || window.TEGAKI_CONFIG.canvas.height;
+      const resolution = options.resolution || 2;
+      
+      const renderTexture = PIXI.RenderTexture.create({
+        width: width,
+        height: height,
+        resolution: resolution
+      });
+      
+      const container = options.container || this.layerSystem.layersContainer;
+      
+      this.app.renderer.render({
+        container: container,
+        target: renderTexture
+      });
+      
+      const canvas = this.app.renderer.extract.canvas(renderTexture);
+      renderTexture.destroy();
+      
+      return canvas;
+    }
+    
+    downloadFile(blob, filename) {
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      a.style.display = 'none';
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }
+    
+    isExporting() {
+      return this.currentExport !== null;
+    }
+    
+    getCurrentProgress() {
+      return this.currentExport?.progress || 0;
+    }
+    
+    abortExport() {
+      if (this.currentExport) {
+        this.currentExport = null;
+        window.TegakiEventBus?.emit('export:aborted');
+      }
+    }
+  }
+  
+  return ExportManager;
+})();
+
+─────────────────────────
+4.2 PNGExporter (system/exporters/png-exporter.js)
+─────────────────────────
+window.PNGExporter = (function() {
+  'use strict';
+  
+  class PNGExporter {
+    constructor(exportManager) {
+      this.manager = exportManager;
+    }
+    
+    async export(options = {}) {
+      window.TegakiEventBus?.emit('export:started', { format: 'png' });
+      
+      const canvas = this.manager.renderToCanvas(options);
+      
+      return new Promise((resolve, reject) => {
+        canvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error('PNG generation failed'));
+            return;
+          }
+          
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+          const filename = `tegaki_${timestamp}.png`;
+          
+          this.manager.downloadFile(blob, filename);
+          
+          window.TegakiEventBus?.emit('export:completed', { 
+            format: 'png', 
+            size: blob.size 
+          });
+          
+          resolve({ blob, filename });
+        }, 'image/png');
+      });
+    }
+  }
+  
+  return PNGExporter;
+})();
+
+─────────────────────────
+4.3 GIFExporter統合 (system/exporters/gif-exporter.js)
+─────────────────────────
+既存コードを移動し、ExportManagerインターフェース適合
+
+変更点:
+- window.TegakiGIFExporter → window.GIFExporter
+- constructor に exportManager 追加
+- export(options) メソッド追加 (既存exportGIFをラップ)
+- this.app, this.animationSystem を manager経由で取得
+
+※既存ロジックは全て維持
+
+─────────────────────────
+4.4 APNGExporter (system/exporters/apng-exporter.js)
+─────────────────────────
+Phase2実装: UPNG.js使用
+
+window.APNGExporter = (function() {
+  'use strict';
+  
+  class APNGExporter {
+    constructor(exportManager) {
+      this.manager = exportManager;
+    }
+    
+    async export(options = {}) {
+      if (typeof UPNG === 'undefined') {
+        throw new Error('UPNG.js not loaded');
+      }
+      
+      window.TegakiEventBus?.emit('export:started', { format: 'apng' });
+      
+      const animData = this.manager.animationSystem.getAnimationData();
+      if (animData.cuts.length === 0) {
+        throw new Error('No animation cuts available');
+      }
+      
+      const width = options.width || window.TEGAKI_CONFIG.canvas.width;
+      const height = options.height || window.TEGAKI_CONFIG.canvas.height;
+      
+      const frames = [];
+      const delays = [];
+      
+      const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
+      
+      for (let i = 0; i < animData.cuts.length; i++) {
+        this.manager.animationSystem.applyCutToLayers(i);
+        await this.waitFrame();
+        
+        const canvas = this.manager.renderToCanvas({ width, height });
+        const dataURL = canvas.toDataURL('image/png');
+        
+        // UPNG形式変換
+        const binary = atob(dataURL.split(',')[1]);
+        const arr = new Uint8Array(binary.length);
+        for (let j = 0; j < binary.length; j++) {
+          arr[j] = binary.charCodeAt(j);
+        }
+        
+        frames.push(arr.buffer);
+        delays.push(Math.round(animData.cuts[i].duration * 1000));
+        
+        window.TegakiEventBus?.emit('export:progress', { 
+          current: i + 1, 
+          total: animData.cuts.length 
+        });
+      }
+      
+      this.manager.animationSystem.restoreFromSnapshots(backupSnapshots);
+      
+      const apng = UPNG.encode(frames, width, height, 0, delays);
+      const blob = new Blob([apng], { type: 'image/apng' });
+      
+      const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+      const filename = `tegaki_animation_${timestamp}.apng`;
+      
+      this.manager.downloadFile(blob, filename);
+      
+      window.TegakiEventBus?.emit('export:completed', { 
+        format: 'apng', 
+        size: blob.size 
+      });
+      
+      return { blob, filename };
+    }
+    
+    waitFrame() {
+      return new Promise(resolve => {
+        requestAnimationFrame(() => setTimeout(resolve, 16));
+      });
+    }
+  }
+  
+  return APNGExporter;
+})();
+
+─────────────────────────
+4.5 WEBPExporter (system/exporters/webp-exporter.js)
+─────────────────────────
+Phase2実装: ブラウザ標準API優先
+
+window.WEBPExporter = (function() {
+  'use strict';
+  
+  class WEBPExporter {
+    constructor(exportManager) {
+      this.manager = exportManager;
+    }
+    
+    async export(options = {}) {
+      // ブラウザのWebP対応確認
+      const canvas = document.createElement('canvas');
+      const supportsWebP = canvas.toDataURL('image/webp').indexOf('data:image/webp') === 0;
+      
+      if (!supportsWebP) {
+        throw new Error('Browser does not support WebP format');
+      }
+      
+      window.TegakiEventBus?.emit('export:started', { format: 'webp' });
+      
+      const quality = options.quality || 0.9;
+      const renderCanvas = this.manager.renderToCanvas(options);
+      
+      return new Promise((resolve, reject) => {
+        renderCanvas.toBlob((blob) => {
+          if (!blob) {
+            reject(new Error('WEBP generation failed'));
+            return;
+          }
+          
+          const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+          const filename = `tegaki_${timestamp}.webp`;
+          
+          this.manager.downloadFile(blob, filename);
+          
+          window.TegakiEventBus?.emit('export:completed', { 
+            format: 'webp', 
+            size: blob.size 
+          });
+          
+          resolve({ blob, filename });
+        }, 'image/webp', quality);
+      });
+    }
+  }
+  
+  return WEBPExporter;
+})();
+
+─────────────────────────
+4.6 ExportPopup (ui/export-popup.js)
+─────────────────────────
+window.ExportPopup = (function() {
+  'use strict';
+  
+  class ExportPopup {
+    constructor(exportManager) {
+      this.manager = exportManager;
+      this.selectedFormat = 'png';
+      this.setupUI();
+      this.setupEventListeners();
+    }
+    
+    setupUI() {
+      // ポップアップHTML生成は省略 (後述)
+    }
+    
+    setupEventListeners() {
+      const formatBtns = document.querySelectorAll('.format-btn');
+      formatBtns.forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (btn.classList.contains('disabled')) return;
+          this.selectFormat(btn.dataset.format);
+        });
+      });
+      
+      const executeBtn = document.getElementById('export-execute');
+      if (executeBtn) {
+        executeBtn.addEventListener('click', () => this.executeExport());
+      }
+      
+      const cancelBtn = document.getElementById('export-cancel');
+      if (cancelBtn) {
+        cancelBtn.addEventListener('click', () => this.hide());
+      }
+      
+      window.TegakiEventBus?.on('export:progress', (data) => {
+        this.updateProgress(data);
+      });
+      
+      window.TegakiEventBus?.on('export:completed', () => {
+        this.hide();
+      });
+    }
+    
+    selectFormat(format) {
+      this.selectedFormat = format;
+      
+      document.querySelectorAll('.format-btn').forEach(btn => {
+        btn.classList.toggle('selected', btn.dataset.format === format);
+      });
+      
+      this.updateOptionsUI(format);
+    }
+    
+    updateOptionsUI(format) {
+      const optionsEl = document.getElementById('export-options');
+      if (!optionsEl) return;
+      
+      // フォーマット別オプションUI生成
+      const optionsMap = {
+        'png': '<div>サイズ: キャンバスサイズ</div>',
+        'gif': '<div>品質設定は既存システム使用</div>',
+        'apng': '<div>フレーム遅延: 自動</div>',
+        'webp': '<div>品質: 90%</div>',
+        'mp4': '<div>準備中</div>',
+        'pdf': '<div>準備中</div>'
+      };
+      
+      optionsEl.innerHTML = optionsMap[format] || '';
+    }
+    
+    async executeExport() {
+      if (this.manager.isExporting()) return;
+      
+      const progressEl = document.getElementById('export-progress');
+      if (progressEl) progressEl.style.display = 'block';
+      
+      try {
+        await this.manager.export(this.selectedFormat, {});
+      } catch (error) {
+        alert(`エクスポート失敗: ${error.message}`);
+      } finally {
+        if (progressEl) progressEl.style.display = 'none';
+      }
+    }
+    
+    updateProgress(data) {
+      const progressBar = document.querySelector('.progress-bar::after');
+      const progressText = document.querySelector('.progress-text');
+      
+      if (data.current && data.total) {
+        const percent = Math.round((data.current / data.total) * 100);
+        if (progressBar) progressBar.style.width = `${percent}%`;
+        if (progressText) progressText.textContent = `${percent}%`;
+      }
+    }
+    
+    show() {
+      const popup = document.getElementById('export-popup');
+      if (popup) popup.classList.add('show');
+    }
+    
+    hide() {
+      const popup = document.getElementById('export-popup');
+      if (popup) popup.classList.remove('show');
+    }
+  }
+  
+  return ExportPopup;
+})();
+
+========================================
+5. index.html改修内容
+========================================
+
+【CDNライブラリ追加】 (gif.jsの直後)
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/UPNG-js/2.1.0/UPNG.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+【スクリプトタグ追加】 (gif-exporter.jsの前)
+  <script src="system/export-manager.js"></script>
+  <script src="system/exporters/png-exporter.js"></script>
+  <script src="system/exporters/gif-exporter.js"></script>
+  <script src="system/exporters/apng-exporter.js"></script>
+  <script src="system/exporters/webp-exporter.js"></script>
+  <script src="ui/export-popup.js"></script>
+
+【HTML追加】 (resize-settings直後)
+  <div class="popup-panel" id="export-popup">...</div>
+
+【初期化コード追加】 (DOMContentLoaded内)
+  // ExportManager初期化とエクスポーター登録
+
+========================================
+6. 実装優先順位 (改訂)
+========================================
+
+Phase 1 (最優先) - 今回実装:
+  ✓ ExportManager基盤
+  ✓ PNGExporter
+  ✓ GIFExporter統合
+  ✓ ExportPopup UI
+  ✓ PNG/GIF動作確認
+
+Phase 2 (次回):
+  - APNGExporter (UPNG.js)
+  - WEBPExporter (ブラウザAPI)
+
+Phase 3 (将来):
+  - MP4Exporter (MediaRecorder)
+  - PDFExporter (jsPDF)
+
+========================================
+7. 改訂ポイントまとめ
+========================================
+
+GPT5見解採用:
+  ✓ renderer.extract.canvas() 中心設計
+  ✓ グローバル名前空間 (即時関数)
+  ✓ CDNライブラリ活用
+  ✓ file://環境完全対応
+  ✓ UPNG.js採用 (APNG)
+  ✓ ブラウザ標準API優先 (WEBP)
+  ✓ MediaRecorder採用 (MP4)
+
+========================================
+END OF REVISED DOCUMENT
+========================================
