@@ -1,10 +1,12 @@
 // ================================================================================
-// system/animation-system.js - 改修版：CUT作成フロー修正 + ディープコピー徹底
+// system/animation-system.js - GIF/PNGエクスポート対応版
 // ================================================================================
-// 改修内容：
-// - createNewBlankCut(): トランザクション化、イベント発火タイミング最適化
-// - createNewCutFromCurrentLayers(): ディープコピーの徹底
-// - _deepCopyLayer(), _deepCopyPath(): 参照漏れ防止
+// 【修正】GIFExporter用APIを追加:
+//   - captureAllLayerStates()
+//   - restoreFromSnapshots()
+//   - applyCutToLayers()
+//   - getAnimationData() (既存)
+//   - getCurrentCutIndex() (既存)
 
 (function() {
     'use strict';
@@ -343,13 +345,10 @@
             return { thumbDisplayW, thumbDisplayH };
         }
         
-        // ===== 改修：createNewCutFromCurrentLayers() =====
         createNewCutFromCurrentLayers() {
-            // トランザクション開始
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             const cut = new Cut(cutId, `CUT${this.animationData.cuts.length + 1}`, this.config);
             
-            // 現在のレイヤーをディープコピー
             if (this.layerSystem?.currentCutContainer) {
                 const currentLayers = this.layerSystem.currentCutContainer.children;
                 
@@ -373,7 +372,6 @@
             
             this.switchToActiveCut(newCutIndex);
             
-            // イベント発火（トランザクション完了後）
             setTimeout(async () => {
                 await this.generateCutThumbnail(newCutIndex);
                 if (this.eventBus) {
@@ -387,9 +385,7 @@
             return cut;
         }
         
-        // ===== 改修：createNewBlankCut() =====
         createNewBlankCut() {
-            // トランザクション開始：全ての操作を完了してからイベント発火
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             const cut = new Cut(cutId, `CUT${this.animationData.cuts.length + 1}`, this.config);
             
@@ -413,7 +409,6 @@
             
             this.switchToActiveCut(newIndex);
             
-            // トランザクション完了後、イベント発火（History記録が安全）
             setTimeout(() => {
                 if (this.eventBus) {
                     this.eventBus.emit('animation:cut-created', { 
@@ -467,12 +462,10 @@
             return layer;
         }
         
-        // ===== 改修：_deepCopyLayer() =====
         _deepCopyLayer(originalLayer) {
             const layer = new PIXI.Container();
             layer.label = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             
-            // layerDataを新規作成（参照コピーしない）
             layer.layerData = {
                 id: layer.label,
                 name: originalLayer.layerData?.name || 'Layer',
@@ -482,7 +475,6 @@
                 paths: []
             };
             
-            // Transform情報をコピー（値渡し）
             layer.position.set(originalLayer.position.x, originalLayer.position.y);
             layer.rotation = originalLayer.rotation;
             layer.scale.set(originalLayer.scale.x, originalLayer.scale.y);
@@ -490,7 +482,6 @@
             layer.visible = originalLayer.visible;
             layer.alpha = originalLayer.alpha;
             
-            // 背景レイヤーの場合
             if (originalLayer.layerData?.isBackground) {
                 const canvasSize = this.getCurrentCanvasSize();
                 const bg = new PIXI.Graphics();
@@ -500,7 +491,6 @@
                 layer.layerData.backgroundGraphics = bg;
             }
             
-            // パスをディープコピー
             if (originalLayer.layerData?.paths && Array.isArray(originalLayer.layerData.paths)) {
                 originalLayer.layerData.paths.forEach(originalPath => {
                     const copiedPath = this._deepCopyPath(originalPath);
@@ -514,13 +504,11 @@
             return layer;
         }
         
-        // ===== 改修：_deepCopyPath() =====
         _deepCopyPath(originalPath) {
             if (!originalPath?.points || originalPath.points.length === 0) return null;
             
             const graphics = new PIXI.Graphics();
             
-            // pointsをディープコピー
             const copiedPoints = originalPath.points.map(p => ({ x: p.x, y: p.y }));
             
             copiedPoints.forEach(point => {
@@ -541,6 +529,51 @@
                 graphics: graphics
             };
         }
+        
+        // ===== 【追加】GIF/PNGエクスポート用API =====
+        captureAllLayerStates() {
+            if (!this.layerSystem) {
+                throw new Error('AnimationSystem: layerSystem is not assigned');
+            }
+            const layers = this.layerSystem.getLayers();
+            return layers.map(layer => ({
+                layerId: layer.layerData?.id ?? null,
+                visible: !!layer.visible,
+                alpha: typeof layer.alpha === 'number' ? layer.alpha : (layer.layerData?.opacity ?? 1.0),
+                x: layer.x ?? 0,
+                y: layer.y ?? 0,
+                scaleX: layer.scale?.x ?? 1,
+                scaleY: layer.scale?.y ?? 1,
+                rotation: layer.rotation ?? 0
+            }));
+        }
+        
+        restoreFromSnapshots(snapshots) {
+            if (!this.layerSystem) {
+                throw new Error('AnimationSystem: layerSystem is not assigned');
+            }
+            const layers = this.layerSystem.getLayers();
+            snapshots.forEach((snap, index) => {
+                const layer = layers.find(l => (l.layerData?.id ?? null) === snap.layerId) || layers[index];
+                if (!layer) return;
+                if (typeof snap.visible === 'boolean') layer.visible = snap.visible;
+                if (typeof snap.alpha === 'number') layer.alpha = snap.alpha;
+                if (typeof snap.x === 'number') layer.x = snap.x;
+                if (typeof snap.y === 'number') layer.y = snap.y;
+                if (typeof snap.scaleX === 'number') layer.scale.x = snap.scaleX;
+                if (typeof snap.scaleY === 'number') layer.scale.y = snap.scaleY;
+                if (typeof snap.rotation === 'number') layer.rotation = snap.rotation;
+            });
+        }
+        
+        applyCutToLayers(cutIndex) {
+            const cut = this.animationData.cuts[cutIndex];
+            if (!cut) {
+                throw new Error(`AnimationSystem: cut ${cutIndex} not found`);
+            }
+            this.switchToActiveCut(cutIndex);
+        }
+        // ===== エクスポート用API終了 =====
         
         switchToActiveCut(cutIndex) {
             if (this.cutSwitchInProgress) {

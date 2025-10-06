@@ -1,12 +1,22 @@
 // ==================================================
 // system/export-manager.js
-// エクスポート統合管理システム
+// エクスポート統合管理システム - バリデーション強化版
 // ==================================================
 window.ExportManager = (function() {
     'use strict';
     
     class ExportManager {
         constructor(app, layerSystem, animationSystem, cameraSystem) {
+            if (!app || !app.renderer) {
+                throw new Error('ExportManager: app and renderer are required');
+            }
+            if (!layerSystem) {
+                throw new Error('ExportManager: layerSystem is required');
+            }
+            if (!animationSystem) {
+                throw new Error('ExportManager: animationSystem is required');
+            }
+            
             this.app = app;
             this.layerSystem = layerSystem;
             this.animationSystem = animationSystem;
@@ -42,13 +52,24 @@ window.ExportManager = (function() {
             const height = options.height || window.TEGAKI_CONFIG.canvas.height;
             const resolution = options.resolution || 2;
             
+            // layersContainerまたはcurrentCutContainerを取得
+            const container = options.container || 
+                             this.layerSystem.layersContainer || 
+                             this.layerSystem.currentCutContainer;
+            
+            if (!container) {
+                throw new Error('ExportManager.renderToCanvas: layers container is not available. Ensure layerSystem.currentCutContainer is properly initialized.');
+            }
+            
+            if (typeof container.updateLocalTransform !== 'function') {
+                throw new Error('ExportManager.renderToCanvas: provided container is not a PIXI DisplayObject');
+            }
+            
             const renderTexture = PIXI.RenderTexture.create({
                 width: width,
                 height: height,
                 resolution: resolution
             });
-            
-            const container = options.container || this.layerSystem.layersContainer;
             
             this.app.renderer.render({
                 container: container,
@@ -73,6 +94,17 @@ window.ExportManager = (function() {
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         }
         
+        async copyToClipboard(blob) {
+            try {
+                const item = new ClipboardItem({ [blob.type]: blob });
+                await navigator.clipboard.write([item]);
+                return true;
+            } catch (error) {
+                console.error('Clipboard copy failed:', error);
+                return false;
+            }
+        }
+        
         isExporting() {
             return this.currentExport !== null;
         }
@@ -92,4 +124,4 @@ window.ExportManager = (function() {
     return ExportManager;
 })();
 
-console.log('✅ export-manager.js loaded');
+console.log('✅ export-manager.js (バリデーション強化版) loaded');

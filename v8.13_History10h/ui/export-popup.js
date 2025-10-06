@@ -1,6 +1,6 @@
 // ==================================================
 // ui/export-popup.js
-// エクスポートUI管理 - setupUI実装・セレクタ修正版
+// エクスポートUI管理 - コピー機能追加版
 // ==================================================
 window.ExportPopup = (function() {
     'use strict';
@@ -48,6 +48,7 @@ window.ExportPopup = (function() {
                     </div>
                     <div class="export-actions">
                         <button class="action-button" id="export-execute">出力開始</button>
+                        <button class="action-button secondary" id="export-copy">コピー</button>
                         <button class="action-button secondary" id="export-cancel">キャンセル</button>
                     </div>
                 `;
@@ -71,6 +72,11 @@ window.ExportPopup = (function() {
                     return;
                 }
                 
+                if (e.target.closest('#export-copy')) {
+                    this.executeCopy();
+                    return;
+                }
+                
                 if (e.target.closest('#export-cancel')) {
                     this.hide();
                     return;
@@ -90,6 +96,10 @@ window.ExportPopup = (function() {
                     this.onExportFailed(data);
                 });
                 
+                window.TegakiEventBus.on('export:copied', () => {
+                    this.onCopySuccess();
+                });
+                
                 window.TegakiEventBus.on('export:aborted', () => {
                     const progressEl = document.getElementById('export-progress');
                     if (progressEl) progressEl.style.display = 'none';
@@ -106,6 +116,22 @@ window.ExportPopup = (function() {
             });
             
             this.updateOptionsUI(format);
+            this.updateCopyButtonState();
+        }
+        
+        updateCopyButtonState() {
+            const copyBtn = document.getElementById('export-copy');
+            if (!copyBtn) return;
+            
+            const copyableFormats = ['png'];
+            
+            if (copyableFormats.includes(this.selectedFormat)) {
+                copyBtn.disabled = false;
+                copyBtn.style.opacity = '1';
+            } else {
+                copyBtn.disabled = true;
+                copyBtn.style.opacity = '0.5';
+            }
         }
         
         updateOptionsUI(format) {
@@ -174,9 +200,11 @@ window.ExportPopup = (function() {
             
             const progressEl = document.getElementById('export-progress');
             const executeBtn = document.getElementById('export-execute');
+            const copyBtn = document.getElementById('export-copy');
             
             if (progressEl) progressEl.style.display = 'block';
             if (executeBtn) executeBtn.disabled = true;
+            if (copyBtn) copyBtn.disabled = true;
             
             try {
                 await this.manager.export(this.selectedFormat, {});
@@ -184,8 +212,61 @@ window.ExportPopup = (function() {
                 alert(`エクスポート失敗: ${error.message}`);
                 if (progressEl) progressEl.style.display = 'none';
                 if (executeBtn) executeBtn.disabled = false;
+                this.updateCopyButtonState();
                 this.resetProgress();
             }
+        }
+        
+        async executeCopy() {
+            if (this.manager.isExporting()) {
+                return;
+            }
+            
+            const copyableFormats = ['png'];
+            if (!copyableFormats.includes(this.selectedFormat)) {
+                alert(`${this.selectedFormat.toUpperCase()}のコピーは対応していません`);
+                return;
+            }
+            
+            const copyBtn = document.getElementById('export-copy');
+            const executeBtn = document.getElementById('export-execute');
+            
+            if (copyBtn) {
+                copyBtn.disabled = true;
+                copyBtn.textContent = 'コピー中...';
+            }
+            if (executeBtn) executeBtn.disabled = true;
+            
+            try {
+                const exporter = this.manager.exporters[this.selectedFormat];
+                if (exporter && exporter.copy) {
+                    await exporter.copy({});
+                } else {
+                    throw new Error('Copy method not available');
+                }
+            } catch (error) {
+                alert(`コピー失敗: ${error.message}`);
+                if (copyBtn) {
+                    copyBtn.textContent = 'コピー';
+                }
+                this.updateCopyButtonState();
+                if (executeBtn) executeBtn.disabled = false;
+            }
+        }
+        
+        onCopySuccess() {
+            const copyBtn = document.getElementById('export-copy');
+            const executeBtn = document.getElementById('export-execute');
+            
+            if (copyBtn) {
+                copyBtn.textContent = 'コピー完了✓';
+                setTimeout(() => {
+                    copyBtn.textContent = 'コピー';
+                    this.updateCopyButtonState();
+                }, 2000);
+            }
+            
+            if (executeBtn) executeBtn.disabled = false;
         }
         
         updateProgress(data) {
@@ -210,6 +291,7 @@ window.ExportPopup = (function() {
             
             if (progressEl) progressEl.style.display = 'none';
             if (executeBtn) executeBtn.disabled = false;
+            this.updateCopyButtonState();
             
             this.resetProgress();
             
@@ -224,6 +306,7 @@ window.ExportPopup = (function() {
             
             if (progressEl) progressEl.style.display = 'none';
             if (executeBtn) executeBtn.disabled = false;
+            this.updateCopyButtonState();
             
             this.resetProgress();
         }
@@ -256,4 +339,4 @@ window.ExportPopup = (function() {
     return ExportPopup;
 })();
 
-console.log('✅ export-popup.js loaded');
+console.log('✅ export-popup.js (コピー機能追加版) loaded');
