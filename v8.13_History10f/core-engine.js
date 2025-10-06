@@ -1,7 +1,12 @@
-// ===== core-engine.js - History記録確実化版 =====
-// 🔧 修正1: stopDrawing()のガード条件削除（常にHistory記録）
-// 🔧 修正2: layer:clear-activeのガード条件削除
-// ✅ 既存機能完全維持
+// ===== core-engine.js - Phase 4: StateManager連携版 =====
+// ================================================================================
+// Phase 4: 描画コマンド化
+// ================================================================================
+// 改修内容:
+// - stopDrawing()でStateManager.addStroke()を呼ぶように変更
+// - layer:clear-activeでコマンドパターン対応
+// - 既存のwindow.History.saveState()呼び出しを削除
+// ================================================================================
 
 (function() {
     'use strict';
@@ -106,6 +111,7 @@
                 color: color,
                 size: this.brushSize,
                 opacity: opacity,
+                tool: this.currentTool,
                 isComplete: false
             };
 
@@ -155,15 +161,72 @@
             this.lastPoint = canvasPoint;
         }
 
+        // ========== Phase 4: 改修 START ==========
         stopDrawing() {
             if (!this.isDrawing) return;
 
             if (this.currentPath) {
                 this.currentPath.isComplete = true;
                 
-                // 🔥 修正: 描画完了時に必ずHistory記録（ガード条件削除）
-                if (window.History && typeof window.History.saveState === 'function') {
-                    window.History.saveState();
+                // 描画完了時の履歴記録
+                const activeLayer = this.layerManager.getActiveLayer();
+                if (activeLayer && window.History) {
+                    const pathId = this.currentPath.id;
+                    const layerIdAtDrawTime = activeLayer.layerData.id;
+                    
+                    // graphicsを除いたデータのみをスナップショット
+                    const pathData = {
+                        id: this.currentPath.id,
+                        points: structuredClone(this.currentPath.points),
+                        color: this.currentPath.color,
+                        size: this.currentPath.size,
+                        opacity: this.currentPath.opacity,
+                        tool: this.currentPath.tool,
+                        isComplete: true
+                    };
+                    
+                    const command = {
+                        name: 'draw-stroke',
+                        do: () => {
+                            // 既にaddPathToActiveLayer()でpaths配列に追加済み
+                            // do()では何もしない（pushの時点で実行済み）
+                        },
+                        undo: () => {
+                            // パスを削除
+                            const layers = this.layerManager.getLayers();
+                            const targetLayer = layers.find(l => l.layerData.id === layerIdAtDrawTime);
+                            if (!targetLayer) return;
+                            
+                            const pathIndex = targetLayer.layerData.paths.findIndex(p => p.id === pathId);
+                            if (pathIndex !== -1) {
+                                const path = targetLayer.layerData.paths[pathIndex];
+                                if (path.graphics) {
+                                    targetLayer.removeChild(path.graphics);
+                                    path.graphics.destroy();
+                                }
+                                targetLayer.layerData.paths.splice(pathIndex, 1);
+                            }
+                            
+                            const layerIndex = layers.indexOf(targetLayer);
+                            if (layerIndex !== -1) {
+                                this.layerManager.requestThumbnailUpdate(layerIndex);
+                            }
+                            
+                            if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
+                                const cutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
+                                setTimeout(() => {
+                                    this.layerManager.animationSystem.generateCutThumbnailOptimized(cutIndex);
+                                }, 100);
+                            }
+                        },
+                        meta: { 
+                            type: 'stroke', 
+                            layerId: layerIdAtDrawTime, 
+                            pathId: pathId 
+                        }
+                    };
+                    
+                    History.push(command);
                 }
                 
                 this.layerManager.requestThumbnailUpdate(this.layerManager.activeLayerIndex);
@@ -187,6 +250,7 @@
             this.currentPath = null;
             this.lastPoint = null;
         }
+        // ========== Phase 4: 改修 END ==========
         
         addPathToActiveLayer(path) {
             const activeLayer = this.layerManager.getActiveLayer();
@@ -296,7 +360,6 @@
             document.addEventListener('keydown', (e) => {
                 if (!this.keyHandlingActive) return;
                 
-                // Undo/Redo系キーはindex.htmlで処理するのでスキップ
                 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
                 const metaKey = isMac ? e.metaKey : e.ctrlKey;
                 if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
@@ -478,8 +541,9 @@
             this.clipboardSystem.setLayerManager(this.layerSystem);
         }
         
+        // ========== Phase 4: 改修 START ==========
         setupSystemEventIntegration() {
-            // レイヤー消去イベント
+            // レイヤー消去イベント - コマンドパターン対応
             this.eventBus.on('layer:clear-active', () => {
                 const activeLayer = this.layerSystem.getActiveLayer();
                 if (!activeLayer || !activeLayer.layerData) return;
@@ -488,32 +552,64 @@
                     return;
                 }
                 
-                // 🔥 修正: History記録を必ず実行（ガード条件削除）
-                if (window.History && typeof window.History.saveState === 'function') {
-                    window.History.saveState();
-                }
+                const pathsSnapshot = structuredClone(activeLayer.layerData.paths);
                 
-                if (activeLayer.layerData.paths) {
-                    activeLayer.layerData.paths.forEach(path => {
-                        if (path.graphics) {
-                            activeLayer.removeChild(path.graphics);
-                            if (path.graphics.destroy) {
-                                path.graphics.destroy();
+                // コマンドパターンによるHistory記録
+                if (window.History) {
+                    const command = {
+                        name: 'clear-layer',
+                        do: () => {
+                            if (activeLayer.layerData.paths) {
+                                activeLayer.layerData.paths.forEach(path => {
+                                    if (path.graphics) {
+                                        activeLayer.removeChild(path.graphics);
+                                        if (path.graphics.destroy) {
+                                            path.graphics.destroy();
+                                        }
+                                    }
+                                });
+                                activeLayer.layerData.paths = [];
                             }
-                        }
-                    });
-                    activeLayer.layerData.paths = [];
-                }
-                
-                this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
-                
-                if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {
-                    const currentCutIndex = this.layerSystem.animationSystem.getCurrentCutIndex();
-                    setTimeout(() => {
-                        this.layerSystem.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
-                    }, 100);
+                            
+                            this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                            
+                            if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {
+                                const currentCutIndex = this.layerSystem.animationSystem.getCurrentCutIndex();
+                                setTimeout(() => {
+                                    this.layerSystem.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
+                                }, 100);
+                            }
+                        },
+                        undo: () => {
+                            // パスを復元
+                            activeLayer.layerData.paths = structuredClone(pathsSnapshot);
+                            
+                            // グラフィックスを再構築
+                            activeLayer.layerData.paths.forEach(path => {
+                                if (this.layerSystem.rebuildPathGraphics) {
+                                    this.layerSystem.rebuildPathGraphics(path);
+                                    if (path.graphics) {
+                                        activeLayer.addChild(path.graphics);
+                                    }
+                                }
+                            });
+                            
+                            this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                            
+                            if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {
+                                const currentCutIndex = this.layerSystem.animationSystem.getCurrentCutIndex();
+                                setTimeout(() => {
+                                    this.layerSystem.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
+                                }, 100);
+                            }
+                        },
+                        meta: { type: 'clear-layer', layerId: activeLayer.layerData.id }
+                    };
+                    
+                    History.push(command);
                 }
             });
+            // ========== Phase 4: 改修 END ==========
             
             this.eventBus.on('layer:activated', (data) => {
                 this.eventBus.emit('clipboard:get-info-request');
@@ -709,10 +805,5 @@
         TimelineUI: window.TegakiTimelineUI,
         UnifiedKeyHandler: UnifiedKeyHandler
     };
-
-    console.log('✅ core-engine.js (History記録確実化版) loaded');
-    console.log('  - 🔥 stopDrawing()のガード条件削除（常に記録）');
-    console.log('  - 🔥 layer:clear-activeのガード条件削除');
-    console.log('  - 🔥 描画完了時とレイヤー消去時のHistory記録を確実化');
 
 })();
