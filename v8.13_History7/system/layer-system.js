@@ -96,48 +96,53 @@
             console.log('✅ LayerSystem: 初期化完了（TEGAKI_KEYMAP統合済み）');
         }
 
-        reorderLayers(fromIndex, toIndex) {
-            const layers = this.getLayers();
-            
-            if (fromIndex < 0 || fromIndex >= layers.length || 
-                toIndex < 0 || toIndex >= layers.length || 
-                fromIndex === toIndex) {
-                console.warn(`Invalid reorder indices: ${fromIndex} → ${toIndex}`);
-                return false;
-            }
-            
-            try {
-                const [movedLayer] = layers.splice(fromIndex, 1);
-                layers.splice(toIndex, 0, movedLayer);
-                
-                this.currentCutContainer.removeChild(movedLayer);
-                this.currentCutContainer.addChildAt(movedLayer, toIndex);
-                
-                if (this.activeLayerIndex === fromIndex) {
-                    this.activeLayerIndex = toIndex;
-                } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
-                    this.activeLayerIndex--;
-                } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
-                    this.activeLayerIndex++;
-                }
-                
-                if (this.eventBus) {
-                    this.eventBus.emit('layer:reordered', { 
-                        fromIndex, 
-                        toIndex, 
-                        activeIndex: this.activeLayerIndex,
-                        movedLayerId: movedLayer.layerData?.id
-                    });
-                }
-                
-                console.log(`✅ Layers reordered: ${fromIndex} → ${toIndex}, active: ${this.activeLayerIndex}`);
-                return true;
-                
-            } catch (error) {
-                console.error('❌ Layer reorder failed:', error);
-                return false;
-            }
+reorderLayers(fromIndex, toIndex) {
+    const layers = this.getLayers();
+    
+    if (fromIndex < 0 || fromIndex >= layers.length || 
+        toIndex < 0 || toIndex >= layers.length || 
+        fromIndex === toIndex) {
+        console.warn(`Invalid reorder indices: ${fromIndex} → ${toIndex}`);
+        return false;
+    }
+    
+    try {
+        const [movedLayer] = layers.splice(fromIndex, 1);
+        layers.splice(toIndex, 0, movedLayer);
+        
+        this.currentCutContainer.removeChild(movedLayer);
+        this.currentCutContainer.addChildAt(movedLayer, toIndex);
+        
+        if (this.activeLayerIndex === fromIndex) {
+            this.activeLayerIndex = toIndex;
+        } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
+            this.activeLayerIndex--;
+        } else if (this.activeLayerIndex < fromIndex && this.activeLayerIndex >= toIndex) {
+            this.activeLayerIndex++;
         }
+        
+        // 🔥 追加: レイヤー順序変更成功時にHistory記録
+        if (window.History && typeof window.History.saveState === 'function') {
+            window.History.saveState();
+        }
+        
+        if (this.eventBus) {
+            this.eventBus.emit('layer:reordered', { 
+                fromIndex, 
+                toIndex, 
+                activeIndex: this.activeLayerIndex,
+                movedLayerId: movedLayer.layerData?.id
+            });
+        }
+        
+        console.log(`✅ Layers reordered: ${fromIndex} → ${toIndex}, active: ${this.activeLayerIndex}`);
+        return true;
+        
+    } catch (error) {
+        console.error('❌ Layer reorder failed:', error);
+        return false;
+    }
+}
 
         setCurrentCutContainer(cutContainer) {
             this.currentCutContainer = cutContainer;
@@ -659,39 +664,35 @@
             }
         }
 
-        moveActiveLayerHierarchy(direction) {
-            const layers = this.getLayers();
-            if (layers.length <= 1) return;
-            
-            const currentIndex = this.activeLayerIndex;
-            let newIndex;
-            
-            if (direction === 'up') {
-                newIndex = Math.min(currentIndex + 1, layers.length - 1);
-            } else if (direction === 'down') {
-                newIndex = Math.max(currentIndex - 1, 0);
-            } else {
-                return;
-            }
-            
-            if (newIndex !== currentIndex) {
-                if (window.History && typeof window.History.saveState === 'function') {
-                    if (!window.History._manager?.isExecutingUndoRedo && !window.History._manager?.isRecordingState) {
-                        window.History.saveState();
-                    }
-                }
-                
-                this.setActiveLayer(newIndex);
-                
-                if (this.eventBus) {
-                    this.eventBus.emit('layer:hierarchy-moved', { 
-                        direction, 
-                        oldIndex: currentIndex, 
-                        newIndex 
-                    });
-                }
-            }
+moveActiveLayerHierarchy(direction) {
+    const layers = this.getLayers();
+    if (layers.length <= 1) return;
+    
+    const currentIndex = this.activeLayerIndex;
+    let newIndex;
+    
+    if (direction === 'up') {
+        newIndex = Math.min(currentIndex + 1, layers.length - 1);
+    } else if (direction === 'down') {
+        newIndex = Math.max(currentIndex - 1, 0);
+    } else {
+        return;
+    }
+    
+    if (newIndex !== currentIndex) {
+        // 🔥 削除: History記録（reorderLayers()で記録される）
+        
+        this.setActiveLayer(newIndex);
+        
+        if (this.eventBus) {
+            this.eventBus.emit('layer:hierarchy-moved', { 
+                direction, 
+                oldIndex: currentIndex, 
+                newIndex 
+            });
         }
+    }
+}
 
         _setupLayerDragEvents() {
             const canvas = this._getSafeCanvas();
@@ -840,29 +841,34 @@
             }
         }
         
-        exitLayerMoveMode() {
-            if (!this.isLayerMoveMode) return;
-            
-            this.isLayerMoveMode = false;
-            this.vKeyPressed = false;
-            this.isLayerDragging = false;
-            
-            if (this.cameraSystem?.setVKeyPressed) {
-                this.cameraSystem.setVKeyPressed(false);
-                this.cameraSystem.hideGuideLines();
-            }
-            
-            if (this.layerTransformPanel) {
-                this.layerTransformPanel.classList.remove('show');
-            }
-            
-            this.updateCursor();
-            this.confirmLayerTransform();
-            
-            if (this.eventBus) {
-                this.eventBus.emit('layer:move-mode-exited');
-            }
-        }
+exitLayerMoveMode() {
+    if (!this.isLayerMoveMode) return;
+    
+    this.isLayerMoveMode = false;
+    this.vKeyPressed = false;
+    this.isLayerDragging = false;
+    
+    if (this.cameraSystem?.setVKeyPressed) {
+        this.cameraSystem.setVKeyPressed(false);
+        this.cameraSystem.hideGuideLines();
+    }
+    
+    if (this.layerTransformPanel) {
+        this.layerTransformPanel.classList.remove('show');
+    }
+    
+    this.updateCursor();
+    this.confirmLayerTransform();
+    
+    // 🔥 追加: レイヤー変形確定後にHistory記録
+    if (window.History && typeof window.History.saveState === 'function') {
+        window.History.saveState();
+    }
+    
+    if (this.eventBus) {
+        this.eventBus.emit('layer:move-mode-exited');
+    }
+}
 
         moveActiveLayer(keyCode) {
             const activeLayer = this.getActiveLayer();
