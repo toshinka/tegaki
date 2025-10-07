@@ -1,0 +1,704 @@
+===============================================================================
+  ToshinkaTegakiTool - めぶき/ふたば連携機能 実装計画書
+  Version: v8.13_Album1
+  Date: 2025-10-07
+  Target: IndexedDB仮想アルバム + クリップボード連携
+===============================================================================
+
+【目的】
+- めぶきちゃんねる/ふたばちゃんねるへのアニメーション投稿を簡素化
+- IndexedDBを仮想アルバムとして活用し、APNG/GIFをクリップボード経由で貼付可能に
+- ブックマークレット起動時は「掲示板モード」、通常起動時は「汎用モード」として動作
+
+【技術制約】
+✅ APNG: image/png として ClipboardAPI 対応可能性あり
+❌ GIF: ClipboardAPI 非対応（ブラウザ仕様）
+✅ IndexedDB: 同一オリジン内で永続化可能
+⚠️ セキュリティ: 別タブ間の直接データ共有は不可
+
+【実装方針】
+1. 仮想アルバム機能（IndexedDB）を新規実装
+2. サイドバーの既存アルバムアイコンを活用
+3. アルバムポップアップに保存/コピー機能追加
+4. mebuki-loader.js から起動時は「スプラウトボタン」を表示
+5. APNGを優先フォーマットとして推奨
+
+===============================================================================
+【実装ファイル一覧】
+===============================================================================
+
+[新規作成]
+- system/virtual-album.js          仮想アルバムコアシステム
+- ui/album-popup.js                アルバムUI管理
+- mebuki-mode.js                   めぶきモード制御
+
+[改修]
+- ui/ui-panels.js                  サイドバーアルバムアイコン連携
+- system/export-manager.js         エクスポート時のアルバム保存対応
+- index.html                       新規ファイルの読み込み
+- mebuki-loader.js                 ブックマークレット側の実装
+
+===============================================================================
+
+📁 ファイル別実装詳細1. system/virtual-album.js（新規作成）
+1. system/virtual-album.js（新規作成）
+===============================================================================
+ファイル: system/virtual-album.js
+役割: IndexedDBを使った仮想アルバムのコアシステム
+依存: なし
+公開API:
+  - init()                        初期化
+  - saveAnimation(blob, metadata) アニメーション保存
+  - getAllAnimations()            全アニメーション取得
+  - getLatest()                   最新アニメーション取得
+  - deleteAnimation(id)           削除
+  - copyToClipboard(id)           クリップボードコピー
+===============================================================================
+
+class VirtualAlbum {
+    constructor() {
+        this.dbName = 'ToshinkaTegakiAlbum';
+        this.version = 1;
+        this.storeName = 'animations';
+        this.db = null;
+        this.maxItems = 20; // 最大保存件数
+    }
+
+    // 初期化
+    async init() {
+        if (this.db) return;
+        
+        return new Promise((resolve, reject) => {
+            const req = indexedDB.open(this.dbName, this.version);
+            
+            req.onupgradeneeded = (e) => {
+                const db = e.target.result;
+                if (!db.objectStoreNames.contains(this.storeName)) {
+                    const store = db.createObjectStore(this.storeName, { 
+                        keyPath: 'id', 
+                        autoIncrement: true 
+                    });
+                    store.createIndex('timestamp', 'timestamp', { unique: false });
+                }
+            };
+            
+            req.onsuccess = (e) => {
+                this.db = e.target.result;
+                resolve();
+            };
+            
+            req.onerror = () => reject(new Error('IndexedDB初期化失敗'));
+        });
+    }
+
+    // アニメーション保存
+    async saveAnimation(blob, metadata = {}) {
+        await this.init();
+        
+        const data = {
+            blob: blob,
+            format: metadata.format || 'apng',
+            width: metadata.width || 0,
+            height: metadata.height || 0,
+            frames: metadata.frames || 1,
+            timestamp: Date.now(),
+            thumbnail: metadata.thumbnail || null // Base64サムネイル
+        };
+        
+        const tx = this.db.transaction(this.storeName, 'readwrite');
+        const store = tx.objectStore(this.storeName);
+        
+        // 古いデータを削除（maxItems以上の場合）
+        const all = await this._getAllKeys();
+        if (all.length >= this.maxItems) {
+            const deleteCount = all.length - this.maxItems + 1;
+            for (let i = 0; i < deleteCount; i++) {
+                store.delete(all[i]);
+            }
+        }
+        
+        return new Promise((resolve, reject) => {
+            const req = store.add(data);
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(new Error('保存失敗'));
+        });
+    }
+
+    // 全アニメーション取得
+    async getAllAnimations() {
+        await this.init();
+        
+        const tx = this.db.transaction(this.storeName, 'readonly');
+        const store = tx.objectStore(this.storeName);
+        const index = store.index('timestamp');
+        
+        return new Promise((resolve, reject) => {
+            const req = index.openCursor(null, 'prev'); // 新しい順
+            const items = [];
+            
+            req.onsuccess = (e) => {
+                const cursor = e.target.result;
+                if (cursor) {
+                    items.push(cursor.value);
+                    cursor.continue();
+                } else {
+                    resolve(items);
+                }
+            };
+            req.onerror = () => reject(new Error('取得失敗'));
+        });
+    }
+
+    // 最新アニメーション取得
+    async getLatest() {
+        const all = await this.getAllAnimations();
+        return all.length > 0 ? all[0] : null;
+    }
+
+    // 削除
+    async deleteAnimation(id) {
+        await this.init();
+        
+        const tx = this.db.transaction(this.storeName, 'readwrite');
+        const store = tx.objectStore(this.storeName);
+        
+        return new Promise((resolve, reject) => {
+            const req = store.delete(id);
+            req.onsuccess = () => resolve();
+            req.onerror = () => reject(new Error('削除失敗'));
+        });
+    }
+
+    // クリップボードコピー（APNG優先）
+    async copyToClipboard(id) {
+        await this.init();
+        
+        const tx = this.db.transaction(this.storeName, 'readonly');
+        const store = tx.objectStore(this.storeName);
+        
+        return new Promise(async (resolve, reject) => {
+            const req = store.get(id);
+            
+            req.onsuccess = async () => {
+                const item = req.result;
+                if (!item) {
+                    reject(new Error('データが見つかりません'));
+                    return;
+                }
+                
+                try {
+                    // APNGは image/png として、GIFは諦める
+                    const mimeType = item.format === 'apng' ? 'image/png' : 'image/gif';
+                    
+                    await navigator.clipboard.write([
+                        new ClipboardItem({ [mimeType]: item.blob })
+                    ]);
+                    
+                    resolve();
+                } catch (err) {
+                    reject(new Error('クリップボードコピー失敗: ' + err.message));
+                }
+            };
+            
+            req.onerror = () => reject(new Error('データ取得失敗'));
+        });
+    }
+
+    // 内部：全キー取得
+    async _getAllKeys() {
+        const tx = this.db.transaction(this.storeName, 'readonly');
+        const store = tx.objectStore(this.storeName);
+        
+        return new Promise((resolve, reject) => {
+            const req = store.getAllKeys();
+            req.onsuccess = () => resolve(req.result);
+            req.onerror = () => reject(new Error('キー取得失敗'));
+        });
+    }
+}
+
+// グローバルインスタンス
+window.virtualAlbum = new VirtualAlbum();
+
+2. ui/album-popup.js（新規作成）
+
+===============================================================================
+ファイル: ui/album-popup.js
+役割: アルバムポップアップUIの管理
+依存: system/virtual-album.js, system/event-bus.js
+公開API:
+  - show()                        ポップアップ表示
+  - hide()                        ポップアップ非表示
+  - refresh()                     アルバム内容更新
+===============================================================================
+
+class AlbumPopup {
+    constructor(eventBus) {
+        this.eventBus = eventBus;
+        this.container = null;
+        this.isVisible = false;
+    }
+
+    // ポップアップ作成
+    create() {
+        this.container = document.createElement('div');
+        this.container.id = 'album-popup';
+        this.container.style.cssText = `
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            width: 600px;
+            max-height: 80vh;
+            background: #f5e6e0;
+            border: 2px solid #800000;
+            border-radius: 8px;
+            padding: 20px;
+            z-index: 10000;
+            display: none;
+            overflow-y: auto;
+        `;
+        
+        const header = document.createElement('div');
+        header.style.cssText = `
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 16px;
+        `;
+        
+        const title = document.createElement('h3');
+        title.textContent = '仮想アルバム';
+        title.style.cssText = 'margin: 0; color: #800000;';
+        
+        const closeBtn = document.createElement('button');
+        closeBtn.textContent = '✕';
+        closeBtn.style.cssText = `
+            background: none;
+            border: none;
+            color: #800000;
+            font-size: 24px;
+            cursor: pointer;
+            padding: 0;
+            width: 32px;
+            height: 32px;
+        `;
+        closeBtn.onclick = () => this.hide();
+        
+        header.appendChild(title);
+        header.appendChild(closeBtn);
+        
+        const grid = document.createElement('div');
+        grid.id = 'album-grid';
+        grid.style.cssText = `
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 16px;
+        `;
+        
+        this.container.appendChild(header);
+        this.container.appendChild(grid);
+        document.body.appendChild(this.container);
+    }
+
+    // 表示
+    async show() {
+        if (!this.container) this.create();
+        
+        this.container.style.display = 'block';
+        this.isVisible = true;
+        
+        await this.refresh();
+    }
+
+    // 非表示
+    hide() {
+        if (this.container) {
+            this.container.style.display = 'none';
+            this.isVisible = false;
+        }
+    }
+
+    // 内容更新
+    async refresh() {
+        const grid = document.getElementById('album-grid');
+        if (!grid) return;
+        
+        grid.innerHTML = '';
+        
+        const items = await window.virtualAlbum.getAllAnimations();
+        
+        if (items.length === 0) {
+            grid.innerHTML = '<p style="grid-column: 1/-1; text-align: center; color: #800000;">アルバムは空です</p>';
+            return;
+        }
+        
+        items.forEach(item => {
+            const card = this.createCard(item);
+            grid.appendChild(card);
+        });
+    }
+
+    // カード作成
+    createCard(item) {
+        const card = document.createElement('div');
+        card.style.cssText = `
+            background: #ede0d8;
+            border: 1px solid #c0a090;
+            border-radius: 4px;
+            padding: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        `;
+        
+        // サムネイル
+        const thumb = document.createElement('div');
+        thumb.style.cssText = `
+            width: 100%;
+            aspect-ratio: 4/3;
+            background: #d0c0b0;
+            border-radius: 4px;
+            overflow: hidden;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+        `;
+        
+        if (item.thumbnail) {
+            const img = document.createElement('img');
+            img.src = item.thumbnail;
+            img.style.cssText = 'max-width: 100%; max-height: 100%; object-fit: contain;';
+            thumb.appendChild(img);
+        } else {
+            thumb.textContent = 'No Preview';
+            thumb.style.color = '#800000';
+        }
+        
+        thumb.onclick = () => this.loadAnimation(item);
+        
+        // 情報
+        const info = document.createElement('div');
+        info.style.cssText = 'font-size: 12px; color: #800000;';
+        info.innerHTML = `
+            ${item.format.toUpperCase()} | ${item.width}×${item.height} | ${item.frames}f<br>
+            ${new Date(item.timestamp).toLocaleString('ja-JP')}
+        `;
+        
+        // ボタン群
+        const buttons = document.createElement('div');
+        buttons.style.cssText = 'display: flex; gap: 8px;';
+        
+        const downloadBtn = this.createIconButton('⬇', 'ダウンロード', async () => {
+            const url = URL.createObjectURL(item.blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `animation-${item.id}.${item.format}`;
+            a.click();
+            URL.revokeObjectURL(url);
+        });
+        
+        const copyBtn = this.createIconButton('📋', 'コピー', async () => {
+            try {
+                await window.virtualAlbum.copyToClipboard(item.id);
+                alert('クリップボードにコピーしました！');
+            } catch (err) {
+                alert('コピー失敗: ' + err.message);
+            }
+        });
+        
+        const deleteBtn = this.createIconButton('🗑', '削除', async () => {
+            if (confirm('削除しますか？')) {
+                await window.virtualAlbum.deleteAnimation(item.id);
+                await this.refresh();
+            }
+        });
+        
+        buttons.appendChild(downloadBtn);
+        buttons.appendChild(copyBtn);
+        buttons.appendChild(deleteBtn);
+        
+        card.appendChild(thumb);
+        card.appendChild(info);
+        card.appendChild(buttons);
+        
+        return card;
+    }
+
+    // アイコンボタン作成
+    createIconButton(icon, tooltip, onClick) {
+        const btn = document.createElement('button');
+        btn.textContent = icon;
+        btn.title = tooltip;
+        btn.style.cssText = `
+            flex: 1;
+            padding: 8px;
+            background: #c0a090;
+            border: none;
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 16px;
+        `;
+        btn.onclick = onClick;
+        return btn;
+    }
+
+    // アニメーション読み込み
+    loadAnimation(item) {
+        // TODO: レイヤーに読み込む処理（未実装）
+        console.log('Load animation:', item);
+        alert('アニメーション読み込み機能は未実装です');
+    }
+}
+
+3. mebuki-mode.js（新規作成）
+
+===============================================================================
+ファイル: mebuki-mode.js
+役割: めぶき/ふたばモード時の「スプラウトボタン」制御
+依存: system/virtual-album.js, system/export-manager.js
+公開API:
+  - init()                        めぶきモード初期化
+  - createSproutButton()          スプラウトボタン作成
+===============================================================================
+
+class MebukiMode {
+    constructor(app) {
+        this.app = app;
+        this.sproutButton = null;
+        this.isEnabled = false;
+    }
+
+    // 初期化（URLパラメータで判定）
+    init() {
+        const params = new URLSearchParams(window.location.search);
+        this.isEnabled = params.get('mode') === 'mebuki';
+        
+        if (this.isEnabled) {
+            this.createSproutButton();
+        }
+    }
+
+    // スプラウトボタン作成
+    createSproutButton() {
+        this.sproutButton = document.createElement('button');
+        this.sproutButton.id = 'mebuki-sprout-btn';
+        this.sproutButton.innerHTML = `
+            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M14 9.536V7a4 4 0 0 1 4-4h1.5a.5.5 0 0 1 .5.5V5a4 4 0 0 1-4 4 4 4 0 0 0-4 4c0 2 1 3 1 5a5 5 0 0 1-1 3"/>
+                <path d="M4 9a5 5 0 0 1 8 4 5 5 0 0 1-8-4"/>
+                <path d="M5 21h14"/>
+            </svg>
+        `;
+        this.sproutButton.title = 'めぶきに投稿';
+        this.sproutButton.style.cssText = `
+            position: fixed;
+            top: 16px;
+            right: 60px;
+            width: 48px;
+            height: 48px;
+            background: rgba(255, 245, 230, 0.95);
+            border: 2px solid #800000;
+            border-radius: 50%;
+            cursor: pointer;
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.2);
+        `;
+        
+        this.sproutButton.onclick = async () => {
+            await this.exportToMebuki();
+        };
+        
+        document.body.appendChild(this.sproutButton);
+    }
+
+    // めぶきへエクスポート（自動処理）
+    async exportToMebuki() {
+        try {
+            // 1. APNG生成
+            const blob = await this.app.exportManager.exportAPNG();
+            
+            // 2. サムネイル生成
+            const thumbnail = await this.generateThumbnail();
+            
+            // 3. メタデータ取得
+            const metadata = {
+                format: 'apng',
+                width: this.app.stateManager.state.canvasWidth,
+                height: this.app.stateManager.state.canvasHeight,
+                frames: this.app.animationSystem.totalFrames,
+                thumbnail: thumbnail
+            };
+            
+            // 4. 仮想アルバムに保存
+            const id = await window.virtualAlbum.saveAnimation(blob, metadata);
+            
+            // 5. クリップボードにコピー
+            await window.virtualAlbum.copyToClipboard(id);
+            
+            // 6. 完了通知
+            alert('めぶきアルバムに保存し、クリップボードにコピーしました！\n掲示板でCtrl+Vしてください。');
+            
+            // 7. ツールを閉じる（オプション）
+            // window.close();
+            
+        } catch (err) {
+            console.error('Export error:', err);
+            alert('エクスポート失敗: ' + err.message);
+        }
+    }
+
+    // サムネイル生成
+    async generateThumbnail() {
+        const canvas = document.createElement('canvas');
+        canvas.width = 200;
+        canvas.height = 150;
+        const ctx = canvas.getContext('2d');
+        
+        // TODO: 現在のフレームをキャプチャ
+        // 暫定：空のキャンバス
+        ctx.fillStyle = '#d0c0b0';
+        ctx.fillRect(0, 0, 200, 150);
+        
+        return canvas.toDataURL('image/png');
+    }
+}
+
+4. ui/ui-panels.js（改修）
+
+===============================================================================
+ファイル: ui/ui-panels.js（改修）
+改修内容: サイドバーのアルバムアイコンクリックで AlbumPopup を表示
+===============================================================================
+
+// 既存のアルバムボタンにイベント追加（該当箇所を探して修正）
+
++ // AlbumPopup インスタンス作成（クラス内）
++ this.albumPopup = new AlbumPopup(this.eventBus);
+
+  // サイドバーのアルバムボタン作成部分（既存コード）
+  const albumBtn = document.createElement('button');
+  albumBtn.innerHTML = `<svg>...</svg>`; // 既存のアルバムアイコン
++ albumBtn.onclick = () => {
++     this.albumPopup.show();
++ };
+
+5. system/export-manager.js（改修）
+
+===============================================================================
+ファイル: system/export-manager.js（改修）
+改修内容: エクスポート時に仮想アルバムへの保存オプション追加
+===============================================================================
+
+  // エクスポートメソッド内に追加
+  async exportAPNG() {
+      const blob = await this.apngExporter.export(/* ... */);
+      
++     // 仮想アルバムに自動保存（オプション）
++     if (this.stateManager.state.autoSaveToAlbum) {
++         const thumbnail = await this.generateThumbnail();
++         await window.virtualAlbum.saveAnimation(blob, {
++             format: 'apng',
++             width: this.stateManager.state.canvasWidth,
++             height: this.stateManager.state.canvasHeight,
++             frames: this.animationSystem.totalFrames,
++             thumbnail: thumbnail
++         });
++     }
+      
+      return blob;
+  }
+
+
+6. index.html（改修）
+
+===============================================================================
+ファイル: index.html（改修）
+改修内容: 新規ファイルの読み込み追加
+===============================================================================
+
+  <script src="system/history.js"></script>
++ <script src="system/virtual-album.js"></script>
+  <script src="system/animation-system.js"></script>
+  
+  <script src="ui/timeline-ui.js"></script>
++ <script src="ui/album-popup.js"></script>
+  <script src="ui/ui-panels.js"></script>
+  
++ <script src="mebuki-mode.js"></script>
+  <script src="core-runtime.js"></script>
+
+7. mebuki-loader.js（改修）
+
+===============================================================================
+ファイル: mebuki-loader.js（改修）
+改修内容: URLパラメータで ?mode=mebuki を付与してツールを起動
+===============================================================================
+
+javascript:void(((d) => {
+    // ツールURLにめぶきモードパラメータ付与
+    const toolUrl = 'https://toshinka.github.io/tegaki/?mode=mebuki';
+    
+    // ツールを別タブで開く
+    const toolTab = window.open(toolUrl, 'mebuki_tegaki');
+    
+    if (!toolTab) {
+        alert('ポップアップがブロックされました。\nブラウザ設定を確認してください。');
+        return;
+    }
+    
+    toolTab.focus();
+    
+})(document));
+
+📋 実装チェックリスト
+
+Phase 1: コアシステム
+□ system/virtual-album.js 作成
+□ ui/album-popup.js 作成
+□ index.html に読み込み追加
+□ ui/ui-panels.js にアルバム表示処理追加
+
+Phase 2: めぶきモード
+□ mebuki-mode.js 作成
+□ スプラウトボタン表示確認
+□ 自動エクスポート動作確認
+
+Phase 3: 統合テスト
+□ アルバム保存/削除テスト
+□ クリップボードコピーテスト（APNG）
+□ めぶき/ふたばへの投稿テスト
+□ 通常モードでの動作確認
+
+Phase 4: UX改善
+□ サムネイル生成実装
+□ エラーハンドリング強化
+□ ショートカット追加（Ctrl+Shift+A: アルバム表示）
+
+⚠️ 注意事項
+1. GIFはクリップボードAPI非対応
+   → APNGを優先フォーマットとして推奨
+
+2. IndexedDBは同一オリジン限定
+   → toshinka.github.io 内でのみ機能
+
+3. セキュリティ制約
+   → 別タブ/別ドメイン間の直接データ共有は不可
+   → postMessageも使用不可（異なるオリジンのため）
+
+4. ブラウザ対応
+   → Chrome/Edge: 完全対応
+   → Firefox: APNG対応あり
+   → Safari: 要検証
+
+🚀 次のステップ
+
+system/virtual-album.js から実装開始
+ui/album-popup.js でUI構築
+ui/ui-panels.js に連携処理追加
+動作確認後、めぶきモード実装
