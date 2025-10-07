@@ -1,330 +1,305 @@
-【改修計画書（プレーンテキスト）】
-件名：GIFコピー（クリップボード）取得失敗の原因究明と改修計画
-対象リポジトリ/ブランチ：v8.13_History10i（提示されたファイル群）
-目的：UIの「GIF コピー（クリップボード）」ボタンを右クリックの「画像をコピー」と同等に動作させる。
-備考：PixiJS v8.13、ローカル file:// 実行想定、ES2023（モジュール不使用）。ベクターペン主体、冗長なログやフォールバック不可。UIは最小限。
+===== 改修計画書: GIFクリップボード＆ポップアップ完結化（file:// 対応） =====
+作成: ChatGPT（指示に基づく改修案）
+目的:
+  - 別タブを開かず、ポップアップ内で画像（PNG/GIFなど）のプレビュー・コピー・ダウンロードを完結させる。
+  - file:// 環境向けに Data URL を採用し、必ずプレビューおよびダウンロードの手段が残ること。
+  - Clipboard API が使用可能なら直接コピーを試行し、不可の場合はプレビューを表示してユーザが右クリックでコピー/保存できるようにする。
+  - UIはシンプルで、既存の export-popup に統合。アイコンや余計な装飾は加えない。
 
-------------------------
-1) 現状の問題（要点）
-------------------------
-・PNG（静止画像）の出力＆クリップボードコピーは成功するが、GIF（アニメーション）の「クリップボードへコピー」が失敗する。
-・想定される主因（複合的）：
-  A. クリップボードAPIの利用方法・MIMEハンドリングの不備
-     - GIFデータ（ArrayBufferなど）を正しい Blob('image/gif') に変換していない、
-       あるいは ClipboardItem の生成方法が誤っている。
-  B. ブラウザ/コンテキストの制約
-     - navigator.clipboard.write による画像バイナリの書き込み（image/gif）のサポート状況。
-     - Chromium系では file:// や一部環境で画像の MIME タイプサポートや許可要件が異なる。
-  C. 「アニメーションGIF」という性質
-     - アニメGIFは複数フレームを含むバイナリ。プログラム側でフレーム列を正しく結合した生のGIFバイナリ（valid GIF）を作れていない可能性。
-  D. 非同期処理や例外の未捕捉
-     - Blob 作成や navigator.clipboard.write のエラーが無視/ログ不足で失敗原因不明になっている。
+前提ルール（既存ルールに従う）:
+  - PixiJS v8.13、ES2023、モジュールは使用しない。
+  - file:// での直開き対応。
+  - コンソールログは最小限。
+  - ベクターデータの取り扱いは慎重に。ラスタ化はエクスポータの責務と明示する。
 
-※右クリックの「画像をコピー」はブラウザ組み込み処理で、ブラウザがページ内のGIF URLまたは表示要素を参照して直接コピーする挙動。
-　プログラムから同等に動かすには「正しい Blob と ClipboardItem を使って navigator.clipboard.write()」する必要があるが、仕様・実装差が影響する。
+概要フロー（高レベル）:
+  1. ユーザが「エクスポート」→「GIF」を選択 → エクスポータが GIF バイナリ (Uint8Array / ArrayBuffer) を生成する。
+  2. Export Manager はバイナリを受け取り Data URL を作成（`data:image/gif;base64,...`）および `Blob` を生成。
+  3. ポップアップ（ui/export-popup.js 拡張）を開く。ポップアップ内に:
+     - サムネイル（<img src="data:...">）を表示
+     - 「直接コピー（Clipboard）」ボタン（表示は Clipboard API 利用可判定による）
+     - 「ダウンロード」ボタン（`<a download>` link）
+     - ステータス領域（成功/失敗メッセージ）
+  4. ボタン操作:
+     - 直接コピーボタン: `navigator.clipboard.write([ new ClipboardItem({ 'image/gif': blob }) ])` を試行。
+         - 成功: ステータス更新（"クリップボードにコピーしました"）→ UI は閉じる/そのまま
+         - 失敗/例外: ステータスにエラーを表示し、自動でプレビュー表示（既に表示されている）を促す
+     - ダウンロードボタン: data URL を `href` に持つ `<a download="image.gif">` を渡す（file:// でも動作）
+  5. 自動フォールバック:
+     - Clipboard API が存在かつ権限がある場合は「直接コピー」UIを表示
+     - それ以外は「コピー不可（プレビューで右クリックしてください）」というメッセージとダウンロードリンクを表示
 
-------------------------
-2) 受け得る解決策（優先順位付）
-------------------------
-（優先度A）直接的解決（推奨）：Navigator Clipboard API を正しく使って GIF バイナリをクリップボードへ書き込む
-  - 前提：生成済みの GIF バイナリ（ArrayBuffer / Uint8Array / Blob）を確実に new Blob([...], {type:'image/gif'}) にする
-  - ClipboardItem を使用：`new ClipboardItem({ 'image/gif': blob })` -> `await navigator.clipboard.write([item])`
-  - 例外処理で失敗を検出、UIに最小限の通知（失敗/非対応）を出す。
+変更対象ファイル（候補）と作業内容:
+  - system/export-manager.js
+    - 追加/変更:
+      - `exportToGif()` の返り値を `ArrayBuffer | Uint8Array` とする既存仕様を確認し、`prepareExportResultForPopup({mime, arrayBuffer, filename})` を追加。Data URL / Blob を作成して popup に渡す統一 API を提供。
+      - 新 helper: `arrayBufferToDataUrl(arrayBuffer, mime)` 、 `arrayBufferToBlob(arrayBuffer, mime)` を実装。
 
-（優先度B）環境依存の回避（代替）：ユーザーに保存または新規タブで開く（右クリックと同等動作を促す）
-  - 自動ダウンロード（a.downloadクリック） + 新しいタブで Blob URL を開く。ユーザーは右クリックで「画像をコピー」できる。
-  - これは「プログラム的にコピー」ではないが、確実で環境依存が少ない。
+  - system/exporters/gif-exporter.js
+    - 追加/変更:
+      - 現在の GIF 生成ロジックはそのまま利用。ただし、出力は **ArrayBuffer** を返すよう統一（既にそうであればそのまま）。
+      - メソッド名例: `exportGifAsArrayBuffer({frames, options}) => Promise<ArrayBuffer>`
 
-（優先度C）サーバ経由/HTTPS環境で動作させる（推奨される運用改善）
-  - Chrome のセキュリティモデル上、file:// 環境で clipboard.write 画像が制限される場合がある。
-  - 開発時はローカルでも `http://localhost` または secure `https://` で動かすことを推奨（しかし今回の改修では強制しない）。
+  - ui/export-popup.js
+    - 追加/変更:
+      - Popup の DOM を JS で生成（既存 popup 構造を拡張）。popup 内に以下領域を持つ:
+         * プレビューイメージ領域: `<img id="exportPreview" alt="preview">`
+         * ボタン群: 「Copy to Clipboard（id=btnCopy）」, 「Download（id=btnDownload）」, 「Close」
+         * ステータスメッセージ領域: `<div id="exportStatus">`
+      - 関数 `showExportPopup({mime, dataUrl, blob, filename})` を実装。
+      - 関数 `tryCopyImageBlobToClipboard(blob)` を実装（ClipboardItem を使用）。`async/await` で例外を捕捉し、失敗したら UI にエラーメッセージ表示。
+      - file:// 対応のため、ダウンロードリンクには `href = dataUrl` を設定。
 
-------------------------
-3) 技術的修正方針（要約）
-------------------------
-A. GIF出力側（gif-exporter）で「最終的なGIFバイナリ」を Blob で確実に取得できる API を提供する。
-   - 例：`gifExporter.generateGifBlob(options): Promise<Blob>` をエクスポートする。
+  - system/history.js / system/drawing-clipboard.js
+    - 変更不要（ただしエクスポータが取り出すフレーム/ベクターデータ API が変わる場合は調整）。
 
-B. export-manager 側にコピー処理ユーティリティを実装。
-   - `exportManager.copyGifBlobToClipboard(blob): Promise<void>`
-   - 内部で feature-detect（ClipboardItem, navigator.clipboard.write） -> try write -> 成功/失敗ハンドリング。
-   - 失敗時は（1）自動ダウンロード、（2）新規タブで表示、の順でフォールバック。
+UI/UXルール（簡潔に）:
+  - ポップアップはモーダル風（既存の export-popup を流用）で過度な装飾無し。
+  - Clipboard API の可否は起動時に判定して、ボタンの有無/enable 状態を切り替える。
+  - エラーは短い日本語で表示（例: "クリップボードへの書き込みに失敗しました。ブラウザの権限を確認するか、下のダウンロードを使用してください。"）
+  - 画像は `max-width: 100%` のレスポンシブ表示（ポップアップ内で右クリックしやすい）にする。
 
-C. UI（export-popup / timeline-ui に結びつく箇所）
-   - 「GIFコピー」クリックで exportManager の generate -> copy の一連を呼ぶ。
-   - 進捗は最小限の状態更新（例："コピー中..." → 成功/失敗）。ログは極小に。
+セキュリティ／権限注意:
+  - Clipboard API の失敗は普通に発生する（file:// やブラウザ設定）。必ずダウンロード/プレビューが使えること。
+  - `navigator.clipboard.write` に渡す MIME タイプは正確に（`image/gif` など）する。
 
-D. 命名と API の統一
-   - gif-exporter: `generateGifBlob`, `generateGifArrayBuffer`, `generateGifDataUrl` （オプション）
-   - export-manager: `exportAsPng`, `exportAsGif`, `copyGifToClipboard`, `downloadBlob`
-   - 例外はすべて Promise reject で返す。呼び出し側でトランザクション管理。
+追加ユーティリティ（小さな関数群）:
+  - `arrayBufferToBase64(arrayBuffer) => string`（base64 変換）
+  - `arrayBufferToDataUrl(arrayBuffer, mime) => 'data:...;base64,....'`
+  - `arrayBufferToBlob(arrayBuffer, mime) => Blob`
 
-------------------------
-4) ファイル別改修計画（具体的指示）
-------------------------
-※下記は差分パッチではなく、実装する関数・変更個所の最小単位の指示です。
-（A）system/exporters/gif-exporter.js
-  - 追加/修正：
-    1) export (名前付き) `generateGifBlob(options)` を実装/公開する。
-       シグネチャ（推奨）：
-         async function generateGifBlob({ frames, width, height, delay, loop }): Promise<Blob>
-       実装ノート：
-         - 既存のGIF生成ロジックがあるなら、最終出力を ArrayBuffer/Uint8Array で得る処理の直後に
-           `return new Blob([arrayBufferOrUint8Array], { type: 'image/gif' });`
-         - もし GIF エンコーダが callback ベースなら Promise 化する。
-         - 必要に応じて `generateGifDataUrl` も用意（UIでのプレビュー用）。
-    2) 失敗時のエラーを明確な Error オブジェクトで reject する（例：new Error('GIF_GENERATION_FAILED: reason')）。
+テスト手順（簡潔）:
+  1. 開発環境（file://）で GIF エクスポート → ポップアップ表示 → プレビューが表示されること
+  2. 「ダウンロード」クリック → ブラウザがダウンロード（または保存ダイアログ）を出すこと
+  3. HTTPS 環境（ローカルサーバ or 本番）で GIF エクスポート → ポップアップが Clipboard ボタンを表示 → 「コピー」を押すとペースト先に GIF が貼れること（例: Slack/Google Docs/画像エディタ等）
+  4. Clipboard API が拒否された場合はステータスメッセージが出ること
 
-  - コメント、命名の強制：
-    - 関数の頭に JSDoc 風のコメントを付け、戻り値が Blob であることを明記。
+実装スニペット（必須の核心部分、ui/export-popup.js に入れる想定）:
+  - 下記の "実装例コード" セクションをそのまま追加して差し替え可能。
 
-（B）system/export-manager.js（または export-manager のメイン）
-  - 追加/修正：
-    1) `async function copyGifToClipboard(blob)` を実装。
-       実装方針（コード骨子は下に示す）：
-         - Feature detect:
-             if (!navigator.clipboard || typeof ClipboardItem === 'undefined') throw { code:'NO_CLIPBOARD_API' }
-         - Ensure MIME type:
-             if (blob.type !== 'image/gif') blob = new Blob([await blob.arrayBuffer()], { type: 'image/gif' });
-         - Try:
-             const item = new ClipboardItem({ 'image/gif': blob });
-             await navigator.clipboard.write([item]);
-         - Catch:
-             throw the caught error to be handled by caller.
-    2) `async function tryCopyGifWithFallback(blob, filename)` を実装：
-         - try copyGifToClipboard(blob)
-         - on success return { ok:true }
-         - on failure:
-             - fallback1: triggerDownload(blob, filename)
-             - fallback2: openBlobInNewTab(blob)
-         - provide minimal user-notice via export-popup (文字列) — not flashy.
-    3) export-manager の public API に `exportAsGifAndCopy({frames,...})` を追加して UI から叩けるようにする。
+保守性・AI対応:
+  - 関数名は動詞＋名詞で明確に（例: `showExportPopup`, `tryCopyImageBlobToClipboard`）。
+  - エクスポータは **ArrayBuffer を返すことを契約** とする（他の形式は manager 側で統一的に変換）。
+  - popup は DOM を JS で完全生成し、CSS も小さなスコープスタイルを付与（外部依存を避ける）。
+  - すべての変更点をコメントで明示（Claude が読みやすいように）。
 
-  - エラーハンドリング：
-    - エラーはコード付きで返す（例：NO_CLIPBOARD_API, CLIPBOARD_WRITE_FAILED, NOT_SECURE_CONTEXT）。
+----- END OF PLAN -----
+下に、実装例コード（抜粋） を置きます。後続 Claude はこれを 見て ui/export-popup.js と system/export-manager.js、system/exporters/gif-exporter.js に適用してください。必要に応じて関数名を既存コードに合わせてください。
 
-（C）ui/export-popup.js（および timeline-ui.js からの呼び出し）
-  - 追加/修正：
-    1) GIF コピー操作のハンドラを次の流れで呼ぶ：
-       - disable UI control (最小)
-       - call exportManager.generateGifBlob(...)
-       - call exportManager.tryCopyGifWithFallback(blob, 'tegaki-export.gif')
-       - show minimal success or failure message text（例："GIFをクリップボードにコピーしました" / "対応していないためファイルをダウンロードしました: tegaki-export.gif"）
-    2) ユーザー確認ダイアログや過剰なログは行わない（ルールに準拠）。
+（重要）このコードは モジュール化していない ES2023 非モジュール形式 を想定しています。exportManager 等の既存オブジェクトに統合してください。
 
-（D）system/history.js 等（補足）
-  - GIF のフレーム列を正しく渡すため、gif-exporter には安定した frames 形式を渡すこと。
-  - frames は必ず `Uint8ClampedArray` ではなく、各フレームのイメージ（ImageBitmap / ImageData / Canvas）を受け取る形式を統一する。仕様を gif-exporter の JSDoc に明記。
+javascript
+コードをコピーする
+/* ---------- system/export-manager.js 追加ユーティリティ ---------- */
 
-------------------------
-5) 具象コード（主要部分・そのまま貼れる形）
-------------------------
-（注）下のコードはESモジュールではなく IIFE / Common global を前提とした関数定義例。既存プロジェクトに合わせて `window.GifExporter = { ... }` 等に収めてください。
-
---- gif-exporter.js 追加関数（要貼り換え） ---
 /**
- * generateGifBlob
- * @param {{ frames: Array, width: number, height: number, delay: number, loop: number }} opts
- * @returns {Promise<Blob>} resolves to image/gif Blob
+ * ArrayBuffer -> base64
  */
-async function generateGifBlob(opts) {
-  // 既存の GIF エンコーダ実装を Promise 化して Blob を返す想定
-  return new Promise((resolve, reject) => {
+function arrayBufferToBase64(buffer) {
+  // digit-by-digit safe conversion
+  const bytes = new Uint8Array(buffer);
+  let binary = "";
+  // chunk to avoid stack blow
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode.apply(null, bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+}
+
+/**
+ * ArrayBuffer -> data URL
+ */
+function arrayBufferToDataUrl(buffer, mime) {
+  const base64 = arrayBufferToBase64(buffer);
+  return `data:${mime};base64,${base64}`;
+}
+
+/**
+ * ArrayBuffer -> Blob
+ */
+function arrayBufferToBlob(buffer, mime) {
+  return new Blob([buffer], { type: mime });
+}
+
+/* Example integration point:
+   exportManager.exportGif(...) returns Promise<ArrayBuffer>
+   after receiving array buffer:
+*/
+async function handleExportResultArrayBuffer(arrayBuffer, { filename = 'image.gif', mime = 'image/gif' } = {}) {
+  const dataUrl = arrayBufferToDataUrl(arrayBuffer, mime);
+  const blob = arrayBufferToBlob(arrayBuffer, mime);
+  // call UI
+  showExportPopup({ mime, dataUrl, blob, filename });
+}
+
+/* ---------- ui/export-popup.js 追加/差し替え ---------- */
+
+/**
+ * showExportPopup: ポップアップを DOM で生成して制御します。
+ * 引数: { mime, dataUrl, blob, filename }
+ */
+function showExportPopup({ mime, dataUrl, blob, filename }) {
+  // 既存ポップアップがあれば再利用 or 削除
+  const existing = document.getElementById('exportPopupContainer');
+  if (existing) existing.remove();
+
+  // create container
+  const container = document.createElement('div');
+  container.id = 'exportPopupContainer';
+  container.style.position = 'fixed';
+  container.style.left = '50%';
+  container.style.top = '50%';
+  container.style.transform = 'translate(-50%, -50%)';
+  container.style.zIndex = 9999;
+  container.style.background = '#fff';
+  container.style.padding = '12px';
+  container.style.border = '1px solid #ccc';
+  container.style.borderRadius = '8px';
+  container.style.boxShadow = '0 2px 12px rgba(0,0,0,0.2)';
+  container.style.maxWidth = '90vw';
+  container.style.maxHeight = '80vh';
+  container.style.overflow = 'auto';
+  container.style.fontFamily = 'sans-serif';
+
+  // image preview
+  const img = document.createElement('img');
+  img.id = 'exportPreview';
+  img.src = dataUrl;
+  img.alt = filename || 'export';
+  img.style.maxWidth = '320px';
+  img.style.maxHeight = '320px';
+  img.style.display = 'block';
+  img.style.marginBottom = '8px';
+  img.style.cursor = 'context-menu'; // right-click hint
+
+  // buttons container
+  const btnWrap = document.createElement('div');
+  btnWrap.style.display = 'flex';
+  btnWrap.style.gap = '8px';
+  btnWrap.style.alignItems = 'center';
+  btnWrap.style.marginBottom = '8px';
+
+  // Copy button (may be hidden if clipboard unsupported)
+  const btnCopy = document.createElement('button');
+  btnCopy.id = 'btnCopyImage';
+  btnCopy.textContent = 'クリップボードにコピー';
+  btnCopy.style.padding = '6px 10px';
+  btnCopy.style.borderRadius = '6px';
+  btnCopy.style.border = '1px solid #888';
+  btnCopy.style.background = '#f7f7f7';
+  btnCopy.style.cursor = 'pointer';
+
+  // Download link button
+  const linkDownload = document.createElement('a');
+  linkDownload.id = 'btnDownloadImage';
+  linkDownload.download = filename || 'image.gif';
+  linkDownload.href = dataUrl;
+  linkDownload.textContent = 'ダウンロード';
+  linkDownload.style.display = 'inline-block';
+  linkDownload.style.padding = '6px 10px';
+  linkDownload.style.borderRadius = '6px';
+  linkDownload.style.border = '1px solid #888';
+  linkDownload.style.background = '#f7f7f7';
+  linkDownload.style.textDecoration = 'none';
+  linkDownload.style.color = 'inherit';
+
+  // Close button
+  const btnClose = document.createElement('button');
+  btnClose.textContent = '閉じる';
+  btnClose.style.padding = '6px 10px';
+  btnClose.style.borderRadius = '6px';
+  btnClose.style.border = '1px solid #888';
+  btnClose.style.background = '#f7f7f7';
+  btnClose.style.cursor = 'pointer';
+
+  // Status
+  const status = document.createElement('div');
+  status.id = 'exportStatus';
+  status.style.fontSize = '13px';
+  status.style.color = '#333';
+  status.style.marginTop = '6px';
+  status.textContent = '右クリックで画像をコピーまたは保存できます。';
+
+  // Assemble
+  btnWrap.appendChild(btnCopy);
+  btnWrap.appendChild(linkDownload);
+  btnWrap.appendChild(btnClose);
+
+  container.appendChild(img);
+  container.appendChild(btnWrap);
+  container.appendChild(status);
+  document.body.appendChild(container);
+
+  // Clipboard availability check
+  const clipboardAvailable = !!(navigator.clipboard && window.ClipboardItem);
+  if (!clipboardAvailable) {
+    // Hide copy button if not supported and make status clear
+    btnCopy.style.display = 'none';
+    status.textContent = 'クリップボードへの直接コピーはこの環境でサポートされていません。右クリックでコピー／保存してください。';
+  }
+
+  // tryCopyImageBlobToClipboard: attempt to copy blob to clipboard
+  async function tryCopyImageBlobToClipboard(blobToCopy) {
     try {
-      // 例：既存 encoder が `encoder.render(frames, callback(arrayBuffer))` のような形なら
-      const encoder = createGifEncoder(opts.width, opts.height, /*他パラ*/);
-      encoder.setDelay(opts.delay ?? 100);
-      encoder.setRepeat(opts.loop ?? 0);
-      for (const frame of opts.frames) {
-        // frame は Canvas / ImageData / ImageBitmap のいずれかを想定
-        encoder.addFrame(frame);
-      }
-      encoder.finish((arrayBufferOrUint8) => {
-        try {
-          const blob = new Blob([arrayBufferOrUint8], { type: 'image/gif' });
-          resolve(blob);
-        } catch (e) {
-          reject(new Error('GIF_BLOB_CREATION_FAILED: ' + (e && e.message)));
-        }
-      });
+      // create ClipboardItem
+      const item = new ClipboardItem({ [mime]: blobToCopy });
+      await navigator.clipboard.write([item]);
+      status.textContent = 'クリップボードに画像をコピーしました。ペーストして確認してください。';
+      // Optionally close popup after success
+      // container.remove();
     } catch (err) {
-      reject(new Error('GIF_GENERATION_FAILED: ' + (err && err.message)));
+      // handle errors gracefully
+      console.warn('Clipboard write failed:', err);
+      status.textContent = 'クリップボードへの書き込みに失敗しました。右クリックでコピー/保存してください。';
     }
-  });
-}
+  }
 
---- export-manager.js 追加関数（要貼り換え） ---
-/**
- * copyGifToClipboard
- * Attempts to copy a Blob with MIME image/gif to the clipboard.
- * Throws an Error with code property on failure.
- */
-async function copyGifToClipboard(blob) {
-  if (!navigator.clipboard) {
-    const err = new Error('Clipboard API not available');
-    err.code = 'NO_CLIPBOARD_API';
-    throw err;
-  }
-  if (typeof ClipboardItem === 'undefined') {
-    const err = new Error('ClipboardItem not supported in this environment');
-    err.code = 'NO_CLIPBOARDITEM';
-    throw err;
-  }
-  // Ensure Blob MIME
-  let targetBlob = blob;
-  if (blob.type !== 'image/gif') {
-    // convert to gif MIME wrapper if possible
-    const buffer = await blob.arrayBuffer();
-    targetBlob = new Blob([buffer], { type: 'image/gif' });
-  }
-  try {
-    const clipboardItem = new ClipboardItem({ 'image/gif': targetBlob });
-    await navigator.clipboard.write([clipboardItem]);
-    return;
-  } catch (e) {
-    // attach code for caller
-    const err = new Error('CLIPBOARD_WRITE_FAILED: ' + (e && e.message));
-    err.code = 'CLIPBOARD_WRITE_FAILED';
-    err.inner = e;
-    throw err;
-  }
-}
-
-/**
- * tryCopyGifWithFallback
- * Attempts clipboard copy, on failure triggers download and opens in new tab.
- */
-async function tryCopyGifWithFallback(blob, filename = 'tegaki-export.gif') {
-  try {
-    await copyGifToClipboard(blob);
-    return { ok: true, method: 'clipboard' };
-  } catch (err) {
-    // Fallback: auto-download + open in new tab for manual right-click copy
-    try {
-      // trigger download
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement('a');
-      a.href = url;
-      a.download = filename;
-      // append to DOM for file:// environments too
-      (document.body || document.documentElement).appendChild(a);
-      a.click();
-      a.remove();
-      // open in new tab (ユーザーが右クリックでコピー可能)
-      window.open(url, '_blank');
-      // release URL after a delay to allow tab to fetch
-      setTimeout(() => URL.revokeObjectURL(url), 10000);
-    } catch (dlErr) {
-      // 最低限の通知用の Error を返す
-      const fallbackErr = new Error('FALLBACK_DOWNLOAD_FAILED: ' + (dlErr && dlErr.message));
-      fallbackErr.code = 'FALLBACK_DOWNLOAD_FAILED';
-      throw fallbackErr;
-    }
-    return { ok: false, method: 'download' };
-  }
-}
-
---- export-popup.js（UI 呼び出し例） ---
-async function onGifCopyButtonClicked() {
-  // UI 最小制御（無駄なダイアログは出さない）
-  try {
-    // 1) GIF Blob を生成
-    const gifBlob = await generateGifBlob({
-      frames: getFramesForExport(), // 呼び出し側で統一フォーマットを渡す
-      width: exportWidth,
-      height: exportHeight,
-      delay: 100,
-      loop: 0
+  // event listeners
+  btnCopy.addEventListener('click', function () {
+    // disable button to prevent double-click
+    btnCopy.disabled = true;
+    btnCopy.textContent = 'コピー中...';
+    // try copy
+    tryCopyImageBlobToClipboard(blob).finally(() => {
+      btnCopy.disabled = false;
+      btnCopy.textContent = 'クリップボードにコピー';
     });
-    // 2) コピー試行（内部でフォールバックを行う）
-    const result = await tryCopyGifWithFallback(gifBlob, 'tegaki-export.gif');
-    if (result.ok && result.method === 'clipboard') {
-      showMinimalNotice('GIFをクリップボードにコピーしました。'); // 最小の UI メッセージ
-    } else {
-      showMinimalNotice('環境制約のためファイルをダウンロードしました（右クリックでコピーしてください）。');
-    }
-  } catch (err) {
-    // 失敗時は最小限のエラーメッセージに留める
-    console.error('GIF copy/export failed:', err);
-    showMinimalNotice('GIFのコピーに失敗しました（詳細はコンソール）。');
+  });
+
+  btnClose.addEventListener('click', function () {
+    container.remove();
+  });
+
+  // Accessibility: allow ESC to close
+  function onKey(e) {
+    if (e.key === 'Escape') container.remove();
   }
+  window.addEventListener('keydown', onKey, { once: true });
 }
 
-------------------------
-6) テスト項目（開発者向け）
-------------------------
-1. 正常系（Clipboard対応環境）
-   - Chrome stable で HTTPS / localhost 環境：GIFを生成 -> クリップボードへ貼り付け（例：Gmail作成欄, Paint, Slack）でアニメGIFが貼られるか。
-2. 環境依存（file://）
-   - file:// 実行時に copy が失敗することを想定。フォールバックでダウンロード+新規タブが起動すること。
-3. 型チェック
-   - Blob の MIME が image/gif であること、生成時のサイズが妥当であること。
-4. 大きさ/パフォーマンス
-   - フレーム数やサイズが大きい時のメモリ挙動・UIブロッキングがないか（非同期で処理）。
-5. エラーハンドリング
-   - 権限や例外（Clipboard write rejected, NotAllowedErrorなど）の復帰シナリオを確認。
+/* ---------- system/exporters/gif-exporter.js (期待される返り値) ----------
+ * 既存の GIF としてエンコードする処理はそのまま残すが、
+ * 必ず Promise<ArrayBuffer> を返すように統一してください。
+ *
+ * 例:
+ * function exportGifAsArrayBuffer(frames, options) { return Promise<ArrayBuffer>; }
+ *
+ * この ArrayBuffer を export-manager 側の handleExportResultArrayBuffer() に渡します。
+ */
 
-------------------------
-7) ドキュメント（後続Claude向けの注記）
-------------------------
-・API一覧（シンプル）
-  - gif-exporter.generateGifBlob(opts) -> Promise<Blob>
-  - export-manager.copyGifToClipboard(blob) -> Promise<void> (rejectで理由)
-  - export-manager.tryCopyGifWithFallback(blob, filename) -> Promise<{ok:boolean,method:string}>
-  - UI側での呼び出しは上記 tryCopyGifWithFallback を利用する。
+/* ---------- 使い方（例） ----------
+exportButton.onclick = async function() {
+  // 1) GIF を生成（ArrayBuffer を取得）
+  const arrayBuffer = await gifExporter.exportGifAsArrayBuffer(frames, options);
 
-・命名規則
-  - エクスポーターは `generateXxx...`、マネージャは `exportAsXxx...` / `copyXxx...`。Promise ベース。
+  // 2) 結果を handleExportResultArrayBuffer に渡す
+  handleExportResultArrayBuffer(arrayBuffer, { filename: 'my_drawing.gif', mime: 'image/gif' });
+};
+*/
+補足メモ（小さな実務アドバイス）
+navigator.clipboard.write はユーザーアクション（ボタンの click）中の呼び出しで成功しやすいです。自動で行わず「コピー」ボタンを押させるのが安全です。
 
-・注意点
-  - file:// 実行ではブラウザの制約で clipboard.write が動作しない可能性が高い点を明記。
-  - 可能であれば開発時は `http://localhost` でテストすること（ただし今回改修は file:// を妨げない実装にする）。
+file:// 環境ではクリップボードが使えない想定で、ポップアップを表示したら即プレビューとダウンロードリンクを見せるUIにしておくと UX が良いです。
 
-------------------------
-8) 追加メモ（技術的背景）
-------------------------
-・ClipboardItem と navigator.clipboard.write は、画像の MIME をサポートすれば「ブラウザ組み込みの画像コピー」と同等の効果を持つ。
-・しかしブラウザ実装依存（特に image/gif の扱い）やセキュリティ制約があるため、確実に動かすには「Blob を生成 -> ClipboardItem に渡す」実装 + フォールバックを同梱するのが現実的。
-・右クリックと完全に同一の内部実装はできない（ブラウザ内部 API に依存するため）が、「ユーザーが右クリックでコピーできるようにファイルを開く」フォールバックで代用できる。
-
-------------------------
-9) 実装優先タスクリスト（小分け、Claudeがそのまま実装できる順）
-------------------------
-① gif-exporter.js に `generateGifBlob` を実装（最重要）
-② export-manager.js に `copyGifToClipboard` と `tryCopyGifWithFallback` を実装
-③ UI（export-popup.js）からの呼び出しを繋ぐ（ハンドラの追加）
-④ 単体テスト（手順をREADMEに追記）
-⑤ edge-case のログとエラーコードの整備（console.error は最小に）
-
-------------------------
-10) 参考になるコードスニペット（短縮版、コピペ可）
-------------------------
-（コピー処理のコア：短縮）
-async function copyGifToClipboardCore(blob) {
-  if (!navigator.clipboard || typeof ClipboardItem === 'undefined') throw { code:'NO_CLIPBOARD' };
-  const b = (blob.type === 'image/gif') ? blob : new Blob([await blob.arrayBuffer()], { type:'image/gif' });
-  const item = new ClipboardItem({ 'image/gif': b });
-  await navigator.clipboard.write([item]);
-}
-
-（フォールバックのダウンロード）
-function downloadBlob(blob, filename='file.gif') {
-  const url = URL.createObjectURL(blob);
-  const a = document.createElement('a');
-  a.href = url; a.download = filename;
-  document.body.appendChild(a);
-  a.click();
-  a.remove();
-  setTimeout(()=>URL.revokeObjectURL(url), 10000);
-}
-
-------------------------
-11) 最後に（結論）
-------------------------
-- まずは gif-exporter 側で「正しい GIF Blob（image/gif）」を確実に作ることが最重要（これが無ければ Clipboard 側は無意味）。
-- 次に export-manager 側で ClipboardItem を正しく使って書き込む。環境依存で失敗するため、確実なフォールバック（ダウンロードと新しいタブで開く）を用意する。
-- file:// 実行環境ではブラウザの制約で直接コピーが不可の場合があることを念頭に置く（開発時は localhost を推奨）。
-- 上記の関数群は小さく、後続の Claude により可読に改修しやすい設計にしてある。JSDoc を付け、エラーコードで判別できるようにすること。
-
-以上。必要であれば、指示に従って実際の差分パッチ（ファイル単位のパッチ）をこのまま作成します。  
-（追記不要ならここで作業は完了です）
+GIF のバイナリサイズが大きい場合、Data URL を直接 DOM に埋めるとメモリを消費します。大きな GIF の場合は Blob URL（URL.createObjectURL(blob)) を使う方法もあります。※ただし Blob URL は file:// 環境でも動作します。もし Data URL にこだわるなら Base64 生成処理を慎重に（上の arrayBufferToBase64 を使用）。
