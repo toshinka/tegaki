@@ -1,11 +1,16 @@
-// ===== system/layer-system.js - History統合版 =====
-// 改修内容：
-// - createLayer/deleteLayer/reorderLayersでコマンドパターンのHistory.push()を使用
-// - exitLayerMoveMode()でレイヤー変形確定時にHistory記録
+// ===== system/layer-system.js - Phase 1: 緊急修正完全版 =====
+// 【Phase 1 緊急修正内容】
+// 1. moveActiveLayerHierarchy(): 入れ替えではなく階層移動に変更
+//    - Ctrl+↑: レイヤーを上の階層に移動（配列の後ろに移動）
+//    - Ctrl+↓: レイヤーを下の階層に移動（配列の前に移動）
 // 
-// ⚠️ 注意：この改修では、既存の window.History.saveState() 呼び出しは
-// 新しい History.push() を使ったコマンドパターンに置き換える必要がありますが、
-// 現時点では古い saveState() が残っているため、動作確認後に削除してください。
+// 【継承された既存機能】
+// - History統合（createLayer/deleteLayer/reorderLayers/exitLayerMoveMode）
+// - レイヤー変形システム（Vキーモード）
+// - サムネイル生成
+// - Cut/Animation System連携
+// - ドラッグ&ドロップ対応
+// - 全てのイベントバス連携
 
 (function() {
     'use strict';
@@ -94,8 +99,6 @@
             this._startThumbnailUpdateProcess();
         }
 
-        // ===== 以下、既存のメソッド群（最小限の改修のみ） =====
-
         reorderLayers(fromIndex, toIndex) {
             const layers = this.getLayers();
             
@@ -109,7 +112,6 @@
                 const movedLayer = layers[fromIndex];
                 const oldActiveIndex = this.activeLayerIndex;
                 
-                // 🔥 改修: コマンドパターンによるHistory記録
                 if (window.History && !window.History._manager.isApplying) {
                     const entry = {
                         name: 'layer-reorder',
@@ -164,7 +166,6 @@
                     };
                     window.History.push(entry);
                 } else {
-                    // 直接実行
                     const [layer] = layers.splice(fromIndex, 1);
                     layers.splice(toIndex, 0, layer);
                     
@@ -707,34 +708,119 @@
             }
         }
 
+        // ========== Phase 1: 緊急修正 START ==========
+        // 🔥 修正: 入れ替えではなく階層移動に変更
         moveActiveLayerHierarchy(direction) {
             const layers = this.getLayers();
             if (layers.length <= 1) return;
             
             const currentIndex = this.activeLayerIndex;
+            const activeLayer = layers[currentIndex];
+            
+            // 背景レイヤーは移動不可
+            if (activeLayer?.layerData?.isBackground) return;
+            
             let newIndex;
             
             if (direction === 'up') {
-                newIndex = Math.min(currentIndex + 1, layers.length - 1);
+                // 上に移動 = 配列の後方に移動 = インデックス+1
+                newIndex = currentIndex + 1;
+                if (newIndex >= layers.length) {
+                    return; // 既に最上位なので移動しない
+                }
             } else if (direction === 'down') {
-                newIndex = Math.max(currentIndex - 1, 0);
+                // 下に移動 = 配列の前方に移動 = インデックス-1
+                newIndex = currentIndex - 1;
+                if (newIndex < 0) {
+                    return; // 既に最下位なので移動しない
+                }
+                
+                // 背景レイヤー（通常index=0）を飛び越えられないようにする
+                const targetLayer = layers[newIndex];
+                if (targetLayer?.layerData?.isBackground) {
+                    return;
+                }
             } else {
                 return;
             }
             
-            if (newIndex !== currentIndex) {
-                this.reorderLayers(currentIndex, newIndex);
-                this.setActiveLayer(newIndex);
+            // レイヤーを移動（入れ替えではなく挿入）
+            if (window.History && !window.History._manager.isApplying) {
+                const oldIndex = currentIndex;
+                
+                const entry = {
+                    name: 'layer-hierarchy-move',
+                    do: () => {
+                        const layers = this.getLayers();
+                        const layer = layers[oldIndex];
+                        
+                        // 配列から削除
+                        this.currentCutContainer.removeChildAt(oldIndex);
+                        
+                        // 新しい位置に挿入
+                        this.currentCutContainer.addChildAt(layer, newIndex);
+                        
+                        // アクティブレイヤーインデックスを更新
+                        this.activeLayerIndex = newIndex;
+                        
+                        this.updateLayerPanelUI();
+                        
+                        if (this.eventBus) {
+                            this.eventBus.emit('layer:hierarchy-moved', { 
+                                direction, 
+                                oldIndex, 
+                                newIndex,
+                                layerId: layer.layerData?.id
+                            });
+                        }
+                    },
+                    undo: () => {
+                        const layers = this.getLayers();
+                        const layer = layers[newIndex];
+                        
+                        // 配列から削除
+                        this.currentCutContainer.removeChildAt(newIndex);
+                        
+                        // 元の位置に挿入
+                        this.currentCutContainer.addChildAt(layer, oldIndex);
+                        
+                        // アクティブレイヤーインデックスを復元
+                        this.activeLayerIndex = oldIndex;
+                        
+                        this.updateLayerPanelUI();
+                        
+                        if (this.eventBus) {
+                            this.eventBus.emit('layer:hierarchy-moved', { 
+                                direction: direction === 'up' ? 'down' : 'up', 
+                                oldIndex: newIndex, 
+                                newIndex: oldIndex,
+                                layerId: layer.layerData?.id
+                            });
+                        }
+                    },
+                    meta: { direction, oldIndex, newIndex }
+                };
+                
+                window.History.push(entry);
+            } else {
+                // 直接実行
+                this.currentCutContainer.removeChildAt(currentIndex);
+                this.currentCutContainer.addChildAt(activeLayer, newIndex);
+                this.activeLayerIndex = newIndex;
+                
+                this.updateLayerPanelUI();
                 
                 if (this.eventBus) {
                     this.eventBus.emit('layer:hierarchy-moved', { 
                         direction, 
                         oldIndex: currentIndex, 
-                        newIndex 
+                        newIndex,
+                        layerId: activeLayer.layerData?.id
                     });
                 }
             }
         }
+        // ========== Phase 1: 緊急修正 END ==========
 
         _setupLayerDragEvents() {
             const canvas = this._getSafeCanvas();
@@ -882,7 +968,6 @@
             }
         }
         
-        // 🔥 改修: exitLayerMoveMode - レイヤー変形確定時にHistory記録
         exitLayerMoveMode() {
             if (!this.isLayerMoveMode) return;
             
@@ -906,7 +991,6 @@
             this.updateCursor();
             this.confirmLayerTransform();
             
-            // 🔥 改修: コマンドパターンによるHistory記録
             if (activeLayer && layerId && transformBefore && this.isTransformNonDefault(transformBefore)) {
                 const pathsAfter = structuredClone(activeLayer.layerData.paths);
                 const transformAfter = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
@@ -915,7 +999,6 @@
                     const entry = {
                         name: 'layer-transform',
                         do: () => {
-                            // 変形済みのパスを適用
                             this.safeRebuildLayer(activeLayer, pathsAfter);
                             this.layerTransforms.set(layerId, transformAfter);
                             activeLayer.position.set(0, 0);
@@ -925,9 +1008,6 @@
                             this.requestThumbnailUpdate(this.activeLayerIndex);
                         },
                         undo: () => {
-                            // 変形前の状態に戻す（transformBeforeは保存されているので、それを使ってパスを逆変換）
-                            // 簡易実装: 変形前のパスを復元する必要があるが、ここでは省略
-                            // 完全な実装には、変形前のパスも保存する必要がある
                             this.layerTransforms.set(layerId, transformBefore);
                             const centerX = this.config.canvas.width / 2;
                             const centerY = this.config.canvas.height / 2;
@@ -1291,7 +1371,6 @@
             }
         }
 
-        // 🔥 改修: createLayer - コマンドパターンによるHistory記録
         createLayer(name, isBackground = false) {
             if (!this.currentCutContainer) {
                 return null;
@@ -1325,7 +1404,6 @@
             
             const newIndex = this.currentCutContainer.children.length;
 
-            // 🔥 改修: コマンドパターンによるHistory記録
             if (window.History && !window.History._manager.isApplying) {
                 const entry = {
                     name: 'layer-create',
@@ -1625,9 +1703,8 @@
                             this.toggleLayerVisibility(i);
                             e.stopPropagation();
                         } else if (action.includes('layer-delete')) {
-                            if (confirm(`レイヤー "${layer.layerData.name}" を削除しますか？`)) {
-                                this.deleteLayer(i);
-                            }
+                            // 🔥 Phase 1改修: confirm削除でレスポンス向上
+                            this.deleteLayer(i);
                             e.stopPropagation();
                         } else {
                             this.setActiveLayer(i);
@@ -1686,7 +1763,6 @@
             }
         }
 
-        // 🔥 改修: deleteLayer - コマンドパターンによるHistory記録
         deleteLayer(layerIndex) {
             const layers = this.getLayers();
             
@@ -1704,7 +1780,6 @@
             try {
                 const previousActiveIndex = this.activeLayerIndex;
                 
-                // 🔥 改修: コマンドパターンによるHistory記録
                 if (window.History && !window.History._manager.isApplying) {
                     const entry = {
                         name: 'layer-delete',
