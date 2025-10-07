@@ -1,217 +1,372 @@
-【概要】
-このドキュメントは、v8.13_Based ブランチ（v8.13_History10g）で「PNG/GIF エクスポートが失敗する」問題の原因調査結果と、Claude（後続AI）が素早く改修できるようにした改修計画書です。
+後続の Claude がそのまま読み取り・適用しやすいよう、ファイル毎に「目的」「問題点」「修正方針」「差分（実装例）」を整理しました。
+出力は改修ドキュメント兼パッチ案です。必要な箇所は Promise ベースで明確にし、進捗（progress）とエラー検出ができるように実装例を提示します。コンソールログは最小に留める方針にしてあります（ただしデバッグ用途で必要最小限のログは残します）。
 
-要点（先に結論）
+--- begin of file: gif-exporter-fix-plan.txt ---
+TITLE: GIF export — 問題解析と改修計画書
+TARGET: repo path: system/exporters/gif-exporter.js (plus small changes in export-manager.js / ui/export-popup.js)
+ENV: Chrome (file://), PixiJS v8.13, ES2023, no bundler/TS
 
-* GIFエクスポートの致命エラー：`this.manager.animationSystem.captureAllLayerStates is not a function`
-  → animation-system に GIF exporter が期待する公開 API（captureAllLayerStates / restoreFromSnapshots / applyCutToLayers / getAnimationData / getCurrentCutIndex / generateCutThumbnail 等）が実装されていないか、アサインされているオブジェクトが想定の AnimationSystem インスタンスではない。
+SUMMARY:
 
-* PNGエクスポートの致命エラー：`Cannot read properties of undefined (reading 'updateLocalTransform')`
-  → Pixi のレンダラーが渡された `container` オブジェクトに対して `updateLocalTransform` を呼び出そうとしたが、`container` が undefined か、Pixi の DisplayObject（Container等）ではない。具体的には `ExportManager.renderToCanvas()` が参照する `layerSystem.layersContainer` が未定義、または初期化順序が不正で ExportManager 作成時に正しい参照が渡されていない。
+現象: GIF 出力処理が「全フレームを GIF インスタンスに追加」した後に render が始まるが、プログレスが 0% のまま進行しない（レンダー停滞）。
 
-設計方針（ユーザーの制約準拠）
+観測ログ（抜粋）:
 
-* PixiJS v8.13 固有 API に合わせる。
-* ES2023、モジュール無し、ローカル file:// で動く形で修正。
-* ベクターペン主体なのでデータ所有権（layerData 等）は触りすぎない。API と命名を厳格に定義する。
-* フェイルセーフでの暗黙修復は禁止。明確なバリデーションとエラーを出す。
-* コンソールログは最小限（重要なエラー / 開発用 WARN のみ）。
+[GIF Export] All frames added, restoring state
 
-改修サマリ（ファイル毎）
+[GIF Export] Starting GIF render
 
-1. system/animation-system.js — 必須公開 API を実装
+[GIF Export] Progress: 0%
 
-* 目的: GIFエクスポーターが期待する API を提供する。
+以後進まない
 
-* 追加（必須）メソッド（名前／シグニチャ）：
+推定原因（優先度順）:
 
-  * captureAllLayerStates() → Array<Snapshot>
-  * restoreFromSnapshots(snapshots) → void
-  * applyCutToLayers(cutIndex) → void
-  * getAnimationData() → { cuts: [...] }
-  * getCurrentCutIndex() → number
-  * generateCutThumbnail(cutIndex) → void  (UI 呼び出し用は既に利用箇所あり)
+使用している GIF ライブラリの worker スクリプト（workerScript / workerPath）が正しく参照できていないため、バックグラウンドでレンダリング worker が起動せずハングしている。 → workerPath 未設定や file:// の制約でロード失敗。
 
-* 実装方針（簡潔）:
+GIF ライブラリへのフレーム追加は成功しているが、render()/onFinished の Promise/コールバックを正しく待っていない/バインドしていない。UI側はレンダリング完了の通知が来ないため 0% のまま。
 
-  * Snapshot は「非破壊」で十分な情報のみを保持する。例: { layerId, visible, alpha, x, y, scaleX, scaleY, rotation }
-  * captureAllLayerStates は layerSystem.getLayers()（または layerSystem 内の公開 API）を使って各レイヤーの状態を取得して返す。
-  * restoreFromSnapshots は snapshot を受け取り layerSystem のレイヤーに一括で適用する（破壊的にレイヤーを削る/作るのではなく、表示状態と transform を復元する）。
-  * applyCutToLayers は animation data（cut の定義: 各 cut が保持する layer state）を layerSystem に適用する。animationSystem 内で cut -> layer のマッピングが必要。
-  * getAnimationData は animator の内部データ構造をそのまま返す（ただし参照渡しは避け、必要なら shallow copy を返す）。
+大きすぎるキャンバス/メモリ不足でブラウザ側が内部的に止まっている（メモリ使用量・Blob生成で時間がかかる）。この場合も進捗が更新されにくい。
 
-* サンプル実装（抜粋: 追加コード）:
+非同期の状態復元（state restore）で renderer が一時停止しており、描画データ取得方法が誤っている（ベクターデータの扱いで rasterize が必要な箇所で未処理）。
 
-```javascript
-// animation-system.js — 追加メソッドの例（簡易、安全第一）
-AnimationSystem.prototype.captureAllLayerStates = function() {
-  if (!this.layerSystem) throw new Error('AnimationSystem: layerSystem is not assigned');
-  const layers = this.layerSystem.getLayers();
-  return layers.map(layer => ({
-    layerId: layer.layerData?.id ?? null,
-    visible: !!layer.layerData?.visible,
-    alpha: typeof layer.alpha === 'number' ? layer.alpha : (layer.layerData?.opacity ?? 1.0),
-    x: layer.x ?? 0,
-    y: layer.y ?? 0,
-    scaleX: layer.scale?.x ?? 1,
-    scaleY: layer.scale?.y ?? 1,
-    rotation: layer.rotation ?? 0
-  }));
-};
+方針:
 
-AnimationSystem.prototype.restoreFromSnapshots = function(snapshots) {
-  if (!this.layerSystem) throw new Error('AnimationSystem: layerSystem is not assigned');
-  const layers = this.layerSystem.getLayers();
-  // レイヤー順が同一である前提。ただし layerId があれば照合して当てる
-  snapshots.forEach(snap => {
-    const layer = layers.find(l => (l.layerData?.id ?? null) === snap.layerId) || layers.shift();
-    if (!layer) return; // 無ければ無視
-    if (typeof snap.visible === 'boolean') layer.visible = snap.visible;
-    if (typeof snap.alpha === 'number') layer.alpha = snap.alpha;
-    if (typeof snap.x === 'number') layer.x = snap.x;
-    if (typeof snap.y === 'number') layer.y = snap.y;
-    if (typeof snap.scaleX === 'number') layer.scale.x = snap.scaleX;
-    if (typeof snap.scaleY === 'number') layer.scale.y = snap.scaleY;
-    if (typeof snap.rotation === 'number') layer.rotation = snap.rotation;
-  });
-};
+ライブラリ依存の「worker path」「worker in-page fallback」を確実にセットする（file:// 環境対策）。
 
-AnimationSystem.prototype.getAnimationData = function() {
-  // 内部データ構造（this.animData など）を返す。参照渡しは避ける。
-  return this.animData ? JSON.parse(JSON.stringify(this.animData)) : { cuts: [] };
-};
+exporter を Promise ベースに再実装し、レンダリングの「進捗」「完了」「エラー」を明確に通知するAPIにする。
 
-AnimationSystem.prototype.getCurrentCutIndex = function() {
-  return typeof this.currentCutIndex === 'number' ? this.currentCutIndex : 0;
-};
+UI 側（export-popup.js）を呼び出し元でレンダリング中のロック、プログレス表示（0→100）を exporter のコールバックから受け取るように修正。
 
-AnimationSystem.prototype.applyCutToLayers = function(cutIndex) {
-  const animData = this.getAnimationData();
-  const cut = animData.cuts[cutIndex];
-  if (!cut) throw new Error(`AnimationSystem: cut ${cutIndex} not found`);
-  // cut.layers : [{layerId, visible, alpha, x,y, ...}] 等を想定
-  if (!cut.layers || !Array.isArray(cut.layers)) return;
-  const layers = this.layerSystem.getLayers();
-  cut.layers.forEach(layerState => {
-    const layer = layers.find(l => (l.layerData?.id ?? null) === layerState.layerId);
-    if (!layer) return;
-    if (typeof layerState.visible === 'boolean') layer.visible = layerState.visible;
-    if (typeof layerState.alpha === 'number') layer.alpha = layerState.alpha;
-    if (typeof layerState.x === 'number') layer.x = layerState.x;
-    if (typeof layerState.y === 'number') layer.y = layerState.y;
-    // scale/rotation 等も同様
-  });
-};
-```
+タイムアウトとリトライ（短い）を導入して、「ハング検出」できるようにする（ただしフェイルセーフによる暗黙修復は厳禁。検出したらエラーで切り上げ、ユーザーには明示的にエラーを返す）。
 
-※ この実装は「既存の layerSystem.getLayers() が正しく Pixi Container を返す」ことを前提にしています。
+ベクターペンの取り扱いに注意：フレームキャプチャは Pixi の renderer.extract.canvas(app.stage) 等を使い「必要最小限のラスタ化」を行う。内部データの直接シリアライズは行わない（所有権・座標混同のリスク回避）。
 
-2. system/export-manager.js / system/exporters/png-exporter.js / system/gif-exporter.js — 明確な入力バリデーションを追加
+REQUIRED FILES TO MODIFY:
 
-* 目的: 早期に原因を検出し、わかりやすいエラーに置き換える（暗黙の回復はしない）。
+system/exporters/gif-exporter.js (主要改修)
 
-* 追加方針:
+system/export-manager.js (export 呼び出し方を Promise に合わせる)
 
-  * renderToCanvas の最初で `if (!container || typeof container.updateLocalTransform !== 'function') throw new Error('ExportManager.renderToCanvas: invalid container');`
-  * PNGExporter.export と GIFExporter.exportGIF の冒頭で `if (!this.manager || !this.manager.layerSystem) throw new Error('...')`
-  * GIF の backupSnapshots 呼び出しは `if (typeof this.animationSystem.captureAllLayerStates !== 'function') throw new Error('AnimationSystem.captureAllLayerStates missing')`
+ui/export-popup.js (キャンセル/進捗 UI を exporter に紐付ける)
 
-* サンプル修正（ExportManager.renderToCanvas）:
+--- FILE: system/exporters/gif-exporter.js ---
+PURPOSE:
 
-```javascript
-renderToCanvas(options = {}) {
-  const container = options.container || this.layerSystem?.layersContainer;
-  if (!container) throw new Error('ExportManager: layers container is not available. Ensure ExportManager was constructed after LayerSystem initialization and that layerSystem.layersContainer is a PIXI.Container.');
-  if (typeof container.updateLocalTransform !== 'function') throw new Error('ExportManager: provided container is not a PIXI DisplayObject');
-  // ... 以降は既存処理
+GIF の生成と Blob の返却を行う。Promise ベースで進捗を通知（コールバック or イベント）。
+
+PROBLEMS FOUND / DESIGN CHOICES:
+
+既存コードはログを出しているが、render の async 完了を待てていないか、worker path が誤っている。
+
+file:// 環境で worker を外部読み込みする場合パス解決失敗が起きるため、ライブラリが worker URL を要求する場合は「同梱 worker」を base64 でインライン供給するフォールバックを用意する（ライブラリ許可時のみ）。
+
+必要最小限のデバッグログを残す。エラーは必ず reject する。
+
+PATCH / NEW IMPLEMENTATION (example):
+（下記はそのまま置き換え可能な実装例。使用している GIF ライブラリ名によっては微修正が必要。ここでは広く使われる gif.js（https://jnordberg.github.io/gif.js/）互換の
+ API を想定している）
+
+// system/exporters/gif-exporter.js
+// Promise-based GIF exporter with robust progress and error handling.
+// Assumptions:
+// - global `app` (Pixi.Application) is available or passed in via options
+// - uses GIF() constructor from gif.js (workerScript path must be provided or fallback to inline worker)
+
+(function(global){
+  const DEFAULTS = {
+    workerScriptPath: 'system/exporters/gif.worker.js', // repo-relative path; ensure this file exists
+    workers: 2,
+    quality: 10,
+    repeat: 0, // loop
+    delay: 100, // ms per frame (can be overridden per-export)
+    timeoutMs: 120000 // detect stuck render after 2 minutes
+  };
+
+  function createGifInstance(opts = {}) {
+    const cfg = Object.assign({}, DEFAULTS, opts);
+    // Ensure GIF constructor exists
+    if (typeof GIF === 'undefined') {
+      throw new Error('GIF library not found (expected global GIF).');
+    }
+    // If workerScriptPath is not loadable in file://, consumer should provide inline fallback.
+    const gif = new GIF({
+      workers: cfg.workers,
+      quality: cfg.quality,
+      workerScript: cfg.workerScriptPath, // gif.js accepts workerScript
+      repeat: cfg.repeat
+    });
+    return { gif, cfg };
+  }
+
+  // captureFrame: returns a canvas for given stage using PIXI extract
+  function captureFrameAsCanvas(app) {
+    // Pixi v8: app.renderer.extract.canvas(app.stage) is valid
+    // but to avoid cross-origin issues, ensure stage background is opaque
+    const canvas = app.renderer.extract.canvas(app.stage);
+    return canvas;
+  }
+
+  // Main export function
+  async function exportGIF({ app, frames /*array of frame descriptors*/, delay, onProgress, workerScriptPath }) {
+    if (!app) throw new Error('exportGIF: missing `app` (PIXI Application).');
+    if (!Array.isArray(frames) || frames.length === 0) throw new Error('exportGIF: no frames to export.');
+
+    const { gif, cfg } = createGifInstance({ workerScriptPath });
+    if (typeof onProgress !== 'function') onProgress = () => {};
+    const totalFrames = frames.length;
+
+    // Bind progress
+    gif.on('progress', (p) => {
+      // p: 0..1
+      try {
+        onProgress(Math.round(p * 100));
+      } catch (e) {
+        // swallow UI errors
+      }
+    });
+
+    // Promise wrapper for finished event
+    const finishedPromise = new Promise((resolve, reject) => {
+      let finished = false;
+      const finishHandler = (blob) => {
+        finished = true;
+        cleanup();
+        resolve(blob);
+      };
+      const errorHandler = (err) => {
+        cleanup();
+        reject(err || new Error('GIF render failed'));
+      };
+
+      function cleanup() {
+        try {
+          gif.removeEventListener && gif.removeEventListener('finished', finishHandler);
+          gif.on && gif.on('finished', null); // defensive
+        } catch (_) {}
+      }
+
+      // Bind gif.js finish
+      gif.on('finished', finishHandler);
+      // Some implementations provide 'abort' or 'error'; listen generically
+      gif.on('error', errorHandler);
+      
+      // Timeout to detect stuck render
+      const to = setTimeout(() => {
+        if (!finished) {
+          errorHandler(new Error(`GIF render timeout after ${cfg.timeoutMs}ms`));
+        }
+      }, cfg.timeoutMs);
+      // Ensure we clear timeout on resolve/reject
+      finishedPromise.finally(() => clearTimeout(to));
+    });
+
+    // Add frames (synchronously)
+    for (let i = 0; i < totalFrames; i++) {
+      const frame = frames[i];
+      // frame can be:
+      // - {canvas} -> use directly
+      // - {capture: true} -> capture from app current state
+      // - {time: <ms>} -> set app state to that cut/time then capture (caller must have prepared)
+      let canvas;
+      if (frame.canvas) {
+        canvas = frame.canvas;
+      } else if (frame.capture) {
+        canvas = captureFrameAsCanvas(app);
+      } else {
+        throw new Error('Unsupported frame descriptor. Must provide canvas or capture: true.');
+      }
+      const frameDelay = typeof frame.delay === 'number' ? frame.delay : delay || cfg.delay;
+      // addFrame: gif.js uses addFrame(canvas, {delay})
+      gif.addFrame(canvas, { delay: frameDelay });
+      // Minimal progress update after adding frame(s)
+      const addedPct = Math.round(((i + 1) / totalFrames) * 5); // small bump until render starts
+      onProgress(addedPct);
+    }
+
+    // Trigger render
+    // Some gif.js versions use gif.render(); others auto-render after render() call
+    try {
+      gif.render();
+    } catch (err) {
+      // If render throws, reject
+      throw err;
+    }
+
+    // Wait for finishedPromise to resolve -> Blob
+    const blob = await finishedPromise;
+    onProgress(100);
+    return blob;
+  }
+
+  // Exported API
+  global.GIFExporter = {
+    exportGIF
+  };
+
+})(this);
+
+
+NOTES:
+
+workerScriptPath must point to a valid gif.worker.js that matches the GIF library version. If repo does not include it, add system/exporters/gif.worker.js (grab from gif.js release) or implement an inline fallback (advanced). For file://, relative path resolution must be correct (e.g. same folder).
+
+frames は「canvas」を直接渡す設計にしておくと API が単純。呼び出し側（export-manager）で Pixi の extract を用いて canvas を作るのが明確で、安全。
+
+onProgress は 0..100 の整数で報告する。UI 側はこの値でプログレスバーを更新する。
+
+--- FILE: system/export-manager.js ---
+PURPOSE:
+
+既存の export-manager.js が gif-exporter を呼び出している箇所を Promise/await に書き換える。
+
+PATCH EXAMPLE (重要箇所のみ):
+
+// system/export-manager.js (pseudo)
+async function exportAsGif({ app, cuts, onProgress }) {
+  // Prepare frames: produce array of canvases in correct order
+  const frames = [];
+  for (let cut of cuts) {
+    // Ensure application state is set to the cut
+    // If cuts need to change stage, use existing camera/state manager APIs.
+    // After state is set, extract canvas:
+    app.ticker.update(); // ensure render updated (if necessary)
+    const canvas = app.renderer.extract.canvas(app.stage);
+    frames.push({ canvas, delay: cut.delay || 100 });
+  }
+
+  try {
+    const blob = await GIFExporter.exportGIF({
+      app,
+      frames,
+      delay: 100,
+      onProgress,
+      workerScriptPath: 'system/exporters/gif.worker.js' // repo relative
+    });
+    // do something with blob: download/save/copy
+    return blob;
+  } catch (err) {
+    // propagate error to UI
+    throw err;
+  }
 }
-```
 
-* GIFExporter 側でも同様に早期検査:
 
-```javascript
-if (!this.animationSystem) throw new Error('GIFExporter: animationSystem not assigned');
-if (typeof this.animationSystem.captureAllLayerStates !== 'function') throw new Error('GIFExporter: required method captureAllLayerStates missing in AnimationSystem');
-```
+--- FILE: ui/export-popup.js ---
+PURPOSE:
 
-3. core-runtime.js / core-engine.js — 初期化順序の明確化と責務分離ドキュメントを追記
+エクスポート開始/進捗表示/キャンセルを表示する UI。exporter の onProgress を受けてプログレスを更新する。
 
-* 目的: ExportManager や UI が未初期化のオブジェクトを参照してしまう初期化順序不備を排除。
+PATCH EXAMPLE (pseudo):
 
-* 方針:
+// ui/export-popup.js (relevant excerpt)
+function startGifExport(app, cuts) {
+  const progressEl = document.getElementById('export-progress');
+  const btnCancel = document.getElementById('export-cancel');
 
-  * コア初期化フローを一箇所（core-runtime.js）に集約し、順序を明記する（例: 1. EventBus, 2. StateManager, 3. LayerSystem, 4. AnimationSystem, 5. CameraSystem, 6. ExportManager, 7. UI）。
-  * ExportManager は layerSystem, animationSystem をコンストラクタで受け取るが、受け取り時点で未初期化の可能性があるなら setLayerSystem/setAnimationSystem を持たせ、`validate()` を呼ぶ設計を採る（ただし暗黙の遅延初期化は最小限）。
+  let cancelled = false;
+  btnCancel.onclick = () => {
+    cancelled = true;
+    // Note: gif.js supports abort via gif.abort() if available; not all versions
+    // Provide user-visible cancellation and throw in export-manager if not supported.
+  };
 
-* 追加ドキュメント例（core-runtime.js の最上部コメント形式）:
+  function onProgress(pct) {
+    if (cancelled) return;
+    progressEl.value = pct;
+  }
 
-```
-Initialization order (must be preserved):
-1. EventBus
-2. StateManager
-3. LayerSystem (provides getLayers(), layersContainer)
-4. AnimationSystem (depends on LayerSystem)
-5. CameraSystem
-6. ExportManager (depends on LayerSystem & AnimationSystem)
-7. UI
-```
+  exportManager.exportAsGif({ app, cuts, onProgress })
+    .then(blob => {
+      // present/save blob, close popup
+    })
+    .catch(err => {
+      // show clear error message to user
+      alert('GIF export failed: ' + (err && err.message ? err.message : 'unknown'));
+    });
+}
 
-4. system/layer-system.js — layersContainer の公開性を確認
 
-* 目的: レンダリング用 root container を必ず `layersContainer` として公開する契約を明確化。
-* チェック: `this.layersContainer` が `PIXI.Container`（もしくは DisplayObject）であるか、`getLayers()` が期待する配列を返すか。
-* 変更点: ファイル先頭に small API doc-comment を追記。
+--- DEBUG CHECKLIST (優先順) ---
 
-追加検査＆テスト手順（実務）
+確認: system/exporters/gif.worker.js がリポジトリに存在するか、パスが正しいか。workerScriptPath を絶対ではなく repo 相対で指定しているか。（file:// での path 解決注意）
 
-1. 開発ブランチで unit-like quick check を行う:
+ブラウザ DevTools の Network タブで worker の読み込み失敗（404）や CORS エラーが出ていないかを確認。
 
-   * console で `window.TegakiLayerSystem` / `window.TegakiAnimationSystem` / `window.ExportManager` が定義済みか確認。
-   * `typeof window.TegakiAnimationSystem.captureAllLayerStates` が 'function' であることを確認。
-   * `window.TegakiLayerSystem.layersContainer instanceof PIXI.Container` を確認。
-2. エクスポート試験（手順）:
+gif ライブラリの on('progress', fn) が呼ばれているかを確認（existing code で progress が 0% のままなら event が正しくバインドされているか）。
 
-   * PNG: UI から PNG を選択 -> 失敗時はエラーメッセージをそのまま表示（詳細は DevTools）。
-   * GIF: UI から GIF を選択 -> 同上。
-3. もし上の関数が未だ無ければ、animation-system.js に上記サンプルを追加し再試行。
+メモリ問題の確認: 大きなキャンバスやフレーム数が多い場合、Blob 生成で長時間停止することがある。最初は小さい画像サイズ、少ないフレーム数（例: 3フレーム、128x128）で試験してみる。
 
-改修の優先順位（短期→中期）
+呼び出し側の state restore（"restoring state"）が render をブロックしないか。app.ticker.update() などで強制描画を行い、extract が正しいピクセルを取得できるか確認。
 
-* 優先 (1-2日): ExportManager の入力バリデーション追加、GIFExporter の存在チェック、PNG エラー原因の早期検出メッセージ化。
-* 優先 (2-4日): animation-system に capture/restore/applyCut 系の最小実装を追加（UI やアセットの壊滅を避けるために浅いコピーで実装）。
-* 中期 (4-7日): core-runtime の初期化フローを明文化し、コンストラクタで渡すオブジェクトの「契約」をJS Doc 化。
-* 改善 (任意): animationSystem の単体テスト（簡易 smoke test）追加。
+もし gif.js を使っているなら、バージョン互換（workerScript の API 変更）を確認。workerScript が workerScriptPath でなく workerPath など別名を要求する場合あり。
 
-付録: 具体的パッチ案（差分スタイル）
+--- FALLBACKS & SAFETY ---
 
-* animation-system.js に以下を追加する（ファイル末尾に diff で貼る想定）:
+ハング検出のため timeoutMs を導入している。タイムアウト到達時は reject し、UI に明示的なエラーを返す。
 
-```diff
-+ // === GIF/Png Exporter 用の互換 API ===
-+ AnimationSystem.prototype.captureAllLayerStates = function() { ... }
-+ AnimationSystem.prototype.restoreFromSnapshots = function(snapshots) { ... }
-+ AnimationSystem.prototype.applyCutToLayers = function(cutIndex) { ... }
-+ AnimationSystem.prototype.getAnimationData = function() { ... }
-+ AnimationSystem.prototype.getCurrentCutIndex = function() { ... }
-+
-```
+フェイルセーフで自動再試行は行わない（仕様に基づく）。ただし、エラー時は「工数少で再試行する手順」をドキュメントで示す。
 
-* export-manager.js の renderToCanvas 先頭に以下挿入:
+ベクターデータは canvas 化（extract）してから gif ライブラリに渡す。内部的にベクタ表現をシリアライズしない（所有権・座標系の混乱回避）。
 
-```diff
-+ const container = options.container || this.layerSystem?.layersContainer;
-+ if (!container) throw new Error('ExportManager.renderToCanvas: layers container missing. Ensure LayerSystem initialized before ExportManager.');
-+ if (typeof container.updateLocalTransform !== 'function') throw new Error('ExportManager.renderToCanvas: container is not a PIXI display object');
-```
+--- TEST PLAN ---
 
-最後に（実装時のヒント）
+小さなサンプルで動作確認
 
-* 既存コードは UI/History 側で `window.History._manager.isApplying` 等の後方互換アクセサを使っているため、既存の public surface を壊さない範囲で実装すること。
-* Snapshot の保存は軽量に。GIF 作成時に大量のデータコピーを行うとメモリが爆発するため、必要最小限のプロパティに絞る。
-* `restoreFromSnapshots` は、存在しないレイヤー参照を無視して安全に復元する。
+3 frames, 200x200 px, delay 200ms, workerScript が読み込めることを確認
 
----
+Expect: progress updates 0→100, blob returned, download works
 
-このドキュメントは .txt での納品を前提としています。実際のパッチ（差分）を作る場合は、上記のサンプルをベースに小さなコミット単位で作業してください。変更時は必ず `core-runtime.js` の初期化順を確認の上、Export 関連を再検証してください。
+file:// 実行確認
 
-以上です。必要ならこのまま具体的な `animation-system.js` への差分パッチ（完全なコード）を作成します。
+Chrome でローカル直読みによる worker 読み込みが拒否されるケースがあるため、worker をリポジトリ内に置き相対パス指定で確認
+
+メモリストレス試験
+
+大サイズ（1920x1080, frames 30）で時間・メモリを監視。必要なら Frame size / frame countの制限をUIで警告。
+
+異常系
+
+worker 読み込み失敗：明確なエラーメッセージを UI に表示
+
+render タイムアウト：UI に「レンダリングがタイムアウトしました（ログ参照）」を表示
+
+--- DOCUMENTATION NOTES FOR NEXT DEVELOPER (Claude) ---
+
+GIFExporter.exportGIF は Promise を返す。呼び出し側は await で待つこと。進捗は onProgress callback を渡すこと。
+
+frames は canvas オブジェクトの配列（または {canvas, delay} の配列）を渡す設計にすると呼び出しが明確・安全（capture は呼び出し側で行う）。
+
+ベクタ→ラスタ変換は呼び出し側の責務とする。これにより exporter はラスタデータのみを扱い、データ所有権が明確になる。
+
+workerScript のバージョンを repo に同梱すること。file:// 環境でのロードを最優先で確認。
+
+--- ESTIMATED CODE CHANGES (concise) ---
+
+Add/replace system/exporters/gif-exporter.js with Promise-based implementation (example above).
+
+Ensure system/exporters/gif.worker.js exists and matches the gif.js version used. If not present, add it.
+
+Update system/export-manager.js to prepare frames as canvases and call GIFExporter.exportGIF(...) via await.
+
+Update ui/export-popup.js to provide onProgress and handle reject/error.
+
+--- LOGGING GUIDELINES ---
+
+Keep console logs minimal and actionable:
+
+One INFO at start: "GIF export started (N frames, WxH)"
+
+On error: console.error('GIF export error', err)
+
+Avoid per-frame verbose logs.
+
+For debugging, temporarily enable verbose logging via a debug flag.
+
+--- END OF PLAN ---
+
+
+--- explanation / final notes ---
+- 上の実装例は **gif.js（jnordberg/gif.js）互換 API** を想定しています。もし別の GIF ライブラリ（例えば gif-encoder 等）を使っているなら、`gif.addFrame` / `gif.render` / `on('finished')` といった部分をそのライブラリの対応する API に置き換えてください。  
+- 最も高頻度で失敗する原因は **worker のロード（file://）** です。まず `system/exporters/gif.worker.js` が存在するか、Network タブで 404 になっていないかを確認してください。これが直れば進捗が動く可能性が高いです。  
+- まずは上の `exportGIF` を導入して小さい画像（例: 200x200、3フレーム）で動作確認してください。動くなら段階的に実ケースに戻します。  

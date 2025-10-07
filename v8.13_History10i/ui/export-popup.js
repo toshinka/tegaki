@@ -1,6 +1,6 @@
 // ==================================================
 // ui/export-popup.js
-// エクスポートUI管理 - コピー機能追加版
+// エクスポートUI管理 - GIFコピー対応版
 // ==================================================
 window.ExportPopup = (function() {
     'use strict';
@@ -123,7 +123,8 @@ window.ExportPopup = (function() {
             const copyBtn = document.getElementById('export-copy');
             if (!copyBtn) return;
             
-            const copyableFormats = ['png'];
+            // PNGとGIFをコピー可能に
+            const copyableFormats = ['png', 'gif'];
             
             if (copyableFormats.includes(this.selectedFormat)) {
                 copyBtn.disabled = false;
@@ -155,7 +156,8 @@ window.ExportPopup = (function() {
                     <div class="setting-label">GIFアニメーション出力</div>
                     <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
                         全てのCUTをGIFアニメーションとして出力します。<br>
-                        品質: ${quality} / フレーム数: ${cutCount}
+                        品質: ${quality} / フレーム数: ${cutCount}<br>
+                        <span style="color: var(--futaba-maroon);">※コピー時、ブラウザ制約により最初のフレーム(PNG)がコピーされます</span>
                     </div>
                 `,
                 'apng': `
@@ -222,7 +224,7 @@ window.ExportPopup = (function() {
                 return;
             }
             
-            const copyableFormats = ['png'];
+            const copyableFormats = ['png', 'gif'];
             if (!copyableFormats.includes(this.selectedFormat)) {
                 alert(`${this.selectedFormat.toUpperCase()}のコピーは対応していません`);
                 return;
@@ -230,12 +232,18 @@ window.ExportPopup = (function() {
             
             const copyBtn = document.getElementById('export-copy');
             const executeBtn = document.getElementById('export-execute');
+            const progressEl = document.getElementById('export-progress');
             
             if (copyBtn) {
                 copyBtn.disabled = true;
                 copyBtn.textContent = 'コピー中...';
             }
             if (executeBtn) executeBtn.disabled = true;
+            
+            // GIFの場合はプログレス表示
+            if (this.selectedFormat === 'gif' && progressEl) {
+                progressEl.style.display = 'block';
+            }
             
             try {
                 const exporter = this.manager.exporters[this.selectedFormat];
@@ -249,14 +257,19 @@ window.ExportPopup = (function() {
                 if (copyBtn) {
                     copyBtn.textContent = 'コピー';
                 }
+                if (progressEl) progressEl.style.display = 'none';
                 this.updateCopyButtonState();
                 if (executeBtn) executeBtn.disabled = false;
+                this.resetProgress();
             }
         }
         
         onCopySuccess() {
             const copyBtn = document.getElementById('export-copy');
             const executeBtn = document.getElementById('export-execute');
+            const progressEl = document.getElementById('export-progress');
+            
+            if (progressEl) progressEl.style.display = 'none';
             
             if (copyBtn) {
                 copyBtn.textContent = 'コピー完了✓';
@@ -267,6 +280,7 @@ window.ExportPopup = (function() {
             }
             
             if (executeBtn) executeBtn.disabled = false;
+            this.resetProgress();
         }
         
         updateProgress(data) {
@@ -276,7 +290,7 @@ window.ExportPopup = (function() {
             let percent = 0;
             
             if (data.progress !== undefined) {
-                percent = Math.round(data.progress * 100);
+                percent = Math.round(data.progress);
             } else if (data.current && data.total) {
                 percent = Math.round((data.current / data.total) * 100);
             }
@@ -339,4 +353,4 @@ window.ExportPopup = (function() {
     return ExportPopup;
 })();
 
-console.log('✅ export-popup.js (コピー機能追加版) loaded');
+console.log('✅ export-popup.js (GIFコピー対応版) loaded');
