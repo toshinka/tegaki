@@ -1,6 +1,6 @@
 // ==================================================
 // system/export-manager.js
-// エクスポート統合管理システム - バリデーション強化版
+// エクスポート統合管理システム - 静音ダウンロード対応版
 // ==================================================
 window.ExportManager = (function() {
     'use strict';
@@ -47,12 +47,80 @@ window.ExportManager = (function() {
             }
         }
         
+        /**
+         * copyGifToClipboard
+         * GIF BlobをClipboard APIを使ってクリップボードへコピー
+         * @param {Blob} blob - image/gif MIME type のBlob
+         * @returns {Promise<void>}
+         * @throws {Error} code付きエラー (NO_CLIPBOARD_API, NO_CLIPBOARDITEM, CLIPBOARD_WRITE_FAILED)
+         */
+        async copyGifToClipboard(blob) {
+            if (!navigator.clipboard) {
+                const err = new Error('Clipboard API not available');
+                err.code = 'NO_CLIPBOARD_API';
+                throw err;
+            }
+            if (typeof ClipboardItem === 'undefined') {
+                const err = new Error('ClipboardItem not supported in this environment');
+                err.code = 'NO_CLIPBOARDITEM';
+                throw err;
+            }
+            
+            let targetBlob = blob;
+            if (blob.type !== 'image/gif') {
+                const buffer = await blob.arrayBuffer();
+                targetBlob = new Blob([buffer], { type: 'image/gif' });
+            }
+            
+            try {
+                const clipboardItem = new ClipboardItem({ 'image/gif': targetBlob });
+                await navigator.clipboard.write([clipboardItem]);
+                return;
+            } catch (e) {
+                const err = new Error('CLIPBOARD_WRITE_FAILED: ' + (e && e.message));
+                err.code = 'CLIPBOARD_WRITE_FAILED';
+                err.inner = e;
+                throw err;
+            }
+        }
+        
+        /**
+         * copyGifToClipboardWithFallback
+         * GIF Blobをクリップボードへコピーを試行し、失敗時に新規タブで開く（静音）
+         * @param {Blob} blob - image/gif MIME type のBlob
+         * @returns {Promise<{ok: boolean, method: string}>}
+         */
+        async copyGifToClipboardWithFallback(blob) {
+            try {
+                await this.copyGifToClipboard(blob);
+                return { ok: true, method: 'clipboard' };
+            } catch (err) {
+                try {
+                    const url = URL.createObjectURL(blob);
+                    
+                    // 新規タブで開く（ダウンロードダイアログなし）
+                    const newTab = window.open(url, '_blank');
+                    
+                    // URLを10秒後に解放
+                    setTimeout(() => URL.revokeObjectURL(url), 10000);
+                    
+                    if (!newTab) {
+                        throw new Error('ポップアップがブロックされました');
+                    }
+                } catch (openErr) {
+                    const fallbackErr = new Error('FALLBACK_OPEN_FAILED: ' + (openErr && openErr.message));
+                    fallbackErr.code = 'FALLBACK_OPEN_FAILED';
+                    throw fallbackErr;
+                }
+                return { ok: false, method: 'fallback' };
+            }
+        }
+        
         renderToCanvas(options = {}) {
             const width = options.width || window.TEGAKI_CONFIG.canvas.width;
             const height = options.height || window.TEGAKI_CONFIG.canvas.height;
             const resolution = options.resolution || 2;
             
-            // layersContainerまたはcurrentCutContainerを取得
             const container = options.container || 
                              this.layerSystem.layersContainer || 
                              this.layerSystem.currentCutContainer;
@@ -100,7 +168,6 @@ window.ExportManager = (function() {
                 await navigator.clipboard.write([item]);
                 return true;
             } catch (error) {
-                console.error('Clipboard copy failed:', error);
                 return false;
             }
         }
@@ -124,4 +191,4 @@ window.ExportManager = (function() {
     return ExportManager;
 })();
 
-console.log('✅ export-manager.js (バリデーション強化版) loaded');
+console.log('✅ export-manager.js (静音ダウンロード対応版) loaded');
