@@ -231,9 +231,6 @@
                 <div class="format-selection">
                     <button class="format-btn selected" data-format="png">PNG</button>
                     <button class="format-btn" data-format="gif">GIF</button>
-                    <button class="format-btn disabled" data-format="apng">APNG</button>
-                    <button class="format-btn disabled" data-format="webp">WEBP</button>
-                    <button class="format-btn disabled" data-format="mp4">MP4</button>
                     <button class="format-btn disabled" data-format="pdf">PDF</button>
                 </div>
                 <div class="export-options" id="export-options">
@@ -283,31 +280,15 @@
 (function() {
     'use strict';
     
-    function preventBrowserDefaults(e) {
-        if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
-        if (e.key.startsWith('F') && e.key.length <= 3) {
-            e.preventDefault();
-            return;
-        }
-        if (e.ctrlKey || e.metaKey) {
-            const key = e.code || e.key;
-            if (key === 'KeyZ' || key === 'KeyY' || key === 'KeyL' || key === 'Space') {
-                e.preventDefault();
-                return;
-            }
-            if (key.startsWith('Key') || key.startsWith('Digit')) {
-                e.preventDefault();
-            }
-        }
-    }
-    
+    // ========== Phase 1: History統合 - Ctrl+Z/Y対応 START ==========
     function setupUnifiedKeyboardShortcuts() {
         document.addEventListener('keydown', (e) => {
-            preventBrowserDefaults(e);
-            
             const eventBus = window.TegakiEventBus;
-            if (!eventBus) return;
+            const keymap = window.TEGAKI_KEYMAP;
             
+            if (!eventBus || !keymap) return;
+            
+            // 入力フィールド内では処理しない
             const activeElement = document.activeElement;
             if (activeElement && (
                 activeElement.tagName === 'INPUT' ||
@@ -315,70 +296,96 @@
                 activeElement.isContentEditable
             )) return;
             
-            if (e.code === 'Delete' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-                eventBus.emit('layer:clear-active');
+            // ブラウザデフォルト動作を防止（F5, F11, F12以外）
+            if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
+            if (e.key.startsWith('F') && e.key.length <= 3) {
                 e.preventDefault();
                 return;
             }
             
-            if (e.ctrlKey && e.code === 'KeyL' && !e.shiftKey && !e.altKey) {
-                if (window.drawingApp?.layerManager) {
-                    const layerSystem = window.drawingApp.layerManager;
-                    const newLayerIndex = layerSystem.layers.length + 1;
-                    layerSystem.createLayer(`L${newLayerIndex}`, false);
-                    eventBus.emit('layer:created-by-shortcut', { index: newLayerIndex });
-                }
-                e.preventDefault();
-                return;
-            }
+            // config.jsのキーマップでアクション解決
+            const action = keymap.getAction(e, { vMode: false });
             
-            if (e.shiftKey && e.code === 'KeyN' && !e.ctrlKey && !e.altKey) {
-                const animationSystem = window.animationSystem;
-                if (animationSystem) {
-                    animationSystem.createNewEmptyCut();
-                    eventBus.emit('cut:created-by-shortcut');
-                }
-                e.preventDefault();
-                return;
-            }
+            if (!action) return;
             
-            if (e.shiftKey && e.code === 'KeyA' && !e.ctrlKey && !e.altKey) {
-                eventBus.emit('ui:toggle-timeline');
-                e.preventDefault();
-                return;
-            }
-            
-            if (e.ctrlKey && e.code === 'Space' && !e.shiftKey && !e.altKey) {
-                const timelineUI = window.timelineUI;
-                if (timelineUI && timelineUI.isVisible) {
-                    timelineUI.togglePlayStop();
-                }
-                e.preventDefault();
-                return;
-            }
-            
-            if (e.shiftKey && e.code === 'KeyC' && !e.ctrlKey && !e.altKey) {
-                eventBus.emit('cut:copy-current');
-                setTimeout(() => {
-                    eventBus.emit('cut:paste-right-adjacent');
-                }, 10);
-                e.preventDefault();
-                return;
-            }
-            
-            if (e.code === 'KeyP' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-                eventBus.emit('tool:select', { tool: 'pen' });
-                e.preventDefault();
-                return;
-            }
-            
-            if (e.code === 'KeyE' && !e.ctrlKey && !e.altKey && !e.shiftKey) {
-                eventBus.emit('tool:select', { tool: 'eraser' });
-                e.preventDefault();
-                return;
+            // アクション処理
+            switch(action) {
+                // 🔥 Phase 1改修: History操作
+                case 'UNDO':
+                    if (window.History && window.History.canUndo()) {
+                        window.History.undo();
+                    }
+                    e.preventDefault();
+                    break;
+                    
+                case 'REDO':
+                    if (window.History && window.History.canRedo()) {
+                        window.History.redo();
+                    }
+                    e.preventDefault();
+                    break;
+                
+                // レイヤー操作
+                case 'LAYER_CLEAR':
+                    eventBus.emit('layer:clear-active');
+                    e.preventDefault();
+                    break;
+                
+                case 'LAYER_CREATE':
+                    if (window.drawingApp?.layerManager) {
+                        const layerSystem = window.drawingApp.layerManager;
+                        const newLayerIndex = layerSystem.getLayers().length + 1;
+                        layerSystem.createLayer(`L${newLayerIndex}`, false);
+                        eventBus.emit('layer:created-by-shortcut', { index: newLayerIndex });
+                    }
+                    e.preventDefault();
+                    break;
+                
+                // GIF/アニメーション操作
+                case 'GIF_CREATE_CUT':
+                    const animationSystem = window.animationSystem;
+                    if (animationSystem) {
+                        animationSystem.createNewEmptyCut();
+                        eventBus.emit('cut:created-by-shortcut');
+                    }
+                    e.preventDefault();
+                    break;
+                
+                case 'GIF_TOGGLE_TIMELINE':
+                    eventBus.emit('ui:toggle-timeline');
+                    e.preventDefault();
+                    break;
+                
+                case 'GIF_PLAY_PAUSE':
+                    const timelineUI = window.timelineUI;
+                    if (timelineUI && timelineUI.isVisible) {
+                        timelineUI.togglePlayStop();
+                    }
+                    e.preventDefault();
+                    break;
+                
+                case 'GIF_COPY_CUT':
+                    eventBus.emit('cut:copy-current');
+                    setTimeout(() => {
+                        eventBus.emit('cut:paste-right-adjacent');
+                    }, 10);
+                    e.preventDefault();
+                    break;
+                
+                // ツール切り替え
+                case 'TOOL_PEN':
+                    eventBus.emit('tool:select', { tool: 'pen' });
+                    e.preventDefault();
+                    break;
+                
+                case 'TOOL_ERASER':
+                    eventBus.emit('tool:select', { tool: 'eraser' });
+                    e.preventDefault();
+                    break;
             }
         });
     }
+    // ========== Phase 1: History統合 - Ctrl+Z/Y対応 END ==========
     
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', setupUnifiedKeyboardShortcuts);
@@ -530,8 +537,9 @@ function setupHistoryIntegration() {
         window.TegakiEventBus.on('history:changed', (data) => {
             const historyElement = document.getElementById('history-info');
             if (historyElement && data) {
-                const undoCount = data.canUndo ? 1 : 0;
-                historyElement.textContent = `${undoCount}/50`;
+                const currentIndex = data.currentIndex + 1;
+                const stackSize = data.stackSize;
+                historyElement.textContent = `${currentIndex}/${stackSize}`;
             }
         });
     }
@@ -553,7 +561,6 @@ window.addEventListener('DOMContentLoaded', async () => {
         
         setupHistoryIntegration();
         
-        // === 【改修】確実なExportSystem初期化 ===
         const initExportWithRetry = () => {
             let retryCount = 0;
             const maxRetries = 10;
@@ -575,21 +582,17 @@ window.addEventListener('DOMContentLoaded', async () => {
                 retryCount++;
                 if (retryCount < maxRetries) {
                     setTimeout(tryInit, 200);
-                } else {
-                    console.error('[ExportInit] 初期化タイムアウト - animationSystemが準備できません');
                 }
             };
             
             tryInit();
         };
         
-        // EventBusで初期化トリガー
         if (window.TegakiEventBus) {
             window.TegakiEventBus.on('animation:system-ready', initExportWithRetry);
             window.TegakiEventBus.on('animation:initialized', initExportWithRetry);
         }
         
-        // タイマーでも初期化を試行（フォールバック）
         setTimeout(initExportWithRetry, 500);
         
         if (window.CoordinateSystem?.diagnoseReferences) {
@@ -615,4 +618,7 @@ try {
 } catch (error) {}
     </script>
 </body>
-</html>
+</html> data-format="apng">APNG</button>
+                    <button class="format-btn disabled" data-format="webp">WEBP</button>
+                    <button class="format-btn disabled" data-format="mp4">MP4</button>
+                    <button class="format-btn disabled"
