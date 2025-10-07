@@ -493,6 +493,30 @@ window.ExportPopup = (function() {
         }
     }
     
+// export-popup.js 内に追加
+createMebukiExportButton() {
+    const btn = document.createElement('button');
+    btn.textContent = 'めぶきに投稿';
+    btn.onclick = async () => {
+        // GIF生成
+        const gifBlob = await this.exportManager.exportGIF();
+        
+        // 親ウィンドウ（めぶき）にpostMessage
+        if (window.parent !== window) {
+            window.parent.postMessage({
+                type: 'export-animation',
+                blob: gifBlob,
+                firstFramePNG: await this.getFirstFrameAsPNG()
+            }, '*');
+        } else {
+            // 通常のダウンロード
+            this.downloadBlob(gifBlob, 'animation.gif');
+        }
+    };
+    return btn;
+}
+
+
     return ExportPopup;
 })();
 
