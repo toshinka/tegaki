@@ -1,6 +1,6 @@
 // ==================================================
 // system/export-manager.js
-// エクスポート統合管理システム - 静音ダウンロード対応版
+// エクスポート統合管理システム - Data URL対応版
 // ==================================================
 window.ExportManager = (function() {
     'use strict';
@@ -48,11 +48,38 @@ window.ExportManager = (function() {
         }
         
         /**
+         * arrayBufferToBase64
+         * ArrayBufferをBase64文字列に変換（大容量対応）
+         */
+        arrayBufferToBase64(buffer) {
+            const bytes = new Uint8Array(buffer);
+            let binary = '';
+            const chunkSize = 0x8000;
+            
+            for (let i = 0; i < bytes.length; i += chunkSize) {
+                const chunk = bytes.subarray(i, i + chunkSize);
+                binary += String.fromCharCode.apply(null, chunk);
+            }
+            
+            return btoa(binary);
+        }
+        
+        /**
+         * blobToDataURL
+         * BlobをData URL形式に変換
+         */
+        async blobToDataURL(blob) {
+            const arrayBuffer = await blob.arrayBuffer();
+            const base64 = this.arrayBufferToBase64(arrayBuffer);
+            return `data:${blob.type};base64,${base64}`;
+        }
+        
+        /**
          * copyGifToClipboard
          * GIF BlobをClipboard APIを使ってクリップボードへコピー
          * @param {Blob} blob - image/gif MIME type のBlob
          * @returns {Promise<void>}
-         * @throws {Error} code付きエラー (NO_CLIPBOARD_API, NO_CLIPBOARDITEM, CLIPBOARD_WRITE_FAILED)
+         * @throws {Error} code付きエラー
          */
         async copyGifToClipboard(blob) {
             if (!navigator.clipboard) {
@@ -61,7 +88,7 @@ window.ExportManager = (function() {
                 throw err;
             }
             if (typeof ClipboardItem === 'undefined') {
-                const err = new Error('ClipboardItem not supported in this environment');
+                const err = new Error('ClipboardItem not supported');
                 err.code = 'NO_CLIPBOARDITEM';
                 throw err;
             }
@@ -75,9 +102,8 @@ window.ExportManager = (function() {
             try {
                 const clipboardItem = new ClipboardItem({ 'image/gif': targetBlob });
                 await navigator.clipboard.write([clipboardItem]);
-                return;
             } catch (e) {
-                const err = new Error('CLIPBOARD_WRITE_FAILED: ' + (e && e.message));
+                const err = new Error('Clipboard write failed: ' + (e && e.message));
                 err.code = 'CLIPBOARD_WRITE_FAILED';
                 err.inner = e;
                 throw err;
@@ -85,34 +111,18 @@ window.ExportManager = (function() {
         }
         
         /**
-         * copyGifToClipboardWithFallback
-         * GIF Blobをクリップボードへコピーを試行し、失敗時に新規タブで開く（静音）
+         * copyGifWithPreviewFallback
+         * GIF Blobをクリップボードへコピーを試行し、失敗時にプレビュー表示用のデータを返す
          * @param {Blob} blob - image/gif MIME type のBlob
-         * @returns {Promise<{ok: boolean, method: string}>}
+         * @returns {Promise<{success: boolean, blob: Blob, dataUrl?: string}>}
          */
-        async copyGifToClipboardWithFallback(blob) {
+        async copyGifWithPreviewFallback(blob) {
             try {
                 await this.copyGifToClipboard(blob);
-                return { ok: true, method: 'clipboard' };
+                return { success: true, blob };
             } catch (err) {
-                try {
-                    const url = URL.createObjectURL(blob);
-                    
-                    // 新規タブで開く（ダウンロードダイアログなし）
-                    const newTab = window.open(url, '_blank');
-                    
-                    // URLを10秒後に解放
-                    setTimeout(() => URL.revokeObjectURL(url), 10000);
-                    
-                    if (!newTab) {
-                        throw new Error('ポップアップがブロックされました');
-                    }
-                } catch (openErr) {
-                    const fallbackErr = new Error('FALLBACK_OPEN_FAILED: ' + (openErr && openErr.message));
-                    fallbackErr.code = 'FALLBACK_OPEN_FAILED';
-                    throw fallbackErr;
-                }
-                return { ok: false, method: 'fallback' };
+                const dataUrl = await this.blobToDataURL(blob);
+                return { success: false, blob, dataUrl };
             }
         }
         
@@ -126,7 +136,7 @@ window.ExportManager = (function() {
                              this.layerSystem.currentCutContainer;
             
             if (!container) {
-                throw new Error('ExportManager.renderToCanvas: layers container is not available. Ensure layerSystem.currentCutContainer is properly initialized.');
+                throw new Error('ExportManager.renderToCanvas: layers container is not available');
             }
             
             if (typeof container.updateLocalTransform !== 'function') {
@@ -191,4 +201,4 @@ window.ExportManager = (function() {
     return ExportManager;
 })();
 
-console.log('✅ export-manager.js (静音ダウンロード対応版) loaded');
+console.log('✅ export-manager.js (Data URL対応版) loaded');

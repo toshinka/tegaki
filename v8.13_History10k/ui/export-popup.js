@@ -1,6 +1,6 @@
 // ==================================================
 // ui/export-popup.js
-// エクスポートUI管理 - GIFプレビュー対応版
+// エクスポートUI管理 - プレビュー完結型
 // ==================================================
 window.ExportPopup = (function() {
     'use strict';
@@ -10,7 +10,8 @@ window.ExportPopup = (function() {
             this.manager = exportManager;
             this.selectedFormat = 'png';
             this.isVisible = false;
-            this.currentGifBlob = null;
+            this.currentPreviewUrl = null;
+            this.currentBlob = null;
             this.setupUI();
             this.setupEventListeners();
         }
@@ -18,7 +19,30 @@ window.ExportPopup = (function() {
         setupUI() {
             let popup = document.getElementById('export-popup');
             
-            if (!popup) {
+            if (popup) {
+                const previewContainer = popup.querySelector('#preview-container');
+                if (!previewContainer) {
+                    const progressEl = popup.querySelector('#export-progress');
+                    if (progressEl) {
+                        const newContainer = document.createElement('div');
+                        newContainer.id = 'preview-container';
+                        newContainer.style.cssText = 'display: none; margin: 12px 0; text-align: center; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 6px; padding: 12px;';
+                        newContainer.innerHTML = `
+                            <div id="preview-message" style="font-size: 12px; color: var(--futaba-maroon); margin-bottom: 8px; font-weight: 500;">
+                                ↓ 下の画像を右クリック →「画像をコピー」してください
+                            </div>
+                            <img id="preview-image" style="max-width: 100%; max-height: 320px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: context-menu; display: block; margin: 0 auto;" />
+                            <div style="display: flex; gap: 8px; justify-content: center; margin-top: 8px;">
+                                <a id="preview-download" class="action-button secondary" style="text-decoration: none; display: inline-block; padding: 8px 16px;" download>ダウンロード</a>
+                            </div>
+                            <div id="preview-note" style="font-size: 11px; color: var(--text-secondary); margin-top: 8px;">
+                                ※ブラウザの制約により、直接クリップボードへコピーできません
+                            </div>
+                        `;
+                        progressEl.parentNode.insertBefore(newContainer, progressEl.nextSibling);
+                    }
+                }
+            } else {
                 popup = document.createElement('div');
                 popup.id = 'export-popup';
                 popup.className = 'popup-panel';
@@ -49,12 +73,15 @@ window.ExportPopup = (function() {
                         </div>
                         <div class="progress-text">0%</div>
                     </div>
-                    <div class="gif-preview-container" id="gif-preview-container" style="display: none; margin: 12px 0; text-align: center; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 6px; padding: 12px;">
-                        <div style="font-size: 12px; color: var(--futaba-maroon); margin-bottom: 8px; font-weight: 500;">
+                    <div class="preview-container" id="preview-container" style="display: none; margin: 12px 0; text-align: center; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 6px; padding: 12px;">
+                        <div id="preview-message" style="font-size: 12px; color: var(--futaba-maroon); margin-bottom: 8px; font-weight: 500;">
                             ↓ 下の画像を右クリック →「画像をコピー」してください
                         </div>
-                        <img id="gif-preview-image" style="max-width: 100%; max-height: 300px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: context-menu;" />
-                        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 8px;">
+                        <img id="preview-image" style="max-width: 100%; max-height: 320px; border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: context-menu; display: block; margin: 0 auto;" />
+                        <div style="display: flex; gap: 8px; justify-content: center; margin-top: 8px;">
+                            <a id="preview-download" class="action-button secondary" style="text-decoration: none; display: inline-block; padding: 8px 16px;" download>ダウンロード</a>
+                        </div>
+                        <div id="preview-note" style="font-size: 11px; color: var(--text-secondary); margin-top: 8px;">
                             ※ブラウザの制約により、直接クリップボードへコピーできません
                         </div>
                     </div>
@@ -72,7 +99,6 @@ window.ExportPopup = (function() {
         }
         
         setupEventListeners() {
-            // ポップアップ内のクリックイベント
             document.addEventListener('click', (e) => {
                 const formatBtn = e.target.closest('.format-btn');
                 if (formatBtn && !formatBtn.classList.contains('disabled')) {
@@ -90,7 +116,6 @@ window.ExportPopup = (function() {
                     return;
                 }
                 
-                // ポップアップ外クリックで閉じる（遅延実行で他の処理を優先）
                 if (this.isVisible) {
                     setTimeout(() => {
                         const popup = document.getElementById('export-popup');
@@ -138,7 +163,7 @@ window.ExportPopup = (function() {
             
             this.updateOptionsUI(format);
             this.updateCopyButtonState();
-            this.hideGifPreview();
+            this.hidePreview();
         }
         
         updateCopyButtonState() {
@@ -209,34 +234,68 @@ window.ExportPopup = (function() {
             optionsEl.innerHTML = optionsMap[format] || '';
         }
         
-        showGifPreview(blob) {
-            const container = document.getElementById('gif-preview-container');
-            const img = document.getElementById('gif-preview-image');
+        showPreview(blob, dataUrl, message = null) {
+            const container = document.getElementById('preview-container');
+            const img = document.getElementById('preview-image');
+            const messageEl = document.getElementById('preview-message');
+            const noteEl = document.getElementById('preview-note');
+            const downloadBtn = document.getElementById('preview-download');
             
             if (!container || !img) return;
             
-            if (this.currentGifBlob) {
-                URL.revokeObjectURL(img.src);
+            this.cleanupPreview();
+            
+            this.currentBlob = blob;
+            
+            if (dataUrl) {
+                this.currentPreviewUrl = dataUrl;
+                img.src = dataUrl;
+            } else {
+                this.currentPreviewUrl = URL.createObjectURL(blob);
+                img.src = this.currentPreviewUrl;
             }
             
-            this.currentGifBlob = blob;
-            img.src = URL.createObjectURL(blob);
+            if (downloadBtn) {
+                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+                const ext = blob.type.split('/')[1] || 'gif';
+                const filename = `tegaki_${ext}_${timestamp}.${ext}`;
+                
+                if (dataUrl) {
+                    downloadBtn.href = dataUrl;
+                } else {
+                    downloadBtn.href = this.currentPreviewUrl;
+                }
+                downloadBtn.download = filename;
+            }
+            
+            if (message && messageEl) {
+                messageEl.textContent = message;
+            }
+            
+            if (noteEl) {
+                noteEl.style.display = dataUrl ? 'block' : 'none';
+            }
+            
             container.style.display = 'block';
         }
         
-        hideGifPreview() {
-            const container = document.getElementById('gif-preview-container');
-            const img = document.getElementById('gif-preview-image');
-            
-            if (!container || !img) return;
-            
-            if (this.currentGifBlob) {
-                URL.revokeObjectURL(img.src);
-                this.currentGifBlob = null;
+        hidePreview() {
+            const container = document.getElementById('preview-container');
+            if (container) {
+                container.style.display = 'none';
             }
+            this.cleanupPreview();
+        }
+        
+        cleanupPreview() {
+            if (this.currentPreviewUrl && !this.currentPreviewUrl.startsWith('data:')) {
+                URL.revokeObjectURL(this.currentPreviewUrl);
+            }
+            this.currentPreviewUrl = null;
+            this.currentBlob = null;
             
-            container.style.display = 'none';
-            img.src = '';
+            const img = document.getElementById('preview-image');
+            if (img) img.src = '';
         }
         
         showStatus(message, isError = false) {
@@ -271,7 +330,7 @@ window.ExportPopup = (function() {
             const copyBtn = document.getElementById('export-copy');
             
             this.hideStatus();
-            this.hideGifPreview();
+            this.hidePreview();
             if (progressEl) progressEl.style.display = 'block';
             if (executeBtn) executeBtn.disabled = true;
             if (copyBtn) copyBtn.disabled = true;
@@ -303,7 +362,7 @@ window.ExportPopup = (function() {
             const progressEl = document.getElementById('export-progress');
             
             this.hideStatus();
-            this.hideGifPreview();
+            this.hidePreview();
             
             if (copyBtn) {
                 copyBtn.disabled = true;
@@ -342,7 +401,15 @@ window.ExportPopup = (function() {
             if (progressEl) progressEl.style.display = 'none';
             
             if (data && data.blob) {
-                this.showGifPreview(data.blob);
+                if (data.dataUrl) {
+                    this.showPreview(data.blob, data.dataUrl, data.message || '↓ 下の画像を右クリック →「画像をコピー」してください');
+                } else {
+                    this.showStatus(data.message || 'クリップボードにコピーしました');
+                    setTimeout(() => this.hideStatus(), 2000);
+                }
+            } else if (data && data.message) {
+                this.showStatus(data.message);
+                setTimeout(() => this.hideStatus(), 2000);
             }
             
             if (copyBtn) {
@@ -421,7 +488,7 @@ window.ExportPopup = (function() {
                 this.isVisible = false;
                 this.resetProgress();
                 this.hideStatus();
-                this.hideGifPreview();
+                this.hidePreview();
             }
         }
     }
@@ -429,4 +496,4 @@ window.ExportPopup = (function() {
     return ExportPopup;
 })();
 
-console.log('✅ export-popup.js (GIFプレビュー対応版) loaded');
+console.log('✅ export-popup.js (プレビュー完結型) loaded');
