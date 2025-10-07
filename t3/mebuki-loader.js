@@ -1,6 +1,6 @@
 // mebuki-loader.js（概念コード）
 javascript:((async (d) => {
-    const toolUrl = 'https://toshinka.github.io/tegaki/v8.13_History12/index.html';
+    const toolUrl = 'https://toshinka.github.io/tegaki/';
     const response = await fetch(toolUrl);
     const toolHTML = await response.text();
     
@@ -9,7 +9,7 @@ javascript:((async (d) => {
     iframe.id = 'mebuki-tegaki-overlay';
     iframe.style.cssText = `
         position: fixed !important;
-        top: 0 !important;
+        top: 0 !important;https://github.com/toshinka/tegaki
         left: 0 !important;
         width: 100vw !important;
         height: 100vh !important;
