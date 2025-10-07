@@ -1,372 +1,330 @@
-後続の Claude がそのまま読み取り・適用しやすいよう、ファイル毎に「目的」「問題点」「修正方針」「差分（実装例）」を整理しました。
-出力は改修ドキュメント兼パッチ案です。必要な箇所は Promise ベースで明確にし、進捗（progress）とエラー検出ができるように実装例を提示します。コンソールログは最小に留める方針にしてあります（ただしデバッグ用途で必要最小限のログは残します）。
+【改修計画書（プレーンテキスト）】
+件名：GIFコピー（クリップボード）取得失敗の原因究明と改修計画
+対象リポジトリ/ブランチ：v8.13_History10i（提示されたファイル群）
+目的：UIの「GIF コピー（クリップボード）」ボタンを右クリックの「画像をコピー」と同等に動作させる。
+備考：PixiJS v8.13、ローカル file:// 実行想定、ES2023（モジュール不使用）。ベクターペン主体、冗長なログやフォールバック不可。UIは最小限。
 
---- begin of file: gif-exporter-fix-plan.txt ---
-TITLE: GIF export — 問題解析と改修計画書
-TARGET: repo path: system/exporters/gif-exporter.js (plus small changes in export-manager.js / ui/export-popup.js)
-ENV: Chrome (file://), PixiJS v8.13, ES2023, no bundler/TS
+------------------------
+1) 現状の問題（要点）
+------------------------
+・PNG（静止画像）の出力＆クリップボードコピーは成功するが、GIF（アニメーション）の「クリップボードへコピー」が失敗する。
+・想定される主因（複合的）：
+  A. クリップボードAPIの利用方法・MIMEハンドリングの不備
+     - GIFデータ（ArrayBufferなど）を正しい Blob('image/gif') に変換していない、
+       あるいは ClipboardItem の生成方法が誤っている。
+  B. ブラウザ/コンテキストの制約
+     - navigator.clipboard.write による画像バイナリの書き込み（image/gif）のサポート状況。
+     - Chromium系では file:// や一部環境で画像の MIME タイプサポートや許可要件が異なる。
+  C. 「アニメーションGIF」という性質
+     - アニメGIFは複数フレームを含むバイナリ。プログラム側でフレーム列を正しく結合した生のGIFバイナリ（valid GIF）を作れていない可能性。
+  D. 非同期処理や例外の未捕捉
+     - Blob 作成や navigator.clipboard.write のエラーが無視/ログ不足で失敗原因不明になっている。
 
-SUMMARY:
+※右クリックの「画像をコピー」はブラウザ組み込み処理で、ブラウザがページ内のGIF URLまたは表示要素を参照して直接コピーする挙動。
+　プログラムから同等に動かすには「正しい Blob と ClipboardItem を使って navigator.clipboard.write()」する必要があるが、仕様・実装差が影響する。
 
-現象: GIF 出力処理が「全フレームを GIF インスタンスに追加」した後に render が始まるが、プログレスが 0% のまま進行しない（レンダー停滞）。
+------------------------
+2) 受け得る解決策（優先順位付）
+------------------------
+（優先度A）直接的解決（推奨）：Navigator Clipboard API を正しく使って GIF バイナリをクリップボードへ書き込む
+  - 前提：生成済みの GIF バイナリ（ArrayBuffer / Uint8Array / Blob）を確実に new Blob([...], {type:'image/gif'}) にする
+  - ClipboardItem を使用：`new ClipboardItem({ 'image/gif': blob })` -> `await navigator.clipboard.write([item])`
+  - 例外処理で失敗を検出、UIに最小限の通知（失敗/非対応）を出す。
 
-観測ログ（抜粋）:
+（優先度B）環境依存の回避（代替）：ユーザーに保存または新規タブで開く（右クリックと同等動作を促す）
+  - 自動ダウンロード（a.downloadクリック） + 新しいタブで Blob URL を開く。ユーザーは右クリックで「画像をコピー」できる。
+  - これは「プログラム的にコピー」ではないが、確実で環境依存が少ない。
 
-[GIF Export] All frames added, restoring state
+（優先度C）サーバ経由/HTTPS環境で動作させる（推奨される運用改善）
+  - Chrome のセキュリティモデル上、file:// 環境で clipboard.write 画像が制限される場合がある。
+  - 開発時はローカルでも `http://localhost` または secure `https://` で動かすことを推奨（しかし今回の改修では強制しない）。
 
-[GIF Export] Starting GIF render
+------------------------
+3) 技術的修正方針（要約）
+------------------------
+A. GIF出力側（gif-exporter）で「最終的なGIFバイナリ」を Blob で確実に取得できる API を提供する。
+   - 例：`gifExporter.generateGifBlob(options): Promise<Blob>` をエクスポートする。
 
-[GIF Export] Progress: 0%
+B. export-manager 側にコピー処理ユーティリティを実装。
+   - `exportManager.copyGifBlobToClipboard(blob): Promise<void>`
+   - 内部で feature-detect（ClipboardItem, navigator.clipboard.write） -> try write -> 成功/失敗ハンドリング。
+   - 失敗時は（1）自動ダウンロード、（2）新規タブで表示、の順でフォールバック。
 
-以後進まない
+C. UI（export-popup / timeline-ui に結びつく箇所）
+   - 「GIFコピー」クリックで exportManager の generate -> copy の一連を呼ぶ。
+   - 進捗は最小限の状態更新（例："コピー中..." → 成功/失敗）。ログは極小に。
 
-推定原因（優先度順）:
+D. 命名と API の統一
+   - gif-exporter: `generateGifBlob`, `generateGifArrayBuffer`, `generateGifDataUrl` （オプション）
+   - export-manager: `exportAsPng`, `exportAsGif`, `copyGifToClipboard`, `downloadBlob`
+   - 例外はすべて Promise reject で返す。呼び出し側でトランザクション管理。
 
-使用している GIF ライブラリの worker スクリプト（workerScript / workerPath）が正しく参照できていないため、バックグラウンドでレンダリング worker が起動せずハングしている。 → workerPath 未設定や file:// の制約でロード失敗。
+------------------------
+4) ファイル別改修計画（具体的指示）
+------------------------
+※下記は差分パッチではなく、実装する関数・変更個所の最小単位の指示です。
+（A）system/exporters/gif-exporter.js
+  - 追加/修正：
+    1) export (名前付き) `generateGifBlob(options)` を実装/公開する。
+       シグネチャ（推奨）：
+         async function generateGifBlob({ frames, width, height, delay, loop }): Promise<Blob>
+       実装ノート：
+         - 既存のGIF生成ロジックがあるなら、最終出力を ArrayBuffer/Uint8Array で得る処理の直後に
+           `return new Blob([arrayBufferOrUint8Array], { type: 'image/gif' });`
+         - もし GIF エンコーダが callback ベースなら Promise 化する。
+         - 必要に応じて `generateGifDataUrl` も用意（UIでのプレビュー用）。
+    2) 失敗時のエラーを明確な Error オブジェクトで reject する（例：new Error('GIF_GENERATION_FAILED: reason')）。
 
-GIF ライブラリへのフレーム追加は成功しているが、render()/onFinished の Promise/コールバックを正しく待っていない/バインドしていない。UI側はレンダリング完了の通知が来ないため 0% のまま。
+  - コメント、命名の強制：
+    - 関数の頭に JSDoc 風のコメントを付け、戻り値が Blob であることを明記。
 
-大きすぎるキャンバス/メモリ不足でブラウザ側が内部的に止まっている（メモリ使用量・Blob生成で時間がかかる）。この場合も進捗が更新されにくい。
+（B）system/export-manager.js（または export-manager のメイン）
+  - 追加/修正：
+    1) `async function copyGifToClipboard(blob)` を実装。
+       実装方針（コード骨子は下に示す）：
+         - Feature detect:
+             if (!navigator.clipboard || typeof ClipboardItem === 'undefined') throw { code:'NO_CLIPBOARD_API' }
+         - Ensure MIME type:
+             if (blob.type !== 'image/gif') blob = new Blob([await blob.arrayBuffer()], { type: 'image/gif' });
+         - Try:
+             const item = new ClipboardItem({ 'image/gif': blob });
+             await navigator.clipboard.write([item]);
+         - Catch:
+             throw the caught error to be handled by caller.
+    2) `async function tryCopyGifWithFallback(blob, filename)` を実装：
+         - try copyGifToClipboard(blob)
+         - on success return { ok:true }
+         - on failure:
+             - fallback1: triggerDownload(blob, filename)
+             - fallback2: openBlobInNewTab(blob)
+         - provide minimal user-notice via export-popup (文字列) — not flashy.
+    3) export-manager の public API に `exportAsGifAndCopy({frames,...})` を追加して UI から叩けるようにする。
 
-非同期の状態復元（state restore）で renderer が一時停止しており、描画データ取得方法が誤っている（ベクターデータの扱いで rasterize が必要な箇所で未処理）。
+  - エラーハンドリング：
+    - エラーはコード付きで返す（例：NO_CLIPBOARD_API, CLIPBOARD_WRITE_FAILED, NOT_SECURE_CONTEXT）。
 
-方針:
+（C）ui/export-popup.js（および timeline-ui.js からの呼び出し）
+  - 追加/修正：
+    1) GIF コピー操作のハンドラを次の流れで呼ぶ：
+       - disable UI control (最小)
+       - call exportManager.generateGifBlob(...)
+       - call exportManager.tryCopyGifWithFallback(blob, 'tegaki-export.gif')
+       - show minimal success or failure message text（例："GIFをクリップボードにコピーしました" / "対応していないためファイルをダウンロードしました: tegaki-export.gif"）
+    2) ユーザー確認ダイアログや過剰なログは行わない（ルールに準拠）。
 
-ライブラリ依存の「worker path」「worker in-page fallback」を確実にセットする（file:// 環境対策）。
+（D）system/history.js 等（補足）
+  - GIF のフレーム列を正しく渡すため、gif-exporter には安定した frames 形式を渡すこと。
+  - frames は必ず `Uint8ClampedArray` ではなく、各フレームのイメージ（ImageBitmap / ImageData / Canvas）を受け取る形式を統一する。仕様を gif-exporter の JSDoc に明記。
 
-exporter を Promise ベースに再実装し、レンダリングの「進捗」「完了」「エラー」を明確に通知するAPIにする。
+------------------------
+5) 具象コード（主要部分・そのまま貼れる形）
+------------------------
+（注）下のコードはESモジュールではなく IIFE / Common global を前提とした関数定義例。既存プロジェクトに合わせて `window.GifExporter = { ... }` 等に収めてください。
 
-UI 側（export-popup.js）を呼び出し元でレンダリング中のロック、プログレス表示（0→100）を exporter のコールバックから受け取るように修正。
-
-タイムアウトとリトライ（短い）を導入して、「ハング検出」できるようにする（ただしフェイルセーフによる暗黙修復は厳禁。検出したらエラーで切り上げ、ユーザーには明示的にエラーを返す）。
-
-ベクターペンの取り扱いに注意：フレームキャプチャは Pixi の renderer.extract.canvas(app.stage) 等を使い「必要最小限のラスタ化」を行う。内部データの直接シリアライズは行わない（所有権・座標混同のリスク回避）。
-
-REQUIRED FILES TO MODIFY:
-
-system/exporters/gif-exporter.js (主要改修)
-
-system/export-manager.js (export 呼び出し方を Promise に合わせる)
-
-ui/export-popup.js (キャンセル/進捗 UI を exporter に紐付ける)
-
---- FILE: system/exporters/gif-exporter.js ---
-PURPOSE:
-
-GIF の生成と Blob の返却を行う。Promise ベースで進捗を通知（コールバック or イベント）。
-
-PROBLEMS FOUND / DESIGN CHOICES:
-
-既存コードはログを出しているが、render の async 完了を待てていないか、worker path が誤っている。
-
-file:// 環境で worker を外部読み込みする場合パス解決失敗が起きるため、ライブラリが worker URL を要求する場合は「同梱 worker」を base64 でインライン供給するフォールバックを用意する（ライブラリ許可時のみ）。
-
-必要最小限のデバッグログを残す。エラーは必ず reject する。
-
-PATCH / NEW IMPLEMENTATION (example):
-（下記はそのまま置き換え可能な実装例。使用している GIF ライブラリ名によっては微修正が必要。ここでは広く使われる gif.js（https://jnordberg.github.io/gif.js/）互換の
- API を想定している）
-
-// system/exporters/gif-exporter.js
-// Promise-based GIF exporter with robust progress and error handling.
-// Assumptions:
-// - global `app` (Pixi.Application) is available or passed in via options
-// - uses GIF() constructor from gif.js (workerScript path must be provided or fallback to inline worker)
-
-(function(global){
-  const DEFAULTS = {
-    workerScriptPath: 'system/exporters/gif.worker.js', // repo-relative path; ensure this file exists
-    workers: 2,
-    quality: 10,
-    repeat: 0, // loop
-    delay: 100, // ms per frame (can be overridden per-export)
-    timeoutMs: 120000 // detect stuck render after 2 minutes
-  };
-
-  function createGifInstance(opts = {}) {
-    const cfg = Object.assign({}, DEFAULTS, opts);
-    // Ensure GIF constructor exists
-    if (typeof GIF === 'undefined') {
-      throw new Error('GIF library not found (expected global GIF).');
-    }
-    // If workerScriptPath is not loadable in file://, consumer should provide inline fallback.
-    const gif = new GIF({
-      workers: cfg.workers,
-      quality: cfg.quality,
-      workerScript: cfg.workerScriptPath, // gif.js accepts workerScript
-      repeat: cfg.repeat
-    });
-    return { gif, cfg };
-  }
-
-  // captureFrame: returns a canvas for given stage using PIXI extract
-  function captureFrameAsCanvas(app) {
-    // Pixi v8: app.renderer.extract.canvas(app.stage) is valid
-    // but to avoid cross-origin issues, ensure stage background is opaque
-    const canvas = app.renderer.extract.canvas(app.stage);
-    return canvas;
-  }
-
-  // Main export function
-  async function exportGIF({ app, frames /*array of frame descriptors*/, delay, onProgress, workerScriptPath }) {
-    if (!app) throw new Error('exportGIF: missing `app` (PIXI Application).');
-    if (!Array.isArray(frames) || frames.length === 0) throw new Error('exportGIF: no frames to export.');
-
-    const { gif, cfg } = createGifInstance({ workerScriptPath });
-    if (typeof onProgress !== 'function') onProgress = () => {};
-    const totalFrames = frames.length;
-
-    // Bind progress
-    gif.on('progress', (p) => {
-      // p: 0..1
-      try {
-        onProgress(Math.round(p * 100));
-      } catch (e) {
-        // swallow UI errors
-      }
-    });
-
-    // Promise wrapper for finished event
-    const finishedPromise = new Promise((resolve, reject) => {
-      let finished = false;
-      const finishHandler = (blob) => {
-        finished = true;
-        cleanup();
-        resolve(blob);
-      };
-      const errorHandler = (err) => {
-        cleanup();
-        reject(err || new Error('GIF render failed'));
-      };
-
-      function cleanup() {
-        try {
-          gif.removeEventListener && gif.removeEventListener('finished', finishHandler);
-          gif.on && gif.on('finished', null); // defensive
-        } catch (_) {}
-      }
-
-      // Bind gif.js finish
-      gif.on('finished', finishHandler);
-      // Some implementations provide 'abort' or 'error'; listen generically
-      gif.on('error', errorHandler);
-      
-      // Timeout to detect stuck render
-      const to = setTimeout(() => {
-        if (!finished) {
-          errorHandler(new Error(`GIF render timeout after ${cfg.timeoutMs}ms`));
-        }
-      }, cfg.timeoutMs);
-      // Ensure we clear timeout on resolve/reject
-      finishedPromise.finally(() => clearTimeout(to));
-    });
-
-    // Add frames (synchronously)
-    for (let i = 0; i < totalFrames; i++) {
-      const frame = frames[i];
-      // frame can be:
-      // - {canvas} -> use directly
-      // - {capture: true} -> capture from app current state
-      // - {time: <ms>} -> set app state to that cut/time then capture (caller must have prepared)
-      let canvas;
-      if (frame.canvas) {
-        canvas = frame.canvas;
-      } else if (frame.capture) {
-        canvas = captureFrameAsCanvas(app);
-      } else {
-        throw new Error('Unsupported frame descriptor. Must provide canvas or capture: true.');
-      }
-      const frameDelay = typeof frame.delay === 'number' ? frame.delay : delay || cfg.delay;
-      // addFrame: gif.js uses addFrame(canvas, {delay})
-      gif.addFrame(canvas, { delay: frameDelay });
-      // Minimal progress update after adding frame(s)
-      const addedPct = Math.round(((i + 1) / totalFrames) * 5); // small bump until render starts
-      onProgress(addedPct);
-    }
-
-    // Trigger render
-    // Some gif.js versions use gif.render(); others auto-render after render() call
+--- gif-exporter.js 追加関数（要貼り換え） ---
+/**
+ * generateGifBlob
+ * @param {{ frames: Array, width: number, height: number, delay: number, loop: number }} opts
+ * @returns {Promise<Blob>} resolves to image/gif Blob
+ */
+async function generateGifBlob(opts) {
+  // 既存の GIF エンコーダ実装を Promise 化して Blob を返す想定
+  return new Promise((resolve, reject) => {
     try {
-      gif.render();
+      // 例：既存 encoder が `encoder.render(frames, callback(arrayBuffer))` のような形なら
+      const encoder = createGifEncoder(opts.width, opts.height, /*他パラ*/);
+      encoder.setDelay(opts.delay ?? 100);
+      encoder.setRepeat(opts.loop ?? 0);
+      for (const frame of opts.frames) {
+        // frame は Canvas / ImageData / ImageBitmap のいずれかを想定
+        encoder.addFrame(frame);
+      }
+      encoder.finish((arrayBufferOrUint8) => {
+        try {
+          const blob = new Blob([arrayBufferOrUint8], { type: 'image/gif' });
+          resolve(blob);
+        } catch (e) {
+          reject(new Error('GIF_BLOB_CREATION_FAILED: ' + (e && e.message)));
+        }
+      });
     } catch (err) {
-      // If render throws, reject
-      throw err;
+      reject(new Error('GIF_GENERATION_FAILED: ' + (err && err.message)));
     }
+  });
+}
 
-    // Wait for finishedPromise to resolve -> Blob
-    const blob = await finishedPromise;
-    onProgress(100);
-    return blob;
+--- export-manager.js 追加関数（要貼り換え） ---
+/**
+ * copyGifToClipboard
+ * Attempts to copy a Blob with MIME image/gif to the clipboard.
+ * Throws an Error with code property on failure.
+ */
+async function copyGifToClipboard(blob) {
+  if (!navigator.clipboard) {
+    const err = new Error('Clipboard API not available');
+    err.code = 'NO_CLIPBOARD_API';
+    throw err;
   }
-
-  // Exported API
-  global.GIFExporter = {
-    exportGIF
-  };
-
-})(this);
-
-
-NOTES:
-
-workerScriptPath must point to a valid gif.worker.js that matches the GIF library version. If repo does not include it, add system/exporters/gif.worker.js (grab from gif.js release) or implement an inline fallback (advanced). For file://, relative path resolution must be correct (e.g. same folder).
-
-frames は「canvas」を直接渡す設計にしておくと API が単純。呼び出し側（export-manager）で Pixi の extract を用いて canvas を作るのが明確で、安全。
-
-onProgress は 0..100 の整数で報告する。UI 側はこの値でプログレスバーを更新する。
-
---- FILE: system/export-manager.js ---
-PURPOSE:
-
-既存の export-manager.js が gif-exporter を呼び出している箇所を Promise/await に書き換える。
-
-PATCH EXAMPLE (重要箇所のみ):
-
-// system/export-manager.js (pseudo)
-async function exportAsGif({ app, cuts, onProgress }) {
-  // Prepare frames: produce array of canvases in correct order
-  const frames = [];
-  for (let cut of cuts) {
-    // Ensure application state is set to the cut
-    // If cuts need to change stage, use existing camera/state manager APIs.
-    // After state is set, extract canvas:
-    app.ticker.update(); // ensure render updated (if necessary)
-    const canvas = app.renderer.extract.canvas(app.stage);
-    frames.push({ canvas, delay: cut.delay || 100 });
+  if (typeof ClipboardItem === 'undefined') {
+    const err = new Error('ClipboardItem not supported in this environment');
+    err.code = 'NO_CLIPBOARDITEM';
+    throw err;
   }
-
+  // Ensure Blob MIME
+  let targetBlob = blob;
+  if (blob.type !== 'image/gif') {
+    // convert to gif MIME wrapper if possible
+    const buffer = await blob.arrayBuffer();
+    targetBlob = new Blob([buffer], { type: 'image/gif' });
+  }
   try {
-    const blob = await GIFExporter.exportGIF({
-      app,
-      frames,
-      delay: 100,
-      onProgress,
-      workerScriptPath: 'system/exporters/gif.worker.js' // repo relative
-    });
-    // do something with blob: download/save/copy
-    return blob;
-  } catch (err) {
-    // propagate error to UI
+    const clipboardItem = new ClipboardItem({ 'image/gif': targetBlob });
+    await navigator.clipboard.write([clipboardItem]);
+    return;
+  } catch (e) {
+    // attach code for caller
+    const err = new Error('CLIPBOARD_WRITE_FAILED: ' + (e && e.message));
+    err.code = 'CLIPBOARD_WRITE_FAILED';
+    err.inner = e;
     throw err;
   }
 }
 
-
---- FILE: ui/export-popup.js ---
-PURPOSE:
-
-エクスポート開始/進捗表示/キャンセルを表示する UI。exporter の onProgress を受けてプログレスを更新する。
-
-PATCH EXAMPLE (pseudo):
-
-// ui/export-popup.js (relevant excerpt)
-function startGifExport(app, cuts) {
-  const progressEl = document.getElementById('export-progress');
-  const btnCancel = document.getElementById('export-cancel');
-
-  let cancelled = false;
-  btnCancel.onclick = () => {
-    cancelled = true;
-    // Note: gif.js supports abort via gif.abort() if available; not all versions
-    // Provide user-visible cancellation and throw in export-manager if not supported.
-  };
-
-  function onProgress(pct) {
-    if (cancelled) return;
-    progressEl.value = pct;
+/**
+ * tryCopyGifWithFallback
+ * Attempts clipboard copy, on failure triggers download and opens in new tab.
+ */
+async function tryCopyGifWithFallback(blob, filename = 'tegaki-export.gif') {
+  try {
+    await copyGifToClipboard(blob);
+    return { ok: true, method: 'clipboard' };
+  } catch (err) {
+    // Fallback: auto-download + open in new tab for manual right-click copy
+    try {
+      // trigger download
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      // append to DOM for file:// environments too
+      (document.body || document.documentElement).appendChild(a);
+      a.click();
+      a.remove();
+      // open in new tab (ユーザーが右クリックでコピー可能)
+      window.open(url, '_blank');
+      // release URL after a delay to allow tab to fetch
+      setTimeout(() => URL.revokeObjectURL(url), 10000);
+    } catch (dlErr) {
+      // 最低限の通知用の Error を返す
+      const fallbackErr = new Error('FALLBACK_DOWNLOAD_FAILED: ' + (dlErr && dlErr.message));
+      fallbackErr.code = 'FALLBACK_DOWNLOAD_FAILED';
+      throw fallbackErr;
+    }
+    return { ok: false, method: 'download' };
   }
-
-  exportManager.exportAsGif({ app, cuts, onProgress })
-    .then(blob => {
-      // present/save blob, close popup
-    })
-    .catch(err => {
-      // show clear error message to user
-      alert('GIF export failed: ' + (err && err.message ? err.message : 'unknown'));
-    });
 }
 
+--- export-popup.js（UI 呼び出し例） ---
+async function onGifCopyButtonClicked() {
+  // UI 最小制御（無駄なダイアログは出さない）
+  try {
+    // 1) GIF Blob を生成
+    const gifBlob = await generateGifBlob({
+      frames: getFramesForExport(), // 呼び出し側で統一フォーマットを渡す
+      width: exportWidth,
+      height: exportHeight,
+      delay: 100,
+      loop: 0
+    });
+    // 2) コピー試行（内部でフォールバックを行う）
+    const result = await tryCopyGifWithFallback(gifBlob, 'tegaki-export.gif');
+    if (result.ok && result.method === 'clipboard') {
+      showMinimalNotice('GIFをクリップボードにコピーしました。'); // 最小の UI メッセージ
+    } else {
+      showMinimalNotice('環境制約のためファイルをダウンロードしました（右クリックでコピーしてください）。');
+    }
+  } catch (err) {
+    // 失敗時は最小限のエラーメッセージに留める
+    console.error('GIF copy/export failed:', err);
+    showMinimalNotice('GIFのコピーに失敗しました（詳細はコンソール）。');
+  }
+}
 
---- DEBUG CHECKLIST (優先順) ---
+------------------------
+6) テスト項目（開発者向け）
+------------------------
+1. 正常系（Clipboard対応環境）
+   - Chrome stable で HTTPS / localhost 環境：GIFを生成 -> クリップボードへ貼り付け（例：Gmail作成欄, Paint, Slack）でアニメGIFが貼られるか。
+2. 環境依存（file://）
+   - file:// 実行時に copy が失敗することを想定。フォールバックでダウンロード+新規タブが起動すること。
+3. 型チェック
+   - Blob の MIME が image/gif であること、生成時のサイズが妥当であること。
+4. 大きさ/パフォーマンス
+   - フレーム数やサイズが大きい時のメモリ挙動・UIブロッキングがないか（非同期で処理）。
+5. エラーハンドリング
+   - 権限や例外（Clipboard write rejected, NotAllowedErrorなど）の復帰シナリオを確認。
 
-確認: system/exporters/gif.worker.js がリポジトリに存在するか、パスが正しいか。workerScriptPath を絶対ではなく repo 相対で指定しているか。（file:// での path 解決注意）
+------------------------
+7) ドキュメント（後続Claude向けの注記）
+------------------------
+・API一覧（シンプル）
+  - gif-exporter.generateGifBlob(opts) -> Promise<Blob>
+  - export-manager.copyGifToClipboard(blob) -> Promise<void> (rejectで理由)
+  - export-manager.tryCopyGifWithFallback(blob, filename) -> Promise<{ok:boolean,method:string}>
+  - UI側での呼び出しは上記 tryCopyGifWithFallback を利用する。
 
-ブラウザ DevTools の Network タブで worker の読み込み失敗（404）や CORS エラーが出ていないかを確認。
+・命名規則
+  - エクスポーターは `generateXxx...`、マネージャは `exportAsXxx...` / `copyXxx...`。Promise ベース。
 
-gif ライブラリの on('progress', fn) が呼ばれているかを確認（existing code で progress が 0% のままなら event が正しくバインドされているか）。
+・注意点
+  - file:// 実行ではブラウザの制約で clipboard.write が動作しない可能性が高い点を明記。
+  - 可能であれば開発時は `http://localhost` でテストすること（ただし今回改修は file:// を妨げない実装にする）。
 
-メモリ問題の確認: 大きなキャンバスやフレーム数が多い場合、Blob 生成で長時間停止することがある。最初は小さい画像サイズ、少ないフレーム数（例: 3フレーム、128x128）で試験してみる。
+------------------------
+8) 追加メモ（技術的背景）
+------------------------
+・ClipboardItem と navigator.clipboard.write は、画像の MIME をサポートすれば「ブラウザ組み込みの画像コピー」と同等の効果を持つ。
+・しかしブラウザ実装依存（特に image/gif の扱い）やセキュリティ制約があるため、確実に動かすには「Blob を生成 -> ClipboardItem に渡す」実装 + フォールバックを同梱するのが現実的。
+・右クリックと完全に同一の内部実装はできない（ブラウザ内部 API に依存するため）が、「ユーザーが右クリックでコピーできるようにファイルを開く」フォールバックで代用できる。
 
-呼び出し側の state restore（"restoring state"）が render をブロックしないか。app.ticker.update() などで強制描画を行い、extract が正しいピクセルを取得できるか確認。
+------------------------
+9) 実装優先タスクリスト（小分け、Claudeがそのまま実装できる順）
+------------------------
+① gif-exporter.js に `generateGifBlob` を実装（最重要）
+② export-manager.js に `copyGifToClipboard` と `tryCopyGifWithFallback` を実装
+③ UI（export-popup.js）からの呼び出しを繋ぐ（ハンドラの追加）
+④ 単体テスト（手順をREADMEに追記）
+⑤ edge-case のログとエラーコードの整備（console.error は最小に）
 
-もし gif.js を使っているなら、バージョン互換（workerScript の API 変更）を確認。workerScript が workerScriptPath でなく workerPath など別名を要求する場合あり。
+------------------------
+10) 参考になるコードスニペット（短縮版、コピペ可）
+------------------------
+（コピー処理のコア：短縮）
+async function copyGifToClipboardCore(blob) {
+  if (!navigator.clipboard || typeof ClipboardItem === 'undefined') throw { code:'NO_CLIPBOARD' };
+  const b = (blob.type === 'image/gif') ? blob : new Blob([await blob.arrayBuffer()], { type:'image/gif' });
+  const item = new ClipboardItem({ 'image/gif': b });
+  await navigator.clipboard.write([item]);
+}
 
---- FALLBACKS & SAFETY ---
+（フォールバックのダウンロード）
+function downloadBlob(blob, filename='file.gif') {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(()=>URL.revokeObjectURL(url), 10000);
+}
 
-ハング検出のため timeoutMs を導入している。タイムアウト到達時は reject し、UI に明示的なエラーを返す。
+------------------------
+11) 最後に（結論）
+------------------------
+- まずは gif-exporter 側で「正しい GIF Blob（image/gif）」を確実に作ることが最重要（これが無ければ Clipboard 側は無意味）。
+- 次に export-manager 側で ClipboardItem を正しく使って書き込む。環境依存で失敗するため、確実なフォールバック（ダウンロードと新しいタブで開く）を用意する。
+- file:// 実行環境ではブラウザの制約で直接コピーが不可の場合があることを念頭に置く（開発時は localhost を推奨）。
+- 上記の関数群は小さく、後続の Claude により可読に改修しやすい設計にしてある。JSDoc を付け、エラーコードで判別できるようにすること。
 
-フェイルセーフで自動再試行は行わない（仕様に基づく）。ただし、エラー時は「工数少で再試行する手順」をドキュメントで示す。
-
-ベクターデータは canvas 化（extract）してから gif ライブラリに渡す。内部的にベクタ表現をシリアライズしない（所有権・座標系の混乱回避）。
-
---- TEST PLAN ---
-
-小さなサンプルで動作確認
-
-3 frames, 200x200 px, delay 200ms, workerScript が読み込めることを確認
-
-Expect: progress updates 0→100, blob returned, download works
-
-file:// 実行確認
-
-Chrome でローカル直読みによる worker 読み込みが拒否されるケースがあるため、worker をリポジトリ内に置き相対パス指定で確認
-
-メモリストレス試験
-
-大サイズ（1920x1080, frames 30）で時間・メモリを監視。必要なら Frame size / frame countの制限をUIで警告。
-
-異常系
-
-worker 読み込み失敗：明確なエラーメッセージを UI に表示
-
-render タイムアウト：UI に「レンダリングがタイムアウトしました（ログ参照）」を表示
-
---- DOCUMENTATION NOTES FOR NEXT DEVELOPER (Claude) ---
-
-GIFExporter.exportGIF は Promise を返す。呼び出し側は await で待つこと。進捗は onProgress callback を渡すこと。
-
-frames は canvas オブジェクトの配列（または {canvas, delay} の配列）を渡す設計にすると呼び出しが明確・安全（capture は呼び出し側で行う）。
-
-ベクタ→ラスタ変換は呼び出し側の責務とする。これにより exporter はラスタデータのみを扱い、データ所有権が明確になる。
-
-workerScript のバージョンを repo に同梱すること。file:// 環境でのロードを最優先で確認。
-
---- ESTIMATED CODE CHANGES (concise) ---
-
-Add/replace system/exporters/gif-exporter.js with Promise-based implementation (example above).
-
-Ensure system/exporters/gif.worker.js exists and matches the gif.js version used. If not present, add it.
-
-Update system/export-manager.js to prepare frames as canvases and call GIFExporter.exportGIF(...) via await.
-
-Update ui/export-popup.js to provide onProgress and handle reject/error.
-
---- LOGGING GUIDELINES ---
-
-Keep console logs minimal and actionable:
-
-One INFO at start: "GIF export started (N frames, WxH)"
-
-On error: console.error('GIF export error', err)
-
-Avoid per-frame verbose logs.
-
-For debugging, temporarily enable verbose logging via a debug flag.
-
---- END OF PLAN ---
-
-
---- explanation / final notes ---
-- 上の実装例は **gif.js（jnordberg/gif.js）互換 API** を想定しています。もし別の GIF ライブラリ（例えば gif-encoder 等）を使っているなら、`gif.addFrame` / `gif.render` / `on('finished')` といった部分をそのライブラリの対応する API に置き換えてください。  
-- 最も高頻度で失敗する原因は **worker のロード（file://）** です。まず `system/exporters/gif.worker.js` が存在するか、Network タブで 404 になっていないかを確認してください。これが直れば進捗が動く可能性が高いです。  
-- まずは上の `exportGIF` を導入して小さい画像（例: 200x200、3フレーム）で動作確認してください。動くなら段階的に実ケースに戻します。  
+以上。必要であれば、指示に従って実際の差分パッチ（ファイル単位のパッチ）をこのまま作成します。  
+（追記不要ならここで作業は完了です）
