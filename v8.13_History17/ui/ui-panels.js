@@ -1,7 +1,7 @@
-// ===== ui-panels.js - ExportPopup参照修正版 =====
+// ===== ui-panels.js - アルバム連携実装版 =====
 // 🎯 改修内容：
-// - export-tool イベントハンドラ実装
-// - ExportPopup正しい参照 (window.TEGAKI_EXPORT_POPUP)
+// - library-tool クリック時にAlbumPopup表示
+// - AlbumPopupインスタンスの初期化と管理
 
 window.TegakiUI = {
     
@@ -61,7 +61,8 @@ window.TegakiUI = {
                 if (!e.target.closest('.popup-panel') && 
                     !e.target.closest('.layer-transform-panel') &&
                     !e.target.closest('.tool-button') &&
-                    !e.target.closest('.layer-panel-container')) {
+                    !e.target.closest('.layer-panel-container') &&
+                    !e.target.closest('#album-popup')) {
                     this.closeAllPopups();
                 }
             });
@@ -111,24 +112,22 @@ window.TegakiUI = {
                     this.updateToolUI('gif-animation');
                 },
                 'library-tool': () => {
-                    alert('アルバム保管機能は準備中です\n\n今後の実装予定:\n- ブラウザ内保存（localStorage/IndexedDB）\n- レイヤー構造含む復元\n- サムネイル表示\n- 削除機能');
                     this.closeAllPopups();
+                    
+                    if (this.albumPopup) {
+                        this.albumPopup.show();
+                    } else {
+                        alert('アルバムシステムが初期化されていません');
+                    }
                 },
                 'export-tool': () => {
-                    console.log('[ExportUI] export-tool clicked');
-                    
-                    // まず他のポップアップを閉じる
                     this.closeAllPopups();
                     
-                    // 次にエクスポートポップアップを表示
                     if (window.TEGAKI_EXPORT_POPUP) {
-                        console.log('[ExportUI] Opening export popup...');
                         window.TEGAKI_EXPORT_POPUP.show();
                     } else if (window.exportPopup) {
-                        console.log('[ExportUI] Using fallback exportPopup');
                         window.exportPopup.show();
                     } else {
-                        console.error('[ExportUI] ExportPopup not found');
                         alert('エクスポートシステムが初期化されていません');
                     }
                 }
@@ -168,12 +167,16 @@ window.TegakiUI = {
         }
 
         closeAllPopups() {
-            // エクスポートポップアップ以外を閉じる
             document.querySelectorAll('.popup-panel').forEach(popup => {
                 if (popup.id !== 'export-popup') {
                     popup.classList.remove('show');
                 }
             });
+            
+            if (this.albumPopup) {
+                this.albumPopup.hide();
+            }
+            
             this.activePopup = null;
         }
 
@@ -501,4 +504,4 @@ window.TegakiUI = {
     }
 };
 
-console.log('✅ ui-panels.js ExportPopup参照修正版 loaded');
+console.log('✅ ui-panels.js アルバム連携実装版 loaded');
