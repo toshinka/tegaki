@@ -10,14 +10,12 @@ window.QuickExportUI = (function() {
             this.exportManager = null;
             this.button = null;
             this.popup = null;
-            this.lastSaveHandles = {}; // format別の保存先記憶
+            this.lastSaveHandles = {};
             
-            // 初期化を遅延実行（exportManagerの準備を待つ）
             this.initWhenReady();
         }
         
         initWhenReady() {
-            // exportManagerが利用可能になるまで待機
             const checkInterval = setInterval(() => {
                 if (window.exportManager) {
                     clearInterval(checkInterval);
@@ -27,7 +25,6 @@ window.QuickExportUI = (function() {
                 }
             }, 100);
             
-            // 10秒でタイムアウト
             setTimeout(() => clearInterval(checkInterval), 10000);
         }
         
@@ -80,7 +77,6 @@ window.QuickExportUI = (function() {
             
             document.body.appendChild(this.button);
             
-            // キーボードショートカット: Ctrl+E
             document.addEventListener('keydown', (e) => {
                 if (e.ctrlKey && e.key === 'e') {
                     e.preventDefault();
@@ -98,7 +94,7 @@ window.QuickExportUI = (function() {
         }
         
         showPopup() {
-            this.closePopup(); // 既存のポップアップを削除
+            this.closePopup();
             
             this.popup = document.createElement('div');
             this.popup.id = 'quick-export-popup';
@@ -146,13 +142,11 @@ window.QuickExportUI = (function() {
             
             document.body.appendChild(this.popup);
             
-            // イベントリスナー
             this.popup.querySelector('#qe-apng').onclick = () => this.handleExport('apng');
             this.popup.querySelector('#qe-webp').onclick = () => this.handleExport('webp');
             this.popup.querySelector('#qe-gif').onclick = () => this.handleExport('gif');
             this.popup.querySelector('#qe-close').onclick = () => this.closeWindow();
             
-            // 外側クリックで閉じる
             setTimeout(() => {
                 const handleOutsideClick = (e) => {
                     if (this.popup && 
@@ -184,37 +178,32 @@ window.QuickExportUI = (function() {
             try {
                 let blob, filename;
                 
-                // フォーマット別のエクスポート実行
                 switch(format) {
                     case 'gif':
                         const gifExporter = this.exportManager.exporters.gif;
                         if (!gifExporter) throw new Error('GIF exporter not available');
-                        const gifResult = await gifExporter.generateGifBlob();
-                        blob = gifResult;
+                        blob = await gifExporter.generateBlob();
                         filename = `animation_${this.getTimestamp()}.gif`;
                         break;
                         
                     case 'apng':
-                        // APNG実装待ち - 暫定的にGIF
-                        status.textContent = '⚠️ APNG coming soon, using GIF';
-                        const tempResult = await this.exportManager.exporters.gif.generateGifBlob();
-                        blob = tempResult;
-                        filename = `animation_${this.getTimestamp()}.gif`;
+                        const apngExporter = this.exportManager.exporters.apng;
+                        if (!apngExporter) throw new Error('APNG exporter not available');
+                        blob = await apngExporter.generateBlob();
+                        filename = `animation_${this.getTimestamp()}.png`;
                         break;
                         
                     case 'webp':
-                        // WebP実装待ち - 暫定的にGIF
-                        status.textContent = '⚠️ WebP coming soon, using GIF';
-                        const tempResult2 = await this.exportManager.exporters.gif.generateGifBlob();
-                        blob = tempResult2;
-                        filename = `animation_${this.getTimestamp()}.gif`;
+                        const webpExporter = this.exportManager.exporters.webp;
+                        if (!webpExporter) throw new Error('WebP exporter not available');
+                        blob = await webpExporter.generateBlob();
+                        filename = `animation_${this.getTimestamp()}.webp`;
                         break;
                         
                     default:
                         throw new Error(`Unknown format: ${format}`);
                 }
                 
-                // File System Access API試行
                 const saved = await this.saveWithFileSystemAPI(blob, filename, format);
                 
                 if (saved) {
@@ -230,39 +219,32 @@ window.QuickExportUI = (function() {
             } catch (error) {
                 status.textContent = `❌ ${error.message}`;
                 status.style.color = '#dc3545';
-                console.error('Export failed:', error);
             }
         }
         
         async saveWithFileSystemAPI(blob, filename, format) {
-            // File System Access API が利用可能か確認
             if (!window.showSaveFilePicker) {
-                // フォールバック: ダウンロード
                 this.downloadFile(blob, filename);
                 return false;
             }
             
             try {
-                // 前回の保存先ハンドルを使用（クイック保存）
                 let handle = this.lastSaveHandles[format];
                 
                 if (!handle) {
-                    // 初回または新規保存先選択
                     handle = await window.showSaveFilePicker({
                         suggestedName: filename,
                         types: [{
                             description: `${format.toUpperCase()} Animation`,
                             accept: { 
-                                [`image/${format}`]: [`.${format}`] 
+                                [`image/${format === 'apng' ? 'png' : format}`]: [`.${format === 'apng' ? 'png' : format}`] 
                             }
                         }]
                     });
                     
-                    // 保存先を記憶
                     this.lastSaveHandles[format] = handle;
                 }
                 
-                // ファイルに書き込み
                 const writable = await handle.createWritable();
                 await writable.write(blob);
                 await writable.close();
@@ -271,12 +253,9 @@ window.QuickExportUI = (function() {
                 
             } catch (error) {
                 if (error.name === 'AbortError') {
-                    // ユーザーがキャンセル
                     throw new Error('Cancelled');
                 }
                 
-                // エラー時はダウンロードにフォールバック
-                console.warn('File System API failed, fallback to download:', error);
                 this.downloadFile(blob, filename);
                 return false;
             }
@@ -311,14 +290,12 @@ window.QuickExportUI = (function() {
         }
         
         setupMessageBridge() {
-            // 親ウィンドウとの通信（将来拡張用）
             window.addEventListener('message', (event) => {
                 if (event.data.type === 'request-quick-export') {
                     this.showPopup();
                 }
             });
             
-            // 準備完了を通知
             if (window.opener) {
                 window.opener.postMessage({ 
                     type: 'tegaki-ready',
@@ -331,7 +308,6 @@ window.QuickExportUI = (function() {
     return QuickExportUI;
 })();
 
-// グローバル初期化
 window.addEventListener('DOMContentLoaded', () => {
     window.quickExportUI = new window.QuickExportUI();
 });
