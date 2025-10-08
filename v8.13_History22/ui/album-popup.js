@@ -1,6 +1,7 @@
 /**
  * アルバムポップアップ
- * 通常スナップショット（レイヤー保持）とGIFスナップショット（ラスター化）の両対応
+ * 通常スナップショット（レイヤー保持）専用
+ * カメラフレーム内のみキャプチャ
  */
 
 class AlbumPopup {
@@ -13,7 +14,6 @@ class AlbumPopup {
     this.popup = null;
     this.isOpen = false;
     this.snapshots = [];
-    this.previewIntervals = new Map();
   }
 
   show() {
@@ -26,9 +26,6 @@ class AlbumPopup {
 
   hide() {
     if (!this.isOpen) return;
-    
-    this.previewIntervals.forEach(id => clearInterval(id));
-    this.previewIntervals.clear();
     
     if (this.overlay) {
       this.overlay.remove();
@@ -78,7 +75,6 @@ class AlbumPopup {
     `;
     controls.innerHTML = `
       <button id="albumSave" style="padding: 8px 20px; border: 2px solid var(--futaba-maroon); border-radius: 8px; background: var(--futaba-background); color: var(--futaba-maroon); font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 14px;">現在の状態を保存</button>
-      <button id="albumSaveGIF" style="padding: 8px 20px; border: 2px solid var(--futaba-maroon); border-radius: 8px; background: var(--futaba-background); color: var(--futaba-maroon); font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 14px;">GIF保存</button>
     `;
 
     const gallery = document.createElement('div');
@@ -89,7 +85,7 @@ class AlbumPopup {
       overflow-x: hidden;
       padding: 16px;
       display: grid;
-      grid-template-columns: repeat(6, 130px);
+      grid-template-columns: repeat(auto-fill, 130px);
       gap: 12px;
       align-content: start;
       justify-content: start;
@@ -104,12 +100,6 @@ class AlbumPopup {
     if (saveBtn) {
       saveBtn.onclick = () => this._saveSnapshot();
       this._setupButtonHover(saveBtn);
-    }
-
-    const saveGIFBtn = document.getElementById('albumSaveGIF');
-    if (saveGIFBtn) {
-      saveGIFBtn.onclick = () => this._saveAsGIF();
-      this._setupButtonHover(saveGIFBtn);
     }
     
     this.overlay.onclick = (e) => {
@@ -136,171 +126,102 @@ class AlbumPopup {
 
   async _saveSnapshot() {
     const snapshot = await this._captureSnapshot();
-    this.snapshots.push(snapshot);
-    this._saveToStorage();
-    this._renderGallery();
-  }
-
-  async _saveAsGIF() {
-    if (!this.animationSystem) return;
-
-    const exportManager = window.TegakiCoreEngine?.exportManager;
-    if (!exportManager || !exportManager.gifExporter) {
-      alert('GIFエクスポーターが利用できません');
-      return;
-    }
-
-    try {
-      const blob = await exportManager.gifExporter.generateGifBlob();
-      const dataUrl = await this._blobToDataURL(blob);
-      
-      const thumbnail = await this._createGIFThumbnail(dataUrl);
-
-      const cuts = this.animationSystem.animationData.cuts || [];
-      const frames = [];
-      
-      for (let i = 0; i < cuts.length; i++) {
-        const renderTexture = PIXI.RenderTexture.create({
-          width: this.app.screen.width,
-          height: this.app.screen.height
-        });
-
-        this.app.renderer.render({
-          container: cuts[i].container,
-          target: renderTexture
-        });
-
-        const canvas = this.app.renderer.extract.canvas(renderTexture);
-        const frameData = canvas.toDataURL('image/png');
-        frames.push(frameData);
-        
-        renderTexture.destroy(true);
-      }
-
-      const snapshot = {
-        id: Date.now(),
-        type: 'gif',
-        timestamp: Date.now(),
-        thumbnail,
-        frames,
-        gifBlob: dataUrl,
-        frameDelay: 100,
-        loop: true
-      };
-
+    if (snapshot && snapshot.thumbnail) {
       this.snapshots.push(snapshot);
       this._saveToStorage();
       this._renderGallery();
-    } catch (error) {
-      alert('GIF生成に失敗しました: ' + error.message);
     }
   }
 
-  async _blobToDataURL(blob) {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
-      reader.readAsDataURL(blob);
-    });
-  }
-
-  async _createGIFThumbnail(dataUrl) {
-    return dataUrl;
-  }
-
   async _captureSnapshot() {
+    // AnimationSystemから現在のカットコンテナを取得
+    if (!this.animationSystem || !this.animationSystem.animationData) {
+      alert('アニメーションシステムが初期化されていません');
+      return null;
+    }
+
+    const currentCutIndex = this.animationSystem.getCurrentCutIndex();
+    const cuts = this.animationSystem.animationData.cuts || [];
+    const currentCut = cuts[currentCutIndex];
+    
+    if (!currentCut || !currentCut.container) {
+      alert('現在のカットが見つかりません');
+      return null;
+    }
+
+    const CONFIG = window.TEGAKI_CONFIG;
+    
+    // カットコンテナ全体をレンダリング（背景レイヤー含む）
     const renderTexture = PIXI.RenderTexture.create({
-      width: this.app.screen.width,
-      height: this.app.screen.height
+      width: CONFIG.canvas.width,
+      height: CONFIG.canvas.height
     });
 
     this.app.renderer.render({
-      container: this.app.stage,
+      container: currentCut.container,
       target: renderTexture
     });
 
     const canvas = this.app.renderer.extract.canvas(renderTexture);
-    const thumbnail = this._createThumbnail(canvas);
+    const thumbnail = canvas.toDataURL('image/png');
     
     renderTexture.destroy(true);
 
+    // レイヤー情報の保存（背景レイヤー含む）
     const cutStates = [];
-    if (this.animationSystem && this.animationSystem.animationData) {
-      const cuts = this.animationSystem.animationData.cuts || [];
-      cuts.forEach((cut, index) => {
-        const layerStates = [];
-        if (cut.container && cut.container.children) {
-          cut.container.children.forEach(layer => {
-            if (layer.layerData) {
-              const layerState = {
-                id: layer.layerData.id,
-                name: layer.layerData.name,
-                visible: layer.visible,
-                opacity: layer.alpha,
-                isBackground: layer.layerData.isBackground || false,
-                paths: []
-              };
+    cuts.forEach((cut, index) => {
+      const layerStates = [];
+      if (cut.container && cut.container.children) {
+        cut.container.children.forEach(layer => {
+          if (layer.layerData) {
+            const layerState = {
+              id: layer.layerData.id,
+              name: layer.layerData.name,
+              visible: layer.visible,
+              opacity: layer.alpha,
+              isBackground: layer.layerData.isBackground || false,
+              paths: []
+            };
 
-              if (!layer.layerData.isBackground && layer.layerData.paths) {
-                layerState.paths = layer.layerData.paths.map(p => ({
-                  id: p.id,
-                  points: structuredClone(p.points),
-                  color: p.color,
-                  size: p.size,
-                  opacity: p.opacity,
-                  tool: p.tool
-                }));
-              }
-
-              layerStates.push(layerState);
+            // 背景レイヤーの情報も保存
+            if (layer.layerData.isBackground) {
+              layerState.backgroundColor = CONFIG.background.color || 0xF0E0D6;
+            } else if (layer.layerData.paths) {
+              layerState.paths = layer.layerData.paths.map(p => ({
+                id: p.id,
+                points: structuredClone(p.points),
+                color: p.color,
+                size: p.size,
+                opacity: p.opacity,
+                tool: p.tool
+              }));
             }
-          });
-        }
-        cutStates.push({
-          index,
-          layerStates
+
+            layerStates.push(layerState);
+          }
         });
+      }
+      cutStates.push({
+        index,
+        layerStates
       });
-    }
+    });
 
     return {
       id: Date.now(),
-      type: 'layered',
       timestamp: Date.now(),
       thumbnail,
-      currentCut: this.animationSystem ? this.animationSystem.getCurrentCutIndex() : 0,
+      currentCut: currentCutIndex,
       cutStates
     };
   }
 
-  _createThumbnail(source) {
-    let canvas;
-    if (typeof source === 'string') {
-      const img = new Image();
-      img.src = source;
-      canvas = document.createElement('canvas');
-      canvas.width = img.naturalWidth || this.app.screen.width;
-      canvas.height = img.naturalHeight || this.app.screen.height;
-      const ctx = canvas.getContext('2d');
-      ctx.drawImage(img, 0, 0);
-    } else {
-      canvas = source;
-    }
-    
-    return canvas.toDataURL('image/png');
-  }
-
   async _loadSnapshot(snapshot) {
-    if (snapshot.type === 'gif') {
-      await this._loadGIFSnapshot(snapshot);
-      return;
-    }
-
     if (!this.animationSystem) return;
 
     const cuts = this.animationSystem.animationData.cuts;
     
+    // 必要なカット数を確保
     while (cuts.length < snapshot.cutStates.length) {
       if (this.animationSystem.createNewEmptyCut) {
         this.animationSystem.createNewEmptyCut();
@@ -309,39 +230,50 @@ class AlbumPopup {
       }
     }
 
+    // 各カットのレイヤーを復元
     snapshot.cutStates.forEach((cutState, cutIndex) => {
       if (cutIndex >= cuts.length) return;
       
       const cut = cuts[cutIndex];
       if (!cut.container) return;
 
+      // 既存のレイヤーをすべて削除
       while (cut.container.children.length > 0) {
         const child = cut.container.children[0];
         cut.container.removeChild(child);
         if (child.destroy) child.destroy({ children: true });
       }
 
+      // レイヤーを復元
       cutState.layerStates.forEach(layerState => {
         const layerContainer = new PIXI.Container();
-        layerContainer.visible = layerState.visible !== false;
-        layerContainer.alpha = layerState.opacity;
         layerContainer.label = layerState.name;
+        
+        // 表示状態を正しく設定
+        const isVisible = layerState.visible !== false;
+        layerContainer.visible = isVisible;
+        layerContainer.alpha = layerState.opacity;
         
         layerContainer.layerData = {
           id: layerState.id,
           name: layerState.name,
+          visible: isVisible, // layerDataにも明示的に設定
+          opacity: layerState.opacity,
           isBackground: layerState.isBackground || false,
           paths: []
         };
 
         if (layerState.isBackground) {
+          // 背景レイヤーを復元
           const bg = new PIXI.Graphics();
           const CONFIG = window.TEGAKI_CONFIG;
+          const bgColor = layerState.backgroundColor || CONFIG.background.color || 0xF0E0D6;
           bg.rect(0, 0, CONFIG.canvas.width, CONFIG.canvas.height);
-          bg.fill(CONFIG.background.color || 0xF0E0D6);
+          bg.fill(bgColor);
           layerContainer.addChild(bg);
           layerContainer.layerData.backgroundGraphics = bg;
         } else {
+          // 通常レイヤーのパスを復元
           layerState.paths.forEach(pathData => {
             const graphics = new PIXI.Graphics();
             pathData.points.forEach(point => {
@@ -368,6 +300,7 @@ class AlbumPopup {
         cut.container.addChild(layerContainer);
       });
 
+      // サムネイル更新
       if (this.animationSystem.generateCutThumbnail) {
         setTimeout(() => {
           this.animationSystem.generateCutThumbnail(cutIndex);
@@ -375,10 +308,12 @@ class AlbumPopup {
       }
     });
 
+    // カット切り替え
     if (this.animationSystem.setCutIndex) {
       this.animationSystem.setCutIndex(snapshot.currentCut);
     }
 
+    // レイヤーパネル更新
     setTimeout(() => {
       if (this.layerSystem && this.layerSystem.updateLayerPanelUI) {
         this.layerSystem.updateLayerPanelUI();
@@ -386,102 +321,11 @@ class AlbumPopup {
     }, 200);
 
     this.hide();
-  }
-
-  async _loadGIFSnapshot(snapshot) {
-    if (!this.animationSystem) return;
-
-    const cuts = this.animationSystem.animationData.cuts;
-    
-    while (cuts.length < snapshot.frames.length) {
-      if (this.animationSystem.createNewEmptyCut) {
-        this.animationSystem.createNewEmptyCut();
-      } else if (this.animationSystem.addCut) {
-        this.animationSystem.addCut();
-      }
-    }
-
-    for (let i = 0; i < snapshot.frames.length; i++) {
-      if (i >= cuts.length) break;
-      
-      const cut = cuts[i];
-      if (!cut.container) continue;
-
-      while (cut.container.children.length > 0) {
-        const child = cut.container.children[0];
-        cut.container.removeChild(child);
-        if (child.destroy) child.destroy({ children: true });
-      }
-
-      const img = new Image();
-      await new Promise(resolve => {
-        img.onload = resolve;
-        img.src = snapshot.frames[i];
-      });
-
-      const texture = PIXI.Texture.from(img);
-      const sprite = new PIXI.Sprite(texture);
-
-      const layerContainer = new PIXI.Container();
-      layerContainer.label = 'GIFレイヤー';
-      layerContainer.addChild(sprite);
-      
-      layerContainer.layerData = {
-        id: Date.now() + i,
-        name: 'GIFレイヤー',
-        isBackground: false,
-        paths: []
-      };
-
-      cut.container.addChild(layerContainer);
-
-      if (this.animationSystem.generateCutThumbnail) {
-        setTimeout(() => {
-          this.animationSystem.generateCutThumbnail(i);
-        }, 50 + i * 20);
-      }
-    }
-
-    if (this.animationSystem.setCutIndex) {
-      this.animationSystem.setCutIndex(0);
-    }
-
-    setTimeout(() => {
-      if (this.layerSystem && this.layerSystem.updateLayerPanelUI) {
-        this.layerSystem.updateLayerPanelUI();
-      }
-    }, 200);
-
-    this.hide();
-  }
-
-  _fitImageToContainer(img, containerW, containerH) {
-    const iw = img.naturalWidth || img.width || 1;
-    const ih = img.naturalHeight || img.height || 1;
-    const imgAspect = iw / ih;
-    const containerAspect = containerW / containerH;
-    
-    if (imgAspect >= containerAspect) {
-      img.style.width = '100%';
-      img.style.height = 'auto';
-    } else {
-      img.style.width = 'auto';
-      img.style.height = '100%';
-    }
   }
 
   _renderGallery() {
     const gallery = document.getElementById('albumGallery');
     if (!gallery) return;
-
-    if (this.previewIntervals && this.previewIntervals.size > 0) {
-      for (const imgEl of Array.from(this.previewIntervals.keys())) {
-        if (!document.body.contains(imgEl)) {
-          clearInterval(this.previewIntervals.get(imgEl));
-          this.previewIntervals.delete(imgEl);
-        }
-      }
-    }
 
     gallery.innerHTML = '';
 
@@ -515,14 +359,11 @@ class AlbumPopup {
       img.src = snapshot.thumbnail;
       img.style.cssText = `
         display: block;
-        max-width: 100%;
-        max-height: 100%;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
         cursor: pointer;
       `;
-      
-      img.onload = () => {
-        this._fitImageToContainer(img, 130, 98);
-      };
       
       img.onclick = (e) => {
         e.stopPropagation();
@@ -542,36 +383,21 @@ class AlbumPopup {
         flex-shrink: 0;
       `;
 
-      if (snapshot.type === 'gif') {
-        card.onmouseenter = () => {
-          card.style.transform = 'translateY(-2px)';
-          card.style.borderColor = 'var(--futaba-maroon)';
-          card.style.boxShadow = '0 4px 8px rgba(128, 0, 0, 0.2)';
-          this._startGIFPreview(snapshot, img);
-        };
-        card.onmouseleave = () => {
-          card.style.transform = 'translateY(0)';
-          card.style.borderColor = 'var(--futaba-light-medium)';
-          card.style.boxShadow = 'none';
-          this._stopGIFPreview(snapshot, img);
-        };
-      } else {
-        card.onmouseenter = () => {
-          card.style.transform = 'translateY(-2px)';
-          card.style.borderColor = 'var(--futaba-maroon)';
-          card.style.boxShadow = '0 4px 8px rgba(128, 0, 0, 0.2)';
-        };
-        card.onmouseleave = () => {
-          card.style.transform = 'translateY(0)';
-          card.style.borderColor = 'var(--futaba-light-medium)';
-          card.style.boxShadow = 'none';
-        };
-      }
+      card.onmouseenter = () => {
+        card.style.transform = 'translateY(-2px)';
+        card.style.borderColor = 'var(--futaba-maroon)';
+        card.style.boxShadow = '0 4px 8px rgba(128, 0, 0, 0.2)';
+      };
+      card.onmouseleave = () => {
+        card.style.transform = 'translateY(0)';
+        card.style.borderColor = 'var(--futaba-light-medium)';
+        card.style.boxShadow = 'none';
+      };
 
       const downloadBtn = this._createIconButton(
         '<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>',
         'var(--futaba-maroon)',
-        () => snapshot.type === 'gif' ? this._downloadAsGIF(snapshot) : this._downloadAsPNG(snapshot)
+        () => this._downloadAsPNG(snapshot)
       );
       
       const delBtn = this._createIconButton(
@@ -587,40 +413,6 @@ class AlbumPopup {
       card.appendChild(actions);
       gallery.appendChild(card);
     });
-  }
-
-  _createCompactButton(text, color, onClick) {
-    const btn = document.createElement('button');
-    btn.textContent = text;
-    btn.style.cssText = `
-      flex: 1;
-      background: var(--futaba-background);
-      border: 1px solid var(--futaba-light-medium);
-      color: ${color};
-      padding: 4px 6px;
-      cursor: pointer;
-      border-radius: 4px;
-      font-size: 11px;
-      font-weight: 600;
-      transition: all 0.2s;
-      height: 24px;
-      white-space: nowrap;
-    `;
-    btn.onmouseenter = () => {
-      btn.style.background = color;
-      btn.style.color = 'var(--text-inverse)';
-      btn.style.borderColor = color;
-    };
-    btn.onmouseleave = () => {
-      btn.style.background = 'var(--futaba-background)';
-      btn.style.color = color;
-      btn.style.borderColor = 'var(--futaba-light-medium)';
-    };
-    btn.onclick = (e) => {
-      e.stopPropagation();
-      onClick();
-    };
-    return btn;
   }
 
   _createIconButton(svgContent, color, onClick) {
@@ -663,45 +455,10 @@ class AlbumPopup {
     return btn;
   }
 
-  _startGIFPreview(snapshot, imgElement) {
-    if (snapshot.type !== 'gif' || !snapshot.frames) return;
-    
-    this._stopGIFPreview(snapshot, imgElement);
-
-    let frameIndex = 0;
-    const intervalId = setInterval(() => {
-      frameIndex = (frameIndex + 1) % snapshot.frames.length;
-      imgElement.src = snapshot.frames[frameIndex];
-    }, snapshot.frameDelay || 100);
-    
-    this.previewIntervals.set(imgElement, intervalId);
-  }
-
-  _stopGIFPreview(snapshot, imgElement) {
-    const intervalId = this.previewIntervals.get(imgElement);
-    if (intervalId) {
-      clearInterval(intervalId);
-      this.previewIntervals.delete(imgElement);
-    }
-    imgElement.src = snapshot.thumbnail;
-  }
-
   _downloadAsPNG(snapshot) {
     const link = document.createElement('a');
     link.download = `snapshot_${snapshot.id}.png`;
     link.href = snapshot.thumbnail;
-    link.click();
-  }
-
-  async _downloadAsGIF(snapshot) {
-    if (!snapshot.gifBlob) {
-      alert('GIFデータが見つかりません');
-      return;
-    }
-
-    const link = document.createElement('a');
-    link.download = `animation_${snapshot.id}.gif`;
-    link.href = snapshot.gifBlob;
     link.click();
   }
 
@@ -714,15 +471,10 @@ class AlbumPopup {
   _saveToStorage() {
     const data = this.snapshots.map(s => ({
       id: s.id,
-      type: s.type || 'layered',
       timestamp: s.timestamp,
       thumbnail: s.thumbnail,
       currentCut: s.currentCut,
-      cutStates: s.cutStates,
-      frames: s.frames,
-      gifBlob: s.gifBlob,
-      frameDelay: s.frameDelay,
-      loop: s.loop
+      cutStates: s.cutStates
     }));
     localStorage.setItem('tegaki_album', JSON.stringify(data));
   }
@@ -732,9 +484,6 @@ class AlbumPopup {
     if (stored) {
       try {
         this.snapshots = JSON.parse(stored);
-        this.snapshots.forEach(s => {
-          if (!s.type) s.type = 'layered';
-        });
       } catch (e) {
         this.snapshots = [];
       }
