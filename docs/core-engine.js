@@ -1,8 +1,8 @@
-// ===== core-engine.js - Phase 2: Redo対応完全版 =====
+// ===== core-engine.js - ブックマークレットモード対応版 =====
 // ================================================================================
-// Phase 2改修内容:
-// - stopDrawing()のdo()メソッド実装（Redo可能に）
-// - History.jsのEventBus修正対応
+// 改修内容:
+// - ブックマークレットモード検出・対応
+// - exportForBookmarklet() メソッド追加
 // - 既存機能完全継承
 // ================================================================================
 
@@ -527,9 +527,13 @@
         }
     }
 
+    // ===== [追加] ブックマークレットモード対応 CoreEngine =====
     class CoreEngine {
-        constructor(app) {
+        constructor(app, config = {}) {
             this.app = app;
+            
+            // ブックマークレットモード検出
+            this.isBookmarkletMode = config.isBookmarkletMode || false;
             
             this.eventBus = window.TegakiEventBus;
             if (!this.eventBus) {
@@ -544,6 +548,7 @@
             this.animationSystem = null;
             this.timelineUI = null;
             this.keyHandler = null;
+            this.exportManager = null;
             
             this.setupCrossReferences();
             this.setupSystemEventIntegration();
@@ -681,6 +686,33 @@
             }
         }
         
+        // ===== [追加] ブックマークレット用エクスポートAPI =====
+        /**
+         * ブックマークレット用Blob取得
+         * @param {string} format - 'png'|'apng'|'gif'|'webp'
+         * @param {Object} options - エクスポートオプション
+         * @returns {Promise<Blob>}
+         */
+        async exportForBookmarklet(format = 'gif', options = {}) {
+            if (!this.exportManager) {
+                throw new Error('ExportManager is not initialized');
+            }
+            
+            // フォーマット別にBlob取得
+            switch(format.toLowerCase()) {
+                case 'png':
+                    return await this.exportManager.exportAsPNGBlob(options);
+                case 'apng':
+                    return await this.exportManager.exportAsAPNGBlob(options);
+                case 'gif':
+                    return await this.exportManager.exportAsGIFBlob(options);
+                case 'webp':
+                    return await this.exportManager.exportAsWebPBlob(options);
+                default:
+                    throw new Error(`Unsupported format: ${format}`);
+            }
+        }
+        
         getCameraSystem() { return this.cameraSystem; }
         getLayerManager() { return this.layerSystem; }
         getDrawingEngine() { return this.drawingEngine; }
@@ -689,6 +721,7 @@
         getTimelineUI() { return this.timelineUI; }
         getKeyHandler() { return this.keyHandler; }
         getEventBus() { return this.eventBus; }
+        getExportManager() { return this.exportManager; }
         
         setupCanvasEvents() {
             const canvas = this.app.canvas || this.app.view;
@@ -774,6 +807,16 @@
             
             this.initializeAnimationSystem();
             
+            // ExportManager初期化
+            if (window.ExportManager && this.animationSystem) {
+                this.exportManager = new window.ExportManager(
+                    this.app,
+                    this.layerSystem,
+                    this.animationSystem,
+                    this.cameraSystem
+                );
+            }
+            
             this.keyHandler = new UnifiedKeyHandler(
                 this.cameraSystem,
                 this.layerSystem,
@@ -798,7 +841,7 @@
             });
             
             this.eventBus.emit('core:initialized', {
-                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history']
+                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'export']
             });
             
             return this;
@@ -819,3 +862,5 @@
     };
 
 })();
+
+console.log('✅ core-engine.js (bookmarklet mode) loaded');
