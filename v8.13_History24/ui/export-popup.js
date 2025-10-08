@@ -1,6 +1,6 @@
 // ==================================================
 // ui/export-popup.js
-// エクスポートUI管理 - プレビュー統一版
+// エクスポートUI管理 - プレビュー統一版（Optional Chaining除去）
 // ==================================================
 window.ExportPopup = (function() {
     'use strict';
@@ -28,32 +28,30 @@ window.ExportPopup = (function() {
                 popup.style.minWidth = '420px';
                 popup.style.maxWidth = '600px';
                 
-                popup.innerHTML = `
-                    <div class="popup-title">画像・アニメ出力</div>
-                    <div class="format-selection">
-                        <button class="format-btn selected" data-format="png">PNG</button>
-                        <button class="format-btn" data-format="gif">GIF</button>
-                        <button class="format-btn disabled" data-format="pdf">PDF</button>
-                    </div>
-                    <div class="export-options" id="export-options"></div>
-                    <div class="export-progress" id="export-progress" style="display: none;">
-                        <div class="progress-bar">
-                            <div class="progress-fill"></div>
-                        </div>
-                        <div class="progress-text">0%</div>
-                    </div>
-                    <div class="preview-container" id="preview-container" style="display: none; margin: 8px 0; text-align: center; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 6px; padding: 8px; max-height: 350px; overflow: auto;">
-                        <div id="preview-message" style="font-size: 12px; color: var(--futaba-maroon); margin-bottom: 8px; font-weight: 500;">
-                            プレビューを表示しました。右クリックでコピーできます
-                        </div>
-                        <img id="preview-image" style="max-width: 100%; max-height: 300px; width: auto; height: auto; object-fit: contain; border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: context-menu; display: block; margin: 0 auto;" />
-                    </div>
-                    <div class="export-status" id="export-status" style="display: none; font-size: 12px; color: var(--text-secondary); margin: 8px 0;"></div>
-                    <div class="export-actions">
-                        <button class="action-button" id="export-execute">ダウンロード</button>
-                        <button class="action-button secondary" id="export-preview" style="display: none;">プレビュー</button>
-                    </div>
-                `;
+                popup.innerHTML = '<div class="popup-title">画像・アニメ出力</div>' +
+                    '<div class="format-selection">' +
+                        '<button class="format-btn selected" data-format="png">PNG</button>' +
+                        '<button class="format-btn" data-format="gif">GIF</button>' +
+                        '<button class="format-btn disabled" data-format="pdf">PDF</button>' +
+                    '</div>' +
+                    '<div class="export-options" id="export-options"></div>' +
+                    '<div class="export-progress" id="export-progress" style="display: none;">' +
+                        '<div class="progress-bar">' +
+                            '<div class="progress-fill"></div>' +
+                        '</div>' +
+                        '<div class="progress-text">0%</div>' +
+                    '</div>' +
+                    '<div class="preview-container" id="preview-container" style="display: none; margin: 8px 0; text-align: center; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 6px; padding: 8px; max-height: 350px; overflow: auto;">' +
+                        '<div id="preview-message" style="font-size: 12px; color: var(--futaba-maroon); margin-bottom: 8px; font-weight: 500;">' +
+                            'プレビューを表示しました。右クリックでコピーできます' +
+                        '</div>' +
+                        '<img id="preview-image" style="max-width: 100%; max-height: 300px; width: auto; height: auto; object-fit: contain; border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: context-menu; display: block; margin: 0 auto;" />' +
+                    '</div>' +
+                    '<div class="export-status" id="export-status" style="display: none; font-size: 12px; color: var(--text-secondary); margin: 8px 0;"></div>' +
+                    '<div class="export-actions">' +
+                        '<button class="action-button" id="export-execute">ダウンロード</button>' +
+                        '<button class="action-button secondary" id="export-preview" style="display: none;">プレビュー</button>' +
+                    '</div>';
                 
                 document.body.appendChild(popup);
             }
@@ -85,7 +83,7 @@ window.ExportPopup = (function() {
                         const exportIcon = document.getElementById('export-tool');
                         
                         if (popup && !popup.contains(e.target) && 
-                            e.target !== exportIcon && !exportIcon?.contains(e.target)) {
+                            e.target !== exportIcon && (!exportIcon || !exportIcon.contains(e.target))) {
                             this.hide();
                         }
                     }, 0);
@@ -126,12 +124,22 @@ window.ExportPopup = (function() {
             this.hidePreview();
         }
         
+        getCutCount() {
+            if (this.manager && this.manager.animationSystem && 
+                this.manager.animationSystem.getAnimationData) {
+                const animData = this.manager.animationSystem.getAnimationData();
+                if (animData && animData.cuts) {
+                    return animData.cuts.length;
+                }
+            }
+            return 1;
+        }
+        
         updatePreviewButtonVisibility() {
             const previewBtn = document.getElementById('export-preview');
             if (!previewBtn) return;
             
-            // 動画形式判定（GIFまたはAPNG）
-            const cutCount = this.manager?.animationSystem?.getAnimationData?.()?.cuts?.length || 1;
+            const cutCount = this.getCutCount();
             const isAnimation = this.selectedFormat === 'gif' || (this.selectedFormat === 'png' && cutCount >= 2);
             
             previewBtn.style.display = isAnimation ? 'block' : 'none';
@@ -141,46 +149,50 @@ window.ExportPopup = (function() {
             const optionsEl = document.getElementById('export-options');
             if (!optionsEl) return;
             
-            const canvasWidth = window.TEGAKI_CONFIG?.canvas.width || 400;
-            const canvasHeight = window.TEGAKI_CONFIG?.canvas.height || 400;
-            const cutCount = this.manager?.animationSystem?.getAnimationData?.()?.cuts?.length || 1;
-            const quality = window.TEGAKI_CONFIG?.animation?.exportSettings?.quality || 10;
+            let canvasWidth = 400;
+            let canvasHeight = 400;
+            if (window.TEGAKI_CONFIG && window.TEGAKI_CONFIG.canvas) {
+                canvasWidth = window.TEGAKI_CONFIG.canvas.width;
+                canvasHeight = window.TEGAKI_CONFIG.canvas.height;
+            }
             
-            // PNG自動判定の説明
+            const cutCount = this.getCutCount();
+            
+            let quality = 10;
+            if (window.TEGAKI_CONFIG && window.TEGAKI_CONFIG.animation && 
+                window.TEGAKI_CONFIG.animation.exportSettings) {
+                quality = window.TEGAKI_CONFIG.animation.exportSettings.quality;
+            }
+            
             const pngDescription = cutCount >= 2 
-                ? `全${cutCount}個のCUTをAPNG（アニメーションPNG）として出力します。`
-                : `現在のキャンバスをPNG画像として出力します。`;
+                ? '全' + cutCount + '個のCUTをAPNG（アニメーションPNG）として出力します。'
+                : '現在のキャンバスをPNG画像として出力します。';
+            
+            const cutInfo = cutCount >= 2 ? (' / CUT数: ' + cutCount) : '';
             
             const optionsMap = {
-                'png': `
-                    <div class="setting-label">PNG出力（CUT数で自動判定）</div>
-                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
-                        ${pngDescription}<br>
-                        サイズ: ${canvasWidth}×${canvasHeight}px${cutCount >= 2 ? ` / CUT数: ${cutCount}` : ''}
-                    </div>
-                `,
-                'gif': `
-                    <div class="setting-label">GIFアニメーション出力</div>
-                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
-                        全${cutCount}個のCUTをGIFアニメーションとして出力します。<br>
-                        品質: ${quality} / フレーム数: ${cutCount}
-                    </div>
-                `,
-                'pdf': `
-                    <div class="setting-label">PDF出力</div>
-                    <div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">
-                        準備中 - 将来実装予定
-                    </div>
-                `
+                'png': '<div class="setting-label">PNG出力（CUT数で自動判定）</div>' +
+                    '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
+                        pngDescription + '<br>' +
+                        'サイズ: ' + canvasWidth + '×' + canvasHeight + 'px' + cutInfo +
+                    '</div>',
+                'gif': '<div class="setting-label">GIFアニメーション出力</div>' +
+                    '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
+                        '全' + cutCount + '個のCUTをGIFアニメーションとして出力します。<br>' +
+                        '品質: ' + quality + ' / フレーム数: ' + cutCount +
+                    '</div>',
+                'pdf': '<div class="setting-label">PDF出力</div>' +
+                    '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
+                        '準備中 - 将来実装予定' +
+                    '</div>'
             };
             
             optionsEl.innerHTML = optionsMap[format] || '';
             
-            // プレビューボタン表示更新
             this.updatePreviewButtonVisibility();
         }
         
-        showPreview(blob, message = null) {
+        showPreview(blob, message) {
             const container = document.getElementById('preview-container');
             const img = document.getElementById('preview-image');
             const messageEl = document.getElementById('preview-message');
@@ -219,7 +231,7 @@ window.ExportPopup = (function() {
             if (img) img.src = '';
         }
         
-        showStatus(message, isError = false) {
+        showStatus(message, isError) {
             const statusEl = document.getElementById('export-status');
             if (!statusEl) return;
             
@@ -242,7 +254,7 @@ window.ExportPopup = (function() {
             
             const disabledFormats = ['pdf'];
             if (disabledFormats.includes(this.selectedFormat)) {
-                this.showStatus(`${this.selectedFormat.toUpperCase()}出力は準備中です`, true);
+                this.showStatus(this.selectedFormat.toUpperCase() + '出力は準備中です', true);
                 return;
             }
             
@@ -259,7 +271,7 @@ window.ExportPopup = (function() {
             try {
                 await this.manager.export(this.selectedFormat, {});
             } catch (error) {
-                this.showStatus(`エクスポート失敗: ${error.message}`, true);
+                this.showStatus('エクスポート失敗: ' + error.message, true);
                 if (progressEl) progressEl.style.display = 'none';
                 if (executeBtn) executeBtn.disabled = false;
                 if (previewBtn) previewBtn.disabled = false;
@@ -274,7 +286,7 @@ window.ExportPopup = (function() {
             
             const disabledFormats = ['pdf'];
             if (disabledFormats.includes(this.selectedFormat)) {
-                this.showStatus(`${this.selectedFormat.toUpperCase()}のプレビューは準備中です`, true);
+                this.showStatus(this.selectedFormat.toUpperCase() + 'のプレビューは準備中です', true);
                 return;
             }
             
@@ -291,8 +303,7 @@ window.ExportPopup = (function() {
             }
             if (executeBtn) executeBtn.disabled = true;
             
-            // アニメーション形式の場合は進捗表示
-            const cutCount = this.manager?.animationSystem?.getAnimationData?.()?.cuts?.length || 1;
+            const cutCount = this.getCutCount();
             const isAnimation = this.selectedFormat === 'gif' || (this.selectedFormat === 'png' && cutCount >= 2);
             
             if (isAnimation && progressEl) {
@@ -300,12 +311,12 @@ window.ExportPopup = (function() {
             }
             
             try {
-                const { blob, format } = await this.manager.generatePreview(this.selectedFormat, {});
+                const result = await this.manager.generatePreview(this.selectedFormat, {});
                 
                 if (progressEl) progressEl.style.display = 'none';
                 
-                const formatName = format === 'apng' ? 'APNG' : format.toUpperCase();
-                this.showPreview(blob, `${formatName}プレビューを表示しました。右クリックでコピーできます`);
+                const formatName = result.format === 'apng' ? 'APNG' : result.format.toUpperCase();
+                this.showPreview(result.blob, formatName + 'プレビューを表示しました。右クリックでコピーできます');
                 
                 if (previewBtn) {
                     previewBtn.textContent = 'プレビュー';
@@ -315,7 +326,7 @@ window.ExportPopup = (function() {
                 this.resetProgress();
                 
             } catch (error) {
-                this.showStatus(`プレビュー生成失敗: ${error.message}`, true);
+                this.showStatus('プレビュー生成失敗: ' + error.message, true);
                 if (previewBtn) {
                     previewBtn.textContent = 'プレビュー';
                     previewBtn.disabled = false;
@@ -338,8 +349,8 @@ window.ExportPopup = (function() {
                 percent = Math.round((data.current / data.total) * 100);
             }
             
-            if (progressFill) progressFill.style.width = `${percent}%`;
-            if (progressText) progressText.textContent = `${percent}%`;
+            if (progressFill) progressFill.style.width = percent + '%';
+            if (progressText) progressText.textContent = percent + '%';
         }
         
         onExportCompleted(data) {
@@ -353,8 +364,8 @@ window.ExportPopup = (function() {
             
             this.resetProgress();
             
-            const formatName = data.format === 'apng' ? 'APNG' : data.format?.toUpperCase();
-            this.showStatus(`${formatName}ダウンロード完了`);
+            const formatName = data.format === 'apng' ? 'APNG' : (data.format ? data.format.toUpperCase() : 'PNG');
+            this.showStatus(formatName + 'ダウンロード完了', false);
             setTimeout(() => this.hideStatus(), 2000);
         }
         
@@ -367,7 +378,7 @@ window.ExportPopup = (function() {
             if (executeBtn) executeBtn.disabled = false;
             if (previewBtn) previewBtn.disabled = false;
             
-            this.showStatus(`エクスポート失敗: ${data.error}`, true);
+            this.showStatus('エクスポート失敗: ' + data.error, true);
             this.resetProgress();
         }
         
