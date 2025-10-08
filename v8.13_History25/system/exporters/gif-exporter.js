@@ -1,277 +1,95 @@
-// ==================================================
-// system/exporters/gif-exporter.js
-// GIFアニメーションエクスポーター - generateBlob統一版
-// ==================================================
-window.GIFExporter = (function() {
-    'use strict';
-    
-    class GIFExporter {
-        constructor(exportManager) {
-            if (!exportManager) {
-                throw new Error('GIFExporter: exportManager is required');
-            }
-            this.manager = exportManager;
-            this.isExporting = false;
-            this.workerBlobURL = null;
-        }
-        
-        /**
-         * GIF Blob生成（プレビュー/ダウンロード兼用）
-         */
-        async generateBlob(options = {}) {
-            if (this.isExporting) {
-                throw new Error('GIF export already in progress');
-            }
-            
-            if (!this.manager?.animationSystem) {
-                throw new Error('AnimationSystem not available');
-            }
-            
-            const animData = this.manager.animationSystem.getAnimationData();
-            if (!animData?.cuts || animData.cuts.length === 0) {
-                throw new Error('アニメーションにCUTが含まれていません');
-            }
-            
-            const settings = {
-                width: options.width || window.TEGAKI_CONFIG.canvas.width,
-                height: options.height || window.TEGAKI_CONFIG.canvas.height,
-                quality: options.quality || window.TEGAKI_CONFIG.animation.exportSettings.quality
-            };
-            
-            const maxSize = window.TEGAKI_CONFIG.animation.exportSettings;
-            if (settings.width > maxSize.maxWidth) {
-                const ratio = maxSize.maxWidth / settings.width;
-                settings.width = maxSize.maxWidth;
-                settings.height = Math.round(settings.height * ratio);
-            }
-            if (settings.height > maxSize.maxHeight) {
-                const ratio = maxSize.maxHeight / settings.height;
-                settings.height = maxSize.maxHeight;
-                settings.width = Math.round(settings.width * ratio);
-            }
-            
-            this.isExporting = true;
-            
-            try {
-                if (!this.workerBlobURL) {
-                    this.workerBlobURL = await this.createWorkerBlobURL();
-                }
-                
-                const gif = new GIF({
-                    quality: settings.quality,
-                    width: settings.width,
-                    height: settings.height,
-                    workers: 2,
-                    workerScript: this.workerBlobURL
-                });
-                
-                gif.on('progress', (progress) => {
-                    const progressPercent = Math.round(progress * 100);
-                    window.TegakiEventBus?.emit('export:progress', { 
-                        format: 'gif',
-                        progress: progressPercent 
-                    });
-                });
-                
-                const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
-                
-                for (let i = 0; i < animData.cuts.length; i++) {
-                    const cut = animData.cuts[i];
-                    
-                    this.manager.animationSystem.applyCutToLayers(i);
-                    await this.waitFrame();
-                    
-                    const canvas = await this.renderCutToCanvas(settings);
-                    
-                    if (canvas) {
-                        gif.addFrame(canvas, { 
-                            delay: Math.round(cut.duration * 1000)
-                        });
-                    }
-                    
-                    window.TegakiEventBus?.emit('export:frame-rendered', { 
-                        frame: i + 1, 
-                        total: animData.cuts.length 
-                    });
-                }
-                
-                this.manager.animationSystem.restoreFromSnapshots(backupSnapshots);
-                
-                const blob = await this.renderGIF(gif);
-                
-                this.isExporting = false;
-                return blob;
-                
-            } catch (error) {
-                this.isExporting = false;
-                throw new Error('GIF generation failed: ' + error.message);
-            }
-        }
-        
-        /**
-         * GIFエクスポート（ダウンロード）
-         */
-        async export(options = {}) {
-            try {
-                window.TegakiEventBus?.emit('export:started', { format: 'gif' });
-                
-                const blob = await this.generateBlob(options);
-                
-                const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-                const filename = `tegaki_animation_${timestamp}.gif`;
-                
-                this.manager.downloadFile(blob, filename);
-                
-                const animData = this.manager.animationSystem.getAnimationData();
-                window.TegakiEventBus?.emit('export:completed', {
-                    format: 'gif',
-                    size: blob.size,
-                    cuts: animData.cuts.length,
-                    filename: filename
-                });
-                
-                return { blob, filename, format: 'gif' };
-                
-            } catch (error) {
-                window.TegakiEventBus?.emit('export:failed', { 
-                    format: 'gif',
-                    error: error.message
-                });
-                throw error;
-            }
-        }
-        
-        async createWorkerBlobURL() {
-            try {
-                const response = await fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js');
-                const workerCode = await response.text();
-                const blob = new Blob([workerCode], { type: 'application/javascript' });
-                return URL.createObjectURL(blob);
-            } catch (error) {
-                throw new Error('Worker script fetch failed: ' + error.message);
-            }
-        }
-        
-        renderGIF(gif) {
-            return new Promise((resolve, reject) => {
-                let finished = false;
-                const TIMEOUT_MS = 120000;
-                
-                const cleanup = () => {
-                    clearTimeout(timeoutId);
-                };
-                
-                const timeoutId = setTimeout(() => {
-                    if (!finished) {
-                        finished = true;
-                        cleanup();
-                        reject(new Error('GIF render timeout (120秒経過)'));
-                    }
-                }, TIMEOUT_MS);
-                
-                gif.on('finished', (blob) => {
-                    if (!finished) {
-                        finished = true;
-                        cleanup();
-                        resolve(blob);
-                    }
-                });
-                
-                gif.on('abort', () => {
-                    if (!finished) {
-                        finished = true;
-                        cleanup();
-                        reject(new Error('GIF render aborted'));
-                    }
-                });
-                
-                try {
-                    gif.render();
-                } catch (err) {
-                    if (!finished) {
-                        finished = true;
-                        cleanup();
-                        reject(err);
-                    }
-                }
-            });
-        }
-        
-        async renderCutToCanvas(settings) {
-            const renderTexture = PIXI.RenderTexture.create({
-                width: settings.width,
-                height: settings.height,
-                resolution: 1
-            });
-            
-            const tempContainer = new PIXI.Container();
-            
-            const layersContainer = this.manager.animationSystem.layerSystem.currentCutContainer;
-            if (!layersContainer) {
-                throw new Error('currentCutContainer not found');
-            }
-            
-            const originalParent = layersContainer.parent;
-            const originalPosition = { 
-                x: layersContainer.x, 
-                y: layersContainer.y,
-                scaleX: layersContainer.scale.x,
-                scaleY: layersContainer.scale.y
-            };
-            
-            if (originalParent) {
-                originalParent.removeChild(layersContainer);
-            }
-            
-            tempContainer.addChild(layersContainer);
-            layersContainer.position.set(0, 0);
-            
-            if (settings.width !== window.TEGAKI_CONFIG.canvas.width || 
-                settings.height !== window.TEGAKI_CONFIG.canvas.height) {
-                const scaleX = settings.width / window.TEGAKI_CONFIG.canvas.width;
-                const scaleY = settings.height / window.TEGAKI_CONFIG.canvas.height;
-                const scale = Math.min(scaleX, scaleY);
-                layersContainer.scale.set(scale, scale);
-                
-                const scaledWidth = window.TEGAKI_CONFIG.canvas.width * scale;
-                const scaledHeight = window.TEGAKI_CONFIG.canvas.height * scale;
-                layersContainer.position.set(
-                    (settings.width - scaledWidth) / 2,
-                    (settings.height - scaledHeight) / 2
-                );
-            }
-            
-            this.manager.app.renderer.render({
-                container: tempContainer,
-                target: renderTexture
-            });
-            
-            const canvas = this.manager.app.renderer.extract.canvas(renderTexture);
-            
-            tempContainer.removeChild(layersContainer);
-            layersContainer.position.set(originalPosition.x, originalPosition.y);
-            layersContainer.scale.set(originalPosition.scaleX, originalPosition.scaleY);
-            
-            if (originalParent) {
-                originalParent.addChild(layersContainer);
-            }
-            
-            renderTexture.destroy();
-            tempContainer.destroy();
-            
-            return canvas;
-        }
-        
-        waitFrame() {
-            return new Promise(resolve => {
-                requestAnimationFrame(() => {
-                    setTimeout(resolve, 16);
-                });
-            });
-        }
-    }
-    
-    return GIFExporter;
-})();
+class GIFExporter {
+  constructor(manager) {
+    this.manager = manager;
+  }
 
-console.log('✅ gif-exporter.js (generateBlob統一版) loaded');
+  async createWorkerBlobURL() {
+    try {
+      const localResp = await fetch('./vendor/gif.worker.js');
+      if (localResp.ok) {
+        const localCode = await localResp.text();
+        return URL.createObjectURL(new Blob([localCode], { type: 'application/javascript' }));
+      }
+    } catch (e) {
+    }
+
+    try {
+      const response = await fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js');
+      const workerCode = await response.text();
+      const blob = new Blob([workerCode], { type: 'application/javascript' });
+      return URL.createObjectURL(blob);
+    } catch (error) {
+      throw new Error('Worker script unavailable. Place gif.worker.js in ./vendor/ or use http(s) server.');
+    }
+  }
+
+  async generateBlob(options = {}) {
+    if (typeof GIF === 'undefined') {
+      throw new Error('GIF library not loaded');
+    }
+
+    const settings = this.manager.animationSystem.getSettings();
+    const cuts = this.manager.animationSystem.getCuts();
+
+    if (!cuts || cuts.length === 0) {
+      throw new Error('No animation cuts available');
+    }
+
+    const workerUrl = await this.createWorkerBlobURL();
+
+    const gif = new GIF({
+      workers: 2,
+      quality: options.quality || 10,
+      width: settings.width,
+      height: settings.height,
+      workerScript: workerUrl
+    });
+
+    const savedState = this.manager.layerSystem.saveLayerStates();
+
+    try {
+      for (let i = 0; i < cuts.length; i++) {
+        this.manager.animationSystem.applyCutToLayers(i);
+        await new Promise(resolve => requestAnimationFrame(resolve));
+
+        const canvas = await this.manager.renderToCanvas();
+        const duration = (typeof cuts[i].duration === 'number') ? cuts[i].duration : (1 / settings.fps);
+        const delayMs = Math.round(duration * 1000);
+
+        gif.addFrame(canvas, { delay: delayMs });
+      }
+
+      return new Promise((resolve, reject) => {
+        gif.on('finished', (blob) => {
+          URL.revokeObjectURL(workerUrl);
+          resolve(blob);
+        });
+        gif.on('error', (error) => {
+          URL.revokeObjectURL(workerUrl);
+          reject(error);
+        });
+        gif.render();
+      });
+
+    } finally {
+      this.manager.layerSystem.restoreLayerStates(savedState);
+    }
+  }
+
+  async export(options = {}) {
+    const blob = await this.generateBlob(options);
+    const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
+    const filename = options.filename || `animation_${timestamp}.gif`;
+
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+
+    return { success: true, filename };
+  }
+}
