@@ -1,80 +1,73 @@
-// mebuki-loader.js
-(function() {
-  if (globalThis.mebukiStart) {
-    // すでにロード済みなら再実行
+(function(){
+  if(globalThis.mebukiStart){
     globalThis.mebukiStart();
     return;
   }
 
-  // お絵かきツールのURL（docs/index.html をエントリにしている想定）
-  const toolUrl = 'https://toshinka.github.io/tegaki/?mode=mebuki';
+  globalThis.mebukiStart = function(){
+    // PixiJS アプリの canvas を直接 overlay に生成
+    const overlay = document.createElement('div');
+    overlay.id = 'tegaki-overlay';
+    overlay.style.position = 'fixed';
+    overlay.style.top = '0';
+    overlay.style.left = '0';
+    overlay.style.width = '100%';
+    overlay.style.height = '100%';
+    overlay.style.zIndex = '999999';
+    overlay.style.background = 'rgba(0,0,0,0.6)';
+    document.body.appendChild(overlay);
 
-  // iFrameでツールを呼び出す
-  function openTool() {
-    // 既にiFrameが存在すれば再利用
-    if (document.getElementById('tegaki-iframe')) {
-      document.getElementById('tegaki-iframe').style.display = 'block';
-      return;
-    }
+    const canvas = document.createElement('canvas');
+    canvas.id = 'tegaki-canvas';
+    canvas.style.width = '80%';
+    canvas.style.height = '80%';
+    canvas.style.margin = '5% auto';
+    canvas.style.display = 'block';
+    overlay.appendChild(canvas);
 
-    const iframe = document.createElement('iframe');
-    iframe.id = 'tegaki-iframe';
-    iframe.src = toolUrl;
-    iframe.style.position = 'fixed';
-    iframe.style.top = '0';
-    iframe.style.left = '0';
-    iframe.style.width = '100%';
-    iframe.style.height = '100%';
-    iframe.style.zIndex = '999999';
-    iframe.style.border = 'none';
-    iframe.style.background = '#fff';
-    document.body.appendChild(iframe);
+    // TODO: PixiJS 初期化して canvas に描画
+    const app = new PIXI.Application({ view: canvas, width:800, height:600 });
 
-    // メッセージ受信: ツールから描画完了PNGを受け取る
-    window.addEventListener('message', async (ev) => {
-      if (!ev.data || !ev.data.type) return;
+    // 完了ボタン
+    const btn = document.createElement('button');
+    btn.textContent = "完了して添付";
+    btn.style.position = 'absolute';
+    btn.style.bottom = '20px';
+    btn.style.left = '50%';
+    btn.style.transform = 'translateX(-50%)';
+    overlay.appendChild(btn);
 
-      if (ev.data.type === 'tegaki:close') {
-        iframe.remove();
-      }
-
-      if (ev.data.type === 'tegaki:export') {
-        const blob = await (await fetch(ev.data.dataUrl)).blob();
-        const file = new File([blob], "tegaki.png", { type: "image/png" });
-
-        // Mebukiのfile inputを探す
-        let input = document.querySelector('input[type="file"][accept*="image/png"]');
-        if (!input) {
-          const btn = document.querySelector('.dt_r_status-button');
-          if (btn) btn.click();
-          input = await waitForInput();
-        }
-
-        // inputにFileをセット
+    btn.onclick = function(){
+      app.view.toBlob(blob => {
+        const file = new File([blob], "tegaki.png", { type:"image/png" });
         const dt = new DataTransfer();
         dt.items.add(file);
-        input.files = dt.files;
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-        iframe.remove();
-      }
-    });
-  }
 
-  // input[type=file] 出現待ち
-  function waitForInput() {
-    return new Promise((resolve, reject) => {
-      const observer = new MutationObserver(() => {
-        const input = document.querySelector('input[type="file"][accept*="image/png"]');
-        if (input) {
-          observer.disconnect();
+        detectFileInput().then(input => {
+          input.files = dt.files;
+          input.dispatchEvent(new Event("change", { bubbles:true }));
+          overlay.remove();
+          app.destroy(true);
+        });
+      });
+    };
+  };
+
+  function detectFileInput(){
+    let input = document.querySelector('input[type=file][accept*="image/png"]');
+    if(input) return Promise.resolve(input);
+    const btn = document.querySelector('.dt_r_status-button');
+    if(btn) btn.click();
+    return new Promise((resolve,reject)=>{
+      const obs = new MutationObserver(()=>{
+        input = document.querySelector('input[type=file][accept*="image/png"]');
+        if(input){
+          obs.disconnect();
           resolve(input);
         }
       });
-      observer.observe(document.body, { childList: true, subtree: true });
-      setTimeout(() => { observer.disconnect(); reject("Mebuki input not found"); }, 5000);
+      obs.observe(document.body,{childList:true,subtree:true});
+      setTimeout(()=>{obs.disconnect();reject("input not found");},5000);
     });
   }
-
-  // グローバルエントリ
-  globalThis.mebukiStart = openTool;
 })();

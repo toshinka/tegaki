@@ -1,3 +1,61 @@
+🚨はっちゃんキャンバス（canvas98）の突破方法
+
+canvas98 の bookmarklet を改めて見ると：
+
+javascript:(function(){
+  if(!globalThis.canvas98start){
+    var s=document.createElement('script');
+    s.charset='UTF-8';
+    s.src='https://canvas98.github.io/canvas98/all-in-one.js';
+    document.body.appendChild(s)
+  } else {
+    globalThis.canvas98start()
+  }
+})();
+
+
+→ iframe ではなく script タグで直接 JS を注入 してます。
+その JS (all-in-one.js) が 掲示板の DOM に直接「描画UI（キャンバス、ボタン）」を挿入して稼働 しているんです。
+
+つまり：
+
+iframe を使わない
+
+親ページの CSP を回避する
+
+直接 DOM に PixiJS アプリを生成して「掲示板上に浮かせる」
+
+この方式だから、ふたばや Mebuki のような CSP 強いサイトでも動作していたわけです。
+
+今の loader の問題点
+
+iframe に依存 → ブロックされる
+
+export 連携のメッセージングが不要に複雑になってる
+
+Tegaki 用に改良すべき方向
+
+iframe を廃止
+→ 代わりに script で直接 core-engine を注入して、PixiJS の <canvas> をページ内にオーバーレイ表示。
+
+「添付処理」だけを残す
+
+export した PNG を Mebuki の input[type=file] に注入する処理はそのまま残す
+
+ただし export は iframe 経由ではなく「アプリ内部 API」から直接呼び出す
+
+全体の流れ（はっちゃん方式を踏襲）
+
+Bookmarklet → loader を script タグで読み込み
+
+loader が globalThis.mebukiStart を登録
+
+mebukiStart() が Pixi アプリをページに直接挿入（position:fixed の canvas/UI）
+
+完了ボタンを押したら PNG → File → input[type=file] 注入
+
+-------
+
 Tegaki ブックマークレット for Futaba / Mebuki
 ──────────────────────────────────────────────
 目的:
