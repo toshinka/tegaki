@@ -1,0 +1,354 @@
+🚨はっちゃんキャンバス（canvas98）の突破方法
+
+canvas98 の bookmarklet を改めて見ると：
+
+javascript:(function(){
+  if(!globalThis.canvas98start){
+    var s=document.createElement('script');
+    s.charset='UTF-8';
+    s.src='https://canvas98.github.io/canvas98/all-in-one.js';
+    document.body.appendChild(s)
+  } else {
+    globalThis.canvas98start()
+  }
+})();
+
+
+→ iframe ではなく script タグで直接 JS を注入 してます。
+その JS (all-in-one.js) が 掲示板の DOM に直接「描画UI（キャンバス、ボタン）」を挿入して稼働 しているんです。
+
+つまり：
+
+iframe を使わない
+
+親ページの CSP を回避する
+
+直接 DOM に PixiJS アプリを生成して「掲示板上に浮かせる」
+
+この方式だから、ふたばや Mebuki のような CSP 強いサイトでも動作していたわけです。
+
+今の loader の問題点
+
+iframe に依存 → ブロックされる
+
+export 連携のメッセージングが不要に複雑になってる
+
+Tegaki 用に改良すべき方向
+
+iframe を廃止
+→ 代わりに script で直接 core-engine を注入して、PixiJS の <canvas> をページ内にオーバーレイ表示。
+
+「添付処理」だけを残す
+
+export した PNG を Mebuki の input[type=file] に注入する処理はそのまま残す
+
+ただし export は iframe 経由ではなく「アプリ内部 API」から直接呼び出す
+
+全体の流れ（はっちゃん方式を踏襲）
+
+Bookmarklet → loader を script タグで読み込み
+
+loader が globalThis.mebukiStart を登録
+
+mebukiStart() が Pixi アプリをページに直接挿入（position:fixed の canvas/UI）
+
+完了ボタンを押したら PNG → File → input[type=file] 注入
+
+-------
+
+掲示板連携機能：実装計画書（骨子）
+1. 目標とする機能とユーザー体験
+フェーズ	ユーザー操作	アプリの動作
+開始	掲示板のスレッドで、ユーザー様のお絵描きツール（Bookmarkletなど）を起動。	ツールがwindow.AppCoreなどを初期化し、掲示板のDOMの上に描画キャンバスを表示。
+描画	ユーザーがアニメーションを描画。（GIF/APNG/WebP）	ツールが描画データをメモリ内で保持。
+完了	ユーザーがツール内の「添付して終了」ボタンを押す。	アップロード処理を実行し、自動でレス入力ポップアップを開き、アニメーションファイルを添付。
+終了	ツールがキャンバスを削除し、掲示板画面に戻る。	レス入力ポップアップにアニメーションが表示された状態で、ユーザーはコメントや名前を入力して投稿するだけとなる。
+2. 必要なピースと実装モジュール
+この仕組みを実現するために必要な「ピース（機能）」は、以下の4つに分類されます。
+
+ピースA: アニメーションデータ生成・取得 (window.AppCore / window.ToolManager)
+目的	詳細
+データ生成	描画したフレームから、ターゲットとするアニメーション形式（GIF/APNG/WebP）のBlobデータを生成する機能。
+Blob取得	window.ToolManager.exportAnimationBlob()のようなメソッドで、生成したBlobデータを取得する。
+ピースB: 掲示板DOM操作・イベントエミュレーション (window.AttachmentManager 新設推奨)
+これが最も複雑で、Mebukiのロジックを流用する核となる部分です。
+
+目的	詳細
+ターゲット特定	非表示の <input type="file"> 要素、およびレス入力ポップアップを開くボタンを特定するロジックを実装。（document.querySelectorなどを使用）
+投稿ポップアップ起動	getTextarea()関数がやっていたように、まずレス入力ポップアップを開くボタンをプログラム的にクリックする。
+データ注入	Blobを**Fileオブジェクトに変換し、ターゲットの<input type="file">要素の files プロパティに設定するロジック。（クリップボード回避の核心）**
+イベント発火	ファイル設定後、ターゲットの<input>要素に対して**changeイベント**をディスパッチし、掲示板のアップロード処理をトリガーする。
+ピースC: アプリの起動・終了管理 (window.AppCore)
+目的	詳細
+終了待機	アニメーションのBlob生成と添付イベントの発火が完了するまで、ツールの終了処理をasync/awaitで待機する。
+後処理	アニメーション添付が成功した後、canvasやwrapper要素をDOMから安全にremove()し、window.AppCore.exit()を完了させる。
+ピースD: エラー・状態管理 (window.ErrorManager / window.StateManager)
+目的	詳細
+状態管理	添付処理の最中であることをwindow.StateManagerで管理し、二重起動などを防ぐ。
+エラー報告	fetchやDOM操作が失敗した場合、ユーザーに分かりやすいメッセージをwindow.ErrorManager経由で表示する。
+3. 足りないピースと今後の課題
+現在の知見で、実装計画を進めるために不足している具体的な情報は以下の2点です。
+
+ターゲットとなるDOM要素のIDまたはセレクター:
+
+レス入力ポップアップを開くボタンの正確なセレクター。
+
+非表示の <input type="file"> 要素の正確なセレクター。
+
+アニメーション添付後の確認:
+
+ファイル注入後、掲示板がファイル名やサムネイルをレス入力ポップアップ内に表示完了するまでの時間（待機処理）。
+
+MebukiにあったwaitMutationのような仕組み（MutationObserver）を使って、「ファイルが添付されました」という表示が出たことを確認してからツールを閉じるロジックが必要になる可能性があります。
+
+これらのセレクターと待機ロジックに必要な情報は、デベロッパーツールを使って特定していくことになります。実装に着手する前に、まずはこれらのDOM情報を特定し、**window.AttachmentManager**の初期設計を固めることをお勧めします。
+
+このコードは、ユーザーがファイルをアップロードした後、レス入力ポップアップ内に表示される「添付ファイルのプレビュー要素」のHTML構造を示しています。この構造から、添付が成功したことを確認するための待機ロジックと、アニメーションGIFがどのように扱われているかを推測できます。
+
+添付完了後の構造分析と待機ロジック
+1. 重要な要素の特定
+添付された画像は、以下の<img>タグとして表現されています。
+
+HTML
+
+<img alt="【バス・タイムの気分で】大崎甜花2.jpg" class="size-18 rounded object-contain" src="blob:https://mebuki.moe/80049b47-b0e3-47b0-9c77-a15880a9b224">
+<img>タグが存在する: ファイルがアップロードされ、サーバー側での処理（Blob URLの生成など）が完了した後、この要素がDOMに追加されます。
+
+src="blob:...": これは、ファイルデータがブラウザのメモリまたはIndexedDB内に一時的に存在していることを示す Blob URL です。このURLは、掲示板がアップロードされたデータからサムネイル表示用に生成したものと考えられます。
+
+ファイル名: alt属性にはファイル名らしき情報が含まれています。
+
+2. 待機（完了確認）ロジックの設計
+以前の計画で**「足りないピース」として挙げた、「ファイル添付が完了したことの確認」**のロジックは、この要素の出現を監視することで実装できます。
+
+ユーザー様のお絵描きツールを安全に閉じるために、以下のロジックをwindow.AttachmentManagerなどのモジュールに追加します。
+
+⭕️ 推奨される待機ロジック（MutationObserverの応用）
+提供されたMebukiのロジックにはwaitMutationというものがありましたが、これと同様に MutationObserver を使用して、親要素内のDOMの変化を監視します。
+
+監視開始: ファイルのデータ注入とchangeイベント発火直後に、レス入力ポップアップのコンテンツエリア全体を対象にMutationObserverを起動します。
+
+成功条件: MutationObserverのコールバック内で、以下のセレクターに該当する要素がDOMに追加されたことを検出したら、監視を終了（disconnect）し、添付成功としてツールの終了に進みます。
+
+セレクター例 (画像のDOM構造に基づき推定):
+
+JavaScript
+
+'div.relative.flex.items-center img[src^="blob:"]'
+（src属性が "blob:" で始まる <img> タグを探す）
+
+タイムアウト: 万が一要素が出現しなかった場合（アップロード失敗など）に備え、一定時間（例：5秒）でタイムアウトさせるエラーハンドリングが必要です。
+
+3. アニメーションGIFの挙動について
+<img>タグは、通常、GIFアニメーションの場合、アニメーションする状態で表示されます。
+
+もし掲示板側でGIFの最初のフレームだけをサムネイルとして表示するような処理をしていれば、ここで静止画として表示される可能性もあります。
+
+どちらにせよ、アップロード時にアニメーションGIFのBlobデータを正しく渡せていれば、この<img>タグはプレビュー用であり、実際の投稿処理は、その裏側にある非表示の<input type="file">から行われます。プレビューが静止画であっても、元のファイルデータが正しければ、投稿時にはアニメーションとしてアップロードされることが期待できます。
+
+この発見により、実装計画のピースがほぼ揃いました。残るは、レス入力ポップアップを開くボタンと非表示の<input type="file"> のセレクター特定のみです。
+
+-------
+
+
+
+
+Tegaki ブックマークレット for Futaba / Mebuki
+──────────────────────────────────────────────
+目的:
+  ・ふたばちゃんねる（Futaba）とめぶきちゃんねる（Mebuki）の掲示板投稿欄に
+    Tegakiで描いた絵を注入できるブックマークレットを作る。
+  ・両掲示板で仕組みが異なるため、共通フレームワークを持ちつつ
+    個別に「キャンバス注入方式」と「ファイル入力注入方式」を切替可能にする。
+
+──────────────────────────────────────────────
+【全体構造】
+──────────────────────────────────────────────
+1. ブックマークレット
+   - 一行JS。
+   - tegaki-loader.js を読み込み、window.tegakiStart() を呼ぶ。
+
+2. Tegaki Loader
+   - 掲示板種別を判定（Futaba/Mebuki）。
+   - 対応する detect メソッドで注入先を特定。
+   - core-engine.js を読み込み、Tegaki アプリを起動。
+   - 起動時オプションに { mode:"bookmarklet", targetElement } を渡す。
+
+3. Tegaki Core (PixiJS v8.13)
+   - 通常描画機能に加え、Bookmarklet API を提供:
+     * window.tegakiStart()
+     * window.tegakiStop()
+     * window.tegakiCancel()
+
+4. 注入対象
+   - Futaba: <canvas id="oejs"> に drawImage で描画反映。
+   - Mebuki: <input type=file> に File を注入 → プレビュー <img src="blob:..."> が生成される。
+
+──────────────────────────────────────────────
+【動作フロー】
+──────────────────────────────────────────────
+Step 0: ユーザーがブックマークレット実行
+Step 1: loader が起動
+   - 掲示板判定
+   - detectBoardCanvas_Futaba() または detectFileInput_Mebuki() 実行
+Step 2: Tegaki Core をロード
+   - PixiJS アプリを起動
+   - boardCanvas/input を保持
+   - 描画画面を表示
+Step 3: ユーザー描画
+Step 4: 完了操作
+   - Futaba: toDataURL → drawImage(canvas)
+   - Mebuki: toBlob → File → input.files → change イベント
+Step 5: UIを閉じて終了
+   - app.destroy(true)
+
+──────────────────────────────────────────────
+【主要メソッド設計】
+──────────────────────────────────────────────
+1. Futaba用
+------------------------------------------------
+async function detectBoardCanvas_Futaba() {
+  let canvas = document.querySelector('#oejs');
+  if (canvas) return canvas;
+
+  // 無ければボタンをクリックして生成
+  const btn = document.querySelector('#oebtnj, #oebtnj_f');
+  if (btn) btn.click();
+
+  return new Promise((resolve, reject) => {
+    const observer = new MutationObserver(() => {
+      canvas = document.querySelector('#oejs');
+      if (canvas) {
+        observer.disconnect();
+        resolve(canvas);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => { observer.disconnect(); reject("Futaba canvas not found"); }, 5000);
+  });
+}
+
+function stopTegaki_Futaba(app, boardCanvas) {
+  try {
+    const dataURL = app.view.toDataURL("image/png");
+    const img = new Image();
+    img.onload = () => {
+      const ctx = boardCanvas.getContext("2d");
+      ctx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);
+      ctx.drawImage(img, 0, 0, boardCanvas.width, boardCanvas.height);
+      app.destroy(true);
+    };
+    img.src = dataURL;
+  } catch (e) {
+    console.error("Futaba stop failed", e);
+  }
+}
+
+2. Mebuki用
+------------------------------------------------
+async function detectFileInput_Mebuki() {
+  let input = document.querySelector('input[type="file"][accept*="image/png"]');
+  if (input) return input;
+
+  const btn = document.querySelector('.dt_r_status-button'); // 手書きを添付
+  if (btn) btn.click();
+
+  return new Promise((resolve, reject) => {
+    const observer = new MutationObserver(() => {
+      input = document.querySelector('input[type="file"][accept*="image/png"]');
+      if (input) {
+        observer.disconnect();
+        resolve(input);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => { observer.disconnect(); reject("Mebuki input not found"); }, 5000);
+  });
+}
+
+function stopTegaki_Mebuki(app, input) {
+  app.view.toBlob(blob => {
+    const file = new File([blob], "tegaki.png", { type: "image/png" });
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    app.destroy(true);
+  }, "image/png");
+}
+
+3. 共通 API
+------------------------------------------------
+window.tegakiStart = async function() {
+  if (location.host.includes("2chan.net")) {
+    const canvas = await detectBoardCanvas_Futaba();
+    window.tegakiTarget = { type:"futaba", element:canvas };
+  } else if (location.host.includes("mebuki.moe")) {
+    const input = await detectFileInput_Mebuki();
+    window.tegakiTarget = { type:"mebuki", element:input };
+  }
+  // PixiJS アプリ起動処理（省略）
+};
+
+window.tegakiStop = function(app) {
+  if (!window.tegakiTarget) return;
+  if (window.tegakiTarget.type === "futaba") {
+    stopTegaki_Futaba(app, window.tegakiTarget.element);
+  } else if (window.tegakiTarget.type === "mebuki") {
+    stopTegaki_Mebuki(app, window.tegakiTarget.element);
+  }
+};
+
+window.tegakiCancel = function(app) {
+  app.destroy(true);
+};
+
+──────────────────────────────────────────────
+【セレクタまとめ】
+──────────────────────────────────────────────
+Futaba:
+  - boardCanvas: #oejs
+  - button: #oebtnj, #oebtnj_f
+
+Mebuki:
+  - 手書きボタン: .dt_r_status-button
+  - input[type=file][accept*="image/png"]
+
+──────────────────────────────────────────────
+【改修計画への反映】
+──────────────────────────────────────────────
+- Futaba対応: 従来通り canvas 注入方式。
+- Mebuki対応: input[type=file] 注入方式に設計変更。
+- detect 系関数を分離し、掲示板ごとに切替可能にする。
+- Tegaki Core の API は start/stop/cancel を共通インタフェースに統一。
+- フォールバック禁止: セレクタが変わって検出失敗したら例外として終了。
+
+──────────────────────────────────────────────
+【ブックマークレット例】
+──────────────────────────────────────────────
+javascript:(function(){
+  if(!window.tegakiStart){
+    var s=document.createElement('script');
+    s.charset='UTF-8';
+    s.src='https://example.com/tegaki-loader.js';
+    document.body.appendChild(s);
+  } else {
+    window.tegakiStart();
+  }
+})();
+
+
+※Elementsで取得した参考になりそうな箇所
+
+🌿めぶきチャンネルのレス投稿ウィンドウボタン
+<button data-slot="button" class="focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive inline-flex shrink-0 items-center justify-center gap-2 text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*='size-'])]:size-4 text-primary-foreground hover:bg-primary/90 bg-primary size-14 rounded-full shadow-md backdrop-blur-lg" type="button" title="レスを投稿"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-feather size-7" aria-hidden="true"><path d="M12.67 19a2 2 0 0 0 1.416-.588l6.154-6.172a6 6 0 0 0-8.49-8.49L5.586 9.914A2 2 0 0 0 5 11.328V18a1 1 0 0 0 1 1z"></path><path d="M16 8 2 22"></path><path d="M17.5 15H9"></path></svg></button>
+
+🌿めぶきチャンネルのレス投稿ウィンドウ展開後の中身
+<textarea data-slot="textarea" class="border-input dark:text-foreground placeholder:text-muted-foreground focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive flex field-sizing-content min-h-16 border px-2 text-base break-all text-black disabled:cursor-not-allowed disabled:opacity-50 md:text-sm mb-2 w-full flex-1 resize-none rounded-none border-none bg-transparent py-3 pr-10 pl-4 leading-relaxed transition-colors outline-none focus-visible:border-none focus-visible:ring-0 sm:max-h-92 sm:min-h-24 dark:bg-transparent" id="_r_d_-content" name="content" form="_r_d_" placeholder="レスを入力" inputmode="text"></textarea>
+
+
+🌿めぶきチャンネルの画像投稿ボタン
+<button data-slot="button" class="focus-visible:border-ring focus-visible:ring-ring/50 aria-invalid:ring-destructive/20 dark:aria-invalid:ring-destructive/40 aria-invalid:border-destructive inline-flex shrink-0 items-center justify-center gap-2 rounded-md text-sm font-medium whitespace-nowrap transition-all outline-none focus-visible:ring-[3px] disabled:pointer-events-none disabled:opacity-50 [&amp;_svg]:pointer-events-none [&amp;_svg]:shrink-0 [&amp;_svg:not([class*='size-'])]:size-4 bg-background/80 hover:bg-accent hover:text-accent-foreground dark:border-input border shadow-xs size-9 text-muted-foreground" type="button" tabindex="-1"><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-image size-6" aria-hidden="true"><rect width="18" height="18" x="3" y="3" rx="2" ry="2"></rect><circle cx="9" cy="9" r="2"></circle><path d="m21 15-3.086-3.086a2 2 0 0 0-2.828 0L6 21"></path></svg></button>
+
+🌿めぶきチャンネルの画像投稿後のサムネイル
+<img alt="【バス・タイムの気分で】大崎甜花2.jpg" class="size-18 rounded object-contain" src="blob:https://mebuki.moe/d9ebcdad-d7ac-4c11-9189-ca83b3f6f5f5">
