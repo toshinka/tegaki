@@ -1,0 +1,357 @@
+Tegaki ブックマークレット構造・フロー整理
+─────────────────────────────────────
+目的:
+  他AIが読んでも分かりやすいように、はっちゃん(canvas98)の仕組みを換骨奪胎した
+  Tegaki ブックマークレットの「構造」と「動作フロー」をプレーンテキストで記述。
+
+─────────────────────────────────────
+【全体構造】
+─────────────────────────────────────
+1. ブックマークレット (一行JS)
+   - ページ上で実行される。
+   - Tegaki loader スクリプトを動的に読み込む。
+   - globalThis や window に登録された start 関数を呼ぶ。
+
+2. Tegaki Loader (軽量JS)
+   - 掲示板の DOM を検出（投稿欄の canvas 要素やボタン）。
+   - boardCanvas を確定。
+   - Tegaki core-engine.js を読み込んで起動。
+   - 起動時に isBookmarkletMode: true を渡す。
+
+3. Tegaki Core (PixiJS v8.13 ベース)
+   - 通常動作用の描画ロジック。
+   - ブックマークレットモードでは以下の追加APIを提供:
+     * window.tegakiStart()
+     * window.tegakiStop()
+     * window.tegakiCancel()
+   - Pixi の app.view(canvas) → 掲示板 boardCanvas へのコピー処理を実装。
+
+4. 掲示板 Canvas (ふたば/めぶき)
+   - 投稿欄に存在する canvas。
+   - Tegaki 側で描いた内容を最終的にここへ反映。
+
+─────────────────────────────────────
+【動作フロー（ステップごと）】
+─────────────────────────────────────
+Step 0: ユーザーがブックマークレットをクリック
+  ↓
+Step 1: ブックマークレットが script 要素を挿入
+  - src = tegaki-loader.js
+  - charset=UTF-8
+  - body.appendChild(script)
+  ↓
+Step 2: Tegaki Loader 実行
+  - 掲示板 canvas (#oejs など) を検出
+  - もし存在しなければ、投稿欄の「描くボタン」(#oebtnj 等)を click して生成
+  - boardCanvas を確定
+  - Tegaki Core を非同期読み込み (core-engine.js)
+  - Tegaki Core に { isBookmarkletMode:true, boardCanvas } を渡す
+  ↓
+Step 3: Tegaki Core 起動
+  - PixiJS アプリ生成 (app = new PIXI.Application)
+  - 描画UIを表示 (既存 boardCanvas は hidden)
+  - window.tegakiStart/Stop/Cancel を登録
+  ↓
+Step 4: ユーザーが絵を描く
+  - Pixi の app.view に描画
+  ↓
+Step 5: 完了操作 (Stop/Cancel)
+  - Stop:
+    * dataURL = app.view.toDataURL()
+    * img = new Image()
+    * img.onload → boardCanvas.getContext('2d').drawImage(img,...)
+    * boardCanvas を再表示
+    * Pixi app.destroy()
+    * UI を閉じる
+  - Cancel:
+    * boardCanvas を再表示
+    * Pixi app.destroy()
+    * 描画結果は反映せず終了
+  ↓
+Step 6: 掲示板に描画済み状態で残る
+  - ユーザーはそのまま投稿可能。
+
+─────────────────────────────────────
+【主要API／関数】
+─────────────────────────────────────
+1. ブックマークレット一行:
+   javascript:(function(){
+     if(!window.tegakiStart){
+       var s=document.createElement('script');
+       s.charset='UTF-8';
+       s.src='https://example.com/tegaki-loader.js';
+       document.body.appendChild(s);
+     } else {
+       window.tegakiStart();
+     }
+   })();
+
+2. Tegaki Loader 内部:
+   - detectBoardCanvas()
+   - loadTegakiCore()
+   - initTegaki(boardCanvas)
+
+3. Tegaki Core 内部API:
+   - window.tegakiStart()   // 起動エントリ
+   - window.tegakiStop()    // Pixi → boardCanvas へコピー
+   - window.tegakiCancel()  // キャンセルして終了
+
+─────────────────────────────────────
+【掲示板ごとのセレクタ例】
+─────────────────────────────────────
+- Futaba (二次裏):
+  * boardCanvas: #oejs
+  * drawButton:  #oebtnj または #oebtnj_f
+
+- Mebuki:
+  * boardCanvas: フォーム内の canvas 要素
+  * drawButton: 投稿欄近くの「描く」ボタン (ID は要調査)
+
+─────────────────────────────────────
+【重要な注意点】
+─────────────────────────────────────
+- CSP が厳しい掲示板では loader がブロックされる場合がある → 暗黙修復せず中断。
+- canvas.toDataURL() は CORS 汚染で失敗することがある → 外部画像の使用に注意。
+- Pixi app.destroy() を必ず呼び出してリソース解放。
+- UI を最小化（ショートカット主体）、冗長ログは出さない。
+
+─────────────────────────────────────
+【まとめ】
+─────────────────────────────────────
+- ブックマークレットは「script動的読込 → 掲示板canvas検出 → Tegaki起動 → Pixiで描画 → Stopでコピー → 復元」の単純な流れ。
+- canvas98 の構造 (globalThis, boardCanvas検出, toDataURL→drawImage) を抽出して
+  Tegaki Core のAPIに落とし込めば実現可能。
+- 曖昧処理は禁止 → セレクタが変わったら「失敗」として終了する。
+
+
+
+🏗️ 概要
+
+本計画書は、PixiJS v8.13 を使用した手描きツール「ToshinkaTegakiTool」について、
+既存構造（t3start.js／mebuki.ts 等ブックマークレット経由の iframe 起動）を維持しつつ、
+以下の3点を主軸に改修を行うものである。
+
+APNG 出力対応（複数フレーム保持）
+
+透過情報の完全保持と色化け防止
+
+iframe 転送方式・スケーリング処理の安定化
+
+🧱 1. 現行構成の整理
+1.1 構造フロー
+ブックマークレット →
+  fetch(ToshinkaTegakiTool.html) →
+    iframe 生成 →
+      PixiJSアプリ初期化 →
+        layerManager + canvasManager →
+          親ページの #oejs に転送
+
+1.2 主要責務
+コンポーネント	役割
+layerManager	背景画像や描画レイヤー管理（複数Canvas）
+canvasManager	全レイヤー合成、Undo/Redo、export管理
+topBarManager	UIボタン管理（閉じる／出力）
+ブックマークレット	親ページへの注入、iframe生成、結果転送
+🔍 2. 現行問題点の分析
+2.1 APNG非対応構造
+const dataURL = mergedCanvas.toDataURL('image/png');
+
+
+現行は単一CanvasをPNGとしてエンコードし、
+window.parent.postMessage()で親へ転送。
+
+この手法ではAPNGのアニメーション情報が完全に失われる。
+
+2.2 透過処理の欠落
+
+PixiJSはデフォルトで「premultiplied alpha」を使用。
+
+drawImage()で合成した際、透明境界が白や黒ににじむ。
+
+背景レイヤーと統合時に誤合成が発生する。
+
+2.3 スケーリング問題
+if (img.width > maxSize) scale = Math.min(...);
+tc.drawImage(img, 0, 0, img.width, img.height, 0, 0, w, h);
+
+
+補間がONのため、細線・透過ピクセルにブリードが生じる。
+
+ctx.imageSmoothingEnabled = false指定が望ましい。
+
+2.4 iframe 転送の制約
+
+postMessage({ imageDataUrl })で文字列転送しており、
+Base64 データの容量制限・速度低下・APNG 不適合のリスク。
+
+Blob転送（Object URL or Transferable Streams）が望ましい。
+
+💡 3. 改修目標
+分野	改修方針
+出力形式	PNG → APNG（UPNG.jsを使用）
+転送形式	Base64 → Blob URL
+透過処理	非premultiplied Alphaでの再合成
+背景読み込み	<img> → UPNG.decode()による全フレーム展開
+スケーリング	imageSmoothingEnabled = false
+Undo/Redo	各フレーム単位の履歴保存
+互換性	既存ブックマークレット構造を維持（差し替え可能）
+⚙️ 4. 新アーキテクチャ設計
+4.1 転送パイプライン
+PixiJS Layers
+   ↓
+FrameCaptureManager
+   ↓ (ImageData配列)
+APNGEncoder(UPNG.js)
+   ↓ (ArrayBuffer)
+Blob(URL.createObjectURL)
+   ↓
+postMessage({ type:'toshinka-apng-export', blobUrl })
+
+4.2 主要モジュール追加
+モジュール	概要	備考
+FrameCaptureManager	各描画状態をImageDataで記録	各フレームのdelay付き
+APNGEncoder	UPNG.encode()でAPNG生成	透過保持可能
+TransferBridge	iframe間のBlob転送制御	URL解放処理を明示
+TransparencyHelper	premultiplied alpha解除	PixiJS → Canvas変換時に介入
+🧩 5. 改修箇所詳細
+5.1 layerManager.loadBackgroundImage
+
+現行：
+
+const img = new Image();
+img.src = imageDataUrl;
+ctx.drawImage(img, 0, 0);
+
+
+改修後：
+
+if (isAPNG(imageDataUrl)) {
+    const buf = await fetch(imageDataUrl).then(r=>r.arrayBuffer());
+    const apng = UPNG.decode(buf);
+    const frame = UPNG.toRGBA8(apng)[0]; // 1枚目表示
+    const imgData = new ImageData(new Uint8ClampedArray(frame), apng.width, apng.height);
+    ctx.putImageData(imgData, 0, 0);
+} else {
+    // 従来PNG
+    const img = new Image();
+    img.onload = () => ctx.drawImage(img, 0, 0);
+    img.src = imageDataUrl;
+}
+
+5.2 canvasManager.transferToParent
+
+現行：
+
+const dataURL = mergedCanvas.toDataURL('image/png');
+window.parent.postMessage({ imageDataUrl: dataURL }, '*');
+
+
+改修後：
+
+const frames = this.app.layerManager.collectFrames();
+const delays = frames.map(f => f.delay || 100);
+const imgs = frames.map(f => f.ctx.getImageData(0,0,width,height).data.buffer);
+const apng = UPNG.encode(imgs, width, height, 0, delays);
+
+const blob = new Blob([apng], { type: 'image/apng' });
+const url = URL.createObjectURL(blob);
+
+window.parent.postMessage({ 
+    type: 'toshinka-apng-export', 
+    blobUrl: url 
+}, '*');
+
+5.3 topBarManager.closeTool
+
+改修：
+transferToParent() 呼び出しをAPNG対応関数に差し替え。
+
+5.4 親側（mebuki.ts）の messageHandler
+
+現行：
+
+if (event.data.type === 'toshinka-tegaki-tool-export') {
+    const img = new Image();
+    img.src = event.data.imageDataUrl;
+}
+
+
+改修後：
+
+if (event.data.type === 'toshinka-apng-export') {
+    const img = new Image();
+    img.src = event.data.blobUrl;
+    img.onload = () => {
+        ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(event.data.blobUrl);
+    };
+}
+
+🎨 6. APNG転送・透過保持対応計画（新章）
+項目	技術的内容	実装上の要点
+アニメーション保持	UPNG.encode()でframe結合	各frameをImageDataとして保存
+透過維持	非premultiplied alpha変換	Pixiのrenderer.extract.pixels()で取得
+通信経路	Blob URL転送	Base64禁止・URL解放を徹底
+メモリ管理	URL.revokeObjectURL()呼び出し	メモリリーク防止
+プレビュー互換	PNGモードも併存	if(frames.length>1)でAPNG切替
+拡張性	将来的にGIF / WebPも許容	encodeTypeパラメータ化
+🧰 7. 実装順序
+
+現行transferToParent()を分離リファクタ
+
+ExportManagerとして独立化
+
+FrameCaptureManager導入
+
+PixiRenderer.extract.canvas()でframe配列取得
+
+UPNG.js 組み込み
+
+fetch('https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.js')動的読み込み
+
+親ページ側受信修正
+
+Blob URL転送・解放対応
+
+透過補正・スケーリング確認
+
+imageSmoothingオフ＋premultiplied解除テスト
+
+最終統合テスト（ふたば・めぶき両対応）
+
+🧾 8. テスト計画
+テスト内容	期待結果
+単フレームPNG出力	透明保持・無劣化
+複数フレームAPNG出力	正常再生・ループ維持
+ふたば環境	iframe起動・転送成功
+めぶき環境	ブロック警告なし（sandbox対応）
+スクロールバー復元	overflow復帰正常
+🧩 9. 今後の拡張見込み
+
+WebP アニメ対応：Canvas.toBlob('image/webp', quality)対応版
+
+Undo/Redo 強化：FrameCaptureManagerと履歴統合
+
+分離レンダリング：Pixi RenderTextureによる描画キャッシュ層の導入
+
+🧭 結論
+
+mebuki.ts に見られるように、
+現状は「一枚絵PNGのBase64転送」に特化しており、
+APNG や透過保持の面では不完全な構造である。
+
+PixiJS v8.13 と UPNG.js を組み合わせた上記再設計により、
+
+高品質な透過保持
+
+複数フレームAPNG出力
+
+低負荷なBlob転送
+
+f-channel / mebuki両対応
+
+が同時に実現可能となる。
+
+📄 この計画書をもとに、次段階として「改修コード試作（段階的実装スケルトン）」も作成可能です。
+次に進めますか？（例：transferToParent()＋FrameCaptureManager の初期実装コード生成）

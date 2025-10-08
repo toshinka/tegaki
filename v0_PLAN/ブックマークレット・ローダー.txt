@@ -1,0 +1,183 @@
+Tegaki ブックマークレット for Futaba / Mebuki
+──────────────────────────────────────────────
+目的:
+  ・ふたばちゃんねる（Futaba）とめぶきちゃんねる（Mebuki）の掲示板投稿欄に
+    Tegakiで描いた絵を注入できるブックマークレットを作る。
+  ・両掲示板で仕組みが異なるため、共通フレームワークを持ちつつ
+    個別に「キャンバス注入方式」と「ファイル入力注入方式」を切替可能にする。
+
+──────────────────────────────────────────────
+【全体構造】
+──────────────────────────────────────────────
+1. ブックマークレット
+   - 一行JS。
+   - tegaki-loader.js を読み込み、window.tegakiStart() を呼ぶ。
+
+2. Tegaki Loader
+   - 掲示板種別を判定（Futaba/Mebuki）。
+   - 対応する detect メソッドで注入先を特定。
+   - core-engine.js を読み込み、Tegaki アプリを起動。
+   - 起動時オプションに { mode:"bookmarklet", targetElement } を渡す。
+
+3. Tegaki Core (PixiJS v8.13)
+   - 通常描画機能に加え、Bookmarklet API を提供:
+     * window.tegakiStart()
+     * window.tegakiStop()
+     * window.tegakiCancel()
+
+4. 注入対象
+   - Futaba: <canvas id="oejs"> に drawImage で描画反映。
+   - Mebuki: <input type=file> に File を注入 → プレビュー <img src="blob:..."> が生成される。
+
+──────────────────────────────────────────────
+【動作フロー】
+──────────────────────────────────────────────
+Step 0: ユーザーがブックマークレット実行
+Step 1: loader が起動
+   - 掲示板判定
+   - detectBoardCanvas_Futaba() または detectFileInput_Mebuki() 実行
+Step 2: Tegaki Core をロード
+   - PixiJS アプリを起動
+   - boardCanvas/input を保持
+   - 描画画面を表示
+Step 3: ユーザー描画
+Step 4: 完了操作
+   - Futaba: toDataURL → drawImage(canvas)
+   - Mebuki: toBlob → File → input.files → change イベント
+Step 5: UIを閉じて終了
+   - app.destroy(true)
+
+──────────────────────────────────────────────
+【主要メソッド設計】
+──────────────────────────────────────────────
+1. Futaba用
+------------------------------------------------
+async function detectBoardCanvas_Futaba() {
+  let canvas = document.querySelector('#oejs');
+  if (canvas) return canvas;
+
+  // 無ければボタンをクリックして生成
+  const btn = document.querySelector('#oebtnj, #oebtnj_f');
+  if (btn) btn.click();
+
+  return new Promise((resolve, reject) => {
+    const observer = new MutationObserver(() => {
+      canvas = document.querySelector('#oejs');
+      if (canvas) {
+        observer.disconnect();
+        resolve(canvas);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => { observer.disconnect(); reject("Futaba canvas not found"); }, 5000);
+  });
+}
+
+function stopTegaki_Futaba(app, boardCanvas) {
+  try {
+    const dataURL = app.view.toDataURL("image/png");
+    const img = new Image();
+    img.onload = () => {
+      const ctx = boardCanvas.getContext("2d");
+      ctx.clearRect(0, 0, boardCanvas.width, boardCanvas.height);
+      ctx.drawImage(img, 0, 0, boardCanvas.width, boardCanvas.height);
+      app.destroy(true);
+    };
+    img.src = dataURL;
+  } catch (e) {
+    console.error("Futaba stop failed", e);
+  }
+}
+
+2. Mebuki用
+------------------------------------------------
+async function detectFileInput_Mebuki() {
+  let input = document.querySelector('input[type="file"][accept*="image/png"]');
+  if (input) return input;
+
+  const btn = document.querySelector('.dt_r_status-button'); // 手書きを添付
+  if (btn) btn.click();
+
+  return new Promise((resolve, reject) => {
+    const observer = new MutationObserver(() => {
+      input = document.querySelector('input[type="file"][accept*="image/png"]');
+      if (input) {
+        observer.disconnect();
+        resolve(input);
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+    setTimeout(() => { observer.disconnect(); reject("Mebuki input not found"); }, 5000);
+  });
+}
+
+function stopTegaki_Mebuki(app, input) {
+  app.view.toBlob(blob => {
+    const file = new File([blob], "tegaki.png", { type: "image/png" });
+    const dt = new DataTransfer();
+    dt.items.add(file);
+    input.files = dt.files;
+    input.dispatchEvent(new Event("change", { bubbles: true }));
+    app.destroy(true);
+  }, "image/png");
+}
+
+3. 共通 API
+------------------------------------------------
+window.tegakiStart = async function() {
+  if (location.host.includes("2chan.net")) {
+    const canvas = await detectBoardCanvas_Futaba();
+    window.tegakiTarget = { type:"futaba", element:canvas };
+  } else if (location.host.includes("mebuki.moe")) {
+    const input = await detectFileInput_Mebuki();
+    window.tegakiTarget = { type:"mebuki", element:input };
+  }
+  // PixiJS アプリ起動処理（省略）
+};
+
+window.tegakiStop = function(app) {
+  if (!window.tegakiTarget) return;
+  if (window.tegakiTarget.type === "futaba") {
+    stopTegaki_Futaba(app, window.tegakiTarget.element);
+  } else if (window.tegakiTarget.type === "mebuki") {
+    stopTegaki_Mebuki(app, window.tegakiTarget.element);
+  }
+};
+
+window.tegakiCancel = function(app) {
+  app.destroy(true);
+};
+
+──────────────────────────────────────────────
+【セレクタまとめ】
+──────────────────────────────────────────────
+Futaba:
+  - boardCanvas: #oejs
+  - button: #oebtnj, #oebtnj_f
+
+Mebuki:
+  - 手書きボタン: .dt_r_status-button
+  - input[type=file][accept*="image/png"]
+
+──────────────────────────────────────────────
+【改修計画への反映】
+──────────────────────────────────────────────
+- Futaba対応: 従来通り canvas 注入方式。
+- Mebuki対応: input[type=file] 注入方式に設計変更。
+- detect 系関数を分離し、掲示板ごとに切替可能にする。
+- Tegaki Core の API は start/stop/cancel を共通インタフェースに統一。
+- フォールバック禁止: セレクタが変わって検出失敗したら例外として終了。
+
+──────────────────────────────────────────────
+【ブックマークレット例】
+──────────────────────────────────────────────
+javascript:(function(){
+  if(!window.tegakiStart){
+    var s=document.createElement('script');
+    s.charset='UTF-8';
+    s.src='https://example.com/tegaki-loader.js';
+    document.body.appendChild(s);
+  } else {
+    window.tegakiStart();
+  }
+})();
