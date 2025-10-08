@@ -1,296 +1,279 @@
-改修計画書：アルバム／タイムライン サムネイル縮小の多重処理問題調査と改修案
-================================================================================
-作成日: 2025-10-08
-対象リポジトリブランチ: v8.13_History21
-（参照した主要ファイル：ui/album-popup.js, ui/timeline-thumbnail-utils.js, ui/timeline-ui.js, core-engine.js）
+ファイル: export-manager.js
+概要:
+  - PNG として要求された場合に自動的に APNG に切り替えるロジックあり。
+  - generatePreview(format) は exporter.generateBlob を呼ぶ前提になっている（generateBlob が存在する exporter が必須）。
+  - canvas 抽出・ダウンロード・クリップボード系は集中管理されている（良い）。
 
-要約
-----
-- 症状：アルバム（album-popup）のパネル内サムネイルが「小さい」。要望は「アスペクト比を保ちつつ、長辺が目いっぱいに表示されること」。  
-  さらに「縮小化処理がずっと残り続ける（縮小処理が継続実行される）挙動」を確認。
-- 調査結果の短評：サムネイルのリサイズ責務が複数箇所で重複しており（AlbumPopup、TimelineThumbnailUtils、TimelineUI 等）、かつ GIF プレビューやサムネイル更新のイベント連鎖が要因で多重処理（重複タイマーや連続生成）が発生している可能性が高い。まずは **AlbumPopup 側の表示ロジックの修正（低リスク）** を行い、次に **共通ユーティリティ化・生成 / キャッシュ / 更新フローの整理（中〜高リスク）** を順次適用する。
+確認された問題点:
+  1) generatePreview() は "exporter.generateBlob" を期待するが、UI側で別名のメソッドを呼んでいる（例: generateGifBlob）。
+  2) renderToCanvas() の PIXI.render の呼び方は v8 でも使えるが、API 呼び出しで target を渡す形は微妙（現状動いていれば無視可）。ただし v8 の仕様に合わせた明示的な呼び方に整えると安全。
+  3) export-manager は APNG や GIF エクスポーターが正しく登録され、グローバルライブラリ（UPNG, GIF.js）等がロードされている事を前提としている。外部ロード失敗時のハンドリングが弱い。
 
-再現手順（短）
---------------
-1. アプリを開き、アルバム（AlbumPopup）を表示する。  
-2. ギャラリーに登録されたスナップショット（特に縦長画像／横長画像混在）を確認。  
-3. サムネイルがカード内で「小さく」表示される。また、GIF サムネイルのプレビューが複数重複して動き続けると CPU 使用や画像のチラつきが出る場合がある。
+修正方針（優先度: 中→低）
+  - (必須) exporter の公開 API を統一する: 全てのアニメ系エクスポーターは
+      - async generateBlob(options) を実装する（プレビュー用）
+      - async export(options) を実装する（ダウンロード用）
+    とし、export-manager はこれだけを呼び出すようにする。
+  - (推奨) renderToCanvas の呼び方を PIXI v8 推奨形式に合わせて明記し、例外は捕捉して人にわかるエラーメッセージを投げる。
+  - (必須) generatePreview() のエラーメッセージを詳細化（missing lib / missing exporter / animationSystem unavailable など）。
+  - (推奨) 外部依存（UPNG, GIF.js, gif.worker）未ロード時は UI にわかりやすく通知し、フェールバック方針を明示する（"APNG 未ロード" 等）。
 
-観察（ソースから見えた点）
--------------------------
-- album-popup.js は snapshot.thumbnail を dataURL として img に割り当て、`img.style` に固定 `width:130px; height:98px; object-fit:contain` を入れている。これだと「長辺を目いっぱいにする」動作にならない。さらに GIF プレビューは setInterval で img.src を書き換える実装。  
-- timeline-thumbnail-utils.js は生成側で縮小（maxThumbW/H）を行っており、cache を持つ。生成の API が複数の呼び出し元から呼ばれている印象。  
-- timeline-ui.js 側でも独自にサムネイルのアスペクト比計算を行っており、責務が分散している（同一の計算が重複）。またイベントバスで「layer:updated」「drawing:path-completed」等の度に更新要求が来る設計で、デバウンス/フラグ管理が不十分な箇所がある。  
-（詳細は参照ファイル参照）
+参考差分（抜粋）:
+  // export-manager.js: generatePreview の例外メッセージ化
+  - const exporter = this.exporters[targetFormat];
+  - if (!exporter || !exporter.generateBlob) { throw new Error('Preview not supported for format: ' + targetFormat); }
+  + const exporter = this.exporters[targetFormat];
+  + if (!exporter) { throw new Error('Preview failed: exporter not registered for format: ' + targetFormat); }
+  + if (typeof exporter.generateBlob !== 'function') {
+  +   throw new Error('Preview failed: exporter "' + targetFormat + '" does not implement generateBlob(options).');
+  + }
 
-根本原因（仮説・優先度順）
------------------------
-1. 表示責務分散：サムネイルの「どのサイズで表示するか・どこが決めるか」が複数ファイルで重複 → 「多重縮小／多重style適用」が発生。  
-2. GIF プレビューの重複：プレビュー開始で既存 interval を確実に止めないケースがあるため、複数 interval が残り続ける（img.src を継続的に書き換える）→ 見た目が崩れたり継続負荷。  
-3. 更新フローのループ：描画イベントやサムネイル生成イベントが相互にトリガーし合い短時間に何度もサムネイル生成リクエストが飛ぶ（デバウンス/進行中フラグの不足）。  
-4. キャッシュ不整合：TimelineThumbnailUtils の cache key が呼び出し条件（出力サイズ）を包含しておらず、異なる表示サイズでの再利用や不要な再生成を誘発している可能性。
+テスト項目:
+  - exportManager.registerExporter('gif', new GIFExporter(exportManager)); 等で登録→ exportManager.generatePreview('gif') が Blob を返すこと。
+  - 外部 lib 未ロード時は generatePreview がわかりやすい例外を投げること。
+---
 
-優先度付き改修方針（短）
------------------------
-A. まず低リスクで AlbumPopup の表示ロジック修正（UX 即効）：  
-   - 固定幅・固定高さを img に直接与えない。カード内に「thumbnail container（固定枠）」を用意して、img の onload で naturalWidth/naturalHeight を見て **コンテナのアスペクト比と比較 → 長辺を 100% にする**（幅 or 高さを auto にする）方式に変更。  
-   - GIF プレビューは「開始前に既存 interval を必ずクリア」する処理を追加。ギャラリーを書き換える際に DOM 外の img に紐付いた interval を掃除する処理も追加する（再レンダリングで interval が残る問題対策）。  
+ファイル: system/exporters/png-exporter.js
+概要:
+  - 単一フレーム PNG を生成する generateBlob を持つ（プレビュー対応あり）。実装は概ね良好。
 
-B. 中リスク：TimelineThumbnailUtils 側を小さく改善（ユーティリティ化）：  
-   - サムネイルサイズ決定（canvas -> thumbW/thumbH の算出）を static helper として切り出す。呼び出し側（TimelineUI 等）はこの helper を使って「1 箇所でサイズ算出」。  
-   - generateThumbnail の cacheKey に出力サイズ（maxThumbWxH）を含める（誤キャッシュ防止）。  
+確認された問題点:
+  - 特になし（ただし API 名は他のエクスポーターと合わせるべき）。
 
-C. 変更の段階的適用（高信頼性で実施）：
-   - TimelineUI の applyCutThumbnailAspectRatio を上の helper を使うよう差し替え。  
-   - イベントバス由来のサムネイル更新をより堅牢に（強めのデバウンス、thumbnailUpdateInProgress チェック、短時間重複リクエストの破棄）する。  
-   - animationSystem.generateCutThumbnailOptimized 等がイベントを多重発行していないか確認。必要なら「generate 実行中フラグ」を追加し二重実行を防ぐ。
+修正方針:
+  - 変更不要。ただし generateBlob の返り値が Blob であることを保証する（既に保証）。コメントで API を明記すること。
 
-ファイル別変更案（実装コード断片：そのまま差し替え可能）
--------------------------------------
-以下は「実際に差し替えて動作検証できる」最小改修スニペット群です。
-※差分は album-popup.js と timeline-thumbnail-utils.js と timeline-ui.js に集中させることを推奨。
+--- 
 
-1) ui/album-popup.js（主要・低リスク修正）
-   - 置換箇所：_renderGallery 内の img 要素作成部分、_startGIFPreview / _stopGIFPreview、ギャラリークリア前の interval クリーン処理、補助メソッド _fitImageToContainer を追加。
+ファイル: system/exporters/apng-exporter.js
+概要:
+  - APNG 用の generateBlob/export を提供。
+  - 内部で UPNG.encode を使って APNG を生成している。
+  - レイヤー状態のスナップショット取得・復元を行い、各 CUT をレンダリングして frames と delays を作っている。
 
-変更スニペット（該当メソッドの完全差し替え例）
-────────────────────────────────────────
-（1）_fitImageToContainer をクラスに追加
-```javascript
-// AlbumPopup クラス内に追加
-_fitImageToContainer(img, containerW, containerH) {
-  try {
-    const iw = img.naturalWidth || img.width || 1;
-    const ih = img.naturalHeight || img.height || 1;
-    const imgAspect = iw / ih;
-    const containerAspect = (containerW || 1) / (containerH || 1);
-    if (imgAspect >= containerAspect) {
-      img.style.width = '100%';
-      img.style.height = 'auto';
-    } else {
-      img.style.width = 'auto';
-      img.style.height = '100%';
+確認された問題点（優先度 高→中）:
+  1) **遅延時間（delay）単位の誤り疑い**:
+     - コード内で `const duration = cut.duration || (1000 / settings.fps); delays.push(Math.round(duration * 1000));`
+     - もし cut.duration が（秒）単位であれば `*1000` は正しい（秒→ms）。だが `cut.duration` が既にミリ秒（ms）なら二重掛けになる。
+     - ドキュメント・データ構造が不明なため、**必ず cut.duration の単位を仕様として明示化する必要**がある。推奨は「cut.duration は秒（浮動小数）で管理」か「ミリ秒で管理」のどちらかに統一。
+  2) **UPNG がロードされていないと _checkUPNGAvailability() が例外を投げる**。UI 側で捕捉されていないと「発火しない」症状になる。
+  3) **frames 配列に push しているデータの形式確認**:
+     - frames に `imageData.data.buffer` を push しているが、UPNG.encode に渡す frames の仕様（RGBA Uint8Array または ArrayBuffer）を満たしているか確認が必要（概ね OK だが API に依存）。
+  4) レンダリング時に `this.manager.animationSystem.applyCutToLayers(i); await this._waitFrame();` としているが、applyCutToLayers が同期で DOM 更新（PIXI の表示更新）を受けるには requestAnimationFrame のタイミングが必要。_waitFrame は requestAnimationFrame + setTimeout だが、確実性のためは `await new Promise(r => requestAnimationFrame(r));` のほうが確実。
+
+修正方針:
+  - (必須) `cut.duration` の単位を明文化/統一する。既存データに合わせて修正。推奨：**cut.duration は秒（小数）で保管** → APNG 整形時に `Math.round(cut.duration * 1000)` で ms に変換。
+  - (必須) `_checkUPNGAvailability()` の例外は上位（ExportPopup など）でキャッチされユーザーへメッセージ表示する。たとえば "APNG ライブラリが読み込まれていません"。
+  - (推奨) フレームの取得を `const rgbaBuf = new Uint8Array(imageData.data.buffer); frames.push(rgbaBuf);` のように明示しておく。
+  - (推奨) _waitFrame を `await new Promise(r => requestAnimationFrame(r));` に変更。
+  - (推奨) UPNG.encode の delay 単位を明記（ms で渡す）と注釈を付ける。
+
+参考差分（抜粋）:
+  - // duration 関連直し
+  - const duration = (typeof cut.duration === 'number') ? cut.duration : (1 / settings.fps);
+  - // cut.duration は「秒」仕様を前提 → ms に変換
+  - delays.push(Math.round(duration * 1000)); // ms 単位
+  - // フレーム push を明示
+  - const rgbaBuf = new Uint8Array(imageData.data.buffer);
+  - frames.push(rgbaBuf.buffer);
+
+テスト項目:
+  - cut.duration が秒（例: 0.1）でエクスポートして期待通りのフレーム遅延となること。
+  - UPNG 未ロード時に明確なエラーを投げ UI が表示すること。
+  - 生成 Blob が PNG タイプで APNG ビューアで再生されること。
+
+---
+
+ファイル: system/exporters/gif-exporter.js
+概要:
+  - GIF 生成は gif.js を使い、Worker を CDN から fetch して Blob URL を作る実装。
+  - generateBlob と export を提供（generateBlob が generateBlob 統一 API として存在する）。
+
+確認された問題点（優先度 高→中）:
+  1) **quick-export-ui や他 UI が gifExporter.generateGifBlob() のような「別名」を期待している**（存在しないメソッド名）。つまり UI と exporter の API 名が不整合になっている。これが「ボタンを押しても発火しない」第一の原因。
+  2) **file:// 環境（ローカル HTML 直開き）では fetch('https://cdn.jsdelivr.../gif.worker.js') がブロックされる / CSP・CORS で失敗することが多い**。現在の createWorkerBlobURL は外部 fetch に依存しているため、ローカルでの動作不安定。
+  3) gif.js 本体（GIF コンストラクタ）およびその worker の存在チェックが弱い → 未ロード時に例外を投げ UI は黙る。
+
+修正方針:
+  - (必須) **API を統一**：exporter は `generateBlob(options)` を実装（既にある）→ UI は `exportManager.generatePreview('gif')` または `exporter.generateBlob()` を使うように修正。`generateGifBlob()` を呼んでいる箇所は全部 `generateBlob()` に差し替え。
+  - (必須) createWorkerBlobURL は file:// 環境を検出してローカルの同梱 worker スクリプトを優先して使うルールを入れる。つまり
+      1. まず `if (typeof GIF === 'undefined') throw` を行いチェック
+      2. try fetch CDN; catch → fallback to `window.GIFWorkerBlob` (もし同梱されている場合) or throw user-friendly error instructing to open via http(s) server.
+  - (推奨) gif.js と worker をプロジェクトに同梱し、相対パス（./vendor/gif.worker.js, ./vendor/gif.js）から読み込むようにして file:// でも動作するようにする。CDN は “オプション” に。
+  - (推奨) createWorkerBlobURL の失敗時に UI に意味のあるメッセージを返す。
+
+参考差分（抜粋）:
+  - // quick-export-ui 側の呼び出しを修正する（後述）
+  - // gif-exporter: createWorkerBlobURL に fallback を追加
+  - async createWorkerBlobURL() {
+  -   // 1) 同梱ローカルを優先
+  -   try {
+  -     const localResp = await fetch('./vendor/gif.worker.js');
+  -     if (localResp.ok) { const localCode = await localResp.text(); return URL.createObjectURL(new Blob([localCode], {type:'application/javascript'})); }
+  -   } catch(e){ /* ignore */ }
+  -   // 2) CDN を試す
+  -   try { ... fetch CDN ... }
+  -   catch(err) {
+  -     throw new Error('Worker script fetch failed. Running from file:// may block external fetch. Include ./vendor/gif.worker.js locally or run via http(s) server.');
+  -   }
+  - }
+
+テスト項目:
+  - local vendor ファイルを置いた状態で file:// で GIF エクスポート（preview）できること。
+  - quick-export-ui の呼び出しが generateBlob に変更後、UI が発火すること。
+  - Worker 取得に失敗した際に UI に説明的エラーが出ること。
+
+---
+
+ファイル: system/quick-export-ui.js
+概要:
+  - Quick Export UI（小型ポップアップ）。ショートカット Ctrl+E 等。
+  - APNG / GIF / WebP をボタンで呼び出すが、APNG と WebP は未実装（暫定で GIF を代替に使用する実装がある）。
+
+確認された問題点（優先度 高）:
+  1) `handleExport` 内で `this.exportManager.exporters.gif.generateGifBlob()` を呼んでいる。`gif-exporter.js` は `generateBlob()` を実装しており `generateGifBlob` という名前は存在しない。→ **UI からの呼出が失敗している（例外が出てcatch に入る）**。これが「ボタン押しても発火しない」大きな原因。
+  2) APNG ボタンの暫定フォールバックも同じ generateGifBlob 呼び出しになっているため APNG プレビューが発火しない。
+  3) file:// 環境で File System API が使えない（ブラウザによる）場合はダウンロードにフォールバックするが、GIF 作成以前に createWorkerBlobURL/fetch で失敗している可能性が高い。
+  4) `handleExport` は UI レベルで try/catch しているが、例外メッセージを status に出すだけで詳細ログが console.error されるのみ。ユーザーには「外部ライブラリ未ロード」「Worker fetch が失敗」「API 名不一致」などの具体的指示が必要。
+
+修正方針（優先度: 高）:
+  - (必須) `generateGifBlob()` 呼び出しを `generateBlob()`（引数 options あり）に変更する:
+      - `const gifResult = await this.exportManager.exporters.gif.generateBlob();`
+  - (必須) APNG ボタンは **exportManager.generatePreview('png')** か **exportManager.generatePreview('apng')** を使う方が一貫して安全。
+      - 例: `const result = await this.exportManager.generatePreview('png');`（export-manager が png->apng 自動判定するため）
+  - (必須) quickly detect file:// and if yes show a visible tooltip: "ローカル開発時は ./vendor/gif.worker.js 等を同梱するか、http(s) サーバーで開いてください"。
+  - (推奨) handleExport の各分岐で使う API を export-manager 経由に集約（UI は exporter internals に依存しない）：
+      - `const preview = await this.exportManager.generatePreview(format, options)`
+      - or `await this.exportManager.export(format, options)`
+    こうすれば UI と exporter の API 不整合を起こさない。
+
+具体差分（抜粋）:
+  - // 旧（問題）
+  - const gifResult = await this.exportManager.exporters.gif.generateGifBlob();
+  - // 新（修正）
+  - const gifExporter = this.exportManager.exporters.gif;
+  - if (!gifExporter || typeof gifExporter.generateBlob !== 'function') throw new Error('GIF exporter not available');
+  - const gifBlob = await gifExporter.generateBlob();
+  - blob = gifBlob;
+
+  - // APNG ボタン処理（推奨）
+  - // 旧: const tempResult = await this.exportManager.exporters.gif.generateGifBlob();
+  - // 新:
+  - const preview = await this.exportManager.generatePreview('png'); // exportManager will auto-select apng when needed
+  - blob = preview.blob;
+
+テスト項目:
+  - quick-export-ui の GIF/APNG ボタンを押すと exportManager 経由で generateBlob/generatePreview が呼ばれ、 status に成功/失敗が表示されること。
+  - file:// で起動した場合、ユーザー向けの説明が表示されること。
+
+---
+
+ファイル: ui/export-popup.js
+概要:
+  - ExportPopup は ExportManager.generatePreview / export を使ってプレビュー・ダウンロードを制御する（良い）。
+  - プレビュー UI（img）に Blob URL を set して表示する。
+
+確認された問題点:
+  1) ExportPopup.executePreview は `this.manager.generatePreview(this.selectedFormat, {})` を呼ぶ。export-manager.generatePreview は exporter.generateBlob がある前提で OK。
+  2) ただし export-popup 側で発生した例外（UPNG 未ロード, gif.worker fetch error, animationSystem エラー 等）をユーザーにわかりやすく伝える仕組みはあるが、例外メッセージの内容によりユーザーには「発火しない」ように見える場合がある（短いメッセージ or 瞬間的に消えるなど）。
+  3) preview の MIME タイプが `image/png`（APNG）/`image/gif` であることを確認して img に set しているが、ブラウザによっては apng 再生に対応していない場合がある（この点はユーザー環境依存）。
+
+修正方針（優先度: 中）:
+  - (必須) 例外の具体メッセージをユーザー向けに整形する。例: "APNG を生成するためのライブラリが読み込まれていません (UPNG.js)。index.html に <script src='./vendor/upng.js'></script> を追加してください。"
+  - (推奨) APNG が表示されない場合の代替（GIF への自動フォールバック）を UI に提示するか、ユーザーに明示する。
+  - (推奨) プレビュー時に `URL.createObjectURL` した blob.type を `console.debug` に出す（デバッグ用・本番は抑制）。
+
+テスト項目:
+  - APNG 未ロード時に ExportPopup.executePreview が具体的な指示メッセージ（上記）を表示すること。
+  - ブラウザで APNG をサポートしているかを判定するユーティリティ（簡易）を入れてメッセージを出すか検討。
+
+---
+
+共通の「外部リソース（ライブラリ）管理」提案（必須対応推奨）
+  - 現在 CDN に依存している箇所があり、file:// でのローカル直開き前提では失敗することがある。
+  - 対策:
+    1) `vendor/` ディレクトリを作り、必要な外部スクリプト（upng.js, gif.js, gif.worker.js 等）をプロジェクト内に同梱する。
+    2) index.html でまずローカルの vendor を試す。見つからなければ CDN にフォールバック（ただし file:// 環境は CDN を試せないのでユーザーに HTTP で開くよう促す）。
+    3) 各 exporter 内で外部ライブラリの存在チェック（typeof UPNG !== 'undefined' など）を行い、未存在なら throw するが、エラーメッセージは UI 向けにわかりやすくする。
+
+短期優先度作業一覧（実行順、担当: Claude）
+  1) quick-export-ui.js の `generateGifBlob()` 呼び出しを `generateBlob()` に置換（全呼び出し箇所）。【重要・高】
+  2) Exporter（gif）側で createWorkerBlobURL にローカル vendor フォールバックを追加。【高】
+  3) export-manager.generatePreview の例外メッセージを明確化し、exporter.generateBlob がない場合はわかりやすく投げる。【中】
+  4) apng-exporter の cut.duration 単位を明示化（仕様を決め、必要なら変換）。_waitFrame を requestAnimationFrame に変更。【中】
+  5) index.html に vendor フォルダ参照の README セクションを追加（ローカル実行時の注意）。【中】
+  6) export-popup の例外メッセージをユーザー指示付きに変更（UPNG 未ロードや worker fetch など）。【中】
+
+レビュー & テストチェックリスト
+  - [ ] quick-export-ui のボタンを押して Blob を取得できる（GIF/APNG 含む）。
+  - [ ] APNG が生成される場合、exportManager._shouldUseAPNG() により png 指定でも apng が選ばれること。
+  - [ ] file:// で問題が起きるケースについて、UI が「vendor を配置 or http(s) で開く」旨を表示すること。
+  - [ ] 例外メッセージはユーザー向けに変更済み（技術文は console に、ユーザー向けは UI に）。
+  - [ ] 全 exporter が `generateBlob` を提供していること。
+
+コード修正（具体的抜粋例）
+  - quick-export-ui.js (handleExport の該当部分)
+    // 変更前（問題）
+    // const gifResult = await this.exportManager.exporters.gif.generateGifBlob();
+    // 変更後（修正）
+    const gifExporter = this.exportManager.exporters.gif;
+    if (!gifExporter || typeof gifExporter.generateBlob !== 'function') {
+      throw new Error('GIF exporter not available (generateBlob missing).');
     }
-    // 常に object-fit: contain を念のため維持
-    img.style.objectFit = 'contain';
-  } catch (e) {
-    // 念のためフォールバック（破綻を避ける）
-    img.style.width = '100%';
-    img.style.height = 'auto';
-  }
-}
+    const gifBlob = await gifExporter.generateBlob();
+    blob = gifBlob;
+    filename = `animation_${this.getTimestamp()}.gif`;
 
-（2）_renderGallery のサムネイル生成部分（置換）
-
-// gallery.innerHTML = ''; の直前に「残っている previewInterval の掃除」を追加
-if (this.previewIntervals && this.previewIntervals.size > 0) {
-  for (const imgEl of Array.from(this.previewIntervals.keys())) {
-    if (!document.body.contains(imgEl)) {
-      clearInterval(this.previewIntervals.get(imgEl));
-      this.previewIntervals.delete(imgEl);
+  - export-manager.js (generatePreview より詳細なエラーメッセージ)
+    // 変更前
+    // if (!exporter || !exporter.generateBlob) { throw new Error('Preview not supported for format: ' + targetFormat); }
+    // 変更後
+    if (!exporter) {
+      throw new Error('Preview failed: exporter not registered for format: ' + targetFormat);
     }
-  }
-}
-gallery.innerHTML = '';
-
-// card + thumbnailContainer + img の組み立て（カード生成ループ内）
-const card = document.createElement('div');
-card.style.cssText = ` background: #ffffee; border: 1px solid var(--futaba-light-medium); border-radius: 6px; overflow: hidden; transition: all 0.2s; width: 130px; height: 130px; display: flex; flex-direction: column; `;
-
-// thumbnail container
-const thumbnailContainer = document.createElement('div');
-thumbnailContainer.style.cssText = ` width: 130px; height: 98px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#ffffee; flex-shrink:0; `;
-
-// image element
-const img = document.createElement('img');
-img.src = snapshot.thumbnail;
-img.style.cssText = ` display:block; max-width:100%; max-height:100%; object-fit:contain; cursor:pointer; `;
-img.onclick = (e) => { e.stopPropagation(); this._loadSnapshot(snapshot); };
-
-// fit on load (ensures長辺が目一杯)
-img.onload = () => {
-  const cw = thumbnailContainer.clientWidth || 130;
-  const ch = thumbnailContainer.clientHeight || 98;
-  this._fitImageToContainer(img, cw, ch);
-};
-
-thumbnailContainer.appendChild(img);
-card.appendChild(thumbnailContainer);
-// ... 既存の actions 部分を付ける処理はそのまま（actions を作って card に append）
-
-
-（3）GIF プレビュー開始・停止の改良（重複 interval を作らない）
-
-_startGIFPreview(snapshot, imgElement) {
-  if (snapshot.type !== 'gif' || !snapshot.frames) return;
-  // 重複開始防止: 既に interval があればクリアする
-  this._stopGIFPreview(snapshot, imgElement);
-
-  let frameIndex = 0;
-  const intervalId = setInterval(() => {
-    try {
-      frameIndex = (frameIndex + 1) % snapshot.frames.length;
-      imgElement.src = snapshot.frames[frameIndex];
-    } catch (e) {
-      // ignore
+    if (typeof exporter.generateBlob !== 'function') {
+      throw new Error('Preview failed: exporter "' + targetFormat + '" must implement generateBlob(options).');
     }
-  }, snapshot.frameDelay || 100);
 
-  this.previewIntervals.set(imgElement, intervalId);
-}
-
-_stopGIFPreview(snapshot, imgElement) {
-  const intervalId = this.previewIntervals.get(imgElement);
-  if (intervalId) {
-    clearInterval(intervalId);
-    this.previewIntervals.delete(imgElement);
-  }
-  // 復帰: 元サムネイル
-  try { imgElement.src = snapshot.thumbnail; } catch (e) { /* ignore */ }
-}
-
-
-注意点：
-
-ギャラリーを再レンダリングする際に DOM から消えた img に紐づく interval を残さないよう、先頭で掃除を行う（上記）。
-
-previewIntervals のキーは DOM 要素（img）を用いているので、再描画で新しい img が作られると古い img 要素が DOM から消えても interval が残ることがある→必ず掃除する。
-
-ui/timeline-thumbnail-utils.js（ユーティリティ化）
-
-目的：サムネイルのサイズ算出ロジックを一箇所にまとめ、呼び出し元はそれを使う。
-
-変更点：
-
-static computeThumbSize(canvasW, canvasH, maxThumbW = 150, maxThumbH = 150) を追加
-
-generateThumbnail の cacheKey に maxThumbW/maxThumbH を含めるように変更
-
-generateThumbnail が出力するサイズは computeThumbSize を使う
-
-変更スニペット（クラス内に追加/置換）
-
-class TimelineThumbnailUtils {
-  // 既存 constructor の上または下に以下を追加
-  static computeThumbSize(canvasW, canvasH, maxThumbW = 150, maxThumbH = 150) {
-    const aspectRatio = (canvasW && canvasH) ? (canvasW / canvasH) : 1;
-    let thumbW, thumbH;
-    if (aspectRatio > 1) {
-      thumbW = maxThumbW;
-      thumbH = Math.round(maxThumbW / aspectRatio);
-    } else {
-      thumbH = maxThumbH;
-      thumbW = Math.round(maxThumbH * aspectRatio);
+  - gif-exporter.js (createWorkerBlobURL にローカルフォールバック)
+    async createWorkerBlobURL() {
+      // Try local vendor first (so file:// works)
+      try {
+        const localResp = await fetch('./vendor/gif.worker.js');
+        if (localResp.ok) {
+          const localCode = await localResp.text();
+          return URL.createObjectURL(new Blob([localCode], { type: 'application/javascript' }));
+        }
+      } catch (e) {
+        // ignore; fallthrough to CDN
+      }
+      // CDN fallback
+      try {
+        const response = await fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js');
+        const workerCode = await response.text();
+        const blob = new Blob([workerCode], { type: 'application/javascript' });
+        return URL.createObjectURL(blob);
+      } catch (error) {
+        throw new Error('Worker script fetch failed. If running locally (file://), place gif.worker.js into ./vendor/ and try again, or run via http(s) server. Original error: ' + error.message);
+      }
     }
-    return { thumbW, thumbH };
-  }
 
-  // generateThumbnail の先頭付近（キャッシュキー）を次のように修正
-  generateThumbnail(cut, maxThumbW = 150, maxThumbH = 150) {
-    const cacheKey = `${cut.id}_${cut.canvasWidth}_${cut.canvasHeight}_${maxThumbW}x${maxThumbH}`;
-    if (this.thumbnailCache.has(cacheKey)) return this.thumbnailCache.get(cacheKey);
-    // 以降で computeThumbSize を利用する
-    const { thumbW, thumbH } = TimelineThumbnailUtils.computeThumbSize(canvasW, canvasH, maxThumbW, maxThumbH);
-    // thumbCanvas.width = thumbW; thumbCanvas.height = thumbH; ... の代入に使用
-  }
-}
+注意事項（運用上の指示）
+  - ローカル直開き（file://）を想定しているため、外部 CDN に依存する worker やライブラリはプロジェクト内に同梱する運用を推奨する。
+  - cut.duration の単位をプロジェクト全体で統一する（お勧め：秒で管理）。変更する場合は history / animation data 互換性に注意。
+  - APNG のプレビュー可否はブラウザ依存（古いブラウザは APNG を再生できない）。その場合は GIF フォールバックを UI で案内する。
 
+付録: デバッグ時のチェック手順（順序）
+  1) ブラウザ開発者ツールの Console を確認。missing function / undefined などのエラーを特定。
+  2) quick-export-ui でエラーが出ている場合は、console エラーの関数名（例: generateGifBlob is not a function）を修正。
+  3) gif.worker fetch エラーが出ている場合は、ネットワークタブで 404/blocked を確認。file:// の場合は vendor 同梱を試す。
+  4) APNG 生成失敗時は `_checkUPNGAvailability()` の例外を捕捉しているか確認。index.html に UPNG の読み込みがあるかを確認。
+  5) export-popup で preview が空白な場合は result.blob.type を確認して mime を調べる（img タグがその mime をサポートしているか）。
 
-ui/timeline-ui.js（呼び出し側修正）
+まとめ（要点）
+  - 最短で動かすにはまず **quick-export-ui.js の generateGifBlob 呼び出し→generateBlob に修正**すること（これだけでボタンが発火する可能性が高い）。
+  - 併せて **gif-exporter の worker fetch のローカル fallback を追加**し、ローカル直開きを安定化すること。
+  - APNG が動かない場合は **UPNG.js のロード確認**（未ロードなら index.html に同梱 or CDN を追加）と **cut.duration の単位統一**を行う。
+  - UI は内部実装に依存せず export-manager の公開 API（generatePreview / export）を使う設計に寄せるのが安全で拡張性が高い。
 
-applyCutThumbnailAspectRatio の内部計算を上の helper に置き換える。
-
-requestThumbnailUpdate / updateAllCutThumbnails 周りに短時間リクエスト抑止（簡易タイムスタンプ制御）を追加。
-
-変更スニペット（置換例）
-
-
-applyCutThumbnailAspectRatio(cutItem, cutIndex) {
-  const thumbnail = cutItem.querySelector('.cut-thumbnail');
-  if (!thumbnail) return;
-  const canvasWidth = this.animationSystem.layerSystem?.config?.canvas?.width || 800;
-  const canvasHeight = this.animationSystem.layerSystem?.config?.canvas?.height || 600;
-  const maxWidth = 72;
-  const maxHeight = 54;
-  // TimelineThumbnailUtils が存在する前提で呼ぶ
-  if (window.TimelineThumbnailUtils && typeof window.TimelineThumbnailUtils.computeThumbSize === 'function') {
-    const { thumbW, thumbH } = window.TimelineThumbnailUtils.computeThumbSize(canvasWidth, canvasHeight, maxWidth, maxHeight);
-    thumbnail.style.width = thumbW + 'px';
-    thumbnail.style.height = thumbH + 'px';
-  } else {
-    // 既存のフォールバック計算
-    const aspectRatio = canvasWidth / canvasHeight;
-    let thumbWidth, thumbHeight;
-    if (aspectRatio >= maxWidth / maxHeight) {
-      thumbWidth = maxWidth;
-      thumbHeight = Math.round(maxWidth / aspectRatio);
-    } else {
-      thumbHeight = maxHeight;
-      thumbWidth = Math.round(maxHeight * aspectRatio);
-    }
-    thumbnail.style.width = thumbWidth + 'px';
-    thumbnail.style.height = thumbHeight + 'px';
-  }
-}
-
-
-イベント重複対策（timeline-ui.requestThumbnailUpdate の強化）
-
-requestThumbnailUpdate() {
-  if (this.thumbnailUpdateInProgress) return;
-  const now = Date.now();
-  if (this._lastThumbnailRequestAt && now - this._lastThumbnailRequestAt < 250) {
-    // 250ms以内の連続要求は無視
-    return;
-  }
-  this._lastThumbnailRequestAt = now;
-  if (this.thumbnailUpdateTimer) clearTimeout(this.thumbnailUpdateTimer);
-  this.thumbnailUpdateTimer = setTimeout(() => { this.updateCurrentCutThumbnail(); }, 200);
-}
-
-
-テスト手順（改修後検証）
-
-アプリを起動 → AlbumPopup を開く。全スナップショットが正しく表示され、各カードで長辺がカードに収まるように最大化されていることを確認。
-
-横長画像は幅がいっぱいに、縦長画像は高さがいっぱいに表示される（余白は必ず短辺側に発生）。
-
-GIF サムネイル上でホバー → プレビュー開始と停止が確実に行われることを確認。
-
-ホバーを繰り返しても interval が重複して残らない（開発者ツールで setInterval の数や CPU を監視）。
-
-レイヤーを描画 → タイムライン / アルバム のサムネイル更新が過度に連続発生しないこと（短時間に連続で regenerate されない）。
-
-メモリリークの簡易確認：ギャラリーを多数回開閉してから profiler でタイマー/イベントリスナが残っていないことを確認。
-
-
-リスクと巻き戻し（rollback）
-
-低リスク：AlbumPopup の表示ロジック変更は DOM 構造を少し変えるため、ボタン位置や CSS の影響を確認。問題があれば元の img style 部分を戻すだけで即ロールバック可能。
-
-中〜高リスク：Timeline 系を共通化すると他 UI が影響を受ける為、段階的に（まず AlbumPopup→TimelineUI→TimelineThumbnailUtils の順）適用。各段階で unit テスト的な動作確認を必須とする。
-
-備考（運用上の注意）
-
-本ツールはベクターペン主体。サムネイル生成では 元データ（paths 等）をラスタライズする際にラスタ情報を永続化しないよう注意→ スナップショットに paths 情報を含める設計は維持する（既に album-popup.js でその扱いがある）。
-
-extract.pixels や RenderTexture の頻繁生成は重い処理。頻度はデバウンスで抑える方向で改善する（必要なら、generateThumbnail の内部で再利用可能な RenderTexture を流用する案を検討）。
-
-実施作業一覧（優先順タスク）
-
-AlbumPopup の _renderGallery, _startGIFPreview, _stopGIFPreview, _fitImageToContainer を適用（上記スニペット）。→ 動作確認。
-
-TimelineThumbnailUtils に computeThumbSize を追加、cacheKey を改善。→ TimelineUI の applyCutThumbnailAspectRatio を computeThumbSize 利用に差し替え。→ 動作確認。
-
-requestThumbnailUpdate のデバウンス強化・進行中フラグの見直し（timeline-ui / core-engine の相互作用を観察）。→ 動作確認。
-
-必要なら animation-system の generateCutThumbnailOptimized の内部で「実行中フラグ」を設け、同時多重実行・イベント乱発を抑止。
-
-コードレビュー → CI/ローカル受け入れテスト（アルバムの開閉、ギャラリー再描画、描画・消去・Undo/Redo のループテスト）。
-
-最後に（次のアクション）
-
-まずは 1) の AlbumPopup の修正を実装していただき、差し替え後のスクリーンショットとブラウザの開発者ツールでのタイマー状況を教えてください。
-
-それを受けて 2) 以降を段階的に作業します。
-（ただし、この返信では改修コードの「提案」は完了しています。実装・動作確認はリポジトリ側で行ってください。）
+--- end of file ---

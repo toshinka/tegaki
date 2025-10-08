@@ -1,11 +1,9 @@
-// ===== core-engine.js - Phase 4: StateManager連携版 =====
+// ===== core-engine.js - Phase 2: Redo対応完全版 =====
 // ================================================================================
-// Phase 4: 描画コマンド化
-// ================================================================================
-// 改修内容:
-// - stopDrawing()でStateManager.addStroke()を呼ぶように変更
-// - layer:clear-activeでコマンドパターン対応
-// - 既存のwindow.History.saveState()呼び出しを削除
+// Phase 2改修内容:
+// - stopDrawing()のdo()メソッド実装（Redo可能に）
+// - History.jsのEventBus修正対応
+// - 既存機能完全継承
 // ================================================================================
 
 (function() {
@@ -161,20 +159,17 @@
             this.lastPoint = canvasPoint;
         }
 
-        // ========== Phase 4: 改修 START ==========
         stopDrawing() {
             if (!this.isDrawing) return;
 
             if (this.currentPath) {
                 this.currentPath.isComplete = true;
                 
-                // 描画完了時の履歴記録
                 const activeLayer = this.layerManager.getActiveLayer();
                 if (activeLayer && window.History) {
                     const pathId = this.currentPath.id;
                     const layerIdAtDrawTime = activeLayer.layerData.id;
                     
-                    // graphicsを除いたデータのみをスナップショット
                     const pathData = {
                         id: this.currentPath.id,
                         points: structuredClone(this.currentPath.points),
@@ -188,11 +183,35 @@
                     const command = {
                         name: 'draw-stroke',
                         do: () => {
-                            // 既にaddPathToActiveLayer()でpaths配列に追加済み
-                            // do()では何もしない（pushの時点で実行済み）
+                            const layers = this.layerManager.getLayers();
+                            const targetLayer = layers.find(l => l.layerData.id === layerIdAtDrawTime);
+                            if (!targetLayer) return;
+                            
+                            const existingPath = targetLayer.layerData.paths.find(p => p.id === pathId);
+                            if (existingPath) return;
+                            
+                            const restoredPath = structuredClone(pathData);
+                            if (this.layerManager.rebuildPathGraphics) {
+                                this.layerManager.rebuildPathGraphics(restoredPath);
+                                if (restoredPath.graphics) {
+                                    targetLayer.layerData.paths.push(restoredPath);
+                                    targetLayer.addChild(restoredPath.graphics);
+                                    
+                                    const layerIndex = layers.indexOf(targetLayer);
+                                    if (layerIndex !== -1) {
+                                        this.layerManager.requestThumbnailUpdate(layerIndex);
+                                    }
+                                    
+                                    if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
+                                        const cutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
+                                        setTimeout(() => {
+                                            this.layerManager.animationSystem.generateCutThumbnailOptimized(cutIndex);
+                                        }, 100);
+                                    }
+                                }
+                            }
                         },
                         undo: () => {
-                            // パスを削除
                             const layers = this.layerManager.getLayers();
                             const targetLayer = layers.find(l => l.layerData.id === layerIdAtDrawTime);
                             if (!targetLayer) return;
@@ -250,7 +269,6 @@
             this.currentPath = null;
             this.lastPoint = null;
         }
-        // ========== Phase 4: 改修 END ==========
         
         addPathToActiveLayer(path) {
             const activeLayer = this.layerManager.getActiveLayer();
@@ -541,9 +559,7 @@
             this.clipboardSystem.setLayerManager(this.layerSystem);
         }
         
-        // ========== Phase 4: 改修 START ==========
         setupSystemEventIntegration() {
-            // レイヤー消去イベント - コマンドパターン対応
             this.eventBus.on('layer:clear-active', () => {
                 const activeLayer = this.layerSystem.getActiveLayer();
                 if (!activeLayer || !activeLayer.layerData) return;
@@ -554,7 +570,6 @@
                 
                 const pathsSnapshot = structuredClone(activeLayer.layerData.paths);
                 
-                // コマンドパターンによるHistory記録
                 if (window.History) {
                     const command = {
                         name: 'clear-layer',
@@ -581,10 +596,8 @@
                             }
                         },
                         undo: () => {
-                            // パスを復元
                             activeLayer.layerData.paths = structuredClone(pathsSnapshot);
                             
-                            // グラフィックスを再構築
                             activeLayer.layerData.paths.forEach(path => {
                                 if (this.layerSystem.rebuildPathGraphics) {
                                     this.layerSystem.rebuildPathGraphics(path);
@@ -609,7 +622,6 @@
                     History.push(command);
                 }
             });
-            // ========== Phase 4: 改修 END ==========
             
             this.eventBus.on('layer:activated', (data) => {
                 this.eventBus.emit('clipboard:get-info-request');
