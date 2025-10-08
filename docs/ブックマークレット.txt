@@ -27,3 +27,19 @@ MebukiTest_vB.js
 javascript:(function(){
   if(!globalThis.mebukiStart){var s=document.createElement('script');s.src='https://toshinka.github.io/tegaki/MebukiTest_vB.js';document.body.appendChild(s);}else{globalThis.mebukiStart();}
 })();
+
+C案
+MebukiTest_vC.js
+
+javascript:(function(){
+  if(!globalThis.mebukiStartC){
+    var s=document.createElement('script');
+    s.src='https://toshinka.github.io/tegaki/MebukiTest_vC.js';
+    document.body.appendChild(s);
+  }else{
+    globalThis.mebukiStartC();
+  }
+})();
+
+
+javascript:(function(){if(!globalThis.canvas98start){var s=document.createElement('script');s.charset='UTF-8';s.src='https://canvas98.github.io/canvas98/all-in-one.js';document.body.appendChild(s)}else{globalThis.canvas98start()}})();

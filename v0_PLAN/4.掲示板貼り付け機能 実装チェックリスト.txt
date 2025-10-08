@@ -1,0 +1,349 @@
+# 掲示板貼り付け機能 実装チェックリスト
+
+## 📋 実装手順
+
+### Phase 1: ファイル追加
+
+- [ ] `system/board-paste-integration.js` を作成
+  - Artifactからコードをコピー
+  - ファイルエンコーディングは UTF-8 に設定
+
+### Phase 2: HTML修正
+
+- [ ] `index.html` にスクリプト読み込みを追加
+  ```html
+  <!-- export-manager.js の後に追加 -->
+  <script src="system/board-paste-integration.js"></script>
+  ```
+
+### Phase 3: 設定ファイル修正
+
+- [ ] `config.js` に `boardPaste` 設定を追加
+  - `window.TEGAKI_CONFIG.boardPaste` オブジェクト
+  - プリセット設定（オプション）
+  - バリデーション関数（オプション）
+
+### Phase 4: コアエンジン統合
+
+- [ ] `core-engine.js` のコンストラクタに追加
+  ```javascript
+  this.boardPasteIntegration = null;
+  ```
+
+- [ ] `core-engine.js` の `init()` メソッドに追加
+  ```javascript
+  this._initBoardPasteIntegration();
+  this._setupBoardPasteShortcuts();
+  ```
+
+- [ ] 以下のメソッドを追加:
+  - [ ] `_initBoardPasteIntegration()`
+  - [ ] `_setupBoardPasteShortcuts()`
+  - [ ] `_handleBoardPasteCopy()`
+  - [ ] `_handleBoardPasteLoad()`
+  - [ ] `_handleBoardPasteDownload()`
+  - [ ] `_showNotification()` (既存がない場合)
+
+### Phase 5: 動作確認
+
+- [ ] ブラウザのコンソールでエラーがないか確認
+- [ ] 初期化ログ `✅ Board Paste Integration initialized` を確認
+- [ ] ショートカット登録ログを確認
+
+---
+
+## 🧪 テストコード
+
+### コンソールでの基本テスト
+
+ブラウザのコンソール (F12) で以下を実行:
+
+```javascript
+// ===== 1. システムの初期化確認 =====
+console.log('Engine:', window.coreEngine);
+console.log('BoardPaste:', window.coreEngine?.boardPasteIntegration);
+
+// 初期化されていればOK
+// 出力: BoardPasteIntegration { layerSystem: ..., exportManager: ..., ... }
+
+
+// ===== 2. 設定の確認 =====
+console.log('Config:', window.TEGAKI_CONFIG.boardPaste);
+
+// 期待される出力:
+// { maxWidth: 400, maxHeight: 400, imageFormat: 'png', ... }
+
+
+// ===== 3. シリアライズのテスト =====
+const engine = window.coreEngine || window.TegakiCoreEngine;
+const boardPaste = engine.boardPasteIntegration;
+
+// 簡単な絵を描いてから実行
+const workData = boardPaste.serializeCurrentWork();
+console.log('Serialized:', workData);
+
+// 期待される出力:
+// { version: "1.0", timestamp: "...", layers: [...] }
+
+
+// ===== 4. エンコード/デコードのテスト =====
+const encoded = boardPaste.encodeWorkData(workData);
+console.log('Encoded length:', encoded.length);
+
+const decoded = boardPaste.decodeWorkData(encoded);
+console.log('Decoded:', decoded);
+console.log('Match:', JSON.stringify(workData) === JSON.stringify(decoded));
+
+// 期待される出力: Match: true
+
+
+// ===== 5. HTML生成のテスト =====
+boardPaste.generateBoardPasteHTML().then(html => {
+    console.log('Generated HTML length:', html.length);
+    console.log('HTML preview:', html.substring(0, 200) + '...');
+});
+
+// 期待される出力: <img src="data:image/png;base64,..." ...>
+
+
+// ===== 6. クリップボードコピーのテスト =====
+// 簡単な絵を描いてから実行
+boardPaste.copyToClipboardAsHTML().then(success => {
+    console.log('Copy success:', success);
+});
+
+// 期待される出力: Copy success: true
+// 通知も表示されるはず
+
+
+// ===== 7. デバッグヘルパーのテスト =====
+if (window.debugBoardPaste) {
+    // シリアライズデータの確認
+    const data = window.debugBoardPaste.serialize();
+    console.log('Debug serialize:', data);
+    
+    // コピー実行
+    window.debugBoardPaste.copy();
+}
+```
+
+---
+
+## 🎯 機能テスト手順
+
+### テスト1: 基本的なコピー&ペースト
+
+1. **準備**: 簡単な絵を描く（1レイヤー、数本の線）
+2. **コピー**: `Ctrl+Shift+C` を押す
+3. **確認**: 通知「掲示板貼り付け用にコピーしました」が表示
+4. **新規キャンバス**: ページをリロード or 全削除
+5. **ペースト**: `Ctrl+Shift+V` を押す
+6. **確認**: 確認ダイアログが表示され、作品が復元される
+
+**期待結果**: 元の絵と同じものが復元される
+
+---
+
+### テスト2: 複数レイヤーのコピー&ペースト
+
+1. **準備**: 3つのレイヤーを作成し、それぞれに異なる色の線を描く
+2. **レイヤー設定**: 
+   - レイヤー1: 表示、不透明度100%
+   - レイヤー2: 非表示
+   - レイヤー3: 表示、不透明度50%
+3. **コピー**: `Ctrl+Shift+C`
+4. **ペースト**: `Ctrl+Shift+V`
+
+**期待結果**: 
+- レイヤー数が一致
+- 表示/非表示の状態が復元
+- 不透明度が復元
+- すべての線が正しく復元
+
+---
+
+### テスト3: HTMLファイルのダウンロード
+
+1. **準備**: 絵を描く
+2. **ダウンロード**: `Ctrl+Shift+D` を押す
+3. **確認**: `tegaki_board_paste_YYYY-MM-DD...html` がダウンロードされる
+4. **検証**: ダウンロードしたHTMLをテキストエディタで開く
+
+**期待される内容**:
+```html
+<img 
+  src="data:image/png;base64,..." 
+  alt="Tegaki Drawing" 
+  title="..." 
+  data-tegaki-work="..." 
+  style="max-width: 100%; height: auto;">
+```
+
+5. **読み込みテスト**: HTMLファイルの内容を全選択してコピー
+6. **クリップボード設定**: ブラウザの開発ツールで以下を実行
+   ```javascript
+   const html = `ここにコピーしたHTMLを貼り付け`;
+   const blob = new Blob([html], { type: 'text/html' });
+   const item = new ClipboardItem({ 'text/html': blob });
+   await navigator.clipboard.write([item]);
+   ```
+7. **読み込み**: `Ctrl+Shift+V` で復元
+
+---
+
+### テスト4: サイズ制限のテスト
+
+1. **大きなキャンバス**: 設定を変更
+   ```javascript
+   window.TEGAKI_CONFIG.boardPaste.maxWidth = 200;
+   window.TEGAKI_CONFIG.boardPaste.maxHeight = 200;
+   ```
+2. **コピー**: `Ctrl+Shift+C`
+3. **HTMLダウンロード**: `Ctrl+Shift+D`
+4. **画像確認**: HTMLをブラウザで開き、画像サイズを確認
+
+**期待結果**: 画像が200x200以下にリサイズされている
+
+---
+
+### テスト5: エラーハンドリング
+
+#### 5-1: 空のキャンバス
+1. **準備**: 何も描かない
+2. **コピー**: `Ctrl+Shift+C`
+
+**期待結果**: エラーなくコピーされる（空のデータ）
+
+#### 5-2: 無効なHTML
+1. **準備**: 無効なHTMLをクリップボードにコピー
+   ```javascript
+   navigator.clipboard.writeText('<div>Invalid</div>');
+   ```
+2. **読み込み**: `Ctrl+Shift+V`
+
+**期待結果**: エラー通知「有効な作品データが見つかりません」
+
+#### 5-3: クリップボードが空
+1. **準備**: クリップボードをクリア
+2. **読み込み**: `Ctrl+Shift+V`
+
+**期待結果**: エラー通知「クリップボードにHTMLがありません」
+
+---
+
+## 🐛 トラブルシューティング
+
+### 問題: コピーできない
+
+**チェックリスト**:
+- [ ] HTTPSまたはlocalhost環境で実行しているか
+- [ ] ブラウザがClipboard APIをサポートしているか (Chrome, Firefox, Edge)
+- [ ] ブラウザの設定でクリップボードアクセスが許可されているか
+
+**コンソールエラーを確認**:
+```javascript
+navigator.permissions.query({ name: 'clipboard-write' }).then(result => {
+    console.log('Clipboard write permission:', result.state);
+});
+```
+
+---
+
+### 問題: 読み込みに失敗する
+
+**デバッグ手順**:
+1. HTMLをコンソールで確認
+   ```javascript
+   navigator.clipboard.read().then(items => {
+       items[0].getType('text/html').then(blob => {
+           blob.text().then(html => console.log(html));
+       });
+   });
+   ```
+
+2. data-tegaki-work属性を確認
+   ```javascript
+   const html = `...クリップボードの内容...`;
+   const div = document.createElement('div');
+   div.innerHTML = html;
+   const img = div.querySelector('img');
+   console.log('data-tegaki-work:', img?.getAttribute('data-tegaki-work'));
+   ```
+
+3. デコードをテスト
+   ```javascript
+   const encoded = '...data-tegaki-work属性の値...';
+   const decoded = window.coreEngine.boardPasteIntegration.decodeWorkData(encoded);
+   console.log('Decoded:', decoded);
+   ```
+
+---
+
+### 問題: 画像が表示されない
+
+**チェックリスト**:
+- [ ] Data URLのサイズが制限を超えていないか
+- [ ] PNG生成が正しく行われているか
+- [ ] Base64エンコードが正しいか
+
+**デバッグ**:
+```javascript
+// Data URLのサイズを確認
+const html = await window.coreEngine.boardPasteIntegration.generateBoardPasteHTML();
+const match = html.match(/src="([^"]+)"/);
+if (match) {
+    const dataURL = match[1];
+    console.log('Data URL size:', dataURL.length, 'bytes');
+    console.log('Size MB:', (dataURL.length / 1024 / 1024).toFixed(2));
+}
+```
+
+---
+
+## ✅ 最終確認チェックリスト
+
+### コード品質
+- [ ] コンソールにエラーが出ていない
+- [ ] すべての初期化ログが表示されている
+- [ ] 警告メッセージがない（または意図したもののみ）
+
+### 機能
+- [ ] Ctrl+Shift+C でコピーできる
+- [ ] Ctrl+Shift+V で読み込める
+- [ ] Ctrl+Shift+D でダウンロードできる
+- [ ] 通知が正しく表示される
+
+### データ整合性
+- [ ] シンプルな絵が完全に復元される
+- [ ] 複数レイヤーが正しく復元される
+- [ ] レイヤー設定（表示/非表示、不透明度）が復元される
+- [ ] 色とサイズが正確に復元される
+
+### ブラウザ互換性
+- [ ] Chrome で動作する
+- [ ] Firefox で動作する
+- [ ] Edge で動作する
+- [ ] (オプション) Safari で動作する
+
+### パフォーマンス
+- [ ] 小さな絵（<100点）: 1秒以内
+- [ ] 中規模の絵（100-500点）: 3秒以内
+- [ ] 大きな絵（500-1000点）: 10秒以内
+
+---
+
+## 📝 実装完了後のタスク
+
+- [ ] コミットメッセージを書く
+- [ ] READMEを更新する
+- [ ] ショートカット一覧を更新する
+- [ ] ユーザードキュメントを作成する
+- [ ] (オプション) チュートリアル動画を作成する
+
+---
+
+## 🎉 完成！
+
+すべてのチェックが完了したら、実装は完了です。
+
+お疲れ様でした！
