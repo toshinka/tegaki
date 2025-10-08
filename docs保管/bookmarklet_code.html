@@ -1,0 +1,234 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Tegaki めぶきちゃんねる連携 ブックマークレット</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            background: white;
+            border-radius: 8px;
+            padding: 30px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            border-bottom: 3px solid #4CAF50;
+            padding-bottom: 10px;
+        }
+        
+        h2 {
+            color: #555;
+            margin-top: 30px;
+        }
+        
+        .bookmarklet-box {
+            background: #fafafa;
+            border: 2px dashed #4CAF50;
+            border-radius: 8px;
+            padding: 20px;
+            margin: 20px 0;
+        }
+        
+        .bookmarklet-link {
+            display: inline-block;
+            background: #4CAF50;
+            color: white;
+            padding: 15px 30px;
+            text-decoration: none;
+            border-radius: 5px;
+            font-size: 18px;
+            font-weight: bold;
+            cursor: move;
+        }
+        
+        .bookmarklet-link:hover {
+            background: #45a049;
+        }
+        
+        .instruction {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .warning {
+            background: #fff3e0;
+            border-left: 4px solid #ff9800;
+            padding: 15px;
+            margin: 15px 0;
+        }
+        
+        .code-block {
+            background: #272822;
+            color: #f8f8f2;
+            padding: 15px;
+            border-radius: 5px;
+            overflow-x: auto;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            line-height: 1.5;
+        }
+        
+        ol {
+            line-height: 2;
+        }
+        
+        .feature-list {
+            background: #f9f9f9;
+            border-radius: 5px;
+            padding: 15px 15px 15px 40px;
+        }
+        
+        .success {
+            color: #4CAF50;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>📝 Tegaki めぶきちゃんねる連携</h1>
+        
+        <p>
+            めぶきちゃんねるで直接お絵かきできるブックマークレットです。<br>
+            描いた絵をそのまま投稿できます。
+        </p>
+        
+        <h2>🔖 ブックマークレットのインストール</h2>
+        
+        <div class="instruction">
+            <strong>手順:</strong>
+            <ol>
+                <li>下の緑色のボタンを<strong>ブックマークバーにドラッグ&ドロップ</strong></li>
+                <li>または右クリック → 「お気に入りに追加」</li>
+            </ol>
+        </div>
+        
+        <div class="bookmarklet-box" style="text-align: center;">
+            <a href="javascript:(function(){if(!window.tegakiStart){var s=document.createElement('script');s.charset='UTF-8';s.src='https://toshinka.github.io/tegaki/v8.13_History28/tegaki-loader.js';document.body.appendChild(s)}else{window.tegakiStart()}})();" class="bookmarklet-link">
+                🎨 Tegaki起動
+            </a>
+            <p style="color: #666; margin-top: 10px;">
+                ↑ このボタンをブックマークバーにドラッグ
+            </p>
+        </div>
+        
+        <h2>📖 使い方</h2>
+        
+        <div class="instruction">
+            <ol>
+                <li>めぶきちゃんねるのスレッドを開く</li>
+                <li>ブックマークバーの「🎨 Tegaki起動」をクリック</li>
+                <li>お絵かきツールが全画面表示される</li>
+                <li>絵を描く</li>
+                <li>「✓ 掲示板に貼り付けて閉じる」をクリック</li>
+                <li>自動的に投稿フォームに画像が添付される</li>
+                <li>コメントを入力して投稿</li>
+            </ol>
+        </div>
+        
+        <h2>✨ 機能</h2>
+        
+        <ul class="feature-list">
+            <li><span class="success">✓</span> ベクターペン描画</li>
+            <li><span class="success">✓</span> レイヤー機能</li>
+            <li><span class="success">✓</span> アニメーション対応 (GIF/APNG/WebP)</li>
+            <li><span class="success">✓</span> Undo/Redo対応</li>
+            <li><span class="success">✓</span> ズーム・パン操作</li>
+            <li><span class="success">✓</span> 出力フォーマット選択可能</li>
+        </ul>
+        
+        <h2>⌨️ ショートカット</h2>
+        
+        <ul class="feature-list">
+            <li><strong>P</strong> - ペンツール</li>
+            <li><strong>E</strong> - 消しゴム</li>
+            <li><strong>Space + ドラッグ</strong> - キャンバス移動</li>
+            <li><strong>Ctrl + ホイール</strong> - ズーム</li>
+            <li><strong>Ctrl + Z</strong> - 元に戻す</li>
+            <li><strong>Ctrl + Y</strong> - やり直し</li>
+            <li><strong>Alt + A</strong> - タイムライン表示/非表示</li>
+            <li><strong>Alt + C</strong> - 新しいカット追加</li>
+        </ul>
+        
+        <h2>⚙️ 技術仕様</h2>
+        
+        <div class="warning">
+            <strong>対応掲示板:</strong>
+            <ul style="margin: 10px 0;">
+                <li>めぶきちゃんねる (mebuki.moe) ✓</li>
+                <li>その他の掲示板は今後対応予定</li>
+            </ul>
+        </div>
+        
+        <div class="instruction">
+            <strong>出力フォーマット:</strong>
+            <ul style="margin: 10px 0;">
+                <li><strong>GIF</strong> - アニメーション対応、広い互換性</li>
+                <li><strong>PNG</strong> - 静止画、高画質</li>
+                <li><strong>APNG</strong> - アニメーション、PNG互換</li>
+                <li><strong>WebP</strong> - 軽量、最新ブラウザ対応</li>
+            </ul>
+        </div>
+        
+        <h2>🔧 開発者向け情報</h2>
+        
+        <p>ローダースクリプトのURL:</p>
+        <div class="code-block">
+https://toshinka.github.io/tegaki/v8.13_History28/tegaki-loader.js
+        </div>
+        
+        <p>ブックマークレットのコード (1行):</p>
+        <div class="code-block" style="word-break: break-all;">
+javascript:(function(){if(!window.tegakiStart){var s=document.createElement('script');s.charset='UTF-8';s.src='https://toshinka.github.io/tegaki/v8.13_History28/tegaki-loader.js';document.body.appendChild(s)}else{window.tegakiStart()}})();
+        </div>
+        
+        <h2>📝 注意事項</h2>
+        
+        <ul class="feature-list">
+            <li>ベクターペン主体のため、複雑な絵はデータ量が増えます</li>
+            <li>アニメーションのフレーム数が多いと出力に時間がかかります</li>
+            <li>ブックマークレット起動中は他の操作ができません</li>
+            <li>描画内容はキャンセルすると破棄されます（保存機能なし）</li>
+        </ul>
+        
+        <h2>🐛 トラブルシューティング</h2>
+        
+        <div class="warning">
+            <strong>ブックマークレットが動かない場合:</strong>
+            <ul style="margin: 10px 0;">
+                <li>ブラウザのコンソール（F12）でエラーを確認</li>
+                <li>めぶきちゃんねるのDOM構造が変わった可能性</li>
+                <li>ブラウザのキャッシュをクリアして再試行</li>
+            </ul>
+        </div>
+        
+        <div class="instruction">
+            <strong>画像が投稿フォームに反映されない場合:</strong>
+            <ul style="margin: 10px 0;">
+                <li>手動で「レスを投稿」ボタンを押してフォームを開く</li>
+                <li>ファイル入力欄が表示されているか確認</li>
+                <li>ブラウザのFile API対応状況を確認</li>
+            </ul>
+        </div>
+        
+        <hr style="margin: 30px 0; border: none; border-top: 1px solid #ddd;">
+        
+        <p style="text-align: center; color: #999;">
+            Tegaki Drawing Tool - Bookmarklet Edition<br>
+            PixiJS v8.13 | Vector Pen Based
+        </p>
+    </div>
+</body>
+</html>
