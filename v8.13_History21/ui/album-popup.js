@@ -68,19 +68,6 @@ class AlbumPopup {
       color: var(--text-primary);
     `;
 
-    const header = document.createElement('div');
-    header.style.cssText = `
-      padding: 16px 20px;
-      border-bottom: 2px solid var(--futaba-light-medium);
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      flex-shrink: 0;
-    `;
-    header.innerHTML = `
-      <span style="font-size: 16px; font-weight: bold; color: var(--futaba-maroon);">アルバム</span>
-    `;
-
     const controls = document.createElement('div');
     controls.style.cssText = `
       padding: 16px 20px;
@@ -108,7 +95,6 @@ class AlbumPopup {
       justify-content: start;
     `;
 
-    this.popup.appendChild(header);
     this.popup.appendChild(controls);
     this.popup.appendChild(gallery);
     this.overlay.appendChild(this.popup);
@@ -460,28 +446,42 @@ class AlbumPopup {
       this.animationSystem.setCutIndex(0);
     }
 
-    if (this.layerSystem && this.layerSystem.updateLayerPanelUI) {
-      setTimeout(() => {
-        const currentCut = this.animationSystem.animationData.cuts[this.animationSystem.getCurrentCutIndex()];
-        if (currentCut && currentCut.container) {
-          currentCut.container.children.forEach((layer, index) => {
-            const eyeBtn = document.querySelector(`#layerPanel .layer-item:nth-child(${index + 1}) .layer-eye`);
-            if (eyeBtn && layer) {
-              eyeBtn.textContent = layer.visible ? '👁' : '👁‍🗨';
-              eyeBtn.style.opacity = layer.visible ? '1' : '0.3';
-            }
-          });
-        }
+    setTimeout(() => {
+      if (this.layerSystem && this.layerSystem.updateLayerPanelUI) {
         this.layerSystem.updateLayerPanelUI();
-      }, 150);
-    }
+      }
+    }, 200);
 
     this.hide();
+  }
+
+  _fitImageToContainer(img, containerW, containerH) {
+    const iw = img.naturalWidth || img.width || 1;
+    const ih = img.naturalHeight || img.height || 1;
+    const imgAspect = iw / ih;
+    const containerAspect = containerW / containerH;
+    
+    if (imgAspect >= containerAspect) {
+      img.style.width = '100%';
+      img.style.height = 'auto';
+    } else {
+      img.style.width = 'auto';
+      img.style.height = '100%';
+    }
   }
 
   _renderGallery() {
     const gallery = document.getElementById('albumGallery');
     if (!gallery) return;
+
+    if (this.previewIntervals && this.previewIntervals.size > 0) {
+      for (const imgEl of Array.from(this.previewIntervals.keys())) {
+        if (!document.body.contains(imgEl)) {
+          clearInterval(this.previewIntervals.get(imgEl));
+          this.previewIntervals.delete(imgEl);
+        }
+      }
+    }
 
     gallery.innerHTML = '';
 
@@ -498,30 +498,38 @@ class AlbumPopup {
         display: flex;
         flex-direction: column;
       `;
-      card.onmouseenter = () => {
-        card.style.transform = 'translateY(-2px)';
-        card.style.borderColor = 'var(--futaba-maroon)';
-        card.style.boxShadow = '0 4px 8px rgba(128, 0, 0, 0.2)';
-      };
-      card.onmouseleave = () => {
-        card.style.transform = 'translateY(0)';
-        card.style.borderColor = 'var(--futaba-light-medium)';
-        card.style.boxShadow = 'none';
-      };
+      
+      const thumbnailContainer = document.createElement('div');
+      thumbnailContainer.style.cssText = `
+        width: 130px;
+        height: 98px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        overflow: hidden;
+        background: #ffffee;
+        flex-shrink: 0;
+      `;
 
       const img = document.createElement('img');
       img.src = snapshot.thumbnail;
       img.style.cssText = `
-        width: 130px;
-        height: 98px;
-        object-fit: contain;
         display: block;
-        background: #ffffee;
+        max-width: 100%;
+        max-height: 100%;
         cursor: pointer;
-        flex-shrink: 0;
       `;
       
-      img.onclick = () => this._loadSnapshot(snapshot);
+      img.onload = () => {
+        this._fitImageToContainer(img, 130, 98);
+      };
+      
+      img.onclick = (e) => {
+        e.stopPropagation();
+        this._loadSnapshot(snapshot);
+      };
+
+      thumbnailContainer.appendChild(img);
 
       const actions = document.createElement('div');
       actions.style.cssText = `
@@ -547,6 +555,17 @@ class AlbumPopup {
           card.style.boxShadow = 'none';
           this._stopGIFPreview(snapshot, img);
         };
+      } else {
+        card.onmouseenter = () => {
+          card.style.transform = 'translateY(-2px)';
+          card.style.borderColor = 'var(--futaba-maroon)';
+          card.style.boxShadow = '0 4px 8px rgba(128, 0, 0, 0.2)';
+        };
+        card.onmouseleave = () => {
+          card.style.transform = 'translateY(0)';
+          card.style.borderColor = 'var(--futaba-light-medium)';
+          card.style.boxShadow = 'none';
+        };
       }
 
       const downloadBtn = this._createIconButton(
@@ -564,7 +583,7 @@ class AlbumPopup {
       actions.appendChild(downloadBtn);
       actions.appendChild(delBtn);
 
-      card.appendChild(img);
+      card.appendChild(thumbnailContainer);
       card.appendChild(actions);
       gallery.appendChild(card);
     });
@@ -647,6 +666,8 @@ class AlbumPopup {
   _startGIFPreview(snapshot, imgElement) {
     if (snapshot.type !== 'gif' || !snapshot.frames) return;
     
+    this._stopGIFPreview(snapshot, imgElement);
+
     let frameIndex = 0;
     const intervalId = setInterval(() => {
       frameIndex = (frameIndex + 1) % snapshot.frames.length;
