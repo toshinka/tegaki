@@ -14,9 +14,6 @@ window.APNGExporter = (function() {
             this.isExporting = false;
         }
         
-        /**
-         * APNGエクスポート（ダウンロード）
-         */
         async export(options = {}) {
             if (this.isExporting) {
                 throw new Error('Export already in progress');
@@ -70,9 +67,6 @@ window.APNGExporter = (function() {
             }
         }
         
-        /**
-         * APNG Blob生成（プレビュー/ダウンロード兼用）
-         */
         async generateBlob(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
             const animData = this.manager.animationSystem.getAnimationData();
@@ -83,7 +77,6 @@ window.APNGExporter = (function() {
                 fps: options.fps || 12
             };
             
-            // サイズ制限
             const maxSize = CONFIG.animation.exportSettings || { maxWidth: 1920, maxHeight: 1080 };
             if (settings.width > maxSize.maxWidth) {
                 const ratio = maxSize.maxWidth / settings.width;
@@ -99,34 +92,30 @@ window.APNGExporter = (function() {
             const frames = [];
             const delays = [];
             
-            // レイヤー状態バックアップ
             const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
             
-            // 各CUTレンダリング
             for (let i = 0; i < animData.cuts.length; i++) {
                 const cut = animData.cuts[i];
                 
-                // CUT適用
                 this.manager.animationSystem.applyCutToLayers(i);
                 await this._waitFrame();
                 
-                // Canvasレンダリング
                 const canvas = await this._renderCutToCanvas(settings);
                 if (!canvas) {
                     throw new Error('Failed to render cut ' + i);
                 }
                 
-                // ImageData取得
                 const ctx = canvas.getContext('2d', { willReadFrequently: true });
                 const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
                 
                 frames.push(imageData.data.buffer);
                 
-                // 遅延時間（マイクロ秒）
-                const duration = cut.duration || (1000 / settings.fps);
-                delays.push(Math.round(duration * 1000));
+                const durationMs = cut.duration !== undefined && cut.duration !== null 
+                    ? Math.round(cut.duration * 1000)
+                    : Math.round(1000 / settings.fps);
                 
-                // 進捗通知
+                delays.push(durationMs);
+                
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('export:frame-rendered', { 
                         frame: i + 1, 
@@ -135,24 +124,19 @@ window.APNGExporter = (function() {
                 }
             }
             
-            // レイヤー状態復元
             this.manager.animationSystem.restoreFromSnapshots(backupSnapshots);
             
-            // UPNG.encode でAPNG生成
             const apngBuffer = UPNG.encode(
                 frames,
                 settings.width,
                 settings.height,
-                0, // 0 = APNG
+                0,
                 delays
             );
             
             return new Blob([apngBuffer], { type: 'image/png' });
         }
         
-        /**
-         * CUTをCanvasにレンダリング（GIFExporterと同じロジック）
-         */
         async _renderCutToCanvas(settings) {
             const CONFIG = window.TEGAKI_CONFIG;
             
@@ -164,13 +148,11 @@ window.APNGExporter = (function() {
             
             const tempContainer = new PIXI.Container();
             
-            // レイヤーコンテナ取得
             const layersContainer = this.manager.animationSystem.layerSystem.currentCutContainer;
             if (!layersContainer) {
                 throw new Error('currentCutContainer not found');
             }
             
-            // 元の状態保存
             const originalParent = layersContainer.parent;
             const originalPosition = { 
                 x: layersContainer.x, 
@@ -179,7 +161,6 @@ window.APNGExporter = (function() {
                 scaleY: layersContainer.scale.y
             };
             
-            // 一時コンテナに移動
             if (originalParent) {
                 originalParent.removeChild(layersContainer);
             }
@@ -187,7 +168,6 @@ window.APNGExporter = (function() {
             tempContainer.addChild(layersContainer);
             layersContainer.position.set(0, 0);
             
-            // スケール調整
             if (settings.width !== CONFIG.canvas.width || settings.height !== CONFIG.canvas.height) {
                 const scaleX = settings.width / CONFIG.canvas.width;
                 const scaleY = settings.height / CONFIG.canvas.height;
@@ -198,23 +178,19 @@ window.APNGExporter = (function() {
                 const scaledWidth = CONFIG.canvas.width * scale;
                 const scaledHeight = CONFIG.canvas.height * scale;
                 
-                // センタリング
                 layersContainer.position.set(
                     (settings.width - scaledWidth) / 2,
                     (settings.height - scaledHeight) / 2
                 );
             }
             
-            // レンダリング
             this.manager.app.renderer.render({
                 container: tempContainer,
                 target: renderTexture
             });
             
-            // Canvas抽出
             const canvas = this.manager.app.renderer.extract.canvas(renderTexture);
             
-            // 元の状態復元
             tempContainer.removeChild(layersContainer);
             layersContainer.position.set(originalPosition.x, originalPosition.y);
             layersContainer.scale.set(originalPosition.scaleX, originalPosition.scaleY);
@@ -223,25 +199,18 @@ window.APNGExporter = (function() {
                 originalParent.addChild(layersContainer);
             }
             
-            // クリーンアップ
             renderTexture.destroy();
             tempContainer.destroy();
             
             return canvas;
         }
         
-        /**
-         * UPNG.js確認
-         */
         _checkUPNGAvailability() {
             if (typeof UPNG === 'undefined') {
                 throw new Error('UPNG.js not loaded');
             }
         }
         
-        /**
-         * フレーム待機
-         */
         _waitFrame() {
             return new Promise(resolve => {
                 requestAnimationFrame(() => {
@@ -254,7 +223,4 @@ window.APNGExporter = (function() {
     return APNGExporter;
 })();
 
-console.log('✅ apng-exporter.js (完全修正版) loaded');
-
-
-
+console.log('✅ apng-exporter.js loaded');

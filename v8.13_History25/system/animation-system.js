@@ -385,41 +385,98 @@
             return cut;
         }
         
-        createNewBlankCut() {
-            const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            const cut = new Cut(cutId, `CUT${this.animationData.cuts.length + 1}`, this.config);
-            
-            const bgLayer = this._createBackgroundLayer(cutId);
-            const layer1 = this._createBlankLayer(cutId, 'レイヤー1');
-            
-            cut.addLayer(bgLayer);
-            cut.addLayer(layer1);
-            
-            this.animationData.cuts.push(cut);
-            const newIndex = this.animationData.cuts.length - 1;
-            
-            if (this.canvasContainer) {
-                this.canvasContainer.addChild(cut.container);
-                cut.container.visible = false;
-            }
-            
-            if (this.layerSystem?.createCutRenderTexture) {
-                this.layerSystem.createCutRenderTexture(cutId);
-            }
-            
-            this.switchToActiveCut(newIndex);
-            
-            setTimeout(() => {
+// ========== 改修1: createNewBlankCut() ==========
+createNewBlankCut() {
+    const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+    const cut = new Cut(cutId, `CUT${this.animationData.cuts.length + 1}`, this.config);
+    
+    const bgLayer = this._createBackgroundLayer(cutId);
+    const layer1 = this._createBlankLayer(cutId, 'レイヤー1');
+    
+    cut.addLayer(bgLayer);
+    cut.addLayer(layer1);
+    
+    const newIndex = this.animationData.cuts.length;
+    
+    // 🔥 Phase 2改修: History統合
+    if (window.History && !window.History._manager.isApplying) {
+        const command = {
+            name: 'create-cut',
+            do: () => {
+                this.animationData.cuts.push(cut);
+                
+                if (this.canvasContainer) {
+                    this.canvasContainer.addChild(cut.container);
+                    cut.container.visible = false;
+                }
+                
+                if (this.layerSystem?.createCutRenderTexture) {
+                    this.layerSystem.createCutRenderTexture(cutId);
+                }
+                
+                this.switchToActiveCut(newIndex);
+                
                 if (this.eventBus) {
                     this.eventBus.emit('animation:cut-created', { 
                         cutId: cut.id, 
                         cutIndex: newIndex 
                     });
                 }
-            }, 0);
-            
-            return cut;
+            },
+            undo: () => {
+                const cutIndex = this.animationData.cuts.findIndex(c => c.id === cutId);
+                if (cutIndex !== -1) {
+                    const removedCut = this.animationData.cuts[cutIndex];
+                    
+                    if (this.layerSystem?.destroyCutRenderTexture) {
+                        this.layerSystem.destroyCutRenderTexture(removedCut.id);
+                    }
+                    
+                    if (this.canvasContainer && removedCut.container.parent === this.canvasContainer) {
+                        this.canvasContainer.removeChild(removedCut.container);
+                    }
+                    
+                    this.animationData.cuts.splice(cutIndex, 1);
+                    
+                    if (this.animationData.cuts.length > 0) {
+                        const newActiveIndex = Math.min(cutIndex, this.animationData.cuts.length - 1);
+                        this.switchToActiveCut(newActiveIndex);
+                    }
+                    
+                    if (this.eventBus) {
+                        this.eventBus.emit('animation:cut-deleted', { cutIndex });
+                    }
+                }
+            },
+            meta: { type: 'cut-create', cutId, cutIndex: newIndex }
+        };
+        
+        window.History.push(command);
+    } else {
+        // 直接実行（History適用中またはHistory無効時）
+        this.animationData.cuts.push(cut);
+        
+        if (this.canvasContainer) {
+            this.canvasContainer.addChild(cut.container);
+            cut.container.visible = false;
         }
+        
+        if (this.layerSystem?.createCutRenderTexture) {
+            this.layerSystem.createCutRenderTexture(cutId);
+        }
+        
+        this.switchToActiveCut(newIndex);
+        
+        if (this.eventBus) {
+            this.eventBus.emit('animation:cut-created', { 
+                cutId: cut.id, 
+                cutIndex: newIndex 
+            });
+        }
+    }
+    
+    return cut;
+}
         
         createNewEmptyCut() {
             return this.createNewBlankCut();
@@ -854,68 +911,190 @@
             this.isInitializing = false;
         }
         
-        deleteCut(cutIndex) {
-            if (cutIndex < 0 || cutIndex >= this.animationData.cuts.length) return false;
-            if (this.animationData.cuts.length <= 1) return false;
-            
-            const cut = this.animationData.cuts[cutIndex];
-            
-            if (this.layerSystem?.destroyCutRenderTexture) {
-                this.layerSystem.destroyCutRenderTexture(cut.id);
-            }
-            
-            if (this.canvasContainer && cut.container.parent === this.canvasContainer) {
-                this.canvasContainer.removeChild(cut.container);
-            }
-            
-            cut.container.destroy({ children: true, texture: false, baseTexture: false });
-            
-            this.animationData.cuts.splice(cutIndex, 1);
-            
-            if (this.animationData.playback.currentCutIndex >= cutIndex) {
-                this.animationData.playback.currentCutIndex = Math.max(0, 
-                    this.animationData.playback.currentCutIndex - 1
-                );
-            }
-            
-            if (this.animationData.cuts.length > 0) {
-                const newIndex = Math.min(cutIndex, this.animationData.cuts.length - 1);
-                this.switchToActiveCut(newIndex);
-            }
-            
-            if (this.eventBus) {
-                this.eventBus.emit('animation:cut-deleted', { cutIndex });
-            }
-            
-            return true;
+// ========== 改修2: deleteCut() ==========
+deleteCut(cutIndex) {
+    if (cutIndex < 0 || cutIndex >= this.animationData.cuts.length) return false;
+    if (this.animationData.cuts.length <= 1) return false;
+    
+    const cut = this.animationData.cuts[cutIndex];
+    const cutSnapshot = cut.serialize(); // シリアライズして保存
+    const oldCurrentIndex = this.animationData.playback.currentCutIndex;
+    
+    // 🔥 Phase 2改修: History統合
+    if (window.History && !window.History._manager.isApplying) {
+        const command = {
+            name: 'delete-cut',
+            do: () => {
+                if (this.layerSystem?.destroyCutRenderTexture) {
+                    this.layerSystem.destroyCutRenderTexture(cut.id);
+                }
+                
+                if (this.canvasContainer && cut.container.parent === this.canvasContainer) {
+                    this.canvasContainer.removeChild(cut.container);
+                }
+                
+                cut.container.destroy({ children: true, texture: false, baseTexture: false });
+                
+                this.animationData.cuts.splice(cutIndex, 1);
+                
+                if (this.animationData.playback.currentCutIndex >= cutIndex) {
+                    this.animationData.playback.currentCutIndex = Math.max(0, 
+                        this.animationData.playback.currentCutIndex - 1
+                    );
+                }
+                
+                if (this.animationData.cuts.length > 0) {
+                    const newIndex = Math.min(cutIndex, this.animationData.cuts.length - 1);
+                    this.switchToActiveCut(newIndex);
+                }
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:cut-deleted', { cutIndex });
+                }
+            },
+            undo: () => {
+                // Cutを復元
+                const restoredCut = Cut.deserialize(cutSnapshot, this.config);
+                this.animationData.cuts.splice(cutIndex, 0, restoredCut);
+                
+                if (this.canvasContainer) {
+                    this.canvasContainer.addChild(restoredCut.container);
+                    restoredCut.container.visible = false;
+                }
+                
+                if (this.layerSystem?.createCutRenderTexture) {
+                    this.layerSystem.createCutRenderTexture(restoredCut.id);
+                }
+                
+                this.animationData.playback.currentCutIndex = oldCurrentIndex;
+                this.switchToActiveCut(oldCurrentIndex);
+                
+                // サムネイル再生成
+                setTimeout(() => {
+                    this.generateCutThumbnail(cutIndex);
+                }, 100);
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:cut-restored', { 
+                        cutId: restoredCut.id, 
+                        cutIndex 
+                    });
+                }
+            },
+            meta: { type: 'cut-delete', cutId: cut.id, cutIndex }
+        };
+        
+        window.History.push(command);
+    } else {
+        // 直接実行
+        if (this.layerSystem?.destroyCutRenderTexture) {
+            this.layerSystem.destroyCutRenderTexture(cut.id);
         }
         
-        reorderCuts(oldIndex, newIndex) {
-            if (oldIndex === newIndex) return;
-            if (oldIndex < 0 || oldIndex >= this.animationData.cuts.length) return;
-            if (newIndex < 0 || newIndex >= this.animationData.cuts.length) return;
-            
-            const [movedCut] = this.animationData.cuts.splice(oldIndex, 1);
-            this.animationData.cuts.splice(newIndex, 0, movedCut);
-            
-            if (this.animationData.playback.currentCutIndex === oldIndex) {
-                this.animationData.playback.currentCutIndex = newIndex;
-            } else if (oldIndex < this.animationData.playback.currentCutIndex && 
-                       newIndex >= this.animationData.playback.currentCutIndex) {
-                this.animationData.playback.currentCutIndex--;
-            } else if (oldIndex > this.animationData.playback.currentCutIndex && 
-                       newIndex <= this.animationData.playback.currentCutIndex) {
-                this.animationData.playback.currentCutIndex++;
-            }
-            
-            if (this.eventBus) {
-                this.eventBus.emit('animation:cuts-reordered', { 
-                    oldIndex, 
-                    newIndex,
-                    currentCutIndex: this.animationData.playback.currentCutIndex
-                });
-            }
+        if (this.canvasContainer && cut.container.parent === this.canvasContainer) {
+            this.canvasContainer.removeChild(cut.container);
         }
+        
+        cut.container.destroy({ children: true, texture: false, baseTexture: false });
+        
+        this.animationData.cuts.splice(cutIndex, 1);
+        
+        if (this.animationData.playback.currentCutIndex >= cutIndex) {
+            this.animationData.playback.currentCutIndex = Math.max(0, 
+                this.animationData.playback.currentCutIndex - 1
+            );
+        }
+        
+        if (this.animationData.cuts.length > 0) {
+            const newIndex = Math.min(cutIndex, this.animationData.cuts.length - 1);
+            this.switchToActiveCut(newIndex);
+        }
+        
+        if (this.eventBus) {
+            this.eventBus.emit('animation:cut-deleted', { cutIndex });
+        }
+    }
+    
+    return true;
+}        
+// ========== 改修3: reorderCuts() ==========
+reorderCuts(oldIndex, newIndex) {
+    if (oldIndex === newIndex) return;
+    if (oldIndex < 0 || oldIndex >= this.animationData.cuts.length) return;
+    if (newIndex < 0 || newIndex >= this.animationData.cuts.length) return;
+    
+    const oldCurrentIndex = this.animationData.playback.currentCutIndex;
+    
+    // 🔥 Phase 2改修: History統合
+    if (window.History && !window.History._manager.isApplying) {
+        const command = {
+            name: 'reorder-cuts',
+            do: () => {
+                const [movedCut] = this.animationData.cuts.splice(oldIndex, 1);
+                this.animationData.cuts.splice(newIndex, 0, movedCut);
+                
+                if (this.animationData.playback.currentCutIndex === oldIndex) {
+                    this.animationData.playback.currentCutIndex = newIndex;
+                } else if (oldIndex < this.animationData.playback.currentCutIndex && 
+                           newIndex >= this.animationData.playback.currentCutIndex) {
+                    this.animationData.playback.currentCutIndex--;
+                } else if (oldIndex > this.animationData.playback.currentCutIndex && 
+                           newIndex <= this.animationData.playback.currentCutIndex) {
+                    this.animationData.playback.currentCutIndex++;
+                }
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:cuts-reordered', { 
+                        oldIndex, 
+                        newIndex,
+                        currentCutIndex: this.animationData.playback.currentCutIndex
+                    });
+                }
+            },
+            undo: () => {
+                // 元に戻す
+                const [movedCut] = this.animationData.cuts.splice(newIndex, 1);
+                this.animationData.cuts.splice(oldIndex, 0, movedCut);
+                
+                this.animationData.playback.currentCutIndex = oldCurrentIndex;
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:cuts-reordered', { 
+                        oldIndex: newIndex, 
+                        newIndex: oldIndex,
+                        currentCutIndex: this.animationData.playback.currentCutIndex
+                    });
+                }
+            },
+            meta: { type: 'cut-reorder', oldIndex, newIndex }
+        };
+        
+        window.History.push(command);
+    } else {
+        // 直接実行
+        const [movedCut] = this.animationData.cuts.splice(oldIndex, 1);
+        this.animationData.cuts.splice(newIndex, 0, movedCut);
+        
+        if (this.animationData.playback.currentCutIndex === oldIndex) {
+            this.animationData.playback.currentCutIndex = newIndex;
+        } else if (oldIndex < this.animationData.playback.currentCutIndex && 
+                   newIndex >= this.animationData.playback.currentCutIndex) {
+            this.animationData.playback.currentCutIndex--;
+        } else if (oldIndex > this.animationData.playback.currentCutIndex && 
+                   newIndex <= this.animationData.playback.currentCutIndex) {
+            this.animationData.playback.currentCutIndex++;
+        }
+        
+        if (this.eventBus) {
+            this.eventBus.emit('animation:cuts-reordered', { 
+                oldIndex, 
+                newIndex,
+                currentCutIndex: this.animationData.playback.currentCutIndex
+            });
+        }
+    }
+}
+
         
         renameCutsSequentially() {
             if (!this.animationData.cuts || this.animationData.cuts.length === 0) return;

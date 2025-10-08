@@ -1,6 +1,6 @@
 // ==================================================
 // system/exporters/gif-exporter.js
-// GIFアニメーションエクスポーター - generateBlob統一版
+// GIFアニメーションエクスポーター - file://環境対応版
 // ==================================================
 window.GIFExporter = (function() {
     'use strict';
@@ -15,9 +15,6 @@ window.GIFExporter = (function() {
             this.workerBlobURL = null;
         }
         
-        /**
-         * GIF Blob生成（プレビュー/ダウンロード兼用）
-         */
         async generateBlob(options = {}) {
             if (this.isExporting) {
                 throw new Error('GIF export already in progress');
@@ -84,9 +81,11 @@ window.GIFExporter = (function() {
                     const canvas = await this.renderCutToCanvas(settings);
                     
                     if (canvas) {
-                        gif.addFrame(canvas, { 
-                            delay: Math.round(cut.duration * 1000)
-                        });
+                        const delayMs = cut.duration !== undefined && cut.duration !== null
+                            ? Math.round(cut.duration * 1000)
+                            : 100;
+                        
+                        gif.addFrame(canvas, { delay: delayMs });
                     }
                     
                     window.TegakiEventBus?.emit('export:frame-rendered', { 
@@ -108,9 +107,6 @@ window.GIFExporter = (function() {
             }
         }
         
-        /**
-         * GIFエクスポート（ダウンロード）
-         */
         async export(options = {}) {
             try {
                 window.TegakiEventBus?.emit('export:started', { format: 'gif' });
@@ -142,13 +138,30 @@ window.GIFExporter = (function() {
         }
         
         async createWorkerBlobURL() {
+            const localPath = 'vendor/gif.worker.js';
+            const cdnPath = 'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js';
+            
             try {
-                const response = await fetch('https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.worker.js');
+                const response = await fetch(localPath);
+                if (response.ok) {
+                    const workerCode = await response.text();
+                    const blob = new Blob([workerCode], { type: 'application/javascript' });
+                    return URL.createObjectURL(blob);
+                }
+            } catch (e) {
+                // file://環境でのローカルフェッチ失敗は無視
+            }
+            
+            try {
+                const response = await fetch(cdnPath);
+                if (!response.ok) {
+                    throw new Error('CDN fetch failed: ' + response.status);
+                }
                 const workerCode = await response.text();
                 const blob = new Blob([workerCode], { type: 'application/javascript' });
                 return URL.createObjectURL(blob);
             } catch (error) {
-                throw new Error('Worker script fetch failed: ' + error.message);
+                throw new Error('Worker script unavailable (local and CDN failed)');
             }
         }
         
@@ -274,4 +287,4 @@ window.GIFExporter = (function() {
     return GIFExporter;
 })();
 
-console.log('✅ gif-exporter.js (generateBlob統一版) loaded');
+console.log('✅ gif-exporter.js loaded');
