@@ -7,7 +7,7 @@
     'use strict';
     
     // ===== 設定 =====
-    const TEGAKI_BASE_URL = 'https://toshinka.github.io/tegaki/index.html';
+    const TEGAKI_BASE_URL = 'https://toshinka.github.io/tegaki/';
     const MEBUKI_TIMEOUT = 3000; // 要素検出タイムアウト(ms)
     
     // ===== めぶきちゃんねる検出用セレクタ =====
