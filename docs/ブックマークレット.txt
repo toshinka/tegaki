@@ -1,3 +1,45 @@
+
+javascript:void(async(d)=>{const t='https://toshinka.github.io/tegaki/';const i=d.getElementById('mebuki-tegaki-overlay');if(i){i.remove();return}const o=d.createElement('iframe');o.id='mebuki-tegaki-overlay';o.style.cssText='position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;border:none!important;margin:0!important;padding:0!important;display:block!important;';d.body.appendChild(o);o.src=t;window.addEventListener('message',async(e)=>{if(e.origin!==t.slice(0,-1))return;if(e.data.type==='export-finish'||e.data.type==='tool-close-request'){if(e.data.type==='export-finish'){const{gifBlob:r,firstFramePNG:n}=e.data;const s=URL.createObjectURL(r);const a=d.createElement('a');a.href=s;a.download=`mebuki-${Date.now()}.gif`;d.body.appendChild(a);a.click();d.body.removeChild(a);URL.revokeObjectURL(s);if(n&&navigator.clipboard.write){try{await navigator.clipboard.write([new ClipboardItem({'image/png':n})])}catch(e){console.warn('クリップボードへのコピーに失敗しました:',e);}}alert('描画完了！データを処理し、ツールを閉じます。');}else{console.log('ツールからの終了リクエストを受信しました。');}o.remove()}})}) (document)
+
+
+Tegaki 用に改良すべき方向
+
+iframe を廃止
+→ 代わりに script で直接 core-engine を注入して、PixiJS の <canvas> をページ内にオーバーレイ表示。
+
+「添付処理」だけを残す
+
+export した PNG を Mebuki の input[type=file] に注入する処理はそのまま残す
+
+ただし export は iframe 経由ではなく「アプリ内部 API」から直接呼び出す
+
+全体の流れ（はっちゃん方式を踏襲）
+
+Bookmarklet → loader を script タグで読み込み
+
+loader が globalThis.mebukiStart を登録
+
+mebukiStart() が Pixi アプリをページに直接挿入（position:fixed の canvas/UI）
+
+完了ボタンを押したら PNG → File → input[type=file] 注入
+
+「このコンテンツはブロックされました。サイト所有者に連絡して問題を解決してください。」
+
+javascript:(function(){
+  if(!globalThis.mebukiStart){
+    var s=document.createElement('script');
+    s.charset='UTF-8';
+    s.src='https://toshinka.github.io/tegaki/mebuki-loader.js';
+    document.body.appendChild(s);
+  } else {
+    globalThis.mebukiStart();
+  }
+})();
+
+
+
+
+
 A案：mebukiStart（Canvas98風）完全版：掲示板DOMを検出して直接乗っ取るコード（最優先）
 
 B案：Blob-based iframe loader（スレッドでのブロック回避用）：自動的にBlob/srcdocにフォールバックする MebukiTest_v2
