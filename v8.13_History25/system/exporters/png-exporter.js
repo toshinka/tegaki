@@ -1,6 +1,6 @@
 // ==================================================
 // system/exporters/png-exporter.js
-// PNG静止画エクスポーター - 単一フレーム専用
+// PNG静止画エクスポーター - 単一フレーム専用（プレビュー対応）
 // ==================================================
 window.PNGExporter = (function() {
     'use strict';
@@ -13,6 +13,9 @@ window.PNGExporter = (function() {
             this.manager = exportManager;
         }
         
+        /**
+         * PNG出力実行（ダウンロード）
+         */
         async export(options) {
             if (!this.manager || !this.manager.layerSystem) {
                 throw new Error('LayerSystem not available');
@@ -50,8 +53,19 @@ window.PNGExporter = (function() {
             }
         }
         
-        async generateBlob(options) {
-            const canvas = this.manager.renderToCanvas(options);
+        /**
+         * PNG Blob生成（プレビュー/ダウンロード兼用）
+         */
+        async generateBlob(options = {}) {
+            const CONFIG = window.TEGAKI_CONFIG;
+            
+            const settings = {
+                width: options.width || CONFIG.canvas.width,
+                height: options.height || CONFIG.canvas.height,
+                resolution: options.resolution || 2
+            };
+            
+            const canvas = this.manager.renderToCanvas(settings);
             
             return new Promise((resolve, reject) => {
                 canvas.toBlob((blob) => {
@@ -68,4 +82,4 @@ window.PNGExporter = (function() {
     return PNGExporter;
 })();
 
-console.log('✅ png-exporter.js (単一フレーム専用) loaded');
+console.log('✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded');

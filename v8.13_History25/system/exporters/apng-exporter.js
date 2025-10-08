@@ -1,6 +1,6 @@
 // ==================================================
 // system/exporters/apng-exporter.js
-// APNGアニメーションエクスポーター - 複数フレーム専用
+// APNGアニメーションエクスポーター - 完全修正版
 // ==================================================
 window.APNGExporter = (function() {
     'use strict';
@@ -24,16 +24,18 @@ window.APNGExporter = (function() {
             
             this._checkUPNGAvailability();
             
-            if (!this.manager?.animationSystem) {
+            if (!this.manager || !this.manager.animationSystem) {
                 throw new Error('AnimationSystem not available');
             }
             
             const animData = this.manager.animationSystem.getAnimationData();
-            if (!animData?.cuts || animData.cuts.length < 2) {
+            if (!animData || !animData.cuts || animData.cuts.length < 2) {
                 throw new Error('APNGには2つ以上のCUTが必要です');
             }
             
-            window.TegakiEventBus?.emit('export:started', { format: 'apng' });
+            if (window.TegakiEventBus) {
+                window.TegakiEventBus.emit('export:started', { format: 'apng' });
+            }
             
             this.isExporting = true;
             
@@ -41,23 +43,27 @@ window.APNGExporter = (function() {
                 const blob = await this.generateBlob(options);
                 
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-                const filename = options.filename || `tegaki_animation_${timestamp}.png`;
+                const filename = options.filename || ('tegaki_animation_' + timestamp + '.png');
                 
                 this.manager.downloadFile(blob, filename);
                 
-                window.TegakiEventBus?.emit('export:completed', {
-                    format: 'apng',
-                    size: blob.size,
-                    cuts: animData.cuts.length,
-                    filename: filename
-                });
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('export:completed', {
+                        format: 'apng',
+                        size: blob.size,
+                        cuts: animData.cuts.length,
+                        filename: filename
+                    });
+                }
                 
-                return { blob, filename, format: 'apng' };
+                return { blob: blob, filename: filename, format: 'apng' };
             } catch (error) {
-                window.TegakiEventBus?.emit('export:failed', { 
-                    format: 'apng',
-                    error: error.message
-                });
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('export:failed', { 
+                        format: 'apng',
+                        error: error.message
+                    });
+                }
                 throw error;
             } finally {
                 this.isExporting = false;
@@ -78,7 +84,7 @@ window.APNGExporter = (function() {
             };
             
             // サイズ制限
-            const maxSize = CONFIG.animation?.exportSettings || { maxWidth: 1920, maxHeight: 1080 };
+            const maxSize = CONFIG.animation.exportSettings || { maxWidth: 1920, maxHeight: 1080 };
             if (settings.width > maxSize.maxWidth) {
                 const ratio = maxSize.maxWidth / settings.width;
                 settings.width = maxSize.maxWidth;
@@ -107,7 +113,7 @@ window.APNGExporter = (function() {
                 // Canvasレンダリング
                 const canvas = await this._renderCutToCanvas(settings);
                 if (!canvas) {
-                    throw new Error(`Failed to render cut ${i}`);
+                    throw new Error('Failed to render cut ' + i);
                 }
                 
                 // ImageData取得
@@ -116,15 +122,17 @@ window.APNGExporter = (function() {
                 
                 frames.push(imageData.data.buffer);
                 
-                // 遅延時間（ミリ秒）
+                // 遅延時間（マイクロ秒）
                 const duration = cut.duration || (1000 / settings.fps);
                 delays.push(Math.round(duration * 1000));
                 
                 // 進捗通知
-                window.TegakiEventBus?.emit('export:frame-rendered', { 
-                    frame: i + 1, 
-                    total: animData.cuts.length 
-                });
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('export:frame-rendered', { 
+                        frame: i + 1, 
+                        total: animData.cuts.length 
+                    });
+                }
             }
             
             // レイヤー状態復元
@@ -143,7 +151,7 @@ window.APNGExporter = (function() {
         }
         
         /**
-         * CUTをCanvasにレンダリング
+         * CUTをCanvasにレンダリング（GIFExporterと同じロジック）
          */
         async _renderCutToCanvas(settings) {
             const CONFIG = window.TEGAKI_CONFIG;
@@ -246,4 +254,4 @@ window.APNGExporter = (function() {
     return APNGExporter;
 })();
 
-console.log('✅ apng-exporter.js (複数フレーム専用) loaded');
+console.log('✅ apng-exporter.js (完全修正版) loaded');
