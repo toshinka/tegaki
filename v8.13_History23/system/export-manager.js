@@ -1,6 +1,6 @@
 // ==================================================
 // system/export-manager.js
-// エクスポート統合管理システム - Data URL対応版
+// エクスポート統合管理 - PNG/APNG自動判定対応
 // ==================================================
 window.ExportManager = (function() {
     'use strict';
@@ -29,13 +29,31 @@ window.ExportManager = (function() {
             this.exporters[format] = exporter;
         }
         
+        /**
+         * PNG出力自動判定（CUT数で判定）
+         */
+        _shouldUseAPNG() {
+            const animData = this.animationSystem?.getAnimationData();
+            const cutCount = animData?.cuts?.length || 0;
+            return cutCount >= 2;
+        }
+        
+        /**
+         * エクスポート実行（自動判定対応）
+         */
         async export(format, options = {}) {
-            const exporter = this.exporters[format];
-            if (!exporter) {
-                throw new Error(`Unsupported format: ${format}`);
+            // PNG指定時はCUT数で自動判定
+            let targetFormat = format;
+            if (format === 'png' && this._shouldUseAPNG()) {
+                targetFormat = 'apng';
             }
             
-            this.currentExport = { format, progress: 0 };
+            const exporter = this.exporters[targetFormat];
+            if (!exporter) {
+                throw new Error(`Unsupported format: ${targetFormat}`);
+            }
+            
+            this.currentExport = { format: targetFormat, progress: 0 };
             
             try {
                 const result = await exporter.export(options);
@@ -48,8 +66,26 @@ window.ExportManager = (function() {
         }
         
         /**
-         * arrayBufferToBase64
-         * ArrayBufferをBase64文字列に変換（大容量対応）
+         * プレビュー生成（自動判定対応）
+         */
+        async generatePreview(format, options = {}) {
+            // PNG指定時はCUT数で自動判定
+            let targetFormat = format;
+            if (format === 'png' && this._shouldUseAPNG()) {
+                targetFormat = 'apng';
+            }
+            
+            const exporter = this.exporters[targetFormat];
+            if (!exporter || !exporter.generateBlob) {
+                throw new Error(`Preview not supported for format: ${targetFormat}`);
+            }
+            
+            const blob = await exporter.generateBlob(options);
+            return { blob, format: targetFormat };
+        }
+        
+        /**
+         * ArrayBuffer → Base64変換
          */
         arrayBufferToBase64(buffer) {
             const bytes = new Uint8Array(buffer);
@@ -65,8 +101,7 @@ window.ExportManager = (function() {
         }
         
         /**
-         * blobToDataURL
-         * BlobをData URL形式に変換
+         * Blob → Data URL変換
          */
         async blobToDataURL(blob) {
             const arrayBuffer = await blob.arrayBuffer();
@@ -75,11 +110,7 @@ window.ExportManager = (function() {
         }
         
         /**
-         * copyGifToClipboard
-         * GIF BlobをClipboard APIを使ってクリップボードへコピー
-         * @param {Blob} blob - image/gif MIME type のBlob
-         * @returns {Promise<void>}
-         * @throws {Error} code付きエラー
+         * GIFクリップボードコピー
          */
         async copyGifToClipboard(blob) {
             if (!navigator.clipboard) {
@@ -111,10 +142,7 @@ window.ExportManager = (function() {
         }
         
         /**
-         * copyGifWithPreviewFallback
-         * GIF Blobをクリップボードへコピーを試行し、失敗時にプレビュー表示用のデータを返す
-         * @param {Blob} blob - image/gif MIME type のBlob
-         * @returns {Promise<{success: boolean, blob: Blob, dataUrl?: string}>}
+         * GIFコピー（フォールバック付き）
          */
         async copyGifWithPreviewFallback(blob) {
             try {
@@ -126,6 +154,9 @@ window.ExportManager = (function() {
             }
         }
         
+        /**
+         * Canvasレンダリング
+         */
         renderToCanvas(options = {}) {
             const width = options.width || window.TEGAKI_CONFIG.canvas.width;
             const height = options.height || window.TEGAKI_CONFIG.canvas.height;
@@ -136,11 +167,11 @@ window.ExportManager = (function() {
                              this.layerSystem.currentCutContainer;
             
             if (!container) {
-                throw new Error('ExportManager.renderToCanvas: layers container is not available');
+                throw new Error('layers container is not available');
             }
             
             if (typeof container.updateLocalTransform !== 'function') {
-                throw new Error('ExportManager.renderToCanvas: provided container is not a PIXI DisplayObject');
+                throw new Error('provided container is not a PIXI DisplayObject');
             }
             
             const renderTexture = PIXI.RenderTexture.create({
@@ -160,6 +191,9 @@ window.ExportManager = (function() {
             return canvas;
         }
         
+        /**
+         * ファイルダウンロード
+         */
         downloadFile(blob, filename) {
             const url = URL.createObjectURL(blob);
             const a = document.createElement('a');
@@ -172,6 +206,9 @@ window.ExportManager = (function() {
             setTimeout(() => URL.revokeObjectURL(url), 1000);
         }
         
+        /**
+         * クリップボードコピー
+         */
         async copyToClipboard(blob) {
             try {
                 const item = new ClipboardItem({ [blob.type]: blob });
@@ -201,4 +238,4 @@ window.ExportManager = (function() {
     return ExportManager;
 })();
 
-console.log('✅ export-manager.js (Data URL対応版) loaded');
+console.log('✅ export-manager.js (PNG/APNG自動判定対応) loaded');

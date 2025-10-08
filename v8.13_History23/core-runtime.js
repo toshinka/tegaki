@@ -1,6 +1,6 @@
-// ===== core-runtime.js - エクスポートシステム初期化強化版 =====
+// ===== core-runtime.js - PNG/APNG/GIF自動判定対応版 =====
+// 【改修】APNGExporter登録対応
 // 【改修】ExportSystem確実初期化機能追加
-// 【改修】依存性明確化とエラーハンドリング
 // 【維持】全既存機能・リサイズ即時反映・背景塗り
 // PixiJS v8.13 対応
 
@@ -188,7 +188,6 @@
             
             const bg = layer.layerData.backgroundGraphics;
             
-            // 既存のGraphicsをクリアして再描画
             bg.clear();
             bg.rect(0, 0, width, height);
             bg.fill(CONFIG.background.color || 0xF0E0D6);
@@ -202,11 +201,10 @@
             
             this.project.canvasSize = { w, h };
             
-            // 【改修1】AnimationSystemからアクティブCUTを取得
             const animationSystem = window.animationSystem || window.TegakiAnimationSystem;
             const currentCutIndex = animationSystem?.getCurrentCutIndex?.() ?? 0;
             
-            // 全CUTのrenderTextureを再作成
+            // 全CUTのrenderTexture再作成
             this.project.cuts.forEach(cut => {
                 if (cut.renderTexture) {
                     cut.renderTexture.destroy(true);
@@ -221,7 +219,7 @@
                 cut.needsThumbnailUpdate = true;
             });
             
-            // 【改修2】AnimationSystemの全CUTの背景レイヤーを更新
+            // AnimationSystemの全CUTの背景レイヤー更新
             if (animationSystem?.animationData?.cuts) {
                 animationSystem.animationData.cuts.forEach((cut, cutIndex) => {
                     if (cut.container && cut.container.children) {
@@ -232,12 +230,11 @@
                         });
                     }
                     
-                    // 【改修3】各CUTのRenderTextureを即座に更新
                     if (this.internal.layerManager?.renderCutToTexture) {
                         this.internal.layerManager.renderCutToTexture(cut.id, cut.container);
                     }
                     
-                    // 【改修4】サムネイル即時生成（アクティブCUTを優先）
+                    // サムネイル即時生成
                     if (cutIndex === currentCutIndex) {
                         setTimeout(() => {
                             if (animationSystem.generateCutThumbnail) {
@@ -258,7 +255,6 @@
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.emit('camera:resized', { width: w, height: h });
                 
-                // 【改修5】タイムラインUIへの即時更新通知
                 setTimeout(() => {
                     window.TegakiEventBus.emit('animation:thumbnails-need-update');
                 }, 200);
@@ -273,7 +269,7 @@
                 this.internal.cameraSystem.resizeCanvas(w, h);
             }
             
-            // 【改修6】レイヤーパネルの即時更新
+            // レイヤーパネル更新
             if (this.internal.layerManager?.updateLayerPanelUI) {
                 setTimeout(() => {
                     this.internal.layerManager.updateLayerPanelUI();
@@ -303,7 +299,7 @@
             });
         },
         
-        // === 描画完了通知（レイヤーから呼ばれる） ===
+        // === 描画完了通知 ===
         markCutDirty(cutId) {
             const cut = cutId ? this.getCutById(cutId) : this.getActiveCut();
             if (cut) {
@@ -328,7 +324,7 @@
             };
         },
         
-        // === 既存API互換性（統合実装は次フェーズ） ===
+        // === 既存API互換性 ===
         api: {
             setTool(toolName) {
                 if (CoreRuntime.internal.drawingEngine?.setTool) {
@@ -458,13 +454,13 @@
         isInitialized() { return this.internal.initialized; }
     };
     
-    // === 【新規】ExportSystem初期化関数 ===
+    // === 【改修】ExportSystem初期化（APNGExporter対応） ===
     CoreRuntime.initializeExportSystem = function(pixiApp, onSuccess) {
         if (window.TEGAKI_EXPORT_MANAGER) {
             return true;
         }
         
-        if (!window.ExportManager || !window.PNGExporter || !window.GIFExporter) {
+        if (!window.ExportManager || !window.PNGExporter || !window.APNGExporter || !window.GIFExporter) {
             console.error('[ExportInit] ExportManager or Exporters not loaded');
             return false;
         }
@@ -489,23 +485,23 @@
             
             const mgr = window.TEGAKI_EXPORT_MANAGER;
             
+            // Exporter登録
             mgr.registerExporter('png', new window.PNGExporter(mgr));
+            mgr.registerExporter('apng', new window.APNGExporter(mgr));
             mgr.registerExporter('gif', new window.GIFExporter(mgr));
             
-            if (window.APNGExporter) {
-                mgr.registerExporter('apng', new window.APNGExporter(mgr));
-            }
-            if (window.WEBPExporter) {
-                mgr.registerExporter('webp', new window.WEBPExporter(mgr));
-            }
-            
+            // ExportPopup初期化
             if (window.ExportPopup && !window.TEGAKI_EXPORT_POPUP) {
                 window.TEGAKI_EXPORT_POPUP = new window.ExportPopup(mgr);
                 
                 const exportToolBtn = document.getElementById('export-tool');
                 if (exportToolBtn) {
                     exportToolBtn.addEventListener('click', () => {
-                        window.TEGAKI_EXPORT_POPUP.show();
+                        if (window.TEGAKI_EXPORT_POPUP.isVisible) {
+                            window.TEGAKI_EXPORT_POPUP.hide();
+                        } else {
+                            window.TEGAKI_EXPORT_POPUP.show();
+                        }
                     });
                 }
             }
@@ -514,7 +510,7 @@
                 window.TegakiEventBus.emit('export:manager:initialized', { timestamp: Date.now() });
             }
             
-            console.log('✅ ExportSystem initialized');
+            console.log('✅ ExportSystem initialized (PNG/APNG/GIF)');
             
             if (onSuccess) onSuccess();
             return true;
@@ -527,8 +523,8 @@
     
     window.CoreRuntime = CoreRuntime;
     
-    console.log('✅ core-runtime.js エクスポート初期化強化版 loaded');
-    console.log('  ✅ ExportSystem確実初期化機能追加');
-    console.log('  ✅ 依存性明確化とエラーハンドリング');
+    console.log('✅ core-runtime.js PNG/APNG/GIF自動判定対応版 loaded');
+    console.log('  ✅ APNGExporter登録対応');
+    console.log('  ✅ ExportSystem確実初期化');
     console.log('  ✅ 既存機能完全維持');
 })();

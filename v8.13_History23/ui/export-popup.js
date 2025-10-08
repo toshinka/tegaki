@@ -1,6 +1,6 @@
 // ==================================================
 // ui/export-popup.js
-// エクスポートUI管理 - PNG/APNG自動判定対応版
+// エクスポートUI管理 - プレビュー統一版
 // ==================================================
 window.ExportPopup = (function() {
     'use strict';
@@ -51,7 +51,7 @@ window.ExportPopup = (function() {
                     <div class="export-status" id="export-status" style="display: none; font-size: 12px; color: var(--text-secondary); margin: 8px 0;"></div>
                     <div class="export-actions">
                         <button class="action-button" id="export-execute">ダウンロード</button>
-                        <button class="action-button secondary" id="export-preview">プレビュー生成</button>
+                        <button class="action-button secondary" id="export-preview" style="display: none;">プレビュー</button>
                     </div>
                 `;
                 
@@ -122,7 +122,19 @@ window.ExportPopup = (function() {
             });
             
             this.updateOptionsUI(format);
+            this.updatePreviewButtonVisibility();
             this.hidePreview();
+        }
+        
+        updatePreviewButtonVisibility() {
+            const previewBtn = document.getElementById('export-preview');
+            if (!previewBtn) return;
+            
+            // 動画形式判定（GIFまたはAPNG）
+            const cutCount = this.manager?.animationSystem?.getAnimationData?.()?.cuts?.length || 1;
+            const isAnimation = this.selectedFormat === 'gif' || (this.selectedFormat === 'png' && cutCount >= 2);
+            
+            previewBtn.style.display = isAnimation ? 'block' : 'none';
         }
         
         updateOptionsUI(format) {
@@ -163,6 +175,9 @@ window.ExportPopup = (function() {
             };
             
             optionsEl.innerHTML = optionsMap[format] || '';
+            
+            // プレビューボタン表示更新
+            this.updatePreviewButtonVisibility();
         }
         
         showPreview(blob, message = null) {
@@ -276,44 +291,24 @@ window.ExportPopup = (function() {
             }
             if (executeBtn) executeBtn.disabled = true;
             
-            if (this.selectedFormat === 'gif' || this._shouldUseAPNG()) {
-                if (progressEl) progressEl.style.display = 'block';
+            // アニメーション形式の場合は進捗表示
+            const cutCount = this.manager?.animationSystem?.getAnimationData?.()?.cuts?.length || 1;
+            const isAnimation = this.selectedFormat === 'gif' || (this.selectedFormat === 'png' && cutCount >= 2);
+            
+            if (isAnimation && progressEl) {
+                progressEl.style.display = 'block';
             }
             
             try {
-                const exporter = this.manager.exporters[this.selectedFormat];
-                if (!exporter) {
-                    throw new Error('Exporter not available');
-                }
-                
-                let blob;
-                
-                // PNG/APNGの場合は内部的に判定してAPNG生成することがある
-                if (this.selectedFormat === 'png') {
-                    const cutCount = this.manager?.animationSystem?.getAnimationData?.()?.cuts?.length || 1;
-                    if (cutCount >= 2) {
-                        // APNG生成
-                        blob = await exporter._generateAPNGBlob({});
-                    } else {
-                        // 単一PNG生成
-                        const canvas = this.manager.renderToCanvas({});
-                        blob = await new Promise(resolve => {
-                            canvas.toBlob(resolve, 'image/png');
-                        });
-                    }
-                } else if (this.selectedFormat === 'gif') {
-                    blob = await exporter.generateGifBlob({});
-                } else {
-                    throw new Error('Preview not supported for this format');
-                }
+                const { blob, format } = await this.manager.generatePreview(this.selectedFormat, {});
                 
                 if (progressEl) progressEl.style.display = 'none';
                 
-                const formatName = this._shouldUseAPNG() ? 'APNG' : this.selectedFormat.toUpperCase();
+                const formatName = format === 'apng' ? 'APNG' : format.toUpperCase();
                 this.showPreview(blob, `${formatName}プレビューを表示しました。右クリックでコピーできます`);
                 
                 if (previewBtn) {
-                    previewBtn.textContent = 'プレビュー生成';
+                    previewBtn.textContent = 'プレビュー';
                     previewBtn.disabled = false;
                 }
                 if (executeBtn) executeBtn.disabled = false;
@@ -322,19 +317,13 @@ window.ExportPopup = (function() {
             } catch (error) {
                 this.showStatus(`プレビュー生成失敗: ${error.message}`, true);
                 if (previewBtn) {
-                    previewBtn.textContent = 'プレビュー生成';
+                    previewBtn.textContent = 'プレビュー';
                     previewBtn.disabled = false;
                 }
                 if (progressEl) progressEl.style.display = 'none';
                 if (executeBtn) executeBtn.disabled = false;
                 this.resetProgress();
             }
-        }
-        
-        _shouldUseAPNG() {
-            if (this.selectedFormat !== 'png') return false;
-            const cutCount = this.manager?.animationSystem?.getAnimationData?.()?.cuts?.length || 1;
-            return cutCount >= 2;
         }
         
         updateProgress(data) {
@@ -364,7 +353,6 @@ window.ExportPopup = (function() {
             
             this.resetProgress();
             
-            // ダウンロード完了後も閉じない（連続エクスポート対応）
             const formatName = data.format === 'apng' ? 'APNG' : data.format?.toUpperCase();
             this.showStatus(`${formatName}ダウンロード完了`);
             setTimeout(() => this.hideStatus(), 2000);
@@ -416,4 +404,4 @@ window.ExportPopup = (function() {
     return ExportPopup;
 })();
 
-console.log('✅ export-popup.js (PNG/APNG自動判定対応版) loaded');
+console.log('✅ export-popup.js (プレビュー統一版) loaded');
