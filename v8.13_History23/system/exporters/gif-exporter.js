@@ -1,6 +1,6 @@
 // ==================================================
 // system/exporters/gif-exporter.js
-// GIFアニメーションエクスポーター - デバッグ版
+// GIFアニメーションエクスポーター - generateBlob統一版
 // ==================================================
 window.GIFExporter = (function() {
     'use strict';
@@ -15,29 +15,20 @@ window.GIFExporter = (function() {
             this.workerBlobURL = null;
         }
         
-        async generateGifBlob(options = {}) {
+        /**
+         * GIF Blob生成（プレビュー/ダウンロード兼用）
+         */
+        async generateBlob(options = {}) {
             if (this.isExporting) {
                 throw new Error('GIF export already in progress');
             }
             
-            if (!this.manager || !this.manager.animationSystem) {
-                throw new Error('GIFExporter: manager or animationSystem not available');
-            }
-            
-            if (!this.manager.animationSystem.captureAllLayerStates) {
-                throw new Error('GIFExporter: required method captureAllLayerStates missing');
-            }
-            
-            if (!this.manager.animationSystem.restoreFromSnapshots) {
-                throw new Error('GIFExporter: required method restoreFromSnapshots missing');
-            }
-            
-            if (!this.manager.animationSystem.applyCutToLayers) {
-                throw new Error('GIFExporter: required method applyCutToLayers missing');
+            if (!this.manager?.animationSystem) {
+                throw new Error('AnimationSystem not available');
             }
             
             const animData = this.manager.animationSystem.getAnimationData();
-            if (!animData || !animData.cuts || animData.cuts.length === 0) {
+            if (!animData?.cuts || animData.cuts.length === 0) {
                 throw new Error('アニメーションにCUTが含まれていません');
             }
             
@@ -109,23 +100,22 @@ window.GIFExporter = (function() {
                 const blob = await this.renderGIF(gif);
                 
                 this.isExporting = false;
-                console.log('[GIF] Blob generated:', blob.size, 'bytes', blob.type);
                 return blob;
                 
             } catch (error) {
                 this.isExporting = false;
-                console.error('[GIF] Generation failed:', error);
-                const err = new Error('GIF generation failed: ' + error.message);
-                err.inner = error;
-                throw err;
+                throw new Error('GIF generation failed: ' + error.message);
             }
         }
         
+        /**
+         * GIFエクスポート（ダウンロード）
+         */
         async export(options = {}) {
             try {
                 window.TegakiEventBus?.emit('export:started', { format: 'gif' });
                 
-                const blob = await this.generateGifBlob(options);
+                const blob = await this.generateBlob(options);
                 
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
                 const filename = `tegaki_animation_${timestamp}.gif`;
@@ -140,69 +130,14 @@ window.GIFExporter = (function() {
                     filename: filename
                 });
                 
-                return { blob, filename };
+                return { blob, filename, format: 'gif' };
                 
             } catch (error) {
                 window.TegakiEventBus?.emit('export:failed', { 
                     format: 'gif',
-                    error 
+                    error: error.message
                 });
                 throw error;
-            }
-        }
-        
-        async copy(options = {}) {
-            let blob = null;
-            
-            try {
-                console.log('[GIF Copy] Starting...');
-                window.TegakiEventBus?.emit('export:started', { format: 'gif' });
-                
-                blob = await this.generateGifBlob(options);
-                console.log('[GIF Copy] Blob generated, attempting clipboard...');
-                
-                const result = await this.manager.copyGifWithPreviewFallback(blob);
-                console.log('[GIF Copy] Result:', result);
-                
-                if (result.success) {
-                    console.log('[GIF Copy] Clipboard success');
-                    window.TegakiEventBus?.emit('export:copied', {
-                        format: 'gif',
-                        blob: blob,
-                        dataUrl: null,
-                        message: 'クリップボードにコピーしました'
-                    });
-                } else {
-                    console.log('[GIF Copy] Clipboard failed, showing preview with dataUrl length:', result.dataUrl?.length);
-                    window.TegakiEventBus?.emit('export:copied', {
-                        format: 'gif',
-                        blob: blob,
-                        dataUrl: result.dataUrl,
-                        message: 'プレビューを表示しました。右クリックでコピーできます'
-                    });
-                }
-                
-                return result;
-                
-            } catch (error) {
-                console.error('[GIF Copy] Error:', error);
-                if (blob) {
-                    console.log('[GIF Copy] Fallback: generating dataUrl for preview');
-                    const dataUrl = await this.manager.blobToDataURL(blob);
-                    console.log('[GIF Copy] DataUrl length:', dataUrl.length);
-                    window.TegakiEventBus?.emit('export:copied', {
-                        format: 'gif',
-                        blob: blob,
-                        dataUrl: dataUrl,
-                        message: 'エラーが発生しました。プレビューから保存してください'
-                    });
-                } else {
-                    window.TegakiEventBus?.emit('export:failed', { 
-                        format: 'gif',
-                        error 
-                    });
-                    throw error;
-                }
             }
         }
         
@@ -271,11 +206,9 @@ window.GIFExporter = (function() {
             
             const tempContainer = new PIXI.Container();
             
-            const layersContainer = this.manager.animationSystem.layerSystem.layersContainer || 
-                                   this.manager.animationSystem.layerSystem.currentCutContainer;
-            
+            const layersContainer = this.manager.animationSystem.layerSystem.currentCutContainer;
             if (!layersContainer) {
-                throw new Error('layersContainer not found');
+                throw new Error('currentCutContainer not found');
             }
             
             const originalParent = layersContainer.parent;
@@ -341,4 +274,4 @@ window.GIFExporter = (function() {
     return GIFExporter;
 })();
 
-console.log('✅ gif-exporter.js (デバッグ版) loaded');
+console.log('✅ gif-exporter.js (generateBlob統一版) loaded');
