@@ -1,4 +1,5 @@
-// ===== core-runtime.js - PNG/APNG/GIF自動判定対応版 =====
+// ===== core-runtime.js - ブックマークレット対応版 =====
+// 【追加】window.startTegakiApp() エントリーポイント
 // 【改修】APNGExporter登録対応
 // 【改修】ExportSystem確実初期化機能追加
 // 【維持】全既存機能・リサイズ即時反映・背景塗り
@@ -490,8 +491,13 @@
             mgr.registerExporter('apng', new window.APNGExporter(mgr));
             mgr.registerExporter('gif', new window.GIFExporter(mgr));
             
-            // ExportPopup初期化
-            if (window.ExportPopup && !window.TEGAKI_EXPORT_POPUP) {
+            // WebPExporterがあれば登録
+            if (window.WebPExporter) {
+                mgr.registerExporter('webp', new window.WebPExporter(mgr));
+            }
+            
+            // ExportPopup初期化（通常モード時のみ）
+            if (window.ExportPopup && !window.TEGAKI_EXPORT_POPUP && !window._isBookmarkletMode) {
                 window.TEGAKI_EXPORT_POPUP = new window.ExportPopup(mgr);
                 
                 const exportToolBtn = document.getElementById('export-tool');
@@ -510,7 +516,7 @@
                 window.TegakiEventBus.emit('export:manager:initialized', { timestamp: Date.now() });
             }
             
-            console.log('✅ ExportSystem initialized (PNG/APNG/GIF)');
+            console.log('✅ ExportSystem initialized (PNG/APNG/GIF/WebP)');
             
             if (onSuccess) onSuccess();
             return true;
@@ -523,7 +529,87 @@
     
     window.CoreRuntime = CoreRuntime;
     
-    console.log('✅ core-runtime.js PNG/APNG/GIF自動判定対応版 loaded');
+    // ===== 【追加】ブックマークレット用エントリーポイント =====
+    window.startTegakiApp = async function(config = {}) {
+        console.log('🚀 startTegakiApp() called');
+        
+        // ブックマークレットモードフラグ
+        const isBookmarkletMode = config.isBookmarkletMode || false;
+        window._isBookmarkletMode = isBookmarkletMode;
+        
+        // コンテナ取得
+        const container = config.container || document.getElementById('canvas-container');
+        if (!container) {
+            throw new Error('Canvas container not found');
+        }
+        
+        // PixiJS Application作成
+        const app = new PIXI.Application();
+        
+        const appWidth = config.width || window.innerWidth;
+        const appHeight = config.height || window.innerHeight;
+        
+        await app.init({
+            width: appWidth,
+            height: appHeight,
+            backgroundColor: 0x1a1a1a,
+            resolution: window.devicePixelRatio || 1,
+            autoDensity: true
+        });
+        
+        container.appendChild(app.canvas);
+        
+        // CoreEngine初期化
+        if (!window.TegakiCore || !window.TegakiCore.CoreEngine) {
+            throw new Error('TegakiCore.CoreEngine not found');
+        }
+        
+        const coreEngine = new window.TegakiCore.CoreEngine(app, config);
+        coreEngine.initialize();
+        
+        // システム取得
+        const layerSystem = coreEngine.getLayerManager();
+        const animationSystem = coreEngine.getAnimationSystem();
+        const cameraSystem = coreEngine.getCameraSystem();
+        
+        // ExportManager初期化
+        let exportManager = null;
+        if (window.ExportManager && animationSystem) {
+            exportManager = new window.ExportManager(
+                app,
+                layerSystem,
+                animationSystem,
+                cameraSystem
+            );
+            
+            // Exporter登録
+            if (window.PNGExporter) {
+                exportManager.registerExporter('png', new window.PNGExporter(exportManager));
+            }
+            if (window.APNGExporter) {
+                exportManager.registerExporter('apng', new window.APNGExporter(exportManager));
+            }
+            if (window.GIFExporter) {
+                exportManager.registerExporter('gif', new window.GIFExporter(exportManager));
+            }
+            if (window.WebPExporter) {
+                exportManager.registerExporter('webp', new window.WebPExporter(exportManager));
+            }
+            
+            console.log('✅ ExportManager initialized with exporters');
+        }
+        
+        console.log('✅ Tegaki App initialized successfully');
+        
+        return {
+            app: app,
+            coreEngine: coreEngine,
+            exportManager: exportManager
+        };
+    };
+    
+    console.log('✅ core-runtime.js ブックマークレット対応版 loaded');
+    console.log('  ✅ window.startTegakiApp() registered');
     console.log('  ✅ APNGExporter登録対応');
     console.log('  ✅ ExportSystem確実初期化');
     console.log('  ✅ 既存機能完全維持');
