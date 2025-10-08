@@ -269,9 +269,9 @@
     <script src="system/export-manager.js"></script>
     <script src="system/exporters/png-exporter.js"></script>
     <script src="system/exporters/gif-exporter.js"></script>
-    <script src="ui/export-popup.js"></script>
     <script src="ui/timeline-ui.js"></script>
     <script src="ui/album-popup.js"></script>
+    <script src="ui/export-popup.js"></script>
     <script src="ui/ui-panels.js"></script>
     <script src="ui/timeline-thumbnail-utils.js"></script>
     <script src="core-runtime.js"></script>
@@ -472,6 +472,15 @@ function initializeApp() {
                 this.coreEngine.getLayerManager(), 
                 this.pixiApp
             );
+
+if (this.coreEngine.animationSystem) {
+    const albumInitSuccess = this.uiController.initializeAlbumPopup(
+        this.coreEngine.animationSystem
+    );
+    if (albumInitSuccess) {
+        console.log('✅ AlbumPopup initialized');
+    }
+}
             
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
                 return CoreRuntime.api.resizeCanvas(newWidth, newHeight);

@@ -1,7 +1,4 @@
-// ===== ui-panels.js - アルバム連携実装版 =====
-// 🎯 改修内容：
-// - library-tool クリック時にAlbumPopup表示
-// - AlbumPopupインスタンスの初期化と管理
+// ===== ui-panels.js - アルバム初期化対応版 =====
 
 window.TegakiUI = {
     
@@ -12,6 +9,7 @@ window.TegakiUI = {
             this.app = app;
             this.activePopup = null;
             this.toolbarIconClickMode = false;
+            this.albumPopup = null;
             
             this.validateCoreRuntime();
             
@@ -29,6 +27,33 @@ window.TegakiUI = {
             
             if (!window.CoreRuntime.api) {
                 throw new Error('CoreRuntime.api not initialized');
+            }
+        }
+        
+        // アルバムポップアップ初期化
+        initializeAlbumPopup(animationSystem) {
+            if (!window.AlbumPopup) {
+                console.error('❌ AlbumPopup class not loaded');
+                console.error('Make sure ui/album-popup.js is loaded before ui-panels.js');
+                return false;
+            }
+            
+            if (!animationSystem) {
+                console.error('❌ AnimationSystem not provided');
+                return false;
+            }
+            
+            try {
+                this.albumPopup = new window.AlbumPopup(
+                    this.app,
+                    this.layerManager,
+                    animationSystem
+                );
+                console.log('✅ AlbumPopup initialized successfully');
+                return true;
+            } catch (error) {
+                console.error('❌ Failed to initialize AlbumPopup:', error);
+                return false;
             }
         }
         
@@ -504,4 +529,4 @@ window.TegakiUI = {
     }
 };
 
-console.log('✅ ui-panels.js アルバム連携実装版 loaded');
+console.log('✅ ui-panels.js アルバム初期化対応版 loaded');
