@@ -1,7 +1,10 @@
 // system/history.js
 // ================================================================================
-// Phase 1: コマンドパターン完全移行 + 後方互換性
+// Phase 2: EventBus修正 + コマンドパターン完全実装
 // ================================================================================
+// 改修内容:
+// - _notifyHistoryChanged()でwindow.TegakiEventBusを使用
+// - 既存機能完全継承
 
 (function() {
     'use strict';
@@ -13,10 +16,8 @@
             this.isApplying = false;
             this.maxSize = 500;
             
-            // ========== Phase 1: 後方互換性追加 START ==========
-            // 既存コード（layer-system.js等）が window.History._manager.isApplying を参照しているため
-            this._manager = this; // this._manager.isApplying で this.isApplying を参照できるように
-            // ========== Phase 1: 後方互換性追加 END ==========
+            // 後方互換性（既存コードが window.History._manager.isApplying を参照）
+            this._manager = this;
         }
 
         push(command) {
@@ -31,11 +32,18 @@
 
             try {
                 this.isApplying = true;
+                
+                // 現在位置より後ろのスタックを削除
                 this.stack.splice(this.index + 1);
+                
+                // コマンドを実行
                 command.do();
+                
+                // スタックに追加
                 this.stack.push(command);
                 this.index++;
                 
+                // スタックサイズ制限
                 if (this.stack.length > this.maxSize) {
                     this.stack.shift();
                     this.index--;
@@ -129,9 +137,11 @@
             );
         }
 
+        // ========== Phase 2: 改修 START ==========
         _notifyHistoryChanged() {
-            if (window.EventBus) {
-                EventBus.emit('history:changed', {
+            // 🔥 修正: window.EventBus → window.TegakiEventBus
+            if (window.TegakiEventBus) {
+                window.TegakiEventBus.emit('history:changed', {
                     canUndo: this.canUndo(),
                     canRedo: this.canRedo(),
                     stackSize: this.stack.length,
@@ -139,6 +149,7 @@
                 });
             }
         }
+        // ========== Phase 2: 改修 END ==========
 
         debug() {
             console.log('[History] Stack:', this.stack.map(cmd => cmd.name));
@@ -146,8 +157,25 @@
             console.log('[History] Can Undo:', this.canUndo());
             console.log('[History] Can Redo:', this.canRedo());
         }
+        
+        // デバッグ用：最後のコマンドを表示
+        getLastCommand() {
+            return this.stack[this.index] || null;
+        }
+        
+        // デバッグ用：スタック全体を取得
+        getStack() {
+            return this.stack.map((cmd, idx) => ({
+                index: idx,
+                name: cmd.name,
+                isCurrent: idx === this.index,
+                meta: cmd.meta
+            }));
+        }
     }
 
     window.History = new HistoryManager();
+    
+    console.log('✅ history.js (Phase 2: EventBus修正版) loaded');
 
 })();

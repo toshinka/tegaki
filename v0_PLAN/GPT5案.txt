@@ -1,124 +1,296 @@
-===============================
-ブラウザお絵かきツール 改修計画書
-===============================
-対象: v8.13_History14 ブランチ
-目的: 出力機能を GIF 中心から APNG + WebP 中心へ移行し、互換性を確保する。
+改修計画書：アルバム／タイムライン サムネイル縮小の多重処理問題調査と改修案
+================================================================================
+作成日: 2025-10-08
+対象リポジトリブランチ: v8.13_History21
+（参照した主要ファイル：ui/album-popup.js, ui/timeline-thumbnail-utils.js, ui/timeline-ui.js, core-engine.js）
 
---------------------------------
-# 改修背景
-- ふたば☆ちゃんねるでの手描き動画投稿は APNG でのみ作動する。
-- GIF はサムネイルで動作するが、投稿時の本体動画用途には不適合。
-- めぶきチャンネル等、新環境も見据え APNG + WebP 路線にシフトするのが合理的。
-- GIF 出力機能は後方互換用に残すが、メインは APNG/WebP とする。
+要約
+----
+- 症状：アルバム（album-popup）のパネル内サムネイルが「小さい」。要望は「アスペクト比を保ちつつ、長辺が目いっぱいに表示されること」。  
+  さらに「縮小化処理がずっと残り続ける（縮小処理が継続実行される）挙動」を確認。
+- 調査結果の短評：サムネイルのリサイズ責務が複数箇所で重複しており（AlbumPopup、TimelineThumbnailUtils、TimelineUI 等）、かつ GIF プレビューやサムネイル更新のイベント連鎖が要因で多重処理（重複タイマーや連続生成）が発生している可能性が高い。まずは **AlbumPopup 側の表示ロジックの修正（低リスク）** を行い、次に **共通ユーティリティ化・生成 / キャッシュ / 更新フローの整理（中〜高リスク）** を順次適用する。
 
---------------------------------
-# 実行環境制約
-- PixiJS v8.13（CDN読み込み）
-- ES2023 / モジュール未使用
-- 実行: Chrome 最新 / file:// 直開き可能
-- 禁止事項: Canvas2Dの乱用, TypeScript, Vite, ESM, bundler, Babel
-- ベクターペン主体で、ラスターペンは最終段階まで未使用
-- フォーカス: 可読性・改修容易性・AIによる自動改修支援
+再現手順（短）
+--------------
+1. アプリを開き、アルバム（AlbumPopup）を表示する。  
+2. ギャラリーに登録されたスナップショット（特に縦長画像／横長画像混在）を確認。  
+3. サムネイルがカード内で「小さく」表示される。また、GIF サムネイルのプレビューが複数重複して動き続けると CPU 使用や画像のチラつきが出る場合がある。
 
---------------------------------
-# 全体方針
-1. system/exporters 以下に「apng-exporter.js」「webp-exporter.js」を整備
-   - GIF エクスポーターと同様に Blob を返す API とする
-   - API 定義は統一: `exportAsBlob(frames, options) -> Promise<Blob>`
+観察（ソースから見えた点）
+-------------------------
+- album-popup.js は snapshot.thumbnail を dataURL として img に割り当て、`img.style` に固定 `width:130px; height:98px; object-fit:contain` を入れている。これだと「長辺を目いっぱいにする」動作にならない。さらに GIF プレビューは setInterval で img.src を書き換える実装。  
+- timeline-thumbnail-utils.js は生成側で縮小（maxThumbW/H）を行っており、cache を持つ。生成の API が複数の呼び出し元から呼ばれている印象。  
+- timeline-ui.js 側でも独自にサムネイルのアスペクト比計算を行っており、責務が分散している（同一の計算が重複）。またイベントバスで「layer:updated」「drawing:path-completed」等の度に更新要求が来る設計で、デバウンス/フラグ管理が不十分な箇所がある。  
+（詳細は参照ファイル参照）
 
-2. core-engine / export-manager 側でエクスポート選択肢を拡張
-   - format: 'gif' | 'apng' | 'webp' で切り替え可能にする
-   - Blob を返し、UI 層が URL.createObjectURL(blob) で `<img>` に渡せるようにする
+根本原因（仮説・優先度順）
+-----------------------
+1. 表示責務分散：サムネイルの「どのサイズで表示するか・どこが決めるか」が複数ファイルで重複 → 「多重縮小／多重style適用」が発生。  
+2. GIF プレビューの重複：プレビュー開始で既存 interval を確実に止めないケースがあるため、複数 interval が残り続ける（img.src を継続的に書き換える）→ 見た目が崩れたり継続負荷。  
+3. 更新フローのループ：描画イベントやサムネイル生成イベントが相互にトリガーし合い短時間に何度もサムネイル生成リクエストが飛ぶ（デバウンス/進行中フラグの不足）。  
+4. キャッシュ不整合：TimelineThumbnailUtils の cache key が呼び出し条件（出力サイズ）を包含しておらず、異なる表示サイズでの再利用や不要な再生成を誘発している可能性。
 
-3. UI 層の改修
-   - export-popup.js: フォーマット選択肢に APNG / WebP を追加
-   - timeline-thumbnail-utils.js: Blob URL を `<img>` に設定し、右クリック保存で元フォーマット保持可能にする
+優先度付き改修方針（短）
+-----------------------
+A. まず低リスクで AlbumPopup の表示ロジック修正（UX 即効）：  
+   - 固定幅・固定高さを img に直接与えない。カード内に「thumbnail container（固定枠）」を用意して、img の onload で naturalWidth/naturalHeight を見て **コンテナのアスペクト比と比較 → 長辺を 100% にする**（幅 or 高さを auto にする）方式に変更。  
+   - GIF プレビューは「開始前に既存 interval を必ずクリア」する処理を追加。ギャラリーを書き換える際に DOM 外の img に紐付いた interval を掃除する処理も追加する（再レンダリングで interval が残る問題対策）。  
 
-4. ライブラリ利用方針
-   - GIF 同様、外部ライブラリを最小限に。
-   - 候補:
-     - APNG: "UPNG.js" （軽量 APNG エンコーダ、ESM不要）
-     - WebP: "libwebpjs" または "webp-encoder" 系の軽量実装
-   - いずれも ES2023 グローバルスコープで動作可能なビルドを利用
+B. 中リスク：TimelineThumbnailUtils 側を小さく改善（ユーティリティ化）：  
+   - サムネイルサイズ決定（canvas -> thumbW/thumbH の算出）を static helper として切り出す。呼び出し側（TimelineUI 等）はこの helper を使って「1 箇所でサイズ算出」。  
+   - generateThumbnail の cacheKey に出力サイズ（maxThumbWxH）を含める（誤キャッシュ防止）。  
 
-5. クリップボード機能
-   - GIF 直接コピーは困難であるため、APNG/WebP を Blob として生成後
-     `navigator.clipboard.write([ new ClipboardItem({ "image/png": fallbackFrame }) ])`
-     のように静止PNGコピーを提供（静止画コピーのみ保証）
-   - 本体アニメは Blob URL + ダウンロードボタン提供
+C. 変更の段階的適用（高信頼性で実施）：
+   - TimelineUI の applyCutThumbnailAspectRatio を上の helper を使うよう差し替え。  
+   - イベントバス由来のサムネイル更新をより堅牢に（強めのデバウンス、thumbnailUpdateInProgress チェック、短時間重複リクエストの破棄）する。  
+   - animationSystem.generateCutThumbnailOptimized 等がイベントを多重発行していないか確認。必要なら「generate 実行中フラグ」を追加し二重実行を防ぐ。
 
---------------------------------
-# 改修ファイルと作業内容
-1. system/exporters/apng-exporter.js
-   - 新規作成
-   - 役割: frames 配列を APNG にまとめ、Blob(type:"image/apng") を返す
-   - 内部: UPNG.js 利用可
-   - API: `exportAsBlob(frames, options)`
+ファイル別変更案（実装コード断片：そのまま差し替え可能）
+-------------------------------------
+以下は「実際に差し替えて動作検証できる」最小改修スニペット群です。
+※差分は album-popup.js と timeline-thumbnail-utils.js と timeline-ui.js に集中させることを推奨。
 
-2. system/exporters/webp-exporter.js
-   - 新規作成
-   - 役割: frames 配列を animated WebP にまとめ、Blob(type:"image/webp") を返す
-   - API: `exportAsBlob(frames, options)`
+1) ui/album-popup.js（主要・低リスク修正）
+   - 置換箇所：_renderGallery 内の img 要素作成部分、_startGIFPreview / _stopGIFPreview、ギャラリークリア前の interval クリーン処理、補助メソッド _fitImageToContainer を追加。
 
-3. system/export-manager.js
-   - エクスポート選択肢に 'apng', 'webp' を追加
-   - フォーマット別に該当 exporter を呼ぶ分岐を追加
-   - 既存 GIF ルートは維持
+変更スニペット（該当メソッドの完全差し替え例）
+────────────────────────────────────────
+（1）_fitImageToContainer をクラスに追加
+```javascript
+// AlbumPopup クラス内に追加
+_fitImageToContainer(img, containerW, containerH) {
+  try {
+    const iw = img.naturalWidth || img.width || 1;
+    const ih = img.naturalHeight || img.height || 1;
+    const imgAspect = iw / ih;
+    const containerAspect = (containerW || 1) / (containerH || 1);
+    if (imgAspect >= containerAspect) {
+      img.style.width = '100%';
+      img.style.height = 'auto';
+    } else {
+      img.style.width = 'auto';
+      img.style.height = '100%';
+    }
+    // 常に object-fit: contain を念のため維持
+    img.style.objectFit = 'contain';
+  } catch (e) {
+    // 念のためフォールバック（破綻を避ける）
+    img.style.width = '100%';
+    img.style.height = 'auto';
+  }
+}
 
-4. ui/export-popup.js
-   - 出力形式選択UIに APNG / WebP を追加
-   - 出力後は Blob URL を生成しサムネイル用に渡す
+（2）_renderGallery のサムネイル生成部分（置換）
 
-5. ui/timeline-thumbnail-utils.js
-   - `createThumbnailImageFromBlob(blob, filename)` ユーティリティを共通化
-   - `<img src=objectURL>` 方式でアニメファイルを保持し、右クリック保存が元フォーマットで動作するようにする
-   - ダウンロードボタンを追加可能にする
+// gallery.innerHTML = ''; の直前に「残っている previewInterval の掃除」を追加
+if (this.previewIntervals && this.previewIntervals.size > 0) {
+  for (const imgEl of Array.from(this.previewIntervals.keys())) {
+    if (!document.body.contains(imgEl)) {
+      clearInterval(this.previewIntervals.get(imgEl));
+      this.previewIntervals.delete(imgEl);
+    }
+  }
+}
+gallery.innerHTML = '';
 
-6. core-engine.js / core-runtime.js
-   - export-manager の新APIを呼び出す側を改修
-   - Blob を Promise で受け取り、UI に渡す
+// card + thumbnailContainer + img の組み立て（カード生成ループ内）
+const card = document.createElement('div');
+card.style.cssText = ` background: #ffffee; border: 1px solid var(--futaba-light-medium); border-radius: 6px; overflow: hidden; transition: all 0.2s; width: 130px; height: 130px; display: flex; flex-direction: column; `;
 
---------------------------------
-# API 定義（統一仕様）
-```js
-// 全エクスポーター共通
-async function exportAsBlob(frames, options) -> Promise<Blob>
+// thumbnail container
+const thumbnailContainer = document.createElement('div');
+thumbnailContainer.style.cssText = ` width: 130px; height: 98px; display:flex; align-items:center; justify-content:center; overflow:hidden; background:#ffffee; flex-shrink:0; `;
 
-// options 例
-{
-  fps: 12,
-  quality: 0.9,
-  transparent: true,
-  filename: 'output.apng' // or .webp
+// image element
+const img = document.createElement('img');
+img.src = snapshot.thumbnail;
+img.style.cssText = ` display:block; max-width:100%; max-height:100%; object-fit:contain; cursor:pointer; `;
+img.onclick = (e) => { e.stopPropagation(); this._loadSnapshot(snapshot); };
+
+// fit on load (ensures長辺が目一杯)
+img.onload = () => {
+  const cw = thumbnailContainer.clientWidth || 130;
+  const ch = thumbnailContainer.clientHeight || 98;
+  this._fitImageToContainer(img, cw, ch);
+};
+
+thumbnailContainer.appendChild(img);
+card.appendChild(thumbnailContainer);
+// ... 既存の actions 部分を付ける処理はそのまま（actions を作って card に append）
+
+
+（3）GIF プレビュー開始・停止の改良（重複 interval を作らない）
+
+_startGIFPreview(snapshot, imgElement) {
+  if (snapshot.type !== 'gif' || !snapshot.frames) return;
+  // 重複開始防止: 既に interval があればクリアする
+  this._stopGIFPreview(snapshot, imgElement);
+
+  let frameIndex = 0;
+  const intervalId = setInterval(() => {
+    try {
+      frameIndex = (frameIndex + 1) % snapshot.frames.length;
+      imgElement.src = snapshot.frames[frameIndex];
+    } catch (e) {
+      // ignore
+    }
+  }, snapshot.frameDelay || 100);
+
+  this.previewIntervals.set(imgElement, intervalId);
+}
+
+_stopGIFPreview(snapshot, imgElement) {
+  const intervalId = this.previewIntervals.get(imgElement);
+  if (intervalId) {
+    clearInterval(intervalId);
+    this.previewIntervals.delete(imgElement);
+  }
+  // 復帰: 元サムネイル
+  try { imgElement.src = snapshot.thumbnail; } catch (e) { /* ignore */ }
 }
 
 
-将来展望
+注意点：
 
-GIF: 後方互換用として残し、積極利用は推奨しない
+ギャラリーを再レンダリングする際に DOM から消えた img に紐づく interval を残さないよう、先頭で掃除を行う（上記）。
 
-APNG: ふたば投稿向けの標準出力形式
+previewIntervals のキーは DOM 要素（img）を用いているので、再描画で新しい img が作られると古い img 要素が DOM から消えても interval が残ることがある→必ず掃除する。
 
-WebP: 汎用的・軽量な次世代フォーマットとして採用
+ui/timeline-thumbnail-utils.js（ユーティリティ化）
 
-クリップボードコピー: 静止PNGを保証、アニメは Blob URL ダウンロード利用
+目的：サムネイルのサイズ算出ロジックを一箇所にまとめ、呼び出し元はそれを使う。
 
-改修優先度
+変更点：
 
-apng-exporter.js 実装
+static computeThumbSize(canvasW, canvasH, maxThumbW = 150, maxThumbH = 150) を追加
 
-webp-exporter.js 実装
+generateThumbnail の cacheKey に maxThumbW/maxThumbH を含めるように変更
 
-export-manager.js 拡張
+generateThumbnail が出力するサイズは computeThumbSize を使う
 
-export-popup.js + thumbnail-utils.js のUI拡張
+変更スニペット（クラス内に追加/置換）
 
-テスト:
+class TimelineThumbnailUtils {
+  // 既存 constructor の上または下に以下を追加
+  static computeThumbSize(canvasW, canvasH, maxThumbW = 150, maxThumbH = 150) {
+    const aspectRatio = (canvasW && canvasH) ? (canvasW / canvasH) : 1;
+    let thumbW, thumbH;
+    if (aspectRatio > 1) {
+      thumbW = maxThumbW;
+      thumbH = Math.round(maxThumbW / aspectRatio);
+    } else {
+      thumbH = maxThumbH;
+      thumbW = Math.round(maxThumbH * aspectRatio);
+    }
+    return { thumbW, thumbH };
+  }
 
-ふたば投稿でAPNGが正しく動くか確認
+  // generateThumbnail の先頭付近（キャッシュキー）を次のように修正
+  generateThumbnail(cut, maxThumbW = 150, maxThumbH = 150) {
+    const cacheKey = `${cut.id}_${cut.canvasWidth}_${cut.canvasHeight}_${maxThumbW}x${maxThumbH}`;
+    if (this.thumbnailCache.has(cacheKey)) return this.thumbnailCache.get(cacheKey);
+    // 以降で computeThumbSize を利用する
+    const { thumbW, thumbH } = TimelineThumbnailUtils.computeThumbSize(canvasW, canvasH, maxThumbW, maxThumbH);
+    // thumbCanvas.width = thumbW; thumbCanvas.height = thumbH; ... の代入に使用
+  }
+}
 
-Chrome/Edge/SafariでAPNG/WebP保存が可能か確認
 
-file:// 環境でもBlob URL表示が可能か確認
+ui/timeline-ui.js（呼び出し側修正）
+
+applyCutThumbnailAspectRatio の内部計算を上の helper に置き換える。
+
+requestThumbnailUpdate / updateAllCutThumbnails 周りに短時間リクエスト抑止（簡易タイムスタンプ制御）を追加。
+
+変更スニペット（置換例）
 
 
+applyCutThumbnailAspectRatio(cutItem, cutIndex) {
+  const thumbnail = cutItem.querySelector('.cut-thumbnail');
+  if (!thumbnail) return;
+  const canvasWidth = this.animationSystem.layerSystem?.config?.canvas?.width || 800;
+  const canvasHeight = this.animationSystem.layerSystem?.config?.canvas?.height || 600;
+  const maxWidth = 72;
+  const maxHeight = 54;
+  // TimelineThumbnailUtils が存在する前提で呼ぶ
+  if (window.TimelineThumbnailUtils && typeof window.TimelineThumbnailUtils.computeThumbSize === 'function') {
+    const { thumbW, thumbH } = window.TimelineThumbnailUtils.computeThumbSize(canvasWidth, canvasHeight, maxWidth, maxHeight);
+    thumbnail.style.width = thumbW + 'px';
+    thumbnail.style.height = thumbH + 'px';
+  } else {
+    // 既存のフォールバック計算
+    const aspectRatio = canvasWidth / canvasHeight;
+    let thumbWidth, thumbHeight;
+    if (aspectRatio >= maxWidth / maxHeight) {
+      thumbWidth = maxWidth;
+      thumbHeight = Math.round(maxWidth / aspectRatio);
+    } else {
+      thumbHeight = maxHeight;
+      thumbWidth = Math.round(maxHeight * aspectRatio);
+    }
+    thumbnail.style.width = thumbWidth + 'px';
+    thumbnail.style.height = thumbHeight + 'px';
+  }
+}
+
+
+イベント重複対策（timeline-ui.requestThumbnailUpdate の強化）
+
+requestThumbnailUpdate() {
+  if (this.thumbnailUpdateInProgress) return;
+  const now = Date.now();
+  if (this._lastThumbnailRequestAt && now - this._lastThumbnailRequestAt < 250) {
+    // 250ms以内の連続要求は無視
+    return;
+  }
+  this._lastThumbnailRequestAt = now;
+  if (this.thumbnailUpdateTimer) clearTimeout(this.thumbnailUpdateTimer);
+  this.thumbnailUpdateTimer = setTimeout(() => { this.updateCurrentCutThumbnail(); }, 200);
+}
+
+
+テスト手順（改修後検証）
+
+アプリを起動 → AlbumPopup を開く。全スナップショットが正しく表示され、各カードで長辺がカードに収まるように最大化されていることを確認。
+
+横長画像は幅がいっぱいに、縦長画像は高さがいっぱいに表示される（余白は必ず短辺側に発生）。
+
+GIF サムネイル上でホバー → プレビュー開始と停止が確実に行われることを確認。
+
+ホバーを繰り返しても interval が重複して残らない（開発者ツールで setInterval の数や CPU を監視）。
+
+レイヤーを描画 → タイムライン / アルバム のサムネイル更新が過度に連続発生しないこと（短時間に連続で regenerate されない）。
+
+メモリリークの簡易確認：ギャラリーを多数回開閉してから profiler でタイマー/イベントリスナが残っていないことを確認。
+
+
+リスクと巻き戻し（rollback）
+
+低リスク：AlbumPopup の表示ロジック変更は DOM 構造を少し変えるため、ボタン位置や CSS の影響を確認。問題があれば元の img style 部分を戻すだけで即ロールバック可能。
+
+中〜高リスク：Timeline 系を共通化すると他 UI が影響を受ける為、段階的に（まず AlbumPopup→TimelineUI→TimelineThumbnailUtils の順）適用。各段階で unit テスト的な動作確認を必須とする。
+
+備考（運用上の注意）
+
+本ツールはベクターペン主体。サムネイル生成では 元データ（paths 等）をラスタライズする際にラスタ情報を永続化しないよう注意→ スナップショットに paths 情報を含める設計は維持する（既に album-popup.js でその扱いがある）。
+
+extract.pixels や RenderTexture の頻繁生成は重い処理。頻度はデバウンスで抑える方向で改善する（必要なら、generateThumbnail の内部で再利用可能な RenderTexture を流用する案を検討）。
+
+実施作業一覧（優先順タスク）
+
+AlbumPopup の _renderGallery, _startGIFPreview, _stopGIFPreview, _fitImageToContainer を適用（上記スニペット）。→ 動作確認。
+
+TimelineThumbnailUtils に computeThumbSize を追加、cacheKey を改善。→ TimelineUI の applyCutThumbnailAspectRatio を computeThumbSize 利用に差し替え。→ 動作確認。
+
+requestThumbnailUpdate のデバウンス強化・進行中フラグの見直し（timeline-ui / core-engine の相互作用を観察）。→ 動作確認。
+
+必要なら animation-system の generateCutThumbnailOptimized の内部で「実行中フラグ」を設け、同時多重実行・イベント乱発を抑止。
+
+コードレビュー → CI/ローカル受け入れテスト（アルバムの開閉、ギャラリー再描画、描画・消去・Undo/Redo のループテスト）。
+
+最後に（次のアクション）
+
+まずは 1) の AlbumPopup の修正を実装していただき、差し替え後のスクリーンショットとブラウザの開発者ツールでのタイマー状況を教えてください。
+
+それを受けて 2) 以降を段階的に作業します。
+（ただし、この返信では改修コードの「提案」は完了しています。実装・動作確認はリポジトリ側で行ってください。）
