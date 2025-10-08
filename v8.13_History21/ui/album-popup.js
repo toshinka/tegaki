@@ -220,31 +220,7 @@ class AlbumPopup {
   }
 
   async _createGIFThumbnail(dataUrl) {
-    return new Promise((resolve) => {
-      const img = new Image();
-      img.onload = () => {
-        const thumbCanvas = document.createElement('canvas');
-        thumbCanvas.width = 130;
-        thumbCanvas.height = 98;
-        
-        const ctx = thumbCanvas.getContext('2d');
-        const CONFIG = window.TEGAKI_CONFIG;
-        ctx.fillStyle = CONFIG.background.color ? 
-          '#' + CONFIG.background.color.toString(16).padStart(6, '0') : 
-          '#F0E0D6';
-        ctx.fillRect(0, 0, 130, 98);
-        
-        const scale = Math.min(130 / img.width, 98 / img.height);
-        const scaledWidth = img.width * scale;
-        const scaledHeight = img.height * scale;
-        const x = (130 - scaledWidth) / 2;
-        const y = (98 - scaledHeight) / 2;
-        
-        ctx.drawImage(img, x, y, scaledWidth, scaledHeight);
-        resolve(thumbCanvas.toDataURL('image/jpeg', 0.8));
-      };
-      img.src = dataUrl;
-    });
+    return dataUrl;
   }
 
   async _captureSnapshot() {
@@ -325,28 +301,8 @@ class AlbumPopup {
     } else {
       canvas = source;
     }
-
-    const thumbCanvas = document.createElement('canvas');
-    thumbCanvas.width = 130;
-    thumbCanvas.height = 98;
     
-    const ctx = thumbCanvas.getContext('2d');
-    
-    const CONFIG = window.TEGAKI_CONFIG;
-    ctx.fillStyle = CONFIG.background.color ? 
-      '#' + CONFIG.background.color.toString(16).padStart(6, '0') : 
-      '#F0E0D6';
-    ctx.fillRect(0, 0, 130, 98);
-    
-    const scale = Math.min(130 / canvas.width, 98 / canvas.height);
-    const scaledWidth = canvas.width * scale;
-    const scaledHeight = canvas.height * scale;
-    const x = (130 - scaledWidth) / 2;
-    const y = (98 - scaledHeight) / 2;
-    
-    ctx.drawImage(canvas, x, y, scaledWidth, scaledHeight);
-    
-    return thumbCanvas.toDataURL('image/jpeg', 0.8);
+    return canvas.toDataURL('image/png');
   }
 
   async _loadSnapshot(snapshot) {
@@ -381,7 +337,7 @@ class AlbumPopup {
 
       cutState.layerStates.forEach(layerState => {
         const layerContainer = new PIXI.Container();
-        layerContainer.visible = layerState.visible;
+        layerContainer.visible = layerState.visible !== false;
         layerContainer.alpha = layerState.opacity;
         layerContainer.label = layerState.name;
         
@@ -437,11 +393,11 @@ class AlbumPopup {
       this.animationSystem.setCutIndex(snapshot.currentCut);
     }
 
-    if (this.layerSystem && this.layerSystem.updateLayerPanelUI) {
-      setTimeout(() => {
+    setTimeout(() => {
+      if (this.layerSystem && this.layerSystem.updateLayerPanelUI) {
         this.layerSystem.updateLayerPanelUI();
-      }, 100);
-    }
+      }
+    }, 200);
 
     this.hide();
   }
@@ -506,8 +462,18 @@ class AlbumPopup {
 
     if (this.layerSystem && this.layerSystem.updateLayerPanelUI) {
       setTimeout(() => {
+        const currentCut = this.animationSystem.animationData.cuts[this.animationSystem.getCurrentCutIndex()];
+        if (currentCut && currentCut.container) {
+          currentCut.container.children.forEach((layer, index) => {
+            const eyeBtn = document.querySelector(`#layerPanel .layer-item:nth-child(${index + 1}) .layer-eye`);
+            if (eyeBtn && layer) {
+              eyeBtn.textContent = layer.visible ? '👁' : '👁‍🗨';
+              eyeBtn.style.opacity = layer.visible ? '1' : '0.3';
+            }
+          });
+        }
         this.layerSystem.updateLayerPanelUI();
-      }, 100);
+      }, 150);
     }
 
     this.hide();
@@ -522,7 +488,7 @@ class AlbumPopup {
     this.snapshots.forEach(snapshot => {
       const card = document.createElement('div');
       card.style.cssText = `
-        background: var(--futaba-cream);
+        background: #ffffee;
         border: 1px solid var(--futaba-light-medium);
         border-radius: 6px;
         overflow: hidden;
@@ -548,9 +514,9 @@ class AlbumPopup {
       img.style.cssText = `
         width: 130px;
         height: 98px;
-        object-fit: cover;
+        object-fit: contain;
         display: block;
-        background: var(--futaba-background);
+        background: #ffffee;
         cursor: pointer;
         flex-shrink: 0;
       `;
