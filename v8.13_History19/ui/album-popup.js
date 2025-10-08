@@ -1,6 +1,6 @@
 /**
  * アルバムポップアップ
- * スナップショット保存・読み込み機能（シンプル版）
+ * スナップショット保存・読み込み機能（コンパクト版）
  */
 
 class AlbumPopup {
@@ -71,6 +71,7 @@ class AlbumPopup {
       display: flex;
       justify-content: space-between;
       align-items: center;
+      flex-shrink: 0;
     `;
     header.innerHTML = `
       <span style="font-size: 16px; font-weight: bold; color: var(--futaba-maroon);">アルバム</span>
@@ -82,6 +83,7 @@ class AlbumPopup {
       border-bottom: 2px solid var(--futaba-light-medium);
       display: flex;
       gap: 12px;
+      flex-shrink: 0;
     `;
     controls.innerHTML = `
       <button id="albumSave" style="padding: 8px 20px; border: 2px solid var(--futaba-maroon); border-radius: 8px; background: var(--futaba-background); color: var(--futaba-maroon); font-weight: 600; cursor: pointer; transition: all 0.2s; font-size: 14px;">現在の状態を保存</button>
@@ -92,10 +94,11 @@ class AlbumPopup {
     gallery.style.cssText = `
       flex: 1;
       overflow-y: auto;
-      padding: 20px;
+      overflow-x: hidden;
+      padding: 16px;
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
-      gap: 16px;
+      grid-template-columns: repeat(auto-fill, minmax(120px, 1fr));
+      gap: 12px;
       align-content: start;
     `;
 
@@ -105,7 +108,6 @@ class AlbumPopup {
     this.overlay.appendChild(this.popup);
     document.body.appendChild(this.overlay);
 
-    // DOM追加後にイベントリスナー設定
     const saveBtn = document.getElementById('albumSave');
     if (saveBtn) {
       saveBtn.onclick = () => this._saveSnapshot();
@@ -119,14 +121,12 @@ class AlbumPopup {
       };
     }
     
-    // 画面外クリックで閉じる
     this.overlay.onclick = (e) => {
       if (e.target === this.overlay) {
         this.hide();
       }
     };
     
-    // ポップアップ内クリックは伝播を止める
     this.popup.onclick = (e) => {
       e.stopPropagation();
     };
@@ -137,8 +137,6 @@ class AlbumPopup {
     this.snapshots.push(snapshot);
     this._saveToStorage();
     this._renderGallery();
-    
-    // 保存後もポップアップを閉じない
   }
 
   async _captureSnapshot() {
@@ -153,7 +151,15 @@ class AlbumPopup {
     });
 
     const canvas = this.app.renderer.extract.canvas(renderTexture);
-    const thumbnail = canvas.toDataURL('image/png');
+    
+    // サムネイル生成（120x90に縮小）
+    const thumbCanvas = document.createElement('canvas');
+    thumbCanvas.width = 120;
+    thumbCanvas.height = 90;
+    const ctx = thumbCanvas.getContext('2d');
+    ctx.drawImage(canvas, 0, 0, 120, 90);
+    const thumbnail = thumbCanvas.toDataURL('image/jpeg', 0.8);
+    
     renderTexture.destroy(true);
 
     const cutStates = [];
@@ -173,7 +179,6 @@ class AlbumPopup {
                 paths: []
               };
 
-              // 背景レイヤー以外のパスデータを保存
               if (!layer.layerData.isBackground && layer.layerData.paths) {
                 layerState.paths = layer.layerData.paths.map(p => ({
                   id: p.id,
@@ -210,7 +215,6 @@ class AlbumPopup {
 
     const cuts = this.animationSystem.animationData.cuts;
     
-    // 必要なCUT数まで追加（正しいメソッド名を使用）
     while (cuts.length < snapshot.cutStates.length) {
       if (this.animationSystem.createNewEmptyCut) {
         this.animationSystem.createNewEmptyCut();
@@ -219,21 +223,18 @@ class AlbumPopup {
       }
     }
 
-    // 各CUTのレイヤーを復元
     snapshot.cutStates.forEach((cutState, cutIndex) => {
       if (cutIndex >= cuts.length) return;
       
       const cut = cuts[cutIndex];
       if (!cut.container) return;
 
-      // 既存レイヤーをクリア
       while (cut.container.children.length > 0) {
         const child = cut.container.children[0];
         cut.container.removeChild(child);
         if (child.destroy) child.destroy({ children: true });
       }
 
-      // レイヤーを復元
       cutState.layerStates.forEach(layerState => {
         const layerContainer = new PIXI.Container();
         layerContainer.visible = layerState.visible;
@@ -247,7 +248,6 @@ class AlbumPopup {
           paths: []
         };
 
-        // 背景レイヤーの場合
         if (layerState.isBackground) {
           const bg = new PIXI.Graphics();
           const CONFIG = window.TEGAKI_CONFIG;
@@ -256,7 +256,6 @@ class AlbumPopup {
           layerContainer.addChild(bg);
           layerContainer.layerData.backgroundGraphics = bg;
         } else {
-          // 通常レイヤー：パスを復元
           layerState.paths.forEach(pathData => {
             const graphics = new PIXI.Graphics();
             pathData.points.forEach(point => {
@@ -283,7 +282,6 @@ class AlbumPopup {
         cut.container.addChild(layerContainer);
       });
 
-      // サムネイル更新
       if (this.animationSystem.generateCutThumbnail) {
         setTimeout(() => {
           this.animationSystem.generateCutThumbnail(cutIndex);
@@ -291,17 +289,14 @@ class AlbumPopup {
       }
     });
 
-    // 指定CUTに切り替え
     if (this.animationSystem.setCutIndex) {
       this.animationSystem.setCutIndex(snapshot.currentCut);
     }
 
-    // レイヤーパネル更新（visibleを正しく反映）
     if (this.layerSystem && this.layerSystem.updateLayerPanelUI) {
       setTimeout(() => {
         this.layerSystem.updateLayerPanelUI();
         
-        // 可視性アイコンを強制更新
         const layers = this.layerSystem.getLayers();
         layers.forEach((layer, index) => {
           const layerElement = document.querySelector(`[data-layer-index="${index}"]`);
@@ -322,10 +317,6 @@ class AlbumPopup {
     this.hide();
   }
 
-  async _exportAsGIF(snapshot) {
-    alert('GIF出力機能は準備中です');
-  }
-
   _renderGallery() {
     const gallery = document.getElementById('albumGallery');
     if (!gallery) return;
@@ -337,15 +328,15 @@ class AlbumPopup {
       card.style.cssText = `
         background: var(--futaba-background);
         border: 2px solid var(--futaba-light-medium);
-        border-radius: 8px;
+        border-radius: 6px;
         overflow: hidden;
-        cursor: pointer;
         transition: all 0.2s;
+        position: relative;
       `;
       card.onmouseenter = () => {
-        card.style.transform = 'translateY(-4px)';
+        card.style.transform = 'translateY(-2px)';
         card.style.borderColor = 'var(--futaba-maroon)';
-        card.style.boxShadow = '0 8px 16px rgba(128, 0, 0, 0.2)';
+        card.style.boxShadow = '0 4px 8px rgba(128, 0, 0, 0.2)';
       };
       card.onmouseleave = () => {
         card.style.transform = 'translateY(0)';
@@ -357,128 +348,63 @@ class AlbumPopup {
       img.src = snapshot.thumbnail;
       img.style.cssText = `
         width: 100%;
-        height: 160px;
+        height: 90px;
         object-fit: cover;
         display: block;
         background: var(--light-medium);
+        cursor: pointer;
       `;
-
-      const info = document.createElement('div');
-      info.style.cssText = `
-        padding: 10px 12px;
-        font-size: 11px;
-        color: var(--text-secondary);
-        border-top: 1px solid var(--futaba-light-medium);
-        font-family: monospace;
-      `;
-      const date = new Date(snapshot.timestamp);
-      info.textContent = `${date.toLocaleDateString()} ${date.toLocaleTimeString()}`;
+      img.onclick = () => this._loadSnapshot(snapshot);
 
       const actions = document.createElement('div');
       actions.style.cssText = `
-        padding: 8px 12px 12px;
+        padding: 4px;
         display: flex;
-        gap: 6px;
+        gap: 4px;
+        border-top: 1px solid var(--futaba-light-medium);
       `;
 
-      const loadBtn = document.createElement('button');
-      loadBtn.textContent = '読込';
-      loadBtn.style.cssText = `
-        flex: 1;
-        background: var(--futaba-background);
-        border: 2px solid var(--futaba-maroon);
-        color: var(--futaba-maroon);
-        padding: 6px;
-        cursor: pointer;
-        border-radius: 6px;
-        font-size: 12px;
-        font-weight: 600;
-        transition: all 0.2s;
-      `;
-      loadBtn.onmouseenter = () => {
-        loadBtn.style.background = 'var(--futaba-maroon)';
-        loadBtn.style.color = 'var(--text-inverse)';
-      };
-      loadBtn.onmouseleave = () => {
-        loadBtn.style.background = 'var(--futaba-background)';
-        loadBtn.style.color = 'var(--futaba-maroon)';
-      };
-      loadBtn.onclick = (e) => {
-        e.stopPropagation();
-        this._loadSnapshot(snapshot);
-      };
-
-      const gifBtn = document.createElement('button');
-      gifBtn.textContent = 'GIF';
-      gifBtn.style.cssText = `
-        flex: 1;
-        background: var(--futaba-background);
-        border: 2px solid var(--futaba-light-medium);
-        color: var(--text-secondary);
-        padding: 6px;
-        cursor: pointer;
-        border-radius: 6px;
-        font-size: 12px;
-        font-weight: 600;
-        transition: all 0.2s;
-      `;
-      gifBtn.onmouseenter = () => {
-        gifBtn.style.borderColor = 'var(--futaba-maroon)';
-      };
-      gifBtn.onmouseleave = () => {
-        gifBtn.style.borderColor = 'var(--futaba-light-medium)';
-      };
-      gifBtn.onclick = (e) => {
-        e.stopPropagation();
-        this._exportAsGIF(snapshot);
-      };
-
-      const delBtn = document.createElement('button');
-      delBtn.textContent = '削除';
-      delBtn.style.cssText = `
-        background: var(--futaba-background);
-        border: 2px solid var(--futaba-light-medium);
-        color: var(--text-secondary);
-        padding: 6px 10px;
-        cursor: pointer;
-        border-radius: 6px;
-        font-size: 12px;
-        font-weight: 600;
-        transition: all 0.2s;
-      `;
-      delBtn.onmouseenter = () => {
-        delBtn.style.borderColor = 'var(--futaba-light-maroon)';
-        delBtn.style.color = 'var(--futaba-light-maroon)';
-      };
-      delBtn.onmouseleave = () => {
-        delBtn.style.borderColor = 'var(--futaba-light-medium)';
-        delBtn.style.color = 'var(--text-secondary)';
-      };
-      delBtn.onclick = (e) => {
-        e.stopPropagation();
-        this._deleteSnapshot(snapshot.id);
-      };
+      const loadBtn = this._createCompactButton('読', 'var(--futaba-maroon)', () => this._loadSnapshot(snapshot));
+      const delBtn = this._createCompactButton('×', 'var(--text-secondary)', () => this._deleteSnapshot(snapshot.id));
 
       actions.appendChild(loadBtn);
-      actions.appendChild(gifBtn);
       actions.appendChild(delBtn);
 
       card.appendChild(img);
-      card.appendChild(info);
       card.appendChild(actions);
       gallery.appendChild(card);
-
-      card.onmouseenter = () => this._startPreview(snapshot, img);
-      card.onmouseleave = () => this._stopPreview(img, snapshot);
     });
   }
 
-  _startPreview(snapshot, imgElement) {
-    // 簡易プレビュー（将来的に実装）
-  }
-
-  _stopPreview(imgElement, snapshot) {
-    imgElement.src = snapshot.thumbnail;
+  _createCompactButton(text, color, onClick) {
+    const btn = document.createElement('button');
+    btn.textContent = text;
+    btn.style.cssText = `
+      flex: 1;
+      background: var(--futaba-background);
+      border: 1px solid var(--futaba-light-medium);
+      color: ${color};
+      padding: 4px;
+      cursor: pointer;
+      border-radius: 4px;
+      font-size: 12px;
+      font-weight: 600;
+      transition: all 0.2s;
+      min-height: 24px;
+    `;
+    btn.onmouseenter = () => {
+      btn.style.background = color;
+      btn.style.color = 'var(--text-inverse)';
+    };
+    btn.onmouseleave = () => {
+      btn.style.background = 'var(--futaba-background)';
+      btn.style.color = color;
+    };
+    btn.onclick = (e) => {
+      e.stopPropagation();
+      onClick();
+    };
+    return btn;
   }
 
   _deleteSnapshot(id) {
@@ -512,6 +438,4 @@ class AlbumPopup {
   }
 }
 
-// グローバルに登録
 window.AlbumPopup = AlbumPopup;
-console.log('✅ album-popup.js loaded - AlbumPopup class registered');
