@@ -1,6 +1,6 @@
 // ==================================================
 // system/export-manager.js
-// エクスポート統合管理 - PNG/APNG自動判定対応
+// エクスポート統合管理 - PNG/APNG自動判定対応（デバッグ版）
 // ==================================================
 window.ExportManager = (function() {
     'use strict';
@@ -33,8 +33,10 @@ window.ExportManager = (function() {
          * PNG出力自動判定（CUT数で判定）
          */
         _shouldUseAPNG() {
-            const animData = this.animationSystem?.getAnimationData();
-            const cutCount = animData?.cuts?.length || 0;
+            const animData = this.animationSystem && this.animationSystem.getAnimationData 
+                ? this.animationSystem.getAnimationData() 
+                : null;
+            const cutCount = animData && animData.cuts ? animData.cuts.length : 0;
             return cutCount >= 2;
         }
         
@@ -50,7 +52,7 @@ window.ExportManager = (function() {
             
             const exporter = this.exporters[targetFormat];
             if (!exporter) {
-                throw new Error(`Unsupported format: ${targetFormat}`);
+                throw new Error('Unsupported format: ' + targetFormat);
             }
             
             this.currentExport = { format: targetFormat, progress: 0 };
@@ -77,11 +79,11 @@ window.ExportManager = (function() {
             
             const exporter = this.exporters[targetFormat];
             if (!exporter || !exporter.generateBlob) {
-                throw new Error(`Preview not supported for format: ${targetFormat}`);
+                throw new Error('Preview not supported for format: ' + targetFormat);
             }
             
             const blob = await exporter.generateBlob(options);
-            return { blob, format: targetFormat };
+            return { blob: blob, format: targetFormat };
         }
         
         /**
@@ -106,7 +108,7 @@ window.ExportManager = (function() {
         async blobToDataURL(blob) {
             const arrayBuffer = await blob.arrayBuffer();
             const base64 = this.arrayBufferToBase64(arrayBuffer);
-            return `data:${blob.type};base64,${base64}`;
+            return 'data:' + blob.type + ';base64,' + base64;
         }
         
         /**
@@ -147,10 +149,10 @@ window.ExportManager = (function() {
         async copyGifWithPreviewFallback(blob) {
             try {
                 await this.copyGifToClipboard(blob);
-                return { success: true, blob };
+                return { success: true, blob: blob };
             } catch (err) {
                 const dataUrl = await this.blobToDataURL(blob);
-                return { success: false, blob, dataUrl };
+                return { success: false, blob: blob, dataUrl: dataUrl };
             }
         }
         
@@ -224,13 +226,15 @@ window.ExportManager = (function() {
         }
         
         getCurrentProgress() {
-            return this.currentExport?.progress || 0;
+            return this.currentExport ? this.currentExport.progress : 0;
         }
         
         abortExport() {
             if (this.currentExport) {
                 this.currentExport = null;
-                window.TegakiEventBus?.emit('export:aborted');
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('export:aborted');
+                }
             }
         }
     }
@@ -238,4 +242,4 @@ window.ExportManager = (function() {
     return ExportManager;
 })();
 
-console.log('✅ export-manager.js (PNG/APNG自動判定対応) loaded');
+console.log('✅ export-manager.js (PNG/APNG自動判定対応・デバッグ版) loaded');

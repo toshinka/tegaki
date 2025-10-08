@@ -1,6 +1,6 @@
 // ==================================================
 // ui/export-popup.js
-// エクスポートUI管理 - プレビュー統一版（Optional Chaining除去）
+// エクスポートUI管理 - PNG/APNGプレビュー完全対応版
 // ==================================================
 window.ExportPopup = (function() {
     'use strict';
@@ -50,7 +50,7 @@ window.ExportPopup = (function() {
                     '<div class="export-status" id="export-status" style="display: none; font-size: 12px; color: var(--text-secondary); margin: 8px 0;"></div>' +
                     '<div class="export-actions">' +
                         '<button class="action-button" id="export-execute">ダウンロード</button>' +
-                        '<button class="action-button secondary" id="export-preview" style="display: none;">プレビュー</button>' +
+                        '<button class="action-button secondary" id="export-preview">プレビュー</button>' +
                     '</div>';
                 
                 document.body.appendChild(popup);
@@ -140,9 +140,9 @@ window.ExportPopup = (function() {
             if (!previewBtn) return;
             
             const cutCount = this.getCutCount();
-            const isAnimation = this.selectedFormat === 'gif' || (this.selectedFormat === 'png' && cutCount >= 2);
+            const showPreview = this.selectedFormat === 'png' || this.selectedFormat === 'gif';
             
-            previewBtn.style.display = isAnimation ? 'block' : 'none';
+            previewBtn.style.display = showPreview ? 'block' : 'none';
         }
         
         updateOptionsUI(format) {
@@ -415,4 +415,4 @@ window.ExportPopup = (function() {
     return ExportPopup;
 })();
 
-console.log('✅ export-popup.js (プレビュー統一版) loaded');
+console.log('✅ export-popup.js (PNG/APNGプレビュー完全対応版) loaded');
