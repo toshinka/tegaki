@@ -1,3 +1,35 @@
+Wt2YNuifhr:1  GET https://www.googletagmanager.com/gtag/js?id=G-R9M4MJTZFD net::ERR_BLOCKED_BY_CLIENT
+Wt2YNuifhr:302  GET https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015 net::ERR_BLOCKED_BY_CLIENT
+content-scripts.js:1 Content Script Bridge: Sending response back to page context: {isAllowListed: false, isProtectionEnabled: true, isScamsProtectionEnabled: true}
+injection-tss-mv3.js:1 TSS: Received response from checkDomainAndRun: {isAllowListed: false, isProtectionEnabled: true, isScamsProtectionEnabled: true}
+app.(_bslug).t._tslug-DS4DPkDC.js:1021 [Discord Tegaki]Launched
+entry.client-BpkMKvdU.js:14  POST https://o4509874266243072.ingest.us.sentry.io/api/4509874267750400/envelope/?sentry_version=7&sentry_key=75630a38269c96a334231d0cef4a0cc4&sentry_client=sentry.javascript.react-router%2F10.17.0 net::ERR_BLOCKED_BY_CLIENT
+d @ entry.client-BpkMKvdU.js:14
+Y @ entry.client-BpkMKvdU.js:7
+d @ entry.client-BpkMKvdU.js:7
+m @ entry.client-BpkMKvdU.js:7
+sendEnvelope @ entry.client-BpkMKvdU.js:6
+sendSession @ entry.client-BpkMKvdU.js:6
+captureSession @ entry.client-BpkMKvdU.js:6
+Ft @ debug-build-BEYY8Tgy.js:2
+Zn @ debug-build-BEYY8Tgy.js:2
+setupOnce @ entry.client-BpkMKvdU.js:14
+hh @ entry.client-BpkMKvdU.js:6
+（匿名） @ entry.client-BpkMKvdU.js:6
+dg @ entry.client-BpkMKvdU.js:6
+_setupIntegrations @ entry.client-BpkMKvdU.js:6
+init @ entry.client-BpkMKvdU.js:6
+_g @ entry.client-BpkMKvdU.js:7
+X1 @ entry.client-BpkMKvdU.js:14
+Z1 @ entry.client-BpkMKvdU.js:14
+（匿名） @ entry.client-BpkMKvdU.js:42
+main.js:1 [Discord Tegaki]Launched
+screenshot.png:1  GET https://mebuki.moe/app/t/screenshot.png 404 (Not Found)
+tegaki-loader.js:430 ✅ tegaki-loader.js loaded
+content.js:1 Uncaught (in promise) The message port closed before a response was received.
+（匿名） @ content.js:1
+Refused to connect to 'https://cdn.jsdelivr.net/npm/pixi.js@8.5.2/dist/pixi.min.js.map' because it violates the following Content Security Policy directive: "connect-src 'self' data: https://*.google-analytics.com https://analytics.google.com https://*.analytics.google.com https://*.googletagmanager.com https://*.sentry.io".
+
 config.js:537 ✅ config.js (キーマッピング完全一元管理版) loaded
 config.js:538    🎯 アクション中心設計: すべてのショートカットをTEGAKI_KEYMAPで管理
 config.js:539    🎯 コンテキスト対応: vMode, Ctrl, Shift, Alt を柔軟に処理
@@ -39,87 +71,25 @@ drawing-clipboard.js:603 ✅ drawing-clipboard.js Phase4改修版+確定イベ�
 drawing-clipboard.js:604    - ✅ CTRL+V behavior: overwrite active layer
 drawing-clipboard.js:605    - ✅ Commit events: paste:commit, operation:commit
 drawing-clipboard.js:606    - ✅ Thumbnail auto-update on paste
-export-manager.js:95 ✅ export-manager.js loaded
-png-exporter.js:47 ✅ png-exporter.js loaded
-gif-exporter.js:199 ✅ gif-exporter.js (統合版) loaded
-export-popup.js:259 ✅ export-popup.js loaded
-ui-panels.js:496 ✅ ui-panels.js ExportPopup参照修正版 loaded
-core-runtime.js:530 ✅ core-runtime.js エクスポート初期化強化版 loaded
-core-runtime.js:531   ✅ ExportSystem確実初期化機能追加
-core-runtime.js:532   ✅ 依存性明確化とエラーハンドリング
-core-runtime.js:533   ✅ 既存機能完全維持
+history.js:179 ✅ history.js (Phase 2: EventBus修正版) loaded
+export-manager.js:259 ✅ export-manager.js loaded
+png-exporter.js:85 ✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded
+apng-exporter.js:226 ✅ apng-exporter.js loaded
+gif-exporter.js:290 ✅ gif-exporter.js loaded
+ui-panels.js:532 ✅ ui-panels.js アルバム初期化対応版 loaded
+core-runtime.js:526 ✅ core-runtime.js PNG/APNG/GIF自動判定対応版 loaded
+core-runtime.js:527   ✅ APNGExporter登録対応
+core-runtime.js:528   ✅ ExportSystem確実初期化
+core-runtime.js:529   ✅ 既存機能完全維持
+tegaki-loader.js:54 [Tegaki] 起動失敗: Error: Tegakiアプリケーションが見つかりません
+    at TegakiBookmarklet.initializeTegaki (tegaki-loader.js:263:23)
+    at TegakiBookmarklet.start (tegaki-loader.js:51:28)
+（匿名） @ entry.client-BpkMKvdU.js:14
+start @ tegaki-loader.js:54
+await in start
+window.tegakiStart @ tegaki-loader.js:422
+（匿名） @ tegaki-loader.js:426
+（匿名） @ tegaki-loader.js:428
 coordinate-system.js:63 🔗 CoordinateSystem EventBus integration configured
 coordinate-system.js:47 ✅ CoordinateSystem initialized with canvas: 344x135
-coordinate-system.js:757 🔄 CoordinateSystem auto-initialized
-camera-system.js:50 CameraSystem: Initializing...
-camera-system.js:76 CameraSystem: Creating containers...
-camera-system.js:101 ✅ CameraSystem containers created
-camera-system.js:194 ✅ CameraSystem events setup completed
-camera-system.js:71 ✅ CameraSystem initialized (キーバインディング変更対応版)
-drawing-clipboard.js:19 DrawingClipboard: Initializing...
-drawing-clipboard.js:26 ✅ DrawingClipboard initialized (Phase4改修版 + 確定イベント)
-coordinate-system.js:75 🔗 CameraSystem reference set in CoordinateSystem
-coordinate-system.js:70 🔗 LayerSystem reference set in CoordinateSystem
-coordinate-system.js:80 🔗 AnimationSystem reference set in CoordinateSystem
-core-runtime.js:44 === CoreRuntime リサイズ即時反映版 初期化開始 ===
-core-runtime.js:109 ✅ CUT作成: CUT1 (344x135)
-core-runtime.js:137 🔄 CUT切替: CUT1
-core-runtime.js:58 ✅ CoreRuntime 初期化完了
-core-runtime.js:517 ✅ ExportSystem initialized
-index.html:564 ✅ ExportSystem初期化成功
- console.log('=== ExportSystem診断 ===');
-console.log('TEGAKI_EXPORT_MANAGER:', window.TEGAKI_EXPORT_MANAGER);
-console.log('TEGAKI_EXPORT_POPUP:', window.TEGAKI_EXPORT_POPUP);
-console.log('exportPopup (old ref):', window.exportPopup);
-console.log('animationSystem:', window.animationSystem);
-VM240:1 === ExportSystem診断 ===
-VM240:2 TEGAKI_EXPORT_MANAGER: ExportManager {app: ju, layerSystem: LayerSystem, animationSystem: AnimationSystem, cameraSystem: CameraSystem, exporters: {…}, …}
-VM240:3 TEGAKI_EXPORT_POPUP: ExportPopup {manager: ExportManager, selectedFormat: 'png'}
-VM240:4 exportPopup (old ref): undefined
-VM240:5 animationSystem: AnimationSystem {animationData: {…}, layerSystem: LayerSystem, cameraSystem: CameraSystem, app: ju, stage: Z, …}
-undefined
-// ===================================================================
-// ブラウザのコンソールで以下を実行してエクスポートシステムを診断
-// ===================================================================
-
-// 1. ExportSystemの状態確認
-console.log('=== ExportSystem診断 ===');
-console.log('TEGAKI_EXPORT_MANAGER:', window.TEGAKI_EXPORT_MANAGER);
-console.log('TEGAKI_EXPORT_POPUP:', window.TEGAKI_EXPORT_POPUP);
-console.log('exportPopup (old ref):', window.exportPopup);
-console.log('animationSystem:', window.animationSystem);
-
-// 2. ExportManagerの登録状況
-if (window.TEGAKI_EXPORT_MANAGER) {
-    console.log('Registered exporters:', Object.keys(window.TEGAKI_EXPORT_MANAGER.exporters));
-}
-
-// 3. ボタンの存在確認
-const exportBtn = document.getElementById('export-tool');
-console.log('export-tool button:', exportBtn);
-console.log('export-popup element:', document.getElementById('export-popup'));
-
-// 4. 手動でポップアップ表示テスト
-if (window.TEGAKI_EXPORT_POPUP) {
-    console.log('✅ 手動テスト: window.TEGAKI_EXPORT_POPUP.show() を実行可能');
-    // window.TEGAKI_EXPORT_POPUP.show(); // コメント解除で実行
-} else {
-    console.error('❌ TEGAKI_EXPORT_POPUP が存在しません');
-}
-
-// 5. イベントリスナーの確認
-console.log('EventListeners on export-tool:', getEventListeners(exportBtn));
-
-console.log('=== 診断完了 ===');
-VM244:6 === ExportSystem診断 ===
-VM244:7 TEGAKI_EXPORT_MANAGER: ExportManager {app: ju, layerSystem: LayerSystem, animationSystem: AnimationSystem, cameraSystem: CameraSystem, exporters: {…}, …}animationSystem: AnimationSystem {animationData: {…}, layerSystem: LayerSystem, cameraSystem: CameraSystem, app: ju, stage: Z, …}app: ju {stage: Z, renderer: kv, queueResize: ƒ, _cancelResize: ƒ, resize: ƒ, …}cameraSystem: CameraSystem {app: {…}, config: {…}, eventBus: EventBus, isDragging: false, isScaleRotateDragging: false, …}currentExport: nullexporters: {png: PNGExporter, gif: GIFExporter}layerSystem: LayerSystem {app: ju, config: {…}, eventBus: EventBus, currentCutContainer: Z, activeLayerIndex: 1, …}[[Prototype]]: Object
-VM244:8 TEGAKI_EXPORT_POPUP: ExportPopup {manager: ExportManager, selectedFormat: 'png'}
-VM244:9 exportPopup (old ref): undefined
-VM244:10 animationSystem: AnimationSystem {animationData: {…}, layerSystem: LayerSystem, cameraSystem: CameraSystem, app: ju, stage: Z, …}
-VM244:14 Registered exporters: (2) ['png', 'gif']
-VM244:19 export-tool button: <div class=​"tool-button" id=​"export-tool" title=​"画像・アニメ出力">​…​</div>​flex
-VM244:20 export-popup element: <div class=​"popup-panel" id=​"export-popup" style=​"left:​ 60px;​ top:​ 200px;​ min-width:​ 420px;​">​…​</div>​
-VM244:24 ✅ 手動テスト: window.TEGAKI_EXPORT_POPUP.show() を実行可能
-VM244:31 EventListeners on export-tool: {click: Array(1)}
-VM244:33 === 診断完了 ===
-undefined
+coordinate-system.js:769 🔄 CoordinateSystem auto-initialized (delayed)

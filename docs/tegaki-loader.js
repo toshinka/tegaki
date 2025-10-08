@@ -91,12 +91,27 @@
         
         // ===== Tegakiコアスクリプトの読込 =====
         async loadTegakiCore() {
+            // CDNライブラリ（先に読み込む）
+            const cdnLibraries = [
+                'https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js',
+                'https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js',
+                'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js',
+                'https://cdnjs.cloudflare.com/ajax/libs/UPNG-js/2.1.0/UPNG.js'
+            ];
+            
+            console.log('[Tegaki] Loading CDN libraries...');
+            for (const url of cdnLibraries) {
+                await this.loadScript(url);
+            }
+            console.log('[Tegaki] ✓ All CDN libraries loaded');
+            
+            // Tegakiコアスクリプト
             const scripts = [
-                'https://cdn.jsdelivr.net/npm/pixi.js@8.5.2/dist/pixi.min.js',
                 'config.js',
                 'coordinate-system.js',
                 'system/event-bus.js',
                 'system/state-manager.js',
+                'system/layer-commands.js',
                 'system/camera-system.js',
                 'system/layer-system.js',
                 'system/drawing-clipboard.js',
@@ -111,14 +126,17 @@
                 'ui/timeline-ui.js',
                 'ui/album-popup.js',
                 'ui/ui-panels.js',
-                'core-engine.js',
-                'core-runtime.js'  // 最後に読み込む
+                'ui/timeline-thumbnail-utils.js',
+                'core-runtime.js',
+                'core-engine.js'
             ];
             
+            console.log('[Tegaki] Loading Tegaki core scripts...');
             for (const script of scripts) {
-                const url = script.startsWith('http') ? script : TEGAKI_BASE_URL + script;
+                const url = TEGAKI_BASE_URL + script;
                 await this.loadScript(url);
             }
+            console.log('[Tegaki] ✓ All Tegaki scripts loaded');
         }
         
         // ===== スクリプト読込ヘルパー =====
@@ -127,8 +145,14 @@
                 const script = document.createElement('script');
                 script.src = url;
                 script.charset = 'UTF-8';
-                script.onload = resolve;
-                script.onerror = () => reject(new Error(`Failed to load: ${url}`));
+                script.onload = () => {
+                    console.log(`[Tegaki] ✓ Script loaded: ${url}`);
+                    resolve();
+                };
+                script.onerror = (error) => {
+                    console.error(`[Tegaki] ✗ Failed to load: ${url}`, error);
+                    reject(new Error(`Failed to load: ${url}`));
+                };
                 document.head.appendChild(script);
             });
         }
@@ -259,8 +283,15 @@
         async initializeTegaki() {
             const canvasDiv = document.getElementById('tegaki-canvas-container');
             
+            // デバッグ: 利用可能なシステムを確認
+            console.log('[Tegaki] Available systems:');
+            console.log('  - window.startTegakiApp:', typeof window.startTegakiApp);
+            console.log('  - window.TegakiCore:', typeof window.TegakiCore);
+            console.log('  - window.PIXI:', typeof window.PIXI);
+            console.log('  - window.TEGAKI_CONFIG:', typeof window.TEGAKI_CONFIG);
+            
             if (!window.startTegakiApp) {
-                throw new Error('Tegakiアプリケーションが見つかりません');
+                throw new Error('Tegakiアプリケーションが見つかりません\nwindow.startTegakiAppが存在しません');
             }
             
             // Tegaki起動 (ブックマークレットモード)
@@ -268,6 +299,8 @@
                 container: canvasDiv,
                 isBookmarkletMode: true
             });
+            
+            console.log('[Tegaki] ✓ Application started successfully');
         }
         
         // ===== エクスポートして閉じる =====
