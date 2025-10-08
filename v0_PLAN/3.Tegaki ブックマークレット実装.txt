@@ -1,0 +1,336 @@
+# Tegaki ブックマークレット機能 統合ガイド
+
+## 📚 概要
+
+canvas98の仕組みを参考に、Tegakiツールを掲示板で使えるようにするブックマークレット機能を実装します。
+
+## 🎯 実装の全体像
+
+```
+[ユーザー] 
+    ↓ クリック
+[ブックマークレット] (1行のJavaScript)
+    ↓ 外部JSを読み込み
+[tegaki-loader.js] (掲示板検出・統合処理)
+    ↓ Tegakiコアを読み込み
+[Tegaki ツール本体] (PixiJS + あなたのコード)
+    ↓ 描画
+[掲示板のcanvasにコピー]
+    ↓ 投稿
+[完了]
+```
+
+## 📁 必要なファイル構成
+
+```
+your-domain.com/
+├── tegaki/
+│   ├── index.html (通常版)
+│   ├── config.js
+│   ├── core-engine.js
+│   ├── system/
+│   │   ├── layer-system.js
+│   │   ├── export-manager.js
+│   │   └── ...
+│   └── ...
+├── tegaki-loader.js (ブックマークレット用)
+└── install.html (インストールページ)
+```
+
+## 🔧 実装手順
+
+### Step 1: tegaki-loader.js の作成
+
+前のArtifactのコードを使用して `tegaki-loader.js` を作成します。
+
+**重要な修正ポイント**:
+
+```javascript
+// baseURLを実際のドメインに変更
+const baseURL = 'https://your-domain.com/tegaki/';
+
+// または相対パスの場合
+const baseURL = '/tegaki/';
+```
+
+### Step 2: CORS設定（サーバー側）
+
+`tegaki-loader.js` や依存ファイルを外部から読み込めるようにCORSヘッダーを設定:
+
+#### Apache (.htaccess)
+
+```apache
+<IfModule mod_headers.c>
+    Header set Access-Control-Allow-Origin "*"
+    Header set Access-Control-Allow-Methods "GET, OPTIONS"
+</IfModule>
+```
+
+#### Nginx
+
+```nginx
+location /tegaki/ {
+    add_header Access-Control-Allow-Origin *;
+    add_header Access-Control-Allow-Methods "GET, OPTIONS";
+}
+```
+
+#### Node.js (Express)
+
+```javascript
+app.use('/tegaki', (req, res, next) => {
+    res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, OPTIONS');
+    next();
+});
+```
+
+### Step 3: ブックマークレットの生成
+
+#### 方法1: 手動で作成
+
+```javascript
+javascript:(function(){if(!window.tegakiStart){const s=document.createElement('script');s.charset='UTF-8';s.src='https://your-domain.com/tegaki-loader.js';document.body.appendChild(s)}else{window.tegakiStart()}})();
+```
+
+#### 方法2: 生成ツールを使用
+
+```javascript
+// ブラウザのコンソールで実行
+BookmarkletGenerator.copyToClipboard('https://your-domain.com/tegaki-loader.js');
+```
+
+### Step 4: インストールページの作成
+
+`install.html` を作成し、前のArtifactの `INSTALL_PAGE_HTML` を使用:
+
+```html
+<!-- install.html -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>Tegaki ブックマークレット</title>
+    <!-- スタイルとコンテンツは前のArtifact参照 -->
+</head>
+<body>
+    <!-- インストール手順 -->
+    <a href="javascript:(function(){...})();" class="bookmarklet">
+       📌 Tegaki を起動
+    </a>
+</body>
+</html>
+```
+
+### Step 5: core-engine.js の修正
+
+ブックマークレットモードでの起動に対応:
+
+```javascript
+// core-engine.js に追加
+
+class TegakiCoreEngine {
+    constructor(options = {}) {
+        // 既存のコード...
+        
+        // ブックマークレットモードの検出
+        this.isBookmarkletMode = options.isBookmarkletMode || false;
+        
+        if (this.isBookmarkletMode) {
+            this.boardCanvas = options.boardCanvas;
+            this.onExit = options.onExit || null;
+        }
+    }
+    
+    async init() {
+        // 既存の初期化...
+        
+        if (this.isBookmarkletMode) {
+            // ブックマークレットモード用の設定
+            this._setupBookmarkletMode();
+        }
+    }
+    
+    _setupBookmarkletMode() {
+        // 掲示板のcanvasサイズに合わせる
+        if (this.boardCanvas) {
+            window.TEGAKI_CONFIG.canvas.width = this.boardCanvas.width;
+            window.TEGAKI_CONFIG.canvas.height = this.boardCanvas.height;
+        }
+        
+        // 終了時の処理をフック
+        if (this.onExit && window.TegakiEventBus) {
+            window.TegakiEventBus.on('app:exit', this.onExit);
+        }
+    }
+}
+```
+
+### Step 6: tegaki-loader.js でエンジンを起動
+
+```javascript
+async startTegaki() {
+    // コンテナ作成...
+    
+    // エンジン起動（ブックマークレットモード）
+    if (window.TegakiCoreEngine) {
+        const engine = new window.TegakiCoreEngine({
+            isBookmarkletMode: true,
+            boardCanvas: this.boardCanvas,
+            onExit: () => {
+                this.exit();
+            }
+        });
+        
+        await engine.init();
+        this.tegakiUI = engine;
+        
+        // ... 以下既存のコード
+    }
+}
+```
+
+## 🧪 テスト手順
+
+### ローカル環境でのテスト
+
+#### 1. ローカルサーバーを起動
+
+```bash
+# Python 3
+python -m http.server 8000
+
+# Node.js (http-server)
+npx http-server -p 8000
+
+# PHP
+php -S localhost:8000
+```
+
+#### 2. テスト用HTMLを作成
+
+```html
+<!-- test-board.html -->
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <title>テスト掲示板</title>
+</head>
+<body>
+    <h1>テスト掲示板</h1>
+    
+    <!-- ふたば風のcanvas -->
+    <form>
+        <canvas id="oejs" width="400" height="400" style="border: 1px solid #ccc;"></canvas>
+        <br>
+        <button type="button" id="oebtnj">お絵かき</button>
+        <button type="submit">投稿</button>
+    </form>
+    
+    <script>
+        // デバッグ用
+        document.querySelector('form').addEventListener('submit', (e) => {
+            e.preventDefault();
+            const canvas = document.getElementById('oejs');
+            const dataURL = canvas.toDataURL();
+            console.log('投稿された画像:', dataURL.substring(0, 100) + '...');
+            alert('投稿されました（実際には送信されません）');
+        });
+    </script>
+</body>
+</html>
+```
+
+#### 3. ブックマークレット作成
+
+```javascript
+// ローカル用ブックマークレット
+javascript:(function(){if(!window.tegakiStart){const s=document.createElement('script');s.charset='UTF-8';s.src='http://localhost:8000/tegaki-loader.js';document.body.appendChild(s)}else{window.tegakiStart()}})();
+```
+
+#### 4. テスト実行
+
+1. `http://localhost:8000/test-board.html` を開く
+2. ブックマークレットをクリック
+3. Tegakiツールが起動するか確認
+4. 絵を描いて「掲示板に貼り付けて閉じる」をクリック
+5. canvasに絵がコピーされているか確認
+
+### 実際の掲示板でのテスト
+
+#### 安全なテスト方法
+
+1. **ローカルでテスト用スレッドを立てる**
+   - 自分で立てたテストスレッドで試す
+   - 削除依頼を出す準備をしておく
+
+2. **画像の確認**
+   - コピーされた画像が正しいか
+   - サイズが適切か
+   - 色が正確か
+
+3. **複数回テスト**
+   - 連続して使用できるか
+   - メモリリークがないか
+
+## 🚨 注意事項
+
+### セキュリティ
+
+#### 1. XSS対策
+
+ブックマークレットは**ユーザーが明示的に実行**するため、XSSではありません。ただし:
+
+- ✅ HTTPS経由で配信すること
+- ✅ 信頼できるドメインから読み込むこと
+- ✅ コードを定期的に監査すること
+
+#### 2. プライバシー
+
+- ❌ ユーザーの描いた絵を勝手に送信しない
+- ❌ 個人情報を収集しない
+- ❌ トラッキングコードを含めない
+
+#### 3. 掲示板のルール遵守
+
+- ✅ 掲示板の利用規約を守る
+- ✅ スパム行為をしない
+- ✅ 荒らし行為に使用しない
+
+### 技術的制約
+
+#### 1. Same-Origin Policy
+
+ブックマークレットは**ユーザーのコンテキスト**で実行されるため、Same-Origin Policyの影響を受けません。
+
+#### 2. CSP (Content Security Policy)
+
+一部の掲示板はCSPが厳格な場合があります:
+
+```http
+Content-Security-Policy: script-src 'self'
+```
+
+この場合、ブックマークレットは動作しません。
+
+#### 3. iframe内での実行
+
+掲示板がiframe内にある場合、アクセスに制限があります。
+
+## 🔍 トラブルシューティング
+
+### 問題1: ブックマークレットが動作しない
+
+**チェック項目**:
+- [ ] JavaScriptが有効になっているか
+- [ ] CORSエラーが出ていないか (コンソール確認)
+- [ ] tegaki-loader.js のURLが正しいか
+- [ ] ネットワークタブで404エラーがないか
+
+**デバッグ**:
+```javascript
+// コンソールで確認
+console.log('tegakiStart:', window.tegakiStart);
+
+// 手動で実

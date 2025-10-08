@@ -18,11 +18,51 @@ javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://t
 javascript:(d=>{d=d.body.appendChild(d.createElement('script'));d.src=`https://toshinka.github.io/tegaki/t3start.js?${parseInt(Date.now()/36e+5)*36e+5}`})(document)
 
 
+はっちゃん
+javascript:(function(){if(!globalThis.canvas98start){var s=document.createElement('script');s.charset='UTF-8';s.src='https://canvas98.github.io/canvas98/all-in-one.js';document.body.appendChild(s)}else{globalThis.canvas98start()}})();
+
+https://canvas98.github.io/canvas98/
+
+javascript:(function(){if(!globalThis.canvas98start){var s=document.createElement('script');s.charset='UTF-8';s.src='https://toshinka.github.io/tegaki/';document.body.appendChild(s)}else{globalThis.canvas98start()}})();
+
+
 OLD
 
-javascript:void(async(d)=>{const t='https://toshinka.github.io/tegaki/start.js';const i=d.getElementById('mebuki-tegaki-overlay');if(i){i.remove();return}const o=d.createElement('iframe');o.id='mebuki-tegaki-overlay';o.style.cssText='position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;border:none!important;margin:0!important;padding:0!important;display:block!important;';d.body.appendChild(o);o.src=t;window.addEventListener('message',async(e)=>{if(e.origin!==t.slice(0,-1))return;if(e.data.type==='export-finish'||e.data.type==='tool-close-request'){if(e.data.type==='export-finish'){const{gifBlob:r,firstFramePNG:n}=e.data;const s=URL.createObjectURL(r);const a=d.createElement('a');a.href=s;a.download=`mebuki-${Date.now()}.gif`;d.body.appendChild(a);a.click();d.body.removeChild(a);URL.revokeObjectURL(s);if(n&&navigator.clipboard.write){try{await navigator.clipboard.write([new ClipboardItem({'image/png':n})])}catch(e){console.warn('クリップボードへのコピーに失敗しました:',e);}}alert('描画完了！データを処理し、ツールを閉じます。');}else{console.log('ツールからの終了リクエストを受信しました。');}o.remove()}})}) (document)
+javascript:void(async(d)=>{const t='https://toshinka.github.io/tegaki/test.js';const i=d.getElementById('mebuki-tegaki-overlay');if(i){i.remove();return}const o=d.createElement('iframe');o.id='mebuki-tegaki-overlay';o.style.cssText='position:fixed!important;top:0!important;left:0!important;width:100vw!important;height:100vh!important;z-index:2147483647!important;border:none!important;margin:0!important;padding:0!important;display:block!important;';d.body.appendChild(o);o.src=t;window.addEventListener('message',async(e)=>{if(e.origin!==t.slice(0,-1))return;if(e.data.type==='export-finish'||e.data.type==='tool-close-request'){if(e.data.type==='export-finish'){const{gifBlob:r,firstFramePNG:n}=e.data;const s=URL.createObjectURL(r);const a=d.createElement('a');a.href=s;a.download=`mebuki-${Date.now()}.gif`;d.body.appendChild(a);a.click();d.body.removeChild(a);URL.revokeObjectURL(s);if(n&&navigator.clipboard.write){try{await navigator.clipboard.write([new ClipboardItem({'image/png':n})])}catch(e){console.warn('クリップボードへのコピーに失敗しました:',e);}}alert('描画完了！データを処理し、ツールを閉じます。');}else{console.log('ツールからの終了リクエストを受信しました。');}o.remove()}})}) (document)
 
 
 TAB
 
 javascript:void(((d)=>{const t='https://toshinka.github.io/tegaki/mebuki-loader.js';const e=window.open(t,'mebuki_tegaki');if(e){e.focus();const i=d.getElementById('mebuki-tegaki-overlay');if(i){i.remove()}}else{alert('お絵かきツールの新しいタブが開けませんでした。\nブラウザのポップアップブロッカーを確認してください。');}})(document));
+
+
+98+mebuki
+
+javascript:(function(){
+  if (!globalThis.mebukiStart) {
+    var s = document.createElement('script');
+    s.src = 'https://toshinka.github.io/tegaki/MebukiTest_vA.js';
+    document.body.appendChild(s);
+  } else {
+    globalThis.mebukiStart();
+  }
+})();
+
+
+
+javascript:(function() {
+    if (!window.tegakiStart) {
+        const s = document.createElement('script');
+        s.charset = 'UTF-8';
+        s.src = 'https://toshinka.github.io/tegaki/test.js';
+        document.body.appendChild(s);
+    } else {
+        window.tegakiStart();
+    }
+})();
+
+
+javascript:(function(){
+  if(!globalThis.mebukiStart){var s=document.createElement('script');s.src='https://toshinka.github.io/tegaki/MebukiTest_vB.js';document.body.appendChild(s);}else{globalThis.mebukiStart();}
+})();
+
