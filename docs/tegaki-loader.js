@@ -1,15 +1,14 @@
 // ==================================================
 // tegaki-loader.js (動作確認用軽量版)
-// めぶきちゃんねる連携テスト用 v1.1
+// めぶきちゃんねる連携テスト用 v1.2
 // スクリプト読込なし・400x400キャンバス・ふたばカラー
-// 背景色 #f0e0d6 対応版
 // ==================================================
 
 (function() {
     'use strict';
     
     const MEBUKI_TIMEOUT = 3000;
-    const BACKGROUND_COLOR = '#f0e0d6'; // めぶきちゃんねる背景色
+    const BACKGROUND_COLOR = '#f0e0d6'; 
     
     const MEBUKI_SELECTORS = {
         postButton: 'button[title="レスを投稿"]',
