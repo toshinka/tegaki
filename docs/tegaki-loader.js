@@ -110,7 +110,7 @@
             
             // Tegakiコアスクリプト
             const scripts = [
-                'docs/config.js',
+                'config.js',
                 'coordinate-system.js',
                 'system/event-bus.js',
                 'system/state-manager.js',
@@ -134,13 +134,22 @@
                 'core-engine.js'
             ];
             
-            console.log('[Tegaki] Loading Tegaki core scripts...');
-            for (const script of scripts) {
-                const url = TEGAKI_BASE_URL + script;
-                await this.loadScript(url);
-            }
-            console.log('[Tegaki] ✓ All Tegaki scripts loaded');
-        }
+// === 修正済みスクリプト読込ループ（パス正規化付き） ===
+console.log('[Tegaki] Loading Tegaki core scripts...');
+for (const script of scripts) {
+  // script が絶対URLならそのまま、そうでなければ docs/ プレフィックスを付与してから結合
+  let path;
+  if (/^https?:\/\//.test(script)) {
+    path = script;
+  } else {
+    // scripts 配列に既に 'docs/' が含まれている場合はそのまま使い、
+    // 含まれていなければ 'docs/' を付ける（公開は docs/ 配下なので）
+    path = script.startsWith('docs/') ? script : 'docs/' + script;
+    path = TEGAKI_BASE_URL + path;
+  }
+  await this.loadScript(path);
+}
+console.log('[Tegaki] ✓ All Tegaki scripts loaded');
         
         // ===== スクリプト読込ヘルパー =====
         loadScript(url) {
