@@ -1,0 +1,310 @@
+==============================
+改修計画書（プレーンテキスト）
+プロジェクト: tegaki (PixiJS v8.13)
+目的:
+  - 既存 index.html を通常起動用エントリとして保ちつつ、
+    ブックマークレット／掲示板用の軽量入口 "tegaki-loader.js" を作る。
+  - それ以外の JS/CSS/HTML資産は共用する。
+  - 後続のAI/開発者が容易に改修できるよう、責務を明確化する。
+
+前提ルール（変更不可／参考）
+  - 実行環境: Chrome 最新。ローカル file:// で動作可能。
+  - PixiJS v8.13 を使用（必ず1バージョンのみ）。
+  - モジュール（ESM）やビルドツールは禁止。純粋なブラウザスクリプト。
+  - Canvas2D はなるべく使わない（サムネイルは例外）。
+  - グローバル汚染は最小限に。APIは単一エントリ名空間へ曝露。
+  - 既存ファイルの不必要な二重実装禁止。
+
+設計方針（短縮）
+  - index.html: そのまま動く既存の「フル」エントリを維持。
+  - 共通資産: JS群、CSS、UIテンプレートは分離して共用可能に。
+  - tegaki-loader.js: ブックマークレット用「ハブ」。外部からページ内へ安全に注入し順次読み込む。
+  - 名前空間: レガシーコードを壊さないため、手早く統一的な橋渡し (window.TegakiApp) を提供。
+  - 初期化: loader は読み込み順を守り、最後に `TegakiApp.start()` もしくは既存の `window.tegakiStart()` を呼ぶ。
+
+想定ファイル構成（提案）
+  /docs/
+    index.html                  // 既存の開発向けページ（そのまま）
+    tegaki-ui.html              // UIのHTML断片（index.html から分離）
+    tegaki-style.css            // すべてのUIスタイル（index.html の <style> から抽出）
+    tegaki-loader.js            // ブックマークレット用ローダー（入口）
+    load-sequence.json          // 読込順リスト（保守用）
+    /* 既存JS群（共用） */
+    config.js
+    coordinate-system.js
+    core-runtime.js
+    core-engine.js
+    system/*.js
+    ui/*.js
+    /* exporters, anim, etc. */
+
+ファイルごとの責務（要点）
+  - index.html
+      * 開発・単体実行用。headにCDN, link, scriptを正常に配置。
+      * 変更: UI部分 (div, style) は分離対象 → index.html は tegaki-ui.html/tegaki-style.css を読み込む形にする（推奨）。
+  - tegaki-ui.html
+      * UI構造のみを持つ（ツールバー、ポップアップ、canvasコンテナ）。IDは一つのルートコンテナにネスト（#tegaki-root）。
+      * 直接 body に innerHTML で挿入する形を想定。
+  - tegaki-style.css
+      * 全スタイルを含む。すべてのセレクタに `.tegaki-` プレフィックス、または #tegaki-root をスコープの先頭に付ける。
+      * 画像やアイコンは外部URL参照に。フォントも同様。
+  - load-sequence.json
+      * index.html の <script> 順序と同じ配列を保持（ローダーはこれを参照して順次ロード）。
+      * 例:
+        ["config.js","coordinate-system.js","system/event-bus.js",..., "core-engine.js"]
+  - tegaki-loader.js
+      * ブックマークレット（ or ブラウザ挿入）から呼ばれる。
+      * 役割:
+         - (1) base URL と load-sequence を決める
+         - (2) CSS を head に追加（link または style）
+         - (3) UIテンプレートを fetch して #tegaki-root に挿入
+         - (4) script を load-sequence に従い順次追加（document.createElement('script')）
+         - (5) 読込完了後に初期化（TegakiApp.start() を呼ぶ）
+      * エラー時はユーザー向けの簡素なダイアログを表示して gracefully fail。
+      * CSPエラーの検知とユーザーへの説明を出す。
+  - 既存 .js 群（core-*, system/*, ui/*）
+      * 可能なら内部で `export` 的なグローバルを追加しない。
+      * もし既存が `window.tegakiStart` などで初期化しているなら loader はその関数を呼ぶだけでOK。
+      * 重要: これらのファイルに手を入れる必要がある場合、最小限のラッパーのみを追加（後述）。
+
+API / 名前空間ポリシー（推奨）
+  - 単一のエクスポート名: `window.TegakiApp` オブジェクトを推奨（index.html が既に使用している API は尊重）。
+  - TegakiApp インタフェース:
+    * start(options)          // 起動（options: {container, width, height, debug:false}）
+    * stop()                  // 表示を消すがリソースは残す（再開可能）
+    * destroy()               // 完全破棄（イベント解除・DOM削除）
+    * version                 // 文字列
+    * readyPromise            // 読込完了を示す Promise
+  - もし既存コードが `window.tegakiStart()` を提供しているなら loader は TegakiApp.start() のエイリアスを設定する。
+
+ロード順序（重要）
+  - index.html に記載されている順序をそのまま `load-sequence.json` に保持する。
+  - ローダーは "逐次挿入" を守る。`script.onload` を使って次を追加する（Promiseチェーン）。
+  - 理由: グローバル定義依存が多く、順番が破壊されると ReferenceError がでる。
+
+ローダー雛形（tegaki-loader.js） — そのまま使えるテンプレ
+  - 下記コードは `base` を適宜書き換えるだけで動きます。
+  - 使い方:
+      * ブックマークレットに埋める場合、`javascript:(function(){ ... })();` で包むか、
+      * 別ファイルを外部から読み込ませる場合は document.createElement('script') で読み込みます。
+
+(--- BEGIN tegaki-loader.js ---)
+(function() {
+  'use strict';
+
+  // 設定
+  const BASE = 'https://toshinka.github.io/tegaki/docs/'; // <-- 必要に応じて変更
+  const UI_HTML = BASE + 'tegaki-ui.html';
+  const STYLE_HREF = BASE + 'tegaki-style.css';
+  const SEQUENCE_URL = BASE + 'load-sequence.json';
+
+  // 単純なログ(最小限)
+  const _log = (...args) => { /* noop or console.log when debug */ };
+
+  // ユーザー向けエラー表示（最小限）
+  function showError(message) {
+    try {
+      const el = document.createElement('div');
+      el.id = 'tegaki-loader-error';
+      el.style.position = 'fixed';
+      el.style.right = '12px';
+      el.style.bottom = '12px';
+      el.style.zIndex = '2147483646';
+      el.style.background = 'rgba(0,0,0,0.85)';
+      el.style.color = 'white';
+      el.style.padding = '10px 12px';
+      el.style.borderRadius = '6px';
+      el.style.fontSize = '13px';
+      el.textContent = message;
+      document.body.appendChild(el);
+      setTimeout(()=>el.remove(), 10000);
+    } catch(e){}
+  }
+
+  // CSS を追加
+  function injectStyle(href) {
+    return new Promise((resolve, reject) => {
+      if (document.querySelector('link[data-tegaki-style]')) return resolve();
+      const link = document.createElement('link');
+      link.rel = 'stylesheet';
+      link.href = href;
+      link.setAttribute('data-tegaki-style','1');
+      link.onload = () => resolve();
+      link.onerror = () => { reject(new Error('Style load failed')); };
+      document.head.appendChild(link);
+    });
+  }
+
+  // UI HTML を読み込んで挿入
+  async function injectUI(htmlUrl) {
+    const resp = await fetch(htmlUrl, {cache: 'no-cache'});
+    if (!resp.ok) throw new Error('UI fetch failed: ' + resp.status);
+    const html = await resp.text();
+    let root = document.getElementById('tegaki-root');
+    if (!root) {
+      root = document.createElement('div');
+      root.id = 'tegaki-root';
+      root.style.zIndex = '2147483647';
+      // 固定表示にして掲示板と重ならないようにするのはローカルのスタイル次第
+      document.body.appendChild(root);
+    }
+    root.innerHTML = html;
+  }
+
+  // script を逐次ロード
+  function loadScriptsSequentially(list, base) {
+    return new Promise((resolve, reject) => {
+      const arr = (list || []).slice();
+      const next = () => {
+        if (arr.length === 0) return resolve();
+        const fname = arr.shift();
+        const s = document.createElement('script');
+        s.src = base + fname;
+        s.charset = 'UTF-8';
+        s.onload = () => next();
+        s.onerror = (e) => reject(new Error('Script load error: ' + fname));
+        document.body.appendChild(s);
+      };
+      next();
+    });
+  }
+
+  // load-sequence.json を取得
+  async function fetchSequence(url) {
+    const r = await fetch(url, {cache: 'no-cache'});
+    if (!r.ok) throw new Error('Sequence fetch failed: ' + r.status);
+    return r.json();
+  }
+
+  // エントリポイント
+  (async function main() {
+    try {
+      await injectStyle(STYLE_HREF);
+    } catch (e) {
+      showError('Failed to load style. CSP or network?');
+      return;
+    }
+
+    try {
+      await injectUI(UI_HTML);
+    } catch (e) {
+      showError('Failed to load UI template.');
+      return;
+    }
+
+    let seq;
+    try {
+      seq = await fetchSequence(SEQUENCE_URL);
+    } catch (e) {
+      showError('Failed to load script sequence.');
+      return;
+    }
+
+    try {
+      await loadScriptsSequentially(seq, BASE);
+    } catch (e) {
+      // CSP等で外部スクリプトが拒否される場合ここに来る
+      showError('Failed to load modules. CSP or network issue.');
+      return;
+    }
+
+    // 初期化呼び出し: 既存 API を尊重
+    try {
+      if (window.TegakiApp && typeof window.TegakiApp.start === 'function') {
+        window.TegakiApp.start({container: document.getElementById('tegaki-root')});
+      } else if (typeof window.tegakiStart === 'function') {
+        window.tegakiStart(); // 既存互換
+      } else if (typeof window.Tegaki === 'object' && typeof window.Tegaki.start === 'function') {
+        window.Tegaki.start({container: document.getElementById('tegaki-root')});
+      } else {
+        showError('Module loaded but no start() found.');
+      }
+    } catch (e) {
+      showError('Initialization error: ' + (e && e.message));
+    }
+  })();
+})();
+(--- END tegaki-loader.js ---)
+
+移植（ブリッジ）戦略（既存ファイルを改変せずに実現したい場合）
+  - ケース A: 既存JSはグローバルに初期化関数（window.tegakiStart）を作っている
+      * ローダーは単に読み込み完了後に window.tegakiStart() を呼ぶ。
+  - ケース B: 既存JSは DOMContentLoaded / inline script に依存している（例: 即時実行で初期化）
+      * 対応: 既存コードの冒頭に「初期化関数があればそれを使う」ラッパーを一箇所だけ追加する（小変更推奨）。
+      * ラッパー案（既存の core-runtime.js の先頭に短い条件分岐を追加するだけ）:
+        - `if (typeof window.__TEGAKI_BOOTSTRAP === 'function') { window.__TEGAKI_BOOTSTRAP(); } else { /* 従来の自動初期化 */ }`
+      * ただし可能なら無改変で動かすのが望ましい → 読み込み順・DOM存在を担保するローダーで回避。
+
+分離して良い要素（index.html から安全に切り出せる）
+  - UI の HTML（toolbar, popup, key legend, dialogs） → tegaki-ui.html
+  - 全てのスタイル（ボタン、popup、panel） → tegaki-style.css
+  - 非同期に読み込んで良い静的アセット（icons, fonts）
+  - 理由: UI/Style はアプリ本体ロジックに依存しない。ロード順の先頭で入れればOK。
+
+分離しない（または注意を要する）要素
+  - `<meta>` や CDN の script タグ（PixiJS）→ loader が代替ロードを管理
+  - inline script でしか定義されていない即時実行ロジック → ローダー側で順序対応しない限り問題になる
+  - DOM 内容に強く結びついた初期化コード（body上の特定IDが必要）→ UI分離と合わせて調整が必要
+
+ファイル別の改修メソッド一覧（AIが改修しやすいように）
+  - config.js
+      * 役割: 定数・UIサイズ・デフォルト値
+      * 改修候補: base URL などを外部から override できる仕組み（TegakiApp.configOverride）
+  - coordinate-system.js
+      * 役割: 座標系とトランスフォーム
+      * 注意点: 単位系の名前を明示。API: toCanvas(x,y), toWorld(x,y)
+  - system/event-bus.js
+      * 役割: Central Event Bus
+      * API: EventBus.emit(name, payload), EventBus.on(name, handler), EventBus.off(...)
+      * 改修: メモリリーク防止のため removeAllHandlersFor(context) を追加
+  - system/state-manager.js
+      * 役割: Undo/Redo, app state
+      * API: State.push(action), State.undo(), State.redo()
+      * 注意: ローダー再開で状態の継続性をどうするか明記する
+  - core-runtime.js / core-engine.js
+      * 役割: Pixi アプリ初期化、main loop、レンダリングエントリ
+      * API: init(containerElement, options), resize(), destroy()
+      * 注意: Pixiの二重ロードを避けるため `if (!window.PIXI) loadPixi()` チェックを入れる
+
+QA / 確認チェックリスト（実装後の確認事項）
+  1. index.html を直接開いて、従来どおり動くか（local file://）。
+  2. ブラウザコンソールに ReferenceError が出ていないか。
+  3. ブックマークレット起動 → UI が挿入されるか（#tegaki-root が作成される）。
+  4. load-sequence.json の順序で .js がロードされ、最終的に start() が呼ばれるか。
+  5. CSS セレクタの衝突がないか（掲示板の UI と干渉していないか）。
+  6. 画像添付フロー（描画→toBlob→FormData→upload）が安全に動作するか（ブラウザの file input を直接上書きしてないこと）。
+  7. CSP がある掲示板での挙動確認: ローダーが拒否されたときにユーザーへ正しいメッセージを出すか。
+  8. Pixi 2重ロード検出（window.PIXI が既にある場合の挙動）を確認。
+  9. 停止（stop）→ 再開（start）でメモリリークがないか。
+
+運用上の注意 / セキュリティ
+  - ブックマークレット公開時は README に「このブックマークレットは third-party サイトの CSP により動作しない場合がある」と明記。
+  - ユーザーの入力を外部へ勝手に送信しない（プライバシー尊重）。upload API を使う場合は送信先を表示。
+  - 掲示板運営の規約に抵触しないか事前に確認する（自動投稿や添付の扱い）。
+
+移行手順（推奨）
+  1. index.html 内の `<style>` および UI fragment を tegaki-style.css / tegaki-ui.html に分割する。
+  2. load-sequence.json を作成（index.html にある <script> の順序をそのまま列挙）。
+  3. loader 雛形（上記）を docs/ に置き、ローカルで動作検証。
+  4. ブックマークレットを作る（`javascript:(function(){var s=document.createElement('script');s.src='https://.../tegaki-loader.js';document.body.appendChild(s);})();`）。
+  5. 掲示板上でテスト。CSPで失敗する場合はエラーメッセージをログに残す（ユーザー向けダイアログ）。
+  6. 必要に応じて core-runtime などに最小ラッパーを追加（自動初期化を関数化）。
+
+リスク一覧（短め）
+  - CSPにより外部スクリプトがブロックされる → ローダーが機能しない（説明表示に留める）。
+  - グローバル変数の衝突 → 名前空間化とプレフィックスで軽減。
+  - 既存コードの強い即時依存（DOMContentLoaded 等） → 小ラッパーで対応。
+  - ファイル順序ずれ → load-sequence.json 管理で回避。
+
+付録: 開発者向け注記（Claude 向け）
+  - コードの改修は「既存APIを壊さない」ことを第一に。可能なら API を追加する形で機能拡張。
+  - すべての DOM 要素に `data-tegaki-*` 属性を付けると、デバッグ時に要素を検索しやすい。
+  - CSS は必ず `#tegaki-root` スコープ下に記述して、掲示板側への影響を即座に防ぐ。
+  - すべての公開関数・クラスには JSDoc 風コメントを付ける（AI の解析に有利）。
+
+==============================
+作成者メモ:
+  - 上記は「最小の変更で index.html と loader の両立」を実現する設計書です。
+  - 必要なら、この計画書を元に実際のファイル（tegaki-ui.html, tegaki-style.css, load-sequence.json, tegaki-loader.js）を生成します。
+  - 生成希望があれば、今すぐサンプルファイル群を作成して提示します。
+==============================
