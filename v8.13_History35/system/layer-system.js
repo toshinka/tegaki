@@ -109,9 +109,22 @@
                 // Perfect Freehandが利用可能かつstrokeOptionsがある場合
                 if (path.strokeOptions && typeof getStroke !== 'undefined') {
                     try {
+                        // Phase 2: 現在のズーム率を取得
+                        const currentScale = this.cameraSystem?.camera?.scale || 1;
+                        
+                        // Phase 2: originalSizeがある場合は現在のズーム率で再計算
+                        let renderSize = path.size;
+                        if (path.originalSize !== undefined && path.scaleAtDrawTime !== undefined) {
+                            // 描画時のスケールと現在のスケールの差を考慮
+                            // originalSize / scaleAtDrawTime で正規化サイズを取得
+                            // それを currentScale で割る
+                            const normalizedSize = path.originalSize / path.scaleAtDrawTime;
+                            renderSize = normalizedSize / currentScale;
+                        }
+                        
                         const options = {
                             ...path.strokeOptions,
-                            size: path.size,
+                            size: renderSize,
                             color: path.color,
                             alpha: path.opacity
                         };
@@ -372,6 +385,11 @@
                 setTimeout(() => {
                     this.updateLayerPanelUI();
                 }, 100);
+            });
+            
+            // Phase 2: カメラスケール変更時のレイヤー再描画
+            this.eventBus.on('camera:scale-changed', (data) => {
+                this.rebuildAllLayersForScaleChange();
             });
         }
         
