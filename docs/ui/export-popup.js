@@ -1,6 +1,6 @@
 // ==================================================
 // ui/export-popup.js
-// エクスポートUI管理 - PNG/APNGプレビュー完全対応版
+// エクスポートUI管理 - デバッグ強化版
 // ==================================================
 window.ExportPopup = (function() {
     'use strict';
@@ -197,12 +197,27 @@ window.ExportPopup = (function() {
             const img = document.getElementById('preview-image');
             const messageEl = document.getElementById('preview-message');
             
-            if (!container || !img) return;
+            if (!container || !img) {
+                console.error('Preview elements not found');
+                return;
+            }
             
             this.cleanupPreview();
             
             this.currentBlob = blob;
             this.currentPreviewUrl = URL.createObjectURL(blob);
+            
+            console.log('Preview URL created:', this.currentPreviewUrl);
+            console.log('Blob type:', blob.type, 'Size:', blob.size);
+            
+            img.onload = () => {
+                console.log('Preview image loaded successfully');
+            };
+            
+            img.onerror = (e) => {
+                console.error('Preview image load error:', e);
+            };
+            
             img.src = this.currentPreviewUrl;
             
             if (message && messageEl) {
@@ -271,6 +286,7 @@ window.ExportPopup = (function() {
             try {
                 await this.manager.export(this.selectedFormat, {});
             } catch (error) {
+                console.error('Export error:', error);
                 this.showStatus('エクスポート失敗: ' + error.message, true);
                 if (progressEl) progressEl.style.display = 'none';
                 if (executeBtn) executeBtn.disabled = false;
@@ -280,7 +296,13 @@ window.ExportPopup = (function() {
         }
         
         async executePreview() {
+            console.log('=== Preview execution started ===');
+            console.log('Current format:', this.selectedFormat);
+            console.log('Manager exists:', !!this.manager);
+            console.log('Is exporting:', this.manager.isExporting());
+            
             if (this.manager.isExporting()) {
+                console.log('Already exporting, aborting');
                 return;
             }
             
@@ -306,12 +328,20 @@ window.ExportPopup = (function() {
             const cutCount = this.getCutCount();
             const isAnimation = this.selectedFormat === 'gif' || (this.selectedFormat === 'png' && cutCount >= 2);
             
+            console.log('Cut count:', cutCount);
+            console.log('Is animation:', isAnimation);
+            
             if (isAnimation && progressEl) {
                 progressEl.style.display = 'block';
             }
             
             try {
+                console.log('Calling generatePreview...');
                 const result = await this.manager.generatePreview(this.selectedFormat, {});
+                
+                console.log('Preview generated:', result);
+                console.log('Blob received:', result.blob);
+                console.log('Format:', result.format);
                 
                 if (progressEl) progressEl.style.display = 'none';
                 
@@ -325,7 +355,13 @@ window.ExportPopup = (function() {
                 if (executeBtn) executeBtn.disabled = false;
                 this.resetProgress();
                 
+                console.log('=== Preview execution completed ===');
+                
             } catch (error) {
+                console.error('=== Preview execution failed ===');
+                console.error('Error:', error);
+                console.error('Stack:', error.stack);
+                
                 this.showStatus('プレビュー生成失敗: ' + error.message, true);
                 if (previewBtn) {
                     previewBtn.textContent = 'プレビュー';
@@ -415,4 +451,4 @@ window.ExportPopup = (function() {
     return ExportPopup;
 })();
 
-console.log('✅ export-popup.js (PNG/APNGプレビュー完全対応版) loaded');
+console.log('✅ export-popup.js (デバッグ強化版) loaded');

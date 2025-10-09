@@ -1,95 +1,20 @@
-Wt2YNuifhr:1  GET https://www.googletagmanager.com/gtag/js?id=G-R9M4MJTZFD net::ERR_BLOCKED_BY_CLIENT
-Wt2YNuifhr:302  GET https://static.cloudflareinsights.com/beacon.min.js/vcd15cbe7772f49c399c6a5babf22c1241717689176015 net::ERR_BLOCKED_BY_CLIENT
-content-scripts.js:1 Content Script Bridge: Sending response back to page context: {isAllowListed: false, isProtectionEnabled: true, isScamsProtectionEnabled: true}
-injection-tss-mv3.js:1 TSS: Received response from checkDomainAndRun: {isAllowListed: false, isProtectionEnabled: true, isScamsProtectionEnabled: true}
-app.(_bslug).t._tslug-DS4DPkDC.js:1021 [Discord Tegaki]Launched
-entry.client-BpkMKvdU.js:14  POST https://o4509874266243072.ingest.us.sentry.io/api/4509874267750400/envelope/?sentry_version=7&sentry_key=75630a38269c96a334231d0cef4a0cc4&sentry_client=sentry.javascript.react-router%2F10.17.0 net::ERR_BLOCKED_BY_CLIENT
-d @ entry.client-BpkMKvdU.js:14
-Y @ entry.client-BpkMKvdU.js:7
-d @ entry.client-BpkMKvdU.js:7
-m @ entry.client-BpkMKvdU.js:7
-sendEnvelope @ entry.client-BpkMKvdU.js:6
-sendSession @ entry.client-BpkMKvdU.js:6
-captureSession @ entry.client-BpkMKvdU.js:6
-Ft @ debug-build-BEYY8Tgy.js:2
-Zn @ debug-build-BEYY8Tgy.js:2
-setupOnce @ entry.client-BpkMKvdU.js:14
-hh @ entry.client-BpkMKvdU.js:6
-（匿名） @ entry.client-BpkMKvdU.js:6
-dg @ entry.client-BpkMKvdU.js:6
-_setupIntegrations @ entry.client-BpkMKvdU.js:6
-init @ entry.client-BpkMKvdU.js:6
-_g @ entry.client-BpkMKvdU.js:7
-X1 @ entry.client-BpkMKvdU.js:14
-Z1 @ entry.client-BpkMKvdU.js:14
-（匿名） @ entry.client-BpkMKvdU.js:42
+www.googletagmanager.com/gtag/js?id=G-R9M4MJTZFD:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+vcd15cbe7772f49c399c6a5babf22c1241717689176015:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
+ Content Script Bridge: Sending response back to page context: Object
+ TSS: Received response from checkDomainAndRun: Object
+o4509874266243072.ingest.us.sentry.io/api/4509874267750400/envelope/?sentry_version=7&sentry_key=75630a38269c96a334231d0cef4a0cc4&sentry_client=sentry.javascript.react-router%2F10.17.0:1  Failed to load resource: net::ERR_BLOCKED_BY_CLIENT
 main.js:1 [Discord Tegaki]Launched
-screenshot.png:1  GET https://mebuki.moe/app/t/screenshot.png 404 (Not Found)
-tegaki-loader.js:430 ✅ tegaki-loader.js loaded
+entry.client-BpkMKvdU.js:14 [Discord Tegaki]Launched
 content.js:1 Uncaught (in promise) The message port closed before a response was received.
-（匿名） @ content.js:1
-Refused to connect to 'https://cdn.jsdelivr.net/npm/pixi.js@8.5.2/dist/pixi.min.js.map' because it violates the following Content Security Policy directive: "connect-src 'self' data: https://*.google-analytics.com https://analytics.google.com https://*.analytics.google.com https://*.googletagmanager.com https://*.sentry.io".
-
-config.js:537 ✅ config.js (キーマッピング完全一元管理版) loaded
-config.js:538    🎯 アクション中心設計: すべてのショートカットをTEGAKI_KEYMAPで管理
-config.js:539    🎯 コンテキスト対応: vMode, Ctrl, Shift, Alt を柔軟に処理
-config.js:540    🎯 カメラ反転 vs レイヤー反転: Vモードで自動切り替え
-config.js:541    🎯 H: キャンバス水平反転 / V+H: レイヤー水平反転
-config.js:542    🎯 Shift+H: キャンバス垂直反転 / V+Shift+H: レイヤー垂直反転
-config.js:543    🎯 レガシー互換: 既存コードとの後方互換性を維持
-config.js:544    🎯 デバッグ支援: window.TEGAKI_KEYMAP.debugShowMapping() でマッピング一覧表示
-config.js:545    🎯 UI準備完了: getUIConfigData() で設定画面用データ取得可能
-coordinate-system.js:32 🧭 CoordinateSystem: システム統合改修版 初期化
-coordinate-system.js:730 ✅ coordinate-system.js loaded (システム統合改修版)
-coordinate-system.js:731 🔧 改修完了項目:
-coordinate-system.js:732   🆕 applyLayerTransform(): 統一レイヤー変形API
-coordinate-system.js:733   🆕 normalizeTransform(): 変形データ正規化
-coordinate-system.js:734   🆕 combineTransforms(): 変形合成
-coordinate-system.js:735   🆕 screenToWorld/worldToScreen(): キャッシュ対応座標変換
-coordinate-system.js:736   🆕 localToWorld/worldToLocal(): レイヤー座標変換
-coordinate-system.js:737   🆕 getLayerBounds(): 統一境界取得
-coordinate-system.js:738   🆕 distance/angle/normalizeAngle(): 数学関数統合
-coordinate-system.js:739   🆕 normalizeVector/dotProduct/crossProduct(): ベクトル計算
-coordinate-system.js:740   🆕 diagnoseReferences(): システム統合診断
-coordinate-system.js:741   🆕 runTransformTests(): 座標変換テスト
-coordinate-system.js:742   🆕 runPerformanceTest(): パフォーマンス測定
-coordinate-system.js:743   🔧 EventBus完全統合・キャッシュシステム
-coordinate-system.js:744   🔧 LayerSystem/CameraSystem/AnimationSystem参照統合
-coordinate-system.js:745   🔧 座標系混在問題・API断片化解消
-coordinate-system.js:746   ✅ PixiJS v8.13 完全対応
-coordinate-system.js:747   ✅ システム間連携強化
-event-bus.js:143 ✅ system/event-bus.js Phase 2: 優先度機能追加版 loaded
-state-manager.js:291 ✅ state-manager.js (Export Manager対応版) loaded
-camera-system.js:654 ✅ camera-system.js (キーバインディング変更対応版) loaded successfully
-camera-system.js:655    - ✅ LayerSystemとの連携強化・キー処理重複回避
-camera-system.js:656    - ✅ 素の方向キー処理をLayerSystemに委譲
-camera-system.js:657    - ✅ Space + 方向キー: カメラ操作専用に限定
-camera-system.js:658    - ✅ V + H反転処理の協調動作
-camera-system.js:659    - 🔧 キー衝突の完全回避・責務分離明確化
-camera-system.js:660    - EventBus統合・API統一完了
-drawing-clipboard.js:603 ✅ drawing-clipboard.js Phase4改修版+確定イベント loaded
-drawing-clipboard.js:604    - ✅ CTRL+V behavior: overwrite active layer
-drawing-clipboard.js:605    - ✅ Commit events: paste:commit, operation:commit
-drawing-clipboard.js:606    - ✅ Thumbnail auto-update on paste
-history.js:179 ✅ history.js (Phase 2: EventBus修正版) loaded
-export-manager.js:259 ✅ export-manager.js loaded
-png-exporter.js:85 ✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded
-apng-exporter.js:226 ✅ apng-exporter.js loaded
-gif-exporter.js:290 ✅ gif-exporter.js loaded
-ui-panels.js:532 ✅ ui-panels.js アルバム初期化対応版 loaded
-core-runtime.js:526 ✅ core-runtime.js PNG/APNG/GIF自動判定対応版 loaded
-core-runtime.js:527   ✅ APNGExporter登録対応
-core-runtime.js:528   ✅ ExportSystem確実初期化
-core-runtime.js:529   ✅ 既存機能完全維持
-tegaki-loader.js:54 [Tegaki] 起動失敗: Error: Tegakiアプリケーションが見つかりません
-    at TegakiBookmarklet.initializeTegaki (tegaki-loader.js:263:23)
-    at TegakiBookmarklet.start (tegaki-loader.js:51:28)
+entry.client-BpkMKvdU.js:14 ✅ tegaki-loader.js loaded
+entry.client-BpkMKvdU.js:14 [Tegaki] Loading CDN libraries...
+entry.client-BpkMKvdU.js:14 [Tegaki] ✓ Script loaded: https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js
+entry.client-BpkMKvdU.js:14 [Tegaki] ✓ Script loaded: https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js
+entry.client-BpkMKvdU.js:14 [Tegaki] ✓ Script loaded: https://unpkg.com/upng-js@2.1.0/UPNG.js
+entry.client-BpkMKvdU.js:14 [Tegaki] ✗ Failed to load: https://cdnjs.cloudflare.com/ajax/libs/UPNG-js/2.1.0/UPNG.js Event
 （匿名） @ entry.client-BpkMKvdU.js:14
-start @ tegaki-loader.js:54
-await in start
-window.tegakiStart @ tegaki-loader.js:422
-（匿名） @ tegaki-loader.js:426
-（匿名） @ tegaki-loader.js:428
-coordinate-system.js:63 🔗 CoordinateSystem EventBus integration configured
-coordinate-system.js:47 ✅ CoordinateSystem initialized with canvas: 344x135
-coordinate-system.js:769 🔄 CoordinateSystem auto-initialized (delayed)
+entry.client-BpkMKvdU.js:14 [Tegaki] 起動失敗: Error: Failed to load: https://cdnjs.cloudflare.com/ajax/libs/UPNG-js/2.1.0/UPNG.js
+    at script.onerror (tegaki-loader.js:154:28)
+（匿名） @ entry.client-BpkMKvdU.js:14
+Refused to connect to 'https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js.map' because it violates the following Content Security Policy directive: "connect-src 'self' data: https://*.google-analytics.com https://analytics.google.com https://*.analytics.google.com https://*.googletagmanager.com https://*.sentry.io".
+

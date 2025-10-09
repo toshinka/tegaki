@@ -1,6 +1,6 @@
 // ==================================================
 // system/exporters/gif-exporter.js
-// GIFアニメーションエクスポーター - file://環境対応版
+// GIFアニメーションエクスポーター - PixiJS v8.13完全対応版
 // ==================================================
 window.GIFExporter = (function() {
     'use strict';
@@ -259,7 +259,17 @@ window.GIFExporter = (function() {
                 target: renderTexture
             });
             
-            const canvas = this.manager.app.renderer.extract.canvas(renderTexture);
+            let canvas;
+            try {
+                const result = this.manager.app.renderer.extract.canvas(renderTexture);
+                if (result instanceof Promise) {
+                    canvas = await result;
+                } else {
+                    canvas = result;
+                }
+            } catch (extractError) {
+                throw new Error('Canvas extraction failed: ' + extractError.message);
+            }
             
             tempContainer.removeChild(layersContainer);
             layersContainer.position.set(originalPosition.x, originalPosition.y);
@@ -269,8 +279,8 @@ window.GIFExporter = (function() {
                 originalParent.addChild(layersContainer);
             }
             
-            renderTexture.destroy();
-            tempContainer.destroy();
+            renderTexture.destroy(true);
+            tempContainer.destroy({ children: true });
             
             return canvas;
         }
@@ -287,4 +297,4 @@ window.GIFExporter = (function() {
     return GIFExporter;
 })();
 
-console.log('✅ gif-exporter.js loaded');
+console.log('✅ gif-exporter.js (PixiJS v8.13完全対応版) loaded');

@@ -1,6 +1,6 @@
 // ==================================================
 // system/exporters/apng-exporter.js
-// APNGアニメーションエクスポーター - 完全修正版
+// APNGアニメーションエクスポーター - PixiJS v8.13完全対応版
 // ==================================================
 window.APNGExporter = (function() {
     'use strict';
@@ -189,7 +189,17 @@ window.APNGExporter = (function() {
                 target: renderTexture
             });
             
-            const canvas = this.manager.app.renderer.extract.canvas(renderTexture);
+            let canvas;
+            try {
+                const result = this.manager.app.renderer.extract.canvas(renderTexture);
+                if (result instanceof Promise) {
+                    canvas = await result;
+                } else {
+                    canvas = result;
+                }
+            } catch (extractError) {
+                throw new Error('Canvas extraction failed: ' + extractError.message);
+            }
             
             tempContainer.removeChild(layersContainer);
             layersContainer.position.set(originalPosition.x, originalPosition.y);
@@ -199,8 +209,8 @@ window.APNGExporter = (function() {
                 originalParent.addChild(layersContainer);
             }
             
-            renderTexture.destroy();
-            tempContainer.destroy();
+            renderTexture.destroy(true);
+            tempContainer.destroy({ children: true });
             
             return canvas;
         }
@@ -223,4 +233,4 @@ window.APNGExporter = (function() {
     return APNGExporter;
 })();
 
-console.log('✅ apng-exporter.js loaded');
+console.log('✅ apng-exporter.js (PixiJS v8.13完全対応版) loaded');
