@@ -110,7 +110,7 @@
             
             // Tegakiコアスクリプト
             const scripts = [
-                'config.js',
+                'docs/config.js',
                 'coordinate-system.js',
                 'system/event-bus.js',
                 'system/state-manager.js',
