@@ -1,0 +1,467 @@
+# tegaki-loader.js 完全移植改修計画書
+
+## 📋 現状分析
+
+### 容量比較
+- **index.html**: 約1000行（HTML+CSS+JS統合）
+- **tegaki-loader.js**: 約400行（JS部分のみ）
+- **問題**: 60%の機能が欠落
+
+### 欠落している主要機能
+#### 1. **CDN読込の欠落**
+- ❌ SortableJS
+- ❌ pako (zlib圧縮)
+- ❌ UPNG.js (APNG)
+- ❌ jsPDF
+
+#### 2. **UI要素の欠落**
+- ❌ サイドバーツールボタン群
+- ❌ レイヤーパネル
+- ❌ タイムラインUI
+- ❌ エクスポートポップアップ
+- ❌ アルバムポップアップ
+- ❌ レイヤートランスフォームパネル
+- ❌ ステータスパネル
+
+#### 3. **機能の欠落**
+- ❌ ショートカットキー統合
+- ❌ History統合（Ctrl+Z/Y）
+- ❌ FPSモニター
+- ❌ Canvas情報表示
+- ❌ DPR表示
+
+#### 4. **スクリプト読込順序の問題**
+- ❌ `export-popup.js` 欠落
+- ❌ `diagnostics.js` 欠落
+- ❌ webp/mp4/pdf exporter 欠落
+
+---
+
+## 🎯 完全移植チェックリスト
+
+### Phase 1: CDNライブラリ読込（完全）
+```javascript
+[✓] PIXI.js v8.13.0
+[ ] SortableJS (レイヤードラッグ用)
+[ ] pako v2.1.0 (zlib圧縮)
+[ ] UPNG.js v2.1.0 (APNG生成)
+[ ] GIF.js v0.2.0
+[ ] jsPDF v2.5.1
+```
+
+### Phase 2: Tegakiコアスクリプト読込（完全）
+```javascript
+[✓] config.js
+[✓] coordinate-system.js
+[✓] system/event-bus.js
+[✓] system/state-manager.js
+[ ] system/layer-commands.js ⚠️
+[✓] system/camera-system.js
+[✓] system/layer-system.js
+[✓] system/drawing-clipboard.js
+[✓] system/history.js
+[✓] system/virtual-album.js
+[✓] system/animation-system.js
+[✓] system/export-manager.js
+[✓] system/exporters/png-exporter.js
+[✓] system/exporters/apng-exporter.js
+[✓] system/exporters/gif-exporter.js
+[ ] system/exporters/webp-exporter.js ⚠️
+[ ] system/exporters/mp4-exporter.js ⚠️
+[ ] system/exporters/pdf-exporter.js ⚠️
+[ ] system/quick-export-ui.js ⚠️
+[✓] ui/timeline-ui.js
+[✓] ui/album-popup.js
+[ ] ui/export-popup.js ⚠️ 重要
+[✓] ui/ui-panels.js
+[✓] ui/timeline-thumbnail-utils.js
+[✓] core-runtime.js
+[✓] core-engine.js
+[ ] system/diagnostics.js ⚠️
+```
+
+### Phase 3: UI要素移植（完全）
+
+#### 3.1 サイドバーツールボタン
+```javascript
+[ ] library-tool (アルバム保管)
+[ ] export-tool (画像・アニメ出力)
+[ ] resize-tool (リサイズ)
+[ ] pen-tool (ベクターペン)
+[ ] eraser-tool (消しゴム)
+[ ] gif-animation-tool (GIFアニメーション)
+```
+
+#### 3.2 レイヤーパネル
+```javascript
+[ ] layer-panel-container
+[ ] layer-controls-row
+[ ] layer-add-button
+[ ] folder-add-button
+[ ] layer-panel-items
+[ ] layer-item (個別レイヤー表示)
+[ ] layer-visibility (表示/非表示)
+[ ] layer-opacity (不透明度表示)
+[ ] layer-name (名前表示)
+[ ] layer-thumbnail (サムネイル)
+[ ] layer-delete-button (削除ボタン)
+```
+
+#### 3.3 ポップアップパネル
+```javascript
+[ ] pen-settings (ペン設定)
+[ ] export-popup (エクスポート設定)
+[ ] resize-settings (リサイズ設定)
+```
+
+#### 3.4 ステータスパネル
+```javascript
+[ ] status-panel
+[ ] canvas-info (キャンバスサイズ)
+[ ] current-tool (現在のツール)
+[ ] current-layer (現在のレイヤー)
+[ ] coordinates (座標表示)
+[ ] transform-info (トランスフォーム情報)
+[ ] dpr-info (DPR)
+[ ] fps (FPS)
+[ ] history-info (History状態)
+```
+
+#### 3.5 レイヤートランスフォームパネル
+```javascript
+[ ] layer-transform-panel
+[ ] layer-x-slider (X座標)
+[ ] layer-y-slider (Y座標)
+[ ] layer-rotation-slider (回転)
+[ ] layer-scale-slider (拡縮)
+[ ] flip-horizontal-btn (水平反転)
+[ ] flip-vertical-btn (垂直反転)
+```
+
+### Phase 4: CSS移植（完全）
+
+#### 4.1 CSS変数定義
+```css
+[ ] --futaba-maroon
+[ ] --futaba-light-maroon
+[ ] --futaba-medium
+[ ] --futaba-light-medium
+[ ] --futaba-cream
+[ ] --futaba-background
+[ ] --text-primary
+[ ] --text-secondary
+[ ] --text-inverse
+```
+
+#### 4.2 主要クラス定義
+```css
+[ ] .main-layout
+[ ] .sidebar
+[ ] .tool-button
+[ ] .tool-separator
+[ ] .canvas-area
+[ ] .layer-panel-container
+[ ] .cut-indicator
+[ ] .layer-controls-row
+[ ] .layer-item
+[ ] .popup-panel
+[ ] .status-panel
+[ ] .layer-transform-panel
+[ ] .export-options
+[ ] .preview-container
+```
+
+### Phase 5: JavaScript機能移植（完全）
+
+#### 5.1 キーボードショートカット統合
+```javascript
+[ ] setupUnifiedKeyboardShortcuts()
+[ ] UNDO (Ctrl+Z)
+[ ] REDO (Ctrl+Shift+Z / Ctrl+Y)
+[ ] LAYER_CLEAR
+[ ] LAYER_CREATE (Ctrl+L)
+[ ] GIF_CREATE_CUT
+[ ] GIF_TOGGLE_TIMELINE
+[ ] GIF_PLAY_PAUSE (Space)
+[ ] GIF_COPY_CUT
+[ ] TOOL_PEN (P)
+[ ] TOOL_ERASER (E)
+```
+
+#### 5.2 History統合
+```javascript
+[ ] setupHistoryIntegration()
+[ ] history:changed イベント購読
+[ ] history-info 要素更新
+```
+
+#### 5.3 アプリケーション初期化
+```javascript
+[ ] checkPhase1Dependencies()
+[ ] checkCoreRuntime()
+[ ] initializeApp()
+[ ] DrawingApp クラス
+[ ] updateCanvasInfo()
+[ ] updateDPRInfo()
+[ ] startFPSMonitor()
+```
+
+#### 5.4 ExportSystem初期化
+```javascript
+[ ] initExportWithRetry()
+[ ] CoreRuntime.initializeExportSystem()
+[ ] animation:system-ready イベント購読
+[ ] animation:initialized イベント購読
+```
+
+#### 5.5 UIController統合
+```javascript
+[ ] UIController インスタンス生成
+[ ] initializeAlbumPopup()
+[ ] initializeExportPopup()
+[ ] initializeLayerPanel()
+[ ] initializeToolButtons()
+```
+
+#### 5.6 診断機能
+```javascript
+[ ] CoordinateSystem.diagnoseReferences()
+[ ] SystemDiagnostics.runFullDiagnostics()
+```
+
+### Phase 6: イベントバス統合（完全）
+
+#### 6.1 ツールイベント
+```javascript
+[ ] tool:select
+[ ] tool:pen
+[ ] tool:eraser
+```
+
+#### 6.2 レイヤーイベント
+```javascript
+[ ] layer:clear-active
+[ ] layer:created-by-shortcut
+[ ] layer:visibility-toggle
+[ ] layer:delete
+[ ] layer:select
+```
+
+#### 6.3 アニメーションイベント
+```javascript
+[ ] cut:created-by-shortcut
+[ ] cut:copy-current
+[ ] cut:paste-right-adjacent
+[ ] animation:system-ready
+[ ] animation:initialized
+```
+
+#### 6.4 UIイベント
+```javascript
+[ ] ui:toggle-timeline
+[ ] ui:toggle-layer-panel
+[ ] ui:toggle-export-popup
+```
+
+#### 6.5 Historyイベント
+```javascript
+[ ] history:changed
+```
+
+---
+
+## 🔧 実装戦略
+
+### 戦略1: HTML→JS変換マッピング
+```
+index.html の <div> → JS で createElement('div')
+index.html の <style> → JS で .style.cssText = `...`
+index.html の <script> → JS で関数/クラス定義
+```
+
+### 戦略2: コンポーネント分割
+```javascript
+class TegakiBookmarklet {
+  constructor()
+  start()
+  
+  // --- CDN読込 ---
+  loadCDNLibraries()
+  loadTegakiCore()
+  
+  // --- UI構築 ---
+  createMainLayout()
+  createSidebar()
+  createCanvasArea()
+  createLayerPanel()
+  createStatusPanel()
+  createPopupPanels()
+  
+  // --- 機能統合 ---
+  setupShortcuts()
+  setupEventBus()
+  setupHistory()
+  setupFPSMonitor()
+  
+  // --- Tegaki起動 ---
+  initializeTegaki()
+  initializeUIController()
+  
+  // --- エクスポート ---
+  exportAndClose()
+  injectToBoard()
+  
+  // --- クリーンアップ ---
+  cleanup()
+}
+```
+
+### 戦略3: CSS定義方法
+```javascript
+// 1. <style> タグとして注入
+const style = document.createElement('style');
+style.textContent = `
+  :root { --futaba-maroon: #800000; }
+  .tool-button { ... }
+`;
+document.head.appendChild(style);
+
+// 2. インラインスタイルで直接適用
+element.style.cssText = `
+  background: var(--futaba-maroon);
+  border: 2px solid var(--futaba-medium);
+`;
+```
+
+### 戦略4: 継承チェックトリガー
+各Phase完了時に以下を確認:
+```javascript
+function validatePhase(phase) {
+  const checklist = PHASE_CHECKLISTS[phase];
+  const missing = checklist.filter(item => !item.completed);
+  if (missing.length > 0) {
+    console.error(`Phase ${phase} incomplete:`, missing);
+    return false;
+  }
+  return true;
+}
+```
+
+---
+
+## 📦 最終構成（目標）
+
+### ファイル構成
+```
+tegaki-loader.js (単一ファイル: 約1500-2000行)
+├── Phase 1: CDN読込 (約100行)
+├── Phase 2: Tegakiコア読込 (約50行)
+├── Phase 3: CSS定義 (約400行)
+├── Phase 4: UI構築 (約600行)
+├── Phase 5: 機能統合 (約300行)
+├── Phase 6: イベントバス (約100行)
+└── Phase 7: クリーンアップ (約50行)
+```
+
+### メモリ管理
+```javascript
+- 全UI要素を this.elements = {} に格納
+- cleanup() で全要素を破棄
+- EventBus購読を this.subscriptions = [] に記録
+- cleanup() で全購読解除
+```
+
+---
+
+## ⚠️ 重要注意事項
+
+### ベクターペン情報の取扱
+```javascript
+// ❌ 危険: 全ベクターパスをシリアライズ
+const data = layerSystem.serializeAllVectorData();
+
+// ✅ 安全: エクスポート時のみラスタライズ
+const blob = await exportManager.exportAsPNGBlob();
+```
+
+### localStorage禁止
+```javascript
+// ❌ 禁止
+localStorage.setItem('tegaki-data', ...);
+
+// ✅ 許可: メモリ内で保持
+this.temporaryData = { ... };
+```
+
+### 座標系の混在防止
+```javascript
+// 常に CoordinateSystem 経由で変換
+const screenPos = CoordinateSystem.worldToScreen(worldPos);
+const worldPos = CoordinateSystem.screenToWorld(screenPos);
+```
+
+---
+
+## 🚀 実装順序（推奨）
+
+### 優先度1（必須）
+1. Phase 1: CDN読込完全化
+2. Phase 2: スクリプト読込完全化
+3. Phase 3: CSS定義完全移植
+4. Phase 4: サイドバー+ステータスパネル
+
+### 優先度2（重要）
+5. Phase 5: ショートカット統合
+6. Phase 6: History統合
+7. Phase 7: レイヤーパネル
+8. Phase 8: エクスポートポップアップ
+
+### 優先度3（推奨）
+9. Phase 9: FPSモニター
+10. Phase 10: 診断機能
+11. Phase 11: UIController統合
+
+---
+
+## 🔍 検証方法
+
+### 起動時チェック
+```javascript
+1. 全CDNライブラリが読み込まれたか？
+2. 全Tegakiスクリプトが読み込まれたか？
+3. CSSが適用されているか？
+4. UI要素が全て表示されているか？
+5. ショートカットキーが動作するか？
+6. エクスポートが成功するか？
+```
+
+### 終了時チェック
+```javascript
+1. 全UI要素が削除されたか？
+2. イベントリスナーが全て解除されたか？
+3. PIXIアプリが破棄されたか？
+4. メモリリークが発生していないか？
+```
+
+---
+
+## 📊 進捗トラッキング
+
+```
+Phase 1: CDN読込        [ ] 0/6
+Phase 2: スクリプト読込  [ ] 0/27
+Phase 3: CSS定義        [ ] 0/30
+Phase 4: UI構築         [ ] 0/40
+Phase 5: 機能統合       [ ] 0/15
+Phase 6: イベントバス    [ ] 0/12
+Phase 7: クリーンアップ  [ ] 0/5
+
+全体進捗: 0/135 (0%)
+```
+
+---
+
+## 🎯 次のステップ
+
+この計画書に従って、**Phase 1から順番に**実装を進めてください。
+各Phaseの完了時に必ずチェックリストを確認し、漏れがないことを確認してください。
