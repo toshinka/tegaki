@@ -134,22 +134,42 @@
                 'core-engine.js'
             ];
             
-// === 修正済みスクリプト読込ループ（パス正規化付き） ===
+// === 修正版 スクリプト読込ループ ===
 console.log('[Tegaki] Loading Tegaki core scripts...');
+
 for (const script of scripts) {
-  // script が絶対URLならそのまま、そうでなければ docs/ プレフィックスを付与してから結合
   let path;
   if (/^https?:\/\//.test(script)) {
+    // すでに絶対URLならそのまま
     path = script;
   } else {
-    // scripts 配列に既に 'docs/' が含まれている場合はそのまま使い、
-    // 含まれていなければ 'docs/' を付ける（公開は docs/ 配下なので）
+    // docs/ が無ければ付与
     path = script.startsWith('docs/') ? script : 'docs/' + script;
     path = TEGAKI_BASE_URL + path;
   }
-  await this.loadScript(path);
+  // await は使えないので Promise チェーンで処理
+  awaitLoader(path);
 }
-console.log('[Tegaki] ✓ All Tegaki scripts loaded');
+
+function awaitLoader(path) {
+  return new Promise((resolve, reject) => {
+    const el = document.createElement('script');
+    el.charset = 'UTF-8';
+    el.src = path;
+    el.onload = () => {
+      console.log('[Tegaki] loaded:', path);
+      resolve();
+    };
+    el.onerror = () => {
+      console.error('[Tegaki] Failed to load:', path);
+      reject(new Error('Failed to load: ' + path));
+    };
+    document.body.appendChild(el);
+  });
+}
+
+console.log('[Tegaki] ✓ All Tegaki scripts scheduled for load');
+
         
         // ===== スクリプト読込ヘルパー =====
         loadScript(url) {
