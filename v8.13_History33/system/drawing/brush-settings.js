@@ -1,133 +1,121 @@
 /**
- * brush-settings.js
+ * BrushSettings v1.0
  * ブラシ設定管理
- * Version: 1.0.0
- * 
- * 【責務】
- * - ブラシサイズ・色・不透明度の管理
- * - Perfect Freehand strokeOptionsの生成
- * - 設定変更時のバリデーション
- * - EventBus連携
  */
 
-(function(global) {
-  'use strict';
+class BrushSettings {
+  constructor(config, eventBus) {
+    this.config = config || {};
+    this.eventBus = eventBus;
 
-  class BrushSettings {
-    constructor(config = {}, eventBus = null) {
-      this.config = config;
-      this.eventBus = eventBus;
+    // ブラシ設定
+    this.size = 8;
+    this.color = 0x000000;
+    this.opacity = 1.0;
 
-      // デフォルト設定
-      this.settings = {
-        size: config.defaultBrushSize || 4,
-        color: config.defaultBrushColor || 0x000000,
-        opacity: config.defaultBrushOpacity || 1.0,
-        thinning: 0.5,
-        smoothing: 0.5,
-        streamline: 0.5,
-        simulatePressure: true
-      };
-    }
+    // Perfect Freehand設定
+    this.thinning = 0.5;
+    this.smoothing = 0.5;
+    this.streamline = 0.5;
+    this.simulatePressure = true;
+  }
 
-    /**
-     * ブラシサイズ取得
-     */
-    getBrushSize() {
-      return this.settings.size;
-    }
+  /**
+   * ブラシサイズ取得
+   * @returns {number}
+   */
+  getBrushSize() {
+    return this.size;
+  }
 
-    /**
-     * ブラシサイズ設定
-     * @param {number} size - 0.1-100
-     */
-    setBrushSize(size) {
-      const clamped = Math.max(0.1, Math.min(100, size));
-      this.settings.size = clamped;
-      
-      if (this.eventBus) {
-        this.eventBus.emit('brush:size-changed', { size: clamped });
-      }
-    }
-
-    /**
-     * ブラシ色取得
-     */
-    getBrushColor() {
-      return this.settings.color;
-    }
-
-    /**
-     * ブラシ色設定
-     * @param {number} color - PIXI形式（0xRRGGBB）
-     */
-    setBrushColor(color) {
-      this.settings.color = color;
-      
-      if (this.eventBus) {
-        this.eventBus.emit('brush:color-changed', { color });
-      }
-    }
-
-    /**
-     * 不透明度取得
-     */
-    getBrushOpacity() {
-      return this.settings.opacity;
-    }
-
-    /**
-     * 不透明度設定
-     * @param {number} opacity - 0.0-1.0
-     */
-    setBrushOpacity(opacity) {
-      const clamped = Math.max(0.0, Math.min(1.0, opacity));
-      this.settings.opacity = clamped;
-      
-      if (this.eventBus) {
-        this.eventBus.emit('brush:opacity-changed', { opacity: clamped });
-      }
-    }
-
-    /**
-     * Perfect Freehand用のstrokeOptions生成
-     */
-    getStrokeOptions() {
-      return {
-        size: this.settings.size,
-        color: this.settings.color,
-        opacity: this.settings.opacity,
-        thinning: this.settings.thinning,
-        smoothing: this.settings.smoothing,
-        streamline: this.settings.streamline,
-        simulatePressure: this.settings.simulatePressure
-      };
-    }
-
-    /**
-     * strokeOptionsの部分上書き
-     * @param {Object} overrides - 上書きする設定
-     */
-    updateStrokeOptions(overrides) {
-      Object.assign(this.settings, overrides);
-      
-      if (this.eventBus) {
-        this.eventBus.emit('brush:settings-changed', this.settings);
-      }
-    }
-
-    /**
-     * 全設定取得
-     */
-    getAllSettings() {
-      return { ...this.settings };
+  /**
+   * ブラシサイズ設定
+   * @param {number} size
+   */
+  setBrushSize(size) {
+    size = Math.max(0.1, Math.min(100, size));
+    this.size = size;
+    
+    if (this.eventBus) {
+      this.eventBus.emit('brushSizeChanged', { size });
     }
   }
 
-  // グローバル登録
-  if (!global.TegakiDrawing) {
-    global.TegakiDrawing = {};
+  /**
+   * ブラシ色取得
+   * @returns {number}
+   */
+  getBrushColor() {
+    return this.color;
   }
-  global.TegakiDrawing.BrushSettings = BrushSettings;
 
-})(window);
+  /**
+   * ブラシ色設定
+   * @param {number} color
+   */
+  setBrushColor(color) {
+    this.color = color;
+    
+    if (this.eventBus) {
+      this.eventBus.emit('brushColorChanged', { color });
+    }
+  }
+
+  /**
+   * 不透明度取得
+   * @returns {number}
+   */
+  getBrushOpacity() {
+    return this.opacity;
+  }
+
+  /**
+   * 不透明度設定
+   * @param {number} opacity
+   */
+  setBrushOpacity(opacity) {
+    opacity = Math.max(0.0, Math.min(1.0, opacity));
+    this.opacity = opacity;
+    
+    if (this.eventBus) {
+      this.eventBus.emit('brushOpacityChanged', { opacity });
+    }
+  }
+
+  /**
+   * Perfect Freehand用のstrokeOptions生成
+   * @returns {Object}
+   */
+  getStrokeOptions() {
+    return {
+      size: this.size,
+      thinning: this.thinning,
+      smoothing: this.smoothing,
+      streamline: this.streamline,
+      easing: (t) => t,
+      simulatePressure: this.simulatePressure,
+      color: this.color,
+      alpha: this.opacity
+    };
+  }
+
+  /**
+   * strokeOptionsの部分更新
+   * @param {Object} overrides
+   */
+  updateStrokeOptions(overrides) {
+    if (!overrides) return;
+    
+    if (overrides.size !== undefined) this.size = overrides.size;
+    if (overrides.thinning !== undefined) this.thinning = overrides.thinning;
+    if (overrides.smoothing !== undefined) this.smoothing = overrides.smoothing;
+    if (overrides.streamline !== undefined) this.streamline = overrides.streamline;
+    if (overrides.simulatePressure !== undefined) this.simulatePressure = overrides.simulatePressure;
+  }
+}
+
+// グローバル登録
+if (typeof window.TegakiDrawing === 'undefined') {
+  window.TegakiDrawing = {};
+}
+window.TegakiDrawing.BrushSettings = BrushSettings;

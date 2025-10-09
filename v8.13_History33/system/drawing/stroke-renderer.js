@@ -1,139 +1,118 @@
 /**
- * drawing-engine.js
- * 統合・公開API
- * Version: 1.0.0
- * 
- * 【責務】
- * - 各サブモジュールの初期化・統合
- * - 外部からの描画操作API提供
- * - EventBus連携
- * - History連携の橋渡し
+ * StrokeRenderer v1.0
+ * Perfect Freehand描画実行
  */
 
-(function(global) {
-  'use strict';
+class StrokeRenderer {
+  constructor(config) {
+    this.config = config || {};
+  }
 
-  class DrawingEngine {
-    constructor(cameraSystem, layerManager, eventBus, config) {
-      this.cameraSystem = cameraSystem;
-      this.layerManager = layerManager;
-      this.eventBus = eventBus;
-      this.config = config;
+  /**
+   * Perfect Freehandでストローク描画
+   * @param {Array} points - [{ x, y, pressure }]
+   * @param {Object} strokeOptions - Perfect Freehand設定
+   * @param {PIXI.Graphics} graphics - 描画先
+   */
+  renderStroke(points, strokeOptions, graphics) {
+    if (!points || points.length === 0 || !graphics) return;
 
-      // サブモジュール初期化
-      this.settings = new global.TegakiDrawing.BrushSettings(config, eventBus);
-      this.recorder = new global.TegakiDrawing.StrokeRecorder();
-      this.renderer = new global.TegakiDrawing.StrokeRenderer(config);
-      this.pressureHandler = new global.TegakiDrawing.PressureHandler();
-      this.transformer = new global.TegakiDrawing.StrokeTransformer(config);
-
-      // 描画状態
-      this.currentTool = 'pen';
-      this.isDrawing = false;
-      this.currentPath = null;
+    // Perfect Freehand が利用可能かチェック
+    if (typeof getStroke === 'undefined') {
+      this.renderStrokeWithCircles(points, strokeOptions.size || 8, 0x000000, 1.0, graphics);
+      return;
     }
 
-    /**
-     * 描画開始
-     * @param {number} screenX
-     * @param {number} screenY
-     * @param {number|PointerEvent} pressureOrEvent
-     */
-    startDrawing(screenX, screenY, pressureOrEvent) {
-      // 座標変換
-      const worldPos = this.cameraSystem.screenToWorld(screenX, screenY);
+    try {
+      // Perfect Freehandでアウトライン生成
+      const outlinePoints = getStroke(points, strokeOptions);
       
-      // 筆圧取得
-      const pressure = typeof pressureOrEvent === 'object' 
-        ? this.pressureHandler.getPressure(pressureOrEvent)
-        : (pressureOrEvent || 0.5);
-
-      const point = {
-        x: worldPos.x,
-        y: worldPos.y,
-        pressure: pressure
-      };
-
-      // パス開始
-      const strokeOptions = this.settings.getStrokeOptions();
-      this.currentPath = this.recorder.startNewPath(
-        point,
-        this.settings.getBrushColor(),
-        this.settings.getBrushSize(),
-        this.settings.getBrushOpacity(),
-        this.currentTool,
-        strokeOptions
-      );
-
-      // Graphics生成
-      this.currentPath.graphics = new PIXI.Graphics();
-      const activeLayer = this.layerManager.getActiveLayer();
-      if (activeLayer && activeLayer.container) {
-        activeLayer.container.addChild(this.currentPath.graphics);
+      if (!outlinePoints || outlinePoints.length === 0) {
+        this.renderStrokeWithCircles(points, strokeOptions.size || 8, 0x000000, 1.0, graphics);
+        return;
       }
 
-      this.isDrawing = true;
+      // PIXI.Graphics描画
+      graphics.clear();
+      graphics.poly(outlinePoints);
+      graphics.fill({ color: strokeOptions.color || 0x000000, alpha: strokeOptions.alpha || 1.0 });
+      
+    } catch (error) {
+      console.warn('Perfect Freehand描画エラー:', error);
+      this.renderStrokeWithCircles(points, strokeOptions.size || 8, 0x000000, 1.0, graphics);
+    }
+  }
 
-      // 初回描画
-      this.renderer.renderStroke(
-        this.currentPath.points,
-        this.currentPath.strokeOptions,
-        this.currentPath.graphics
+  /**
+   * フォールバック描画 (円の連続)
+   * @param {Array} points
+   * @param {number} size
+   * @param {number} color
+   * @param {number} opacity
+   * @param {PIXI.Graphics} graphics
+   */
+  renderStrokeWithCircles(points, size, color, opacity, graphics) {
+    if (!points || points.length === 0 || !graphics) return;
+
+    graphics.clear();
+    const radius = size / 2;
+
+    for (const pt of points) {
+      graphics.circle(pt.x, pt.y, radius);
+      graphics.fill({ color: color, alpha: opacity });
+    }
+  }
+
+  /**
+   * パスデータからGraphicsを再構築 (Undo/Redo用)
+   * @param {Object} pathData
+   * @returns {PIXI.Graphics}
+   */
+  rebuildPathGraphics(pathData) {
+    const graphics = new PIXI.Graphics();
+
+    if (!pathData || !pathData.points || pathData.points.length === 0) {
+      return graphics;
+    }
+
+    // strokeOptionsが存在し、Perfect Freehandが使える場合
+    if (pathData.strokeOptions && typeof getStroke !== 'undefined') {
+      const options = {
+        ...pathData.strokeOptions,
+        size: pathData.size,
+        color: pathData.color,
+        alpha: pathData.opacity
+      };
+      
+      this.renderStroke(pathData.points, options, graphics);
+    } else {
+      // フォールバック
+      this.renderStrokeWithCircles(
+        pathData.points,
+        pathData.size,
+        pathData.color,
+        pathData.opacity,
+        graphics
       );
     }
 
-    /**
-     * 描画継続
-     * @param {number} screenX
-     * @param {number} screenY
-     * @param {number|PointerEvent} pressureOrEvent
-     */
-    continueDrawing(screenX, screenY, pressureOrEvent) {
-      if (!this.isDrawing || !this.currentPath) return;
+    return graphics;
+  }
 
-      // 座標変換
-      const worldPos = this.cameraSystem.screenToWorld(screenX, screenY);
+  /**
+   * ズーム対応の線幅計算 (Phase 2用)
+   * @param {number} baseSize - 基本サイズ
+   * @param {number} cameraScale - カメラスケール
+   * @returns {number}
+   */
+  getScaledSize(baseSize, cameraScale) {
+    if (!cameraScale || cameraScale <= 0) return baseSize;
+    return baseSize / cameraScale;
+  }
+}
 
-      // 筆圧取得
-      const pressure = typeof pressureOrEvent === 'object'
-        ? this.pressureHandler.getPressure(pressureOrEvent)
-        : (pressureOrEvent || 0.5);
-
-      const point = {
-        x: worldPos.x,
-        y: worldPos.y,
-        pressure: pressure
-      };
-
-      // ポイント追加
-      this.recorder.addPoint(this.currentPath, point);
-
-      // 再描画
-      this.renderer.renderStroke(
-        this.currentPath.points,
-        this.currentPath.strokeOptions,
-        this.currentPath.graphics
-      );
-    }
-
-    /**
-     * 描画終了
-     */
-    stopDrawing() {
-      if (!this.isDrawing || !this.currentPath) return;
-
-      // パス完了
-      this.recorder.finalizePath(this.currentPath);
-
-      // History登録（最小限のデータ）
-      const activeLayer = this.layerManager.getActiveLayer();
-      if (activeLayer && this.eventBus) {
-        const pathDataClone = this.recorder.clonePathData(this.currentPath);
-        
-        this.eventBus.emit('drawing:stroke-completed', {
-          layerId: activeLayer.id,
-          pathData: pathDataClone
-        });
-      }
-
-      // リセット
+// グローバル登録
+if (typeof window.TegakiDrawing === 'undefined') {
+  window.TegakiDrawing = {};
+}
+window.TegakiDrawing.StrokeRenderer = StrokeRenderer;

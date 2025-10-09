@@ -1,222 +1,219 @@
 /**
- * drawing-engine.js
- * 統合・公開API
- * Version: 1.0.0
- * 
- * 【責務】
- * - 各サブモジュールの初期化・統合
- * - 外部からの描画操作API提供
- * - EventBus連携
- * - History連携の橋渡し
+ * DrawingEngine v2.0 (分割統合版)
+ * Perfect Freehand対応ベクターペンエンジン
  */
 
-(function(global) {
-  'use strict';
+class DrawingEngine {
+  constructor(cameraSystem, layerManager, eventBus, config) {
+    this.cameraSystem = cameraSystem;
+    this.layerManager = layerManager;
+    this.eventBus = eventBus;
+    this.config = config || {};
 
-  class DrawingEngine {
-    constructor(cameraSystem, layerManager, eventBus, config) {
-      this.cameraSystem = cameraSystem;
-      this.layerManager = layerManager;
-      this.eventBus = eventBus;
-      this.config = config;
+    // サブモジュール初期化
+    this.settings = new window.TegakiDrawing.BrushSettings(config, eventBus);
+    this.recorder = new window.TegakiDrawing.StrokeRecorder();
+    this.renderer = new window.TegakiDrawing.StrokeRenderer(config);
+    this.pressureHandler = new window.TegakiDrawing.PressureHandler();
+    this.transformer = new window.TegakiDrawing.StrokeTransformer(config);
 
-      // サブモジュール初期化
-      this.settings = new global.TegakiDrawing.BrushSettings(config, eventBus);
-      this.recorder = new global.TegakiDrawing.StrokeRecorder();
-      this.renderer = new global.TegakiDrawing.StrokeRenderer(config);
-      this.pressureHandler = new global.TegakiDrawing.PressureHandler();
-      this.transformer = new global.TegakiDrawing.StrokeTransformer(config);
+    // 描画状態
+    this.isDrawing = false;
+    this.currentTool = 'pen'; // 'pen' | 'eraser'
+    this.currentPath = null;
+  }
 
-      // 描画状態
-      this.currentTool = 'pen';
-      this.isDrawing = false;
-      this.currentPath = null;
-    }
+  /**
+   * 描画開始
+   * @param {number} screenX
+   * @param {number} screenY
+   * @param {number|PointerEvent} pressureOrEvent
+   */
+  startDrawing(screenX, screenY, pressureOrEvent) {
+    const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
+    const pressure = this.pressureHandler.getPressure(pressureOrEvent);
 
-    /**
-     * 描画開始
-     * @param {number} screenX
-     * @param {number} screenY
-     * @param {number|PointerEvent} pressureOrEvent
-     */
-    startDrawing(screenX, screenY, pressureOrEvent) {
-      // 座標変換
-      const worldPos = this.cameraSystem.screenToWorld(screenX, screenY);
+    // ストロークオプション取得
+    const strokeOptions = this.settings.getStrokeOptions();
+
+    // 新規パス開始
+    this.currentPath = this.recorder.startNewPath(
+      { x: canvasPoint.x, y: canvasPoint.y, pressure },
+      this.currentTool === 'eraser' ? this.config.background.color : this.settings.getBrushColor(),
+      this.settings.getBrushSize(),
+      this.settings.getBrushOpacity(),
+      this.currentTool,
+      strokeOptions
+    );
+
+    // Graphics作成
+    this.currentPath.graphics = new PIXI.Graphics();
+    
+    this.isDrawing = true;
+  }
+
+  /**
+   * 描画継続
+   * @param {number} screenX
+   * @param {number} screenY
+   * @param {number|PointerEvent} pressureOrEvent
+   */
+  continueDrawing(screenX, screenY, pressureOrEvent) {
+    if (!this.isDrawing || !this.currentPath) return;
+
+    const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
+    const pressure = this.pressureHandler.getPressure(pressureOrEvent);
+
+    // 座標追加
+    this.recorder.addPoint(this.currentPath, {
+      x: canvasPoint.x,
+      y: canvasPoint.y,
+      pressure
+    });
+
+    // リアルタイム描画
+    const options = {
+      ...this.currentPath.strokeOptions,
+      color: this.currentPath.color,
+      alpha: this.currentPath.opacity
+    };
+
+    this.renderer.renderStroke(
+      this.currentPath.points,
+      options,
+      this.currentPath.graphics
+    );
+  }
+
+  /**
+   * 描画終了
+   */
+  stopDrawing() {
+    if (!this.isDrawing || !this.currentPath) return;
+
+    // パス確定
+    this.recorder.finalizePath(this.currentPath);
+
+    // 最終描画
+    const options = {
+      ...this.currentPath.strokeOptions,
+      color: this.currentPath.color,
+      alpha: this.currentPath.opacity
+    };
+
+    this.renderer.renderStroke(
+      this.currentPath.points,
+      options,
+      this.currentPath.graphics
+    );
+
+    // レイヤーに追加
+    this.addPathToActiveLayer(this.currentPath);
+
+    // 筆圧ハンドラーリセット
+    this.pressureHandler.reset();
+
+    this.isDrawing = false;
+    this.currentPath = null;
+  }
+
+  /**
+   * アクティブレイヤーにパス追加
+   * @param {Object} pathData
+   */
+  addPathToActiveLayer(pathData) {
+    const activeLayer = this.layerManager.getActiveLayer();
+    if (!activeLayer) return;
+
+    // レイヤー変形が適用されている場合
+    if (activeLayer.transform && !this.transformer.isTransformNonDefault(activeLayer.transform)) {
+      const transformedGraphics = this.transformer.applyTransformToPath(
+        pathData,
+        activeLayer.transform,
+        this.config.canvas.width,
+        this.config.canvas.height
+      );
       
-      // 筆圧取得
-      const pressure = typeof pressureOrEvent === 'object' 
-        ? this.pressureHandler.getPressure(pressureOrEvent)
-        : (pressureOrEvent || 0.5);
-
-      const point = {
-        x: worldPos.x,
-        y: worldPos.y,
-        pressure: pressure
-      };
-
-      // パス開始
-      const strokeOptions = this.settings.getStrokeOptions();
-      this.currentPath = this.recorder.startNewPath(
-        point,
-        this.settings.getBrushColor(),
-        this.settings.getBrushSize(),
-        this.settings.getBrushOpacity(),
-        this.currentTool,
-        strokeOptions
-      );
-
-      // Graphics生成
-      this.currentPath.graphics = new PIXI.Graphics();
-      const activeLayer = this.layerManager.getActiveLayer();
-      if (activeLayer && activeLayer.container) {
-        activeLayer.container.addChild(this.currentPath.graphics);
+      if (transformedGraphics) {
+        pathData.graphics = transformedGraphics;
       }
-
-      this.isDrawing = true;
-
-      // 初回描画
-      this.renderer.renderStroke(
-        this.currentPath.points,
-        this.currentPath.strokeOptions,
-        this.currentPath.graphics
-      );
     }
 
-    /**
-     * 描画継続
-     * @param {number} screenX
-     * @param {number} screenY
-     * @param {number|PointerEvent} pressureOrEvent
-     */
-    continueDrawing(screenX, screenY, pressureOrEvent) {
-      if (!this.isDrawing || !this.currentPath) return;
-
-      // 座標変換
-      const worldPos = this.cameraSystem.screenToWorld(screenX, screenY);
-
-      // 筆圧取得
-      const pressure = typeof pressureOrEvent === 'object'
-        ? this.pressureHandler.getPressure(pressureOrEvent)
-        : (pressureOrEvent || 0.5);
-
-      const point = {
-        x: worldPos.x,
-        y: worldPos.y,
-        pressure: pressure
-      };
-
-      // ポイント追加
-      this.recorder.addPoint(this.currentPath, point);
-
-      // 再描画
-      this.renderer.renderStroke(
-        this.currentPath.points,
-        this.currentPath.strokeOptions,
-        this.currentPath.graphics
-      );
+    // レイヤーに追加
+    activeLayer.container.addChild(pathData.graphics);
+    
+    // パスデータ記録
+    if (!activeLayer.paths) {
+      activeLayer.paths = [];
     }
+    activeLayer.paths.push(pathData);
 
-    /**
-     * 描画終了
-     */
-    stopDrawing() {
-      if (!this.isDrawing || !this.currentPath) return;
-
-      // パス完了
-      this.recorder.finalizePath(this.currentPath);
-
-      // History登録（最小限のデータ）
-      const activeLayer = this.layerManager.getActiveLayer();
-      if (activeLayer && this.eventBus) {
-        const pathDataClone = this.recorder.clonePathData(this.currentPath);
-        
-        this.eventBus.emit('drawing:stroke-completed', {
-          layerId: activeLayer.id,
-          pathData: pathDataClone
-        });
-      }
-
-      // リセット
-      this.pressureHandler.reset();
-      this.isDrawing = false;
-      this.currentPath = null;
+    // History登録
+    if (this.eventBus) {
+      this.eventBus.emit('pathAdded', { 
+        layerId: activeLayer.id,
+        path: this.recorder.clonePathData(pathData)
+      });
     }
+  }
 
-    /**
-     * ツール切り替え
-     * @param {string} tool - 'pen' | 'eraser'
-     */
-    setTool(tool) {
+  /**
+   * ツール設定
+   * @param {string} tool - 'pen' | 'eraser'
+   */
+  setTool(tool) {
+    if (tool === 'pen' || tool === 'eraser') {
       this.currentTool = tool;
+      
       if (this.eventBus) {
-        this.eventBus.emit('tool:changed', { tool });
+        this.eventBus.emit('toolChanged', { tool });
       }
     }
-
-    /**
-     * ブラシサイズ設定
-     * @param {number} size
-     */
-    setBrushSize(size) {
-      this.settings.setBrushSize(size);
-    }
-
-    /**
-     * ブラシ色設定
-     * @param {number} color
-     */
-    setBrushColor(color) {
-      this.settings.setBrushColor(color);
-    }
-
-    /**
-     * 不透明度設定
-     * @param {number} opacity
-     */
-    setBrushOpacity(opacity) {
-      this.settings.setBrushOpacity(opacity);
-    }
-
-    /**
-     * 現在のツール取得
-     */
-    getCurrentTool() {
-      return this.currentTool;
-    }
-
-    /**
-     * 描画中かどうか
-     */
-    getIsDrawing() {
-      return this.isDrawing;
-    }
-
-    /**
-     * パスデータからGraphics再構築（Undo/Redo用）
-     * @param {Object} pathData
-     * @returns {PIXI.Graphics}
-     */
-    rebuildGraphicsFromPath(pathData) {
-      return this.renderer.rebuildPathGraphics(pathData);
-    }
-
-    /**
-     * レイヤー変形を適用したGraphics生成
-     * @param {Object} pathData
-     * @param {Object} transform
-     * @param {number} canvasWidth
-     * @param {number} canvasHeight
-     * @returns {PIXI.Graphics}
-     */
-    applyTransformToPath(pathData, transform, canvasWidth, canvasHeight) {
-      return this.transformer.applyTransformToPath(pathData, transform, canvasWidth, canvasHeight);
-    }
   }
 
-  // グローバル登録
-  if (!global.TegakiDrawing) {
-    global.TegakiDrawing = {};
+  /**
+   * ブラシサイズ設定
+   * @param {number} size
+   */
+  setBrushSize(size) {
+    this.settings.setBrushSize(size);
   }
-  global.TegakiDrawing.DrawingEngine = DrawingEngine;
 
-})(window);
+  /**
+   * ブラシ色設定
+   * @param {number} color
+   */
+  setBrushColor(color) {
+    this.settings.setBrushColor(color);
+  }
+
+  /**
+   * ブラシ不透明度設定
+   * @param {number} opacity
+   */
+  setBrushOpacity(opacity) {
+    this.settings.setBrushOpacity(opacity);
+  }
+
+  /**
+   * 現在のツール取得
+   * @returns {string}
+   */
+  getCurrentTool() {
+    return this.currentTool;
+  }
+
+  /**
+   * 描画中かチェック
+   * @returns {boolean}
+   */
+  getIsDrawing() {
+    return this.isDrawing;
+  }
+}
+
+// グローバル登録
+if (typeof window.TegakiDrawing === 'undefined') {
+  window.TegakiDrawing = {};
+}
+window.TegakiDrawing.DrawingEngine = DrawingEngine;

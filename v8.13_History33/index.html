@@ -207,43 +207,42 @@
 </script>
 
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://unpkg.com/perfect-freehand@1.2.0/dist/index.umd.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
     <script src="https://unpkg.com/upng-js@2.1.0/UPNG.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
     
-    <script src="config.js"></script>
-    <script src="coordinate-system.js"></script>
-    <script src="system/event-bus.js"></script>
-    <script src="system/state-manager.js"></script>
-    <script src="system/layer-commands.js"></script>
-    <script src="system/camera-system.js"></script>
-    <script src="system/layer-system.js"></script>
-    <script src="system/drawing-clipboard.js"></script>
-    <script src="system/history.js"></script>
-    <script src="system/virtual-album.js"></script>
-    <script src="system/animation-system.js"></script>
-    <script src="system/export-manager.js"></script>
-    <script src="system/exporters/png-exporter.js"></script>
-    <script src="system/exporters/apng-exporter.js"></script>
-    <script src="system/exporters/gif-exporter.js"></script>
+  <!-- システムコア -->
+  <script src="config.js"></script>
+  <script src="coordinate-system.js"></script>
+  <script src="system/event-bus.js"></script>
+  <script src="system/state-manager.js"></script>
+  <script src="system/camera-system.js"></script>
+  <script src="system/layer-system.js"></script>
+  <script src="system/drawing-clipboard.js"></script>
+  <script src="system/history.js"></script>
+  <script src="system/virtual-album.js"></script>
+  <script src="system/animation-system.js"></script>
 
-<!-- ⭐ DrawingEngine分割モジュール（core-runtime.jsより前） -->
-<script src="system/drawing/stroke-recorder.js"></script>
-<script src="system/drawing/stroke-renderer.js"></script>
-<script src="system/drawing/brush-settings.js"></script>
-<script src="system/drawing/pressure-handler.js"></script>
-<script src="system/drawing/stroke-transformer.js"></script>
-<script src="system/drawing/drawing-engine.js"></script>
+  <!-- 描画システム (分割後) -->
+  <script src="system/drawing/stroke-recorder.js"></script>
+  <script src="system/drawing/stroke-renderer.js"></script>
+  <script src="system/drawing/brush-settings.js"></script>
+  <script src="system/drawing/pressure-handler.js"></script>
+  <script src="system/drawing/stroke-transformer.js"></script>
+  <script src="system/drawing/drawing-engine.js"></script>
 
-    <script src="ui/timeline-ui.js"></script>
-    <script src="ui/album-popup.js"></script>
-    <script src="ui/export-popup.js"></script>
-    <script src="ui/ui-panels.js"></script>
-    <script src="ui/timeline-thumbnail-utils.js"></script>
-    <script src="core-runtime.js"></script>
-    <script src="core-engine.js"></script>
-    <script src="system/diagnostics.js"></script>
+  <!-- UI -->
+  <script src="ui/timeline-thumbnail-utils.js"></script>
+  <script src="ui/timeline-ui.js"></script>
+  <script src="ui/album-popup.js"></script>
+  <script src="ui/ui-panels.js"></script>
+  <script src="ui/export-popup.js"></script>
+
+  <!-- コアエンジン -->
+  <script src="core-runtime.js"></script>
+  <script src="core-engine.js"></script>
 
     <script>
 (function() {
