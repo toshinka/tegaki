@@ -1,13 +1,15 @@
 // ==================================================
 // tegaki-loader.js (動作確認用軽量版)
-// めぶきちゃんねる連携テスト用
+// めぶきちゃんねる連携テスト用 v1.0
 // スクリプト読込なし・400x400キャンバス・ふたばカラー
+// 背景色 #f0e0d6 対応版
 // ==================================================
 
 (function() {
     'use strict';
     
     const MEBUKI_TIMEOUT = 3000;
+    const BACKGROUND_COLOR = '#f0e0d6'; // めぶきちゃんねる背景色
     
     const MEBUKI_SELECTORS = {
         postButton: 'button[title="レスを投稿"]',
@@ -283,7 +285,7 @@
         
         async exportAndClose() {
             try {
-                const blob = await this.canvasToBlob();
+                const blob = await this.canvasToBlobWithBackground();
                 await this.injectToBoard(blob);
                 
                 alert('掲示板への画像貼り付けが完了しました！\nコメントを入力して投稿してください。');
@@ -295,9 +297,24 @@
             }
         }
         
-        canvasToBlob() {
+        // 背景色を塗りつぶしてからBlobを生成
+        canvasToBlobWithBackground() {
             return new Promise((resolve, reject) => {
-                this.canvas.toBlob((blob) => {
+                // 一時的なキャンバスを作成
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = this.canvas.width;
+                tempCanvas.height = this.canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // 背景色を塗りつぶす
+                tempCtx.fillStyle = BACKGROUND_COLOR;
+                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
+                
+                // 元のキャンバスの内容を上に描画
+                tempCtx.drawImage(this.canvas, 0, 0);
+                
+                // Blobに変換
+                tempCanvas.toBlob((blob) => {
                     if (blob) {
                         resolve(blob);
                     } else {
@@ -392,3 +409,5 @@
     window.tegakiStart();
     
 })();
+
+console.log('✅ tegaki-loader.js (背景色対応版) loaded');
