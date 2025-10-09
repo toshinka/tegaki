@@ -1,6 +1,6 @@
 // ==================================================
 // tegaki-loader.js (動作確認用軽量版)
-// めぶきちゃんねる連携テスト用 v1.0
+// めぶきちゃんねる連携テスト用 v1.1
 // スクリプト読込なし・400x400キャンバス・ふたばカラー
 // 背景色 #f0e0d6 対応版
 // ==================================================
@@ -83,7 +83,7 @@
                 width: 100vw;
                 height: 100vh;
                 z-index: 999999;
-                background: #ffffee;
+                background: #f0e0d6;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
