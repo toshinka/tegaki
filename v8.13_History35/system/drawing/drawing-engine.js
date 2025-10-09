@@ -33,8 +33,13 @@ class DrawingEngine {
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
     const pressure = this.pressureHandler.getPressure(pressureOrEvent);
 
-    // ストロークオプション取得
+    // 現在のズーム率取得
+    const currentScale = this.cameraSystem.camera.scale || 1;
+
+    // ストロークオプション取得（ズーム対応サイズ）
     const strokeOptions = this.settings.getStrokeOptions();
+    const scaledSize = this.renderer.getScaledSize(this.settings.getBrushSize(), currentScale);
+    strokeOptions.size = scaledSize;
 
     // 新規パス開始
     this.currentPath = this.recorder.startNewPath(
@@ -45,6 +50,10 @@ class DrawingEngine {
       this.currentTool,
       strokeOptions
     );
+
+    // Phase 2: 元サイズとスケール記録
+    this.currentPath.originalSize = this.settings.getBrushSize();
+    this.currentPath.scaleAtDrawTime = currentScale;
 
     // Graphics作成
     this.currentPath.graphics = new PIXI.Graphics();

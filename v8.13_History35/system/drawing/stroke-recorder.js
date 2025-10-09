@@ -28,7 +28,9 @@ class StrokeRecorder {
       tool: tool,
       isComplete: false,
       strokeOptions: { ...strokeOptions },
-      graphics: null
+      graphics: null,
+      originalSize: size,        // Phase 2: 元のブラシサイズ
+      scaleAtDrawTime: 1.0       // Phase 2: 描画時のズーム率（後で上書き）
     };
     
     return pathData;
