@@ -1,8 +1,8 @@
-// ===== ui/timeline-ui.js - Phase 3.1改修版 =====
+// ===== ui/timeline-ui.js - Phase 2.5改修版（Display同期修正） =====
 // 【改修内容】
-// 1. 矢印キー方向修正（Phase 1継承）
-// 2. History変更時の表示同期（Phase 2.5継承）
-// 3. Cut選択時の正確なIndex管理（Phase 3.1追加）
+// 1. History変更時に強制的にCUTリストを再生成
+// 2. Cut削除・追加時のパネル同期遅延を排除
+// 3. 矢印キー修正は継続（Phase 1から継承）
 
 (function() {
     'use strict';
@@ -41,17 +41,20 @@
             
             this.setupThumbnailAutoUpdate();
             this.setupResizeEventListener();
+            // 🔥 Phase 2.5改修: History変更リスナー追加
             this.setupHistoryChangeListener();
             
             this.isInitialized = true;
         }
         
+        // ========== Phase 2.5改修: History変更リスナー ==========
         setupHistoryChangeListener() {
             if (!this.eventBus) return;
             
             this.eventBus.on('history:changed', (data) => {
                 if (!this.isVisible) return;
                 
+                // 🔥 CUT数の変更を検知して、パネル表示を強制更新
                 const animData = this.animationSystem.getAnimationData();
                 const totalCutsInDOM = this.cutsContainer.querySelectorAll('.cut-item').length;
                 
@@ -80,7 +83,10 @@
                 }
             });
         }
+        // ========== Phase 2.5改修: END ==========
         
+        // ========== Phase 2.5改修: updateCutsListImmediate() ==========
+        // 🔥 Undo/Redo時の即座更新用
         updateCutsListImmediate() {
             if (this.cutListUpdateInProgress) return;
             
@@ -113,6 +119,7 @@
                 this.cutListUpdateInProgress = false;
             }
         }
+        // ========== Phase 2.5改修: END ==========
         
         setupResizeEventListener() {
             if (!this.eventBus) return;
@@ -660,7 +667,7 @@
             }
         }
         
-        // ========== Phase 3.1: 矢印キー完全修正 ==========
+        // ========== Phase 1: 矢印キー修正 ==========
         setupKeyboardShortcuts() {
             document.addEventListener('keydown', (e) => {
                 if (!this.isVisible) return;
@@ -673,19 +680,19 @@
                     e.preventDefault();
                 } else if (e.code === 'ArrowLeft') {
                     e.preventDefault();
-                    this.selectPreviousCut();
+                    this.goToPreviousCutSafe();
                 } else if (e.code === 'ArrowRight') {
                     e.preventDefault();
-                    this.selectNextCut();
+                    this.goToNextCutSafe();
                 } else if (e.code === 'Equal' && e.altKey) {
                     this.animationSystem.createNewEmptyCut();
                     e.preventDefault();
                 }
             });
         }
+        // ========== Phase 1: END ==========
         
-        // Phase 3.1: 正しい方向のメソッド名
-        selectPreviousCut() {
+        goToPreviousCutSafe() {
             const animData = this.animationSystem.getAnimationData();
             if (animData.cuts.length === 0) return;
             
@@ -703,7 +710,7 @@
             }
         }
         
-        selectNextCut() {
+        goToNextCutSafe() {
             const animData = this.animationSystem.getAnimationData();
             if (animData.cuts.length === 0) return;
             
@@ -720,16 +727,6 @@
                 this.eventBus.emit('animation:cut-changed', { cutIndex: newIndex, direction: 'next' });
             }
         }
-        
-        // 後方互換性のため旧メソッド名も残す
-        goToPreviousCutSafe() {
-            this.selectPreviousCut();
-        }
-        
-        goToNextCutSafe() {
-            this.selectNextCut();
-        }
-        // ========== Phase 3.1: END ==========
         
         setupAnimationEvents() {
             if (!this.eventBus) return;
@@ -796,8 +793,8 @@
             
             layerContainer.insertBefore(cutIndicator, layerContainer.firstChild);
             
-            document.getElementById('cut-prev-btn')?.addEventListener('click', () => this.selectPreviousCut());
-            document.getElementById('cut-next-btn')?.addEventListener('click', () => this.selectNextCut());
+            document.getElementById('cut-prev-btn')?.addEventListener('click', () => this.goToPreviousCutSafe());
+            document.getElementById('cut-next-btn')?.addEventListener('click', () => this.goToNextCutSafe());
             
             this.updateLayerPanelIndicator();
         }
@@ -824,6 +821,7 @@
         }
         
         updateCutsList() {
+            // 🔥 Phase 2.5改修: updateCutsListImmediate()へ委譲
             this.updateCutsListImmediate();
         }
         
@@ -1000,5 +998,3 @@
     }
     window.TegakiUI.TimelineUI = TimelineUI;
 })();
-
-console.log('✅ timeline-ui.js (Phase 3.1) loaded');
