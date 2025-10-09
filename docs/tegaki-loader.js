@@ -95,7 +95,7 @@
             const cdnLibraries = [
                 'https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js',
                 'https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js',
-                'https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js',
+                'https://unpkg.com/upng-js@2.1.0/UPNG.js',
                 'https://cdnjs.cloudflare.com/ajax/libs/UPNG-js/2.1.0/UPNG.js'
             ];
             
