@@ -1,0 +1,295 @@
+# 【Phase 3改修計画】StateManager統一とCut管理の一元化
+
+## 現状分析
+
+### 二重管理の問題
+
+**現在のデータ構造：**
+
+```
+StateManager (未使用):
+  state.timeline.frames[] ← 用語が古い
+    └─ layers[]
+      └─ strokes[]
+
+AnimationSystem (実際に使用):
+  animationData.cuts[] ← 実装済み・動作中
+    └─ layers[]
+      └─ paths[]
+```
+
+### 問題点
+
+| 項目 | 問題 |
+|------|------|
+| **用語混在** | frames vs cuts |
+| **所有権不明確** | StateManagerとAnimationSystemで管理が分散 |
+| **データ同期** | 手動で同期必要（自動同期なし） |
+| **UIの依存** | TimelineUIがAnimationSystemに直接依存 |
+
+---
+
+## Phase 3改修の目標
+
+### 🎯 最終目標
+
+**StateManager を唯一のデータソースにする**
+
+```
+StateManager（単一の真実）
+├─ state.timeline.cuts[]
+│  └─ layers[]
+│    └─ strokes[]
+│
+└─ イベント駆動で UI/Engine に通知
+     ↓
+  AnimationSystem（StateManagerのプロキシ）
+     ↓
+  TimelineUI（イベント購読者）
+```
+
+### 改修の3段階
+
+1. **Phase 3.1: StateManager をCuts対応に改修**
+   - `frames[]` → `cuts[]` に変更
+   - Cut管理用APIを追加
+   - History統合を完備
+
+2. **Phase 3.2: AnimationSystem をStateManagerのプロキシにする**
+   - AnimationSystem のメソッドが StateManager を呼ぶように変更
+   - 直接データ操作をしない
+   - イベント発行を統一
+
+3. **Phase 3.3: TimelineUI と描画エンジンを統合**
+   - StateManagerのイベントをリッスン
+   - 自動的に再描画・表示更新
+
+---
+
+## Phase 3.1: StateManager改修（Cuts対応版）
+
+### 変更内容
+
+#### 1. 初期状態をCuts構造に変更
+
+**Before（frames）:**
+```javascript
+_createInitialState() {
+    const initialFrameId = this._generateId('frame');
+    ...
+    return {
+        timeline: {
+            currentFrameId: initialFrameId,
+            frames: [{ ... }]
+        }
+    }
+}
+```
+
+**After（cuts）:**
+```javascript
+_createInitialState() {
+    const initialCutId = this._generateId('cut');
+    ...
+    return {
+        timeline: {
+            currentCutId: initialCutId,
+            cuts: [{
+                id: initialCutId,
+                name: 'CUT1',
+                duration: 0.5,
+                layers: [...]
+            }]
+        }
+    }
+}
+```
+
+#### 2. APIの改修
+
+```javascript
+// 従来のAPI（Frame対応）
+getCurrentFrame()
+getFrameById(frameId)
+
+// 新API（Cut対応）
+getCurrentCut()
+getCutById(cutId)
+getCutIndex(cutId)
+
+// Cut管理API（新規追加）
+addCut(name)              ← History統合
+removeCut(cutId)          ← History統合
+reorderCuts(fromId, toId) ← History統合
+updateCutDuration(cutId, duration)
+```
+
+#### 3. LayerAPI の改修
+
+```javascript
+// StateManager側
+addLayerToCut(cutId, name)
+removeLayerFromCut(cutId, layerId)
+
+// 使用例
+StateManager.addLayerToCut('cut_001', 'レイヤー1')
+```
+
+---
+
+## Phase 3.2: AnimationSystem をプロキシに
+
+### 改修方針
+
+**現在:**
+```javascript
+// AnimationSystem が直接データ操作
+deleteCut(cutIndex) {
+    this.animationData.cuts.splice(cutIndex, 1); // ❌ 直接操作
+}
+```
+
+**改修後:**
+```javascript
+// StateManager経由で操作
+deleteCut(cutId) {
+    StateManager.removeCut(cutId);  // ✅ StateManagerを経由
+}
+```
+
+### 実装パターン
+
+```javascript
+// AnimationSystem.js
+createNewBlankCut() {
+    // StateManager に委譲
+    const cut = StateManager.addCut(`CUT${StateManager.getCutCount() + 1}`);
+    
+    // StateManagerのイベントで自動更新される
+    // （TimelineUIはStateManagerのイベントをリッスン）
+    
+    return cut;
+}
+
+deleteCut(cutId) {
+    StateManager.removeCut(cutId);
+    // イベント: 'cut:deleted' が自動発行される
+}
+
+reorderCuts(fromId, toId) {
+    StateManager.reorderCuts(fromId, toId);
+    // イベント: 'cuts:reordered' が自動発行される
+}
+```
+
+---
+
+## Phase 3.3: UI/Engine統合
+
+### イベント駆動設計
+
+```javascript
+// StateManagerがイベントを発行
+'cut:created'       → { cutId, cut, index }
+'cut:deleted'       → { cutId, index }
+'cut:updated'       → { cutId, duration }
+'cuts:reordered'    → { oldIndex, newIndex }
+
+'layer:added'       → { cutId, layer }
+'layer:removed'     → { cutId, layerId }
+
+'stroke:added'      → { cutId, layerId, stroke }
+'stroke:removed'    → { cutId, layerId, strokeId }
+```
+
+### TimelineUI側
+
+```javascript
+// TimelineUIがStateManagerのイベントをリッスン
+setupStateManagerListeners() {
+    this.eventBus.on('cut:created', (data) => {
+        this.updateCutsListImmediate();
+    });
+    
+    this.eventBus.on('cut:deleted', (data) => {
+        this.updateCutsListImmediate();
+    });
+    
+    this.eventBus.on('cuts:reordered', (data) => {
+        this.updateCutsListImmediate();
+    });
+}
+```
+
+---
+
+## 実装スケジュール
+
+### Week 1: Phase 3.1実装
+- [ ] StateManager を Cuts構造に変更
+- [ ] Cut管理API実装
+- [ ] History統合
+- [ ] テスト（アンドゥ/リドゥ動作確認）
+
+### Week 2: Phase 3.2実装  
+- [ ] AnimationSystem をStateManager プロキシ化
+- [ ] イベント統一
+- [ ] 既存コードの互換性確認
+
+### Week 3: Phase 3.3統合
+- [ ] TimelineUI統合
+- [ ] 全体テスト
+- [ ] パフォーマンス最適化
+
+---
+
+## 改修による効果
+
+| 項目 | Before | After |
+|------|--------|-------|
+| **データ管理** | 二重管理 | 統一管理 |
+| **更新の一貫性** | 手動同期 | 自動同期 |
+| **テスト性** | 複雑 | 単純 |
+| **拡張性** | 困難 | 容易 |
+| **パフォーマンス** | 不安定 | 最適化可能 |
+
+---
+
+## 次のステップ
+
+**Phase 3.1 を開始する前に：**
+
+1. ✅ timeline-ui.js の改修完了確認
+2. ✅ animation-system.js Phase2.5完了確認  
+3. 📋 state-manager.js の改修開始
+
+**改修順序：**
+1. state-manager.js （Cuts対応）
+2. animation-system.js （StateManagerプロキシ化）
+3. timeline-ui.js （イベント統一）
+
+---
+
+## 注意事項
+
+### ⚠️ 破壊的変更
+- StateManager の `frames[]` → `cuts[]` に変更
+- 既存のコードが `getCurrentFrame()` を使用している場合、`getCurrentCut()` に置き換え需要
+
+### 🔄 後方互換性
+- AnimationSystem の public API は変わらない
+- TimelineUI の public API は変わらない
+- 内部実装のみ変更
+
+### 📊 テスト項目
+- [ ] Undo/Redo が全操作で動作
+- [ ] イベント発行タイミング正確
+- [ ] UIの表示更新が即座
+
+---
+
+## 質問・検討事項
+
+1. **Phase 3.1をいつ開始する？** → 準備完了後すぐ開始
+2. **既存データとの互換性は？** → Phase 3.1で新規作成のみ対応
+3. **段階的な移行は可能？** → 可能（Phase 3.2で両者共存可能）

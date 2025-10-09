@@ -1,0 +1,416 @@
+================================================================================
+  ベクターペン段階的改修計画書 v1.0
+  作成日: 2025-10-09
+  対象: PixiJS v8.13 お絵かきツール
+================================================================================
+
+【改修目的】
+  - 現状: 円の連続による粗い線 → 筆圧対応・補正された滑らかなベクター線
+  - ズームレベルに応じた線幅の正規化
+  - 段階的実装により、各Phaseで動作確認可能な設計
+
+【技術スタック】
+  - PixiJS v8.13
+  - Perfect Freehand v1.2+ (CDN: https://cdn.skypack.dev/perfect-freehand)
+  - ES2023 (no ESM, グローバル変数使用)
+
+【全体フロー】
+  1. PointerEvent発火 (canvas上)
+  2. DrawingEngine.startDrawing()    → パス開始、初期点記録
+  3. DrawingEngine.continueDrawing() → 座標収集、リアルタイム描画
+  4. DrawingEngine.stopDrawing()     → 補正適用、History登録
+  5. LayerSystem.rebuildPathGraphics() → Undo/Redo時の再描画
+
+
+================================================================================
+  Phase 1: Perfect Freehand導入 + 基本補正
+================================================================================
+
+【目標】
+  - Perfect Freehandライブラリの統合
+  - 円の連続 → 補正された滑らかな線への置き換え
+  - 既存のパスデータ構造維持(後方互換性)
+
+【改修ファイル】
+  ■ index.html
+    - <script>タグ追加 (Perfect Freehand CDN読み込み)
+    - 位置: <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0..."></script> の直後
+    - 記述例:
+      <script src="https://cdn.skypack.dev/perfect-freehand@1.2.0"></script>
+
+  ■ core-engine.js
+    - DrawingEngineクラスの改修
+    - 改修対象メソッド:
+      1. constructor() - Perfect Freehandオプション初期化
+      2. startDrawing() - ストローク開始処理
+      3. continueDrawing() - 座標収集+リアルタイム補正描画
+      4. stopDrawing() - 最終補正+History登録
+      5. addPathToActiveLayer() - レイヤー変形対応維持
+
+【改修詳細: DrawingEngine】
+
+  ▼ 1. constructor() 追加プロパティ
+    this.strokeOptions = {
+      size: 16,              // ブラシサイズ
+      thinning: 0.5,         // 筆圧による細さ変化 (0-1)
+      smoothing: 0.5,        // 補正強度 (0-1)
+      streamline: 0.5,       // 手ブレ補正 (0-1)
+      easing: (t) => t,      // イージング関数
+      simulatePressure: true // 筆圧シミュレート (速度ベース)
+    };
+
+  ▼ 2. startDrawing(screenX, screenY) 変更点
+    - 現状: graphics.circle() で初期点描画
+    - 変更後: ポイント配列のみ初期化、描画は continueDrawing() に委譲
+    - this.currentPath.points = [{ x, y, pressure: 0.5 }];
+    - this.currentPath.graphics = new PIXI.Graphics(); (空のまま)
+
+  ▼ 3. continueDrawing(screenX, screenY) 変更点
+    - 現状: 各点ごとに circle() 描画
+    - 変更後:
+      (a) 座標収集: this.currentPath.points.push({ x, y, pressure })
+      (b) Perfect Freehand呼び出し:
+          const outlinePoints = getStroke(this.currentPath.points, this.strokeOptions);
+      (c) PIXI.Graphics更新:
+          this.currentPath.graphics.clear();
+          this.currentPath.graphics.poly(outlinePoints);
+          this.currentPath.graphics.fill({ color, alpha });
+
+  ▼ 4. stopDrawing() 変更点
+    - 最終補正適用 (continueDrawing()と同じ処理)
+    - this.currentPath.isComplete = true;
+    - History.push() 前にパスデータ確定
+
+  ▼ 5. パスデータ構造拡張
+    pathData = {
+      id: string,
+      points: [{ x: number, y: number, pressure: number }], // pressure追加
+      color: number,
+      size: number,
+      opacity: number,
+      tool: 'pen' | 'eraser',
+      isComplete: boolean,
+      strokeOptions: { ...this.strokeOptions } // 新規追加
+    };
+
+【改修ファイル: system/layer-system.js】
+  ■ LayerSystem.rebuildPathGraphics(path)
+    - Undo/Redo時のパス再描画処理
+    - 変更点:
+      if (path.strokeOptions && window.getStroke) {
+        const outlinePoints = getStroke(path.points, path.strokeOptions);
+        path.graphics = new PIXI.Graphics();
+        path.graphics.poly(outlinePoints);
+        path.graphics.fill({ color: path.color, alpha: path.opacity });
+      } else {
+        // 旧形式フォールバック (円の連続)
+        path.graphics = new PIXI.Graphics();
+        path.points.forEach(pt => {
+          path.graphics.circle(pt.x, pt.y, path.size / 2);
+          path.graphics.fill({ color: path.color, alpha: path.opacity });
+        });
+      }
+
+【動作確認】
+  1. ペンツールで線を描画 → 滑らかな線になるか
+  2. Ctrl+Z (Undo) → 線が消えるか
+  3. Ctrl+Y (Redo) → 線が復元されるか (補正維持)
+  4. 消しゴムツール → 既存動作維持されているか
+
+【Phase 1完了基準】
+  ✓ Perfect Freehand統合完了
+  ✓ 線の補正が視覚的に確認できる
+  ✓ Undo/Redo動作正常
+  ✓ 既存機能（消しゴム、レイヤー操作）に影響なし
+
+
+================================================================================
+  Phase 2: ズームレベル対応 + スケール不変線幅
+================================================================================
+
+【目標】
+  - 拡大時に線が太く見える問題の解決
+  - カメラズーム率に応じた線幅の正規化
+  - 描画時の座標変換精度向上
+
+【改修ファイル】
+  ■ core-engine.js (DrawingEngine)
+  ■ system/camera-system.js (参考: スケール取得)
+
+【改修詳細: DrawingEngine】
+
+  ▼ 1. getScaledBrushSize() 新規メソッド追加
+    getScaledBrushSize() {
+      const currentScale = this.cameraSystem.camera.scale;
+      return this.brushSize / currentScale;
+    }
+
+  ▼ 2. continueDrawing() 変更点
+    - strokeOptionsのsize更新:
+      this.strokeOptions.size = this.getScaledBrushSize();
+    - Perfect Freehand呼び出し前に実行
+
+  ▼ 3. パスデータに元サイズ記録
+    pathData.originalSize = this.brushSize; // ズーム前の実サイズ
+    pathData.scaleAtDrawTime = this.cameraSystem.camera.scale; // 描画時倍率
+
+【改修ファイル: system/layer-system.js】
+  ■ rebuildPathGraphics(path) 変更点
+    - 現在のズーム率を考慮した再描画:
+      const currentScale = this.cameraSystem.camera.scale;
+      const scaledSize = path.originalSize / currentScale;
+      const scaledOptions = { ...path.strokeOptions, size: scaledSize };
+      const outlinePoints = getStroke(path.points, scaledOptions);
+
+【改修ファイル: system/camera-system.js】
+  ■ 参考メソッド (改修不要、参照のみ)
+    - this.camera.scale: 現在のズーム倍率を取得
+    - updateCamera(): ズーム変更時のイベント発火
+
+【動作確認】
+  1. 線を描画後、Ctrl+ホイールで拡大 → 線幅が一定に見えるか
+  2. 拡大状態で描画 → 縮小時も線幅が一定か
+  3. 異なるズームレベルで描画した線が混在 → すべて正しい太さか
+
+【Phase 2完了基準】
+  ✓ ズームしても線幅が視覚的に一定
+  ✓ 異なるズームレベルで描画した線の整合性確保
+  ✓ Undo/Redo時も線幅正常
+
+
+================================================================================
+  Phase 3: 筆圧対応 (PointerEvent.pressure利用)
+================================================================================
+
+【目標】
+  - デバイス筆圧検知 (ペンタブ、iPad Pencil等)
+  - 筆圧に応じた線の太さ変化
+  - 筆圧非対応デバイスでは速度ベースの自動調整
+
+【改修ファイル】
+  ■ core-engine.js (DrawingEngine, setupCanvasEvents)
+
+【改修詳細: DrawingEngine】
+
+  ▼ 1. startDrawing(screenX, screenY, pressure = 0.5) 引数追加
+    - pressureパラメータを受け取る
+    - this.currentPath.points = [{ x, y, pressure }];
+
+  ▼ 2. continueDrawing(screenX, screenY, pressure = 0.5) 引数追加
+    - pressure値を座標と一緒に記録
+    - this.currentPath.points.push({ x, y, pressure });
+
+  ▼ 3. strokeOptions設定変更
+    this.strokeOptions.simulatePressure = false; // 実筆圧使用時はfalse
+    this.strokeOptions.thinning = 0.7; // 筆圧変化を強調
+
+【改修詳細: CoreEngine.setupCanvasEvents()】
+  ■ pointerdownイベント変更
+    canvas.addEventListener('pointerdown', (e) => {
+      const pressure = e.pressure || 0.5; // フォールバック
+      this.drawingEngine.startDrawing(x, y, pressure);
+    });
+
+  ■ pointermoveイベント変更
+    canvas.addEventListener('pointermove', (e) => {
+      const pressure = e.pressure || this.estimatePressure(e); // 速度ベース推定
+      this.drawingEngine.continueDrawing(x, y, pressure);
+    });
+
+  ▼ estimatePressure(event) 新規メソッド
+    // 筆圧非対応デバイス用: 移動速度から疑似筆圧算出
+    estimatePressure(event) {
+      if (event.pressure > 0 && event.pressure < 1) {
+        return event.pressure; // 実筆圧優先
+      }
+      
+      if (!this.lastPointerTime) {
+        this.lastPointerTime = Date.now();
+        return 0.5;
+      }
+      
+      const now = Date.now();
+      const deltaTime = now - this.lastPointerTime;
+      const velocity = deltaTime > 0 ? 1000 / deltaTime : 0;
+      
+      this.lastPointerTime = now;
+      
+      // 速度が速い → 筆圧低い (0.3-0.7の範囲)
+      return Math.max(0.3, Math.min(0.7, 1 - velocity / 100));
+    }
+
+【動作確認】
+  1. ペンタブ使用時: 筆圧に応じて線の太さが変化するか
+  2. マウス使用時: 速度に応じて太さが変化するか (滑らかさ)
+  3. Undo/Redo: 筆圧情報が維持されているか
+
+【Phase 3完了基準】
+  ✓ 筆圧対応デバイスで正しく検知
+  ✓ 非対応デバイスでも自然な線
+  ✓ パスデータに筆圧情報が記録される
+
+
+================================================================================
+  Phase 4: 消しゴムの透明度対応 + アルファ合成
+================================================================================
+
+【目標】
+  - 消しゴムをキャンバスカラー塗りつぶし → 本物の透明化
+  - レイヤー合成時の正しいアルファブレンド
+  - 既存の消しゴム履歴との互換性維持
+
+【改修ファイル】
+  ■ core-engine.js (DrawingEngine)
+  ■ system/layer-system.js (レイヤー合成)
+
+【改修詳細: DrawingEngine】
+
+  ▼ 1. continueDrawing() 消しゴム処理変更
+    - 現状: color = CONFIG.background.color
+    - 変更後:
+      if (this.currentTool === 'eraser') {
+        // アルファマスクとして描画
+        this.currentPath.graphics.blendMode = PIXI.BLEND_MODES.ERASE;
+        // または destination-out合成
+      }
+
+  ▼ 2. パスデータ拡張
+    pathData.blendMode = this.currentTool === 'eraser' 
+      ? PIXI.BLEND_MODES.ERASE 
+      : PIXI.BLEND_MODES.NORMAL;
+
+【改修ファイル: system/layer-system.js】
+  ■ rebuildPathGraphics(path) 変更点
+    - path.graphics.blendMode = path.blendMode || PIXI.BLEND_MODES.NORMAL;
+    - 消しゴムパスの再描画時にブレンドモード復元
+
+  ■ レイヤー合成設定
+    - layer.blendMode = PIXI.BLEND_MODES.NORMAL; (通常レイヤー)
+    - RenderTextureを使った消しゴム合成の検討
+
+【動作確認】
+  1. 線を描画後、消しゴムで消す → 完全に透明になるか
+  2. 複数レイヤー重ね → 下のレイヤーが見えるか
+  3. Undo/Redo → 消しゴム履歴が正しく復元されるか
+
+【Phase 4完了基準】
+  ✓ 消しゴムが本当の透明化として動作
+  ✓ レイヤー合成が正しく機能
+  ✓ 既存の消しゴムデータとの互換性維持
+
+
+================================================================================
+  Phase 5 (オプション): カスタムシェーダー + 高度なアンチエイリアス
+================================================================================
+
+【目標】
+  - WebGL2カスタムシェーダーによる線品質向上
+  - マルチサンプリングアンチエイリアス (MSAA)
+  - グラデーション対応 (筆圧 → 透明度変換)
+
+【検討事項】
+  - PixiJS FilterまたはMeshを使用
+  - パフォーマンスへの影響評価
+  - Phase 1-4完了後に実施
+
+【改修ファイル】
+  ■ 新規ファイル: system/stroke-shader.js
+  ■ core-engine.js (シェーダー統合)
+
+【詳細は Phase 1-4 完了後に設計】
+
+
+================================================================================
+  改修時の注意事項
+================================================================================
+
+【必須確認事項】
+  ✓ 各Phase完了後に動作確認テストを実施
+  ✓ Historyシステムとの連携を常に確認 (Undo/Redo)
+  ✓ AnimationSystemとの整合性 (カットサムネイル更新)
+  ✓ ブラウザコンソールにエラーが出ていないか
+  ✓ 既存のパスデータが壊れていないか (後方互換性)
+
+【デバッグポイント】
+  - console.log() は最小限に
+  - Perfect Freehandの読み込み確認: window.getStroke存在チェック
+  - パスデータ構造のバリデーション
+  - ズーム率とブラシサイズの計算確認
+
+【パフォーマンス考慮】
+  - continueDrawing()内の処理は最適化必須 (60fps維持)
+  - Perfect Freehand呼び出し頻度の調整 (間引き処理検討)
+  - ポイント数が多い場合の簡略化
+
+【コーディング規約】
+  - ES2023準拠
+  - グローバル変数使用 (window.getStroke等)
+  - 命名規則: camelCase
+  - コメントは簡潔に
+
+
+================================================================================
+  改修完了チェックリスト
+================================================================================
+
+Phase 1: Perfect Freehand導入
+  [ ] Perfect Freehand CDN読み込み成功
+  [ ] DrawingEngine改修完了
+  [ ] 線の補正が視覚的に確認できる
+  [ ] Undo/Redo動作正常
+  [ ] 既存機能に影響なし
+
+Phase 2: ズームレベル対応
+  [ ] getScaledBrushSize()実装
+  [ ] ズーム時の線幅一定化確認
+  [ ] 異なるズームレベルでの描画整合性確認
+
+Phase 3: 筆圧対応
+  [ ] PointerEvent.pressure取得実装
+  [ ] 筆圧変化の視覚的確認
+  [ ] 非対応デバイスでのフォールバック動作確認
+
+Phase 4: 消しゴム透明度対応
+  [ ] BLEND_MODES.ERASE実装
+  [ ] 透明化動作確認
+  [ ] レイヤー合成正常動作
+
+Phase 5: カスタムシェーダー (オプション)
+  [ ] 設計書作成
+  [ ] 実装
+  [ ] パフォーマンステスト
+
+
+================================================================================
+  改修スケジュール目安
+================================================================================
+
+Phase 1: 2-3時間 (ライブラリ統合 + 基本動作確認)
+Phase 2: 1-2時間 (ズーム対応)
+Phase 3: 2-3時間 (筆圧検知 + 疑似筆圧実装)
+Phase 4: 3-4時間 (消しゴム改修 + 合成処理)
+Phase 5: 5-8時間 (シェーダー設計 + 実装) ※オプション
+
+合計: 8-12時間 (Phase 1-4のみ)
+
+
+================================================================================
+  参考リンク
+================================================================================
+
+Perfect Freehand:
+  - GitHub: https://github.com/steveruizok/perfect-freehand
+  - CDN: https://cdn.skypack.dev/perfect-freehand@1.2.0
+  - API Docs: https://perfectfreehand.com/
+
+PixiJS v8.13:
+  - Graphics API: https://pixijs.download/release/docs/scene.Graphics.html
+  - BlendModes: https://pixijs.download/release/docs/constants.BLEND_MODES.html
+
+PointerEvent:
+  - MDN: https://developer.mozilla.org/en-US/docs/Web/API/PointerEvent/pressure
+
+
+================================================================================
+  END OF DOCUMENT
+================================================================================
