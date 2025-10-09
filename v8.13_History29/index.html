@@ -110,8 +110,28 @@
         .progress-text { text-align: center; font-size: 12px; font-weight: 600; color: var(--futaba-maroon); font-family: monospace; }
         .export-actions { display: flex; gap: 12px; margin-top: 16px; }
         .export-actions .action-button { flex: 1; }
-        .preview-container { max-height: 350px; overflow: hidden; }
-        .preview-container img { max-width: 200px; max-height: 200px; width: auto; height: auto; object-fit: contain; }
+        .preview-container { 
+            max-height: 350px; 
+            overflow: auto;
+            margin: 8px 0;
+            text-align: center;
+            background: var(--futaba-background);
+            border: 1px solid var(--futaba-light-medium);
+            border-radius: 6px;
+            padding: 8px;
+        }
+        .preview-container img { 
+            max-width: 100%; 
+            max-height: 300px; 
+            width: auto; 
+            height: auto; 
+            object-fit: contain;
+            border: 2px solid var(--futaba-light-medium);
+            border-radius: 4px;
+            cursor: context-menu;
+            display: block;
+            margin: 0 auto;
+        }
     </style>
 </head>
 <body>
@@ -146,87 +166,11 @@
             <div class="popup-panel" id="pen-settings" style="left: 60px; top: 100px;">
                 <div class="popup-title">ベクターペンツール設定</div>
                 <div class="setting-group">
-                    <div class="setting-label">サイズ</div>
-                    <div class="slider-container">
-                        <div class="slider" id="pen-size-slider"><div class="slider-track" id="pen-size-track"></div><div class="slider-handle" id="pen-size-handle"></div></div>
-                        <div class="slider-value" id="pen-size-value">16.0px</div>
-                    </div>
-                </div>
-                <div class="setting-group">
-                    <div class="setting-label">不透明度</div>
-                    <div class="slider-container">
-                        <div class="slider" id="pen-opacity-slider"><div class="slider-track" id="pen-opacity-track"></div><div class="slider-handle" id="pen-opacity-handle"></div></div>
-                        <div class="slider-value" id="pen-opacity-value">85.0%</div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="layer-transform-panel" id="layer-transform-panel">
-                <div class="panel-sections">
-                    <div class="panel-section">
-                        <div class="compact-slider-group">
-                            <div class="compact-slider"><div class="compact-slider-label">X</div><div class="slider" id="layer-x-slider"><div class="slider-track"></div><div class="slider-handle"></div></div><div class="slider-value" id="layer-x-value">0px</div></div>
-                            <div class="compact-slider"><div class="compact-slider-label">Y</div><div class="slider" id="layer-y-slider"><div class="slider-track"></div><div class="slider-handle"></div></div><div class="slider-value" id="layer-y-value">0px</div></div>
-                        </div>
-                    </div>
-                    <div class="panel-section">
-                        <div class="compact-slider-group">
-                            <div class="compact-slider"><div class="compact-slider-label">回転</div><div class="slider" id="layer-rotation-slider"><div class="slider-track"></div><div class="slider-handle"></div></div><div class="slider-value" id="layer-rotation-value">0°</div></div>
-                            <div class="compact-slider"><div class="compact-slider-label">拡縮</div><div class="slider" id="layer-scale-slider"><div class="slider-track"></div><div class="slider-handle"></div></div><div class="slider-value" id="layer-scale-value">1.00x</div></div>
-                        </div>
-                    </div>
-                    <div class="panel-section">
-                        <div class="flip-section">
-                            <div class="flip-button" id="flip-horizontal-btn">水平反転</div>
-                            <div class="flip-button" id="flip-vertical-btn">垂直反転</div>
-                        </div>
-                    </div>
-                </div>
-            </div>
-            
-            <div class="status-panel">
-                <div class="status-group">
-                    <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
-                    <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
-                    <div class="status-item">Layer: <span id="current-layer">レイヤー0</span></div>
-                    <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
-                    <div class="status-item">Transform: <span id="transform-info">x:0 y:0 s:1.0 r:0°</span></div>
-                    <div class="status-item">DPR: <span id="dpr-info">1.0</span></div>
-                </div>
-                <div class="status-group">
-                    <div class="status-item">FPS: <span id="fps">60</span></div>
-                    <div class="status-item">History: <span id="history-info">0/50</span></div>
-                </div>
-            </div>
-            
-            <div class="layer-panel-container" id="layer-panel-container">
-                <div class="layer-controls-row">
-                    <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加 (Ctrl+L)">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
-                    </div>
-                    <div class="folder-add-button" id="add-folder-btn" title="フォルダ追加（準備中）">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
-                    </div>
-                </div>
-                <div class="layer-panel-items" id="layer-list"></div>
-            </div>
-            
-            <div class="popup-panel" id="resize-settings" style="left: 60px; top: 150px;">
-                <div class="popup-title">キャンバスリサイズ</div>
-                <div class="setting-group">
-                    <div class="setting-label">キャンバスサイズ</div>
-                    <div class="size-input-group">
-                        <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
-                        <div class="size-multiply">×</div>
-                        <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
-                    </div>
-                </div>
-                <div class="setting-group">
                     <div class="action-button" id="apply-resize">適用</div>
                 </div>
             </div>
             
-            <div class="popup-panel" id="export-popup" style="left: 60px; top: 10px; min-width: 120px;">
+            <div class="popup-panel" id="export-popup" style="left: 60px; top: 10px; min-width: 420px;">
                 <div class="popup-title">画像・アニメ出力</div>
                 <div class="format-selection">
                     <button class="format-btn selected" data-format="png">PNG</button>
@@ -241,9 +185,14 @@
                     <div class="progress-bar"><div class="progress-fill"></div></div>
                     <div class="progress-text">0%</div>
                 </div>
+                <div class="preview-container" id="preview-container" style="display: none;">
+
+                    <img id="preview-image" alt="Preview" />
+                </div>
+                <div class="export-status" id="export-status" style="display: none; font-size: 12px; color: var(--text-secondary); margin: 8px 0;"></div>
                 <div class="export-actions">
-                        <button class="action-button" id="export-execute">ダウンロード</button>
-                        <button class="action-button secondary" id="export-copy">プレビュー</button>
+                    <button class="action-button" id="export-execute">ダウンロード</button>
+                    <button class="action-button secondary" id="export-preview">プレビュー</button>
                 </div>
             </div>
         </div>
@@ -251,8 +200,9 @@
 
     <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
     <script src="https://unpkg.com/upng-js@2.1.0/UPNG.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
     <script src="config.js"></script>
@@ -403,6 +353,8 @@ function checkPhase1Dependencies() {
         { name: 'TEGAKI_CONFIG', obj: window.TEGAKI_CONFIG },
         { name: 'TegakiEventBus', obj: window.TegakiEventBus },
         { name: 'Sortable', obj: window.Sortable },
+        { name: 'pako', obj: window.pako },
+        { name: 'UPNG', obj: window.UPNG },
         { name: 'GIF', obj: window.GIF }
     ];
     
@@ -630,7 +582,80 @@ try {
 } catch (error) {}
     </script>
 </body>
-</html> data-format="apng">APNG</button>
-                    <button class="format-btn disabled" data-format="webp">WEBP</button>
-                    <button class="format-btn disabled" data-format="mp4">MP4</button>
-                    <button class="format-btn disabled"
+</html>group">
+                    <div class="setting-label">サイズ</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-size-slider"><div class="slider-track" id="pen-size-track"></div><div class="slider-handle" id="pen-size-handle"></div></div>
+                        <div class="slider-value" id="pen-size-value">16.0px</div>
+                    </div>
+                </div>
+                <div class="setting-group">
+                    <div class="setting-label">不透明度</div>
+                    <div class="slider-container">
+                        <div class="slider" id="pen-opacity-slider"><div class="slider-track" id="pen-opacity-track"></div><div class="slider-handle" id="pen-opacity-handle"></div></div>
+                        <div class="slider-value" id="pen-opacity-value">85.0%</div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="layer-transform-panel" id="layer-transform-panel">
+                <div class="panel-sections">
+                    <div class="panel-section">
+                        <div class="compact-slider-group">
+                            <div class="compact-slider"><div class="compact-slider-label">X</div><div class="slider" id="layer-x-slider"><div class="slider-track"></div><div class="slider-handle"></div></div><div class="slider-value" id="layer-x-value">0px</div></div>
+                            <div class="compact-slider"><div class="compact-slider-label">Y</div><div class="slider" id="layer-y-slider"><div class="slider-track"></div><div class="slider-handle"></div></div><div class="slider-value" id="layer-y-value">0px</div></div>
+                        </div>
+                    </div>
+                    <div class="panel-section">
+                        <div class="compact-slider-group">
+                            <div class="compact-slider"><div class="compact-slider-label">回転</div><div class="slider" id="layer-rotation-slider"><div class="slider-track"></div><div class="slider-handle"></div></div><div class="slider-value" id="layer-rotation-value">0°</div></div>
+                            <div class="compact-slider"><div class="compact-slider-label">拡縮</div><div class="slider" id="layer-scale-slider"><div class="slider-track"></div><div class="slider-handle"></div></div><div class="slider-value" id="layer-scale-value">1.00x</div></div>
+                        </div>
+                    </div>
+                    <div class="panel-section">
+                        <div class="flip-section">
+                            <div class="flip-button" id="flip-horizontal-btn">水平反転</div>
+                            <div class="flip-button" id="flip-vertical-btn">垂直反転</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="status-panel">
+                <div class="status-group">
+                    <div class="status-item">Canvas: <span id="canvas-info">400×400px</span></div>
+                    <div class="status-item">Tool: <span id="current-tool">ベクターペン</span></div>
+                    <div class="status-item">Layer: <span id="current-layer">レイヤー0</span></div>
+                    <div class="status-item">座標: <span id="coordinates">x: 0, y: 0</span></div>
+                    <div class="status-item">Transform: <span id="transform-info">x:0 y:0 s:1.0 r:0°</span></div>
+                    <div class="status-item">DPR: <span id="dpr-info">1.0</span></div>
+                </div>
+                <div class="status-group">
+                    <div class="status-item">FPS: <span id="fps">60</span></div>
+                    <div class="status-item">History: <span id="history-info">0/50</span></div>
+                </div>
+            </div>
+            
+            <div class="layer-panel-container" id="layer-panel-container">
+                <div class="layer-controls-row">
+                    <div class="layer-add-button" id="add-layer-btn" title="レイヤー追加 (Ctrl+L)">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><line x1="12" x2="12" y1="5" y2="19"/><line x1="5" x2="19" y1="12" y2="12"/></svg>
+                    </div>
+                    <div class="folder-add-button" id="add-folder-btn" title="フォルダ追加（準備中）">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M12 10v6"/><path d="M9 13h6"/><path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z"/></svg>
+                    </div>
+                </div>
+                <div class="layer-panel-items" id="layer-list"></div>
+            </div>
+            
+            <div class="popup-panel" id="resize-settings" style="left: 60px; top: 150px;">
+                <div class="popup-title">キャンバスリサイズ</div>
+                <div class="setting-group">
+                    <div class="setting-label">キャンバスサイズ</div>
+                    <div class="size-input-group">
+                        <input type="number" class="size-input" id="canvas-width" min="100" max="4096" value="400">
+                        <div class="size-multiply">×</div>
+                        <input type="number" class="size-input" id="canvas-height" min="100" max="4096" value="400">
+                    </div>
+                </div>
+                <div class="setting-
