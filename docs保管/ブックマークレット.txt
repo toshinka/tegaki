@@ -1,9 +1,13 @@
+javascript:(function(){if(!window.tegakiStart){var s=document.createElement('script');s.charset='UTF-8';s.src='https://toshinka.github.io/tegaki/tegaki-loader.js';document.body.appendChild(s)}else{window.tegakiStart()}})();
+
+
+
 /**
  * めぶき/ふたば用ブックマークレット
  * お絵かきツールを別タブで起動し、めぶきモードを有効化
  */
 javascript:void(((d) => {
-    const toolUrl = 'https://toshinka.github.io/tegaki/?mode=mebuki';
+    const toolUrl = 'https://toshinka.github.io/tegaki/tegaki-loader.js';
     
     const toolTab = window.open(toolUrl, 'mebuki_tegaki');
     
