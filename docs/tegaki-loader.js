@@ -173,7 +173,7 @@ console.log('[Tegaki] ✓ All Tegaki scripts scheduled for load');
         
         // ===== スクリプト読込ヘルパー =====
         loadScript(url) {
-            return new Promise((resolve, reject) => {
+            return new Promise(resolve, reject) => {
                 const script = document.createElement('script');
                 script.src = url;
                 script.charset = 'UTF-8';
