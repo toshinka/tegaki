@@ -198,19 +198,20 @@
         </div>
     </div>
 
-    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
-    <script src="https://cdn.skypack.dev/perfect-freehand@1.2.0"></script>
-    <script type="module">
-        import getStroke from 'https://cdn.skypack.dev/perfect-freehand@1.2.0';
-        window.getStroke = getStroke;
-        console.log('✅ Perfect Freehand loaded:', typeof window.getStroke);
-    </script>
+<script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+
+<!-- Perfect Freehand (Skypack経由) -->
+<script type="module">
+  import getStroke from 'https://cdn.skypack.dev/perfect-freehand@1.2.0';
+  window.getStroke = getStroke;
+</script>
+
     <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
     <script src="https://unpkg.com/upng-js@2.1.0/UPNG.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
-
+    
     <script src="config.js"></script>
     <script src="coordinate-system.js"></script>
     <script src="system/event-bus.js"></script>
@@ -226,6 +227,15 @@
     <script src="system/exporters/png-exporter.js"></script>
     <script src="system/exporters/apng-exporter.js"></script>
     <script src="system/exporters/gif-exporter.js"></script>
+
+<!-- ⭐ DrawingEngine分割モジュール（core-runtime.jsより前） -->
+<script src="system/drawing/stroke-recorder.js"></script>
+<script src="system/drawing/stroke-renderer.js"></script>
+<script src="system/drawing/brush-settings.js"></script>
+<script src="system/drawing/pressure-handler.js"></script>
+<script src="system/drawing/stroke-transformer.js"></script>
+<script src="system/drawing/drawing-engine.js"></script>
+
     <script src="ui/timeline-ui.js"></script>
     <script src="ui/album-popup.js"></script>
     <script src="ui/export-popup.js"></script>
