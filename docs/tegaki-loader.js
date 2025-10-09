@@ -152,7 +152,7 @@ for (const script of scripts) {
 }
 
 function awaitLoader(path) {
-  return new Promise((resolve, reject) => {
+  return new Promise(resolve, reject) => {
     const el = document.createElement('script');
     el.charset = 'UTF-8';
     el.src = path;
