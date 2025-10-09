@@ -1,6 +1,6 @@
 // ==================================================
 // tegaki-loader.js (動作確認用軽量版)
-// めぶきちゃんねる連携テスト用 v1.2
+// めぶきちゃんねる連携テスト用 v1.3
 // スクリプト読込なし・400x400キャンバス・ふたばカラー
 // ==================================================
 
@@ -82,7 +82,7 @@
                 width: 100vw;
                 height: 100vh;
                 z-index: 999999;
-                background: #f0e0d6;
+                background: #ffffee;
                 display: flex;
                 flex-direction: column;
                 align-items: center;
@@ -103,7 +103,7 @@
             
             const canvasWrapper = document.createElement('div');
             canvasWrapper.style.cssText = `
-                background: #f0e0d6;
+                background: white;
                 padding: 20px;
                 border-radius: 12px;
                 border: 3px solid #800000;
@@ -115,7 +115,7 @@
             this.canvas.height = 400;
             this.canvas.style.cssText = `
                 display: block;
-                background: white;
+                background: #f0e0d6;
                 cursor: crosshair;
                 border: 2px solid #cf9c97;
             `;
