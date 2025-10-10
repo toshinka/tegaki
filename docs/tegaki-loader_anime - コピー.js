@@ -17,10 +17,9 @@
         // ↓↓↓↓↓ このURLはご自身の環境に合わせて書き換えてください ↓↓↓↓↓
         tegaki: 'https://cdn.jsdelivr.net/gh/toshinka/tegaki/docs/tegaki_anime.js', // 例: GitHub PagesのURL
         upng: 'https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.min.js',
-        pako: 'https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js', 
+        pako: 'https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js', // 💡 APNG圧縮用のpako.jsを追加
         gif: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js',
-        // 💡 Workerスクリプトはテキストとして取得するため、URLはそのまま残す
-        gifWorker: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js' 
+        gifWorker: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js'
     };
     const MEBUKI_TIMEOUT = 3000;
     const MEBUKI_SELECTORS = {
@@ -37,17 +36,6 @@
             script.onload = resolve;
             script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
             document.head.appendChild(script);
-        });
-    }
-    
-    // 💡 Workerスクリプトのテキスト内容を取得するユーティリティを追加
-    function loadText(url) {
-        return fetch(url).then(response => {
-            if (!response.ok) {
-                // MIMEタイプエラーの原因となるHTML応答を防ぐため、エラー応答をチェック
-                throw new Error(`Failed to fetch script text: ${response.status} ${response.statusText}`);
-            }
-            return response.text();
         });
     }
 
@@ -109,6 +97,7 @@
             if (this.boardType === 'mebuki') {
                 const postBtn = document.querySelector(MEBUKI_SELECTORS.postButton);
                 if (postBtn) {
+                    // ポストボタンを押してフォームを表示
                     postBtn.click();
                     await this.wait(300);
                 }
@@ -158,37 +147,23 @@
             document.body.appendChild(this.loadingEl);
 
             try {
-                // ライブラリを読み込み (gifWorkerはテキストとして別途取得)
-                const [
-                    gifWorkerText
-                ] = await Promise.all([
-                    loadText(SCRIPT_URLS.gifWorker), // 💡 Workerスクリプトのテキストをフェッチ
+                // ライブラリを読み込み
+                await Promise.all([
                     loadScript(SCRIPT_URLS.upng),
-                    loadScript(SCRIPT_URLS.pako), 
+                    loadScript(SCRIPT_URLS.pako), // 💡 pakoを読み込む
                     loadScript(SCRIPT_URLS.gif),
                     loadScript(SCRIPT_URLS.tegaki)
                 ]);
                 
-                // 1. GIF Workerの修正
-                if (window.GIF && window.GIF.prototype && gifWorkerText) {
-                    // 💡 WorkerスクリプトのテキストからBlob URLを作成し、クロスオリジンを回避
-                    const blob = new Blob([gifWorkerText], { type: 'application/javascript' });
-                    const blobURL = URL.createObjectURL(blob);
-                    
+                // GIFライブラリのバグ修正を適用 (以前の修正)
+                if (window.GIF && window.GIF.prototype) {
                     if (typeof window.GIF.prototype.options === 'undefined') {
                         window.GIF.prototype.options = {};
                     }
-                    window.GIF.prototype.options.workerScript = blobURL;
-                    console.log('GIF worker script set using Blob URL.');
+                    window.GIF.prototype.options.workerScript = SCRIPT_URLS.gifWorker;
                 } else {
-                     console.warn('GIFライブラリまたはWorkerテキストが見つかりません。GIF投稿は動作しません。');
-                }
-
-                // 2. APNG (pako) の修正
-                if (window.pako) {
-                     // 💡 UPNG.jsがpakoを見つけられるように、Zlibとしても公開
-                     window.Zlib = window.pako; 
-                     console.log('pako linked to Zlib for UPNG compatibility.');
+                     // GIFが読み込めなくても、APNGの可能性もあるためエラーにはしない
+                     console.warn('GIFライブラリ (window.GIF) が見つかりません。GIF投稿は動作しません。');
                 }
                 
                 // UI作成とコアインスタンス化
@@ -206,13 +181,13 @@
 
             } catch (error) {
                 console.error('Tegaki loader failed:', error);
-                this.loadingEl.textContent = `お絵かきツールの読み込みに失敗しました: ${error.message}`;
-                setTimeout(() => this.loadingEl.remove(), 5000);
+                this.loadingEl.textContent = 'お絵かきツールの読み込みに失敗しました。';
+                setTimeout(() => this.loadingEl.remove(), 3000);
                 this.cleanup();
             }
         }
 
-        // ===== UI作成 (変更なし) =====
+        // ===== UI作成 =====
         createUI() {
             // ... (UI作成コードは変更なし) ...
             // フルスクリーンコンテナ
@@ -250,7 +225,7 @@
             buttonGroup.style.cssText = `display: flex; gap: 8px;`;
 
             // APNG投稿ボタン
-            const postApngBtn = createButton('APNG投稿', () => this.exportAndAttach('png'), true);
+            const postApngBtn = createButton('APNG投稿', () => this.exportAndAttach('apng'), true);
             postApngBtn.title = 'APNGを生成して掲示板に添付';
             
             // GIF投稿ボタン
@@ -308,11 +283,11 @@
                     this.loadingEl.textContent = `${type.toUpperCase()}を生成中... (${percent}%)`;
                 };
 
-                if (type === 'png') {
-                    // APNGはpako.jsのZlib割り当てによりエラー解消されるはず
+                if (type === 'apng') {
+                    // APNGはpako.js追加によりエラー解消
                     blob = await this.core.exportAsApng();
                 } else if (type === 'gif') {
-                    // GIF生成時に進捗コールバックを渡す
+                    // 💡 GIF生成時に進捗コールバックを渡す
                     blob = await this.core.exportAsGif(progressCallback);
                 } else {
                     throw new Error('無効なエクスポートタイプです。');
@@ -347,7 +322,7 @@
                 throw new Error('入力要素が見つかりません');
             }
             
-            const mimeType = type === 'png' ? 'image/ypng' : 'image/gif';
+            const mimeType = type === 'apng' ? 'image/apng' : 'image/gif';
             const filename = `tegaki_anime_${Date.now()}.${type}`;
             const file = new File([blob], filename, {
                 type: mimeType,
@@ -402,6 +377,7 @@
             
             if (this.loadingEl) {
                 this.loadingEl.remove();
+                // loadingElをnullにしないことで、次の投稿時にも再利用できる
             }
             
             console.log('[Tegaki Anime Loader] ✓ Cleanup complete');
@@ -439,5 +415,6 @@
     };
     
     // 初回実行
-    // window.tegakiAnimeStart(); 
+    // window.tegakiAnimeStart(); // ブックマークレット発火の場合はローダー側で自動起動させない
+
 })();
