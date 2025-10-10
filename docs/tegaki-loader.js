@@ -116,7 +116,7 @@
                 align-items: center;
                 padding: 8px 16px;
                 background: #e9c2ba;
-                border-bottom: 0px solid #aa5a56;
+                border-bottom: 1px solid #aa5a56;
                 gap: 8px;
             `;
             
