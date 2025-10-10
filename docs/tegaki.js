@@ -1,54 +1,301 @@
 // ==================================================
-// tegaki.js
+// tegaki.js - Phase 2: アンドゥ/リドゥシステム追加
 // お絵かき機能本体 - ふたば風デザイン
 // ==================================================
 
 (function() {
     'use strict';
     
-    // ===== Tegakiコアクラス =====
+    // ===== HistoryManagerクラス =====
+    class HistoryManager {
+        constructor(maxSteps = 50) {
+            this.undoStack = [];
+            this.redoStack = [];
+            this.maxSteps = maxSteps;
+        }
+        
+        saveState(layersData) {
+            this.undoStack.push(layersData);
+            if (this.undoStack.length > this.maxSteps) {
+                this.undoStack.shift();
+            }
+            this.redoStack = [];
+            console.log('[History] State saved, undo stack:', this.undoStack.length);
+        }
+        
+        canUndo() {
+            return this.undoStack.length > 0;
+        }
+        
+        canRedo() {
+            return this.redoStack.length > 0;
+        }
+        
+        undo(currentState) {
+            if (!this.canUndo()) return null;
+            this.redoStack.push(currentState);
+            const prevState = this.undoStack.pop();
+            console.log('[History] Undo executed');
+            return prevState;
+        }
+        
+        redo(currentState) {
+            if (!this.canRedo()) return null;
+            this.undoStack.push(currentState);
+            const nextState = this.redoStack.pop();
+            console.log('[History] Redo executed');
+            return nextState;
+        }
+        
+        clear() {
+            this.undoStack = [];
+            this.redoStack = [];
+        }
+    }
+    
+    // ===== Layerクラス =====
+    class Layer {
+        constructor(id, name, width = 400, height = 400, isBackground = false) {
+            this.id = id;
+            this.name = name;
+            this.visible = true;
+            this.isBackground = isBackground;
+            
+            this.canvas = document.createElement('canvas');
+            this.canvas.width = width;
+            this.canvas.height = height;
+            this.ctx = this.canvas.getContext('2d');
+            
+            if (isBackground) {
+                this.ctx.fillStyle = '#f0e0d6';
+                this.ctx.fillRect(0, 0, width, height);
+            }
+        }
+        
+        clear() {
+            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            if (this.isBackground) {
+                this.ctx.fillStyle = '#f0e0d6';
+                this.ctx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+            }
+        }
+        
+        getImageData() {
+            return this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
+        }
+        
+        putImageData(imageData) {
+            this.ctx.putImageData(imageData, 0, 0);
+        }
+    }
+    
+    // ===== TegakiCoreクラス =====
     window.TegakiCore = class TegakiCore {
         constructor(container) {
             this.container = container;
             this.wrapper = null;
-            this.canvas = null;
-            this.ctx = null;
-            this.bgCanvas = null;
-            this.bgCtx = null;
+            this.displayCanvas = null;
+            this.displayCtx = null;
             
-            // 描画状態
+            this.layers = [];
+            this.activeLayerIndex = 0;
+            this.layerIdCounter = 0;
+            
+            this.history = new HistoryManager(50);
+            this.isRestoringState = false;
+            
             this.isDrawing = false;
             this.lastX = 0;
             this.lastY = 0;
             
-            // ツール設定
             this.tool = 'pen';
-            this.color = '#800000'; // futaba-maroon
+            this.color = '#800000';
             this.size = 2;
             
-            // カラーパレット
             this.colors = [
-                '#800000', // futaba-maroon
-                '#aa5a56', // futaba-light-maroon
-                '#cf9c97', // futaba-medium
-                '#e9c2ba', // futaba-light-medium
-                '#f0e0d6', // futaba-cream
-                '#ffffee'  // futaba-background
+                '#800000', '#aa5a56', '#cf9c97',
+                '#e9c2ba', '#f0e0d6', '#ffffee'
             ];
             
             this.init();
         }
         
-        // ===== 初期化 =====
         init() {
+            console.log('[Tegaki Core] Initializing Phase 2...');
             this.createUI();
+            this.initLayers();
             this.setupCanvas();
             this.attachEvents();
+            this.renderLayers();
+            this.captureState();
+            console.log('[Tegaki Core] ✓ Phase 2 initialized');
+        }
+        
+        // ===== 履歴管理 =====
+        captureState() {
+            if (this.isRestoringState) return;
+            
+            const state = {
+                layers: this.layers.map(layer => ({
+                    id: layer.id,
+                    name: layer.name,
+                    visible: layer.visible,
+                    isBackground: layer.isBackground,
+                    imageData: layer.getImageData()
+                })),
+                activeLayerIndex: this.activeLayerIndex
+            };
+            
+            this.history.saveState(state);
+            this.updateUndoRedoButtons();
+        }
+        
+        restoreState(state) {
+            if (!state) return;
+            
+            this.isRestoringState = true;
+            
+            // レイヤー再構築
+            this.layers = state.layers.map(layerData => {
+                const layer = new Layer(
+                    layerData.id,
+                    layerData.name,
+                    400,
+                    400,
+                    layerData.isBackground
+                );
+                layer.visible = layerData.visible;
+                layer.putImageData(layerData.imageData);
+                return layer;
+            });
+            
+            this.activeLayerIndex = state.activeLayerIndex;
+            this.updateLayerPanel();
+            this.renderLayers();
+            this.updateUndoRedoButtons();
+            
+            this.isRestoringState = false;
+        }
+        
+        undo() {
+            const currentState = {
+                layers: this.layers.map(layer => ({
+                    id: layer.id,
+                    name: layer.name,
+                    visible: layer.visible,
+                    isBackground: layer.isBackground,
+                    imageData: layer.getImageData()
+                })),
+                activeLayerIndex: this.activeLayerIndex
+            };
+            
+            const prevState = this.history.undo(currentState);
+            if (prevState) {
+                this.restoreState(prevState);
+            }
+        }
+        
+        redo() {
+            const currentState = {
+                layers: this.layers.map(layer => ({
+                    id: layer.id,
+                    name: layer.name,
+                    visible: layer.visible,
+                    isBackground: layer.isBackground,
+                    imageData: layer.getImageData()
+                })),
+                activeLayerIndex: this.activeLayerIndex
+            };
+            
+            const nextState = this.history.redo(currentState);
+            if (nextState) {
+                this.restoreState(nextState);
+            }
+        }
+        
+        updateUndoRedoButtons() {
+            const undoBtn = document.getElementById('tegaki-undo-btn');
+            const redoBtn = document.getElementById('tegaki-redo-btn');
+            
+            if (undoBtn) {
+                undoBtn.disabled = !this.history.canUndo();
+                undoBtn.style.opacity = this.history.canUndo() ? '1' : '0.3';
+            }
+            if (redoBtn) {
+                redoBtn.disabled = !this.history.canRedo();
+                redoBtn.style.opacity = this.history.canRedo() ? '1' : '0.3';
+            }
+        }
+        
+        // ===== レイヤー管理 =====
+        initLayers() {
+            const bgLayer = new Layer(this.layerIdCounter++, '背景', 400, 400, true);
+            this.layers.push(bgLayer);
+            
+            const layer1 = new Layer(this.layerIdCounter++, 'レイヤー1', 400, 400, false);
+            this.layers.push(layer1);
+            
+            this.activeLayerIndex = 1;
+            console.log('[Tegaki Core] ✓ Layers initialized');
+        }
+        
+        addLayer() {
+            const newLayer = new Layer(
+                this.layerIdCounter++,
+                `レイヤー${this.layerIdCounter}`,
+                400, 400, false
+            );
+            this.layers.push(newLayer);
+            this.activeLayerIndex = this.layers.length - 1;
+            this.updateLayerPanel();
+            this.renderLayers();
+            this.captureState();
+        }
+        
+        deleteLayer(index) {
+            if (this.layers[index].isBackground) {
+                alert('背景レイヤーは削除できません');
+                return;
+            }
+            if (this.layers.length <= 2) {
+                alert('レイヤーは最低1枚必要です');
+                return;
+            }
+            
+            this.layers.splice(index, 1);
+            if (this.activeLayerIndex >= this.layers.length) {
+                this.activeLayerIndex = this.layers.length - 1;
+            }
+            
+            this.updateLayerPanel();
+            this.renderLayers();
+            this.captureState();
+        }
+        
+        setActiveLayer(index) {
+            if (index >= 0 && index < this.layers.length) {
+                this.activeLayerIndex = index;
+                this.updateLayerPanel();
+            }
+        }
+        
+        toggleLayerVisibility(index) {
+            this.layers[index].visible = !this.layers[index].visible;
+            this.updateLayerPanel();
+            this.renderLayers();
+        }
+        
+        renderLayers() {
+            this.displayCtx.clearRect(0, 0, 400, 400);
+            for (let i = 0; i < this.layers.length; i++) {
+                if (this.layers[i].visible) {
+                    this.displayCtx.drawImage(this.layers[i].canvas, 0, 0);
+                }
+            }
         }
         
         // ===== UI作成 =====
         createUI() {
-            // ラッパー
             this.wrapper = document.createElement('div');
             this.wrapper.style.cssText = `
                 display: flex;
@@ -57,10 +304,7 @@
                 background: #ffffee;
             `;
             
-            // サイドバー
             const sidebar = this.createSidebar();
-            
-            // キャンバスエリア
             const canvasArea = document.createElement('div');
             canvasArea.style.cssText = `
                 flex: 1;
@@ -68,10 +312,8 @@
                 justify-content: center;
                 align-items: center;
                 background: #ffffee;
-                position: relative;
             `;
             
-            // キャンバスコンテナ
             const canvasContainer = document.createElement('div');
             canvasContainer.style.cssText = `
                 position: relative;
@@ -80,65 +322,150 @@
                 box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
             `;
             
-            // 背景キャンバス（レイヤー0）
-            this.bgCanvas = document.createElement('canvas');
-            this.bgCanvas.width = 400;
-            this.bgCanvas.height = 400;
-            this.bgCanvas.style.cssText = `
-                position: absolute;
-                top: 0;
-                left: 0;
-                background: #f0e0d6;
-            `;
-            this.bgCtx = this.bgCanvas.getContext('2d');
-            
-            // 描画キャンバス（レイヤー1・透明）
-            this.canvas = document.createElement('canvas');
-            this.canvas.width = 400;
-            this.canvas.height = 400;
-            this.canvas.style.cssText = `
+            this.displayCanvas = document.createElement('canvas');
+            this.displayCanvas.width = 400;
+            this.displayCanvas.height = 400;
+            this.displayCanvas.style.cssText = `
                 position: absolute;
                 top: 0;
                 left: 0;
                 cursor: crosshair;
             `;
-            this.ctx = this.canvas.getContext('2d');
+            this.displayCtx = this.displayCanvas.getContext('2d');
             
-            canvasContainer.appendChild(this.bgCanvas);
-            canvasContainer.appendChild(this.canvas);
+            canvasContainer.appendChild(this.displayCanvas);
             canvasArea.appendChild(canvasContainer);
             
             this.wrapper.appendChild(sidebar);
             this.wrapper.appendChild(canvasArea);
-            
             this.container.appendChild(this.wrapper);
+            
+            // トップバーにアンドゥ/リドゥボタンを追加
+            this.addUndoRedoToTopBar();
         }
         
-        // ===== サイドバー作成 =====
+        addUndoRedoToTopBar() {
+            // トップバーを探す（ローダー側で作成済み）
+            const topBar = this.container.parentElement.querySelector('div');
+            if (!topBar) return;
+            
+            // ボタングループを探す
+            const buttonGroup = topBar.querySelector('div:last-child');
+            if (!buttonGroup) return;
+            
+            // アンドゥボタン
+            const undoBtn = document.createElement('button');
+            undoBtn.id = 'tegaki-undo-btn';
+            undoBtn.innerHTML = '↶';
+            undoBtn.title = '元に戻す (Ctrl+Z)';
+            undoBtn.style.cssText = `
+                padding: 8px 12px;
+                background: #f0e0d6;
+                color: #800000;
+                border: 1px solid #aa5a56;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 16px;
+                font-weight: bold;
+                transition: all 0.2s;
+            `;
+            undoBtn.onmouseover = () => {
+                if (!undoBtn.disabled) undoBtn.style.background = '#e9c2ba';
+            };
+            undoBtn.onmouseout = () => undoBtn.style.background = '#f0e0d6';
+            undoBtn.onclick = () => this.undo();
+            
+            // リドゥボタン
+            const redoBtn = document.createElement('button');
+            redoBtn.id = 'tegaki-redo-btn';
+            redoBtn.innerHTML = '↷';
+            redoBtn.title = 'やり直す (Ctrl+U)';
+            redoBtn.style.cssText = `
+                padding: 8px 12px;
+                background: #f0e0d6;
+                color: #800000;
+                border: 1px solid #aa5a56;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 16px;
+                font-weight: bold;
+                transition: all 0.2s;
+            `;
+            redoBtn.onmouseover = () => {
+                if (!redoBtn.disabled) redoBtn.style.background = '#e9c2ba';
+            };
+            redoBtn.onmouseout = () => redoBtn.style.background = '#f0e0d6';
+            redoBtn.onclick = () => this.redo();
+            
+            // 投稿ボタンの前に挿入
+            const postBtn = buttonGroup.querySelector('button');
+            buttonGroup.insertBefore(undoBtn, postBtn);
+            buttonGroup.insertBefore(redoBtn, postBtn);
+            
+            this.updateUndoRedoButtons();
+        }
+        
         createSidebar() {
             const sidebar = document.createElement('div');
             sidebar.style.cssText = `
                 width: 80px;
                 background: #e9c2ba;
-                padding: 16px 12px;
+                padding: 12px 8px;
                 display: flex;
                 flex-direction: column;
-                gap: 20px;
+                gap: 16px;
                 border-right: 2px solid #cf9c97;
                 overflow-y: auto;
             `;
             
-            // ツールセクション
-            const toolSection = document.createElement('div');
-            toolSection.style.cssText = `
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-            `;
+            sidebar.appendChild(this.createColorSection());
+            sidebar.appendChild(this.createToolSection());
+            sidebar.appendChild(this.createSizeSection());
+            sidebar.appendChild(this.createLayerPanel());
             
-            const toolLabel = this.createLabel('ツール');
-            const penBtn = this.createToolButton('🖊️', 'ペン', 'pen', true);
-            const eraserBtn = this.createToolButton('🧹', '消しゴム', 'eraser', false);
+            return sidebar;
+        }
+        
+        createColorSection() {
+            const section = document.createElement('div');
+            section.style.cssText = `display: flex; flex-direction: column; gap: 6px;`;
+            
+            const label = this.createLabel('色');
+            const palette = document.createElement('div');
+            palette.style.cssText = `display: grid; grid-template-columns: repeat(2, 1fr); gap: 4px;`;
+            
+            this.colors.forEach((color, index) => {
+                const colorBtn = document.createElement('button');
+                colorBtn.style.cssText = `
+                    width: 100%;
+                    height: 24px;
+                    background: ${color};
+                    border: 2px solid ${index === 0 ? '#800000' : '#aa5a56'};
+                    border-radius: 3px;
+                    cursor: pointer;
+                `;
+                colorBtn.onclick = () => {
+                    this.color = color;
+                    palette.querySelectorAll('button').forEach(btn => {
+                        btn.style.border = '2px solid #aa5a56';
+                    });
+                    colorBtn.style.border = '2px solid #800000';
+                };
+                palette.appendChild(colorBtn);
+            });
+            
+            section.appendChild(label);
+            section.appendChild(palette);
+            return section;
+        }
+        
+        createToolSection() {
+            const section = document.createElement('div');
+            section.style.cssText = `display: flex; flex-direction: column; gap: 6px;`;
+            
+            const label = this.createLabel('ツール');
+            const penBtn = this.createToolButton('🖊️', 'ペン', true);
+            const eraserBtn = this.createToolButton('🧹', '消しゴム', false);
             
             penBtn.onclick = () => {
                 this.tool = 'pen';
@@ -156,286 +483,269 @@
                 penBtn.style.color = '#800000';
             };
             
-            toolSection.appendChild(toolLabel);
-            toolSection.appendChild(penBtn);
-            toolSection.appendChild(eraserBtn);
+            section.appendChild(label);
+            section.appendChild(penBtn);
+            section.appendChild(eraserBtn);
+            return section;
+        }
+        
+        createSizeSection() {
+            const section = document.createElement('div');
+            section.style.cssText = `display: flex; flex-direction: column; gap: 6px;`;
             
-            // カラーパレットセクション
-            const colorSection = document.createElement('div');
-            colorSection.style.cssText = `
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-            `;
-            
-            const colorLabel = this.createLabel('色');
-            const palette = document.createElement('div');
-            palette.style.cssText = `
-                display: grid;
-                grid-template-columns: repeat(2, 1fr);
-                gap: 6px;
-            `;
-            
-            this.colors.forEach((color, index) => {
-                const colorBtn = document.createElement('button');
-                colorBtn.style.cssText = `
-                    width: 100%;
-                    height: 28px;
-                    background: ${color};
-                    border: 2px solid ${index === 0 ? '#800000' : '#aa5a56'};
-                    border-radius: 4px;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                `;
-                
-                colorBtn.onclick = () => {
-                    this.color = color;
-                    palette.querySelectorAll('button').forEach(btn => {
-                        btn.style.border = '2px solid #aa5a56';
-                        btn.style.transform = 'scale(1)';
-                    });
-                    colorBtn.style.border = '2px solid #800000';
-                    colorBtn.style.transform = 'scale(1.1)';
-                };
-                
-                palette.appendChild(colorBtn);
-            });
-            
-            colorSection.appendChild(colorLabel);
-            colorSection.appendChild(palette);
-            
-            // サイズセクション
-            const sizeSection = document.createElement('div');
-            sizeSection.style.cssText = `
-                display: flex;
-                flex-direction: column;
-                gap: 8px;
-            `;
-            
-            const sizeLabel = this.createLabel('サイズ');
+            const label = this.createLabel('サイズ');
             const sizeValue = document.createElement('div');
             sizeValue.textContent = '2px';
             sizeValue.style.cssText = `
                 color: #800000;
-                font-size: 12px;
+                font-size: 11px;
                 text-align: center;
                 font-weight: bold;
             `;
             
-            const sizeSlider = document.createElement('input');
-            sizeSlider.type = 'range';
-            sizeSlider.min = '1';
-            sizeSlider.max = '50';
-            sizeSlider.value = '2';
-            sizeSlider.style.cssText = `
-                width: 100%;
-                cursor: pointer;
-                accent-color: #800000;
-            `;
-            
-            sizeSlider.oninput = (e) => {
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = '1';
+            slider.max = '50';
+            slider.value = '2';
+            slider.style.cssText = `width: 100%; cursor: pointer; accent-color: #800000;`;
+            slider.oninput = (e) => {
                 this.size = parseInt(e.target.value);
                 sizeValue.textContent = `${this.size}px`;
             };
             
-            sizeSection.appendChild(sizeLabel);
-            sizeSection.appendChild(sizeValue);
-            sizeSection.appendChild(sizeSlider);
+            section.appendChild(label);
+            section.appendChild(sizeValue);
+            section.appendChild(slider);
+            return section;
+        }
+        
+        createLayerPanel() {
+            const panel = document.createElement('div');
+            panel.id = 'tegaki-layer-panel';
+            panel.style.cssText = `display: flex; flex-direction: column; gap: 6px; margin-top: auto;`;
             
-            // クリアボタン
-            const clearBtn = document.createElement('button');
-            clearBtn.textContent = '🗑️ クリア';
-            clearBtn.style.cssText = `
-                background: #cf9c97;
-                border: 2px solid #aa5a56;
-                color: #800000;
-                padding: 10px;
-                border-radius: 4px;
-                cursor: pointer;
-                font-size: 13px;
-                font-weight: bold;
-                margin-top: auto;
-                transition: all 0.2s;
+            const label = this.createLabel('レイヤー');
+            
+            const controls = document.createElement('div');
+            controls.style.cssText = `display: flex; gap: 4px;`;
+            
+            const addBtn = document.createElement('button');
+            addBtn.textContent = '➕';
+            addBtn.title = 'レイヤー追加';
+            addBtn.style.cssText = `
+                flex: 1; padding: 6px; background: #cf9c97;
+                border: 1px solid #aa5a56; border-radius: 3px;
+                cursor: pointer; font-size: 14px;
             `;
-            clearBtn.onmouseover = () => {
-                clearBtn.style.background = '#aa5a56';
-                clearBtn.style.color = 'white';
-            };
-            clearBtn.onmouseout = () => {
-                clearBtn.style.background = '#cf9c97';
-                clearBtn.style.color = '#800000';
-            };
-            clearBtn.onclick = () => {
-                if (confirm('キャンバスをクリアしますか？')) {
-                    this.clearCanvas();
+            addBtn.onclick = () => this.addLayer();
+            
+            const delBtn = document.createElement('button');
+            delBtn.textContent = '➖';
+            delBtn.title = 'レイヤー削除';
+            delBtn.style.cssText = `
+                flex: 1; padding: 6px; background: #cf9c97;
+                border: 1px solid #aa5a56; border-radius: 3px;
+                cursor: pointer; font-size: 14px;
+            `;
+            delBtn.onclick = () => {
+                if (confirm('選択中のレイヤーを削除しますか？')) {
+                    this.deleteLayer(this.activeLayerIndex);
                 }
             };
             
-            sidebar.appendChild(toolSection);
-            sidebar.appendChild(colorSection);
-            sidebar.appendChild(sizeSection);
-            sidebar.appendChild(clearBtn);
+            controls.appendChild(addBtn);
+            controls.appendChild(delBtn);
             
-            return sidebar;
+            const layerList = document.createElement('div');
+            layerList.id = 'tegaki-layer-list';
+            layerList.style.cssText = `
+                display: flex; flex-direction: column-reverse;
+                gap: 4px; max-height: 150px; overflow-y: auto;
+            `;
+            
+            panel.appendChild(label);
+            panel.appendChild(controls);
+            panel.appendChild(layerList);
+            
+            this.updateLayerPanel();
+            return panel;
         }
         
-        // ===== ツールボタン作成 =====
-        createToolButton(emoji, label, tool, isActive) {
+        updateLayerPanel() {
+            const layerList = document.getElementById('tegaki-layer-list');
+            if (!layerList) return;
+            
+            layerList.innerHTML = '';
+            
+            for (let i = this.layers.length - 1; i >= 0; i--) {
+                const layer = this.layers[i];
+                const isActive = i === this.activeLayerIndex;
+                
+                const item = document.createElement('div');
+                item.style.cssText = `
+                    display: flex; align-items: center; gap: 4px;
+                    padding: 4px;
+                    background: ${isActive ? '#800000' : 'transparent'};
+                    color: ${isActive ? 'white' : '#800000'};
+                    border: 1px solid ${isActive ? '#800000' : '#aa5a56'};
+                    border-radius: 3px; cursor: pointer; font-size: 10px;
+                `;
+                
+                const checkbox = document.createElement('input');
+                checkbox.type = 'checkbox';
+                checkbox.checked = layer.visible;
+                checkbox.style.cursor = 'pointer';
+                checkbox.onclick = (e) => {
+                    e.stopPropagation();
+                    this.toggleLayerVisibility(i);
+                };
+                
+                const name = document.createElement('span');
+                name.textContent = layer.name;
+                name.style.cssText = `
+                    flex: 1; overflow: hidden;
+                    text-overflow: ellipsis; white-space: nowrap;
+                `;
+                
+                item.onclick = () => this.setActiveLayer(i);
+                item.appendChild(checkbox);
+                item.appendChild(name);
+                layerList.appendChild(item);
+            }
+        }
+        
+        createToolButton(emoji, label, isActive) {
             const btn = document.createElement('button');
-            btn.innerHTML = `<div style="font-size: 20px;">${emoji}</div><div style="font-size: 10px; margin-top: 2px;">${label}</div>`;
-            btn.title = label;
+            btn.innerHTML = `
+                <div style="font-size: 18px;">${emoji}</div>
+                <div style="font-size: 9px; margin-top: 2px;">${label}</div>
+            `;
             btn.style.cssText = `
                 background: ${isActive ? '#800000' : '#cf9c97'};
                 color: ${isActive ? 'white' : '#800000'};
-                border: 2px solid #aa5a56;
-                padding: 8px;
-                border-radius: 4px;
-                cursor: pointer;
-                display: flex;
-                flex-direction: column;
-                align-items: center;
-                justify-content: center;
-                transition: all 0.2s;
-                font-weight: bold;
+                border: 1px solid #aa5a56; padding: 6px;
+                border-radius: 3px; cursor: pointer;
+                display: flex; flex-direction: column;
+                align-items: center; font-weight: bold;
             `;
-            
             return btn;
         }
         
-        // ===== ラベル作成 =====
         createLabel(text) {
             const label = document.createElement('div');
             label.textContent = text;
             label.style.cssText = `
-                font-size: 11px;
-                color: #800000;
-                font-weight: bold;
-                text-align: center;
-                padding: 4px 0;
-                background: #f0e0d6;
-                border-radius: 3px;
+                font-size: 10px; color: #800000;
+                font-weight: bold; text-align: center;
+                padding: 3px 0; background: #f0e0d6;
+                border-radius: 2px;
             `;
             return label;
         }
         
-        // ===== キャンバス設定 =====
+        // ===== キャンバス設定とイベント =====
         setupCanvas() {
-            this.ctx.lineCap = 'round';
-            this.ctx.lineJoin = 'round';
+            this.layers.forEach(layer => {
+                layer.ctx.lineCap = 'round';
+                layer.ctx.lineJoin = 'round';
+            });
         }
         
-        // ===== イベント設定 =====
         attachEvents() {
-            this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
-            this.canvas.addEventListener('mousemove', (e) => this.draw(e));
-            this.canvas.addEventListener('mouseup', () => this.stopDrawing());
-            this.canvas.addEventListener('mouseleave', () => this.stopDrawing());
+            this.displayCanvas.addEventListener('mousedown', (e) => this.startDrawing(e));
+            this.displayCanvas.addEventListener('mousemove', (e) => this.draw(e));
+            this.displayCanvas.addEventListener('mouseup', () => this.stopDrawing());
+            this.displayCanvas.addEventListener('mouseleave', () => this.stopDrawing());
             
-            // タッチイベント
-            this.canvas.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                const touch = e.touches[0];
-                const mouseEvent = new MouseEvent('mousedown', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY
-                });
-                this.canvas.dispatchEvent(mouseEvent);
-            });
-            
-            this.canvas.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                const touch = e.touches[0];
-                const mouseEvent = new MouseEvent('mousemove', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY
-                });
-                this.canvas.dispatchEvent(mouseEvent);
-            });
-            
-            this.canvas.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                const mouseEvent = new MouseEvent('mouseup', {});
-                this.canvas.dispatchEvent(mouseEvent);
+            // キーボードショートカット
+            document.addEventListener('keydown', (e) => {
+                if (e.ctrlKey && e.key === 'z') {
+                    e.preventDefault();
+                    this.undo();
+                } else if (e.ctrlKey && e.key === 'u') {
+                    e.preventDefault();
+                    this.redo();
+                }
             });
         }
         
-        // ===== 描画開始 =====
         startDrawing(e) {
             this.isDrawing = true;
-            const rect = this.canvas.getBoundingClientRect();
+            const rect = this.displayCanvas.getBoundingClientRect();
             this.lastX = e.clientX - rect.left;
             this.lastY = e.clientY - rect.top;
         }
         
-        // ===== 描画 =====
         draw(e) {
             if (!this.isDrawing) return;
             
-            const rect = this.canvas.getBoundingClientRect();
+            const rect = this.displayCanvas.getBoundingClientRect();
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
             
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.lastX, this.lastY);
-            this.ctx.lineTo(x, y);
+            const activeLayer = this.layers[this.activeLayerIndex];
+            const ctx = activeLayer.ctx;
+            
+            ctx.beginPath();
+            ctx.moveTo(this.lastX, this.lastY);
+            ctx.lineTo(x, y);
             
             if (this.tool === 'pen') {
-                this.ctx.globalCompositeOperation = 'source-over';
-                this.ctx.strokeStyle = this.color;
-                this.ctx.lineWidth = this.size;
+                ctx.globalCompositeOperation = 'source-over';
+                ctx.strokeStyle = this.color;
+                ctx.lineWidth = this.size;
             } else if (this.tool === 'eraser') {
-                this.ctx.globalCompositeOperation = 'destination-out';
-                this.ctx.lineWidth = this.size;
+                ctx.globalCompositeOperation = 'destination-out';
+                ctx.lineWidth = this.size;
             }
             
-            this.ctx.stroke();
-            
+            ctx.stroke();
             this.lastX = x;
             this.lastY = y;
+            this.renderLayers();
         }
         
-        // ===== 描画終了 =====
         stopDrawing() {
-            this.isDrawing = false;
+            if (this.isDrawing) {
+                this.isDrawing = false;
+                this.captureState(); // 描画完了時に履歴保存
+            }
         }
         
-        // ===== キャンバスクリア =====
         clearCanvas() {
-            this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            const activeLayer = this.layers[this.activeLayerIndex];
+            activeLayer.clear();
+            this.renderLayers();
+            this.captureState();
         }
         
-        // ===== エクスポート（Blob） =====
         async exportAsBlob() {
-            // 一時キャンバスで合成
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = 400;
             tempCanvas.height = 400;
             const tempCtx = tempCanvas.getContext('2d');
             
-            // 背景を描画
-            tempCtx.drawImage(this.bgCanvas, 0, 0);
-            // 描画レイヤーを重ねる
-            tempCtx.drawImage(this.canvas, 0, 0);
+            for (let i = 0; i < this.layers.length; i++) {
+                if (this.layers[i].visible) {
+                    tempCtx.drawImage(this.layers[i].canvas, 0, 0);
+                }
+            }
             
             return new Promise((resolve) => {
-                tempCanvas.toBlob((blob) => {
-                    resolve(blob);
-                }, 'image/png');
+                tempCanvas.toBlob((blob) => resolve(blob), 'image/png');
             });
         }
         
-        // ===== 破棄 =====
         destroy() {
             if (this.wrapper && this.wrapper.parentNode) {
                 this.wrapper.remove();
             }
-            this.canvas = null;
-            this.ctx = null;
-            this.bgCanvas = null;
-            this.bgCtx = null;
+            this.layers = [];
+            this.history.clear();
         }
     };
     
-    console.log('✅ tegaki.js (TegakiCore) loaded');
+    console.log('✅ tegaki.js Phase 2 (Undo/Redo) loaded');
     
 })();
