@@ -112,7 +112,7 @@
             const topBar = document.createElement('div');
             topBar.style.cssText = `
                 display: flex;
-                justify-content: flex-end;
+                justify-content: space-between;
                 align-items: center;
                 padding: 8px 16px;
                 background: #cf9c97;
@@ -120,20 +120,62 @@
                 gap: 8px;
             `;
             
-            // 投稿ボタン（緑）
+            // 左側：タイトルと注意書き
+            const titleArea = document.createElement('div');
+            titleArea.style.cssText = `
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            `;
+            
+            const title = document.createElement('div');
+            title.textContent = 'めぶき用Tegakiツールテスト';
+            title.style.cssText = `
+                color: #800000;
+                font-size: 14px;
+                font-weight: bold;
+            `;
+            
+            const notice = document.createElement('div');
+            notice.textContent = '※予告無しにツール削除の可能性があります。';
+            notice.style.cssText = `
+                color: #aa5a56;
+                font-size: 10px;
+            `;
+            
+            titleArea.appendChild(title);
+            titleArea.appendChild(notice);
+            
+            // 右側：ボタングループ
+            const buttonGroup = document.createElement('div');
+            buttonGroup.style.cssText = `
+                display: flex;
+                gap: 8px;
+            `;
+            
+            // 投稿ボタン（めぶきアイコン + 緑）
             const postBtn = document.createElement('button');
-            postBtn.textContent = '📎';
+            postBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                    <path d="M14 9.536V7a4 4 0 0 1 4-4h1.5a.5.5 0 0 1 .5.5V5a4 4 0 0 1-4 4 4 4 0 0 0-4 4c0 2 1 3 1 5a5 5 0 0 1-1 3"/>
+                    <path d="M4 9a5 5 0 0 1 8 4 5 5 0 0 1-8-4"/>
+                    <path d="M5 21h14"/>
+                </svg>
+                <span style="vertical-align: middle;">投稿</span>
+            `;
             postBtn.title = '掲示板に添付';
             postBtn.style.cssText = `
-                padding: 8px 12px;
+                padding: 8px 16px;
                 background: #4ade80;
                 color: white;
                 border: none;
                 border-radius: 4px;
                 cursor: pointer;
-                font-size: 16px;
+                font-size: 14px;
                 font-weight: bold;
                 transition: background 0.2s;
+                display: inline-flex;
+                align-items: center;
             `;
             postBtn.onmouseover = () => postBtn.style.background = '#22c55e';
             postBtn.onmouseout = () => postBtn.style.background = '#4ade80';
@@ -158,8 +200,10 @@
             closeBtn.onmouseout = () => closeBtn.style.background = '#f87171';
             closeBtn.onclick = () => this.cancel();
             
-            topBar.appendChild(postBtn);
-            topBar.appendChild(closeBtn);
+            buttonGroup.appendChild(postBtn);
+            buttonGroup.appendChild(closeBtn);
+            topBar.appendChild(titleArea);
+            topBar.appendChild(buttonGroup);
             this.container.appendChild(topBar);
             
             // キャンバスエリア（Tegakiコアが使用）
