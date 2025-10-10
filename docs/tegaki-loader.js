@@ -115,8 +115,8 @@
                 justify-content: space-between;
                 align-items: center;
                 padding: 8px 16px;
-                background: #cf9c97;
-                border-bottom: 2px solid #aa5a56;
+                background: #e9c2ba;
+                border-bottom: 0px solid #aa5a56;
                 gap: 8px;
             `;
             
