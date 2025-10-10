@@ -1,14 +1,15 @@
 // ==================================================
-// tegaki-loader.js (動作確認用軽量版)
-// めぶきちゃんねる連携テスト用 v1.3
-// スクリプト読込なし・400x400キャンバス・ふたばカラー
+// tegaki-loader.js
+// ブックマークレット用ローダー - 拡張可能な2ファイル構成
 // ==================================================
 
 (function() {
     'use strict';
     
+    // ===== 設定 =====
+    // GitHub Pagesを使用（正しいMIMEタイプで配信される）
+    const TEGAKI_CORE_URL = 'https://toshinka.github.io/tegaki/docs/tegaki_basic.js';
     const MEBUKI_TIMEOUT = 3000;
-    const BACKGROUND_COLOR = '#f0e0d6'; 
     
     const MEBUKI_SELECTORS = {
         postButton: 'button[title="レスを投稿"]',
@@ -16,52 +17,70 @@
         previewImg: 'img[src^="blob:"]'
     };
     
-    class TegakiBookmarkletTest {
+    // ===== ブックマークレット本体 =====
+    class TegakiBookmarklet {
         constructor() {
             this.boardType = null;
             this.targetInput = null;
+            this.tegakiCore = null;
             this.container = null;
-            this.canvas = null;
-            this.ctx = null;
-            this.isDrawing = false;
-            this.lastX = 0;
-            this.lastY = 0;
             this.originalBodyOverflow = null;
         }
         
+        // ===== エントリーポイント =====
         async start() {
             try {
+                console.log('[Tegaki Loader] Starting...');
+                
+                // 1. 掲示板判定
                 this.boardType = this.detectBoard();
                 if (!this.boardType) {
                     alert('対応していない掲示板です\n現在はめぶきちゃんねる(mebuki.moe)のみ対応しています');
                     return;
                 }
+                console.log('[Tegaki Loader] ✓ Board detected:', this.boardType);
                 
+                // 2. 要素検出
                 await this.findTargetElements();
-                this.createUI();
-                this.setupCanvas();
+                console.log('[Tegaki Loader] ✓ Target elements found');
+                
+                // 3. UI作成（トップバーのみ）
+                this.createContainer();
+                console.log('[Tegaki Loader] ✓ Container created');
+                
+                // 4. Tegakiコア読込と起動
+                await this.loadAndInitTegaki();
+                console.log('[Tegaki Loader] ✓ Tegaki initialized');
                 
             } catch (error) {
-                console.error('[Tegaki Test] 起動失敗:', error);
+                console.error('[Tegaki Loader] 起動失敗:', error);
                 alert('Tegaki起動に失敗しました\n' + error.message);
                 this.cleanup();
             }
         }
         
+        // ===== 掲示板判定 =====
         detectBoard() {
             const host = location.host;
-            if (host.includes('mebuki.moe')) return 'mebuki';
+            if (host.includes('mebuki.moe')) {
+                return 'mebuki';
+            }
+            // 将来的に他の掲示板を追加可能
+            // if (host.includes('futaba.com')) return 'futaba';
             return null;
         }
         
+        // ===== ファイル入力要素の検出 =====
         async findTargetElements() {
             if (this.boardType === 'mebuki') {
+                // レス投稿ボタンをクリックして入力欄を開く
                 const postBtn = document.querySelector(MEBUKI_SELECTORS.postButton);
                 if (postBtn) {
                     postBtn.click();
                     await this.wait(300);
                 }
                 
+                // input要素を探す
                 await this.waitFor(() => {
                     this.targetInput = document.querySelector(MEBUKI_SELECTORS.fileInput);
                     return this.targetInput !== null;
@@ -73,8 +92,11 @@
             }
         }
         
-        createUI() {
+        // ===== UIコンテナ作成（トップバーのみ） =====
+        createContainer() {
+            // フルスクリーンコンテナ
             this.container = document.createElement('div');
+            this.container.id = 'tegaki-bookmarklet-container';
             this.container.style.cssText = `
                 position: fixed;
                 top: 0;
@@ -82,254 +104,213 @@
                 width: 100vw;
                 height: 100vh;
                 z-index: 999999;
-                background: #ffffee;
                 display: flex;
                 flex-direction: column;
+            `;
+            
+            // トップバー（ふたば風カラー）
+            const topBar = document.createElement('div');
+            topBar.style.cssText = `
+                display: flex;
+                justify-content: space-between;
                 align-items: center;
-                justify-content: center;
-                font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+                padding: 8px 16px;
+                background: #e9c2ba;
+                border-bottom: 1px solid #aa5a56;
+                gap: 8px;
+            `;
+            
+            // 左側：タイトルと注意書き
+            const titleArea = document.createElement('div');
+            titleArea.style.cssText = `
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
             `;
             
             const title = document.createElement('div');
-            title.textContent = 'Tegaki 動作確認用テスト';
+            title.textContent = 'めぶき用Tegakiツールテスト';
             title.style.cssText = `
-                position: absolute;
-                top: 20px;
-                font-size: 20px;
-                font-weight: bold;
                 color: #800000;
-            `;
-            this.container.appendChild(title);
-            
-            const canvasWrapper = document.createElement('div');
-            canvasWrapper.style.cssText = `
-                background: white;
-                padding: 20px;
-                border-radius: 12px;
-                border: 3px solid #800000;
-                box-shadow: 0 8px 24px rgba(128, 0, 0, 0.3);
+                font-size: 14px;
+                font-weight: bold;
             `;
             
-            this.canvas = document.createElement('canvas');
-            this.canvas.width = 400;
-            this.canvas.height = 400;
-            this.canvas.style.cssText = `
-                display: block;
-                background: #f0e0d6;
-                cursor: crosshair;
-                border: 2px solid #cf9c97;
+            const notice = document.createElement('div');
+            notice.textContent = '※予告無しにツール削除の可能性があります。';
+            notice.style.cssText = `
+                color: #aa5a56;
+                font-size: 10px;
             `;
-            canvasWrapper.appendChild(this.canvas);
-            this.container.appendChild(canvasWrapper);
             
-            const buttonBar = document.createElement('div');
-            buttonBar.style.cssText = `
-                position: absolute;
-                bottom: 30px;
+            titleArea.appendChild(title);
+            titleArea.appendChild(notice);
+            
+            // 右側：ボタングループ
+            const buttonGroup = document.createElement('div');
+            buttonGroup.style.cssText = `
                 display: flex;
-                gap: 15px;
+                gap: 8px;
             `;
             
-            const clearBtn = document.createElement('button');
-            clearBtn.textContent = '🗑 クリア';
-            clearBtn.style.cssText = `
-                padding: 12px 24px;
-                background: #f0e0d6;
-                color: #800000;
-                border: 2px solid #800000;
-                border-radius: 8px;
-                cursor: pointer;
-                font-size: 15px;
-                font-weight: bold;
-                transition: all 0.2s;
+            // 投稿ボタン（めぶきアイコン + 緑）
+            const postBtn = document.createElement('button');
+            postBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                    <path d="M14 9.536V7a4 4 0 0 1 4-4h1.5a.5.5 0 0 1 .5.5V5a4 4 0 0 1-4 4 4 4 0 0 0-4 4c0 2 1 3 1 5a5 5 0 0 1-1 3"/>
+                    <path d="M4 9a5 5 0 0 1 8 4 5 5 0 0 1-8-4"/>
+                    <path d="M5 21h14"/>
+                </svg>
+                <span style="vertical-align: middle;">投稿</span>
             `;
-            clearBtn.onmouseover = () => {
-                clearBtn.style.background = '#cf9c97';
-                clearBtn.style.transform = 'translateY(-2px)';
-            };
-            clearBtn.onmouseout = () => {
-                clearBtn.style.background = '#f0e0d6';
-                clearBtn.style.transform = 'translateY(0)';
-            };
-            clearBtn.onclick = () => this.clearCanvas();
-            
-            const cancelBtn = document.createElement('button');
-            cancelBtn.textContent = '✕ キャンセル';
-            cancelBtn.style.cssText = `
-                padding: 12px 24px;
-                background: #f44336;
+            postBtn.title = '掲示板に添付';
+            postBtn.style.cssText = `
+                padding: 8px 16px;
+                background: #4ade80;
                 color: white;
                 border: none;
-                border-radius: 8px;
+                border-radius: 4px;
                 cursor: pointer;
-                font-size: 15px;
+                font-size: 14px;
                 font-weight: bold;
-                transition: all 0.2s;
+                transition: background 0.2s;
+                display: inline-flex;
+                align-items: center;
             `;
-            cancelBtn.onmouseover = () => {
-                cancelBtn.style.background = '#da190b';
-                cancelBtn.style.transform = 'translateY(-2px)';
-            };
-            cancelBtn.onmouseout = () => {
-                cancelBtn.style.background = '#f44336';
-                cancelBtn.style.transform = 'translateY(0)';
-            };
-            cancelBtn.onclick = () => this.cancel();
+            postBtn.onmouseover = () => postBtn.style.background = '#22c55e';
+            postBtn.onmouseout = () => postBtn.style.background = '#4ade80';
+            postBtn.onclick = () => this.exportAndAttach();
             
-            const doneBtn = document.createElement('button');
-            doneBtn.textContent = '✓ 掲示板に貼り付けて閉じる';
-            doneBtn.style.cssText = `
-                padding: 12px 28px;
-                background: #4CAF50;
+            // 閉じるボタン（朱色）
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '✕';
+            closeBtn.title = '閉じる';
+            closeBtn.style.cssText = `
+                padding: 8px 12px;
+                background: #f87171;
                 color: white;
                 border: none;
-                border-radius: 8px;
+                border-radius: 4px;
                 cursor: pointer;
                 font-size: 16px;
                 font-weight: bold;
-                transition: all 0.2s;
+                transition: background 0.2s;
             `;
-            doneBtn.onmouseover = () => {
-                doneBtn.style.background = '#45a049';
-                doneBtn.style.transform = 'translateY(-2px)';
-            };
-            doneBtn.onmouseout = () => {
-                doneBtn.style.background = '#4CAF50';
-                doneBtn.style.transform = 'translateY(0)';
-            };
-            doneBtn.onclick = () => this.exportAndClose();
+            closeBtn.onmouseover = () => closeBtn.style.background = '#ef4444';
+            closeBtn.onmouseout = () => closeBtn.style.background = '#f87171';
+            closeBtn.onclick = () => this.cancel();
             
-            buttonBar.appendChild(clearBtn);
-            buttonBar.appendChild(cancelBtn);
-            buttonBar.appendChild(doneBtn);
-            this.container.appendChild(buttonBar);
+            buttonGroup.appendChild(postBtn);
+            buttonGroup.appendChild(closeBtn);
+            topBar.appendChild(titleArea);
+            topBar.appendChild(buttonGroup);
+            this.container.appendChild(topBar);
+            
+            // キャンバスエリア（Tegakiコアが使用）
+            const canvasArea = document.createElement('div');
+            canvasArea.id = 'tegaki-canvas-area';
+            canvasArea.style.cssText = `
+                flex: 1;
+                position: relative;
+                overflow: hidden;
+                background: #ffffee;
+            `;
+            this.container.appendChild(canvasArea);
             
             document.body.appendChild(this.container);
             
+            // スクロール防止
             this.originalBodyOverflow = document.body.style.overflow;
             document.body.style.overflow = 'hidden';
         }
         
-        setupCanvas() {
-            this.ctx = this.canvas.getContext('2d');
-            this.ctx.lineCap = 'round';
-            this.ctx.lineJoin = 'round';
-            this.ctx.lineWidth = 3;
-            this.ctx.strokeStyle = '#800000';
+        // ===== Tegakiコア読込と起動 =====
+        async loadAndInitTegaki() {
+            // スクリプトが既に読み込まれているかチェック
+            if (window.TegakiCore) {
+                console.log('[Tegaki Loader] TegakiCore already loaded');
+                this.initTegaki();
+                return;
+            }
             
-            this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
-            this.canvas.addEventListener('mousemove', (e) => this.draw(e));
-            this.canvas.addEventListener('mouseup', () => this.stopDrawing());
-            this.canvas.addEventListener('mouseout', () => this.stopDrawing());
+            console.log('[Tegaki Loader] Loading TegakiCore from:', TEGAKI_CORE_URL);
             
-            this.canvas.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                const touch = e.touches[0];
-                const mouseEvent = new MouseEvent('mousedown', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY
-                });
-                this.canvas.dispatchEvent(mouseEvent);
+            // スクリプトタグで読み込み
+            const script = document.createElement('script');
+            script.src = TEGAKI_CORE_URL;
+            script.charset = 'UTF-8';
+            script.type = 'text/javascript'; // 明示的に指定
+            
+            await new Promise((resolve, reject) => {
+                script.onload = () => {
+                    console.log('[Tegaki Loader] ✓ TegakiCore script loaded');
+                    resolve();
+                };
+                script.onerror = (error) => {
+                    console.error('[Tegaki Loader] ✗ Failed to load TegakiCore:', error);
+                    reject(new Error('Tegakiコアの読み込みに失敗しました\nURL: ' + TEGAKI_CORE_URL));
+                };
+                document.head.appendChild(script);
             });
             
-            this.canvas.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                const touch = e.touches[0];
-                const mouseEvent = new MouseEvent('mousemove', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY
-                });
-                this.canvas.dispatchEvent(mouseEvent);
-            });
+            // TegakiCoreが定義されているか確認
+            if (!window.TegakiCore) {
+                throw new Error('TegakiCoreが読み込まれましたが、クラスが見つかりません');
+            }
             
-            this.canvas.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                const mouseEvent = new MouseEvent('mouseup', {});
-                this.canvas.dispatchEvent(mouseEvent);
-            });
+            this.initTegaki();
         }
         
-        startDrawing(e) {
-            this.isDrawing = true;
-            const rect = this.canvas.getBoundingClientRect();
-            this.lastX = e.clientX - rect.left;
-            this.lastY = e.clientY - rect.top;
-        }
-        
-        draw(e) {
-            if (!this.isDrawing) return;
+        // ===== Tegakiコア初期化 =====
+        initTegaki() {
+            const canvasArea = document.getElementById('tegaki-canvas-area');
+            if (!canvasArea) {
+                throw new Error('キャンバスエリアが見つかりません');
+            }
             
-            const rect = this.canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.lastX, this.lastY);
-            this.ctx.lineTo(x, y);
-            this.ctx.stroke();
-            
-            this.lastX = x;
-            this.lastY = y;
-        }
-        
-        stopDrawing() {
-            this.isDrawing = false;
-        }
-        
-        clearCanvas() {
-            if (confirm('キャンバスをクリアしますか？')) {
-                this.ctx.clearRect(0, 0, this.canvas.width, this.canvas.height);
+            try {
+                this.tegakiCore = new window.TegakiCore(canvasArea);
+                console.log('[Tegaki Loader] ✓ TegakiCore instance created');
+            } catch (error) {
+                console.error('[Tegaki Loader] ✗ Failed to initialize TegakiCore:', error);
+                throw new Error('TegakiCoreの初期化に失敗しました: ' + error.message);
             }
         }
         
-        async exportAndClose() {
+        // ===== エクスポートして添付 =====
+        async exportAndAttach() {
+            if (!this.tegakiCore) {
+                alert('お絵かきツールが初期化されていません');
+                return;
+            }
+            
             try {
-                const blob = await this.canvasToBlobWithBackground();
-                await this.injectToBoard(blob);
+                console.log('[Tegaki Loader] Exporting canvas...');
                 
-                alert('掲示板への画像貼り付けが完了しました！\nコメントを入力して投稿してください。');
+                // キャンバスから画像を取得
+                const blob = await this.tegakiCore.exportAsBlob();
+                console.log('[Tegaki Loader] ✓ Blob created:', blob.size, 'bytes');
+                
+                // 掲示板に注入
+                await this.injectToBoard(blob);
+                console.log('[Tegaki Loader] ✓ Image injected to board');
+                
+                alert('画像を添付しました！投稿ボタンを押してください。');
                 this.cleanup();
                 
             } catch (error) {
-                console.error('[Tegaki Test] エクスポート失敗:', error);
+                console.error('[Tegaki Loader] エクスポート失敗:', error);
                 alert('画像の出力に失敗しました\n' + error.message);
             }
         }
         
-        // 背景色を塗りつぶしてからBlobを生成
-        canvasToBlobWithBackground() {
-            return new Promise((resolve, reject) => {
-                // 一時的なキャンバスを作成
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = this.canvas.width;
-                tempCanvas.height = this.canvas.height;
-                const tempCtx = tempCanvas.getContext('2d');
-                
-                // 背景色を塗りつぶす
-                tempCtx.fillStyle = BACKGROUND_COLOR;
-                tempCtx.fillRect(0, 0, tempCanvas.width, tempCanvas.height);
-                
-                // 元のキャンバスの内容を上に描画
-                tempCtx.drawImage(this.canvas, 0, 0);
-                
-                // Blobに変換
-                tempCanvas.toBlob((blob) => {
-                    if (blob) {
-                        resolve(blob);
-                    } else {
-                        reject(new Error('Blob生成に失敗しました'));
-                    }
-                }, 'image/png');
-            });
-        }
-        
+        // ===== 掲示板にFile注入 =====
         async injectToBoard(blob) {
             if (!this.targetInput) {
                 throw new Error('入力要素が見つかりません');
             }
             
-            const filename = `tegaki_test_${Date.now()}.png`;
-            
+            const filename = `tegaki_${Date.now()}.png`;
             const file = new File([blob], filename, {
                 type: 'image/png',
                 lastModified: Date.now()
@@ -339,48 +320,59 @@
             dt.items.add(file);
             this.targetInput.files = dt.files;
             
+            // changeイベント発火
             const changeEvent = new Event('change', { bubbles: true });
             this.targetInput.dispatchEvent(changeEvent);
             
-            await this.waitForPreview();
-        }
-        
-        async waitForPreview() {
+            // プレビュー表示を待つ（オプション）
             try {
                 await this.waitFor(() => {
-                    const preview = document.querySelector(MEBUKI_SELECTORS.previewImg);
-                    return preview !== null;
-                }, 5000);
+                    return document.querySelector(MEBUKI_SELECTORS.previewImg) !== null;
+                }, 3000);
+                console.log('[Tegaki Loader] ✓ Preview displayed');
             } catch (error) {
-                console.warn('[Tegaki Test] プレビュー表示確認タイムアウト（処理は継続）');
+                console.warn('[Tegaki Loader] プレビュー確認タイムアウト（処理は正常完了）');
             }
         }
         
+        // ===== キャンセル =====
         cancel() {
-            if (confirm('描いた内容は破棄されます。よろしいですか？')) {
+            if (confirm('描いた内容は破棄されます。よろしいですか?')) {
                 this.cleanup();
             }
         }
         
+        // ===== クリーンアップ =====
         cleanup() {
+            console.log('[Tegaki Loader] Cleaning up...');
+            
+            // Tegakiコア破棄
+            if (this.tegakiCore && this.tegakiCore.destroy) {
+                this.tegakiCore.destroy();
+                this.tegakiCore = null;
+            }
+            
+            // コンテナ削除
             if (this.container) {
                 this.container.remove();
                 this.container = null;
             }
             
+            // スタイル復元
             if (this.originalBodyOverflow !== null) {
                 document.body.style.overflow = this.originalBodyOverflow;
                 this.originalBodyOverflow = null;
             }
             
-            this.canvas = null;
-            this.ctx = null;
+            console.log('[Tegaki Loader] ✓ Cleanup complete');
         }
         
+        // ===== ユーティリティ: 待機 =====
         wait(ms) {
             return new Promise(resolve => setTimeout(resolve, ms));
         }
         
+        // ===== ユーティリティ: 条件待機 =====
         waitFor(condition, timeout = 5000) {
             return new Promise((resolve, reject) => {
                 const startTime = Date.now();
@@ -398,15 +390,17 @@
         }
     }
     
+    // ===== グローバル登録 =====
     window.tegakiStart = function() {
-        if (!window._tegakiBookmarkletTest) {
-            window._tegakiBookmarkletTest = new TegakiBookmarkletTest();
+        if (!window._tegakiBookmarklet) {
+            window._tegakiBookmarklet = new TegakiBookmarklet();
         }
-        window._tegakiBookmarkletTest.start();
+        window._tegakiBookmarklet.start();
     };
     
+    // ===== 自動起動 =====
     window.tegakiStart();
     
 })();
 
-console.log('✅ tegaki-loader.js (背景色対応版) loaded');
+console.log('✅ tegaki-loader.js loaded (2-file architecture)');
