@@ -1,6 +1,6 @@
 // ==================================================
 // tegaki_anime.js
-// アニメーションお絵かき機能本体
+// アニメーションお絵かき機能本体 (修正版)
 // ==================================================
 
 (function() {
@@ -14,7 +14,6 @@
             this.canvas = null; // 描画用メインキャンバス
             this.ctx = null;
             this.bgCanvas = null; // 背景表示用キャンバス
-            this.bgCtx = null;
             
             // 描画状態
             this.isDrawing = false;
@@ -35,6 +34,9 @@
             // Undo/Redo履歴
             this.history = []; // 各レイヤーの履歴を保持する2次元配列
             this.historyIndex = []; // 各レイヤーの現在の履歴位置
+            
+            // 💡 イベントリスナーのメモリリーク対策
+            this.boundHandleKeyDown = this.handleKeyDown.bind(this);
             
             this.init();
         }
@@ -58,7 +60,7 @@
                 width: 100%;
                 height: 100%;
                 background: #ffffee;
-                padding-top: 20px;
+                padding: 10px 0 20px 0; /* 💡 UIレイアウト調整 (上下の余白) */
             `;
             
             // キャンバスエリア
@@ -80,21 +82,19 @@
                 box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
             `;
             
-            // 背景キャンバス（レイヤー0）
+            // 背景キャンバス
             this.bgCanvas = document.createElement('canvas');
             this.bgCanvas.width = 400;
             this.bgCanvas.height = 400;
-            this.bgCanvas.style.cssText = `
-                position: absolute; top: 0; left: 0; background: #f0e0d6;
-            `;
+            this.bgCanvas.getContext('2d').fillStyle = '#f0e0d6';
+            this.bgCanvas.getContext('2d').fillRect(0, 0, 400, 400);
+            this.bgCanvas.style.cssText = `position: absolute; top: 0; left: 0;`;
             
-            // 描画キャンバス（レイヤー1・透明）
+            // 描画キャンバス
             this.canvas = document.createElement('canvas');
             this.canvas.width = 400;
             this.canvas.height = 400;
-            this.canvas.style.cssText = `
-                position: absolute; top: 0; left: 0; cursor: crosshair;
-            `;
+            this.canvas.style.cssText = `position: absolute; top: 0; left: 0; cursor: crosshair;`;
             
             canvasContainer.appendChild(this.bgCanvas);
             canvasContainer.appendChild(this.canvas);
@@ -106,7 +106,7 @@
                 display: flex;
                 justify-content: center;
                 gap: 10px;
-                padding: 15px 0;
+                padding: 5px 0; /* 💡 UIレイアウト調整 (キャンバスとの余白を詰める) */
             `;
             
             for (let i = 0; i < this.frameCount; i++) {
@@ -170,8 +170,8 @@
                 this.canvas.dispatchEvent(new MouseEvent('mouseup', {}));
             });
 
-            // キーボードイベント (Undo/Redo)
-            document.addEventListener('keydown', (e) => this.handleKeyDown(e));
+            // 💡 キーボードイベント (Undo/Redo) - 修正済み
+            document.addEventListener('keydown', this.boundHandleKeyDown);
         }
         
         // ===== 描画処理 =====
@@ -223,14 +223,23 @@
         
         updateThumbnail() {
             const thumbCanvas = this.thumbnailContainer.childNodes[this.activeLayerIndex];
+            if (!thumbCanvas) return;
             const thumbCtx = thumbCanvas.getContext('2d');
             thumbCtx.clearRect(0, 0, thumbCanvas.width, thumbCanvas.height);
-            thumbCtx.drawImage(this.canvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
+
+            // サムネイルには背景も合成して表示
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = this.canvas.width;
+            tempCanvas.height = this.canvas.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.drawImage(this.bgCanvas, 0, 0);
+            tempCtx.drawImage(this.canvas, 0, 0);
+            
+            thumbCtx.drawImage(tempCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
         }
 
         // ===== Undo/Redo 機能 =====
         handleKeyDown(e) {
-            // TegakiのUIが表示されている時だけUndo/Redoを有効にする
             if (!this.wrapper || !this.wrapper.isConnected) return;
             
             if (e.ctrlKey && e.key.toLowerCase() === 'z') {
@@ -247,7 +256,6 @@
             const history = this.history[this.activeLayerIndex];
             let index = this.historyIndex[this.activeLayerIndex];
             
-            // 現在のインデックス以降の履歴（Redo用の履歴）を削除
             if (index < history.length - 1) {
                 this.history[this.activeLayerIndex] = history.slice(0, index + 1);
             }
@@ -281,28 +289,38 @@
         }
 
         // ===== エクスポート処理 =====
-        // 実行前にアクティブなレイヤーの状態を保存する
         prepareExport() {
              this.layers[this.activeLayerIndex] = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
         }
 
-        // APNGとしてエクスポート (要 UPNG.js)
+        // 💡 APNGとしてエクスポート (背景合成の不具合を修正)
         async exportAsApng() {
             this.prepareExport();
-            if (!window.UPNG) {
-                alert('APNG生成ライブラリが読み込まれていません。');
+            if (!window.UPNG || !window.Zlib) {
+                alert('APNG生成ライブラリ(UPNG.js/pako.js)が読み込まれていません。');
                 return null;
             }
             
-            const frames = this.layers.map(imageData => imageData.data.buffer);
-            const delays = Array(this.frameCount).fill(this.frameDelay);
+            const frames = [];
+            for (const layerData of this.layers) {
+                const frameCanvas = document.createElement('canvas');
+                frameCanvas.width = this.canvas.width;
+                frameCanvas.height = this.canvas.height;
+                const frameCtx = frameCanvas.getContext('2d');
+                
+                frameCtx.drawImage(this.bgCanvas, 0, 0); // 背景を描画
+                frameCtx.putImageData(layerData, 0, 0);   // レイヤーを重ねる
+                
+                frames.push(frameCtx.getImageData(0, 0, this.canvas.width, this.canvas.height).data.buffer);
+            }
             
+            const delays = Array(this.frameCount).fill(this.frameDelay);
             const apngData = UPNG.encode(frames, this.canvas.width, this.canvas.height, 0, delays);
             return new Blob([apngData], {type: 'image/apng'});
         }
 
-        // GIFとしてエクスポート (要 gif.js)
-        async exportAsGif() {
+        // 💡 GIFとしてエクスポート (進捗表示コールバックを追加)
+        async exportAsGif(onProgress) {
             this.prepareExport();
             if (!window.GIF) {
                 alert('GIF生成ライブラリが読み込まれていません。');
@@ -316,6 +334,10 @@
                     width: this.canvas.width,
                     height: this.canvas.height
                 });
+                
+                if (onProgress && typeof onProgress === 'function') {
+                    gif.on('progress', onProgress);
+                }
 
                 // 背景と各レイヤーを合成してフレームを作成
                 for (const layerData of this.layers) {
@@ -330,17 +352,21 @@
                     gif.addFrame(frameCanvas, { delay: this.frameDelay });
                 }
 
-                gif.on('finished', (blob) => resolve(blob));
+                gif.on('finished', (blob) => {
+                    if (onProgress) gif.off('progress', onProgress);
+                    resolve(blob)
+                });
                 gif.render();
             });
         }
         
         // ===== 破棄処理 =====
         destroy() {
+            // 💡 イベントリスナーのメモリリーク対策
+            document.removeEventListener('keydown', this.boundHandleKeyDown);
             if (this.wrapper && this.wrapper.parentNode) {
                 this.wrapper.remove();
             }
-            document.removeEventListener('keydown', this.handleKeyDown);
         }
     };
     
