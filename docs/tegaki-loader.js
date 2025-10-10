@@ -1,1 +1,406 @@
-function _0x3d2f(_0x50a545,_0x18c5bf){const _0x2b690a=_0x2b69();return _0x3d2f=function(_0x3d2f1e,_0x45a9df){_0x3d2f1e=_0x3d2f1e-0x71;let _0x3a0340=_0x2b690a[_0x3d2f1e];return _0x3a0340;},_0x3d2f(_0x50a545,_0x18c5bf);}const _0xe84e83=_0x3d2f;function _0x2b69(){const _0x592b05=['exportAndAttach','閉じる','onmouseover','previewImg','onload','onerror','input[type=\x22file\x22][accept*=\x22image\x22]','files','size','destroy','createContainer','button','お絵かきツールが初期化されていません','Tegaki起動に失敗しました\x0a','background','dispatchEvent','tegaki-bookmarklet-container','findTargetElements','type','5482872DWXKXJ','tegakiStart','image/png','[Tegaki\x20Loader]\x20✗\x20Failed\x20to\x20load\x20TegakiCore:','3800304AHQiID','originalBodyOverflow','247210GKtEep','div','画像を添付しました！投稿ボタンを押してください。','cssText','log','exportAsBlob','\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20display:\x20flex;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20justify-content:\x20space-between;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20align-items:\x20center;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20padding:\x208px\x2016px;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20background:\x20#e9c2ba;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20border-bottom:\x201px\x20solid\x20#aa5a56;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20gap:\x208px;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20','postButton','\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20position:\x20fixed;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20top:\x200;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20left:\x200;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20width:\x20100vw;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20height:\x20100vh;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20z-index:\x20999999;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20display:\x20flex;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20flex-direction:\x20column;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20','createElement','.png','src','host','button[title=\x22レスを投稿\x22]','appendChild','initTegaki','TegakiCoreが読み込まれましたが、クラスが見つかりません','_tegakiBookmarklet','#22c55e','getElementById','10036128NoUCiY','Tegakiコアの読み込みに失敗しました\x0aURL:\x20','targetInput','tegakiCore','9002444dFZQro','click','[Tegaki\x20Loader]\x20✓\x20TegakiCore\x20instance\x20created','tegaki-canvas-area','detectBoard','\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20padding:\x208px\x2012px;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20background:\x20#f87171;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20color:\x20white;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20border:\x20none;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20border-radius:\x204px;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20cursor:\x20pointer;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20font-size:\x2016px;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20font-weight:\x20bold;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20transition:\x20background\x200.2s;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20','waitFor','\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20flex:\x201;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20position:\x20relative;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20overflow:\x20hidden;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20background:\x20#ffffee;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20','描いた内容は破棄されます。よろしいですか?','#f87171','入力要素が見つかりません','img[src^=\x22blob:\x22]','mebuki','innerHTML','[Tegaki\x20Loader]\x20Exporting\x20canvas...','tegaki_','text/javascript','boardType','[Tegaki\x20Loader]\x20✓\x20Board\x20detected:','querySelector','items','841066imwjvJ','[Tegaki\x20Loader]\x20プレビュー確認タイムアウト（処理は正常完了）','※予告無しにツール削除の可能性があります。','7YowqjA','container','[Tegaki\x20Loader]\x20Starting...','title','fileInput','\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20color:\x20#aa5a56;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20font-size:\x2010px;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20','warn','[Tegaki\x20Loader]\x20エクスポート失敗:','[Tegaki\x20Loader]\x20✓\x20Blob\x20created:','2076iHoGII','start','onclick','style','\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20display:\x20flex;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20flex-direction:\x20column;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20gap:\x202px;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20','[Tegaki\x20Loader]\x20TegakiCore\x20already\x20loaded','head','20UEeEHN','now','#4ade80','textContent','2218cycZym','[Tegaki\x20Loader]\x20✓\x20TegakiCore\x20script\x20loaded','body','TegakiCore','タイムアウト','overflow','掲示板に添付','[Tegaki\x20Loader]\x20起動失敗:','画像の出力に失敗しました\x0a','[Tegaki\x20Loader]\x20✓\x20Container\x20created','cancel','30sHxDIU','cleanup','[Tegaki\x20Loader]\x20✗\x20Failed\x20to\x20initialize\x20TegakiCore:','[Tegaki\x20Loader]\x20Loading\x20TegakiCore\x20from:','[Tegaki\x20Loader]\x20✓\x20Target\x20elements\x20found','wait','message','loadAndInitTegaki','キャンバスエリアが見つかりません','mebuki.moe','error','[Tegaki\x20Loader]\x20Cleaning\x20up...','✅\x20tegaki-loader.js\x20loaded\x20(2-file\x20architecture)','onmouseout'];_0x2b69=function(){return _0x592b05;};return _0x2b69();}(function(_0x14d20d,_0x559c6e){const _0x370e8a=_0x3d2f,_0x258617=_0x14d20d();while(!![]){try{const _0x1e046e=parseInt(_0x370e8a(0xc7))/0x1+parseInt(_0x370e8a(0xde))/0x2*(parseInt(_0x370e8a(0xd3))/0x3)+parseInt(_0x370e8a(0xda))/0x4*(-parseInt(_0x370e8a(0x9a))/0x5)+parseInt(_0x370e8a(0x94))/0x6+parseInt(_0x370e8a(0xca))/0x7*(parseInt(_0x370e8a(0xae))/0x8)+-parseInt(_0x370e8a(0x98))/0x9+parseInt(_0x370e8a(0x73))/0xa*(-parseInt(_0x370e8a(0xb2))/0xb);if(_0x1e046e===_0x559c6e)break;else _0x258617['push'](_0x258617['shift']());}catch(_0x7a7137){_0x258617['push'](_0x258617['shift']());}}}(_0x2b69,0x9f370),(function(){'use strict';const _0x22eb53=_0x3d2f;const _0x4ab273='https://toshinka.github.io/tegaki/docs/tegaki.js',_0x3a1fbb=0xbb8,_0x28f338={'postButton':_0x22eb53(0xa7),'fileInput':_0x22eb53(0x87),'previewImg':_0x22eb53(0xbd)};class _0x2a0347{constructor(){const _0x3e8fe3=_0x22eb53;this[_0x3e8fe3(0xc3)]=null,this[_0x3e8fe3(0xb0)]=null,this['tegakiCore']=null,this[_0x3e8fe3(0xcb)]=null,this[_0x3e8fe3(0x99)]=null;}async[_0x22eb53(0xd4)](){const _0x4e97ec=_0x22eb53;try{console[_0x4e97ec(0x9e)](_0x4e97ec(0xcc)),this[_0x4e97ec(0xc3)]=this[_0x4e97ec(0xb6)]();if(!this[_0x4e97ec(0xc3)]){alert('対応していない掲示板です\x0a現在はめぶきちゃんねる(mebuki.moe)のみ対応しています');return;}console[_0x4e97ec(0x9e)](_0x4e97ec(0xc4),this['boardType']),await this['findTargetElements'](),console[_0x4e97ec(0x9e)](_0x4e97ec(0x77)),this[_0x4e97ec(0x8b)](),console['log'](_0x4e97ec(0x71)),await this[_0x4e97ec(0x7a)](),console[_0x4e97ec(0x9e)]('[Tegaki\x20Loader]\x20✓\x20Tegaki\x20initialized');}catch(_0x264bde){console[_0x4e97ec(0x7d)](_0x4e97ec(0xe5),_0x264bde),alert(_0x4e97ec(0x8e)+_0x264bde[_0x4e97ec(0x79)]),this[_0x4e97ec(0x74)]();}}[_0x22eb53(0xb6)](){const _0x3d0e45=_0x22eb53,_0x42af76=location[_0x3d0e45(0xa6)];if(_0x42af76['includes'](_0x3d0e45(0x7c)))return _0x3d0e45(0xbe);return null;}async[_0x22eb53(0x92)](){const _0x15e768=_0x22eb53;if(this[_0x15e768(0xc3)]===_0x15e768(0xbe)){const _0x185650=document[_0x15e768(0xc5)](_0x28f338[_0x15e768(0xa1)]);_0x185650&&(_0x185650[_0x15e768(0xb3)](),await this[_0x15e768(0x78)](0x12c));await this[_0x15e768(0xb8)](()=>{const _0x1981a7=_0x15e768;return this[_0x1981a7(0xb0)]=document[_0x1981a7(0xc5)](_0x28f338[_0x1981a7(0xce)]),this[_0x1981a7(0xb0)]!==null;},_0x3a1fbb);if(!this[_0x15e768(0xb0)])throw new Error('ファイル入力要素が見つかりません');}}['createContainer'](){const _0x3486a5=_0x22eb53;this['container']=document[_0x3486a5(0xa3)](_0x3486a5(0x9b)),this[_0x3486a5(0xcb)]['id']=_0x3486a5(0x91),this[_0x3486a5(0xcb)]['style']['cssText']=_0x3486a5(0xa2);const _0x3d9f3f=document['createElement'](_0x3486a5(0x9b));_0x3d9f3f[_0x3486a5(0xd6)][_0x3486a5(0x9d)]=_0x3486a5(0xa0);const _0x1fface=document[_0x3486a5(0xa3)](_0x3486a5(0x9b));_0x1fface[_0x3486a5(0xd6)][_0x3486a5(0x9d)]=_0x3486a5(0xd7);const _0x125365=document['createElement']('div');_0x125365[_0x3486a5(0xdd)]='めぶき用Tegakiツールテスト',_0x125365[_0x3486a5(0xd6)][_0x3486a5(0x9d)]='\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20color:\x20#800000;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20font-size:\x2014px;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20font-weight:\x20bold;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20';const _0x25f7a3=document[_0x3486a5(0xa3)](_0x3486a5(0x9b));_0x25f7a3[_0x3486a5(0xdd)]=_0x3486a5(0xc9),_0x25f7a3[_0x3486a5(0xd6)][_0x3486a5(0x9d)]=_0x3486a5(0xcf),_0x1fface[_0x3486a5(0xa8)](_0x125365),_0x1fface['appendChild'](_0x25f7a3);const _0x20d767=document['createElement'](_0x3486a5(0x9b));_0x20d767[_0x3486a5(0xd6)][_0x3486a5(0x9d)]='\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20display:\x20flex;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20gap:\x208px;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20';const _0x32bbcc=document['createElement'](_0x3486a5(0x8c));_0x32bbcc[_0x3486a5(0xbf)]='\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<svg\x20xmlns=\x22http://www.w3.org/2000/svg\x22\x20width=\x2216\x22\x20height=\x2216\x22\x20viewBox=\x220\x200\x2024\x2024\x22\x20fill=\x22none\x22\x20stroke=\x22white\x22\x20stroke-width=\x222\x22\x20stroke-linecap=\x22round\x22\x20stroke-linejoin=\x22round\x22\x20style=\x22vertical-align:\x20middle;\x20margin-right:\x204px;\x22>\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<path\x20d=\x22M14\x209.536V7a4\x204\x200\x200\x201\x204-4h1.5a.5.5\x200\x200\x201\x20.5.5V5a4\x204\x200\x200\x201-4\x204\x204\x204\x200\x200\x200-4\x204c0\x202\x201\x203\x201\x205a5\x205\x200\x200\x201-1\x203\x22/>\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<path\x20d=\x22M4\x209a5\x205\x200\x200\x201\x208\x204\x205\x205\x200\x200\x201-8-4\x22/>\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<path\x20d=\x22M5\x2021h14\x22/>\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20</svg>\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20<span\x20style=\x22vertical-align:\x20middle;\x22>投稿</span>\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20',_0x32bbcc[_0x3486a5(0xcd)]=_0x3486a5(0xe4),_0x32bbcc[_0x3486a5(0xd6)][_0x3486a5(0x9d)]='\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20padding:\x208px\x2016px;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20background:\x20#4ade80;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20color:\x20white;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20border:\x20none;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20border-radius:\x204px;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20cursor:\x20pointer;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20font-size:\x2014px;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20font-weight:\x20bold;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20transition:\x20background\x200.2s;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20display:\x20inline-flex;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20align-items:\x20center;\x0a\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20\x20',_0x32bbcc[_0x3486a5(0x83)]=()=>_0x32bbcc['style'][_0x3486a5(0x8f)]=_0x3486a5(0xac),_0x32bbcc[_0x3486a5(0x80)]=()=>_0x32bbcc[_0x3486a5(0xd6)][_0x3486a5(0x8f)]=_0x3486a5(0xdc),_0x32bbcc[_0x3486a5(0xd5)]=()=>this[_0x3486a5(0x81)]();const _0x210fed=document[_0x3486a5(0xa3)](_0x3486a5(0x8c));_0x210fed[_0x3486a5(0xdd)]='✕',_0x210fed['title']=_0x3486a5(0x82),_0x210fed[_0x3486a5(0xd6)][_0x3486a5(0x9d)]=_0x3486a5(0xb7),_0x210fed['onmouseover']=()=>_0x210fed['style'][_0x3486a5(0x8f)]='#ef4444',_0x210fed['onmouseout']=()=>_0x210fed[_0x3486a5(0xd6)][_0x3486a5(0x8f)]=_0x3486a5(0xbb),_0x210fed['onclick']=()=>this[_0x3486a5(0x72)](),_0x20d767[_0x3486a5(0xa8)](_0x32bbcc),_0x20d767['appendChild'](_0x210fed),_0x3d9f3f[_0x3486a5(0xa8)](_0x1fface),_0x3d9f3f['appendChild'](_0x20d767),this[_0x3486a5(0xcb)][_0x3486a5(0xa8)](_0x3d9f3f);const _0x589965=document['createElement'](_0x3486a5(0x9b));_0x589965['id']=_0x3486a5(0xb5),_0x589965[_0x3486a5(0xd6)][_0x3486a5(0x9d)]=_0x3486a5(0xb9),this[_0x3486a5(0xcb)]['appendChild'](_0x589965),document[_0x3486a5(0xe0)][_0x3486a5(0xa8)](this['container']),this[_0x3486a5(0x99)]=document['body']['style'][_0x3486a5(0xe3)],document[_0x3486a5(0xe0)][_0x3486a5(0xd6)][_0x3486a5(0xe3)]='hidden';}async[_0x22eb53(0x7a)](){const _0xcf1b83=_0x22eb53;if(window[_0xcf1b83(0xe1)]){console[_0xcf1b83(0x9e)](_0xcf1b83(0xd8)),this[_0xcf1b83(0xa9)]();return;}console[_0xcf1b83(0x9e)](_0xcf1b83(0x76),_0x4ab273);const _0x2e8fa8=document[_0xcf1b83(0xa3)]('script');_0x2e8fa8[_0xcf1b83(0xa5)]=_0x4ab273,_0x2e8fa8['charset']='UTF-8',_0x2e8fa8[_0xcf1b83(0x93)]=_0xcf1b83(0xc2),await new Promise((_0x3fe87a,_0x23b2f4)=>{const _0x578e56=_0xcf1b83;_0x2e8fa8[_0x578e56(0x85)]=()=>{const _0x55929b=_0x578e56;console['log'](_0x55929b(0xdf)),_0x3fe87a();},_0x2e8fa8[_0x578e56(0x86)]=_0x28cffb=>{const _0x3b4fdf=_0x578e56;console[_0x3b4fdf(0x7d)](_0x3b4fdf(0x97),_0x28cffb),_0x23b2f4(new Error(_0x3b4fdf(0xaf)+_0x4ab273));},document[_0x578e56(0xd9)][_0x578e56(0xa8)](_0x2e8fa8);});if(!window[_0xcf1b83(0xe1)])throw new Error(_0xcf1b83(0xaa));this[_0xcf1b83(0xa9)]();}['initTegaki'](){const _0x376ae7=_0x22eb53,_0x1da3b8=document[_0x376ae7(0xad)](_0x376ae7(0xb5));if(!_0x1da3b8)throw new Error(_0x376ae7(0x7b));try{this[_0x376ae7(0xb1)]=new window[(_0x376ae7(0xe1))](_0x1da3b8),console['log'](_0x376ae7(0xb4));}catch(_0x362767){console[_0x376ae7(0x7d)](_0x376ae7(0x75),_0x362767);throw new Error('TegakiCoreの初期化に失敗しました:\x20'+_0x362767[_0x376ae7(0x79)]);}}async[_0x22eb53(0x81)](){const _0x2aa1c4=_0x22eb53;if(!this[_0x2aa1c4(0xb1)]){alert(_0x2aa1c4(0x8d));return;}try{console[_0x2aa1c4(0x9e)](_0x2aa1c4(0xc0));const _0x1790d5=await this[_0x2aa1c4(0xb1)][_0x2aa1c4(0x9f)]();console[_0x2aa1c4(0x9e)](_0x2aa1c4(0xd2),_0x1790d5[_0x2aa1c4(0x89)],'bytes'),await this['injectToBoard'](_0x1790d5),console[_0x2aa1c4(0x9e)]('[Tegaki\x20Loader]\x20✓\x20Image\x20injected\x20to\x20board'),alert(_0x2aa1c4(0x9c)),this['cleanup']();}catch(_0x4793f0){console[_0x2aa1c4(0x7d)](_0x2aa1c4(0xd1),_0x4793f0),alert(_0x2aa1c4(0xe6)+_0x4793f0['message']);}}async['injectToBoard'](_0x3c744b){const _0x38a86c=_0x22eb53;if(!this[_0x38a86c(0xb0)])throw new Error(_0x38a86c(0xbc));const _0x242491=_0x38a86c(0xc1)+Date[_0x38a86c(0xdb)]()+_0x38a86c(0xa4),_0x4f18d0=new File([_0x3c744b],_0x242491,{'type':_0x38a86c(0x96),'lastModified':Date[_0x38a86c(0xdb)]()}),_0x498f31=new DataTransfer();_0x498f31[_0x38a86c(0xc6)]['add'](_0x4f18d0),this[_0x38a86c(0xb0)][_0x38a86c(0x88)]=_0x498f31[_0x38a86c(0x88)];const _0x2a845d=new Event('change',{'bubbles':!![]});this[_0x38a86c(0xb0)][_0x38a86c(0x90)](_0x2a845d);try{await this[_0x38a86c(0xb8)](()=>{const _0x2228b9=_0x38a86c;return document[_0x2228b9(0xc5)](_0x28f338[_0x2228b9(0x84)])!==null;},0xbb8),console['log']('[Tegaki\x20Loader]\x20✓\x20Preview\x20displayed');}catch(_0x53d4c7){console[_0x38a86c(0xd0)](_0x38a86c(0xc8));}}[_0x22eb53(0x72)](){const _0x289b71=_0x22eb53;confirm(_0x289b71(0xba))&&this[_0x289b71(0x74)]();}['cleanup'](){const _0x188633=_0x22eb53;console[_0x188633(0x9e)](_0x188633(0x7e)),this[_0x188633(0xb1)]&&this[_0x188633(0xb1)][_0x188633(0x8a)]&&(this[_0x188633(0xb1)]['destroy'](),this[_0x188633(0xb1)]=null),this[_0x188633(0xcb)]&&(this[_0x188633(0xcb)]['remove'](),this['container']=null),this[_0x188633(0x99)]!==null&&(document['body']['style'][_0x188633(0xe3)]=this[_0x188633(0x99)],this[_0x188633(0x99)]=null),console['log']('[Tegaki\x20Loader]\x20✓\x20Cleanup\x20complete');}[_0x22eb53(0x78)](_0x29d075){return new Promise(_0x887e10=>setTimeout(_0x887e10,_0x29d075));}['waitFor'](_0x291bda,_0x37fa9b=0x1388){return new Promise((_0x4512f2,_0x38801f)=>{const _0xf18780=_0x3d2f,_0x309490=Date[_0xf18780(0xdb)](),_0x451fc9=()=>{const _0x36b493=_0xf18780;if(_0x291bda())_0x4512f2();else Date[_0x36b493(0xdb)]()-_0x309490>_0x37fa9b?_0x38801f(new Error(_0x36b493(0xe2))):setTimeout(_0x451fc9,0x64);};_0x451fc9();});}}window[_0x22eb53(0x95)]=function(){const _0xfd7c97=_0x22eb53;!window['_tegakiBookmarklet']&&(window['_tegakiBookmarklet']=new _0x2a0347()),window[_0xfd7c97(0xab)][_0xfd7c97(0xd4)]();},window[_0x22eb53(0x95)]();}()),console[_0xe84e83(0x9e)](_0xe84e83(0x7f)));
+// ==================================================
+// tegaki-loader.js
+// ブックマークレット用ローダー - 拡張可能な2ファイル構成
+// ==================================================
+
+(function() {
+    'use strict';
+    
+    // ===== 設定 =====
+    // GitHub Pagesを使用（正しいMIMEタイプで配信される）
+    const TEGAKI_CORE_URL = 'https://toshinka.github.io/tegaki/docs/tegaki.js';
+    const MEBUKI_TIMEOUT = 3000;
+    
+    const MEBUKI_SELECTORS = {
+        postButton: 'button[title="レスを投稿"]',
+        fileInput: 'input[type="file"][accept*="image"]',
+        previewImg: 'img[src^="blob:"]'
+    };
+    
+    // ===== ブックマークレット本体 =====
+    class TegakiBookmarklet {
+        constructor() {
+            this.boardType = null;
+            this.targetInput = null;
+            this.tegakiCore = null;
+            this.container = null;
+            this.originalBodyOverflow = null;
+        }
+        
+        // ===== エントリーポイント =====
+        async start() {
+            try {
+                console.log('[Tegaki Loader] Starting...');
+                
+                // 1. 掲示板判定
+                this.boardType = this.detectBoard();
+                if (!this.boardType) {
+                    alert('対応していない掲示板です\n現在はめぶきちゃんねる(mebuki.moe)のみ対応しています');
+                    return;
+                }
+                console.log('[Tegaki Loader] ✓ Board detected:', this.boardType);
+                
+                // 2. 要素検出
+                await this.findTargetElements();
+                console.log('[Tegaki Loader] ✓ Target elements found');
+                
+                // 3. UI作成（トップバーのみ）
+                this.createContainer();
+                console.log('[Tegaki Loader] ✓ Container created');
+                
+                // 4. Tegakiコア読込と起動
+                await this.loadAndInitTegaki();
+                console.log('[Tegaki Loader] ✓ Tegaki initialized');
+                
+            } catch (error) {
+                console.error('[Tegaki Loader] 起動失敗:', error);
+                alert('Tegaki起動に失敗しました\n' + error.message);
+                this.cleanup();
+            }
+        }
+        
+        // ===== 掲示板判定 =====
+        detectBoard() {
+            const host = location.host;
+            if (host.includes('mebuki.moe')) {
+                return 'mebuki';
+            }
+            // 将来的に他の掲示板を追加可能
+            // if (host.includes('futaba.com')) return 'futaba';
+            return null;
+        }
+        
+        // ===== ファイル入力要素の検出 =====
+        async findTargetElements() {
+            if (this.boardType === 'mebuki') {
+                // レス投稿ボタンをクリックして入力欄を開く
+                const postBtn = document.querySelector(MEBUKI_SELECTORS.postButton);
+                if (postBtn) {
+                    postBtn.click();
+                    await this.wait(300);
+                }
+                
+                // input要素を探す
+                await this.waitFor(() => {
+                    this.targetInput = document.querySelector(MEBUKI_SELECTORS.fileInput);
+                    return this.targetInput !== null;
+                }, MEBUKI_TIMEOUT);
+                
+                if (!this.targetInput) {
+                    throw new Error('ファイル入力要素が見つかりません');
+                }
+            }
+        }
+        
+        // ===== UIコンテナ作成（トップバーのみ） =====
+        createContainer() {
+            // フルスクリーンコンテナ
+            this.container = document.createElement('div');
+            this.container.id = 'tegaki-bookmarklet-container';
+            this.container.style.cssText = `
+                position: fixed;
+                top: 0;
+                left: 0;
+                width: 100vw;
+                height: 100vh;
+                z-index: 999999;
+                display: flex;
+                flex-direction: column;
+            `;
+            
+            // トップバー（ふたば風カラー）
+            const topBar = document.createElement('div');
+            topBar.style.cssText = `
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 8px 16px;
+                background: #e9c2ba;
+                border-bottom: 1px solid #aa5a56;
+                gap: 8px;
+            `;
+            
+            // 左側：タイトルと注意書き
+            const titleArea = document.createElement('div');
+            titleArea.style.cssText = `
+                display: flex;
+                flex-direction: column;
+                gap: 2px;
+            `;
+            
+            const title = document.createElement('div');
+            title.textContent = 'めぶき用Tegakiツールテスト';
+            title.style.cssText = `
+                color: #800000;
+                font-size: 14px;
+                font-weight: bold;
+            `;
+            
+            const notice = document.createElement('div');
+            notice.textContent = '※予告無しにツール削除の可能性があります。';
+            notice.style.cssText = `
+                color: #aa5a56;
+                font-size: 10px;
+            `;
+            
+            titleArea.appendChild(title);
+            titleArea.appendChild(notice);
+            
+            // 右側：ボタングループ
+            const buttonGroup = document.createElement('div');
+            buttonGroup.style.cssText = `
+                display: flex;
+                gap: 8px;
+            `;
+            
+            // 投稿ボタン（めぶきアイコン + 緑）
+            const postBtn = document.createElement('button');
+            postBtn.innerHTML = `
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin-right: 4px;">
+                    <path d="M14 9.536V7a4 4 0 0 1 4-4h1.5a.5.5 0 0 1 .5.5V5a4 4 0 0 1-4 4 4 4 0 0 0-4 4c0 2 1 3 1 5a5 5 0 0 1-1 3"/>
+                    <path d="M4 9a5 5 0 0 1 8 4 5 5 0 0 1-8-4"/>
+                    <path d="M5 21h14"/>
+                </svg>
+                <span style="vertical-align: middle;">投稿</span>
+            `;
+            postBtn.title = '掲示板に添付';
+            postBtn.style.cssText = `
+                padding: 8px 16px;
+                background: #4ade80;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 14px;
+                font-weight: bold;
+                transition: background 0.2s;
+                display: inline-flex;
+                align-items: center;
+            `;
+            postBtn.onmouseover = () => postBtn.style.background = '#22c55e';
+            postBtn.onmouseout = () => postBtn.style.background = '#4ade80';
+            postBtn.onclick = () => this.exportAndAttach();
+            
+            // 閉じるボタン（朱色）
+            const closeBtn = document.createElement('button');
+            closeBtn.textContent = '✕';
+            closeBtn.title = '閉じる';
+            closeBtn.style.cssText = `
+                padding: 8px 12px;
+                background: #f87171;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-size: 16px;
+                font-weight: bold;
+                transition: background 0.2s;
+            `;
+            closeBtn.onmouseover = () => closeBtn.style.background = '#ef4444';
+            closeBtn.onmouseout = () => closeBtn.style.background = '#f87171';
+            closeBtn.onclick = () => this.cancel();
+            
+            buttonGroup.appendChild(postBtn);
+            buttonGroup.appendChild(closeBtn);
+            topBar.appendChild(titleArea);
+            topBar.appendChild(buttonGroup);
+            this.container.appendChild(topBar);
+            
+            // キャンバスエリア（Tegakiコアが使用）
+            const canvasArea = document.createElement('div');
+            canvasArea.id = 'tegaki-canvas-area';
+            canvasArea.style.cssText = `
+                flex: 1;
+                position: relative;
+                overflow: hidden;
+                background: #ffffee;
+            `;
+            this.container.appendChild(canvasArea);
+            
+            document.body.appendChild(this.container);
+            
+            // スクロール防止
+            this.originalBodyOverflow = document.body.style.overflow;
+            document.body.style.overflow = 'hidden';
+        }
+        
+        // ===== Tegakiコア読込と起動 =====
+        async loadAndInitTegaki() {
+            // スクリプトが既に読み込まれているかチェック
+            if (window.TegakiCore) {
+                console.log('[Tegaki Loader] TegakiCore already loaded');
+                this.initTegaki();
+                return;
+            }
+            
+            console.log('[Tegaki Loader] Loading TegakiCore from:', TEGAKI_CORE_URL);
+            
+            // スクリプトタグで読み込み
+            const script = document.createElement('script');
+            script.src = TEGAKI_CORE_URL;
+            script.charset = 'UTF-8';
+            script.type = 'text/javascript'; // 明示的に指定
+            
+            await new Promise((resolve, reject) => {
+                script.onload = () => {
+                    console.log('[Tegaki Loader] ✓ TegakiCore script loaded');
+                    resolve();
+                };
+                script.onerror = (error) => {
+                    console.error('[Tegaki Loader] ✗ Failed to load TegakiCore:', error);
+                    reject(new Error('Tegakiコアの読み込みに失敗しました\nURL: ' + TEGAKI_CORE_URL));
+                };
+                document.head.appendChild(script);
+            });
+            
+            // TegakiCoreが定義されているか確認
+            if (!window.TegakiCore) {
+                throw new Error('TegakiCoreが読み込まれましたが、クラスが見つかりません');
+            }
+            
+            this.initTegaki();
+        }
+        
+        // ===== Tegakiコア初期化 =====
+        initTegaki() {
+            const canvasArea = document.getElementById('tegaki-canvas-area');
+            if (!canvasArea) {
+                throw new Error('キャンバスエリアが見つかりません');
+            }
+            
+            try {
+                this.tegakiCore = new window.TegakiCore(canvasArea);
+                console.log('[Tegaki Loader] ✓ TegakiCore instance created');
+            } catch (error) {
+                console.error('[Tegaki Loader] ✗ Failed to initialize TegakiCore:', error);
+                throw new Error('TegakiCoreの初期化に失敗しました: ' + error.message);
+            }
+        }
+        
+        // ===== エクスポートして添付 =====
+        async exportAndAttach() {
+            if (!this.tegakiCore) {
+                alert('お絵かきツールが初期化されていません');
+                return;
+            }
+            
+            try {
+                console.log('[Tegaki Loader] Exporting canvas...');
+                
+                // キャンバスから画像を取得
+                const blob = await this.tegakiCore.exportAsBlob();
+                console.log('[Tegaki Loader] ✓ Blob created:', blob.size, 'bytes');
+                
+                // 掲示板に注入
+                await this.injectToBoard(blob);
+                console.log('[Tegaki Loader] ✓ Image injected to board');
+                
+                alert('画像を添付しました！投稿ボタンを押してください。');
+                this.cleanup();
+                
+            } catch (error) {
+                console.error('[Tegaki Loader] エクスポート失敗:', error);
+                alert('画像の出力に失敗しました\n' + error.message);
+            }
+        }
+        
+        // ===== 掲示板にFile注入 =====
+        async injectToBoard(blob) {
+            if (!this.targetInput) {
+                throw new Error('入力要素が見つかりません');
+            }
+            
+            const filename = `tegaki_${Date.now()}.png`;
+            const file = new File([blob], filename, {
+                type: 'image/png',
+                lastModified: Date.now()
+            });
+            
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            this.targetInput.files = dt.files;
+            
+            // changeイベント発火
+            const changeEvent = new Event('change', { bubbles: true });
+            this.targetInput.dispatchEvent(changeEvent);
+            
+            // プレビュー表示を待つ（オプション）
+            try {
+                await this.waitFor(() => {
+                    return document.querySelector(MEBUKI_SELECTORS.previewImg) !== null;
+                }, 3000);
+                console.log('[Tegaki Loader] ✓ Preview displayed');
+            } catch (error) {
+                console.warn('[Tegaki Loader] プレビュー確認タイムアウト（処理は正常完了）');
+            }
+        }
+        
+        // ===== キャンセル =====
+        cancel() {
+            if (confirm('描いた内容は破棄されます。よろしいですか?')) {
+                this.cleanup();
+            }
+        }
+        
+        // ===== クリーンアップ =====
+        cleanup() {
+            console.log('[Tegaki Loader] Cleaning up...');
+            
+            // Tegakiコア破棄
+            if (this.tegakiCore && this.tegakiCore.destroy) {
+                this.tegakiCore.destroy();
+                this.tegakiCore = null;
+            }
+            
+            // コンテナ削除
+            if (this.container) {
+                this.container.remove();
+                this.container = null;
+            }
+            
+            // スタイル復元
+            if (this.originalBodyOverflow !== null) {
+                document.body.style.overflow = this.originalBodyOverflow;
+                this.originalBodyOverflow = null;
+            }
+            
+            console.log('[Tegaki Loader] ✓ Cleanup complete');
+        }
+        
+        // ===== ユーティリティ: 待機 =====
+        wait(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        
+        // ===== ユーティリティ: 条件待機 =====
+        waitFor(condition, timeout = 5000) {
+            return new Promise((resolve, reject) => {
+                const startTime = Date.now();
+                const check = () => {
+                    if (condition()) {
+                        resolve();
+                    } else if (Date.now() - startTime > timeout) {
+                        reject(new Error('タイムアウト'));
+                    } else {
+                        setTimeout(check, 100);
+                    }
+                };
+                check();
+            });
+        }
+    }
+    
+    // ===== グローバル登録 =====
+    window.tegakiStart = function() {
+        if (!window._tegakiBookmarklet) {
+            window._tegakiBookmarklet = new TegakiBookmarklet();
+        }
+        window._tegakiBookmarklet.start();
+    };
+    
+    // ===== 自動起動 =====
+    window.tegakiStart();
+    
+})();
+
+console.log('✅ tegaki-loader.js loaded (2-file architecture)');
