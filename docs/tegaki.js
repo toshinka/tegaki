@@ -1,5 +1,5 @@
 // ==================================================
-// tegaki.js - Phase 8: UI最適化、キーボードショートカット、キャンバス変形
+// tegaki.js - Phase 9: UI改善版（中央揃え・額縁・移動対応）
 // ==================================================
 
 (function() {
@@ -76,12 +76,17 @@
             this.previewCanvas = null;
             this.previewCtx = null;
             this.canvasContainer = null;
+            this.frameOverlay = null;
             this.layers = [];
             this.activeLayerIndex = 0;
             this.layerIdCounter = 0;
             this.history = new HistoryManager(50);
             this.isRestoringState = false;
             this.isDrawing = false;
+            this.isPanning = false;
+            this.lastPanX = 0;
+            this.lastPanY = 0;
+            this.spacePressed = false;
             
             // Tool properties
             this.tool = 'pen';
@@ -103,34 +108,35 @@
             
             this.colors = ['#800000', '#aa5a56', '#cf9c97', '#e9c2ba', '#f0e0d6', '#ffffee'];
             this.icons = {
-                pen: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>`,
-                eraser: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg>`,
-                bucket: `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/></svg>`,
-                eye: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>`,
-                eyeOff: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>`,
-                addLayer: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`,
-                deleteLayer: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
-                trash: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
-                undo: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>`,
-                redo: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></svg>`,
-                flipH: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 5 5-5 5V7"/><path d="m21 7-5 5 5 5V7"/><path d="M12 20v2"/><path d="M12 14v2"/><path d="M12 8v2"/><path d="M12 2v2"/></svg>`,
-                flipV: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m17 3-5 5-5-5h10"/><path d="m17 21-5-5-5 5h10"/><path d="M4 12H2"/><path d="M10 12H8"/><path d="M16 12h-2"/><path d="M22 12h-2"/></svg>`,
-                rotateCcw: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`,
-                refresh: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 0 0-9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/><path d="M3 12a9 9 0 0 0 9 9 9.75 9.75 0 0 0 6.74-2.74L21 16"/><path d="M16 16h5v5"/></svg>`
+                pen: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z"/></svg>`,
+                eraser: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 21H8a2 2 0 0 1-1.42-.587l-3.994-3.999a2 2 0 0 1 0-2.828l10-10a2 2 0 0 1 2.829 0l5.999 6a2 2 0 0 1 0 2.828L12.834 21"/><path d="m5.082 11.09 8.828 8.828"/></svg>`,
+                bucket: `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m19 11-8-8-8.6 8.6a2 2 0 0 0 0 2.8l5.2 5.2c.8.8 2 .8 2.8 0L19 11Z"/><path d="m5 2 5 5"/><path d="M2 13h15"/></svg>`,
+                eye: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0"/><circle cx="12" cy="12" r="3"/></svg>`,
+                eyeOff: `<svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49"/><path d="M14.084 14.158a3 3 0 0 1-4.242-4.242"/><path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143"/><path d="m2 2 20 20"/></svg>`,
+                addLayer: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><line x1="15" x2="15" y1="12" y2="18"/><line x1="12" x2="18" y1="15" y2="15"/><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>`,
+                deleteLayer: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
+                trash: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M10 11v6"/><path d="M14 11v6"/><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6"/><path d="M3 6h18"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></svg>`,
+                undo: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 14 4 9l5-5"/><path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11"/></svg>`,
+                redo: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 14 5-5-5-5"/><path d="M20 9H9.5A5.5 5.5 0 0 0 4 14.5A5.5 5.5 0 0 0 9.5 20H13"/></svg>`,
+                flipH: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m3 7 5 5-5 5V7"/><path d="m21 7-5 5 5 5V7"/><path d="M12 20v2"/><path d="M12 14v2"/><path d="M12 8v2"/><path d="M12 2v2"/></svg>`,
+                flipV: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="m17 3-5 5-5-5h10"/><path d="m17 21-5-5-5 5h10"/><path d="M4 12H2"/><path d="M10 12H8"/><path d="M16 12h-2"/><path d="M22 12h-2"/></svg>`,
+                rotateCcw: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 12a9 9 0 1 0 9-9 9.75 9.75 0 0 0-6.74 2.74L3 8"/><path d="M3 3v5h5"/></svg>`,
+                rotateCw: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8"/><path d="M21 3v5h-5"/></svg>`,
+                refresh: `<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M15 21v-8a1 1 0 0 0-1-1h-4a1 1 0 0 0-1 1v8"/><path d="M3 10a2 2 0 0 1 .709-1.528l7-6a2 2 0 0 1 2.582 0l7 6A2 2 0 0 1 21 10v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/></svg>`
             };
             
             this.init();
         }
         
         init() {
-            console.log('[Tegaki Core] Initializing Phase 8...');
+            console.log('[Tegaki Core] Initializing Phase 9...');
             this.createUI();
             this.initLayers();
             this.updateLayerPanel();
             this.attachEvents();
             this.renderLayers();
             this.captureState();
-            console.log('[Tegaki Core] ✓ Phase 8 initialized with perfect-freehand');
+            console.log('[Tegaki Core] ✓ Phase 9 initialized');
         }
         
         captureState() { 
@@ -267,7 +273,7 @@
         clearAllLayers() {
             if (confirm('すべてのレイヤーをクリアしますか?\nこの操作は元に戻せます。')) {
                 this.layers.forEach((layer, i) => {
-                    if (i > 0) { // 背景以外
+                    if (i > 0) {
                         layer.clear();
                     }
                 });
@@ -348,25 +354,69 @@
 
         createUI() {
             this.wrapper = document.createElement('div');
-            this.wrapper.style.cssText = `display: flex; width: 100%; height: 100%; background: #ffffee;`;
+            this.wrapper.style.cssText = `display: flex; width: 100%; height: 100%; background: #ffffee; position: relative;`;
+            this.wrapper.appendChild(this.createShortcutGuide());
             this.wrapper.appendChild(this.createToolPanel());
             this.wrapper.appendChild(this.createCanvasArea());
             this.wrapper.appendChild(this.createLayerSidebar());
             this.container.appendChild(this.wrapper);
-            this.createTopBarControls();
+            
+            const parentTopBar = this.findParentTopBar();
+            if (parentTopBar) {
+                this.createTopBarControls(parentTopBar);
+            }
+        }
+        
+        createShortcutGuide() {
+            const guide = document.createElement('div');
+            guide.style.cssText = `
+                position: absolute;
+                top: 20px;
+                left: 90px;
+                background: rgba(240, 224, 214, 0.9);
+                border: 1px solid #aa5a56;
+                border-radius: 4px;
+                padding: 12px;
+                font-size: 11px;
+                color: #800000;
+                line-height: 1.6;
+                z-index: 1;
+                pointer-events: none;
+            `;
+            guide.innerHTML = `
+                <div style="font-weight: bold; margin-bottom: 6px; font-size: 12px;">ショートカット</div>
+                <div><b>P</b>: ペン / <b>E</b>: 消しゴム / <b>G</b>: バケツ</div>
+                <div><b>Ctrl+Z</b>: 元に戻す / <b>Ctrl+Y</b>: やり直す</div>
+                <div><b>H</b>: 左右反転 / <b>Shift+H</b>: 上下反転</div>
+                <div><b>スクロール</b>: 拡縮 / <b>Shift+スクロール</b>: 回転</div>
+                <div><b>Ctrl+0</b>: 表示リセット</div>
+                <div><b>Space+ドラッグ</b> or <b>額縁ドラッグ</b>: 移動</div>
+                <div><b>Del/BS</b>: レイヤークリア</div>
+            `;
+            return guide;
+        }
+        
+        findParentTopBar() {
+            let element = this.container;
+            while (element) {
+                const topBar = element.querySelector('#top-bar');
+                if (topBar) return topBar;
+                element = element.parentElement;
+            }
+            return document.querySelector('#top-bar');
         }
 
         createToolPanel() {
             const panel = document.createElement('div');
             panel.id = 'tegaki-tool-panel';
-            panel.style.cssText = `width: 50px; background: #e9c2ba; padding: 4px; display: flex; flex-direction: column; align-items: center; gap: 2px; border-right: 2px solid #cf9c97; overflow-y: auto;`;
+            panel.style.cssText = `width: 70px; background: #e9c2ba; padding: 8px 6px; display: flex; flex-direction: column; align-items: center; gap: 6px; border-right: 2px solid #cf9c97; overflow-y: auto; z-index: 10;`;
             
-            // Color palette (2x3 grid)
+            // カラーパレット（2列グリッド）
             const colorPalette = document.createElement('div');
-            colorPalette.style.cssText = 'display: grid; grid-template-columns: repeat(2, 1fr); gap: 1px; width: 100%; padding: 0 2px;';
+            colorPalette.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 4px; width: 100%;';
             this.colors.forEach(c => { 
                 const colorBtn = document.createElement('button'); 
-                colorBtn.style.cssText = `width: 20px; height: 20px; border: 2px solid transparent; border-radius: 2px; padding: 0; background: ${c}; cursor: pointer; transition: border 0.15s;`;
+                colorBtn.style.cssText = `width: 100%; aspect-ratio: 1; border: 2px solid transparent; border-radius: 2px; padding: 0; background: ${c}; cursor: pointer; transition: border 0.15s;`;
                 colorBtn.dataset.color = c; 
                 colorBtn.title = c;
                 colorBtn.onclick = () => this.setColor(c); 
@@ -375,14 +425,23 @@
             panel.appendChild(colorPalette);
             panel.appendChild(this.createSeparator());
             
-            // Tool buttons
-            this.createToolButton(panel, 'pen', this.icons.pen, 'ペン (P)');
-            this.createToolButton(panel, 'eraser', this.icons.eraser, '消しゴム (E)');
-            this.createToolButton(panel, 'bucket', this.icons.bucket, 'バケツ (G)');
+            // ツールボタン（2列グリッド）
+            const toolGrid = document.createElement('div');
+            toolGrid.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 4px; width: 100%;';
+            
+            this.createToolButton(toolGrid, 'pen', this.icons.pen, 'ペン (P)');
+            this.createToolButton(toolGrid, 'eraser', this.icons.eraser, '消しゴム (E)');
+            this.createToolButton(toolGrid, 'bucket', this.icons.bucket, 'バケツ (G)');
+            
+            panel.appendChild(toolGrid);
             panel.appendChild(this.createSeparator());
             
-            // Size presets
-            [1, 3, 5, 10, 30].forEach(size => this.createSizePreset(panel, size));
+            // サイズプリセット（2列グリッド）
+            const sizeGrid = document.createElement('div');
+            sizeGrid.style.cssText = 'display: grid; grid-template-columns: 1fr 1fr; gap: 4px; width: 100%;';
+            [1, 3, 5, 10, 30].forEach(size => this.createSizePreset(sizeGrid, size));
+            panel.appendChild(sizeGrid);
+            
             return panel;
         }
 
@@ -391,12 +450,12 @@
             btn.dataset.size = size;
             btn.dataset.preset = size;
             btn.title = `${size}px`;
-            btn.style.cssText = `width: 24px; height: 24px; border-radius: 2px; border: 2px solid transparent; background-color: #f0e0d6; color: #800000; font-size: 8px; font-weight: bold; cursor: pointer; position: relative; display: flex; align-items: center; justify-content: center; transition: border 0.15s; margin: 1px 0;`;
+            btn.style.cssText = `width: 100%; aspect-ratio: 1; border-radius: 2px; border: 2px solid transparent; background-color: #f0e0d6; color: #800000; font-size: 13px; font-weight: bold; cursor: pointer; position: relative; display: flex; align-items: center; justify-content: center; transition: border 0.15s;`;
             btn.textContent = size;
             
             const trigger = document.createElement('div');
             trigger.innerHTML = '▼';
-            trigger.style.cssText = `position: absolute; bottom: -6px; right: -6px; font-size: 14px; color: #800000; cursor: pointer; background: rgba(240,224,214,0.9); width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: 2px; line-height: 1;`;
+            trigger.style.cssText = `position: absolute; bottom: 2px; right: 2px; font-size: 8px; color: #800000; cursor: pointer; background: rgba(240,224,214,0.9); width: 12px; height: 12px; display: flex; align-items: center; justify-content: center; border-radius: 2px; line-height: 1;`;
             btn.appendChild(trigger);
             
             btn.onclick = (e) => {
@@ -414,17 +473,16 @@
         createToolButton(parent, toolName, svgHTML, title) {
             const btn = this.createIconButton(svgHTML, title, null, this.tool === toolName);
             btn.dataset.tool = toolName;
-            btn.style.width = '32px';
-            btn.style.height = '32px';
+            btn.style.width = '100%';
+            btn.style.aspectRatio = '1';
             btn.style.borderRadius = '2px';
             btn.style.position = 'relative';
-            btn.style.margin = '1px 0';
             btn.onclick = (e) => { this.setTool(toolName); };
             
             if (toolName === 'pen') {
                 const trigger = document.createElement('div');
                 trigger.innerHTML = '▼';
-                trigger.style.cssText = `position: absolute; bottom: -6px; right: -6px; font-size: 14px; color: #800000; cursor: pointer; background: rgba(240,224,214,0.9); width: 16px; height: 16px; display: flex; align-items: center; justify-content: center; border-radius: 2px; line-height: 1;`;
+                trigger.style.cssText = `position: absolute; bottom: 2px; right: 2px; font-size: 8px; color: #800000; cursor: pointer; background: rgba(240,224,214,0.9); width: 12px; height: 12px; display: flex; align-items: center; justify-content: center; border-radius: 2px; line-height: 1;`;
                 trigger.onclick = (e) => { e.stopPropagation(); this.setTool(toolName); this.showPenSettingsPopup(btn); };
                 btn.appendChild(trigger);
             }
@@ -490,10 +548,15 @@
         
         createCanvasArea() { 
             const area = document.createElement('div'); 
-            area.style.cssText = `flex: 1; display: flex; justify-content: center; align-items: center; overflow: auto; padding: 20px;`; 
+            area.style.cssText = `flex: 1; display: flex; justify-content: center; align-items: center; overflow: auto; padding: 20px; position: relative;`; 
+            
+            // 額縁を含むラッパー
+            const frameWrapper = document.createElement('div');
+            frameWrapper.style.cssText = `position: relative; padding: 30px; background: white; box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3); cursor: grab;`;
+            frameWrapper.id = 'tegaki-frame-wrapper';
             
             this.canvasContainer = document.createElement('div'); 
-            this.canvasContainer.style.cssText = `position: relative; width: 400px; height: 400px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); flex-shrink: 0; transition: transform 0.1s ease-out;`; 
+            this.canvasContainer.style.cssText = `position: relative; width: 400px; height: 400px; flex-shrink: 0; transition: transform 0.1s ease-out;`; 
             
             this.displayCanvas = document.createElement('canvas'); 
             this.displayCanvas.width = 400; 
@@ -507,15 +570,24 @@
             this.previewCanvas.style.cssText = `position: absolute; top: 0; left: 0; cursor: crosshair; touch-action: none;`; 
             this.previewCtx = this.previewCanvas.getContext('2d'); 
             
+            // 額縁用の透明オーバーレイ（描画可能領域を拡張）
+            this.frameOverlay = document.createElement('canvas');
+            this.frameOverlay.width = 460;
+            this.frameOverlay.height = 460;
+            this.frameOverlay.style.cssText = `position: absolute; top: -30px; left: -30px; pointer-events: none;`;
+            
             this.canvasContainer.appendChild(this.displayCanvas); 
-            this.canvasContainer.appendChild(this.previewCanvas); 
-            area.appendChild(this.canvasContainer); 
+            this.canvasContainer.appendChild(this.previewCanvas);
+            this.canvasContainer.appendChild(this.frameOverlay);
+            
+            frameWrapper.appendChild(this.canvasContainer);
+            area.appendChild(frameWrapper); 
             return area; 
         }
         
         createLayerSidebar() { 
             const sidebar = document.createElement('div'); 
-            sidebar.style.cssText = `width: 180px; background: transparent; padding: 8px 6px; display: flex; flex-direction: column; gap: 12px; border-left: 2px solid #cf9c97; overflow-y: auto;`; 
+            sidebar.style.cssText = `width: 180px; background: transparent; padding: 8px 6px; display: flex; flex-direction: column; gap: 12px; border-left: 2px solid #cf9c97; overflow-y: auto; z-index: 10;`; 
             sidebar.appendChild(this.createLayerPanel()); 
             return sidebar; 
         }
@@ -545,17 +617,22 @@
             return panel; 
         }
         
-        createTopBarControls() { 
-            const topBar = document.querySelector('#top-bar');
-            if (!topBar) return;
+        createTopBarControls(topBar) {
+            if (!topBar) {
+                console.warn('[Tegaki] No top bar found, skipping top bar controls');
+                return;
+            }
             
-            // 既存の投稿ボタンを削除
-            const oldPostBtn = document.getElementById('post-button');
+            const oldPostBtn = topBar.querySelector('#post-button');
             if (oldPostBtn) oldPostBtn.remove();
             
             const buttonGroup = topBar.querySelector('.button-group');
-            if (!buttonGroup) return;
+            if (!buttonGroup) {
+                console.warn('[Tegaki] No button group found in top bar');
+                return;
+            }
             buttonGroup.innerHTML = '';
+            buttonGroup.style.cssText = 'display: flex; align-items: center; justify-content: center; gap: 6px; width: 100%;';
             
             const createBtn = (id, html, title, onClick, color = '#f0e0d6') => { 
                 const btn = document.createElement('button'); 
@@ -569,34 +646,23 @@
                 return btn; 
             };
             
-            // 左側グループ：ゴミ箱、アンドゥ、リドゥ
-            const leftGroup = document.createElement('div');
-            leftGroup.style.cssText = 'display: flex; gap: 6px;';
-            
             const trashBtn = createBtn('tegaki-trash-btn', this.icons.trash, 'すべてクリア (Del)', () => this.clearAllLayers());
             const undoBtn = createBtn('tegaki-undo-btn', this.icons.undo, '元に戻す (Ctrl+Z)', () => this.undo());
             const redoBtn = createBtn('tegaki-redo-btn', this.icons.redo, 'やり直す (Ctrl+Y)', () => this.redo());
-            
-            leftGroup.appendChild(trashBtn);
-            leftGroup.appendChild(undoBtn);
-            leftGroup.appendChild(redoBtn);
-            
-            // 中央グループ：変形ツール
-            const centerGroup = document.createElement('div');
-            centerGroup.style.cssText = 'display: flex; gap: 6px; margin-left: auto;';
-            
             const flipHBtn = createBtn('tegaki-fliph-btn', this.icons.flipH, '左右反転 (H)', () => this.flipHorizontal());
             const flipVBtn = createBtn('tegaki-flipv-btn', this.icons.flipV, '上下反転 (Shift+H)', () => this.flipVertical());
-            const rotateBtn = createBtn('tegaki-rotate-btn', this.icons.rotateCcw, '回転 (Shift+スクロール)', () => this.rotateCanvas(90));
+            const rotateCcwBtn = createBtn('tegaki-rotateccw-btn', this.icons.rotateCcw, '反時計回り (Shift+スクロール)', () => this.rotateCanvas(-90));
+            const rotateCwBtn = createBtn('tegaki-rotatecw-btn', this.icons.rotateCw, '時計回り', () => this.rotateCanvas(90));
             const resetBtn = createBtn('tegaki-reset-btn', this.icons.refresh, 'リセット (Ctrl+0)', () => this.resetTransform());
             
-            centerGroup.appendChild(flipHBtn);
-            centerGroup.appendChild(flipVBtn);
-            centerGroup.appendChild(rotateBtn);
-            centerGroup.appendChild(resetBtn);
-            
-            buttonGroup.appendChild(leftGroup);
-            buttonGroup.appendChild(centerGroup);
+            buttonGroup.appendChild(trashBtn);
+            buttonGroup.appendChild(undoBtn);
+            buttonGroup.appendChild(redoBtn);
+            buttonGroup.appendChild(flipHBtn);
+            buttonGroup.appendChild(flipVBtn);
+            buttonGroup.appendChild(rotateCcwBtn);
+            buttonGroup.appendChild(rotateCwBtn);
+            buttonGroup.appendChild(resetBtn);
             
             this.updateUndoRedoButtons(); 
         }
@@ -633,7 +699,6 @@
             }); 
         }
         
-        // Tool/Color/Size/Opacity setters
         setTool(toolName) { 
             this.tool = toolName; 
             document.querySelectorAll('#tegaki-tool-panel button[data-tool]').forEach(btn => { 
@@ -692,33 +757,74 @@
             }); 
         }
 
-        // Events and Drawing
         attachEvents() {
+            // 額縁エリアでのパン操作
+            const frameWrapper = document.getElementById('tegaki-frame-wrapper');
+            if (frameWrapper) {
+                frameWrapper.addEventListener('pointerdown', (e) => {
+                    const rect = this.previewCanvas.getBoundingClientRect();
+                    const isOutsideCanvas = 
+                        e.clientX < rect.left || e.clientX > rect.right ||
+                        e.clientY < rect.top || e.clientY > rect.bottom;
+                    
+                    if (isOutsideCanvas || this.spacePressed) {
+                        e.preventDefault();
+                        this.isPanning = true;
+                        this.lastPanX = e.clientX;
+                        this.lastPanY = e.clientY;
+                        frameWrapper.style.cursor = 'grabbing';
+                        frameWrapper.setPointerCapture(e.pointerId);
+                    }
+                });
+                
+                frameWrapper.addEventListener('pointermove', (e) => {
+                    if (this.isPanning) {
+                        const dx = e.clientX - this.lastPanX;
+                        const dy = e.clientY - this.lastPanY;
+                        this.offsetX += dx;
+                        this.offsetY += dy;
+                        this.lastPanX = e.clientX;
+                        this.lastPanY = e.clientY;
+                        this.applyTransform();
+                    }
+                });
+                
+                frameWrapper.addEventListener('pointerup', (e) => {
+                    if (this.isPanning) {
+                        this.isPanning = false;
+                        frameWrapper.style.cursor = 'grab';
+                        frameWrapper.releasePointerCapture(e.pointerId);
+                    }
+                });
+            }
+            
+            // キャンバス描画イベント
             this.previewCanvas.addEventListener('pointerdown', (e) => this.startDrawing(e));
             this.previewCanvas.addEventListener('pointermove', (e) => this.draw(e));
             this.previewCanvas.addEventListener('pointerup', (e) => this.stopDrawing(e));
             this.previewCanvas.addEventListener('pointerleave', (e) => this.stopDrawing(e));
             
-            // Keyboard shortcuts
-            document.addEventListener('keydown', (e) => { 
-                // Undo/Redo
+            // キーボードショートカット
+            document.addEventListener('keydown', (e) => {
+                // Space押下検知
+                if (e.code === 'Space' && !this.isDrawing) {
+                    e.preventDefault();
+                    this.spacePressed = true;
+                    if (frameWrapper) frameWrapper.style.cursor = 'grab';
+                }
+                
                 if ((e.ctrlKey || e.metaKey) && !e.shiftKey) { 
                     if (e.key === 'z') { e.preventDefault(); this.undo(); } 
                     if (e.key === 'y') { e.preventDefault(); this.redo(); }
                     if (e.key === '0') { e.preventDefault(); this.resetTransform(); }
                 }
                 
-                // Tool shortcuts (no modifiers)
                 if (!e.ctrlKey && !e.metaKey && !e.altKey) {
                     if (e.key === 'p' || e.key === 'P') { e.preventDefault(); this.setTool('pen'); }
                     if (e.key === 'e' || e.key === 'E') { e.preventDefault(); this.setTool('eraser'); }
                     if (e.key === 'g' || e.key === 'G') { e.preventDefault(); this.setTool('bucket'); }
-                    
-                    // Flip
                     if (e.key === 'h' && !e.shiftKey) { e.preventDefault(); this.flipHorizontal(); }
                     if (e.key === 'H' && e.shiftKey) { e.preventDefault(); this.flipVertical(); }
-                    
-                    // Clear layer
                     if (e.key === 'Delete' || e.key === 'Backspace') { 
                         e.preventDefault(); 
                         this.clearActiveLayer(); 
@@ -726,14 +832,19 @@
                 }
             });
             
-            // Mouse wheel for zoom/rotate
+            document.addEventListener('keyup', (e) => {
+                if (e.code === 'Space') {
+                    this.spacePressed = false;
+                    if (frameWrapper && !this.isPanning) frameWrapper.style.cursor = 'grab';
+                }
+            });
+            
+            // マウスホイールで拡縮・回転
             this.previewCanvas.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 if (e.shiftKey) {
-                    // Rotate
                     this.rotateCanvas(e.deltaY > 0 ? 5 : -5);
                 } else {
-                    // Zoom
                     this.scaleCanvas(e.deltaY < 0 ? 1 : -1);
                 }
             }, { passive: false });
@@ -742,13 +853,17 @@
         }
         
         startDrawing(e) {
-            if (!e.isPrimary || this.layers[this.activeLayerIndex].isBackground) return;
-            const rect = this.previewCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left; 
-            const y = e.clientY - rect.top;
+            if (!e.isPrimary || this.layers[this.activeLayerIndex].isBackground || this.spacePressed) return;
+            
+            // 額縁領域を含めた座標計算
+            const canvasRect = this.previewCanvas.getBoundingClientRect();
+            const x = e.clientX - canvasRect.left; 
+            const y = e.clientY - canvasRect.top;
             
             if (this.tool === 'bucket') { 
-                this.floodFill(x, y); 
+                if (x >= 0 && x < 400 && y >= 0 && y < 400) {
+                    this.floodFill(x, y); 
+                }
                 return; 
             }
             
@@ -760,16 +875,17 @@
         
         draw(e) {
             if (!this.isDrawing || !e.isPrimary) return;
-            const rect = this.previewCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left; 
-            const y = e.clientY - rect.top;
+            
+            const canvasRect = this.previewCanvas.getBoundingClientRect();
+            const x = e.clientX - canvasRect.left; 
+            const y = e.clientY - canvasRect.top;
+            
             this.strokePoints.push([x, y, e.pressure > 0 ? e.pressure * this.pressureSensitivity : 0.5]);
             
             this.previewCtx.clearRect(0, 0, 400, 400);
             
             if (!window.perfectFreehand || !window.perfectFreehand.getStroke) {
                 console.error('[Tegaki] perfect-freehand not available, falling back to basic drawing');
-                // Fallback: simple line drawing
                 this.previewCtx.strokeStyle = this.color;
                 this.previewCtx.globalAlpha = this.opacity;
                 this.previewCtx.lineWidth = this.size;
@@ -793,14 +909,8 @@
                 smoothing: this.smoothing,
                 streamline: 0.5,
                 easing: (t) => t,
-                start: {
-                    taper: 0,
-                    cap: true
-                },
-                end: {
-                    taper: 0,
-                    cap: true
-                }
+                start: { taper: 0, cap: true },
+                end: { taper: 0, cap: true }
             });
 
             if (!stroke.length) return;
@@ -829,7 +939,6 @@
             }
         }
 
-        // Bucket fill tool
         floodFill(startX, startY) {
             const x = Math.floor(startX);
             const y = Math.floor(startY);
@@ -902,7 +1011,6 @@
             } : null; 
         }
         
-        // Export method for bookmarklet
         exportAsBlob() {
             return new Promise((resolve) => {
                 this.displayCanvas.toBlob((blob) => {
@@ -910,7 +1018,17 @@
                 }, 'image/png');
             });
         }
+        
+        destroy() {
+            if (this.wrapper && this.wrapper.parentNode) {
+                this.wrapper.remove();
+            }
+            this.displayCanvas = null;
+            this.displayCtx = null;
+            this.previewCanvas = null;
+            this.previewCtx = null;
+        }
     };
     
-    console.log('✅ tegaki.js Phase 8 loaded (UI optimized, shortcuts, canvas transform)');
+    console.log('✅ tegaki.js Phase 9 loaded');
 })();
