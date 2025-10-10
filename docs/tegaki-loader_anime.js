@@ -81,9 +81,18 @@
                 loadScript(SCRIPT_URLS.gif),
                 loadScript(SCRIPT_URLS.tegaki)
             ]);
+
             // gif.jsのワーカーパスを設定
-            window.GIF.prototype.options.workerScript = SCRIPT_URLS.gifWorker;
-            console.log('All scripts loaded.');
+            if (window.GIF && window.GIF.prototype) {
+                // optionsが存在しない場合は初期化する
+                if (typeof window.GIF.prototype.options === 'undefined') {
+                    window.GIF.prototype.options = {};
+                }
+                window.GIF.prototype.options.workerScript = SCRIPT_URLS.gifWorker;
+                console.log('GIF worker script path set.');
+            } else {
+                 throw new Error('GIFライブラリ (window.GIF) が見つかりません。');
+            }
 
             // ローダーUIを作成
             const container = document.createElement('div');
