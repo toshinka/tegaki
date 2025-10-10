@@ -115,7 +115,7 @@
                 thumb.height = 60;
                 thumb.style.cssText = `
                     border: 3px solid #aa5a56;
-                    border-radius: 4px;
+                    border-radius: 2px;
                     background: #f0e0d6;
                     cursor: pointer;
                     transition: all 0.2s;
