@@ -17,6 +17,7 @@
         // ↓↓↓↓↓ このURLはご自身の環境に合わせて書き換えてください ↓↓↓↓↓
         tegaki: 'https://cdn.jsdelivr.net/gh/toshinka/tegaki/docs/tegaki_anime.js', // 例: GitHub PagesのURL
         upng: 'https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.min.js',
+        pako: 'https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js', // 💡 APNG圧縮用のpako.jsを追加
         gif: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js',
         gifWorker: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js'
     };
@@ -96,6 +97,7 @@
             if (this.boardType === 'mebuki') {
                 const postBtn = document.querySelector(MEBUKI_SELECTORS.postButton);
                 if (postBtn) {
+                    // ポストボタンを押してフォームを表示
                     postBtn.click();
                     await this.wait(300);
                 }
@@ -148,18 +150,20 @@
                 // ライブラリを読み込み
                 await Promise.all([
                     loadScript(SCRIPT_URLS.upng),
+                    loadScript(SCRIPT_URLS.pako), // 💡 pakoを読み込む
                     loadScript(SCRIPT_URLS.gif),
                     loadScript(SCRIPT_URLS.tegaki)
                 ]);
                 
-                // GIFライブラリのバグ修正を適用
+                // GIFライブラリのバグ修正を適用 (以前の修正)
                 if (window.GIF && window.GIF.prototype) {
                     if (typeof window.GIF.prototype.options === 'undefined') {
                         window.GIF.prototype.options = {};
                     }
                     window.GIF.prototype.options.workerScript = SCRIPT_URLS.gifWorker;
                 } else {
-                     throw new Error('GIFライブラリ (window.GIF) が見つかりません。');
+                     // GIFが読み込めなくても、APNGの可能性もあるためエラーにはしない
+                     console.warn('GIFライブラリ (window.GIF) が見つかりません。GIF投稿は動作しません。');
                 }
                 
                 // UI作成とコアインスタンス化
@@ -183,8 +187,9 @@
             }
         }
 
-        // ===== UI作成 (BasicのトップバーとAnimeのメインUIを統合) =====
+        // ===== UI作成 =====
         createUI() {
+            // ... (UI作成コードは変更なし) ...
             // フルスクリーンコンテナ
             this.container = document.createElement('div');
             this.container.id = 'tegaki-anime-container';
@@ -256,7 +261,7 @@
             document.body.style.overflow = 'hidden';
         }
 
-        // ===== エクスポートして添付 (Basicから改変) =====
+        // ===== エクスポートして添付 (進捗表示対応) =====
         async exportAndAttach(type) {
             if (!this.core) {
                 alert('お絵かきツールが初期化されていません');
@@ -264,19 +269,31 @@
             }
             
             try {
+                // 💡 ローディング表示を強化
+                this.loadingEl = this.loadingEl || document.createElement('div');
                 this.loadingEl.textContent = `${type.toUpperCase()}を生成中...`;
-                this.loadingEl.style.display = 'block';
+                this.loadingEl.style.cssText = 'position:fixed; top:10px; left:50%; transform:translateX(-50%); background: #800000; color:white; padding:10px; border-radius:5px; z-index:10001;';
+                document.body.appendChild(this.loadingEl);
 
                 let blob;
+                
+                const progressCallback = (p) => {
+                    const percent = Math.floor(p * 100);
+                    // 💡 進捗状況をUIに表示
+                    this.loadingEl.textContent = `${type.toUpperCase()}を生成中... (${percent}%)`;
+                };
+
                 if (type === 'apng') {
+                    // APNGはpako.js追加によりエラー解消
                     blob = await this.core.exportAsApng();
                 } else if (type === 'gif') {
-                    blob = await this.core.exportAsGif();
+                    // 💡 GIF生成時に進捗コールバックを渡す
+                    blob = await this.core.exportAsGif(progressCallback);
                 } else {
                     throw new Error('無効なエクスポートタイプです。');
                 }
                 
-                this.loadingEl.style.display = 'none';
+                this.loadingEl.remove();
 
                 if (!blob) {
                     alert(`${type.toUpperCase()}の生成に失敗しました。`);
@@ -294,7 +311,7 @@
                 
             } catch (error) {
                 console.error('[Tegaki Anime Loader] エクスポート失敗:', error);
-                this.loadingEl.style.display = 'none';
+                if (this.loadingEl) this.loadingEl.remove();
                 alert(`画像の出力に失敗しました\n${error.message}`);
             }
         }
@@ -360,7 +377,7 @@
             
             if (this.loadingEl) {
                 this.loadingEl.remove();
-                this.loadingEl = null;
+                // loadingElをnullにしないことで、次の投稿時にも再利用できる
             }
             
             console.log('[Tegaki Anime Loader] ✓ Cleanup complete');
@@ -398,6 +415,6 @@
     };
     
     // 初回実行
-    window.tegakiAnimeStart();
+    // window.tegakiAnimeStart(); // ブックマークレット発火の場合はローダー側で自動起動させない
 
 })();
