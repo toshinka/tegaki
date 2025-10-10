@@ -250,7 +250,7 @@
             buttonGroup.style.cssText = `display: flex; gap: 8px;`;
 
             // APNG投稿ボタン
-            const postApngBtn = createButton('APNG投稿', () => this.exportAndAttach('png'), true);
+            const postApngBtn = createButton('APNG投稿', () => this.exportAndAttach('apng'), true);
             postApngBtn.title = 'APNGを生成して掲示板に添付';
             
             // GIF投稿ボタン
@@ -308,7 +308,7 @@
                     this.loadingEl.textContent = `${type.toUpperCase()}を生成中... (${percent}%)`;
                 };
 
-                if (type === 'png') {
+                if (type === 'apng') {
                     // APNGはpako.jsのZlib割り当てによりエラー解消されるはず
                     blob = await this.core.exportAsApng();
                 } else if (type === 'gif') {
@@ -347,7 +347,7 @@
                 throw new Error('入力要素が見つかりません');
             }
             
-            const mimeType = type === 'png' ? 'image/png' : 'image/gif';
+            const mimeType = type === 'apng' ? 'image/apng' : 'image/gif';
             const filename = `tegaki_anime_${Date.now()}.${type}`;
             const file = new File([blob], filename, {
                 type: mimeType,
