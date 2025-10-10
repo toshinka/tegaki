@@ -1,9 +1,10 @@
-// ===== core-engine.js - Quick Fix完全版 =====
+// ===== core-engine.js - Phase 4.1 CRITICAL修正版 =====
 // ================================================================================
-// Quick Fix改修内容:
-// - DrawingEngine が StateManager.addStroke() を使用（オプション）
-// - 既存のHistory統合は維持（互換性重視）
-// - 全機能継承
+// Phase 4.1 改修内容:
+// 1. レイヤー階層移動を「入れ替え」から「移動」に完全修正
+// 2. Ctrl+↑: レイヤーを上へ（配列後方へ） / Ctrl+↓: レイヤーを下へ（配列前方へ）
+// 3. 背景レイヤー飛び越え防止の維持
+// 4. CUT移動（矢印キー）の動作確認・修正
 // ================================================================================
 
 (function() {
@@ -402,7 +403,7 @@
         }
         
         handleKeyDown(e) {
-            // Quick Fix: 矢印キー完全修正
+            // Phase 4.1: 矢印キー完全修正
             if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || 
                 e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
                 this.handleArrowKeys(e);
@@ -486,7 +487,7 @@
             }
         }
         
-        // Quick Fix: 矢印キー処理の完全修正
+        // Phase 4.1: 矢印キー処理の完全修正
         handleArrowKeys(e) {
             e.preventDefault();
             
@@ -494,12 +495,16 @@
             const layers = this.layerSystem.getLayers();
             
             if (e.ctrlKey) {
-                // Ctrl+↑↓: レイヤーを上下に移動（階層移動）
+                // Ctrl+↑↓: レイヤー階層移動（単純な移動、入れ替えではない）
                 if (e.code === 'ArrowUp') {
-                    // 上に移動 = 配列の後方
+                    // 上に移動 = 配列の後方へ移動
                     if (activeIndex < layers.length - 1) {
                         const layer = layers[activeIndex];
-                        if (!layer?.layerData?.isBackground) {
+                        const targetLayer = layers[activeIndex + 1];
+                        
+                        // 背景レイヤーを飛び越えない
+                        if (!layer?.layerData?.isBackground && !targetLayer?.layerData?.isBackground) {
+                            // 配列から削除して後方に再挿入
                             this.layerSystem.currentCutContainer.removeChildAt(activeIndex);
                             this.layerSystem.currentCutContainer.addChildAt(layer, activeIndex + 1);
                             this.layerSystem.activeLayerIndex = activeIndex + 1;
@@ -507,12 +512,14 @@
                         }
                     }
                 } else if (e.code === 'ArrowDown') {
-                    // 下に移動 = 配列の前方
+                    // 下に移動 = 配列の前方へ移動
                     if (activeIndex > 0) {
                         const layer = layers[activeIndex];
                         const targetLayer = layers[activeIndex - 1];
+                        
                         // 背景レイヤーを飛び越えない
                         if (!layer?.layerData?.isBackground && !targetLayer?.layerData?.isBackground) {
+                            // 配列から削除して前方に再挿入
                             this.layerSystem.currentCutContainer.removeChildAt(activeIndex);
                             this.layerSystem.currentCutContainer.addChildAt(layer, activeIndex - 1);
                             this.layerSystem.activeLayerIndex = activeIndex - 1;
@@ -520,14 +527,29 @@
                         }
                     }
                 }
-            } else {
-                // ↑↓←→: Cut移動
-                if (!this.animationSystem) return;
-                
-                if (e.code === 'ArrowUp' || e.code === 'ArrowLeft') {
+            } else if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
+                // タイムライン表示時: ←→でCUT移動
+                if (e.code === 'ArrowLeft') {
+                    // 左 = 前のCUT
                     this.animationSystem.goToPreviousFrame();
-                } else if (e.code === 'ArrowDown' || e.code === 'ArrowRight') {
+                } else if (e.code === 'ArrowRight') {
+                    // 右 = 次のCUT
                     this.animationSystem.goToNextFrame();
+                }
+            } else {
+                // 通常時: ↑↓でレイヤーのアクティブ変更
+                if (e.code === 'ArrowUp') {
+                    // 上 = レイヤーパネルの上へ = 配列の後方
+                    if (activeIndex < layers.length - 1) {
+                        this.layerSystem.activeLayerIndex = activeIndex + 1;
+                        this.layerSystem.updateLayerPanelUI();
+                    }
+                } else if (e.code === 'ArrowDown') {
+                    // 下 = レイヤーパネルの下へ = 配列の前方
+                    if (activeIndex > 0) {
+                        this.layerSystem.activeLayerIndex = activeIndex - 1;
+                        this.layerSystem.updateLayerPanelUI();
+                    }
                 }
             }
         }
@@ -905,4 +927,4 @@
 
 })();
 
-console.log('✅ core-engine.js (Quick Fix完全版) loaded');
+console.log('✅ core-engine.js (Phase 4.1 CRITICAL修正版) loaded');
