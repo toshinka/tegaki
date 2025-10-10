@@ -1,361 +1,443 @@
 // ==================================================
-// tegaki_anime.js
-// アニメーションお絵かき機能本体 (最終修正版)
+// tegaki_loader_anime.js
+// お絵かきツールをページに読み込み、UIを制御する
 // ==================================================
 
 (function() {
     'use strict';
     
-    // ===== Tegakiコアクラス (アニメーション対応版) =====
-    window.TegakiAnimeCore = class TegakiAnimeCore {
-        constructor(container) {
-            this.container = container;
-            this.wrapper = null;
-            this.canvas = null; // 描画用メインキャンバス
-            this.ctx = null;
-            this.bgCanvas = null; // 背景表示用キャンバス
-            
-            // 描画状態
-            this.isDrawing = false;
-            this.lastX = 0;
-            this.lastY = 0;
-            
-            // 固定ツール設定
-            this.color = '#800000';
-            this.size = 2;
-            
-            // アニメーション設定
-            this.frameCount = 5;
-            this.frameDelay = 200; // 1フレームあたりの表示時間 (ms) 0.2s
-            this.layers = []; // 各フレームのImageDataを保持
-            this.thumbnailContainer = null;
-            this.activeLayerIndex = 0;
-            
-            // Undo/Redo履歴
-            this.history = []; // 各レイヤーの履歴を保持する2次元配列
-            this.historyIndex = []; // 各レイヤーの現在の履歴位置
-            
-            // 💡 イベントリスナーのメモリリーク対策 (bind済みの関数を保持)
-            this.boundHandleKeyDown = this.handleKeyDown.bind(this);
-            
-            this.init();
-        }
-        
-        // ===== 初期化 =====
-        init() {
-            this.createUI();
-            this.setupCanvas();
-            this.initLayersAndHistory();
-            this.attachEvents();
-            this.switchLayer(0); // 最初のレイヤーをアクティブに
-        }
-        
-        // ===== UI作成 =====
-        createUI() {
-            // ラッパー
-            this.wrapper = document.createElement('div');
-            this.wrapper.style.cssText = `
-                display: flex;
-                flex-direction: column;
-                width: 100%;
-                height: 100%;
-                background: #ffffee;
-                padding: 10px 0 20px 0; /* 💡 UIレイアウト調整: 下に20px余白 */
-            `;
-            
-            // キャンバスエリア
-            const canvasArea = document.createElement('div');
-            canvasArea.style.cssText = `
-                flex: 1;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                position: relative;
-            `;
-            
-            // キャンバスコンテナ
-            const canvasContainer = document.createElement('div');
-            canvasContainer.style.cssText = `
-                position: relative;
-                width: 400px;
-                height: 400px;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-            `;
-            
-            // 背景キャンバス
-            this.bgCanvas = document.createElement('canvas');
-            this.bgCanvas.width = 400;
-            this.bgCanvas.height = 400;
-            this.bgCanvas.getContext('2d').fillStyle = '#f0e0d6';
-            this.bgCanvas.getContext('2d').fillRect(0, 0, 400, 400);
-            this.bgCanvas.style.cssText = `position: absolute; top: 0; left: 0;`;
-            
-            // 描画キャンバス
-            this.canvas = document.createElement('canvas');
-            this.canvas.width = 400;
-            this.canvas.height = 400;
-            this.canvas.style.cssText = `position: absolute; top: 0; left: 0; cursor: crosshair;`;
-            
-            canvasContainer.appendChild(this.bgCanvas);
-            canvasContainer.appendChild(this.canvas);
-            canvasArea.appendChild(canvasContainer);
-            
-            // サムネイルエリア
-            this.thumbnailContainer = document.createElement('div');
-            this.thumbnailContainer.style.cssText = `
-                display: flex;
-                justify-content: center;
-                gap: 10px;
-                padding: 5px 0; /* 💡 UIレイアウト調整: キャンバスとサムネイル間を詰める */
-            `;
-            
-            for (let i = 0; i < this.frameCount; i++) {
-                const thumb = document.createElement('canvas');
-                thumb.width = 60;
-                thumb.height = 60;
-                thumb.style.cssText = `
-                    border: 3px solid #aa5a56;
-                    border-radius: 2px;
-                    background: #f0e0d6;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                `;
-                thumb.title = `レイヤー ${i + 1}`;
-                thumb.onclick = () => this.switchLayer(i);
-                this.thumbnailContainer.appendChild(thumb);
-            }
-            
-            this.wrapper.appendChild(canvasArea);
-            this.wrapper.appendChild(this.thumbnailContainer);
-            this.container.appendChild(this.wrapper);
-        }
-        
-        // ===== キャンバスとコンテキスト設定 =====
-        setupCanvas() {
-            this.ctx = this.canvas.getContext('2d');
-            this.ctx.lineCap = 'round';
-            this.ctx.lineJoin = 'round';
-            this.ctx.strokeStyle = this.color;
-            this.ctx.lineWidth = this.size;
-        }
+    // 起動関数がすでに存在する場合は重複実行を防ぐ
+    if (window.tegakiAnimeStart) {
+        window.tegakiAnimeStart();
+        return;
+    }
 
-        // ===== レイヤーと履歴の初期化 =====
-        initLayersAndHistory() {
-            for (let i = 0; i < this.frameCount; i++) {
-                const initialImageData = this.ctx.createImageData(this.canvas.width, this.canvas.height);
-                this.layers.push(initialImageData);
-                this.history.push([initialImageData]); 
-                this.historyIndex.push(0);
-            }
-        }
-        
-        // ===== イベント設定 =====
-        attachEvents() {
-            // 💡 bind()を避け、アロー関数でthisをキャプチャ
-            this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
-            this.canvas.addEventListener('mousemove', (e) => this.draw(e));
-            this.canvas.addEventListener('mouseup', () => this.stopDrawing());
-            this.canvas.addEventListener('mouseleave', () => this.stopDrawing());
-            
-            // タッチイベント
-            this.canvas.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                this.canvas.dispatchEvent(new MouseEvent('mousedown', { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY }));
-            });
-            this.canvas.addEventListener('touchmove', (e) => {
-                e.preventDefault();
-                this.canvas.dispatchEvent(new MouseEvent('mousemove', { clientX: e.touches[0].clientX, clientY: e.touches[0].clientY }));
-            });
-            this.canvas.addEventListener('touchend', (e) => {
-                e.preventDefault();
-                this.canvas.dispatchEvent(new MouseEvent('mouseup', {}));
-            });
-
-            // キーボードイベント (Undo/Redo) - 修正済み
-            document.addEventListener('keydown', this.boundHandleKeyDown);
-        }
-        
-        // ===== 描画処理 (変更なし) =====
-        startDrawing(e) {
-            this.isDrawing = true;
-            const rect = this.canvas.getBoundingClientRect();
-            [this.lastX, this.lastY] = [e.clientX - rect.left, e.clientY - rect.top];
-        }
-        
-        draw(e) {
-            if (!this.isDrawing) return;
-            const rect = this.canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
-            
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.lastX, this.lastY);
-            this.ctx.lineTo(x, y);
-            this.ctx.stroke();
-            
-            [this.lastX, this.lastY] = [x, y];
-        }
-        
-        stopDrawing() {
-            if (!this.isDrawing) return;
-            this.isDrawing = false;
-            this.ctx.beginPath();
-            this.pushHistory();
-            this.updateThumbnail();
-        }
-
-        // ===== レイヤー管理/サムネイル (変更なし) =====
-        switchLayer(index) {
-            if (index === this.activeLayerIndex) return;
-            this.layers[this.activeLayerIndex] = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-            this.activeLayerIndex = index;
-            this.ctx.putImageData(this.layers[index], 0, 0);
-            this.thumbnailContainer.childNodes.forEach((thumb, i) => {
-                thumb.style.borderColor = (i === index) ? '#800000' : '#aa5a56';
-                thumb.style.transform = (i === index) ? 'scale(1.1)' : 'scale(1)';
-            });
-        }
-        
-        updateThumbnail() {
-            const thumbCanvas = this.thumbnailContainer.childNodes[this.activeLayerIndex];
-            if (!thumbCanvas) return;
-            const thumbCtx = thumbCanvas.getContext('2d');
-            thumbCtx.clearRect(0, 0, thumbCanvas.width, thumbCanvas.height);
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = this.canvas.width;
-            tempCanvas.height = this.canvas.height;
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.drawImage(this.bgCanvas, 0, 0);
-            tempCtx.drawImage(this.canvas, 0, 0);
-            thumbCtx.drawImage(tempCanvas, 0, 0, thumbCanvas.width, thumbCanvas.height);
-        }
-
-        // ===== Undo/Redo 機能 (変更なし) =====
-        handleKeyDown(e) {
-            if (!this.wrapper || !this.wrapper.isConnected) return;
-            if (e.ctrlKey && e.key.toLowerCase() === 'z') {
-                e.preventDefault();
-                this.undo();
-            }
-            if (e.ctrlKey && e.key.toLowerCase() === 'y') {
-                e.preventDefault();
-                this.redo();
-            }
-        }
-
-        pushHistory() {
-            const history = this.history[this.activeLayerIndex];
-            let index = this.historyIndex[this.activeLayerIndex];
-            if (index < history.length - 1) {
-                this.history[this.activeLayerIndex] = history.slice(0, index + 1);
-            }
-            const imageData = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-            this.history[this.activeLayerIndex].push(imageData);
-            this.historyIndex[this.activeLayerIndex]++;
-        }
-
-        undo() {
-            let index = this.historyIndex[this.activeLayerIndex];
-            if (index > 0) {
-                index--;
-                this.historyIndex[this.activeLayerIndex] = index;
-                const imageData = this.history[this.activeLayerIndex][index];
-                this.ctx.putImageData(imageData, 0, 0);
-                this.updateThumbnail();
-            }
-        }
-        
-        redo() {
-            const history = this.history[this.activeLayerIndex];
-            let index = this.historyIndex[this.activeLayerIndex];
-            if (index < history.length - 1) {
-                index++;
-                this.historyIndex[this.activeLayerIndex] = index;
-                const imageData = this.history[this.activeLayerIndex][index];
-                this.ctx.putImageData(imageData, 0, 0);
-                this.updateThumbnail();
-            }
-        }
-
-        // ===== エクスポート処理 (APNG: 背景合成済み) =====
-        prepareExport() {
-             this.layers[this.activeLayerIndex] = this.ctx.getImageData(0, 0, this.canvas.width, this.canvas.height);
-        }
-
-        // 💡 APNGとしてエクスポート (背景合成の不具合修正済み)
-        async exportAsApng() {
-            this.prepareExport();
-            if (!window.UPNG || !window.Zlib) {
-                alert('APNG生成ライブラリ(UPNG.js/pako.js)が読み込まれていません。');
-                return null;
-            }
-            
-            const frames = [];
-            for (const layerData of this.layers) {
-                const frameCanvas = document.createElement('canvas');
-                frameCanvas.width = this.canvas.width;
-                frameCanvas.height = this.canvas.height;
-                const frameCtx = frameCanvas.getContext('2d');
-                
-                frameCtx.drawImage(this.bgCanvas, 0, 0); // 背景を描画
-                frameCtx.putImageData(layerData, 0, 0);   // レイヤーを重ねる
-                
-                frames.push(frameCtx.getImageData(0, 0, this.canvas.width, this.canvas.height).data.buffer);
-            }
-            
-            const delays = Array(this.frameCount).fill(this.frameDelay);
-            const apngData = UPNG.encode(frames, this.canvas.width, this.canvas.height, 0, delays);
-            return new Blob([apngData], {type: 'image/apng'});
-        }
-
-        // 💡 GIFとしてエクスポート (進捗表示コールバック対応)
-        async exportAsGif(onProgress) {
-            this.prepareExport();
-            if (!window.GIF) {
-                alert('GIF生成ライブラリが読み込まれていません。');
-                return null;
-            }
-
-            return new Promise((resolve) => {
-                const gif = new GIF({
-                    workers: 2,
-                    quality: 10,
-                    width: this.canvas.width,
-                    height: this.canvas.height
-                });
-                
-                if (onProgress && typeof onProgress === 'function') {
-                    gif.on('progress', onProgress);
-                }
-
-                for (const layerData of this.layers) {
-                    const frameCanvas = document.createElement('canvas');
-                    frameCanvas.width = this.canvas.width;
-                    frameCanvas.height = this.canvas.height;
-                    const frameCtx = frameCanvas.getContext('2d');
-                    
-                    frameCtx.drawImage(this.bgCanvas, 0, 0); 
-                    frameCtx.putImageData(layerData, 0, 0);   
-                    
-                    gif.addFrame(frameCanvas, { delay: this.frameDelay });
-                }
-
-                gif.on('finished', (blob) => {
-                    if (onProgress) gif.off('progress', onProgress);
-                    resolve(blob)
-                });
-                gif.render();
-            });
-        }
-        
-        // ===== 破棄処理 (変更なし) =====
-        destroy() {
-            document.removeEventListener('keydown', this.boundHandleKeyDown);
-            if (this.wrapper && this.wrapper.parentNode) {
-                this.wrapper.remove();
-            }
-        }
+    // ===== 設定 (アニメーション版) =====
+    const SCRIPT_URLS = {
+        // ↓↓↓↓↓ このURLはご自身の環境に合わせて書き換えてください ↓↓↓↓↓
+        tegaki: 'https://cdn.jsdelivr.net/gh/toshinka/tegaki/docs/tegaki_anime.js', // 例: GitHub PagesのURL
+        upng: 'https://cdn.jsdelivr.net/npm/upng-js@2.1.0/UPNG.min.js',
+        pako: 'https://cdnjs.cloudflare.com/ajax/libs/pako/2.1.0/pako.min.js', 
+        gif: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.js',
+        // 💡 Workerスクリプトはテキストとして取得するため、URLはそのまま残す
+        gifWorker: 'https://cdnjs.cloudflare.com/ajax/libs/gif.js/0.2.0/gif.worker.js' 
+    };
+    const MEBUKI_TIMEOUT = 3000;
+    const MEBUKI_SELECTORS = {
+        postButton: 'button[title="レスを投稿"]',
+        fileInput: 'input[type="file"][accept*="image"]',
+        previewImg: 'img[src^="blob:"]'
     };
     
-    console.log('✅ tegaki_anime.js (TegakiAnimeCore) loaded');
+    // ===== ユーティリティ =====
+    function loadScript(url) {
+        return new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = url;
+            script.onload = resolve;
+            script.onerror = () => reject(new Error(`Failed to load script: ${url}`));
+            document.head.appendChild(script);
+        });
+    }
+    
+    // 💡 Workerスクリプトのテキスト内容を取得するユーティリティを追加
+    function loadText(url) {
+        return fetch(url).then(response => {
+            if (!response.ok) {
+                // MIMEタイプエラーの原因となるHTML応答を防ぐため、エラー応答をチェック
+                throw new Error(`Failed to fetch script text: ${response.status} ${response.statusText}`);
+            }
+            return response.text();
+        });
+    }
+
+    // ふたば/めぶき風ボタンを作成するヘルパー関数
+    function createButton(text, onClick, isPrimary = false) {
+        const btn = document.createElement('button');
+        btn.innerHTML = text;
+        
+        const primaryBg = '#4ade80'; // 緑系
+        const primaryHover = '#22c55e';
+        const primaryBorder = '#22c55e';
+
+        const secondaryBg = '#f87171'; // 朱色系
+        const secondaryHover = '#ef4444';
+        const secondaryBorder = '#ef4444';
+
+        btn.style.cssText = `
+            padding: 8px 16px;
+            background: ${isPrimary ? primaryBg : secondaryBg};
+            color: white;
+            border: 2px solid ${isPrimary ? primaryBorder : secondaryBorder};
+            border-radius: 4px;
+            cursor: pointer;
+            font-size: 14px;
+            font-weight: bold;
+            transition: all 0.2s;
+            display: inline-flex;
+            align-items: center;
+            gap: 4px;
+        `;
+        btn.onmouseover = () => btn.style.background = isPrimary ? primaryHover : secondaryHover;
+        btn.onmouseout = () => btn.style.background = isPrimary ? primaryBg : secondaryBg;
+        btn.onclick = onClick;
+        return btn;
+    }
+    
+    // ===== ローダーメインクラス =====
+    class TegakiLoaderAnime {
+        constructor() {
+            this.boardType = null;
+            this.targetInput = null;
+            this.core = null;
+            this.container = null;
+            this.originalBodyOverflow = null;
+            this.loadingEl = null;
+        }
+
+        // ===== 掲示板判定 (Basicから流用) =====
+        detectBoard() {
+            const host = location.host;
+            if (host.includes('mebuki.moe')) {
+                return 'mebuki';
+            }
+            return null;
+        }
+        
+        // ===== ファイル入力要素の検出 (Basicから流用) =====
+        async findTargetElements() {
+            if (this.boardType === 'mebuki') {
+                const postBtn = document.querySelector(MEBUKI_SELECTORS.postButton);
+                if (postBtn) {
+                    postBtn.click();
+                    await this.wait(300);
+                }
+                
+                await this.waitFor(() => {
+                    this.targetInput = document.querySelector(MEBUKI_SELECTORS.fileInput);
+                    return this.targetInput !== null;
+                }, MEBUKI_TIMEOUT);
+                
+                if (!this.targetInput) {
+                    throw new Error('ファイル入力要素が見つかりません');
+                }
+            }
+        }
+
+        // ===== エントリーポイント =====
+        async start() {
+            console.log('[Tegaki Anime Loader] Starting...');
+            
+            // 既存のUIがあれば削除して作り直す
+            if (window.tegakiAnimeCore) {
+                window.tegakiAnimeCore.destroy();
+                window.tegakiAnimeCore = null;
+            }
+            const existingContainer = document.getElementById('tegaki-anime-container');
+            if (existingContainer) {
+                existingContainer.remove();
+            }
+
+            // 掲示板判定と要素検出を先に行う (失敗したらここで終了)
+            try {
+                this.boardType = this.detectBoard();
+                if (!this.boardType) {
+                    throw new Error('対応していない掲示板です');
+                }
+                await this.findTargetElements();
+            } catch (error) {
+                alert(`Tegaki起動に失敗しました: ${error.message}`);
+                this.cleanup();
+                return;
+            }
+
+            // ローディング表示
+            this.loadingEl = document.createElement('div');
+            this.loadingEl.textContent = 'お絵かきツールを準備中...';
+            this.loadingEl.style.cssText = 'position:fixed; top:10px; left:50%; transform:translateX(-50%); background: #800000; color:white; padding:10px; border-radius:5px; z-index:10001;';
+            document.body.appendChild(this.loadingEl);
+
+            try {
+                // ライブラリを読み込み (gifWorkerはテキストとして別途取得)
+                const [
+                    gifWorkerText
+                ] = await Promise.all([
+                    loadText(SCRIPT_URLS.gifWorker), // 💡 Workerスクリプトのテキストをフェッチ
+                    loadScript(SCRIPT_URLS.upng),
+                    loadScript(SCRIPT_URLS.pako), 
+                    loadScript(SCRIPT_URLS.gif),
+                    loadScript(SCRIPT_URLS.tegaki)
+                ]);
+                
+                // 1. GIF Workerの修正
+                if (window.GIF && window.GIF.prototype && gifWorkerText) {
+                    // 💡 WorkerスクリプトのテキストからBlob URLを作成し、クロスオリジンを回避
+                    const blob = new Blob([gifWorkerText], { type: 'application/javascript' });
+                    const blobURL = URL.createObjectURL(blob);
+                    
+                    if (typeof window.GIF.prototype.options === 'undefined') {
+                        window.GIF.prototype.options = {};
+                    }
+                    window.GIF.prototype.options.workerScript = blobURL;
+                    console.log('GIF worker script set using Blob URL.');
+                } else {
+                     console.warn('GIFライブラリまたはWorkerテキストが見つかりません。GIF投稿は動作しません。');
+                }
+
+                // 2. APNG (pako) の修正
+                if (window.pako) {
+                     // 💡 UPNG.jsがpakoを見つけられるように、Zlibとしても公開
+                     window.Zlib = window.pako; 
+                     console.log('pako linked to Zlib for UPNG compatibility.');
+                }
+                
+                // UI作成とコアインスタンス化
+                this.createUI();
+                
+                // TegakiCoreをインスタンス化
+                const tegakiArea = document.getElementById('tegaki-canvas-area-anime');
+                if (!window.TegakiAnimeCore) {
+                    throw new Error('TegakiAnimeCoreクラスが見つかりません。');
+                }
+                this.core = new window.TegakiAnimeCore(tegakiArea);
+                window.tegakiAnimeCore = this.core; // グローバルに公開
+                
+                this.loadingEl.remove();
+
+            } catch (error) {
+                console.error('Tegaki loader failed:', error);
+                this.loadingEl.textContent = `お絵かきツールの読み込みに失敗しました: ${error.message}`;
+                setTimeout(() => this.loadingEl.remove(), 5000);
+                this.cleanup();
+            }
+        }
+
+        // ===== UI作成 (変更なし) =====
+        createUI() {
+            // ... (UI作成コードは変更なし) ...
+            // フルスクリーンコンテナ
+            this.container = document.createElement('div');
+            this.container.id = 'tegaki-anime-container';
+            this.container.style.cssText = `
+                position: fixed; top: 0; left: 0; width: 100vw; height: 100vh;
+                background: #f0e0d6; z-index: 10000;
+                display: flex; flex-direction: column;
+            `;
+
+            // トップバー（ふたば風カラー）
+            const topBar = document.createElement('div');
+            topBar.style.cssText = `
+                display: flex;
+                justify-content: space-between;
+                align-items: center;
+                padding: 8px 16px;
+                background: #e9c2ba;
+                border-bottom: 2px solid #cf9c97;
+                gap: 8px;
+            `;
+            
+            // 左側：タイトル
+            const title = document.createElement('div');
+            title.textContent = 'アニメお絵かきツール';
+            title.style.cssText = `
+                color: #800000;
+                font-size: 14px;
+                font-weight: bold;
+            `;
+            
+            // 右側：ボタングループ
+            const buttonGroup = document.createElement('div');
+            buttonGroup.style.cssText = `display: flex; gap: 8px;`;
+
+            // APNG投稿ボタン
+            const postApngBtn = createButton('APNG投稿', () => this.exportAndAttach('png'), true);
+            postApngBtn.title = 'APNGを生成して掲示板に添付';
+            
+            // GIF投稿ボタン
+            const postGifBtn = createButton('GIF投稿', () => this.exportAndAttach('gif'), true);
+            postGifBtn.title = 'GIFを生成して掲示板に添付';
+
+            // 閉じるボタン
+            const closeBtn = createButton('✕ 閉じる', () => this.cancel());
+            closeBtn.title = '破棄して閉じる';
+            
+            buttonGroup.appendChild(postApngBtn);
+            buttonGroup.appendChild(postGifBtn);
+            buttonGroup.appendChild(closeBtn);
+            topBar.appendChild(title);
+            topBar.appendChild(buttonGroup);
+            this.container.appendChild(topBar);
+
+            // キャンバスエリア（Tegakiコアが使用）
+            const canvasArea = document.createElement('div');
+            canvasArea.id = 'tegaki-canvas-area-anime';
+            canvasArea.style.cssText = `
+                flex: 1;
+                position: relative;
+                overflow: hidden;
+                background: #ffffee;
+            `;
+            this.container.appendChild(canvasArea);
+            
+            document.body.appendChild(this.container);
+            
+            // スクロール防止
+            this.originalBodyOverflow = document.body.style.overflow;
+            document.body.style.overflow = 'hidden';
+        }
+
+        // ===== エクスポートして添付 (進捗表示対応) =====
+        async exportAndAttach(type) {
+            if (!this.core) {
+                alert('お絵かきツールが初期化されていません');
+                return;
+            }
+            
+            try {
+                // 💡 ローディング表示を強化
+                this.loadingEl = this.loadingEl || document.createElement('div');
+                this.loadingEl.textContent = `${type.toUpperCase()}を生成中...`;
+                this.loadingEl.style.cssText = 'position:fixed; top:10px; left:50%; transform:translateX(-50%); background: #800000; color:white; padding:10px; border-radius:5px; z-index:10001;';
+                document.body.appendChild(this.loadingEl);
+
+                let blob;
+                
+                const progressCallback = (p) => {
+                    const percent = Math.floor(p * 100);
+                    // 💡 進捗状況をUIに表示
+                    this.loadingEl.textContent = `${type.toUpperCase()}を生成中... (${percent}%)`;
+                };
+
+                if (type === 'png') {
+                    // APNGはpako.jsのZlib割り当てによりエラー解消されるはず
+                    blob = await this.core.exportAsApng();
+                } else if (type === 'gif') {
+                    // GIF生成時に進捗コールバックを渡す
+                    blob = await this.core.exportAsGif(progressCallback);
+                } else {
+                    throw new Error('無効なエクスポートタイプです。');
+                }
+                
+                this.loadingEl.remove();
+
+                if (!blob) {
+                    alert(`${type.toUpperCase()}の生成に失敗しました。`);
+                    return;
+                }
+                
+                console.log(`[Tegaki Anime Loader] ✓ ${type.toUpperCase()} Blob created:`, blob.size, 'bytes');
+                
+                // 掲示板に注入
+                await this.injectToBoard(blob, type);
+                console.log('[Tegaki Anime Loader] ✓ Image injected to board');
+                
+                alert(`画像を添付しました！投稿ボタンを押してください。\n(ファイル形式: ${type.toUpperCase()})`);
+                this.cleanup();
+                
+            } catch (error) {
+                console.error('[Tegaki Anime Loader] エクスポート失敗:', error);
+                if (this.loadingEl) this.loadingEl.remove();
+                alert(`画像の出力に失敗しました\n${error.message}`);
+            }
+        }
+        
+        // ===== 掲示板にFile注入 (Basicから流用) =====
+        async injectToBoard(blob, type) {
+            if (!this.targetInput) {
+                throw new Error('入力要素が見つかりません');
+            }
+            
+            const mimeType = type === 'png' ? 'image/png' : 'image/gif';
+            const filename = `tegaki_anime_${Date.now()}.${type}`;
+            const file = new File([blob], filename, {
+                type: mimeType,
+                lastModified: Date.now()
+            });
+            
+            const dt = new DataTransfer();
+            dt.items.add(file);
+            this.targetInput.files = dt.files;
+            
+            // changeイベント発火
+            const changeEvent = new Event('change', { bubbles: true });
+            this.targetInput.dispatchEvent(changeEvent);
+            
+            // プレビュー表示を待つ（オプション）
+            try {
+                await this.waitFor(() => {
+                    return document.querySelector(MEBUKI_SELECTORS.previewImg) !== null;
+                }, 3000);
+                console.log('[Tegaki Anime Loader] ✓ Preview displayed');
+            } catch (error) {
+                console.warn('[Tegaki Anime Loader] プレビュー確認タイムアウト（処理は正常完了）');
+            }
+        }
+
+        // ===== キャンセル (Basicから流用) =====
+        cancel() {
+            if (confirm('描いた内容は破棄されます。よろしいですか?')) {
+                this.cleanup();
+            }
+        }
+        
+        // ===== クリーンアップ (Basicから流用) =====
+        cleanup() {
+            console.log('[Tegaki Anime Loader] Cleaning up...');
+            
+            if (this.core && this.core.destroy) {
+                this.core.destroy();
+                this.core = null;
+                window.tegakiAnimeCore = null;
+            }
+            
+            if (this.container) {
+                this.container.remove();
+                this.container = null;
+            }
+            
+            if (this.originalBodyOverflow !== null) {
+                document.body.style.overflow = this.originalBodyOverflow;
+                this.originalBodyOverflow = null;
+            }
+            
+            if (this.loadingEl) {
+                this.loadingEl.remove();
+            }
+            
+            console.log('[Tegaki Anime Loader] ✓ Cleanup complete');
+        }
+
+        // ===== ユーティリティ: 待機 (Basicから流用) =====
+        wait(ms) {
+            return new Promise(resolve => setTimeout(resolve, ms));
+        }
+        
+        // ===== ユーティリティ: 条件待機 (Basicから流用) =====
+        waitFor(condition, timeout = 5000) {
+            return new Promise((resolve, reject) => {
+                const startTime = Date.now();
+                const check = () => {
+                    if (condition()) {
+                        resolve();
+                    } else if (Date.now() - startTime > timeout) {
+                        reject(new Error('タイムアウト'));
+                    } else {
+                        setTimeout(check, 100);
+                    }
+                };
+                check();
+            });
+        }
+    }
+
+    // ===== グローバル登録 =====
+    window.tegakiAnimeStart = function() {
+        if (!window.tegakiAnimeInstance) {
+            window.tegakiAnimeInstance = new TegakiLoaderAnime();
+        }
+        window.tegakiAnimeInstance.start();
+    };
+    
+    // 初回実行
+    // window.tegakiAnimeStart(); 
 })();
