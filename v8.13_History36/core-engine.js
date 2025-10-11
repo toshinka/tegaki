@@ -1,10 +1,8 @@
-// ===== core-engine.js - Phase 4.1 CRITICAL修正版 =====
+// ===== core-engine.js - Phase 4.3 Vキー競合修正版 =====
 // ================================================================================
-// Phase 4.1 改修内容:
-// 1. レイヤー階層移動を「入れ替え」から「移動」に完全修正
-// 2. Ctrl+↑: レイヤーを上へ（配列後方へ） / Ctrl+↓: レイヤーを下へ（配列前方へ）
-// 3. 背景レイヤー飛び越え防止の維持
-// 4. CUT移動（矢印キー）の動作確認・修正
+// Phase 4.3 改修内容:
+// 1. handleArrowKeys()にVキー判定を追加（V押下中は処理しない）
+// 2. レイヤー操作とCUT移動の競合を完全解消
 // ================================================================================
 
 (function() {
@@ -403,7 +401,6 @@
         }
         
         handleKeyDown(e) {
-            // Phase 4.1: 矢印キー完全修正
             if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || 
                 e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
                 this.handleArrowKeys(e);
@@ -487,24 +484,26 @@
             }
         }
         
-        // Phase 4.1: 矢印キー処理の完全修正
+        // ========== Phase 4.3改修: handleArrowKeys() ==========
         handleArrowKeys(e) {
             e.preventDefault();
+            
+            // 🔥 Phase 4.3: V押下中は処理しない（レイヤー操作が優先）
+            if (this.layerSystem?.vKeyPressed) {
+                return;
+            }
             
             const activeIndex = this.layerSystem.activeLayerIndex;
             const layers = this.layerSystem.getLayers();
             
             if (e.ctrlKey) {
-                // Ctrl+↑↓: レイヤー階層移動（単純な移動、入れ替えではない）
+                // Ctrl+↑↓: レイヤー階層移動
                 if (e.code === 'ArrowUp') {
-                    // 上に移動 = 配列の後方へ移動
                     if (activeIndex < layers.length - 1) {
                         const layer = layers[activeIndex];
                         const targetLayer = layers[activeIndex + 1];
                         
-                        // 背景レイヤーを飛び越えない
                         if (!layer?.layerData?.isBackground && !targetLayer?.layerData?.isBackground) {
-                            // 配列から削除して後方に再挿入
                             this.layerSystem.currentCutContainer.removeChildAt(activeIndex);
                             this.layerSystem.currentCutContainer.addChildAt(layer, activeIndex + 1);
                             this.layerSystem.activeLayerIndex = activeIndex + 1;
@@ -512,14 +511,11 @@
                         }
                     }
                 } else if (e.code === 'ArrowDown') {
-                    // 下に移動 = 配列の前方へ移動
                     if (activeIndex > 0) {
                         const layer = layers[activeIndex];
                         const targetLayer = layers[activeIndex - 1];
                         
-                        // 背景レイヤーを飛び越えない
                         if (!layer?.layerData?.isBackground && !targetLayer?.layerData?.isBackground) {
-                            // 配列から削除して前方に再挿入
                             this.layerSystem.currentCutContainer.removeChildAt(activeIndex);
                             this.layerSystem.currentCutContainer.addChildAt(layer, activeIndex - 1);
                             this.layerSystem.activeLayerIndex = activeIndex - 1;
@@ -530,22 +526,18 @@
             } else if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
                 // タイムライン表示時: ←→でCUT移動
                 if (e.code === 'ArrowLeft') {
-                    // 左 = 前のCUT
                     this.animationSystem.goToPreviousFrame();
                 } else if (e.code === 'ArrowRight') {
-                    // 右 = 次のCUT
                     this.animationSystem.goToNextFrame();
                 }
             } else {
                 // 通常時: ↑↓でレイヤーのアクティブ変更
                 if (e.code === 'ArrowUp') {
-                    // 上 = レイヤーパネルの上へ = 配列の後方
                     if (activeIndex < layers.length - 1) {
                         this.layerSystem.activeLayerIndex = activeIndex + 1;
                         this.layerSystem.updateLayerPanelUI();
                     }
                 } else if (e.code === 'ArrowDown') {
-                    // 下 = レイヤーパネルの下へ = 配列の前方
                     if (activeIndex > 0) {
                         this.layerSystem.activeLayerIndex = activeIndex - 1;
                         this.layerSystem.updateLayerPanelUI();
@@ -553,6 +545,7 @@
                 }
             }
         }
+        // ========== Phase 4.3改修: END ==========
         
         handleKeyUp(e) {
         }
@@ -927,4 +920,6 @@
 
 })();
 
-console.log('✅ core-engine.js (Phase 4.1 CRITICAL修正版) loaded');
+console.log('✅ core-engine.js (Phase 4.3: Vキー競合修正版) loaded');
+console.log('   - 🔥 handleArrowKeys()にVキー判定を追加');
+console.log('   - 🔥 V押下中は矢印キー処理をスキップ（レイヤー操作が優先）');
