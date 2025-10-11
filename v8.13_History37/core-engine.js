@@ -1,8 +1,8 @@
-// ===== core-engine.js - Phase 4.3 Vキー競合修正版 =====
+// ===== core-engine.js - Phase 5.1: キャンバスリサイズ機能追加 =====
 // ================================================================================
-// Phase 4.3 改修内容:
-// 1. handleArrowKeys()にVキー判定を追加（V押下中は処理しない）
-// 2. レイヤー操作とCUT移動の競合を完全解消
+// Phase 5.1 改修内容:
+// 1. resizeCanvas()にCUTサムネイル再生成機能を追加
+// 2. animation-system.jsとの連携強化
 // ================================================================================
 
 (function() {
@@ -484,11 +484,9 @@
             }
         }
         
-        // ========== Phase 4.3改修: handleArrowKeys() ==========
         handleArrowKeys(e) {
             e.preventDefault();
             
-            // 🔥 Phase 4.3: V押下中は処理しない（レイヤー操作が優先）
             if (this.layerSystem?.vKeyPressed) {
                 return;
             }
@@ -497,7 +495,6 @@
             const layers = this.layerSystem.getLayers();
             
             if (e.ctrlKey) {
-                // Ctrl+↑↓: レイヤー階層移動
                 if (e.code === 'ArrowUp') {
                     if (activeIndex < layers.length - 1) {
                         const layer = layers[activeIndex];
@@ -524,14 +521,12 @@
                     }
                 }
             } else if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                // タイムライン表示時: ←→でCUT移動
                 if (e.code === 'ArrowLeft') {
                     this.animationSystem.goToPreviousFrame();
                 } else if (e.code === 'ArrowRight') {
                     this.animationSystem.goToNextFrame();
                 }
             } else {
-                // 通常時: ↑↓でレイヤーのアクティブ変更
                 if (e.code === 'ArrowUp') {
                     if (activeIndex < layers.length - 1) {
                         this.layerSystem.activeLayerIndex = activeIndex + 1;
@@ -545,7 +540,6 @@
                 }
             }
         }
-        // ========== Phase 4.3改修: END ==========
         
         handleKeyUp(e) {
         }
@@ -832,12 +826,15 @@
             this.layerSystem.processThumbnailUpdates();
         }
         
+        // ========== 🔥 Phase 5.1: resizeCanvas() - CUTサムネイル再生成追加 ==========
         resizeCanvas(newWidth, newHeight) {
             CONFIG.canvas.width = newWidth;
             CONFIG.canvas.height = newHeight;
             
+            // カメラシステムのリサイズ
             this.cameraSystem.resizeCanvas(newWidth, newHeight);
             
+            // 背景レイヤーの再描画
             const layers = this.layerSystem.getLayers();
             layers.forEach(layer => {
                 if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
@@ -847,12 +844,42 @@
                 }
             });
             
+            // レイヤーサムネイルの再生成
             for (let i = 0; i < layers.length; i++) {
                 this.layerSystem.requestThumbnailUpdate(i);
             }
             
+            // 🔥 Phase 5.1: CUTサムネイル再生成
+            if (this.animationSystem) {
+                setTimeout(() => {
+                    const animData = this.animationSystem.getAnimationData();
+                    if (animData && animData.cuts) {
+                        for (let i = 0; i < animData.cuts.length; i++) {
+                            if (this.animationSystem.generateCutThumbnail) {
+                                this.animationSystem.generateCutThumbnail(i);
+                            } else if (this.animationSystem.generateCutThumbnailOptimized) {
+                                this.animationSystem.generateCutThumbnailOptimized(i);
+                            }
+                        }
+                    }
+                }, 500);
+            }
+            
+            // canvas-infoの更新
+            const canvasInfoElement = document.getElementById('canvas-info');
+            if (canvasInfoElement) {
+                canvasInfoElement.textContent = `${newWidth}×${newHeight}px`;
+            }
+            
+            // リサイズポップアップを閉じる
+            const resizeSettings = document.getElementById('resize-settings');
+            if (resizeSettings) {
+                resizeSettings.classList.remove('show');
+            }
+            
             this.eventBus.emit('canvas:resized', { width: newWidth, height: newHeight });
         }
+        // ========== 🔥 Phase 5.1: END ==========
         
         initialize() {
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
@@ -920,6 +947,6 @@
 
 })();
 
-console.log('✅ core-engine.js (Phase 4.3: Vキー競合修正版) loaded');
-console.log('   - 🔥 handleArrowKeys()にVキー判定を追加');
-console.log('   - 🔥 V押下中は矢印キー処理をスキップ（レイヤー操作が優先）');
+console.log('✅ core-engine.js (Phase 5.1: キャンバスリサイズ機能追加) loaded');
+console.log('   - 🔥 resizeCanvas()にCUTサムネイル再生成機能を追加');
+console.log('   - 🔥 リサイズ後に全CUTのサムネイルを自動更新');
