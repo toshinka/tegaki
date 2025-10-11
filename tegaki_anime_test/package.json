@@ -1,0 +1,17 @@
+    {
+      "name": "tegaki_anime_test",
+      "version": "1.0.0",
+      "description": "Animation drawing tool for Mebuki channel",
+      "main": "dist/tegaki_anime.js",
+      "scripts": {
+        "build": "node build.js"
+      },
+      "dependencies": {
+        "upng-js": "^2.1.0",
+        "pako": "^2.1.0",
+        "gif.js": "^0.2.0"
+      },
+      "keywords": ["canvas", "animation", "apng", "gif"],
+      "author": "",
+      "license": "MIT"
+    }
