@@ -1,13 +1,10 @@
 // ================================================================================
-// system/animation-system.js - GIF/PNGエクスポート対応版
+// system/animation-system.js - Phase 4.1: CUT自動採番対応版
 // ================================================================================
-// Phase 2.5改修: deleteCut() と reorderCuts() に History統合を追加
-// 【修正】GIFExporter用APIを追加:
-//   - captureAllLayerStates()
-//   - restoreFromSnapshots()
-//   - applyCutToLayers()
-//   - getAnimationData() (既存)
-//   - getCurrentCutIndex() (既存)
+// 【Phase 4.1改修内容】
+// 1. createNewBlankCut() でCUT追加後に自動採番を実行
+// 2. 「CUT番号整理」ボタンが不要になるよう、常に順序通りの番号を維持
+// 3. History統合済み（Phase 2.5の機能を継承）
 
 (function() {
     'use strict';
@@ -386,23 +383,84 @@
             return cut;
         }
         
-createNewBlankCut() {
-    const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-    const cut = new Cut(cutId, `CUT${this.animationData.cuts.length + 1}`, this.config);
-    
-    const bgLayer = this._createBackgroundLayer(cutId);
-    const layer1 = this._createBlankLayer(cutId, 'レイヤー1');
-    
-    cut.addLayer(bgLayer);
-    cut.addLayer(layer1);
-    
-    const newIndex = this.animationData.cuts.length;
-    
-    if (window.History && !window.History._manager.isApplying) {
-        const command = {
-            name: 'create-cut',
-            do: () => {
+        // ========== Phase 4.1改修: createNewBlankCut() ==========
+        createNewBlankCut() {
+            const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            // 🔥 Phase 4.1: 仮の名前で作成（後で自動採番）
+            const cut = new Cut(cutId, `CUT_TEMP_${cutId}`, this.config);
+            
+            const bgLayer = this._createBackgroundLayer(cutId);
+            const layer1 = this._createBlankLayer(cutId, 'レイヤー1');
+            
+            cut.addLayer(bgLayer);
+            cut.addLayer(layer1);
+            
+            const newIndex = this.animationData.cuts.length;
+            
+            if (window.History && !window.History._manager.isApplying) {
+                const command = {
+                    name: 'create-cut',
+                    do: () => {
+                        this.animationData.cuts.push(cut);
+                        
+                        // 🔥 Phase 4.1: CUT追加後に自動採番を実行
+                        this.renameCutsSequentially();
+                        
+                        if (this.canvasContainer) {
+                            this.canvasContainer.addChild(cut.container);
+                            cut.container.visible = false;
+                        }
+                        
+                        if (this.layerSystem?.createCutRenderTexture) {
+                            this.layerSystem.createCutRenderTexture(cutId);
+                        }
+                        
+                        this.switchToActiveCut(newIndex);
+                        
+                        if (this.eventBus) {
+                            this.eventBus.emit('animation:cut-created', { 
+                                cutId: cut.id, 
+                                cutIndex: newIndex 
+                            });
+                        }
+                    },
+                    undo: () => {
+                        const cutIndex = this.animationData.cuts.findIndex(c => c.id === cutId);
+                        if (cutIndex !== -1) {
+                            const removedCut = this.animationData.cuts[cutIndex];
+                            
+                            if (this.layerSystem?.destroyCutRenderTexture) {
+                                this.layerSystem.destroyCutRenderTexture(removedCut.id);
+                            }
+                            
+                            if (this.canvasContainer && removedCut.container.parent === this.canvasContainer) {
+                                this.canvasContainer.removeChild(removedCut.container);
+                            }
+                            
+                            this.animationData.cuts.splice(cutIndex, 1);
+                            
+                            // 🔥 Phase 4.1: CUT削除後も自動採番を実行
+                            this.renameCutsSequentially();
+                            
+                            if (this.animationData.cuts.length > 0) {
+                                const newActiveIndex = Math.min(cutIndex, this.animationData.cuts.length - 1);
+                                this.switchToActiveCut(newActiveIndex);
+                            }
+                            
+                            if (this.eventBus) {
+                                this.eventBus.emit('animation:cut-deleted', { cutIndex });
+                            }
+                        }
+                    },
+                    meta: { type: 'cut-create', cutId, cutIndex: newIndex }
+                };
+                
+                window.History.push(command);
+            } else {
                 this.animationData.cuts.push(cut);
+                
+                // 🔥 Phase 4.1: CUT追加後に自動採番を実行
+                this.renameCutsSequentially();
                 
                 if (this.canvasContainer) {
                     this.canvasContainer.addChild(cut.container);
@@ -421,60 +479,11 @@ createNewBlankCut() {
                         cutIndex: newIndex 
                     });
                 }
-            },
-            undo: () => {
-                const cutIndex = this.animationData.cuts.findIndex(c => c.id === cutId);
-                if (cutIndex !== -1) {
-                    const removedCut = this.animationData.cuts[cutIndex];
-                    
-                    if (this.layerSystem?.destroyCutRenderTexture) {
-                        this.layerSystem.destroyCutRenderTexture(removedCut.id);
-                    }
-                    
-                    if (this.canvasContainer && removedCut.container.parent === this.canvasContainer) {
-                        this.canvasContainer.removeChild(removedCut.container);
-                    }
-                    
-                    this.animationData.cuts.splice(cutIndex, 1);
-                    
-                    if (this.animationData.cuts.length > 0) {
-                        const newActiveIndex = Math.min(cutIndex, this.animationData.cuts.length - 1);
-                        this.switchToActiveCut(newActiveIndex);
-                    }
-                    
-                    if (this.eventBus) {
-                        this.eventBus.emit('animation:cut-deleted', { cutIndex });
-                    }
-                }
-            },
-            meta: { type: 'cut-create', cutId, cutIndex: newIndex }
-        };
-        
-        window.History.push(command);
-    } else {
-        this.animationData.cuts.push(cut);
-        
-        if (this.canvasContainer) {
-            this.canvasContainer.addChild(cut.container);
-            cut.container.visible = false;
+            }
+            
+            return cut;
         }
-        
-        if (this.layerSystem?.createCutRenderTexture) {
-            this.layerSystem.createCutRenderTexture(cutId);
-        }
-        
-        this.switchToActiveCut(newIndex);
-        
-        if (this.eventBus) {
-            this.eventBus.emit('animation:cut-created', { 
-                cutId: cut.id, 
-                cutIndex: newIndex 
-            });
-        }
-    }
-    
-    return cut;
-}
+        // ========== Phase 4.1改修: END ==========
         
         createNewEmptyCut() {
             return this.createNewBlankCut();
@@ -767,6 +776,9 @@ createNewBlankCut() {
             
             this.animationData.cuts.splice(insertIndex, 0, pastedCut);
             
+            // 🔥 Phase 4.1: ペースト後も自動採番
+            this.renameCutsSequentially();
+            
             if (this.canvasContainer) {
                 this.canvasContainer.addChild(pastedCut.container);
             }
@@ -795,6 +807,9 @@ createNewBlankCut() {
             
             this.animationData.cuts.push(pastedCut);
             const newIndex = this.animationData.cuts.length - 1;
+            
+            // 🔥 Phase 4.1: ペースト後も自動採番
+            this.renameCutsSequentially();
             
             if (this.canvasContainer) {
                 this.canvasContainer.addChild(pastedCut.container);
@@ -930,6 +945,9 @@ createNewBlankCut() {
                         
                         this.animationData.cuts.splice(cutIndex, 1);
                         
+                        // 🔥 Phase 4.1: CUT削除後も自動採番
+                        this.renameCutsSequentially();
+                        
                         if (this.animationData.playback.currentCutIndex >= cutIndex) {
                             this.animationData.playback.currentCutIndex = Math.max(0, 
                                 this.animationData.playback.currentCutIndex - 1
@@ -948,6 +966,9 @@ createNewBlankCut() {
                     undo: () => {
                         const restoredCut = Cut.deserialize(cutSnapshot, this.config);
                         this.animationData.cuts.splice(cutIndex, 0, restoredCut);
+                        
+                        // 🔥 Phase 4.1: CUT復元後も自動採番
+                        this.renameCutsSequentially();
                         
                         if (this.canvasContainer) {
                             this.canvasContainer.addChild(restoredCut.container);
@@ -987,6 +1008,9 @@ createNewBlankCut() {
                 
                 this.animationData.cuts.splice(cutIndex, 1);
                 
+                // 🔥 Phase 4.1: CUT削除後も自動採番
+                this.renameCutsSequentially();
+                
                 if (this.animationData.playback.currentCutIndex >= cutIndex) {
                     this.animationData.playback.currentCutIndex = Math.max(0, 
                         this.animationData.playback.currentCutIndex - 1
@@ -1022,6 +1046,9 @@ createNewBlankCut() {
                         const [movedCut] = this.animationData.cuts.splice(oldIndex, 1);
                         this.animationData.cuts.splice(newIndex, 0, movedCut);
                         
+                        // 🔥 Phase 4.1: CUT並び替え後も自動採番
+                        this.renameCutsSequentially();
+                        
                         if (this.animationData.playback.currentCutIndex === oldIndex) {
                             this.animationData.playback.currentCutIndex = newIndex;
                         } else if (oldIndex < this.animationData.playback.currentCutIndex && 
@@ -1043,6 +1070,9 @@ createNewBlankCut() {
                         const [movedCut] = this.animationData.cuts.splice(newIndex, 1);
                         this.animationData.cuts.splice(oldIndex, 0, movedCut);
                         
+                        // 🔥 Phase 4.1: CUT並び替え戻し後も自動採番
+                        this.renameCutsSequentially();
+                        
                         this.animationData.playback.currentCutIndex = oldCurrentIndex;
                         
                         if (this.eventBus) {
@@ -1059,6 +1089,9 @@ createNewBlankCut() {
             } else {
                 const [movedCut] = this.animationData.cuts.splice(oldIndex, 1);
                 this.animationData.cuts.splice(newIndex, 0, movedCut);
+                
+                // 🔥 Phase 4.1: CUT並び替え後も自動採番
+                this.renameCutsSequentially();
                 
                 if (this.animationData.playback.currentCutIndex === oldIndex) {
                     this.animationData.playback.currentCutIndex = newIndex;
@@ -1080,6 +1113,7 @@ createNewBlankCut() {
         }
         // ========== Phase 2.5改修: END ==========
         
+        // ========== Phase 4.1改修: renameCutsSequentially() ==========
         renameCutsSequentially() {
             if (!this.animationData.cuts || this.animationData.cuts.length === 0) return;
             
@@ -1091,6 +1125,7 @@ createNewBlankCut() {
                 this.eventBus.emit('animation:cuts-renamed-sequentially');
             }
         }
+        // ========== Phase 4.1改修: END ==========
         
         updateCutDuration(cutIndex, duration) {
             const cut = this.animationData.cuts[cutIndex];
@@ -1162,6 +1197,10 @@ createNewBlankCut() {
             } else {
                 this.play();
             }
+        }
+        
+        togglePlayPause() {
+            this.togglePlayStop();
         }
         
         startPlaybackLoop() {
@@ -1385,3 +1424,5 @@ createNewBlankCut() {
     window.animationSystem = new AnimationSystem();
 
 })();
+
+console.log('✅ animation-system.js (Phase 4.1: CUT自動採番対応版) loaded');

@@ -1,8 +1,9 @@
-// ===== ui/timeline-ui.js - Phase 2.5改修版（Display同期修正） =====
-// 【改修内容】
-// 1. History変更時に強制的にCUTリストを再生成
-// 2. Cut削除・追加時のパネル同期遅延を排除
-// 3. 矢印キー修正は継続（Phase 1から継承）
+// ===== ui/timeline-ui.js - Phase 4.4: UI/UX改善版 =====
+// 【Phase 4.4改修内容】
+// 1. タイムラインパネルの影を削除（box-shadow: none）
+// 2. アクティブCUTの枠線を細く（3px → 1px）
+// 3. タイムラインパネルの透過度を上げる（0.1 → 0.05）
+// 【継承】Phase 4.3のVキー競合修正を維持
 
 (function() {
     'use strict';
@@ -41,20 +42,17 @@
             
             this.setupThumbnailAutoUpdate();
             this.setupResizeEventListener();
-            // 🔥 Phase 2.5改修: History変更リスナー追加
             this.setupHistoryChangeListener();
             
             this.isInitialized = true;
         }
         
-        // ========== Phase 2.5改修: History変更リスナー ==========
         setupHistoryChangeListener() {
             if (!this.eventBus) return;
             
             this.eventBus.on('history:changed', (data) => {
                 if (!this.isVisible) return;
                 
-                // 🔥 CUT数の変更を検知して、パネル表示を強制更新
                 const animData = this.animationSystem.getAnimationData();
                 const totalCutsInDOM = this.cutsContainer.querySelectorAll('.cut-item').length;
                 
@@ -83,10 +81,7 @@
                 }
             });
         }
-        // ========== Phase 2.5改修: END ==========
         
-        // ========== Phase 2.5改修: updateCutsListImmediate() ==========
-        // 🔥 Undo/Redo時の即座更新用
         updateCutsListImmediate() {
             if (this.cutListUpdateInProgress) return;
             
@@ -119,7 +114,6 @@
                 this.cutListUpdateInProgress = false;
             }
         }
-        // ========== Phase 2.5改修: END ==========
         
         setupResizeEventListener() {
             if (!this.eventBus) return;
@@ -317,6 +311,7 @@
             this.domCreated = true;
         }
         
+        // ========== Phase 4.4改修: injectCompleteTimelineCSS() ==========
         injectCompleteTimelineCSS() {
             if (document.querySelector('style[data-timeline="timeline-ui"]')) return;
             
@@ -324,9 +319,9 @@
             style.dataset.timeline = 'timeline-ui';
             style.textContent = `
         .timeline-panel { position: fixed !important; bottom: 12px !important; left: 60px !important; right: 220px !important; 
-            background: rgba(255, 255, 238, 0.1) !important; border: 2px solid var(--futaba-medium) !important; 
+            background: rgba(255, 255, 238, 0.05) !important; border: 2px solid var(--futaba-medium) !important; 
             border-radius: 12px !important; padding: 8px 10px 10px 10px !important; z-index: 1500 !important; max-height: 180px !important; 
-            display: none !important; box-shadow: 0 6px 16px rgba(128, 0, 0, 0.25) !important; backdrop-filter: blur(12px) !important; }
+            display: none !important; box-shadow: none !important; backdrop-filter: blur(12px) !important; }
         .timeline-panel.show { display: block !important; animation: slideUp 0.35s ease-out !important; }
         @keyframes slideUp { from { opacity: 0; transform: translateY(25px) scale(0.96); } to { opacity: 1; transform: translateY(0) scale(1); } }
         
@@ -355,7 +350,7 @@
         .cut-item:hover { border-color: var(--futaba-medium) !important; transform: translateY(-2px) scale(1.02) !important; 
             box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2) !important; }
         .cut-item.active { border-color: var(--futaba-maroon) !important; background: #ffffee !important; 
-            box-shadow: 0 0 0 3px rgba(128, 0, 0, 0.3) !important; transform: translateY(-2px) scale(1.02) !important; }
+            box-shadow: 0 0 0 1px rgba(128, 0, 0, 0.5) !important; transform: translateY(-2px) scale(1.02) !important; }
         
         .cut-thumbnail { background: #ffffee !important; border: 1px solid var(--futaba-light-medium) !important; 
             border-radius: 6px !important; overflow: hidden !important; margin-bottom: 3px !important; position: relative !important; 
@@ -486,6 +481,7 @@
     `;
             document.head.appendChild(style);
         }
+        // ========== Phase 4.4改修: END ==========
         
         ensureInitialCut() {
             const animData = this.animationSystem.getAnimationData();
@@ -667,10 +663,13 @@
             }
         }
         
-        // ========== Phase 1: 矢印キー修正 ==========
         setupKeyboardShortcuts() {
             document.addEventListener('keydown', (e) => {
                 if (!this.isVisible) return;
+                
+                if (this.animationSystem?.layerSystem?.vKeyPressed) {
+                    return;
+                }
                 
                 if (e.code === 'Space' && e.shiftKey && !e.ctrlKey && !e.altKey) {
                     this.togglePlayStop();
@@ -690,7 +689,6 @@
                 }
             });
         }
-        // ========== Phase 1: END ==========
         
         goToPreviousCutSafe() {
             const animData = this.animationSystem.getAnimationData();
@@ -821,7 +819,6 @@
         }
         
         updateCutsList() {
-            // 🔥 Phase 2.5改修: updateCutsListImmediate()へ委譲
             this.updateCutsListImmediate();
         }
         
@@ -998,3 +995,8 @@
     }
     window.TegakiUI.TimelineUI = TimelineUI;
 })();
+
+console.log('✅ timeline-ui.js (Phase 4.4: UI/UX改善版) loaded');
+console.log('   - 🎨 タイムラインパネルの影を削除（box-shadow: none）');
+console.log('   - 🎨 アクティブCUTの枠線を細く（3px → 1px）');
+console.log('   - 🎨 タイムラインパネルの透過度を上げる（0.1 → 0.05）');
