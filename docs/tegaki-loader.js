@@ -76,6 +76,7 @@
             this.previewCanvas = null;
             this.previewCtx = null;
             this.canvasContainer = null;
+            this.transformWrapper = null;
             this.layers = [];
             this.activeLayerIndex = 0;
             this.layerIdCounter = 0;
@@ -333,8 +334,8 @@
         }
         
         applyTransform() {
-            if (this.canvasContainer) {
-                this.canvasContainer.style.transform = `translate(${this.offsetX}px, ${this.offsetY}px) scale(${this.scale}) rotate(${this.rotation}deg)`;
+            if (this.transformWrapper) {
+                this.transformWrapper.style.transform = `translate(${this.offsetX}px, ${this.offsetY}px) scale(${this.scale}) rotate(${this.rotation}deg)`;
             }
         }
         
@@ -509,10 +510,15 @@
         
         createCanvasArea() { 
             const area = document.createElement('div'); 
-            area.style.cssText = `flex: 1; display: flex; justify-content: center; align-items: center; overflow: auto; padding: 20px;`; 
+            area.style.cssText = `flex: 1; display: flex; justify-content: center; align-items: center; overflow: auto; padding: 20px; position: relative;`; 
             
+            // 変形可能なラッパー（白い額縁とキャンバスを含む）
+            this.transformWrapper = document.createElement('div');
+            this.transformWrapper.style.cssText = `position: relative; transform-origin: center center; transition: transform 0.1s ease-out;`;
+            
+            // キャンバスコンテナ（白い額縁）
             this.canvasContainer = document.createElement('div'); 
-            this.canvasContainer.style.cssText = `position: relative; width: 400px; height: 400px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); flex-shrink: 0; transition: transform 0.1s ease-out;`; 
+            this.canvasContainer.style.cssText = `position: relative; width: 400px; height: 400px; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2); flex-shrink: 0;`; 
             
             this.displayCanvas = document.createElement('canvas'); 
             this.displayCanvas.width = 400; 
@@ -527,8 +533,9 @@
             this.previewCtx = this.previewCanvas.getContext('2d'); 
             
             this.canvasContainer.appendChild(this.displayCanvas); 
-            this.canvasContainer.appendChild(this.previewCanvas); 
-            area.appendChild(this.canvasContainer); 
+            this.canvasContainer.appendChild(this.previewCanvas);
+            this.transformWrapper.appendChild(this.canvasContainer);
+            area.appendChild(this.transformWrapper); 
             return area; 
         }
         
@@ -757,11 +764,27 @@
             this.closePopup = this.closePopup.bind(this);
         }
         
+        // スクリーン座標からキャンバス座標への変換
+        screenToCanvas(screenX, screenY) {
+            const rect = this.previewCanvas.getBoundingClientRect();
+            
+            // previewCanvas上の座標（変形後のピクセル座標）
+            const canvasScreenX = screenX - rect.left;
+            const canvasScreenY = screenY - rect.top;
+            
+            // 変形の影響を受けていない正規化座標に変換
+            const normalizedX = canvasScreenX / (rect.width / 400);
+            const normalizedY = canvasScreenY / (rect.height / 400);
+            
+            return { x: normalizedX, y: normalizedY };
+        }
+        
         startDrawing(e) {
             if (!e.isPrimary || this.layers[this.activeLayerIndex].isBackground) return;
-            const rect = this.previewCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left; 
-            const y = e.clientY - rect.top;
+            
+            const pos = this.screenToCanvas(e.clientX, e.clientY);
+            const x = pos.x;
+            const y = pos.y;
             
             if (this.tool === 'bucket') { 
                 this.floodFill(x, y); 
@@ -776,9 +799,11 @@
         
         draw(e) {
             if (!this.isDrawing || !e.isPrimary) return;
-            const rect = this.previewCanvas.getBoundingClientRect();
-            const x = e.clientX - rect.left; 
-            const y = e.clientY - rect.top;
+            
+            const pos = this.screenToCanvas(e.clientX, e.clientY);
+            const x = pos.x;
+            const y = pos.y;
+            
             this.strokePoints.push([x, y, e.pressure > 0 ? e.pressure * this.pressureSensitivity : 0.5]);
             
             this.previewCtx.clearRect(0, 0, 400, 400);
@@ -922,8 +947,12 @@
             if (this.wrapper && this.wrapper.parentNode) {
                 this.wrapper.remove();
             }
-            this.canvas = null;
-            this.ctx = null;
+            this.displayCanvas = null;
+            this.displayCtx = null;
+            this.previewCanvas = null;
+            this.previewCtx = null;
+            this.canvasContainer = null;
+            this.transformWrapper = null;
         }
     };
     
