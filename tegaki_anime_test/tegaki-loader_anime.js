@@ -168,7 +168,7 @@
             `;
             
             const title = document.createElement('div');
-            title.textContent = `めぶき手書き Gifアニメてすと ${LOADER_VERSION}`;
+            title.textContent = `めぶき手書き APNGアニメてすと ${LOADER_VERSION}`;
             title.style.cssText = `
                 color: #800000;
                 font-size: 14px;
