@@ -165,7 +165,7 @@
             }
         }
         
-        // ========== コピー＆ペースト ==========
+        // ========== コピー&ペースト ==========
         
         copyLayer() {
             const imageData = this.ctx.getImageData(
@@ -1044,34 +1044,30 @@
             );
         }
         
-        // ========== APNGエクスポート ==========
+        // ========== APNGエクスポート（修正版） ==========
         
-async exportAsApng() {
-    // ★ より詳細なライブラリ確認
-    const missingLibs = [];
-    
-    if (typeof window === 'undefined' || !window.UPNG) {
-        missingLibs.push('UPNG');
-    }
-    if (typeof window === 'undefined' || !window.pako) {
-        missingLibs.push('pako');
-    }
-    
-    if (missingLibs.length > 0) {
-        console.error('Missing libraries:', missingLibs);
-        console.error('window.UPNG:', window.UPNG);
-        console.error('window.pako:', window.pako);
-        console.error('window.Zlib:', window.Zlib);
-        
-        throw new Error(
-            `APNGエクスポートに必要なライブラリが見つかりません: ${missingLibs.join(', ')}\n` +
-            'ビルドが正しく行われているか確認してください。'
-        );
-    }
+        async exportAsApng() {
             this.prepareExport();
             
-            if (!window.UPNG || !window.Zlib) {
-                alert('APNGエクスポートにはUPNG.jsとpako.jsが必要です。');
+            // ★ 正確にチェック
+            if (!window.UPNG) {
+                console.error('Missing UPNG:', {
+                    window_UPNG: !!window.UPNG,
+                    UPNG_type: typeof window.UPNG,
+                    UPNG_encode: typeof window.UPNG?.encode
+                });
+                alert('APNGエクスポートにはUPNG.jsが必要です。\nページを再読み込みしてください。');
+                return null;
+            }
+            
+            // ★ Zlib ではなく pako を check
+            if (!window.pako) {
+                console.error('Missing pako:', {
+                    window_pako: !!window.pako,
+                    pako_type: typeof window.pako,
+                    pako_inflate: typeof window.pako?.inflate
+                });
+                alert('APNGエクスポートにはpako.jsが必要です。\nページを再読み込みしてください。');
                 return null;
             }
             
@@ -1097,15 +1093,22 @@ async exportAsApng() {
             
             const delays = Array(this.frameCount).fill(this.frameDelay);
             
-            const apngData = UPNG.encode(
-                frames,
-                this.canvas.width,
-                this.canvas.height,
-                0,
-                delays
-            );
-            
-            return new Blob([apngData], {type: 'image/png'});
+            try {
+                // ★ window.UPNG を明示的に使用
+                const apngData = window.UPNG.encode(
+                    frames,
+                    this.canvas.width,
+                    this.canvas.height,
+                    0,
+                    delays
+                );
+                
+                return new Blob([apngData], {type: 'image/png'});
+            } catch (error) {
+                console.error('APNG encoding failed:', error);
+                alert('APNG生成中にエラーが発生しました:\n' + error.message);
+                return null;
+            }
         }
         
         // ========== GIFエクスポート ==========
@@ -1206,5 +1209,5 @@ async exportAsApng() {
         }
     };
     
-    console.log('✅ TegakiAnimeCore loaded (Enhanced version with improved layout)');
-})()
+    console.log('✅ TegakiAnimeCore loaded (Fixed APNG export version)');
+})();
