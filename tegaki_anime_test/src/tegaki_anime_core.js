@@ -243,7 +243,9 @@
         // ========== キャンバス設定 ==========
         
         setupCanvas() {
-            this.ctx = this.canvas.getContext('2d');
+            this.ctx = this.canvas.getContext('2d', {
+                willReadFrequently: true
+            });
             this.ctx.lineCap = 'round';
             this.ctx.lineJoin = 'round';
             this.ctx.strokeStyle = this.color;
@@ -503,50 +505,65 @@
                 return null;
             }
 
-            return new Promise((resolve) => {
-                // GIF.js インスタンスを作成
-                const gif = new GIF({
-                    workers: 2,
-                    quality: 10,
-                    width: this.canvas.width,
-                    height: this.canvas.height
-                });
-                
-                // 進捗コールバックを登録
-                if (onProgress && typeof onProgress === 'function') {
-                    gif.on('progress', onProgress);
-                }
-
-                // 各レイヤーを背景と合成してフレーム追加
-                for (const layerData of this.layers) {
-                    const frameCanvas = document.createElement('canvas');
-                    frameCanvas.width = this.canvas.width;
-                    frameCanvas.height = this.canvas.height;
-                    const frameCtx = frameCanvas.getContext('2d');
-                    
-                    // 背景を描画
-                    frameCtx.drawImage(this.bgCanvas, 0, 0);
-                    
-                    // レイヤーを重ねる
-                    frameCtx.putImageData(layerData, 0, 0);
-                    
-                    // GIF にフレームを追加
-                    gif.addFrame(frameCanvas, { 
-                        delay: this.frameDelay 
+            return new Promise((resolve, reject) => {
+                try {
+                    // GIF.js インスタンスを作成
+                    const gif = new GIF({
+                        workers: 2,
+                        quality: 10,
+                        width: this.canvas.width,
+                        height: this.canvas.height,
+                        workerScript: window.GIF.prototype.options.workerScript
                     });
-                }
-
-                // 生成完了イベント
-                gif.on('finished', (blob) => {
-                    // 進捗コールバックを解除（メモリリーク対策）
-                    if (onProgress) {
-                        gif.off('progress', onProgress);
+                    
+                    // 進捗コールバックを登録
+                    if (onProgress && typeof onProgress === 'function') {
+                        gif.on('progress', onProgress);
                     }
-                    resolve(blob);
-                });
-                
-                // GIF生成を開始
-                gif.render();
+
+                    // 各レイヤーを背景と合成してフレーム追加
+                    for (const layerData of this.layers) {
+                        const frameCanvas = document.createElement('canvas');
+                        frameCanvas.width = this.canvas.width;
+                        frameCanvas.height = this.canvas.height;
+                        const frameCtx = frameCanvas.getContext('2d', {
+                            willReadFrequently: true
+                        });
+                        
+                        // 背景を描画
+                        frameCtx.drawImage(this.bgCanvas, 0, 0);
+                        
+                        // レイヤーを重ねる
+                        frameCtx.putImageData(layerData, 0, 0);
+                        
+                        // GIF にフレームを追加
+                        gif.addFrame(frameCanvas, { 
+                            delay: this.frameDelay,
+                            copy: true
+                        });
+                    }
+
+                    // 生成完了イベント
+                    gif.on('finished', (blob) => {
+                        // 進捗コールバックを解除（メモリリーク対策）
+                        if (onProgress) {
+                            gif.off('progress', onProgress);
+                        }
+                        resolve(blob);
+                    });
+                    
+                    // エラーハンドリング
+                    setTimeout(() => {
+                        if (!gif.running) {
+                            reject(new Error('GIF rendering timeout'));
+                        }
+                    }, 30000);
+                    
+                    // GIF生成を開始
+                    gif.render();
+                } catch (error) {
+                    reject(error);
+                }
             });
         }
         

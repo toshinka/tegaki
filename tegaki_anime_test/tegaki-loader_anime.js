@@ -1,12 +1,15 @@
 (function() {
     'use strict';
     
-    if (window.tegakiAnimeStart) {
+    // グローバル関数が既に存在し、かつインスタンスも存在する場合は即座に起動
+    if (window.tegakiAnimeStart && window.tegakiAnimeInstance) {
         window.tegakiAnimeStart();
         return;
     }
-
-    // ===== 設定 =====
+    
+    // グローバル関数が存在しない場合のみ定義
+    if (!window.tegakiAnimeStart) {
+        // ===== 設定 =====
     const SCRIPT_URLS = {
         // 統合済みファイルのみ読み込む（他は不要）
         tegaki: 'https://toshinka.github.io/tegaki/tegaki_anime_test/dist/tegaki_anime.js'
