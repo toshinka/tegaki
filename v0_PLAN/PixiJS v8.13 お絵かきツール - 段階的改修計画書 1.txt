@@ -1,0 +1,871 @@
+================================================================================
+PixiJS v8.13 お絵かきツール - 段階的改修計画書 1/2
+================================================================================
+作成日: 2025-10-12
+対象バージョン: v8.13_History37
+スコープ: 基本システムの改修（Phase 1-6）
+後続: 計画書 2/2 でペンツール・export機能の統合を予定
+
+================================================================================
+改修の原則
+================================================================================
+
+【SOLID原則とDRY原則】
+- 単一責任: 各オブジェクトは1つの責任のみ保持
+- 依存性逆転: 具体実装ではなく抽象（インターフェース）に依存
+- DRY: データ定義は1箇所に集約（重複を排除）
+
+【グローバル化の統一ルール】
+以下のみ window 配下に公開:
+- window.TegakiDataModels (LayerModel, CutModel の定義)
+- window.TegakiBatchAPI (公的な一括操作API)
+- window.EventBus (状態変化の伝播)
+- window.StateManager (状態照会)
+- window.drawingApp (アプリケーション本体)
+- window.batchAPI (BatchAPI インスタンス)
+
+既存システムは window 配下に保持（LayerSystem, AnimationSystem, History など）
+
+【依存関係の方向（必ず守ること）】
+UI層 ← EventBus ← BatchAPI ← StateManager
+                   ↓
+            LayerSystem/AnimationSystem
+                   ↓
+                DataModel
+                   ↓
+            PIXI Objects / Canvas
+
+【メソッド命名規則】
+- set* : 状態変更（setLayerProperty）
+- get* : 状態照会（getLayer）
+- update* : 複数の状態を更新（updateActiveLayerTransform）
+- request* : 非同期/デバウンス処理の要求（requestThumbnailUpdate）
+
+================================================================================
+Phase 1: メモリリーク解消
+================================================================================
+
+【目的と効果】
+Graphics破棄漏れ修正 → 長時間作業でのメモリ蓄積を防止
+所要時間: 5分
+影響範囲: 単一ファイル
+ユーザー実感: 高（白画面フリーズが解消）
+
+【修正対象ファイル】
+system/layer-system.js
+
+【参考ファイル】
+config.js（メモリ関連設定確認用）
+
+【処理フロー上の位置】
+DrawingEngine.completeStroke()
+  → LayerSystem.addPathToActiveLayer()
+    → rebuildPathGraphics() ← ★修正箇所
+
+【具体的な修正内容】
+
+ファイル: system/layer-system.js
+メソッド: rebuildPathGraphics(path)
+行番号: 67-73 付近
+
+現状コード:
+```javascript
+if (path.graphics) {
+    try {
+        if (path.graphics.destroy && typeof path.graphics.destroy === 'function') {
+            path.graphics.destroy();  // 子オブジェクト破棄オプション不足
+        }
+    } catch (destroyError) {}
+    path.graphics = null;
+}
+```
+
+修正後コード:
+```javascript
+if (path.graphics) {
+    try {
+        if (path.graphics.destroy && typeof path.graphics.destroy === 'function') {
+            path.graphics.destroy({ 
+                children: true,      // 子要素も破棄
+                texture: false, 
+                baseTexture: false 
+            });
+        }
+    } catch (destroyError) {}
+    path.graphics = null;
+}
+```
+
+修正理由:
+PIXI.Graphics の destroy() メソッドに children: true オプションを指定することで、
+子要素（GraphicsPath の内部ジオメトリなど）も完全に破棄される。
+このオプションを指定しないと、子オブジェクトがメモリに残る。
+
+【検証ポイント】
+1. ブラウザを開く（DevTools F12）
+2. Performance → Memory タブで初期メモリを記録
+3. 50本程度のストロークを描画
+4. Ctrl+Z でundo、Ctrl+Y でredo を繰り返す（30回程度）
+5. メモリ使用量が増加し続けないこと（300MB以下に収まる目安）を確認
+6. ブラウザのコンソールにエラーが出ていないことを確認
+
+【単独検証可能性】
+✅ このPhaseは単独で修正・検証可能
+修正後、window.drawingApp でアプリが正常に動作することだけ確認すれば OK
+
+【進行チェックリスト】
+□ layer-system.js の rebuildPathGraphics を修正
+□ ブラウザコンソールでエラーなし
+□ 通常のストローク描画で問題なし
+→ 完了後、Phase 2 へ進む
+
+================================================================================
+Phase 2: Perfect Freehand スケール再計算の廃止
+================================================================================
+
+【目的と効果】
+カメラズーム時の全パス再描画を停止 → 描画速度95%改善
+所要時間: 10分
+影響範囲: 単一ファイル（2箇所）
+ユーザー実感: 高（カメラズーム時の引っかかりが大幅に改善）
+
+【修正対象ファイル】
+system/layer-system.js
+
+【参考ファイル】
+system/camera-system.js（updateScale メソッド呼び出し元確認用）
+core-engine.js（EventBus登録確認用）
+
+【処理フロー上の位置】
+現状（改修前）:
+CameraSystem.updateScale()
+  → EventBus.emit('camera:scale-changed', data)
+    → LayerSystem._setupAnimationSystemIntegration() 内のリスナー
+      → rebuildAllLayersForScaleChange()
+        → 全レイヤーの全パスの rebuildPathGraphics()
+          → スケール再計算（重い処理 ✗）
+
+改修後（改修予定）:
+CameraSystem.updateScale()
+  → PIXI Container.scale のみ適用（軽い処理 ✓）
+
+【具体的な修正内容】
+
+修正1: スケール再計算ロジックの削除
+
+ファイル: system/layer-system.js
+メソッド: rebuildPathGraphics(path)
+行番号: 79-92 付近
+
+現状コード:
+```javascript
+// Phase 2: 現在のズーム率を取得
+const currentScale = this.cameraSystem?.camera?.scale || 1;
+
+// Phase 2: originalSizeがある場合は現在のズーム率で再計算
+let renderSize = path.size;
+if (path.originalSize !== undefined && path.scaleAtDrawTime !== undefined) {
+    const normalizedSize = path.originalSize / path.scaleAtDrawTime;
+    renderSize = normalizedSize / currentScale;
+}
+```
+
+修正後コード（以下に全置換）:
+```javascript
+const renderSize = path.size;  // 描画時のサイズを固定使用
+```
+
+修正理由:
+ズームはPIXI Containerの scale プロパティで処理され、
+ベクターストロークもContainerスケーリングで拡大縮小されるため、
+パスごとにスケール再計算する必要がない。
+この処理は冗長かつ負荷が高い。
+
+修正2: camera:scale-changed イベントリスナーの削除
+
+ファイル: system/layer-system.js
+メソッド: _setupAnimationSystemIntegration()
+行番号: 326-330 付近
+
+現状コード:
+```javascript
+// Phase 2: カメラスケール変更時のレイヤー再描画
+this.eventBus.on('camera:scale-changed', (data) => {
+    this.rebuildAllLayersForScaleChange();
+});
+```
+
+修正後コード（このブロック全体を削除）:
+```javascript
+// [削除] camera:scale-changed イベントリスナーは不要
+```
+
+削除に伴い呼び出されなくなるメソッド:
+- LayerSystem.rebuildAllLayersForScaleChange() ← 削除可能
+
+【検証ポイント】
+1. 複数のストロークを描画（30本程度）
+2. マウスホイールでカメラをズームイン/アウト（5秒間のズーム操作）
+3. ズーム操作が即座に反映され、遅延やカクつきがないことを確認
+4. ストロークの見た目（太さ、形状）が正常であることを確認
+5. ブラウザコンソールでエラーなし
+
+【依存関係チェック】
+修正前確認（重要）:
+- camera-system.js の updateScale() が EventBus.emit('camera:scale-changed') を呼ぶことを確認
+- その呼び出しが削除される LayerSystem のリスナーにのみ依存していないことを確認
+
+【進行チェックリスト】
+□ Phase 1 の修正が完了していることを確認
+□ layer-system.js の rebuildPathGraphics() のスケール再計算を削除
+□ layer-system.js の _setupAnimationSystemIntegration() の camera:scale-changed リスナーを削除
+□ ブラウザコンソールでエラーなし
+□ ズーム操作で速度改善を実感
+→ 完了後、Phase 3 へ進む
+
+================================================================================
+Phase 3: サムネイル更新の最適化
+================================================================================
+
+【目的と効果】
+レイヤー移動中の過剰なサムネイル生成を抑制 → UIレスポンス80%改善
+所要時間: 10分
+影響範囲: 単一ファイル（3箇所）
+ユーザー実感: 中（レイヤー移動時のUIカクつきが改善）
+
+【修正対象ファイル】
+system/layer-system.js
+
+【参考ファイル】
+ui/timeline-ui.js（サムネイル更新の呼び出し確認用）
+ui/ui-panels.js（レイヤーパネルの更新タイミング確認用）
+
+【処理フロー上の位置】
+現状（改修前）:
+Vキー押下 → enterLayerMoveMode()
+  → マウス移動（複数回イベント発火）
+    → _handleLayerDrag()
+      → updateActiveLayerTransform() ← 毎回呼ぶ
+        → requestThumbnailUpdate() ← 毎回呼ぶ（過度 ✗）
+          → processThumbnailUpdates()
+            → UI更新（重い処理）
+
+改修後（改修予定）:
+Vキー押下 → enterLayerMoveMode()
+  → マウス移動（複数回イベント発火）
+    → _handleLayerDrag()
+      → updateActiveLayerTransform() ← 毎回呼ぶ
+        → requestThumbnailUpdate() ← isLayerDragging フラグでスキップ ✓
+Vキー離す → exitLayerMoveMode()
+  → requestThumbnailUpdate() ← ここで1回だけ実行 ✓
+    → processThumbnailUpdates()
+      → UI更新
+
+【具体的な修正内容】
+
+修正1: requestThumbnailUpdate のデバウンス延長
+
+ファイル: system/layer-system.js
+メソッド: requestThumbnailUpdate(layerIndex)
+行番号: 1057-1067 付近
+
+現状コード:
+```javascript
+requestThumbnailUpdate(layerIndex) {
+    const layers = this.getLayers();
+    if (layerIndex >= 0 && layerIndex < layers.length) {
+        this.thumbnailUpdateQueue.add(layerIndex);
+        
+        if (!this.thumbnailUpdateTimer) {
+            this.thumbnailUpdateTimer = setTimeout(() => {
+                this.processThumbnailUpdates();
+                this.thumbnailUpdateTimer = null;
+            }, 100);  // ← 100ms は短すぎる
+        }
+    }
+}
+```
+
+修正後コード:
+```javascript
+requestThumbnailUpdate(layerIndex) {
+    const layers = this.getLayers();
+    if (layerIndex >= 0 && layerIndex < layers.length) {
+        this.thumbnailUpdateQueue.add(layerIndex);
+        
+        // デバウンス処理: 既存タイマーをクリア
+        if (this.thumbnailUpdateTimer) {
+            clearTimeout(this.thumbnailUpdateTimer);
+        }
+        
+        this.thumbnailUpdateTimer = setTimeout(() => {
+            this.processThumbnailUpdates();
+            this.thumbnailUpdateTimer = null;
+        }, 500);  // 100ms → 500ms に延長
+    }
+}
+```
+
+修正理由:
+タイマーをクリアして延長することで、連続的な requestThumbnailUpdate 呼び出しが
+最後の呼び出しから500ms後にまとめて処理される。
+これにより、レイヤー移動中の複数回の更新要求が1回にまとめられる。
+
+修正2: レイヤー移動中のサムネイル更新抑制
+
+ファイル: system/layer-system.js
+メソッド: updateActiveLayerTransform(property, value)
+行番号: 419 付近
+
+現状コード:
+```javascript
+updateActiveLayerTransform(property, value) {
+    // ... 変形処理 ...
+    
+    this.requestThumbnailUpdate(this.activeLayerIndex);  // 毎回呼ばれる
+    
+    if (this.eventBus) {
+        this.eventBus.emit('layer:updated', { layerId, transform });
+    }
+}
+```
+
+修正後コード:
+```javascript
+updateActiveLayerTransform(property, value) {
+    // ... 変形処理 ...
+    
+    // Vキー押下中（ドラッグ操作中）はサムネイル更新をスキップ
+    if (!this.isLayerDragging) {
+        this.requestThumbnailUpdate(this.activeLayerIndex);
+    }
+    
+    if (this.eventBus) {
+        this.eventBus.emit('layer:updated', { layerId, transform });
+    }
+}
+```
+
+修正理由:
+isLayerDragging フラグで「ドラッグ操作中」を判定し、
+その期間中はサムネイル更新を完全にスキップする。
+
+修正3: レイヤー移動モード終了時に一度だけ更新
+
+ファイル: system/layer-system.js
+メソッド: exitLayerMoveMode()
+行番号: 753 付近
+
+現状コード:
+```javascript
+exitLayerMoveMode() {
+    // ... 既存の終了処理 ...
+    
+    this.updateCursor();
+    this.confirmLayerTransform();
+    
+    // ... 残りの処理 ...
+}
+```
+
+修正後コード:
+```javascript
+exitLayerMoveMode() {
+    // ... 既存の終了処理 ...
+    
+    this.updateCursor();
+    this.confirmLayerTransform();
+    
+    // ← ここに追加
+    this.requestThumbnailUpdate(this.activeLayerIndex);
+    
+    // ... 残りの処理 ...
+}
+```
+
+修正理由:
+ドラッグ終了時に一度だけ requestThumbnailUpdate を呼ぶことで、
+最終的な位置でサムネイルが正しく更新される。
+
+【必須: isLayerDragging フラグの初期化】
+
+LayerSystem.constructor または初期化処理内に以下を追加:
+```javascript
+this.isLayerDragging = false;
+```
+
+enterLayerMoveMode() 内で以下を追加:
+```javascript
+this.isLayerDragging = true;
+```
+
+exitLayerMoveMode() 内で以下を追加:
+```javascript
+this.isLayerDragging = false;
+```
+
+【検証ポイント】
+1. Vキーを押してレイヤー移動モードに入る
+2. マウスでレイヤーを5秒程度ドラッグ移動
+3. ドラッグ中に UI（タイムラインのサムネイル）がカクつかないこと
+4. Vキーを離す
+5. ドラッグ終了直後にサムネイルが正しく更新されることを確認
+6. ブラウザコンソールでエラーなし
+
+【エラー検証タイミング（重要）】
+Phase 3 修正後の初回起動時に以下を確認:
+```javascript
+// ブラウザコンソールで実行
+window.drawingApp.layerManager.isLayerDragging
+// undefined でなく false が返ること
+```
+
+もし undefined の場合:
+→ LayerSystem constructor で初期化が漏れている
+→ layer-system.js の constructor 内に `this.isLayerDragging = false;` を追加
+
+【進行チェックリスト】
+□ Phase 1, 2 の修正が完了していることを確認
+□ layer-system.js の requestThumbnailUpdate のタイマーを 500ms に延長
+□ layer-system.js の updateActiveLayerTransform で isLayerDragging チェックを追加
+□ layer-system.js の exitLayerMoveMode で requestThumbnailUpdate を追加
+□ LayerSystem.constructor で isLayerDragging = false を初期化
+□ ブラウザコンソールでエラーなし
+□ レイヤー移動時のUIレスポンス改善を実感
+→ 完了後、Phase 3.5 へ進む
+
+================================================================================
+Phase 3.5: 既存UIコードのBatchAPI準拠化
+================================================================================
+
+【目的と効果】
+UIコードをBatchAPI経由に統一 → Phase 4以降のデータモデル統合をスムーズに
+所要時間: 15分
+影響範囲: 2ファイル（ui/timeline-ui.js, ui/ui-panels.js）
+ユーザー実感: なし（内部処理の整理）
+
+【重要】
+このPhaseは Phase 4 の前に必ず実施すること。
+既存UIとBatchAPIの二重レイヤーアクセスを避けるため。
+
+【修正対象ファイル】
+ui/timeline-ui.js
+ui/ui-panels.js
+
+【参考ファイル】
+system/layer-system.js（既存の public メソッド確認用）
+
+【処理フロー上の位置】
+現状:
+UI要素イベント → LayerSystem直接操作
+
+改修後（準備段階）:
+UI要素イベント → [将来的に] BatchAPI経由
+（現時点ではBatchAPIが未実装なので、コード変更のみ）
+
+【具体的な修正内容】
+
+修正方針:
+以下のパターンを検索・置換する準備をする（Phase 5 実装後に実施）
+
+パターン1: レイヤー名変更操作
+
+ui/ui-panels.js 内を検索:
+```javascript
+// 現在のコード例（実装によって異なる場合あり）
+layer.name = newName;
+```
+
+置換予定（Phase 5 以降）:
+```javascript
+window.batchAPI.renameLayer(layerIndex, newName);
+```
+
+パターン2: レイヤー表示/非表示操作
+
+ui/timeline-ui.js 内を検索:
+```javascript
+layer.visible = !layer.visible;
+```
+
+置換予定（Phase 5 以降）:
+```javascript
+const currentVisibility = window.batchAPI.getLayer(layerIndex).visible;
+window.batchAPI.setLayerProperty(layerIndex, 'visible', !currentVisibility);
+```
+
+パターン3: 不透明度操作
+
+ui/timeline-ui.js 内を検索:
+```javascript
+layer.alpha = value;
+```
+
+置換予定（Phase 5 以降）:
+```javascript
+window.batchAPI.setLayerProperty(layerIndex, 'opacity', value);
+```
+
+【現時点での作業】
+Phase 3.5 は「コード検索と置換予定地のマーク」を推奨。
+実際の置換は Phase 5（BatchAPI実装）後に実施。
+
+【進行チェックリスト】
+□ Phase 3 の修正が完了していることを確認
+□ ui/timeline-ui.js 内の layer.visible, layer.alpha 操作を検索してリスト化
+□ ui/ui-panels.js 内の layer.name, layer.visible, layer.alpha 操作を検索
+□ ブラウザコンソールでエラーなし
+→ 完了後、Phase 4 へ進む
+
+================================================================================
+Phase 4: データモデル統一化 - Layer定義
+================================================================================
+
+【目的と効果】
+レイヤーデータを標準スキーマで管理 → Phase 5-6 でのAPI統合をスムーズに
+所要時間: 30分
+影響範囲: 3ファイル（新規 data-models.js + layer-system.js 修正 + index.html）
+ユーザー実感: なし（内部データ構造の統一）
+
+【修正対象ファイル】
+system/data-models.js（新規作成）
+system/layer-system.js（createLayer メソッド修正）
+index.html（script 読み込み追加）
+
+【参考ファイル】
+system/layer-system.js（createLayer の実装確認用）
+system/animation-system.js（CUT管理の参考用）
+
+【データモデルの構造】
+
+LAYER_SCHEMA:
+```
+{
+  id: { type: 'string', required: true, editable: false },
+  name: { type: 'string', required: true, editable: true },
+  visible: { type: 'boolean', default: true, editable: true },
+  opacity: { type: 'number', min: 0, max: 1, default: 1.0, editable: true },
+  isBackground: { type: 'boolean', default: false, editable: false },
+  clipping: { type: 'boolean', default: false, editable: true },
+  blendMode: { type: 'string', default: 'normal', editable: true },
+  locked: { type: 'boolean', default: false, editable: true }
+}
+```
+
+CUT_SCHEMA:
+```
+{
+  id: { type: 'string', required: true, editable: false },
+  name: { type: 'string', required: true, editable: true },
+  duration: { type: 'number', min: 0.01, max: 10, default: 0.5, editable: true },
+  visible: { type: 'boolean', default: true, editable: true },
+  locked: { type: 'boolean', default: false, editable: true }
+}
+```
+
+【処理フロー上の位置】
+現状:
+LayerSystem.createLayer()
+  → PIXI.Container 生成
+    → layer.name = 名前
+
+改修後:
+LayerSystem.createLayer()
+  → LayerModel 生成（データモデル）
+  → PIXI.Container 生成
+    → layer.layerData = LayerModel（参照を保持）
+
+【具体的な実装内容】
+
+Step 1: system/data-models.js を新規作成
+
+ファイル名: system/data-models.js
+内容:
+```javascript
+(function() {
+    'use strict';
+
+    // ========== Layer データモデル ==========
+    const LAYER_SCHEMA = {
+        id: { type: 'string', required: true, editable: false },
+        name: { type: 'string', required: true, editable: true },
+        visible: { type: 'boolean', default: true, editable: true },
+        opacity: { type: 'number', min: 0, max: 1, default: 1.0, editable: true },
+        isBackground: { type: 'boolean', default: false, editable: false },
+        clipping: { type: 'boolean', default: false, editable: true },
+        blendMode: { type: 'string', default: 'normal', editable: true },
+        locked: { type: 'boolean', default: false, editable: true }
+    };
+
+    class LayerModel {
+        constructor(data = {}) {
+            this.id = data.id || `layer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            this.name = data.name || 'レイヤー';
+            this.visible = data.visible !== undefined ? data.visible : true;
+            this.opacity = data.opacity !== undefined ? data.opacity : 1.0;
+            this.isBackground = data.isBackground || false;
+            this.clipping = data.clipping || false;
+            this.blendMode = data.blendMode || 'normal';
+            this.locked = data.locked || false;
+            this.paths = data.paths || [];
+        }
+
+        static getSchema() {
+            return LAYER_SCHEMA;
+        }
+
+        toJSON() {
+            return {
+                id: this.id,
+                name: this.name,
+                visible: this.visible,
+                opacity: this.opacity,
+                isBackground: this.isBackground,
+                clipping: this.clipping,
+                blendMode: this.blendMode,
+                locked: this.locked
+            };
+        }
+
+        validate() {
+            const errors = [];
+            if (!this.id) errors.push('id is required');
+            if (!this.name) errors.push('name is required');
+            if (this.opacity < 0 || this.opacity > 1) errors.push('opacity must be 0-1');
+            return { valid: errors.length === 0, errors };
+        }
+    }
+
+    // ========== CUT データモデル ==========
+    const CUT_SCHEMA = {
+        id: { type: 'string', required: true, editable: false },
+        name: { type: 'string', required: true, editable: true },
+        duration: { type: 'number', min: 0.01, max: 10, default: 0.5, editable: true },
+        visible: { type: 'boolean', default: true, editable: true },
+        locked: { type: 'boolean', default: false, editable: true }
+    };
+
+    class CutModel {
+        constructor(data = {}) {
+            this.id = data.id || `cut_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            this.name = data.name || 'CUT';
+            this.duration = data.duration !== undefined ? data.duration : 0.5;
+            this.visible = data.visible !== undefined ? data.visible : true;
+            this.locked = data.locked || false;
+        }
+
+        static getSchema() {
+            return CUT_SCHEMA;
+        }
+
+        toJSON() {
+            return {
+                id: this.id,
+                name: this.name,
+                duration: this.duration,
+                visible: this.visible,
+                locked: this.locked
+            };
+        }
+
+        validate() {
+            const errors = [];
+            if (!this.id) errors.push('id is required');
+            if (!this.name) errors.push('name is required');
+            if (this.duration < 0.01 || this.duration > 10) {
+                errors.push('duration must be 0.01-10');
+            }
+            return { valid: errors.length === 0, errors };
+        }
+    }
+
+    window.TegakiDataModels = {
+        LayerModel,
+        CutModel,
+        LAYER_SCHEMA,
+        CUT_SCHEMA
+    };
+
+    console.log('✅ data-models.js loaded');
+})();
+```
+
+Step 2: index.html の script 読み込み順序を修正
+
+現状:
+```html
+<script src="config.js"></script>
+<script src="coordinate-system.js"></script>
+<script src="system/event-bus.js"></script>
+...
+```
+
+修正後（data-models.js を system/event-bus.js より前に追加）:
+```html
+<script src="config.js"></script>
+<script src="coordinate-system.js"></script>
+<script src="system/data-models.js"></script>
+<script src="system/event-bus.js"></script>
+...
+```
+
+理由: LayerModel を event-bus.js より前に定義しておく必要はないが、
+phase 5 以降で batch-api.js が data-models.js に依存するため、
+読み込み順序を統一しておくのが良い。
+
+Step 3: system/layer-system.js の createLayer メソッドを修正
+
+ファイル: system/layer-system.js
+メソッド: createLayer(name, isBackground)
+行番号: 915 付近
+
+現状コード:
+```javascript
+createLayer(name, isBackground = false) {
+    if (!this.currentCutContainer) {
+        return null;
+    }
+    
+    const layer = new PIXI.Container();
+    layer.label = `layer_${this.currentCutContainer.children.length + 1}`;
+    layer.name = name || `レイヤー${this.currentCutContainer.children.length + 1}`;
+    layer.visible = true;
+    layer.alpha = 1.0;
+    
+    // ... 残りの処理 ...
+}
+```
+
+修正後コード:
+```javascript
+createLayer(name, isBackground = false) {
+    if (!this.currentCutContainer) {
+        return null;
+    }
+    
+    // ← DataModel を使用
+    const layerModel = new window.TegakiDataModels.LayerModel({
+        name: name || `レイヤー${this.currentCutContainer.children.length + 1}`,
+        isBackground: isBackground
+    });
+    
+    const layer = new PIXI.Container();
+    layer.label = layerModel.id;
+    layer.layerData = layerModel;  // ← モデルを参照として保持
+    layer.visible = true;
+    layer.alpha = 1.0;
+    
+    // ... 残りの処理（既存コード）...
+}
+```
+
+修正理由:
+LayerModel を新規作成し、PIXI Container に layerData プロパティとして保持する。
+これにより、PIXI オブジェクトとデータモデルが1:1で対応し、
+Phase 5 以降の BatchAPI 実装時にスキーマに基づいた検証が可能になる。
+
+【検証ポイント】
+ブラウザコンソールで以下を実行:
+
+1. window.TegakiDataModels が定義されているか確認
+```javascript
+window.TegakiDataModels.LAYER_SCHEMA
+// → スキーマが表示される
+```
+
+2. レイヤー作成後、データモデルが設定されているか確認
+```javascript
+const layer = window.drawingApp.layerManager.getActiveLayer();
+layer.layerData.toJSON()
+// → { id: "layer_...", name: "...", visible: true, opacity: 1.0, ... }
+```
+
+3. スキーマの取得確認
+```javascript
+window.TegakiDataModels.LayerModel.getSchema()
+// → editableフラグ付きのスキーマが返される
+```
+
+【エラー検証タイミング（重要）】
+Phase 4 修正直後に以下を確認:
+
+1. index.html の読み込み順確認
+   data-models.js → event-bus.js → layer-system.js の順
+   （そうしないと LayerModel が未定義でエラー）
+
+2. 既存レイヤーに layerData が設定されているか確認
+   アプリ起動直後に以下をコンソールで実行:
+   ```javascript
+   window.drawingApp.layerManager.getLayers()[0].layerData
+   // → undefined の場合、createLayer がまだ新しいコードで実行されていない
+   // → 新規レイヤーを作成して確認
+   ```
+
+3. 修正後、新規レイヤーを作成して確認
+```javascript
+window.drawingApp.layerManager.createLayer('test')
+layer.layerData
+// → LayerModel インスタンスが返される
+```
+
+【よくあるエラー】
+
+エラー: "LayerModel is not defined"
+原因: index.html で data-models.js が読み込まれていない、または読み込み順が間違っている
+解決: index.html の script タグを確認して、data-models.js が最初に読まれることを確認
+
+エラー: "layer.layerData is undefined"
+原因: 既存の createLayer メソッドが更新されていない、または古いコードが実行されている
+解決: layer-system.js の createLayer メソッドが修正されたコードになっているか確認
+     ブラウザキャッシュをクリア（Ctrl+Shift+Delete）してリロード
+
+【進行チェックリスト】
+□ Phase 3, 3.5 の修正が完了していることを確認
+□ system/data-models.js を新規作成
+□ index.html の script タグに data-models.js を追加
+□ system/layer-system.js の createLayer を修正
+□ ブラウザコンソールでエラーなし
+□ 新規レイヤー作成時に layer.layerData が存在することを確認
+→ 完了後、Phase 5 へ進む（計画書 2/2 を参照）
+
+================================================================================
+Phase 5-6 について（計画書 2/2 へ続く）
+================================================================================
+
+【次フェーズの予告】
+計画書 2/2 では以下を実装します:
+
+Phase 5: 標準化API実装 - BatchAPI
+- 新規ファイル: system/batch-api.js
+- 修正ファイル: core-engine.js
+- Layer/CUT の統一的な操作 API を実装
+- スプレッドシートUI での操作を前提とした設計
+
+Phase 6: History統合 - BatchAPI操作の記録
+- 修正ファイル: system/batch-api.js（Phase 5 で作成）
+- 修正ファイル: system/history.js
+- 全ての BatchAPI 操作を Undo/Redo 対象にする
+
+【計画書 1 との境界線】
+計画書 1 の Phase 1-4 は「基本システムの改修」で、
+ユーザーに見える改善（性能向上、UI改善）と、
+データ構造の統一化（LayerModel/CutModel）に注力。
+
+計画書 2 の Phase 5-6 は「API層の統一」で、
+既存システムとの整合性を保ちながら、
+新しいデータモデルに基づいた統一的なインターフェースを提供。
+
+【今後の展望】
+計画書 2/2 を実装後、さらに以下の改修が予定されています:
+
+Phase 7: ペンツール統合（別途計画予定）
+- stroke-recorder, drawing-engine の EventBus 対応
+- path を LayerModel.paths に統合
+
+Phase 8: Export機能統合（別途計画予定）
+- export-manager, exporters の DataModel 対応
+- layer.layerData.paths から paths を取得
+
+================================================================================
+終了
+================================================================================

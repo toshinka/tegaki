@@ -1,9 +1,9 @@
-// ===== ui/timeline-ui.js - Phase 4.4: UI/UX改善版 =====
-// 【Phase 4.4改修内容】
-// 1. タイムラインパネルの影を削除（box-shadow: none）
-// 2. アクティブCUTの枠線を細く（3px → 1px）
-// 3. タイムラインパネルの透過度を上げる（0.1 → 0.05）
-// 【継承】Phase 4.3のVキー競合修正を維持
+// ===== ui/timeline-ui.js - Phase 5.2: キー処理一元化版 =====
+// 【Phase 5.2改修内容】
+// 1. setupKeyboardShortcuts()を削除（キー処理はUnifiedKeyHandlerに一元化）
+// 2. goToPreviousCutSafe()とgoToNextCutSafe()はpublicメソッドとして維持
+// 3. togglePlayStop()もpublicメソッドとして公開（Ctrl+Spaceで呼び出される）
+// 【継承】Phase 4.4のUI/UX改善を維持
 
 (function() {
     'use strict';
@@ -35,7 +35,7 @@
             this.createCompleteTimelineStructure();
             this.injectCompleteTimelineCSS();
             this.setupEventListeners();
-            this.setupKeyboardShortcuts();
+            // 🔥 Phase 5.2: setupKeyboardShortcuts()を削除（キー処理はUnifiedKeyHandlerに一元化）
             this.setupAnimationEvents();
             this.createLayerPanelCutIndicator();
             this.ensureInitialCut();
@@ -255,7 +255,7 @@
                             <path d="m7 22-4-4 4-4"/><path d="M21 13v1a4 4 0 0 1-4 4H3"/>
                         </svg>
                     </button>
-                    <button id="play-btn" title="再生/停止 (K)">▶</button>
+                    <button id="play-btn" title="再生/停止 (Ctrl+Space)">▶</button>
                     <span id="playback-time" class="playback-time">0:00:00</span>
                     <button id="add-cut-btn" title="新CUT追加 (Shift+N)" class="icon-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
@@ -311,7 +311,6 @@
             this.domCreated = true;
         }
         
-        // ========== Phase 4.4改修: injectCompleteTimelineCSS() ==========
         injectCompleteTimelineCSS() {
             if (document.querySelector('style[data-timeline="timeline-ui"]')) return;
             
@@ -481,7 +480,6 @@
     `;
             document.head.appendChild(style);
         }
-        // ========== Phase 4.4改修: END ==========
         
         ensureInitialCut() {
             const animData = this.animationSystem.getAnimationData();
@@ -582,6 +580,7 @@
             }
         }
         
+        // 🔥 Phase 5.2: publicメソッドとして維持（UnifiedKeyHandlerから呼び出される）
         togglePlayStop() {
             if (this.isPlaying) {
                 this.animationSystem.stop();
@@ -663,33 +662,11 @@
             }
         }
         
-        setupKeyboardShortcuts() {
-            document.addEventListener('keydown', (e) => {
-                if (!this.isVisible) return;
-                
-                if (this.animationSystem?.layerSystem?.vKeyPressed) {
-                    return;
-                }
-                
-                if (e.code === 'Space' && e.shiftKey && !e.ctrlKey && !e.altKey) {
-                    this.togglePlayStop();
-                    e.preventDefault();
-                } else if (e.code === 'KeyR' && !e.ctrlKey && !e.altKey) {
-                    this.toggleRepeat();
-                    e.preventDefault();
-                } else if (e.code === 'ArrowLeft') {
-                    e.preventDefault();
-                    this.goToPreviousCutSafe();
-                } else if (e.code === 'ArrowRight') {
-                    e.preventDefault();
-                    this.goToNextCutSafe();
-                } else if (e.code === 'Equal' && e.altKey) {
-                    this.animationSystem.createNewEmptyCut();
-                    e.preventDefault();
-                }
-            });
-        }
+        // 🔥 Phase 5.2: setupKeyboardShortcuts()を削除
+        // キー処理はcore-engine.jsのUnifiedKeyHandlerに一元化
+        // 以下のメソッドはpublicメソッドとして維持され、UnifiedKeyHandlerから呼び出される
         
+        // 🔥 Phase 5.2: publicメソッドとして維持
         goToPreviousCutSafe() {
             const animData = this.animationSystem.getAnimationData();
             if (animData.cuts.length === 0) return;
@@ -708,6 +685,7 @@
             }
         }
         
+        // 🔥 Phase 5.2: publicメソッドとして維持
         goToNextCutSafe() {
             const animData = this.animationSystem.getAnimationData();
             if (animData.cuts.length === 0) return;
@@ -996,7 +974,7 @@
     window.TegakiUI.TimelineUI = TimelineUI;
 })();
 
-console.log('✅ timeline-ui.js (Phase 4.4: UI/UX改善版) loaded');
-console.log('   - 🎨 タイムラインパネルの影を削除（box-shadow: none）');
-console.log('   - 🎨 アクティブCUTの枠線を細く（3px → 1px）');
-console.log('   - 🎨 タイムラインパネルの透過度を上げる（0.1 → 0.05）');
+console.log('✅ timeline-ui.js (Phase 5.2: キー処理一元化版) loaded');
+console.log('   - 🔥 setupKeyboardShortcuts()を削除（キー処理はUnifiedKeyHandlerに一元化）');
+console.log('   - 🔥 goToPreviousCutSafe()とgoToNextCutSafe()はpublicメソッドとして維持');
+console.log('   - 🔥 togglePlayStop()もpublicメソッドとして維持');
