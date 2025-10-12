@@ -366,11 +366,17 @@
             this.drawingEngine = drawingEngine;
             this.eventBus = eventBus || window.TegakiEventBus;
             this.animationSystem = animationSystem;
+            this.timelineUI = null; // 🔥 Phase 5.2: TimelineUIの参照
             
             this.keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
             this.keyHandlingActive = true;
             
             this.setupKeyHandling();
+        }
+        
+        // 🔥 Phase 5.2: TimelineUI参照の設定
+        setTimelineUI(timelineUI) {
+            this.timelineUI = timelineUI;
         }
         
         setupKeyHandling() {

@@ -1,0 +1,1124 @@
+================================================================================
+PixiJS v8.13 お絵かきツール - 段階的改修計画書 3/3
+================================================================================
+作成日: 2025-10-12
+対象バージョン: v8.13_History37
+スコープ: ペンツール統合とExport機能統合（Phase 7-8）
+前提条件: 計画書 1/2 と 2/2 がすべて完了していること
+
+【重要】
+計画書 3/3 は計画書 1/2 と 2/2 の全Phaseが完了した状態から開始すること。
+計画書 2/2 の Phase 5-6 が未完了の場合、エラーが多発する可能性があります。
+
+================================================================================
+計画書 3/3 の目的
+================================================================================
+
+計画書 1/2, 2/2 で整備した基本システムを、
+ペンツール（描画機能）とExport機能に統合することで、
+全体を一つの統一されたデータモデル・API層で動作させる。
+
+【統合前の状況】
+Phase 1-6 実装後：
+- 基本システムは改善済み（Phase 1-3）
+- DataModel 層が統一化（Phase 4）
+- BatchAPI で Layer/CUT の統一 API が完成（Phase 5-6）
+
+しかし：
+- ペンツール（描画）は既存のまま
+- Export 機能は既存のまま
+→ 一部の処理が二重化、データ不整合のリスク
+
+【統合後の目標】
+- ペンツール → EventBus → UI 層までの流れを統一
+- Export 機能 → LayerModel.paths から データ取得
+- 全ての path データが LayerModel 配下に管理される
+- ペン操作も Undo/Redo 対象に
+
+================================================================================
+Phase 7: ペンツール統合 - EventBus 対応
+================================================================================
+
+【目的と効果】
+ペンツール（描画）をEventBus経由に統一 → LayerModel との一体化
+所要時間: 50分
+影響範囲: 4ファイル（drawing-engine.js, stroke-recorder.js, stroke-renderer.js, layer-system.js）
+ユーザー実感: なし（内部処理の統一）
+
+【修正対象ファイル】
+system/drawing/drawing-engine.js
+system/drawing/stroke-recorder.js
+system/drawing/stroke-renderer.js
+system/layer-system.js（一部修正）
+
+【参考ファイル】
+system/layer-system.js（addPathToActiveLayer メソッド参照用）
+system/data-models.js（LayerModel.paths 参照用）
+
+【処理フロー上の位置】
+
+現状（計画書 2/2 完了後）：
+ペン操作 → DrawingEngine.completeStroke()
+  → LayerSystem.addPathToActiveLayer()
+    → layer.paths.push(path)
+    → [History記録なし]
+    → [EventBus通知なし]
+
+改修後（Phase 7 以降）：
+ペン操作 → DrawingEngine.completeStroke()
+  → stroke-recorder でパス記録
+  → stroke-renderer で描画
+  → LayerSystem.addPathToActiveLayer()
+    → layer.layerData.paths.push(path) ← 統一
+    → EventBus.emit('layer:stroke-added', { path, layerIndex })
+    → History.push(command) ← History対応
+    → UI更新
+
+【具体的な修正内容】
+
+修正1: LayerSystem.addPathToActiveLayer の修正
+
+ファイル: system/layer-system.js
+メソッド: addPathToActiveLayer(path)
+
+現状コード（例）:
+```javascript
+addPathToActiveLayer(path) {
+    if (!this.getActiveLayer()) return;
+    
+    const activeLayer = this.getActiveLayer();
+    activeLayer.paths.push(path);  // ← 直接操作
+    
+    this.rebuildPathGraphics(path);
+    this.requestThumbnailUpdate(this.activeLayerIndex);
+}
+```
+
+修正後コード:
+```javascript
+addPathToActiveLayer(path) {
+    if (!this.getActiveLayer()) return;
+    
+    const activeLayer = this.getActiveLayer();
+    const layerIndex = this.activeLayerIndex;
+    
+    // ← DataModel を通して追加
+    if (activeLayer.layerData && activeLayer.layerData.paths) {
+        activeLayer.layerData.paths.push(path);
+    }
+    // 互換性維持（既存の layer.paths にも追加）
+    if (!activeLayer.layerData) {
+        activeLayer.paths = activeLayer.paths || [];
+        activeLayer.paths.push(path);
+    }
+    
+    this.rebuildPathGraphics(path);
+    this.requestThumbnailUpdate(layerIndex);
+    
+    // ← EventBus通知
+    if (this.eventBus) {
+        this.eventBus.emit('layer:stroke-added', { 
+            path, 
+            layerIndex,
+            layerId: activeLayer.label
+        });
+    }
+}
+```
+
+修正理由：
+path データを LayerModel.paths に一元管理することで、
+Export 機能から統一的にアクセス可能にする。
+EventBus 通知により、UI層が即座に反応できる。
+
+修正2: DrawingEngine.completeStroke に History 統合
+
+ファイル: system/drawing/drawing-engine.js
+メソッド: completeStroke()
+
+現状コード（例）:
+```javascript
+completeStroke() {
+    if (this.currentPath && this.currentPath.points.length > 0) {
+        this.layerSystem.addPathToActiveLayer(this.currentPath);
+        
+        // History 記録（既存の仕組みがあれば）
+        // ...
+        
+        this.currentPath = null;
+    }
+}
+```
+
+修正後コード:
+```javascript
+completeStroke() {
+    if (this.currentPath && this.currentPath.points.length > 0) {
+        const path = this.currentPath;
+        const layerIndex = this.layerSystem.activeLayerIndex;
+        
+        // ← History に記録
+        if (window.History && !window.History._manager.isApplying) {
+            const command = {
+                name: 'stroke-added',
+                do: () => {
+                    this.layerSystem.addPathToActiveLayer(path);
+                },
+                undo: () => {
+                    // ← アクティブレイヤーから path を削除
+                    const activeLayer = this.layerSystem.getActiveLayer();
+                    if (activeLayer.layerData && activeLayer.layerData.paths) {
+                        activeLayer.layerData.paths = 
+                            activeLayer.layerData.paths.filter(p => p !== path);
+                    }
+                    if (activeLayer.paths) {
+                        activeLayer.paths = activeLayer.paths.filter(p => p !== path);
+                    }
+                    
+                    // Graphics を破棄
+                    if (path.graphics) {
+                        try {
+                            path.graphics.destroy({ children: true, texture: false, baseTexture: false });
+                        } catch (e) {}
+                    }
+                    
+                    this.layerSystem.requestThumbnailUpdate(layerIndex);
+                },
+                meta: { type: 'stroke', layerIndex }
+            };
+            
+            window.History.push(command);
+        } else {
+            this.layerSystem.addPathToActiveLayer(path);
+        }
+        
+        this.currentPath = null;
+    }
+}
+```
+
+修正理由：
+ペン操作を History に記録することで、
+Undo/Redo でストロークの追加/削除が可能になる。
+undo 時には Graphics の破棄とレイヤーデータの削除が両方必要。
+
+修正3: stroke-recorder の層アクセス統一
+
+ファイル: system/drawing/stroke-recorder.js
+
+検索・修正対象:
+- layer.paths への直接操作をすべて検索
+- layer.graphics への直接操作をすべて検索
+
+現状パターン（例）:
+```javascript
+// stroke-recorder.js 内で
+if (this.currentStroke.graphics) {
+    this.currentStroke.graphics.destroy();  // Phase 1 の修正と同じ
+}
+
+// layer.paths アクセス
+this.strokeIndex = this.currentLayer.paths.length;
+```
+
+修正方針（実装依存）:
+```javascript
+// layer.layerData.paths へのアクセスに統一
+const paths = this.currentLayer.layerData?.paths || this.currentLayer.paths;
+this.strokeIndex = paths.length;
+```
+
+修正4: stroke-renderer の互換性確保
+
+ファイル: system/drawing/stroke-renderer.js
+
+修正対象:
+- renderStroke() メソッド内でのパス参照
+- Graphics 生成時のパスデータアクセス
+
+現状パターン（例）:
+```javascript
+renderStroke(path, container) {
+    // path データからグラフィックスを生成
+    const graphics = this.createGraphics(path.points, path.size, path.color);
+    path.graphics = graphics;
+    container.addChild(graphics);
+}
+```
+
+修正後コード:
+```javascript
+renderStroke(path, container) {
+    // path データからグラフィックスを生成（変更なし）
+    const graphics = this.createGraphics(path.points, path.size, path.color);
+    path.graphics = graphics;
+    container.addChild(graphics);
+    
+    // ← path が LayerModel.paths に属することを確認
+    // （このメソッド内では変更不要、addPathToActiveLayer で管理）
+}
+```
+
+【検証ポイント】
+
+1. ペン操作の基本動作
+```javascript
+// ブラウザで通常のペン操作
+// ストロークを描画 → layer.layerData.paths に追加されることを確認
+window.drawingApp.layerManager.getActiveLayer().layerData.paths.length
+// → 1 以上の値が返される
+```
+
+2. History 連携確認
+```javascript
+// ストロークを描画
+// Ctrl+Z で Undo
+// ストロークが削除されることを確認
+
+// History クラスで undo() メソッドを実行
+window.drawingApp.undo()
+// コンソールにエラーなし
+```
+
+3. EventBus 通知確認
+```javascript
+// EventBus リスナーを登録
+window.EventBus.on('layer:stroke-added', (data) => {
+    console.log('Stroke added:', data);
+});
+
+// ストロークを描画
+// コンソールに "Stroke added: {...}" が出力されることを確認
+```
+
+4. layer.paths の互換性確認
+```javascript
+const layer = window.drawingApp.layerManager.getActiveLayer();
+
+// DataModel 経由でアクセス
+layer.layerData.paths.length
+
+// 従来の方法でもアクセス可能（互換性維持）
+layer.paths.length
+
+// 両者が同じ array を参照していることを確認
+```
+
+【エラー検証タイミング（重要）】
+
+Phase 7 修正直後に以下を確認:
+
+1. ストローク描画後、layer.layerData.paths が更新されているか
+```javascript
+const beforeLength = window.drawingApp.layerManager.getActiveLayer().layerData.paths.length;
+// ストロークを描画
+const afterLength = window.drawingApp.layerManager.getActiveLayer().layerData.paths.length;
+// afterLength > beforeLength であることを確認
+```
+
+2. History 記録が機能しているか
+```javascript
+// ストロークを描画
+window.drawingApp.undo()
+// 前後の paths.length が変わることで確認
+```
+
+3. Graphics の破棄が正しく機能しているか
+```javascript
+// ストロークを描画 → Undo → Redo を複数回繰り返す
+// ブラウザの Memory タブで、メモリが回収されていることを確認
+```
+
+【よくあるエラー】
+
+エラー: "layer.layerData is undefined"
+原因: Phase 4 が未完了、または layer の初期化が不正
+解決: 計画書 1/2 の Phase 4 が完全に実装されているか確認
+
+エラー: "addPathToActiveLayer is not a function"
+原因: layer-system.js のメソッドが修正されていない
+解決: addPathToActiveLayer メソッドが定義されているか確認
+
+エラー: Undo 時に Graphics が残る
+原因: completeStroke の undo 関数で Graphics 破棄が漏れている
+解決: Graphics.destroy() が undo コマンドに含まれていることを確認
+
+【進行チェックリスト】
+□ 計画書 1/2, 2/2 がすべて完了していることを確認
+□ system/layer-system.js の addPathToActiveLayer を修正
+□ system/drawing/drawing-engine.js の completeStroke に History 統合
+□ system/drawing/stroke-recorder.js で layer.layerData.paths への参照に統一
+□ system/drawing/stroke-renderer.js で互換性を確保
+□ ブラウザコンソールでエラーなし
+□ ストローク描画が正常に動作
+□ ストロークが layer.layerData.paths に追加されることを確認
+□ Undo/Redo でストロークの追加/削除が可能なことを確認
+→ 完了後、Phase 8 へ進む
+
+================================================================================
+Phase 8: Export機能統合 - DataModel 対応
+================================================================================
+
+【目的と効果】
+Export機能を LayerModel/DataModel に統一 → 全機能の一体化完成
+所要時間: 40分
+影響範囲: 6ファイル（export-manager.js + 5つの exporter）
+ユーザー実感: 高（Export 時のデータ整合性向上、バグ減少）
+
+【修正対象ファイル】
+system/export-manager.js
+system/exporters/png-exporter.js
+system/exporters/apng-exporter.js
+system/exporters/gif-exporter.js
+system/exporters/webp-exporter.js
+system/exporters/mp4-exporter.js
+system/exporters/pdf-exporter.js
+
+【参考ファイル】
+system/data-models.js（LAYER_SCHEMA, LayerModel 参照用）
+system/batch-api.js（getAllLayers() 参照用）
+
+【処理フロー上の位置】
+
+現状（計画書 2/2 + Phase 7 完了後）：
+Export UI → export-manager.export()
+  → exporter.export()
+    → layer.paths から path データ抽出
+    → [layer.layerData.paths を参照していない]
+    → 不整合の可能性
+
+改修後（Phase 8 以降）：
+Export UI → export-manager.export()
+  → exporter.export()
+    → BatchAPI.getAllLayers() から層情報取得
+    → layer.layerData.paths から path データ抽出
+    → [統一されたデータ参照]
+    → 一貫性保証
+
+【具体的な修正内容】
+
+修正1: export-manager.js の統一化
+
+ファイル: system/export-manager.js
+メソッド: export(format, options)（メイン export 関数）
+
+現状コード（例）:
+```javascript
+export(format, options) {
+    const layers = this.layerSystem.getLayers();
+    
+    // フォーマットごとの exporter を選択
+    let exporter;
+    switch (format) {
+        case 'png': exporter = new PNGExporter(); break;
+        case 'gif': exporter = new GIFExporter(); break;
+        case 'mp4': exporter = new MP4Exporter(); break;
+        default: return;
+    }
+    
+    // export 実行
+    exporter.export(layers, options);
+}
+```
+
+修正後コード:
+```javascript
+export(format, options) {
+    // ← BatchAPI 経由でレイヤー情報を取得
+    const layersData = window.batchAPI.getAllLayers();
+    const layers = this.layerSystem.getLayers();
+    
+    // exporter に渡すデータを統一
+    const exportData = {
+        layersData,  // LayerModel の JSON データ
+        layers,      // PIXI Container（Graphics描画用）
+        options
+    };
+    
+    // フォーマットごとの exporter を選択
+    let exporter;
+    switch (format) {
+        case 'png': exporter = new PNGExporter(); break;
+        case 'gif': exporter = new GIFExporter(); break;
+        case 'mp4': exporter = new MP4Exporter(); break;
+        default: return;
+    }
+    
+    // export 実行
+    exporter.export(exportData);
+}
+```
+
+修正理由：
+LayerModel.toJSON() で取得した統一されたデータと、
+描画用の PIXI オブジェクトの両方を exporter に渡すことで、
+両レイヤーの情報を参照可能にする。
+
+修正2: 全 exporter の統一パターン（PNGExporter を例に）
+
+ファイル: system/exporters/png-exporter.js
+メソッド: export(exportData)
+
+現状コード（例）:
+```javascript
+export(layers, options) {
+    layers.forEach((layer, index) => {
+        const paths = layer.paths;  // ← 直接参照
+        paths.forEach(path => {
+            // path データから PNG を生成
+            this.renderPath(path);
+        });
+    });
+    
+    this.savePNG(options.filename);
+}
+```
+
+修正後コード:
+```javascript
+export(exportData) {
+    const { layersData, layers, options } = exportData;
+    
+    // layer.layerData.paths から path を取得
+    layers.forEach((layer, index) => {
+        const layerData = layersData[index];
+        
+        // 可視性やロック状態をチェック
+        if (!layerData.visible || layerData.locked) {
+            return;  // スキップ
+        }
+        
+        // path データを LayerModel から取得
+        const paths = layer.layerData?.paths || layer.paths;
+        
+        paths.forEach(path => {
+            // path データから PNG を生成
+            this.renderPath(path);
+        });
+    });
+    
+    this.savePNG(options.filename);
+}
+```
+
+修正理由：
+- layer.layerData.paths から path データを取得することで、
+  Phase 7 での path 管理と統一
+- layerData の visible/locked フラグを参照することで、
+  Export 時のレイヤー表示状態を正しく反映
+- 互換性維持（layer.paths へのフォールバック）
+
+修正3: APNG, GIF, WebP exporter の修正
+
+ファイル: system/exporters/apng-exporter.js
+       system/exporters/gif-exporter.js
+       system/exporters/webp-exporter.js
+
+修正パターン（APNG を例に）:
+
+現状コード:
+```javascript
+export(layers, options) {
+    const frames = [];
+    options.cuts.forEach(cut => {
+        // CUT ごとに フレーム生成
+        const frame = this.renderFrame(cut, layers);
+        frames.push(frame);
+    });
+    
+    this.compileAPNG(frames, options.filename);
+}
+```
+
+修正後コード:
+```javascript
+export(exportData) {
+    const { layersData, layers, options } = exportData;
+    
+    const frames = [];
+    options.cuts.forEach((cut, cutIndex) => {
+        // ← CUT の duration を使用
+        const frameDuration = Math.round(cut.duration * 1000);
+        
+        // CUT ごとに フレーム生成
+        const frame = this.renderFrame(cut, layers, layersData);
+        frames.push({
+            data: frame,
+            duration: frameDuration
+        });
+    });
+    
+    this.compileAPNG(frames, options.filename);
+}
+```
+
+修正理由：
+- CUT 情報を BatchAPI 経由で取得
+- CUT.duration が LayerModel で定義されているため、
+  統一的にアクセス可能
+
+修正4: MP4, PDF exporter の修正
+
+ファイル: system/exporters/mp4-exporter.js
+       system/exporters/pdf-exporter.js
+
+修正パターン（MP4 を例に）:
+
+現状コード:
+```javascript
+export(layers, options) {
+    // video codec 初期化
+    const videoEncoder = new VideoEncoder(options);
+    
+    options.cuts.forEach(cut => {
+        const duration = cut.duration || 0.5;  // ← 推測値
+        const frameCount = Math.round(duration * 30);  // fps 30
+        
+        for (let i = 0; i < frameCount; i++) {
+            const frame = this.renderFrame(cut, layers, i);
+            videoEncoder.addFrame(frame);
+        }
+    });
+    
+    videoEncoder.export(options.filename);
+}
+```
+
+修正後コード:
+```javascript
+export(exportData) {
+    const { layersData, layers, options } = exportData;
+    
+    // video codec 初期化
+    const videoEncoder = new VideoEncoder(options);
+    
+    // ← CUT の duration を正確に取得
+    window.batchAPI.getAllCuts().forEach((cut, cutIndex) => {
+        const duration = cut.duration;  // ← LayerModel から正確に取得
+        const frameCount = Math.round(duration * 30);
+        
+        for (let i = 0; i < frameCount; i++) {
+            const frame = this.renderFrame(cut, layers, layersData, i);
+            videoEncoder.addFrame(frame);
+        }
+    });
+    
+    videoEncoder.export(options.filename);
+}
+```
+
+修正理由：
+- BatchAPI.getAllCuts() で統一的に CUT 情報を取得
+- cut.duration が正確に反映され、
+  フレーム数の計算がより正確になる
+
+【検証ポイント】
+
+1. Export データの統一確認
+```javascript
+// export 前に LayerModel データが正しいか確認
+window.batchAPI.getAllLayers()[0].toJSON()
+// → { id, name, visible, opacity, ... } が返される
+```
+
+2. PNG export の動作確認
+```javascript
+// UI から PNG export を実行
+// 画像ファイルが生成される
+// 可視レイヤーのみが出力されることを確認
+```
+
+3. アニメーション export の動作確認
+```javascript
+// UI から GIF/WebP/MP4 export を実行
+// 各 CUT の duration が正確に反映されることを確認
+// フレーム数が正しいことを確認
+```
+
+4. レイヤー情報の reflect 確認
+```javascript
+// レイヤーを非表示に設定
+// GIF export を実行
+// 非表示レイヤーが出力に含まれていないことを確認
+```
+
+【エラー検証タイミング（重要）】
+
+Phase 8 修正直後に以下を確認:
+
+1. export-manager が BatchAPI を参照しているか
+```javascript
+// export 前にコンソールで確認
+window.batchAPI.getAllLayers()
+// → データが返されることを確認
+```
+
+2. exporter が exportData の構造を正しく処理しているか
+```javascript
+// PNG export 実行時のコンソールログで確認
+// "exporting 3 layers" などの情報が出力されることを確認
+```
+
+3. レイヤー表示状態が正しく反映されているか
+```javascript
+// レイヤー1を非表示
+// レイヤー2,3を表示状態に
+// PNG export
+// 出力画像にレイヤー2,3のみが含まれることを確認
+```
+
+【よくあるエラー】
+
+エラー: "batchAPI.getAllLayers is not a function"
+原因: Phase 5 が未完了、または BatchAPI が初期化されていない
+解決: 計画書 2/2 の Phase 5-6 が完全に実装されているか確認
+
+エラー: Export ファイルが空またはデータが欠落
+原因: layer.layerData.paths が参照されていない
+解決: exporter で layer.layerData?.paths のフォールバックが正しいか確認
+
+エラー: アニメーション export 時に timing がずれる
+原因: CUT.duration の参照が不正確
+解決: window.batchAPI.getAllCuts() で duration を取得しているか確認
+
+【進行チェックリスト】
+□ Phase 7 が完了していることを確認
+□ system/export-manager.js を修正
+□ 全 exporter（PNG, APNG, GIF, WebP, MP4, PDF）を修正
+□ 各 exporter で layer.layerData.paths にアクセスしていることを確認
+□ 各 exporter で BatchAPI データを参照していることを確認
+□ ブラウザコンソールでエラーなし
+□ PNG export が正常に動作することを確認
+□ GIF/WebP export でレイヤー情報が正しく反映されることを確認
+□ MP4 export で CUT duration が正確に反映されることを確認
+□ レイヤーの visible/locked フラグが Export に反映されることを確認
+→ 完了後、計画書 1/2, 2/2, 3/3 の全 Phase が完了
+
+================================================================================
+計画書全体の統合チェック（1/2 + 2/2 + 3/3 完了後）
+================================================================================
+
+【最終統合検証】
+
+Step 1: 全 Phase 完了確認
+□ Phase 1: メモリリーク解消 ✓
+□ Phase 2: スケール再計算廃止 ✓
+□ Phase 3: サムネイル最適化 ✓
+□ Phase 3.5: UI コード準拠化 ✓
+□ Phase 4: DataModel 統一化 ✓
+□ Phase 5: BatchAPI 実装 ✓
+□ Phase 6: History 統合 ✓
+□ Phase 7: ペンツール統合 ✓
+□ Phase 8: Export 機能統合 ✓
+
+Step 2: データフロー統一確認
+```
+描画操作
+  → DrawingEngine
+    → stroke-recorder
+      → Layer.layerData.paths に追加
+      → History に記録
+      → EventBus 通知
+
+UI 操作（層パネル）
+  → UI層
+    → BatchAPI
+      → Layer.layerData プロパティ変更
+      → History に記録
+      → EventBus 通知
+
+Export
+  → Export UI
+    → export-manager
+      → BatchAPI.getAllLayers()
+      → Layer.layerData から データ取得
+      → 各 exporter で処理
+      → ファイル出力
+```
+
+Step 3: 完全動作シナリオ
+
+1. アプリ起動
+2. レイヤーを2個作成
+3. 各レイヤーにストロークを描画（各3本程度）
+4. レイヤー1 を非表示に設定
+5. レイヤー2 の名前を変更
+6. レイヤー2 の opacity を 0.7 に変更
+7. Ctrl+Z で 3回 undo
+8. Ctrl+Y で 3回 redo
+9. PNG export で画像出力
+   → レイヤー2 のみが出力されることを確認
+10. GIF export でアニメーション出力
+    → フレーム数が正確なことを確認
+11. ブラウザ DevTools で以下を確認
+    ```javascript
+    // 全レイヤー情報を表示
+    window.batchAPI.getAllLayers().forEach(l => {
+        console.log(l.name, 'paths:', l.paths?.length || 0);
+    });
+    ```
+12. Memory タブで以下を確認
+    → 全操作後もメモリが安定していること
+    → メモリリークの兆候がないこと
+
+Step 4: パフォーマンス指標確認
+
+以下が計画書 1/2 前と後で改善されていることを確認:
+
+| 指標 | 改修前 | 改修後 | 効果 |
+|-----|-------|--------|-----|
+| メモリ使用量（10分間使用） | 増加傾向 | 安定 | Phase 1 |
+| ズーム操作時の fps | 低下 | 安定 | Phase 2 |
+| レイヤー移動時の fps | 低下 | 安定 | Phase 3 |
+| Export 時間（100層） | 不明 | 測定可能 | Phase 8 |
+
+【最終チェックリスト】
+
+□ 全 Phase 実装完了
+□ ブラウザコンソールでエラーなし
+□ 全 UI 操作が正常に動作
+□ Undo/Redo がすべての操作に対応
+□ Export 全フォーマットが正常に動作
+□ メモリが安定している
+□ パフォーマンスが改善されている
+□ データ整合性が保たれている
+
+================================================================================
+今後の拡張計画（将来検討）
+================================================================================
+
+【Phase 9 以降の可能性】
+
+計画書 1/2, 2/2, 3/3 で整備されたシステムの上に、
+さらなる機能拡張が可能になります。
+
+Phase 9: スプレッドシート UI 実装（検討中）
+- レイヤーパネルを Excel ライクなテーブル UI に
+- 複数セルの選択と一括編集
+- フィルタリング・ソート機能
+- CSV/TSV エクスポート機能
+
+実装ファイル（予定）:
+- ui/spreadsheet-editor.js（新規）
+- 外部ライブラリ: Handsontable または ag-Grid
+
+Phase 10: PSD 入出力対応（検討中）
+- Photoshop ファイルの読み込み
+- LayerModel への変換
+- PSD ファイルの出力
+
+実装ファイル（予定）:
+- system/psd-importer.js（新規）
+- system/psd-exporter.js（新規）
+- 外部ライブラリ: ag-psd
+
+Phase 11: マルチユーザー同期（検討中）
+- WebSocket による リアルタイム同期
+- 競合解決メカニズム
+- ローカル/クラウド ハイブリッド
+
+実装ファイル（予定）:
+- system/sync-manager.js（新規）
+- system/conflict-resolver.js（新規）
+
+================================================================================
+トラブルシューティング
+================================================================================
+
+【計画書全体で発生しやすいエラーと対処法】
+
+エラー: "window.* is undefined"（一般的）
+
+原因の可能性:
+1. script タグの読み込み順序が間違っている
+2. ファイルが読み込まれていない（404エラー）
+3. ブラウザキャッシュが古い
+
+対処法:
+1. index.html の script タグの順序を確認
+   推奨順序:
+   - config.js
+   - coordinate-system.js
+   - system/data-models.js ← Phase 4 で追加
+   - system/event-bus.js
+   - system/state-manager.js
+   - system/batch-api.js ← Phase 5 で追加
+   - ... 他のシステム
+
+2. ブラウザの Network タブで、全てのスクリプトが正常に読み込まれているか確認
+   （404 エラーがないか）
+
+3. ブラウザキャッシュをクリア
+   Ctrl+Shift+Delete → Cached images and files をクリア
+   または F5 で再読み込み
+
+---
+
+エラー: "layer.layerData is undefined"（Phase 4-8 で多発）
+
+原因の可能性:
+1. Phase 4 が未完了
+2. 既存レイヤーに新しいコードが適用されていない
+3. createLayer メソッドが古いコードで実行されている
+
+対処法:
+1. 新規レイヤーを作成して確認
+   ```javascript
+   window.drawingApp.layerManager.createLayer('test')
+   layer = window.drawingApp.layerManager.getActiveLayer()
+   layer.layerData
+   // undefined でなく LayerModel インスタンスが返されることを確認
+   ```
+
+2. layer-system.js の createLayer メソッドが
+   「layerModel = new window.TegakiDataModels.LayerModel()」
+   を含んでいることを確認
+
+3. 既存ファイルを開いた場合は、保存して再度開く
+   （古いデータ形式が残っている可能性）
+
+---
+
+エラー: "Undo が効かない"（Phase 6-8 で多発）
+
+原因の可能性:
+1. History が初期化されていない
+2. History._manager.isApplying フラグの管理が不正
+3. undo() メソッドの実行に失敗
+
+対処法:
+1. History が初期化されているか確認
+   ```javascript
+   window.History
+   // undefined でなく History クラスが返される
+   ```
+
+2. コンソールでエラーがないか確認
+   ```javascript
+   window.drawingApp.undo()  // エラーメッセージを確認
+   ```
+
+3. History のスタック状態を確認
+   ```javascript
+   window.History._manager.stack.length
+   // 0 でなく、操作数分の値が返されることを確認
+   ```
+
+---
+
+エラー: "Export ファイルが生成されない"（Phase 8 で多発）
+
+原因の可能性:
+1. exporter が exportData の構造を正しく解釈していない
+2. layer.layerData.paths が undefined
+3. 出力形式が不正
+
+対処法:
+1. コンソールで exporter のデバッグログを確認
+   ```javascript
+   // exporter 内で console.log を追加
+   console.log('layersData:', layersData);
+   console.log('paths count:', paths.length);
+   ```
+
+2. layer.layerData.paths が定義されているか確認
+   ```javascript
+   const layer = window.drawingApp.layerManager.getActiveLayer();
+   layer.layerData.paths
+   // array が返される
+   ```
+
+3. export-manager.export() がオプションを正しく受け取っているか
+   ```javascript
+   window.drawingApp.exportManager.export('png', { filename: 'test.png' })
+   ```
+
+---
+
+エラー: "EventBus イベントが発火しない"（Phase 7 で多発）
+
+原因の可能性:
+1. EventBus.emit() が呼ばれていない
+2. EventBus.on() でリスナーが登録されていない
+3. イベント名が一致していない
+
+対処法:
+1. EventBus にリスナーを登録して確認
+   ```javascript
+   window.EventBus.on('layer:stroke-added', (data) => {
+       console.log('Event fired:', data);
+   });
+   // ストロークを描画
+   ```
+
+2. layer-system.js の addPathToActiveLayer で
+   EventBus.emit() が実行されているか確認
+   ```javascript
+   if (this.eventBus) {
+       this.eventBus.emit('layer:stroke-added', {...});
+   }
+   ```
+
+3. イベント名のスペルミスを確認
+   Layer 側: 'layer:stroke-added'
+   リスナー側: 同じ名前を使用
+
+================================================================================
+実装時のベストプラクティス
+================================================================================
+
+【各 Phase での確認作業】
+
+Phase ごとの修正後は、必ず以下の順序でチェック:
+
+1. ブラウザコンソール確認
+   - エラーが出ていないか
+   - 警告メッセージがないか
+   - 「✅ xxx.js loaded」ログが出ているか
+
+2. アプリ基本動作確認
+   - アプリが起動するか
+   - ストローク描画が可能か
+   - レイヤー操作が可能か
+
+3. Phase 固有の動作確認
+   - その Phase で導入された機能が動作しているか
+   - コンソールでテストコード実行して確認
+
+4. Undo/Redo 確認（Phase 6 以降）
+   - 操作後に Ctrl+Z で undo 可能か
+   - Ctrl+Y で redo 可能か
+
+5. Memory/Performance 確認
+   - DevTools の Memory タブで異常がないか
+   - DevTools の Performance タブで fps が安定しているか
+
+【ファイル修正時のチェックリスト】
+
+各ファイル修正前に:
+□ 元のコードをバックアップ（git など）
+□ 修正個所を正確に特定
+□ 修正後の期待動作を理解
+
+修正後に:
+□ syntax エラーがないか（DevTools で確認）
+□ 修正個所の前後で機能が動作しているか
+□ 依存する他のファイルが影響を受けていないか
+□ コンソールにエラーが出ていないか
+
+【段階的な修正のコツ】
+
+複数ファイルの修正が必要な場合:
+
+1. 「依存される側」から修正する
+   例: data-models.js → layer-system.js → export-manager.js
+
+2. 各修正後に「依存する側」がエラーなく起動することを確認
+
+3. 複数ファイル修正後に「全体の動作」を確認
+
+例（Phase 4）:
+1. data-models.js を新規作成
+2. index.html の script タグを追加
+3. layer-system.js の createLayer を修正
+4. アプリ起動してエラーなし確認
+5. 新規レイヤーが layer.layerData を持つことを確認
+
+================================================================================
+各計画書の役割と依存関係
+================================================================================
+
+【計画書 1/2】
+役割: 基本システムの改善
+- ユーザーが直接実感できる改善（速度向上など）
+- 既存データ構造との整合性を保つ
+- 単独で検証・導入可能
+
+依存関係: なし（既存システムのみ）
+
+【計画書 2/2】
+役割: API層の統一
+- 開発者向けの統一インターフェース
+- 計画書 1/2 の完了が前提条件
+- History との統合で Undo/Redo 完全対応
+
+依存関係: 計画書 1/2 の Phase 1-4 が必須
+
+【計画書 3/3】
+役割: 機能統合の完成
+- ペンツール・Export を新しいデータモデルに統合
+- 全システムが一体化
+- 計画書 1/2 と 2/2 の完全実装が前提条件
+
+依存関係: 計画書 1/2 の Phase 1-4 + 計画書 2/2 の Phase 5-6 が必須
+
+【推奨実装順序】
+
+```
+計画書 1/2 の Phase 1-3 完了
+  ↓ （パフォーマンス改善を確認）
+計画書 1/2 の Phase 4 完了
+  ↓ （データモデル統一を確認）
+計画書 2/2 の Phase 5-6 完了
+  ↓ （API層を確認、History 統合を確認）
+計画書 3/3 の Phase 7-8 完了
+  ↓
+全システムの統合テスト完了
+```
+
+各 Phase 間に数日の猶予を置くことで、
+各段階での問題を十分に検証できます。
+
+================================================================================
+質疑応答（よくある質問）
+================================================================================
+
+Q1: Phase 3.5 は本当に必要ですか？
+A: Phase 3.5 は「準備段階」です。
+   計画書 1/2 単独で実装する場合は、Phase 3.5 をスキップしても OK。
+   ただし計画書 2/2 に進む場合は、Phase 5 の前に
+   既存 UI コードを BatchAPI 準拠に変更する必要があります。
+   Phase 3.5 を実装することで、その準備作業を事前に済ませられます。
+
+Q2: 全てのファイルを同時に修正して大丈夫ですか？
+A: 推奨されません。
+   ファイル単位でスケーラブルな改修が目的です。
+   1つの Phase を完了させて、ブラウザで確認してから
+   次の Phase に進むことをお勧めします。
+   そうしないと、エラーの原因特定が困難になります。
+
+Q3: 既存システムとの互換性を完全に保つことは可能ですか？
+A: 完全には難しいです。
+   特に計画書 2/2 の Phase 5-6 で BatchAPI を導入すると、
+   既存の UI コードと新しい API の両方が並存する時期があります。
+   その間は、既存 UI コード → BatchAPI への段階的な移行が必要です。
+   Phase 3.5 でこの準備をすることで、スムーズに移行できます。
+
+Q4: History に記録されない操作がある場合はどうしますか？
+A: Phase 6 で History 統合したメソッド以外は、
+   自動的には History に記録されません。
+   特に以下は手動で History 統合が必要です:
+   - stroke-recorder 内の独自操作
+   - export 中に行うレイヤー変更
+   - UI から直接行う操作（EventBus 経由でない場合）
+
+   これらが必要な場合は Phase 7-8 を参考に、
+   該当メソッドに History コマンド登録を追加してください。
+
+Q5: 複数の exporter の修正を同時に進めても大丈夫ですか？
+A: 修正パターンは全て同じ（exportData の構造化）なので、
+   複数 exporter を並列に修正しても OK です。
+   ただし各 exporter ごとに動作確認を実施することをお勧めします。
+
+================================================================================
+終了 - 計画書 1/2, 2/2, 3/3 完成
+================================================================================
+
+この 3 冊の計画書で、PixiJS v8.13 お絵かきツールの
+段階的改修が全て網羅されています。
+
+各計画書は独立して読むことも、
+全体を通して読むこともできるように設計されています。
+
+実装時のご質問や、追加の説明が必要な場合は、
+気軽にお尋ねください。
