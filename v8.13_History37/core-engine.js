@@ -407,6 +407,7 @@
         }
         
         handleKeyDown(e) {
+            // 🔥 Phase 5.2: 矢印キーは専用ハンドラーで処理
             if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || 
                 e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
                 this.handleArrowKeys(e);
@@ -447,8 +448,8 @@
                     break;
                 
                 case 'gifToggleAnimation':
-                    if (e.altKey && window.timelineUI) {
-                        window.timelineUI.toggle();
+                    if (e.altKey && this.timelineUI) {
+                        this.timelineUI.toggle();
                         e.preventDefault();
                     }
                     break;
@@ -460,23 +461,10 @@
                     }
                     break;
                 
+                // 🔥 Phase 5.2: Ctrl+Spaceで再生/停止
                 case 'gifPlayPause':
-                    if (e.code === 'Space' && this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                        this.animationSystem.togglePlayPause();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifPrevFrame':
-                    if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                        this.animationSystem.goToPreviousFrame();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifNextFrame':
-                    if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                        this.animationSystem.goToNextFrame();
+                    if (e.code === 'Space' && e.ctrlKey && this.timelineUI && this.timelineUI.isVisible) {
+                        this.timelineUI.togglePlayStop();
                         e.preventDefault();
                     }
                     break;
@@ -490,9 +478,11 @@
             }
         }
         
+        // 🔥 Phase 5.2改修: handleArrowKeys() - Timeline操作を追加
         handleArrowKeys(e) {
             e.preventDefault();
             
+            // V押下中は処理しない（レイヤー操作が優先）
             if (this.layerSystem?.vKeyPressed) {
                 return;
             }
@@ -501,6 +491,7 @@
             const layers = this.layerSystem.getLayers();
             
             if (e.ctrlKey) {
+                // Ctrl+↑↓: レイヤー階層移動
                 if (e.code === 'ArrowUp') {
                     if (activeIndex < layers.length - 1) {
                         const layer = layers[activeIndex];
@@ -526,13 +517,14 @@
                         }
                     }
                 }
-            } else if (this.animationSystem && window.timelineUI && window.timelineUI.isVisible) {
-                if (e.code === 'ArrowLeft') {
-                    this.animationSystem.goToPreviousFrame();
-                } else if (e.code === 'ArrowRight') {
-                    this.animationSystem.goToNextFrame();
+                // 🔥 Phase 5.2: Ctrl+←→でCUT移動（Timeline表示時）
+                else if (e.code === 'ArrowLeft' && this.timelineUI && this.timelineUI.isVisible) {
+                    this.timelineUI.goToPreviousCutSafe();
+                } else if (e.code === 'ArrowRight' && this.timelineUI && this.timelineUI.isVisible) {
+                    this.timelineUI.goToNextCutSafe();
                 }
             } else {
+                // 通常時: ↑↓でレイヤーのアクティブ変更
                 if (e.code === 'ArrowUp') {
                     if (activeIndex < layers.length - 1) {
                         this.layerSystem.activeLayerIndex = activeIndex + 1;
@@ -915,6 +907,11 @@
                 this.animationSystem
             );
             
+            // 🔥 Phase 5.2: UnifiedKeyHandlerにTimelineUI参照を設定
+            if (this.timelineUI) {
+                this.keyHandler.setTimelineUI(this.timelineUI);
+            }
+            
             this.eventBus.on('animation:initial-cut-created', () => {
                 this.layerSystem.updateLayerPanelUI();
                 this.layerSystem.updateStatusDisplay();
@@ -953,6 +950,7 @@
 
 })();
 
-console.log('✅ core-engine.js (Phase 5.1: キャンバスリサイズ機能追加) loaded');
-console.log('   - 🔥 resizeCanvas()にCUTサムネイル再生成機能を追加');
-console.log('   - 🔥 リサイズ後に全CUTのサムネイルを自動更新');
+console.log('✅ core-engine.js (Phase 5.2: キー処理一元化版) loaded');
+console.log('   - 🔥 Phase 5.1: resizeCanvas()にCUTサムネイル再生成機能を追加');
+console.log('   - 🔥 Phase 5.2: UnifiedKeyHandlerにTimelineUI統合');
+console.log('   - 🔥 Ctrl+Space: 再生/停止、Ctrl+←→: CUT移動');
