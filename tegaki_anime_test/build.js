@@ -43,27 +43,43 @@ output += `
 (function() {
     'use strict';
     
-    // GIFライブラリが読み込まれているか確認
-    if (typeof window === 'undefined' || !window.GIF) {
-        console.warn('GIF.js not loaded, skipping Worker inline');
-        return;
+    // DOMContentLoaded を待たずに即座に実行
+    function initWorker() {
+        // GIFライブラリが読み込まれているか確認
+        if (typeof window === 'undefined' || !window.GIF) {
+            console.warn('GIF.js not loaded, skipping Worker inline');
+            return;
+        }
+        
+        // Base64からWorkerコードをデコード
+        const workerCodeBase64 = '${workerBase64}';
+        const workerCode = atob(workerCodeBase64);
+        
+        // Blob URL を生成
+        const blob = new Blob([workerCode], { 
+            type: 'application/javascript' 
+        });
+        const workerUrl = URL.createObjectURL(blob);
+        
+        // GIF.js のデフォルト Worker を上書き
+        if (window.GIF && window.GIF.prototype) {
+            if (!window.GIF.prototype.options) {
+                window.GIF.prototype.options = {};
+            }
+            window.GIF.prototype.options.workerScript = workerUrl;
+            console.log('✅ GIF.js Worker inlined successfully');
+            console.log('   Worker URL:', workerUrl);
+        } else {
+            console.error('❌ GIF.prototype not found');
+        }
     }
     
-    // Base64からWorkerコードをデコード
-    const workerCodeBase64 = '${workerBase64}';
-    const workerCode = atob(workerCodeBase64);
+    // 即座に実行を試みる
+    initWorker();
     
-    // Blob URL を生成
-    const blob = new Blob([workerCode], { 
-        type: 'application/javascript' 
-    });
-    const workerUrl = URL.createObjectURL(blob);
-    
-    // GIF.js のデフォルト Worker を上書き
-    if (window.GIF.prototype) {
-        window.GIF.prototype.options = window.GIF.prototype.options || {};
-        window.GIF.prototype.options.workerScript = workerUrl;
-        console.log('✅ GIF.js Worker inlined successfully');
+    // もし失敗した場合は DOMContentLoaded で再試行
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initWorker);
     }
 })();
 `;

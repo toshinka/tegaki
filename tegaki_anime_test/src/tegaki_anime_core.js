@@ -367,14 +367,18 @@
         updateThumbnail() {
             const thumbCanvas = this.thumbnailContainer.childNodes[this.activeLayerIndex];
             if (!thumbCanvas) return;
-            const thumbCtx = thumbCanvas.getContext('2d');
+            const thumbCtx = thumbCanvas.getContext('2d', {
+                willReadFrequently: true
+            });
             thumbCtx.clearRect(0, 0, thumbCanvas.width, thumbCanvas.height);
 
             // サムネイルには背景も合成して表示
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = this.canvas.width;
             tempCanvas.height = this.canvas.height;
-            const tempCtx = tempCanvas.getContext('2d');
+            const tempCtx = tempCanvas.getContext('2d', {
+                willReadFrequently: true
+            });
             tempCtx.drawImage(this.bgCanvas, 0, 0);
             tempCtx.drawImage(this.canvas, 0, 0);
             
@@ -504,6 +508,14 @@
                 alert('GIF生成ライブラリが読み込まれていません。');
                 return null;
             }
+            
+            // Worker URL の確認
+            const workerUrl = window.GIF.prototype.options?.workerScript;
+            if (!workerUrl || !workerUrl.startsWith('blob:')) {
+                console.error('Worker URL not properly initialized:', workerUrl);
+                alert('GIF Worker が正しく初期化されていません。ページを再読み込みしてください。');
+                return null;
+            }
 
             return new Promise((resolve, reject) => {
                 try {
@@ -513,7 +525,7 @@
                         quality: 10,
                         width: this.canvas.width,
                         height: this.canvas.height,
-                        workerScript: window.GIF.prototype.options.workerScript
+                        workerScript: workerUrl
                     });
                     
                     // 進捗コールバックを登録
