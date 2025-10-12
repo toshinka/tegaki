@@ -135,39 +135,37 @@ output += `
     'use strict';
     
     if (typeof window !== 'undefined') {
-        // pako.js の公開（最優先）
-        if (typeof pako !== 'undefined') {
-            window.pako = pako;
-            window.Zlib = pako;  // UPNG.jsが期待する名前
-            console.log('✅ pako exposed to window');
-        } else {
-            console.error('❌ pako not found');
-        }
-        
         // UPNG.js の公開
         if (typeof UPNG !== 'undefined') {
             window.UPNG = UPNG;
-            console.log('✅ UPNG exposed to window');
+            console.log('✓ UPNG exposed to window');
         } else {
-            console.error('❌ UPNG not found');
+            console.warn('✗ UPNG not found in scope');
+        }
+        
+        // pako.js の公開（複数の名前でアクセス可能にする）
+        if (typeof pako !== 'undefined') {
+            window.pako = pako;
+            window.Zlib = pako;  // UPNG.js が期待する代替名
+            console.log('✓ pako exposed to window');
+        } else {
+            console.warn('✗ pako not found in scope');
         }
         
         // GIF.js の公開
         if (typeof GIF !== 'undefined') {
             window.GIF = GIF;
-            console.log('✅ GIF exposed to window');
+            console.log('✓ GIF exposed to window');
         } else {
-            console.error('❌ GIF not found');
+            console.warn('✗ GIF not found in scope');
         }
         
         // 最終確認
-        console.log('📊 Library status:', {
+        console.log('📦 Library Check:', {
+            UPNG: !!window.UPNG,
             pako: !!window.pako,
             Zlib: !!window.Zlib,
-            UPNG: !!window.UPNG,
-            GIF: !!window.GIF,
-            gifWorkerUrl: window.__gifWorkerUrl?.substring(0, 50) + '...',
-            workerScript: window.GIF?.prototype?.options?.workerScript?.substring(0, 50) + '...'
+            GIF: !!window.GIF
         });
     }
 })();
