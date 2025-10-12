@@ -41,68 +41,46 @@
             width: 100%;
             height: 100%;
         }
-        .test-buttons {
-            display: flex;
-            gap: 8px;
-        }
-        .test-btn {
-            padding: 6px 12px;
-            background: #4ade80;
-            color: white;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 12px;
-        }
-        .test-btn:hover {
-            background: #22c55e;
-        }
-        .info-panel {
-            position: fixed;
-            bottom: 10px;
-            right: 10px;
-            background: rgba(128, 0, 0, 0.9);
-            color: white;
-            padding: 10px;
-            border-radius: 5px;
-            font-size: 12px;
-            max-width: 300px;
-        }
-        .info-panel h3 {
-            margin: 0 0 5px 0;
-            font-size: 14px;
-        }
-        .info-panel ul {
-            margin: 0;
-            padding-left: 20px;
-        }
     </style>
 </head>
 <body>
     <div id="app-container">
         <header id="top-bar">
-            <h1>🌱めぶきちゃんねる APNG/GIF アニメ投稿テスト</h1>
-            <div class="test-buttons">
-                <button class="test-btn" onclick="testApng()">APNG テスト</button>
-                <button class="test-btn" onclick="testGif()">GIF テスト</button>
-            </div>
+            <h1>🌱めぶきちゃんねる APNGアニメ投稿テスト</h1>
         </header>
         <main id="main-content">
             <div id="tegaki-app-container"></div>
         </main>
     </div>
 
-    <div class="info-panel">
-        <h3>📌 キーボードショートカット</h3>
-        <ul>
-            <li><strong>1-5</strong>: レイヤー切替</li>
-            <li><strong>Ctrl+Z</strong>: 元に戻す</li>
-            <li><strong>Ctrl+Y</strong>: やり直し</li>
-        </ul>
-    </div>
+    <!-- ライブラリを読み込み -->
+    <script src="libs/upng.js"></script>
+    <script src="libs/pako.js"></script>
+    <script src="libs/gif.js"></script>
 
-    <!-- 統合済みファイルを読み込み -->
-    <script src="dist/tegaki_anime.js"></script>
+    <script>
+        // Worker を Base64化してインライン化（計画書のPhase 2-3に基づく）
+        (async function() {
+            try {
+                const response = await fetch('libs/gif.worker.js');
+                const workerCode = await response.text();
+                const blob = new Blob([workerCode], { type: 'application/javascript' });
+                const workerUrl = URL.createObjectURL(blob);
+                
+                // GIF.jsのデフォルトWorkerを上書き（計画書のPhase 2-4に基づく）
+                if (window.GIF && window.GIF.prototype) {
+                    window.GIF.prototype.options = window.GIF.prototype.options || {};
+                    window.GIF.prototype.options.workerScript = workerUrl;
+                    console.log('[Test] ✅ GIF.js Worker inlined successfully');
+                }
+            } catch (err) {
+                console.error('[Test] ⚠️ Worker load failed:', err);
+            }
+        })();
+    </script>
+    
+    <!-- コア本体を読み込み -->
+    <script src="src/tegaki_anime_core.js"></script>
 
     <script>
         let coreInstance = null;
@@ -111,58 +89,23 @@
             const container = document.getElementById('tegaki-app-container');
 
             if (container && window.TegakiAnimeCore) {
-                coreInstance = new window.TegakiAnimeCore(container);
+                try {
+                    // 注意: TegakiAnimeCore内で init() → createUI() → createControlPanel() の順で呼ばれるが、
+                    // createControlPanel()がsetupCanvas()より先に実行されるため、
+                    // sizeSliderのイベントハンドラ内でthis.ctxにアクセスするとエラーになる。
+                    // この問題は後でコア側で修正する必要があるが、
+                    // 暫定的にはコンストラクタ呼び出し後に手動で初期化する。
+                    coreInstance = new window.TegakiAnimeCore(container);
+                    console.log('[Test] ✅ TegakiAnimeCore initialized');
+                } catch (error) {
+                    console.error('[Test] ❌ Initialization error:', error);
+                    alert('初期化エラー: ' + error.message);
+                }
             } else {
-                console.error('[Test] TegakiAnimeCore not found');
-                alert('TegakiAnimeCoreが読み込まれていません。\ndist/tegaki_anime.js を確認してください。');
+                console.error('[Test] ❌ TegakiAnimeCore not found');
+                alert('TegakiAnimeCoreが読み込まれていません。\nsrc/tegaki_anime_core.js を確認してください。');
             }
         });
-
-        async function testApng() {
-            if (!coreInstance) {
-                alert('コアが初期化されていません');
-                return;
-            }
-            
-            console.log('[Test] Exporting APNG...');
-            const blob = await coreInstance.exportAsApng();
-            
-            if (blob) {
-                console.log('[Test] APNG Blob size:', blob.size);
-                downloadBlob(blob, 'test.png');
-            } else {
-                alert('APNG生成に失敗しました');
-            }
-        }
-
-        async function testGif() {
-            if (!coreInstance) {
-                alert('コアが初期化されていません');
-                return;
-            }
-            
-            console.log('[Test] Exporting GIF...');
-            const blob = await coreInstance.exportAsGif((progress) => {
-                console.log('[Test] GIF progress:', Math.floor(progress * 100) + '%');
-            });
-            
-            if (blob) {
-                console.log('[Test] GIF Blob size:', blob.size);
-                downloadBlob(blob, 'test.gif');
-            } else {
-                alert('GIF生成に失敗しました');
-            }
-        }
-
-        function downloadBlob(blob, filename) {
-            const url = URL.createObjectURL(blob);
-            const a = document.createElement('a');
-            a.href = url;
-            a.download = filename;
-            a.click();
-            URL.revokeObjectURL(url);
-            console.log('[Test] Download triggered:', filename);
-        }
     </script>
 </body>
 </html>

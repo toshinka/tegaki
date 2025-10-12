@@ -12,7 +12,7 @@
             this.onionCanvas = null;
             this.onionCtx = null;
             
-            // ふたばカラー定義
+            // 茶色カラー定義
             this.colors = {
                 maroon: '#800000',
                 lightMaroon: '#aa5a56',
@@ -49,7 +49,7 @@
             
             // オニオンスキン設定
             this.onionSkinEnabled = false;
-            this.onionSkinFrames = 1; // 前後何フレーム表示するか
+            this.onionSkinFrames = 1;
             this.minOnionFrames = 1;
             this.maxOnionFrames = 3;
             
@@ -135,19 +135,13 @@
         registerDefaultKeys() {
             const km = this.keyManager;
             
-            // Undo/Redo
             km.register('z', { ctrl: true }, () => this.undo(), 'Undo');
             km.register('y', { ctrl: true }, () => this.redo(), 'Redo');
-            
-            // コピー＆ペースト
             km.register('c', { ctrl: true }, () => this.copyLayer(), 'Copy');
             km.register('v', { ctrl: true }, () => this.pasteLayer(), 'Paste');
-            
-            // ツール切替
             km.register('p', {}, () => this.switchTool('pen'), 'Pen');
             km.register('e', {}, () => this.switchTool('eraser'), 'Eraser');
             
-            // レイヤー切替（数字キー1-9）
             for (let i = 1; i <= 9; i++) {
                 if (i <= this.frameCount) {
                     km.register(String(i), {}, () => this.switchLayer(i - 1), `Layer ${i}`);
@@ -174,14 +168,12 @@
         // ========== コピー＆ペースト ==========
         
         copyLayer() {
-            // 現在のレイヤーをクリップボードにコピー
             const imageData = this.ctx.getImageData(
                 0, 0,
                 this.canvas.width,
                 this.canvas.height
             );
             
-            // ImageDataをディープコピー
             const copiedData = this.ctx.createImageData(imageData.width, imageData.height);
             copiedData.data.set(imageData.data);
             this.clipboard = copiedData;
@@ -195,7 +187,6 @@
                 return;
             }
             
-            // クリップボードから現在のレイヤーにペースト
             this.ctx.putImageData(this.clipboard, 0, 0);
             this.pushHistory();
             this.updateThumbnail();
@@ -234,8 +225,9 @@
                 width: 100%;
                 height: 100%;
                 background: ${this.colors.background};
-                gap: 10px;
-                padding: 10px;
+                gap: 15px;
+                padding: 15px;
+                box-sizing: border-box;
             `;
             
             this.createShortcutPanel();
@@ -254,6 +246,7 @@
                 font-size: 12px;
                 color: ${this.colors.maroon};
                 overflow-y: auto;
+                flex-shrink: 0;
             `;
             
             panel.innerHTML = `
@@ -290,7 +283,8 @@
                 flex: 1;
                 display: flex;
                 flex-direction: column;
-                gap: 10px;
+                gap: 20px;
+                min-width: 0;
             `;
             
             const canvasWrapper = document.createElement('div');
@@ -299,6 +293,7 @@
                 display: flex;
                 justify-content: center;
                 align-items: center;
+                min-height: 0;
             `;
             
             const canvasContainer = document.createElement('div');
@@ -307,6 +302,7 @@
                 width: ${this.canvasWidth}px;
                 height: ${this.canvasHeight}px;
                 box-shadow: 0 2px 8px rgba(128, 0, 0, 0.2);
+                flex-shrink: 0;
             `;
             
             // 背景キャンバス
@@ -322,7 +318,7 @@
                 left: 0;
             `;
             
-            // オニオンスキンキャンバス（背景と描画の間）
+            // オニオンスキンキャンバス
             this.onionCanvas = document.createElement('canvas');
             this.onionCanvas.width = this.canvasWidth;
             this.onionCanvas.height = this.canvasHeight;
@@ -349,18 +345,37 @@
             canvasContainer.appendChild(this.canvas);
             canvasWrapper.appendChild(canvasContainer);
             
-            // サムネイルエリア
+            // サムネイルエリア（中央下、より下に配置）
             this.thumbnailContainer = document.createElement('div');
             this.thumbnailContainer.style.cssText = `
                 display: flex;
                 justify-content: center;
-                gap: 10px;
-                padding: 10px;
+                gap: 15px;
+                padding: 20px;
                 background: rgba(233, 194, 186, 0.3);
                 border-radius: 4px;
+                flex-shrink: 0;
             `;
             
             for (let i = 0; i < this.frameCount; i++) {
+                const thumbWrapper = document.createElement('div');
+                thumbWrapper.style.cssText = `
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    gap: 8px;
+                `;
+                
+                const thumbNumber = document.createElement('div');
+                thumbNumber.style.cssText = `
+                    font-size: 14px;
+                    font-weight: bold;
+                    color: ${this.colors.maroon};
+                    width: 60px;
+                    text-align: center;
+                `;
+                thumbNumber.textContent = String(i + 1);
+                
                 const thumb = document.createElement('canvas');
                 thumb.width = 60;
                 thumb.height = 60;
@@ -373,7 +388,10 @@
                 `;
                 thumb.title = `レイヤー ${i + 1} (${i + 1}キー)`;
                 thumb.onclick = () => this.switchLayer(i);
-                this.thumbnailContainer.appendChild(thumb);
+                
+                thumbWrapper.appendChild(thumbNumber);
+                thumbWrapper.appendChild(thumb);
+                this.thumbnailContainer.appendChild(thumbWrapper);
             }
             
             centerArea.appendChild(canvasWrapper);
@@ -384,36 +402,24 @@
         createControlPanel() {
             this.controlPanel = document.createElement('div');
             this.controlPanel.style.cssText = `
-                width: 180px;
+                width: 200px;
                 background: transparent;
                 padding: 10px;
                 font-size: 12px;
                 color: ${this.colors.maroon};
                 display: flex;
                 flex-direction: column;
-                gap: 15px;
+                gap: 20px;
                 overflow-y: auto;
+                flex-shrink: 0;
             `;
             
-            // プレビューボタン（一番上）
             this.createPreviewButton();
-            
-            // ツール選択
             this.createToolSelector();
-            
-            // ペンサイズスライダー
             this.createPenSizeControl();
-            
-            // 消しゴムサイズスライダー
             this.createEraserSizeControl();
-            
-            // 筆圧感度スライダー
             this.createPressureControl();
-            
-            // オニオンスキン設定
             this.createOnionSkinControl();
-            
-            // アニメーション速度スライダー
             this.createDelayControl();
             
             this.wrapper.appendChild(this.controlPanel);
@@ -441,12 +447,12 @@
             const toolControl = document.createElement('div');
             
             const label = document.createElement('label');
-            label.style.cssText = 'display: block; margin-bottom: 5px; font-weight: bold;';
+            label.style.cssText = 'display: block; margin-bottom: 8px; font-weight: bold;';
             label.textContent = 'ツール';
             toolControl.appendChild(label);
             
             const btnContainer = document.createElement('div');
-            btnContainer.style.cssText = 'display: flex; gap: 5px;';
+            btnContainer.style.cssText = 'display: flex; gap: 8px;';
             
             const penBtn = document.createElement('button');
             penBtn.textContent = 'ペン';
@@ -488,7 +494,7 @@
         createPenSizeControl() {
             const sizeControl = document.createElement('div');
             sizeControl.innerHTML = `
-                <label style="display: block; margin-bottom: 5px; font-weight: bold;">
+                <label style="display: block; margin-bottom: 8px; font-weight: bold;">
                     ペンサイズ: <span id="pen-size-value">${this.size}</span>px
                 </label>
                 <input type="range" id="pen-size-slider" 
@@ -514,7 +520,7 @@
         createEraserSizeControl() {
             const eraserControl = document.createElement('div');
             eraserControl.innerHTML = `
-                <label style="display: block; margin-bottom: 5px; font-weight: bold;">
+                <label style="display: block; margin-bottom: 8px; font-weight: bold;">
                     消しゴムサイズ: <span id="eraser-size-value">${this.eraserSize}</span>px
                 </label>
                 <input type="range" id="eraser-size-slider" 
@@ -540,7 +546,7 @@
         createPressureControl() {
             const pressureControl = document.createElement('div');
             pressureControl.innerHTML = `
-                <label style="display: block; margin-bottom: 5px; font-weight: bold;">
+                <label style="display: block; margin-bottom: 8px; font-weight: bold;">
                     筆圧感度: <span id="pressure-value">${this.pressureSensitivity.toFixed(1)}</span>
                 </label>
                 <input type="range" id="pressure-slider" 
@@ -549,7 +555,7 @@
                     value="${this.pressureSensitivity * 10}" 
                     step="1"
                     style="width: 100%; accent-color: ${this.colors.maroon};">
-                <div style="display: flex; justify-content: space-between; font-size: 10px; color: ${this.colors.lightMaroon}; margin-top: 2px;">
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: ${this.colors.lightMaroon}; margin-top: 4px;">
                     <span>弱</span>
                     <span>強</span>
                 </div>
@@ -569,7 +575,7 @@
             const onionControl = document.createElement('div');
             
             const headerDiv = document.createElement('div');
-            headerDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px;';
+            headerDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;';
             
             const label = document.createElement('label');
             label.style.cssText = 'font-weight: bold;';
@@ -595,7 +601,7 @@
             
             const sliderDiv = document.createElement('div');
             sliderDiv.innerHTML = `
-                <label style="display: block; margin-bottom: 5px; font-size: 11px;">
+                <label style="display: block; margin-bottom: 8px; font-size: 11px;">
                     表示コマ数: <span id="onion-frames-value">${this.onionSkinFrames}</span>
                 </label>
                 <input type="range" id="onion-frames-slider" 
@@ -640,9 +646,8 @@
             this.onionCtx = this.onionCanvas.getContext('2d');
             this.onionCtx.clearRect(0, 0, this.onionCanvas.width, this.onionCanvas.height);
             
-            // 前後のフレームを半透明で表示
             for (let offset = -this.onionSkinFrames; offset <= this.onionSkinFrames; offset++) {
-                if (offset === 0) continue; // 現在のフレームはスキップ
+                if (offset === 0) continue;
                 
                 const targetIndex = this.activeLayerIndex + offset;
                 if (targetIndex < 0 || targetIndex >= this.frameCount) continue;
@@ -650,7 +655,6 @@
                 const opacity = 0.3 * (1 - Math.abs(offset) / (this.onionSkinFrames + 1));
                 this.onionCtx.globalAlpha = opacity;
                 
-                // 前のフレームは青系、後のフレームは赤系
                 if (offset < 0) {
                     this.onionCtx.globalCompositeOperation = 'source-over';
                     this.onionCtx.filter = 'hue-rotate(200deg)';
@@ -659,7 +663,6 @@
                     this.onionCtx.filter = 'hue-rotate(0deg)';
                 }
                 
-                // ImageDataを一時キャンバスに描画してからオニオンキャンバスへ
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = this.canvasWidth;
                 tempCanvas.height = this.canvasHeight;
@@ -669,7 +672,6 @@
                 this.onionCtx.drawImage(tempCanvas, 0, 0);
             }
             
-            // リセット
             this.onionCtx.globalAlpha = 1.0;
             this.onionCtx.filter = 'none';
             this.onionCtx.globalCompositeOperation = 'source-over';
@@ -684,7 +686,7 @@
         createDelayControl() {
             const delayControl = document.createElement('div');
             delayControl.innerHTML = `
-                <label style="display: block; margin-bottom: 5px; font-weight: bold;">
+                <label style="display: block; margin-bottom: 8px; font-weight: bold;">
                     フレーム間隔: <span id="delay-value">${this.frameDelay}</span>ms
                 </label>
                 <input type="range" id="delay-slider" 
@@ -693,7 +695,7 @@
                     value="${this.frameDelay}" 
                     step="10"
                     style="width: 100%; accent-color: ${this.colors.maroon};">
-                <div style="display: flex; justify-content: space-between; font-size: 10px; color: ${this.colors.lightMaroon}; margin-top: 2px;">
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: ${this.colors.lightMaroon}; margin-top: 4px;">
                     <span>速い</span>
                     <span>遅い</span>
                 </div>
@@ -749,7 +751,6 @@
                 this.canvas.height
             );
             
-            // オニオンスキンを一時的にオフ
             this.clearOnionSkin();
             
             this.isPreviewPlaying = true;
@@ -773,10 +774,8 @@
             this.previewBtn.textContent = 'プレビュー';
             this.previewBtn.style.background = this.colors.maroon;
             
-            // 元のレイヤーに戻す
             this.ctx.putImageData(this.layers[this.activeLayerIndex], 0, 0);
             
-            // オニオンスキンを復元
             this.updateOnionSkin();
         }
         
@@ -795,7 +794,6 @@
             this.ctx.strokeStyle = this.color;
             this.ctx.lineWidth = this.size;
             
-            // オニオンスキンキャンバスの初期化
             this.onionCtx = this.onionCanvas.getContext('2d', {
                 willReadFrequently: true
             });
@@ -815,23 +813,23 @@
                 this.historyIndex.push(0);
             }
             
-            // 最初のサムネイルをハイライト
             if (this.thumbnailContainer && this.thumbnailContainer.childNodes[0]) {
-                this.thumbnailContainer.childNodes[0].style.borderColor = this.colors.maroon;
-                this.thumbnailContainer.childNodes[0].style.transform = 'scale(1.1)';
+                const firstThumb = this.thumbnailContainer.childNodes[0].querySelector('canvas');
+                if (firstThumb) {
+                    firstThumb.style.borderColor = this.colors.maroon;
+                    firstThumb.style.transform = 'scale(1.1)';
+                }
             }
         }
         
         // ========== イベントリスナー設定 ==========
         
         attachEvents() {
-            // マウスイベント
             this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
             this.canvas.addEventListener('mousemove', (e) => this.draw(e));
             this.canvas.addEventListener('mouseup', () => this.stopDrawing());
             this.canvas.addEventListener('mouseleave', () => this.stopDrawing());
             
-            // タッチイベント
             this.canvas.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 const touch = e.touches[0];
@@ -858,13 +856,11 @@
                 this.canvas.dispatchEvent(mouseEvent);
             }, { passive: false });
             
-            // Pointer Events（タブレットペンの筆圧検知）
             this.canvas.addEventListener('pointerdown', (e) => this.startDrawing(e));
             this.canvas.addEventListener('pointermove', (e) => this.drawWithPressure(e));
             this.canvas.addEventListener('pointerup', () => this.stopDrawing());
             this.canvas.addEventListener('pointerleave', () => this.stopDrawing());
 
-            // キーボードイベント
             document.addEventListener('keydown', this.boundHandleKeyDown);
         }
         
@@ -900,16 +896,12 @@
             const x = e.clientX - rect.left;
             const y = e.clientY - rect.top;
             
-            // 筆圧の取得（0.0～1.0、デフォルト0.5）
             let pressure = e.pressure || 0.5;
             
-            // ゼロ荷重に近い状態からの検知を改善
             if (pressure < 0.1) pressure = 0.1;
             
-            // 筆圧感度を適用
             pressure = Math.pow(pressure, 1 / this.pressureSensitivity);
             
-            // 線の太さを筆圧で調整
             const baseSize = this.tool === 'pen' ? this.size : this.eraserSize;
             const adjustedSize = baseSize * (0.3 + pressure * 0.7);
             this.ctx.lineWidth = adjustedSize;
@@ -928,7 +920,6 @@
             this.isDrawing = false;
             this.ctx.beginPath();
             
-            // 線の太さを元に戻す
             this.ctx.lineWidth = this.tool === 'pen' ? this.size : this.eraserSize;
             
             this.pushHistory();
@@ -941,35 +932,37 @@
         switchLayer(index) {
             if (index === this.activeLayerIndex) return;
             
-            // プレビュー中は停止
             if (this.isPreviewPlaying) {
                 this.stopPreview();
             }
             
-            // 現在のレイヤーの描画内容を保存
             this.layers[this.activeLayerIndex] = this.ctx.getImageData(
                 0, 0, 
                 this.canvas.width, 
                 this.canvas.height
             );
             
-            // 新しいレイヤーに切り替え
             this.activeLayerIndex = index;
             this.ctx.putImageData(this.layers[index], 0, 0);
             
-            // サムネイルのハイライトを更新
-            this.thumbnailContainer.childNodes.forEach((thumb, i) => {
-                thumb.style.borderColor = (i === index) ? this.colors.maroon : this.colors.lightMaroon;
-                thumb.style.transform = (i === index) ? 'scale(1.1)' : 'scale(1)';
+            this.thumbnailContainer.childNodes.forEach((thumbWrapper, i) => {
+                const thumb = thumbWrapper.querySelector('canvas');
+                if (thumb) {
+                    thumb.style.borderColor = (i === index) ? this.colors.maroon : this.colors.lightMaroon;
+                    thumb.style.transform = (i === index) ? 'scale(1.1)' : 'scale(1)';
+                }
             });
             
-            // オニオンスキンを更新
             this.updateOnionSkin();
         }
         
         updateThumbnail() {
-            const thumbCanvas = this.thumbnailContainer.childNodes[this.activeLayerIndex];
+            const thumbWrapper = this.thumbnailContainer.childNodes[this.activeLayerIndex];
+            if (!thumbWrapper) return;
+            
+            const thumbCanvas = thumbWrapper.querySelector('canvas');
             if (!thumbCanvas) return;
+            
             const thumbCtx = thumbCanvas.getContext('2d', {
                 willReadFrequently: true
             });
@@ -998,12 +991,10 @@
             const history = this.history[this.activeLayerIndex];
             let index = this.historyIndex[this.activeLayerIndex];
             
-            // 現在位置より後の履歴を削除（分岐を防ぐ）
             if (index < history.length - 1) {
                 this.history[this.activeLayerIndex] = history.slice(0, index + 1);
             }
             
-            // 現在の状態を履歴に追加
             const imageData = this.ctx.getImageData(
                 0, 0, 
                 this.canvas.width, 
@@ -1041,12 +1032,10 @@
         // ========== エクスポート前処理 ==========
         
         prepareExport() {
-            // プレビュー中は停止
             if (this.isPreviewPlaying) {
                 this.stopPreview();
             }
             
-            // 現在編集中のレイヤーの内容を保存
             this.layers[this.activeLayerIndex] = this.ctx.getImageData(
                 0, 0, 
                 this.canvas.width, 
@@ -1059,42 +1048,33 @@
         async exportAsApng() {
             this.prepareExport();
             
-            // ライブラリの存在確認
             if (!window.UPNG || !window.Zlib) {
-                alert('APNG生成ライブラリ(UPNG.js/pako.js)が読み込まれていません。');
+                alert('APNGエクスポートにはUPNG.jsとpako.jsが必要です。');
                 return null;
             }
             
             const frames = [];
             
-            // 各レイヤーを背景と合成してフレーム化
             for (const layerData of this.layers) {
                 const frameCanvas = document.createElement('canvas');
                 frameCanvas.width = this.canvas.width;
                 frameCanvas.height = this.canvas.height;
                 const frameCtx = frameCanvas.getContext('2d');
                 
-                // 背景を描画
                 frameCtx.drawImage(this.bgCanvas, 0, 0);
-                
-                // レイヤーを重ねる
                 frameCtx.putImageData(layerData, 0, 0);
                 
-                // ImageData の data プロパティ（Uint8ClampedArray）を取得
                 const imageData = frameCtx.getImageData(
                     0, 0, 
                     frameCanvas.width, 
                     frameCanvas.height
                 );
                 
-                // ArrayBuffer に変換して frames 配列に追加
                 frames.push(imageData.data.buffer);
             }
             
-            // 各フレームの表示時間（ミリ秒）
             const delays = Array(this.frameCount).fill(this.frameDelay);
             
-            // UPNG.encode でAPNGバイナリを生成
             const apngData = UPNG.encode(
                 frames,
                 this.canvas.width,
@@ -1103,7 +1083,6 @@
                 delays
             );
             
-            // Blob に変換して返す
             return new Blob([apngData], {type: 'image/png'});
         }
         
@@ -1112,18 +1091,16 @@
         async exportAsGif(onProgress) {
             this.prepareExport();
             
-            // ライブラリの存在確認
             if (!window.GIF) {
-                alert('GIF生成ライブラリが読み込まれていません。');
+                alert('GIFエクスポートにはgif.jsが必要です。');
                 return null;
             }
             
-            // Worker URL の取得
             let workerUrl = window.GIF.prototype.options?.workerScript;
             
             if (!workerUrl || !workerUrl.startsWith('blob:')) {
                 console.error('Worker URL not found:', workerUrl);
-                alert('GIF Worker が初期化されていません。ページを再読み込みしてください。');
+                alert('GIF Workerが初期化されていません。ページを再読み込みしてください。');
                 return null;
             }
 
@@ -1138,32 +1115,25 @@
                         debug: false
                     });
                     
-                    // 進捗コールバックを登録
                     if (onProgress && typeof onProgress === 'function') {
                         gif.on('progress', onProgress);
                     }
 
-                    // 各レイヤーを背景と合成してフレーム追加
                     for (const layerData of this.layers) {
                         const frameCanvas = document.createElement('canvas');
                         frameCanvas.width = this.canvas.width;
                         frameCanvas.height = this.canvas.height;
                         const frameCtx = frameCanvas.getContext('2d');
                         
-                        // 背景を描画
                         frameCtx.drawImage(this.bgCanvas, 0, 0);
-                        
-                        // レイヤーを重ねる
                         frameCtx.putImageData(layerData, 0, 0);
                         
-                        // GIF にフレームを追加
                         gif.addFrame(frameCanvas, { 
                             delay: this.frameDelay,
                             copy: true
                         });
                     }
 
-                    // 生成完了イベント
                     gif.on('finished', (blob) => {
                         if (onProgress) {
                             gif.off('progress', onProgress);
@@ -1171,14 +1141,12 @@
                         resolve(blob);
                     });
                     
-                    // タイムアウト
                     setTimeout(() => {
                         if (!gif.running) {
                             reject(new Error('GIF rendering timeout'));
                         }
                     }, 30000);
                     
-                    // GIF生成を開始
                     gif.render();
                 } catch (error) {
                     reject(error);
@@ -1189,26 +1157,21 @@
         // ========== クリーンアップ ==========
         
         destroy() {
-            // プレビューを停止
             if (this.isPreviewPlaying) {
                 this.stopPreview();
             }
             
-            // イベントリスナーを解除（メモリリーク対策）
             document.removeEventListener('keydown', this.boundHandleKeyDown);
             
-            // ResizeObserver解除
             if (this.resizeObserver) {
                 this.resizeObserver.disconnect();
                 this.resizeObserver = null;
             }
             
-            // DOM要素を削除
             if (this.wrapper && this.wrapper.parentNode) {
                 this.wrapper.remove();
             }
             
-            // 参照をクリア
             this.canvas = null;
             this.ctx = null;
             this.bgCanvas = null;
@@ -1221,5 +1184,5 @@
         }
     };
     
-    console.log('✅ TegakiAnimeCore loaded (Enhanced version)');
-})();
+    console.log('✅ TegakiAnimeCore loaded (Enhanced version with improved layout)');
+})()
