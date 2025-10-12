@@ -1,6 +1,9 @@
 (function() {
     'use strict';
     
+    // バージョン情報
+    const LOADER_VERSION = 'v2';
+    
     // ===== 設定 =====
     const SCRIPT_URLS = {
         // 統合済みファイルのみ読み込む（他は不要）
@@ -116,7 +119,7 @@
             }
 
             this.loadingEl = document.createElement('div');
-            this.loadingEl.textContent = 'お絵かきツールを準備中...';
+            this.loadingEl.textContent = `お絵かきツールを準備中... (${LOADER_VERSION})`;
             this.loadingEl.style.cssText = 'position:fixed; top:10px; left:50%; transform:translateX(-50%); background: #800000; color:white; padding:10px; border-radius:5px; z-index:10001;';
             document.body.appendChild(this.loadingEl);
 
@@ -165,7 +168,7 @@
             `;
             
             const title = document.createElement('div');
-            title.textContent = 'めぶき手書き Gifアニメてすと v1.0';
+            title.textContent = `めぶき手書き Gifアニメてすと ${LOADER_VERSION}`;
             title.style.cssText = `
                 color: #800000;
                 font-size: 14px;
