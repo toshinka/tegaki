@@ -13,6 +13,7 @@
             // キャンバス設定
             this.canvasWidth = 400;
             this.canvasHeight = 400;
+            this.backgroundColor = '#f0e0d6'; // 背景色（ふたば風）
             
             // 描画状態
             this.isDrawing = false;
@@ -22,13 +23,22 @@
             // ツール設定
             this.color = '#800000';
             this.size = 2;
+            this.minSize = 1;
+            this.maxSize = 20;
             
             // アニメーション設定
             this.frameCount = 5;
-            this.frameDelay = 200;
+            this.frameDelay = 200; // ミリ秒
+            this.minDelay = 10;
+            this.maxDelay = 2000;
             this.layers = [];
             this.thumbnailContainer = null;
             this.activeLayerIndex = 0;
+            
+            // UI要素
+            this.controlPanel = null;
+            this.sizeSlider = null;
+            this.delaySlider = null;
             
             // Undo/Redo履歴
             this.history = [];
@@ -153,24 +163,80 @@
             this.wrapper = document.createElement('div');
             this.wrapper.style.cssText = `
                 display: flex;
-                flex-direction: column;
+                flex-direction: row;
                 width: 100%;
                 height: 100%;
                 background: #ffffee;
-                padding: 10px 0 20px 0;
+                gap: 10px;
+                padding: 10px;
             `;
             
-            // キャンバスエリア作成
-            const canvasArea = document.createElement('div');
-            canvasArea.style.cssText = `
+            // 左側：ショートカット説明パネル
+            this.createShortcutPanel();
+            
+            // 中央：キャンバスエリア
+            this.createCanvasArea();
+            
+            // 右側：コントロールパネル
+            this.createControlPanel();
+            
+            this.container.appendChild(this.wrapper);
+        }
+        
+        createShortcutPanel() {
+            const panel = document.createElement('div');
+            panel.style.cssText = `
+                width: 180px;
+                background: rgba(240, 224, 214, 0.8);
+                border: 2px solid #cf9c97;
+                border-radius: 4px;
+                padding: 10px;
+                font-size: 12px;
+                color: #800000;
+                overflow-y: auto;
+            `;
+            
+            panel.innerHTML = `
+                <h3 style="margin: 0 0 10px 0; font-size: 14px; border-bottom: 1px solid #cf9c97; padding-bottom: 5px;">
+                    ⌨️ ショートカット
+                </h3>
+                <div style="line-height: 1.8;">
+                    <div><b>1-5</b>: レイヤー切替</div>
+                    <div><b>Ctrl+Z</b>: 元に戻す</div>
+                    <div><b>Ctrl+Y</b>: やり直し</div>
+                </div>
+                <h3 style="margin: 15px 0 10px 0; font-size: 14px; border-bottom: 1px solid #cf9c97; padding-bottom: 5px;">
+                    ℹ️ 使い方
+                </h3>
+                <div style="line-height: 1.6; font-size: 11px;">
+                    ・各レイヤーに描画<br>
+                    ・下のサムネイルで切替<br>
+                    ・右側でペン設定<br>
+                    ・完成したらAPNG投稿
+                </div>
+            `;
+            
+            this.wrapper.appendChild(panel);
+        }
+        
+        createCanvasArea() {
+            const centerArea = document.createElement('div');
+            centerArea.style.cssText = `
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+            `;
+            
+            // キャンバスコンテナ
+            const canvasWrapper = document.createElement('div');
+            canvasWrapper.style.cssText = `
                 flex: 1;
                 display: flex;
                 justify-content: center;
                 align-items: center;
-                position: relative;
             `;
             
-            // キャンバスコンテナ（背景+描画の2層構造）
             const canvasContainer = document.createElement('div');
             canvasContainer.style.cssText = `
                 position: relative;
@@ -179,12 +245,12 @@
                 box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
             `;
             
-            // 背景キャンバス（レイヤー0）
+            // 背景キャンバス（不透明）
             this.bgCanvas = document.createElement('canvas');
             this.bgCanvas.width = this.canvasWidth;
             this.bgCanvas.height = this.canvasHeight;
             const bgCtx = this.bgCanvas.getContext('2d');
-            bgCtx.fillStyle = '#f0e0d6';
+            bgCtx.fillStyle = this.backgroundColor;
             bgCtx.fillRect(0, 0, this.canvasWidth, this.canvasHeight);
             this.bgCanvas.style.cssText = `
                 position: absolute; 
@@ -192,7 +258,7 @@
                 left: 0;
             `;
             
-            // 描画キャンバス（レイヤー1・透明）
+            // 描画キャンバス（透明）
             this.canvas = document.createElement('canvas');
             this.canvas.width = this.canvasWidth;
             this.canvas.height = this.canvasHeight;
@@ -203,21 +269,21 @@
                 cursor: crosshair;
             `;
             
-            // 組み立て
             canvasContainer.appendChild(this.bgCanvas);
             canvasContainer.appendChild(this.canvas);
-            canvasArea.appendChild(canvasContainer);
+            canvasWrapper.appendChild(canvasContainer);
             
-            // サムネイルエリア作成
+            // サムネイルエリア
             this.thumbnailContainer = document.createElement('div');
             this.thumbnailContainer.style.cssText = `
                 display: flex;
                 justify-content: center;
                 gap: 10px;
-                padding: 5px 0;
+                padding: 10px;
+                background: rgba(240, 224, 214, 0.5);
+                border-radius: 4px;
             `;
             
-            // サムネイル個別作成（フレーム数分）
             for (let i = 0; i < this.frameCount; i++) {
                 const thumb = document.createElement('canvas');
                 thumb.width = 60;
@@ -225,7 +291,7 @@
                 thumb.style.cssText = `
                     border: 3px solid #aa5a56;
                     border-radius: 2px;
-                    background: #f0e0d6;
+                    background: ${this.backgroundColor};
                     cursor: pointer;
                     transition: all 0.2s;
                 `;
@@ -234,10 +300,96 @@
                 this.thumbnailContainer.appendChild(thumb);
             }
             
-            // DOMに追加
-            this.wrapper.appendChild(canvasArea);
-            this.wrapper.appendChild(this.thumbnailContainer);
-            this.container.appendChild(this.wrapper);
+            centerArea.appendChild(canvasWrapper);
+            centerArea.appendChild(this.thumbnailContainer);
+            this.wrapper.appendChild(centerArea);
+        }
+        
+        createControlPanel() {
+            this.controlPanel = document.createElement('div');
+            this.controlPanel.style.cssText = `
+                width: 180px;
+                background: rgba(240, 224, 214, 0.8);
+                border: 2px solid #cf9c97;
+                border-radius: 4px;
+                padding: 10px;
+                font-size: 12px;
+                color: #800000;
+                display: flex;
+                flex-direction: column;
+                gap: 15px;
+            `;
+            
+            // ペンサイズスライダー
+            const sizeControl = document.createElement('div');
+            sizeControl.innerHTML = `
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">
+                    ✏️ ペンサイズ: <span id="size-value">${this.size}</span>px
+                </label>
+                <input type="range" id="size-slider" 
+                    min="${this.minSize}" 
+                    max="${this.maxSize}" 
+                    value="${this.size}" 
+                    style="width: 100%;">
+            `;
+            
+            this.sizeSlider = sizeControl.querySelector('#size-slider');
+            const sizeValue = sizeControl.querySelector('#size-value');
+            this.sizeSlider.addEventListener('input', (e) => {
+                this.size = parseInt(e.target.value);
+                sizeValue.textContent = this.size;
+                this.ctx.lineWidth = this.size;
+            });
+            
+            // アニメーション速度スライダー
+            const delayControl = document.createElement('div');
+            delayControl.innerHTML = `
+                <label style="display: block; margin-bottom: 5px; font-weight: bold;">
+                    ⏱️ フレーム間隔: <span id="delay-value">${this.frameDelay}</span>ms
+                </label>
+                <input type="range" id="delay-slider" 
+                    min="${this.minDelay}" 
+                    max="${this.maxDelay}" 
+                    value="${this.frameDelay}" 
+                    step="10"
+                    style="width: 100%;">
+                <div style="display: flex; justify-content: space-between; font-size: 10px; color: #666; margin-top: 2px;">
+                    <span>速い</span>
+                    <span>遅い</span>
+                </div>
+            `;
+            
+            this.delaySlider = delayControl.querySelector('#delay-slider');
+            const delayValue = delayControl.querySelector('#delay-value');
+            this.delaySlider.addEventListener('input', (e) => {
+                this.frameDelay = parseInt(e.target.value);
+                delayValue.textContent = this.frameDelay;
+            });
+            
+            // プレビューボタン（今後実装）
+            const previewBtn = document.createElement('button');
+            previewBtn.textContent = '▶️ プレビュー';
+            previewBtn.style.cssText = `
+                padding: 8px;
+                background: #4ade80;
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-weight: bold;
+            `;
+            previewBtn.onclick = () => this.previewAnimation();
+            
+            this.controlPanel.appendChild(sizeControl);
+            this.controlPanel.appendChild(delayControl);
+            this.controlPanel.appendChild(previewBtn);
+            
+            this.wrapper.appendChild(this.controlPanel);
+        }
+        
+        previewAnimation() {
+            // 今後実装: アニメーションプレビュー
+            alert('プレビュー機能は今後実装予定です');
         }
         
         // ========== キャンバス設定 ==========
@@ -509,24 +661,37 @@
                 return null;
             }
             
-            // Worker URL の確認
-            const workerUrl = window.GIF.prototype.options?.workerScript;
+            // Worker URL の取得と確認
+            let workerUrl = window.GIF.prototype.options?.workerScript;
+            
+            // Worker URL が正しく設定されていない場合は再初期化
             if (!workerUrl || !workerUrl.startsWith('blob:')) {
-                console.error('Worker URL not properly initialized:', workerUrl);
-                alert('GIF Worker が正しく初期化されていません。ページを再読み込みしてください。');
-                return null;
+                console.warn('Worker URL not initialized, attempting to reinitialize...');
+                
+                // グローバルに保存されたWorker URLを確認
+                if (window.__gifWorkerUrl && window.__gifWorkerUrl.startsWith('blob:')) {
+                    workerUrl = window.__gifWorkerUrl;
+                    console.log('Using cached worker URL:', workerUrl);
+                } else {
+                    console.error('Worker URL not found:', workerUrl);
+                    alert('GIF Worker が初期化されていません。ページを再読み込みしてください。');
+                    return null;
+                }
             }
 
             return new Promise((resolve, reject) => {
                 try {
-                    // GIF.js インスタンスを作成
+                    // GIF.js インスタンスを作成（workerScriptを明示的に指定）
                     const gif = new GIF({
                         workers: 2,
                         quality: 10,
                         width: this.canvas.width,
                         height: this.canvas.height,
-                        workerScript: workerUrl
+                        workerScript: workerUrl,
+                        debug: false
                     });
+                    
+                    console.log('GIF instance created with worker:', workerUrl);
                     
                     // 進捗コールバックを登録
                     if (onProgress && typeof onProgress === 'function') {
