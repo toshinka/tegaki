@@ -1,15 +1,7 @@
 (function() {
     'use strict';
     
-    // グローバル関数が既に存在し、かつインスタンスも存在する場合は即座に起動
-    if (window.tegakiAnimeStart && window.tegakiAnimeInstance) {
-        window.tegakiAnimeStart();
-        return;
-    }
-    
-    // グローバル関数が存在しない場合のみ定義
-    if (!window.tegakiAnimeStart) {
-        // ===== 設定 =====
+    // ===== 設定 =====
     const SCRIPT_URLS = {
         // 統合済みファイルのみ読み込む（他は不要）
         tegaki: 'https://toshinka.github.io/tegaki/tegaki_anime_test/dist/tegaki_anime.js'
@@ -173,7 +165,7 @@
             `;
             
             const title = document.createElement('div');
-            title.textContent = 'めぶき手書き　Gifアニメ添付テストv1.0';
+            title.textContent = 'アニメお絵かきツール';
             title.style.cssText = `
                 color: #800000;
                 font-size: 14px;
@@ -343,12 +335,20 @@
         }
     }
 
-    // ===== グローバル登録 =====
-    window.tegakiAnimeStart = function() {
-        if (!window.tegakiAnimeInstance) {
-            window.tegakiAnimeInstance = new TegakiLoaderAnime();
-        }
-        window.tegakiAnimeInstance.start();
-    };
+    // ===== グローバル登録（一度だけ実行） =====
+    if (!window.tegakiAnimeStart) {
+        window.tegakiAnimeStart = function() {
+            if (!window.tegakiAnimeInstance) {
+                window.tegakiAnimeInstance = new TegakiLoaderAnime();
+            }
+            window.tegakiAnimeInstance.start();
+        };
+        
+        // 初回読み込み時は自動起動
+        window.tegakiAnimeStart();
+    } else {
+        // 既にローダーが読み込まれている場合も起動
+        window.tegakiAnimeStart();
+    }
 
 })();
