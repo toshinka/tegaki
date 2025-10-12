@@ -13,6 +13,7 @@
             // キャンバス設定
             this.canvasWidth = 400;
             this.canvasHeight = 400;
+            this.backgroundColor = '#f0e0d6'; // 背景色（ふたば風）
             
             // 描画状態
             this.isDrawing = false;
@@ -22,13 +23,22 @@
             // ツール設定
             this.color = '#800000';
             this.size = 2;
+            this.minSize = 1;
+            this.maxSize = 20;
             
             // アニメーション設定
             this.frameCount = 5;
-            this.frameDelay = 200;
+            this.frameDelay = 200; // ミリ秒
+            this.minDelay = 10;
+            this.maxDelay = 2000;
             this.layers = [];
             this.thumbnailContainer = null;
             this.activeLayerIndex = 0;
+            
+            // UI要素
+            this.controlPanel = null;
+            this.sizeSlider = null;
+            this.delaySlider = null;
             
             // Undo/Redo履歴
             this.history = [];
