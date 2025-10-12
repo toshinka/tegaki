@@ -165,7 +165,7 @@
             `;
             
             const title = document.createElement('div');
-            title.textContent = 'アニメお絵かきツール';
+            title.textContent = 'めぶき手書き Gifアニメてすと v1.0';
             title.style.cssText = `
                 color: #800000;
                 font-size: 14px;
