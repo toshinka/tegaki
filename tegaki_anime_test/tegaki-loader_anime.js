@@ -2,7 +2,7 @@
     'use strict';
     
     // バージョン情報
-    const LOADER_VERSION = 'v3';
+    const LOADER_VERSION = 'v5';
     
     // ===== 設定 =====
     const SCRIPT_URLS = {
@@ -181,14 +181,14 @@
             const postApngBtn = createButton('APNG投稿', () => this.exportAndAttach('apng'), true);
             postApngBtn.title = 'APNGを生成して掲示板に添付';
             
-            const postGifBtn = createButton('GIF投稿', () => this.exportAndAttach('gif'), true);
-            postGifBtn.title = 'GIFを生成して掲示板に添付';
+            // GIFボタンは一旦削除（Worker問題のため）
+            // const postGifBtn = createButton('GIF投稿', () => this.exportAndAttach('gif'), true);
 
             const closeBtn = createButton('✕ 閉じる', () => this.cancel());
             closeBtn.title = '破棄して閉じる';
             
             buttonGroup.appendChild(postApngBtn);
-            buttonGroup.appendChild(postGifBtn);
+            // buttonGroup.appendChild(postGifBtn); // 削除
             buttonGroup.appendChild(closeBtn);
             topBar.appendChild(title);
             topBar.appendChild(buttonGroup);
