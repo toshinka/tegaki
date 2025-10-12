@@ -92,12 +92,27 @@ output += `
             });
             const workerUrl = URL.createObjectURL(blob);
             
+            // グローバル変数にも保存（フォールバック用）
+            window.__gifWorkerUrl = workerUrl;
+            
             // GIF.js のプロトタイプを確認して設定
             if (GIF.prototype) {
                 if (!GIF.prototype.options) {
                     GIF.prototype.options = {};
                 }
                 GIF.prototype.options.workerScript = workerUrl;
+                
+                // GIFコンストラクタのデフォルト値も上書き
+                const originalGIF = window.GIF;
+                window.GIF = function(options) {
+                    options = options || {};
+                    if (!options.workerScript) {
+                        options.workerScript = workerUrl;
+                    }
+                    return originalGIF.call(this, options);
+                };
+                window.GIF.prototype = originalGIF.prototype;
+                
                 console.log('✅ GIF.js Worker inlined successfully');
                 console.log('   Worker URL:', workerUrl);
             } else {
@@ -150,6 +165,7 @@ output += `
             Zlib: !!window.Zlib,
             UPNG: !!window.UPNG,
             GIF: !!window.GIF,
+            gifWorkerUrl: window.__gifWorkerUrl?.substring(0, 50) + '...',
             workerScript: window.GIF?.prototype?.options?.workerScript?.substring(0, 50) + '...'
         });
     }

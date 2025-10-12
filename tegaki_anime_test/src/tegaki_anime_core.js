@@ -509,24 +509,37 @@
                 return null;
             }
             
-            // Worker URL の確認
-            const workerUrl = window.GIF.prototype.options?.workerScript;
+            // Worker URL の取得と確認
+            let workerUrl = window.GIF.prototype.options?.workerScript;
+            
+            // Worker URL が正しく設定されていない場合は再初期化
             if (!workerUrl || !workerUrl.startsWith('blob:')) {
-                console.error('Worker URL not properly initialized:', workerUrl);
-                alert('GIF Worker が正しく初期化されていません。ページを再読み込みしてください。');
-                return null;
+                console.warn('Worker URL not initialized, attempting to reinitialize...');
+                
+                // グローバルに保存されたWorker URLを確認
+                if (window.__gifWorkerUrl && window.__gifWorkerUrl.startsWith('blob:')) {
+                    workerUrl = window.__gifWorkerUrl;
+                    console.log('Using cached worker URL:', workerUrl);
+                } else {
+                    console.error('Worker URL not found:', workerUrl);
+                    alert('GIF Worker が初期化されていません。ページを再読み込みしてください。');
+                    return null;
+                }
             }
 
             return new Promise((resolve, reject) => {
                 try {
-                    // GIF.js インスタンスを作成
+                    // GIF.js インスタンスを作成（workerScriptを明示的に指定）
                     const gif = new GIF({
                         workers: 2,
                         quality: 10,
                         width: this.canvas.width,
                         height: this.canvas.height,
-                        workerScript: workerUrl
+                        workerScript: workerUrl,
+                        debug: false
                     });
+                    
+                    console.log('GIF instance created with worker:', workerUrl);
                     
                     // 進捗コールバックを登録
                     if (onProgress && typeof onProgress === 'function') {
