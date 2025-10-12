@@ -1046,7 +1046,28 @@
         
         // ========== APNGエクスポート ==========
         
-        async exportAsApng() {
+async exportAsApng() {
+    // ★ より詳細なライブラリ確認
+    const missingLibs = [];
+    
+    if (typeof window === 'undefined' || !window.UPNG) {
+        missingLibs.push('UPNG');
+    }
+    if (typeof window === 'undefined' || !window.pako) {
+        missingLibs.push('pako');
+    }
+    
+    if (missingLibs.length > 0) {
+        console.error('Missing libraries:', missingLibs);
+        console.error('window.UPNG:', window.UPNG);
+        console.error('window.pako:', window.pako);
+        console.error('window.Zlib:', window.Zlib);
+        
+        throw new Error(
+            `APNGエクスポートに必要なライブラリが見つかりません: ${missingLibs.join(', ')}\n` +
+            'ビルドが正しく行われているか確認してください。'
+        );
+    }
             this.prepareExport();
             
             if (!window.UPNG || !window.Zlib) {

@@ -1,7 +1,7 @@
 // ========================================
 // Tegaki Anime Bundle
 // UPNG.js + pako.js + GIF.js + TegakiAnimeCore
-// Build: 2025-10-12T19:57:20.564Z
+// Build: 2025-10-12T20:13:19.728Z
 // ========================================
 
 
@@ -1888,7 +1888,28 @@ UPNG.encode.alphaMul = function(img, roundA) {
         
         // ========== APNGエクスポート ==========
         
-        async exportAsApng() {
+async exportAsApng() {
+    // ★ より詳細なライブラリ確認
+    const missingLibs = [];
+    
+    if (typeof window === 'undefined' || !window.UPNG) {
+        missingLibs.push('UPNG');
+    }
+    if (typeof window === 'undefined' || !window.pako) {
+        missingLibs.push('pako');
+    }
+    
+    if (missingLibs.length > 0) {
+        console.error('Missing libraries:', missingLibs);
+        console.error('window.UPNG:', window.UPNG);
+        console.error('window.pako:', window.pako);
+        console.error('window.Zlib:', window.Zlib);
+        
+        throw new Error(
+            `APNGエクスポートに必要なライブラリが見つかりません: ${missingLibs.join(', ')}\n` +
+            'ビルドが正しく行われているか確認してください。'
+        );
+    }
             this.prepareExport();
             
             if (!window.UPNG || !window.Zlib) {
@@ -2086,36 +2107,36 @@ UPNG.encode.alphaMul = function(img, roundA) {
     'use strict';
     
     if (typeof window !== 'undefined') {
-        // UPNG.js の公開
-        if (typeof UPNG !== 'undefined') {
-            window.UPNG = UPNG;
-            console.log('✓ UPNG exposed to window');
-        } else {
-            console.warn('✗ UPNG not found in scope');
-        }
-        
-        // pako.js の公開（複数の名前でアクセス可能にする）
+        // ★ 1. 順序保証: pako を先に公開
         if (typeof pako !== 'undefined') {
             window.pako = pako;
-            window.Zlib = pako;  // UPNG.js が期待する代替名
-            console.log('✓ pako exposed to window');
+            window.Zlib = pako;
+            console.log('✓ pako exposed');
         } else {
-            console.warn('✗ pako not found in scope');
+            console.warn('✗ pako not found');
         }
         
-        // GIF.js の公開
+        // ★ 2. UPNG を公開（pako が先に公開されたので安全）
+        if (typeof UPNG !== 'undefined') {
+            window.UPNG = UPNG;
+            console.log('✓ UPNG exposed');
+        } else {
+            console.warn('✗ UPNG not found');
+        }
+        
+        // ★ 3. GIF を公開
         if (typeof GIF !== 'undefined') {
             window.GIF = GIF;
-            console.log('✓ GIF exposed to window');
+            console.log('✓ GIF exposed');
         } else {
-            console.warn('✗ GIF not found in scope');
+            console.warn('✗ GIF not found');
         }
         
-        // 最終確認
-        console.log('📦 Library Check:', {
-            UPNG: !!window.UPNG,
+        // ★ 4. 最終確認
+        console.log('📦 Final library check:', {
             pako: !!window.pako,
             Zlib: !!window.Zlib,
+            UPNG: !!window.UPNG,
             GIF: !!window.GIF
         });
     }
@@ -3170,7 +3191,28 @@ UPNG.encode.alphaMul = function(img, roundA) {
         
         // ========== APNGエクスポート ==========
         
-        async exportAsApng() {
+async exportAsApng() {
+    // ★ より詳細なライブラリ確認
+    const missingLibs = [];
+    
+    if (typeof window === 'undefined' || !window.UPNG) {
+        missingLibs.push('UPNG');
+    }
+    if (typeof window === 'undefined' || !window.pako) {
+        missingLibs.push('pako');
+    }
+    
+    if (missingLibs.length > 0) {
+        console.error('Missing libraries:', missingLibs);
+        console.error('window.UPNG:', window.UPNG);
+        console.error('window.pako:', window.pako);
+        console.error('window.Zlib:', window.Zlib);
+        
+        throw new Error(
+            `APNGエクスポートに必要なライブラリが見つかりません: ${missingLibs.join(', ')}\n` +
+            'ビルドが正しく行われているか確認してください。'
+        );
+    }
             this.prepareExport();
             
             if (!window.UPNG || !window.Zlib) {
