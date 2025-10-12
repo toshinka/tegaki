@@ -1105,8 +1105,18 @@
                 frameCanvas.height = this.canvas.height;
                 const frameCtx = frameCanvas.getContext('2d');
                 
+                // ★ 背景を先に描画
                 frameCtx.drawImage(this.bgCanvas, 0, 0);
-                frameCtx.putImageData(layerData, 0, 0);
+                
+                // ★ レイヤーを一時キャンバスに描画してから合成
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = this.canvas.width;
+                tempCanvas.height = this.canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.putImageData(layerData, 0, 0);
+                
+                // 背景の上にレイヤーを重ねる（透明部分は背景が見える）
+                frameCtx.drawImage(tempCanvas, 0, 0);
                 
                 const imageData = frameCtx.getImageData(
                     0, 0, 
@@ -1176,8 +1186,18 @@
                         frameCanvas.height = this.canvas.height;
                         const frameCtx = frameCanvas.getContext('2d');
                         
+                        // ★ 背景を先に描画
                         frameCtx.drawImage(this.bgCanvas, 0, 0);
-                        frameCtx.putImageData(layerData, 0, 0);
+                        
+                        // ★ レイヤーを一時キャンバスに描画してから合成
+                        const tempCanvas = document.createElement('canvas');
+                        tempCanvas.width = this.canvas.width;
+                        tempCanvas.height = this.canvas.height;
+                        const tempCtx = tempCanvas.getContext('2d');
+                        tempCtx.putImageData(layerData, 0, 0);
+                        
+                        // 背景の上にレイヤーを重ねる
+                        frameCtx.drawImage(tempCanvas, 0, 0);
                         
                         gif.addFrame(frameCanvas, { 
                             delay: this.frameDelay,
