@@ -2,7 +2,7 @@
     'use strict';
     
     // バージョン情報
-    const LOADER_VERSION = 'v5';
+    const LOADER_VERSION = 'v6';
     
     // ===== 設定 =====
     const SCRIPT_URLS = {
