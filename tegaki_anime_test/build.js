@@ -1,3 +1,11 @@
+// ========== Pako Compatibility Shim ==========
+(function() {
+    // upng.js が pako を探す前に window.pako が利用可能にする
+    if (typeof window !== 'undefined' && !window.pako && typeof pako !== 'undefined') {
+        window.pako = pako;
+    }
+})();
+
 const fs = require('fs');
 const path = require('path');
 
@@ -135,36 +143,36 @@ output += `
     'use strict';
     
     if (typeof window !== 'undefined') {
-        // UPNG.js の公開
-        if (typeof UPNG !== 'undefined') {
-            window.UPNG = UPNG;
-            console.log('✓ UPNG exposed to window');
-        } else {
-            console.warn('✗ UPNG not found in scope');
-        }
-        
-        // pako.js の公開（複数の名前でアクセス可能にする）
+        // ★ 1. 順序保証: pako を先に公開
         if (typeof pako !== 'undefined') {
             window.pako = pako;
-            window.Zlib = pako;  // UPNG.js が期待する代替名
-            console.log('✓ pako exposed to window');
+            window.Zlib = pako;
+            console.log('✓ pako exposed');
         } else {
-            console.warn('✗ pako not found in scope');
+            console.warn('✗ pako not found');
         }
         
-        // GIF.js の公開
+        // ★ 2. UPNG を公開（pako が先に公開されたので安全）
+        if (typeof UPNG !== 'undefined') {
+            window.UPNG = UPNG;
+            console.log('✓ UPNG exposed');
+        } else {
+            console.warn('✗ UPNG not found');
+        }
+        
+        // ★ 3. GIF を公開
         if (typeof GIF !== 'undefined') {
             window.GIF = GIF;
-            console.log('✓ GIF exposed to window');
+            console.log('✓ GIF exposed');
         } else {
-            console.warn('✗ GIF not found in scope');
+            console.warn('✗ GIF not found');
         }
         
-        // 最終確認
-        console.log('📦 Library Check:', {
-            UPNG: !!window.UPNG,
+        // ★ 4. 最終確認
+        console.log('📦 Final library check:', {
             pako: !!window.pako,
             Zlib: !!window.Zlib,
+            UPNG: !!window.UPNG,
             GIF: !!window.GIF
         });
     }
