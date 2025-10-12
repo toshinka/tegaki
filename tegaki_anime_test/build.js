@@ -17,7 +17,8 @@ let output = `// ========================================
 const libraryFiles = [
     'libs/pako.js',    // pako を最初に読み込む（UPNG が依存）
     'libs/upng.js',
-    'libs/gif.js'
+    'libs/gif.js', 
+    'src/tegaki_anime_core.js' 
 ];
 
 // ファイル存在確認

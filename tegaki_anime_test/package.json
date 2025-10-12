@@ -4,9 +4,7 @@
   "description": "Animation drawing tool for Mebuki channel",
   "main": "dist/tegaki_anime.js",
   "scripts": {
-    "copy-libs": "node copy-libs.js",
     "build": "node build.js",
-    "prebuild": "node copy-libs.js",
     "dev": "npm run build && python -m http.server 8000",
     "test": "echo \"Open http://localhost:8000/TegakiAniTest.html\" && npm run dev"
   },
