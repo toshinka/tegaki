@@ -1,7 +1,7 @@
 // ========================================
 // Tegaki Anime Bundle
 // UPNG.js + pako.js + GIF.js + TegakiAnimeCore
-// Build: 2025-10-12T17:46:45.845Z
+// Build: 2025-10-12T18:59:28.280Z
 // ========================================
 
 
@@ -1112,7 +1112,8 @@ UPNG.encode.alphaMul = function(img, roundA) {
                     ・サムネイルで切替<br>
                     ・オニオンスキンで確認<br>
                     ・プレビューで動作確認<br>
-                    ・完成したらAPNG投稿
+                    ・完成したらAPNG投稿<br>
+                    ※予告無く仕様変更や消去されます
                 </div>
             `;
             
@@ -2395,7 +2396,8 @@ UPNG.encode.alphaMul = function(img, roundA) {
                     ・サムネイルで切替<br>
                     ・オニオンスキンで確認<br>
                     ・プレビューで動作確認<br>
-                    ・完成したらAPNG投稿
+                    ・完成したらAPNG投稿<br>
+                    ※予告無く仕様変更や消去されます
                 </div>
             `;
             
