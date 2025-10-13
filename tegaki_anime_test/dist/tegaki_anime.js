@@ -1,7 +1,7 @@
 // ========================================
 // Tegaki Anime Bundle
 // UPNG.js + pako.js + GIF.js + TegakiAnimeCore
-// Build: 2025-10-13T05:14:03.971Z
+// Build: 2025-10-13T05:37:06.384Z
 // ========================================
 
 
@@ -1114,6 +1114,12 @@ UPNG.encode.alphaMul = function(img, roundA) {
                     ・プレビューで動作確認<br>
                     ・完成したらAPNG投稿<br>
                     ※予告無く仕様変更や消去されます
+                </div>
+                <h3 style="margin: 15px 0 10px 0; font-size: 14px; padding-bottom: 5px;">
+                    注意事項
+                </h3>
+                <div style="line-height: 1.6; font-size: 11px;">
+                    ※一度ツールを起動し添付した後は、二度目の添付を受け付けないことがあります。再度同じスレッドにお絵かきをする際は、一度スレッドを閉じてカタログから再度開くなどして更新してからツールを立ち上げてください。
                 </div>
             `;
             
@@ -2458,6 +2464,12 @@ UPNG.encode.alphaMul = function(img, roundA) {
                     ・プレビューで動作確認<br>
                     ・完成したらAPNG投稿<br>
                     ※予告無く仕様変更や消去されます
+                </div>
+                <h3 style="margin: 15px 0 10px 0; font-size: 14px; padding-bottom: 5px;">
+                    注意事項
+                </h3>
+                <div style="line-height: 1.6; font-size: 11px;">
+                    ※一度ツールを起動し添付した後は、二度目の添付を受け付けないことがあります。再度同じスレッドにお絵かきをする際は、一度スレッドを閉じてカタログから再度開くなどして更新してからツールを立ち上げてください。
                 </div>
             `;
             

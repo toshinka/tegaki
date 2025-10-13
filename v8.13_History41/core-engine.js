@@ -1,8 +1,7 @@
-// ===== core-engine.js - Phase 5.1: キャンバスリサイズ機能追加 =====
+// ===== core-engine.js - Phase 6: BatchAPI統合 =====
 // ================================================================================
-// Phase 5.1 改修内容:
-// 1. resizeCanvas()にCUTサムネイル再生成機能を追加
-// 2. animation-system.jsとの連携強化
+// Phase 6 改修内容:
+// 1. BatchAPI インスタンスの初期化とグローバル公開
 // ================================================================================
 
 (function() {
@@ -366,7 +365,7 @@
             this.drawingEngine = drawingEngine;
             this.eventBus = eventBus || window.TegakiEventBus;
             this.animationSystem = animationSystem;
-            this.timelineUI = null; // 🔥 Phase 5.2: TimelineUIの参照
+            this.timelineUI = null;
             
             this.keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
             this.keyHandlingActive = true;
@@ -374,7 +373,6 @@
             this.setupKeyHandling();
         }
         
-        // 🔥 Phase 5.2: TimelineUI参照の設定
         setTimelineUI(timelineUI) {
             this.timelineUI = timelineUI;
         }
@@ -407,7 +405,6 @@
         }
         
         handleKeyDown(e) {
-            // 🔥 Phase 5.2: 矢印キーは専用ハンドラーで処理
             if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || 
                 e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
                 this.handleArrowKeys(e);
@@ -461,7 +458,6 @@
                     }
                     break;
                 
-                // 🔥 Phase 5.2: Ctrl+Spaceで再生/停止
                 case 'gifPlayPause':
                     if (e.code === 'Space' && e.ctrlKey && this.timelineUI && this.timelineUI.isVisible) {
                         this.timelineUI.togglePlayStop();
@@ -478,11 +474,9 @@
             }
         }
         
-        // 🔥 Phase 5.2改修: handleArrowKeys() - Timeline操作を追加
         handleArrowKeys(e) {
             e.preventDefault();
             
-            // V押下中は処理しない（レイヤー操作が優先）
             if (this.layerSystem?.vKeyPressed) {
                 return;
             }
@@ -491,7 +485,6 @@
             const layers = this.layerSystem.getLayers();
             
             if (e.ctrlKey) {
-                // Ctrl+↑↓: レイヤー階層移動
                 if (e.code === 'ArrowUp') {
                     if (activeIndex < layers.length - 1) {
                         const layer = layers[activeIndex];
@@ -517,14 +510,12 @@
                         }
                     }
                 }
-                // 🔥 Phase 5.2: Ctrl+←→でCUT移動（Timeline表示時）
                 else if (e.code === 'ArrowLeft' && this.timelineUI && this.timelineUI.isVisible) {
                     this.timelineUI.goToPreviousCutSafe();
                 } else if (e.code === 'ArrowRight' && this.timelineUI && this.timelineUI.isVisible) {
                     this.timelineUI.goToNextCutSafe();
                 }
             } else {
-                // 通常時: ↑↓でレイヤーのアクティブ変更
                 if (e.code === 'ArrowUp') {
                     if (activeIndex < layers.length - 1) {
                         this.layerSystem.activeLayerIndex = activeIndex + 1;
@@ -607,6 +598,7 @@
             this.timelineUI = null;
             this.keyHandler = null;
             this.exportManager = null;
+            this.batchAPI = null;
             
             this.setupCrossReferences();
             this.setupSystemEventIntegration();
@@ -772,6 +764,19 @@
         getKeyHandler() { return this.keyHandler; }
         getEventBus() { return this.eventBus; }
         getExportManager() { return this.exportManager; }
+        getBatchAPI() { return this.batchAPI; }
+        
+        undo() {
+            if (window.History) {
+                window.History.undo();
+            }
+        }
+        
+        redo() {
+            if (window.History) {
+                window.History.redo();
+            }
+        }
         
         setupCanvasEvents() {
             const canvas = this.app.canvas || this.app.view;
@@ -824,15 +829,12 @@
             this.layerSystem.processThumbnailUpdates();
         }
         
-        // ========== 🔥 Phase 5.1: resizeCanvas() - CUTサムネイル再生成追加 ==========
         resizeCanvas(newWidth, newHeight) {
             CONFIG.canvas.width = newWidth;
             CONFIG.canvas.height = newHeight;
             
-            // カメラシステムのリサイズ
             this.cameraSystem.resizeCanvas(newWidth, newHeight);
             
-            // 背景レイヤーの再描画
             const layers = this.layerSystem.getLayers();
             layers.forEach(layer => {
                 if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
@@ -842,12 +844,10 @@
                 }
             });
             
-            // レイヤーサムネイルの再生成
             for (let i = 0; i < layers.length; i++) {
                 this.layerSystem.requestThumbnailUpdate(i);
             }
             
-            // 🔥 Phase 5.1: CUTサムネイル再生成
             if (this.animationSystem) {
                 setTimeout(() => {
                     const animData = this.animationSystem.getAnimationData();
@@ -863,13 +863,11 @@
                 }, 500);
             }
             
-            // canvas-infoの更新
             const canvasInfoElement = document.getElementById('canvas-info');
             if (canvasInfoElement) {
                 canvasInfoElement.textContent = `${newWidth}×${newHeight}px`;
             }
             
-            // リサイズポップアップを閉じる
             const resizeSettings = document.getElementById('resize-settings');
             if (resizeSettings) {
                 resizeSettings.classList.remove('show');
@@ -877,7 +875,6 @@
             
             this.eventBus.emit('canvas:resized', { width: newWidth, height: newHeight });
         }
-        // ========== 🔥 Phase 5.1: END ==========
         
         initialize() {
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
@@ -889,6 +886,22 @@
             }
             
             this.initializeAnimationSystem();
+            
+            // ========== 🔥 Phase 6: BatchAPI 初期化 START ==========
+            if (window.TegakiBatchAPI && this.animationSystem) {
+                this.batchAPI = new window.TegakiBatchAPI(
+                    this.layerSystem,
+                    this.animationSystem
+                );
+                
+                // グローバル公開（開発・デバッグ用）
+                window.batchAPI = this.batchAPI;
+                
+                console.log('✅ BatchAPI initialized and exposed to window.batchAPI');
+            } else {
+                console.warn('⚠️ BatchAPI not initialized: TegakiBatchAPI or AnimationSystem not found');
+            }
+            // ========== 🔥 Phase 6: BatchAPI 初期化 END ==========
             
             if (window.ExportManager && this.animationSystem) {
                 this.exportManager = new window.ExportManager(
@@ -907,7 +920,6 @@
                 this.animationSystem
             );
             
-            // 🔥 Phase 5.2: UnifiedKeyHandlerにTimelineUI参照を設定
             if (this.timelineUI) {
                 this.keyHandler.setTimelineUI(this.timelineUI);
             }
@@ -928,7 +940,7 @@
             });
             
             this.eventBus.emit('core:initialized', {
-                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'export']
+                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export']
             });
             
             return this;
@@ -950,7 +962,6 @@
 
 })();
 
-console.log('✅ core-engine.js (Phase 5.2: キー処理一元化版) loaded');
-console.log('   - 🔥 Phase 5.1: resizeCanvas()にCUTサムネイル再生成機能を追加');
-console.log('   - 🔥 Phase 5.2: UnifiedKeyHandlerにTimelineUI統合');
-console.log('   - 🔥 Ctrl+Space: 再生/停止、Ctrl+←→: CUT移動');
+console.log('✅ core-engine.js (Phase 6: BatchAPI統合版) loaded');
+console.log('   - 🔥 Phase 6: BatchAPI初期化とグローバル公開');
+console.log('   - window.batchAPI で BatchAPI にアクセス可能');
