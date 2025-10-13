@@ -1,4 +1,4 @@
-// ===== system/layer-system.js - Perfect Freehand対応版 =====
+// ===== system/layer-system.js - Phase 7対応版 =====
 
 (function() {
     'use strict';
@@ -156,6 +156,41 @@
             } catch (error) {
                 path.graphics = null;
                 return false;
+            }
+        }
+
+        // ========== Phase 7: ペンツール統合 ==========
+        addPathToActiveLayer(path) {
+            if (!this.getActiveLayer()) return;
+            
+            const activeLayer = this.getActiveLayer();
+            const layerIndex = this.activeLayerIndex;
+            
+            // DataModel を通して追加
+            if (activeLayer.layerData && activeLayer.layerData.paths) {
+                activeLayer.layerData.paths.push(path);
+            }
+            // 互換性維持（既存の layer.paths にも追加）
+            if (!activeLayer.layerData) {
+                activeLayer.paths = activeLayer.paths || [];
+                activeLayer.paths.push(path);
+            }
+            
+            this.rebuildPathGraphics(path);
+            
+            if (path.graphics) {
+                activeLayer.addChild(path.graphics);
+            }
+            
+            this.requestThumbnailUpdate(layerIndex);
+            
+            // EventBus通知
+            if (this.eventBus) {
+                this.eventBus.emit('layer:stroke-added', { 
+                    path, 
+                    layerIndex,
+                    layerId: activeLayer.label
+                });
             }
         }
 
@@ -1411,7 +1446,7 @@
             
             const layer = new PIXI.Container();
             layer.label = layerModel.id;
-            layer.layerData = layerModel;  // モデルを参照として保持
+            layer.layerData = layerModel;
 
             this.layerTransforms.set(layerModel.id, {
                 x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
@@ -1535,12 +1570,6 @@
             }
         }
 
-        addPathToActiveLayer(path) {
-            if (this.activeLayerIndex >= 0) {
-                this.addPathToLayer(this.activeLayerIndex, path);
-            }
-        }
-
         insertClipboard(data) {
             if (this.eventBus) {
                 this.eventBus.emit('layer:clipboard-inserted', data);
@@ -1560,7 +1589,7 @@
                 this.thumbnailUpdateTimer = setTimeout(() => {
                     this.processThumbnailUpdates();
                     this.thumbnailUpdateTimer = null;
-                }, 500);  // Phase 3: 100ms → 500ms に延長
+                }, 500);
             }
         }
 
@@ -1879,4 +1908,4 @@
 
 })();
 
-console.log('✅ layer-system.js (Perfect Freehand対応版) loaded');
+console.log('✅ layer-system.js (Phase 7対応版) loaded');

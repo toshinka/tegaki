@@ -1,6 +1,6 @@
 /**
- * DrawingEngine v2.0 (分割統合版)
- * Perfect Freehand対応ベクターペンエンジン
+ * DrawingEngine v2.1 (Phase 7対応版)
+ * Perfect Freehand対応ベクターペンエンジン + History統合
  */
 
 class DrawingEngine {
@@ -95,7 +95,7 @@ class DrawingEngine {
   }
 
   /**
-   * 描画終了
+   * 描画終了 (Phase 7: History統合)
    */
   stopDrawing() {
     if (!this.isDrawing || !this.currentPath) return;
@@ -116,54 +116,56 @@ class DrawingEngine {
       this.currentPath.graphics
     );
 
-    // レイヤーに追加
-    this.addPathToActiveLayer(this.currentPath);
+    // Phase 7: History統合
+    if (this.currentPath && this.currentPath.points.length > 0) {
+      const path = this.currentPath;
+      const layerIndex = this.layerManager.activeLayerIndex;
+      
+      // History に記録
+      if (window.History && !window.History._manager.isApplying) {
+        const command = {
+          name: 'stroke-added',
+          do: () => {
+            this.layerManager.addPathToActiveLayer(path);
+          },
+          undo: () => {
+            // アクティブレイヤーから path を削除
+            const activeLayer = this.layerManager.getActiveLayer();
+            if (activeLayer?.layerData?.paths) {
+              activeLayer.layerData.paths = 
+                activeLayer.layerData.paths.filter(p => p !== path);
+            }
+            // 互換性維持
+            if (activeLayer?.paths) {
+              activeLayer.paths = activeLayer.paths.filter(p => p !== path);
+            }
+            
+            // Graphics を破棄
+            if (path.graphics) {
+              try {
+                if (activeLayer) {
+                  activeLayer.removeChild(path.graphics);
+                }
+                path.graphics.destroy({ children: true, texture: false, baseTexture: false });
+              } catch (e) {}
+            }
+            
+            this.layerManager.requestThumbnailUpdate(layerIndex);
+          },
+          meta: { type: 'stroke', layerIndex }
+        };
+        
+        window.History.push(command);
+      } else {
+        this.layerManager.addPathToActiveLayer(path);
+      }
+    }
 
     // 筆圧ハンドラーリセット
     this.pressureHandler.reset();
 
     this.isDrawing = false;
     this.currentPath = null;
-  }
-
-  /**
-   * アクティブレイヤーにパス追加
-   * @param {Object} pathData
-   */
-  addPathToActiveLayer(pathData) {
-    const activeLayer = this.layerManager.getActiveLayer();
-    if (!activeLayer) return;
-
-    // レイヤー変形が適用されている場合
-    if (activeLayer.transform && !this.transformer.isTransformNonDefault(activeLayer.transform)) {
-      const transformedGraphics = this.transformer.applyTransformToPath(
-        pathData,
-        activeLayer.transform,
-        this.config.canvas.width,
-        this.config.canvas.height
-      );
-      
-      if (transformedGraphics) {
-        pathData.graphics = transformedGraphics;
-      }
-    }
-
-    // レイヤーに追加
-    activeLayer.container.addChild(pathData.graphics);
-    
-    // パスデータ記録
-    if (!activeLayer.paths) {
-      activeLayer.paths = [];
-    }
-    activeLayer.paths.push(pathData);
-
-    // History登録
-    if (this.eventBus) {
-      this.eventBus.emit('pathAdded', { 
-        layerId: activeLayer.id,
-        path: this.recorder.clonePathData(pathData)
-      });
-    }
   }
 
   /**
@@ -226,3 +228,5 @@ if (typeof window.TegakiDrawing === 'undefined') {
   window.TegakiDrawing = {};
 }
 window.TegakiDrawing.DrawingEngine = DrawingEngine;
+
+console.log('✅ drawing-engine.js (Phase 7対応版) loaded');
