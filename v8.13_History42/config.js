@@ -9,7 +9,7 @@ window.TEGAKI_CONFIG = {
         height: 135 
     },
     pen: { 
-        size: 2, 
+        size: 5, 
         opacity: 0.85, 
         color: 0x800000 
     },
