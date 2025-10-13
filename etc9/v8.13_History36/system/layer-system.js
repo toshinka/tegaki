@@ -47,16 +47,16 @@
             this.currentCutContainer = new PIXI.Container();
             this.currentCutContainer.label = 'temporary_cut_container';
             
-            // Phase 4: 背景レイヤーもLayerModelを使用
             const bgLayer = new PIXI.Container();
-            const bgLayerModel = new window.TegakiDataModels.LayerModel({
+            bgLayer.label = 'temp_layer_bg';
+            bgLayer.layerData = {
                 id: 'temp_layer_bg_' + Date.now(),
                 name: '背景',
-                isBackground: true
-            });
-            
-            bgLayer.label = bgLayerModel.id;
-            bgLayer.layerData = bgLayerModel;
+                visible: true,
+                opacity: 1.0,
+                isBackground: true,
+                paths: []
+            };
             
             const bg = new PIXI.Graphics();
             bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
@@ -66,15 +66,16 @@
             
             this.currentCutContainer.addChild(bgLayer);
             
-            // Phase 4: レイヤー1もLayerModelを使用
             const layer1 = new PIXI.Container();
-            const layer1Model = new window.TegakiDataModels.LayerModel({
+            layer1.label = 'temp_layer_1';
+            layer1.layerData = {
                 id: 'temp_layer_1_' + Date.now(),
-                name: 'レイヤー1'
-            });
-            
-            layer1.label = layer1Model.id;
-            layer1.layerData = layer1Model;
+                name: 'レイヤー1',
+                visible: true,
+                opacity: 1.0,
+                isBackground: false,
+                paths: []
+            };
             
             this.currentCutContainer.addChild(layer1);
             
@@ -86,18 +87,13 @@
             this._startThumbnailUpdateProcess();
         }
 
-        // ========== Phase 1: メモリリーク解消 ==========
+        // ========== Perfect Freehand対応 rebuildPathGraphics ==========
         rebuildPathGraphics(path) {
             try {
-                // Phase 1: 既存のGraphicsを完全に破棄（子要素も含む）
                 if (path.graphics) {
                     try {
                         if (path.graphics.destroy && typeof path.graphics.destroy === 'function') {
-                            path.graphics.destroy({ 
-                                children: true,      // 子要素も破棄
-                                texture: false, 
-                                baseTexture: false 
-                            });
+                            path.graphics.destroy();
                         }
                     } catch (destroyError) {
                     }
@@ -113,8 +109,18 @@
                 // Perfect Freehandが利用可能かつstrokeOptionsがある場合
                 if (path.strokeOptions && typeof getStroke !== 'undefined') {
                     try {
-                        // Phase 2: スケール再計算を廃止（描画時のサイズを固定使用）
-                        const renderSize = path.size;
+                        // Phase 2: 現在のズーム率を取得
+                        const currentScale = this.cameraSystem?.camera?.scale || 1;
+                        
+                        // Phase 2: originalSizeがある場合は現在のズーム率で再計算
+                        let renderSize = path.size;
+                        if (path.originalSize !== undefined && path.scaleAtDrawTime !== undefined) {
+                            // 描画時のスケールと現在のスケールの差を考慮
+                            // originalSize / scaleAtDrawTime で正規化サイズを取得
+                            // それを currentScale で割る
+                            const normalizedSize = path.originalSize / path.scaleAtDrawTime;
+                            renderSize = normalizedSize / currentScale;
+                        }
                         
                         const options = {
                             ...path.strokeOptions,
@@ -381,7 +387,10 @@
                 }, 100);
             });
             
-            // Phase 2: camera:scale-changed イベントリスナーは削除（不要）
+            // Phase 2: カメラスケール変更時のレイヤー再描画
+            this.eventBus.on('camera:scale-changed', (data) => {
+                this.rebuildAllLayersForScaleChange();
+            });
         }
         
         _establishAnimationSystemConnection() {
@@ -404,8 +413,6 @@
                 }
             }
         }
-
-        // Phase 2: rebuildAllLayersForScaleChange メソッドは削除（不要）
 
         _setupLayerTransformPanel() {
             this.layerTransformPanel = document.getElementById('layer-transform-panel');
@@ -540,10 +547,7 @@
                 this._applyTransformDirect(activeLayer, transform, centerX, centerY);
             }
             
-            // Phase 3: Vキー押下中（ドラッグ操作中）はサムネイル更新をスキップ
-            if (!this.isLayerDragging) {
-                this.requestThumbnailUpdate(this.activeLayerIndex);
-            }
+            this.requestThumbnailUpdate(this.activeLayerIndex);
             
             if (this.eventBus) {
                 this.eventBus.emit('layer:updated', { layerId, transform });
@@ -1043,9 +1047,6 @@
             this.updateCursor();
             this.confirmLayerTransform();
             
-            // Phase 3: レイヤー移動モード終了時に一度だけサムネイル更新
-            this.requestThumbnailUpdate(this.activeLayerIndex);
-            
             if (activeLayer && layerId && transformBefore && this.isTransformNonDefault(transformBefore)) {
                 const pathsAfter = structuredClone(activeLayer.layerData.paths);
                 const transformAfter = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
@@ -1403,17 +1404,21 @@
                 return null;
             }
             
-            // Phase 4: DataModel を使用
-            const layerModel = new window.TegakiDataModels.LayerModel({
-                name: name || `レイヤー${this.currentCutContainer.children.length + 1}`,
-                isBackground: isBackground
-            });
-            
+            const layerCounter = Date.now();
             const layer = new PIXI.Container();
-            layer.label = layerModel.id;
-            layer.layerData = layerModel;  // モデルを参照として保持
+            const layerId = `layer_${layerCounter}`;
+            
+            layer.label = layerId;
+            layer.layerData = {
+                id: layerId,
+                name: name || `レイヤー${this.currentCutContainer.children.length + 1}`,
+                visible: true,
+                opacity: 1.0,
+                isBackground: isBackground,
+                paths: []
+            };
 
-            this.layerTransforms.set(layerModel.id, {
+            this.layerTransforms.set(layerId, {
                 x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
             });
 
@@ -1446,7 +1451,7 @@
                         this.updateLayerPanelUI();
                         this.updateStatusDisplay();
                     },
-                    meta: { layerId: layerModel.id, name: layerModel.name }
+                    meta: { layerId, name }
                 };
                 window.History.push(entry);
             } else {
@@ -1458,7 +1463,7 @@
             }
             
             if (this.eventBus) {
-                this.eventBus.emit('layer:created', { layerId: layerModel.id, name: layerModel.name, isBackground });
+                this.eventBus.emit('layer:created', { layerId, name, isBackground });
             }
             
             const layers = this.getLayers();
@@ -1552,15 +1557,12 @@
             if (layerIndex >= 0 && layerIndex < layers.length) {
                 this.thumbnailUpdateQueue.add(layerIndex);
                 
-                // Phase 3: デバウンス処理 - 既存タイマーをクリア
-                if (this.thumbnailUpdateTimer) {
-                    clearTimeout(this.thumbnailUpdateTimer);
+                if (!this.thumbnailUpdateTimer) {
+                    this.thumbnailUpdateTimer = setTimeout(() => {
+                        this.processThumbnailUpdates();
+                        this.thumbnailUpdateTimer = null;
+                    }, 100);
                 }
-                
-                this.thumbnailUpdateTimer = setTimeout(() => {
-                    this.processThumbnailUpdates();
-                    this.thumbnailUpdateTimer = null;
-                }, 500);  // Phase 3: 100ms → 500ms に延長
             }
         }
 
@@ -1715,7 +1717,7 @@
                         <div class="layer-thumbnail-placeholder"></div>
                     </div>
                     <div class="layer-delete-button">
-                        <svg xmlns="http://www.w3.org/2000/svg" width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round">
+                        <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                             <path d="m18 6-12 12"/><path d="m6 6 12 12"/>
                         </svg>
                     </div>
