@@ -1,3 +1,5 @@
+// ===== system/batch-api.js - Phase 5: 標準化API実装 =====
+
 (function() {
     'use strict';
 
