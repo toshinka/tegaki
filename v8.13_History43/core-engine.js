@@ -818,34 +818,51 @@
                 return;
             }
             
-            // 🔥 修正: PointerEvent オブジェクトを渡す
+            // 🔥 修正: capture フェーズで処理し、描画用イベントを優先
             canvas.addEventListener('pointerdown', (e) => {
-                if (e.button !== 0) return;
-                const rect = canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
-                // 🔥 PointerEvent オブジェクトを第3引数に渡す
-                this.drawingEngine.startDrawing(x, y, e);
-                e.preventDefault();
-            });
+                // CameraSystemのイベント（右クリック、Spaceキー）の場合はスキップ
+                if (e.button === 2 || this.cameraSystem.spacePressed || this.layerSystem.vKeyPressed) {
+                    return;
+                }
+                
+                // 左クリック（button === 0）の描画処理
+                if (e.button === 0) {
+                    const rect = canvas.getBoundingClientRect();
+                    const x = e.clientX - rect.left;
+                    const y = e.clientY - rect.top;
+                    // 🔥 PointerEvent オブジェクトを第3引数に渡す
+                    this.drawingEngine.startDrawing(x, y, e);
+                    e.stopPropagation(); // 他のリスナーへの伝播を停止
+                }
+            }, true); // true = capture フェーズ
 
             canvas.addEventListener('pointermove', (e) => {
                 const rect = canvas.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
                 this.updateCoordinates(x, y);
-                // 🔥 PointerEvent オブジェクトを第3引数に渡す
-                this.drawingEngine.continueDrawing(x, y, e);
+                
+                // 描画中でない場合でも座標更新は行う
+                if (this.drawingEngine.isDrawing) {
+                    // 🔥 PointerEvent オブジェクトを第3引数に渡す
+                    this.drawingEngine.continueDrawing(x, y, e);
+                }
+                
                 this.eventBus.emit('ui:mouse-move', { x, y });
-            });
+            }, true); // true = capture フェーズ
             
             canvas.addEventListener('pointerup', (e) => {
-                this.drawingEngine.stopDrawing();
-            });
+                if (this.drawingEngine.isDrawing) {
+                    this.drawingEngine.stopDrawing();
+                    e.stopPropagation(); // 他のリスナーへの伝播を停止
+                }
+            }, true); // true = capture フェーズ
             
             canvas.addEventListener('pointerleave', (e) => {
-                this.drawingEngine.stopDrawing();
-            });
+                if (this.drawingEngine.isDrawing) {
+                    this.drawingEngine.stopDrawing();
+                }
+            }, true); // true = capture フェーズ
         }
         
         switchTool(tool) {
