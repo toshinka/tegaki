@@ -804,7 +804,7 @@
         
         initLayersAndHistory() {
             for (let i = 0; i < this.frameCount; i++) {
-                // ★ 背景色で塗りつぶした ImageData を作成
+                // 背景色で塗りつぶした ImageData を作成
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = this.canvas.width;
                 tempCanvas.height = this.canvas.height;
@@ -826,7 +826,7 @@
                 this.historyIndex.push(0);
             }
             
-            // ★ 初期レイヤーをキャンバスに反映
+            // 初期レイヤーをキャンバスに反映
             this.ctx.putImageData(this.layers[0], 0, 0);
             
             if (this.thumbnailContainer && this.thumbnailContainer.childNodes[0]) {
@@ -836,7 +836,7 @@
                     firstThumb.style.transform = 'scale(1.1)';
                 }
                 
-                // ★ 全てのサムネイルを更新
+                // 全てのサムネイルを更新
                 for (let i = 0; i < this.frameCount; i++) {
                     this.updateThumbnailByIndex(i);
                 }
@@ -1000,7 +1000,7 @@
                 willReadFrequently: true
             });
             
-            // ★ 背景を描画してからレイヤーを重ねる
+            // 背景を描画してからレイヤーを重ねる
             tempCtx.drawImage(this.bgCanvas, 0, 0);
             tempCtx.putImageData(this.layers[index], 0, 0);
             
@@ -1070,12 +1070,12 @@
             );
         }
         
-        // ========== APNGエクスポート（修正版） ==========
+        // ========== APNGエクスポート（改修版：透明背景出力） ==========
         
         async exportAsApng() {
             this.prepareExport();
             
-            // ★ 正確にチェック
+            // ライブラリチェック
             if (!window.UPNG) {
                 console.error('Missing UPNG:', {
                     window_UPNG: !!window.UPNG,
@@ -1086,7 +1086,6 @@
                 return null;
             }
             
-            // ★ Zlib ではなく pako を check
             if (!window.pako) {
                 console.error('Missing pako:', {
                     window_pako: !!window.pako,
@@ -1099,24 +1098,16 @@
             
             const frames = [];
             
+            // ★改修: 透明背景のまま出力（掲示板用）
             for (const layerData of this.layers) {
                 const frameCanvas = document.createElement('canvas');
                 frameCanvas.width = this.canvas.width;
                 frameCanvas.height = this.canvas.height;
                 const frameCtx = frameCanvas.getContext('2d');
                 
-                // ★ 背景を先に描画
-                frameCtx.drawImage(this.bgCanvas, 0, 0);
-                
-                // ★ レイヤーを一時キャンバスに描画してから合成
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = this.canvas.width;
-                tempCanvas.height = this.canvas.height;
-                const tempCtx = tempCanvas.getContext('2d');
-                tempCtx.putImageData(layerData, 0, 0);
-                
-                // 背景の上にレイヤーを重ねる（透明部分は背景が見える）
-                frameCtx.drawImage(tempCanvas, 0, 0);
+                // ★重要: 背景を描画せず、レイヤーのみ出力
+                // 掲示板側の背景が透けて見えるようにする
+                frameCtx.putImageData(layerData, 0, 0);
                 
                 const imageData = frameCtx.getImageData(
                     0, 0, 
@@ -1130,12 +1121,11 @@
             const delays = Array(this.frameCount).fill(this.frameDelay);
             
             try {
-                // ★ window.UPNG を明示的に使用
                 const apngData = window.UPNG.encode(
                     frames,
                     this.canvas.width,
                     this.canvas.height,
-                    0,
+                    0, // 透過PNG
                     delays
                 );
                 
@@ -1147,7 +1137,7 @@
             }
         }
         
-        // ========== GIFエクスポート ==========
+        // ========== GIFエクスポート（改修版：透明背景出力） ==========
         
         async exportAsGif(onProgress) {
             this.prepareExport();
@@ -1173,6 +1163,7 @@
                         width: this.canvas.width,
                         height: this.canvas.height,
                         workerScript: workerUrl,
+                        transparent: 0x00000000, // ★追加: 透過色指定
                         debug: false
                     });
                     
@@ -1180,24 +1171,15 @@
                         gif.on('progress', onProgress);
                     }
 
+                    // ★改修: 透明背景のまま出力
                     for (const layerData of this.layers) {
                         const frameCanvas = document.createElement('canvas');
                         frameCanvas.width = this.canvas.width;
                         frameCanvas.height = this.canvas.height;
                         const frameCtx = frameCanvas.getContext('2d');
                         
-                        // ★ 背景を先に描画
-                        frameCtx.drawImage(this.bgCanvas, 0, 0);
-                        
-                        // ★ レイヤーを一時キャンバスに描画してから合成
-                        const tempCanvas = document.createElement('canvas');
-                        tempCanvas.width = this.canvas.width;
-                        tempCanvas.height = this.canvas.height;
-                        const tempCtx = tempCanvas.getContext('2d');
-                        tempCtx.putImageData(layerData, 0, 0);
-                        
-                        // 背景の上にレイヤーを重ねる
-                        frameCtx.drawImage(tempCanvas, 0, 0);
+                        // ★重要: 背景を描画せず、レイヤーのみ出力
+                        frameCtx.putImageData(layerData, 0, 0);
                         
                         gif.addFrame(frameCanvas, { 
                             delay: this.frameDelay,
@@ -1255,5 +1237,5 @@
         }
     };
     
-    console.log('✅ TegakiAnimeCore loaded (Fixed APNG export version)');
+    console.log('✅ TegakiAnimeCore loaded (Fixed APNG/GIF export - transparent background)');
 })();
