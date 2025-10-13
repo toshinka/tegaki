@@ -1,7 +1,7 @@
-// ===== core-engine.js - Phase 6: BatchAPI統合 =====
-// ================================================================================
-// Phase 6 改修内容:
-// 1. BatchAPI インスタンスの初期化とグローバル公開
+// ===== core-engine.js - タブレットペン対応修正版 =====
+// 🔥 修正内容:
+// 1. setupCanvasEvents() で PointerEvent オブジェクトを DrawingEngine に渡すよう修正
+// 2. DrawingEngine のメソッドシグネチャを修正（pressureOrEvent引数追加）
 // ================================================================================
 
 (function() {
@@ -58,6 +58,19 @@
             this.currentPath = null;
             this.lastPoint = null;
             
+            // 🔥 筆圧ハンドラー追加
+            this.pressureHandler = {
+                getPressure: (pointerEventOrPressure) => {
+                    if (typeof pointerEventOrPressure === 'number') {
+                        return Math.max(0.0, Math.min(1.0, pointerEventOrPressure));
+                    }
+                    if (pointerEventOrPressure && pointerEventOrPressure.pressure > 0 && pointerEventOrPressure.pressure < 1) {
+                        return pointerEventOrPressure.pressure;
+                    }
+                    return 0.5;
+                }
+            };
+            
             this._setupEventBusListeners();
         }
 
@@ -81,7 +94,8 @@
             });
         }
 
-        startDrawing(screenX, screenY) {
+        // 🔥 修正: pressureOrEvent 引数を追加
+        startDrawing(screenX, screenY, pressureOrEvent = 0.5) {
             if (this.isDrawing || this.cameraSystem.spacePressed || this.cameraSystem.isDragging || 
                 this.layerManager.vKeyPressed) return;
 
@@ -90,6 +104,9 @@
             if (!this.cameraSystem.isPointInExtendedCanvas(canvasPoint)) {
                 return;
             }
+            
+            // 🔥 筆圧取得
+            const pressure = this.pressureHandler.getPressure(pressureOrEvent);
             
             this.isDrawing = true;
             this.lastPoint = canvasPoint;
@@ -100,10 +117,13 @@
             const color = this.currentTool === 'eraser' ? this.config.background.color : this.brushColor;
             const opacity = this.currentTool === 'eraser' ? 1.0 : this.brushOpacity;
 
+            // 🔥 筆圧対応サイズ計算
+            const pressureAdjustedSize = this.brushSize * (0.5 + pressure * 0.5);
+
             this.currentPath = {
                 id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 graphics: new PIXI.Graphics(),
-                points: [{ x: canvasPoint.x, y: canvasPoint.y }],
+                points: [{ x: canvasPoint.x, y: canvasPoint.y, pressure: pressure }],
                 color: color,
                 size: this.brushSize,
                 opacity: opacity,
@@ -111,7 +131,7 @@
                 isComplete: false
             };
 
-            this.currentPath.graphics.circle(canvasPoint.x, canvasPoint.y, this.brushSize / 2);
+            this.currentPath.graphics.circle(canvasPoint.x, canvasPoint.y, pressureAdjustedSize / 2);
             this.currentPath.graphics.fill({ color: color, alpha: opacity });
 
             this.addPathToActiveLayer(this.currentPath);
@@ -120,17 +140,22 @@
                 this.eventBus.emit('drawing:started', {
                     tool: this.currentTool,
                     point: canvasPoint,
-                    pathId: this.currentPath.id
+                    pathId: this.currentPath.id,
+                    pressure: pressure
                 });
             }
         }
 
-        continueDrawing(screenX, screenY) {
+        // 🔥 修正: pressureOrEvent 引数を追加
+        continueDrawing(screenX, screenY, pressureOrEvent = 0.5) {
             if (!this.isDrawing || !this.currentPath || this.cameraSystem.spacePressed || 
                 this.cameraSystem.isDragging || this.layerManager.vKeyPressed) return;
 
             const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY, { forDrawing: true });
             const lastPoint = this.lastPoint;
+            
+            // 🔥 筆圧取得
+            const pressure = this.pressureHandler.getPressure(pressureOrEvent);
             
             const distance = Math.sqrt(
                 Math.pow(canvasPoint.x - lastPoint.x, 2) + 
@@ -139,19 +164,22 @@
 
             if (distance < 1) return;
 
+            // 🔥 筆圧対応サイズ計算
+            const pressureAdjustedSize = this.brushSize * (0.5 + pressure * 0.5);
+
             const steps = Math.max(1, Math.floor(distance / 1));
             for (let i = 1; i <= steps; i++) {
                 const t = i / steps;
                 const x = lastPoint.x + (canvasPoint.x - lastPoint.x) * t;
                 const y = lastPoint.y + (canvasPoint.y - lastPoint.y) * t;
 
-                this.currentPath.graphics.circle(x, y, this.brushSize / 2);
+                this.currentPath.graphics.circle(x, y, pressureAdjustedSize / 2);
                 this.currentPath.graphics.fill({ 
                     color: this.currentPath.color, 
                     alpha: this.currentPath.opacity 
                 });
 
-                this.currentPath.points.push({ x, y });
+                this.currentPath.points.push({ x, y, pressure: pressure });
             }
 
             this.lastPoint = canvasPoint;
@@ -293,7 +321,11 @@
                         try {
                             const transformedPoint = matrix.apply(point);
                             if (isFinite(transformedPoint.x) && isFinite(transformedPoint.y)) {
-                                transformedGraphics.circle(transformedPoint.x, transformedPoint.y, path.size / 2);
+                                // 🔥 筆圧対応
+                                const pressure = point.pressure || 0.5;
+                                const pressureAdjustedSize = path.size * (0.5 + pressure * 0.5);
+                                
+                                transformedGraphics.circle(transformedPoint.x, transformedPoint.y, pressureAdjustedSize / 2);
                                 transformedGraphics.fill({ color: path.color, alpha: path.opacity });
                             }
                         } catch (transformError) {
@@ -778,6 +810,7 @@
             }
         }
         
+        // 🔥 タブレットペン対応: setupCanvasEvents() を修正
         setupCanvasEvents() {
             const canvas = this.app.canvas || this.app.view;
             if (!canvas) {
@@ -785,12 +818,14 @@
                 return;
             }
             
+            // 🔥 修正: PointerEvent オブジェクトを渡す
             canvas.addEventListener('pointerdown', (e) => {
                 if (e.button !== 0) return;
                 const rect = canvas.getBoundingClientRect();
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
-                this.drawingEngine.startDrawing(x, y);
+                // 🔥 PointerEvent オブジェクトを第3引数に渡す
+                this.drawingEngine.startDrawing(x, y, e);
                 e.preventDefault();
             });
 
@@ -799,7 +834,8 @@
                 const x = e.clientX - rect.left;
                 const y = e.clientY - rect.top;
                 this.updateCoordinates(x, y);
-                this.drawingEngine.continueDrawing(x, y);
+                // 🔥 PointerEvent オブジェクトを第3引数に渡す
+                this.drawingEngine.continueDrawing(x, y, e);
                 this.eventBus.emit('ui:mouse-move', { x, y });
             });
             
@@ -887,21 +923,14 @@
             
             this.initializeAnimationSystem();
             
-            // ========== 🔥 Phase 6: BatchAPI 初期化 START ==========
             if (window.TegakiBatchAPI && this.animationSystem) {
                 this.batchAPI = new window.TegakiBatchAPI(
                     this.layerSystem,
                     this.animationSystem
                 );
                 
-                // グローバル公開（開発・デバッグ用）
                 window.batchAPI = this.batchAPI;
-                
-                console.log('✅ BatchAPI initialized and exposed to window.batchAPI');
-            } else {
-                console.warn('⚠️ BatchAPI not initialized: TegakiBatchAPI or AnimationSystem not found');
             }
-            // ========== 🔥 Phase 6: BatchAPI 初期化 END ==========
             
             if (window.ExportManager && this.animationSystem) {
                 this.exportManager = new window.ExportManager(
@@ -962,6 +991,6 @@
 
 })();
 
-console.log('✅ core-engine.js (Phase 6: BatchAPI統合版) loaded');
-console.log('   - 🔥 Phase 6: BatchAPI初期化とグローバル公開');
-console.log('   - window.batchAPI で BatchAPI にアクセス可能');
+console.log('✅ core-engine.js (タブレットペン対応版) loaded');
+console.log('   - 🔥 PointerEvent.pressure 対応完了');
+console.log('   - 🔥 DrawingEngine に筆圧処理追加');
