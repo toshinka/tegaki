@@ -1,7 +1,7 @@
 // ========================================
 // Tegaki Anime Bundle
 // UPNG.js + pako.js + GIF.js + TegakiAnimeCore
-// Build: 2025-10-12T21:03:14.689Z
+// Build: 2025-10-13T05:14:03.971Z
 // ========================================
 
 
@@ -1646,29 +1646,19 @@ UPNG.encode.alphaMul = function(img, roundA) {
         
         initLayersAndHistory() {
             for (let i = 0; i < this.frameCount; i++) {
-                // ★ 背景色で塗りつぶした ImageData を作成
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = this.canvas.width;
-                tempCanvas.height = this.canvas.height;
-                const tempCtx = tempCanvas.getContext('2d');
-                
-                // 背景色で塗りつぶし
-                tempCtx.fillStyle = this.backgroundColor;
-                tempCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-                
-                // ImageData として取得
-                const initialImageData = tempCtx.getImageData(
-                    0, 0,
+                // ★改修: 完全に透明なImageDataを作成
+                const initialImageData = this.ctx.createImageData(
                     this.canvas.width, 
                     this.canvas.height
                 );
+                // ImageDataは既に透明（全ピクセルのアルファ値が0）
                 
                 this.layers.push(initialImageData);
                 this.history.push([initialImageData]);
                 this.historyIndex.push(0);
             }
             
-            // ★ 初期レイヤーをキャンバスに反映
+            // 初期レイヤーをキャンバスに反映
             this.ctx.putImageData(this.layers[0], 0, 0);
             
             if (this.thumbnailContainer && this.thumbnailContainer.childNodes[0]) {
@@ -1678,7 +1668,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                     firstThumb.style.transform = 'scale(1.1)';
                 }
                 
-                // ★ 全てのサムネイルを更新
+                // 全てのサムネイルを更新
                 for (let i = 0; i < this.frameCount; i++) {
                     this.updateThumbnailByIndex(i);
                 }
@@ -1823,6 +1813,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
             this.updateThumbnailByIndex(this.activeLayerIndex);
         }
         
+        // ★改修: 背景と透明レイヤーの合成
         updateThumbnailByIndex(index) {
             const thumbWrapper = this.thumbnailContainer.childNodes[index];
             if (!thumbWrapper) return;
@@ -1835,6 +1826,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
             });
             thumbCtx.clearRect(0, 0, thumbCanvas.width, thumbCanvas.height);
 
+            // ★手順1: 一時キャンバスで合成
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = this.canvas.width;
             tempCanvas.height = this.canvas.height;
@@ -1842,10 +1834,22 @@ UPNG.encode.alphaMul = function(img, roundA) {
                 willReadFrequently: true
             });
             
-            // ★ 背景を描画してからレイヤーを重ねる
+            // ★手順2: 背景を描画（レイヤー0）
             tempCtx.drawImage(this.bgCanvas, 0, 0);
-            tempCtx.putImageData(this.layers[index], 0, 0);
             
+            // ★手順3: 透明レイヤーを別キャンバスに描画
+            const layerCanvas = document.createElement('canvas');
+            layerCanvas.width = this.canvas.width;
+            layerCanvas.height = this.canvas.height;
+            const layerCtx = layerCanvas.getContext('2d', {
+                willReadFrequently: true
+            });
+            layerCtx.putImageData(this.layers[index], 0, 0);
+            
+            // ★手順4: 透明レイヤーを背景の上に重ねる（レイヤー1）
+            tempCtx.drawImage(layerCanvas, 0, 0);
+            
+            // サムネイルに縮小して描画
             thumbCtx.drawImage(
                 tempCanvas, 
                 0, 0, 
@@ -1871,6 +1875,9 @@ UPNG.encode.alphaMul = function(img, roundA) {
             );
             this.history[this.activeLayerIndex].push(imageData);
             this.historyIndex[this.activeLayerIndex]++;
+            
+            // レイヤー配列も更新
+            this.layers[this.activeLayerIndex] = imageData;
         }
 
         undo() {
@@ -1880,6 +1887,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                 this.historyIndex[this.activeLayerIndex] = index;
                 const imageData = this.history[this.activeLayerIndex][index];
                 this.ctx.putImageData(imageData, 0, 0);
+                this.layers[this.activeLayerIndex] = imageData;
                 this.updateThumbnail();
                 this.updateOnionSkin();
             }
@@ -1893,6 +1901,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                 this.historyIndex[this.activeLayerIndex] = index;
                 const imageData = this.history[this.activeLayerIndex][index];
                 this.ctx.putImageData(imageData, 0, 0);
+                this.layers[this.activeLayerIndex] = imageData;
                 this.updateThumbnail();
                 this.updateOnionSkin();
             }
@@ -1912,12 +1921,12 @@ UPNG.encode.alphaMul = function(img, roundA) {
             );
         }
         
-        // ========== APNGエクスポート（修正版） ==========
+        // ========== APNGエクスポート（改修版：透明背景出力） ==========
         
         async exportAsApng() {
             this.prepareExport();
             
-            // ★ 正確にチェック
+            // ライブラリチェック
             if (!window.UPNG) {
                 console.error('Missing UPNG:', {
                     window_UPNG: !!window.UPNG,
@@ -1928,7 +1937,6 @@ UPNG.encode.alphaMul = function(img, roundA) {
                 return null;
             }
             
-            // ★ Zlib ではなく pako を check
             if (!window.pako) {
                 console.error('Missing pako:', {
                     window_pako: !!window.pako,
@@ -1941,24 +1949,15 @@ UPNG.encode.alphaMul = function(img, roundA) {
             
             const frames = [];
             
+            // ★改修: 透明レイヤーのみ出力（背景を描画しない）
             for (const layerData of this.layers) {
                 const frameCanvas = document.createElement('canvas');
                 frameCanvas.width = this.canvas.width;
                 frameCanvas.height = this.canvas.height;
                 const frameCtx = frameCanvas.getContext('2d');
                 
-                // ★ 背景を先に描画
-                frameCtx.drawImage(this.bgCanvas, 0, 0);
-                
-                // ★ レイヤーを一時キャンバスに描画してから合成
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = this.canvas.width;
-                tempCanvas.height = this.canvas.height;
-                const tempCtx = tempCanvas.getContext('2d');
-                tempCtx.putImageData(layerData, 0, 0);
-                
-                // 背景の上にレイヤーを重ねる（透明部分は背景が見える）
-                frameCtx.drawImage(tempCanvas, 0, 0);
+                // ★重要: 背景を描画せず、透明レイヤーのみ出力
+                frameCtx.putImageData(layerData, 0, 0);
                 
                 const imageData = frameCtx.getImageData(
                     0, 0, 
@@ -1972,12 +1971,11 @@ UPNG.encode.alphaMul = function(img, roundA) {
             const delays = Array(this.frameCount).fill(this.frameDelay);
             
             try {
-                // ★ window.UPNG を明示的に使用
                 const apngData = window.UPNG.encode(
                     frames,
                     this.canvas.width,
                     this.canvas.height,
-                    0,
+                    0, // 透過PNG
                     delays
                 );
                 
@@ -1989,7 +1987,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
             }
         }
         
-        // ========== GIFエクスポート ==========
+        // ========== GIFエクスポート（改修版：透明背景出力） ==========
         
         async exportAsGif(onProgress) {
             this.prepareExport();
@@ -2015,6 +2013,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                         width: this.canvas.width,
                         height: this.canvas.height,
                         workerScript: workerUrl,
+                        transparent: 0x00000000, // ★追加: 透過色指定
                         debug: false
                     });
                     
@@ -2022,24 +2021,17 @@ UPNG.encode.alphaMul = function(img, roundA) {
                         gif.on('progress', onProgress);
                     }
 
+                    // ★改修: 透明レイヤーのみ出力（背景を描画しない）
                     for (const layerData of this.layers) {
                         const frameCanvas = document.createElement('canvas');
                         frameCanvas.width = this.canvas.width;
                         frameCanvas.height = this.canvas.height;
-                        const frameCtx = frameCanvas.getContext('2d');
+                        const frameCtx = frameCanvas.getContext('2d', {
+                            willReadFrequently: true
+                        });
                         
-                        // ★ 背景を先に描画
-                        frameCtx.drawImage(this.bgCanvas, 0, 0);
-                        
-                        // ★ レイヤーを一時キャンバスに描画してから合成
-                        const tempCanvas = document.createElement('canvas');
-                        tempCanvas.width = this.canvas.width;
-                        tempCanvas.height = this.canvas.height;
-                        const tempCtx = tempCanvas.getContext('2d');
-                        tempCtx.putImageData(layerData, 0, 0);
-                        
-                        // 背景の上にレイヤーを重ねる
-                        frameCtx.drawImage(tempCanvas, 0, 0);
+                        // ★重要: 背景を描画せず、透明レイヤーのみ出力
+                        frameCtx.putImageData(layerData, 0, 0);
                         
                         gif.addFrame(frameCanvas, { 
                             delay: this.frameDelay,
@@ -2097,7 +2089,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
         }
     };
     
-    console.log('✅ TegakiAnimeCore loaded (Fixed APNG export version)');
+    console.log('✅ TegakiAnimeCore loaded (レイヤー分離改修版 - 全機能継承)');
 })();
 
 // ========== GIF.js Worker Inline ==========
@@ -2998,29 +2990,19 @@ UPNG.encode.alphaMul = function(img, roundA) {
         
         initLayersAndHistory() {
             for (let i = 0; i < this.frameCount; i++) {
-                // ★ 背景色で塗りつぶした ImageData を作成
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = this.canvas.width;
-                tempCanvas.height = this.canvas.height;
-                const tempCtx = tempCanvas.getContext('2d');
-                
-                // 背景色で塗りつぶし
-                tempCtx.fillStyle = this.backgroundColor;
-                tempCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-                
-                // ImageData として取得
-                const initialImageData = tempCtx.getImageData(
-                    0, 0,
+                // ★改修: 完全に透明なImageDataを作成
+                const initialImageData = this.ctx.createImageData(
                     this.canvas.width, 
                     this.canvas.height
                 );
+                // ImageDataは既に透明（全ピクセルのアルファ値が0）
                 
                 this.layers.push(initialImageData);
                 this.history.push([initialImageData]);
                 this.historyIndex.push(0);
             }
             
-            // ★ 初期レイヤーをキャンバスに反映
+            // 初期レイヤーをキャンバスに反映
             this.ctx.putImageData(this.layers[0], 0, 0);
             
             if (this.thumbnailContainer && this.thumbnailContainer.childNodes[0]) {
@@ -3030,7 +3012,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                     firstThumb.style.transform = 'scale(1.1)';
                 }
                 
-                // ★ 全てのサムネイルを更新
+                // 全てのサムネイルを更新
                 for (let i = 0; i < this.frameCount; i++) {
                     this.updateThumbnailByIndex(i);
                 }
@@ -3175,6 +3157,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
             this.updateThumbnailByIndex(this.activeLayerIndex);
         }
         
+        // ★改修: 背景と透明レイヤーの合成
         updateThumbnailByIndex(index) {
             const thumbWrapper = this.thumbnailContainer.childNodes[index];
             if (!thumbWrapper) return;
@@ -3187,6 +3170,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
             });
             thumbCtx.clearRect(0, 0, thumbCanvas.width, thumbCanvas.height);
 
+            // ★手順1: 一時キャンバスで合成
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = this.canvas.width;
             tempCanvas.height = this.canvas.height;
@@ -3194,10 +3178,22 @@ UPNG.encode.alphaMul = function(img, roundA) {
                 willReadFrequently: true
             });
             
-            // ★ 背景を描画してからレイヤーを重ねる
+            // ★手順2: 背景を描画（レイヤー0）
             tempCtx.drawImage(this.bgCanvas, 0, 0);
-            tempCtx.putImageData(this.layers[index], 0, 0);
             
+            // ★手順3: 透明レイヤーを別キャンバスに描画
+            const layerCanvas = document.createElement('canvas');
+            layerCanvas.width = this.canvas.width;
+            layerCanvas.height = this.canvas.height;
+            const layerCtx = layerCanvas.getContext('2d', {
+                willReadFrequently: true
+            });
+            layerCtx.putImageData(this.layers[index], 0, 0);
+            
+            // ★手順4: 透明レイヤーを背景の上に重ねる（レイヤー1）
+            tempCtx.drawImage(layerCanvas, 0, 0);
+            
+            // サムネイルに縮小して描画
             thumbCtx.drawImage(
                 tempCanvas, 
                 0, 0, 
@@ -3223,6 +3219,9 @@ UPNG.encode.alphaMul = function(img, roundA) {
             );
             this.history[this.activeLayerIndex].push(imageData);
             this.historyIndex[this.activeLayerIndex]++;
+            
+            // レイヤー配列も更新
+            this.layers[this.activeLayerIndex] = imageData;
         }
 
         undo() {
@@ -3232,6 +3231,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                 this.historyIndex[this.activeLayerIndex] = index;
                 const imageData = this.history[this.activeLayerIndex][index];
                 this.ctx.putImageData(imageData, 0, 0);
+                this.layers[this.activeLayerIndex] = imageData;
                 this.updateThumbnail();
                 this.updateOnionSkin();
             }
@@ -3245,6 +3245,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                 this.historyIndex[this.activeLayerIndex] = index;
                 const imageData = this.history[this.activeLayerIndex][index];
                 this.ctx.putImageData(imageData, 0, 0);
+                this.layers[this.activeLayerIndex] = imageData;
                 this.updateThumbnail();
                 this.updateOnionSkin();
             }
@@ -3264,12 +3265,12 @@ UPNG.encode.alphaMul = function(img, roundA) {
             );
         }
         
-        // ========== APNGエクスポート（修正版） ==========
+        // ========== APNGエクスポート（改修版：透明背景出力） ==========
         
         async exportAsApng() {
             this.prepareExport();
             
-            // ★ 正確にチェック
+            // ライブラリチェック
             if (!window.UPNG) {
                 console.error('Missing UPNG:', {
                     window_UPNG: !!window.UPNG,
@@ -3280,7 +3281,6 @@ UPNG.encode.alphaMul = function(img, roundA) {
                 return null;
             }
             
-            // ★ Zlib ではなく pako を check
             if (!window.pako) {
                 console.error('Missing pako:', {
                     window_pako: !!window.pako,
@@ -3293,24 +3293,15 @@ UPNG.encode.alphaMul = function(img, roundA) {
             
             const frames = [];
             
+            // ★改修: 透明レイヤーのみ出力（背景を描画しない）
             for (const layerData of this.layers) {
                 const frameCanvas = document.createElement('canvas');
                 frameCanvas.width = this.canvas.width;
                 frameCanvas.height = this.canvas.height;
                 const frameCtx = frameCanvas.getContext('2d');
                 
-                // ★ 背景を先に描画
-                frameCtx.drawImage(this.bgCanvas, 0, 0);
-                
-                // ★ レイヤーを一時キャンバスに描画してから合成
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = this.canvas.width;
-                tempCanvas.height = this.canvas.height;
-                const tempCtx = tempCanvas.getContext('2d');
-                tempCtx.putImageData(layerData, 0, 0);
-                
-                // 背景の上にレイヤーを重ねる（透明部分は背景が見える）
-                frameCtx.drawImage(tempCanvas, 0, 0);
+                // ★重要: 背景を描画せず、透明レイヤーのみ出力
+                frameCtx.putImageData(layerData, 0, 0);
                 
                 const imageData = frameCtx.getImageData(
                     0, 0, 
@@ -3324,12 +3315,11 @@ UPNG.encode.alphaMul = function(img, roundA) {
             const delays = Array(this.frameCount).fill(this.frameDelay);
             
             try {
-                // ★ window.UPNG を明示的に使用
                 const apngData = window.UPNG.encode(
                     frames,
                     this.canvas.width,
                     this.canvas.height,
-                    0,
+                    0, // 透過PNG
                     delays
                 );
                 
@@ -3341,7 +3331,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
             }
         }
         
-        // ========== GIFエクスポート ==========
+        // ========== GIFエクスポート（改修版：透明背景出力） ==========
         
         async exportAsGif(onProgress) {
             this.prepareExport();
@@ -3367,6 +3357,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                         width: this.canvas.width,
                         height: this.canvas.height,
                         workerScript: workerUrl,
+                        transparent: 0x00000000, // ★追加: 透過色指定
                         debug: false
                     });
                     
@@ -3374,24 +3365,17 @@ UPNG.encode.alphaMul = function(img, roundA) {
                         gif.on('progress', onProgress);
                     }
 
+                    // ★改修: 透明レイヤーのみ出力（背景を描画しない）
                     for (const layerData of this.layers) {
                         const frameCanvas = document.createElement('canvas');
                         frameCanvas.width = this.canvas.width;
                         frameCanvas.height = this.canvas.height;
-                        const frameCtx = frameCanvas.getContext('2d');
+                        const frameCtx = frameCanvas.getContext('2d', {
+                            willReadFrequently: true
+                        });
                         
-                        // ★ 背景を先に描画
-                        frameCtx.drawImage(this.bgCanvas, 0, 0);
-                        
-                        // ★ レイヤーを一時キャンバスに描画してから合成
-                        const tempCanvas = document.createElement('canvas');
-                        tempCanvas.width = this.canvas.width;
-                        tempCanvas.height = this.canvas.height;
-                        const tempCtx = tempCanvas.getContext('2d');
-                        tempCtx.putImageData(layerData, 0, 0);
-                        
-                        // 背景の上にレイヤーを重ねる
-                        frameCtx.drawImage(tempCanvas, 0, 0);
+                        // ★重要: 背景を描画せず、透明レイヤーのみ出力
+                        frameCtx.putImageData(layerData, 0, 0);
                         
                         gif.addFrame(frameCanvas, { 
                             delay: this.frameDelay,
@@ -3449,5 +3433,5 @@ UPNG.encode.alphaMul = function(img, roundA) {
         }
     };
     
-    console.log('✅ TegakiAnimeCore loaded (Fixed APNG export version)');
+    console.log('✅ TegakiAnimeCore loaded (レイヤー分離改修版 - 全機能継承)');
 })();
