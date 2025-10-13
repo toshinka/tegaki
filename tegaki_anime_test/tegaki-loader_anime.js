@@ -2,7 +2,7 @@
     'use strict';
     
     // バージョン情報
-    const LOADER_VERSION = 'v0.51';
+    const LOADER_VERSION = 'v0.52';
     
     // ===== 設定 =====
     const SCRIPT_URLS = {
@@ -168,7 +168,7 @@
             `;
             
             const title = document.createElement('div');
-            title.textContent = `めぶき手書き APNGアニメてすと ${LOADER_VERSION}`;
+            title.textContent = `🌱めぶがき APNGてすと ${LOADER_VERSION}`;
             title.style.cssText = `
                 color: #800000;
                 font-size: 14px;

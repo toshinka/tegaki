@@ -1,7 +1,7 @@
 // ========================================
 // Tegaki Anime Bundle
 // UPNG.js + pako.js + GIF.js + TegakiAnimeCore
-// Build: 2025-10-13T05:47:40.940Z
+// Build: 2025-10-13T06:21:42.369Z
 // ========================================
 
 
@@ -1104,22 +1104,13 @@ UPNG.encode.alphaMul = function(img, roundA) {
                     <div><b>Ctrl+C</b>: コピー</div>
                     <div><b>Ctrl+V</b>: ペースト</div>
                 </div>
-                <h3 style="margin: 15px 0 10px 0; font-size: 14px; padding-bottom: 5px;">
-                    使い方
-                </h3>
-                <div style="line-height: 1.6; font-size: 11px;">
-                    ・各レイヤーに描画<br>
-                    ・サムネイルで切替<br>
-                    ・オニオンスキンで確認<br>
-                    ・プレビューで動作確認<br>
-                    ・完成したらAPNG投稿<br>
-                    ※予告無く仕様変更や消去されます
-                </div>
+ 
                 <h3 style="margin: 15px 0 10px 0; font-size: 14px; padding-bottom: 5px;">
                     注意事項
                 </h3>
                 <div style="line-height: 1.6; font-size: 11px;">
-                    ※一度ツールを起動し添付した後は、二度目の添付を受け付けないことがあります。再度同じスレッドにお絵かきをする際は、一度スレッドを閉じてカタログから再度開くなどして更新してからツールを立ち上げてください。
+                    ※一度ツールを起動し添付した後は、二度目の添付を受け付けないことがあります。再度同じスレッドにお絵かきをする際は、一度スレを閉じるか移動して更新してからツールを再起動してください。<BR>
+                    ※本ツールは予告無く仕様変更・削除される事があります。
                 </div>
             `;
             
@@ -1652,12 +1643,22 @@ UPNG.encode.alphaMul = function(img, roundA) {
         
         initLayersAndHistory() {
             for (let i = 0; i < this.frameCount; i++) {
-                // ★改修: 完全に透明なImageDataを作成
-                const initialImageData = this.ctx.createImageData(
+                // ★改修: 背景色で塗りつぶしたImageDataを作成
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = this.canvas.width;
+                tempCanvas.height = this.canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // 背景色で塗りつぶし
+                tempCtx.fillStyle = this.backgroundColor;
+                tempCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // ImageDataとして取得
+                const initialImageData = tempCtx.getImageData(
+                    0, 0,
                     this.canvas.width, 
                     this.canvas.height
                 );
-                // ImageDataは既に透明（全ピクセルのアルファ値が0）
                 
                 this.layers.push(initialImageData);
                 this.history.push([initialImageData]);
@@ -1927,7 +1928,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
             );
         }
         
-        // ========== APNGエクスポート（改修版：透明背景出力） ==========
+        // ========== APNGエクスポート（改修版：背景合成出力） ==========
         
         async exportAsApng() {
             this.prepareExport();
@@ -1955,14 +1956,15 @@ UPNG.encode.alphaMul = function(img, roundA) {
             
             const frames = [];
             
-            // ★改修: 透明レイヤーのみ出力（背景を描画しない）
+            // ★改修: 背景と合成して出力（掲示板のサムネイル表示用）
             for (const layerData of this.layers) {
                 const frameCanvas = document.createElement('canvas');
                 frameCanvas.width = this.canvas.width;
                 frameCanvas.height = this.canvas.height;
                 const frameCtx = frameCanvas.getContext('2d');
                 
-                // ★重要: 背景を描画せず、透明レイヤーのみ出力
+                // ★重要: 背景を描画してから透明レイヤーを重ねる
+                frameCtx.drawImage(this.bgCanvas, 0, 0);
                 frameCtx.putImageData(layerData, 0, 0);
                 
                 const imageData = frameCtx.getImageData(
@@ -1993,7 +1995,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
             }
         }
         
-        // ========== GIFエクスポート（改修版：透明背景出力） ==========
+        // ========== GIFエクスポート（改修版：背景合成出力） ==========
         
         async exportAsGif(onProgress) {
             this.prepareExport();
@@ -2019,7 +2021,6 @@ UPNG.encode.alphaMul = function(img, roundA) {
                         width: this.canvas.width,
                         height: this.canvas.height,
                         workerScript: workerUrl,
-                        transparent: 0x00000000, // ★追加: 透過色指定
                         debug: false
                     });
                     
@@ -2027,7 +2028,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                         gif.on('progress', onProgress);
                     }
 
-                    // ★改修: 透明レイヤーのみ出力（背景を描画しない）
+                    // ★改修: 背景と合成して出力（掲示板のサムネイル表示用）
                     for (const layerData of this.layers) {
                         const frameCanvas = document.createElement('canvas');
                         frameCanvas.width = this.canvas.width;
@@ -2036,7 +2037,8 @@ UPNG.encode.alphaMul = function(img, roundA) {
                             willReadFrequently: true
                         });
                         
-                        // ★重要: 背景を描画せず、透明レイヤーのみ出力
+                        // ★重要: 背景を描画してから透明レイヤーを重ねる
+                        frameCtx.drawImage(this.bgCanvas, 0, 0);
                         frameCtx.putImageData(layerData, 0, 0);
                         
                         gif.addFrame(frameCanvas, { 
@@ -2454,22 +2456,13 @@ UPNG.encode.alphaMul = function(img, roundA) {
                     <div><b>Ctrl+C</b>: コピー</div>
                     <div><b>Ctrl+V</b>: ペースト</div>
                 </div>
-                <h3 style="margin: 15px 0 10px 0; font-size: 14px; padding-bottom: 5px;">
-                    使い方
-                </h3>
-                <div style="line-height: 1.6; font-size: 11px;">
-                    ・各レイヤーに描画<br>
-                    ・サムネイルで切替<br>
-                    ・オニオンスキンで確認<br>
-                    ・プレビューで動作確認<br>
-                    ・完成したらAPNG投稿<br>
-                    ※予告無く仕様変更や消去されます
-                </div>
+ 
                 <h3 style="margin: 15px 0 10px 0; font-size: 14px; padding-bottom: 5px;">
                     注意事項
                 </h3>
                 <div style="line-height: 1.6; font-size: 11px;">
-                    ※一度ツールを起動し添付した後は、二度目の添付を受け付けないことがあります。再度同じスレッドにお絵かきをする際は、一度スレッドを閉じてカタログから再度開くなどして更新してからツールを立ち上げてください。
+                    ※一度ツールを起動し添付した後は、二度目の添付を受け付けないことがあります。再度同じスレッドにお絵かきをする際は、一度スレを閉じるか移動して更新してからツールを再起動してください。<BR>
+                    ※本ツールは予告無く仕様変更・削除される事があります。
                 </div>
             `;
             
@@ -3002,12 +2995,22 @@ UPNG.encode.alphaMul = function(img, roundA) {
         
         initLayersAndHistory() {
             for (let i = 0; i < this.frameCount; i++) {
-                // ★改修: 完全に透明なImageDataを作成
-                const initialImageData = this.ctx.createImageData(
+                // ★改修: 背景色で塗りつぶしたImageDataを作成
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = this.canvas.width;
+                tempCanvas.height = this.canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                
+                // 背景色で塗りつぶし
+                tempCtx.fillStyle = this.backgroundColor;
+                tempCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                
+                // ImageDataとして取得
+                const initialImageData = tempCtx.getImageData(
+                    0, 0,
                     this.canvas.width, 
                     this.canvas.height
                 );
-                // ImageDataは既に透明（全ピクセルのアルファ値が0）
                 
                 this.layers.push(initialImageData);
                 this.history.push([initialImageData]);
@@ -3277,7 +3280,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
             );
         }
         
-        // ========== APNGエクスポート（改修版：透明背景出力） ==========
+        // ========== APNGエクスポート（改修版：背景合成出力） ==========
         
         async exportAsApng() {
             this.prepareExport();
@@ -3305,14 +3308,15 @@ UPNG.encode.alphaMul = function(img, roundA) {
             
             const frames = [];
             
-            // ★改修: 透明レイヤーのみ出力（背景を描画しない）
+            // ★改修: 背景と合成して出力（掲示板のサムネイル表示用）
             for (const layerData of this.layers) {
                 const frameCanvas = document.createElement('canvas');
                 frameCanvas.width = this.canvas.width;
                 frameCanvas.height = this.canvas.height;
                 const frameCtx = frameCanvas.getContext('2d');
                 
-                // ★重要: 背景を描画せず、透明レイヤーのみ出力
+                // ★重要: 背景を描画してから透明レイヤーを重ねる
+                frameCtx.drawImage(this.bgCanvas, 0, 0);
                 frameCtx.putImageData(layerData, 0, 0);
                 
                 const imageData = frameCtx.getImageData(
@@ -3343,7 +3347,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
             }
         }
         
-        // ========== GIFエクスポート（改修版：透明背景出力） ==========
+        // ========== GIFエクスポート（改修版：背景合成出力） ==========
         
         async exportAsGif(onProgress) {
             this.prepareExport();
@@ -3369,7 +3373,6 @@ UPNG.encode.alphaMul = function(img, roundA) {
                         width: this.canvas.width,
                         height: this.canvas.height,
                         workerScript: workerUrl,
-                        transparent: 0x00000000, // ★追加: 透過色指定
                         debug: false
                     });
                     
@@ -3377,7 +3380,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                         gif.on('progress', onProgress);
                     }
 
-                    // ★改修: 透明レイヤーのみ出力（背景を描画しない）
+                    // ★改修: 背景と合成して出力（掲示板のサムネイル表示用）
                     for (const layerData of this.layers) {
                         const frameCanvas = document.createElement('canvas');
                         frameCanvas.width = this.canvas.width;
@@ -3386,7 +3389,8 @@ UPNG.encode.alphaMul = function(img, roundA) {
                             willReadFrequently: true
                         });
                         
-                        // ★重要: 背景を描画せず、透明レイヤーのみ出力
+                        // ★重要: 背景を描画してから透明レイヤーを重ねる
+                        frameCtx.drawImage(this.bgCanvas, 0, 0);
                         frameCtx.putImageData(layerData, 0, 0);
                         
                         gif.addFrame(frameCanvas, { 
