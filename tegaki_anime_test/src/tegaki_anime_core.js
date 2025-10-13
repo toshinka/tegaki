@@ -48,10 +48,8 @@
             this.maxPressureSensitivity = 2.0;
             
             // オニオンスキン設定
-            this.onionSkinEnabled = false;
-            this.onionSkinFrames = 1;
-            this.minOnionFrames = 1;
-            this.maxOnionFrames = 3;
+            this.onionSkinMode = 0; // 0=OFF, 1/2/3=表示フレーム数
+            this.onionSkinAlpha = 0.3;
             
             // アニメーション設定
             this.frameCount = 5;
@@ -70,14 +68,19 @@
             // クリップボード
             this.clipboard = null;
             
+            // レイヤードラッグ設定
+            this.isDraggingLayer = false;
+            this.draggedLayerIndex = -1;
+            this.dragStartX = 0;
+            
             // UI要素
             this.controlPanel = null;
             this.sizeSlider = null;
             this.eraserSizeSlider = null;
             this.pressureSlider = null;
             this.delaySlider = null;
-            this.onionFramesSlider = null;
             this.previewBtn = null;
+            this.onionSkinButtons = [];
             
             // Undo/Redo履歴
             this.history = [];
@@ -86,6 +89,7 @@
             // キー処理統合用
             this.keyManager = null;
             this.boundHandleKeyDown = this.handleKeyDown.bind(this);
+            this.vKeyPressed = false;
             
             // リサイズ対応
             this.resizeObserver = null;
@@ -142,6 +146,12 @@
             km.register('p', {}, () => this.switchTool('pen'), 'Pen');
             km.register('e', {}, () => this.switchTool('eraser'), 'Eraser');
             
+            // 0-3: オニオンスキン切替
+            km.register('0', {}, () => this.setOnionSkinMode(0), 'Onion Off');
+            km.register('1', {}, () => this.setOnionSkinMode(1), 'Onion 1');
+            km.register('2', {}, () => this.setOnionSkinMode(2), 'Onion 2');
+            km.register('3', {}, () => this.setOnionSkinMode(3), 'Onion 3');
+            
             for (let i = 1; i <= 9; i++) {
                 if (i <= this.frameCount) {
                     km.register(String(i), {}, () => this.switchLayer(i - 1), `Layer ${i}`);
@@ -151,6 +161,13 @@
         
         handleKeyDown(e) {
             if (!this.wrapper || !this.wrapper.isConnected) return;
+            
+            // V キー判定（レイヤードラッグ用）
+            if (e.key.toLowerCase() === 'v' && !e.ctrlKey) {
+                this.vKeyPressed = true;
+                this.canvas.style.cursor = 'grab';
+                return;
+            }
             
             const keyStr = this.normalizeKey(e.key, {
                 ctrl: e.ctrlKey,
@@ -162,6 +179,14 @@
             if (binding) {
                 e.preventDefault();
                 binding.handler();
+            }
+        }
+        
+        handleKeyUp(e) {
+            if (e.key.toLowerCase() === 'v') {
+                this.vKeyPressed = false;
+                this.isDraggingLayer = false;
+                this.canvas.style.cursor = this.tool === 'pen' ? 'crosshair' : 'pointer';
             }
         }
         
@@ -193,6 +218,84 @@
             this.updateOnionSkin();
             
             console.log('✅ Pasted from clipboard');
+        }
+        
+        // ========== オニオンスキン制御 ==========
+        
+        setOnionSkinMode(mode) {
+            if (mode < 0 || mode > 3) return;
+            this.onionSkinMode = mode;
+            
+            // ボタンハイライト更新
+            this.onionSkinButtons.forEach(({ btn, btnMode }) => {
+                if (btnMode === mode) {
+                    btn.style.background = this.colors.maroon;
+                    btn.style.color = 'white';
+                } else {
+                    btn.style.background = '#ddd';
+                    btn.style.color = '#333';
+                }
+            });
+            
+            this.updateOnionSkin();
+        }
+        
+        updateOnionSkin() {
+            if (this.onionCtx) {
+                this.onionCtx.clearRect(0, 0, this.onionCanvas.width, this.onionCanvas.height);
+            }
+            
+            if (this.onionSkinMode === 0) return;
+            
+            this.onionCtx = this.onionCanvas.getContext('2d');
+            
+            // 過去フレーム（赤系・段々薄くなる）
+            for (let i = 1; i <= this.onionSkinMode; i++) {
+                const prevIndex = this.activeLayerIndex - i;
+                if (prevIndex < 0) break;
+                
+                const prevLayer = this.layers[prevIndex];
+                if (!prevLayer) continue;
+                
+                const opacity = this.onionSkinAlpha / i;
+                this.onionCtx.globalAlpha = opacity;
+                this.onionCtx.globalCompositeOperation = 'source-over';
+                this.onionCtx.filter = 'hue-rotate(0deg) saturate(1.2)';
+                
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = this.canvas.width;
+                tempCanvas.height = this.canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.putImageData(prevLayer, 0, 0);
+                
+                this.onionCtx.drawImage(tempCanvas, 0, 0);
+            }
+            
+            // 未来フレーム（青系・段々薄くなる）
+            for (let i = 1; i <= this.onionSkinMode; i++) {
+                const nextIndex = this.activeLayerIndex + i;
+                if (nextIndex >= this.frameCount) break;
+                
+                const nextLayer = this.layers[nextIndex];
+                if (!nextLayer) continue;
+                
+                const opacity = this.onionSkinAlpha / i;
+                this.onionCtx.globalAlpha = opacity;
+                this.onionCtx.globalCompositeOperation = 'source-over';
+                this.onionCtx.filter = 'hue-rotate(200deg) saturate(1.2)';
+                
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = this.canvas.width;
+                tempCanvas.height = this.canvas.height;
+                const tempCtx = tempCanvas.getContext('2d');
+                tempCtx.putImageData(nextLayer, 0, 0);
+                
+                this.onionCtx.drawImage(tempCanvas, 0, 0);
+            }
+            
+            this.onionCtx.globalAlpha = 1.0;
+            this.onionCtx.filter = 'none';
+            this.onionCtx.globalCompositeOperation = 'source-over';
         }
         
         // ========== リサイズ対応 ==========
@@ -255,19 +358,21 @@
                 </h3>
                 <div style="line-height: 1.8;">
                     <div><b>1-5</b>: レイヤー切替</div>
+                    <div><b>0-3</b>: オニオンスキン</div>
                     <div><b>P</b>: ペン</div>
                     <div><b>E</b>: 消しゴム</div>
                     <div><b>Ctrl+Z</b>: 元に戻す</div>
                     <div><b>Ctrl+Y</b>: やり直し</div>
                     <div><b>Ctrl+C</b>: コピー</div>
                     <div><b>Ctrl+V</b>: ペースト</div>
+                    <div><b>V+ドラッグ</b>: レイヤー移動</div>
                 </div>
  
                 <h3 style="margin: 15px 0 10px 0; font-size: 14px; padding-bottom: 5px;">
                     注意事項
                 </h3>
                 <div style="line-height: 1.6; font-size: 11px;">
-                    ※一度ツールを起動し添付した後は、二度目の添付を受け付けないことがあります。再度同じスレッドにお絵かきをする際は、一度スレを閉じるか移動して更新してからツールを再起動してください。<BR>
+                    ※一度ツールを起動し添付した後は、二度目の添付を受け付けないことがあります。再度同じスレッドにおえかきをする際は、一度スレを閉じるか移動して更新してからツールを再起動してください。<BR>
                     ※本ツールは予告無く仕様変更・削除される事があります。
                 </div>
             `;
@@ -343,7 +448,7 @@
             canvasContainer.appendChild(this.canvas);
             canvasWrapper.appendChild(canvasContainer);
             
-            // サムネイルエリア（中央下、より下に配置）
+            // サムネイルエリア
             this.thumbnailContainer = document.createElement('div');
             this.thumbnailContainer.style.cssText = `
                 display: flex;
@@ -385,6 +490,7 @@
                     transition: all 0.2s;
                 `;
                 thumb.title = `レイヤー ${i + 1} (${i + 1}キー)`;
+                thumb.layerIndex = i;
                 thumb.onclick = () => this.switchLayer(i);
                 
                 thumbWrapper.appendChild(thumbNumber);
@@ -572,113 +678,34 @@
         createOnionSkinControl() {
             const onionControl = document.createElement('div');
             
-            const headerDiv = document.createElement('div');
-            headerDiv.style.cssText = 'display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;';
-            
             const label = document.createElement('label');
-            label.style.cssText = 'font-weight: bold;';
+            label.style.cssText = 'display: block; margin-bottom: 8px; font-weight: bold;';
             label.textContent = 'オニオンスキン';
+            onionControl.appendChild(label);
             
-            const toggleBtn = document.createElement('button');
-            toggleBtn.textContent = 'OFF';
-            toggleBtn.style.cssText = `
-                padding: 4px 8px;
-                background: ${this.colors.lightMaroon};
-                color: white;
-                border: none;
-                border-radius: 3px;
-                cursor: pointer;
-                font-size: 11px;
-            `;
-            toggleBtn.onclick = () => this.toggleOnionSkin(toggleBtn);
-            this.onionToggleBtn = toggleBtn;
+            const btnGroup = document.createElement('div');
+            btnGroup.style.cssText = 'display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px;';
             
-            headerDiv.appendChild(label);
-            headerDiv.appendChild(toggleBtn);
-            onionControl.appendChild(headerDiv);
+            for (let i = 0; i <= 3; i++) {
+                const btn = document.createElement('button');
+                btn.textContent = i === 0 ? 'OFF' : String(i);
+                btn.style.cssText = `
+                    padding: 6px 4px;
+                    background: ${i === this.onionSkinMode ? this.colors.maroon : '#ddd'};
+                    color: ${i === this.onionSkinMode ? 'white' : '#333'};
+                    border: none;
+                    border-radius: 3px;
+                    cursor: pointer;
+                    font-size: 12px;
+                    font-weight: bold;
+                `;
+                btn.onclick = () => this.setOnionSkinMode(i);
+                btnGroup.appendChild(btn);
+                this.onionSkinButtons.push({ btn, btnMode: i });
+            }
             
-            const sliderDiv = document.createElement('div');
-            sliderDiv.innerHTML = `
-                <label style="display: block; margin-bottom: 8px; font-size: 11px;">
-                    表示コマ数: <span id="onion-frames-value">${this.onionSkinFrames}</span>
-                </label>
-                <input type="range" id="onion-frames-slider" 
-                    min="${this.minOnionFrames}" 
-                    max="${this.maxOnionFrames}" 
-                    value="${this.onionSkinFrames}" 
-                    style="width: 100%; accent-color: ${this.colors.maroon};">
-            `;
-            
-            this.onionFramesSlider = sliderDiv.querySelector('#onion-frames-slider');
-            const onionValue = sliderDiv.querySelector('#onion-frames-value');
-            this.onionFramesSlider.addEventListener('input', (e) => {
-                this.onionSkinFrames = parseInt(e.target.value);
-                onionValue.textContent = this.onionSkinFrames;
-                this.updateOnionSkin();
-            });
-            
-            onionControl.appendChild(sliderDiv);
+            onionControl.appendChild(btnGroup);
             this.controlPanel.appendChild(onionControl);
-        }
-        
-        toggleOnionSkin(btn) {
-            this.onionSkinEnabled = !this.onionSkinEnabled;
-            
-            if (this.onionSkinEnabled) {
-                btn.textContent = 'ON';
-                btn.style.background = this.colors.maroon;
-                this.updateOnionSkin();
-            } else {
-                btn.textContent = 'OFF';
-                btn.style.background = this.colors.lightMaroon;
-                this.clearOnionSkin();
-            }
-        }
-        
-        updateOnionSkin() {
-            if (!this.onionSkinEnabled) {
-                this.clearOnionSkin();
-                return;
-            }
-            
-            this.onionCtx = this.onionCanvas.getContext('2d');
-            this.onionCtx.clearRect(0, 0, this.onionCanvas.width, this.onionCanvas.height);
-            
-            for (let offset = -this.onionSkinFrames; offset <= this.onionSkinFrames; offset++) {
-                if (offset === 0) continue;
-                
-                const targetIndex = this.activeLayerIndex + offset;
-                if (targetIndex < 0 || targetIndex >= this.frameCount) continue;
-                
-                const opacity = 0.3 * (1 - Math.abs(offset) / (this.onionSkinFrames + 1));
-                this.onionCtx.globalAlpha = opacity;
-                
-                if (offset < 0) {
-                    this.onionCtx.globalCompositeOperation = 'source-over';
-                    this.onionCtx.filter = 'hue-rotate(200deg)';
-                } else {
-                    this.onionCtx.globalCompositeOperation = 'source-over';
-                    this.onionCtx.filter = 'hue-rotate(0deg)';
-                }
-                
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = this.canvasWidth;
-                tempCanvas.height = this.canvasHeight;
-                const tempCtx = tempCanvas.getContext('2d');
-                tempCtx.putImageData(this.layers[targetIndex], 0, 0);
-                
-                this.onionCtx.drawImage(tempCanvas, 0, 0);
-            }
-            
-            this.onionCtx.globalAlpha = 1.0;
-            this.onionCtx.filter = 'none';
-            this.onionCtx.globalCompositeOperation = 'source-over';
-        }
-        
-        clearOnionSkin() {
-            if (this.onionCtx) {
-                this.onionCtx.clearRect(0, 0, this.onionCanvas.width, this.onionCanvas.height);
-            }
         }
         
         createDelayControl() {
@@ -718,14 +745,14 @@
                 this.ctx.globalCompositeOperation = 'source-over';
                 this.ctx.lineWidth = this.size;
                 this.ctx.strokeStyle = this.color;
-                this.canvas.style.cursor = 'crosshair';
+                this.canvas.style.cursor = this.vKeyPressed ? 'grab' : 'crosshair';
                 
                 this.penBtn.style.background = this.colors.maroon;
                 this.eraserBtn.style.background = this.colors.lightMaroon;
             } else if (tool === 'eraser') {
                 this.ctx.globalCompositeOperation = 'destination-out';
                 this.ctx.lineWidth = this.eraserSize;
-                this.canvas.style.cursor = 'pointer';
+                this.canvas.style.cursor = this.vKeyPressed ? 'grab' : 'pointer';
                 
                 this.penBtn.style.background = this.colors.lightMaroon;
                 this.eraserBtn.style.background = this.colors.maroon;
@@ -749,8 +776,6 @@
                 this.canvas.height
             );
             
-            this.clearOnionSkin();
-            
             this.isPreviewPlaying = true;
             this.previewFrame = 0;
             this.previewBtn.textContent = '停止';
@@ -773,7 +798,6 @@
             this.previewBtn.style.background = this.colors.maroon;
             
             this.ctx.putImageData(this.layers[this.activeLayerIndex], 0, 0);
-            
             this.updateOnionSkin();
         }
         
@@ -801,17 +825,14 @@
         
         initLayersAndHistory() {
             for (let i = 0; i < this.frameCount; i++) {
-                // ★改修: 背景色で塗りつぶしたImageDataを作成
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = this.canvas.width;
                 tempCanvas.height = this.canvas.height;
                 const tempCtx = tempCanvas.getContext('2d');
                 
-                // 背景色で塗りつぶし
                 tempCtx.fillStyle = this.backgroundColor;
                 tempCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);
                 
-                // ImageDataとして取得
                 const initialImageData = tempCtx.getImageData(
                     0, 0,
                     this.canvas.width, 
@@ -823,7 +844,6 @@
                 this.historyIndex.push(0);
             }
             
-            // 初期レイヤーをキャンバスに反映
             this.ctx.putImageData(this.layers[0], 0, 0);
             
             if (this.thumbnailContainer && this.thumbnailContainer.childNodes[0]) {
@@ -833,7 +853,6 @@
                     firstThumb.style.transform = 'scale(1.1)';
                 }
                 
-                // 全てのサムネイルを更新
                 for (let i = 0; i < this.frameCount; i++) {
                     this.updateThumbnailByIndex(i);
                 }
@@ -879,12 +898,21 @@
             this.canvas.addEventListener('pointerup', () => this.stopDrawing());
             this.canvas.addEventListener('pointerleave', () => this.stopDrawing());
 
-            document.addEventListener('keydown', this.boundHandleKeyDown);
+            document.addEventListener('keydown', this.boundHandleKeyDown.bind(this));
+            document.addEventListener('keyup', (e) => this.handleKeyUp(e));
+            
+            // レイヤードラッグ
+            this.thumbnailContainer.addEventListener('mousedown', (e) => this.startLayerDrag(e));
+            this.thumbnailContainer.addEventListener('mousemove', (e) => this.dragLayer(e));
+            this.thumbnailContainer.addEventListener('mouseup', () => this.endLayerDrag());
+            this.thumbnailContainer.addEventListener('mouseleave', () => this.endLayerDrag());
         }
         
         // ========== 描画処理 ==========
         
         startDrawing(e) {
+            if (this.vKeyPressed) return; // V+ドラッグ時は描画しない
+            
             this.isDrawing = true;
             const rect = this.canvas.getBoundingClientRect();
             this.lastX = e.clientX - rect.left;
@@ -974,11 +1002,72 @@
             this.updateOnionSkin();
         }
         
+        // ========== レイヤードラッグ移動 ==========
+        
+        startLayerDrag(e) {
+            if (!this.vKeyPressed) return;
+            
+            const thumbWrapper = e.target.closest('div').parentElement;
+            if (!thumbWrapper) return;
+            
+            const thumbCanvas = thumbWrapper.querySelector('canvas');
+            if (thumbCanvas && thumbCanvas.layerIndex !== undefined) {
+                this.isDraggingLayer = true;
+                this.draggedLayerIndex = thumbCanvas.layerIndex;
+                this.dragStartX = e.clientX;
+            }
+        }
+        
+        dragLayer(e) {
+            if (!this.isDraggingLayer || this.draggedLayerIndex === -1) return;
+            
+            const currentX = e.clientX;
+            const threshold = 40; // ドラッグ判定の閾値
+            
+            if (Math.abs(currentX - this.dragStartX) > threshold) {
+                const direction = currentX > this.dragStartX ? 1 : -1;
+                const targetIndex = this.draggedLayerIndex + direction;
+                
+                if (targetIndex >= 0 && targetIndex < this.frameCount) {
+                    this.swapLayers(this.draggedLayerIndex, targetIndex);
+                    this.draggedLayerIndex = targetIndex;
+                    this.dragStartX = currentX;
+                }
+            }
+        }
+        
+        endLayerDrag() {
+            this.isDraggingLayer = false;
+            this.draggedLayerIndex = -1;
+        }
+        
+        swapLayers(index1, index2) {
+            const temp = this.layers[index1];
+            this.layers[index1] = this.layers[index2];
+            this.layers[index2] = temp;
+            
+            if (this.activeLayerIndex === index1) {
+                this.activeLayerIndex = index2;
+            } else if (this.activeLayerIndex === index2) {
+                this.activeLayerIndex = index1;
+            }
+            
+            this.updateThumbnailByIndex(index1);
+            this.updateThumbnailByIndex(index2);
+            
+            this.thumbnailContainer.childNodes.forEach((thumbWrapper, i) => {
+                const thumb = thumbWrapper.querySelector('canvas');
+                if (thumb) {
+                    thumb.style.borderColor = (i === this.activeLayerIndex) ? this.colors.maroon : this.colors.lightMaroon;
+                    thumb.style.transform = (i === this.activeLayerIndex) ? 'scale(1.1)' : 'scale(1)';
+                }
+            });
+        }
+        
         updateThumbnail() {
             this.updateThumbnailByIndex(this.activeLayerIndex);
         }
         
-        // ★改修: 背景と透明レイヤーの合成
         updateThumbnailByIndex(index) {
             const thumbWrapper = this.thumbnailContainer.childNodes[index];
             if (!thumbWrapper) return;
@@ -991,7 +1080,6 @@
             });
             thumbCtx.clearRect(0, 0, thumbCanvas.width, thumbCanvas.height);
 
-            // ★手順1: 一時キャンバスで合成
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = this.canvas.width;
             tempCanvas.height = this.canvas.height;
@@ -999,10 +1087,8 @@
                 willReadFrequently: true
             });
             
-            // ★手順2: 背景を描画（レイヤー0）
             tempCtx.drawImage(this.bgCanvas, 0, 0);
             
-            // ★手順3: 透明レイヤーを別キャンバスに描画
             const layerCanvas = document.createElement('canvas');
             layerCanvas.width = this.canvas.width;
             layerCanvas.height = this.canvas.height;
@@ -1011,10 +1097,8 @@
             });
             layerCtx.putImageData(this.layers[index], 0, 0);
             
-            // ★手順4: 透明レイヤーを背景の上に重ねる（レイヤー1）
             tempCtx.drawImage(layerCanvas, 0, 0);
             
-            // サムネイルに縮小して描画
             thumbCtx.drawImage(
                 tempCanvas, 
                 0, 0, 
@@ -1041,7 +1125,6 @@
             this.history[this.activeLayerIndex].push(imageData);
             this.historyIndex[this.activeLayerIndex]++;
             
-            // レイヤー配列も更新
             this.layers[this.activeLayerIndex] = imageData;
         }
 
@@ -1086,42 +1169,31 @@
             );
         }
         
-        // ========== APNGエクスポート（改修版：背景合成出力） ==========
+        // ========== APNGエクスポート ==========
         
         async exportAsApng() {
             this.prepareExport();
             
-            // ライブラリチェック
             if (!window.UPNG) {
-                console.error('Missing UPNG:', {
-                    window_UPNG: !!window.UPNG,
-                    UPNG_type: typeof window.UPNG,
-                    UPNG_encode: typeof window.UPNG?.encode
-                });
+                console.error('Missing UPNG');
                 alert('APNGエクスポートにはUPNG.jsが必要です。\nページを再読み込みしてください。');
                 return null;
             }
             
             if (!window.pako) {
-                console.error('Missing pako:', {
-                    window_pako: !!window.pako,
-                    pako_type: typeof window.pako,
-                    pako_inflate: typeof window.pako?.inflate
-                });
+                console.error('Missing pako');
                 alert('APNGエクスポートにはpako.jsが必要です。\nページを再読み込みしてください。');
                 return null;
             }
             
             const frames = [];
             
-            // ★改修: 背景と合成して出力（掲示板のサムネイル表示用）
             for (const layerData of this.layers) {
                 const frameCanvas = document.createElement('canvas');
                 frameCanvas.width = this.canvas.width;
                 frameCanvas.height = this.canvas.height;
                 const frameCtx = frameCanvas.getContext('2d');
                 
-                // ★重要: 背景を描画してから透明レイヤーを重ねる
                 frameCtx.drawImage(this.bgCanvas, 0, 0);
                 frameCtx.putImageData(layerData, 0, 0);
                 
@@ -1141,7 +1213,7 @@
                     frames,
                     this.canvas.width,
                     this.canvas.height,
-                    0, // 透過PNG
+                    0,
                     delays
                 );
                 
@@ -1153,7 +1225,7 @@
             }
         }
         
-        // ========== GIFエクスポート（改修版：背景合成出力） ==========
+        // ========== GIFエクスポート ==========
         
         async exportAsGif(onProgress) {
             this.prepareExport();
@@ -1186,7 +1258,6 @@
                         gif.on('progress', onProgress);
                     }
 
-                    // ★改修: 背景と合成して出力（掲示板のサムネイル表示用）
                     for (const layerData of this.layers) {
                         const frameCanvas = document.createElement('canvas');
                         frameCanvas.width = this.canvas.width;
@@ -1195,7 +1266,6 @@
                             willReadFrequently: true
                         });
                         
-                        // ★重要: 背景を描画してから透明レイヤーを重ねる
                         frameCtx.drawImage(this.bgCanvas, 0, 0);
                         frameCtx.putImageData(layerData, 0, 0);
                         
@@ -1255,5 +1325,5 @@
         }
     };
     
-    console.log('✅ TegakiAnimeCore loaded (レイヤー分離改修版 - 全機能継承)');
+    console.log('✅ TegakiAnimeCore loaded (完全版・全機能継承)');
 })();
