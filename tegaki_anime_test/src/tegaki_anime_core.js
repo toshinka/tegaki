@@ -804,22 +804,12 @@
         
         initLayersAndHistory() {
             for (let i = 0; i < this.frameCount; i++) {
-                // 背景色で塗りつぶした ImageData を作成
-                const tempCanvas = document.createElement('canvas');
-                tempCanvas.width = this.canvas.width;
-                tempCanvas.height = this.canvas.height;
-                const tempCtx = tempCanvas.getContext('2d');
-                
-                // 背景色で塗りつぶし
-                tempCtx.fillStyle = this.backgroundColor;
-                tempCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);
-                
-                // ImageData として取得
-                const initialImageData = tempCtx.getImageData(
-                    0, 0,
+                // ★改修: 完全に透明なImageDataを作成
+                const initialImageData = this.ctx.createImageData(
                     this.canvas.width, 
                     this.canvas.height
                 );
+                // ImageDataは既に透明（全ピクセルのアルファ値が0）
                 
                 this.layers.push(initialImageData);
                 this.history.push([initialImageData]);
@@ -981,6 +971,7 @@
             this.updateThumbnailByIndex(this.activeLayerIndex);
         }
         
+        // ★改修: 背景と透明レイヤーの合成
         updateThumbnailByIndex(index) {
             const thumbWrapper = this.thumbnailContainer.childNodes[index];
             if (!thumbWrapper) return;
@@ -993,6 +984,7 @@
             });
             thumbCtx.clearRect(0, 0, thumbCanvas.width, thumbCanvas.height);
 
+            // ★手順1: 一時キャンバスで合成
             const tempCanvas = document.createElement('canvas');
             tempCanvas.width = this.canvas.width;
             tempCanvas.height = this.canvas.height;
@@ -1000,10 +992,22 @@
                 willReadFrequently: true
             });
             
-            // 背景を描画してからレイヤーを重ねる
+            // ★手順2: 背景を描画（レイヤー0）
             tempCtx.drawImage(this.bgCanvas, 0, 0);
-            tempCtx.putImageData(this.layers[index], 0, 0);
             
+            // ★手順3: 透明レイヤーを別キャンバスに描画
+            const layerCanvas = document.createElement('canvas');
+            layerCanvas.width = this.canvas.width;
+            layerCanvas.height = this.canvas.height;
+            const layerCtx = layerCanvas.getContext('2d', {
+                willReadFrequently: true
+            });
+            layerCtx.putImageData(this.layers[index], 0, 0);
+            
+            // ★手順4: 透明レイヤーを背景の上に重ねる（レイヤー1）
+            tempCtx.drawImage(layerCanvas, 0, 0);
+            
+            // サムネイルに縮小して描画
             thumbCtx.drawImage(
                 tempCanvas, 
                 0, 0, 
@@ -1029,6 +1033,9 @@
             );
             this.history[this.activeLayerIndex].push(imageData);
             this.historyIndex[this.activeLayerIndex]++;
+            
+            // レイヤー配列も更新
+            this.layers[this.activeLayerIndex] = imageData;
         }
 
         undo() {
@@ -1038,6 +1045,7 @@
                 this.historyIndex[this.activeLayerIndex] = index;
                 const imageData = this.history[this.activeLayerIndex][index];
                 this.ctx.putImageData(imageData, 0, 0);
+                this.layers[this.activeLayerIndex] = imageData;
                 this.updateThumbnail();
                 this.updateOnionSkin();
             }
@@ -1051,6 +1059,7 @@
                 this.historyIndex[this.activeLayerIndex] = index;
                 const imageData = this.history[this.activeLayerIndex][index];
                 this.ctx.putImageData(imageData, 0, 0);
+                this.layers[this.activeLayerIndex] = imageData;
                 this.updateThumbnail();
                 this.updateOnionSkin();
             }
@@ -1098,15 +1107,14 @@
             
             const frames = [];
             
-            // ★改修: 透明背景のまま出力（掲示板用）
+            // ★改修: 透明レイヤーのみ出力（背景を描画しない）
             for (const layerData of this.layers) {
                 const frameCanvas = document.createElement('canvas');
                 frameCanvas.width = this.canvas.width;
                 frameCanvas.height = this.canvas.height;
                 const frameCtx = frameCanvas.getContext('2d');
                 
-                // ★重要: 背景を描画せず、レイヤーのみ出力
-                // 掲示板側の背景が透けて見えるようにする
+                // ★重要: 背景を描画せず、透明レイヤーのみ出力
                 frameCtx.putImageData(layerData, 0, 0);
                 
                 const imageData = frameCtx.getImageData(
@@ -1171,14 +1179,16 @@
                         gif.on('progress', onProgress);
                     }
 
-                    // ★改修: 透明背景のまま出力
+                    // ★改修: 透明レイヤーのみ出力（背景を描画しない）
                     for (const layerData of this.layers) {
                         const frameCanvas = document.createElement('canvas');
                         frameCanvas.width = this.canvas.width;
                         frameCanvas.height = this.canvas.height;
-                        const frameCtx = frameCanvas.getContext('2d');
+                        const frameCtx = frameCanvas.getContext('2d', {
+                            willReadFrequently: true
+                        });
                         
-                        // ★重要: 背景を描画せず、レイヤーのみ出力
+                        // ★重要: 背景を描画せず、透明レイヤーのみ出力
                         frameCtx.putImageData(layerData, 0, 0);
                         
                         gif.addFrame(frameCanvas, { 
@@ -1237,5 +1247,5 @@
         }
     };
     
-    console.log('✅ TegakiAnimeCore loaded (Fixed APNG/GIF export - transparent background)');
+    console.log('✅ TegakiAnimeCore loaded (レイヤー分離改修版 - 全機能継承)');
 })();

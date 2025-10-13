@@ -1,5 +1,3 @@
-// ===== system/batch-api.js - Phase 5: 標準化API実装 =====
-
 (function() {
     'use strict';
 
@@ -44,13 +42,42 @@
                 if (schema.max !== undefined && value > schema.max) return false;
             }
             
-            layer.layerData[property] = value;
+            // History 統合（Undo/Redo対応）
+            if (window.History && !window.History.isApplying) {
+                const oldValue = layer.layerData[property];
+                
+                const command = {
+                    name: 'layer-property-change',
+                    do: () => {
+                        layer.layerData[property] = value;
+                        if (property === 'visible') layer.visible = value;
+                        if (property === 'opacity') layer.alpha = value;
+                        this.layerSystem.requestThumbnailUpdate(index);
+                    },
+                    undo: () => {
+                        layer.layerData[property] = oldValue;
+                        if (property === 'visible') layer.visible = oldValue;
+                        if (property === 'opacity') layer.alpha = oldValue;
+                        this.layerSystem.requestThumbnailUpdate(index);
+                    },
+                    meta: { 
+                        type: 'layer-prop', 
+                        index, 
+                        property, 
+                        oldValue, 
+                        newValue: value 
+                    }
+                };
+                
+                window.History.push(command);
+            } else {
+                // History が無効な場合は直接実行
+                layer.layerData[property] = value;
+                if (property === 'visible') layer.visible = value;
+                if (property === 'opacity') layer.alpha = value;
+                this.layerSystem.requestThumbnailUpdate(index);
+            }
             
-            // PIXI オブジェクトへ反映
-            if (property === 'visible') layer.visible = value;
-            if (property === 'opacity') layer.alpha = value;
-            
-            this.layerSystem.requestThumbnailUpdate(index);
             return true;
         }
 
@@ -59,9 +86,57 @@
         }
 
         batchUpdateLayers(updates) {
-            // updates = [{ index: 0, property: 'opacity', value: 0.5 }, ...]
-            const results = [];
+            // Composite コマンドを使用（複数操作を1つの Undo/Redo で扱う）
+            if (window.History && !window.History.isApplying) {
+                const commands = [];
+                
+                for (const update of updates) {
+                    const layers = this.layerSystem.getLayers();
+                    const layer = layers[update.index];
+                    if (!layer?.layerData) continue;
+                    
+                    const oldValue = layer.layerData[update.property];
+                    
+                    commands.push({
+                        name: 'layer-prop-batch-item',
+                        do: () => {
+                            const currentLayers = this.layerSystem.getLayers();
+                            const currentLayer = currentLayers[update.index];
+                            if (!currentLayer?.layerData) return;
+                            
+                            currentLayer.layerData[update.property] = update.value;
+                            if (update.property === 'visible') currentLayer.visible = update.value;
+                            if (update.property === 'opacity') currentLayer.alpha = update.value;
+                            this.layerSystem.requestThumbnailUpdate(update.index);
+                        },
+                        undo: () => {
+                            const currentLayers = this.layerSystem.getLayers();
+                            const currentLayer = currentLayers[update.index];
+                            if (!currentLayer?.layerData) return;
+                            
+                            currentLayer.layerData[update.property] = oldValue;
+                            if (update.property === 'visible') currentLayer.visible = oldValue;
+                            if (update.property === 'opacity') currentLayer.alpha = oldValue;
+                            this.layerSystem.requestThumbnailUpdate(update.index);
+                        },
+                        meta: { index: update.index, property: update.property }
+                    });
+                }
+                
+                if (commands.length > 0) {
+                    // 複数のコマンドをまとめて1つの Undo/Redo にする
+                    const composite = window.History.createComposite(
+                        commands, 
+                        'batch-layer-update'
+                    );
+                    window.History.push(composite);
+                }
+                
+                return updates.map(u => ({ ...u, success: true }));
+            }
             
+            // History が無効な場合は通常実行
+            const results = [];
             for (const update of updates) {
                 const success = this.setLayerProperty(
                     update.index, 
@@ -70,15 +145,14 @@
                 );
                 results.push({ ...update, success });
             }
-            
             return results;
         }
 
         batchRenameLayers(pattern) {
-            // pattern = { search: 'Layer', replace: 'レイヤー' }
             const layers = this.layerSystem.getLayers();
-            const results = [];
+            const changes = [];
             
+            // 変更対象を事前に集計
             layers.forEach((layer, index) => {
                 if (!layer.layerData) return;
                 
@@ -89,13 +163,50 @@
                 );
                 
                 if (newName !== oldName) {
-                    layer.layerData.name = newName;
-                    results.push({ index, oldName, newName });
+                    changes.push({ index, oldName, newName });
                 }
             });
             
+            // History 記録
+            if (window.History && !window.History.isApplying) {
+                const commands = changes.map(change => ({
+                    name: 'layer-rename-batch-item',
+                    do: () => {
+                        const currentLayers = this.layerSystem.getLayers();
+                        const layer = currentLayers[change.index];
+                        if (layer?.layerData) {
+                            layer.layerData.name = change.newName;
+                        }
+                    },
+                    undo: () => {
+                        const currentLayers = this.layerSystem.getLayers();
+                        const layer = currentLayers[change.index];
+                        if (layer?.layerData) {
+                            layer.layerData.name = change.oldName;
+                        }
+                    },
+                    meta: { index: change.index }
+                }));
+                
+                if (commands.length > 0) {
+                    const composite = window.History.createComposite(
+                        commands, 
+                        'batch-rename-layers'
+                    );
+                    window.History.push(composite);
+                }
+            } else {
+                // History が無効な場合は直接実行
+                changes.forEach(change => {
+                    const layer = layers[change.index];
+                    if (layer?.layerData) {
+                        layer.layerData.name = change.newName;
+                    }
+                });
+            }
+            
             this.layerSystem.updateLayerPanelUI();
-            return results;
+            return changes;
         }
 
         // ========== CUT 操作 ==========
@@ -138,7 +249,26 @@
                 if (schema.max !== undefined && value > schema.max) return false;
             }
             
-            cut[property] = value;
+            // History 統合
+            if (window.History && !window.History.isApplying) {
+                const oldValue = cut[property];
+                
+                const command = {
+                    name: 'cut-property-change',
+                    do: () => {
+                        cut[property] = value;
+                    },
+                    undo: () => {
+                        cut[property] = oldValue;
+                    },
+                    meta: { type: 'cut-prop', index, property, oldValue, newValue: value }
+                };
+                
+                window.History.push(command);
+            } else {
+                cut[property] = value;
+            }
+            
             return true;
         }
 
@@ -212,5 +342,5 @@
 
     window.TegakiBatchAPI = BatchAPI;
 
-    console.log('✅ batch-api.js loaded');
+    console.log('✅ batch-api.js (Phase 6: History統合版) loaded');
 })();
