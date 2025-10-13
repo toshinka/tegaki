@@ -1,6 +1,6 @@
 /**
  * DrawingEngine v2.1 (Phase 7対応版)
- * Perfect Freehand対応ベクターペンエンジン + History統合
+ * Perfect Freehand対応ベクターペンエンジン + History統合 + 筆圧対応
  */
 
 class DrawingEngine {
@@ -10,17 +10,30 @@ class DrawingEngine {
     this.eventBus = eventBus;
     this.config = config || {};
 
-    // サブモジュール初期化
-    this.settings = new window.TegakiDrawing.BrushSettings(config, eventBus);
-    this.recorder = new window.TegakiDrawing.StrokeRecorder();
-    this.renderer = new window.TegakiDrawing.StrokeRenderer(config);
-    this.pressureHandler = new window.TegakiDrawing.PressureHandler();
-    this.transformer = new window.TegakiDrawing.StrokeTransformer(config);
+    // サブモジュール初期化（存在する場合のみ）
+    if (window.TegakiDrawing) {
+      this.settings = window.TegakiDrawing.BrushSettings ? 
+        new window.TegakiDrawing.BrushSettings(config, eventBus) : null;
+      this.recorder = window.TegakiDrawing.StrokeRecorder ? 
+        new window.TegakiDrawing.StrokeRecorder() : null;
+      this.renderer = window.TegakiDrawing.StrokeRenderer ? 
+        new window.TegakiDrawing.StrokeRenderer(config) : null;
+      this.pressureHandler = window.TegakiDrawing.PressureHandler ? 
+        new window.TegakiDrawing.PressureHandler() : null;
+      this.transformer = window.TegakiDrawing.StrokeTransformer ? 
+        new window.TegakiDrawing.StrokeTransformer(config) : null;
+    }
+
+    // フォールバック: 基本設定
+    this.brushSize = config?.pen?.size || 8;
+    this.brushColor = config?.pen?.color || 0x000000;
+    this.brushOpacity = config?.pen?.opacity || 1.0;
 
     // 描画状態
     this.isDrawing = false;
     this.currentTool = 'pen'; // 'pen' | 'eraser'
     this.currentPath = null;
+    this.lastPoint = null;
   }
 
   /**
