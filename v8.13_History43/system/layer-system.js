@@ -87,78 +87,85 @@
         }
 
         // ========== Phase 1: メモリリーク解消 ==========
-        rebuildPathGraphics(path) {
+rebuildPathGraphics(path) {
+    try {
+        // Phase 1: 既存のGraphicsを完全に破棄（子要素も含む）
+        if (path.graphics) {
             try {
-                // Phase 1: 既存のGraphicsを完全に破棄（子要素も含む）
-                if (path.graphics) {
-                    try {
-                        if (path.graphics.destroy && typeof path.graphics.destroy === 'function') {
-                            path.graphics.destroy({ 
-                                children: true,      // 子要素も破棄
-                                texture: false, 
-                                baseTexture: false 
-                            });
-                        }
-                    } catch (destroyError) {
-                    }
-                    path.graphics = null;
+                if (path.graphics.destroy && typeof path.graphics.destroy === 'function') {
+                    path.graphics.destroy({ 
+                        children: true,      // 子要素も破棄
+                        texture: false, 
+                        baseTexture: false 
+                    });
                 }
+            } catch (destroyError) {
+            }
+            path.graphics = null;
+        }
+        
+        path.graphics = new PIXI.Graphics();
+        
+        if (!path.points || !Array.isArray(path.points) || path.points.length === 0) {
+            return true;
+        }
+        
+        // Perfect Freehandが利用可能かつstrokeOptionsがある場合
+        if (path.strokeOptions && typeof getStroke !== 'undefined') {
+            try {
+                // Phase 2: スケール再計算を廃止（描画時のサイズを固定使用）
+                const renderSize = path.size;
                 
-                path.graphics = new PIXI.Graphics();
+                const options = {
+                    ...path.strokeOptions,
+                    size: renderSize,
+                    color: path.color,
+                    alpha: path.opacity
+                };
                 
-                if (!path.points || !Array.isArray(path.points) || path.points.length === 0) {
+                const outlinePoints = getStroke(path.points, options);
+                
+                if (outlinePoints && outlinePoints.length > 0) {
+                    path.graphics.poly(outlinePoints);
+                    path.graphics.fill({ 
+                        color: path.color || 0x000000, 
+                        alpha: path.opacity || 1.0 
+                    });
                     return true;
                 }
-                
-                // Perfect Freehandが利用可能かつstrokeOptionsがある場合
-                if (path.strokeOptions && typeof getStroke !== 'undefined') {
-                    try {
-                        // Phase 2: スケール再計算を廃止（描画時のサイズを固定使用）
-                        const renderSize = path.size;
-                        
-                        const options = {
-                            ...path.strokeOptions,
-                            size: renderSize,
-                            color: path.color,
-                            alpha: path.opacity
-                        };
-                        
-                        const outlinePoints = getStroke(path.points, options);
-                        
-                        if (outlinePoints && outlinePoints.length > 0) {
-                            path.graphics.poly(outlinePoints);
-                            path.graphics.fill({ 
-                                color: path.color || 0x000000, 
-                                alpha: path.opacity || 1.0 
-                            });
-                            return true;
-                        }
-                    } catch (pfError) {
-                        // Perfect Freehand失敗時はフォールバック
-                    }
-                }
-                
-                // フォールバック: 円の連続描画
-                for (let point of path.points) {
-                    if (typeof point.x === 'number' && typeof point.y === 'number' &&
-                        isFinite(point.x) && isFinite(point.y)) {
-                        
-                        path.graphics.circle(point.x, point.y, (path.size || 16) / 2);
-                        path.graphics.fill({ 
-                            color: path.color || 0x800000, 
-                            alpha: path.opacity || 1.0 
-                        });
-                    }
-                }
-                
-                return true;
-                
-            } catch (error) {
-                path.graphics = null;
-                return false;
+            } catch (pfError) {
+                // Perfect Freehand失敗時はフォールバック
             }
         }
-
+        
+        // 🔥 フォールバック: 筆圧対応の円の連続描画
+        for (let point of path.points) {
+            if (typeof point.x === 'number' && typeof point.y === 'number' &&
+                isFinite(point.x) && isFinite(point.y)) {
+                
+                // 🔥 筆圧対応: 各ポイントに筆圧情報がある場合はそれを使用
+                const pressure = (typeof point.pressure === 'number' && point.pressure > 0) 
+                    ? point.pressure 
+                    : 0.5;
+                
+                // 🔥 筆圧に応じてサイズを調整 (0.5倍～1.0倍の範囲)
+                const pressureAdjustedSize = (path.size || 16) * (0.5 + pressure * 0.5);
+                
+                path.graphics.circle(point.x, point.y, pressureAdjustedSize / 2);
+                path.graphics.fill({ 
+                    color: path.color || 0x800000, 
+                    alpha: path.opacity || 1.0 
+                });
+            }
+        }
+        
+        return true;
+        
+    } catch (error) {
+        path.graphics = null;
+        return false;
+    }
+}
         // ========== Phase 7: ペンツール統合 ==========
         addPathToActiveLayer(path) {
             if (!this.getActiveLayer()) return;
