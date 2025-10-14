@@ -1,7 +1,7 @@
 // ========================================
 // Tegaki Anime Bundle
 // UPNG.js + pako.js + GIF.js + TegakiAnimeCore
-// Build: 2025-10-14T07:30:31.399Z
+// Build: 2025-10-14T08:01:56.574Z
 // ========================================
 
 
@@ -2043,7 +2043,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                 frameCanvas.height = this.canvas.height;
                 const frameCtx = frameCanvas.getContext('2d');
                 
-                frameCtx.drawImage(this.bgCanvas, 0, 0);
+                // 背景を描画せず、透明なまま描画レイヤーのみ出力
                 frameCtx.putImageData(layerData, 0, 0);
                 
                 const imageData = frameCtx.getImageData(
@@ -2094,7 +2094,8 @@ UPNG.encode.alphaMul = function(img, roundA) {
                         width: this.canvas.width,
                         height: this.canvas.height,
                         workerScript: workerUrl,
-                        debug: false
+                        debug: false,
+                        transparent: 0x000000  // 黒を透明色として扱う
                     });
                     
                     if (onProgress && typeof onProgress === 'function') {
@@ -2107,7 +2108,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                         frameCanvas.height = this.canvas.height;
                         const frameCtx = frameCanvas.getContext('2d');
                         
-                        frameCtx.drawImage(this.bgCanvas, 0, 0);
+                        // 背景を描画せず、透明なまま描画レイヤーのみ出力
                         frameCtx.putImageData(layerData, 0, 0);
                         
                         gif.addFrame(frameCanvas, { 
@@ -3465,7 +3466,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                 frameCanvas.height = this.canvas.height;
                 const frameCtx = frameCanvas.getContext('2d');
                 
-                frameCtx.drawImage(this.bgCanvas, 0, 0);
+                // 背景を描画せず、透明なまま描画レイヤーのみ出力
                 frameCtx.putImageData(layerData, 0, 0);
                 
                 const imageData = frameCtx.getImageData(
@@ -3516,7 +3517,8 @@ UPNG.encode.alphaMul = function(img, roundA) {
                         width: this.canvas.width,
                         height: this.canvas.height,
                         workerScript: workerUrl,
-                        debug: false
+                        debug: false,
+                        transparent: 0x000000  // 黒を透明色として扱う
                     });
                     
                     if (onProgress && typeof onProgress === 'function') {
@@ -3529,7 +3531,7 @@ UPNG.encode.alphaMul = function(img, roundA) {
                         frameCanvas.height = this.canvas.height;
                         const frameCtx = frameCanvas.getContext('2d');
                         
-                        frameCtx.drawImage(this.bgCanvas, 0, 0);
+                        // 背景を描画せず、透明なまま描画レイヤーのみ出力
                         frameCtx.putImageData(layerData, 0, 0);
                         
                         gif.addFrame(frameCanvas, { 
