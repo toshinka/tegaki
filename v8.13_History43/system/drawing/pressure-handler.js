@@ -1,6 +1,10 @@
 /**
- * PressureHandler v1.0
+ * PressureHandler v1.1 (筆圧判定修正版)
  * 筆圧検知・疑似筆圧算出
+ * 
+ * 🔥 修正内容:
+ * - pressure の判定条件を >= 0 && <= 1 に変更（0と1も含める）
+ * - typeof number チェックを追加
  */
 
 class PressureHandler {
@@ -26,12 +30,13 @@ class PressureHandler {
     const event = pointerEventOrPressure;
     if (!event) return 0.5;
 
-    // 実筆圧が有効な場合
-    if (event.pressure > 0 && event.pressure < 1) {
+    // 🔥 修正: PointerEvent.pressure が定義されている場合はその値を使う
+    if (typeof event.pressure === 'number' && !Number.isNaN(event.pressure)) {
+      // pressure は 0.0 〜 1.0 が妥当なので clamp する
       return this.normalizePressure(event.pressure);
     }
 
-    // 疑似筆圧算出 (速度ベース)
+    // フォールバック：速度ベースの疑似筆圧
     return this.estimatePressureFromVelocity(event.clientX, event.clientY, event.timeStamp);
   }
 
@@ -99,3 +104,6 @@ if (typeof window.TegakiDrawing === 'undefined') {
   window.TegakiDrawing = {};
 }
 window.TegakiDrawing.PressureHandler = PressureHandler;
+
+console.log('✅ PressureHandler (筆圧判定修正版) loaded');
+console.log('   - 🔥 pressure 判定を >= 0 && <= 1 に修正（0と1も含める）');
