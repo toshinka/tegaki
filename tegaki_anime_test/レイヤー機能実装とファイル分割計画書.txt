@@ -1,0 +1,710 @@
+# Tegaki Anime レイヤー機能実装とファイル分割計画書
+
+## 📋 プロジェクト概要
+
+### 目標
+- フレームごとに複数レイヤーを持つ階層構造の実装
+- コードの可読性・保守性向上のためのファイル分割
+- 既存機能を維持しながら拡張可能なアーキテクチャへ移行
+
+### 現状の構造
+```
+フレーム1 → ImageData（1枚）
+フレーム2 → ImageData（1枚）
+...
+フレーム5 → ImageData（1枚）
+```
+
+### 新構造（目標）
+```
+フレームフォルダ1
+  ├─ レイヤー0（背景・不透明）
+  ├─ レイヤー1（透明・描画用）
+  └─ レイヤー2（透明・描画用）
+フレームフォルダ2
+  ├─ レイヤー0（背景・不透明）
+  ├─ レイヤー1（透明・描画用）
+  └─ レイヤー2（透明・描画用）
+...
+```
+
+---
+
+## 🗂️ ファイル分割設計
+
+### 分割方針
+1. **責務による分離**: 各モジュールが単一の責務を持つ
+2. **依存関係の明確化**: 各モジュール間の依存を最小限に
+3. **Claude可読性重視**: 各ファイルが1000行以内、明確な命名
+
+### 新しいファイル構成
+
+```
+tegaki_anime_test/
+├── src/
+│   ├── tegaki_anime_core.js          # メインクラス（統合・初期化）
+│   ├── modules/
+│   │   ├── CanvasManager.js          # キャンバス管理・座標変換
+│   │   ├── LayerManager.js           # レイヤー・フレーム管理
+│   │   ├── DrawingEngine.js          # 描画処理・ペンツール
+│   │   ├── HistoryManager.js         # Undo/Redo履歴管理
+│   │   ├── UIBuilder.js              # UI生成・レイアウト
+│   │   ├── KeyboardManager.js        # キーボード入力処理
+│   │   └── ExportManager.js          # APNG/GIF出力処理
+│   └── utils/
+│       ├── constants.js              # 定数定義
+│       └── helpers.js                # ユーティリティ関数
+├── libs/                              # 外部ライブラリ（変更なし）
+├── dist/
+│   └── tegaki_anime.js               # ビルド生成物
+├── build.js                           # ビルドスクリプト（要修正）
+└── TegakiAniTest.html                 # テスト用HTML
+```
+
+---
+
+## 📐 各モジュール詳細設計
+
+### 1. CanvasManager.js
+**責務**: キャンバス座標管理、描画コンテキスト管理
+
+```javascript
+// 主要機能
+- キャンバス座標とマウス座標の変換
+- 描画コンテキストの初期化・設定
+- キャンバスサイズ管理
+- スケール・オフセット処理（将来の拡大縮小機能用）
+```
+
+**API例**:
+```javascript
+class CanvasManager {
+  constructor(width, height, backgroundColor)
+  getCanvasCoordinates(clientX, clientY)
+  createCanvas(options)
+  getDrawingContext()
+  clearCanvas()
+}
+```
+
+**依存関係**: なし（最も低レベル）
+
+---
+
+### 2. LayerManager.js
+**責務**: レイヤー・フレーム階層構造の管理
+
+```javascript
+// データ構造
+frames: [
+  { // Frame 0
+    layers: [
+      { imageData: ImageData, visible: true, opacity: 1.0, name: '背景' },
+      { imageData: ImageData, visible: true, opacity: 1.0, name: 'レイヤー1' },
+      { imageData: ImageData, visible: true, opacity: 1.0, name: 'レイヤー2' }
+    ]
+  },
+  { // Frame 1
+    layers: [ ... ]
+  }
+]
+activeFrameIndex: 0
+activeLayerIndex: 1
+```
+
+**API例**:
+```javascript
+class LayerManager {
+  constructor(frameCount, layerCountPerFrame, canvasWidth, canvasHeight)
+  
+  // フレーム操作
+  switchFrame(frameIndex)
+  getActiveFrame()
+  
+  // レイヤー操作
+  switchLayer(layerIndex)
+  getActiveLayer()
+  getCompositeImageData(frameIndex) // 全レイヤー合成
+  
+  // レイヤー設定
+  setLayerVisibility(frameIndex, layerIndex, visible)
+  setLayerOpacity(frameIndex, layerIndex, opacity)
+  
+  // データ取得
+  getAllFrames()
+  exportFrameData()
+}
+```
+
+**依存関係**: CanvasManager（ImageData生成用）
+
+---
+
+### 3. DrawingEngine.js
+**責務**: 実際の描画処理、ペンツール機能
+
+```javascript
+// 主要機能
+- ペン描画（ライン、点）
+- 消しゴム機能
+- ブラシ設定（サイズ、色、不透明度）
+- 図形描画（今後の拡張用：直線、矩形、円）
+```
+
+**API例**:
+```javascript
+class DrawingEngine {
+  constructor(canvasManager)
+  
+  // 描画処理
+  startDrawing(x, y)
+  draw(x, y)
+  stopDrawing()
+  
+  // ツール設定
+  setColor(color)
+  setSize(size)
+  setTool(tool) // 'pen' | 'eraser' | 'line' | 'rect'
+  
+  // 描画先指定
+  setTargetContext(ctx)
+  
+  // プレビュー描画（図形ツール用）
+  drawPreview(startX, startY, endX, endY)
+}
+```
+
+**依存関係**: CanvasManager
+
+---
+
+### 4. HistoryManager.js
+**責務**: Undo/Redo履歴管理（フレーム×レイヤーごと）
+
+```javascript
+// データ構造
+history: [
+  [ // Frame 0
+    [ // Layer 0
+      ImageData, ImageData, ...
+    ],
+    [ // Layer 1
+      ImageData, ImageData, ...
+    ]
+  ],
+  [ // Frame 1
+    ...
+  ]
+]
+historyIndex: [[0, 0, 0], [0, 0, 0], ...] // [frame][layer]
+```
+
+**API例**:
+```javascript
+class HistoryManager {
+  constructor(frameCount, layerCount)
+  
+  pushHistory(frameIndex, layerIndex, imageData)
+  undo(frameIndex, layerIndex)
+  redo(frameIndex, layerIndex)
+  
+  canUndo(frameIndex, layerIndex)
+  canRedo(frameIndex, layerIndex)
+  
+  clearHistory(frameIndex, layerIndex)
+  getHistorySize() // メモリ使用量確認用
+}
+```
+
+**依存関係**: なし
+
+---
+
+### 5. UIBuilder.js
+**責務**: UI要素の生成・レイアウト
+
+```javascript
+// 主要機能
+- 全体レイアウト構築
+- ショートカットパネル生成
+- コントロールパネル生成
+- サムネイル生成・更新
+- レイヤーパネル生成（新規）
+```
+
+**API例**:
+```javascript
+class UIBuilder {
+  constructor(container)
+  
+  // レイアウト
+  createMainLayout()
+  createCanvasArea(canvasElement)
+  createControlPanel()
+  createShortcutPanel()
+  
+  // サムネイル
+  createFrameThumbnails(frameCount, onClick)
+  updateFrameThumbnail(frameIndex, imageData)
+  highlightFrameThumbnail(frameIndex)
+  
+  // レイヤーパネル（新規）
+  createLayerPanel(layerCount, onLayerClick)
+  updateLayerThumbnail(layerIndex, imageData)
+  highlightLayerThumbnail(layerIndex)
+  setLayerPanelVisibility(frameIndex) // アクティブフレームのレイヤーのみ表示
+  
+  // コントロール
+  createSlider(label, min, max, value, onChange)
+  createButton(label, onClick, style)
+}
+```
+
+**依存関係**: なし（純粋なDOM操作）
+
+---
+
+### 6. KeyboardManager.js
+**責務**: キーボード入力の一元管理
+
+```javascript
+// 既存のkeyManagerを独立モジュール化
+```
+
+**API例**:
+```javascript
+class KeyboardManager {
+  constructor()
+  
+  register(key, modifier, handler, description)
+  unregister(key, modifier)
+  enable()
+  disable()
+  getBindings() // ショートカット一覧取得
+}
+```
+
+**依存関係**: なし
+
+---
+
+### 7. ExportManager.js
+**責務**: APNG/GIF出力処理
+
+```javascript
+// 主要機能
+- レイヤー合成
+- APNG生成
+- GIF生成
+- プログレス管理
+```
+
+**API例**:
+```javascript
+class ExportManager {
+  constructor(layerManager, canvasManager)
+  
+  async exportAsApng(frameDelay)
+  async exportAsGif(frameDelay, onProgress)
+  
+  // ヘルパー
+  compositeFrame(frameData)
+  validateExportData()
+}
+```
+
+**依存関係**: LayerManager, CanvasManager
+
+---
+
+### 8. tegaki_anime_core.js（新）
+**責務**: 各モジュールの統合・初期化・イベント連携
+
+```javascript
+class TegakiAnimeCore {
+  constructor(container) {
+    // モジュールインスタンス
+    this.canvasManager = new CanvasManager(400, 400, '#f0e0d6');
+    this.layerManager = new LayerManager(5, 3, 400, 400);
+    this.drawingEngine = new DrawingEngine(this.canvasManager);
+    this.historyManager = new HistoryManager(5, 3);
+    this.uiBuilder = new UIBuilder(container);
+    this.keyboardManager = new KeyboardManager();
+    this.exportManager = new ExportManager(this.layerManager, this.canvasManager);
+    
+    this.init();
+  }
+  
+  init() {
+    // UIビルド
+    this.uiBuilder.createMainLayout();
+    
+    // キャンバス初期化
+    const canvas = this.canvasManager.createCanvas();
+    this.uiBuilder.createCanvasArea(canvas);
+    
+    // イベント連携
+    this.attachEvents();
+    this.registerKeys();
+  }
+  
+  attachEvents() {
+    // 描画イベント → DrawingEngine
+    // レイヤー切替 → LayerManager
+    // 履歴操作 → HistoryManager
+  }
+  
+  // 各モジュールへの委譲メソッド
+  switchFrame(index) { ... }
+  switchLayer(index) { ... }
+  undo() { ... }
+  redo() { ... }
+}
+```
+
+---
+
+## 🎨 新UIレイアウト設計
+
+### 画面構成（左→右）
+
+```
+┌────────────────────────────────────────────────────────────┐
+│  ショートカット │     キャンバスエリア      │ レイヤー │ コントロール │
+│      パネル     │                          │  パネル  │   パネル     │
+│    (180px)     │                          │ (150px) │   (180px)    │
+├────────────────┼──────────────────────────┼─────────┼──────────────┤
+│  📌 1-5:フレーム │  ┌──────────────────┐  │ □ レイヤー2 │ ✏️ ペンサイズ │
+│  📌 Ctrl+Z: Undo│  │                  │  │ □ レイヤー1 │   [====]     │
+│  📌 Ctrl+Y: Redo│  │    400x400       │  │ ■ 背景     │              │
+│  📌 Q/W: レイヤー│  │    キャンバス    │  │            │ ⏱️ 間隔      │
+│                │  │                  │  │ （縦並び） │   [====]     │
+│  ℹ️ 使い方      │  └──────────────────┘  │            │              │
+│  - 各レイヤー描画│                          │            │ ▶️ プレビュー │
+│  - 下のサムネで │  ┌──┬──┬──┬──┬──┐  │            │ 💾 APNG出力  │
+│    フレーム切替 │  │ 1│ 2│ 3│ 4│ 5│  │            │ 🎬 GIF出力   │
+│                │  └──┴──┴──┴──┴──┘  │            │              │
+│                │   (フレームサムネイル) │            │              │
+└────────────────┴──────────────────────────┴─────────┴──────────────┘
+```
+
+### レイヤーパネル詳細
+
+```
+┌─ レイヤーパネル ─────┐
+│ Frame 3 のレイヤー   │
+│ ────────────────────│
+│ □ 👁️ レイヤー2       │ ← サムネイル60x60
+│   [不透明度: 100%]   │    チェックで表示/非表示
+│ ────────────────────│
+│ ■ 👁️ レイヤー1 ★    │ ← ★=アクティブ
+│   [不透明度: 100%]   │
+│ ────────────────────│
+│ □ 👁️ 背景           │
+│   [不透明度: 100%]   │
+│ ────────────────────│
+│  [+ 新規レイヤー]    │ ← 今後の拡張用
+└──────────────────────┘
+```
+
+**特徴**:
+- フレーム切替時にレイヤーパネルの内容も切り替わる
+- レイヤーサムネイルは縦並び（時間軸=フレームは横、空間軸=レイヤーは縦）
+- アクティブなレイヤーにはハイライト
+- 目のアイコンで表示/非表示切替（今後実装）
+- 不透明度スライダー（今後実装）
+
+---
+
+## 🔧 build.js の修正
+
+### 現状の問題
+- 単一ファイル（tegaki_anime_core.js）のみを読み込んでいる
+
+### 修正内容
+
+```javascript
+const coreFiles = [
+  'src/utils/constants.js',
+  'src/utils/helpers.js',
+  'src/modules/CanvasManager.js',
+  'src/modules/LayerManager.js',
+  'src/modules/DrawingEngine.js',
+  'src/modules/HistoryManager.js',
+  'src/modules/UIBuilder.js',
+  'src/modules/KeyboardManager.js',
+  'src/modules/ExportManager.js',
+  'src/tegaki_anime_core.js'  // 最後に統合クラス
+];
+
+// 各ファイルを順番に結合
+let coreCode = '';
+for (const file of coreFiles) {
+  coreCode += fs.readFileSync(file, 'utf8') + '\n\n';
+}
+```
+
+**ポイント**:
+- 依存関係順に読み込み（低レベル→高レベル）
+- 各ファイルはIIFEでラップし、windowに公開
+- グローバル汚染を防ぐ
+
+---
+
+## 🚀 実装フェーズ
+
+### Phase 1: ファイル分割（既存機能維持）
+**期間**: 1-2週間  
+**目標**: 既存機能を損なわず、ファイル分割のみ実施
+
+1. `src/modules/` ディレクトリ作成
+2. 各モジュールファイル作成（既存コードを移植）
+3. `build.js` 修正
+4. ビルド・動作確認
+5. 既存機能の全面テスト
+
+**検証項目**:
+- [ ] 描画機能正常動作
+- [ ] Undo/Redo正常動作
+- [ ] フレーム切替正常動作
+- [ ] APNG/GIF出力正常動作
+- [ ] キーボードショートカット正常動作
+
+---
+
+### Phase 2: LayerManager拡張（データ構造変更）
+**期間**: 1週間  
+**目標**: 階層構造（フレーム→レイヤー）への移行
+
+1. `LayerManager.js` のデータ構造変更
+2. 各モジュールのAPI呼び出し修正
+3. 既存テストの実施
+
+**検証項目**:
+- [ ] レイヤーデータ正常保存
+- [ ] フレーム切替時のレイヤー保持
+- [ ] 合成処理の正常動作
+
+---
+
+### Phase 3: レイヤーUI実装
+**期間**: 1週間  
+**目標**: レイヤーパネルの追加
+
+1. `UIBuilder.js` にレイヤーパネル生成機能追加
+2. レイヤー切替イベント実装
+3. レイヤーサムネイル更新処理
+4. レイアウト調整（サイドバー詰める）
+
+**検証項目**:
+- [ ] レイヤーパネル表示
+- [ ] レイヤー切替正常動作
+- [ ] サムネイル更新正常動作
+- [ ] UI崩れなし
+
+---
+
+### Phase 4: 履歴管理拡張
+**期間**: 3-5日  
+**目標**: フレーム×レイヤーごとのUndo/Redo
+
+1. `HistoryManager.js` の3次元配列対応
+2. Undo/Redoのレイヤー別処理
+3. メモリ使用量最適化
+
+**検証項目**:
+- [ ] レイヤー別Undo/Redo
+- [ ] 履歴の巻き戻し正常動作
+- [ ] メモリリークなし
+
+---
+
+### Phase 5: エクスポート処理修正
+**期間**: 3-5日  
+**目標**: レイヤー合成を考慮したAPNG/GIF出力
+
+1. `ExportManager.js` の合成処理修正
+2. 全レイヤー合成ロジック実装
+3. 出力品質確認
+
+**検証項目**:
+- [ ] APNG出力正常
+- [ ] GIF出力正常
+- [ ] レイヤー合成結果が正しい
+
+---
+
+### Phase 6: キーボードショートカット拡張
+**期間**: 2-3日  
+**目標**: レイヤー切替のショートカット追加
+
+1. `KeyboardManager.js` にレイヤー切替登録
+2. ショートカットパネル更新
+3. ヘルプ表示改善
+
+**ショートカット案**:
+- `Q` / `W`: レイヤー上下切替
+- `Shift+1～5`: フレーム切替（既存の1～5と併用）
+- `Ctrl+L`: レイヤーパネル表示切替
+
+---
+
+## 📝 各モジュールの実装優先度
+
+### 高優先度（Phase 1で必須）
+1. ✅ `CanvasManager.js` - 基盤
+2. ✅ `LayerManager.js` - コア機能
+3. ✅ `DrawingEngine.js` - 描画処理
+4. ✅ `HistoryManager.js` - Undo/Redo
+
+### 中優先度（Phase 2-3）
+5. ✅ `UIBuilder.js` - UI生成
+6. ✅ `KeyboardManager.js` - 入力処理
+
+### 低優先度（Phase 4-5）
+7. ✅ `ExportManager.js` - 出力処理
+
+---
+
+## ⚠️ 注意事項・リスク
+
+### 技術的制約
+- CSP制約により、CDN不可・全てのコードを1ファイルに統合必須
+- IIFE + window公開パターン必須
+- メモリ使用量増加に注意（フレーム×レイヤー分のImageData）
+
+### メモリ最適化案
+- 不要な履歴の自動削除（上限100ステップなど）
+- 非アクティブなレイヤーの圧縮（今後検討）
+- サムネイルの遅延生成
+
+### 互換性維持
+- 既存のブックマークレットが動作すること
+- TegakiAniTest.html で全機能動作すること
+- 既存ユーザーの混乱を招かないUI
+
+---
+
+## 🧪 テスト計画
+
+### 自動テスト（今後導入検討）
+- レイヤー切替テスト
+- 履歴管理テスト
+- 合成処理テスト
+
+### 手動テスト
+- [ ] 描画→Undo→Redo
+- [ ] フレーム切替→レイヤー切替→描画
+- [ ] 全レイヤー描画→APNG出力
+- [ ] 長時間使用時のメモリリーク確認
+
+---
+
+## 📚 ドキュメント更新
+
+### 更新対象
+- [ ] 実装Guideline.txt（新モジュール構成）
+- [ ] README.md（使い方）
+- [ ] 各モジュールのJSDoc追加
+- [ ] ショートカット一覧更新
+
+---
+
+## 🎯 マイルストーン
+
+| フェーズ | 完了目標日 | 成果物 |
+|---------|-----------|--------|
+| Phase 1 | 2週間後 | ファイル分割完了・既存機能維持 |
+| Phase 2 | +1週間 | 階層構造実装 |
+| Phase 3 | +1週間 | レイヤーUI実装 |
+| Phase 4 | +5日 | 履歴管理拡張 |
+| Phase 5 | +5日 | エクスポート修正 |
+| Phase 6 | +3日 | ショートカット拡張 |
+
+**総計**: 約1.5ヶ月
+
+---
+
+## 🔄 次のアクション
+
+### 即座に着手可能
+1. ✅ `src/modules/` ディレクトリ作成
+2. ✅ `CanvasManager.js` 作成（既存コードから座標処理を抽出）
+3. ✅ `build.js` を複数ファイル対応に修正
+4. ✅ Phase 1の動作確認
+
+### 要確認事項
+- レイヤー数は3固定か、可変にするか？
+  - → 提案: 初期3固定、将来的に可変対応
+- 背景レイヤーは常に不透明か？
+  - → 提案: 消しゴムで透明化可能（チェック柄表示）
+- レイヤーの並び順（上が手前 vs 上が奥）
+  - → 提案: 上が手前（Photoshop方式）
+
+---
+
+## 💡 将来の拡張案
+
+### 短期（Phase 7以降）
+- レイヤーの表示/非表示切替
+- レイヤーの不透明度調整
+- レイヤーの並び替え（ドラッグ&ドロップ）
+
+### 中期
+- レイヤー数の動的変更
+- レイヤーの複製・削除
+- レイヤー合成モード（乗算、スクリーンなど）
+
+### 長期
+- レイヤーグループ（フォルダ）機能
+- クリッピングマスク
+- 調整レイヤー
+
+---
+
+## 📊 見積もり・工数
+
+### コーディング工数
+- ファイル分割: 8-16時間
+- レイヤー機能実装: 16-24時間
+- UI実装: 8-12時間
+- テスト・デバッグ: 12-20時間
+
+**合計**: 44-72時間（約1-1.5ヶ月、週10時間作業の場合）
+
+### リスクバッファ
+- 想定外のバグ修正: +20%
+- UIの微調整・フィードバック対応: +10%
+
+---
+
+## ✅ チェックリスト
+
+### Phase 1開始前
+- [ ] この計画書のレビュー・承認
+- [ ] バックアップ取得（git tag）
+- [ ] 開発環境の準備
+- [ ] build.js のテスト
+
+### Phase 1完了条件
+- [ ] 全モジュールファイル作成完了
+- [ ] npm run build 成功
+- [ ] TegakiAniTest.html で全機能動作確認
+- [ ] 既存テストケース全てパス
+- [ ] コードレビュー完了
+
+---
+
+## 📞 サポート・質問
+
+実装中の質問や問題が発生した場合は、以下を明記してください：
+- 実装中のフェーズ
+- 該当するモジュール名
+- エラーメッセージ（あれば）
+- 期待する動作と実際の動作
+
+---
+
+**計画書バージョン**: 1.0  
+**作成日**: 2025-10-15  
+**最終更新**: 2025-10-15

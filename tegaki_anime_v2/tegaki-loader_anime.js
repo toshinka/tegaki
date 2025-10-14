@@ -1,11 +1,9 @@
 (function() {
     'use strict';
     
-    if (window.tegakiAnimeStart) {
-        window.tegakiAnimeStart();
-        return;
-    }
-
+    // バージョン情報
+    const LOADER_VERSION = 'v11';
+    
     // ===== 設定 =====
     const SCRIPT_URLS = {
         // 統合済みファイルのみ読み込む（他は不要）
@@ -121,7 +119,7 @@
             }
 
             this.loadingEl = document.createElement('div');
-            this.loadingEl.textContent = 'お絵かきツールを準備中...';
+            this.loadingEl.textContent = `お絵かきツールを準備中... (${LOADER_VERSION})`;
             this.loadingEl.style.cssText = 'position:fixed; top:10px; left:50%; transform:translateX(-50%); background: #800000; color:white; padding:10px; border-radius:5px; z-index:10001;';
             document.body.appendChild(this.loadingEl);
 
@@ -169,13 +167,25 @@
                 gap: 8px;
             `;
             
-            const title = document.createElement('div');
-            title.textContent = 'アニメお絵かきツール';
-            title.style.cssText = `
-                color: #800000;
-                font-size: 14px;
-                font-weight: bold;
-            `;
+const title = document.createElement('div');
+
+
+const sproutIconSVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="vertical-align: middle; margin: 0 2px;">
+    <path d="M14 9.536V7a4 4 0 0 1 4-4h1.5a.5.5 0 0 1 .5.5V5a4 4 0 0 1-4 4 4 4 0 0 0-4 4c0 2 1 3 1 5a5 5 0 0 1-1 3"/>
+    <path d="M4 9a5 5 0 0 1 8 4 5 5 0 0 1-8-4"/>
+    <path d="M5 21h14"/>
+</svg>`;
+
+
+title.innerHTML = `めぶがき${sproutIconSVG}APNGてすと${LOADER_VERSION}`;
+
+title.style.cssText = `
+    color: #800000;
+    font-size: 14px;
+    font-weight: bold;
+    display: flex;         /* SVGとテキストを横並びに */
+    align-items: center;   /* 垂直方向の中央揃え */
+`;
             
             const buttonGroup = document.createElement('div');
             buttonGroup.style.cssText = `display: flex; gap: 8px;`;
@@ -183,14 +193,14 @@
             const postApngBtn = createButton('APNG投稿', () => this.exportAndAttach('apng'), true);
             postApngBtn.title = 'APNGを生成して掲示板に添付';
             
-            const postGifBtn = createButton('GIF投稿', () => this.exportAndAttach('gif'), true);
-            postGifBtn.title = 'GIFを生成して掲示板に添付';
+            // GIFボタンは一旦削除（Worker問題のため）
+            // const postGifBtn = createButton('GIF投稿', () => this.exportAndAttach('gif'), true);
 
             const closeBtn = createButton('✕ 閉じる', () => this.cancel());
             closeBtn.title = '破棄して閉じる';
             
             buttonGroup.appendChild(postApngBtn);
-            buttonGroup.appendChild(postGifBtn);
+            // buttonGroup.appendChild(postGifBtn); // 削除
             buttonGroup.appendChild(closeBtn);
             topBar.appendChild(title);
             topBar.appendChild(buttonGroup);
@@ -340,12 +350,20 @@
         }
     }
 
-    // ===== グローバル登録 =====
-    window.tegakiAnimeStart = function() {
-        if (!window.tegakiAnimeInstance) {
-            window.tegakiAnimeInstance = new TegakiLoaderAnime();
-        }
-        window.tegakiAnimeInstance.start();
-    };
+    // ===== グローバル登録（一度だけ実行） =====
+    if (!window.tegakiAnimeStart) {
+        window.tegakiAnimeStart = function() {
+            if (!window.tegakiAnimeInstance) {
+                window.tegakiAnimeInstance = new TegakiLoaderAnime();
+            }
+            window.tegakiAnimeInstance.start();
+        };
+        
+        // 初回読み込み時は自動起動
+        window.tegakiAnimeStart();
+    } else {
+        // 既にローダーが読み込まれている場合も起動
+        window.tegakiAnimeStart();
+    }
 
 })();
