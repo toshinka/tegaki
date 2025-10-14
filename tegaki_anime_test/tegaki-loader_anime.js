@@ -168,7 +168,7 @@
             `;
             
             const title = document.createElement('div');
-            title.textContent = `🌱めぶがき APNGてすと ${LOADER_VERSION}`;
+            title.textContent = `めぶがき🌱APNGてすと${LOADER_VERSION}`;
             title.style.cssText = `
                 color: #800000;
                 font-size: 14px;
