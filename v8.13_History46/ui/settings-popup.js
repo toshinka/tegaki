@@ -1,366 +1,327 @@
-/**
- * SettingsPopup - 統合設定パネル
- * 筆圧感度、線補正、UIの表示設定を管理
- */
+// ===== settings-popup.js - 設定パネル実装 =====
+// 筆圧補正・線補正・ステータスパネルON/OFF
 
-class SettingsPopup {
-  constructor() {
-    this.isVisible = false;
-    this.panel = null;
-    this.brushSettings = null;
-    
-    this.initializePanel();
-    this.attachEventListeners();
-  }
+window.TegakiUI = window.TegakiUI || {};
 
-  initializePanel() {
-    // ポップアップパネル作成
-    this.panel = document.createElement('div');
-    this.panel.className = 'popup-panel';
-    this.panel.id = 'settings-popup';
-    this.panel.style.cssText = 'left: 60px; top: 100px; min-width: 320px;';
-    
-    this.panel.innerHTML = `
-      <div class="popup-title" style="display: block; font-size: 16px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 16px;">設定</div>
-      
-      <!-- 筆圧感度設定 -->
-      <div class="setting-group">
-        <div class="setting-label">筆圧感度</div>
-        <div class="slider-container">
-          <div class="slider" id="pressure-sensitivity-slider">
-            <div class="slider-track" id="pressure-sensitivity-track"></div>
-            <div class="slider-handle" id="pressure-sensitivity-handle"></div>
-          </div>
-          <div class="slider-value" id="pressure-sensitivity-value">0.50</div>
-        </div>
-        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
-          ペンタブレットの筆圧の反応度を調整します
-        </div>
-      </div>
-      
-      <!-- 線補正（Streamline） -->
-      <div class="setting-group">
-        <div class="setting-label">線補正</div>
-        <div class="slider-container">
-          <div class="slider" id="streamline-slider">
-            <div class="slider-track" id="streamline-track"></div>
-            <div class="slider-handle" id="streamline-handle"></div>
-          </div>
-          <div class="slider-value" id="streamline-value">0.50</div>
-        </div>
-        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
-          線の滑らかさを調整します（高いほど遅延が発生）
-        </div>
-      </div>
-      
-      <!-- スムージング -->
-      <div class="setting-group">
-        <div class="setting-label">スムージング</div>
-        <div class="slider-container">
-          <div class="slider" id="smoothing-slider">
-            <div class="slider-track" id="smoothing-track"></div>
-            <div class="slider-handle" id="smoothing-handle"></div>
-          </div>
-          <div class="slider-value" id="smoothing-value">0.50</div>
-        </div>
-        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
-          線の平滑化を調整します
-        </div>
-      </div>
-      
-      <!-- 太さ変化（Thinning） -->
-      <div class="setting-group">
-        <div class="setting-label">太さ変化</div>
-        <div class="slider-container">
-          <div class="slider" id="thinning-slider">
-            <div class="slider-track" id="thinning-track"></div>
-            <div class="slider-handle" id="thinning-handle"></div>
-          </div>
-          <div class="slider-value" id="thinning-value">0.50</div>
-        </div>
-        <div style="font-size: 11px; color: var(--text-secondary); margin-top: 4px;">
-          筆圧による線の太さの変化量を調整します
-        </div>
-      </div>
-      
-      <!-- 筆圧シミュレーション -->
-      <div class="setting-group">
-        <div class="setting-label">筆圧シミュレーション</div>
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer;">
-          <input type="checkbox" id="simulate-pressure-checkbox" checked style="cursor: pointer;">
-          <span style="font-size: 12px; color: var(--text-secondary);">筆圧非対応デバイスで速度から筆圧を推定</span>
-        </label>
-      </div>
-      
-      <!-- UI表示設定 -->
-      <div class="setting-group" style="border-top: 1px solid var(--futaba-light-medium); padding-top: 16px; margin-top: 16px;">
-        <div class="setting-label">UI表示設定</div>
-        <label style="display: flex; align-items: center; gap: 8px; cursor: pointer; margin-bottom: 8px;">
-          <input type="checkbox" id="show-status-panel-checkbox" checked style="cursor: pointer;">
-          <span style="font-size: 12px; color: var(--text-secondary);">ステータスパネルを表示</span>
-        </label>
-      </div>
-      
-      <!-- リセットボタン -->
-      <div class="setting-group" style="margin-top: 16px;">
-        <button class="action-button secondary" id="reset-settings-btn" style="width: 100%;">
-          デフォルトに戻す
-        </button>
-      </div>
-    `;
-    
-    document.body.appendChild(this.panel);
-  }
-
-  attachEventListeners() {
-    // スライダーの初期化と操作
-    this.initializeSlider('pressure-sensitivity', 0, 1, 0.5, (value) => {
-      // 筆圧感度は現時点では表示のみ（将来の実装用）
-      this.saveSetting('pressureSensitivity', value);
-    });
-    
-    this.initializeSlider('streamline', 0, 1, 0.5, (value) => {
-      if (this.brushSettings) {
-        this.brushSettings.streamline = value;
-      }
-      this.saveSetting('streamline', value);
-    });
-    
-    this.initializeSlider('smoothing', 0, 1, 0.5, (value) => {
-      if (this.brushSettings) {
-        this.brushSettings.smoothing = value;
-      }
-      this.saveSetting('smoothing', value);
-    });
-    
-    this.initializeSlider('thinning', -1, 1, 0.5, (value) => {
-      if (this.brushSettings) {
-        this.brushSettings.thinning = value;
-      }
-      this.saveSetting('thinning', value);
-    });
-    
-    // 筆圧シミュレーションチェックボックス
-    const simulatePressureCheckbox = document.getElementById('simulate-pressure-checkbox');
-    if (simulatePressureCheckbox) {
-      simulatePressureCheckbox.addEventListener('change', (e) => {
-        if (this.brushSettings) {
-          this.brushSettings.simulatePressure = e.target.checked;
+window.TegakiUI.SettingsPopup = class {
+    constructor(drawingEngine) {
+        this.drawingEngine = drawingEngine;
+        this.popup = document.getElementById('settings-popup');
+        this.isVisible = false;
+        
+        if (!this.popup) {
+            this.createPopupElement();
         }
-        this.saveSetting('simulatePressure', e.target.checked);
-      });
+        
+        this.setupEventListeners();
+        this.loadSettings();
     }
     
-    // ステータスパネル表示切替
-    const showStatusPanelCheckbox = document.getElementById('show-status-panel-checkbox');
-    if (showStatusPanelCheckbox) {
-      showStatusPanelCheckbox.addEventListener('change', (e) => {
+    createPopupElement() {
+        const container = document.createElement('div');
+        container.id = 'settings-popup';
+        container.className = 'popup-panel';
+        container.innerHTML = `
+            <div class="popup-title">設定</div>
+            
+            <div class="setting-group">
+                <div class="setting-label">筆圧補正</div>
+                <div class="slider-container">
+                    <div class="slider" id="pressure-correction-slider">
+                        <div class="slider-track" id="pressure-correction-track"></div>
+                        <div class="slider-handle" id="pressure-correction-handle"></div>
+                    </div>
+                    <div class="slider-value" id="pressure-correction-value">1.0</div>
+                </div>
+                <div style="font-size: 10px; color: var(--text-secondary); margin-top: 4px;">
+                    筆圧の感度を調整します。大きい値ほど筆圧が強く反映されます。
+                </div>
+            </div>
+            
+            <div class="setting-group">
+                <div class="setting-label">線補正（スムーズ度）</div>
+                <div class="slider-container">
+                    <div class="slider" id="smoothing-slider">
+                        <div class="slider-track" id="smoothing-track"></div>
+                        <div class="slider-handle" id="smoothing-handle"></div>
+                    </div>
+                    <div class="slider-value" id="smoothing-value">0.5</div>
+                </div>
+                <div style="font-size: 10px; color: var(--text-secondary); margin-top: 4px;">
+                    線の滑らかさ。大きい値ほど線が滑らかになりますが反応が遅くなります。
+                </div>
+            </div>
+            
+            <div class="setting-group">
+                <div class="setting-label">筆圧カーブ（将来機能）</div>
+                <div style="font-size: 11px; color: var(--text-secondary); padding: 8px 12px; background: var(--futaba-background); border-radius: 6px; border: 1px dashed var(--futaba-light-medium);">
+                    ユーザーごとの筆圧感度カスタマイズ機能は次のバージョンで実装予定です。
+                </div>
+            </div>
+            
+            <div class="setting-group">
+                <div class="setting-label">ステータスパネル</div>
+                <div style="display: flex; gap: 12px; align-items: center;">
+                    <button id="status-panel-toggle" class="action-button" style="flex: 1;">
+                        非表示
+                    </button>
+                    <span id="status-panel-state" style="font-size: 11px; color: var(--text-secondary); min-width: 60px; text-align: right;">
+                        表示中
+                    </span>
+                </div>
+            </div>
+        `;
+        
+        document.querySelector('.canvas-area').appendChild(container);
+        this.popup = container;
+    }
+    
+    setupEventListeners() {
+        const statusToggleBtn = document.getElementById('status-panel-toggle');
+        if (statusToggleBtn) {
+            statusToggleBtn.addEventListener('click', () => {
+                this.toggleStatusPanel();
+            });
+        }
+    }
+    
+    loadSettings() {
+        const stored = localStorage.getItem('tegaki_settings');
+        if (stored) {
+            try {
+                const settings = JSON.parse(stored);
+                this.applySettings(settings);
+            } catch (error) {
+                this.initializeDefaultSettings();
+            }
+        } else {
+            this.initializeDefaultSettings();
+        }
+    }
+    
+    initializeDefaultSettings() {
+        const defaults = {
+            pressureCorrection: 1.0,
+            smoothing: 0.5,
+            statusPanelVisible: true
+        };
+        
+        this.applySettings(defaults);
+        this.saveSettings(defaults);
+    }
+    
+    applySettings(settings) {
+        if (settings.pressureCorrection !== undefined) {
+            this.updatePressureCorrectionSlider(settings.pressureCorrection);
+            if (this.drawingEngine && this.drawingEngine.settings) {
+                this.drawingEngine.settings.pressureCorrection = settings.pressureCorrection;
+            }
+        }
+        
+        if (settings.smoothing !== undefined) {
+            this.updateSmoothingSlider(settings.smoothing);
+            if (this.drawingEngine && this.drawingEngine.settings) {
+                this.drawingEngine.settings.smoothing = settings.smoothing;
+            }
+        }
+        
+        if (settings.statusPanelVisible !== undefined) {
+            this.setStatusPanelVisibility(settings.statusPanelVisible);
+        }
+    }
+    
+    updatePressureCorrectionSlider(value) {
+        const min = 0.1;
+        const max = 3.0;
+        const clampedValue = Math.max(min, Math.min(max, value));
+        
+        const percentage = ((clampedValue - min) / (max - min)) * 100;
+        const track = document.getElementById('pressure-correction-track');
+        const handle = document.getElementById('pressure-correction-handle');
+        const display = document.getElementById('pressure-correction-value');
+        
+        if (track) track.style.width = percentage + '%';
+        if (handle) handle.style.left = percentage + '%';
+        if (display) display.textContent = clampedValue.toFixed(2);
+        
+        this.setupPressureCorrectionListener();
+    }
+    
+    updateSmoothingSlider(value) {
+        const min = 0;
+        const max = 1;
+        const clampedValue = Math.max(min, Math.min(max, value));
+        
+        const percentage = (clampedValue / max) * 100;
+        const track = document.getElementById('smoothing-track');
+        const handle = document.getElementById('smoothing-handle');
+        const display = document.getElementById('smoothing-value');
+        
+        if (track) track.style.width = percentage + '%';
+        if (handle) handle.style.left = percentage + '%';
+        if (display) display.textContent = clampedValue.toFixed(2);
+        
+        this.setupSmoothingListener();
+    }
+    
+    setupPressureCorrectionListener() {
+        const slider = document.getElementById('pressure-correction-slider');
+        if (!slider || slider.pressureCorrectionListenerSetup) return;
+        
+        slider.pressureCorrectionListenerSetup = true;
+        
+        let dragging = false;
+        const min = 0.1;
+        const max = 3.0;
+        
+        const updateValue = (clientX) => {
+            const rect = slider.getBoundingClientRect();
+            const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            const value = min + (percentage * (max - min));
+            
+            const track = slider.querySelector('.slider-track');
+            const handle = slider.querySelector('.slider-handle');
+            const display = document.getElementById('pressure-correction-value');
+            
+            track.style.width = (percentage * 100) + '%';
+            handle.style.left = (percentage * 100) + '%';
+            display.textContent = value.toFixed(2);
+            
+            if (this.drawingEngine && this.drawingEngine.settings) {
+                this.drawingEngine.settings.pressureCorrection = value;
+            }
+        };
+        
+        slider.addEventListener('mousedown', (e) => {
+            dragging = true;
+            updateValue(e.clientX);
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (dragging) updateValue(e.clientX);
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (dragging) {
+                dragging = false;
+                const value = parseFloat(document.getElementById('pressure-correction-value').textContent);
+                this.saveSettings({ pressureCorrection: value });
+            }
+        });
+    }
+    
+    setupSmoothingListener() {
+        const slider = document.getElementById('smoothing-slider');
+        if (!slider || slider.smoothingListenerSetup) return;
+        
+        slider.smoothingListenerSetup = true;
+        
+        let dragging = false;
+        const min = 0;
+        const max = 1;
+        
+        const updateValue = (clientX) => {
+            const rect = slider.getBoundingClientRect();
+            const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            const value = min + (percentage * (max - min));
+            
+            const track = slider.querySelector('.slider-track');
+            const handle = slider.querySelector('.slider-handle');
+            const display = document.getElementById('smoothing-value');
+            
+            track.style.width = (percentage * 100) + '%';
+            handle.style.left = (percentage * 100) + '%';
+            display.textContent = value.toFixed(2);
+            
+            if (this.drawingEngine && this.drawingEngine.settings) {
+                this.drawingEngine.settings.smoothing = value;
+            }
+        };
+        
+        slider.addEventListener('mousedown', (e) => {
+            dragging = true;
+            updateValue(e.clientX);
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (dragging) updateValue(e.clientX);
+        });
+        
+        document.addEventListener('mouseup', () => {
+            if (dragging) {
+                dragging = false;
+                const value = parseFloat(document.getElementById('smoothing-value').textContent);
+                this.saveSettings({ smoothing: value });
+            }
+        });
+    }
+    
+    toggleStatusPanel() {
         const statusPanel = document.querySelector('.status-panel');
-        if (statusPanel) {
-          statusPanel.style.display = e.target.checked ? 'flex' : 'none';
+        if (!statusPanel) return;
+        
+        const isCurrentlyVisible = statusPanel.style.display !== 'none';
+        const newVisibility = !isCurrentlyVisible;
+        
+        statusPanel.style.display = newVisibility ? 'flex' : 'none';
+        
+        const toggleBtn = document.getElementById('status-panel-toggle');
+        const stateDisplay = document.getElementById('status-panel-state');
+        
+        if (toggleBtn) {
+            toggleBtn.textContent = newVisibility ? '非表示' : '表示';
         }
-        this.saveSetting('showStatusPanel', e.target.checked);
-      });
-    }
-    
-    // リセットボタン
-    const resetBtn = document.getElementById('reset-settings-btn');
-    if (resetBtn) {
-      resetBtn.addEventListener('click', () => {
-        this.resetToDefaults();
-      });
-    }
-    
-    // 設定読み込み
-    this.loadSettings();
-  }
-
-  initializeSlider(id, min, max, defaultValue, onChange) {
-    const slider = document.getElementById(`${id}-slider`);
-    const track = document.getElementById(`${id}-track`);
-    const handle = document.getElementById(`${id}-handle`);
-    const valueDisplay = document.getElementById(`${id}-value`);
-    
-    if (!slider || !track || !handle || !valueDisplay) return;
-    
-    let currentValue = defaultValue;
-    
-    const updateSlider = (value) => {
-      currentValue = Math.max(min, Math.min(max, value));
-      const percent = ((currentValue - min) / (max - min)) * 100;
-      track.style.width = percent + '%';
-      handle.style.left = percent + '%';
-      valueDisplay.textContent = currentValue.toFixed(2);
-      if (onChange) onChange(currentValue);
-    };
-    
-    updateSlider(defaultValue);
-    
-    let isDragging = false;
-    
-    handle.addEventListener('mousedown', (e) => {
-      isDragging = true;
-      e.preventDefault();
-    });
-    
-    document.addEventListener('mousemove', (e) => {
-      if (!isDragging) return;
-      const rect = slider.getBoundingClientRect();
-      const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-      const value = min + ((max - min) * percent / 100);
-      updateSlider(value);
-    });
-    
-    document.addEventListener('mouseup', () => {
-      isDragging = false;
-    });
-    
-    slider.addEventListener('click', (e) => {
-      if (e.target === handle) return;
-      const rect = slider.getBoundingClientRect();
-      const percent = ((e.clientX - rect.left) / rect.width) * 100;
-      const value = min + ((max - min) * percent / 100);
-      updateSlider(value);
-    });
-    
-    // スライダーインスタンスを保存
-    this[`${id}Slider`] = { updateSlider };
-  }
-
-  setBrushSettings(brushSettings) {
-    this.brushSettings = brushSettings;
-    
-    // 現在の値を反映
-    if (brushSettings) {
-      if (this.streamlineSlider) {
-        this.streamlineSlider.updateSlider(brushSettings.streamline || 0.5);
-      }
-      if (this.smoothingSlider) {
-        this.smoothingSlider.updateSlider(brushSettings.smoothing || 0.5);
-      }
-      if (this.thinningSlider) {
-        this.thinningSlider.updateSlider(brushSettings.thinning || 0.5);
-      }
-      
-      const simulateCheckbox = document.getElementById('simulate-pressure-checkbox');
-      if (simulateCheckbox) {
-        simulateCheckbox.checked = brushSettings.simulatePressure !== false;
-      }
-    }
-  }
-
-  show() {
-    if (this.panel) {
-      this.panel.classList.add('show');
-      this.isVisible = true;
-    }
-  }
-
-  hide() {
-    if (this.panel) {
-      this.panel.classList.remove('show');
-      this.isVisible = false;
-    }
-  }
-
-  toggle() {
-    if (this.isVisible) {
-      this.hide();
-    } else {
-      this.show();
-    }
-  }
-
-  saveSetting(key, value) {
-    try {
-      const settings = JSON.parse(localStorage.getItem('tegaki_settings') || '{}');
-      settings[key] = value;
-      localStorage.setItem('tegaki_settings', JSON.stringify(settings));
-    } catch (e) {
-      // localStorageが使用できない環境では無視
-    }
-  }
-
-  loadSettings() {
-    try {
-      const settings = JSON.parse(localStorage.getItem('tegaki_settings') || '{}');
-      
-      if (settings.streamline !== undefined && this.streamlineSlider) {
-        this.streamlineSlider.updateSlider(settings.streamline);
-      }
-      if (settings.smoothing !== undefined && this.smoothingSlider) {
-        this.smoothingSlider.updateSlider(settings.smoothing);
-      }
-      if (settings.thinning !== undefined && this.thinningSlider) {
-        this.thinningSlider.updateSlider(settings.thinning);
-      }
-      if (settings.pressureSensitivity !== undefined && this['pressure-sensitivitySlider']) {
-        this['pressure-sensitivitySlider'].updateSlider(settings.pressureSensitivity);
-      }
-      
-      const simulateCheckbox = document.getElementById('simulate-pressure-checkbox');
-      if (settings.simulatePressure !== undefined && simulateCheckbox) {
-        simulateCheckbox.checked = settings.simulatePressure;
-        if (this.brushSettings) {
-          this.brushSettings.simulatePressure = settings.simulatePressure;
+        
+        if (stateDisplay) {
+            stateDisplay.textContent = newVisibility ? '表示中' : '非表示中';
         }
-      }
-      
-      const showStatusCheckbox = document.getElementById('show-status-panel-checkbox');
-      if (settings.showStatusPanel !== undefined && showStatusCheckbox) {
-        showStatusCheckbox.checked = settings.showStatusPanel;
+        
+        this.saveSettings({ statusPanelVisible: newVisibility });
+    }
+    
+    setStatusPanelVisibility(visible) {
         const statusPanel = document.querySelector('.status-panel');
-        if (statusPanel) {
-          statusPanel.style.display = settings.showStatusPanel ? 'flex' : 'none';
+        if (!statusPanel) return;
+        
+        statusPanel.style.display = visible ? 'flex' : 'none';
+        
+        const toggleBtn = document.getElementById('status-panel-toggle');
+        const stateDisplay = document.getElementById('status-panel-state');
+        
+        if (toggleBtn) {
+            toggleBtn.textContent = visible ? '非表示' : '表示';
         }
-      }
-    } catch (e) {
-      // localStorageが使用できない環境では無視
-    }
-  }
-
-  resetToDefaults() {
-    if (this['pressure-sensitivitySlider']) {
-      this['pressure-sensitivitySlider'].updateSlider(0.5);
-    }
-    if (this.streamlineSlider) {
-      this.streamlineSlider.updateSlider(0.5);
-    }
-    if (this.smoothingSlider) {
-      this.smoothingSlider.updateSlider(0.5);
-    }
-    if (this.thinningSlider) {
-      this.thinningSlider.updateSlider(0.5);
+        
+        if (stateDisplay) {
+            stateDisplay.textContent = visible ? '表示中' : '非表示中';
+        }
     }
     
-    const simulateCheckbox = document.getElementById('simulate-pressure-checkbox');
-    if (simulateCheckbox) {
-      simulateCheckbox.checked = true;
-      if (this.brushSettings) {
-        this.brushSettings.simulatePressure = true;
-      }
+    saveSettings(partial) {
+        const stored = localStorage.getItem('tegaki_settings');
+        const current = stored ? JSON.parse(stored) : {
+            pressureCorrection: 1.0,
+            smoothing: 0.5,
+            statusPanelVisible: true
+        };
+        
+        const updated = { ...current, ...partial };
+        localStorage.setItem('tegaki_settings', JSON.stringify(updated));
     }
     
-    const showStatusCheckbox = document.getElementById('show-status-panel-checkbox');
-    if (showStatusCheckbox) {
-      showStatusCheckbox.checked = true;
-      const statusPanel = document.querySelector('.status-panel');
-      if (statusPanel) {
-        statusPanel.style.display = 'flex';
-      }
+    show() {
+        if (!this.popup) return;
+        
+        this.popup.classList.add('show');
+        this.isVisible = true;
     }
     
-    // localStorageをクリア
-    try {
-      localStorage.removeItem('tegaki_settings');
-    } catch (e) {}
-  }
-}
-
-// グローバル登録
-if (typeof window.TegakiUI === 'undefined') {
-  window.TegakiUI = {};
-}
-window.TegakiUI.SettingsPopup = SettingsPopup;
+    hide() {
+        if (!this.popup) return;
+        
+        this.popup.classList.remove('show');
+        this.isVisible = false;
+    }
+};
 
 console.log('✅ settings-popup.js loaded');
