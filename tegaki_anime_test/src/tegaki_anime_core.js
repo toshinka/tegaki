@@ -47,7 +47,7 @@
             this.minPressureSensitivity = 0.0;
             this.maxPressureSensitivity = 2.0;
             
-            // オニオンスキン設定（★改修：デフォルト1に変更）
+            // オニオンスキン設定
             this.onionSkinMode = 1;
             this.onionSkinAlpha = 0.3;
             
@@ -68,7 +68,7 @@
             // クリップボード
             this.clipboard = null;
             
-            // ★改修：V+ドラッグ用の変数追加
+            // V+ドラッグ用の変数
             this.isDraggingCanvas = false;
             this.dragStartCanvasX = 0;
             
@@ -144,8 +144,6 @@
             km.register('v', { ctrl: true }, () => this.pasteLayer(), 'Paste');
             km.register('p', {}, () => this.switchTool('pen'), 'Pen');
             km.register('e', {}, () => this.switchTool('eraser'), 'Eraser');
-            
-            // ★改修：Oキーでオニオンスキンサイクル追加
             km.register('o', {}, () => this.cycleOnionSkinMode(), 'Cycle Onion');
             
             for (let i = 1; i <= 9; i++) {
@@ -155,7 +153,6 @@
             }
         }
         
-        // ★改修：Oキーでオニオンスキン切替
         cycleOnionSkinMode() {
             this.onionSkinMode = (this.onionSkinMode + 1) % 4;
             this.setOnionSkinMode(this.onionSkinMode);
@@ -164,7 +161,6 @@
         handleKeyDown(e) {
             if (!this.wrapper || !this.wrapper.isConnected) return;
             
-            // V キー判定（レイヤードラッグ用）
             if (e.key.toLowerCase() === 'v' && !e.ctrlKey) {
                 this.vKeyPressed = true;
                 this.canvas.style.cursor = 'grab';
@@ -187,7 +183,7 @@
         handleKeyUp(e) {
             if (e.key.toLowerCase() === 'v') {
                 this.vKeyPressed = false;
-                this.isDraggingLayer = false;
+                this.isDraggingCanvas = false;
                 this.canvas.style.cursor = this.tool === 'pen' ? 'crosshair' : 'pointer';
             }
         }
@@ -204,22 +200,15 @@
             const copiedData = this.ctx.createImageData(imageData.width, imageData.height);
             copiedData.data.set(imageData.data);
             this.clipboard = copiedData;
-            
-            console.log('✅ Layer copied to clipboard');
         }
         
         pasteLayer() {
-            if (!this.clipboard) {
-                console.log('⚠️ Clipboard is empty');
-                return;
-            }
+            if (!this.clipboard) return;
             
             this.ctx.putImageData(this.clipboard, 0, 0);
             this.pushHistory();
             this.updateThumbnail();
             this.updateOnionSkin();
-            
-            console.log('✅ Pasted from clipboard');
         }
         
         // ========== オニオンスキン制御 ==========
@@ -228,7 +217,6 @@
             if (mode < 0 || mode > 3) return;
             this.onionSkinMode = mode;
             
-            // ★改修：ふたばカラー適用
             this.onionSkinButtons.forEach(({ btn, btnMode }) => {
                 if (btnMode === mode) {
                     btn.style.background = this.colors.maroon;
@@ -242,7 +230,6 @@
             this.updateOnionSkin();
         }
         
-        // ★改修：オニオンスキン描画ロジック修正
         updateOnionSkin() {
             if (this.onionCtx) {
                 this.onionCtx.clearRect(0, 0, this.onionCanvas.width, this.onionCanvas.height);
@@ -252,7 +239,7 @@
             
             this.onionCtx = this.onionCanvas.getContext('2d');
             
-            // 過去フレーム（赤系・段々薄くなる）
+            // 過去フレーム(赤系・段々薄くなる)
             for (let i = 1; i <= this.onionSkinMode; i++) {
                 const prevIndex = this.activeLayerIndex - i;
                 if (prevIndex < 0) break;
@@ -262,7 +249,6 @@
                 
                 const opacity = this.onionSkinAlpha / i;
                 
-                // ★重要：lighten合成モードで透過を保持
                 this.onionCtx.globalCompositeOperation = 'lighten';
                 this.onionCtx.globalAlpha = opacity;
                 this.onionCtx.filter = 'hue-rotate(0deg) saturate(1.2)';
@@ -276,7 +262,7 @@
                 this.onionCtx.drawImage(tempCanvas, 0, 0);
             }
             
-            // 未来フレーム（青系・段々薄くなる）
+            // 未来フレーム(青系・段々薄くなる)
             for (let i = 1; i <= this.onionSkinMode; i++) {
                 const nextIndex = this.activeLayerIndex + i;
                 if (nextIndex >= this.frameCount) break;
@@ -286,7 +272,6 @@
                 
                 const opacity = this.onionSkinAlpha / i;
                 
-                // ★重要：lighten合成モードで透過を保持
                 this.onionCtx.globalCompositeOperation = 'lighten';
                 this.onionCtx.globalAlpha = opacity;
                 this.onionCtx.filter = 'hue-rotate(200deg) saturate(1.2)';
@@ -379,7 +364,7 @@
                     注意事項
                 </h3>
                 <div style="line-height: 1.6; font-size: 11px;">
-                    ※一度ツールを起動し添付した後は、二度目の添付を受け付けないことがあります。再度同じスレッドにおえかきをする際は、一度スレを閉じるか移動して更新してからツールを再起動してください。<BR>
+                    ※一度ツールを起動し添付した後は、二度目の添付を受け付けない事があります。再度同じスレッドにおえかきをする際は、一度スレを閉じるか移動して更新してからツールを再起動してください。<BR>
                     ※本ツールは予告無く仕様変更・削除される事があります。
                 </div>
             `;
@@ -683,7 +668,6 @@
             this.controlPanel.appendChild(pressureControl);
         }
         
-        // ★改修：ふたばカラー適用
         createOnionSkinControl() {
             const onionControl = document.createElement('div');
             
@@ -825,8 +809,6 @@
             this.ctx.strokeStyle = this.color;
             this.ctx.lineWidth = this.size;
             
-            this.canvas.style.touchAction = 'none';
-            
             this.onionCtx = this.onionCanvas.getContext('2d', {
                 willReadFrequently: true
             });
@@ -836,13 +818,11 @@
         
         initLayersAndHistory() {
             for (let i = 0; i < this.frameCount; i++) {
-                // ★改修：透明背景で初期化（背景色を塗らない）
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = this.canvas.width;
                 tempCanvas.height = this.canvas.height;
                 const tempCtx = tempCanvas.getContext('2d');
                 
-                // 透明のまま（背景を塗らない）
                 tempCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 
                 const initialImageData = tempCtx.getImageData(
@@ -874,9 +854,9 @@
         // ========== イベントリスナー設定 ==========
         
         attachEvents() {
-            // pointerイベントで統一（ペン・マウス・タッチ）
             this.canvas.addEventListener('pointerdown', (e) => {
                 e.preventDefault();
+                
                 if (e.pointerType === 'mouse' && e.button !== 0) return;
                 
                 if (this.vKeyPressed) {
@@ -885,7 +865,7 @@
                 }
                 
                 this.startDrawing(e);
-            });
+            }, { passive: false });
             
             this.canvas.addEventListener('pointermove', (e) => {
                 e.preventDefault();
@@ -898,18 +878,24 @@
                 if (this.isDrawing) {
                     this.draw(e);
                 }
-            });
+            }, { passive: false });
             
             this.canvas.addEventListener('pointerup', (e) => {
                 e.preventDefault();
+                
                 if (this.isDraggingCanvas) {
                     this.stopCanvasDrag();
                 } else {
                     this.stopDrawing();
                 }
+            }, { passive: false });
+            
+            this.canvas.addEventListener('pointercancel', (e) => {
+                if (this.isDraggingCanvas) this.stopCanvasDrag();
+                if (this.isDrawing) this.stopDrawing();
             });
             
-            this.canvas.addEventListener('pointerleave', () => {
+            this.canvas.addEventListener('pointerleave', (e) => {
                 if (this.isDraggingCanvas) this.stopCanvasDrag();
                 if (this.isDrawing) this.stopDrawing();
             });
@@ -918,7 +904,7 @@
             window.addEventListener('keyup', (e) => this.handleKeyUp(e));
         }
         
-        // ========== 描画処理 ==========
+        // ========== 描画処理(筆圧対応) ==========
         
         startDrawing(e) {
             this.isDrawing = true;
@@ -926,10 +912,18 @@
             this.lastX = (e.clientX - rect.left) * (this.canvas.width / rect.width);
             this.lastY = (e.clientY - rect.top) * (this.canvas.height / rect.height);
             
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.lastX, this.lastY);
+            let pressure = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 0.5;
+            pressure = Math.pow(pressure, 1 / this.pressureSensitivity);
+            
+            const baseSize = this.tool === 'pen' ? this.size : this.eraserSize;
+            const adjustedSize = baseSize * (0.3 + pressure * 0.7);
+            
+            this.ctx.lineWidth = adjustedSize;
             this.ctx.lineCap = 'round';
             this.ctx.lineJoin = 'round';
+            
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.lastX, this.lastY);
         }
         
         draw(e) {
@@ -939,8 +933,18 @@
             const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
             const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
             
+            let pressure = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 0.5;
+            pressure = Math.pow(pressure, 1 / this.pressureSensitivity);
+            
+            const baseSize = this.tool === 'pen' ? this.size : this.eraserSize;
+            const adjustedSize = baseSize * (0.3 + pressure * 0.7);
+            
+            this.ctx.lineWidth = adjustedSize;
             this.ctx.lineTo(x, y);
             this.ctx.stroke();
+            
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, y);
             
             this.lastX = x;
             this.lastY = y;
@@ -1252,7 +1256,6 @@
                 this.stopPreview();
             }
             
-            // ★修正：windowからイベント削除
             window.removeEventListener('keydown', this.boundHandleKeyDown);
             window.removeEventListener('keyup', (e) => this.handleKeyUp(e));
             
@@ -1277,5 +1280,5 @@
         }
     };
     
-    console.log('✅ TegakiAnimeCore loaded (完全版・全機能継承)');
+    console.log('✅ TegakiAnimeCore loaded (筆圧対応・完全版)');
 })();
