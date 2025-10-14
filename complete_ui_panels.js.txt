@@ -1,0 +1,79 @@
+// ===== ui-panels.js - 完全結合版（設定パネル統合） =====
+// Phase 12対応 + 設定パネル統合
+
+window.TegakiUI = {
+    
+    UIController: class {
+        constructor(drawingEngine, layerManager, app) {
+            this.drawingEngine = drawingEngine;
+            this.layerManager = layerManager;
+            this.app = app;
+            this.activePopup = null;
+            this.toolbarIconClickMode = false;
+            this.albumPopup = null;
+            this.settingsPopup = null; // 🔥 設定パネル
+            
+            this.validateCoreRuntime();
+            
+            this.setupEventDelegation();
+            this.setupSliders();
+            this.setupCanvasResize();
+            this.setupFlipButtons();
+            this.initializeSettingsPopup(); // 🔥 設定パネル初期化
+            window.TegakiUI.setupPanelStyles();
+        }
+        
+        validateCoreRuntime() {
+            if (!window.CoreRuntime) {
+                throw new Error('CoreRuntime dependency missing');
+            }
+            
+            if (!window.CoreRuntime.api) {
+                throw new Error('CoreRuntime.api not initialized');
+            }
+        }
+        
+        // 🔥 設定パネル初期化
+        initializeSettingsPopup() {
+            if (!window.TegakiUI.SettingsPopup) {
+                console.warn('⚠️ SettingsPopup not loaded');
+                return false;
+            }
+            
+            try {
+                this.settingsPopup = new window.TegakiUI.SettingsPopup();
+                
+                // BrushSettingsと連携
+                if (this.drawingEngine && this.drawingEngine.settings) {
+                    this.settingsPopup.setBrushSettings(this.drawingEngine.settings);
+                }
+                
+                console.log('✅ SettingsPopup initialized');
+                return true;
+            } catch (error) {
+                console.error('❌ Failed to initialize SettingsPopup:', error);
+                return false;
+            }
+        }
+        
+        // アルバムポップアップ初期化
+        initializeAlbumPopup(animationSystem) {
+            if (!window.AlbumPopup) {
+                console.error('❌ AlbumPopup class not loaded');
+                console.error('Make sure ui/album-popup.js is loaded before ui-panels.js');
+                return false;
+            }
+            
+            if (!animationSystem) {
+                console.error('❌ AnimationSystem not provided');
+                return false;
+            }
+            
+            try {
+                this.albumPopup = new window.AlbumPopup(
+                    this.app,
+                    this.layerManager,
+                    animationSystem
+                );
+                console.log('✅ AlbumPopup initialized successfully');
+                return true;
