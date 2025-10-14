@@ -450,11 +450,29 @@
                 top: 0; 
                 left: 0; 
                 cursor: crosshair;
+                touch-action: none;
+                user-select: none;
             `;
             
             canvasContainer.appendChild(this.bgCanvas);
             canvasContainer.appendChild(this.onionCanvas);
             canvasContainer.appendChild(this.canvas);
+            
+            // ★デバッグ：全イベントタイプをログ
+            ['pointerdown', 'pointerup', 'pointermove', 'pointerenter', 'pointerleave', 
+             'mousedown', 'mouseup', 'touchstart', 'touchend'].forEach(eventType => {
+                this.canvas.addEventListener(eventType, (e) => {
+                    if (eventType.includes('down') || eventType.includes('start')) {
+                        console.log(`🔍 Event fired: ${eventType}`, {
+                            type: e.type,
+                            pointerType: e.pointerType,
+                            pressure: e.pressure,
+                            button: e.button
+                        });
+                    }
+                }, { passive: false });
+            });
+            
             canvasWrapper.appendChild(canvasContainer);
             
             // サムネイルエリア
@@ -829,6 +847,14 @@
             // ★改修：touchAction設定追加
             this.canvas.style.touchAction = 'none';
             
+            // ★デバッグ：キャンバスのイベント受信確認
+            console.log('🎨 Canvas setup:', {
+                width: this.canvas.width,
+                height: this.canvas.height,
+                touchAction: this.canvas.style.touchAction,
+                pointerEvents: this.canvas.style.pointerEvents
+            });
+            
             this.onionCtx = this.onionCanvas.getContext('2d', {
                 willReadFrequently: true
             });
@@ -876,7 +902,7 @@
         // ========== イベントリスナー設定 ==========
         
         attachEvents() {
-            // ★改修：pointerイベントのみに統一（デバッグログ追加）
+            // ★改修：pointerイベントのみに統一
             
             this.canvas.addEventListener('pointerdown', (e) => {
                 console.log('🖱️ pointerdown:', {
@@ -888,8 +914,8 @@
                 
                 e.preventDefault();
                 
-                // 右クリック無視
-                if (e.button !== 0) return;
+                // ★重要修正：ペンの場合はbuttonチェックをスキップ
+                if (e.pointerType === 'mouse' && e.button !== 0) return;
                 
                 // V+ドラッグモード時はキャンバスドラッグ開始
                 if (this.vKeyPressed) {
@@ -947,27 +973,64 @@
                 }
             });
 
-            document.addEventListener('keydown', this.boundHandleKeyDown);
-            document.addEventListener('keyup', (e) => this.handleKeyUp(e));
+            // ★重要修正：windowに登録してどこからでもキー入力を受け取る
+            window.addEventListener('keydown', this.boundHandleKeyDown);
+            window.addEventListener('keyup', (e) => this.handleKeyUp(e));
         }
         
         // ========== 描画処理 ==========
         
         startDrawing(e) {
+            console.log('✏️ startDrawing called', {
+                isDrawing: this.isDrawing,
+                tool: this.tool,
+                size: this.size,
+                pressure: e.pressure,
+                pointerType: e.pointerType,
+                buttons: e.buttons, // ★追加：ボタン状態確認
+                isPrimary: e.isPrimary // ★追加：プライマリポインタ確認
+            });
+            
             this.isDrawing = true;
             const rect = this.canvas.getBoundingClientRect();
             this.lastX = (e.clientX - rect.left) * (this.canvas.width / rect.width);
             this.lastY = (e.clientY - rect.top) * (this.canvas.height / rect.height);
             
-            // ★重要：描画開始点も筆圧を反映
-            let pressure = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 0.5;
+            console.log('📍 Start position:', { x: this.lastX, y: this.lastY });
+            
+            // ★重要修正：マウスでもpressure情報を活用
+            // ペンタブがマウスモードで動いている場合でも対応
+            let pressure = (typeof e.pressure === 'number') ? e.pressure : 0.5;
+            
+            // ★新規追加：pressure情報がない場合、buttonsプロパティから推測
+            if (pressure === 0.5 && e.buttons === 1) {
+                // 通常のマウスクリック：固定値
+                pressure = 0.5;
+            } else if (pressure <= 0) {
+                // pressureが0の場合の最低保証
+                pressure = 0.2;
+            }
+            
             pressure = Math.pow(pressure, 1 / this.pressureSensitivity);
             const baseSize = this.tool === 'pen' ? this.size : this.eraserSize;
             const adjustedSize = baseSize * (0.3 + pressure * 0.7);
+            
+            console.log('🎨 Line width:', adjustedSize, 'raw pressure:', e.pressure, 'adjusted:', pressure);
+            
             this.ctx.lineWidth = adjustedSize;
+            this.ctx.lineCap = 'round';
+            this.ctx.lineJoin = 'round';
+            this.ctx.strokeStyle = this.tool === 'pen' ? this.color : 'rgba(0,0,0,1)';
+            this.ctx.globalCompositeOperation = this.tool === 'pen' ? 'source-over' : 'destination-out';
             
             this.ctx.beginPath();
             this.ctx.moveTo(this.lastX, this.lastY);
+            
+            // ★追加：開始点に点を打つ（短いタップでも描画されるように）
+            this.ctx.arc(this.lastX, this.lastY, adjustedSize / 2, 0, Math.PI * 2);
+            this.ctx.fill();
+            
+            console.log('✅ Drawing initialized');
         }
         
         draw(e) {
@@ -994,8 +1057,9 @@
             const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
             const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
             
-            // ★重要：pressure === 0 または undefined の場合のフォールバック
-            let pressure = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 0.5;
+            // ★重要修正：マウスモードでも対応
+            let pressure = (typeof e.pressure === 'number') ? e.pressure : 0.5;
+            if (pressure <= 0) pressure = 0.2;
             
             // 筆圧感度の逆数で累乗（感度が高いほど変化が大きい）
             pressure = Math.pow(pressure, 1 / this.pressureSensitivity);
@@ -1006,6 +1070,8 @@
             
             this.ctx.lineTo(x, y);
             this.ctx.stroke();
+            
+            // 次のセグメント用に新しいパスを開始
             this.ctx.beginPath();
             this.ctx.moveTo(x, y);
             
@@ -1015,11 +1081,15 @@
         
         stopDrawing() {
             if (!this.isDrawing) return;
+            
+            console.log('🛑 stopDrawing called');
+            
             this.isDrawing = false;
             this.ctx.closePath();
             
             this.ctx.lineWidth = this.tool === 'pen' ? this.size : this.eraserSize;
             
+            console.log('💾 Saving to history');
             this.pushHistory();
             this.updateThumbnail();
             this.updateOnionSkin();
@@ -1028,8 +1098,8 @@
         // ========== V+ドラッグでレイヤー移動 ==========
         
         startCanvasDrag(e) {
+            console.log('🎯 startCanvasDrag');
             this.isDraggingCanvas = true;
-            const rect = this.canvas.getBoundingClientRect();
             this.dragStartCanvasX = e.clientX;
             this.dragStartCanvasY = e.clientY;
             this.draggedFromIndex = this.activeLayerIndex;
@@ -1041,22 +1111,33 @@
             
             const deltaX = e.clientX - this.dragStartCanvasX;
             
-            // 横方向のドラッグで前後のレイヤーに移動
-            const threshold = 60; // 閾値（ピクセル）
+            console.log('🔄 Drag deltaX:', deltaX);
+            
+            // ★修正：閾値を30pxに下げる（より反応しやすく）
+            const threshold = 30;
             
             if (Math.abs(deltaX) > threshold) {
                 const direction = deltaX > 0 ? 1 : -1;
                 const targetIndex = this.activeLayerIndex + direction;
                 
-                if (targetIndex >= 0 && targetIndex < this.frameCount && targetIndex !== this.draggedFromIndex) {
+                console.log('🔀 Attempting to switch:', {
+                    from: this.activeLayerIndex,
+                    to: targetIndex,
+                    direction: direction > 0 ? 'right' : 'left'
+                });
+                
+                // ★修正：draggedFromIndex チェックを削除（毎回切替可能に）
+                if (targetIndex >= 0 && targetIndex < this.frameCount) {
+                    console.log('✅ Layer switched to:', targetIndex);
                     this.switchLayer(targetIndex);
-                    this.dragStartCanvasX = e.clientX;
+                    this.dragStartCanvasX = e.clientX; // リセット
                     this.draggedFromIndex = targetIndex;
                 }
             }
         }
         
         stopCanvasDrag() {
+            console.log('🛑 stopCanvasDrag');
             this.isDraggingCanvas = false;
             this.canvas.style.cursor = this.tool === 'pen' ? 'crosshair' : 'pointer';
         }
@@ -1328,7 +1409,9 @@
                 this.stopPreview();
             }
             
-            document.removeEventListener('keydown', this.boundHandleKeyDown);
+            // ★修正：windowからイベント削除
+            window.removeEventListener('keydown', this.boundHandleKeyDown);
+            window.removeEventListener('keyup', (e) => this.handleKeyUp(e));
             
             if (this.resizeObserver) {
                 this.resizeObserver.disconnect();
