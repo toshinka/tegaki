@@ -1,7 +1,9 @@
-// ===== core-engine.js - タブレットペン対応修正版 =====
-// 🔥 修正内容:
-// 1. setupCanvasEvents() で PointerEvent オブジェクトを DrawingEngine に渡すよう修正
-// 2. DrawingEngine のメソッドシグネチャを修正（pressureOrEvent引数追加）
+// ===== core-engine.js - ペン描画修正版 =====
+// ================================================================================
+// 修正内容:
+// 1. canvas.style.touchAction = 'none' を追加
+// 2. setPointerCapture/releasePointerCapture を実装
+// 3. PointerEvent を startDrawing/continueDrawing に渡す
 // ================================================================================
 
 (function() {
@@ -58,19 +60,6 @@
             this.currentPath = null;
             this.lastPoint = null;
             
-            // 🔥 筆圧ハンドラー追加
-            this.pressureHandler = {
-                getPressure: (pointerEventOrPressure) => {
-                    if (typeof pointerEventOrPressure === 'number') {
-                        return Math.max(0.0, Math.min(1.0, pointerEventOrPressure));
-                    }
-                    if (pointerEventOrPressure && pointerEventOrPressure.pressure > 0 && pointerEventOrPressure.pressure < 1) {
-                        return pointerEventOrPressure.pressure;
-                    }
-                    return 0.5;
-                }
-            };
-            
             this._setupEventBusListeners();
         }
 
@@ -94,8 +83,8 @@
             });
         }
 
-        // 🔥 修正: pressureOrEvent 引数を追加
-        startDrawing(screenX, screenY, pressureOrEvent = 0.5) {
+        // 🔥 修正: PointerEvent を受け取る
+        startDrawing(screenX, screenY, pointerEvent) {
             if (this.isDrawing || this.cameraSystem.spacePressed || this.cameraSystem.isDragging || 
                 this.layerManager.vKeyPressed) return;
 
@@ -104,9 +93,6 @@
             if (!this.cameraSystem.isPointInExtendedCanvas(canvasPoint)) {
                 return;
             }
-            
-            // 🔥 筆圧取得
-            const pressure = this.pressureHandler.getPressure(pressureOrEvent);
             
             this.isDrawing = true;
             this.lastPoint = canvasPoint;
@@ -117,13 +103,10 @@
             const color = this.currentTool === 'eraser' ? this.config.background.color : this.brushColor;
             const opacity = this.currentTool === 'eraser' ? 1.0 : this.brushOpacity;
 
-            // 🔥 筆圧対応サイズ計算
-            const pressureAdjustedSize = this.brushSize * (0.5 + pressure * 0.5);
-
             this.currentPath = {
                 id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 graphics: new PIXI.Graphics(),
-                points: [{ x: canvasPoint.x, y: canvasPoint.y, pressure: pressure }],
+                points: [{ x: canvasPoint.x, y: canvasPoint.y }],
                 color: color,
                 size: this.brushSize,
                 opacity: opacity,
@@ -131,7 +114,7 @@
                 isComplete: false
             };
 
-            this.currentPath.graphics.circle(canvasPoint.x, canvasPoint.y, pressureAdjustedSize / 2);
+            this.currentPath.graphics.circle(canvasPoint.x, canvasPoint.y, this.brushSize / 2);
             this.currentPath.graphics.fill({ color: color, alpha: opacity });
 
             this.addPathToActiveLayer(this.currentPath);
@@ -140,22 +123,18 @@
                 this.eventBus.emit('drawing:started', {
                     tool: this.currentTool,
                     point: canvasPoint,
-                    pathId: this.currentPath.id,
-                    pressure: pressure
+                    pathId: this.currentPath.id
                 });
             }
         }
 
-        // 🔥 修正: pressureOrEvent 引数を追加
-        continueDrawing(screenX, screenY, pressureOrEvent = 0.5) {
+        // 🔥 修正: PointerEvent を受け取る
+        continueDrawing(screenX, screenY, pointerEvent) {
             if (!this.isDrawing || !this.currentPath || this.cameraSystem.spacePressed || 
                 this.cameraSystem.isDragging || this.layerManager.vKeyPressed) return;
 
             const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY, { forDrawing: true });
             const lastPoint = this.lastPoint;
-            
-            // 🔥 筆圧取得
-            const pressure = this.pressureHandler.getPressure(pressureOrEvent);
             
             const distance = Math.sqrt(
                 Math.pow(canvasPoint.x - lastPoint.x, 2) + 
@@ -164,22 +143,19 @@
 
             if (distance < 1) return;
 
-            // 🔥 筆圧対応サイズ計算
-            const pressureAdjustedSize = this.brushSize * (0.5 + pressure * 0.5);
-
             const steps = Math.max(1, Math.floor(distance / 1));
             for (let i = 1; i <= steps; i++) {
                 const t = i / steps;
                 const x = lastPoint.x + (canvasPoint.x - lastPoint.x) * t;
                 const y = lastPoint.y + (canvasPoint.y - lastPoint.y) * t;
 
-                this.currentPath.graphics.circle(x, y, pressureAdjustedSize / 2);
+                this.currentPath.graphics.circle(x, y, this.brushSize / 2);
                 this.currentPath.graphics.fill({ 
                     color: this.currentPath.color, 
                     alpha: this.currentPath.opacity 
                 });
 
-                this.currentPath.points.push({ x, y, pressure: pressure });
+                this.currentPath.points.push({ x, y });
             }
 
             this.lastPoint = canvasPoint;
@@ -321,11 +297,7 @@
                         try {
                             const transformedPoint = matrix.apply(point);
                             if (isFinite(transformedPoint.x) && isFinite(transformedPoint.y)) {
-                                // 🔥 筆圧対応
-                                const pressure = point.pressure || 0.5;
-                                const pressureAdjustedSize = path.size * (0.5 + pressure * 0.5);
-                                
-                                transformedGraphics.circle(transformedPoint.x, transformedPoint.y, pressureAdjustedSize / 2);
+                                transformedGraphics.circle(transformedPoint.x, transformedPoint.y, path.size / 2);
                                 transformedGraphics.fill({ color: path.color, alpha: path.opacity });
                             }
                         } catch (transformError) {
@@ -334,6 +306,256 @@
                     
                     path.graphics = transformedGraphics;
                 } catch (error) {
+                }
+            }
+        }
+        
+        async exportForBookmarklet(format = 'gif', options = {}) {
+            if (!this.exportManager) {
+                throw new Error('ExportManager is not initialized');
+            }
+            
+            switch(format.toLowerCase()) {
+                case 'png':
+                    return await this.exportManager.exportAsPNGBlob(options);
+                case 'apng':
+                    return await this.exportManager.exportAsAPNGBlob(options);
+                case 'gif':
+                    return await this.exportManager.exportAsGIFBlob(options);
+                case 'webp':
+                    return await this.exportManager.exportAsWebPBlob(options);
+                default:
+                    throw new Error(`Unsupported format: ${format}`);
+            }
+        }
+        
+        getCameraSystem() { return this.cameraSystem; }
+        getLayerManager() { return this.layerSystem; }
+        getDrawingEngine() { return this.drawingEngine; }
+        getClipboardSystem() { return this.clipboardSystem; }
+        getAnimationSystem() { return this.animationSystem; }
+        getTimelineUI() { return this.timelineUI; }
+        getKeyHandler() { return this.keyHandler; }
+        getEventBus() { return this.eventBus; }
+        getExportManager() { return this.exportManager; }
+        getBatchAPI() { return this.batchAPI; }
+        
+        undo() {
+            if (window.History) {
+                window.History.undo();
+            }
+        }
+        
+        redo() {
+            if (window.History) {
+                window.History.redo();
+            }
+        }
+        
+        // 🔥 修正: Pointer Events 対応
+        setupCanvasEvents() {
+            const canvas = this.app.canvas || this.app.view;
+            if (!canvas) {
+                console.error('Canvas element not found');
+                return;
+            }
+            
+            // === 🔥 1. touch-action: none を設定 ===
+            if (canvas && canvas.style) {
+                canvas.style.touchAction = 'none';
+            }
+            
+            // === 🔥 2. pointerdown で Pointer Capture ===
+            canvas.addEventListener('pointerdown', (e) => {
+                if (e.button === 2 || this.cameraSystem.spacePressed || this.layerSystem.vKeyPressed) return;
+                if (e.button !== 0) return;
+                
+                try { canvas.setPointerCapture(e.pointerId); } catch(err) {}
+                
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                this.drawingEngine.startDrawing(x, y, e);
+                e.stopPropagation();
+            }, true);
+
+            // === 🔥 3. pointermove で PointerEvent を渡す ===
+            canvas.addEventListener('pointermove', (e) => {
+                const rect = canvas.getBoundingClientRect();
+                const x = e.clientX - rect.left;
+                const y = e.clientY - rect.top;
+                this.updateCoordinates(x, y);
+                if (this.drawingEngine.isDrawing) {
+                    this.drawingEngine.continueDrawing(x, y, e);
+                }
+                this.eventBus.emit('ui:mouse-move', { x, y });
+            }, true);
+            
+            // === 🔥 4. pointerup で Pointer Capture 解放 ===
+            canvas.addEventListener('pointerup', (e) => {
+                try { canvas.releasePointerCapture(e.pointerId); } catch(err) {}
+                if (this.drawingEngine.isDrawing) {
+                    this.drawingEngine.stopDrawing();
+                    e.stopPropagation();
+                }
+            }, true);
+            
+            // === 🔥 5. pointercancel でも Pointer Capture 解放 ===
+            canvas.addEventListener('pointercancel', (e) => {
+                try { canvas.releasePointerCapture(e.pointerId); } catch(err) {}
+                if (this.drawingEngine.isDrawing) {
+                    this.drawingEngine.stopDrawing();
+                }
+            }, true);
+        }
+        
+        switchTool(tool) {
+            if (this.keyHandler) {
+                this.keyHandler.switchTool(tool);
+            } else {
+                this.drawingEngine.setTool(tool);
+                this.cameraSystem.updateCursor();
+            }
+        }
+        
+        updateCoordinates(x, y) {
+            this.cameraSystem.updateCoordinates(x, y);
+        }
+        
+        processThumbnailUpdates() {
+            this.layerSystem.processThumbnailUpdates();
+        }
+        
+        resizeCanvas(newWidth, newHeight) {
+            CONFIG.canvas.width = newWidth;
+            CONFIG.canvas.height = newHeight;
+            
+            this.cameraSystem.resizeCanvas(newWidth, newHeight);
+            
+            const layers = this.layerSystem.getLayers();
+            layers.forEach(layer => {
+                if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
+                    layer.layerData.backgroundGraphics.clear();
+                    layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
+                    layer.layerData.backgroundGraphics.fill(CONFIG.background.color);
+                }
+            });
+            
+            for (let i = 0; i < layers.length; i++) {
+                this.layerSystem.requestThumbnailUpdate(i);
+            }
+            
+            if (this.animationSystem) {
+                setTimeout(() => {
+                    const animData = this.animationSystem.getAnimationData();
+                    if (animData && animData.cuts) {
+                        for (let i = 0; i < animData.cuts.length; i++) {
+                            if (this.animationSystem.generateCutThumbnail) {
+                                this.animationSystem.generateCutThumbnail(i);
+                            } else if (this.animationSystem.generateCutThumbnailOptimized) {
+                                this.animationSystem.generateCutThumbnailOptimized(i);
+                            }
+                        }
+                    }
+                }, 500);
+            }
+            
+            const canvasInfoElement = document.getElementById('canvas-info');
+            if (canvasInfoElement) {
+                canvasInfoElement.textContent = `${newWidth}×${newHeight}px`;
+            }
+            
+            const resizeSettings = document.getElementById('resize-settings');
+            if (resizeSettings) {
+                resizeSettings.classList.remove('show');
+            }
+            
+            this.eventBus.emit('canvas:resized', { width: newWidth, height: newHeight });
+        }
+        
+        initialize() {
+            this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
+            this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
+            this.clipboardSystem.init(this.eventBus, CONFIG);
+            
+            if (window.History && typeof window.History.setLayerSystem === 'function') {
+                window.History.setLayerSystem(this.layerSystem);
+            }
+            
+            this.initializeAnimationSystem();
+            
+            if (window.TegakiBatchAPI && this.animationSystem) {
+                this.batchAPI = new window.TegakiBatchAPI(
+                    this.layerSystem,
+                    this.animationSystem
+                );
+                
+                window.batchAPI = this.batchAPI;
+            }
+            
+            if (window.ExportManager && this.animationSystem) {
+                this.exportManager = new window.ExportManager(
+                    this.app,
+                    this.layerSystem,
+                    this.animationSystem,
+                    this.cameraSystem
+                );
+            }
+            
+            this.keyHandler = new UnifiedKeyHandler(
+                this.cameraSystem,
+                this.layerSystem,
+                this.drawingEngine,
+                this.eventBus,
+                this.animationSystem
+            );
+            
+            if (this.timelineUI) {
+                this.keyHandler.setTimelineUI(this.timelineUI);
+            }
+            
+            this.eventBus.on('animation:initial-cut-created', () => {
+                this.layerSystem.updateLayerPanelUI();
+                this.layerSystem.updateStatusDisplay();
+            });
+            
+            if (window.TegakiUI && window.TegakiUI.initializeSortable) {
+                window.TegakiUI.initializeSortable(this.layerSystem);
+            }
+            
+            this.setupCanvasEvents();
+            
+            this.app.ticker.add(() => {
+                this.processThumbnailUpdates();
+            });
+            
+            this.eventBus.emit('core:initialized', {
+                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export']
+            });
+            
+            return this;
+        }
+    }
+
+    window.TegakiCore = {
+        CoreEngine: CoreEngine,
+        CameraSystem: window.TegakiCameraSystem,
+        LayerManager: window.TegakiLayerSystem,
+        LayerSystem: window.TegakiLayerSystem,
+        DrawingEngine: DrawingEngine,
+        ClipboardSystem: window.TegakiDrawingClipboard,
+        DrawingClipboard: window.TegakiDrawingClipboard,
+        AnimationSystem: window.TegakiAnimationSystem,
+        TimelineUI: window.TegakiTimelineUI,
+        UnifiedKeyHandler: UnifiedKeyHandler
+    };
+
+})();
+
+console.log('✅ core-engine.js (ペン描画修正版) loaded');
+console.log('   - 🔥 canvas.style.touchAction = "none" 追加');
+console.log('   - 🔥 setPointerCapture/releasePointerCapture 実装');
+console.log('   - 🔥 PointerEvent を startDrawing/continueDrawing に渡す'); {
                 }
             }
             
@@ -763,251 +985,4 @@
                     if (typeof window.CoordinateSystem.setAnimationSystem === 'function' && this.animationSystem) {
                         window.CoordinateSystem.setAnimationSystem(this.animationSystem);
                     }
-                } catch (error) {
-                }
-            }
-        }
-        
-        async exportForBookmarklet(format = 'gif', options = {}) {
-            if (!this.exportManager) {
-                throw new Error('ExportManager is not initialized');
-            }
-            
-            switch(format.toLowerCase()) {
-                case 'png':
-                    return await this.exportManager.exportAsPNGBlob(options);
-                case 'apng':
-                    return await this.exportManager.exportAsAPNGBlob(options);
-                case 'gif':
-                    return await this.exportManager.exportAsGIFBlob(options);
-                case 'webp':
-                    return await this.exportManager.exportAsWebPBlob(options);
-                default:
-                    throw new Error(`Unsupported format: ${format}`);
-            }
-        }
-        
-        getCameraSystem() { return this.cameraSystem; }
-        getLayerManager() { return this.layerSystem; }
-        getDrawingEngine() { return this.drawingEngine; }
-        getClipboardSystem() { return this.clipboardSystem; }
-        getAnimationSystem() { return this.animationSystem; }
-        getTimelineUI() { return this.timelineUI; }
-        getKeyHandler() { return this.keyHandler; }
-        getEventBus() { return this.eventBus; }
-        getExportManager() { return this.exportManager; }
-        getBatchAPI() { return this.batchAPI; }
-        
-        undo() {
-            if (window.History) {
-                window.History.undo();
-            }
-        }
-        
-        redo() {
-            if (window.History) {
-                window.History.redo();
-            }
-        }
-        
-        // 🔥 タブレットペン対応: setupCanvasEvents() を修正
-        setupCanvasEvents() {
-            const canvas = this.app.canvas || this.app.view;
-            if (!canvas) {
-                console.error('Canvas element not found');
-                return;
-            }
-            
-            // 🔥 修正: capture フェーズで処理し、描画用イベントを優先
-            canvas.addEventListener('pointerdown', (e) => {
-                // CameraSystemのイベント（右クリック、Spaceキー）の場合はスキップ
-                if (e.button === 2 || this.cameraSystem.spacePressed || this.layerSystem.vKeyPressed) {
-                    return;
-                }
-                
-                // 左クリック（button === 0）の描画処理
-                if (e.button === 0) {
-                    const rect = canvas.getBoundingClientRect();
-                    const x = e.clientX - rect.left;
-                    const y = e.clientY - rect.top;
-                    // 🔥 PointerEvent オブジェクトを第3引数に渡す
-                    this.drawingEngine.startDrawing(x, y, e);
-                    e.stopPropagation(); // 他のリスナーへの伝播を停止
-                }
-            }, true); // true = capture フェーズ
-
-            canvas.addEventListener('pointermove', (e) => {
-                const rect = canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
-                this.updateCoordinates(x, y);
-                
-                // 描画中でない場合でも座標更新は行う
-                if (this.drawingEngine.isDrawing) {
-                    // 🔥 PointerEvent オブジェクトを第3引数に渡す
-                    this.drawingEngine.continueDrawing(x, y, e);
-                }
-                
-                this.eventBus.emit('ui:mouse-move', { x, y });
-            }, true); // true = capture フェーズ
-            
-            canvas.addEventListener('pointerup', (e) => {
-                if (this.drawingEngine.isDrawing) {
-                    this.drawingEngine.stopDrawing();
-                    e.stopPropagation(); // 他のリスナーへの伝播を停止
-                }
-            }, true); // true = capture フェーズ
-            
-            canvas.addEventListener('pointerleave', (e) => {
-                if (this.drawingEngine.isDrawing) {
-                    this.drawingEngine.stopDrawing();
-                }
-            }, true); // true = capture フェーズ
-        }
-        
-        switchTool(tool) {
-            if (this.keyHandler) {
-                this.keyHandler.switchTool(tool);
-            } else {
-                this.drawingEngine.setTool(tool);
-                this.cameraSystem.updateCursor();
-            }
-        }
-        
-        updateCoordinates(x, y) {
-            this.cameraSystem.updateCoordinates(x, y);
-        }
-        
-        processThumbnailUpdates() {
-            this.layerSystem.processThumbnailUpdates();
-        }
-        
-        resizeCanvas(newWidth, newHeight) {
-            CONFIG.canvas.width = newWidth;
-            CONFIG.canvas.height = newHeight;
-            
-            this.cameraSystem.resizeCanvas(newWidth, newHeight);
-            
-            const layers = this.layerSystem.getLayers();
-            layers.forEach(layer => {
-                if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
-                    layer.layerData.backgroundGraphics.clear();
-                    layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
-                    layer.layerData.backgroundGraphics.fill(CONFIG.background.color);
-                }
-            });
-            
-            for (let i = 0; i < layers.length; i++) {
-                this.layerSystem.requestThumbnailUpdate(i);
-            }
-            
-            if (this.animationSystem) {
-                setTimeout(() => {
-                    const animData = this.animationSystem.getAnimationData();
-                    if (animData && animData.cuts) {
-                        for (let i = 0; i < animData.cuts.length; i++) {
-                            if (this.animationSystem.generateCutThumbnail) {
-                                this.animationSystem.generateCutThumbnail(i);
-                            } else if (this.animationSystem.generateCutThumbnailOptimized) {
-                                this.animationSystem.generateCutThumbnailOptimized(i);
-                            }
-                        }
-                    }
-                }, 500);
-            }
-            
-            const canvasInfoElement = document.getElementById('canvas-info');
-            if (canvasInfoElement) {
-                canvasInfoElement.textContent = `${newWidth}×${newHeight}px`;
-            }
-            
-            const resizeSettings = document.getElementById('resize-settings');
-            if (resizeSettings) {
-                resizeSettings.classList.remove('show');
-            }
-            
-            this.eventBus.emit('canvas:resized', { width: newWidth, height: newHeight });
-        }
-        
-        initialize() {
-            this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
-            this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
-            this.clipboardSystem.init(this.eventBus, CONFIG);
-            
-            if (window.History && typeof window.History.setLayerSystem === 'function') {
-                window.History.setLayerSystem(this.layerSystem);
-            }
-            
-            this.initializeAnimationSystem();
-            
-            if (window.TegakiBatchAPI && this.animationSystem) {
-                this.batchAPI = new window.TegakiBatchAPI(
-                    this.layerSystem,
-                    this.animationSystem
-                );
-                
-                window.batchAPI = this.batchAPI;
-            }
-            
-            if (window.ExportManager && this.animationSystem) {
-                this.exportManager = new window.ExportManager(
-                    this.app,
-                    this.layerSystem,
-                    this.animationSystem,
-                    this.cameraSystem
-                );
-            }
-            
-            this.keyHandler = new UnifiedKeyHandler(
-                this.cameraSystem,
-                this.layerSystem,
-                this.drawingEngine,
-                this.eventBus,
-                this.animationSystem
-            );
-            
-            if (this.timelineUI) {
-                this.keyHandler.setTimelineUI(this.timelineUI);
-            }
-            
-            this.eventBus.on('animation:initial-cut-created', () => {
-                this.layerSystem.updateLayerPanelUI();
-                this.layerSystem.updateStatusDisplay();
-            });
-            
-            if (window.TegakiUI && window.TegakiUI.initializeSortable) {
-                window.TegakiUI.initializeSortable(this.layerSystem);
-            }
-            
-            this.setupCanvasEvents();
-            
-            this.app.ticker.add(() => {
-                this.processThumbnailUpdates();
-            });
-            
-            this.eventBus.emit('core:initialized', {
-                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export']
-            });
-            
-            return this;
-        }
-    }
-
-    window.TegakiCore = {
-        CoreEngine: CoreEngine,
-        CameraSystem: window.TegakiCameraSystem,
-        LayerManager: window.TegakiLayerSystem,
-        LayerSystem: window.TegakiLayerSystem,
-        DrawingEngine: DrawingEngine,
-        ClipboardSystem: window.TegakiDrawingClipboard,
-        DrawingClipboard: window.TegakiDrawingClipboard,
-        AnimationSystem: window.TegakiAnimationSystem,
-        TimelineUI: window.TegakiTimelineUI,
-        UnifiedKeyHandler: UnifiedKeyHandler
-    };
-
-})();
-
-console.log('✅ core-engine.js (タブレットペン対応版) loaded');
-console.log('   - 🔥 PointerEvent.pressure 対応完了');
-console.log('   - 🔥 DrawingEngine に筆圧処理追加');
+                } catch (error)

@@ -47,8 +47,8 @@
             this.minPressureSensitivity = 0.0;
             this.maxPressureSensitivity = 2.0;
             
-            // オニオンスキン設定
-            this.onionSkinMode = 0; // 0=OFF, 1/2/3=表示フレーム数
+            // オニオンスキン設定（★改修：デフォルト1に変更）
+            this.onionSkinMode = 1;
             this.onionSkinAlpha = 0.3;
             
             // アニメーション設定
@@ -68,10 +68,11 @@
             // クリップボード
             this.clipboard = null;
             
-            // レイヤードラッグ設定
-            this.isDraggingLayer = false;
-            this.draggedLayerIndex = -1;
-            this.dragStartX = 0;
+            // ★改修：V+ドラッグ用の変数追加
+            this.isDraggingCanvas = false;
+            this.dragStartCanvasX = 0;
+            this.dragStartCanvasY = 0;
+            this.draggedFromIndex = -1;
             
             // UI要素
             this.controlPanel = null;
@@ -146,17 +147,20 @@
             km.register('p', {}, () => this.switchTool('pen'), 'Pen');
             km.register('e', {}, () => this.switchTool('eraser'), 'Eraser');
             
-            // 0-3: オニオンスキン切替
-            km.register('0', {}, () => this.setOnionSkinMode(0), 'Onion Off');
-            km.register('1', {}, () => this.setOnionSkinMode(1), 'Onion 1');
-            km.register('2', {}, () => this.setOnionSkinMode(2), 'Onion 2');
-            km.register('3', {}, () => this.setOnionSkinMode(3), 'Onion 3');
+            // ★改修：Oキーでオニオンスキンサイクル追加
+            km.register('o', {}, () => this.cycleOnionSkinMode(), 'Cycle Onion');
             
             for (let i = 1; i <= 9; i++) {
                 if (i <= this.frameCount) {
                     km.register(String(i), {}, () => this.switchLayer(i - 1), `Layer ${i}`);
                 }
             }
+        }
+        
+        // ★改修：Oキーでオニオンスキン切替
+        cycleOnionSkinMode() {
+            this.onionSkinMode = (this.onionSkinMode + 1) % 4;
+            this.setOnionSkinMode(this.onionSkinMode);
         }
         
         handleKeyDown(e) {
@@ -226,20 +230,21 @@
             if (mode < 0 || mode > 3) return;
             this.onionSkinMode = mode;
             
-            // ボタンハイライト更新
+            // ★改修：ふたばカラー適用
             this.onionSkinButtons.forEach(({ btn, btnMode }) => {
                 if (btnMode === mode) {
                     btn.style.background = this.colors.maroon;
                     btn.style.color = 'white';
                 } else {
-                    btn.style.background = '#ddd';
-                    btn.style.color = '#333';
+                    btn.style.background = this.colors.lightMedium;
+                    btn.style.color = this.colors.maroon;
                 }
             });
             
             this.updateOnionSkin();
         }
         
+        // ★改修：オニオンスキン描画ロジック修正
         updateOnionSkin() {
             if (this.onionCtx) {
                 this.onionCtx.clearRect(0, 0, this.onionCanvas.width, this.onionCanvas.height);
@@ -258,8 +263,10 @@
                 if (!prevLayer) continue;
                 
                 const opacity = this.onionSkinAlpha / i;
+                
+                // ★重要：lighten合成モードで透過を保持
+                this.onionCtx.globalCompositeOperation = 'lighten';
                 this.onionCtx.globalAlpha = opacity;
-                this.onionCtx.globalCompositeOperation = 'source-over';
                 this.onionCtx.filter = 'hue-rotate(0deg) saturate(1.2)';
                 
                 const tempCanvas = document.createElement('canvas');
@@ -280,8 +287,10 @@
                 if (!nextLayer) continue;
                 
                 const opacity = this.onionSkinAlpha / i;
+                
+                // ★重要：lighten合成モードで透過を保持
+                this.onionCtx.globalCompositeOperation = 'lighten';
                 this.onionCtx.globalAlpha = opacity;
-                this.onionCtx.globalCompositeOperation = 'source-over';
                 this.onionCtx.filter = 'hue-rotate(200deg) saturate(1.2)';
                 
                 const tempCanvas = document.createElement('canvas');
@@ -358,7 +367,7 @@
                 </h3>
                 <div style="line-height: 1.8;">
                     <div><b>1-5</b>: レイヤー切替</div>
-                    <div><b>0-3</b>: オニオンスキン</div>
+                    <div><b>O</b>: オニオンスキン</div>
                     <div><b>P</b>: ペン</div>
                     <div><b>E</b>: 消しゴム</div>
                     <div><b>Ctrl+Z</b>: 元に戻す</div>
@@ -675,6 +684,7 @@
             this.controlPanel.appendChild(pressureControl);
         }
         
+        // ★改修：ふたばカラー適用
         createOnionSkinControl() {
             const onionControl = document.createElement('div');
             
@@ -691,8 +701,8 @@
                 btn.textContent = i === 0 ? 'OFF' : String(i);
                 btn.style.cssText = `
                     padding: 6px 4px;
-                    background: ${i === this.onionSkinMode ? this.colors.maroon : '#ddd'};
-                    color: ${i === this.onionSkinMode ? 'white' : '#333'};
+                    background: ${i === this.onionSkinMode ? this.colors.maroon : this.colors.lightMedium};
+                    color: ${i === this.onionSkinMode ? 'white' : this.colors.maroon};
                     border: none;
                     border-radius: 3px;
                     cursor: pointer;
@@ -816,6 +826,9 @@
             this.ctx.strokeStyle = this.color;
             this.ctx.lineWidth = this.size;
             
+            // ★改修：touchAction設定追加
+            this.canvas.style.touchAction = 'none';
+            
             this.onionCtx = this.onionCanvas.getContext('2d', {
                 willReadFrequently: true
             });
@@ -825,13 +838,14 @@
         
         initLayersAndHistory() {
             for (let i = 0; i < this.frameCount; i++) {
+                // ★改修：透明背景で初期化（背景色を塗らない）
                 const tempCanvas = document.createElement('canvas');
                 tempCanvas.width = this.canvas.width;
                 tempCanvas.height = this.canvas.height;
                 const tempCtx = tempCanvas.getContext('2d');
                 
-                tempCtx.fillStyle = this.backgroundColor;
-                tempCtx.fillRect(0, 0, this.canvas.width, this.canvas.height);
+                // 透明のまま（背景を塗らない）
+                tempCtx.clearRect(0, 0, this.canvas.width, this.canvas.height);
                 
                 const initialImageData = tempCtx.getImageData(
                     0, 0,
@@ -862,61 +876,98 @@
         // ========== イベントリスナー設定 ==========
         
         attachEvents() {
-            this.canvas.addEventListener('mousedown', (e) => this.startDrawing(e));
-            this.canvas.addEventListener('mousemove', (e) => this.draw(e));
-            this.canvas.addEventListener('mouseup', () => this.stopDrawing());
-            this.canvas.addEventListener('mouseleave', () => this.stopDrawing());
+            // ★改修：pointerイベントのみに統一（デバッグログ追加）
             
-            this.canvas.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                const touch = e.touches[0];
-                const mouseEvent = new MouseEvent('mousedown', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY
+            this.canvas.addEventListener('pointerdown', (e) => {
+                console.log('🖱️ pointerdown:', {
+                    type: e.pointerType,
+                    pressure: e.pressure,
+                    vKey: this.vKeyPressed,
+                    button: e.button
                 });
-                this.canvas.dispatchEvent(mouseEvent);
-            }, { passive: false });
-            
-            this.canvas.addEventListener('touchmove', (e) => {
+                
                 e.preventDefault();
-                const touch = e.touches[0];
-                const mouseEvent = new MouseEvent('mousemove', {
-                    clientX: touch.clientX,
-                    clientY: touch.clientY
-                });
-                this.canvas.dispatchEvent(mouseEvent);
-            }, { passive: false });
+                
+                // 右クリック無視
+                if (e.button !== 0) return;
+                
+                // V+ドラッグモード時はキャンバスドラッグ開始
+                if (this.vKeyPressed) {
+                    console.log('🔄 V+drag mode');
+                    this.startCanvasDrag(e);
+                    return;
+                }
+                
+                // 通常の描画開始
+                console.log('✏️ Start drawing');
+                this.startDrawing(e);
+            });
             
-            this.canvas.addEventListener('touchend', (e) => {
+            this.canvas.addEventListener('pointermove', (e) => {
                 e.preventDefault();
-                const mouseEvent = new MouseEvent('mouseup', {});
-                this.canvas.dispatchEvent(mouseEvent);
-            }, { passive: false });
+                
+                // V+ドラッグモード
+                if (this.vKeyPressed && this.isDraggingCanvas) {
+                    this.dragCanvas(e);
+                    return;
+                }
+                
+                // 通常の描画（筆圧対応）
+                if (this.isDrawing) {
+                    this.drawWithPressure(e);
+                }
+            });
             
-            this.canvas.addEventListener('pointerdown', (e) => this.startDrawing(e));
-            this.canvas.addEventListener('pointermove', (e) => this.drawWithPressure(e));
-            this.canvas.addEventListener('pointerup', () => this.stopDrawing());
-            this.canvas.addEventListener('pointerleave', () => this.stopDrawing());
+            this.canvas.addEventListener('pointerup', (e) => {
+                console.log('🖱️ pointerup');
+                e.preventDefault();
+                
+                if (this.isDraggingCanvas) {
+                    this.stopCanvasDrag();
+                    return;
+                }
+                
+                this.stopDrawing();
+            });
+            
+            this.canvas.addEventListener('pointercancel', (e) => {
+                console.log('🖱️ pointercancel');
+                if (this.isDraggingCanvas) {
+                    this.stopCanvasDrag();
+                }
+                this.stopDrawing();
+            });
+            
+            this.canvas.addEventListener('pointerleave', (e) => {
+                if (this.isDraggingCanvas) {
+                    this.stopCanvasDrag();
+                }
+                if (this.isDrawing) {
+                    this.stopDrawing();
+                }
+            });
 
-            document.addEventListener('keydown', this.boundHandleKeyDown.bind(this));
+            document.addEventListener('keydown', this.boundHandleKeyDown);
             document.addEventListener('keyup', (e) => this.handleKeyUp(e));
-            
-            // レイヤードラッグ
-            this.thumbnailContainer.addEventListener('mousedown', (e) => this.startLayerDrag(e));
-            this.thumbnailContainer.addEventListener('mousemove', (e) => this.dragLayer(e));
-            this.thumbnailContainer.addEventListener('mouseup', () => this.endLayerDrag());
-            this.thumbnailContainer.addEventListener('mouseleave', () => this.endLayerDrag());
         }
         
         // ========== 描画処理 ==========
         
         startDrawing(e) {
-            if (this.vKeyPressed) return; // V+ドラッグ時は描画しない
-            
             this.isDrawing = true;
             const rect = this.canvas.getBoundingClientRect();
-            this.lastX = e.clientX - rect.left;
-            this.lastY = e.clientY - rect.top;
+            this.lastX = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+            this.lastY = (e.clientY - rect.top) * (this.canvas.height / rect.height);
+            
+            // ★重要：描画開始点も筆圧を反映
+            let pressure = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 0.5;
+            pressure = Math.pow(pressure, 1 / this.pressureSensitivity);
+            const baseSize = this.tool === 'pen' ? this.size : this.eraserSize;
+            const adjustedSize = baseSize * (0.3 + pressure * 0.7);
+            this.ctx.lineWidth = adjustedSize;
+            
+            this.ctx.beginPath();
+            this.ctx.moveTo(this.lastX, this.lastY);
         }
         
         draw(e) {
@@ -935,27 +986,28 @@
             this.lastY = y;
         }
         
+        // ★改修：筆圧処理の改善
         drawWithPressure(e) {
             if (!this.isDrawing) return;
             
             const rect = this.canvas.getBoundingClientRect();
-            const x = e.clientX - rect.left;
-            const y = e.clientY - rect.top;
+            const x = (e.clientX - rect.left) * (this.canvas.width / rect.width);
+            const y = (e.clientY - rect.top) * (this.canvas.height / rect.height);
             
-            let pressure = e.pressure || 0.5;
+            // ★重要：pressure === 0 または undefined の場合のフォールバック
+            let pressure = (typeof e.pressure === 'number' && e.pressure > 0) ? e.pressure : 0.5;
             
-            if (pressure < 0.1) pressure = 0.1;
-            
+            // 筆圧感度の逆数で累乗（感度が高いほど変化が大きい）
             pressure = Math.pow(pressure, 1 / this.pressureSensitivity);
             
             const baseSize = this.tool === 'pen' ? this.size : this.eraserSize;
             const adjustedSize = baseSize * (0.3 + pressure * 0.7);
             this.ctx.lineWidth = adjustedSize;
             
-            this.ctx.beginPath();
-            this.ctx.moveTo(this.lastX, this.lastY);
             this.ctx.lineTo(x, y);
             this.ctx.stroke();
+            this.ctx.beginPath();
+            this.ctx.moveTo(x, y);
             
             this.lastX = x;
             this.lastY = y;
@@ -964,13 +1016,49 @@
         stopDrawing() {
             if (!this.isDrawing) return;
             this.isDrawing = false;
-            this.ctx.beginPath();
+            this.ctx.closePath();
             
             this.ctx.lineWidth = this.tool === 'pen' ? this.size : this.eraserSize;
             
             this.pushHistory();
             this.updateThumbnail();
             this.updateOnionSkin();
+        }
+        
+        // ========== V+ドラッグでレイヤー移動 ==========
+        
+        startCanvasDrag(e) {
+            this.isDraggingCanvas = true;
+            const rect = this.canvas.getBoundingClientRect();
+            this.dragStartCanvasX = e.clientX;
+            this.dragStartCanvasY = e.clientY;
+            this.draggedFromIndex = this.activeLayerIndex;
+            this.canvas.style.cursor = 'grabbing';
+        }
+        
+        dragCanvas(e) {
+            if (!this.isDraggingCanvas) return;
+            
+            const deltaX = e.clientX - this.dragStartCanvasX;
+            
+            // 横方向のドラッグで前後のレイヤーに移動
+            const threshold = 60; // 閾値（ピクセル）
+            
+            if (Math.abs(deltaX) > threshold) {
+                const direction = deltaX > 0 ? 1 : -1;
+                const targetIndex = this.activeLayerIndex + direction;
+                
+                if (targetIndex >= 0 && targetIndex < this.frameCount && targetIndex !== this.draggedFromIndex) {
+                    this.switchLayer(targetIndex);
+                    this.dragStartCanvasX = e.clientX;
+                    this.draggedFromIndex = targetIndex;
+                }
+            }
+        }
+        
+        stopCanvasDrag() {
+            this.isDraggingCanvas = false;
+            this.canvas.style.cursor = this.tool === 'pen' ? 'crosshair' : 'pointer';
         }
         
         // ========== レイヤー管理 ==========
@@ -1000,68 +1088,6 @@
             });
             
             this.updateOnionSkin();
-        }
-        
-        // ========== レイヤードラッグ移動 ==========
-        
-        startLayerDrag(e) {
-            if (!this.vKeyPressed) return;
-            
-            const thumbWrapper = e.target.closest('div').parentElement;
-            if (!thumbWrapper) return;
-            
-            const thumbCanvas = thumbWrapper.querySelector('canvas');
-            if (thumbCanvas && thumbCanvas.layerIndex !== undefined) {
-                this.isDraggingLayer = true;
-                this.draggedLayerIndex = thumbCanvas.layerIndex;
-                this.dragStartX = e.clientX;
-            }
-        }
-        
-        dragLayer(e) {
-            if (!this.isDraggingLayer || this.draggedLayerIndex === -1) return;
-            
-            const currentX = e.clientX;
-            const threshold = 40; // ドラッグ判定の閾値
-            
-            if (Math.abs(currentX - this.dragStartX) > threshold) {
-                const direction = currentX > this.dragStartX ? 1 : -1;
-                const targetIndex = this.draggedLayerIndex + direction;
-                
-                if (targetIndex >= 0 && targetIndex < this.frameCount) {
-                    this.swapLayers(this.draggedLayerIndex, targetIndex);
-                    this.draggedLayerIndex = targetIndex;
-                    this.dragStartX = currentX;
-                }
-            }
-        }
-        
-        endLayerDrag() {
-            this.isDraggingLayer = false;
-            this.draggedLayerIndex = -1;
-        }
-        
-        swapLayers(index1, index2) {
-            const temp = this.layers[index1];
-            this.layers[index1] = this.layers[index2];
-            this.layers[index2] = temp;
-            
-            if (this.activeLayerIndex === index1) {
-                this.activeLayerIndex = index2;
-            } else if (this.activeLayerIndex === index2) {
-                this.activeLayerIndex = index1;
-            }
-            
-            this.updateThumbnailByIndex(index1);
-            this.updateThumbnailByIndex(index2);
-            
-            this.thumbnailContainer.childNodes.forEach((thumbWrapper, i) => {
-                const thumb = thumbWrapper.querySelector('canvas');
-                if (thumb) {
-                    thumb.style.borderColor = (i === this.activeLayerIndex) ? this.colors.maroon : this.colors.lightMaroon;
-                    thumb.style.transform = (i === this.activeLayerIndex) ? 'scale(1.1)' : 'scale(1)';
-                }
-            });
         }
         
         updateThumbnail() {
