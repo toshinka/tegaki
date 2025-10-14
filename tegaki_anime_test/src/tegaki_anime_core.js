@@ -568,7 +568,7 @@
             eraserBtn.style.cssText = `
                 flex: 1;
                 padding: 8px;
-                background: ${this.colors.lightMaroon};
+                background: ${this.colors.medium};
                 color: white;
                 border: none;
                 border-radius: 4px;
