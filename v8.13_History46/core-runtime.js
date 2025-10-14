@@ -1,4 +1,5 @@
-// ===== core-runtime.js - ブックマークレット対応版 =====
+// ===== core-runtime.js - Phase 12: PixiJS EventSystem統合版 =====
+// 【Phase 12】PixiJS FederatedPointerEvent対応
 // 【追加】window.startTegakiApp() エントリーポイント
 // 【改修】APNGExporter登録対応
 // 【改修】ExportSystem確実初期化機能追加
@@ -37,12 +38,14 @@
             cameraSystem: null,
             layerManager: null,
             drawingEngine: null,
-            initialized: false
+            initialized: false,
+            // Phase 12: PixiJS EventSystem用
+            pointerEventsSetup: false
         },
         
         // === 初期化 ===
         init(options) {
-            console.log('=== CoreRuntime リサイズ即時反映版 初期化開始 ===');
+            console.log('=== CoreRuntime Phase 12: PixiJS EventSystem統合版 初期化開始 ===');
             
             Object.assign(this.internal, options);
             this.project.renderer = options.app?.renderer;
@@ -56,9 +59,70 @@
             
             this.setupLegacyCompatibility();
             
-            console.log('✅ CoreRuntime 初期化完了');
+            // Phase 12: PixiJS Events設定
+            this.setupPointerEvents();
+            
+            console.log('✅ CoreRuntime 初期化完了（Phase 12対応）');
             
             return this;
+        },
+        
+        // === Phase 12: PixiJS EventSystem設定 ===
+        setupPointerEvents() {
+            if (!this.internal.app?.stage || this.internal.pointerEventsSetup) return;
+            
+            const stage = this.internal.app.stage;
+            
+            // ステージ全体でインタラクティブに
+            stage.eventMode = 'static';
+            stage.hitArea = this.internal.app.screen;
+            
+            // Phase 12: PixiJS Events
+            stage.on('pointerdown', (event) => {
+                this.handlePointerDown(event);
+            });
+            
+            stage.on('pointermove', (event) => {
+                this.handlePointerMove(event);
+            });
+            
+            stage.on('pointerup', (event) => {
+                this.handlePointerUp(event);
+            });
+            
+            stage.on('pointerupoutside', (event) => {
+                this.handlePointerUp(event);
+            });
+            
+            this.internal.pointerEventsSetup = true;
+            console.log('✅ PixiJS EventSystem設定完了');
+        },
+        
+        // === Phase 12: Pointerイベントハンドラ ===
+        handlePointerDown(event) {
+            // Phase 12: event.global で座標取得
+            const screenX = event.global.x;
+            const screenY = event.global.y;
+            
+            // Phase 12: FederatedPointerEventをそのまま渡す
+            if (this.internal.drawingEngine && !this.internal.layerManager?.isLayerMoveMode) {
+                this.internal.drawingEngine.startDrawing(screenX, screenY, event);
+            }
+        },
+        
+        handlePointerMove(event) {
+            const screenX = event.global.x;
+            const screenY = event.global.y;
+            
+            if (this.internal.drawingEngine?.isDrawing) {
+                this.internal.drawingEngine.continueDrawing(screenX, screenY, event);
+            }
+        },
+        
+        handlePointerUp(event) {
+            if (this.internal.drawingEngine?.isDrawing) {
+                this.internal.drawingEngine.stopDrawing();
+            }
         },
         
         setupCoordinateSystem() {
@@ -76,7 +140,9 @@
                 pixiApp: this.internal.app,
                 cameraSystem: this.internal.cameraSystem,
                 layerManager: this.internal.layerManager,
-                drawingEngine: this.internal.drawingEngine
+                drawingEngine: this.internal.drawingEngine,
+                // Phase 12用のapp参照
+                app: this.internal.app
             };
             
             window.drawingAppResizeCanvas = (w, h) => {
@@ -316,6 +382,7 @@
                 activeCutId: this.project.activeCutId,
                 canvasSize: this.project.canvasSize,
                 DPR: this.project.DPR,
+                pointerEventsSetup: this.internal.pointerEventsSetup,
                 cuts: this.project.cuts.map(c => ({
                     id: c.id,
                     name: c.name,
@@ -608,9 +675,11 @@
         };
     };
     
-    console.log('✅ core-runtime.js ブックマークレット対応版 loaded');
+    console.log('✅ core-runtime.js Phase 12: PixiJS EventSystem統合版 loaded');
+    console.log('  ✅ FederatedPointerEvent対応');
+    console.log('  ✅ stage.eventMode設定');
+    console.log('  ✅ 圧力・傾き取得安定化');
     console.log('  ✅ window.startTegakiApp() registered');
     console.log('  ✅ APNGExporter登録対応');
-    console.log('  ✅ ExportSystem確実初期化');
     console.log('  ✅ 既存機能完全維持');
 })();
