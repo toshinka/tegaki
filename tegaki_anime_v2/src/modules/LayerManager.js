@@ -134,29 +134,44 @@
         }
         
         /**
-         * 指定フレームの全レイヤーを合成したImageDataを取得
+         * 指定フレームの全レイヤーを合成したImageDataを取得（不透明度と表示状態を考慮）
          */
         getCompositeImageData(frameIndex) {
             if (frameIndex < 0 || frameIndex >= this.frameCount) return null;
             
             const frame = this.frames[frameIndex];
-            let composite = this.canvasManager.createEmptyImageData();
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = this.canvasManager.width;
+            tempCanvas.height = this.canvasManager.height;
+            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
             
             // レイヤー0（背景）から順に合成
             for (let i = 0; i < frame.layers.length; i++) {
                 const layer = frame.layers[i];
                 if (!layer.visible) continue;
                 
-                if (window.TegakiHelpers) {
-                    composite = window.TegakiHelpers.compositeImageData(
-                        this.canvasManager.ctx,
-                        composite,
-                        layer.imageData
+                // 不透明度を設定
+                tempCtx.globalAlpha = layer.opacity;
+                
+                // レイヤーを描画
+                tempCtx.putImageData(layer.imageData, 0, 0);
+                
+                // 次のレイヤーのために現在の状態を取得
+                if (i < frame.layers.length - 1) {
+                    const currentComposite = tempCtx.getImageData(
+                        0, 0, 
+                        tempCanvas.width, 
+                        tempCanvas.height
                     );
+                    tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
+                    tempCtx.globalAlpha = 1.0;
+                    tempCtx.putImageData(currentComposite, 0, 0);
                 }
             }
             
-            return composite;
+            // 最終的な合成結果を取得
+            tempCtx.globalAlpha = 1.0;
+            return tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
         }
         
         /**
@@ -180,9 +195,32 @@
         }
         
         /**
-         * 新しいフレームを追加
+         * 新しいフレームを末尾に追加
          */
         addFrame() {
+            const frame = this.createNewFrame();
+            this.frames.push(frame);
+            this.frameCount++;
+        }
+        
+        /**
+         * 指定位置の後に新しいフレームを追加
+         */
+        addFrameAfter(afterIndex) {
+            if (afterIndex < 0 || afterIndex >= this.frameCount) {
+                this.addFrame();
+                return;
+            }
+            
+            const frame = this.createNewFrame();
+            this.frames.splice(afterIndex + 1, 0, frame);
+            this.frameCount++;
+        }
+        
+        /**
+         * 新しいフレームを作成
+         */
+        createNewFrame() {
             const frame = {
                 layers: []
             };
@@ -210,8 +248,7 @@
                 });
             }
             
-            this.frames.push(frame);
-            this.frameCount++;
+            return frame;
         }
         
         /**
