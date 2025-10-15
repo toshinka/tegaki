@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 PixiJS v8.13 お絵かきツール - Phase 2対応版</title>
+    <title>🎨 PixiJS v8.13 お絵かきツール</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
@@ -28,7 +28,6 @@
     <script src="system/event-bus.js"></script>
     <script src="system/state-manager.js"></script>
     <script src="system/settings-manager.js"></script>
-    <script src="system/layer-commands.js"></script>
     <script src="system/camera-system.js"></script>
     <script src="system/layer-system.js"></script>
     <script src="system/drawing-clipboard.js"></script>
@@ -68,7 +67,6 @@
 (function() {
     'use strict';
     
-    // ========== Phase 1: History統合 - Ctrl+Z/Y対応 START ==========
     function setupUnifiedKeyboardShortcuts() {
         document.addEventListener('keydown', (e) => {
             const eventBus = window.TegakiEventBus;
@@ -76,7 +74,6 @@
             
             if (!eventBus || !keymap) return;
             
-            // 入力フィールド内では処理しない
             const activeElement = document.activeElement;
             if (activeElement && (
                 activeElement.tagName === 'INPUT' ||
@@ -84,21 +81,17 @@
                 activeElement.isContentEditable
             )) return;
             
-            // ブラウザデフォルト動作を防止（F5, F11, F12以外）
             if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
             if (e.key.startsWith('F') && e.key.length <= 3) {
                 e.preventDefault();
                 return;
             }
             
-            // config.jsのキーマップでアクション解決
             const action = keymap.getAction(e, { vMode: false });
             
             if (!action) return;
             
-            // アクション処理
             switch(action) {
-                // 🔥 Phase 1改修: History操作
                 case 'UNDO':
                     if (window.History && window.History.canUndo()) {
                         window.History.undo();
@@ -113,7 +106,6 @@
                     e.preventDefault();
                     break;
                 
-                // レイヤー操作
                 case 'LAYER_CLEAR':
                     eventBus.emit('layer:clear-active');
                     e.preventDefault();
@@ -129,7 +121,6 @@
                     e.preventDefault();
                     break;
                 
-                // GIF/アニメーション操作
                 case 'GIF_CREATE_CUT':
                     const animationSystem = window.animationSystem;
                     if (animationSystem) {
@@ -160,7 +151,6 @@
                     e.preventDefault();
                     break;
                 
-                // ツール切り替え
                 case 'TOOL_PEN':
                     eventBus.emit('tool:select', { tool: 'pen' });
                     e.preventDefault();
@@ -173,7 +163,6 @@
             }
         });
     }
-    // ========== Phase 1: History統合 - Ctrl+Z/Y対応 END ==========
     
     if (document.readyState === 'loading') {
         document.addEventListener('DOMContentLoaded', setupUnifiedKeyboardShortcuts);
@@ -182,7 +171,6 @@
     }
 })();
 
-// 🔥 Phase 5.1: リサイズスライダーの初期化
 (function() {
     'use strict';
     
@@ -210,7 +198,6 @@
         let currentWidth = window.TEGAKI_CONFIG?.canvas?.width || 344;
         let currentHeight = window.TEGAKI_CONFIG?.canvas?.height || 135;
         
-        // スライダー値の更新
         function updateWidthSlider(value) {
             currentWidth = Math.max(MIN_SIZE, Math.min(MAX_SIZE, value));
             const percent = ((currentWidth - MIN_SIZE) / (MAX_SIZE - MIN_SIZE)) * 100;
@@ -227,18 +214,15 @@
             heightDisplay.textContent = currentHeight + 'px';
         }
         
-        // 初期値設定
         updateWidthSlider(currentWidth);
         updateHeightSlider(currentHeight);
         
-        // 幅スライダーのドラッグ
         let isDraggingWidth = false;
         widthHandle.addEventListener('mousedown', (e) => {
             isDraggingWidth = true;
             e.preventDefault();
         });
         
-        // 高さスライダーのドラッグ
         let isDraggingHeight = false;
         heightHandle.addEventListener('mousedown', (e) => {
             isDraggingHeight = true;
@@ -265,7 +249,6 @@
             isDraggingHeight = false;
         });
         
-        // スライダークリックで移動
         widthSlider.addEventListener('click', (e) => {
             if (e.target === widthHandle) return;
             const rect = widthSlider.getBoundingClientRect();
@@ -282,13 +265,11 @@
             updateHeightSlider(Math.round(value));
         });
         
-        // ステップボタン
         widthDecrease.addEventListener('click', () => updateWidthSlider(currentWidth - 1));
         widthIncrease.addEventListener('click', () => updateWidthSlider(currentWidth + 1));
         heightDecrease.addEventListener('click', () => updateHeightSlider(currentHeight - 1));
         heightIncrease.addEventListener('click', () => updateHeightSlider(currentHeight + 1));
         
-        // リサイズ実行
         applyBtn.addEventListener('click', () => {
             if (window.coreEngine && currentWidth > 0 && currentHeight > 0) {
                 window.coreEngine.resizeCanvas(currentWidth, currentHeight);
@@ -369,7 +350,6 @@ function initializeApp() {
             this.coreEngine = new CoreEngine(this.pixiApp);
             const drawingApp = this.coreEngine.initialize();
             
-            // 🔥 Phase 5.1: グローバルアクセス用
             window.coreEngine = this.coreEngine;
             
             CoreRuntime.init({
@@ -388,7 +368,7 @@ function initializeApp() {
             );
 
             if (this.coreEngine.animationSystem) {
-                const albumInitSuccess = this.uiController.initializeAlbumPopup(
+                this.uiController.initializeAlbumPopup(
                     this.coreEngine.animationSystem
                 );
             }
@@ -469,7 +449,6 @@ function setupHistoryIntegration() {
 
 window.addEventListener('DOMContentLoaded', async () => {
     try {
-        // 🔥 Phase 2: DOM構築
         if (!window.DOMBuilder) {
             throw new Error('DOMBuilder not loaded');
         }
@@ -481,6 +460,9 @@ window.addEventListener('DOMContentLoaded', async () => {
         
         const mainLayout = window.DOMBuilder.buildMainLayout();
         appContainer.appendChild(mainLayout);
+        
+        const statusPanel = window.DOMBuilder.buildStatusPanel();
+        document.body.appendChild(statusPanel);
         
         checkPhase1Dependencies();
         
