@@ -1,20 +1,11 @@
-// ========== Pako Compatibility Shim ==========
-(function() {
-    // upng.js が pako を探す前に window.pako が利用可能にする
-    if (typeof window !== 'undefined' && !window.pako && typeof pako !== 'undefined') {
-        window.pako = pako;
-    }
-})();
-
 const fs = require('fs');
 const path = require('path');
 
-console.log('🔨 Building tegaki_anime.js with inline Worker...');
-console.log('📂 Current directory:', __dirname);
+console.log('🔨 Building tegaki_anime.js with modular architecture...');
 
 // 出力ファイルのヘッダー
 let output = `// ========================================
-// Tegaki Anime Bundle
+// Tegaki Anime Bundle (Modular Architecture)
 // UPNG.js + pako.js + GIF.js + TegakiAnimeCore
 // Build: ${new Date().toISOString()}
 // ========================================
@@ -23,53 +14,15 @@ let output = `// ========================================
 
 // 結合するライブラリファイルのリスト
 const libraryFiles = [
-    'libs/pako.js',    // pako を最初に読み込む（UPNG が依存）
     'libs/upng.js',
-    'libs/gif.js', 
-    'src/tegaki_anime_core.js' 
+    'libs/pako.js',
+    'libs/gif.js'
 ];
 
-// ファイル存在確認
-console.log('\n📋 Checking required files...');
-let allFilesExist = true;
-
-libraryFiles.forEach(file => {
-    const fullPath = path.join(__dirname, file);
-    if (fs.existsSync(fullPath)) {
-        console.log(`  ✓ ${file}`);
-    } else {
-        console.error(`  ✗ ${file} - NOT FOUND`);
-        allFilesExist = false;
-    }
-});
-
-const workerFile = 'libs/gif.worker.js';
-const workerPath = path.join(__dirname, workerFile);
-if (fs.existsSync(workerPath)) {
-    console.log(`  ✓ ${workerFile}`);
-} else {
-    console.error(`  ✗ ${workerFile} - NOT FOUND`);
-    allFilesExist = false;
-}
-
-const coreFile = 'src/tegaki_anime_core.js';
-const corePath = path.join(__dirname, coreFile);
-if (fs.existsSync(corePath)) {
-    console.log(`  ✓ ${coreFile}`);
-} else {
-    console.warn(`  ⚠ ${coreFile} - NOT FOUND (will skip core integration)`);
-}
-
-if (!allFilesExist) {
-    console.error('\n❌ Build failed: Required library files are missing');
-    process.exit(1);
-}
-
-console.log('\n🔄 Reading and combining files...\n');
-
 // ライブラリを順次読み込んで結合
+console.log('📦 Loading libraries...');
 libraryFiles.forEach(file => {
-    console.log(`📦 Reading: ${file}`);
+    console.log(`  - ${file}`);
     const content = fs.readFileSync(path.join(__dirname, file), 'utf8');
     output += `\n// ========== ${file} ==========\n`;
     output += content + '\n';
@@ -77,61 +30,44 @@ libraryFiles.forEach(file => {
 
 // Worker ファイルをBase64に変換
 console.log('🔧 Encoding gif.worker.js to Base64...');
-const workerCode = fs.readFileSync(workerPath, 'utf8');
+const workerCode = fs.readFileSync(
+    path.join(__dirname, 'libs/gif.worker.js'), 
+    'utf8'
+);
 const workerBase64 = Buffer.from(workerCode).toString('base64');
 console.log(`  ✓ Worker size: ${workerCode.length} bytes`);
 console.log(`  ✓ Base64 size: ${workerBase64.length} bytes`);
 
-// Worker をインライン化するコード（即座に実行）
+// Worker をインライン化するコード
 output += `
 // ========== GIF.js Worker Inline ==========
 (function() {
     'use strict';
     
-    // 即座に Worker を初期化
-    if (typeof window !== 'undefined' && typeof GIF !== 'undefined') {
-        try {
-            // Base64からWorkerコードをデコード
-            const workerCodeBase64 = '${workerBase64}';
-            const workerCode = atob(workerCodeBase64);
-            
-            // Blob URL を生成
-            const blob = new Blob([workerCode], { 
-                type: 'application/javascript' 
-            });
-            const workerUrl = URL.createObjectURL(blob);
-            
-            // グローバル変数にも保存（フォールバック用）
-            window.__gifWorkerUrl = workerUrl;
-            
-            // GIF.js のプロトタイプを確認して設定
-            if (GIF.prototype) {
-                if (!GIF.prototype.options) {
-                    GIF.prototype.options = {};
-                }
-                GIF.prototype.options.workerScript = workerUrl;
-                
-                // GIFコンストラクタのデフォルト値も上書き
-                const originalGIF = window.GIF;
-                window.GIF = function(options) {
-                    options = options || {};
-                    if (!options.workerScript) {
-                        options.workerScript = workerUrl;
-                    }
-                    return originalGIF.call(this, options);
-                };
-                window.GIF.prototype = originalGIF.prototype;
-                
-                console.log('✅ GIF.js Worker inlined successfully');
-                console.log('   Worker URL:', workerUrl);
-            } else {
-                console.error('❌ GIF.prototype not found');
-            }
-        } catch (error) {
-            console.error('❌ Worker inline failed:', error);
-        }
-    } else {
-        console.warn('⚠️  GIF.js not loaded yet, Worker inline skipped');
+    // GIFライブラリが読み込まれているか確認
+    if (typeof window === 'undefined' || !window.GIF) {
+        console.warn('GIF.js not loaded, skipping Worker inline');
+        return;
+    }
+    
+    // Base64からWorkerコードをデコード
+    const workerCodeBase64 = '${workerBase64}';
+    const workerCode = atob(workerCodeBase64);
+    
+    // Blob URL を生成
+    const blob = new Blob([workerCode], { 
+        type: 'application/javascript' 
+    });
+    const workerUrl = URL.createObjectURL(blob);
+    
+    // グローバルに保存（ExportManagerから参照可能に）
+    window.__gifWorkerUrl = workerUrl;
+    
+    // GIF.js のデフォルト Worker を上書き
+    if (window.GIF.prototype) {
+        window.GIF.prototype.options = window.GIF.prototype.options || {};
+        window.GIF.prototype.options.workerScript = workerUrl;
+        console.log('✅ GIF.js Worker inlined successfully');
     }
 })();
 `;
@@ -143,51 +79,59 @@ output += `
     'use strict';
     
     if (typeof window !== 'undefined') {
-        // ★ 1. 順序保証: pako を先に公開
-        if (typeof pako !== 'undefined') {
-            window.pako = pako;
-            window.Zlib = pako;
-            console.log('✓ pako exposed');
-        } else {
-            console.warn('✗ pako not found');
-        }
-        
-        // ★ 2. UPNG を公開（pako が先に公開されたので安全）
+        // UPNG.js の公開
         if (typeof UPNG !== 'undefined') {
             window.UPNG = UPNG;
-            console.log('✓ UPNG exposed');
-        } else {
-            console.warn('✗ UPNG not found');
         }
         
-        // ★ 3. GIF を公開
+        // pako.js の公開
+        if (typeof pako !== 'undefined') {
+            window.pako = pako;
+            window.Zlib = pako;  // UPNG.jsが期待する名前
+        }
+        
+        // GIF.js の公開
         if (typeof GIF !== 'undefined') {
             window.GIF = GIF;
-            console.log('✓ GIF exposed');
-        } else {
-            console.warn('✗ GIF not found');
         }
         
-        // ★ 4. 最終確認
-        console.log('📦 Final library check:', {
+        console.log('✅ Libraries exposed to window:', {
+            UPNG: !!window.UPNG,
             pako: !!window.pako,
             Zlib: !!window.Zlib,
-            UPNG: !!window.UPNG,
             GIF: !!window.GIF
         });
     }
 })();
 `;
 
-// src/tegaki_anime_core.js が存在する場合は追加
-if (fs.existsSync(corePath)) {
-    console.log(`📦 Reading: ${coreFile}`);
-    const coreContent = fs.readFileSync(corePath, 'utf8');
-    output += `\n// ========== ${coreFile} ==========\n`;
-    output += coreContent + '\n';
-} else {
-    console.warn(`⚠️  ${coreFile} not found - skipping core integration`);
-}
+// コアモジュールファイルのリスト（依存関係順）
+const coreFiles = [
+    'src/utils/constants.js',
+    'src/utils/helpers.js',
+    'src/modules/CanvasManager.js',
+    'src/modules/LayerManager.js',
+    'src/modules/DrawingEngine.js',
+    'src/modules/HistoryManager.js',
+    'src/modules/KeyboardManager.js',
+    'src/modules/UIBuilder.js',
+    'src/modules/ExportManager.js',
+    'src/tegaki_anime_core.js'  // 最後に統合クラス
+];
+
+// コアモジュールを順次読み込んで結合
+console.log('📦 Loading core modules...');
+coreFiles.forEach(file => {
+    const filePath = path.join(__dirname, file);
+    if (fs.existsSync(filePath)) {
+        console.log(`  - ${file}`);
+        const content = fs.readFileSync(filePath, 'utf8');
+        output += `\n// ========== ${file} ==========\n`;
+        output += content + '\n';
+    } else {
+        console.warn(`  ⚠️  ${file} not found - skipping`);
+    }
+});
 
 // dist フォルダが存在しない場合は作成
 const distDir = path.join(__dirname, 'dist');
@@ -206,14 +150,4 @@ console.log('\n✅ Build complete!');
 console.log(`📄 Output: ${outputPath}`);
 console.log(`📦 Size: ${(stats.size / 1024).toFixed(2)} KB`);
 console.log(`📦 Lines: ${output.split('\n').length}`);
-console.log(`📦 Characters: ${output.length.toLocaleString()}`);
-
-// 最終確認
-console.log('\n🔍 Verification:');
-console.log(`  File exists: ${fs.existsSync(outputPath)}`);
-
-console.log('\n✨ Next steps:');
-console.log('  1. Test locally: python -m http.server 8000');
-console.log('  2. Open: http://localhost:8000/TegakiAniTest.html');
-console.log('  3. Check console for library status');
-console.log('  4. Deploy to GitHub Pages');
+console.log(`\n🎉 Ready to test with TegakiAniTest.html`);

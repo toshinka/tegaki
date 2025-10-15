@@ -1,27 +1,12 @@
-// ===== settings-popup.js - 設定パネル実装 =====
-// 筆圧補正・線補正・ステータスパネルON/OFF
-
-window.TegakiUI = window.TegakiUI || {};
-
-window.TegakiUI.SettingsPopup = class {
-    constructor(drawingEngine) {
-        this.drawingEngine = drawingEngine;
-        this.popup = document.getElementById('settings-popup');
-        this.isVisible = false;
+createPopupElement() {
+        const container = document.querySelector('.canvas-area');
+        const popupDiv = document.createElement('div');
+        popupDiv.id = 'settings-popup';
+        popupDiv.className = 'popup-panel';
+        popupDiv.style.left = '60px';
+        popupDiv.style.top = '250px';
         
-        if (!this.popup) {
-            this.createPopupElement();
-        }
-        
-        this.setupEventListeners();
-        this.loadSettings();
-    }
-    
-    createPopupElement() {
-        const container = document.createElement('div');
-        container.id = 'settings-popup';
-        container.className = 'popup-panel';
-        container.innerHTML = `
+        popupDiv.innerHTML = `
             <div class="popup-title">設定</div>
             
             <div class="setting-group">
@@ -72,8 +57,8 @@ window.TegakiUI.SettingsPopup = class {
             </div>
         `;
         
-        document.querySelector('.canvas-area').appendChild(container);
-        this.popup = container;
+        container.appendChild(popupDiv);
+        this.popup = popupDiv;
     }
     
     setupEventListeners() {
@@ -324,4 +309,28 @@ window.TegakiUI.SettingsPopup = class {
     }
 };
 
-console.log('✅ settings-popup.js loaded');
+console.log('✅ settings-popup.js loaded');// ===== settings-popup.js - Settings Popup完全実装版 =====
+// Phase 12対応版
+
+window.TegakiUI = window.TegakiUI || {};
+
+window.TegakiUI.SettingsPopup = class {
+    constructor(drawingEngine) {
+        this.drawingEngine = drawingEngine;
+        this.popup = document.getElementById('settings-popup');
+        this.isVisible = false;
+        
+        if (!this.popup) {
+            this.createPopupElement();
+        }
+        
+        this.setupEventListeners();
+        this.loadSettings();
+    }
+    
+    createPopupElement() {
+        const container = document.querySelector('.canvas-area');
+        const popupDiv = document.createElement('div');
+        popupDiv.id = 'settings-popup';
+        popupDiv.className = 'popup-panel';
+        popupDiv.style.left = '60px';

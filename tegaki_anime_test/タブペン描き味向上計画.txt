@@ -1,0 +1,97 @@
+🎨 高評価(実装推奨)
+1. Pointer Events API (Level 2+)
+評点: ★★★★★ (95/100)
+
+効果: 筆圧、傾き、ツイストの検出
+実装難易度: ★★☆☆☆ (低)
+親和性: 既存のマウスイベント処理に統合しやすい
+
+javascriptcanvas.addEventListener('pointermove', (e) => {
+  const pressure = e.pressure; // 0.0 ~ 1.0
+  const tiltX = e.tiltX; // -90 ~ 90度
+  const tiltY = e.tiltY;
+  // ブラシサイズや透明度に反映
+});
+2. Pressure.js
+評点: ★★★★☆ (88/100)
+
+効果: Apple Pencilやその他のペン入力の筆圧を正規化
+実装難易度: ★★☆☆☆
+サイズ: 軽量 (~5KB)
+利点: ブラウザ間の筆圧差を吸収
+URL: https://pressurejs.com/
+
+3. Path Simplification (Simplify.js)
+評点: ★★★★☆ (85/100)
+
+効果: ストローク座標の最適化、アニメデータ削減
+実装難易度: ★☆☆☆☆ (非常に低)
+サイズ: 超軽量 (~2KB)
+利点: 既存のアニメーション記録システムと相性抜群
+
+javascript// 座標配列を簡略化してファイルサイズ削減
+const simplified = simplify(points, tolerance);
+🎯 中評価(検討価値あり)
+4. Perfect Freehand
+評点: ★★★★☆ (82/100)
+
+効果: Apple Notes風の滑らかなストローク生成
+実装難易度: ★★★☆☆
+サイズ: 中程度 (~15KB)
+利点: 筆圧対応の美しい線が自動生成
+懸念: 既存の描画ロジックの書き換えが必要
+
+5. OffscreenCanvas API
+評点: ★★★☆☆ (78/100)
+
+効果: Web Worker内での描画処理、パフォーマンス向上
+実装難易度: ★★★★☆ (高)
+利点: UIスレッドをブロックしない
+懸念: ブラウザサポートがまだ完全ではない
+
+6. Catmull-Rom Spline補間
+評点: ★★★☆☆ (75/100)
+
+効果: ストロークの滑らか化
+実装難易度: ★★☆☆☆
+利点: 自前実装も可能、依存なし
+
+javascript// ペン入力の座標を補間して滑らかに
+function catmullRom(p0, p1, p2, p3, t) {
+  // 実装は比較的シンプル
+}
+⚠️ 要注意(条件付き)
+7. WebGL/WebGPU描画
+評点: ★★☆☆☆ (60/100)
+
+効果: 高速な描画、エフェクト追加
+実装難易度: ★★★★★ (非常に高)
+懸念: 既存のCanvas2D実装を全面的に書き換え必要
+
+8. IndexedDB保存機能
+評点: ★★★☆☆ (70/100)
+
+効果: ローカル自動保存、復元機能
+実装難易度: ★★★☆☆
+注意: 容量制限、プライバシー配慮が必要
+
+🚀 推奨実装ロードマップ
+Phase 1 (即効性あり)
+
+Pointer Events APIの統合
+Simplify.jsでデータ最適化
+基本的なCatmull-Rom補間
+
+Phase 2 (体験向上)
+4. Pressure.jsで筆圧正規化
+5. Perfect Freehandでストローク美化
+Phase 3 (パフォーマンス)
+6. 必要に応じてOffscreenCanvas検討
+💡 実装のポイント
+既存コードのtegaki_anime_core.jsを見ると:
+
+イベント処理が明確に分離されている
+アニメーション記録システムが完成している
+Canvas2D APIベースで統一されている
+
+このため、Pointer Events API + Simplify.jsの組み合わせが最も効果的で実装しやすいと判断します。既存のアーキテクチャを崩さず、段階的な改善が可能です。

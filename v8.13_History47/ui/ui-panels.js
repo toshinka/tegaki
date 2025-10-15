@@ -1,5 +1,4 @@
-// ===== ui-panels.js - Settings Popup対応版 =====
-// Phase 12対応 + Settings Popup統合
+// ===== ui-panels.js - アルバム初期化対応版 =====
 
 window.TegakiUI = {
     
@@ -11,7 +10,6 @@ window.TegakiUI = {
             this.activePopup = null;
             this.toolbarIconClickMode = false;
             this.albumPopup = null;
-            this.settingsPopup = null;
             
             this.validateCoreRuntime();
             
@@ -19,7 +17,6 @@ window.TegakiUI = {
             this.setupSliders();
             this.setupCanvasResize();
             this.setupFlipButtons();
-            this.initializeSettingsPopup();
             window.TegakiUI.setupPanelStyles();
         }
         
@@ -33,25 +30,16 @@ window.TegakiUI = {
             }
         }
         
-        initializeSettingsPopup() {
-            if (!window.TegakiUI.SettingsPopup) {
-                return false;
-            }
-            
-            try {
-                this.settingsPopup = new window.TegakiUI.SettingsPopup(this.drawingEngine);
-                return true;
-            } catch (error) {
-                return false;
-            }
-        }
-        
+        // アルバムポップアップ初期化
         initializeAlbumPopup(animationSystem) {
             if (!window.AlbumPopup) {
+                console.error('❌ AlbumPopup class not loaded');
+                console.error('Make sure ui/album-popup.js is loaded before ui-panels.js');
                 return false;
             }
             
             if (!animationSystem) {
+                console.error('❌ AnimationSystem not provided');
                 return false;
             }
             
@@ -61,8 +49,10 @@ window.TegakiUI = {
                     this.layerManager,
                     animationSystem
                 );
+                console.log('✅ AlbumPopup initialized successfully');
                 return true;
             } catch (error) {
+                console.error('❌ Failed to initialize AlbumPopup:', error);
                 return false;
             }
         }
@@ -165,12 +155,6 @@ window.TegakiUI = {
                     } else {
                         alert('エクスポートシステムが初期化されていません');
                     }
-                },
-                'settings-tool': () => {
-                    this.closeAllPopups();
-                    if (this.settingsPopup) {
-                        this.settingsPopup.show();
-                    }
                 }
             };
             
@@ -216,10 +200,6 @@ window.TegakiUI = {
             
             if (this.albumPopup) {
                 this.albumPopup.hide();
-            }
-            
-            if (this.settingsPopup) {
-                this.settingsPopup.hide();
             }
             
             this.activePopup = null;
@@ -549,4 +529,4 @@ window.TegakiUI = {
     }
 };
 
-console.log('✅ ui-panels.js Settings Popup対応版 loaded');
+console.log('✅ ui-panels.js アルバム初期化対応版 loaded');
