@@ -1,5 +1,9 @@
-// ===== settings-popup.js - SOLID原則準拠版 =====
+// ===== settings-popup.js - リファクタリング版 =====
 // 責務: UI表示・ユーザー入力の受付・EventBusへの通知のみ
+// 改善点:
+// - スライダー実装を ui/slider-utils.js に統一
+// - localStorage 操作を SettingsManager に移管
+// - 重複コードを削除
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -7,8 +11,10 @@ window.TegakiUI.SettingsPopup = class {
     constructor(drawingEngine) {
         this.drawingEngine = drawingEngine; // 読み取り専用（現在の設定値取得用）
         this.eventBus = window.TegakiEventBus;
+        this.settingsManager = window.CoreRuntime?.api?.getSettingsManager() || null;
         this.popup = document.getElementById('settings-popup');
         this.isVisible = false;
+        this.sliders = {}; // スライダーインスタンスを保持
         
         // HTMLに空のdivがある場合は中身を生成
         if (this.popup && this.popup.children.length === 0) {
@@ -43,10 +49,10 @@ window.TegakiUI.SettingsPopup = class {
                 <div class="setting-label">筆圧補正（感度）</div>
                 <div class="slider-container">
                     <div class="slider" id="pressure-correction-slider">
-                        <div class="slider-track" id="pressure-correction-track"></div>
-                        <div class="slider-handle" id="pressure-correction-handle"></div>
+                        <div class="slider-track"></div>
+                        <div class="slider-handle"></div>
                     </div>
-                    <div class="slider-value" id="pressure-correction-value">1.0</div>
+                    <div class="slider-value">1.0</div>
                 </div>
                 <div style="font-size: 10px; color: var(--text-secondary); margin-top: 4px;">
                     筆圧の感度を調整します。大きい値ほど筆圧が強く反映されます。
@@ -57,10 +63,10 @@ window.TegakiUI.SettingsPopup = class {
                 <div class="setting-label">線補正（スムーズ度）</div>
                 <div class="slider-container">
                     <div class="slider" id="smoothing-slider">
-                        <div class="slider-track" id="smoothing-track"></div>
-                        <div class="slider-handle" id="smoothing-handle"></div>
+                        <div class="slider-track"></div>
+                        <div class="slider-handle"></div>
                     </div>
-                    <div class="slider-value" id="smoothing-value">0.5</div>
+                    <div class="slider-value">0.5</div>
                 </div>
                 <div style="font-size: 10px; color: var(--text-secondary); margin-top: 4px;">
                     線の滑らかさ。値が大きいほど線が滑らかになりますが反応が遅くなります。
@@ -120,6 +126,29 @@ window.TegakiUI.SettingsPopup = class {
     }
     
     setupEventListeners() {
+        // 🔧 改善: スライダーを統一実装で作成
+        if (window.TegakiUI.SliderUtils) {
+            // 筆圧補正スライダー
+            this.sliders.pressureCorrection = window.TegakiUI.SliderUtils.createSlider({
+                container: 'pressure-correction-slider',
+                min: 0.1,
+                max: 3.0,
+                initial: 1.0,
+                format: (value) => value.toFixed(2),
+                onCommit: (value) => this.notifyPressureCorrectionChange(value)
+            });
+            
+            // 線補正スライダー
+            this.sliders.smoothing = window.TegakiUI.SliderUtils.createSlider({
+                container: 'smoothing-slider',
+                min: 0.0,
+                max: 1.0,
+                initial: 0.5,
+                format: (value) => value.toFixed(2),
+                onCommit: (value) => this.notifySmoothingChange(value)
+            });
+        }
+        
         // ステータスパネル切り替え
         const statusToggleBtn = document.getElementById('status-panel-toggle');
         if (statusToggleBtn) {
@@ -164,16 +193,23 @@ window.TegakiUI.SettingsPopup = class {
     }
     
     loadSettings() {
-        const stored = localStorage.getItem('tegaki_settings');
-        if (stored) {
-            try {
-                const settings = JSON.parse(stored);
-                this.applySettingsToUI(settings);
-            } catch (error) {
+        // 🔧 改善: SettingsManagerから設定を読み込み
+        if (this.settingsManager) {
+            const settings = this.settingsManager.get();
+            this.applySettingsToUI(settings);
+        } else {
+            // フォールバック: localStorageから直接読み込み
+            const stored = localStorage.getItem('tegaki_settings');
+            if (stored) {
+                try {
+                    const settings = JSON.parse(stored);
+                    this.applySettingsToUI(settings);
+                } catch (error) {
+                    this.initializeDefaultSettings();
+                }
+            } else {
                 this.initializeDefaultSettings();
             }
-        } else {
-            this.initializeDefaultSettings();
         }
     }
     
@@ -186,16 +222,15 @@ window.TegakiUI.SettingsPopup = class {
         };
         
         this.applySettingsToUI(defaults);
-        this.saveSettings(defaults);
     }
     
     applySettingsToUI(settings) {
-        if (settings.pressureCorrection !== undefined) {
-            this.updatePressureCorrectionSlider(settings.pressureCorrection);
+        if (settings.pressureCorrection !== undefined && this.sliders.pressureCorrection) {
+            this.sliders.pressureCorrection.setValue(settings.pressureCorrection);
         }
         
-        if (settings.smoothing !== undefined) {
-            this.updateSmoothingSlider(settings.smoothing);
+        if (settings.smoothing !== undefined && this.sliders.smoothing) {
+            this.sliders.smoothing.setValue(settings.smoothing);
         }
         
         if (settings.pressureCurve !== undefined) {
@@ -207,28 +242,24 @@ window.TegakiUI.SettingsPopup = class {
         }
     }
     
-    // ===== 筆圧補正の通知（EventBus経由） =====
+    // ===== EventBus通知メソッド =====
+    
     notifyPressureCorrectionChange(value) {
         if (this.eventBus) {
             this.eventBus.emit('settings:pressure-correction', { value });
         }
-        this.saveSettings({ pressureCorrection: value });
     }
     
-    // ===== 線補正の通知（EventBus経由） =====
     notifySmoothingChange(value) {
         if (this.eventBus) {
             this.eventBus.emit('settings:smoothing', { value });
         }
-        this.saveSettings({ smoothing: value });
     }
     
-    // ===== 筆圧カーブの通知（EventBus経由） =====
     notifyPressureCurveChange(curve) {
         if (this.eventBus) {
             this.eventBus.emit('settings:pressure-curve', { curve });
         }
-        this.saveSettings({ pressureCurve: curve });
     }
     
     applyPressureCurveUI(curve) {
@@ -245,124 +276,6 @@ window.TegakiUI.SettingsPopup = class {
                 btn.style.background = 'var(--futaba-background)';
                 btn.style.borderColor = 'var(--futaba-light-medium)';
                 btn.style.color = 'var(--futaba-maroon)';
-            }
-        });
-    }
-    
-    updatePressureCorrectionSlider(value) {
-        const min = 0.1;
-        const max = 3.0;
-        const clampedValue = Math.max(min, Math.min(max, value));
-        
-        const percentage = ((clampedValue - min) / (max - min)) * 100;
-        const track = document.getElementById('pressure-correction-track');
-        const handle = document.getElementById('pressure-correction-handle');
-        const display = document.getElementById('pressure-correction-value');
-        
-        if (track) track.style.width = percentage + '%';
-        if (handle) handle.style.left = percentage + '%';
-        if (display) display.textContent = clampedValue.toFixed(2);
-        
-        this.setupPressureCorrectionListener();
-    }
-    
-    updateSmoothingSlider(value) {
-        const min = 0;
-        const max = 1;
-        const clampedValue = Math.max(min, Math.min(max, value));
-        
-        const percentage = (clampedValue / max) * 100;
-        const track = document.getElementById('smoothing-track');
-        const handle = document.getElementById('smoothing-handle');
-        const display = document.getElementById('smoothing-value');
-        
-        if (track) track.style.width = percentage + '%';
-        if (handle) handle.style.left = percentage + '%';
-        if (display) display.textContent = clampedValue.toFixed(2);
-        
-        this.setupSmoothingListener();
-    }
-    
-    setupPressureCorrectionListener() {
-        const slider = document.getElementById('pressure-correction-slider');
-        if (!slider || slider.pressureCorrectionListenerSetup) return;
-        
-        slider.pressureCorrectionListenerSetup = true;
-        
-        let dragging = false;
-        const min = 0.1;
-        const max = 3.0;
-        
-        const updateValue = (clientX) => {
-            const rect = slider.getBoundingClientRect();
-            const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-            const value = min + (percentage * (max - min));
-            
-            const track = slider.querySelector('.slider-track');
-            const handle = slider.querySelector('.slider-handle');
-            const display = document.getElementById('pressure-correction-value');
-            
-            if (track) track.style.width = (percentage * 100) + '%';
-            if (handle) handle.style.left = (percentage * 100) + '%';
-            if (display) display.textContent = value.toFixed(2);
-        };
-        
-        slider.addEventListener('mousedown', (e) => {
-            dragging = true;
-            updateValue(e.clientX);
-        });
-        
-        document.addEventListener('mousemove', (e) => {
-            if (dragging) updateValue(e.clientX);
-        });
-        
-        document.addEventListener('mouseup', () => {
-            if (dragging) {
-                dragging = false;
-                const value = parseFloat(document.getElementById('pressure-correction-value').textContent);
-                this.notifyPressureCorrectionChange(value);
-            }
-        });
-    }
-    
-    setupSmoothingListener() {
-        const slider = document.getElementById('smoothing-slider');
-        if (!slider || slider.smoothingListenerSetup) return;
-        
-        slider.smoothingListenerSetup = true;
-        
-        let dragging = false;
-        const min = 0;
-        const max = 1;
-        
-        const updateValue = (clientX) => {
-            const rect = slider.getBoundingClientRect();
-            const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
-            const value = min + (percentage * (max - min));
-            
-            const track = slider.querySelector('.slider-track');
-            const handle = slider.querySelector('.slider-handle');
-            const display = document.getElementById('smoothing-value');
-            
-            if (track) track.style.width = (percentage * 100) + '%';
-            if (handle) handle.style.left = (percentage * 100) + '%';
-            if (display) display.textContent = value.toFixed(2);
-        };
-        
-        slider.addEventListener('mousedown', (e) => {
-            dragging = true;
-            updateValue(e.clientX);
-        });
-        
-        document.addEventListener('mousemove', (e) => {
-            if (dragging) updateValue(e.clientX);
-        });
-        
-        document.addEventListener('mouseup', () => {
-            if (dragging) {
-                dragging = false;
-                const value = parseFloat(document.getElementById('smoothing-value').textContent);
-                this.notifySmoothingChange(value);
             }
         });
     }
@@ -387,7 +300,10 @@ window.TegakiUI.SettingsPopup = class {
             stateDisplay.textContent = newVisibility ? '表示中' : '非表示中';
         }
         
-        this.saveSettings({ statusPanelVisible: newVisibility });
+        // SettingsManagerに保存
+        if (this.settingsManager) {
+            this.settingsManager.set('statusPanelVisible', newVisibility);
+        }
     }
     
     setStatusPanelVisibility(visible) {
@@ -408,19 +324,6 @@ window.TegakiUI.SettingsPopup = class {
         }
     }
     
-    saveSettings(partial) {
-        const stored = localStorage.getItem('tegaki_settings');
-        const current = stored ? JSON.parse(stored) : {
-            pressureCorrection: 1.0,
-            smoothing: 0.5,
-            pressureCurve: 'linear',
-            statusPanelVisible: true
-        };
-        
-        const updated = { ...current, ...partial };
-        localStorage.setItem('tegaki_settings', JSON.stringify(updated));
-    }
-    
     show() {
         if (!this.popup) return;
         
@@ -434,9 +337,19 @@ window.TegakiUI.SettingsPopup = class {
         this.popup.classList.remove('show');
         this.isVisible = false;
     }
+    
+    destroy() {
+        // スライダーのクリーンアップ
+        Object.values(this.sliders).forEach(slider => {
+            if (slider && slider.destroy) {
+                slider.destroy();
+            }
+        });
+        this.sliders = {};
+    }
 };
 
-console.log('✅ settings-popup.js SOLID原則準拠版 loaded');
-console.log('   - EventBus経由で設定を通知');
-console.log('   - DrawingEngineへの直接書き込みなし');
-console.log('   - 位置調整: 上部固定・スクロール対応');
+console.log('✅ settings-popup.js リファクタリング版 loaded');
+console.log('   - スライダー実装を ui/slider-utils.js に統一');
+console.log('   - SettingsManager 統合');
+console.log('   - 重複コード削除完了');

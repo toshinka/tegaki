@@ -42,7 +42,7 @@
                 height: 100%;
                 background: #ffffee;
                 gap: ${this.config.panelGap}px;
-                padding: ${this.config.panelPadding}px;
+                padding: ${this.config.panelGap}px;
             `;
             
             this.container.appendChild(this.wrapper);
@@ -74,17 +74,21 @@
                     <div><b>Q/W</b>: レイヤー切替</div>
                     <div><b>P</b>: ペン</div>
                     <div><b>E</b>: 消しゴム</div>
-                    <div><b>G</b>: バケツ</div>
+                    <div><b>O</b>: オニオンスキン</div>
+                    <div><b>V</b>: ドラッグ移動</div>
                     <div><b>Ctrl+Z</b>: 元に戻す</div>
                     <div><b>Ctrl+Y</b>: やり直し</div>
+                    <div><b>Ctrl+C</b>: コピー</div>
+                    <div><b>Ctrl+V</b>: ペースト</div>
                 </div>
                 <h3 style="margin: 15px 0 10px 0; font-size: 14px; border-bottom: 1px solid ${this.config.panelBorderColor}; padding-bottom: 5px;">
                     ℹ️ 使い方
                 </h3>
                 <div style="line-height: 1.6; font-size: 11px;">
                     ・各レイヤーに描画<br>
-                    ・下のサムネイルでフレーム切替<br>
-                    ・右側でツール・色設定<br>
+                    ・サムネイルで切替<br>
+                    ・オニオンスキンで<br>
+                    　前後を確認<br>
                     ・完成したらAPNG投稿
                 </div>
             `;
@@ -104,6 +108,7 @@
                 display: flex;
                 flex-direction: column;
                 gap: ${this.config.panelGap}px;
+                min-width: 0;
             `;
             
             // キャンバスコンテナ
@@ -113,6 +118,7 @@
                 display: flex;
                 justify-content: center;
                 align-items: center;
+                min-height: 0;
             `;
             
             const canvasContainer = document.createElement('div');
@@ -142,6 +148,7 @@
                 display: flex;
                 justify-content: center;
                 align-items: center;
+                flex-wrap: wrap;
                 gap: ${this.config.panelGap}px;
                 padding: ${this.config.panelPadding}px;
                 background: rgba(240, 224, 214, 0.5);
@@ -151,6 +158,9 @@
             const thumbnails = [];
             
             for (let i = 0; i < frameCount; i++) {
+                const thumbWrapper = document.createElement('div');
+                thumbWrapper.style.cssText = 'text-align: center;';
+                
                 const thumb = document.createElement('canvas');
                 thumb.width = this.config.thumbnailSize;
                 thumb.height = this.config.thumbnailSize;
@@ -160,12 +170,23 @@
                     background: #f0e0d6;
                     cursor: pointer;
                     transition: all 0.2s;
+                    display: block;
                 `;
                 thumb.title = `フレーム ${i + 1} (${i + 1}キー)`;
                 thumb.onclick = () => onClick(i);
                 
+                const label = document.createElement('div');
+                label.style.cssText = `
+                    font-size: 10px;
+                    color: ${this.config.activeColor};
+                    margin-top: 2px;
+                `;
+                label.textContent = i + 1;
+                
+                thumbWrapper.appendChild(thumb);
+                thumbWrapper.appendChild(label);
                 thumbnails.push(thumb);
-                thumbnailContainer.appendChild(thumb);
+                thumbnailContainer.appendChild(thumbWrapper);
             }
             
             return { container: thumbnailContainer, thumbnails };
@@ -210,7 +231,7 @@
         /**
          * レイヤーパネル作成
          */
-        createLayerPanel(layerCount, onClick) {
+        createLayerPanel(layerCount, onLayerClick, onVisibilityChange, onOpacityChange) {
             const panel = document.createElement('div');
             panel.style.cssText = `
                 width: ${this.config.layerPanelWidth}px;
@@ -221,6 +242,8 @@
                 font-size: 12px;
                 color: ${this.config.activeColor};
                 overflow-y: auto;
+                display: flex;
+                flex-direction: column;
             `;
             
             const header = document.createElement('div');
@@ -229,12 +252,18 @@
                 margin-bottom: 10px;
                 border-bottom: 1px solid ${this.config.panelBorderColor};
                 padding-bottom: 5px;
+                flex-shrink: 0;
             `;
-            header.textContent = 'レイヤー';
+            header.innerHTML = '🖼️ フレームのレイヤー';
             panel.appendChild(header);
             
             const layersContainer = document.createElement('div');
-            layersContainer.style.cssText = 'display: flex; flex-direction: column-reverse; gap: 5px;';
+            layersContainer.style.cssText = `
+                display: flex;
+                flex-direction: column-reverse;
+                gap: 8px;
+                flex: 1;
+            `;
             
             const layers = [];
             
@@ -244,29 +273,152 @@
                     border: 2px solid ${this.config.inactiveColor};
                     border-radius: 2px;
                     padding: 5px;
-                    cursor: pointer;
                     transition: all 0.2s;
+                    background: white;
                 `;
-                layerItem.onclick = () => onClick(i);
+                
+                // 上部: サムネイル + 表示切替
+                const topRow = document.createElement('div');
+                topRow.style.cssText = 'display: flex; align-items: center; gap: 5px; margin-bottom: 5px;';
+                
+                const visibilityBtn = document.createElement('button');
+                visibilityBtn.innerHTML = '👁️';
+                visibilityBtn.style.cssText = `
+                    width: 24px;
+                    height: 24px;
+                    border: 1px solid ${this.config.inactiveColor};
+                    background: white;
+                    cursor: pointer;
+                    border-radius: 2px;
+                    font-size: 14px;
+                    padding: 0;
+                    flex-shrink: 0;
+                `;
+                visibilityBtn.title = '表示/非表示';
+                visibilityBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    onVisibilityChange(i);
+                };
                 
                 const layerCanvas = document.createElement('canvas');
-                layerCanvas.width = this.config.layerThumbnailSize;
-                layerCanvas.height = this.config.layerThumbnailSize;
+                layerCanvas.width = 40;
+                layerCanvas.height = 40;
                 layerCanvas.style.cssText = `
                     display: block;
-                    width: 100%;
+                    flex: 1;
                     background: #f0e0d6;
-                    margin-bottom: 3px;
+                    cursor: pointer;
+                    border: 1px solid ${this.config.panelBorderColor};
+                `;
+                layerCanvas.onclick = () => onLayerClick(i);
+                
+                topRow.appendChild(visibilityBtn);
+                topRow.appendChild(layerCanvas);
+                
+                // 中央: レイヤー名
+                const layerLabel = document.createElement('div');
+                layerLabel.style.cssText = `
+                    font-size: 11px;
+                    text-align: center;
+                    font-weight: bold;
+                    margin-bottom: 5px;
+                    cursor: pointer;
+                `;
+                layerLabel.textContent = i === 0 ? '背景' : `レイヤー${i}`;
+                layerLabel.onclick = () => onLayerClick(i);
+                
+                // 下部: 不透明度コントロール
+                const opacityRow = document.createElement('div');
+                opacityRow.style.cssText = `
+                    display: flex;
+                    align-items: center;
+                    gap: 3px;
+                    font-size: 10px;
                 `;
                 
-                const layerLabel = document.createElement('div');
-                layerLabel.style.cssText = 'font-size: 10px; text-align: center;';
-                layerLabel.textContent = i === 0 ? '背景' : `レイヤー${i}`;
+                const decreaseBtn = document.createElement('button');
+                decreaseBtn.innerHTML = '◀';
+                decreaseBtn.style.cssText = `
+                    width: 18px;
+                    height: 18px;
+                    border: 1px solid ${this.config.inactiveColor};
+                    background: white;
+                    cursor: pointer;
+                    border-radius: 2px;
+                    font-size: 10px;
+                    padding: 0;
+                `;
+                decreaseBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    onOpacityChange(i, -1);
+                };
                 
-                layerItem.appendChild(layerCanvas);
+                const opacityDisplay = document.createElement('div');
+                opacityDisplay.style.cssText = `
+                    flex: 1;
+                    text-align: center;
+                    font-weight: bold;
+                    cursor: ew-resize;
+                    user-select: none;
+                    padding: 2px;
+                `;
+                opacityDisplay.textContent = '100%';
+                
+                // ドラッグで不透明度調整
+                let isDragging = false;
+                let startX = 0;
+                let startOpacity = 100;
+                
+                opacityDisplay.onmousedown = (e) => {
+                    isDragging = true;
+                    startX = e.clientX;
+                    startOpacity = parseInt(opacityDisplay.textContent);
+                    e.preventDefault();
+                };
+                
+                document.addEventListener('mousemove', (e) => {
+                    if (!isDragging) return;
+                    const diff = e.clientX - startX;
+                    const newOpacity = Math.max(0, Math.min(100, startOpacity + Math.round(diff / 2)));
+                    onOpacityChange(i, newOpacity - parseInt(opacityDisplay.textContent));
+                });
+                
+                document.addEventListener('mouseup', () => {
+                    isDragging = false;
+                });
+                
+                const increaseBtn = document.createElement('button');
+                increaseBtn.innerHTML = '▶';
+                increaseBtn.style.cssText = `
+                    width: 18px;
+                    height: 18px;
+                    border: 1px solid ${this.config.inactiveColor};
+                    background: white;
+                    cursor: pointer;
+                    border-radius: 2px;
+                    font-size: 10px;
+                    padding: 0;
+                `;
+                increaseBtn.onclick = (e) => {
+                    e.stopPropagation();
+                    onOpacityChange(i, 1);
+                };
+                
+                opacityRow.appendChild(decreaseBtn);
+                opacityRow.appendChild(opacityDisplay);
+                opacityRow.appendChild(increaseBtn);
+                
+                layerItem.appendChild(topRow);
                 layerItem.appendChild(layerLabel);
+                layerItem.appendChild(opacityRow);
                 
-                layers.push({ item: layerItem, canvas: layerCanvas, label: layerLabel });
+                layers.push({ 
+                    item: layerItem, 
+                    canvas: layerCanvas, 
+                    label: layerLabel,
+                    visibilityBtn: visibilityBtn,
+                    opacityDisplay: opacityDisplay
+                });
                 layersContainer.appendChild(layerItem);
             }
             
@@ -308,7 +460,7 @@
          * チェック柄背景を描画（透明部分の可視化用）
          */
         drawCheckeredBackground(ctx, width, height) {
-            const checkSize = 8;
+            const checkSize = 4;
             ctx.fillStyle = '#ffffff';
             ctx.fillRect(0, 0, width, height);
             
@@ -330,8 +482,23 @@
                 layer.item.style.borderColor = (i === activeIndex) ? 
                     this.config.activeColor : this.config.inactiveColor;
                 layer.item.style.backgroundColor = (i === activeIndex) ? 
-                    'rgba(128, 0, 0, 0.1)' : 'transparent';
+                    'rgba(128, 0, 0, 0.05)' : 'white';
             });
+        }
+        
+        /**
+         * レイヤーの表示状態を更新
+         */
+        updateLayerVisibility(layers, layerIndex, visible) {
+            layers[layerIndex].visibilityBtn.innerHTML = visible ? '👁️' : '🚫';
+            layers[layerIndex].item.style.opacity = visible ? '1' : '0.5';
+        }
+        
+        /**
+         * レイヤーの不透明度表示を更新
+         */
+        updateLayerOpacity(layers, layerIndex, opacity) {
+            layers[layerIndex].opacityDisplay.textContent = `${Math.round(opacity * 100)}%`;
         }
         
         /**
@@ -349,7 +516,8 @@
                 color: ${this.config.activeColor};
                 display: flex;
                 flex-direction: column;
-                gap: 15px;
+                gap: 12px;
+                overflow-y: auto;
             `;
             
             // カラーパレット
@@ -358,7 +526,7 @@
             
             // ツールスロット
             const toolSection = this.createToolSlots(callbacks.onToolChange);
-            panel.appendChild(toolSection);
+            panel.appendChild(toolSection.section);
             
             // ペンサイズスライダー
             const sizeSection = this.createSizeSlider(callbacks.onSizeChange);
@@ -438,7 +606,7 @@
             buttons.forEach((btn, i) => {
                 btn.style.borderColor = (i === activeIndex) ? 
                     this.config.activeColor : this.config.inactiveColor;
-                btn.style.transform = (i === activeIndex) ? 'scale(1.1)' : 'scale(1)';
+                btn.style.transform = (i === activeIndex) ? 'scale(1.05)' : 'scale(1)';
             });
         }
         
@@ -460,8 +628,7 @@
             
             const toolList = [
                 { name: 'ペン', icon: '✏️', tool: 'pen' },
-                { name: '消しゴム', icon: '🧽', tool: 'eraser' },
-                { name: 'バケツ', icon: '🪣', tool: 'bucket' }
+                { name: '消しゴム', icon: '🧽', tool: 'eraser' }
             ];
             
             toolList.forEach((toolInfo, i) => {
@@ -469,7 +636,7 @@
                 btn.style.cssText = `
                     flex: 1;
                     padding: 8px;
-                    background: ${this.config.panelBackground};
+                    background: white;
                     border: 2px solid ${this.config.inactiveColor};
                     border-radius: 2px;
                     cursor: pointer;
@@ -502,7 +669,7 @@
                 btn.style.borderColor = (i === activeIndex) ? 
                     this.config.activeColor : this.config.inactiveColor;
                 btn.style.backgroundColor = (i === activeIndex) ? 
-                    'rgba(128, 0, 0, 0.1)' : this.config.panelBackground;
+                    'rgba(128, 0, 0, 0.1)' : 'white';
             });
         }
         
@@ -617,30 +784,32 @@
             buttons.style.cssText = 'display: flex; gap: 5px;';
             
             const addBtn = document.createElement('button');
-            addBtn.textContent = '➕ 追加';
+            addBtn.textContent = '選択右に新規';
             addBtn.style.cssText = `
                 flex: 1;
-                padding: 8px;
+                padding: 6px;
                 background: #4ade80;
                 color: white;
                 border: none;
                 border-radius: 4px;
                 cursor: pointer;
                 font-weight: bold;
+                font-size: 11px;
             `;
             addBtn.onclick = onAdd;
             
             const deleteBtn = document.createElement('button');
-            deleteBtn.textContent = '🗑️ 削除';
+            deleteBtn.textContent = '選択削除';
             deleteBtn.style.cssText = `
                 flex: 1;
-                padding: 8px;
+                padding: 6px;
                 background: #f87171;
                 color: white;
                 border: none;
                 border-radius: 4px;
                 cursor: pointer;
                 font-weight: bold;
+                font-size: 11px;
             `;
             deleteBtn.onclick = onDelete;
             
@@ -675,7 +844,7 @@
             
             // オニオンスキン
             const onionLabel = document.createElement('label');
-            onionLabel.style.cssText = 'display: flex; align-items: center; gap: 5px; font-size: 11px;';
+            onionLabel.style.cssText = 'display: flex; align-items: center; gap: 5px; font-size: 11px; cursor: pointer;';
             
             const onionCheckbox = document.createElement('input');
             onionCheckbox.type = 'checkbox';

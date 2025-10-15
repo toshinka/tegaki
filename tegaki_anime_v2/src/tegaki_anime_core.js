@@ -38,33 +38,16 @@
          */
         init() {
             // 依存モジュールの存在確認
-            if (!window.CanvasManager) {
-                console.error('❌ CanvasManager not loaded');
-                throw new Error('CanvasManager is required but not loaded');
-            }
-            if (!window.LayerManager) {
-                console.error('❌ LayerManager not loaded');
-                throw new Error('LayerManager is required but not loaded');
-            }
-            if (!window.DrawingEngine) {
-                console.error('❌ DrawingEngine not loaded');
-                throw new Error('DrawingEngine is required but not loaded');
-            }
-            if (!window.HistoryManager) {
-                console.error('❌ HistoryManager not loaded');
-                throw new Error('HistoryManager is required but not loaded');
-            }
-            if (!window.UIBuilder) {
-                console.error('❌ UIBuilder not loaded');
-                throw new Error('UIBuilder is required but not loaded');
-            }
-            if (!window.KeyboardManager) {
-                console.error('❌ KeyboardManager not loaded');
-                throw new Error('KeyboardManager is required but not loaded');
-            }
-            if (!window.ExportManager) {
-                console.error('❌ ExportManager not loaded');
-                throw new Error('ExportManager is required but not loaded');
+            const requiredModules = [
+                'CanvasManager', 'LayerManager', 'DrawingEngine', 
+                'HistoryManager', 'UIBuilder', 'KeyboardManager', 'ExportManager'
+            ];
+            
+            for (const moduleName of requiredModules) {
+                if (!window[moduleName]) {
+                    console.error(`❌ ${moduleName} not loaded`);
+                    throw new Error(`${moduleName} is required but not loaded`);
+                }
             }
             
             console.log('✅ All modules verified');
@@ -115,10 +98,12 @@
             this.frameThumbnails = thumbnailData.thumbnails;
             centerArea.appendChild(thumbnailData.container);
             
-            // レイヤーパネル
+            // レイヤーパネル（不透明度と表示ON/OFFコールバック追加）
             const layerPanelData = this.uiBuilder.createLayerPanel(
                 this.layerManager.layerCountPerFrame,
-                (index) => this.switchLayer(index)
+                (index) => this.switchLayer(index),
+                (index) => this.toggleLayerVisibility(index),
+                (index, delta) => this.adjustLayerOpacity(index, delta)
             );
             this.layerPanel = layerPanelData.layers;
             
@@ -138,6 +123,56 @@
             // 初期ハイライト
             this.uiBuilder.highlightFrameThumbnail(this.frameThumbnails, 0);
             this.uiBuilder.highlightLayerPanel(this.layerPanel, 1);
+            
+            // レイヤーの表示状態を初期化
+            this.updateLayerVisibilityUI();
+        }
+        
+        /**
+         * レイヤーの表示/非表示を切り替え
+         */
+        toggleLayerVisibility(layerIndex) {
+            const frame = this.layerManager.getActiveFrame();
+            const layer = frame.layers[layerIndex];
+            layer.visible = !layer.visible;
+            
+            // UIを更新
+            this.uiBuilder.updateLayerVisibility(this.layerPanel, layerIndex, layer.visible);
+            
+            // フレームサムネイルを更新
+            this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
+        }
+        
+        /**
+         * レイヤーの不透明度を調整
+         */
+        adjustLayerOpacity(layerIndex, delta) {
+            const frame = this.layerManager.getActiveFrame();
+            const layer = frame.layers[layerIndex];
+            
+            // deltaが100未満の場合は相対的な変更、100以上の場合は絶対値
+            if (Math.abs(delta) < 100) {
+                layer.opacity = Math.max(0, Math.min(1, layer.opacity + (delta / 100)));
+            } else {
+                layer.opacity = Math.max(0, Math.min(1, delta / 100));
+            }
+            
+            // UIを更新
+            this.uiBuilder.updateLayerOpacity(this.layerPanel, layerIndex, layer.opacity);
+            
+            // フレームサムネイルを更新
+            this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
+        }
+        
+        /**
+         * レイヤーの表示状態UIを更新
+         */
+        updateLayerVisibilityUI() {
+            const frame = this.layerManager.getActiveFrame();
+            frame.layers.forEach((layer, i) => {
+                this.uiBuilder.updateLayerVisibility(this.layerPanel, i, layer.visible);
+                this.uiBuilder.updateLayerOpacity(this.layerPanel, i, layer.opacity);
+            });
         }
         
         /**
@@ -206,7 +241,13 @@
             // ツール切替
             km.register('p', {}, () => this.setTool('pen'), 'Pen tool');
             km.register('e', {}, () => this.setTool('eraser'), 'Eraser tool');
-            km.register('g', {}, () => this.setTool('bucket'), 'Bucket tool');
+            
+            // オニオンスキン切替
+            km.register('o', {}, () => {
+                this.setOnionSkin(!this.onionSkinEnabled);
+                const checkbox = document.getElementById('onion-skin-check');
+                if (checkbox) checkbox.checked = this.onionSkinEnabled;
+            }, 'Toggle onion skin');
             
             // キーボードマネージャーを有効化
             km.attach();
@@ -290,6 +331,7 @@
             // UIを更新
             this.uiBuilder.highlightFrameThumbnail(this.frameThumbnails, frameIndex);
             this.updateLayerPanelThumbnails();
+            this.updateLayerVisibilityUI();
         }
         
         /**
@@ -426,15 +468,15 @@
             // 現在のレイヤーを保存
             this.saveCurrentLayer();
             
-            // フレームを追加
-            this.layerManager.addFrame();
+            // 現在のフレームの右に新しいフレームを挿入
+            this.layerManager.addFrameAfter(this.layerManager.activeFrameIndex);
             this.historyManager.addFrame();
             
             // UIを再構築
             this.rebuildFrameThumbnails();
             
             // 新しいフレームに切り替え
-            this.switchFrame(this.layerManager.frameCount - 1);
+            this.switchFrame(this.layerManager.activeFrameIndex + 1);
         }
         
         /**
@@ -468,7 +510,7 @@
          */
         rebuildFrameThumbnails() {
             // 古いサムネイルコンテナを削除
-            const oldContainer = this.frameThumbnails[0]?.parentElement;
+            const oldContainer = this.frameThumbnails[0]?.parentElement?.parentElement;
             if (oldContainer) {
                 oldContainer.remove();
             }

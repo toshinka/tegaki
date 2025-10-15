@@ -80,16 +80,6 @@
             box-shadow: 0 4px 8px rgba(128, 0, 0, 0.2);
         }
         
-        .export-btn.gif {
-            background: linear-gradient(135deg, #4ade80 0%, #22c55e 100%);
-        }
-        
-        .export-btn.gif:hover {
-            background: linear-gradient(135deg, #22c55e 0%, #16a34a 100%);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(74, 222, 128, 0.2);
-        }
-        
         .export-btn:active {
             transform: translateY(0);
         }
@@ -117,41 +107,12 @@
             font-weight: bold;
             margin-left: 10px;
         }
-        
-        #progress-container {
-            display: none;
-            padding: 10px;
-            background: rgba(74, 222, 128, 0.1);
-            border-top: 2px solid #4ade80;
-        }
-        
-        #progress-bar {
-            width: 100%;
-            height: 20px;
-            background: #e0e0e0;
-            border-radius: 10px;
-            overflow: hidden;
-        }
-        
-        #progress-fill {
-            width: 0%;
-            height: 100%;
-            background: linear-gradient(90deg, #4ade80 0%, #22c55e 100%);
-            transition: width 0.3s;
-        }
-        
-        #progress-text {
-            text-align: center;
-            margin-top: 5px;
-            font-size: 12px;
-            color: #666;
-        }
     </style>
 </head>
 <body>
     <h1>
         めぶがき
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="14" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" class="lucide lucide-sprout-icon lucide-sprout">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="14" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 9.536V7a4 4 0 0 1 4-4h1.5a.5.5 0 0 1 .5.5V5a4 4 0 0 1-4 4 4 4 0 0 0-4 4c0 2 1 3 1 5a5 5 0 0 1-1 3"/>
             <path d="M4 9a5 5 0 0 1 8 4 5 5 0 0 1-8-4"/>
             <path d="M5 21h14"/>
@@ -159,24 +120,14 @@
         APNG投稿テスト
         <span class="dev-badge">DEV</span>
     </h1>
-    <div class="subtitle">レイヤー機能・バケツツール対応版（開発検証用・モジュール個別読み込み）</div>
+    <div class="subtitle">レイヤー機能・不透明度・表示ON/OFF対応版（開発検証用）</div>
     
     <div id="app-container">
         <div id="tegaki-container"></div>
         
-        <div id="progress-container">
-            <div id="progress-bar">
-                <div id="progress-fill"></div>
-            </div>
-            <div id="progress-text">生成中...</div>
-        </div>
-        
         <div class="button-panel">
             <button class="export-btn apng" id="export-apng">
                 💾 APNG出力
-            </button>
-            <button class="export-btn gif" id="export-gif">
-                🎬 GIF出力
             </button>
         </div>
         
@@ -184,8 +135,13 @@
             <p>
                 <strong>操作方法:</strong> 
                 1-9キーでフレーム切替 | Q/Wキーでレイヤー切替 | 
-                P=ペン, E=消しゴム, G=バケツ | 
+                P=ペン, E=消しゴム, O=オニオンスキン | 
                 Ctrl+Z=元に戻す, Ctrl+Y=やり直し
+            </p>
+            <p style="margin-top: 5px;">
+                <strong>新機能:</strong> 
+                レイヤーパネルで👁️=表示切替 | ◀100%▶=不透明度調整(1%単位) | 
+                100%の上でドラッグでも調整可能
             </p>
             <p style="margin-top: 5px; color: #f59e0b;">
                 ⚠️ 開発版：各モジュールを個別に読み込むため、エラー箇所の特定が容易です
@@ -196,47 +152,23 @@
     <!-- ライブラリ読み込み -->
     <script src="libs/upng.js"></script>
     <script src="libs/pako.js"></script>
-    <script src="libs/gif.js"></script>
     
-    <!-- GIF Worker インライン化 -->
+    <!-- ライブラリのグローバル公開 -->
     <script>
-        (async function() {
+        (function() {
             'use strict';
             
-            // GIF.js Worker の初期化
-            if (typeof GIF !== 'undefined') {
-                try {
-                    const response = await fetch('libs/gif.worker.js');
-                    const workerCode = await response.text();
-                    const blob = new Blob([workerCode], { type: 'application/javascript' });
-                    const workerUrl = URL.createObjectURL(blob);
-                    
-                    window.__gifWorkerUrl = workerUrl;
-                    
-                    if (GIF.prototype) {
-                        GIF.prototype.options = GIF.prototype.options || {};
-                        GIF.prototype.options.workerScript = workerUrl;
-                        console.log('✅ GIF.js Worker initialized');
-                    }
-                } catch (error) {
-                    console.error('❌ Failed to load GIF worker:', error);
-                }
-            }
-            
-            // ライブラリのグローバル公開
             if (typeof window !== 'undefined') {
                 if (typeof UPNG !== 'undefined') window.UPNG = UPNG;
                 if (typeof pako !== 'undefined') {
                     window.pako = pako;
                     window.Zlib = pako;
                 }
-                if (typeof GIF !== 'undefined') window.GIF = GIF;
                 
                 console.log('✅ Libraries exposed:', {
                     UPNG: !!window.UPNG,
                     pako: !!window.pako,
-                    Zlib: !!window.Zlib,
-                    GIF: !!window.GIF
+                    Zlib: !!window.Zlib
                 });
             }
         })();
@@ -301,78 +233,13 @@
             }
         }
         
-        // GIF出力
-        async function exportGif() {
-            if (!tegakiCore) {
-                alert('描画ツールが初期化されていません');
-                return;
-            }
-            
-            const progressContainer = document.getElementById('progress-container');
-            const progressFill = document.getElementById('progress-fill');
-            const progressText = document.getElementById('progress-text');
-            const exportBtn = document.getElementById('export-gif');
-            
-            try {
-                // プログレスバー表示
-                progressContainer.style.display = 'block';
-                progressFill.style.width = '0%';
-                progressText.textContent = '生成中...';
-                exportBtn.disabled = true;
-                
-                // 進捗コールバック
-                const onProgress = (progress) => {
-                    const percent = Math.round(progress * 100);
-                    progressFill.style.width = `${percent}%`;
-                    progressText.textContent = `生成中... ${percent}%`;
-                };
-                
-                const blob = await tegakiCore.exportAsGif(onProgress);
-                
-                if (blob) {
-                    // 完了表示
-                    progressFill.style.width = '100%';
-                    progressText.textContent = '完了！';
-                    
-                    // ダウンロード
-                    const url = URL.createObjectURL(blob);
-                    const a = document.createElement('a');
-                    a.href = url;
-                    a.download = `tegaki_anime_${Date.now()}.gif`;
-                    document.body.appendChild(a);
-                    a.click();
-                    document.body.removeChild(a);
-                    URL.revokeObjectURL(url);
-                    
-                    setTimeout(() => {
-                        progressContainer.style.display = 'none';
-                        exportBtn.disabled = false;
-                        alert('GIF出力完了！');
-                    }, 1000);
-                }
-            } catch (error) {
-                console.error('GIF export error:', error);
-                alert('GIF出力に失敗しました: ' + error.message);
-                progressContainer.style.display = 'none';
-                exportBtn.disabled = false;
-            }
-        }
-        
         // イベントリスナー設定
-        document.getElementById('export-apng').addEventListener('click', exportApng);
-        document.getElementById('export-gif').addEventListener('click', exportGif);
-        
-        // ページ読み込み時に初期化
-        window.addEventListener('load', () => {
-            console.log('🚀 Initializing Tegaki Anime (Dev Mode)...');
+        document.addEventListener('DOMContentLoaded', () => {
+            // 初期化
             initTegaki();
-        });
-        
-        // ページアンロード時にクリーンアップ
-        window.addEventListener('beforeunload', () => {
-            if (tegakiCore) {
-                tegakiCore.destroy();
-            }
+            
+            // ボタンイベント
+            document.getElementById('export-apng').addEventListener('click', exportApng);
         });
     </script>
 </body>
