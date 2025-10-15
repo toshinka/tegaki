@@ -1,9 +1,9 @@
 /**
- * PressureHandler v2.0 - Phase 12: PixiJS FederatedPointerEvent対応
- * 🔥 Phase 12機能:
- * - PixiJS FederatedPointerEvent からの圧力取得
- * - 傾き情報（tiltX, tiltY）の取得
- * - nativeEvent からの正確な筆圧データ抽出
+ * PressureHandler v2.1 - 設定適用機能追加版
+ * 変更点:
+ * - pressureCorrection プロパティ追加
+ * - setCorrectedPressure() による設定適用メソッド追加
+ * - DrawingEngineから設定を受け取れるように改修
  */
 
 class PressureHandler {
@@ -16,17 +16,28 @@ class PressureHandler {
     this.tiltX = 0;
     this.tiltY = 0;
     
+    // 🆕 筆圧補正係数（DrawingEngineから設定される）
+    this.pressureCorrection = 1.0;
+    
     // 速度ベースのフォールバック用
     this.lastPoint = null;
     this.lastTimestamp = null;
     this.velocityHistory = [];
     this.maxVelocityHistory = 5;
   }
+  
+  /**
+   * 🆕 筆圧補正係数を設定
+   * @param {number} value - 0.1～3.0
+   */
+  setPressureCorrection(value) {
+    this.pressureCorrection = Math.max(0.1, Math.min(3.0, value));
+  }
 
   /**
    * Phase 12: PixiJS FederatedPointerEvent から圧力取得
    * @param {FederatedPointerEvent|PointerEvent|number} event
-   * @returns {number} 0.0-1.0
+   * @returns {number} 0.0-1.0（生の筆圧値）
    */
   getPressure(event) {
     // 数値が直接渡された場合
@@ -65,6 +76,19 @@ class PressureHandler {
     this.lastPressure = smoothed;
     
     return smoothed;
+  }
+  
+  /**
+   * 🆕 補正済み筆圧を取得（BrushSettingsのカーブ適用後を想定）
+   * ※ 実際のカーブ適用はBrushSettings側で行う
+   * ※ ここでは単純な係数のみ適用
+   * @param {FederatedPointerEvent|PointerEvent|number} event
+   * @returns {number} 0.0-1.0（補正済み筆圧）
+   */
+  getCorrectedPressure(event) {
+    const rawPressure = this.getPressure(event);
+    const corrected = rawPressure * this.pressureCorrection;
+    return Math.max(0.0, Math.min(1.0, corrected));
   }
 
   /**
@@ -151,6 +175,18 @@ class PressureHandler {
     this.lastTimestamp = null;
     this.velocityHistory = [];
   }
+  
+  /**
+   * 🆕 デバッグ情報取得
+   */
+  getDebugInfo() {
+    return {
+      pressureCorrection: this.pressureCorrection,
+      lastPressure: this.lastPressure,
+      historySize: this.pressureHistory.length,
+      tilt: { x: this.tiltX, y: this.tiltY }
+    };
+  }
 }
 
 // グローバル登録
@@ -159,6 +195,7 @@ if (typeof window.TegakiDrawing === 'undefined') {
 }
 window.TegakiDrawing.PressureHandler = PressureHandler;
 
-console.log('✅ pressure-handler.js v2.0 (Phase 12: FederatedPointerEvent対応) loaded');
-console.log('   - PixiJS EventSystem互換');
-console.log('   - 傾き取得対応');
+console.log('✅ pressure-handler.js v2.1 (設定適用機能追加版) loaded');
+console.log('   - setPressureCorrection() 追加');
+console.log('   - getCorrectedPressure() 追加');
+console.log('   - DrawingEngineからの設定受け取り対応');

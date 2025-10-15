@@ -1,0 +1,374 @@
+# index.html 分割改修計画書
+Version: v8.13_History49 → v8.13_History50
+対象: 後続Claude向け段階的改修手順
+
+## 改修目的
+- index.htmlの責務混在を解消し、DRY/SOLID原則に準拠
+- Claudeからの可視性向上とバイブコーディング施工性改善
+- 既存のファイル分割思想(ui/, system/)との一貫性確保
+
+## 制約条件（厳守）
+- 実行環境: Chrome最新、file://直開き可能
+- 技術: PixiJS v8.13 CDN、ES2023、グローバル関数のみ
+- 禁止: ESM, TypeScript, bundler, Canvas2D(サムネ以外)
+- 動作: 既存機能の完全維持、破壊的変更なし
+
+## 改修フェーズ
+
+### Phase 1: CSS分離（最優先・最安全）
+影響範囲: 最小、リスク: 極低
+
+#### 1-1. styles/main.css 新規作成
+- index.htmlの<style>タグ内容を全てコピー
+- ファイル先頭にコメント追加:
+  /* Tegaki Tool - Main Stylesheet */
+  /* DO NOT use CSS-in-JS or inline styles */
+
+#### 1-2. index.html修正
+- <style>タグ削除
+- <head>内に追加:
+  <link rel="stylesheet" href="styles/main.css">
+- 動作確認: 全UI要素のスタイル適用確認
+
+#### 1-3. 検証項目
+□ file://で正常にCSS読み込み
+□ 全パネル(controls, layerControls, animation-controls)の表示
+□ hover/active状態の動作
+□ カラーピッカー、スライダーのスタイル
+□ ポップアップ(設定、エクスポート、アルバム)の表示
+
+---
+
+### Phase 2: DOM構築ロジック分離
+影響範囲: 中、リスク: 低
+
+#### 2-1. ui/dom-builder.js 新規作成
+グローバル名前空間: window.DOMBuilder = {}
+
+##### 実装すべき関数:
+```
+DOMBuilder.buildControlsPanel(container)
+  - #controlsパネル全体の構築
+  - ブラシサイズ、不透明度スライダー
+  - カラーピッカー
+  - Undo/Redo/Clearボタン
+  - 戻り値: なし(DOMに直接追加)
+
+DOMBuilder.buildLayerPanel(container)
+  - #layerControlsパネルの構築
+  - レイヤー追加/削除ボタン
+  - レイヤーリスト(#layerList)
+  - 戻り値: なし
+
+DOMBuilder.buildAnimationControls(container)
+  - #animation-controlsパネルの構築
+  - 再生/停止ボタン
+  - FPS設定
+  - 戻り値: なし
+
+DOMBuilder.buildCanvasContainer()
+  - #canvasContainerとPixiJSマウント先の作成
+  - 戻り値: コンテナ要素
+
+DOMBuilder.createButton(text, id, className)
+  - 汎用ボタン生成ヘルパー
+  - 戻り値: button要素
+
+DOMBuilder.createSlider(id, min, max, value, step)
+  - 汎用スライダー生成ヘルパー
+  - 戻り値: {container, input, label}
+```
+
+#### 2-2. index.html修正
+- <body>を最小限に:
+```html
+  <body>
+    <div id="app"></div>
+    <!-- script読み込み -->
+  </body>
+```
+- main()関数内でDOM構築:
+```javascript
+  const app = document.getElementById('app');
+  DOMBuilder.buildCanvasContainer();
+  DOMBuilder.buildControlsPanel(document.body);
+  DOMBuilder.buildLayerPanel(document.body);
+  DOMBuilder.buildAnimationControls(document.body);
+```
+
+#### 2-3. 検証項目
+□ 全UI要素が正しい位置に生成される
+□ ID/class名の一致(CSS適用確認)
+□ ボタン、スライダーの視覚的表示
+□ ポップアップトリガーボタンの存在
+
+---
+
+### Phase 3: キーボードハンドラー分離
+影響範囲: 中、リスク: 中
+
+#### 3-1. ui/keyboard-handler.js 新規作成
+グローバル名前空間: window.KeyboardHandler = {}
+
+##### 実装すべき構造:
+```
+KeyboardHandler.shortcuts = {
+  // ショートカット定義マップ
+  'z': { ctrl: true, action: 'undo', description: 'Undo' },
+  'y': { ctrl: true, action: 'redo', description: 'Redo' },
+  'KeyB': { action: 'brush', description: 'Brush Tool' },
+  'KeyE': { action: 'eraser', description: 'Eraser Tool' },
+  // ... 全ショートカット定義
+}
+
+KeyboardHandler.init()
+  - document.addEventListener('keydown', ...)の一元管理
+  - EventBus.emit()で各機能にディスパッチ
+  - 修飾キー(Ctrl/Shift/Alt)の判定ロジック
+
+KeyboardHandler.isInputFocused()
+  - input/textarea/contenteditable判定
+  - ショートカット無効化判定
+
+KeyboardHandler.getShortcutList()
+  - UI表示用ショートカット一覧取得
+```
+
+#### 3-2. index.html修正
+- 既存のkeydownリスナーを全削除
+- main()関数内で初期化:
+```javascript
+  KeyboardHandler.init();
+```
+
+#### 3-3. 検証項目
+□ Ctrl+Z/Y で Undo/Redo
+□ B/E でブラシ/消しゴム切替
+□ 数字キーでレイヤー切替
+□ Space でアニメ再生/停止
+□ input要素フォーカス時はショートカット無効
+□ EventBusへの正しいイベント発火
+
+---
+
+### Phase 4: 初期化ロジック分離
+影響範囲: 大、リスク: 中
+
+#### 4-1. core-initializer.js 新規作成
+グローバル名前空間: window.CoreInitializer = {}
+
+##### 実装すべき関数:
+```
+CoreInitializer.initialize()
+  - 現在のmain()関数の内容を移動
+  - 初期化シーケンス:
+    1. DOM構築(DOMBuilder呼び出し)
+    2. PixiJSアプリケーション初期化
+    3. 各システムモジュール初期化
+       - StateManager
+       - SettingsManager
+       - LayerSystem
+       - CameraSystem
+       - DrawingEngine
+       - History
+       - AnimationSystem
+       - VirtualAlbum
+    4. EventBus購読設定
+    5. UI初期化(TimelineUI, SettingsPopup等)
+    6. KeyboardHandler初期化
+    7. 初回レンダリング
+
+CoreInitializer.setupEventListeners()
+  - PixiJSイベント(pointerdown/move/up)の設定
+  - ウィンドウリサイズハンドラー
+  - UI要素へのイベントバインディング
+
+CoreInitializer.loadInitialState()
+  - デフォルト設定の適用
+  - 初期レイヤー作成
+```
+
+#### 4-2. index.html修正
+- <script>タグを整理:
+```html
+  <!-- External Libraries -->
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.1.3/dist/pixi.min.js"></script>
+  
+  <!-- Core Config -->
+  <script src="config.js"></script>
+  <script src="coordinate-system.js"></script>
+  
+  <!-- System -->
+  <script src="system/data-models.js"></script>
+  <script src="system/batch-api.js"></script>
+  <script src="system/event-bus.js"></script>
+  <!-- ... 既存system/*.js ... -->
+  
+  <!-- UI -->
+  <script src="ui/dom-builder.js"></script>
+  <script src="ui/keyboard-handler.js"></script>
+  <!-- ... 既存ui/*.js ... -->
+  
+  <!-- Core -->
+  <script src="core-initializer.js"></script>
+  <script src="core-runtime.js"></script>
+  <script src="core-engine.js"></script>
+  
+  <!-- Entry Point -->
+  <script>
+    document.addEventListener('DOMContentLoaded', () => {
+      CoreInitializer.initialize();
+    });
+  </script>
+```
+
+#### 4-3. 検証項目
+□ DOMContentLoaded後に正常起動
+□ PixiJSキャンバスの描画
+□ 全システムモジュールの初期化完了
+□ 描画機能の動作(ブラシ、消しゴム)
+□ レイヤー操作(追加、削除、切替)
+□ Undo/Redo履歴の記録
+□ アニメーション再生
+□ エクスポート機能(PNG, GIF等)
+□ file://での完全動作
+
+---
+
+### Phase 5: 最終検証とクリーンアップ
+影響範囲: 全体、リスク: 低
+
+#### 5-1. index.html最終形態
+- HTMLは構造のみ(約50-80行)
+- <head>: meta, title, CSS/JSリンク
+- <body>: #app コンテナのみ
+- <script>: DOMContentLoadedリスナーのみ
+
+#### 5-2. コード品質チェック
+□ グローバル汚染の最小化(名前空間使用)
+□ console.log削除(デバッグログは最小限)
+□ 重複コード排除(DRY原則)
+□ 関数の単一責任(SOLID原則)
+□ コメントの適切性(過剰な説明なし)
+
+#### 5-3. 全機能回帰テスト
+□ 描画: ベクターペン、筆圧対応、スムージング
+□ レイヤー: 追加、削除、順序変更、表示/非表示
+□ カメラ: パン、ズーム、リセット
+□ 履歴: Undo/Redo、ブランチ操作
+□ アニメ: 再生、FPS変更、ループ
+□ アルバム: ページ追加、切替、削除
+□ エクスポート: PNG, APNG, GIF, WebP, MP4, PDF
+□ クリップボード: コピー、ペースト
+□ 設定: キャンバスサイズ、背景色、グリッド
+□ ショートカット: 全キーバインド動作
+
+#### 5-4. ファイル構造最終確認
+```
+index.html (50-80行)
+config.js
+coordinate-system.js
+styles/
+  └── main.css (全スタイル)
+system/
+  ├── data-models.js
+  ├── batch-api.js
+  ├── event-bus.js
+  ├── state-manager.js
+  ├── settings-manager.js
+  ├── camera-system.js
+  ├── layer-system.js
+  ├── history.js
+  ├── animation-system.js
+  ├── virtual-album.js
+  ├── drawing-clipboard.js
+  ├── export-manager.js
+  ├── quick-export-ui.js
+  ├── drawing/
+  │   ├── drawing-engine.js
+  │   ├── stroke-renderer.js
+  │   ├── stroke-recorder.js
+  │   ├── stroke-transformer.js
+  │   ├── brush-settings.js
+  │   └── pressure-handler.js
+  └── exporters/
+      ├── png-exporter.js
+      ├── apng-exporter.js
+      ├── gif-exporter.js
+      ├── webp-exporter.js
+      ├── mp4-exporter.js
+      └── pdf-exporter.js
+ui/
+  ├── dom-builder.js (新規)
+  ├── keyboard-handler.js (新規)
+  ├── timeline-ui.js
+  ├── timeline-thumbnail-utils.js
+  ├── slider-utils.js
+  ├── album-popup.js
+  ├── ui-panels.js
+  ├── settings-popup.js
+  └── export-popup.js
+core-initializer.js (新規)
+core-runtime.js
+core-engine.js
+```
+
+---
+
+## 改修時の注意事項
+
+### セーフティチェックリスト
+- [ ] 各Phase完了後に必ず動作確認
+- [ ] file://プロトコルでの読み込み確認
+- [ ] EventBusのイベント名一致確認
+- [ ] グローバル変数の衝突確認
+- [ ] PixiJS v8 APIの正しい使用
+- [ ] 筆圧入力の動作確認(ペンタブレット)
+
+### ロールバック手順
+各Phase失敗時:
+1. 該当ファイルを削除
+2. index.htmlを前Phaseの状態に戻す
+3. ブラウザキャッシュクリア
+4. 動作確認後、原因調査
+
+### デバッグ方法
+- Chrome DevTools Sourcesタブで各jsファイル確認
+- Networkタブで404エラー確認
+- Consoleでグローバル変数確認: window.DOMBuilder等
+- EventBusログ有効化: EventBus.enableDebugLog() (実装必要なら)
+
+---
+
+## 改修完了の定義
+1. index.htmlが100行以下
+2. 全UIがstyles/main.cssで管理
+3. DOM構築がui/dom-builder.jsに集約
+4. キーボード入力がui/keyboard-handler.jsに集約
+5. 初期化がcore-initializer.jsに集約
+6. 全機能が改修前と同一動作
+7. file://で完全動作
+8. コンソールエラー0件
+
+---
+
+## 後続Claude向け指示
+
+この計画書を受け取った後続Claudeは:
+
+1. **Phase 1から順番に実行**すること(スキップ禁止)
+2. 各Phase完了後、必ず**検証項目を全てチェック**
+3. エラー発生時は**該当Phaseのみロールバック**
+4. **既存機能の破壊的変更は絶対禁止**
+5. **ESM/TypeScript/bundler使用禁止**を厳守
+6. コード生成時は**完全なファイル内容**を提示(省略禁止)
+7. **console.logは最小限**(改修完了後削除)
+8. 不明点は**先に質問**、推測実装禁止
+
+改修中に発見した問題:
+- API不一致 → 即報告、BatchAPIで統一
+- EventBus統合不完全 → 該当箇所を指摘
+- 二重実装 → DRY原則違反として報告
+- 座標系混在 → CoordinateSystemで統一確認
+
+Good luck, Claude. Keep it clean, keep it simple.

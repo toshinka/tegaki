@@ -1,6 +1,7 @@
-// ===== config.js - キーマッピング完全一元管理版 + Phase 1対応 =====
+// ===== config.js - キーマッピング完全一元管理版 =====
 // 🎯 改修内容: すべてのショートカットをアクション中心の設計に統一
-// 🔥 Phase 1: Pointer Events API & Simplify.js 設定追加
+// 🎯 目的: AI改修性・保守性・拡張性の最大化
+// 🎯 カメラ反転とレイヤー反転の協調動作対応
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -10,10 +11,7 @@ window.TEGAKI_CONFIG = {
     pen: { 
         size: 15, 
         opacity: 0.85, 
-        color: 0x800000,
-        // 🔥 Phase 1: Pointer Events API設定
-        useTiltForSize: true,      // ペンの傾きでサイズ調整（Apple Pencil等）
-        useTiltForOpacity: true,   // ペンの傾きで不透明度調整
+        color: 0x800000 
     },
     camera: {
         minScale: 0.1,
@@ -68,11 +66,6 @@ window.TEGAKI_CONFIG = {
             loopByDefault: true,
             previewQuality: 'medium'
         }
-    },
-    // 🔥 Phase 1: Simplify.js設定
-    simplify: {
-        tolerance: 1.0,         // 0.5-2.0推奨（低いほど精密、高いほど圧縮）
-        highQuality: true       // Ramer-Douglas-Peuckerアルゴリズム使用
     },
     debug: false
 };
@@ -541,11 +534,12 @@ window.TEGAKI_UTILS = {
 // 🎯 初期化ログ
 // =============================================================================
 
-console.log('✅ config.js (Phase 1対応完全版) loaded');
+console.log('✅ config.js (キーマッピング完全一元管理版) loaded');
 console.log('   🎯 アクション中心設計: すべてのショートカットをTEGAKI_KEYMAPで管理');
-console.log('   🔥 Phase 1対応: Pointer Events API & Simplify.js設定追加');
-console.log('   🔥 useTiltForSize: ペンの傾きでサイズ調整（デフォルト: true）');
-console.log('   🔥 useTiltForOpacity: ペンの傾きで不透明度調整（デフォルト: true）');
-console.log('   🔥 Simplify tolerance: ' + window.TEGAKI_CONFIG.simplify.tolerance + ' (0.5-2.0推奨)');
 console.log('   🎯 コンテキスト対応: vMode, Ctrl, Shift, Alt を柔軟に処理');
+console.log('   🎯 カメラ反転 vs レイヤー反転: Vモードで自動切り替え');
+console.log('   🎯 H: キャンバス水平反転 / V+H: レイヤー水平反転');
+console.log('   🎯 Shift+H: キャンバス垂直反転 / V+Shift+H: レイヤー垂直反転');
+console.log('   🎯 レガシー互換: 既存コードとの後方互換性を維持');
 console.log('   🎯 デバッグ支援: window.TEGAKI_KEYMAP.debugShowMapping() でマッピング一覧表示');
+console.log('   🎯 UI準備完了: getUIConfigData() で設定画面用データ取得可能');

@@ -30,6 +30,12 @@
             this.eraserSize = 10;
             this.onionSkinEnabled = false;
             
+            // プレビュー状態
+            this.isPreviewMode = false;
+            this.previewIntervalId = null;
+            this.previewFrameIndex = 0;
+            this.savedCanvasState = null;
+            
             this.init();
         }
         
@@ -90,10 +96,13 @@
             const bgCanvas = this.canvasManager.bgCanvas;
             const centerArea = this.uiBuilder.createCanvasArea(canvas, bgCanvas);
             
-            // フレームサムネイル
+            // フレームサムネイル（コントロールボタン付き）
             const thumbnailData = this.uiBuilder.createFrameThumbnails(
                 this.layerManager.frameCount,
-                (index) => this.switchFrame(index)
+                (index) => this.switchFrame(index),
+                () => this.addFrame(),
+                () => this.deleteFrame(),
+                () => this.copyFrame()
             );
             this.frameThumbnails = thumbnailData.thumbnails;
             centerArea.appendChild(thumbnailData.container);
@@ -101,6 +110,7 @@
             // レイヤーパネル（不透明度と表示ON/OFFコールバック追加）
             const layerPanelData = this.uiBuilder.createLayerPanel(
                 this.layerManager.layerCountPerFrame,
+                this.layerManager.activeFrameIndex,
                 (index) => this.switchLayer(index),
                 (index) => this.toggleLayerVisibility(index),
                 (index, delta) => this.adjustLayerOpacity(index, delta)
@@ -114,9 +124,7 @@
                 onSizeChange: (size) => this.setPenSize(size),
                 onEraserSizeChange: (size) => this.setEraserSize(size),
                 onDelayChange: (delay) => this.setFrameDelay(delay),
-                onAddFrame: () => this.addFrame(),
-                onDeleteFrame: () => this.deleteFrame(),
-                onPreview: () => this.previewAnimation(),
+                onPreview: () => this.togglePreview(),
                 onOnionSkinChange: (enabled) => this.setOnionSkin(enabled)
             });
             
@@ -141,6 +149,11 @@
             
             // フレームサムネイルを更新
             this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
+            
+            // 現在編集中のレイヤーの表示を切り替えた場合は再読み込み
+            if (layerIndex === this.layerManager.activeLayerIndex) {
+                this.loadCurrentLayer();
+            }
         }
         
         /**
@@ -257,6 +270,8 @@
          * マウスダウンハンドラ
          */
         handleMouseDown(e) {
+            if (this.isPreviewMode) return; // プレビュー中は描画不可
+            
             const shouldPushHistory = this.drawingEngine.startDrawing(e.clientX, e.clientY);
             
             // バケツツールの場合は即座に履歴に追加
@@ -270,6 +285,7 @@
          * マウスムーブハンドラ
          */
         handleMouseMove(e) {
+            if (this.isPreviewMode) return; // プレビュー中は描画不可
             this.drawingEngine.draw(e.clientX, e.clientY);
         }
         
@@ -277,6 +293,8 @@
          * マウスアップハンドラ
          */
         handleMouseUp() {
+            if (this.isPreviewMode) return; // プレビュー中は描画不可
+            
             const shouldPushHistory = this.drawingEngine.stopDrawing();
             
             if (shouldPushHistory) {
@@ -318,6 +336,7 @@
          */
         switchFrame(frameIndex) {
             if (frameIndex === this.layerManager.activeFrameIndex) return;
+            if (this.isPreviewMode) return; // プレビュー中は切替不可
             
             // 現在のレイヤーを保存
             this.saveCurrentLayer();
@@ -332,6 +351,7 @@
             this.uiBuilder.highlightFrameThumbnail(this.frameThumbnails, frameIndex);
             this.updateLayerPanelThumbnails();
             this.updateLayerVisibilityUI();
+            this.uiBuilder.updateLayerPanelHeader(frameIndex);
         }
         
         /**
@@ -339,6 +359,7 @@
          */
         switchLayer(layerIndex) {
             if (layerIndex === this.layerManager.activeLayerIndex) return;
+            if (this.isPreviewMode) return; // プレビュー中は切替不可
             
             // 現在のレイヤーを保存
             this.saveCurrentLayer();
@@ -377,6 +398,8 @@
          * Undo
          */
         undo() {
+            if (this.isPreviewMode) return; // プレビュー中は操作不可
+            
             const imageData = this.historyManager.undo(
                 this.layerManager.activeFrameIndex,
                 this.layerManager.activeLayerIndex
@@ -393,6 +416,8 @@
          * Redo
          */
         redo() {
+            if (this.isPreviewMode) return; // プレビュー中は操作不可
+            
             const imageData = this.historyManager.redo(
                 this.layerManager.activeFrameIndex,
                 this.layerManager.activeLayerIndex
@@ -462,9 +487,63 @@
         }
         
         /**
+         * プレビューモードの切り替え
+         */
+        togglePreview() {
+            if (this.isPreviewMode) {
+                this.stopPreview();
+            } else {
+                this.startPreview();
+            }
+        }
+        
+        /**
+         * プレビュー開始
+         */
+        startPreview() {
+            // 現在のレイヤーを保存
+            this.saveCurrentLayer();
+            
+            this.isPreviewMode = true;
+            this.previewFrameIndex = 0;
+            
+            // 合成フレームを取得
+            const compositeFrames = this.layerManager.getCompositeFrames();
+            
+            // アニメーション開始
+            this.previewIntervalId = setInterval(() => {
+                const imageData = compositeFrames[this.previewFrameIndex];
+                this.canvasManager.putImageData(imageData);
+                
+                this.previewFrameIndex = (this.previewFrameIndex + 1) % compositeFrames.length;
+            }, this.frameDelay);
+            
+            console.log('✅ Preview started');
+        }
+        
+        /**
+         * プレビュー停止
+         */
+        stopPreview() {
+            if (this.previewIntervalId) {
+                clearInterval(this.previewIntervalId);
+                this.previewIntervalId = null;
+            }
+            
+            this.isPreviewMode = false;
+            
+            // 元のレイヤーを復元
+            this.loadCurrentLayer();
+            
+            console.log('✅ Preview stopped');
+        }
+        
+        /**
          * フレームを追加
          */
         addFrame() {
+            if (this.isPreviewMode) return; // プレビュー中は操作不可
+            
             // 現在のレイヤーを保存
             this.saveCurrentLayer();
             
@@ -480,9 +559,31 @@
         }
         
         /**
+         * フレームをコピー
+         */
+        copyFrame() {
+            if (this.isPreviewMode) return; // プレビュー中は操作不可
+            
+            // 現在のレイヤーを保存
+            this.saveCurrentLayer();
+            
+            // 現在のフレームをコピー
+            this.layerManager.copyFrameAfter(this.layerManager.activeFrameIndex);
+            this.historyManager.addFrame();
+            
+            // UIを再構築
+            this.rebuildFrameThumbnails();
+            
+            // 新しいフレームに切り替え
+            this.switchFrame(this.layerManager.activeFrameIndex + 1);
+        }
+        
+        /**
          * フレームを削除
          */
         deleteFrame() {
+            if (this.isPreviewMode) return; // プレビュー中は操作不可
+            
             if (this.layerManager.frameCount <= 1) {
                 alert('最後のフレームは削除できません');
                 return;
@@ -518,7 +619,10 @@
             // 新しいサムネイルを作成
             const thumbnailData = this.uiBuilder.createFrameThumbnails(
                 this.layerManager.frameCount,
-                (index) => this.switchFrame(index)
+                (index) => this.switchFrame(index),
+                () => this.addFrame(),
+                () => this.deleteFrame(),
+                () => this.copyFrame()
             );
             this.frameThumbnails = thumbnailData.thumbnails;
             
@@ -557,6 +661,9 @@
          * 現在のフレーム・レイヤーのサムネイルを更新
          */
         updateCurrentLayerThumbnails() {
+            // 現在のレイヤーを保存
+            this.saveCurrentLayer();
+            
             // フレームサムネイルを更新
             this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
             
@@ -579,74 +686,14 @@
         }
         
         /**
-         * アニメーションプレビュー
-         */
-        previewAnimation() {
-            // 現在のレイヤーを保存
-            this.saveCurrentLayer();
-            
-            // プレビューウィンドウを作成
-            const previewWindow = window.open('', 'Preview', 'width=420,height=420');
-            
-            if (!previewWindow) {
-                alert('ポップアップがブロックされました。ブラウザの設定を確認してください。');
-                return;
-            }
-            
-            previewWindow.document.write(`
-                <!DOCTYPE html>
-                <html>
-                <head>
-                    <title>アニメーションプレビュー</title>
-                    <style>
-                        body {
-                            margin: 0;
-                            display: flex;
-                            justify-content: center;
-                            align-items: center;
-                            height: 100vh;
-                            background: #333;
-                        }
-                        canvas {
-                            border: 2px solid #800000;
-                            box-shadow: 0 4px 12px rgba(0, 0, 0, 0.5);
-                        }
-                    </style>
-                </head>
-                <body>
-                    <canvas id="preview" width="400" height="400"></canvas>
-                </body>
-                </html>
-            `);
-            
-            const previewCanvas = previewWindow.document.getElementById('preview');
-            const previewCtx = previewCanvas.getContext('2d');
-            
-            let currentFrame = 0;
-            const compositeFrames = this.layerManager.getCompositeFrames();
-            
-            const animate = () => {
-                const imageData = compositeFrames[currentFrame];
-                previewCtx.putImageData(imageData, 0, 0);
-                
-                currentFrame = (currentFrame + 1) % compositeFrames.length;
-                
-                setTimeout(() => {
-                    if (!previewWindow.closed) {
-                        animate();
-                    }
-                }, this.frameDelay);
-            };
-            
-            previewWindow.onload = () => {
-                animate();
-            };
-        }
-        
-        /**
          * APNGとしてエクスポート
          */
         async exportAsApng() {
+            // プレビューを停止
+            if (this.isPreviewMode) {
+                this.stopPreview();
+            }
+            
             // 現在のレイヤーを保存
             this.saveCurrentLayer();
             
@@ -664,6 +711,11 @@
          * GIFとしてエクスポート
          */
         async exportAsGif(onProgress) {
+            // プレビューを停止
+            if (this.isPreviewMode) {
+                this.stopPreview();
+            }
+            
             // 現在のレイヤーを保存
             this.saveCurrentLayer();
             
@@ -681,6 +733,11 @@
          * クリーンアップ
          */
         destroy() {
+            // プレビューを停止
+            if (this.isPreviewMode) {
+                this.stopPreview();
+            }
+            
             // キーボードマネージャーをデタッチ
             if (this.keyboardManager) {
                 this.keyboardManager.destroy();
