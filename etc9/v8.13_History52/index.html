@@ -1,0 +1,536 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 PixiJS v8.13 お絵かきツール</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+    <div id="app"></div>
+
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+    <script src="https://unpkg.com/perfect-freehand@1.2.0/dist/index.umd.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+    <script src="https://unpkg.com/upng-js@2.1.0/UPNG.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <!-- Core Config -->
+    <script src="config.js"></script>
+    <script src="coordinate-system.js"></script>
+    
+    <!-- System -->
+    <script src="system/data-models.js"></script>
+    <script src="system/batch-api.js"></script>
+    <script src="system/event-bus.js"></script>
+    <script src="system/state-manager.js"></script>
+    <script src="system/settings-manager.js"></script>
+    <script src="system/camera-system.js"></script>
+    <script src="system/layer-system.js"></script>
+    <script src="system/drawing-clipboard.js"></script>
+    <script src="system/history.js"></script>
+    <script src="system/virtual-album.js"></script>
+    <script src="system/animation-system.js"></script>
+
+    <!-- Drawing System -->
+    <script src="system/drawing/stroke-recorder.js"></script>
+    <script src="system/drawing/stroke-renderer.js"></script>
+    <script src="system/drawing/brush-settings.js"></script>
+    <script src="system/drawing/pressure-handler.js"></script>
+    <script src="system/drawing/stroke-transformer.js"></script>
+    <script src="system/drawing/drawing-engine.js"></script>
+
+    <!-- Export System -->
+    <script src="system/export-manager.js"></script>
+    <script src="system/exporters/png-exporter.js"></script>
+    <script src="system/exporters/apng-exporter.js"></script>
+    <script src="system/exporters/gif-exporter.js"></script>
+
+    <!-- UI -->
+    <script src="ui/dom-builder.js"></script>
+    <script src="ui/timeline-thumbnail-utils.js"></script>
+    <script src="ui/timeline-ui.js"></script>
+    <script src="ui/slider-utils.js"></script>
+    <script src="ui/album-popup.js"></script>
+    <script src="ui/ui-panels.js"></script>
+    <script src="ui/export-popup.js"></script>
+    <script src="ui/settings-popup.js"></script>
+
+    <!-- Core -->
+    <script src="core-runtime.js"></script>
+    <script src="core-engine.js"></script>
+
+    <script>
+(function() {
+    'use strict';
+    
+    function setupUnifiedKeyboardShortcuts() {
+        document.addEventListener('keydown', (e) => {
+            const eventBus = window.TegakiEventBus;
+            const keymap = window.TEGAKI_KEYMAP;
+            
+            if (!eventBus || !keymap) return;
+            
+            const activeElement = document.activeElement;
+            if (activeElement && (
+                activeElement.tagName === 'INPUT' ||
+                activeElement.tagName === 'TEXTAREA' ||
+                activeElement.isContentEditable
+            )) return;
+            
+            if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
+            if (e.key.startsWith('F') && e.key.length <= 3) {
+                e.preventDefault();
+                return;
+            }
+            
+            const action = keymap.getAction(e, { vMode: false });
+            
+            if (!action) return;
+            
+            switch(action) {
+                case 'UNDO':
+                    if (window.History && window.History.canUndo()) {
+                        window.History.undo();
+                    }
+                    e.preventDefault();
+                    break;
+                    
+                case 'REDO':
+                    if (window.History && window.History.canRedo()) {
+                        window.History.redo();
+                    }
+                    e.preventDefault();
+                    break;
+                
+                case 'LAYER_CLEAR':
+                    eventBus.emit('layer:clear-active');
+                    e.preventDefault();
+                    break;
+                
+                case 'LAYER_CREATE':
+                    if (window.drawingApp?.layerManager) {
+                        const layerSystem = window.drawingApp.layerManager;
+                        const newLayerIndex = layerSystem.getLayers().length + 1;
+                        layerSystem.createLayer(`L${newLayerIndex}`, false);
+                        eventBus.emit('layer:created-by-shortcut', { index: newLayerIndex });
+                    }
+                    e.preventDefault();
+                    break;
+                
+                case 'GIF_CREATE_CUT':
+                    const animationSystem = window.animationSystem;
+                    if (animationSystem) {
+                        animationSystem.createNewEmptyCut();
+                        eventBus.emit('cut:created-by-shortcut');
+                    }
+                    e.preventDefault();
+                    break;
+                
+                case 'GIF_TOGGLE_TIMELINE':
+                    eventBus.emit('ui:toggle-timeline');
+                    e.preventDefault();
+                    break;
+                
+                case 'GIF_PLAY_PAUSE':
+                    const timelineUI = window.timelineUI;
+                    if (timelineUI && timelineUI.isVisible) {
+                        timelineUI.togglePlayStop();
+                    }
+                    e.preventDefault();
+                    break;
+                
+                case 'GIF_COPY_CUT':
+                    eventBus.emit('cut:copy-current');
+                    setTimeout(() => {
+                        eventBus.emit('cut:paste-right-adjacent');
+                    }, 10);
+                    e.preventDefault();
+                    break;
+                
+                case 'TOOL_PEN':
+                    eventBus.emit('tool:select', { tool: 'pen' });
+                    e.preventDefault();
+                    break;
+                
+                case 'TOOL_ERASER':
+                    eventBus.emit('tool:select', { tool: 'eraser' });
+                    e.preventDefault();
+                    break;
+            }
+        });
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', setupUnifiedKeyboardShortcuts);
+    } else {
+        setupUnifiedKeyboardShortcuts();
+    }
+})();
+
+(function() {
+    'use strict';
+    
+    function initializeResizeSliders() {
+        const widthSlider = document.getElementById('canvas-width-slider');
+        const widthTrack = document.getElementById('canvas-width-track');
+        const widthHandle = document.getElementById('canvas-width-handle');
+        const widthDisplay = document.getElementById('canvas-width-display');
+        const widthDecrease = document.getElementById('width-decrease');
+        const widthIncrease = document.getElementById('width-increase');
+        
+        const heightSlider = document.getElementById('canvas-height-slider');
+        const heightTrack = document.getElementById('canvas-height-track');
+        const heightHandle = document.getElementById('canvas-height-handle');
+        const heightDisplay = document.getElementById('canvas-height-display');
+        const heightDecrease = document.getElementById('height-decrease');
+        const heightIncrease = document.getElementById('height-increase');
+        
+        const applyBtn = document.getElementById('apply-resize');
+        
+        if (!widthSlider || !heightSlider) return;
+        
+        const MIN_SIZE = 100;
+        const MAX_SIZE = 2000;
+        let currentWidth = window.TEGAKI_CONFIG?.canvas?.width || 344;
+        let currentHeight = window.TEGAKI_CONFIG?.canvas?.height || 135;
+        
+        function updateWidthSlider(value) {
+            currentWidth = Math.max(MIN_SIZE, Math.min(MAX_SIZE, value));
+            const percent = ((currentWidth - MIN_SIZE) / (MAX_SIZE - MIN_SIZE)) * 100;
+            widthTrack.style.width = percent + '%';
+            widthHandle.style.left = percent + '%';
+            widthDisplay.textContent = currentWidth + 'px';
+        }
+        
+        function updateHeightSlider(value) {
+            currentHeight = Math.max(MIN_SIZE, Math.min(MAX_SIZE, value));
+            const percent = ((currentHeight - MIN_SIZE) / (MAX_SIZE - MIN_SIZE)) * 100;
+            heightTrack.style.width = percent + '%';
+            heightHandle.style.left = percent + '%';
+            heightDisplay.textContent = currentHeight + 'px';
+        }
+        
+        updateWidthSlider(currentWidth);
+        updateHeightSlider(currentHeight);
+        
+        let isDraggingWidth = false;
+        widthHandle.addEventListener('mousedown', (e) => {
+            isDraggingWidth = true;
+            e.preventDefault();
+        });
+        
+        let isDraggingHeight = false;
+        heightHandle.addEventListener('mousedown', (e) => {
+            isDraggingHeight = true;
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', (e) => {
+            if (isDraggingWidth) {
+                const rect = widthSlider.getBoundingClientRect();
+                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                const value = MIN_SIZE + ((MAX_SIZE - MIN_SIZE) * percent / 100);
+                updateWidthSlider(Math.round(value));
+            }
+            if (isDraggingHeight) {
+                const rect = heightSlider.getBoundingClientRect();
+                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                const value = MIN_SIZE + ((MAX_SIZE - MIN_SIZE) * percent / 100);
+                updateHeightSlider(Math.round(value));
+            }
+        });
+        
+        document.addEventListener('mouseup', () => {
+            isDraggingWidth = false;
+            isDraggingHeight = false;
+        });
+        
+        widthSlider.addEventListener('click', (e) => {
+            if (e.target === widthHandle) return;
+            const rect = widthSlider.getBoundingClientRect();
+            const percent = ((e.clientX - rect.left) / rect.width) * 100;
+            const value = MIN_SIZE + ((MAX_SIZE - MIN_SIZE) * percent / 100);
+            updateWidthSlider(Math.round(value));
+        });
+        
+        heightSlider.addEventListener('click', (e) => {
+            if (e.target === heightHandle) return;
+            const rect = heightSlider.getBoundingClientRect();
+            const percent = ((e.clientX - rect.left) / rect.width) * 100;
+            const value = MIN_SIZE + ((MAX_SIZE - MIN_SIZE) * percent / 100);
+            updateHeightSlider(Math.round(value));
+        });
+        
+        widthDecrease.addEventListener('click', () => updateWidthSlider(currentWidth - 1));
+        widthIncrease.addEventListener('click', () => updateWidthSlider(currentWidth + 1));
+        heightDecrease.addEventListener('click', () => updateHeightSlider(currentHeight - 1));
+        heightIncrease.addEventListener('click', () => updateHeightSlider(currentHeight + 1));
+        
+        applyBtn.addEventListener('click', () => {
+            if (window.coreEngine && currentWidth > 0 && currentHeight > 0) {
+                window.coreEngine.resizeCanvas(currentWidth, currentHeight);
+            } else if (window.drawingAppResizeCanvas) {
+                window.drawingAppResizeCanvas(currentWidth, currentHeight);
+            }
+        });
+    }
+    
+    if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', initializeResizeSliders);
+    } else {
+        initializeResizeSliders();
+    }
+})();
+
+function checkPhase1Dependencies() {
+    const dependencies = [
+        { name: 'PIXI', obj: window.PIXI },
+        { name: 'TEGAKI_CONFIG', obj: window.TEGAKI_CONFIG },
+        { name: 'TegakiEventBus', obj: window.TegakiEventBus },
+        { name: 'Sortable', obj: window.Sortable },
+        { name: 'pako', obj: window.pako },
+        { name: 'UPNG', obj: window.UPNG },
+        { name: 'GIF', obj: window.GIF }
+    ];
+    
+    const missing = dependencies.filter(dep => !dep.obj);
+    if (missing.length > 0) {
+        throw new Error(`Dependencies not loaded: ${missing.map(d => d.name).join(', ')}`);
+    }
+    
+    if (!window.TEGAKI_CONFIG.animation) {
+        throw new Error('Animation configuration not found');
+    }
+    
+    return true;
+}
+
+function checkCoreRuntime() {
+    return window.CoreRuntime && window.TegakiCore?.CoreEngine;
+}
+
+function initializeApp() {
+    const CoreEngine = window.TegakiCore.CoreEngine;
+    const CONFIG = window.TEGAKI_CONFIG;
+    const { UIController } = window.TegakiUI;
+    
+    class DrawingApp {
+        constructor() {
+            this.pixiApp = null;
+            this.coreEngine = null;
+            this.uiController = null;
+        }
+        
+        async initialize() {
+            const containerEl = document.getElementById('drawing-canvas');
+            if (!containerEl) throw new Error('Canvas container not found');
+            
+            this.pixiApp = new PIXI.Application();
+            const screenWidth = window.innerWidth - 50;
+            const screenHeight = window.innerHeight;
+            
+            await this.pixiApp.init({
+                width: screenWidth,
+                height: screenHeight,
+                backgroundAlpha: 0,
+                resolution: 1,
+                antialias: true,
+                eventMode: 'static'
+            });
+            
+            containerEl.innerHTML = '';
+            containerEl.appendChild(this.pixiApp.canvas);
+            this.pixiApp.canvas.style.width = `${screenWidth}px`;
+            this.pixiApp.canvas.style.height = `${screenHeight}px`;
+            
+            this.coreEngine = new CoreEngine(this.pixiApp);
+            const drawingApp = this.coreEngine.initialize();
+            
+            window.coreEngine = this.coreEngine;
+            
+            CoreRuntime.init({
+                app: this.pixiApp,
+                worldContainer: this.coreEngine.getCameraSystem().worldContainer,
+                canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
+                cameraSystem: this.coreEngine.getCameraSystem(),
+                layerManager: this.coreEngine.getLayerManager(),
+                drawingEngine: this.coreEngine.getDrawingEngine()
+            });
+            
+            this.uiController = new UIController(
+                this.coreEngine.getDrawingEngine(), 
+                this.coreEngine.getLayerManager(), 
+                this.pixiApp
+            );
+
+            if (this.coreEngine.animationSystem) {
+                this.uiController.initializeAlbumPopup(
+                    this.coreEngine.animationSystem
+                );
+            }
+            
+            window.drawingAppResizeCanvas = (newWidth, newHeight) => {
+                return CoreRuntime.api.resizeCanvas(newWidth, newHeight);
+            };
+            
+            window.addEventListener('resize', () => {
+                const newWidth = window.innerWidth - 50;
+                const newHeight = window.innerHeight;
+                this.pixiApp.renderer.resize(newWidth, newHeight);
+                this.pixiApp.canvas.style.width = `${newWidth}px`;
+                this.pixiApp.canvas.style.height = `${newHeight}px`;
+                const cameraSystem = this.coreEngine.getCameraSystem();
+                cameraSystem.initializeCamera();
+                cameraSystem.updateGuideLinesForCanvasResize();
+            });
+            
+            this.updateCanvasInfo();
+            this.updateDPRInfo();
+            this.startFPSMonitor();
+            
+            window.drawingApp = drawingApp;
+            return true;
+        }
+        
+        updateCanvasInfo() {
+            const element = document.getElementById('canvas-info');
+            if (element) {
+                element.textContent = `${CONFIG.canvas.width}×${CONFIG.canvas.height}px`;
+            }
+        }
+        
+        updateDPRInfo() {
+            const element = document.getElementById('dpr-info');
+            if (element) {
+                element.textContent = (window.devicePixelRatio || 1).toFixed(1);
+            }
+        }
+        
+        startFPSMonitor() {
+            let frameCount = 0;
+            let lastTime = performance.now();
+            
+            const updateFPS = () => {
+                frameCount++;
+                const currentTime = performance.now();
+                
+                if (currentTime - lastTime >= 1000) {
+                    const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
+                    const element = document.getElementById('fps');
+                    if (element) element.textContent = fps;
+                    frameCount = 0;
+                    lastTime = currentTime;
+                }
+                requestAnimationFrame(updateFPS);
+            };
+            updateFPS();
+        }
+    }
+    
+    return DrawingApp;
+}
+
+function setupHistoryIntegration() {
+    if (window.TegakiEventBus && window.History) {
+        window.TegakiEventBus.on('history:changed', (data) => {
+            const historyElement = document.getElementById('history-info');
+            if (historyElement && data) {
+                const currentIndex = data.currentIndex + 1;
+                const stackSize = data.stackSize;
+                historyElement.textContent = `${currentIndex}/${stackSize}`;
+            }
+        });
+    }
+}
+
+window.addEventListener('DOMContentLoaded', async () => {
+    try {
+        if (!window.DOMBuilder) {
+            throw new Error('DOMBuilder not loaded');
+        }
+        
+        const appContainer = document.getElementById('app');
+        if (!appContainer) {
+            throw new Error('#app container not found');
+        }
+        
+        const mainLayout = window.DOMBuilder.buildMainLayout();
+        appContainer.appendChild(mainLayout);
+        
+        const statusPanel = window.DOMBuilder.buildStatusPanel();
+        document.body.appendChild(statusPanel);
+        
+        checkPhase1Dependencies();
+        
+        if (!checkCoreRuntime()) {
+            throw new Error('CoreRuntime initialization failed');
+        }
+        
+        const DrawingApp = initializeApp();
+        const app = new DrawingApp();
+        await app.initialize();
+        
+        window.drawingAppInstance = app;
+        
+        setupHistoryIntegration();
+        
+        const initExportWithRetry = () => {
+            let retryCount = 0;
+            const maxRetries = 10;
+            
+            const tryInit = () => {
+                if (window.animationSystem && window.CoreRuntime) {
+                    const success = window.CoreRuntime.initializeExportSystem(
+                        app.pixiApp,
+                        () => {}
+                    );
+                    
+                    if (success) {
+                        return;
+                    }
+                }
+                
+                retryCount++;
+                if (retryCount < maxRetries) {
+                    setTimeout(tryInit, 200);
+                }
+            };
+            
+            tryInit();
+        };
+        
+        if (window.TegakiEventBus) {
+            window.TegakiEventBus.on('animation:system-ready', initExportWithRetry);
+            window.TegakiEventBus.on('animation:initialized', initExportWithRetry);
+        }
+        
+        setTimeout(initExportWithRetry, 500);
+        
+        if (window.CoordinateSystem?.diagnoseReferences) {
+            window.CoordinateSystem.diagnoseReferences();
+        }
+        
+        if (window.SystemDiagnostics) {
+            setTimeout(() => {
+                try {
+                    const diagnostics = new window.SystemDiagnostics();
+                    diagnostics.runFullDiagnostics();
+                } catch (diagError) {}
+            }, 1000);
+        }
+        
+    } catch (error) {
+        console.error('Initialization failed:', error);
+    }
+});
+
+try {
+    checkPhase1Dependencies();
+} catch (error) {}
+    </script>
+</body>
+</html>

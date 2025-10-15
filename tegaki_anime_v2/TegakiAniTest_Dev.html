@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>めぶがきぞ APNG投稿テスト（開発版）</title>
+    <title>めぶがき APNG投稿テスト（開発版）</title>
     <style>
         * {
             margin: 0;
@@ -15,29 +15,22 @@
             font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
             background: linear-gradient(135deg, #ffffee 0%, #f0e0d6 100%);
             min-height: 100vh;
-            padding: 20px;
+            padding: 10px;
         }
         
         h1 {
             text-align: center;
             color: #800000;
             margin-bottom: 10px;
-            font-size: 24px;
+            font-size: 18px;
             display: flex;
             align-items: center;
             justify-content: center;
             gap: 5px;
         }
         
-        .subtitle {
-            text-align: center;
-            color: #aa5a56;
-            margin-bottom: 20px;
-            font-size: 14px;
-        }
-        
         #app-container {
-            max-width: 1400px;
+            max-width: 1600px;
             margin: 0 auto;
             background: white;
             border-radius: 8px;
@@ -47,55 +40,8 @@
         
         #tegaki-container {
             width: 100%;
-            height: 600px;
-        }
-        
-        .button-panel {
-            display: flex;
-            gap: 10px;
-            padding: 15px;
-            background: rgba(240, 224, 214, 0.5);
-            border-top: 2px solid #cf9c97;
-            justify-content: center;
-        }
-        
-        .export-btn {
-            padding: 12px 24px;
-            font-size: 14px;
-            font-weight: bold;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            transition: all 0.2s;
-            color: white;
-        }
-        
-        .export-btn.apng {
-            background: linear-gradient(135deg, #800000 0%, #aa5a56 100%);
-        }
-        
-        .export-btn.apng:hover {
-            background: linear-gradient(135deg, #aa5a56 0%, #cf9c97 100%);
-            transform: translateY(-2px);
-            box-shadow: 0 4px 8px rgba(128, 0, 0, 0.2);
-        }
-        
-        .export-btn:active {
-            transform: translateY(0);
-        }
-        
-        .export-btn:disabled {
-            opacity: 0.5;
-            cursor: not-allowed;
-        }
-        
-        .info-panel {
-            padding: 15px;
-            background: rgba(240, 224, 214, 0.3);
-            border-top: 1px solid #cf9c97;
-            text-align: center;
-            font-size: 12px;
-            color: #666;
+            height: calc(100vh - 60px);
+            min-height: 600px;
         }
         
         .dev-badge {
@@ -112,7 +58,7 @@
 <body>
     <h1>
         めぶがき
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="14" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
             <path d="M14 9.536V7a4 4 0 0 1 4-4h1.5a.5.5 0 0 1 .5.5V5a4 4 0 0 1-4 4 4 4 0 0 0-4 4c0 2 1 3 1 5a5 5 0 0 1-1 3"/>
             <path d="M4 9a5 5 0 0 1 8 4 5 5 0 0 1-8-4"/>
             <path d="M5 21h14"/>
@@ -120,33 +66,9 @@
         APNG投稿テスト
         <span class="dev-badge">DEV</span>
     </h1>
-    <div class="subtitle">レイヤー機能・不透明度・表示ON/OFF対応版（開発検証用）</div>
     
     <div id="app-container">
         <div id="tegaki-container"></div>
-        
-        <div class="button-panel">
-            <button class="export-btn apng" id="export-apng">
-                💾 APNG出力
-            </button>
-        </div>
-        
-        <div class="info-panel">
-            <p>
-                <strong>操作方法:</strong> 
-                1-9キーでフレーム切替 | Q/Wキーでレイヤー切替 | 
-                P=ペン, E=消しゴム, O=オニオンスキン | 
-                Ctrl+Z=元に戻す, Ctrl+Y=やり直し
-            </p>
-            <p style="margin-top: 5px;">
-                <strong>新機能:</strong> 
-                レイヤーパネルで👁️=表示切替 | ◀100%▶=不透明度調整(1%単位) | 
-                100%の上でドラッグでも調整可能
-            </p>
-            <p style="margin-top: 5px; color: #f59e0b;">
-                ⚠️ 開発版：各モジュールを個別に読み込むため、エラー箇所の特定が容易です
-            </p>
-        </div>
     </div>
     
     <!-- ライブラリ読み込み -->
@@ -204,7 +126,7 @@
             console.log('✅ Tegaki Anime initialized');
         }
         
-        // APNG出力
+        // APNG出力（開発用）
         async function exportApng() {
             if (!tegakiCore) {
                 alert('描画ツールが初期化されていません');
@@ -233,13 +155,17 @@
             }
         }
         
+        // グローバル公開（開発用）
+        window.tegakiCore = null;
+        window.exportApng = exportApng;
+        
         // イベントリスナー設定
         document.addEventListener('DOMContentLoaded', () => {
             // 初期化
             initTegaki();
+            window.tegakiCore = tegakiCore;
             
-            // ボタンイベント
-            document.getElementById('export-apng').addEventListener('click', exportApng);
+            console.log('✅ Tegaki Anime ready. Use window.exportApng() to export APNG.');
         });
     </script>
 </body>

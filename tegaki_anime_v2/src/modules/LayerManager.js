@@ -218,6 +218,37 @@
         }
         
         /**
+         * 指定位置の後にフレームをコピー
+         */
+        copyFrameAfter(afterIndex) {
+            if (afterIndex < 0 || afterIndex >= this.frameCount) {
+                this.addFrame();
+                return;
+            }
+            
+            // 現在のフレームをディープコピー
+            const sourceFrame = this.frames[afterIndex];
+            const copiedFrame = {
+                layers: []
+            };
+            
+            for (let i = 0; i < sourceFrame.layers.length; i++) {
+                const sourceLayer = sourceFrame.layers[i];
+                const copiedImageData = this.canvasManager.cloneImageData(sourceLayer.imageData);
+                
+                copiedFrame.layers.push({
+                    imageData: copiedImageData,
+                    visible: sourceLayer.visible,
+                    opacity: sourceLayer.opacity,
+                    name: sourceLayer.name
+                });
+            }
+            
+            this.frames.splice(afterIndex + 1, 0, copiedFrame);
+            this.frameCount++;
+        }
+        
+        /**
          * 新しいフレームを作成
          */
         createNewFrame() {
