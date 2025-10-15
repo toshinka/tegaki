@@ -132,7 +132,7 @@ window.DOMBuilder = (function() {
 
         // フォーマット選択
         const formatSelection = createElement('div', { className: 'format-selection' });
-        ['png', 'gif', 'pdf'].forEach((fmt, idx) => {
+        ['png', 'gif', 'pdf'].forEach((fmt) => {
             const btn = createElement('button', {
                 className: fmt === 'png' ? 'format-btn selected' : (fmt === 'pdf' ? 'format-btn disabled' : 'format-btn'),
                 textContent: fmt.toUpperCase(),
@@ -398,5 +398,26 @@ window.DOMBuilder = (function() {
         mainLayout.appendChild(buildSidebar());
 
         const canvasArea = buildCanvasArea();
+        canvasArea.appendChild(buildPenSettingsPopup());
+        canvasArea.appendChild(buildExportPopup());
+        canvasArea.appendChild(buildResizePopup());
+        canvasArea.appendChild(buildSettingsPopup());
+        canvasArea.appendChild(buildLayerTransformPanel());
         
-        //
+        mainLayout.appendChild(canvasArea);
+
+        const rightPanel = createElement('div', { className: 'right-panel' });
+        rightPanel.appendChild(buildLayerPanel());
+        mainLayout.appendChild(rightPanel);
+
+        return mainLayout;
+    }
+
+    // 公開API
+    return {
+        buildMainLayout: buildMainLayout,
+        buildStatusPanel: buildStatusPanel,
+        createElement: createElement,
+        ICONS: ICONS
+    };
+})();
