@@ -1,0 +1,351 @@
+コードを確認しました。現在の状態とポップアップ統一のための段階的改修計画書を作成します。
+
+サイドバーポップアップ統一化 - 段階的改修計画書
+現状分析
+各ポップアップの状態管理の違い
+SettingsPopup
+  プロパティ: isVisible (boolean)
+  場所: window.TegakiUI.SettingsPopup
+  クラス: TegakiUI名前空間のクラスインスタンス
+  トグル実装: show()/hide()メソッドあり
+
+ExportPopup
+  プロパティ: isVisible (boolean)
+  場所: window.TEGAKI_EXPORT_POPUP または window.exportPopup
+  クラス: グローバル関数スコープのクラス
+  トグル実装: show()/hide()メソッドあり
+
+AlbumPopup
+  プロパティ: isOpen (boolean) ⚠️異なる命名
+  場所: this.albumPopup (UIController内)
+  クラス: グローバルスコープのクラス
+  トグル実装: show()/hide()メソッドあり
+  特徴: オーバーレイ式の全画面モーダル
+問題点
+
+AlbumPopupのみプロパティ名がisOpenで統一されていない
+名前空間がバラバラ（TegakiUI、グローバル、UIController内）
+画面外クリック時の処理がui-panels.jsのcloseAllPopups()に依存
+AlbumPopupはモーダル式で他と挙動が異なる
+
+
+改修方針
+基本ルール
+
+API統一: 全てのポップアップでisVisibleプロパティを使用
+トグル動作: show()/hide()/toggle()メソッドを標準実装
+名前空間: TegakiUI名前空間に統一（段階的移行）
+UIController管理: UIControllerが全ポップアップを統括
+画面外クリック: 各ポップアップが自己完結的に処理
+
+
+フェーズ1: AlbumPopup プロパティ名統一（最優先）
+目的
+isOpenをisVisibleに変更し、他のポップアップとAPI統一
+変更内容
+album-popup.js
+javascript// 変更前
+this.isOpen = false;
+
+show() {
+  if (this.isOpen) return;
+  // ...
+  this.isOpen = true;
+}
+
+hide() {
+  if (!this.isOpen) return;
+  // ...
+  this.isOpen = false;
+}
+
+// 変更後
+this.isVisible = false;
+
+show() {
+  if (this.isVisible) return;
+  // ...
+  this.isVisible = true;
+}
+
+hide() {
+  if (!this.isVisible) return;
+  // ...
+  this.isVisible = false;
+}
+
+// 🆕 toggle()メソッド追加
+toggle() {
+  if (this.isVisible) {
+    this.hide();
+  } else {
+    this.show();
+  }
+}
+ui-panels.js (handleToolClick内)
+javascript// 変更前
+'library-tool': () => {
+  this.closeAllPopups();
+  if (this.albumPopup) {
+    this.albumPopup.show();
+  }
+}
+
+// 変更後
+'library-tool': () => {
+  if (this.albumPopup) {
+    if (this.albumPopup.isVisible) {
+      this.albumPopup.hide();
+    } else {
+      this.closeAllPopups();
+      this.albumPopup.show();
+    }
+  }
+}
+影響範囲
+
+album-popup.js: プロパティ名変更のみ（3箇所）
+ui-panels.js: トグル動作追加（1箇所）
+
+テスト項目
+
+ アルバムアイコン1回目クリックで開く
+ アルバムアイコン2回目クリックで閉じる
+ 画面外クリックで閉じる
+ 他のポップアップを開いた時にアルバムが閉じる
+
+
+フェーズ2: ExportPopup トグル動作実装
+目的
+ExportPopupにトグル動作を追加し、連続クリックで閉じれるようにする
+変更内容
+export-popup.js
+javascript// 🆕 toggle()メソッド追加
+toggle() {
+  if (this.isVisible) {
+    this.hide();
+  } else {
+    this.show();
+  }
+}
+ui-panels.js (handleToolClick内)
+javascript// 変更前
+'export-tool': () => {
+  this.closeAllPopups();
+  if (window.TEGAKI_EXPORT_POPUP) {
+    window.TEGAKI_EXPORT_POPUP.show();
+  } else if (window.exportPopup) {
+    window.exportPopup.show();
+  }
+}
+
+// 変更後
+'export-tool': () => {
+  const popup = window.TEGAKI_EXPORT_POPUP || window.exportPopup;
+  if (popup) {
+    if (popup.isVisible) {
+      popup.hide();
+    } else {
+      this.closeAllPopups();
+      popup.show();
+    }
+  }
+}
+影響範囲
+
+export-popup.js: toggle()メソッド追加
+ui-panels.js: トグル動作追加（1箇所）
+
+テスト項目
+
+ エクスポートアイコン1回目クリックで開く
+ エクスポートアイコン2回目クリックで閉じる
+ 画面外クリックで閉じる（既存機能）
+
+
+フェーズ3: SettingsPopup トグル動作最適化
+目的
+既にトグル機能はあるが、UIController経由での動作を確実にする
+変更内容
+ui-panels.js (handleToolClick内)
+javascript// 変更前
+'settings-tool': () => {
+  console.log('⚙️ Settings button clicked');
+  this.closeAllPopups();
+  if (this.settingsPopup) {
+    this.settingsPopup.show();
+  }
+}
+
+// 変更後
+'settings-tool': () => {
+  if (this.settingsPopup) {
+    if (this.settingsPopup.isVisible) {
+      this.settingsPopup.hide();
+    } else {
+      this.closeAllPopups();
+      this.settingsPopup.show();
+    }
+  }
+}
+影響範囲
+
+ui-panels.js: トグル動作追加（1箇所）
+
+テスト項目
+
+ 設定アイコン1回目クリックで開く
+ 設定アイコン2回目クリックで閉じる
+ ショートカット(Shift+P)でもトグル動作
+ 画面外クリックで閉じる（既存機能）
+
+
+フェーズ4: closeAllPopups() 最適化
+目的
+全ポップアップを統一的に管理し、漏れを防ぐ
+変更内容
+ui-panels.js
+javascript// 変更前
+closeAllPopups() {
+  document.querySelectorAll('.popup-panel').forEach(popup => {
+    if (popup.id !== 'export-popup') {
+      popup.classList.remove('show');
+    }
+  });
+  
+  if (this.albumPopup) {
+    this.albumPopup.hide();
+  }
+  
+  if (this.settingsPopup) {
+    this.settingsPopup.hide();
+  }
+  
+  this.activePopup = null;
+}
+
+// 変更後
+closeAllPopups() {
+  // 管理されたポップアップを順次閉じる
+  const popups = [
+    this.settingsPopup,
+    this.albumPopup,
+    window.TEGAKI_EXPORT_POPUP || window.exportPopup
+  ];
+  
+  popups.forEach(popup => {
+    if (popup && popup.isVisible) {
+      popup.hide();
+    }
+  });
+  
+  // 古いDOM直接操作も残す（後方互換）
+  document.querySelectorAll('.popup-panel').forEach(popup => {
+    popup.classList.remove('show');
+  });
+  
+  this.activePopup = null;
+}
+影響範囲
+
+ui-panels.js: closeAllPopups()メソッドのリファクタリング
+
+テスト項目
+
+ 画面外クリックで全ポップアップが閉じる
+ 別のポップアップを開いた時に他が閉じる
+ 描画中にポップアップが勝手に閉じない
+
+
+フェーズ5: 名前空間統一（オプション・将来的）
+目的
+全てをTegakiUI名前空間に移行し、管理を一元化
+変更内容
+export-popup.js
+javascript// 変更前
+window.ExportPopup = (function() { ... })();
+
+// 変更後
+window.TegakiUI = window.TegakiUI || {};
+window.TegakiUI.ExportPopup = (function() { ... })();
+// 後方互換のため window.ExportPopup も残す
+window.ExportPopup = window.TegakiUI.ExportPopup;
+album-popup.js
+javascript// 変更前
+window.AlbumPopup = AlbumPopup;
+
+// 変更後
+window.TegakiUI = window.TegakiUI || {};
+window.TegakiUI.AlbumPopup = AlbumPopup;
+window.AlbumPopup = window.TegakiUI.AlbumPopup;
+```
+
+### 影響範囲
+- export-popup.js: 名前空間変更
+- album-popup.js: 名前空間変更
+- ui-panels.js: 参照先を順次変更
+- core-initializer.js: 初期化処理の参照先変更
+
+---
+
+## 実装優先順位
+```
+優先度S（即時実施）:
+  フェーズ1 - AlbumPopup isVisible統一
+
+優先度A（次回実施）:
+  フェーズ2 - ExportPopup トグル動作
+  フェーズ3 - SettingsPopup トグル最適化
+
+優先度B（中期実施）:
+  フェーズ4 - closeAllPopups() 最適化
+
+優先度C（長期・オプション）:
+  フェーズ5 - 名前空間統一
+
+改修時の注意事項
+1. 後方互換性
+
+既存のコードが動作し続けるように古いAPIも残す
+移行期間中はdeprecation warningをコンソールに出す
+
+2. イベント伝播
+
+ポップアップ内のクリックイベントが親に伝播しないようstopPropagation()を確認
+画面外クリック判定はsetTimeout()で遅延させる（既存実装通り）
+
+3. AlbumPopupの特殊性
+
+オーバーレイ式のため他とは異なる実装
+this.overlay.onclickで画面外クリックを独自処理
+この動作は維持する
+
+4. テスト方法
+各フェーズ完了後に以下を確認:
+
+各アイコンの1回目クリック → 開く
+各アイコンの2回目クリック → 閉じる
+画面外クリック → 閉じる
+別アイコンクリック → 前のポップアップが閉じる
+ショートカットキーも同様に動作
+
+
+改修完了後のAPI一覧
+統一されたポップアップAPI
+javascript// 全てのポップアップで共通
+popup.isVisible    // boolean: 表示状態
+popup.show()       // 表示
+popup.hide()       // 非表示
+popup.toggle()     // トグル（追加）
+
+// アクセス方法
+window.TegakiUI.SettingsPopup  // 設定
+window.TegakiUI.ExportPopup    // エクスポート
+window.TegakiUI.AlbumPopup     // アルバム
+
+// UIController経由
+uiController.settingsPopup
+uiController.albumPopup
+window.TEGAKI_EXPORT_POPUP
+
+以上が段階的改修計画書です。フェーズ1から順番に実施することで、リスクを最小限に抑えながらAPI統一を達成できます。
