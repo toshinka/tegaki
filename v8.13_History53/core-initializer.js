@@ -244,10 +244,6 @@ window.CoreInitializer = (function() {
             
             window.KeyboardHandler.init();
             
-            if (window.ResizeSlider) {
-                window.ResizeSlider.init();
-            }
-            
             const app = new DrawingApp();
             await app.initialize();
             
@@ -256,6 +252,13 @@ window.CoreInitializer = (function() {
             setupHistoryIntegration();
             
             initializeExportSystem(app);
+            
+            // ResizeSliderはDOM構築後に初期化
+            if (window.ResizeSlider) {
+                setTimeout(() => {
+                    window.ResizeSlider.init();
+                }, 100);
+            }
             
             runDiagnostics();
             
