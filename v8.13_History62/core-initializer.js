@@ -48,12 +48,18 @@ window.CoreInitializer = (function() {
         document.body.appendChild(statusPanel);
     }
 
-    // 🆕 SettingsManager 初期化
+    // 🆕 SettingsManager 初期化（修正版）
     function initializeSettingsManager(eventBus, config) {
         if (!window.TegakiSettingsManager) {
             throw new Error('SettingsManager class not found');
         }
 
+        // 🔥 既にインスタンスの場合はそのまま返す
+        if (window.TegakiSettingsManager.prototype === undefined) {
+            return window.TegakiSettingsManager;
+        }
+
+        // クラスの場合はインスタンス化
         const settingsManager = new window.TegakiSettingsManager(eventBus, config);
         window.TegakiSettingsManager = settingsManager; // インスタンスに置き換え
         
@@ -66,7 +72,7 @@ window.CoreInitializer = (function() {
             this.pixiApp = null;
             this.coreEngine = null;
             this.uiController = null;
-            this.settingsManager = null; // 🆕
+            this.settingsManager = null;
         }
         
         async initialize() {
@@ -100,7 +106,7 @@ window.CoreInitializer = (function() {
             
             window.coreEngine = this.coreEngine;
             
-            // 🆕 SettingsManager を先に初期化
+            // 🔥 SettingsManager を先に初期化（UIController より前）
             this.settingsManager = initializeSettingsManager(
                 window.TegakiEventBus,
                 CONFIG
@@ -113,9 +119,10 @@ window.CoreInitializer = (function() {
                 cameraSystem: this.coreEngine.getCameraSystem(),
                 layerManager: this.coreEngine.getLayerManager(),
                 drawingEngine: this.coreEngine.getDrawingEngine(),
-                settingsManager: this.settingsManager // 🆕 追加
+                settingsManager: this.settingsManager
             });
             
+            // 🔥 UIController初期化（SettingsManagerの初期化後に実行）
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
                 this.coreEngine.getLayerManager(), 

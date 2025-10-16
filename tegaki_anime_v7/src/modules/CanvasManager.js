@@ -1,5 +1,6 @@
 // ========================================
-// CanvasManager.js - キャンバス管理
+// CanvasManager.js - キャンバス管理（改修版）
+// 座標系統一・World座標対応
 // ========================================
 
 (function() {
@@ -17,6 +18,14 @@
             this.ctx = null;
             this.bgCanvas = null;
             this.bgCtx = null;
+            
+            // 座標変換パラメータ（将来の拡張用）
+            this.transform = {
+                offsetX: 0,
+                offsetY: 0,
+                scale: 1.0,
+                rotation: 0
+            };
             
             // 自動的にキャンバスを作成
             this.createCanvas();
@@ -103,16 +112,66 @@
         }
         
         /**
-         * クライアント座標をキャンバス座標に変換
+         * クライアント座標をキャンバス座標に変換（統一メソッド）
+         * 将来的な変換・回転・拡縮に対応
          */
         getCanvasCoordinates(clientX, clientY) {
             if (!this.canvas) return { x: 0, y: 0 };
             
             const rect = this.canvas.getBoundingClientRect();
+            
+            // スクリーン座標からキャンバスローカル座標へ
+            let x = clientX - rect.left;
+            let y = clientY - rect.top;
+            
+            // 将来的な変換パラメータを適用
+            // 現在はスケール1.0、オフセット0、回転0なので実質何もしない
+            x = (x - this.transform.offsetX) / this.transform.scale;
+            y = (y - this.transform.offsetY) / this.transform.scale;
+            
+            // TODO: 回転が実装された場合はここで逆回転を適用
+            // if (this.transform.rotation !== 0) { ... }
+            
             return {
-                x: Math.floor(clientX - rect.left),
-                y: Math.floor(clientY - rect.top)
+                x: Math.floor(x),
+                y: Math.floor(y)
             };
+        }
+        
+        /**
+         * キャンバス座標からWorld座標への変換（将来の拡張用）
+         */
+        canvasToWorld(canvasX, canvasY) {
+            // 現在は変換なし
+            return { x: canvasX, y: canvasY };
+        }
+        
+        /**
+         * World座標からキャンバス座標への変換（将来の拡張用）
+         */
+        worldToCanvas(worldX, worldY) {
+            // 現在は変換なし
+            return { x: worldX, y: worldY };
+        }
+        
+        /**
+         * 変換パラメータを設定（将来の拡張用）
+         */
+        setTransform(offsetX, offsetY, scale, rotation) {
+            this.transform.offsetX = offsetX || 0;
+            this.transform.offsetY = offsetY || 0;
+            this.transform.scale = scale || 1.0;
+            this.transform.rotation = rotation || 0;
+        }
+        
+        /**
+         * 変換パラメータをリセット
+         */
+        resetTransform() {
+            this.transform.offsetX = 0;
+            this.transform.offsetY = 0;
+            this.transform.scale = 1.0;
+            this.transform.rotation = 0;
         }
         
         /**
@@ -123,7 +182,7 @@
         }
         
         /**
-         * ImageData のクローンを作成
+         * ImageData のクローンを作成（ディープコピー）
          */
         cloneImageData(imageData) {
             const cloned = this.ctx.createImageData(imageData.width, imageData.height);
@@ -207,6 +266,6 @@
     // window に公開
     if (typeof window !== 'undefined') {
         window.CanvasManager = CanvasManager;
-        console.log('✅ CanvasManager loaded');
+        console.log('✅ CanvasManager (改修版) loaded');
     }
 })();
