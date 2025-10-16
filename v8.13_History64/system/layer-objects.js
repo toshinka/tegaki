@@ -1,13 +1,19 @@
-// ===== system/layer-objects.js - PixiJS密結合層 =====
-// LayerSystemから分離されたPixiJS依存コンポーネント
-// 責務: Container生成、Graphics描画、RenderTexture操作
-// PixiJS v8.13完全準拠
+// ===== system/layer-objects.js - PixiJS依存完全集約版 =====
+// LayerSystemから分離されたPixiJS密結合層
+// 責務: Container生成、Graphics描画、変形行列、サムネイル生成
+// PixiJS v8.13完全準拠 | 他システムへの依存: なし
 
 (function() {
     'use strict';
 
     // ========== BaseLayerFactory: レイヤーContainer生成 ==========
     class BaseLayerFactory {
+        /**
+         * LayerModelからPixi.Containerを生成
+         * @param {LayerModel} layerModel - データモデル
+         * @param {Object} config - 設定オブジェクト
+         * @returns {PIXI.Container} 生成されたレイヤー
+         */
         static createLayer(layerModel, config) {
             if (!layerModel || !config) {
                 throw new Error('LayerModel and config required');
@@ -29,6 +35,9 @@
             return layer;
         }
 
+        /**
+         * 背景Graphics更新
+         */
         static updateBackgroundGraphics(layer, config) {
             if (!layer.layerData?.isBackground || !layer.layerData.backgroundGraphics) {
                 return false;
@@ -40,13 +49,37 @@
             bg.fill(config.background.color);
             return true;
         }
+
+        /**
+         * レイヤー可視性設定
+         */
+        static setLayerVisibility(layer, visible) {
+            if (!layer || !layer.layerData) return false;
+            layer.layerData.visible = visible;
+            layer.visible = visible;
+            return true;
+        }
+
+        /**
+         * レイヤー不透明度設定
+         */
+        static setLayerOpacity(layer, opacity) {
+            if (!layer || !layer.layerData) return false;
+            layer.layerData.opacity = Math.max(0, Math.min(1, opacity));
+            layer.alpha = layer.layerData.opacity;
+            return true;
+        }
     }
 
     // ========== PathGraphicsBuilder: ストローク描画 ==========
     class PathGraphicsBuilder {
+        /**
+         * パスからPixi.Graphicsを再構築
+         * Perfect Freehand利用可能時は高品質描画、フォールバックは円連続
+         */
         static rebuildPathGraphics(path) {
             try {
-                // 既存Graphics破棄
+                // 既存Graphics完全破棄
                 if (path.graphics) {
                     if (path.graphics.destroy && typeof path.graphics.destroy === 'function') {
                         path.graphics.destroy({ 
@@ -112,6 +145,9 @@
             }
         }
 
+        /**
+         * パスを変形行列適用してGraphics生成（プレビュー用）
+         */
         static createTransformedGraphics(path, matrix) {
             if (!path || !path.points || !matrix) {
                 return null;
@@ -147,10 +183,31 @@
                 return null;
             }
         }
+
+        /**
+         * パスGraphicsをレイヤーに追加
+         */
+        static addPathToLayer(layer, path) {
+            if (!layer || !path || !path.graphics) return false;
+
+            try {
+                layer.addChild(path.graphics);
+                if (layer.layerData && Array.isArray(layer.layerData.paths)) {
+                    layer.layerData.paths.push(path);
+                }
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
     }
 
     // ========== LayerRenderer: サムネイル生成 ==========
     class LayerRenderer {
+        /**
+         * レイヤーサムネイル生成
+         * 変形状態を保存→リセット→レンダリング→復元の流れ
+         */
         static renderLayerThumbnail(layer, renderer, config, thumbnailSize) {
             if (!renderer || !layer || !config) {
                 return null;
@@ -228,6 +285,9 @@
             }
         }
 
+        /**
+         * サムネイルサイズ計算（アスペクト比維持）
+         */
         static calculateThumbnailSize(canvasWidth, canvasHeight, maxWidth = 72, maxHeight = 48) {
             const canvasAspectRatio = canvasWidth / canvasHeight;
             let thumbnailWidth, thumbnailHeight;
@@ -250,10 +310,47 @@
                 height: Math.round(thumbnailHeight)
             };
         }
+
+        /**
+         * カットコンテナをRenderTextureにレンダリング
+         */
+        static renderCutToTexture(renderer, cutContainer, renderTexture) {
+            if (!renderer || !cutContainer || !renderTexture) {
+                return false;
+            }
+
+            try {
+                renderer.render({
+                    container: cutContainer,
+                    target: renderTexture,
+                    clear: true
+                });
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        /**
+         * RenderTexture生成
+         */
+        static createRenderTexture(width, height) {
+            try {
+                return PIXI.RenderTexture.create({
+                    width: width,
+                    height: height
+                });
+            } catch (error) {
+                return null;
+            }
+        }
     }
 
     // ========== TransformHelper: 変形行列操作 ==========
     class TransformHelper {
+        /**
+         * 変形パラメータから行列生成
+         */
         static createTransformMatrix(transform, centerX, centerY) {
             const matrix = new PIXI.Matrix();
             
@@ -265,6 +362,9 @@
             return matrix;
         }
 
+        /**
+         * 逆変形行列生成
+         */
         static createInverseTransformMatrix(transform, centerX, centerY) {
             const matrix = new PIXI.Matrix();
             
@@ -276,6 +376,9 @@
             return matrix;
         }
 
+        /**
+         * ポイント配列を行列変換
+         */
         static transformPoints(points, matrix) {
             const transformedPoints = [];
             
@@ -313,13 +416,17 @@
             return transformedPoints;
         }
 
+        /**
+         * レイヤーContainerに変形を適用
+         * CoordinateSystem APIがあれば委譲、なければ直接適用
+         */
         static applyLayerTransform(layer, transform, centerX, centerY, coordAPI = null) {
-            if (!layer || !transform) return;
+            if (!layer || !transform) return false;
 
             // CoordinateSystem APIが利用可能な場合は委譲
             if (coordAPI?.applyLayerTransform) {
                 coordAPI.applyLayerTransform(layer, transform, centerX, centerY);
-                return;
+                return true;
             }
 
             // フォールバック: 直接適用
@@ -340,11 +447,40 @@
                 layer.rotation = 0;
                 layer.scale.set(1, 1);
             }
+            return true;
+        }
+
+        /**
+         * 変形がデフォルト（変形なし）か判定
+         */
+        static isTransformDefault(transform) {
+            if (!transform) return true;
+            return (transform.x === 0 && transform.y === 0 && 
+                    transform.rotation === 0 && 
+                    Math.abs(transform.scaleX) === 1 && 
+                    Math.abs(transform.scaleY) === 1);
+        }
+
+        /**
+         * 変形パラメータをリセット
+         */
+        static createDefaultTransform() {
+            return {
+                x: 0,
+                y: 0,
+                rotation: 0,
+                scaleX: 1,
+                scaleY: 1
+            };
         }
     }
 
     // ========== LayerGraphicsManager: レイヤー再構築 ==========
     class LayerGraphicsManager {
+        /**
+         * レイヤーを新しいパス配列で再構築
+         * 既存Graphics破棄→新規パス追加
+         */
         static rebuildLayer(layer, newPaths) {
             try {
                 // 背景Graphics以外の子要素を削除
@@ -399,6 +535,9 @@
             }
         }
 
+        /**
+         * レイヤーの全Graphics削除
+         */
         static clearLayerGraphics(layer) {
             if (!layer || !layer.layerData) return false;
 
@@ -431,6 +570,120 @@
                 return false;
             }
         }
+
+        /**
+         * レイヤーの全ストロークに変形を適用して再構築
+         */
+        static applyTransformToPaths(layer, transform, centerX, centerY) {
+            if (!layer.layerData?.paths || layer.layerData.paths.length === 0) {
+                return true;
+            }
+
+            try {
+                const matrix = TransformHelper.createTransformMatrix(transform, centerX, centerY);
+                const transformedPaths = [];
+                
+                for (let i = 0; i < layer.layerData.paths.length; i++) {
+                    const path = layer.layerData.paths[i];
+                    
+                    if (!path?.points || !Array.isArray(path.points) || path.points.length === 0) {
+                        continue;
+                    }
+                    
+                    const transformedPoints = TransformHelper.transformPoints(path.points, matrix);
+                    
+                    if (transformedPoints.length === 0) {
+                        continue;
+                    }
+                    
+                    const transformedPath = {
+                        id: path.id,
+                        points: transformedPoints,
+                        color: path.color,
+                        size: path.size,
+                        opacity: path.opacity,
+                        tool: path.tool,
+                        isComplete: path.isComplete || true,
+                        strokeOptions: path.strokeOptions,
+                        graphics: null
+                    };
+                    
+                    transformedPaths.push(transformedPath);
+                }
+                
+                return LayerGraphicsManager.rebuildLayer(layer, transformedPaths);
+                
+            } catch (error) {
+                return false;
+            }
+        }
+    }
+
+    // ========== ContainerHelper: Container階層操作 ==========
+    class ContainerHelper {
+        /**
+         * レイヤーを親コンテナに追加
+         */
+        static addLayerToContainer(parentContainer, layer, index = -1) {
+            if (!parentContainer || !layer) return false;
+
+            try {
+                if (index < 0 || index >= parentContainer.children.length) {
+                    parentContainer.addChild(layer);
+                } else {
+                    parentContainer.addChildAt(layer, index);
+                }
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        /**
+         * レイヤーを親コンテナから削除
+         */
+        static removeLayerFromContainer(parentContainer, layer) {
+            if (!parentContainer || !layer) return false;
+
+            try {
+                parentContainer.removeChild(layer);
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        /**
+         * レイヤーの階層位置変更
+         */
+        static reorderLayer(parentContainer, fromIndex, toIndex) {
+            if (!parentContainer) return false;
+
+            try {
+                const layer = parentContainer.children[fromIndex];
+                parentContainer.removeChildAt(fromIndex);
+                parentContainer.addChildAt(layer, toIndex);
+                return true;
+            } catch (error) {
+                return false;
+            }
+        }
+
+        /**
+         * カットコンテナ生成
+         */
+        static createCutContainer(label = 'cut_container') {
+            const container = new PIXI.Container();
+            container.label = label;
+            return container;
+        }
+
+        /**
+         * レイヤー数取得
+         */
+        static getLayerCount(container) {
+            return container ? container.children.length : 0;
+        }
     }
 
     // ========== グローバル公開 ==========
@@ -439,14 +692,17 @@
         PathGraphicsBuilder,
         LayerRenderer,
         TransformHelper,
-        LayerGraphicsManager
+        LayerGraphicsManager,
+        ContainerHelper
     };
 
 })();
 
-console.log('✅ layer-objects.js loaded successfully');
-console.log('   - BaseLayerFactory: Container生成');
-console.log('   - PathGraphicsBuilder: Graphics描画');
-console.log('   - LayerRenderer: サムネイル生成');
-console.log('   - TransformHelper: 変形行列');
-console.log('   - LayerGraphicsManager: レイヤー再構築');
+console.log('✅ layer-objects.js loaded (改修完了版)');
+console.log('   📦 BaseLayerFactory: レイヤーContainer生成');
+console.log('   🎨 PathGraphicsBuilder: ストローク描画');
+console.log('   🖼️  LayerRenderer: サムネイル・RenderTexture');
+console.log('   🔄 TransformHelper: 変形行列操作');
+console.log('   🔧 LayerGraphicsManager: レイヤー再構築');
+console.log('   📂 ContainerHelper: Container階層操作');
+console.log('   ✨ PixiJS依存完全集約・LayerSystem分離完了');

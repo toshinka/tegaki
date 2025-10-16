@@ -1,6 +1,6 @@
 // ========================================
-// tegaki_anime_core.js - メインクラス（統合）
-// スロット機能完全実装版
+// tegaki_anime_core.js - メインクラス（改修版）
+// レイヤー・キャンバス・サムネイル同期の完全修正
 // ========================================
 
 (function() {
@@ -92,8 +92,24 @@
             this.registerKeyboardShortcuts();
             
             // 初期表示（合成表示で開始）
-            this.loadCurrentLayerComposite();
+            // 初期履歴を全レイヤーに保存
+            this.saveInitialHistory();
+            this.loadCurrentFrameComposite();
             this.updateAllThumbnails();
+        }
+        
+        /**
+         * 初期履歴を保存
+         */
+        saveInitialHistory() {
+            for (let f = 0; f < this.layerManager.frameCount; f++) {
+                for (let l = 0; l < this.layerManager.layerCountPerFrame; l++) {
+                    const imageData = this.layerManager.getLayerImageData(f, l);
+                    if (imageData) {
+                        this.historyManager.pushHistory(f, l, imageData);
+                    }
+                }
+            }
         }
         
         /**
@@ -264,11 +280,8 @@
             // UIを更新
             this.uiBuilder.updateLayerVisibility(this.layerPanel, layerIndex, layer.visible);
             
-            // フレームサムネイルを更新
-            this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
-            
-            // 合成表示を再描画
-            this.redrawComposite();
+            // 合成表示を再描画（フレームサムネイルも更新）
+            this.refreshDisplay();
         }
         
         /**
@@ -288,11 +301,8 @@
             // UIを更新
             this.uiBuilder.updateLayerOpacity(this.layerPanel, layerIndex, layer.opacity);
             
-            // フレームサムネイルを更新
-            this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
-            
-            // 合成表示を再描画
-            this.redrawComposite();
+            // 合成表示を再描画（フレームサムネイルも更新）
+            this.refreshDisplay();
         }
         
         /**
@@ -402,21 +412,20 @@
         }
         
         /**
-         * マウスダウンハンドラ
+         * マウスダウンハンドラ（改修版）
+         * 描画開始前にアクティブレイヤーのみを表示
          */
         handleMouseDown(e) {
             if (this.isPreviewMode) return; // プレビュー中は描画不可
             
-            // 描画開始前にアクティブレイヤーのみを表示
-            this.loadCurrentLayer();
+            // 【重要】描画開始前に現在のレイヤーデータをキャンバスに表示
+            this.loadCurrentLayerOnly();
             
             const shouldPushHistory = this.drawingEngine.startDrawing(e.clientX, e.clientY);
             
-            // バケツツールの場合は即座に履歴に追加
+            // バケツツールの場合は即座に処理完了
             if (shouldPushHistory) {
-                this.saveToHistory();
-                this.updateCurrentLayerThumbnails();
-                this.redrawComposite();
+                this.handleDrawingComplete();
             }
         }
         
@@ -429,7 +438,8 @@
         }
         
         /**
-         * マウスアップハンドラ
+         * マウスアップハンドラ（改修版）
+         * 描画完了時の処理を統一
          */
         handleMouseUp() {
             if (this.isPreviewMode) return; // プレビュー中は描画不可
@@ -437,76 +447,94 @@
             const shouldPushHistory = this.drawingEngine.stopDrawing();
             
             if (shouldPushHistory) {
-                this.saveToHistory();
-                this.updateCurrentLayerThumbnails();
+                this.handleDrawingComplete();
             }
+        }
+        
+        /**
+         * 描画完了時の統一処理（改修版）
+         * レイヤー保存→履歴保存→サムネイル更新→合成表示
+         */
+        handleDrawingComplete() {
+            // 1. キャンバスの内容をアクティブレイヤーに保存
+            this.saveCurrentLayerFromCanvas();
             
-            // 描画終了後に合成表示に戻す
-            this.redrawComposite();
-        }
-        
-        /**
-         * 現在のレイヤーを読み込み（アクティブレイヤーのみ）
-         */
-        loadCurrentLayer() {
+            // 2. 履歴に保存
             const imageData = this.layerManager.getActiveLayerImageData();
-            this.canvasManager.putImageData(imageData);
-        }
-        
-        /**
-         * 現在のフレームの合成表示を読み込み
-         */
-        loadCurrentLayerComposite() {
-            const compositeData = this.layerManager.getCompositeImageData(
-                this.layerManager.activeFrameIndex
-            );
-            this.canvasManager.putImageData(compositeData);
-        }
-        
-        /**
-         * 合成表示を再描画
-         */
-        redrawComposite() {
-            if (!this.drawingEngine.isDrawing) {
-                this.loadCurrentLayerComposite();
-            }
-        }
-        
-        /**
-         * 現在のレイヤーを保存
-         */
-        saveCurrentLayer() {
-            const imageData = this.canvasManager.getImageData();
-            this.layerManager.setActiveLayerImageData(imageData);
-        }
-        
-        /**
-         * 履歴に保存
-         */
-        saveToHistory() {
-            const imageData = this.canvasManager.getImageData();
             this.historyManager.pushHistory(
                 this.layerManager.activeFrameIndex,
                 this.layerManager.activeLayerIndex,
                 imageData
             );
+            
+            // 3. サムネイルを更新
+            this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
+            this.updateLayerPanelThumbnails();
+            
+            // 4. 合成表示に戻す
+            this.loadCurrentFrameComposite();
         }
         
         /**
-         * フレーム切替
+         * 現在のレイヤーのみをキャンバスに表示（描画用）
+         */
+        loadCurrentLayerOnly() {
+            const imageData = this.layerManager.getActiveLayerImageData();
+            this.canvasManager.clearCanvas();
+            this.canvasManager.putImageData(imageData);
+        }
+        
+        /**
+         * キャンバスの内容を現在のレイヤーに保存
+         */
+        saveCurrentLayerFromCanvas() {
+            const imageData = this.canvasManager.getImageData();
+            this.layerManager.setActiveLayerImageData(imageData);
+        }
+        
+        /**
+         * 現在のフレームの合成表示をキャンバスに読み込み
+         */
+        loadCurrentFrameComposite() {
+            const compositeData = this.layerManager.getCompositeImageData(
+                this.layerManager.activeFrameIndex
+            );
+            if (compositeData) {
+                this.canvasManager.clearCanvas();
+                this.canvasManager.putImageData(compositeData);
+            }
+        }
+        
+        /**
+         * 表示を更新（レイヤー属性変更時用）
+         */
+        refreshDisplay() {
+            if (!this.drawingEngine.isDrawing) {
+                this.loadCurrentFrameComposite();
+                this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
+                this.updateLayerPanelThumbnails();
+            }
+        }
+        
+        /**
+         * フレーム切替（改修版）
+         * 確実にレイヤーデータを保存してから切り替える
          */
         switchFrame(frameIndex) {
             if (frameIndex === this.layerManager.activeFrameIndex) return;
             if (this.isPreviewMode) return; // プレビュー中は切替不可
             
-            // 現在のレイヤーを保存
-            this.saveCurrentLayer();
+            // 【重要】描画中でない場合のみ、現在の状態を保存
+            if (!this.drawingEngine.isDrawing) {
+                // 現状のキャンバスは合成表示なので、レイヤーデータはそのまま
+                // （レイヤーデータは既に保存済み）
+            }
             
             // フレームを切替
             this.layerManager.switchFrame(frameIndex);
             
             // 新しいフレームの合成表示を読み込み
-            this.loadCurrentLayerComposite();
+            this.loadCurrentFrameComposite();
             
             // UIを更新
             this.uiBuilder.highlightFrameThumbnail(this.frameThumbnails, frameIndex);
@@ -516,20 +544,24 @@
         }
         
         /**
-         * レイヤー切替
+         * レイヤー切替（改修版）
+         * 確実にレイヤーデータを保存してから切り替える
          */
         switchLayer(layerIndex) {
             if (layerIndex === this.layerManager.activeLayerIndex) return;
             if (this.isPreviewMode) return; // プレビュー中は切替不可
             
-            // 現在のレイヤーを保存
-            this.saveCurrentLayer();
+            // 【重要】描画中でない場合のみ、現在の状態を保存
+            if (!this.drawingEngine.isDrawing) {
+                // 現状のキャンバスは合成表示なので、レイヤーデータはそのまま
+                // （レイヤーデータは既に保存済み）
+            }
             
             // レイヤーを切替
             this.layerManager.switchLayer(layerIndex);
             
             // 合成表示を読み込み（描画時以外は全レイヤー表示）
-            this.loadCurrentLayerComposite();
+            this.loadCurrentFrameComposite();
             
             // UIを更新
             this.uiBuilder.highlightLayerPanel(this.layerPanel, layerIndex);
@@ -556,7 +588,7 @@
         }
         
         /**
-         * Undo
+         * Undo（改修版）
          */
         undo() {
             if (this.isPreviewMode) return; // プレビュー中は操作不可
@@ -567,15 +599,20 @@
             );
             
             if (imageData) {
-                this.canvasManager.putImageData(imageData);
+                // レイヤーデータを更新
                 this.layerManager.setActiveLayerImageData(imageData);
-                this.updateCurrentLayerThumbnails();
-                this.redrawComposite();
+                
+                // サムネイルを更新
+                this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
+                this.updateLayerPanelThumbnails();
+                
+                // 合成表示を更新
+                this.loadCurrentFrameComposite();
             }
         }
         
         /**
-         * Redo
+         * Redo（改修版）
          */
         redo() {
             if (this.isPreviewMode) return; // プレビュー中は操作不可
@@ -586,10 +623,15 @@
             );
             
             if (imageData) {
-                this.canvasManager.putImageData(imageData);
+                // レイヤーデータを更新
                 this.layerManager.setActiveLayerImageData(imageData);
-                this.updateCurrentLayerThumbnails();
-                this.redrawComposite();
+                
+                // サムネイルを更新
+                this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
+                this.updateLayerPanelThumbnails();
+                
+                // 合成表示を更新
+                this.loadCurrentFrameComposite();
             }
         }
         
@@ -664,9 +706,6 @@
          * プレビュー開始
          */
         startPreview() {
-            // 現在のレイヤーを保存
-            this.saveCurrentLayer();
-            
             this.isPreviewMode = true;
             this.previewFrameIndex = 0;
             
@@ -676,7 +715,10 @@
             // アニメーション開始
             this.previewIntervalId = setInterval(() => {
                 const imageData = compositeFrames[this.previewFrameIndex];
-                this.canvasManager.putImageData(imageData);
+                if (imageData) {
+                    this.canvasManager.clearCanvas();
+                    this.canvasManager.putImageData(imageData);
+                }
                 
                 this.previewFrameIndex = (this.previewFrameIndex + 1) % compositeFrames.length;
             }, this.frameDelay);
@@ -696,7 +738,7 @@
             this.isPreviewMode = false;
             
             // 元の合成表示を復元
-            this.loadCurrentLayerComposite();
+            this.loadCurrentFrameComposite();
             
             console.log('✅ Preview stopped');
         }
@@ -707,18 +749,24 @@
         addFrame() {
             if (this.isPreviewMode) return; // プレビュー中は操作不可
             
-            // 現在のレイヤーを保存
-            this.saveCurrentLayer();
-            
             // 現在のフレームの右に新しいフレームを挿入
             this.layerManager.addFrameAfter(this.layerManager.activeFrameIndex);
             this.historyManager.addFrame();
+            
+            // 新しいフレームの初期履歴を保存
+            const newFrameIndex = this.layerManager.activeFrameIndex + 1;
+            for (let l = 0; l < this.layerManager.layerCountPerFrame; l++) {
+                const imageData = this.layerManager.getLayerImageData(newFrameIndex, l);
+                if (imageData) {
+                    this.historyManager.pushHistory(newFrameIndex, l, imageData);
+                }
+            }
             
             // UIを再構築
             this.rebuildFrameThumbnails();
             
             // 新しいフレームに切り替え
-            this.switchFrame(this.layerManager.activeFrameIndex + 1);
+            this.switchFrame(newFrameIndex);
         }
         
         /**
@@ -727,18 +775,24 @@
         copyFrame() {
             if (this.isPreviewMode) return; // プレビュー中は操作不可
             
-            // 現在のレイヤーを保存
-            this.saveCurrentLayer();
-            
             // 現在のフレームをコピー
             this.layerManager.copyFrameAfter(this.layerManager.activeFrameIndex);
             this.historyManager.addFrame();
+            
+            // コピーしたフレームの初期履歴を保存
+            const newFrameIndex = this.layerManager.activeFrameIndex + 1;
+            for (let l = 0; l < this.layerManager.layerCountPerFrame; l++) {
+                const imageData = this.layerManager.getLayerImageData(newFrameIndex, l);
+                if (imageData) {
+                    this.historyManager.pushHistory(newFrameIndex, l, imageData);
+                }
+            }
             
             // UIを再構築
             this.rebuildFrameThumbnails();
             
             // 新しいフレームに切り替え
-            this.switchFrame(this.layerManager.activeFrameIndex + 1);
+            this.switchFrame(newFrameIndex);
         }
         
         /**
@@ -763,9 +817,11 @@
                 
                 // アクティブフレームを調整
                 const newIndex = Math.min(currentIndex, this.layerManager.frameCount - 1);
-                this.loadCurrentLayerComposite();
+                this.layerManager.activeFrameIndex = newIndex;
+                this.loadCurrentFrameComposite();
                 this.uiBuilder.highlightFrameThumbnail(this.frameThumbnails, newIndex);
                 this.updateAllThumbnails();
+                this.updateLayerVisibilityUI();
             }
         }
         
@@ -811,8 +867,11 @@
          * フレームサムネイルを更新
          */
         updateFrameThumbnail(frameIndex) {
+            if (frameIndex < 0 || frameIndex >= this.layerManager.frameCount) return;
+            if (!this.frameThumbnails[frameIndex]) return;
+            
             const compositeData = this.layerManager.getCompositeImageData(frameIndex);
-            if (compositeData && this.frameThumbnails[frameIndex]) {
+            if (compositeData) {
                 this.uiBuilder.updateFrameThumbnail(
                     this.frameThumbnails[frameIndex],
                     compositeData
@@ -821,30 +880,20 @@
         }
         
         /**
-         * 現在のフレーム・レイヤーのサムネイルを更新
-         */
-        updateCurrentLayerThumbnails() {
-            // 現在のレイヤーを保存
-            this.saveCurrentLayer();
-            
-            // フレームサムネイルを更新（合成表示）
-            this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
-            
-            // レイヤーサムネイルを更新
-            this.updateLayerPanelThumbnails();
-        }
-        
-        /**
          * レイヤーパネルのサムネイルを更新
          */
         updateLayerPanelThumbnails() {
             const frame = this.layerManager.getActiveFrame();
+            if (!frame) return;
             
             for (let i = 0; i < frame.layers.length; i++) {
                 const layer = frame.layers[i];
-                const layerCanvas = this.layerPanel[i].canvas;
-                
-                this.uiBuilder.updateLayerThumbnail(layerCanvas, layer.imageData);
+                if (this.layerPanel[i] && this.layerPanel[i].canvas) {
+                    this.uiBuilder.updateLayerThumbnail(
+                        this.layerPanel[i].canvas,
+                        layer.imageData
+                    );
+                }
             }
         }
         
@@ -856,9 +905,6 @@
             if (this.isPreviewMode) {
                 this.stopPreview();
             }
-            
-            // 現在のレイヤーを保存
-            this.saveCurrentLayer();
             
             try {
                 const blob = await this.exportManager.exportAsApng(this.frameDelay);
@@ -878,9 +924,6 @@
             if (this.isPreviewMode) {
                 this.stopPreview();
             }
-            
-            // 現在のレイヤーを保存
-            this.saveCurrentLayer();
             
             try {
                 const blob = await this.exportManager.exportAsGif(this.frameDelay, onProgress);
@@ -927,5 +970,5 @@
         }
     };
     
-    console.log('✅ TegakiAnimeCore loaded');
+    console.log('✅ TegakiAnimeCore (改修版) loaded');
 })();
