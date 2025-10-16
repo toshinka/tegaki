@@ -1,7 +1,8 @@
-// ===== config.js - キーマッピング完全一元管理版 + 設定ポップアップ対応 =====
-// 🎯 改修内容: 設定ポップアップショートカット追加、すべてのショートカットをアクション中心の設計に統一
+// ===== config.js - キーマッピング完全一元管理版 =====
+// 🎯 改修内容: すべてのショートカットをアクション中心の設計に統一
 // 🎯 目的: AI改修性・保守性・拡張性の最大化
 // 🎯 カメラ反転とレイヤー反転の協調動作対応
+// 🎯 Settings Popup対応: Ctrl+, で設定を開く
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -104,6 +105,15 @@ window.TEGAKI_KEYMAP = {
             shift: false,
             alt: false,
             description: '消しゴムツール'
+        },
+        
+        // === 設定 ===
+        SETTINGS_OPEN: {
+            key: 'Comma',
+            ctrl: true,
+            shift: false,
+            alt: false,
+            description: '設定を開く'
         },
         
         // === レイヤー操作 ===
@@ -296,15 +306,6 @@ window.TEGAKI_KEYMAP = {
             shift: true,
             alt: false,
             description: 'CUTコピー&ペースト'
-        },
-        
-        // === UI操作（🆕 設定ポップアップ追加） ===
-        UI_SETTINGS_TOGGLE: {
-            key: 'Comma',
-            ctrl: true,
-            shift: false,
-            alt: false,
-            description: '設定パネルを開く'
         }
     },
     
@@ -388,9 +389,9 @@ window.TEGAKI_KEYMAP = {
             'KeyL': 'L',
             'KeyZ': 'Z',
             'KeyY': 'Y',
+            'Comma': ',',
             'Digit0': '0',
             'Plus': '+',
-            'Comma': ',',
             'ArrowUp': '↑',
             'ArrowDown': '↓',
             'ArrowLeft': '←',
@@ -415,6 +416,7 @@ window.TEGAKI_KEYMAP = {
         const categories = {
             'History操作': ['UNDO', 'REDO'],
             'ツール': ['TOOL_PEN', 'TOOL_ERASER'],
+            '設定': ['SETTINGS_OPEN'],
             'レイヤー基本': ['LAYER_CREATE', 'LAYER_CLEAR', 'LAYER_COPY', 'LAYER_PASTE'],
             'レイヤー階層': ['LAYER_HIERARCHY_UP', 'LAYER_HIERARCHY_DOWN'],
             'レイヤー移動モード': ['LAYER_MOVE_MODE_TOGGLE'],
@@ -422,8 +424,7 @@ window.TEGAKI_KEYMAP = {
             'レイヤー変形': ['LAYER_SCALE_UP', 'LAYER_SCALE_DOWN', 'LAYER_ROTATE_LEFT', 'LAYER_ROTATE_RIGHT'],
             'カメラ反転': ['CAMERA_FLIP_HORIZONTAL', 'CAMERA_FLIP_VERTICAL'],
             'レイヤー反転': ['LAYER_FLIP_HORIZONTAL', 'LAYER_FLIP_VERTICAL'],
-            'GIF/アニメーション': ['GIF_PREV_FRAME', 'GIF_NEXT_FRAME', 'GIF_PLAY_PAUSE', 'GIF_TOGGLE_TIMELINE', 'GIF_CREATE_CUT', 'GIF_COPY_CUT'],
-            'UI操作': ['UI_SETTINGS_TOGGLE']
+            'GIF/アニメーション': ['GIF_PREV_FRAME', 'GIF_NEXT_FRAME', 'GIF_PLAY_PAUSE', 'GIF_TOGGLE_TIMELINE', 'GIF_CREATE_CUT', 'GIF_COPY_CUT']
         };
         
         return Object.entries(categories).map(([category, actions]) => ({
@@ -545,10 +546,10 @@ window.TEGAKI_UTILS = {
 // 🎯 初期化ログ
 // =============================================================================
 
-console.log('✅ config.js (設定ポップアップ対応版) loaded');
+console.log('✅ config.js (キーマッピング完全一元管理版 + Settings Popup対応) loaded');
 console.log('   🎯 アクション中心設計: すべてのショートカットをTEGAKI_KEYMAPで管理');
 console.log('   🎯 コンテキスト対応: vMode, Ctrl, Shift, Alt を柔軟に処理');
-console.log('   🎯 設定ポップアップ: Ctrl+, で開く (UI_SETTINGS_TOGGLE)');
+console.log('   🎯 Settings Popup: Ctrl+, で設定を開く');
 console.log('   🎯 カメラ反転 vs レイヤー反転: Vモードで自動切り替え');
 console.log('   🎯 H: キャンバス水平反転 / V+H: レイヤー水平反転');
 console.log('   🎯 Shift+H: キャンバス垂直反転 / V+Shift+H: レイヤー垂直反転');

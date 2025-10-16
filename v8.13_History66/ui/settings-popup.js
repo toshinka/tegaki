@@ -559,3 +559,8 @@ window.TegakiUI.SettingsPopup = class {
         this.initialized = false;
     }
 };
+
+// グローバルエクスポート（他のモジュールから参照可能に）
+window.SettingsPopup = window.TegakiUI.SettingsPopup;
+
+console.log('✅ settings-popup.js (修正版・完全機能継承) loaded');
