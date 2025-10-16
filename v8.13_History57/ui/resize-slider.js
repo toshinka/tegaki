@@ -1,4 +1,4 @@
-// Tegaki Tool - Resize Slider Module (Direction Control Enhanced)
+// Tegaki Tool - Resize Slider Module (History対応・入力改善版)
 // DO NOT use ESM, only global namespace
 
 window.ResizeSlider = (function() {
@@ -11,10 +11,9 @@ window.ResizeSlider = (function() {
     let currentHeight = 0;
     let isDraggingWidth = false;
     let isDraggingHeight = false;
-    let horizontalAlign = 'center'; // left, center, right
-    let verticalAlign = 'center';   // top, center, bottom
+    let horizontalAlign = 'center';
+    let verticalAlign = 'center';
 
-    // スライダー要素の取得
     function getElements() {
         return {
             widthSlider: document.getElementById('canvas-width-slider'),
@@ -43,7 +42,6 @@ window.ResizeSlider = (function() {
         };
     }
 
-    // 幅スライダー更新
     function updateWidthSlider(value, elements) {
         currentWidth = Math.max(MIN_SIZE, Math.min(MAX_SIZE, value));
         const percent = ((currentWidth - MIN_SIZE) / (MAX_SIZE - MIN_SIZE)) * 100;
@@ -55,7 +53,6 @@ window.ResizeSlider = (function() {
         }
     }
 
-    // 高さスライダー更新
     function updateHeightSlider(value, elements) {
         currentHeight = Math.max(MIN_SIZE, Math.min(MAX_SIZE, value));
         const percent = ((currentHeight - MIN_SIZE) / (MAX_SIZE - MIN_SIZE)) * 100;
@@ -67,9 +64,7 @@ window.ResizeSlider = (function() {
         }
     }
 
-    // アライメントボタンの選択状態更新
     function updateAlignmentButtons(elements) {
-        // 水平方向
         [elements.horizontalAlignLeft, elements.horizontalAlignCenter, elements.horizontalAlignRight].forEach(btn => {
             if (btn) btn.classList.remove('active');
         });
@@ -81,7 +76,6 @@ window.ResizeSlider = (function() {
             elements.horizontalAlignRight.classList.add('active');
         }
 
-        // 垂直方向
         [elements.verticalAlignTop, elements.verticalAlignCenter, elements.verticalAlignBottom].forEach(btn => {
             if (btn) btn.classList.remove('active');
         });
@@ -94,7 +88,6 @@ window.ResizeSlider = (function() {
         }
     }
 
-    // ドラッグハンドラー
     function setupDragHandlers(elements) {
         const handleMouseMove = (e) => {
             if (isDraggingWidth) {
@@ -130,7 +123,6 @@ window.ResizeSlider = (function() {
         document.addEventListener('mouseup', handleMouseUp);
     }
 
-    // クリックハンドラー
     function setupClickHandlers(elements) {
         elements.widthSlider.addEventListener('click', (e) => {
             if (e.target === elements.widthHandle) return;
@@ -149,7 +141,6 @@ window.ResizeSlider = (function() {
         });
     }
 
-    // ステップボタンハンドラー
     function setupStepButtons(elements) {
         elements.widthDecrease.addEventListener('click', () => {
             updateWidthSlider(currentWidth - 1, elements);
@@ -168,40 +159,97 @@ window.ResizeSlider = (function() {
         });
     }
 
-    // 数値入力ハンドラー
     function setupInputHandlers(elements) {
         if (elements.widthInput) {
+            // フォーカス時：全選択して入力しやすく
+            elements.widthInput.addEventListener('focus', (e) => {
+                e.target.select();
+                e.target.style.borderColor = 'var(--futaba-maroon)';
+            });
+            
+            // 入力中：リアルタイムでスライダー更新（範囲内のみ）
             elements.widthInput.addEventListener('input', (e) => {
                 const value = parseInt(e.target.value, 10);
-                if (!isNaN(value)) {
+                
+                // 範囲外の視覚フィードバック
+                if (isNaN(value) || value < MIN_SIZE || value > MAX_SIZE) {
+                    e.target.style.borderColor = '#d32f2f';
+                    e.target.style.color = '#d32f2f';
+                } else {
+                    e.target.style.borderColor = 'var(--futaba-maroon)';
+                    e.target.style.color = 'var(--futaba-maroon)';
                     updateWidthSlider(value, elements);
                 }
             });
             
-            elements.widthInput.addEventListener('blur', (e) => {
-                if (e.target.value === '' || isNaN(parseInt(e.target.value, 10))) {
-                    elements.widthInput.value = currentWidth;
+            // Enter確定
+            elements.widthInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.target.blur();
                 }
+            });
+            
+            // 確定時：範囲補正して反映
+            elements.widthInput.addEventListener('blur', (e) => {
+                let value = parseInt(e.target.value, 10);
+                
+                if (isNaN(value)) {
+                    value = currentWidth;
+                } else if (value < MIN_SIZE) {
+                    value = MIN_SIZE;
+                } else if (value > MAX_SIZE) {
+                    value = MAX_SIZE;
+                }
+                
+                updateWidthSlider(value, elements);
+                e.target.style.borderColor = '';
+                e.target.style.color = '';
             });
         }
 
         if (elements.heightInput) {
+            elements.heightInput.addEventListener('focus', (e) => {
+                e.target.select();
+                e.target.style.borderColor = 'var(--futaba-maroon)';
+            });
+            
             elements.heightInput.addEventListener('input', (e) => {
                 const value = parseInt(e.target.value, 10);
-                if (!isNaN(value)) {
+                
+                if (isNaN(value) || value < MIN_SIZE || value > MAX_SIZE) {
+                    e.target.style.borderColor = '#d32f2f';
+                    e.target.style.color = '#d32f2f';
+                } else {
+                    e.target.style.borderColor = 'var(--futaba-maroon)';
+                    e.target.style.color = 'var(--futaba-maroon)';
                     updateHeightSlider(value, elements);
                 }
             });
             
-            elements.heightInput.addEventListener('blur', (e) => {
-                if (e.target.value === '' || isNaN(parseInt(e.target.value, 10))) {
-                    elements.heightInput.value = currentHeight;
+            elements.heightInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                    e.target.blur();
                 }
+            });
+            
+            elements.heightInput.addEventListener('blur', (e) => {
+                let value = parseInt(e.target.value, 10);
+                
+                if (isNaN(value)) {
+                    value = currentHeight;
+                } else if (value < MIN_SIZE) {
+                    value = MIN_SIZE;
+                } else if (value > MAX_SIZE) {
+                    value = MAX_SIZE;
+                }
+                
+                updateHeightSlider(value, elements);
+                e.target.style.borderColor = '';
+                e.target.style.color = '';
             });
         }
     }
 
-    // アライメントボタンハンドラー
     function setupAlignmentButtons(elements) {
         if (elements.horizontalAlignLeft) {
             elements.horizontalAlignLeft.addEventListener('click', () => {
@@ -242,19 +290,136 @@ window.ResizeSlider = (function() {
         }
     }
 
-    // リサイズ実行ハンドラー
+    function serializePathForSnapshot(path) {
+        return {
+            id: path.id,
+            points: path.points ? path.points.map(p => ({ x: p.x, y: p.y, pressure: p.pressure })) : [],
+            color: path.color,
+            size: path.size,
+            opacity: path.opacity,
+            tool: path.tool,
+            isComplete: path.isComplete
+        };
+    }
+
     function setupApplyButton(elements) {
         elements.applyBtn.addEventListener('click', () => {
-            if (window.coreEngine && currentWidth > 0 && currentHeight > 0) {
-                window.coreEngine.resizeCanvas(currentWidth, currentHeight, {
-                    horizontalAlign,
-                    verticalAlign
-                });
+            if (!window.coreEngine || !window.History) return;
+            if (currentWidth <= 0 || currentHeight <= 0) return;
+            
+            const newWidth = currentWidth;
+            const newHeight = currentHeight;
+            
+            const alignOptions = {
+                horizontalAlign: horizontalAlign === 'left' ? 'right' : 
+                                 horizontalAlign === 'right' ? 'left' : 'center',
+                verticalAlign: verticalAlign === 'top' ? 'bottom' : 
+                               verticalAlign === 'bottom' ? 'top' : 'center'
+            };
+            
+            const oldWidth = window.TEGAKI_CONFIG.canvas.width;
+            const oldHeight = window.TEGAKI_CONFIG.canvas.height;
+            const layerManager = window.coreEngine.getLayerManager();
+            const layers = layerManager.getLayers();
+            
+            const layerSnapshots = layers.map(layer => ({
+                id: layer.layerData.id,
+                paths: layer.layerData.paths.map(serializePathForSnapshot),
+                isBackground: layer.layerData.isBackground
+            }));
+            
+            const command = {
+                name: 'resize-canvas',
+                do: () => {
+                    window.coreEngine.resizeCanvas(newWidth, newHeight, alignOptions);
+                },
+                undo: () => {
+                    window.TEGAKI_CONFIG.canvas.width = oldWidth;
+                    window.TEGAKI_CONFIG.canvas.height = oldHeight;
+                    window.coreEngine.getCameraSystem().resizeCanvas(oldWidth, oldHeight);
+                    
+                    const currentLayers = layerManager.getLayers();
+                    
+                    layerSnapshots.forEach(snapshot => {
+                        const layer = currentLayers.find(l => l.layerData.id === snapshot.id);
+                        if (!layer) return;
+                        
+                        layer.layerData.paths.forEach(path => {
+                            if (path.graphics) {
+                                layer.removeChild(path.graphics);
+                                path.graphics.destroy();
+                            }
+                        });
+                        
+                        if (snapshot.isBackground && layer.layerData.backgroundGraphics) {
+                            layer.layerData.backgroundGraphics.clear();
+                            layer.layerData.backgroundGraphics.rect(0, 0, oldWidth, oldHeight);
+                            layer.layerData.backgroundGraphics.fill(window.TEGAKI_CONFIG.background.color);
+                        }
+                        
+                        layer.layerData.paths = snapshot.paths.map(pathData => {
+                            const restoredPath = {
+                                id: pathData.id,
+                                points: pathData.points.map(p => ({ x: p.x, y: p.y, pressure: p.pressure })),
+                                color: pathData.color,
+                                size: pathData.size,
+                                opacity: pathData.opacity,
+                                tool: pathData.tool,
+                                isComplete: pathData.isComplete,
+                                graphics: null
+                            };
+                            
+                            if (layerManager.rebuildPathGraphics) {
+                                layerManager.rebuildPathGraphics(restoredPath);
+                                if (restoredPath.graphics) {
+                                    layer.addChild(restoredPath.graphics);
+                                }
+                            }
+                            
+                            return restoredPath;
+                        });
+                    });
+                    
+                    for (let i = 0; i < currentLayers.length; i++) {
+                        layerManager.requestThumbnailUpdate(i);
+                    }
+                    
+                    const animSys = window.coreEngine.getAnimationSystem();
+                    if (animSys) {
+                        setTimeout(() => {
+                            const animData = animSys.getAnimationData();
+                            if (animData && animData.cuts) {
+                                for (let i = 0; i < animData.cuts.length; i++) {
+                                    if (animSys.generateCutThumbnailOptimized) {
+                                        animSys.generateCutThumbnailOptimized(i);
+                                    }
+                                }
+                            }
+                        }, 500);
+                    }
+                    
+                    const canvasInfoElement = document.getElementById('canvas-info');
+                    if (canvasInfoElement) {
+                        canvasInfoElement.textContent = `${oldWidth}×${oldHeight}px`;
+                    }
+                },
+                meta: { 
+                    type: 'resize-canvas', 
+                    from: { width: oldWidth, height: oldHeight },
+                    to: { width: newWidth, height: newHeight },
+                    align: alignOptions
+                }
+            };
+            
+            window.History.push(command);
+            
+            const resizeSettings = document.getElementById('resize-settings');
+            if (resizeSettings) {
+                resizeSettings.classList.remove('show');
             }
         });
     }
 
-    // 初期化
     function init() {
         const elements = getElements();
         
@@ -279,9 +444,10 @@ window.ResizeSlider = (function() {
         return true;
     }
 
-    // 公開API
     return {
         init,
         getAlignment: () => ({ horizontalAlign, verticalAlign })
     };
 })();
+
+console.log('✅ resize-slider.js (History対応・入力改善版) loaded');

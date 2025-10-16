@@ -16,6 +16,38 @@
 }
 
 body { 
+
+<!-- index.htmlの</body>直前に追加 -->
+<style>
+/* リサイズポップアップの文字色をfutaba-maroonに統一 */
+#resize-settings .resize-slider-label,
+#resize-settings .resize-value-input,
+#resize-settings .resize-step-btn,
+#resize-settings .align-btn {
+    color: var(--futaba-maroon) !important;
+}
+
+#resize-settings .slider-display {
+    color: var(--futaba-maroon) !important;
+}
+
+/* リサイズポップアップ全体の文字色 */
+#resize-settings {
+    color: var(--futaba-maroon);
+}
+
+/* リサイズ入力フィールドのプレースホルダー */
+#resize-settings .resize-value-input::placeholder {
+    color: rgba(128, 0, 0, 0.5);
+}
+
+/* アライメントボタンのアクティブ状態を維持 */
+#resize-settings .align-btn.active {
+    color: white !important;
+    background: var(--futaba-maroon);
+}
+</style>
+
     font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Noto Sans JP', sans-serif; 
     background: var(--futaba-background); 
     height: 100vh; 
