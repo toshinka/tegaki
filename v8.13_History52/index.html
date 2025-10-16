@@ -51,6 +51,7 @@
 
     <!-- UI -->
     <script src="ui/dom-builder.js"></script>
+    <script src="ui/keyboard-handler.js"></script>
     <script src="ui/timeline-thumbnail-utils.js"></script>
     <script src="ui/timeline-ui.js"></script>
     <script src="ui/slider-utils.js"></script>
@@ -64,113 +65,6 @@
     <script src="core-engine.js"></script>
 
     <script>
-(function() {
-    'use strict';
-    
-    function setupUnifiedKeyboardShortcuts() {
-        document.addEventListener('keydown', (e) => {
-            const eventBus = window.TegakiEventBus;
-            const keymap = window.TEGAKI_KEYMAP;
-            
-            if (!eventBus || !keymap) return;
-            
-            const activeElement = document.activeElement;
-            if (activeElement && (
-                activeElement.tagName === 'INPUT' ||
-                activeElement.tagName === 'TEXTAREA' ||
-                activeElement.isContentEditable
-            )) return;
-            
-            if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
-            if (e.key.startsWith('F') && e.key.length <= 3) {
-                e.preventDefault();
-                return;
-            }
-            
-            const action = keymap.getAction(e, { vMode: false });
-            
-            if (!action) return;
-            
-            switch(action) {
-                case 'UNDO':
-                    if (window.History && window.History.canUndo()) {
-                        window.History.undo();
-                    }
-                    e.preventDefault();
-                    break;
-                    
-                case 'REDO':
-                    if (window.History && window.History.canRedo()) {
-                        window.History.redo();
-                    }
-                    e.preventDefault();
-                    break;
-                
-                case 'LAYER_CLEAR':
-                    eventBus.emit('layer:clear-active');
-                    e.preventDefault();
-                    break;
-                
-                case 'LAYER_CREATE':
-                    if (window.drawingApp?.layerManager) {
-                        const layerSystem = window.drawingApp.layerManager;
-                        const newLayerIndex = layerSystem.getLayers().length + 1;
-                        layerSystem.createLayer(`L${newLayerIndex}`, false);
-                        eventBus.emit('layer:created-by-shortcut', { index: newLayerIndex });
-                    }
-                    e.preventDefault();
-                    break;
-                
-                case 'GIF_CREATE_CUT':
-                    const animationSystem = window.animationSystem;
-                    if (animationSystem) {
-                        animationSystem.createNewEmptyCut();
-                        eventBus.emit('cut:created-by-shortcut');
-                    }
-                    e.preventDefault();
-                    break;
-                
-                case 'GIF_TOGGLE_TIMELINE':
-                    eventBus.emit('ui:toggle-timeline');
-                    e.preventDefault();
-                    break;
-                
-                case 'GIF_PLAY_PAUSE':
-                    const timelineUI = window.timelineUI;
-                    if (timelineUI && timelineUI.isVisible) {
-                        timelineUI.togglePlayStop();
-                    }
-                    e.preventDefault();
-                    break;
-                
-                case 'GIF_COPY_CUT':
-                    eventBus.emit('cut:copy-current');
-                    setTimeout(() => {
-                        eventBus.emit('cut:paste-right-adjacent');
-                    }, 10);
-                    e.preventDefault();
-                    break;
-                
-                case 'TOOL_PEN':
-                    eventBus.emit('tool:select', { tool: 'pen' });
-                    e.preventDefault();
-                    break;
-                
-                case 'TOOL_ERASER':
-                    eventBus.emit('tool:select', { tool: 'eraser' });
-                    e.preventDefault();
-                    break;
-            }
-        });
-    }
-    
-    if (document.readyState === 'loading') {
-        document.addEventListener('DOMContentLoaded', setupUnifiedKeyboardShortcuts);
-    } else {
-        setupUnifiedKeyboardShortcuts();
-    }
-})();
-
 (function() {
     'use strict';
     
@@ -453,6 +347,10 @@ window.addEventListener('DOMContentLoaded', async () => {
             throw new Error('DOMBuilder not loaded');
         }
         
+        if (!window.KeyboardHandler) {
+            throw new Error('KeyboardHandler not loaded');
+        }
+        
         const appContainer = document.getElementById('app');
         if (!appContainer) {
             throw new Error('#app container not found');
@@ -463,6 +361,8 @@ window.addEventListener('DOMContentLoaded', async () => {
         
         const statusPanel = window.DOMBuilder.buildStatusPanel();
         document.body.appendChild(statusPanel);
+        
+        window.KeyboardHandler.init();
         
         checkPhase1Dependencies();
         
