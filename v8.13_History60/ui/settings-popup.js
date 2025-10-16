@@ -1,9 +1,6 @@
-// ===== ui/settings-popup.js - スライダーボタン発火修正版 =====
+// ===== ui/settings-popup.js - 完全独立版 =====
 // 責務: UI表示・ユーザー入力の受付・EventBusへの通知のみ
-// 修正点:
-// - SliderUtils の即座チェックと初期化
-// - イベントリスナーの確実な登録
-// - 初期化タイミングの最適化
+// SliderUtils に依存せず、独自のスライダー実装を使用
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -31,46 +28,18 @@ window.TegakiUI.SettingsPopup = class {
             this.popup.style.maxHeight = 'calc(100vh - 120px)';
             this.popup.style.overflowY = 'auto';
         }
-        
-        // 📌 修正: SliderUtils が即座に利用可能かチェック
-        if (window.TegakiUI?.SliderUtils) {
-            // 即座に初期化
-            this.initialize();
-        } else {
-            // 利用可能になるまで待機
-            this.waitForSliderUtils();
-        }
     }
     
     /**
-     * 初期化処理（SliderUtils が利用可能な状態で実行）
+     * 初期化処理（show()時に実行）
      */
     initialize() {
         if (this.initialized) return;
         
-        this.setupEventListeners();
+        this.setupSliders();
+        this.setupButtons();
         this.loadSettings();
         this.initialized = true;
-    }
-    
-    /**
-     * SliderUtils の読み込みを待つ
-     */
-    waitForSliderUtils() {
-        let attempts = 0;
-        const maxAttempts = 100; // 5秒
-        
-        const checkInterval = setInterval(() => {
-            attempts++;
-            
-            if (window.TegakiUI?.SliderUtils) {
-                clearInterval(checkInterval);
-                this.initialize();
-            } else if (attempts >= maxAttempts) {
-                clearInterval(checkInterval);
-                console.warn('[SettingsPopup] SliderUtils not found after 5 seconds');
-            }
-        }, 50);
     }
     
     /**
@@ -166,78 +135,132 @@ window.TegakiUI.SettingsPopup = class {
     }
     
     /**
-     * イベントリスナーを設定
+     * スライダーを設定（独自実装）
      */
-    setupEventListeners() {
-        if (!window.TegakiUI?.SliderUtils) {
-            console.error('[SettingsPopup] SliderUtils not available');
-            return;
-        }
-        
+    setupSliders() {
         // ========== 筆圧補正スライダー ==========
-        const pressureCorrectionEl = document.getElementById('pressure-correction-slider');
-        if (pressureCorrectionEl) {
-            // 既存のスライダーインスタンスをクリア
-            if (pressureCorrectionEl._sliderListenerSetup) {
-                pressureCorrectionEl._sliderListenerSetup = false;
-            }
-            
-            this.sliders.pressureCorrection = window.TegakiUI.SliderUtils.createSlider({
-                container: pressureCorrectionEl,
-                min: 0.1,
-                max: 3.0,
-                initial: this.settingsManager?.get('pressureCorrection') || 1.0,
-                format: (value) => value.toFixed(2),
-                onChange: (value) => {
-                    // リアルタイムプレビュー用（EventBusで通知）
-                    if (this.eventBus) {
-                        this.eventBus.emit('settings:pressure-correction', { value });
-                    }
-                },
-                onCommit: (value) => {
-                    // 確定時にSettingsManagerに保存
-                    if (this.settingsManager) {
-                        this.settingsManager.set('pressureCorrection', value);
-                    }
+        this.sliders.pressureCorrection = this.createSlider({
+            container: document.getElementById('pressure-correction-slider'),
+            min: 0.1,
+            max: 3.0,
+            initial: this.settingsManager?.get('pressureCorrection') || 1.0,
+            format: (value) => value.toFixed(2),
+            onChange: (value) => {
+                if (this.eventBus) {
+                    this.eventBus.emit('settings:pressure-correction', { value });
                 }
-            });
-        }
+            },
+            onCommit: (value) => {
+                if (this.settingsManager) {
+                    this.settingsManager.set('pressureCorrection', value);
+                }
+            }
+        });
         
         // ========== 線補正スライダー ==========
-        const smoothingEl = document.getElementById('smoothing-slider');
-        if (smoothingEl) {
-            // 既存のスライダーインスタンスをクリア
-            if (smoothingEl._sliderListenerSetup) {
-                smoothingEl._sliderListenerSetup = false;
-            }
-            
-            this.sliders.smoothing = window.TegakiUI.SliderUtils.createSlider({
-                container: smoothingEl,
-                min: 0.0,
-                max: 1.0,
-                initial: this.settingsManager?.get('smoothing') || 0.5,
-                format: (value) => value.toFixed(2),
-                onChange: (value) => {
-                    if (this.eventBus) {
-                        this.eventBus.emit('settings:smoothing', { value });
-                    }
-                },
-                onCommit: (value) => {
-                    if (this.settingsManager) {
-                        this.settingsManager.set('smoothing', value);
-                    }
+        this.sliders.smoothing = this.createSlider({
+            container: document.getElementById('smoothing-slider'),
+            min: 0.0,
+            max: 1.0,
+            initial: this.settingsManager?.get('smoothing') || 0.5,
+            format: (value) => value.toFixed(2),
+            onChange: (value) => {
+                if (this.eventBus) {
+                    this.eventBus.emit('settings:smoothing', { value });
                 }
-            });
-        }
+            },
+            onCommit: (value) => {
+                if (this.settingsManager) {
+                    this.settingsManager.set('smoothing', value);
+                }
+            }
+        });
+    }
+    
+    /**
+     * 独自スライダー実装
+     */
+    createSlider(options) {
+        const { container, min, max, initial, format, onChange, onCommit } = options;
         
+        if (!container) return null;
+        
+        const track = container.querySelector('.slider-track');
+        const handle = container.querySelector('.slider-handle');
+        const valueDisplay = container.parentNode?.querySelector('.slider-value');
+        
+        if (!track || !handle) return null;
+        
+        let currentValue = initial;
+        let dragging = false;
+        
+        const updateUI = (newValue) => {
+            currentValue = Math.max(min, Math.min(max, newValue));
+            const percentage = ((currentValue - min) / (max - min)) * 100;
+            
+            track.style.width = percentage + '%';
+            handle.style.left = percentage + '%';
+            
+            if (valueDisplay) {
+                valueDisplay.textContent = format ? format(currentValue) : currentValue.toFixed(1);
+            }
+        };
+        
+        const getValue = (clientX) => {
+            const rect = container.getBoundingClientRect();
+            const percentage = Math.max(0, Math.min(1, (clientX - rect.left) / rect.width));
+            return min + (percentage * (max - min));
+        };
+        
+        const handleMouseDown = (e) => {
+            dragging = true;
+            const newValue = getValue(e.clientX);
+            updateUI(newValue);
+            if (onChange) onChange(currentValue);
+            e.preventDefault();
+        };
+        
+        const handleMouseMove = (e) => {
+            if (!dragging) return;
+            const newValue = getValue(e.clientX);
+            updateUI(newValue);
+            if (onChange) onChange(currentValue);
+        };
+        
+        const handleMouseUp = () => {
+            if (!dragging) return;
+            dragging = false;
+            if (onCommit) onCommit(currentValue);
+        };
+        
+        container.addEventListener('mousedown', handleMouseDown);
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
+        
+        updateUI(initial);
+        
+        return {
+            getValue: () => currentValue,
+            setValue: (value) => {
+                updateUI(value);
+                if (onChange) onChange(currentValue);
+            },
+            destroy: () => {
+                container.removeEventListener('mousedown', handleMouseDown);
+                document.removeEventListener('mousemove', handleMouseMove);
+                document.removeEventListener('mouseup', handleMouseUp);
+            }
+        };
+    }
+    
+    /**
+     * ボタンを設定
+     */
+    setupButtons() {
         // ========== ステータスパネル切り替えボタン ==========
         const statusToggleBtn = document.getElementById('status-panel-toggle');
         if (statusToggleBtn) {
-            // 既存のイベントリスナーを削除（重複防止）
-            const newBtn = statusToggleBtn.cloneNode(true);
-            statusToggleBtn.parentNode.replaceChild(newBtn, statusToggleBtn);
-            
-            newBtn.addEventListener('click', (e) => {
+            statusToggleBtn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
                 this.toggleStatusPanel();
@@ -247,13 +270,18 @@ window.TegakiUI.SettingsPopup = class {
         // ========== 筆圧カーブボタン ==========
         const curveBtns = document.querySelectorAll('.pressure-curve-btn');
         curveBtns.forEach(btn => {
-            // 既存のイベントリスナーを削除（重複防止）
-            const newBtn = btn.cloneNode(true);
-            btn.parentNode.replaceChild(newBtn, btn);
-            
-            newBtn.addEventListener('click', (e) => {
+            btn.addEventListener('click', (e) => {
                 e.preventDefault();
                 e.stopPropagation();
+                
+                // data-curve属性を取得（clickイベントのtargetから確実に取得）
+                const clickedBtn = e.currentTarget;
+                const curve = clickedBtn.getAttribute('data-curve');
+                
+                if (!curve) {
+                    console.error('[SettingsPopup] No curve data on button');
+                    return;
+                }
                 
                 // すべてのボタンをデアクティベート
                 document.querySelectorAll('.pressure-curve-btn').forEach(b => {
@@ -264,34 +292,32 @@ window.TegakiUI.SettingsPopup = class {
                 });
                 
                 // クリックされたボタンをアクティベート
-                newBtn.classList.add('active');
-                newBtn.style.background = 'var(--futaba-maroon)';
-                newBtn.style.borderColor = 'var(--futaba-maroon)';
-                newBtn.style.color = 'var(--text-inverse)';
+                clickedBtn.classList.add('active');
+                clickedBtn.style.background = 'var(--futaba-maroon)';
+                clickedBtn.style.borderColor = 'var(--futaba-maroon)';
+                clickedBtn.style.color = 'var(--text-inverse)';
                 
-                const curve = newBtn.getAttribute('data-curve');
+                // SettingsManagerに保存（先に保存）
+                if (this.settingsManager) {
+                    this.settingsManager.set('pressureCurve', curve);
+                }
                 
                 // EventBusで通知
                 if (this.eventBus) {
                     this.eventBus.emit('settings:pressure-curve', { curve });
                 }
-                
-                // SettingsManagerに保存
-                if (this.settingsManager) {
-                    this.settingsManager.set('pressureCurve', curve);
-                }
             });
             
             // ホバー効果
-            newBtn.addEventListener('mouseenter', () => {
-                if (!newBtn.classList.contains('active')) {
-                    newBtn.style.borderColor = 'var(--futaba-maroon)';
+            btn.addEventListener('mouseenter', () => {
+                if (!btn.classList.contains('active')) {
+                    btn.style.borderColor = 'var(--futaba-maroon)';
                 }
             });
             
-            newBtn.addEventListener('mouseleave', () => {
-                if (!newBtn.classList.contains('active')) {
-                    newBtn.style.borderColor = 'var(--futaba-light-medium)';
+            btn.addEventListener('mouseleave', () => {
+                if (!btn.classList.contains('active')) {
+                    btn.style.borderColor = 'var(--futaba-light-medium)';
                 }
             });
         });
@@ -425,6 +451,11 @@ window.TegakiUI.SettingsPopup = class {
      */
     show() {
         if (!this.popup) return;
+        
+        // 📌 初回表示時に初期化
+        if (!this.initialized) {
+            this.initialize();
+        }
         
         this.popup.classList.add('show');
         this.isVisible = true;

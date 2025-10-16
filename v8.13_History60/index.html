@@ -5,33 +5,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>🎨 PixiJS v8.13 お絵かきツール</title>
     <link rel="stylesheet" href="styles/main.css">
-    <style>
-        /* リサイズポップアップの文字色をfutaba-maroonに統一 */
-        #resize-settings .resize-slider-label,
-        #resize-settings .resize-value-input,
-        #resize-settings .resize-step-btn,
-        #resize-settings .align-btn {
-            color: var(--futaba-maroon) !important;
-        }
-
-        #resize-settings .slider-display,
-        #resize-settings .slider-value {
-            color: var(--futaba-maroon) !important;
-        }
-
-        #resize-settings {
-            color: var(--futaba-maroon);
-        }
-
-        #resize-settings .resize-value-input::placeholder {
-            color: rgba(128, 0, 0, 0.5);
-        }
-
-        #resize-settings .align-btn.active {
-            color: white !important;
-            background: var(--futaba-maroon);
-        }
-    </style>
 </head>
 <body>
     <div id="app"></div>
@@ -78,15 +51,15 @@
 
     <!-- UI -->
     <script src="ui/dom-builder.js"></script>
+    <script src="ui/slider-utils.js"></script>
     <script src="ui/keyboard-handler.js"></script>
     <script src="ui/resize-slider.js"></script>
     <script src="ui/timeline-thumbnail-utils.js"></script>
     <script src="ui/timeline-ui.js"></script>
-    <script src="ui/slider-utils.js"></script>
     <script src="ui/album-popup.js"></script>
+    <script src="ui/settings-popup.js"></script>
     <script src="ui/ui-panels.js"></script>
     <script src="ui/export-popup.js"></script>
-    <script src="ui/settings-popup.js"></script>
 
     <!-- Core -->
     <script src="core-initializer.js"></script>
