@@ -1,10 +1,11 @@
 // Tegaki Tool - Keyboard Handler Module
 // DO NOT use ESM, only global namespace
+// 🆕 設定ポップアップショートカット対応版
 
 window.KeyboardHandler = (function() {
     'use strict';
 
-    // ショートカット定義マップ
+    // ショートカット定義マップ（表示用）
     const shortcuts = {
         'UNDO': { keys: ['z'], ctrl: true, description: 'Undo (元に戻す)' },
         'REDO': { keys: ['y', 'Z'], ctrl: true, description: 'Redo (やり直し)' },
@@ -15,7 +16,8 @@ window.KeyboardHandler = (function() {
         'GIF_PLAY_PAUSE': { keys: [' '], description: 'Play/Pause Animation (再生/停止)' },
         'GIF_COPY_CUT': { keys: ['d'], ctrl: true, description: 'Duplicate Cut (カット複製)' },
         'TOOL_PEN': { keys: ['p', 'b'], description: 'Pen Tool (ペンツール)' },
-        'TOOL_ERASER': { keys: ['e'], description: 'Eraser Tool (消しゴム)' }
+        'TOOL_ERASER': { keys: ['e'], description: 'Eraser Tool (消しゴム)' },
+        'UI_SETTINGS_TOGGLE': { keys: [','], ctrl: true, description: 'Settings Panel (設定パネル)' }
     };
 
     let isInitialized = false;
@@ -127,6 +129,12 @@ window.KeyboardHandler = (function() {
             
             case 'TOOL_ERASER':
                 eventBus.emit('tool:select', { tool: 'eraser' });
+                event.preventDefault();
+                break;
+            
+            // 🆕 設定ポップアップを開く
+            case 'UI_SETTINGS_TOGGLE':
+                eventBus.emit('ui:toggle-settings');
                 event.preventDefault();
                 break;
         }

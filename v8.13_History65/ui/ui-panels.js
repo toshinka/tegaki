@@ -1,5 +1,6 @@
-// ===== ui-panels.js - Settings Popup対応版（完全改修） =====
-// Phase 12対応版 + Settings Popup統合
+// ===== ui-panels.js - Settings Popup完全対応版 =====
+// 🎯 責務: UIイベント処理、ポップアップ管理、統一されたインターフェース
+// 🎯 修正内容: EventBus経由での設定ポップアップ開閉に対応
 
 window.TegakiUI = {
     
@@ -16,6 +17,7 @@ window.TegakiUI = {
             this.validateCoreRuntime();
             
             this.setupEventDelegation();
+            this.setupEventBusListeners();
             this.setupSliders();
             this.setupCanvasResize();
             this.setupFlipButtons();
@@ -65,6 +67,24 @@ window.TegakiUI = {
             } catch (error) {
                 return false;
             }
+        }
+        
+        // 🆕 EventBusリスナー設定
+        setupEventBusListeners() {
+            const eventBus = window.TegakiEventBus;
+            if (!eventBus) return;
+            
+            // 設定ポップアップの表示切替（ショートカット対応）
+            eventBus.on('ui:toggle-settings', () => {
+                if (this.settingsPopup) {
+                    if (this.settingsPopup.isVisible) {
+                        this.settingsPopup.hide();
+                    } else {
+                        this.closeAllPopups();
+                        this.settingsPopup.show();
+                    }
+                }
+            });
         }
         
         setupEventDelegation() {
@@ -549,4 +569,4 @@ window.TegakiUI = {
     }
 };
 
-console.log('✅ ui-panels.js Settings Popup対応版 loaded');
+console.log('✅ ui-panels.js Settings Popup完全対応版 loaded');
