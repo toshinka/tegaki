@@ -141,7 +141,7 @@
     };
     
     console.log('✅ system/event-bus.js Phase 2: 優先度機能追加版 loaded');
-    
+    window.EventBus = EventBus;
 })();
 
 // ===== 使用例（コメント） =====

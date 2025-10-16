@@ -1,11 +1,10 @@
 // Tegaki Tool - Keyboard Handler Module
 // DO NOT use ESM, only global namespace
-// 🆕 設定ポップアップショートカット対応版
 
 window.KeyboardHandler = (function() {
     'use strict';
 
-    // ショートカット定義マップ（表示用）
+    // ショートカット定義マップ
     const shortcuts = {
         'UNDO': { keys: ['z'], ctrl: true, description: 'Undo (元に戻す)' },
         'REDO': { keys: ['y', 'Z'], ctrl: true, description: 'Redo (やり直し)' },
@@ -17,7 +16,7 @@ window.KeyboardHandler = (function() {
         'GIF_COPY_CUT': { keys: ['d'], ctrl: true, description: 'Duplicate Cut (カット複製)' },
         'TOOL_PEN': { keys: ['p', 'b'], description: 'Pen Tool (ペンツール)' },
         'TOOL_ERASER': { keys: ['e'], description: 'Eraser Tool (消しゴム)' },
-        'UI_SETTINGS_TOGGLE': { keys: [','], ctrl: true, description: 'Settings Panel (設定パネル)' }
+        'SETTINGS_OPEN': { keys: [','], ctrl: true, description: 'Open Settings (設定を開く)' }
     };
 
     let isInitialized = false;
@@ -132,9 +131,21 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // 🆕 設定ポップアップを開く
-            case 'UI_SETTINGS_TOGGLE':
-                eventBus.emit('ui:toggle-settings');
+            case 'SETTINGS_OPEN':
+                // 設定ポップアップを開く（他のポップアップと同じ仕組み）
+                if (window.TegakiUI?.uiController) {
+                    // UIControllerを経由して開く
+                    window.TegakiUI.uiController.closeAllPopups();
+                    if (window.TegakiUI.uiController.settingsPopup) {
+                        window.TegakiUI.uiController.settingsPopup.show();
+                    }
+                } else if (window.TegakiUI?.SettingsPopup) {
+                    // フォールバック: 直接インスタンスにアクセス
+                    const settingsBtn = document.getElementById('settings-tool');
+                    if (settingsBtn) {
+                        settingsBtn.click();
+                    }
+                }
                 event.preventDefault();
                 break;
         }

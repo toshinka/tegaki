@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 PixiJS v8.13 お絵かきツール</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+    <div id="app"></div>
+
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"defer></script>
+    <script src="https://unpkg.com/perfect-freehand@1.2.0/dist/index.umd.js"defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"defer></script>
+    <script src="https://unpkg.com/upng-js@2.1.0/UPNG.js"defer></script>
+    <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"defer></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"defer></script>
+
+    <!-- Core Config -->
+    <script src="config.js"defer></script>
+    <script src="coordinate-system.js"defer></script>
+    
+    <!-- System -->
+    <script src="system/data-models.js"defer></script>
+    <script src="system/batch-api.js"defer></script>
+    <script src="system/event-bus.js"defer></script>
+    <script src="system/state-manager.js"defer></script>
+    <script src="system/settings-manager.js"defer></script>
+    <script src="system/camera-system.js"defer></script>
+    <script src="system/layer-objects.js"defer></script>
+    <script src="system/layer-system.js"defer></script>
+    <script src="system/drawing-clipboard.js"defer></script>
+    <script src="system/history.js"defer></script>
+    <script src="system/virtual-album.js"defer></script>
+    <script src="system/animation-system.js"defer></script>
+
+    <!-- Drawing System -->
+    <script src="system/drawing/stroke-recorder.js"defer></script>
+    <script src="system/drawing/stroke-renderer.js"defer></script>
+    <script src="system/drawing/brush-settings.js"defer></script>
+    <script src="system/drawing/pressure-handler.js"defer></script>
+    <script src="system/drawing/stroke-transformer.js"defer></script>
+    <script src="system/drawing/drawing-engine.js"defer></script>
+
+    <!-- Export System -->
+    <script src="system/export-manager.js"defer></script>
+    <script src="system/exporters/png-exporter.js"defer></script>
+    <script src="system/exporters/apng-exporter.js"defer></script>
+    <script src="system/exporters/gif-exporter.js"defer></script>
+
+    <!-- UI -->
+    <script src="ui/dom-builder.js"defer></script>
+    <script src="ui/slider-utils.js"defer></script>
+    <script src="ui/keyboard-handler.js"defer></script>
+    <script src="ui/resize-slider.js"defer></script>
+    <script src="ui/timeline-thumbnail-utils.js"defer></script>
+    <script src="ui/timeline-ui.js"defer></script>
+    <script src="ui/album-popup.js"defer></script>
+    <script src="ui/settings-popup.js"defer></script>
+    <script src="ui/ui-panels.js"defer></script>
+    <script src="ui/export-popup.js"defer></script>
+
+    <!-- Core -->
+    <script src="core-initializer.js"defer></script>
+    <script src="core-runtime.js"defer></script>
+    <script src="core-engine.js"defer></script>
+
+    <!-- Entry Point -->
+    <script>
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                await window.CoreInitializer.initialize();
+            } catch (error) {
+                console.error('Application initialization failed:', error);
+            }
+        });
+    </script>
+</body>
+</html>
