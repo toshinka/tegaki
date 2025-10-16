@@ -17,7 +17,8 @@ class BrushSettings {
     this.opacity = this.config.pen?.opacity || 1.0;
 
     // Perfect Freehand設定
-    this.thinning = 0.5;
+    // 🆕 Phase 4: thinningを0.7に引き上げ（フェザータッチをより細く）
+    this.thinning = 0.7;
     this.smoothing = this.config.userSettings?.smoothing || 0.5;
     this.streamline = 0.5;
     this.simulatePressure = true;
@@ -206,8 +207,9 @@ class BrushSettings {
         return normalized * normalized;
       
       case 'ease-out':
-        // 強く押さないと太くならない（平方根）
-        return Math.sqrt(normalized);
+        // 🆕 Phase 4: より強いカーブでフェザータッチを細く
+        // 三乗カーブで低圧力時により細い線に
+        return Math.pow(normalized, 3);
       
       default:
         return normalized;
