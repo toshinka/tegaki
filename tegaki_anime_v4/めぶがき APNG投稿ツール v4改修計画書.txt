@@ -1,0 +1,542 @@
+# めぶがき APNG投稿ツール v4改修計画書
+
+## 1. 現状分析
+
+### 現在の実装状況（v4）
+✅ **完了済み：**
+- レイヤー合成表示機能
+- 描画中はアクティブレイヤーのみ表示、描画終了後に合成表示
+- 消しゴムは透明化（`destination-out`）
+- レイヤーの表示/非表示、不透明度調整機能
+- フレームレス、コンパクトなUI
+
+⚠️ **改修が必要：**
+- ペン/消しゴムのスロット機能が未実装
+- レイヤーパネルのレイアウトが縦並び（レイアウト案では横並び）
+- UIのカラースキームが統一されていない
+
+---
+
+## 2. カラースキーム統一
+
+### 定義カラー
+```javascript
+{
+  primary: '#800000',      // アクティブ要素、ペンデフォルト色
+  secondary: '#aa5a56',    // 非アクティブ要素
+  border: '#cf9c97',       // ボーダー、テキスト
+  light: '#e9c2ba',        // ライトアクセント
+  background: '#f0e0d6',   // キャンバス背景、パネル背景
+  white: '#ffffff'         // ホワイト
+}
+```
+
+### 適用箇所
+- ボタンのボーダー（アクティブ/非アクティブ）
+- パネル背景
+- テキストカラー
+- フレームサムネイル、レイヤーサムネイルのボーダー
+
+---
+
+## 3. ツールスロット機能の実装
+
+### 3.1 UI構成
+
+#### ペンスロット（3スロット）
+```
+┌────────┬────────┬────────┐
+│   ✏️   │   ✏️   │   ✏️   │
+│  2.0   │  5.0   │  10.0  │
+└────────┴────────┴────────┘
+         ▲
+    [スライダー]
+         ▼
+```
+
+- 各スロットにペンサイズを保持（初期値: 2, 5, 10）
+- アクティブスロットをボーダーで強調
+- スライダーでアクティブスロットのサイズを0.5刻みで調整
+- スライダー上に▲ボタン（+0.5）、下に▼ボタン（-0.5）
+
+#### 消しゴムスロット（3スロット）
+```
+┌────────┬────────┬────────┐
+│   🧽   │   🧽   │   🧽   │
+│  10    │  20    │  30    │
+└────────┴────────┴────────┘
+         ▲
+    [スライダー]
+         ▼
+```
+
+- 同様の構成（初期値: 10, 20, 30）
+
+### 3.2 ショートカット
+
+**現在のツール切替:**
+- `P` → ペン
+- `E` → 消しゴム
+
+**新規追加:**
+- ペンツール選択中:
+  - `[` → 前のペンスロット
+  - `]` → 次のペンスロット
+  
+- 消しゴムツール選択中:
+  - `[` → 前の消しゴムスロット
+  - `]` → 次の消しゴムスロット
+
+### 3.3 実装方法
+
+#### tegaki_anime_core.js に追加
+
+```javascript
+constructor() {
+    // ...
+    
+    // ペンスロット（3つ）
+    this.penSlots = [
+        { size: 2, active: true },
+        { size: 5, active: false },
+        { size: 10, active: false }
+    ];
+    this.activePenSlotIndex = 0;
+    
+    // 消しゴムスロット（3つ）
+    this.eraserSlots = [
+        { size: 10, active: true },
+        { size: 20, active: false },
+        { size: 30, active: false }
+    ];
+    this.activeEraserSlotIndex = 0;
+}
+
+// ペンスロット切替
+switchPenSlot(direction) {
+    if (this.drawingEngine.currentTool !== 'pen') return;
+    
+    // 現在のスロットを非アクティブに
+    this.penSlots[this.activePenSlotIndex].active = false;
+    
+    // 次のスロットへ
+    this.activePenSlotIndex = 
+        (this.activePenSlotIndex + direction + this.penSlots.length) 
+        % this.penSlots.length;
+    
+    // 新しいスロットをアクティブに
+    this.penSlots[this.activePenSlotIndex].active = true;
+    
+    // サイズを適用
+    const newSize = this.penSlots[this.activePenSlotIndex].size;
+    this.setPenSize(newSize);
+    
+    // UIを更新
+    this.uiBuilder.updatePenSlots(this.penSlots, this.activePenSlotIndex);
+}
+
+// 消しゴムスロット切替（同様）
+switchEraserSlot(direction) {
+    if (this.drawingEngine.currentTool !== 'eraser') return;
+    
+    this.eraserSlots[this.activeEraserSlotIndex].active = false;
+    
+    this.activeEraserSlotIndex = 
+        (this.activeEraserSlotIndex + direction + this.eraserSlots.length) 
+        % this.eraserSlots.length;
+    
+    this.eraserSlots[this.activeEraserSlotIndex].active = true;
+    
+    const newSize = this.eraserSlots[this.activeEraserSlotIndex].size;
+    this.setEraserSize(newSize);
+    
+    this.uiBuilder.updateEraserSlots(this.eraserSlots, this.activeEraserSlotIndex);
+}
+
+// ペンサイズ更新時にスロットも更新
+setPenSize(size) {
+    this.penSize = size;
+    if (this.drawingEngine.currentTool === 'pen') {
+        this.drawingEngine.setSize(size);
+        // アクティブスロットのサイズも更新
+        this.penSlots[this.activePenSlotIndex].size = size;
+        this.uiBuilder.updatePenSlots(this.penSlots, this.activePenSlotIndex);
+    }
+}
+
+// 消しゴムサイズ更新時にスロットも更新
+setEraserSize(size) {
+    this.eraserSize = size;
+    if (this.drawingEngine.currentTool === 'eraser') {
+        this.drawingEngine.setSize(size);
+        this.eraserSlots[this.activeEraserSlotIndex].size = size;
+        this.uiBuilder.updateEraserSlots(this.eraserSlots, this.activeEraserSlotIndex);
+    }
+}
+```
+
+#### UIBuilder.js に追加
+
+```javascript
+/**
+ * ペンスロットUI作成
+ */
+createPenSlots(slots, onSlotClick, onSizeChange) {
+    const section = document.createElement('div');
+    
+    const label = document.createElement('div');
+    label.textContent = 'ペンサイズ';
+    label.style.cssText = 'font-weight: bold; margin-bottom: 4px; font-size: 11px;';
+    section.appendChild(label);
+    
+    // スロット行
+    const slotRow = document.createElement('div');
+    slotRow.style.cssText = 'display: flex; gap: 4px; margin-bottom: 4px;';
+    
+    const slotButtons = [];
+    slots.forEach((slot, i) => {
+        const btn = document.createElement('button');
+        btn.style.cssText = `
+            flex: 1;
+            padding: 4px;
+            background: white;
+            border: 2px solid ${slot.active ? this.config.activeColor : this.config.inactiveColor};
+            border-radius: 2px;
+            cursor: pointer;
+            font-size: 9px;
+            text-align: center;
+        `;
+        btn.innerHTML = `✏️<br>${slot.size.toFixed(1)}`;
+        btn.onclick = () => onSlotClick(i);
+        
+        slotButtons.push(btn);
+        slotRow.appendChild(btn);
+    });
+    section.appendChild(slotRow);
+    
+    // ▲ボタン
+    const upBtn = document.createElement('button');
+    upBtn.textContent = '▲';
+    upBtn.style.cssText = `
+        width: 100%;
+        height: 20px;
+        background: white;
+        border: 1px solid ${this.config.border};
+        cursor: pointer;
+        font-size: 10px;
+    `;
+    upBtn.onclick = () => onSizeChange(0.5);
+    section.appendChild(upBtn);
+    
+    // スライダー
+    const slider = document.createElement('input');
+    slider.type = 'range';
+    slider.min = '1';
+    slider.max = '20';
+    slider.step = '0.5';
+    slider.value = slots.find(s => s.active).size;
+    slider.style.cssText = 'width: 100%;';
+    slider.oninput = (e) => onSizeChange(parseFloat(e.target.value) - slots.find(s => s.active).size);
+    section.appendChild(slider);
+    
+    // ▼ボタン
+    const downBtn = document.createElement('button');
+    downBtn.textContent = '▼';
+    downBtn.style.cssText = `
+        width: 100%;
+        height: 20px;
+        background: white;
+        border: 1px solid ${this.config.border};
+        cursor: pointer;
+        font-size: 10px;
+    `;
+    downBtn.onclick = () => onSizeChange(-0.5);
+    section.appendChild(downBtn);
+    
+    return { section, slotButtons, slider };
+}
+
+/**
+ * ペンスロット更新
+ */
+updatePenSlots(slots, activeIndex) {
+    // スロットボタンの更新処理
+    this.penSlotButtons.forEach((btn, i) => {
+        btn.style.borderColor = (i === activeIndex) ? 
+            this.config.activeColor : this.config.inactiveColor;
+        btn.innerHTML = `✏️<br>${slots[i].size.toFixed(1)}`;
+    });
+    
+    // スライダーの値を更新
+    if (this.penSlider) {
+        this.penSlider.value = slots[activeIndex].size;
+    }
+}
+```
+
+#### KeyboardManager.js のショートカット登録
+
+```javascript
+// tegaki_anime_core.js の registerKeyboardShortcuts() に追加
+
+// ペンスロット切替
+km.register('[', {}, () => {
+    if (this.drawingEngine.currentTool === 'pen') {
+        this.switchPenSlot(-1);
+    } else if (this.drawingEngine.currentTool === 'eraser') {
+        this.switchEraserSlot(-1);
+    }
+}, 'Previous tool slot');
+
+km.register(']', {}, () => {
+    if (this.drawingEngine.currentTool === 'pen') {
+        this.switchPenSlot(1);
+    } else if (this.drawingEngine.currentTool === 'eraser') {
+        this.switchEraserSlot(1);
+    }
+}, 'Next tool slot');
+```
+
+---
+
+## 4. レイヤーパネル改修
+
+### 4.1 現在のレイアウト（縦並び）
+```
+┌────────────┐
+│  [表示]    │
+│  L1        │
+│ ┌────────┐ │
+│ │サムネ  │ │
+│ └────────┘ │
+│  ◀ 100% ▶ │
+└────────────┘
+```
+
+### 4.2 新レイアウト（横並び：レイアウト案準拠）
+```
+┌──────────────────┐
+│ [表示] ┌──────┐  │
+│  100%  │サム  │  │
+│   L1   │ネイル│  │
+│        └──────┘  │
+└──────────────────┘
+```
+
+**構成:**
+- 左側：情報欄
+  - 表示/非表示ボタン（👁/🚫）
+  - 不透明度（％表示 + ◀▶ボタン）
+  - レイヤー名（L0, L1, L2...）
+  
+- 右側：サムネイル
+  - サイズをフレームサムネイルと同等（50x50 → 60x60推奨）
+  - チェック柄背景で透明部分を可視化
+
+### 4.3 UIBuilder.js 修正
+
+```javascript
+createLayerPanel(layerCount, currentFrameIndex, onLayerClick, onVisibilityChange, onOpacityChange) {
+    // ...
+    
+    for (let i = 0; i < layerCount; i++) {
+        const layerItem = document.createElement('div');
+        layerItem.style.cssText = `
+            border: 2px solid ${this.config.inactiveColor};
+            border-radius: 2px;
+            padding: 4px;
+            transition: all 0.2s;
+            background: white;
+            display: flex;
+            gap: 4px;
+        `;
+        
+        // 左側：情報欄
+        const infoColumn = document.createElement('div');
+        infoColumn.style.cssText = `
+            display: flex;
+            flex-direction: column;
+            gap: 2px;
+            flex: 1;
+            min-width: 50px;
+        `;
+        
+        // 表示切替ボタン
+        const visibilityBtn = document.createElement('button');
+        visibilityBtn.textContent = '👁️';
+        visibilityBtn.style.cssText = `
+            width: 100%;
+            height: 20px;
+            border: 1px solid ${this.config.border};
+            background: white;
+            cursor: pointer;
+            border-radius: 2px;
+            font-size: 12px;
+            padding: 0;
+        `;
+        visibilityBtn.onclick = (e) => {
+            e.stopPropagation();
+            onVisibilityChange(i);
+        };
+        infoColumn.appendChild(visibilityBtn);
+        
+        // 不透明度表示
+        const opacityDisplay = document.createElement('div');
+        opacityDisplay.style.cssText = `
+            text-align: center;
+            font-weight: bold;
+            font-size: 10px;
+        `;
+        opacityDisplay.textContent = '100%';
+        infoColumn.appendChild(opacityDisplay);
+        
+        // 不透明度調整ボタン
+        const opacityRow = document.createElement('div');
+        opacityRow.style.cssText = 'display: flex; gap: 2px;';
+        
+        const decreaseBtn = document.createElement('button');
+        decreaseBtn.innerHTML = '◀';
+        decreaseBtn.style.cssText = `
+            flex: 1;
+            height: 18px;
+            border: 1px solid ${this.config.border};
+            background: white;
+            cursor: pointer;
+            font-size: 9px;
+            padding: 0;
+        `;
+        decreaseBtn.onclick = (e) => {
+            e.stopPropagation();
+            onOpacityChange(i, -10);
+        };
+        
+        const increaseBtn = document.createElement('button');
+        increaseBtn.innerHTML = '▶';
+        increaseBtn.style.cssText = `
+            flex: 1;
+            height: 18px;
+            border: 1px solid ${this.config.border};
+            background: white;
+            cursor: pointer;
+            font-size: 9px;
+            padding: 0;
+        `;
+        increaseBtn.onclick = (e) => {
+            e.stopPropagation();
+            onOpacityChange(i, 10);
+        };
+        
+        opacityRow.appendChild(decreaseBtn);
+        opacityRow.appendChild(increaseBtn);
+        infoColumn.appendChild(opacityRow);
+        
+        // レイヤー名
+        const layerLabel = document.createElement('div');
+        layerLabel.style.cssText = `
+            font-size: 10px;
+            text-align: center;
+            font-weight: bold;
+            cursor: pointer;
+        `;
+        layerLabel.textContent = i === 0 ? 'L0' : `L${i}`;
+        layerLabel.onclick = () => onLayerClick(i);
+        infoColumn.appendChild(layerLabel);
+        
+        // 右側：サムネイル
+        const layerCanvas = document.createElement('canvas');
+        layerCanvas.width = 60;  // フレームサムネイルと同等
+        layerCanvas.height = 60;
+        layerCanvas.style.cssText = `
+            display: block;
+            width: 60px;
+            height: 60px;
+            background: #f0e0d6;
+            cursor: pointer;
+            border: 1px solid ${this.config.border};
+            flex-shrink: 0;
+        `;
+        layerCanvas.onclick = () => onLayerClick(i);
+        
+        layerItem.appendChild(infoColumn);
+        layerItem.appendChild(layerCanvas);
+        
+        layers.push({ 
+            item: layerItem, 
+            canvas: layerCanvas, 
+            label: layerLabel,
+            visibilityBtn: visibilityBtn,
+            opacityDisplay: opacityDisplay
+        });
+        layersContainer.appendChild(layerItem);
+    }
+    
+    // ...
+}
+```
+
+---
+
+## 5. 修正ファイル一覧
+
+### 主要修正ファイル
+1. **src/tegaki_anime_core.js**
+   - スロット管理の追加
+   - スロット切替メソッドの追加
+   - ショートカット登録
+
+2. **src/modules/UIBuilder.js**
+   - createPenSlots() 追加
+   - createEraserSlots() 追加
+   - updatePenSlots(), updateEraserSlots() 追加
+   - createLayerPanel() のレイアウト変更（横並び）
+   - カラースキーム適用
+
+3. **src/utils/constants.js**
+   - カラー定義の追加（必要に応じて）
+
+### 動作確認項目
+- [ ] ペンスロット切替（[/]キー）
+- [ ] 消しゴムスロット切替（[/]キー）
+- [ ] スライダーでサイズ調整（0.5刻み）
+- [ ] ▲▼ボタンでサイズ増減
+- [ ] レイヤーパネルの横並びレイアウト
+- [ ] レイヤーサムネイルサイズ60x60
+- [ ] カラースキーム統一
+
+---
+
+## 6. 実装優先順位
+
+### Phase 1: スロット機能（高優先度）
+1. tegaki_anime_core.jsにスロット管理追加
+2. UIBuilder.jsにスロット UI追加
+3. ショートカット登録
+
+### Phase 2: レイヤーパネル改修（中優先度）
+1. レイアウトを横並びに変更
+2. サムネイルサイズを60x60に拡大
+3. 情報欄のコンパクト化
+
+### Phase 3: カラースキーム統一（低優先度）
+1. constants.jsにカラー定義追加
+2. 全UIコンポーネントに適用
+
+---
+
+## 7. 補足事項
+
+### 消しゴムについて
+✅ **既に実装済み：**
+- `destination-out` で透明化処理
+- 背景レイヤーも透明化可能
+
+### レイヤー合成表示について
+✅ **既に実装済み：**
+- 描画中: アクティブレイヤーのみ表示
+- 描画終了後: 全レイヤー合成表示
+- フレームサムネイル: 常に合成表示
+
+### 注意点
+- スロット切替時、現在のツール（ペン/消しゴム）に応じて動作を分岐
+- スライダー値の変更時、アクティブスロットのサイズも同期更新
+- レイヤーパネルの横幅が狭い場合、情報欄とサムネイルのバランスに注意

@@ -1,9 +1,11 @@
-// ===== core-runtime.js - Phase 12: PixiJS EventSystem統合版 =====
+// ===== core-runtime.js - Phase 12: PixiJS EventSystem統合版 + 設定API拡張 =====
 // 【Phase 12】PixiJS FederatedPointerEvent対応
 // 【追加】window.startTegakiApp() エントリーポイント
 // 【改修】APNGExporter登録対応
 // 【改修】ExportSystem確実初期化機能追加
 // 【維持】全既存機能・リサイズ即時反映・背景塗り
+// 【🆕 v2.1】設定関連API追加（setPressureCorrection, setSmoothing, setPressureCurve）
+// 【🆕 v2.1】SettingsManager統合
 // PixiJS v8.13 対応
 
 (function() {
@@ -38,6 +40,7 @@
             cameraSystem: null,
             layerManager: null,
             drawingEngine: null,
+            settingsManager: null, // 🆕 v2.1: SettingsManager追加
             initialized: false,
             // Phase 12: PixiJS EventSystem用
             pointerEventsSetup: false
@@ -248,7 +251,7 @@
             }
         },
         
-        // === 【改修】背景レイヤー更新ヘルパー ===
+        // === 背景レイヤー更新ヘルパー ===
         updateBackgroundLayerSize(layer, width, height) {
             if (!layer?.layerData?.isBackground) return false;
             if (!layer.layerData.backgroundGraphics) return false;
@@ -262,7 +265,7 @@
             return true;
         },
         
-        // === 【改修】キャンバスサイズ変更 ===
+        // === キャンバスサイズ変更 ===
         updateCanvasSize(w, h) {
             console.log('CoreRuntime: キャンバスサイズ変更:', w, 'x', h);
             
@@ -383,6 +386,7 @@
                 canvasSize: this.project.canvasSize,
                 DPR: this.project.DPR,
                 pointerEventsSetup: this.internal.pointerEventsSetup,
+                settingsManagerInitialized: this.internal.settingsManager !== null, // 🆕 v2.1
                 cuts: this.project.cuts.map(c => ({
                     id: c.id,
                     name: c.name,
@@ -502,6 +506,103 @@
                     return true;
                 }
                 return true;
+            },
+            
+            // ===== 🆕 v2.1: 設定関連API =====
+            
+            /**
+             * 筆圧補正係数を設定
+             * @param {number} value - 0.1～3.0
+             * @returns {boolean} 成功/失敗
+             */
+            setPressureCorrection(value) {
+                if (CoreRuntime.internal.drawingEngine?.settings) {
+                    CoreRuntime.internal.drawingEngine.settings.setPressureCorrection(value);
+                    return true;
+                }
+                return false;
+            },
+            
+            /**
+             * 線補正（スムーズ度）を設定
+             * @param {number} value - 0.0～1.0
+             * @returns {boolean} 成功/失敗
+             */
+            setSmoothing(value) {
+                if (CoreRuntime.internal.drawingEngine?.settings) {
+                    CoreRuntime.internal.drawingEngine.settings.setSmoothing(value);
+                    return true;
+                }
+                return false;
+            },
+            
+            /**
+             * 筆圧カーブを設定
+             * @param {string} curve - 'linear' | 'ease-in' | 'ease-out'
+             * @returns {boolean} 成功/失敗
+             */
+            setPressureCurve(curve) {
+                if (CoreRuntime.internal.drawingEngine?.settings) {
+                    CoreRuntime.internal.drawingEngine.settings.setPressureCurve(curve);
+                    return true;
+                }
+                return false;
+            },
+            
+            /**
+             * 現在の設定を取得
+             * @returns {Object|null} 設定オブジェクト
+             */
+            getSettings() {
+                if (CoreRuntime.internal.drawingEngine?.settings) {
+                    return CoreRuntime.internal.drawingEngine.settings.getCurrentSettings();
+                }
+                return null;
+            },
+            
+            /**
+             * SettingsManagerの初期化（CoreEngine初期化時に呼ぶ）
+             * @param {Object} config - TEGAKI_CONFIG
+             * @returns {boolean} 成功/失敗
+             */
+            initializeSettingsManager(config) {
+                if (!window.TegakiSettingsManager) {
+                    console.error('[CoreRuntime] TegakiSettingsManager not loaded');
+                    return false;
+                }
+                
+                if (!CoreRuntime.internal.settingsManager) {
+                    CoreRuntime.internal.settingsManager = new window.TegakiSettingsManager(
+                        window.TegakiEventBus,
+                        config
+                    );
+                    
+                    console.log('✅ SettingsManager initialized via CoreRuntime');
+                    
+                    // 初期設定をDrawingEngineに適用
+                    const settings = CoreRuntime.internal.settingsManager.get();
+                    if (settings.pressureCorrection !== undefined) {
+                        this.setPressureCorrection(settings.pressureCorrection);
+                    }
+                    if (settings.smoothing !== undefined) {
+                        this.setSmoothing(settings.smoothing);
+                    }
+                    if (settings.pressureCurve !== undefined) {
+                        this.setPressureCurve(settings.pressureCurve);
+                    }
+                    
+                    return true;
+                }
+                
+                return false;
+            },
+            
+            /**
+             * SettingsManagerを取得
+             * @returns {Object|null}
+             */
+            getSettingsManager() {
+                return CoreRuntime.internal.settingsManager || null;
             }
         },
         
@@ -522,7 +623,7 @@
         isInitialized() { return this.internal.initialized; }
     };
     
-    // === 【改修】ExportSystem初期化（APNGExporter対応） ===
+    // === ExportSystem初期化（APNGExporter対応） ===
     CoreRuntime.initializeExportSystem = function(pixiApp, onSuccess) {
         if (window.TEGAKI_EXPORT_MANAGER) {
             return true;
@@ -596,7 +697,7 @@
     
     window.CoreRuntime = CoreRuntime;
     
-    // ===== 【追加】ブックマークレット用エントリーポイント =====
+    // ===== ブックマークレット用エントリーポイント =====
     window.startTegakiApp = async function(config = {}) {
         console.log('🚀 startTegakiApp() called');
         
@@ -675,10 +776,17 @@
         };
     };
     
-    console.log('✅ core-runtime.js Phase 12: PixiJS EventSystem統合版 loaded');
+    console.log('✅ core-runtime.js v2.1 loaded');
+    console.log('  ✅ Phase 12: PixiJS EventSystem統合');
     console.log('  ✅ FederatedPointerEvent対応');
     console.log('  ✅ stage.eventMode設定');
-    console.log('  ✅ 圧力・傾き取得安定化');
+    console.log('  ✅ 🆕 v2.1: 設定関連API追加');
+    console.log('     - setPressureCorrection()');
+    console.log('     - setSmoothing()');
+    console.log('     - setPressureCurve()');
+    console.log('     - getSettings()');
+    console.log('     - initializeSettingsManager()');
+    console.log('     - getSettingsManager()');
     console.log('  ✅ window.startTegakiApp() registered');
     console.log('  ✅ APNGExporter登録対応');
     console.log('  ✅ 既存機能完全維持');

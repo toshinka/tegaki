@@ -1,7 +1,8 @@
-// ===== core-engine.js - タブレットペン対応修正版 =====
+// ===== core-engine.js - タブレットペン対応 + リサイズ改修版 =====
 // 🔥 修正内容:
 // 1. setupCanvasEvents() で PointerEvent オブジェクトを DrawingEngine に渡すよう修正
 // 2. DrawingEngine のメソッドシグネチャを修正（pressureOrEvent引数追加）
+// 3. resizeCanvas() にアライメント対応追加（水平・垂直方向選択可能）
 // ================================================================================
 
 (function() {
@@ -882,25 +883,88 @@
             this.layerSystem.processThumbnailUpdates();
         }
         
-        resizeCanvas(newWidth, newHeight) {
+        // 🔥 リサイズ改修: アライメント対応版
+        resizeCanvas(newWidth, newHeight, options = {}) {
+            const oldWidth = CONFIG.canvas.width;
+            const oldHeight = CONFIG.canvas.height;
+            
+            const horizontalAlign = options.horizontalAlign || 'center';
+            const verticalAlign = options.verticalAlign || 'center';
+            
+            // オフセット計算
+            let offsetX = 0;
+            let offsetY = 0;
+            
+            const widthDiff = newWidth - oldWidth;
+            const heightDiff = newHeight - oldHeight;
+            
+            // 水平方向オフセット
+            if (horizontalAlign === 'left') {
+                offsetX = 0;
+            } else if (horizontalAlign === 'center') {
+                offsetX = widthDiff / 2;
+            } else if (horizontalAlign === 'right') {
+                offsetX = widthDiff;
+            }
+            
+            // 垂直方向オフセット
+            if (verticalAlign === 'top') {
+                offsetY = 0;
+            } else if (verticalAlign === 'center') {
+                offsetY = heightDiff / 2;
+            } else if (verticalAlign === 'bottom') {
+                offsetY = heightDiff;
+            }
+            
+            // コンフィグ更新
             CONFIG.canvas.width = newWidth;
             CONFIG.canvas.height = newHeight;
             
+            // カメラシステムのリサイズ
             this.cameraSystem.resizeCanvas(newWidth, newHeight);
             
+            // 全レイヤーの内容をオフセット
             const layers = this.layerSystem.getLayers();
             layers.forEach(layer => {
+                // 背景グラフィックスの再生成
                 if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
                     layer.layerData.backgroundGraphics.clear();
                     layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
                     layer.layerData.backgroundGraphics.fill(CONFIG.background.color);
                 }
+                
+                // パスのオフセット適用
+                if (offsetX !== 0 || offsetY !== 0) {
+                    layer.layerData.paths.forEach(path => {
+                        if (path.points) {
+                            path.points.forEach(point => {
+                                point.x += offsetX;
+                                point.y += offsetY;
+                            });
+                        }
+                        
+                        // グラフィックスの再構築
+                        if (path.graphics) {
+                            layer.removeChild(path.graphics);
+                            path.graphics.destroy();
+                        }
+                        
+                        if (this.layerSystem.rebuildPathGraphics) {
+                            this.layerSystem.rebuildPathGraphics(path);
+                            if (path.graphics) {
+                                layer.addChild(path.graphics);
+                            }
+                        }
+                    });
+                }
             });
             
+            // サムネイル更新
             for (let i = 0; i < layers.length; i++) {
                 this.layerSystem.requestThumbnailUpdate(i);
             }
             
+            // アニメーションシステムのサムネイル更新
             if (this.animationSystem) {
                 setTimeout(() => {
                     const animData = this.animationSystem.getAnimationData();
@@ -916,6 +980,7 @@
                 }, 500);
             }
             
+            // UI更新
             const canvasInfoElement = document.getElementById('canvas-info');
             if (canvasInfoElement) {
                 canvasInfoElement.textContent = `${newWidth}×${newHeight}px`;
@@ -926,7 +991,17 @@
                 resizeSettings.classList.remove('show');
             }
             
-            this.eventBus.emit('canvas:resized', { width: newWidth, height: newHeight });
+            // イベント発火
+            this.eventBus.emit('canvas:resized', { 
+                width: newWidth, 
+                height: newHeight,
+                oldWidth,
+                oldHeight,
+                offsetX,
+                offsetY,
+                horizontalAlign,
+                verticalAlign
+            });
         }
         
         initialize() {
@@ -1008,6 +1083,7 @@
 
 })();
 
-console.log('✅ core-engine.js (タブレットペン対応版) loaded');
+console.log('✅ core-engine.js (タブレットペン + リサイズ改修版) loaded');
 console.log('   - 🔥 PointerEvent.pressure 対応完了');
 console.log('   - 🔥 DrawingEngine に筆圧処理追加');
+console.log('   - 🔥 resizeCanvas にアライメント対応追加');
