@@ -1,6 +1,9 @@
 /**
- * BrushSettings v2.0 - 筆圧・線補正・カーブ管理
- * 責務: ブラシパラメータの管理と描画ロジック
+ * BrushSettings v4.0 - スムージングモード管理追加版
+ * 変更点:
+ * - Catmull-Rom Spline用のスムージングモード管理
+ * - スプライン詳細設定の管理
+ * - EventBus連携強化
  */
 
 class BrushSettings {
@@ -14,14 +17,24 @@ class BrushSettings {
     this.opacity = this.config.pen?.opacity || 1.0;
 
     // Perfect Freehand設定
-    this.thinning = 0.5;
+    // 🆕 Phase 4: thinningを0.7に引き上げ（フェザータッチをより細く）
+    this.thinning = 0.7;
     this.smoothing = this.config.userSettings?.smoothing || 0.5;
     this.streamline = 0.5;
     this.simulatePressure = true;
     
-    // 🆕 筆圧・線補正設定
+    // 筆圧・線補正設定
     this.pressureCorrection = this.config.userSettings?.pressureCorrection || 1.0;
     this.pressureCurve = this.config.userSettings?.pressureCurve || 'linear';
+    
+    // Simplify.js設定
+    this.simplifyTolerance = this.config.userSettings?.simplifyTolerance || 1.0;
+    this.simplifyEnabled = this.config.userSettings?.simplifyEnabled !== false;
+    
+    // 🆕 Catmull-Rom Spline設定
+    this.smoothingMode = this.config.userSettings?.smoothingMode || 'medium';
+    this.splineTension = this.config.userSettings?.splineTension || 0.5;
+    this.splineSegments = this.config.userSettings?.splineSegments || 8;
     
     // EventBusで設定変更を購読
     this.subscribeToSettingsChanges();
@@ -43,6 +56,27 @@ class BrushSettings {
     
     this.eventBus.on('settings:pressure-curve', ({ curve }) => {
       this.setPressureCurve(curve);
+    });
+    
+    this.eventBus.on('settings:simplify-tolerance', ({ value }) => {
+      this.setSimplifyTolerance(value);
+    });
+    
+    this.eventBus.on('settings:simplify-enabled', ({ enabled }) => {
+      this.setSimplifyEnabled(enabled);
+    });
+    
+    // 🆕 Splineスムージングイベント
+    this.eventBus.on('settings:smoothing-mode', ({ mode }) => {
+      this.setSmoothingMode(mode);
+    });
+    
+    this.eventBus.on('settings:spline-tension', ({ value }) => {
+      this.setSplineTension(value);
+    });
+    
+    this.eventBus.on('settings:spline-segments', ({ value }) => {
+      this.setSplineSegments(value);
     });
   }
 
@@ -89,6 +123,74 @@ class BrushSettings {
   }
 
   /**
+   * Simplify許容誤差の設定
+   * @param {number} value - 0.1～5.0
+   */
+  setSimplifyTolerance(value) {
+    const clamped = Math.max(0.1, Math.min(5.0, value));
+    this.simplifyTolerance = clamped;
+    
+    if (this.eventBus) {
+      this.eventBus.emit('brush:simplify-tolerance-changed', { value: clamped });
+    }
+  }
+
+  /**
+   * Simplify有効/無効の切替
+   * @param {boolean} enabled
+   */
+  setSimplifyEnabled(enabled) {
+    this.simplifyEnabled = !!enabled;
+    
+    if (this.eventBus) {
+      this.eventBus.emit('brush:simplify-enabled-changed', { enabled: this.simplifyEnabled });
+    }
+  }
+
+  /**
+   * 🆕 スムージングモードの設定
+   * @param {string} mode - 'none' | 'light' | 'medium' | 'strong'
+   */
+  setSmoothingMode(mode) {
+    const validModes = ['none', 'light', 'medium', 'strong'];
+    if (!validModes.includes(mode)) {
+      mode = 'medium';
+    }
+    
+    this.smoothingMode = mode;
+    
+    if (this.eventBus) {
+      this.eventBus.emit('brush:smoothing-mode-changed', { mode });
+    }
+  }
+
+  /**
+   * 🆕 スプライン張力の設定
+   * @param {number} value - 0.0～1.0
+   */
+  setSplineTension(value) {
+    const clamped = Math.max(0.0, Math.min(1.0, value));
+    this.splineTension = clamped;
+    
+    if (this.eventBus) {
+      this.eventBus.emit('brush:spline-tension-changed', { value: clamped });
+    }
+  }
+
+  /**
+   * 🆕 スプラインセグメント数の設定
+   * @param {number} value - 2～20
+   */
+  setSplineSegments(value) {
+    const clamped = Math.max(2, Math.min(20, Math.floor(value)));
+    this.splineSegments = clamped;
+    
+    if (this.eventBus) {
+      this.eventBus.emit('brush:spline-segments-changed', { value: clamped });
+    }
+  }
+
+  /**
    * 筆圧カーブの適用
    * @param {number} rawPressure - 0.0～1.0
    * @returns {number} カーブ適用後の筆圧
@@ -105,8 +207,9 @@ class BrushSettings {
         return normalized * normalized;
       
       case 'ease-out':
-        // 強く押さないと太くならない（平方根）
-        return Math.sqrt(normalized);
+        // 🆕 Phase 4: より強いカーブでフェザータッチを細く
+        // 三乗カーブで低圧力時により細い線に
+        return Math.pow(normalized, 3);
       
       default:
         return normalized;
@@ -233,7 +336,13 @@ class BrushSettings {
       opacity: this.opacity,
       pressureCorrection: this.pressureCorrection,
       smoothing: this.smoothing,
-      pressureCurve: this.pressureCurve
+      pressureCurve: this.pressureCurve,
+      simplifyTolerance: this.simplifyTolerance,
+      simplifyEnabled: this.simplifyEnabled,
+      // 🆕 Spline設定
+      smoothingMode: this.smoothingMode,
+      splineTension: this.splineTension,
+      splineSegments: this.splineSegments
     };
   }
 }
@@ -243,5 +352,3 @@ if (typeof window.TegakiDrawing === 'undefined') {
   window.TegakiDrawing = {};
 }
 window.TegakiDrawing.BrushSettings = BrushSettings;
-
-console.log('✅ brush-settings.js v2.0 (筆圧・線補正管理) loaded');

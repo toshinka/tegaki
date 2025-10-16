@@ -1,10 +1,10 @@
 /**
- * DrawingEngine v2.2 (Phase 1: EventBus統合完全化)
- * Perfect Freehand対応ベクターペンエンジン + History統合 + 筆圧対応
- * 
+ * DrawingEngine v3.0 - Simplify + Catmull-Rom Spline統合版
  * 変更点:
- * - subscribeToSettings() メソッド追加
- * - 設定変更イベントの購読とPressureHandlerへの即時適用
+ * - StrokeRecorderへのSimplify設定適用
+ * - StrokeTransformerへのSpline設定適用
+ * - preprocessStroke()によるスムージング前処理
+ * - EventBus購読の拡張
  */
 
 class DrawingEngine {
@@ -14,7 +14,7 @@ class DrawingEngine {
     this.eventBus = eventBus;
     this.config = config || {};
 
-    // サブモジュール初期化（存在する場合のみ）
+    // サブモジュール初期化
     if (window.TegakiDrawing) {
       this.settings = window.TegakiDrawing.BrushSettings ? 
         new window.TegakiDrawing.BrushSettings(config, eventBus) : null;
@@ -39,43 +39,65 @@ class DrawingEngine {
     this.currentPath = null;
     this.lastPoint = null;
     
-    // 🆕 Phase 1: EventBus購読の初期化
+    // EventBus購読の初期化
     this.subscribeToSettings();
+    
+    // 🆕 初期設定をサブモジュールに適用
+    this.applySyncSettings();
   }
 
   /**
-   * 🆕 Phase 1: EventBus購読の設定
-   * 設定変更イベントを購読し、PressureHandlerに即座に適用
+   * 🆕 初期設定の同期
+   * BrushSettingsからRecorder/Transformerへ設定を適用
+   */
+  applySyncSettings() {
+    if (!this.settings) return;
+    
+    const currentSettings = this.settings.getCurrentSettings();
+    
+    // StrokeRecorderへのSimplify設定適用
+    if (this.recorder && typeof this.recorder.setSimplifySettings === 'function') {
+      this.recorder.setSimplifySettings(
+        currentSettings.simplifyTolerance,
+        true // highQuality
+      );
+    }
+    if (this.recorder && typeof this.recorder.setSimplifyEnabled === 'function') {
+      this.recorder.setSimplifyEnabled(currentSettings.simplifyEnabled);
+    }
+    
+    // StrokeTransformerへのSpline設定適用
+    if (this.transformer && typeof this.transformer.setSmoothingMode === 'function') {
+      this.transformer.setSmoothingMode(currentSettings.smoothingMode);
+    }
+    if (this.transformer && typeof this.transformer.setSplineParameters === 'function') {
+      this.transformer.setSplineParameters(
+        currentSettings.splineTension,
+        currentSettings.splineSegments
+      );
+    }
+    
+    // PressureHandlerへの筆圧補正適用
+    if (this.pressureHandler && typeof this.pressureHandler.setPressureCorrection === 'function') {
+      this.pressureHandler.setPressureCorrection(currentSettings.pressureCorrection);
+    }
+  }
+
+  /**
+   * EventBus購読の設定
    */
   subscribeToSettings() {
     if (!this.eventBus) return;
     
     // 筆圧補正の変更を購読
-    this.eventBus.on('settings:pressure-correction', ({ value }) => {
-      // BrushSettingsへの適用
+    this.eventBus.on('settings:spline-segments', ({ value }) => {
       if (this.settings) {
-        this.settings.setPressureCorrection(value);
+        this.settings.setSplineSegments(value);
       }
-      // PressureHandlerへの即時適用
-      if (this.pressureHandler) {
-        this.pressureHandler.setPressureCorrection(value);
+      if (this.transformer) {
+        const tension = this.settings.splineTension;
+        this.transformer.setSplineParameters(tension, value);
       }
-    });
-    
-    // 線補正（スムージング）の変更を購読
-    this.eventBus.on('settings:smoothing', ({ value }) => {
-      if (this.settings) {
-        this.settings.setSmoothing(value);
-      }
-    });
-    
-    // 筆圧カーブの変更を購読
-    this.eventBus.on('settings:pressure-curve', ({ curve }) => {
-      if (this.settings) {
-        this.settings.setPressureCurve(curve);
-      }
-      // 注: PressureHandlerは生の筆圧値のみ扱う
-      // カーブ適用はBrushSettings側で行われる
     });
   }
 
@@ -107,7 +129,7 @@ class DrawingEngine {
       strokeOptions
     );
 
-    // Phase 2: 元サイズとスケール記録
+    // 元サイズとスケール記録
     this.currentPath.originalSize = this.settings.getBrushSize();
     this.currentPath.scaleAtDrawTime = currentScale;
 
@@ -128,13 +150,29 @@ class DrawingEngine {
 
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
     const pressure = this.pressureHandler.getPressure(pressureOrEvent);
-
-    // 座標追加
-    this.recorder.addPoint(this.currentPath, {
+    
+    // 🆕 Phase 4: タイムスタンプ付き座標
+    const timestamp = performance.now();
+    const pointWithTime = {
       x: canvasPoint.x,
       y: canvasPoint.y,
-      pressure
-    });
+      pressure,
+      timestamp
+    };
+
+    // 🆕 Phase 4: カメラスケールを渡して動的閾値対応
+    const cameraScale = this.cameraSystem.camera.scale || 1.0;
+    this.recorder.addPoint(this.currentPath, pointWithTime, cameraScale);
+
+    // スムージング前処理（リアルタイム描画時は軽めに）
+    let pointsToRender = this.currentPath.points;
+    if (this.transformer && this.currentPath.points.length > 3) {
+      // リアルタイム描画では最新の数ポイントのみスムージング
+      const recentPoints = this.currentPath.points.slice(-10);
+      const smoothed = this.transformer.preprocessStroke(recentPoints);
+      // 全体の座標 + スムージング済み最新部分
+      pointsToRender = [...this.currentPath.points.slice(0, -10), ...smoothed];
+    }
 
     // リアルタイム描画
     const options = {
@@ -144,20 +182,25 @@ class DrawingEngine {
     };
 
     this.renderer.renderStroke(
-      this.currentPath.points,
+      pointsToRender,
       options,
       this.currentPath.graphics
     );
   }
 
   /**
-   * 描画終了 (Phase 7: History統合)
+   * 描画終了
    */
   stopDrawing() {
     if (!this.isDrawing || !this.currentPath) return;
 
-    // パス確定
+    // パス確定（Simplify適用）
     this.recorder.finalizePath(this.currentPath);
+
+    // 🆕 Catmull-Rom Splineスムージング適用
+    if (this.transformer && this.currentPath.points.length > 2) {
+      this.currentPath.points = this.transformer.preprocessStroke(this.currentPath.points);
+    }
 
     // 最終描画
     const options = {
@@ -172,7 +215,7 @@ class DrawingEngine {
       this.currentPath.graphics
     );
 
-    // Phase 7: History統合
+    // History統合
     if (this.currentPath && this.currentPath.points.length > 0) {
       const path = this.currentPath;
       const layerIndex = this.layerManager.activeLayerIndex;
@@ -277,16 +320,84 @@ class DrawingEngine {
   getIsDrawing() {
     return this.isDrawing;
   }
+  
+  /**
+   * 🆕 デバッグ情報取得
+   */
+  getDebugInfo() {
+    return {
+      settings: this.settings?.getCurrentSettings(),
+      recorder: this.recorder?.getDebugInfo(),
+      transformer: this.transformer?.getDebugInfo(),
+      pressureHandler: this.pressureHandler?.getDebugInfo()
+    };
+  }
 }
 
 // グローバル登録
 if (typeof window.TegakiDrawing === 'undefined') {
   window.TegakiDrawing = {};
 }
-window.TegakiDrawing.DrawingEngine = DrawingEngine;
-
-console.log('✅ drawing-engine.js v2.2 (Phase 1: EventBus統合完全化) loaded');
-console.log('   - subscribeToSettings() メソッド追加');
-console.log('   - settings:pressure-correction イベント購読');
-console.log('   - settings:smoothing イベント購読');
-console.log('   - settings:pressure-curve イベント購読');
+window.TegakiDrawing.DrawingEngine = DrawingEngine;('settings:pressure-correction', ({ value }) => {
+      if (this.settings) {
+        this.settings.setPressureCorrection(value);
+      }
+      if (this.pressureHandler) {
+        this.pressureHandler.setPressureCorrection(value);
+      }
+    });
+    
+    // 線補正（スムージング）の変更を購読
+    this.eventBus.on('settings:smoothing', ({ value }) => {
+      if (this.settings) {
+        this.settings.setSmoothing(value);
+      }
+    });
+    
+    // 筆圧カーブの変更を購読
+    this.eventBus.on('settings:pressure-curve', ({ curve }) => {
+      if (this.settings) {
+        this.settings.setPressureCurve(curve);
+      }
+    });
+    
+    // 🆕 Simplify設定の変更を購読
+    this.eventBus.on('settings:simplify-tolerance', ({ value }) => {
+      if (this.settings) {
+        this.settings.setSimplifyTolerance(value);
+      }
+      if (this.recorder) {
+        this.recorder.setSimplifySettings(value, true);
+      }
+    });
+    
+    this.eventBus.on('settings:simplify-enabled', ({ enabled }) => {
+      if (this.settings) {
+        this.settings.setSimplifyEnabled(enabled);
+      }
+      if (this.recorder) {
+        this.recorder.setSimplifyEnabled(enabled);
+      }
+    });
+    
+    // 🆕 Splineスムージング設定の変更を購読
+    this.eventBus.on('settings:smoothing-mode', ({ mode }) => {
+      if (this.settings) {
+        this.settings.setSmoothingMode(mode);
+      }
+      if (this.transformer) {
+        this.transformer.setSmoothingMode(mode);
+      }
+    });
+    
+    this.eventBus.on('settings:spline-tension', ({ value }) => {
+      if (this.settings) {
+        this.settings.setSplineTension(value);
+      }
+      if (this.transformer) {
+        const segments = this.settings.splineSegments;
+        this.transformer.setSplineParameters(value, segments);
+      }
+    });
+    
+    this.eventBus.on
