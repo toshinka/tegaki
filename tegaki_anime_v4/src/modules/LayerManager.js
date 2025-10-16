@@ -1,5 +1,6 @@
 // ========================================
 // LayerManager.js - レイヤー・フレーム管理
+// 合成処理修正版
 // ========================================
 
 (function() {
@@ -134,44 +135,41 @@
         }
         
         /**
-         * 指定フレームの全レイヤーを合成したImageDataを取得（不透明度と表示状態を考慮）
+         * 指定フレームの全レイヤーを合成したImageDataを取得
+         * レイヤー0（背景）から順に上に重ねていく
          */
         getCompositeImageData(frameIndex) {
             if (frameIndex < 0 || frameIndex >= this.frameCount) return null;
             
             const frame = this.frames[frameIndex];
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = this.canvasManager.width;
-            tempCanvas.height = this.canvasManager.height;
-            const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
+            const width = this.canvasManager.width;
+            const height = this.canvasManager.height;
+            
+            // 合成用のキャンバスを作成
+            const compositeCanvas = document.createElement('canvas');
+            compositeCanvas.width = width;
+            compositeCanvas.height = height;
+            const ctx = compositeCanvas.getContext('2d', { willReadFrequently: true });
             
             // レイヤー0（背景）から順に合成
             for (let i = 0; i < frame.layers.length; i++) {
                 const layer = frame.layers[i];
+                
+                // 非表示レイヤーはスキップ
                 if (!layer.visible) continue;
                 
                 // 不透明度を設定
-                tempCtx.globalAlpha = layer.opacity;
+                ctx.globalAlpha = layer.opacity;
                 
-                // レイヤーを描画
-                tempCtx.putImageData(layer.imageData, 0, 0);
-                
-                // 次のレイヤーのために現在の状態を取得
-                if (i < frame.layers.length - 1) {
-                    const currentComposite = tempCtx.getImageData(
-                        0, 0, 
-                        tempCanvas.width, 
-                        tempCanvas.height
-                    );
-                    tempCtx.clearRect(0, 0, tempCanvas.width, tempCanvas.height);
-                    tempCtx.globalAlpha = 1.0;
-                    tempCtx.putImageData(currentComposite, 0, 0);
-                }
+                // ImageDataを描画
+                ctx.putImageData(layer.imageData, 0, 0);
             }
             
+            // globalAlphaをリセット
+            ctx.globalAlpha = 1.0;
+            
             // 最終的な合成結果を取得
-            tempCtx.globalAlpha = 1.0;
-            return tempCtx.getImageData(0, 0, tempCanvas.width, tempCanvas.height);
+            return ctx.getImageData(0, 0, width, height);
         }
         
         /**
