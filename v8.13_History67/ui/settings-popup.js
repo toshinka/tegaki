@@ -1,7 +1,9 @@
-// ===== ui/settings-popup.js - 完全独立版 (修正) =====
+// ===== ui/settings-popup.js - 完全独立版 (修正v2) =====
 // 責務: UI表示・ユーザー入力の受付・EventBusへの通知のみ
 // SliderUtils に依存せず、独自のスライダー実装を使用
+// 🔥 修正: グローバル公開の確実な実行
 
+// 🔥 TegakiUI名前空間の確保
 window.TegakiUI = window.TegakiUI || {};
 
 window.TegakiUI.SettingsPopup = class {
@@ -19,6 +21,8 @@ window.TegakiUI.SettingsPopup = class {
         
         // DOM要素を確実に取得または作成
         this.ensurePopupElement();
+        
+        console.log('✅ SettingsPopup instance created');
     }
     
     /**
@@ -514,12 +518,17 @@ window.TegakiUI.SettingsPopup = class {
      * ポップアップを表示
      */
     show() {
+        console.log('🎯 SettingsPopup.show() called');
+        
         // DOM要素を再確認
         if (!this.popup) {
             this.ensurePopupElement();
         }
         
-        if (!this.popup) return;
+        if (!this.popup) {
+            console.error('❌ Popup element not found');
+            return;
+        }
         
         // 📌 初回表示時に初期化
         if (!this.initialized) {
@@ -533,6 +542,8 @@ window.TegakiUI.SettingsPopup = class {
         if (this.initialized) {
             this.loadSettings();
         }
+        
+        console.log('✅ SettingsPopup shown');
     }
     
     /**
@@ -560,7 +571,9 @@ window.TegakiUI.SettingsPopup = class {
     }
 };
 
-// グローバルエクスポート（他のモジュールから参照可能に）
+// 🔥 グローバルエクスポート（他のモジュールから参照可能に）
 window.SettingsPopup = window.TegakiUI.SettingsPopup;
 
-console.log('✅ settings-popup.js (修正版・完全機能継承) loaded');
+console.log('✅ settings-popup.js (修正版v2・完全機能継承) loaded');
+console.log('✅ window.TegakiUI.SettingsPopup:', typeof window.TegakiUI.SettingsPopup);
+console.log('✅ window.SettingsPopup:', typeof window.SettingsPopup);

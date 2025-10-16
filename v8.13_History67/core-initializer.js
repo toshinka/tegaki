@@ -1,5 +1,6 @@
 // Tegaki Tool - Core Initializer Module
 // DO NOT use ESM, only global namespace
+// 🔥 修正: SettingsPopup初期化を遅延実行（UIController初期化後）
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -122,12 +123,16 @@ window.CoreInitializer = (function() {
                 settingsManager: this.settingsManager
             });
             
-            // 🔥 UIController初期化（SettingsManagerの初期化後に実行）
+            // 🔥 UIController初期化
+            console.log('🔧 Initializing UIController...');
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
                 this.coreEngine.getLayerManager(), 
                 this.pixiApp
             );
+
+            // 🔥 SettingsPopupの遅延初期化（UIController初期化後）
+            this.initializeSettingsPopupDelayed();
 
             if (this.coreEngine.animationSystem) {
                 this.uiController.initializeAlbumPopup(
@@ -146,6 +151,44 @@ window.CoreInitializer = (function() {
             
             window.drawingApp = drawingApp;
             return true;
+        }
+        
+        // 🆕 SettingsPopupの遅延初期化
+        initializeSettingsPopupDelayed() {
+            console.log('🔧 Attempting to initialize SettingsPopup (delayed)...');
+            
+            // SettingsPopupクラスが利用可能になるまで待機
+            const maxRetries = 20;
+            let retryCount = 0;
+            
+            const tryInitialize = () => {
+                if (window.TegakiUI?.SettingsPopup) {
+                    console.log('✅ SettingsPopup class found, initializing...');
+                    
+                    try {
+                        // UIController経由で初期化
+                        if (this.uiController) {
+                            const success = this.uiController.initializeSettingsPopup();
+                            if (success) {
+                                console.log('✅ SettingsPopup initialized successfully (delayed)');
+                                return;
+                            }
+                        }
+                    } catch (error) {
+                        console.error('❌ SettingsPopup initialization failed:', error);
+                    }
+                }
+                
+                retryCount++;
+                if (retryCount < maxRetries) {
+                    setTimeout(tryInitialize, 50);
+                } else {
+                    console.warn('⚠️ SettingsPopup initialization timeout after', maxRetries * 50, 'ms');
+                }
+            };
+            
+            // 最初の試行
+            setTimeout(tryInitialize, 0);
         }
         
         setupEventListeners() {
@@ -303,3 +346,5 @@ window.CoreInitializer = (function() {
         DrawingApp
     };
 })();
+
+console.log('✅ core-initializer.js (SettingsPopup遅延初期化対応版) loaded');
