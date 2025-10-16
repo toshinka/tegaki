@@ -1,6 +1,6 @@
 // ========================================
 // tegaki_anime_core.js - メインクラス（統合）
-// レイヤー合成表示対応版
+// スロット機能完全実装版
 // ========================================
 
 (function() {
@@ -27,9 +27,23 @@
             
             // 設定
             this.frameDelay = 200;
-            this.penSize = 2;
-            this.eraserSize = 10;
             this.onionSkinEnabled = false;
+            
+            // ペンスロット（3つ）
+            this.penSlots = [
+                { size: 2, active: true },
+                { size: 5, active: false },
+                { size: 10, active: false }
+            ];
+            this.activePenSlotIndex = 0;
+            
+            // 消しゴムスロット（3つ）
+            this.eraserSlots = [
+                { size: 10, active: true },
+                { size: 20, active: false },
+                { size: 30, active: false }
+            ];
+            this.activeEraserSlotIndex = 0;
             
             // プレビュー状態
             this.isPreviewMode = false;
@@ -118,15 +132,19 @@
             );
             this.layerPanel = layerPanelData.layers;
             
-            // コントロールパネル
+            // コントロールパネル（スロット対応）
             this.uiBuilder.createControlPanel({
                 onColorChange: (color) => this.setColor(color),
                 onToolChange: (tool) => this.setTool(tool),
-                onSizeChange: (size) => this.setPenSize(size),
-                onEraserSizeChange: (size) => this.setEraserSize(size),
                 onDelayChange: (delay) => this.setFrameDelay(delay),
                 onPreview: () => this.togglePreview(),
-                onOnionSkinChange: (enabled) => this.setOnionSkin(enabled)
+                onOnionSkinChange: (enabled) => this.setOnionSkin(enabled),
+                penSlots: this.penSlots,
+                onPenSlotClick: (index) => this.switchPenSlotDirect(index),
+                onPenSizeChange: (delta) => this.adjustPenSize(delta),
+                eraserSlots: this.eraserSlots,
+                onEraserSlotClick: (index) => this.switchEraserSlotDirect(index),
+                onEraserSizeChange: (delta) => this.adjustEraserSize(delta)
             });
             
             // 初期ハイライト
@@ -135,6 +153,104 @@
             
             // レイヤーの表示状態を初期化
             this.updateLayerVisibilityUI();
+        }
+        
+        /**
+         * ペンスロット直接切替
+         */
+        switchPenSlotDirect(index) {
+            if (index === this.activePenSlotIndex) return;
+            
+            this.penSlots[this.activePenSlotIndex].active = false;
+            this.activePenSlotIndex = index;
+            this.penSlots[this.activePenSlotIndex].active = true;
+            
+            const newSize = this.penSlots[this.activePenSlotIndex].size;
+            this.setPenSize(newSize);
+            
+            this.uiBuilder.updatePenSlots(this.penSlots, this.activePenSlotIndex);
+        }
+        
+        /**
+         * ペンスロット切替（[/]キー用）
+         */
+        switchPenSlot(direction) {
+            if (this.drawingEngine.currentTool !== 'pen') return;
+            
+            this.penSlots[this.activePenSlotIndex].active = false;
+            
+            this.activePenSlotIndex = 
+                (this.activePenSlotIndex + direction + this.penSlots.length) 
+                % this.penSlots.length;
+            
+            this.penSlots[this.activePenSlotIndex].active = true;
+            
+            const newSize = this.penSlots[this.activePenSlotIndex].size;
+            this.setPenSize(newSize);
+            
+            this.uiBuilder.updatePenSlots(this.penSlots, this.activePenSlotIndex);
+        }
+        
+        /**
+         * ペンサイズ調整
+         */
+        adjustPenSize(delta) {
+            const newSize = Math.max(1, Math.min(20, 
+                this.penSlots[this.activePenSlotIndex].size + delta));
+            
+            this.penSlots[this.activePenSlotIndex].size = newSize;
+            this.setPenSize(newSize);
+            
+            this.uiBuilder.updatePenSlots(this.penSlots, this.activePenSlotIndex);
+        }
+        
+        /**
+         * 消しゴムスロット直接切替
+         */
+        switchEraserSlotDirect(index) {
+            if (index === this.activeEraserSlotIndex) return;
+            
+            this.eraserSlots[this.activeEraserSlotIndex].active = false;
+            this.activeEraserSlotIndex = index;
+            this.eraserSlots[this.activeEraserSlotIndex].active = true;
+            
+            const newSize = this.eraserSlots[this.activeEraserSlotIndex].size;
+            this.setEraserSize(newSize);
+            
+            this.uiBuilder.updateEraserSlots(this.eraserSlots, this.activeEraserSlotIndex);
+        }
+        
+        /**
+         * 消しゴムスロット切替（[/]キー用）
+         */
+        switchEraserSlot(direction) {
+            if (this.drawingEngine.currentTool !== 'eraser') return;
+            
+            this.eraserSlots[this.activeEraserSlotIndex].active = false;
+            
+            this.activeEraserSlotIndex = 
+                (this.activeEraserSlotIndex + direction + this.eraserSlots.length) 
+                % this.eraserSlots.length;
+            
+            this.eraserSlots[this.activeEraserSlotIndex].active = true;
+            
+            const newSize = this.eraserSlots[this.activeEraserSlotIndex].size;
+            this.setEraserSize(newSize);
+            
+            this.uiBuilder.updateEraserSlots(this.eraserSlots, this.activeEraserSlotIndex);
+        }
+        
+        /**
+         * 消しゴムサイズ調整
+         */
+        adjustEraserSize(delta) {
+            const newSize = Math.max(1, Math.min(50, 
+                this.eraserSlots[this.activeEraserSlotIndex].size + delta));
+            
+            this.eraserSlots[this.activeEraserSlotIndex].size = newSize;
+            this.setEraserSize(newSize);
+            
+            this.uiBuilder.updateEraserSlots(this.eraserSlots, this.activeEraserSlotIndex);
         }
         
         /**
@@ -256,6 +372,23 @@
             // ツール切替
             km.register('p', {}, () => this.setTool('pen'), 'Pen tool');
             km.register('e', {}, () => this.setTool('eraser'), 'Eraser tool');
+            
+            // スロット切替
+            km.register('[', {}, () => {
+                if (this.drawingEngine.currentTool === 'pen') {
+                    this.switchPenSlot(-1);
+                } else if (this.drawingEngine.currentTool === 'eraser') {
+                    this.switchEraserSlot(-1);
+                }
+            }, 'Previous tool slot');
+            
+            km.register(']', {}, () => {
+                if (this.drawingEngine.currentTool === 'pen') {
+                    this.switchPenSlot(1);
+                } else if (this.drawingEngine.currentTool === 'eraser') {
+                    this.switchEraserSlot(1);
+                }
+            }, 'Next tool slot');
             
             // オニオンスキン切替
             km.register('o', {}, () => {
@@ -475,9 +608,11 @@
             
             // ツールに応じてサイズを切り替え
             if (tool === 'eraser') {
-                this.drawingEngine.setSize(this.eraserSize);
+                const size = this.eraserSlots[this.activeEraserSlotIndex].size;
+                this.drawingEngine.setSize(size);
             } else if (tool === 'pen') {
-                this.drawingEngine.setSize(this.penSize);
+                const size = this.penSlots[this.activePenSlotIndex].size;
+                this.drawingEngine.setSize(size);
             }
         }
         
@@ -485,7 +620,6 @@
          * ペンサイズを設定
          */
         setPenSize(size) {
-            this.penSize = size;
             if (this.drawingEngine.currentTool === 'pen') {
                 this.drawingEngine.setSize(size);
             }
@@ -495,7 +629,6 @@
          * 消しゴムサイズを設定
          */
         setEraserSize(size) {
-            this.eraserSize = size;
             if (this.drawingEngine.currentTool === 'eraser') {
                 this.drawingEngine.setSize(size);
             }
