@@ -1,6 +1,6 @@
 // ========================================
 // UIBuilder.js - UI生成・レイアウト
-// スロット機能 + レイアウト改修版
+// スロット機能完全実装版
 // ========================================
 
 (function() {
@@ -14,280 +14,6 @@
             
             // スロットUI要素への参照
             this.penSlotButtons = [];
-            slots.forEach((slot, i) => {
-                const btn = document.createElement('button');
-                btn.style.cssText = `
-                    flex: 1;
-                    padding: 4px 2px;
-                    background: white;
-                    border: 2px solid ${slot.active ? this.config.primary : this.config.secondary};
-                    border-radius: 2px;
-                    cursor: pointer;
-                    font-size: 9px;
-                    text-align: center;
-                    line-height: 1.2;
-                `;
-                btn.innerHTML = `✏️<br>${slot.size.toFixed(1)}`;
-                btn.onclick = () => onSlotClick(i);
-                
-                this.penSlotButtons.push(btn);
-                slotRow.appendChild(btn);
-            });
-            section.appendChild(slotRow);
-            
-            // ▲ボタン
-            const upBtn = document.createElement('button');
-            upBtn.textContent = '▲';
-            upBtn.style.cssText = `
-                width: 100%;
-                height: 18px;
-                background: white;
-                border: 1px solid ${this.config.border};
-                cursor: pointer;
-                font-size: 10px;
-                border-radius: 2px;
-            `;
-            upBtn.onclick = () => onSizeChange(0.5);
-            section.appendChild(upBtn);
-            
-            // スライダー
-            const slider = document.createElement('input');
-            slider.type = 'range';
-            slider.min = '1';
-            slider.max = '20';
-            slider.step = '0.5';
-            slider.value = slots.find(s => s.active).size;
-            slider.style.cssText = 'width: 100%;';
-            slider.oninput = (e) => {
-                const newValue = parseFloat(e.target.value);
-                const activeSlot = slots.find(s => s.active);
-                const delta = newValue - activeSlot.size;
-                onSizeChange(delta);
-            };
-            this.penSlider = slider;
-            section.appendChild(slider);
-            
-            // ▼ボタン
-            const downBtn = document.createElement('button');
-            downBtn.textContent = '▼';
-            downBtn.style.cssText = `
-                width: 100%;
-                height: 18px;
-                background: white;
-                border: 1px solid ${this.config.border};
-                cursor: pointer;
-                font-size: 10px;
-                border-radius: 2px;
-            `;
-            downBtn.onclick = () => onSizeChange(-0.5);
-            section.appendChild(downBtn);
-            
-            return { section };
-        }
-        
-        /**
-         * ペンスロット更新
-         */
-        updatePenSlots(slots, activeIndex) {
-            this.penSlotButtons.forEach((btn, i) => {
-                btn.style.borderColor = (i === activeIndex) ? 
-                    this.config.primary : this.config.secondary;
-                btn.style.borderWidth = (i === activeIndex) ? '3px' : '2px';
-                btn.innerHTML = `✏️<br>${slots[i].size.toFixed(1)}`;
-            });
-            
-            if (this.penSlider) {
-                this.penSlider.value = slots[activeIndex].size;
-            }
-        }
-        
-        /**
-         * 消しゴムスロット作成
-         */
-        createEraserSlots(slots, onSlotClick, onSizeChange) {
-            const section = document.createElement('div');
-            
-            const label = document.createElement('div');
-            label.textContent = '消しゴムサイズ';
-            label.style.cssText = 'font-weight: bold; margin-bottom: 4px; font-size: 11px;';
-            section.appendChild(label);
-            
-            // スロット行
-            const slotRow = document.createElement('div');
-            slotRow.style.cssText = 'display: flex; gap: 3px; margin-bottom: 4px;';
-            
-            this.eraserSlotButtons = [];
-            slots.forEach((slot, i) => {
-                const btn = document.createElement('button');
-                btn.style.cssText = `
-                    flex: 1;
-                    padding: 4px 2px;
-                    background: white;
-                    border: 2px solid ${slot.active ? this.config.primary : this.config.secondary};
-                    border-radius: 2px;
-                    cursor: pointer;
-                    font-size: 9px;
-                    text-align: center;
-                    line-height: 1.2;
-                `;
-                btn.innerHTML = `🧽<br>${slot.size.toFixed(0)}`;
-                btn.onclick = () => onSlotClick(i);
-                
-                this.eraserSlotButtons.push(btn);
-                slotRow.appendChild(btn);
-            });
-            section.appendChild(slotRow);
-            
-            // ▲ボタン
-            const upBtn = document.createElement('button');
-            upBtn.textContent = '▲';
-            upBtn.style.cssText = `
-                width: 100%;
-                height: 18px;
-                background: white;
-                border: 1px solid ${this.config.border};
-                cursor: pointer;
-                font-size: 10px;
-                border-radius: 2px;
-            `;
-            upBtn.onclick = () => onSizeChange(1);
-            section.appendChild(upBtn);
-            
-            // スライダー
-            const slider = document.createElement('input');
-            slider.type = 'range';
-            slider.min = '1';
-            slider.max = '50';
-            slider.step = '1';
-            slider.value = slots.find(s => s.active).size;
-            slider.style.cssText = 'width: 100%;';
-            slider.oninput = (e) => {
-                const newValue = parseFloat(e.target.value);
-                const activeSlot = slots.find(s => s.active);
-                const delta = newValue - activeSlot.size;
-                onSizeChange(delta);
-            };
-            this.eraserSlider = slider;
-            section.appendChild(slider);
-            
-            // ▼ボタン
-            const downBtn = document.createElement('button');
-            downBtn.textContent = '▼';
-            downBtn.style.cssText = `
-                width: 100%;
-                height: 18px;
-                background: white;
-                border: 1px solid ${this.config.border};
-                cursor: pointer;
-                font-size: 10px;
-                border-radius: 2px;
-            `;
-            downBtn.onclick = () => onSizeChange(-1);
-            section.appendChild(downBtn);
-            
-            return { section };
-        }
-        
-        /**
-         * 消しゴムスロット更新
-         */
-        updateEraserSlots(slots, activeIndex) {
-            this.eraserSlotButtons.forEach((btn, i) => {
-                btn.style.borderColor = (i === activeIndex) ? 
-                    this.config.primary : this.config.secondary;
-                btn.style.borderWidth = (i === activeIndex) ? '3px' : '2px';
-                btn.innerHTML = `🧽<br>${slots[i].size.toFixed(0)}`;
-            });
-            
-            if (this.eraserSlider) {
-                this.eraserSlider.value = slots[activeIndex].size;
-            }
-        }
-        
-        /**
-         * フレーム間隔スライダー作成
-         */
-        createDelaySlider(onChange) {
-            const section = document.createElement('div');
-            
-            const label = document.createElement('label');
-            label.style.cssText = 'display: block; margin-bottom: 4px; font-weight: bold; font-size: 11px;';
-            label.innerHTML = `間隔: <span id="delay-value">200</span>ms`;
-            section.appendChild(label);
-            
-            const slider = document.createElement('input');
-            slider.type = 'range';
-            slider.id = 'delay-slider';
-            slider.min = '10';
-            slider.max = '2000';
-            slider.value = '200';
-            slider.step = '10';
-            slider.style.cssText = 'width: 100%;';
-            
-            const valueSpan = label.querySelector('#delay-value');
-            slider.addEventListener('input', (e) => {
-                const value = parseInt(e.target.value);
-                valueSpan.textContent = value;
-                onChange(value);
-            });
-            
-            const hint = document.createElement('div');
-            hint.style.cssText = 'display: flex; justify-content: space-between; font-size: 9px; color: #666; margin-top: 2px;';
-            hint.innerHTML = '<span>速い</span><span>遅い</span>';
-            section.appendChild(slider);
-            section.appendChild(hint);
-            
-            return section;
-        }
-        
-        /**
-         * オニオンスキンセクション作成
-         */
-        createOnionSkinSection(onOnionSkinChange) {
-            const section = document.createElement('div');
-            
-            const onionLabel = document.createElement('label');
-            onionLabel.style.cssText = 'display: flex; align-items: center; gap: 5px; font-size: 11px; cursor: pointer;';
-            
-            const onionCheckbox = document.createElement('input');
-            onionCheckbox.type = 'checkbox';
-            onionCheckbox.id = 'onion-skin-check';
-            onionCheckbox.checked = false;
-            onionCheckbox.onchange = (e) => onOnionSkinChange(e.target.checked);
-            
-            const onionText = document.createElement('span');
-            onionText.textContent = 'オニオンスキン';
-            
-            onionLabel.appendChild(onionCheckbox);
-            onionLabel.appendChild(onionText);
-            section.appendChild(onionLabel);
-            
-            return section;
-        }
-        
-        /**
-         * クリーンアップ
-         */
-        destroy() {
-            if (this.wrapper && this.wrapper.parentNode) {
-                this.wrapper.remove();
-            }
-            this.wrapper = null;
-            this.container = null;
-            this.layerPanelHeaderElement = null;
-            this.penSlotButtons = [];
-            this.penSlider = null;
-            this.eraserSlotButtons = [];
-            this.eraserSlider = null;
-        }
-    }
-    
-    // window に公開
-    if (typeof window !== 'undefined') {
-        window.UIBuilder = UIBuilder;
-        console.log('✅ UIBuilder loaded');
-    }
-})();SlotButtons = [];
             this.penSlider = null;
             this.eraserSlotButtons = [];
             this.eraserSlider = null;
@@ -907,20 +633,24 @@
             panel.appendChild(toolSection.section);
             
             // ペンスロット
-            const penSlotSection = this.createPenSlots(
-                callbacks.penSlots,
-                callbacks.onPenSlotClick,
-                callbacks.onPenSizeChange
-            );
-            panel.appendChild(penSlotSection.section);
+            if (callbacks.penSlots) {
+                const penSlotSection = this.createPenSlots(
+                    callbacks.penSlots,
+                    callbacks.onPenSlotClick,
+                    callbacks.onPenSizeChange
+                );
+                panel.appendChild(penSlotSection.section);
+            }
             
             // 消しゴムスロット
-            const eraserSlotSection = this.createEraserSlots(
-                callbacks.eraserSlots,
-                callbacks.onEraserSlotClick,
-                callbacks.onEraserSizeChange
-            );
-            panel.appendChild(eraserSlotSection.section);
+            if (callbacks.eraserSlots) {
+                const eraserSlotSection = this.createEraserSlots(
+                    callbacks.eraserSlots,
+                    callbacks.onEraserSlotClick,
+                    callbacks.onEraserSizeChange
+                );
+                panel.appendChild(eraserSlotSection.section);
+            }
             
             // フレーム間隔
             const delaySection = this.createDelaySlider(callbacks.onDelayChange);
@@ -1076,4 +806,278 @@
             const slotRow = document.createElement('div');
             slotRow.style.cssText = 'display: flex; gap: 3px; margin-bottom: 4px;';
             
-            this.pen
+            this.penSlotButtons = [];
+            slots.forEach((slot, i) => {
+                const btn = document.createElement('button');
+                btn.style.cssText = `
+                    flex: 1;
+                    padding: 4px 2px;
+                    background: white;
+                    border: 2px solid ${slot.active ? this.config.primary : this.config.secondary};
+                    border-radius: 2px;
+                    cursor: pointer;
+                    font-size: 9px;
+                    text-align: center;
+                    line-height: 1.2;
+                `;
+                btn.innerHTML = `✏️<br>${slot.size.toFixed(1)}`;
+                btn.onclick = () => onSlotClick(i);
+                
+                this.penSlotButtons.push(btn);
+                slotRow.appendChild(btn);
+            });
+            section.appendChild(slotRow);
+            
+            // ▲ボタン
+            const upBtn = document.createElement('button');
+            upBtn.textContent = '▲';
+            upBtn.style.cssText = `
+                width: 100%;
+                height: 18px;
+                background: white;
+                border: 1px solid ${this.config.border};
+                cursor: pointer;
+                font-size: 10px;
+                border-radius: 2px;
+            `;
+            upBtn.onclick = () => onSizeChange(0.5);
+            section.appendChild(upBtn);
+            
+            // スライダー
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = '1';
+            slider.max = '20';
+            slider.step = '0.5';
+            slider.value = slots.find(s => s.active).size;
+            slider.style.cssText = 'width: 100%;';
+            slider.oninput = (e) => {
+                const newValue = parseFloat(e.target.value);
+                const activeSlot = slots.find(s => s.active);
+                const delta = newValue - activeSlot.size;
+                onSizeChange(delta);
+            };
+            this.penSlider = slider;
+            section.appendChild(slider);
+            
+            // ▼ボタン
+            const downBtn = document.createElement('button');
+            downBtn.textContent = '▼';
+            downBtn.style.cssText = `
+                width: 100%;
+                height: 18px;
+                background: white;
+                border: 1px solid ${this.config.border};
+                cursor: pointer;
+                font-size: 10px;
+                border-radius: 2px;
+            `;
+            downBtn.onclick = () => onSizeChange(-0.5);
+            section.appendChild(downBtn);
+            
+            return { section };
+        }
+        
+        /**
+         * ペンスロット更新
+         */
+        updatePenSlots(slots, activeIndex) {
+            this.penSlotButtons.forEach((btn, i) => {
+                btn.style.borderColor = (i === activeIndex) ? 
+                    this.config.primary : this.config.secondary;
+                btn.style.borderWidth = (i === activeIndex) ? '3px' : '2px';
+                btn.innerHTML = `✏️<br>${slots[i].size.toFixed(1)}`;
+            });
+            
+            if (this.penSlider) {
+                this.penSlider.value = slots[activeIndex].size;
+            }
+        }
+        
+        /**
+         * 消しゴムスロット作成
+         */
+        createEraserSlots(slots, onSlotClick, onSizeChange) {
+            const section = document.createElement('div');
+            
+            const label = document.createElement('div');
+            label.textContent = '消しゴムサイズ';
+            label.style.cssText = 'font-weight: bold; margin-bottom: 4px; font-size: 11px;';
+            section.appendChild(label);
+            
+            // スロット行
+            const slotRow = document.createElement('div');
+            slotRow.style.cssText = 'display: flex; gap: 3px; margin-bottom: 4px;';
+            
+            this.eraserSlotButtons = [];
+            slots.forEach((slot, i) => {
+                const btn = document.createElement('button');
+                btn.style.cssText = `
+                    flex: 1;
+                    padding: 4px 2px;
+                    background: white;
+                    border: 2px solid ${slot.active ? this.config.primary : this.config.secondary};
+                    border-radius: 2px;
+                    cursor: pointer;
+                    font-size: 9px;
+                    text-align: center;
+                    line-height: 1.2;
+                `;
+                btn.innerHTML = `🧽<br>${slot.size.toFixed(0)}`;
+                btn.onclick = () => onSlotClick(i);
+                
+                this.eraserSlotButtons.push(btn);
+                slotRow.appendChild(btn);
+            });
+            section.appendChild(slotRow);
+            
+            // ▲ボタン
+            const upBtn = document.createElement('button');
+            upBtn.textContent = '▲';
+            upBtn.style.cssText = `
+                width: 100%;
+                height: 18px;
+                background: white;
+                border: 1px solid ${this.config.border};
+                cursor: pointer;
+                font-size: 10px;
+                border-radius: 2px;
+            `;
+            upBtn.onclick = () => onSizeChange(1);
+            section.appendChild(upBtn);
+            
+            // スライダー
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.min = '1';
+            slider.max = '50';
+            slider.step = '1';
+            slider.value = slots.find(s => s.active).size;
+            slider.style.cssText = 'width: 100%;';
+            slider.oninput = (e) => {
+                const newValue = parseFloat(e.target.value);
+                const activeSlot = slots.find(s => s.active);
+                const delta = newValue - activeSlot.size;
+                onSizeChange(delta);
+            };
+            this.eraserSlider = slider;
+            section.appendChild(slider);
+            
+            // ▼ボタン
+            const downBtn = document.createElement('button');
+            downBtn.textContent = '▼';
+            downBtn.style.cssText = `
+                width: 100%;
+                height: 18px;
+                background: white;
+                border: 1px solid ${this.config.border};
+                cursor: pointer;
+                font-size: 10px;
+                border-radius: 2px;
+            `;
+            downBtn.onclick = () => onSizeChange(-1);
+            section.appendChild(downBtn);
+            
+            return { section };
+        }
+        
+        /**
+         * 消しゴムスロット更新
+         */
+        updateEraserSlots(slots, activeIndex) {
+            this.eraserSlotButtons.forEach((btn, i) => {
+                btn.style.borderColor = (i === activeIndex) ? 
+                    this.config.primary : this.config.secondary;
+                btn.style.borderWidth = (i === activeIndex) ? '3px' : '2px';
+                btn.innerHTML = `🧽<br>${slots[i].size.toFixed(0)}`;
+            });
+            
+            if (this.eraserSlider) {
+                this.eraserSlider.value = slots[activeIndex].size;
+            }
+        }
+        
+        /**
+         * フレーム間隔スライダー作成
+         */
+        createDelaySlider(onChange) {
+            const section = document.createElement('div');
+            
+            const label = document.createElement('label');
+            label.style.cssText = 'display: block; margin-bottom: 4px; font-weight: bold; font-size: 11px;';
+            label.innerHTML = `間隔: <span id="delay-value">200</span>ms`;
+            section.appendChild(label);
+            
+            const slider = document.createElement('input');
+            slider.type = 'range';
+            slider.id = 'delay-slider';
+            slider.min = '10';
+            slider.max = '2000';
+            slider.value = '200';
+            slider.step = '10';
+            slider.style.cssText = 'width: 100%;';
+            
+            const valueSpan = label.querySelector('#delay-value');
+            slider.addEventListener('input', (e) => {
+                const value = parseInt(e.target.value);
+                valueSpan.textContent = value;
+                onChange(value);
+            });
+            
+            const hint = document.createElement('div');
+            hint.style.cssText = 'display: flex; justify-content: space-between; font-size: 9px; color: #666; margin-top: 2px;';
+            hint.innerHTML = '<span>速い</span><span>遅い</span>';
+            section.appendChild(slider);
+            section.appendChild(hint);
+            
+            return section;
+        }
+        
+        /**
+         * オニオンスキンセクション作成
+         */
+        createOnionSkinSection(onOnionSkinChange) {
+            const section = document.createElement('div');
+            
+            const onionLabel = document.createElement('label');
+            onionLabel.style.cssText = 'display: flex; align-items: center; gap: 5px; font-size: 11px; cursor: pointer;';
+            
+            const onionCheckbox = document.createElement('input');
+            onionCheckbox.type = 'checkbox';
+            onionCheckbox.id = 'onion-skin-check';
+            onionCheckbox.checked = false;
+            onionCheckbox.onchange = (e) => onOnionSkinChange(e.target.checked);
+            
+            const onionText = document.createElement('span');
+            onionText.textContent = 'オニオンスキン';
+            
+            onionLabel.appendChild(onionCheckbox);
+            onionLabel.appendChild(onionText);
+            section.appendChild(onionLabel);
+            
+            return section;
+        }
+        
+        /**
+         * クリーンアップ
+         */
+        destroy() {
+            if (this.wrapper && this.wrapper.parentNode) {
+                this.wrapper.remove();
+            }
+            this.wrapper = null;
+            this.container = null;
+            this.layerPanelHeaderElement = null;
+            this.penSlotButtons = [];
+            this.penSlider = null;
+            this.eraserSlotButtons = [];
+            this.eraserSlider = null;
+        }
+    }
+    
+    // window に公開
+    if (typeof window !== 'undefined') {
+        window.UIBuilder = UIBuilder;
+        console.log('✅ UIBuilder loaded');
+    }
+})();
