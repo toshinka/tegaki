@@ -1,0 +1,292 @@
+# Tegaki 設定システム アーキテクチャ設計書
+
+## 📊 現状分析（As-Is）
+
+### データフロー図
+
+```
+┌─────────────────┐
+│ settings-popup  │ UI層：ユーザー入力の受付のみ
+│   .js           │
+└────────┬────────┘
+         │ EventBus.emit()
+         ↓
+┌─────────────────┐
+│   EventBus      │ 通信層：疎結合な通知機構
+└────────┬────────┘
+         │ .on() 購読
+         ↓
+┌─────────────────┐
+│ brush-settings  │ ドメイン層：設定値の管理
+│   .js           │ - pressureCorrection
+└────────┬────────┘ - smoothing
+         │         - pressureCurve
+         │ 
+         ↓ ???（現状不明確）
+┌─────────────────┐
+│ pressure-handler│ 適用層：実際の描画処理
+│   .js           │ - 筆圧の取得と変換
+└─────────────────┘
+         ↓
+┌─────────────────┐
+│ drawing-engine  │ 描画実行層
+│   .js           │
+└─────────────────┘
+```
+
+### 🔴 問題点
+
+1. **適用層の欠落**: BrushSettings → PressureHandler への設定適用が不明確
+2. **DrawingEngineの孤立**: EventBusを購読していない
+3. **設定永続化の分散**: localStorage が settings-popup.js に直接記述
+
+---
+
+## 🎯 理想アーキテクチャ（To-Be）
+
+### 責務分離の原則
+
+```
+┌─────────────────────────────────────────────────────────┐
+│                      UI層（View）                        │
+│  - settings-popup.js: 設定UIの表示・入力受付            │
+│  - ui-panels.js: ツールバーUI                           │
+└─────────────────┬───────────────────────────────────────┘
+                  │ emit('settings:xxx', {value})
+                  ↓
+┌─────────────────────────────────────────────────────────┐
+│                   通信層（EventBus）                      │
+│  - event-bus.js: 疎結合な通知機構                        │
+└─────────┬───────────────────────────────┬───────────────┘
+          │                               │
+          │ on('settings:xxx')            │ on('settings:xxx')
+          ↓                               ↓
+┌─────────────────────┐       ┌─────────────────────────┐
+│   設定管理層         │       │   コア制御層             │
+│ SettingsManager     │◄──────│ CoreRuntime.api         │
+│ - loadFromStorage() │       │ - setPressureCorrection │
+│ - saveToStorage()   │       │ - setSmoothing          │
+│ - getDefaults()     │       │ - setPressureCurve      │
+└──────────┬──────────┘       └────────┬────────────────┘
+           │                           │
+           │ 設定値の配布               │ コマンド発行
+           ↓                           ↓
+┌─────────────────────┐       ┌─────────────────────────┐
+│  ドメイン層          │       │   描画エンジン層         │
+│ BrushSettings       │◄──────│ DrawingEngine           │
+│ - applyXxx()        │       │ - subscribeToSettings() │
+│ - validateXxx()     │       └────────┬────────────────┘
+└──────────┬──────────┘                │
+           │                            │
+           │ 変換・適用                 │
+           ↓                            ↓
+┌─────────────────────┐       ┌─────────────────────────┐
+│  適用層              │       │  レンダリング層          │
+│ PressureHandler     │       │ StrokeRenderer          │
+│ - getCorrectedPres  │       │ - renderStroke()        │
+│ - applyCurve()      │       └─────────────────────────┘
+└─────────────────────┘
+```
+
+### データフロー（理想）
+
+```
+[ユーザー操作]
+    ↓
+settings-popup.js: スライダー変更を検知
+    ↓
+EventBus.emit('settings:pressure-correction', {value: 1.5})
+    ↓
+┌──────────────────┬──────────────────┬──────────────────┐
+│                  │                  │                  │
+│ SettingsManager  │ BrushSettings    │ DrawingEngine    │
+│ .updateSetting() │ .setPressureCor  │ .onSettingsChang │
+│ → localStorage   │ → 内部状態更新   │ → サブモジュール │
+│                  │                  │    への伝播      │
+└──────────────────┴──────────────────┴──────────────────┘
+    ↓                  ↓                  ↓
+保存完了           設定適用準備        PressureHandlerへ
+                                       即座に反映
+```
+
+---
+
+## 📋 ファイル別責務定義（SOLID原則）
+
+### UI層
+**settings-popup.js**
+- ✅ 単一責任: UI表示とユーザー入力の受付
+- ✅ 依存性逆転: EventBusのみに依存（具体実装には非依存）
+- ❌ 現状の問題: localStorage への直接書き込み
+
+**ui-panels.js**
+- ✅ 単一責任: ツールバーUIの制御
+- ❌ 現状の問題: スライダー実装が重複
+
+### 通信層
+**event-bus.js**
+- ✅ 単一責任: イベントの発行・購読
+- ✅ 開放閉鎖原則: 新しいイベント追加が容易
+- ✅ 優先度機能: Phase 2で追加済み
+
+### 設定管理層（新規作成が必要）
+**settings-manager.js** ⭐ NEW
+- 単一責任: 設定値の永続化とデフォルト管理
+- 依存性逆転: EventBusとlocalStorageのみに依存
+- 開放閉鎖原則: 新しい設定項目の追加が容易
+
+### コア制御層
+**core-runtime.js**
+- ✅ 単一責任: システム全体の初期化と制御
+- ❌ 現状の問題: 設定関連のAPI不足
+
+### ドメイン層
+**brush-settings.js**
+- ✅ 単一責任: ブラシパラメータの管理と検証
+- ✅ EventBus購読: 設定変更を正しく購読
+- ⚠️ 改善余地: 設定適用の責務が不明確
+
+**pressure-handler.js**
+- ✅ 単一責任: 筆圧データの取得と正規化
+- ❌ 現状の問題: BrushSettingsの設定を適用していない
+
+### 描画エンジン層
+**drawing-engine.js**
+- ⚠️ 現状の問題: EventBusを購読していない
+- ⚠️ 改善余地: サブモジュールへの設定伝播が不明確
+
+---
+
+## 🔧 実装計画（優先順位）
+
+### Priority 1: 基盤整備（可視性向上）
+✅ このドキュメント作成（完了）
+
+### Priority 2: 設定管理の一元化
+1. `system/settings-manager.js` を新規作成
+2. localStorage の責務を移管
+3. config.js との連携準備
+
+### Priority 3: EventBus統合の完全化
+1. DrawingEngine に `subscribeToSettings()` 追加
+2. PressureHandler への設定適用フロー確立
+3. 設定変更の即時反映テスト
+
+### Priority 4: CoreRuntime API拡張
+1. `api.setPressureCorrection()` 追加
+2. `api.setSmoothing()` 追加
+3. `api.setPressureCurve()` 追加
+
+### Priority 5: UI統合（リファクタリング）
+1. スライダー実装の統一（`ui/slider-utils.js`）
+2. settings-popup.js のリファクタリング
+3. 重複コードの削除
+
+---
+
+## 📝 イベント命名規則
+
+### 設定変更イベント
+```javascript
+'settings:pressure-correction'  // 筆圧補正変更
+'settings:smoothing'            // 線補正変更
+'settings:pressure-curve'       // 筆圧カーブ変更
+'settings:status-panel-visible' // ステータスパネル表示切替
+```
+
+### 設定読み込みイベント
+```javascript
+'settings:loaded'               // 設定読み込み完了
+'settings:saved'                // 設定保存完了
+'settings:reset'                // 設定リセット
+```
+
+### ブラシ設定変更イベント（既存）
+```javascript
+'brush:pressure-correction-changed'  // BrushSettings内部での変更通知
+'brush:smoothing-changed'
+'brush:pressure-curve-changed'
+'brushSizeChanged'
+'brushColorChanged'
+'brushOpacityChanged'
+```
+
+---
+
+## 🔍 デバッグ支援
+
+### 設定変更の追跡
+```javascript
+// EventBusのデバッグモードを有効化
+window.TegakiEventBus.setDebug(true);
+
+// 設定関連イベントのみフィルタリング
+window.TegakiEventBus.on('settings:*', (data) => {
+  console.log('設定変更:', data);
+});
+```
+
+### 現在の設定状態を確認
+```javascript
+// BrushSettings の状態
+window.drawingApp.drawingEngine.settings.getCurrentSettings();
+
+// SettingsManager の状態（実装後）
+window.TegakiSettingsManager.getAll();
+
+// CoreRuntime経由での確認（実装後）
+window.CoreRuntime.api.getSettings();
+```
+
+---
+
+## 🎯 成功基準
+
+### 機能要件
+- [ ] スライダー変更が即座に描画に反映される
+- [ ] 設定がページリロード後も保持される
+- [ ] 複数の設定変更が競合しない
+- [ ] config.js のデフォルト値が正しく適用される
+
+### 非機能要件（AI改修性）
+- [ ] ファイルの責務が明確（1ファイル1責務）
+- [ ] データフローが追跡可能
+- [ ] 新しい設定項目の追加が容易
+- [ ] テストが書きやすい構造
+- [ ] コンソールログなしでデバッグ可能
+
+### コード品質
+- [ ] DRY原則: 重複コードなし
+- [ ] SOLID原則: 単一責任・依存性逆転
+- [ ] EventBus統合: すべての設定変更がイベント経由
+- [ ] API統一: CoreRuntime.api 経由でアクセス可能
+
+---
+
+## 📚 参考：現在の設定項目一覧
+
+```javascript
+{
+  // ブラシ設定
+  pressureCorrection: 1.0,    // 0.1 - 3.0
+  smoothing: 0.5,             // 0.0 - 1.0
+  pressureCurve: 'linear',    // 'linear' | 'ease-in' | 'ease-out'
+  
+  // UI設定
+  statusPanelVisible: true,
+  
+  // 将来追加予定（config.js統合時）
+  // keyBindings: {...},
+  // theme: 'futaba',
+  // exportDefaults: {...}
+}
+```
+
+---
+
+## 🚀 次のステップ
+
+1. このドキュメントをレビュー
+2. Priority 2（SettingsManager作成）から実装開始
+3. 各Priorityごとに動作確認
+4. 最後に統合テスト
