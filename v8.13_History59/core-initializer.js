@@ -48,12 +48,25 @@ window.CoreInitializer = (function() {
         document.body.appendChild(statusPanel);
     }
 
+    // 🆕 SettingsManager 初期化
+    function initializeSettingsManager(eventBus, config) {
+        if (!window.TegakiSettingsManager) {
+            throw new Error('SettingsManager class not found');
+        }
+
+        const settingsManager = new window.TegakiSettingsManager(eventBus, config);
+        window.TegakiSettingsManager = settingsManager; // インスタンスに置き換え
+        
+        return settingsManager;
+    }
+
     // DrawingAppクラス定義
     class DrawingApp {
         constructor() {
             this.pixiApp = null;
             this.coreEngine = null;
             this.uiController = null;
+            this.settingsManager = null; // 🆕
         }
         
         async initialize() {
@@ -87,13 +100,20 @@ window.CoreInitializer = (function() {
             
             window.coreEngine = this.coreEngine;
             
+            // 🆕 SettingsManager を先に初期化
+            this.settingsManager = initializeSettingsManager(
+                window.TegakiEventBus,
+                CONFIG
+            );
+            
             CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
                 canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
                 cameraSystem: this.coreEngine.getCameraSystem(),
                 layerManager: this.coreEngine.getLayerManager(),
-                drawingEngine: this.coreEngine.getDrawingEngine()
+                drawingEngine: this.coreEngine.getDrawingEngine(),
+                settingsManager: this.settingsManager // 🆕 追加
             });
             
             this.uiController = new UIController(
