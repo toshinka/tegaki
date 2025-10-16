@@ -1,7 +1,9 @@
 // ==================================================
-// ui/export-popup.js
-// エクスポートUI管理 - デバッグ強化版
+// ui/export-popup.js - 改修版
+// 責務: エクスポートUI管理、プレビュー表示
+// 🔥 改修: グローバル参照の統一、トグル機能
 // ==================================================
+
 window.ExportPopup = (function() {
     'use strict';
     
@@ -36,15 +38,11 @@ window.ExportPopup = (function() {
                     '</div>' +
                     '<div class="export-options" id="export-options"></div>' +
                     '<div class="export-progress" id="export-progress" style="display: none;">' +
-                        '<div class="progress-bar">' +
-                            '<div class="progress-fill"></div>' +
-                        '</div>' +
+                        '<div class="progress-bar"><div class="progress-fill"></div></div>' +
                         '<div class="progress-text">0%</div>' +
                     '</div>' +
                     '<div class="preview-container" id="preview-container" style="display: none; margin: 8px 0; text-align: center; background: var(--futaba-background); border: 1px solid var(--futaba-light-medium); border-radius: 6px; padding: 8px; max-height: 350px; overflow: auto;">' +
-                        '<div id="preview-message" style="font-size: 12px; color: var(--futaba-maroon); margin-bottom: 8px; font-weight: 500;">' +
-                            'プレビューを表示しました。右クリックでコピーできます' +
-                        '</div>' +
+                        '<div id="preview-message" style="font-size: 12px; color: var(--futaba-maroon); margin-bottom: 8px; font-weight: 500;">プレビュー</div>' +
                         '<img id="preview-image" style="max-width: 100%; max-height: 300px; width: auto; height: auto; object-fit: contain; border: 2px solid var(--futaba-light-medium); border-radius: 4px; cursor: context-menu; display: block; margin: 0 auto;" />' +
                     '</div>' +
                     '<div class="export-status" id="export-status" style="display: none; font-size: 12px; color: var(--text-secondary); margin: 8px 0;"></div>' +
@@ -75,18 +73,6 @@ window.ExportPopup = (function() {
                 if (e.target.closest('#export-preview')) {
                     this.executePreview();
                     return;
-                }
-                
-                if (this.isVisible) {
-                    setTimeout(() => {
-                        const popup = document.getElementById('export-popup');
-                        const exportIcon = document.getElementById('export-tool');
-                        
-                        if (popup && !popup.contains(e.target) && 
-                            e.target !== exportIcon && (!exportIcon || !exportIcon.contains(e.target))) {
-                            this.hide();
-                        }
-                    }, 0);
                 }
             });
             
@@ -125,10 +111,9 @@ window.ExportPopup = (function() {
         }
         
         getCutCount() {
-            if (this.manager && this.manager.animationSystem && 
-                this.manager.animationSystem.getAnimationData) {
+            if (this.manager?.animationSystem?.getAnimationData) {
                 const animData = this.manager.animationSystem.getAnimationData();
-                if (animData && animData.cuts) {
+                if (animData?.cuts) {
                     return animData.cuts.length;
                 }
             }
@@ -141,7 +126,6 @@ window.ExportPopup = (function() {
             
             const cutCount = this.getCutCount();
             const showPreview = this.selectedFormat === 'png' || this.selectedFormat === 'gif';
-            
             previewBtn.style.display = showPreview ? 'block' : 'none';
         }
         
@@ -151,16 +135,14 @@ window.ExportPopup = (function() {
             
             let canvasWidth = 400;
             let canvasHeight = 400;
-            if (window.TEGAKI_CONFIG && window.TEGAKI_CONFIG.canvas) {
+            if (window.TEGAKI_CONFIG?.canvas) {
                 canvasWidth = window.TEGAKI_CONFIG.canvas.width;
                 canvasHeight = window.TEGAKI_CONFIG.canvas.height;
             }
             
             const cutCount = this.getCutCount();
-            
             let quality = 10;
-            if (window.TEGAKI_CONFIG && window.TEGAKI_CONFIG.animation && 
-                window.TEGAKI_CONFIG.animation.exportSettings) {
+            if (window.TEGAKI_CONFIG?.animation?.exportSettings) {
                 quality = window.TEGAKI_CONFIG.animation.exportSettings.quality;
             }
             
@@ -188,7 +170,6 @@ window.ExportPopup = (function() {
             };
             
             optionsEl.innerHTML = optionsMap[format] || '';
-            
             this.updatePreviewButtonVisibility();
         }
         
@@ -197,27 +178,15 @@ window.ExportPopup = (function() {
             const img = document.getElementById('preview-image');
             const messageEl = document.getElementById('preview-message');
             
-            if (!container || !img) {
-                console.error('Preview elements not found');
-                return;
-            }
+            if (!container || !img) return;
             
             this.cleanupPreview();
             
             this.currentBlob = blob;
             this.currentPreviewUrl = URL.createObjectURL(blob);
             
-            console.log('Preview URL created:', this.currentPreviewUrl);
-            console.log('Blob type:', blob.type, 'Size:', blob.size);
-            
-            img.onload = () => {
-                console.log('Preview image loaded successfully');
-            };
-            
-            img.onerror = (e) => {
-                console.error('Preview image load error:', e);
-            };
-            
+            img.onload = () => { /* handled */ };
+            img.onerror = () => { /* handled */ };
             img.src = this.currentPreviewUrl;
             
             if (message && messageEl) {
@@ -286,7 +255,6 @@ window.ExportPopup = (function() {
             try {
                 await this.manager.export(this.selectedFormat, {});
             } catch (error) {
-                console.error('Export error:', error);
                 this.showStatus('エクスポート失敗: ' + error.message, true);
                 if (progressEl) progressEl.style.display = 'none';
                 if (executeBtn) executeBtn.disabled = false;
@@ -296,13 +264,7 @@ window.ExportPopup = (function() {
         }
         
         async executePreview() {
-            console.log('=== Preview execution started ===');
-            console.log('Current format:', this.selectedFormat);
-            console.log('Manager exists:', !!this.manager);
-            console.log('Is exporting:', this.manager.isExporting());
-            
             if (this.manager.isExporting()) {
-                console.log('Already exporting, aborting');
                 return;
             }
             
@@ -328,20 +290,12 @@ window.ExportPopup = (function() {
             const cutCount = this.getCutCount();
             const isAnimation = this.selectedFormat === 'gif' || (this.selectedFormat === 'png' && cutCount >= 2);
             
-            console.log('Cut count:', cutCount);
-            console.log('Is animation:', isAnimation);
-            
             if (isAnimation && progressEl) {
                 progressEl.style.display = 'block';
             }
             
             try {
-                console.log('Calling generatePreview...');
                 const result = await this.manager.generatePreview(this.selectedFormat, {});
-                
-                console.log('Preview generated:', result);
-                console.log('Blob received:', result.blob);
-                console.log('Format:', result.format);
                 
                 if (progressEl) progressEl.style.display = 'none';
                 
@@ -355,13 +309,7 @@ window.ExportPopup = (function() {
                 if (executeBtn) executeBtn.disabled = false;
                 this.resetProgress();
                 
-                console.log('=== Preview execution completed ===');
-                
             } catch (error) {
-                console.error('=== Preview execution failed ===');
-                console.error('Error:', error);
-                console.error('Stack:', error.stack);
-                
                 this.showStatus('プレビュー生成失敗: ' + error.message, true);
                 if (previewBtn) {
                     previewBtn.textContent = 'プレビュー';
@@ -446,9 +394,21 @@ window.ExportPopup = (function() {
                 this.hidePreview();
             }
         }
+        
+        toggle() {
+            if (this.isVisible) {
+                this.hide();
+            } else {
+                this.show();
+            }
+        }
     }
     
     return ExportPopup;
 })();
 
-console.log('✅ export-popup.js (デバッグ強化版) loaded');
+// 🔥 グローバル登録を統一（複数参照パターンに対応）
+window.TegakiExportPopup = window.ExportPopup;
+if (!window.exportPopup && window.ExportPopup) {
+    window.exportPopup = window.ExportPopup;
+}

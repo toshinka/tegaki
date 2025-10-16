@@ -1,7 +1,7 @@
 /**
- * アルバムポップアップ
- * 通常スナップショット（レイヤー保持）専用
- * カメラフレーム内のみキャプチャ
+ * album-popup.js - 改修版
+ * 責務: アルバムUI表示・スナップショット管理
+ * 🔥 改修: コード簡潔化、APIの統一
  */
 
 class AlbumPopup {
@@ -12,27 +12,36 @@ class AlbumPopup {
     
     this.overlay = null;
     this.popup = null;
-    this.isOpen = false;
+    this.isVisible = false;
     this.snapshots = [];
+    
+    this._loadSnapshots();
   }
 
   show() {
-    if (this.isOpen) return;
+    if (this.isVisible) return;
     
     this._createPopup();
-    this._loadSnapshots();
-    this.isOpen = true;
+    this.isVisible = true;
   }
 
   hide() {
-    if (!this.isOpen) return;
+    if (!this.isVisible) return;
     
     if (this.overlay) {
       this.overlay.remove();
       this.overlay = null;
     }
     this.popup = null;
-    this.isOpen = false;
+    this.isVisible = false;
+  }
+
+  toggle() {
+    if (this.isVisible) {
+      this.hide();
+    } else {
+      this.show();
+    }
   }
 
   _createPopup() {
@@ -111,6 +120,8 @@ class AlbumPopup {
     this.popup.onclick = (e) => {
       e.stopPropagation();
     };
+    
+    this._renderGallery();
   }
 
   _setupButtonHover(btn) {
@@ -126,7 +137,7 @@ class AlbumPopup {
 
   async _saveSnapshot() {
     const snapshot = await this._captureSnapshot();
-    if (snapshot && snapshot.thumbnail) {
+    if (snapshot?.thumbnail) {
       this.snapshots.push(snapshot);
       this._saveToStorage();
       this._renderGallery();
@@ -134,8 +145,7 @@ class AlbumPopup {
   }
 
   async _captureSnapshot() {
-    // AnimationSystemから現在のカットコンテナを取得
-    if (!this.animationSystem || !this.animationSystem.animationData) {
+    if (!this.animationSystem?.animationData) {
       alert('アニメーションシステムが初期化されていません');
       return null;
     }
@@ -144,14 +154,12 @@ class AlbumPopup {
     const cuts = this.animationSystem.animationData.cuts || [];
     const currentCut = cuts[currentCutIndex];
     
-    if (!currentCut || !currentCut.container) {
+    if (!currentCut?.container) {
       alert('現在のカットが見つかりません');
       return null;
     }
 
     const CONFIG = window.TEGAKI_CONFIG;
-    
-    // カットコンテナ全体をレンダリング（背景レイヤー含む）
     const renderTexture = PIXI.RenderTexture.create({
       width: CONFIG.canvas.width,
       height: CONFIG.canvas.height
@@ -167,11 +175,10 @@ class AlbumPopup {
     
     renderTexture.destroy(true);
 
-    // レイヤー情報の保存（背景レイヤー含む）
     const cutStates = [];
     cuts.forEach((cut, index) => {
       const layerStates = [];
-      if (cut.container && cut.container.children) {
+      if (cut.container?.children) {
         cut.container.children.forEach(layer => {
           if (layer.layerData) {
             const layerState = {
@@ -183,7 +190,6 @@ class AlbumPopup {
               paths: []
             };
 
-            // 背景レイヤーの情報も保存
             if (layer.layerData.isBackground) {
               layerState.backgroundColor = CONFIG.background.color || 0xF0E0D6;
             } else if (layer.layerData.paths) {
@@ -201,10 +207,7 @@ class AlbumPopup {
           }
         });
       }
-      cutStates.push({
-        index,
-        layerStates
-      });
+      cutStates.push({ index, layerStates });
     });
 
     return {
@@ -221,7 +224,6 @@ class AlbumPopup {
 
     const cuts = this.animationSystem.animationData.cuts;
     
-    // 必要なカット数を確保
     while (cuts.length < snapshot.cutStates.length) {
       if (this.animationSystem.createNewEmptyCut) {
         this.animationSystem.createNewEmptyCut();
@@ -230,26 +232,22 @@ class AlbumPopup {
       }
     }
 
-    // 各カットのレイヤーを復元
     snapshot.cutStates.forEach((cutState, cutIndex) => {
       if (cutIndex >= cuts.length) return;
       
       const cut = cuts[cutIndex];
       if (!cut.container) return;
 
-      // 既存のレイヤーをすべて削除
       while (cut.container.children.length > 0) {
         const child = cut.container.children[0];
         cut.container.removeChild(child);
         if (child.destroy) child.destroy({ children: true });
       }
 
-      // レイヤーを復元
       cutState.layerStates.forEach(layerState => {
         const layerContainer = new PIXI.Container();
         layerContainer.label = layerState.name;
         
-        // 表示状態を正しく設定
         const isVisible = layerState.visible !== false;
         layerContainer.visible = isVisible;
         layerContainer.alpha = layerState.opacity;
@@ -257,14 +255,13 @@ class AlbumPopup {
         layerContainer.layerData = {
           id: layerState.id,
           name: layerState.name,
-          visible: isVisible, // layerDataにも明示的に設定
+          visible: isVisible,
           opacity: layerState.opacity,
           isBackground: layerState.isBackground || false,
           paths: []
         };
 
         if (layerState.isBackground) {
-          // 背景レイヤーを復元
           const bg = new PIXI.Graphics();
           const CONFIG = window.TEGAKI_CONFIG;
           const bgColor = layerState.backgroundColor || CONFIG.background.color || 0xF0E0D6;
@@ -273,7 +270,6 @@ class AlbumPopup {
           layerContainer.addChild(bg);
           layerContainer.layerData.backgroundGraphics = bg;
         } else {
-          // 通常レイヤーのパスを復元
           layerState.paths.forEach(pathData => {
             const graphics = new PIXI.Graphics();
             pathData.points.forEach(point => {
@@ -300,7 +296,6 @@ class AlbumPopup {
         cut.container.addChild(layerContainer);
       });
 
-      // サムネイル更新
       if (this.animationSystem.generateCutThumbnail) {
         setTimeout(() => {
           this.animationSystem.generateCutThumbnail(cutIndex);
@@ -308,14 +303,12 @@ class AlbumPopup {
       }
     });
 
-    // カット切り替え
     if (this.animationSystem.setCutIndex) {
       this.animationSystem.setCutIndex(snapshot.currentCut);
     }
 
-    // レイヤーパネル更新
     setTimeout(() => {
-      if (this.layerSystem && this.layerSystem.updateLayerPanelUI) {
+      if (this.layerSystem?.updateLayerPanelUI) {
         this.layerSystem.updateLayerPanelUI();
       }
     }, 200);
@@ -488,7 +481,6 @@ class AlbumPopup {
         this.snapshots = [];
       }
     }
-    this._renderGallery();
   }
 }
 
