@@ -8,7 +8,10 @@ window.TegakiUI.SettingsPopup = class {
     constructor(drawingEngine) {
         this.drawingEngine = drawingEngine;
         this.eventBus = window.TegakiEventBus;
-        this.settingsManager = window.TegakiSettingsManager;
+        
+        // 🔥 SettingsManagerの安全な取得（インスタンスチェック）
+        this.settingsManager = this.getSettingsManager();
+        
         this.popup = null;
         this.isVisible = false;
         this.sliders = {};
@@ -16,6 +19,30 @@ window.TegakiUI.SettingsPopup = class {
         
         // DOM要素を確実に取得または作成
         this.ensurePopupElement();
+    }
+    
+    /**
+     * 🆕 SettingsManagerの安全な取得
+     */
+    getSettingsManager() {
+        const manager = window.TegakiSettingsManager;
+        
+        // インスタンスの場合はそのまま返す
+        if (manager && typeof manager.get === 'function') {
+            return manager;
+        }
+        
+        // クラスの場合はインスタンス化（フォールバック）
+        if (manager && typeof manager === 'function') {
+            console.warn('[SettingsPopup] SettingsManager is still a class, instantiating...');
+            const instance = new manager(window.TegakiEventBus, window.TEGAKI_CONFIG);
+            window.TegakiSettingsManager = instance;
+            return instance;
+        }
+        
+        // どちらでもない場合はnull
+        console.warn('[SettingsPopup] SettingsManager not available');
+        return null;
     }
     
     /**
@@ -151,12 +178,17 @@ window.TegakiUI.SettingsPopup = class {
      * スライダーを設定（独自実装）
      */
     setupSliders() {
+        // 🔥 デフォルト値を先に取得（SettingsManagerなしでも動作）
+        const defaultSettings = this.getDefaultSettings();
+        const currentPressure = this.settingsManager?.get('pressureCorrection') ?? defaultSettings.pressureCorrection;
+        const currentSmoothing = this.settingsManager?.get('smoothing') ?? defaultSettings.smoothing;
+        
         // ========== 筆圧補正スライダー ==========
         this.sliders.pressureCorrection = this.createSlider({
             container: document.getElementById('pressure-correction-slider'),
             min: 0.1,
             max: 3.0,
-            initial: this.settingsManager?.get('pressureCorrection') || 1.0,
+            initial: currentPressure,
             format: (value) => value.toFixed(2),
             onChange: (value) => {
                 if (this.eventBus) {
@@ -166,6 +198,9 @@ window.TegakiUI.SettingsPopup = class {
             onCommit: (value) => {
                 if (this.settingsManager) {
                     this.settingsManager.set('pressureCorrection', value);
+                } else {
+                    // フォールバック: localStorageに直接保存
+                    this.saveFallback('pressureCorrection', value);
                 }
             }
         });
@@ -175,7 +210,7 @@ window.TegakiUI.SettingsPopup = class {
             container: document.getElementById('smoothing-slider'),
             min: 0.0,
             max: 1.0,
-            initial: this.settingsManager?.get('smoothing') || 0.5,
+            initial: currentSmoothing,
             format: (value) => value.toFixed(2),
             onChange: (value) => {
                 if (this.eventBus) {
@@ -185,9 +220,25 @@ window.TegakiUI.SettingsPopup = class {
             onCommit: (value) => {
                 if (this.settingsManager) {
                     this.settingsManager.set('smoothing', value);
+                } else {
+                    this.saveFallback('smoothing', value);
                 }
             }
         });
+    }
+    
+    /**
+     * 🆕 フォールバック保存（SettingsManager不在時）
+     */
+    saveFallback(key, value) {
+        try {
+            const stored = localStorage.getItem('tegaki_settings');
+            const settings = stored ? JSON.parse(stored) : {};
+            settings[key] = value;
+            localStorage.setItem('tegaki_settings', JSON.stringify(settings));
+        } catch (error) {
+            console.error('[SettingsPopup] Fallback save failed:', error);
+        }
     }
     
     /**
@@ -309,6 +360,8 @@ window.TegakiUI.SettingsPopup = class {
                 // SettingsManagerに保存（先に保存）
                 if (this.settingsManager) {
                     this.settingsManager.set('pressureCurve', curve);
+                } else {
+                    this.saveFallback('pressureCurve', curve);
                 }
                 
                 // EventBusで通知
@@ -431,6 +484,8 @@ window.TegakiUI.SettingsPopup = class {
         // SettingsManagerに保存
         if (this.settingsManager) {
             this.settingsManager.set('statusPanelVisible', newVisibility);
+        } else {
+            this.saveFallback('statusPanelVisible', newVisibility);
         }
     }
     
