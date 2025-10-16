@@ -1,6 +1,10 @@
 /**
- * DrawingEngine v2.1 (Phase 7対応版)
+ * DrawingEngine v2.2 (Phase 1: EventBus統合完全化)
  * Perfect Freehand対応ベクターペンエンジン + History統合 + 筆圧対応
+ * 
+ * 変更点:
+ * - subscribeToSettings() メソッド追加
+ * - 設定変更イベントの購読とPressureHandlerへの即時適用
  */
 
 class DrawingEngine {
@@ -34,6 +38,45 @@ class DrawingEngine {
     this.currentTool = 'pen'; // 'pen' | 'eraser'
     this.currentPath = null;
     this.lastPoint = null;
+    
+    // 🆕 Phase 1: EventBus購読の初期化
+    this.subscribeToSettings();
+  }
+
+  /**
+   * 🆕 Phase 1: EventBus購読の設定
+   * 設定変更イベントを購読し、PressureHandlerに即座に適用
+   */
+  subscribeToSettings() {
+    if (!this.eventBus) return;
+    
+    // 筆圧補正の変更を購読
+    this.eventBus.on('settings:pressure-correction', ({ value }) => {
+      // BrushSettingsへの適用
+      if (this.settings) {
+        this.settings.setPressureCorrection(value);
+      }
+      // PressureHandlerへの即時適用
+      if (this.pressureHandler) {
+        this.pressureHandler.setPressureCorrection(value);
+      }
+    });
+    
+    // 線補正（スムージング）の変更を購読
+    this.eventBus.on('settings:smoothing', ({ value }) => {
+      if (this.settings) {
+        this.settings.setSmoothing(value);
+      }
+    });
+    
+    // 筆圧カーブの変更を購読
+    this.eventBus.on('settings:pressure-curve', ({ curve }) => {
+      if (this.settings) {
+        this.settings.setPressureCurve(curve);
+      }
+      // 注: PressureHandlerは生の筆圧値のみ扱う
+      // カーブ適用はBrushSettings側で行われる
+    });
   }
 
   /**
@@ -242,4 +285,8 @@ if (typeof window.TegakiDrawing === 'undefined') {
 }
 window.TegakiDrawing.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js (Phase 7対応版) loaded');
+console.log('✅ drawing-engine.js v2.2 (Phase 1: EventBus統合完全化) loaded');
+console.log('   - subscribeToSettings() メソッド追加');
+console.log('   - settings:pressure-correction イベント購読');
+console.log('   - settings:smoothing イベント購読');
+console.log('   - settings:pressure-curve イベント購読');
