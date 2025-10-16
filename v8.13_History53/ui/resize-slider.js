@@ -53,17 +53,7 @@ window.ResizeSlider = (function() {
 
     // ドラッグハンドラー
     function setupDragHandlers(elements) {
-        elements.widthHandle.addEventListener('mousedown', (e) => {
-            isDraggingWidth = true;
-            e.preventDefault();
-        });
-        
-        elements.heightHandle.addEventListener('mousedown', (e) => {
-            isDraggingHeight = true;
-            e.preventDefault();
-        });
-        
-        document.addEventListener('mousemove', (e) => {
+        const handleMouseMove = (e) => {
             if (isDraggingWidth) {
                 const rect = elements.widthSlider.getBoundingClientRect();
                 const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
@@ -76,12 +66,25 @@ window.ResizeSlider = (function() {
                 const value = MIN_SIZE + ((MAX_SIZE - MIN_SIZE) * percent / 100);
                 updateHeightSlider(Math.round(value), elements);
             }
-        });
+        };
         
-        document.addEventListener('mouseup', () => {
+        const handleMouseUp = () => {
             isDraggingWidth = false;
             isDraggingHeight = false;
+        };
+        
+        elements.widthHandle.addEventListener('mousedown', (e) => {
+            isDraggingWidth = true;
+            e.preventDefault();
         });
+        
+        elements.heightHandle.addEventListener('mousedown', (e) => {
+            isDraggingHeight = true;
+            e.preventDefault();
+        });
+        
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
     }
 
     // クリックハンドラー
