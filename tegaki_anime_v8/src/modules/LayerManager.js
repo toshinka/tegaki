@@ -1,6 +1,6 @@
 // ========================================
 // LayerManager.js - レイヤー・フレーム管理
-// 合成処理修正版
+// 合成処理完全修正版（レイヤーの正しいアルファ合成）
 // ========================================
 
 (function() {
@@ -8,7 +8,7 @@
     
     class LayerManager {
         constructor(frameCount, layerCountPerFrame, canvasManager) {
-            const config = window.TegakiConstants?.ANIMATION_CONFIG || {};
+            const config = window.TegakiConstants && window.TegakiConstants.ANIMATION_CONFIG ? window.TegakiConstants.ANIMATION_CONFIG : {};
             
             this.frameCount = frameCount || config.DEFAULT_FRAME_COUNT || 3;
             this.layerCountPerFrame = layerCountPerFrame || config.DEFAULT_LAYER_COUNT || 3;
@@ -135,8 +135,11 @@
         }
         
         /**
-         * 指定フレームの全レイヤーを合成したImageDataを取得
+         * 指定フレームの全レイヤーを合成したImageDataを取得（完全修正版）
          * レイヤー0（背景）から順に上に重ねていく
+         * 
+         * 【重要】putImageData()は既存の内容を上書きしてしまうため使用不可
+         * 各レイヤーを一時キャンバスに描画してから、drawImage()で合成する
          */
         getCompositeImageData(frameIndex) {
             if (frameIndex < 0 || frameIndex >= this.frameCount) return null;
@@ -151,6 +154,9 @@
             compositeCanvas.height = height;
             const ctx = compositeCanvas.getContext('2d', { willReadFrequently: true });
             
+            // 完全に透明な状態から開始
+            ctx.clearRect(0, 0, width, height);
+            
             // レイヤー0（背景）から順に合成
             for (let i = 0; i < frame.layers.length; i++) {
                 const layer = frame.layers[i];
@@ -158,11 +164,18 @@
                 // 非表示レイヤーはスキップ
                 if (!layer.visible) continue;
                 
-                // 不透明度を設定
-                ctx.globalAlpha = layer.opacity;
+                // 各レイヤー用の一時キャンバスを作成
+                const tempCanvas = document.createElement('canvas');
+                tempCanvas.width = width;
+                tempCanvas.height = height;
+                const tempCtx = tempCanvas.getContext('2d', { willReadFrequently: true });
                 
-                // ImageDataを描画
-                ctx.putImageData(layer.imageData, 0, 0);
+                // ImageDataを一時キャンバスに配置
+                tempCtx.putImageData(layer.imageData, 0, 0);
+                
+                // 不透明度を設定して合成キャンバスに描画
+                ctx.globalAlpha = layer.opacity;
+                ctx.drawImage(tempCanvas, 0, 0);
             }
             
             // globalAlphaをリセット

@@ -1,5 +1,5 @@
 // ========================================
-// DrawingEngine.js - 描画エンジン
+// DrawingEngine.js - 描画エンジン（互換性修正版）
 // ========================================
 
 (function() {
@@ -7,8 +7,9 @@
     
     class DrawingEngine {
         constructor(canvasManager) {
-            const config = window.TegakiConstants?.CANVAS_CONFIG || {};
-            const tools = window.TegakiConstants?.TOOLS || {};
+            // オプショナルチェーン演算子を使わない形式に修正
+            const config = window.TegakiConstants && window.TegakiConstants.CANVAS_CONFIG ? window.TegakiConstants.CANVAS_CONFIG : {};
+            const tools = window.TegakiConstants && window.TegakiConstants.TOOLS ? window.TegakiConstants.TOOLS : {};
             
             this.canvasManager = canvasManager;
             this.ctx = canvasManager.getDrawingContext();
