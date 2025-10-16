@@ -967,6 +967,36 @@ body {
     max-width: 420px;
 }
 
+
+/* リサイズポップアップ全体の文字色をfutaba-maroonに統一 */
+#resize-settings {
+    color: var(--futaba-maroon);
+}
+
+#resize-settings .resize-slider-label,
+#resize-settings .resize-value-input,
+#resize-settings .resize-step-btn,
+#resize-settings .align-btn {
+    color: var(--futaba-maroon) !important;
+}
+
+#resize-settings .slider-display,
+#resize-settings .slider-value {
+    color: var(--futaba-maroon) !important;
+}
+
+/* リサイズ入力フィールドのプレースホルダー */
+#resize-settings .resize-value-input::placeholder {
+    color: rgba(128, 0, 0, 0.5);
+}
+
+/* アライメントボタンのアクティブ状態 */
+#resize-settings .align-btn.active {
+    color: white !important;
+    background: var(--futaba-maroon);
+}
+
+
 /* 数値入力フィールドのスピンボタン削除（Chrome/Safari） */
 .resize-input::-webkit-outer-spin-button,
 .resize-input::-webkit-inner-spin-button {
