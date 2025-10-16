@@ -1,4 +1,4 @@
-// ===== ui/settings-popup.js - 完全独立版 =====
+// ===== ui/settings-popup.js - 完全独立版 (修正) =====
 // 責務: UI表示・ユーザー入力の受付・EventBusへの通知のみ
 // SliderUtils に依存せず、独自のスライダー実装を使用
 
@@ -9,16 +9,27 @@ window.TegakiUI.SettingsPopup = class {
         this.drawingEngine = drawingEngine;
         this.eventBus = window.TegakiEventBus;
         this.settingsManager = window.TegakiSettingsManager;
-        this.popup = document.getElementById('settings-popup');
+        this.popup = null;
         this.isVisible = false;
         this.sliders = {};
         this.initialized = false;
         
-        // HTMLに空のdivがある場合は中身を生成
-        if (this.popup && this.popup.children.length === 0) {
-            this.populatePopupContent();
-        } else if (!this.popup) {
+        // DOM要素を確実に取得または作成
+        this.ensurePopupElement();
+    }
+    
+    /**
+     * ポップアップ要素を確実に取得または作成
+     */
+    ensurePopupElement() {
+        this.popup = document.getElementById('settings-popup');
+        
+        if (!this.popup) {
+            // 要素が存在しない場合は作成
             this.createPopupElement();
+        } else if (this.popup.children.length === 0) {
+            // 要素は存在するが中身が空の場合は生成
+            this.populatePopupContent();
         }
         
         // 位置を上部に変更（見切れ防止）
@@ -46,6 +57,8 @@ window.TegakiUI.SettingsPopup = class {
      * ポップアップ内容を生成
      */
     populatePopupContent() {
+        if (!this.popup) return;
+        
         this.popup.innerHTML = `
             <div class="popup-title" style="font-size: 16px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 16px; text-align: center;">
                 設定
@@ -274,14 +287,10 @@ window.TegakiUI.SettingsPopup = class {
                 e.preventDefault();
                 e.stopPropagation();
                 
-                // data-curve属性を取得（clickイベントのtargetから確実に取得）
                 const clickedBtn = e.currentTarget;
                 const curve = clickedBtn.getAttribute('data-curve');
                 
-                if (!curve) {
-                    console.error('[SettingsPopup] No curve data on button');
-                    return;
-                }
+                if (!curve) return;
                 
                 // すべてのボタンをデアクティベート
                 document.querySelectorAll('.pressure-curve-btn').forEach(b => {
@@ -450,6 +459,11 @@ window.TegakiUI.SettingsPopup = class {
      * ポップアップを表示
      */
     show() {
+        // DOM要素を再確認
+        if (!this.popup) {
+            this.ensurePopupElement();
+        }
+        
         if (!this.popup) return;
         
         // 📌 初回表示時に初期化
