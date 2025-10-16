@@ -1,0 +1,178 @@
+Layer System 分割改修計画書 (Claude向け)
+🎯 改修目標
+layer-system.js を LayerSystem (70%) と LayerObjects (30%) に分割し、PixiJS依存を分離して改修効率を向上させる。
+📋 実行フロー
+Phase 1: 現状分析とファイル取得
+取得対象:
+
+system/layer-system.js (分割元)
+system/data-models.js (LayerData構造の確認)
+system/event-bus.js (イベント連携確認)
+system/camera-system.js (Container階層の確認)
+system/drawing-engine.js (描画連携確認)
+core-engine.js (LayerSystem呼び出し箇所確認)
+
+実施内容:
+
+LayerSystemの全メソッドをリストアップ
+Pixi.Container直接操作箇所を特定
+LayerData構造定義箇所を特定
+serialize/deserialize処理を特定
+
+
+Phase 2: layer-objects.js 設計
+新規作成: system/layer-objects.js
+抽出対象機能:
+
+class BaseLayer - 基底レイヤークラス
+
+constructor(id, name, type)
+setVisible(flag) - Pixi.Container.visible制御
+setLocked(flag) - インタラクション制御
+setOpacity(value) - Pixi.Container.alpha制御
+toJSON() - シリアライズ
+fromJSON(data) - デシリアライズ
+
+
+class VectorLayer extends BaseLayer - ベクターレイヤー
+
+Pixi.Container生成
+Graphics/Sprite子要素管理
+
+
+class ReferenceLayer extends BaseLayer - 参照レイヤー
+class OnionLayer extends BaseLayer - オニオンスキン
+
+PixiJS依存の完全集約:
+
+new PIXI.Container() 呼び出し
+container.addChild() / removeChild()
+container.visible / alpha / zIndex 制御
+
+グローバル公開:
+javascriptwindow.LayerObjects = { BaseLayer, VectorLayer, ReferenceLayer, OnionLayer };
+注意点:
+
+他ファイルへの依存禁止 (PixiJS以外)
+EventBus/CameraSystemを直接参照しない
+LayerSystemからコールバック受け取る設計
+
+
+Phase 3: layer-system.js 改修
+保持する機能 (70%):
+
+createLayer(type, options) - LayerObjects経由で生成
+deleteLayer(id) - History連携含む
+moveLayer(id, newIndex) - zIndex再計算
+setActiveLayer(id) - EventBus発火
+getActiveLayer() / getAllLayers()
+updateVisibility() - 全レイヤー可視性同期
+serialize() / deserialize() - Export/Import用
+
+削除/移動する機能:
+
+Pixi.Container直接生成 → LayerObjects委譲
+Layer構造体定義 → LayerObjects.BaseLayer
+toJSON個別実装 → BaseLayer.toJSON()
+
+改修ポイント:
+javascript// 改修前
+this.layers[id] = {
+  container: new PIXI.Container(),
+  id, name, visible: true
+};
+
+// 改修後
+this.layers[id] = new window.LayerObjects.VectorLayer(id, name);
+this.layerContainer.addChild(this.layers[id].container);
+依存関係:
+
+LayerObjects を先に読み込み (index.html順序重要)
+EventBus.emit('layer:created', layer) 維持
+CameraSystem.worldContainer 階層維持
+
+
+Phase 4: index.html 読み込み順変更
+変更箇所:
+html<!-- 変更前 -->
+<script src="system/layer-system.js"></script>
+
+<!-- 変更後 -->
+<script src="system/layer-objects.js"></script>
+<script src="system/layer-system.js"></script>
+確認項目:
+
+window.LayerObjects がLayerSystem読み込み前に定義済み
+core-engine.js での new LayerSystem() 動作確認
+
+
+Phase 5: 統合テスト項目
+検証対象:
+
+レイヤー作成/削除 (Ctrl+Shift+N / Delete)
+レイヤー可視性切り替え (UI連携)
+アクティブレイヤー変更 (描画先切り替え)
+Undo/Redo でのレイヤー状態復元
+Export時のserialize/deserialize
+カメラズーム時のContainer階層維持
+
+破壊的変更チェック:
+
+LayerSystem.createLayer() API互換性
+layer.container プロパティアクセス維持
+EventBusイベント名変更なし
+
+
+🔍 リスク対応
+高リスク箇所
+
+Containerの所有権
+
+LayerObjectsで生成したContainerをLayerSystemが管理
+layer.container への直接アクセスが残る箇所に注意
+
+
+循環参照
+
+LayerObjects → LayerSystem 参照は禁止
+コールバック渡しで対応
+
+
+History復元
+
+deserialize() でLayerObjects.fromJSON()使用
+既存のHistoryスナップショットと互換性維持
+
+
+
+ミス防止策
+
+LayerObjectsは window.LayerObjects のみ公開
+LayerSystem内でPixi直接参照を全削除
+grep "new PIXI.Container" で漏れ確認
+
+
+📦 成果物
+新規ファイル
+
+system/layer-objects.js (約300-400行)
+
+改修ファイル
+
+system/layer-system.js (約600-700行、Pixi参照削除)
+index.html (script順序変更)
+
+不変ファイル
+
+system/camera-system.js
+system/drawing-engine.js
+core-engine.js
+
+
+✅ 完了条件
+
+LayerObjectsがPixiJS依存を完全に内包
+LayerSystemからPixi直接参照が0件
+既存の全レイヤー操作が動作
+History復元が正常動作
+Export/Importが互換性維持
