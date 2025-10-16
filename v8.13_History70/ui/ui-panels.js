@@ -1,11 +1,9 @@
-// ===== ui-panels.js - Settings Popup完全対応版（修正v3） =====
-// 🎯 責務: UIイベント処理、ポップアップ管理、統一されたインターフェース
-// 🎯 修正内容: window.TegakiUI名前空間を保持（上書き防止）
+// ===== ui-panels.js - 改修版 =====
+// 責務: UIイベント管理、ポップアップ制御の一元化
+// 🔥 改修: デバッグ削減、構造最適化、EventBus統合
 
-// 🔥 重要: 既存のTegakiUI名前空間を保持
 window.TegakiUI = window.TegakiUI || {};
 
-// 🔥 UIControllerクラス定義
 window.TegakiUI.UIController = class {
     constructor(drawingEngine, layerManager, app) {
         this.drawingEngine = drawingEngine;
@@ -13,131 +11,140 @@ window.TegakiUI.UIController = class {
         this.app = app;
         this.activePopup = null;
         this.toolbarIconClickMode = false;
+        
+        // ポップアップ参照（遅延初期化対応）
         this.albumPopup = null;
         this.settingsPopup = null;
+        this.exportPopup = null;
         
-        try {
-            this.validateCoreRuntime();
-            
-            this.setupEventDelegation();
-            
-            // 🔥 EventBusリスナー登録（最優先で実行）
-            this.setupEventBusListeners();
-            
-            this.setupSliders();
-            this.setupCanvasResize();
-            this.setupFlipButtons();
-            
-            // SettingsPopupの初期化（EventBusリスナー登録後）
-            this.initializeSettingsPopup();
-            
-            window.TegakiUI.setupPanelStyles();
-            
-            console.log('✅ UIController initialized successfully');
-        } catch (error) {
-            console.error('❌ UIController initialization failed:', error);
-            throw error;
-        }
+        this.validateCoreRuntime();
+        this.setupEventDelegation();
+        this.setupEventBusListeners();
+        this.setupSliders();
+        this.setupCanvasResize();
+        this.setupFlipButtons();
+        this.initializeSettingsPopup();
+        window.TegakiUI.setupPanelStyles();
     }
     
     validateCoreRuntime() {
-        if (!window.CoreRuntime) {
+        if (!window.CoreRuntime?.api) {
             throw new Error('CoreRuntime dependency missing');
         }
-        
-        if (!window.CoreRuntime.api) {
-            throw new Error('CoreRuntime.api not initialized');
+    }
+    
+    // ===== ポップアップ参照管理 =====
+    
+    /**
+     * ポップアップ参照を遅延取得（初期化タイミングの依存性回避）
+     */
+    getExportPopup() {
+        if (!this.exportPopup) {
+            this.exportPopup = window.TegakiExportPopup || window.exportPopup;
+        }
+        return this.exportPopup;
+    }
+    
+    getSettingsPopup() {
+        return this.settingsPopup;
+    }
+    
+    getAlbumPopup() {
+        return this.albumPopup;
+    }
+    
+    /**
+     * ポップアップ初期化（外部から呼び出し）
+     */
+    initializeAlbumPopup(animationSystem) {
+        if (!window.AlbumPopup || !animationSystem) {
+            return false;
+        }
+        try {
+            this.albumPopup = new window.AlbumPopup(this.app, this.layerManager, animationSystem);
+            return true;
+        } catch (error) {
+            return false;
         }
     }
     
+    /**
+     * 設定ポップアップの初期化
+     */
     initializeSettingsPopup() {
-        console.log('🔧 initializeSettingsPopup called');
-        console.log('🔍 window.TegakiUI.SettingsPopup:', typeof window.TegakiUI.SettingsPopup);
-        
         if (!window.TegakiUI.SettingsPopup) {
-            console.warn('⚠️ SettingsPopup class not found');
             return false;
         }
-        
-        // 既に初期化済みの場合はスキップ
         if (this.settingsPopup) {
-            console.log('✅ SettingsPopup already initialized');
             return true;
         }
-        
         try {
             this.settingsPopup = new window.TegakiUI.SettingsPopup(this.drawingEngine);
-            
-            // 🔥 グローバルにも公開（keyboard-handlerからのアクセス用）
             window.TegakiUI.uiController = this;
-            
-            console.log('✅ SettingsPopup initialized successfully');
-            return true;
-        } catch (error) {
-            console.error('❌ SettingsPopup initialization failed:', error);
-            return false;
-        }
-    }
-    
-    initializeAlbumPopup(animationSystem) {
-        if (!window.AlbumPopup) {
-            return false;
-        }
-        
-        if (!animationSystem) {
-            return false;
-        }
-        
-        try {
-            this.albumPopup = new window.AlbumPopup(
-                this.app,
-                this.layerManager,
-                animationSystem
-            );
             return true;
         } catch (error) {
             return false;
         }
     }
     
-    // 🆕 EventBusリスナー設定
+    // ===== EventBusリスナー =====
+    
     setupEventBusListeners() {
         const eventBus = window.TegakiEventBus;
-        if (!eventBus) {
-            console.error('❌ EventBus not found');
-            return;
-        }
+        if (!eventBus) return;
         
-        console.log('📡 Setting up EventBus listeners for UI...');
-        
-        // 設定ポップアップの表示切替（ショートカット対応）
+        // 設定ポップアップのトグル（ショートカット対応）
         eventBus.on('ui:toggle-settings', () => {
-            console.log('🎯 ui:toggle-settings event received');
             if (this.settingsPopup) {
-                if (this.settingsPopup.isVisible) {
-                    this.settingsPopup.hide();
-                } else {
-                    this.closeAllPopups();
-                    this.settingsPopup.show();
-                }
-            } else {
-                console.warn('⚠️ settingsPopup not initialized yet');
+                this.settingsPopup.isVisible ? this.settingsPopup.hide() : this.showPopup(this.settingsPopup);
             }
         });
         
-        // 🔥 設定ポップアップの直接表示（keyboard-handler用）
         eventBus.on('ui:show-settings', () => {
-            console.log('🎯 ui:show-settings event received');
             if (this.settingsPopup) {
-                this.closeAllPopups();
-                this.settingsPopup.show();
-            } else {
-                console.warn('⚠️ settingsPopup not initialized yet');
+                this.showPopup(this.settingsPopup);
+            }
+        });
+    }
+    
+    // ===== ポップアップ制御 =====
+    
+    /**
+     * ポップアップを表示（他を自動的に閉じる）
+     */
+    showPopup(popup) {
+        if (!popup) return;
+        this.closeAllPopups(popup);
+        popup.show();
+    }
+    
+    /**
+     * 全ポップアップを閉じる（除外指定可能）
+     */
+    closeAllPopups(exceptPopup = null) {
+        const popups = [
+            { instance: this.settingsPopup, id: 'settings-popup' },
+            { instance: this.albumPopup, id: 'album' },
+            { instance: this.getExportPopup(), id: 'export-popup' }
+        ];
+        
+        popups.forEach(({ instance, id }) => {
+            if (instance && instance !== exceptPopup && instance.isVisible) {
+                instance.hide();
             }
         });
         
-        console.log('✅ EventBus listeners registered:', eventBus.getRegisteredEvents());
+        // DOM直接操作（トグル用アニメーションクラス）
+        document.querySelectorAll('.popup-panel').forEach(popup => {
+            if (exceptPopup !== this.getExportPopup() || popup.id !== 'export-popup') {
+                popup.classList.remove('show');
+            }
+        });
+        
+        this.activePopup = null;
     }
+    
+    // ===== イベント委譲 =====
     
     setupEventDelegation() {
         document.addEventListener('click', (e) => {
@@ -151,7 +158,7 @@ window.TegakiUI.UIController = class {
 
             const layerAddBtn = e.target.closest('#add-layer-btn');
             if (layerAddBtn) {
-                const layerCount = this.getLayerCount();
+                const layerCount = this.layerManager?.layers?.length || 1;
                 const result = window.CoreRuntime.api.createLayer(`レイヤー${layerCount}`);
                 if (result) {
                     window.CoreRuntime.api.setActiveLayer(result.index);
@@ -165,45 +172,32 @@ window.TegakiUI.UIController = class {
                 return;
             }
 
+            // 画面外クリック処理
             if (!e.target.closest('.popup-panel') && 
                 !e.target.closest('.layer-transform-panel') &&
                 !e.target.closest('.tool-button') &&
-                !e.target.closest('.layer-panel-container') &&
-                !e.target.closest('#album-popup')) {
+                !e.target.closest('.layer-panel-container')) {
                 this.closeAllPopups();
             }
         });
     }
     
-    getLayerCount() {
-        try {
-            return this.layerManager?.layers?.length || 1;
-        } catch (error) {
-            return 1;
-        }
-    }
-
+    // ===== ツール処理 =====
+    
     handleToolClick(button) {
         const toolId = button.id;
-        
         const toolMap = {
             'pen-tool': () => {
-                const success = window.CoreRuntime.api.setTool('pen');
-                if (!success) return;
-                
+                if (!window.CoreRuntime.api.setTool('pen')) return;
                 window.CoreRuntime.api.exitLayerMoveMode();
-                
                 if (!this.toolbarIconClickMode) {
                     this.togglePopup('pen-settings');
                 }
                 this.updateToolUI('pen');
             },
             'eraser-tool': () => {
-                const success = window.CoreRuntime.api.setTool('eraser');
-                if (!success) return;
-                
+                if (!window.CoreRuntime.api.setTool('eraser')) return;
                 window.CoreRuntime.api.exitLayerMoveMode();
-                
                 this.closeAllPopups();
                 this.updateToolUI('eraser');
             },
@@ -214,37 +208,27 @@ window.TegakiUI.UIController = class {
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('ui:toggle-timeline');
                 }
-                
                 this.closeAllPopups();
                 this.updateToolUI('gif-animation');
             },
             'library-tool': () => {
-                this.closeAllPopups();
-                
-                if (this.albumPopup) {
-                    this.albumPopup.show();
-                } else {
+                if (!this.albumPopup) {
                     alert('アルバムシステムが初期化されていません');
+                    return;
                 }
+                this.albumPopup.isVisible ? this.albumPopup.hide() : this.showPopup(this.albumPopup);
             },
             'export-tool': () => {
-                this.closeAllPopups();
-                
-                if (window.TEGAKI_EXPORT_POPUP) {
-                    window.TEGAKI_EXPORT_POPUP.show();
-                } else if (window.exportPopup) {
-                    window.exportPopup.show();
-                } else {
+                const popup = this.getExportPopup();
+                if (!popup) {
                     alert('エクスポートシステムが初期化されていません');
+                    return;
                 }
+                popup.isVisible ? popup.hide() : this.showPopup(popup);
             },
             'settings-tool': () => {
-                console.log('⚙️ Settings button clicked');
-                this.closeAllPopups();
                 if (this.settingsPopup) {
-                    this.settingsPopup.show();
-                } else {
-                    console.warn('⚠️ settingsPopup not initialized');
+                    this.settingsPopup.isVisible ? this.settingsPopup.hide() : this.showPopup(this.settingsPopup);
                 }
             }
         };
@@ -273,43 +257,23 @@ window.TegakiUI.UIController = class {
         const popup = document.getElementById(popupId);
         if (!popup) return;
         
-        if (this.activePopup && this.activePopup !== popup) {
-            this.activePopup.classList.remove('show');
-        }
-        
         const isVisible = popup.classList.contains('show');
         popup.classList.toggle('show', !isVisible);
         this.activePopup = isVisible ? null : popup;
     }
-
-    closeAllPopups() {
-        document.querySelectorAll('.popup-panel').forEach(popup => {
-            if (popup.id !== 'export-popup') {
-                popup.classList.remove('show');
-            }
-        });
-        
-        if (this.albumPopup) {
-            this.albumPopup.hide();
-        }
-        
-        if (this.settingsPopup) {
-            this.settingsPopup.hide();
-        }
-        
-        this.activePopup = null;
-    }
-
+    
+    // ===== スライダー・リサイズ =====
+    
     setupSliders() {
         const CONFIG = window.TEGAKI_CONFIG;
         
         window.TegakiUI.createSlider('pen-size-slider', 0.1, 100, CONFIG.pen.size, (value) => {
-            const success = window.CoreRuntime.api.setBrushSize(value);
+            window.CoreRuntime.api.setBrushSize(value);
             return value.toFixed(1) + 'px';
         });
         
         window.TegakiUI.createSlider('pen-opacity-slider', 0, 100, CONFIG.pen.opacity * 100, (value) => {
-            const success = window.CoreRuntime.api.setBrushOpacity(value / 100);
+            window.CoreRuntime.api.setBrushOpacity(value / 100);
             return value.toFixed(1) + '%';
         });
     }
@@ -326,7 +290,7 @@ window.TegakiUI.UIController = class {
                     const newHeight = parseInt(heightInput.value);
                     
                     if (newWidth > 0 && newHeight > 0) {
-                        this.resizeCanvas(newWidth, newHeight);
+                        window.CoreRuntime.api.resizeCanvas(newWidth, newHeight);
                         this.closeAllPopups();
                     }
                 }
@@ -340,7 +304,7 @@ window.TegakiUI.UIController = class {
         
         if (flipHorizontalBtn) {
             flipHorizontalBtn.addEventListener('click', () => {
-                if (this.layerManager && typeof this.layerManager.flipActiveLayer === 'function') {
+                if (this.layerManager?.flipActiveLayer) {
                     this.layerManager.flipActiveLayer('horizontal');
                 }
             });
@@ -348,29 +312,23 @@ window.TegakiUI.UIController = class {
         
         if (flipVerticalBtn) {
             flipVerticalBtn.addEventListener('click', () => {
-                if (this.layerManager && typeof this.layerManager.flipActiveLayer === 'function') {
+                if (this.layerManager?.flipActiveLayer) {
                     this.layerManager.flipActiveLayer('vertical');
                 }
             });
         }
     }
-
-    resizeCanvas(newWidth, newHeight) {
-        try {
-            const success = window.CoreRuntime.api.resizeCanvas(newWidth, newHeight);
-        } catch (error) {
-        }
-    }
 };
 
-// 🔥 ユーティリティ関数をTegakiUI名前空間に追加
+// ===== ユーティリティ関数 =====
+
 window.TegakiUI.createSlider = function(sliderId, min, max, initial, callback) {
     const container = document.getElementById(sliderId);
     if (!container) return;
 
     const track = container.querySelector('.slider-track');
     const handle = container.querySelector('.slider-handle');
-    const valueDisplay = container.parentNode.querySelector('.slider-value');
+    const valueDisplay = container.parentNode?.querySelector('.slider-value');
 
     if (!track || !handle || !valueDisplay) return;
 
@@ -410,8 +368,8 @@ window.TegakiUI.createSlider = function(sliderId, min, max, initial, callback) {
 };
 
 window.TegakiUI.setupPanelStyles = function() {
-    const slimStyle = document.createElement('style');
-    slimStyle.textContent = `
+    const style = document.createElement('style');
+    style.textContent = `
         .flip-section {
             gap: 2px !important;
             height: 56px;
@@ -424,8 +382,6 @@ window.TegakiUI.setupPanelStyles = function() {
             padding: 4px 8px !important;
             font-size: 10px !important;
             white-space: nowrap !important;
-            min-width: auto !important;
-            width: auto !important;
             height: 26px !important;
             display: flex !important;
             align-items: center !important;
@@ -436,8 +392,8 @@ window.TegakiUI.setupPanelStyles = function() {
         .layer-item {
             width: 180px;
             height: 64px;
-            background:  var(--futaba-background);
-            opacity: 0.7;  
+            background: var(--futaba-background);
+            opacity: 0.7;
             border: 1px solid var(--futaba-light-medium);
             border-radius: 6px;
             padding: 6px 8px;
@@ -452,7 +408,6 @@ window.TegakiUI.setupPanelStyles = function() {
             position: relative;
             box-shadow: 0 1px 2px rgba(128, 0, 0, 0.05);
             min-width: 180px;
-            max-width: 180px;
         }
         
         .layer-thumbnail {
@@ -493,46 +448,6 @@ window.TegakiUI.setupPanelStyles = function() {
             text-overflow: ellipsis;
             align-self: end;
             margin-bottom: 2px;
-            max-width: calc(100% - 8px);
-        }
-        
-        .crosshair-sight {
-            display: none !important;
-        }
-        
-        .camera-guide-lines {
-            position: absolute;
-            pointer-events: none;
-            z-index: 1500;
-            opacity: 0;
-            transition: opacity 0.2s ease;
-        }
-        
-        .camera-guide-lines.show {
-            opacity: 1;
-        }
-        
-        .camera-guide-line {
-            position: absolute;
-            background: var(--futaba-maroon);
-            box-shadow: 0 0 2px rgba(255, 255, 255, 0.8);
-            opacity: 0.8;
-        }
-        
-        .camera-guide-line.horizontal {
-            height: 1px;
-            width: 100%;
-            top: 50%;
-            left: 0;
-            transform: translateY(-50%);
-        }
-        
-        .camera-guide-line.vertical {
-            width: 1px;
-            height: 100%;
-            left: 50%;
-            top: 0;
-            transform: translateX(-50%);
         }
         
         .layer-transform-panel {
@@ -569,15 +484,8 @@ window.TegakiUI.setupPanelStyles = function() {
             flex-direction: column !important;
             justify-content: space-between !important;
         }
-        
-        .compact-slider {
-            height: 26px;
-            display: flex !important;
-            align-items: center !important;
-            gap: 6px !important;
-        }
     `;
-    document.head.appendChild(slimStyle);
+    document.head.appendChild(style);
     
     setTimeout(() => {
         const flipHBtn = document.getElementById('flip-horizontal-btn');
@@ -589,9 +497,7 @@ window.TegakiUI.setupPanelStyles = function() {
 
 window.TegakiUI.initializeSortable = function(layerManager) {
     const layerList = document.getElementById('layer-list');
-    if (!layerList || typeof Sortable === 'undefined') {
-        return;
-    }
+    if (!layerList || typeof Sortable === 'undefined') return;
     
     if (layerList.sortableInstance) {
         layerList.sortableInstance.destroy();
@@ -604,26 +510,14 @@ window.TegakiUI.initializeSortable = function(layerManager) {
         chosenClass: 'sortable-chosen',
         handle: '.layer-item',
         onEnd: function(evt) {
-            const uiOldIndex = evt.oldIndex;
-            const uiNewIndex = evt.newIndex;
-            
             const layers = layerManager.getLayers();
-            const fromIndex = layers.length - 1 - uiOldIndex;
-            const toIndex = layers.length - 1 - uiNewIndex;
+            const fromIndex = layers.length - 1 - evt.oldIndex;
+            const toIndex = layers.length - 1 - evt.newIndex;
             
             if (fromIndex !== toIndex) {
-                const success = layerManager.reorderLayers(fromIndex, toIndex);
-                
-                if (success) {
-                    layerManager.updateLayerPanelUI();
-                } else {
-                    layerManager.updateLayerPanelUI();
-                }
+                layerManager.reorderLayers(fromIndex, toIndex);
+                layerManager.updateLayerPanelUI();
             }
         }
     });
 };
-
-console.log('✅ ui-panels.js Settings Popup完全対応版（修正v3・完全版） loaded');
-console.log('✅ window.TegakiUI.SettingsPopup:', typeof window.TegakiUI.SettingsPopup);
-console.log('✅ window.TegakiUI.UIController:', typeof window.TegakiUI.UIController);
