@@ -1,6 +1,6 @@
 // ========================================
 // CanvasManager.js - キャンバス管理（改修版）
-// 座標系統一・World座標対応
+// 座標系統一・World座標対応・互換性修正
 // ========================================
 
 (function() {
@@ -8,7 +8,7 @@
     
     const CanvasManager = class CanvasManager {
         constructor(width, height, backgroundColor) {
-            const config = window.TegakiConstants?.CANVAS_CONFIG || {};
+            const config = window.TegakiConstants && window.TegakiConstants.CANVAS_CONFIG ? window.TegakiConstants.CANVAS_CONFIG : {};
             
             this.width = width || config.WIDTH || 400;
             this.height = height || config.HEIGHT || 400;

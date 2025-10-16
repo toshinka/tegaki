@@ -1,0 +1,327 @@
+# 🔧 Tegaki Anime v7 改修計画書
+
+## 📊 問題分析
+
+### 検出された主要問題
+
+#### 1. レイヤー・キャンバス・サムネイル間の同期不整合
+**問題の詳細:**
+- 描画中はアクティブレイヤーのみを表示し、描画終了後に合成表示する設計
+- しかし、`saveCurrentLayer()`と`loadCurrentLayer()`のタイミングが不適切
+- レイヤーデータの保存/復元が不完全で、他のレイヤーに転写される現象が発生
+
+**原因:**
+- `handleMouseDown()`で`loadCurrentLayer()`を呼んでいるが、その前にキャンバスには合成表示が残っている
+- `saveCurrentLayer()`でキャンバス全体を保存するため、合成表示がレイヤーに書き込まれる
+- サムネイル更新のタイミングが一貫していない
+
+#### 2. 座標系の統一性欠如
+**問題の詳細:**
+- `CanvasManager.getCanvasCoordinates()`と個別の座標変換が混在
+- 将来的な変換・回転・拡縮に対応できない構造
+
+**原因:**
+- 座標変換の責務が分散している
+- World座標系の概念がない
+
+#### 3. LayerManager.getCompositeImageData()の合成ロジック問題
+**問題の詳細:**
+- `ctx.putImageData()`を繰り返し呼ぶことで上書きしてしまう
+- `globalAlpha`だけでは正しいアルファ合成にならない
+
+**原因:**
+- `putImageData()`は既存の内容を無視して上書きする
+- 正しくは各レイヤーを一時キャンバスに描画してから`drawImage()`で合成する必要がある
+
+#### 4. 履歴管理の不完全性
+**問題の詳細:**
+- 描画完了時に履歴保存するが、レイヤー切替時の保存タイミングが曖昧
+
+**原因:**
+- フレーム切替時は保存されるが、レイヤー切替時は履歴に保存されない
+- 初期状態の履歴が保存されていない
+
+---
+
+## 🛠️ 改修内容
+
+### Phase 1: 座標系の統一化
+
+**ファイル:** `CanvasManager.js`
+
+**変更点:**
+1. 座標変換の責務を`CanvasManager`に完全集約
+2. 変換パラメータ構造体を追加（将来の拡張用）
+   ```javascript
+   this.transform = {
+       offsetX: 0,
+       offsetY: 0,
+       scale: 1.0,
+       rotation: 0
+   };
+   ```
+3. World座標系変換メソッドを追加（現在は実装なし、将来の拡張用）
+   - `canvasToWorld(canvasX, canvasY)`
+   - `worldToCanvas(worldX, worldY)`
+4. 変換パラメータ設定メソッドを追加
+   - `setTransform(offsetX, offsetY, scale, rotation)`
+   - `resetTransform()`
+
+**互換性:** 既存のコードは変更なしで動作
+
+---
+
+### Phase 2: レイヤー合成ロジックの完全修正
+
+**ファイル:** `LayerManager.js`
+
+**変更点:**
+1. `getCompositeImageData()`を完全に書き直し
+2. 正しいアルファ合成の実装
+   ```javascript
+   // 各レイヤーを一時キャンバスに描画
+   const tempCanvas = document.createElement('canvas');
+   tempCanvas.width = width;
+   tempCanvas.height = height;
+   const tempCtx = tempCanvas.getContext('2d');
+   tempCtx.putImageData(layer.imageData, 0, 0);
+   
+   // 不透明度を設定して合成
+   ctx.globalAlpha = layer.opacity;
+   ctx.drawImage(tempCanvas, 0, 0);
+   ```
+3. 合成キャンバスを完全に透明な状態から開始
+
+**効果:** レイヤーの表示/非表示、不透明度が正しく反映される
+
+---
+
+### Phase 3: 描画フローの完全整理
+
+**ファイル:** `tegaki_anime_core.js`、`DrawingEngine.js`
+
+**変更点:**
+
+#### 3-1. 座標変換の統一（DrawingEngine.js）
+- `startDrawing()`と`draw()`で`CanvasManager.getCanvasCoordinates()`を使用
+- 個別の座標変換コードを削除
+
+#### 3-2. 描画フローの明確化（tegaki_anime_core.js）
+
+**新しい描画フロー:**
+```
+1. mousedown
+   └→ loadCurrentLayerOnly() // アクティブレイヤーのみ表示
+   └→ startDrawing()
+   
+2. mousemove
+   └→ draw()
+   
+3. mouseup
+   └→ stopDrawing()
+   └→ handleDrawingComplete()
+       ├→ saveCurrentLayerFromCanvas() // キャンバス→レイヤー
+       ├→ pushHistory() // 履歴保存
+       ├→ updateFrameThumbnail() // サムネイル更新
+       ├→ updateLayerPanelThumbnails()
+       └→ loadCurrentFrameComposite() // 合成表示に戻す
+```
+
+**新規メソッド:**
+- `loadCurrentLayerOnly()` - アクティブレイヤーのみ表示
+- `saveCurrentLayerFromCanvas()` - キャンバス→レイヤーデータ保存
+- `loadCurrentFrameComposite()` - フレーム合成表示
+- `handleDrawingComplete()` - 描画完了時の統一処理
+- `refreshDisplay()` - レイヤー属性変更時の表示更新
+
+**削除メソッド:**
+- `loadCurrentLayer()` - 曖昧なので削除
+- `saveCurrentLayer()` - 曖昧なので削除
+- `loadCurrentLayerComposite()` - 名前が不正確なので削除
+
+---
+
+### Phase 4: サムネイル更新の統一
+
+**ファイル:** `tegaki_anime_core.js`
+
+**変更点:**
+1. サムネイル更新を確実に実行
+2. フレームサムネイルは常に合成表示を反映
+3. レイヤーパネルサムネイルは各レイヤーの生データを反映
+4. 不透明度・表示/非表示変更時も確実に更新
+
+**更新タイミング:**
+- 描画完了時: `handleDrawingComplete()`
+- Undo/Redo時: `undo()`, `redo()`
+- レイヤー属性変更時: `refreshDisplay()`
+- フレーム追加/削除時: `rebuildFrameThumbnails()`
+
+---
+
+### Phase 5: 履歴管理の完全化
+
+**ファイル:** `tegaki_anime_core.js`
+
+**変更点:**
+1. 初期化時に全フレーム・全レイヤーの初期状態を履歴に保存
+   ```javascript
+   saveInitialHistory() {
+       for (let f = 0; f < frameCount; f++) {
+           for (let l = 0; l < layerCount; l++) {
+               const imageData = layerManager.getLayerImageData(f, l);
+               historyManager.pushHistory(f, l, imageData);
+           }
+       }
+   }
+   ```
+2. フレーム追加/コピー時に新フレームの初期履歴を保存
+3. 履歴保存は描画完了時のみ（レイヤー切替では保存しない）
+
+---
+
+## 📝 実装ガイド
+
+### 置き換えファイル一覧
+
+```
+src/modules/CanvasManager.js    → CanvasManager.js (改修版)
+src/modules/LayerManager.js     → LayerManager.js (改修版)
+src/modules/DrawingEngine.js    → DrawingEngine.js (改修版)
+src/tegaki_anime_core.js        → tegaki_anime_core.js (改修版)
+```
+
+### 置き換え手順
+
+1. **バックアップ作成**
+   ```bash
+   cp src/modules/CanvasManager.js src/modules/CanvasManager.js.backup
+   cp src/modules/LayerManager.js src/modules/LayerManager.js.backup
+   cp src/modules/DrawingEngine.js src/modules/DrawingEngine.js.backup
+   cp src/tegaki_anime_core.js src/tegaki_anime_core.js.backup
+   ```
+
+2. **改修版ファイルを配置**
+   - 提供された改修版ファイルを対応する位置にコピー
+
+3. **ビルド**
+   ```bash
+   npm run build
+   ```
+
+4. **テスト**
+   - `TegakiAniTest_Dev.html`で動作確認
+   - レイヤー間での転写がないか確認
+   - サムネイル更新が正しいか確認
+   - Undo/Redoが正しく動作するか確認
+
+### 動作確認項目
+
+#### ✅ 基本描画
+- [ ] ペンで描画できる
+- [ ] 消しゴムで消せる
+- [ ] バケツツールが動作する
+
+#### ✅ レイヤー機能
+- [ ] レイヤー切替が正しく動作
+- [ ] レイヤー1で描いた内容がレイヤー2に転写されない
+- [ ] レイヤーの表示/非表示が正しく動作
+- [ ] レイヤーの不透明度が正しく反映される
+
+#### ✅ フレーム機能
+- [ ] フレーム切替が正しく動作
+- [ ] フレーム追加が正しく動作
+- [ ] フレームコピーが正しく動作
+- [ ] フレーム削除が正しく動作
+
+#### ✅ サムネイル
+- [ ] フレームサムネイルが合成表示を反映
+- [ ] レイヤーサムネイルが各レイヤーを反映
+- [ ] 描画後にサムネイルが更新される
+- [ ] レイヤー属性変更時にサムネイルが更新される
+
+#### ✅ 履歴
+- [ ] Undoが正しく動作
+- [ ] Redoが正しく動作
+- [ ] 初期状態からUndoできる
+
+#### ✅ プレビュー
+- [ ] プレビューが正しく再生される
+- [ ] プレビュー停止後に元の表示に戻る
+
+---
+
+## 🔮 将来の拡張への対応
+
+### キャンバス移動・回転・拡縮
+
+改修後の`CanvasManager`は将来の拡張に対応しています：
+
+```javascript
+// キャンバスを移動・拡縮する例（将来実装）
+canvasManager.setTransform(
+    offsetX,  // X方向オフセット
+    offsetY,  // Y方向オフセット
+    scale,    // 拡大率
+    rotation  // 回転角度（ラジアン）
+);
+
+// 座標変換は自動的に適用される
+const coords = canvasManager.getCanvasCoordinates(clientX, clientY);
+```
+
+### 実装時の注意点
+
+1. **座標変換は`CanvasManager`に集約**
+   - 全ての座標変換は`getCanvasCoordinates()`を通す
+   - 独自の座標計算を追加しない
+
+2. **World座標系の活用**
+   - 必要に応じて`canvasToWorld()`/`worldToCanvas()`を実装
+   - 座標系の変換ロジックを`CanvasManager`内に閉じ込める
+
+3. **描画フローを守る**
+   - 描画開始: `loadCurrentLayerOnly()`
+   - 描画完了: `handleDrawingComplete()`
+   - この2つの間でレイヤーデータを直接操作しない
+
+---
+
+## 📌 まとめ
+
+### 改修のポイント
+
+1. **座標系の統一** - 将来の拡張に対応
+2. **レイヤー合成の修正** - 正しいアルファ合成
+3. **描画フローの明確化** - データの流れを単純化
+4. **サムネイル更新の徹底** - 常に最新状態を反映
+5. **履歴管理の完全化** - 初期状態から全て記録
+
+### 互換性
+
+- **既存のUIBuilderは変更不要**
+- **既存のHistoryManagerは変更不要**
+- **既存のExportManagerは変更不要**
+- **既存のKeyboardManagerは変更不要**
+
+### 影響範囲
+
+- **変更あり**: CanvasManager, LayerManager, DrawingEngine, TegakiAnimeCore
+- **変更なし**: UIBuilder, HistoryManager, ExportManager, KeyboardManager, helpers, constants
+
+---
+
+## 🚀 導入効果
+
+### Before（改修前）
+- ❌ レイヤー間で勝手に転写される
+- ❌ サムネイルが更新されないことがある
+- ❌ 合成表示が正しくない
+- ❌ Undo/Redoが不安定
+
+### After（改修後）
+- ✅ レイヤーが完全に独立
+- ✅ サムネイルが常に正確
+- ✅ 合成表示が完璧
+- ✅ Undo/Redoが安定
+- ✅ 将来の拡張に対応
