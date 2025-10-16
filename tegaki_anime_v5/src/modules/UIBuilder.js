@@ -14,569 +14,6 @@
             
             // スロットUI要素への参照
             this.penSlotButtons = [];
-            this.penSlider = null;
-            this.eraserSlotButtons = [];
-            this.eraserSlider = null;
-            
-            // カラースキーム
-            this.config = {
-                shortcutPanelWidth: 120,
-                controlPanelWidth: 150,
-                layerPanelWidth: 130,
-                thumbnailSize: 60,
-                layerThumbnailSize: 60,
-                panelGap: 8,
-                panelPadding: 8,
-                panelBackground: 'transparent',
-                panelBorderColor: 'transparent',
-                primary: '#800000',
-                secondary: '#aa5a56',
-                border: '#cf9c97',
-                light: '#e9c2ba',
-                background: '#f0e0d6',
-                white: '#ffffff'
-            };
-            
-            this.colorPalette = [
-                '#800000', '#aa5a56', '#cf9c97', '#e9c2ba', '#f0e0d6', '#ffffff'
-            ];
-        }
-        
-        /**
-         * メインレイアウト作成
-         */
-        createMainLayout() {
-            this.wrapper = document.createElement('div');
-            this.wrapper.style.cssText = `
-                display: flex;
-                flex-direction: column;
-                width: 100%;
-                height: 100%;
-                background: #ffffee;
-                gap: ${this.config.panelGap}px;
-                padding: ${this.config.panelGap}px;
-            `;
-            
-            // タイトルバー
-            const titleBar = document.createElement('div');
-            titleBar.style.cssText = `
-                font-size: 13px;
-                font-weight: bold;
-                color: ${this.config.primary};
-                padding: 4px 8px;
-                text-align: center;
-                background: rgba(240, 224, 214, 0.3);
-                border-radius: 2px;
-            `;
-            titleBar.textContent = 'めぶがき APNG投稿テスト DEV';
-            this.wrapper.appendChild(titleBar);
-            
-            // メインコンテンツエリア
-            const mainContent = document.createElement('div');
-            mainContent.style.cssText = `
-                display: flex;
-                flex-direction: row;
-                flex: 1;
-                gap: ${this.config.panelGap}px;
-                min-height: 0;
-            `;
-            this.wrapper.appendChild(mainContent);
-            this.mainContent = mainContent;
-            
-            this.container.appendChild(this.wrapper);
-            return this.wrapper;
-        }
-        
-        /**
-         * ショートカットパネル作成
-         */
-        createShortcutPanel() {
-            const panel = document.createElement('div');
-            panel.style.cssText = `
-                width: ${this.config.shortcutPanelWidth}px;
-                background: ${this.config.panelBackground};
-                padding: ${this.config.panelPadding}px;
-                font-size: 11px;
-                color: ${this.config.primary};
-                overflow-y: auto;
-            `;
-            
-            let shortcutHtml = `
-                <h3 style="margin: 0 0 8px 0; font-size: 12px; padding-bottom: 4px; border-bottom: 1px solid ${this.config.border};">
-                    ショートカット
-                </h3>
-                <div style="line-height: 1.6;">
-                    <div><b>1-9</b>: フレーム</div>
-                    <div><b>Q/W</b>: レイヤー</div>
-                    <div><b>P</b>: ペン</div>
-                    <div><b>E</b>: 消しゴム</div>
-                    <div><b>[ / ]</b>: スロット</div>
-                    <div><b>O</b>: オニオン</div>
-                    <div><b>V</b>: 移動</div>
-                    <div><b>Ctrl+Z</b>: Undo</div>
-                    <div><b>Ctrl+Y</b>: Redo</div>
-                </div>
-                <h3 style="margin: 12px 0 8px 0; font-size: 12px; padding-bottom: 4px; border-bottom: 1px solid ${this.config.border};">
-                    使い方
-                </h3>
-                <div style="line-height: 1.5; font-size: 10px;">
-                    各レイヤーに描画してサムネイルで切替。完成したらAPNG投稿。
-                </div>
-            `;
-            
-            panel.innerHTML = shortcutHtml;
-            this.mainContent.appendChild(panel);
-            return panel;
-        }
-        
-        /**
-         * キャンバスエリア作成
-         */
-        createCanvasArea(canvas, bgCanvas) {
-            const centerArea = document.createElement('div');
-            centerArea.style.cssText = `
-                flex: 1;
-                display: flex;
-                flex-direction: column;
-                gap: ${this.config.panelGap}px;
-                min-width: 0;
-            `;
-            
-            // 上部: プレビューボタン
-            const topBar = document.createElement('div');
-            topBar.style.cssText = `
-                display: flex;
-                justify-content: center;
-                gap: 8px;
-            `;
-            
-            const previewBtn = document.createElement('button');
-            previewBtn.id = 'preview-button';
-            previewBtn.textContent = 'プレビュー';
-            previewBtn.style.cssText = `
-                padding: 6px 16px;
-                background: #4ade80;
-                color: white;
-                border: none;
-                border-radius: 4px;
-                cursor: pointer;
-                font-weight: bold;
-                font-size: 12px;
-            `;
-            topBar.appendChild(previewBtn);
-            centerArea.appendChild(topBar);
-            
-            // キャンバスコンテナ
-            const canvasWrapper = document.createElement('div');
-            canvasWrapper.style.cssText = `
-                flex: 1;
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                min-height: 0;
-            `;
-            
-            const canvasContainer = document.createElement('div');
-            canvasContainer.style.cssText = `
-                position: relative;
-                width: ${canvas.width}px;
-                height: ${canvas.height}px;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
-            `;
-            
-            canvasContainer.appendChild(bgCanvas);
-            canvasContainer.appendChild(canvas);
-            canvasWrapper.appendChild(canvasContainer);
-            
-            centerArea.appendChild(canvasWrapper);
-            this.mainContent.appendChild(centerArea);
-            
-            return centerArea;
-        }
-        
-        /**
-         * フレームサムネイル作成
-         */
-        createFrameThumbnails(frameCount, onClick, onAdd, onDelete, onCopy) {
-            const container = document.createElement('div');
-            container.style.cssText = `
-                display: flex;
-                flex-direction: column;
-                gap: ${this.config.panelGap}px;
-            `;
-            
-            // 操作ボタン群
-            const buttonRow = document.createElement('div');
-            buttonRow.style.cssText = `
-                display: flex;
-                justify-content: center;
-                gap: 5px;
-            `;
-            
-            const deleteBtn = document.createElement('button');
-            deleteBtn.textContent = '選択削除';
-            deleteBtn.style.cssText = `
-                padding: 4px 8px;
-                background: #f87171;
-                color: white;
-                border: none;
-                border-radius: 3px;
-                cursor: pointer;
-                font-size: 10px;
-                font-weight: bold;
-            `;
-            deleteBtn.onclick = onDelete;
-            
-            const copyBtn = document.createElement('button');
-            copyBtn.textContent = '選択右にコピー';
-            copyBtn.style.cssText = `
-                padding: 4px 8px;
-                background: #60a5fa;
-                color: white;
-                border: none;
-                border-radius: 3px;
-                cursor: pointer;
-                font-size: 10px;
-                font-weight: bold;
-            `;
-            copyBtn.onclick = onCopy;
-            
-            const addBtn = document.createElement('button');
-            addBtn.textContent = '選択右に新規';
-            addBtn.style.cssText = `
-                padding: 4px 8px;
-                background: #4ade80;
-                color: white;
-                border: none;
-                border-radius: 3px;
-                cursor: pointer;
-                font-size: 10px;
-                font-weight: bold;
-            `;
-            addBtn.onclick = onAdd;
-            
-            buttonRow.appendChild(deleteBtn);
-            buttonRow.appendChild(copyBtn);
-            buttonRow.appendChild(addBtn);
-            container.appendChild(buttonRow);
-            
-            // サムネイル行
-            const thumbnailContainer = document.createElement('div');
-            thumbnailContainer.style.cssText = `
-                display: flex;
-                justify-content: center;
-                align-items: center;
-                flex-wrap: wrap;
-                gap: 8px;
-                padding: 8px;
-                background: rgba(240, 224, 214, 0.3);
-                border-radius: 4px;
-            `;
-            
-            const thumbnails = [];
-            
-            for (let i = 0; i < frameCount; i++) {
-                const thumbWrapper = document.createElement('div');
-                thumbWrapper.style.cssText = 'text-align: center;';
-                
-                const thumb = document.createElement('canvas');
-                thumb.width = this.config.thumbnailSize;
-                thumb.height = this.config.thumbnailSize;
-                thumb.style.cssText = `
-                    border: 2px solid ${this.config.secondary};
-                    border-radius: 2px;
-                    background: ${this.config.background};
-                    cursor: pointer;
-                    transition: all 0.2s;
-                    display: block;
-                `;
-                thumb.title = `フレーム ${i + 1} (${i + 1}キー)`;
-                thumb.onclick = () => onClick(i);
-                
-                const label = document.createElement('div');
-                label.style.cssText = `
-                    font-size: 10px;
-                    color: ${this.config.primary};
-                    margin-top: 2px;
-                `;
-                label.textContent = i + 1;
-                
-                thumbWrapper.appendChild(thumb);
-                thumbWrapper.appendChild(label);
-                thumbnails.push(thumb);
-                thumbnailContainer.appendChild(thumbWrapper);
-            }
-            
-            container.appendChild(thumbnailContainer);
-            
-            return { container, thumbnails };
-        }
-        
-        /**
-         * フレームサムネイルを更新
-         */
-        updateFrameThumbnail(thumbnailCanvas, imageData) {
-            const thumbCtx = thumbnailCanvas.getContext('2d', {
-                willReadFrequently: true
-            });
-            thumbCtx.clearRect(0, 0, thumbnailCanvas.width, thumbnailCanvas.height);
-            
-            const tempCanvas = document.createElement('canvas');
-            tempCanvas.width = imageData.width;
-            tempCanvas.height = imageData.height;
-            const tempCtx = tempCanvas.getContext('2d');
-            tempCtx.putImageData(imageData, 0, 0);
-            
-            layerCtx.drawImage(
-                tempCanvas,
-                0, 0,
-                layerCanvas.width,
-                layerCanvas.height
-            );
-        }
-        
-        /**
-         * チェック柄背景を描画
-         */
-        drawCheckeredBackground(ctx, width, height) {
-            const checkSize = 4;
-            ctx.fillStyle = '#ffffff';
-            ctx.fillRect(0, 0, width, height);
-            
-            ctx.fillStyle = '#cccccc';
-            for (let y = 0; y < height; y += checkSize) {
-                for (let x = 0; x < width; x += checkSize) {
-                    if ((x / checkSize + y / checkSize) % 2 === 0) {
-                        ctx.fillRect(x, y, checkSize, checkSize);
-                    }
-                }
-            }
-        }
-        
-        /**
-         * レイヤーパネルのハイライト
-         */
-        highlightLayerPanel(layers, activeIndex) {
-            layers.forEach((layer, i) => {
-                layer.item.style.borderColor = (i === activeIndex) ? 
-                    this.config.primary : this.config.secondary;
-                layer.item.style.backgroundColor = (i === activeIndex) ? 
-                    'rgba(128, 0, 0, 0.05)' : 'white';
-                layer.item.style.borderWidth = (i === activeIndex) ? '3px' : '2px';
-            });
-        }
-        
-        /**
-         * レイヤーの表示状態を更新
-         */
-        updateLayerVisibility(layers, layerIndex, visible) {
-            layers[layerIndex].visibilityBtn.textContent = visible ? '👁️' : '🚫';
-            layers[layerIndex].item.style.opacity = visible ? '1' : '0.5';
-        }
-        
-        /**
-         * レイヤーの不透明度表示を更新
-         */
-        updateLayerOpacity(layers, layerIndex, opacity) {
-            layers[layerIndex].opacityDisplay.textContent = `${Math.round(opacity * 100)}%`;
-        }
-        
-        /**
-         * コントロールパネル作成
-         */
-        createControlPanel(callbacks) {
-            const panel = document.createElement('div');
-            panel.style.cssText = `
-                width: ${this.config.controlPanelWidth}px;
-                background: ${this.config.panelBackground};
-                padding: ${this.config.panelPadding}px;
-                font-size: 11px;
-                color: ${this.config.primary};
-                display: flex;
-                flex-direction: column;
-                gap: 10px;
-                overflow-y: auto;
-            `;
-            
-            // カラーパレット
-            const paletteSection = this.createColorPalette(callbacks.onColorChange);
-            panel.appendChild(paletteSection);
-            
-            // ツールボタン
-            const toolSection = this.createToolButtons(callbacks.onToolChange);
-            panel.appendChild(toolSection.section);
-            
-            // ペンスロット
-            const penSlotSection = this.createPenSlots(
-                callbacks.penSlots,
-                callbacks.onPenSlotClick,
-                callbacks.onPenSizeChange
-            );
-            panel.appendChild(penSlotSection.section);
-            
-            // 消しゴムスロット
-            const eraserSlotSection = this.createEraserSlots(
-                callbacks.eraserSlots,
-                callbacks.onEraserSlotClick,
-                callbacks.onEraserSizeChange
-            );
-            panel.appendChild(eraserSlotSection.section);
-            
-            // フレーム間隔
-            const delaySection = this.createDelaySlider(callbacks.onDelayChange);
-            panel.appendChild(delaySection);
-            
-            // オニオンスキン
-            const onionSection = this.createOnionSkinSection(callbacks.onOnionSkinChange);
-            panel.appendChild(onionSection);
-            
-            this.mainContent.appendChild(panel);
-            
-            // プレビューボタンのイベント設定
-            const previewBtn = document.getElementById('preview-button');
-            if (previewBtn) {
-                previewBtn.onclick = callbacks.onPreview;
-            }
-            
-            return panel;
-        }
-        
-        /**
-         * カラーパレット作成
-         */
-        createColorPalette(onChange) {
-            const section = document.createElement('div');
-            
-            const label = document.createElement('div');
-            label.style.cssText = 'font-weight: bold; margin-bottom: 4px; font-size: 11px;';
-            label.textContent = 'パレット';
-            section.appendChild(label);
-            
-            const palette = document.createElement('div');
-            palette.style.cssText = `
-                display: grid;
-                grid-template-columns: repeat(3, 1fr);
-                gap: 4px;
-            `;
-            
-            const colorButtons = [];
-            
-            this.colorPalette.forEach((color, i) => {
-                const btn = document.createElement('button');
-                btn.style.cssText = `
-                    width: 100%;
-                    height: 28px;
-                    background: ${color};
-                    border: 2px solid ${this.config.secondary};
-                    border-radius: 2px;
-                    cursor: pointer;
-                    transition: all 0.2s;
-                `;
-                btn.onclick = () => {
-                    onChange(color);
-                    this.highlightColorButton(colorButtons, i);
-                };
-                
-                colorButtons.push(btn);
-                palette.appendChild(btn);
-            });
-            
-            this.highlightColorButton(colorButtons, 0);
-            
-            section.appendChild(palette);
-            return section;
-        }
-        
-        /**
-         * カラーボタンのハイライト
-         */
-        highlightColorButton(buttons, activeIndex) {
-            buttons.forEach((btn, i) => {
-                btn.style.borderColor = (i === activeIndex) ? 
-                    this.config.primary : this.config.secondary;
-                btn.style.borderWidth = (i === activeIndex) ? '3px' : '2px';
-            });
-        }
-        
-        /**
-         * ツールボタン作成
-         */
-        createToolButtons(onChange) {
-            const section = document.createElement('div');
-            
-            const label = document.createElement('div');
-            label.style.cssText = 'font-weight: bold; margin-bottom: 4px; font-size: 11px;';
-            label.textContent = 'ツール';
-            section.appendChild(label);
-            
-            const tools = document.createElement('div');
-            tools.style.cssText = 'display: flex; gap: 4px;';
-            
-            const toolButtons = [];
-            
-            const toolList = [
-                { name: 'ペン', tool: 'pen' },
-                { name: '消しゴム', tool: 'eraser' }
-            ];
-            
-            toolList.forEach((toolInfo, i) => {
-                const btn = document.createElement('button');
-                btn.style.cssText = `
-                    flex: 1;
-                    padding: 6px;
-                    background: white;
-                    border: 2px solid ${this.config.secondary};
-                    border-radius: 2px;
-                    cursor: pointer;
-                    font-size: 10px;
-                    transition: all 0.2s;
-                    font-weight: bold;
-                `;
-                btn.textContent = toolInfo.name;
-                btn.onclick = () => {
-                    onChange(toolInfo.tool);
-                    this.highlightToolButton(toolButtons, i);
-                };
-                
-                toolButtons.push(btn);
-                tools.appendChild(btn);
-            });
-            
-            this.highlightToolButton(toolButtons, 0);
-            
-            section.appendChild(tools);
-            return { section, buttons: toolButtons };
-        }
-        
-        /**
-         * ツールボタンのハイライト
-         */
-        highlightToolButton(buttons, activeIndex) {
-            buttons.forEach((btn, i) => {
-                btn.style.borderColor = (i === activeIndex) ? 
-                    this.config.primary : this.config.secondary;
-                btn.style.backgroundColor = (i === activeIndex) ? 
-                    'rgba(128, 0, 0, 0.1)' : 'white';
-                btn.style.borderWidth = (i === activeIndex) ? '3px' : '2px';
-            });
-        }
-        
-        /**
-         * ペンスロット作成
-         */
-        createPenSlots(slots, onSlotClick, onSizeChange) {
-            const section = document.createElement('div');
-            
-            const label = document.createElement('div');
-            label.textContent = 'ペンサイズ';
-            label.style.cssText = 'font-weight: bold; margin-bottom: 4px; font-size: 11px;';
-            section.appendChild(label);
-            
-            // スロット行
-            const slotRow = document.createElement('div');
-            slotRow.style.cssText = 'display: flex; gap: 3px; margin-bottom: 4px;';
-            
-            this.penSlotButtons = [];
             slots.forEach((slot, i) => {
                 const btn = document.createElement('button');
                 btn.style.cssText = `
@@ -850,7 +287,316 @@
         window.UIBuilder = UIBuilder;
         console.log('✅ UIBuilder loaded');
     }
-})();.width = imageData.width;
+})();SlotButtons = [];
+            this.penSlider = null;
+            this.eraserSlotButtons = [];
+            this.eraserSlider = null;
+            
+            // カラースキーム
+            this.config = {
+                shortcutPanelWidth: 120,
+                controlPanelWidth: 150,
+                layerPanelWidth: 130,
+                thumbnailSize: 60,
+                layerThumbnailSize: 60,
+                panelGap: 8,
+                panelPadding: 8,
+                panelBackground: 'transparent',
+                panelBorderColor: 'transparent',
+                primary: '#800000',
+                secondary: '#aa5a56',
+                border: '#cf9c97',
+                light: '#e9c2ba',
+                background: '#f0e0d6',
+                white: '#ffffff'
+            };
+            
+            this.colorPalette = [
+                '#800000', '#aa5a56', '#cf9c97', '#e9c2ba', '#f0e0d6', '#ffffff'
+            ];
+        }
+        
+        /**
+         * メインレイアウト作成
+         */
+        createMainLayout() {
+            this.wrapper = document.createElement('div');
+            this.wrapper.style.cssText = `
+                display: flex;
+                flex-direction: column;
+                width: 100%;
+                height: 100%;
+                background: #ffffee;
+                gap: ${this.config.panelGap}px;
+                padding: ${this.config.panelGap}px;
+            `;
+            
+            // タイトルバー
+            const titleBar = document.createElement('div');
+            titleBar.style.cssText = `
+                font-size: 13px;
+                font-weight: bold;
+                color: ${this.config.primary};
+                padding: 4px 8px;
+                text-align: center;
+                background: rgba(240, 224, 214, 0.3);
+                border-radius: 2px;
+            `;
+            titleBar.textContent = 'めぶがき APNG投稿テスト DEV';
+            this.wrapper.appendChild(titleBar);
+            
+            // メインコンテンツエリア
+            const mainContent = document.createElement('div');
+            mainContent.style.cssText = `
+                display: flex;
+                flex-direction: row;
+                flex: 1;
+                gap: ${this.config.panelGap}px;
+                min-height: 0;
+            `;
+            this.wrapper.appendChild(mainContent);
+            this.mainContent = mainContent;
+            
+            this.container.appendChild(this.wrapper);
+            return this.wrapper;
+        }
+        
+        /**
+         * ショートカットパネル作成
+         */
+        createShortcutPanel() {
+            const panel = document.createElement('div');
+            panel.style.cssText = `
+                width: ${this.config.shortcutPanelWidth}px;
+                background: ${this.config.panelBackground};
+                padding: ${this.config.panelPadding}px;
+                font-size: 11px;
+                color: ${this.config.primary};
+                overflow-y: auto;
+            `;
+            
+            let shortcutHtml = `
+                <h3 style="margin: 0 0 8px 0; font-size: 12px; padding-bottom: 4px; border-bottom: 1px solid ${this.config.border};">
+                    ショートカット
+                </h3>
+                <div style="line-height: 1.6;">
+                    <div><b>1-9</b>: フレーム</div>
+                    <div><b>Q/W</b>: レイヤー</div>
+                    <div><b>P</b>: ペン</div>
+                    <div><b>E</b>: 消しゴム</div>
+                    <div><b>[ / ]</b>: スロット</div>
+                    <div><b>O</b>: オニオン</div>
+                    <div><b>V</b>: 移動</div>
+                    <div><b>Ctrl+Z</b>: Undo</div>
+                    <div><b>Ctrl+Y</b>: Redo</div>
+                </div>
+                <h3 style="margin: 12px 0 8px 0; font-size: 12px; padding-bottom: 4px; border-bottom: 1px solid ${this.config.border};">
+                    使い方
+                </h3>
+                <div style="line-height: 1.5; font-size: 10px;">
+                    各レイヤーに描画してサムネイルで切替。完成したらAPNG投稿。
+                </div>
+            `;
+            
+            panel.innerHTML = shortcutHtml;
+            this.mainContent.appendChild(panel);
+            return panel;
+        }
+        
+        /**
+         * キャンバスエリア作成
+         */
+        createCanvasArea(canvas, bgCanvas) {
+            const centerArea = document.createElement('div');
+            centerArea.style.cssText = `
+                flex: 1;
+                display: flex;
+                flex-direction: column;
+                gap: ${this.config.panelGap}px;
+                min-width: 0;
+            `;
+            
+            // 上部: プレビューボタン
+            const topBar = document.createElement('div');
+            topBar.style.cssText = `
+                display: flex;
+                justify-content: center;
+                gap: 8px;
+            `;
+            
+            const previewBtn = document.createElement('button');
+            previewBtn.id = 'preview-button';
+            previewBtn.textContent = 'プレビュー';
+            previewBtn.style.cssText = `
+                padding: 6px 16px;
+                background: ${this.config.primary};
+                color: white;
+                border: none;
+                border-radius: 4px;
+                cursor: pointer;
+                font-weight: bold;
+                font-size: 12px;
+            `;
+            topBar.appendChild(previewBtn);
+            centerArea.appendChild(topBar);
+            
+            // キャンバスコンテナ
+            const canvasWrapper = document.createElement('div');
+            canvasWrapper.style.cssText = `
+                flex: 1;
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                min-height: 0;
+            `;
+            
+            const canvasContainer = document.createElement('div');
+            canvasContainer.style.cssText = `
+                position: relative;
+                width: ${canvas.width}px;
+                height: ${canvas.height}px;
+                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.2);
+            `;
+            
+            canvasContainer.appendChild(bgCanvas);
+            canvasContainer.appendChild(canvas);
+            canvasWrapper.appendChild(canvasContainer);
+            
+            centerArea.appendChild(canvasWrapper);
+            this.mainContent.appendChild(centerArea);
+            
+            return centerArea;
+        }
+        
+        /**
+         * フレームサムネイル作成
+         */
+        createFrameThumbnails(frameCount, onClick, onAdd, onDelete, onCopy) {
+            const container = document.createElement('div');
+            container.style.cssText = `
+                display: flex;
+                flex-direction: column;
+                gap: ${this.config.panelGap}px;
+            `;
+            
+            // 操作ボタン群
+            const buttonRow = document.createElement('div');
+            buttonRow.style.cssText = `
+                display: flex;
+                justify-content: center;
+                gap: 5px;
+            `;
+            
+            const deleteBtn = document.createElement('button');
+            deleteBtn.textContent = '選択削除';
+            deleteBtn.style.cssText = `
+                padding: 4px 8px;
+                background: #f87171;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+                font-size: 10px;
+                font-weight: bold;
+            `;
+            deleteBtn.onclick = onDelete;
+            
+            const copyBtn = document.createElement('button');
+            copyBtn.textContent = '選択右にコピー';
+            copyBtn.style.cssText = `
+                padding: 4px 8px;
+                background: #60a5fa;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+                font-size: 10px;
+                font-weight: bold;
+            `;
+            copyBtn.onclick = onCopy;
+            
+            const addBtn = document.createElement('button');
+            addBtn.textContent = '選択右に新規';
+            addBtn.style.cssText = `
+                padding: 4px 8px;
+                background: #4ade80;
+                color: white;
+                border: none;
+                border-radius: 3px;
+                cursor: pointer;
+                font-size: 10px;
+                font-weight: bold;
+            `;
+            addBtn.onclick = onAdd;
+            
+            buttonRow.appendChild(deleteBtn);
+            buttonRow.appendChild(copyBtn);
+            buttonRow.appendChild(addBtn);
+            container.appendChild(buttonRow);
+            
+            // サムネイル行
+            const thumbnailContainer = document.createElement('div');
+            thumbnailContainer.style.cssText = `
+                display: flex;
+                justify-content: center;
+                align-items: center;
+                flex-wrap: wrap;
+                gap: 8px;
+                padding: 8px;
+                background: rgba(240, 224, 214, 0.3);
+                border-radius: 4px;
+            `;
+            
+            const thumbnails = [];
+            
+            for (let i = 0; i < frameCount; i++) {
+                const thumbWrapper = document.createElement('div');
+                thumbWrapper.style.cssText = 'text-align: center;';
+                
+                const thumb = document.createElement('canvas');
+                thumb.width = this.config.thumbnailSize;
+                thumb.height = this.config.thumbnailSize;
+                thumb.style.cssText = `
+                    border: 2px solid ${this.config.secondary};
+                    border-radius: 2px;
+                    background: ${this.config.background};
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    display: block;
+                `;
+                thumb.title = `フレーム ${i + 1} (${i + 1}キー)`;
+                thumb.onclick = () => onClick(i);
+                
+                const label = document.createElement('div');
+                label.style.cssText = `
+                    font-size: 10px;
+                    color: ${this.config.primary};
+                    margin-top: 2px;
+                `;
+                label.textContent = i + 1;
+                
+                thumbWrapper.appendChild(thumb);
+                thumbWrapper.appendChild(label);
+                thumbnails.push(thumb);
+                thumbnailContainer.appendChild(thumbWrapper);
+            }
+            
+            container.appendChild(thumbnailContainer);
+            
+            return { container, thumbnails };
+        }
+        
+        /**
+         * フレームサムネイルを更新
+         */
+        updateFrameThumbnail(thumbnailCanvas, imageData) {
+            const thumbCtx = thumbnailCanvas.getContext('2d', {
+                willReadFrequently: true
+            });
+            thumbCtx.clearRect(0, 0, thumbnailCanvas.width, thumbnailCanvas.height);
+            
+            const tempCanvas = document.createElement('canvas');
+            tempCanvas.width = imageData.width;
             tempCanvas.height = imageData.height;
             const tempCtx = tempCanvas.getContext('2d');
             tempCtx.putImageData(imageData, 0, 0);
@@ -872,6 +618,24 @@
                     this.config.primary : this.config.secondary;
                 thumb.style.borderWidth = (i === activeIndex) ? '3px' : '2px';
             });
+        }
+        
+        /**
+         * チェック柄背景を描画
+         */
+        drawCheckeredBackground(ctx, width, height) {
+            const checkSize = 4;
+            ctx.fillStyle = '#ffffff';
+            ctx.fillRect(0, 0, width, height);
+            
+            ctx.fillStyle = '#cccccc';
+            for (let y = 0; y < height; y += checkSize) {
+                for (let x = 0; x < width; x += checkSize) {
+                    if ((x / checkSize + y / checkSize) % 2 === 0) {
+                        ctx.fillRect(x, y, checkSize, checkSize);
+                    }
+                }
+            }
         }
         
         /**
@@ -1076,4 +840,240 @@
             this.drawCheckeredBackground(layerCtx, layerCanvas.width, layerCanvas.height);
             
             const tempCanvas = document.createElement('canvas');
-            tempCanvas
+            tempCanvas.width = imageData.width;
+            tempCanvas.height = imageData.height;
+            const tempCtx = tempCanvas.getContext('2d');
+            tempCtx.putImageData(imageData, 0, 0);
+            
+            layerCtx.drawImage(
+                tempCanvas,
+                0, 0,
+                layerCanvas.width,
+                layerCanvas.height
+            );
+        }
+        
+        /**
+         * レイヤーパネルのハイライト
+         */
+        highlightLayerPanel(layers, activeIndex) {
+            layers.forEach((layer, i) => {
+                layer.item.style.borderColor = (i === activeIndex) ? 
+                    this.config.primary : this.config.secondary;
+                layer.item.style.backgroundColor = (i === activeIndex) ? 
+                    'rgba(128, 0, 0, 0.05)' : 'white';
+                layer.item.style.borderWidth = (i === activeIndex) ? '3px' : '2px';
+            });
+        }
+        
+        /**
+         * レイヤーの表示状態を更新
+         */
+        updateLayerVisibility(layers, layerIndex, visible) {
+            layers[layerIndex].visibilityBtn.textContent = visible ? '👁️' : '🚫';
+            layers[layerIndex].item.style.opacity = visible ? '1' : '0.5';
+        }
+        
+        /**
+         * レイヤーの不透明度表示を更新
+         */
+        updateLayerOpacity(layers, layerIndex, opacity) {
+            layers[layerIndex].opacityDisplay.textContent = `${Math.round(opacity * 100)}%`;
+        }
+        
+        /**
+         * コントロールパネル作成
+         */
+        createControlPanel(callbacks) {
+            const panel = document.createElement('div');
+            panel.style.cssText = `
+                width: ${this.config.controlPanelWidth}px;
+                background: ${this.config.panelBackground};
+                padding: ${this.config.panelPadding}px;
+                font-size: 11px;
+                color: ${this.config.primary};
+                display: flex;
+                flex-direction: column;
+                gap: 10px;
+                overflow-y: auto;
+            `;
+            
+            // カラーパレット
+            const paletteSection = this.createColorPalette(callbacks.onColorChange);
+            panel.appendChild(paletteSection);
+            
+            // ツールボタン
+            const toolSection = this.createToolButtons(callbacks.onToolChange);
+            panel.appendChild(toolSection.section);
+            
+            // ペンスロット
+            const penSlotSection = this.createPenSlots(
+                callbacks.penSlots,
+                callbacks.onPenSlotClick,
+                callbacks.onPenSizeChange
+            );
+            panel.appendChild(penSlotSection.section);
+            
+            // 消しゴムスロット
+            const eraserSlotSection = this.createEraserSlots(
+                callbacks.eraserSlots,
+                callbacks.onEraserSlotClick,
+                callbacks.onEraserSizeChange
+            );
+            panel.appendChild(eraserSlotSection.section);
+            
+            // フレーム間隔
+            const delaySection = this.createDelaySlider(callbacks.onDelayChange);
+            panel.appendChild(delaySection);
+            
+            // オニオンスキン
+            const onionSection = this.createOnionSkinSection(callbacks.onOnionSkinChange);
+            panel.appendChild(onionSection);
+            
+            this.mainContent.appendChild(panel);
+            
+            // プレビューボタンのイベント設定
+            const previewBtn = document.getElementById('preview-button');
+            if (previewBtn) {
+                previewBtn.onclick = callbacks.onPreview;
+            }
+            
+            return panel;
+        }
+        
+        /**
+         * カラーパレット作成
+         */
+        createColorPalette(onChange) {
+            const section = document.createElement('div');
+            
+            const label = document.createElement('div');
+            label.style.cssText = 'font-weight: bold; margin-bottom: 4px; font-size: 11px;';
+            label.textContent = 'パレット';
+            section.appendChild(label);
+            
+            const palette = document.createElement('div');
+            palette.style.cssText = `
+                display: grid;
+                grid-template-columns: repeat(3, 1fr);
+                gap: 4px;
+            `;
+            
+            const colorButtons = [];
+            
+            this.colorPalette.forEach((color, i) => {
+                const btn = document.createElement('button');
+                btn.style.cssText = `
+                    width: 100%;
+                    height: 28px;
+                    background: ${color};
+                    border: 2px solid ${this.config.secondary};
+                    border-radius: 2px;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                `;
+                btn.onclick = () => {
+                    onChange(color);
+                    this.highlightColorButton(colorButtons, i);
+                };
+                
+                colorButtons.push(btn);
+                palette.appendChild(btn);
+            });
+            
+            this.highlightColorButton(colorButtons, 0);
+            
+            section.appendChild(palette);
+            return section;
+        }
+        
+        /**
+         * カラーボタンのハイライト
+         */
+        highlightColorButton(buttons, activeIndex) {
+            buttons.forEach((btn, i) => {
+                btn.style.borderColor = (i === activeIndex) ? 
+                    this.config.primary : this.config.secondary;
+                btn.style.borderWidth = (i === activeIndex) ? '3px' : '2px';
+            });
+        }
+        
+        /**
+         * ツールボタン作成
+         */
+        createToolButtons(onChange) {
+            const section = document.createElement('div');
+            
+            const label = document.createElement('div');
+            label.style.cssText = 'font-weight: bold; margin-bottom: 4px; font-size: 11px;';
+            label.textContent = 'ツール';
+            section.appendChild(label);
+            
+            const tools = document.createElement('div');
+            tools.style.cssText = 'display: flex; gap: 4px;';
+            
+            const toolButtons = [];
+            
+            const toolList = [
+                { name: 'ペン', tool: 'pen' },
+                { name: '消しゴム', tool: 'eraser' }
+            ];
+            
+            toolList.forEach((toolInfo, i) => {
+                const btn = document.createElement('button');
+                btn.style.cssText = `
+                    flex: 1;
+                    padding: 6px;
+                    background: white;
+                    border: 2px solid ${this.config.secondary};
+                    border-radius: 2px;
+                    cursor: pointer;
+                    font-size: 10px;
+                    transition: all 0.2s;
+                    font-weight: bold;
+                `;
+                btn.textContent = toolInfo.name;
+                btn.onclick = () => {
+                    onChange(toolInfo.tool);
+                    this.highlightToolButton(toolButtons, i);
+                };
+                
+                toolButtons.push(btn);
+                tools.appendChild(btn);
+            });
+            
+            this.highlightToolButton(toolButtons, 0);
+            
+            section.appendChild(tools);
+            return { section, buttons: toolButtons };
+        }
+        
+        /**
+         * ツールボタンのハイライト
+         */
+        highlightToolButton(buttons, activeIndex) {
+            buttons.forEach((btn, i) => {
+                btn.style.borderColor = (i === activeIndex) ? 
+                    this.config.primary : this.config.secondary;
+                btn.style.backgroundColor = (i === activeIndex) ? 
+                    'rgba(128, 0, 0, 0.1)' : 'white';
+                btn.style.borderWidth = (i === activeIndex) ? '3px' : '2px';
+            });
+        }
+        
+        /**
+         * ペンスロット作成
+         */
+        createPenSlots(slots, onSlotClick, onSizeChange) {
+            const section = document.createElement('div');
+            
+            const label = document.createElement('div');
+            label.textContent = 'ペンサイズ';
+            label.style.cssText = 'font-weight: bold; margin-bottom: 4px; font-size: 11px;';
+            section.appendChild(label);
+            
+            // スロット行
+            const slotRow = document.createElement('div');
+            slotRow.style.cssText = 'display: flex; gap: 3px; margin-bottom: 4px;';
+            
+            this.pen

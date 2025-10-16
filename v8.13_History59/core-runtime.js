@@ -516,11 +516,9 @@
              * @returns {boolean} 成功/失敗
              */
             setPressureCorrection(value) {
-                if (CoreRuntime.internal.drawingEngine?.settings) {
-                    CoreRuntime.internal.drawingEngine.settings.setPressureCorrection(value);
-                    return true;
-                }
-                return false;
+                const manager = CoreRuntime.internal.settingsManager;
+                if (!manager) return false;
+                return manager.set('pressureCorrection', value);
             },
             
             /**
@@ -529,11 +527,9 @@
              * @returns {boolean} 成功/失敗
              */
             setSmoothing(value) {
-                if (CoreRuntime.internal.drawingEngine?.settings) {
-                    CoreRuntime.internal.drawingEngine.settings.setSmoothing(value);
-                    return true;
-                }
-                return false;
+                const manager = CoreRuntime.internal.settingsManager;
+                if (!manager) return false;
+                return manager.set('smoothing', value);
             },
             
             /**
@@ -542,63 +538,45 @@
              * @returns {boolean} 成功/失敗
              */
             setPressureCurve(curve) {
-                if (CoreRuntime.internal.drawingEngine?.settings) {
-                    CoreRuntime.internal.drawingEngine.settings.setPressureCurve(curve);
-                    return true;
-                }
-                return false;
+                const manager = CoreRuntime.internal.settingsManager;
+                if (!manager) return false;
+                return manager.set('pressureCurve', curve);
             },
             
             /**
-             * 現在の設定を取得
+             * 現在の設定をすべて取得
              * @returns {Object|null} 設定オブジェクト
              */
             getSettings() {
-                if (CoreRuntime.internal.drawingEngine?.settings) {
-                    return CoreRuntime.internal.drawingEngine.settings.getCurrentSettings();
-                }
-                return null;
+                const manager = CoreRuntime.internal.settingsManager;
+                if (!manager) return null;
+                return manager.get();
             },
             
             /**
-             * SettingsManagerの初期化（CoreEngine初期化時に呼ぶ）
-             * @param {Object} config - TEGAKI_CONFIG
+             * 設定を部分更新
+             * @param {Object} updates - 更新する設定 { key: value, ... }
              * @returns {boolean} 成功/失敗
              */
-            initializeSettingsManager(config) {
-                if (!window.TegakiSettingsManager) {
-                    console.error('[CoreRuntime] TegakiSettingsManager not loaded');
-                    return false;
-                }
-                
-                if (!CoreRuntime.internal.settingsManager) {
-                    CoreRuntime.internal.settingsManager = new window.TegakiSettingsManager(
-                        window.TegakiEventBus,
-                        config
-                    );
-                    
-                    console.log('✅ SettingsManager initialized via CoreRuntime');
-                    
-                    // 初期設定をDrawingEngineに適用
-                    const settings = CoreRuntime.internal.settingsManager.get();
-                    if (settings.pressureCorrection !== undefined) {
-                        this.setPressureCorrection(settings.pressureCorrection);
-                    }
-                    if (settings.smoothing !== undefined) {
-                        this.setSmoothing(settings.smoothing);
-                    }
-                    if (settings.pressureCurve !== undefined) {
-                        this.setPressureCurve(settings.pressureCurve);
-                    }
-                    
-                    return true;
-                }
-                
-                return false;
+            updateSettings(updates) {
+                const manager = CoreRuntime.internal.settingsManager;
+                if (!manager) return false;
+                return manager.update(updates);
             },
             
             /**
-             * SettingsManagerを取得
+             * 設定をリセット
+             * @returns {boolean} 成功/失敗
+             */
+            resetSettings() {
+                const manager = CoreRuntime.internal.settingsManager;
+                if (!manager) return false;
+                manager.reset();
+                return true;
+            },
+            
+            /**
+             * SettingsManager を取得
              * @returns {Object|null}
              */
             getSettingsManager() {
@@ -785,7 +763,8 @@
     console.log('     - setSmoothing()');
     console.log('     - setPressureCurve()');
     console.log('     - getSettings()');
-    console.log('     - initializeSettingsManager()');
+    console.log('     - updateSettings()');
+    console.log('     - resetSettings()');
     console.log('     - getSettingsManager()');
     console.log('  ✅ window.startTegakiApp() registered');
     console.log('  ✅ APNGExporter登録対応');
