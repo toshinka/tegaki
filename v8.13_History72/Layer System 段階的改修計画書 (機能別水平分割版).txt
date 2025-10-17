@@ -1,0 +1,764 @@
+================================================================================
+Layer System 段階的改修計画書 (機能別水平分割版)
+================================================================================
+
+🎯 改修目標
+layer-system.js (1,500行) を機能別に3分割し、40%軽量化。
+既存API互換性を維持しつつ、段階的に安全に移行する。
+
+================================================================================
+Phase 1: LayerTransform 分離（変形機能の独立化）
+================================================================================
+
+📋 対象機能
+- レイヤー移動・回転・拡大縮小・反転
+- Vキーモード管理
+- 変形パネル制御
+- ドラッグ操作
+- 変形確定・座標変換
+
+📂 ファイル構成
+【新規作成】
+  system/layer-transform.js (300-400行)
+
+【改修対象】
+  system/layer-system.js (1,500行 → 1,200行)
+
+【参照ファイル】
+  system/layer-system.js (移動元メソッドの確認)
+  coordinate-system.js (座標変換APIの確認)
+  config.js (layer設定の確認)
+
+---
+
+📝 layer-transform.js 実装内容
+
+【クラス定義】
+class LayerTransform {
+    constructor(config, coordAPI)
+    
+    // 状態管理
+    transforms: Map<layerId, {x, y, rotation, scaleX, scaleY}>
+    isVKeyPressed: boolean
+    isDragging: boolean
+    dragLastPoint: {x, y}
+    transformPanel: HTMLElement
+    
+    // 初期化
+    init(app, cameraSystem)
+    
+    // モード制御
+    enterMoveMode()
+    exitMoveMode()
+    toggleMoveMode()
+    
+    // 変形操作
+    updateTransform(layer, property, value)
+    applyTransform(layer, transform)
+    flipLayer(layer, direction)
+    moveLayer(layer, direction, amount)
+    scaleLayer(layer, factor)
+    rotateLayer(layer, angle)
+    
+    // 変形確定
+    confirmTransform(layer)
+    applyTransformToPaths(layer, transform)
+    
+    // 内部処理
+    _setupTransformPanel()
+    _setupDragEvents(canvas)
+    _handleDrag(event)
+    _createTransformMatrix(transform, centerX, centerY)
+    _transformPoints(points, matrix)
+    _isTransformNonDefault(transform)
+    _updateCursor(canvas)
+    
+    // コールバック
+    onTransformComplete: Function
+    onTransformUpdate: Function
+}
+
+【移動対象メソッド (layer-system.js から)】
+- enterLayerMoveMode()
+- exitLayerMoveMode()
+- toggleLayerMoveMode()
+- updateActiveLayerTransform()
+- flipActiveLayer()
+- moveActiveLayer()
+- transformActiveLayer()
+- confirmLayerTransform()
+- safeApplyTransformToPaths()
+- createTransformMatrix()
+- safeTransformPoints()
+- isTransformNonDefault()
+- updateCursor()
+- _applyTransformDirect()
+- _setupLayerTransformPanel()
+- _setupLayerSlider()
+- _setupLayerDragEvents()
+- _getSafeCanvas()
+- _handleLayerDrag()
+- updateLayerTransformPanelValues()
+- updateFlipButtons()
+
+【依存関係】
+- window.CoordinateSystem (座標変換)
+- PIXI.Matrix (行列計算)
+- this.config.layer.* (設定値)
+- this.config.canvas.* (キャンバスサイズ)
+
+【キーボードイベント処理】
+_setupLayerOperations() 内の以下のケースを分離:
+- LAYER_MOVE_MODE_TOGGLE
+- LAYER_MOVE_UP/DOWN/LEFT/RIGHT
+- LAYER_SCALE_UP/DOWN
+- LAYER_ROTATE_LEFT/RIGHT
+- LAYER_FLIP_HORIZONTAL/VERTICAL
+
+---
+
+📝 layer-system.js 改修内容
+
+【追加プロパティ】
+this.transform: LayerTransform
+
+【init() での初期化】
+this.transform = new LayerTransform(this.config, this.coordAPI);
+this.transform.init(this.app, this.cameraSystem);
+this.transform.onTransformComplete = (layer) => {
+    this.requestThumbnailUpdate(this.getLayerIndex(layer));
+    this.eventBus.emit('layer:transform-confirmed', {layerId: layer.layerData.id});
+};
+this.transform.onTransformUpdate = (layer, transform) => {
+    this.eventBus.emit('layer:updated', {layerId: layer.layerData.id, transform});
+};
+
+【委譲メソッド (公開API維持)】
+enterLayerMoveMode() {
+    return this.transform.enterMoveMode();
+}
+
+exitLayerMoveMode() {
+    const activeLayer = this.getActiveLayer();
+    return this.transform.exitMoveMode(activeLayer);
+}
+
+flipActiveLayer(direction) {
+    const activeLayer = this.getActiveLayer();
+    return this.transform.flipLayer(activeLayer, direction);
+}
+
+// 以下同様にすべての変形関連メソッドを委譲
+
+【削除メソッド】
+上記「移動対象メソッド」をすべて削除
+
+【_setupLayerOperations() 改修】
+変形関連のキーボードイベントをLayerTransformに委譲:
+case 'LAYER_MOVE_MODE_TOGGLE':
+    this.transform.toggleMoveMode();
+    e.preventDefault();
+    break;
+
+---
+
+✅ Phase 1 完了条件
+- LayerTransform単体でインスタンス化可能
+- すべての変形操作が正常動作
+- Vキーモードの入退出が正常
+- 変形パネルの表示・更新が正常
+- History統合が正常
+- 既存のキーボードショートカットが動作
+
+🧪 テスト項目
+- Vキー押下→レイヤー移動モード入退出
+- 矢印キーでレイヤー移動
+- Shift+矢印キーで拡大縮小・回転
+- ドラッグでレイヤー移動
+- Shift+ドラッグで拡大縮小・回転
+- 反転ボタンで水平・垂直反転
+- Vキー離脱時の変形確定
+- Undo/Redoで変形の復元
+
+================================================================================
+Phase 2: LayerRendering 分離（描画機能の独立化）
+================================================================================
+
+📋 対象機能
+- PathGraphics再構築
+- レイヤーサムネイル生成
+- RenderTexture管理
+- Canvas2D描画処理
+
+📂 ファイル構成
+【新規作成】
+  system/layer-rendering.js (250-350行)
+
+【改修対象】
+  system/layer-system.js (1,200行 → 900行)
+
+【参照ファイル】
+  system/layer-system.js (移動元メソッドの確認)
+  config.js (thumbnail設定の確認)
+
+---
+
+📝 layer-rendering.js 実装内容
+
+【クラス定義】
+class LayerRendering {
+    constructor(config)
+    
+    // 状態管理
+    app: PIXI.Application
+    renderer: PIXI.Renderer
+    thumbnailQueue: Set<layerIndex>
+    thumbnailTimer: number
+    cutRenderTextures: Map<cutId, RenderTexture>
+    cutThumbnailDirty: Map<cutId, boolean>
+    
+    // 初期化
+    setApp(app)
+    startThumbnailProcess()
+    
+    // Path描画
+    rebuildPathGraphics(path)
+    
+    // サムネイル生成
+    generateThumbnail(layer, panelElement, config)
+    calculateThumbnailSize(canvasWidth, canvasHeight)
+    requestThumbnailUpdate(layerIndex)
+    processThumbnailUpdates(layers)
+    
+    // RenderTexture管理
+    createCutRenderTexture(cutId, width, height)
+    renderCutToTexture(cutId, container)
+    getCutRenderTexture(cutId)
+    destroyCutRenderTexture(cutId)
+    markCutThumbnailDirty(cutId)
+    isCutThumbnailDirty(cutId)
+    clearCutThumbnailDirty(cutId)
+    
+    // 内部処理
+    _renderLayerToTexture(layer, width, height, scale)
+    _createCanvas(width, height)
+    _saveLayerState(layer)
+    _restoreLayerState(layer, state)
+}
+
+【移動対象メソッド (layer-system.js から)】
+- rebuildPathGraphics()
+- updateThumbnail()
+- requestThumbnailUpdate()
+- processThumbnailUpdates()
+- _startThumbnailUpdateProcess()
+- createCutRenderTexture()
+- renderCutToTexture()
+- getCutRenderTexture()
+- destroyCutRenderTexture()
+- markCutThumbnailDirty()
+- isCutThumbnailDirty()
+- clearCutThumbnailDirty()
+
+【依存関係】
+- PIXI.Graphics
+- PIXI.RenderTexture
+- PIXI.Container
+- getStroke() (Perfect Freehand)
+- this.config.canvas.* (キャンバスサイズ)
+- this.config.thumbnail.* (サムネイル設定)
+- this.config.background.* (背景色)
+
+【rebuildPathGraphics() 実装注意】
+- Perfect Freehand利用可能時は高品質描画
+- フォールバック: 円の連続描画
+- Graphics破棄処理を確実に実行
+- path.graphics に新しいGraphicsを設定
+
+【generateThumbnail() 実装注意】
+- レイヤーの変形状態を保存
+- 変形をリセットしてレンダリング
+- 変形状態を復元
+- レイヤーを元の位置に戻す
+- RenderTextureの破棄を確実に実行
+
+---
+
+📝 layer-system.js 改修内容
+
+【追加プロパティ】
+this.rendering: LayerRendering
+
+【init() での初期化】
+this.rendering = new LayerRendering(this.config);
+this.rendering.setApp(this.app);
+this.rendering.startThumbnailProcess();
+
+【委譲メソッド (公開API維持)】
+rebuildPathGraphics(path) {
+    return this.rendering.rebuildPathGraphics(path);
+}
+
+requestThumbnailUpdate(layerIndex) {
+    return this.rendering.requestThumbnailUpdate(layerIndex);
+}
+
+createCutRenderTexture(cutId) {
+    return this.rendering.createCutRenderTexture(
+        cutId, 
+        this.config.canvas.width, 
+        this.config.canvas.height
+    );
+}
+
+// 以下同様にすべての描画関連メソッドを委譲
+
+【updateThumbnail() 改修】
+// LayerRenderingに委譲し、パネル要素の取得のみLayerSystemで実行
+updateThumbnail(layerIndex) {
+    const layers = this.getLayers();
+    const layer = layers[layerIndex];
+    const layerItems = document.querySelectorAll('.layer-item');
+    const panelIndex = layers.length - 1 - layerIndex;
+    const thumbnail = layerItems[panelIndex]?.querySelector('.layer-thumbnail');
+    
+    if (thumbnail) {
+        this.rendering.generateThumbnail(layer, thumbnail, this.config);
+    }
+}
+
+【processThumbnailUpdates() 改修】
+processThumbnailUpdates() {
+    const layers = this.getLayers();
+    this.rendering.processThumbnailUpdates(layers, (layerIndex) => {
+        this.updateThumbnail(layerIndex);
+    });
+}
+
+【削除メソッド】
+上記「移動対象メソッド」をすべて削除
+
+---
+
+✅ Phase 2 完了条件
+- LayerRendering単体でインスタンス化可能
+- Path描画が正常動作
+- サムネイル生成が正常動作
+- RenderTexture管理が正常動作
+- メモリリークなし (Graphics破棄確認)
+- 既存の描画処理がすべて動作
+
+🧪 テスト項目
+- ペンツールで描画→Path Graphics生成
+- レイヤーサムネイルの生成・更新
+- レイヤー変形後のサムネイル更新
+- カット切り替え時のRenderTexture生成
+- カット削除時のRenderTexture破棄
+- メモリ使用量の監視
+
+================================================================================
+Phase 3: LayerHierarchy 分離（階層管理の独立化）
+================================================================================
+
+📋 対象機能
+- レイヤー作成・削除
+- レイヤー順序変更
+- アクティブレイヤー管理
+- History統合
+
+📂 ファイル構成
+【新規作成】
+  system/layer-hierarchy.js (200-300行)
+
+【改修対象】
+  system/layer-system.js (900行 → 600行)
+
+【参照ファイル】
+  system/layer-system.js (移動元メソッドの確認)
+  system/history.js (History APIの確認)
+  system/data-models.js (LayerModelの確認)
+
+---
+
+📝 layer-hierarchy.js 実装内容
+
+【クラス定義】
+class LayerHierarchy {
+    constructor(config)
+    
+    // 状態管理
+    container: PIXI.Container
+    activeLayerIndex: number
+    
+    // レイヤー操作
+    createLayer(name, isBackground)
+    deleteLayer(index)
+    getLayers()
+    getActiveLayer()
+    setActiveLayer(index)
+    getLayerIndex(layer)
+    
+    // 階層操作
+    reorderLayers(fromIndex, toIndex)
+    moveLayerHierarchy(index, direction)
+    
+    // 可視性
+    toggleLayerVisibility(index)
+    
+    // パス追加
+    addPathToLayer(index, path)
+    addPathToActiveLayer(path)
+    
+    // Container管理
+    setContainer(container)
+    
+    // 内部処理
+    _wrapWithHistory(action, name, meta)
+    _createLayerContainer(layerModel, config)
+    _updateActiveIndex(fromIndex, toIndex)
+}
+
+【移動対象メソッド (layer-system.js から)】
+- createLayer()
+- deleteLayer()
+- getLayers()
+- getActiveLayer()
+- setActiveLayer()
+- reorderLayers()
+- moveActiveLayerHierarchy()
+- toggleLayerVisibility()
+- addPathToLayer()
+- addPathToActiveLayer()
+
+【依存関係】
+- PIXI.Container
+- PIXI.Graphics
+- window.TegakiDataModels.LayerModel
+- window.History (履歴管理)
+- this.config.canvas.* (キャンバスサイズ)
+- this.config.background.* (背景色)
+
+【createLayer() 実装注意】
+- LayerModelを生成
+- PIXI.Containerを生成
+- backgroundGraphicsの設定 (背景レイヤーの場合)
+- History統合
+- コールバック: onCreate(layer, index)
+
+【deleteLayer() 実装注意】
+- 背景レイヤーは削除不可
+- アクティブレイヤーインデックスの調整
+- History統合
+- コールバック: onDelete(layerId, index)
+
+【reorderLayers() 実装注意】
+- Container階層の更新
+- アクティブレイヤーインデックスの調整
+- History統合
+- コールバック: onReorder(fromIndex, toIndex)
+
+---
+
+📝 layer-system.js 改修内容
+
+【追加プロパティ】
+this.hierarchy: LayerHierarchy
+
+【init() での初期化】
+this.hierarchy = new LayerHierarchy(this.config);
+this.hierarchy.setContainer(this.currentCutContainer);
+this.hierarchy.onCreate = (layer, index) => {
+    this.updateLayerPanelUI();
+    this.updateStatusDisplay();
+    this.eventBus.emit('layer:created', {layerId: layer.layerData.id});
+};
+this.hierarchy.onDelete = (layerId, index) => {
+    this.updateLayerPanelUI();
+    this.updateStatusDisplay();
+    this.eventBus.emit('layer:deleted', {layerId, layerIndex: index});
+};
+this.hierarchy.onReorder = (fromIndex, toIndex) => {
+    this.updateLayerPanelUI();
+    this.eventBus.emit('layer:reordered', {fromIndex, toIndex});
+};
+
+【委譲メソッド (公開API維持)】
+createLayer(name, isBackground) {
+    return this.hierarchy.createLayer(name, isBackground);
+}
+
+deleteLayer(index) {
+    return this.hierarchy.deleteLayer(index);
+}
+
+getLayers() {
+    return this.hierarchy.getLayers();
+}
+
+getActiveLayer() {
+    return this.hierarchy.getActiveLayer();
+}
+
+setActiveLayer(index) {
+    this.hierarchy.setActiveLayer(index);
+    this.updateLayerPanelUI();
+    this.updateStatusDisplay();
+    if (this.isLayerMoveMode) {
+        this.transform.updateTransformPanelValues(this.getActiveLayer());
+    }
+}
+
+// 以下同様にすべての階層関連メソッドを委譲
+
+【activeLayerIndex プロパティ】
+// LayerHierarchyに委譲
+get activeLayerIndex() {
+    return this.hierarchy.activeLayerIndex;
+}
+
+set activeLayerIndex(value) {
+    this.hierarchy.activeLayerIndex = value;
+}
+
+【削除メソッド】
+上記「移動対象メソッド」をすべて削除
+
+【setCurrentCutContainer() 改修】
+setCurrentCutContainer(cutContainer) {
+    this.currentCutContainer = cutContainer;
+    this.hierarchy.setContainer(cutContainer);
+    
+    const layers = this.getLayers();
+    if (layers.length > 0) {
+        this.setActiveLayer(layers.length - 1);
+    }
+    
+    this.updateLayerPanelUI();
+    this.updateStatusDisplay();
+}
+
+---
+
+✅ Phase 3 完了条件
+- LayerHierarchy単体でインスタンス化可能
+- レイヤー作成・削除が正常動作
+- レイヤー順序変更が正常動作
+- アクティブレイヤー切り替えが正常動作
+- History統合が正常動作
+- 既存のレイヤー操作がすべて動作
+
+🧪 テスト項目
+- レイヤー追加ボタン→新規レイヤー作成
+- レイヤー削除ボタン→レイヤー削除
+- レイヤークリック→アクティブレイヤー切り替え
+- レイヤードラッグ→順序変更
+- レイヤー階層移動キー→順序変更
+- Undo/Redoでレイヤー操作の復元
+- 背景レイヤーの削除不可確認
+
+================================================================================
+Phase 4: 統合・最終調整
+================================================================================
+
+📋 対象作業
+- 各モジュール間の連携確認
+- EventBus通知の整理
+- UI更新処理の最適化
+- 不要コードの削除
+
+📂 ファイル構成
+【改修対象】
+  system/layer-system.js (600行 → 500行)
+  system/layer-transform.js (微調整)
+  system/layer-rendering.js (微調整)
+  system/layer-hierarchy.js (微調整)
+
+【参照ファイル】
+  system/event-bus.js (イベント名の確認)
+  ui/ui-panels.js (UI更新処理の確認)
+
+---
+
+📝 layer-system.js 最終調整
+
+【残存メソッド (約500行)】
+- init()
+- setCurrentCutContainer()
+- updateLayerPanelUI()
+- updateStatusDisplay()
+- insertClipboard()
+- setCameraSystem()
+- setApp()
+- setAnimationSystem()
+- _setupAnimationSystemIntegration()
+- _establishAnimationSystemConnection()
+- _setupLayerOperations() (キーボードイベント委譲のみ)
+
+【_setupLayerOperations() 最終形】
+変形関連: this.transform.*
+階層操作: this.hierarchy.*
+アニメーション: this.animationSystem.*
+
+【EventBus通知の整理】
+各モジュールのコールバックでEmit:
+- layer:created → hierarchy.onCreate
+- layer:deleted → hierarchy.onDelete
+- layer:reordered → hierarchy.onReorder
+- layer:updated → transform.onTransformUpdate
+- layer:transform-confirmed → transform.onTransformComplete
+- layer:visibility-changed → hierarchy.onVisibilityChange
+
+【不要コード削除】
+- 使われていないヘルパー関数
+- 重複したユーティリティ
+- コメントアウトされたコード
+
+---
+
+📝 各モジュール間連携の確認
+
+【LayerSystem → LayerTransform】
+- getActiveLayer() → transform.enterMoveMode()
+- transform.onTransformComplete → rendering.generateThumbnail()
+
+【LayerSystem → LayerRendering】
+- hierarchy.onCreate → rendering.requestThumbnailUpdate()
+- transform.onTransformComplete → rendering.generateThumbnail()
+
+【LayerSystem → LayerHierarchy】
+- hierarchy.onCreate → updateLayerPanelUI()
+- hierarchy.onDelete → updateLayerPanelUI()
+- hierarchy.onReorder → updateLayerPanelUI()
+
+【循環参照の防止】
+各モジュールはLayerSystemを直接参照しない
+コールバック経由でのみ通知
+
+---
+
+✅ Phase 4 完了条件
+- すべてのモジュールが連携動作
+- EventBus通知が正常
+- UI更新が正常
+- メモリリークなし
+- 不要コードが削除済み
+- コード行数が目標値以内
+
+🧪 統合テスト項目
+- 新規キャンバス作成→初期レイヤー生成
+- レイヤー作成→サムネイル生成
+- レイヤー変形→サムネイル更新
+- レイヤー削除→UI更新
+- レイヤー順序変更→UI更新
+- カット切り替え→レイヤー切り替え
+- すべてのキーボードショートカット
+- すべてのUndo/Redo操作
+- メモリ使用量の長時間監視
+
+================================================================================
+index.html 読み込み順序 (Phase 3完了後)
+================================================================================
+
+<!-- 既存ファイル -->
+<script src="system/data-models.js"></script>
+<script src="system/event-bus.js"></script>
+<script src="system/history.js"></script>
+
+<!-- 新規ファイル (Phase完了順に追加) -->
+<script src="system/layer-rendering.js"></script>
+<script src="system/layer-transform.js"></script>
+<script src="system/layer-hierarchy.js"></script>
+
+<!-- 改修後のメインファイル -->
+<script src="system/layer-system.js"></script>
+
+================================================================================
+リスク管理
+================================================================================
+
+🚨 高リスク箇所
+
+【Phase 1】
+- 変形座標の計算ミス
+  対策: CoordinateSystem APIの動作確認
+  
+- History統合の不具合
+  対策: Undo/Redo の詳細テスト
+
+【Phase 2】
+- Graphics破棄漏れ
+  対策: メモリプロファイラで監視
+  
+- サムネイル生成時のレイヤー状態破壊
+  対策: 状態保存・復元の確実な実行
+
+【Phase 3】
+- Container階層の不整合
+  対策: 各操作後のgetLayers()で検証
+  
+- アクティブレイヤーインデックスのズレ
+  対策: インデックス調整ロジックの詳細テスト
+
+【全Phase共通】
+- 循環参照
+  対策: コールバックのみ使用
+  
+- 既存API破壊
+  対策: 公開APIの完全互換性維持
+
+🛡️ ロールバック手順
+
+各Phase完了時点でGitコミット推奨:
+Phase 1完了: "refactor: separate LayerTransform"
+Phase 2完了: "refactor: separate LayerRendering"
+Phase 3完了: "refactor: separate LayerHierarchy"
+Phase 4完了: "refactor: finalize layer-system split"
+
+不具合発生時は直前のコミットに戻す
+
+================================================================================
+成果物
+================================================================================
+
+【新規ファイル】
+system/layer-rendering.js   (250-350行)
+system/layer-transform.js   (300-400行)
+system/layer-hierarchy.js   (200-300行)
+
+【改修ファイル】
+system/layer-system.js       (1,500行 → 500行)
+
+【不変ファイル】
+system/data-models.js
+system/event-bus.js
+system/history.js
+system/camera-system.js
+coordinate-system.js
+その他すべてのシステムファイル
+
+【合計削減】
+1,500行 → 1,250-1,450行 (250-450行削減、約17-30%軽量化)
+※ 機能分離による可読性・保守性向上が主目的
+
+================================================================================
+完了基準
+================================================================================
+
+✅ 機能面
+- すべての既存機能が正常動作
+- すべてのキーボードショートカットが動作
+- History (Undo/Redo) が正常動作
+- UI更新が正常動作
+
+✅ 品質面
+- メモリリークなし
+- コンソールエラーなし
+- 既存APIの完全互換性維持
+
+✅ コード品質
+- 各モジュールが自己完結
+- 循環参照なし
+- コードの重複なし
+- 明確な責務分離
+
+================================================================================
