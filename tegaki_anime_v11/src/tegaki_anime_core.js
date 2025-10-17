@@ -1,6 +1,6 @@
 // ========================================
 // tegaki_anime_core.js - メインクラス（改修版）
-// レイヤー・キャンバス・サムネイル同期の完全修正
+// バケツツール対応・オニオンスキンレベル対応
 // ========================================
 
 (function() {
@@ -27,7 +27,7 @@
             
             // 設定
             this.frameDelay = 200;
-            this.onionSkinEnabled = false;
+            this.onionSkinLevel = 0; // 0:無効, 1-3:表示数
             
             // ペンスロット（3つ）
             this.penSlots = [
@@ -92,7 +92,6 @@
             this.registerKeyboardShortcuts();
             
             // 初期表示（合成表示で開始）
-            // 初期履歴を全レイヤーに保存
             this.saveInitialHistory();
             this.loadCurrentFrameComposite();
             this.updateAllThumbnails();
@@ -122,12 +121,12 @@
             // ショートカットパネル
             this.uiBuilder.createShortcutPanel();
             
-            // キャンバスエリア（既に作成済みのキャンバスを使用）
+            // キャンバスエリア
             const canvas = this.canvasManager.canvas;
             const bgCanvas = this.canvasManager.bgCanvas;
             const centerArea = this.uiBuilder.createCanvasArea(canvas, bgCanvas);
             
-            // フレームサムネイル（コントロールボタン付き）
+            // フレームサムネイル
             const thumbnailData = this.uiBuilder.createFrameThumbnails(
                 this.layerManager.frameCount,
                 (index) => this.switchFrame(index),
@@ -138,7 +137,7 @@
             this.frameThumbnails = thumbnailData.thumbnails;
             centerArea.appendChild(thumbnailData.container);
             
-            // レイヤーパネル（不透明度と表示ON/OFFコールバック追加）
+            // レイヤーパネル
             const layerPanelData = this.uiBuilder.createLayerPanel(
                 this.layerManager.layerCountPerFrame,
                 this.layerManager.activeFrameIndex,
@@ -148,13 +147,13 @@
             );
             this.layerPanel = layerPanelData.layers;
             
-            // コントロールパネル（スロット対応）
+            // コントロールパネル
             this.uiBuilder.createControlPanel({
                 onColorChange: (color) => this.setColor(color),
                 onToolChange: (tool) => this.setTool(tool),
                 onDelayChange: (delay) => this.setFrameDelay(delay),
                 onPreview: () => this.togglePreview(),
-                onOnionSkinChange: (enabled) => this.setOnionSkin(enabled),
+                onOnionSkinChange: (level) => this.setOnionSkin(level),
                 penSlots: this.penSlots,
                 onPenSlotClick: (index) => this.switchPenSlotDirect(index),
                 onPenSizeChange: (delta) => this.adjustPenSize(delta),
@@ -277,10 +276,7 @@
             const layer = frame.layers[layerIndex];
             layer.visible = !layer.visible;
             
-            // UIを更新
             this.uiBuilder.updateLayerVisibility(this.layerPanel, layerIndex, layer.visible);
-            
-            // 合成表示を再描画（フレームサムネイルも更新）
             this.refreshDisplay();
         }
         
@@ -291,17 +287,13 @@
             const frame = this.layerManager.getActiveFrame();
             const layer = frame.layers[layerIndex];
             
-            // deltaが100未満の場合は相対的な変更、100以上の場合は絶対値
             if (Math.abs(delta) < 100) {
                 layer.opacity = Math.max(0, Math.min(1, layer.opacity + (delta / 100)));
             } else {
                 layer.opacity = Math.max(0, Math.min(1, delta / 100));
             }
             
-            // UIを更新
             this.uiBuilder.updateLayerOpacity(this.layerPanel, layerIndex, layer.opacity);
-            
-            // 合成表示を再描画（フレームサムネイルも更新）
             this.refreshDisplay();
         }
         
@@ -322,13 +314,12 @@
         attachEvents() {
             const canvas = this.canvasManager.canvas;
             
-            // マウスイベント
             canvas.addEventListener('mousedown', (e) => this.handleMouseDown(e));
             canvas.addEventListener('mousemove', (e) => this.handleMouseMove(e));
             canvas.addEventListener('mouseup', () => this.handleMouseUp());
             canvas.addEventListener('mouseleave', () => this.handleMouseUp());
             
-            // タッチイベント（モバイル対応）
+            // タッチイベント
             canvas.addEventListener('touchstart', (e) => {
                 e.preventDefault();
                 const touch = e.touches[0];
@@ -382,6 +373,8 @@
             // ツール切替
             km.register('p', {}, () => this.setTool('pen'), 'Pen tool');
             km.register('e', {}, () => this.setTool('eraser'), 'Eraser tool');
+            km.register('g', {}, () => this.setTool('bucket'), 'Bucket tool');
+            km.register('i', {}, () => this.setTool('eyedropper'), 'Eyedropper tool');
             
             // スロット切替
             km.register('[', {}, () => {
@@ -400,30 +393,28 @@
                 }
             }, 'Next tool slot');
             
-            // オニオンスキン切替
+            // オニオンスキン切替（0→1→2→3→0）
             km.register('o', {}, () => {
-                this.setOnionSkin(!this.onionSkinEnabled);
-                const checkbox = document.getElementById('onion-skin-check');
-                if (checkbox) checkbox.checked = this.onionSkinEnabled;
+                this.onionSkinLevel = (this.onionSkinLevel + 1) % 4;
+                this.setOnionSkin(this.onionSkinLevel);
+                // UIのボタンを更新
+                const btn = document.getElementById(`onion-btn-${this.onionSkinLevel}`);
+                if (btn) btn.click();
             }, 'Toggle onion skin');
             
-            // キーボードマネージャーを有効化
             km.attach();
         }
         
         /**
-         * マウスダウンハンドラ（改修版）
-         * 描画開始前にアクティブレイヤーのみを表示
+         * マウスダウンハンドラ
          */
         handleMouseDown(e) {
-            if (this.isPreviewMode) return; // プレビュー中は描画不可
+            if (this.isPreviewMode) return;
             
-            // 【重要】描画開始前に現在のレイヤーデータをキャンバスに表示
             this.loadCurrentLayerOnly();
             
             const shouldPushHistory = this.drawingEngine.startDrawing(e.clientX, e.clientY);
             
-            // バケツツールの場合は即座に処理完了
             if (shouldPushHistory) {
                 this.handleDrawingComplete();
             }
@@ -433,16 +424,15 @@
          * マウスムーブハンドラ
          */
         handleMouseMove(e) {
-            if (this.isPreviewMode) return; // プレビュー中は描画不可
+            if (this.isPreviewMode) return;
             this.drawingEngine.draw(e.clientX, e.clientY);
         }
         
         /**
-         * マウスアップハンドラ（改修版）
-         * 描画完了時の処理を統一
+         * マウスアップハンドラ
          */
         handleMouseUp() {
-            if (this.isPreviewMode) return; // プレビュー中は描画不可
+            if (this.isPreviewMode) return;
             
             const shouldPushHistory = this.drawingEngine.stopDrawing();
             
@@ -452,14 +442,11 @@
         }
         
         /**
-         * 描画完了時の統一処理（改修版）
-         * レイヤー保存→履歴保存→サムネイル更新→合成表示
+         * 描画完了時の統一処理
          */
         handleDrawingComplete() {
-            // 1. キャンバスの内容をアクティブレイヤーに保存
             this.saveCurrentLayerFromCanvas();
             
-            // 2. 履歴に保存
             const imageData = this.layerManager.getActiveLayerImageData();
             this.historyManager.pushHistory(
                 this.layerManager.activeFrameIndex,
@@ -467,16 +454,14 @@
                 imageData
             );
             
-            // 3. サムネイルを更新
             this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
             this.updateLayerPanelThumbnails();
             
-            // 4. 合成表示に戻す
             this.loadCurrentFrameComposite();
         }
         
         /**
-         * 現在のレイヤーのみをキャンバスに表示（描画用）
+         * 現在のレイヤーのみをキャンバスに表示
          */
         loadCurrentLayerOnly() {
             const imageData = this.layerManager.getActiveLayerImageData();
@@ -506,7 +491,7 @@
         }
         
         /**
-         * 表示を更新（レイヤー属性変更時用）
+         * 表示を更新
          */
         refreshDisplay() {
             if (!this.drawingEngine.isDrawing) {
@@ -517,26 +502,15 @@
         }
         
         /**
-         * フレーム切替（改修版）
-         * 確実にレイヤーデータを保存してから切り替える
+         * フレーム切替
          */
         switchFrame(frameIndex) {
             if (frameIndex === this.layerManager.activeFrameIndex) return;
-            if (this.isPreviewMode) return; // プレビュー中は切替不可
+            if (this.isPreviewMode) return;
             
-            // 【重要】描画中でない場合のみ、現在の状態を保存
-            if (!this.drawingEngine.isDrawing) {
-                // 現状のキャンバスは合成表示なので、レイヤーデータはそのまま
-                // （レイヤーデータは既に保存済み）
-            }
-            
-            // フレームを切替
             this.layerManager.switchFrame(frameIndex);
-            
-            // 新しいフレームの合成表示を読み込み
             this.loadCurrentFrameComposite();
             
-            // UIを更新
             this.uiBuilder.highlightFrameThumbnail(this.frameThumbnails, frameIndex);
             this.updateLayerPanelThumbnails();
             this.updateLayerVisibilityUI();
@@ -544,26 +518,15 @@
         }
         
         /**
-         * レイヤー切替（改修版）
-         * 確実にレイヤーデータを保存してから切り替える
+         * レイヤー切替
          */
         switchLayer(layerIndex) {
             if (layerIndex === this.layerManager.activeLayerIndex) return;
-            if (this.isPreviewMode) return; // プレビュー中は切替不可
+            if (this.isPreviewMode) return;
             
-            // 【重要】描画中でない場合のみ、現在の状態を保存
-            if (!this.drawingEngine.isDrawing) {
-                // 現状のキャンバスは合成表示なので、レイヤーデータはそのまま
-                // （レイヤーデータは既に保存済み）
-            }
-            
-            // レイヤーを切替
             this.layerManager.switchLayer(layerIndex);
-            
-            // 合成表示を読み込み（描画時以外は全レイヤー表示）
             this.loadCurrentFrameComposite();
             
-            // UIを更新
             this.uiBuilder.highlightLayerPanel(this.layerPanel, layerIndex);
         }
         
@@ -588,10 +551,10 @@
         }
         
         /**
-         * Undo（改修版）
+         * Undo
          */
         undo() {
-            if (this.isPreviewMode) return; // プレビュー中は操作不可
+            if (this.isPreviewMode) return;
             
             const imageData = this.historyManager.undo(
                 this.layerManager.activeFrameIndex,
@@ -599,23 +562,20 @@
             );
             
             if (imageData) {
-                // レイヤーデータを更新
                 this.layerManager.setActiveLayerImageData(imageData);
                 
-                // サムネイルを更新
                 this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
                 this.updateLayerPanelThumbnails();
                 
-                // 合成表示を更新
                 this.loadCurrentFrameComposite();
             }
         }
         
         /**
-         * Redo（改修版）
+         * Redo
          */
         redo() {
-            if (this.isPreviewMode) return; // プレビュー中は操作不可
+            if (this.isPreviewMode) return;
             
             const imageData = this.historyManager.redo(
                 this.layerManager.activeFrameIndex,
@@ -623,14 +583,11 @@
             );
             
             if (imageData) {
-                // レイヤーデータを更新
                 this.layerManager.setActiveLayerImageData(imageData);
                 
-                // サムネイルを更新
                 this.updateFrameThumbnail(this.layerManager.activeFrameIndex);
                 this.updateLayerPanelThumbnails();
                 
-                // 合成表示を更新
                 this.loadCurrentFrameComposite();
             }
         }
@@ -655,6 +612,12 @@
             } else if (tool === 'pen') {
                 const size = this.penSlots[this.activePenSlotIndex].size;
                 this.drawingEngine.setSize(size);
+            }
+            
+            // UIのツールボタンを更新
+            if (this.uiBuilder.toolButtons) {
+                const toolIndex = tool === 'pen' ? 0 : tool === 'eraser' ? 1 : 2;
+                this.uiBuilder.highlightToolButton(this.uiBuilder.toolButtons, toolIndex);
             }
         }
         
@@ -684,10 +647,11 @@
         }
         
         /**
-         * オニオンスキンを設定
+         * オニオンスキンを設定（レベル対応）
          */
-        setOnionSkin(enabled) {
-            this.onionSkinEnabled = enabled;
+        setOnionSkin(level) {
+            this.onionSkinLevel = level;
+            console.log(`オニオンスキンレベル: ${level}`);
             // TODO: オニオンスキン表示の実装
         }
         
@@ -709,10 +673,8 @@
             this.isPreviewMode = true;
             this.previewFrameIndex = 0;
             
-            // 合成フレームを取得
             const compositeFrames = this.layerManager.getCompositeFrames();
             
-            // アニメーション開始
             this.previewIntervalId = setInterval(() => {
                 const imageData = compositeFrames[this.previewFrameIndex];
                 if (imageData) {
@@ -736,8 +698,6 @@
             }
             
             this.isPreviewMode = false;
-            
-            // 元の合成表示を復元
             this.loadCurrentFrameComposite();
             
             console.log('✅ Preview stopped');
@@ -747,13 +707,11 @@
          * フレームを追加
          */
         addFrame() {
-            if (this.isPreviewMode) return; // プレビュー中は操作不可
+            if (this.isPreviewMode) return;
             
-            // 現在のフレームの右に新しいフレームを挿入
             this.layerManager.addFrameAfter(this.layerManager.activeFrameIndex);
             this.historyManager.addFrame();
             
-            // 新しいフレームの初期履歴を保存
             const newFrameIndex = this.layerManager.activeFrameIndex + 1;
             for (let l = 0; l < this.layerManager.layerCountPerFrame; l++) {
                 const imageData = this.layerManager.getLayerImageData(newFrameIndex, l);
@@ -762,10 +720,7 @@
                 }
             }
             
-            // UIを再構築
             this.rebuildFrameThumbnails();
-            
-            // 新しいフレームに切り替え
             this.switchFrame(newFrameIndex);
         }
         
@@ -773,13 +728,11 @@
          * フレームをコピー
          */
         copyFrame() {
-            if (this.isPreviewMode) return; // プレビュー中は操作不可
+            if (this.isPreviewMode) return;
             
-            // 現在のフレームをコピー
             this.layerManager.copyFrameAfter(this.layerManager.activeFrameIndex);
             this.historyManager.addFrame();
             
-            // コピーしたフレームの初期履歴を保存
             const newFrameIndex = this.layerManager.activeFrameIndex + 1;
             for (let l = 0; l < this.layerManager.layerCountPerFrame; l++) {
                 const imageData = this.layerManager.getLayerImageData(newFrameIndex, l);
@@ -788,10 +741,7 @@
                 }
             }
             
-            // UIを再構築
             this.rebuildFrameThumbnails();
-            
-            // 新しいフレームに切り替え
             this.switchFrame(newFrameIndex);
         }
         
@@ -799,7 +749,7 @@
          * フレームを削除
          */
         deleteFrame() {
-            if (this.isPreviewMode) return; // プレビュー中は操作不可
+            if (this.isPreviewMode) return;
             
             if (this.layerManager.frameCount <= 1) {
                 alert('最後のフレームは削除できません');
@@ -812,10 +762,8 @@
                 this.layerManager.deleteFrame(currentIndex);
                 this.historyManager.deleteFrame(currentIndex);
                 
-                // UIを再構築
                 this.rebuildFrameThumbnails();
                 
-                // アクティブフレームを調整
                 const newIndex = Math.min(currentIndex, this.layerManager.frameCount - 1);
                 this.layerManager.activeFrameIndex = newIndex;
                 this.loadCurrentFrameComposite();
@@ -829,13 +777,11 @@
          * フレームサムネイルを再構築
          */
         rebuildFrameThumbnails() {
-            // 古いサムネイルコンテナを削除
             const oldContainer = this.frameThumbnails[0]?.parentElement?.parentElement;
             if (oldContainer) {
                 oldContainer.remove();
             }
             
-            // 新しいサムネイルを作成
             const thumbnailData = this.uiBuilder.createFrameThumbnails(
                 this.layerManager.frameCount,
                 (index) => this.switchFrame(index),
@@ -845,11 +791,9 @@
             );
             this.frameThumbnails = thumbnailData.thumbnails;
             
-            // キャンバスエリアに追加
-            const centerArea = this.uiBuilder.wrapper.children[1];
+            const centerArea = this.uiBuilder.wrapper.children[0].children[1];
             centerArea.appendChild(thumbnailData.container);
             
-            // サムネイルを更新
             this.updateAllThumbnails();
         }
         
@@ -901,7 +845,6 @@
          * APNGとしてエクスポート
          */
         async exportAsApng() {
-            // プレビューを停止
             if (this.isPreviewMode) {
                 this.stopPreview();
             }
@@ -920,7 +863,6 @@
          * GIFとしてエクスポート
          */
         async exportAsGif(onProgress) {
-            // プレビューを停止
             if (this.isPreviewMode) {
                 this.stopPreview();
             }
@@ -939,17 +881,14 @@
          * クリーンアップ
          */
         destroy() {
-            // プレビューを停止
             if (this.isPreviewMode) {
                 this.stopPreview();
             }
             
-            // キーボードマネージャーをデタッチ
             if (this.keyboardManager) {
                 this.keyboardManager.destroy();
             }
             
-            // 各モジュールを破棄
             if (this.canvasManager) this.canvasManager.destroy();
             if (this.layerManager) this.layerManager.destroy();
             if (this.drawingEngine) this.drawingEngine.destroy();
@@ -957,7 +896,6 @@
             if (this.uiBuilder) this.uiBuilder.destroy();
             if (this.exportManager) this.exportManager.destroy();
             
-            // 参照をクリア
             this.canvasManager = null;
             this.layerManager = null;
             this.drawingEngine = null;
