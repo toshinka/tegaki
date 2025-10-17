@@ -147,103 +147,138 @@
 
         // ========== Path描画（既存機能） ==========
         
-        rebuildPathGraphics(path) {
+rebuildPathGraphics(path) {
+    try {
+        // 古いGraphics/Mesh/Container破棄
+        if (path.container) {
             try {
-                if (path.graphics) {
-                    try {
-                        if (path.graphics.destroy && typeof path.graphics.destroy === 'function') {
-                            path.graphics.destroy({ 
-                                children: true,
-                                texture: false, 
-                                baseTexture: false 
-                            });
-                        }
-                    } catch (destroyError) {
-                    }
-                    path.graphics = null;
-                }
+                path.container.destroy({ children: true });
+            } catch (e) {}
+            path.container = null;
+        } else if (path.mesh) {
+            try {
+                path.mesh.destroy({ children: true });
+            } catch (e) {}
+            path.mesh = null;
+        } else if (path.graphics) {
+            try {
+                path.graphics.destroy({ 
+                    children: true,
+                    texture: false, 
+                    baseTexture: false 
+                });
+            } catch (e) {}
+            path.graphics = null;
+        }
+        
+        if (!path.points || !Array.isArray(path.points) || path.points.length === 0) {
+            return true;
+        }
+        
+        // 🆕 Phase 2: meshVerticesがある場合はMesh再構築
+        if (path.meshVertices && window.TegakiDrawing?.StrokeRenderer) {
+            const renderer = new window.TegakiDrawing.StrokeRenderer(this.config);
+            if (this.app?.renderer) {
+                renderer.setRenderer(this.app.renderer);
+            }
+            
+            path.container = new PIXI.Container();
+            path.mesh = renderer.rebuildMeshFromData(path.meshVertices, path.container);
+            
+            return !!path.mesh;
+        }
+        
+        // フォールバック: Graphics描画
+        path.graphics = new PIXI.Graphics();
+        
+        if (path.strokeOptions && typeof getStroke !== 'undefined') {
+            try {
+                const renderSize = path.size;
+                const options = {
+                    ...path.strokeOptions,
+                    size: renderSize,
+                    color: path.color,
+                    alpha: path.opacity
+                };
                 
-                path.graphics = new PIXI.Graphics();
+                const outlinePoints = getStroke(path.points, options);
                 
-                if (!path.points || !Array.isArray(path.points) || path.points.length === 0) {
+                if (outlinePoints && outlinePoints.length > 0) {
+                    path.graphics.poly(outlinePoints);
+                    path.graphics.fill({ 
+                        color: path.color || 0x000000, 
+                        alpha: path.opacity || 1.0 
+                    });
                     return true;
                 }
-                
-                if (path.strokeOptions && typeof getStroke !== 'undefined') {
-                    try {
-                        const renderSize = path.size;
-                        
-                        const options = {
-                            ...path.strokeOptions,
-                            size: renderSize,
-                            color: path.color,
-                            alpha: path.opacity
-                        };
-                        
-                        const outlinePoints = getStroke(path.points, options);
-                        
-                        if (outlinePoints && outlinePoints.length > 0) {
-                            path.graphics.poly(outlinePoints);
-                            path.graphics.fill({ 
-                                color: path.color || 0x000000, 
-                                alpha: path.opacity || 1.0 
-                            });
-                            return true;
-                        }
-                    } catch (pfError) {
-                    }
-                }
-                
-                for (let point of path.points) {
-                    if (typeof point.x === 'number' && typeof point.y === 'number' &&
-                        isFinite(point.x) && isFinite(point.y)) {
-                        
-                        path.graphics.circle(point.x, point.y, (path.size || 16) / 2);
-                        path.graphics.fill({ 
-                            color: path.color || 0x800000, 
-                            alpha: path.opacity || 1.0 
-                        });
-                    }
-                }
-                
-                return true;
-                
-            } catch (error) {
-                path.graphics = null;
-                return false;
-            }
+            } catch (pfError) {}
         }
-
-        addPathToActiveLayer(path) {
-            if (!this.getActiveLayer()) return;
-            
-            const activeLayer = this.getActiveLayer();
-            const layerIndex = this.activeLayerIndex;
-            
-            if (activeLayer.layerData && activeLayer.layerData.paths) {
-                activeLayer.layerData.paths.push(path);
-            }
-            if (!activeLayer.layerData) {
-                activeLayer.paths = activeLayer.paths || [];
-                activeLayer.paths.push(path);
-            }
-            
-            this.rebuildPathGraphics(path);
-            
-            if (path.graphics) {
-                activeLayer.addChild(path.graphics);
-            }
-            
-            this.requestThumbnailUpdate(layerIndex);
-            
-            if (this.eventBus) {
-                this.eventBus.emit('layer:stroke-added', { 
-                    path, 
-                    layerIndex,
-                    layerId: activeLayer.label
+        
+        // 最終フォールバック: 円描画
+        for (let point of path.points) {
+            if (typeof point.x === 'number' && typeof point.y === 'number' &&
+                isFinite(point.x) && isFinite(point.y)) {
+                
+                path.graphics.circle(point.x, point.y, (path.size || 16) / 2);
+                path.graphics.fill({ 
+                    color: path.color || 0x800000, 
+                    alpha: path.opacity || 1.0 
                 });
             }
         }
+        
+        return true;
+        
+    } catch (error) {
+        console.error('[LayerSystem] rebuildPathGraphics failed:', error);
+        return false;
+    }
+}
+
+addPathToActiveLayer(path) {
+    if (!this.getActiveLayer()) return;
+    
+    const activeLayer = this.getActiveLayer();
+    const layerIndex = this.activeLayerIndex;
+    
+    // pathsに追加
+    if (activeLayer.layerData && activeLayer.layerData.paths) {
+        activeLayer.layerData.paths.push(path);
+    }
+    if (!activeLayer.layerData) {
+        activeLayer.paths = activeLayer.paths || [];
+        activeLayer.paths.push(path);
+    }
+    
+    // 🆕 Phase 2: container/mesh/graphicsを優先順位で追加
+    if (path.container) {
+        activeLayer.addChild(path.container);
+    } else if (path.mesh) {
+        activeLayer.addChild(path.mesh);
+    } else {
+        // Graphics再構築が必要な場合
+        this.rebuildPathGraphics(path);
+        
+        if (path.container) {
+            activeLayer.addChild(path.container);
+        } else if (path.mesh) {
+            activeLayer.addChild(path.mesh);
+        } else if (path.graphics) {
+            activeLayer.addChild(path.graphics);
+        }
+    }
+    
+    this.requestThumbnailUpdate(layerIndex);
+    
+    if (this.eventBus) {
+        this.eventBus.emit('layer:stroke-added', { 
+            path, 
+            layerIndex,
+            layerId: activeLayer.label,
+            hasMesh: !!path.meshVertices // 🆕 Phase 2
+        });
+    }
+}
 
         addPathToLayer(layerIndex, path) {
             const layers = this.getLayers();

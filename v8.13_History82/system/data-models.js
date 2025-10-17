@@ -1,4 +1,4 @@
-// ===== system/data-models.js - Phase 4: データモデル統一化 =====
+// ===== system/data-models.js - Phase 2: meshVertices対応 =====
 
 (function() {
     'use strict';
@@ -97,12 +97,69 @@
         }
     }
 
+    // ========== Phase 2: StrokeData拡張 START ==========
+    /**
+     * StrokeData - ストローク描画データ
+     * Phase 2: meshVertices対応
+     */
+    const STROKE_SCHEMA = {
+        id: { type: 'string', required: true },
+        points: { type: 'array', required: true },
+        size: { type: 'number', default: 8 },
+        color: { type: 'number', default: 0x000000 },
+        opacity: { type: 'number', min: 0, max: 1, default: 1.0 },
+        strokeOptions: { type: 'object', required: false },
+        meshVertices: { type: 'object', required: false } // 🆕 Phase 2
+    };
+
+    class StrokeData {
+        constructor(data = {}) {
+            this.id = data.id || `stroke_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
+            this.points = data.points || [];
+            this.size = data.size || 8;
+            this.color = data.color !== undefined ? data.color : 0x000000;
+            this.opacity = data.opacity !== undefined ? data.opacity : 1.0;
+            this.strokeOptions = data.strokeOptions || null;
+            
+            // 🆕 Phase 2: meshVerticesフィールド
+            // { vertices: [], uvs: [], indices: [], color, alpha }
+            this.meshVertices = data.meshVertices || null;
+        }
+
+        static getSchema() {
+            return STROKE_SCHEMA;
+        }
+
+        toJSON() {
+            return {
+                id: this.id,
+                points: this.points,
+                size: this.size,
+                color: this.color,
+                opacity: this.opacity,
+                strokeOptions: this.strokeOptions,
+                meshVertices: this.meshVertices // 🆕 Phase 2
+            };
+        }
+
+        validate() {
+            const errors = [];
+            if (!this.id) errors.push('id is required');
+            if (!Array.isArray(this.points)) errors.push('points must be array');
+            if (this.opacity < 0 || this.opacity > 1) errors.push('opacity must be 0-1');
+            return { valid: errors.length === 0, errors };
+        }
+    }
+    // ========== Phase 2: StrokeData拡張 END ==========
+
     window.TegakiDataModels = {
         LayerModel,
         CutModel,
+        StrokeData, // 🆕 Phase 2
         LAYER_SCHEMA,
-        CUT_SCHEMA
+        CUT_SCHEMA,
+        STROKE_SCHEMA // 🆕 Phase 2
     };
 
-    console.log('✅ data-models.js loaded');
+    console.log('✅ data-models.js (Phase 2: meshVertices対応) loaded');
 })();
