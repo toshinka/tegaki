@@ -21,6 +21,7 @@ window.KeyboardHandler = (function() {
     };
 
     let isInitialized = false;
+    let layerSystemRef = null;
 
     // 入力要素にフォーカスがあるかチェック
     function isInputFocused() {
@@ -32,6 +33,27 @@ window.KeyboardHandler = (function() {
             activeElement.tagName === 'TEXTAREA' ||
             activeElement.isContentEditable
         );
+    }
+
+    // LayerSystemの参照を取得
+    function getLayerSystem() {
+        if (layerSystemRef) return layerSystemRef;
+        
+        // 複数の場所から取得を試みる
+        const candidates = [
+            window.drawingApp?.layerManager,
+            window.layerSystem,
+            window.coreEngine?.layerSystem
+        ];
+        
+        for (let candidate of candidates) {
+            if (candidate && typeof candidate.vKeyPressed !== 'undefined') {
+                layerSystemRef = candidate;
+                return candidate;
+            }
+        }
+        
+        return null;
     }
 
     // キーボードイベントハンドラー
@@ -51,12 +73,31 @@ window.KeyboardHandler = (function() {
             return;
         }
         
+        // LayerSystemからvModeを取得
+        const layerSystem = getLayerSystem();
+        const vMode = layerSystem ? layerSystem.vKeyPressed : false;
+        
         // config.jsのキーマップでアクション解決
-        const action = keymap.getAction(e, { vMode: false });
+        const action = keymap.getAction(e, { vMode });
         
         if (!action) return;
         
-        // アクション処理
+        // レイヤー関連のアクションはlayer-system.jsに任せる
+        const layerActions = [
+            'LAYER_MOVE_MODE_TOGGLE',
+            'LAYER_MOVE_UP', 'LAYER_MOVE_DOWN', 'LAYER_MOVE_LEFT', 'LAYER_MOVE_RIGHT',
+            'LAYER_SCALE_UP', 'LAYER_SCALE_DOWN', 'LAYER_ROTATE_LEFT', 'LAYER_ROTATE_RIGHT',
+            'LAYER_FLIP_HORIZONTAL', 'LAYER_FLIP_VERTICAL',
+            'LAYER_HIERARCHY_UP', 'LAYER_HIERARCHY_DOWN',
+            'GIF_PREV_FRAME', 'GIF_NEXT_FRAME'
+        ];
+        
+        // これらのアクションはlayer-system.jsが処理するのでスキップ
+        if (layerActions.includes(action)) {
+            return;
+        }
+        
+        // その他のアクション処理
         handleAction(action, e, eventBus);
     }
 
@@ -89,8 +130,8 @@ window.KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_CREATE':
-                if (window.drawingApp?.layerManager) {
-                    const layerSystem = window.drawingApp.layerManager;
+                const layerSystem = getLayerSystem();
+                if (layerSystem) {
                     const newLayerIndex = layerSystem.getLayers().length + 1;
                     layerSystem.createLayer(`L${newLayerIndex}`, false);
                     eventBus.emit('layer:created-by-shortcut', { index: newLayerIndex });
@@ -160,7 +201,7 @@ window.KeyboardHandler = (function() {
 
     // 🆕 アクティブレイヤーの絵を削除（履歴対応）
     function deleteActiveLayerDrawings() {
-        const layerSystem = window.drawingApp?.layerManager;
+        const layerSystem = getLayerSystem();
         if (!layerSystem) return;
         
         const activeLayer = layerSystem.getActiveLayer();
@@ -300,6 +341,7 @@ window.KeyboardHandler = (function() {
         init,
         isInputFocused,
         getShortcutList,
-        shortcuts
+        shortcuts,
+        setLayerSystem: (ls) => { layerSystemRef = ls; }
     };
 })();

@@ -1298,8 +1298,8 @@
         setCameraSystem(cameraSystem) {
             this.cameraSystem = cameraSystem;
             
-            // Phase 1: CameraSystem設定後にTransform初期化
-            if (this.transform && this.app) {
+            // Phase 1: CameraSystem設定後にTransform初期化を試みる
+            if (this.transform && this.app && !this.transform.app) {
                 this.initTransform();
             }
         }
@@ -1307,9 +1307,13 @@
         setApp(app) {
             this.app = app;
             
-            // Phase 1: App設定後にTransform初期化
-            if (this.transform && this.cameraSystem) {
-                this.initTransform();
+            // Phase 1: App設定後にTransform初期化を試みる
+            if (this.transform && !this.transform.app) {
+                // CameraSystemが既に設定されていればすぐに初期化
+                // そうでなければCameraSystem設定時に初期化
+                if (this.cameraSystem) {
+                    this.initTransform();
+                }
             }
         }
 
