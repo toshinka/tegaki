@@ -1,12 +1,10 @@
 /**
- * DrawingEngine v4.0 - Phase 2: Mesh描画統合
+ * DrawingEngine v6.0 - Phase 4: 圧力フィルタ統合
  * 
  * 変更点:
- * - Graphics描画をMesh描画に置き換え
- * - renderStroke()の戻り値を{ mesh, meshVertices }に対応
- * - currentPath.meshVerticesの保存
- * - History統合（meshVertices対応）
- * - Phase 1の筆圧・スムージング機能を完全継承
+ * - getFilteredPressure()を使用（座標を渡す）
+ * - baseline補正→フィルタ適用の順序を保証
+ * - Phase 3の単独点対応を完全継承
  */
 
 class DrawingEngine {
@@ -121,11 +119,26 @@ class DrawingEngine {
         this.transformer.setSplineParameters(tension, value);
       }
     });
+    
+    // 🆕 Phase 4: フィルタ設定イベント
+    this.eventBus.on('settings:filter-enabled', ({ enabled }) => {
+      if (this.pressureHandler) this.pressureHandler.setFilterEnabled(enabled);
+    });
+    
+    this.eventBus.on('settings:filter-settings', (settings) => {
+      if (this.pressureHandler) this.pressureHandler.setFilterSettings(settings);
+    });
   }
 
   startDrawing(screenX, screenY, pressureOrEvent) {
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
-    const pressure = this.pressureHandler.getPressure(pressureOrEvent);
+    
+    // 🔥 Phase 4: フィルタ適用済み筆圧取得
+    const pressure = this.pressureHandler.getFilteredPressure(
+      pressureOrEvent, 
+      { x: canvasPoint.x, y: canvasPoint.y }
+    );
+    
     const currentScale = this.cameraSystem.camera.scale || 1;
 
     const strokeOptions = this.settings.getStrokeOptions();
@@ -144,20 +157,25 @@ class DrawingEngine {
     this.currentPath.originalSize = this.settings.getBrushSize();
     this.currentPath.scaleAtDrawTime = currentScale;
 
-    // 🆕 Phase 2: Container作成（Mesh追加用）
+    // Phase 2継承: Container作成
     this.currentPath.container = new PIXI.Container();
     
     this.isDrawing = true;
   }
 
   /**
-   * 🔥 Phase 2: Mesh描画対応版
+   * 🔥 Phase 4: フィルタ適用済み筆圧取得版
    */
   continueDrawing(screenX, screenY, pressureOrEvent) {
     if (!this.isDrawing || !this.currentPath) return;
 
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
-    const pressure = this.pressureHandler.getPressure(pressureOrEvent);
+    
+    // 🔥 Phase 4: フィルタ適用済み筆圧取得（座標を渡す）
+    const pressure = this.pressureHandler.getFilteredPressure(
+      pressureOrEvent,
+      { x: canvasPoint.x, y: canvasPoint.y }
+    );
 
     this.recorder.addPoint(this.currentPath, {
       x: canvasPoint.x,
@@ -165,66 +183,63 @@ class DrawingEngine {
       pressure
     });
 
-    // 🆕 Phase 2: Mesh描画（リアルタイム）
+    // Phase 3継承: isSinglePointフラグを含むオプション
     const options = {
       ...this.currentPath.strokeOptions,
       color: this.currentPath.color,
-      alpha: this.currentPath.opacity
+      alpha: this.currentPath.opacity,
+      isSinglePoint: this.currentPath.isSinglePoint || false
     };
 
-    // containerをクリアして再描画
     this.currentPath.container.removeChildren();
 
     const result = this.renderer.renderStroke(
       this.currentPath.points,
       options,
       this.currentPath.container,
-      true // incremental mode
+      true
     );
     
-    // 🆕 Phase 2: meshVertices保存（リアルタイムでは仮保存）
     if (result && result.meshVertices) {
       this.currentPath.meshVertices = result.meshVertices;
     }
   }
 
   /**
-   * 🔥 Phase 2: Mesh描画 + meshVertices保存対応版
+   * Phase 4継承: フィルタ統合完了版
    */
   stopDrawing() {
     if (!this.isDrawing || !this.currentPath) return;
 
-    // Step 1: Catmull-Rom Splineスムージング
-    if (this.transformer && this.currentPath.points.length > 2) {
+    // Step 1: Catmull-Rom Splineスムージング（単独点以外）
+    if (this.transformer && this.currentPath.points.length > 2 && !this.currentPath.isSinglePoint) {
       this.currentPath.points = this.transformer.preprocessStroke(this.currentPath.points);
     }
     
-    // Step 2: Simplify最適化
+    // Step 2: Simplify最適化 + 単独点判定
     this.recorder.finalizePath(this.currentPath);
 
-    // Step 3: 最終Mesh描画
+    // Step 3: 最終描画
     const options = {
       ...this.currentPath.strokeOptions,
       color: this.currentPath.color,
-      alpha: this.currentPath.opacity
+      alpha: this.currentPath.opacity,
+      isSinglePoint: this.currentPath.isSinglePoint || false
     };
 
-    // containerをクリアして最終描画
     this.currentPath.container.removeChildren();
 
     const result = this.renderer.renderStroke(
       this.currentPath.points,
       options,
       this.currentPath.container,
-      false // 最終描画
+      false
     );
 
-    // 🆕 Phase 2: meshVerticesを保存
     if (result && result.meshVertices) {
       this.currentPath.meshVertices = result.meshVertices;
     }
 
-    // 🆕 Phase 2: graphicsの代わりにmeshを保存
     this.currentPath.mesh = result.mesh;
 
     // History統合
@@ -248,7 +263,7 @@ class DrawingEngine {
               activeLayer.paths = activeLayer.paths.filter(p => p !== path);
             }
             
-            // 🆕 Phase 2: Mesh/Container破棄
+            // Phase 2継承: Mesh/Container破棄
             if (path.container) {
               try {
                 if (activeLayer) {
@@ -264,7 +279,6 @@ class DrawingEngine {
                 path.mesh.destroy({ children: true });
               } catch (e) {}
             } else if (path.graphics) {
-              // 旧形式フォールバック
               try {
                 if (activeLayer) {
                   activeLayer.removeChild(path.graphics);
@@ -278,7 +292,8 @@ class DrawingEngine {
           meta: { 
             type: 'stroke', 
             layerIndex,
-            hasMesh: !!path.meshVertices // 🆕 Phase 2
+            hasMesh: !!path.meshVertices,
+            isSinglePoint: path.isSinglePoint || false
           }
         };
         
@@ -328,7 +343,7 @@ class DrawingEngine {
       recorder: this.recorder?.getDebugInfo(),
       transformer: this.transformer?.getDebugInfo(),
       pressureHandler: this.pressureHandler?.getDebugInfo(),
-      renderer: this.renderer?.getDebugInfo() // 🆕 Phase 2
+      renderer: this.renderer?.getDebugInfo()
     };
   }
 }

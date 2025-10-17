@@ -1,4 +1,7 @@
-// ===== system/layer-system.js - Phase 1改修版 (LayerTransform分離) 完全版 =====
+// ===== system/layer-system.js - GPT5案修正完全版 =====
+// 修正内容:
+// 1. init()終了時に確実にinitTransform()を呼ぶ
+// 2. setApp/setCameraSystem時にも初期化を試みる（二重初期化防止付き）
 
 (function() {
     'use strict';
@@ -23,7 +26,7 @@
             
             this.coordAPI = window.CoordinateSystem;
             
-            // Phase 1: LayerTransform統合
+            // LayerTransform統合
             this.transform = null;
             this.isInitialized = false;
         }
@@ -36,7 +39,7 @@
                 throw new Error('EventBus required for LayerSystem');
             }
             
-            // Phase 1: LayerTransform初期化（インスタンス作成のみ）
+            // LayerTransform初期化（インスタンス作成）
             if (window.TegakiLayerTransform) {
                 this.transform = new window.TegakiLayerTransform(this.config, this.coordAPI);
             } else {
@@ -74,7 +77,7 @@
             layer1.label = layer1Model.id;
             layer1.layerData = layer1Model;
             
-            // Phase 1: LayerTransformに初期Transformを登録
+            // LayerTransformに初期Transformを登録
             if (this.transform) {
                 this.transform.setTransform(layer1Model.id, {
                     x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
@@ -89,12 +92,24 @@
             this._setupAnimationSystemIntegration();
             this._startThumbnailUpdateProcess();
             
+            // ★GPT5案修正1: init()終了時、app/cameraSystemが既にセット済みならtransform初期化
+            if (this.transform && this.app && this.cameraSystem && !this.transform.app) {
+                try {
+                    this.initTransform();
+                } catch (err) {
+                    console.warn('layer-system: initTransform auto-call failed', err);
+                }
+            }
+            
             this.isInitialized = true;
         }
         
-        // Phase 1: LayerTransform初期化（app/cameraSystem設定後に呼ぶ）
+        // LayerTransform初期化（app/cameraSystem設定後に呼ぶ）
         initTransform() {
             if (!this.transform || !this.app) return;
+            
+            // 二重初期化防止
+            if (this.transform.app) return;
             
             this.transform.init(this.app, this.cameraSystem);
             
@@ -145,140 +160,104 @@
             return layers.indexOf(layer);
         }
 
-        // ========== Path描画（既存機能） ==========
-        
-rebuildPathGraphics(path) {
-    try {
-        // 古いGraphics/Mesh/Container破棄
-        if (path.container) {
+        // Path描画
+        rebuildPathGraphics(path) {
             try {
-                path.container.destroy({ children: true });
-            } catch (e) {}
-            path.container = null;
-        } else if (path.mesh) {
-            try {
-                path.mesh.destroy({ children: true });
-            } catch (e) {}
-            path.mesh = null;
-        } else if (path.graphics) {
-            try {
-                path.graphics.destroy({ 
-                    children: true,
-                    texture: false, 
-                    baseTexture: false 
-                });
-            } catch (e) {}
-            path.graphics = null;
-        }
-        
-        if (!path.points || !Array.isArray(path.points) || path.points.length === 0) {
-            return true;
-        }
-        
-        // 🆕 Phase 2: meshVerticesがある場合はMesh再構築
-        if (path.meshVertices && window.TegakiDrawing?.StrokeRenderer) {
-            const renderer = new window.TegakiDrawing.StrokeRenderer(this.config);
-            if (this.app?.renderer) {
-                renderer.setRenderer(this.app.renderer);
-            }
-            
-            path.container = new PIXI.Container();
-            path.mesh = renderer.rebuildMeshFromData(path.meshVertices, path.container);
-            
-            return !!path.mesh;
-        }
-        
-        // フォールバック: Graphics描画
-        path.graphics = new PIXI.Graphics();
-        
-        if (path.strokeOptions && typeof getStroke !== 'undefined') {
-            try {
-                const renderSize = path.size;
-                const options = {
-                    ...path.strokeOptions,
-                    size: renderSize,
-                    color: path.color,
-                    alpha: path.opacity
-                };
+                if (path.graphics) {
+                    try {
+                        if (path.graphics.destroy && typeof path.graphics.destroy === 'function') {
+                            path.graphics.destroy({ 
+                                children: true,
+                                texture: false, 
+                                baseTexture: false 
+                            });
+                        }
+                    } catch (destroyError) {
+                    }
+                    path.graphics = null;
+                }
                 
-                const outlinePoints = getStroke(path.points, options);
+                path.graphics = new PIXI.Graphics();
                 
-                if (outlinePoints && outlinePoints.length > 0) {
-                    path.graphics.poly(outlinePoints);
-                    path.graphics.fill({ 
-                        color: path.color || 0x000000, 
-                        alpha: path.opacity || 1.0 
-                    });
+                if (!path.points || !Array.isArray(path.points) || path.points.length === 0) {
                     return true;
                 }
-            } catch (pfError) {}
-        }
-        
-        // 最終フォールバック: 円描画
-        for (let point of path.points) {
-            if (typeof point.x === 'number' && typeof point.y === 'number' &&
-                isFinite(point.x) && isFinite(point.y)) {
                 
-                path.graphics.circle(point.x, point.y, (path.size || 16) / 2);
-                path.graphics.fill({ 
-                    color: path.color || 0x800000, 
-                    alpha: path.opacity || 1.0 
+                if (path.strokeOptions && typeof getStroke !== 'undefined') {
+                    try {
+                        const renderSize = path.size;
+                        
+                        const options = {
+                            ...path.strokeOptions,
+                            size: renderSize,
+                            color: path.color,
+                            alpha: path.opacity
+                        };
+                        
+                        const outlinePoints = getStroke(path.points, options);
+                        
+                        if (outlinePoints && outlinePoints.length > 0) {
+                            path.graphics.poly(outlinePoints);
+                            path.graphics.fill({ 
+                                color: path.color || 0x000000, 
+                                alpha: path.opacity || 1.0 
+                            });
+                            return true;
+                        }
+                    } catch (pfError) {
+                    }
+                }
+                
+                for (let point of path.points) {
+                    if (typeof point.x === 'number' && typeof point.y === 'number' &&
+                        isFinite(point.x) && isFinite(point.y)) {
+                        
+                        path.graphics.circle(point.x, point.y, (path.size || 16) / 2);
+                        path.graphics.fill({ 
+                            color: path.color || 0x800000, 
+                            alpha: path.opacity || 1.0 
+                        });
+                    }
+                }
+                
+                return true;
+                
+            } catch (error) {
+                path.graphics = null;
+                return false;
+            }
+        }
+
+        addPathToActiveLayer(path) {
+            if (!this.getActiveLayer()) return;
+            
+            const activeLayer = this.getActiveLayer();
+            const layerIndex = this.activeLayerIndex;
+            
+            if (activeLayer.layerData && activeLayer.layerData.paths) {
+                activeLayer.layerData.paths.push(path);
+            }
+            if (!activeLayer.layerData) {
+                activeLayer.paths = activeLayer.paths || [];
+                activeLayer.paths.push(path);
+            }
+            
+            this.rebuildPathGraphics(path);
+            
+            if (path.graphics) {
+                activeLayer.addChild(path.graphics);
+            }
+            
+            this.requestThumbnailUpdate(layerIndex);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('layer:stroke-added', { 
+                    path, 
+                    layerIndex,
+                    layerId: activeLayer.label
                 });
             }
         }
-        
-        return true;
-        
-    } catch (error) {
-        console.error('[LayerSystem] rebuildPathGraphics failed:', error);
-        return false;
-    }
-}
-
-addPathToActiveLayer(path) {
-    if (!this.getActiveLayer()) return;
-    
-    const activeLayer = this.getActiveLayer();
-    const layerIndex = this.activeLayerIndex;
-    
-    // pathsに追加
-    if (activeLayer.layerData && activeLayer.layerData.paths) {
-        activeLayer.layerData.paths.push(path);
-    }
-    if (!activeLayer.layerData) {
-        activeLayer.paths = activeLayer.paths || [];
-        activeLayer.paths.push(path);
-    }
-    
-    // 🆕 Phase 2: container/mesh/graphicsを優先順位で追加
-    if (path.container) {
-        activeLayer.addChild(path.container);
-    } else if (path.mesh) {
-        activeLayer.addChild(path.mesh);
-    } else {
-        // Graphics再構築が必要な場合
-        this.rebuildPathGraphics(path);
-        
-        if (path.container) {
-            activeLayer.addChild(path.container);
-        } else if (path.mesh) {
-            activeLayer.addChild(path.mesh);
-        } else if (path.graphics) {
-            activeLayer.addChild(path.graphics);
-        }
-    }
-    
-    this.requestThumbnailUpdate(layerIndex);
-    
-    if (this.eventBus) {
-        this.eventBus.emit('layer:stroke-added', { 
-            path, 
-            layerIndex,
-            layerId: activeLayer.label,
-            hasMesh: !!path.meshVertices // 🆕 Phase 2
-        });
-    }
-}
 
         addPathToLayer(layerIndex, path) {
             const layers = this.getLayers();
@@ -307,8 +286,7 @@ addPathToActiveLayer(path) {
             }
         }
 
-        // ========== Phase 1: LayerTransform委譲メソッド（公開API維持） ==========
-        
+        // LayerTransform委譲メソッド（公開API維持）
         enterLayerMoveMode() {
             if (this.transform) {
                 this.transform.enterMoveMode();
@@ -540,8 +518,7 @@ addPathToActiveLayer(path) {
             }
         }
 
-        // ========== レイヤー管理（既存機能） ==========
-        
+        // レイヤー管理
         reorderLayers(fromIndex, toIndex) {
             const layers = this.getLayers();
             
@@ -1330,25 +1307,21 @@ addPathToActiveLayer(path) {
             }
         }
 
+        // ★GPT5案修正2: CameraSystem設定時にtransform初期化を試みる
         setCameraSystem(cameraSystem) {
             this.cameraSystem = cameraSystem;
             
-            // Phase 1: CameraSystem設定後にTransform初期化を試みる
             if (this.transform && this.app && !this.transform.app) {
                 this.initTransform();
             }
         }
 
+        // ★GPT5案修正3: App設定時にtransform初期化を試みる
         setApp(app) {
             this.app = app;
             
-            // Phase 1: App設定後にTransform初期化を試みる
-            if (this.transform && !this.transform.app) {
-                // CameraSystemが既に設定されていればすぐに初期化
-                // そうでなければCameraSystem設定時に初期化
-                if (this.cameraSystem) {
-                    this.initTransform();
-                }
+            if (this.transform && this.cameraSystem && !this.transform.app) {
+                this.initTransform();
             }
         }
 
@@ -1450,3 +1423,5 @@ addPathToActiveLayer(path) {
     window.TegakiLayerSystem = LayerSystem;
 
 })();
+
+console.log('✅ layer-system.js (GPT5案修正完全版) loaded');
