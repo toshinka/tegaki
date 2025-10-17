@@ -1,4 +1,4 @@
-// ===== config.js - Phase 4.5: フェザータッチ最適化版 =====
+// ===== config.js - サイズスロット対応版 =====
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -21,7 +21,6 @@ window.TEGAKI_CONFIG = {
                 shortDistanceThreshold: 5.0,
                 longDistanceThreshold: 20.0
             },
-            // 🆕 Phase 4.5: フェザータッチ強化設定
             featherCurve: {
                 enabled: true,
                 ultraLowThreshold: 0.1,
@@ -30,12 +29,33 @@ window.TEGAKI_CONFIG = {
                 midValue: 0.1,
                 highPower: 2.0
             },
-            // 🆕 Phase 4.5: 超細開始点の引き下げ
             ultraFineStart: {
                 threshold: 0.05,
                 multiplier: 0.01,
                 power: 8
             }
+        }
+    },
+    eraser: {
+        size: 20,
+        opacity: 1.0
+    },
+    // 🆕 サイズスロット設定（1〜9キーで選択可能）
+    sizeSlots: {
+        pen: [2, 4, 6, 8, 12, 16, 24, 36, 50],      // ペン用スロット
+        eraser: [10, 15, 20, 30, 40, 50, 60, 80, 100] // 消しゴム用スロット（将来実装）
+    },
+    // 🆕 ドラッグ調整の感度設定
+    dragAdjustment: {
+        size: {
+            sensitivity: 0.1,  // 1ピクセルあたりの変化量
+            min: 0.1,
+            max: 100
+        },
+        opacity: {
+            sensitivity: 0.005, // 1ピクセルあたりの変化量
+            min: 0.0,
+            max: 1.0
         }
     },
     camera: {
@@ -372,7 +392,8 @@ window.TEGAKI_KEYMAP = {
     getKeyDisplayName(keyCode) {
         const displayNames = {
             'KeyP': 'P', 'KeyE': 'E', 'KeyV': 'V', 'KeyH': 'H', 'KeyA': 'A', 'KeyN': 'N', 'KeyC': 'C', 'KeyL': 'L', 'KeyZ': 'Z', 'KeyY': 'Y',
-            'Comma': ',', 'Digit0': '0', 'Plus': '+', 'ArrowUp': '↑', 'ArrowDown': '↓', 'ArrowLeft': '←', 'ArrowRight': '→',
+            'Comma': ',', 'Digit0': '0', 'Digit1': '1', 'Digit2': '2', 'Digit3': '3', 'Digit4': '4', 'Digit5': '5', 'Digit6': '6', 'Digit7': '7', 'Digit8': '8', 'Digit9': '9',
+            'Plus': '+', 'ArrowUp': '↑', 'ArrowDown': '↓', 'ArrowLeft': '←', 'ArrowRight': '→',
             'Space': 'Space', 'Delete': 'Delete', 'Backspace': 'Backspace'
         };
         return displayNames[keyCode] || keyCode;
@@ -509,7 +530,6 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js (Phase 4.5: フェザータッチ最適化版) loaded');
-console.log('   Phase 1: ベースラインキャリブレーション設定');
-console.log('   Phase 4: 距離ベース適応フィルタ設定');
-console.log('   🆕 Phase 4.5: フェザーカーブ + 超細開始点最適化');
+console.log('✅ config.js (サイズスロット対応版) loaded');
+console.log('   🆕 sizeSlots: ペン/消しゴム用サイズスロット設定追加');
+console.log('   🆕 dragAdjustment: ドラッグ調整感度設定追加');

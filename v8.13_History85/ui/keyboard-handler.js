@@ -1,14 +1,22 @@
-// ===== ui/keyboard-handler.js - GPT5案修正完全版 =====
-// 修正内容:
-// 1. Delete/Backspaceで「アクティブレイヤーの描画削除」を実装（History統合）
-// 2. 二重初期化防止フラグ追加
-// 3. layer:clear-activeイベントの発火タイミングを明確化（Ctrl+Delete）
+// ===== ui/keyboard-handler.js - モード式P/E+ドラッグ対応版 =====
+// 機能:
+// - P/Eキー押しっぱなし→マウスドラッグでサイズ・透明度調整モード
+// - 左右ドラッグ: サイズ、上下ドラッグ: 透明度
+// - ToolSizeManagerへの委譲によるDRY原則準拠
 
 window.KeyboardHandler = (function() {
     'use strict';
 
     let isInitialized = false;
     let vKeyPressed = false;
+    
+    // P/Eキードラッグモード用の状態管理
+    let pKeyPressed = false;
+    let eKeyPressed = false;
+    let isDraggingSize = false;
+    let dragStartX = 0;
+    let dragStartY = 0;
+    let activeDragTool = null; // 'pen' or 'eraser'
 
     // 入力要素にフォーカスがあるかチェック
     function isInputFocused() {
@@ -37,6 +45,34 @@ window.KeyboardHandler = (function() {
             vKeyPressed = true;
         }
         
+        // Pキー押しっぱなし検出（修飾キーなし）
+        if (e.code === 'KeyP' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+            if (!pKeyPressed) {
+                pKeyPressed = true;
+                activeDragTool = 'pen';
+                
+                // ツール選択アクションも発火
+                if (!isDraggingSize) {
+                    eventBus.emit('tool:select', { tool: 'pen' });
+                }
+            }
+            return;
+        }
+        
+        // Eキー押しっぱなし検出（修飾キーなし）
+        if (e.code === 'KeyE' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+            if (!eKeyPressed) {
+                eKeyPressed = true;
+                activeDragTool = 'eraser';
+                
+                // ツール選択アクションも発火
+                if (!isDraggingSize) {
+                    eventBus.emit('tool:select', { tool: 'eraser' });
+                }
+            }
+            return;
+        }
+        
         // ブラウザデフォルト動作を防止（F5, F11, F12以外）
         if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
         if (e.key.startsWith('F') && e.key.length <= 3) {
@@ -53,10 +89,104 @@ window.KeyboardHandler = (function() {
         handleAction(action, e, eventBus);
     }
 
-    // KeyUpイベントでVキーをリリース
+    // KeyUpイベントでキーをリリース
     function handleKeyUp(e) {
         if (e.code === 'KeyV') {
             vKeyPressed = false;
+        }
+        
+        if (e.code === 'KeyP') {
+            pKeyPressed = false;
+            if (activeDragTool === 'pen') {
+                activeDragTool = null;
+            }
+        }
+        
+        if (e.code === 'KeyE') {
+            eKeyPressed = false;
+            if (activeDragTool === 'eraser') {
+                activeDragTool = null;
+            }
+        }
+    }
+
+    // マウスダウンイベント（ドラッグ開始）
+    function handleMouseDown(e) {
+        // P/Eキーが押されていない、または既にドラッグ中なら無視
+        if (!activeDragTool || isDraggingSize) return;
+        if (isInputFocused()) return;
+        
+        // ドラッグモード開始
+        isDraggingSize = true;
+        dragStartX = e.clientX;
+        dragStartY = e.clientY;
+        
+        // 現在の設定を取得してToolSizeManagerに通知
+        const toolSizeManager = window.toolSizeManager;
+        const drawingEngine = window.drawingApp?.drawingEngine;
+        
+        if (!toolSizeManager || !drawingEngine) return;
+        
+        let startSize, startOpacity;
+        
+        if (activeDragTool === 'pen') {
+            const brushSettings = drawingEngine.brushSettings;
+            if (brushSettings) {
+                startSize = brushSettings.getBrushSize();
+                startOpacity = brushSettings.getBrushOpacity();
+            }
+        } else if (activeDragTool === 'eraser') {
+            const eraserSettings = drawingEngine.eraserBrushSettings;
+            if (eraserSettings) {
+                startSize = eraserSettings.getBrushSize();
+                startOpacity = eraserSettings.getBrushOpacity();
+            }
+        }
+        
+        if (startSize === undefined || startOpacity === undefined) return;
+        
+        // ToolSizeManagerにドラッグ開始を通知
+        if (window.TegakiEventBus) {
+            window.TegakiEventBus.emit('tool:drag-size-start', {
+                tool: activeDragTool,
+                startSize,
+                startOpacity
+            });
+        }
+        
+        e.preventDefault();
+    }
+
+    // マウス移動イベント（ドラッグ中）
+    function handleMouseMove(e) {
+        if (!isDraggingSize || !activeDragTool) return;
+        
+        const deltaX = e.clientX - dragStartX;
+        const deltaY = e.clientY - dragStartY;
+        
+        // ToolSizeManagerにドラッグ更新を通知
+        if (window.TegakiEventBus) {
+            window.TegakiEventBus.emit('tool:drag-size-update', {
+                tool: activeDragTool,
+                deltaX,
+                deltaY
+            });
+        }
+        
+        e.preventDefault();
+    }
+
+    // マウスアップイベント（ドラッグ終了）
+    function handleMouseUp(e) {
+        if (isDraggingSize) {
+            isDraggingSize = false;
+            
+            // ToolSizeManagerにドラッグ終了を通知
+            if (window.TegakiEventBus) {
+                window.TegakiEventBus.emit('tool:drag-size-end');
+            }
+            
+            e.preventDefault();
         }
     }
 
@@ -77,13 +207,11 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // ★GPT5案修正: Delete/Backspaceでアクティブレイヤーの描画を削除
             case 'LAYER_DELETE_DRAWINGS':
                 deleteActiveLayerDrawings();
                 event.preventDefault();
                 break;
             
-            // ★GPT5案修正: Ctrl+DeleteでLayer全クリア（別処理として明確化）
             case 'LAYER_CLEAR':
                 eventBus.emit('layer:clear-active');
                 event.preventDefault();
@@ -156,8 +284,7 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // ★GPT5案修正: アクティブレイヤーの描画を削除（History統合）
-    // レイヤー自体は削除せず、中の絵（全パス）のみ削除
+    // アクティブレイヤーの描画を削除（History統合）
     function deleteActiveLayerDrawings() {
         const layerSystem = window.drawingApp?.layerManager || window.coreEngine?.layerSystem;
         if (!layerSystem) return;
@@ -301,7 +428,7 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // ★GPT5案修正: 初期化（二重初期化防止）
+    // 初期化（二重初期化防止）
     function init() {
         if (isInitialized) {
             return;
@@ -309,6 +436,11 @@ window.KeyboardHandler = (function() {
 
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
+        
+        // マウスイベントリスナー追加
+        document.addEventListener('mousedown', handleMouseDown);
+        document.addEventListener('mousemove', handleMouseMove);
+        document.addEventListener('mouseup', handleMouseUp);
         
         // 二重初期化防止フラグ
         isInitialized = true;
@@ -329,6 +461,8 @@ window.KeyboardHandler = (function() {
             { action: 'GIF_COPY_CUT', keys: ['Ctrl+D'], description: 'カット複製' },
             { action: 'TOOL_PEN', keys: ['P', 'B'], description: 'ペンツール' },
             { action: 'TOOL_ERASER', keys: ['E'], description: '消しゴム' },
+            { action: 'PEN_SIZE_OPACITY', keys: ['P+ドラッグ'], description: 'ペンサイズ/透明度調整（左右:サイズ、上下:透明度）' },
+            { action: 'ERASER_SIZE_OPACITY', keys: ['E+ドラッグ'], description: '消しゴムサイズ/透明度調整（左右:サイズ、上下:透明度）' },
             { action: 'SETTINGS_OPEN', keys: ['Ctrl+,'], description: '設定を開く' },
             { action: 'LAYER_MOVE_MODE_TOGGLE', keys: ['V'], description: 'レイヤー移動モード切替' }
         ];
@@ -343,4 +477,4 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js (GPT5案修正完全版) loaded');
+console.log('✅ keyboard-handler.js (モード式P/E+ドラッグ対応版) loaded');
