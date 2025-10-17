@@ -1,4 +1,4 @@
-// ===== core-engine.js - Phase 1修正版 (LayerTransform分離対応) =====
+// ===== core-engine.js - Phase 1修正版 (LayerTransform連携確立) =====
 
 (function() {
     'use strict';
@@ -633,6 +633,12 @@
             this.layerSystem.setCameraSystem(this.cameraSystem);
             this.layerSystem.setApp(this.app);
             
+            // 🔧 Phase 1修正: LayerTransform初期化を追加
+            // App と CameraSystem の両方が設定された後に LayerTransform を初期化
+            if (this.layerSystem.initTransform) {
+                this.layerSystem.initTransform();
+            }
+            
             this.clipboardSystem.setLayerManager(this.layerSystem);
         }
         
@@ -1051,6 +1057,6 @@
 
 })();
 
-console.log('✅ core-engine.js (Phase 1修正版) loaded');
-console.log('   - LayerTransform統合対応完了');
-console.log('   - 描画遅延問題修正');
+console.log('✅ core-engine.js loaded');
+console.log('   - LayerTransform連携確立完了');
+console.log('   - setupCrossReferences()にinitTransform()追加');
