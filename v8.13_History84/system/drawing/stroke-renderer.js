@@ -1,10 +1,9 @@
 /**
- * StrokeRenderer v4.0 - Phase 2: perfect-freehand + Mesh描画
+ * StrokeRenderer v5.0 - Phase 4.5: サイズ補正強化版
  * 変更点:
- * - perfect-freehandアウトライン→Triangle Strip Mesh変換
- * - Graphics.lineStyle()描画を完全削除（二重実装防止）
- * - meshVerticesデータ構造追加
- * - Phase 1の最小幅保証を継承
+ * - getPressureAdjustedWidth()に最小幅保証を強化
+ * - perfect-freehandへのサイズパラメータを圧力に基づいて動的調整
+ * - 極小点でもサイズスケーリングを適用
  */
 
 class StrokeRenderer {
@@ -19,6 +18,9 @@ class StrokeRenderer {
     
     // Phase 1継承: devicePixelRatio対応
     this.baseMinWidth = 1.0;
+    
+    // 🆕 Phase 4.5: 圧力ベースのサイズ調整係数
+    this.pressureToSizeMultiplier = 1.0;
   }
 
   setRenderer(renderer) {
@@ -36,10 +38,43 @@ class StrokeRenderer {
     return 1.0 / this.renderer.resolution;
   }
 
+  /**
+   * 🆕 Phase 4.5: 圧力ベースの線幅計算（改良版）
+   * @param {number} pressure - 0.0～1.0（フェザーカーブ適用済み）
+   * @param {number} baseSize - 基本線幅
+   * @returns {number} 実際の線幅
+   */
   getPressureAdjustedWidth(pressure, baseSize) {
     const minWidth = this.getMinPhysicalWidth();
-    if (pressure <= 0) return minWidth;
-    return minWidth + (baseSize - minWidth) * pressure;
+    
+    // 極小圧力の保護：0.0でも最小幅は保証
+    if (pressure <= 0.0) {
+      return minWidth;
+    }
+    
+    // 🆕 Phase 4.5: 圧力域を2段階で処理
+    if (pressure <= 0.01) {
+      // 0.0～0.01：最小幅付近で微小変化
+      return minWidth * (1.0 + pressure / 0.01 * 0.1);
+    } 
+    else if (pressure <= 0.1) {
+      // 0.01～0.1：最小幅から10%の間で線形変化
+      return minWidth * (1.1 + (pressure - 0.01) / 0.09 * 0.9);
+    } 
+    else {
+      // 0.1～1.0：通常の線形補間
+      return minWidth + (baseSize - minWidth) * pressure;
+    }
+  }
+
+  /**
+   * スケール適用済みのサイズ取得
+   * @param {number} baseSize - 基本サイズ
+   * @param {number} scale - カメラスケール
+   * @returns {number} スケール調整済みサイズ
+   */
+  getScaledSize(baseSize, scale = 1.0) {
+    return baseSize / scale;
   }
 
   /**
@@ -47,16 +82,15 @@ class StrokeRenderer {
    * perfect-freehand + Mesh描画
    * @param {Array} points - [{ x, y, pressure }]
    * @param {Object} strokeOptions - { size, thinning, smoothing, streamline, color, alpha }
-   * @param {PIXI.Container} container - 描画先コンテナ（Mesh追加用）
+   * @param {PIXI.Container} container - 描画先コンテナ
    * @param {boolean} incremental - リアルタイム描画モード
-   * @returns {Object} { mesh, meshVertices } - 生成されたMeshとその頂点データ
+   * @returns {Object} { mesh, meshVertices }
    */
   renderStroke(points, strokeOptions, container, incremental = false) {
     if (!points || points.length === 0 || !container) {
       return { mesh: null, meshVertices: null };
     }
 
-    // perfect-freehand利用可能チェック
     if (typeof getStroke === 'undefined') {
       return this.renderStrokeWithCircles(points, strokeOptions, container);
     }
@@ -64,11 +98,15 @@ class StrokeRenderer {
     try {
       // Phase 1: 最小幅保証
       const minWidth = this.getMinPhysicalWidth();
-      const adjustedSize = Math.max(strokeOptions.size || 8, minWidth);
-
-      // perfect-freehand設定（計画書準拠）
+      
+      // 🆕 Phase 4.5: 圧力の平均値から動的にサイズ調整
+      const avgPressure = points.reduce((sum, p) => sum + (p.pressure || 0.5), 0) / points.length;
+      const baseSize = strokeOptions.size || 8;
+      const dynamicSize = this.getPressureAdjustedWidth(avgPressure, baseSize);
+      
+      // perfect-freehand設定
       const pfOptions = {
-        size: adjustedSize,
+        size: Math.max(dynamicSize, minWidth),
         thinning: strokeOptions.thinning !== undefined ? strokeOptions.thinning : 0,
         smoothing: strokeOptions.smoothing !== undefined ? strokeOptions.smoothing : 0.5,
         streamline: strokeOptions.streamline !== undefined ? strokeOptions.streamline : 0.5,
@@ -96,7 +134,6 @@ class StrokeRenderer {
         strokeOptions.alpha !== undefined ? strokeOptions.alpha : 1.0
       );
 
-      // Meshをコンテナに追加
       if (meshData.mesh) {
         container.addChild(meshData.mesh);
       }
@@ -104,7 +141,6 @@ class StrokeRenderer {
       return meshData;
 
     } catch (error) {
-      console.error('[StrokeRenderer] Mesh generation failed:', error);
       return this.renderStrokeWithCircles(points, strokeOptions, container);
     }
   }
@@ -121,43 +157,32 @@ class StrokeRenderer {
       return { mesh: null, meshVertices: null };
     }
 
-    // 頂点配列構築: outline座標をそのまま使用
     const vertices = [];
     const uvs = [];
     const indices = [];
 
-    // アウトラインをTriangle Fan方式で三角形分割
-    // 中心点として最初の点を使用
     const center = outline[0];
     vertices.push(center[0], center[1]);
     uvs.push(0.5, 0.5);
 
-    // 外周点を追加
     for (let i = 0; i < outline.length; i++) {
       const pt = outline[i];
       vertices.push(pt[0], pt[1]);
-      
-      // UV座標（0-1範囲）
       const u = (i / outline.length);
       uvs.push(u, 0);
     }
 
-    // インデックス生成: Triangle Fan
     for (let i = 1; i < outline.length; i++) {
       indices.push(0, i, i + 1);
     }
-    // 最後の三角形：閉じる
     indices.push(0, outline.length, 1);
 
-    // PIXI.Geometry生成
     const geometry = new PIXI.Geometry()
       .addAttribute('aVertexPosition', vertices, 2)
       .addAttribute('aTextureCoord', uvs, 2)
       .addIndex(indices);
 
-    // 単色用シェーダー（PixiJS v8標準）
     const shader = PIXI.Shader.from(
-      // Vertex Shader
       `
       precision mediump float;
       attribute vec2 aVertexPosition;
@@ -171,7 +196,6 @@ class StrokeRenderer {
         gl_Position = vec4((projectionMatrix * translationMatrix * vec3(aVertexPosition, 1.0)).xy, 0.0, 1.0);
       }
       `,
-      // Fragment Shader
       `
       precision mediump float;
       varying vec2 vTextureCoord;
@@ -181,16 +205,13 @@ class StrokeRenderer {
         gl_FragColor = uColor;
       }
       `,
-      // Uniforms
       {
         uColor: this.hexToRGBA(color, alpha)
       }
     );
 
-    // Mesh生成
     const mesh = new PIXI.Mesh({ geometry, shader });
 
-    // meshVertices保存用データ
     const meshVertices = {
       vertices: Array.from(vertices),
       uvs: Array.from(uvs),
@@ -243,7 +264,7 @@ class StrokeRenderer {
     
     return { 
       mesh: graphics, 
-      meshVertices: null // Graphicsはmeshデータなし
+      meshVertices: null
     };
   }
 
@@ -309,12 +330,10 @@ class StrokeRenderer {
       return null;
     }
 
-    // meshVerticesがある場合はMesh再構築
     if (pathData.meshVertices) {
       return this.rebuildMeshFromData(pathData.meshVertices, container);
     }
 
-    // フォールバック: 古い形式 or perfect-freehand不在
     if (pathData.points && pathData.points.length > 0) {
       const strokeOptions = {
         size: pathData.size || 8,
@@ -399,7 +418,6 @@ class StrokeRenderer {
   }
 }
 
-// グローバル登録
 if (typeof window.TegakiDrawing === 'undefined') {
   window.TegakiDrawing = {};
 }
