@@ -1,4 +1,4 @@
-// ===== config.js - Phase 1: ペン高精度化設定追加版 =====
+// ===== config.js - Phase 4: 圧力フィルタ設定追加版 =====
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -9,12 +9,20 @@ window.TEGAKI_CONFIG = {
         size: 10, 
         opacity: 0.85, 
         color: 0x800000,
-        // 🆕 Phase 1: ペン高精度化設定
+        // Phase 1: ペン高精度化設定
         pressure: {
-            baselineCalibration: true,      // ベースラインキャリブレーション有効化
-            baselineSampleCount: 5,         // キャリブレーション用サンプル数
-            minPhysicalWidth: 1.0,          // 最小物理幅（ピクセル）
-            enableDevicePixelRatio: true    // DPR対応有効化
+            baselineCalibration: true,
+            baselineSampleCount: 5,
+            minPhysicalWidth: 1.0,
+            enableDevicePixelRatio: true,
+            // 🆕 Phase 4: 圧力フィルタ設定
+            filter: {
+                enabled: true,                  // フィルタ有効化
+                minAlpha: 0.3,                  // 長距離時のフィルタ係数（低パスフィルタ）
+                maxAlpha: 0.9,                  // 短距離時のフィルタ係数（即時反映）
+                shortDistanceThreshold: 5.0,    // 短距離閾値（px）
+                longDistanceThreshold: 20.0     // 長距離閾値（px）
+            }
         }
     },
     camera: {
@@ -511,6 +519,6 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js (Phase 1: ペン高精度化設定追加版) loaded');
-console.log('   🆕 Phase 1: ベースラインキャリブレーション設定追加');
-console.log('   🆕 Phase 1: devicePixelRatio対応設定追加');
+console.log('✅ config.js (Phase 4: 圧力フィルタ設定追加版) loaded');
+console.log('   Phase 1: ベースラインキャリブレーション設定');
+console.log('   🆕 Phase 4: 距離ベース適応フィルタ設定追加');

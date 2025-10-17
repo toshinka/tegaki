@@ -1,10 +1,9 @@
 /**
- * StrokeRecorder v2.0 - Simplify.js統合版
+ * StrokeRecorder v3.0 - Phase 3: 短距離クリック（単独点）対応
  * 変更点:
- * - finalizePath()でSimplify.js座標最適化を実行
- * - simplifyTolerance設定の管理
- * - 最適化前後のポイント数比較機能
- * - メモリ効率の大幅向上
+ * - pointerup時のクリック判定ロジック追加
+ * - 単独点フラグ管理（isSinglePoint）
+ * - 距離計算を活用した短距離判定
  */
 
 class StrokeRecorder {
@@ -12,44 +11,39 @@ class StrokeRecorder {
     this.pathIdCounter = 0;
     
     // Simplify.js設定
-    this.simplifyTolerance = 1.0;      // 許容誤差（1.0 = デフォルト）
-    this.simplifyHighQuality = true;   // 高品質モード
-    this.enableSimplify = true;        // Simplify有効化フラグ
+    this.simplifyTolerance = 1.0;
+    this.simplifyHighQuality = true;
+    this.enableSimplify = true;
     
-    // 🆕 Phase 4: 高密度サンプリング設定
-    this.minDistance = 0.5;            // 最小記録距離（1.0→0.5に低減）
-    this.maxPoints = 10000;            // ポイント数上限
-    this.enableDynamicThreshold = true; // ズーム対応動的閾値
+    // Phase 4: 高密度サンプリング設定
+    this.minDistance = 0.5;
+    this.maxPoints = 10000;
+    this.enableDynamicThreshold = true;
+    
+    // 🆕 Phase 3: クリック判定設定
+    this.clickDistanceThreshold = 2.0; // 2px未満なら単独点
+    this.clickSampleThreshold = 2;     // サンプル数2以下なら単独点
   }
 
-  /**
-   * 🆕 Simplify設定の更新
-   * @param {number} tolerance - 許容誤差 (0.1～5.0)
-   * @param {boolean} highQuality - 高品質モード
-   */
   setSimplifySettings(tolerance, highQuality = true) {
     this.simplifyTolerance = Math.max(0.1, Math.min(5.0, tolerance));
     this.simplifyHighQuality = highQuality;
   }
 
-  /**
-   * 🆕 Simplify有効/無効切替
-   * @param {boolean} enabled
-   */
   setSimplifyEnabled(enabled) {
     this.enableSimplify = enabled;
   }
 
   /**
-   * 新規パス開始
-   * @param {Object} initialPoint - { x, y, pressure }
-   * @param {number} color - 色 (0xRRGGBB)
-   * @param {number} size - ブラシサイズ
-   * @param {number} opacity - 不透明度 (0.0-1.0)
-   * @param {string} tool - 'pen' | 'eraser'
-   * @param {Object} strokeOptions - Perfect Freehand設定
-   * @returns {Object} pathData
+   * 🆕 Phase 3: クリック判定設定の更新
+   * @param {number} distanceThreshold - 距離閾値（px）
+   * @param {number} sampleThreshold - サンプル数閾値
    */
+  setClickThresholds(distanceThreshold, sampleThreshold) {
+    this.clickDistanceThreshold = Math.max(0.5, distanceThreshold);
+    this.clickSampleThreshold = Math.max(1, sampleThreshold);
+  }
+
   startNewPath(initialPoint, color, size, opacity, tool, strokeOptions) {
     const pathData = {
       id: this.generatePathId(),
@@ -63,20 +57,17 @@ class StrokeRecorder {
       graphics: null,
       originalSize: size,
       scaleAtDrawTime: 1.0,
-      // 🆕 最適化統計
       pointsBeforeSimplify: 0,
       pointsAfterSimplify: 0,
-      simplifyReduction: 0
+      simplifyReduction: 0,
+      // 🆕 Phase 3: 単独点フラグ
+      isSinglePoint: false,
+      totalDistance: 0
     };
     
     return pathData;
   }
 
-  /**
-   * ポイント追加
-   * @param {Object} pathData
-   * @param {Object} point - { x, y, pressure }
-   */
   addPoint(pathData, point) {
     if (!pathData || !point) return;
     
@@ -90,47 +81,53 @@ class StrokeRecorder {
     }
     
     pathData.points.push({ ...point });
+    
+    // 🆕 Phase 3: 総移動距離を記録
+    pathData.totalDistance = (pathData.totalDistance || 0) + distance;
   }
 
   /**
-   * パス完了処理（Simplify.js統合）
+   * 🔥 Phase 3: パス完了処理（クリック判定統合）
    * @param {Object} pathData
    */
   finalizePath(pathData) {
     if (!pathData) return;
     
-    // 最適化前のポイント数を記録
+    // 🆕 Phase 3: クリック判定
+    const isClick = this.detectSinglePoint(pathData);
+    pathData.isSinglePoint = isClick;
+    
+    // 単独点の場合はSimplifyをスキップ
+    if (isClick) {
+      pathData.pointsBeforeSimplify = pathData.points.length;
+      pathData.pointsAfterSimplify = pathData.points.length;
+      pathData.simplifyReduction = 0;
+      pathData.isComplete = true;
+      return;
+    }
+    
+    // 通常のストローク処理
     pathData.pointsBeforeSimplify = pathData.points.length;
     
-    // Simplify.js が利用可能かつ有効な場合、座標最適化を実行
     if (this.enableSimplify && typeof simplify !== 'undefined' && pathData.points.length > 2) {
       try {
-        // Simplify.js用の座標形式に変換 [{ x, y, pressure }] → [{ x, y }]
         const pointsForSimplify = pathData.points.map(p => ({ x: p.x, y: p.y }));
-        
-        // Simplify実行
         const simplified = simplify(pointsForSimplify, this.simplifyTolerance, this.simplifyHighQuality);
-        
-        // 筆圧情報を補間しながら結果を再構築
         const simplifiedWithPressure = this.interpolatePressure(pathData.points, simplified);
         
-        // 最適化後のポイントで置き換え
         pathData.points = simplifiedWithPressure;
         pathData.pointsAfterSimplify = simplifiedWithPressure.length;
         
-        // 削減率を計算（パーセント）
         if (pathData.pointsBeforeSimplify > 0) {
           pathData.simplifyReduction = 
             ((pathData.pointsBeforeSimplify - pathData.pointsAfterSimplify) / pathData.pointsBeforeSimplify * 100).toFixed(1);
         }
         
       } catch (error) {
-        // Simplifyエラー時は元のポイントをそのまま使用
         pathData.pointsAfterSimplify = pathData.points.length;
         pathData.simplifyReduction = 0;
       }
     } else {
-      // Simplify無効時
       pathData.pointsAfterSimplify = pathData.points.length;
       pathData.simplifyReduction = 0;
     }
@@ -139,11 +136,25 @@ class StrokeRecorder {
   }
 
   /**
-   * 🆕 Simplify後の座標に筆圧を補間
-   * @param {Array} originalPoints - 元の座標（筆圧付き）
-   * @param {Array} simplifiedPoints - 最適化後の座標（筆圧なし）
-   * @returns {Array} 筆圧補間済み座標
+   * 🆕 Phase 3: 単独点判定ロジック
+   * @param {Object} pathData
+   * @returns {boolean} true = 単独点（クリック）, false = 通常ストローク
    */
+  detectSinglePoint(pathData) {
+    if (!pathData || !pathData.points || pathData.points.length === 0) {
+      return false;
+    }
+    
+    // 条件1: サンプル数が閾値以下
+    const sampleCheck = pathData.points.length <= this.clickSampleThreshold;
+    
+    // 条件2: 総移動距離が閾値未満
+    const distanceCheck = (pathData.totalDistance || 0) < this.clickDistanceThreshold;
+    
+    // 両方満たす場合のみ単独点と判定
+    return sampleCheck && distanceCheck;
+  }
+
   interpolatePressure(originalPoints, simplifiedPoints) {
     if (!simplifiedPoints || simplifiedPoints.length === 0) {
       return originalPoints;
@@ -152,7 +163,6 @@ class StrokeRecorder {
     const result = [];
     
     for (const simplePoint of simplifiedPoints) {
-      // 最も近い元の座標を探す
       let nearestPoint = originalPoints[0];
       let minDistance = this.getDistance(simplePoint, originalPoints[0]);
       
@@ -164,7 +174,6 @@ class StrokeRecorder {
         }
       }
       
-      // 筆圧情報をコピー
       result.push({
         x: simplePoint.x,
         y: simplePoint.y,
@@ -175,31 +184,16 @@ class StrokeRecorder {
     return result;
   }
 
-  /**
-   * パスID生成
-   * @returns {string}
-   */
   generatePathId() {
     return `path_${Date.now()}_${this.pathIdCounter++}`;
   }
 
-  /**
-   * 2点間の距離計算
-   * @param {Object} p1 - { x, y }
-   * @param {Object} p2 - { x, y }
-   * @returns {number}
-   */
   getDistance(p1, p2) {
     const dx = p2.x - p1.x;
     const dy = p2.y - p1.y;
     return Math.sqrt(dx * dx + dy * dy);
   }
 
-  /**
-   * パスデータのディープコピー (History用)
-   * @param {Object} pathData
-   * @returns {Object}
-   */
   clonePathData(pathData) {
     return {
       id: pathData.id,
@@ -211,21 +205,23 @@ class StrokeRecorder {
       isComplete: pathData.isComplete,
       strokeOptions: { ...pathData.strokeOptions },
       graphics: null,
-      // 🆕 最適化統計もコピー
       pointsBeforeSimplify: pathData.pointsBeforeSimplify || 0,
       pointsAfterSimplify: pathData.pointsAfterSimplify || 0,
-      simplifyReduction: pathData.simplifyReduction || 0
+      simplifyReduction: pathData.simplifyReduction || 0,
+      // 🆕 Phase 3: 単独点情報もコピー
+      isSinglePoint: pathData.isSinglePoint || false,
+      totalDistance: pathData.totalDistance || 0
     };
   }
 
-  /**
-   * 🆕 デバッグ情報取得
-   */
   getDebugInfo() {
     return {
       simplifyEnabled: this.enableSimplify,
       tolerance: this.simplifyTolerance,
-      highQuality: this.simplifyHighQuality
+      highQuality: this.simplifyHighQuality,
+      // 🆕 Phase 3: クリック判定設定
+      clickDistanceThreshold: this.clickDistanceThreshold,
+      clickSampleThreshold: this.clickSampleThreshold
     };
   }
 }

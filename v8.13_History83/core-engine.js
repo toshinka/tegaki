@@ -1,4 +1,8 @@
-// ===== core-engine.js - 構文エラー修正版 (Delete/Backspace, V機能統合) =====
+// ===== core-engine.js - GPT5案修正完全版 =====
+// 修正内容:
+// 1. setupCrossReferences()内でlayerSystem.initTransform()を確実に呼ぶ
+// 2. UnifiedKeyHandlerのDelete処理を統一（二重実装を排除）
+// 3. layer:clear-activeイベントハンドラでHistory対応の削除処理を実装
 
 (function() {
     'use strict';
@@ -291,7 +295,6 @@
             
             const layerId = activeLayer.layerData.id;
             
-            // LayerTransform から Transform取得
             const transform = this.layerManager.transform?.getTransform(layerId);
             
             if (transform && this.layerManager.transform?._isTransformNonDefault(transform)) {
@@ -308,7 +311,7 @@
                     
                     const transformedGraphics = new PIXI.Graphics();
                     
-                    path.points.forEach((point) => {
+                    path.points.forEach((point, index) => {
                         try {
                             const transformedPoint = matrix.apply(point);
                             if (isFinite(transformedPoint.x) && isFinite(transformedPoint.y)) {
@@ -380,232 +383,8 @@
         }
     }
 
-    class UnifiedKeyHandler {
-        constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
-            this.cameraSystem = cameraSystem;
-            this.layerSystem = layerSystem;
-            this.drawingEngine = drawingEngine;
-            this.eventBus = eventBus || window.TegakiEventBus;
-            this.animationSystem = animationSystem;
-            this.timelineUI = null;
-            
-            this.keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
-            this.keyHandlingActive = true;
-            
-            this.setupKeyHandling();
-        }
-        
-        setTimelineUI(timelineUI) {
-            this.timelineUI = timelineUI;
-        }
-        
-        setupKeyHandling() {
-            document.addEventListener('keydown', (e) => {
-                if (!this.keyHandlingActive) return;
-                
-                const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
-                const metaKey = isMac ? e.metaKey : e.ctrlKey;
-                if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
-                    return;
-                }
-                
-                this.handleKeyDown(e);
-            });
-            
-            document.addEventListener('keyup', (e) => {
-                if (!this.keyHandlingActive) return;
-                this.handleKeyUp(e);
-            });
-            
-            window.addEventListener('blur', () => {
-                this.resetAllKeyStates();
-            });
-            
-            window.addEventListener('focus', () => {
-                this.resetAllKeyStates();
-            });
-        }
-        
-        handleKeyDown(e) {
-            if (e.code === 'ArrowUp' || e.code === 'ArrowDown' || 
-                e.code === 'ArrowLeft' || e.code === 'ArrowRight') {
-                this.handleArrowKeys(e);
-                return;
-            }
-            
-            const action = this.keyConfig.getActionForKey(e.code, {
-                vPressed: this.layerSystem.vKeyPressed,
-                shiftPressed: e.shiftKey,
-                altPressed: e.altKey
-            });
-            
-            if (this.handleSpecialKeys(e)) {
-                return;
-            }
-            
-            if (!action) return;
-            
-            switch(action) {
-                case 'pen':
-                    if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.switchTool('pen');
-                        if (this.layerSystem.isLayerMoveMode) {
-                            this.layerSystem.exitLayerMoveMode();
-                        }
-                        e.preventDefault();
-                    }
-                    break;
-                    
-                case 'eraser':
-                    if (!e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.switchTool('eraser');
-                        if (this.layerSystem.isLayerMoveMode) {
-                            this.layerSystem.exitLayerMoveMode();
-                        }
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'layerMoveMode':
-                    if (e.code === 'KeyV' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.layerSystem.toggleLayerMoveMode();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifToggleAnimation':
-                    if (e.altKey && this.timelineUI) {
-                        this.timelineUI.toggle();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifAddCut':
-                    if (e.altKey && this.animationSystem) {
-                        this.animationSystem.createCutFromCurrentState();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'gifPlayPause':
-                    if (e.code === 'Space' && e.ctrlKey && this.timelineUI && this.timelineUI.isVisible) {
-                        this.timelineUI.togglePlayStop();
-                        e.preventDefault();
-                    }
-                    break;
-                
-                case 'delete':
-                    if ((e.code === 'Delete' || e.code === 'Backspace') && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.eventBus.emit('layer:clear-active');
-                        e.preventDefault();
-                    }
-                    break;
-            }
-        }
-        
-        handleArrowKeys(e) {
-            e.preventDefault();
-            
-            if (this.layerSystem?.vKeyPressed) {
-                return;
-            }
-            
-            const activeIndex = this.layerSystem.activeLayerIndex;
-            const layers = this.layerSystem.getLayers();
-            
-            if (e.ctrlKey) {
-                if (e.code === 'ArrowUp') {
-                    if (activeIndex < layers.length - 1) {
-                        const layer = layers[activeIndex];
-                        const targetLayer = layers[activeIndex + 1];
-                        
-                        if (!layer?.layerData?.isBackground && !targetLayer?.layerData?.isBackground) {
-                            this.layerSystem.currentCutContainer.removeChildAt(activeIndex);
-                            this.layerSystem.currentCutContainer.addChildAt(layer, activeIndex + 1);
-                            this.layerSystem.activeLayerIndex = activeIndex + 1;
-                            this.layerSystem.updateLayerPanelUI();
-                        }
-                    }
-                } else if (e.code === 'ArrowDown') {
-                    if (activeIndex > 0) {
-                        const layer = layers[activeIndex];
-                        const targetLayer = layers[activeIndex - 1];
-                        
-                        if (!layer?.layerData?.isBackground && !targetLayer?.layerData?.isBackground) {
-                            this.layerSystem.currentCutContainer.removeChildAt(activeIndex);
-                            this.layerSystem.currentCutContainer.addChildAt(layer, activeIndex - 1);
-                            this.layerSystem.activeLayerIndex = activeIndex - 1;
-                            this.layerSystem.updateLayerPanelUI();
-                        }
-                    }
-                }
-                else if (e.code === 'ArrowLeft' && this.timelineUI && this.timelineUI.isVisible) {
-                    this.timelineUI.goToPreviousCutSafe();
-                } else if (e.code === 'ArrowRight' && this.timelineUI && this.timelineUI.isVisible) {
-                    this.timelineUI.goToNextCutSafe();
-                }
-            } else {
-                if (e.code === 'ArrowUp') {
-                    if (activeIndex < layers.length - 1) {
-                        this.layerSystem.activeLayerIndex = activeIndex + 1;
-                        this.layerSystem.updateLayerPanelUI();
-                    }
-                } else if (e.code === 'ArrowDown') {
-                    if (activeIndex > 0) {
-                        this.layerSystem.activeLayerIndex = activeIndex - 1;
-                        this.layerSystem.updateLayerPanelUI();
-                    }
-                }
-            }
-        }
-        
-        handleKeyUp(e) {
-        }
-        
-        handleSpecialKeys(e) {
-            if (e.ctrlKey && e.code === 'Digit0') {
-                return false;
-            }
-            
-            if (e.code === 'Space') {
-                return false;
-            }
-            
-            return false;
-        }
-        
-        switchTool(tool) {
-            this.drawingEngine.setTool(tool);
-            
-            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-            const toolBtn = document.getElementById(tool + '-tool');
-            if (toolBtn) {
-                toolBtn.classList.add('active');
-            }
-
-            const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
-            const toolElement = document.getElementById('current-tool');
-            if (toolElement) {
-                toolElement.textContent = toolNames[tool] || tool;
-            }
-            
-            this.cameraSystem.updateCursor();
-            
-            if (this.eventBus) {
-                this.eventBus.emit('key:tool-switched', { tool });
-            }
-        }
-        
-        resetAllKeyStates() {
-            if (this.cameraSystem._resetAllKeyStates) {
-                this.cameraSystem._resetAllKeyStates();
-            }
-        }
-        
-        setKeyHandlingActive(active) {
-            this.keyHandlingActive = active;
-        }
-    }
+    // ★GPT5案修正: UnifiedKeyHandlerは使わず、KeyboardHandlerに一本化
+    // core-engine.jsではキーハンドリングを行わない（ui/keyboard-handler.jsが担当）
 
     class CoreEngine {
         constructor(app, config = {}) {
@@ -625,7 +404,6 @@
             
             this.animationSystem = null;
             this.timelineUI = null;
-            this.keyHandler = null;
             this.exportManager = null;
             this.batchAPI = null;
             
@@ -633,6 +411,7 @@
             this.setupSystemEventIntegration();
         }
         
+        // ★GPT5案修正: setupCrossReferences内でlayerSystem.initTransform()を確実に呼ぶ
         setupCrossReferences() {
             this.cameraSystem.setLayerManager(this.layerSystem);
             this.cameraSystem.setDrawingEngine(this.drawingEngine);
@@ -640,7 +419,7 @@
             this.layerSystem.setCameraSystem(this.cameraSystem);
             this.layerSystem.setApp(this.app);
             
-            // LayerTransform初期化
+            // LayerTransform初期化を確実に実行
             if (this.layerSystem.initTransform) {
                 this.layerSystem.initTransform();
             }
@@ -648,6 +427,7 @@
             this.clipboardSystem.setLayerManager(this.layerSystem);
         }
         
+        // ★GPT5案修正: layer:clear-activeイベントで削除処理を実装（History統合）
         setupSystemEventIntegration() {
             this.eventBus.on('layer:clear-active', () => {
                 const activeLayer = this.layerSystem.getActiveLayer();
@@ -657,25 +437,37 @@
                     return;
                 }
                 
-                const pathsSnapshot = structuredClone(activeLayer.layerData.paths);
+                const paths = activeLayer.layerData.paths;
+                if (!paths || paths.length === 0) return;
                 
-                if (window.History) {
+                const pathsSnapshot = structuredClone(paths);
+                const layerIndex = this.layerSystem.activeLayerIndex;
+                
+                if (window.History && !window.History._manager.isApplying) {
                     const command = {
                         name: 'clear-layer',
                         do: () => {
-                            if (activeLayer.layerData.paths) {
-                                activeLayer.layerData.paths.forEach(path => {
-                                    if (path.graphics) {
-                                        activeLayer.removeChild(path.graphics);
-                                        if (path.graphics.destroy) {
-                                            path.graphics.destroy();
-                                        }
-                                    }
-                                });
-                                activeLayer.layerData.paths = [];
+                            // すべてのGraphicsを削除
+                            const childrenToRemove = [];
+                            for (let child of activeLayer.children) {
+                                if (child !== activeLayer.layerData.backgroundGraphics) {
+                                    childrenToRemove.push(child);
+                                }
                             }
                             
-                            this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                            childrenToRemove.forEach(child => {
+                                try {
+                                    activeLayer.removeChild(child);
+                                    if (child.destroy && typeof child.destroy === 'function') {
+                                        child.destroy({ children: true, texture: false, baseTexture: false });
+                                    }
+                                } catch (error) {
+                                }
+                            });
+                            
+                            activeLayer.layerData.paths = [];
+                            
+                            this.layerSystem.requestThumbnailUpdate(layerIndex);
                             
                             if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {
                                 const currentCutIndex = this.layerSystem.animationSystem.getCurrentCutIndex();
@@ -685,18 +477,24 @@
                             }
                         },
                         undo: () => {
-                            activeLayer.layerData.paths = structuredClone(pathsSnapshot);
+                            // pathsを復元
+                            activeLayer.layerData.paths = [];
                             
-                            activeLayer.layerData.paths.forEach(path => {
-                                if (this.layerSystem.rebuildPathGraphics) {
-                                    this.layerSystem.rebuildPathGraphics(path);
-                                    if (path.graphics) {
-                                        activeLayer.addChild(path.graphics);
+                            for (let i = 0; i < pathsSnapshot.length; i++) {
+                                const pathData = pathsSnapshot[i];
+                                
+                                try {
+                                    const rebuildSuccess = this.layerSystem.rebuildPathGraphics(pathData);
+                                    
+                                    if (rebuildSuccess && pathData.graphics) {
+                                        activeLayer.layerData.paths.push(pathData);
+                                        activeLayer.addChild(pathData.graphics);
                                     }
+                                } catch (error) {
                                 }
-                            });
+                            }
                             
-                            this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                            this.layerSystem.requestThumbnailUpdate(layerIndex);
                             
                             if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {
                                 const currentCutIndex = this.layerSystem.animationSystem.getCurrentCutIndex();
@@ -705,7 +503,11 @@
                                 }, 100);
                             }
                         },
-                        meta: { type: 'clear-layer', layerId: activeLayer.layerData.id }
+                        meta: { 
+                            type: 'clear-layer', 
+                            layerId: activeLayer.layerData.id,
+                            pathCount: pathsSnapshot.length
+                        }
                     };
                     
                     History.push(command);
@@ -723,10 +525,12 @@
         
         initializeAnimationSystem() {
             if (!window.TegakiAnimationSystem) {
+                console.warn('⚠️ TegakiAnimationSystem not found');
                 return;
             }
             
             if (!window.TegakiTimelineUI) {
+                console.warn('⚠️ TegakiTimelineUI not found');
                 return;
             }
             
@@ -743,6 +547,7 @@
                 this.setupCoordinateSystemReferences();
                 
             } catch (error) {
+                console.error('❌ Failed to initialize AnimationSystem:', error);
                 this.animationSystem = null;
                 this.timelineUI = null;
             }
@@ -792,7 +597,6 @@
         getClipboardSystem() { return this.clipboardSystem; }
         getAnimationSystem() { return this.animationSystem; }
         getTimelineUI() { return this.timelineUI; }
-        getKeyHandler() { return this.keyHandler; }
         getEventBus() { return this.eventBus; }
         getExportManager() { return this.exportManager; }
         getBatchAPI() { return this.batchAPI; }
@@ -812,6 +616,7 @@
         setupCanvasEvents() {
             const canvas = this.app.canvas || this.app.view;
             if (!canvas) {
+                console.error('Canvas element not found');
                 return;
             }
             
@@ -857,12 +662,8 @@
         }
         
         switchTool(tool) {
-            if (this.keyHandler) {
-                this.keyHandler.switchTool(tool);
-            } else {
-                this.drawingEngine.setTool(tool);
-                this.cameraSystem.updateCursor();
-            }
+            this.drawingEngine.setTool(tool);
+            this.cameraSystem.updateCursor();
         }
         
         updateCoordinates(x, y) {
@@ -1009,18 +810,6 @@
                 );
             }
             
-            this.keyHandler = new UnifiedKeyHandler(
-                this.cameraSystem,
-                this.layerSystem,
-                this.drawingEngine,
-                this.eventBus,
-                this.animationSystem
-            );
-            
-            if (this.timelineUI) {
-                this.keyHandler.setTimelineUI(this.timelineUI);
-            }
-            
             this.eventBus.on('animation:initial-cut-created', () => {
                 this.layerSystem.updateLayerPanelUI();
                 this.layerSystem.updateStatusDisplay();
@@ -1037,7 +826,7 @@
             });
             
             this.eventBus.emit('core:initialized', {
-                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export']
+                systems: ['camera', 'layer', 'clipboard', 'drawing', 'animation', 'history', 'batchapi', 'export']
             });
             
             return this;
@@ -1053,10 +842,9 @@
         ClipboardSystem: window.TegakiDrawingClipboard,
         DrawingClipboard: window.TegakiDrawingClipboard,
         AnimationSystem: window.TegakiAnimationSystem,
-        TimelineUI: window.TegakiTimelineUI,
-        UnifiedKeyHandler: UnifiedKeyHandler
+        TimelineUI: window.TegakiTimelineUI
     };
 
 })();
 
-console.log('✅ core-engine.js loaded');
+console.log('✅ core-engine.js (GPT5案修正完全版) loaded');

@@ -1,11 +1,14 @@
-// Tegaki Tool - Keyboard Handler Module
-// DO NOT use ESM, only global namespace
+// ===== ui/keyboard-handler.js - GPT5案修正完全版 =====
+// 修正内容:
+// 1. Delete/Backspaceで「アクティブレイヤーの描画削除」を実装（History統合）
+// 2. 二重初期化防止フラグ追加
+// 3. layer:clear-activeイベントの発火タイミングを明確化（Ctrl+Delete）
 
 window.KeyboardHandler = (function() {
     'use strict';
 
     let isInitialized = false;
-    let vKeyPressed = false; // 🔧 vMode状態を追跡
+    let vKeyPressed = false;
 
     // 入力要素にフォーカスがあるかチェック
     function isInputFocused() {
@@ -29,7 +32,7 @@ window.KeyboardHandler = (function() {
         // 入力フィールド内では処理しない
         if (isInputFocused()) return;
         
-        // 🔧 Vキー状態を追跡
+        // Vキー状態を追跡
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             vKeyPressed = true;
         }
@@ -41,7 +44,7 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // 🔧 config.jsのキーマップでアクション解決（vMode状態を渡す）
+        // config.jsのキーマップでアクション解決
         const action = keymap.getAction(e, { vMode: vKeyPressed });
         
         if (!action) return;
@@ -50,7 +53,7 @@ window.KeyboardHandler = (function() {
         handleAction(action, e, eventBus);
     }
 
-    // 🔧 KeyUpイベントでVキーをリリース
+    // KeyUpイベントでVキーをリリース
     function handleKeyUp(e) {
         if (e.code === 'KeyV') {
             vKeyPressed = false;
@@ -74,12 +77,13 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            // ★GPT5案修正: Delete/Backspaceでアクティブレイヤーの描画を削除
             case 'LAYER_DELETE_DRAWINGS':
-                // DEL/Backspaceでアクティブレイヤーの絵を削除
                 deleteActiveLayerDrawings();
                 event.preventDefault();
                 break;
             
+            // ★GPT5案修正: Ctrl+DeleteでLayer全クリア（別処理として明確化）
             case 'LAYER_CLEAR':
                 eventBus.emit('layer:clear-active');
                 event.preventDefault();
@@ -152,9 +156,10 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // アクティブレイヤーの絵を削除（履歴対応）
+    // ★GPT5案修正: アクティブレイヤーの描画を削除（History統合）
+    // レイヤー自体は削除せず、中の絵（全パス）のみ削除
     function deleteActiveLayerDrawings() {
-        const layerSystem = window.drawingApp?.layerManager;
+        const layerSystem = window.drawingApp?.layerManager || window.coreEngine?.layerSystem;
         if (!layerSystem) return;
         
         const activeLayer = layerSystem.getActiveLayer();
@@ -172,9 +177,9 @@ window.KeyboardHandler = (function() {
             const layerIndex = layerSystem.activeLayerIndex;
             
             const entry = {
-                name: 'layer-delete-drawings',
+                name: 'delete-layer-drawings',
                 do: () => {
-                    clearLayerDrawings(layerSystem, activeLayer);
+                    clearLayerDrawings(layerSystem, activeLayer, layerIndex);
                 },
                 undo: () => {
                     restoreLayerDrawings(layerSystem, activeLayer, pathsBackup, layerIndex);
@@ -187,12 +192,12 @@ window.KeyboardHandler = (function() {
             
             window.History.push(entry);
         } else {
-            clearLayerDrawings(layerSystem, activeLayer);
+            clearLayerDrawings(layerSystem, activeLayer, layerSystem.activeLayerIndex);
         }
     }
 
-    // レイヤーの絵をクリア
-    function clearLayerDrawings(layerSystem, layer) {
+    // レイヤーの描画をクリア
+    function clearLayerDrawings(layerSystem, layer, layerIndex) {
         if (!layer || !layer.layerData) return;
         
         // すべてのGraphicsを削除
@@ -210,7 +215,6 @@ window.KeyboardHandler = (function() {
                     child.destroy({ children: true, texture: false, baseTexture: false });
                 }
             } catch (error) {
-                // エラーは無視
             }
         });
         
@@ -218,23 +222,46 @@ window.KeyboardHandler = (function() {
         layer.layerData.paths = [];
         
         // サムネイル更新
-        layerSystem.requestThumbnailUpdate(layerSystem.activeLayerIndex);
+        layerSystem.requestThumbnailUpdate(layerIndex);
+        
+        // カットサムネイル更新
+        if (layerSystem.animationSystem?.generateCutThumbnailOptimized) {
+            const cutIndex = layerSystem.animationSystem.getCurrentCutIndex();
+            setTimeout(() => {
+                layerSystem.animationSystem.generateCutThumbnailOptimized(cutIndex);
+            }, 100);
+        }
         
         // EventBus通知
         if (window.TegakiEventBus) {
             window.TegakiEventBus.emit('layer:drawings-deleted', {
                 layerId: layer.layerData.id,
-                layerIndex: layerSystem.activeLayerIndex
+                layerIndex: layerIndex
             });
         }
     }
 
-    // レイヤーの絵を復元
+    // レイヤーの描画を復元
     function restoreLayerDrawings(layerSystem, layer, pathsBackup, layerIndex) {
         if (!layer || !layer.layerData || !pathsBackup) return;
         
         // 現在の描画を削除
-        clearLayerDrawings(layerSystem, layer);
+        const childrenToRemove = [];
+        for (let child of layer.children) {
+            if (child !== layer.layerData.backgroundGraphics) {
+                childrenToRemove.push(child);
+            }
+        }
+        
+        childrenToRemove.forEach(child => {
+            try {
+                layer.removeChild(child);
+                if (child.destroy && typeof child.destroy === 'function') {
+                    child.destroy({ children: true, texture: false, baseTexture: false });
+                }
+            } catch (error) {
+            }
+        });
         
         // pathsを復元
         layer.layerData.paths = [];
@@ -250,12 +277,19 @@ window.KeyboardHandler = (function() {
                     layer.addChild(pathData.graphics);
                 }
             } catch (error) {
-                // エラーは無視
             }
         }
         
         // サムネイル更新
         layerSystem.requestThumbnailUpdate(layerIndex);
+        
+        // カットサムネイル更新
+        if (layerSystem.animationSystem?.generateCutThumbnailOptimized) {
+            const cutIndex = layerSystem.animationSystem.getCurrentCutIndex();
+            setTimeout(() => {
+                layerSystem.animationSystem.generateCutThumbnailOptimized(cutIndex);
+            }, 100);
+        }
         
         // EventBus通知
         if (window.TegakiEventBus) {
@@ -267,16 +301,18 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // 初期化
+    // ★GPT5案修正: 初期化（二重初期化防止）
     function init() {
         if (isInitialized) {
             return;
         }
 
         document.addEventListener('keydown', handleKeyDown, { capture: true });
-
-        document.addEventListener('keyup', handleKeyUp); // 🔧 KeyUp追加
+        document.addEventListener('keyup', handleKeyUp);
+        
+        // 二重初期化防止フラグ
         isInitialized = true;
+        window.KeyboardHandler._isInitialized = true;
     }
 
     // ショートカット一覧取得（UI表示用）
@@ -284,16 +320,17 @@ window.KeyboardHandler = (function() {
         return [
             { action: 'UNDO', keys: ['Ctrl+Z'], description: '元に戻す' },
             { action: 'REDO', keys: ['Ctrl+Y', 'Ctrl+Shift+Z'], description: 'やり直し' },
-            { action: 'LAYER_DELETE_DRAWINGS', keys: ['Delete', 'Backspace'], description: 'レイヤーの絵を削除' },
-            { action: 'LAYER_CLEAR', keys: ['Ctrl+Delete'], description: 'レイヤークリア' },
+            { action: 'LAYER_DELETE_DRAWINGS', keys: ['Delete', 'Backspace'], description: 'アクティブレイヤーの描画削除' },
+            { action: 'LAYER_CLEAR', keys: ['Ctrl+Delete'], description: 'アクティブレイヤークリア' },
             { action: 'LAYER_CREATE', keys: ['Ctrl+L'], description: 'レイヤー追加' },
             { action: 'GIF_CREATE_CUT', keys: ['Ctrl+N'], description: 'カット追加' },
             { action: 'GIF_TOGGLE_TIMELINE', keys: ['Ctrl+T'], description: 'タイムライン表示切替' },
-            { action: 'GIF_PLAY_PAUSE', keys: ['Space'], description: '再生/停止' },
+            { action: 'GIF_PLAY_PAUSE', keys: ['Space'], description: '再生/停止（タイムライン表示時）' },
             { action: 'GIF_COPY_CUT', keys: ['Ctrl+D'], description: 'カット複製' },
             { action: 'TOOL_PEN', keys: ['P', 'B'], description: 'ペンツール' },
             { action: 'TOOL_ERASER', keys: ['E'], description: '消しゴム' },
-            { action: 'SETTINGS_OPEN', keys: ['Ctrl+,'], description: '設定を開く' }
+            { action: 'SETTINGS_OPEN', keys: ['Ctrl+,'], description: '設定を開く' },
+            { action: 'LAYER_MOVE_MODE_TOGGLE', keys: ['V'], description: 'レイヤー移動モード切替' }
         ];
     }
 
@@ -301,6 +338,9 @@ window.KeyboardHandler = (function() {
     return {
         init,
         isInputFocused,
-        getShortcutList
+        getShortcutList,
+        _isInitialized: false
     };
 })();
+
+console.log('✅ keyboard-handler.js (GPT5案修正完全版) loaded');
