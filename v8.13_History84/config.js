@@ -1,4 +1,4 @@
-// ===== config.js - Phase 4: 圧力フィルタ設定追加版 =====
+// ===== config.js - Phase 4.5: フェザータッチ最適化版 =====
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -9,19 +9,32 @@ window.TEGAKI_CONFIG = {
         size: 10, 
         opacity: 0.85, 
         color: 0x800000,
-        // Phase 1: ペン高精度化設定
         pressure: {
             baselineCalibration: true,
             baselineSampleCount: 5,
             minPhysicalWidth: 1.0,
             enableDevicePixelRatio: true,
-            // 🆕 Phase 4: 圧力フィルタ設定
             filter: {
-                enabled: true,                  // フィルタ有効化
-                minAlpha: 0.3,                  // 長距離時のフィルタ係数（低パスフィルタ）
-                maxAlpha: 0.9,                  // 短距離時のフィルタ係数（即時反映）
-                shortDistanceThreshold: 5.0,    // 短距離閾値（px）
-                longDistanceThreshold: 20.0     // 長距離閾値（px）
+                enabled: true,
+                minAlpha: 0.3,
+                maxAlpha: 0.9,
+                shortDistanceThreshold: 5.0,
+                longDistanceThreshold: 20.0
+            },
+            // 🆕 Phase 4.5: フェザータッチ強化設定
+            featherCurve: {
+                enabled: true,
+                ultraLowThreshold: 0.1,
+                ultraLowCompression: 0.01,
+                midThreshold: 0.3,
+                midValue: 0.1,
+                highPower: 2.0
+            },
+            // 🆕 Phase 4.5: 超細開始点の引き下げ
+            ultraFineStart: {
+                threshold: 0.05,
+                multiplier: 0.01,
+                power: 8
             }
         }
     },
@@ -82,7 +95,6 @@ window.TEGAKI_CONFIG = {
     debug: false
 };
 
-// キーマッピング（既存のまま維持）
 window.TEGAKI_KEYMAP = {
     actions: {
         UNDO: {
@@ -355,41 +367,20 @@ window.TEGAKI_KEYMAP = {
                 });
             });
         }
-        
-        console.table(mappings);
     },
     
     getKeyDisplayName(keyCode) {
         const displayNames = {
-            'KeyP': 'P',
-            'KeyE': 'E',
-            'KeyV': 'V',
-            'KeyH': 'H',
-            'KeyA': 'A',
-            'KeyN': 'N',
-            'KeyC': 'C',
-            'KeyL': 'L',
-            'KeyZ': 'Z',
-            'KeyY': 'Y',
-            'Comma': ',',
-            'Digit0': '0',
-            'Plus': '+',
-            'ArrowUp': '↑',
-            'ArrowDown': '↓',
-            'ArrowLeft': '←',
-            'ArrowRight': '→',
-            'Space': 'Space',
-            'Delete': 'Delete',
-            'Backspace': 'Backspace'
+            'KeyP': 'P', 'KeyE': 'E', 'KeyV': 'V', 'KeyH': 'H', 'KeyA': 'A', 'KeyN': 'N', 'KeyC': 'C', 'KeyL': 'L', 'KeyZ': 'Z', 'KeyY': 'Y',
+            'Comma': ',', 'Digit0': '0', 'Plus': '+', 'ArrowUp': '↑', 'ArrowDown': '↓', 'ArrowLeft': '←', 'ArrowRight': '→',
+            'Space': 'Space', 'Delete': 'Delete', 'Backspace': 'Backspace'
         };
-        
         return displayNames[keyCode] || keyCode;
     },
     
     getActionDescription(actionName) {
         const config = this.actions[actionName];
         if (!config) return null;
-        
         const cfg = Array.isArray(config) ? config[0] : config;
         return cfg.description || actionName;
     },
@@ -431,7 +422,6 @@ window.TEGAKI_KEYMAP = {
     }
 };
 
-// レガシー互換性維持
 window.TEGAKI_KEYCONFIG = {
     pen: 'KeyP',
     eraser: 'KeyE',
@@ -519,6 +509,7 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js (Phase 4: 圧力フィルタ設定追加版) loaded');
+console.log('✅ config.js (Phase 4.5: フェザータッチ最適化版) loaded');
 console.log('   Phase 1: ベースラインキャリブレーション設定');
-console.log('   🆕 Phase 4: 距離ベース適応フィルタ設定追加');
+console.log('   Phase 4: 距離ベース適応フィルタ設定');
+console.log('   🆕 Phase 4.5: フェザーカーブ + 超細開始点最適化');

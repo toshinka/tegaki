@@ -1,10 +1,10 @@
 /**
- * DrawingEngine v6.0 - Phase 4: 圧力フィルタ統合
+ * DrawingEngine v7.0 - Phase 4.5: フェザーカーブ統合版
  * 
  * 変更点:
- * - getFilteredPressure()を使用（座標を渡す）
- * - baseline補正→フィルタ適用の順序を保証
- * - Phase 3の単独点対応を完全継承
+ * - getFilteredPressure()で圧力フィルタ + フェザーカーブを完全統合
+ * - applyFeatherCurve()がPressureHandlerで実行
+ * - 極小点でも最小幅を保証
  */
 
 class DrawingEngine {
@@ -14,7 +14,6 @@ class DrawingEngine {
     this.eventBus = eventBus;
     this.config = config || {};
 
-    // サブモジュール初期化
     if (window.TegakiDrawing) {
       this.settings = window.TegakiDrawing.BrushSettings ? 
         new window.TegakiDrawing.BrushSettings(config, eventBus) : null;
@@ -28,12 +27,10 @@ class DrawingEngine {
         new window.TegakiDrawing.StrokeTransformer(config) : null;
     }
 
-    // フォールバック設定
     this.brushSize = config?.pen?.size || 8;
     this.brushColor = config?.pen?.color || 0x000000;
     this.brushOpacity = config?.pen?.opacity || 1.0;
 
-    // 描画状態
     this.isDrawing = false;
     this.currentTool = 'pen';
     this.currentPath = null;
@@ -70,6 +67,11 @@ class DrawingEngine {
     
     if (this.pressureHandler && typeof this.pressureHandler.setPressureCorrection === 'function') {
       this.pressureHandler.setPressureCorrection(currentSettings.pressureCorrection);
+    }
+    
+    // 🆕 Phase 4.5: フィルタ設定を config から読み込み
+    if (this.pressureHandler && this.config.pen?.pressure?.filter) {
+      this.pressureHandler.setFilterSettings(this.config.pen.pressure.filter);
     }
   }
 
@@ -120,7 +122,6 @@ class DrawingEngine {
       }
     });
     
-    // 🆕 Phase 4: フィルタ設定イベント
     this.eventBus.on('settings:filter-enabled', ({ enabled }) => {
       if (this.pressureHandler) this.pressureHandler.setFilterEnabled(enabled);
     });
@@ -133,7 +134,7 @@ class DrawingEngine {
   startDrawing(screenX, screenY, pressureOrEvent) {
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
     
-    // 🔥 Phase 4: フィルタ適用済み筆圧取得
+    // 🆕 Phase 4.5: フェザーカーブ + フィルタ適用済み筆圧取得
     const pressure = this.pressureHandler.getFilteredPressure(
       pressureOrEvent, 
       { x: canvasPoint.x, y: canvasPoint.y }
@@ -157,21 +158,20 @@ class DrawingEngine {
     this.currentPath.originalSize = this.settings.getBrushSize();
     this.currentPath.scaleAtDrawTime = currentScale;
 
-    // Phase 2継承: Container作成
     this.currentPath.container = new PIXI.Container();
     
     this.isDrawing = true;
   }
 
   /**
-   * 🔥 Phase 4: フィルタ適用済み筆圧取得版
+   * 🆕 Phase 4.5: フェザーカーブ統合版
    */
   continueDrawing(screenX, screenY, pressureOrEvent) {
     if (!this.isDrawing || !this.currentPath) return;
 
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
     
-    // 🔥 Phase 4: フィルタ適用済み筆圧取得（座標を渡す）
+    // 🆕 Phase 4.5: フェザーカーブ + フィルタ適用済み筆圧取得
     const pressure = this.pressureHandler.getFilteredPressure(
       pressureOrEvent,
       { x: canvasPoint.x, y: canvasPoint.y }
@@ -183,7 +183,6 @@ class DrawingEngine {
       pressure
     });
 
-    // Phase 3継承: isSinglePointフラグを含むオプション
     const options = {
       ...this.currentPath.strokeOptions,
       color: this.currentPath.color,
@@ -206,20 +205,17 @@ class DrawingEngine {
   }
 
   /**
-   * Phase 4継承: フィルタ統合完了版
+   * Phase 4継承: フェザーカーブ統合完了版
    */
   stopDrawing() {
     if (!this.isDrawing || !this.currentPath) return;
 
-    // Step 1: Catmull-Rom Splineスムージング（単独点以外）
     if (this.transformer && this.currentPath.points.length > 2 && !this.currentPath.isSinglePoint) {
       this.currentPath.points = this.transformer.preprocessStroke(this.currentPath.points);
     }
     
-    // Step 2: Simplify最適化 + 単独点判定
     this.recorder.finalizePath(this.currentPath);
 
-    // Step 3: 最終描画
     const options = {
       ...this.currentPath.strokeOptions,
       color: this.currentPath.color,
@@ -242,7 +238,6 @@ class DrawingEngine {
 
     this.currentPath.mesh = result.mesh;
 
-    // History統合
     if (this.currentPath && this.currentPath.points.length > 0) {
       const path = this.currentPath;
       const layerIndex = this.layerManager.activeLayerIndex;
@@ -263,7 +258,6 @@ class DrawingEngine {
               activeLayer.paths = activeLayer.paths.filter(p => p !== path);
             }
             
-            // Phase 2継承: Mesh/Container破棄
             if (path.container) {
               try {
                 if (activeLayer) {

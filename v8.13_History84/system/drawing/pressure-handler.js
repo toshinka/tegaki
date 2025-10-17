@@ -30,9 +30,9 @@ class PressureHandler {
     this.isCalibrating = false;
     
     // 既存の超細開始点設定（baselineと併用）
-    this.initialTouchThreshold = 0.2;
-    this.initialTouchMultiplier = 0.05;
-    this.ultraLowPressurePower = 6;
+    this.initialTouchThreshold = 0.05;
+    this.initialTouchMultiplier = 0.01;
+    this.ultraLowPressurePower = 8;
     
     // ストローク開始フラグ
     this.isFirstTouch = true;
