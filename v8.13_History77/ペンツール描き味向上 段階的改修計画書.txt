@@ -1,0 +1,291 @@
+# ペンツール描き味向上 段階的改修計画書
+
+## 目標
+- フェザータッチでも反応するゼロ荷重からのリニアな筆圧
+- ジャギー感の少ない滑らかな見た目
+- 高い反応性と滑らかな描き味
+
+## 現在の実装状況
+- ✅ Perfect Freehand実装済み (stroke-renderer.js)
+- ✅ 傾き検出実装済み (pressure-handler.js getTilt())
+- ✅ 筆圧補正・カーブ実装済み (brush-settings.js)
+- ⚠️ twist（ペン回転）未実装
+- ⚠️ Simplify.js未導入（座標最適化なし）
+- ⚠️ Catmull-Rom Spline未実装（スムージング不足）
+- ⚠️ 筆圧最小閾値が高め（ゼロ荷重非対応）
+
+---
+
+## Phase 1: ゼロ荷重対応 + twist検出【最優先】
+**実装時間: 30分 / 効果: ★★★★★**
+
+### 対象ファイル
+- system/drawing/pressure-handler.js
+
+### 改修内容
+1. 筆圧最小閾値の撤廃
+   - 現在: getPressure()が0.5デフォルト → 0.001レベルに変更
+   - 筆圧0をlastPressureで置き換える処理を削除
+   - フェザータッチを正確に記録
+
+2. twist（ペン回転角）検出追加
+   - getTilt()メソッドと同様にgetTwist()実装
+   - nativeEvent.twist / event.twistから取得
+   - 将来のブラシ表現拡張に備える
+
+3. 筆圧履歴スムージングの最適化
+   - maxHistorySize: 3 → 5に拡大（より滑らか）
+   - 重み付き移動平均に変更（最新の値を重視）
+
+### 参考ファイル
+- brush-settings.js（設定値との連携確認）
+
+### 期待される効果
+- Apple Pencil等のフェザータッチが正確に反映
+- ペン回転情報の取得（将来の平筆ブラシ等に活用可能）
+- より自然な筆圧変化
+
+---
+
+## Phase 2: Simplify.js統合【高優先】
+**実装時間: 1時間 / 効果: ★★★★★**
+
+### 対象ファイル
+- system/drawing/stroke-recorder.js
+- index.html（CDN追加）
+
+### 改修内容
+1. Simplify.js CDN読み込み
+   - index.htmlの<head>に追加
+   - CDN: https://cdnjs.cloudflare.com/ajax/libs/simplify-js/1.2.4/simplify.min.js
+
+2. finalizePath()にsimplify統合
+   - パス完了時に座標を最適化
+   - tolerance値を調整可能に（デフォルト: 1.0）
+   - highQuality: trueで高精度モード
+
+3. 設定パラメータ追加
+   - brush-settings.jsにsimplifyTolerance追加
+   - EventBusでリアルタイム調整可能に
+
+### 参考ファイル
+- brush-settings.js（設定管理）
+- system/history.js（履歴データへの影響確認）
+
+### 期待される効果
+- アニメ記録の大幅な軽量化（50-70%削減）
+- 描画パフォーマンス向上
+- メモリ使用量削減
+
+---
+
+## Phase 3: Catmull-Rom Spline補間【中優先】
+**実装時間: 2-3時間 / 効果: ★★★★☆**
+
+### 対象ファイル
+- system/drawing/stroke-transformer.js（新規責務追加）
+- system/drawing/stroke-recorder.js（補間ポイント生成）
+
+### 改修内容
+1. stroke-transformer.jsの責務拡張
+   - 現在: レイヤー変形のみ
+   - 追加: ストローク座標のスムージング処理
+
+2. Catmull-Rom Spline実装
+   - 独自実装（ライブラリ不要、100行程度）
+   - 補間密度の調整可能化
+   - Perfect Freehandへの入力前に適用
+
+3. スムージングモード追加
+   - brush-settings.jsにsmoothingMode追加
+   - 'none' / 'light' / 'medium' / 'strong'
+   - EventBusでリアルタイム切替
+
+4. メソッド構成
+   - applyCatmullRomSpline(points, tension, segments)
+   - interpolatePoint(p0, p1, p2, p3, t, tension)
+   - subdividePath(points, density)
+
+### 参考ファイル
+- stroke-renderer.js（Perfect Freehandとの連携）
+- brush-settings.js（設定管理）
+
+### 期待される効果
+- ジャギー感の大幅な低減
+- より美しい曲線
+- Perfect Freehandとの相乗効果
+
+---
+
+## Phase 4: 高密度サンプリング【低優先】
+**実装時間: 1時間 / 効果: ★★★☆☆**
+
+### 対象ファイル
+- system/drawing/stroke-recorder.js
+
+### 改修内容
+1. 間引き閾値の最適化
+   - 現在: minDistance = 1.0
+   - 変更: 0.5に低減（より細かく記録）
+   - ズームレベルに応じた動的調整
+
+2. タイムスタンプベース補間
+   - 16ms（60fps）間隔で中間点を生成
+   - 速い動きでも滑らかに
+
+3. メモリ管理
+   - 長いストロークでの自動間引き
+   - ポイント数上限の設定（デフォルト: 10000）
+
+### 参考ファイル
+- pressure-handler.js（タイムスタンプ連携）
+- system/camera-system.js（ズームレベル取得）
+
+### 期待される効果
+- より滑らかな描画
+- 高速描画時の補完性向上
+
+---
+
+## Phase 5: レンダリング最適化【低優先】
+**実装時間: 2時間 / 効果: ★★★☆☆**
+
+### 対象ファイル
+- system/drawing/stroke-renderer.js
+
+### 改修内容
+1. Graphics描画の最適化
+   - 不要なclear()の削減
+   - セグメント単位のバッチ処理
+
+2. アンチエイリアス品質向上
+   - PIXI.Graphics設定の見直し
+   - antialias: true確認
+
+3. メモリプール導入検討
+   - Graphics再利用メカニズム
+   - GC負荷の軽減
+
+### 参考ファイル
+- system/layer-system.js（レイヤー描画連携）
+- config.js（グローバル設定）
+
+### 期待される効果
+- 描画パフォーマンス向上
+- メモリ使用量の安定化
+
+---
+
+## 実装順序の推奨
+
+### 即座実装（1-2時間で完了）
+1. **Phase 1: ゼロ荷重 + twist** (30分)
+   - 即効性が高く、リスクが低い
+   - Apple Pencilユーザーへの効果大
+
+2. **Phase 2: Simplify.js統合** (1時間)
+   - アニメ記録の軽量化は全体に波及効果
+   - 実装も簡単
+
+### 品質向上（2-4時間）
+3. **Phase 3: Catmull-Rom Spline** (2-3時間)
+   - 描き味の質的向上
+   - やや実装量が多いが効果は大きい
+
+### 余裕があれば
+4. **Phase 4: 高密度サンプリング** (1時間)
+5. **Phase 5: レンダリング最適化** (2時間)
+
+---
+
+## ファイル構成と改修範囲
+
+### 必須改修ファイル（Phase 1-3）
+```
+system/drawing/pressure-handler.js      [Phase 1] ゼロ荷重・twist
+system/drawing/stroke-recorder.js       [Phase 2] Simplify統合
+system/drawing/stroke-transformer.js    [Phase 3] Catmull-Rom実装
+system/drawing/brush-settings.js        [Phase 2,3] 設定追加
+index.html                              [Phase 2] CDN追加
+```
+
+### 参照のみ（改修不要）
+```
+system/drawing/stroke-renderer.js       Perfect Freehand呼び出し確認
+system/drawing/drawing-engine.js        全体フロー確認
+config.js                               グローバル設定確認
+system/event-bus.js                     イベント仕様確認
+```
+
+---
+
+## コーディングルール再確認
+
+### 厳守事項
+- PixiJS v8.13のみ使用（v7との混在禁止）
+- ES2023構文、モジュール不使用
+- ライブラリの有効活用（車輪の再発明禁止）
+- 座標系の一貫性（キャンバス座標 vs ワールド座標）
+- 明確なAPI境界
+- DRY/SOLID原則
+- AIからの可読性最優先
+
+### 禁止事項
+- Canvas2D使用（サムネイル以外）
+- TypeScript / ESM / bundler
+- 曖昧なフォールバック処理
+- 過度なエラー演出
+- コンソールログの乱用
+
+---
+
+## 次のステップ
+
+この計画書に基づき、以下の順序で改修を進めます：
+
+1. **Phase 1実装** → pressure-handler.js改修版提出
+2. **Phase 2実装** → stroke-recorder.js + index.html改修版提出
+3. **Phase 3実装** → stroke-transformer.js大幅改修版提出
+
+各フェーズ完了後、動作確認とフィードバックを受けてから次フェーズへ進みます。
+
+---
+
+## 補足: 後続Claudeへの引き継ぎ情報
+
+### アーキテクチャ概要
+```
+[DrawingEngine] 描画の起点、イベント統括
+    ↓
+[PressureHandler] 筆圧・傾き・twist取得
+    ↓
+[StrokeRecorder] 座標収集・Simplify最適化
+    ↓
+[StrokeTransformer] スムージング・変形
+    ↓
+[StrokeRenderer] Perfect Freehand実行
+    ↓
+[LayerSystem] レイヤーへの描画反映
+```
+
+### データフロー
+```
+PointerEvent
+  → PressureHandler.getPressure() → 生筆圧
+  → BrushSettings.applyPressureCorrection() → 補正筆圧
+  → StrokeRecorder.addPoint() → 座標記録
+  → StrokeRecorder.finalizePath() → Simplify最適化
+  → StrokeTransformer.applyCatmullRomSpline() → スムージング
+  → StrokeRenderer.renderStroke() → Perfect Freehand描画
+```
+
+### 設定管理の流れ
+```
+BrushSettings → EventBus → 各コンポーネント
+  - pressureCorrection
+  - smoothing
+  - simplifyTolerance
+  - smoothingMode
+```
+
+この計画書を基に、確実に機能を継承した改修版を段階的に提出していきます。
