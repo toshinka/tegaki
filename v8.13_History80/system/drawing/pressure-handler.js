@@ -1,10 +1,10 @@
 /**
- * PressureHandler v4.0 - フェザータッチ強化版
+ * PressureHandler v5.0 - 超細開始点対応版
  * 変更点:
- * - 超低圧力時の極細線対応（0.0-0.1の範囲を大幅に細く）
- * - 筆圧カーブの最適化（低圧力時の感度向上）
- * - 初期タッチの最小サイズ設定
- * - より滑らかな筆圧遷移
+ * - 初期接触時の筆圧を強制的に極小値から開始
+ * - 0-0.2範囲で6乗カーブ適用（超細線）
+ * - 履歴スムージングを初期接触時のみオフ
+ * - ライバルツールに匹敵する感度を実現
  */
 
 class PressureHandler {
@@ -20,13 +20,18 @@ class PressureHandler {
     // twist（ペン回転角）対応
     this.twist = 0;
     
-    // 筆圧補正係数（DrawingEngineから設定される）
+    // 筆圧補正係数
     this.pressureCorrection = 1.0;
     
-    // 🆕 フェザータッチ設定
-    this.minPressureThreshold = 0.0;  // 最小閾値（0から感知）
-    this.featherTouchMultiplier = 0.3; // 低圧力時の倍率（0-0.15範囲を極細に）
-    this.featherTouchRange = 0.15;     // フェザータッチと判定する圧力範囲
+    // 🆕 超細開始点設定
+    this.initialTouchThreshold = 0.2;  // 初期接触閾値
+    this.initialTouchMultiplier = 0.05; // 初期接触時の倍率（超細）
+    this.ultraLowPressurePower = 6;    // 超低圧力カーブの指数
+    
+    // 🆕 ストローク開始フラグ
+    this.isFirstTouch = true;
+    this.touchStartTimestamp = 0;
+    this.touchGracePeriod = 100; // 最初の100ms間は特別処理
     
     // 速度ベースのフォールバック用
     this.lastPoint = null;
@@ -44,18 +49,13 @@ class PressureHandler {
   }
 
   /**
-   * 🆕 フェザータッチ設定
-   * @param {Object} config
-   * @param {number} config.multiplier - 低圧力時の倍率 (0.1～1.0)
-   * @param {number} config.range - フェザータッチ範囲 (0.05～0.3)
+   * 🆕 ストローク開始（描画開始時に呼ぶ）
    */
-  setFeatherTouchConfig(config) {
-    if (config.multiplier !== undefined) {
-      this.featherTouchMultiplier = Math.max(0.1, Math.min(1.0, config.multiplier));
-    }
-    if (config.range !== undefined) {
-      this.featherTouchRange = Math.max(0.05, Math.min(0.3, config.range));
-    }
+  startStroke() {
+    this.isFirstTouch = true;
+    this.touchStartTimestamp = Date.now();
+    this.pressureHistory = [];
+    this.lastPressure = 0.0;
   }
 
   /**
@@ -83,13 +83,31 @@ class PressureHandler {
       pressure = event.pressure;
     }
     
-    // 履歴に追加して重み付き移動平均
+    // 🆕 初期接触時の特別処理
+    const now = Date.now();
+    const isInGracePeriod = (now - this.touchStartTimestamp) < this.touchGracePeriod;
+    
+    if (this.isFirstTouch && pressure < this.initialTouchThreshold) {
+      // 超低圧力時は6乗カーブで極小化
+      const normalizedLow = pressure / this.initialTouchThreshold;
+      pressure = Math.pow(normalizedLow, this.ultraLowPressurePower) * this.initialTouchThreshold * this.initialTouchMultiplier;
+      
+      // 最初の接触後もグレースピリオド内は特別処理継続
+      if (!isInGracePeriod) {
+        this.isFirstTouch = false;
+      }
+    } else {
+      this.isFirstTouch = false;
+    }
+    
+    // 履歴に追加（初期接触時はスムージング弱め）
     this.pressureHistory.push(pressure);
     if (this.pressureHistory.length > this.maxHistorySize) {
       this.pressureHistory.shift();
     }
     
-    const smoothed = this.getWeightedAverage(this.pressureHistory);
+    // 🆕 初期接触時はスムージングをスキップ
+    const smoothed = isInGracePeriod ? pressure : this.getWeightedAverage(this.pressureHistory);
     this.lastPressure = smoothed;
     
     return smoothed;
@@ -109,7 +127,7 @@ class PressureHandler {
     let weightTotal = 0;
     
     for (let i = 0; i < values.length; i++) {
-      const weight = i + 1; // 最新の値ほど重みが大きい
+      const weight = i + 1;
       weightedSum += values[i] * weight;
       weightTotal += weight;
     }
@@ -118,40 +136,41 @@ class PressureHandler {
   }
   
   /**
-   * 🆕 フェザータッチカーブ適用
-   * 低圧力時に極端に細くし、中圧力以上は通常カーブ
+   * 🆕 超細フェザータッチカーブ適用
+   * ライバルツールに匹敵する感度を実現
    * @param {number} rawPressure - 0.0～1.0
    * @returns {number} カーブ適用後の筆圧
    */
-  applyFeatherTouchCurve(rawPressure) {
-    if (rawPressure <= this.featherTouchRange) {
-      // フェザータッチ範囲：指数カーブで極細に
-      // 0.0 -> 0.0, 0.15 -> 0.045程度にマッピング
-      const normalizedInRange = rawPressure / this.featherTouchRange;
-      const curved = Math.pow(normalizedInRange, 2.5); // 2.5乗カーブ
-      return curved * this.featherTouchRange * this.featherTouchMultiplier;
+  applyUltraFeatherCurve(rawPressure) {
+    // 3段階のカーブで自然な遷移
+    if (rawPressure <= 0.1) {
+      // 極低圧力域（0.0-0.1）: 8乗カーブで1ピクセル級の細さ
+      const normalized = rawPressure / 0.1;
+      return Math.pow(normalized, 8) * 0.01; // 最大でも0.01
+    } else if (rawPressure <= 0.3) {
+      // 低圧力域（0.1-0.3）: 4乗カーブで滑らかに太く
+      const normalized = (rawPressure - 0.1) / 0.2;
+      return 0.01 + Math.pow(normalized, 4) * 0.09; // 0.01-0.1
     } else {
-      // 通常範囲：より滑らかな遷移
-      const normalizedAboveRange = (rawPressure - this.featherTouchRange) / (1.0 - this.featherTouchRange);
-      const curved = Math.pow(normalizedAboveRange, 1.5); // 1.5乗カーブ
-      const baseValue = this.featherTouchRange * this.featherTouchMultiplier;
-      return baseValue + curved * (1.0 - baseValue);
+      // 通常域（0.3-1.0）: 2乗カーブで自然に
+      const normalized = (rawPressure - 0.3) / 0.7;
+      return 0.1 + Math.pow(normalized, 2) * 0.9; // 0.1-1.0
     }
   }
   
   /**
-   * 補正済み筆圧を取得（BrushSettingsのカーブ適用後を想定）
+   * 補正済み筆圧を取得
    * @param {FederatedPointerEvent|PointerEvent|number} event
    * @returns {number} 0.0-1.0（補正済み筆圧）
    */
   getCorrectedPressure(event) {
     const rawPressure = this.getPressure(event);
     
-    // 🆕 フェザータッチカーブ適用
-    const featherCurved = this.applyFeatherTouchCurve(rawPressure);
+    // 🆕 超細カーブ適用
+    const ultraCurved = this.applyUltraFeatherCurve(rawPressure);
     
     // 補正係数適用
-    const corrected = featherCurved * this.pressureCorrection;
+    const corrected = ultraCurved * this.pressureCorrection;
     
     return Math.max(0.0, Math.min(1.0, corrected));
   }
@@ -164,14 +183,11 @@ class PressureHandler {
   getTilt(event) {
     if (!event) return { tiltX: 0, tiltY: 0 };
     
-    // FederatedPointerEvent の場合
     if (event.nativeEvent) {
       const native = event.nativeEvent;
       this.tiltX = native.tiltX || 0;
       this.tiltY = native.tiltY || 0;
-    }
-    // 通常の PointerEvent の場合
-    else {
+    } else {
       this.tiltX = event.tiltX || 0;
       this.tiltY = event.tiltY || 0;
     }
@@ -187,13 +203,10 @@ class PressureHandler {
   getTwist(event) {
     if (!event) return 0;
     
-    // FederatedPointerEvent の場合
     if (event.nativeEvent) {
       const native = event.nativeEvent;
       this.twist = native.twist || 0;
-    }
-    // 通常の PointerEvent の場合
-    else {
+    } else {
       this.twist = event.twist || 0;
     }
     
@@ -201,7 +214,7 @@ class PressureHandler {
   }
 
   /**
-   * 全ポインタ情報を一括取得（パフォーマンス最適化用）
+   * 全ポインタ情報を一括取得
    * @param {FederatedPointerEvent|PointerEvent} event
    * @returns {{pressure: number, tiltX: number, tiltY: number, twist: number}}
    */
@@ -240,16 +253,12 @@ class PressureHandler {
     const distance = Math.sqrt(dx * dx + dy * dy);
     const velocity = distance / deltaTime;
 
-    // 速度履歴に追加
     this.velocityHistory.push(velocity);
     if (this.velocityHistory.length > this.maxVelocityHistory) {
       this.velocityHistory.shift();
     }
 
-    // 移動平均
     const avgVelocity = this.velocityHistory.reduce((sum, v) => sum + v, 0) / this.velocityHistory.length;
-
-    // 速度が速い → 筆圧低い (0.3-0.7の範囲)
     const pressure = Math.max(0.3, Math.min(0.7, 1 - avgVelocity / 2.0));
 
     this.lastPoint = { x, y };
@@ -279,6 +288,8 @@ class PressureHandler {
     this.lastPoint = null;
     this.lastTimestamp = null;
     this.velocityHistory = [];
+    this.isFirstTouch = true;
+    this.touchStartTimestamp = 0;
   }
   
   /**
@@ -291,10 +302,12 @@ class PressureHandler {
       historySize: this.pressureHistory.length,
       tilt: { x: this.tiltX, y: this.tiltY },
       twist: this.twist,
-      featherTouch: {
-        multiplier: this.featherTouchMultiplier,
-        range: this.featherTouchRange
-      }
+      ultraFeather: {
+        initialThreshold: this.initialTouchThreshold,
+        initialMultiplier: this.initialTouchMultiplier,
+        ultraLowPower: this.ultraLowPressurePower
+      },
+      isFirstTouch: this.isFirstTouch
     };
   }
 }

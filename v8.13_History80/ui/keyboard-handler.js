@@ -4,24 +4,8 @@
 window.KeyboardHandler = (function() {
     'use strict';
 
-    // ショートカット定義マップ
-    const shortcuts = {
-        'UNDO': { keys: ['z'], ctrl: true, description: 'Undo (元に戻す)' },
-        'REDO': { keys: ['y', 'Z'], ctrl: true, description: 'Redo (やり直し)' },
-        'LAYER_DELETE_DRAWINGS': { keys: ['Delete', 'Backspace'], ctrl: false, description: 'Delete Layer Drawings (レイヤーの絵を削除)' },
-        'LAYER_CLEAR': { keys: ['Delete'], ctrl: true, description: 'Clear Layer (レイヤークリア)' },
-        'LAYER_CREATE': { keys: ['l'], ctrl: true, description: 'Create Layer (レイヤー追加)' },
-        'GIF_CREATE_CUT': { keys: ['n'], ctrl: true, description: 'Create Cut (カット追加)' },
-        'GIF_TOGGLE_TIMELINE': { keys: ['t'], ctrl: true, description: 'Toggle Timeline (タイムライン表示切替)' },
-        'GIF_PLAY_PAUSE': { keys: [' '], description: 'Play/Pause Animation (再生/停止)' },
-        'GIF_COPY_CUT': { keys: ['d'], ctrl: true, description: 'Duplicate Cut (カット複製)' },
-        'TOOL_PEN': { keys: ['p', 'b'], description: 'Pen Tool (ペンツール)' },
-        'TOOL_ERASER': { keys: ['e'], description: 'Eraser Tool (消しゴム)' },
-        'SETTINGS_OPEN': { keys: [','], ctrl: true, description: 'Open Settings (設定を開く)' }
-    };
-
     let isInitialized = false;
-    let layerSystemRef = null;
+    let vKeyPressed = false; // 🔧 vMode状態を追跡
 
     // 入力要素にフォーカスがあるかチェック
     function isInputFocused() {
@@ -35,27 +19,6 @@ window.KeyboardHandler = (function() {
         );
     }
 
-    // LayerSystemの参照を取得
-    function getLayerSystem() {
-        if (layerSystemRef) return layerSystemRef;
-        
-        // 複数の場所から取得を試みる
-        const candidates = [
-            window.drawingApp?.layerManager,
-            window.layerSystem,
-            window.coreEngine?.layerSystem
-        ];
-        
-        for (let candidate of candidates) {
-            if (candidate && typeof candidate.vKeyPressed !== 'undefined') {
-                layerSystemRef = candidate;
-                return candidate;
-            }
-        }
-        
-        return null;
-    }
-
     // キーボードイベントハンドラー
     function handleKeyDown(e) {
         const eventBus = window.TegakiEventBus;
@@ -66,6 +29,11 @@ window.KeyboardHandler = (function() {
         // 入力フィールド内では処理しない
         if (isInputFocused()) return;
         
+        // 🔧 Vキー状態を追跡
+        if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+            vKeyPressed = true;
+        }
+        
         // ブラウザデフォルト動作を防止（F5, F11, F12以外）
         if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
         if (e.key.startsWith('F') && e.key.length <= 3) {
@@ -73,32 +41,20 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // LayerSystemからvModeを取得
-        const layerSystem = getLayerSystem();
-        const vMode = layerSystem ? layerSystem.vKeyPressed : false;
-        
-        // config.jsのキーマップでアクション解決
-        const action = keymap.getAction(e, { vMode });
+        // 🔧 config.jsのキーマップでアクション解決（vMode状態を渡す）
+        const action = keymap.getAction(e, { vMode: vKeyPressed });
         
         if (!action) return;
         
-        // レイヤー関連のアクションはlayer-system.jsに任せる
-        const layerActions = [
-            'LAYER_MOVE_MODE_TOGGLE',
-            'LAYER_MOVE_UP', 'LAYER_MOVE_DOWN', 'LAYER_MOVE_LEFT', 'LAYER_MOVE_RIGHT',
-            'LAYER_SCALE_UP', 'LAYER_SCALE_DOWN', 'LAYER_ROTATE_LEFT', 'LAYER_ROTATE_RIGHT',
-            'LAYER_FLIP_HORIZONTAL', 'LAYER_FLIP_VERTICAL',
-            'LAYER_HIERARCHY_UP', 'LAYER_HIERARCHY_DOWN',
-            'GIF_PREV_FRAME', 'GIF_NEXT_FRAME'
-        ];
-        
-        // これらのアクションはlayer-system.jsが処理するのでスキップ
-        if (layerActions.includes(action)) {
-            return;
-        }
-        
-        // その他のアクション処理
+        // アクション処理
         handleAction(action, e, eventBus);
+    }
+
+    // 🔧 KeyUpイベントでVキーをリリース
+    function handleKeyUp(e) {
+        if (e.code === 'KeyV') {
+            vKeyPressed = false;
+        }
     }
 
     // アクション処理
@@ -119,7 +75,7 @@ window.KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_DELETE_DRAWINGS':
-                // 🆕 DEL/Backspaceでアクティブレイヤーの絵を削除
+                // DEL/Backspaceでアクティブレイヤーの絵を削除
                 deleteActiveLayerDrawings();
                 event.preventDefault();
                 break;
@@ -130,8 +86,8 @@ window.KeyboardHandler = (function() {
                 break;
             
             case 'LAYER_CREATE':
-                const layerSystem = getLayerSystem();
-                if (layerSystem) {
+                if (window.drawingApp?.layerManager) {
+                    const layerSystem = window.drawingApp.layerManager;
                     const newLayerIndex = layerSystem.getLayers().length + 1;
                     layerSystem.createLayer(`L${newLayerIndex}`, false);
                     eventBus.emit('layer:created-by-shortcut', { index: newLayerIndex });
@@ -180,15 +136,12 @@ window.KeyboardHandler = (function() {
                 break;
             
             case 'SETTINGS_OPEN':
-                // 設定ポップアップを開く（他のポップアップと同じ仕組み）
                 if (window.TegakiUI?.uiController) {
-                    // UIControllerを経由して開く
                     window.TegakiUI.uiController.closeAllPopups();
                     if (window.TegakiUI.uiController.settingsPopup) {
                         window.TegakiUI.uiController.settingsPopup.show();
                     }
                 } else if (window.TegakiUI?.SettingsPopup) {
-                    // フォールバック: 直接インスタンスにアクセス
                     const settingsBtn = document.getElementById('settings-tool');
                     if (settingsBtn) {
                         settingsBtn.click();
@@ -199,9 +152,9 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // 🆕 アクティブレイヤーの絵を削除（履歴対応）
+    // アクティブレイヤーの絵を削除（履歴対応）
     function deleteActiveLayerDrawings() {
-        const layerSystem = getLayerSystem();
+        const layerSystem = window.drawingApp?.layerManager;
         if (!layerSystem) return;
         
         const activeLayer = layerSystem.getActiveLayer();
@@ -320,28 +273,34 @@ window.KeyboardHandler = (function() {
             return;
         }
 
-        document.addEventListener('keydown', handleKeyDown);
+        document.addEventListener('keydown', handleKeyDown, { capture: true });
+
+        document.addEventListener('keyup', handleKeyUp); // 🔧 KeyUp追加
         isInitialized = true;
     }
 
     // ショートカット一覧取得（UI表示用）
     function getShortcutList() {
-        return Object.entries(shortcuts).map(([action, config]) => ({
-            action,
-            keys: config.keys,
-            ctrl: config.ctrl || false,
-            shift: config.shift || false,
-            alt: config.alt || false,
-            description: config.description
-        }));
+        return [
+            { action: 'UNDO', keys: ['Ctrl+Z'], description: '元に戻す' },
+            { action: 'REDO', keys: ['Ctrl+Y', 'Ctrl+Shift+Z'], description: 'やり直し' },
+            { action: 'LAYER_DELETE_DRAWINGS', keys: ['Delete', 'Backspace'], description: 'レイヤーの絵を削除' },
+            { action: 'LAYER_CLEAR', keys: ['Ctrl+Delete'], description: 'レイヤークリア' },
+            { action: 'LAYER_CREATE', keys: ['Ctrl+L'], description: 'レイヤー追加' },
+            { action: 'GIF_CREATE_CUT', keys: ['Ctrl+N'], description: 'カット追加' },
+            { action: 'GIF_TOGGLE_TIMELINE', keys: ['Ctrl+T'], description: 'タイムライン表示切替' },
+            { action: 'GIF_PLAY_PAUSE', keys: ['Space'], description: '再生/停止' },
+            { action: 'GIF_COPY_CUT', keys: ['Ctrl+D'], description: 'カット複製' },
+            { action: 'TOOL_PEN', keys: ['P', 'B'], description: 'ペンツール' },
+            { action: 'TOOL_ERASER', keys: ['E'], description: '消しゴム' },
+            { action: 'SETTINGS_OPEN', keys: ['Ctrl+,'], description: '設定を開く' }
+        ];
     }
 
     // 公開API
     return {
         init,
         isInputFocused,
-        getShortcutList,
-        shortcuts,
-        setLayerSystem: (ls) => { layerSystemRef = ls; }
+        getShortcutList
     };
 })();
