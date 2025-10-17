@@ -36,7 +36,7 @@
                 throw new Error('EventBus required for LayerSystem');
             }
             
-            // Phase 1: LayerTransform初期化
+            // Phase 1: LayerTransform初期化（インスタンス作成のみ）
             if (window.TegakiLayerTransform) {
                 this.transform = new window.TegakiLayerTransform(this.config, this.coordAPI);
             } else {

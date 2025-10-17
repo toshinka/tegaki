@@ -1,4 +1,4 @@
-// ===== core-engine.js - Phase 1修正版 (LayerTransform連携確立) =====
+// ===== core-engine.js - Phase 1完全修正版 (LayerTransform初期化追加) =====
 
 (function() {
     'use strict';
@@ -633,8 +633,7 @@
             this.layerSystem.setCameraSystem(this.cameraSystem);
             this.layerSystem.setApp(this.app);
             
-            // 🔧 Phase 1修正: LayerTransform初期化を追加
-            // App と CameraSystem の両方が設定された後に LayerTransform を初期化
+            // ⭐ Phase 1修正: LayerTransform初期化を追加
             if (this.layerSystem.initTransform) {
                 this.layerSystem.initTransform();
             }
@@ -668,27 +667,6 @@
                                 });
                                 activeLayer.layerData.paths = [];
                             }
-                            
-                            this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
-                            
-                            if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {
-                                const currentCutIndex = this.layerSystem.animationSystem.getCurrentCutIndex();
-                                setTimeout(() => {
-                                    this.layerSystem.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
-                                }, 100);
-                            }
-                        },
-                        undo: () => {
-                            activeLayer.layerData.paths = structuredClone(pathsSnapshot);
-                            
-                            activeLayer.layerData.paths.forEach(path => {
-                                if (this.layerSystem.rebuildPathGraphics) {
-                                    this.layerSystem.rebuildPathGraphics(path);
-                                    if (path.graphics) {
-                                        activeLayer.addChild(path.graphics);
-                                    }
-                                }
-                            });
                             
                             this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
                             
@@ -1057,6 +1035,28 @@
 
 })();
 
-console.log('✅ core-engine.js loaded');
-console.log('   - LayerTransform連携確立完了');
-console.log('   - setupCrossReferences()にinitTransform()追加');
+console.log('✅ core-engine.js (Phase 1完全修正版) loaded');
+console.log('   - LayerTransform統合対応完了');
+console.log('   - LayerTransform.initTransform()呼び出し追加');
+console.log('   - 描画遅延問題修正');
+                                const currentCutIndex = this.layerSystem.animationSystem.getCurrentCutIndex();
+                                setTimeout(() => {
+                                    this.layerSystem.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
+                                }, 100);
+                            }
+                        },
+                        undo: () => {
+                            activeLayer.layerData.paths = structuredClone(pathsSnapshot);
+                            
+                            activeLayer.layerData.paths.forEach(path => {
+                                if (this.layerSystem.rebuildPathGraphics) {
+                                    this.layerSystem.rebuildPathGraphics(path);
+                                    if (path.graphics) {
+                                        activeLayer.addChild(path.graphics);
+                                    }
+                                }
+                            });
+                            
+                            this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                            
+                            if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {

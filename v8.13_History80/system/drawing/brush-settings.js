@@ -1,9 +1,10 @@
 /**
- * BrushSettings v5.0 - フェザータッチ対応版
+ * BrushSettings v6.0 - 超細開始点対応版
  * 変更点:
- * - thinning値を0.85に引き上げ（低圧力時により細く）
- * - 筆圧カーブのease-outを強化（4乗カーブ）
- * - フェザータッチ専用設定追加
+ * - Perfect Freehandの`start`オプション活用（極細開始点）
+ * - thinning 0.95（最大値）で低圧力時を極限まで細く
+ * - taperStart/taperEnd追加で自然な線の出入り
+ * - lastオプションで線の終端処理改善
  */
 
 class BrushSettings {
@@ -17,11 +18,22 @@ class BrushSettings {
     this.opacity = this.config.pen?.opacity || 1.0;
 
     // Perfect Freehand設定
-    // 🆕 thinningを0.85に引き上げ（フェザータッチをより細く）
-    this.thinning = 0.85;
+    // 🆕 thinningを0.95（最大値近く）に設定
+    this.thinning = 0.95;
     this.smoothing = this.config.userSettings?.smoothing || 0.5;
     this.streamline = 0.5;
     this.simulatePressure = true;
+    
+    // 🆕 開始点・終端のテーパー設定
+    this.taperStart = 0; // 0-100: 開始点のテーパー長さ（ピクセル）
+    this.taperEnd = 0;   // 0-100: 終端のテーパー長さ（ピクセル）
+    
+    // 🆕 開始点の形状設定
+    this.capStart = true;  // 開始点を丸くする
+    this.capEnd = true;    // 終端を丸くする
+    
+    // 🆕 最小サイズ設定（フェザータッチ用）
+    this.minSize = 0.1;  // 最小線幅（ピクセル）デフォルト0.1で極細
     
     // 筆圧・線補正設定
     this.pressureCorrection = this.config.userSettings?.pressureCorrection || 1.0;
@@ -77,6 +89,11 @@ class BrushSettings {
     
     this.eventBus.on('settings:spline-segments', ({ value }) => {
       this.setSplineSegments(value);
+    });
+    
+    // 🆕 最小サイズ設定イベント
+    this.eventBus.on('settings:min-size', ({ value }) => {
+      this.setMinSize(value);
     });
   }
 
@@ -191,7 +208,20 @@ class BrushSettings {
   }
 
   /**
-   * 🆕 筆圧カーブの適用（フェザータッチ強化版）
+   * 🆕 最小サイズ設定
+   * @param {number} value - 0.05～2.0
+   */
+  setMinSize(value) {
+    const clamped = Math.max(0.05, Math.min(2.0, value));
+    this.minSize = clamped;
+    
+    if (this.eventBus) {
+      this.eventBus.emit('brush:min-size-changed', { value: clamped });
+    }
+  }
+
+  /**
+   * 筆圧カーブの適用（フェザータッチ強化版）
    * @param {number} rawPressure - 0.0～1.0
    * @returns {number} カーブ適用後の筆圧
    */
@@ -207,9 +237,9 @@ class BrushSettings {
         return normalized * normalized;
       
       case 'ease-out':
-        // 🆕 4乗カーブでフェザータッチを極細に
-        // 0.1 -> 0.0001, 0.2 -> 0.0016, 0.5 -> 0.0625
-        return Math.pow(normalized, 4);
+        // 5乗カーブでフェザータッチを更に極細に
+        // 0.1 -> 0.00001, 0.2 -> 0.00032, 0.5 -> 0.03125
+        return Math.pow(normalized, 5);
       
       default:
         return normalized;
@@ -295,10 +325,12 @@ class BrushSettings {
   }
 
   /**
-   * Perfect Freehand用のstrokeOptions生成
+   * 🆕 Perfect Freehand用のstrokeOptions生成（start/last対応）
+   * @param {boolean} isFirst - 最初の点かどうか
+   * @param {boolean} isLast - 最後の点かどうか
    * @returns {Object}
    */
-  getStrokeOptions() {
+  getStrokeOptions(isFirst = false, isLast = false) {
     return {
       size: this.size,
       thinning: this.thinning,
@@ -306,6 +338,15 @@ class BrushSettings {
       streamline: this.streamline,
       easing: (t) => t,
       simulatePressure: this.simulatePressure,
+      start: {
+        taper: this.taperStart,
+        cap: this.capStart
+      },
+      end: {
+        taper: this.taperEnd,
+        cap: this.capEnd
+      },
+      last: isLast, // 最後の点フラグ
       color: this.color,
       alpha: this.opacity
     };
@@ -323,6 +364,8 @@ class BrushSettings {
     if (overrides.smoothing !== undefined) this.smoothing = overrides.smoothing;
     if (overrides.streamline !== undefined) this.streamline = overrides.streamline;
     if (overrides.simulatePressure !== undefined) this.simulatePressure = overrides.simulatePressure;
+    if (overrides.taperStart !== undefined) this.taperStart = overrides.taperStart;
+    if (overrides.taperEnd !== undefined) this.taperEnd = overrides.taperEnd;
   }
 
   /**
@@ -342,7 +385,10 @@ class BrushSettings {
       smoothingMode: this.smoothingMode,
       splineTension: this.splineTension,
       splineSegments: this.splineSegments,
-      thinning: this.thinning
+      thinning: this.thinning,
+      minSize: this.minSize,
+      taperStart: this.taperStart,
+      taperEnd: this.taperEnd
     };
   }
 }
