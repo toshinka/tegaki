@@ -1,8 +1,9 @@
-// ===== ui/keyboard-handler.js - モード式P/E+ドラッグ対応版 =====
+// ===== ui/keyboard-handler.js - 視覚フィードバック統合版 =====
 // 機能:
 // - P/Eキー押しっぱなし→マウスドラッグでサイズ・透明度調整モード
 // - 左右ドラッグ: サイズ、上下ドラッグ: 透明度
 // - ToolSizeManagerへの委譲によるDRY原則準拠
+// - 視覚的フィードバック（円のプレビュー + 数値表示）
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -477,4 +478,4 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js (モード式P/E+ドラッグ対応版) loaded');
+console.log('✅ keyboard-handler.js (視覚フィードバック統合版) loaded');
