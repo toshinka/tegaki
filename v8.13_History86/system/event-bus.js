@@ -1,23 +1,43 @@
-// ===== system/event-bus.js - デバッグ強化版 =====
-// 🔥 修正ポイント:
-// 1. イベント発火・購読のデバッグログ追加
-// 2. リスナー登録状況の可視化
-// 3. エラーハンドリング強化
+// ===== system/event-bus.js - 警告最適化版 =====
+// イベントバスの警告を最適化し、不要なコンソール出力を削減
 
 window.TegakiEventBusClass = (function() {
     'use strict';
 
+    // 警告を出すべき重要イベント（リスナー必須）のホワイトリスト
+    const CRITICAL_EVENTS = new Set([
+        'layer:added',
+        'layer:removed',
+        'layer:selected',
+        'tool:changed',
+        'history:undo',
+        'history:redo',
+        'drawing:started',
+        'drawing:ended'
+    ]);
+
+    // 警告を抑制すべきイベント（リスナー不要で正常）
+    const SILENT_EVENTS = new Set([
+        'ui:mouse-move',           // マウス移動は頻繁で通知のみ
+        'core:initialized',        // 初期化完了通知
+        'cut:switched',            // カット切り替え通知
+        'ui:status-updated',       // UI更新通知
+        'export:manager:initialized', // エクスポートマネージャー初期化通知
+        'cut:updated'              // カット更新通知
+    ]);
+
     class EventBus {
         constructor() {
             this._events = new Map();
-            this._debugMode = false; // デバッグモードフラグ
-            console.log('✅ EventBus initialized');
+            this._debugMode = false; // デバッグモードはデフォルトOFF
         }
 
         // デバッグモードの切り替え
         setDebugMode(enabled) {
             this._debugMode = enabled;
-            console.log(`EventBus debug mode: ${enabled ? 'ON' : 'OFF'}`);
+            if (enabled) {
+                console.log('🔍 EventBus debug mode: ON');
+            }
         }
 
         // イベントリスナーを登録
@@ -64,21 +84,16 @@ window.TegakiEventBusClass = (function() {
                 console.log(`🔔 EventBus.emit("${eventName}")`, data);
             }
             
-            if (!this._events.has(eventName)) {
-                if (this._debugMode) {
-                    console.warn(`⚠️ No listeners for event: "${eventName}"`);
+            // リスナーが存在しない場合の処理
+            if (!this._events.has(eventName) || this._events.get(eventName).length === 0) {
+                // デバッグモードON、かつ重要イベント、かつサイレントイベントでない場合のみ警告
+                if (this._debugMode && CRITICAL_EVENTS.has(eventName) && !SILENT_EVENTS.has(eventName)) {
+                    console.warn(`⚠️ No listeners for critical event: "${eventName}"`);
                 }
                 return;
             }
 
             const listeners = this._events.get(eventName);
-            
-            if (listeners.length === 0) {
-                if (this._debugMode) {
-                    console.warn(`⚠️ Event "${eventName}" has no listeners`);
-                }
-                return;
-            }
 
             // 各リスナーを実行（エラーハンドリング付き）
             listeners.forEach((callback, index) => {
@@ -149,11 +164,8 @@ window.TegakiEventBusClass = (function() {
 if (!window.TegakiEventBus) {
     window.TegakiEventBus = new window.TegakiEventBusClass();
     
-    // 🔥 P/E+ドラッグ機能のデバッグ用に初期状態でデバッグモードON
-    // 動作確認後に false に変更してください
-    window.TegakiEventBus.setDebugMode(true);
-    
-    console.log('✅ TegakiEventBus instance created globally');
+    // デバッグモードはデフォルトOFF（必要時のみONにする）
+    // window.TegakiEventBus.setDebugMode(true);
 }
 
-console.log('✅ system/event-bus.js (デバッグ強化版) loaded');
+console.log('✅ system/event-bus.js loaded');

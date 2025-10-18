@@ -1,4 +1,4 @@
-// ===== config.js - サイズスロット対応版 =====
+// ===== config.js - P/E+ドラッグ機能対応版 =====
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -40,22 +40,40 @@ window.TEGAKI_CONFIG = {
         size: 20,
         opacity: 1.0
     },
+    // 🆕 tools構造（ToolSizeManager用）
+    tools: {
+        pen: {
+            defaultSize: 10,
+            defaultOpacity: 0.85
+        },
+        eraser: {
+            defaultSize: 20,
+            defaultOpacity: 1.0
+        }
+    },
     // 🆕 サイズスロット設定（1〜9キーで選択可能）
     sizeSlots: {
-        pen: [2, 4, 6, 8, 12, 16, 24, 36, 50],      // ペン用スロット
-        eraser: [10, 15, 20, 30, 40, 50, 60, 80, 100] // 消しゴム用スロット（将来実装）
+        pen: [2, 4, 6, 8, 12, 16, 24, 36, 50],
+        eraser: [10, 15, 20, 30, 40, 50, 60, 80, 100]
     },
     // 🆕 ドラッグ調整の感度設定
     dragAdjustment: {
         size: {
-            sensitivity: 0.1,  // 1ピクセルあたりの変化量
+            sensitivity: 0.1,
             min: 0.1,
             max: 100
         },
         opacity: {
-            sensitivity: 0.005, // 1ピクセルあたりの変化量
+            sensitivity: 0.005,
             min: 0.0,
             max: 1.0
+        },
+        // 🆕 視覚フィードバック設定
+        visual: {
+            textColor: '#ffffff',
+            fontSize: 12,
+            showValues: true,
+            animationDuration: 150
         }
     },
     camera: {
@@ -530,6 +548,8 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js (サイズスロット対応版) loaded');
-console.log('   🆕 sizeSlots: ペン/消しゴム用サイズスロット設定追加');
+console.log('✅ config.js (P/E+ドラッグ機能対応版) loaded');
+console.log('   🆕 tools: ペン/消しゴムのデフォルト設定追加');
+console.log('   🆕 sizeSlots: サイズスロット設定追加');
 console.log('   🆕 dragAdjustment: ドラッグ調整感度設定追加');
+console.log('   🆕 dragAdjustment.visual: 視覚フィードバック設定追加');

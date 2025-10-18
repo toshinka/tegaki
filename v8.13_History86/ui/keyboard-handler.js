@@ -1,9 +1,4 @@
-// ===== ui/keyboard-handler.js - 発火修正版 =====
-// 🔥 修正ポイント:
-// 1. キー押下状態をグローバルに保持してドラッグ中も参照可能に
-// 2. mousedown のイベント優先度を上げる（capture: true）
-// 3. ドラッグ検出ロジックを簡略化
-// 4. デバッグログを追加（動作確認用）
+// ===== ui/keyboard-handler.js - P/E+ドラッグ対応完全版 =====
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -11,7 +6,7 @@ window.KeyboardHandler = (function() {
     let isInitialized = false;
     let vKeyPressed = false;
     
-    // 🔥 P/Eキードラッグモード用の状態管理（グローバルで保持）
+    // 🔥 P/Eキードラッグモード用の状態管理
     const dragState = {
         pKeyPressed: false,
         eKeyPressed: false,
@@ -54,11 +49,10 @@ window.KeyboardHandler = (function() {
                 dragState.pKeyPressed = true;
                 dragState.activeTool = 'pen';
                 
-                console.log('🔑 P key pressed - pen mode active');
-                
-                // ツール選択アクションも発火（ドラッグ中でない場合のみ）
-                if (!dragState.isDragging) {
-                    eventBus.emit('tool:select', { tool: 'pen' });
+                // ツール切り替え（ドラッグ開始前）
+                if (window.CoreRuntime?.api) {
+                    window.CoreRuntime.api.setTool('pen');
+                    console.log('🔑 P key: Switched to pen tool');
                 }
             }
             return;
@@ -70,11 +64,10 @@ window.KeyboardHandler = (function() {
                 dragState.eKeyPressed = true;
                 dragState.activeTool = 'eraser';
                 
-                console.log('🔑 E key pressed - eraser mode active');
-                
-                // ツール選択アクションも発火（ドラッグ中でない場合のみ）
-                if (!dragState.isDragging) {
-                    eventBus.emit('tool:select', { tool: 'eraser' });
+                // ツール切り替え（ドラッグ開始前）
+                if (window.CoreRuntime?.api) {
+                    window.CoreRuntime.api.setTool('eraser');
+                    console.log('🔑 E key: Switched to eraser tool');
                 }
             }
             return;
@@ -119,56 +112,38 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // 🔥 マウスダウンイベント（ドラッグ開始）- capture: true で優先捕捉
+    // 🔥 マウスダウンイベント（ドラッグ開始）
     function handleMouseDown(e) {
-        // 🔥 重要: P/Eキーが押されているかチェック
         const isKeyPressed = dragState.pKeyPressed || dragState.eKeyPressed;
         
         if (!isKeyPressed) return;
         if (isInputFocused()) return;
-        if (dragState.isDragging) return; // 既にドラッグ中
+        if (dragState.isDragging) return;
         
         console.log('🖱️ Mouse down detected with key pressed:', dragState.activeTool);
         
-        // ドラッグモード開始
-        dragState.isDragging = true;
+        // ドラッグ開始位置を記録
         dragState.dragStartX = e.clientX;
         dragState.dragStartY = e.clientY;
         
-        // 現在の設定を取得してToolSizeManagerに通知
-        const toolSizeManager = window.toolSizeManager;
-        const drawingEngine = window.drawingApp?.drawingEngine;
-        
-        if (!toolSizeManager) {
-            console.error('❌ toolSizeManager not found');
-            return;
-        }
+        // 現在の設定を取得
+        const drawingEngine = window.drawingApp?.drawingEngine || window.coreEngine?.drawingEngine;
         
         if (!drawingEngine) {
             console.error('❌ drawingEngine not found');
             return;
         }
         
-        let startSize, startOpacity;
+        // DrawingEngineでは settings として格納されている
+        const brushSettings = drawingEngine.settings;
         
-        if (dragState.activeTool === 'pen') {
-            const brushSettings = drawingEngine.brushSettings;
-            if (brushSettings) {
-                startSize = brushSettings.getBrushSize();
-                startOpacity = brushSettings.getBrushOpacity();
-            }
-        } else if (dragState.activeTool === 'eraser') {
-            const eraserSettings = drawingEngine.eraserBrushSettings;
-            if (eraserSettings) {
-                startSize = eraserSettings.getBrushSize();
-                startOpacity = eraserSettings.getBrushOpacity();
-            }
-        }
-        
-        if (startSize === undefined || startOpacity === undefined) {
-            console.error('❌ Could not get start size/opacity');
+        if (!brushSettings) {
+            console.error('❌ BrushSettings not found');
             return;
         }
+        
+        const startSize = brushSettings.getBrushSize();
+        const startOpacity = brushSettings.getBrushOpacity();
         
         console.log('✅ Drag start:', { tool: dragState.activeTool, startSize, startOpacity });
         
@@ -180,6 +155,8 @@ window.KeyboardHandler = (function() {
                 startOpacity
             });
         }
+        
+        dragState.isDragging = true;
         
         e.preventDefault();
         e.stopPropagation();
@@ -290,12 +267,16 @@ window.KeyboardHandler = (function() {
                 break;
             
             case 'TOOL_PEN':
-                eventBus.emit('tool:select', { tool: 'pen' });
+                if (window.CoreRuntime?.api) {
+                    window.CoreRuntime.api.setTool('pen');
+                }
                 event.preventDefault();
                 break;
             
             case 'TOOL_ERASER':
-                eventBus.emit('tool:select', { tool: 'eraser' });
+                if (window.CoreRuntime?.api) {
+                    window.CoreRuntime.api.setTool('eraser');
+                }
                 event.preventDefault();
                 break;
             
@@ -460,7 +441,7 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // 🔥 初期化（二重初期化防止 + capture: true で優先度向上）
+    // 🔥 初期化
     function init() {
         if (isInitialized) {
             console.warn('⚠️ KeyboardHandler already initialized');
@@ -477,7 +458,6 @@ window.KeyboardHandler = (function() {
         document.addEventListener('mousemove', handleMouseMove, { capture: true });
         document.addEventListener('mouseup', handleMouseUp, { capture: true });
         
-        // 二重初期化防止フラグ
         isInitialized = true;
         window.KeyboardHandler._isInitialized = true;
         
@@ -496,7 +476,7 @@ window.KeyboardHandler = (function() {
             { action: 'GIF_TOGGLE_TIMELINE', keys: ['Ctrl+T'], description: 'タイムライン表示切替' },
             { action: 'GIF_PLAY_PAUSE', keys: ['Space'], description: '再生/停止（タイムライン表示時）' },
             { action: 'GIF_COPY_CUT', keys: ['Ctrl+D'], description: 'カット複製' },
-            { action: 'TOOL_PEN', keys: ['P', 'B'], description: 'ペンツール' },
+            { action: 'TOOL_PEN', keys: ['P'], description: 'ペンツール' },
             { action: 'TOOL_ERASER', keys: ['E'], description: '消しゴム' },
             { action: 'PEN_SIZE_OPACITY', keys: ['P+ドラッグ'], description: 'ペンサイズ/透明度調整（左右:サイズ、上下:透明度）' },
             { action: 'ERASER_SIZE_OPACITY', keys: ['E+ドラッグ'], description: '消しゴムサイズ/透明度調整（左右:サイズ、上下:透明度）' },
@@ -521,9 +501,9 @@ window.KeyboardHandler = (function() {
         init,
         isInputFocused,
         getShortcutList,
-        getDebugState, // 🔥 デバッグ用
+        getDebugState,
         _isInitialized: false
     };
 })();
 
-console.log('✅ keyboard-handler.js (発火修正版) loaded');
+console.log('✅ keyboard-handler.js (P/E+ドラッグ完全対応版) loaded');

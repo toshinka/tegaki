@@ -1,6 +1,6 @@
 // Tegaki Tool - Core Initializer Module
 // DO NOT use ESM, only global namespace
-// 🔥 修正: ExportPopup初期化を確実に実行
+// 🔥 修正: ToolSizeManager & DragVisualFeedback 初期化追加
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -67,6 +67,46 @@ window.CoreInitializer = (function() {
         return settingsManager;
     }
 
+    // 🔥 ToolSizeManager初期化
+    function initializeToolSizeManager(eventBus, config) {
+        console.log('🔧 Initializing ToolSizeManager...');
+        
+        if (!window.ToolSizeManager) {
+            console.warn('⚠️ ToolSizeManager class not found');
+            return null;
+        }
+        
+        try {
+            const toolSizeManager = new window.ToolSizeManager(config, eventBus);
+            window.toolSizeManager = toolSizeManager;
+            console.log('✅ ToolSizeManager initialized');
+            return toolSizeManager;
+        } catch (error) {
+            console.error('❌ ToolSizeManager initialization failed:', error);
+            return null;
+        }
+    }
+
+    // 🔥 DragVisualFeedback初期化
+    function initializeDragVisualFeedback(eventBus, config) {
+        console.log('🔧 Initializing DragVisualFeedback...');
+        
+        if (!window.DragVisualFeedback) {
+            console.warn('⚠️ DragVisualFeedback class not found');
+            return null;
+        }
+        
+        try {
+            const dragVisualFeedback = new window.DragVisualFeedback(config, eventBus);
+            window.dragVisualFeedback = dragVisualFeedback;
+            console.log('✅ DragVisualFeedback initialized');
+            return dragVisualFeedback;
+        } catch (error) {
+            console.error('❌ DragVisualFeedback initialization failed:', error);
+            return null;
+        }
+    }
+
     // DrawingAppクラス定義
     class DrawingApp {
         constructor() {
@@ -74,6 +114,8 @@ window.CoreInitializer = (function() {
             this.coreEngine = null;
             this.uiController = null;
             this.settingsManager = null;
+            this.toolSizeManager = null;
+            this.dragVisualFeedback = null;
         }
         
         async initialize() {
@@ -113,6 +155,18 @@ window.CoreInitializer = (function() {
                 CONFIG
             );
             
+            // 🔥 ToolSizeManager を初期化
+            this.toolSizeManager = initializeToolSizeManager(
+                window.TegakiEventBus,
+                CONFIG
+            );
+            
+            // 🔥 DragVisualFeedback を初期化
+            this.dragVisualFeedback = initializeDragVisualFeedback(
+                window.TegakiEventBus,
+                CONFIG
+            );
+            
             CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
@@ -122,6 +176,31 @@ window.CoreInitializer = (function() {
                 drawingEngine: this.coreEngine.getDrawingEngine(),
                 settingsManager: this.settingsManager
             });
+            
+            // 🔥 ToolSizeManagerとBrushSettingsを連携（遅延実行）
+            setTimeout(() => {
+                if (this.toolSizeManager && this.coreEngine.getDrawingEngine()) {
+                    const drawingEngine = this.coreEngine.getDrawingEngine();
+                    // DrawingEngineでは settings として格納されている
+                    const brushSettings = drawingEngine.settings;
+                    
+                    if (brushSettings) {
+                        // ToolSizeManagerに参照を保存
+                        this.toolSizeManager.brushSettings = brushSettings;
+                        console.log('✅ ToolSizeManager linked to BrushSettings');
+                        
+                        // 初期値を同期
+                        const penSize = brushSettings.getBrushSize();
+                        const penOpacity = brushSettings.getBrushOpacity();
+                        this.toolSizeManager.penSize = penSize;
+                        this.toolSizeManager.penOpacity = penOpacity;
+                        
+                        console.log('✅ Initial pen size/opacity synced:', { penSize, penOpacity });
+                    } else {
+                        console.warn('⚠️ BrushSettings not found in DrawingEngine');
+                    }
+                }
+            }, 100);
             
             // UIController初期化
             console.log('🔧 Initializing UIController...');
@@ -256,12 +335,11 @@ window.CoreInitializer = (function() {
         
         const initExportWithRetry = () => {
             let retryCount = 0;
-            const maxRetries = 20; // リトライ回数増加
+            const maxRetries = 20;
             
             const tryInit = () => {
                 console.log(`Export init attempt ${retryCount + 1}/${maxRetries}`);
                 
-                // 必要な依存関係をチェック
                 if (!window.animationSystem) {
                     console.log('⏳ Waiting for animationSystem...');
                     retryCount++;
@@ -282,7 +360,6 @@ window.CoreInitializer = (function() {
                     return;
                 }
                 
-                // ExportManager初期化
                 const success = window.CoreRuntime.initializeExportSystem(
                     app.pixiApp,
                     () => {
@@ -296,14 +373,13 @@ window.CoreInitializer = (function() {
                     console.log('window.TEGAKI_EXPORT_POPUP:', !!window.TEGAKI_EXPORT_POPUP);
                     console.log('window.exportPopup:', !!window.exportPopup);
                     
-                    // 🔥 ExportPopupがまだ作成されていない場合は手動作成
                     if (!window.TEGAKI_EXPORT_POPUP && !window.exportPopup) {
                         console.log('⚠️ ExportPopup not created, creating manually...');
                         
                         if (window.ExportPopup && window.TEGAKI_EXPORT_MANAGER) {
                             try {
                                 window.TEGAKI_EXPORT_POPUP = new window.ExportPopup(window.TEGAKI_EXPORT_MANAGER);
-                                window.exportPopup = window.TEGAKI_EXPORT_POPUP; // エイリアス
+                                window.exportPopup = window.TEGAKI_EXPORT_POPUP;
                                 console.log('✅ ExportPopup created manually');
                                 console.log('ExportPopup.isVisible:', window.TEGAKI_EXPORT_POPUP.isVisible);
                             } catch (error) {
@@ -328,13 +404,11 @@ window.CoreInitializer = (function() {
             tryInit();
         };
         
-        // EventBusリスナー
         if (window.TegakiEventBus) {
             window.TegakiEventBus.on('animation:system-ready', initExportWithRetry);
             window.TegakiEventBus.on('animation:initialized', initExportWithRetry);
         }
         
-        // 即座に1回試行
         setTimeout(initExportWithRetry, 500);
     }
 
@@ -361,6 +435,7 @@ window.CoreInitializer = (function() {
             
             buildDOM();
             
+            // 🔥 KeyboardHandlerは最後に初期化（他のシステムが整った後）
             window.KeyboardHandler.init();
             
             const app = new DrawingApp();
@@ -370,10 +445,8 @@ window.CoreInitializer = (function() {
             
             setupHistoryIntegration();
             
-            // 🔥 Export System初期化（修正版）
             initializeExportSystem(app);
             
-            // ResizeSliderはDOM構築後に初期化
             if (window.ResizeSlider) {
                 setTimeout(() => {
                     window.ResizeSlider.init();
@@ -381,6 +454,15 @@ window.CoreInitializer = (function() {
             }
             
             runDiagnostics();
+            
+            // 🔥 初期化完了の確認ログ
+            console.log('=== P/E+Drag Feature Status ===');
+            console.log('EventBus:', !!window.TegakiEventBus);
+            console.log('ToolSizeManager:', !!window.toolSizeManager);
+            console.log('DragVisualFeedback:', !!window.dragVisualFeedback);
+            console.log('DrawingEngine:', !!window.drawingApp?.drawingEngine);
+            console.log('BrushSettings linked:', !!window.toolSizeManager?.brushSettings);
+            console.log('================================');
             
             return true;
         } catch (error) {
@@ -397,4 +479,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (ExportPopup初期化修正版) loaded');
+console.log('✅ core-initializer.js (ToolSizeManager & DragVisualFeedback対応版) loaded');
