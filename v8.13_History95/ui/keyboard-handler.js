@@ -1,6 +1,5 @@
-// ui/keyboard-handler.js - 修正版
-// 🔧 修正: getBrushSettings()を複数経路で堅牢に探索
-// 🔧 修正: P/E+ドラッグ時のBrushSettings取得を確実化
+// ui/keyboard-handler.js - 最小限修正版
+// 🔧 修正: getBrushSettings()をsettingsプロパティ優先に変更
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -62,8 +61,7 @@ window.KeyboardHandler = (function() {
     }
 
     /**
-     * BrushSettings取得（堅牢化版）
-     * DrawingEngine.brushSettings が正しいパス
+     * 🔧 修正: settingsプロパティ優先（brushSettingsは互換性のため残す）
      */
     function getBrushSettings() {
         const candidates = [
@@ -76,7 +74,10 @@ window.KeyboardHandler = (function() {
         for (const c of candidates) {
             if (!c) continue;
             
-            // 🔧 brushSettings プロパティ優先
+            // 🔧 修正: settings プロパティを最優先
+            if (c.settings) return c.settings;
+            
+            // brushSettings プロパティ（互換性）
             if (c.brushSettings) return c.brushSettings;
             
             // getBrushSettings() メソッド
@@ -84,26 +85,8 @@ window.KeyboardHandler = (function() {
                 try {
                     const s = c.getBrushSettings();
                     if (s) return s;
-                } catch (e) {
-                    // 失敗時は次の候補へ
-                }
+                } catch (e) {}
             }
-        }
-        
-        // coreEngine.getDrawingEngine() を試行
-        if (window.coreEngine && typeof window.coreEngine.getDrawingEngine === 'function') {
-            try {
-                const de = window.coreEngine.getDrawingEngine();
-                if (de?.brushSettings) return de.brushSettings;
-            } catch (e) {
-                // 失敗時は続行
-            }
-        }
-        
-        // CoreRuntime.api 経由
-        if (window.CoreRuntime?.api) {
-            const s = window.CoreRuntime.api.getBrushSettings?.();
-            if (s) return s;
         }
         
         return null;
@@ -183,7 +166,7 @@ window.KeyboardHandler = (function() {
     }
 
     /**
-     * マウスダウン: P/E+ドラッグ開始判定
+     * 🔧 修正: マウスダウン時のBrushSettings取得を簡潔化
      */
     function handleMouseDown(e) {
         const isKeyPressed = dragState.pKeyPressed || dragState.eKeyPressed;
@@ -198,27 +181,15 @@ window.KeyboardHandler = (function() {
         const brushSettings = getBrushSettings();
         
         if (!brushSettings) {
-            // BrushSettingsが見つからない場合は静かに失敗
-            return;
+            return; // 静かに失敗
         }
         
         let startSize, startOpacity;
         
         try {
-            // getter経由で取得
-            if (typeof brushSettings.getBrushSize === 'function') {
-                startSize = brushSettings.getBrushSize();
-            } else {
-                startSize = brushSettings.size || 6;
-            }
-            
-            if (typeof brushSettings.getBrushOpacity === 'function') {
-                startOpacity = brushSettings.getBrushOpacity();
-            } else {
-                startOpacity = brushSettings.opacity || 1.0;
-            }
+            startSize = brushSettings.getBrushSize?.() || brushSettings.size || 6;
+            startOpacity = brushSettings.getBrushOpacity?.() || brushSettings.opacity || 1.0;
         } catch (error) {
-            // getter失敗時はデフォルト値
             startSize = 6;
             startOpacity = 1.0;
         }
@@ -424,9 +395,7 @@ window.KeyboardHandler = (function() {
                 if (child.destroy && typeof child.destroy === 'function') {
                     child.destroy({ children: true, texture: false, baseTexture: false });
                 }
-            } catch (error) {
-                // 静かに失敗
-            }
+            } catch (error) {}
         });
         
         layer.layerData.paths = [];
@@ -464,9 +433,7 @@ window.KeyboardHandler = (function() {
                 if (child.destroy && typeof child.destroy === 'function') {
                     child.destroy({ children: true, texture: false, baseTexture: false });
                 }
-            } catch (error) {
-                // 静かに失敗
-            }
+            } catch (error) {}
         });
         
         layer.layerData.paths = [];
@@ -494,9 +461,7 @@ window.KeyboardHandler = (function() {
                     layer.layerData.paths.push(pathData);
                     layer.addChild(pathData.graphics);
                 }
-            } catch (error) {
-                // 静かに失敗
-            }
+            } catch (error) {}
         }
         
         layerSystem.requestThumbnailUpdate(layerIndex);
