@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>P/E+ドラッグ機能 テストページ</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 20px;
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+            background: #f5f5f5;
+        }
+        
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+            background: white;
+            padding: 30px;
+            border-radius: 8px;
+            box-shadow: 0 2px 8px rgba(0,0,0,0.1);
+        }
+        
+        h1 {
+            color: #333;
+            border-bottom: 2px solid #007bff;
+            padding-bottom: 10px;
+        }
+        
+        .test-area {
+            margin: 20px 0;
+            padding: 20px;
+            background: #f8f9fa;
+            border: 2px dashed #ccc;
+            border-radius: 4px;
+            min-height: 200px;
+            position: relative;
+        }
+        
+        .instructions {
+            background: #e7f3ff;
+            border-left: 4px solid #007bff;
+            padding: 15px;
+            margin: 20px 0;
+        }
+        
+        .instructions h3 {
+            margin-top: 0;
+            color: #007bff;
+        }
+        
+        .status {
+            margin: 20px 0;
+            padding: 15px;
+            background: #fff;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+        }
+        
+        .status-item {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px 0;
+            border-bottom: 1px solid #eee;
+        }
+        
+        .status-item:last-child {
+            border-bottom: none;
+        }
+        
+        .status-label {
+            font-weight: bold;
+            color: #555;
+        }
+        
+        .status-value {
+            color: #007bff;
+            font-family: 'Courier New', monospace;
+        }
+        
+        .button {
+            background: #007bff;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            border-radius: 4px;
+            cursor: pointer;
+            margin-right: 10px;
+            font-size: 14px;
+        }
+        
+        .button:hover {
+            background: #0056b3;
+        }
+        
+        .button.secondary {
+            background: #6c757d;
+        }
+        
+        .button.secondary:hover {
+            background: #545b62;
+        }
+        
+        .log-area {
+            background: #1e1e1e;
+            color: #d4d4d4;
+            padding: 15px;
+            border-radius: 4px;
+            font-family: 'Courier New', monospace;
+            font-size: 12px;
+            max-height: 300px;
+            overflow-y: auto;
+            margin: 20px 0;
+        }
+        
+        .log-entry {
+            padding: 2px 0;
+            white-space: pre-wrap;
+        }
+        
+        .log-success { color: #4ec9b0; }
+        .log-error { color: #f48771; }
+        .log-warning { color: #dcdcaa; }
+        .log-info { color: #9cdcfe; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎨 P/E+ドラッグ機能 テストページ</h1>
+        
+        <div class="instructions">
+            <h3>📖 使い方</h3>
+            <ol>
+                <li><strong>Pキー</strong>を押したまま、下のテストエリアでマウスをドラッグ</li>
+                <li>左右にドラッグ → サイズ変更</li>
+                <li>上下にドラッグ → 不透明度変更</li>
+                <li><strong>Eキー</strong>でも同様にテスト可能（消しゴムモード）</li>
+                <li>キーを離すと通常モードに戻る</li>
+            </ol>
+        </div>
+        
+        <div class="test-area" id="test-area">
+            <p style="text-align: center; color: #999; margin-top: 80px;">
+                ここでP/Eキー + ドラッグをテストしてください
+            </p>
+        </div>
+        
+        <div class="status">
+            <h3>📊 ステータス</h3>
+            <div class="status-item">
+                <span class="status-label">Pキー押下:</span>
+                <span class="status-value" id="status-p-key">❌</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">Eキー押下:</span>
+                <span class="status-value" id="status-e-key">❌</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">ドラッグ中:</span>
+                <span class="status-value" id="status-dragging">❌</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">現在のツール:</span>
+                <span class="status-value" id="status-tool">なし</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">ペンサイズ:</span>
+                <span class="status-value" id="status-pen-size">-</span>
+            </div>
+            <div class="status-item">
+                <span class="status-label">ペン不透明度:</span>
+                <span class="status-value" id="status-pen-opacity">-</span>
+            </div>
+        </div>
+        
+        <div style="margin: 20px 0;">
+            <button class="button" onclick="runFullTest()">🧪 フルテスト実行</button>
+            <button class="button secondary" onclick="clearLog()">🗑️ ログクリア</button>
+            <button class="button secondary" onclick="showSystemInfo()">ℹ️ システム情報</button>
+        </div>
+        
+        <div class="log-area" id="log-area">
+            <div class="log-entry log-info">準備完了 - P または E キーを押しながらドラッグしてください</div>
+        </div>
+    </div>
+    
+    <!-- 簡易版のスクリプト（実際の実装をシミュレート） -->
+    <script>
+        // 簡易的なEventBus実装
+        class SimpleEventBus {
+            constructor() {
+                this._events = new Map();
+            }
+            
+            on(eventName, callback) {
+                if (!this._events.has(eventName)) {
+                    this._events.set(eventName, []);
+                }
+                this._events.get(eventName).push(callback);
+            }
+            
+            emit(eventName, data) {
+                if (!this._events.has(eventName)) return;
+                this._events.get(eventName).forEach(cb => cb(data));
+            }
+        }
+        
+        const eventBus = new SimpleEventBus();
+        
+        // 状態管理
+        const state = {
+            pKeyPressed: false,
+            eKeyPressed: false,
+            isDragging: false,
+            activeTool: null,
+            dragStartX: 0,
+            dragStartY: 0,
+            penSize: 10,
+            penOpacity: 1.0,
+            eraserSize: 20,
+            eraserOpacity: 1.0
+        };
+        
+        // ログ追加関数
+        function addLog(message, type = 'info') {
+            const logArea = document.getElementById('log-area');
+            const entry = document.createElement('div');
+            entry.className = `log-entry log-${type}`;
+            entry.textContent = `[${new Date().toLocaleTimeString()}] ${message}`;
+            logArea.appendChild(entry);
+            logArea.scrollTop = logArea.scrollHeight;
+        }
+        
+        // ステータス更新
+        function updateStatus() {
+            document.getElementById('status-p-key').textContent = state.pKeyPressed ? '✅' : '❌';
+            document.getElementById('status-e-key').textContent = state.eKeyPressed ? '✅' : '❌';
+            document.getElementById('status-dragging').textContent = state.isDragging ? '✅' : '❌';
+            document.getElementById('status-tool').textContent = state.activeTool || 'なし';
+            document.getElementById('status-pen-size').textContent = state.penSize.toFixed(1) + 'px';
+            document.getElementById('status-pen-opacity').textContent = (state.penOpacity * 100).toFixed(0) + '%';
+        }
+        
+        // キーボードイベント
+        document.addEventListener('keydown', (e) => {
+            if (e.code === 'KeyP' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                if (!state.pKeyPressed) {
+                    state.pKeyPressed = true;
+                    state.activeTool = 'pen';
+                    addLog('🔑 P キー押下 - ペンモード', 'success');
+                    updateStatus();
+                }
+            }
+            
+            if (e.code === 'KeyE' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
+                if (!state.eKeyPressed) {
+                    state.eKeyPressed = true;
+                    state.activeTool = 'eraser';
+                    addLog('🔑 E キー押下 - 消しゴムモード', 'success');
+                    updateStatus();
+                }
+            }
+        });
+        
+        document.addEventListener('keyup', (e) => {
+            if (e.code === 'KeyP') {
+                state.pKeyPressed = false;
+                if (state.activeTool === 'pen') {
+                    state.activeTool = null;
+                }
+                addLog('🔑 P キーリリース', 'info');
+                updateStatus();
+            }
+            
+            if (e.code === 'KeyE') {
+                state.eKeyPressed = false;
+                if (state.activeTool === 'eraser') {
+                    state.activeTool = null;
+                }
+                addLog('🔑 E キーリリース', 'info');
+                updateStatus();
+            }
+        });
+        
+        // マウスイベント（テストエリア内のみ）
+        const testArea = document.getElementById('test-area');
+        
+        testArea.addEventListener('mousedown', (e) => {
+            if (state.pKeyPressed || state.eKeyPressed) {
+                state.isDragging = true;
+                state.dragStartX = e.clientX;
+                state.dragStartY = e.clientY;
+                addLog(`🖱️ ドラッグ開始 (${state.activeTool})`, 'success');
+                eventBus.emit('drag-start', { tool: state.activeTool });
+                updateStatus();
+            }
+        });
+        
+        testArea.addEventListener('mousemove', (e) => {
+            if (state.isDragging) {
+                const deltaX = e.clientX - state.dragStartX;
+                const deltaY = e.clientY - state.dragStartY;
+                
+                // サイズ計算
+                const newSize = Math.max(0.1, Math.min(100, 
+                    (state.activeTool === 'pen' ? 10 : 20) + deltaX * 0.1
+                ));
+                
+                // 不透明度計算
+                const newOpacity = Math.max(0, Math.min(1, 1.0 + deltaY * 0.005));
+                
+                if (state.activeTool === 'pen') {
+                    state.penSize = newSize;
+                    state.penOpacity = newOpacity;
+                } else {
+                    state.eraserSize = newSize;
+                    state.eraserOpacity = newOpacity;
+                }
+                
+                updateStatus();
+            }
+        });
+        
+        testArea.addEventListener('mouseup', () => {

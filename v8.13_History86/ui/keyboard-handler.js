@@ -1,9 +1,9 @@
-// ===== ui/keyboard-handler.js - 視覚フィードバック統合版 =====
-// 機能:
-// - P/Eキー押しっぱなし→マウスドラッグでサイズ・透明度調整モード
-// - 左右ドラッグ: サイズ、上下ドラッグ: 透明度
-// - ToolSizeManagerへの委譲によるDRY原則準拠
-// - 視覚的フィードバック（円のプレビュー + 数値表示）
+// ===== ui/keyboard-handler.js - 発火修正版 =====
+// 🔥 修正ポイント:
+// 1. キー押下状態をグローバルに保持してドラッグ中も参照可能に
+// 2. mousedown のイベント優先度を上げる（capture: true）
+// 3. ドラッグ検出ロジックを簡略化
+// 4. デバッグログを追加（動作確認用）
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -11,13 +11,15 @@ window.KeyboardHandler = (function() {
     let isInitialized = false;
     let vKeyPressed = false;
     
-    // P/Eキードラッグモード用の状態管理
-    let pKeyPressed = false;
-    let eKeyPressed = false;
-    let isDraggingSize = false;
-    let dragStartX = 0;
-    let dragStartY = 0;
-    let activeDragTool = null; // 'pen' or 'eraser'
+    // 🔥 P/Eキードラッグモード用の状態管理（グローバルで保持）
+    const dragState = {
+        pKeyPressed: false,
+        eKeyPressed: false,
+        isDragging: false,
+        dragStartX: 0,
+        dragStartY: 0,
+        activeTool: null // 'pen' or 'eraser'
+    };
 
     // 入力要素にフォーカスがあるかチェック
     function isInputFocused() {
@@ -46,28 +48,32 @@ window.KeyboardHandler = (function() {
             vKeyPressed = true;
         }
         
-        // Pキー押しっぱなし検出（修飾キーなし）
+        // 🔥 Pキー押しっぱなし検出（修飾キーなし）
         if (e.code === 'KeyP' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-            if (!pKeyPressed) {
-                pKeyPressed = true;
-                activeDragTool = 'pen';
+            if (!dragState.pKeyPressed) {
+                dragState.pKeyPressed = true;
+                dragState.activeTool = 'pen';
                 
-                // ツール選択アクションも発火
-                if (!isDraggingSize) {
+                console.log('🔑 P key pressed - pen mode active');
+                
+                // ツール選択アクションも発火（ドラッグ中でない場合のみ）
+                if (!dragState.isDragging) {
                     eventBus.emit('tool:select', { tool: 'pen' });
                 }
             }
             return;
         }
         
-        // Eキー押しっぱなし検出（修飾キーなし）
+        // 🔥 Eキー押しっぱなし検出（修飾キーなし）
         if (e.code === 'KeyE' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-            if (!eKeyPressed) {
-                eKeyPressed = true;
-                activeDragTool = 'eraser';
+            if (!dragState.eKeyPressed) {
+                dragState.eKeyPressed = true;
+                dragState.activeTool = 'eraser';
                 
-                // ツール選択アクションも発火
-                if (!isDraggingSize) {
+                console.log('🔑 E key pressed - eraser mode active');
+                
+                // ツール選択アクションも発火（ドラッグ中でない場合のみ）
+                if (!dragState.isDragging) {
                     eventBus.emit('tool:select', { tool: 'eraser' });
                 }
             }
@@ -97,46 +103,61 @@ window.KeyboardHandler = (function() {
         }
         
         if (e.code === 'KeyP') {
-            pKeyPressed = false;
-            if (activeDragTool === 'pen') {
-                activeDragTool = null;
+            console.log('🔑 P key released');
+            dragState.pKeyPressed = false;
+            if (dragState.activeTool === 'pen') {
+                dragState.activeTool = null;
             }
         }
         
         if (e.code === 'KeyE') {
-            eKeyPressed = false;
-            if (activeDragTool === 'eraser') {
-                activeDragTool = null;
+            console.log('🔑 E key released');
+            dragState.eKeyPressed = false;
+            if (dragState.activeTool === 'eraser') {
+                dragState.activeTool = null;
             }
         }
     }
 
-    // マウスダウンイベント（ドラッグ開始）
+    // 🔥 マウスダウンイベント（ドラッグ開始）- capture: true で優先捕捉
     function handleMouseDown(e) {
-        // P/Eキーが押されていない、または既にドラッグ中なら無視
-        if (!activeDragTool || isDraggingSize) return;
+        // 🔥 重要: P/Eキーが押されているかチェック
+        const isKeyPressed = dragState.pKeyPressed || dragState.eKeyPressed;
+        
+        if (!isKeyPressed) return;
         if (isInputFocused()) return;
+        if (dragState.isDragging) return; // 既にドラッグ中
+        
+        console.log('🖱️ Mouse down detected with key pressed:', dragState.activeTool);
         
         // ドラッグモード開始
-        isDraggingSize = true;
-        dragStartX = e.clientX;
-        dragStartY = e.clientY;
+        dragState.isDragging = true;
+        dragState.dragStartX = e.clientX;
+        dragState.dragStartY = e.clientY;
         
         // 現在の設定を取得してToolSizeManagerに通知
         const toolSizeManager = window.toolSizeManager;
         const drawingEngine = window.drawingApp?.drawingEngine;
         
-        if (!toolSizeManager || !drawingEngine) return;
+        if (!toolSizeManager) {
+            console.error('❌ toolSizeManager not found');
+            return;
+        }
+        
+        if (!drawingEngine) {
+            console.error('❌ drawingEngine not found');
+            return;
+        }
         
         let startSize, startOpacity;
         
-        if (activeDragTool === 'pen') {
+        if (dragState.activeTool === 'pen') {
             const brushSettings = drawingEngine.brushSettings;
             if (brushSettings) {
                 startSize = brushSettings.getBrushSize();
                 startOpacity = brushSettings.getBrushOpacity();
             }
-        } else if (activeDragTool === 'eraser') {
+        } else if (dragState.activeTool === 'eraser') {
             const eraserSettings = drawingEngine.eraserBrushSettings;
             if (eraserSettings) {
                 startSize = eraserSettings.getBrushSize();
@@ -144,43 +165,52 @@ window.KeyboardHandler = (function() {
             }
         }
         
-        if (startSize === undefined || startOpacity === undefined) return;
+        if (startSize === undefined || startOpacity === undefined) {
+            console.error('❌ Could not get start size/opacity');
+            return;
+        }
+        
+        console.log('✅ Drag start:', { tool: dragState.activeTool, startSize, startOpacity });
         
         // ToolSizeManagerにドラッグ開始を通知
         if (window.TegakiEventBus) {
             window.TegakiEventBus.emit('tool:drag-size-start', {
-                tool: activeDragTool,
+                tool: dragState.activeTool,
                 startSize,
                 startOpacity
             });
         }
         
         e.preventDefault();
+        e.stopPropagation();
     }
 
-    // マウス移動イベント（ドラッグ中）
+    // 🔥 マウス移動イベント（ドラッグ中）
     function handleMouseMove(e) {
-        if (!isDraggingSize || !activeDragTool) return;
+        if (!dragState.isDragging || !dragState.activeTool) return;
         
-        const deltaX = e.clientX - dragStartX;
-        const deltaY = e.clientY - dragStartY;
+        const deltaX = e.clientX - dragState.dragStartX;
+        const deltaY = e.clientY - dragState.dragStartY;
         
         // ToolSizeManagerにドラッグ更新を通知
         if (window.TegakiEventBus) {
             window.TegakiEventBus.emit('tool:drag-size-update', {
-                tool: activeDragTool,
+                tool: dragState.activeTool,
                 deltaX,
                 deltaY
             });
         }
         
         e.preventDefault();
+        e.stopPropagation();
     }
 
-    // マウスアップイベント（ドラッグ終了）
+    // 🔥 マウスアップイベント（ドラッグ終了）
     function handleMouseUp(e) {
-        if (isDraggingSize) {
-            isDraggingSize = false;
+        if (dragState.isDragging) {
+            console.log('🖱️ Mouse up - drag ended');
+            
+            dragState.isDragging = false;
             
             // ToolSizeManagerにドラッグ終了を通知
             if (window.TegakiEventBus) {
@@ -188,6 +218,7 @@ window.KeyboardHandler = (function() {
             }
             
             e.preventDefault();
+            e.stopPropagation();
         }
     }
 
@@ -429,23 +460,28 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // 初期化（二重初期化防止）
+    // 🔥 初期化（二重初期化防止 + capture: true で優先度向上）
     function init() {
         if (isInitialized) {
+            console.warn('⚠️ KeyboardHandler already initialized');
             return;
         }
+
+        console.log('🔧 Initializing KeyboardHandler with P/E+Drag support...');
 
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
         
-        // マウスイベントリスナー追加
-        document.addEventListener('mousedown', handleMouseDown);
-        document.addEventListener('mousemove', handleMouseMove);
-        document.addEventListener('mouseup', handleMouseUp);
+        // 🔥 マウスイベントリスナー追加（capture: true で優先捕捉）
+        document.addEventListener('mousedown', handleMouseDown, { capture: true });
+        document.addEventListener('mousemove', handleMouseMove, { capture: true });
+        document.addEventListener('mouseup', handleMouseUp, { capture: true });
         
         // 二重初期化防止フラグ
         isInitialized = true;
         window.KeyboardHandler._isInitialized = true;
+        
+        console.log('✅ KeyboardHandler initialized successfully');
     }
 
     // ショートカット一覧取得（UI表示用）
@@ -469,13 +505,25 @@ window.KeyboardHandler = (function() {
         ];
     }
 
+    // 🔥 デバッグ用：現在の状態を取得
+    function getDebugState() {
+        return {
+            pKeyPressed: dragState.pKeyPressed,
+            eKeyPressed: dragState.eKeyPressed,
+            isDragging: dragState.isDragging,
+            activeTool: dragState.activeTool,
+            isInitialized: isInitialized
+        };
+    }
+
     // 公開API
     return {
         init,
         isInputFocused,
         getShortcutList,
+        getDebugState, // 🔥 デバッグ用
         _isInitialized: false
     };
 })();
 
-console.log('✅ keyboard-handler.js (視覚フィードバック統合版) loaded');
+console.log('✅ keyboard-handler.js (発火修正版) loaded');
