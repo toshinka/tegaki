@@ -1,7 +1,5 @@
-// ===== ui/keyboard-handler.js - 修正完全版 =====
-// 修正内容:
-// 1. structuredClone → serializePathsForHistory で DataCloneError 解決
-// 2. getBrushSettings() 防御的取得で settings 参照を堅牢化
+// ui/keyboard-handler.js - 完全版
+// 修正: getBrushSettings()の堅牢化（複数経路探索）
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -9,17 +7,15 @@ window.KeyboardHandler = (function() {
     let isInitialized = false;
     let vKeyPressed = false;
     
-    // P/Eキードラッグモード用の状態管理
     const dragState = {
         pKeyPressed: false,
         eKeyPressed: false,
         isDragging: false,
         dragStartX: 0,
         dragStartY: 0,
-        activeTool: null // 'pen' or 'eraser'
+        activeTool: null
     };
 
-    // 🆕 シリアライズ可能な形式でパスを保存（DataCloneError対策）
     function serializePathsForHistory(paths) {
         return (paths || []).map(p => {
             return {
@@ -46,7 +42,6 @@ window.KeyboardHandler = (function() {
         });
     }
 
-    // 入力要素にフォーカスがあるかチェック
     function isInputFocused() {
         const activeElement = document.activeElement;
         if (!activeElement) return false;
@@ -58,7 +53,6 @@ window.KeyboardHandler = (function() {
         );
     }
 
-    // DrawingEngine取得（複数のパスを試行）
     function getDrawingEngine() {
         return window.drawingApp?.drawingEngine || 
                window.coreEngine?.drawingEngine || 
@@ -66,54 +60,55 @@ window.KeyboardHandler = (function() {
                null;
     }
 
-    // 🆕 BrushSettings取得（防御的・複数経路探索）
     function getBrushSettings() {
-        // 複数の候補から探索
         const candidates = [
             window.drawingApp?.drawingEngine,
             window.coreEngine?.drawingEngine,
             window.CoreEngine?.drawingEngine,
-            window.drawingEngine,
-            window.CoreRuntime?.api && { settings: window.CoreRuntime.api.getBrushSettings?.() }
+            window.drawingEngine
         ];
         
         for (const c of candidates) {
             if (!c) continue;
             if (c.settings) return c.settings;
-            // CoreRuntime API style
             if (c.getBrushSettings && typeof c.getBrushSettings === 'function') {
                 const s = c.getBrushSettings();
                 if (s) return s;
             }
         }
         
-        // 最後の保険
-        console.warn('⚠️ BrushSettings not found via getBrushSettings()');
+        if (window.coreEngine && typeof window.coreEngine.getDrawingEngine === 'function') {
+            try {
+                const de = window.coreEngine.getDrawingEngine();
+                if (de?.settings) return de.settings;
+            } catch (e) {}
+        }
+        
+        if (window.CoreRuntime?.api) {
+            const s = window.CoreRuntime.api.getBrushSettings?.();
+            if (s) return s;
+        }
+        
         return null;
     }
 
-    // キーボードイベントハンドラー
     function handleKeyDown(e) {
         const eventBus = window.TegakiEventBus;
         const keymap = window.TEGAKI_KEYMAP;
         
         if (!eventBus || !keymap) return;
         
-        // 入力フィールド内では処理しない
         if (isInputFocused()) return;
         
-        // Vキー状態を追跡
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             vKeyPressed = true;
         }
         
-        // Pキー押しっぱなし検出（修飾キーなし）
         if (e.code === 'KeyP' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             if (!dragState.pKeyPressed) {
                 dragState.pKeyPressed = true;
                 dragState.activeTool = 'pen';
                 
-                // ツール切り替え（ドラッグ開始前）
                 if (window.CoreRuntime?.api) {
                     window.CoreRuntime.api.setTool('pen');
                 }
@@ -121,13 +116,11 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // Eキー押しっぱなし検出（修飾キーなし）
         if (e.code === 'KeyE' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             if (!dragState.eKeyPressed) {
                 dragState.eKeyPressed = true;
                 dragState.activeTool = 'eraser';
                 
-                // ツール切り替え（ドラッグ開始前）
                 if (window.CoreRuntime?.api) {
                     window.CoreRuntime.api.setTool('eraser');
                 }
@@ -135,23 +128,19 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // ブラウザデフォルト動作を防止（F5, F11, F12以外）
         if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
         if (e.key.startsWith('F') && e.key.length <= 3) {
             e.preventDefault();
             return;
         }
         
-        // config.jsのキーマップでアクション解決
         const action = keymap.getAction(e, { vMode: vKeyPressed });
         
         if (!action) return;
         
-        // アクション処理
         handleAction(action, e, eventBus);
     }
 
-    // KeyUpイベントでキーをリリース
     function handleKeyUp(e) {
         if (e.code === 'KeyV') {
             vKeyPressed = false;
@@ -172,7 +161,6 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // マウスダウンイベント（ドラッグ開始）
     function handleMouseDown(e) {
         const isKeyPressed = dragState.pKeyPressed || dragState.eKeyPressed;
         
@@ -180,29 +168,24 @@ window.KeyboardHandler = (function() {
         if (isInputFocused()) return;
         if (dragState.isDragging) return;
         
-        // ドラッグ開始位置を記録
         dragState.dragStartX = e.clientX;
         dragState.dragStartY = e.clientY;
         
-        // BrushSettings取得
         const brushSettings = getBrushSettings();
         
         if (!brushSettings) {
             return;
         }
         
-        // 現在のサイズと透明度を取得
         let startSize, startOpacity;
         
         try {
             startSize = brushSettings.getBrushSize();
             startOpacity = brushSettings.getBrushOpacity();
         } catch (error) {
-            console.error('❌ Failed to get brush settings:', error);
             return;
         }
         
-        // ToolSizeManagerにドラッグ開始を通知
         if (window.TegakiEventBus) {
             window.TegakiEventBus.emit('tool:drag-size-start', {
                 tool: dragState.activeTool,
@@ -217,14 +200,12 @@ window.KeyboardHandler = (function() {
         e.stopPropagation();
     }
 
-    // マウス移動イベント（ドラッグ中）
     function handleMouseMove(e) {
         if (!dragState.isDragging || !dragState.activeTool) return;
         
         const deltaX = e.clientX - dragState.dragStartX;
         const deltaY = e.clientY - dragState.dragStartY;
         
-        // ToolSizeManagerにドラッグ更新を通知
         if (window.TegakiEventBus) {
             window.TegakiEventBus.emit('tool:drag-size-update', {
                 tool: dragState.activeTool,
@@ -237,12 +218,10 @@ window.KeyboardHandler = (function() {
         e.stopPropagation();
     }
 
-    // マウスアップイベント（ドラッグ終了）
     function handleMouseUp(e) {
         if (dragState.isDragging) {
             dragState.isDragging = false;
             
-            // ToolSizeManagerにドラッグ終了を通知
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.emit('tool:drag-size-end');
             }
@@ -252,7 +231,6 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // アクション処理
     function handleAction(action, event, eventBus) {
         switch(action) {
             case 'UNDO':
@@ -350,7 +328,6 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // 🆕 アクティブレイヤーの描画を削除（History統合・修正版）
     function deleteActiveLayerDrawings() {
         const layerSystem = window.drawingApp?.layerManager || window.coreEngine?.layerSystem;
         if (!layerSystem) return;
@@ -358,13 +335,11 @@ window.KeyboardHandler = (function() {
         const activeLayer = layerSystem.getActiveLayer();
         if (!activeLayer || !activeLayer.layerData) return;
         
-        // 背景レイヤーは削除不可
         if (activeLayer.layerData.isBackground) return;
         
         const paths = activeLayer.layerData.paths;
         if (!paths || paths.length === 0) return;
         
-        // 🔥 修正: structuredClone → serializePathsForHistory
         if (window.History && !window.History._manager.isApplying) {
             const pathsBackup = serializePathsForHistory(paths);
             const layerIndex = layerSystem.activeLayerIndex;
@@ -389,11 +364,9 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // レイヤーの描画をクリア
     function clearLayerDrawings(layerSystem, layer, layerIndex) {
         if (!layer || !layer.layerData) return;
         
-        // すべてのGraphicsを削除
         const childrenToRemove = [];
         for (let child of layer.children) {
             if (child !== layer.layerData.backgroundGraphics) {
@@ -411,13 +384,10 @@ window.KeyboardHandler = (function() {
             }
         });
         
-        // pathsをクリア
         layer.layerData.paths = [];
         
-        // サムネイル更新
         layerSystem.requestThumbnailUpdate(layerIndex);
         
-        // カットサムネイル更新
         if (layerSystem.animationSystem?.generateCutThumbnailOptimized) {
             const cutIndex = layerSystem.animationSystem.getCurrentCutIndex();
             setTimeout(() => {
@@ -425,7 +395,6 @@ window.KeyboardHandler = (function() {
             }, 100);
         }
         
-        // EventBus通知
         if (window.TegakiEventBus) {
             window.TegakiEventBus.emit('layer:drawings-deleted', {
                 layerId: layer.layerData.id,
@@ -434,11 +403,9 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // 🆕 レイヤーの描画を復元（シリアライズデータから再構築）
     function restoreLayerDrawings(layerSystem, layer, pathsBackup, layerIndex) {
         if (!layer || !layer.layerData || !pathsBackup) return;
         
-        // 現在の描画を削除
         const childrenToRemove = [];
         for (let child of layer.children) {
             if (child !== layer.layerData.backgroundGraphics) {
@@ -456,14 +423,12 @@ window.KeyboardHandler = (function() {
             }
         });
         
-        // pathsを復元
         layer.layerData.paths = [];
         
         for (let i = 0; i < pathsBackup.length; i++) {
             const serializedPath = pathsBackup[i];
             
             try {
-                // シリアライズデータから再構築
                 const pathData = {
                     id: serializedPath.id,
                     type: serializedPath.type,
@@ -487,10 +452,8 @@ window.KeyboardHandler = (function() {
             }
         }
         
-        // サムネイル更新
         layerSystem.requestThumbnailUpdate(layerIndex);
         
-        // カットサムネイル更新
         if (layerSystem.animationSystem?.generateCutThumbnailOptimized) {
             const cutIndex = layerSystem.animationSystem.getCurrentCutIndex();
             setTimeout(() => {
@@ -498,7 +461,6 @@ window.KeyboardHandler = (function() {
             }, 100);
         }
         
-        // EventBus通知
         if (window.TegakiEventBus) {
             window.TegakiEventBus.emit('layer:drawings-restored', {
                 layerId: layer.layerData.id,
@@ -508,17 +470,14 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // 初期化
     function init() {
         if (isInitialized) {
-            console.warn('⚠️ KeyboardHandler already initialized');
             return;
         }
 
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
         
-        // マウスイベントリスナー追加（capture: true で優先捕捉）
         document.addEventListener('mousedown', handleMouseDown, { capture: true });
         document.addEventListener('mousemove', handleMouseMove, { capture: true });
         document.addEventListener('mouseup', handleMouseUp, { capture: true });
@@ -527,7 +486,6 @@ window.KeyboardHandler = (function() {
         window.KeyboardHandler._isInitialized = true;
     }
 
-    // ショートカット一覧取得（UI表示用）
     function getShortcutList() {
         return [
             { action: 'UNDO', keys: ['Ctrl+Z'], description: '元に戻す' },
@@ -548,7 +506,6 @@ window.KeyboardHandler = (function() {
         ];
     }
 
-    // デバッグ用：現在の状態を取得
     function getDebugState() {
         return {
             pKeyPressed: dragState.pKeyPressed,
@@ -561,7 +518,6 @@ window.KeyboardHandler = (function() {
         };
     }
 
-    // 公開API
     return {
         init,
         isInputFocused,
