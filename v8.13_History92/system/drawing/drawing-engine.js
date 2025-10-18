@@ -1,9 +1,8 @@
 /**
- * DrawingEngine v7.2 - BrushSettings確実な初期化版
+ * DrawingEngine v7.3 - BrushSettings確実な初期化版 + イベント駆動対応
  * 
  * 変更点:
- * - BrushSettings初期化を同期的に完了させる
- * - 初期化失敗時のフォールバック追加
+ * - brush:initialized イベント発行を追加（同期・遅延両方）
  */
 
 class DrawingEngine {
@@ -13,7 +12,6 @@ class DrawingEngine {
     this.eventBus = eventBus;
     this.config = config || {};
 
-    // 🔥 修正: BrushSettings初期化を確実に（同期優先）
     this.settings = null;
     this._initializeBrushSettingsSync();
     
@@ -41,48 +39,35 @@ class DrawingEngine {
     this.applySyncSettings();
   }
 
-  /**
-   * 🔥 修正: BrushSettings同期初期化（即座に成功させる）
-   */
   _initializeBrushSettingsSync() {
     if (window.TegakiDrawing?.BrushSettings) {
       this.settings = new window.TegakiDrawing.BrushSettings(this.config, this.eventBus);
-      console.log('✅ BrushSettings initialized immediately');
+      this._emitBrushInitialized();
       return true;
     }
     
-    // フォールバック: グローバルスコープから探索
     const BrushSettingsClass = window.BrushSettings || 
                                 window.TegakiDrawing?.BrushSettings ||
                                 null;
     
     if (BrushSettingsClass) {
       this.settings = new BrushSettingsClass(this.config, this.eventBus);
-      console.log('✅ BrushSettings initialized (fallback)');
+      this._emitBrushInitialized();
       return true;
     }
     
-    console.error('❌ BrushSettings class not found');
-    
-    // 最終フォールバック: 遅延初期化を試行（非同期）
     this._initializeBrushSettingsDelayed();
     return false;
   }
 
-  /**
-   * BrushSettings遅延初期化（フォールバック用）
-   */
   _initializeBrushSettingsDelayed() {
-    console.warn('⚠️ BrushSettings not available yet, will retry...');
-    
     let retryCount = 0;
-    const maxRetries = 100; // 最大5秒待機
+    const maxRetries = 100;
     
     const retryInit = () => {
       retryCount++;
       
       if (this.settings) {
-        console.log('✅ BrushSettings already initialized');
         return;
       }
       
@@ -92,29 +77,31 @@ class DrawingEngine {
       
       if (BrushSettingsClass) {
         this.settings = new BrushSettingsClass(this.config, this.eventBus);
-        console.log('✅ BrushSettings initialized (delayed after', retryCount * 50, 'ms)');
-        
-        // 遅延初期化後に設定を再適用
+        this._emitBrushInitialized();
         this.applySyncSettings();
         return;
       }
       
       if (retryCount < maxRetries) {
         setTimeout(retryInit, 50);
-      } else {
-        console.error('❌ BrushSettings initialization failed after', retryCount * 50, 'ms');
       }
     };
     
     setTimeout(retryInit, 50);
   }
 
-  /**
-   * BrushSettings取得（nullチェック付き）
-   */
+  _emitBrushInitialized() {
+    try {
+      if (this.eventBus && typeof this.eventBus.emit === 'function') {
+        this.eventBus.emit('brush:initialized', { settings: this.settings });
+      }
+    } catch (e) {
+      console.warn('brush:initialized emit failed', e);
+    }
+  }
+
   _ensureBrushSettings() {
     if (!this.settings) {
-      console.error('❌ BrushSettings not initialized');
       return false;
     }
     return true;
