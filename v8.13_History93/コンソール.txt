@@ -1,0 +1,222 @@
+config.js:551 ✅ config.js (P/E+ドラッグ機能対応版) loaded
+config.js:552    🆕 tools: ペン/消しゴムのデフォルト設定追加
+config.js:553    🆕 sizeSlots: サイズスロット設定追加
+config.js:554    🆕 dragAdjustment: ドラッグ調整感度設定追加
+config.js:555    🆕 dragAdjustment.visual: 視覚フィードバック設定追加
+coordinate-system.js:32 🧭 CoordinateSystem: システム統合改修版 初期化
+coordinate-system.js:730 ✅ coordinate-system.js loaded (システム統合改修版)
+coordinate-system.js:731 🔧 改修完了項目:
+coordinate-system.js:732   🆕 applyLayerTransform(): 統一レイヤー変形API
+coordinate-system.js:733   🆕 normalizeTransform(): 変形データ正規化
+coordinate-system.js:734   🆕 combineTransforms(): 変形合成
+coordinate-system.js:735   🆕 screenToWorld/worldToScreen(): キャッシュ対応座標変換
+coordinate-system.js:736   🆕 localToWorld/worldToLocal(): レイヤー座標変換
+coordinate-system.js:737   🆕 getLayerBounds(): 統一境界取得
+coordinate-system.js:738   🆕 distance/angle/normalizeAngle(): 数学関数統合
+coordinate-system.js:739   🆕 normalizeVector/dotProduct/crossProduct(): ベクトル計算
+coordinate-system.js:740   🆕 diagnoseReferences(): システム統合診断
+coordinate-system.js:741   🆕 runTransformTests(): 座標変換テスト
+coordinate-system.js:742   🆕 runPerformanceTest(): パフォーマンス測定
+coordinate-system.js:743   🔧 EventBus完全統合・キャッシュシステム
+coordinate-system.js:744   🔧 LayerSystem/CameraSystem/AnimationSystem参照統合
+coordinate-system.js:745   🔧 座標系混在問題・API断片化解消
+coordinate-system.js:746   ✅ PixiJS v8.13 完全対応
+coordinate-system.js:747   ✅ システム間連携強化
+data-models.js:164 ✅ data-models.js (Phase 2: meshVertices対応) loaded
+event-bus.js:171 ✅ system/event-bus.js loaded
+batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
+settings-manager.js:254 ✅ system/settings-manager.js loaded
+settings-manager.js:255    - 責務: 設定の永続化・デフォルト管理
+settings-manager.js:256    - SOLID原則準拠: 単一責任
+settings-manager.js:257    - EventBus統合: 設定変更の購読と通知
+camera-system.js:599 ✅ camera-system.js (Phase 4.2: 拡縮上下修正版) loaded successfully
+camera-system.js:600    - 🔥 Space+Shift+ドラッグ: 上=拡大、下=縮小に修正
+camera-system.js:601    - 🔥 Space+Shift+↑: 拡大、Space+Shift+↓: 縮小に修正
+layer-transform.js:652 ✅ layer-transform.js loaded
+layer-system.js:1427 ✅ layer-system.js (GPT5案修正完全版) loaded
+drawing-clipboard.js:603 ✅ drawing-clipboard.js Phase4改修版+確定イベント loaded
+drawing-clipboard.js:604    - ✅ CTRL+V behavior: overwrite active layer
+drawing-clipboard.js:605    - ✅ Commit events: paste:commit, operation:commit
+drawing-clipboard.js:606    - ✅ Thumbnail auto-update on paste
+history.js:179 ✅ history.js (Phase 2: EventBus修正版) loaded
+ ✅ animation-system.js (Phase 4.1: CUT自動採番対応版) loaded
+ 🔧 [BrushSettings] Starting registration...
+ ✅ [BrushSettings] Created window.TegakiDrawing namespace
+ ✅ [BrushSettings] Registered successfully:
+    - window.TegakiDrawing.BrushSettings: true
+    - window.BrushSettings: true
+brush-settings.js:312    - globalThis.BrushSettings: true
+brush-settings.js:314 ✅ brush-settings.js loaded completely
+export-manager.js:259 ✅ export-manager.js loaded
+png-exporter.js:85 ✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded
+apng-exporter.js:236 ✅ apng-exporter.js (PixiJS v8.13完全対応版) loaded
+gif-exporter.js:300 ✅ gif-exporter.js (PixiJS v8.13完全対応版) loaded
+slider-utils.js:197 ✅ ui/slider-utils.js loaded
+slider-utils.js:198    - 責務: スライダーUIの統一実装
+slider-utils.js:199    - DRY原則: settings-popup.js と ui-panels.js で共有
+slider-utils.js:200    - API: createSlider() / createSimpleSlider()
+drag-visual-feedback.js:150 ✅ ui/drag-visual-feedback.js (統合修正版) loaded
+timeline-ui.js:977 ✅ timeline-ui.js (Phase 5.2: キー処理一元化版) loaded
+timeline-ui.js:978    - 🔥 setupKeyboardShortcuts()を削除（キー処理はUnifiedKeyHandlerに一元化）
+timeline-ui.js:979    - 🔥 goToPreviousCutSafe()とgoToNextCutSafe()はpublicメソッドとして維持
+timeline-ui.js:980    - 🔥 togglePlayStop()もpublicメソッドとして維持
+core-initializer.js:451 ✅ core-initializer.js loaded
+core-runtime.js:757 ✅ core-runtime.js v2.1 loaded
+core-runtime.js:758   ✅ Phase 12: PixiJS EventSystem統合
+core-runtime.js:759   ✅ FederatedPointerEvent対応
+core-runtime.js:760   ✅ stage.eventMode設定
+core-runtime.js:761   ✅ 🆕 v2.1: 設定関連API追加
+core-runtime.js:762      - setPressureCorrection()
+core-runtime.js:763      - setSmoothing()
+core-runtime.js:764      - setPressureCurve()
+core-runtime.js:765      - getSettings()
+core-runtime.js:766      - updateSettings()
+core-runtime.js:767      - resetSettings()
+core-runtime.js:768      - getSettingsManager()
+core-runtime.js:769   ✅ window.startTegakiApp() registered
+core-runtime.js:770   ✅ APNGExporter登録対応
+core-runtime.js:771   ✅ 既存機能完全維持
+core-engine.js:850 ✅ core-engine.js (GPT5案修正完全版) loaded
+coordinate-system.js:63 🔗 CoordinateSystem EventBus integration configured
+coordinate-system.js:47 ✅ CoordinateSystem initialized with canvas: 344x135
+coordinate-system.js:757 🔄 CoordinateSystem auto-initialized
+index.html:78 🚀 Starting application with P/E+Drag feature...
+index.html:84 📦 Checking dependencies...
+index.html:85   PIXI: true
+index.html:86   TegakiDrawing: true
+index.html:87   BrushSettings: true
+index.html:88   ToolSizeManager: true
+index.html:89   KeyboardHandler: true
+drawing-clipboard.js:19 DrawingClipboard: Initializing...
+drawing-clipboard.js:26 ✅ DrawingClipboard initialized (Phase4改修版 + 確定イベント)
+coordinate-system.js:75 🔗 CameraSystem reference set in CoordinateSystem
+coordinate-system.js:70 🔗 LayerSystem reference set in CoordinateSystem
+coordinate-system.js:80 🔗 AnimationSystem reference set in CoordinateSystem
+core-runtime.js:51 === CoreRuntime Phase 12: PixiJS EventSystem統合版 初期化開始 ===
+core-runtime.js:179 ✅ CUT作成: CUT1 (344x135)
+core-runtime.js:207 🔄 CUT切替: CUT1
+core-runtime.js:101 ✅ PixiJS EventSystem設定完了
+core-runtime.js:68 ✅ CoreRuntime 初期化完了（Phase 12対応）
+// DrawingEngineのバージョンとメソッド確認
+
+console.log('=== DrawingEngine バージョン確認 ===\n');
+
+const de = window.coreEngine?.drawingEngine || window.drawingApp?.drawingEngine;
+
+if (!de) {
+  console.log('❌ DrawingEngine not found');
+} else {
+  console.log('1. DrawingEngine 基本情報:');
+  console.log('  constructor.name:', de.constructor.name);
+  
+  // 全メソッドを列挙
+  console.log('\n2. 利用可能なメソッド:');
+  const methods = [];
+  for (let key in de) {
+    if (typeof de[key] === 'function') {
+      methods.push(key);
+    }
+  }
+  console.log('  Methods:', methods.join(', '));
+  
+  // 重要なメソッドの存在確認
+  console.log('\n3. 重要メソッドの確認:');
+  console.log('  _ensureBrushSettings:', typeof de._ensureBrushSettings);
+  console.log('  _initializeBrushSettingsSync:', typeof de._initializeBrushSettingsSync);
+  console.log('  _initializeBrushSettingsDelayed:', typeof de._initializeBrushSettingsDelayed);
+  console.log('  _emitBrushInitialized:', typeof de._emitBrushInitialized);
+  
+  // プロパティ確認
+  console.log('\n4. プロパティ確認:');
+  console.log('  settings:', de.settings);
+  console.log('  config:', !!de.config);
+  console.log('  eventBus:', !!de.eventBus);
+  console.log('  recorder:', !!de.recorder);
+  console.log('  renderer:', !!de.renderer);
+  
+  // BrushSettings手動初期化を試みる
+  console.log('\n5. 手動初期化テスト:');
+  
+  const BrushSettingsClass = window.TegakiDrawing?.BrushSettings || window.BrushSettings;
+  
+  if (BrushSettingsClass) {
+    console.log('  ✅ BrushSettingsクラス発見');
+    
+    try {
+      const testSettings = new BrushSettingsClass(de.config, de.eventBus);
+      console.log('  ✅ インスタンス化成功');
+      
+      // DrawingEngineに強制設定
+      de.settings = testSettings;
+      console.log('  ✅ DrawingEngine.settings に強制設定');
+      console.log('     - getBrushSize():', de.settings.getBrushSize());
+      
+      // EventBus発火テスト
+      if (de.eventBus) {
+        de.eventBus.emit('brush:initialized', { settings: de.settings });
+        console.log('  ✅ brush:initialized イベント発火');
+      }
+      
+      // ToolSizeManager再確認
+      if (window.toolSizeManager) {
+        setTimeout(() => {
+          const bs = window.toolSizeManager._getBrushSettings();
+          console.log('\n6. ToolSizeManager再確認:');
+          console.log('  _getBrushSettings():', !!bs);
+          if (bs) {
+            console.log('  ✅ BrushSettings 取得成功!');
+            console.log('     - size:', bs.getBrushSize());
+          }
+        }, 100);
+      }
+      
+    } catch (e) {
+      console.log('  ❌ エラー:', e.message);
+    }
+    
+  } else {
+    console.log('  ❌ BrushSettingsクラスが見つかりません');
+  }
+}
+
+console.log('\n=== 確認完了 ===');
+VM511:3 === DrawingEngine バージョン確認 ===
+
+VM511:10 1. DrawingEngine 基本情報:
+VM511:11   constructor.name: DrawingEngine
+VM511:14 
+2. 利用可能なメソッド:
+VM511:21   Methods: 
+VM511:24 
+3. 重要メソッドの確認:
+VM511:25   _ensureBrushSettings: undefined
+VM511:26   _initializeBrushSettingsSync: undefined
+VM511:27   _initializeBrushSettingsDelayed: undefined
+VM511:28   _emitBrushInitialized: undefined
+VM511:31 
+4. プロパティ確認:
+VM511:32   settings: undefined
+VM511:33   config: true
+VM511:34   eventBus: true
+VM511:35   recorder: false
+VM511:36   renderer: false
+VM511:39 
+5. 手動初期化テスト:
+VM511:44   ✅ BrushSettingsクラス発見
+VM511:48   ✅ インスタンス化成功
+VM511:52   ✅ DrawingEngine.settings に強制設定
+VM511:53      - getBrushSize(): 10
+VM511:58   ✅ brush:initialized イベント発火
+VM511:83 
+=== 確認完了 ===
+index.html:97 ✅ Application ready!
+index.html:98 📝 Usage:
+index.html:99   - Press P + drag: Adjust pen size/opacity
+index.html:100   - Press E + drag: Adjust eraser size/opacity
+index.html:101   - Drag Left/Right: Change size
+index.html:102   - Drag Up/Down: Change opacity
+undefined
+VM511:65 
+6. ToolSizeManager再確認:
+VM511:66   _getBrushSettings(): false
+core-runtime.js:665 ✅ ExportSystem initialized (PNG/APNG/GIF/WebP)

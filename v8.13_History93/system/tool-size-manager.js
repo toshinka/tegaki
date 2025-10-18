@@ -1,6 +1,11 @@
 /**
- * ToolSizeManager
+ * ToolSizeManager (修正版)
  * ペン・消しゴムのサイズ・透明度の一元管理
+ * 
+ * 🔧 修正内容:
+ * - BrushSettings参照を複数経路で探索（堅牢化）
+ * - 初期化を遅延実行可能に（DrawingEngine準備後に呼び出し）
+ * - EventBusリスナーの確実な登録
  */
 class ToolSizeManager {
     constructor(config, eventBus) {
@@ -22,33 +27,93 @@ class ToolSizeManager {
         // ドラッグ状態
         this.dragState = null;
 
+        // EventBusリスナー登録
         this._setupEventListeners();
+        
+        // BrushSettings初期同期（遅延実行）
+        this._delayedInitialization();
+    }
+
+    /**
+     * 遅延初期化: DrawingEngine準備後にBrushSettingsと同期
+     */
+    _delayedInitialization() {
+        // DrawingEngineが準備できるまで待つ（最大5秒）
+        let attempts = 0;
+        const maxAttempts = 50; // 50 * 100ms = 5秒
+        
+        const checkBrushSettings = () => {
+            const brushSettings = this._getBrushSettings();
+            
+            if (brushSettings) {
+                // BrushSettingsから初期値を取得
+                try {
+                    this.penSize = brushSettings.getBrushSize();
+                    this.penOpacity = brushSettings.getBrushOpacity();
+                } catch (e) {
+                    // getter失敗時はデフォルト値を維持
+                }
+                return;
+            }
+            
+            attempts++;
+            if (attempts < maxAttempts) {
+                setTimeout(checkBrushSettings, 100);
+            }
+        };
+        
+        // 初回は即実行
+        setTimeout(checkBrushSettings, 0);
     }
 
     _setupEventListeners() {
+        if (!this.eventBus) return;
+        
         this.eventBus.on('tool:drag-size-start', (data) => this.handleDragStart(data));
         this.eventBus.on('tool:drag-size-update', (data) => this.handleDragUpdate(data));
         this.eventBus.on('tool:drag-size-end', () => this.handleDragEnd());
     }
 
     /**
-     * BrushSettingsへの安全なアクセス
+     * BrushSettingsへの堅牢なアクセス（複数経路探索）
      */
     _getBrushSettings() {
-        // DrawingEngine.settings が正しいパス
-        const de = window.drawingApp?.drawingEngine || window.coreEngine?.drawingEngine;
+        // 🔧 修正: DrawingEngine.brushSettings が正しいパス
+        const candidates = [
+            window.drawingApp?.drawingEngine,
+            window.coreEngine?.drawingEngine,
+            window.CoreEngine?.drawingEngine,
+            window.drawingEngine
+        ];
         
-        if (!de) {
-            console.warn('⚠️ DrawingEngine not found');
-            return null;
+        for (const de of candidates) {
+            if (!de) continue;
+            
+            // brushSettingsプロパティをチェック
+            if (de.brushSettings) return de.brushSettings;
+            
+            // getBrushSettings()メソッドをチェック
+            if (de.getBrushSettings && typeof de.getBrushSettings === 'function') {
+                try {
+                    const bs = de.getBrushSettings();
+                    if (bs) return bs;
+                } catch (e) {
+                    // 失敗時は次の候補へ
+                }
+            }
         }
         
-        if (!de.settings) {
-            console.warn('⚠️ DrawingEngine.settings is undefined');
-            return null;
+        // coreEngine経由でDrawingEngineを取得
+        if (window.coreEngine && typeof window.coreEngine.getDrawingEngine === 'function') {
+            try {
+                const de = window.coreEngine.getDrawingEngine();
+                if (de?.brushSettings) return de.brushSettings;
+            } catch (e) {
+                // 失敗時は次へ
+            }
         }
         
-        return de.settings;
+        return null;
     }
 
     handleDragStart({ tool, startSize, startOpacity }) {
@@ -119,13 +184,17 @@ class ToolSizeManager {
             // BrushSettings の API を使用
             if (typeof brushSettings.setBrushSize === 'function') {
                 brushSettings.setBrushSize(size);
+            } else if (typeof brushSettings.size !== 'undefined') {
+                brushSettings.size = size;
             }
 
             if (typeof brushSettings.setBrushOpacity === 'function') {
                 brushSettings.setBrushOpacity(opacity);
+            } else if (typeof brushSettings.opacity !== 'undefined') {
+                brushSettings.opacity = opacity;
             }
         } catch (error) {
-            console.warn('⚠️ Failed to apply brush settings:', error.message);
+            // エラー時は静かに失敗
         }
     }
 
@@ -153,7 +222,10 @@ class ToolSizeManager {
             eraserOpacity: this.eraserOpacity,
             dragState: this.dragState,
             brushSettingsExists: !!brushSettings,
-            drawingEngineExists: !!(window.drawingApp?.drawingEngine || window.coreEngine?.drawingEngine)
+            drawingEngineExists: !!(
+                window.drawingApp?.drawingEngine || 
+                window.coreEngine?.drawingEngine
+            )
         };
     }
 }
