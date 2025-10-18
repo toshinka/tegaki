@@ -1,0 +1,195 @@
+# P/E+ドラッグ機能 実装完了チェックリスト
+
+## 📋 実装ファイル一覧
+
+### 新規作成ファイル（2ファイル）
+
+- [x] **system/tool-size-manager.js**
+  - ツールサイズ・透明度の一元管理
+  - EventBus統合
+  - BrushSettings更新
+
+- [x] **ui/drag-visual-feedback.js**
+  - リアルタイム視覚フィードバック
+  - 円の描画とサイズ変更
+  - 数値表示（サイズ・不透明度）
+
+### 修正が必要な既存ファイル（3ファイル）
+
+- [ ] **config.js**
+  - `sizeSlots`設定追加
+  - `dragAdjustment`感度設定追加
+  - 📄 修正内容: [config_updated] artifact参照
+
+- [ ] **ui/keyboard-handler.js**
+  - P/Eキー押下検出
+  - ドラッグイベントハンドリング
+  - EventBus連携
+  - 📄 修正内容: [keyboard_handler_update] artifact参照
+
+- [ ] **core-initializer.js**
+  - ToolSizeManager初期化
+  - DragVisualFeedback初期化
+  - BrushSettings連携
+  - 📄 修正内容: [core_initializer_update] artifact参照
+
+- [ ] **index.html**
+  - スクリプトタグ2つ追加
+  - 📄 修正内容: [index_html_update] artifact参照
+
+## 🔧 実装手順
+
+### ステップ1: 新規ファイルの配置
+
+```bash
+# 以下のファイルをプロジェクトに追加
+system/tool-size-manager.js      # [tool_size_manager] artifactの内容
+ui/drag-visual-feedback.js       # [drag_visual_feedback] artifactの内容
+```
+
+### ステップ2: 既存ファイルの修正
+
+1. **config.js** の修正
+   - [config_updated] artifactの内容を追加
+   - 既存の`TEGAKI_CONFIG`オブジェクトに設定を追加
+
+2. **ui/keyboard-handler.js** の修正
+   - [keyboard_handler_update] artifactのガイドに従って実装
+   - 状態変数の追加
+   - keydown/keyupハンドラの修正
+   - マウスイベントハンドラの追加
+
+3. **core-initializer.js** の修正
+   - [core_initializer_update] artifactのガイドに従って実装
+   - 初期化コードの追加
+   - BrushSettings連携コードの追加
+
+4. **index.html** の修正
+   - [index_html_update] artifactのガイドに従って実装
+   - スクリプトタグ2つを適切な位置に追加
+
+### ステップ3: 動作確認
+
+[test_debug_guide] artifactに従ってテストを実施：
+
+1. ブラウザでアプリを開く
+2. コンソールで初期化確認
+3. P/Eキー+ドラッグの手動テスト
+4. イベントフローの確認
+5. 統合テストスクリプトの実行
+
+## 🎯 実装の特徴
+
+### DRY原則の遵守
+- サイズ・透明度管理を`ToolSizeManager`に一元化
+- 重複コードなし、単一責任の明確化
+
+### SOLID原則の遵守
+- **単一責任**: 各クラスが1つの責務のみ
+- **開放閉鎖**: サイズスロット機能の追加が容易
+- **依存性逆転**: EventBusを介した疎結合
+
+### AI可読性の最大化
+- 明確なファイル構造
+- 一貫した命名規則
+- コメントによる責務の明示
+
+### モダンな実装
+- ES2023構文
+- クラスベース設計
+- イベント駆動アーキテクチャ
+
+## 📊 アーキテクチャ図
+
+```
+┌─────────────────────────────────────────────┐
+│             ユーザー操作                     │
+│        P/Eキー + マウスドラッグ              │
+└─────────────────────────────────────────────┘
+                    │
+                    ▼
+┌─────────────────────────────────────────────┐
+│       ui/keyboard-handler.js                │
+│  - キー検出（P/E押下状態管理）               │
+│  - ドラッグイベント捕捉                      │
+│  - EventBusへイベント発行                    │
+└─────────────────────────────────────────────┘
+                    │
+                    │ EventBus
+                    ▼
+┌─────────────────────────────────────────────┐
+│      system/tool-size-manager.js            │
+│  - サイズ・透明度計算                        │
+│  - BrushSettings更新                        │
+│  - 状態管理                                  │
+└─────────────────────────────────────────────┘
+          │                         │
+          │ EventBus                │ 直接呼び出し
+          ▼                         ▼
+┌──────────────────┐    ┌──────────────────────┐
+│ ui/drag-visual-  │    │   BrushSettings      │
+│ feedback.js      │    │  - setBrushSize()    │
+│ - 視覚フィード   │    │  - setBrushOpacity() │
+│   バック表示     │    └──────────────────────┘
+└──────────────────┘
+```
+
+## 🚀 将来の拡張性
+
+この実装により、以下の機能追加が容易になります：
+
+### 1. サイズスロット機能（1-9キー）
+```javascript
+// keyboard-handler.jsに数行追加するだけ
+eventBus.emit('tool:select-size-slot', { slot: number });
+```
+
+### 2. UI表示（スライダー・パネル）
+```javascript
+// EventBusを購読するだけで連携可能
+eventBus.on('tool:size-opacity-changed', updateUI);
+```
+
+### 3. 設定の永続化
+```javascript
+// SettingsManagerと連携
+toolSizeManager.saveToConfig();
+```
+
+### 4. カスタム感度設定
+```javascript
+// config.jsの値を変更するだけ
+dragAdjustment.size.sensitivity = 0.2;
+```
+
+## ✅ 完了確認
+
+すべての項目をチェックして実装完了を確認：
+
+- [ ] 2つの新規ファイルを作成・配置した
+- [ ] 4つの既存ファイルを修正した
+- [ ] ブラウザでエラーなく起動する
+- [ ] コンソールで初期化確認が通る
+- [ ] Pキー+ドラッグでペンサイズが変更できる
+- [ ] Eキー+ドラッグで消しゴムサイズが変更できる
+- [ ] 視覚フィードバック（円と数値）が表示される
+- [ ] キーリリースで通常モードに戻る
+- [ ] ドラッグ中は描画されない
+- [ ] 変更後のサイズで正常に描画できる
+
+## 📞 トラブル時の対応
+
+問題が発生した場合は [test_debug_guide] を参照してください。
+
+主な確認ポイント：
+1. スクリプトの読み込み順序
+2. 初期化の順序
+3. EventBusの動作
+4. BrushSettingsとの連携
+5. ブラウザコンソールのエラー
+
+---
+
+**実装完了おめでとうございます！🎉**
+
+この実装により、直感的で視覚的にわかりやすいペンサイズ調整機能が追加されました。
