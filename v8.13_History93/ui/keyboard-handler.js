@@ -1,5 +1,6 @@
-// ui/keyboard-handler.js - 完全版
-// 修正: getBrushSettings()の堅牢化（複数経路探索）
+// ui/keyboard-handler.js - 修正版
+// 🔧 修正: getBrushSettings()を複数経路で堅牢に探索
+// 🔧 修正: P/E+ドラッグ時のBrushSettings取得を確実化
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -60,6 +61,10 @@ window.KeyboardHandler = (function() {
                null;
     }
 
+    /**
+     * BrushSettings取得（堅牢化版）
+     * DrawingEngine.brushSettings が正しいパス
+     */
     function getBrushSettings() {
         const candidates = [
             window.drawingApp?.drawingEngine,
@@ -70,20 +75,32 @@ window.KeyboardHandler = (function() {
         
         for (const c of candidates) {
             if (!c) continue;
-            if (c.settings) return c.settings;
+            
+            // 🔧 brushSettings プロパティ優先
+            if (c.brushSettings) return c.brushSettings;
+            
+            // getBrushSettings() メソッド
             if (c.getBrushSettings && typeof c.getBrushSettings === 'function') {
-                const s = c.getBrushSettings();
-                if (s) return s;
+                try {
+                    const s = c.getBrushSettings();
+                    if (s) return s;
+                } catch (e) {
+                    // 失敗時は次の候補へ
+                }
             }
         }
         
+        // coreEngine.getDrawingEngine() を試行
         if (window.coreEngine && typeof window.coreEngine.getDrawingEngine === 'function') {
             try {
                 const de = window.coreEngine.getDrawingEngine();
-                if (de?.settings) return de.settings;
-            } catch (e) {}
+                if (de?.brushSettings) return de.brushSettings;
+            } catch (e) {
+                // 失敗時は続行
+            }
         }
         
+        // CoreRuntime.api 経由
         if (window.CoreRuntime?.api) {
             const s = window.CoreRuntime.api.getBrushSettings?.();
             if (s) return s;
@@ -104,6 +121,7 @@ window.KeyboardHandler = (function() {
             vKeyPressed = true;
         }
         
+        // P/Eキー押下時（ツール切替）
         if (e.code === 'KeyP' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             if (!dragState.pKeyPressed) {
                 dragState.pKeyPressed = true;
@@ -128,7 +146,10 @@ window.KeyboardHandler = (function() {
             return;
         }
         
+        // F5/F11/F12は通常動作
         if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
+        
+        // その他Fキー無効化
         if (e.key.startsWith('F') && e.key.length <= 3) {
             e.preventDefault();
             return;
@@ -161,6 +182,9 @@ window.KeyboardHandler = (function() {
         }
     }
 
+    /**
+     * マウスダウン: P/E+ドラッグ開始判定
+     */
     function handleMouseDown(e) {
         const isKeyPressed = dragState.pKeyPressed || dragState.eKeyPressed;
         
@@ -174,18 +198,32 @@ window.KeyboardHandler = (function() {
         const brushSettings = getBrushSettings();
         
         if (!brushSettings) {
+            // BrushSettingsが見つからない場合は静かに失敗
             return;
         }
         
         let startSize, startOpacity;
         
         try {
-            startSize = brushSettings.getBrushSize();
-            startOpacity = brushSettings.getBrushOpacity();
+            // getter経由で取得
+            if (typeof brushSettings.getBrushSize === 'function') {
+                startSize = brushSettings.getBrushSize();
+            } else {
+                startSize = brushSettings.size || 6;
+            }
+            
+            if (typeof brushSettings.getBrushOpacity === 'function') {
+                startOpacity = brushSettings.getBrushOpacity();
+            } else {
+                startOpacity = brushSettings.opacity || 1.0;
+            }
         } catch (error) {
-            return;
+            // getter失敗時はデフォルト値
+            startSize = 6;
+            startOpacity = 1.0;
         }
         
+        // EventBus発火
         if (window.TegakiEventBus) {
             window.TegakiEventBus.emit('tool:drag-size-start', {
                 tool: dragState.activeTool,
@@ -200,6 +238,9 @@ window.KeyboardHandler = (function() {
         e.stopPropagation();
     }
 
+    /**
+     * マウス移動: ドラッグ中の更新
+     */
     function handleMouseMove(e) {
         if (!dragState.isDragging || !dragState.activeTool) return;
         
@@ -218,6 +259,9 @@ window.KeyboardHandler = (function() {
         e.stopPropagation();
     }
 
+    /**
+     * マウスアップ: ドラッグ終了
+     */
     function handleMouseUp(e) {
         if (dragState.isDragging) {
             dragState.isDragging = false;
@@ -381,6 +425,7 @@ window.KeyboardHandler = (function() {
                     child.destroy({ children: true, texture: false, baseTexture: false });
                 }
             } catch (error) {
+                // 静かに失敗
             }
         });
         
@@ -420,6 +465,7 @@ window.KeyboardHandler = (function() {
                     child.destroy({ children: true, texture: false, baseTexture: false });
                 }
             } catch (error) {
+                // 静かに失敗
             }
         });
         
@@ -449,6 +495,7 @@ window.KeyboardHandler = (function() {
                     layer.addChild(pathData.graphics);
                 }
             } catch (error) {
+                // 静かに失敗
             }
         }
         
