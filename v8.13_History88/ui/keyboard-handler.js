@@ -134,11 +134,11 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // DrawingEngineでは settings として格納されている
+        // 🔥 修正: DrawingEngineでは settings として格納されている
         const brushSettings = drawingEngine.settings;
         
         if (!brushSettings) {
-            console.error('❌ BrushSettings not found');
+            console.error('❌ BrushSettings not found in drawingEngine.settings');
             return;
         }
         
