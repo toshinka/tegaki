@@ -1,6 +1,6 @@
 // Tegaki Tool - Core Initializer Module
 // DO NOT use ESM, only global namespace
-// 🔥 修正: ToolSizeManager & DragVisualFeedback 初期化追加
+// 🔥 修正: KeyboardHandler初期化タイミングを修正
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -67,7 +67,7 @@ window.CoreInitializer = (function() {
         return settingsManager;
     }
 
-    // 🔥 ToolSizeManager初期化
+    // ToolSizeManager初期化
     function initializeToolSizeManager(eventBus, config) {
         console.log('🔧 Initializing ToolSizeManager...');
         
@@ -87,7 +87,7 @@ window.CoreInitializer = (function() {
         }
     }
 
-    // 🔥 DragVisualFeedback初期化
+    // DragVisualFeedback初期化
     function initializeDragVisualFeedback(eventBus, config) {
         console.log('🔧 Initializing DragVisualFeedback...');
         
@@ -155,13 +155,13 @@ window.CoreInitializer = (function() {
                 CONFIG
             );
             
-            // 🔥 ToolSizeManager を初期化
+            // ToolSizeManager を初期化
             this.toolSizeManager = initializeToolSizeManager(
                 window.TegakiEventBus,
                 CONFIG
             );
             
-            // 🔥 DragVisualFeedback を初期化
+            // DragVisualFeedback を初期化
             this.dragVisualFeedback = initializeDragVisualFeedback(
                 window.TegakiEventBus,
                 CONFIG
@@ -177,15 +177,20 @@ window.CoreInitializer = (function() {
                 settingsManager: this.settingsManager
             });
             
-            // 🔥 ToolSizeManagerとBrushSettingsを連携（遅延実行）
+            // 🔥 KeyboardHandlerをここで初期化（DrawingEngine準備完了後）
+            console.log('🔧 Initializing KeyboardHandler...');
+            if (window.KeyboardHandler) {
+                window.KeyboardHandler.init();
+                console.log('✅ KeyboardHandler initialized');
+            }
+            
+            // ToolSizeManagerとBrushSettingsを連携
             setTimeout(() => {
                 if (this.toolSizeManager && this.coreEngine.getDrawingEngine()) {
                     const drawingEngine = this.coreEngine.getDrawingEngine();
-                    // DrawingEngineでは settings として格納されている
                     const brushSettings = drawingEngine.settings;
                     
                     if (brushSettings) {
-                        // ToolSizeManagerに参照を保存
                         this.toolSizeManager.brushSettings = brushSettings;
                         console.log('✅ ToolSizeManager linked to BrushSettings');
                         
@@ -329,7 +334,7 @@ window.CoreInitializer = (function() {
         }
     }
 
-    // 🔥 Export System初期化（修正版・確実に実行）
+    // Export System初期化
     function initializeExportSystem(app) {
         console.log('🔧 Initializing Export System...');
         
@@ -369,9 +374,6 @@ window.CoreInitializer = (function() {
                 
                 if (success) {
                     console.log('✅ ExportManager created');
-                    console.log('window.TEGAKI_EXPORT_MANAGER:', !!window.TEGAKI_EXPORT_MANAGER);
-                    console.log('window.TEGAKI_EXPORT_POPUP:', !!window.TEGAKI_EXPORT_POPUP);
-                    console.log('window.exportPopup:', !!window.exportPopup);
                     
                     if (!window.TEGAKI_EXPORT_POPUP && !window.exportPopup) {
                         console.log('⚠️ ExportPopup not created, creating manually...');
@@ -381,12 +383,9 @@ window.CoreInitializer = (function() {
                                 window.TEGAKI_EXPORT_POPUP = new window.ExportPopup(window.TEGAKI_EXPORT_MANAGER);
                                 window.exportPopup = window.TEGAKI_EXPORT_POPUP;
                                 console.log('✅ ExportPopup created manually');
-                                console.log('ExportPopup.isVisible:', window.TEGAKI_EXPORT_POPUP.isVisible);
                             } catch (error) {
                                 console.error('❌ Failed to create ExportPopup manually:', error);
                             }
-                        } else {
-                            console.error('❌ ExportPopup class or TEGAKI_EXPORT_MANAGER not available');
                         }
                     }
                     
@@ -435,8 +434,7 @@ window.CoreInitializer = (function() {
             
             buildDOM();
             
-            // 🔥 KeyboardHandlerは最後に初期化（他のシステムが整った後）
-            window.KeyboardHandler.init();
+            // 🔥 KeyboardHandlerはDrawingApp内で初期化される
             
             const app = new DrawingApp();
             await app.initialize();
@@ -455,13 +453,14 @@ window.CoreInitializer = (function() {
             
             runDiagnostics();
             
-            // 🔥 初期化完了の確認ログ
+            // 初期化完了の確認ログ
             console.log('=== P/E+Drag Feature Status ===');
             console.log('EventBus:', !!window.TegakiEventBus);
             console.log('ToolSizeManager:', !!window.toolSizeManager);
             console.log('DragVisualFeedback:', !!window.dragVisualFeedback);
             console.log('DrawingEngine:', !!window.drawingApp?.drawingEngine);
             console.log('BrushSettings linked:', !!window.toolSizeManager?.brushSettings);
+            console.log('KeyboardHandler initialized:', window.KeyboardHandler?._isInitialized);
             console.log('================================');
             
             return true;
@@ -479,4 +478,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (ToolSizeManager & DragVisualFeedback対応版) loaded');
+console.log('✅ core-initializer.js loaded');
