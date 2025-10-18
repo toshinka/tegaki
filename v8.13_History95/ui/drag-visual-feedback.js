@@ -1,5 +1,5 @@
-// ui/drag-visual-feedback.js - 統合修正版
-// 修正: イベント名を tool:drag-size-* に統一
+// ui/drag-visual-feedback.js - 色修正版
+// 🔧 修正: ふたばカラー（#800000）に変更
 
 window.DragVisualFeedback = (function() {
     'use strict';
@@ -19,6 +19,9 @@ window.DragVisualFeedback = (function() {
         }
 
         _createElements() {
+            // 🔧 修正: ふたばカラー
+            const futabaColor = '#800000'; // ダークレッド
+            
             this.container = document.createElement('div');
             this.container.id = 'drag-visual-feedback';
             this.container.style.cssText = `
@@ -32,7 +35,7 @@ window.DragVisualFeedback = (function() {
             this.circle.style.cssText = `
                 position: absolute;
                 border-radius: 50%;
-                border: 2px solid ${this.config.dragAdjustment.visual.textColor};
+                border: 2px solid ${futabaColor};
                 background: transparent;
                 transform: translate(-50%, -50%);
                 transition: width 0.05s ease, height 0.05s ease, opacity 0.05s ease;
@@ -42,15 +45,16 @@ window.DragVisualFeedback = (function() {
             this.textContainer.style.cssText = `
                 position: absolute;
                 font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
-                font-size: ${this.config.dragAdjustment.visual.fontSize}px;
-                color: ${this.config.dragAdjustment.visual.textColor};
-                background: rgba(255, 255, 255, 0.9);
-                padding: 4px 8px;
+                font-size: 13px;
+                color: ${futabaColor};
+                background: rgba(255, 248, 220, 0.95);
+                padding: 6px 10px;
                 border-radius: 4px;
+                border: 1px solid ${futabaColor};
                 white-space: nowrap;
                 transform: translate(-50%, -100%);
                 margin-top: -10px;
-                box-shadow: 0 2px 8px rgba(0, 0, 0, 0.15);
+                box-shadow: 0 2px 8px rgba(128, 0, 0, 0.2);
             `;
             
             this.container.appendChild(this.circle);
@@ -100,14 +104,15 @@ window.DragVisualFeedback = (function() {
             
             this.isActive = false;
             
-            this.container.style.transition = `opacity ${this.config.dragAdjustment.visual.animationDuration}ms ease`;
+            const duration = this.config.dragAdjustment?.visual?.animationDuration || 200;
+            this.container.style.transition = `opacity ${duration}ms ease`;
             this.container.style.opacity = '0';
             
             setTimeout(() => {
                 this.container.style.display = 'none';
                 this.container.style.opacity = '1';
                 this.container.style.transition = '';
-            }, this.config.dragAdjustment.visual.animationDuration);
+            }, duration);
         }
 
         _updatePosition(x, y) {
@@ -121,17 +126,15 @@ window.DragVisualFeedback = (function() {
             this.circle.style.height = circleSize + 'px';
             this.circle.style.opacity = Math.max(0.3, opacity);
             
-            if (this.config.dragAdjustment.visual.showValues) {
-                const toolName = this.currentTool === 'pen' ? 'ペン' : '消しゴム';
-                const sizeText = `サイズ: ${size.toFixed(1)}px`;
-                const opacityText = `不透明度: ${(opacity * 100).toFixed(0)}%`;
-                
-                this.textContainer.innerHTML = `
-                    <div style="font-weight: bold; margin-bottom: 2px;">${toolName}</div>
-                    <div>${sizeText}</div>
-                    <div>${opacityText}</div>
-                `;
-            }
+            const toolName = this.currentTool === 'pen' ? 'ペン' : '消しゴム';
+            const sizeText = `サイズ: ${size.toFixed(1)}px`;
+            const opacityText = `不透明度: ${(opacity * 100).toFixed(0)}%`;
+            
+            this.textContainer.innerHTML = `
+                <div style="font-weight: bold; margin-bottom: 2px;">${toolName}</div>
+                <div>${sizeText}</div>
+                <div>${opacityText}</div>
+            `;
             
             const offset = (circleSize / 2) + 10;
             this.textContainer.style.marginTop = `-${offset + 50}px`;
@@ -147,4 +150,4 @@ window.DragVisualFeedback = (function() {
     return DragVisualFeedback;
 })();
 
-console.log('✅ ui/drag-visual-feedback.js (統合修正版) loaded');
+console.log('✅ ui/drag-visual-feedback.js (色修正版) loaded');
