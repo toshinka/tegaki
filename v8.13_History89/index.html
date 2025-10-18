@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 PixiJS v8.13 お絵かきツール </title>
+    <title>🎨 PixiJS v8.13 お絵かきツール - P/E+Drag対応</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
@@ -76,10 +76,33 @@
         window.addEventListener('DOMContentLoaded', async () => {
             try {
                 console.log('🚀 Starting application with P/E+Drag feature...');
+                
+                // すべてのスクリプトが確実に読み込まれるまで待機
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                // 依存関係の確認
+                console.log('📦 Checking dependencies...');
+                console.log('  PIXI:', !!window.PIXI);
+                console.log('  TegakiDrawing:', !!window.TegakiDrawing);
+                console.log('  BrushSettings:', !!window.TegakiDrawing?.BrushSettings);
+                console.log('  ToolSizeManager:', !!window.ToolSizeManager);
+                console.log('  KeyboardHandler:', !!window.KeyboardHandler);
+                
+                if (!window.TegakiDrawing?.BrushSettings) {
+                    throw new Error('BrushSettings not loaded!');
+                }
+                
                 await window.CoreInitializer.initialize();
-                console.log('✅ Application ready! Press P or E + drag to adjust size/opacity');
+                
+                console.log('✅ Application ready!');
+                console.log('📝 Usage:');
+                console.log('  - Press P + drag: Adjust pen size/opacity');
+                console.log('  - Press E + drag: Adjust eraser size/opacity');
+                console.log('  - Drag Left/Right: Change size');
+                console.log('  - Drag Up/Down: Change opacity');
             } catch (error) {
-                console.error('Application initialization failed:', error);
+                console.error('❌ Application initialization failed:', error);
+                alert('初期化に失敗しました。ページを再読み込みしてください。');
             }
         });
     </script>

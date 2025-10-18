@@ -1,10 +1,8 @@
 /**
- * DrawingEngine v7.0 - Phase 4.5: フェザーカーブ統合版
+ * DrawingEngine v7.1 - BrushSettings遅延初期化対応版
  * 
  * 変更点:
- * - getFilteredPressure()で圧力フィルタ + フェザーカーブを完全統合
- * - applyFeatherCurve()がPressureHandlerで実行
- * - 極小点でも最小幅を保証
+ * - BrushSettingsが即座に初期化できない場合の遅延初期化に対応
  */
 
 class DrawingEngine {
@@ -14,9 +12,10 @@ class DrawingEngine {
     this.eventBus = eventBus;
     this.config = config || {};
 
+    // BrushSettings初期化（遅延対応）
+    this._initializeBrushSettings();
+    
     if (window.TegakiDrawing) {
-      this.settings = window.TegakiDrawing.BrushSettings ? 
-        new window.TegakiDrawing.BrushSettings(config, eventBus) : null;
       this.recorder = window.TegakiDrawing.StrokeRecorder ? 
         new window.TegakiDrawing.StrokeRecorder() : null;
       this.renderer = window.TegakiDrawing.StrokeRenderer ? 
@@ -38,6 +37,45 @@ class DrawingEngine {
     
     this.subscribeToSettings();
     this.applySyncSettings();
+  }
+
+  /**
+   * BrushSettings初期化（遅延対応）
+   */
+  _initializeBrushSettings() {
+    if (window.TegakiDrawing?.BrushSettings) {
+      this.settings = new window.TegakiDrawing.BrushSettings(this.config, this.eventBus);
+      console.log('✅ BrushSettings initialized immediately');
+    } else {
+      console.warn('⚠️ BrushSettings not available yet, will retry...');
+      this.settings = null;
+      
+      // 遅延初期化を試行
+      const retryInit = () => {
+        if (window.TegakiDrawing?.BrushSettings && !this.settings) {
+          this.settings = new window.TegakiDrawing.BrushSettings(this.config, this.eventBus);
+          console.log('✅ BrushSettings initialized (delayed)');
+          
+          // 遅延初期化後に設定を再適用
+          this.applySyncSettings();
+        } else if (!this.settings) {
+          setTimeout(retryInit, 50);
+        }
+      };
+      
+      setTimeout(retryInit, 50);
+    }
+  }
+
+  /**
+   * BrushSettings取得（nullチェック付き）
+   */
+  _ensureBrushSettings() {
+    if (!this.settings) {
+      console.error('❌ BrushSettings not initialized');
+      return false;
+    }
+    return true;
   }
 
   applySyncSettings() {
@@ -69,7 +107,6 @@ class DrawingEngine {
       this.pressureHandler.setPressureCorrection(currentSettings.pressureCorrection);
     }
     
-    // 🆕 Phase 4.5: フィルタ設定を config から読み込み
     if (this.pressureHandler && this.config.pen?.pressure?.filter) {
       this.pressureHandler.setFilterSettings(this.config.pen.pressure.filter);
     }
@@ -132,9 +169,10 @@ class DrawingEngine {
   }
 
   startDrawing(screenX, screenY, pressureOrEvent) {
+    if (!this._ensureBrushSettings()) return;
+    
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
     
-    // 🆕 Phase 4.5: フェザーカーブ + フィルタ適用済み筆圧取得
     const pressure = this.pressureHandler.getFilteredPressure(
       pressureOrEvent, 
       { x: canvasPoint.x, y: canvasPoint.y }
@@ -163,15 +201,11 @@ class DrawingEngine {
     this.isDrawing = true;
   }
 
-  /**
-   * 🆕 Phase 4.5: フェザーカーブ統合版
-   */
   continueDrawing(screenX, screenY, pressureOrEvent) {
     if (!this.isDrawing || !this.currentPath) return;
 
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
     
-    // 🆕 Phase 4.5: フェザーカーブ + フィルタ適用済み筆圧取得
     const pressure = this.pressureHandler.getFilteredPressure(
       pressureOrEvent,
       { x: canvasPoint.x, y: canvasPoint.y }
@@ -204,9 +238,6 @@ class DrawingEngine {
     }
   }
 
-  /**
-   * Phase 4継承: フェザーカーブ統合完了版
-   */
   stopDrawing() {
     if (!this.isDrawing || !this.currentPath) return;
 
@@ -312,15 +343,21 @@ class DrawingEngine {
   }
 
   setBrushSize(size) {
-    this.settings.setBrushSize(size);
+    if (this._ensureBrushSettings()) {
+      this.settings.setBrushSize(size);
+    }
   }
 
   setBrushColor(color) {
-    this.settings.setBrushColor(color);
+    if (this._ensureBrushSettings()) {
+      this.settings.setBrushColor(color);
+    }
   }
 
   setBrushOpacity(opacity) {
-    this.settings.setBrushOpacity(opacity);
+    if (this._ensureBrushSettings()) {
+      this.settings.setBrushOpacity(opacity);
+    }
   }
 
   getCurrentTool() {
