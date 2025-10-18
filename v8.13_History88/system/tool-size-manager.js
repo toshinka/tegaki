@@ -33,6 +33,9 @@ window.ToolSizeManager = (function() {
                 startOpacity: 0
             };
             
+            // BrushSettings参照（core-initializerから設定される）
+            this.brushSettings = null;
+            
             this._setupEventListeners();
         }
 
@@ -147,22 +150,27 @@ window.ToolSizeManager = (function() {
         }
 
         _applyToBrushSettings(tool, size, opacity) {
-            const drawingEngine = window.drawingApp?.drawingEngine;
-            if (!drawingEngine) return;
-            
-            if (tool === 'pen') {
-                const brushSettings = drawingEngine.brushSettings;
-                if (brushSettings) {
-                    brushSettings.setBrushSize(size);
-                    brushSettings.setBrushOpacity(opacity);
-                }
-            } else if (tool === 'eraser') {
-                const eraserSettings = drawingEngine.eraserBrushSettings;
-                if (eraserSettings) {
-                    eraserSettings.setBrushSize(size);
-                    eraserSettings.setBrushOpacity(opacity);
-                }
+            // 🔥 修正: drawingEngine.settings を参照
+            const drawingEngine = window.drawingApp?.drawingEngine || window.coreEngine?.drawingEngine;
+            if (!drawingEngine) {
+                console.warn('⚠️ DrawingEngine not found');
+                return;
             }
+            
+            // DrawingEngineでは settings プロパティにBrushSettingsが格納されている
+            const settings = drawingEngine.settings;
+            
+            if (!settings) {
+                console.warn('⚠️ BrushSettings not found in DrawingEngine');
+                return;
+            }
+            
+            // ペン/消しゴム共通でBrushSettingsを更新
+            // （DrawingEngineが現在のツールに応じて適切に処理する）
+            settings.setBrushSize(size);
+            settings.setBrushOpacity(opacity);
+            
+            console.log('✅ BrushSettings updated:', { tool, size, opacity });
         }
 
         // サイズスロット選択（将来の1-9キー対応用）
@@ -197,7 +205,8 @@ window.ToolSizeManager = (function() {
                 eraserSize: this.eraserSize,
                 eraserOpacity: this.eraserOpacity,
                 dragActive: this.dragState.active,
-                dragTool: this.dragState.tool
+                dragTool: this.dragState.tool,
+                brushSettingsLinked: !!this.brushSettings
             };
         }
     }
