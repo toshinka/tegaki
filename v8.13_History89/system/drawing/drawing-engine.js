@@ -1,9 +1,9 @@
 /**
- * DrawingEngine v7.2 - BrushSettings確実な初期化版
+ * DrawingEngine v7.3 - BrushSettings超堅牢版
  * 
  * 変更点:
- * - BrushSettings初期化を同期的に完了させる
- * - 初期化失敗時のフォールバック追加
+ * - BrushSettingsの探索を徹底強化（グローバル・TegakiDrawing両対応）
+ * - 初期化失敗時の詳細ログ追加
  */
 
 class DrawingEngine {
@@ -13,9 +13,9 @@ class DrawingEngine {
     this.eventBus = eventBus;
     this.config = config || {};
 
-    // 🔥 修正: BrushSettings初期化を確実に（同期優先）
+    // 🔥 修正: BrushSettings初期化（超堅牢版）
     this.settings = null;
-    this._initializeBrushSettingsSync();
+    this._initializeBrushSettingsRobust();
     
     if (window.TegakiDrawing) {
       this.recorder = window.TegakiDrawing.StrokeRecorder ? 
@@ -42,29 +42,41 @@ class DrawingEngine {
   }
 
   /**
-   * 🔥 修正: BrushSettings同期初期化（即座に成功させる）
+   * 🔥 BrushSettings超堅牢版初期化
    */
-  _initializeBrushSettingsSync() {
-    if (window.TegakiDrawing?.BrushSettings) {
-      this.settings = new window.TegakiDrawing.BrushSettings(this.config, this.eventBus);
-      console.log('✅ BrushSettings initialized immediately');
-      return true;
+  _initializeBrushSettingsRobust() {
+    console.log('🔧 Attempting to initialize BrushSettings...');
+    
+    // 複数の候補から探索
+    const candidates = [
+      { name: 'window.TegakiDrawing.BrushSettings', value: window.TegakiDrawing?.BrushSettings },
+      { name: 'window.BrushSettings', value: window.BrushSettings },
+      { name: 'globalThis.BrushSettings', value: globalThis.BrushSettings }
+    ];
+    
+    console.log('🔍 Searching for BrushSettings in:');
+    candidates.forEach(c => {
+      console.log(`  ${c.name}:`, !!c.value);
+    });
+    
+    // 最初に見つかったものを使用
+    for (const candidate of candidates) {
+      if (candidate.value && typeof candidate.value === 'function') {
+        try {
+          this.settings = new candidate.value(this.config, this.eventBus);
+          console.log(`✅ BrushSettings initialized from ${candidate.name}`);
+          return true;
+        } catch (error) {
+          console.error(`❌ Failed to initialize from ${candidate.name}:`, error);
+        }
+      }
     }
     
-    // フォールバック: グローバルスコープから探索
-    const BrushSettingsClass = window.BrushSettings || 
-                                window.TegakiDrawing?.BrushSettings ||
-                                null;
+    // すべて失敗した場合
+    console.error('❌ BrushSettings class not found in any location');
+    console.log('🔍 Available window properties:', Object.keys(window).filter(k => k.includes('Brush') || k.includes('Tegaki')));
     
-    if (BrushSettingsClass) {
-      this.settings = new BrushSettingsClass(this.config, this.eventBus);
-      console.log('✅ BrushSettings initialized (fallback)');
-      return true;
-    }
-    
-    console.error('❌ BrushSettings class not found');
-    
-    // 最終フォールバック: 遅延初期化を試行（非同期）
+    // 遅延初期化を試行
     this._initializeBrushSettingsDelayed();
     return false;
   }
@@ -73,10 +85,10 @@ class DrawingEngine {
    * BrushSettings遅延初期化（フォールバック用）
    */
   _initializeBrushSettingsDelayed() {
-    console.warn('⚠️ BrushSettings not available yet, will retry...');
+    console.warn('⚠️ Starting delayed BrushSettings initialization...');
     
     let retryCount = 0;
-    const maxRetries = 100; // 最大5秒待機
+    const maxRetries = 200; // 最大10秒待機
     
     const retryInit = () => {
       retryCount++;
@@ -86,23 +98,38 @@ class DrawingEngine {
         return;
       }
       
+      // 複数の候補を再チェック
       const BrushSettingsClass = window.TegakiDrawing?.BrushSettings || 
                                   window.BrushSettings ||
+                                  globalThis.BrushSettings ||
                                   null;
       
-      if (BrushSettingsClass) {
-        this.settings = new BrushSettingsClass(this.config, this.eventBus);
-        console.log('✅ BrushSettings initialized (delayed after', retryCount * 50, 'ms)');
-        
-        // 遅延初期化後に設定を再適用
-        this.applySyncSettings();
-        return;
+      if (BrushSettingsClass && typeof BrushSettingsClass === 'function') {
+        try {
+          this.settings = new BrushSettingsClass(this.config, this.eventBus);
+          console.log(`✅ BrushSettings initialized (delayed after ${retryCount * 50}ms)`);
+          
+          // 遅延初期化後に設定を再適用
+          this.applySyncSettings();
+          
+          // グローバルに公開（keyboard-handlerからアクセス可能に）
+          if (!window.drawingEngine) {
+            window.drawingEngine = this;
+          }
+          
+          return;
+        } catch (error) {
+          console.error('❌ Delayed initialization failed:', error);
+        }
       }
       
       if (retryCount < maxRetries) {
         setTimeout(retryInit, 50);
       } else {
-        console.error('❌ BrushSettings initialization failed after', retryCount * 50, 'ms');
+        console.error(`❌ BrushSettings initialization failed after ${retryCount * 50}ms`);
+        console.log('🔍 Final check - Available globals:');
+        console.log('  window.TegakiDrawing:', window.TegakiDrawing);
+        console.log('  window.BrushSettings:', window.BrushSettings);
       }
     };
     
