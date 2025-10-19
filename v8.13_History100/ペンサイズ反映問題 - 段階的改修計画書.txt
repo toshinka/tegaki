@@ -1,0 +1,188 @@
+===========================================
+ペンサイズ反映問題 - 段階的改修計画書
+===========================================
+
+【問題の本質】
+UI側でのサイズ変更値は保持されているが、描画エンジン(BrushSettings)への伝達が機能していない。
+原因: BrushSettingsインスタンスの初期化不備とToolSizeManager→DrawingEngine間の参照断絶。
+
+【改修方針】
+1. BrushSettingsインスタンスの確実な生成と参照経路の確立
+2. EventBusを介した一貫したサイズ変更フロー構築
+3. 冗長な探索ロジックの削減とDRY原則の徹底
+
+===========================================
+Phase 1: BrushSettings初期化の確立
+===========================================
+
+【目的】
+DrawingEngineがBrushSettingsインスタンスを確実に保持し、
+ToolSizeManagerから参照可能にする。
+
+【改修ファイル】
+- system/drawing/drawing-engine.js (主要改修)
+- core-initializer.js (初期化順序調整)
+
+【参考ファイル】
+- system/drawing/brush-settings.js
+- system/tool-size-manager.js
+
+【処理フロー位置】
+初期化シーケンス: EventBus生成 → Config読込 → BrushSettings生成 → DrawingEngine生成
+
+【具体的変更】
+
+1. drawing-engine.js
+   - constructor内でBrushSettingsインスタンスを必ず生成
+   - this.settings = new BrushSettings(config, eventBus) の明示的代入
+   - window.drawingEngine = this の設定（ToolSizeManagerの探索対象として）
+
+2. core-initializer.js
+   - DrawingEngine初期化前にEventBusとConfigが確実に存在することを保証
+   - 初期化順序の明示: setupEventBus() → loadConfig() → initDrawingEngine()
+
+【使用メソッド/定義】
+- BrushSettings.constructor(config, eventBus)
+- DrawingEngine.constructor(...) 内での this.settings 初期化
+- window.drawingEngine への参照設定
+
+【検証方法】
+console.log(window.drawingEngine?.settings) が BrushSettings インスタンスを返すこと
+
+===========================================
+Phase 2: ToolSizeManager簡素化
+===========================================
+
+【目的】
+冗長な再試行ロジックと複数探索パスを削減し、
+確実に初期化されたBrushSettingsへ直接アクセスする。
+
+【改修ファイル】
+- system/tool-size-manager.js (リファクタリング)
+
+【参考ファイル】
+- system/drawing/brush-settings.js (メソッド仕様確認)
+- system/drawing/drawing-engine.js (参照構造確認)
+
+【処理フロー位置】
+UI操作 → EventBus発火 → ToolSizeManager受信 → BrushSettings更新 → 描画反映
+
+【具体的変更】
+
+1. _getBrushSettings() 簡素化
+   - window.drawingEngine.settings のみを参照
+   - 複数フォールバックパスを削除
+   - 見つからない場合はエラーログ（初期化失敗として扱う）
+
+2. _attemptConnection() 削除
+   - Phase1で確実に初期化されるため再試行不要
+
+3. イベントハンドラ統一
+   - tool:size-opacity-changed のみを購読
+   - 他の重複イベント購読を削除
+
+【使用メソッド/定義】
+- BrushSettings.setBrushSize(size)
+- BrushSettings.setBrushOpacity(opacity)
+- EventBus.on('tool:size-opacity-changed', handler)
+
+【検証方法】
+UIドラッグ時に BrushSettings.setBrushSize() が呼ばれること（ブレークポイント確認）
+
+===========================================
+Phase 3: UI→EventBus発火の統一
+===========================================
+
+【目的】
+resize-slider、drag-visual-feedbackからのイベント発火を
+tool:size-opacity-changed に統一し、重複イベントを削除。
+
+【改修ファイル】
+- ui/resize-slider.js
+- ui/drag-visual-feedback.js
+
+【参考ファイル】
+- system/event-bus.js (イベント仕様)
+- system/tool-size-manager.js (購読イベント名)
+
+【処理フロー位置】
+ユーザー操作 → UI層イベントハンドラ → EventBus.emit → ToolSizeManager
+
+【具体的変更】
+
+1. resize-slider.js
+   - サイズ変更時に tool:size-opacity-changed のみ emit
+   - tool:drag-size-update 等の重複イベント削除
+
+2. drag-visual-feedback.js
+   - ドラッグ終了時に tool:size-opacity-changed を emit
+   - 一時的な視覚フィードバック表示は継続
+
+【使用メソッド/定義】
+- EventBus.emit('tool:size-opacity-changed', { tool, size, opacity })
+- payload構造: { tool: string, size: number, opacity: number }
+
+【検証方法】
+EventBus.getDebugInfo() で tool:size-opacity-changed のリスナーとemit回数確認
+
+===========================================
+Phase 4: グローバル参照の整理（オプション）
+===========================================
+
+【目的】
+window直接参照を減らし、core-engineを経由した参照に統一。
+（ただし現在の動作が安定している場合は省略可）
+
+【改修ファイル】
+- core-engine.js
+- system/tool-size-manager.js
+
+【参考ファイル】
+- core-initializer.js
+
+【処理フロー位置】
+初期化: CoreEngine生成 → 各サブシステムへの参照保持 → ToolSizeManagerへの依存注入
+
+【具体的変更】
+
+1. core-engine.js
+   - this.drawingEngine を保持
+   - getDrawingEngine() メソッド追加
+
+2. tool-size-manager.js
+   - constructor に drawingEngine を受け取る
+   - _getBrushSettings() を this.drawingEngine.settings 参照に変更
+
+【使用メソッド/定義】
+- CoreEngine.getDrawingEngine()
+- ToolSizeManager.constructor(config, eventBus, drawingEngine)
+
+===========================================
+実装の優先順位
+===========================================
+
+必須: Phase 1, 2, 3
+推奨: Phase 4（テスト性向上のため）
+
+Phase 1 → Phase 2 の順で実施すれば即座に問題解決。
+Phase 3 は並行実施可能だが Phase 2 後の方が検証が容易。
+
+===========================================
+改修後の期待動作フロー
+===========================================
+
+1. ユーザーがP+ドラッグでサイズ変更
+2. drag-visual-feedback が視覚フィードバック表示
+3. drag-visual-feedback が tool:size-opacity-changed を emit
+4. ToolSizeManager が受信
+5. ToolSizeManager が window.drawingEngine.settings.setBrushSize() 呼出
+6. BrushSettings が内部状態更新 & brushSizeChanged emit
+7. DrawingEngine が次回描画時に新サイズを使用
+
+===========================================
+【注意事項】
+- localStorage/sessionStorage は使用不可（Claude.ai制約）
+- 全てのサイズ状態は BrushSettings インスタンス内で管理
+- イベント名は tool:size-opacity-changed に統一（他は削除）
+- console.log は検証後に最小限に削減
+===========================================
