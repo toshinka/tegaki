@@ -1,5 +1,6 @@
 // Tegaki Tool - Core Initializer Module
 // Phase1: 初期化順序の明確化と BrushSettings 確実生成
+// Phase2: ToolSizeManager エラーハンドリング改善
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -68,6 +69,7 @@ window.CoreInitializer = (function() {
 
     function initializeToolSizeManager(eventBus, config) {
         if (!window.ToolSizeManager) {
+            console.error('❌ ToolSizeManager class not found');
             return null;
         }
         
@@ -76,12 +78,16 @@ window.CoreInitializer = (function() {
             window.toolSizeManager = toolSizeManager;
             return toolSizeManager;
         } catch (error) {
+            console.error('❌ ToolSizeManager initialization failed:', error);
+            console.error('   config:', config);
+            console.error('   eventBus:', eventBus);
             return null;
         }
     }
 
     function initializeDragVisualFeedback(eventBus, config) {
         if (!window.DragVisualFeedback) {
+            console.error('❌ DragVisualFeedback class not found');
             return null;
         }
         
@@ -90,6 +96,7 @@ window.CoreInitializer = (function() {
             window.dragVisualFeedback = dragVisualFeedback;
             return dragVisualFeedback;
         } catch (error) {
+            console.error('❌ DragVisualFeedback initialization failed:', error);
             return null;
         }
     }
@@ -171,17 +178,25 @@ window.CoreInitializer = (function() {
                 CONFIG
             );
             
-            // Phase1: ToolSizeManager初期化（DrawingEngine.settings準備後）
+            // Phase2: ToolSizeManager初期化（DrawingEngine.settings準備後）
             this.toolSizeManager = initializeToolSizeManager(
                 window.TegakiEventBus,
                 CONFIG
             );
             
-            // Phase1: DragVisualFeedback初期化
+            if (!this.toolSizeManager) {
+                console.error('⚠️ ToolSizeManager initialization failed, P/E+Drag feature will not work');
+            }
+            
+            // Phase2: DragVisualFeedback初期化
             this.dragVisualFeedback = initializeDragVisualFeedback(
                 window.TegakiEventBus,
                 CONFIG
             );
+            
+            if (!this.dragVisualFeedback) {
+                console.error('⚠️ DragVisualFeedback initialization failed, visual feedback will not work');
+            }
             
             CoreRuntime.init({
                 app: this.pixiApp,
