@@ -103,6 +103,14 @@
         
         // === Phase 12: Pointerイベントハンドラ ===
         handlePointerDown(event) {
+            // 🔧 追加: P/Eキー押下中はサイズ変更モード（描画無効）
+            if (window.KeyboardHandler) {
+                const debugState = window.KeyboardHandler.getDebugState?.();
+                if (debugState && (debugState.pKeyPressed || debugState.eKeyPressed)) {
+                    return; // サイズ変更モード中は描画しない
+                }
+            }
+            
             // Phase 12: event.global で座標取得
             const screenX = event.global.x;
             const screenY = event.global.y;
@@ -114,6 +122,14 @@
         },
         
         handlePointerMove(event) {
+            // 🔧 追加: ドラッグ中はサイズ変更モード（描画無効）
+            if (window.KeyboardHandler) {
+                const debugState = window.KeyboardHandler.getDebugState?.();
+                if (debugState && debugState.isDragging) {
+                    return; // サイズ変更モード中は描画しない
+                }
+            }
+            
             const screenX = event.global.x;
             const screenY = event.global.y;
             
@@ -123,6 +139,14 @@
         },
         
         handlePointerUp(event) {
+            // 🔧 追加: ドラッグ中はサイズ変更モード（描画無効）
+            if (window.KeyboardHandler) {
+                const debugState = window.KeyboardHandler.getDebugState?.();
+                if (debugState && debugState.isDragging) {
+                    return; // サイズ変更モード中は描画しない
+                }
+            }
+            
             if (this.internal.drawingEngine?.isDrawing) {
                 this.internal.drawingEngine.stopDrawing();
             }

@@ -1,5 +1,5 @@
-// ui/keyboard-handler.js - 最小限修正版
-// 🔧 修正: getBrushSettings()をsettingsプロパティ優先に変更
+// ui/keyboard-handler.js - P/E+ドラッグ機能修正版
+// 🔧 修正: deltaX/deltaYを開始位置からの累積差分として渡す
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -65,8 +65,8 @@ window.KeyboardHandler = (function() {
      */
     function getBrushSettings() {
         const candidates = [
-            window.drawingApp?.drawingEngine,
             window.coreEngine?.drawingEngine,
+            window.drawingApp?.drawingEngine,
             window.CoreEngine?.drawingEngine,
             window.drawingEngine
         ];
@@ -74,13 +74,9 @@ window.KeyboardHandler = (function() {
         for (const c of candidates) {
             if (!c) continue;
             
-            // 🔧 修正: settings プロパティを最優先
             if (c.settings) return c.settings;
-            
-            // brushSettings プロパティ（互換性）
             if (c.brushSettings) return c.brushSettings;
             
-            // getBrushSettings() メソッド
             if (c.getBrushSettings && typeof c.getBrushSettings === 'function') {
                 try {
                     const s = c.getBrushSettings();
@@ -150,7 +146,11 @@ window.KeyboardHandler = (function() {
             vKeyPressed = false;
         }
         
+        // 🔧 修正: キーアップ時にドラッグを終了
         if (e.code === 'KeyP') {
+            if (dragState.isDragging && dragState.activeTool === 'pen') {
+                endDrag();
+            }
             dragState.pKeyPressed = false;
             if (dragState.activeTool === 'pen') {
                 dragState.activeTool = null;
@@ -158,6 +158,9 @@ window.KeyboardHandler = (function() {
         }
         
         if (e.code === 'KeyE') {
+            if (dragState.isDragging && dragState.activeTool === 'eraser') {
+                endDrag();
+            }
             dragState.eKeyPressed = false;
             if (dragState.activeTool === 'eraser') {
                 dragState.activeTool = null;
@@ -166,7 +169,7 @@ window.KeyboardHandler = (function() {
     }
 
     /**
-     * 🔧 修正: マウスダウン時のBrushSettings取得を簡潔化
+     * マウスダウン: ドラッグ開始
      */
     function handleMouseDown(e) {
         const isKeyPressed = dragState.pKeyPressed || dragState.eKeyPressed;
@@ -175,13 +178,18 @@ window.KeyboardHandler = (function() {
         if (isInputFocused()) return;
         if (dragState.isDragging) return;
         
+        // 🔧 修正: 描画を確実に防止
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        
         dragState.dragStartX = e.clientX;
         dragState.dragStartY = e.clientY;
         
         const brushSettings = getBrushSettings();
         
         if (!brushSettings) {
-            return; // 静かに失敗
+            return;
         }
         
         let startSize, startOpacity;
@@ -204,17 +212,20 @@ window.KeyboardHandler = (function() {
         }
         
         dragState.isDragging = true;
-        
-        e.preventDefault();
-        e.stopPropagation();
     }
 
     /**
-     * マウス移動: ドラッグ中の更新
+     * 🔧 修正: マウス移動 - 開始位置からの累積差分を計算
      */
     function handleMouseMove(e) {
         if (!dragState.isDragging || !dragState.activeTool) return;
         
+        // 🔧 修正: 描画を確実に防止
+        e.preventDefault();
+        e.stopPropagation();
+        e.stopImmediatePropagation();
+        
+        // 🔧 修正: 開始位置からの累積差分
         const deltaX = e.clientX - dragState.dragStartX;
         const deltaY = e.clientY - dragState.dragStartY;
         
@@ -225,9 +236,6 @@ window.KeyboardHandler = (function() {
                 deltaY
             });
         }
-        
-        e.preventDefault();
-        e.stopPropagation();
     }
 
     /**
@@ -235,14 +243,54 @@ window.KeyboardHandler = (function() {
      */
     function handleMouseUp(e) {
         if (dragState.isDragging) {
-            dragState.isDragging = false;
-            
-            if (window.TegakiEventBus) {
-                window.TegakiEventBus.emit('tool:drag-size-end');
-            }
-            
+            // 🔧 修正: 描画を確実に防止
             e.preventDefault();
             e.stopPropagation();
+            e.stopImmediatePropagation();
+            
+            endDrag();
+        }
+    }
+
+    /**
+     * ドラッグ終了処理
+     */
+    function endDrag() {
+        dragState.isDragging = false;
+        
+        if (window.TegakiEventBus) {
+            window.TegakiEventBus.emit('tool:drag-size-end');
+        }
+    }
+    
+    /**
+     * 🆕 PointerEvent対応（PixiJS EventSystem対策）
+     */
+    function handlePointerDown(e) {
+        if (dragState.pKeyPressed || dragState.eKeyPressed) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            // MouseEventとして処理
+            handleMouseDown(e);
+        }
+    }
+    
+    function handlePointerMove(e) {
+        if (dragState.isDragging) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            handleMouseMove(e);
+        }
+    }
+    
+    function handlePointerUp(e) {
+        if (dragState.isDragging) {
+            e.preventDefault();
+            e.stopPropagation();
+            e.stopImmediatePropagation();
+            handleMouseUp(e);
         }
     }
 
@@ -488,11 +536,17 @@ window.KeyboardHandler = (function() {
         }
 
         document.addEventListener('keydown', handleKeyDown, { capture: true });
-        document.addEventListener('keyup', handleKeyUp);
+        document.addEventListener('keyup', handleKeyUp, { capture: true });
         
-        document.addEventListener('mousedown', handleMouseDown, { capture: true });
-        document.addEventListener('mousemove', handleMouseMove, { capture: true });
-        document.addEventListener('mouseup', handleMouseUp, { capture: true });
+        // 🔧 修正: マウスイベントを最優先でキャプチャ（useCapture: true）
+        document.addEventListener('mousedown', handleMouseDown, { capture: true, passive: false });
+        document.addEventListener('mousemove', handleMouseMove, { capture: true, passive: false });
+        document.addEventListener('mouseup', handleMouseUp, { capture: true, passive: false });
+        
+        // 🔧 追加: PointerEventも同様に処理（PixiJS EventSystem対策）
+        document.addEventListener('pointerdown', handlePointerDown, { capture: true, passive: false });
+        document.addEventListener('pointermove', handlePointerMove, { capture: true, passive: false });
+        document.addEventListener('pointerup', handlePointerUp, { capture: true, passive: false });
         
         isInitialized = true;
         window.KeyboardHandler._isInitialized = true;
@@ -524,6 +578,8 @@ window.KeyboardHandler = (function() {
             eKeyPressed: dragState.eKeyPressed,
             isDragging: dragState.isDragging,
             activeTool: dragState.activeTool,
+            dragStartX: dragState.dragStartX,
+            dragStartY: dragState.dragStartY,
             isInitialized: isInitialized,
             drawingEngine: getDrawingEngine(),
             brushSettings: getBrushSettings()
@@ -538,3 +594,5 @@ window.KeyboardHandler = (function() {
         _isInitialized: false
     };
 })();
+
+console.log('✅ keyboard-handler.js loaded (P/E+ドラッグ修正版)');

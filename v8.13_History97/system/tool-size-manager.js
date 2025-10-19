@@ -1,11 +1,11 @@
 /**
  * tool-size-manager.js
- * P/E+ドラッグ機能 - EventBus統合完全版 v2
+ * P/E+ドラッグ機能 - EventBus統合完全版 v3
  * 
- * 🔧 修正内容 v2:
- * - dragState初期化時に軸ロック機能追加（先に動かした軸を優先）
- * - サイズに応じた感度の可変化（小サイズは繊細、大サイズは大胆に）
- * - 実サイズ変更の確実化
+ * 🔧 修正内容 v3:
+ * - BrushSettings取得の確実性向上（DrawingEngine.settings優先）
+ * - 実サイズ変更の確実化（setBrushSize/Opacity直接呼び出し）
+ * - デバッグログの強化
  */
 
 (function() {
@@ -34,8 +34,22 @@
             // BrushSettings直接参照（初期化後に設定される）
             this.brushSettings = null;
 
-            // EventBusリスナー登録
-            this._setupEventListeners();
+            // 🔧 修正: EventBusの存在確認後にリスナー登録
+            if (this.eventBus && typeof this.eventBus.on === 'function') {
+                this._setupEventListeners();
+            } else {
+                console.warn('⚠️ ToolSizeManager: EventBus not available, retrying...');
+                setTimeout(() => this._retrySetupEventListeners(), 100);
+            }
+        }
+        
+        _retrySetupEventListeners() {
+            if (window.TegakiEventBus && typeof window.TegakiEventBus.on === 'function') {
+                this.eventBus = window.TegakiEventBus;
+                this._setupEventListeners();
+            } else {
+                setTimeout(() => this._retrySetupEventListeners(), 100);
+            }
         }
 
         _setupEventListeners() {
@@ -49,7 +63,7 @@
                     startOpacity: data.startOpacity,
                     currentSize: data.startSize,
                     currentOpacity: data.startOpacity,
-                    lockedAxis: null, // 'size' or 'opacity'
+                    lockedAxis: null,
                     totalDeltaX: 0,
                     totalDeltaY: 0
                 };
@@ -63,11 +77,9 @@
 
                 const sensitivity = this.config.dragAdjustment;
                 
-                // 累積デルタを更新
                 this.dragState.totalDeltaX += Math.abs(data.deltaX);
                 this.dragState.totalDeltaY += Math.abs(data.deltaY);
 
-                // 軸ロック判定（最初に5px以上動いた軸を優先）
                 if (!this.dragState.lockedAxis) {
                     if (this.dragState.totalDeltaX > 5) {
                         this.dragState.lockedAxis = 'size';
@@ -79,14 +91,12 @@
                 let newSize = this.dragState.currentSize;
                 let newOpacity = this.dragState.currentOpacity;
 
-                // サイズ計算（軸ロックされていない、またはsize軸の場合）
                 if (!this.dragState.lockedAxis || this.dragState.lockedAxis === 'size') {
-                    // サイズに応じた感度の可変化
                     let sizeSensitivity = sensitivity.size.sensitivity;
                     if (this.dragState.startSize < 10) {
-                        sizeSensitivity *= 0.5; // 小サイズは繊細に
+                        sizeSensitivity *= 0.5;
                     } else if (this.dragState.startSize > 30) {
-                        sizeSensitivity *= 2.0; // 大サイズは大胆に
+                        sizeSensitivity *= 2.0;
                     }
 
                     newSize = Math.max(
@@ -98,7 +108,6 @@
                     );
                 }
 
-                // 透明度計算（軸ロックされていない、またはopacity軸の場合）
                 if (!this.dragState.lockedAxis || this.dragState.lockedAxis === 'opacity') {
                     newOpacity = Math.max(
                         sensitivity.opacity.min,
@@ -112,7 +121,6 @@
                 this.dragState.currentSize = newSize;
                 this.dragState.currentOpacity = newOpacity;
 
-                // 値を保存
                 if (data.tool === 'pen') {
                     this.penSize = newSize;
                     this.penOpacity = newOpacity;
@@ -121,10 +129,9 @@
                     this.eraserOpacity = newOpacity;
                 }
 
-                // BrushSettingsに反映
+                // 🔧 修正: BrushSettingsに確実に反映
                 this._updateBrushSettings(newSize, newOpacity);
 
-                // イベント発行
                 this.eventBus.emit('tool:size-opacity-changed', {
                     tool: data.tool,
                     size: newSize,
@@ -149,32 +156,31 @@
         }
 
         /**
-         * BrushSettings取得（強制パッチ互換メソッド）
+         * 🔧 修正: BrushSettings取得（DrawingEngine.settings優先）
          */
         _getBrushSettings() {
-            // 直接参照が既に設定されている場合
             if (this.brushSettings) {
                 return this.brushSettings;
             }
 
-            // CoreRuntime.api経由で取得
-            if (window.CoreRuntime?.api?.getDrawingEngine) {
-                const de = window.CoreRuntime.api.getDrawingEngine();
-                if (de?.settings) {
-                    this.brushSettings = de.settings;
-                    return de.settings;
-                }
-            }
-
-            // フォールバック: 直接参照を試行
-            const candidates = [
+            // 1. DrawingEngine.settings (最優先)
+            const drawingEngines = [
                 window.coreEngine?.drawingEngine,
                 window.drawingApp?.drawingEngine,
                 window.CoreEngine?.drawingEngine,
                 window.drawingEngine
             ];
 
-            for (const de of candidates) {
+            for (const de of drawingEngines) {
+                if (de?.settings) {
+                    this.brushSettings = de.settings;
+                    return de.settings;
+                }
+            }
+
+            // 2. CoreRuntime.api経由
+            if (window.CoreRuntime?.api?.getDrawingEngine) {
+                const de = window.CoreRuntime.api.getDrawingEngine();
                 if (de?.settings) {
                     this.brushSettings = de.settings;
                     return de.settings;
@@ -185,7 +191,7 @@
         }
 
         /**
-         * BrushSettingsへの値反映
+         * 🔧 修正: BrushSettingsへの値反映（確実化）
          */
         _updateBrushSettings(size, opacity) {
             const brushSettings = this._getBrushSettings();
@@ -195,11 +201,24 @@
             }
 
             try {
+                // サイズ設定
                 if (typeof brushSettings.setBrushSize === 'function') {
                     brushSettings.setBrushSize(size);
+                } else if (brushSettings.size !== undefined) {
+                    brushSettings.size = size;
                 }
+
+                // 不透明度設定
                 if (typeof brushSettings.setBrushOpacity === 'function') {
                     brushSettings.setBrushOpacity(opacity);
+                } else if (brushSettings.opacity !== undefined) {
+                    brushSettings.opacity = opacity;
+                }
+
+                // EventBus発行（他のコンポーネント連携）
+                if (this.eventBus) {
+                    this.eventBus.emit('brushSizeChanged', { size });
+                    this.eventBus.emit('brushOpacityChanged', { opacity });
                 }
             } catch (e) {
                 // 静かに失敗
@@ -236,12 +255,10 @@
          * 現在のツール取得
          */
         getCurrentTool() {
-            // CoreRuntime.api経由で取得
             if (window.CoreRuntime?.api?.getCurrentTool) {
                 return window.CoreRuntime.api.getCurrentTool();
             }
 
-            // フォールバック: DrawingEngineから取得
             const de = window.coreEngine?.drawingEngine || 
                        window.drawingApp?.drawingEngine;
             
@@ -259,13 +276,13 @@
                 eraserOpacity: this.eraserOpacity,
                 dragState: this.dragState,
                 sizeSlots: this.sizeSlots,
-                brushSettings: !!this._getBrushSettings()
+                brushSettings: !!this._getBrushSettings(),
+                brushSettingsDetails: this._getBrushSettings()?.getCurrentSettings?.()
             };
         }
     }
 
-    // グローバル登録
     window.ToolSizeManager = ToolSizeManager;
 })();
 
-console.log('✅ tool-size-manager.js v2 loaded (軸ロック + 可変感度)');
+console.log('✅ tool-size-manager.js v3 loaded (実サイズ反映確実化)');
