@@ -1,5 +1,6 @@
-// ui/tool-size-popup.js
+// ui/tool-size-popup.js v2.0
 // ペン・消しゴム共用のサイズ変更ポップアップUI
+// 🔧 改修: TEGAKI_CONFIG対応、BrushSettings統合
 
 const ToolSizePopup = (() => {
   let popup = null;
@@ -7,8 +8,8 @@ const ToolSizePopup = (() => {
   let slotElements = [];
   let sliderElement = null;
   let valueInputElement = null;
+  let activeSlotIndex = null;
 
-  // テーパリング刻み幅定義
   const TAPER_STEPS = [
     { max: 3, step: 0.1 },
     { max: 10, step: 0.5 },
@@ -29,10 +30,31 @@ const ToolSizePopup = (() => {
     return Math.round(value / step) * step;
   }
 
-  function createPopupDOM() {
-    console.log('[ToolSizePopup] Creating popup DOM...');
+  /**
+   * 🔧 改修: BrushSettingsから現在のサイズを取得
+   */
+  function getBrushSettings() {
+    const sources = [
+      () => window.drawingApp?.drawingEngine?.settings,
+      () => window.coreEngine?.drawingEngine?.settings,
+      () => window.CoreRuntime?.internal?.drawingEngine?.settings,
+      () => window.drawingEngine?.settings
+    ];
     
-    if (!window.CONFIG?.toolSizePopup) {
+    for (const fn of sources) {
+      try {
+        const settings = fn();
+        if (settings) return settings;
+      } catch (e) {}
+    }
+    
+    return null;
+  }
+
+  function createPopupDOM() {
+    const config = window.TEGAKI_CONFIG || window.CONFIG;
+    
+    if (!config?.toolSizePopup) {
       console.error('[ToolSizePopup] CONFIG.toolSizePopup not found!');
       return null;
     }
@@ -42,20 +64,18 @@ const ToolSizePopup = (() => {
       return null;
     }
     
-    const config = window.CONFIG.toolSizePopup;
+    const popupConfig = config.toolSizePopup;
     const panel = DOMBuilder.createElement('div', 'tool-size-popup-panel popup-panel');
 
     // スロットコンテナ
     const slotsContainer = DOMBuilder.createElement('div', 'slots-container');
     
-    console.log('[ToolSizePopup] Creating', config.slots.length, 'slots');
-    
-    config.slots.forEach((size, index) => {
+    popupConfig.slots.forEach((size, index) => {
       const slotItem = DOMBuilder.createElement('div', 'slot-item');
       
       const dotSize = Math.max(
-        config.dotMinSize,
-        Math.min(config.dotMaxSize, (size / config.sliderMax) * config.dotMaxSize)
+        popupConfig.dotMinSize,
+        Math.min(popupConfig.dotMaxSize, (size / popupConfig.sliderMax) * popupConfig.dotMaxSize)
       );
       
       const dot = DOMBuilder.createElement('div', 'slot-dot');
@@ -90,16 +110,16 @@ const ToolSizePopup = (() => {
     sliderElement = DOMBuilder.createElement('input');
     sliderElement.type = 'range';
     sliderElement.className = 'size-slider';
-    sliderElement.min = config.sliderMin;
-    sliderElement.max = config.sliderMax;
+    sliderElement.min = popupConfig.sliderMin;
+    sliderElement.max = popupConfig.sliderMax;
     sliderElement.step = 0.1;
     sliderElement.addEventListener('input', handleSliderInput);
     
     valueInputElement = DOMBuilder.createElement('input');
     valueInputElement.type = 'number';
     valueInputElement.className = 'size-value-input';
-    valueInputElement.min = config.sliderMin;
-    valueInputElement.max = config.sliderMax;
+    valueInputElement.min = popupConfig.sliderMin;
+    valueInputElement.max = popupConfig.sliderMax;
     valueInputElement.step = 0.1;
     valueInputElement.addEventListener('change', handleValueInputChange);
     
@@ -119,68 +139,83 @@ const ToolSizePopup = (() => {
     return panel;
   }
 
+  /**
+   * 🔧 改修: スロットクリック時、BrushSettingsに直接反映
+   */
   function handleSlotClick(slotIndex) {
     if (!currentTool) return;
     
-    const config = window.CONFIG.toolSizePopup;
-    const size = config.slots[slotIndex];
+    const config = window.TEGAKI_CONFIG || window.CONFIG;
+    const size = config.toolSizePopup.slots[slotIndex];
     
-    window.ToolSizeManager.setActiveSlot(currentTool, slotIndex);
-    window.ToolSizeManager.applySizeFromSlot(currentTool, slotIndex);
+    activeSlotIndex = slotIndex;
     
-    updateUI(size);
-    
-    window.EventBus.emit('tool:size-opacity-changed', {
-      tool: currentTool,
-      size,
-      opacity: window.SettingsManager.getToolOpacity(currentTool)
-    });
+    applySize(size);
   }
 
   function handleSliderInput(e) {
     const value = parseFloat(e.target.value);
     updateValueDisplay(value);
+    
+    // スライダー操作時はスロットのアクティブを解除
+    activeSlotIndex = null;
+    updateActiveSlot();
   }
 
   function handleValueInputChange(e) {
     if (!currentTool) return;
     
-    const config = window.CONFIG.toolSizePopup;
+    const config = window.TEGAKI_CONFIG || window.CONFIG;
     let value = parseFloat(e.target.value);
     
-    value = Math.max(config.sliderMin, Math.min(config.sliderMax, value));
+    value = Math.max(config.toolSizePopup.sliderMin, Math.min(config.toolSizePopup.sliderMax, value));
     value = roundToStep(value);
     
+    activeSlotIndex = null;
     applySize(value);
   }
 
   function adjustValue(direction) {
     if (!currentTool) return;
     
-    const config = window.CONFIG.toolSizePopup;
+    const config = window.TEGAKI_CONFIG || window.CONFIG;
     let currentValue = parseFloat(sliderElement.value);
     const step = getStepForValue(currentValue);
     
     let newValue = currentValue + (direction * step);
-    newValue = Math.max(config.sliderMin, Math.min(config.sliderMax, newValue));
+    newValue = Math.max(config.toolSizePopup.sliderMin, Math.min(config.toolSizePopup.sliderMax, newValue));
     newValue = roundToStep(newValue);
     
+    activeSlotIndex = null;
     applySize(newValue);
   }
 
+  /**
+   * 🔧 改修: BrushSettingsに直接反映
+   */
   function applySize(size) {
     if (!currentTool) return;
     
-    window.ToolSizeManager.setSize(currentTool, size);
-    window.ToolSizeManager.clearActiveSlot(currentTool);
+    const brushSettings = getBrushSettings();
+    if (!brushSettings) {
+      console.error('[ToolSizePopup] BrushSettings not found');
+      return;
+    }
     
+    // BrushSettingsに反映
+    brushSettings.setBrushSize(size);
+    
+    // UIを更新
     updateUI(size);
     
-    window.EventBus.emit('tool:size-opacity-changed', {
-      tool: currentTool,
-      size,
-      opacity: window.SettingsManager.getToolOpacity(currentTool)
-    });
+    // EventBus通知（DragVisualFeedback用）
+    if (window.TegakiEventBus) {
+      window.TegakiEventBus.emit('tool:size-opacity-changed', {
+        tool: currentTool,
+        size: size,
+        opacity: brushSettings.getBrushOpacity()
+      });
+    }
   }
 
   function updateUI(size) {
@@ -202,10 +237,8 @@ const ToolSizePopup = (() => {
   }
 
   function updateActiveSlot() {
-    const activeSlot = window.ToolSizeManager.getActiveSlot(currentTool);
-    
     slotElements.forEach((element, index) => {
-      if (index === activeSlot) {
+      if (index === activeSlotIndex) {
         element.classList.add('active');
       } else {
         element.classList.remove('active');
@@ -213,38 +246,65 @@ const ToolSizePopup = (() => {
     });
   }
 
-  function show(tool) {
-    console.log('[ToolSizePopup] show() called for tool:', tool);
-    console.log('[ToolSizePopup] CONFIG exists:', !!window.CONFIG);
-    console.log('[ToolSizePopup] ToolSizeManager exists:', !!window.ToolSizeManager);
+  /**
+   * 🔧 改修: BrushSettingsから現在のサイズを取得してスロットマッチング
+   */
+  function detectActiveSlot(currentSize) {
+    const config = window.TEGAKI_CONFIG || window.CONFIG;
+    const slots = config.toolSizePopup.slots;
     
+    const matchIndex = slots.findIndex(size => Math.abs(size - currentSize) < 0.01);
+    
+    if (matchIndex !== -1) {
+      activeSlotIndex = matchIndex;
+    } else {
+      activeSlotIndex = null;
+    }
+  }
+
+  function show(tool) {
     if (!popup) {
-      console.log('[ToolSizePopup] Creating popup DOM...');
       popup = createPopupDOM();
+      if (!popup) {
+        console.error('[ToolSizePopup] Failed to create popup DOM');
+        return;
+      }
       document.body.appendChild(popup);
-      console.log('[ToolSizePopup] Popup appended to body');
     }
 
     currentTool = tool;
     
-    const currentSize = window.ToolSizeManager.getSize(tool);
-    console.log('[ToolSizePopup] Current size for', tool, ':', currentSize);
+    // 🔧 改修: BrushSettingsから現在のサイズを取得
+    const brushSettings = getBrushSettings();
+    if (!brushSettings) {
+      console.error('[ToolSizePopup] BrushSettings not found');
+      return;
+    }
+    
+    const currentSize = brushSettings.getBrushSize();
+    
+    // スロットマッチング
+    detectActiveSlot(currentSize);
     
     updateUI(currentSize);
     
     popup.style.display = 'block';
-    console.log('[ToolSizePopup] Popup displayed');
     
-    window.EventBus.emit('popup:opened', { type: 'toolSize' });
+    if (window.TegakiEventBus) {
+      window.TegakiEventBus.emit('popup:opened', { type: 'toolSize' });
+    }
   }
 
   function hide() {
     if (popup) {
       popup.style.display = 'none';
       currentTool = null;
+      activeSlotIndex = null;
     }
     
-    window.EventBus.emit('popup:closed', { type: 'toolSize' });
+    if (window.TegakiEventBus) {
+      window.TegakiEventBus.emit('popup:closed', { type: 'toolSize' });
+    }
   }
 
   function isVisible() {
@@ -252,19 +312,26 @@ const ToolSizePopup = (() => {
   }
 
   function forceShow(tool = 'pen') {
-    console.log('[ToolSizePopup] Force showing popup for:', tool);
     show(tool);
   }
 
   function getDebugInfo() {
+    const brushSettings = getBrushSettings();
+    
     return {
       popupExists: !!popup,
       isVisible: isVisible(),
       currentTool,
+      activeSlotIndex,
       slotElementsCount: slotElements.length,
       hasSlider: !!sliderElement,
       hasValueInput: !!valueInputElement,
-      config: window.CONFIG?.toolSizePopup
+      brushSettings: {
+        available: !!brushSettings,
+        currentSize: brushSettings ? brushSettings.getBrushSize() : null,
+        currentOpacity: brushSettings ? brushSettings.getBrushOpacity() : null
+      },
+      config: window.TEGAKI_CONFIG?.toolSizePopup || window.CONFIG?.toolSizePopup
     };
   }
 
@@ -279,5 +346,8 @@ const ToolSizePopup = (() => {
 
 window.ToolSizePopup = ToolSizePopup;
 
-console.log('✅ tool-size-popup.js loaded');
-console.log('Debug: window.ToolSizePopup.forceShow("pen") to test');
+console.log('✅ tool-size-popup.js v2.0 loaded');
+console.log('   🔧 TEGAKI_CONFIG対応');
+console.log('   🔧 BrushSettings統合');
+console.log('   🔧 ToolSizeManagerへの依存削除');
+console.log('   💡 Test: window.ToolSizePopup.forceShow("pen")');
