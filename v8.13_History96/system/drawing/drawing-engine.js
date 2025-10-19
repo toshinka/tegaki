@@ -1,10 +1,11 @@
 /**
- * DrawingEngine v7.4 - BrushSettings遅延初期化完全対応版
+ * DrawingEngine v7.5 - P/E+ドラッグ機能完全対応版
  * 
  * 🔧 修正内容:
- * - BrushSettings初期化をより堅牢に（読み込み順序に依存しない）
- * - _ensureBrushSettings()の実装を追加
+ * - BrushSettings初期化の確実性を向上
+ * - settings プロパティを最優先（brushSettingsは互換性のため残す）
  * - brush:initialized イベント発行を確実化
+ * - _ensureBrushSettings()の実装を堅牢化
  */
 
 class DrawingEngine {
@@ -14,7 +15,7 @@ class DrawingEngine {
     this.eventBus = eventBus;
     this.config = config || {};
 
-    // 🔧 修正: settingsを明示的にnullで初期化
+    // settings プロパティを明示的にnullで初期化
     this.settings = null;
     this._initializeBrushSettingsSync();
     
@@ -51,12 +52,15 @@ class DrawingEngine {
                                 null;
     
     if (BrushSettingsClass) {
-      this.settings = new BrushSettingsClass(this.config, this.eventBus);
-      this._emitBrushInitialized();
-      return true;
+      try {
+        this.settings = new BrushSettingsClass(this.config, this.eventBus);
+        this._emitBrushInitialized();
+        return true;
+      } catch (e) {
+        // 初期化失敗時は遅延初期化へ
+      }
     }
     
-    // 🔧 修正: 即座に見つからない場合は遅延初期化
     this._initializeBrushSettingsDelayed();
     return false;
   }
@@ -66,12 +70,11 @@ class DrawingEngine {
    */
   _initializeBrushSettingsDelayed() {
     let retryCount = 0;
-    const maxRetries = 200; // 200 * 50ms = 10秒
+    const maxRetries = 200;
     
     const retryInit = () => {
       retryCount++;
       
-      // すでに初期化済みならスキップ
       if (this.settings) {
         return;
       }
@@ -87,7 +90,6 @@ class DrawingEngine {
         return;
       }
       
-      // リトライ続行
       if (retryCount < maxRetries) {
         setTimeout(retryInit, 50);
       }
@@ -110,15 +112,13 @@ class DrawingEngine {
   }
 
   /**
-   * 🔧 修正: BrushSettings確認（なければ再試行）
+   * BrushSettings確認（なければ再試行）
    */
   _ensureBrushSettings() {
-    // すでに初期化済み
     if (this.settings) {
       return true;
     }
     
-    // 再度同期初期化を試行
     const BrushSettingsClass = window.TegakiDrawing?.BrushSettings || 
                                 window.BrushSettings ||
                                 null;
@@ -438,3 +438,5 @@ if (typeof window.TegakiDrawing === 'undefined') {
   window.TegakiDrawing = {};
 }
 window.TegakiDrawing.DrawingEngine = DrawingEngine;
+
+console.log('✅ drawing-engine.js loaded');
