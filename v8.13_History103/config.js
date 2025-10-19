@@ -1,4 +1,4 @@
-// ===== config.js - P/E+ドラッグ機能対応版 =====
+// ===== config.js - Tool Size Popup対応版 =====
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -40,7 +40,6 @@ window.TEGAKI_CONFIG = {
         size: 20,
         opacity: 1.0
     },
-    // 🆕 tools構造（ToolSizeManager用）
     tools: {
         pen: {
             defaultSize: 10,
@@ -51,12 +50,18 @@ window.TEGAKI_CONFIG = {
             defaultOpacity: 1.0
         }
     },
-    // 🆕 サイズスロット設定（1〜9キーで選択可能）
     sizeSlots: {
         pen: [2, 4, 6, 8, 12, 16, 24, 36, 50],
         eraser: [10, 15, 20, 30, 40, 50, 60, 80, 100]
     },
-    // 🆕 ドラッグ調整の感度設定
+    // 🆕 Tool Size Popup設定
+    toolSizePopup: {
+        slots: [1, 3, 5, 10, 30, 100],
+        sliderMin: 0.1,
+        sliderMax: 500,
+        dotMinSize: 4,
+        dotMaxSize: 20
+    },
     dragAdjustment: {
         size: {
             sensitivity: 0.1,
@@ -68,7 +73,6 @@ window.TEGAKI_CONFIG = {
             min: 0.0,
             max: 1.0
         },
-        // 🆕 視覚フィードバック設定
         visual: {
             textColor: '#ffffff',
             fontSize: 12,
@@ -132,6 +136,9 @@ window.TEGAKI_CONFIG = {
     },
     debug: false
 };
+
+// 🔧 互換性エイリアス
+window.CONFIG = window.TEGAKI_CONFIG;
 
 window.TEGAKI_KEYMAP = {
     actions: {
@@ -548,8 +555,6 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js (P/E+ドラッグ機能対応版) loaded');
-console.log('   🆕 tools: ペン/消しゴムのデフォルト設定追加');
-console.log('   🆕 sizeSlots: サイズスロット設定追加');
-console.log('   🆕 dragAdjustment: ドラッグ調整感度設定追加');
-console.log('   🆕 dragAdjustment.visual: 視覚フィードバック設定追加');
+console.log('✅ config.js loaded (Tool Size Popup対応版)');
+console.log('   🆕 toolSizePopup設定追加');
+console.log('   🔧 window.CONFIG = window.TEGAKI_CONFIG エイリアス設定');

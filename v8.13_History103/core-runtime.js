@@ -1,17 +1,11 @@
-// ===== core-runtime.js - Phase 12: PixiJS EventSystem統合版 + 設定API拡張 =====
-// 【Phase 12】PixiJS FederatedPointerEvent対応
-// 【追加】window.startTegakiApp() エントリーポイント
-// 【改修】APNGExporter登録対応
-// 【改修】ExportSystem確実初期化機能追加
-// 【維持】全既存機能・リサイズ即時反映・背景塗り
-// 【🆕 v2.1】設定関連API追加（setPressureCorrection, setSmoothing, setPressureCurve）
-// 【🆕 v2.1】SettingsManager統合
+// ===== core-runtime.js v2.2 - window.drawingEngine追加版 =====
+// 【改修 v2.2】setupLegacyCompatibility() に window.drawingEngine を追加
+// 【Phase 12】PixiJS EventSystem統合版 + 設定API拡張
 // PixiJS v8.13 対応
 
 (function() {
     'use strict';
     
-    // 依存確認
     if (!window.CoordinateSystem) {
         throw new Error('coordinate-system.js dependency missing');
     }
@@ -20,9 +14,7 @@
         throw new Error('config.js dependency missing');
     }
     
-    // === CoreRuntime: Project/CUT管理とCUT切替機能 ===
     const CoreRuntime = {
-        // Project構造
         project: {
             canvasSize: { w: CONFIG.canvas.width, h: CONFIG.canvas.height },
             DPR: window.devicePixelRatio || 1,
@@ -32,7 +24,6 @@
             activeCutId: null
         },
         
-        // 内部参照（既存システムとの互換性）
         internal: {
             app: null,
             worldContainer: null,
@@ -40,15 +31,13 @@
             cameraSystem: null,
             layerManager: null,
             drawingEngine: null,
-            settingsManager: null, // 🆕 v2.1: SettingsManager追加
+            settingsManager: null,
             initialized: false,
-            // Phase 12: PixiJS EventSystem用
             pointerEventsSetup: false
         },
         
-        // === 初期化 ===
         init(options) {
-            console.log('=== CoreRuntime Phase 12: PixiJS EventSystem統合版 初期化開始 ===');
+            console.log('=== CoreRuntime v2.2 初期化開始 ===');
             
             Object.assign(this.internal, options);
             this.project.renderer = options.app?.renderer;
@@ -60,27 +49,24 @@
             const defaultCut = this.createCut({ name: 'CUT1' });
             this.switchCut(defaultCut.id);
             
+            // 🔧 改修: setupLegacyCompatibilityでwindow.drawingEngineを設定
             this.setupLegacyCompatibility();
             
-            // Phase 12: PixiJS Events設定
             this.setupPointerEvents();
             
-            console.log('✅ CoreRuntime 初期化完了（Phase 12対応）');
+            console.log('✅ CoreRuntime v2.2 初期化完了');
             
             return this;
         },
         
-        // === Phase 12: PixiJS EventSystem設定 ===
         setupPointerEvents() {
             if (!this.internal.app?.stage || this.internal.pointerEventsSetup) return;
             
             const stage = this.internal.app.stage;
             
-            // ステージ全体でインタラクティブに
             stage.eventMode = 'static';
             stage.hitArea = this.internal.app.screen;
             
-            // Phase 12: PixiJS Events
             stage.on('pointerdown', (event) => {
                 this.handlePointerDown(event);
             });
@@ -101,32 +87,27 @@
             console.log('✅ PixiJS EventSystem設定完了');
         },
         
-        // === Phase 12: Pointerイベントハンドラ ===
         handlePointerDown(event) {
-            // 🔧 追加: P/Eキー押下中はサイズ変更モード（描画無効）
             if (window.KeyboardHandler) {
                 const debugState = window.KeyboardHandler.getDebugState?.();
                 if (debugState && (debugState.pKeyPressed || debugState.eKeyPressed)) {
-                    return; // サイズ変更モード中は描画しない
+                    return;
                 }
             }
             
-            // Phase 12: event.global で座標取得
             const screenX = event.global.x;
             const screenY = event.global.y;
             
-            // Phase 12: FederatedPointerEventをそのまま渡す
             if (this.internal.drawingEngine && !this.internal.layerManager?.isLayerMoveMode) {
                 this.internal.drawingEngine.startDrawing(screenX, screenY, event);
             }
         },
         
         handlePointerMove(event) {
-            // 🔧 追加: ドラッグ中はサイズ変更モード（描画無効）
             if (window.KeyboardHandler) {
                 const debugState = window.KeyboardHandler.getDebugState?.();
                 if (debugState && debugState.isDragging) {
-                    return; // サイズ変更モード中は描画しない
+                    return;
                 }
             }
             
@@ -139,11 +120,10 @@
         },
         
         handlePointerUp(event) {
-            // 🔧 追加: ドラッグ中はサイズ変更モード（描画無効）
             if (window.KeyboardHandler) {
                 const debugState = window.KeyboardHandler.getDebugState?.();
                 if (debugState && debugState.isDragging) {
-                    return; // サイズ変更モード中は描画しない
+                    return;
                 }
             }
             
@@ -162,22 +142,31 @@
             }
         },
         
+        /**
+         * 🔧 改修: window.drawingEngine を追加
+         * ToolSizeManager対応のため
+         */
         setupLegacyCompatibility() {
             window.drawingApp = {
                 pixiApp: this.internal.app,
                 cameraSystem: this.internal.cameraSystem,
                 layerManager: this.internal.layerManager,
                 drawingEngine: this.internal.drawingEngine,
-                // Phase 12用のapp参照
                 app: this.internal.app
             };
+            
+            // 🔧 追加: window.drawingEngine グローバル登録
+            window.drawingEngine = this.internal.drawingEngine;
             
             window.drawingAppResizeCanvas = (w, h) => {
                 return this.updateCanvasSize(w, h);
             };
+            
+            console.log('✅ Legacy Compatibility設定完了');
+            console.log('   - window.drawingApp.drawingEngine');
+            console.log('   - window.drawingEngine (NEW)');
         },
         
-        // === CUT作成 ===
         createCut(opts = {}) {
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
             const w = Math.round(this.project.canvasSize.w);
@@ -204,7 +193,6 @@
             return cut;
         },
         
-        // === CUT切替（stage差し替え） ===
         switchCut(cutId) {
             const newCut = this.getCutById(cutId);
             if (!newCut) {
@@ -232,7 +220,6 @@
             return true;
         },
         
-        // === CUT取得 ===
         getCutById(cutId) {
             return this.project.cuts.find(c => c.id === cutId);
         },
@@ -242,7 +229,6 @@
                 this.getCutById(this.project.activeCutId) : null;
         },
         
-        // === サムネイル生成 ===
         renderCutToTexture(cutId) {
             const cut = this.getCutById(cutId);
             if (!cut || !this.project.renderer) return null;
@@ -261,7 +247,6 @@
             }
         },
         
-        // === dataURL取得 ===
         extractCutDataURL(cutId) {
             const renderTexture = this.renderCutToTexture(cutId);
             if (!renderTexture || !this.project.renderer) return '';
@@ -275,7 +260,6 @@
             }
         },
         
-        // === 背景レイヤー更新ヘルパー ===
         updateBackgroundLayerSize(layer, width, height) {
             if (!layer?.layerData?.isBackground) return false;
             if (!layer.layerData.backgroundGraphics) return false;
@@ -289,7 +273,6 @@
             return true;
         },
         
-        // === キャンバスサイズ変更 ===
         updateCanvasSize(w, h) {
             console.log('CoreRuntime: キャンバスサイズ変更:', w, 'x', h);
             
@@ -298,7 +281,6 @@
             const animationSystem = window.animationSystem || window.TegakiAnimationSystem;
             const currentCutIndex = animationSystem?.getCurrentCutIndex?.() ?? 0;
             
-            // 全CUTのrenderTexture再作成
             this.project.cuts.forEach(cut => {
                 if (cut.renderTexture) {
                     cut.renderTexture.destroy(true);
@@ -313,7 +295,6 @@
                 cut.needsThumbnailUpdate = true;
             });
             
-            // AnimationSystemの全CUTの背景レイヤー更新
             if (animationSystem?.animationData?.cuts) {
                 animationSystem.animationData.cuts.forEach((cut, cutIndex) => {
                     if (cut.container && cut.container.children) {
@@ -328,7 +309,6 @@
                         this.internal.layerManager.renderCutToTexture(cut.id, cut.container);
                     }
                     
-                    // サムネイル即時生成
                     if (cutIndex === currentCutIndex) {
                         setTimeout(() => {
                             if (animationSystem.generateCutThumbnail) {
@@ -345,7 +325,6 @@
                 });
             }
             
-            // EventBus通知
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.emit('camera:resized', { width: w, height: h });
                 
@@ -354,16 +333,13 @@
                 }, 200);
             }
             
-            // CONFIG更新
             CONFIG.canvas.width = w;
             CONFIG.canvas.height = h;
             
-            // 既存システムへの反映
             if (this.internal.cameraSystem?.resizeCanvas) {
                 this.internal.cameraSystem.resizeCanvas(w, h);
             }
             
-            // レイヤーパネル更新
             if (this.internal.layerManager?.updateLayerPanelUI) {
                 setTimeout(() => {
                     this.internal.layerManager.updateLayerPanelUI();
@@ -377,7 +353,6 @@
             return true;
         },
         
-        // === レンダーループ用API ===
         updateThumbnails() {
             this.project.cuts.forEach((cut, index) => {
                 if (cut.needsThumbnailUpdate) {
@@ -393,7 +368,6 @@
             });
         },
         
-        // === 描画完了通知 ===
         markCutDirty(cutId) {
             const cut = cutId ? this.getCutById(cutId) : this.getActiveCut();
             if (cut) {
@@ -401,7 +375,6 @@
             }
         },
         
-        // === デバッグ情報 ===
         getDebugInfo() {
             return {
                 initialized: this.internal.initialized,
@@ -410,7 +383,8 @@
                 canvasSize: this.project.canvasSize,
                 DPR: this.project.DPR,
                 pointerEventsSetup: this.internal.pointerEventsSetup,
-                settingsManagerInitialized: this.internal.settingsManager !== null, // 🆕 v2.1
+                settingsManagerInitialized: this.internal.settingsManager !== null,
+                drawingEngineGlobal: !!window.drawingEngine, // 🔧 追加
                 cuts: this.project.cuts.map(c => ({
                     id: c.id,
                     name: c.name,
@@ -420,7 +394,6 @@
             };
         },
         
-        // === 既存API互換性 ===
         api: {
             setTool(toolName) {
                 if (CoreRuntime.internal.drawingEngine?.setTool) {
@@ -532,66 +505,36 @@
                 return true;
             },
             
-            // ===== 🆕 v2.1: 設定関連API =====
-            
-            /**
-             * 筆圧補正係数を設定
-             * @param {number} value - 0.1～3.0
-             * @returns {boolean} 成功/失敗
-             */
             setPressureCorrection(value) {
                 const manager = CoreRuntime.internal.settingsManager;
                 if (!manager) return false;
                 return manager.set('pressureCorrection', value);
             },
             
-            /**
-             * 線補正（スムーズ度）を設定
-             * @param {number} value - 0.0～1.0
-             * @returns {boolean} 成功/失敗
-             */
             setSmoothing(value) {
                 const manager = CoreRuntime.internal.settingsManager;
                 if (!manager) return false;
                 return manager.set('smoothing', value);
             },
             
-            /**
-             * 筆圧カーブを設定
-             * @param {string} curve - 'linear' | 'ease-in' | 'ease-out'
-             * @returns {boolean} 成功/失敗
-             */
             setPressureCurve(curve) {
                 const manager = CoreRuntime.internal.settingsManager;
                 if (!manager) return false;
                 return manager.set('pressureCurve', curve);
             },
             
-            /**
-             * 現在の設定をすべて取得
-             * @returns {Object|null} 設定オブジェクト
-             */
             getSettings() {
                 const manager = CoreRuntime.internal.settingsManager;
                 if (!manager) return null;
                 return manager.get();
             },
             
-            /**
-             * 設定を部分更新
-             * @param {Object} updates - 更新する設定 { key: value, ... }
-             * @returns {boolean} 成功/失敗
-             */
             updateSettings(updates) {
                 const manager = CoreRuntime.internal.settingsManager;
                 if (!manager) return false;
                 return manager.update(updates);
             },
             
-            /**
-             * 設定をリセット
-             * @returns {boolean} 成功/失敗
-             */
             resetSettings() {
                 const manager = CoreRuntime.internal.settingsManager;
                 if (!manager) return false;
@@ -599,10 +542,6 @@
                 return true;
             },
             
-            /**
-             * SettingsManager を取得
-             * @returns {Object|null}
-             */
             getSettingsManager() {
                 return CoreRuntime.internal.settingsManager || null;
             }
@@ -625,7 +564,6 @@
         isInitialized() { return this.internal.initialized; }
     };
     
-    // === ExportSystem初期化（APNGExporter対応） ===
     CoreRuntime.initializeExportSystem = function(pixiApp, onSuccess) {
         if (window.TEGAKI_EXPORT_MANAGER) {
             return true;
@@ -656,17 +594,14 @@
             
             const mgr = window.TEGAKI_EXPORT_MANAGER;
             
-            // Exporter登録
             mgr.registerExporter('png', new window.PNGExporter(mgr));
             mgr.registerExporter('apng', new window.APNGExporter(mgr));
             mgr.registerExporter('gif', new window.GIFExporter(mgr));
             
-            // WebPExporterがあれば登録
             if (window.WebPExporter) {
                 mgr.registerExporter('webp', new window.WebPExporter(mgr));
             }
             
-            // ExportPopup初期化（通常モード時のみ）
             if (window.ExportPopup && !window.TEGAKI_EXPORT_POPUP && !window._isBookmarkletMode) {
                 window.TEGAKI_EXPORT_POPUP = new window.ExportPopup(mgr);
                 
@@ -699,21 +634,17 @@
     
     window.CoreRuntime = CoreRuntime;
     
-    // ===== ブックマークレット用エントリーポイント =====
     window.startTegakiApp = async function(config = {}) {
         console.log('🚀 startTegakiApp() called');
         
-        // ブックマークレットモードフラグ
         const isBookmarkletMode = config.isBookmarkletMode || false;
         window._isBookmarkletMode = isBookmarkletMode;
         
-        // コンテナ取得
         const container = config.container || document.getElementById('canvas-container');
         if (!container) {
             throw new Error('Canvas container not found');
         }
         
-        // PixiJS Application作成
         const app = new PIXI.Application();
         
         const appWidth = config.width || window.innerWidth;
@@ -729,7 +660,6 @@
         
         container.appendChild(app.canvas);
         
-        // CoreEngine初期化
         if (!window.TegakiCore || !window.TegakiCore.CoreEngine) {
             throw new Error('TegakiCore.CoreEngine not found');
         }
@@ -737,12 +667,10 @@
         const coreEngine = new window.TegakiCore.CoreEngine(app, config);
         coreEngine.initialize();
         
-        // システム取得
         const layerSystem = coreEngine.getLayerManager();
         const animationSystem = coreEngine.getAnimationSystem();
         const cameraSystem = coreEngine.getCameraSystem();
         
-        // ExportManager初期化
         let exportManager = null;
         if (window.ExportManager && animationSystem) {
             exportManager = new window.ExportManager(
@@ -752,7 +680,6 @@
                 cameraSystem
             );
             
-            // Exporter登録
             if (window.PNGExporter) {
                 exportManager.registerExporter('png', new window.PNGExporter(exportManager));
             }
@@ -778,19 +705,11 @@
         };
     };
     
-    console.log('✅ core-runtime.js v2.1 loaded');
+    console.log('✅ core-runtime.js v2.2 loaded');
     console.log('  ✅ Phase 12: PixiJS EventSystem統合');
     console.log('  ✅ FederatedPointerEvent対応');
-    console.log('  ✅ stage.eventMode設定');
-    console.log('  ✅ 🆕 v2.1: 設定関連API追加');
-    console.log('     - setPressureCorrection()');
-    console.log('     - setSmoothing()');
-    console.log('     - setPressureCurve()');
-    console.log('     - getSettings()');
-    console.log('     - updateSettings()');
-    console.log('     - resetSettings()');
-    console.log('     - getSettingsManager()');
-    console.log('  ✅ window.startTegakiApp() registered');
-    console.log('  ✅ APNGExporter登録対応');
+    console.log('  🔧 window.drawingEngine グローバル登録追加');
+    console.log('  ✅ ToolSizeManager対応完了');
+    console.log('  ✅ 設定関連API完備');
     console.log('  ✅ 既存機能完全維持');
 })();
