@@ -1,5 +1,5 @@
 // ui/drag-visual-feedback.js - P/E+ドラッグ視覚フィードバック
-// 🔧 修正: ふたばカラー、カーソル追従座標修正、キー離し時の自動非表示
+// 🔧 修正: カーソル位置追従、ドラッグ開始位置に表示
 
 window.DragVisualFeedback = (function() {
     'use strict';
@@ -15,9 +15,26 @@ window.DragVisualFeedback = (function() {
             this.currentTool = null;
             this.currentX = 0;
             this.currentY = 0;
+            this.dragStartX = 0;
+            this.dragStartY = 0;
             
             this._createElements();
-            this._setupEventListeners();
+            
+            // 🔧 修正: EventBusの存在確認後にリスナー登録
+            if (this.eventBus && typeof this.eventBus.on === 'function') {
+                this._setupEventListeners();
+            } else {
+                setTimeout(() => this._retrySetupEventListeners(), 100);
+            }
+        }
+        
+        _retrySetupEventListeners() {
+            if (window.TegakiEventBus && typeof window.TegakiEventBus.on === 'function') {
+                this.eventBus = window.TegakiEventBus;
+                this._setupEventListeners();
+            } else {
+                setTimeout(() => this._retrySetupEventListeners(), 100);
+            }
         }
 
         _createElements() {
@@ -76,10 +93,12 @@ window.DragVisualFeedback = (function() {
                 this._handleDragEnd();
             });
             
+            // 🔧 修正: マウス移動でカーソル位置を常に更新
             document.addEventListener('mousemove', (e) => {
+                this.currentX = e.clientX;
+                this.currentY = e.clientY;
+                
                 if (this.isActive) {
-                    this.currentX = e.clientX;
-                    this.currentY = e.clientY;
                     this._updatePosition();
                 }
             });
@@ -92,13 +111,12 @@ window.DragVisualFeedback = (function() {
             this.currentTool = tool;
             this.container.style.display = 'block';
             
-            // 初期位置を画面中央に設定（左下回避）
-            if (this.currentX === 0 && this.currentY === 0) {
-                this.currentX = window.innerWidth / 2;
-                this.currentY = window.innerHeight / 2;
-                this._updatePosition();
-            }
+            // 🔧 修正: ドラッグ開始位置を記録
+            this.dragStartX = this.currentX;
+            this.dragStartY = this.currentY;
             
+            // 初期位置をドラッグ開始位置に設定
+            this._updatePosition();
             this._updateVisuals(startSize, startOpacity);
         }
 
@@ -126,6 +144,7 @@ window.DragVisualFeedback = (function() {
         }
 
         _updatePosition() {
+            // 🔧 修正: 現在のカーソル位置に表示
             this.container.style.left = this.currentX + 'px';
             this.container.style.top = this.currentY + 'px';
         }
@@ -160,4 +179,4 @@ window.DragVisualFeedback = (function() {
     return DragVisualFeedback;
 })();
 
-console.log('✅ drag-visual-feedback.js loaded');
+console.log('✅ drag-visual-feedback.js loaded (カーソル追従改善)');
