@@ -1,4 +1,4 @@
-/* Tegaki Tool - Main Stylesheet (Tool Size Popup追加版) */
+/* Tegaki Tool - Main Stylesheet */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -91,6 +91,8 @@ body {
     cursor: crosshair; 
     touch-action: none; 
 }
+
+/* ===== Layer Panel ===== */
 
 .layer-panel-container { 
     position: fixed; 
@@ -310,167 +312,7 @@ body {
     stroke: #800000; 
 }
 
-/* ===== Tool Size Popup ===== */
-
-.tool-size-popup-panel {
-    position: fixed;
-    top: 50%;
-    left: 70px;
-    transform: translateY(-50%);
-    background: var(--futaba-cream);
-    border: 2px solid var(--futaba-maroon);
-    border-radius: 12px;
-    padding: 16px;
-    z-index: 2100;
-    min-width: 280px;
-    box-shadow: 0 8px 24px rgba(128, 0, 0, 0.25);
-}
-
-.slots-container {
-    display: grid;
-    grid-template-columns: repeat(6, 1fr);
-    gap: 8px;
-    margin-bottom: 16px;
-}
-
-.slot-item {
-    display: flex;
-    flex-direction: column;
-    align-items: center;
-    gap: 6px;
-    padding: 8px 4px;
-    background: var(--futaba-background);
-    border: 2px solid var(--futaba-light-medium);
-    border-radius: 6px;
-    cursor: pointer;
-    transition: all 0.2s;
-}
-
-.slot-item:hover {
-    border-color: var(--futaba-medium);
-    background: var(--futaba-light-medium);
-    transform: translateY(-2px);
-}
-
-.slot-item.active {
-    border-color: var(--futaba-maroon);
-    background: var(--futaba-maroon);
-}
-
-.slot-item.active .slot-number {
-    color: var(--text-inverse);
-}
-
-.slot-item.active .slot-dot {
-    background: var(--text-inverse);
-}
-
-.slot-dot {
-    background: var(--futaba-maroon);
-    border-radius: 50%;
-    transition: all 0.2s;
-}
-
-.slot-number {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--futaba-maroon);
-    font-family: monospace;
-}
-
-.size-slider-container {
-    display: flex;
-    align-items: center;
-    gap: 8px;
-}
-
-.slider-step-btn {
-    width: 32px;
-    height: 32px;
-    background: var(--futaba-background);
-    border: 2px solid var(--futaba-light-medium);
-    border-radius: 6px;
-    color: var(--futaba-maroon);
-    font-size: 14px;
-    font-weight: bold;
-    cursor: pointer;
-    transition: all 0.15s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    user-select: none;
-}
-
-.slider-step-btn:hover {
-    background: var(--futaba-medium);
-    border-color: var(--futaba-maroon);
-}
-
-.slider-step-btn:active {
-    transform: scale(0.95);
-}
-
-.slider-wrapper {
-    flex: 1;
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
-}
-
-.size-slider {
-    width: 100%;
-    height: 6px;
-    -webkit-appearance: none;
-    appearance: none;
-    background: var(--futaba-light-medium);
-    border-radius: 3px;
-    outline: none;
-    cursor: pointer;
-}
-
-.size-slider::-webkit-slider-thumb {
-    -webkit-appearance: none;
-    appearance: none;
-    width: 16px;
-    height: 16px;
-    background: var(--futaba-maroon);
-    border: 2px solid var(--futaba-background);
-    border-radius: 50%;
-    cursor: grab;
-}
-
-.size-slider::-webkit-slider-thumb:active {
-    cursor: grabbing;
-}
-
-.size-slider::-moz-range-thumb {
-    width: 16px;
-    height: 16px;
-    background: var(--futaba-maroon);
-    border: 2px solid var(--futaba-background);
-    border-radius: 50%;
-    cursor: grab;
-}
-
-.size-value-input {
-    width: 100%;
-    padding: 4px 8px;
-    font-size: 12px;
-    font-family: monospace;
-    font-weight: 600;
-    text-align: center;
-    background: var(--futaba-background);
-    border: 1px solid var(--futaba-light-medium);
-    border-radius: 4px;
-    color: var(--futaba-maroon);
-    outline: none;
-}
-
-.size-value-input:focus {
-    border-color: var(--futaba-maroon);
-}
-
-/* ===== Popup Base Styles ===== */
+/* ===== Popup Panel Base ===== */
 
 .popup-panel { 
     position: fixed; 
@@ -503,6 +345,170 @@ body {
 .popup-title { 
     display: none; 
 }
+
+/* ===== Tool Size Popup ===== */
+
+.tool-size-popup-panel {
+    position: fixed;
+    left: 70px;
+    top: 50%;
+    transform: translateY(-50%);
+    background: var(--futaba-cream);
+    border: 2px solid var(--futaba-maroon);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(128, 0, 0, 0.25);
+    padding: 16px;
+    z-index: 2000;
+    min-width: 200px;
+    max-width: 220px;
+}
+
+.slots-container {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+}
+
+.slot-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 4px;
+    border: 2px solid var(--futaba-light-medium);
+    border-radius: 8px;
+    background: var(--futaba-background);
+    cursor: pointer;
+    transition: all 0.2s ease;
+    user-select: none;
+}
+
+.slot-item:hover {
+    border-color: var(--futaba-medium);
+    background: var(--futaba-light-medium);
+    transform: translateY(-2px);
+}
+
+.slot-item.active {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-maroon);
+}
+
+.slot-item.active .slot-number {
+    color: var(--text-inverse);
+}
+
+.slot-dot {
+    background: var(--futaba-maroon);
+    border-radius: 50%;
+    transition: all 0.2s ease;
+}
+
+.slot-item.active .slot-dot {
+    background: var(--text-inverse);
+}
+
+.slot-number {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--futaba-maroon);
+    font-family: monospace;
+}
+
+.size-slider-container {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+
+.slider-step-btn {
+    width: 28px;
+    height: 28px;
+    border: 2px solid var(--futaba-light-medium);
+    border-radius: 6px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+}
+
+.slider-step-btn:hover {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-medium);
+    transform: scale(1.05);
+}
+
+.slider-step-btn:active {
+    transform: scale(0.95);
+}
+
+.slider-wrapper {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+}
+
+.size-slider {
+    width: 100%;
+    height: 6px;
+    background: var(--futaba-light-medium);
+    border-radius: 3px;
+    outline: none;
+    cursor: pointer;
+    -webkit-appearance: none;
+}
+
+.size-slider::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    width: 16px;
+    height: 16px;
+    background: var(--futaba-maroon);
+    border: 2px solid var(--futaba-background);
+    border-radius: 50%;
+    cursor: grab;
+}
+
+.size-slider::-webkit-slider-thumb:active {
+    cursor: grabbing;
+}
+
+.size-slider::-moz-range-thumb {
+    width: 16px;
+    height: 16px;
+    background: var(--futaba-maroon);
+    border: 2px solid var(--futaba-background);
+    border-radius: 50%;
+    cursor: grab;
+}
+
+.size-value-input {
+    width: 100%;
+    padding: 4px 8px;
+    border: 1px solid var(--futaba-light-medium);
+    border-radius: 4px;
+    background: var(--futaba-background);
+    color: var(--futaba-maroon);
+    font-size: 12px;
+    font-weight: 600;
+    font-family: monospace;
+    text-align: center;
+    outline: none;
+}
+
+.size-value-input:focus {
+    border-color: var(--futaba-maroon);
+    background: var(--futaba-cream);
+}
+
+/* ===== Settings & Sliders ===== */
 
 .setting-group { 
     margin-bottom: 16px; 
@@ -558,7 +564,7 @@ body {
     text-align: right; 
 }
 
-/* ===== リサイズポップアップ：小型化版 ===== */
+/* ===== Resize Popup ===== */
 
 .resize-popup-compact {
     min-width: 280px !important;
@@ -750,7 +756,7 @@ body {
     display: none;
 }
 
-/* ===== その他のポップアップスタイル ===== */
+/* ===== Action Buttons ===== */
 
 .action-button { 
     padding: 6px 12px; 
@@ -779,6 +785,8 @@ body {
     background: var(--futaba-light-medium); 
     color: var(--text-primary); 
 }
+
+/* ===== Layer Transform Panel ===== */
 
 .layer-transform-panel { 
     position: fixed; 
@@ -890,6 +898,8 @@ body {
     color: var(--text-inverse); 
 }
 
+/* ===== Status Panel ===== */
+
 .status-panel { 
     position: fixed; 
     top: 12px; 
@@ -917,6 +927,8 @@ body {
     color: var(--futaba-maroon); 
     font-weight: 600; 
 }
+
+/* ===== Export Popup ===== */
 
 .format-selection { 
     display: grid; 
@@ -1025,6 +1037,8 @@ body {
     margin: 0 auto;
 }
 
+/* ===== Settings Popup ===== */
+
 #settings-popup {
     min-width: 340px;
     max-width: 360px;
@@ -1077,211 +1091,3 @@ body {
     min-width: 60px;
     text-align: right;
 }
-
-<!-- main.cssに追加するCSS -->
-
-<style>
-/* ===== Tool Size Popup ===== */
-
-.tool-size-popup-panel {
-  position: fixed;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(30, 30, 30, 0.95);
-  border: 2px solid #555;
-  border-radius: 8px;
-  padding: 20px;
-  z-index: 10000;
-  display: none;
-  min-width: 320px;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
-}
-
-/* スロットコンテナ */
-.slots-container {
-  display: grid;
-  grid-template-columns: repeat(6, 1fr);
-  gap: 12px;
-  margin-bottom: 20px;
-}
-
-/* スロットアイテム */
-.slot-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  padding: 8px;
-  background: rgba(50, 50, 50, 0.6);
-  border: 2px solid transparent;
-  border-radius: 6px;
-  cursor: pointer;
-  transition: all 0.2s ease;
-  min-height: 60px;
-}
-
-.slot-item:hover {
-  background: rgba(70, 70, 70, 0.8);
-  border-color: #888;
-}
-
-.slot-item.active {
-  background: rgba(80, 120, 180, 0.4);
-  border-color: #4a90e2;
-}
-
-/* スロットの丸点 */
-.slot-dot {
-  background: #fff;
-  border-radius: 50%;
-  margin-bottom: 6px;
-  flex-shrink: 0;
-}
-
-/* スロットの数値 */
-.slot-number {
-  color: #ccc;
-  font-size: 11px;
-  font-weight: 500;
-  text-align: center;
-}
-
-.slot-item.active .slot-number {
-  color: #4a90e2;
-  font-weight: 700;
-}
-
-/* スライダーコンテナ */
-.size-slider-container {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-.slider-wrapper {
-  flex: 1;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-}
-
-/* スライダー本体 */
-.size-slider {
-  width: 100%;
-  height: 6px;
-  background: rgba(100, 100, 100, 0.5);
-  border-radius: 3px;
-  outline: none;
-  -webkit-appearance: none;
-  appearance: none;
-}
-
-.size-slider::-webkit-slider-thumb {
-  -webkit-appearance: none;
-  appearance: none;
-  width: 18px;
-  height: 18px;
-  background: #4a90e2;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-  transition: all 0.2s ease;
-}
-
-.size-slider::-webkit-slider-thumb:hover {
-  background: #5aa0f2;
-  transform: scale(1.1);
-}
-
-.size-slider::-moz-range-thumb {
-  width: 18px;
-  height: 18px;
-  background: #4a90e2;
-  border: none;
-  border-radius: 50%;
-  cursor: pointer;
-  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.3);
-  transition: all 0.2s ease;
-}
-
-.size-slider::-moz-range-thumb:hover {
-  background: #5aa0f2;
-  transform: scale(1.1);
-}
-
-/* 数値入力フィールド */
-.size-value-input {
-  width: 100%;
-  padding: 6px 10px;
-  background: rgba(50, 50, 50, 0.8);
-  border: 1px solid #555;
-  border-radius: 4px;
-  color: #fff;
-  font-size: 13px;
-  font-family: 'Courier New', monospace;
-  text-align: center;
-  outline: none;
-}
-
-.size-value-input:focus {
-  border-color: #4a90e2;
-  background: rgba(60, 60, 60, 0.9);
-}
-
-/* ◀▶ボタン */
-.slider-step-btn {
-  width: 36px;
-  height: 36px;
-  background: rgba(70, 70, 70, 0.8);
-  border: 1px solid #555;
-  border-radius: 4px;
-  color: #ccc;
-  font-size: 14px;
-  cursor: pointer;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  transition: all 0.2s ease;
-  flex-shrink: 0;
-}
-
-.slider-step-btn:hover {
-  background: rgba(90, 90, 90, 0.9);
-  border-color: #888;
-  color: #fff;
-}
-
-.slider-step-btn:active {
-  background: rgba(110, 110, 110, 1);
-  transform: scale(0.95);
-}
-
-/* レスポンシブ対応 */
-@media (max-width: 480px) {
-  .tool-size-popup-panel {
-    min-width: 280px;
-    padding: 15px;
-  }
-  
-  .slots-container {
-    grid-template-columns: repeat(3, 1fr);
-    gap: 10px;
-  }
-  
-  .slot-item {
-    min-height: 50px;
-    padding: 6px;
-  }
-  
-  .slot-number {
-    font-size: 10px;
-  }
-  
-  .slider-step-btn {
-    width: 32px;
-    height: 32px;
-    font-size: 12px;
-  }
-}
-</style>

@@ -1,4 +1,4 @@
-// ===== config.js - Tool Size Popup対応版 =====
+// ===== config.js - P/E+ドラッグ機能対応版 =====
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -54,7 +54,7 @@ window.TEGAKI_CONFIG = {
         pen: [2, 4, 6, 8, 12, 16, 24, 36, 50],
         eraser: [10, 15, 20, 30, 40, 50, 60, 80, 100]
     },
-    // 🆕 Tool Size Popup設定
+    // 🆕 ToolSizePopup 設定
     toolSizePopup: {
         slots: [1, 3, 5, 10, 30, 100],
         sliderMin: 0.1,
@@ -136,9 +136,6 @@ window.TEGAKI_CONFIG = {
     },
     debug: false
 };
-
-// 🔧 互換性エイリアス
-window.CONFIG = window.TEGAKI_CONFIG;
 
 window.TEGAKI_KEYMAP = {
     actions: {
@@ -554,7 +551,3 @@ window.TEGAKI_UTILS = {
         if (window.TEGAKI_CONFIG.debug) console.log(...args);
     }
 };
-
-console.log('✅ config.js loaded (Tool Size Popup対応版)');
-console.log('   🆕 toolSizePopup設定追加');
-console.log('   🔧 window.CONFIG = window.TEGAKI_CONFIG エイリアス設定');
