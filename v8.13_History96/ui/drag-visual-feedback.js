@@ -1,5 +1,5 @@
-// ui/drag-visual-feedback.js - 色修正版
-// 🔧 修正: ふたばカラー（#800000）に変更
+// ui/drag-visual-feedback.js - P/E+ドラッグ視覚フィードバック
+// 🔧 修正: ふたばカラー、カーソル追従座標修正、キー離し時の自動非表示
 
 window.DragVisualFeedback = (function() {
     'use strict';
@@ -13,14 +13,15 @@ window.DragVisualFeedback = (function() {
             this.textContainer = null;
             this.isActive = false;
             this.currentTool = null;
+            this.currentX = 0;
+            this.currentY = 0;
             
             this._createElements();
             this._setupEventListeners();
         }
 
         _createElements() {
-            // 🔧 修正: ふたばカラー
-            const futabaColor = '#800000'; // ダークレッド
+            const futabaColor = '#800000';
             
             this.container = document.createElement('div');
             this.container.id = 'drag-visual-feedback';
@@ -77,7 +78,9 @@ window.DragVisualFeedback = (function() {
             
             document.addEventListener('mousemove', (e) => {
                 if (this.isActive) {
-                    this._updatePosition(e.clientX, e.clientY);
+                    this.currentX = e.clientX;
+                    this.currentY = e.clientY;
+                    this._updatePosition();
                 }
             });
         }
@@ -88,6 +91,13 @@ window.DragVisualFeedback = (function() {
             this.isActive = true;
             this.currentTool = tool;
             this.container.style.display = 'block';
+            
+            // 初期位置を画面中央に設定（左下回避）
+            if (this.currentX === 0 && this.currentY === 0) {
+                this.currentX = window.innerWidth / 2;
+                this.currentY = window.innerHeight / 2;
+                this._updatePosition();
+            }
             
             this._updateVisuals(startSize, startOpacity);
         }
@@ -115,9 +125,9 @@ window.DragVisualFeedback = (function() {
             }, duration);
         }
 
-        _updatePosition(x, y) {
-            this.container.style.left = x + 'px';
-            this.container.style.top = y + 'px';
+        _updatePosition() {
+            this.container.style.left = this.currentX + 'px';
+            this.container.style.top = this.currentY + 'px';
         }
 
         _updateVisuals(size, opacity) {
@@ -150,4 +160,4 @@ window.DragVisualFeedback = (function() {
     return DragVisualFeedback;
 })();
 
-console.log('✅ ui/drag-visual-feedback.js (色修正版) loaded');
+console.log('✅ drag-visual-feedback.js loaded');

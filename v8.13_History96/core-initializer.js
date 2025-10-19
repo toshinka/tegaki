@@ -1,6 +1,6 @@
 // Tegaki Tool - Core Initializer Module
 // DO NOT use ESM, only global namespace
-// 修正: brush:initializedイベント駆動の初期化待ち合わせ
+// 🔧 修正: P/E+ドラッグ機能の確実な初期化
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -138,6 +138,9 @@ window.CoreInitializer = (function() {
             
             const drawingEngine = this.coreEngine.getDrawingEngine();
             
+            // 🔧 修正: DrawingEngine.settingsを強制初期化
+            await this._ensureDrawingEngineSettings(drawingEngine);
+            
             this.toolSizeManager = initializeToolSizeManager(
                 window.TegakiEventBus,
                 CONFIG
@@ -162,6 +165,7 @@ window.CoreInitializer = (function() {
                 window.KeyboardHandler.init();
             }
             
+            // 🔧 修正: ToolSizeManager接続を確実に実行
             await this._linkToolSizeManager(drawingEngine);
             
             this.uiController = new UIController(
@@ -191,64 +195,64 @@ window.CoreInitializer = (function() {
             return true;
         }
         
+        /**
+         * 🆕 DrawingEngine.settingsの強制初期化
+         */
+        async _ensureDrawingEngineSettings(drawingEngine) {
+            if (!drawingEngine) return;
+            
+            // 既に初期化済みならスキップ
+            if (drawingEngine.settings) return;
+            
+            const BrushSettingsClass = window.TegakiDrawing?.BrushSettings || window.BrushSettings;
+            
+            if (!BrushSettingsClass) {
+                // BrushSettingsクラスが見つからない場合は待機
+                await new Promise(resolve => setTimeout(resolve, 100));
+                return this._ensureDrawingEngineSettings(drawingEngine);
+            }
+            
+            try {
+                drawingEngine.settings = new BrushSettingsClass(drawingEngine.config, drawingEngine.eventBus);
+                
+                if (drawingEngine.eventBus) {
+                    drawingEngine.eventBus.emit('brush:initialized', { settings: drawingEngine.settings });
+                }
+            } catch (e) {
+                // 初期化失敗時は再試行
+                await new Promise(resolve => setTimeout(resolve, 100));
+                return this._ensureDrawingEngineSettings(drawingEngine);
+            }
+        }
+        
+        /**
+         * 🔧 修正: ToolSizeManagerとBrushSettingsの接続を確実化
+         */
         async _linkToolSizeManager(drawingEngine) {
             if (!this.toolSizeManager || !drawingEngine) return;
 
-            const attemptLink = (brushSettingsInstance) => {
-                try {
-                    this.toolSizeManager.brushSettings = brushSettingsInstance;
-                    
-                    const penSize = brushSettingsInstance.getBrushSize?.() ?? brushSettingsInstance.size;
-                    const penOpacity = brushSettingsInstance.getBrushOpacity?.() ?? brushSettingsInstance.opacity;
-                    
-                    this.toolSizeManager.penSize = penSize;
-                    this.toolSizeManager.penOpacity = penOpacity;
-                } catch (e) {
-                    console.error('Error linking ToolSizeManager', e);
-                }
-            };
-
-            if (drawingEngine.settings) {
-                attemptLink(drawingEngine.settings);
+            // DrawingEngine.settingsが存在するまで待機
+            let retryCount = 0;
+            while (!drawingEngine.settings && retryCount < 50) {
+                await new Promise(resolve => setTimeout(resolve, 100));
+                retryCount++;
+            }
+            
+            if (!drawingEngine.settings) {
                 return;
             }
 
-            return new Promise((resolve) => {
-                let timedOut = false;
-                const timeoutId = setTimeout(() => {
-                    timedOut = true;
-                    resolve();
-                }, 5000);
-
-                const onBrushInit = ({ settings }) => {
-                    if (timedOut) return;
-                    clearTimeout(timeoutId);
-                    attemptLink(settings);
-                    resolve();
-                };
-
-                if (window.TegakiEventBus && typeof window.TegakiEventBus.once === 'function') {
-                    window.TegakiEventBus.once('brush:initialized', onBrushInit);
-                } else {
-                    let retry = 0;
-                    const poll = () => {
-                        if (drawingEngine.settings) {
-                            clearTimeout(timeoutId);
-                            attemptLink(drawingEngine.settings);
-                            resolve();
-                            return;
-                        }
-                        retry++;
-                        if (retry < 100 && !timedOut) {
-                            setTimeout(poll, 20);
-                        } else {
-                            clearTimeout(timeoutId);
-                            resolve();
-                        }
-                    };
-                    poll();
-                }
-            });
+            try {
+                this.toolSizeManager.brushSettings = drawingEngine.settings;
+                
+                const penSize = drawingEngine.settings.getBrushSize?.() ?? drawingEngine.settings.size;
+                const penOpacity = drawingEngine.settings.getBrushOpacity?.() ?? drawingEngine.settings.opacity;
+                
+                this.toolSizeManager.penSize = penSize;
+                this.toolSizeManager.penOpacity = penOpacity;
+            } catch (e) {
+                // 静かに失敗
+            }
         }
         
         initializeSettingsPopupDelayed() {
@@ -448,4 +452,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js loaded');
+console.log('✅ core-initializer.js (P/E+ドラッグ対応版) loaded');
