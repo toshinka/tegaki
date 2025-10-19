@@ -1,6 +1,6 @@
 // ===== ui-panels.js - 改修版 =====
-// 責務: UIイベント管理、ポップアップ制御の一元化
-// 🔥 改修: デバッグ削減、構造最適化、EventBus統合
+// 責務: UIイベント管理、ポップアップ制御の一元化、Tool Size Popup対応
+// 🔥 改修: Tool Size Popup対応 + handleToolClick改修
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -16,6 +16,7 @@ window.TegakiUI.UIController = class {
         this.albumPopup = null;
         this.settingsPopup = null;
         this.exportPopup = null;
+        this.toolSizePopup = null; // 🆕
         
         this.validateCoreRuntime();
         this.setupEventDelegation();
@@ -125,7 +126,8 @@ window.TegakiUI.UIController = class {
         const popups = [
             { instance: this.settingsPopup, id: 'settings-popup' },
             { instance: this.albumPopup, id: 'album' },
-            { instance: this.getExportPopup(), id: 'export-popup' }
+            { instance: this.getExportPopup(), id: 'export-popup' },
+            { instance: this.toolSizePopup, id: 'tool-size-popup' } // 🆕
         ];
         
         popups.forEach(({ instance, id }) => {
@@ -190,15 +192,17 @@ window.TegakiUI.UIController = class {
             'pen-tool': () => {
                 if (!window.CoreRuntime.api.setTool('pen')) return;
                 window.CoreRuntime.api.exitLayerMoveMode();
-                if (!this.toolbarIconClickMode) {
-                    this.togglePopup('pen-settings');
+                if (this.toolbarIconClickMode) {
+                    this.showToolSizePopup('pen'); // 🆕
                 }
                 this.updateToolUI('pen');
             },
             'eraser-tool': () => {
                 if (!window.CoreRuntime.api.setTool('eraser')) return;
                 window.CoreRuntime.api.exitLayerMoveMode();
-                this.closeAllPopups();
+                if (this.toolbarIconClickMode) {
+                    this.showToolSizePopup('eraser'); // 🆕
+                }
                 this.updateToolUI('eraser');
             },
             'resize-tool': () => {
@@ -260,6 +264,23 @@ window.TegakiUI.UIController = class {
         const isVisible = popup.classList.contains('show');
         popup.classList.toggle('show', !isVisible);
         this.activePopup = isVisible ? null : popup;
+    }
+    
+    // ===== ツールサイズポップアップ =====
+    
+    /**
+     * Tool Size Popup を表示
+     */
+    showToolSizePopup(tool) {
+        if (!this.toolSizePopup) {
+            if (!window.TegakiUI?.ToolSizePopup) {
+                return;
+            }
+            this.toolSizePopup = new window.TegakiUI.ToolSizePopup(window.ToolSizeManager);
+        }
+        
+        this.closeAllPopups();
+        this.toolSizePopup.show(tool);
     }
     
     // ===== スライダー・リサイズ =====

@@ -1,0 +1,187 @@
+# Tool Size Popup 実装計画書
+
+## 概要
+ペン・消しゴムアイコンから開くサイズ変更ポップアップを実装。6つの初期スロット、スライダー、ドラッグ調整ボタン、ツールごと独立したアクティブ状態を備える。
+
+---
+
+## 仕様一覧
+
+### 1. スロット設定
+- **初期スロット**: `[1, 3, 5, 10, 30, 100]` (6個固定)
+- **共用動作**: ペン/消しゴムで共通のスロット表示
+- **アクティブ独立**: 各ツールが独立したアクティブスロット状態を持つ
+  - 例：ペン選択時スロット1がアクティブ → 消しゴム選択時スロット1のアクティブ外れる → ペン戻るとスロット1復帰
+
+### 2. スロットビジュアル
+- **数値表示**: スロットの下に数字を表示
+- **●表示**: 数字の上にサイズに応じた●（丸点）
+- **制約**: 
+  - ●の最小値・最大値はスロット領域の大きさで決定
+  - 例：サイズ100と500は視覚上同じ●サイズ、数値だけ異なる
+
+### 3. スライダー
+- **位置**: スロットの下部に配置
+- **テーパリング**（スムーズな刻み幅）:
+  - 1～3: **0.1刻み**
+  - 3～10: **0.5刻み**
+  - 10～30: **1刻み**
+  - 30～200: **10刻み**
+  - 200～500: **50刻み**
+- **直接入力**: 細かい値は数値入力フィールドで対応
+
+### 4. ボタン
+- **◀▶ボタン**: スライダーの左右に配置
+- **デザイン統一**: 既存ポップアップのボタン仕様に従う
+
+### 5. ポップアップ基本動作
+- **トリガー**: ペンまたは消しゴムアイコンをクリック
+- **挙動**: ショートカット（P/E）ではポップアップ表示なし（従来どおり）
+- **表示状態**: 同じポップアップをどちらのツールからでも利用
+- **将来予定**: ウィンドウフレーム（WINDOWS的な上部フチ）追加予定
+
+---
+
+## ファイル構成と改修対象
+
+### 新規作成
+- **`ui/tool-size-popup.js`**  
+  責務: ポップアップUI構築、スロット/スライダー管理、アクティブ状態制御
+
+### 改修ファイル
+
+#### 1. **config.js**
+変更内容: サイズスロット設定を追加
+```javascript
+// 既存のsizeSlots: {pen: [...], eraser: [...]} を利用
+// 新規: toolSizePopup.defaults を追加
+toolSizePopup: {
+  slots: [1, 3, 5, 10, 30, 100],
+  sliderMin: 0.1,
+  sliderMax: 500,
+  dotMinSize: 4,    // ●の最小表示サイズ（px）
+  dotMaxSize: 20    // ●の最大表示サイズ（px）
+}
+```
+
+#### 2. **ui-panels.js** 
+変更内容: ペン/消しゴムクリック時のポップアップ分岐
+- `handleToolClick()` の `pen-tool` / `eraser-tool` ブロック内
+- アイコン直クリック時にのみ `showToolSizePopup()` を呼び出し
+- ショートカット時は従来どおり`toolbarIconClickMode = false`で判定
+
+#### 3. **styles/main.css**
+変更内容: ポップアップ用CSS追加
+- `.tool-size-popup-panel`: ポップアップコンテナ
+- `.slot-item`, `.slot-number`, `.slot-dot`: スロット要素
+- `.size-slider-container`, `.slider-step-btn`: スライダー関連
+
+#### 4. **system/tool-size-manager.js**
+変更内容: スロット値反映機能を追加メソッド
+```javascript
+setActiveSlot(tool, slotIndex)  // アクティブスロット指定
+getActiveSlot(tool)              // アクティブスロット取得
+applySizeFromSlot(tool, slotIndex) // スロット値をツールに反映
+```
+
+---
+
+## 実装フロー
+
+### Phase 1: ポップアップUI基本構築（tool-size-popup.js）
+1. ポップアップDOMを作成するメソッド
+2. 6つのスロット要素を生成（スロット番号・●・数値）
+3. スライダー + ◀▶ボタン配置
+4. 数値入力フィールド（オプション）
+5. 初期化時にToolSizeManagerから現在値を取得
+
+**ミスしやすいポイント**:
+- スロットのアクティブ状態を「ツール別」に分離する（単なるindicatorではなく）
+- ●の大きさ計算式：`Math.min(dotMaxSize, (value / sliderMax) * dotMaxSize)`
+
+### Phase 2: UIController連携（ui-panels.js改修）
+1. `handleToolClick()` でペン/消しゴムクリック判定
+2. `toolbarIconClickMode` で判定: **true = icon click → showToolSizePopup()**
+3. 既存ポップアップクローズ処理を統合
+4. EventBusで`toolSizePopup:open` イベント発火（ToolSizeManagerへ通知）
+
+**ミスしやすいポイント**:
+- `toolbarIconClickMode` の設定タイミング（handleToolClick前で true、後で false）
+- ショートカットキー（P/E）は従来どおり`toolbarIconClickMode = false`のまま
+
+### Phase 3: config拡張
+- `toolSizePopup` オブジェクトを追加
+- デフォルトスロット、●サイズ範囲を定義
+
+### Phase 4: CSS追加（styles/main.css）
+- ポップアップパネル基本スタイル（位置固定、背景、枠線）
+- スロット領域：grid配置 で整列
+- スライダーコンテナ
+- ボタンスタイル（既存`.slider-step-btn`を参考）
+
+---
+
+## EventBus フロー
+
+```
+UI: ペン/消しゴムアイコンクリック
+  ↓
+UIController.handleToolClick('pen-tool' or 'eraser-tool')
+  ↓
+showToolSizePopup(tool)
+  ↓
+ToolSizePopup: DOM表示 + ツール別アクティブ状態適用
+  ↓
+ユーザー: スロット or スライダー操作
+  ↓
+ToolSizePopup → EventBus: tool:size-opacity-changed
+  ↓
+ToolSizeManager: size/opacity 反映
+```
+
+---
+
+## 参考実装（既存コード活用）
+
+### ボタンスタイル参照
+- `settings-popup.js`: `.pressure-curve-btn` 参考（ボーダー/背景/アクティブ状態）
+
+### スライダー実装参照
+- `settings-popup.js._createSlider()`: スライダー基本実装
+- `ui-panels.js.createSlider()`: シンプル実装版
+
+### ポップアップ構造参照
+- `settings-popup.js`: `.popup-panel`, `.popup-title`
+- `ui-panels.js.UIController.showPopup()`: ポップアップ制御ロジック
+
+---
+
+## 留意事項
+
+### ショートカット非表示の実現
+```javascript
+// ショートカット時（P/E キー押下）
+toolbarIconClickMode = false  // 初期値
+// → showToolSizePopup() 呼ばれない
+
+// アイコン直クリック時
+toolbarIconClickMode = true
+// handleToolClick後
+toolbarIconClickMode = false
+// → showToolSizePopup() 呼ばれる
+```
+
+### 実装テスト項目
+1. ペンアイコンクリック → ポップアップ表示 + ペン用アクティブスロット適用
+2. 消しゴムアイコンクリック → 同じポップアップ + 消しゴム用アクティブスロット適用
+3. ペン → 消しゴム切り替え → ペン戻す → 元のアクティブスロット復帰
+4. スロットクリック → 値反映 + EventBus発火
+5. スライダー操作 → 値更新 + EventBus発火
+6. ◀▶ボタン → テーパリング刻み値で増減
+7. P/E ショートカット → ポップアップ表示なし（従来動作）
+
+---
+
+## 予定機能（将来改修）
+- ウィンドウフレーム（上部フチ）追加 → ドラッグ移動対応
+- ポップアップ位置永続化
