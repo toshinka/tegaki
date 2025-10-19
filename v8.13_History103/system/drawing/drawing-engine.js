@@ -1,7 +1,12 @@
 /**
- * DrawingEngine v8.1 - Phase1: BrushSettings確実初期化版 + tool:size:changed対応
+ * DrawingEngine v8.2 - P/E+ドラッグ完全対応版
  * 
- * 改修内容:
+ * 🔧 修正内容:
+ * - tool:size-opacity-changed のツールチェックを削除（132行目）
+ *   理由: KeyboardHandler.dragState.activeTool と DrawingEngine.currentTool の
+ *        同期タイミングの問題により、イベントが無視されていた
+ * 
+ * 既存の改修内容:
  * - constructor内でBrushSettingsを確実に生成
  * - this.brushSize/brushColor/brushOpacity プロパティ削除（BrushSettingsに一元化）
  * - 冗長な遅延初期化ロジック削除
@@ -126,18 +131,23 @@ class DrawingEngine {
       }
     });
     
-    // tool:size-opacity-changed イベント購読（P/E+ドラッグ対応）
+    // 🔧 修正: tool:size-opacity-changed イベント購読（P/E+ドラッグ対応）
+    // ツールチェックを削除し、常に反映するように変更
     this.eventBus.on('tool:size-opacity-changed', ({ tool, size, opacity }) => {
       if (!this.settings) return;
       
-      // ツールが一致する場合のみ反映（toolがnullの場合は常に反映）
-      if (!tool || tool === this.currentTool) {
-        if (size !== undefined) {
-          this.settings.setBrushSize(size);
-        }
-        if (opacity !== undefined) {
-          this.settings.setBrushOpacity(opacity);
-        }
+      // 🔧 修正前（GitHubファイル132行目）:
+      // if (!tool || tool === this.currentTool) {
+      //
+      // 🔧 修正後: ツールチェックを完全削除
+      // 理由: KeyboardHandler.dragState.activeTool と DrawingEngine.currentTool が
+      //      非同期のため、P/Eキー押下直後はツールが一致せずイベントが無視される
+      
+      if (size !== undefined) {
+        this.settings.setBrushSize(size);
+      }
+      if (opacity !== undefined) {
+        this.settings.setBrushOpacity(opacity);
       }
     });
     
