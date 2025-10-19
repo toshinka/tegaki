@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>🎨 PixiJS v8.13 お絵かきツール - Tool Size Popup対応</title>
+    <link rel="stylesheet" href="styles/main.css">
+</head>
+<body>
+    <div id="app"></div>
+
+    <!-- External Libraries -->
+    <script src="https://cdn.jsdelivr.net/npm/pixi.js@8.13.0/dist/pixi.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/perfect-freehand@1.2.2/dist/perfect-freehand.umd.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/simplify-js/1.2.4/simplify.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sortablejs@latest/Sortable.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/pako@2.1.0/dist/pako.min.js"></script>
+    <script src="https://unpkg.com/upng-js@2.1.0/UPNG.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+
+    <!-- Core Config -->
+    <script src="config.js"></script>
+    <script src="coordinate-system.js"></script>
+    
+    <!-- System -->
+    <script src="system/data-models.js"></script>
+    <script src="system/event-bus.js"></script>
+    <script src="system/batch-api.js"></script>
+    <script src="system/tool-size-manager.js"></script>
+    <script src="system/state-manager.js"></script>
+    <script src="system/settings-manager.js"></script>
+    <script src="system/camera-system.js"></script>
+    <script src="system/layer-transform.js"></script>
+    <script src="system/layer-system.js"></script>
+    <script src="system/drawing-clipboard.js"></script>
+    <script src="system/history.js"></script>
+    <script src="system/virtual-album.js"></script>
+    <script src="system/animation-system.js"></script>
+
+    <!-- Drawing System -->
+    <script src="system/drawing/brush-settings.js"></script>
+    <script src="system/drawing/stroke-recorder.js"></script>
+    <script src="system/drawing/stroke-renderer.js"></script>
+    <script src="system/drawing/pressure-filter.js"></script>
+    <script src="system/drawing/pressure-handler.js"></script>
+    <script src="system/drawing/stroke-transformer.js"></script>
+    <script src="system/drawing/drawing-engine.js"></script>
+
+    <!-- Export System -->
+    <script src="system/export-manager.js"></script>
+    <script src="system/exporters/png-exporter.js"></script>
+    <script src="system/exporters/apng-exporter.js"></script>
+    <script src="system/exporters/gif-exporter.js"></script>
+
+    <!-- UI -->
+    <script src="ui/dom-builder.js"></script>
+    <script src="ui/slider-utils.js"></script>
+    <script src="ui/drag-visual-feedback.js"></script>
+    <script src="ui/keyboard-handler.js"></script>
+    <script src="ui/resize-slider.js"></script>
+    <script src="ui/timeline-thumbnail-utils.js"></script>
+    <script src="ui/timeline-ui.js"></script>
+    <script src="ui/album-popup.js"></script>
+    <script src="ui/settings-popup.js"></script>
+    <script src="ui/tool-size-popup.js"></script>
+    <script src="ui/ui-panels.js"></script>
+    <script src="ui/export-popup.js"></script>
+
+    <!-- Core -->
+    <script src="core-initializer.js"></script>
+    <script src="core-runtime.js"></script>
+    <script src="core-engine.js"></script>
+
+    <!-- Entry Point -->
+    <script>
+        window.addEventListener('DOMContentLoaded', async () => {
+            try {
+                console.log('🚀 Starting application with Tool Size Popup...');
+                
+                await new Promise(resolve => setTimeout(resolve, 100));
+                
+                console.log('📦 Checking dependencies...');
+                console.log('  PIXI:', !!window.PIXI);
+                console.log('  TegakiDrawing:', !!window.TegakiDrawing);
+                console.log('  BrushSettings:', !!window.TegakiDrawing?.BrushSettings);
+                console.log('  ToolSizeManager:', !!window.ToolSizeManager);
+                console.log('  ToolSizePopup:', !!window.ToolSizePopup);
+                console.log('  KeyboardHandler:', !!window.KeyboardHandler);
+                
+                if (!window.TegakiDrawing?.BrushSettings) {
+                    throw new Error('BrushSettings not loaded!');
+                }
+                
+                if (!window.ToolSizePopup) {
+                    throw new Error('ToolSizePopup not loaded!');
+                }
+                
+                await window.CoreInitializer.initialize();
+                
+                // デバッグ用グローバル関数
+                window.testToolSizePopup = function(tool = 'pen') {
+                    console.log('=== Testing Tool Size Popup ===');
+                    console.log('ToolSizePopup exists:', !!window.ToolSizePopup);
+                    console.log('ToolSizeManager exists:', !!window.ToolSizeManager);
+                    console.log('CONFIG exists:', !!window.CONFIG);
+                    console.log('EventBus exists:', !!window.EventBus);
+                    
+                    if (window.ToolSizePopup) {
+                        console.log('Debug info:', window.ToolSizePopup.getDebugInfo());
+                        console.log('Calling forceShow...');
+                        window.ToolSizePopup.forceShow(tool);
+                    } else {
+                        console.error('ToolSizePopup not loaded!');
+                    }
+                };
+                
+                console.log('✅ Application ready!');
+                console.log('📝 Usage:');
+                console.log('  - Click Pen/Eraser icon: Open size popup');
+                console.log('  - Press P/E: Switch tool (no popup)');
+                console.log('  - Press P/E + drag: Adjust size/opacity');
+                console.log('');
+                console.log('🔧 Debug commands:');
+                console.log('  - testToolSizePopup("pen") or testToolSizePopup("eraser")');
+                console.log('  - window.ToolSizePopup.getDebugInfo()');
+            } catch (error) {
+                console.error('❌ Application initialization failed:', error);
+                alert('初期化に失敗しました。ページを再読み込みしてください。');
+            }
+        });
+    </script>
+</body>
+</html>

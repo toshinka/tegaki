@@ -1,6 +1,5 @@
-// ===== ui-panels.js - 完全版 =====
-// 責務: UIイベント管理、ポップアップ制御の一元化、Tool Size Popup対応
-// 🔥 改修: Tool Size Popup対応 + handleToolClick改修
+// ui/ui-panels.js
+// 責務: UIイベント管理、ポップアップ制御の一元化
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -12,11 +11,9 @@ window.TegakiUI.UIController = class {
         this.activePopup = null;
         this.toolbarIconClickMode = false;
         
-        // ポップアップ参照（遅延初期化対応）
         this.albumPopup = null;
         this.settingsPopup = null;
         this.exportPopup = null;
-        this.toolSizePopup = null; // 🆕
         
         this.validateCoreRuntime();
         this.setupEventDelegation();
@@ -25,7 +22,6 @@ window.TegakiUI.UIController = class {
         this.setupCanvasResize();
         this.setupFlipButtons();
         this.initializeSettingsPopup();
-        this.initializeToolSizePopup(); // 🆕
         window.TegakiUI.setupPanelStyles();
     }
     
@@ -35,11 +31,6 @@ window.TegakiUI.UIController = class {
         }
     }
     
-    // ===== ポップアップ参照管理 =====
-    
-    /**
-     * ポップアップ参照を遅延取得（初期化タイミングの依存性回避）
-     */
     getExportPopup() {
         if (!this.exportPopup) {
             this.exportPopup = window.TegakiExportPopup || window.exportPopup;
@@ -55,9 +46,6 @@ window.TegakiUI.UIController = class {
         return this.albumPopup;
     }
     
-    /**
-     * ポップアップ初期化（外部から呼び出し）
-     */
     initializeAlbumPopup(animationSystem) {
         if (!window.AlbumPopup || !animationSystem) {
             return false;
@@ -70,9 +58,6 @@ window.TegakiUI.UIController = class {
         }
     }
     
-    /**
-     * 設定ポップアップの初期化
-     */
     initializeSettingsPopup() {
         if (!window.TegakiUI.SettingsPopup) {
             return false;
@@ -89,36 +74,10 @@ window.TegakiUI.UIController = class {
         }
     }
     
-    /**
-     * Tool Size Popupの初期化
-     */
-    initializeToolSizePopup() {
-        if (!window.ToolSizePopup) {
-            return false;
-        }
-        try {
-            const eventBus = window.TegakiEventBus;
-            const toolSizeManager = window.ToolSizeManager;
-            const config = window.CONFIG;
-            
-            if (!eventBus || !toolSizeManager || !config) {
-                return false;
-            }
-            
-            this.toolSizePopup = new window.ToolSizePopup(eventBus, toolSizeManager, config);
-            return true;
-        } catch (error) {
-            return false;
-        }
-    }
-    
-    // ===== EventBusリスナー =====
-    
     setupEventBusListeners() {
-        const eventBus = window.TegakiEventBus;
+        const eventBus = window.EventBus;
         if (!eventBus) return;
         
-        // 設定ポップアップのトグル（ショートカット対応）
         eventBus.on('ui:toggle-settings', () => {
             if (this.settingsPopup) {
                 this.settingsPopup.isVisible ? this.settingsPopup.hide() : this.showPopup(this.settingsPopup);
@@ -130,39 +89,44 @@ window.TegakiUI.UIController = class {
                 this.showPopup(this.settingsPopup);
             }
         });
+        
+        eventBus.on('popup:opened', (data) => {
+            if (data.type !== 'toolSize') {
+                this.closeToolSizePopup();
+            }
+        });
     }
     
-    // ===== ポップアップ制御 =====
-    
-    /**
-     * ポップアップを表示（他を自動的に閉じる）
-     */
     showPopup(popup) {
         if (!popup) return;
         this.closeAllPopups(popup);
-        popup.show();
+        
+        if (typeof popup.show === 'function') {
+            popup.show();
+        } else if (popup.style) {
+            popup.style.display = 'block';
+        }
     }
     
-    /**
-     * 全ポップアップを閉じる（除外指定可能）
-     */
     closeAllPopups(exceptPopup = null) {
         const popups = [
             { instance: this.settingsPopup, id: 'settings-popup' },
             { instance: this.albumPopup, id: 'album' },
-            { instance: this.getExportPopup(), id: 'export-popup' },
-            { instance: this.toolSizePopup, id: 'tool-size-popup' } // 🆕
+            { instance: this.getExportPopup(), id: 'export-popup' }
         ];
         
-        popups.forEach(({ instance, id }) => {
-            if (instance && instance !== exceptPopup && instance.isVisible) {
-                instance.hide();
-            } else if (instance && instance !== exceptPopup && instance.panel) {
-                instance.hide();
+        popups.forEach(({ instance }) => {
+            if (instance && instance !== exceptPopup) {
+                if (typeof instance.hide === 'function' && instance.isVisible) {
+                    instance.hide();
+                } else if (instance.style && instance.style.display !== 'none') {
+                    instance.style.display = 'none';
+                }
             }
         });
         
-        // DOM直接操作（トグル用アニメーションクラス）
+        this.closeToolSizePopup();
+        
         document.querySelectorAll('.popup-panel').forEach(popup => {
             if (exceptPopup !== this.getExportPopup() || popup.id !== 'export-popup') {
                 popup.classList.remove('show');
@@ -172,12 +136,33 @@ window.TegakiUI.UIController = class {
         this.activePopup = null;
     }
     
-    // ===== イベント委譲 =====
+    closeToolSizePopup() {
+        if (window.ToolSizePopup?.isVisible()) {
+            window.ToolSizePopup.hide();
+        }
+    }
+    
+    showToolSizePopup(tool) {
+        console.log('[UIController] showToolSizePopup called for:', tool);
+        console.log('[UIController] ToolSizePopup exists:', !!window.ToolSizePopup);
+        
+        if (!window.ToolSizePopup) {
+            console.error('[UIController] ToolSizePopup not found!');
+            return;
+        }
+        
+        this.closeAllPopups();
+        window.ToolSizePopup.show(tool);
+        console.log('[UIController] ToolSizePopup.show() called');
+    }
     
     setupEventDelegation() {
+        console.log('[UIController] Setting up event delegation');
+        
         document.addEventListener('click', (e) => {
             const toolButton = e.target.closest('.tool-button');
             if (toolButton) {
+                console.log('[UIController] Tool button clicked:', toolButton.id);
                 this.toolbarIconClickMode = true;
                 this.handleToolClick(toolButton);
                 this.toolbarIconClickMode = false;
@@ -200,44 +185,53 @@ window.TegakiUI.UIController = class {
                 return;
             }
 
-            // 画面外クリック処理
             if (!e.target.closest('.popup-panel') && 
+                !e.target.closest('.tool-size-popup-panel') &&
                 !e.target.closest('.layer-transform-panel') &&
                 !e.target.closest('.tool-button') &&
-                !e.target.closest('.tool-size-popup-panel') &&
                 !e.target.closest('.layer-panel-container')) {
                 this.closeAllPopups();
             }
         });
     }
     
-    // ===== ツール処理 =====
-    
     handleToolClick(button) {
         const toolId = button.id;
+        console.log('[UIController] Tool clicked:', toolId, 'iconClickMode:', this.toolbarIconClickMode);
+        
         const toolMap = {
             'pen-tool': () => {
                 if (!window.CoreRuntime.api.setTool('pen')) return;
                 window.CoreRuntime.api.exitLayerMoveMode();
+                
                 if (this.toolbarIconClickMode) {
-                    this.showToolSizePopup('pen'); // 🆕
+                    console.log('[UIController] Showing tool size popup for pen');
+                    this.showToolSizePopup('pen');
+                } else {
+                    this.togglePopup('pen-settings');
                 }
+                
                 this.updateToolUI('pen');
             },
             'eraser-tool': () => {
                 if (!window.CoreRuntime.api.setTool('eraser')) return;
                 window.CoreRuntime.api.exitLayerMoveMode();
+                
                 if (this.toolbarIconClickMode) {
-                    this.showToolSizePopup('eraser'); // 🆕
+                    console.log('[UIController] Showing tool size popup for eraser');
+                    this.showToolSizePopup('eraser');
+                } else {
+                    this.closeAllPopups();
                 }
+                
                 this.updateToolUI('eraser');
             },
             'resize-tool': () => {
                 this.togglePopup('resize-settings');
             },
             'gif-animation-tool': () => {
-                if (window.TegakiEventBus) {
-                    window.TegakiEventBus.emit('ui:toggle-timeline');
+                if (window.EventBus) {
+                    window.EventBus.emit('ui:toggle-timeline');
                 }
                 this.closeAllPopups();
                 this.updateToolUI('gif-animation');
@@ -292,26 +286,6 @@ window.TegakiUI.UIController = class {
         popup.classList.toggle('show', !isVisible);
         this.activePopup = isVisible ? null : popup;
     }
-    
-    // ===== ツールサイズポップアップ =====
-    
-    /**
-     * Tool Size Popup を表示
-     */
-    showToolSizePopup(tool) {
-        if (!this.toolSizePopup) {
-            this.initializeToolSizePopup();
-        }
-        
-        if (!this.toolSizePopup) {
-            return;
-        }
-        
-        this.closeAllPopups(this.toolSizePopup);
-        this.toolSizePopup.show(tool);
-    }
-    
-    // ===== スライダー・リサイズ =====
     
     setupSliders() {
         const CONFIG = window.TEGAKI_CONFIG;
@@ -368,8 +342,6 @@ window.TegakiUI.UIController = class {
         }
     }
 };
-
-// ===== ユーティリティ関数 =====
 
 window.TegakiUI.createSlider = function(sliderId, min, max, initial, callback) {
     const container = document.getElementById(sliderId);
@@ -569,4 +541,4 @@ window.TegakiUI.initializeSortable = function(layerManager) {
             }
         }
     });
-}
+};
