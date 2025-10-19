@@ -25,7 +25,7 @@
  ✅ data-models.js (Phase 2: meshVertices対応) loaded
  ✅ system/event-bus.js loaded
  ✅ batch-api.js (Phase 6: History統合版) loaded
- ✅ tool-size-manager.js v3 loaded (実サイズ反映確実化)
+ ✅ tool-size-manager.js v3.2 loaded (強制EventBus統合版)
  ✅ system/settings-manager.js loaded
     - 責務: 設定の永続化・デフォルト管理
     - SOLID原則準拠: 単一責任
@@ -45,27 +45,27 @@
  ✅ [BrushSettings] Created window.TegakiDrawing namespace
  ✅ [BrushSettings] Registered successfully:
     - window.TegakiDrawing.BrushSettings: true
-brush-settings.js:311    - window.BrushSettings: true
-brush-settings.js:312    - globalThis.BrushSettings: true
-brush-settings.js:314 ✅ brush-settings.js loaded completely
-drawing-engine.js:442 ✅ drawing-engine.js loaded
-export-manager.js:259 ✅ export-manager.js loaded
-png-exporter.js:85 ✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded
-apng-exporter.js:236 ✅ apng-exporter.js (PixiJS v8.13完全対応版) loaded
-gif-exporter.js:300 ✅ gif-exporter.js (PixiJS v8.13完全対応版) loaded
-slider-utils.js:197 ✅ ui/slider-utils.js loaded
-slider-utils.js:198    - 責務: スライダーUIの統一実装
-slider-utils.js:199    - DRY原則: settings-popup.js と ui-panels.js で共有
-slider-utils.js:200    - API: createSlider() / createSimpleSlider()
-drag-visual-feedback.js:182 ✅ drag-visual-feedback.js loaded (カーソル追従改善)
-keyboard-handler.js:598 ✅ keyboard-handler.js loaded (P/E+ドラッグ修正版)
-timeline-ui.js:977 ✅ timeline-ui.js (Phase 5.2: キー処理一元化版) loaded
-timeline-ui.js:978    - 🔥 setupKeyboardShortcuts()を削除（キー処理はUnifiedKeyHandlerに一元化）
-timeline-ui.js:979    - 🔥 goToPreviousCutSafe()とgoToNextCutSafe()はpublicメソッドとして維持
-timeline-ui.js:980    - 🔥 togglePlayStop()もpublicメソッドとして維持
-core-initializer.js:455 ✅ core-initializer.js (P/E+ドラッグ対応版) loaded
-core-runtime.js:781 ✅ core-runtime.js v2.1 loaded
-core-runtime.js:782   ✅ Phase 12: PixiJS EventSystem統合
+    - window.BrushSettings: true
+    - globalThis.BrushSettings: true
+ ✅ brush-settings.js loaded completely
+ ✅ drawing-engine.js v7.8 loaded (強制EventBus統合版)
+ ✅ export-manager.js loaded
+ ✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded
+ ✅ apng-exporter.js (PixiJS v8.13完全対応版) loaded
+ ✅ gif-exporter.js (PixiJS v8.13完全対応版) loaded
+ ✅ ui/slider-utils.js loaded
+    - 責務: スライダーUIの統一実装
+    - DRY原則: settings-popup.js と ui-panels.js で共有
+    - API: createSlider() / createSimpleSlider()
+ ✅ drag-visual-feedback.js loaded (カーソル追従改善)
+ ✅ keyboard-handler.js loaded (P/E+ドラッグ修正版)
+ ✅ timeline-ui.js (Phase 5.2: キー処理一元化版) loaded
+    - 🔥 setupKeyboardShortcuts()を削除（キー処理はUnifiedKeyHandlerに一元化）
+    - 🔥 goToPreviousCutSafe()とgoToNextCutSafe()はpublicメソッドとして維持
+    - 🔥 togglePlayStop()もpublicメソッドとして維持
+ ✅ core-initializer.js (P/E+ドラッグ対応版) loaded
+ ✅ core-runtime.js v2.1 loaded
+   ✅ Phase 12: PixiJS EventSystem統合
 core-runtime.js:783   ✅ FederatedPointerEvent対応
 core-runtime.js:784   ✅ stage.eventMode設定
 core-runtime.js:785   ✅ 🆕 v2.1: 設定関連API追加
@@ -108,14 +108,11 @@ index.html:101   - Drag Left/Right: Change size
 index.html:102   - Drag Up/Down: Change opacity
 core-runtime.js:689 ✅ ExportSystem initialized (PNG/APNG/GIF/WebP)
 /**
- * P/E+ドラッグ機能デバッグコマンド集
+ * P/E+ドラッグ機能デバッグコマンド集 (改善版)
  * 
  * ブラウザのコンソールに貼り付けて実行してください
  */
 
-// ==========================================
-// 1. システム全体の状態確認
-// ==========================================
 window.debugPenDrag = {
     /**
      * 全体状況をチェック
@@ -152,7 +149,7 @@ window.debugPenDrag = {
         if (de) {
             console.log('  存在: ✅');
             console.log('  settings:', !!de.settings);
-            console.log('  brushSettings:', !!de.brushSettings);
+            console.log('  currentTool:', de.currentTool);
             if (de.settings) {
                 console.log('  settings.size:', de.settings.size);
                 console.log('  settings.opacity:', de.settings.opacity);
@@ -183,37 +180,6 @@ window.debugPenDrag = {
     },
     
     /**
-     * BrushSettingsへのパスを確認
-     */
-    checkBrushSettingsPath() {
-        console.log('=== BrushSettings 取得パス確認 ===\n');
-        
-        const paths = [
-            { name: 'window.coreEngine.drawingEngine.settings', 
-              value: window.coreEngine?.drawingEngine?.settings },
-            { name: 'window.drawingApp.drawingEngine.settings', 
-              value: window.drawingApp?.drawingEngine?.settings },
-            { name: 'window.CoreEngine.drawingEngine.settings', 
-              value: window.CoreEngine?.drawingEngine?.settings },
-            { name: 'window.drawingEngine.settings', 
-              value: window.drawingEngine?.settings },
-            { name: 'window.TegakiDrawing.BrushSettings', 
-              value: window.TegakiDrawing?.BrushSettings },
-            { name: 'window.BrushSettings', 
-              value: window.BrushSettings }
-        ];
-        
-        paths.forEach(p => {
-            console.log(`${p.name}:`, p.value ? '✅' : '❌');
-            if (p.value && typeof p.value === 'object' && p.value.size !== undefined) {
-                console.log(`  -> size: ${p.value.size}, opacity: ${p.value.opacity}`);
-            }
-        });
-        
-        console.log('\n=====================================');
-    },
-    
-    /**
      * EventBusのリスナーを確認
      */
     checkEventListeners() {
@@ -237,7 +203,85 @@ window.debugPenDrag = {
         targetEvents.forEach(evt => {
             const listeners = events[evt];
             console.log(`${evt}:`, listeners ? `${listeners.length}個` : '0個');
+            if (listeners && listeners.length > 0) {
+                console.log('  → リスナー登録済み ✅');
+            }
         });
+        
+        console.log('\n=====================================');
+    },
+    
+    /**
+     * P/E+ドラッグのイベントフローをシミュレート
+     */
+    async simulateDrag(tool = 'pen', sizeChange = 10, opacityChange = 0.1) {
+        console.log(`\n=== ${tool} ドラッグシミュレーション開始 ===`);
+        
+        if (!window.TegakiEventBus) {
+            console.error('❌ EventBus が見つかりません');
+            return;
+        }
+        
+        const de = window.coreEngine?.drawingEngine || window.drawingApp?.drawingEngine;
+        if (!de?.settings) {
+            console.error('❌ DrawingEngine.settings が見つかりません');
+            return;
+        }
+        
+        const initialSize = de.settings.size;
+        const initialOpacity = de.settings.opacity;
+        
+        console.log('初期値:', { size: initialSize, opacity: initialOpacity });
+        
+        // 1. ドラッグ開始
+        console.log('\n1. tool:drag-size-start 発行...');
+        window.TegakiEventBus.emit('tool:drag-size-start', {
+            tool: tool,
+            startSize: initialSize,
+            startOpacity: initialOpacity
+        });
+        
+        await this._wait(300);
+        
+        // 2. ドラッグ更新
+        console.log('2. tool:drag-size-update 発行...');
+        window.TegakiEventBus.emit('tool:drag-size-update', {
+            tool: tool,
+            deltaX: sizeChange / 0.1,  // 感度0.1で割る
+            deltaY: -opacityChange / 0.002  // 感度0.002で割る
+        });
+        
+        await this._wait(300);
+        
+        // 3. ドラッグ終了
+        console.log('3. tool:drag-size-end 発行...');
+        window.TegakiEventBus.emit('tool:drag-size-end');
+        
+        await this._wait(300);
+        
+        // 4. 結果確認
+        const finalSize = de.settings.size;
+        const finalOpacity = de.settings.opacity;
+        
+        console.log('\n結果:', { 
+            size: finalSize, 
+            opacity: finalOpacity 
+        });
+        
+        const sizeChanged = Math.abs(finalSize - initialSize) > 0.1;
+        const opacityChanged = Math.abs(finalOpacity - initialOpacity) > 0.01;
+        
+        console.log('\n変更検出:', {
+            サイズ: sizeChanged ? '✅ 変更された' : '❌ 変更なし',
+            不透明度: opacityChanged ? '✅ 変更された' : '❌ 変更なし'
+        });
+        
+        if (sizeChanged && opacityChanged) {
+            console.log('\n🎉 P/E+ドラッグ機能は正常に動作しています！');
+        } else {
+            console.log('\n⚠️ P/E+ドラッグ機能に問題がある可能性があります');
+            console.log('   checkEventListeners() でリスナー登録を確認してください');
+        }
         
         console.log('\n=====================================');
     },
@@ -245,16 +289,11 @@ window.debugPenDrag = {
     /**
      * 手動でサイズ変更をテスト
      */
-    testSizeChange(size, opacity) {
-        console.log(`\n=== 手動サイズ変更テスト (${size}px, ${opacity}) ===`);
+    testDirectChange(size, opacity) {
+        console.log(`\n=== 直接変更テスト (${size}px, ${opacity}) ===`);
         
         const de = window.coreEngine?.drawingEngine || window.drawingApp?.drawingEngine;
-        if (!de) {
-            console.error('❌ DrawingEngine が見つかりません');
-            return;
-        }
-        
-        if (!de.settings) {
+        if (!de?.settings) {
             console.error('❌ DrawingEngine.settings が見つかりません');
             return;
         }
@@ -264,71 +303,19 @@ window.debugPenDrag = {
             opacity: de.settings.opacity
         });
         
-        if (typeof de.settings.setBrushSize === 'function') {
-            de.settings.setBrushSize(size);
-        } else {
-            de.settings.size = size;
-        }
-        
-        if (typeof de.settings.setBrushOpacity === 'function') {
-            de.settings.setBrushOpacity(opacity);
-        } else {
-            de.settings.opacity = opacity;
-        }
+        de.settings.setBrushSize(size);
+        de.settings.setBrushOpacity(opacity);
         
         console.log('変更後:', {
             size: de.settings.size,
             opacity: de.settings.opacity
         });
         
-        console.log('✅ 手動変更完了');
+        console.log('✅ 直接変更完了');
     },
     
     /**
-     * EventBusで直接イベントを発行してテスト
-     */
-    testEventEmit() {
-        console.log('\n=== EventBus発行テスト ===');
-        
-        if (!window.TegakiEventBus) {
-            console.error('❌ EventBus が見つかりません');
-            return;
-        }
-        
-        console.log('1. tool:drag-size-start を発行...');
-        window.TegakiEventBus.emit('tool:drag-size-start', {
-            tool: 'pen',
-            startSize: 10,
-            startOpacity: 0.8
-        });
-        
-        setTimeout(() => {
-            console.log('2. tool:drag-size-update を発行...');
-            window.TegakiEventBus.emit('tool:drag-size-update', {
-                tool: 'pen',
-                deltaX: 50,
-                deltaY: -20
-            });
-        }, 500);
-        
-        setTimeout(() => {
-            console.log('3. tool:drag-size-end を発行...');
-            window.TegakiEventBus.emit('tool:drag-size-end');
-            
-            setTimeout(() => {
-                const de = window.coreEngine?.drawingEngine || window.drawingApp?.drawingEngine;
-                if (de?.settings) {
-                    console.log('\n結果:', {
-                        size: de.settings.size,
-                        opacity: de.settings.opacity
-                    });
-                }
-            }, 100);
-        }, 1000);
-    },
-    
-    /**
-     * 現在のツールとサイズを表示
+     * 現在の設定を表示
      */
     showCurrent() {
         const de = window.coreEngine?.drawingEngine || window.drawingApp?.drawingEngine;
@@ -371,171 +358,154 @@ window.debugPenDrag = {
         }
         
         this.showCurrent();
+    },
+    
+    /**
+     * 待機関数
+     */
+    _wait(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    },
+    
+    /**
+     * 自動診断実行
+     */
+    async runDiagnostics() {
+        console.log('🔍 P/E+ドラッグ 自動診断開始\n');
+        
+        this.checkAll();
+        console.log('\n');
+        
+        this.checkEventListeners();
+        console.log('\n');
+        
+        await this.simulateDrag('pen', 5, 0.1);
+        
+        console.log('\n🔍 診断完了');
     }
 };
 
 // 使い方を表示
 console.log(`
-🔧 P/E+ドラッグ デバッグコマンド
+🔧 P/E+ドラッグ デバッグコマンド (改善版)
 
-以下のコマンドをコンソールで実行してください:
+【推奨】まず自動診断を実行:
+  debugPenDrag.runDiagnostics()
 
+個別コマンド:
 1. 全体状態確認
    debugPenDrag.checkAll()
 
-2. BrushSettings取得パス確認
-   debugPenDrag.checkBrushSettingsPath()
-
-3. EventBusリスナー確認
+2. EventBusリスナー確認
    debugPenDrag.checkEventListeners()
 
-4. 手動サイズ変更テスト
-   debugPenDrag.testSizeChange(20, 0.9)
+3. ドラッグシミュレーション
+   debugPenDrag.simulateDrag('pen', 10, 0.1)
+   debugPenDrag.simulateDrag('eraser', 15, 0.2)
 
-5. EventBus発行テスト
-   debugPenDrag.testEventEmit()
+4. 直接変更テスト
+   debugPenDrag.testDirectChange(20, 0.9)
 
-6. 現在の設定表示
+5. 現在の設定表示
    debugPenDrag.showCurrent()
 
-7. ツール切替テスト
+6. ツール切替テスト
    debugPenDrag.switchTool('pen')
    debugPenDrag.switchTool('eraser')
 `);
-VM1700:269 
-🔧 P/E+ドラッグ デバッグコマンド
+VM73:280 
+🔧 P/E+ドラッグ デバッグコマンド (改善版)
 
-以下のコマンドをコンソールで実行してください:
+【推奨】まず自動診断を実行:
+  debugPenDrag.runDiagnostics()
 
+個別コマンド:
 1. 全体状態確認
    debugPenDrag.checkAll()
 
-2. BrushSettings取得パス確認
-   debugPenDrag.checkBrushSettingsPath()
-
-3. EventBusリスナー確認
+2. EventBusリスナー確認
    debugPenDrag.checkEventListeners()
 
-4. 手動サイズ変更テスト
-   debugPenDrag.testSizeChange(20, 0.9)
+3. ドラッグシミュレーション
+   debugPenDrag.simulateDrag('pen', 10, 0.1)
+   debugPenDrag.simulateDrag('eraser', 15, 0.2)
 
-5. EventBus発行テスト
-   debugPenDrag.testEventEmit()
+4. 直接変更テスト
+   debugPenDrag.testDirectChange(20, 0.9)
 
-6. 現在の設定表示
+5. 現在の設定表示
    debugPenDrag.showCurrent()
 
-7. ツール切替テスト
+6. ツール切替テスト
    debugPenDrag.switchTool('pen')
    debugPenDrag.switchTool('eraser')
 
 undefined
-debugPenDrag.checkAll()
-VM1700:15 === P/E+ドラッグ システム状態 ===
+debugPenDrag.runDiagnostics()
+ 🔍 P/E+ドラッグ 自動診断開始
 
-VM1700:18 1. EventBus:
-VM1700:19   存在: true
-VM1700:20   リスナー数: 0
-VM1700:24 
+ === P/E+ドラッグ システム状態 ===
+
+VM73:15 1. EventBus:
+VM73:16   存在: true
+VM73:17   リスナー数: 0
+VM73:21 
 2. ToolSizeManager:
-VM1700:27   存在: ✅
-VM1700:29   ペンサイズ: 10
-VM1700:30   ペン不透明度: 0.85
-VM1700:31   ドラッグ中: false
-VM1700:32   BrushSettings取得可: true
-VM1700:34   現在のBrushSettings: {size: 10, color: 0, opacity: 0.85, pressureCorrection: 1, smoothing: 0.5, …}
-VM1700:41 
+VM73:24   存在: ✅
+VM73:26   ペンサイズ: 20.425
+VM73:27   ペン不透明度: 0.85
+VM73:28   ドラッグ中: false
+VM73:29   BrushSettings取得可: true
+VM73:31   現在のBrushSettings: {size: 20.425, color: 0, opacity: 0.85, pressureCorrection: 1, smoothing: 0.5, …}
+VM73:38 
 3. DrawingEngine:
-VM1700:44   存在: ✅
-VM1700:45   settings: true
-VM1700:46   brushSettings: false
-VM1700:48   settings.size: 10
-VM1700:49   settings.opacity: 0.85
-VM1700:56 
+VM73:41   存在: ✅
+VM73:42   settings: true
+VM73:43   currentTool: pen
+VM73:45   settings.size: 20.425
+VM73:46   settings.opacity: 0.85
+VM73:53 
 4. KeyboardHandler:
-VM1700:60   Pキー押下: false
-VM1700:61   Eキー押下: false
-VM1700:62   ドラッグ中: false
-VM1700:63   アクティブツール: null
-VM1700:68 
+VM73:57   Pキー押下: false
+VM73:58   Eキー押下: false
+VM73:59   ドラッグ中: false
+VM73:60   アクティブツール: null
+VM73:65 
 5. DragVisualFeedback:
-VM1700:70   DOM要素: true
-VM1700:71   表示中: false
-VM1700:73 
+VM73:67   DOM要素: true
+VM73:68   表示中: false
+VM73:70 
 =====================================
-undefined
-debugPenDrag.checkBrushSettingsPath()
-VM1700:80 === BrushSettings 取得パス確認 ===
+VM73:268 
 
-VM1700:98 window.coreEngine.drawingEngine.settings: ✅
-VM1700:100   -> size: 10, opacity: 0.85
-VM1700:98 window.drawingApp.drawingEngine.settings: ✅
-VM1700:100   -> size: 10, opacity: 0.85
-VM1700:98 window.CoreEngine.drawingEngine.settings: ❌
-VM1700:98 window.drawingEngine.settings: ❌
-VM1700:98 window.TegakiDrawing.BrushSettings: ✅
-VM1700:98 window.BrushSettings: ✅
-VM1700:104 
-=====================================
-undefined
-debugPenDrag.checkEventListeners()
-VM1700:111 === EventBus リスナー確認 ===
+VM73:77 === EventBus リスナー確認 ===
 
-VM1700:130 tool:drag-size-start: 0個
-VM1700:130 tool:drag-size-update: 0個
-VM1700:130 tool:drag-size-end: 0個
-VM1700:130 tool:size-opacity-changed: 0個
-VM1700:130 brushSizeChanged: 0個
-VM1700:130 brushOpacityChanged: 0個
-VM1700:133 
+VM73:96 tool:drag-size-start: 0個
+VM73:96 tool:drag-size-update: 0個
+VM73:96 tool:drag-size-end: 0個
+VM73:96 tool:size-opacity-changed: 0個
+VM73:96 brushSizeChanged: 0個
+VM73:96 brushOpacityChanged: 0個
+VM73:102 
 =====================================
-undefined
-debugPenDrag.testSizeChange(20, 0.9)
-VM1700:140 
-=== 手動サイズ変更テスト (20px, 0.9) ===
-VM1700:153 変更前: {size: 10, opacity: 0.85}
-VM1700:170 変更後: {size: 20, opacity: 0.9}
-VM1700:175 ✅ 手動変更完了
-undefined
-debugPenDrag.testEventEmit()
-VM1700:182 
-=== EventBus発行テスト ===
-VM1700:189 1. tool:drag-size-start を発行...
-undefined
-VM1700:197 2. tool:drag-size-update を発行...
-VM1700:206 3. tool:drag-size-end を発行...
-VM1700:212 
-結果: {size: 15, opacity: 0.8}
-debugPenDrag.showCurrent()
-VM1700:231 === 現在の設定 ===
-VM1700:232 ツール: pen
-VM1700:234 サイズ: 15
-VM1700:235 不透明度: 0.8
-VM1700:236 色: 0
-undefined
-debugPenDrag.showCurrent()
-VM1700:231 === 現在の設定 ===
-VM1700:232 ツール: pen
-VM1700:234 サイズ: 15
-VM1700:235 不透明度: 0.8
-VM1700:236 色: 0
-undefined
-   debugPenDrag.switchTool('pen')
-   debugPenDrag.switchTool('eraser')
-VM1700:249 
-=== ツール切替: pen ===
-VM1700:253 ✅ CoreRuntime.api.setTool() で切替完了
-VM1700:231 === 現在の設定 ===
-VM1700:232 ツール: pen
-VM1700:234 サイズ: 15
-VM1700:235 不透明度: 0.8
-VM1700:236 色: 0
-VM1700:249 
-=== ツール切替: eraser ===
-VM1700:253 ✅ CoreRuntime.api.setTool() で切替完了
-VM1700:231 === 現在の設定 ===
-VM1700:232 ツール: eraser
-VM1700:234 サイズ: 15
-VM1700:235 不透明度: 0.8
-VM1700:236 色: 0
-undefined
+VM73:271 
+
+VM73:109 
+=== pen ドラッグシミュレーション開始 ===
+VM73:125 初期値: {size: 20.425, opacity: 0.85}
+VM73:128 
+1. tool:drag-size-start 発行...
+Promise {<pending>}
+VM73:138 2. tool:drag-size-update 発行...
+VM73:148 3. tool:drag-size-end 発行...
+VM73:157 
+結果: {size: 25.425, opacity: 0.85}
+VM73:165 
+変更検出: {サイズ: '✅ 変更された', 不透明度: '❌ 変更なし'}
+VM73:173 
+⚠️ P/E+ドラッグ機能に問題がある可能性があります
+VM73:174    checkEventListeners() でリスナー登録を確認してください
+VM73:177 
+=====================================
+VM73:275 
+🔍 診断完了

@@ -1,11 +1,11 @@
 /**
- * tool-size-manager.js
- * P/E+ドラッグ機能 - EventBus統合完全版 v3
+ * tool-size-manager.js v3.2
+ * P/E+ドラッグ機能 - EventBus統合完全版（強制統合）
  * 
- * 🔧 修正内容 v3:
- * - BrushSettings取得の確実性向上（DrawingEngine.settings優先）
- * - 実サイズ変更の確実化（setBrushSize/Opacity直接呼び出し）
- * - デバッグログの強化
+ * 🔧 修正内容 v3.2:
+ * - EventBus統合をより確実に（即座購読 + フォールバック）
+ * - window.TegakiEventBus直接参照を追加
+ * - リスナー登録の確実性を最大化
  */
 
 (function() {
@@ -34,26 +34,55 @@
             // BrushSettings直接参照（初期化後に設定される）
             this.brushSettings = null;
 
-            // 🔧 修正: EventBusの存在確認後にリスナー登録
-            if (this.eventBus && typeof this.eventBus.on === 'function') {
-                this._setupEventListeners();
-            } else {
-                console.warn('⚠️ ToolSizeManager: EventBus not available, retrying...');
-                setTimeout(() => this._retrySetupEventListeners(), 100);
-            }
+            // EventBus購読フラグ
+            this._isEventBusSubscribed = false;
+            
+            // 🔧 修正: 即座購読 + 遅延フォールバック
+            this._immediateSubscription();
+            this._setupEventBusSubscription();
         }
         
-        _retrySetupEventListeners() {
-            if (window.TegakiEventBus && typeof window.TegakiEventBus.on === 'function') {
-                this.eventBus = window.TegakiEventBus;
+        /**
+         * 🆕 即座にEventBus購読を試みる（利用可能な場合）
+         */
+        _immediateSubscription() {
+            const eventBus = this.eventBus || window.TegakiEventBus;
+            
+            if (eventBus && typeof eventBus.on === 'function' && !this._isEventBusSubscribed) {
+                this.eventBus = eventBus;
                 this._setupEventListeners();
-            } else {
-                setTimeout(() => this._retrySetupEventListeners(), 100);
+                this._isEventBusSubscribed = true;
             }
         }
 
+        /**
+         * 🆕 EventBus購読の遅延セットアップ（フォールバック）
+         */
+        _setupEventBusSubscription() {
+            if (this._isEventBusSubscribed) return;
+
+            const checkAndSubscribe = () => {
+                if (this._isEventBusSubscribed) return;
+
+                // グローバルEventBusを優先的に確認
+                const eventBus = window.TegakiEventBus || this.eventBus;
+                
+                if (eventBus && typeof eventBus.on === 'function') {
+                    this.eventBus = eventBus;
+                    this._setupEventListeners();
+                    this._isEventBusSubscribed = true;
+                    return;
+                }
+
+                // 再試行
+                setTimeout(checkAndSubscribe, 50);
+            };
+
+            setTimeout(checkAndSubscribe, 50);
+        }
+
         _setupEventListeners() {
-            if (!this.eventBus) return;
+            if (!this.eventBus || this._isEventBusSubscribed) return;
 
             // tool:drag-size-start
             this.eventBus.on('tool:drag-size-start', (data) => {
@@ -109,6 +138,7 @@
                 }
 
                 if (!this.dragState.lockedAxis || this.dragState.lockedAxis === 'opacity') {
+                    // 不透明度計算（上にドラッグ=増加、下にドラッグ=減少）
                     newOpacity = Math.max(
                         sensitivity.opacity.min,
                         Math.min(
@@ -129,14 +159,18 @@
                     this.eraserOpacity = newOpacity;
                 }
 
-                // 🔧 修正: BrushSettingsに確実に反映
+                // BrushSettingsに確実に反映
                 this._updateBrushSettings(newSize, newOpacity);
 
-                this.eventBus.emit('tool:size-opacity-changed', {
-                    tool: data.tool,
-                    size: newSize,
-                    opacity: newOpacity
-                });
+                // EventBus発行
+                const eventBus = this.eventBus || window.TegakiEventBus;
+                if (eventBus) {
+                    eventBus.emit('tool:size-opacity-changed', {
+                        tool: data.tool,
+                        size: newSize,
+                        opacity: newOpacity
+                    });
+                }
             });
 
             // tool:drag-size-end
@@ -145,18 +179,23 @@
 
                 const { tool, currentSize, currentOpacity } = this.dragState;
 
-                this.eventBus.emit('tool:size-drag-completed', {
-                    tool,
-                    finalSize: currentSize,
-                    finalOpacity: currentOpacity
-                });
+                const eventBus = this.eventBus || window.TegakiEventBus;
+                if (eventBus) {
+                    eventBus.emit('tool:size-drag-completed', {
+                        tool,
+                        finalSize: currentSize,
+                        finalOpacity: currentOpacity
+                    });
+                }
 
                 this.dragState = null;
             });
+
+            this._isEventBusSubscribed = true;
         }
 
         /**
-         * 🔧 修正: BrushSettings取得（DrawingEngine.settings優先）
+         * BrushSettings取得（DrawingEngine.settings優先）
          */
         _getBrushSettings() {
             if (this.brushSettings) {
@@ -191,7 +230,7 @@
         }
 
         /**
-         * 🔧 修正: BrushSettingsへの値反映（確実化）
+         * BrushSettingsへの値反映（確実化）
          */
         _updateBrushSettings(size, opacity) {
             const brushSettings = this._getBrushSettings();
@@ -216,9 +255,10 @@
                 }
 
                 // EventBus発行（他のコンポーネント連携）
-                if (this.eventBus) {
-                    this.eventBus.emit('brushSizeChanged', { size });
-                    this.eventBus.emit('brushOpacityChanged', { opacity });
+                const eventBus = this.eventBus || window.TegakiEventBus;
+                if (eventBus) {
+                    eventBus.emit('brushSizeChanged', { size });
+                    eventBus.emit('brushOpacityChanged', { opacity });
                 }
             } catch (e) {
                 // 静かに失敗
@@ -244,11 +284,14 @@
             this._updateBrushSettings(newSize, 
                 currentTool === 'pen' ? this.penOpacity : this.eraserOpacity);
 
-            this.eventBus.emit('tool:size-slot-selected', {
-                tool: currentTool,
-                slot,
-                size: newSize
-            });
+            const eventBus = this.eventBus || window.TegakiEventBus;
+            if (eventBus) {
+                eventBus.emit('tool:size-slot-selected', {
+                    tool: currentTool,
+                    slot,
+                    size: newSize
+                });
+            }
         }
 
         /**
@@ -277,7 +320,9 @@
                 dragState: this.dragState,
                 sizeSlots: this.sizeSlots,
                 brushSettings: !!this._getBrushSettings(),
-                brushSettingsDetails: this._getBrushSettings()?.getCurrentSettings?.()
+                brushSettingsDetails: this._getBrushSettings()?.getCurrentSettings?.(),
+                eventBusSubscribed: this._isEventBusSubscribed,
+                eventBusReference: !!(this.eventBus || window.TegakiEventBus)
             };
         }
     }
@@ -285,4 +330,4 @@
     window.ToolSizeManager = ToolSizeManager;
 })();
 
-console.log('✅ tool-size-manager.js v3 loaded (実サイズ反映確実化)');
+console.log('✅ tool-size-manager.js v3.2 loaded (強制EventBus統合版)');
