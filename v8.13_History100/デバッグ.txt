@@ -1,0 +1,306 @@
+/**
+ * P/E+ドラッグ機能デバッグコマンド集 (改善版)
+ * 
+ * ブラウザのコンソールに貼り付けて実行してください
+ */
+
+window.debugPenDrag = {
+    /**
+     * 全体状況をチェック
+     */
+    checkAll() {
+        console.log('=== P/E+ドラッグ システム状態 ===\n');
+        
+        // EventBus
+        console.log('1. EventBus:');
+        console.log('  存在:', !!window.TegakiEventBus);
+        console.log('  リスナー数:', window.TegakiEventBus?._events ? 
+            Object.keys(window.TegakiEventBus._events).length : 0);
+        
+        // ToolSizeManager
+        console.log('\n2. ToolSizeManager:');
+        const tsm = window.toolSizeManager;
+        if (tsm) {
+            console.log('  存在: ✅');
+            const info = tsm.getDebugInfo();
+            console.log('  ペンサイズ:', info.penSize);
+            console.log('  ペン不透明度:', info.penOpacity);
+            console.log('  ドラッグ中:', !!info.dragState);
+            console.log('  BrushSettings取得可:', info.brushSettings);
+            if (info.brushSettingsDetails) {
+                console.log('  現在のBrushSettings:', info.brushSettingsDetails);
+            }
+        } else {
+            console.log('  存在: ❌');
+        }
+        
+        // DrawingEngine
+        console.log('\n3. DrawingEngine:');
+        const de = window.coreEngine?.drawingEngine || window.drawingApp?.drawingEngine;
+        if (de) {
+            console.log('  存在: ✅');
+            console.log('  settings:', !!de.settings);
+            console.log('  currentTool:', de.currentTool);
+            if (de.settings) {
+                console.log('  settings.size:', de.settings.size);
+                console.log('  settings.opacity:', de.settings.opacity);
+            }
+        } else {
+            console.log('  存在: ❌');
+        }
+        
+        // KeyboardHandler
+        console.log('\n4. KeyboardHandler:');
+        if (window.KeyboardHandler) {
+            const state = window.KeyboardHandler.getDebugState?.();
+            if (state) {
+                console.log('  Pキー押下:', state.pKeyPressed);
+                console.log('  Eキー押下:', state.eKeyPressed);
+                console.log('  ドラッグ中:', state.isDragging);
+                console.log('  アクティブツール:', state.activeTool);
+            }
+        }
+        
+        // DragVisualFeedback
+        console.log('\n5. DragVisualFeedback:');
+        const feedback = document.getElementById('drag-visual-feedback');
+        console.log('  DOM要素:', !!feedback);
+        console.log('  表示中:', feedback?.style.display !== 'none');
+        
+        console.log('\n=====================================');
+    },
+    
+    /**
+     * EventBusのリスナーを確認
+     */
+    checkEventListeners() {
+        console.log('=== EventBus リスナー確認 ===\n');
+        
+        if (!window.TegakiEventBus?._events) {
+            console.log('EventBus未初期化');
+            return;
+        }
+        
+        const events = window.TegakiEventBus._events;
+        const targetEvents = [
+            'tool:drag-size-start',
+            'tool:drag-size-update',
+            'tool:drag-size-end',
+            'tool:size-opacity-changed',
+            'brushSizeChanged',
+            'brushOpacityChanged'
+        ];
+        
+        targetEvents.forEach(evt => {
+            const listeners = events[evt];
+            console.log(`${evt}:`, listeners ? `${listeners.length}個` : '0個');
+            if (listeners && listeners.length > 0) {
+                console.log('  → リスナー登録済み ✅');
+            }
+        });
+        
+        console.log('\n=====================================');
+    },
+    
+    /**
+     * P/E+ドラッグのイベントフローをシミュレート
+     */
+    async simulateDrag(tool = 'pen', sizeChange = 10, opacityChange = 0.1) {
+        console.log(`\n=== ${tool} ドラッグシミュレーション開始 ===`);
+        
+        if (!window.TegakiEventBus) {
+            console.error('❌ EventBus が見つかりません');
+            return;
+        }
+        
+        const de = window.coreEngine?.drawingEngine || window.drawingApp?.drawingEngine;
+        if (!de?.settings) {
+            console.error('❌ DrawingEngine.settings が見つかりません');
+            return;
+        }
+        
+        const initialSize = de.settings.size;
+        const initialOpacity = de.settings.opacity;
+        
+        console.log('初期値:', { size: initialSize, opacity: initialOpacity });
+        
+        // 1. ドラッグ開始
+        console.log('\n1. tool:drag-size-start 発行...');
+        window.TegakiEventBus.emit('tool:drag-size-start', {
+            tool: tool,
+            startSize: initialSize,
+            startOpacity: initialOpacity
+        });
+        
+        await this._wait(300);
+        
+        // 2. ドラッグ更新
+        console.log('2. tool:drag-size-update 発行...');
+        window.TegakiEventBus.emit('tool:drag-size-update', {
+            tool: tool,
+            deltaX: sizeChange / 0.1,  // 感度0.1で割る
+            deltaY: -opacityChange / 0.002  // 感度0.002で割る
+        });
+        
+        await this._wait(300);
+        
+        // 3. ドラッグ終了
+        console.log('3. tool:drag-size-end 発行...');
+        window.TegakiEventBus.emit('tool:drag-size-end');
+        
+        await this._wait(300);
+        
+        // 4. 結果確認
+        const finalSize = de.settings.size;
+        const finalOpacity = de.settings.opacity;
+        
+        console.log('\n結果:', { 
+            size: finalSize, 
+            opacity: finalOpacity 
+        });
+        
+        const sizeChanged = Math.abs(finalSize - initialSize) > 0.1;
+        const opacityChanged = Math.abs(finalOpacity - initialOpacity) > 0.01;
+        
+        console.log('\n変更検出:', {
+            サイズ: sizeChanged ? '✅ 変更された' : '❌ 変更なし',
+            不透明度: opacityChanged ? '✅ 変更された' : '❌ 変更なし'
+        });
+        
+        if (sizeChanged && opacityChanged) {
+            console.log('\n🎉 P/E+ドラッグ機能は正常に動作しています！');
+        } else {
+            console.log('\n⚠️ P/E+ドラッグ機能に問題がある可能性があります');
+            console.log('   checkEventListeners() でリスナー登録を確認してください');
+        }
+        
+        console.log('\n=====================================');
+    },
+    
+    /**
+     * 手動でサイズ変更をテスト
+     */
+    testDirectChange(size, opacity) {
+        console.log(`\n=== 直接変更テスト (${size}px, ${opacity}) ===`);
+        
+        const de = window.coreEngine?.drawingEngine || window.drawingApp?.drawingEngine;
+        if (!de?.settings) {
+            console.error('❌ DrawingEngine.settings が見つかりません');
+            return;
+        }
+        
+        console.log('変更前:', {
+            size: de.settings.size,
+            opacity: de.settings.opacity
+        });
+        
+        de.settings.setBrushSize(size);
+        de.settings.setBrushOpacity(opacity);
+        
+        console.log('変更後:', {
+            size: de.settings.size,
+            opacity: de.settings.opacity
+        });
+        
+        console.log('✅ 直接変更完了');
+    },
+    
+    /**
+     * 現在の設定を表示
+     */
+    showCurrent() {
+        const de = window.coreEngine?.drawingEngine || window.drawingApp?.drawingEngine;
+        if (!de) {
+            console.error('❌ DrawingEngine が見つかりません');
+            return;
+        }
+        
+        console.log('=== 現在の設定 ===');
+        console.log('ツール:', de.currentTool || 'unknown');
+        if (de.settings) {
+            console.log('サイズ:', de.settings.size);
+            console.log('不透明度:', de.settings.opacity);
+            console.log('色:', de.settings.color);
+        }
+    },
+    
+    /**
+     * ツール切替テスト
+     */
+    switchTool(tool) {
+        if (!['pen', 'eraser'].includes(tool)) {
+            console.error('❌ ツールは "pen" または "eraser" を指定してください');
+            return;
+        }
+        
+        console.log(`\n=== ツール切替: ${tool} ===`);
+        
+        if (window.CoreRuntime?.api?.setTool) {
+            window.CoreRuntime.api.setTool(tool);
+            console.log('✅ CoreRuntime.api.setTool() で切替完了');
+        } else {
+            const de = window.coreEngine?.drawingEngine || window.drawingApp?.drawingEngine;
+            if (de?.setTool) {
+                de.setTool(tool);
+                console.log('✅ DrawingEngine.setTool() で切替完了');
+            } else {
+                console.error('❌ ツール切替メソッドが見つかりません');
+            }
+        }
+        
+        this.showCurrent();
+    },
+    
+    /**
+     * 待機関数
+     */
+    _wait(ms) {
+        return new Promise(resolve => setTimeout(resolve, ms));
+    },
+    
+    /**
+     * 自動診断実行
+     */
+    async runDiagnostics() {
+        console.log('🔍 P/E+ドラッグ 自動診断開始\n');
+        
+        this.checkAll();
+        console.log('\n');
+        
+        this.checkEventListeners();
+        console.log('\n');
+        
+        await this.simulateDrag('pen', 5, 0.1);
+        
+        console.log('\n🔍 診断完了');
+    }
+};
+
+// 使い方を表示
+console.log(`
+🔧 P/E+ドラッグ デバッグコマンド (改善版)
+
+【推奨】まず自動診断を実行:
+  debugPenDrag.runDiagnostics()
+
+個別コマンド:
+1. 全体状態確認
+   debugPenDrag.checkAll()
+
+2. EventBusリスナー確認
+   debugPenDrag.checkEventListeners()
+
+3. ドラッグシミュレーション
+   debugPenDrag.simulateDrag('pen', 10, 0.1)
+   debugPenDrag.simulateDrag('eraser', 15, 0.2)
+
+4. 直接変更テスト
+   debugPenDrag.testDirectChange(20, 0.9)
+
+5. 現在の設定表示
+   debugPenDrag.showCurrent()
+
+6. ツール切替テスト
+   debugPenDrag.switchTool('pen')
+   debugPenDrag.switchTool('eraser')
+`);
