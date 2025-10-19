@@ -1,0 +1,18 @@
+// 1. DrawingEngineが新しいバージョンか確認
+console.log('Has _initializeBrushSettings:', typeof window.drawingEngine._initializeBrushSettings);
+console.log('Has brushSize property:', 'brushSize' in window.drawingEngine);
+// 2. P+ドラッグ後に再度確認
+console.log('=== After Drag ===');
+console.log('ToolSizeManager.penSize:', window.toolSizeManager.penSize);
+console.log('BrushSettings.getBrushSize():', window.drawingEngine.settings.getBrushSize());
+console.log('DrawingEngine.brushSize:', window.drawingEngine.brushSize); // undefinedになるはず
+// 3. 実際に描画して確認
+VM1590:2 Has _initializeBrushSettings: undefined
+VM1590:3 Has brushSize property: true
+VM1590:6 === After Drag ===
+VM1590:7 ToolSizeManager.penSize: 19.3
+VM1590:8 BrushSettings.getBrushSize(): 19.3
+VM1590:9 DrawingEngine.brushSize: 10
+
+
+ツールサイズでは確実に反映されて情報は保持しているけれどDrawingEngine.brushSizeのconfigからの10は更新されずな結果のようです。受け渡し更新させる仕組みが無い状態?

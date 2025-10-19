@@ -1,11 +1,12 @@
 /**
- * DrawingEngine v8.0 - Phase1: BrushSettings確実初期化版
+ * DrawingEngine v8.1 - Phase1: BrushSettings確実初期化版 + tool:size:changed対応
  * 
  * 改修内容:
  * - constructor内でBrushSettingsを確実に生成
  * - this.brushSize/brushColor/brushOpacity プロパティ削除（BrushSettingsに一元化）
  * - 冗長な遅延初期化ロジック削除
  * - イベント購読の簡素化
+ * - tool:size:changed イベント追加対応（DragVisualFeedback互換性）
  */
 
 class DrawingEngine {
@@ -112,6 +113,18 @@ class DrawingEngine {
    */
   subscribeToSettings() {
     if (!this.eventBus) return;
+    
+    // tool:size:changed イベント購読（DragVisualFeedback互換性）
+    this.eventBus.on('tool:size:changed', ({ tool, size }) => {
+      if (!this.settings) return;
+      
+      // ツールが一致する場合のみ反映（toolがnullの場合は常に反映）
+      if (!tool || tool === this.currentTool) {
+        if (size !== undefined) {
+          this.settings.setBrushSize(size);
+        }
+      }
+    });
     
     // tool:size-opacity-changed イベント購読（P/E+ドラッグ対応）
     this.eventBus.on('tool:size-opacity-changed', ({ tool, size, opacity }) => {
