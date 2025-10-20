@@ -2,6 +2,7 @@
 // 責務: アルバムUI表示・スナップショット管理
 // 🔥 改修: 他のポップアップと同じ仕組みに統一（.popup-panel、固定位置）
 // 🔥 FIX: 旧実装を完全に削除し、新実装のみに統一
+// 🔥 FIX: 初期状態で強制的に非表示にする処理を追加
 
 // 旧実装が残っている場合は削除
 if (window.AlbumPopup) {
@@ -23,6 +24,9 @@ window.TegakiUI.AlbumPopup = class {
     this._loadSnapshots();
     this._ensurePopupElement();
     
+    // 🔥 FIX: 初期状態で確実に非表示にする
+    this.hide();
+    
     console.log('✅ AlbumPopup (new implementation) initialized');
   }
 
@@ -31,6 +35,10 @@ window.TegakiUI.AlbumPopup = class {
     
     if (!this.popup) {
       this._createPopupElement();
+    } else {
+      // 🔥 FIX: 既存要素がある場合も確実に非表示状態にする
+      this.popup.classList.remove('show');
+      this.popup.style.display = 'none';
     }
   }
 
@@ -47,7 +55,8 @@ window.TegakiUI.AlbumPopup = class {
     popupDiv.style.maxWidth = '900px';
     popupDiv.style.height = '80vh';
     popupDiv.style.maxHeight = '700px';
-    popupDiv.style.display = 'flex';
+    // 🔥 FIX: 初期状態で display: none を設定
+    popupDiv.style.display = 'none';
     popupDiv.style.flexDirection = 'column';
     
     popupDiv.innerHTML = `
@@ -79,9 +88,14 @@ window.TegakiUI.AlbumPopup = class {
     
     if (!this.popup) return;
     
-    this.popup.classList.add('show');
-    this.isVisible = true;
-    this._renderGallery();
+    // 🔥 FIX: display を flex に変更してから show クラスを追加
+    this.popup.style.display = 'flex';
+    // DOM更新を待つ
+    requestAnimationFrame(() => {
+      this.popup.classList.add('show');
+      this.isVisible = true;
+      this._renderGallery();
+    });
   }
 
   hide() {
@@ -89,6 +103,13 @@ window.TegakiUI.AlbumPopup = class {
     
     this.popup.classList.remove('show');
     this.isVisible = false;
+    
+    // 🔥 FIX: アニメーション完了後に display: none を設定
+    setTimeout(() => {
+      if (!this.isVisible && this.popup) {
+        this.popup.style.display = 'none';
+      }
+    }, 300);
   }
 
   toggle() {

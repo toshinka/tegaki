@@ -1,6 +1,7 @@
 // ===== ui-panels.js - 改修版 =====
 // 責務: UIイベント管理、ポップアップ制御の一元化
 // 🔥 改修: ペンアイコンクリック修正、排他制御統一、エクスポートポップアップ初期化修正
+// 🔥 FIX: エクスポートポップアップをDOM直接操作で確実に表示
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -38,11 +39,27 @@ window.TegakiUI.UIController = class {
     // ===== ポップアップ参照管理 =====
     
     getExportPopup() {
+        // 🔥 FIX: 複数の参照先を順番にチェック
         if (!this.exportPopup) {
-            this.exportPopup = window.TEGAKI_EXPORT_POPUP || window.exportPopup || window.exportPopupInstance;
+            this.exportPopup = 
+                window.TEGAKI_EXPORT_POPUP || 
+                window.exportPopup || 
+                window.exportPopupInstance ||
+                window.TegakiUI?.exportPopup;
             
             if (!this.exportPopup) {
-                console.warn('Export popup instance not found yet');
+                console.warn('⚠️ Export popup instance not found, attempting to create...');
+                // 🔥 FIX: ExportManagerが存在すれば手動作成を試みる
+                if (window.TEGAKI_EXPORT_MANAGER && window.ExportPopup) {
+                    try {
+                        this.exportPopup = new window.ExportPopup(window.TEGAKI_EXPORT_MANAGER);
+                        window.TEGAKI_EXPORT_POPUP = this.exportPopup;
+                        window.exportPopup = this.exportPopup;
+                        console.log('✅ Export popup created manually in UIController');
+                    } catch (error) {
+                        console.error('❌ Failed to create export popup:', error);
+                    }
+                }
             }
         }
         return this.exportPopup;
@@ -140,6 +157,13 @@ window.TegakiUI.UIController = class {
                 this.quickAccessPopup.toggle();
             }
         });
+        
+        // 🔥 NEW: エクスポートマネージャー初期化完了時にポップアップ取得を再試行
+        eventBus.on('export:manager:initialized', () => {
+            console.log('🔧 ExportManager initialized, refreshing popup reference...');
+            this.exportPopup = null; // 参照をクリア
+            this.getExportPopup(); // 再取得
+        });
     }
     
     // ===== ポップアップ制御 =====
@@ -185,10 +209,17 @@ window.TegakiUI.UIController = class {
             resizePopup.classList.remove('show');
         }
         
+        // 🔥 FIX: エクスポートポップアップもDOM直接操作で確実に閉じる
+        const exportPopupEl = document.getElementById('export-popup');
+        if (exportPopupEl && exportPopupEl !== exceptPopup && exceptPopup !== 'export') {
+            exportPopupEl.classList.remove('show');
+        }
+        
         // DOM直接操作で確実に閉じる
         document.querySelectorAll('.popup-panel').forEach(popup => {
             if (popup === exceptPopup?.popup) return;
             if (exceptPopup === 'resize' && popup.id === 'resize-settings') return;
+            if (exceptPopup === 'export' && popup.id === 'export-popup') return;
             
             popup.classList.remove('show');
         });
@@ -290,21 +321,62 @@ window.TegakiUI.UIController = class {
                 }
             },
             'export-tool': () => {
-                const popup = this.getExportPopup();
-                if (!popup) {
-                    alert('エクスポートシステムが初期化されていません');
+                // 🔥 FIX: DOM直接操作でエクスポートポップアップを確実に表示
+                const exportPopupEl = document.getElementById('export-popup');
+                
+                if (!exportPopupEl) {
+                    console.error('❌ Export popup DOM element not found');
+                    alert('エクスポートポップアップが見つかりません。\nページをリロードしてください。');
                     return;
                 }
-                // 🔥 FIX: show/hideメソッドの存在チェック
-                if (typeof popup.show === 'function' && typeof popup.hide === 'function') {
-                    if (popup.isVisible) {
-                        popup.hide();
-                    } else {
-                        this.showPopup(popup);
+                
+                // 🔥 FIX: DOM要素から直接状態を取得（インスタンスの状態は無視）
+                const isCurrentlyVisible = exportPopupEl.classList.contains('show');
+                
+                console.log('🔧 Export popup toggle:', {
+                    domHasShowClass: isCurrentlyVisible,
+                    computedDisplay: window.getComputedStyle(exportPopupEl).display,
+                    hasExportManager: !!window.TEGAKI_EXPORT_MANAGER,
+                    hasExportPopupInstance: !!this.getExportPopup()
+                });
+                
+                if (isCurrentlyVisible) {
+                    // 非表示にする
+                    console.log('→ Hiding export popup');
+                    exportPopupEl.classList.remove('show');
+                    
+                    // インスタンスがあればそちらも更新
+                    const popupInstance = this.getExportPopup();
+                    if (popupInstance) {
+                        popupInstance.isVisible = false;
                     }
                 } else {
-                    console.error('Export popup show/hide methods not found');
-                    alert('エクスポートポップアップが正しく初期化されていません');
+                    // 表示する
+                    console.log('→ Showing export popup');
+                    
+                    // 他のポップアップを閉じる
+                    this.closeAllPopups('export');
+                    
+                    // 🔥 FIX: 確実にshowクラスを追加
+                    exportPopupEl.classList.add('show');
+                    
+                    // 強制的にdisplay: blockを設定（CSSが効かない場合の保険）
+                    if (window.getComputedStyle(exportPopupEl).display === 'none') {
+                        exportPopupEl.style.display = 'block';
+                        console.log('⚠️ Forced display:block (CSS not working)');
+                    }
+                    
+                    // インスタンスがあればそちらも更新
+                    const popupInstance = this.getExportPopup();
+                    if (popupInstance) {
+                        popupInstance.isVisible = true;
+                        // インスタンスの初期化メソッドがあれば呼ぶ
+                        if (typeof popupInstance.selectFormat === 'function') {
+                            popupInstance.selectFormat(popupInstance.selectedFormat || 'png');
+                        }
+                    }
+                    
+                    console.log('✅ Export popup shown via DOM manipulation');
                 }
             },
             'settings-tool': () => {
