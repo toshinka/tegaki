@@ -2,6 +2,7 @@
 // ui/export-popup.js - 改修版
 // 責務: エクスポートUI管理、プレビュー表示
 // 🔥 改修: グローバル参照の統一、トグル機能
+// 🔥 FIX: 初期状態で確実に非表示にする
 // ==================================================
 
 window.ExportPopup = (function() {
@@ -11,11 +12,14 @@ window.ExportPopup = (function() {
         constructor(exportManager) {
             this.manager = exportManager;
             this.selectedFormat = 'png';
-            this.isVisible = false;
+            this.isVisible = false; // 🔥 FIX: 初期状態はfalse
             this.currentPreviewUrl = null;
             this.currentBlob = null;
             this.setupUI();
             this.setupEventListeners();
+            
+            // 🔥 FIX: 初期化時に確実に非表示状態にする
+            this.hide();
         }
         
         setupUI() {
@@ -53,6 +57,9 @@ window.ExportPopup = (function() {
                 
                 document.body.appendChild(popup);
             }
+            
+            // 🔥 FIX: DOM要素が存在する場合も確実に非表示状態にする
+            popup.classList.remove('show');
             
             this.updateOptionsUI(this.selectedFormat);
         }
