@@ -1,13 +1,12 @@
-// ===== ui/quick-access-popup.js =====
+// ===== ui/quick-access-popup.js - PopupManager対応改修版 =====
 // 責務: クイックアクセスUI表示・管理
-// 🔥 改修: 他のポップアップと同じ仕組みに統一、Qキーショートカット実装
-// 🎯 ペンアイコンクリックでトグル、ショートカット: Q
+// 🔥 改修: PopupManager統合、共通インターフェース適用
 
 window.TegakiUI = window.TegakiUI || {};
 
 window.TegakiUI.QuickAccessPopup = class {
-    constructor(drawingEngine) {
-        this.drawingEngine = drawingEngine;
+    constructor(dependencies) {
+        this.drawingEngine = dependencies.drawingEngine;
         this.popup = null;
         this.isVisible = false;
         
@@ -19,6 +18,10 @@ window.TegakiUI.QuickAccessPopup = class {
         
         if (!this.popup) {
             this._createPopupElement();
+        } else {
+            // 既存要素の初期化
+            this.popup.classList.remove('show');
+            this.popup.style.display = '';
         }
     }
     
@@ -60,6 +63,8 @@ window.TegakiUI.QuickAccessPopup = class {
         this.popup = popupDiv;
     }
     
+    // ===== 必須インターフェース =====
+    
     show() {
         if (!this.popup) {
             this._ensurePopupElement();
@@ -85,7 +90,17 @@ window.TegakiUI.QuickAccessPopup = class {
             this.show();
         }
     }
+    
+    isReady() {
+        return !!this.popup;
+    }
+    
+    destroy() {
+        // cleanup if needed
+    }
 };
 
 // グローバル公開
 window.QuickAccessPopup = window.TegakiUI.QuickAccessPopup;
+
+console.log('✅ quick-access-popup.js (PopupManager対応版) loaded');
