@@ -1,12 +1,12 @@
-// ===== settings-popup.js - 改修版 =====
-// 責務: UI表示、ユーザー入力受付、EventBus通知
-// 🔥 改修: コード簡潔化、デバッグログ削減
+// ===== settings-popup.js - PopupManager対応改修版 =====
+// 責務: 設定UI表示、ユーザー入力受付、EventBus通知
+// 🔥 改修: PopupManager統合、共通インターフェース適用
 
 window.TegakiUI = window.TegakiUI || {};
 
 window.TegakiUI.SettingsPopup = class {
-    constructor(drawingEngine) {
-        this.drawingEngine = drawingEngine;
+    constructor(dependencies) {
+        this.drawingEngine = dependencies.drawingEngine;
         this.eventBus = window.TegakiEventBus;
         this.settingsManager = this._getSettingsManager();
         
@@ -39,8 +39,14 @@ window.TegakiUI.SettingsPopup = class {
         
         if (!this.popup) {
             this._createPopupElement();
-        } else if (this.popup.children.length === 0) {
-            this._populateContent();
+        } else {
+            // 既存要素の初期化
+            this.popup.classList.remove('show');
+            this.popup.style.display = '';
+            
+            if (this.popup.children.length === 0) {
+                this._populateContent();
+            }
         }
         
         if (this.popup) {
@@ -423,6 +429,8 @@ window.TegakiUI.SettingsPopup = class {
         }
     }
     
+    // ===== 必須インターフェース =====
+    
     show() {
         if (!this.popup) {
             this._ensurePopupElement();
@@ -457,6 +465,10 @@ window.TegakiUI.SettingsPopup = class {
         }
     }
     
+    isReady() {
+        return !!this.popup;
+    }
+    
     destroy() {
         Object.values(this.sliders).forEach(slider => {
             if (slider?.destroy) {
@@ -469,4 +481,6 @@ window.TegakiUI.SettingsPopup = class {
 };
 
 // グローバル公開
-window.SettingsPopup = window.TegakiUI.SettingsPopup
+window.SettingsPopup = window.TegakiUI.SettingsPopup;
+
+console.log('✅ settings-popup.js (PopupManager対応版) loaded');
