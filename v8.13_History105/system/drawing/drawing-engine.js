@@ -1,10 +1,10 @@
 /**
- * DrawingEngine v7.9 - EventBus購読修正版
+ * DrawingEngine v7.10 - v7.9修正版（最小限の改修）
  * 
- * 🔧 修正内容 v7.9:
- * - _isEventBusSubscribed フラグの初期化修正
- * - subscribeToSettings() の購読確認を確実化
- * - tool:size-opacity-changed イベント購読を最優先化
+ * 🔧 修正内容 v7.10:
+ * - startDrawing() で毎回 BrushSettings から値を直接取得（スナップショット化廃止）
+ * - subscribeToSettings() メソッドを確実に定義
+ * - _isEventBusSubscribed フラグを確実に初期化
  */
 
 class DrawingEngine {
@@ -38,16 +38,20 @@ class DrawingEngine {
     this.currentPath = null;
     this.lastPoint = null;
     
-    // 🔧 修正: フラグを false で初期化（undefined 回避）
+    // 🔧 修正 v7.10: フラグを false で確実に初期化
     this._isEventBusSubscribed = false;
+    
+    // 即座購読を試みる
     this._immediateSubscription();
+    
+    // フォールバック: 50ms後に再試行
     this._setupEventBusSubscription();
     
     this.applySyncSettings();
   }
 
   /**
-   * 🆕 即座にEventBus購読を試みる（利用可能な場合）
+   * 即座にEventBus購読を試みる
    */
   _immediateSubscription() {
     const eventBus = this.eventBus || window.TegakiEventBus;
@@ -59,7 +63,7 @@ class DrawingEngine {
   }
 
   /**
-   * 🆕 EventBus購読の遅延セットアップ（フォールバック）
+   * EventBus購読のフォールバック
    */
   _setupEventBusSubscription() {
     if (this._isEventBusSubscribed) return;
@@ -67,7 +71,6 @@ class DrawingEngine {
     const checkAndSubscribe = () => {
       if (this._isEventBusSubscribed) return;
 
-      // グローバルEventBusを優先的に確認
       const eventBus = window.TegakiEventBus || this.eventBus;
       
       if (eventBus && typeof eventBus.on === 'function') {
@@ -76,7 +79,6 @@ class DrawingEngine {
         return;
       }
 
-      // 再試行
       setTimeout(checkAndSubscribe, 50);
     };
 
@@ -84,7 +86,7 @@ class DrawingEngine {
   }
 
   /**
-   * BrushSettings同期初期化（即座に成功する場合）
+   * BrushSettings同期初期化
    */
   _initializeBrushSettingsSync() {
     const BrushSettingsClass = window.TegakiDrawing?.BrushSettings || 
@@ -97,7 +99,8 @@ class DrawingEngine {
         this._emitBrushInitialized();
         return true;
       } catch (e) {
-        // 初期化失敗時は遅延初期化へ
+        this._initializeBrushSettingsDelayed();
+        return false;
       }
     }
     
@@ -106,7 +109,7 @@ class DrawingEngine {
   }
 
   /**
-   * BrushSettings遅延初期化（最大10秒待機）
+   * BrushSettings遅延初期化
    */
   _initializeBrushSettingsDelayed() {
     let retryCount = 0;
@@ -153,7 +156,7 @@ class DrawingEngine {
   }
 
   /**
-   * BrushSettings確認（なければ再試行）
+   * BrushSettings確認
    */
   _ensureBrushSettings() {
     if (this.settings) {
@@ -209,7 +212,7 @@ class DrawingEngine {
   }
 
   /**
-   * 🔧 修正: EventBus購読（購読済みフラグの確実な設定）
+   * 🔧 修正 v7.10: EventBus購読メソッド（確実に定義）
    */
   subscribeToSettings() {
     // 既に購読済みの場合はスキップ
@@ -222,11 +225,10 @@ class DrawingEngine {
       return;
     }
     
-    // 🆕 P/E+ドラッグ対応: tool:size-opacity-changed イベント購読（最優先）
+    // 🔥 P/E+ドラッグ対応: tool:size-opacity-changed イベント購読
     eventBus.on('tool:size-opacity-changed', ({ tool, size, opacity }) => {
       if (!this.settings) return;
       
-      // ツールが一致する場合のみ反映（toolがnullの場合は常に反映）
       if (!tool || tool === this.currentTool) {
         if (size !== undefined) {
           this.settings.setBrushSize(size);
@@ -289,10 +291,14 @@ class DrawingEngine {
       if (this.pressureHandler) this.pressureHandler.setFilterSettings(settings);
     });
     
-    // 🔧 修正: 購読完了フラグを確実に設定
+    // 🔧 修正 v7.10: 購読完了フラグを確実に設定
     this._isEventBusSubscribed = true;
   }
 
+  /**
+   * 🔧 修正 v7.10: startDrawing で毎回リアルタイムの値を取得
+   * スナップショット化を廃止し、常に最新のBrushSettingsから取得
+   */
   startDrawing(screenX, screenY, pressureOrEvent) {
     if (!this._ensureBrushSettings()) return;
     
@@ -305,20 +311,25 @@ class DrawingEngine {
     
     const currentScale = this.cameraSystem.camera.scale || 1;
 
+    // 🔧 修正 v7.10: 直前に取得（毎回新鮮な値）
     const strokeOptions = this.settings.getStrokeOptions();
-    const scaledSize = this.renderer.getScaledSize(this.settings.getBrushSize(), currentScale);
+    const currentSize = this.settings.getBrushSize();
+    const currentColor = this.settings.getBrushColor();
+    const currentOpacity = this.settings.getBrushOpacity();
+    
+    const scaledSize = this.renderer.getScaledSize(currentSize, currentScale);
     strokeOptions.size = scaledSize;
 
     this.currentPath = this.recorder.startNewPath(
       { x: canvasPoint.x, y: canvasPoint.y, pressure },
-      this.currentTool === 'eraser' ? this.config.background.color : this.settings.getBrushColor(),
-      this.settings.getBrushSize(),
-      this.settings.getBrushOpacity(),
+      this.currentTool === 'eraser' ? this.config.background.color : currentColor,
+      currentSize,
+      currentOpacity,
       this.currentTool,
       strokeOptions
     );
 
-    this.currentPath.originalSize = this.settings.getBrushSize();
+    this.currentPath.originalSize = currentSize;
     this.currentPath.scaleAtDrawTime = currentScale;
 
     this.currentPath.container = new PIXI.Container();
@@ -512,4 +523,4 @@ if (typeof window.TegakiDrawing === 'undefined') {
 }
 window.TegakiDrawing.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js v7.9 loaded (EventBus購読修正版)');
+console.log('✅ drawing-engine.js v7.10 loaded (v7.9修正版 - スナップショット化廃止)');
