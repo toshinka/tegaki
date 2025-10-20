@@ -1,10 +1,10 @@
 /**
- * DrawingEngine v7.8 - P/E+ドラッグ完全対応版（強制EventBus統合）
+ * DrawingEngine v7.9 - EventBus購読修正版
  * 
- * 🔧 修正内容 v7.8:
- * - EventBus統合をより確実に（即座購読 + フォールバック）
- * - window.TegakiEventBus直接参照を追加
- * - リスナー登録の確実性を最大化
+ * 🔧 修正内容 v7.9:
+ * - _isEventBusSubscribed フラグの初期化修正
+ * - subscribeToSettings() の購読確認を確実化
+ * - tool:size-opacity-changed イベント購読を最優先化
  */
 
 class DrawingEngine {
@@ -38,7 +38,7 @@ class DrawingEngine {
     this.currentPath = null;
     this.lastPoint = null;
     
-    // 🔧 修正: 即座購読 + 遅延フォールバック
+    // 🔧 修正: フラグを false で初期化（undefined 回避）
     this._isEventBusSubscribed = false;
     this._immediateSubscription();
     this._setupEventBusSubscription();
@@ -55,7 +55,6 @@ class DrawingEngine {
     if (eventBus && typeof eventBus.on === 'function' && !this._isEventBusSubscribed) {
       this.eventBus = eventBus;
       this.subscribeToSettings();
-      this._isEventBusSubscribed = true;
     }
   }
 
@@ -74,7 +73,6 @@ class DrawingEngine {
       if (eventBus && typeof eventBus.on === 'function') {
         this.eventBus = eventBus;
         this.subscribeToSettings();
-        this._isEventBusSubscribed = true;
         return;
       }
 
@@ -210,13 +208,21 @@ class DrawingEngine {
     }
   }
 
+  /**
+   * 🔧 修正: EventBus購読（購読済みフラグの確実な設定）
+   */
   subscribeToSettings() {
-    if (this._isEventBusSubscribed) return;
+    // 既に購読済みの場合はスキップ
+    if (this._isEventBusSubscribed) {
+      return;
+    }
     
     const eventBus = this.eventBus || window.TegakiEventBus;
-    if (!eventBus) return;
+    if (!eventBus) {
+      return;
+    }
     
-    // 🆕 P/E+ドラッグ対応: tool:size-opacity-changed イベント購読
+    // 🆕 P/E+ドラッグ対応: tool:size-opacity-changed イベント購読（最優先）
     eventBus.on('tool:size-opacity-changed', ({ tool, size, opacity }) => {
       if (!this.settings) return;
       
@@ -283,6 +289,7 @@ class DrawingEngine {
       if (this.pressureHandler) this.pressureHandler.setFilterSettings(settings);
     });
     
+    // 🔧 修正: 購読完了フラグを確実に設定
     this._isEventBusSubscribed = true;
   }
 
@@ -505,4 +512,4 @@ if (typeof window.TegakiDrawing === 'undefined') {
 }
 window.TegakiDrawing.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js v7.8 loaded (強制EventBus統合版)');
+console.log('✅ drawing-engine.js v7.9 loaded (EventBus購読修正版)');

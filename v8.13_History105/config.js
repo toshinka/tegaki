@@ -54,13 +54,16 @@ window.TEGAKI_CONFIG = {
         pen: [2, 4, 6, 8, 12, 16, 24, 36, 50],
         eraser: [10, 15, 20, 30, 40, 50, 60, 80, 100]
     },
-    // 🆕 ToolSizePopup 設定
+    // 🆕 ToolSizePopup 設定（ツール別スロット対応）
     toolSizePopup: {
-        slots: [1, 3, 5, 10, 30, 100],
+        slots: {
+            pen: [1, 3, 5, 10, 30, 100],
+            eraser: [5, 10, 20, 40, 80, 150]
+        },
         sliderMin: 0.1,
         sliderMax: 500,
         dotMinSize: 4,
-        dotMaxSize: 20
+        dotMaxSize: 32
     },
     dragAdjustment: {
         size: {
