@@ -1,7 +1,6 @@
 // Tegaki Tool - Core Initializer Module
 // DO NOT use ESM, only global namespace
-// 🔥 修正: ExportPopup初期化を確実に実行
-// 🎯 追加: ToolSizePopup初期化
+// 🔥 修正: ExportPopup初期化を確実に実行 + ToolSizePopup初期化追加
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -56,10 +55,12 @@ window.CoreInitializer = (function() {
             throw new Error('SettingsManager class not found');
         }
 
+        // 既にインスタンスの場合はそのまま返す
         if (window.TegakiSettingsManager.prototype === undefined) {
             return window.TegakiSettingsManager;
         }
 
+        // クラスの場合はインスタンス化
         const settingsManager = new window.TegakiSettingsManager(eventBus, config);
         window.TegakiSettingsManager = settingsManager;
         
@@ -123,6 +124,7 @@ window.CoreInitializer = (function() {
             });
             
             // UIController初期化
+            console.log('🔧 Initializing UIController...');
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
                 this.coreEngine.getLayerManager(), 
@@ -132,7 +134,7 @@ window.CoreInitializer = (function() {
             // SettingsPopupの遅延初期化
             this.initializeSettingsPopupDelayed();
 
-            // 🎯 ToolSizePopup遅延初期化
+            // 🔥 ToolSizePopupの遅延初期化
             this.initializeToolSizePopupDelayed();
 
             if (this.coreEngine.animationSystem) {
@@ -155,48 +157,93 @@ window.CoreInitializer = (function() {
         }
         
         initializeSettingsPopupDelayed() {
+            console.log('🔧 Attempting to initialize SettingsPopup (delayed)...');
+            
             const maxRetries = 20;
             let retryCount = 0;
             
             const tryInitialize = () => {
                 if (window.TegakiUI?.SettingsPopup) {
+                    console.log('✅ SettingsPopup class found, initializing...');
+                    
                     try {
                         if (this.uiController) {
                             const success = this.uiController.initializeSettingsPopup();
                             if (success) {
+                                console.log('✅ SettingsPopup initialized successfully (delayed)');
                                 return;
                             }
                         }
-                    } catch (error) {}
-                }
-                
-                retryCount++;
-                if (retryCount < maxRetries) {
-                    setTimeout(tryInitialize, 50);
-                }
-            };
-            
-            setTimeout(tryInitialize, 0);
-        }
-
-        // 🎯 ToolSizePopup遅延初期化
-        initializeToolSizePopupDelayed() {
-            const maxRetries = 20;
-            let retryCount = 0;
-            
-            const tryInitialize = () => {
-                if (window.ToolSizePopup && window.DOMBuilder && window.DOMBuilder.create) {
-                    try {
-                        window.ToolSizePopup.initialize();
-                        return;
                     } catch (error) {
-                        console.error('ToolSizePopup initialization failed:', error);
+                        console.error('❌ SettingsPopup initialization failed:', error);
                     }
                 }
                 
                 retryCount++;
                 if (retryCount < maxRetries) {
                     setTimeout(tryInitialize, 50);
+                } else {
+                    console.warn('⚠️ SettingsPopup initialization timeout after', maxRetries * 50, 'ms');
+                }
+            };
+            
+            setTimeout(tryInitialize, 0);
+        }
+
+        // 🔥 ToolSizePopupの遅延初期化
+        initializeToolSizePopupDelayed() {
+            console.log('🔧 Attempting to initialize ToolSizePopup (delayed)...');
+            
+            const maxRetries = 20;
+            let retryCount = 0;
+            
+            const tryInitialize = () => {
+                // 必要な依存関係を確認
+                const dependencies = {
+                    ToolSizePopup: window.ToolSizePopup,
+                    DOMBuilder: window.DOMBuilder,
+                    StateManager: window.StateManager,
+                    ToolSizeManager: window.ToolSizeManager,
+                    EventBus: window.EventBus || window.TegakiEventBus,
+                    config: window.TEGAKI_CONFIG?.toolSize
+                };
+                
+                const missing = Object.entries(dependencies)
+                    .filter(([key, value]) => !value)
+                    .map(([key]) => key);
+                
+                if (missing.length > 0) {
+                    console.log(`⏳ Waiting for ToolSizePopup dependencies: ${missing.join(', ')}`);
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        setTimeout(tryInitialize, 50);
+                    } else {
+                        console.warn('⚠️ ToolSizePopup dependencies not ready after', maxRetries * 50, 'ms');
+                        console.warn('Missing:', missing);
+                    }
+                    return;
+                }
+                
+                // DOMBuilder.createエイリアスを確認
+                if (!window.DOMBuilder.create && window.DOMBuilder.createElement) {
+                    window.DOMBuilder.create = window.DOMBuilder.createElement;
+                    console.log('✅ DOMBuilder.create alias added');
+                }
+                
+                // ToolSizePopupを初期化
+                try {
+                    if (window.ToolSizePopup && !window.ToolSizePopup.initialized) {
+                        window.ToolSizePopup.initialize();
+                        console.log('✅ ToolSizePopup initialized successfully');
+                        console.log('   - Popup element:', !!window.ToolSizePopup.popup);
+                        console.log('   - Slot buttons:', window.ToolSizePopup.slotButtons.length);
+                    }
+                } catch (error) {
+                    console.error('❌ ToolSizePopup initialization failed:', error);
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        setTimeout(tryInitialize, 100);
+                    }
                 }
             };
             
@@ -268,20 +315,29 @@ window.CoreInitializer = (function() {
 
     // 🔥 Export System初期化（修正版・確実に実行）
     function initializeExportSystem(app) {
+        console.log('🔧 Initializing Export System...');
+        
         const initExportWithRetry = () => {
             let retryCount = 0;
-            const maxRetries = 20;
+            const maxRetries = 20; // リトライ回数増加
             
             const tryInit = () => {
+                console.log(`Export init attempt ${retryCount + 1}/${maxRetries}`);
+                
+                // 必要な依存関係をチェック
                 if (!window.animationSystem) {
+                    console.log('⏳ Waiting for animationSystem...');
                     retryCount++;
                     if (retryCount < maxRetries) {
                         setTimeout(tryInit, 200);
+                    } else {
+                        console.error('❌ animationSystem not ready after', maxRetries, 'attempts');
                     }
                     return;
                 }
                 
                 if (!window.CoreRuntime) {
+                    console.log('⏳ Waiting for CoreRuntime...');
                     retryCount++;
                     if (retryCount < maxRetries) {
                         setTimeout(tryInit, 200);
@@ -289,37 +345,59 @@ window.CoreInitializer = (function() {
                     return;
                 }
                 
+                // ExportManager初期化
                 const success = window.CoreRuntime.initializeExportSystem(
                     app.pixiApp,
-                    () => {}
+                    () => {
+                        console.log('✅ Export system initialized successfully');
+                    }
                 );
                 
                 if (success) {
+                    console.log('✅ ExportManager created');
+                    console.log('window.TEGAKI_EXPORT_MANAGER:', !!window.TEGAKI_EXPORT_MANAGER);
+                    console.log('window.TEGAKI_EXPORT_POPUP:', !!window.TEGAKI_EXPORT_POPUP);
+                    console.log('window.exportPopup:', !!window.exportPopup);
+                    
+                    // 🔥 ExportPopupがまだ作成されていない場合は手動作成
                     if (!window.TEGAKI_EXPORT_POPUP && !window.exportPopup) {
+                        console.log('⚠️ ExportPopup not created, creating manually...');
+                        
                         if (window.ExportPopup && window.TEGAKI_EXPORT_MANAGER) {
                             try {
                                 window.TEGAKI_EXPORT_POPUP = new window.ExportPopup(window.TEGAKI_EXPORT_MANAGER);
-                                window.exportPopup = window.TEGAKI_EXPORT_POPUP;
-                            } catch (error) {}
+                                window.exportPopup = window.TEGAKI_EXPORT_POPUP; // エイリアス
+                                console.log('✅ ExportPopup created manually');
+                                console.log('ExportPopup.isVisible:', window.TEGAKI_EXPORT_POPUP.isVisible);
+                            } catch (error) {
+                                console.error('❌ Failed to create ExportPopup manually:', error);
+                            }
+                        } else {
+                            console.error('❌ ExportPopup class or TEGAKI_EXPORT_MANAGER not available');
                         }
                     }
+                    
                     return;
                 }
                 
                 retryCount++;
                 if (retryCount < maxRetries) {
                     setTimeout(tryInit, 200);
+                } else {
+                    console.error('❌ Export system initialization failed after', maxRetries, 'attempts');
                 }
             };
             
             tryInit();
         };
         
+        // EventBusリスナー
         if (window.TegakiEventBus) {
             window.TegakiEventBus.on('animation:system-ready', initExportWithRetry);
             window.TegakiEventBus.on('animation:initialized', initExportWithRetry);
         }
         
+        // 即座に1回試行
         setTimeout(initExportWithRetry, 500);
     }
 
@@ -355,8 +433,10 @@ window.CoreInitializer = (function() {
             
             setupHistoryIntegration();
             
+            // 🔥 Export System初期化（修正版）
             initializeExportSystem(app);
             
+            // ResizeSliderはDOM構築後に初期化
             if (window.ResizeSlider) {
                 setTimeout(() => {
                     window.ResizeSlider.init();
@@ -380,4 +460,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (ToolSizePopup対応版) loaded');
+console.log('✅ core-initializer.js (ExportPopup+ToolSizePopup対応版) loaded');

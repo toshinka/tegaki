@@ -1,6 +1,6 @@
 // ===== ui-panels.js - 改修版 =====
 // 責務: UIイベント管理、ポップアップ制御の一元化
-// 🔥 改修: デバッグ削減、構造最適化、EventBus統合
+// 🔥 改修: クイックアクセスポップアップ統合、リサイズポップアップ排他制御追加
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -16,6 +16,7 @@ window.TegakiUI.UIController = class {
         this.albumPopup = null;
         this.settingsPopup = null;
         this.exportPopup = null;
+        this.quickAccessPopup = null; // 🔥 RENAMED
         
         this.validateCoreRuntime();
         this.setupEventDelegation();
@@ -24,6 +25,8 @@ window.TegakiUI.UIController = class {
         this.setupCanvasResize();
         this.setupFlipButtons();
         this.initializeSettingsPopup();
+        this.initializeQuickAccessPopup(); // 🔥 RENAMED
+        this.initializeStatusPanel(); // 🔥 NEW: ステータスパネル初期化
         window.TegakiUI.setupPanelStyles();
     }
     
@@ -35,12 +38,15 @@ window.TegakiUI.UIController = class {
     
     // ===== ポップアップ参照管理 =====
     
-    /**
-     * ポップアップ参照を遅延取得（初期化タイミングの依存性回避）
-     */
     getExportPopup() {
         if (!this.exportPopup) {
-            this.exportPopup = window.TegakiExportPopup || window.exportPopup;
+            // 🔥 確実にインスタンスを取得
+            this.exportPopup = window.TEGAKI_EXPORT_POPUP || window.exportPopup || window.exportPopupInstance;
+            
+            // まだない場合はウォーニング
+            if (!this.exportPopup) {
+                console.warn('Export popup instance not found yet');
+            }
         }
         return this.exportPopup;
     }
@@ -53,9 +59,10 @@ window.TegakiUI.UIController = class {
         return this.albumPopup;
     }
     
-    /**
-     * ポップアップ初期化（外部から呼び出し）
-     */
+    getQuickAccessPopup() {
+        return this.quickAccessPopup;
+    }
+    
     initializeAlbumPopup(animationSystem) {
         if (!window.AlbumPopup || !animationSystem) {
             return false;
@@ -68,9 +75,6 @@ window.TegakiUI.UIController = class {
         }
     }
     
-    /**
-     * 設定ポップアップの初期化
-     */
     initializeSettingsPopup() {
         if (!window.TegakiUI.SettingsPopup) {
             return false;
@@ -87,13 +91,37 @@ window.TegakiUI.UIController = class {
         }
     }
     
+    // 🔥 RENAMED: クイックアクセスポップアップの初期化
+    initializeQuickAccessPopup() {
+        if (!window.TegakiUI.QuickAccessPopup) {
+            return false;
+        }
+        if (this.quickAccessPopup) {
+            return true;
+        }
+        try {
+            this.quickAccessPopup = new window.TegakiUI.QuickAccessPopup(this.drawingEngine);
+            return true;
+        } catch (error) {
+            return false;
+        }
+    }
+    
+    // 🔥 NEW: ステータスパネルの初期状態を非表示に
+    initializeStatusPanel() {
+        const statusPanel = document.querySelector('.status-panel');
+        if (statusPanel) {
+            // デフォルト非表示
+            statusPanel.style.display = 'none';
+        }
+    }
+    
     // ===== EventBusリスナー =====
     
     setupEventBusListeners() {
         const eventBus = window.TegakiEventBus;
         if (!eventBus) return;
         
-        // 設定ポップアップのトグル（ショートカット対応）
         eventBus.on('ui:toggle-settings', () => {
             if (this.settingsPopup) {
                 this.settingsPopup.isVisible ? this.settingsPopup.hide() : this.showPopup(this.settingsPopup);
@@ -111,32 +139,54 @@ window.TegakiUI.UIController = class {
     
     /**
      * ポップアップを表示（他を自動的に閉じる）
+     * 🔥 クイックアクセスポップアップは例外（重複起動可能）
      */
     showPopup(popup) {
         if (!popup) return;
-        this.closeAllPopups(popup);
+        
+        // クイックアクセスポップアップ以外は排他制御
+        if (popup !== this.quickAccessPopup) {
+            this.closeAllPopups(popup);
+        }
+        
         popup.show();
     }
     
     /**
      * 全ポップアップを閉じる（除外指定可能）
+     * 🔥 リサイズポップアップも追加、Album Popupも確実に閉じる
      */
     closeAllPopups(exceptPopup = null) {
         const popups = [
             { instance: this.settingsPopup, id: 'settings-popup' },
-            { instance: this.albumPopup, id: 'album' },
+            { instance: this.quickAccessPopup, id: 'quick-access-popup' },
+            { instance: this.albumPopup, id: 'album-popup' }, // 🔥 確実に閉じる
             { instance: this.getExportPopup(), id: 'export-popup' }
         ];
         
         popups.forEach(({ instance, id }) => {
-            if (instance && instance !== exceptPopup && instance.isVisible) {
-                instance.hide();
+            if (instance && instance !== exceptPopup) {
+                // 🔥 isVisibleチェックを削除して常に閉じる
+                if (typeof instance.hide === 'function') {
+                    instance.hide();
+                }
+                instance.isVisible = false; // 🔥 強制的にフラグをfalseに
             }
         });
         
-        // DOM直接操作（トグル用アニメーションクラス）
+        // 🔥 リサイズポップアップも排他制御対象に
+        const resizePopup = document.getElementById('resize-settings');
+        if (resizePopup && resizePopup.classList.contains('show') && exceptPopup !== 'resize') {
+            resizePopup.classList.remove('show');
+        }
+        
+        // 🔥 DOM直接操作で確実に閉じる
         document.querySelectorAll('.popup-panel').forEach(popup => {
-            if (exceptPopup !== this.getExportPopup() || popup.id !== 'export-popup') {
+            if (popup === exceptPopup?.popup) return;
+            if (exceptPopup === 'resize' && popup.id === 'resize-settings') return;
+            
+            // クイックアクセス以外を閉じる
+            if (popup.id !== 'quick-access-popup') {
                 popup.classList.remove('show');
             }
         });
@@ -172,11 +222,11 @@ window.TegakiUI.UIController = class {
                 return;
             }
 
-            // 画面外クリック処理
             if (!e.target.closest('.popup-panel') && 
                 !e.target.closest('.layer-transform-panel') &&
                 !e.target.closest('.tool-button') &&
                 !e.target.closest('.layer-panel-container')) {
+                // 🔥 クイックアクセス以外を閉じる
                 this.closeAllPopups();
             }
         });
@@ -190,8 +240,12 @@ window.TegakiUI.UIController = class {
             'pen-tool': () => {
                 if (!window.CoreRuntime.api.setTool('pen')) return;
                 window.CoreRuntime.api.exitLayerMoveMode();
+                
+                // 🔥 クイックアクセスポップアップは重複起動可能
                 if (!this.toolbarIconClickMode) {
-                    this.togglePopup('pen-settings');
+                    if (this.quickAccessPopup) {
+                        this.quickAccessPopup.toggle();
+                    }
                 }
                 this.updateToolUI('pen');
             },
@@ -202,7 +256,17 @@ window.TegakiUI.UIController = class {
                 this.updateToolUI('eraser');
             },
             'resize-tool': () => {
-                this.togglePopup('resize-settings');
+                // 🔥 リサイズポップアップも排他制御
+                const resizePopup = document.getElementById('resize-settings');
+                if (resizePopup) {
+                    const isVisible = resizePopup.classList.contains('show');
+                    if (isVisible) {
+                        resizePopup.classList.remove('show');
+                    } else {
+                        this.closeAllPopups('resize');
+                        resizePopup.classList.add('show');
+                    }
+                }
             },
             'gif-animation-tool': () => {
                 if (window.TegakiEventBus) {
@@ -216,7 +280,12 @@ window.TegakiUI.UIController = class {
                     alert('アルバムシステムが初期化されていません');
                     return;
                 }
-                this.albumPopup.isVisible ? this.albumPopup.hide() : this.showPopup(this.albumPopup);
+                // 🔥 排他制御を適用（Album Popupも他のポップアップを閉じる）
+                if (this.albumPopup.isVisible) {
+                    this.albumPopup.hide();
+                } else {
+                    this.showPopup(this.albumPopup);
+                }
             },
             'export-tool': () => {
                 const popup = this.getExportPopup();
@@ -224,7 +293,19 @@ window.TegakiUI.UIController = class {
                     alert('エクスポートシステムが初期化されていません');
                     return;
                 }
-                popup.isVisible ? popup.hide() : this.showPopup(popup);
+                // 🔥 確実にメソッドが存在するかチェック
+                if (popup.isVisible) {
+                    if (typeof popup.hide === 'function') {
+                        popup.hide();
+                    }
+                } else {
+                    if (typeof popup.show === 'function') {
+                        this.showPopup(popup);
+                    } else {
+                        console.error('Export popup show method not found');
+                        alert('エクスポートポップアップが正しく初期化されていません');
+                    }
+                }
             },
             'settings-tool': () => {
                 if (this.settingsPopup) {
@@ -520,4 +601,4 @@ window.TegakiUI.initializeSortable = function(layerManager) {
             }
         }
     });
-};
+}

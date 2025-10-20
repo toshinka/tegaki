@@ -1,17 +1,36 @@
 /**
  * StateManager - アプリケーション状態の一元管理
- * Phase 3.1: Cuts対応版 + History統合完備
+ * Phase 3.1: Cuts対応版 + History統合完備 + Tool Size管理追加 + EventBus安全化
  */
 
 class StateManager {
     constructor() {
         this.state = this._createInitialState();
-        this.eventBus = window.EventBus;
-        this.history = window.History;
+        this._eventBus = null;
+        this.history = null;
     }
 
     /**
-     * 初期状態の作成（Cuts構造）
+     * EventBusの遅延取得（安全なアクセス）
+     */
+    get eventBus() {
+        if (!this._eventBus) {
+            this._eventBus = window.EventBus || window.TegakiEventBus;
+        }
+        return this._eventBus;
+    }
+
+    /**
+     * EventBus emitの安全な呼び出し
+     */
+    _safeEmit(eventName, data) {
+        if (this.eventBus && typeof this.eventBus.emit === 'function') {
+            this.eventBus.emit(eventName, data);
+        }
+    }
+
+    /**
+     * 初期状態の作成（Cuts構造 + Tool Size）
      */
     _createInitialState() {
         const initialCutId = this._generateId('cut');
@@ -43,7 +62,12 @@ class StateManager {
                 currentTool: 'pen',
                 color: '#000000',
                 lineWidth: 2,
-                opacity: 1.0
+                opacity: 1.0,
+                // ツールサイズ管理
+                penSize: 10,
+                penOpacity: 0.85,
+                eraserSize: 20,
+                eraserOpacity: 1.0
             }
         };
     }
@@ -55,6 +79,55 @@ class StateManager {
         return `${prefix}_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
     }
 
+    // ===== Tool Size API =====
+
+    getCurrentTool() {
+        return this.state.tool.currentTool;
+    }
+
+    setCurrentTool(tool) {
+        this.state.tool.currentTool = tool;
+        this._safeEmit('tool:change', { tool });
+    }
+
+    getPenSize() {
+        return this.state.tool.penSize;
+    }
+
+    setPenSize(size) {
+        this.state.tool.penSize = size;
+        this._safeEmit('toolSize:change', { tool: 'pen', size });
+    }
+
+    getPenOpacity() {
+        return this.state.tool.penOpacity;
+    }
+
+    setPenOpacity(opacity) {
+        this.state.tool.penOpacity = opacity;
+        this._safeEmit('toolOpacity:change', { tool: 'pen', opacity });
+    }
+
+    getEraserSize() {
+        return this.state.tool.eraserSize;
+    }
+
+    setEraserSize(size) {
+        this.state.tool.eraserSize = size;
+        this._safeEmit('eraserSize:change', { tool: 'eraser', size });
+    }
+
+    getEraserOpacity() {
+        return this.state.tool.eraserOpacity;
+    }
+
+    setEraserOpacity(opacity) {
+        this.state.tool.eraserOpacity = opacity;
+        this._safeEmit('eraserOpacity:change', { tool: 'eraser', opacity });
+    }
+
+    // ===== Cut Management =====
+
     /**
      * 現在のCutを取得
      */
@@ -63,7 +136,6 @@ class StateManager {
             c => c.id === this.state.timeline.currentCutId
         );
         if (!cut) {
-            console.error('Current cut not found:', this.state.timeline.currentCutId);
             return this.state.timeline.cuts[0];
         }
         return cut;
@@ -108,7 +180,7 @@ class StateManager {
         }
         
         this.state.timeline.currentCutId = cutId;
-        this.eventBus.emit('cut:selected', { cutId });
+        this._safeEmit('cut:selected', { cutId });
     }
 
     /**
@@ -128,6 +200,10 @@ class StateManager {
      * Cut追加（History統合）
      */
     addCut(name) {
+        if (!this.history) {
+            this.history = window.History;
+        }
+
         const cutId = this._generateId('cut');
         const layerId = this._generateId('layer');
         const index = this.state.timeline.cuts.length;
@@ -153,15 +229,14 @@ class StateManager {
             name: 'add-cut',
             do: () => {
                 this.state.timeline.cuts.push(cut);
-                this.eventBus.emit('cut:created', { cutId, cut, index });
+                this._safeEmit('cut:created', { cutId, cut, index });
             },
             undo: () => {
                 const idx = this.getCutIndex(cutId);
                 if (idx !== -1) {
                     this.state.timeline.cuts.splice(idx, 1);
-                    this.eventBus.emit('cut:deleted', { cutId, index: idx });
+                    this._safeEmit('cut:deleted', { cutId, index: idx });
                     
-                    // 削除したCutが現在のCutだった場合、前のCutに移動
                     if (this.state.timeline.currentCutId === cutId) {
                         const newIndex = Math.max(0, idx - 1);
                         if (this.state.timeline.cuts[newIndex]) {
@@ -173,7 +248,11 @@ class StateManager {
             meta: { type: 'cut', cutId }
         };
 
-        this.history.push(command);
+        if (this.history) {
+            this.history.push(command);
+        } else {
+            command.do();
+        }
         return cut;
     }
 
@@ -181,13 +260,16 @@ class StateManager {
      * Cut削除（History統合）
      */
     removeCut(cutId) {
+        if (!this.history) {
+            this.history = window.History;
+        }
+
         const index = this.getCutIndex(cutId);
         if (index === -1) {
             console.error('Cut not found:', cutId);
             return;
         }
 
-        // 最後の1つは削除不可
         if (this.state.timeline.cuts.length <= 1) {
             console.warn('Cannot delete the last cut');
             return;
@@ -200,7 +282,7 @@ class StateManager {
             name: 'remove-cut',
             do: () => {
                 this.state.timeline.cuts.splice(index, 1);
-                this.eventBus.emit('cut:deleted', { cutId, index });
+                this._safeEmit('cut:deleted', { cutId, index });
 
                 if (wasCurrentCut) {
                     const newIndex = Math.min(index, this.state.timeline.cuts.length - 1);
@@ -209,7 +291,7 @@ class StateManager {
             },
             undo: () => {
                 this.state.timeline.cuts.splice(index, 0, cut);
-                this.eventBus.emit('cut:created', { cutId, cut, index });
+                this._safeEmit('cut:created', { cutId, cut, index });
 
                 if (wasCurrentCut) {
                     this.setCurrentCutId(cutId);
@@ -218,41 +300,55 @@ class StateManager {
             meta: { type: 'cut', cutId }
         };
 
-        this.history.push(command);
+        if (this.history) {
+            this.history.push(command);
+        } else {
+            command.do();
+        }
     }
 
     /**
      * Cut並び替え（History統合）
      */
     reorderCuts(fromIndex, toIndex) {
+        if (!this.history) {
+            this.history = window.History;
+        }
+
         if (fromIndex === toIndex) return;
         if (fromIndex < 0 || fromIndex >= this.state.timeline.cuts.length) return;
         if (toIndex < 0 || toIndex >= this.state.timeline.cuts.length) return;
-
-        const cuts = [...this.state.timeline.cuts];
 
         const command = {
             name: 'reorder-cuts',
             do: () => {
                 const [cut] = this.state.timeline.cuts.splice(fromIndex, 1);
                 this.state.timeline.cuts.splice(toIndex, 0, cut);
-                this.eventBus.emit('cuts:reordered', { fromIndex, toIndex });
+                this._safeEmit('cuts:reordered', { fromIndex, toIndex });
             },
             undo: () => {
                 const [cut] = this.state.timeline.cuts.splice(toIndex, 1);
                 this.state.timeline.cuts.splice(fromIndex, 0, cut);
-                this.eventBus.emit('cuts:reordered', { fromIndex: toIndex, toIndex: fromIndex });
+                this._safeEmit('cuts:reordered', { fromIndex: toIndex, toIndex: fromIndex });
             },
             meta: { type: 'cut-reorder' }
         };
 
-        this.history.push(command);
+        if (this.history) {
+            this.history.push(command);
+        } else {
+            command.do();
+        }
     }
 
     /**
      * Cut名前変更
      */
     updateCutName(cutId, name) {
+        if (!this.history) {
+            this.history = window.History;
+        }
+
         const cut = this.getCutById(cutId);
         if (!cut) return;
 
@@ -262,22 +358,30 @@ class StateManager {
             name: 'update-cut-name',
             do: () => {
                 cut.name = name;
-                this.eventBus.emit('cut:updated', { cutId, name });
+                this._safeEmit('cut:updated', { cutId, name });
             },
             undo: () => {
                 cut.name = oldName;
-                this.eventBus.emit('cut:updated', { cutId, name: oldName });
+                this._safeEmit('cut:updated', { cutId, name: oldName });
             },
             meta: { type: 'cut', cutId }
         };
 
-        this.history.push(command);
+        if (this.history) {
+            this.history.push(command);
+        } else {
+            command.do();
+        }
     }
 
     /**
      * Cut時間変更
      */
     updateCutDuration(cutId, duration) {
+        if (!this.history) {
+            this.history = window.History;
+        }
+
         const cut = this.getCutById(cutId);
         if (!cut) return;
 
@@ -287,22 +391,30 @@ class StateManager {
             name: 'update-cut-duration',
             do: () => {
                 cut.duration = duration;
-                this.eventBus.emit('cut:updated', { cutId, duration });
+                this._safeEmit('cut:updated', { cutId, duration });
             },
             undo: () => {
                 cut.duration = oldDuration;
-                this.eventBus.emit('cut:updated', { cutId, duration: oldDuration });
+                this._safeEmit('cut:updated', { cutId, duration: oldDuration });
             },
             meta: { type: 'cut', cutId }
         };
 
-        this.history.push(command);
+        if (this.history) {
+            this.history.push(command);
+        } else {
+            command.do();
+        }
     }
 
     /**
      * Cutにレイヤー追加（History統合）
      */
     addLayerToCut(cutId, name) {
+        if (!this.history) {
+            this.history = window.History;
+        }
+
         const cut = this.getCutById(cutId);
         if (!cut) {
             console.error('Cut not found:', cutId);
@@ -326,20 +438,24 @@ class StateManager {
             do: () => {
                 cut.layers.push(layer);
                 cut.activeLayerIndex = cut.layers.length - 1;
-                this.eventBus.emit('layer:added', { cutId, layer, index });
+                this._safeEmit('layer:added', { cutId, layer, index });
             },
             undo: () => {
                 const idx = cut.layers.findIndex(l => l.id === layerId);
                 if (idx !== -1) {
                     cut.layers.splice(idx, 1);
                     cut.activeLayerIndex = Math.min(cut.activeLayerIndex, cut.layers.length - 1);
-                    this.eventBus.emit('layer:removed', { cutId, layerId, index: idx });
+                    this._safeEmit('layer:removed', { cutId, layerId, index: idx });
                 }
             },
             meta: { type: 'layer', cutId, layerId }
         };
 
-        this.history.push(command);
+        if (this.history) {
+            this.history.push(command);
+        } else {
+            command.do();
+        }
         return layer;
     }
 
@@ -347,6 +463,10 @@ class StateManager {
      * Cutからレイヤー削除（History統合）
      */
     removeLayerFromCut(cutId, layerId) {
+        if (!this.history) {
+            this.history = window.History;
+        }
+
         const cut = this.getCutById(cutId);
         if (!cut) {
             console.error('Cut not found:', cutId);
@@ -359,7 +479,6 @@ class StateManager {
             return;
         }
 
-        // 最後の1つは削除不可
         if (cut.layers.length <= 1) {
             console.warn('Cannot delete the last layer');
             return;
@@ -375,25 +494,33 @@ class StateManager {
                 if (cut.activeLayerIndex >= cut.layers.length) {
                     cut.activeLayerIndex = cut.layers.length - 1;
                 }
-                this.eventBus.emit('layer:removed', { cutId, layerId, index });
+                this._safeEmit('layer:removed', { cutId, layerId, index });
             },
             undo: () => {
                 cut.layers.splice(index, 0, layer);
                 if (wasActiveLayer) {
                     cut.activeLayerIndex = index;
                 }
-                this.eventBus.emit('layer:added', { cutId, layer, index });
+                this._safeEmit('layer:added', { cutId, layer, index });
             },
             meta: { type: 'layer', cutId, layerId }
         };
 
-        this.history.push(command);
+        if (this.history) {
+            this.history.push(command);
+        } else {
+            command.do();
+        }
     }
 
     /**
      * ストローク追加（History統合）
      */
     addStroke(strokeData) {
+        if (!this.history) {
+            this.history = window.History;
+        }
+
         const cut = this.getCurrentCut();
         const layer = cut.layers[cut.activeLayerIndex];
         
@@ -406,14 +533,14 @@ class StateManager {
         const stroke = { 
             id: strokeId, 
             ...strokeData,
-            points: [...strokeData.points] // コピー
+            points: [...strokeData.points]
         };
 
         const command = {
             name: 'add-stroke',
             do: () => {
                 layer.strokes.push(stroke);
-                this.eventBus.emit('stroke:added', { 
+                this._safeEmit('stroke:added', { 
                     cutId: cut.id, 
                     layerId: layer.id, 
                     stroke 
@@ -423,7 +550,7 @@ class StateManager {
                 const idx = layer.strokes.findIndex(s => s.id === strokeId);
                 if (idx !== -1) {
                     layer.strokes.splice(idx, 1);
-                    this.eventBus.emit('stroke:removed', { 
+                    this._safeEmit('stroke:removed', { 
                         cutId: cut.id, 
                         layerId: layer.id, 
                         strokeId 
@@ -433,7 +560,11 @@ class StateManager {
             meta: { type: 'stroke', cutId: cut.id, layerId: layer.id, strokeId }
         };
 
-        this.history.push(command);
+        if (this.history) {
+            this.history.push(command);
+        } else {
+            command.do();
+        }
         return stroke;
     }
 
@@ -441,6 +572,10 @@ class StateManager {
      * ストローク削除（History統合）
      */
     removeStroke(strokeId) {
+        if (!this.history) {
+            this.history = window.History;
+        }
+
         const cut = this.getCurrentCut();
         const layer = cut.layers[cut.activeLayerIndex];
         
@@ -461,7 +596,7 @@ class StateManager {
             name: 'remove-stroke',
             do: () => {
                 layer.strokes.splice(index, 1);
-                this.eventBus.emit('stroke:removed', { 
+                this._safeEmit('stroke:removed', { 
                     cutId: cut.id, 
                     layerId: layer.id, 
                     strokeId 
@@ -469,7 +604,7 @@ class StateManager {
             },
             undo: () => {
                 layer.strokes.splice(index, 0, stroke);
-                this.eventBus.emit('stroke:added', { 
+                this._safeEmit('stroke:added', { 
                     cutId: cut.id, 
                     layerId: layer.id, 
                     stroke 
@@ -478,7 +613,11 @@ class StateManager {
             meta: { type: 'stroke', cutId: cut.id, layerId: layer.id, strokeId }
         };
 
-        this.history.push(command);
+        if (this.history) {
+            this.history.push(command);
+        } else {
+            command.do();
+        }
     }
 
     /**
@@ -500,7 +639,7 @@ class StateManager {
         }
         
         cut.activeLayerIndex = index;
-        this.eventBus.emit('layer:selected', { 
+        this._safeEmit('layer:selected', { 
             cutId: cut.id, 
             layerId: cut.layers[index].id, 
             index 
@@ -519,7 +658,7 @@ class StateManager {
      */
     updateToolSettings(settings) {
         Object.assign(this.state.tool, settings);
-        this.eventBus.emit('tool:updated', settings);
+        this._safeEmit('tool:updated', settings);
     }
 
     /**
@@ -535,7 +674,7 @@ class StateManager {
     deserialize(json) {
         try {
             this.state = JSON.parse(json);
-            this.eventBus.emit('state:restored');
+            this._safeEmit('state:restored');
         } catch (error) {
             console.error('Failed to deserialize state:', error);
         }
@@ -546,7 +685,7 @@ class StateManager {
      */
     reset() {
         this.state = this._createInitialState();
-        this.eventBus.emit('state:reset');
+        this._safeEmit('state:reset');
     }
 
     // ===== 後方互換性API（段階的移行用） =====
