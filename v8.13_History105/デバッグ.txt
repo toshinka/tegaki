@@ -1,11 +1,10 @@
-// 1. DrawingEngineが新しいバージョンか確認
-console.log('Has _initializeBrushSettings:', typeof window.drawingEngine._initializeBrushSettings);
-console.log('Has brushSize property:', 'brushSize' in window.drawingEngine);
+// 再テスト
+console.log('DrawingEngine subscribed:', window.CoreRuntime.internal.drawingEngine._isEventBusSubscribed);
+// → true になるはず
 
-// 2. P+ドラッグ後に再度確認
-console.log('=== After Drag ===');
-console.log('ToolSizeManager.penSize:', window.toolSizeManager.penSize);
-console.log('BrushSettings.getBrushSize():', window.drawingEngine.settings.getBrushSize());
-console.log('DrawingEngine.brushSize:', window.drawingEngine.brushSize); // undefinedになるはず
+// サイズ変更
+window.TegakiEventBus.emit('tool:size-opacity-changed', { tool: 'pen', size: 50, opacity: 0.85 });
+console.log('Current size:', window.CoreRuntime.internal.drawingEngine.settings.getBrushSize());
+// → 50
 
-// 3. 実際に描画して確認
+// 実際に描画してサイズ反映を確認
