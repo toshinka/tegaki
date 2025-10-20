@@ -1,0 +1,375 @@
+# ツールサイズポップアップ シンボル・メソッド辞典
+
+## 📦 関連ファイル構造
+
+```
+config.js                        # 設定の起点
+system/
+  ├── tool-size-manager.js      # スロット管理
+  ├── state-manager.js           # 状態管理（唯一のデータ保持）
+  └── event-bus.js               # イベント通信
+ui/
+  ├── tool-size-popup.js         # UIとユーザー操作
+  ├── ui-panels.js               # アイコンクリック処理
+  └── dom-builder.js             # DOM生成（create/createElement）
+core-initializer.js              # 初期化オーケストレーション
+```
+
+---
+
+## 🔧 config.js
+
+### グローバル変数
+- `window.TEGAKI_CONFIG` - 全設定のルートオブジェクト
+  - `.pen` - ペン設定
+    - `.size` - デフォルトサイズ (10)
+    - `.opacity` - デフォルト不透明度 (0.85)
+  - `.toolSize` - **[要追加]** ツールサイズスロット設定
+
+### 要追加設定
+```javascript
+toolSize: {
+  slots: 6,
+  penMin: 0.1,
+  penMax: 300,
+  thumbnailMin: 1,
+  thumbnailMax: 25,
+  penSlots: [
+    [1, 0.85],
+    [3, 0.85],
+    [5, 0.85],
+    [10, 0.85],
+    [30, 0.85],
+    [80, 0.85]
+  ],
+  eraserSlots: [
+    [1, 1.0],
+    [3, 1.0],
+    [5, 1.0],
+    [10, 1.0],
+    [30, 1.0],
+    [80, 1.0]
+  ]
+}
+```
+
+---
+
+## 🗂️ system/state-manager.js
+
+### クラス
+- `StateManager` - アプリケーション状態の唯一の保持者
+
+### インスタンス
+- `window.StateManager` - グローバルシングルトン
+
+### プロパティ
+- `.state` - 全状態のルートオブジェクト
+  - `.tool.currentTool` - 現在のツール ('pen' | 'eraser')
+  - `.tool.penSize` - ペンサイズ
+  - `.tool.penOpacity` - ペン不透明度
+  - `.tool.eraserSize` - 消しゴムサイズ
+  - `.tool.eraserOpacity` - 消しゴム不透明度
+
+### メソッド（ツール関連）
+- `getCurrentTool(): string` - 現在のツールを取得
+- `setCurrentTool(tool)` - ツール切り替え、`tool:change`イベント発火
+- `getPenSize(): number` - ペンサイズ取得
+- `setPenSize(size)` - ペンサイズ設定、`toolSize:change`発火
+- `getPenOpacity(): number` - ペン不透明度取得
+- `setPenOpacity(opacity)` - ペン不透明度設定、`toolOpacity:change`発火
+- `getEraserSize(): number` - 消しゴムサイズ取得
+- `setEraserSize(size)` - 消しゴムサイズ設定、`eraserSize:change`発火
+- `getEraserOpacity(): number` - 消しゴム不透明度取得
+- `setEraserOpacity(opacity)` - 消しゴム不透明度設定、`eraserOpacity:change`発火
+
+### 発火イベント
+- `tool:change` - ツール切り替え時 `{ tool: 'pen'|'eraser' }`
+- `toolSize:change` - ペンサイズ変更時 `{ tool: 'pen', size }`
+- `toolOpacity:change` - ペン不透明度変更時 `{ tool: 'pen', opacity }`
+- `eraserSize:change` - 消しゴムサイズ変更時 `{ tool: 'eraser', size }`
+- `eraserOpacity:change` - 消しゴム不透明度変更時 `{ tool: 'eraser', opacity }`
+
+---
+
+## 🎛️ system/tool-size-manager.js
+
+### クラス
+- `ToolSizeManager` - スロット専用管理システム
+
+### インスタンス
+- `window.ToolSizeManager` - グローバルシングルトン
+
+### プロパティ
+- `.config` - `window.TEGAKI_CONFIG.toolSize`への参照
+- `.penSlots[]` - ペンスロット配列 `[{ size, opacity }, ...]`
+- `.eraserSlots[]` - 消しゴムスロット配列
+- `.activePenSlot: number` - ペンのアクティブスロットインデックス（デフォルト3）
+- `.activeEraserSlot: number` - 消しゴムのアクティブスロットインデックス（デフォルト0）
+
+### メソッド
+- `getCurrentSlots(): Array<{size, opacity}>` - 現在ツールのスロット配列取得
+- `getActiveSlotIndex(): number` - 現在ツールのアクティブインデックス取得
+- `setActiveSlot(index)` - アクティブスロット変更→StateManager更新→`slotChanged`発火
+- `updateActiveSlotValue(size, opacity)` - アクティブスロットの値更新→`slotValueChanged`発火
+- `getSlotValue(index): {size, opacity}` - 指定スロット値取得
+- `_restoreToolSlotValues(tool)` - ツール切り替え時にスロット値をStateManagerへ反映（内部）
+- `_initializeSlots(slotsConfig)` - スロット初期化（内部）
+
+### リスンイベント
+- `tool:change` - ツール切り替え時、対応スロット値をStateManagerへ復元
+
+### 発火イベント
+- `slotChanged` - `{ tool, index }` スロット選択時
+- `slotValueChanged` - `{ tool, index, size, opacity }` スロット値変更時
+
+---
+
+## 🎨 ui/tool-size-popup.js
+
+### クラス
+- `ToolSizePopup` - ポップアップUI管理
+
+### インスタンス
+- `window.ToolSizePopup` - グローバルシングルトン
+
+### プロパティ
+- `.popup: HTMLElement` - ポップアップDOM
+- `.slotButtons[]` - スロットボタン配列
+- `.sizeValueDisplay: HTMLElement` - サイズ値表示
+- `.opacityValueDisplay: HTMLElement` - 不透明度値表示
+- `.sizeSlider: HTMLInputElement` - サイズスライダー
+- `.opacitySlider: HTMLInputElement` - 不透明度スライダー
+- `.isOpen: boolean` - 表示状態フラグ
+- `.initialized: boolean` - 初期化済みフラグ
+
+### メソッド
+- `initialize()` - DOM生成と初期設定（DOMBuilder依存）
+- `open()` - ポップアップ表示
+- `close()` - ポップアップ非表示
+- `toggle()` - 表示/非表示切替
+- `show()` - open()のエイリアス
+- `hide()` - close()のエイリアス
+
+### DOM生成（内部メソッド）
+- `_createPopup()` - ルートDOM生成
+- `_createSlotButtons()` - スロットボタンコンテナ生成
+- `_createSlotButton(index)` - 個別スロットボタン生成
+  - 子要素: `.thumbnailCircle`, `.sizeLabel`, `.opacityLabel`
+- `_createSizeSection()` - サイズセクション生成
+- `_createOpacitySection()` - 不透明度セクション生成
+- `_createSliderRow(type)` - スライダー行生成（±ボタン付き）
+- `_createAdjustButton(text, delta, type)` - ±調整ボタン生成
+
+### イベントハンドラ（内部メソッド）
+- `_handleSlotClick(index)` - スロットクリック→`ToolSizeManager.setActiveSlot()`
+- `_handleSliderChange(type)` - スライダー変更→StateManager更新
+- `_adjustValue(type, delta)` - ±ボタンクリック→StateManager更新
+- `_enableDirectInput(element, type)` - 数値クリック→input要素生成→確定処理
+
+### UI更新（内部メソッド）
+- `_updateFromState()` - StateManagerから値取得→UI反映
+- `_updateSlotDisplay()` - 全スロットのサムネイルとラベル更新
+- `_updateSlotHighlight()` - アクティブスロットのハイライト更新
+- `_updateActiveSlotFromState()` - StateManager→ToolSizeManagerへ反映
+
+### リスンイベント
+- `tool:change` - ツール切り替え時、UI更新
+- `slotChanged` - スロット選択時、ハイライト更新
+- `slotValueChanged` - スロット値変更時、表示更新
+- `document.click` - 画面外クリックで閉じる
+
+---
+
+## 🖥️ ui/ui-panels.js
+
+### クラス
+- `window.TegakiUI.UIController` - UI統合制御
+
+### プロパティ
+- `.toolSizePopup` - ToolSizePopupへの参照（遅延初期化）
+
+### メソッド
+- `getToolSizePopup()` - ToolSizePopup取得と初期化確認
+- `handleToolClick(button)` - サイドバーアイコンクリック処理
+  - `'pen-tool'` → `setTool('pen')` + ToolSizePopup表示
+  - `'eraser-tool'` → `setTool('eraser')` + ToolSizePopup表示
+- `closeAllPopups(exceptPopup)` - 全ポップアップを閉じる（指定除外可）
+
+### ツールマップ（handleToolClick内）
+```javascript
+toolMap = {
+  'pen-tool': () => {
+    CoreRuntime.api.setTool('pen');
+    toolSizePopup.open();
+    this.updateToolUI('pen');
+  },
+  'eraser-tool': () => {
+    CoreRuntime.api.setTool('eraser');
+    toolSizePopup.open();
+    this.updateToolUI('eraser');
+  }
+}
+```
+
+---
+
+## 🏗️ ui/dom-builder.js
+
+### 関数
+- `DOMBuilder.createElement(tag, options)` - 汎用DOM生成
+  - `options.id` - ID属性
+  - `options.className` - class属性
+  - `options.innerHTML` - innerHTML
+  - `options.textContent` - textContent
+  - `options.title` - title属性
+  - `options.style` - スタイルオブジェクト
+  - `options.attributes` - 属性オブジェクト
+
+### エイリアス
+- `DOMBuilder.create()` - `createElement()`のエイリアス（互換性用）
+
+---
+
+## 🚀 core-initializer.js
+
+### 関数
+- `initialize()` - メイン初期化
+- `DrawingApp.initializeToolSizePopupDelayed()` - ToolSizePopup遅延初期化
+  - 最大20回リトライ、50msインターバル
+  - 依存確認: `window.ToolSizePopup`, `window.DOMBuilder.create`
+
+---
+
+## 📡 system/event-bus.js
+
+### クラス
+- `EventBus` - イベント通信システム
+
+### インスタンス
+- `window.TegakiEventBus` - グローバルシングルトン
+- `window.EventBus` - エイリアス
+
+### メソッド
+- `on(event, callback, priority?)` - リスナー登録（優先度指定可）
+- `off(event, callback)` - リスナー解除
+- `emit(event, data)` - イベント発火（優先度順実行）
+- `once(event, callback, priority?)` - 一度だけ実行
+
+### 既存イベント定数
+```javascript
+EVENTS = {
+  LAYER_CREATED: 'layer:created',
+  OPERATION_COMMIT: 'operation:commit',
+  HISTORY_CHANGED: 'history:changed',
+  // ...
+}
+```
+
+---
+
+## 🔄 データフロー図
+
+```
+【ユーザー操作】
+  ↓
+ui-panels.js (handleToolClick)
+  ├→ CoreRuntime.api.setTool('pen')
+  │   └→ StateManager.setCurrentTool('pen')
+  │       └→ EventBus.emit('tool:change', {tool: 'pen'})
+  │           └→ ToolSizeManager._restoreToolSlotValues('pen')
+  │               └→ StateManager.setPenSize/Opacity(slot値)
+  └→ ToolSizePopup.open()
+
+【スロットクリック】
+  ↓
+ToolSizePopup._handleSlotClick(index)
+  └→ ToolSizeManager.setActiveSlot(index)
+      ├→ StateManager.setPenSize/Opacity(slot値)
+      │   └→ EventBus.emit('toolSize:change')
+      └→ EventBus.emit('slotChanged', {tool, index})
+
+【スライダー変更】
+  ↓
+ToolSizePopup._handleSliderChange('size')
+  ├→ StateManager.setPenSize(value)
+  │   └→ EventBus.emit('toolSize:change')
+  └→ ToolSizeManager.updateActiveSlotValue(size, opacity)
+      └→ EventBus.emit('slotValueChanged')
+```
+
+---
+
+## 🔍 現状の問題点
+
+### 1. config.jsに設定が存在しない
+- `window.TEGAKI_CONFIG.toolSize`が未定義
+- ToolSizeManager初期化時にエラー発生可能
+
+### 2. ToolSizePopupが表示されない
+**原因候補:**
+- DOMBuilder.createが未定義（createElementのみ存在）
+- 初期化タイミングの問題（依存関係が揃う前に呼び出し）
+- ポップアップのz-indexやpositionの競合
+- EventBusリスナーの登録失敗
+
+### 3. スロット表示の計算式未実装
+- サムネイル●のサイズ計算
+  - 最小1px、最大25px（調整必要）
+  - サイズに応じた線形スケーリング
+
+### 4. ツール切り替え時の状態復元
+- ペン↔消しゴム切替時、各スロットのアクティブ状態を保持
+- StateManagerとToolSizeManagerの同期が必要
+
+---
+
+## 📋 実装チェックリスト
+
+### Phase 1: 設定とデータモデル
+- [ ] config.jsに`toolSize`設定追加
+- [ ] ToolSizeManager: `_restoreToolSlotValues()`動作確認
+- [ ] StateManager: 既存API確認（setPenSize等）
+
+### Phase 2: UI実装
+- [ ] DOMBuilder.create()エイリアス確認
+- [ ] ToolSizePopup.initialize()成功確認
+- [ ] スロットボタンDOM生成確認
+- [ ] スライダーDOM生成確認
+- [ ] CSSスタイル適用確認
+
+### Phase 3: イベント連携
+- [ ] ui-panels.js: ペン/消しゴムアイコンクリック処理
+- [ ] tool:change → ToolSizeManager反応確認
+- [ ] slotChanged → UI更新確認
+- [ ] slotValueChanged → スロット表示更新確認
+
+### Phase 4: 統合テスト
+- [ ] ペンアイコンクリック→ポップアップ表示
+- [ ] スロットクリック→サイズ変更確認
+- [ ] ツール切り替え→アクティブスロット保持確認
+- [ ] 画面外クリック→ポップアップ閉じる確認
+
+---
+
+## 🎯 次のClaudeへの指示テンプレート
+
+```
+この辞典を参照して以下を実行:
+
+1. config.jsにtoolSize設定を追加（辞典の設定例を使用）
+2. DOMBuilder.createがcreateElementのエイリアスか確認し、なければ追加
+3. ToolSizePopup._createPopup()でpreview.webpと同じレイアウトを生成
+   - スロット6個を横並び
+   - 各スロットに●サムネイル、サイズ値、不透明度表示
+   - アクティブスロットはピンク背景
+4. スロットクリック→setActiveSlot()→StateManager更新を確認
+5. ツール切り替え時、各ツールのアクティブスロットを復元
+
+【参考ファイル】
+- 設定: config.js
+- スロット管理: system/tool-size-manager.js
+- UI: ui/tool-size-popup.js
+- アイコン処理: ui/ui-panels.js
+- DOM生成: ui/dom-builder.js
+```

@@ -1,0 +1,538 @@
+# ペン/消しゴムツールサイズポップアップ改修計画書 v2.0
+
+## 📋 目標
+
+preview.webpのようなスロット式ツールサイズポップアップの完全実装
+- サイドバーのペン/消しゴムアイコンクリック専用トリガー
+- ペンと消しゴムで独立したスロット記憶
+- スライダー連動でリアルタイム更新
+
+---
+
+## 🔍 現状分析と問題点
+
+### 確認済みファイル構造
+
+```
+既存実装済み:
+✅ ui/tool-size-popup.js        - UI実装済み（但し表示されない）
+✅ system/tool-size-manager.js  - スロット管理実装済み
+✅ ui/ui-panels.js              - アイコンクリック処理実装済み
+✅ system/state-manager.js      - ツールサイズAPI実装済み
+✅ core-initializer.js          - 遅延初期化実装済み
+
+未実装/不完全:
+❌ config.js                    - toolSize設定が存在しない
+❌ ui/dom-builder.js            - createエイリアスが存在しない
+❌ tool-size-popup.css          - CSSファイルが読み込まれていない
+⚠️  ui/tool-size-popup.js        - 初期化されるが表示されない
+```
+
+### 致命的な問題
+
+1. **config.jsにtoolSize設定が存在しない**
+   - ToolSizeManagerが `window.TEGAKI_CONFIG.toolSize` を参照するがundefined
+   - 初期化時にエラーが発生
+
+2. **DOMBuilder.createエイリアスが未定義**
+   - tool-size-popup.jsが `window.DOMBuilder.create()` を使用
+   - DOMBuilderには `createElement()` のみ存在
+   - ポップアップのDOM生成が失敗
+
+3. **ポップアップが表示されない理由**
+   - 初期状態で `display: 'none'` 設定
+   - `open()` メソッドは `display: 'block'` に変更
+   - しかしCSSの位置やz-indexが適切でない可能性
+
+4. **StateManagerとの連携不完全**
+   - ツール切り替え時、ToolSizeManagerが正しく反応しない
+   - config.jsのpen.size/opacityを上書きする仕組みが未実装
+
+---
+
+## 🎯 改修方針
+
+### 優先度
+
+1. **Phase 1: 基盤修正（必須）** - config.js設定追加、DOMBuilderエイリアス
+2. **Phase 2: 表示確認** - ポップアップが開くことを確認
+3. **Phase 3: 機能完成** - スロット選択、スライダー連動、ツール切り替え
+4. **Phase 4: 統合テスト** - 全体動作確認とデバッグ
+
+---
+
+## 📦 Phase 1: 基盤修正
+
+### 1-1. config.js修正
+
+**ファイル:** `config.js`  
+**位置:** `window.TEGAKI_CONFIG`の直後に追加  
+**依存:** なし
+
+#### 追加する設定
+
+```javascript
+window.TEGAKI_CONFIG = {
+    canvas: { ... },
+    pen: { 
+        size: 10, 
+        opacity: 0.85, 
+        // ... 既存設定 ...
+    },
+    
+    // 🆕 ツールサイズポップアップ設定
+    toolSize: {
+        slots: 6,                    // スロット数
+        penMin: 0.1,                 // ペンサイズ最小値
+        penMax: 300,                 // ペンサイズ最大値
+        thumbnailMin: 1,             // サムネイル●最小サイズ（px）
+        thumbnailMax: 25,            // サムネイル●最大サイズ（px）
+        
+        // ペンスロット初期値 [サイズ, 不透明度]
+        penSlots: [
+            [1, 0.85],
+            [3, 0.85],
+            [5, 0.85],
+            [29, 0.85],    // デフォルトアクティブ（index 3）
+            [16, 0.85],
+            [32, 0.85]
+        ],
+        
+        // 消しゴムスロット初期値
+        eraserSlots: [
+            [1, 1.0],      // デフォルトアクティブ（index 0）
+            [3, 1.0],
+            [5, 1.0],
+            [10, 1.0],
+            [30, 1.0],
+            [80, 1.0]
+        ]
+    },
+    
+    camera: { ... },
+    // ... 以降既存設定 ...
+};
+```
+
+#### 確認項目
+
+- [ ] `window.TEGAKI_CONFIG.toolSize` が定義されている
+- [ ] `toolSize.penSlots` が6要素の配列
+- [ ] `toolSize.eraserSlots` が6要素の配列
+- [ ] ToolSizeManagerが初期化時にエラーを出さない
+
+---
+
+### 1-2. ui/dom-builder.js修正
+
+**ファイル:** `ui/dom-builder.js`  
+**位置:** `return`文の直前  
+**依存:** 既存の`createElement`関数
+
+#### 追加するエイリアス
+
+```javascript
+// 公開API
+return {
+    buildMainLayout: buildMainLayout,
+    buildStatusPanel: buildStatusPanel,
+    createElement: createElement,
+    create: createElement,  // 🆕 エイリアス追加（後方互換性）
+    ICONS: ICONS
+};
+```
+
+#### 確認項目
+
+- [ ] `window.DOMBuilder.create` が呼び出し可能
+- [ ] tool-size-popup.jsが初期化エラーを出さない
+- [ ] DOM要素が正常に生成される
+
+---
+
+## 📦 Phase 2: 表示確認
+
+### 2-1. ポップアップ表示デバッグ
+
+**ファイル:** `ui/tool-size-popup.js`  
+**確認項目:** `open()`メソッドの動作
+
+#### デバッグ手順
+
+1. ペンアイコンをクリック
+2. ブラウザコンソールで以下を実行:
+   ```javascript
+   window.ToolSizePopup.isOpen  // true になるべき
+   window.ToolSizePopup.popup.style.display  // 'block' になるべき
+   ```
+3. DOMツリーで `.tool-size-popup` を確認
+4. 計算されたスタイルを確認（z-index, position, transform）
+
+#### 表示されない場合の対処
+
+**A. z-index問題**
+- 他のポップアップやパネルより低い可能性
+- `tool-size-popup.css` で `z-index: 10000` を確認
+
+**B. 位置問題**
+- `left: 50%`, `transform: translateX(-50%)` が正しく適用されているか
+- 画面外に飛んでいないか確認
+
+**C. 親要素の問題**
+- `document.body` に直接追加されているか確認
+- `.canvas-area` 内に入っている場合は移動
+
+---
+
+### 2-2. ui/ui-panels.js連携確認
+
+**ファイル:** `ui/ui-panels.js`  
+**メソッド:** `handleToolClick(button)`
+
+#### 現在の実装（確認済み）
+
+```javascript
+'pen-tool': () => {
+    if (!window.CoreRuntime.api.setTool('pen')) return;
+    window.CoreRuntime.api.exitLayerMoveMode();
+    
+    // ツールサイズポップアップを表示
+    const toolSizePopup = this.getToolSizePopup();
+    if (toolSizePopup) {
+        this.closeAllPopups(toolSizePopup);
+        toolSizePopup.open();  // 🎯 この行が実行されるか確認
+    }
+    
+    this.updateToolUI('pen');
+}
+```
+
+#### 確認項目
+
+- [ ] ペンアイコンクリック時、`getToolSizePopup()` が null でない
+- [ ] `toolSizePopup.initialized` が true
+- [ ] `toolSizePopup.open()` が実際に呼ばれる
+- [ ] 他のポップアップが閉じる
+
+---
+
+## 📦 Phase 3: 機能完成
+
+### 3-1. スロット選択機能
+
+**ファイル:** `ui/tool-size-popup.js`  
+**メソッド:** `_handleSlotClick(index)`
+
+#### データフロー
+
+```
+ユーザーがスロット3をクリック
+  ↓
+_handleSlotClick(3)
+  ↓
+window.ToolSizeManager.setActiveSlot(3)
+  ↓
+[ToolSizeManager内部]
+  - this.activePenSlot = 3 (ペンの場合)
+  - slots[3]の値を取得 → {size: 29, opacity: 0.85}
+  - StateManager.setPenSize(29)
+  - StateManager.setPenOpacity(0.85)
+  - EventBus.emit('slotChanged', {tool: 'pen', index: 3})
+  ↓
+[UI更新]
+  - _updateSlotHighlight() → スロット3がピンク背景
+  - _updateFromState() → サイズ値表示が29.0pxに更新
+```
+
+#### 確認項目
+
+- [ ] スロットクリックでアクティブが切り替わる
+- [ ] ピンク背景が正しいスロットに移動
+- [ ] サイズと不透明度の値が即座に更新
+- [ ] 実際の描画サイズが変わる（CoreRuntimeへの伝播確認）
+
+---
+
+### 3-2. スライダー連動
+
+**ファイル:** `ui/tool-size-popup.js`  
+**メソッド:** `_handleSliderChange(type)`
+
+#### データフロー
+
+```
+サイズスライダーを50にドラッグ
+  ↓
+_handleSliderChange('size')
+  ↓
+StateManager.setPenSize(50)
+  ↓
+EventBus.emit('toolSize:change', {tool: 'pen', size: 50})
+  ↓
+_updateActiveSlotFromState()
+  ↓
+ToolSizeManager.updateActiveSlotValue(50, 現在の不透明度)
+  ↓
+EventBus.emit('slotValueChanged', {...})
+  ↓
+_updateSlotDisplay() → アクティブスロットの●と数値が更新
+```
+
+#### 確認項目
+
+- [ ] スライダー移動でリアルタイムに値が変わる
+- [ ] アクティブスロットの●サイズが変化
+- [ ] アクティブスロットのラベル数値が更新
+- [ ] 他のスロットは変化しない
+
+---
+
+### 3-3. ツール切り替え時の状態保持
+
+**ファイル:** `system/tool-size-manager.js`  
+**メソッド:** `_restoreToolSlotValues(tool)`
+
+#### データフロー
+
+```
+【ペン選択中、スロット3（29px）使用】
+  ↓
+消しゴムアイコンクリック
+  ↓
+StateManager.setCurrentTool('eraser')
+  ↓
+EventBus.emit('tool:change', {tool: 'eraser'})
+  ↓
+ToolSizeManager._restoreToolSlotValues('eraser')
+  ↓
+[消しゴムのアクティブスロット（index 0）を復元]
+  - StateManager.setEraserSize(eraserSlots[0].size) → 1
+  - StateManager.setEraserOpacity(eraserSlots[0].opacity) → 1.0
+  ↓
+ポップアップUI更新
+  - _updateSlotHighlight() → スロット0がアクティブ
+  - _updateFromState() → サイズ1.0px、不透明度100%表示
+  ↓
+【再度ペンに戻す】
+  ↓
+ToolSizeManager._restoreToolSlotValues('pen')
+  ↓
+スロット3（29px, 85%）が復元される
+```
+
+#### 確認項目
+
+- [ ] ペン→消しゴム切り替えで消しゴムのアクティブスロットになる
+- [ ] 消しゴム→ペン切り替えでペンのアクティブスロットに戻る
+- [ ] 各ツールのスロット状態が独立して記憶される
+- [ ] 切り替え後の描画サイズが正しい
+
+---
+
+### 3-4. 数値直接入力
+
+**ファイル:** `ui/tool-size-popup.js`  
+**メソッド:** `_enableDirectInput(element, type)`
+
+#### 動作仕様
+
+1. サイズ値 "29.0px" をクリック
+2. `<input type="text">` に置き換え
+3. 数値を入力（例: 50）
+4. Enterキーまたはフォーカスアウトで確定
+5. StateManager更新 → スロット更新 → UI反映
+
+#### 確認項目
+
+- [ ] サイズ値クリックで入力欄に変わる
+- [ ] 数値入力してEnterで確定できる
+- [ ] 範囲外の値は自動的にクランプされる（0.1-300）
+- [ ] 不透明度値も同様に動作（0-100%）
+
+---
+
+## 📦 Phase 4: 統合テスト
+
+### 4-1. 全体動作シナリオ
+
+#### シナリオ1: 基本操作
+
+1. ペンアイコンクリック → ポップアップ表示
+2. スロット4（デフォルト29px）が選択状態
+3. スロット1（1px）クリック → サイズ1.0px表示
+4. 描画して極細線が引けることを確認
+5. スロット6（32px）クリック → サイズ32.0px表示
+6. 描画して太い線が引けることを確認
+
+#### シナリオ2: スライダー調整
+
+1. サイズスライダーを100にドラッグ
+2. アクティブスロットの●が大きくなる
+3. アクティブスロットのラベルが100.0pxになる
+4. 描画して100pxの線が引ける
+5. 不透明度スライダーを50%にドラッグ
+6. 描画して半透明の線が引ける
+
+#### シナリオ3: ツール切り替え
+
+1. ペンでスロット5（16px）を選択
+2. 消しゴムアイコンクリック
+3. ポップアップがそのまま表示
+4. 消しゴムのスロット1（1px）が選択状態
+5. 消しゴムのスロット4（10px）を選択
+6. ペンアイコンに戻す
+7. ペンのスロット5（16px）が復元される
+8. 消しゴムに戻す
+9. 消しゴムのスロット4（10px）が復元される
+
+#### シナリオ4: 画面外クリック
+
+1. ポップアップ表示中
+2. キャンバスエリアをクリック
+3. ポップアップが閉じる
+4. ツールアイコン再クリックで再度開く
+5. 前回のスロット状態が保持されている
+
+---
+
+### 4-2. デバッグポイント
+
+#### A. ポップアップが表示されない
+
+**確認:**
+```javascript
+// コンソールで確認
+window.ToolSizePopup
+window.ToolSizePopup.initialized
+window.ToolSizePopup.popup
+window.TEGAKI_CONFIG.toolSize
+window.DOMBuilder.create
+```
+
+**対処:**
+- config.jsのtoolSize設定を確認
+- DOMBuilder.createエイリアスを確認
+- 初期化タイミングをcore-initializerで確認
+
+#### B. スロットクリックが反応しない
+
+**確認:**
+```javascript
+// スロットボタンの存在確認
+document.querySelectorAll('.tool-size-popup div')
+
+// イベントリスナー確認
+window.ToolSizeManager
+window.StateManager.getPenSize()
+```
+
+**対処:**
+- `_handleSlotClick`内で`console.log`追加
+- ToolSizeManager.setActiveSlot()の実行確認
+- StateManagerのイベント発火確認
+
+#### C. ツール切り替えで状態が戻らない
+
+**確認:**
+```javascript
+// ツール切り替え前後
+window.ToolSizeManager.activePenSlot
+window.ToolSizeManager.activeEraserSlot
+window.StateManager.getCurrentTool()
+```
+
+**対処:**
+- EventBus.on('tool:change')リスナー確認
+- _restoreToolSlotValues()の実行確認
+- StateManagerのツールサイズAPI確認
+
+---
+
+## 🔧 トラブルシューティング
+
+### よくある問題と解決策
+
+| 問題 | 原因 | 解決策 |
+|------|------|--------|
+| ポップアップが全く表示されない | config.toolSize未定義 | Phase 1-1を実施 |
+| DOM生成エラー | DOMBuilder.create未定義 | Phase 1-2を実施 |
+| スロットが反応しない | イベントリスナー未登録 | _setupEventListeners()確認 |
+| ツール切り替えで状態が消える | tool:changeイベント未処理 | ToolSizeManagerのリスナー確認 |
+| サムネイル●が変化しない | _updateSlotDisplay()未実行 | slotValueChangedイベント確認 |
+| 実際の描画サイズが変わらない | CoreRuntimeへの伝播失敗 | StateManagerイベント発火確認 |
+
+---
+
+## 📊 依存関係マトリクス
+
+```
+config.js (toolSize設定)
+    ↓
+tool-size-manager.js (スロット管理)
+    ↓
+state-manager.js (ツールサイズAPI)
+    ↓
+tool-size-popup.js (UI表示)
+    ↑
+dom-builder.js (DOM生成)
+    ↑
+ui-panels.js (アイコンクリック)
+    ↑
+core-initializer.js (遅延初期化)
+```
+
+---
+
+## ✅ 最終チェックリスト
+
+### Phase 1完了条件
+- [ ] config.jsにtoolSize設定追加
+- [ ] DOMBuilder.createエイリアス追加
+- [ ] ToolSizeManager初期化エラーなし
+- [ ] tool-size-popup.js初期化エラーなし
+
+### Phase 2完了条件
+- [ ] ペンアイコンクリックでポップアップ表示
+- [ ] 消しゴムアイコンクリックでポップアップ表示
+- [ ] 6つのスロットボタンが横並びで表示
+- [ ] サイズ/不透明度セクションが表示
+
+### Phase 3完了条件
+- [ ] スロットクリックでアクティブ切り替え
+- [ ] ピンク背景が正しく移動
+- [ ] スライダーでリアルタイム更新
+- [ ] 数値直接入力が動作
+- [ ] ツール切り替えで状態保持
+
+### Phase 4完了条件
+- [ ] シナリオ1-4すべてパス
+- [ ] 画面外クリックで閉じる
+- [ ] ショートカットP/Eでポップアップは**開かない**
+- [ ] 描画サイズが正確に反映
+
+---
+
+## 🎯 次のClaudeへの引き継ぎ
+
+この計画書を使用して以下の順序で改修を進めてください:
+
+1. **Phase 1から順番に実施**（飛ばさない）
+2. **各Phaseの完了条件を必ず確認**
+3. **問題が発生したらトラブルシューティング参照**
+4. **コンソールログは最小限**（エラー時のみ）
+5. **変更したファイルは必ず動作確認**
+
+### 改修時の注意点
+
+- **既存コードを壊さない** - 他のポップアップの動作に影響を与えない
+- **DRY原則** - 重複コードは作らない
+- **EventBus統一** - すべてのイベント通信はEventBus経由
+- **StateManager唯一性** - ツールサイズの状態はStateManagerのみが保持
+- **ToolSizeManagerは補助** - スロット情報のみ管理、状態は持たない
+
+---
+
+## 📝 改修履歴
+
+- v2.0: 既存コード分析に基づく全面改訂、Phase分割明確化
+- v1.0: 初版作成（実装前）
