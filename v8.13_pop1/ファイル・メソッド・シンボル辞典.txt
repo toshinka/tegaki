@@ -1,0 +1,380 @@
+# Tegaki v8.13_pop1 - ファイル・メソッド・シンボル辞典
+
+## 🔍 ポップアップ関連の二重実装チェック
+
+### ❌ 問題発見: AlbumPopup の二重実装
+
+#### 1. **album-popup.js** (旧実装が残っている可能性)
+- **グローバル登録**: `window.AlbumPopup` (独自オーバーレイ方式)
+- **実装方式**: フルスクリーンオーバーレイ + センタリング
+- **メソッド**: `show()`, `hide()`, `toggle()`
+
+#### 2. **album-popup.js** (新実装)
+- **グローバル登録**: `window.TegakiUI.AlbumPopup`
+- **実装方式**: `.popup-panel` クラス + 固定位置
+- **メソッド**: `show()`, `hide()`, `toggle()`
+
+#### 3. **ui-panels.js** (`UIController.initializeAlbumPopup`)
+```javascript
+initializeAlbumPopup(animationSystem) {
+    // window.TegakiUI.AlbumPopup を使用
+    this.albumPopup = new window.TegakiUI.AlbumPopup(...)
+}
+```
+
+#### 4. **core-engine.js** (`CoreEngine`)
+- アルバムポップアップは**直接管理していない**
+- `exportManager`のみ管理
+
+---
+
+## 📁 ポップアップ管理フロー
+
+### UIController (ui-panels.js)
+
+#### ポップアップ参照
+```javascript
+this.albumPopup = null          // AlbumPopup
+this.settingsPopup = null       // SettingsPopup
+this.exportPopup = null         // ExportPopup
+this.quickAccessPopup = null    // QuickAccessPopup
+```
+
+#### 初期化メソッド
+```javascript
+initializeAlbumPopup(animationSystem)       // ✅ window.TegakiUI.AlbumPopup
+initializeSettingsPopup()                   // ✅ window.TegakiUI.SettingsPopup
+initializeQuickAccessPopup()                // ✅ window.TegakiUI.QuickAccessPopup
+getExportPopup()                            // ✅ window.TEGAKI_EXPORT_POPUP
+```
+
+#### ポップアップ制御
+```javascript
+showPopup(popup)                 // 他のポップアップを閉じて表示
+closeAllPopups(exceptPopup)      // 全ポップアップを閉じる
+```
+
+#### ツールハンドラー
+```javascript
+handleToolClick(button)
+  - 'pen-tool'        → quickAccessPopup.toggle()
+  - 'library-tool'    → albumPopup.toggle()
+  - 'export-tool'     → exportPopup.toggle()
+  - 'settings-tool'   → settingsPopup.toggle()
+  - 'resize-tool'     → リサイズポップアップ
+```
+
+---
+
+## 🎯 各ポップアップの実装
+
+### 1. QuickAccessPopup (quick-access-popup.js)
+```javascript
+class QuickAccessPopup {
+    constructor(drawingEngine)
+    
+    // DOM
+    _ensurePopupElement()
+    _createPopupElement()          // <div id="quick-access-popup" class="popup-panel">
+    
+    // 制御
+    show()                         // popup.classList.add('show')
+    hide()                         // popup.classList.remove('show')
+    toggle()
+}
+
+// グローバル登録
+window.TegakiUI.QuickAccessPopup
+window.QuickAccessPopup
+```
+
+### 2. SettingsPopup (settings-popup.js)
+```javascript
+class SettingsPopup {
+    constructor(drawingEngine)
+    
+    // DOM
+    _ensurePopupElement()
+    _createPopupElement()          // <div id="settings-popup" class="popup-panel">
+    _populateContent()
+    
+    // 初期化
+    initialize()
+    _setupSliders()
+    _setupButtons()
+    
+    // 制御
+    show()                         // popup.classList.add('show')
+    hide()                         // popup.classList.remove('show')
+    toggle()
+}
+
+// グローバル登録
+window.TegakiUI.SettingsPopup
+window.SettingsPopup
+```
+
+### 3. AlbumPopup (album-popup.js) ⚠️ 二重実装疑惑
+```javascript
+class AlbumPopup {
+    constructor(app, layerSystem, animationSystem)
+    
+    // DOM (新実装)
+    _ensurePopupElement()
+    _createPopupElement()          // <div id="album-popup" class="popup-panel">
+    
+    // 制御 (新実装)
+    show()                         // popup.classList.add('show')
+    hide()                         // popup.classList.remove('show')
+    toggle()
+    
+    // 機能
+    _saveSnapshot()
+    _loadSnapshot()
+    _renderGallery()
+}
+
+// グローバル登録 (新実装)
+window.TegakiUI.AlbumPopup
+window.AlbumPopup = window.TegakiUI.AlbumPopup
+
+// ⚠️ 旧実装が残っている可能性
+// - オーバーレイ方式
+// - document.createElement('div') で overlay 作成
+// - document.body.appendChild(overlay)
+```
+
+### 4. ExportPopup (export-popup.js)
+```javascript
+class ExportPopup {
+    constructor(exportManager)
+    
+    // DOM
+    setupUI()                      // <div id="export-popup" class="popup-panel">
+    updateOptionsUI(format)
+    
+    // 制御
+    show()                         // popup.classList.add('show')
+    hide()                         // popup.classList.remove('show')
+    toggle()
+    
+    // エクスポート
+    executeExport()
+    executePreview()
+}
+
+// グローバル登録
+window.ExportPopup
+window.TegakiExportPopup
+window.TEGAKI_EXPORT_POPUP        // インスタンス
+```
+
+---
+
+## 🔧 初期化フロー
+
+### core-initializer.js
+```javascript
+class DrawingApp {
+    async initialize() {
+        // 1. UIController 初期化
+        this.uiController = new UIController(...)
+        
+        // 2. SettingsPopup 遅延初期化
+        this.initializeSettingsPopupDelayed()
+        
+        // 3. AlbumPopup 初期化
+        if (this.coreEngine.animationSystem) {
+            this.uiController.initializeAlbumPopup(
+                this.coreEngine.animationSystem
+            );
+        }
+    }
+}
+
+// Export System 初期化
+function initializeExportSystem(app) {
+    CoreRuntime.initializeExportSystem(...)
+    
+    // ExportPopup 手動作成
+    if (!window.TEGAKI_EXPORT_POPUP) {
+        window.TEGAKI_EXPORT_POPUP = new window.ExportPopup(...)
+    }
+}
+```
+
+---
+
+## 🚨 問題の根本原因
+
+### 1. **album-popup.js が二重にロードされている可能性**
+   - `index.html` で `<script src="ui/album-popup.js"></script>`
+   - 旧実装コードが残っている
+   - 新実装が追加されたが、旧実装が削除されていない
+
+### 2. **グローバル登録の競合**
+   ```javascript
+   // 旧実装 (オーバーレイ方式)
+   window.AlbumPopup = class { ... }
+   
+   // 新実装 (.popup-panel方式)
+   window.TegakiUI.AlbumPopup = class { ... }
+   window.AlbumPopup = window.TegakiUI.AlbumPopup  // 上書き
+   ```
+
+### 3. **UIController の参照が不明確**
+   ```javascript
+   // ui-panels.js
+   initializeAlbumPopup(animationSystem) {
+       // window.TegakiUI.AlbumPopup を参照
+       this.albumPopup = new window.TegakiUI.AlbumPopup(...)
+   }
+   
+   handleToolClick(button) {
+       case 'library-tool':
+           // this.albumPopup を使用
+           if (this.albumPopup.isVisible) {
+               this.albumPopup.hide();
+           } else {
+               this.showPopup(this.albumPopup);
+           }
+   }
+   ```
+
+---
+
+## ✅ 解決策
+
+### 1. album-popup.js の完全書き換え
+   - ファイルの先頭で旧実装を削除
+   - 新実装のみを残す
+
+### 2. グローバル登録の統一
+   ```javascript
+   // album-popup.js の最後
+   
+   // 旧実装を削除
+   if (window.AlbumPopup) {
+       delete window.AlbumPopup;
+   }
+   
+   // 新実装を登録
+   window.TegakiUI.AlbumPopup = class { ... }
+   window.AlbumPopup = window.TegakiUI.AlbumPopup;
+   ```
+
+### 3. DOM要素の重複チェック
+   ```javascript
+   _ensurePopupElement() {
+       // 既存の要素を削除
+       const existingPopup = document.getElementById('album-popup');
+       if (existingPopup) {
+           existingPopup.remove();
+       }
+       
+       this._createPopupElement();
+   }
+   ```
+
+### 4. イベントリスナーの重複防止
+   ```javascript
+   // library-tool アイコンのクリックイベント
+   // ui-panels.js で一元管理
+   ```
+
+---
+
+## 📊 ショートカット管理
+
+### keyboard-handler.js
+```javascript
+handleKeyDown(e) {
+    // Q キー
+    if (e.key === 'q' || e.key === 'Q') {
+        eventBus.emit('ui:toggle-quick-access');
+    }
+}
+```
+
+### ui-panels.js (EventBus リスナー)
+```javascript
+setupEventBusListeners() {
+    eventBus.on('ui:toggle-quick-access', () => {
+        if (this.quickAccessPopup) {
+            this.quickAccessPopup.toggle();
+        }
+    });
+}
+```
+
+---
+
+## 🎨 CSS クラス統一
+
+### .popup-panel (全ポップアップ共通)
+```css
+.popup-panel {
+    position: fixed;
+    display: none;                    /* デフォルト非表示 */
+    background: var(--futaba-cream);
+    border: 2px solid var(--futaba-maroon);
+    border-radius: 12px;
+    padding: 20px;
+    box-shadow: 0 8px 24px rgba(128, 0, 0, 0.2);
+    z-index: 9999;
+}
+
+.popup-panel.show {
+    display: flex;                    /* 表示時 */
+    flex-direction: column;
+}
+```
+
+### ポップアップ位置
+- **QuickAccessPopup**: `top: 60px; left: 60px;`
+- **SettingsPopup**: `top: 60px; left: 60px;`
+- **AlbumPopup**: `top: 60px; left: 60px;` (新実装)
+- **ExportPopup**: `top: 200px; left: 60px;`
+
+---
+
+## 🔍 デバッグチェックリスト
+
+1. **ブラウザコンソールで確認**
+   ```javascript
+   console.log('window.AlbumPopup:', window.AlbumPopup);
+   console.log('window.TegakiUI.AlbumPopup:', window.TegakiUI.AlbumPopup);
+   console.log('Same?', window.AlbumPopup === window.TegakiUI.AlbumPopup);
+   
+   // UIController のインスタンス
+   console.log('uiController.albumPopup:', window.TegakiUI.uiController?.albumPopup);
+   ```
+
+2. **DOM要素の重複確認**
+   ```javascript
+   console.log('album-popup elements:', 
+       document.querySelectorAll('#album-popup').length
+   );
+   console.log('album-overlay elements:', 
+       document.querySelectorAll('.album-overlay').length
+   );
+   ```
+
+3. **イベントリスナーの確認**
+   ```javascript
+   const libraryBtn = document.getElementById('library-tool');
+   console.log('library-tool listeners:', 
+       getEventListeners(libraryBtn)  // Chrome DevTools
+   );
+   ```
+
+---
+
+## 🎯 最終確認項目
+
+- [ ] `album-popup.js` に旧実装コードが残っていないか
+- [ ] `window.AlbumPopup === window.TegakiUI.AlbumPopup` が true か
+- [ ] DOM に `#album-popup` が1つだけ存在するか
+- [ ] DOM に `.album-overlay` が存在しないか
+- [ ] `library-tool` アイコンのクリックイベントが重複していないか
+- [ ] `closeAllPopups()` でアルバムポップアップが確実に閉じるか
