@@ -1,0 +1,404 @@
+改修計画書 - アーキテクチャ統一・スリム化プロジェクト
+============================================================
+
+対象: PixiJS v8.13 お絵かきツール (v8.13_pop5)
+目標: DrawingEngine統一 / API境界明確化 / 冗長コード削除 / Claude可読性最大化
+方針: フォールバック・過剰ログ禁止 / 二重実装排除 / 単一責任原則徹底
+
+
+【PHASE 1】DrawingEngine統一 ◎最優先
+================================================
+
+目的: 簡易版削除 → 完全版へ統一、筆圧・スムージング有効化
+
+改修ファイル: core-engine.js
+参考ファイル: system/drawing/drawing-engine.js
+
+フロー位置: 
+  ユーザー操作 → CoreRuntime Pointer Events → DrawingEngine → LayerSystem
+
+作業内容:
+
+1. 行41-260: class DrawingEngine { ... } 全削除
+   理由: system/drawing/drawing-engine.js の完全版が存在
+
+2. 行295付近: CoreEngine.constructor() 修正
+
+❌ 削除
+this.drawingEngine = new DrawingEngine(
+    this.cameraSystem, this.layerSystem, this.eventBus, CONFIG
+);
+
+✅ 置換
+if (!window.TegakiDrawing?.DrawingEngine) {
+    throw new Error('DrawingEngine not loaded');
+}
+this.drawingEngine = new window.TegakiDrawing.DrawingEngine(
+    this.cameraSystem, this.layerSystem, this.eventBus, CONFIG
+);
+
+影響:
+  ✅ PressureHandler動作開始
+  ✅ Simplify.js + Catmull-Rom Spline有効化
+  ✅ settings-popup.js設定が反映開始
+  ⚠️ ストローク見た目変更（円形積算 → Perfect Freehand）
+
+テスト:
+  - 筆圧感度確認
+  - Undo/Redo整合性
+  - 設定UI反映（サイズ・色・不透明度・筆圧補正）
+
+
+【PHASE 1B】PointerEvents一元化 ◎優先度高
+===============================================
+
+目的: core-engine.js / core-runtime.js の二重イベント処理排除
+
+改修ファイル: core-engine.js, core-runtime.js
+参考ファイル: system/drawing/drawing-engine.js
+
+フロー位置:
+  ユーザー操作 → CoreRuntime.stage.on('pointerdown') → DrawingEngine
+
+事前確認: core-runtime.js 行120-140付近でpointerdown処理の有無確認
+
+作業内容:
+
+ケース1: core-runtime.js既存処理あり
+  ✅ core-engine.js 行750-850: setupCanvasEvents()内の
+     pointerdown/move/up リスナー全削除
+
+ケース2: 二重処理確認時
+  ✅ core-runtime.js へ統一
+  
+  core-runtime.js修正例:
+  stage.on('pointerdown', (event) => {
+      if (!this.internal.layerManager?.isLayerMoveMode) {
+          this.internal.drawingEngine.startDrawing(
+              event.global.x, event.global.y, event
+          );
+      }
+  });
+  
+  core-engine.js: setupCanvasEvents()削除
+
+影響:
+  - イベントリスナ重複排除
+  - パフォーマンス向上
+
+テスト:
+  - 描画開始・継続・終了
+  - Space/Vキー時の描画抑止
+  - レイヤー移動モード時の描画抑止
+
+
+【PHASE 2】座標変換API統一
+===============================
+
+目的: CameraSystem / CoordinateSystem / 内部変換の3経路を整理
+
+改修ファイル: camera-system.js, coordinate-system.js
+参考ファイル: system/drawing/drawing-engine.js, system/layer-transform.js
+
+フロー位置:
+  PointerEvent → CameraSystem.screenToCanvas() → DrawingEngine → LayerTransform
+
+現状問題:
+  経路1: CameraSystem.screenToCanvas() - forDrawingオプション不明確
+  経路2: CoordinateSystem.screenToCanvas() - 本番/診断混在
+  経路3: DrawingEngine内部変換 - 散在
+
+作業内容:
+
+1. camera-system.js整理
+   
+   screenToCanvas(screenX, screenY)メソッドを明確化:
+   
+   screenToCanvas(screenX, screenY) {
+       const globalPoint = { x: screenX, y: screenY };
+       return this.canvasContainer.toLocal(globalPoint);
+   }
+   
+   forDrawingオプション削除 or 専用メソッド化:
+   
+   screenToCanvasForDrawing(screenX, screenY) {
+       const point = this.screenToCanvas(screenX, screenY);
+       // 拡張キャンバス判定等の特殊処理
+       return point;
+   }
+
+2. coordinate-system.js 診断専用化
+   
+   ファイル先頭に追記:
+   /**
+    * 診断・デバッグ専用
+    * 本番コードでの使用禁止
+    * CameraSystem使用すること
+    */
+   window.CoordinateSystem.DIAGNOSTIC_ONLY = true;
+
+3. DrawingEngine座標処理検証
+   
+   system/drawing/drawing-engine.js:
+   - startDrawing()内の座標変換確認
+   - layerManager.addPathToActiveLayer()での座標処理確認
+   - LayerTransform適用タイミング検証
+
+テスト:
+  - 通常描画座標精度
+  - ズーム・パン時の座標変換
+  - レイヤー変形適用時の座標
+  - キャンバスリサイズ後の座標
+
+
+【PHASE 3】設定参照統一
+===============================
+
+目的: CONFIG直接参照 → SettingsManager経由に統一、リアクティブ化
+
+改修ファイル: core-engine.js, system/camera-system.js, system/layer-system.js,
+             system/drawing/drawing-engine.js
+参考ファイル: system/settings-manager.js
+
+フロー位置:
+  UI変更 → SettingsManager.set() → EventBus発火 → 各システム反映
+
+パターン判定:
+
+  継続OK: CONFIG.canvas.width/height等の起動時固定値
+  
+  要変更: 実行時変更可能な設定
+  
+  ❌ Before
+  const size = this.config.pen.size;
+  const color = this.config.pen.color;
+  
+  ✅ After
+  const size = window.TegakiSettingsManager.get('pen.size');
+  const color = window.TegakiSettingsManager.get('pen.color');
+
+対象設定:
+  - pen.size/color/opacity
+  - eraser.size
+  - pressure.correction
+  - smoothing.enabled/mode
+  - simplify.tolerance/enabled
+  - spline.tension/segments
+
+EventBus統合:
+
+  SettingsManager.set()修正:
+  
+  set(key, value) {
+      const oldValue = this.settings[key];
+      this.settings[key] = value;
+      this.eventBus.emit(`settings:${key}:changed`, { oldValue, value });
+  }
+  
+  各システムで購読:
+  
+  this.eventBus.on('settings:pen.size:changed', ({ value }) => {
+      this.updateBrushSize(value);
+  });
+
+テスト:
+  - 設定UI変更即座反映
+  - Undo/Redo時の設定状態
+  - EventBus発火確認
+
+
+【PHASE 4】DOM操作分離 ◎保守性向上
+===============================================
+
+目的: ロジック層からUI操作排除、UIRenderer層作成
+
+新規作成: ui/layer-panel-renderer.js
+         ui/status-display-renderer.js
+改修ファイル: system/layer-system.js, system/camera-system.js
+参考ファイル: ui/ui-panels.js, ui/dom-builder.js
+
+フロー位置:
+  データ変更 → Renderer.render(data) → DOM更新
+
+作業内容:
+
+1. ui/layer-panel-renderer.js新規作成
+   
+   class LayerPanelRenderer {
+       render(layers, activeIndex) {
+           return layers.map((l, i) => 
+               this.renderLayerItem(l, i === activeIndex)
+           ).join('');
+       }
+       
+       renderLayerItem(layer, isActive) {
+           return `<div class="layer-item ${isActive ? 'active' : ''}">
+               <span>${layer.name}</span>
+           </div>`;
+       }
+   }
+
+2. system/layer-system.js修正
+   
+   ❌ 削除: updateLayerPanelUI()内の200行DOM生成
+   
+   ✅ 置換:
+   updateLayerPanelUI() {
+       const html = this.layerPanelRenderer.render(
+           this.getLayers(), this.activeLayerIndex
+       );
+       document.getElementById('layer-list').innerHTML = html;
+   }
+
+3. ui/status-display-renderer.js新規作成
+   
+   camera-system.js の updateCoordinates()等を移行
+
+テスト:
+  - レイヤーパネル表示
+  - 座標表示更新
+  - Renderer独立テスト
+
+
+【PHASE 5】EventBus統合完全化
+===================================
+
+目的: 全状態変更でイベント発火、EventBus一覧ドキュメント作成
+
+改修ファイル: core-engine.js, system/camera-system.js, system/layer-system.js
+新規作成: docs/event-bus-reference.md
+
+フロー位置:
+  状態変更 → EventBus.emit() → 購読者へ通知
+
+作業内容:
+
+1. DrawingEngine (core-engine.js)
+   
+   setBrushSize(size)等にEventBus追加:
+   
+   setBrushSize(size) {
+       const oldSize = this.brushSize;
+       this.brushSize = Math.max(0.1, Math.min(100, size));
+       if (oldSize !== this.brushSize && this.eventBus) {
+           this.eventBus.emit('drawing:brush-size:changed', {
+               oldSize, newSize: this.brushSize
+           });
+       }
+   }
+
+2. CameraSystem状態変更イベント
+   
+   zoom/rotate/pan時:
+   
+   this.eventBus.emit('camera:zoom:changed', { 
+       oldZoom, newZoom 
+   });
+
+3. イベント命名規則統一
+   
+   形式: domain:action:changed
+   
+   例:
+   - drawing:brush-size:changed
+   - camera:zoom:changed
+   - layer:activated
+   - settings:pen.size:changed
+
+テスト:
+  - 全状態変更でイベント発火確認
+  - ペイロード検証
+  - リスナ応答確認
+
+
+【PHASE 6】CoreRuntime API拡張
+===================================
+
+目的: 外部連携API統一、ブックマークレット対応強化
+
+改修ファイル: core-runtime.js
+参考ファイル: system/popup-manager.js, system/settings-manager.js
+
+フロー位置:
+  外部呼び出し → CoreRuntime.api → 各システム
+
+作業内容:
+
+  CoreRuntime.api拡張:
+  
+  api: {
+      popup: { ... }, // 既存
+      
+      draw: {
+          clear: () => this.internal.layerSystem.clearActiveLayer(),
+          undo: () => window.History.undo(),
+          redo: () => window.History.redo()
+      },
+      
+      settings: {
+          set: (k, v) => window.TegakiSettingsManager.set(k, v),
+          get: (k) => window.TegakiSettingsManager.get(k)
+      },
+      
+      tools: {
+          setPen: () => this.internal.setCurrentTool('pen'),
+          setEraser: () => this.internal.setCurrentTool('eraser'),
+          getCurrent: () => this.internal.currentTool
+      },
+      
+      layers: {
+          create: () => this.internal.layerSystem.createLayer(),
+          delete: (i) => this.internal.layerSystem.deleteLayer(i),
+          getActive: () => this.internal.layerSystem.getActiveLayer(),
+          setActive: (i) => this.internal.layerSystem.setActiveLayer(i)
+      }
+  }
+
+テスト:
+  - 各API呼び出し
+  - 戻り値確認
+  - ブックマークレット連携
+
+
+改修優先度
+===========================
+
+即座実施（1-2日）:
+  PHASE 1: DrawingEngine統一
+  PHASE 1B: PointerEvents一元化
+
+短期（3-7日）:
+  PHASE 2: 座標変換API統一
+  PHASE 3: 設定参照統一
+
+中期（1-2週間）:
+  PHASE 4: DOM操作分離
+  PHASE 5: EventBus統合完全化
+
+余裕時:
+  PHASE 6: CoreRuntime API拡張
+
+
+冗長コード削除指針
+===========================
+
+削除対象:
+  ❌ console.log/warn (デバッグ用は全削除)
+  ❌ try-catch (明確なエラー発生箇所のみ残す)
+  ❌ フォールバック処理 (曖昧な動作修復禁止)
+  ❌ 二重チェック (if (!x) x = default; 等の冗長防御)
+  ❌ 過剰コメント (自明な処理の説明削除)
+
+保持対象:
+  ✅ throw new Error() (即座失敗)
+  ✅ API境界の型チェック (入力検証)
+  ✅ 重要な処理の説明コメント
+
+
+期待効果
+===========================
+
+パフォーマンス: イベント処理効率化、不要コード削除
+保守性: 単一責任徹底、API境界明確化、Claude可読性最大化
+機能性: 筆圧・スムージング有効化、リアクティブ設定変更
+拡張性: 新規ツール追加容易、ブックマークレット対応強化
