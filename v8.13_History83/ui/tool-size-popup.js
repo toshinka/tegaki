@@ -1,5 +1,6 @@
 // ============================================
 // ui/tool-size-popup.js - Tool Size Slot UI
+// サイドバーのペン/消しゴムアイコンクリック専用
 // ============================================
 
 window.ToolSizePopup = (function() {
@@ -14,13 +15,27 @@ window.ToolSizePopup = (function() {
             this.sizeSlider = null;
             this.opacitySlider = null;
             this.isOpen = false;
-            this.eventBus = window.EventBus || window.TegakiEventBus;
+            this.initialized = false;
+            this.eventBus = null;
         }
 
         initialize() {
+            if (this.initialized) return;
+            
+            // DOMBuilderの互換性確保
+            if (!window.DOMBuilder || !window.DOMBuilder.create) {
+                if (window.DOMBuilder && window.DOMBuilder.createElement) {
+                    window.DOMBuilder.create = window.DOMBuilder.createElement;
+                } else {
+                    console.error('DOMBuilder not available');
+                    return;
+                }
+            }
+            
             this._createPopup();
             this._setupEventListeners();
             this._updateFromState();
+            this.initialized = true;
         }
 
         _createPopup() {
@@ -359,12 +374,15 @@ window.ToolSizePopup = (function() {
         }
 
         _handleSlotClick(index) {
+            if (!window.ToolSizeManager) return;
             window.ToolSizeManager.setActiveSlot(index);
             this._updateSlotHighlight();
             this._updateFromState();
         }
 
         _handleSliderChange(type) {
+            if (!window.StateManager) return;
+            
             const tool = window.StateManager.getCurrentTool();
             
             if (type === 'size') {
@@ -388,6 +406,8 @@ window.ToolSizePopup = (function() {
         }
 
         _adjustValue(type, delta) {
+            if (!window.StateManager) return;
+            
             const tool = window.StateManager.getCurrentTool();
             const config = window.TEGAKI_CONFIG.toolSize;
             
@@ -440,6 +460,12 @@ window.ToolSizePopup = (function() {
             });
 
             const finalize = () => {
+                if (!window.StateManager) {
+                    element.style.display = 'block';
+                    input.remove();
+                    return;
+                }
+
                 const newValue = parseFloat(input.value);
                 if (!isNaN(newValue)) {
                     const tool = window.StateManager.getCurrentTool();
@@ -487,6 +513,8 @@ window.ToolSizePopup = (function() {
         }
 
         _updateActiveSlotFromState() {
+            if (!window.StateManager || !window.ToolSizeManager) return;
+            
             const tool = window.StateManager.getCurrentTool();
             const size = tool === 'pen' ? window.StateManager.getPenSize() : window.StateManager.getEraserSize();
             const opacity = tool === 'pen' ? window.StateManager.getPenOpacity() : window.StateManager.getEraserOpacity();
@@ -495,6 +523,11 @@ window.ToolSizePopup = (function() {
         }
 
         _setupEventListeners() {
+            this.eventBus = window.EventBus || window.TegakiEventBus;
+            if (!this.eventBus || !this.eventBus.on) {
+                return;
+            }
+
             this.eventBus.on('tool:change', () => {
                 if (this.isOpen) {
                     this._updateFromState();
@@ -514,20 +547,17 @@ window.ToolSizePopup = (function() {
                 }
             });
 
-            document.addEventListener('keydown', (e) => {
-                if (e.key === 'b' || e.key === 'B') {
-                    this.toggle();
-                }
-            });
-
+            // 画面外クリックで閉じる
             document.addEventListener('click', (e) => {
-                if (this.isOpen && !this.popup.contains(e.target)) {
+                if (this.isOpen && this.popup && !this.popup.contains(e.target) && !e.target.closest('.tool-button')) {
                     this.close();
                 }
             });
         }
 
         _updateFromState() {
+            if (!window.StateManager || !this.sizeValueDisplay || !this.opacityValueDisplay) return;
+            
             const tool = window.StateManager.getCurrentTool();
             const size = tool === 'pen' ? window.StateManager.getPenSize() : window.StateManager.getEraserSize();
             const opacity = tool === 'pen' ? window.StateManager.getPenOpacity() : window.StateManager.getEraserOpacity();
@@ -535,13 +565,15 @@ window.ToolSizePopup = (function() {
             this.sizeValueDisplay.textContent = `${size.toFixed(1)}px`;
             this.opacityValueDisplay.textContent = `${Math.round(opacity * 100)}%`;
 
-            this.sizeSlider.value = size;
-            this.opacitySlider.value = opacity;
+            if (this.sizeSlider) this.sizeSlider.value = size;
+            if (this.opacitySlider) this.opacitySlider.value = opacity;
 
             this._updateSlotDisplay();
         }
 
         _updateSlotDisplay() {
+            if (!window.ToolSizeManager || !window.TEGAKI_CONFIG) return;
+            
             const slots = window.ToolSizeManager.getCurrentSlots();
             const config = window.TEGAKI_CONFIG.toolSize;
 
@@ -549,41 +581,61 @@ window.ToolSizePopup = (function() {
                 const btn = this.slotButtons[index];
                 if (!btn) return;
 
-                const normalizedSize = (slot.size - config.penMin) / (config.penMax - config.penMin);
-                const thumbnailSize = config.thumbnailMin + normalizedSize * (config.thumbnailMax - config.thumbnailMin);
+                const normalizedSize = Math.max(0, Math.min(1, (slot.size - config.penMin) / (config.penMax - config.penMin)));
+                const thumbnailSize = Math.max(1, config.thumbnailMin + normalizedSize * (config.thumbnailMax - config.thumbnailMin));
 
-                btn.thumbnailCircle.style.width = `${thumbnailSize}px`;
-                btn.thumbnailCircle.style.height = `${thumbnailSize}px`;
-                btn.thumbnailCircle.style.opacity = slot.opacity;
+                if (btn.thumbnailCircle) {
+                    btn.thumbnailCircle.style.width = `${thumbnailSize}px`;
+                    btn.thumbnailCircle.style.height = `${thumbnailSize}px`;
+                    btn.thumbnailCircle.style.opacity = slot.opacity;
+                }
 
-                btn.sizeLabel.textContent = `${slot.size.toFixed(1)}px`;
-                btn.opacityLabel.textContent = `${Math.round(slot.opacity * 100)}%`;
+                if (btn.sizeLabel) {
+                    btn.sizeLabel.textContent = `${slot.size.toFixed(1)}px`;
+                }
+                if (btn.opacityLabel) {
+                    btn.opacityLabel.textContent = `${Math.round(slot.opacity * 100)}%`;
+                }
             });
         }
 
         _updateSlotHighlight() {
+            if (!window.ToolSizeManager) return;
+            
             const activeIndex = window.ToolSizeManager.getActiveSlotIndex();
 
             this.slotButtons.forEach((btn, index) => {
                 if (index === activeIndex) {
                     btn.classList.add('active');
                     btn.style.background = 'rgba(139, 69, 19, 0.15)';
-                    btn.sizeLabel.style.color = '#8B4513';
-                    btn.sizeLabel.style.fontWeight = '700';
+                    if (btn.sizeLabel) {
+                        btn.sizeLabel.style.color = '#8B4513';
+                        btn.sizeLabel.style.fontWeight = '700';
+                    }
                 } else {
                     btn.classList.remove('active');
                     btn.style.background = 'transparent';
-                    btn.sizeLabel.style.color = '#333';
-                    btn.sizeLabel.style.fontWeight = '600';
+                    if (btn.sizeLabel) {
+                        btn.sizeLabel.style.color = '#333';
+                        btn.sizeLabel.style.fontWeight = '600';
+                    }
                 }
             });
         }
 
         toggle() {
+            if (!this.initialized) {
+                this.initialize();
+            }
             this.isOpen ? this.close() : this.open();
         }
 
         open() {
+            if (!this.initialized) {
+                this.initialize();
+            }
+            if (!this.popup) return;
+            
             this.popup.style.display = 'block';
             this.isOpen = true;
             this._updateFromState();
@@ -591,8 +643,23 @@ window.ToolSizePopup = (function() {
         }
 
         close() {
+            if (!this.popup) return;
+            
             this.popup.style.display = 'none';
             this.isOpen = false;
+        }
+
+        // 外部から初期化状態を確認できるメソッド
+        show() {
+            this.open();
+        }
+
+        hide() {
+            this.close();
+        }
+
+        get isVisible() {
+            return this.isOpen;
         }
     }
 
