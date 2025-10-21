@@ -1,12 +1,9 @@
-// ===== core-initializer.js - PopupManager対応改修版 + UIController修正 =====
-// 責務: アプリケーション初期化、PopupManager統合
-// 🔥 改修: PopupManager導入、遅延初期化の削除、一元化
-// 🔧 修正: UIController参照エラー解決
+// ===== core-initializer.js - Phase1C: Vキー確実初期化版 =====
+// 🔥 Phase1C: KeyboardHandler初期化確認強化 + 診断追加
 
 window.CoreInitializer = (function() {
     'use strict';
 
-    // 依存関係チェック
     function checkDependencies() {
         const dependencies = [
             { name: 'PIXI', obj: window.PIXI },
@@ -34,12 +31,9 @@ window.CoreInitializer = (function() {
             throw new Error('CoreRuntime or CoreEngine not loaded');
         }
         
-        // UIControllerは後で読み込まれるのでここではチェックしない
-        
         return true;
     }
 
-    // DOM構築
     function buildDOM() {
         const appContainer = document.getElementById('app');
         if (!appContainer) {
@@ -53,41 +47,32 @@ window.CoreInitializer = (function() {
         document.body.appendChild(statusPanel);
     }
 
-    // SettingsManager 初期化
     function initializeSettingsManager(eventBus, config) {
         if (!window.TegakiSettingsManager) {
             throw new Error('SettingsManager class not found');
         }
 
-        // 既にインスタンスの場合はそのまま返す
         if (window.TegakiSettingsManager.prototype === undefined) {
             return window.TegakiSettingsManager;
         }
 
-        // クラスの場合はインスタンス化
         const settingsManager = new window.TegakiSettingsManager(eventBus, config);
         window.TegakiSettingsManager = settingsManager;
         
         return settingsManager;
     }
 
-    // PopupManager初期化
     function initializePopupManager(app, coreEngine) {
-        console.log('🔧 Initializing PopupManager...');
-        
         const popupManager = new window.TegakiPopupManager(window.TegakiEventBus);
         
-        // 優先度1: Settings（依存関係なし）
         popupManager.register('settings', window.TegakiUI.SettingsPopup, {
             drawingEngine: coreEngine.getDrawingEngine()
         }, { priority: 1 });
         
-        // 優先度2: QuickAccess（依存関係なし）
         popupManager.register('quickAccess', window.TegakiUI.QuickAccessPopup, {
             drawingEngine: coreEngine.getDrawingEngine()
         }, { priority: 2 });
         
-        // 優先度3: Album（AnimationSystem依存）
         popupManager.register('album', window.TegakiUI.AlbumPopup, {
             app: app.pixiApp,
             layerSystem: coreEngine.getLayerManager(),
@@ -97,26 +82,19 @@ window.CoreInitializer = (function() {
             waitFor: ['animationSystem']
         });
         
-        // 優先度4: Export（ExportManager依存）
         popupManager.register('export', window.TegakiExportPopup, {
-            exportManager: null // 後で設定
+            exportManager: null
         }, { 
             priority: 4,
             waitFor: ['TEGAKI_EXPORT_MANAGER']
         });
         
-        // 初期化実行
         popupManager.initializeAll();
-        
-        // グローバル公開
         window.PopupManager = popupManager;
-        
-        console.log('✅ PopupManager initialized');
         
         return popupManager;
     }
 
-    // DrawingAppクラス定義
     class DrawingApp {
         constructor() {
             this.pixiApp = null;
@@ -130,7 +108,6 @@ window.CoreInitializer = (function() {
             const CONFIG = window.TEGAKI_CONFIG;
             const CoreEngine = window.TegakiCore.CoreEngine;
             
-            // 🔧 修正: UIControllerを安全に取得
             const UIController = window.TegakiUI.UIController;
             if (!UIController) {
                 throw new Error('UIController class not found in window.TegakiUI');
@@ -162,13 +139,11 @@ window.CoreInitializer = (function() {
             
             window.coreEngine = this.coreEngine;
             
-            // SettingsManager初期化
             this.settingsManager = initializeSettingsManager(
                 window.TegakiEventBus,
                 CONFIG
             );
             
-            // CoreRuntime初期化
             window.CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
@@ -179,19 +154,14 @@ window.CoreInitializer = (function() {
                 settingsManager: this.settingsManager
             });
             
-            // UIController初期化
-            console.log('🔧 Initializing UIController...');
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
                 this.coreEngine.getLayerManager(), 
                 this.pixiApp
             );
-            console.log('✅ UIController initialized');
 
-            // PopupManager初期化（UIControllerの後）
             this.popupManager = initializePopupManager(this, this.coreEngine);
             
-            // Export System初期化
             this.initializeExportSystem();
             
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
@@ -205,44 +175,32 @@ window.CoreInitializer = (function() {
             
             window.drawingApp = drawingApp;
             
-            console.log('✅ DrawingApp initialization complete');
             return true;
         }
         
         initializeExportSystem() {
-            console.log('🔧 Initializing Export System...');
-            
             const tryInit = () => {
                 if (!window.animationSystem) {
-                    console.log('⏳ Waiting for animationSystem...');
                     setTimeout(tryInit, 200);
                     return;
                 }
                 
                 if (!window.CoreRuntime) {
-                    console.log('⏳ Waiting for CoreRuntime...');
                     setTimeout(tryInit, 200);
                     return;
                 }
                 
-                // ExportManager初期化
                 const success = window.CoreRuntime.initializeExportSystem(
                     this.pixiApp,
                     () => {
-                        console.log('✅ Export system initialized');
-                        
-                        // PopupManagerのExport依存関係を更新
                         if (window.PopupManager && window.TEGAKI_EXPORT_MANAGER) {
                             const exportPopupData = window.PopupManager.popups.get('export');
                             if (exportPopupData) {
                                 exportPopupData.dependencies.exportManager = window.TEGAKI_EXPORT_MANAGER;
-                                
-                                // 再初期化試行
                                 window.PopupManager.initialize('export');
                             }
                         }
                         
-                        // EventBus通知
                         if (window.TegakiEventBus) {
                             window.TegakiEventBus.emit('export:manager:initialized');
                         }
@@ -250,18 +208,15 @@ window.CoreInitializer = (function() {
                 );
                 
                 if (!success) {
-                    console.log('⏳ Export system not ready, retrying...');
                     setTimeout(tryInit, 200);
                 }
             };
             
-            // EventBusリスナー
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.on('animation:system-ready', tryInit);
                 window.TegakiEventBus.on('animation:initialized', tryInit);
             }
             
-            // 即座に1回試行
             setTimeout(tryInit, 500);
         }
         
@@ -314,7 +269,6 @@ window.CoreInitializer = (function() {
         }
     }
 
-    // History統合セットアップ
     function setupHistoryIntegration() {
         if (window.TegakiEventBus && window.History) {
             window.TegakiEventBus.on('history:changed', (data) => {
@@ -328,7 +282,6 @@ window.CoreInitializer = (function() {
         }
     }
 
-    // 診断実行
     function runDiagnostics() {
         if (window.CoordinateSystem?.diagnoseReferences) {
             window.CoordinateSystem.diagnoseReferences();
@@ -340,12 +293,10 @@ window.CoreInitializer = (function() {
                     const diagnostics = new window.SystemDiagnostics();
                     diagnostics.runFullDiagnostics();
                 } catch (diagError) {
-                    console.warn('Diagnostics failed:', diagError);
                 }
             }, 1000);
         }
         
-        // PopupManager診断
         if (window.PopupManager) {
             setTimeout(() => {
                 window.PopupManager.diagnose();
@@ -353,19 +304,57 @@ window.CoreInitializer = (function() {
         }
     }
 
-    // メイン初期化関数
+    // Phase1C: KeyboardHandler初期化確認診断
+    function diagnoseKeyboardHandler() {
+        setTimeout(() => {
+            const eventBus = window.TegakiEventBus;
+            if (!eventBus) return;
+            
+            // テストリスナー追加
+            let vkeyTestReceived = false;
+            const testListener = () => {
+                vkeyTestReceived = true;
+            };
+            
+            eventBus.on('keyboard:vkey-pressed', testListener);
+            
+            // 手動イベント発火テスト
+            setTimeout(() => {
+                eventBus.emit('keyboard:vkey-pressed', { pressed: true });
+                
+                setTimeout(() => {
+                    if (vkeyTestReceived) {
+                        console.log('✅ Phase1C: Vキーイベント配信正常');
+                    } else {
+                        console.warn('⚠️ Phase1C: Vキーイベント配信失敗 - EventBus確認必要');
+                    }
+                    
+                    eventBus.off('keyboard:vkey-pressed', testListener);
+                }, 100);
+            }, 100);
+        }, 1000);
+    }
+
     async function initialize() {
         try {
-            console.log('🚀 CoreInitializer: Starting initialization...');
+            console.log('🚀 Phase1C: CoreInitializer starting...');
             
             checkDependencies();
-            console.log('✅ Dependencies check passed');
+            console.log('✅ Dependencies OK');
             
             buildDOM();
             console.log('✅ DOM built');
             
-            window.KeyboardHandler.init();
-            console.log('✅ KeyboardHandler initialized');
+            // Phase1C: KeyboardHandler初期化を確実に実行
+            if (window.KeyboardHandler && window.KeyboardHandler.init) {
+                window.KeyboardHandler.init();
+                console.log('✅ Phase1C: KeyboardHandler.init() executed');
+                
+                // 初期化フラグ設定
+                document._keyboardHandlerInitialized = true;
+            } else {
+                console.error('❌ Phase1C: KeyboardHandler.init() not found');
+            }
             
             const app = new DrawingApp();
             await app.initialize();
@@ -374,7 +363,6 @@ window.CoreInitializer = (function() {
             
             setupHistoryIntegration();
             
-            // ResizeSliderはDOM構築後に初期化
             if (window.ResizeSlider) {
                 setTimeout(() => {
                     window.ResizeSlider.init();
@@ -383,15 +371,17 @@ window.CoreInitializer = (function() {
             
             runDiagnostics();
             
-            console.log('✅✅✅ Application initialization complete ✅✅✅');
+            // Phase1C: Vキー診断実行
+            diagnoseKeyboardHandler();
+            
+            console.log('✅✅✅ Phase1C: Application initialized successfully ✅✅✅');
             return true;
         } catch (error) {
-            console.error('❌ Initialization failed:', error);
+            console.error('❌ Phase1C: Initialization failed:', error);
             throw error;
         }
     }
 
-    // 公開API
     return {
         initialize,
         checkDependencies,
@@ -399,4 +389,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (PopupManager統合版 + UIController修正) loaded');
+console.log('✅ core-initializer.js (Phase1C: Vキー確実初期化版) loaded');
