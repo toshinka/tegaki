@@ -1,4 +1,4 @@
-// ===== core-engine.js - PHASE 1: DrawingEngine統一版 =====
+// ===== core-engine.js - PHASE 1B: PointerEvents一元化版 =====
 
 (function() {
     'use strict';
@@ -303,8 +303,11 @@
             this.layerSystem.setCameraSystem(this.cameraSystem);
             this.layerSystem.setApp(this.app);
             
-            if (this.layerSystem.initTransform) {
-                this.layerSystem.initTransform();
+            // Phase1B: 明示的にTransform初期化を確認
+            if (this.layerSystem.transform && !this.layerSystem.transform.app) {
+                if (this.layerSystem.initTransform) {
+                    this.layerSystem.initTransform();
+                }
             }
             
             this.clipboardSystem.setLayerManager(this.layerSystem);
@@ -472,8 +475,7 @@
         }
         
         setupCanvasEvents() {
-            // PHASE 1B: Pointer Events削除
-            // core-runtime.js で一元管理されているため不要
+            // PHASE 1B: Pointer Events削除（core-runtime.jsで一元管理）
             // 座標表示のみ残す
             
             const canvas = this.app.canvas || this.app.view;

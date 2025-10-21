@@ -1,6 +1,6 @@
-// ===== keyboard-handler.js - 改修版 =====
+// ===== keyboard-handler.js - Phase1B改修版 =====
 // 責務: キーボードショートカット管理
-// 🔥 改修: Qキーでクイックアクセスポップアップをトグル
+// 🔥 Phase1B: EventBus経由でVキー状態を通知
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -27,15 +27,19 @@ window.KeyboardHandler = (function() {
         
         if (isInputFocused()) return;
         
-        // 🔥 NEW: Qキーでクイックアクセスポップアップをトグル
+        // Qキーでクイックアクセスポップアップをトグル
         if ((e.key === 'q' || e.key === 'Q') && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             eventBus.emit('ui:toggle-quick-access');
             e.preventDefault();
             return;
         }
         
+        // Phase1B: Vキー押下をEventBusで通知
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-            vKeyPressed = true;
+            if (!vKeyPressed) {
+                vKeyPressed = true;
+                eventBus.emit('keyboard:vkey-pressed', { pressed: true });
+            }
         }
         
         if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
@@ -52,8 +56,15 @@ window.KeyboardHandler = (function() {
     }
 
     function handleKeyUp(e) {
+        // Phase1B: Vキー解放をEventBusで通知
         if (e.code === 'KeyV') {
-            vKeyPressed = false;
+            if (vKeyPressed) {
+                vKeyPressed = false;
+                const eventBus = window.TegakiEventBus;
+                if (eventBus) {
+                    eventBus.emit('keyboard:vkey-released', { pressed: false });
+                }
+            }
         }
     }
 
@@ -203,7 +214,6 @@ window.KeyboardHandler = (function() {
                     child.destroy({ children: true, texture: false, baseTexture: false });
                 }
             } catch (error) {
-                // silent
             }
         });
         
@@ -237,7 +247,6 @@ window.KeyboardHandler = (function() {
                     layer.addChild(pathData.graphics);
                 }
             } catch (error) {
-                // silent
             }
         }
         
@@ -259,6 +268,18 @@ window.KeyboardHandler = (function() {
 
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
+        
+        // ウィンドウフォーカス喪失時にVキー状態をリセット
+        window.addEventListener('blur', () => {
+            if (vKeyPressed) {
+                vKeyPressed = false;
+                const eventBus = window.TegakiEventBus;
+                if (eventBus) {
+                    eventBus.emit('keyboard:vkey-released', { pressed: false });
+                }
+            }
+        });
+        
         isInitialized = true;
     }
 
@@ -276,7 +297,8 @@ window.KeyboardHandler = (function() {
             { action: 'TOOL_PEN', keys: ['P', 'B'], description: 'ペンツール' },
             { action: 'TOOL_ERASER', keys: ['E'], description: '消しゴム' },
             { action: 'SETTINGS_OPEN', keys: ['Ctrl+,'], description: '設定を開く' },
-            { action: 'QUICK_ACCESS', keys: ['Q'], description: 'クイックアクセス' }
+            { action: 'QUICK_ACCESS', keys: ['Q'], description: 'クイックアクセス' },
+            { action: 'LAYER_MOVE_MODE', keys: ['V'], description: 'レイヤー移動モード' }
         ];
     }
 
