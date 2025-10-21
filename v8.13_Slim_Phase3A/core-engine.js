@@ -1,36 +1,20 @@
-// ===== core-engine.js - PHASE 1B: PointerEvents一元化版 =====
+// ===== core-engine.js - Phase3完了・スリム化版 =====
+// Phase1: DrawingEngine統一完了
+// Phase1B: PointerEvents一元化完了
+// Phase3: 設定参照統一完了・冗長コード削減
 
 (function() {
     'use strict';
     
-    if (!window.TegakiCameraSystem) {
-        throw new Error('system/camera-system.js is required');
-    }
-    
-    if (!window.TegakiLayerSystem) {
-        throw new Error('system/layer-system.js is required');
-    }
-    
-    if (!window.TegakiDrawingClipboard) {
-        throw new Error('system/drawing-clipboard.js is required');
-    }
-    
-    if (!window.TegakiEventBus) {
-        throw new Error('system/event-bus.js is required');
-    }
+    if (!window.TegakiCameraSystem) throw new Error('system/camera-system.js required');
+    if (!window.TegakiLayerSystem) throw new Error('system/layer-system.js required');
+    if (!window.TegakiDrawingClipboard) throw new Error('system/drawing-clipboard.js required');
+    if (!window.TegakiEventBus) throw new Error('system/event-bus.js required');
     
     const CONFIG = window.TEGAKI_CONFIG;
-    if (!CONFIG) {
-        throw new Error('config.js is required');
-    }
-
-    if (!CONFIG.animation) {
-        throw new Error('Animation configuration is required');
-    }
-
-    if (!window.TEGAKI_KEYCONFIG_MANAGER) {
-        throw new Error('KeyConfig manager is required');
-    }
+    if (!CONFIG) throw new Error('config.js required');
+    if (!CONFIG.animation) throw new Error('Animation configuration required');
+    if (!window.TEGAKI_KEYCONFIG_MANAGER) throw new Error('KeyConfig manager required');
 
     class UnifiedKeyHandler {
         constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
@@ -40,7 +24,6 @@
             this.eventBus = eventBus || window.TegakiEventBus;
             this.animationSystem = animationSystem;
             this.timelineUI = null;
-            
             this.keyConfig = window.TEGAKI_KEYCONFIG_MANAGER;
             this.keyHandlingActive = true;
             
@@ -57,9 +40,7 @@
                 
                 const isMac = navigator.platform.toUpperCase().indexOf('MAC') >= 0;
                 const metaKey = isMac ? e.metaKey : e.ctrlKey;
-                if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) {
-                    return;
-                }
+                if (metaKey && (e.code === 'KeyZ' || e.code === 'KeyY')) return;
                 
                 this.handleKeyDown(e);
             });
@@ -69,13 +50,8 @@
                 this.handleKeyUp(e);
             });
             
-            window.addEventListener('blur', () => {
-                this.resetAllKeyStates();
-            });
-            
-            window.addEventListener('focus', () => {
-                this.resetAllKeyStates();
-            });
+            window.addEventListener('blur', () => this.resetAllKeyStates());
+            window.addEventListener('focus', () => this.resetAllKeyStates());
         }
         
         handleKeyDown(e) {
@@ -91,10 +67,7 @@
                 altPressed: e.altKey
             });
             
-            if (this.handleSpecialKeys(e)) {
-                return;
-            }
-            
+            if (this.handleSpecialKeys(e)) return;
             if (!action) return;
             
             switch(action) {
@@ -158,9 +131,7 @@
         handleArrowKeys(e) {
             e.preventDefault();
             
-            if (this.layerSystem?.vKeyPressed) {
-                return;
-            }
+            if (this.layerSystem?.vKeyPressed) return;
             
             const activeIndex = this.layerSystem.activeLayerIndex;
             const layers = this.layerSystem.getLayers();
@@ -211,18 +182,11 @@
             }
         }
         
-        handleKeyUp(e) {
-        }
+        handleKeyUp(e) {}
         
         handleSpecialKeys(e) {
-            if (e.ctrlKey && e.code === 'Digit0') {
-                return false;
-            }
-            
-            if (e.code === 'Space') {
-                return false;
-            }
-            
+            if (e.ctrlKey && e.code === 'Digit0') return false;
+            if (e.code === 'Space') return false;
             return false;
         }
         
@@ -231,15 +195,11 @@
             
             document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
             const toolBtn = document.getElementById(tool + '-tool');
-            if (toolBtn) {
-                toolBtn.classList.add('active');
-            }
+            if (toolBtn) toolBtn.classList.add('active');
 
             const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
             const toolElement = document.getElementById('current-tool');
-            if (toolElement) {
-                toolElement.textContent = toolNames[tool] || tool;
-            }
+            if (toolElement) toolElement.textContent = toolNames[tool] || tool;
             
             this.cameraSystem.updateCursor();
             
@@ -262,21 +222,17 @@
     class CoreEngine {
         constructor(app, config = {}) {
             this.app = app;
-            
             this.isBookmarkletMode = config.isBookmarkletMode || false;
-            
             this.eventBus = window.TegakiEventBus;
-            if (!this.eventBus) {
-                throw new Error('window.TegakiEventBus is required');
-            }
+            if (!this.eventBus) throw new Error('window.TegakiEventBus required');
             
             this.cameraSystem = new window.TegakiCameraSystem();
             this.layerSystem = new window.TegakiLayerSystem();
             this.clipboardSystem = new window.TegakiDrawingClipboard();
             
-            // PHASE 1: 完全版DrawingEngineを使用
+            // Phase1: 完全版DrawingEngine使用
             if (!window.TegakiDrawing?.DrawingEngine) {
-                throw new Error('TegakiDrawing.DrawingEngine not found - system/drawing/drawing-engine.js must be loaded before core-engine.js');
+                throw new Error('TegakiDrawing.DrawingEngine not found');
             }
             
             this.drawingEngine = new window.TegakiDrawing.DrawingEngine(
@@ -303,7 +259,6 @@
             this.layerSystem.setCameraSystem(this.cameraSystem);
             this.layerSystem.setApp(this.app);
             
-            // Phase1B: 明示的にTransform初期化を確認
             if (this.layerSystem.transform && !this.layerSystem.transform.app) {
                 if (this.layerSystem.initTransform) {
                     this.layerSystem.initTransform();
@@ -317,10 +272,7 @@
             this.eventBus.on('layer:clear-active', () => {
                 const activeLayer = this.layerSystem.getActiveLayer();
                 if (!activeLayer || !activeLayer.layerData) return;
-                
-                if (activeLayer.layerData.isBackground) {
-                    return;
-                }
+                if (activeLayer.layerData.isBackground) return;
                 
                 const pathsSnapshot = structuredClone(activeLayer.layerData.paths);
                 
@@ -332,9 +284,7 @@
                                 activeLayer.layerData.paths.forEach(path => {
                                     if (path.graphics) {
                                         activeLayer.removeChild(path.graphics);
-                                        if (path.graphics.destroy) {
-                                            path.graphics.destroy();
-                                        }
+                                        if (path.graphics.destroy) path.graphics.destroy();
                                     }
                                 });
                                 activeLayer.layerData.paths = [];
@@ -355,9 +305,7 @@
                             activeLayer.layerData.paths.forEach(path => {
                                 if (this.layerSystem.rebuildPathGraphics) {
                                     this.layerSystem.rebuildPathGraphics(path);
-                                    if (path.graphics) {
-                                        activeLayer.addChild(path.graphics);
-                                    }
+                                    if (path.graphics) activeLayer.addChild(path.graphics);
                                 }
                             });
                             
@@ -387,67 +335,45 @@
         }
         
         initializeAnimationSystem() {
-            if (!window.TegakiAnimationSystem) {
-                return;
-            }
+            if (!window.TegakiAnimationSystem || !window.TegakiTimelineUI) return;
             
-            if (!window.TegakiTimelineUI) {
-                return;
-            }
+            this.animationSystem = new window.TegakiAnimationSystem();
+            this.animationSystem.init(this.layerSystem, this.app, this.cameraSystem);
             
-            try {
-                this.animationSystem = new window.TegakiAnimationSystem();
-                this.animationSystem.init(this.layerSystem, this.app, this.cameraSystem);
-                
-                this.timelineUI = new window.TegakiTimelineUI(this.animationSystem);
-                this.timelineUI.init();
-                
-                window.animationSystem = this.animationSystem;
-                window.timelineUI = this.timelineUI;
-                
-                this.setupCoordinateSystemReferences();
-                
-            } catch (error) {
-                this.animationSystem = null;
-                this.timelineUI = null;
-            }
+            this.timelineUI = new window.TegakiTimelineUI(this.animationSystem);
+            this.timelineUI.init();
+            
+            window.animationSystem = this.animationSystem;
+            window.timelineUI = this.timelineUI;
+            
+            this.setupCoordinateSystemReferences();
         }
         
         setupCoordinateSystemReferences() {
-            if (window.CoordinateSystem) {
-                try {
-                    if (typeof window.CoordinateSystem.setCameraSystem === 'function') {
-                        window.CoordinateSystem.setCameraSystem(this.cameraSystem);
-                    }
-                    
-                    if (typeof window.CoordinateSystem.setLayerSystem === 'function') {
-                        window.CoordinateSystem.setLayerSystem(this.layerSystem);
-                    }
-                    
-                    if (typeof window.CoordinateSystem.setAnimationSystem === 'function' && this.animationSystem) {
-                        window.CoordinateSystem.setAnimationSystem(this.animationSystem);
-                    }
-                } catch (error) {
-                }
+            if (!window.CoordinateSystem) return;
+            
+            if (typeof window.CoordinateSystem.setCameraSystem === 'function') {
+                window.CoordinateSystem.setCameraSystem(this.cameraSystem);
+            }
+            
+            if (typeof window.CoordinateSystem.setLayerSystem === 'function') {
+                window.CoordinateSystem.setLayerSystem(this.layerSystem);
+            }
+            
+            if (typeof window.CoordinateSystem.setAnimationSystem === 'function' && this.animationSystem) {
+                window.CoordinateSystem.setAnimationSystem(this.animationSystem);
             }
         }
         
         async exportForBookmarklet(format = 'gif', options = {}) {
-            if (!this.exportManager) {
-                throw new Error('ExportManager is not initialized');
-            }
+            if (!this.exportManager) throw new Error('ExportManager not initialized');
             
             switch(format.toLowerCase()) {
-                case 'png':
-                    return await this.exportManager.exportAsPNGBlob(options);
-                case 'apng':
-                    return await this.exportManager.exportAsAPNGBlob(options);
-                case 'gif':
-                    return await this.exportManager.exportAsGIFBlob(options);
-                case 'webp':
-                    return await this.exportManager.exportAsWebPBlob(options);
-                default:
-                    throw new Error(`Unsupported format: ${format}`);
+                case 'png': return await this.exportManager.exportAsPNGBlob(options);
+                case 'apng': return await this.exportManager.exportAsAPNGBlob(options);
+                case 'gif': return await this.exportManager.exportAsGIFBlob(options);
+                case 'webp': return await this.exportManager.exportAsWebPBlob(options);
+                default: throw new Error(`Unsupported format: ${format}`);
             }
         }
         
@@ -463,25 +389,17 @@
         getBatchAPI() { return this.batchAPI; }
         
         undo() {
-            if (window.History) {
-                window.History.undo();
-            }
+            if (window.History) window.History.undo();
         }
         
         redo() {
-            if (window.History) {
-                window.History.redo();
-            }
+            if (window.History) window.History.redo();
         }
         
         setupCanvasEvents() {
-            // PHASE 1B: Pointer Events削除（core-runtime.jsで一元管理）
-            // 座標表示のみ残す
-            
+            // Phase1B: Pointer Events削除（core-runtime.jsで一元管理）
             const canvas = this.app.canvas || this.app.view;
-            if (!canvas) {
-                return;
-            }
+            if (!canvas) return;
             
             canvas.addEventListener('pointermove', (e) => {
                 const rect = canvas.getBoundingClientRect();
@@ -567,9 +485,7 @@
                         
                         if (this.layerSystem.rebuildPathGraphics) {
                             this.layerSystem.rebuildPathGraphics(path);
-                            if (path.graphics) {
-                                layer.addChild(path.graphics);
-                            }
+                            if (path.graphics) layer.addChild(path.graphics);
                         }
                     });
                 }
@@ -600,9 +516,7 @@
             }
             
             const resizeSettings = document.getElementById('resize-settings');
-            if (resizeSettings) {
-                resizeSettings.classList.remove('show');
-            }
+            if (resizeSettings) resizeSettings.classList.remove('show');
             
             this.eventBus.emit('canvas:resized', { 
                 width: newWidth, 
@@ -632,7 +546,6 @@
                     this.layerSystem,
                     this.animationSystem
                 );
-                
                 window.batchAPI = this.batchAPI;
             }
             
