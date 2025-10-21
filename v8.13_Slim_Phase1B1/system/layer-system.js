@@ -1,5 +1,5 @@
-// ===== system/layer-system.js - Phase1B改修版 =====
-// 🔥 Phase1B: Vキーイベント受信でLayerTransformを更新
+// ===== system/layer-system.js - Phase1B改修版 + Vキーモード完全修正 =====
+// 🔥 修正: 起動時Vモード発火防止 + Vキートグル正常化
 
 (function() {
     'use strict';
@@ -36,7 +36,7 @@
                 throw new Error('EventBus required for LayerSystem');
             }
             
-            // LayerTransform初期化（インスタンス作成のみ）
+            // LayerTransform初期化（インスタンス作成のみ、init()は後で呼ぶ）
             if (window.TegakiLayerTransform) {
                 this.transform = new window.TegakiLayerTransform(this.config, this.coordAPI);
             } else {
@@ -91,19 +91,27 @@
             this.isInitialized = true;
         }
         
-        // Phase1B: Vキーイベント購読
+        // 🔥 Phase1B: Vキーイベント購読 - 修正版
         _setupVKeyEvents() {
             if (!this.eventBus) return;
             
             this.eventBus.on('keyboard:vkey-pressed', () => {
                 if (!this.transform) return;
                 
-                // Transformが初期化されていない場合は初期化を試みる
+                // LayerTransformが初期化されていない場合は初期化
                 if (!this.transform.app && this.app && this.cameraSystem) {
                     this.initTransform();
                 }
                 
+                // 既にVモードの場合は何もしない（重複発火防止）
+                if (this.transform.isVKeyPressed) {
+                    return;
+                }
+                
+                // Vキーモードに入る
                 this.transform.enterMoveMode();
+                
+                // アクティブレイヤーのパネル値を更新
                 const activeLayer = this.getActiveLayer();
                 if (activeLayer) {
                     this.transform.updateTransformPanelValues(activeLayer);
@@ -113,6 +121,12 @@
             this.eventBus.on('keyboard:vkey-released', () => {
                 if (!this.transform) return;
                 
+                // Vモードでない場合は何もしない
+                if (!this.transform.isVKeyPressed) {
+                    return;
+                }
+                
+                // Vキーモードを抜ける
                 const activeLayer = this.getActiveLayer();
                 this.transform.exitMoveMode(activeLayer);
             });
