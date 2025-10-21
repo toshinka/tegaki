@@ -1,4 +1,5 @@
-// ===== core-runtime.js - Phase3完了版(クリーンナップ済) =====
+// ===== core-runtime.js - Phase6完了版 =====
+// Phase6: API拡張完了・外部連携強化・ブックマークレット対応
 
 (function() {
     'use strict';
@@ -307,12 +308,38 @@
         },
         
         api: {
+            draw: {
+                clear: () => {
+                    if (window.TegakiEventBus) {
+                        window.TegakiEventBus.emit('layer:clear-active');
+                        return true;
+                    }
+                    return false;
+                },
+                
+                undo: () => {
+                    if (window.History) {
+                        window.History.undo();
+                        return true;
+                    }
+                    return false;
+                },
+                
+                redo: () => {
+                    if (window.History) {
+                        window.History.redo();
+                        return true;
+                    }
+                    return false;
+                }
+            },
+            
             tool: {
                 set: (toolName) => {
                     if (CoreRuntime.internal.drawingEngine?.setTool) {
                         CoreRuntime.internal.drawingEngine.setTool(toolName);
-                        if (CoreRuntime.internal.cameraSystem?.switchTool) {
-                            CoreRuntime.internal.cameraSystem.switchTool(toolName);
+                        if (CoreRuntime.internal.cameraSystem?.updateCursor) {
+                            CoreRuntime.internal.cameraSystem.updateCursor();
                         }
                         return true;
                     }
@@ -321,24 +348,52 @@
                 
                 get: () => {
                     return CoreRuntime.internal.drawingEngine?.currentTool || null;
+                },
+                
+                setPen: () => {
+                    return CoreRuntime.api.tool.set('pen');
+                },
+                
+                setEraser: () => {
+                    return CoreRuntime.api.tool.set('eraser');
                 }
             },
             
             brush: {
                 setSize: (size) => {
-                    if (CoreRuntime.internal.drawingEngine?.setBrushSize) {
-                        CoreRuntime.internal.drawingEngine.setBrushSize(size);
+                    if (window.TegakiSettingsManager) {
+                        window.TegakiSettingsManager.set('pen.size', size);
                         return true;
                     }
                     return false;
                 },
                 
-                setOpacity: (opacity) => {
-                    if (CoreRuntime.internal.drawingEngine?.setBrushOpacity) {
-                        CoreRuntime.internal.drawingEngine.setBrushOpacity(opacity);
+                getSize: () => {
+                    return window.TegakiSettingsManager?.get('pen.size') || null;
+                },
+                
+                setColor: (color) => {
+                    if (window.TegakiSettingsManager) {
+                        window.TegakiSettingsManager.set('pen.color', color);
                         return true;
                     }
                     return false;
+                },
+                
+                getColor: () => {
+                    return window.TegakiSettingsManager?.get('pen.color') || null;
+                },
+                
+                setOpacity: (opacity) => {
+                    if (window.TegakiSettingsManager) {
+                        window.TegakiSettingsManager.set('pen.opacity', opacity);
+                        return true;
+                    }
+                    return false;
+                },
+                
+                getOpacity: () => {
+                    return window.TegakiSettingsManager?.get('pen.opacity') || null;
                 }
             },
             
@@ -382,6 +437,26 @@
                     return false;
                 },
                 
+                reset: () => {
+                    if (CoreRuntime.internal.cameraSystem?.resetView) {
+                        CoreRuntime.internal.cameraSystem.resetView();
+                        return true;
+                    }
+                    return false;
+                },
+                
+                getZoom: () => {
+                    return CoreRuntime.internal.cameraSystem?.worldContainer?.scale?.x || 1;
+                },
+                
+                getPosition: () => {
+                    if (!CoreRuntime.internal.cameraSystem?.worldContainer) return { x: 0, y: 0 };
+                    return {
+                        x: CoreRuntime.internal.cameraSystem.worldContainer.x,
+                        y: CoreRuntime.internal.cameraSystem.worldContainer.y
+                    };
+                },
+                
                 resize: (w, h) => {
                     return CoreRuntime.updateCanvasSize(w, h);
                 }
@@ -390,6 +465,18 @@
             layer: {
                 getActive: () => {
                     return CoreRuntime.internal.layerManager?.getActiveLayer() || null;
+                },
+                
+                getActiveIndex: () => {
+                    return CoreRuntime.internal.layerManager?.activeLayerIndex ?? -1;
+                },
+                
+                getAll: () => {
+                    return CoreRuntime.internal.layerManager?.getLayers() || [];
+                },
+                
+                getCount: () => {
+                    return CoreRuntime.internal.layerManager?.getLayers()?.length || 0;
                 },
                 
                 create: (name, isBackground = false) => {
@@ -404,9 +491,36 @@
                     return null;
                 },
                 
+                delete: (index) => {
+                    if (CoreRuntime.internal.layerManager?.deleteLayer) {
+                        return CoreRuntime.internal.layerManager.deleteLayer(index);
+                    }
+                    return false;
+                },
+                
                 setActive: (index) => {
                     if (CoreRuntime.internal.layerManager) {
                         CoreRuntime.internal.layerManager.setActiveLayer(index);
+                        return true;
+                    }
+                    return false;
+                },
+                
+                setVisible: (index, visible) => {
+                    const layers = CoreRuntime.internal.layerManager?.getLayers();
+                    if (layers && layers[index]) {
+                        layers[index].visible = visible;
+                        CoreRuntime.internal.layerManager.updateLayerPanelUI();
+                        return true;
+                    }
+                    return false;
+                },
+                
+                setOpacity: (index, opacity) => {
+                    const layers = CoreRuntime.internal.layerManager?.getLayers();
+                    if (layers && layers[index]) {
+                        layers[index].alpha = Math.max(0, Math.min(1, opacity));
+                        CoreRuntime.internal.layerManager.updateLayerPanelUI();
                         return true;
                     }
                     return false;
@@ -431,24 +545,25 @@
             
             settings: {
                 get: (key) => {
-                    return CoreRuntime.internal.settingsManager?.get(key);
+                    if (!key) return window.TegakiSettingsManager?.getAll();
+                    return window.TegakiSettingsManager?.get(key);
                 },
                 
                 set: (key, value) => {
-                    return CoreRuntime.internal.settingsManager?.set(key, value) || false;
+                    return window.TegakiSettingsManager?.set(key, value) || false;
                 },
                 
                 update: (updates) => {
-                    return CoreRuntime.internal.settingsManager?.update(updates) || false;
+                    return window.TegakiSettingsManager?.update(updates) || false;
                 },
                 
                 reset: () => {
-                    CoreRuntime.internal.settingsManager?.reset();
+                    window.TegakiSettingsManager?.reset();
                     return true;
                 },
                 
                 getAll: () => {
-                    return CoreRuntime.internal.settingsManager?.get();
+                    return window.TegakiSettingsManager?.getAll();
                 }
             },
             
@@ -476,6 +591,59 @@
                 isVisible: (name) => {
                     if (!window.PopupManager) return false;
                     return window.PopupManager.isVisible(name);
+                }
+            },
+            
+            animation: {
+                getCutCount: () => {
+                    return window.animationSystem?.getAnimationData()?.cuts?.length || 0;
+                },
+                
+                getCurrentCutIndex: () => {
+                    return window.animationSystem?.getCurrentCutIndex?.() ?? -1;
+                },
+                
+                createCut: () => {
+                    if (window.animationSystem?.createCutFromCurrentState) {
+                        window.animationSystem.createCutFromCurrentState();
+                        return true;
+                    }
+                    return false;
+                },
+                
+                deleteCut: (index) => {
+                    if (window.animationSystem?.deleteCut) {
+                        return window.animationSystem.deleteCut(index);
+                    }
+                    return false;
+                },
+                
+                goToCut: (index) => {
+                    if (window.animationSystem?.switchToCut) {
+                        window.animationSystem.switchToCut(index);
+                        return true;
+                    }
+                    return false;
+                },
+                
+                play: () => {
+                    if (window.timelineUI?.playAnimation) {
+                        window.timelineUI.playAnimation();
+                        return true;
+                    }
+                    return false;
+                },
+                
+                stop: () => {
+                    if (window.timelineUI?.stopAnimation) {
+                        window.timelineUI.stopAnimation();
+                        return true;
+                    }
+                    return false;
+                },
+                
+                isPlaying: () => {
+                    return window.timelineUI?.isPlaying || false;
                 }
             }
         },
