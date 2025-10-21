@@ -1,7 +1,7 @@
-// ===== core-engine.js - Phase3完了・スリム化版 =====
+// ===== core-engine.js - Phase3完了・クリーン版 =====
 // Phase1: DrawingEngine統一完了
 // Phase1B: PointerEvents一元化完了
-// Phase3: 設定参照統一完了・冗長コード削減
+// Phase3: 設定参照統一完了・冗長コード削減完了
 
 (function() {
     'use strict';
@@ -230,7 +230,6 @@
             this.layerSystem = new window.TegakiLayerSystem();
             this.clipboardSystem = new window.TegakiDrawingClipboard();
             
-            // Phase1: 完全版DrawingEngine使用
             if (!window.TegakiDrawing?.DrawingEngine) {
                 throw new Error('TegakiDrawing.DrawingEngine not found');
             }
@@ -397,7 +396,6 @@
         }
         
         setupCanvasEvents() {
-            // Phase1B: Pointer Events削除（core-runtime.jsで一元管理）
             const canvas = this.app.canvas || this.app.view;
             if (!canvas) return;
             
