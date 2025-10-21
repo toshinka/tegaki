@@ -1,6 +1,6 @@
-// ===== system/camera-system.js - Phase 4.2: 拡縮上下修正版 =====
+// ===== system/camera-system.js - Phase 2: 座標変換API統一版 =====
+// 【Phase 2改修】screenToCanvas()明確化、forDrawingオプション削除
 // 座標変換・ズーム・パン・回転等の「カメラ操作」専用
-// 【Phase 4.2改修】Space+Shift+ドラッグの上下を修正（上=拡大、下=縮小）
 // PixiJS v8.13 対応・改修計画書完全準拠版
 
 (function() {
@@ -12,7 +12,6 @@
             this.config = null;
             this.eventBus = null;
             
-            // カメラ状態
             this.isDragging = false;
             this.isScaleRotateDragging = false;
             this.lastPoint = { x: 0, y: 0 };
@@ -20,7 +19,6 @@
             this.horizontalFlipped = false;
             this.verticalFlipped = false;
             
-            // 初期状態の記憶（Ctrl+0リセット用）
             this.initialState = {
                 position: null,
                 scale: 1.0,
@@ -29,19 +27,16 @@
                 verticalFlipped: false
             };
             
-            // キー状態管理
             this.spacePressed = false;
             this.shiftPressed = false;
             this.vKeyPressed = false;
             
-            // PixiJS Containers
             this.worldContainer = null;
             this.canvasContainer = null;
             this.cameraFrame = null;
             this.guideLines = null;
             this.canvasMask = null;
             
-            // 内部参照（後で設定）
             this.layerManager = null;
             this.drawingEngine = null;
         }
@@ -53,7 +48,6 @@
             if (stage && stage.addChild) {
                 this.app = { stage: stage };
             } else {
-                console.error('CameraSystem: Invalid stage provided');
                 throw new Error('Valid PIXI stage required for CameraSystem');
             }
             
@@ -161,7 +155,6 @@
         _setupEvents() {
             const canvas = this._getSafeCanvas();
             if (!canvas) {
-                console.error('CameraSystem: Canvas element not found for event setup');
                 return;
             }
 
@@ -250,7 +243,6 @@
             });
         }
 
-        // ========== Phase 4.2改修: _handleScaleRotateDrag() ==========
         _handleScaleRotateDrag(e) {
             const dx = e.clientX - this.lastPoint.x;
             const dy = e.clientY - this.lastPoint.y;
@@ -260,7 +252,6 @@
             const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
             
             if (Math.abs(dx) > Math.abs(dy)) {
-                // 水平方向優先: 回転
                 this.rotation += (dx * this.config.camera.dragRotationSpeed);
                 this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
                 
@@ -268,8 +259,6 @@
                 this.worldContainer.x += worldCenter.x - newWorldCenter.x;
                 this.worldContainer.y += worldCenter.y - newWorldCenter.y;
             } else {
-                // 🔥 Phase 4.2: 垂直方向優先 = 拡縮（上下反転修正）
-                // dy に -1 を掛けることで、上=拡大、下=縮小に修正
                 const scaleFactor = 1 + (-dy * this.config.camera.dragScaleSpeed);
                 const newScale = this.worldContainer.scale.x * scaleFactor;
                 
@@ -284,7 +273,6 @@
             this.lastPoint = { x: e.clientX, y: e.clientY };
             this.updateTransformDisplay();
         }
-        // ========== Phase 4.2改修: END ==========
 
         _handleWheelRotation(e, centerX, centerY) {
             const rotationDelta = e.deltaY < 0 ? 
@@ -391,7 +379,6 @@
             }
         }
 
-        // ========== Phase 4.2改修: _handleCameraTransformKeys() ==========
         _handleCameraTransformKeys(e) {
             if (this.spacePressed && this.shiftPressed && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
                 const centerX = this.config.canvas.width / 2;
@@ -400,11 +387,9 @@
                 
                 switch(e.code) {
                     case 'ArrowUp':
-                        // 🔥 Phase 4.2: 上キー = 拡大
                         this._scaleCamera(1 + this.config.camera.wheelZoomSpeed, worldCenter, centerX, centerY);
                         break;
                     case 'ArrowDown':
-                        // 🔥 Phase 4.2: 下キー = 縮小
                         this._scaleCamera(1 - this.config.camera.wheelZoomSpeed, worldCenter, centerX, centerY);
                         break;
                     case 'ArrowLeft':
@@ -419,7 +404,6 @@
                 e.preventDefault();
             }
         }
-        // ========== Phase 4.2改修: END ==========
 
         _handleCameraFlipKeys(e) {
             if (!this.vKeyPressed && e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -462,19 +446,10 @@
             this.worldContainer.y += worldCenter.y - newWorldCenter.y;
         }
 
-        screenToCanvas(screenX, screenY, options = {}) {
+        // === Phase 2: 座標変換API統一 ===
+        screenToCanvas(screenX, screenY) {
             const globalPoint = { x: screenX, y: screenY };
-            const canvasPoint = this.canvasContainer.toLocal(globalPoint);
-            
-            if (options.forDrawing) {
-                return canvasPoint;
-            }
-            
-            return canvasPoint;
-        }
-
-        screenToCanvasForDrawing(screenX, screenY) {
-            return this.screenToCanvas(screenX, screenY, { forDrawing: true });
+            return this.canvasContainer.toLocal(globalPoint);
         }
 
         setZoom(level) {
@@ -596,8 +571,6 @@
 
     window.TegakiCameraSystem = CameraSystem;
 
-    console.log('✅ camera-system.js (Phase 4.2: 拡縮上下修正版) loaded successfully');
-    console.log('   - 🔥 Space+Shift+ドラッグ: 上=拡大、下=縮小に修正');
-    console.log('   - 🔥 Space+Shift+↑: 拡大、Space+Shift+↓: 縮小に修正');
-    
+    console.log('✅ camera-system.js (Phase 2: 座標変換API統一版) loaded');
+    console.log('  🔧 screenToCanvas() 明確化（forDrawingオプション削除）');
 })();
