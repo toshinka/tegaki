@@ -1,4 +1,4 @@
-// ===== core-runtime.js - Phase3完了版 =====
+// ===== core-runtime.js - Phase3完了版(クリーンナップ済) =====
 
 (function() {
     'use strict';
@@ -78,20 +78,14 @@
         },
         
         handlePointerDown(event) {
-            const screenX = event.global.x;
-            const screenY = event.global.y;
-            
             if (this.internal.drawingEngine && !this.internal.layerManager?.isLayerMoveMode) {
-                this.internal.drawingEngine.startDrawing(screenX, screenY, event);
+                this.internal.drawingEngine.startDrawing(event.global.x, event.global.y, event);
             }
         },
         
         handlePointerMove(event) {
-            const screenX = event.global.x;
-            const screenY = event.global.y;
-            
             if (this.internal.drawingEngine?.isDrawing) {
-                this.internal.drawingEngine.continueDrawing(screenX, screenY, event);
+                this.internal.drawingEngine.continueDrawing(event.global.x, event.global.y, event);
             }
         },
         
@@ -186,29 +180,21 @@
             const cut = this.getCutById(cutId);
             if (!cut || !this.project.renderer) return null;
             
-            try {
-                this.project.renderer.render({
-                    container: cut.container,
-                    target: cut.renderTexture
-                });
-                
-                cut.needsThumbnailUpdate = false;
-                return cut.renderTexture;
-            } catch (error) {
-                return null;
-            }
+            this.project.renderer.render({
+                container: cut.container,
+                target: cut.renderTexture
+            });
+            
+            cut.needsThumbnailUpdate = false;
+            return cut.renderTexture;
         },
         
         extractCutDataURL(cutId) {
             const renderTexture = this.renderCutToTexture(cutId);
             if (!renderTexture || !this.project.renderer) return '';
             
-            try {
-                const canvas = this.project.renderer.extract.canvas(renderTexture);
-                return canvas.toDataURL('image/png');
-            } catch (error) {
-                return '';
-            }
+            const canvas = this.project.renderer.extract.canvas(renderTexture);
+            return canvas.toDataURL('image/png');
         },
         
         updateBackgroundLayerSize(layer, width, height) {
@@ -320,225 +306,177 @@
             }
         },
         
-        getDebugInfo() {
-            return {
-                initialized: this.internal.initialized,
-                cutsCount: this.project.cuts.length,
-                activeCutId: this.project.activeCutId,
-                canvasSize: this.project.canvasSize,
-                DPR: this.project.DPR,
-                pointerEventsSetup: this.internal.pointerEventsSetup,
-                settingsManagerInitialized: this.internal.settingsManager !== null,
-                popupManagerInitialized: !!window.PopupManager,
-                cuts: this.project.cuts.map(c => ({
-                    id: c.id,
-                    name: c.name,
-                    layerCount: c.layers.length,
-                    needsUpdate: c.needsThumbnailUpdate
-                }))
-            };
-        },
-        
         api: {
-            setTool(toolName) {
-                if (CoreRuntime.internal.drawingEngine?.setTool) {
-                    CoreRuntime.internal.drawingEngine.setTool(toolName);
-                    if (CoreRuntime.internal.cameraSystem?.switchTool) {
-                        CoreRuntime.internal.cameraSystem.switchTool(toolName);
+            tool: {
+                set: (toolName) => {
+                    if (CoreRuntime.internal.drawingEngine?.setTool) {
+                        CoreRuntime.internal.drawingEngine.setTool(toolName);
+                        if (CoreRuntime.internal.cameraSystem?.switchTool) {
+                            CoreRuntime.internal.cameraSystem.switchTool(toolName);
+                        }
+                        return true;
+                    }
+                    return false;
+                },
+                
+                get: () => {
+                    return CoreRuntime.internal.drawingEngine?.currentTool || null;
+                }
+            },
+            
+            brush: {
+                setSize: (size) => {
+                    if (CoreRuntime.internal.drawingEngine?.setBrushSize) {
+                        CoreRuntime.internal.drawingEngine.setBrushSize(size);
+                        return true;
+                    }
+                    return false;
+                },
+                
+                setOpacity: (opacity) => {
+                    if (CoreRuntime.internal.drawingEngine?.setBrushOpacity) {
+                        CoreRuntime.internal.drawingEngine.setBrushOpacity(opacity);
+                        return true;
+                    }
+                    return false;
+                }
+            },
+            
+            camera: {
+                pan: (dx, dy) => {
+                    if (CoreRuntime.internal.cameraSystem) {
+                        CoreRuntime.internal.cameraSystem.worldContainer.x += dx;
+                        CoreRuntime.internal.cameraSystem.worldContainer.y += dy;
+                        CoreRuntime.internal.cameraSystem.updateTransformDisplay();
+                        return true;
+                    }
+                    return false;
+                },
+                
+                zoom: (factor, centerX = null, centerY = null) => {
+                    if (!CoreRuntime.internal.cameraSystem) return false;
+                    
+                    const currentScale = CoreRuntime.internal.cameraSystem.worldContainer.scale.x;
+                    const newScale = currentScale * factor;
+                    
+                    if (newScale >= CONFIG.camera.minScale && newScale <= CONFIG.camera.maxScale) {
+                        const cx = centerX !== null ? centerX : CONFIG.canvas.width / 2;
+                        const cy = centerY !== null ? centerY : CONFIG.canvas.height / 2;
+                        
+                        const worldCenter = window.CoordinateSystem.localToGlobal(
+                            CoreRuntime.internal.cameraSystem.worldContainer, { x: cx, y: cy }
+                        );
+                        
+                        CoreRuntime.internal.cameraSystem.worldContainer.scale.set(newScale);
+                        
+                        const newWorldCenter = window.CoordinateSystem.localToGlobal(
+                            CoreRuntime.internal.cameraSystem.worldContainer, { x: cx, y: cy }
+                        );
+                        
+                        CoreRuntime.internal.cameraSystem.worldContainer.x += worldCenter.x - newWorldCenter.x;
+                        CoreRuntime.internal.cameraSystem.worldContainer.y += worldCenter.y - newWorldCenter.y;
+                        CoreRuntime.internal.cameraSystem.updateTransformDisplay();
+                        
+                        return true;
+                    }
+                    return false;
+                },
+                
+                resize: (w, h) => {
+                    return CoreRuntime.updateCanvasSize(w, h);
+                }
+            },
+            
+            layer: {
+                getActive: () => {
+                    return CoreRuntime.internal.layerManager?.getActiveLayer() || null;
+                },
+                
+                create: (name, isBackground = false) => {
+                    if (CoreRuntime.internal.layerManager) {
+                        const result = CoreRuntime.internal.layerManager.createLayer(name, isBackground);
+                        if (result) {
+                            CoreRuntime.internal.layerManager.updateLayerPanelUI();
+                            CoreRuntime.internal.layerManager.updateStatusDisplay();
+                        }
+                        return result;
+                    }
+                    return null;
+                },
+                
+                setActive: (index) => {
+                    if (CoreRuntime.internal.layerManager) {
+                        CoreRuntime.internal.layerManager.setActiveLayer(index);
+                        return true;
+                    }
+                    return false;
+                },
+                
+                enterMoveMode: () => {
+                    if (CoreRuntime.internal.layerManager?.enterLayerMoveMode) {
+                        CoreRuntime.internal.layerManager.enterLayerMoveMode();
+                        return true;
+                    }
+                    return false;
+                },
+                
+                exitMoveMode: () => {
+                    if (CoreRuntime.internal.layerManager?.exitLayerMoveMode) {
+                        CoreRuntime.internal.layerManager.exitLayerMoveMode();
+                        return true;
                     }
                     return true;
                 }
-                return false;
             },
             
-            setBrushSize(size) {
-                if (CoreRuntime.internal.drawingEngine?.setBrushSize) {
-                    CoreRuntime.internal.drawingEngine.setBrushSize(size);
-                    return true;
-                }
-                return false;
-            },
-            
-            setBrushOpacity(opacity) {
-                if (CoreRuntime.internal.drawingEngine?.setBrushOpacity) {
-                    CoreRuntime.internal.drawingEngine.setBrushOpacity(opacity);
-                    return true;
-                }
-                return false;
-            },
-            
-            panCamera(dx, dy) {
-                if (CoreRuntime.internal.cameraSystem) {
-                    CoreRuntime.internal.cameraSystem.worldContainer.x += dx;
-                    CoreRuntime.internal.cameraSystem.worldContainer.y += dy;
-                    CoreRuntime.internal.cameraSystem.updateTransformDisplay();
-                    return true;
-                }
-                return false;
-            },
-            
-            zoomCamera(factor, centerX = null, centerY = null) {
-                if (!CoreRuntime.internal.cameraSystem) return false;
+            settings: {
+                get: (key) => {
+                    return CoreRuntime.internal.settingsManager?.get(key);
+                },
                 
-                const currentScale = CoreRuntime.internal.cameraSystem.worldContainer.scale.x;
-                const newScale = currentScale * factor;
+                set: (key, value) => {
+                    return CoreRuntime.internal.settingsManager?.set(key, value) || false;
+                },
                 
-                if (newScale >= CONFIG.camera.minScale && newScale <= CONFIG.camera.maxScale) {
-                    const cx = centerX !== null ? centerX : CONFIG.canvas.width / 2;
-                    const cy = centerY !== null ? centerY : CONFIG.canvas.height / 2;
-                    
-                    const worldCenter = window.CoordinateSystem.localToGlobal(
-                        CoreRuntime.internal.cameraSystem.worldContainer, { x: cx, y: cy }
-                    );
-                    
-                    CoreRuntime.internal.cameraSystem.worldContainer.scale.set(newScale);
-                    
-                    const newWorldCenter = window.CoordinateSystem.localToGlobal(
-                        CoreRuntime.internal.cameraSystem.worldContainer, { x: cx, y: cy }
-                    );
-                    
-                    CoreRuntime.internal.cameraSystem.worldContainer.x += worldCenter.x - newWorldCenter.x;
-                    CoreRuntime.internal.cameraSystem.worldContainer.y += worldCenter.y - newWorldCenter.y;
-                    CoreRuntime.internal.cameraSystem.updateTransformDisplay();
-                    
+                update: (updates) => {
+                    return CoreRuntime.internal.settingsManager?.update(updates) || false;
+                },
+                
+                reset: () => {
+                    CoreRuntime.internal.settingsManager?.reset();
                     return true;
+                },
+                
+                getAll: () => {
+                    return CoreRuntime.internal.settingsManager?.get();
                 }
-                return false;
             },
             
-            resizeCanvas(w, h) {
-                return CoreRuntime.updateCanvasSize(w, h);
-            },
-            
-            getActiveLayer() {
-                return CoreRuntime.internal.layerManager?.getActiveLayer() || null;
-            },
-            
-            createLayer(name, isBackground = false) {
-                if (CoreRuntime.internal.layerManager) {
-                    const result = CoreRuntime.internal.layerManager.createLayer(name, isBackground);
-                    if (result) {
-                        CoreRuntime.internal.layerManager.updateLayerPanelUI();
-                        CoreRuntime.internal.layerManager.updateStatusDisplay();
-                    }
-                    return result;
+            popup: {
+                show: (name) => {
+                    if (!window.PopupManager) return false;
+                    return window.PopupManager.show(name);
+                },
+                
+                hide: (name) => {
+                    if (!window.PopupManager) return false;
+                    return window.PopupManager.hide(name);
+                },
+                
+                toggle: (name) => {
+                    if (!window.PopupManager) return false;
+                    return window.PopupManager.toggle(name);
+                },
+                
+                hideAll: (exceptName = null) => {
+                    if (!window.PopupManager) return;
+                    window.PopupManager.hideAll(exceptName);
+                },
+                
+                isVisible: (name) => {
+                    if (!window.PopupManager) return false;
+                    return window.PopupManager.isVisible(name);
                 }
-                return null;
-            },
-            
-            setActiveLayer(index) {
-                if (CoreRuntime.internal.layerManager) {
-                    CoreRuntime.internal.layerManager.setActiveLayer(index);
-                    return true;
-                }
-                return false;
-            },
-            
-            enterLayerMoveMode() {
-                if (CoreRuntime.internal.layerManager?.enterLayerMoveMode) {
-                    CoreRuntime.internal.layerManager.enterLayerMoveMode();
-                    return true;
-                }
-                return false;
-            },
-            
-            exitLayerMoveMode() {
-                if (CoreRuntime.internal.layerManager?.exitLayerMoveMode) {
-                    CoreRuntime.internal.layerManager.exitLayerMoveMode();
-                    return true;
-                }
-                return true;
-            },
-            
-            setPressureCorrection(value) {
-                const manager = CoreRuntime.internal.settingsManager;
-                if (!manager) return false;
-                return manager.set('pressureCorrection', value);
-            },
-            
-            setSmoothing(value) {
-                const manager = CoreRuntime.internal.settingsManager;
-                if (!manager) return false;
-                return manager.set('smoothing', value);
-            },
-            
-            setPressureCurve(curve) {
-                const manager = CoreRuntime.internal.settingsManager;
-                if (!manager) return false;
-                return manager.set('pressureCurve', curve);
-            },
-            
-            getSettings() {
-                const manager = CoreRuntime.internal.settingsManager;
-                if (!manager) return null;
-                return manager.get();
-            },
-            
-            updateSettings(updates) {
-                const manager = CoreRuntime.internal.settingsManager;
-                if (!manager) return false;
-                return manager.update(updates);
-            },
-            
-            resetSettings() {
-                const manager = CoreRuntime.internal.settingsManager;
-                if (!manager) return false;
-                manager.reset();
-                return true;
-            },
-            
-            getSettingsManager() {
-                return CoreRuntime.internal.settingsManager || null;
-            },
-            
-            showPopup(name) {
-                if (!window.PopupManager) return false;
-                return window.PopupManager.show(name);
-            },
-            
-            hidePopup(name) {
-                if (!window.PopupManager) return false;
-                return window.PopupManager.hide(name);
-            },
-            
-            togglePopup(name) {
-                if (!window.PopupManager) return false;
-                return window.PopupManager.toggle(name);
-            },
-            
-            hideAllPopups(exceptName = null) {
-                if (!window.PopupManager) return;
-                window.PopupManager.hideAll(exceptName);
-            },
-            
-            isPopupVisible(name) {
-                if (!window.PopupManager) return false;
-                return window.PopupManager.isVisible(name);
-            },
-            
-            isPopupReady(name) {
-                if (!window.PopupManager) return false;
-                return window.PopupManager.isReady(name);
-            },
-            
-            getPopup(name) {
-                if (!window.PopupManager) return null;
-                return window.PopupManager.get(name);
-            },
-            
-            getPopupStatus(name) {
-                if (!window.PopupManager) return null;
-                return window.PopupManager.getStatus(name);
-            },
-            
-            getAllPopupStatuses() {
-                if (!window.PopupManager) return [];
-                return window.PopupManager.getAllStatuses();
-            },
-            
-            diagnosePopups() {
-                if (!window.PopupManager) return;
-                window.PopupManager.diagnose();
             }
         },
         
@@ -576,49 +514,44 @@
             return false;
         }
         
-        try {
-            window.TEGAKI_EXPORT_MANAGER = new window.ExportManager(
-                pixiApp,
-                this.internal.layerManager,
-                window.animationSystem,
-                this.internal.cameraSystem
-            );
-            
-            const mgr = window.TEGAKI_EXPORT_MANAGER;
-            
-            mgr.registerExporter('png', new window.PNGExporter(mgr));
-            mgr.registerExporter('apng', new window.APNGExporter(mgr));
-            mgr.registerExporter('gif', new window.GIFExporter(mgr));
-            
-            if (window.WebPExporter) {
-                mgr.registerExporter('webp', new window.WebPExporter(mgr));
-            }
-            
-            if (window.ExportPopup && !window.TEGAKI_EXPORT_POPUP && !window._isBookmarkletMode) {
-                window.TEGAKI_EXPORT_POPUP = new window.ExportPopup(mgr);
-                
-                const exportToolBtn = document.getElementById('export-tool');
-                if (exportToolBtn) {
-                    exportToolBtn.addEventListener('click', () => {
-                        if (window.TEGAKI_EXPORT_POPUP.isVisible) {
-                            window.TEGAKI_EXPORT_POPUP.hide();
-                        } else {
-                            window.TEGAKI_EXPORT_POPUP.show();
-                        }
-                    });
-                }
-            }
-            
-            if (window.TegakiEventBus) {
-                window.TegakiEventBus.emit('export:manager:initialized', { timestamp: Date.now() });
-            }
-            
-            if (onSuccess) onSuccess();
-            return true;
-            
-        } catch (error) {
-            return false;
+        window.TEGAKI_EXPORT_MANAGER = new window.ExportManager(
+            pixiApp,
+            this.internal.layerManager,
+            window.animationSystem,
+            this.internal.cameraSystem
+        );
+        
+        const mgr = window.TEGAKI_EXPORT_MANAGER;
+        
+        mgr.registerExporter('png', new window.PNGExporter(mgr));
+        mgr.registerExporter('apng', new window.APNGExporter(mgr));
+        mgr.registerExporter('gif', new window.GIFExporter(mgr));
+        
+        if (window.WebPExporter) {
+            mgr.registerExporter('webp', new window.WebPExporter(mgr));
         }
+        
+        if (window.ExportPopup && !window.TEGAKI_EXPORT_POPUP && !window._isBookmarkletMode) {
+            window.TEGAKI_EXPORT_POPUP = new window.ExportPopup(mgr);
+            
+            const exportToolBtn = document.getElementById('export-tool');
+            if (exportToolBtn) {
+                exportToolBtn.addEventListener('click', () => {
+                    if (window.TEGAKI_EXPORT_POPUP.isVisible) {
+                        window.TEGAKI_EXPORT_POPUP.hide();
+                    } else {
+                        window.TEGAKI_EXPORT_POPUP.show();
+                    }
+                });
+            }
+        }
+        
+        if (window.TegakiEventBus) {
+            window.TegakiEventBus.emit('export:manager:initialized', { timestamp: Date.now() });
+        }
+        
+        if (onSuccess) onSuccess();
+        return true;
     };
     
     window.CoreRuntime = CoreRuntime;

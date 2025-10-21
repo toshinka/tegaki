@@ -1,6 +1,5 @@
-// ===== system/camera-system.js - Phase 2完了・ログスリム化版 =====
-// 座標変換・ズーム・パン・回転等の「カメラ操作」専用
-// PixiJS v8.13 対応
+// ===== system/camera-system.js - Phase4準備版 =====
+// 責務: カメラ操作(ズーム・パン・回転)専用、DOM操作削除
 
 (function() {
     'use strict';
@@ -145,10 +144,7 @@
             this.horizontalFlipped = false;
             this.verticalFlipped = false;
             
-            this.updateTransformDisplay();
-            if (this.eventBus) {
-                this.eventBus.emit('camera:changed');
-            }
+            this._emitTransformChanged();
         }
 
         _setupEvents() {
@@ -182,12 +178,12 @@
                 if ((e.button === 2 || this.spacePressed) && !this.shiftPressed) {
                     this.isDragging = true;
                     this.lastPoint = { x: e.clientX, y: e.clientY };
-                    canvas.style.cursor = 'move';
+                    this._emitCursorChange('move');
                     e.preventDefault();
                 } else if ((e.button === 2 || this.spacePressed) && this.shiftPressed) {
                     this.isScaleRotateDragging = true;
                     this.lastPoint = { x: e.clientX, y: e.clientY };
-                    canvas.style.cursor = 'grab';
+                    this._emitCursorChange('grab');
                     e.preventDefault();
                 }
             });
@@ -201,7 +197,7 @@
                     this.worldContainer.y += dy;
                     
                     this.lastPoint = { x: e.clientX, y: e.clientY };
-                    this.updateTransformDisplay();
+                    this._emitTransformChanged();
                 } else if (this.isScaleRotateDragging) {
                     this._handleScaleRotateDrag(e);
                 }
@@ -210,16 +206,16 @@
             canvas.addEventListener('pointerup', (e) => {
                 if (this.isDragging && (e.button === 2 || this.spacePressed)) {
                     this.isDragging = false;
-                    this.updateCursor();
+                    this._emitCursorUpdate();
                 }
                 if (this.isScaleRotateDragging && (e.button === 2 || this.spacePressed)) {
                     this.isScaleRotateDragging = false;
-                    this.updateCursor();
+                    this._emitCursorUpdate();
                 }
             });
 
             canvas.addEventListener('pointerenter', () => {
-                this.updateCursor();
+                this._emitCursorUpdate();
             });
             
             canvas.addEventListener('wheel', (e) => {
@@ -236,7 +232,7 @@
                     this._handleWheelZoom(e, centerX, centerY);
                 }
                 
-                this.updateTransformDisplay();
+                this._emitTransformChanged();
             });
         }
 
@@ -268,7 +264,7 @@
             }
             
             this.lastPoint = { x: e.clientX, y: e.clientY };
-            this.updateTransformDisplay();
+            this._emitTransformChanged();
         }
 
         _handleWheelRotation(e, centerX, centerY) {
@@ -312,7 +308,7 @@
                 
                 if (e.code === 'Space') {
                     this.spacePressed = true;
-                    this.updateCursor();
+                    this._emitCursorUpdate();
                     e.preventDefault();
                     return;
                 }
@@ -349,7 +345,7 @@
         _resetKeyStates(e) {
             if (e.code === 'Space') {
                 this.spacePressed = false;
-                this.updateCursor();
+                this._emitCursorUpdate();
             }
             if (!e.shiftKey) {
                 this.shiftPressed = false;
@@ -359,7 +355,7 @@
         _resetAllKeyStates() {
             this.spacePressed = false;
             this.shiftPressed = false;
-            this.updateCursor();
+            this._emitCursorUpdate();
         }
 
         _handleCameraMoveKeys(e) {
@@ -371,7 +367,7 @@
                     case 'ArrowRight':   this.worldContainer.x += moveAmount; break;
                     case 'ArrowLeft':    this.worldContainer.x -= moveAmount; break;
                 }
-                this.updateTransformDisplay();
+                this._emitTransformChanged();
                 e.preventDefault();
             }
         }
@@ -397,7 +393,7 @@
                         break;
                 }
                 
-                this.updateTransformDisplay();
+                this._emitTransformChanged();
                 e.preventDefault();
             }
         }
@@ -420,7 +416,7 @@
                 this.worldContainer.x += worldCenter.x - newWorldCenter.x;
                 this.worldContainer.y += worldCenter.y - newWorldCenter.y;
                 
-                this.updateTransformDisplay();
+                this._emitTransformChanged();
                 e.preventDefault();
             }
         }
@@ -443,6 +439,42 @@
             this.worldContainer.y += worldCenter.y - newWorldCenter.y;
         }
 
+        _emitTransformChanged() {
+            if (this.eventBus) {
+                this.eventBus.emit('camera:transform-changed', {
+                    x: Math.round(this.worldContainer.x),
+                    y: Math.round(this.worldContainer.y),
+                    scale: Math.abs(this.worldContainer.scale.x).toFixed(2),
+                    rotation: Math.round(this.rotation % 360)
+                });
+            }
+        }
+
+        _emitCursorUpdate() {
+            if (!this.eventBus) return;
+            
+            let cursor = 'crosshair';
+            
+            if (this.vKeyPressed) {
+                cursor = 'grab';
+            } else if (this.isDragging || (this.spacePressed && !this.shiftPressed)) {
+                cursor = 'move';
+            } else if (this.isScaleRotateDragging || (this.spacePressed && this.shiftPressed)) {
+                cursor = 'grab';
+            } else {
+                const tool = this.drawingEngine ? this.drawingEngine.currentTool : 'pen';
+                cursor = tool === 'eraser' ? 'cell' : 'crosshair';
+            }
+            
+            this.eventBus.emit('camera:cursor-changed', { cursor });
+        }
+
+        _emitCursorChange(cursor) {
+            if (this.eventBus) {
+                this.eventBus.emit('camera:cursor-changed', { cursor });
+            }
+        }
+
         screenToCanvas(screenX, screenY) {
             const globalPoint = { x: screenX, y: screenY };
             return this.canvasContainer.toLocal(globalPoint);
@@ -451,24 +483,18 @@
         setZoom(level) {
             const clampedLevel = Math.max(this.config.camera.minScale, Math.min(this.config.camera.maxScale, level));
             this.worldContainer.scale.set(clampedLevel);
-            this.updateTransformDisplay();
-            if (this.eventBus) {
-                this.eventBus.emit('camera:changed');
-            }
+            this._emitTransformChanged();
         }
 
         pan(dx, dy) {
             this.worldContainer.x += dx;
             this.worldContainer.y += dy;
-            this.updateTransformDisplay();
-            if (this.eventBus) {
-                this.eventBus.emit('camera:changed');
-            }
+            this._emitTransformChanged();
         }
 
         setVKeyPressed(pressed) {
             this.vKeyPressed = pressed;
-            this.updateCursor();
+            this._emitCursorUpdate();
         }
 
         toScreenCoords(worldX, worldY) {
@@ -482,26 +508,7 @@
         }
 
         updateCursor() {
-            const canvas = this._getSafeCanvas();
-            if (!canvas) return;
-
-            if (this.vKeyPressed) {
-                canvas.style.cursor = 'grab';
-            } else if (this.isDragging || (this.spacePressed && !this.shiftPressed)) {
-                canvas.style.cursor = 'move';
-            } else if (this.isScaleRotateDragging || (this.spacePressed && this.shiftPressed)) {
-                canvas.style.cursor = 'grab';
-            } else {
-                const tool = this.drawingEngine ? this.drawingEngine.currentTool : 'pen';
-                canvas.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair';
-            }
-        }
-
-        updateCoordinates(x, y) {
-            const element = document.getElementById('coordinates');
-            if (element) {
-                element.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
-            }
+            this._emitCursorUpdate();
         }
 
         switchTool(toolName) {
@@ -513,28 +520,15 @@
                 this.layerManager.exitLayerMoveMode();
             }
             
-            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-            const toolBtn = document.getElementById(toolName + '-tool');
-            if (toolBtn) toolBtn.classList.add('active');
-
-            const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
-            const toolElement = document.getElementById('current-tool');
-            if (toolElement) {
-                toolElement.textContent = toolNames[toolName] || toolName;
+            if (this.eventBus) {
+                this.eventBus.emit('camera:tool-switched', { tool: toolName });
             }
 
-            this.updateCursor();
+            this._emitCursorUpdate();
         }
 
         updateTransformDisplay() {
-            const element = document.getElementById('transform-info');
-            if (element) {
-                const x = Math.round(this.worldContainer.x);
-                const y = Math.round(this.worldContainer.y);
-                const s = Math.abs(this.worldContainer.scale.x).toFixed(2);
-                const r = Math.round(this.rotation % 360);
-                element.textContent = `x:${x} y:${y} s:${s} r:${r}°`;
-            }
+            this._emitTransformChanged();
         }
 
         _drawCameraFrame() {
