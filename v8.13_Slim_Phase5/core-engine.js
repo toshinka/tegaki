@@ -1,7 +1,6 @@
-// ===== core-engine.js - Phase3完了・クリーン版 =====
-// Phase1: DrawingEngine統一完了
-// Phase1B: PointerEvents一元化完了
-// Phase3: 設定参照統一完了・冗長コード削減完了
+// ===== core-engine.js - Phase5-6完了版 =====
+// Phase5: EventBus統合完全化 - 全状態変更でイベント発火
+// Phase6: API拡張準備完了
 
 (function() {
     'use strict';
@@ -147,6 +146,12 @@
                             this.layerSystem.currentCutContainer.addChildAt(layer, activeIndex + 1);
                             this.layerSystem.activeLayerIndex = activeIndex + 1;
                             this.layerSystem.updateLayerPanelUI();
+                            
+                            this.eventBus.emit('layer:order:changed', {
+                                oldIndex: activeIndex,
+                                newIndex: activeIndex + 1,
+                                direction: 'up'
+                            });
                         }
                     }
                 } else if (e.code === 'ArrowDown') {
@@ -159,6 +164,12 @@
                             this.layerSystem.currentCutContainer.addChildAt(layer, activeIndex - 1);
                             this.layerSystem.activeLayerIndex = activeIndex - 1;
                             this.layerSystem.updateLayerPanelUI();
+                            
+                            this.eventBus.emit('layer:order:changed', {
+                                oldIndex: activeIndex,
+                                newIndex: activeIndex - 1,
+                                direction: 'down'
+                            });
                         }
                     }
                 }
@@ -170,13 +181,25 @@
             } else {
                 if (e.code === 'ArrowUp') {
                     if (activeIndex < layers.length - 1) {
+                        const oldIndex = activeIndex;
                         this.layerSystem.activeLayerIndex = activeIndex + 1;
                         this.layerSystem.updateLayerPanelUI();
+                        
+                        this.eventBus.emit('layer:selection:changed', {
+                            oldIndex,
+                            newIndex: activeIndex + 1
+                        });
                     }
                 } else if (e.code === 'ArrowDown') {
                     if (activeIndex > 0) {
+                        const oldIndex = activeIndex;
                         this.layerSystem.activeLayerIndex = activeIndex - 1;
                         this.layerSystem.updateLayerPanelUI();
+                        
+                        this.eventBus.emit('layer:selection:changed', {
+                            oldIndex,
+                            newIndex: activeIndex - 1
+                        });
                     }
                 }
             }
@@ -191,6 +214,7 @@
         }
         
         switchTool(tool) {
+            const oldTool = this.drawingEngine.currentTool;
             this.drawingEngine.setTool(tool);
             
             document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
@@ -203,9 +227,7 @@
             
             this.cameraSystem.updateCursor();
             
-            if (this.eventBus) {
-                this.eventBus.emit('key:tool-switched', { tool });
-            }
+            this.eventBus.emit('tool:changed', { oldTool, newTool: tool });
         }
         
         resetAllKeyStates() {
@@ -216,6 +238,7 @@
         
         setKeyHandlingActive(active) {
             this.keyHandlingActive = active;
+            this.eventBus.emit('keyboard:handling:changed', { active });
         }
     }
 
@@ -273,6 +296,7 @@
                 if (!activeLayer || !activeLayer.layerData) return;
                 if (activeLayer.layerData.isBackground) return;
                 
+                const layerIndex = this.layerSystem.activeLayerIndex;
                 const pathsSnapshot = structuredClone(activeLayer.layerData.paths);
                 
                 if (window.History) {
@@ -289,7 +313,7 @@
                                 activeLayer.layerData.paths = [];
                             }
                             
-                            this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                            this.layerSystem.requestThumbnailUpdate(layerIndex);
                             
                             if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {
                                 const currentCutIndex = this.layerSystem.animationSystem.getCurrentCutIndex();
@@ -297,6 +321,11 @@
                                     this.layerSystem.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
                                 }, 100);
                             }
+                            
+                            this.eventBus.emit('layer:cleared', { 
+                                layerIndex,
+                                pathCount: pathsSnapshot.length 
+                            });
                         },
                         undo: () => {
                             activeLayer.layerData.paths = structuredClone(pathsSnapshot);
@@ -308,7 +337,7 @@
                                 }
                             });
                             
-                            this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                            this.layerSystem.requestThumbnailUpdate(layerIndex);
                             
                             if (this.layerSystem.animationSystem?.generateCutThumbnailOptimized) {
                                 const currentCutIndex = this.layerSystem.animationSystem.getCurrentCutIndex();
@@ -316,6 +345,11 @@
                                     this.layerSystem.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
                                 }, 100);
                             }
+                            
+                            this.eventBus.emit('layer:restored', { 
+                                layerIndex,
+                                pathCount: pathsSnapshot.length 
+                            });
                         },
                         meta: { type: 'clear-layer', layerId: activeLayer.layerData.id }
                     };
@@ -388,11 +422,17 @@
         getBatchAPI() { return this.batchAPI; }
         
         undo() {
-            if (window.History) window.History.undo();
+            if (window.History) {
+                window.History.undo();
+                this.eventBus.emit('history:undo', { timestamp: Date.now() });
+            }
         }
         
         redo() {
-            if (window.History) window.History.redo();
+            if (window.History) {
+                window.History.redo();
+                this.eventBus.emit('history:redo', { timestamp: Date.now() });
+            }
         }
         
         setupCanvasEvents() {
@@ -412,8 +452,10 @@
             if (this.keyHandler) {
                 this.keyHandler.switchTool(tool);
             } else {
+                const oldTool = this.drawingEngine.currentTool;
                 this.drawingEngine.setTool(tool);
                 this.cameraSystem.updateCursor();
+                this.eventBus.emit('tool:changed', { oldTool, newTool: tool });
             }
         }
         
