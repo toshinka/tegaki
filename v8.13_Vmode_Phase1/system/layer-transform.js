@@ -1,4 +1,4 @@
-// ===== system/layer-transform.js - Phase 1: 変形機能の独立化 + 反転機能修正 =====
+// ===== system/layer-transform.js - Vモード完全版: 変形確定・反転・ホイール対応 =====
 
 (function() {
     'use strict';
@@ -12,6 +12,8 @@
      * - 変形パネル制御
      * - ドラッグ操作
      * - 変形確定・座標変換
+     * 
+     * 🔥 Vモード改修: 変形確定バグ修正・反転機能・ホイール操作追加
      */
     class LayerTransform {
         constructor(config, coordAPI) {
@@ -37,6 +39,8 @@
             this.onFlipRequest = null;
             this.onDragRequest = null;
             this.onSliderChange = null;
+            this.onRebuildRequired = null; // 🔥 PHASE 1: Graphics再構築要求
+            this.onGetActiveLayer = null;  // 🔥 PHASE 4: アクティブレイヤー取得
         }
 
         // ========== 初期化 ==========
@@ -48,6 +52,7 @@
             this._setupTransformPanel();
             this._setupDragEvents();
             this._setupFlipKeyEvents();
+            this._setupWheelEvents(); // 🔥 PHASE 4: ホイール操作
         }
 
         // ========== モード制御 ==========
@@ -85,11 +90,6 @@
             }
             
             this._updateCursor();
-            
-            // 変形確定
-            if (activeLayer) {
-                this.confirmTransform(activeLayer);
-            }
         }
         
         toggleMoveMode(activeLayer) {
@@ -304,32 +304,46 @@
 
         // ========== 変形確定 ==========
         
+        // 🔥 PHASE 1: 変形確定処理修正版
         confirmTransform(layer) {
-            if (!layer?.layerData) return;
+            if (!layer?.layerData) return false;
             
             const layerId = layer.layerData.id;
             const transform = this.transforms.get(layerId);
             
-            if (this._isTransformNonDefault(transform)) {
-                const success = this.applyTransformToPaths(layer, transform);
-                
-                if (success) {
-                    layer.position.set(0, 0);
-                    layer.rotation = 0;
-                    layer.scale.set(1, 1);
-                    layer.pivot.set(0, 0);
-                    
-                    this.transforms.set(layerId, {
-                        x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
-                    });
-                    
-                    this.updateFlipButtons(layer);
-                    
-                    if (this.onTransformComplete) {
-                        this.onTransformComplete(layer);
-                    }
-                }
+            if (!this._isTransformNonDefault(transform)) {
+                return false; // 変形なし
             }
+            
+            const pathsBackup = structuredClone(layer.layerData.paths);
+            const success = this.applyTransformToPaths(layer, transform);
+            
+            if (!success) return false;
+            
+            // PixiJS変形リセット
+            layer.position.set(0, 0);
+            layer.rotation = 0;
+            layer.scale.set(1, 1);
+            layer.pivot.set(0, 0);
+            
+            // 変形データリセット
+            this.transforms.set(layerId, {
+                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+            });
+            
+            // 🔥 PHASE 1: Graphicsリビルドコールバック
+            if (this.onRebuildRequired) {
+                this.onRebuildRequired(layer, layer.layerData.paths);
+            }
+            
+            // 完了コールバック
+            if (this.onTransformComplete) {
+                this.onTransformComplete(layer, pathsBackup);
+            }
+            
+            this.updateFlipButtons(layer);
+            
+            return true;
         }
         
         applyTransformToPaths(layer, transform) {
@@ -368,7 +382,6 @@
                     });
                 }
                 
-                // レイヤーのPathsを置き換え（外部で再構築を実行する）
                 layer.layerData.paths = transformedPaths;
                 return true;
                 
@@ -402,6 +415,7 @@
                 return value.toFixed(2) + 'x';
             });
             
+            // 🔥 PHASE 2: 反転ボタンイベント
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
             
@@ -511,6 +525,7 @@
             });
         }
 
+        // 🔥 PHASE 3: Hキー反転機能（入力フォーカス判定追加済み）
         _setupFlipKeyEvents() {
             document.addEventListener('keydown', (e) => {
                 if (!this.isVKeyPressed) return;
@@ -537,6 +552,61 @@
                     e.preventDefault();
                 }
             });
+        }
+
+        // 🔥 PHASE 4: ホイール操作追加
+        _setupWheelEvents() {
+            const canvas = this._getSafeCanvas();
+            if (!canvas) return;
+            
+            canvas.addEventListener('wheel', (e) => {
+                if (!this.isVKeyPressed) return;
+                
+                // アクティブレイヤー取得
+                if (!this.onGetActiveLayer) return;
+                const activeLayer = this.onGetActiveLayer();
+                if (!activeLayer?.layerData) return;
+                
+                const layerId = activeLayer.layerData.id;
+                
+                if (!this.transforms.has(layerId)) {
+                    this.transforms.set(layerId, {
+                        x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+                    });
+                }
+                
+                const transform = this.transforms.get(layerId);
+                const centerX = this.config.canvas.width / 2;
+                const centerY = this.config.canvas.height / 2;
+                
+                if (e.shiftKey) {
+                    // Shift+ホイール: 回転
+                    const rotationDelta = e.deltaY > 0 ? 0.05 : -0.05;
+                    transform.rotation += rotationDelta;
+                } else {
+                    // ホイールのみ: 拡大縮小
+                    const scaleDelta = e.deltaY > 0 ? 0.95 : 1.05;
+                    const currentScale = Math.abs(transform.scaleX);
+                    const newScale = Math.max(
+                        this.config.layer.minScale,
+                        Math.min(this.config.layer.maxScale, currentScale * scaleDelta)
+                    );
+                    
+                    const hFlipped = transform.scaleX < 0;
+                    const vFlipped = transform.scaleY < 0;
+                    transform.scaleX = hFlipped ? -newScale : newScale;
+                    transform.scaleY = vFlipped ? -newScale : newScale;
+                }
+                
+                this.applyTransform(activeLayer, transform, centerX, centerY);
+                this.updateTransformPanelValues(activeLayer);
+                
+                if (this.onTransformUpdate) {
+                    this.onTransformUpdate(activeLayer, transform);
+                }
+                
+                e.preventDefault();
+            }, { passive: false });
         }
 
         _handleDrag(e) {
