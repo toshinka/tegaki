@@ -1,7 +1,8 @@
 /**
- * DrawingEngine - ペン描画統合制御クラス
+ * DrawingEngine - ペン描画統合制御クラス (Phase 1: PointerEvent対応版)
  * 
  * 責務: ポインターイベント → 記録 → 描画 → 履歴のフロー制御
+ *       + tiltX/Y, twistデータの取得と活用
  * 
  * API:
  * - startDrawing(x, y, event)
@@ -22,6 +23,9 @@ class DrawingEngine {
         this.strokeRecorder = new StrokeRecorder(this.pressureHandler, this.cameraSystem);
         this.strokeRenderer = new StrokeRenderer(app);
 
+        // 🆕 Phase 1: BrushSettings参照を保持
+        this.brushSettings = null;
+
         // 状態管理
         this.isDrawing = false;
         this.currentPreview = null;
@@ -31,7 +35,14 @@ class DrawingEngine {
     }
 
     /**
-     * 描画開始（core-runtime互換API）
+     * 🆕 Phase 1: BrushSettings設定
+     */
+    setBrushSettings(brushSettings) {
+        this.brushSettings = brushSettings;
+    }
+
+    /**
+     * 🆕 Phase 1: 描画開始（PointerEvent対応）
      */
     startDrawing(x, y, event) {
         // ツールモード確認
@@ -48,9 +59,15 @@ class DrawingEngine {
         // ブラシ設定取得
         this.currentSettings = this.getBrushSettings();
 
-        // ストローク記録開始
-        const pressure = event.pressure || 0.5;
-        this.strokeRecorder.startStroke(x, y, pressure);
+        // 🆕 Phase 1: PointerEventを直接渡す
+        if (event && event.pointerType) {
+            // PointerEvent対応メソッドを使用
+            this.strokeRecorder.startStrokeFromEvent(event);
+        } else {
+            // レガシー互換（マウスなど）
+            const pressure = event?.pressure || 0.5;
+            this.strokeRecorder.startStroke(x, y, pressure);
+        }
 
         this.isDrawing = true;
 
@@ -67,14 +84,20 @@ class DrawingEngine {
     }
 
     /**
-     * 描画継続（core-runtime互換API）
+     * 🆕 Phase 1: 描画継続（PointerEvent対応）
      */
     continueDrawing(x, y, event) {
         if (!this.isDrawing) return;
 
-        // ポイント追加
-        const pressure = event.pressure || 0.5;
-        this.strokeRecorder.addPoint(x, y, pressure);
+        // 🆕 Phase 1: PointerEventを直接渡す
+        if (event && event.pointerType) {
+            const pressure = event.pressure || 0.5;
+            this.strokeRecorder.addPointFromEvent(event, pressure);
+        } else {
+            // レガシー互換
+            const pressure = event?.pressure || 0.5;
+            this.strokeRecorder.addPoint(x, y, pressure);
+        }
 
         // プレビュー更新
         this.updatePreview();
@@ -148,19 +171,12 @@ class DrawingEngine {
      * ストローク確定描画
      */
     finalizeStroke(strokeData) {
-        console.log('[DrawingEngine] finalizeStroke開始');
-        console.log('  currentLayer:', this.currentLayer);
-        console.log('  strokeData.points.length:', strokeData.points.length);
-        
         if (!this.currentLayer || strokeData.points.length === 0) {
-            console.warn('[DrawingEngine] finalizeStroke中止: currentLayer=', this.currentLayer, 'points=', strokeData.points.length);
             return;
         }
 
         // 高品質レンダリング（筆圧反映版）
         const strokeObject = this.strokeRenderer.renderFinalStroke(strokeData, this.currentSettings);
-        
-        console.log('[DrawingEngine] strokeObject生成:', strokeObject);
 
         // StrokeData作成
         const strokeModel = new window.TegakiDataModels.StrokeData({
@@ -175,22 +191,15 @@ class DrawingEngine {
         // 履歴コマンド作成（レイヤー参照をクロージャで確実に保持）
         const targetLayer = this.currentLayer;
         const layerId = targetLayer.layerData?.id || targetLayer.label;
-        
-        console.log('[DrawingEngine] コマンド作成: layer=', targetLayer, 'layerId=', layerId);
 
         const addStrokeCommand = {
             name: 'Add Stroke',
             do: () => {
-                console.log('[DrawingEngine] do() 実行: layer=', targetLayer, 'children前=', targetLayer.children.length);
                 if (targetLayer && targetLayer.addChild) {
                     targetLayer.addChild(strokeObject);
-                    console.log('[DrawingEngine] do() 完了: children後=', targetLayer.children.length);
-                } else {
-                    console.error('[DrawingEngine] do() 失敗: targetLayerが無効');
                 }
             },
             undo: () => {
-                console.log('[DrawingEngine] undo() 実行');
                 if (targetLayer && targetLayer.removeChild) {
                     targetLayer.removeChild(strokeObject);
                     strokeObject.destroy({ children: true });
@@ -205,10 +214,7 @@ class DrawingEngine {
 
         // 履歴に追加
         if (this.history && this.history.push) {
-            console.log('[DrawingEngine] History.push実行');
             this.history.push(addStrokeCommand);
-        } else {
-            console.error('[DrawingEngine] History未定義');
         }
 
         // レイヤー更新通知
@@ -220,10 +226,15 @@ class DrawingEngine {
     }
 
     /**
-     * ブラシ設定取得
+     * 🆕 Phase 1: ブラシ設定取得（BrushSettings優先）
      */
     getBrushSettings() {
-        // BrushSettings または SettingsManager から取得
+        // 🆕 Phase 1: BrushSettingsインスタンスから取得
+        if (this.brushSettings) {
+            return this.brushSettings.getCurrentSettings();
+        }
+
+        // レガシー互換: グローバルから取得
         if (window.brushSettings) {
             return {
                 color: window.brushSettings.getColor(),
@@ -234,16 +245,16 @@ class DrawingEngine {
 
         if (window.TegakiSettingsManager) {
             return {
-                color: window.TegakiSettingsManager.get('pen.color') || 0x000000,
-                size: window.TegakiSettingsManager.get('pen.size') || 5,
+                color: window.TegakiSettingsManager.get('pen.color') || 0x800000,
+                size: window.TegakiSettingsManager.get('pen.size') || 3,
                 alpha: window.TegakiSettingsManager.get('pen.opacity') || 1.0
             };
         }
 
-        // フォールバック
+        // 🆕 Phase 1: フォールバック（futaba-maroon）
         return {
-            color: 0x000000,
-            size: 5,
+            color: 0x800000,
+            size: 3,
             alpha: 1.0
         };
     }

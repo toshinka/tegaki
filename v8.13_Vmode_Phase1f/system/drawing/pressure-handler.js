@@ -1,12 +1,14 @@
 /**
- * PressureHandler - 筆圧補正専用クラス
+ * PressureHandler - 筆圧補正専用クラス (Phase 1: tilt/twist対応版)
  * 
  * 責務: 生筆圧値(rawPressure)をベースライン補正した補正筆圧値に変換
+ *       + Pointer Events API完全活用（tiltX, tiltY, twist）
  * 
  * 動作仕様:
  * - ストローク開始時の初期N点からベースライン(無負荷時の圧力)を算出
  * - 補正式: (raw - baseline) / (1 - baseline)
  * - ベースライン算出中は pressure = 0 を返す
+ * - tiltX/Y, twistデータを保持し、将来の高度な筆圧表現に備える
  */
 
 class PressureHandler {
@@ -15,6 +17,11 @@ class PressureHandler {
         this.baselineSamples = [];
         this.BASELINE_SAMPLE_COUNT = 5; // 初期5点でベースライン算出
         this.isCalibrated = false;
+        
+        // 🆕 Phase 1: Pointer Events API拡張データ
+        this.tiltX = 0;
+        this.tiltY = 0;
+        this.twist = 0;
     }
 
     /**
@@ -24,6 +31,18 @@ class PressureHandler {
         this.baseline = 0;
         this.baselineSamples = [];
         this.isCalibrated = false;
+        
+        // tiltデータはリセットしない（ストローク中継続使用）
+    }
+
+    /**
+     * 🆕 Phase 1: PointerEventからtilt/twistデータを更新
+     * @param {PointerEvent} event - pointer event
+     */
+    updateTiltData(event) {
+        this.tiltX = event.tiltX || 0;
+        this.tiltY = event.tiltY || 0;
+        this.twist = event.twist || 0;
     }
 
     /**
@@ -56,6 +75,18 @@ class PressureHandler {
         
         // 0.0 ~ 1.0 にクランプ
         return Math.max(0, Math.min(1, calibrated));
+    }
+
+    /**
+     * 🆕 Phase 1: tilt/twistデータを取得
+     * @returns {Object} {tiltX, tiltY, twist}
+     */
+    getTiltData() {
+        return {
+            tiltX: this.tiltX,
+            tiltY: this.tiltY,
+            twist: this.twist
+        };
     }
 
     /**

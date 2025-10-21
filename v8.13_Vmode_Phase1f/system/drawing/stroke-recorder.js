@@ -1,7 +1,8 @@
 /**
- * StrokeRecorder - ストローク座標記録専用クラス
+ * StrokeRecorder - ストローク座標記録専用クラス (Phase 1: tilt/twist対応版)
  * 
  * 責務: ポインターイベントから座標・筆圧・時刻を記録
+ *       + tiltX/Y, twistデータの取得と記録
  * 
  * 座標系: レイヤーローカル座標（camera-system経由で変換済み）
  * 
@@ -18,7 +19,26 @@ class StrokeRecorder {
     }
 
     /**
-     * ストローク記録開始
+     * 🆕 Phase 1: ストローク記録開始（PointerEvent対応）
+     * @param {PointerEvent} event - ポインターイベント
+     */
+    startStrokeFromEvent(event) {
+        this.points = [];
+        this.isRecording = true;
+        
+        // 🆕 Phase 1: tilt/twistデータを更新
+        this.pressureHandler.updateTiltData(event);
+        
+        // 圧力ハンドラー初期化
+        this.pressureHandler.startStroke();
+        
+        // 初回ポイント追加
+        const pressure = event.pressure || 0.5;
+        this.addPointFromEvent(event, pressure);
+    }
+
+    /**
+     * ストローク記録開始（レガシー互換）
      * @param {number} screenX - スクリーン座標X
      * @param {number} screenY - スクリーン座標Y
      * @param {number} rawPressure - 生筆圧値
@@ -35,7 +55,39 @@ class StrokeRecorder {
     }
 
     /**
-     * ポイント追加
+     * 🆕 Phase 1: PointerEventからポイント追加
+     * @param {PointerEvent} event - ポインターイベント
+     * @param {number} rawPressure - 生筆圧値
+     */
+    addPointFromEvent(event, rawPressure) {
+        if (!this.isRecording) return;
+
+        // 🆕 Phase 1: tilt/twistデータを更新
+        this.pressureHandler.updateTiltData(event);
+
+        // スクリーン座標 → レイヤーローカル座標変換
+        const localPoint = this.cameraSystem.screenToLayer(event.clientX, event.clientY);
+        
+        // 筆圧補正
+        const pressure = this.pressureHandler.getCalibratedPressure(rawPressure);
+
+        // 🆕 Phase 1: tiltデータも記録（将来のPhase 2以降で使用）
+        const tiltData = this.pressureHandler.getTiltData();
+
+        this.points.push({
+            x: localPoint.x,
+            y: localPoint.y,
+            pressure: pressure,
+            time: performance.now(),
+            // 将来の高度な筆圧表現用（現在は記録のみ）
+            tiltX: tiltData.tiltX,
+            tiltY: tiltData.tiltY,
+            twist: tiltData.twist
+        });
+    }
+
+    /**
+     * ポイント追加（レガシー互換）
      * @param {number} screenX - スクリーン座標X
      * @param {number} screenY - スクリーン座標Y
      * @param {number} rawPressure - 生筆圧値
@@ -53,7 +105,11 @@ class StrokeRecorder {
             x: localPoint.x,
             y: localPoint.y,
             pressure: pressure,
-            time: performance.now()
+            time: performance.now(),
+            // tiltデータなし（マウスなど）
+            tiltX: 0,
+            tiltY: 0,
+            twist: 0
         });
     }
 
