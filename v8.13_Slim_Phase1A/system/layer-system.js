@@ -1,4 +1,5 @@
-// ===== system/layer-system.js - Phase 1改修版 (LayerTransform分離) 完全版 =====
+// ===== system/layer-system.js - Phase1B改修版 =====
+// 🔥 Phase1B: Vキーイベント受信でLayerTransformを更新
 
 (function() {
     'use strict';
@@ -23,7 +24,6 @@
             
             this.coordAPI = window.CoordinateSystem;
             
-            // Phase 1: LayerTransform統合
             this.transform = null;
             this.isInitialized = false;
         }
@@ -36,11 +36,10 @@
                 throw new Error('EventBus required for LayerSystem');
             }
             
-            // Phase 1: LayerTransform初期化（インスタンス作成のみ）
+            // LayerTransform初期化（インスタンス作成のみ）
             if (window.TegakiLayerTransform) {
                 this.transform = new window.TegakiLayerTransform(this.config, this.coordAPI);
             } else {
-                console.warn('TegakiLayerTransform not available');
                 this.transform = null;
             }
             
@@ -74,7 +73,6 @@
             layer1.label = layer1Model.id;
             layer1.layerData = layer1Model;
             
-            // Phase 1: LayerTransformに初期Transformを登録
             if (this.transform) {
                 this.transform.setTransform(layer1Model.id, {
                     x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
@@ -87,18 +85,44 @@
             
             this._setupLayerOperations();
             this._setupAnimationSystemIntegration();
+            this._setupVKeyEvents();
             this._startThumbnailUpdateProcess();
             
             this.isInitialized = true;
         }
         
-        // Phase 1: LayerTransform初期化（app/cameraSystem設定後に呼ぶ）
+        // Phase1B: Vキーイベント購読
+        _setupVKeyEvents() {
+            if (!this.eventBus) return;
+            
+            this.eventBus.on('keyboard:vkey-pressed', () => {
+                if (!this.transform) return;
+                
+                // Transformが初期化されていない場合は初期化を試みる
+                if (!this.transform.app && this.app && this.cameraSystem) {
+                    this.initTransform();
+                }
+                
+                this.transform.enterMoveMode();
+                const activeLayer = this.getActiveLayer();
+                if (activeLayer) {
+                    this.transform.updateTransformPanelValues(activeLayer);
+                }
+            });
+            
+            this.eventBus.on('keyboard:vkey-released', () => {
+                if (!this.transform) return;
+                
+                const activeLayer = this.getActiveLayer();
+                this.transform.exitMoveMode(activeLayer);
+            });
+        }
+        
         initTransform() {
             if (!this.transform || !this.app) return;
             
             this.transform.init(this.app, this.cameraSystem);
             
-            // コールバック設定
             this.transform.onTransformComplete = (layer) => {
                 this.requestThumbnailUpdate(this.getLayerIndex(layer));
                 this.eventBus.emit('layer:transform-confirmed', {layerId: layer.layerData.id});
@@ -145,8 +169,6 @@
             return layers.indexOf(layer);
         }
 
-        // ========== Path描画（既存機能） ==========
-        
         rebuildPathGraphics(path) {
             try {
                 if (path.graphics) {
@@ -272,8 +294,6 @@
             }
         }
 
-        // ========== Phase 1: LayerTransform委譲メソッド（公開API維持） ==========
-        
         enterLayerMoveMode() {
             if (this.transform) {
                 this.transform.enterMoveMode();
@@ -505,8 +525,6 @@
             }
         }
 
-        // ========== レイヤー管理（既存機能） ==========
-        
         reorderLayers(fromIndex, toIndex) {
             const layers = this.getLayers();
             
@@ -1298,7 +1316,6 @@
         setCameraSystem(cameraSystem) {
             this.cameraSystem = cameraSystem;
             
-            // Phase 1: CameraSystem設定後にTransform初期化を試みる
             if (this.transform && this.app && !this.transform.app) {
                 this.initTransform();
             }
@@ -1307,10 +1324,7 @@
         setApp(app) {
             this.app = app;
             
-            // Phase 1: App設定後にTransform初期化を試みる
             if (this.transform && !this.transform.app) {
-                // CameraSystemが既に設定されていればすぐに初期化
-                // そうでなければCameraSystem設定時に初期化
                 if (this.cameraSystem) {
                     this.initTransform();
                 }
