@@ -1,0 +1,331 @@
+config.js:514 ✅ config.js (Phase 1: ペン高精度化設定追加版) loaded
+config.js:515    🆕 Phase 1: ベースラインキャリブレーション設定追加
+config.js:516    🆕 Phase 1: devicePixelRatio対応設定追加
+coordinate-system.js:32 🧭 CoordinateSystem: システム統合改修版 初期化
+coordinate-system.js:730 ✅ coordinate-system.js loaded (システム統合改修版)
+coordinate-system.js:731 🔧 改修完了項目:
+coordinate-system.js:732   🆕 applyLayerTransform(): 統一レイヤー変形API
+coordinate-system.js:733   🆕 normalizeTransform(): 変形データ正規化
+coordinate-system.js:734   🆕 combineTransforms(): 変形合成
+coordinate-system.js:735   🆕 screenToWorld/worldToScreen(): キャッシュ対応座標変換
+coordinate-system.js:736   🆕 localToWorld/worldToLocal(): レイヤー座標変換
+coordinate-system.js:737   🆕 getLayerBounds(): 統一境界取得
+coordinate-system.js:738   🆕 distance/angle/normalizeAngle(): 数学関数統合
+coordinate-system.js:739   🆕 normalizeVector/dotProduct/crossProduct(): ベクトル計算
+coordinate-system.js:740   🆕 diagnoseReferences(): システム統合診断
+coordinate-system.js:741   🆕 runTransformTests(): 座標変換テスト
+coordinate-system.js:742   🆕 runPerformanceTest(): パフォーマンス測定
+coordinate-system.js:743   🔧 EventBus完全統合・キャッシュシステム
+coordinate-system.js:744   🔧 LayerSystem/CameraSystem/AnimationSystem参照統合
+coordinate-system.js:745   🔧 座標系混在問題・API断片化解消
+coordinate-system.js:746   ✅ PixiJS v8.13 完全対応
+coordinate-system.js:747   ✅ システム間連携強化
+data-models.js:107 ✅ data-models.js loaded
+batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
+event-bus.js:143 ✅ system/event-bus.js Phase 2: 優先度機能追加版 loaded
+popup-manager.js:425 ✅ popup-manager.js loaded
+settings-manager.js:254 ✅ system/settings-manager.js loaded
+settings-manager.js:255    - 責務: 設定の永続化・デフォルト管理
+settings-manager.js:256    - SOLID原則準拠: 単一責任
+settings-manager.js:257    - EventBus統合: 設定変更の購読と通知
+camera-system.js:599 ✅ camera-system.js (Phase 4.2: 拡縮上下修正版) loaded successfully
+camera-system.js:600    - 🔥 Space+Shift+ドラッグ: 上=拡大、下=縮小に修正
+camera-system.js:601    - 🔥 Space+Shift+↑: 拡大、Space+Shift+↓: 縮小に修正
+layer-transform.js:652 ✅ layer-transform.js loaded
+drawing-clipboard.js:603 ✅ drawing-clipboard.js Phase4改修版+確定イベント loaded
+drawing-clipboard.js:604    - ✅ CTRL+V behavior: overwrite active layer
+drawing-clipboard.js:605    - ✅ Commit events: paste:commit, operation:commit
+drawing-clipboard.js:606    - ✅ Thumbnail auto-update on paste
+history.js:179 ✅ history.js (Phase 2: EventBus修正版) loaded
+animation-system.js:1428 ✅ animation-system.js (Phase 4.1: CUT自動採番対応版) loaded
+export-manager.js:259 ✅ export-manager.js loaded
+png-exporter.js:85 ✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded
+apng-exporter.js:236 ✅ apng-exporter.js (PixiJS v8.13完全対応版) loaded
+gif-exporter.js:300 ✅ gif-exporter.js (PixiJS v8.13完全対応版) loaded
+slider-utils.js:197 ✅ ui/slider-utils.js loaded
+slider-utils.js:198    - 責務: スライダーUIの統一実装
+slider-utils.js:199    - DRY原則: settings-popup.js と ui-panels.js で共有
+slider-utils.js:200    - API: createSlider() / createSimpleSlider()
+timeline-ui.js:977 ✅ timeline-ui.js (Phase 5.2: キー処理一元化版) loaded
+timeline-ui.js:978    - 🔥 setupKeyboardShortcuts()を削除（キー処理はUnifiedKeyHandlerに一元化）
+timeline-ui.js:979    - 🔥 goToPreviousCutSafe()とgoToNextCutSafe()はpublicメソッドとして維持
+timeline-ui.js:980    - 🔥 togglePlayStop()もpublicメソッドとして維持
+album-popup.js:477 ✅ album-popup.js (PopupManager対応版 + display修正) loaded
+settings-popup.js:486 ✅ settings-popup.js (PopupManager対応版) loaded
+quick-access-popup.js:106 ✅ quick-access-popup.js (PopupManager対応版) loaded
+export-popup.js:429 ✅ export-popup.js (PopupManager対応版) loaded
+ui-panels.js:471 ✅ ui-panels.js (PopupManager対応版) loaded
+core-initializer.js:402 ✅ core-initializer.js (PopupManager統合版 + UIController修正) loaded
+core-runtime.js:804 ✅ core-runtime.js v2.2 loaded
+core-runtime.js:805   ✅ Phase 12: PixiJS EventSystem統合
+core-runtime.js:806   ✅ FederatedPointerEvent対応
+core-runtime.js:807   ✅ stage.eventMode設定
+core-runtime.js:808   ✅ v2.1: 設定関連API追加
+core-runtime.js:809      - setPressureCorrection()
+core-runtime.js:810      - setSmoothing()
+core-runtime.js:811      - setPressureCurve()
+core-runtime.js:812      - getSettings()
+core-runtime.js:813      - updateSettings()
+core-runtime.js:814      - resetSettings()
+core-runtime.js:815      - getSettingsManager()
+core-runtime.js:816   ✅ v2.2: PopupManager API追加
+core-runtime.js:817      - showPopup()
+core-runtime.js:818      - hidePopup()
+core-runtime.js:819      - togglePopup()
+core-runtime.js:820      - hideAllPopups()
+core-runtime.js:821      - isPopupVisible()
+core-runtime.js:822      - isPopupReady()
+core-runtime.js:823      - getPopup()
+core-runtime.js:824      - getPopupStatus()
+core-runtime.js:825      - getAllPopupStatuses()
+core-runtime.js:826      - diagnosePopups()
+core-runtime.js:827   ✅ window.startTegakiApp() registered
+core-runtime.js:828   ✅ APNGExporter登録対応
+core-runtime.js:829   ✅ 既存機能完全維持
+coordinate-system.js:63 🔗 CoordinateSystem EventBus integration configured
+coordinate-system.js:47 ✅ CoordinateSystem initialized with canvas: 344x135
+coordinate-system.js:757 🔄 CoordinateSystem auto-initialized
+core-initializer.js:359 🚀 CoreInitializer: Starting initialization...
+core-initializer.js:362 ✅ Dependencies check passed
+core-initializer.js:365 ✅ DOM built
+core-initializer.js:368 ✅ KeyboardHandler initialized
+drawing-clipboard.js:19 DrawingClipboard: Initializing...
+drawing-clipboard.js:26 ✅ DrawingClipboard initialized (Phase4改修版 + 確定イベント)
+coordinate-system.js:75 🔗 CameraSystem reference set in CoordinateSystem
+coordinate-system.js:70 🔗 LayerSystem reference set in CoordinateSystem
+coordinate-system.js:80 🔗 AnimationSystem reference set in CoordinateSystem
+core-runtime.js:52 === CoreRuntime Phase 12: PixiJS EventSystem統合版 初期化開始 ===
+core-runtime.js:180 ✅ CUT作成: CUT1 (344x135)
+core-runtime.js:208 🔄 CUT切替: CUT1
+core-runtime.js:102 ✅ PixiJS EventSystem設定完了
+core-runtime.js:69 ✅ CoreRuntime 初期化完了（Phase 12対応）
+core-initializer.js:183 🔧 Initializing UIController...
+core-initializer.js:189 ✅ UIController initialized
+core-initializer.js:76 🔧 Initializing PopupManager...
+popup-manager.js:19 ✅ PopupManager initialized
+popup-manager.js:52 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:52 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:52 📋 Popup "album" registered (priority: 3)
+popup-manager.js:52 📋 Popup "export" registered (priority: 4)
+popup-manager.js:124 🔧 Initializing all popups...
+popup-manager.js:106 ✅ Popup "settings" initialized successfully
+popup-manager.js:106 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:106 ✅ Popup "album" initialized successfully
+popup-manager.js:83 ⏳ Popup "export" waiting for: TEGAKI_EXPORT_MANAGER
+popup-manager.js:141 📊 Popup initialization: 3 ready, 1 deferred
+core-initializer.js:114 ✅ PopupManager initialized
+core-initializer.js:213 🔧 Initializing Export System...
+core-initializer.js:208 ✅ DrawingApp initialization complete
+core-initializer.js:386 ✅✅✅ Application initialization complete ✅✅✅
+index.html:80 ✅ Application initialized successfully
+index.html:81 📊 PopupManager status:
+popup-manager.js:399 === PopupManager Diagnostics ===
+popup-manager.js:400 Registered popups: 4
+popup-manager.js:401 Active popup: none
+popup-manager.js:402 
+Popup statuses:
+popup-manager.js:202 ⚠️ Popup "export" not ready (status: registered)
+get @ popup-manager.js:202
+isVisible @ popup-manager.js:333
+getStatus @ popup-manager.js:375
+(anonymous) @ popup-manager.js:389
+getAllStatuses @ popup-manager.js:388
+diagnose @ popup-manager.js:404
+(anonymous) @ index.html:83
+popup-manager.js:83 ⏳ Popup "export" waiting for: TEGAKI_EXPORT_MANAGER
+popup-manager.js:411   ✅ 🙈 settings (priority: 1, status: ready)
+popup-manager.js:411   ✅ 🙈 quickAccess (priority: 2, status: ready)
+popup-manager.js:411   ✅ 🙈 album (priority: 3, status: ready)
+popup-manager.js:414       Waiting for: animationSystem
+popup-manager.js:411   📋 🙈 export (priority: 4, status: registered)
+popup-manager.js:414       Waiting for: TEGAKI_EXPORT_MANAGER
+popup-manager.js:418 ================================
+core-runtime.js:712 ✅ ExportSystem initialized (PNG/APNG/GIF/WebP)
+core-initializer.js:232 ✅ Export system initialized
+popup-manager.js:106 ✅ Popup "export" initialized successfully
+popup-manager.js:181 ✅ All deferred popups initialized
+popup-manager.js:399 === PopupManager Diagnostics ===
+popup-manager.js:400 Registered popups: 4
+popup-manager.js:401 Active popup: none
+popup-manager.js:402 
+Popup statuses:
+popup-manager.js:411   ✅ 🙈 settings (priority: 1, status: ready)
+popup-manager.js:411   ✅ 🙈 quickAccess (priority: 2, status: ready)
+popup-manager.js:411   ✅ 🙈 album (priority: 3, status: ready)
+popup-manager.js:414       Waiting for: animationSystem
+popup-manager.js:411   ✅ 🙈 export (priority: 4, status: ready)
+popup-manager.js:414       Waiting for: TEGAKI_EXPORT_MANAGER
+popup-manager.js:418 ================================
+// ===== Vキー診断コマンド =====
+// コンソールに以下をコピー&ペーストして実行
+
+(function() {
+    console.log('=== Vキー診断開始 ===\n');
+    
+    // 1. 基本システムの存在確認
+    console.log('【1. システム存在確認】');
+    console.log('EventBus:', !!window.TegakiEventBus);
+    console.log('LayerSystem:', !!window.TegakiLayerSystem);
+    console.log('LayerTransform:', !!window.TegakiLayerTransform);
+    console.log('KeyboardHandler:', !!window.KeyboardHandler);
+    console.log('drawingApp:', !!window.drawingApp);
+    console.log('');
+    
+    // 2. LayerSystemインスタンスの確認
+    const layerSystem = window.drawingApp?.layerManager || window.coreEngine?.layerSystem;
+    console.log('【2. LayerSystemインスタンス】');
+    console.log('layerSystem instance:', !!layerSystem);
+    if (layerSystem) {
+        console.log('  - transform:', !!layerSystem.transform);
+        console.log('  - eventBus:', !!layerSystem.eventBus);
+        console.log('  - isInitialized:', layerSystem.isInitialized);
+        console.log('  - isLayerMoveMode:', layerSystem.isLayerMoveMode);
+        console.log('  - vKeyPressed:', layerSystem.vKeyPressed);
+        if (layerSystem.transform) {
+            console.log('  - transform.isVKeyPressed:', layerSystem.transform.isVKeyPressed);
+            console.log('  - transform.app:', !!layerSystem.transform.app);
+            console.log('  - transform.cameraSystem:', !!layerSystem.transform.cameraSystem);
+        }
+    }
+    console.log('');
+    
+    // 3. EventBusリスナー確認
+    console.log('【3. EventBusリスナー】');
+    if (window.TegakiEventBus && window.TegakiEventBus._events) {
+        const vkeyPressed = window.TegakiEventBus._events['keyboard:vkey-pressed'];
+        const vkeyReleased = window.TegakiEventBus._events['keyboard:vkey-released'];
+        console.log('keyboard:vkey-pressed リスナー数:', vkeyPressed?.length || 0);
+        console.log('keyboard:vkey-released リスナー数:', vkeyReleased?.length || 0);
+    } else {
+        console.log('EventBus._events が存在しません');
+    }
+    console.log('');
+    
+    // 4. KeyboardHandlerの初期化確認
+    console.log('【4. KeyboardHandler状態】');
+    console.log('KeyboardHandler.init実行済み:', document._keyboardHandlerInitialized || 'unknown');
+    console.log('');
+    
+    // 5. 実際のVキーテスト
+    console.log('【5. Vキーイベント発火テスト】');
+    console.log('手動でVキーを押してください...');
+    console.log('');
+    
+    // テスト用リスナー追加
+    let testListenerAdded = false;
+    if (window.TegakiEventBus) {
+        window._vkeyTestListener = (data) => {
+            console.log('✅ keyboard:vkey-pressed イベント受信:', data);
+        };
+        window.TegakiEventBus.on('keyboard:vkey-pressed', window._vkeyTestListener);
+        testListenerAdded = true;
+        console.log('テストリスナーを追加しました（30秒後に自動削除）');
+        
+        setTimeout(() => {
+            if (window.TegakiEventBus && window._vkeyTestListener) {
+                window.TegakiEventBus.off('keyboard:vkey-pressed', window._vkeyTestListener);
+                delete window._vkeyTestListener;
+                console.log('テストリスナーを削除しました');
+            }
+        }, 30000);
+    }
+    console.log('');
+    
+    // 6. keydownイベントの直接確認
+    console.log('【6. keydownイベント直接監視】');
+    console.log('Vキーを押すとここにログが出ます...');
+    window._vkeyDirectListener = (e) => {
+        if (e.code === 'KeyV') {
+            console.log('✅ keydown KeyV 検出:', {
+                code: e.code,
+                key: e.key,
+                ctrlKey: e.ctrlKey,
+                shiftKey: e.shiftKey,
+                altKey: e.altKey,
+                target: e.target.tagName
+            });
+        }
+    };
+    document.addEventListener('keydown', window._vkeyDirectListener, { capture: true });
+    console.log('keydownリスナーを追加しました（30秒後に自動削除）');
+    
+    setTimeout(() => {
+        document.removeEventListener('keydown', window._vkeyDirectListener, { capture: true });
+        delete window._vkeyDirectListener;
+        console.log('keydownリスナーを削除しました');
+    }, 30000);
+    console.log('');
+    
+    // 7. 推奨アクション
+    console.log('【診断完了】');
+    console.log('次のステップ:');
+    console.log('1. Vキーを押してログを確認');
+    console.log('2. もしkeydownが検出されるのにEventBusイベントが発火しない場合');
+    console.log('   → KeyboardHandler.init()が実行されていない可能性');
+    console.log('3. もしEventBusイベントは発火するがLayerTransformが反応しない場合');
+    console.log('   → _setupVKeyEvents()が実行されていない可能性');
+    console.log('');
+    console.log('=== 診断終了 ===');
+})();
+
+// 手動でイベント発火テスト
+console.log('\n【手動テスト用コマンド】');
+console.log('以下をコピペして実行すると、手動でVキー押下をシミュレートできます:');
+console.log('window.TegakiEventBus.emit("keyboard:vkey-pressed", { pressed: true });');
+console.log('');
+console.log('Vキー解放のシミュレート:');
+console.log('window.TegakiEventBus.emit("keyboard:vkey-released", { pressed: false });');
+VM387:5 === Vキー診断開始 ===
+
+VM387:8 【1. システム存在確認】
+VM387:9 EventBus: true
+VM387:10 LayerSystem: true
+VM387:11 LayerTransform: true
+VM387:12 KeyboardHandler: true
+VM387:13 drawingApp: true
+VM387:14 
+VM387:18 【2. LayerSystemインスタンス】
+VM387:19 layerSystem instance: true
+VM387:21   - transform: true
+VM387:22   - eventBus: true
+VM387:23   - isInitialized: true
+VM387:24   - isLayerMoveMode: false
+VM387:25   - vKeyPressed: false
+VM387:27   - transform.isVKeyPressed: false
+VM387:28   - transform.app: true
+VM387:29   - transform.cameraSystem: true
+VM387:32 
+VM387:35 【3. EventBusリスナー】
+VM387:42 EventBus._events が存在しません
+VM387:44 
+VM387:47 【4. KeyboardHandler状態】
+VM387:48 KeyboardHandler.init実行済み: unknown
+VM387:49 
+VM387:52 【5. Vキーイベント発火テスト】
+VM387:53 手動でVキーを押してください...
+VM387:54 
+VM387:64 テストリスナーを追加しました（30秒後に自動削除）
+VM387:74 
+VM387:77 【6. keydownイベント直接監視】
+VM387:78 Vキーを押すとここにログが出ます...
+VM387:92 keydownリスナーを追加しました（30秒後に自動削除）
+VM387:99 
+VM387:102 【診断完了】
+VM387:103 次のステップ:
+VM387:104 1. Vキーを押してログを確認
+VM387:105 2. もしkeydownが検出されるのにEventBusイベントが発火しない場合
+VM387:106    → KeyboardHandler.init()が実行されていない可能性
+VM387:107 3. もしEventBusイベントは発火するがLayerTransformが反応しない場合
+VM387:108    → _setupVKeyEvents()が実行されていない可能性
+VM387:109 
+VM387:110 === 診断終了 ===
+VM387:114 
+【手動テスト用コマンド】
+VM387:115 以下をコピペして実行すると、手動でVキー押下をシミュレートできます:
+VM387:116 window.TegakiEventBus.emit("keyboard:vkey-pressed", { pressed: true });
+VM387:117 
+VM387:118 Vキー解放のシミュレート:
+VM387:119 window.TegakiEventBus.emit("keyboard:vkey-released", { pressed: false });
+undefined
+VM387:60 ✅ keyboard:vkey-pressed イベント受信: {pressed: true}
+VM387:81 ✅ keydown KeyV 検出: {code: 'KeyV', key: 'v', ctrlKey: false, shiftKey: false, altKey: false, …}

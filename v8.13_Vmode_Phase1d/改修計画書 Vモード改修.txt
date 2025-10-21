@@ -1,0 +1,567 @@
+改修計画書 - Vモード改修: レイヤー変形機能復活プロジェクト
+============================================================
+
+対象: PixiJS v8.13 お絵かきツール (v8.13_Slim_Phase5)
+目標: Vモード機能完全復活 / 変形確定バグ修正 / ホイール操作対応
+方針: トグル方式維持 / 確定処理即座実行 / ショートカット優先
+
+
+【現状調査結果】Vモード関連シンボル辞典
+================================================
+
+■ Vモード状態管理
+  keyboard-handler.js:
+    - vKeyPressed (boolean) : Vキー押下状態
+    - handleKeyDown() : 'KeyV'検出 → EventBus発火
+    - handleKeyUp() : 'KeyV'解放時処理（現在トグル方式のため無処理）
+    
+  layer-system.js:
+    - isVKeyPressed (boolean) : LayerTransform経由の状態プロパティ
+    - isLayerMoveMode (getter) : transform?.isVKeyPressed読み取り
+    - vKeyPressed (getter) : 同上
+    - enterLayerMoveMode() : Vモード開始
+    - exitLayerMoveMode() : Vモード終了（変形確定処理含む）
+    - toggleLayerMoveMode() : トグル処理
+    - _setupVKeyEvents() : EventBus購読
+    
+  layer-transform.js:
+    - isVKeyPressed (boolean) : 変形モード状態
+    - isDragging (boolean) : ドラッグ操作中フラグ
+    - enterMoveMode() : Vモード開始処理
+    - exitMoveMode(layer) : Vモード終了処理（変形確定処理含む）
+    - toggleMoveMode(layer) : トグル処理
+
+■ 変形データ管理
+  layer-transform.js:
+    - transforms (Map<layerId, transform>) : レイヤー毎の変形データ
+      transform構造: { x, y, rotation, scaleX, scaleY }
+    - getTransform(layerId) : 変形データ取得
+    - setTransform(layerId, transform) : 変形データ設定
+    - deleteTransform(layerId) : 変形データ削除
+
+■ 変形操作メソッド
+  layer-transform.js:
+    - updateTransform(layer, property, value) : 変形値更新
+    - applyTransform(layer, transform, centerX, centerY) : レイヤーへ変形適用
+    - flipLayer(layer, direction) : 反転（horizontal/vertical）
+    - moveLayer(layer, direction, amount) : 移動
+    - scaleLayer(layer, keyCode) : 拡大縮小
+    - rotateLayer(layer, keyCode) : 回転
+    - confirmTransform(layer) : ★変形確定（座標変換実行）
+    - applyTransformToPaths(layer, transform) : ★パスデータへ変形適用
+    
+■ 変形UIパネル
+  layer-transform.js:
+    - transformPanel (DOM) : #layer-transform-panel
+    - _setupTransformPanel() : スライダー・ボタン初期化
+    - updateTransformPanelValues(layer) : スライダー値更新
+    - updateFlipButtons(layer) : 反転ボタン状態更新
+    - _setupSlider() : スライダー構築
+    
+  HTML要素:
+    - #layer-transform-panel : 変形パネルコンテナ
+    - #layer-x-slider : X位置スライダー
+    - #layer-y-slider : Y位置スライダー
+    - #layer-rotation-slider : 回転スライダー
+    - #layer-scale-slider : スケールスライダー
+    - #flip-horizontal-btn : 水平反転ボタン
+    - #flip-vertical-btn : 垂直反転ボタン
+
+■ イベント処理
+  layer-system.js:
+    - EventBus購読: 'keyboard:vkey-pressed', 'keyboard:vkey-released'
+    - EventBus発行: 'layer:transform-confirmed', 'layer:updated'
+    
+  layer-transform.js:
+    - コールバック: onTransformComplete, onTransformUpdate, onFlipRequest, onDragRequest, onSliderChange
+    - canvas pointerdown/move/up : ドラッグ処理
+    - document keydown : Hキー反転処理
+
+■ ショートカット定義
+  config.js TEGAKI_KEYMAP:
+    - LAYER_MOVE_MODE_TOGGLE : V（Vモードトグル）
+    - LAYER_MOVE_UP/DOWN/LEFT/RIGHT : ↑↓←→ (vMode:true)
+    - LAYER_SCALE_UP/DOWN : Shift+↑↓ (vMode:true)
+    - LAYER_ROTATE_LEFT/RIGHT : Shift+←→ (vMode:true)
+    - LAYER_FLIP_HORIZONTAL : H (vMode:true)
+    - LAYER_FLIP_VERTICAL : Shift+H (vMode:true)
+
+■ 座標変換処理
+  layer-transform.js:
+    - _createTransformMatrix(transform, centerX, centerY) : PixiJS Matrix生成
+    - _transformPoints(points, matrix) : パス座標群へ行列適用
+    - _isTransformNonDefault(transform) : 変形有無判定
+
+
+【問題点】
+================================================
+
+❌ 問題1: Vモード終了時に変形が反映されない
+  原因: exitMoveMode()内のconfirmTransform()が呼ばれても、
+        layer-system.js側でrebuildLayerGraphics()が実行されていない
+  
+  影響範囲:
+    - layer-transform.js: confirmTransform() → applyTransformToPaths()
+    - layer-system.js: exitMoveMode() → confirmTransform()
+    - 変形後の座標データは更新されるが、Graphics再構築が未実行
+
+❌ 問題2: 反転ボタンが発火しない
+  原因: layer-transform.js内のボタンイベントリスナーは設定されているが、
+        onFlipRequest コールバックが layer-system.js側で設定されていない可能性
+  
+  影響範囲:
+    - layer-transform.js: _setupTransformPanel() → ボタンclick → onFlipRequest()
+    - layer-system.js: initTransform() → transform.onFlipRequest = ...
+
+❌ 問題3: Hキー反転が機能しない
+  原因: layer-transform.js の _setupFlipKeyEvents() は実装済みだが、
+        onFlipRequest コールバック未設定
+  
+  影響範囲:
+    - layer-transform.js: _setupFlipKeyEvents() → document.keydown → onFlipRequest()
+
+❌ 問題4: ホイール操作での拡大縮小・回転が未実装
+  原因: layer-transform.js にホイールイベントリスナーが存在しない
+  
+  必要機能:
+    - ホイール → scale変更
+    - Shift+ホイール → rotation変更
+
+
+【PHASE 1】変形確定処理修正 ◎最優先
+================================================
+
+目的: Vモード終了時に変形を即座反映、Graphics再構築実行
+
+改修ファイル: system/layer-system.js, system/layer-transform.js
+参考ファイル: system/history.js
+
+フロー位置:
+  Vキートグル解除 → exitMoveMode() → confirmTransform() → 
+  applyTransformToPaths() → パス座標変換 → rebuildLayer() → Graphics再構築
+
+作業内容:
+
+1. layer-transform.js: confirmTransform()修正
+
+現状:
+  confirmTransform(layer) {
+      if (!layer?.layerData) return;
+      const layerId = layer.layerData.id;
+      const transform = this.transforms.get(layerId);
+      
+      if (this._isTransformNonDefault(transform)) {
+          const success = this.applyTransformToPaths(layer, transform);
+          
+          if (success) {
+              layer.position.set(0, 0);
+              layer.rotation = 0;
+              layer.scale.set(1, 1);
+              layer.pivot.set(0, 0);
+              this.transforms.set(layerId, {...});
+              // ★ ここでGraphics再構築が必要
+          }
+      }
+  }
+
+修正案: コールバック追加
+  
+  confirmTransform(layer) {
+      if (!layer?.layerData) return false;
+      
+      const layerId = layer.layerData.id;
+      const transform = this.transforms.get(layerId);
+      
+      if (!this._isTransformNonDefault(transform)) {
+          return false; // 変形なし
+      }
+      
+      const pathsBackup = structuredClone(layer.layerData.paths);
+      const success = this.applyTransformToPaths(layer, transform);
+      
+      if (!success) return false;
+      
+      // PixiJS変形リセット
+      layer.position.set(0, 0);
+      layer.rotation = 0;
+      layer.scale.set(1, 1);
+      layer.pivot.set(0, 0);
+      
+      // 変形データリセット
+      this.transforms.set(layerId, {
+          x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+      });
+      
+      // ★ 新規: Graphicsリビルドコールバック
+      if (this.onRebuildRequired) {
+          this.onRebuildRequired(layer, layer.layerData.paths);
+      }
+      
+      // 完了コールバック
+      if (this.onTransformComplete) {
+          this.onTransformComplete(layer, pathsBackup);
+      }
+      
+      return true;
+  }
+
+2. layer-system.js: initTransform()修正
+
+追加:
+  this.transform.onRebuildRequired = (layer, transformedPaths) => {
+      const success = this.safeRebuildLayer(layer, transformedPaths);
+      
+      if (success) {
+          this.requestThumbnailUpdate(this.getLayerIndex(layer));
+          
+          if (this.animationSystem?.generateCutThumbnail) {
+              const cutIndex = this.animationSystem.getCurrentCutIndex();
+              setTimeout(() => {
+                  this.animationSystem.generateCutThumbnail(cutIndex);
+              }, 100);
+          }
+      }
+  };
+  
+  this.transform.onTransformComplete = (layer, pathsBackup) => {
+      // Undo/Redo登録
+      if (window.History && !window.History._manager.isApplying) {
+          const layerId = layer.layerData.id;
+          const pathsAfter = structuredClone(layer.layerData.paths);
+          
+          const entry = {
+              name: 'layer-transform-complete',
+              do: () => {
+                  this.safeRebuildLayer(layer, pathsAfter);
+                  this.requestThumbnailUpdate(this.getLayerIndex(layer));
+              },
+              undo: () => {
+                  this.safeRebuildLayer(layer, pathsBackup);
+                  this.requestThumbnailUpdate(this.getLayerIndex(layer));
+              },
+              meta: { layerId, type: 'transform' }
+          };
+          window.History.push(entry);
+      }
+      
+      this.eventBus.emit('layer:transform-confirmed', {
+          layerId: layer.layerData.id
+      });
+  };
+
+3. layer-system.js: exitMoveMode()修正
+
+現状:
+  exitLayerMoveMode() {
+      if (!this.transform) return;
+      const activeLayer = this.getActiveLayer();
+      this.transform.exitMoveMode(activeLayer);
+  }
+
+修正: 確実に確定処理を実行
+  
+  exitLayerMoveMode() {
+      if (!this.transform) return;
+      
+      const activeLayer = this.getActiveLayer();
+      if (!activeLayer) return;
+      
+      // 変形確定
+      const wasTransformed = this.transform.confirmTransform(activeLayer);
+      
+      // Vモード終了
+      this.transform.exitMoveMode(activeLayer);
+      
+      return wasTransformed;
+  }
+
+影響:
+  ✅ Vモード終了時に変形が即座反映
+  ✅ Graphics再構築が確実に実行される
+  ✅ Undo/Redo対応
+
+テスト:
+  - Vモードでレイヤー移動・回転・拡大縮小
+  - Vキートグル解除 → 変形反映確認
+  - Undo → 変形前に戻る確認
+
+
+【PHASE 2】反転ボタン修正
+================================================
+
+目的: ポップアップの水平反転/垂直反転ボタンを機能させる
+
+改修ファイル: system/layer-system.js, system/layer-transform.js
+
+フロー位置:
+  ボタンクリック → onFlipRequest() → flipActiveLayer() → Graphics更新
+
+作業内容:
+
+1. layer-system.js: initTransform() 既存コールバック確認
+
+確認箇所:
+  this.transform.onFlipRequest = (direction) => {
+      this.flipActiveLayer(direction);
+  };
+
+↑既に存在する場合: 問題なし
+↑存在しない場合: 追加
+
+追加内容:
+  this.transform.onFlipRequest = (direction) => {
+      const activeLayer = this.getActiveLayer();
+      if (!activeLayer) return;
+      
+      this.transform.flipLayer(activeLayer, direction);
+      this.requestThumbnailUpdate(this.activeLayerIndex);
+      
+      this.eventBus.emit('layer:flipped', {
+          layerId: activeLayer.layerData.id,
+          direction: direction
+      });
+  };
+
+2. layer-transform.js: _setupTransformPanel() 確認
+
+確認箇所:
+  const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
+  const flipVerticalBtn = document.getElementById('flip-vertical-btn');
+  
+  if (flipHorizontalBtn) {
+      flipHorizontalBtn.addEventListener('click', () => {
+          if (this.onFlipRequest) {
+              this.onFlipRequest('horizontal');
+          }
+      });
+  }
+
+↑既に存在: 問題なし
+
+影響:
+  ✅ ポップアップ反転ボタン動作
+  ✅ 即座反映
+
+テスト:
+  - Vモード時にポップアップ反転ボタンクリック
+  - レイヤーが反転することを確認
+
+
+【PHASE 3】Hキー反転機能修正
+================================================
+
+目的: Vモード時のHキー水平反転、Shift+H垂直反転を有効化
+
+改修ファイル: system/layer-transform.js
+
+フロー位置:
+  document keydown → H検出 → onFlipRequest() → flipLayer()
+
+作業内容:
+
+1. layer-transform.js: _setupFlipKeyEvents() 確認
+
+確認箇所:
+  document.addEventListener('keydown', (e) => {
+      if (!this.isVKeyPressed) return;
+      
+      if (e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+          if (e.shiftKey) {
+              if (this.onFlipRequest) {
+                  this.onFlipRequest('vertical');
+              }
+          } else {
+              if (this.onFlipRequest) {
+                  this.onFlipRequest('horizontal');
+              }
+          }
+          e.preventDefault();
+      }
+  });
+
+↑既に存在: 問題なし
+
+2. 入力フォーカス判定追加
+
+修正:
+  document.addEventListener('keydown', (e) => {
+      if (!this.isVKeyPressed) return;
+      
+      // 入力フォーカス時は無視
+      const activeElement = document.activeElement;
+      if (activeElement && (
+          activeElement.tagName === 'INPUT' ||
+          activeElement.tagName === 'TEXTAREA' ||
+          activeElement.isContentEditable
+      )) {
+          return;
+      }
+      
+      if (e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+          if (e.shiftKey) {
+              if (this.onFlipRequest) {
+                  this.onFlipRequest('vertical');
+              }
+          } else {
+              if (this.onFlipRequest) {
+                  this.onFlipRequest('horizontal');
+              }
+          }
+          e.preventDefault();
+      }
+  });
+
+影響:
+  ✅ Vモード時にHキー反転機能
+  ✅ 入力フォーカス時は無効化
+
+テスト:
+  - Vモード時にHキー → 水平反転
+  - Vモード時にShift+H → 垂直反転
+
+
+【PHASE 4】ホイール操作追加 ◎新機能
+================================================
+
+目的: ホイールで拡大縮小、Shift+ホイールで回転
+
+改修ファイル: system/layer-transform.js
+
+フロー位置:
+  canvas wheel → scale/rotation更新 → applyTransform() → Graphics更新
+
+作業内容:
+
+1. layer-transform.js: _setupWheelEvents() 新規作成
+
+追加メソッド:
+  _setupWheelEvents() {
+      const canvas = this._getSafeCanvas();
+      if (!canvas) return;
+      
+      canvas.addEventListener('wheel', (e) => {
+          if (!this.isVKeyPressed) return;
+          
+          // アクティブレイヤー取得（コールバック経由）
+          if (!this.onGetActiveLayer) return;
+          const activeLayer = this.onGetActiveLayer();
+          if (!activeLayer?.layerData) return;
+          
+          const layerId = activeLayer.layerData.id;
+          
+          if (!this.transforms.has(layerId)) {
+              this.transforms.set(layerId, {
+                  x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+              });
+          }
+          
+          const transform = this.transforms.get(layerId);
+          const centerX = this.config.canvas.width / 2;
+          const centerY = this.config.canvas.height / 2;
+          
+          if (e.shiftKey) {
+              // Shift+ホイール: 回転
+              const rotationDelta = e.deltaY > 0 ? 0.05 : -0.05;
+              transform.rotation += rotationDelta;
+          } else {
+              // ホイールのみ: 拡大縮小
+              const scaleDelta = e.deltaY > 0 ? 0.95 : 1.05;
+              const currentScale = Math.abs(transform.scaleX);
+              const newScale = Math.max(
+                  this.config.layer.minScale,
+                  Math.min(this.config.layer.maxScale, currentScale * scaleDelta)
+              );
+              
+              const hFlipped = transform.scaleX < 0;
+              const vFlipped = transform.scaleY < 0;
+              transform.scaleX = hFlipped ? -newScale : newScale;
+              transform.scaleY = vFlipped ? -newScale : newScale;
+          }
+          
+          this.applyTransform(activeLayer, transform, centerX, centerY);
+          this.updateTransformPanelValues(activeLayer);
+          
+          if (this.onTransformUpdate) {
+              this.onTransformUpdate(activeLayer, transform);
+          }
+          
+          e.preventDefault();
+      }, { passive: false });
+  }
+
+2. layer-transform.js: init() 修正
+
+追加:
+  init(app, cameraSystem) {
+      this.app = app;
+      this.cameraSystem = cameraSystem;
+      
+      this._setupTransformPanel();
+      this._setupDragEvents();
+      this._setupFlipKeyEvents();
+      this._setupWheelEvents(); // ★追加
+  }
+
+3. layer-transform.js: コールバック追加
+
+追加プロパティ:
+  constructor(config, coordAPI) {
+      // ...既存...
+      
+      // コールバック
+      this.onTransformComplete = null;
+      this.onTransformUpdate = null;
+      this.onFlipRequest = null;
+      this.onDragRequest = null;
+      this.onSliderChange = null;
+      this.onRebuildRequired = null; // PHASE 1で追加
+      this.onGetActiveLayer = null; // ★追加
+  }
+
+4. layer-system.js: initTransform() 修正
+
+追加:
+  this.transform.onGetActiveLayer = () => {
+      return this.getActiveLayer();
+  };
+
+影響:
+  ✅ Vモード時にホイールで拡大縮小
+  ✅ Vモード時にShift+ホイールで回転
+  ✅ スライダー値も連動更新
+
+テスト:
+  - Vモード時にホイール上下 → 拡大縮小
+  - Vモード時にShift+ホイール → 回転
+  - スライダー値が連動して更新される
+
+
+改修優先度
+===========================
+
+即座実施（当日）:
+  PHASE 1: 変形確定処理修正
+  PHASE 2: 反転ボタン修正
+  PHASE 3: Hキー反転機能修正
+
+短期（1-2日）:
+  PHASE 4: ホイール操作追加
+
+
+期待効果
+===========================
+
+機能性:
+  ✅ Vモード終了時に変形が確実に反映される
+  ✅ ポップアップ反転ボタンが動作する
+  ✅ Hキー・Shift+Hキー反転が動作する
+  ✅ ホイールで拡大縮小・回転が可能
+
+保守性:
+  ✅ コールバック方式で疎結合維持
+  ✅ Undo/Redo対応
+  ✅ EventBus統合
+
+ユーザビリティ:
+  ✅ 直感的な操作（ホイール対応）
+  ✅ ショートカット優先設計維持

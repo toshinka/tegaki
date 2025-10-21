@@ -1,0 +1,325 @@
+
+現在のコードを分析した結果、ペン描画のリアルタイム性が失われている主要原因を特定しました。
+🔴 主要問題点
+
+    stroke-renderer.js: renderStroke()が完成したストロークしか描画していない
+    drawing-engine.js: リアルタイムプレビュー機構が存在しない
+    イベントフロー: stroke:point時に何も描画更新していない
+
+✅ 解決方針
+
+「確定前の軽量プレビュー」と「確定後の高品質レンダリング」の2段階描画を明確に分離します。
+
+
+🎯 ペン描画リファクタリング新計画書
+アーキテクチャ原則
+
+【座標系統一】
+入力(screen) → camera-system(変換) → レイヤーローカル座標 → 描画・保存
+
+【データフロー】
+PointerEvent → StrokeRecorder(記録) → DrawingEngine(制御) 
+            → StrokeRenderer(描画) → History(保存)
+
+【責務分離】
+- StrokeRecorder: 座標・圧力の記録のみ
+- PressureHandler: 圧力補正のみ
+- StrokeRenderer: 描画実行のみ
+- DrawingEngine: フロー制御・PIXI統合
+
+Phase 1: リアルタイムプレビュー復旧（最優先）
+目標
+
+ポインター移動時に即座に線が見える状態に戻す
+実装内容
+1.1 DrawingEngine改修
+javascript
+
+class DrawingEngine {
+  constructor() {
+    this.currentPreview = null; // PIXI.Graphics（軽量プレビュー用）
+    this.isDrawing = false;
+  }
+
+  // stroke:point時に呼ばれる
+  updatePreview(points, color, size) {
+    if (!this.currentPreview) {
+      this.currentPreview = new PIXI.Graphics();
+      this.currentLayer.addChild(this.currentPreview);
+    }
+    
+    // 前のプレビューをクリア
+    this.currentPreview.clear();
+    
+    // シンプルなlineStyle描画（高速）
+    this.currentPreview.lineStyle({
+      width: size,
+      color: color,
+      cap: PIXI.LINE_CAP.ROUND,
+      join: PIXI.LINE_JOIN.ROUND
+    });
+    
+    if (points.length === 1) {
+      // 単独点は円
+      this.currentPreview.drawCircle(points[0].x, points[0].y, size / 2);
+    } else {
+      // 複数点は線
+      this.currentPreview.moveTo(points[0].x, points[0].y);
+      for (let i = 1; i < points.length; i++) {
+        this.currentPreview.lineTo(points[i].x, points[i].y);
+      }
+    }
+  }
+
+  // stroke:end時に呼ばれる
+  finalizeStroke(strokeData) {
+    // プレビューを削除
+    if (this.currentPreview) {
+      this.currentPreview.destroy();
+      this.currentPreview = null;
+    }
+    
+    // 高品質レンダリング（Phase 2で実装）
+    this.strokeRenderer.renderFinalStroke(strokeData);
+  }
+}
+
+1.2 EventBus連携修正
+javascript
+
+// drawing-engine.js内
+EventBus.on('stroke:point', ({ points, settings }) => {
+  this.updatePreview(points, settings.color, settings.size);
+});
+
+EventBus.on('stroke:end', ({ strokeData }) => {
+  this.finalizeStroke(strokeData);
+});
+
+検証項目
+
+    ポインター移動時に即座に線が表示される
+    60FPS以上を維持（Chrome DevTools Performance）
+    メモリリークなし（プレビュー削除確認）
+
+Phase 2: 圧力システム基盤整備
+2.1 PressureHandler純化
+
+役割: 生圧力値の補正のみ
+javascript
+
+class PressureHandler {
+  constructor() {
+    this.baseline = 0;
+    this.baselineSamples = [];
+    this.BASELINE_SAMPLE_COUNT = 5;
+  }
+
+  // ストローク開始時に呼ぶ
+  startStroke() {
+    this.baseline = 0;
+    this.baselineSamples = [];
+  }
+
+  // 生圧力を補正圧力に変換
+  getCalibratedPressure(rawPressure) {
+    // baseline算出中
+    if (this.baselineSamples.length < this.BASELINE_SAMPLE_COUNT) {
+      this.baselineSamples.push(rawPressure);
+      
+      if (this.baselineSamples.length === this.BASELINE_SAMPLE_COUNT) {
+        this.baseline = Math.min(...this.baselineSamples);
+      }
+      
+      return 0; // baseline算出中は0を返す
+    }
+
+    // baseline補正
+    const calibrated = Math.max(0, rawPressure - this.baseline) / (1 - this.baseline);
+    return Math.min(1, calibrated);
+  }
+}
+
+2.2 StrokeRecorder純化
+
+役割: 座標・圧力・時刻の記録のみ
+javascript
+
+class StrokeRecorder {
+  constructor(pressureHandler) {
+    this.pressureHandler = pressureHandler;
+    this.points = [];
+  }
+
+  startStroke(screenX, screenY, rawPressure) {
+    this.points = [];
+    this.pressureHandler.startStroke();
+    
+    // カメラ変換（camera-system.jsを使用）
+    const localPoint = cameraSystem.screenToLayer(screenX, screenY);
+    
+    this.addPoint(localPoint.x, localPoint.y, rawPressure);
+  }
+
+  addPoint(screenX, screenY, rawPressure) {
+    const localPoint = cameraSystem.screenToLayer(screenX, screenY);
+    const pressure = this.pressureHandler.getCalibratedPressure(rawPressure);
+    
+    this.points.push({
+      x: localPoint.x,
+      y: localPoint.y,
+      pressure: pressure,
+      time: performance.now()
+    });
+  }
+
+  endStroke() {
+    return {
+      points: [...this.points],
+      isSingleDot: this.points.length <= 2 && this.getTotalDistance() < 2
+    };
+  }
+
+  getTotalDistance() {
+    let dist = 0;
+    for (let i = 1; i < this.points.length; i++) {
+      const dx = this.points[i].x - this.points[i-1].x;
+      const dy = this.points[i].y - this.points[i-1].y;
+      dist += Math.sqrt(dx * dx + dy * dy);
+    }
+    return dist;
+  }
+}
+
+Phase 3: 高品質レンダリング（perfect-freehand）
+3.1 StrokeRenderer完全書き直し
+javascript
+
+class StrokeRenderer {
+  constructor(resolution) {
+    this.resolution = resolution;
+    this.minPhysicalWidth = 1 / resolution; // devicePixelRatio対応
+  }
+
+  // 確定ストロークの描画（Mesh方式）
+  renderFinalStroke(strokeData, settings) {
+    if (strokeData.isSingleDot) {
+      return this.renderDot(strokeData.points[0], settings);
+    }
+
+    // perfect-freehand用に変換
+    const pfPoints = strokeData.points.map(p => [p.x, p.y, p.pressure]);
+    
+    const outline = getStroke(pfPoints, {
+      size: settings.size,
+      thinning: 0,
+      smoothing: 0.5,
+      streamline: 0.5,
+      simulatePressure: false
+    });
+
+    return this.createMeshFromOutline(outline, settings.color);
+  }
+
+  renderDot(point, settings) {
+    const graphics = new PIXI.Graphics();
+    const radius = Math.max(this.minPhysicalWidth, settings.size * point.pressure / 2);
+    
+    graphics.beginFill(settings.color);
+    graphics.drawCircle(point.x, point.y, radius);
+    graphics.endFill();
+    
+    return graphics;
+  }
+
+  createMeshFromOutline(outline, color) {
+    const vertices = [];
+    const uvs = [];
+    const indices = [];
+
+    // アウトライン→三角メッシュ変換
+    for (let i = 0; i < outline.length; i++) {
+      vertices.push(outline[i][0], outline[i][1]);
+      uvs.push(i / outline.length, 0);
+    }
+
+    // Triangle strip indices
+    for (let i = 0; i < outline.length - 1; i++) {
+      indices.push(i, i + 1);
+    }
+
+    const geometry = new PIXI.Geometry()
+      .addAttribute('aVertexPosition', vertices, 2)
+      .addAttribute('aUvs', uvs, 2)
+      .addIndex(indices);
+
+    const mesh = new PIXI.Mesh({ geometry });
+    mesh.tint = color;
+
+    return mesh;
+  }
+}
+```
+
+---
+
+## シンボル・メソッド辞典
+
+### 座標系変換
+```
+screenToLayer(screenX, screenY) → {x, y}  // camera-system.js
+```
+
+### EventBus定義
+```
+stroke:start  → { layerId, settings }
+stroke:point  → { points, settings }
+stroke:end    → { strokeData, settings }
+
+データモデル
+javascript
+
+// StrokeData (data-models.js)
+{
+  points: [{x, y, pressure, time}],
+  isSingleDot: boolean,
+  color: number,
+  size: number,
+  layerId: string
+}
+
+BrushSettings (brush-settings.js)
+javascript
+
+{
+  size: number,          // 基準サイズ
+  color: number,         // 0xRRGGBB
+  minPhysicalWidth: number  // 最小物理幅
+}
+```
+
+---
+
+## 実装順序
+```
+Day 1: Phase 1 リアルタイムプレビュー復旧
+  ├─ DrawingEngine.updatePreview() 実装
+  ├─ EventBus連携修正
+  └─ 動作確認（線が即座に引ける）
+
+Day 2: Phase 2 圧力システム整理
+  ├─ PressureHandler純化
+  ├─ StrokeRecorder純化
+  └─ baseline動作確認
+
+Day 3: Phase 3 perfect-freehand統合
+  ├─ CDN追加（index.html）
+  ├─ StrokeRenderer書き直し
+  ├─ Mesh描画確認
+  └─ 単独点描画確認
+
+削除すべき二重実装
+
+    stroke-renderer.jsの古いGraphics.lineStyle()描画コード
+    drawing-engine.js内の座標変換（camera-systemに統一）
+    複数箇所にあるdevicePixelRatio計算
