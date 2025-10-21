@@ -1,0 +1,228 @@
+ペン描画高精度化改修計画書
+目標
+0荷重から1px点までリニアに立ち上がるフェザータッチペンを実装する。
+最終目標：Procreate級の描画品質（120Hz対応・SDF方式）
+
+Phase 1: 基盤整備（圧力キャリブレーション + devicePixelRatio対応）
+対象ファイル
+
+改修: system/drawing/pressure-handler.js
+改修: system/drawing/stroke-recorder.js
+参照: config.js, system/drawing/brush-settings.js
+
+実装内容
+1.1 圧力キャリブレーション機構
+pressure-handler.js に追加:
+- pointerdown時にN=5サンプル取得してbaseline算出
+- 実圧力 = max(0, raw_pressure - baseline) / (1 - baseline)
+- baseline値はストローク毎にリセット
+```
+
+**注意点:**
+- `baseline`は`PressureHandler`クラスのプライベート変数として保持
+- `EventBus`で`stroke:start`時にリセット処理を呼ぶ
+- raw_pressureが0の場合でもbaseline算出に含める（ゼロ荷重検出のため）
+
+#### 1.2 devicePixelRatio対応（最小表示幅）
+**stroke-renderer.js に追加:**
+```
+minWidth = 1 / renderer.resolution
+実際の最小描画サイズ = minWidth * devicePixelRatio
+```
+
+**注意点:**
+- `renderer.resolution`はPixi v8では`PIXI.settings.RESOLUTION`ではなく`app.renderer.resolution`から取得
+- DPR=2環境で0.5pxが物理1pxになる計算を実装
+- `BrushSettings`に`minPhysicalWidth`プロパティ追加
+
+---
+
+## Phase 2: perfect-freehand導入 + Mesh描画
+
+### 対象ファイル
+- **新規作成**: `lib/perfect-freehand.min.js`（CDN: https://cdn.jsdelivr.net/npm/perfect-freehand@1.2.2/dist/perfect-freehand.umd.min.js）
+- **改修**: `system/drawing/stroke-renderer.js`
+- **改修**: `system/drawing/stroke-transformer.js`
+- **参照**: `index.html`（script追加）, `system/history.js`
+
+### 実装内容
+
+#### 2.1 perfect-freehand統合
+**stroke-renderer.js 主要変更:**
+```
+getStroke()関数を呼び出し:
+- thinning: 0（圧力に忠実）
+- size: 1（圧力値で絶対サイズ決定）
+- smoothing: 0.5
+- streamline: 0.5
+```
+
+**注意点:**
+- `getStroke()`の入力形式は`[[x, y, pressure], ...]`
+- 出力は`[[x, y], ...]`のアウトライン座標配列
+- 座標系は**レイヤーローカル座標**（layer-transform.js参照）
+
+#### 2.2 アウトライン→三角メッシュ変換
+**stroke-renderer.jsに実装:**
+```
+- アウトライン配列をtriangle strip方式で頂点配列化
+- PIXI.Mesh生成（geometry: new PIXI.Geometry()）
+- 頂点座標・UV・インデックス配列を設定
+重要な定義:
+javascript// Mesh構造
+const geometry = new PIXI.Geometry()
+  .addAttribute('aVertexPosition', vertices, 2) // [x,y,x,y,...]
+  .addAttribute('aUvs', uvs, 2)
+  .addIndex(indices); // triangle strip indices
+```
+
+**注意点:**
+- Pixi v8では`PIXI.Mesh`コンストラクタが変更されている
+- `mesh.tint = color`でカラー設定
+- 既存の`Graphics.lineStyle()`描画は**完全削除**（二重実装防止）
+
+#### 2.3 History統合
+**history.js確認事項:**
+- `StrokeData`に`meshVertices`フィールド追加
+- undo/redo時にMeshを再構築するロジック追加
+- `batch-api.js`の`addStroke()`でMeshデータも含める
+
+---
+
+## Phase 3: 短距離クリック（単独点）対応
+
+### 対象ファイル
+- **改修**: `system/drawing/stroke-recorder.js`
+- **改修**: `system/drawing/stroke-renderer.js`
+- **参照**: `system/drawing/drawing-engine.js`
+
+### 実装内容
+
+#### 3.1 クリック判定ロジック
+**stroke-recorder.js に追加:**
+```
+pointerup時判定:
+- ストローク距離 < 2px AND サンプル数 <= 2
+- → 単独点フラグを立てる
+```
+
+#### 3.2 単独点の円描画
+**stroke-renderer.js に追加:**
+```
+単独点判定時:
+- PIXI.Graphics.drawCircle(x, y, radius)
+- radius = minPhysicalWidth（Phase 1で定義）
+- perfect-freehandを通さず直接描画
+```
+
+**注意点:**
+- 円の中心座標は最初のpointerdown座標を使用
+- `pressure`が0でも必ず`minPhysicalWidth`で描画
+- Mesh描画とは別パスで処理（条件分岐明確化）
+
+---
+
+## Phase 4: 圧力フィルタ（極小点保護）
+
+### 対象ファイル
+- **改修**: `system/drawing/pressure-handler.js`
+- **新規作成**: `system/drawing/pressure-filter.js`
+- **参照**: `config.js`（フィルタ定数）
+
+### 実装内容
+
+#### 4.1 距離ベース適応フィルタ
+**pressure-filter.js 新規実装:**
+```
+class PressureFilter {
+  apply(currentPressure, prevPressure, distance) {
+    // 短距離（< 5px）→ 即時反映（フィルタ係数0.9）
+    // 長距離（> 20px）→ 低パスフィルタ（係数0.3）
+    const alpha = this.getAlpha(distance);
+    return prevPressure * (1 - alpha) + currentPressure * alpha;
+  }
+}
+```
+
+**注意点:**
+- `distance`は前サンプルとの2Dユークリッド距離
+- フィルタ係数はlinear interpolation
+- Phase 1のbaseline補正**後**に適用
+
+#### 4.2 統合
+**pressure-handler.js 変更:**
+```
+- PressureFilterインスタンスを保持
+- getRawPressure() → getFilteredPressure()にリネーム
+- ストローク距離計算を追加
+```
+
+---
+
+## Phase 5（将来）: SDF方式への移行
+
+### 前提条件
+- Phase 1〜4が完全動作している
+- perfect-freehand + Meshで品質評価済み
+
+### 概要（詳細は次段階で計画）
+```
+- Fragment Shaderで距離場レンダリング
+- 筆圧曲線の非線形補正をGPU内で実行
+- 120Hz入力に対応したテクスチャベース描画
+```
+
+**注意:**
+このPhaseは大規模改修のため別計画書として分離予定。
+
+---
+
+## 重要な注意事項（全Phase共通）
+
+### 座標系の一貫性
+- **入力**: pointer event座標（スクリーン座標）
+- **変換**: `camera-system.js`でレイヤーローカル座標へ
+- **描画**: レイヤーローカル座標系でMesh生成
+- **保存**: `data-models.js`のStrokeDataはレイヤーローカル
+
+### EventBus連携
+```
+stroke:start → baseline初期化 + フィルタリセット
+stroke:point → 圧力フィルタ適用 + サンプル記録
+stroke:end → Mesh生成 + History追加
+既存機能との整合性
+
+stroke-transformer.jsの変形処理はMesh頂点を直接操作
+drawing-clipboard.jsのコピー時はMeshデータも含める
+layer-system.jsの合成モードはMeshのblendMode設定
+
+パフォーマンス指標
+
+120Hz入力時の描画レイテンシ < 8ms
+Mesh頂点数上限: 10000頂点/ストローク
+メモリ使用量: ストローク毎 < 100KB
+
+
+Phase別推奨実装順序
+
+Phase 1 → 即座実装（1日）: 基盤が全てに影響
+Phase 2 → 中核機能（2日）: 描画エンジン刷新
+Phase 3 → 短期改善（半日）: UX向上
+Phase 4 → 品質向上（1日）: 描画フィール調整
+
+Phase 5はPhase 1〜4完了後に評価会議を経て決定。
+
+検証項目チェックリスト
+各Phase完了時に確認:
+
+ 0荷重でも1px点が描画される
+ 圧力0.01→1.0まで線形に太さ変化
+ DPR=2環境で物理1px描画確認
+ クリック時に点が消えない
+ Undo/RedoでMesh復元される
+ メモリリーク無し（DevTools確認）
+ EventBusイベント順序が正しい
+
+
+本計画書はAI実装者向けに最適化されています。
+人間向けの説明・背景・根拠は省略し実装仕様のみ記載。
