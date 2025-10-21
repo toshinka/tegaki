@@ -1,5 +1,4 @@
-// ===== core-initializer.js - Phase1C: Vキー診断修正版 =====
-// 🔥 修正: Vキー診断テストを削除（不要な自動発火を防止）
+// ===== core-initializer.js - スリム化版 =====
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -36,9 +35,7 @@ window.CoreInitializer = (function() {
 
     function buildDOM() {
         const appContainer = document.getElementById('app');
-        if (!appContainer) {
-            throw new Error('#app container not found');
-        }
+        if (!appContainer) throw new Error('#app container not found');
         
         const mainLayout = window.DOMBuilder.buildMainLayout();
         appContainer.appendChild(mainLayout);
@@ -107,11 +104,9 @@ window.CoreInitializer = (function() {
         async initialize() {
             const CONFIG = window.TEGAKI_CONFIG;
             const CoreEngine = window.TegakiCore.CoreEngine;
-            
             const UIController = window.TegakiUI.UIController;
-            if (!UIController) {
-                throw new Error('UIController class not found in window.TegakiUI');
-            }
+            
+            if (!UIController) throw new Error('UIController not found');
             
             const containerEl = document.getElementById('drawing-canvas');
             if (!containerEl) throw new Error('Canvas container not found');
@@ -139,10 +134,7 @@ window.CoreInitializer = (function() {
             
             window.coreEngine = this.coreEngine;
             
-            this.settingsManager = initializeSettingsManager(
-                window.TegakiEventBus,
-                CONFIG
-            );
+            this.settingsManager = initializeSettingsManager(window.TegakiEventBus, CONFIG);
             
             window.CoreRuntime.init({
                 app: this.pixiApp,
@@ -180,12 +172,13 @@ window.CoreInitializer = (function() {
         
         initializeExportSystem() {
             const tryInit = () => {
-                if (!window.animationSystem) {
+                if (!window.animationSystem || !window.CoreRuntime) {
                     setTimeout(tryInit, 200);
                     return;
                 }
                 
-                if (!window.CoreRuntime) {
+                if (!window.ExportManager || !window.PNGExporter || 
+                    !window.APNGExporter || !window.GIFExporter) {
                     setTimeout(tryInit, 200);
                     return;
                 }
@@ -207,9 +200,7 @@ window.CoreInitializer = (function() {
                     }
                 );
                 
-                if (!success) {
-                    setTimeout(tryInit, 200);
-                }
+                if (!success) setTimeout(tryInit, 200);
             };
             
             if (window.TegakiEventBus) {
@@ -282,77 +273,27 @@ window.CoreInitializer = (function() {
         }
     }
 
-    function runDiagnostics() {
-        if (window.CoordinateSystem?.diagnoseReferences) {
-            window.CoordinateSystem.diagnoseReferences();
-        }
-        
-        if (window.SystemDiagnostics) {
-            setTimeout(() => {
-                try {
-                    const diagnostics = new window.SystemDiagnostics();
-                    diagnostics.runFullDiagnostics();
-                } catch (diagError) {
-                }
-            }, 1000);
-        }
-        
-        if (window.PopupManager) {
-            setTimeout(() => {
-                window.PopupManager.diagnose();
-            }, 2000);
-        }
-    }
-
-    // 🔥 Phase1C修正: Vキー診断を削除（不要な自動発火を防止）
-    // KeyboardHandlerは既に初期化されており、手動テストは不要
-    // diagnoseKeyboardHandler() 関数を削除
-
     async function initialize() {
-        try {
-            console.log('🚀 Phase1C: CoreInitializer starting...');
-            
-            checkDependencies();
-            console.log('✅ Dependencies OK');
-            
-            buildDOM();
-            console.log('✅ DOM built');
-            
-            // Phase1C: KeyboardHandler初期化を確実に実行
-            if (window.KeyboardHandler && window.KeyboardHandler.init) {
-                window.KeyboardHandler.init();
-                console.log('✅ Phase1C: KeyboardHandler.init() executed');
-                
-                // 初期化フラグ設定
-                document._keyboardHandlerInitialized = true;
-            } else {
-                console.error('❌ Phase1C: KeyboardHandler.init() not found');
-            }
-            
-            const app = new DrawingApp();
-            await app.initialize();
-            
-            window.drawingAppInstance = app;
-            
-            setupHistoryIntegration();
-            
-            if (window.ResizeSlider) {
-                setTimeout(() => {
-                    window.ResizeSlider.init();
-                }, 100);
-            }
-            
-            runDiagnostics();
-            
-            // 🔥 削除: diagnoseKeyboardHandler() の呼び出しを削除
-            // Vキーの動作確認は実際のキー押下で行う
-            
-            console.log('✅✅✅ Phase1C: Application initialized successfully ✅✅✅');
-            return true;
-        } catch (error) {
-            console.error('❌ Phase1C: Initialization failed:', error);
-            throw error;
+        checkDependencies();
+        buildDOM();
+        
+        if (window.KeyboardHandler && window.KeyboardHandler.init) {
+            window.KeyboardHandler.init();
+            document._keyboardHandlerInitialized = true;
         }
+        
+        const app = new DrawingApp();
+        await app.initialize();
+        
+        window.drawingAppInstance = app;
+        
+        setupHistoryIntegration();
+        
+        if (window.ResizeSlider) {
+            setTimeout(() => window.ResizeSlider.init(), 100);
+        }
+        
+        return true;
     }
 
     return {
@@ -361,5 +302,3 @@ window.CoreInitializer = (function() {
         DrawingApp
     };
 })();
-
-console.log('✅ core-initializer.js (Phase1C: Vキー診断修正版) loaded');

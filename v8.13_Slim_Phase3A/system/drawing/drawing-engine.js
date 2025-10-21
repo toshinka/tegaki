@@ -1,11 +1,8 @@
 /**
- * DrawingEngine v3.3 - PHASE 3完了版
+ * DrawingEngine v3.4 - Phase3完了版
  * Perfect Freehand対応ベクターペンエンジン
  * 
- * 🔧 v3.3改修内容（Phase 3: 設定参照統一）:
- * - CONFIG直接参照削除
- * - SettingsManager経由での設定取得に統一
- * - コンソールログ削減（エラーのみ保持）
+ * Phase3: CONFIG直接参照削除、SettingsManager経由統一
  */
 
 class DrawingEngine {
@@ -121,7 +118,6 @@ class DrawingEngine {
     const scaledSize = this.renderer.getScaledSize(this.settings.getBrushSize(), currentScale);
     strokeOptions.size = scaledSize;
 
-    // Phase 3: CONFIG.background.color → config参照（起動時固定値OK）
     this.currentPath = this.recorder.startNewPath(
       { x: canvasPoint.x, y: canvasPoint.y, pressure },
       this.currentTool === 'eraser' ? this.config.background.color : this.settings.getBrushColor(),
@@ -205,12 +201,8 @@ class DrawingEngine {
             }
             
             if (path.graphics) {
-              try {
-                if (activeLayer) {
-                  activeLayer.removeChild(path.graphics);
-                }
-                path.graphics.destroy({ children: true, texture: false, baseTexture: false });
-              } catch (e) {}
+              if (activeLayer) activeLayer.removeChild(path.graphics);
+              path.graphics.destroy({ children: true, texture: false, baseTexture: false });
             }
             
             this.layerManager.requestThumbnailUpdate(layerIndex);
