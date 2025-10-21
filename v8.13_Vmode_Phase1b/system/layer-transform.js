@@ -77,6 +77,11 @@
         exitMoveMode(activeLayer) {
             if (!this.isVKeyPressed) return;
             
+            // 🔥 PHASE 1: 変形確定を確実に実行
+            if (activeLayer) {
+                this.confirmTransform(activeLayer);
+            }
+            
             this.isVKeyPressed = false;
             this.isDragging = false;
             
