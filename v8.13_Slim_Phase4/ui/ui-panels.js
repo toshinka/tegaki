@@ -1,6 +1,6 @@
-// ===== ui-panels.js - PopupManager対応改修版 =====
+// ===== ui-panels.js - Phase3クリーン版 =====
 // 責務: UIイベント管理、PopupManagerへの委譲
-// 🔥 改修: PopupManager統合、直接参照の削除、排他制御の委譲
+// 改修: コンソールログ削除、CameraSystemDOM参照削除対応完了
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -29,9 +29,6 @@ window.TegakiUI.UIController = class {
     // ===== PopupManager統合メソッド =====
     
     getPopupManager() {
-        if (!window.PopupManager) {
-            console.warn('PopupManager not initialized yet');
-        }
         return window.PopupManager;
     }
     
@@ -110,9 +107,9 @@ window.TegakiUI.UIController = class {
             const layerAddBtn = e.target.closest('#add-layer-btn');
             if (layerAddBtn) {
                 const layerCount = this.layerManager?.layers?.length || 1;
-                const result = window.CoreRuntime.api.createLayer(`レイヤー${layerCount}`);
+                const result = window.CoreRuntime.api.layer.create(`レイヤー${layerCount}`);
                 if (result) {
-                    window.CoreRuntime.api.setActiveLayer(result.index);
+                    window.CoreRuntime.api.layer.setActive(result.index);
                 }
                 return;
             }
@@ -139,14 +136,14 @@ window.TegakiUI.UIController = class {
         const toolId = button.id;
         const toolMap = {
             'pen-tool': () => {
-                if (!window.CoreRuntime.api.setTool('pen')) return;
-                window.CoreRuntime.api.exitLayerMoveMode();
+                if (!window.CoreRuntime.api.tool.set('pen')) return;
+                window.CoreRuntime.api.layer.exitMoveMode();
                 this.togglePopup('quickAccess');
                 this.updateToolUI('pen');
             },
             'eraser-tool': () => {
-                if (!window.CoreRuntime.api.setTool('eraser')) return;
-                window.CoreRuntime.api.exitLayerMoveMode();
+                if (!window.CoreRuntime.api.tool.set('eraser')) return;
+                window.CoreRuntime.api.layer.exitMoveMode();
                 this.closeAllPopups();
                 this.updateToolUI('eraser');
             },
@@ -214,12 +211,12 @@ window.TegakiUI.UIController = class {
         const CONFIG = window.TEGAKI_CONFIG;
         
         window.TegakiUI.createSlider('pen-size-slider', 0.1, 100, CONFIG.pen.size, (value) => {
-            window.CoreRuntime.api.setBrushSize(value);
+            window.CoreRuntime.api.brush.setSize(value);
             return value.toFixed(1) + 'px';
         });
         
         window.TegakiUI.createSlider('pen-opacity-slider', 0, 100, CONFIG.pen.opacity * 100, (value) => {
-            window.CoreRuntime.api.setBrushOpacity(value / 100);
+            window.CoreRuntime.api.brush.setOpacity(value / 100);
             return value.toFixed(1) + '%';
         });
     }
@@ -236,7 +233,7 @@ window.TegakiUI.UIController = class {
                     const newHeight = parseInt(heightInput.value);
                     
                     if (newWidth > 0 && newHeight > 0) {
-                        window.CoreRuntime.api.resizeCanvas(newWidth, newHeight);
+                        window.CoreRuntime.api.camera.resize(newWidth, newHeight);
                         this.closeAllPopups();
                     }
                 }
@@ -467,5 +464,3 @@ window.TegakiUI.initializeSortable = function(layerManager) {
         }
     });
 };
-
-console.log('✅ ui-panels.js (PopupManager対応版) loaded');

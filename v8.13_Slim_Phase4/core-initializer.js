@@ -1,4 +1,6 @@
-// ===== core-initializer.js - スリム化版 =====
+// ===== core-initializer.js - Phase3完了・クリーン版 =====
+// 責務: 依存関係チェック、DOM構築、システム初期化
+// 改修: コンソールログ削除、冗長コード削減
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -92,6 +94,15 @@ window.CoreInitializer = (function() {
         return popupManager;
     }
 
+    function setupEventBusListeners(coreEngine) {
+        const eventBus = window.TegakiEventBus;
+        if (!eventBus) return;
+
+        const statusDisplay = new window.TegakiUI.StatusDisplayRenderer();
+        statusDisplay.setupEventListeners();
+        window.StatusDisplayRenderer = statusDisplay;
+    }
+
     class DrawingApp {
         constructor() {
             this.pixiApp = null;
@@ -154,6 +165,8 @@ window.CoreInitializer = (function() {
 
             this.popupManager = initializePopupManager(this, this.coreEngine);
             
+            setupEventBusListeners(this.coreEngine);
+            
             this.initializeExportSystem();
             
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
@@ -164,8 +177,6 @@ window.CoreInitializer = (function() {
             this.updateCanvasInfo();
             this.updateDPRInfo();
             this.startFPSMonitor();
-            
-            window.drawingApp = drawingApp;
             
             return true;
         }
@@ -260,19 +271,6 @@ window.CoreInitializer = (function() {
         }
     }
 
-    function setupHistoryIntegration() {
-        if (window.TegakiEventBus && window.History) {
-            window.TegakiEventBus.on('history:changed', (data) => {
-                const historyElement = document.getElementById('history-info');
-                if (historyElement && data) {
-                    const currentIndex = data.currentIndex + 1;
-                    const stackSize = data.stackSize;
-                    historyElement.textContent = `${currentIndex}/${stackSize}`;
-                }
-            });
-        }
-    }
-
     async function initialize() {
         checkDependencies();
         buildDOM();
@@ -286,8 +284,6 @@ window.CoreInitializer = (function() {
         await app.initialize();
         
         window.drawingAppInstance = app;
-        
-        setupHistoryIntegration();
         
         if (window.ResizeSlider) {
             setTimeout(() => window.ResizeSlider.init(), 100);
