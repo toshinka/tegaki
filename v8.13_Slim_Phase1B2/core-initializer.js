@@ -1,5 +1,5 @@
-// ===== core-initializer.js - Phase1C: Vキー確実初期化版 =====
-// 🔥 Phase1C: KeyboardHandler初期化確認強化 + 診断追加
+// ===== core-initializer.js - Phase1C: Vキー診断修正版 =====
+// 🔥 修正: Vキー診断テストを削除（不要な自動発火を防止）
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -304,36 +304,9 @@ window.CoreInitializer = (function() {
         }
     }
 
-    // Phase1C: KeyboardHandler初期化確認診断
-    function diagnoseKeyboardHandler() {
-        setTimeout(() => {
-            const eventBus = window.TegakiEventBus;
-            if (!eventBus) return;
-            
-            // テストリスナー追加
-            let vkeyTestReceived = false;
-            const testListener = () => {
-                vkeyTestReceived = true;
-            };
-            
-            eventBus.on('keyboard:vkey-pressed', testListener);
-            
-            // 手動イベント発火テスト
-            setTimeout(() => {
-                eventBus.emit('keyboard:vkey-pressed', { pressed: true });
-                
-                setTimeout(() => {
-                    if (vkeyTestReceived) {
-                        console.log('✅ Phase1C: Vキーイベント配信正常');
-                    } else {
-                        console.warn('⚠️ Phase1C: Vキーイベント配信失敗 - EventBus確認必要');
-                    }
-                    
-                    eventBus.off('keyboard:vkey-pressed', testListener);
-                }, 100);
-            }, 100);
-        }, 1000);
-    }
+    // 🔥 Phase1C修正: Vキー診断を削除（不要な自動発火を防止）
+    // KeyboardHandlerは既に初期化されており、手動テストは不要
+    // diagnoseKeyboardHandler() 関数を削除
 
     async function initialize() {
         try {
@@ -371,8 +344,8 @@ window.CoreInitializer = (function() {
             
             runDiagnostics();
             
-            // Phase1C: Vキー診断実行
-            diagnoseKeyboardHandler();
+            // 🔥 削除: diagnoseKeyboardHandler() の呼び出しを削除
+            // Vキーの動作確認は実際のキー押下で行う
             
             console.log('✅✅✅ Phase1C: Application initialized successfully ✅✅✅');
             return true;
@@ -389,4 +362,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (Phase1C: Vキー確実初期化版) loaded');
+console.log('✅ core-initializer.js (Phase1C: Vキー診断修正版) loaded');
