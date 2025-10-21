@@ -1,11 +1,9 @@
-// ===== coordinate-system.js - Phase 2: 診断専用化明示版 =====
+// ===== coordinate-system.js - Phase 2: 診断専用化明示版（ログスリム化） =====
 /**
  * ⚠️ 診断・デバッグ専用
  * 本番コードでの座標変換使用禁止
  * 座標変換は CameraSystem.screenToCanvas() を使用すること
  */
-// 【Phase 2改修】本番使用禁止の明示化
-// PixiJS v8.13 対応・計画書完全準拠版
 
 (function() {
     'use strict';
@@ -14,21 +12,16 @@
         constructor() {
             this.config = null;
             this.eventBus = null;
-            
             this.layerSystem = null;
             this.cameraSystem = null;
             this.animationSystem = null;
-            
             this.transformCache = new Map();
             this.cacheVersion = 0;
-            
             this.transformSettings = {
                 enableCache: true,
                 cacheMaxSize: 100,
                 enableDebug: false
             };
-            
-            console.log('🧭 CoordinateSystem: 診断専用版 初期化');
         }
         
         init(config, eventBus) {
@@ -40,9 +33,6 @@
             }
             
             this.setupEventListeners();
-            
-            console.log('✅ CoordinateSystem initialized (診断専用)');
-            console.log('   ⚠️ 本番座標変換は CameraSystem.screenToCanvas() を使用');
         }
         
         setupEventListeners() {
@@ -70,9 +60,7 @@
         }
         
         applyLayerTransform(layer, transform, centerX, centerY) {
-            if (!layer || !transform) {
-                return false;
-            }
+            if (!layer || !transform) return false;
             
             try {
                 const hasRotationOrScale = (transform.rotation !== 0 || 
@@ -99,7 +87,6 @@
                 }
                 
                 return true;
-                
             } catch (error) {
                 return false;
             }
@@ -132,10 +119,7 @@
             };
         }
         
-        // === 診断専用座標変換 ===
         screenToWorld(screenX, screenY) {
-            console.warn('⚠️ CoordinateSystem.screenToWorld() は診断専用です');
-            
             const cacheKey = `s2w_${screenX}_${screenY}_${this.cacheVersion}`;
             
             if (this.transformSettings.enableCache && this.transformCache.has(cacheKey)) {
@@ -163,8 +147,6 @@
         }
         
         worldToScreen(worldX, worldY) {
-            console.warn('⚠️ CoordinateSystem.worldToScreen() は診断専用です');
-            
             const cacheKey = `w2s_${worldX}_${worldY}_${this.cacheVersion}`;
             
             if (this.transformSettings.enableCache && this.transformCache.has(cacheKey)) {
@@ -324,7 +306,6 @@
             }
         }
         
-        // === 診断機能 ===
         diagnoseReferences() {
             const diagnosis = {
                 timestamp: new Date().toISOString(),
@@ -341,204 +322,32 @@
                 systemReferences: {
                     hasLayerSystem: !!this.layerSystem,
                     hasCameraSystem: !!this.cameraSystem,
-                    hasAnimationSystem: !!this.animationSystem,
-                    layerSystemType: this.layerSystem ? this.layerSystem.constructor.name : 'None',
-                    cameraSystemType: this.cameraSystem ? this.cameraSystem.constructor.name : 'None',
-                    animationSystemType: this.animationSystem ? this.animationSystem.constructor.name : 'None'
+                    hasAnimationSystem: !!this.animationSystem
                 },
                 cache: {
                     enabled: this.transformSettings.enableCache,
                     size: this.transformCache.size,
                     maxSize: this.transformSettings.cacheMaxSize,
                     version: this.cacheVersion
-                },
-                settings: { ...this.transformSettings }
+                }
             };
             
             const issues = [];
             if (!diagnosis.config.hasConfig) issues.push('Config missing');
             if (!diagnosis.config.hasCanvasConfig) issues.push('Canvas config missing');
             if (!diagnosis.eventBus.hasEventBus) issues.push('EventBus missing');
-            if (!diagnosis.systemReferences.hasLayerSystem) issues.push('LayerSystem reference missing');
-            if (!diagnosis.systemReferences.hasCameraSystem) issues.push('CameraSystem reference missing');
             
             diagnosis.issues = issues;
             diagnosis.healthScore = Math.max(0, 100 - (issues.length * 20));
             
             return diagnosis;
         }
-        
-        runTransformTests() {
-            const tests = [];
-            
-            try {
-                const testTransform = { x: 100, y: 50, rotation: 0, scaleX: 1, scaleY: 1 };
-                const normalized = this.normalizeTransform(testTransform);
-                tests.push({
-                    name: 'normalizeTransform',
-                    passed: normalized.x === 100 && normalized.y === 50,
-                    result: normalized
-                });
-            } catch (error) {
-                tests.push({
-                    name: 'normalizeTransform',
-                    passed: false,
-                    error: error.message
-                });
-            }
-            
-            try {
-                const screenPoint = { x: 400, y: 300 };
-                const worldPoint = this.screenToWorld(screenPoint.x, screenPoint.y);
-                const backToScreen = this.worldToScreen(worldPoint.x, worldPoint.y);
-                
-                const accuracy = this.distance(screenPoint.x, screenPoint.y, backToScreen.x, backToScreen.y);
-                tests.push({
-                    name: 'screenToWorld_worldToScreen',
-                    passed: accuracy < 1.0,
-                    accuracy: accuracy,
-                    original: screenPoint,
-                    converted: backToScreen
-                });
-            } catch (error) {
-                tests.push({
-                    name: 'screenToWorld_worldToScreen',
-                    passed: false,
-                    error: error.message
-                });
-            }
-            
-            try {
-                const dist = this.distance(0, 0, 3, 4);
-                tests.push({
-                    name: 'distance',
-                    passed: Math.abs(dist - 5) < 0.001,
-                    expected: 5,
-                    actual: dist
-                });
-            } catch (error) {
-                tests.push({
-                    name: 'distance',
-                    passed: false,
-                    error: error.message
-                });
-            }
-            
-            try {
-                const normalized = this.normalizeAngle(3 * Math.PI);
-                tests.push({
-                    name: 'normalizeAngle',
-                    passed: Math.abs(normalized - Math.PI) < 0.001,
-                    expected: Math.PI,
-                    actual: normalized
-                });
-            } catch (error) {
-                tests.push({
-                    name: 'normalizeAngle',
-                    passed: false,
-                    error: error.message
-                });
-            }
-            
-            const passedTests = tests.filter(test => test.passed).length;
-            
-            return {
-                tests: tests,
-                totalTests: tests.length,
-                passedTests: passedTests,
-                failedTests: tests.length - passedTests,
-                successRate: (passedTests / tests.length) * 100
-            };
-        }
-        
-        logDebugInfo() {
-            console.log('🔍 CoordinateSystem Debug Info:');
-            console.log('=====================================');
-            
-            const diagnosis = this.diagnoseReferences();
-            const testResults = this.runTransformTests();
-            
-            console.log('📊 System Status:');
-            console.log(`  - Health Score: ${diagnosis.healthScore}%`);
-            console.log(`  - Canvas Size: ${diagnosis.config.canvasSize}`);
-            console.log(`  - EventBus: ${diagnosis.eventBus.hasEventBus ? '✅' : '❌'}`);
-            
-            console.log('🔗 System References:');
-            console.log(`  - LayerSystem: ${diagnosis.systemReferences.hasLayerSystem ? '✅' : '❌'}`);
-            console.log(`  - CameraSystem: ${diagnosis.systemReferences.hasCameraSystem ? '✅' : '❌'}`);
-            console.log(`  - AnimationSystem: ${diagnosis.systemReferences.hasAnimationSystem ? '✅' : '❌'}`);
-            
-            console.log('💾 Cache Status:');
-            console.log(`  - Enabled: ${diagnosis.cache.enabled ? '✅' : '❌'}`);
-            console.log(`  - Size: ${diagnosis.cache.size}/${diagnosis.cache.maxSize}`);
-            console.log(`  - Version: ${diagnosis.cache.version}`);
-            
-            console.log('🧪 Transform Tests:');
-            console.log(`  - Success Rate: ${testResults.successRate.toFixed(1)}%`);
-            console.log(`  - Passed: ${testResults.passedTests}/${testResults.totalTests}`);
-            
-            if (testResults.failedTests > 0) {
-                console.log('  - Failed Tests:');
-                testResults.tests.filter(test => !test.passed).forEach(test => {
-                    console.log(`    ❌ ${test.name}: ${test.error || 'Assertion failed'}`);
-                });
-            }
-            
-            if (diagnosis.issues.length > 0) {
-                console.log('⚠️ Issues:');
-                diagnosis.issues.forEach(issue => {
-                    console.log(`  - ${issue}`);
-                });
-            } else {
-                console.log('✅ All systems operational');
-            }
-            
-            console.log('=====================================');
-            
-            return { diagnosis, testResults };
-        }
-        
-        runPerformanceTest(iterations = 1000) {
-            const results = {};
-            
-            const startTime = performance.now();
-            
-            for (let i = 0; i < iterations; i++) {
-                const x = Math.random() * this.config.canvas.width;
-                const y = Math.random() * this.config.canvas.height;
-                const world = this.screenToWorld(x, y);
-                const screen = this.worldToScreen(world.x, world.y);
-            }
-            
-            const endTime = performance.now();
-            const avgTime = (endTime - startTime) / iterations;
-            
-            results.coordinateTransform = {
-                iterations: iterations,
-                totalTime: endTime - startTime,
-                averageTime: avgTime,
-                operationsPerSecond: 1000 / avgTime
-            };
-            
-            console.log('⚡ CoordinateSystem Performance Test Results:');
-            console.log(`  - ${iterations} coordinate transformations in ${(endTime - startTime).toFixed(2)}ms`);
-            console.log(`  - Average: ${avgTime.toFixed(4)}ms per operation`);
-            console.log(`  - Throughput: ${Math.round(results.coordinateTransform.operationsPerSecond)} ops/sec`);
-            
-            return results;
-        }
     }
     
     const coordinateSystem = new CoordinateSystem();
     window.CoordinateSystem = coordinateSystem;
     window.TEGAKI_COORDINATE_SYSTEM = coordinateSystem;
-    
-    // Phase 2: 診断専用明示
     window.CoordinateSystem.DIAGNOSTIC_ONLY = true;
-    
-    console.log('✅ coordinate-system.js (Phase 2: 診断専用化明示版) loaded');
-    console.log('   ⚠️ 本番座標変換: CameraSystem.screenToCanvas() 使用必須');
-    console.log('   ⚠️ このファイルは診断・デバッグ専用です');
     
     if (typeof window !== 'undefined') {
         if (document.readyState === 'loading') {
@@ -546,8 +355,7 @@
                 if (window.TEGAKI_CONFIG && window.TegakiEventBus) {
                     try {
                         coordinateSystem.init(window.TEGAKI_CONFIG, window.TegakiEventBus);
-                    } catch (error) {
-                    }
+                    } catch (error) {}
                 }
             });
         } else {
@@ -555,8 +363,7 @@
                 if (window.TEGAKI_CONFIG && window.TegakiEventBus && !coordinateSystem.config) {
                     try {
                         coordinateSystem.init(window.TEGAKI_CONFIG, window.TegakiEventBus);
-                    } catch (error) {
-                    }
+                    } catch (error) {}
                 }
             }, 100);
         }

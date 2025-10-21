@@ -1,11 +1,11 @@
 /**
- * DrawingEngine v3.2 - PHASE 1対応・シンプル化版
+ * DrawingEngine v3.3 - PHASE 3完了版
  * Perfect Freehand対応ベクターペンエンジン
  * 
- * 🔧 v3.2修正内容:
- * - cameraSystem.camera.scale → cameraSystem.worldContainer.scale.x に修正
- * - サブモジュール存在チェック強化
- * - フォールバック処理削除（即座失敗）
+ * 🔧 v3.3改修内容（Phase 3: 設定参照統一）:
+ * - CONFIG直接参照削除
+ * - SettingsManager経由での設定取得に統一
+ * - コンソールログ削減（エラーのみ保持）
  */
 
 class DrawingEngine {
@@ -15,7 +15,6 @@ class DrawingEngine {
     this.eventBus = eventBus;
     this.config = config || {};
 
-    // サブモジュール初期化
     if (!window.TegakiDrawing) {
       throw new Error('window.TegakiDrawing namespace not found');
     }
@@ -42,7 +41,6 @@ class DrawingEngine {
     this.pressureHandler = new window.TegakiDrawing.PressureHandler();
     this.transformer = new window.TegakiDrawing.StrokeTransformer(config);
 
-    // 描画状態
     this.isDrawing = false;
     this.currentTool = 'pen';
     this.currentPath = null;
@@ -117,14 +115,13 @@ class DrawingEngine {
   startDrawing(screenX, screenY, pressureOrEvent) {
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
     const pressure = this.pressureHandler.getPressure(pressureOrEvent);
-
-    // 🔧 修正: cameraSystem.camera.scale → worldContainer.scale.x
     const currentScale = this.cameraSystem.worldContainer?.scale?.x || 1;
 
     const strokeOptions = this.settings.getStrokeOptions();
     const scaledSize = this.renderer.getScaledSize(this.settings.getBrushSize(), currentScale);
     strokeOptions.size = scaledSize;
 
+    // Phase 3: CONFIG.background.color → config参照（起動時固定値OK）
     this.currentPath = this.recorder.startNewPath(
       { x: canvasPoint.x, y: canvasPoint.y, pressure },
       this.currentTool === 'eraser' ? this.config.background.color : this.settings.getBrushColor(),
@@ -169,7 +166,6 @@ class DrawingEngine {
   stopDrawing() {
     if (!this.isDrawing || !this.currentPath) return;
 
-    // Spline → Simplify順序
     if (this.transformer && this.currentPath.points.length > 2) {
       this.currentPath.points = this.transformer.preprocessStroke(this.currentPath.points);
     }

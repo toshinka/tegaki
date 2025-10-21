@@ -1,4 +1,4 @@
-// ===== system/layer-transform.js - Phase 1: 変形機能の独立化 =====
+// ===== system/layer-transform.js - Phase 1: 変形機能の独立化 + 反転機能修正 =====
 
 (function() {
     'use strict';
@@ -34,6 +34,9 @@
             // コールバック
             this.onTransformComplete = null;
             this.onTransformUpdate = null;
+            this.onFlipRequest = null;
+            this.onDragRequest = null;
+            this.onSliderChange = null;
         }
 
         // ========== 初期化 ==========
@@ -44,6 +47,7 @@
             
             this._setupTransformPanel();
             this._setupDragEvents();
+            this._setupFlipKeyEvents();
         }
 
         // ========== モード制御 ==========
@@ -507,6 +511,34 @@
             });
         }
 
+        _setupFlipKeyEvents() {
+            document.addEventListener('keydown', (e) => {
+                if (!this.isVKeyPressed) return;
+                
+                const activeElement = document.activeElement;
+                if (activeElement && (
+                    activeElement.tagName === 'INPUT' ||
+                    activeElement.tagName === 'TEXTAREA' ||
+                    activeElement.isContentEditable
+                )) {
+                    return;
+                }
+                
+                if (e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    if (e.shiftKey) {
+                        if (this.onFlipRequest) {
+                            this.onFlipRequest('vertical');
+                        }
+                    } else {
+                        if (this.onFlipRequest) {
+                            this.onFlipRequest('horizontal');
+                        }
+                    }
+                    e.preventDefault();
+                }
+            });
+        }
+
         _handleDrag(e) {
             if (this.onDragRequest) {
                 const dx = e.clientX - this.dragLastPoint.x;
@@ -648,5 +680,3 @@
     window.TegakiLayerTransform = LayerTransform;
 
 })();
-
-console.log('✅ layer-transform.js loaded');

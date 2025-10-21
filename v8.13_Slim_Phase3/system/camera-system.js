@@ -1,7 +1,6 @@
-// ===== system/camera-system.js - Phase 2: 座標変換API統一版 =====
-// 【Phase 2改修】screenToCanvas()明確化、forDrawingオプション削除
+// ===== system/camera-system.js - Phase 2完了・ログスリム化版 =====
 // 座標変換・ズーム・パン・回転等の「カメラ操作」専用
-// PixiJS v8.13 対応・改修計画書完全準拠版
+// PixiJS v8.13 対応
 
 (function() {
     'use strict';
@@ -154,9 +153,7 @@
 
         _setupEvents() {
             const canvas = this._getSafeCanvas();
-            if (!canvas) {
-                return;
-            }
+            if (!canvas) return;
 
             canvas.addEventListener('contextmenu', (e) => e.preventDefault());
             
@@ -446,7 +443,6 @@
             this.worldContainer.y += worldCenter.y - newWorldCenter.y;
         }
 
-        // === Phase 2: 座標変換API統一 ===
         screenToCanvas(screenX, screenY) {
             const globalPoint = { x: screenX, y: screenY };
             return this.canvasContainer.toLocal(globalPoint);
@@ -571,6 +567,4 @@
 
     window.TegakiCameraSystem = CameraSystem;
 
-    console.log('✅ camera-system.js (Phase 2: 座標変換API統一版) loaded');
-    console.log('  🔧 screenToCanvas() 明確化（forDrawingオプション削除）');
 })();
