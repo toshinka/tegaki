@@ -475,9 +475,26 @@
             }
         }
 
-        screenToCanvas(screenX, screenY) {
+        /**
+         * スクリーン座標 → レイヤーローカル座標変換
+         * @param {number} screenX - スクリーン座標X
+         * @param {number} screenY - スクリーン座標Y
+         * @returns {{x: number, y: number}} レイヤーローカル座標
+         */
+        screenToLayer(screenX, screenY) {
             const globalPoint = { x: screenX, y: screenY };
             return this.canvasContainer.toLocal(globalPoint);
+        }
+
+        screenToCanvas(screenX, screenY) {
+            return this.screenToLayer(screenX, screenY);
+        }
+
+        /**
+         * 座標情報更新（ステータス表示用）
+         */
+        updateCoordinates(x, y) {
+            // 空実装（互換性のため）
         }
 
         setZoom(level) {

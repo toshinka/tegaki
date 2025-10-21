@@ -3,10 +3,10 @@
  * 
  * 責務: ポインターイベント → 記録 → 描画 → 履歴のフロー制御
  * 
- * フロー:
- * pointerdown → stroke:start → プレビュー開始
- * pointermove → stroke:point → プレビュー更新
- * pointerup   → stroke:end   → 確定描画 + 履歴追加
+ * API:
+ * - startDrawing(x, y, event)
+ * - continueDrawing(x, y, event)
+ * - stopDrawing()
  */
 
 class DrawingEngine {
@@ -15,6 +15,7 @@ class DrawingEngine {
         this.layerSystem = layerSystem;
         this.cameraSystem = cameraSystem;
         this.history = history;
+        this.eventBus = window.TegakiEventBus;
 
         // コンポーネント初期化
         this.pressureHandler = new PressureHandler();
@@ -23,38 +24,24 @@ class DrawingEngine {
 
         // 状態管理
         this.isDrawing = false;
-        this.currentPreview = null; // リアルタイムプレビュー用Graphics
+        this.currentPreview = null;
         this.currentLayer = null;
         this.currentSettings = null;
-
-        // イベント登録
-        this.setupEventListeners();
+        this.currentTool = 'pen';
     }
 
     /**
-     * イベントリスナー登録
+     * 描画開始（core-runtime互換API）
      */
-    setupEventListeners() {
-        const canvas = this.app.canvas;
-
-        canvas.addEventListener('pointerdown', (e) => this.handlePointerDown(e));
-        canvas.addEventListener('pointermove', (e) => this.handlePointerMove(e));
-        canvas.addEventListener('pointerup', (e) => this.handlePointerUp(e));
-        canvas.addEventListener('pointercancel', (e) => this.handlePointerUp(e));
-    }
-
-    /**
-     * PointerDown処理 - ストローク開始
-     */
-    handlePointerDown(event) {
+    startDrawing(x, y, event) {
         // ツールモード確認
         if (window.stateManager && window.stateManager.state.tool !== 'pen') {
             return;
         }
 
-        // アクティブレイヤー取得
+        // アクティブレイヤー取得（PIXI.Container自体）
         this.currentLayer = this.layerSystem.getActiveLayer();
-        if (!this.currentLayer || this.currentLayer.locked) {
+        if (!this.currentLayer || this.currentLayer.layerData?.locked) {
             return;
         }
 
@@ -63,49 +50,49 @@ class DrawingEngine {
 
         // ストローク記録開始
         const pressure = event.pressure || 0.5;
-        this.strokeRecorder.startStroke(event.clientX, event.clientY, pressure);
+        this.strokeRecorder.startStroke(x, y, pressure);
 
         this.isDrawing = true;
 
         // EventBus通知
-        EventBus.emit('stroke:start', {
-            layerId: this.currentLayer.id,
-            settings: this.currentSettings
-        });
+        if (this.eventBus) {
+            this.eventBus.emit('stroke:start', {
+                layerId: this.currentLayer.layerData?.id || this.currentLayer.label,
+                settings: this.currentSettings
+            });
+        }
 
         // 初回プレビュー
         this.updatePreview();
     }
 
     /**
-     * PointerMove処理 - ストローク記録 + プレビュー更新
+     * 描画継続（core-runtime互換API）
      */
-    handlePointerMove(event) {
+    continueDrawing(x, y, event) {
         if (!this.isDrawing) return;
 
         // ポイント追加
         const pressure = event.pressure || 0.5;
-        this.strokeRecorder.addPoint(event.clientX, event.clientY, pressure);
+        this.strokeRecorder.addPoint(x, y, pressure);
 
         // プレビュー更新
         this.updatePreview();
 
         // EventBus通知
-        EventBus.emit('stroke:point', {
-            points: this.strokeRecorder.getCurrentPoints(),
-            settings: this.currentSettings
-        });
+        if (this.eventBus) {
+            this.eventBus.emit('stroke:point', {
+                points: this.strokeRecorder.getCurrentPoints(),
+                settings: this.currentSettings
+            });
+        }
     }
 
     /**
-     * PointerUp処理 - ストローク確定
+     * 描画終了（core-runtime互換API）
      */
-    handlePointerUp(event) {
+    stopDrawing() {
         if (!this.isDrawing) return;
-
-        // 最終ポイント追加
-        const pressure = event.pressure || 0.5;
-        this.strokeRecorder.addPoint(event.clientX, event.clientY, pressure);
 
         // ストローク記録終了
         const strokeData = this.strokeRecorder.endStroke();
@@ -121,9 +108,11 @@ class DrawingEngine {
         this.currentSettings = null;
 
         // EventBus通知
-        EventBus.emit('stroke:end', {
-            strokeData: strokeData
-        });
+        if (this.eventBus) {
+            this.eventBus.emit('stroke:end', {
+                strokeData: strokeData
+            });
+        }
     }
 
     /**
@@ -137,10 +126,12 @@ class DrawingEngine {
 
         // プレビュー描画
         const points = this.strokeRecorder.getCurrentPoints();
+        if (points.length === 0) return;
+
         this.currentPreview = this.strokeRenderer.renderPreview(points, this.currentSettings);
 
-        // レイヤーに追加
-        this.currentLayer.container.addChild(this.currentPreview);
+        // レイヤー（PIXI.Container自体）に追加
+        this.currentLayer.addChild(this.currentPreview);
     }
 
     /**
@@ -157,10 +148,19 @@ class DrawingEngine {
      * ストローク確定描画
      */
     finalizeStroke(strokeData) {
-        if (!this.currentLayer || strokeData.points.length === 0) return;
+        console.log('[DrawingEngine] finalizeStroke開始');
+        console.log('  currentLayer:', this.currentLayer);
+        console.log('  strokeData.points.length:', strokeData.points.length);
+        
+        if (!this.currentLayer || strokeData.points.length === 0) {
+            console.warn('[DrawingEngine] finalizeStroke中止: currentLayer=', this.currentLayer, 'points=', strokeData.points.length);
+            return;
+        }
 
-        // 高品質レンダリング（Mesh方式）
+        // 高品質レンダリング（筆圧反映版）
         const strokeObject = this.strokeRenderer.renderFinalStroke(strokeData, this.currentSettings);
+        
+        console.log('[DrawingEngine] strokeObject生成:', strokeObject);
 
         // StrokeData作成
         const strokeModel = new window.TegakiDataModels.StrokeData({
@@ -169,45 +169,74 @@ class DrawingEngine {
             color: this.currentSettings.color,
             size: this.currentSettings.size,
             alpha: this.currentSettings.alpha,
-            layerId: this.currentLayer.id
+            layerId: this.currentLayer.layerData?.id || this.currentLayer.label
         });
 
-        // 履歴コマンド作成
+        // 履歴コマンド作成（レイヤー参照をクロージャで確実に保持）
+        const targetLayer = this.currentLayer;
+        const layerId = targetLayer.layerData?.id || targetLayer.label;
+        
+        console.log('[DrawingEngine] コマンド作成: layer=', targetLayer, 'layerId=', layerId);
+
         const addStrokeCommand = {
             name: 'Add Stroke',
             do: () => {
-                this.currentLayer.container.addChild(strokeObject);
+                console.log('[DrawingEngine] do() 実行: layer=', targetLayer, 'children前=', targetLayer.children.length);
+                if (targetLayer && targetLayer.addChild) {
+                    targetLayer.addChild(strokeObject);
+                    console.log('[DrawingEngine] do() 完了: children後=', targetLayer.children.length);
+                } else {
+                    console.error('[DrawingEngine] do() 失敗: targetLayerが無効');
+                }
             },
             undo: () => {
-                this.currentLayer.container.removeChild(strokeObject);
-                strokeObject.destroy({ children: true });
+                console.log('[DrawingEngine] undo() 実行');
+                if (targetLayer && targetLayer.removeChild) {
+                    targetLayer.removeChild(strokeObject);
+                    strokeObject.destroy({ children: true });
+                }
             },
             meta: {
                 type: 'stroke',
-                layerId: this.currentLayer.id,
+                layerId: layerId,
                 strokeData: strokeModel
             }
         };
 
         // 履歴に追加
-        this.history.push(addStrokeCommand);
+        if (this.history && this.history.push) {
+            console.log('[DrawingEngine] History.push実行');
+            this.history.push(addStrokeCommand);
+        } else {
+            console.error('[DrawingEngine] History未定義');
+        }
 
         // レイヤー更新通知
-        EventBus.emit('layer:modified', {
-            layerId: this.currentLayer.id
-        });
+        if (this.eventBus) {
+            this.eventBus.emit('layer:modified', {
+                layerId: layerId
+            });
+        }
     }
 
     /**
      * ブラシ設定取得
      */
     getBrushSettings() {
-        // BrushSettings または StateManager から取得
+        // BrushSettings または SettingsManager から取得
         if (window.brushSettings) {
             return {
                 color: window.brushSettings.getColor(),
                 size: window.brushSettings.getSize(),
                 alpha: window.brushSettings.getAlpha ? window.brushSettings.getAlpha() : 1.0
+            };
+        }
+
+        if (window.TegakiSettingsManager) {
+            return {
+                color: window.TegakiSettingsManager.get('pen.color') || 0x000000,
+                size: window.TegakiSettingsManager.get('pen.size') || 5,
+                alpha: window.TegakiSettingsManager.get('pen.opacity') || 1.0
             };
         }
 
@@ -217,6 +246,13 @@ class DrawingEngine {
             size: 5,
             alpha: 1.0
         };
+    }
+
+    /**
+     * ツール設定
+     */
+    setTool(toolName) {
+        this.currentTool = toolName;
     }
 
     /**
@@ -230,7 +266,9 @@ class DrawingEngine {
         this.currentLayer = null;
         this.currentSettings = null;
 
-        EventBus.emit('stroke:cancel');
+        if (this.eventBus) {
+            this.eventBus.emit('stroke:cancel');
+        }
     }
 
     /**
@@ -245,10 +283,5 @@ class DrawingEngine {
      */
     destroy() {
         this.clearPreview();
-        const canvas = this.app.canvas;
-        canvas.removeEventListener('pointerdown', this.handlePointerDown);
-        canvas.removeEventListener('pointermove', this.handlePointerMove);
-        canvas.removeEventListener('pointerup', this.handlePointerUp);
-        canvas.removeEventListener('pointercancel', this.handlePointerUp);
     }
 }
