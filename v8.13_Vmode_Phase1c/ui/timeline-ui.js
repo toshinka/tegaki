@@ -1,9 +1,9 @@
-// ===== ui/timeline-ui.js - Phase 5.2: キー処理一元化版 =====
-// 【Phase 5.2改修内容】
-// 1. setupKeyboardShortcuts()を削除（キー処理はUnifiedKeyHandlerに一元化）
-// 2. goToPreviousCutSafe()とgoToNextCutSafe()はpublicメソッドとして維持
-// 3. togglePlayStop()もpublicメソッドとして公開（Ctrl+Spaceで呼び出される）
-// 【継承】Phase 4.4のUI/UX改善を維持
+// ===== ui/timeline-ui.js - Frame表記・UI改善版 =====
+// 【改修内容】
+// 1. CUT → Frame (F1, F2...) 表記に変更
+// 2. アクティブ枠を細く（border: 3px → 2px）
+// 3. 削除ボタン位置を下げる（top: -4px → top: 2px）
+// 4. 影の表示条件変更（hover時のみ、通常状態では影なし）
 
 (function() {
     'use strict';
@@ -35,7 +35,6 @@
             this.createCompleteTimelineStructure();
             this.injectCompleteTimelineCSS();
             this.setupEventListeners();
-            // 🔥 Phase 5.2: setupKeyboardShortcuts()を削除（キー処理はUnifiedKeyHandlerに一元化）
             this.setupAnimationEvents();
             this.createLayerPanelCutIndicator();
             this.ensureInitialCut();
@@ -257,7 +256,7 @@
                     </button>
                     <button id="play-btn" title="再生/停止 (Ctrl+Space)">▶</button>
                     <span id="playback-time" class="playback-time">0:00:00</span>
-                    <button id="add-cut-btn" title="新CUT追加 (Shift+N)" class="icon-btn">
+                    <button id="add-cut-btn" title="新Frame追加 (Shift+N)" class="icon-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                             <rect width="8" height="4" x="8" y="2" rx="1" ry="1"/>
                             <path d="M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2"/>
@@ -274,7 +273,7 @@
                             <rect x="8" y="2" width="8" height="4" rx="1"/>
                         </svg>
                     </button>
-                    <button id="rename-cuts-btn" title="CUT番号整理" class="icon-btn">
+                    <button id="rename-cuts-btn" title="Frame番号整理" class="icon-btn">
                         <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                             <path d="M4 22h14a2 2 0 0 0 2-2V7l-5-5H6a2 2 0 0 0-2 2v4"/>
                             <path d="M14 2v4a2 2 0 0 0 2 2h4"/>
@@ -284,9 +283,9 @@
                         </svg>
                     </button>
                     <div class="retime-group">
-                        <label class="retime-label">全カット時間</label>
+                        <label class="retime-label">全Frame時間</label>
                         <input type="number" id="retime-input" class="retime-input" value="0.5" min="0.01" max="10" step="0.01" title="秒数">
-                        <button id="retime-cuts-btn" title="全カット時間変更" class="retime-btn">
+                        <button id="retime-cuts-btn" title="全Frame時間変更" class="retime-btn">
                             <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#800000" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
                                 <path d="M5 22h14"/>
                                 <path d="M5 2h14"/>
@@ -345,11 +344,11 @@
             padding: 2px 2px 2px 6px !important; 
             cursor: pointer !important; position: relative !important; transition: all 0.25s ease !important; flex-shrink: 0 !important; 
             display: flex !important; flex-direction: column !important; align-items: center !important; 
-            box-shadow: 0 2px 6px rgba(128, 0, 0, 0.12) !important; user-select: none !important; }
+            box-shadow: none !important; user-select: none !important; }
         .cut-item:hover { border-color: var(--futaba-medium) !important; transform: translateY(-2px) scale(1.02) !important; 
             box-shadow: 0 4px 12px rgba(128, 0, 0, 0.2) !important; }
-        .cut-item.active { border-color: var(--futaba-maroon) !important; background: #ffffee !important; 
-            box-shadow: 0 0 0 1px rgba(128, 0, 0, 0.5) !important; transform: translateY(-2px) scale(1.02) !important; }
+        .cut-item.active { border-width: 2px !important; border-color: var(--futaba-maroon) !important; background: #ffffee !important; 
+            box-shadow: none !important; transform: translateY(-2px) scale(1.02) !important; }
         
         .cut-thumbnail { background: #ffffee !important; border: 1px solid var(--futaba-light-medium) !important; 
             border-radius: 6px !important; overflow: hidden !important; margin-bottom: 3px !important; position: relative !important; 
@@ -383,7 +382,7 @@
             justify-content: center !important; font-weight: bold !important; padding: 0 !important; transition: all 0.15s ease !important; }
         .duration-nav-btn:hover { color: var(--futaba-light-maroon) !important; transform: scale(1.2) !important; }
         
-        .delete-cut-btn { position: absolute !important; top: -4px !important; right: -4px !important; width: 18px !important; 
+        .delete-cut-btn { position: absolute !important; top: 2px !important; right: -4px !important; width: 18px !important; 
             height: 18px !important; background: rgba(128, 0, 0, 0.9) !important; border: none !important; border-radius: 50% !important; 
             color: white !important; font-size: 10px !important; cursor: pointer !important; opacity: 0 !important; 
             display: flex !important; align-items: center !important; justify-content: center !important; font-weight: bold !important; }
@@ -580,7 +579,6 @@
             }
         }
         
-        // 🔥 Phase 5.2: publicメソッドとして維持（UnifiedKeyHandlerから呼び出される）
         togglePlayStop() {
             if (this.isPlaying) {
                 this.animationSystem.stop();
@@ -662,11 +660,6 @@
             }
         }
         
-        // 🔥 Phase 5.2: setupKeyboardShortcuts()を削除
-        // キー処理はcore-engine.jsのUnifiedKeyHandlerに一元化
-        // 以下のメソッドはpublicメソッドとして維持され、UnifiedKeyHandlerから呼び出される
-        
-        // 🔥 Phase 5.2: publicメソッドとして維持
         goToPreviousCutSafe() {
             const animData = this.animationSystem.getAnimationData();
             if (animData.cuts.length === 0) return;
@@ -685,7 +678,6 @@
             }
         }
         
-        // 🔥 Phase 5.2: publicメソッドとして維持
         goToNextCutSafe() {
             const animData = this.animationSystem.getAnimationData();
             if (animData.cuts.length === 0) return;
@@ -763,7 +755,7 @@
             cutIndicator.className = 'cut-indicator';
             cutIndicator.innerHTML = `
                 <button class="cut-nav-btn" id="cut-prev-btn">◀</button>
-                <span class="cut-display" id="cut-display">CUT1</span>
+                <span class="cut-display" id="cut-display">F1</span>
                 <button class="cut-nav-btn" id="cut-next-btn">▶</button>
             `;
             
@@ -783,13 +775,13 @@
             const totalCuts = animData.cuts.length;
             
             if (totalCuts === 0) {
-                cutDisplay.textContent = 'NO CUT';
+                cutDisplay.textContent = 'NO FRAME';
                 document.getElementById('cut-prev-btn')?.setAttribute('disabled', 'true');
                 document.getElementById('cut-next-btn')?.setAttribute('disabled', 'true');
                 return;
             }
             
-            const currentCutName = animData.cuts[this.currentCutIndex]?.name || `CUT${this.currentCutIndex + 1}`;
+            const currentCutName = animData.cuts[this.currentCutIndex]?.name || `F${this.currentCutIndex + 1}`;
             cutDisplay.textContent = currentCutName;
             
             document.getElementById('cut-prev-btn')?.removeAttribute('disabled');
@@ -890,12 +882,12 @@
             if (cut.thumbnailCanvas) {
                 try {
                     const dataUrl = cut.thumbnailCanvas.toDataURL('image/png');
-                    return `<img src="${dataUrl}" alt="CUT${index + 1}" />`;
+                    return `<img src="${dataUrl}" alt="F${index + 1}" />`;
                 } catch (error) {
                     return `<div class="cut-thumbnail-placeholder">ERR</div>`;
                 }
             } else {
-                return `<div class="cut-thumbnail-placeholder">CUT${index + 1}</div>`;
+                return `<div class="cut-thumbnail-placeholder">F${index + 1}</div>`;
             }
         }
         
@@ -950,7 +942,7 @@
             if (cut && cut.thumbnailCanvas) {
                 try {
                     const dataUrl = cut.thumbnailCanvas.toDataURL('image/png');
-                    thumbnail.innerHTML = `<img src="${dataUrl}" alt="CUT${cutIndex + 1}" />`;
+                    thumbnail.innerHTML = `<img src="${dataUrl}" alt="F${cutIndex + 1}" />`;
                     this.applyCutThumbnailAspectRatio(cutItem, cutIndex);
                 } catch (error) {
                 }
@@ -974,7 +966,4 @@
     window.TegakiUI.TimelineUI = TimelineUI;
 })();
 
-console.log('✅ timeline-ui.js (Phase 5.2: キー処理一元化版) loaded');
-console.log('   - 🔥 setupKeyboardShortcuts()を削除（キー処理はUnifiedKeyHandlerに一元化）');
-console.log('   - 🔥 goToPreviousCutSafe()とgoToNextCutSafe()はpublicメソッドとして維持');
-console.log('   - 🔥 togglePlayStop()もpublicメソッドとして維持');
+console.log('✅ timeline-ui.js (Frame表記・UI改善版) loaded');
