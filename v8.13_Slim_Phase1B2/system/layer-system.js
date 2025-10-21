@@ -91,45 +91,40 @@
             this.isInitialized = true;
         }
         
-        // 🔥 Phase1B: Vキーイベント購読 - 修正版
+        // 🔥 Phase1B: Vキーイベント購読 - トグル方式
         _setupVKeyEvents() {
             if (!this.eventBus) return;
             
-            this.eventBus.on('keyboard:vkey-pressed', () => {
+            // 🔥 修正: Vキー押下でトグル（ON/OFF切替）
+            this.eventBus.on('keyboard:vkey-pressed', function() {
                 if (!this.transform) return;
                 
-                // LayerTransformが初期化されていない場合は初期化
+                // 🔥 修正: LayerTransformが未初期化の場合のみ初期化
                 if (!this.transform.app && this.app && this.cameraSystem) {
                     this.initTransform();
                 }
                 
-                // 既にVモードの場合は何もしない（重複発火防止）
+                // トグル処理
                 if (this.transform.isVKeyPressed) {
-                    return;
+                    // 既にVモード → 終了
+                    const activeLayer = this.getActiveLayer();
+                    this.transform.exitMoveMode(activeLayer);
+                } else {
+                    // Vモードでない → 開始
+                    this.transform.enterMoveMode();
+                    
+                    // アクティブレイヤーのパネル値を更新
+                    const activeLayer = this.getActiveLayer();
+                    if (activeLayer) {
+                        this.transform.updateTransformPanelValues(activeLayer);
+                    }
                 }
-                
-                // Vキーモードに入る
-                this.transform.enterMoveMode();
-                
-                // アクティブレイヤーのパネル値を更新
-                const activeLayer = this.getActiveLayer();
-                if (activeLayer) {
-                    this.transform.updateTransformPanelValues(activeLayer);
-                }
-            });
+            }.bind(this));
             
-            this.eventBus.on('keyboard:vkey-released', () => {
-                if (!this.transform) return;
-                
-                // Vモードでない場合は何もしない
-                if (!this.transform.isVKeyPressed) {
-                    return;
-                }
-                
-                // Vキーモードを抜ける
-                const activeLayer = this.getActiveLayer();
-                this.transform.exitMoveMode(activeLayer);
-            });
+            // 🔥 修正: Vキー解放では何もしない（トグル方式のため）
+            this.eventBus.on('keyboard:vkey-released', function() {
+                // トグル方式では解放時に何もしない
+            }.bind(this));
         }
         
         initTransform() {
@@ -799,10 +794,11 @@
                 if (!action) return;
 
                 switch(action) {
-                    case 'LAYER_MOVE_MODE_TOGGLE':
-                        this.toggleLayerMoveMode();
-                        e.preventDefault();
-                        break;
+                    // 🔥 削除: LAYER_MOVE_MODE_TOGGLEはkeyboard-handler.jsで処理済み
+                    // case 'LAYER_MOVE_MODE_TOGGLE':
+                    //     this.toggleLayerMoveMode();
+                    //     e.preventDefault();
+                    //     break;
 
                     case 'GIF_PREV_FRAME':
                         if (this.animationSystem?.goToPreviousFrame) {
