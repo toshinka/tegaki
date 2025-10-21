@@ -1,5 +1,5 @@
-// ===== core-engine.js - DrawingEngine統合版 =====
-// 改修内容: 新DrawingEngineの初期化に対応
+// ===== core-engine.js - Phase 1完全版 =====
+// 改修内容: DrawingEngine統合 + Phase 1対応
 
 (function() {
     'use strict';
@@ -241,7 +241,7 @@
             this.layerSystem = new window.TegakiLayerSystem();
             this.clipboardSystem = new window.TegakiDrawingClipboard();
             
-            // 新DrawingEngine初期化（app, layerSystem, cameraSystem, history）
+            // DrawingEngine初期化（app, layerSystem, cameraSystem, history）
             this.drawingEngine = new DrawingEngine(
                 this.app,
                 this.layerSystem,
