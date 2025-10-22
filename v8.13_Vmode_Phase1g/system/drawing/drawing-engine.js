@@ -1,8 +1,10 @@
 /**
- * DrawingEngine - ペン描画統合制御クラス (Phase 1: PointerEvent対応版)
+ * DrawingEngine - ペン描画統合制御クラス (Phase 1: 座標変換・ブラシ設定同期版)
  * 
- * 責務: ポインターイベント → 記録 → 描画 → 履歴のフロー制御
- *       + tiltX/Y, twistデータの取得と活用
+ * 修正:
+ * 1. cameraSystem.screenToLayer()の戻り値をレイヤーローカル座標に再変換
+ * 2. BrushSettingsの値をリアルタイムに反映
+ * 3. EventBusの変更をDrawingEngineに即座に適用
  * 
  * API:
  * - startDrawing(x, y, event)
@@ -23,7 +25,7 @@ class DrawingEngine {
         this.strokeRecorder = new StrokeRecorder(this.pressureHandler, this.cameraSystem);
         this.strokeRenderer = new StrokeRenderer(app);
 
-        // 🆕 Phase 1: BrushSettings参照を保持
+        // BrushSettings参照を保持
         this.brushSettings = null;
 
         // 状態管理
@@ -32,17 +34,47 @@ class DrawingEngine {
         this.currentLayer = null;
         this.currentSettings = null;
         this.currentTool = 'pen';
+        
+        // リアルタイムブラシ設定同期
+        this._syncBrushSettingsToRuntime();
     }
 
     /**
-     * 🆕 Phase 1: BrushSettings設定
+     * BrushSettings設定
      */
     setBrushSettings(brushSettings) {
         this.brushSettings = brushSettings;
+        // 設定反映後に同期
+        this._syncBrushSettingsToRuntime();
     }
 
     /**
-     * 🆕 Phase 1: 描画開始（PointerEvent対応）
+     * 🆕 BrushSettingsの値をリアルタイムに同期
+     */
+    _syncBrushSettingsToRuntime() {
+        if (!this.eventBus) return;
+
+        // size変更時
+        this.eventBus.on('brush:size-changed', ({ size }) => {
+            // DrawingEngine内部では使わない
+            // getBrushSettings()で都度参照する設計のため
+        });
+
+        // alpha変更時
+        this.eventBus.on('brush:alpha-changed', ({ alpha }) => {
+            // DrawingEngine内部では使わない
+            // getBrushSettings()で都度参照する設計のため
+        });
+
+        // color変更時
+        this.eventBus.on('brush:color-changed', ({ color }) => {
+            // DrawingEngine内部では使わない
+            // getBrushSettings()で都度参照する設計のため
+        });
+    }
+
+    /**
+     * 描画開始（PointerEvent対応）
      */
     startDrawing(x, y, event) {
         // ツールモード確認
@@ -59,12 +91,10 @@ class DrawingEngine {
         // ブラシ設定取得
         this.currentSettings = this.getBrushSettings();
 
-        // 🆕 Phase 1: PointerEventを直接渡す
+        // PointerEventを直接渡す
         if (event && event.pointerType) {
-            // PointerEvent対応メソッドを使用
             this.strokeRecorder.startStrokeFromEvent(event);
         } else {
-            // レガシー互換（マウスなど）
             const pressure = event?.pressure || 0.5;
             this.strokeRecorder.startStroke(x, y, pressure);
         }
@@ -84,20 +114,22 @@ class DrawingEngine {
     }
 
     /**
-     * 🆕 Phase 1: 描画継続（PointerEvent対応）
+     * 描画継続（PointerEvent対応）
      */
     continueDrawing(x, y, event) {
         if (!this.isDrawing) return;
 
-        // 🆕 Phase 1: PointerEventを直接渡す
+        // PointerEventを直接渡す
         if (event && event.pointerType) {
             const pressure = event.pressure || 0.5;
             this.strokeRecorder.addPointFromEvent(event, pressure);
         } else {
-            // レガシー互換
             const pressure = event?.pressure || 0.5;
             this.strokeRecorder.addPoint(x, y, pressure);
         }
+
+        // 描画途中にブラシ設定が変わる可能性があるため、都度更新
+        this.currentSettings = this.getBrushSettings();
 
         // プレビュー更新
         this.updatePreview();
@@ -175,7 +207,7 @@ class DrawingEngine {
             return;
         }
 
-        // 高品質レンダリング（筆圧反映版）
+        // 高品質レンダリング（プレビュー同一計算式）
         const strokeObject = this.strokeRenderer.renderFinalStroke(strokeData, this.currentSettings);
 
         // StrokeData作成
@@ -226,10 +258,10 @@ class DrawingEngine {
     }
 
     /**
-     * 🆕 Phase 1: ブラシ設定取得（BrushSettings優先）
+     * 🆕 ブラシ設定取得（BrushSettings優先・都度参照）
      */
     getBrushSettings() {
-        // 🆕 Phase 1: BrushSettingsインスタンスから取得
+        // BrushSettingsインスタンスから都度参照
         if (this.brushSettings) {
             return this.brushSettings.getCurrentSettings();
         }
@@ -251,7 +283,7 @@ class DrawingEngine {
             };
         }
 
-        // 🆕 Phase 1: フォールバック（futaba-maroon）
+        // フォールバック（futaba-maroon）
         return {
             color: 0x800000,
             size: 3,

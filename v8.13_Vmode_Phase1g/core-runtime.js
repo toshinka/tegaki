@@ -1,5 +1,5 @@
-// ===== core-runtime.js - Phase6完了版 =====
-// Phase6: API拡張完了・外部連携強化・ブックマークレット対応
+// ===== core-runtime.js - Phase1修正版 =====
+// 修正: api.brush メソッドを BrushSettings → EventBus経由に統一
 
 (function() {
     'use strict';
@@ -29,7 +29,6 @@
             cameraSystem: null,
             layerManager: null,
             drawingEngine: null,
-            settingsManager: null,
             initialized: false,
             pointerEventsSetup: false
         },
@@ -360,40 +359,44 @@
             },
             
             brush: {
+                // 🔧 修正: EventBus経由に統一（TegakiSettingsManager参照を削除）
                 setSize: (size) => {
-                    if (window.TegakiSettingsManager) {
-                        window.TegakiSettingsManager.set('pen.size', size);
+                    if (window.TegakiEventBus) {
+                        window.TegakiEventBus.emit('brush:size-changed', { size });
                         return true;
                     }
                     return false;
                 },
                 
                 getSize: () => {
-                    return window.TegakiSettingsManager?.get('pen.size') || null;
+                    const brushSettings = CoreRuntime.internal.drawingEngine?.brushSettings;
+                    return brushSettings?.getSize() || CONFIG.pen.size || 3;
                 },
                 
                 setColor: (color) => {
-                    if (window.TegakiSettingsManager) {
-                        window.TegakiSettingsManager.set('pen.color', color);
+                    if (window.TegakiEventBus) {
+                        window.TegakiEventBus.emit('brush:color-changed', { color });
                         return true;
                     }
                     return false;
                 },
                 
                 getColor: () => {
-                    return window.TegakiSettingsManager?.get('pen.color') || null;
+                    const brushSettings = CoreRuntime.internal.drawingEngine?.brushSettings;
+                    return brushSettings?.getColor() || CONFIG.pen.color || 0x800000;
                 },
                 
                 setOpacity: (opacity) => {
-                    if (window.TegakiSettingsManager) {
-                        window.TegakiSettingsManager.set('pen.opacity', opacity);
+                    if (window.TegakiEventBus) {
+                        window.TegakiEventBus.emit('brush:alpha-changed', { alpha: opacity });
                         return true;
                     }
                     return false;
                 },
                 
                 getOpacity: () => {
-                    return window.TegakiSettingsManager?.get('pen.opacity') || null;
+                    const brushSettings = CoreRuntime.internal.drawingEngine?.brushSettings;
+                    return brushSettings?.getAlpha() || CONFIG.pen.opacity || 1.0;
                 }
             },
             
@@ -545,25 +548,50 @@
             
             settings: {
                 get: (key) => {
-                    if (!key) return window.TegakiSettingsManager?.getAll();
-                    return window.TegakiSettingsManager?.get(key);
+                    // BrushSettings から直接取得
+                    if (!key) {
+                        const bs = CoreRuntime.internal.drawingEngine?.brushSettings;
+                        return bs?.getCurrentSettings() || {};
+                    }
+                    
+                    if (key === 'pen.size') {
+                        return CoreRuntime.api.brush.getSize();
+                    } else if (key === 'pen.color') {
+                        return CoreRuntime.api.brush.getColor();
+                    } else if (key === 'pen.opacity') {
+                        return CoreRuntime.api.brush.getOpacity();
+                    }
+                    return null;
                 },
                 
                 set: (key, value) => {
-                    return window.TegakiSettingsManager?.set(key, value) || false;
+                    if (key === 'pen.size') {
+                        return CoreRuntime.api.brush.setSize(value);
+                    } else if (key === 'pen.color') {
+                        return CoreRuntime.api.brush.setColor(value);
+                    } else if (key === 'pen.opacity') {
+                        return CoreRuntime.api.brush.setOpacity(value);
+                    }
+                    return false;
                 },
                 
                 update: (updates) => {
-                    return window.TegakiSettingsManager?.update(updates) || false;
+                    for (const [key, value] of Object.entries(updates)) {
+                        CoreRuntime.api.settings.set(key, value);
+                    }
+                    return true;
                 },
                 
                 reset: () => {
-                    window.TegakiSettingsManager?.reset();
+                    const bs = CoreRuntime.internal.drawingEngine?.brushSettings;
+                    if (bs?.resetToDefaults) {
+                        bs.resetToDefaults();
+                    }
                     return true;
                 },
                 
                 getAll: () => {
-                    return window.TegakiSettingsManager?.getAll();
+                    return CoreRuntime.api.settings.get();
                 }
             },
             
@@ -697,21 +725,6 @@
         
         if (window.WebPExporter) {
             mgr.registerExporter('webp', new window.WebPExporter(mgr));
-        }
-        
-        if (window.ExportPopup && !window.TEGAKI_EXPORT_POPUP && !window._isBookmarkletMode) {
-            window.TEGAKI_EXPORT_POPUP = new window.ExportPopup(mgr);
-            
-            const exportToolBtn = document.getElementById('export-tool');
-            if (exportToolBtn) {
-                exportToolBtn.addEventListener('click', () => {
-                    if (window.TEGAKI_EXPORT_POPUP.isVisible) {
-                        window.TEGAKI_EXPORT_POPUP.hide();
-                    } else {
-                        window.TEGAKI_EXPORT_POPUP.show();
-                    }
-                });
-            }
         }
         
         if (window.TegakiEventBus) {

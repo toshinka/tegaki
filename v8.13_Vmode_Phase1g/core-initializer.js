@@ -1,6 +1,5 @@
-// ===== core-initializer.js - Phase3完了・クリーン版 =====
-// 責務: 依存関係チェック、DOM構築、システム初期化
-// 改修: コンソールログ削除、冗長コード削減
+// ===== core-initializer.js - Phase1修正版 =====
+// 修正: SettingsManager を削除し、BrushSettings に統一
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -46,21 +45,6 @@ window.CoreInitializer = (function() {
         document.body.appendChild(statusPanel);
     }
 
-    function initializeSettingsManager(eventBus, config) {
-        if (!window.TegakiSettingsManager) {
-            throw new Error('SettingsManager class not found');
-        }
-
-        if (window.TegakiSettingsManager.prototype === undefined) {
-            return window.TegakiSettingsManager;
-        }
-
-        const settingsManager = new window.TegakiSettingsManager(eventBus, config);
-        window.TegakiSettingsManager = settingsManager;
-        
-        return settingsManager;
-    }
-
     function initializePopupManager(app, coreEngine) {
         const popupManager = new window.TegakiPopupManager(window.TegakiEventBus);
         
@@ -69,7 +53,8 @@ window.CoreInitializer = (function() {
         }, { priority: 1 });
         
         popupManager.register('quickAccess', window.TegakiUI.QuickAccessPopup, {
-            drawingEngine: coreEngine.getDrawingEngine()
+            drawingEngine: coreEngine.getDrawingEngine(),
+            eventBus: window.TegakiEventBus
         }, { priority: 2 });
         
         popupManager.register('album', window.TegakiUI.AlbumPopup, {
@@ -108,7 +93,6 @@ window.CoreInitializer = (function() {
             this.pixiApp = null;
             this.coreEngine = null;
             this.uiController = null;
-            this.settingsManager = null;
             this.popupManager = null;
         }
         
@@ -145,7 +129,9 @@ window.CoreInitializer = (function() {
             
             window.coreEngine = this.coreEngine;
             
-            this.settingsManager = initializeSettingsManager(window.TegakiEventBus, CONFIG);
+            // 🔧 修正: SettingsManager の初期化を削除
+            // BrushSettings は core-engine.js で既に初期化されている
+            // this.settingsManager = initializeSettingsManager(...); ← 削除
             
             window.CoreRuntime.init({
                 app: this.pixiApp,
@@ -154,7 +140,7 @@ window.CoreInitializer = (function() {
                 cameraSystem: this.coreEngine.getCameraSystem(),
                 layerManager: this.coreEngine.getLayerManager(),
                 drawingEngine: this.coreEngine.getDrawingEngine(),
-                settingsManager: this.settingsManager
+                // settingsManager は参照しない（BrushSettings に統一）
             });
             
             this.uiController = new UIController(

@@ -1,5 +1,5 @@
 // ===== core-engine.js - Phase 1完全版 =====
-// 改修内容: DrawingEngine統合 + Phase 1対応
+// 改修内容: DrawingEngine統合 + BrushSettings初期化 + Phase 1対応
 
 (function() {
     'use strict';
@@ -241,6 +241,9 @@
             this.layerSystem = new window.TegakiLayerSystem();
             this.clipboardSystem = new window.TegakiDrawingClipboard();
             
+            // 🆕 BrushSettings初期化
+            this.brushSettings = new BrushSettings(CONFIG, this.eventBus);
+            
             // DrawingEngine初期化（app, layerSystem, cameraSystem, history）
             this.drawingEngine = new DrawingEngine(
                 this.app,
@@ -248,6 +251,9 @@
                 this.cameraSystem,
                 window.History
             );
+            
+            // 🆕 BrushSettingsをDrawingEngineに設定
+            this.drawingEngine.setBrushSettings(this.brushSettings);
             
             this.animationSystem = null;
             this.timelineUI = null;
@@ -381,6 +387,7 @@
         getEventBus() { return this.eventBus; }
         getExportManager() { return this.exportManager; }
         getBatchAPI() { return this.batchAPI; }
+        getBrushSettings() { return this.brushSettings; }
         
         undo() {
             if (window.History) {

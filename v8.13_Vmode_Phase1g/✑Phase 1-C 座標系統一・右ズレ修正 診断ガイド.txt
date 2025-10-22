@@ -1,0 +1,299 @@
+# Phase 1-C: 座標系統一・右ズレ修正 診断ガイド
+
+## 問題: ペンが右にズレる
+
+現象: クリック位置より右に描画される
+
+---
+
+## 座標変換フロー図
+
+```
+┌─────────────────────────────────────────────────────────┐
+│ PointerEvent (ブラウザネイティブ座標系)                  │
+│ event.clientX, event.clientY                            │
+└──────────────┬──────────────────────────────────────────┘
+               │
+               ↓ [core-runtime.js handlePointerDown]
+┌──────────────────────────────────────────────────────────┐
+│ DrawingEngine.startDrawing(                              │
+│   event.global.x,  ← ← ← ❓ これは何座標？            │
+│   event.global.y,                                       │
+│   event                                                 │
+│ )                                                       │
+└──────────────┬──────────────────────────────────────────┘
+               │
+               ↓ [StrokeRecorder.addPointFromEvent]
+┌──────────────────────────────────────────────────────────┐
+│ cameraSystem.screenToLayer(                             │
+│   event.clientX,  ← 元の PointerEvent座標              │
+│   event.clientY                                         │
+│ )                                                       │
+└──────────────┬──────────────────────────────────────────┘
+               │
+               ↓ [CameraSystem内部]
+┌──────────────────────────────────────────────────────────┐
+│ canvasContainer.toLocal({x, y})                         │
+│ = canvasLocal座標（canvasContainer相対）                │
+│                                                         │
+│ ※ レイヤーローカル座標への変換がここで完結している？    │
+└──────────────┬──────────────────────────────────────────┘
+               │
+               ↓
+┌──────────────────────────────────────────────────────────┐
+│ StrokeRecorder.points に格納                            │
+│ {x, y, pressure, ...}                                  │
+└──────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 🔍 ズレの原因候補
+
+### 候補1: event.global.x が既に PixiJS グローバル座標
+**問題**: 
+```javascript
+// core-runtime.js
+handlePointerDown(event) {
+    this.internal.drawingEngine.startDrawing(
+        event.global.x,  // ← これは PixiJS グローバル座標
+        event.global.y,
+        event
+    );
+}
+```
+
+**DrawingEngine内で**:
+```javascript
+// 🔴 間違い
+const canvasLocalPoint = this.cameraSystem.screenToLayer(
+    event.global.x,  // ← PixiJS グローバルをスクリーン座標として解釈
+    event.global.y
+);
+```
+
+**修正**:
+```javascript
+// ✅ 正しい
+const canvasLocalPoint = this.cameraSystem.screenToLayer(
+    event.clientX,  // ← 元の PointerEvent 座標を使用
+    event.clientY
+);
+```
+
+---
+
+### 候補2: canvasContainer のグローバル位置にズレ
+**確認方法**:
+```javascript
+// コンソールで実行
+const cc = drawingApp.cameraSystem.canvasContainer;
+console.log('canvasContainer.position:', cc.position);
+console.log('canvasContainer.scale:', cc.scale);
+console.log('worldContainer.position:', drawingApp.cameraSystem.worldContainer.position);
+console.log('worldContainer.scale:', drawingApp.cameraSystem.worldContainer.scale);
+
+// グローバル座標に変換してみる
+const testPoint = cc.toGlobal({x: 0, y: 0});
+console.log('toGlobal({0,0}):', testPoint);
+```
+
+**期待値**:
+- `canvasContainer.position` = {x: 0, y: 0}
+- `canvasContainer.toGlobal({0,0})` ≈ worldContainer内のどこか
+
+---
+
+### 候補3: screenToLayer() の実装が不正確
+**確認対象**: `camera-system.js` の `screenToLayer()` メソッド
+
+```javascript
+// 現在の実装
+screenToLayer(screenX, screenY) {
+    const globalPoint = { x: screenX, y: screenY };
+    return this.canvasContainer.toLocal(globalPoint);
+}
+```
+
+**問題点**:
+1. `screenX/Y` がスクリーン座標と仮定している
+2. `toLocal()` の基準点がcanvasContainerになっている
+3. worldContainerの変換が反映されていない可能性
+
+**正しい実装の流れ**:
+```
+screenX/Y (スクリーン座標)
+  ↓ [PixiJS画面座標系 → stage.toLocal()]
+  ↓ stage座標 (= worldContainer相対)
+  ↓ [worldContainer → canvasContainer]
+  ↓ canvasLocal座標
+```
+
+---
+
+## 診断手順
+
+### ステップ1: core-runtime.js を確認
+
+```javascript
+// core-runtime.js の handlePointerDown
+handlePointerDown(event) {
+    if (this.internal.drawingEngine && !this.internal.layerManager?.isLayerMoveMode) {
+        // 🔍 確認: event.global.x/y vs event.clientX/Y
+        console.log('event.clientX/Y:', event.clientX, event.clientY);
+        console.log('event.global.x/y:', event.global?.x, event.global?.y);
+        
+        // ← event は PixiJS FederatedPointerEvent か、ネイティブ PointerEvent か？
+        
+        this.internal.drawingEngine.startDrawing(
+            event.global.x,
+            event.global.y,
+            event
+        );
+    }
+}
+```
+
+**質問**: event.global は存在する？存在しない場合、何が渡されているか？
+
+---
+
+### ステップ2: DrawingEngine.startDrawing() を確認
+
+```javascript
+startDrawing(x, y, event) {
+    // 🔍 確認: event の型
+    console.log('event.pointerType:', event.pointerType);
+    console.log('event.clientX/Y:', event.clientX, event.clientY);
+    
+    // ← DrawingEngine が受け取る座標系は統一されているか？
+}
+```
+
+---
+
+### ステップ3: cameraSystem.screenToLayer() の検証
+
+```javascript
+// canvas 要素の位置を確認
+const canvas = document.querySelector('canvas');
+const rect = canvas.getBoundingClientRect();
+console.log('canvas.getBoundingClientRect():', rect);
+// 期待: {left: 0, top: 0, ...}
+
+// PixiJS stage の座標系確認
+const testScreen = { x: 10, y: 10 };
+const testLocal = cameraSystem.screenToLayer(testScreen.x, testScreen.y);
+console.log('screenToLayer(10, 10):', testLocal);
+// 期待: canvasContainerローカル座標で {x: 10, y: 10} に近い値
+
+// worldContainerの影響確認
+const wc = cameraSystem.worldContainer;
+console.log('worldContainer.position:', wc.position);
+console.log('worldContainer.scale:', wc.scale);
+// 影響あるなら、canvasLocal座標に加算が必要
+```
+
+---
+
+## 修正案
+
+### 案A: core-runtime.js で座標を PointerEvent に統一
+
+```javascript
+// ❌ 修正前
+handlePointerDown(event) {
+    this.internal.drawingEngine.startDrawing(
+        event.global.x,
+        event.global.y,
+        event
+    );
+}
+
+// ✅ 修正後
+handlePointerDown(event) {
+    this.internal.drawingEngine.startDrawing(
+        event.clientX,  // ← ネイティブPointerEvent座標を使用
+        event.clientY,
+        event
+    );
+}
+```
+
+---
+
+### 案B: camera-system.screenToLayer() を正確に実装
+
+```javascript
+// 🔄 修正案
+screenToLayer(screenX, screenY) {
+    // stage を通じてスクリーン座標をstage座標に変換
+    const stage = this.app.stage;
+    if (!stage) return { x: screenX, y: screenY };
+    
+    // canvas.getBoundingClientRect() でブラウザスクリーン座標を相対化
+    const canvas = stage.parent?.canvas || stage.parent?.view;
+    if (!canvas) {
+        // フォールバック: canvasContainerに直接変換
+        return this.canvasContainer.toLocal({ x: screenX, y: screenY });
+    }
+    
+    const rect = canvas.getBoundingClientRect();
+    const relativeX = screenX - rect.left;  // キャンバス相対X
+    const relativeY = screenY - rect.top;   // キャンバス相対Y
+    
+    // canvasContainer ローカル座標に変換
+    return this.canvasContainer.toLocal({ x: relativeX, y: relativeY });
+}
+```
+
+---
+
+## チェックリスト
+
+- [ ] core-runtime.js の event座標確認（event.global vs event.clientX/Y）
+- [ ] DrawingEngine に渡される座標の一貫性確認
+- [ ] cameraSystem.screenToLayer() の実装検証
+- [ ] worldContainer の位置・スケール・回転が描画に影響しているか確認
+- [ ] PixiJS stage.toLocal() vs canvasContainer.toLocal() の違い確認
+- [ ] canvas.getBoundingClientRect() とのズレ確認
+
+---
+
+## ログ出力で確認するコード
+
+```javascript
+// QuickAccessPopup.show() 時に実行
+console.group('🔍 座標系デバッグ');
+
+const cc = drawingApp.cameraSystem.canvasContainer;
+const wc = drawingApp.cameraSystem.worldContainer;
+
+console.log('worldContainer:', {
+    x: wc.x, y: wc.y,
+    scaleX: wc.scale.x, scaleY: wc.scale.y,
+    rotation: wc.rotation
+});
+
+console.log('canvasContainer:', {
+    x: cc.x, y: cc.y,
+    scaleX: cc.scale.x, scaleY: cc.scale.y
+});
+
+const testPt = {x: 100, y: 100};
+console.log('Test point (100, 100):', {
+    toLocal: cc.toLocal(testPt),
+    toGlobal: cc.toGlobal(testPt)
+});
+
+console.groupEnd();
+```
+
+---
+
+## 次のステップ
+
+1. **ステップ1～3を実行** してログを取得
+2. ズレの方向と大きさから原因を特定
+3. 該当ファイルを修正
+4. テストで確認
