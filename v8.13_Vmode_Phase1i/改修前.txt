@@ -1,0 +1,38 @@
+// ポップアップ状態確認
+PopupManager.diagnose()
+
+// QuickAccessPopupの状態確認
+PopupManager.getStatus('quickAccess')
+
+// 強制表示テスト
+PopupManager.show('quickAccess')
+
+// DOM要素確認
+document.getElementById('quick-access-popup')
+
+// クラス確認
+document.getElementById('quick-access-popup')?.className
+
+// 表示状態確認
+document.getElementById('quick-access-popup')?.classList.contains('show')
+
+// 現在のツール確認
+StateManager.get('currentTool')
+
+// 全ポップアップステータス
+PopupManager.getAllStatuses()
+popup-manager.js:399 === PopupManager Diagnostics ===
+popup-manager.js:400 Registered popups: 4
+popup-manager.js:401 Active popup: none
+popup-manager.js:402 
+Popup statuses:
+popup-manager.js:411   ✅ 🙈 settings (priority: 1, status: ready)
+popup-manager.js:411   ✅ 🙈 quickAccess (priority: 2, status: ready)
+popup-manager.js:411   ✅ 🙈 album (priority: 3, status: ready)
+popup-manager.js:414       Waiting for: animationSystem
+popup-manager.js:411   ✅ 🙈 export (priority: 4, status: ready)
+popup-manager.js:414       Waiting for: TEGAKI_EXPORT_MANAGER
+popup-manager.js:418 ================================
+popup-manager.js:232 👁️ Popup "quickAccess" shown
+VM441:20 Uncaught TypeError: StateManager.get is not a function
+    at <anonymous>:20:14
