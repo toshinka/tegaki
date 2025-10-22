@@ -1,6 +1,5 @@
-// ===== ui-panels.js - Phase3クリーン版 =====
-// 責務: UIイベント管理、PopupManagerへの委譲
-// 改修: コンソールログ削除、CameraSystemDOM参照削除対応完了
+// ===== ui-panels.js - Phase1修正版 =====
+// 修正: quick-access-popup用スライダーを完全除外
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -25,8 +24,6 @@ window.TegakiUI.UIController = class {
             throw new Error('CoreRuntime dependency missing');
         }
     }
-    
-    // ===== PopupManager統合メソッド =====
     
     getPopupManager() {
         return window.PopupManager;
@@ -67,8 +64,6 @@ window.TegakiUI.UIController = class {
         }
     }
     
-    // ===== EventBusリスナー =====
-    
     setupEventBusListeners() {
         const eventBus = window.TegakiEventBus;
         if (!eventBus) return;
@@ -93,8 +88,6 @@ window.TegakiUI.UIController = class {
             this.togglePopup('export');
         });
     }
-    
-    // ===== イベント委譲 =====
     
     setupEventDelegation() {
         document.addEventListener('click', (e) => {
@@ -129,8 +122,6 @@ window.TegakiUI.UIController = class {
             }
         });
     }
-    
-    // ===== ツール処理 =====
     
     handleToolClick(button) {
         const toolId = button.id;
@@ -205,20 +196,10 @@ window.TegakiUI.UIController = class {
         popup.classList.toggle('show', !isVisible);
     }
     
-    // ===== スライダー・リサイズ =====
-    
     setupSliders() {
-        const CONFIG = window.TEGAKI_CONFIG;
-        
-        window.TegakiUI.createSlider('pen-size-slider', 0.1, 100, CONFIG.pen.size, (value) => {
-            window.CoreRuntime.api.brush.setSize(value);
-            return value.toFixed(1) + 'px';
-        });
-        
-        window.TegakiUI.createSlider('pen-opacity-slider', 0, 100, CONFIG.pen.opacity * 100, (value) => {
-            window.CoreRuntime.api.brush.setOpacity(value / 100);
-            return value.toFixed(1) + '%';
-        });
+        // 🔧 修正: quick-access-popup用スライダーは完全に除外
+        // quick-access-popup.js が qa-size-slider, qa-opacity-slider を管理している
+        // ui-panels.js は pen-size-slider を処理しない
     }
 
     setupCanvasResize() {
@@ -263,11 +244,14 @@ window.TegakiUI.UIController = class {
     }
 };
 
-// ===== ユーティリティ関数 =====
-
 window.TegakiUI.createSlider = function(sliderId, min, max, initial, callback) {
     const container = document.getElementById(sliderId);
     if (!container) return;
+
+    // 🔧 修正: quick-access-popup用スライダー (qa-*) は処理しない
+    if (sliderId.startsWith('qa-')) {
+        return;
+    }
 
     const track = container.querySelector('.slider-track');
     const handle = container.querySelector('.slider-handle');
@@ -329,138 +313,46 @@ window.TegakiUI.setupPanelStyles = function() {
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
-            line-height: 1 !important;
         }
         
-        .layer-item {
-            width: 180px;
-            height: 64px;
-            background: var(--futaba-background);
-            opacity: 0.7;
-            border: 1px solid var(--futaba-light-medium);
-            border-radius: 6px;
-            padding: 6px 8px;
-            cursor: pointer;
-            transition: background-color 0.2s ease, border-color 0.2s ease;
-            display: grid;
-            grid-template-columns: 20px 1fr auto;
-            grid-template-rows: 1fr 1fr;
-            gap: 4px 8px;
-            align-items: center;
-            user-select: none;
+        .slider {
             position: relative;
-            box-shadow: 0 1px 2px rgba(128, 0, 0, 0.05);
-            min-width: 180px;
-        }
-        
-        .layer-thumbnail {
-            grid-column: 3;
-            grid-row: 1 / 3;
-            min-width: 24px;
-            max-width: 72px;
-            height: 48px;
-            background: var(--futaba-background);
-            border: 1px solid var(--futaba-light-medium);
-            border-radius: 4px;
-            overflow: hidden;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            align-self: center;
-            transition: width 0.2s ease;
-            flex-shrink: 0;
-        }
-        
-        .layer-thumbnail img {
             width: 100%;
+            height: 4px;
+            background: #e0e0e0;
+            border-radius: 2px;
+            cursor: pointer;
+        }
+        
+        .slider-track {
+            position: absolute;
             height: 100%;
-            object-fit: cover;
-            border-radius: 3px;
-            transition: opacity 0.2s ease;
+            background: linear-gradient(to right, #4a90e2, #357abd);
+            border-radius: 2px;
+            transition: width 0.05s;
         }
         
-        .layer-name {
-            grid-column: 2;
-            grid-row: 2;
-            font-size: 9px;
-            color: var(--text-primary);
-            font-weight: 500;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            align-self: end;
-            margin-bottom: 2px;
+        .slider-handle {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border: 2px solid #4a90e2;
+            border-radius: 50%;
+            cursor: grab;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            transition: left 0.05s;
         }
         
-        .layer-transform-panel {
-            background: rgba(240, 224, 214, 0.95) !important;
-            backdrop-filter: blur(12px);
-            top: 20px !important;
-            left: 50% !important;
-            transform: translateX(-50%) !important;
-        }
-        
-        .layer-transform-panel.show {
-            animation: slideDown 0.25s ease-out;
-        }
-        
-        @keyframes slideDown {
-            from { 
-                opacity: 0; 
-                transform: translateX(-50%) translateY(-15px) scale(0.95); 
-            }
-            to { 
-                opacity: 1; 
-                transform: translateX(-50%) translateY(0) scale(1); 
-            }
-        }
-        
-        .panel-sections {
-            grid-template-columns: 1fr 1fr auto !important;
-            min-width: 480px !important;
-        }
-        
-        .compact-slider-group {
-            height: 56px;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: space-between !important;
+        .slider-handle:active {
+            cursor: grabbing;
         }
     `;
-    document.head.appendChild(style);
     
-    setTimeout(() => {
-        const flipHBtn = document.getElementById('flip-horizontal-btn');
-        const flipVBtn = document.getElementById('flip-vertical-btn');
-        if (flipHBtn) flipHBtn.textContent = '水平反転';
-        if (flipVBtn) flipVBtn.textContent = '垂直反転';
-    }, 100);
-};
-
-window.TegakiUI.initializeSortable = function(layerManager) {
-    const layerList = document.getElementById('layer-list');
-    if (!layerList || typeof Sortable === 'undefined') return;
-    
-    if (layerList.sortableInstance) {
-        layerList.sortableInstance.destroy();
-        layerList.sortableInstance = null;
+    if (!document.querySelector('style[data-tegaki-panels]')) {
+        style.setAttribute('data-tegaki-panels', 'true');
+        document.head.appendChild(style);
     }
-    
-    layerList.sortableInstance = Sortable.create(layerList, {
-        animation: 150,
-        ghostClass: 'sortable-ghost',
-        chosenClass: 'sortable-chosen',
-        handle: '.layer-item',
-        onEnd: function(evt) {
-            const layers = layerManager.getLayers();
-            const fromIndex = layers.length - 1 - evt.oldIndex;
-            const toIndex = layers.length - 1 - evt.newIndex;
-            
-            if (fromIndex !== toIndex) {
-                layerManager.reorderLayers(fromIndex, toIndex);
-                layerManager.updateLayerPanelUI();
-            }
-        }
-    });
 };

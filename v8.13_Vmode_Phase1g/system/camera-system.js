@@ -1,5 +1,5 @@
-// ===== system/camera-system.js - Phase4準備版 =====
-// 責務: カメラ操作(ズーム・パン・回転)専用、DOM操作削除
+// ===== system/camera-system.js - Phase1: 座標変換修正版 =====
+// 修正: screenToLayer() にcanvas.getBoundingClientRect()を統合
 
 (function() {
     'use strict';
@@ -476,23 +476,29 @@
         }
 
         /**
-         * スクリーン座標 → レイヤーローカル座標変換
-         * @param {number} screenX - スクリーン座標X
-         * @param {number} screenY - スクリーン座標Y
-         * @returns {{x: number, y: number}} レイヤーローカル座標
+         * 🔧 修正: スクリーン座標 → レイヤーローカル座標変換
+         * canvas.getBoundingClientRect() でブラウザ座標を相対化
          */
         screenToLayer(screenX, screenY) {
-            const globalPoint = { x: screenX, y: screenY };
-            return this.canvasContainer.toLocal(globalPoint);
+            const canvas = this._getSafeCanvas();
+            if (!canvas) {
+                // フォールバック
+                return this.canvasContainer.toLocal({ x: screenX, y: screenY });
+            }
+            
+            // ブラウザスクリーン座標 → キャンバス相対座標
+            const rect = canvas.getBoundingClientRect();
+            const relativeX = screenX - rect.left;
+            const relativeY = screenY - rect.top;
+            
+            // キャンバス相対座標 → キャンバスローカル座標
+            return this.canvasContainer.toLocal({ x: relativeX, y: relativeY });
         }
 
         screenToCanvas(screenX, screenY) {
             return this.screenToLayer(screenX, screenY);
         }
 
-        /**
-         * 座標情報更新（ステータス表示用）
-         */
         updateCoordinates(x, y) {
             // 空実装（互換性のため）
         }
