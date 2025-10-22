@@ -109,8 +109,8 @@ window.TegakiUI.QuickAccessPopup = class {
                     <button id="pen-size-decrease" class="resize-arrow-btn">◀</button>
                     
                     <div id="pen-size-slider-container" class="resize-slider">
-                        <div id="pen-size-track" class="resize-slider-track" style="width: 4%; transition: width 0.2s ease;"></div>
-                        <div id="pen-size-handle" class="resize-slider-handle" style="left: 4%; transition: left 0.2s ease;"></div>
+                        <div id="pen-size-track" class="resize-slider-track"></div>
+                        <div id="pen-size-handle" class="resize-slider-handle"></div>
                     </div>
                     
                     <button id="pen-size-increase" class="resize-arrow-btn">▶</button>
@@ -138,8 +138,8 @@ window.TegakiUI.QuickAccessPopup = class {
                     <button id="pen-opacity-decrease" class="resize-arrow-btn">◀</button>
                     
                     <div id="pen-opacity-slider-container" class="resize-slider">
-                        <div id="pen-opacity-track" class="resize-slider-track" style="width: 100%; transition: width 0.2s ease;"></div>
-                        <div id="pen-opacity-handle" class="resize-slider-handle" style="left: 100%; transition: left 0.2s ease;"></div>
+                        <div id="pen-opacity-track" class="resize-slider-track"></div>
+                        <div id="pen-opacity-handle" class="resize-slider-handle"></div>
                     </div>
                     
                     <button id="pen-opacity-increase" class="resize-arrow-btn">▶</button>
@@ -194,9 +194,6 @@ window.TegakiUI.QuickAccessPopup = class {
             this.sizeHandle.addEventListener('mousedown', (e) => {
                 this.isDraggingSize = true;
                 this.sizeHandle.style.cursor = 'grabbing';
-                // ドラッグ中はtransitionを無効化してスムーズに追随
-                if (this.sizeTrack) this.sizeTrack.style.transition = 'none';
-                if (this.sizeHandle) this.sizeHandle.style.transition = 'none';
                 e.preventDefault();
             });
         }
@@ -234,9 +231,6 @@ window.TegakiUI.QuickAccessPopup = class {
             this.opacityHandle.addEventListener('mousedown', (e) => {
                 this.isDraggingOpacity = true;
                 this.opacityHandle.style.cursor = 'grabbing';
-                // ドラッグ中はtransitionを無効化してスムーズに追随
-                if (this.opacityTrack) this.opacityTrack.style.transition = 'none';
-                if (this.opacityHandle) this.opacityHandle.style.transition = 'none';
                 e.preventDefault();
             });
         }
@@ -287,16 +281,10 @@ window.TegakiUI.QuickAccessPopup = class {
             if (this.isDraggingSize) {
                 this.isDraggingSize = false;
                 if (this.sizeHandle) this.sizeHandle.style.cursor = 'grab';
-                // transition復帰（インラインで設定した値に戻す）
-                if (this.sizeTrack) this.sizeTrack.style.transition = 'width 0.2s ease';
-                if (this.sizeHandle) this.sizeHandle.style.transition = 'left 0.2s ease';
             }
             if (this.isDraggingOpacity) {
                 this.isDraggingOpacity = false;
                 if (this.opacityHandle) this.opacityHandle.style.cursor = 'grab';
-                // transition復帰（インラインで設定した値に戻す）
-                if (this.opacityTrack) this.opacityTrack.style.transition = 'width 0.2s ease';
-                if (this.opacityHandle) this.opacityHandle.style.transition = 'left 0.2s ease';
             }
         });
         
