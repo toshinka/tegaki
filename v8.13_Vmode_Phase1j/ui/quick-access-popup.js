@@ -1,4 +1,4 @@
-// ===== ui/quick-access-popup.js - Phase 1改修: リサイズポップアップ完全統一版 =====
+// ===== ui/quick-access-popup.js - Phase 1改修: スライダーアニメーション修正版 =====
 // 責務: ペン設定UIの提供（カラー/サイズ/透明度）
 // デザイン: resize-slider.jsと完全統一、futaba配色5色+background
 
@@ -76,24 +76,24 @@ window.TegakiUI.QuickAccessPopup = class {
                 </div>
                 <div id="pen-color-palette" style="display: flex; gap: 8px; flex-wrap: wrap;">
                     <button class="color-button" data-color="0x800000" style="
-                        width: 36px; height: 36px; border-radius: 4px; border: 3px solid var(--futaba-maroon);
-                        background: #800000; cursor: pointer;
+                        width: 36px; height: 36px; border-radius: 4px; border: 3px solid #ff8c42;
+                        background: #800000; cursor: pointer; transition: all 0.2s ease;
                     " title="futaba-maroon"></button>
                     <button class="color-button" data-color="0xaa5a56" style="
                         width: 36px; height: 36px; border-radius: 4px; border: 2px solid var(--futaba-light-medium);
-                        background: #aa5a56; cursor: pointer;
+                        background: #aa5a56; cursor: pointer; transition: all 0.2s ease;
                     " title="light-maroon"></button>
                     <button class="color-button" data-color="0xcf9c97" style="
                         width: 36px; height: 36px; border-radius: 4px; border: 2px solid var(--futaba-light-medium);
-                        background: #cf9c97; cursor: pointer;
+                        background: #cf9c97; cursor: pointer; transition: all 0.2s ease;
                     " title="medium"></button>
                     <button class="color-button" data-color="0xe9c2ba" style="
                         width: 36px; height: 36px; border-radius: 4px; border: 2px solid var(--futaba-light-medium);
-                        background: #e9c2ba; cursor: pointer;
+                        background: #e9c2ba; cursor: pointer; transition: all 0.2s ease;
                     " title="light-medium"></button>
                     <button class="color-button" data-color="0xf0e0d6" style="
                         width: 36px; height: 36px; border-radius: 4px; border: 2px solid var(--futaba-light-medium);
-                        background: #f0e0d6; cursor: pointer;
+                        background: #f0e0d6; cursor: pointer; transition: all 0.2s ease;
                     " title="cream"></button>
                 </div>
             </div>
@@ -109,8 +109,8 @@ window.TegakiUI.QuickAccessPopup = class {
                     <button id="pen-size-decrease" class="resize-arrow-btn">◀</button>
                     
                     <div id="pen-size-slider-container" class="resize-slider">
-                        <div id="pen-size-track" class="resize-slider-track" style="width: 4%;"></div>
-                        <div id="pen-size-handle" class="resize-slider-handle" style="left: 4%;"></div>
+                        <div id="pen-size-track" class="resize-slider-track" style="width: 4%; transition: width 0.2s ease;"></div>
+                        <div id="pen-size-handle" class="resize-slider-handle" style="left: 4%; transition: left 0.2s ease;"></div>
                     </div>
                     
                     <button id="pen-size-increase" class="resize-arrow-btn">▶</button>
@@ -138,8 +138,8 @@ window.TegakiUI.QuickAccessPopup = class {
                     <button id="pen-opacity-decrease" class="resize-arrow-btn">◀</button>
                     
                     <div id="pen-opacity-slider-container" class="resize-slider">
-                        <div id="pen-opacity-track" class="resize-slider-track" style="width: 100%;"></div>
-                        <div id="pen-opacity-handle" class="resize-slider-handle" style="left: 100%;"></div>
+                        <div id="pen-opacity-track" class="resize-slider-track" style="width: 100%; transition: width 0.2s ease;"></div>
+                        <div id="pen-opacity-handle" class="resize-slider-handle" style="left: 100%; transition: left 0.2s ease;"></div>
                     </div>
                     
                     <button id="pen-opacity-increase" class="resize-arrow-btn">▶</button>
@@ -194,6 +194,9 @@ window.TegakiUI.QuickAccessPopup = class {
             this.sizeHandle.addEventListener('mousedown', (e) => {
                 this.isDraggingSize = true;
                 this.sizeHandle.style.cursor = 'grabbing';
+                // ドラッグ中はtransitionを無効化してスムーズに追随
+                if (this.sizeTrack) this.sizeTrack.style.transition = 'none';
+                if (this.sizeHandle) this.sizeHandle.style.transition = 'none';
                 e.preventDefault();
             });
         }
@@ -231,6 +234,9 @@ window.TegakiUI.QuickAccessPopup = class {
             this.opacityHandle.addEventListener('mousedown', (e) => {
                 this.isDraggingOpacity = true;
                 this.opacityHandle.style.cursor = 'grabbing';
+                // ドラッグ中はtransitionを無効化してスムーズに追随
+                if (this.opacityTrack) this.opacityTrack.style.transition = 'none';
+                if (this.opacityHandle) this.opacityHandle.style.transition = 'none';
                 e.preventDefault();
             });
         }
@@ -267,13 +273,13 @@ window.TegakiUI.QuickAccessPopup = class {
                 const rect = this.sizeSlider.getBoundingClientRect();
                 const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
                 const value = 1 + ((50 - 1) * percent / 100);
-                this._updateSizeSlider(Math.round(value));
+                this._updateSizeSlider(Math.round(value), true);
             }
             
             if (this.isDraggingOpacity) {
                 const rect = this.opacitySlider.getBoundingClientRect();
                 const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-                this._updateOpacitySlider(Math.round(percent));
+                this._updateOpacitySlider(Math.round(percent), true);
             }
         });
         
@@ -281,10 +287,16 @@ window.TegakiUI.QuickAccessPopup = class {
             if (this.isDraggingSize) {
                 this.isDraggingSize = false;
                 if (this.sizeHandle) this.sizeHandle.style.cursor = 'grab';
+                // transition復帰（インラインで設定した値に戻す）
+                if (this.sizeTrack) this.sizeTrack.style.transition = 'width 0.2s ease';
+                if (this.sizeHandle) this.sizeHandle.style.transition = 'left 0.2s ease';
             }
             if (this.isDraggingOpacity) {
                 this.isDraggingOpacity = false;
                 if (this.opacityHandle) this.opacityHandle.style.cursor = 'grab';
+                // transition復帰（インラインで設定した値に戻す）
+                if (this.opacityTrack) this.opacityTrack.style.transition = 'width 0.2s ease';
+                if (this.opacityHandle) this.opacityHandle.style.transition = 'left 0.2s ease';
             }
         });
         
@@ -308,12 +320,12 @@ window.TegakiUI.QuickAccessPopup = class {
         return parseInt(text) || 100;
     }
     
-    _updateSizeSlider(value) {
+    _updateSizeSlider(value, isDragging = false) {
         value = Math.max(1, Math.min(50, value));
         
         const percent = ((value - 1) / (50 - 1)) * 100;
         
-        // UI更新（transitionなし、即座反映）
+        // UI更新
         if (this.sizeTrack) {
             this.sizeTrack.style.width = percent + '%';
         }
@@ -333,10 +345,10 @@ window.TegakiUI.QuickAccessPopup = class {
         }
     }
     
-    _updateOpacitySlider(percent) {
+    _updateOpacitySlider(percent, isDragging = false) {
         percent = Math.max(0, Math.min(100, percent));
         
-        // UI更新（transitionなし、即座反映）
+        // UI更新
         if (this.opacityTrack) {
             this.opacityTrack.style.width = percent + '%';
         }
@@ -361,13 +373,13 @@ window.TegakiUI.QuickAccessPopup = class {
         const colorValue = e.target.getAttribute('data-color');
         const color = parseInt(colorValue);
         
-        // アクティブ状態更新
+        // アクティブ状態更新（橙色枠）
         document.querySelectorAll('.color-button').forEach(btn => {
             btn.style.borderWidth = '2px';
             btn.style.borderColor = 'var(--futaba-light-medium)';
         });
         e.target.style.borderWidth = '3px';
-        e.target.style.borderColor = 'var(--futaba-maroon)';
+        e.target.style.borderColor = '#ff8c42'; // 暖かみのある橙色
         
         // プレビュー更新
         this._updatePreview();
@@ -477,4 +489,4 @@ window.TegakiUI.QuickAccessPopup = class {
 
 window.QuickAccessPopup = window.TegakiUI.QuickAccessPopup;
 
-console.log('✅ quick-access-popup.js (Phase1改修版: リサイズ完全統一) loaded');
+console.log('✅ quick-access-popup.js (Phase1改修版: スライダーアニメーション修正) loaded');
