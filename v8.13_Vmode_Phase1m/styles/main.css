@@ -1,4 +1,4 @@
-/* Tegaki Tool - Main Stylesheet (リサイズポップアップ小型化版 + ペンスライダー修正) */
+/* Tegaki Tool - Main Stylesheet (スライダー統一改修版) */
 /* DO NOT use CSS-in-JS or inline styles */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -291,25 +291,7 @@ body {
     align-items: center;
     justify-content: center;
     cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.2s;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-    gap: 8px;
-}
-
-#status-panel-toggle:hover {
-    background: var(--futaba-medium);
-    border-color: var(--futaba-maroon);
-}
-
-#status-panel-state {
-    font-size: 11px;
-    color: var(--text-secondary);
-    min-width: 60px;
-    text-align: right;
-}2px;
+    border-radius: 2px;
     transition: all 0.15s ease;
     background: rgba(128, 0, 0, 0.08);
     opacity: 0;
@@ -372,6 +354,8 @@ body {
     font-weight: 500; 
 }
 
+/* ===== 統一スライダーUI：茶系配色 ===== */
+
 .slider-container { 
     display: flex; 
     align-items: center; 
@@ -403,8 +387,14 @@ body {
     border-radius: 50%; 
     position: absolute; 
     top: 50%; 
+    left: 0%; 
     transform: translate(-50%, -50%); 
     cursor: grab; 
+    transition: left 0.1s; 
+}
+
+.slider-handle:active {
+    cursor: grabbing;
 }
 
 .slider-value { 
@@ -415,7 +405,7 @@ body {
     text-align: right; 
 }
 
-/* ===== リサイズポップアップ：小型化版 ===== */
+/* ===== リサイズポップアップ：小型化版（茶系統一） ===== */
 
 .resize-popup-compact {
     min-width: 280px !important;
@@ -528,8 +518,10 @@ body {
     border-radius: 50%;
     position: absolute;
     top: 50%;
+    left: 0%;
     transform: translate(-50%, -50%);
     cursor: grab;
+    transition: left 0.1s;
 }
 
 .resize-slider-handle:active {
@@ -605,55 +597,6 @@ body {
 
 .resize-hidden-input {
     display: none;
-}
-
-/* ===== ペン設定ポップアップ：スライダー修正版 ===== */
-
-/* スライダーコンテナに必須のposition:relative */
-#pen-size-slider-container,
-#pen-opacity-slider-container {
-    position: relative;      /* ← 必須：子のabsoluteの基準 */
-    height: 5px;
-    user-select: none;
-}
-
-/* トラック（背景伸縮部分） */
-#pen-size-track,
-#pen-opacity-track {
-    position: absolute;
-    left: 0;
-    top: 50%;
-    height: 5px;
-    transform: translateY(-50%);
-    width: 0%;              /* JSで書き換え */
-    border-radius: 3px;
-    background: var(--futaba-maroon);
-    transition: width 0.2s ease;
-    box-sizing: border-box;
-}
-
-/* ハンドル（●） */
-#pen-size-handle,
-#pen-opacity-handle {
-    position: absolute;      /* ← 必須：leftを有効化 */
-    top: 50%;
-    left: 0%;               /* JSで書き換え */
-    transform: translate(-50%, -50%);  /* ← 中央合わせ：leftのpercentが中心に */
-    width: 14px;
-    height: 14px;
-    border-radius: 50%;
-    background: var(--futaba-maroon);
-    border: 2px solid var(--futaba-background);
-    cursor: grab;
-    transition: left 0.2s ease, transform 0.2s ease;
-    z-index: 2;
-}
-
-/* ドラッグ中の状態 */
-#pen-size-handle:active,
-#pen-opacity-handle:active {
-    cursor: grabbing;
-    transform: translate(-50%, -50%) scale(1.05);
 }
 
 /* ===== その他のポップアップスタイル ===== */
@@ -964,4 +907,18 @@ body {
     font-size: 12px;
     font-weight: 600;
     cursor: pointer;
-    border-radius:
+    border-radius: 6px;
+    transition: all 0.2s;
+}
+
+#status-panel-toggle:hover {
+    background: var(--futaba-medium);
+    border-color: var(--futaba-maroon);
+}
+
+#status-panel-state {
+    font-size: 11px;
+    color: var(--text-secondary);
+    min-width: 60px;
+    text-align: right;
+}
