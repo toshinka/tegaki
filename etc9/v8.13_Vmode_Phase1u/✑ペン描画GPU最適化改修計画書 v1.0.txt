@@ -1,0 +1,529 @@
+# ペン描画GPU最適化改修計画書 v1.0
+
+## 前提条件
+- 実行環境: Chrome最新、file://可、CSP対応
+- 技術: PixiJS v8.13、ES2023（非モジュール）
+- 禁止: Canvas2D（サムネイルは許可）、TS、bundler、ESM
+- CDN: pixi v8.13のみ（外部ペンライブラリは使用しない）
+- 命名規則: EventBus中心設計、clear API boundaries
+- ログ: 最小限（不具合検索可能なため冗長化不要）
+
+## 目標
+- 0荷重から1px点までリニアに立ち上がるフェザータッチペン実装
+- ペンサイズ・透明度スライダー連携
+- GPU活用による滑らかな描画
+- 最終目標: SDF方式による超高精度レンダリング
+
+---
+
+## Phase 1: 基盤整備（ペン色変更 + 圧力補正 + UI連携）
+
+### 対象ファイル
+- **改修**: `config.js`
+- **改修**: `system/drawing/brush-settings.js`
+- **改修**: `system/drawing/pressure-handler.js`
+- **改修**: `ui/quick-access-popup.js`
+- **参照**: `system/event-bus.js`, `system/state-manager.js`
+
+### 実装内容
+
+#### 1.1 ペン色をfutaba-maroonに変更
+**config.js:**
+```javascript
+BRUSH_DEFAULTS: {
+  color: 0x800000, // futaba-maroon
+  size: 3,
+  opacity: 1.0,
+  minWidth: 1,
+  maxWidth: 10
+}
+```
+
+#### 1.2 圧力キャリブレーション機構
+**pressure-handler.js 改修:**
+- プライベート変数: `baseline`, `calibrationSamples`, `tiltX`, `tiltY`, `twist`
+- `onPointerDown()`: N=5サンプルでbaseline算出開始
+- `getAdjustedPressure(rawPressure)`: `max(0, (raw - baseline) / (1 - baseline))`
+- `getTiltData()`: `{x: e.tiltX||0, y: e.tiltY||0, twist: e.twist||0}` 返却
+
+**EventBus連携:**
+```
+'stroke:start' → baseline初期化
+'stroke:point' → 補正後圧力をrecorderへ渡す
+```
+
+#### 1.3 ペンスライダーUI追加
+**quick-access-popup.js 改修:**
+- `createPenControls()` メソッド追加
+- サイズスライダー: 1-50px、デフォルト3
+- 透明度スライダー: 0-1.0、デフォルト1.0
+- スライダー変更時 → `EventBus.emit('brush:size-changed', size)`
+- スライダー変更時 → `EventBus.emit('brush:opacity-changed', opacity)`
+
+**brush-settings.js 改修:**
+```javascript
+constructor() {
+  this.size = CONFIG.BRUSH_DEFAULTS.size;
+  this.opacity = CONFIG.BRUSH_DEFAULTS.opacity;
+  EventBus.on('brush:size-changed', (size) => this.setSize(size));
+  EventBus.on('brush:opacity-changed', (opacity) => this.setOpacity(opacity));
+}
+```
+
+**注意点:**
+- `state-manager.js`の現在ツール状態と連携
+- ペンツール選択中のみスライダー表示
+- `BrushSettings`は単一インスタンス（Singleton風）
+
+---
+
+## Phase 2: Catmull-Rom補間による滑らか化
+
+### 対象ファイル
+- **新規作成**: `system/drawing/curve-interpolator.js`
+- **改修**: `system/drawing/stroke-recorder.js`
+- **改修**: `system/drawing/stroke-renderer.js`
+- **参照**: `system/data-models.js`
+
+### 実装内容
+
+#### 2.1 Catmull-Rom補間クラス作成
+**curve-interpolator.js 新規:**
+```javascript
+class CurveInterpolator {
+  static catmullRom(points, tension = 0.5) {
+    // 4点ごとに補間
+    // tension: 0=線形, 0.5=標準, 1=緩やか
+    // 戻り値: [{x, y, pressure}, ...]
+  }
+  
+  static adaptiveSample(points, maxDistance = 5) {
+    // 距離が大きい区間を細分化
+    // 短距離区間はそのまま
+  }
+}
+```
+
+#### 2.2 StrokeRecorder統合
+**stroke-recorder.js 改修:**
+- `finalizePath()` 内で `CurveInterpolator.catmullRom()` 呼び出し
+- 補間後座標を `StrokeData.points` に格納
+- `StrokeData.originalPoints` に生座標保持（履歴復元用）
+
+**data-models.js 確認:**
+```javascript
+class StrokeData {
+  points: [{x, y, pressure}];
+  originalPoints: [{x, y, pressure}]; // 補間前
+  color: number;
+  opacity: number;
+}
+```
+
+#### 2.3 距離ベース適応フィルタ
+**pressure-handler.js 追加:**
+```javascript
+applyDistanceFilter(currentPressure, prevPressure, distance) {
+  // 短距離（< 5px）→ alpha=0.9（即座反映）
+  // 長距離（> 20px）→ alpha=0.3（スムージング強）
+  const alpha = this.calculateAlpha(distance);
+  return prevPressure * (1 - alpha) + currentPressure * alpha;
+}
+```
+
+**注意点:**
+- baseline補正**後**に距離フィルタ適用
+- `stroke-recorder.js`で前サンプルとの2Dユークリッド距離計算
+
+---
+
+## Phase 3: PixiJS Mesh方式への移行
+
+### 対象ファイル
+- **改修**: `system/drawing/stroke-renderer.js`
+- **新規作成**: `system/drawing/mesh-generator.js`
+- **改修**: `system/history.js`
+- **参照**: `coordinate-system.js`, `system/layer-transform.js`
+
+### 実装内容
+
+#### 3.1 Mesh生成クラス
+**mesh-generator.js 新規:**
+```javascript
+class MeshGenerator {
+  static generateStrokeMesh(points, widths, color, opacity) {
+    const vertices = this.createVertexBuffer(points, widths);
+    const indices = this.triangulate(vertices);
+    const uvs = this.generateUVs(vertices.length);
+    
+    const geometry = new PIXI.Geometry()
+      .addAttribute('aVertexPosition', vertices, 2)
+      .addAttribute('aUvs', uvs, 2)
+      .addIndex(indices);
+    
+    const mesh = new PIXI.Mesh({
+      geometry: geometry,
+      texture: PIXI.Texture.WHITE
+    });
+    
+    mesh.tint = color;
+    mesh.alpha = opacity;
+    return mesh;
+  }
+  
+  static createVertexBuffer(points, widths) {
+    // triangle strip方式
+    // 各点で垂直方向に2頂点生成
+    // 戻り値: Float32Array [x1,y1, x2,y2, ...]
+  }
+  
+  static triangulate(vertexCount) {
+    // triangle strip indices
+    // 戻り値: Uint32Array
+  }
+}
+```
+
+#### 3.2 StrokeRenderer改修
+**stroke-renderer.js 改修:**
+- `renderStroke(strokeData)` 内で既存 `Graphics.lineStyle()` **完全削除**
+- `MeshGenerator.generateStrokeMesh()` 呼び出し
+- 生成したMeshを `layer.container.addChild(mesh)`
+- `mesh.name = 'stroke_' + strokeData.id` で識別
+
+**座標系:**
+- 入力: pointer event座標（スクリーン座標）
+- 変換: `camera-system.js` → レイヤーローカル座標
+- 描画: レイヤーローカル座標系でMesh生成
+
+#### 3.3 History統合
+**history.js 改修:**
+- `StrokeData` に `meshData` フィールド追加:
+  ```javascript
+  meshData: {
+    vertices: Float32Array,
+    indices: Uint32Array,
+    uvs: Float32Array
+  }
+  ```
+- undo/redo時に `MeshGenerator` でMesh再構築
+- `batch-api.js` の `addStroke()` でmeshDataも保存
+
+**注意点:**
+- メモリ使用量: ストローク毎 < 100KB目標
+- Mesh頂点数上限: 10000頂点/ストローク
+
+---
+
+## Phase 4: 短距離クリック（単独点）対応
+
+### 対象ファイル
+- **改修**: `system/drawing/stroke-recorder.js`
+- **改修**: `system/drawing/stroke-renderer.js`
+- **参照**: `system/drawing/drawing-engine.js`
+
+### 実装内容
+
+#### 4.1 クリック判定ロジック
+**stroke-recorder.js 改修:**
+```javascript
+onPointerUp() {
+  const distance = this.calculateTotalDistance();
+  const isSinglePoint = distance < 2 && this.samples.length <= 2;
+  
+  if (isSinglePoint) {
+    this.strokeData.isSinglePoint = true;
+    this.strokeData.clickPosition = this.samples[0];
+  }
+  
+  EventBus.emit('stroke:end', this.strokeData);
+}
+```
+
+#### 4.2 単独点の円描画
+**stroke-renderer.js 改修:**
+```javascript
+renderStroke(strokeData) {
+  if (strokeData.isSinglePoint) {
+    return this.renderSinglePoint(strokeData);
+  }
+  return this.renderMeshStroke(strokeData);
+}
+
+renderSinglePoint(strokeData) {
+  const graphics = new PIXI.Graphics();
+  const radius = this.getMinPhysicalWidth(); // Phase 1のminWidth
+  graphics.circle(strokeData.clickPosition.x, strokeData.clickPosition.y, radius);
+  graphics.fill({ color: strokeData.color, alpha: strokeData.opacity });
+  return graphics;
+}
+```
+
+**注意点:**
+- 圧力が0でも必ず `minWidth` で描画
+- Mesh描画とは別パス（条件分岐明確化）
+
+---
+
+## Phase 5: devicePixelRatio対応 + 品質最適化
+
+### 対象ファイル
+- **改修**: `system/drawing/brush-settings.js`
+- **改修**: `system/drawing/stroke-renderer.js`
+- **新規作成**: `system/adaptive-quality.js`
+- **参照**: `config.js`, `core-engine.js`
+
+### 実装内容
+
+#### 5.1 物理ピクセル対応
+**brush-settings.js 改修:**
+```javascript
+getMinPhysicalWidth() {
+  const dpr = window.devicePixelRatio || 1;
+  const resolution = this.renderer.resolution; // PixiJS v8
+  return (1 / resolution) * dpr; // DPR=2で0.5px → 物理1px
+}
+```
+
+**stroke-renderer.js 改修:**
+- Mesh生成時の最小幅計算に `getMinPhysicalWidth()` 使用
+- 圧力0 → minPhysicalWidth
+- 圧力1.0 → BrushSettings.maxWidth
+
+#### 5.2 アダプティブ品質システム
+**adaptive-quality.js 新規:**
+```javascript
+class AdaptiveQuality {
+  constructor(app) {
+    this.app = app;
+    this.fpsHistory = [];
+    this.currentQuality = 'ultra'; // ultra/high/medium
+  }
+  
+  update() {
+    const fps = this.app.ticker.FPS;
+    this.fpsHistory.push(fps);
+    if (this.fpsHistory.length > 60) this.fpsHistory.shift();
+    
+    const avgFps = this.getAverageFPS();
+    if (avgFps < 30 && this.currentQuality !== 'medium') {
+      this.downgrade();
+    } else if (avgFps > 55 && this.currentQuality !== 'ultra') {
+      this.upgrade();
+    }
+  }
+  
+  downgrade() {
+    // resolution下げる、アンチエイリアス無効化
+    EventBus.emit('quality:changed', this.currentQuality);
+  }
+}
+```
+
+**config.js 追加:**
+```javascript
+QUALITY_PRESETS: {
+  ultra: { resolution: 2, antialiasing: true, strokeSmoothing: 0.85 },
+  high: { resolution: 1.5, antialiasing: true, strokeSmoothing: 0.7 },
+  medium: { resolution: 1, antialiasing: false, strokeSmoothing: 0.5 }
+}
+```
+
+**core-engine.js 統合:**
+- `AdaptiveQuality` インスタンス作成
+- `app.ticker.add()` で毎フレーム監視
+
+---
+
+## Phase 6: SDF（Signed Distance Field）方式への移行
+
+### 対象ファイル
+- **新規作成**: `system/drawing/sdf-shader.js`
+- **新規作成**: `shaders/stroke.frag`
+- **新規作成**: `shaders/stroke.vert`
+- **改修**: `system/drawing/stroke-renderer.js`
+- **参照**: PixiJS v8 Filter API
+
+### 実装内容
+
+#### 6.1 カスタムシェーダー定義
+**stroke.frag 新規:**
+```glsl
+precision mediump float;
+uniform vec2 uResolution;
+uniform float uTime;
+varying vec2 vUv;
+
+float sdSegment(vec2 p, vec2 a, vec2 b, float r) {
+  // Signed Distance Field計算
+  vec2 pa = p - a, ba = b - a;
+  float h = clamp(dot(pa, ba) / dot(ba, ba), 0.0, 1.0);
+  return length(pa - ba * h) - r;
+}
+
+void main() {
+  float d = sdSegment(gl_FragCoord.xy, uStart, uEnd, uWidth);
+  float alpha = smoothstep(0.0, 1.0, 1.0 - d);
+  gl_FragColor = vec4(uColor.rgb, alpha * uColor.a);
+}
+```
+
+**stroke.vert 新規:**
+```glsl
+attribute vec2 aVertexPosition;
+uniform mat3 projectionMatrix;
+varying vec2 vUv;
+
+void main() {
+  gl_Position = vec4((projectionMatrix * vec3(aVertexPosition, 1.0)).xy, 0.0, 1.0);
+  vUv = aVertexPosition;
+}
+```
+
+#### 6.2 SDFレンダラー実装
+**sdf-shader.js 新規:**
+```javascript
+class SDFStrokeShader extends PIXI.Shader {
+  constructor() {
+    const vertexSrc = /* stroke.vert内容 */;
+    const fragmentSrc = /* stroke.frag内容 */;
+    
+    super(PIXI.Program.from(vertexSrc, fragmentSrc), {
+      uResolution: [window.innerWidth, window.innerHeight],
+      uColor: [1.0, 1.0, 1.0, 1.0],
+      uWidth: 5.0,
+      uStart: [0, 0],
+      uEnd: [100, 100]
+    });
+  }
+}
+```
+
+**stroke-renderer.js 改修:**
+```javascript
+renderSDFStroke(strokeData) {
+  const shader = new SDFStrokeShader();
+  const geometry = new PIXI.Geometry()
+    .addAttribute('aVertexPosition', strokeData.boundingBox, 2);
+  
+  const mesh = new PIXI.Mesh({geometry, shader});
+  
+  // ストロークセグメント毎にuniform更新
+  for (let i = 0; i < strokeData.points.length - 1; i++) {
+    shader.uniforms.uStart = [strokeData.points[i].x, strokeData.points[i].y];
+    shader.uniforms.uEnd = [strokeData.points[i+1].x, strokeData.points[i+1].y];
+    shader.uniforms.uWidth = this.calculateWidth(strokeData.points[i].pressure);
+  }
+  
+  return mesh;
+}
+```
+
+#### 6.3 フォールバック戦略
+**stroke-renderer.js 改修:**
+```javascript
+constructor(app) {
+  this.mode = this.detectRenderMode(app);
+}
+
+detectRenderMode(app) {
+  // WebGPU対応確認
+  if (app.renderer.type === PIXI.RENDERER_TYPE.WEBGPU) return 'sdf';
+  // WebGL2確認
+  if (app.renderer.context.webgl2) return 'mesh';
+  return 'graphics'; // フォールバック
+}
+
+renderStroke(strokeData) {
+  switch (this.mode) {
+    case 'sdf': return this.renderSDFStroke(strokeData);
+    case 'mesh': return this.renderMeshStroke(strokeData);
+    default: return this.renderGraphicsStroke(strokeData);
+  }
+}
+```
+
+**注意点:**
+- SDF方式はWebGPU環境のみ有効化
+- デバッグ困難なためエラーハンドリング必須
+- パフォーマンス指標: 120Hz入力時レイテンシ < 8ms
+
+---
+
+## EventBus統合フロー
+
+### 全Phase共通イベント
+```
+'stroke:start' → pressure baseline初期化, UI更新
+'stroke:point' → 圧力フィルタ適用, サンプル記録
+'stroke:end' → Mesh/SDF生成, History追加
+'brush:size-changed' → BrushSettings更新, UI反映
+'brush:opacity-changed' → BrushSettings更新, UI反映
+'quality:changed' → renderer設定更新
+```
+
+---
+
+## 完了基準
+
+### Phase 1
+- [ ] ペン色が#800000で描画される
+- [ ] 圧力0.01で1px点が描画される
+- [ ] ペンスライダーで1-50pxサイズ変更可能
+- [ ] 透明度スライダーで0-1.0調整可能
+
+### Phase 2
+- [ ] Catmull-Rom補間でストローク滑らか化
+- [ ] 短距離区間で圧力即座反映
+- [ ] 長距離区間でスムージング適用
+
+### Phase 3
+- [ ] Graphics描画が完全にMesh置換
+- [ ] Undo/RedoでMesh復元される
+- [ ] メモリ使用量: <100KB/ストローク
+
+### Phase 4
+- [ ] クリック時に点が消えない
+- [ ] 単独点が円形で描画される
+- [ ] 圧力0でもminWidth適用
+
+### Phase 5
+- [ ] DPR=2環境で物理1px描画確認
+- [ ] FPS<30で自動品質ダウングレード
+- [ ] FPS>55で自動品質アップグレード
+
+### Phase 6
+- [ ] WebGPU環境でSDF描画有効化
+- [ ] 120Hz入力対応（レイテンシ<8ms）
+- [ ] WebGL2でMeshフォールバック動作
+
+---
+
+## パフォーマンス指標
+
+| 項目 | 目標値 |
+|------|--------|
+| 描画レイテンシ | < 8ms (120Hz対応) |
+| メモリ/ストローク | < 100KB |
+| Mesh頂点数上限 | 10000頂点 |
+| FPS維持 | 60fps (ultra品質) |
+| 初期化時間 | < 500ms |
+
+---
+
+## 参照ドキュメント
+
+- PixiJS v8 Mesh: https://pixijs.com/8.x/guides/components/meshes
+- PixiJS v8 Shaders: https://pixijs.com/8.x/guides/components/graphics
+- Pointer Events API: https://developer.mozilla.org/en-US/docs/Web/API/Pointer_events
+- Catmull-Rom Spline: https://en.wikipedia.org/wiki/Centripetal_Catmull-Rom_spline
+
+---
+
+## 注意事項
+
+- 各Phase完了後に動作確認必須
+- EventBusイベント順序の整合性確認
+- メモリリーク検証（DevTools Profiler使用）
+- 座標系混在防止（常にレイヤーローカル座標）
+- 既存機能との互換性維持（layer-transform.js, drawing-clipboard.js）
