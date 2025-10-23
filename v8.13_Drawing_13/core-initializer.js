@@ -1,5 +1,5 @@
-// ===== core-initializer.js - BrushSettings修正版 =====
-// 修正: BrushSettings を window.BrushSettings としてグローバル公開
+// ===== core-initializer.js - Phase 1: DrawingEngine初期化確保版 =====
+// 修正: coreEngine.initialize() を明示的に呼び出し
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -59,7 +59,7 @@ window.CoreInitializer = (function() {
         popupManager.register('quickAccess', window.TegakiUI.QuickAccessPopup, {
             drawingEngine: coreEngine.getDrawingEngine(),
             eventBus: window.TegakiEventBus,
-            brushSettings: brushSettings  // ✅ 追加
+            brushSettings: brushSettings
         }, { priority: 2 });
         
         popupManager.register('album', window.TegakiUI.AlbumPopup, {
@@ -136,6 +136,8 @@ window.CoreInitializer = (function() {
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
             this.coreEngine = new CoreEngine(this.pixiApp);
+            
+            // ✅ Phase 1: initialize() を明示的に呼び出し
             const drawingApp = this.coreEngine.initialize();
             
             window.coreEngine = this.coreEngine;
@@ -144,6 +146,12 @@ window.CoreInitializer = (function() {
             const brushSettings = this.coreEngine.getBrushSettings();
             window.BrushSettings = brushSettings;
             console.log('✅ window.BrushSettings 公開完了');
+            
+            // ✅ Phase 1: グローバル参照を確認
+            console.log('✅ グローバル参照確認:');
+            console.log('   window.drawingEngine:', !!window.drawingEngine);
+            console.log('   window.layerManager:', !!window.layerManager);
+            console.log('   window.cameraSystem:', !!window.cameraSystem);
             
             window.CoreRuntime.init({
                 app: this.pixiApp,
@@ -296,4 +304,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (BrushSettings修正版) loaded');
+console.log('✅ core-initializer.js (Phase 1修正版) loaded');

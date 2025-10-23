@@ -1,6 +1,7 @@
-// ===== core-engine.js - 完全改修版 =====
-// 改修2: Delキーでレイヤー内容消去機能追加
-// 元ファイルの全機能継承 + UnifiedKeyHandlerにDEL処理追加
+// ===== core-engine.js - 元ファイル完全継承 + Phase 1改修 =====
+// 改修: UnifiedKeyHandler.switchTool() で drawingEngine.setTool() を呼び出し
+//       initialize() で グローバル参照を設定
+// 元ファイルの全機能継承 + DrawingEngine初期化追加
 
 (function() {
     'use strict';
@@ -118,7 +119,6 @@
                     }
                     break;
                 
-                // ✅改修2: Delキーでレイヤー内容消去
                 case 'delete':
                 case 'LAYER_DELETE_DRAWINGS':
                     if ((e.code === 'Delete' || e.code === 'Backspace') && 
@@ -130,19 +130,16 @@
             }
         }
         
-        // ✅改修2: レイヤー内容消去メソッド
         deleteActiveLayerDrawings() {
             if (!this.layerSystem) return;
             
             const activeLayer = this.layerSystem.getActiveLayer();
             if (!activeLayer || !activeLayer.layerData) return;
             
-            // 背景レイヤーは削除不可
             if (activeLayer.layerData.isBackground) return;
             
             const layerIndex = this.layerSystem.activeLayerIndex;
             
-            // 描画オブジェクトを収集（背景グラフィックスは除外）
             const childrenToRemove = [];
             for (let child of activeLayer.children) {
                 if (child !== activeLayer.layerData.backgroundGraphics) {
@@ -152,7 +149,6 @@
             
             if (childrenToRemove.length === 0) return;
             
-            // History統合
             if (window.History && !window.History._manager?.isApplying) {
                 const command = {
                     name: 'clear-layer-drawings',
@@ -196,7 +192,6 @@
                 
                 window.History.push(command);
             } else {
-                // History無効時は直接実行
                 childrenToRemove.forEach(child => {
                     activeLayer.removeChild(child);
                     if (child.destroy) {
@@ -302,6 +297,11 @@
         }
         
         switchTool(tool) {
+            // ✅改修Phase 1: drawingEngine.setTool() を呼び出し
+            if (this.drawingEngine) {
+                this.drawingEngine.setTool(tool);
+            }
+            
             this.cameraSystem.updateCursor();
             
             this.eventBus.emit('tool:changed', { newTool: tool });
@@ -561,7 +561,6 @@
                 if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
                     layer.layerData.backgroundGraphics.clear();
                     
-                    // チェックパターン背景を再生成
                     const color1 = 0xe9c2ba;
                     const color2 = 0xf0e0d6;
                     const squareSize = 16;
@@ -662,7 +661,6 @@
                 this.layerSystem.updateStatusDisplay();
             });
             
-            // ✅改修5: Sortable初期化
             if (window.TegakiUI && window.TegakiUI.initializeSortable) {
                 setTimeout(() => {
                     window.TegakiUI.initializeSortable(this.layerSystem);
@@ -674,6 +672,11 @@
             this.app.ticker.add(() => {
                 this.processThumbnailUpdates();
             });
+            
+            // ✅改修Phase 1: グローバル参照を設定
+            window.drawingEngine = this.drawingEngine;
+            window.layerManager = this.layerSystem;
+            window.cameraSystem = this.cameraSystem;
             
             this.eventBus.emit('core:initialized', {
                 systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export']
