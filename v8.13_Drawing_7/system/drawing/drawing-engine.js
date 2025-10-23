@@ -1,11 +1,10 @@
 /**
- * DrawingEngine - 座標系修正版
+ * DrawingEngine - 座標変換修正版
  * 
  * ✅ 修正:
- * - screenToCanvas() → screenToWorld() に統一
+ * - event.global (PIXI座標) → canvasContainer.toLocal() で直接変換
  * - BrushSettings.getCurrentSettings() 使用
  * - PressureHandler統合の安全化
- * - StrokeRenderer.setTool() 初期化時に呼び出し
  */
 
 class DrawingEngine {
@@ -56,7 +55,7 @@ class DrawingEngine {
     this.currentPath = null;
     this.lastPoint = null;
     
-    // ✅ Renderer初期化時にツール設定
+    // Renderer初期化時にツール設定
     if (this.renderer && typeof this.renderer.setTool === 'function') {
       this.renderer.setTool(this.currentTool);
     }
@@ -156,35 +155,51 @@ class DrawingEngine {
     if (!this.eventBus) return;
     
     this.eventBus.on('settings:pressure-correction', ({ value }) => {
-      if (this.settings) this.settings.setPressureCorrection(value);
-      if (this.pressureHandler) this.pressureHandler.setPressureCorrection(value);
+      if (this.settings && typeof this.settings.setPressureCorrection === 'function') {
+        this.settings.setPressureCorrection(value);
+      }
+      if (this.pressureHandler && typeof this.pressureHandler.setPressureCorrection === 'function') {
+        this.pressureHandler.setPressureCorrection(value);
+      }
     });
     
     this.eventBus.on('settings:smoothing', ({ value }) => {
-      if (this.settings) this.settings.setSmoothing(value);
+      if (this.settings && typeof this.settings.setSmoothing === 'function') {
+        this.settings.setSmoothing(value);
+      }
     });
     
     this.eventBus.on('settings:pressure-curve', ({ curve }) => {
-      if (this.settings) this.settings.setPressureCurve(curve);
+      if (this.settings && typeof this.settings.setPressureCurve === 'function') {
+        this.settings.setPressureCurve(curve);
+      }
     });
     
     this.eventBus.on('settings:simplify-tolerance', ({ value }) => {
-      if (this.settings) this.settings.setSimplifyTolerance(value);
+      if (this.settings && typeof this.settings.setSimplifyTolerance === 'function') {
+        this.settings.setSimplifyTolerance(value);
+      }
       if (this.recorder) this.recorder.setSimplifySettings(value, true);
     });
     
     this.eventBus.on('settings:simplify-enabled', ({ enabled }) => {
-      if (this.settings) this.settings.setSimplifyEnabled(enabled);
+      if (this.settings && typeof this.settings.setSimplifyEnabled === 'function') {
+        this.settings.setSimplifyEnabled(enabled);
+      }
       if (this.recorder) this.recorder.setSimplifyEnabled(enabled);
     });
     
     this.eventBus.on('settings:smoothing-mode', ({ mode }) => {
-      if (this.settings) this.settings.setSmoothingMode(mode);
+      if (this.settings && typeof this.settings.setSmoothingMode === 'function') {
+        this.settings.setSmoothingMode(mode);
+      }
       if (this.transformer) this.transformer.setSmoothingMode(mode);
     });
     
     this.eventBus.on('settings:spline-tension', ({ value }) => {
-      if (this.settings) this.settings.setSplineTension(value);
+      if (this.settings && typeof this.settings.setSplineTension === 'function') {
+        this.settings.setSplineTension(value);
+      }
       if (this.transformer) {
         const segments = this.settings?.splineSegments || 20;
         this.transformer.setSplineParameters(value, segments);
@@ -192,7 +207,9 @@ class DrawingEngine {
     });
     
     this.eventBus.on('settings:spline-segments', ({ value }) => {
-      if (this.settings) this.settings.setSplineSegments(value);
+      if (this.settings && typeof this.settings.setSplineSegments === 'function') {
+        this.settings.setSplineSegments(value);
+      }
       if (this.transformer) {
         const tension = this.settings?.splineTension || 0.5;
         this.transformer.setSplineParameters(tension, value);
@@ -218,23 +235,33 @@ class DrawingEngine {
   }
 
   /**
-   * 描画開始
-   * ✅ 修正: screenToWorld() に統一
+   * 🔧 PIXI global座標 → レイヤーローカル座標変換
    */
-  startDrawing(screenX, screenY, pressureOrEvent) {
+  _globalToLayerLocal(globalX, globalY) {
+    if (!this.cameraSystem?.canvasContainer) {
+      return { x: globalX, y: globalY };
+    }
+    
+    // PIXI global座標をcanvasContainerのローカル座標に変換
+    return this.cameraSystem.canvasContainer.toLocal({ x: globalX, y: globalY });
+  }
+
+  /**
+   * 描画開始
+   * ✅ 修正: event.global (PIXI座標) を直接変換
+   */
+  startDrawing(globalX, globalY, pressureOrEvent) {
     if (!this.cameraSystem || !this.settings || !this.recorder || !this.renderer) {
       return;
     }
 
-    // ✅ 修正: screenToWorld() に統一（レイヤーローカル座標）
-    const worldPoint = this.cameraSystem.screenToWorld 
-      ? this.cameraSystem.screenToWorld(screenX, screenY)
-      : this.cameraSystem.screenToCanvas(screenX, screenY);
+    // PIXI global座標 → レイヤーローカル座標
+    const layerPoint = this._globalToLayerLocal(globalX, globalY);
 
     const pressure = this._getPressure(pressureOrEvent);
     const currentScale = this.cameraSystem.worldContainer?.scale?.x || 1;
 
-    // ✅ BrushSettings.getCurrentSettings() を使用
+    // BrushSettings.getCurrentSettings() を使用
     const currentSettings = this.settings.getCurrentSettings();
     const strokeOptions = {
       size: currentSettings.size,
@@ -249,7 +276,7 @@ class DrawingEngine {
     strokeOptions.size = scaledSize;
 
     this.currentPath = {
-      points: [{ x: worldPoint.x, y: worldPoint.y, pressure }],
+      points: [{ x: layerPoint.x, y: layerPoint.y, pressure }],
       color: this.currentTool === 'eraser' ? this.config.background?.color || 0xFFFFFF : this.settings.getColor(),
       size: this.settings.getSize(),
       opacity: this.settings.getAlpha(),
@@ -261,27 +288,25 @@ class DrawingEngine {
     };
     
     this.isDrawing = true;
-    this.lastPoint = { x: worldPoint.x, y: worldPoint.y };
+    this.lastPoint = { x: layerPoint.x, y: layerPoint.y };
   }
 
   /**
    * 描画継続
-   * ✅ 修正: screenToWorld() に統一
+   * ✅ 修正: event.global (PIXI座標) を直接変換
    */
-  continueDrawing(screenX, screenY, pressureOrEvent) {
+  continueDrawing(globalX, globalY, pressureOrEvent) {
     if (!this.isDrawing || !this.currentPath) return;
     if (!this.cameraSystem || !this.renderer) return;
 
-    // ✅ 修正: screenToWorld() に統一
-    const worldPoint = this.cameraSystem.screenToWorld 
-      ? this.cameraSystem.screenToWorld(screenX, screenY)
-      : this.cameraSystem.screenToCanvas(screenX, screenY);
+    // PIXI global座標 → レイヤーローカル座標
+    const layerPoint = this._globalToLayerLocal(globalX, globalY);
 
     const pressure = this._getPressure(pressureOrEvent);
 
     this.currentPath.points.push({
-      x: worldPoint.x,
-      y: worldPoint.y,
+      x: layerPoint.x,
+      y: layerPoint.y,
       pressure
     });
 
@@ -295,7 +320,7 @@ class DrawingEngine {
       this.renderer.renderPreview(this.currentPath.points, settings);
     }
 
-    this.lastPoint = { x: worldPoint.x, y: worldPoint.y };
+    this.lastPoint = { x: layerPoint.x, y: layerPoint.y };
   }
 
   /**
@@ -468,8 +493,8 @@ class DrawingEngine {
       hasRenderer: !!this.renderer,
       rendererTool: this.renderer?.currentTool || null,
       cameraSystem: {
-        hasScreenToWorld: typeof this.cameraSystem?.screenToWorld === 'function',
-        hasScreenToCanvas: typeof this.cameraSystem?.screenToCanvas === 'function'
+        hasCanvasContainer: !!this.cameraSystem?.canvasContainer,
+        canvasContainerExists: !!this.cameraSystem?.canvasContainer
       },
       toolManager: this.toolManager ? {
         currentTool: this.toolManager.currentTool,
