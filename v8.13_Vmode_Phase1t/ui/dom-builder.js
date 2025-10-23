@@ -1,4 +1,5 @@
 // Tegaki Tool - DOM Builder Module
+// 🔥 修正: #pen-settings を #legacy-pen-settings に変更してID重複解消
 // DO NOT use ESM, only global namespace
 
 window.DOMBuilder = (function() {
@@ -80,15 +81,17 @@ window.DOMBuilder = (function() {
         return canvasArea;
     }
 
-    // ポップアップパネル: ペン設定
+    // ポップアップパネル: ペン設定（レガシー・非表示）
+    // 🔥 修正: IDを legacy-pen-settings に変更してquick-access-popup.jsとの重複を解消
+    // 🔥 修正: display:none で非表示化（quick-access-popupが代替）
     function buildPenSettingsPopup() {
         const popup = createElement('div', {
             className: 'popup-panel',
-            id: 'pen-settings',
-            style: { left: '60px', top: '100px' }
+            id: 'legacy-pen-settings',  // ✅ ID変更
+            style: { left: '60px', top: '100px', display: 'none' }  // ✅ 非表示化
         });
 
-        const title = createElement('div', { className: 'popup-title', textContent: 'ベクターペンツール設定' });
+        const title = createElement('div', { className: 'popup-title', textContent: 'ベクターペンツール設定（レガシー）' });
         popup.appendChild(title);
 
         // サイズ設定
@@ -96,11 +99,12 @@ window.DOMBuilder = (function() {
         sizeGroup.appendChild(createElement('div', { className: 'setting-label', textContent: 'サイズ' }));
         
         const sizeContainer = createElement('div', { className: 'slider-container' });
-        const sizeSlider = createElement('div', { className: 'slider', id: 'pen-size-slider' });
-        sizeSlider.appendChild(createElement('div', { className: 'slider-track', id: 'pen-size-track' }));
-        sizeSlider.appendChild(createElement('div', { className: 'slider-handle', id: 'pen-size-handle' }));
+        // ✅ IDを変更してquick-access-popupとの重複を解消
+        const sizeSlider = createElement('div', { className: 'slider', id: 'legacy-pen-size-slider' });
+        sizeSlider.appendChild(createElement('div', { className: 'slider-track', id: 'legacy-pen-size-track' }));
+        sizeSlider.appendChild(createElement('div', { className: 'slider-handle', id: 'legacy-pen-size-handle' }));
         sizeContainer.appendChild(sizeSlider);
-        sizeContainer.appendChild(createElement('div', { className: 'slider-value', id: 'pen-size-value', textContent: '16.0px' }));
+        sizeContainer.appendChild(createElement('div', { className: 'slider-value', id: 'legacy-pen-size-value', textContent: '16.0px' }));
         sizeGroup.appendChild(sizeContainer);
         popup.appendChild(sizeGroup);
 
@@ -109,11 +113,12 @@ window.DOMBuilder = (function() {
         opacityGroup.appendChild(createElement('div', { className: 'setting-label', textContent: '不透明度' }));
         
         const opacityContainer = createElement('div', { className: 'slider-container' });
-        const opacitySlider = createElement('div', { className: 'slider', id: 'pen-opacity-slider' });
-        opacitySlider.appendChild(createElement('div', { className: 'slider-track', id: 'pen-opacity-track' }));
-        opacitySlider.appendChild(createElement('div', { className: 'slider-handle', id: 'pen-opacity-handle' }));
+        // ✅ IDを変更してquick-access-popupとの重複を解消
+        const opacitySlider = createElement('div', { className: 'slider', id: 'legacy-pen-opacity-slider' });
+        opacitySlider.appendChild(createElement('div', { className: 'slider-track', id: 'legacy-pen-opacity-track' }));
+        opacitySlider.appendChild(createElement('div', { className: 'slider-handle', id: 'legacy-pen-opacity-handle' }));
         opacityContainer.appendChild(opacitySlider);
-        opacityContainer.appendChild(createElement('div', { className: 'slider-value', id: 'pen-opacity-value', textContent: '85.0%' }));
+        opacityContainer.appendChild(createElement('div', { className: 'slider-value', id: 'legacy-pen-opacity-value', textContent: '85.0%' }));
         opacityGroup.appendChild(opacityContainer);
         popup.appendChild(opacityGroup);
 
@@ -485,3 +490,8 @@ window.DOMBuilder = (function() {
         ICONS: ICONS
     };
 })();
+
+console.log('✅ dom-builder.js (ID重複解消版) loaded');
+console.log('   - #pen-settings → #legacy-pen-settings に変更');
+console.log('   - pen-size-slider → legacy-pen-size-slider に変更');
+console.log('   - quick-access-popup.jsとのID競合を完全解消');
