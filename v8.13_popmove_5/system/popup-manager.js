@@ -1,9 +1,6 @@
 // ===== system/popup-manager.js =====
 // 責務: ポップアップの一元管理
-// - 初期化・登録の統一
-// - 参照管理の統一
-// - 排他制御の実装
-// - EventBus統合
+// 改修1: hideAll()でquick-access-popup除外を確実に実装
 
 window.TegakiPopupManager = class PopupManager {
     constructor(eventBus) {
@@ -12,20 +9,13 @@ window.TegakiPopupManager = class PopupManager {
         }
         
         this.eventBus = eventBus;
-        this.popups = new Map(); // name -> { instance, PopupClass, dependencies, config, status }
+        this.popups = new Map();
         this.activePopup = null;
         this.initializationQueue = [];
         
         console.log('✅ PopupManager initialized');
     }
     
-    /**
-     * ポップアップを登録
-     * @param {string} name - ポップアップ識別名
-     * @param {class} PopupClass - ポップアップクラス
-     * @param {object} dependencies - 依存オブジェクト
-     * @param {object} config - 設定 { priority, waitFor }
-     */
     register(name, PopupClass, dependencies = {}, config = {}) {
         if (this.popups.has(name)) {
             console.warn(`⚠️ Popup "${name}" is already registered`);
@@ -41,7 +31,7 @@ window.TegakiPopupManager = class PopupManager {
                 waitFor: config.waitFor || []
             },
             instance: null,
-            status: 'registered' // registered -> initializing -> ready -> failed
+            status: 'registered'
         };
         
         this.popups.set(name, popupData);
@@ -54,11 +44,6 @@ window.TegakiPopupManager = class PopupManager {
         return true;
     }
     
-    /**
-     * 個別ポップアップを初期化
-     * @param {string} name - ポップアップ識別名
-     * @returns {boolean} 初期化成功/失敗
-     */
     initialize(name) {
         const popupData = this.popups.get(name);
         
@@ -72,10 +57,8 @@ window.TegakiPopupManager = class PopupManager {
             return true;
         }
         
-        // 依存関係チェック
         if (popupData.config.waitFor.length > 0) {
             const missingDeps = popupData.config.waitFor.filter(dep => {
-                // グローバル変数の存在チェック
                 return !window[dep];
             });
             
@@ -88,10 +71,8 @@ window.TegakiPopupManager = class PopupManager {
         popupData.status = 'initializing';
         
         try {
-            // インスタンス生成
             const instance = new popupData.PopupClass(popupData.dependencies);
             
-            // 必須メソッドの確認
             if (typeof instance.show !== 'function' || 
                 typeof instance.hide !== 'function' || 
                 typeof instance.toggle !== 'function') {
@@ -117,13 +98,9 @@ window.TegakiPopupManager = class PopupManager {
         }
     }
     
-    /**
-     * すべてのポップアップを優先順位順に初期化
-     */
     initializeAll() {
         console.log('🔧 Initializing all popups...');
         
-        // 優先順位でソート
         this.initializationQueue.sort((a, b) => a.config.priority - b.config.priority);
         
         let initialized = 0;
@@ -140,16 +117,11 @@ window.TegakiPopupManager = class PopupManager {
         
         console.log(`📊 Popup initialization: ${initialized} ready, ${deferred} deferred`);
         
-        // 遅延初期化が必要なポップアップのリトライ設定
         if (deferred > 0) {
             this._setupDeferredInitialization();
         }
     }
     
-    /**
-     * 遅延初期化のリトライ処理
-     * @private
-     */
     _setupDeferredInitialization() {
         const maxRetries = 20;
         let retryCount = 0;
@@ -185,11 +157,6 @@ window.TegakiPopupManager = class PopupManager {
         setTimeout(retryInitialization, 200);
     }
     
-    /**
-     * ポップアップインスタンスを取得
-     * @param {string} name - ポップアップ識別名
-     * @returns {object|null} ポップアップインスタンス
-     */
     get(name) {
         const popupData = this.popups.get(name);
         
@@ -200,18 +167,13 @@ window.TegakiPopupManager = class PopupManager {
         
         if (popupData.status !== 'ready') {
             console.warn(`⚠️ Popup "${name}" not ready (status: ${popupData.status})`);
-            // リトライ試行
             this.initialize(name);
-            return popupData.instance; // null の可能性あり
+            return popupData.instance;
         }
         
         return popupData.instance;
     }
     
-    /**
-     * ポップアップを表示（排他制御付き）
-     * @param {string} name - ポップアップ識別名
-     */
     show(name) {
         const instance = this.get(name);
         
@@ -220,10 +182,8 @@ window.TegakiPopupManager = class PopupManager {
             return false;
         }
         
-        // 他のポップアップを閉じる
         this.hideAll(name);
         
-        // 表示
         instance.show();
         this.activePopup = name;
         
@@ -234,10 +194,6 @@ window.TegakiPopupManager = class PopupManager {
         return true;
     }
     
-    /**
-     * ポップアップを非表示
-     * @param {string} name - ポップアップ識別名
-     */
     hide(name) {
         const instance = this.get(name);
         
@@ -258,10 +214,6 @@ window.TegakiPopupManager = class PopupManager {
         return true;
     }
     
-    /**
-     * ポップアップの表示/非表示を切り替え
-     * @param {string} name - ポップアップ識別名
-     */
     toggle(name) {
         const instance = this.get(name);
         
@@ -283,13 +235,11 @@ window.TegakiPopupManager = class PopupManager {
         return true;
     }
     
-    /**
-     * すべてのポップアップを閉じる
-     * @param {string} exceptName - 除外するポップアップ名
-     */
+    // ✅改修1: exceptName で quickAccess を確実に除外
     hideAll(exceptName = null) {
         let hiddenCount = 0;
         
+        // インスタンス経由での非表示
         this.popups.forEach((popupData, name) => {
             if (name !== exceptName && popupData.instance) {
                 if (this.isVisible(name)) {
@@ -299,14 +249,24 @@ window.TegakiPopupManager = class PopupManager {
             }
         });
         
-        // DOM直接操作でも確実に閉じる
+        // DOM直接操作でも確実に閉じる（ただしexceptNameは除外）
         document.querySelectorAll('.popup-panel').forEach(popup => {
-            if (popup.id !== `${exceptName}-popup`) {
-                popup.classList.remove('show');
+            const popupId = popup.id;
+            
+            // ✅ quickAccess除外: id="quick-access-popup" の場合はスキップ
+            if (exceptName === 'quickAccess' && popupId === 'quick-access-popup') {
+                return;
             }
+            
+            // ✅ 他のexceptName指定がある場合
+            if (exceptName && popupId === `${exceptName}-popup`) {
+                return;
+            }
+            
+            popup.classList.remove('show');
         });
         
-        // リサイズポップアップも対象
+        // リサイズポップアップも対象（特別扱い）
         const resizePopup = document.getElementById('resize-settings');
         if (resizePopup && exceptName !== 'resize') {
             resizePopup.classList.remove('show');
@@ -320,15 +280,9 @@ window.TegakiPopupManager = class PopupManager {
         
         if (hiddenCount > 0) {
             this.eventBus.emit('popup:all-hidden', { exceptName, hiddenCount });
-            console.log(`🙈 Closed ${hiddenCount} popups (except: ${exceptName || 'none'})`);
         }
     }
     
-    /**
-     * ポップアップが表示されているか確認
-     * @param {string} name - ポップアップ識別名
-     * @returns {boolean}
-     */
     isVisible(name) {
         const instance = this.get(name);
         
@@ -339,29 +293,15 @@ window.TegakiPopupManager = class PopupManager {
         return instance.isVisible === true;
     }
     
-    /**
-     * ポップアップが初期化済みか確認
-     * @param {string} name - ポップアップ識別名
-     * @returns {boolean}
-     */
     isReady(name) {
         const popupData = this.popups.get(name);
         return popupData ? popupData.status === 'ready' : false;
     }
     
-    /**
-     * 登録されているポップアップ一覧を取得
-     * @returns {Array} ポップアップ名の配列
-     */
     getRegisteredPopups() {
         return Array.from(this.popups.keys());
     }
     
-    /**
-     * ポップアップの状態情報を取得
-     * @param {string} name - ポップアップ識別名
-     * @returns {object|null}
-     */
     getStatus(name) {
         const popupData = this.popups.get(name);
         
@@ -378,10 +318,6 @@ window.TegakiPopupManager = class PopupManager {
         };
     }
     
-    /**
-     * すべてのポップアップの状態を取得（デバッグ用）
-     * @returns {Array}
-     */
     getAllStatuses() {
         const statuses = [];
         
@@ -392,9 +328,6 @@ window.TegakiPopupManager = class PopupManager {
         return statuses.sort((a, b) => a.priority - b.priority);
     }
     
-    /**
-     * 診断情報を出力
-     */
     diagnose() {
         console.log('=== PopupManager Diagnostics ===');
         console.log('Registered popups:', this.getRegisteredPopups().length);
@@ -419,7 +352,6 @@ window.TegakiPopupManager = class PopupManager {
     }
 };
 
-// グローバル公開
-window.PopupManager = null; // インスタンスは後で設定
+window.PopupManager = null;
 
-console.log('✅ popup-manager.js loaded');
+console.log('✅ popup-manager.js (quick-access除外対応版) loaded');

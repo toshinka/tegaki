@@ -1,5 +1,6 @@
-// ===== core-engine.js - Phase 1完全版 =====
-// 改修内容: DrawingEngine統合 + BrushSettings初期化 + Phase 1対応
+// ===== core-engine.js - 完全改修版 =====
+// 改修2: Delキーでレイヤー内容消去機能追加
+// 元ファイルの全機能継承 + UnifiedKeyHandlerにDEL処理追加
 
 (function() {
     'use strict';
@@ -117,12 +118,100 @@
                     }
                     break;
                 
+                // ✅改修2: Delキーでレイヤー内容消去
                 case 'delete':
-                    if ((e.code === 'Delete' || e.code === 'Backspace') && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                        this.eventBus.emit('layer:clear-active');
+                case 'LAYER_DELETE_DRAWINGS':
+                    if ((e.code === 'Delete' || e.code === 'Backspace') && 
+                        !e.ctrlKey && !e.altKey && !e.metaKey) {
+                        this.deleteActiveLayerDrawings();
                         e.preventDefault();
                     }
                     break;
+            }
+        }
+        
+        // ✅改修2: レイヤー内容消去メソッド
+        deleteActiveLayerDrawings() {
+            if (!this.layerSystem) return;
+            
+            const activeLayer = this.layerSystem.getActiveLayer();
+            if (!activeLayer || !activeLayer.layerData) return;
+            
+            // 背景レイヤーは削除不可
+            if (activeLayer.layerData.isBackground) return;
+            
+            const layerIndex = this.layerSystem.activeLayerIndex;
+            
+            // 描画オブジェクトを収集（背景グラフィックスは除外）
+            const childrenToRemove = [];
+            for (let child of activeLayer.children) {
+                if (child !== activeLayer.layerData.backgroundGraphics) {
+                    childrenToRemove.push(child);
+                }
+            }
+            
+            if (childrenToRemove.length === 0) return;
+            
+            // History統合
+            if (window.History && !window.History._manager?.isApplying) {
+                const command = {
+                    name: 'clear-layer-drawings',
+                    do: () => {
+                        childrenToRemove.forEach(child => {
+                            activeLayer.removeChild(child);
+                            if (child.destroy) {
+                                child.destroy({ children: true });
+                            }
+                        });
+                        
+                        this.layerSystem.requestThumbnailUpdate(layerIndex);
+                        
+                        if (this.eventBus) {
+                            this.eventBus.emit('layer:cleared', { 
+                                layerIndex,
+                                objectCount: childrenToRemove.length 
+                            });
+                        }
+                    },
+                    undo: () => {
+                        childrenToRemove.forEach(child => {
+                            activeLayer.addChild(child);
+                        });
+                        
+                        this.layerSystem.requestThumbnailUpdate(layerIndex);
+                        
+                        if (this.eventBus) {
+                            this.eventBus.emit('layer:restored', { 
+                                layerIndex,
+                                objectCount: childrenToRemove.length 
+                            });
+                        }
+                    },
+                    meta: { 
+                        type: 'clear-layer-drawings',
+                        layerId: activeLayer.layerData.id,
+                        objectCount: childrenToRemove.length
+                    }
+                };
+                
+                window.History.push(command);
+            } else {
+                // History無効時は直接実行
+                childrenToRemove.forEach(child => {
+                    activeLayer.removeChild(child);
+                    if (child.destroy) {
+                        child.destroy({ children: true });
+                    }
+                });
+                
+                this.layerSystem.requestThumbnailUpdate(layerIndex);
+                
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:cleared', { 
+                        layerIndex,
+                        objectCount: childrenToRemove.length 
+                    });
+                }
             }
         }
         
@@ -241,10 +330,10 @@
             this.layerSystem = new window.TegakiLayerSystem();
             this.clipboardSystem = new window.TegakiDrawingClipboard();
             
-            // 🆕 BrushSettings初期化
+            // BrushSettings初期化
             this.brushSettings = new BrushSettings(CONFIG, this.eventBus);
             
-            // DrawingEngine初期化（app, layerSystem, cameraSystem, history）
+            // DrawingEngine初期化
             this.drawingEngine = new DrawingEngine(
                 this.app,
                 this.layerSystem,
@@ -252,7 +341,7 @@
                 window.History
             );
             
-            // 🆕 BrushSettingsをDrawingEngineに設定
+            // BrushSettingsをDrawingEngineに設定
             this.drawingEngine.setBrushSettings(this.brushSettings);
             
             this.animationSystem = null;
@@ -288,13 +377,13 @@
                 if (activeLayer.layerData.isBackground) return;
                 
                 const layerIndex = this.layerSystem.activeLayerIndex;
-                const childrenSnapshot = [...activeLayer.container.children];
+                const childrenSnapshot = [...activeLayer.children];
                 
                 if (window.History) {
                     const command = {
                         name: 'clear-layer',
                         do: () => {
-                            activeLayer.container.removeChildren();
+                            activeLayer.removeChildren();
                             childrenSnapshot.forEach(child => {
                                 if (child.destroy) child.destroy({ children: true });
                             });
@@ -308,7 +397,7 @@
                         },
                         undo: () => {
                             childrenSnapshot.forEach(child => {
-                                activeLayer.container.addChild(child);
+                                activeLayer.addChild(child);
                             });
                             
                             this.layerSystem.requestThumbnailUpdate(layerIndex);
@@ -471,8 +560,21 @@
             layers.forEach(layer => {
                 if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
                     layer.layerData.backgroundGraphics.clear();
-                    layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
-                    layer.layerData.backgroundGraphics.fill(CONFIG.background.color);
+                    
+                    // チェックパターン背景を再生成
+                    const color1 = 0xe9c2ba;
+                    const color2 = 0xf0e0d6;
+                    const squareSize = 16;
+                    
+                    for (let y = 0; y < newHeight; y += squareSize) {
+                        for (let x = 0; x < newWidth; x += squareSize) {
+                            const isEvenX = (x / squareSize) % 2 === 0;
+                            const isEvenY = (y / squareSize) % 2 === 0;
+                            const color = (isEvenX === isEvenY) ? color1 : color2;
+                            layer.layerData.backgroundGraphics.rect(x, y, squareSize, squareSize);
+                            layer.layerData.backgroundGraphics.fill({ color: color });
+                        }
+                    }
                 }
             });
             
@@ -560,8 +662,11 @@
                 this.layerSystem.updateStatusDisplay();
             });
             
+            // ✅改修5: Sortable初期化
             if (window.TegakiUI && window.TegakiUI.initializeSortable) {
-                window.TegakiUI.initializeSortable(this.layerSystem);
+                setTimeout(() => {
+                    window.TegakiUI.initializeSortable(this.layerSystem);
+                }, 100);
             }
             
             this.setupCanvasEvents();

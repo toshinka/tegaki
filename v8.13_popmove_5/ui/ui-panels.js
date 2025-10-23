@@ -1,5 +1,6 @@
-// ===== ui/ui-panels.js - resize-tool修正版 =====
-// 修正: resize-toolでPopupManagerを使用
+// ===== ui/ui-panels.js - 完全改修版 =====
+// 改修1: quick-access-popup画面外クリック防止
+// 改修5: Sortable初期化関数追加
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -113,12 +114,13 @@ window.TegakiUI.UIController = class {
                 return;
             }
 
+            // ✅改修1: quick-access-popup以外を閉じる（quick-accessは残す）
             if (!e.target.closest('.popup-panel') && 
                 !e.target.closest('.album-overlay') &&
                 !e.target.closest('.layer-transform-panel') &&
                 !e.target.closest('.tool-button') &&
                 !e.target.closest('.layer-panel-container')) {
-                this.closeAllPopups();
+                this.closeAllPopups('quickAccess');
             }
         });
     }
@@ -233,6 +235,40 @@ window.TegakiUI.UIController = class {
     }
 };
 
+// ✅改修5: Sortable初期化関数
+window.TegakiUI.initializeSortable = function(layerSystem) {
+    const layerList = document.getElementById('layer-list');
+    if (!layerList || !window.Sortable) {
+        return;
+    }
+    
+    // 既存のSortableインスタンスを削除
+    if (layerList._sortable) {
+        layerList._sortable.destroy();
+    }
+    
+    layerList._sortable = new Sortable(layerList, {
+        animation: 150,
+        handle: '.layer-item',
+        ghostClass: 'layer-ghost',
+        chosenClass: 'layer-chosen',
+        dragClass: 'layer-drag',
+        onEnd: function(evt) {
+            const fromIndex = evt.oldIndex;
+            const toIndex = evt.newIndex;
+            
+            if (fromIndex !== toIndex) {
+                // UIとデータの逆順に注意
+                const layers = layerSystem.getLayers();
+                const actualFromIndex = layers.length - 1 - fromIndex;
+                const actualToIndex = layers.length - 1 - toIndex;
+                
+                layerSystem.reorderLayers(actualFromIndex, actualToIndex);
+            }
+        }
+    });
+};
+
 window.TegakiUI.createSlider = function(sliderId, min, max, initial, callback) {
     const container = document.getElementById(sliderId);
     if (!container) return;
@@ -337,6 +373,18 @@ window.TegakiUI.setupPanelStyles = function() {
         .slider-handle:active {
             cursor: grabbing;
         }
+        
+        .layer-ghost {
+            opacity: 0.4;
+        }
+        
+        .layer-chosen {
+            background-color: rgba(74, 144, 226, 0.2);
+        }
+        
+        .layer-drag {
+            opacity: 0.8;
+        }
     `;
     
     if (!document.querySelector('style[data-tegaki-panels]')) {
@@ -345,4 +393,4 @@ window.TegakiUI.setupPanelStyles = function() {
     }
 };
 
-console.log('✅ ui-panels.js (resize-tool修正版) loaded');
+console.log('✅ ui-panels.js (完全改修版) loaded');
