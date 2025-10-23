@@ -1,5 +1,5 @@
 /**
- * BrushSettings - ブラシ設定管理クラス（config.js初期値対応版）
+ * BrushSettings - ブラシ設定管理クラス（API統一版）
  * 
  * 責務: ペンの色・サイズ・透明度を一元管理
  * 
@@ -7,6 +7,9 @@
  * 1. config.jsのpen設定から初期値を取得
  * 2. EventBusで色・サイズ・透明度の変更通知を受取
  * 3. DrawingEngineが常に最新値を参照可能
+ * 4. ✅ getOpacity() / setOpacity() API追加（0-100%）
+ * 5. ✅ brush:opacity-changed イベント購読追加
+ * 6. ✅ window.BrushSettings としてグローバル公開
  */
 
 class BrushSettings {
@@ -17,7 +20,7 @@ class BrushSettings {
         // config.jsから初期値を取得（デフォルト値を背後に配置）
         const penConfig = this.config.pen || {};
         
-        // 🔧 修正: デフォルト値をconfig.jsから取得
+        // デフォルト値をconfig.jsから取得
         this.size = penConfig.size !== undefined ? penConfig.size : 3;
         this.color = penConfig.color !== undefined ? penConfig.color : 0x800000; // futaba-maroon
         this.alpha = penConfig.opacity !== undefined ? penConfig.opacity : 1.0;
@@ -45,9 +48,14 @@ class BrushSettings {
             this.setColor(color);
         });
 
-        // 透明度変更
+        // 透明度変更（0.0-1.0形式）
         this.eventBus.on('brush:alpha-changed', ({ alpha }) => {
             this.setAlpha(alpha);
+        });
+
+        // ✅ 追加: 透明度変更（0-100%形式）
+        this.eventBus.on('brush:opacity-changed', ({ opacity }) => {
+            this.setOpacity(opacity);
         });
     }
 
@@ -92,10 +100,26 @@ class BrushSettings {
     }
 
     /**
-     * 透明度設定
+     * 透明度設定（0.0-1.0）
      */
     setAlpha(alpha) {
         this.alpha = Math.max(0, Math.min(1, alpha));
+    }
+
+    /**
+     * ✅ 追加: 透明度取得（0-100%）
+     * UI表示用
+     */
+    getOpacity() {
+        return this.alpha * 100;
+    }
+
+    /**
+     * ✅ 追加: 透明度設定（0-100%）
+     * UI操作用
+     */
+    setOpacity(opacity) {
+        this.setAlpha(opacity / 100);
     }
 
     /**
@@ -120,6 +144,7 @@ class BrushSettings {
             size: this.size,
             color: this.color,
             alpha: this.alpha,
+            opacity: this.getOpacity(), // ✅ 追加
             minPhysicalWidth: this.minPhysicalWidth
         };
     }
@@ -131,6 +156,7 @@ class BrushSettings {
         if (settings.size !== undefined) this.setSize(settings.size);
         if (settings.color !== undefined) this.setColor(settings.color);
         if (settings.alpha !== undefined) this.setAlpha(settings.alpha);
+        if (settings.opacity !== undefined) this.setOpacity(settings.opacity); // ✅ 追加
     }
 
     /**
@@ -144,8 +170,16 @@ class BrushSettings {
     }
 }
 
-// グローバル登録
+// ✅ グローバル登録（TegakiDrawing名前空間）
 if (typeof window.TegakiDrawing === 'undefined') {
     window.TegakiDrawing = {};
 }
 window.TegakiDrawing.BrushSettings = BrushSettings;
+
+// ✅ グローバル登録（window直下 - 後方互換性のため）
+// 注: core-engine.js でインスタンス化された後に設定される想定
+// window.BrushSettings = instance;
+
+console.log('✅ brush-settings.js (API統一版) loaded');
+console.log('   - ✅ getOpacity() / setOpacity() 追加');
+console.log('   - ✅ brush:opacity-changed イベント購読追加');
