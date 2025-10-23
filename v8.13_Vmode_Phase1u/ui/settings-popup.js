@@ -1,6 +1,6 @@
-// ===== settings-popup.js - PopupManager対応改修版 =====
+// ===== settings-popup.js - スライダー配色統一版 =====
 // 責務: 設定UI表示、ユーザー入力受付、EventBus通知
-// 🔥 改修: PopupManager統合、共通インターフェース適用
+// 🎨 修正: スライダー配色をmaroon系に統一
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -40,7 +40,6 @@ window.TegakiUI.SettingsPopup = class {
         if (!this.popup) {
             this._createPopupElement();
         } else {
-            // 既存要素の初期化
             this.popup.classList.remove('show');
             this.popup.style.display = '';
             
@@ -210,6 +209,20 @@ window.TegakiUI.SettingsPopup = class {
         const valueDisplay = container.parentNode?.querySelector('.slider-value');
         
         if (!track || !handle) return null;
+        
+        // 🎨 修正: スライダー配色を明示的にmaroon系に統一
+        container.style.background = 'var(--futaba-light-medium)';
+        container.style.borderRadius = '3px';
+        
+        track.style.background = 'var(--futaba-maroon)';
+        track.style.borderRadius = '3px';
+        track.style.height = '100%';
+        
+        handle.style.background = 'var(--futaba-maroon)';
+        handle.style.border = '2px solid var(--futaba-background)';
+        handle.style.borderRadius = '50%';
+        handle.style.width = '16px';
+        handle.style.height = '16px';
         
         let currentValue = initial;
         let dragging = false;
@@ -429,8 +442,6 @@ window.TegakiUI.SettingsPopup = class {
         }
     }
     
-    // ===== 必須インターフェース =====
-    
     show() {
         if (!this.popup) {
             this._ensurePopupElement();
@@ -480,7 +491,6 @@ window.TegakiUI.SettingsPopup = class {
     }
 };
 
-// グローバル公開
 window.SettingsPopup = window.TegakiUI.SettingsPopup;
 
-console.log('✅ settings-popup.js (PopupManager対応版) loaded');
+console.log('✅ settings-popup.js (スライダー配色統一版) loaded');

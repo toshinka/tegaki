@@ -1,5 +1,5 @@
-// ===== ui-panels.js - Phase1修正版 =====
-// 修正: quick-access-popup用スライダーを完全除外
+// ===== ui/ui-panels.js - resize-tool修正版 =====
+// 修正: resize-toolでPopupManagerを使用
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -139,16 +139,7 @@ window.TegakiUI.UIController = class {
                 this.updateToolUI('eraser');
             },
             'resize-tool': () => {
-                const resizePopup = document.getElementById('resize-settings');
-                if (resizePopup) {
-                    const isVisible = resizePopup.classList.contains('show');
-                    if (isVisible) {
-                        resizePopup.classList.remove('show');
-                    } else {
-                        this.closeAllPopups('resize');
-                        resizePopup.classList.add('show');
-                    }
-                }
+                this.togglePopup('resize');
             },
             'gif-animation-tool': () => {
                 if (window.TegakiEventBus) {
@@ -197,9 +188,7 @@ window.TegakiUI.UIController = class {
     }
     
     setupSliders() {
-        // 🔧 修正: quick-access-popup用スライダーは完全に除外
-        // quick-access-popup.js が qa-size-slider, qa-opacity-slider を管理している
-        // ui-panels.js は pen-size-slider を処理しない
+        // quick-access-popup.js が qa-size-slider, qa-opacity-slider を管理
     }
 
     setupCanvasResize() {
@@ -248,7 +237,6 @@ window.TegakiUI.createSlider = function(sliderId, min, max, initial, callback) {
     const container = document.getElementById(sliderId);
     if (!container) return;
 
-    // 🔧 修正: quick-access-popup用スライダー (qa-*) は処理しない
     if (sliderId.startsWith('qa-')) {
         return;
     }
@@ -356,3 +344,5 @@ window.TegakiUI.setupPanelStyles = function() {
         document.head.appendChild(style);
     }
 };
+
+console.log('✅ ui-panels.js (resize-tool修正版) loaded');
