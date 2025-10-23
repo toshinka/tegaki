@@ -1,12 +1,11 @@
 /**
- * DrawingEngine - Phase 1改修版（完全動作版）
+ * DrawingEngine - 座標系修正版
  * 
  * ✅ 修正:
- * - BrushSettings.getStrokeOptions() → getCurrentSettings() に統一
- * - 全サブモジュール初期化安全化
- * - StrokeRecorder座標系確認・修正
- * - PressureHandler.getPressure() → _getPressure()の正確な実装
- * - EventBus購読完全実装
+ * - screenToCanvas() → screenToWorld() に統一
+ * - BrushSettings.getCurrentSettings() 使用
+ * - PressureHandler統合の安全化
+ * - StrokeRenderer.setTool() 初期化時に呼び出し
  */
 
 class DrawingEngine {
@@ -19,7 +18,7 @@ class DrawingEngine {
     this.eventBus = window.TegakiEventBus;
     this.config = window.TEGAKI_CONFIG || {};
 
-    // サブモジュール初期化（nullチェック）
+    // サブモジュール初期化
     this.toolManager = null;
     this.dataManager = null;
     this.settings = null;
@@ -38,29 +37,29 @@ class DrawingEngine {
       this.settings = window.TegakiDrawing.BrushSettings ? 
         new window.TegakiDrawing.BrushSettings(this.config, this.eventBus) : null;
       
+      this.pressureHandler = window.TegakiDrawing.PressureHandler ? 
+        new window.TegakiDrawing.PressureHandler() : null;
+      
       this.recorder = window.TegakiDrawing.StrokeRecorder ? 
         new window.TegakiDrawing.StrokeRecorder(this.pressureHandler, this.cameraSystem) : null;
       
       this.renderer = window.TegakiDrawing.StrokeRenderer ? 
         new window.TegakiDrawing.StrokeRenderer(this.app) : null;
       
-      this.pressureHandler = window.TegakiDrawing.PressureHandler ? 
-        new window.TegakiDrawing.PressureHandler() : null;
-      
       this.transformer = window.TegakiDrawing.StrokeTransformer ? 
         new window.TegakiDrawing.StrokeTransformer(this.config) : null;
     }
-
-    // フォールバック設定
-    this.brushSize = this.config?.pen?.size || 8;
-    this.brushColor = this.config?.pen?.color || 0x000000;
-    this.brushOpacity = this.config?.pen?.opacity || 1.0;
 
     // 描画状態
     this.isDrawing = false;
     this.currentTool = 'pen';
     this.currentPath = null;
     this.lastPoint = null;
+    
+    // ✅ Renderer初期化時にツール設定
+    if (this.renderer && typeof this.renderer.setTool === 'function') {
+      this.renderer.setTool(this.currentTool);
+    }
     
     // イベント購読
     this.subscribeToSettings();
@@ -78,9 +77,14 @@ class DrawingEngine {
     if (!this.eventBus) return;
     
     this.eventBus.on('tool:changed', ({ to, tool }) => {
+      this.currentTool = to;
       if (this.renderer && typeof this.renderer.setTool === 'function') {
         this.renderer.setTool(to);
       }
+    });
+    
+    this.eventBus.on('tool:select', ({ tool }) => {
+      this.setTool(tool);
     });
   }
 
@@ -215,19 +219,22 @@ class DrawingEngine {
 
   /**
    * 描画開始
-   * ✅ 修正: BrushSettings.getCurrentSettings() を使用
+   * ✅ 修正: screenToWorld() に統一
    */
   startDrawing(screenX, screenY, pressureOrEvent) {
     if (!this.cameraSystem || !this.settings || !this.recorder || !this.renderer) {
       return;
     }
 
-    const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
-    const pressure = this._getPressure(pressureOrEvent);
+    // ✅ 修正: screenToWorld() に統一（レイヤーローカル座標）
+    const worldPoint = this.cameraSystem.screenToWorld 
+      ? this.cameraSystem.screenToWorld(screenX, screenY)
+      : this.cameraSystem.screenToCanvas(screenX, screenY);
 
+    const pressure = this._getPressure(pressureOrEvent);
     const currentScale = this.cameraSystem.worldContainer?.scale?.x || 1;
 
-    // ✅ 修正: BrushSettings.getCurrentSettings() を使用
+    // ✅ BrushSettings.getCurrentSettings() を使用
     const currentSettings = this.settings.getCurrentSettings();
     const strokeOptions = {
       size: currentSettings.size,
@@ -242,7 +249,7 @@ class DrawingEngine {
     strokeOptions.size = scaledSize;
 
     this.currentPath = {
-      points: [{ x: canvasPoint.x, y: canvasPoint.y, pressure }],
+      points: [{ x: worldPoint.x, y: worldPoint.y, pressure }],
       color: this.currentTool === 'eraser' ? this.config.background?.color || 0xFFFFFF : this.settings.getColor(),
       size: this.settings.getSize(),
       opacity: this.settings.getAlpha(),
@@ -254,21 +261,27 @@ class DrawingEngine {
     };
     
     this.isDrawing = true;
+    this.lastPoint = { x: worldPoint.x, y: worldPoint.y };
   }
 
   /**
    * 描画継続
+   * ✅ 修正: screenToWorld() に統一
    */
   continueDrawing(screenX, screenY, pressureOrEvent) {
     if (!this.isDrawing || !this.currentPath) return;
     if (!this.cameraSystem || !this.renderer) return;
 
-    const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
+    // ✅ 修正: screenToWorld() に統一
+    const worldPoint = this.cameraSystem.screenToWorld 
+      ? this.cameraSystem.screenToWorld(screenX, screenY)
+      : this.cameraSystem.screenToCanvas(screenX, screenY);
+
     const pressure = this._getPressure(pressureOrEvent);
 
     this.currentPath.points.push({
-      x: canvasPoint.x,
-      y: canvasPoint.y,
+      x: worldPoint.x,
+      y: worldPoint.y,
       pressure
     });
 
@@ -278,7 +291,11 @@ class DrawingEngine {
       alpha: this.currentPath.opacity
     };
 
-    this.renderer.renderPreview(this.currentPath.points, settings);
+    if (this.renderer.renderPreview) {
+      this.renderer.renderPreview(this.currentPath.points, settings);
+    }
+
+    this.lastPoint = { x: worldPoint.x, y: worldPoint.y };
   }
 
   /**
@@ -364,12 +381,9 @@ class DrawingEngine {
       this.dataManager.addStroke(strokeDataRecord);
     }
 
-    if (this.pressureHandler && typeof this.pressureHandler.startStroke === 'function') {
-      // pressureHandlerのリセットは次のストロークで自動実行
-    }
-
     this.isDrawing = false;
     this.currentPath = null;
+    this.lastPoint = null;
   }
 
   /**
@@ -393,6 +407,10 @@ class DrawingEngine {
   setTool(tool) {
     if (tool === 'pen' || tool === 'eraser') {
       this.currentTool = tool;
+      
+      if (this.renderer && typeof this.renderer.setTool === 'function') {
+        this.renderer.setTool(tool);
+      }
       
       if (this.eventBus) {
         this.eventBus.emit('toolChanged', { tool });
@@ -447,6 +465,12 @@ class DrawingEngine {
       settings: this.settings?.getCurrentSettings?.() || null,
       currentTool: this.currentTool,
       isDrawing: this.isDrawing,
+      hasRenderer: !!this.renderer,
+      rendererTool: this.renderer?.currentTool || null,
+      cameraSystem: {
+        hasScreenToWorld: typeof this.cameraSystem?.screenToWorld === 'function',
+        hasScreenToCanvas: typeof this.cameraSystem?.screenToCanvas === 'function'
+      },
       toolManager: this.toolManager ? {
         currentTool: this.toolManager.currentTool,
         registeredTools: this.toolManager.getRegisteredToolNames?.() || []
