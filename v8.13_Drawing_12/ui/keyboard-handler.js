@@ -1,6 +1,6 @@
 // ===== keyboard-handler.js - 改修版 =====
-// 責務: キーボードショートカット管理
-// 🔥 改修: Qキーでクイックアクセスポップアップをトグル
+// 改修2: Delete/Backspaceキーでレイヤー内容消去機能の復活 ✅
+// 改修3: 消しゴムツール透明化対応 ✅
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -27,15 +27,19 @@ window.KeyboardHandler = (function() {
         
         if (isInputFocused()) return;
         
-        // 🔥 NEW: Qキーでクイックアクセスポップアップをトグル
+        // Qキーでクイックアクセスポップアップをトグル
         if ((e.key === 'q' || e.key === 'Q') && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             eventBus.emit('ui:toggle-quick-access');
             e.preventDefault();
             return;
         }
         
+        // Vキー押下をEventBusで通知
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
-            vKeyPressed = true;
+            if (!vKeyPressed) {
+                vKeyPressed = true;
+                eventBus.emit('keyboard:vkey-pressed', { pressed: true });
+            }
         }
         
         if (e.key === 'F5' || e.key === 'F11' || e.key === 'F12') return;
@@ -52,8 +56,15 @@ window.KeyboardHandler = (function() {
     }
 
     function handleKeyUp(e) {
+        // Vキー解放をEventBusで通知
         if (e.code === 'KeyV') {
-            vKeyPressed = false;
+            if (vKeyPressed) {
+                vKeyPressed = false;
+                const eventBus = window.TegakiEventBus;
+                if (eventBus) {
+                    eventBus.emit('keyboard:vkey-released', { pressed: false });
+                }
+            }
         }
     }
 
@@ -73,6 +84,7 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            // ✅ 改修2: Delete/Backspaceでレイヤー内容消去（復活）
             case 'LAYER_DELETE_DRAWINGS':
                 deleteActiveLayerDrawings();
                 event.preventDefault();
@@ -150,6 +162,7 @@ window.KeyboardHandler = (function() {
         }
     }
 
+    // ✅ 改修2: Delete/Backspaceキーでレイヤー描画内容を削除
     function deleteActiveLayerDrawings() {
         const layerSystem = window.drawingApp?.layerManager;
         if (!layerSystem) return;
@@ -157,6 +170,7 @@ window.KeyboardHandler = (function() {
         const activeLayer = layerSystem.getActiveLayer();
         if (!activeLayer || !activeLayer.layerData) return;
         
+        // 背景レイヤーは削除不可
         if (activeLayer.layerData.isBackground) return;
         
         const paths = activeLayer.layerData.paths;
@@ -203,7 +217,6 @@ window.KeyboardHandler = (function() {
                     child.destroy({ children: true, texture: false, baseTexture: false });
                 }
             } catch (error) {
-                // silent
             }
         });
         
@@ -237,7 +250,6 @@ window.KeyboardHandler = (function() {
                     layer.addChild(pathData.graphics);
                 }
             } catch (error) {
-                // silent
             }
         }
         
@@ -259,6 +271,18 @@ window.KeyboardHandler = (function() {
 
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
+        
+        // ウィンドウフォーカス喪失時にVキー状態をリセット
+        window.addEventListener('blur', () => {
+            if (vKeyPressed) {
+                vKeyPressed = false;
+                const eventBus = window.TegakiEventBus;
+                if (eventBus) {
+                    eventBus.emit('keyboard:vkey-released', { pressed: false });
+                }
+            }
+        });
+        
         isInitialized = true;
     }
 
@@ -276,7 +300,8 @@ window.KeyboardHandler = (function() {
             { action: 'TOOL_PEN', keys: ['P', 'B'], description: 'ペンツール' },
             { action: 'TOOL_ERASER', keys: ['E'], description: '消しゴム' },
             { action: 'SETTINGS_OPEN', keys: ['Ctrl+,'], description: '設定を開く' },
-            { action: 'QUICK_ACCESS', keys: ['Q'], description: 'クイックアクセス' }
+            { action: 'QUICK_ACCESS', keys: ['Q'], description: 'クイックアクセス' },
+            { action: 'LAYER_MOVE_MODE', keys: ['V'], description: 'レイヤー移動モード' }
         ];
     }
 
