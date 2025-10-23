@@ -1,6 +1,6 @@
-// ===== ui/quick-access-popup.js - 最終修正版 =====
+// ===== ui/quick-access-popup.js - Phase1+3完全版 =====
 // 責務: ペン設定クイックアクセスポップアップ
-// 改修: resize-slider.js（IIFE版）の成功パターンを完全に模倣
+// 改修: Phase1 イベントリスナー管理統一 + Phase3 BrushSettings API修正
 
 (function() {
     'use strict';
@@ -21,12 +21,16 @@
             this.isVisible = false;
             this.initialized = false;
             
-            // resize-slider.jsと同じパターン：グローバル変数で状態管理
+            // ✅ Phase1: ドラッグ状態フラグをクラスプロパティ化
             this.isDraggingSize = false;
             this.isDraggingOpacity = false;
             
             // DOM要素キャッシュ
             this.elements = {};
+            
+            // ✅ Phase1: グローバルイベントリスナー参照をクラスプロパティ化
+            this.mouseMoveHandler = null;
+            this.mouseUpHandler = null;
             
             // 現在値
             this.currentSize = 3;
@@ -50,9 +54,15 @@
                 
                 this.panel = document.createElement('div');
                 this.panel.id = 'quick-access-popup';
-                this.panel.className = 'popup-panel';
+                // ✅ Phase2: resize-popup.jsと同じクラスを適用
+                this.panel.className = 'popup-panel resize-popup-compact';
                 this.panel.style.cssText = 'left: 70px; top: 60px;';
                 canvasArea.appendChild(this.panel);
+            }
+            
+            // ✅ Phase2: 既存のpanelにもクラスを確実に適用
+            if (this.panel && !this.panel.classList.contains('resize-popup-compact')) {
+                this.panel.classList.add('resize-popup-compact');
             }
             
             if (!this.panel.children.length) {
@@ -63,7 +73,6 @@
         _populateContent() {
             if (!this.panel) return;
             
-            // resize-popup.jsと同じHTML構造を使用
             this.panel.innerHTML = `
                 <!-- カラーパレット -->
                 <div style="margin-bottom: 20px; padding: 0 8px;">
@@ -161,9 +170,7 @@
             
             this._cacheElements();
             this._setupColorButtons();
-            this._setupSizeSlider();
-            this._setupOpacitySlider();
-            this._setupStepButtons();
+            this._setupSliders();
             this._updateUI();
             
             this.initialized = true;
@@ -189,32 +196,46 @@
             });
         }
 
-        // resize-slider.jsと同じパターン：独立した関数で処理
-        _setupSizeSlider() {
-            const handleMouseMove = (e) => {
-                if (!this.isDraggingSize) return;
-                const rect = this.elements.sizeSlider.getBoundingClientRect();
-                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-                const value = this.MIN_SIZE + ((this.MAX_SIZE - this.MIN_SIZE) * percent / 100);
-                this._updateSizeSlider(value);
-            };
-            
-            const handleMouseUp = () => {
+        // ✅ Phase1: resize-popup.jsと同じパターンで統一
+        _setupSliders() {
+            // グローバルマウスハンドラーをクラスプロパティとして定義
+            this.mouseMoveHandler = (e) => {
                 if (this.isDraggingSize) {
-                    this.isDraggingSize = false;
+                    const rect = this.elements.sizeSlider.getBoundingClientRect();
+                    const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                    const value = this.MIN_SIZE + ((this.MAX_SIZE - this.MIN_SIZE) * percent / 100);
+                    this._updateSizeSlider(value);
                 }
                 if (this.isDraggingOpacity) {
-                    this.isDraggingOpacity = false;
+                    const rect = this.elements.opacitySlider.getBoundingClientRect();
+                    const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                    const value = this.MIN_OPACITY + ((this.MAX_OPACITY - this.MIN_OPACITY) * percent / 100);
+                    this._updateOpacitySlider(value);
                 }
             };
             
-            // ハンドルにmousedown
+            this.mouseUpHandler = () => {
+                this.isDraggingSize = false;
+                this.isDraggingOpacity = false;
+            };
+            
+            // documentにイベントリスナー登録
+            document.addEventListener('mousemove', this.mouseMoveHandler);
+            document.addEventListener('mouseup', this.mouseUpHandler);
+            
+            // サイズハンドル mousedown
             this.elements.sizeHandle.addEventListener('mousedown', (e) => {
                 this.isDraggingSize = true;
                 e.preventDefault();
             });
             
-            // スライダー全体にclick
+            // 透明度ハンドル mousedown
+            this.elements.opacityHandle.addEventListener('mousedown', (e) => {
+                this.isDraggingOpacity = true;
+                e.preventDefault();
+            });
+            
+            // スライダー直接クリック（サイズ）
             this.elements.sizeSlider.addEventListener('click', (e) => {
                 if (e.target === this.elements.sizeHandle) return;
                 const rect = this.elements.sizeSlider.getBoundingClientRect();
@@ -223,27 +244,7 @@
                 this._updateSizeSlider(value);
             });
             
-            // documentにmousemove/mouseup
-            document.addEventListener('mousemove', handleMouseMove);
-            document.addEventListener('mouseup', handleMouseUp);
-        }
-
-        _setupOpacitySlider() {
-            const handleMouseMove = (e) => {
-                if (!this.isDraggingOpacity) return;
-                const rect = this.elements.opacitySlider.getBoundingClientRect();
-                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-                const value = this.MIN_OPACITY + ((this.MAX_OPACITY - this.MIN_OPACITY) * percent / 100);
-                this._updateOpacitySlider(value);
-            };
-            
-            // ハンドルにmousedown
-            this.elements.opacityHandle.addEventListener('mousedown', (e) => {
-                this.isDraggingOpacity = true;
-                e.preventDefault();
-            });
-            
-            // スライダー全体にclick
+            // スライダー直接クリック（透明度）
             this.elements.opacitySlider.addEventListener('click', (e) => {
                 if (e.target === this.elements.opacityHandle) return;
                 const rect = this.elements.opacitySlider.getBoundingClientRect();
@@ -252,12 +253,7 @@
                 this._updateOpacitySlider(value);
             });
             
-            // documentへのイベント登録は_setupSizeSlider()で済み
-            document.addEventListener('mousemove', handleMouseMove);
-        }
-
-        _setupStepButtons() {
-            // サイズステップボタン
+            // ステップボタン（サイズ）
             this.elements.sizeDecrease.addEventListener('click', () => {
                 const current = this.brushSettings.getSize();
                 this._updateSizeSlider(Math.max(this.MIN_SIZE, current - 0.5));
@@ -268,7 +264,7 @@
                 this._updateSizeSlider(Math.min(this.MAX_SIZE, current + 0.5));
             });
             
-            // 透明度ステップボタン
+            // ✅ Phase3: getOpacity()を正しく使用（* 100 不要）
             this.elements.opacityDecrease.addEventListener('click', () => {
                 const current = this.brushSettings.getOpacity();
                 this._updateOpacitySlider(Math.max(this.MIN_OPACITY, current - 5));
@@ -307,19 +303,19 @@
             this.elements.opacityHandle.style.left = percent + '%';
             this.elements.opacityDisplay.textContent = Math.round(this.currentOpacity) + '%';
             
-            // BrushSettings更新
+            // ✅ Phase3: setOpacity()を正しく使用（既に0-100%形式）
             this.brushSettings.setOpacity(this.currentOpacity);
             
             // EventBus通知
             if (this.eventBus) {
-                this.eventBus.emit('brush:opacity-changed', { opacity: this.currentOpacity / 100 });
+                this.eventBus.emit('brush:opacity-changed', { opacity: this.currentOpacity });
             }
         }
 
         _updateUI() {
             if (!this.brushSettings) return;
             
-            // 現在の設定を読み込み
+            // ✅ Phase3: getOpacity()を正しく使用
             this.currentSize = this.brushSettings.getSize();
             this.currentOpacity = this.brushSettings.getOpacity();
             
@@ -358,11 +354,9 @@
             this.panel.classList.add('show');
             this.isVisible = true;
             
-            // 初期化（初回のみ）
+            // ✅ Phase4: resize-popup.jsと同じく、show()時に即座に初期化
             if (!this.initialized) {
-                setTimeout(() => {
-                    this.initialize();
-                }, 50);
+                this.initialize();
             } else {
                 if (this.brushSettings) {
                     this._updateUI();
@@ -396,11 +390,22 @@
             return this.initialized && !!this.panel && !!this.brushSettings;
         }
 
+        // ✅ Phase1: destroy()でイベントリスナーを正しく削除
         destroy() {
-            // イベントリスナーは関数内で定義されているため、
-            // 明示的な削除は不要（クロージャで管理）
+            // グローバルイベントリスナーの削除
+            if (this.mouseMoveHandler) {
+                document.removeEventListener('mousemove', this.mouseMoveHandler);
+                this.mouseMoveHandler = null;
+            }
+            if (this.mouseUpHandler) {
+                document.removeEventListener('mouseup', this.mouseUpHandler);
+                this.mouseUpHandler = null;
+            }
+            
             this.elements = {};
             this.initialized = false;
+            this.isDraggingSize = false;
+            this.isDraggingOpacity = false;
             
             if (this.panel && this.panel.parentNode) {
                 this.panel.parentNode.removeChild(this.panel);
@@ -415,6 +420,8 @@
     }
     window.TegakiUI.QuickAccessPopup = QuickAccessPopup;
 
-    console.log('✅ quick-access-popup.js (最終修正版) loaded');
-    console.log('   - resize-slider.js パターン完全模倣');
+    console.log('✅ quick-access-popup.js (Phase1+3完全版) loaded');
+    console.log('   - イベントリスナー参照を正しく保持');
+    console.log('   - destroy()でメモリリーク防止');
+    console.log('   - BrushSettings API修正完了');
 })();
