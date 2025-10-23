@@ -1,0 +1,570 @@
+# 🔧 改修計画書：4つの問題に対する包括的解決策
+
+## 📋 目次
+1. [シンボル辞典](#シンボル辞典)
+2. [問題分析](#問題分析)
+3. [改修計画](#改修計画)
+4. [実装チェックリスト](#実装チェックリスト)
+
+---
+
+## 🔍 シンボル辞典
+
+### グローバルオブジェクト
+
+| シンボル | 型 | 定義場所 | 責務 | 初期化タイミング |
+|---------|-----|----------|------|------------------|
+| `window.TegakiEventBus` | EventBus | system/event-bus.js | イベント駆動通信 | 最初 |
+| `window.TEGAKI_CONFIG` | Object | config.js | 設定値一元管理 | 最初 |
+| `window.TEGAKI_KEYMAP` | Object | config.js | キーマッピング定義 | 最初 |
+| `window.PopupManager` | PopupManager | system/popup-manager.js | ポップアップ一元管理 | core-initializer.js |
+| `window.History` | History | system/history.js | Undo/Redo管理 | 中期 |
+| `window.StateManager` | StateManager | system/state-manager.js | 状態管理 | 中期 |
+| `window.BrushSettings` | BrushSettings | system/drawing/brush-settings.js | ブラシ設定管理 | core-engine.js |
+| `window.drawingApp` | Object | core-runtime.js | レガシー互換 | core-runtime.js |
+| `window.CoreRuntime` | Object | core-runtime.js | Runtime API | core-runtime.js |
+| `window.animationSystem` | AnimationSystem | system/animation-system.js | アニメーション管理 | core-engine.js |
+| `window.timelineUI` | TimelineUI | ui/timeline-ui.js | タイムラインUI | core-engine.js |
+
+### クラス定義
+
+#### 描画系
+
+| クラス | ファイル | 主要メソッド | 依存 |
+|--------|---------|-------------|------|
+| `DrawingEngine` | system/drawing/drawing-engine.js | `startDrawing()`, `continueDrawing()`, `stopDrawing()`, `setTool()` | StrokeRenderer, StrokeRecorder, BrushSettings |
+| `StrokeRenderer` | system/drawing/stroke-renderer.js | `renderPreview()`, `renderFinalStroke()`, `setTool()` | PIXI.Graphics |
+| `StrokeRecorder` | system/drawing/stroke-recorder.js | `startStroke()`, `addPoint()`, `endStroke()` | PressureHandler |
+| `BrushSettings` | system/drawing/brush-settings.js | `getSize()`, `setSize()`, `getColor()`, `setColor()`, `getOpacity()`, `setOpacity()` | EventBus, CONFIG |
+
+#### システム系
+
+| クラス | ファイル | 主要メソッド | 依存 |
+|--------|---------|-------------|------|
+| `LayerSystem` | system/layer-system.js | `getLayers()`, `getActiveLayer()`, `createLayer()`, `deleteLayer()`, `reorderLayers()` | EventBus, LayerTransform |
+| `CameraSystem` | system/camera-system.js | `init()`, `resizeCanvas()`, `updateCursor()` | EventBus |
+| `StateManager` | system/state-manager.js | `getCurrentTool()`, `setCurrentTool()`, `getPenSize()`, `setPenSize()` | EventBus |
+| `PopupManager` | system/popup-manager.js | `register()`, `show()`, `hide()`, `toggle()`, `hideAll()` | EventBus |
+
+#### UI系
+
+| クラス | ファイル | 主要メソッド | 依存 |
+|--------|---------|-------------|------|
+| `QuickAccessPopup` | ui/quick-access-popup.js | `show()`, `hide()`, `toggle()` | BrushSettings, EventBus |
+| `UIController` | ui/ui-panels.js | `handleToolClick()`, `closeAllPopups()` | PopupManager, CoreRuntime |
+| `KeyboardHandler` | ui/keyboard-handler.js | `handleKeyDown()`, `handleKeyUp()` | EventBus, KEYMAP |
+
+---
+
+## 🐛 問題分析
+
+### 問題1: quick-access-popupが画面外クリックで閉じる
+
+**現状**
+- `ui-panels.js` の `setupEventDelegation()` でグローバルクリックイベントを監視
+- `.popup-panel` 以外をクリックすると `closeAllPopups()` が発火
+- `quick-access-popup` も対象に含まれる
+
+**原因**
+- `closeAllPopups()` が例外処理なしで全ポップアップを閉じる
+- PopupManagerの `hideAll()` に `exceptName` パラメータがあるが活用されていない
+
+**影響範囲**
+- `ui/ui-panels.js` - `setupEventDelegation()`
+- `system/popup-manager.js` - `hideAll()`
+
+---
+
+### 問題2: Delキーでレイヤー内容消去が動作しない
+
+**現状**
+- `config.js` で `LAYER_DELETE_DRAWINGS` アクションが定義済み
+- `keyboard-handler.js` で `deleteActiveLayerDrawings()` 関数が実装済み
+- しかし実際には動作していない
+
+**原因の可能性**
+1. **EventBusとの接続不備**: `keyboard-handler.js` は独立して動作しているが、`core-engine.js` の `UnifiedKeyHandler` が優先される
+2. **キーハンドラーの二重実装**: `keyboard-handler.js` と `core-engine.js (UnifiedKeyHandler)` が共存
+3. **アクション未処理**: `UnifiedKeyHandler.handleKeyDown()` で `LAYER_DELETE_DRAWINGS` アクションが処理されていない
+
+**影響範囲**
+- `ui/keyboard-handler.js` - 初期化されていない可能性
+- `core-engine.js` - UnifiedKeyHandlerがDELキーを処理していない
+- `index.html` - keyboard-handler.jsの読み込み順序
+
+**確認事項**
+```javascript
+// keyboard-handler.js が初期化されているか？
+window.KeyboardHandler?.init() // 呼び出されている？
+
+// UnifiedKeyHandlerがDELを処理しているか？
+// core-engine.js Line 111: switch(action) に 'delete' ケースがあるが
+// 'LAYER_DELETE_DRAWINGS' にマッチしていない
+```
+
+---
+
+### 問題3: 消しゴムが透明ペンではなく背景色で塗りつぶし
+
+**現状**
+- `stroke-renderer.js` で `blendMode: 'erase'` を設定済み（改修版）
+- しかし実際のファイルは古いバージョン？
+
+**原因**
+- `stroke-renderer.js` の実ファイルが改修版に置き換わっていない
+- または `setTool()` が正しく呼び出されていない
+
+**確認事項**
+```javascript
+// StrokeRenderer.setTool() が呼び出されているか？
+drawingEngine.setTool('eraser'); // これがstrokeRenderer.setTool()を呼ぶ？
+
+// 現在のツール状態
+drawingEngine.currentTool // 'eraser' になっている？
+strokeRenderer.currentTool // 'eraser' になっている？
+```
+
+**影響範囲**
+- `system/drawing/stroke-renderer.js` - `setTool()`, `renderPreview()`
+- `system/drawing/drawing-engine.js` - `setTool()` → `strokeRenderer.setTool()`
+- `core-runtime.js` - `CoreRuntime.api.tool.set()`
+- `ui/ui-panels.js` - `handleToolClick()`
+
+**ツール切り替えフロー**
+```
+UIボタンクリック
+  ↓
+ui-panels.js: handleToolClick('eraser-tool')
+  ↓
+CoreRuntime.api.tool.set('eraser')
+  ↓
+drawingEngine.setTool('eraser')
+  ↓
+strokeRenderer.setTool('eraser')  ← ここが実装されていない可能性
+  ↓
+EventBus.emit('tool:select', {tool: 'eraser'})
+```
+
+---
+
+### 問題4: レイヤードラッグによる階層移動が消えている
+
+**現状**
+- `ui-panels.js` に `initializeSortable()` 関数が存在
+- しかし `Sortable.js` が正しく統合されていない
+
+**原因**
+1. **Sortable.jsの初期化タイミング**: `layer-system.js` の `updateLayerPanelUI()` 実行後に呼ばれていない
+2. **HTMLに未反映**: `index.html` でSortable.jsが読み込まれているが、初期化されていない可能性
+3. **LayerSystemとの統合不備**: `reorderLayers()` メソッドは存在するが、Sortableイベントと接続されていない
+
+**影響範囲**
+- `ui/ui-panels.js` - `initializeSortable()`
+- `system/layer-system.js` - `updateLayerPanelUI()`, `reorderLayers()`
+- `core-engine.js` - 初期化時に`initializeSortable()`を呼び出していない
+- `index.html` - Sortable.js読み込み確認
+
+**初期化フロー（理想）**
+```
+core-engine.js: initialize()
+  ↓
+layerSystem.updateLayerPanelUI()
+  ↓
+TegakiUI.initializeSortable(layerSystem) ← 呼び出されていない
+  ↓
+Sortable.create('#layer-list', {...})
+```
+
+---
+
+## 📐 改修計画
+
+### Phase 1: 問題1 - quick-access-popup画面外クリック防止
+
+**修正ファイル**: `ui/ui-panels.js`
+
+**変更内容**:
+```javascript
+// setupEventDelegation() 内
+if (!e.target.closest('.popup-panel') && ...) {
+    // quick-access-popup以外を閉じる
+    const manager = this.getPopupManager();
+    if (manager) {
+        manager.hideAll('quickAccess'); // ← exceptNameを使用
+    }
+}
+```
+
+**影響**: なし（既存機能の限定化）
+
+---
+
+### Phase 2: 問題2 - Delキーでレイヤー内容消去
+
+**修正ファイル**: 
+1. `core-engine.js` - UnifiedKeyHandler
+2. `ui/keyboard-handler.js` - 初期化統合
+
+**変更内容**:
+
+#### 2-1. core-engine.js - UnifiedKeyHandlerにDELキー処理を追加
+
+```javascript
+// UnifiedKeyHandler.handleKeyDown() 内に追加
+case 'delete':
+case 'LAYER_DELETE_DRAWINGS':
+    if ((e.code === 'Delete' || e.code === 'Backspace') && 
+        !e.ctrlKey && !e.altKey && !e.metaKey) {
+        this.deleteActiveLayerDrawings();
+        e.preventDefault();
+    }
+    break;
+
+// 新規メソッド追加
+deleteActiveLayerDrawings() {
+    const layerSystem = this.layerSystem;
+    if (!layerSystem) return;
+    
+    const activeLayer = layerSystem.getActiveLayer();
+    if (!activeLayer || !activeLayer.layerData) return;
+    
+    // 背景レイヤーは削除不可
+    if (activeLayer.layerData.isBackground) return;
+    
+    const paths = activeLayer.layerData.paths;
+    if (!paths || paths.length === 0) return;
+    
+    // History統合
+    if (window.History && !window.History._manager.isApplying) {
+        const pathsBackup = structuredClone(paths);
+        const layerIndex = layerSystem.activeLayerIndex;
+        
+        const entry = {
+            name: 'layer-delete-drawings',
+            do: () => {
+                this.clearLayerDrawings(layerSystem, activeLayer);
+            },
+            undo: () => {
+                this.restoreLayerDrawings(layerSystem, activeLayer, pathsBackup, layerIndex);
+            },
+            meta: { 
+                layerId: activeLayer.layerData.id,
+                pathCount: pathsBackup.length
+            }
+        };
+        
+        window.History.push(entry);
+    } else {
+        this.clearLayerDrawings(layerSystem, activeLayer);
+    }
+}
+
+clearLayerDrawings(layerSystem, layer) {
+    // keyboard-handler.jsから移植
+}
+
+restoreLayerDrawings(layerSystem, layer, pathsBackup, layerIndex) {
+    // keyboard-handler.jsから移植
+}
+```
+
+#### 2-2. keyboard-handler.js - 統合または削除
+
+**オプションA: 完全削除**（推奨）
+- `index.html` から `<script src="ui/keyboard-handler.js"></script>` を削除
+- UnifiedKeyHandlerに機能を統合
+
+**オプションB: 初期化統合**
+- `core-engine.js` で `window.KeyboardHandler.init()` を呼び出す
+
+---
+
+### Phase 3: 問題3 - 消しゴムを透明ペンに変更
+
+**修正ファイル**:
+1. `system/drawing/stroke-renderer.js` - blendMode実装
+2. `system/drawing/drawing-engine.js` - setTool連携
+3. `core-runtime.js` - EventBus発行
+
+**変更内容**:
+
+#### 3-1. stroke-renderer.js
+
+```javascript
+class StrokeRenderer {
+    constructor(app) {
+        this.app = app;
+        this.resolution = window.devicePixelRatio || 1;
+        this.minPhysicalWidth = 1 / this.resolution;
+        this.currentTool = 'pen'; // ← 追加
+    }
+
+    setTool(tool) {
+        this.currentTool = tool;
+    }
+
+    renderPreview(points, settings) {
+        const graphics = new PIXI.Graphics();
+        
+        // 消しゴムモード
+        if (this.currentTool === 'eraser') {
+            graphics.blendMode = 'erase';
+        }
+        
+        // 描画処理
+        if (points.length === 1) {
+            const p = points[0];
+            const width = this.calculateWidth(p.pressure, settings.size);
+            graphics.circle(p.x, p.y, width / 2);
+            
+            if (this.currentTool === 'eraser') {
+                graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+            } else {
+                graphics.fill({ color: settings.color, alpha: settings.alpha || 1.0 });
+            }
+            return graphics;
+        }
+        
+        // 複数点の場合も同様
+        // ...
+    }
+}
+```
+
+#### 3-2. drawing-engine.js
+
+```javascript
+setTool(toolName) {
+    this.currentTool = toolName;
+    // StrokeRendererに伝播
+    if (this.strokeRenderer) {
+        this.strokeRenderer.setTool(toolName);
+    }
+}
+```
+
+#### 3-3. core-runtime.js
+
+```javascript
+api: {
+    tool: {
+        set: (toolName) => {
+            if (CoreRuntime.internal.drawingEngine?.setTool) {
+                CoreRuntime.internal.drawingEngine.setTool(toolName);
+                if (CoreRuntime.internal.cameraSystem?.updateCursor) {
+                    CoreRuntime.internal.cameraSystem.updateCursor();
+                }
+                // EventBus発行
+                if (window.TegakiEventBus) {
+                    window.TegakiEventBus.emit('tool:select', { tool: toolName });
+                }
+                return true;
+            }
+            return false;
+        },
+        // ...
+    }
+}
+```
+
+#### 3-4. drawing-engine.js - EventBus購読追加
+
+```javascript
+_syncToolSelection() {
+    if (!this.eventBus) return;
+
+    this.eventBus.on('tool:select', ({ tool }) => {
+        this.setTool(tool);
+    });
+}
+
+constructor(...) {
+    // ...
+    this._syncToolSelection(); // ← 追加
+}
+```
+
+---
+
+### Phase 4: 問題4 - レイヤードラッグによる階層移動
+
+**修正ファイル**:
+1. `ui/ui-panels.js` - initializeSortable実装
+2. `system/layer-system.js` - updateLayerPanelUI修正
+3. `core-engine.js` - 初期化タイミング
+
+**変更内容**:
+
+#### 4-1. ui-panels.js
+
+```javascript
+window.TegakiUI.initializeSortable = function(layerSystem) {
+    const layerList = document.getElementById('layer-list');
+    if (!layerList || !window.Sortable) {
+        console.warn('Sortable.js not loaded or #layer-list not found');
+        return;
+    }
+    
+    // 既存のSortableインスタンスを削除
+    if (layerList._sortable) {
+        layerList._sortable.destroy();
+    }
+    
+    layerList._sortable = new Sortable(layerList, {
+        animation: 150,
+        handle: '.layer-item',
+        ghostClass: 'layer-ghost',
+        chosenClass: 'layer-chosen',
+        dragClass: 'layer-drag',
+        onEnd: function(evt) {
+            const fromIndex = evt.oldIndex;
+            const toIndex = evt.newIndex;
+            
+            if (fromIndex !== toIndex) {
+                // UIとデータの逆順に注意
+                const layers = layerSystem.getLayers();
+                const actualFromIndex = layers.length - 1 - fromIndex;
+                const actualToIndex = layers.length - 1 - toIndex;
+                
+                layerSystem.reorderLayers(actualFromIndex, actualToIndex);
+            }
+        }
+    });
+    
+    console.log('✅ Sortable initialized for #layer-list');
+};
+```
+
+#### 4-2. layer-system.js
+
+```javascript
+updateLayerPanelUI() {
+    // ...既存のDOM構築処理...
+    
+    // Sortable初期化（最後に呼び出し）
+    if (window.TegakiUI?.initializeSortable) {
+        setTimeout(() => {
+            window.TegakiUI.initializeSortable(this);
+        }, 50);
+    }
+}
+```
+
+#### 4-3. core-engine.js
+
+```javascript
+initialize() {
+    // ...既存の初期化処理...
+    
+    // LayerSystemのUI初期化後にSortableをセットアップ
+    if (window.TegakiUI && window.TegakiUI.initializeSortable) {
+        setTimeout(() => {
+            window.TegakiUI.initializeSortable(this.layerSystem);
+        }, 100);
+    }
+    
+    // ...
+}
+```
+
+---
+
+## ✅ 実装チェックリスト
+
+### Phase 1: quick-access-popup
+- [ ] `ui/ui-panels.js` - `setupEventDelegation()` 修正
+- [ ] `system/popup-manager.js` - `hideAll(exceptName)` 確認
+- [ ] 動作テスト: 画面外クリックでquick-access-popupが残るか
+
+### Phase 2: Delキー機能
+- [ ] `core-engine.js` - UnifiedKeyHandlerに`deleteActiveLayerDrawings()`追加
+- [ ] `core-engine.js` - `clearLayerDrawings()`, `restoreLayerDrawings()`追加
+- [ ] `config.js` - `LAYER_DELETE_DRAWINGS`アクション確認
+- [ ] 動作テスト: Del/Backspaceでレイヤー内容が消えるか
+- [ ] 動作テスト: Undoで復元されるか
+
+### Phase 3: 消しゴム透明化
+- [ ] `system/drawing/stroke-renderer.js` - `currentTool`プロパティ追加
+- [ ] `system/drawing/stroke-renderer.js` - `setTool()`メソッド追加
+- [ ] `system/drawing/stroke-renderer.js` - `renderPreview()`にblendMode分岐追加
+- [ ] `system/drawing/stroke-renderer.js` - `renderFinalStroke()`にblendMode分岐追加
+- [ ] `system/drawing/drawing-engine.js` - `setTool()`に`strokeRenderer.setTool()`追加
+- [ ] `system/drawing/drawing-engine.js` - `_syncToolSelection()`メソッド追加
+- [ ] `core-runtime.js` - `api.tool.set()`にEventBus発行追加
+- [ ] 動作テスト: 消しゴムで描画が透明化されるか
+- [ ] 動作テスト: 背景のチェックパターンが見えるか
+
+### Phase 4: レイヤードラッグ
+- [ ] `ui/ui-panels.js` - `initializeSortable()`関数確認
+- [ ] `ui/ui-panels.js` - CSS（.layer-ghost等）追加
+- [ ] `system/layer-system.js` - `updateLayerPanelUI()`に`initializeSortable()`呼び出し追加
+- [ ] `core-engine.js` - `initialize()`に`initializeSortable()`呼び出し追加
+- [ ] `index.html` - Sortable.js読み込み確認
+- [ ] 動作テスト: レイヤーをドラッグで並び替えできるか
+- [ ] 動作テスト: 並び替え後にUndo/Redoが動作するか
+
+---
+
+## 🔍 二重実装・統一ルールチェック
+
+### ツール管理の統一
+- **StateManager**: `getCurrentTool()`, `setCurrentTool()`
+- **DrawingEngine**: `currentTool`, `setTool()`
+- **CoreRuntime**: `api.tool.set()`, `api.tool.get()`
+- **結論**: DrawingEngineが実体、CoreRuntimeがAPI、StateManagerは不要（削除候補）
+
+### イベント命名規則の統一
+- ✅ 統一: `tool:select`, `tool:changed`
+- ❌ 不統一: `tool:updated` (未使用)
+- **結論**: `tool:select`に統一（DrawingEngine, CoreRuntime）
+
+### ポップアップ管理の統一
+- ✅ PopupManagerで一元管理
+- ✅ EventBusで通知
+- ✅ UIControllerが委譲
+- **結論**: 統一されている
+
+### レイヤー操作の統一
+- ✅ LayerSystemが一元管理
+- ✅ EventBusで通知
+- ⚠️ History統合は部分的（reorderLayersはHistory対応済み、deleteLayerDrawingsは未対応）
+- **結論**: History統合を全メソッドに適用
+
+---
+
+## 📝 実装優先順位
+
+1. **Phase 3（消しゴム）** - 最優先（描画の基本機能）
+2. **Phase 2（Delキー）** - 高優先（頻繁に使用）
+3. **Phase 4（ドラッグ）** - 中優先（UX向上）
+4. **Phase 1（画面外クリック）** - 低優先（軽微な問題）
+
+---
+
+## 🚨 注意事項
+
+1. **ファイル置き換え時の確認**
+   - 元ファイルの全機能が継承されているか
+   - グローバル変数の公開が維持されているか
+   - EventBus購読が正しく設定されているか
+
+2. **History統合の確認**
+   - `window.History.push(command)`が呼ばれているか
+   - `do`/`undo`メソッドが正しく実装されているか
+   - `_manager.isApplying`チェックが入っているか
+
+3. **EventBusの安全性**
+   - `emit`前に`EventBus`の存在確認
+   - `on`前に`EventBus`の存在確認
+   - 循環参照の防止
+
+4. **初期化順序の厳守**
+   ```
+   1. config.js, coordinate-system.js
+   2. system/event-bus.js
+   3. system/data-models.js
+   4. system/*（その他システム）
+   5. system/drawing/*
+   6. ui/*
+   7. core-*
+   ```
