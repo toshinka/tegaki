@@ -1,10 +1,9 @@
 /**
- * DrawingEngine - ペン描画統合制御クラス (Phase 1: 座標変換・ブラシ設定同期版)
+ * DrawingEngine - ペン描画統合制御クラス (消しゴムツール対応版)
  * 
- * 修正:
- * 1. cameraSystem.screenToLayer()の戻り値をレイヤーローカル座標に再変換
- * 2. BrushSettingsの値をリアルタイムに反映
- * 3. EventBusの変更をDrawingEngineに即座に適用
+ * 改修:
+ * - ツール切り替え時にstrokeRendererのsetTool()を呼び出し
+ * - EventBus 'tool:select' を購読してツール状態を同期
  * 
  * API:
  * - startDrawing(x, y, event)
@@ -37,6 +36,9 @@ class DrawingEngine {
         
         // リアルタイムブラシ設定同期
         this._syncBrushSettingsToRuntime();
+        
+        // ツール切り替えイベントを購読
+        this._syncToolSelection();
     }
 
     /**
@@ -44,32 +46,36 @@ class DrawingEngine {
      */
     setBrushSettings(brushSettings) {
         this.brushSettings = brushSettings;
-        // 設定反映後に同期
         this._syncBrushSettingsToRuntime();
     }
 
     /**
-     * 🆕 BrushSettingsの値をリアルタイムに同期
+     * BrushSettingsの値をリアルタイムに同期
      */
     _syncBrushSettingsToRuntime() {
         if (!this.eventBus) return;
 
-        // size変更時
         this.eventBus.on('brush:size-changed', ({ size }) => {
-            // DrawingEngine内部では使わない
-            // getBrushSettings()で都度参照する設計のため
+            // getBrushSettings()で都度参照する設計のため特に処理なし
         });
 
-        // alpha変更時
         this.eventBus.on('brush:alpha-changed', ({ alpha }) => {
-            // DrawingEngine内部では使わない
-            // getBrushSettings()で都度参照する設計のため
+            // getBrushSettings()で都度参照する設計のため特に処理なし
         });
 
-        // color変更時
         this.eventBus.on('brush:color-changed', ({ color }) => {
-            // DrawingEngine内部では使わない
-            // getBrushSettings()で都度参照する設計のため
+            // getBrushSettings()で都度参照する設計のため特に処理なし
+        });
+    }
+
+    /**
+     * ツール切り替えイベントを購読
+     */
+    _syncToolSelection() {
+        if (!this.eventBus) return;
+
+        this.eventBus.on('tool:select', ({ tool }) => {
+            this.setTool(tool);
         });
     }
 
@@ -77,11 +83,6 @@ class DrawingEngine {
      * 描画開始（PointerEvent対応）
      */
     startDrawing(x, y, event) {
-        // ツールモード確認
-        if (window.stateManager && window.stateManager.state.tool !== 'pen') {
-            return;
-        }
-
         // アクティブレイヤー取得（PIXI.Container自体）
         this.currentLayer = this.layerSystem.getActiveLayer();
         if (!this.currentLayer || this.currentLayer.layerData?.locked) {
@@ -105,7 +106,8 @@ class DrawingEngine {
         if (this.eventBus) {
             this.eventBus.emit('stroke:start', {
                 layerId: this.currentLayer.layerData?.id || this.currentLayer.label,
-                settings: this.currentSettings
+                settings: this.currentSettings,
+                tool: this.currentTool
             });
         }
 
@@ -138,7 +140,8 @@ class DrawingEngine {
         if (this.eventBus) {
             this.eventBus.emit('stroke:point', {
                 points: this.strokeRecorder.getCurrentPoints(),
-                settings: this.currentSettings
+                settings: this.currentSettings,
+                tool: this.currentTool
             });
         }
     }
@@ -165,7 +168,8 @@ class DrawingEngine {
         // EventBus通知
         if (this.eventBus) {
             this.eventBus.emit('stroke:end', {
-                strokeData: strokeData
+                strokeData: strokeData,
+                tool: this.currentTool
             });
         }
     }
@@ -217,7 +221,8 @@ class DrawingEngine {
             color: this.currentSettings.color,
             size: this.currentSettings.size,
             alpha: this.currentSettings.alpha,
-            layerId: this.currentLayer.layerData?.id || this.currentLayer.label
+            layerId: this.currentLayer.layerData?.id || this.currentLayer.label,
+            tool: this.currentTool
         });
 
         // 履歴コマンド作成（レイヤー参照をクロージャで確実に保持）
@@ -225,7 +230,7 @@ class DrawingEngine {
         const layerId = targetLayer.layerData?.id || targetLayer.label;
 
         const addStrokeCommand = {
-            name: 'Add Stroke',
+            name: this.currentTool === 'eraser' ? 'Erase' : 'Add Stroke',
             do: () => {
                 if (targetLayer && targetLayer.addChild) {
                     targetLayer.addChild(strokeObject);
@@ -238,7 +243,7 @@ class DrawingEngine {
                 }
             },
             meta: {
-                type: 'stroke',
+                type: this.currentTool === 'eraser' ? 'erase' : 'stroke',
                 layerId: layerId,
                 strokeData: strokeModel
             }
@@ -252,13 +257,14 @@ class DrawingEngine {
         // レイヤー更新通知
         if (this.eventBus) {
             this.eventBus.emit('layer:modified', {
-                layerId: layerId
+                layerId: layerId,
+                tool: this.currentTool
             });
         }
     }
 
     /**
-     * 🆕 ブラシ設定取得（BrushSettings優先・都度参照）
+     * ブラシ設定取得（BrushSettings優先・都度参照）
      */
     getBrushSettings() {
         // BrushSettingsインスタンスから都度参照
@@ -296,6 +302,10 @@ class DrawingEngine {
      */
     setTool(toolName) {
         this.currentTool = toolName;
+        // StrokeRendererにツール状態を反映
+        if (this.strokeRenderer) {
+            this.strokeRenderer.setTool(toolName);
+        }
     }
 
     /**

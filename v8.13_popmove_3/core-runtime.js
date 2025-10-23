@@ -1,5 +1,5 @@
-// ===== core-runtime.js - Phase1修正版 =====
-// 修正: api.brush メソッドを BrushSettings → EventBus経由に統一
+// ===== core-runtime.js - ツール切り替え修正版 =====
+// 修正: handlePointerDown でツールモード判定を追加
 
 (function() {
     'use strict';
@@ -78,7 +78,13 @@
         },
         
         handlePointerDown(event) {
-            if (this.internal.drawingEngine && !this.internal.layerManager?.isLayerMoveMode) {
+            // ツールモード判定: pen/eraserのみ描画開始
+            const currentTool = this.internal.drawingEngine?.currentTool || 'pen';
+            const isDrawingTool = currentTool === 'pen' || currentTool === 'eraser';
+            
+            if (this.internal.drawingEngine && 
+                !this.internal.layerManager?.isLayerMoveMode && 
+                isDrawingTool) {
                 this.internal.drawingEngine.startDrawing(event.global.x, event.global.y, event);
             }
         },
@@ -204,8 +210,21 @@
             const bg = layer.layerData.backgroundGraphics;
             
             bg.clear();
-            bg.rect(0, 0, width, height);
-            bg.fill(CONFIG.background.color || 0xF0E0D6);
+            
+            // チェックパターン背景を再生成
+            const color1 = 0xe9c2ba;
+            const color2 = 0xf0e0d6;
+            const squareSize = 16;
+            
+            for (let y = 0; y < height; y += squareSize) {
+                for (let x = 0; x < width; x += squareSize) {
+                    const isEvenX = (x / squareSize) % 2 === 0;
+                    const isEvenY = (y / squareSize) % 2 === 0;
+                    const color = (isEvenX === isEvenY) ? color1 : color2;
+                    bg.rect(x, y, squareSize, squareSize);
+                    bg.fill({ color: color });
+                }
+            }
             
             return true;
         },
@@ -340,6 +359,9 @@
                         if (CoreRuntime.internal.cameraSystem?.updateCursor) {
                             CoreRuntime.internal.cameraSystem.updateCursor();
                         }
+                        if (window.TegakiEventBus) {
+                            window.TegakiEventBus.emit('tool:select', { tool: toolName });
+                        }
                         return true;
                     }
                     return false;
@@ -359,7 +381,6 @@
             },
             
             brush: {
-                // 🔧 修正: EventBus経由に統一（TegakiSettingsManager参照を削除）
                 setSize: (size) => {
                     if (window.TegakiEventBus) {
                         window.TegakiEventBus.emit('brush:size-changed', { size });
@@ -548,7 +569,6 @@
             
             settings: {
                 get: (key) => {
-                    // BrushSettings から直接取得
                     if (!key) {
                         const bs = CoreRuntime.internal.drawingEngine?.brushSettings;
                         return bs?.getCurrentSettings() || {};
