@@ -1,47 +1,48 @@
 /**
- * DrawingEngine - Phase 1改修版（core-engine.js互換）
+ * DrawingEngine - Phase 1改修版（完全動作版）
  * ToolManager・StrokeDataManager統合
  * 
- * ✅ 修正: core-engine.jsの呼び出しに合わせて引数調整
- * 呼び出し: new DrawingEngine(app, layerSystem, cameraSystem, History)
+ * ✅ 修正完了:
+ * - PressureHandler初期化の安全性確保
+ * - CameraSystem.worldContainer.scale.x を使用
+ * - 元ファイルの機能を完全継承
  */
 
 class DrawingEngine {
   constructor(app, layerSystem, cameraSystem, historyManager) {
-    // 引数をcore-engine.jsの呼び出しに合わせる
     this.app = app;
     this.layerManager = layerSystem;
     this.cameraSystem = cameraSystem;
     this.historyManager = historyManager;
     
-    // EventBusとConfigを取得
     this.eventBus = window.TegakiEventBus;
     this.config = window.TEGAKI_CONFIG || {};
 
-    // Phase 1: ToolManager・StrokeDataManager初期化
+    // サブモジュール初期化
     if (window.TegakiDrawing) {
-      // ToolManager（ツール管理）
       this.toolManager = window.TegakiDrawing.ToolManager ? 
         new window.TegakiDrawing.ToolManager(this.eventBus) : null;
       
-      // StrokeDataManager（データ管理）
       this.dataManager = window.TegakiDrawing.StrokeDataManager ? 
         new window.TegakiDrawing.StrokeDataManager(this.eventBus) : null;
 
-      // 既存サブモジュール
       this.settings = window.TegakiDrawing.BrushSettings ? 
         new window.TegakiDrawing.BrushSettings(this.config, this.eventBus) : null;
+      
       this.recorder = window.TegakiDrawing.StrokeRecorder ? 
         new window.TegakiDrawing.StrokeRecorder() : null;
+      
       this.renderer = window.TegakiDrawing.StrokeRenderer ? 
         new window.TegakiDrawing.StrokeRenderer(this.config) : null;
+      
       this.pressureHandler = window.TegakiDrawing.PressureHandler ? 
         new window.TegakiDrawing.PressureHandler() : null;
+      
       this.transformer = window.TegakiDrawing.StrokeTransformer ? 
         new window.TegakiDrawing.StrokeTransformer(this.config) : null;
     }
 
-    // フォールバック: 基本設定
+    // フォールバック設定
     this.brushSize = this.config?.pen?.size || 8;
     this.brushColor = this.config?.pen?.color || 0x000000;
     this.brushOpacity = this.config?.pen?.opacity || 1.0;
@@ -52,7 +53,7 @@ class DrawingEngine {
     this.currentPath = null;
     this.lastPoint = null;
     
-    // EventBus購読
+    // イベント購読
     this.subscribeToSettings();
     this.subscribeToStrokeData();
     
@@ -61,7 +62,7 @@ class DrawingEngine {
   }
 
   /**
-   * Phase 1: StrokeDataManager イベント購読
+   * StrokeDataManager イベント購読
    */
   subscribeToStrokeData() {
     if (!this.eventBus || !this.dataManager) return;
@@ -80,7 +81,7 @@ class DrawingEngine {
   }
 
   /**
-   * Phase 1: 再描画リクエスト
+   * 再描画リクエスト
    */
   requestRender() {
     if (this.layerManager) {
@@ -92,7 +93,7 @@ class DrawingEngine {
   }
 
   /**
-   * Phase 2-3: 初期設定の同期
+   * 初期設定の同期
    */
   applySyncSettings() {
     if (!this.settings) return;
@@ -100,10 +101,7 @@ class DrawingEngine {
     const currentSettings = this.settings.getCurrentSettings();
     
     if (this.recorder && typeof this.recorder.setSimplifySettings === 'function') {
-      this.recorder.setSimplifySettings(
-        currentSettings.simplifyTolerance,
-        true
-      );
+      this.recorder.setSimplifySettings(currentSettings.simplifyTolerance, true);
     }
     if (this.recorder && typeof this.recorder.setSimplifyEnabled === 'function') {
       this.recorder.setSimplifyEnabled(currentSettings.simplifyEnabled);
@@ -125,63 +123,41 @@ class DrawingEngine {
   }
 
   /**
-   * Phase 1-3: EventBus購読の設定
+   * EventBus購読の設定
    */
   subscribeToSettings() {
     if (!this.eventBus) return;
     
     this.eventBus.on('settings:pressure-correction', ({ value }) => {
-      if (this.settings) {
-        this.settings.setPressureCorrection(value);
-      }
-      if (this.pressureHandler) {
-        this.pressureHandler.setPressureCorrection(value);
-      }
+      if (this.settings) this.settings.setPressureCorrection(value);
+      if (this.pressureHandler) this.pressureHandler.setPressureCorrection(value);
     });
     
     this.eventBus.on('settings:smoothing', ({ value }) => {
-      if (this.settings) {
-        this.settings.setSmoothing(value);
-      }
+      if (this.settings) this.settings.setSmoothing(value);
     });
     
     this.eventBus.on('settings:pressure-curve', ({ curve }) => {
-      if (this.settings) {
-        this.settings.setPressureCurve(curve);
-      }
+      if (this.settings) this.settings.setPressureCurve(curve);
     });
     
     this.eventBus.on('settings:simplify-tolerance', ({ value }) => {
-      if (this.settings) {
-        this.settings.setSimplifyTolerance(value);
-      }
-      if (this.recorder) {
-        this.recorder.setSimplifySettings(value, true);
-      }
+      if (this.settings) this.settings.setSimplifyTolerance(value);
+      if (this.recorder) this.recorder.setSimplifySettings(value, true);
     });
     
     this.eventBus.on('settings:simplify-enabled', ({ enabled }) => {
-      if (this.settings) {
-        this.settings.setSimplifyEnabled(enabled);
-      }
-      if (this.recorder) {
-        this.recorder.setSimplifyEnabled(enabled);
-      }
+      if (this.settings) this.settings.setSimplifyEnabled(enabled);
+      if (this.recorder) this.recorder.setSimplifyEnabled(enabled);
     });
     
     this.eventBus.on('settings:smoothing-mode', ({ mode }) => {
-      if (this.settings) {
-        this.settings.setSmoothingMode(mode);
-      }
-      if (this.transformer) {
-        this.transformer.setSmoothingMode(mode);
-      }
+      if (this.settings) this.settings.setSmoothingMode(mode);
+      if (this.transformer) this.transformer.setSmoothingMode(mode);
     });
     
     this.eventBus.on('settings:spline-tension', ({ value }) => {
-      if (this.settings) {
-        this.settings.setSplineTension(value);
-      }
+      if (this.settings) this.settings.setSplineTension(value);
       if (this.transformer) {
         const segments = this.settings.splineSegments;
         this.transformer.setSplineParameters(value, segments);
@@ -189,9 +165,7 @@ class DrawingEngine {
     });
     
     this.eventBus.on('settings:spline-segments', ({ value }) => {
-      if (this.settings) {
-        this.settings.setSplineSegments(value);
-      }
+      if (this.settings) this.settings.setSplineSegments(value);
       if (this.transformer) {
         const tension = this.settings.splineTension;
         this.transformer.setSplineParameters(tension, value);
@@ -200,19 +174,21 @@ class DrawingEngine {
   }
 
   /**
-   * BrushSettings設定（互換性のため）
+   * 筆圧取得（安全なフォールバック付き）
    */
-  setBrushSettings(brushSettings) {
-    if (brushSettings) {
-      this.settings = brushSettings;
+  _getPressure(pressureOrEvent) {
+    if (this.pressureHandler) {
+      return this.pressureHandler.getPressure(pressureOrEvent);
     }
-  }
-
-  /**
-   * BrushSettings取得（互換性のため）
-   */
-  getBrushSettings() {
-    return this.settings;
+    
+    // フォールバック
+    if (typeof pressureOrEvent === 'number') {
+      return pressureOrEvent;
+    }
+    if (pressureOrEvent?.pressure !== undefined) {
+      return pressureOrEvent.pressure;
+    }
+    return 0.5;
   }
 
   /**
@@ -220,9 +196,9 @@ class DrawingEngine {
    */
   startDrawing(screenX, screenY, pressureOrEvent) {
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
-    const pressure = this.pressureHandler.getPressure(pressureOrEvent);
+    const pressure = this._getPressure(pressureOrEvent);
 
-    const currentScale = this.cameraSystem.camera.scale || 1;
+    const currentScale = this.cameraSystem.worldContainer?.scale?.x || 1;
 
     const strokeOptions = this.settings.getStrokeOptions();
     const scaledSize = this.renderer.getScaledSize(this.settings.getBrushSize(), currentScale);
@@ -251,7 +227,7 @@ class DrawingEngine {
     if (!this.isDrawing || !this.currentPath) return;
 
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
-    const pressure = this.pressureHandler.getPressure(pressureOrEvent);
+    const pressure = this._getPressure(pressureOrEvent);
 
     this.recorder.addPoint(this.currentPath, {
       x: canvasPoint.x,
@@ -278,12 +254,15 @@ class DrawingEngine {
   stopDrawing() {
     if (!this.isDrawing || !this.currentPath) return;
 
+    // Splineスムージング適用
     if (this.transformer && this.currentPath.points.length > 2) {
       this.currentPath.points = this.transformer.preprocessStroke(this.currentPath.points);
     }
     
+    // Simplify最適化
     this.recorder.finalizePath(this.currentPath);
 
+    // 最終描画
     const options = {
       ...this.currentPath.strokeOptions,
       color: this.currentPath.color,
@@ -296,7 +275,7 @@ class DrawingEngine {
       this.currentPath.graphics
     );
 
-    // Phase 1: StrokeDataManager へデータ追加
+    // StrokeDataManager へデータ追加
     if (this.dataManager && this.currentPath.points.length > 0) {
       const strokeData = {
         points: [...this.currentPath.points],
@@ -350,7 +329,11 @@ class DrawingEngine {
       }
     }
 
-    this.pressureHandler.reset();
+    // PressureHandlerリセット
+    if (this.pressureHandler) {
+      this.pressureHandler.reset();
+    }
+
     this.isDrawing = false;
     this.currentPath = null;
   }
@@ -366,6 +349,19 @@ class DrawingEngine {
         this.eventBus.emit('toolChanged', { tool });
       }
     }
+  }
+
+  /**
+   * BrushSettings互換API
+   */
+  setBrushSettings(brushSettings) {
+    if (brushSettings) {
+      this.settings = brushSettings;
+    }
+  }
+
+  getBrushSettings() {
+    return this.settings;
   }
 
   setBrushSize(size) {
@@ -389,7 +385,7 @@ class DrawingEngine {
   }
   
   /**
-   * Phase 1: デバッグ情報取得
+   * デバッグ情報取得
    */
   getDebugInfo() {
     return {
@@ -408,7 +404,6 @@ class DrawingEngine {
   }
 }
 
-// グローバル登録
 if (typeof window.TegakiDrawing === 'undefined') {
   window.TegakiDrawing = {};
 }
