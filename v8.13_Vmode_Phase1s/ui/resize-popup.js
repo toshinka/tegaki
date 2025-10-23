@@ -1,6 +1,6 @@
-// ===== ui/resize-popup.js - 完全修正版 =====
+// ===== ui/resize-popup.js - Phase1修正版 =====
 // 責務: キャンバスリサイズUI表示、ユーザー入力受付、History統合
-// 改修: resize-slider.js パターン完全適用
+// 改修: イベントリスナー管理の統一（resize-slider.jsパターン適用）
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -14,14 +14,14 @@ window.TegakiUI.ResizePopup = class {
         this.isVisible = false;
         this.initialized = false;
         
-        // ドラッグ状態フラグ
+        // ✅ Phase1: ドラッグ状態フラグをクラスプロパティ化
         this.isDraggingWidth = false;
         this.isDraggingHeight = false;
         
         // DOM要素キャッシュ
         this.elements = {};
         
-        // グローバルイベントリスナー参照
+        // ✅ Phase1: グローバルイベントリスナー参照をクラスプロパティ化
         this.mouseMoveHandler = null;
         this.mouseUpHandler = null;
         
@@ -202,8 +202,9 @@ window.TegakiUI.ResizePopup = class {
         this.initialized = true;
     }
     
+    // ✅ Phase1: resize-slider.jsパターン完全適用
     _setupSliders() {
-        // グローバルマウスハンドラー
+        // グローバルマウスハンドラーをクラスプロパティとして定義
         this.mouseMoveHandler = (e) => {
             if (this.isDraggingWidth) {
                 const rect = this.elements.widthSlider.getBoundingClientRect();
@@ -224,22 +225,23 @@ window.TegakiUI.ResizePopup = class {
             this.isDraggingHeight = false;
         };
         
+        // documentにイベントリスナー登録
         document.addEventListener('mousemove', this.mouseMoveHandler);
         document.addEventListener('mouseup', this.mouseUpHandler);
         
-        // 幅ハンドル
+        // 幅ハンドル mousedown
         this.elements.widthHandle.addEventListener('mousedown', (e) => {
             this.isDraggingWidth = true;
             e.preventDefault();
         });
         
-        // 高さハンドル
+        // 高さハンドル mousedown
         this.elements.heightHandle.addEventListener('mousedown', (e) => {
             this.isDraggingHeight = true;
             e.preventDefault();
         });
         
-        // スライダークリック
+        // スライダー直接クリック（幅）
         this.elements.widthSlider.addEventListener('click', (e) => {
             if (e.target === this.elements.widthHandle) return;
             const rect = this.elements.widthSlider.getBoundingClientRect();
@@ -248,6 +250,7 @@ window.TegakiUI.ResizePopup = class {
             this._updateWidthSlider(Math.round(value));
         });
         
+        // スライダー直接クリック（高さ）
         this.elements.heightSlider.addEventListener('click', (e) => {
             if (e.target === this.elements.heightHandle) return;
             const rect = this.elements.heightSlider.getBoundingClientRect();
@@ -256,7 +259,7 @@ window.TegakiUI.ResizePopup = class {
             this._updateHeightSlider(Math.round(value));
         });
         
-        // ステップボタン
+        // ステップボタン（幅）
         this.elements.widthDecrease.addEventListener('click', () => {
             this._updateWidthSlider(this.currentWidth - 1);
         });
@@ -265,6 +268,7 @@ window.TegakiUI.ResizePopup = class {
             this._updateWidthSlider(this.currentWidth + 1);
         });
         
+        // ステップボタン（高さ）
         this.elements.heightDecrease.addEventListener('click', () => {
             this._updateHeightSlider(this.currentHeight - 1);
         });
@@ -495,6 +499,7 @@ window.TegakiUI.ResizePopup = class {
         
         if (!this.popup) return;
         
+        // ✅ Phase4: 表示前に初期化を確実に完了
         if (!this.initialized) {
             this.initialize();
         }
@@ -527,25 +532,27 @@ window.TegakiUI.ResizePopup = class {
         return !!this.popup && this.initialized;
     }
     
+    // ✅ Phase1: destroy()でイベントリスナーを正しく削除
     destroy() {
         // グローバルイベントリスナーの削除
         if (this.mouseMoveHandler) {
             document.removeEventListener('mousemove', this.mouseMoveHandler);
+            this.mouseMoveHandler = null;
         }
         if (this.mouseUpHandler) {
             document.removeEventListener('mouseup', this.mouseUpHandler);
+            this.mouseUpHandler = null;
         }
         
-        this.mouseMoveHandler = null;
-        this.mouseUpHandler = null;
         this.elements = {};
         this.initialized = false;
+        this.isDraggingWidth = false;
+        this.isDraggingHeight = false;
     }
 };
 
-// グローバル公開
 window.ResizePopup = window.TegakiUI.ResizePopup;
 
-console.log('✅ resize-popup.js (完全修正版) loaded');
-console.log('   - ✅ resize-slider.js パターン完全適用');
-console.log('   - ✅ メモリリーク対策完了');
+console.log('✅ resize-popup.js (Phase1修正版) loaded');
+console.log('   - イベントリスナー参照を正しく保持');
+console.log('   - destroy()でメモリリーク防止');
