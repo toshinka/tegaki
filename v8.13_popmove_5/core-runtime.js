@@ -1,5 +1,5 @@
-// ===== core-runtime.js - ツール切り替え修正版 =====
-// 修正: handlePointerDown でツールモード判定を追加
+// ===== core-runtime.js - ツール切り替え強化版 =====
+// 改修3: 消しゴムツール切り替えを確実に伝播
 
 (function() {
     'use strict';
@@ -78,7 +78,6 @@
         },
         
         handlePointerDown(event) {
-            // ツールモード判定: pen/eraserのみ描画開始
             const currentTool = this.internal.drawingEngine?.currentTool || 'pen';
             const isDrawingTool = currentTool === 'pen' || currentTool === 'eraser';
             
@@ -211,7 +210,6 @@
             
             bg.clear();
             
-            // チェックパターン背景を再生成
             const color1 = 0xe9c2ba;
             const color2 = 0xf0e0d6;
             const squareSize = 16;
@@ -353,18 +351,34 @@
             },
             
             tool: {
+                // ✅改修3: ツール切り替えを確実に伝播
                 set: (toolName) => {
-                    if (CoreRuntime.internal.drawingEngine?.setTool) {
-                        CoreRuntime.internal.drawingEngine.setTool(toolName);
-                        if (CoreRuntime.internal.cameraSystem?.updateCursor) {
-                            CoreRuntime.internal.cameraSystem.updateCursor();
-                        }
-                        if (window.TegakiEventBus) {
-                            window.TegakiEventBus.emit('tool:select', { tool: toolName });
-                        }
-                        return true;
+                    const engine = CoreRuntime.internal.drawingEngine;
+                    if (!engine) return false;
+                    
+                    // 1. DrawingEngineに直接設定
+                    if (engine.setTool) {
+                        engine.setTool(toolName);
                     }
-                    return false;
+                    
+                    // 2. StrokeRendererに伝播
+                    if (engine.strokeRenderer && engine.strokeRenderer.setTool) {
+                        engine.strokeRenderer.setTool(toolName);
+                    }
+                    
+                    // 3. カーソル更新
+                    if (CoreRuntime.internal.cameraSystem?.updateCursor) {
+                        CoreRuntime.internal.cameraSystem.updateCursor();
+                    }
+                    
+                    // 4. EventBus通知
+                    if (window.TegakiEventBus) {
+                        window.TegakiEventBus.emit('tool:select', { tool: toolName });
+                    }
+                    
+                    console.log(`🔧 Tool set to: ${toolName}`);
+                    
+                    return true;
                 },
                 
                 get: () => {
@@ -823,3 +837,5 @@
     };
     
 })();
+
+console.log('✅ core-runtime.js (ツール切り替え強化版) loaded');
