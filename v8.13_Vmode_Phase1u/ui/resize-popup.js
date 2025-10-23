@@ -1,6 +1,6 @@
-// ===== ui/resize-popup.js - 初期化タイミング修正版 =====
+// ===== ui/resize-popup.js - イベントリスナー参照修正版 =====
 // 責務: キャンバスリサイズUI表示、ユーザー入力受付、History統合
-// 🔥 修正: show()時にDOM完全レンダリング後に初期化を実行
+// 🔥 修正: イベントハンドラーのthis参照をbindで固定
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -14,18 +14,32 @@ window.TegakiUI.ResizePopup = class {
         this.isVisible = false;
         this.initialized = false;
         
-        // ✅ Phase1: ドラッグ状態フラグをクラスプロパティ化
         this.isDraggingWidth = false;
         this.isDraggingHeight = false;
         
-        // DOM要素キャッシュ
         this.elements = {};
         
-        // ✅ Phase1: グローバルイベントリスナー参照をクラスプロパティ化
-        this.mouseMoveHandler = null;
-        this.mouseUpHandler = null;
+        // 🔥 修正: アロー関数でthisを固定
+        this.mouseMoveHandler = (e) => {
+            if (this.isDraggingWidth) {
+                const rect = this.elements.widthSlider.getBoundingClientRect();
+                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                const value = this.MIN_SIZE + ((this.MAX_SIZE - this.MIN_SIZE) * percent / 100);
+                this._updateWidthSlider(Math.round(value));
+            }
+            if (this.isDraggingHeight) {
+                const rect = this.elements.heightSlider.getBoundingClientRect();
+                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
+                const value = this.MIN_SIZE + ((this.MAX_SIZE - this.MIN_SIZE) * percent / 100);
+                this._updateHeightSlider(Math.round(value));
+            }
+        };
         
-        // 現在値
+        this.mouseUpHandler = () => {
+            this.isDraggingWidth = false;
+            this.isDraggingHeight = false;
+        };
+        
         this.currentWidth = 0;
         this.currentHeight = 0;
         this.horizontalAlign = 'center';
@@ -79,7 +93,6 @@ window.TegakiUI.ResizePopup = class {
         this.popup.innerHTML = `
             <div class="popup-title" style="display: none;">キャンバスリサイズ</div>
             
-            <!-- 横方向配置 -->
             <div class="resize-compact-group">
                 <div class="resize-compact-label">横配置</div>
                 <div class="resize-align-row">
@@ -89,7 +102,6 @@ window.TegakiUI.ResizePopup = class {
                 </div>
             </div>
             
-            <!-- 幅スライダー -->
             <div class="resize-compact-group">
                 <div class="resize-compact-label">幅</div>
                 <div class="resize-slider-row">
@@ -105,7 +117,6 @@ window.TegakiUI.ResizePopup = class {
                 </div>
             </div>
             
-            <!-- 縦方向配置 -->
             <div class="resize-compact-group">
                 <div class="resize-compact-label">縦配置</div>
                 <div class="resize-align-row">
@@ -115,7 +126,6 @@ window.TegakiUI.ResizePopup = class {
                 </div>
             </div>
             
-            <!-- 高さスライダー -->
             <div class="resize-compact-group">
                 <div class="resize-compact-label">高さ</div>
                 <div class="resize-slider-row">
@@ -131,7 +141,6 @@ window.TegakiUI.ResizePopup = class {
                 </div>
             </div>
             
-            <!-- プリセットボタン -->
             <div class="resize-preset-group">
                 <button class="resize-preset-btn" data-width="344" data-height="135">
                     ふたば<br>344×135
@@ -144,10 +153,8 @@ window.TegakiUI.ResizePopup = class {
                 </button>
             </div>
             
-            <!-- 適用ボタン -->
             <button class="resize-apply-btn" id="apply-resize">適用</button>
             
-            <!-- 隠し入力欄（将来の拡張用） -->
             <input type="number" class="resize-hidden-input" id="canvas-width-input">
             <input type="number" class="resize-hidden-input" id="canvas-height-input">
         `;
@@ -155,7 +162,6 @@ window.TegakiUI.ResizePopup = class {
     
     _cacheElements() {
         this.elements = {
-            // 幅スライダー
             widthSlider: document.getElementById('canvas-width-slider'),
             widthTrack: document.getElementById('canvas-width-track'),
             widthHandle: document.getElementById('canvas-width-handle'),
@@ -163,7 +169,6 @@ window.TegakiUI.ResizePopup = class {
             widthDecrease: document.getElementById('width-decrease'),
             widthIncrease: document.getElementById('width-increase'),
             
-            // 高さスライダー
             heightSlider: document.getElementById('canvas-height-slider'),
             heightTrack: document.getElementById('canvas-height-track'),
             heightHandle: document.getElementById('canvas-height-handle'),
@@ -171,7 +176,6 @@ window.TegakiUI.ResizePopup = class {
             heightDecrease: document.getElementById('height-decrease'),
             heightIncrease: document.getElementById('height-increase'),
             
-            // 配置ボタン
             horizontalAlignLeft: document.getElementById('horizontal-align-left'),
             horizontalAlignCenter: document.getElementById('horizontal-align-center'),
             horizontalAlignRight: document.getElementById('horizontal-align-right'),
@@ -179,13 +183,14 @@ window.TegakiUI.ResizePopup = class {
             verticalAlignCenter: document.getElementById('vertical-align-center'),
             verticalAlignBottom: document.getElementById('vertical-align-bottom'),
             
-            // 適用ボタン
             applyBtn: document.getElementById('apply-resize')
         };
     }
     
     initialize() {
-        if (this.initialized) return;
+        if (this.initialized) {
+            this._cleanupEventListeners();
+        }
         
         const config = window.TEGAKI_CONFIG;
         this.currentWidth = config?.canvas?.width || 344;
@@ -202,46 +207,29 @@ window.TegakiUI.ResizePopup = class {
         this.initialized = true;
     }
     
-    // ✅ Phase1: resize-slider.jsパターン完全適用
+    _cleanupEventListeners() {
+        if (this.mouseMoveHandler) {
+            document.removeEventListener('mousemove', this.mouseMoveHandler);
+        }
+        if (this.mouseUpHandler) {
+            document.removeEventListener('mouseup', this.mouseUpHandler);
+        }
+    }
+    
     _setupSliders() {
-        // グローバルマウスハンドラーをクラスプロパティとして定義
-        this.mouseMoveHandler = (e) => {
-            if (this.isDraggingWidth) {
-                const rect = this.elements.widthSlider.getBoundingClientRect();
-                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-                const value = this.MIN_SIZE + ((this.MAX_SIZE - this.MIN_SIZE) * percent / 100);
-                this._updateWidthSlider(Math.round(value));
-            }
-            if (this.isDraggingHeight) {
-                const rect = this.elements.heightSlider.getBoundingClientRect();
-                const percent = Math.max(0, Math.min(100, ((e.clientX - rect.left) / rect.width) * 100));
-                const value = this.MIN_SIZE + ((this.MAX_SIZE - this.MIN_SIZE) * percent / 100);
-                this._updateHeightSlider(Math.round(value));
-            }
-        };
-        
-        this.mouseUpHandler = () => {
-            this.isDraggingWidth = false;
-            this.isDraggingHeight = false;
-        };
-        
-        // documentにイベントリスナー登録
         document.addEventListener('mousemove', this.mouseMoveHandler);
         document.addEventListener('mouseup', this.mouseUpHandler);
         
-        // 幅ハンドル mousedown
         this.elements.widthHandle.addEventListener('mousedown', (e) => {
             this.isDraggingWidth = true;
             e.preventDefault();
         });
         
-        // 高さハンドル mousedown
         this.elements.heightHandle.addEventListener('mousedown', (e) => {
             this.isDraggingHeight = true;
             e.preventDefault();
         });
         
-        // スライダー直接クリック（幅）
         this.elements.widthSlider.addEventListener('click', (e) => {
             if (e.target === this.elements.widthHandle) return;
             const rect = this.elements.widthSlider.getBoundingClientRect();
@@ -250,7 +238,6 @@ window.TegakiUI.ResizePopup = class {
             this._updateWidthSlider(Math.round(value));
         });
         
-        // スライダー直接クリック（高さ）
         this.elements.heightSlider.addEventListener('click', (e) => {
             if (e.target === this.elements.heightHandle) return;
             const rect = this.elements.heightSlider.getBoundingClientRect();
@@ -259,7 +246,6 @@ window.TegakiUI.ResizePopup = class {
             this._updateHeightSlider(Math.round(value));
         });
         
-        // ステップボタン（幅）
         this.elements.widthDecrease.addEventListener('click', () => {
             this._updateWidthSlider(this.currentWidth - 1);
         });
@@ -268,7 +254,6 @@ window.TegakiUI.ResizePopup = class {
             this._updateWidthSlider(this.currentWidth + 1);
         });
         
-        // ステップボタン（高さ）
         this.elements.heightDecrease.addEventListener('click', () => {
             this._updateHeightSlider(this.currentHeight - 1);
         });
@@ -490,8 +475,6 @@ window.TegakiUI.ResizePopup = class {
         this._setVerticalAlign(this.verticalAlign);
     }
     
-    // ===== 必須インターフェース =====
-    
     show() {
         if (!this.popup) {
             this._ensurePopupElement();
@@ -499,13 +482,10 @@ window.TegakiUI.ResizePopup = class {
         
         if (!this.popup) return;
         
-        // 🔥 修正: まずポップアップを表示してDOMをレンダリング
         this.popup.classList.add('show');
         this.isVisible = true;
         
-        // 🔥 修正: requestAnimationFrameでDOM完全レンダリング後に初期化
         requestAnimationFrame(() => {
-            // 🔥 追加: 毎回要素を再キャッシュして初期化状態を確認
             const config = window.TEGAKI_CONFIG;
             this.currentWidth = config?.canvas?.width || 344;
             this.currentHeight = config?.canvas?.height || 135;
@@ -513,15 +493,7 @@ window.TegakiUI.ResizePopup = class {
             if (!this.initialized) {
                 this.initialize();
             } else {
-                // 既に初期化済みでも、イベントリスナーが消えている可能性があるため再確認
-                if (!this.mouseMoveHandler) {
-                    // イベントリスナーが消失している場合は再初期化
-                    this.initialized = false;
-                    this.initialize();
-                } else {
-                    // 正常な場合は値のみ更新
-                    this._updateUI();
-                }
+                this._updateUI();
             }
         });
     }
@@ -545,18 +517,8 @@ window.TegakiUI.ResizePopup = class {
         return !!this.popup && this.initialized;
     }
     
-    // ✅ Phase1: destroy()でイベントリスナーを正しく削除
     destroy() {
-        // グローバルイベントリスナーの削除
-        if (this.mouseMoveHandler) {
-            document.removeEventListener('mousemove', this.mouseMoveHandler);
-            this.mouseMoveHandler = null;
-        }
-        if (this.mouseUpHandler) {
-            document.removeEventListener('mouseup', this.mouseUpHandler);
-            this.mouseUpHandler = null;
-        }
-        
+        this._cleanupEventListeners();
         this.elements = {};
         this.initialized = false;
         this.isDraggingWidth = false;
@@ -566,6 +528,4 @@ window.TegakiUI.ResizePopup = class {
 
 window.ResizePopup = window.TegakiUI.ResizePopup;
 
-console.log('✅ resize-popup.js (初期化タイミング修正版) loaded');
-console.log('   - requestAnimationFrame でDOM完全レンダリング後に初期化');
-console.log('   - show()時の初回でもスライダーが正しく動作');
+console.log('✅ resize-popup.js (イベントリスナー参照修正版) loaded');
