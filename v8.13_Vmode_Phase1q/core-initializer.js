@@ -1,5 +1,5 @@
-// ===== core-initializer.js - Phase1修正版 =====
-// 修正: SettingsManager を削除し、BrushSettings に統一
+// ===== core-initializer.js - BrushSettings修正版 =====
+// 修正: BrushSettings を window.BrushSettings としてグローバル公開
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -48,13 +48,18 @@ window.CoreInitializer = (function() {
     function initializePopupManager(app, coreEngine) {
         const popupManager = new window.TegakiPopupManager(window.TegakiEventBus);
         
+        // ✅ BrushSettings取得
+        const brushSettings = coreEngine.getBrushSettings();
+        
         popupManager.register('settings', window.TegakiUI.SettingsPopup, {
             drawingEngine: coreEngine.getDrawingEngine()
         }, { priority: 1 });
         
+        // ✅ QuickAccessPopup に brushSettings を渡す
         popupManager.register('quickAccess', window.TegakiUI.QuickAccessPopup, {
             drawingEngine: coreEngine.getDrawingEngine(),
-            eventBus: window.TegakiEventBus
+            eventBus: window.TegakiEventBus,
+            brushSettings: brushSettings  // ✅ 追加
         }, { priority: 2 });
         
         popupManager.register('album', window.TegakiUI.AlbumPopup, {
@@ -66,10 +71,16 @@ window.CoreInitializer = (function() {
             waitFor: ['animationSystem']
         });
         
+        // ✅ 追加: ResizePopup 登録
+        popupManager.register('resize', window.TegakiUI.ResizePopup, {
+            coreEngine: coreEngine,
+            history: window.History
+        }, { priority: 4 });
+        
         popupManager.register('export', window.TegakiExportPopup, {
             exportManager: null
         }, { 
-            priority: 4,
+            priority: 5,
             waitFor: ['TEGAKI_EXPORT_MANAGER']
         });
         
@@ -129,9 +140,10 @@ window.CoreInitializer = (function() {
             
             window.coreEngine = this.coreEngine;
             
-            // 🔧 修正: SettingsManager の初期化を削除
-            // BrushSettings は core-engine.js で既に初期化されている
-            // this.settingsManager = initializeSettingsManager(...); ← 削除
+            // ✅ BrushSettings をグローバル公開
+            const brushSettings = this.coreEngine.getBrushSettings();
+            window.BrushSettings = brushSettings;
+            console.log('✅ window.BrushSettings 公開完了');
             
             window.CoreRuntime.init({
                 app: this.pixiApp,
@@ -139,8 +151,7 @@ window.CoreInitializer = (function() {
                 canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
                 cameraSystem: this.coreEngine.getCameraSystem(),
                 layerManager: this.coreEngine.getLayerManager(),
-                drawingEngine: this.coreEngine.getDrawingEngine(),
-                // settingsManager は参照しない（BrushSettings に統一）
+                drawingEngine: this.coreEngine.getDrawingEngine()
             });
             
             this.uiController = new UIController(
@@ -284,3 +295,5 @@ window.CoreInitializer = (function() {
         DrawingApp
     };
 })();
+
+console.log('✅ core-initializer.js (BrushSettings修正版) loaded');
