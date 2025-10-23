@@ -1,6 +1,6 @@
-// ===== ui/quick-access-popup.js - Phase1+3完全版 =====
+// ===== ui/quick-access-popup.js - 背景ドラッグ + 閉じるボタン版 =====
 // 責務: ペン設定クイックアクセスポップアップ
-// 改修: Phase1 イベントリスナー管理統一 + Phase3 BrushSettings API修正
+// 改修: ヘッダー削除 → 背景ドラッグ + 右上×ボタン追加
 
 (function() {
     'use strict';
@@ -21,16 +21,25 @@
             this.isVisible = false;
             this.initialized = false;
             
-            // ✅ Phase1: ドラッグ状態フラグをクラスプロパティ化
+            // スライダードラッグ状態フラグ
             this.isDraggingSize = false;
             this.isDraggingOpacity = false;
+            
+            // ✅ ポップアップドラッグ状態フラグ
+            this.isDraggingPanel = false;
+            this.dragStartX = 0;
+            this.dragStartY = 0;
+            this.panelStartX = 0;
+            this.panelStartY = 0;
             
             // DOM要素キャッシュ
             this.elements = {};
             
-            // ✅ Phase1: グローバルイベントリスナー参照をクラスプロパティ化
+            // グローバルイベントリスナー参照
             this.mouseMoveHandler = null;
             this.mouseUpHandler = null;
+            this.dragMoveHandler = null;
+            this.dragUpHandler = null;
             
             // 現在値
             this.currentSize = 3;
@@ -54,13 +63,14 @@
                 
                 this.panel = document.createElement('div');
                 this.panel.id = 'quick-access-popup';
-                // ✅ Phase2: resize-popup.jsと同じクラスを適用
                 this.panel.className = 'popup-panel resize-popup-compact';
-                this.panel.style.cssText = 'left: 70px; top: 60px;';
+                
+                const savedPos = this._loadPosition();
+                this.panel.style.cssText = `left: ${savedPos.x}px; top: ${savedPos.y}px;`;
+                
                 canvasArea.appendChild(this.panel);
             }
             
-            // ✅ Phase2: 既存のpanelにもクラスを確実に適用
             if (this.panel && !this.panel.classList.contains('resize-popup-compact')) {
                 this.panel.classList.add('resize-popup-compact');
             }
@@ -74,6 +84,9 @@
             if (!this.panel) return;
             
             this.panel.innerHTML = `
+                <!-- ✅ 閉じるボタン（右上） -->
+                <button class="quick-access-close-btn" id="quick-access-close-btn" title="閉じる">×</button>
+
                 <!-- カラーパレット -->
                 <div style="margin-bottom: 20px; padding: 0 8px;">
                     <div style="font-size: 13px; font-weight: 600; color: var(--futaba-maroon); margin-bottom: 8px;">
@@ -139,6 +152,9 @@
 
         _cacheElements() {
             this.elements = {
+                // ✅ 閉じるボタン
+                closeBtn: document.getElementById('quick-access-close-btn'),
+                
                 // サイズスライダー
                 sizeSlider: document.getElementById('pen-size-slider'),
                 sizeTrack: document.getElementById('pen-size-track'),
@@ -169,11 +185,23 @@
             }
             
             this._cacheElements();
+            this._setupCloseButton(); // ✅ 閉じるボタン
             this._setupColorButtons();
             this._setupSliders();
+            this._setupPanelDragHandlers(); // ✅ 背景ドラッグ
             this._updateUI();
             
             this.initialized = true;
+        }
+
+        // ✅ 閉じるボタンのセットアップ
+        _setupCloseButton() {
+            if (!this.elements.closeBtn) return;
+            
+            this.elements.closeBtn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                this.hide();
+            });
         }
 
         _setupColorButtons() {
@@ -196,9 +224,8 @@
             });
         }
 
-        // ✅ Phase1: resize-popup.jsと同じパターンで統一
         _setupSliders() {
-            // グローバルマウスハンドラーをクラスプロパティとして定義
+            // スライダー用グローバルマウスハンドラー
             this.mouseMoveHandler = (e) => {
                 if (this.isDraggingSize) {
                     const rect = this.elements.sizeSlider.getBoundingClientRect();
@@ -219,20 +246,21 @@
                 this.isDraggingOpacity = false;
             };
             
-            // documentにイベントリスナー登録
             document.addEventListener('mousemove', this.mouseMoveHandler);
             document.addEventListener('mouseup', this.mouseUpHandler);
             
-            // サイズハンドル mousedown
+            // サイズハンドル
             this.elements.sizeHandle.addEventListener('mousedown', (e) => {
                 this.isDraggingSize = true;
                 e.preventDefault();
+                e.stopPropagation();
             });
             
-            // 透明度ハンドル mousedown
+            // 透明度ハンドル
             this.elements.opacityHandle.addEventListener('mousedown', (e) => {
                 this.isDraggingOpacity = true;
                 e.preventDefault();
+                e.stopPropagation();
             });
             
             // スライダー直接クリック（サイズ）
@@ -253,7 +281,7 @@
                 this._updateOpacitySlider(value);
             });
             
-            // ステップボタン（サイズ）
+            // ステップボタン
             this.elements.sizeDecrease.addEventListener('click', () => {
                 const current = this.brushSettings.getSize();
                 this._updateSizeSlider(Math.max(this.MIN_SIZE, current - 0.5));
@@ -264,7 +292,6 @@
                 this._updateSizeSlider(Math.min(this.MAX_SIZE, current + 0.5));
             });
             
-            // ✅ Phase3: getOpacity()を正しく使用（* 100 不要）
             this.elements.opacityDecrease.addEventListener('click', () => {
                 const current = this.brushSettings.getOpacity();
                 this._updateOpacitySlider(Math.max(this.MIN_OPACITY, current - 5));
@@ -276,19 +303,107 @@
             });
         }
 
+        // ✅ パネル背景ドラッグハンドラーのセットアップ
+        _setupPanelDragHandlers() {
+            // パネル全体に mousedown イベント
+            this.panel.addEventListener('mousedown', (e) => {
+                // ✅ インタラクティブ要素（ボタン、スライダー）をクリックした場合はドラッグしない
+                const target = e.target;
+                const isInteractive = 
+                    target.classList.contains('color-button') ||
+                    target.classList.contains('resize-arrow-btn') ||
+                    target.classList.contains('resize-slider-handle') ||
+                    target.classList.contains('quick-access-close-btn') ||
+                    target.closest('.resize-slider') ||
+                    target.closest('.color-button') ||
+                    target.closest('.resize-arrow-btn') ||
+                    target.closest('.quick-access-close-btn');
+                
+                if (isInteractive) return;
+                
+                // 背景部分のドラッグ開始
+                this.isDraggingPanel = true;
+                
+                this.dragStartX = e.clientX;
+                this.dragStartY = e.clientY;
+                
+                const rect = this.panel.getBoundingClientRect();
+                this.panelStartX = rect.left;
+                this.panelStartY = rect.top;
+                
+                this.panel.style.cursor = 'grabbing';
+                
+                e.preventDefault();
+            });
+            
+            // グローバルドラッグハンドラー
+            this.dragMoveHandler = (e) => {
+                if (!this.isDraggingPanel) return;
+                
+                const deltaX = e.clientX - this.dragStartX;
+                const deltaY = e.clientY - this.dragStartY;
+                
+                let newX = this.panelStartX + deltaX;
+                let newY = this.panelStartY + deltaY;
+                
+                // 画面境界チェック
+                const viewportWidth = window.innerWidth;
+                const viewportHeight = window.innerHeight;
+                const panelRect = this.panel.getBoundingClientRect();
+                
+                newX = Math.max(0, Math.min(newX, viewportWidth - panelRect.width));
+                newY = Math.max(0, Math.min(newY, viewportHeight - panelRect.height));
+                
+                this.panel.style.left = newX + 'px';
+                this.panel.style.top = newY + 'px';
+            };
+            
+            this.dragUpHandler = () => {
+                if (!this.isDraggingPanel) return;
+                
+                this.isDraggingPanel = false;
+                this.panel.style.cursor = 'default';
+                
+                // 位置を永続化
+                const rect = this.panel.getBoundingClientRect();
+                this._savePosition(rect.left, rect.top);
+            };
+            
+            document.addEventListener('mousemove', this.dragMoveHandler);
+            document.addEventListener('mouseup', this.dragUpHandler);
+        }
+
+        _savePosition(x, y) {
+            try {
+                localStorage.setItem('quick-access-position', JSON.stringify({ x, y }));
+            } catch (error) {
+                // silent fail
+            }
+        }
+
+        _loadPosition() {
+            try {
+                const saved = localStorage.getItem('quick-access-position');
+                if (saved) {
+                    return JSON.parse(saved);
+                }
+            } catch (error) {
+                // silent fail
+            }
+            
+            return { x: 70, y: 60 };
+        }
+
         _updateSizeSlider(value) {
             this.currentSize = Math.max(this.MIN_SIZE, Math.min(this.MAX_SIZE, value));
             const percent = ((this.currentSize - this.MIN_SIZE) / (this.MAX_SIZE - this.MIN_SIZE)) * 100;
             
-            // スライダー表示更新
             this.elements.sizeTrack.style.width = percent + '%';
             this.elements.sizeHandle.style.left = percent + '%';
             this.elements.sizeDisplay.textContent = this.currentSize.toFixed(1) + 'px';
             
-            // BrushSettings更新
             this.brushSettings.setSize(this.currentSize);
             
-            // EventBus通知
             if (this.eventBus) {
                 this.eventBus.emit('brush:size-changed', { size: this.currentSize });
             }
@@ -298,15 +413,12 @@
             this.currentOpacity = Math.max(this.MIN_OPACITY, Math.min(this.MAX_OPACITY, value));
             const percent = ((this.currentOpacity - this.MIN_OPACITY) / (this.MAX_OPACITY - this.MIN_OPACITY)) * 100;
             
-            // スライダー表示更新
             this.elements.opacityTrack.style.width = percent + '%';
             this.elements.opacityHandle.style.left = percent + '%';
             this.elements.opacityDisplay.textContent = Math.round(this.currentOpacity) + '%';
             
-            // ✅ Phase3: setOpacity()を正しく使用（既に0-100%形式）
             this.brushSettings.setOpacity(this.currentOpacity);
             
-            // EventBus通知
             if (this.eventBus) {
                 this.eventBus.emit('brush:opacity-changed', { opacity: this.currentOpacity });
             }
@@ -315,23 +427,19 @@
         _updateUI() {
             if (!this.brushSettings) return;
             
-            // ✅ Phase3: getOpacity()を正しく使用
             this.currentSize = this.brushSettings.getSize();
             this.currentOpacity = this.brushSettings.getOpacity();
             
-            // サイズスライダー更新
             const sizePercent = ((this.currentSize - this.MIN_SIZE) / (this.MAX_SIZE - this.MIN_SIZE)) * 100;
             this.elements.sizeTrack.style.width = sizePercent + '%';
             this.elements.sizeHandle.style.left = sizePercent + '%';
             this.elements.sizeDisplay.textContent = this.currentSize.toFixed(1) + 'px';
             
-            // 透明度スライダー更新
             const opacityPercent = ((this.currentOpacity - this.MIN_OPACITY) / (this.MAX_OPACITY - this.MIN_OPACITY)) * 100;
             this.elements.opacityTrack.style.width = opacityPercent + '%';
             this.elements.opacityHandle.style.left = opacityPercent + '%';
             this.elements.opacityDisplay.textContent = Math.round(this.currentOpacity) + '%';
             
-            // カラーボタンのアクティブ状態を更新
             const currentColor = this.brushSettings.getColor();
             const colorButtons = this.panel.querySelectorAll('.color-button');
             colorButtons.forEach(btn => {
@@ -341,8 +449,6 @@
                     : '2px solid var(--futaba-light-medium)';
             });
         }
-
-        // ===== PopupManager必須メソッド =====
 
         show() {
             if (!this.panel) {
@@ -354,7 +460,6 @@
             this.panel.classList.add('show');
             this.isVisible = true;
             
-            // ✅ Phase4: resize-popup.jsと同じく、show()時に即座に初期化
             if (!this.initialized) {
                 this.initialize();
             } else {
@@ -390,9 +495,8 @@
             return this.initialized && !!this.panel && !!this.brushSettings;
         }
 
-        // ✅ Phase1: destroy()でイベントリスナーを正しく削除
         destroy() {
-            // グローバルイベントリスナーの削除
+            // スライダーグローバルイベントリスナーの削除
             if (this.mouseMoveHandler) {
                 document.removeEventListener('mousemove', this.mouseMoveHandler);
                 this.mouseMoveHandler = null;
@@ -402,10 +506,21 @@
                 this.mouseUpHandler = null;
             }
             
+            // ドラッググローバルイベントリスナーの削除
+            if (this.dragMoveHandler) {
+                document.removeEventListener('mousemove', this.dragMoveHandler);
+                this.dragMoveHandler = null;
+            }
+            if (this.dragUpHandler) {
+                document.removeEventListener('mouseup', this.dragUpHandler);
+                this.dragUpHandler = null;
+            }
+            
             this.elements = {};
             this.initialized = false;
             this.isDraggingSize = false;
             this.isDraggingOpacity = false;
+            this.isDraggingPanel = false;
             
             if (this.panel && this.panel.parentNode) {
                 this.panel.parentNode.removeChild(this.panel);
@@ -420,8 +535,8 @@
     }
     window.TegakiUI.QuickAccessPopup = QuickAccessPopup;
 
-    console.log('✅ quick-access-popup.js (Phase1+3完全版) loaded');
-    console.log('   - イベントリスナー参照を正しく保持');
-    console.log('   - destroy()でメモリリーク防止');
-    console.log('   - BrushSettings API修正完了');
+    console.log('✅ quick-access-popup.js (背景ドラッグ + 閉じるボタン版) loaded');
+    console.log('   - 背景ドラッグで移動可能（スライダー/ボタン以外）');
+    console.log('   - 右上×ボタンで閉じる');
+    console.log('   - 画面外クリックで閉じない（常時開きっぱなし可能）');
 })();

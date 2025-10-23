@@ -413,6 +413,70 @@ body {
     padding: 14px !important;
 }
 
+.quick-access-drag-handle {
+    width: 100%;
+    height: 24px;
+    background: var(--futaba-cream);
+    border-bottom: 1px solid var(--futaba-light-medium);
+    cursor: move;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    user-select: none;
+    border-radius: 16px 16px 0 0;
+    margin: -20px -20px 12px -20px;
+    padding: 0 20px;
+    font-size: 14px;
+    color: var(--futaba-medium);
+    font-weight: bold;
+    letter-spacing: 2px;
+}
+
+.quick-access-close-btn {
+    position: absolute;
+    top: 6px;
+    right: 6px;
+    width: 20px;
+    height: 20px;
+    background: var(--futaba-medium);
+    border: none;
+    border-radius: 50%;
+    color: var(--futaba-background);
+    font-size: 14px;
+    font-weight: bold;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    z-index: 10;
+    line-height: 1;
+    padding: 0;
+    user-select: none;
+}
+
+.quick-access-close-btn:hover {
+    background: var(--futaba-maroon);
+    transform: scale(1.1);
+}
+
+.quick-access-close-btn:active {
+    transform: scale(0.95);
+}
+
+
+.quick-access-drag-handle:hover {
+    background: var(--futaba-light-medium);
+    color: var(--futaba-maroon);
+}
+
+.quick-access-drag-handle:active {
+    cursor: grabbing;
+    background: var(--futaba-medium);
+    color: var(--futaba-background);
+}
+
+
 .resize-compact-group {
     margin-bottom: 10px;
     padding-bottom: 10px;
@@ -921,4 +985,31 @@ body {
     color: var(--text-secondary);
     min-width: 60px;
     text-align: right;
+}
+
+/* ===== Quick Access Popup カーソル表示 ===== */
+/* ドラッグ可能であることを示すカーソル */
+
+#quick-access-popup {
+    cursor: default;
+}
+
+#quick-access-popup:active {
+    cursor: grabbing;
+}
+
+/* インタラクティブ要素はデフォルトカーソルを維持 */
+#quick-access-popup .color-button,
+#quick-access-popup .resize-arrow-btn,
+#quick-access-popup .resize-slider,
+#quick-access-popup .quick-access-close-btn {
+    cursor: pointer;
+}
+
+#quick-access-popup .resize-slider-handle {
+    cursor: grab;
+}
+
+#quick-access-popup .resize-slider-handle:active {
+    cursor: grabbing;
 }
