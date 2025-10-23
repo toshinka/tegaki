@@ -1,4 +1,4 @@
-// ===== core-engine.js - 構文エラー修正版 (Delete/Backspace, V機能統合) =====
+// ===== core-engine.js - Phase 1: ベクターDrawingEngine統合版 =====
 
 (function() {
     'use strict';
@@ -39,346 +39,360 @@
         throw new Error('KeyConfig manager is required');
     }
 
-    class DrawingEngine {
-        constructor(cameraSystem, layerManager, eventBus, config) {
-            this.cameraSystem = cameraSystem;
-            this.layerManager = layerManager;
-            this.eventBus = eventBus || window.TegakiEventBus;
-            this.config = config;
-            
-            this.currentTool = 'pen';
-            this.brushSize = this.config.pen.size;
-            this.brushColor = this.config.pen.color;
-            this.brushOpacity = this.config.pen.opacity;
-            this.isDrawing = false;
-            this.currentPath = null;
-            this.lastPoint = null;
-            
-            this.pressureHandler = {
-                getPressure: (pointerEventOrPressure) => {
-                    if (typeof pointerEventOrPressure === 'number') {
-                        return Math.max(0.0, Math.min(1.0, pointerEventOrPressure));
-                    }
-                    if (pointerEventOrPressure && pointerEventOrPressure.pressure > 0 && pointerEventOrPressure.pressure < 1) {
-                        return pointerEventOrPressure.pressure;
-                    }
-                    return 0.5;
-                }
-            };
-            
-            this._setupEventBusListeners();
-        }
-
-        _setupEventBusListeners() {
-            if (!this.eventBus) return;
-            
-            this.eventBus.on('drawing:tool-changed', (data) => {
-                this.setTool(data.tool);
-            });
-            
-            this.eventBus.on('drawing:brush-size-changed', (data) => {
-                this.setBrushSize(data.size);
-            });
-            
-            this.eventBus.on('drawing:brush-color-changed', (data) => {
-                this.setBrushColor(data.color);
-            });
-            
-            this.eventBus.on('drawing:brush-opacity-changed', (data) => {
-                this.setBrushOpacity(data.opacity);
-            });
-        }
-
-        startDrawing(screenX, screenY, pressureOrEvent = 0.5) {
-            if (this.isDrawing || this.cameraSystem.spacePressed || this.cameraSystem.isDragging || 
-                this.layerManager.vKeyPressed) return;
-
-            const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY, { forDrawing: true });
-            
-            if (!this.cameraSystem.isPointInExtendedCanvas(canvasPoint)) {
-                return;
-            }
-            
-            const pressure = this.pressureHandler.getPressure(pressureOrEvent);
-            
-            this.isDrawing = true;
-            this.lastPoint = canvasPoint;
-
-            const activeLayer = this.layerManager.getActiveLayer();
-            if (!activeLayer) return;
-
-            const color = this.currentTool === 'eraser' ? this.config.background.color : this.brushColor;
-            const opacity = this.currentTool === 'eraser' ? 1.0 : this.brushOpacity;
-
-            const pressureAdjustedSize = this.brushSize * (0.5 + pressure * 0.5);
-
-            this.currentPath = {
-                id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
-                graphics: new PIXI.Graphics(),
-                points: [{ x: canvasPoint.x, y: canvasPoint.y, pressure: pressure }],
-                color: color,
-                size: this.brushSize,
-                opacity: opacity,
-                tool: this.currentTool,
-                isComplete: false
-            };
-
-            this.currentPath.graphics.circle(canvasPoint.x, canvasPoint.y, pressureAdjustedSize / 2);
-            this.currentPath.graphics.fill({ color: color, alpha: opacity });
-
-            this.addPathToActiveLayer(this.currentPath);
-            
-            if (this.eventBus) {
-                this.eventBus.emit('drawing:started', {
-                    tool: this.currentTool,
-                    point: canvasPoint,
-                    pathId: this.currentPath.id,
-                    pressure: pressure
-                });
-            }
-        }
-
-        continueDrawing(screenX, screenY, pressureOrEvent = 0.5) {
-            if (!this.isDrawing || !this.currentPath || this.cameraSystem.spacePressed || 
-                this.cameraSystem.isDragging || this.layerManager.vKeyPressed) return;
-
-            const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY, { forDrawing: true });
-            const lastPoint = this.lastPoint;
-            
-            const pressure = this.pressureHandler.getPressure(pressureOrEvent);
-            
-            const distance = Math.sqrt(
-                Math.pow(canvasPoint.x - lastPoint.x, 2) + 
-                Math.pow(canvasPoint.y - lastPoint.y, 2)
-            );
-
-            if (distance < 1) return;
-
-            const pressureAdjustedSize = this.brushSize * (0.5 + pressure * 0.5);
-
-            const steps = Math.max(1, Math.floor(distance / 1));
-            for (let i = 1; i <= steps; i++) {
-                const t = i / steps;
-                const x = lastPoint.x + (canvasPoint.x - lastPoint.x) * t;
-                const y = lastPoint.y + (canvasPoint.y - lastPoint.y) * t;
-
-                this.currentPath.graphics.circle(x, y, pressureAdjustedSize / 2);
-                this.currentPath.graphics.fill({ 
-                    color: this.currentPath.color, 
-                    alpha: this.currentPath.opacity 
-                });
-
-                this.currentPath.points.push({ x, y, pressure: pressure });
-            }
-
-            this.lastPoint = canvasPoint;
-        }
-
-        stopDrawing() {
-            if (!this.isDrawing) return;
-
-            if (this.currentPath) {
-                this.currentPath.isComplete = true;
+    // Phase 1: ベクター版DrawingEngineを優先使用
+    // system/drawing/drawing-engine.jsが読み込まれていればそちらを使用
+    // なければフォールバック（既存のラスター版）
+    const DrawingEngine = window.TegakiDrawing?.DrawingEngine || (function() {
+        // フォールバック: 既存のラスター版DrawingEngine
+        class FallbackDrawingEngine {
+            constructor(cameraSystem, layerManager, eventBus, config) {
+                this.cameraSystem = cameraSystem;
+                this.layerManager = layerManager;
+                this.eventBus = eventBus || window.TegakiEventBus;
+                this.config = config;
                 
-                const activeLayer = this.layerManager.getActiveLayer();
-                if (activeLayer && window.History) {
-                    const pathId = this.currentPath.id;
-                    const layerIdAtDrawTime = activeLayer.layerData.id;
-                    
-                    const pathData = {
-                        id: this.currentPath.id,
-                        points: structuredClone(this.currentPath.points),
-                        color: this.currentPath.color,
-                        size: this.currentPath.size,
-                        opacity: this.currentPath.opacity,
-                        tool: this.currentPath.tool,
-                        isComplete: true
-                    };
-                    
-                    const command = {
-                        name: 'draw-stroke',
-                        do: () => {
-                            const layers = this.layerManager.getLayers();
-                            const targetLayer = layers.find(l => l.layerData.id === layerIdAtDrawTime);
-                            if (!targetLayer) return;
-                            
-                            const existingPath = targetLayer.layerData.paths.find(p => p.id === pathId);
-                            if (existingPath) return;
-                            
-                            const restoredPath = structuredClone(pathData);
-                            if (this.layerManager.rebuildPathGraphics) {
-                                this.layerManager.rebuildPathGraphics(restoredPath);
-                                if (restoredPath.graphics) {
-                                    targetLayer.layerData.paths.push(restoredPath);
-                                    targetLayer.addChild(restoredPath.graphics);
-                                    
-                                    const layerIndex = layers.indexOf(targetLayer);
-                                    if (layerIndex !== -1) {
-                                        this.layerManager.requestThumbnailUpdate(layerIndex);
-                                    }
-                                    
-                                    if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
-                                        const cutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
-                                        setTimeout(() => {
-                                            this.layerManager.animationSystem.generateCutThumbnailOptimized(cutIndex);
-                                        }, 100);
-                                    }
-                                }
-                            }
-                        },
-                        undo: () => {
-                            const layers = this.layerManager.getLayers();
-                            const targetLayer = layers.find(l => l.layerData.id === layerIdAtDrawTime);
-                            if (!targetLayer) return;
-                            
-                            const pathIndex = targetLayer.layerData.paths.findIndex(p => p.id === pathId);
-                            if (pathIndex !== -1) {
-                                const path = targetLayer.layerData.paths[pathIndex];
-                                if (path.graphics) {
-                                    targetLayer.removeChild(path.graphics);
-                                    path.graphics.destroy();
-                                }
-                                targetLayer.layerData.paths.splice(pathIndex, 1);
-                            }
-                            
-                            const layerIndex = layers.indexOf(targetLayer);
-                            if (layerIndex !== -1) {
-                                this.layerManager.requestThumbnailUpdate(layerIndex);
-                            }
-                            
-                            if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
-                                const cutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
-                                setTimeout(() => {
-                                    this.layerManager.animationSystem.generateCutThumbnailOptimized(cutIndex);
-                                }, 100);
-                            }
-                        },
-                        meta: { 
-                            type: 'stroke', 
-                            layerId: layerIdAtDrawTime, 
-                            pathId: pathId 
+                this.currentTool = 'pen';
+                this.brushSize = this.config.pen.size;
+                this.brushColor = this.config.pen.color;
+                this.brushOpacity = this.config.pen.opacity;
+                this.isDrawing = false;
+                this.currentPath = null;
+                this.lastPoint = null;
+                
+                this.pressureHandler = {
+                    getPressure: (pointerEventOrPressure) => {
+                        if (typeof pointerEventOrPressure === 'number') {
+                            return Math.max(0.0, Math.min(1.0, pointerEventOrPressure));
                         }
-                    };
-                    
-                    History.push(command);
+                        if (pointerEventOrPressure && pointerEventOrPressure.pressure > 0 && pointerEventOrPressure.pressure < 1) {
+                            return pointerEventOrPressure.pressure;
+                        }
+                        return 0.5;
+                    }
+                };
+                
+                this._setupEventBusListeners();
+            }
+
+            _setupEventBusListeners() {
+                if (!this.eventBus) return;
+                
+                this.eventBus.on('drawing:tool-changed', (data) => {
+                    this.setTool(data.tool);
+                });
+                
+                this.eventBus.on('drawing:brush-size-changed', (data) => {
+                    this.setBrushSize(data.size);
+                });
+                
+                this.eventBus.on('drawing:brush-color-changed', (data) => {
+                    this.setBrushColor(data.color);
+                });
+                
+                this.eventBus.on('drawing:brush-opacity-changed', (data) => {
+                    this.setBrushOpacity(data.opacity);
+                });
+            }
+
+            startDrawing(screenX, screenY, pressureOrEvent = 0.5) {
+                if (this.isDrawing || this.cameraSystem.spacePressed || this.cameraSystem.isDragging || 
+                    this.layerManager.vKeyPressed) return;
+
+                const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY, { forDrawing: true });
+                
+                if (!this.cameraSystem.isPointInExtendedCanvas(canvasPoint)) {
+                    return;
                 }
                 
-                this.layerManager.requestThumbnailUpdate(this.layerManager.activeLayerIndex);
+                const pressure = this.pressureHandler.getPressure(pressureOrEvent);
                 
-                if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
-                    const currentCutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
-                    setTimeout(() => {
-                        this.layerManager.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
-                    }, 150);
-                }
+                this.isDrawing = true;
+                this.lastPoint = canvasPoint;
+
+                const activeLayer = this.layerManager.getActiveLayer();
+                if (!activeLayer) return;
+
+                const color = this.currentTool === 'eraser' ? this.config.background.color : this.brushColor;
+                const opacity = this.currentTool === 'eraser' ? 1.0 : this.brushOpacity;
+
+                const pressureAdjustedSize = this.brushSize * (0.5 + pressure * 0.5);
+
+                this.currentPath = {
+                    id: `path_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+                    graphics: new PIXI.Graphics(),
+                    points: [{ x: canvasPoint.x, y: canvasPoint.y, pressure: pressure }],
+                    color: color,
+                    size: this.brushSize,
+                    opacity: opacity,
+                    tool: this.currentTool,
+                    isComplete: false
+                };
+
+                this.currentPath.graphics.circle(canvasPoint.x, canvasPoint.y, pressureAdjustedSize / 2);
+                this.currentPath.graphics.fill({ color: color, alpha: opacity });
+
+                this.addPathToActiveLayer(this.currentPath);
                 
                 if (this.eventBus) {
-                    this.eventBus.emit('drawing:completed', {
+                    this.eventBus.emit('drawing:started', {
+                        tool: this.currentTool,
+                        point: canvasPoint,
                         pathId: this.currentPath.id,
-                        pointCount: this.currentPath.points.length
+                        pressure: pressure
                     });
                 }
             }
 
-            this.isDrawing = false;
-            this.currentPath = null;
-            this.lastPoint = null;
+            continueDrawing(screenX, screenY, pressureOrEvent = 0.5) {
+                if (!this.isDrawing || !this.currentPath || this.cameraSystem.spacePressed || 
+                    this.cameraSystem.isDragging || this.layerManager.vKeyPressed) return;
+
+                const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY, { forDrawing: true });
+                const lastPoint = this.lastPoint;
+                
+                const pressure = this.pressureHandler.getPressure(pressureOrEvent);
+                
+                const distance = Math.sqrt(
+                    Math.pow(canvasPoint.x - lastPoint.x, 2) + 
+                    Math.pow(canvasPoint.y - lastPoint.y, 2)
+                );
+
+                if (distance < 1) return;
+
+                const pressureAdjustedSize = this.brushSize * (0.5 + pressure * 0.5);
+
+                const steps = Math.max(1, Math.floor(distance / 1));
+                for (let i = 1; i <= steps; i++) {
+                    const t = i / steps;
+                    const x = lastPoint.x + (canvasPoint.x - lastPoint.x) * t;
+                    const y = lastPoint.y + (canvasPoint.y - lastPoint.y) * t;
+
+                    this.currentPath.graphics.circle(x, y, pressureAdjustedSize / 2);
+                    this.currentPath.graphics.fill({ 
+                        color: this.currentPath.color, 
+                        alpha: this.currentPath.opacity 
+                    });
+
+                    this.currentPath.points.push({ x, y, pressure: pressure });
+                }
+
+                this.lastPoint = canvasPoint;
+            }
+
+            stopDrawing() {
+                if (!this.isDrawing) return;
+
+                if (this.currentPath) {
+                    this.currentPath.isComplete = true;
+                    
+                    const activeLayer = this.layerManager.getActiveLayer();
+                    if (activeLayer && window.History) {
+                        const pathId = this.currentPath.id;
+                        const layerIdAtDrawTime = activeLayer.layerData.id;
+                        
+                        const pathData = {
+                            id: this.currentPath.id,
+                            points: structuredClone(this.currentPath.points),
+                            color: this.currentPath.color,
+                            size: this.currentPath.size,
+                            opacity: this.currentPath.opacity,
+                            tool: this.currentPath.tool,
+                            isComplete: true
+                        };
+                        
+                        const command = {
+                            name: 'draw-stroke',
+                            do: () => {
+                                const layers = this.layerManager.getLayers();
+                                const targetLayer = layers.find(l => l.layerData.id === layerIdAtDrawTime);
+                                if (!targetLayer) return;
+                                
+                                const existingPath = targetLayer.layerData.paths.find(p => p.id === pathId);
+                                if (existingPath) return;
+                                
+                                const restoredPath = structuredClone(pathData);
+                                if (this.layerManager.rebuildPathGraphics) {
+                                    this.layerManager.rebuildPathGraphics(restoredPath);
+                                    if (restoredPath.graphics) {
+                                        targetLayer.layerData.paths.push(restoredPath);
+                                        targetLayer.addChild(restoredPath.graphics);
+                                        
+                                        const layerIndex = layers.indexOf(targetLayer);
+                                        if (layerIndex !== -1) {
+                                            this.layerManager.requestThumbnailUpdate(layerIndex);
+                                        }
+                                        
+                                        if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
+                                            const cutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
+                                            setTimeout(() => {
+                                                this.layerManager.animationSystem.generateCutThumbnailOptimized(cutIndex);
+                                            }, 100);
+                                        }
+                                    }
+                                }
+                            },
+                            undo: () => {
+                                const layers = this.layerManager.getLayers();
+                                const targetLayer = layers.find(l => l.layerData.id === layerIdAtDrawTime);
+                                if (!targetLayer) return;
+                                
+                                const pathIndex = targetLayer.layerData.paths.findIndex(p => p.id === pathId);
+                                if (pathIndex !== -1) {
+                                    const path = targetLayer.layerData.paths[pathIndex];
+                                    if (path.graphics) {
+                                        targetLayer.removeChild(path.graphics);
+                                        path.graphics.destroy();
+                                    }
+                                    targetLayer.layerData.paths.splice(pathIndex, 1);
+                                }
+                                
+                                const layerIndex = layers.indexOf(targetLayer);
+                                if (layerIndex !== -1) {
+                                    this.layerManager.requestThumbnailUpdate(layerIndex);
+                                }
+                                
+                                if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
+                                    const cutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
+                                    setTimeout(() => {
+                                        this.layerManager.animationSystem.generateCutThumbnailOptimized(cutIndex);
+                                    }, 100);
+                                }
+                            },
+                            meta: { 
+                                type: 'stroke', 
+                                layerId: layerIdAtDrawTime, 
+                                pathId: pathId 
+                            }
+                        };
+                        
+                        History.push(command);
+                    }
+                    
+                    this.layerManager.requestThumbnailUpdate(this.layerManager.activeLayerIndex);
+                    
+                    if (this.layerManager.animationSystem?.generateCutThumbnailOptimized) {
+                        const currentCutIndex = this.layerManager.animationSystem.getCurrentCutIndex();
+                        setTimeout(() => {
+                            this.layerManager.animationSystem.generateCutThumbnailOptimized(currentCutIndex);
+                        }, 150);
+                    }
+                    
+                    if (this.eventBus) {
+                        this.eventBus.emit('drawing:completed', {
+                            pathId: this.currentPath.id,
+                            pointCount: this.currentPath.points.length
+                        });
+                    }
+                }
+
+                this.isDrawing = false;
+                this.currentPath = null;
+                this.lastPoint = null;
+            }
+            
+            addPathToActiveLayer(path) {
+                const activeLayer = this.layerManager.getActiveLayer();
+                if (!activeLayer) return;
+                
+                const layerId = activeLayer.layerData.id;
+                const transform = this.layerManager.transform?.getTransform(layerId);
+                
+                if (transform && this.layerManager.transform?._isTransformNonDefault(transform)) {
+                    try {
+                        const matrix = new PIXI.Matrix();
+                        
+                        const centerX = this.config.canvas.width / 2;
+                        const centerY = this.config.canvas.height / 2;
+                        
+                        matrix.translate(-centerX - transform.x, -centerY - transform.y);
+                        matrix.rotate(-transform.rotation);
+                        matrix.scale(1/transform.scaleX, 1/transform.scaleY);
+                        matrix.translate(centerX, centerY);
+                        
+                        const transformedGraphics = new PIXI.Graphics();
+                        
+                        path.points.forEach((point) => {
+                            try {
+                                const transformedPoint = matrix.apply(point);
+                                if (isFinite(transformedPoint.x) && isFinite(transformedPoint.y)) {
+                                    const pressure = point.pressure || 0.5;
+                                    const pressureAdjustedSize = path.size * (0.5 + pressure * 0.5);
+                                    
+                                    transformedGraphics.circle(transformedPoint.x, transformedPoint.y, pressureAdjustedSize / 2);
+                                    transformedGraphics.fill({ color: path.color, alpha: path.opacity });
+                                }
+                            } catch (transformError) {
+                            }
+                        });
+                        
+                        path.graphics = transformedGraphics;
+                    } catch (error) {
+                    }
+                }
+                
+                activeLayer.layerData.paths.push(path);
+                activeLayer.addChild(path.graphics);
+            }
+
+            setTool(tool) {
+                const oldTool = this.currentTool;
+                this.currentTool = tool;
+                
+                if (this.eventBus && oldTool !== tool) {
+                    this.eventBus.emit('drawing:tool-set', { 
+                        oldTool: oldTool, 
+                        newTool: tool 
+                    });
+                }
+            }
+
+            setBrushSize(size) {
+                const oldSize = this.brushSize;
+                this.brushSize = Math.max(0.1, Math.min(100, size));
+                
+                if (this.eventBus && oldSize !== this.brushSize) {
+                    this.eventBus.emit('drawing:brush-size-set', {
+                        oldSize: oldSize,
+                        newSize: this.brushSize
+                    });
+                }
+            }
+
+            setBrushColor(color) {
+                const oldColor = this.brushColor;
+                this.brushColor = color;
+                
+                if (this.eventBus && oldColor !== color) {
+                    this.eventBus.emit('drawing:brush-color-set', {
+                        oldColor: oldColor,
+                        newColor: color
+                    });
+                }
+            }
+
+            setBrushOpacity(opacity) {
+                const oldOpacity = this.brushOpacity;
+                this.brushOpacity = Math.max(0, Math.min(1, opacity));
+                
+                if (this.eventBus && oldOpacity !== this.brushOpacity) {
+                    this.eventBus.emit('drawing:brush-opacity-set', {
+                        oldOpacity: oldOpacity,
+                        newOpacity: this.brushOpacity
+                    });
+                }
+            }
+            
+            getCurrentTool() {
+                return this.currentTool;
+            }
+            
+            getIsDrawing() {
+                return this.isDrawing;
+            }
         }
         
-        addPathToActiveLayer(path) {
-            const activeLayer = this.layerManager.getActiveLayer();
-            if (!activeLayer) return;
-            
-            const layerId = activeLayer.layerData.id;
-            
-            // LayerTransform から Transform取得
-            const transform = this.layerManager.transform?.getTransform(layerId);
-            
-            if (transform && this.layerManager.transform?._isTransformNonDefault(transform)) {
-                try {
-                    const matrix = new PIXI.Matrix();
-                    
-                    const centerX = this.config.canvas.width / 2;
-                    const centerY = this.config.canvas.height / 2;
-                    
-                    matrix.translate(-centerX - transform.x, -centerY - transform.y);
-                    matrix.rotate(-transform.rotation);
-                    matrix.scale(1/transform.scaleX, 1/transform.scaleY);
-                    matrix.translate(centerX, centerY);
-                    
-                    const transformedGraphics = new PIXI.Graphics();
-                    
-                    path.points.forEach((point) => {
-                        try {
-                            const transformedPoint = matrix.apply(point);
-                            if (isFinite(transformedPoint.x) && isFinite(transformedPoint.y)) {
-                                const pressure = point.pressure || 0.5;
-                                const pressureAdjustedSize = path.size * (0.5 + pressure * 0.5);
-                                
-                                transformedGraphics.circle(transformedPoint.x, transformedPoint.y, pressureAdjustedSize / 2);
-                                transformedGraphics.fill({ color: path.color, alpha: path.opacity });
-                            }
-                        } catch (transformError) {
-                        }
-                    });
-                    
-                    path.graphics = transformedGraphics;
-                } catch (error) {
-                }
-            }
-            
-            activeLayer.layerData.paths.push(path);
-            activeLayer.addChild(path.graphics);
-        }
-
-        setTool(tool) {
-            const oldTool = this.currentTool;
-            this.currentTool = tool;
-            
-            if (this.eventBus && oldTool !== tool) {
-                this.eventBus.emit('drawing:tool-set', { 
-                    oldTool: oldTool, 
-                    newTool: tool 
-                });
-            }
-        }
-
-        setBrushSize(size) {
-            const oldSize = this.brushSize;
-            this.brushSize = Math.max(0.1, Math.min(100, size));
-            
-            if (this.eventBus && oldSize !== this.brushSize) {
-                this.eventBus.emit('drawing:brush-size-set', {
-                    oldSize: oldSize,
-                    newSize: this.brushSize
-                });
-            }
-        }
-
-        setBrushColor(color) {
-            const oldColor = this.brushColor;
-            this.brushColor = color;
-            
-            if (this.eventBus && oldColor !== color) {
-                this.eventBus.emit('drawing:brush-color-set', {
-                    oldColor: oldColor,
-                    newColor: color
-                });
-            }
-        }
-
-        setBrushOpacity(opacity) {
-            const oldOpacity = this.brushOpacity;
-            this.brushOpacity = Math.max(0, Math.min(1, opacity));
-            
-            if (this.eventBus && oldOpacity !== this.brushOpacity) {
-                this.eventBus.emit('drawing:brush-opacity-set', {
-                    oldOpacity: oldOpacity,
-                    newOpacity: this.brushOpacity
-                });
-            }
-        }
-    }
+        return FallbackDrawingEngine;
+    })();
 
     class UnifiedKeyHandler {
         constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
@@ -610,7 +624,6 @@
     class CoreEngine {
         constructor(app, config = {}) {
             this.app = app;
-            
             this.isBookmarkletMode = config.isBookmarkletMode || false;
             
             this.eventBus = window.TegakiEventBus;
@@ -621,7 +634,12 @@
             this.cameraSystem = new window.TegakiCameraSystem();
             this.layerSystem = new window.TegakiLayerSystem();
             this.clipboardSystem = new window.TegakiDrawingClipboard();
+            
+            // Phase 1: ベクター版DrawingEngineを使用
             this.drawingEngine = new DrawingEngine(this.cameraSystem, this.layerSystem, this.eventBus, CONFIG);
+            
+            // グローバルアクセス用（デバッグ）
+            window.coreEngine = this;
             
             this.animationSystem = null;
             this.timelineUI = null;
@@ -640,7 +658,6 @@
             this.layerSystem.setCameraSystem(this.cameraSystem);
             this.layerSystem.setApp(this.app);
             
-            // LayerTransform初期化
             if (this.layerSystem.initTransform) {
                 this.layerSystem.initTransform();
             }
@@ -1059,4 +1076,4 @@
 
 })();
 
-console.log('✅ core-engine.js loaded');
+console.log('✅ core-engine.js (Phase 1: Vector Eraser) loaded');
