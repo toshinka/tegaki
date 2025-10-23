@@ -1,6 +1,6 @@
-// ===== ui-panels.js - PopupManager対応改修版 =====
-// 責務: UIイベント管理、PopupManagerへの委譲
-// 🔥 改修: PopupManager統合、直接参照の削除、排他制御の委譲
+// ===== ui/ui-panels.js - 完全改修版 =====
+// 改修1: quick-access-popup画面外クリック防止
+// 改修5: Sortable初期化関数追加
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -26,12 +26,7 @@ window.TegakiUI.UIController = class {
         }
     }
     
-    // ===== PopupManager統合メソッド =====
-    
     getPopupManager() {
-        if (!window.PopupManager) {
-            console.warn('PopupManager not initialized yet');
-        }
         return window.PopupManager;
     }
     
@@ -70,8 +65,6 @@ window.TegakiUI.UIController = class {
         }
     }
     
-    // ===== EventBusリスナー =====
-    
     setupEventBusListeners() {
         const eventBus = window.TegakiEventBus;
         if (!eventBus) return;
@@ -97,8 +90,6 @@ window.TegakiUI.UIController = class {
         });
     }
     
-    // ===== イベント委譲 =====
-    
     setupEventDelegation() {
         document.addEventListener('click', (e) => {
             const toolButton = e.target.closest('.tool-button');
@@ -110,9 +101,9 @@ window.TegakiUI.UIController = class {
             const layerAddBtn = e.target.closest('#add-layer-btn');
             if (layerAddBtn) {
                 const layerCount = this.layerManager?.layers?.length || 1;
-                const result = window.CoreRuntime.api.createLayer(`レイヤー${layerCount}`);
+                const result = window.CoreRuntime.api.layer.create(`レイヤー${layerCount}`);
                 if (result) {
-                    window.CoreRuntime.api.setActiveLayer(result.index);
+                    window.CoreRuntime.api.layer.setActive(result.index);
                 }
                 return;
             }
@@ -123,44 +114,34 @@ window.TegakiUI.UIController = class {
                 return;
             }
 
+            // ✅改修1: quick-access-popup以外を閉じる（quick-accessは残す）
             if (!e.target.closest('.popup-panel') && 
                 !e.target.closest('.album-overlay') &&
                 !e.target.closest('.layer-transform-panel') &&
                 !e.target.closest('.tool-button') &&
                 !e.target.closest('.layer-panel-container')) {
-                this.closeAllPopups();
+                this.closeAllPopups('quickAccess');
             }
         });
     }
-    
-    // ===== ツール処理 =====
     
     handleToolClick(button) {
         const toolId = button.id;
         const toolMap = {
             'pen-tool': () => {
-                if (!window.CoreRuntime.api.setTool('pen')) return;
-                window.CoreRuntime.api.exitLayerMoveMode();
+                if (!window.CoreRuntime.api.tool.set('pen')) return;
+                window.CoreRuntime.api.layer.exitMoveMode();
                 this.togglePopup('quickAccess');
                 this.updateToolUI('pen');
             },
             'eraser-tool': () => {
-                if (!window.CoreRuntime.api.setTool('eraser')) return;
-                window.CoreRuntime.api.exitLayerMoveMode();
+                if (!window.CoreRuntime.api.tool.set('eraser')) return;
+                window.CoreRuntime.api.layer.exitMoveMode();
                 this.closeAllPopups();
                 this.updateToolUI('eraser');
             },
             'resize-tool': () => {
-                const resizePopup = document.getElementById('resize-settings');
-                if (resizePopup) {
-                    const isVisible = resizePopup.classList.contains('show');
-                    if (isVisible) {
-                        resizePopup.classList.remove('show');
-                    } else {
-                        this.closeAllPopups('resize');
-                        resizePopup.classList.add('show');
-                    }
-                }
+                this.togglePopup('resize');
             },
             'gif-animation-tool': () => {
                 if (window.TegakiEventBus) {
@@ -208,20 +189,8 @@ window.TegakiUI.UIController = class {
         popup.classList.toggle('show', !isVisible);
     }
     
-    // ===== スライダー・リサイズ =====
-    
     setupSliders() {
-        const CONFIG = window.TEGAKI_CONFIG;
-        
-        window.TegakiUI.createSlider('pen-size-slider', 0.1, 100, CONFIG.pen.size, (value) => {
-            window.CoreRuntime.api.setBrushSize(value);
-            return value.toFixed(1) + 'px';
-        });
-        
-        window.TegakiUI.createSlider('pen-opacity-slider', 0, 100, CONFIG.pen.opacity * 100, (value) => {
-            window.CoreRuntime.api.setBrushOpacity(value / 100);
-            return value.toFixed(1) + '%';
-        });
+        // quick-access-popup.js が qa-size-slider, qa-opacity-slider を管理
     }
 
     setupCanvasResize() {
@@ -236,7 +205,7 @@ window.TegakiUI.UIController = class {
                     const newHeight = parseInt(heightInput.value);
                     
                     if (newWidth > 0 && newHeight > 0) {
-                        window.CoreRuntime.api.resizeCanvas(newWidth, newHeight);
+                        window.CoreRuntime.api.camera.resize(newWidth, newHeight);
                         this.closeAllPopups();
                     }
                 }
@@ -266,11 +235,47 @@ window.TegakiUI.UIController = class {
     }
 };
 
-// ===== ユーティリティ関数 =====
+// ✅改修5: Sortable初期化関数
+window.TegakiUI.initializeSortable = function(layerSystem) {
+    const layerList = document.getElementById('layer-list');
+    if (!layerList || !window.Sortable) {
+        return;
+    }
+    
+    // 既存のSortableインスタンスを削除
+    if (layerList._sortable) {
+        layerList._sortable.destroy();
+    }
+    
+    layerList._sortable = new Sortable(layerList, {
+        animation: 150,
+        handle: '.layer-item',
+        ghostClass: 'layer-ghost',
+        chosenClass: 'layer-chosen',
+        dragClass: 'layer-drag',
+        onEnd: function(evt) {
+            const fromIndex = evt.oldIndex;
+            const toIndex = evt.newIndex;
+            
+            if (fromIndex !== toIndex) {
+                // UIとデータの逆順に注意
+                const layers = layerSystem.getLayers();
+                const actualFromIndex = layers.length - 1 - fromIndex;
+                const actualToIndex = layers.length - 1 - toIndex;
+                
+                layerSystem.reorderLayers(actualFromIndex, actualToIndex);
+            }
+        }
+    });
+};
 
 window.TegakiUI.createSlider = function(sliderId, min, max, initial, callback) {
     const container = document.getElementById(sliderId);
     if (!container) return;
+
+    if (sliderId.startsWith('qa-')) {
+        return;
+    }
 
     const track = container.querySelector('.slider-track');
     const handle = container.querySelector('.slider-handle');
@@ -332,140 +337,60 @@ window.TegakiUI.setupPanelStyles = function() {
             display: flex !important;
             align-items: center !important;
             justify-content: center !important;
-            line-height: 1 !important;
         }
         
-        .layer-item {
-            width: 180px;
-            height: 64px;
-            background: var(--futaba-background);
-            opacity: 0.7;
-            border: 1px solid var(--futaba-light-medium);
-            border-radius: 6px;
-            padding: 6px 8px;
-            cursor: pointer;
-            transition: background-color 0.2s ease, border-color 0.2s ease;
-            display: grid;
-            grid-template-columns: 20px 1fr auto;
-            grid-template-rows: 1fr 1fr;
-            gap: 4px 8px;
-            align-items: center;
-            user-select: none;
+        .slider {
             position: relative;
-            box-shadow: 0 1px 2px rgba(128, 0, 0, 0.05);
-            min-width: 180px;
-        }
-        
-        .layer-thumbnail {
-            grid-column: 3;
-            grid-row: 1 / 3;
-            min-width: 24px;
-            max-width: 72px;
-            height: 48px;
-            background: var(--futaba-background);
-            border: 1px solid var(--futaba-light-medium);
-            border-radius: 4px;
-            overflow: hidden;
-            position: relative;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-            align-self: center;
-            transition: width 0.2s ease;
-            flex-shrink: 0;
-        }
-        
-        .layer-thumbnail img {
             width: 100%;
+            height: 4px;
+            background: #e0e0e0;
+            border-radius: 2px;
+            cursor: pointer;
+        }
+        
+        .slider-track {
+            position: absolute;
             height: 100%;
-            object-fit: cover;
-            border-radius: 3px;
-            transition: opacity 0.2s ease;
+            background: linear-gradient(to right, #4a90e2, #357abd);
+            border-radius: 2px;
+            transition: width 0.05s;
         }
         
-        .layer-name {
-            grid-column: 2;
-            grid-row: 2;
-            font-size: 9px;
-            color: var(--text-primary);
-            font-weight: 500;
-            white-space: nowrap;
-            overflow: hidden;
-            text-overflow: ellipsis;
-            align-self: end;
-            margin-bottom: 2px;
+        .slider-handle {
+            position: absolute;
+            width: 16px;
+            height: 16px;
+            top: 50%;
+            transform: translate(-50%, -50%);
+            background: white;
+            border: 2px solid #4a90e2;
+            border-radius: 50%;
+            cursor: grab;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+            transition: left 0.05s;
         }
         
-        .layer-transform-panel {
-            background: rgba(240, 224, 214, 0.95) !important;
-            backdrop-filter: blur(12px);
-            top: 20px !important;
-            left: 50% !important;
-            transform: translateX(-50%) !important;
+        .slider-handle:active {
+            cursor: grabbing;
         }
         
-        .layer-transform-panel.show {
-            animation: slideDown 0.25s ease-out;
+        .layer-ghost {
+            opacity: 0.4;
         }
         
-        @keyframes slideDown {
-            from { 
-                opacity: 0; 
-                transform: translateX(-50%) translateY(-15px) scale(0.95); 
-            }
-            to { 
-                opacity: 1; 
-                transform: translateX(-50%) translateY(0) scale(1); 
-            }
+        .layer-chosen {
+            background-color: rgba(74, 144, 226, 0.2);
         }
         
-        .panel-sections {
-            grid-template-columns: 1fr 1fr auto !important;
-            min-width: 480px !important;
-        }
-        
-        .compact-slider-group {
-            height: 56px;
-            display: flex !important;
-            flex-direction: column !important;
-            justify-content: space-between !important;
+        .layer-drag {
+            opacity: 0.8;
         }
     `;
-    document.head.appendChild(style);
     
-    setTimeout(() => {
-        const flipHBtn = document.getElementById('flip-horizontal-btn');
-        const flipVBtn = document.getElementById('flip-vertical-btn');
-        if (flipHBtn) flipHBtn.textContent = '水平反転';
-        if (flipVBtn) flipVBtn.textContent = '垂直反転';
-    }, 100);
-};
-
-window.TegakiUI.initializeSortable = function(layerManager) {
-    const layerList = document.getElementById('layer-list');
-    if (!layerList || typeof Sortable === 'undefined') return;
-    
-    if (layerList.sortableInstance) {
-        layerList.sortableInstance.destroy();
-        layerList.sortableInstance = null;
+    if (!document.querySelector('style[data-tegaki-panels]')) {
+        style.setAttribute('data-tegaki-panels', 'true');
+        document.head.appendChild(style);
     }
-    
-    layerList.sortableInstance = Sortable.create(layerList, {
-        animation: 150,
-        ghostClass: 'sortable-ghost',
-        chosenClass: 'sortable-chosen',
-        handle: '.layer-item',
-        onEnd: function(evt) {
-            const layers = layerManager.getLayers();
-            const fromIndex = layers.length - 1 - evt.oldIndex;
-            const toIndex = layers.length - 1 - evt.newIndex;
-            
-            if (fromIndex !== toIndex) {
-                layerManager.reorderLayers(fromIndex, toIndex);
-                layerManager.updateLayerPanelUI();
-            }
-        }
-    });
 };
 
-console.log('✅ ui-panels.js (PopupManager対応版) loaded');
+console.log('✅ ui-panels.js (完全改修版) loaded');

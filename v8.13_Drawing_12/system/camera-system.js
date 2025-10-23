@@ -1,7 +1,5 @@
-// ===== system/camera-system.js - Phase 4.2: 拡縮上下修正版 =====
-// 座標変換・ズーム・パン・回転等の「カメラ操作」専用
-// 【Phase 4.2改修】Space+Shift+ドラッグの上下を修正（上=拡大、下=縮小）
-// PixiJS v8.13 対応・改修計画書完全準拠版
+// ===== system/camera-system.js - Phase1: 座標変換修正版 =====
+// 修正: screenToLayer() にcanvas.getBoundingClientRect()を統合
 
 (function() {
     'use strict';
@@ -12,7 +10,6 @@
             this.config = null;
             this.eventBus = null;
             
-            // カメラ状態
             this.isDragging = false;
             this.isScaleRotateDragging = false;
             this.lastPoint = { x: 0, y: 0 };
@@ -20,7 +17,6 @@
             this.horizontalFlipped = false;
             this.verticalFlipped = false;
             
-            // 初期状態の記憶（Ctrl+0リセット用）
             this.initialState = {
                 position: null,
                 scale: 1.0,
@@ -29,19 +25,16 @@
                 verticalFlipped: false
             };
             
-            // キー状態管理
             this.spacePressed = false;
             this.shiftPressed = false;
             this.vKeyPressed = false;
             
-            // PixiJS Containers
             this.worldContainer = null;
             this.canvasContainer = null;
             this.cameraFrame = null;
             this.guideLines = null;
             this.canvasMask = null;
             
-            // 内部参照（後で設定）
             this.layerManager = null;
             this.drawingEngine = null;
         }
@@ -53,7 +46,6 @@
             if (stage && stage.addChild) {
                 this.app = { stage: stage };
             } else {
-                console.error('CameraSystem: Invalid stage provided');
                 throw new Error('Valid PIXI stage required for CameraSystem');
             }
             
@@ -152,18 +144,12 @@
             this.horizontalFlipped = false;
             this.verticalFlipped = false;
             
-            this.updateTransformDisplay();
-            if (this.eventBus) {
-                this.eventBus.emit('camera:changed');
-            }
+            this._emitTransformChanged();
         }
 
         _setupEvents() {
             const canvas = this._getSafeCanvas();
-            if (!canvas) {
-                console.error('CameraSystem: Canvas element not found for event setup');
-                return;
-            }
+            if (!canvas) return;
 
             canvas.addEventListener('contextmenu', (e) => e.preventDefault());
             
@@ -192,12 +178,12 @@
                 if ((e.button === 2 || this.spacePressed) && !this.shiftPressed) {
                     this.isDragging = true;
                     this.lastPoint = { x: e.clientX, y: e.clientY };
-                    canvas.style.cursor = 'move';
+                    this._emitCursorChange('move');
                     e.preventDefault();
                 } else if ((e.button === 2 || this.spacePressed) && this.shiftPressed) {
                     this.isScaleRotateDragging = true;
                     this.lastPoint = { x: e.clientX, y: e.clientY };
-                    canvas.style.cursor = 'grab';
+                    this._emitCursorChange('grab');
                     e.preventDefault();
                 }
             });
@@ -211,7 +197,7 @@
                     this.worldContainer.y += dy;
                     
                     this.lastPoint = { x: e.clientX, y: e.clientY };
-                    this.updateTransformDisplay();
+                    this._emitTransformChanged();
                 } else if (this.isScaleRotateDragging) {
                     this._handleScaleRotateDrag(e);
                 }
@@ -220,16 +206,16 @@
             canvas.addEventListener('pointerup', (e) => {
                 if (this.isDragging && (e.button === 2 || this.spacePressed)) {
                     this.isDragging = false;
-                    this.updateCursor();
+                    this._emitCursorUpdate();
                 }
                 if (this.isScaleRotateDragging && (e.button === 2 || this.spacePressed)) {
                     this.isScaleRotateDragging = false;
-                    this.updateCursor();
+                    this._emitCursorUpdate();
                 }
             });
 
             canvas.addEventListener('pointerenter', () => {
-                this.updateCursor();
+                this._emitCursorUpdate();
             });
             
             canvas.addEventListener('wheel', (e) => {
@@ -246,11 +232,10 @@
                     this._handleWheelZoom(e, centerX, centerY);
                 }
                 
-                this.updateTransformDisplay();
+                this._emitTransformChanged();
             });
         }
 
-        // ========== Phase 4.2改修: _handleScaleRotateDrag() ==========
         _handleScaleRotateDrag(e) {
             const dx = e.clientX - this.lastPoint.x;
             const dy = e.clientY - this.lastPoint.y;
@@ -260,7 +245,6 @@
             const worldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
             
             if (Math.abs(dx) > Math.abs(dy)) {
-                // 水平方向優先: 回転
                 this.rotation += (dx * this.config.camera.dragRotationSpeed);
                 this.worldContainer.rotation = (this.rotation * Math.PI) / 180;
                 
@@ -268,8 +252,6 @@
                 this.worldContainer.x += worldCenter.x - newWorldCenter.x;
                 this.worldContainer.y += worldCenter.y - newWorldCenter.y;
             } else {
-                // 🔥 Phase 4.2: 垂直方向優先 = 拡縮（上下反転修正）
-                // dy に -1 を掛けることで、上=拡大、下=縮小に修正
                 const scaleFactor = 1 + (-dy * this.config.camera.dragScaleSpeed);
                 const newScale = this.worldContainer.scale.x * scaleFactor;
                 
@@ -282,9 +264,8 @@
             }
             
             this.lastPoint = { x: e.clientX, y: e.clientY };
-            this.updateTransformDisplay();
+            this._emitTransformChanged();
         }
-        // ========== Phase 4.2改修: END ==========
 
         _handleWheelRotation(e, centerX, centerY) {
             const rotationDelta = e.deltaY < 0 ? 
@@ -327,7 +308,7 @@
                 
                 if (e.code === 'Space') {
                     this.spacePressed = true;
-                    this.updateCursor();
+                    this._emitCursorUpdate();
                     e.preventDefault();
                     return;
                 }
@@ -364,7 +345,7 @@
         _resetKeyStates(e) {
             if (e.code === 'Space') {
                 this.spacePressed = false;
-                this.updateCursor();
+                this._emitCursorUpdate();
             }
             if (!e.shiftKey) {
                 this.shiftPressed = false;
@@ -374,7 +355,7 @@
         _resetAllKeyStates() {
             this.spacePressed = false;
             this.shiftPressed = false;
-            this.updateCursor();
+            this._emitCursorUpdate();
         }
 
         _handleCameraMoveKeys(e) {
@@ -386,12 +367,11 @@
                     case 'ArrowRight':   this.worldContainer.x += moveAmount; break;
                     case 'ArrowLeft':    this.worldContainer.x -= moveAmount; break;
                 }
-                this.updateTransformDisplay();
+                this._emitTransformChanged();
                 e.preventDefault();
             }
         }
 
-        // ========== Phase 4.2改修: _handleCameraTransformKeys() ==========
         _handleCameraTransformKeys(e) {
             if (this.spacePressed && this.shiftPressed && ['ArrowUp', 'ArrowDown', 'ArrowLeft', 'ArrowRight'].includes(e.code)) {
                 const centerX = this.config.canvas.width / 2;
@@ -400,11 +380,9 @@
                 
                 switch(e.code) {
                     case 'ArrowUp':
-                        // 🔥 Phase 4.2: 上キー = 拡大
                         this._scaleCamera(1 + this.config.camera.wheelZoomSpeed, worldCenter, centerX, centerY);
                         break;
                     case 'ArrowDown':
-                        // 🔥 Phase 4.2: 下キー = 縮小
                         this._scaleCamera(1 - this.config.camera.wheelZoomSpeed, worldCenter, centerX, centerY);
                         break;
                     case 'ArrowLeft':
@@ -415,11 +393,10 @@
                         break;
                 }
                 
-                this.updateTransformDisplay();
+                this._emitTransformChanged();
                 e.preventDefault();
             }
         }
-        // ========== Phase 4.2改修: END ==========
 
         _handleCameraFlipKeys(e) {
             if (!this.vKeyPressed && e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
@@ -439,7 +416,7 @@
                 this.worldContainer.x += worldCenter.x - newWorldCenter.x;
                 this.worldContainer.y += worldCenter.y - newWorldCenter.y;
                 
-                this.updateTransformDisplay();
+                this._emitTransformChanged();
                 e.preventDefault();
             }
         }
@@ -462,42 +439,85 @@
             this.worldContainer.y += worldCenter.y - newWorldCenter.y;
         }
 
-        screenToCanvas(screenX, screenY, options = {}) {
-            const globalPoint = { x: screenX, y: screenY };
-            const canvasPoint = this.canvasContainer.toLocal(globalPoint);
-            
-            if (options.forDrawing) {
-                return canvasPoint;
+        _emitTransformChanged() {
+            if (this.eventBus) {
+                this.eventBus.emit('camera:transform-changed', {
+                    x: Math.round(this.worldContainer.x),
+                    y: Math.round(this.worldContainer.y),
+                    scale: Math.abs(this.worldContainer.scale.x).toFixed(2),
+                    rotation: Math.round(this.rotation % 360)
+                });
             }
-            
-            return canvasPoint;
         }
 
-        screenToCanvasForDrawing(screenX, screenY) {
-            return this.screenToCanvas(screenX, screenY, { forDrawing: true });
+        _emitCursorUpdate() {
+            if (!this.eventBus) return;
+            
+            let cursor = 'crosshair';
+            
+            if (this.vKeyPressed) {
+                cursor = 'grab';
+            } else if (this.isDragging || (this.spacePressed && !this.shiftPressed)) {
+                cursor = 'move';
+            } else if (this.isScaleRotateDragging || (this.spacePressed && this.shiftPressed)) {
+                cursor = 'grab';
+            } else {
+                const tool = this.drawingEngine ? this.drawingEngine.currentTool : 'pen';
+                cursor = tool === 'eraser' ? 'cell' : 'crosshair';
+            }
+            
+            this.eventBus.emit('camera:cursor-changed', { cursor });
+        }
+
+        _emitCursorChange(cursor) {
+            if (this.eventBus) {
+                this.eventBus.emit('camera:cursor-changed', { cursor });
+            }
+        }
+
+        /**
+         * 🔧 修正: スクリーン座標 → レイヤーローカル座標変換
+         * canvas.getBoundingClientRect() でブラウザ座標を相対化
+         */
+        screenToLayer(screenX, screenY) {
+            const canvas = this._getSafeCanvas();
+            if (!canvas) {
+                // フォールバック
+                return this.canvasContainer.toLocal({ x: screenX, y: screenY });
+            }
+            
+            // ブラウザスクリーン座標 → キャンバス相対座標
+            const rect = canvas.getBoundingClientRect();
+            const relativeX = screenX - rect.left;
+            const relativeY = screenY - rect.top;
+            
+            // キャンバス相対座標 → キャンバスローカル座標
+            return this.canvasContainer.toLocal({ x: relativeX, y: relativeY });
+        }
+
+        screenToCanvas(screenX, screenY) {
+            return this.screenToLayer(screenX, screenY);
+        }
+
+        updateCoordinates(x, y) {
+            // 空実装（互換性のため）
         }
 
         setZoom(level) {
             const clampedLevel = Math.max(this.config.camera.minScale, Math.min(this.config.camera.maxScale, level));
             this.worldContainer.scale.set(clampedLevel);
-            this.updateTransformDisplay();
-            if (this.eventBus) {
-                this.eventBus.emit('camera:changed');
-            }
+            this._emitTransformChanged();
         }
 
         pan(dx, dy) {
             this.worldContainer.x += dx;
             this.worldContainer.y += dy;
-            this.updateTransformDisplay();
-            if (this.eventBus) {
-                this.eventBus.emit('camera:changed');
-            }
+            this._emitTransformChanged();
         }
 
         setVKeyPressed(pressed) {
             this.vKeyPressed = pressed;
-            this.updateCursor();
+            this._emitCursorUpdate();
         }
 
         toScreenCoords(worldX, worldY) {
@@ -511,26 +531,7 @@
         }
 
         updateCursor() {
-            const canvas = this._getSafeCanvas();
-            if (!canvas) return;
-
-            if (this.vKeyPressed) {
-                canvas.style.cursor = 'grab';
-            } else if (this.isDragging || (this.spacePressed && !this.shiftPressed)) {
-                canvas.style.cursor = 'move';
-            } else if (this.isScaleRotateDragging || (this.spacePressed && this.shiftPressed)) {
-                canvas.style.cursor = 'grab';
-            } else {
-                const tool = this.drawingEngine ? this.drawingEngine.currentTool : 'pen';
-                canvas.style.cursor = tool === 'eraser' ? 'cell' : 'crosshair';
-            }
-        }
-
-        updateCoordinates(x, y) {
-            const element = document.getElementById('coordinates');
-            if (element) {
-                element.textContent = `x: ${Math.round(x)}, y: ${Math.round(y)}`;
-            }
+            this._emitCursorUpdate();
         }
 
         switchTool(toolName) {
@@ -542,28 +543,15 @@
                 this.layerManager.exitLayerMoveMode();
             }
             
-            document.querySelectorAll('.tool-button').forEach(btn => btn.classList.remove('active'));
-            const toolBtn = document.getElementById(toolName + '-tool');
-            if (toolBtn) toolBtn.classList.add('active');
-
-            const toolNames = { pen: 'ベクターペン', eraser: '消しゴム' };
-            const toolElement = document.getElementById('current-tool');
-            if (toolElement) {
-                toolElement.textContent = toolNames[toolName] || toolName;
+            if (this.eventBus) {
+                this.eventBus.emit('camera:tool-switched', { tool: toolName });
             }
 
-            this.updateCursor();
+            this._emitCursorUpdate();
         }
 
         updateTransformDisplay() {
-            const element = document.getElementById('transform-info');
-            if (element) {
-                const x = Math.round(this.worldContainer.x);
-                const y = Math.round(this.worldContainer.y);
-                const s = Math.abs(this.worldContainer.scale.x).toFixed(2);
-                const r = Math.round(this.rotation % 360);
-                element.textContent = `x:${x} y:${y} s:${s} r:${r}°`;
-            }
+            this._emitTransformChanged();
         }
 
         _drawCameraFrame() {
@@ -596,8 +584,4 @@
 
     window.TegakiCameraSystem = CameraSystem;
 
-    console.log('✅ camera-system.js (Phase 4.2: 拡縮上下修正版) loaded successfully');
-    console.log('   - 🔥 Space+Shift+ドラッグ: 上=拡大、下=縮小に修正');
-    console.log('   - 🔥 Space+Shift+↑: 拡大、Space+Shift+↓: 縮小に修正');
-    
 })();
