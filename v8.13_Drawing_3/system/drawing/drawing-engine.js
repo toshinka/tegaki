@@ -1,110 +1,104 @@
 /**
- * DrawingEngine v4.0 - Phase 1: ツール基盤の構築
- * Perfect Freehand対応ベクターペンエンジン + ツールアーキテクチャ
+ * DrawingEngine - Phase 1改修版（core-engine.js互換）
+ * ToolManager・StrokeDataManager統合
  * 
- * 改修内容:
- * - ToolManager 統合: ツール切り替え機構の導入
- * - StrokeDataManager 統合: データ管理の一元化
- * - 座標変換のみ担当: ワールド座標をツールに委譲
- * 
- * Phase 1では既存のペン描画機能を維持しつつ、
- * Phase 2でPenToolへの移行を準備
+ * ✅ 修正: core-engine.jsの呼び出しに合わせて引数調整
+ * 呼び出し: new DrawingEngine(app, layerSystem, cameraSystem, History)
  */
 
 class DrawingEngine {
-  constructor(app, layerManager, cameraSystem, historyManager) {
-    // 引数の順序を既存のcore-engine.jsに合わせる
+  constructor(app, layerSystem, cameraSystem, historyManager) {
+    // 引数をcore-engine.jsの呼び出しに合わせる
     this.app = app;
-    this.layerManager = layerManager;
+    this.layerManager = layerSystem;
     this.cameraSystem = cameraSystem;
     this.historyManager = historyManager;
     
-    // EventBusとConfigをグローバルから取得
+    // EventBusとConfigを取得
     this.eventBus = window.TegakiEventBus;
     this.config = window.TEGAKI_CONFIG || {};
 
-    // === Phase 1: 新規追加 ===
-    
-    // EventBusの存在確認
-    if (!this.eventBus) {
-      console.error('DrawingEngine: EventBus is not available');
-    }
-    
-    // ToolManager初期化
-    this.toolManager = window.TegakiDrawing?.ToolManager ? 
-      new window.TegakiDrawing.ToolManager(this.eventBus) : null;
-    
-    // StrokeDataManager初期化
-    this.dataManager = window.TegakiDrawing?.StrokeDataManager ? 
-      new window.TegakiDrawing.StrokeDataManager(this.eventBus) : null;
-
-    // === 既存サブモジュール初期化 ===
-    
+    // Phase 1: ToolManager・StrokeDataManager初期化
     if (window.TegakiDrawing) {
+      // ToolManager（ツール管理）
+      this.toolManager = window.TegakiDrawing.ToolManager ? 
+        new window.TegakiDrawing.ToolManager(this.eventBus) : null;
+      
+      // StrokeDataManager（データ管理）
+      this.dataManager = window.TegakiDrawing.StrokeDataManager ? 
+        new window.TegakiDrawing.StrokeDataManager(this.eventBus) : null;
+
+      // 既存サブモジュール
       this.settings = window.TegakiDrawing.BrushSettings ? 
         new window.TegakiDrawing.BrushSettings(this.config, this.eventBus) : null;
       this.recorder = window.TegakiDrawing.StrokeRecorder ? 
         new window.TegakiDrawing.StrokeRecorder() : null;
       this.renderer = window.TegakiDrawing.StrokeRenderer ? 
-        new window.TegakiDrawing.StrokeRenderer(config) : null;
+        new window.TegakiDrawing.StrokeRenderer(this.config) : null;
       this.pressureHandler = window.TegakiDrawing.PressureHandler ? 
         new window.TegakiDrawing.PressureHandler() : null;
       this.transformer = window.TegakiDrawing.StrokeTransformer ? 
-        new window.TegakiDrawing.StrokeTransformer(config) : null;
+        new window.TegakiDrawing.StrokeTransformer(this.config) : null;
     }
 
     // フォールバック: 基本設定
-    this.brushSize = config?.pen?.size || 8;
-    this.brushColor = config?.pen?.color || 0x000000;
-    this.brushOpacity = config?.pen?.opacity || 1.0;
+    this.brushSize = this.config?.pen?.size || 8;
+    this.brushColor = this.config?.pen?.color || 0x000000;
+    this.brushOpacity = this.config?.pen?.opacity || 1.0;
 
     // 描画状態
     this.isDrawing = false;
-    this.currentTool = 'pen'; // Phase 2でtoolManager経由に移行
+    this.currentTool = 'pen';
     this.currentPath = null;
     this.lastPoint = null;
     
-    // EventBus購読の初期化
+    // EventBus購読
     this.subscribeToSettings();
-    this.subscribeToStrokeEvents(); // Phase 1追加
+    this.subscribeToStrokeData();
     
-    // Phase 2-3: 初期設定をサブモジュールに同期
+    // 初期設定同期
     this.applySyncSettings();
   }
 
   /**
-   * Phase 1: StrokeDataManagerイベント購読
-   * ストローク追加・削除時の再描画トリガー
+   * Phase 1: StrokeDataManager イベント購読
    */
-  subscribeToStrokeEvents() {
-    if (!this.eventBus) return;
+  subscribeToStrokeData() {
+    if (!this.eventBus || !this.dataManager) return;
     
-    // ストローク追加時の処理（将来の再描画用）
     this.eventBus.on('stroke:added', ({ id, strokeData }) => {
-      // Phase 5で実装: RenderPipelineによる再描画
+      this.requestRender();
     });
     
-    // ストローク削除時の処理
     this.eventBus.on('stroke:removed', ({ id }) => {
-      // Phase 5で実装: RenderPipelineによる再描画
+      this.requestRender();
     });
     
-    // ストローク更新時の処理
     this.eventBus.on('stroke:updated', ({ id, strokeData }) => {
-      // Phase 5で実装: RenderPipelineによる再描画
+      this.requestRender();
     });
   }
 
   /**
+   * Phase 1: 再描画リクエスト
+   */
+  requestRender() {
+    if (this.layerManager) {
+      const activeLayer = this.layerManager.getActiveLayer();
+      if (activeLayer) {
+        this.layerManager.requestThumbnailUpdate(this.layerManager.activeLayerIndex);
+      }
+    }
+  }
+
+  /**
    * Phase 2-3: 初期設定の同期
-   * BrushSettingsからRecorder/Transformerへ設定を適用
    */
   applySyncSettings() {
     if (!this.settings) return;
     
     const currentSettings = this.settings.getCurrentSettings();
     
-    // StrokeRecorderへのSimplify設定適用
     if (this.recorder && typeof this.recorder.setSimplifySettings === 'function') {
       this.recorder.setSimplifySettings(
         currentSettings.simplifyTolerance,
@@ -115,7 +109,6 @@ class DrawingEngine {
       this.recorder.setSimplifyEnabled(currentSettings.simplifyEnabled);
     }
     
-    // StrokeTransformerへのSpline設定適用
     if (this.transformer && typeof this.transformer.setSmoothingMode === 'function') {
       this.transformer.setSmoothingMode(currentSettings.smoothingMode);
     }
@@ -126,20 +119,16 @@ class DrawingEngine {
       );
     }
     
-    // PressureHandlerへの筆圧補正適用
     if (this.pressureHandler && typeof this.pressureHandler.setPressureCorrection === 'function') {
       this.pressureHandler.setPressureCorrection(currentSettings.pressureCorrection);
     }
   }
 
   /**
-   * Phase 1-3: EventBus購読の設定（拡張版）
-   * 設定変更イベントを購読し、各サブモジュールに即座に適用
+   * Phase 1-3: EventBus購読の設定
    */
   subscribeToSettings() {
     if (!this.eventBus) return;
-    
-    // === Phase 1: 筆圧・線補正 ===
     
     this.eventBus.on('settings:pressure-correction', ({ value }) => {
       if (this.settings) {
@@ -162,8 +151,6 @@ class DrawingEngine {
       }
     });
     
-    // === Phase 2: Simplify.js設定 ===
-    
     this.eventBus.on('settings:simplify-tolerance', ({ value }) => {
       if (this.settings) {
         this.settings.setSimplifyTolerance(value);
@@ -181,8 +168,6 @@ class DrawingEngine {
         this.recorder.setSimplifyEnabled(enabled);
       }
     });
-    
-    // === Phase 3: Catmull-Rom Spline設定 ===
     
     this.eventBus.on('settings:smoothing-mode', ({ mode }) => {
       if (this.settings) {
@@ -215,28 +200,28 @@ class DrawingEngine {
   }
 
   /**
+   * BrushSettings設定（互換性のため）
+   */
+  setBrushSettings(brushSettings) {
+    if (brushSettings) {
+      this.settings = brushSettings;
+    }
+  }
+
+  /**
+   * BrushSettings取得（互換性のため）
+   */
+  getBrushSettings() {
+    return this.settings;
+  }
+
+  /**
    * 描画開始
-   * Phase 1: 座標変換後、既存処理を維持
-   * Phase 2: ToolManager経由に移行予定
-   * 
-   * @param {number} screenX
-   * @param {number} screenY
-   * @param {number|PointerEvent} pressureOrEvent
    */
   startDrawing(screenX, screenY, pressureOrEvent) {
-    // 座標変換: Screen → Canvas (World)
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
     const pressure = this.pressureHandler.getPressure(pressureOrEvent);
 
-    // Phase 2では以下のようにツールに委譲:
-    // const tool = this.toolManager.getCurrentTool();
-    // if (tool) {
-    //   tool.onPointerDown(canvasPoint, pressure);
-    //   return;
-    // }
-
-    // === 既存のペン描画処理（Phase 2まで維持） ===
-    
     const currentScale = this.cameraSystem.camera.scale || 1;
 
     const strokeOptions = this.settings.getStrokeOptions();
@@ -254,7 +239,6 @@ class DrawingEngine {
 
     this.currentPath.originalSize = this.settings.getBrushSize();
     this.currentPath.scaleAtDrawTime = currentScale;
-
     this.currentPath.graphics = new PIXI.Graphics();
     
     this.isDrawing = true;
@@ -262,28 +246,13 @@ class DrawingEngine {
 
   /**
    * 描画継続
-   * Phase 1: 座標変換後、既存処理を維持
-   * 
-   * @param {number} screenX
-   * @param {number} screenY
-   * @param {number|PointerEvent} pressureOrEvent
    */
   continueDrawing(screenX, screenY, pressureOrEvent) {
     if (!this.isDrawing || !this.currentPath) return;
 
-    // 座標変換: Screen → Canvas (World)
     const canvasPoint = this.cameraSystem.screenToCanvas(screenX, screenY);
     const pressure = this.pressureHandler.getPressure(pressureOrEvent);
 
-    // Phase 2では以下のようにツールに委譲:
-    // const tool = this.toolManager.getCurrentTool();
-    // if (tool) {
-    //   tool.onPointerMove(canvasPoint, pressure);
-    //   return;
-    // }
-
-    // === 既存のペン描画処理（Phase 2まで維持） ===
-    
     this.recorder.addPoint(this.currentPath, {
       x: canvasPoint.x,
       y: canvasPoint.y,
@@ -305,24 +274,10 @@ class DrawingEngine {
 
   /**
    * 描画終了
-   * Phase 1: 既存処理を維持しつつ、DataManagerへの追加を準備
-   * 
    */
   stopDrawing() {
     if (!this.isDrawing || !this.currentPath) return;
 
-    // Phase 2では以下のようにツールに委譲:
-    // const tool = this.toolManager.getCurrentTool();
-    // if (tool) {
-    //   const canvasPoint = { x: 0, y: 0 }; // 最終位置
-    //   tool.onPointerUp(canvasPoint, 0);
-    //   this.isDrawing = false;
-    //   return;
-    // }
-
-    // === 既存のペン描画処理（Phase 2まで維持） ===
-    
-    // 正しい処理順序: Spline → Simplify
     if (this.transformer && this.currentPath.points.length > 2) {
       this.currentPath.points = this.transformer.preprocessStroke(this.currentPath.points);
     }
@@ -341,16 +296,18 @@ class DrawingEngine {
       this.currentPath.graphics
     );
 
-    // Phase 1: DataManagerへの追加（将来実装）
-    // if (this.currentPath && this.currentPath.points.length > 0) {
-    //   this.dataManager.addStroke({
-    //     points: this.currentPath.points,
-    //     color: this.currentPath.color,
-    //     size: this.currentPath.originalSize,
-    //     opacity: this.currentPath.opacity,
-    //     tool: this.currentTool
-    //   });
-    // }
+    // Phase 1: StrokeDataManager へデータ追加
+    if (this.dataManager && this.currentPath.points.length > 0) {
+      const strokeData = {
+        points: [...this.currentPath.points],
+        color: this.currentPath.color,
+        size: this.currentPath.size,
+        opacity: this.currentPath.opacity,
+        tool: this.currentPath.tool,
+        strokeOptions: { ...this.currentPath.strokeOptions }
+      };
+      this.dataManager.addStroke(strokeData);
+    }
 
     // History統合
     if (this.currentPath && this.currentPath.points.length > 0) {
@@ -394,17 +351,12 @@ class DrawingEngine {
     }
 
     this.pressureHandler.reset();
-
     this.isDrawing = false;
     this.currentPath = null;
   }
 
   /**
    * ツール設定
-   * Phase 1: 既存処理を維持
-   * Phase 2: toolManager.switchTool() に移行予定
-   * 
-   * @param {string} tool - 'pen' | 'eraser'
    */
   setTool(tool) {
     if (tool === 'pen' || tool === 'eraser') {
@@ -416,71 +368,42 @@ class DrawingEngine {
     }
   }
 
-  /**
-   * ブラシサイズ設定
-   * @param {number} size
-   */
   setBrushSize(size) {
-    if (this.settings) {
-      this.settings.setBrushSize(size);
-    }
+    if (this.settings) this.settings.setBrushSize(size);
   }
 
-  /**
-   * ブラシ色設定
-   * @param {number} color
-   */
   setBrushColor(color) {
-    if (this.settings) {
-      this.settings.setBrushColor(color);
-    }
+    if (this.settings) this.settings.setBrushColor(color);
   }
 
-  /**
-   * ブラシ不透明度設定
-   * @param {number} opacity
-   */
   setBrushOpacity(opacity) {
-    if (this.settings) {
-      this.settings.setBrushOpacity(opacity);
-    }
+    if (this.settings) this.settings.setBrushOpacity(opacity);
   }
 
-  /**
-   * 現在のツール取得
-   * Phase 2: toolManager.getCurrentToolName() に移行予定
-   * 
-   * @returns {string}
-   */
   getCurrentTool() {
     return this.currentTool;
   }
 
-  /**
-   * 描画中かチェック
-   * @returns {boolean}
-   */
   getIsDrawing() {
     return this.isDrawing;
   }
   
   /**
-   * デバッグ情報取得
-   * Phase 1: toolManager, dataManager 追加
+   * Phase 1: デバッグ情報取得
    */
   getDebugInfo() {
     return {
-      toolManager: {
-        currentTool: this.toolManager?.getCurrentToolName(),
-        registeredTools: this.toolManager?.getRegisteredToolNames()
-      },
-      dataManager: {
-        strokeCount: this.dataManager?.getStrokeCount()
-      },
       settings: this.settings?.getCurrentSettings(),
       recorder: this.recorder?.getDebugInfo(),
       transformer: this.transformer?.getDebugInfo(),
-      pressureHandler: this.pressureHandler?.getDebugInfo()
+      pressureHandler: this.pressureHandler?.getDebugInfo(),
+      toolManager: this.toolManager ? {
+        currentTool: this.toolManager.currentTool,
+        registeredTools: Array.from(this.toolManager.toolRegistry?.keys() || [])
+      } : null,
+      dataManager: this.dataManager ? {
+        strokeCount: this.dataManager.strokes?.size || 0
+      } : null
     };
   }
 }
