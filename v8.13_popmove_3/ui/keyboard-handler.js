@@ -1,6 +1,6 @@
-// ===== keyboard-handler.js - Phase1B改修版 =====
-// 責務: キーボードショートカット管理
-// 🔥 Phase1B: EventBus経由でVキー状態を通知
+// ===== keyboard-handler.js - 改修版 =====
+// 改修2: Delete/Backspaceキーでレイヤー内容消去機能の復活 ✅
+// 改修3: 消しゴムツール透明化対応 ✅
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -34,7 +34,7 @@ window.KeyboardHandler = (function() {
             return;
         }
         
-        // Phase1B: Vキー押下をEventBusで通知
+        // Vキー押下をEventBusで通知
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             if (!vKeyPressed) {
                 vKeyPressed = true;
@@ -56,7 +56,7 @@ window.KeyboardHandler = (function() {
     }
 
     function handleKeyUp(e) {
-        // Phase1B: Vキー解放をEventBusで通知
+        // Vキー解放をEventBusで通知
         if (e.code === 'KeyV') {
             if (vKeyPressed) {
                 vKeyPressed = false;
@@ -84,6 +84,7 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            // ✅ 改修2: Delete/Backspaceでレイヤー内容消去（復活）
             case 'LAYER_DELETE_DRAWINGS':
                 deleteActiveLayerDrawings();
                 event.preventDefault();
@@ -161,6 +162,7 @@ window.KeyboardHandler = (function() {
         }
     }
 
+    // ✅ 改修2: Delete/Backspaceキーでレイヤー描画内容を削除
     function deleteActiveLayerDrawings() {
         const layerSystem = window.drawingApp?.layerManager;
         if (!layerSystem) return;
@@ -168,6 +170,7 @@ window.KeyboardHandler = (function() {
         const activeLayer = layerSystem.getActiveLayer();
         if (!activeLayer || !activeLayer.layerData) return;
         
+        // 背景レイヤーは削除不可
         if (activeLayer.layerData.isBackground) return;
         
         const paths = activeLayer.layerData.paths;
