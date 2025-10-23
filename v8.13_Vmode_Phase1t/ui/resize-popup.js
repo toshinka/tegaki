@@ -1,6 +1,6 @@
-// ===== ui/resize-popup.js - Phase1修正版 =====
+// ===== ui/resize-popup.js - 初期化タイミング修正版 =====
 // 責務: キャンバスリサイズUI表示、ユーザー入力受付、History統合
-// 改修: イベントリスナー管理の統一（resize-slider.jsパターン適用）
+// 🔥 修正: show()時にDOM完全レンダリング後に初期化を実行
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -499,18 +499,31 @@ window.TegakiUI.ResizePopup = class {
         
         if (!this.popup) return;
         
-        // ✅ Phase4: 表示前に初期化を確実に完了
-        if (!this.initialized) {
-            this.initialize();
-        }
-        
-        const config = window.TEGAKI_CONFIG;
-        this.currentWidth = config?.canvas?.width || 344;
-        this.currentHeight = config?.canvas?.height || 135;
-        this._updateUI();
-        
+        // 🔥 修正: まずポップアップを表示してDOMをレンダリング
         this.popup.classList.add('show');
         this.isVisible = true;
+        
+        // 🔥 修正: requestAnimationFrameでDOM完全レンダリング後に初期化
+        requestAnimationFrame(() => {
+            // 🔥 追加: 毎回要素を再キャッシュして初期化状態を確認
+            const config = window.TEGAKI_CONFIG;
+            this.currentWidth = config?.canvas?.width || 344;
+            this.currentHeight = config?.canvas?.height || 135;
+            
+            if (!this.initialized) {
+                this.initialize();
+            } else {
+                // 既に初期化済みでも、イベントリスナーが消えている可能性があるため再確認
+                if (!this.mouseMoveHandler) {
+                    // イベントリスナーが消失している場合は再初期化
+                    this.initialized = false;
+                    this.initialize();
+                } else {
+                    // 正常な場合は値のみ更新
+                    this._updateUI();
+                }
+            }
+        });
     }
     
     hide() {
@@ -553,6 +566,6 @@ window.TegakiUI.ResizePopup = class {
 
 window.ResizePopup = window.TegakiUI.ResizePopup;
 
-console.log('✅ resize-popup.js (Phase1修正版) loaded');
-console.log('   - イベントリスナー参照を正しく保持');
-console.log('   - destroy()でメモリリーク防止');
+console.log('✅ resize-popup.js (初期化タイミング修正版) loaded');
+console.log('   - requestAnimationFrame でDOM完全レンダリング後に初期化');
+console.log('   - show()時の初回でもスライダーが正しく動作');
