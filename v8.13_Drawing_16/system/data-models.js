@@ -1,11 +1,8 @@
-// ===== system/data-models.js - Step 1: 安全なマスクプロパティ追加 =====
-// 既存機能を一切変更せず、マスク関連プロパティとメソッドのみ追加
-// hasMask()エラーを解消し、後方互換性を完全維持
+// ===== system/data-models.js - hasMask実装版 =====
 
 (function() {
     'use strict';
 
-    // ========== Layer データモデル ==========
     const LAYER_SCHEMA = {
         id: { type: 'string', required: true, editable: false },
         name: { type: 'string', required: true, editable: true },
@@ -19,7 +16,6 @@
 
     class LayerModel {
         constructor(data = {}) {
-            // 既存のプロパティ（変更なし）
             this.id = data.id || `layer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
             this.name = data.name || 'レイヤー';
             this.visible = data.visible !== undefined ? data.visible : true;
@@ -30,7 +26,7 @@
             this.locked = data.locked || false;
             this.paths = data.paths || [];
             
-            // ===== Step 1: マスク関連プロパティ追加（初期値null） =====
+            // ===== マスク関連プロパティ =====
             this.maskTexture = null;
             this.maskSprite = null;
             this._maskInitialized = false;
@@ -41,8 +37,8 @@
         }
 
         /**
-         * ===== Step 1: マスク存在チェック（エラー回避） =====
-         * @returns {boolean} マスクが初期化済みか
+         * マスク存在チェック
+         * @returns {boolean}
          */
         hasMask() {
             return this._maskInitialized && 
@@ -51,17 +47,16 @@
         }
 
         /**
-         * ===== Step 1: マスク初期化（スタブ） =====
-         * Phase 2で実装予定
-         * @returns {boolean} 常にfalse（未実装）
+         * マスク初期化（Phase 2で実装予定）
+         * @returns {boolean}
          */
         initializeMask(width, height, renderer) {
-            // 今は何もしない（Phase 2で実装）
+            // Phase 2で実装
             return false;
         }
 
         /**
-         * ===== Step 1: マスク破棄 =====
+         * マスク破棄
          */
         destroyMask() {
             if (this.maskSprite) {
@@ -80,8 +75,6 @@
 
             this._maskInitialized = false;
         }
-
-        // ===== 既存メソッド（変更なし） =====
 
         toJSON() {
             return {
@@ -105,7 +98,6 @@
         }
     }
 
-    // ========== CUT データモデル ==========
     const CUT_SCHEMA = {
         id: { type: 'string', required: true, editable: false },
         name: { type: 'string', required: true, editable: true },
@@ -148,7 +140,6 @@
         }
     }
 
-    // ========== Stroke データモデル ==========
     const STROKE_SCHEMA = {
         points: { type: 'array', required: true, editable: false },
         isSingleDot: { type: 'boolean', default: false, editable: false },
@@ -248,7 +239,6 @@
         }
     }
 
-    // ===== グローバル公開 =====
     window.TegakiDataModels = {
         LayerModel,
         CutModel,
