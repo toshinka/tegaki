@@ -1,18 +1,21 @@
+// ===== system/drawing/drawing-engine.js - Phase 4: マスクベース消しゴム統合版 =====
+// 透明ペン方式・ベクター削除方式を完全削除
+// マスクベース消しゴムに置き換え
+// 消しゴム使用時は layerData.maskTexture に黒を描画するのみ
+
 /**
- * DrawingEngine - ペン描画統合制御クラス (透明ペン完全対応版)
+ * DrawingEngine - ペン描画統合制御クラス (マスクベース消しゴム版)
  * 
- * 改修:
- * - ツール切り替え時にstrokeRendererのsetTool()を確実に呼び出し
- * - EventBus 'tool:select' を購読してツール状態を同期
- * - リアルタイム消去処理を最適化
- * - 消しゴムプレビュー表示を改善
+ * Phase 4 改修:
+ * - applyEraserEffect() 系メソッド全削除
+ * - リアルタイム消去処理削除
+ * - マスクベース消しゴムに統一
  * 
  * API:
  * - startDrawing(x, y, event)
  * - continueDrawing(x, y, event)
  * - stopDrawing()
- * - applyRealtimeEraserEffect(eraserPoints)
- * - updateEraserPreview(worldPos)
+ * - setTool(toolName)
  */
 
 class DrawingEngine {
@@ -27,6 +30,9 @@ class DrawingEngine {
         this.pressureHandler = new PressureHandler();
         this.strokeRecorder = new StrokeRecorder(this.pressureHandler, this.cameraSystem);
         this.strokeRenderer = new StrokeRenderer(app);
+        
+        // ===== Phase 4: 消しゴムマスクレンダラー初期化 =====
+        this.eraserRenderer = new window.EraserMaskRenderer(app);
 
         // BrushSettings参照を保持
         this.brushSettings = null;
@@ -38,16 +44,13 @@ class DrawingEngine {
         this.currentSettings = null;
         this.currentTool = 'pen';
         
-        // 消しゴムプレビュー用Graphics
+        // ===== Phase 4: 消しゴムプレビュー用 Graphics =====
         this.eraserPreviewGraphics = null;
         
-        // リアルタイム消去用の処理済みポイントインデックス
-        this.lastProcessedPointIndex = 0;
-        
-        // リアルタイムブラシ設定同期
+        // BrushSettings同期
         this._syncBrushSettingsToRuntime();
         
-        // ツール切り替えイベントを購読
+        // ツール切り替えイベント購読
         this._syncToolSelection();
     }
 
@@ -111,7 +114,6 @@ class DrawingEngine {
         }
 
         this.isDrawing = true;
-        this.lastProcessedPointIndex = 0; // リセット
 
         // EventBus通知
         if (this.eventBus) {
@@ -125,7 +127,7 @@ class DrawingEngine {
         // 初回プレビュー
         this.updatePreview();
         
-        // 消しゴムモード: プレビュー円を表示
+        // ===== Phase 4: 消しゴムモード時プレビュー円表示 =====
         if (this.currentTool === 'eraser') {
             const points = this.strokeRecorder.getCurrentPoints();
             if (points.length > 0) {
@@ -135,7 +137,7 @@ class DrawingEngine {
     }
 
     /**
-     * 描画継続（PointerEvent対応 + リアルタイム消去対応）
+     * 描画継続（PointerEvent対応）
      */
     continueDrawing(x, y, event) {
         if (!this.isDrawing) return;
@@ -149,27 +151,17 @@ class DrawingEngine {
             this.strokeRecorder.addPoint(x, y, pressure);
         }
 
-        // 描画途中にブラシ設定が変わる可能性があるため、都度更新
+        // ブラシ設定更新
         this.currentSettings = this.getBrushSettings();
 
         // プレビュー更新
         this.updatePreview();
 
-        // 消しゴムモード: リアルタイム消去 + プレビュー更新
+        // ===== Phase 4: 消しゴムモード時プレビュー円更新 =====
         if (this.currentTool === 'eraser') {
             const currentPoints = this.strokeRecorder.getCurrentPoints();
-            
-            // プレビュー円を更新
             if (currentPoints.length > 0) {
                 this.updateEraserPreview(currentPoints[currentPoints.length - 1]);
-            }
-            
-            // リアルタイム消去（新しいポイントのみ処理）
-            if (currentPoints.length > this.lastProcessedPointIndex + 1) {
-                const newPoints = currentPoints.slice(this.lastProcessedPointIndex);
-                console.log('🧹 Eraser: processing', newPoints.length, 'new points');
-                this.applyRealtimeEraserEffect(newPoints);
-                this.lastProcessedPointIndex = currentPoints.length - 1;
             }
         }
 
@@ -184,7 +176,7 @@ class DrawingEngine {
     }
 
     /**
-     * 描画終了（core-runtime互換API）
+     * ===== Phase 4: 描画終了（マスクベース消しゴム対応） =====
      */
     stopDrawing() {
         if (!this.isDrawing) return;
@@ -194,29 +186,81 @@ class DrawingEngine {
 
         // プレビュー削除
         this.clearPreview();
-        
-        // 消しゴムプレビュー削除
         this.clearEraserPreview();
 
-        // 現在のツール保存（strokeRenderer が参照できるように）
+        // 現在のツール保存
         const tool = this.currentTool;
 
-        // 消しゴムツール時: 最終消去処理（念のため残りを処理）
+        // ===== Phase 4: 消しゴムツール時はマスクに描画 =====
         if (tool === 'eraser' && this.currentLayer && strokeData.points.length > 0) {
-            // リアルタイム処理で残った部分があれば処理
-            const remainingPoints = strokeData.points.slice(this.lastProcessedPointIndex);
-            if (remainingPoints.length > 1) {
-                this.applyRealtimeEraserEffect(remainingPoints);
+            const activeLayer = this.currentLayer;
+            const layerData = activeLayer.layerData;
+            
+            // マスク存在チェック
+            if (layerData && layerData.hasMask()) {
+                const eraserRadius = this.currentSettings.size / 2;
+                
+                // マスク描画前のスナップショット取得
+                const maskSnapshotBefore = this.eraserRenderer.captureMaskSnapshot(layerData);
+                
+                // マスクに黒を描画（消去効果）
+                const success = this.eraserRenderer.renderEraserToMask(
+                    layerData,
+                    strokeData.points,
+                    eraserRadius
+                );
+                
+                if (success) {
+                    // マスク描画後のスナップショット取得
+                    const maskSnapshotAfter = this.eraserRenderer.captureMaskSnapshot(layerData);
+                    
+                    // History記録
+                    if (this.history && maskSnapshotBefore && maskSnapshotAfter) {
+                        const layerId = layerData.id;
+                        const entry = {
+                            name: 'Erase',
+                            do: async () => {
+                                await this.eraserRenderer.restoreMaskSnapshot(layerData, maskSnapshotAfter);
+                                if (this.eventBus) {
+                                    this.eventBus.emit('layer:modified', { layerId, tool: 'eraser' });
+                                }
+                            },
+                            undo: async () => {
+                                await this.eraserRenderer.restoreMaskSnapshot(layerData, maskSnapshotBefore);
+                                if (this.eventBus) {
+                                    this.eventBus.emit('layer:modified', { layerId, tool: 'eraser' });
+                                }
+                            },
+                            meta: {
+                                type: 'erase',
+                                layerId: layerId,
+                                tool: 'eraser'
+                            }
+                        };
+                        
+                        this.history.push(entry);
+                    }
+                    
+                    // レイヤー更新通知
+                    if (this.eventBus) {
+                        this.eventBus.emit('layer:modified', {
+                            layerId: layerData.id,
+                            tool: 'eraser'
+                        });
+                    }
+                    
+                    // サムネイル更新
+                    this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                }
             }
         } else {
-            // ペンツール時: 確定描画
+            // ===== ペンツール時: 確定描画 =====
             this.finalizeStroke(strokeData, tool);
         }
 
         this.isDrawing = false;
         this.currentLayer = null;
         this.currentSettings = null;
-        this.lastProcessedPointIndex = 0;
 
         // EventBus通知
         if (this.eventBus) {
@@ -257,12 +301,13 @@ class DrawingEngine {
     }
 
     /**
-     * 消しゴムプレビュー円を更新
+     * ===== Phase 4: 消しゴムプレビュー円を更新 =====
      * @param {Object} worldPos - ワールド座標 {x, y}
      */
     updateEraserPreview(worldPos) {
         if (!this.currentLayer) return;
         
+        // Graphics 初回作成
         if (!this.eraserPreviewGraphics) {
             this.eraserPreviewGraphics = new PIXI.Graphics();
             this.currentLayer.addChild(this.eraserPreviewGraphics);
@@ -270,13 +315,16 @@ class DrawingEngine {
         
         const radius = this.currentSettings.size / 2;
         
-        this.eraserPreviewGraphics.clear();
-        this.eraserPreviewGraphics.circle(worldPos.x, worldPos.y, radius);
-        this.eraserPreviewGraphics.stroke({ width: 1, color: 0xFF0000, alpha: 0.5 });
+        // EraserMaskRenderer でプレビュー描画
+        this.eraserRenderer.renderEraserPreview(
+            this.eraserPreviewGraphics,
+            worldPos,
+            radius
+        );
     }
     
     /**
-     * 消しゴムプレビュー削除
+     * ===== Phase 4: 消しゴムプレビュー削除 =====
      */
     clearEraserPreview() {
         if (this.eraserPreviewGraphics) {
@@ -302,13 +350,13 @@ class DrawingEngine {
         const originalTool = this.strokeRenderer.currentTool;
         this.strokeRenderer.setTool(activeTool);
 
-        // 高品質レンダリング（プレビュー同一計算式）
+        // 高品質レンダリング
         const strokeObject = this.strokeRenderer.renderFinalStroke(strokeData, this.currentSettings);
 
         // ツールを戻す
         this.strokeRenderer.setTool(originalTool);
 
-        // Graphics にストロークポイント情報を附属させる（消しゴムで参照可能に）
+        // Graphics にストロークポイント情報を附属させる
         strokeObject._strokePoints = strokeData.points;
         strokeObject._strokeOptions = {
             color: this.currentSettings.color,
@@ -332,7 +380,7 @@ class DrawingEngine {
         const layerId = targetLayer.layerData?.id || targetLayer.label;
 
         const addStrokeCommand = {
-            name: activeTool === 'eraser' ? 'Erase' : 'Add Stroke',
+            name: 'Add Stroke',
             do: () => {
                 if (targetLayer && targetLayer.addChild) {
                     targetLayer.addChild(strokeObject);
@@ -345,7 +393,7 @@ class DrawingEngine {
                 }
             },
             meta: {
-                type: activeTool === 'eraser' ? 'erase' : 'stroke',
+                type: 'stroke',
                 layerId: layerId,
                 strokeData: strokeModel
             }
@@ -363,166 +411,6 @@ class DrawingEngine {
                 tool: activeTool
             });
         }
-    }
-
-    /**
-     * リアルタイム消去効果を適用
-     * 新しい消しゴムポイントに対して即座に既存ストロークを削除・分割
-     * @param {Array} newEraserPoints - 新しい消しゴムポイント配列（最小2点）
-     */
-    applyRealtimeEraserEffect(newEraserPoints) {
-        if (!newEraserPoints || newEraserPoints.length < 2) return;
-        
-        const eraserRadius = this.currentSettings.size / 2;
-        const activeLayer = this.currentLayer;
-        if (!activeLayer) return;
-
-        const VectorOps = window.TegakiDrawing?.VectorOperations;
-        if (!VectorOps) return;
-
-        const allChildren = activeLayer.children || [];
-        const modifications = []; // { graphics, points, segments }
-
-        // 各描画オブジェクトに対して消去判定
-        for (let childIndex = 0; childIndex < allChildren.length; childIndex++) {
-            const graphics = allChildren[childIndex];
-
-            // Graphics オブジェクトのみを処理（プレビュー・背景除外）
-            if (!graphics || 
-                !graphics.geometry || 
-                graphics === this.currentPreview ||
-                graphics === this.eraserPreviewGraphics ||
-                graphics.label?.includes('background')) {
-                continue;
-            }
-
-            // Graphics から元のストロークポイント情報を取得
-            let sourcePoints = graphics._strokePoints;
-
-            // ない場合は layerData.paths から検索
-            if (!sourcePoints && activeLayer.layerData?.paths) {
-                for (const path of activeLayer.layerData.paths) {
-                    if (path.graphics === graphics && path.points) {
-                        sourcePoints = path.points;
-                        break;
-                    }
-                }
-            }
-
-            // ポイント配列がない場合スキップ
-            if (!sourcePoints || sourcePoints.length === 0) continue;
-
-            // 新しい消しゴムポイントで交差判定
-            let hasIntersection = false;
-            for (const eraserPoint of newEraserPoints) {
-                if (VectorOps.testCircleStrokeIntersection(
-                    eraserPoint,
-                    eraserRadius,
-                    sourcePoints
-                )) {
-                    hasIntersection = true;
-                    break;
-                }
-            }
-
-            if (hasIntersection) {
-                // 分割実行
-                const segments = this.splitPathByEraserTrail(
-                    sourcePoints,
-                    newEraserPoints,
-                    eraserRadius
-                );
-                // segments が空配列の場合は完全削除
-                modifications.push({ 
-                    graphics: graphics, 
-                    points: sourcePoints,
-                    segments: segments,
-                    childIndex: childIndex
-                });
-            }
-        }
-
-        // 変更を適用（履歴記録なし・即時反映のみ）
-        this.applyRealtimePathModifications(modifications);
-    }
-
-    /**
-     * リアルタイムパス変更の適用（履歴記録なし）
-     */
-    applyRealtimePathModifications(modifications) {
-        const activeLayer = this.currentLayer;
-        if (!activeLayer || modifications.length === 0) return;
-
-        // 元のパスを削除、分割後のパスを作成
-        for (const { graphics, points, segments } of modifications) {
-            // UIから削除
-            activeLayer.removeChild(graphics);
-            graphics.destroy({ children: true });
-
-            // 分割後のパスを追加
-            for (const segmentPoints of segments) {
-                if (segmentPoints.length < 2) continue;
-
-                // 新しいGraphicsを作成してレンダリング
-                const newGraphics = new PIXI.Graphics();
-
-                // 元のパスの属性を継承（Graphics に附属していれば）
-                const strokeOptions = graphics._strokeOptions || {
-                    color: 0x000000,
-                    alpha: 1.0,
-                    size: 5
-                };
-
-                // StrokeRenderer で描画
-                if (this.strokeRenderer) {
-                    this.strokeRenderer.renderFinalStroke(
-                        { points: segmentPoints, isSingleDot: false },
-                        strokeOptions,
-                        newGraphics
-                    );
-                }
-
-                // ポイント情報を Graphics に附属させる（後で参照可能に）
-                newGraphics._strokePoints = segmentPoints;
-                newGraphics._strokeOptions = strokeOptions;
-
-                activeLayer.addChild(newGraphics);
-            }
-        }
-
-        // サムネイル更新（頻繁な更新を避けるため遅延可能）
-        if (this.layerSystem) {
-            this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
-        }
-    }
-
-    /**
-     * 消しゴムの軌跡全体でパスを分割
-     */
-    splitPathByEraserTrail(sourcePoints, eraserPoints, eraserRadius) {
-        const VectorOps = window.TegakiDrawing?.VectorOperations;
-        if (!VectorOps) return [];
-
-        let remainingSegments = [sourcePoints];
-
-        // 消しゴムの各点で順次分割
-        for (const eraserPoint of eraserPoints) {
-            const newSegments = [];
-
-            for (const segment of remainingSegments) {
-                const splits = VectorOps.splitStrokeByCircle(
-                    segment,
-                    eraserPoint,
-                    eraserRadius,
-                    2 // 最小ポイント数
-                );
-                newSegments.push(...splits);
-            }
-
-            remainingSegments = newSegments.length > 0 ? newSegments : remainingSegments;
-        }
-
-        return remainingSegments;
     }
 
     /**
@@ -586,7 +474,6 @@ class DrawingEngine {
         this.isDrawing = false;
         this.currentLayer = null;
         this.currentSettings = null;
-        this.lastProcessedPointIndex = 0;
 
         if (this.eventBus) {
             this.eventBus.emit('stroke:cancel');
@@ -608,5 +495,3 @@ class DrawingEngine {
         this.clearEraserPreview();
     }
 }
-
-console.log('✅ drawing-engine.js (透明ペン完全対応版) loaded');
