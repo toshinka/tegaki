@@ -1,5 +1,5 @@
-// ===== system/layer-system.js - マスク対応版 =====
-// 元ファイル完全継承 + マスク関連プロパティ追加
+// ===== system/layer-system.js - マスク統合完全版 =====
+// 元ファイル全継承 + マスク初期化・破棄・適用処理追加
 
 (function() {
     'use strict';
@@ -67,6 +67,8 @@
             this._setupVKeyEvents();
             this._startThumbnailUpdateProcess();
             this.isInitialized = true;
+            
+            // ===== 初期レイヤーのマスク初期化を遅延（setApp()で実施） =====
         }
 
         _createCheckerPatternBackground(width, height) {
@@ -194,6 +196,25 @@
             }
         }
 
+        /**
+         * レイヤー内の全Graphicsにマスクを適用
+         * @private
+         */
+        _applyMaskToLayerGraphics(layer) {
+            if (!layer.layerData || !layer.layerData.maskSprite) return;
+            
+            for (const child of layer.children) {
+                if (child === layer.layerData.maskSprite || 
+                    child === layer.layerData.backgroundGraphics) {
+                    continue;
+                }
+                
+                if (child instanceof PIXI.Graphics) {
+                    child.mask = layer.layerData.maskSprite;
+                }
+            }
+        }
+
         addPathToActiveLayer(path) {
             if (!this.getActiveLayer()) return;
             const activeLayer = this.getActiveLayer();
@@ -207,6 +228,9 @@
             }
             this.rebuildPathGraphics(path);
             if (path.graphics) {
+                if (activeLayer.layerData && activeLayer.layerData.maskSprite) {
+                    path.graphics.mask = activeLayer.layerData.maskSprite;
+                }
                 activeLayer.addChild(path.graphics);
             }
             this.requestThumbnailUpdate(layerIndex);
@@ -396,7 +420,8 @@
             try {
                 const childrenToRemove = [];
                 for (let child of layer.children) {
-                    if (child !== layer.layerData.backgroundGraphics) {
+                    if (child !== layer.layerData.backgroundGraphics &&
+                        child !== layer.layerData.maskSprite) {
                         childrenToRemove.push(child);
                     }
                 }
@@ -415,6 +440,9 @@
                     try {
                         const rebuildSuccess = this.rebuildPathGraphics(path);
                         if (rebuildSuccess && path.graphics) {
+                            if (layer.layerData && layer.layerData.maskSprite) {
+                                path.graphics.mask = layer.layerData.maskSprite;
+                            }
                             layer.layerData.paths.push(path);
                             layer.addChild(path.graphics);
                             addedCount++;
@@ -775,6 +803,19 @@
             const layer = new PIXI.Container();
             layer.label = layerModel.id;
             layer.layerData = layerModel;
+            
+            // ===== マスク初期化 =====
+            if (this.app && this.app.renderer) {
+                const success = layerModel.initializeMask(
+                    this.config.canvas.width,
+                    this.config.canvas.height,
+                    this.app.renderer
+                );
+                if (success && layerModel.maskSprite) {
+                    layer.addChild(layerModel.maskSprite);
+                }
+            }
+            
             if (this.transform) {
                 this.transform.setTransform(layerModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
             }
@@ -796,6 +837,10 @@
                         this.updateStatusDisplay();
                     },
                     undo: () => {
+                        // ===== Undo時のマスク破棄 =====
+                        if (layer.layerData) {
+                            layer.layerData.destroyMask();
+                        }
                         this.currentCutContainer.removeChild(layer);
                         const layers = this.getLayers();
                         if (this.activeLayerIndex >= layers.length) {
@@ -1059,6 +1104,26 @@
                     this.initTransform();
                 }
             }
+            
+            // ===== 全レイヤーのマスク初期化（背景含む） =====
+            if (app && app.renderer) {
+                const layers = this.getLayers();
+                for (const layer of layers) {
+                    if (layer.layerData && !layer.layerData.hasMask()) {
+                        const success = layer.layerData.initializeMask(
+                            this.config.canvas.width,
+                            this.config.canvas.height,
+                            app.renderer
+                        );
+                        if (success && layer.layerData.maskSprite) {
+                            // マスクスプライトを最初の子として追加
+                            layer.addChildAt(layer.layerData.maskSprite, 0);
+                            // 既存Graphicsにマスク適用
+                            this._applyMaskToLayerGraphics(layer);
+                        }
+                    }
+                }
+            }
         }
 
         setAnimationSystem(animationSystem) {
@@ -1084,6 +1149,10 @@
                     const entry = {
                         name: 'layer-delete',
                         do: () => {
+                            // ===== マスク破棄 =====
+                            if (layer.layerData) {
+                                layer.layerData.destroyMask();
+                            }
                             this.currentCutContainer.removeChild(layer);
                             if (layerId && this.transform) {
                                 this.transform.deleteTransform(layerId);
@@ -1101,6 +1170,18 @@
                             }
                         },
                         undo: () => {
+                            // ===== Undo時のマスク再初期化 =====
+                            if (layer.layerData && this.app && this.app.renderer) {
+                                layer.layerData.initializeMask(
+                                    this.config.canvas.width,
+                                    this.config.canvas.height,
+                                    this.app.renderer
+                                );
+                                if (layer.layerData.maskSprite) {
+                                    layer.addChildAt(layer.layerData.maskSprite, 0);
+                                    this._applyMaskToLayerGraphics(layer);
+                                }
+                            }
                             this.currentCutContainer.addChildAt(layer, layerIndex);
                             this.activeLayerIndex = previousActiveIndex;
                             this.updateLayerPanelUI();
@@ -1110,6 +1191,10 @@
                     };
                     window.History.push(entry);
                 } else {
+                    // ===== マスク破棄 =====
+                    if (layer.layerData) {
+                        layer.layerData.destroyMask();
+                    }
                     this.currentCutContainer.removeChild(layer);
                     if (layerId && this.transform) {
                         this.transform.deleteTransform(layerId);
