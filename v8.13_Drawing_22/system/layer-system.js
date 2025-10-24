@@ -1,5 +1,14 @@
-// ===== system/layer-system.js - マスク統合完全版 =====
-// 元ファイル全継承 + マスク初期化・破棄・適用処理追加
+// ============================================================================
+// system/layer-system.js - Phase 1 完全版（元ファイル全継承+マスク統合）
+// ============================================================================
+// 改修内容:
+// 1. setApp()で全レイヤーのマスク初期化を確実に実行
+// 2. createLayer()でマスク初期化を確実に実行
+// 3. deleteLayer()でマスク破棄とUndo/Redo時の再初期化を確実に実行
+// 4. addPathToActiveLayer()で新規パスへのマスク適用
+// 5. _applyMaskToLayerGraphics()で全Graphicsにマスク適用
+// 6. rebuildPathGraphics()のnullアクセス対策強化（Redo時のエラー修正）
+// ============================================================================
 
 (function() {
     'use strict';
@@ -67,8 +76,6 @@
             this._setupVKeyEvents();
             this._startThumbnailUpdateProcess();
             this.isInitialized = true;
-            
-            // ===== 初期レイヤーのマスク初期化を遅延（setApp()で実施） =====
         }
 
         _createCheckerPatternBackground(width, height) {
@@ -151,20 +158,37 @@
             return layers.indexOf(layer);
         }
 
+        /**
+         * パス Graphics 再構築（nullアクセス対策強化）
+         * Redo時の "Cannot read properties of null (reading 'uid')" エラー修正
+         */
         rebuildPathGraphics(path) {
             try {
+                // 既存graphicsの安全な破棄
                 if (path.graphics) {
                     try {
-                        if (path.graphics.destroy && typeof path.graphics.destroy === 'function') {
+                        // 親から削除
+                        if (path.graphics.parent) {
+                            path.graphics.parent.removeChild(path.graphics);
+                        }
+                        // destroy前にnullチェック
+                        if (path.graphics && path.graphics.destroy && typeof path.graphics.destroy === 'function') {
                             path.graphics.destroy({ children: true, texture: false, baseTexture: false });
                         }
-                    } catch (destroyError) {}
+                    } catch (destroyError) {
+                        // destroy失敗は無視
+                    }
                     path.graphics = null;
                 }
+                
+                // 新規Graphics作成
                 path.graphics = new PIXI.Graphics();
+                
                 if (!path.points || !Array.isArray(path.points) || path.points.length === 0) {
                     return true;
                 }
+                
+                // perfect-freehandでストローク生成
                 if (path.strokeOptions && typeof getStroke !== 'undefined') {
                     try {
                         const renderSize = path.size;
@@ -180,8 +204,12 @@
                             path.graphics.fill({ color: path.color || 0x000000, alpha: path.opacity || 1.0 });
                             return true;
                         }
-                    } catch (pfError) {}
+                    } catch (pfError) {
+                        // perfect-freehand失敗時はフォールバック
+                    }
                 }
+                
+                // フォールバック: 単純な円描画
                 for (let point of path.points) {
                     if (typeof point.x === 'number' && typeof point.y === 'number' &&
                         isFinite(point.x) && isFinite(point.y)) {
@@ -197,13 +225,14 @@
         }
 
         /**
-         * レイヤー内の全Graphicsにマスクを適用
+         * Phase 1: レイヤー内の全Graphicsにマスクを適用
          * @private
          */
         _applyMaskToLayerGraphics(layer) {
             if (!layer.layerData || !layer.layerData.maskSprite) return;
             
             for (const child of layer.children) {
+                // マスクスプライト自身と背景は除外
                 if (child === layer.layerData.maskSprite || 
                     child === layer.layerData.backgroundGraphics) {
                     continue;
@@ -215,6 +244,9 @@
             }
         }
 
+        /**
+         * Phase 1: 新規パス追加時のマスク適用
+         */
         addPathToActiveLayer(path) {
             if (!this.getActiveLayer()) return;
             const activeLayer = this.getActiveLayer();
@@ -228,7 +260,11 @@
             }
             this.rebuildPathGraphics(path);
             if (path.graphics) {
-                if (activeLayer.layerData && activeLayer.layerData.maskSprite) {
+                // Phase 1: マスク適用
+                if (activeLayer.layerData && 
+                    typeof activeLayer.layerData.hasMask === 'function' &&
+                    activeLayer.layerData.hasMask() &&
+                    activeLayer.layerData.maskSprite) {
                     path.graphics.mask = activeLayer.layerData.maskSprite;
                 }
                 activeLayer.addChild(path.graphics);
@@ -428,7 +464,7 @@
                 childrenToRemove.forEach(child => {
                     try {
                         layer.removeChild(child);
-                        if (child.destroy && typeof child.destroy === 'function') {
+                        if (child && child.destroy && typeof child.destroy === 'function') {
                             child.destroy({ children: true, texture: false, baseTexture: false });
                         }
                     } catch (removeError) {}
@@ -440,7 +476,11 @@
                     try {
                         const rebuildSuccess = this.rebuildPathGraphics(path);
                         if (rebuildSuccess && path.graphics) {
-                            if (layer.layerData && layer.layerData.maskSprite) {
+                            // Phase 1: マスク適用
+                            if (layer.layerData &&
+                                typeof layer.layerData.hasMask === 'function' &&
+                                layer.layerData.hasMask() &&
+                                layer.layerData.maskSprite) {
                                 path.graphics.mask = layer.layerData.maskSprite;
                             }
                             layer.layerData.paths.push(path);
@@ -794,6 +834,9 @@
             }
         }
 
+        /**
+         * Phase 1: レイヤー作成（マスク初期化統合）
+         */
         createLayer(name, isBackground = false) {
             if (!this.currentCutContainer) return null;
             const layerModel = new window.TegakiDataModels.LayerModel({
@@ -804,8 +847,8 @@
             layer.label = layerModel.id;
             layer.layerData = layerModel;
             
-            // ===== マスク初期化 =====
-            if (this.app && this.app.renderer) {
+            // Phase 1: マスク初期化
+            if (this.app && this.app.renderer && typeof layerModel.initializeMask === 'function') {
                 const success = layerModel.initializeMask(
                     this.config.canvas.width,
                     this.config.canvas.height,
@@ -837,8 +880,8 @@
                         this.updateStatusDisplay();
                     },
                     undo: () => {
-                        // ===== Undo時のマスク破棄 =====
-                        if (layer.layerData) {
+                        // Phase 1: Undo時のマスク破棄
+                        if (layer.layerData && typeof layer.layerData.destroyMask === 'function') {
                             layer.layerData.destroyMask();
                         }
                         this.currentCutContainer.removeChild(layer);
@@ -1097,6 +1140,9 @@
             }
         }
 
+        /**
+         * Phase 1: app設定時に全レイヤーのマスク初期化
+         */
         setApp(app) {
             this.app = app;
             if (this.transform && !this.transform.app) {
@@ -1105,11 +1151,11 @@
                 }
             }
             
-            // ===== 全レイヤーのマスク初期化（背景含む） =====
+            // Phase 1: 全レイヤーのマスク初期化（背景含む）
             if (app && app.renderer) {
                 const layers = this.getLayers();
                 for (const layer of layers) {
-                    if (layer.layerData && !layer.layerData.hasMask()) {
+                    if (layer.layerData && typeof layer.layerData.hasMask === 'function' && !layer.layerData.hasMask()) {
                         const success = layer.layerData.initializeMask(
                             this.config.canvas.width,
                             this.config.canvas.height,
@@ -1133,6 +1179,9 @@
             }
         }
 
+        /**
+         * Phase 1: レイヤー削除（マスク破棄とUndo/Redo統合）
+         */
         deleteLayer(layerIndex) {
             const layers = this.getLayers();
             if (layerIndex < 0 || layerIndex >= layers.length) {
@@ -1149,8 +1198,8 @@
                     const entry = {
                         name: 'layer-delete',
                         do: () => {
-                            // ===== マスク破棄 =====
-                            if (layer.layerData) {
+                            // Phase 1: マスク破棄
+                            if (layer.layerData && typeof layer.layerData.destroyMask === 'function') {
                                 layer.layerData.destroyMask();
                             }
                             this.currentCutContainer.removeChild(layer);
@@ -1170,8 +1219,8 @@
                             }
                         },
                         undo: () => {
-                            // ===== Undo時のマスク再初期化 =====
-                            if (layer.layerData && this.app && this.app.renderer) {
+                            // Phase 1: Undo時のマスク再初期化
+                            if (layer.layerData && this.app && this.app.renderer && typeof layer.layerData.initializeMask === 'function') {
                                 layer.layerData.initializeMask(
                                     this.config.canvas.width,
                                     this.config.canvas.height,
@@ -1191,8 +1240,8 @@
                     };
                     window.History.push(entry);
                 } else {
-                    // ===== マスク破棄 =====
-                    if (layer.layerData) {
+                    // Phase 1: マスク破棄
+                    if (layer.layerData && typeof layer.layerData.destroyMask === 'function') {
                         layer.layerData.destroyMask();
                     }
                     this.currentCutContainer.removeChild(layer);
@@ -1225,5 +1274,6 @@
     }
 
     window.TegakiLayerSystem = LayerSystem;
+    console.log('✅ layer-system.js (Phase1完全版) loaded');
 
-})();
+})()
