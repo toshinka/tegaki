@@ -1,18 +1,8 @@
 // ============================================================================
 // system/drawing/drawing-engine.js - Phase 2 完全実装版
 // ============================================================================
-// 修正内容:
-// 1. hasMask()の防御的チェック追加
-// 2. updateEraserMaskPreview() 実装
-// 3. stopDrawing()の消しゴム処理完全実装
-// 4. finalizeStroke()のマスク適用追加
-// 5. History統合の修正（async対応）
-// ============================================================================
 
-(function() {
-    'use strict';
-
-    class DrawingEngine {
+class DrawingEngine {
         constructor(app, layerSystem, cameraSystem, history) {
             this.app = app;
             this.layerSystem = layerSystem;
@@ -21,10 +11,11 @@
             this.eventBus = window.TegakiEventBus;
             this.config = window.TEGAKI_CONFIG;
             
-            this.strokeRecorder = new window.TegakiStrokeRecorder();
+            this.pressureHandler = new window.TegakiPressureHandler();
+            this.strokeRecorder = new window.TegakiStrokeRecorder(this.pressureHandler, cameraSystem);
             this.strokeRenderer = new window.TegakiStrokeRenderer(app);
-            this.eraserRenderer = new window.EraserMaskRenderer(app); // Phase 1
-            this.strokeTransformer = new window.TegakiStrokeTransformer();
+            this.eraserRenderer = new window.EraserMaskRenderer(app);
+            this.strokeTransformer = window.TegakiStrokeTransformer ? new window.TegakiStrokeTransformer() : null;
             
             this.isDrawing = false;
             this.currentLayer = null;
@@ -42,8 +33,7 @@
             this.eraserPreviewGraphics = null;
             this.lastPreviewTime = 0;
             this.previewThrottleMs = 16;
-            
-            this.eraserSnapshotCache = new Map(); // Phase 2: スナップショット管理
+            this.eraserSnapshotCache = new Map();
             
             this._setupToolEvents();
             this._setupSettingsEvents();
@@ -54,6 +44,9 @@
             
             this.eventBus.on('tool:select', ({ tool }) => {
                 this.currentTool = tool;
+                if (this.strokeRenderer) {
+                    this.strokeRenderer.setTool(tool);
+                }
             });
             
             this.eventBus.on('layer:activated', ({ layerIndex }) => {
@@ -76,6 +69,10 @@
             this.eventBus.on('brush:opacity-changed', ({ opacity }) => {
                 this.currentSettings.opacity = opacity;
             });
+        }
+
+        setBrushSettings(brushSettings) {
+            this.brushSettings = brushSettings;
         }
 
         startDrawing(worldX, worldY, pressure = 1.0) {
@@ -108,7 +105,6 @@
             if (this.currentTool === 'pen') {
                 this.updatePreview();
             } else if (this.currentTool === 'eraser') {
-                // Phase 2: リアルタイム消しゴムプレビュー
                 const newPoints = this.strokeRecorder.getRecentPoints(2);
                 this.updateEraserMaskPreview(newPoints);
             }
@@ -122,28 +118,18 @@
             this.clearEraserPreview();
             const tool = this.currentTool;
             
-            // Phase 1: 消しゴム処理
             if (tool === 'eraser' && this.currentLayer && strokeData.points.length > 0) {
                 const layerData = this.currentLayer.layerData;
                 
-                // 防御的チェック
                 if (layerData && typeof layerData.hasMask === 'function' && layerData.hasMask()) {
                     const radius = this.currentSettings.size / 2;
                     
-                    // スナップショット取得
                     const beforeSnapshot = this.eraserRenderer.captureMaskSnapshot(layerData);
-                    
-                    // マスクに消しゴム描画
-                    const success = this.eraserRenderer.renderEraserToMask(
-                        layerData,
-                        strokeData.points,
-                        radius
-                    );
+                    const success = this.eraserRenderer.renderEraserToMask(layerData, strokeData.points, radius);
                     
                     if (success) {
                         const afterSnapshot = this.eraserRenderer.captureMaskSnapshot(layerData);
                         
-                        // History記録（async対応）
                         const entry = {
                             name: 'Erase',
                             do: async () => {
@@ -181,7 +167,6 @@
                     }
                 }
             } else if (tool === 'pen') {
-                // ペンツール: 通常の確定描画
                 this.finalizeStroke(strokeData, tool);
             }
             
@@ -189,11 +174,7 @@
             this.currentLayer = null;
         }
 
-        /**
-         * Phase 2: リアルタイム消しゴムプレビュー
-         */
         updateEraserMaskPreview(newPoints) {
-            // 防御的チェック
             if (!this.currentLayer || 
                 !this.currentLayer.layerData || 
                 typeof this.currentLayer.layerData.hasMask !== 'function' || 
@@ -206,7 +187,6 @@
             const layerData = this.currentLayer.layerData;
             const radius = this.currentSettings.size / 2;
             
-            // 増分ポイントのみ描画
             const incrementalGraphics = new PIXI.Graphics();
             incrementalGraphics.blendMode = PIXI.BLEND_MODES.ERASE;
             
@@ -267,9 +247,6 @@
             }
         }
 
-        /**
-         * Phase 1: ストローク確定（マスク適用追加）
-         */
         finalizeStroke(strokeData, tool = null) {
             if (!this.currentLayer || strokeData.points.length === 0) return;
             
@@ -278,7 +255,6 @@
             
             if (!strokeObject) return;
             
-            // Phase 1: マスク適用
             const layerData = this.currentLayer.layerData;
             if (layerData && typeof layerData.hasMask === 'function' && layerData.hasMask() && layerData.maskSprite) {
                 strokeObject.mask = layerData.maskSprite;
@@ -287,8 +263,7 @@
             const layerIndex = this.layerSystem.activeLayerIndex;
             const layer = this.currentLayer;
             
-            // History記録
-            if (this.history && !window.History._manager.isApplying) {
+            if (this.history && !window.History._manager?.isApplying) {
                 const entry = {
                     name: 'Draw',
                     do: () => {
@@ -343,7 +318,6 @@
                 this.eraserRenderer = null;
             }
             
-            // スナップショットクリーンアップ
             if (this.eraserSnapshotCache) {
                 for (const [key, snapshot] of this.eraserSnapshotCache) {
                     if (snapshot && snapshot.destroy) {
@@ -354,8 +328,7 @@
             }
         }
     }
+}
 
-    window.TegakiDrawingEngine = DrawingEngine;
-    console.log('✅ drawing-engine.js (Phase2完全版) loaded');
-
-})();
+window.TegakiDrawingEngine = DrawingEngine;
+console.log('✅ drawing-engine.js (Phase2完全版) loaded');
