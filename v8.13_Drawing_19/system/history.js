@@ -1,10 +1,10 @@
 // system/history.js
 // ================================================================================
-// Phase 2: EventBus修正 + コマンドパターン完全実装
+// Phase 1完成: async/await対応 + EventBus修正 + コマンドパターン完全実装
 // ================================================================================
 // 改修内容:
-// - _notifyHistoryChanged()でwindow.TegakiEventBusを使用
-// - 既存機能完全継承
+// - undo/redo をasync対応（消しゴムのマスク復元に対応）
+// - 既存のsync entryも動作する後方互換性維持
 
 (function() {
     'use strict';
@@ -20,7 +20,7 @@
             this._manager = this;
         }
 
-        push(command) {
+        async push(command) {
             if (this.isApplying) {
                 return;
             }
@@ -36,8 +36,8 @@
                 // 現在位置より後ろのスタックを削除
                 this.stack.splice(this.index + 1);
                 
-                // コマンドを実行
-                command.do();
+                // コマンドを実行（async対応）
+                await command.do();
                 
                 // スタックに追加
                 this.stack.push(command);
@@ -59,7 +59,7 @@
             }
         }
 
-        undo() {
+        async undo() {
             if (!this.canUndo() || this.isApplying) {
                 return;
             }
@@ -67,7 +67,10 @@
             try {
                 this.isApplying = true;
                 const command = this.stack[this.index];
-                command.undo();
+                
+                // async対応（既存のsync関数も動作）
+                await command.undo();
+                
                 this.index--;
                 this._notifyHistoryChanged();
                 
@@ -78,7 +81,7 @@
             }
         }
 
-        redo() {
+        async redo() {
             if (!this.canRedo() || this.isApplying) {
                 return;
             }
@@ -87,7 +90,10 @@
                 this.isApplying = true;
                 this.index++;
                 const command = this.stack[this.index];
-                command.do();
+                
+                // async対応（既存のsync関数も動作）
+                await command.do();
+                
                 this._notifyHistoryChanged();
                 
             } catch (error) {
@@ -115,11 +121,16 @@
         createComposite(commands, name = 'composite') {
             return {
                 name: name,
-                do: () => {
-                    commands.forEach(cmd => cmd.do());
+                do: async () => {
+                    for (const cmd of commands) {
+                        await cmd.do();
+                    }
                 },
-                undo: () => {
-                    commands.slice().reverse().forEach(cmd => cmd.undo());
+                undo: async () => {
+                    const reversed = commands.slice().reverse();
+                    for (const cmd of reversed) {
+                        await cmd.undo();
+                    }
                 },
                 meta: {
                     type: 'composite',
@@ -137,9 +148,7 @@
             );
         }
 
-        // ========== Phase 2: 改修 START ==========
         _notifyHistoryChanged() {
-            // 🔥 修正: window.EventBus → window.TegakiEventBus
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.emit('history:changed', {
                     canUndo: this.canUndo(),
@@ -149,7 +158,6 @@
                 });
             }
         }
-        // ========== Phase 2: 改修 END ==========
 
         debug() {
             console.log('[History] Stack:', this.stack.map(cmd => cmd.name));
@@ -158,12 +166,10 @@
             console.log('[History] Can Redo:', this.canRedo());
         }
         
-        // デバッグ用：最後のコマンドを表示
         getLastCommand() {
             return this.stack[this.index] || null;
         }
         
-        // デバッグ用：スタック全体を取得
         getStack() {
             return this.stack.map((cmd, idx) => ({
                 index: idx,
@@ -176,6 +182,6 @@
 
     window.History = new HistoryManager();
     
-    console.log('✅ history.js (Phase 2: EventBus修正版) loaded');
+    console.log('✅ history.js (Phase 1: async対応完了版) loaded');
 
 })();
