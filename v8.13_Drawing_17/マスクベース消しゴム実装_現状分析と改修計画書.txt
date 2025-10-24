@@ -1,0 +1,1147 @@
+================================================================================
+マスクベース消しゴム実装 - 現状分析と改修計画書
+PixiJS v8.13 Drawing Tool - Mask-based Eraser Fix Plan
+================================================================================
+
+【エラー原因の特定】
+コンソールエラー: "Uncaught SyntaxError: Unexpected identifier 'method'"
+→ 実行したコードに文法エラー（コメント内の "method" が不正な位置にある）
+→ システム側のエラーではなく、テストコードの書式ミス
+
+
+【現状分析 - 実装状況マトリックス】
+
+ファイル名                                    | 状態 | マスク対応 | 問題点
+-------------------------------------------- | ---- | ---------- | ------
+system/data-models.js                        | ✅   | 部分実装   | initializeMask()未実装
+system/layer-system.js                       | ✅   | 未統合     | マスク初期化呼び出し無し
+system/drawing/eraser-mask-renderer.js       | ✅   | 完全実装   | 問題なし
+system/drawing/drawing-engine.js             | ✅   | 待機状態   | マスク機能は無効化済み
+index.html                                   | ✅   | 読み込み済 | eraser-mask-renderer.js読み込み済
+
+
+================================================================================
+Phase 1: 現状のシンボル・メソッド定義辞典
+================================================================================
+
+【LayerModel クラス (system/data-models.js)】
+
+プロパティ:
+├─ id: string                    # レイヤー固有ID
+├─ name: string                  # レイヤー名
+├─ visible: boolean              # 表示/非表示
+├─ opacity: number               # 不透明度 (0-1)
+├─ isBackground: boolean         # 背景レイヤーフラグ
+├─ clipping: boolean             # クリッピングマスク
+├─ blendMode: string             # ブレンドモード
+├─ locked: boolean               # ロック状態
+├─ paths: Array                  # ストロークパスの配列
+├─ maskTexture: PIXI.RenderTexture | null    # マスクテクスチャ (追加済み)
+├─ maskSprite: PIXI.Sprite | null            # マスクスプライト (追加済み)
+└─ _maskInitialized: boolean                 # マスク初期化フラグ (追加済み)
+
+メソッド:
+├─ constructor(data)             # コンストラクタ
+├─ hasMask(): boolean            # ✅ 実装済み - マスク存在チェック
+├─ initializeMask(w, h, r): boolean  # ❌ 未実装 - Phase 2で実装必要
+├─ destroyMask(): void           # ✅ 実装済み - マスク破棄
+├─ toJSON(): object              # JSON化
+├─ validate(): object            # バリデーション
+├─ static getSchema(): object    # スキーマ取得
+└─ (継承) getTotalDistance(), getBounds()
+
+
+【LayerSystem クラス (system/layer-system.js)】
+
+プロパティ:
+├─ app: PIXI.Application         # PixiJSアプリケーション
+├─ config: object                # 設定オブジェクト
+├─ eventBus: EventBus            # イベントバス
+├─ currentCutContainer: PIXI.Container  # 現在のカットコンテナ
+├─ activeLayerIndex: number      # アクティブレイヤーインデックス
+├─ cameraSystem: CameraSystem    # カメラシステム
+├─ animationSystem: AnimationSystem  # アニメーションシステム
+├─ transform: LayerTransform     # レイヤートランスフォーム
+└─ thumbnailUpdateQueue: Set     # サムネイル更新キュー
+
+重要メソッド:
+├─ init(container, eventBus, config)  # 初期化
+├─ createLayer(name, isBackground): object  # レイヤー作成 (マスク初期化必要)
+├─ deleteLayer(index): boolean   # レイヤー削除 (マスク破棄必要)
+├─ getActiveLayer(): Container   # アクティブレイヤー取得
+├─ getLayers(): Array            # 全レイヤー取得
+├─ setActiveLayer(index): void   # アクティブレイヤー設定
+├─ updateLayerPanelUI(): void    # レイヤーパネルUI更新
+├─ requestThumbnailUpdate(index): void  # サムネイル更新リクエスト
+└─ _createCheckerPatternBackground(w, h): Graphics  # 背景パターン生成
+
+
+【EraserMaskRenderer クラス (system/drawing/eraser-mask-renderer.js)】
+
+プロパティ:
+├─ app: PIXI.Application         # PixiJSアプリケーション
+└─ renderer: PIXI.Renderer       # レンダラー
+
+メソッド:
+├─ constructor(app)              # コンストラクタ
+├─ renderEraserToMask(layerData, points, radius): boolean  # マスクに消しゴム描画
+├─ clearMask(layerData, w, h): boolean  # マスククリア
+├─ captureMaskSnapshot(layerData): string|null  # マスクスナップショット取得
+├─ restoreMaskSnapshot(layerData, dataURL): Promise<boolean>  # マスク復元
+└─ renderEraserPreview(graphics, worldPos, radius): void  # プレビュー描画
+
+
+【DrawingEngine クラス (system/drawing/drawing-engine.js)】
+
+プロパティ:
+├─ app: PIXI.Application
+├─ layerSystem: LayerSystem
+├─ cameraSystem: CameraSystem
+├─ history: History
+├─ eventBus: EventBus
+├─ pressureHandler: PressureHandler
+├─ strokeRecorder: StrokeRecorder
+├─ strokeRenderer: StrokeRenderer
+├─ brushSettings: BrushSettings
+├─ isDrawing: boolean
+├─ currentPreview: Graphics
+├─ currentLayer: Container
+├─ currentSettings: object
+├─ currentTool: string
+├─ eraserPreviewGraphics: Graphics    # 消しゴムプレビュー
+└─ lastProcessedPointIndex: number
+
+重要メソッド:
+├─ startDrawing(x, y, event)     # 描画開始
+├─ continueDrawing(x, y, event)  # 描画継続
+├─ stopDrawing()                 # 描画終了 (消しゴム処理はここ)
+├─ finalizeStroke(strokeData, tool)  # ストローク確定
+├─ updatePreview()               # プレビュー更新
+├─ clearPreview()                # プレビュククリア
+├─ updateEraserPreview(worldPos) # 消しゴムプレビュー更新
+├─ clearEraserPreview()          # 消しゴムプレビュークリア
+├─ setTool(toolName)             # ツール設定
+└─ getBrushSettings(): object    # ブラシ設定取得
+
+
+================================================================================
+Phase 2: 問題点の詳細分析
+================================================================================
+
+【問題1】LayerModel.initializeMask() が未実装
+場所: system/data-models.js
+現状: メソッドは定義されているが、実装が空（return false のみ）
+影響: レイヤー作成時にマスクが初期化されない
+必要な処理:
+  1. PIXI.RenderTexture.create() でテクスチャ作成
+  2. 白い矩形で全体を塗りつぶす（全表示状態）
+  3. PIXI.Sprite を作成してテクスチャを設定
+  4. maskTexture, maskSprite, _maskInitialized を設定
+
+【問題2】LayerSystem.createLayer() でマスク初期化を呼び出していない
+場所: system/layer-system.js - createLayer()メソッド
+現状: レイヤー作成後、マスク関連の処理が一切ない
+影響: 新規作成レイヤーにマスクが作成されない
+必要な処理:
+  1. layer.layerData.initializeMask(width, height, renderer) を呼び出し
+  2. layer.addChild(layer.layerData.maskSprite) でスプライト追加
+  3. layer.childrenにあるGraphicsに mask プロパティを設定
+
+【問題3】LayerSystem.init() の既存レイヤーにマスクが未設定
+場所: system/layer-system.js - init()メソッド
+現状: 背景レイヤーと初期レイヤーにマスクが設定されていない
+影響: アプリ起動時のデフォルトレイヤーにマスクがない
+必要な処理:
+  1. 背景レイヤー作成後に initializeMask() 呼び出し
+  2. レイヤー1作成後に initializeMask() 呼び出し
+
+【問題4】LayerSystem.deleteLayer() でマスク破棄を呼び出していない
+場所: system/layer-system.js - deleteLayer()メソッド
+現状: レイヤー削除時にマスクリソースが解放されていない
+影響: メモリリーク発生の可能性
+必要な処理:
+  1. layer.layerData.destroyMask() を呼び出し
+
+【問題5】DrawingEngine.stopDrawing() で消しゴム実装が無効化されている
+場所: system/drawing/drawing-engine.js - stopDrawing()メソッド
+現状: hasMask()チェック後、何もしない
+影響: 消しゴムツールが動作しない
+必要な処理:
+  1. eraserRenderer プロパティを追加
+  2. コンストラクタで eraserRenderer = new EraserMaskRenderer(app)
+  3. stopDrawing() で eraserRenderer.renderEraserToMask() を呼び出し
+  4. History 記録の実装
+
+
+================================================================================
+Phase 3: 改修フローチャート
+================================================================================
+
+[Step 1: data-models.js] LayerModel.initializeMask() 実装
+    ↓
+    │ 入力: width, height, renderer (PIXI.Renderer)
+    │ 処理:
+    │   1. PIXI.RenderTexture.create({width, height}) → this.maskTexture
+    │   2. PIXI.Graphics で白い矩形を描画
+    │   3. renderer.render() でテクスチャに描画
+    │   4. PIXI.Sprite(maskTexture) → this.maskSprite
+    │   5. this._maskInitialized = true
+    │ 出力: boolean (成功/失敗)
+    ↓
+[Step 2: layer-system.js] createLayer() にマスク初期化追加
+    ↓
+    │ 場所: createLayer() メソッド内、レイヤー作成直後
+    │ 処理:
+    │   1. const success = layerModel.initializeMask(config.canvas.width, config.canvas.height, app.renderer)
+    │   2. if (success) {
+    │        layer.addChild(layerModel.maskSprite)
+    │        // Graphics が追加される度に mask を設定する仕組みも必要
+    │      }
+    ↓
+[Step 3: layer-system.js] init() の既存レイヤーにマスク追加
+    ↓
+    │ 場所: init() メソッド内、背景レイヤーとレイヤー1作成後
+    │ 処理:
+    │   1. bgLayerModel.initializeMask(config.canvas.width, config.canvas.height, app.renderer)
+    │   2. bgLayer.addChild(bgLayerModel.maskSprite)
+    │   3. layer1Model.initializeMask(config.canvas.width, config.canvas.height, app.renderer)
+    │   4. layer1.addChild(layer1Model.maskSprite)
+    ↓
+[Step 4: layer-system.js] deleteLayer() にマスク破棄追加
+    ↓
+    │ 場所: deleteLayer() メソッド内、レイヤー削除前
+    │ 処理:
+    │   1. layer.layerData.destroyMask()
+    ↓
+[Step 5: drawing-engine.js] 消しゴム機能を実装
+    ↓
+    │ 場所: コンストラクタと stopDrawing() メソッド
+    │ 処理:
+    │   【コンストラクタ】
+    │   1. this.eraserRenderer = new EraserMaskRenderer(app)
+    │
+    │   【stopDrawing() - 消しゴム分岐】
+    │   1. if (tool === 'eraser' && layerData.hasMask()) {
+    │   2.   const radius = currentSettings.size / 2
+    │   3.   eraserRenderer.renderEraserToMask(layerData, strokeData.points, radius)
+    │   4.   // History 記録
+    │   5.   const beforeSnapshot = eraserRenderer.captureMaskSnapshot(layerData)
+    │   6.   ... 描画 ...
+    │   7.   const afterSnapshot = eraserRenderer.captureMaskSnapshot(layerData)
+    │   8.   history.push({...})
+    │   }
+    ↓
+[Step 6: レイヤーContainer のマスク自動適用]
+    ↓
+    │ 問題: Graphicsが追加される度に mask を設定する必要がある
+    │ 解決策: layer-system.js の addPathToActiveLayer() などで設定
+    │ または: LayerContainerにラッパークラスを作成してaddChild()をオーバーライド
+    ↓
+[完了] テストと検証
+
+
+================================================================================
+Phase 4: 詳細実装コード - 各ファイルの改修内容
+================================================================================
+
+【ファイル1】system/data-models.js - LayerModel.initializeMask() 実装
+改修箇所: 55行目付近 initializeMask() メソッド
+参照メソッド: destroyMask() - 既存実装を参考
+依存関係: PIXI.RenderTexture, PIXI.Graphics, PIXI.Sprite
+
+```javascript
+/**
+ * マスク初期化
+ * @param {number} width - キャンバス幅
+ * @param {number} height - キャンバス高さ
+ * @param {PIXI.Renderer} renderer - PixiJSレンダラー
+ * @returns {boolean} 成功/失敗
+ */
+initializeMask(width, height, renderer) {
+    // 既にマスクが存在する場合は破棄
+    if (this._maskInitialized) {
+        this.destroyMask();
+    }
+
+    try {
+        // 1. RenderTexture 作成
+        this.maskTexture = PIXI.RenderTexture.create({
+            width: width,
+            height: height
+        });
+
+        // 2. 白い矩形で全体を塗りつぶす（全表示状態）
+        const whiteRect = new PIXI.Graphics();
+        whiteRect.rect(0, 0, width, height);
+        whiteRect.fill({ color: 0xFFFFFF });
+
+        // 3. RenderTexture に描画
+        renderer.render({
+            container: whiteRect,
+            target: this.maskTexture,
+            clear: true
+        });
+
+        // 一時 Graphics を破棄
+        whiteRect.destroy({ children: true });
+
+        // 4. Sprite 作成
+        this.maskSprite = new PIXI.Sprite(this.maskTexture);
+        this.maskSprite.label = 'mask_sprite';
+
+        // 5. 初期化完了フラグ
+        this._maskInitialized = true;
+
+        return true;
+
+    } catch (error) {
+        // エラー時はクリーンアップ
+        this.destroyMask();
+        return false;
+    }
+}
+```
+
+
+【ファイル2】system/layer-system.js - init() メソッド改修
+改修箇所: 行32-65 init()メソッド内
+参照箇所: _createCheckerPatternBackground() - 背景生成パターン
+追加処理: 背景レイヤーとレイヤー1にマスク初期化
+
+```javascript
+init(canvasContainer, eventBus, config) {
+    this.eventBus = eventBus;
+    this.config = config || window.TEGAKI_CONFIG;
+    if (!this.eventBus) throw new Error('EventBus required for LayerSystem');
+    
+    if (window.TegakiLayerTransform) {
+        this.transform = new window.TegakiLayerTransform(this.config, this.coordAPI);
+    } else {
+        this.transform = null;
+    }
+    
+    this.currentCutContainer = new PIXI.Container();
+    this.currentCutContainer.label = 'temporary_cut_container';
+    
+    // 背景レイヤー作成
+    const bgLayer = new PIXI.Container();
+    const bgLayerModel = new window.TegakiDataModels.LayerModel({
+        id: 'temp_layer_bg_' + Date.now(),
+        name: '背景',
+        isBackground: true
+    });
+    bgLayer.label = bgLayerModel.id;
+    bgLayer.layerData = bgLayerModel;
+    const bg = this._createCheckerPatternBackground(this.config.canvas.width, this.config.canvas.height);
+    bgLayer.addChild(bg);
+    bgLayer.layerData.backgroundGraphics = bg;
+    
+    // ===== 追加: 背景レイヤーのマスク初期化 =====
+    // 注意: init()時点では this.app が未設定の可能性あり
+    // → setApp() で後から初期化する、または create時に初期化
+    
+    this.currentCutContainer.addChild(bgLayer);
+    
+    // レイヤー1作成
+    const layer1 = new PIXI.Container();
+    const layer1Model = new window.TegakiDataModels.LayerModel({
+        id: 'temp_layer_1_' + Date.now(),
+        name: 'レイヤー1'
+    });
+    layer1.label = layer1Model.id;
+    layer1.layerData = layer1Model;
+    
+    // ===== 追加: レイヤー1のマスク初期化 =====
+    
+    if (this.transform) {
+        this.transform.setTransform(layer1Model.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
+    }
+    this.currentCutContainer.addChild(layer1);
+    this.activeLayerIndex = 1;
+    
+    this._setupLayerOperations();
+    this._setupAnimationSystemIntegration();
+    this._setupVKeyEvents();
+    this._startThumbnailUpdateProcess();
+    this.isInitialized = true;
+}
+```
+
+【補足】init() 時点での問題
+- this.app が未設定（setApp() で後から設定される）
+- renderer にアクセスできない
+→ 解決策: setApp() または createLayer() で遅延初期化
+
+
+【ファイル2-2】system/layer-system.js - setApp() メソッドに初期化追加
+改修箇所: 行873-882 setApp()メソッド
+参照箇所: initTransform() - 初期化パターン
+追加処理: 既存レイヤーのマスク初期化
+
+```javascript
+setApp(app) {
+    this.app = app;
+    if (this.transform && !this.transform.app) {
+        if (this.cameraSystem) {
+            this.initTransform();
+        }
+    }
+    
+    // ===== 追加: 既存レイヤーのマスク初期化 =====
+    if (app && app.renderer) {
+        const layers = this.getLayers();
+        for (const layer of layers) {
+            if (layer.layerData && !layer.layerData.hasMask()) {
+                const success = layer.layerData.initializeMask(
+                    this.config.canvas.width,
+                    this.config.canvas.height,
+                    app.renderer
+                );
+                if (success && layer.layerData.maskSprite) {
+                    // マスクスプライトをレイヤーの最初の子として追加
+                    layer.addChildAt(layer.layerData.maskSprite, 0);
+                    
+                    // レイヤー内の全てのGraphicsにマスクを適用
+                    this._applyMaskToLayerGraphics(layer);
+                }
+            }
+        }
+    }
+}
+
+/**
+ * レイヤー内の全てのGraphicsにマスクを適用
+ * @private
+ */
+_applyMaskToLayerGraphics(layer) {
+    if (!layer.layerData || !layer.layerData.maskSprite) return;
+    
+    for (const child of layer.children) {
+        // マスクスプライト自身と背景グラフィックスはスキップ
+        if (child === layer.layerData.maskSprite || 
+            child === layer.layerData.backgroundGraphics) {
+            continue;
+        }
+        
+        // Graphics オブジェクトにマスクを設定
+        if (child instanceof PIXI.Graphics) {
+            child.mask = layer.layerData.maskSprite;
+        }
+    }
+}
+```
+
+
+【ファイル2-3】system/layer-system.js - createLayer() メソッド改修
+改修箇所: 行686-738 createLayer()メソッド
+参照箇所: init() - 既存レイヤー作成パターン
+追加処理: マスク初期化とスプライト追加
+
+```javascript
+createLayer(name, isBackground = false) {
+    if (!this.currentCutContainer) return null;
+    const layerModel = new window.TegakiDataModels.LayerModel({
+        name: name || `レイヤー${this.currentCutContainer.children.length + 1}`,
+        isBackground: isBackground
+    });
+    const layer = new PIXI.Container();
+    layer.label = layerModel.id;
+    layer.layerData = layerModel;
+    
+    // ===== 追加: マスク初期化 =====
+    if (this.app && this.app.renderer) {
+        const success = layerModel.initializeMask(
+            this.config.canvas.width,
+            this.config.canvas.height,
+            this.app.renderer
+        );
+        if (success && layerModel.maskSprite) {
+            // マスクスプライトを最初の子として追加
+            layer.addChild(layerModel.maskSprite);
+        }
+    }
+    
+    if (this.transform) {
+        this.transform.setTransform(layerModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
+    }
+    if (isBackground) {
+        const bg = new PIXI.Graphics();
+        bg.rect(0, 0, this.config.canvas.width, this.config.canvas.height);
+        bg.fill(this.config.background.color);
+        layer.addChild(bg);
+        layer.layerData.backgroundGraphics = bg;
+    }
+    
+    // 以下既存の History 記録処理...
+    if (window.History && !window.History._manager.isApplying) {
+        const entry = {
+            name: 'layer-create',
+            do: () => {
+                this.currentCutContainer.addChild(layer);
+                const layers = this.getLayers();
+                this.setActiveLayer(layers.length - 1);
+                this.updateLayerPanelUI();
+                this.updateStatusDisplay();
+            },
+            undo: () => {
+                this.currentCutContainer.removeChild(layer);
+                // ===== 追加: Undo時のマスク破棄 =====
+                if (layer.layerData) {
+                    layer.layerData.destroyMask();
+                }
+                const layers = this.getLayers();
+                if (this.activeLayerIndex >= layers.length) {
+                    this.activeLayerIndex = Math.max(0, layers.length - 1);
+                }
+                this.updateLayerPanelUI();
+                this.updateStatusDisplay();
+            },
+            meta: { layerId: layerModel.id, name: layerModel.name }
+        };
+        window.History.push(entry);
+    } else {
+        // 以下省略...
+    }
+}
+```
+
+
+【ファイル2-4】system/layer-system.js - deleteLayer() メソッド改修
+改修箇所: 行887-954 deleteLayer()メソッド
+参照箇所: destroyMask() - data-models.js
+追加処理: マスク破棄呼び出し
+
+```javascript
+deleteLayer(layerIndex) {
+    const layers = this.getLayers();
+    if (layerIndex < 0 || layerIndex >= layers.length) {
+        return false;
+    }
+    const layer = layers[layerIndex];
+    const layerId = layer.layerData?.id;
+    if (layer.layerData?.isBackground) {
+        return false;
+    }
+    try {
+        const previousActiveIndex = this.activeLayerIndex;
+        if (window.History && !window.History._manager.isApplying) {
+            const entry = {
+                name: 'layer-delete',
+                do: () => {
+                    // ===== 追加: マスク破棄 =====
+                    if (layer.layerData) {
+                        layer.layerData.destroyMask();
+                    }
+                    
+                    this.currentCutContainer.removeChild(layer);
+                    if (layerId && this.transform) {
+                        this.transform.deleteTransform(layerId);
+                    }
+                    const remainingLayers = this.getLayers();
+                    if (remainingLayers.length === 0) {
+                        this.activeLayerIndex = -1;
+                    } else if (this.activeLayerIndex >= remainingLayers.length) {
+                        this.activeLayerIndex = remainingLayers.length - 1;
+                    }
+                    this.updateLayerPanelUI();
+                    this.updateStatusDisplay();
+                    if (this.eventBus) {
+                        this.eventBus.emit('layer:deleted', { layerId, layerIndex });
+                    }
+                },
+                undo: () => {
+                    // ===== 追加: Undo時のマスク再初期化 =====
+                    if (layer.layerData && this.app && this.app.renderer) {
+                        layer.layerData.initializeMask(
+                            this.config.canvas.width,
+                            this.config.canvas.height,
+                            this.app.renderer
+                        );
+                        if (layer.layerData.maskSprite) {
+                            layer.addChildAt(layer.layerData.maskSprite, 0);
+                            this._applyMaskToLayerGraphics(layer);
+                        }
+                    }
+                    
+                    this.currentCutContainer.addChildAt(layer, layerIndex);
+                    this.activeLayerIndex = previousActiveIndex;
+                    this.updateLayerPanelUI();
+                    this.updateStatusDisplay();
+                },
+                meta: { layerId, layerIndex }
+            };
+            window.History.push(entry);
+        } else {
+            // ===== 追加: マスク破棄 =====
+            if (layer.layerData) {
+                layer.layerData.destroyMask();
+            }
+            
+            this.currentCutContainer.removeChild(layer);
+            // 以下既存処理...
+        }
+        // 以下省略...
+    } catch (error) {
+        return false;
+    }
+}
+```
+
+
+【ファイル2-5】system/layer-system.js - addPathToActiveLayer() メソッド改修
+改修箇所: 行241-264 addPathToActiveLayer()メソッド
+参照箇所: rebuildPathGraphics() - Graphics作成パターン
+追加処理: 作成されたGraphicsにマスクを適用
+
+```javascript
+addPathToActiveLayer(path) {
+    if (!this.getActiveLayer()) return;
+    const activeLayer = this.getActiveLayer();
+    const layerIndex = this.activeLayerIndex;
+    if (activeLayer.layerData && activeLayer.layerData.paths) {
+        activeLayer.layerData.paths.push(path);
+    }
+    if (!activeLayer.layerData) {
+        activeLayer.paths = activeLayer.paths || [];
+        activeLayer.paths.push(path);
+    }
+    this.rebuildPathGraphics(path);
+    if (path.graphics) {
+        // ===== 追加: Graphicsにマスクを適用 =====
+        if (activeLayer.layerData && activeLayer.layerData.maskSprite) {
+            path.graphics.mask = activeLayer.layerData.maskSprite;
+        }
+        
+        activeLayer.addChild(path.graphics);
+    }
+    this.requestThumbnailUpdate(layerIndex);
+    if (this.eventBus) {
+        this.eventBus.emit('layer:stroke-added', { path, layerIndex, layerId: activeLayer.label });
+    }
+}
+```
+
+
+【ファイル3】system/drawing/drawing-engine.js - 消しゴム機能実装
+改修箇所1: 行16-30 コンストラクタ
+参照箇所: strokeRenderer初期化パターン
+追加処理: EraserMaskRendererインスタンス作成
+
+```javascript
+constructor(app, layerSystem, cameraSystem, history) {
+    this.app = app;
+    this.layerSystem = layerSystem;
+    this.cameraSystem = cameraSystem;
+    this.history = history;
+    this.eventBus = window.TegakiEventBus;
+
+    this.pressureHandler = new PressureHandler();
+    this.strokeRecorder = new StrokeRecorder(this.pressureHandler, this.cameraSystem);
+    this.strokeRenderer = new StrokeRenderer(app);
+    
+    // ===== 追加: EraserMaskRenderer初期化 =====
+    this.eraserRenderer = new EraserMaskRenderer(app);
+
+    this.brushSettings = null;
+    this.isDrawing = false;
+    this.currentPreview = null;
+    this.currentLayer = null;
+    this.currentSettings = null;
+    this.currentTool = 'pen';
+    
+    this.eraserPreviewGraphics = null;
+    this.lastProcessedPointIndex = 0;
+    
+    this._syncBrushSettingsToRuntime();
+    this._syncToolSelection();
+}
+```
+
+改修箇所2: 行134-165 stopDrawing()メソッド
+参照箇所: finalizeStroke() - ストローク確定パターン
+追加処理: 消しゴムマスク描画とHistory記録
+
+```javascript
+stopDrawing() {
+    if (!this.isDrawing) return;
+
+    const strokeData = this.strokeRecorder.endStroke();
+    this.clearPreview();
+    this.clearEraserPreview();
+    const tool = this.currentTool;
+
+    // ===== 消しゴムツール時の処理 =====
+    if (tool === 'eraser' && this.currentLayer && strokeData.points.length > 0) {
+        const activeLayer = this.currentLayer;
+        const layerData = activeLayer.layerData;
+        
+        // マスク機能チェック（型安全）
+        if (layerData && typeof layerData.hasMask === 'function' && layerData.hasMask()) {
+            // マスクベース消しゴム実装
+            const radius = this.currentSettings.size / 2;
+            
+            // Before スナップショット取得
+            const beforeSnapshot = this.eraserRenderer.captureMaskSnapshot(layerData);
+            
+            // マスクに消しゴムを描画
+            const success = this.eraserRenderer.renderEraserToMask(
+                layerData,
+                strokeData.points,
+                radius
+            );
+            
+            if (success) {
+                // After スナップショット取得
+                const afterSnapshot = this.eraserRenderer.captureMaskSnapshot(layerData);
+                
+                // History 記録
+                const layerId = layerData.id;
+                const entry = {
+                    name: 'Erase',
+                    do: async () => {
+                        if (afterSnapshot) {
+                            await this.eraserRenderer.restoreMaskSnapshot(layerData, afterSnapshot);
+                        }
+                        // サムネイル更新
+                        this.layerSystem.requestThumbnailUpdate(
+                            this.layerSystem.activeLayerIndex
+                        );
+                    },
+                    undo: async () => {
+                        if (beforeSnapshot) {
+                            await this.eraserRenderer.restoreMaskSnapshot(layerData, beforeSnapshot);
+                        }
+                        // サムネイル更新
+                        this.layerSystem.requestThumbnailUpdate(
+                            this.layerSystem.activeLayerIndex
+                        );
+                    },
+                    meta: {
+                        type: 'erase',
+                        layerId: layerId,
+                        tool: 'eraser'
+                    }
+                };
+                
+                if (this.history && this.history.push) {
+                    this.history.push(entry);
+                }
+                
+                // レイヤー更新イベント
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:erased', {
+                        layerId: layerId,
+                        pointCount: strokeData.points.length
+                    });
+                }
+                
+                // サムネイル更新
+                this.layerSystem.requestThumbnailUpdate(
+                    this.layerSystem.activeLayerIndex
+                );
+            }
+        } else {
+            // マスク未初期化: 消しゴムは動作しないが、エラーも出ない
+            // 既存の透明ペン方式やベクター削除は削除済み
+        }
+    } else {
+        // ===== ペンツール時: 通常の確定描画 =====
+        this.finalizeStroke(strokeData, tool);
+    }
+
+    this.isDrawing = false;
+    this.currentLayer = null;
+    this.currentSettings = null;
+    this.lastProcessedPointIndex = 0;
+
+    if (this.eventBus) {
+        this.eventBus.emit('stroke:end', {
+            strokeData: strokeData,
+            tool: tool
+        });
+    }
+}
+```
+
+改修箇所3: 行241-258 finalizeStroke()メソッド - マスク適用
+参照箇所: strokeRenderer.renderFinalStroke() - ストローク描画
+追加処理: 確定されたGraphicsにマスクを適用
+
+```javascript
+finalizeStroke(strokeData, tool = null) {
+    if (!this.currentLayer || strokeData.points.length === 0) {
+        return;
+    }
+
+    const activeTool = tool || this.currentTool || 'pen';
+    const originalTool = this.strokeRenderer.currentTool;
+    this.strokeRenderer.setTool(activeTool);
+
+    const strokeObject = this.strokeRenderer.renderFinalStroke(strokeData, this.currentSettings);
+    this.strokeRenderer.setTool(originalTool);
+
+    strokeObject._strokePoints = strokeData.points;
+    strokeObject._strokeOptions = {
+        color: this.currentSettings.color,
+        size: this.currentSettings.size,
+        alpha: this.currentSettings.alpha
+    };
+    
+    // ===== 追加: 確定されたGraphicsにマスクを適用 =====
+    const layerData = this.currentLayer.layerData;
+    if (layerData && layerData.hasMask() && layerData.maskSprite) {
+        strokeObject.mask = layerData.maskSprite;
+    }
+
+    const strokeModel = new window.TegakiDataModels.StrokeData({
+        points: strokeData.points,
+        isSingleDot: strokeData.isSingleDot,
+        color: this.currentSettings.color,
+        size: this.currentSettings.size,
+        alpha: this.currentSettings.alpha,
+        layerId: this.currentLayer.layerData?.id || this.currentLayer.label,
+        tool: activeTool
+    });
+
+    const targetLayer = this.currentLayer;
+    const layerId = targetLayer.layerData?.id || targetLayer.label;
+
+    const addStrokeCommand = {
+        name: activeTool === 'eraser' ? 'Erase' : 'Add Stroke',
+        do: () => {
+            if (targetLayer && targetLayer.addChild) {
+                targetLayer.addChild(strokeObject);
+            }
+        },
+        undo: () => {
+            if (targetLayer && targetLayer.removeChild) {
+                targetLayer.removeChild(strokeObject);
+                strokeObject.destroy({ children: true });
+            }
+        },
+        meta: {
+            type: activeTool === 'eraser' ? 'erase' : 'stroke',
+            layerId: layerId,
+            strokeData: strokeModel
+        }
+    };
+
+    if (this.history && this.history.push) {
+        this.history.push(addStrokeCommand);
+    }
+
+    if (this.eventBus) {
+        this.eventBus.emit('layer:modified', {
+            layerId: layerId,
+            tool: activeTool
+        });
+    }
+}
+```
+
+
+================================================================================
+Phase 5: マスク適用の仕組みと注意点
+================================================================================
+
+【PixiJS v8 のマスク仕様】
+- Graphics.mask = Sprite でマスクを設定
+- マスクスプライトのテクスチャ:
+  - 白い部分 (RGB: 255,255,255): 完全表示 (alpha = 1)
+  - 黒い部分 (RGB: 0,0,0): 完全非表示 (alpha = 0)
+  - グレー: 半透明
+- マスクはレイヤーのローカル座標系で動作
+
+【マスク適用のタイミング】
+1. レイヤー作成時: maskSprite を layer の最初の子として追加
+2. Graphics 追加時: graphics.mask = layer.layerData.maskSprite
+3. レイヤー再構築時: 全Graphicsに再適用
+
+【重要な実装パターン】
+```javascript
+// パターン1: レイヤー作成時
+layer.addChild(layer.layerData.maskSprite);  // 最初に追加
+
+// パターン2: Graphics追加時
+graphics.mask = layer.layerData.maskSprite;
+layer.addChild(graphics);
+
+// パターン3: 既存Graphicsへの適用
+for (const child of layer.children) {
+    if (child instanceof PIXI.Graphics && child !== maskSprite && child !== bg) {
+        child.mask = layer.layerData.maskSprite;
+    }
+}
+```
+
+【注意点】
+1. maskSprite はレイヤーの子として追加する必要がある
+2. maskSprite 自身にはマスクを適用しない
+3. 背景グラフィックスにはマスクを適用しない
+4. マスクはレイヤーローカル座標で動作するため、レイヤー変形時も追従
+
+
+================================================================================
+Phase 6: テスト手順と確認項目
+================================================================================
+
+【動作確認コマンド（コンソール実行）】
+
+```javascript
+// ===== Step 1: システム初期化確認 =====
+console.log('=== システム初期化確認 ===');
+console.log('LayerSystem:', window.layerSystem || window.coreEngine?.layerSystem);
+console.log('DrawingEngine:', window.drawingEngine || window.coreEngine?.drawingEngine);
+console.log('EraserMaskRenderer:', window.EraserMaskRenderer);
+
+// ===== Step 2: レイヤーのマスク確認 =====
+console.log('\n=== レイヤーマスク確認 ===');
+const layerSystem = window.layerSystem || window.coreEngine?.layerSystem;
+const layers = layerSystem?.getLayers();
+if (layers) {
+    layers.forEach((layer, i) => {
+        const hasMask = layer.layerData?.hasMask();
+        const maskTexture = layer.layerData?.maskTexture;
+        const maskSprite = layer.layerData?.maskSprite;
+        console.log(`Layer ${i} [${layer.layerData?.name}]:`, {
+            hasMask: hasMask,
+            maskTextureExists: !!maskTexture,
+            maskSpriteExists: !!maskSprite,
+            maskSpriteInChildren: layer.children.includes(maskSprite)
+        });
+    });
+}
+
+// ===== Step 3: アクティブレイヤーの詳細確認 =====
+console.log('\n=== アクティブレイヤー詳細 ===');
+const activeLayer = layerSystem?.getActiveLayer();
+if (activeLayer) {
+    console.log('Active Layer:', activeLayer.layerData?.name);
+    console.log('Has Mask:', activeLayer.layerData?.hasMask());
+    console.log('Mask Texture:', activeLayer.layerData?.maskTexture);
+    console.log('Mask Sprite:', activeLayer.layerData?.maskSprite);
+    console.log('Children count:', activeLayer.children.length);
+    console.log('Children:', activeLayer.children.map(c => c.label || c.constructor.name));
+}
+
+// ===== Step 4: 消しゴムツール選択 =====
+console.log('\n=== 消しゴムツール選択 ===');
+window.TegakiEventBus?.emit('tool:select', { tool: 'eraser' });
+console.log('✅ Eraser tool selected');
+
+// ===== Step 5: DrawingEngine確認 =====
+console.log('\n=== DrawingEngine 確認 ===');
+const drawingEngine = window.drawingEngine || window.coreEngine?.drawingEngine;
+console.log('Current Tool:', drawingEngine?.currentTool);
+console.log('Eraser Renderer:', drawingEngine?.eraserRenderer);
+
+// ===== Step 6: 新しいレイヤー作成テスト =====
+console.log('\n=== 新規レイヤー作成テスト ===');
+const result = layerSystem?.createLayer('テストレイヤー');
+if (result) {
+    console.log('✅ Layer created:', result.layer.layerData.name);
+    console.log('Has Mask:', result.layer.layerData.hasMask());
+}
+```
+
+【手動テスト項目】
+□ 1. ページリロード後、エラーなく起動する
+□ 2. レイヤーパネルが正常に表示される
+□ 3. 既存レイヤー（背景、レイヤー1）にマスクが存在する
+□ 4. 新規レイヤー作成時にマスクが自動作成される
+□ 5. ペンツールで描画できる
+□ 6. 消しゴムツールに切り替えられる
+□ 7. 消しゴムツールで描画した部分が消える
+□ 8. 消した部分から下のレイヤーが透けて見える
+□ 9. Ctrl+Z でUndoすると消しゴムが復元される
+□ 10. Ctrl+Shift+Z でRedoすると再び消える
+□ 11. レイヤー削除時にメモリリークがない（DevToolsで確認）
+□ 12. 複数回の描画・消去を繰り返しても安定動作
+□ 13. レイヤーサムネイルが正しく更新される
+□ 14. バケツ塗り（大きなfill）も削れる
+□ 15. 彫刻的な削り出し（細かい線）も可能
+
+【パフォーマンステスト】
+□ 1. 60fps を維持できているか（DevTools Performance）
+□ 2. 消しゴム使用時のフレームドロップがないか
+□ 3. メモリ使用量が増加し続けないか（長時間使用）
+□ 4. RenderTexture のサイズが適切か（キャンバスサイズと一致）
+
+
+================================================================================
+Phase 7: トラブルシューティング
+================================================================================
+
+【エラー1】"Cannot read property 'hasMask' of undefined"
+原因: layerData が未定義
+対処: レイヤー作成時に layerData が正しく設定されているか確認
+
+【エラー2】"maskTexture is null"
+原因: initializeMask() が呼ばれていない、または失敗している
+対処: setApp() で既存レイヤーの初期化を確認、renderer が正しく渡されているか確認
+
+【エラー3】消しゴムで消えない
+原因: Graphics に mask が設定されていない
+対処: finalizeStroke() と addPathToActiveLayer() で mask 設定を確認
+
+【エラー4】消しゴムで全体が消える
+原因: マスクが黒く初期化されている
+対処: initializeMask() で白（0xFFFFFF）で塗りつぶされているか確認
+
+【エラー5】Undo/Redo でエラー
+原因: async/await の処理が正しくない
+対処: History の do/undo メソッドを async 対応にする
+
+【エラー6】メモリリーク
+原因: RenderTexture が破棄されていない
+対処: destroyMask() が正しく呼ばれているか確認、destroy(true) でテクスチャごと破棄
+
+
+================================================================================
+Phase 8: 最適化と拡張機能
+================================================================================
+
+【最適化案】
+1. マスク描画のバッチ処理
+   - 複数ポイントを一度に描画
+   - clear: false で追記モード
+
+2. RenderTexture のサイズ最適化
+   - 必要最小限のサイズで作成
+   - リサイズ時の再作成
+
+3. プレビュー描画の最適化
+   - 毎フレーム更新しない
+   - タイマーで間引き
+
+【拡張機能案】
+1. 消しゴムモード追加
+   - ハード消しゴム（完全削除）
+   - ソフト消しゴム（半透明削除）
+
+2. マスククリア機能
+   - Ctrl+Delete で現在レイヤーのマスクリセット
+   - 「消しゴムで消した部分を全復元」
+
+3. マスク反転機能
+   - 消した部分と残した部分を反転
+
+4. マスクコピー機能
+   - 他のレイヤーにマスクをコピー
+
+
+================================================================================
+Phase 9: 改修ファイル一覧と優先順位
+================================================================================
+
+【必須改修】Priority: HIGH
+1. system/data-models.js
+   - LayerModel.initializeMask() 実装
+   - 影響範囲: 小
+   - リスク: 低
+
+2. system/layer-system.js
+   - setApp() にマスク初期化追加
+   - createLayer() にマスク初期化追加
+   - deleteLayer() にマスク破棄追加
+   - addPathToActiveLayer() にマスク適用追加
+   - _applyMaskToLayerGraphics() 新規メソッド追加
+   - 影響範囲: 中
+   - リスク: 中
+
+3. system/drawing/drawing-engine.js
+   - コンストラクタに eraserRenderer 追加
+   - stopDrawing() に消しゴム実装追加
+   - finalizeStroke() にマスク適用追加
+   - 影響範囲: 中
+   - リスク: 中
+
+【参照必須】Priority: MEDIUM
+- system/drawing/eraser-mask-renderer.js
+  - 既に実装済み、改修不要
+  - API仕様の確認のみ
+
+【テスト必須】Priority: HIGH
+- ブラウザコンソールでの動作確認
+- 手動テスト項目のチェック
+- パフォーマンステスト
+
+
+================================================================================
+Phase 10: 実装順序とチェックポイント
+================================================================================
+
+【Step 1】system/data-models.js 改修
+↓ チェック: hasMask(), initializeMask(), destroyMask() が正常動作
+↓
+【Step 2】system/layer-system.js - setApp() 改修
+↓ チェック: 既存レイヤーにマスクが作成される
+↓
+【Step 3】system/layer-system.js - createLayer() 改修
+↓ チェック: 新規レイヤーにマスクが作成される
+↓
+【Step 4】system/layer-system.js - deleteLayer(), addPathToActiveLayer() 改修
+↓ チェック: レイヤー削除時にマスク破棄、Graphics追加時にマスク適用
+↓
+【Step 5】system/drawing/drawing-engine.js - eraserRenderer 初期化
+↓ チェック: eraserRenderer が正しく作成される
+↓
+【Step 6】system/drawing/drawing-engine.js - stopDrawing() 改修
+↓ チェック: 消しゴムでマスクが黒く描画される
+↓
+【Step 7】system/drawing/drawing-engine.js - finalizeStroke() 改修
+↓ チェック: ペンツールで描画されたGraphicsにマスクが適用される
+↓
+【Step 8】総合テスト
+↓ チェック: 全ての手動テスト項目をクリア
+↓
+【完了】
+
+
+================================================================================
+補足資料: PixiJS v8 RenderTexture API
+================================================================================
+
+【作成】
+```javascript
+const renderTexture = PIXI.RenderTexture.create({
+    width: 1920,
+    height: 1080,
+    resolution: 1
+});
+```
+
+【描画】
+```javascript
+renderer.render({
+    container: graphics,
+    target: renderTexture,
+    clear: false  // 既存内容を保持
+});
+```
+
+【破棄】
+```javascript
+renderTexture.destroy(true);  // テクスチャも破棄
+```
+
+【Canvas抽出】
+```javascript
+const canvas = renderer.extract.canvas(renderTexture);
+const dataURL = canvas.toDataURL('image/png');
+```
+
+
+================================================================================
+以上
+================================================================================
+
+本計画書に従って段階的に改修を進めることで、マスクベース消しゴムが
+正常に動作するようになります。各Stepで動作確認を行い、問題があれば
+該当箇所のみを修正してください。
+
+【重要】
+- 一度に全てを改修せず、Step単位で確認すること
+- コンソールエラーが出たら即座に原因特定すること
+- マスク適用のタイミングを正確に把握すること
+- メモリリークに注意すること

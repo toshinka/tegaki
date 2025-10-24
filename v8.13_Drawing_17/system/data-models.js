@@ -1,4 +1,4 @@
-// ===== system/data-models.js - hasMask実装版 =====
+// ===== system/data-models.js - マスク実装完了版 =====
 
 (function() {
     'use strict';
@@ -26,7 +26,6 @@
             this.locked = data.locked || false;
             this.paths = data.paths || [];
             
-            // ===== マスク関連プロパティ =====
             this.maskTexture = null;
             this.maskSprite = null;
             this._maskInitialized = false;
@@ -36,28 +35,48 @@
             return LAYER_SCHEMA;
         }
 
-        /**
-         * マスク存在チェック
-         * @returns {boolean}
-         */
         hasMask() {
             return this._maskInitialized && 
                    this.maskTexture !== null && 
                    this.maskSprite !== null;
         }
 
-        /**
-         * マスク初期化（Phase 2で実装予定）
-         * @returns {boolean}
-         */
         initializeMask(width, height, renderer) {
-            // Phase 2で実装
-            return false;
+            if (this._maskInitialized) {
+                this.destroyMask();
+            }
+
+            try {
+                this.maskTexture = PIXI.RenderTexture.create({
+                    width: width,
+                    height: height
+                });
+
+                const whiteRect = new PIXI.Graphics();
+                whiteRect.rect(0, 0, width, height);
+                whiteRect.fill({ color: 0xFFFFFF });
+
+                renderer.render({
+                    container: whiteRect,
+                    target: this.maskTexture,
+                    clear: true
+                });
+
+                whiteRect.destroy({ children: true });
+
+                this.maskSprite = new PIXI.Sprite(this.maskTexture);
+                this.maskSprite.label = 'mask_sprite';
+
+                this._maskInitialized = true;
+
+                return true;
+
+            } catch (error) {
+                this.destroyMask();
+                return false;
+            }
         }
 
-        /**
-         * マスク破棄
-         */
         destroyMask() {
             if (this.maskSprite) {
                 try {
