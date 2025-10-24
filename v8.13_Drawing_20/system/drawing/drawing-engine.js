@@ -1,6 +1,6 @@
 /**
- * DrawingEngine - ペン描画統合制御クラス (マスク消しゴム対応完全版)
- * Phase 1: RenderTextureマスクベース消しゴム実装完了
+ * DrawingEngine - Phase 2完成版
+ * GPU最適化消しゴム + リアルタイム増分プレビュー対応
  */
 
 class DrawingEngine {
@@ -14,7 +14,7 @@ class DrawingEngine {
         this.pressureHandler = new PressureHandler();
         this.strokeRecorder = new StrokeRecorder(this.pressureHandler, this.cameraSystem);
         this.strokeRenderer = new StrokeRenderer(app);
-        this.eraserRenderer = new EraserMaskRenderer(app); // Phase 1追加
+        this.eraserRenderer = new EraserMaskRenderer(app);
 
         this.brushSettings = null;
         this.isDrawing = false;
@@ -25,6 +25,10 @@ class DrawingEngine {
         
         this.eraserPreviewGraphics = null;
         this.lastProcessedPointIndex = 0;
+        
+        // Phase 2: スナップショット管理
+        this.eraserSnapshotCache = new Map();
+        this.maxSnapshotCache = 50;
         
         this._syncBrushSettingsToRuntime();
         this._syncToolSelection();
@@ -99,11 +103,19 @@ class DrawingEngine {
         this.currentSettings = this.getBrushSettings();
         this.updatePreview();
 
+        // ===== Phase 2: リアルタイム増分消しゴムプレビュー =====
         if (this.currentTool === 'eraser') {
             const currentPoints = this.strokeRecorder.getCurrentPoints();
             
             if (currentPoints.length > 0) {
                 this.updateEraserPreview(currentPoints[currentPoints.length - 1]);
+                
+                // 増分ポイントのみ処理（パフォーマンス最適化）
+                if (currentPoints.length > this.lastProcessedPointIndex + 5) {
+                    const newPoints = currentPoints.slice(this.lastProcessedPointIndex);
+                    this.updateEraserMaskPreview(newPoints);
+                    this.lastProcessedPointIndex = currentPoints.length;
+                }
             }
         }
 
@@ -124,17 +136,17 @@ class DrawingEngine {
         this.clearEraserPreview();
         const tool = this.currentTool;
 
-        // ===== Phase 1: 消しゴムツール処理 =====
+        // ===== Phase 2: GPU最適化消しゴム処理 =====
         if (tool === 'eraser' && this.currentLayer && strokeData.points.length > 0) {
             const layerData = this.currentLayer.layerData;
             
             if (layerData && typeof layerData.hasMask === 'function' && layerData.hasMask()) {
                 const radius = this.currentSettings.size / 2;
                 
-                // before スナップショット取得
+                // GPU高速スナップショット取得
                 const beforeSnapshot = this.eraserRenderer.captureMaskSnapshot(layerData);
                 
-                // マスクに消しゴム描画
+                // GPU消しゴム描画
                 const ok = this.eraserRenderer.renderEraserToMask(
                     layerData,
                     strokeData.points,
@@ -142,8 +154,10 @@ class DrawingEngine {
                 );
                 
                 if (ok) {
-                    // after スナップショット取得
                     const afterSnapshot = this.eraserRenderer.captureMaskSnapshot(layerData);
+                    
+                    // スナップショットキャッシュ管理
+                    this._manageSnapshotCache(layerData.id, beforeSnapshot, afterSnapshot);
                     
                     // History記録
                     const entry = {
@@ -163,7 +177,9 @@ class DrawingEngine {
                         meta: { 
                             type: 'erase', 
                             layerId: layerData.id, 
-                            tool: 'eraser' 
+                            tool: 'eraser',
+                            beforeSnapshot: beforeSnapshot,
+                            afterSnapshot: afterSnapshot
                         }
                     };
                     
@@ -172,14 +188,17 @@ class DrawingEngine {
                     }
                     
                     if (this.eventBus) {
-                        this.eventBus.emit('layer:erased', { layerId: layerData.id });
+                        this.eventBus.emit('layer:erased', { 
+                            layerId: layerData.id,
+                            pointCount: strokeData.points.length
+                        });
                     }
                     
                     this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
                 }
             }
         } else {
-            // ===== ペンツール: 通常の確定描画 =====
+            // ペンツール: 通常の確定描画
             this.finalizeStroke(strokeData, tool);
         }
 
@@ -194,6 +213,44 @@ class DrawingEngine {
                 tool: tool
             });
         }
+    }
+
+    /**
+     * Phase 2: リアルタイム増分消しゴムマスクプレビュー
+     * @param {Array} newPoints - 新規追加ポイントのみ
+     */
+    updateEraserMaskPreview(newPoints) {
+        if (!this.currentLayer?.layerData?.hasMask()) return;
+        
+        const layerData = this.currentLayer.layerData;
+        const radius = this.currentSettings.size / 2;
+        
+        // 増分ポイントのみ描画（毎フレーム全体再描画を避ける）
+        this.eraserRenderer.renderIncrementalErase(layerData, newPoints, radius);
+    }
+
+    /**
+     * Phase 2: スナップショットキャッシュ管理
+     * @private
+     */
+    _manageSnapshotCache(layerId, beforeSnapshot, afterSnapshot) {
+        if (!this.eraserSnapshotCache.has(layerId)) {
+            this.eraserSnapshotCache.set(layerId, []);
+        }
+        
+        const cache = this.eraserSnapshotCache.get(layerId);
+        
+        // キャッシュ上限チェック
+        if (cache.length >= this.maxSnapshotCache) {
+            // 古いスナップショットを破棄
+            const oldSnapshot = cache.shift();
+            if (oldSnapshot) {
+                this.eraserRenderer.destroySnapshot(oldSnapshot.before);
+                this.eraserRenderer.destroySnapshot(oldSnapshot.after);
+            }
+        }
+        
+        cache.push({ before: beforeSnapshot, after: afterSnapshot });
     }
 
     updatePreview() {
@@ -223,10 +280,7 @@ class DrawingEngine {
         }
         
         const radius = this.currentSettings.size / 2;
-        
-        this.eraserPreviewGraphics.clear();
-        this.eraserPreviewGraphics.circle(worldPos.x, worldPos.y, radius);
-        this.eraserPreviewGraphics.stroke({ width: 1, color: 0xFF0000, alpha: 0.5 });
+        this.eraserRenderer.renderEraserPreview(this.eraserPreviewGraphics, worldPos, radius);
     }
     
     clearEraserPreview() {
@@ -248,7 +302,7 @@ class DrawingEngine {
         const strokeObject = this.strokeRenderer.renderFinalStroke(strokeData, this.currentSettings);
         this.strokeRenderer.setTool(originalTool);
 
-        // ===== Phase 1: 新規ストロークへのマスク適用 =====
+        // Phase 1: 新規ストロークへのマスク適用
         const layerData = this.currentLayer.layerData;
         if (layerData && typeof layerData.hasMask === 'function' && layerData.hasMask() && layerData.maskSprite) {
             strokeObject.mask = layerData.maskSprite;
@@ -367,5 +421,14 @@ class DrawingEngine {
     destroy() {
         this.clearPreview();
         this.clearEraserPreview();
+        
+        // スナップショットキャッシュをクリア
+        for (const [layerId, cache] of this.eraserSnapshotCache) {
+            for (const snapshot of cache) {
+                this.eraserRenderer.destroySnapshot(snapshot.before);
+                this.eraserRenderer.destroySnapshot(snapshot.after);
+            }
+        }
+        this.eraserSnapshotCache.clear();
     }
 }
