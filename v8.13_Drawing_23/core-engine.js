@@ -1,7 +1,6 @@
-// ===== core-engine.js - 元ファイル完全継承 + Phase 1改修 =====
-// 改修: UnifiedKeyHandler.switchTool() で drawingEngine.setTool() を呼び出し
-//       initialize() で グローバル参照を設定
-// 元ファイルの全機能継承 + DrawingEngine初期化追加
+// ===== core-engine.js - Phase 2完全修正版 =====
+// 修正: DrawingEngine参照をwindow.TegakiDrawingEngineに統一
+// 元ファイルの全機能継承 + Phase 2対応
 
 (function() {
     'use strict';
@@ -142,7 +141,8 @@
             
             const childrenToRemove = [];
             for (let child of activeLayer.children) {
-                if (child !== activeLayer.layerData.backgroundGraphics) {
+                if (child !== activeLayer.layerData.backgroundGraphics && 
+                    child !== activeLayer.layerData.maskSprite) {
                     childrenToRemove.push(child);
                 }
             }
@@ -297,13 +297,12 @@
         }
         
         switchTool(tool) {
-            // ✅改修Phase 1: drawingEngine.setTool() を呼び出し
-            if (this.drawingEngine) {
-                this.drawingEngine.setTool(tool);
+            if (this.drawingEngine && this.drawingEngine.currentTool !== tool) {
+                this.drawingEngine.currentTool = tool;
+                this.eventBus.emit('tool:select', { tool });
             }
             
             this.cameraSystem.updateCursor();
-            
             this.eventBus.emit('tool:changed', { newTool: tool });
         }
         
@@ -330,19 +329,24 @@
             this.layerSystem = new window.TegakiLayerSystem();
             this.clipboardSystem = new window.TegakiDrawingClipboard();
             
-            // BrushSettings初期化
-            this.brushSettings = new BrushSettings(CONFIG, this.eventBus);
+            if (!window.TegakiDrawing?.BrushSettings) {
+                throw new Error('system/drawing/brush-settings.js required');
+            }
+            this.brushSettings = new window.TegakiDrawing.BrushSettings(CONFIG, this.eventBus);
             
-            // DrawingEngine初期化
-            this.drawingEngine = new DrawingEngine(
+            if (!window.TegakiDrawingEngine) {
+                throw new Error('system/drawing/drawing-engine.js required');
+            }
+            this.drawingEngine = new window.TegakiDrawingEngine(
                 this.app,
                 this.layerSystem,
                 this.cameraSystem,
                 window.History
             );
             
-            // BrushSettingsをDrawingEngineに設定
-            this.drawingEngine.setBrushSettings(this.brushSettings);
+            if (this.drawingEngine.setBrushSettings) {
+                this.drawingEngine.setBrushSettings(this.brushSettings);
+            }
             
             this.animationSystem = null;
             this.timelineUI = null;
@@ -673,9 +677,9 @@
                 this.processThumbnailUpdates();
             });
             
-            // ✅改修Phase 1: グローバル参照を設定
             window.drawingEngine = this.drawingEngine;
-            window.layerManager = this.layerSystem;
+            window.coreEngine = this;
+            window.layerSystem = this.layerSystem;
             window.cameraSystem = this.cameraSystem;
             
             this.eventBus.emit('core:initialized', {
@@ -691,12 +695,14 @@
         CameraSystem: window.TegakiCameraSystem,
         LayerManager: window.TegakiLayerSystem,
         LayerSystem: window.TegakiLayerSystem,
-        DrawingEngine: DrawingEngine,
+        DrawingEngine: window.TegakiDrawingEngine,
         ClipboardSystem: window.TegakiDrawingClipboard,
         DrawingClipboard: window.TegakiDrawingClipboard,
         AnimationSystem: window.TegakiAnimationSystem,
         TimelineUI: window.TegakiTimelineUI,
         UnifiedKeyHandler: UnifiedKeyHandler
     };
+
+    console.log('✅ core-engine.js (Phase2修正版) loaded');
 
 })();
