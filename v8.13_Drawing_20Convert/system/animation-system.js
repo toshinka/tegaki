@@ -1,22 +1,19 @@
 // ================================================================================
-// system/animation-system.js - LayerModel統合版
+// system/animation-system.js - LayerModel統合版 + FRAME変換完了
 // ================================================================================
-// 【Phase 1根本修正】
-// - _deserializeLayer()でLayerModelインスタンスを作成
-// - マスク機能が完全に動作するようになる
-// - Phase 4.1のCUT自動採番機能は維持
+// CUT→FRAME変換完了: クラス名、メソッド名、変数名、イベント名すべて変換済み
 
 (function() {
     'use strict';
     
-    class Cut {
+    class Frame {
         constructor(id, name, config) {
             this.id = id;
-            this.name = name || `CUT${Date.now()}`;
+            this.name = name || `FRAME${Date.now()}`;
             this.duration = config?.animation?.defaultCutDuration || 0.5;
             
             this.container = new PIXI.Container();
-            this.container.label = `cut_${id}`;
+            this.container.label = `frame_${id}`;
             this.container.sortableChildren = true;
             
             this.thumbnailCanvas = null;
@@ -84,27 +81,25 @@
         }
         
         static deserialize(data, config) {
-            const cut = new Cut(data.id, data.name, config);
-            cut.duration = data.duration;
+            const frame = new Frame(data.id, data.name, config);
+            frame.duration = data.duration;
             
             if (data.layers && Array.isArray(data.layers)) {
                 data.layers.forEach(layerData => {
-                    const layer = cut._deserializeLayer(layerData);
+                    const layer = frame._deserializeLayer(layerData);
                     if (layer) {
-                        cut.addLayer(layer);
+                        frame.addLayer(layer);
                     }
                 });
             }
             
-            return cut;
+            return frame;
         }
         
-        // ===== Phase 1根本修正: LayerModelインスタンス化 =====
         _deserializeLayer(layerData) {
             const layer = new PIXI.Container();
             layer.label = layerData.id;
             
-            // 🔥 LayerModelインスタンスを作成
             const layerModel = new window.TegakiDataModels.LayerModel({
                 id: layerData.id,
                 name: layerData.name,
@@ -192,14 +187,14 @@
             
             this.playbackTimer = null;
             this.isAnimationMode = false;
-            this.initialCutCreated = false;
+            this.initialFrameCreated = false;
             this.isInitializing = false;
-            this.cutSwitchInProgress = false;
+            this.frameSwitchInProgress = false;
             this.hasInitialized = false;
-            this.lastStoppedCutIndex = 0;
+            this.lastStoppedFrameIndex = 0;
             
-            this.cutClipboard = {
-                cutData: null,
+            this.frameClipboard = {
+                frameData: null,
                 timestamp: null,
                 sourceId: null
             };
@@ -218,7 +213,7 @@
         }
         
         handleCanvasResize(newWidth, newHeight) {
-            if (!this.animationData?.cuts || this.animationData.cuts.length === 0) return;
+            if (!this.animationData?.frames || this.animationData.frames.length === 0) return;
             
             setTimeout(() => {
                 this.regenerateAllThumbnails();
@@ -230,12 +225,12 @@
         }
         
         async regenerateAllThumbnails() {
-            if (!this.animationData?.cuts) return;
+            if (!this.animationData?.frames) return;
             
-            for (let i = 0; i < this.animationData.cuts.length; i++) {
-                await this.generateCutThumbnail(i);
+            for (let i = 0; i < this.animationData.frames.length; i++) {
+                await this.generateFrameThumbnail(i);
                 
-                if (i < this.animationData.cuts.length - 1) {
+                if (i < this.animationData.frames.length - 1) {
                     await new Promise(resolve => setTimeout(resolve, 50));
                 }
             }
@@ -257,17 +252,17 @@
             
             this.layerSystem.animationSystem = this;
             
-            if (this.canvasContainer && this.layerSystem.currentCutContainer) {
-                this.canvasContainer.addChild(this.layerSystem.currentCutContainer);
+            if (this.canvasContainer && this.layerSystem.currentFrameContainer) {
+                this.canvasContainer.addChild(this.layerSystem.currentFrameContainer);
             }
             
-            this.setupCutClipboardEvents();
+            this.setupFrameClipboardEvents();
             this.setupLayerChangeListener();
             this.hasInitialized = true;
             
             setTimeout(() => {
-                if (!this.initialCutCreated && !this.isInitializing) {
-                    this.createInitialCutIfNeeded();
+                if (!this.initialFrameCreated && !this.isInitializing) {
+                    this.createInitialFrameIfNeeded();
                 }
             }, 150);
             
@@ -283,32 +278,32 @@
             if (!this.eventBus) return;
             
             this.eventBus.on('layer:path-added', () => {
-                const currentCut = this.getCurrentCut();
-                if (currentCut) {
+                const currentFrame = this.getCurrentFrame();
+                if (currentFrame) {
                     setTimeout(() => {
-                        this.generateCutThumbnail(this.getCurrentCutIndex());
+                        this.generateFrameThumbnail(this.getCurrentFrameIndex());
                     }, 100);
                 }
             });
         }
         
-        setupCutClipboardEvents() {
+        setupFrameClipboardEvents() {
             if (!this.eventBus) return;
             
-            this.eventBus.on('cut:copy-current', () => this.copyCurrent());
-            this.eventBus.on('cut:paste-right-adjacent', () => this.pasteRightAdjacent());
-            this.eventBus.on('cut:paste-new', () => this.pasteAsNew());
+            this.eventBus.on('frame:copy-current', () => this.copyCurrent());
+            this.eventBus.on('frame:paste-right-adjacent', () => this.pasteRightAdjacent());
+            this.eventBus.on('frame:paste-new', () => this.pasteAsNew());
         }
         
         createDefaultAnimation() {
             return {
-                cuts: [],
+                frames: [],
                 settings: {
                     loop: true
                 },
                 playback: {
                     isPlaying: false,
-                    currentCutIndex: 0,
+                    currentFrameIndex: 0,
                     startTime: 0
                 }
             };
@@ -347,148 +342,147 @@
             return { thumbDisplayW, thumbDisplayH };
         }
         
-        createNewCutFromCurrentLayers() {
-            const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            const cut = new Cut(cutId, `CUT${this.animationData.cuts.length + 1}`, this.config);
+        createNewFrameFromCurrentLayers() {
+            const frameId = 'frame_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const frame = new Frame(frameId, `FRAME${this.animationData.frames.length + 1}`, this.config);
             
-            if (this.layerSystem?.currentCutContainer) {
-                const currentLayers = this.layerSystem.currentCutContainer.children;
+            if (this.layerSystem?.currentFrameContainer) {
+                const currentLayers = this.layerSystem.currentFrameContainer.children;
                 
                 currentLayers.forEach(originalLayer => {
                     const copiedLayer = this._deepCopyLayer(originalLayer);
-                    cut.addLayer(copiedLayer);
+                    frame.addLayer(copiedLayer);
                 });
             }
             
-            this.animationData.cuts.push(cut);
-            const newCutIndex = this.animationData.cuts.length - 1;
+            this.animationData.frames.push(frame);
+            const newFrameIndex = this.animationData.frames.length - 1;
             
             if (this.canvasContainer) {
-                this.canvasContainer.addChild(cut.container);
-                cut.container.visible = false;
+                this.canvasContainer.addChild(frame.container);
+                frame.container.visible = false;
             }
             
-            if (this.layerSystem?.createCutRenderTexture) {
-                this.layerSystem.createCutRenderTexture(cutId);
+            if (this.layerSystem?.createFrameRenderTexture) {
+                this.layerSystem.createFrameRenderTexture(frameId);
             }
             
-            this.switchToActiveCut(newCutIndex);
+            this.switchToActiveFrame(newFrameIndex);
             
             setTimeout(async () => {
-                await this.generateCutThumbnail(newCutIndex);
+                await this.generateFrameThumbnail(newFrameIndex);
                 if (this.eventBus) {
-                    this.eventBus.emit('animation:cut-created', { 
-                        cutId: cut.id, 
-                        cutIndex: newCutIndex 
+                    this.eventBus.emit('animation:frame-created', { 
+                        frameId: frame.id, 
+                        frameIndex: newFrameIndex 
                     });
                 }
             }, 100);
             
-            return cut;
+            return frame;
         }
         
-        createNewBlankCut() {
-            const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            const cut = new Cut(cutId, `CUT_TEMP_${cutId}`, this.config);
+        createNewBlankFrame() {
+            const frameId = 'frame_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const frame = new Frame(frameId, `FRAME_TEMP_${frameId}`, this.config);
             
-            const bgLayer = this._createBackgroundLayer(cutId);
-            const layer1 = this._createBlankLayer(cutId, 'レイヤー1');
+            const bgLayer = this._createBackgroundLayer(frameId);
+            const layer1 = this._createBlankLayer(frameId, 'レイヤー1');
             
-            cut.addLayer(bgLayer);
-            cut.addLayer(layer1);
+            frame.addLayer(bgLayer);
+            frame.addLayer(layer1);
             
-            const newIndex = this.animationData.cuts.length;
+            const newIndex = this.animationData.frames.length;
             
             if (window.History && !window.History._manager.isApplying) {
                 const command = {
-                    name: 'create-cut',
+                    name: 'create-frame',
                     do: () => {
-                        this.animationData.cuts.push(cut);
-                        this.renameCutsSequentially();
+                        this.animationData.frames.push(frame);
+                        this.renameFramesSequentially();
                         
                         if (this.canvasContainer) {
-                            this.canvasContainer.addChild(cut.container);
-                            cut.container.visible = false;
+                            this.canvasContainer.addChild(frame.container);
+                            frame.container.visible = false;
                         }
                         
-                        if (this.layerSystem?.createCutRenderTexture) {
-                            this.layerSystem.createCutRenderTexture(cutId);
+                        if (this.layerSystem?.createFrameRenderTexture) {
+                            this.layerSystem.createFrameRenderTexture(frameId);
                         }
                         
-                        this.switchToActiveCut(newIndex);
+                        this.switchToActiveFrame(newIndex);
                         
                         if (this.eventBus) {
-                            this.eventBus.emit('animation:cut-created', { 
-                                cutId: cut.id, 
-                                cutIndex: newIndex 
+                            this.eventBus.emit('animation:frame-created', { 
+                                frameId: frame.id, 
+                                frameIndex: newIndex 
                             });
                         }
                     },
                     undo: () => {
-                        const cutIndex = this.animationData.cuts.findIndex(c => c.id === cutId);
-                        if (cutIndex !== -1) {
-                            const removedCut = this.animationData.cuts[cutIndex];
+                        const frameIndex = this.animationData.frames.findIndex(f => f.id === frameId);
+                        if (frameIndex !== -1) {
+                            const removedFrame = this.animationData.frames[frameIndex];
                             
-                            if (this.layerSystem?.destroyCutRenderTexture) {
-                                this.layerSystem.destroyCutRenderTexture(removedCut.id);
+                            if (this.layerSystem?.destroyFrameRenderTexture) {
+                                this.layerSystem.destroyFrameRenderTexture(removedFrame.id);
                             }
                             
-                            if (this.canvasContainer && removedCut.container.parent === this.canvasContainer) {
-                                this.canvasContainer.removeChild(removedCut.container);
+                            if (this.canvasContainer && removedFrame.container.parent === this.canvasContainer) {
+                                this.canvasContainer.removeChild(removedFrame.container);
                             }
                             
-                            this.animationData.cuts.splice(cutIndex, 1);
-                            this.renameCutsSequentially();
+                            this.animationData.frames.splice(frameIndex, 1);
+                            this.renameFramesSequentially();
                             
-                            if (this.animationData.cuts.length > 0) {
-                                const newActiveIndex = Math.min(cutIndex, this.animationData.cuts.length - 1);
-                                this.switchToActiveCut(newActiveIndex);
+                            if (this.animationData.frames.length > 0) {
+                                const newActiveIndex = Math.min(frameIndex, this.animationData.frames.length - 1);
+                                this.switchToActiveFrame(newActiveIndex);
                             }
                             
                             if (this.eventBus) {
-                                this.eventBus.emit('animation:cut-deleted', { cutIndex });
+                                this.eventBus.emit('animation:frame-deleted', { frameIndex });
                             }
                         }
                     },
-                    meta: { type: 'cut-create', cutId, cutIndex: newIndex }
+                    meta: { type: 'frame-create', frameId, frameIndex: newIndex }
                 };
                 
                 window.History.push(command);
             } else {
-                this.animationData.cuts.push(cut);
-                this.renameCutsSequentially();
+                this.animationData.frames.push(frame);
+                this.renameFramesSequentially();
                 
                 if (this.canvasContainer) {
-                    this.canvasContainer.addChild(cut.container);
-                    cut.container.visible = false;
+                    this.canvasContainer.addChild(frame.container);
+                    frame.container.visible = false;
                 }
                 
-                if (this.layerSystem?.createCutRenderTexture) {
-                    this.layerSystem.createCutRenderTexture(cutId);
+                if (this.layerSystem?.createFrameRenderTexture) {
+                    this.layerSystem.createFrameRenderTexture(frameId);
                 }
                 
-                this.switchToActiveCut(newIndex);
+                this.switchToActiveFrame(newIndex);
                 
                 if (this.eventBus) {
-                    this.eventBus.emit('animation:cut-created', { 
-                        cutId: cut.id, 
-                        cutIndex: newIndex 
+                    this.eventBus.emit('animation:frame-created', { 
+                        frameId: frame.id, 
+                        frameIndex: newIndex 
                     });
                 }
             }
             
-            return cut;
+            return frame;
         }
         
-        createNewEmptyCut() {
-            return this.createNewBlankCut();
+        createNewEmptyFrame() {
+            return this.createNewBlankFrame();
         }
         
-        // ===== LayerModelインスタンス化 =====
-        _createBackgroundLayer(cutId) {
+        _createBackgroundLayer(frameId) {
             const layer = new PIXI.Container();
             const layerModel = new window.TegakiDataModels.LayerModel({
-                id: `${cutId}_layer_bg_${Date.now()}`,
+                id: `${frameId}_layer_bg_${Date.now()}`,
                 name: '背景',
                 visible: true,
                 opacity: 1.0,
@@ -509,11 +503,10 @@
             return layer;
         }
         
-        // ===== LayerModelインスタンス化 =====
-        _createBlankLayer(cutId, name) {
+        _createBlankLayer(frameId, name) {
             const layer = new PIXI.Container();
             const layerModel = new window.TegakiDataModels.LayerModel({
-                id: `${cutId}_layer_${Date.now()}`,
+                id: `${frameId}_layer_${Date.now()}`,
                 name: name,
                 visible: true,
                 opacity: 1.0,
@@ -527,7 +520,6 @@
             return layer;
         }
         
-        // ===== LayerModelインスタンス化 =====
         _deepCopyLayer(originalLayer) {
             const layer = new PIXI.Container();
             const layerModel = new window.TegakiDataModels.LayerModel({
@@ -632,50 +624,48 @@
             });
         }
         
-        applyCutToLayers(cutIndex) {
-            const cut = this.animationData.cuts[cutIndex];
-            if (!cut) {
-                throw new Error(`AnimationSystem: cut ${cutIndex} not found`);
+        applyFrameToLayers(frameIndex) {
+            const frame = this.animationData.frames[frameIndex];
+            if (!frame) {
+                throw new Error(`AnimationSystem: frame ${frameIndex} not found`);
             }
-            this.switchToActiveCut(cutIndex);
+            this.switchToActiveFrame(frameIndex);
         }
         
-        switchToActiveCut(cutIndex) {
-            if (this.cutSwitchInProgress) {
-                setTimeout(() => this.switchToActiveCut(cutIndex), 50);
+        switchToActiveFrame(frameIndex) {
+            if (this.frameSwitchInProgress) {
+                setTimeout(() => this.switchToActiveFrame(frameIndex), 50);
                 return;
             }
             
-            const targetCut = this.animationData.cuts[cutIndex];
-            if (!targetCut || !this.layerSystem) return;
+            const targetFrame = this.animationData.frames[frameIndex];
+            if (!targetFrame || !this.layerSystem) return;
             
-            this.cutSwitchInProgress = true;
+            this.frameSwitchInProgress = true;
             
-            this.animationData.cuts.forEach(cut => {
-                cut.container.visible = false;
+            this.animationData.frames.forEach(frame => {
+                frame.container.visible = false;
             });
             
-            targetCut.container.visible = true;
+            targetFrame.container.visible = true;
             
-            this.layerSystem.setCurrentCutContainer(targetCut.container);
+            this.layerSystem.setCurrentFrameContainer(targetFrame.container);
             
-            // 🔥 カット切替後にマスク初期化チェック
             if (this.app && this.app.renderer) {
                 setTimeout(() => {
-                    this._ensureMasksInitialized(targetCut.container);
+                    this._ensureMasksInitialized(targetFrame.container);
                 }, 50);
             }
             
-            this.animationData.playback.currentCutIndex = cutIndex;
+            this.animationData.playback.currentFrameIndex = frameIndex;
             
             if (this.eventBus) {
-                this.eventBus.emit('animation:cut-applied', { cutIndex, cutId: targetCut.id });
+                this.eventBus.emit('animation:frame-applied', { frameIndex, frameId: targetFrame.id });
             }
             
-            this.cutSwitchInProgress = false;
+            this.frameSwitchInProgress = false;
         }
         
-        // 🔥 マスク初期化保証メソッド
         _ensureMasksInitialized(container) {
             if (!container || !this.app?.renderer || !this.config) return;
             
@@ -683,10 +673,8 @@
             for (const layer of layers) {
                 if (!layer.layerData) continue;
                 
-                // LayerModelインスタンスでない場合はスキップ
                 if (!(layer.layerData instanceof window.TegakiDataModels.LayerModel)) continue;
                 
-                // マスクが未初期化の場合のみ初期化
                 if (!layer.layerData.hasMask()) {
                     const success = layer.layerData.initializeMask(
                         this.config.canvas.width,
@@ -695,17 +683,14 @@
                     );
                     
                     if (success && layer.layerData.maskSprite) {
-                        // maskSpriteを最初の子として追加
                         layer.addChildAt(layer.layerData.maskSprite, 0);
                         
-                        // 既存Graphicsにマスク適用
                         this._applyMaskToLayerGraphics(layer);
                     }
                 }
             }
         }
         
-        // 🔥 レイヤー内のGraphicsにマスク適用
         _applyMaskToLayerGraphics(layer) {
             if (!layer.layerData || !layer.layerData.maskSprite) return;
             
@@ -721,19 +706,19 @@
             }
         }
         
-        switchToActiveCutSafely(cutIndex, resetTransform) {
-            this.switchToActiveCut(cutIndex);
+        switchToActiveFrameSafely(frameIndex, resetTransform) {
+            this.switchToActiveFrame(frameIndex);
         }
         
-        async generateCutThumbnail(cutIndex) {
-            const cut = this.animationData.cuts[cutIndex];
-            if (!cut || !this.layerSystem || !this.app?.renderer) return;
+        async generateFrameThumbnail(frameIndex) {
+            const frame = this.animationData.frames[frameIndex];
+            if (!frame || !this.layerSystem || !this.app?.renderer) return;
             
-            if (this.layerSystem.renderCutToTexture) {
-                this.layerSystem.renderCutToTexture(cut.id, cut.container);
+            if (this.layerSystem.renderFrameToTexture) {
+                this.layerSystem.renderFrameToTexture(frame.id, frame.container);
             }
             
-            const renderTexture = this.layerSystem?.getCutRenderTexture?.(cut.id);
+            const renderTexture = this.layerSystem?.getFrameRenderTexture?.(frame.id);
             if (!renderTexture) return;
             
             const canvasSize = this.getCurrentCanvasSize();
@@ -752,7 +737,7 @@
                     thumbDisplayH
                 );
                 
-                cut.thumbnailCanvas = thumbCanvas;
+                frame.thumbnailCanvas = thumbCanvas;
             } else {
                 const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
                 
@@ -786,37 +771,37 @@
                     offsetX, offsetY, drawW, drawH
                 );
                 
-                cut.thumbnailCanvas = thumbCanvas;
+                frame.thumbnailCanvas = thumbCanvas;
             }
             
-            if (this.layerSystem.clearCutThumbnailDirty) {
-                this.layerSystem.clearCutThumbnailDirty(cut.id);
+            if (this.layerSystem.clearFrameThumbnailDirty) {
+                this.layerSystem.clearFrameThumbnailDirty(frame.id);
             }
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:thumbnail-generated', { 
-                    cutIndex,
+                    frameIndex,
                     thumbSize: { width: thumbDisplayW, height: thumbDisplayH }
                 });
             }
         }
         
-        async generateCutThumbnailOptimized(cutIndex) {
-            return this.generateCutThumbnail(cutIndex);
+        async generateFrameThumbnailOptimized(frameIndex) {
+            return this.generateFrameThumbnail(frameIndex);
         }
         
         copyCurrent() {
-            const currentCut = this.getCurrentCut();
-            if (!currentCut) return false;
+            const currentFrame = this.getCurrentFrame();
+            if (!currentFrame) return false;
             
-            this.cutClipboard.cutData = currentCut.serialize();
-            this.cutClipboard.timestamp = Date.now();
-            this.cutClipboard.sourceId = currentCut.id;
+            this.frameClipboard.frameData = currentFrame.serialize();
+            this.frameClipboard.timestamp = Date.now();
+            this.frameClipboard.sourceId = currentFrame.id;
             
             if (this.eventBus) {
-                this.eventBus.emit('cut:copied', {
-                    cutId: currentCut.id,
-                    cutName: currentCut.name
+                this.eventBus.emit('frame:copied', {
+                    frameId: currentFrame.id,
+                    frameName: currentFrame.name
                 });
             }
             
@@ -824,29 +809,29 @@
         }
         
         pasteRightAdjacent() {
-            if (!this.cutClipboard.cutData) return false;
+            if (!this.frameClipboard.frameData) return false;
             
-            const insertIndex = this.animationData.playback.currentCutIndex + 1;
-            const pastedCut = this.createCutFromClipboard(this.cutClipboard.cutData);
-            if (!pastedCut) return false;
+            const insertIndex = this.animationData.playback.currentFrameIndex + 1;
+            const pastedFrame = this.createFrameFromClipboard(this.frameClipboard.frameData);
+            if (!pastedFrame) return false;
             
-            this.animationData.cuts.splice(insertIndex, 0, pastedCut);
-            this.renameCutsSequentially();
+            this.animationData.frames.splice(insertIndex, 0, pastedFrame);
+            this.renameFramesSequentially();
             
             if (this.canvasContainer) {
-                this.canvasContainer.addChild(pastedCut.container);
+                this.canvasContainer.addChild(pastedFrame.container);
             }
             
-            if (this.layerSystem?.createCutRenderTexture) {
-                this.layerSystem.createCutRenderTexture(pastedCut.id);
+            if (this.layerSystem?.createFrameRenderTexture) {
+                this.layerSystem.createFrameRenderTexture(pastedFrame.id);
             }
             
-            this.switchToActiveCut(insertIndex);
+            this.switchToActiveFrame(insertIndex);
             
             if (this.eventBus) {
-                this.eventBus.emit('cut:pasted-right-adjacent', {
-                    cutId: pastedCut.id,
-                    cutIndex: insertIndex
+                this.eventBus.emit('frame:pasted-right-adjacent', {
+                    frameId: pastedFrame.id,
+                    frameIndex: insertIndex
                 });
             }
             
@@ -854,46 +839,46 @@
         }
         
         pasteAsNew() {
-            if (!this.cutClipboard.cutData) return false;
+            if (!this.frameClipboard.frameData) return false;
             
-            const pastedCut = this.createCutFromClipboard(this.cutClipboard.cutData);
-            if (!pastedCut) return false;
+            const pastedFrame = this.createFrameFromClipboard(this.frameClipboard.frameData);
+            if (!pastedFrame) return false;
             
-            this.animationData.cuts.push(pastedCut);
-            const newIndex = this.animationData.cuts.length - 1;
+            this.animationData.frames.push(pastedFrame);
+            const newIndex = this.animationData.frames.length - 1;
             
-            this.renameCutsSequentially();
+            this.renameFramesSequentially();
             
             if (this.canvasContainer) {
-                this.canvasContainer.addChild(pastedCut.container);
+                this.canvasContainer.addChild(pastedFrame.container);
             }
             
-            if (this.layerSystem?.createCutRenderTexture) {
-                this.layerSystem.createCutRenderTexture(pastedCut.id);
+            if (this.layerSystem?.createFrameRenderTexture) {
+                this.layerSystem.createFrameRenderTexture(pastedFrame.id);
             }
             
-            this.switchToActiveCut(newIndex);
+            this.switchToActiveFrame(newIndex);
             
             if (this.eventBus) {
-                this.eventBus.emit('cut:pasted-new', {
-                    cutId: pastedCut.id,
-                    cutIndex: newIndex
+                this.eventBus.emit('frame:pasted-new', {
+                    frameId: pastedFrame.id,
+                    frameIndex: newIndex
                 });
             }
             
             return true;
         }
         
-        createCutFromClipboard(clipboardData) {
+        createFrameFromClipboard(clipboardData) {
             if (!clipboardData) return null;
             
             const baseName = clipboardData.name.replace(/_copy$/, '').replace(/\(\d+\)$/, '');
             
             let copyCount = 0;
-            for (const cut of this.animationData.cuts) {
-                const cutBaseName = cut.name.replace(/\(\d+\)$/, '');
-                if (cutBaseName === baseName) {
-                    const match = cut.name.match(/\((\d+)\)$/);
+            for (const frame of this.animationData.frames) {
+                const frameBaseName = frame.name.replace(/\(\d+\)$/, '');
+                if (frameBaseName === baseName) {
+                    const match = frame.name.match(/\((\d+)\)$/);
                     if (match) {
                         const num = parseInt(match[1], 10);
                         if (num > copyCount) copyCount = num;
@@ -903,246 +888,246 @@
             
             const newName = `${baseName}(${copyCount + 1})`;
             
-            const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            const cut = Cut.deserialize({
-                id: cutId,
+            const frameId = 'frame_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const frame = Frame.deserialize({
+                id: frameId,
                 name: newName,
                 duration: clipboardData.duration,
                 layers: clipboardData.layers
             }, this.config);
             
             setTimeout(() => {
-                const cutIndex = this.animationData.cuts.findIndex(c => c.id === cut.id);
-                if (cutIndex !== -1) {
-                    this.generateCutThumbnail(cutIndex);
+                const frameIndex = this.animationData.frames.findIndex(f => f.id === frame.id);
+                if (frameIndex !== -1) {
+                    this.generateFrameThumbnail(frameIndex);
                 }
             }, 200);
             
-            return cut;
+            return frame;
         }
         
-        createInitialCutIfNeeded() {
-            if (this.initialCutCreated || this.animationData.cuts.length > 0 || this.isInitializing) {
+        createInitialFrameIfNeeded() {
+            if (this.initialFrameCreated || this.animationData.frames.length > 0 || this.isInitializing) {
                 return;
             }
             
-            if (!this.layerSystem?.currentCutContainer) {
+            if (!this.layerSystem?.currentFrameContainer) {
                 return;
             }
             
             this.isInitializing = true;
             
-            const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            const cut = new Cut(cutId, 'CUT1', this.config);
+            const frameId = 'frame_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
+            const frame = new Frame(frameId, 'FRAME1', this.config);
             
-            const tempLayers = this.layerSystem.currentCutContainer.children.slice();
+            const tempLayers = this.layerSystem.currentFrameContainer.children.slice();
             tempLayers.forEach(tempLayer => {
                 const copiedLayer = this._deepCopyLayer(tempLayer);
-                cut.addLayer(copiedLayer);
+                frame.addLayer(copiedLayer);
             });
             
-            this.animationData.cuts.push(cut);
+            this.animationData.frames.push(frame);
             
             if (this.canvasContainer) {
-                if (this.layerSystem.currentCutContainer.parent === this.canvasContainer) {
-                    this.canvasContainer.removeChild(this.layerSystem.currentCutContainer);
+                if (this.layerSystem.currentFrameContainer.parent === this.canvasContainer) {
+                    this.canvasContainer.removeChild(this.layerSystem.currentFrameContainer);
                 }
                 
-                this.canvasContainer.addChild(cut.container);
-                cut.container.visible = true;
+                this.canvasContainer.addChild(frame.container);
+                frame.container.visible = true;
             }
             
-            if (this.layerSystem.createCutRenderTexture) {
-                this.layerSystem.createCutRenderTexture(cutId);
+            if (this.layerSystem.createFrameRenderTexture) {
+                this.layerSystem.createFrameRenderTexture(frameId);
             }
             
-            this.layerSystem.setCurrentCutContainer(cut.container);
+            this.layerSystem.setCurrentFrameContainer(frame.container);
             
-            this.animationData.playback.currentCutIndex = 0;
-            this.initialCutCreated = true;
+            this.animationData.playback.currentFrameIndex = 0;
+            this.initialFrameCreated = true;
             
             if (this.eventBus) {
-                this.eventBus.emit('animation:initial-cut-created', { 
-                    cutId: cut.id,
-                    cutIndex: 0
+                this.eventBus.emit('animation:initial-frame-created', { 
+                    frameId: frame.id,
+                    frameIndex: 0
                 });
             }
             
             setTimeout(() => {
-                this.generateCutThumbnail(0);
+                this.generateFrameThumbnail(0);
             }, 200);
             
             this.isInitializing = false;
         }
         
-        deleteCut(cutIndex) {
-            if (cutIndex < 0 || cutIndex >= this.animationData.cuts.length) return false;
-            if (this.animationData.cuts.length <= 1) return false;
+        deleteFrame(frameIndex) {
+            if (frameIndex < 0 || frameIndex >= this.animationData.frames.length) return false;
+            if (this.animationData.frames.length <= 1) return false;
             
-            const cut = this.animationData.cuts[cutIndex];
-            const cutSnapshot = cut.serialize();
-            const oldCurrentIndex = this.animationData.playback.currentCutIndex;
+            const frame = this.animationData.frames[frameIndex];
+            const frameSnapshot = frame.serialize();
+            const oldCurrentIndex = this.animationData.playback.currentFrameIndex;
             
             if (window.History && !window.History._manager.isApplying) {
                 const command = {
-                    name: 'delete-cut',
+                    name: 'delete-frame',
                     do: () => {
-                        if (this.layerSystem?.destroyCutRenderTexture) {
-                            this.layerSystem.destroyCutRenderTexture(cut.id);
+                        if (this.layerSystem?.destroyFrameRenderTexture) {
+                            this.layerSystem.destroyFrameRenderTexture(frame.id);
                         }
                         
-                        if (this.canvasContainer && cut.container.parent === this.canvasContainer) {
-                            this.canvasContainer.removeChild(cut.container);
+                        if (this.canvasContainer && frame.container.parent === this.canvasContainer) {
+                            this.canvasContainer.removeChild(frame.container);
                         }
                         
-                        this.animationData.cuts.splice(cutIndex, 1);
-                        this.renameCutsSequentially();
+                        this.animationData.frames.splice(frameIndex, 1);
+                        this.renameFramesSequentially();
                         
-                        if (this.animationData.playback.currentCutIndex >= cutIndex) {
-                            this.animationData.playback.currentCutIndex = Math.max(0, 
-                                this.animationData.playback.currentCutIndex - 1
+                        if (this.animationData.playback.currentFrameIndex >= frameIndex) {
+                            this.animationData.playback.currentFrameIndex = Math.max(0, 
+                                this.animationData.playback.currentFrameIndex - 1
                             );
                         }
                         
-                        if (this.animationData.cuts.length > 0) {
-                            const newIndex = Math.min(cutIndex, this.animationData.cuts.length - 1);
-                            this.switchToActiveCut(newIndex);
+                        if (this.animationData.frames.length > 0) {
+                            const newIndex = Math.min(frameIndex, this.animationData.frames.length - 1);
+                            this.switchToActiveFrame(newIndex);
                         }
                         
                         if (this.eventBus) {
-                            this.eventBus.emit('animation:cut-deleted', { cutIndex });
+                            this.eventBus.emit('animation:frame-deleted', { frameIndex });
                         }
                     },
                     undo: () => {
-                        const restoredCut = Cut.deserialize(cutSnapshot, this.config);
-                        this.animationData.cuts.splice(cutIndex, 0, restoredCut);
-                        this.renameCutsSequentially();
+                        const restoredFrame = Frame.deserialize(frameSnapshot, this.config);
+                        this.animationData.frames.splice(frameIndex, 0, restoredFrame);
+                        this.renameFramesSequentially();
                         
                         if (this.canvasContainer) {
-                            this.canvasContainer.addChild(restoredCut.container);
-                            restoredCut.container.visible = false;
+                            this.canvasContainer.addChild(restoredFrame.container);
+                            restoredFrame.container.visible = false;
                         }
                         
-                        if (this.layerSystem?.createCutRenderTexture) {
-                            this.layerSystem.createCutRenderTexture(restoredCut.id);
+                        if (this.layerSystem?.createFrameRenderTexture) {
+                            this.layerSystem.createFrameRenderTexture(restoredFrame.id);
                         }
                         
-                        this.animationData.playback.currentCutIndex = oldCurrentIndex;
-                        this.switchToActiveCut(oldCurrentIndex);
+                        this.animationData.playback.currentFrameIndex = oldCurrentIndex;
+                        this.switchToActiveFrame(oldCurrentIndex);
                         
                         setTimeout(() => {
-                            this.generateCutThumbnail(cutIndex);
+                            this.generateFrameThumbnail(frameIndex);
                         }, 100);
                         
                         if (this.eventBus) {
-                            this.eventBus.emit('animation:cut-restored', { 
-                                cutId: restoredCut.id, 
-                                cutIndex 
+                            this.eventBus.emit('animation:frame-restored', { 
+                                frameId: restoredFrame.id, 
+                                frameIndex 
                             });
                         }
                     },
-                    meta: { type: 'cut-delete', cutId: cut.id, cutIndex }
+                    meta: { type: 'frame-delete', frameId: frame.id, frameIndex }
                 };
                 
                 window.History.push(command);
             } else {
-                if (this.layerSystem?.destroyCutRenderTexture) {
-                    this.layerSystem.destroyCutRenderTexture(cut.id);
+                if (this.layerSystem?.destroyFrameRenderTexture) {
+                    this.layerSystem.destroyFrameRenderTexture(frame.id);
                 }
                 
-                if (this.canvasContainer && cut.container.parent === this.canvasContainer) {
-                    this.canvasContainer.removeChild(cut.container);
+                if (this.canvasContainer && frame.container.parent === this.canvasContainer) {
+                    this.canvasContainer.removeChild(frame.container);
                 }
                 
-                this.animationData.cuts.splice(cutIndex, 1);
-                this.renameCutsSequentially();
+                this.animationData.frames.splice(frameIndex, 1);
+                this.renameFramesSequentially();
                 
-                if (this.animationData.playback.currentCutIndex >= cutIndex) {
-                    this.animationData.playback.currentCutIndex = Math.max(0, 
-                        this.animationData.playback.currentCutIndex - 1
+                if (this.animationData.playback.currentFrameIndex >= frameIndex) {
+                    this.animationData.playback.currentFrameIndex = Math.max(0, 
+                        this.animationData.playback.currentFrameIndex - 1
                     );
                 }
                 
-                if (this.animationData.cuts.length > 0) {
-                    const newIndex = Math.min(cutIndex, this.animationData.cuts.length - 1);
-                    this.switchToActiveCut(newIndex);
+                if (this.animationData.frames.length > 0) {
+                    const newIndex = Math.min(frameIndex, this.animationData.frames.length - 1);
+                    this.switchToActiveFrame(newIndex);
                 }
                 
                 if (this.eventBus) {
-                    this.eventBus.emit('animation:cut-deleted', { cutIndex });
+                    this.eventBus.emit('animation:frame-deleted', { frameIndex });
                 }
             }
             
             return true;
         }
         
-        reorderCuts(oldIndex, newIndex) {
+        reorderFrames(oldIndex, newIndex) {
             if (oldIndex === newIndex) return;
-            if (oldIndex < 0 || oldIndex >= this.animationData.cuts.length) return;
-            if (newIndex < 0 || newIndex >= this.animationData.cuts.length) return;
+            if (oldIndex < 0 || oldIndex >= this.animationData.frames.length) return;
+            if (newIndex < 0 || newIndex >= this.animationData.frames.length) return;
             
-            const oldCurrentIndex = this.animationData.playback.currentCutIndex;
+            const oldCurrentIndex = this.animationData.playback.currentFrameIndex;
             
             if (window.History && !window.History._manager.isApplying) {
                 const command = {
-                    name: 'reorder-cuts',
+                    name: 'reorder-frames',
                     do: () => {
-                        const [movedCut] = this.animationData.cuts.splice(oldIndex, 1);
-                        this.animationData.cuts.splice(newIndex, 0, movedCut);
-                        this.renameCutsSequentially();
+                        const [movedFrame] = this.animationData.frames.splice(oldIndex, 1);
+                        this.animationData.frames.splice(newIndex, 0, movedFrame);
+                        this.renameFramesSequentially();
                         
-                        if (this.animationData.playback.currentCutIndex === oldIndex) {
-                            this.animationData.playback.currentCutIndex = newIndex;
-                        } else if (oldIndex < this.animationData.playback.currentCutIndex && 
-                                   newIndex >= this.animationData.playback.currentCutIndex) {
-                            this.animationData.playback.currentCutIndex--;
-                        } else if (oldIndex > this.animationData.playback.currentCutIndex && 
-                                   newIndex <= this.animationData.playback.currentCutIndex) {
-                            this.animationData.playback.currentCutIndex++;
+                        if (this.animationData.playback.currentFrameIndex === oldIndex) {
+                            this.animationData.playback.currentFrameIndex = newIndex;
+                        } else if (oldIndex < this.animationData.playback.currentFrameIndex && 
+                                   newIndex >= this.animationData.playback.currentFrameIndex) {
+                            this.animationData.playback.currentFrameIndex--;
+                        } else if (oldIndex > this.animationData.playback.currentFrameIndex && 
+                                   newIndex <= this.animationData.playback.currentFrameIndex) {
+                            this.animationData.playback.currentFrameIndex++;
                         }
                         
                         if (this.eventBus) {
-                            this.eventBus.emit('animation:cuts-reordered', { 
+                            this.eventBus.emit('animation:frames-reordered', { 
                                 oldIndex, 
                                 newIndex
                             });
                         }
                     },
                     undo: () => {
-                        const [movedCut] = this.animationData.cuts.splice(newIndex, 1);
-                        this.animationData.cuts.splice(oldIndex, 0, movedCut);
-                        this.renameCutsSequentially();
+                        const [movedFrame] = this.animationData.frames.splice(newIndex, 1);
+                        this.animationData.frames.splice(oldIndex, 0, movedFrame);
+                        this.renameFramesSequentially();
                         
-                        this.animationData.playback.currentCutIndex = oldCurrentIndex;
+                        this.animationData.playback.currentFrameIndex = oldCurrentIndex;
                         
                         if (this.eventBus) {
-                            this.eventBus.emit('animation:cuts-reordered', { 
+                            this.eventBus.emit('animation:frames-reordered', { 
                                 oldIndex: newIndex, 
                                 newIndex: oldIndex
                             });
                         }
                     },
-                    meta: { type: 'cut-reorder', oldIndex, newIndex }
+                    meta: { type: 'frame-reorder', oldIndex, newIndex }
                 };
                 
                 window.History.push(command);
             } else {
-                const [movedCut] = this.animationData.cuts.splice(oldIndex, 1);
-                this.animationData.cuts.splice(newIndex, 0, movedCut);
-                this.renameCutsSequentially();
+                const [movedFrame] = this.animationData.frames.splice(oldIndex, 1);
+                this.animationData.frames.splice(newIndex, 0, movedFrame);
+                this.renameFramesSequentially();
                 
-                if (this.animationData.playback.currentCutIndex === oldIndex) {
-                    this.animationData.playback.currentCutIndex = newIndex;
-                } else if (oldIndex < this.animationData.playback.currentCutIndex && 
-                           newIndex >= this.animationData.playback.currentCutIndex) {
-                    this.animationData.playback.currentCutIndex--;
-                } else if (oldIndex > this.animationData.playback.currentCutIndex && 
-                           newIndex <= this.animationData.playback.currentCutIndex) {
-                    this.animationData.playback.currentCutIndex++;
+                if (this.animationData.playback.currentFrameIndex === oldIndex) {
+                    this.animationData.playback.currentFrameIndex = newIndex;
+                } else if (oldIndex < this.animationData.playback.currentFrameIndex && 
+                           newIndex >= this.animationData.playback.currentFrameIndex) {
+                    this.animationData.playback.currentFrameIndex--;
+                } else if (oldIndex > this.animationData.playback.currentFrameIndex && 
+                           newIndex <= this.animationData.playback.currentFrameIndex) {
+                    this.animationData.playback.currentFrameIndex++;
                 }
                 
                 if (this.eventBus) {
-                    this.eventBus.emit('animation:cuts-reordered', { 
+                    this.eventBus.emit('animation:frames-reordered', { 
                         oldIndex, 
                         newIndex
                     });
@@ -1150,52 +1135,52 @@
             }
         }
         
-        renameCutsSequentially() {
-            if (!this.animationData.cuts || this.animationData.cuts.length === 0) return;
+        renameFramesSequentially() {
+            if (!this.animationData.frames || this.animationData.frames.length === 0) return;
             
-            this.animationData.cuts.forEach((cut, index) => {
-                cut.name = `CUT${index + 1}`;
+            this.animationData.frames.forEach((frame, index) => {
+                frame.name = `FRAME${index + 1}`;
             });
             
             if (this.eventBus) {
-                this.eventBus.emit('animation:cuts-renamed-sequentially');
+                this.eventBus.emit('animation:frames-renamed-sequentially');
             }
         }
         
-        updateCutDuration(cutIndex, duration) {
-            const cut = this.animationData.cuts[cutIndex];
-            if (!cut) return;
+        updateFrameDuration(frameIndex, duration) {
+            const frame = this.animationData.frames[frameIndex];
+            if (!frame) return;
             
-            cut.duration = Math.max(0.01, Math.min(10, duration));
+            frame.duration = Math.max(0.01, Math.min(10, duration));
             
             if (this.eventBus) {
-                this.eventBus.emit('animation:cut-duration-changed', { 
-                    cutIndex, 
-                    duration: cut.duration 
+                this.eventBus.emit('animation:frame-duration-changed', { 
+                    frameIndex, 
+                    duration: frame.duration 
                 });
             }
         }
         
-        retimeAllCuts(newDuration) {
-            if (!this.animationData.cuts || this.animationData.cuts.length === 0) return;
+        retimeAllFrames(newDuration) {
+            if (!this.animationData.frames || this.animationData.frames.length === 0) return;
             if (isNaN(newDuration) || newDuration <= 0) return;
             
             const clampedDuration = Math.max(0.01, Math.min(10, newDuration));
             
-            this.animationData.cuts.forEach(cut => {
-                cut.duration = clampedDuration;
+            this.animationData.frames.forEach(frame => {
+                frame.duration = clampedDuration;
             });
             
             if (this.eventBus) {
-                this.eventBus.emit('animation:all-cuts-retimed', {
+                this.eventBus.emit('animation:all-frames-retimed', {
                     newDuration: clampedDuration,
-                    cutCount: this.animationData.cuts.length
+                    frameCount: this.animationData.frames.length
                 });
             }
         }
         
         play() {
-            if (this.animationData.cuts.length === 0) return;
+            if (this.animationData.frames.length === 0) return;
             
             this.animationData.playback.isPlaying = true;
             this.animationData.playback.startTime = Date.now();
@@ -1208,7 +1193,7 @@
         
         pause() {
             this.animationData.playback.isPlaying = false;
-            this.lastStoppedCutIndex = this.animationData.playback.currentCutIndex;
+            this.lastStoppedFrameIndex = this.animationData.playback.currentFrameIndex;
             this.stopPlaybackLoop();
             
             if (this.eventBus) {
@@ -1218,7 +1203,7 @@
         
         stop() {
             this.animationData.playback.isPlaying = false;
-            this.lastStoppedCutIndex = this.animationData.playback.currentCutIndex;
+            this.lastStoppedFrameIndex = this.animationData.playback.currentFrameIndex;
             this.stopPlaybackLoop();
             
             if (this.eventBus) {
@@ -1260,17 +1245,17 @@
         updatePlayback() {
             if (!this.animationData.playback.isPlaying) return;
             
-            const currentCut = this.animationData.cuts[this.animationData.playback.currentCutIndex];
-            if (!currentCut) return;
+            const currentFrame = this.animationData.frames[this.animationData.playback.currentFrameIndex];
+            if (!currentFrame) return;
             
             const elapsed = (Date.now() - this.animationData.playback.startTime) / 1000;
             
-            if (elapsed >= currentCut.duration) {
-                this.animationData.playback.currentCutIndex++;
+            if (elapsed >= currentFrame.duration) {
+                this.animationData.playback.currentFrameIndex++;
                 
-                if (this.animationData.playback.currentCutIndex >= this.animationData.cuts.length) {
+                if (this.animationData.playback.currentFrameIndex >= this.animationData.frames.length) {
                     if (this.animationData.settings.loop) {
-                        this.animationData.playback.currentCutIndex = 0;
+                        this.animationData.playback.currentFrameIndex = 0;
                     } else {
                         this.stop();
                         return;
@@ -1278,55 +1263,55 @@
                 }
                 
                 this.animationData.playback.startTime = Date.now();
-                this.switchToActiveCut(this.animationData.playback.currentCutIndex);
+                this.switchToActiveFrame(this.animationData.playback.currentFrameIndex);
                 
                 if (this.eventBus) {
-                    this.eventBus.emit('animation:cut-changed', { 
-                        cutIndex: this.animationData.playback.currentCutIndex 
+                    this.eventBus.emit('animation:frame-changed', { 
+                        frameIndex: this.animationData.playback.currentFrameIndex 
                     });
                 }
             }
         }
         
         goToPreviousFrame() {
-            if (this.animationData.cuts.length === 0) return;
+            if (this.animationData.frames.length === 0) return;
             
             this.stopPlaybackLoop();
             this.animationData.playback.isPlaying = false;
             
-            let newIndex = this.animationData.playback.currentCutIndex - 1;
+            let newIndex = this.animationData.playback.currentFrameIndex - 1;
             if (newIndex < 0) {
-                newIndex = this.animationData.cuts.length - 1;
+                newIndex = this.animationData.frames.length - 1;
             }
             
-            this.animationData.playback.currentCutIndex = newIndex;
-            this.switchToActiveCut(newIndex);
+            this.animationData.playback.currentFrameIndex = newIndex;
+            this.switchToActiveFrame(newIndex);
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:frame-changed', { 
-                    cutIndex: newIndex, 
+                    frameIndex: newIndex, 
                     direction: 'previous' 
                 });
             }
         }
         
         goToNextFrame() {
-            if (this.animationData.cuts.length === 0) return;
+            if (this.animationData.frames.length === 0) return;
             
             this.stopPlaybackLoop();
             this.animationData.playback.isPlaying = false;
             
-            let newIndex = this.animationData.playback.currentCutIndex + 1;
-            if (newIndex >= this.animationData.cuts.length) {
+            let newIndex = this.animationData.playback.currentFrameIndex + 1;
+            if (newIndex >= this.animationData.frames.length) {
                 newIndex = 0;
             }
             
-            this.animationData.playback.currentCutIndex = newIndex;
-            this.switchToActiveCut(newIndex);
+            this.animationData.playback.currentFrameIndex = newIndex;
+            this.switchToActiveFrame(newIndex);
             
             if (this.eventBus) {
                 this.eventBus.emit('animation:frame-changed', { 
-                    cutIndex: newIndex, 
+                    frameIndex: newIndex, 
                     direction: 'next' 
                 });
             }
@@ -1345,42 +1330,42 @@
             return this.animationData; 
         }
         
-        getCurrentCutIndex() { 
-            return this.animationData.playback.currentCutIndex; 
+        getCurrentFrameIndex() { 
+            return this.animationData.playback.currentFrameIndex; 
         }
         
-        getCutCount() { 
-            return this.animationData.cuts.length; 
+        getFrameCount() { 
+            return this.animationData.frames.length; 
         }
         
-        getCurrentCut() { 
-            return this.animationData.cuts[this.animationData.playback.currentCutIndex] || null; 
+        getCurrentFrame() { 
+            return this.animationData.frames[this.animationData.playback.currentFrameIndex] || null; 
         }
         
-        getCurrentCutLayers() {
-            const currentCut = this.getCurrentCut();
-            return currentCut ? currentCut.getLayers() : [];
+        getCurrentFrameLayers() {
+            const currentFrame = this.getCurrentFrame();
+            return currentFrame ? currentFrame.getLayers() : [];
         }
         
-        hasInitialCut() { 
-            return this.animationData.cuts.length > 0; 
+        hasInitialFrame() { 
+            return this.animationData.frames.length > 0; 
         }
         
-        getAllCuts() { 
-            return this.animationData.cuts; 
+        getAllFrames() { 
+            return this.animationData.frames; 
         }
         
-        getCutInfo(cutIndex) {
-            const cut = this.animationData.cuts[cutIndex];
-            if (!cut) return null;
+        getFrameInfo(frameIndex) {
+            const frame = this.animationData.frames[frameIndex];
+            if (!frame) return null;
             
             return {
-                id: cut.id,
-                name: cut.name,
-                duration: cut.duration,
-                layerCount: cut.getLayerCount(),
-                thumbnailCanvas: cut.thumbnailCanvas,
-                isActive: cutIndex === this.animationData.playback.currentCutIndex
+                id: frame.id,
+                name: frame.name,
+                duration: frame.duration,
+                layerCount: frame.getLayerCount(),
+                thumbnailCanvas: frame.thumbnailCanvas,
+                isActive: frameIndex === this.animationData.playback.currentFrameIndex
             };
         }
         
@@ -1392,8 +1377,8 @@
             const elapsed = (Date.now() - this.animationData.playback.startTime) / 1000;
             
             let totalTime = 0;
-            for (let i = 0; i < this.animationData.playback.currentCutIndex; i++) {
-                totalTime += this.animationData.cuts[i]?.duration || 0;
+            for (let i = 0; i < this.animationData.playback.currentFrameIndex; i++) {
+                totalTime += this.animationData.frames[i]?.duration || 0;
             }
             
             return totalTime + elapsed;
@@ -1402,9 +1387,9 @@
         getPlaybackState() {
             return {
                 isPlaying: this.animationData.playback.isPlaying,
-                currentCutIndex: this.animationData.playback.currentCutIndex,
+                currentFrameIndex: this.animationData.playback.currentFrameIndex,
                 loop: this.animationData.settings.loop,
-                cutsCount: this.animationData.cuts.length
+                framesCount: this.animationData.frames.length
             };
         }
         
@@ -1416,7 +1401,7 @@
             this.isAnimationMode = !this.isAnimationMode;
             
             if (this.isAnimationMode) {
-                this.createInitialCutIfNeeded();
+                this.createInitialFrameIfNeeded();
                 if (this.eventBus) {
                     this.eventBus.emit('animation:mode-entered');
                 }
@@ -1432,32 +1417,32 @@
             return this.isAnimationMode;
         }
         
-        addLayerToCurrentCut(layerData) {
-            const currentCut = this.getCurrentCut();
-            if (!currentCut) return null;
+        addLayerToCurrentFrame(layerData) {
+            const currentFrame = this.getCurrentFrame();
+            if (!currentFrame) return null;
             
-            const layer = this._createBlankLayer(currentCut.id, layerData.name || 'New Layer');
+            const layer = this._createBlankLayer(currentFrame.id, layerData.name || 'New Layer');
             layer.visible = layerData.visible !== false;
             layer.alpha = layerData.opacity || 1.0;
             
-            currentCut.addLayer(layer);
+            currentFrame.addLayer(layer);
             
             return layer.layerData;
         }
         
-        updateCurrentCutLayer(layerIndex, updateData) {
-            const currentCut = this.getCurrentCut();
-            return currentCut;
+        updateCurrentFrameLayer(layerIndex, updateData) {
+            const currentFrame = this.getCurrentFrame();
+            return currentFrame;
         }
         
-        saveCutLayerStates() {
+        saveFrameLayerStates() {
         }
     }
     
     window.TegakiAnimationSystem = AnimationSystem;
-    window.TegakiCut = Cut;
+    window.TegakiFrame = Frame;
     window.animationSystem = new AnimationSystem();
 
 })();
 
-console.log('✅ animation-system.js (LayerModel統合版) loaded');
+console.log('✅ animation-system.js (FRAME変換完了版) loaded');
