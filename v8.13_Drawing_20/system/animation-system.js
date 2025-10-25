@@ -1,10 +1,10 @@
 // ================================================================================
-// system/animation-system.js - Phase 4.1: CUT自動採番対応版
+// system/animation-system.js - LayerModel統合版
 // ================================================================================
-// 【Phase 4.1改修内容】
-// 1. createNewBlankCut() でCUT追加後に自動採番を実行
-// 2. 「CUT番号整理」ボタンが不要になるよう、常に順序通りの番号を維持
-// 3. History統合済み（Phase 2.5の機能を継承）
+// 【Phase 1根本修正】
+// - _deserializeLayer()でLayerModelインスタンスを作成
+// - マスク機能が完全に動作するようになる
+// - Phase 4.1のCUT自動採番機能は維持
 
 (function() {
     'use strict';
@@ -99,18 +99,22 @@
             return cut;
         }
         
+        // ===== Phase 1根本修正: LayerModelインスタンス化 =====
         _deserializeLayer(layerData) {
             const layer = new PIXI.Container();
             layer.label = layerData.id;
             
-            layer.layerData = {
+            // 🔥 LayerModelインスタンスを作成
+            const layerModel = new window.TegakiDataModels.LayerModel({
                 id: layerData.id,
                 name: layerData.name,
                 visible: layerData.visible !== false,
                 opacity: layerData.opacity || 1.0,
-                isBackground: layerData.isBackground || false,
-                paths: []
-            };
+                isBackground: layerData.isBackground || false
+            });
+            layerModel.paths = [];
+            
+            layer.layerData = layerModel;
             
             if (layerData.transform) {
                 layer.position.set(layerData.transform.x || 0, layerData.transform.y || 0);
@@ -131,14 +135,14 @@
                 bg.rect(0, 0, canvasWidth, canvasHeight);
                 bg.fill(bgColor);
                 layer.addChild(bg);
-                layer.layerData.backgroundGraphics = bg;
+                layerModel.backgroundGraphics = bg;
             }
             
             if (layerData.paths && Array.isArray(layerData.paths)) {
                 layerData.paths.forEach(pathData => {
                     const path = this._rebuildPath(pathData);
                     if (path) {
-                        layer.layerData.paths.push(path);
+                        layerModel.paths.push(path);
                         layer.addChild(path.graphics);
                     }
                 });
@@ -383,10 +387,8 @@
             return cut;
         }
         
-        // ========== Phase 4.1改修: createNewBlankCut() ==========
         createNewBlankCut() {
             const cutId = 'cut_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            // 🔥 Phase 4.1: 仮の名前で作成（後で自動採番）
             const cut = new Cut(cutId, `CUT_TEMP_${cutId}`, this.config);
             
             const bgLayer = this._createBackgroundLayer(cutId);
@@ -402,8 +404,6 @@
                     name: 'create-cut',
                     do: () => {
                         this.animationData.cuts.push(cut);
-                        
-                        // 🔥 Phase 4.1: CUT追加後に自動採番を実行
                         this.renameCutsSequentially();
                         
                         if (this.canvasContainer) {
@@ -438,8 +438,6 @@
                             }
                             
                             this.animationData.cuts.splice(cutIndex, 1);
-                            
-                            // 🔥 Phase 4.1: CUT削除後も自動採番を実行
                             this.renameCutsSequentially();
                             
                             if (this.animationData.cuts.length > 0) {
@@ -458,8 +456,6 @@
                 window.History.push(command);
             } else {
                 this.animationData.cuts.push(cut);
-                
-                // 🔥 Phase 4.1: CUT追加後に自動採番を実行
                 this.renameCutsSequentially();
                 
                 if (this.canvasContainer) {
@@ -483,61 +479,68 @@
             
             return cut;
         }
-        // ========== Phase 4.1改修: END ==========
         
         createNewEmptyCut() {
             return this.createNewBlankCut();
         }
         
+        // ===== LayerModelインスタンス化 =====
         _createBackgroundLayer(cutId) {
             const layer = new PIXI.Container();
-            layer.label = `${cutId}_layer_bg`;
-            layer.layerData = {
+            const layerModel = new window.TegakiDataModels.LayerModel({
                 id: `${cutId}_layer_bg_${Date.now()}`,
                 name: '背景',
                 visible: true,
                 opacity: 1.0,
-                isBackground: true,
-                paths: []
-            };
+                isBackground: true
+            });
+            layerModel.paths = [];
+            
+            layer.label = layerModel.id;
+            layer.layerData = layerModel;
             
             const canvasSize = this.getCurrentCanvasSize();
             const bg = new PIXI.Graphics();
             bg.rect(0, 0, canvasSize.width, canvasSize.height);
             bg.fill(this.config.background.color);
             layer.addChild(bg);
-            layer.layerData.backgroundGraphics = bg;
+            layerModel.backgroundGraphics = bg;
             
             return layer;
         }
         
+        // ===== LayerModelインスタンス化 =====
         _createBlankLayer(cutId, name) {
             const layer = new PIXI.Container();
-            layer.label = `${cutId}_layer_${Date.now()}`;
-            layer.layerData = {
-                id: layer.label,
+            const layerModel = new window.TegakiDataModels.LayerModel({
+                id: `${cutId}_layer_${Date.now()}`,
                 name: name,
                 visible: true,
                 opacity: 1.0,
-                isBackground: false,
-                paths: []
-            };
+                isBackground: false
+            });
+            layerModel.paths = [];
+            
+            layer.label = layerModel.id;
+            layer.layerData = layerModel;
             
             return layer;
         }
         
+        // ===== LayerModelインスタンス化 =====
         _deepCopyLayer(originalLayer) {
             const layer = new PIXI.Container();
-            layer.label = `${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-            
-            layer.layerData = {
-                id: layer.label,
+            const layerModel = new window.TegakiDataModels.LayerModel({
+                id: `layer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
                 name: originalLayer.layerData?.name || 'Layer',
                 visible: originalLayer.visible,
                 opacity: originalLayer.alpha,
-                isBackground: originalLayer.layerData?.isBackground || false,
-                paths: []
-            };
+                isBackground: originalLayer.layerData?.isBackground || false
+            });
+            layerModel.paths = [];
+            
+            layer.label = layerModel.id;
+            layer.layerData = layerModel;
             
             layer.position.set(originalLayer.position.x, originalLayer.position.y);
             layer.rotation = originalLayer.rotation;
@@ -552,14 +555,14 @@
                 bg.rect(0, 0, canvasSize.width, canvasSize.height);
                 bg.fill(this.config.background.color);
                 layer.addChild(bg);
-                layer.layerData.backgroundGraphics = bg;
+                layerModel.backgroundGraphics = bg;
             }
             
             if (originalLayer.layerData?.paths && Array.isArray(originalLayer.layerData.paths)) {
                 originalLayer.layerData.paths.forEach(originalPath => {
                     const copiedPath = this._deepCopyPath(originalPath);
                     if (copiedPath) {
-                        layer.layerData.paths.push(copiedPath);
+                        layerModel.paths.push(copiedPath);
                         layer.addChild(copiedPath.graphics);
                     }
                 });
@@ -656,6 +659,13 @@
             
             this.layerSystem.setCurrentCutContainer(targetCut.container);
             
+            // 🔥 カット切替後にマスク初期化チェック
+            if (this.app && this.app.renderer) {
+                setTimeout(() => {
+                    this._ensureMasksInitialized(targetCut.container);
+                }, 50);
+            }
+            
             this.animationData.playback.currentCutIndex = cutIndex;
             
             if (this.eventBus) {
@@ -663,6 +673,52 @@
             }
             
             this.cutSwitchInProgress = false;
+        }
+        
+        // 🔥 マスク初期化保証メソッド
+        _ensureMasksInitialized(container) {
+            if (!container || !this.app?.renderer || !this.config) return;
+            
+            const layers = container.children;
+            for (const layer of layers) {
+                if (!layer.layerData) continue;
+                
+                // LayerModelインスタンスでない場合はスキップ
+                if (!(layer.layerData instanceof window.TegakiDataModels.LayerModel)) continue;
+                
+                // マスクが未初期化の場合のみ初期化
+                if (!layer.layerData.hasMask()) {
+                    const success = layer.layerData.initializeMask(
+                        this.config.canvas.width,
+                        this.config.canvas.height,
+                        this.app.renderer
+                    );
+                    
+                    if (success && layer.layerData.maskSprite) {
+                        // maskSpriteを最初の子として追加
+                        layer.addChildAt(layer.layerData.maskSprite, 0);
+                        
+                        // 既存Graphicsにマスク適用
+                        this._applyMaskToLayerGraphics(layer);
+                    }
+                }
+            }
+        }
+        
+        // 🔥 レイヤー内のGraphicsにマスク適用
+        _applyMaskToLayerGraphics(layer) {
+            if (!layer.layerData || !layer.layerData.maskSprite) return;
+            
+            for (const child of layer.children) {
+                if (child === layer.layerData.maskSprite || 
+                    child === layer.layerData.backgroundGraphics) {
+                    continue;
+                }
+                
+                if (child instanceof PIXI.Graphics) {
+                    child.mask = layer.layerData.maskSprite;
+                }
+            }
         }
         
         switchToActiveCutSafely(cutIndex, resetTransform) {
@@ -775,8 +831,6 @@
             if (!pastedCut) return false;
             
             this.animationData.cuts.splice(insertIndex, 0, pastedCut);
-            
-            // 🔥 Phase 4.1: ペースト後も自動採番
             this.renameCutsSequentially();
             
             if (this.canvasContainer) {
@@ -808,7 +862,6 @@
             this.animationData.cuts.push(pastedCut);
             const newIndex = this.animationData.cuts.length - 1;
             
-            // 🔥 Phase 4.1: ペースト後も自動採番
             this.renameCutsSequentially();
             
             if (this.canvasContainer) {
@@ -922,7 +975,6 @@
             this.isInitializing = false;
         }
         
-        // ========== Phase 2.5改修: deleteCut() ==========
         deleteCut(cutIndex) {
             if (cutIndex < 0 || cutIndex >= this.animationData.cuts.length) return false;
             if (this.animationData.cuts.length <= 1) return false;
@@ -944,8 +996,6 @@
                         }
                         
                         this.animationData.cuts.splice(cutIndex, 1);
-                        
-                        // 🔥 Phase 4.1: CUT削除後も自動採番
                         this.renameCutsSequentially();
                         
                         if (this.animationData.playback.currentCutIndex >= cutIndex) {
@@ -966,8 +1016,6 @@
                     undo: () => {
                         const restoredCut = Cut.deserialize(cutSnapshot, this.config);
                         this.animationData.cuts.splice(cutIndex, 0, restoredCut);
-                        
-                        // 🔥 Phase 4.1: CUT復元後も自動採番
                         this.renameCutsSequentially();
                         
                         if (this.canvasContainer) {
@@ -1007,8 +1055,6 @@
                 }
                 
                 this.animationData.cuts.splice(cutIndex, 1);
-                
-                // 🔥 Phase 4.1: CUT削除後も自動採番
                 this.renameCutsSequentially();
                 
                 if (this.animationData.playback.currentCutIndex >= cutIndex) {
@@ -1029,9 +1075,7 @@
             
             return true;
         }
-        // ========== Phase 2.5改修: END ==========
         
-        // ========== Phase 2.5改修: reorderCuts() ==========
         reorderCuts(oldIndex, newIndex) {
             if (oldIndex === newIndex) return;
             if (oldIndex < 0 || oldIndex >= this.animationData.cuts.length) return;
@@ -1045,8 +1089,6 @@
                     do: () => {
                         const [movedCut] = this.animationData.cuts.splice(oldIndex, 1);
                         this.animationData.cuts.splice(newIndex, 0, movedCut);
-                        
-                        // 🔥 Phase 4.1: CUT並び替え後も自動採番
                         this.renameCutsSequentially();
                         
                         if (this.animationData.playback.currentCutIndex === oldIndex) {
@@ -1069,8 +1111,6 @@
                     undo: () => {
                         const [movedCut] = this.animationData.cuts.splice(newIndex, 1);
                         this.animationData.cuts.splice(oldIndex, 0, movedCut);
-                        
-                        // 🔥 Phase 4.1: CUT並び替え戻し後も自動採番
                         this.renameCutsSequentially();
                         
                         this.animationData.playback.currentCutIndex = oldCurrentIndex;
@@ -1089,8 +1129,6 @@
             } else {
                 const [movedCut] = this.animationData.cuts.splice(oldIndex, 1);
                 this.animationData.cuts.splice(newIndex, 0, movedCut);
-                
-                // 🔥 Phase 4.1: CUT並び替え後も自動採番
                 this.renameCutsSequentially();
                 
                 if (this.animationData.playback.currentCutIndex === oldIndex) {
@@ -1111,9 +1149,7 @@
                 }
             }
         }
-        // ========== Phase 2.5改修: END ==========
         
-        // ========== Phase 4.1改修: renameCutsSequentially() ==========
         renameCutsSequentially() {
             if (!this.animationData.cuts || this.animationData.cuts.length === 0) return;
             
@@ -1125,7 +1161,6 @@
                 this.eventBus.emit('animation:cuts-renamed-sequentially');
             }
         }
-        // ========== Phase 4.1改修: END ==========
         
         updateCutDuration(cutIndex, duration) {
             const cut = this.animationData.cuts[cutIndex];
@@ -1425,4 +1460,4 @@
 
 })();
 
-console.log('✅ animation-system.js (Phase 4.1: CUT自動採番対応版) loaded');
+console.log('✅ animation-system.js (LayerModel統合版) loaded');
