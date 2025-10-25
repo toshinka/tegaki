@@ -1,10 +1,9 @@
-// ===== system/data-models.js - Phase 1: マスク初期化完全実装 =====
-// Step 1.1完了: initializeMask()を完全実装
+// ===== system/data-models.js - マスク実装完了版 =====
+// 🔥 maskSpriteを不可視化してレンダリング防止
 
 (function() {
     'use strict';
 
-    // ========== Layer データモデル ==========
     const LAYER_SCHEMA = {
         id: { type: 'string', required: true, editable: false },
         name: { type: 'string', required: true, editable: true },
@@ -37,52 +36,40 @@
             return LAYER_SCHEMA;
         }
 
-        /**
-         * マスク存在チェック
-         * @returns {boolean} マスクが初期化済みか
-         */
         hasMask() {
             return this._maskInitialized && 
                    this.maskTexture !== null && 
                    this.maskSprite !== null;
         }
 
-        /**
-         * ===== Step 1.1: マスク初期化（完全実装） =====
-         * RenderTextureマスク生成
-         * @param {number} width - マスクテクスチャの幅
-         * @param {number} height - マスクテクスチャの高さ
-         * @param {PIXI.Renderer} renderer - PixiJSレンダラー
-         * @returns {boolean} 初期化成功時true
-         */
         initializeMask(width, height, renderer) {
-            if (!renderer) {
-                return false;
-            }
-
             if (this._maskInitialized) {
                 this.destroyMask();
             }
 
             try {
-                this.maskTexture = PIXI.RenderTexture.create({ 
-                    width: width, 
-                    height: height 
+                this.maskTexture = PIXI.RenderTexture.create({
+                    width: width,
+                    height: height
                 });
 
                 const whiteRect = new PIXI.Graphics();
-                whiteRect.rect(0, 0, width, height).fill({ color: 0xFFFFFF });
+                whiteRect.rect(0, 0, width, height);
+                whiteRect.fill({ color: 0xFFFFFF });
 
-                renderer.render({ 
-                    container: whiteRect, 
-                    target: this.maskTexture, 
-                    clear: true 
+                renderer.render({
+                    container: whiteRect,
+                    target: this.maskTexture,
+                    clear: true
                 });
 
-                whiteRect.destroy();
+                whiteRect.destroy({ children: true });
 
                 this.maskSprite = new PIXI.Sprite(this.maskTexture);
                 this.maskSprite.label = 'mask_sprite';
+                
+                // 🔥 マスクスプライト自体を不可視化（マスク機能は維持）
+                this.maskSprite.renderable = false;
 
                 this._maskInitialized = true;
 
@@ -94,9 +81,6 @@
             }
         }
 
-        /**
-         * マスク破棄
-         */
         destroyMask() {
             if (this.maskSprite) {
                 try {
@@ -137,7 +121,6 @@
         }
     }
 
-    // ========== CUT データモデル ==========
     const CUT_SCHEMA = {
         id: { type: 'string', required: true, editable: false },
         name: { type: 'string', required: true, editable: true },
@@ -180,7 +163,6 @@
         }
     }
 
-    // ========== Stroke データモデル ==========
     const STROKE_SCHEMA = {
         points: { type: 'array', required: true, editable: false },
         isSingleDot: { type: 'boolean', default: false, editable: false },
@@ -290,3 +272,5 @@
     };
 
 })();
+
+console.log('✅ data-models.js (マスクスプライト不可視版) loaded');

@@ -1,10 +1,7 @@
 /**
- * DrawingEngine - ペン描画統合制御クラス (Phase 1: 消しゴムマスク統合完了版)
- * 
- * 改修内容:
- * - constructorにEraserMaskRenderer追加
- * - stopDrawing()に消しゴムマスク処理統合
- * - finalizeStroke()にマスク適用追加
+ * DrawingEngine - ペン描画統合制御クラス (マスク消しゴム対応完全版)
+ * Phase 1: RenderTextureマスクベース消しゴム実装完了
+ * 🔥 Undo/Redo時のGraphics破壊問題を修正
  */
 
 class DrawingEngine {
@@ -18,8 +15,6 @@ class DrawingEngine {
         this.pressureHandler = new PressureHandler();
         this.strokeRecorder = new StrokeRecorder(this.pressureHandler, this.cameraSystem);
         this.strokeRenderer = new StrokeRenderer(app);
-        
-        // ===== Phase 1: EraserMaskRenderer追加 =====
         this.eraserRenderer = new EraserMaskRenderer(app);
 
         this.brushSettings = null;
@@ -126,14 +121,17 @@ class DrawingEngine {
         if (!this.isDrawing) return;
 
         const strokeData = this.strokeRecorder.endStroke();
+        this.clearPreview();
+        this.clearEraserPreview();
         const tool = this.currentTool;
-        
-        // ===== Phase 1: 消しゴムマスク処理統合 =====
+
+        // ===== Phase 1: 消しゴムツール処理 =====
         if (tool === 'eraser' && this.currentLayer && strokeData.points.length > 0) {
             const layerData = this.currentLayer.layerData;
             
-            if (layerData?.hasMask?.()) {
+            if (layerData && typeof layerData.hasMask === 'function' && layerData.hasMask()) {
                 const radius = this.currentSettings.size / 2;
+                
                 const beforeSnapshot = this.eraserRenderer.captureMaskSnapshot(layerData);
                 
                 const ok = this.eraserRenderer.renderEraserToMask(
@@ -148,26 +146,39 @@ class DrawingEngine {
                     const entry = {
                         name: 'Erase',
                         do: async () => {
-                            await this.eraserRenderer.restoreMaskSnapshot(layerData, afterSnapshot);
+                            if (afterSnapshot) {
+                                await this.eraserRenderer.restoreMaskSnapshot(layerData, afterSnapshot);
+                            }
                             this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
                         },
                         undo: async () => {
-                            await this.eraserRenderer.restoreMaskSnapshot(layerData, beforeSnapshot);
+                            if (beforeSnapshot) {
+                                await this.eraserRenderer.restoreMaskSnapshot(layerData, beforeSnapshot);
+                            }
                             this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                        },
+                        meta: { 
+                            type: 'erase', 
+                            layerId: layerData.id, 
+                            tool: 'eraser' 
                         }
                     };
                     
-                    this.history?.push(entry);
+                    if (this.history) {
+                        this.history.push(entry);
+                    }
+                    
+                    if (this.eventBus) {
+                        this.eventBus.emit('layer:erased', { layerId: layerData.id });
+                    }
+                    
                     this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
                 }
             }
         } else {
-            // ===== ペンツール時: 通常の確定描画 =====
             this.finalizeStroke(strokeData, tool);
         }
 
-        this.clearPreview();
-        this.clearEraserPreview();
         this.isDrawing = false;
         this.currentLayer = null;
         this.currentSettings = null;
@@ -233,18 +244,18 @@ class DrawingEngine {
         const strokeObject = this.strokeRenderer.renderFinalStroke(strokeData, this.currentSettings);
         this.strokeRenderer.setTool(originalTool);
 
+        // ===== Phase 1: 新規ストロークへのマスク適用 =====
+        const layerData = this.currentLayer.layerData;
+        if (layerData && typeof layerData.hasMask === 'function' && layerData.hasMask() && layerData.maskSprite) {
+            strokeObject.mask = layerData.maskSprite;
+        }
+
         strokeObject._strokePoints = strokeData.points;
         strokeObject._strokeOptions = {
             color: this.currentSettings.color,
             size: this.currentSettings.size,
             alpha: this.currentSettings.alpha
         };
-
-        // ===== Phase 1: マスク適用追加 =====
-        const layerData = this.currentLayer.layerData;
-        if (layerData?.hasMask?.() && layerData.maskSprite) {
-            strokeObject.mask = layerData.maskSprite;
-        }
 
         const strokeModel = new window.TegakiDataModels.StrokeData({
             points: strokeData.points,
@@ -259,17 +270,37 @@ class DrawingEngine {
         const targetLayer = this.currentLayer;
         const layerId = targetLayer.layerData?.id || targetLayer.label;
 
+        // 🔥 Undo時に再マスク適用するための参照保持
+        const layerIndex = this.layerSystem.activeLayerIndex;
+        
         const addStrokeCommand = {
             name: activeTool === 'eraser' ? 'Erase' : 'Add Stroke',
             do: () => {
                 if (targetLayer && targetLayer.addChild) {
                     targetLayer.addChild(strokeObject);
+                    
+                    // 🔥 do実行時にもマスク再適用
+                    const currentLayerData = targetLayer.layerData;
+                    if (currentLayerData && typeof currentLayerData.hasMask === 'function' && 
+                        currentLayerData.hasMask() && currentLayerData.maskSprite) {
+                        strokeObject.mask = currentLayerData.maskSprite;
+                    }
+                    
+                    // 🔥 サムネイル更新
+                    if (this.layerSystem && typeof layerIndex === 'number') {
+                        this.layerSystem.requestThumbnailUpdate(layerIndex);
+                    }
                 }
             },
             undo: () => {
-                if (targetLayer && targetLayer.removeChild) {
+                if (targetLayer && targetLayer.removeChild && strokeObject.parent === targetLayer) {
                     targetLayer.removeChild(strokeObject);
-                    strokeObject.destroy({ children: true });
+                    // 🔥 destroy()を呼ばない（再利用のため）
+                    
+                    // 🔥 サムネイル更新
+                    if (this.layerSystem && typeof layerIndex === 'number') {
+                        this.layerSystem.requestThumbnailUpdate(layerIndex);
+                    }
                 }
             },
             meta: {
@@ -281,6 +312,11 @@ class DrawingEngine {
 
         if (this.history && this.history.push) {
             this.history.push(addStrokeCommand);
+        }
+        
+        // 🔥 初回描画時もサムネイル更新
+        if (this.layerSystem && typeof layerIndex === 'number') {
+            this.layerSystem.requestThumbnailUpdate(layerIndex);
         }
 
         if (this.eventBus) {
