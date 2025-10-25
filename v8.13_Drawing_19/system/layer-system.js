@@ -1,5 +1,5 @@
-// ===== system/layer-system.js - サムネイル自動更新対応版 =====
-// ✅ 改修: layer:modifiedイベントリスナー追加で自動サムネイル更新
+// ===== system/layer-system.js - Phase 1完全版 =====
+// 元ファイル全継承 + LayerModel変換処理追加
 
 (function() {
     'use strict';
@@ -66,7 +66,6 @@
             this._setupAnimationSystemIntegration();
             this._setupVKeyEvents();
             this._startThumbnailUpdateProcess();
-            this._setupThumbnailAutoUpdate();
             this.isInitialized = true;
         }
 
@@ -86,15 +85,6 @@
                 }
             }
             return g;
-        }
-        
-        _setupThumbnailAutoUpdate() {
-            if (!this.eventBus) return;
-            
-            this.eventBus.on('layer:modified', (data) => {
-                const layerIndex = data.layerIndex !== undefined ? data.layerIndex : this.activeLayerIndex;
-                this.requestThumbnailUpdate(layerIndex);
-            });
         }
         
         _setupVKeyEvents() {
@@ -204,6 +194,21 @@
             }
         }
 
+        _applyMaskToLayerGraphics(layer) {
+            if (!layer.layerData || !layer.layerData.maskSprite) return;
+            
+            for (const child of layer.children) {
+                if (child === layer.layerData.maskSprite || 
+                    child === layer.layerData.backgroundGraphics) {
+                    continue;
+                }
+                
+                if (child instanceof PIXI.Graphics) {
+                    child.mask = layer.layerData.maskSprite;
+                }
+            }
+        }
+
         addPathToActiveLayer(path) {
             if (!this.getActiveLayer()) return;
             const activeLayer = this.getActiveLayer();
@@ -217,6 +222,9 @@
             }
             this.rebuildPathGraphics(path);
             if (path.graphics) {
+                if (activeLayer.layerData && activeLayer.layerData.maskSprite) {
+                    path.graphics.mask = activeLayer.layerData.maskSprite;
+                }
                 activeLayer.addChild(path.graphics);
             }
             this.requestThumbnailUpdate(layerIndex);
@@ -406,7 +414,8 @@
             try {
                 const childrenToRemove = [];
                 for (let child of layer.children) {
-                    if (child !== layer.layerData.backgroundGraphics) {
+                    if (child !== layer.layerData.backgroundGraphics &&
+                        child !== layer.layerData.maskSprite) {
                         childrenToRemove.push(child);
                     }
                 }
@@ -425,6 +434,9 @@
                     try {
                         const rebuildSuccess = this.rebuildPathGraphics(path);
                         if (rebuildSuccess && path.graphics) {
+                            if (layer.layerData && layer.layerData.maskSprite) {
+                                path.graphics.mask = layer.layerData.maskSprite;
+                            }
                             layer.layerData.paths.push(path);
                             layer.addChild(path.graphics);
                             addedCount++;
@@ -521,8 +533,7 @@
             if (!this.app?.renderer) return null;
             const renderTexture = PIXI.RenderTexture.create({
                 width: this.config.canvas.width,
-                height: this.config.canvas.height,
-                alphaMode: 'no-premultiply'
+                height: this.config.canvas.height
             });
             this.cutRenderTextures.set(cutId, renderTexture);
             this.cutThumbnailDirty.set(cutId, true);
@@ -786,6 +797,18 @@
             const layer = new PIXI.Container();
             layer.label = layerModel.id;
             layer.layerData = layerModel;
+            
+            if (this.app && this.app.renderer) {
+                const success = layerModel.initializeMask(
+                    this.config.canvas.width,
+                    this.config.canvas.height,
+                    this.app.renderer
+                );
+                if (success && layerModel.maskSprite) {
+                    layer.addChild(layerModel.maskSprite);
+                }
+            }
+            
             if (this.transform) {
                 this.transform.setTransform(layerModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
             }
@@ -807,6 +830,9 @@
                         this.updateStatusDisplay();
                     },
                     undo: () => {
+                        if (layer.layerData) {
+                            layer.layerData.destroyMask();
+                        }
                         this.currentCutContainer.removeChild(layer);
                         const layers = this.getLayers();
                         if (this.activeLayerIndex >= layers.length) {
@@ -929,14 +955,11 @@
                 thumbnail.style.width = Math.round(thumbnailWidth) + 'px';
                 thumbnail.style.height = Math.round(thumbnailHeight) + 'px';
                 const renderScale = this.config.thumbnail?.RENDER_SCALE || 2;
-                
                 const renderTexture = PIXI.RenderTexture.create({
                     width: this.config.canvas.width * renderScale,
                     height: this.config.canvas.height * renderScale,
-                    resolution: renderScale,
-                    alphaMode: 'no-premultiply'
+                    resolution: renderScale
                 });
-                
                 const tempContainer = new PIXI.Container();
                 const originalState = {
                     pos: { x: layer.position.x, y: layer.position.y },
@@ -1073,6 +1096,44 @@
                     this.initTransform();
                 }
             }
+            
+            // ===== Phase 1: LayerModel変換 + マスク初期化 =====
+            if (app && app.renderer) {
+                const layers = this.getLayers();
+                for (const layer of layers) {
+                    // layerData を LayerModel インスタンスに変換
+                    if (layer.layerData && !(layer.layerData instanceof window.TegakiDataModels.LayerModel)) {
+                        const oldData = layer.layerData;
+                        layer.layerData = new window.TegakiDataModels.LayerModel({
+                            id: oldData.id,
+                            name: oldData.name,
+                            visible: oldData.visible !== undefined ? oldData.visible : true,
+                            opacity: oldData.opacity !== undefined ? oldData.opacity : 1.0,
+                            isBackground: oldData.isBackground || false,
+                            clipping: oldData.clipping || false,
+                            blendMode: oldData.blendMode || 'normal',
+                            locked: oldData.locked || false
+                        });
+                        
+                        // 既存プロパティを継承
+                        if (oldData.paths) layer.layerData.paths = oldData.paths;
+                        if (oldData.backgroundGraphics) layer.layerData.backgroundGraphics = oldData.backgroundGraphics;
+                    }
+                    
+                    // マスク初期化
+                    if (layer.layerData && !layer.layerData.hasMask()) {
+                        const success = layer.layerData.initializeMask(
+                            this.config.canvas.width,
+                            this.config.canvas.height,
+                            app.renderer
+                        );
+                        if (success && layer.layerData.maskSprite) {
+                            layer.addChildAt(layer.layerData.maskSprite, 0);
+                            this._applyMaskToLayerGraphics(layer);
+                        }
+                    }
+                }
+            }
         }
 
         setAnimationSystem(animationSystem) {
@@ -1098,6 +1159,9 @@
                     const entry = {
                         name: 'layer-delete',
                         do: () => {
+                            if (layer.layerData) {
+                                layer.layerData.destroyMask();
+                            }
                             this.currentCutContainer.removeChild(layer);
                             if (layerId && this.transform) {
                                 this.transform.deleteTransform(layerId);
@@ -1115,6 +1179,17 @@
                             }
                         },
                         undo: () => {
+                            if (layer.layerData && this.app && this.app.renderer) {
+                                layer.layerData.initializeMask(
+                                    this.config.canvas.width,
+                                    this.config.canvas.height,
+                                    this.app.renderer
+                                );
+                                if (layer.layerData.maskSprite) {
+                                    layer.addChildAt(layer.layerData.maskSprite, 0);
+                                    this._applyMaskToLayerGraphics(layer);
+                                }
+                            }
                             this.currentCutContainer.addChildAt(layer, layerIndex);
                             this.activeLayerIndex = previousActiveIndex;
                             this.updateLayerPanelUI();
@@ -1124,6 +1199,9 @@
                     };
                     window.History.push(entry);
                 } else {
+                    if (layer.layerData) {
+                        layer.layerData.destroyMask();
+                    }
                     this.currentCutContainer.removeChild(layer);
                     if (layerId && this.transform) {
                         this.transform.deleteTransform(layerId);
@@ -1156,5 +1234,3 @@
     window.TegakiLayerSystem = LayerSystem;
 
 })();
-
-console.log('✅ layer-system.js (サムネイル自動更新対応版) loaded');
