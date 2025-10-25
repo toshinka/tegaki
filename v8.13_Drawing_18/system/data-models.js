@@ -1,4 +1,5 @@
-// ===== system/data-models.js - Phase 4: データモデル統一化 + StrokeData追加 =====
+// ===== system/data-models.js - Phase 1: マスク初期化完全実装 =====
+// Step 1.1完了: initializeMask()を完全実装
 
 (function() {
     'use strict';
@@ -26,10 +27,92 @@
             this.blendMode = data.blendMode || 'normal';
             this.locked = data.locked || false;
             this.paths = data.paths || [];
+            
+            this.maskTexture = null;
+            this.maskSprite = null;
+            this._maskInitialized = false;
         }
 
         static getSchema() {
             return LAYER_SCHEMA;
+        }
+
+        /**
+         * マスク存在チェック
+         * @returns {boolean} マスクが初期化済みか
+         */
+        hasMask() {
+            return this._maskInitialized && 
+                   this.maskTexture !== null && 
+                   this.maskSprite !== null;
+        }
+
+        /**
+         * ===== Step 1.1: マスク初期化（完全実装） =====
+         * RenderTextureマスク生成
+         * @param {number} width - マスクテクスチャの幅
+         * @param {number} height - マスクテクスチャの高さ
+         * @param {PIXI.Renderer} renderer - PixiJSレンダラー
+         * @returns {boolean} 初期化成功時true
+         */
+        initializeMask(width, height, renderer) {
+            if (!renderer) {
+                return false;
+            }
+
+            if (this._maskInitialized) {
+                this.destroyMask();
+            }
+
+            try {
+                this.maskTexture = PIXI.RenderTexture.create({ 
+                    width: width, 
+                    height: height 
+                });
+
+                const whiteRect = new PIXI.Graphics();
+                whiteRect.rect(0, 0, width, height).fill({ color: 0xFFFFFF });
+
+                renderer.render({ 
+                    container: whiteRect, 
+                    target: this.maskTexture, 
+                    clear: true 
+                });
+
+                whiteRect.destroy();
+
+                this.maskSprite = new PIXI.Sprite(this.maskTexture);
+                this.maskSprite.label = 'mask_sprite';
+
+                this._maskInitialized = true;
+
+                return true;
+
+            } catch (error) {
+                this.destroyMask();
+                return false;
+            }
+        }
+
+        /**
+         * マスク破棄
+         */
+        destroyMask() {
+            if (this.maskSprite) {
+                try {
+                    this.maskSprite.destroy({ children: true });
+                } catch (e) {}
+                this.maskSprite = null;
+            }
+
+            if (this.maskTexture) {
+                try {
+                    this.maskTexture.destroy(true);
+                } catch (e) {}
+                this.maskTexture = null;
+            }
+
+            this._maskInitialized = false;
         }
 
         toJSON() {
@@ -97,27 +180,26 @@
         }
     }
 
-    // ========== Stroke データモデル（新規追加） ==========
+    // ========== Stroke データモデル ==========
     const STROKE_SCHEMA = {
         points: { type: 'array', required: true, editable: false },
         isSingleDot: { type: 'boolean', default: false, editable: false },
         color: { type: 'number', required: true, editable: false },
         size: { type: 'number', min: 0.1, max: 500, required: true, editable: false },
         alpha: { type: 'number', min: 0, max: 1, default: 1.0, editable: false },
-        layerId: { type: 'string', required: true, editable: false }
+        layerId: { type: 'string', required: true, editable: false },
+        tool: { type: 'string', default: 'pen', editable: false }
     };
 
     class StrokeData {
         constructor(data = {}) {
-            // 必須フィールド
             this.points = data.points || [];
             this.isSingleDot = data.isSingleDot || false;
             this.color = data.color !== undefined ? data.color : 0x000000;
             this.size = data.size !== undefined ? data.size : 5;
             this.alpha = data.alpha !== undefined ? data.alpha : 1.0;
             this.layerId = data.layerId || '';
-
-            // メタデータ
+            this.tool = data.tool || 'pen';
             this.timestamp = data.timestamp || Date.now();
         }
 
@@ -138,6 +220,7 @@
                 size: this.size,
                 alpha: this.alpha,
                 layerId: this.layerId,
+                tool: this.tool,
                 timestamp: this.timestamp
             };
         }
@@ -162,9 +245,6 @@
             return { valid: errors.length === 0, errors };
         }
 
-        /**
-         * ストローク総距離を計算
-         */
         getTotalDistance() {
             if (this.points.length < 2) return 0;
             let dist = 0;
@@ -176,9 +256,6 @@
             return dist;
         }
 
-        /**
-         * バウンディングボックスを計算
-         */
         getBounds() {
             if (this.points.length === 0) {
                 return { x: 0, y: 0, width: 0, height: 0 };
