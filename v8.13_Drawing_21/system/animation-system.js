@@ -1,7 +1,11 @@
 // ================================================================================
-// system/animation-system.js - LayerModel統合版 + FRAME変換完了
+// system/animation-system.js - Frame改修版（CUT→Frame統一）
 // ================================================================================
-// CUT→FRAME変換完了: クラス名、メソッド名、変数名、イベント名すべて変換済み
+// 【改修内容】
+// - Cutクラス → Frameクラスへリネーム
+// - cut関連の全変数・メソッド名 → frame関連へ変更
+// - イベント名を統一（animation:frame-*, frame:*）
+// - LayerModel統合機能は維持
 
 (function() {
     'use strict';
@@ -684,7 +688,6 @@
                     
                     if (success && layer.layerData.maskSprite) {
                         layer.addChildAt(layer.layerData.maskSprite, 0);
-                        
                         this._applyMaskToLayerGraphics(layer);
                     }
                 }
@@ -1445,4 +1448,4 @@
 
 })();
 
-console.log('✅ animation-system.js (FRAME変換完了版) loaded');
+console.log('✅ animation-system.js (Frame改修版) loaded');
