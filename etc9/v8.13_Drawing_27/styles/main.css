@@ -1,5 +1,6 @@
-/* Tegaki Tool - Main Stylesheet (UI改善版) */
+/* Tegaki Tool - Main Stylesheet (UI改善版 + FRAME修正完全版) */
 /* ✅ レイヤー: アクティブ枠#ff8c42、背景半透明#f0e0d6、hover演出 */
+/* ✅ Phase 1: CUT→FRAME表記修正完了 */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -105,7 +106,7 @@ body {
     pointer-events: none; 
 }
 
-.cut-indicator { 
+.frame-indicator { 
     display: flex; 
     align-items: center; 
     justify-content: center;
@@ -121,7 +122,7 @@ body {
     backdrop-filter: blur(8px);
 }
 
-.cut-nav-btn { 
+.frame-nav-btn { 
     width: 28px; 
     height: 28px; 
     background: var(--futaba-background); 
@@ -134,17 +135,17 @@ body {
     transition: all 0.15s; 
 }
 
-.cut-nav-btn:hover { 
+.frame-nav-btn:hover { 
     background: var(--futaba-medium); 
     transform: scale(1.08); 
 }
 
-.cut-nav-btn:disabled { 
+.frame-nav-btn:disabled { 
     opacity: 0.3; 
     cursor: not-allowed; 
 }
 
-.cut-display { 
+.frame-display { 
     color: var(--futaba-maroon); 
     font-weight: bold; 
     min-width: 52px; 

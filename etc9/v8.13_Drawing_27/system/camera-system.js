@@ -1,5 +1,6 @@
-// ===== system/camera-system.js - Phase1: 座標変換修正版 =====
+// ===== system/camera-system.js - Phase2: リサイズイベント強化版 =====
 // 修正: screenToLayer() にcanvas.getBoundingClientRect()を統合
+// 修正: resizeCanvas() でサムネイル再生成イベントを発火
 
 (function() {
     'use strict';
@@ -482,16 +483,13 @@
         screenToLayer(screenX, screenY) {
             const canvas = this._getSafeCanvas();
             if (!canvas) {
-                // フォールバック
                 return this.canvasContainer.toLocal({ x: screenX, y: screenY });
             }
             
-            // ブラウザスクリーン座標 → キャンバス相対座標
             const rect = canvas.getBoundingClientRect();
             const relativeX = screenX - rect.left;
             const relativeY = screenY - rect.top;
             
-            // キャンバス相対座標 → キャンバスローカル座標
             return this.canvasContainer.toLocal({ x: relativeX, y: relativeY });
         }
 
@@ -500,7 +498,6 @@
         }
 
         updateCoordinates(x, y) {
-            // 空実装（互換性のため）
         }
 
         setZoom(level) {
@@ -566,10 +563,18 @@
             return this.worldContainer.toGlobal({ x: centerX, y: centerY });
         }
 
+        /**
+         * ✅ Phase 2修正: リサイズ時にサムネイル再生成イベントを発火
+         */
         resizeCanvas(newWidth, newHeight) {
             this.updateGuideLinesForCanvasResize();
+            
             if (this.eventBus) {
                 this.eventBus.emit('camera:resized', { width: newWidth, height: newHeight });
+                
+                setTimeout(() => {
+                    this.eventBus.emit('animation:thumbnails-need-update');
+                }, 100);
             }
         }
 
@@ -585,3 +590,5 @@
     window.TegakiCameraSystem = CameraSystem;
 
 })();
+
+console.log('✅ camera-system.js (Phase2: イベント強化版) loaded');
