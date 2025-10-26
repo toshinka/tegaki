@@ -1,14 +1,18 @@
 /**
- * PressureHandler - 筆圧補正専用クラス (Phase 1: tilt/twist対応版)
+ * PressureHandler - 筆圧補正専用クラス (Phase 3: 距離ベース適応フィルタ追加版)
  * 
  * 責務: 生筆圧値(rawPressure)をベースライン補正した補正筆圧値に変換
  *       + Pointer Events API完全活用（tiltX, tiltY, twist）
+ *       + 距離ベース適応フィルタ（Phase 3追加）
  * 
  * 動作仕様:
  * - ストローク開始時の初期N点からベースライン(無負荷時の圧力)を算出
  * - 補正式: (raw - baseline) / (1 - baseline)
  * - ベースライン算出中は pressure = 0 を返す
  * - tiltX/Y, twistデータを保持し、将来の高度な筆圧表現に備える
+ * 
+ * Phase 3追加:
+ * - 距離ベース適応フィルタ: 短距離→即座反映、長距離→スムージング
  */
 
 class PressureHandler {
@@ -18,10 +22,14 @@ class PressureHandler {
         this.BASELINE_SAMPLE_COUNT = 5; // 初期5点でベースライン算出
         this.isCalibrated = false;
         
-        // 🆕 Phase 1: Pointer Events API拡張データ
+        // Pointer Events API拡張データ
         this.tiltX = 0;
         this.tiltY = 0;
         this.twist = 0;
+        
+        // Phase 3: 距離ベース適応フィルタ
+        this.previousPressure = 0;
+        this.enableDistanceFilter = true;
     }
 
     /**
@@ -31,12 +39,13 @@ class PressureHandler {
         this.baseline = 0;
         this.baselineSamples = [];
         this.isCalibrated = false;
+        this.previousPressure = 0;
         
         // tiltデータはリセットしない（ストローク中継続使用）
     }
 
     /**
-     * 🆕 Phase 1: PointerEventからtilt/twistデータを更新
+     * PointerEventからtilt/twistデータを更新
      * @param {PointerEvent} event - pointer event
      */
     updateTiltData(event) {
@@ -78,7 +87,59 @@ class PressureHandler {
     }
 
     /**
-     * 🆕 Phase 1: tilt/twistデータを取得
+     * Phase 3: 距離ベース適応フィルタを適用
+     * @param {number} currentPressure - 現在の筆圧値
+     * @param {number} prevPressure - 前回の筆圧値
+     * @param {number} distance - 前回からの移動距離(px)
+     * @returns {number} フィルタ適用後の筆圧値
+     */
+    applyDistanceFilter(currentPressure, prevPressure, distance) {
+        if (!this.enableDistanceFilter) {
+            return currentPressure;
+        }
+
+        // alpha値を距離に応じて動的計算
+        const alpha = this._calculateAlpha(distance);
+        
+        // EMA (Exponential Moving Average) フィルタ
+        const filtered = prevPressure * (1 - alpha) + currentPressure * alpha;
+        
+        return filtered;
+    }
+
+    /**
+     * Phase 3: 距離に応じたalpha値計算
+     * @private
+     * @param {number} distance - 移動距離(px)
+     * @returns {number} alpha値 (0.0 ~ 1.0)
+     */
+    _calculateAlpha(distance) {
+        // 短距離（< 5px）→ alpha=0.9（即座反映）
+        // 長距離（> 20px）→ alpha=0.3（スムージング強）
+        
+        if (distance < 5) {
+            return 0.9;
+        }
+        
+        if (distance > 20) {
+            return 0.3;
+        }
+        
+        // 5px ~ 20px の範囲で線形補間
+        // alpha = 0.9 - ((distance - 5) / 15) * 0.6
+        return 0.9 - ((distance - 5) / 15) * 0.6;
+    }
+
+    /**
+     * Phase 3: 距離ベースフィルタの有効/無効設定
+     * @param {boolean} enabled - true=有効, false=無効
+     */
+    setDistanceFilterEnabled(enabled) {
+        this.enableDistanceFilter = enabled;
+    }
+
+    /**
+     * tilt/twistデータを取得
      * @returns {Object} {tiltX, tiltY, twist}
      */
     getTiltData() {
@@ -102,4 +163,24 @@ class PressureHandler {
     isReady() {
         return this.isCalibrated;
     }
+
+    /**
+     * Phase 3: 前回の筆圧値を更新
+     * @param {number} pressure - 筆圧値
+     */
+    updatePreviousPressure(pressure) {
+        this.previousPressure = pressure;
+    }
+
+    /**
+     * Phase 3: 前回の筆圧値を取得
+     */
+    getPreviousPressure() {
+        return this.previousPressure;
+    }
 }
+
+console.log('✅ pressure-handler.js (Phase 3: 距離ベースフィルタ追加版) loaded');
+console.log('   - applyDistanceFilter() 追加');
+console.log('   - 短距離: alpha=0.9 (即座反映)');
+console.log('   - 長距離: alpha=0.3 (スムージング強)');
