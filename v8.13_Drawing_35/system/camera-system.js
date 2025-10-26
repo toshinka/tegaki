@@ -1,6 +1,6 @@
-// ===== system/camera-system.js - Phase2: リサイズイベント強化版 =====
-// 修正: screenToLayer() にcanvas.getBoundingClientRect()を統合
-// 修正: resizeCanvas() でサムネイル再生成イベントを発火
+// ===== system/camera-system.js - Space+ドラッグ修正版 =====
+// 🔥 改修1: Space押下時にcanvasMoveModeフラグを立て、ペン描画を防ぐ
+// 🔥 改修2: Space/ドラッグのどちらかを離したら即座にcanvasMoveModeを解除
 
 (function() {
     'use strict';
@@ -29,6 +29,9 @@
             this.spacePressed = false;
             this.shiftPressed = false;
             this.vKeyPressed = false;
+            
+            // 🔥 改修1: キャンバス移動モードフラグ
+            this.canvasMoveMode = false;
             
             this.worldContainer = null;
             this.canvasContainer = null;
@@ -172,19 +175,25 @@
             return null;
         }
 
+        // 🔥 改修1: キャンバス移動モードの状態管理
         _setupMouseEvents(canvas) {
             canvas.addEventListener('pointerdown', (e) => {
                 if (this.vKeyPressed) return;
                 
+                // 🔥 Space押下中または右クリックでキャンバス移動開始
                 if ((e.button === 2 || this.spacePressed) && !this.shiftPressed) {
                     this.isDragging = true;
+                    this.canvasMoveMode = true;  // 🔥 移動モード開始
                     this.lastPoint = { x: e.clientX, y: e.clientY };
                     this._emitCursorChange('move');
+                    this._emitCanvasMoveMode(true);  // 🔥 イベント発火
                     e.preventDefault();
                 } else if ((e.button === 2 || this.spacePressed) && this.shiftPressed) {
                     this.isScaleRotateDragging = true;
+                    this.canvasMoveMode = true;  // 🔥 変形モード開始
                     this.lastPoint = { x: e.clientX, y: e.clientY };
                     this._emitCursorChange('grab');
+                    this._emitCanvasMoveMode(true);  // 🔥 イベント発火
                     e.preventDefault();
                 }
             });
@@ -204,13 +213,18 @@
                 }
             });
             
+            // 🔥 改修2: pointerupでキャンバス移動モード即座解除
             canvas.addEventListener('pointerup', (e) => {
-                if (this.isDragging && (e.button === 2 || this.spacePressed)) {
+                if (this.isDragging && (e.button === 2 || !this.spacePressed)) {
                     this.isDragging = false;
+                    this.canvasMoveMode = false;  // 🔥 移動モード解除
+                    this._emitCanvasMoveMode(false);  // 🔥 イベント発火
                     this._emitCursorUpdate();
                 }
-                if (this.isScaleRotateDragging && (e.button === 2 || this.spacePressed)) {
+                if (this.isScaleRotateDragging && (e.button === 2 || !this.spacePressed)) {
                     this.isScaleRotateDragging = false;
+                    this.canvasMoveMode = false;  // 🔥 変形モード解除
+                    this._emitCanvasMoveMode(false);  // 🔥 イベント発火
                     this._emitCursorUpdate();
                 }
             });
@@ -297,6 +311,7 @@
             }
         }
 
+        // 🔥 改修2: Spaceキー解放時にキャンバス移動モード即座解除
         _setupKeyboardEvents() {
             document.addEventListener('keydown', (e) => {
                 this._updateKeyStates(e);
@@ -307,7 +322,8 @@
                     return;
                 }
                 
-                if (e.code === 'Space') {
+                // 🔥 Space押下でキャンバス移動モード開始（ドラッグなしでも）
+                if (e.code === 'Space' && !this.spacePressed) {
                     this.spacePressed = true;
                     this._emitCursorUpdate();
                     e.preventDefault();
@@ -326,6 +342,7 @@
                 this._handleCameraFlipKeys(e);
             });
             
+            // 🔥 改修2: keyupで即座解除
             document.addEventListener('keyup', (e) => {
                 this._resetKeyStates(e);
             });
@@ -343,9 +360,17 @@
             if (e.shiftKey) this.shiftPressed = true;
         }
 
+        // 🔥 改修2: Spaceキー解放時にキャンバス移動モード即座解除
         _resetKeyStates(e) {
             if (e.code === 'Space') {
                 this.spacePressed = false;
+                // 🔥 ドラッグ中でもSpace離したら即座解除
+                if (this.canvasMoveMode) {
+                    this.canvasMoveMode = false;
+                    this.isDragging = false;
+                    this.isScaleRotateDragging = false;
+                    this._emitCanvasMoveMode(false);
+                }
                 this._emitCursorUpdate();
             }
             if (!e.shiftKey) {
@@ -356,6 +381,13 @@
         _resetAllKeyStates() {
             this.spacePressed = false;
             this.shiftPressed = false;
+            // 🔥 移動モードも解除
+            if (this.canvasMoveMode) {
+                this.canvasMoveMode = false;
+                this.isDragging = false;
+                this.isScaleRotateDragging = false;
+                this._emitCanvasMoveMode(false);
+            }
             this._emitCursorUpdate();
         }
 
@@ -451,6 +483,13 @@
             }
         }
 
+        // 🔥 改修1: キャンバス移動モード状態をEventBusで通知
+        _emitCanvasMoveMode(active) {
+            if (this.eventBus) {
+                this.eventBus.emit('camera:canvas-move-mode', { active });
+            }
+        }
+
         _emitCursorUpdate() {
             if (!this.eventBus) return;
             
@@ -476,10 +515,6 @@
             }
         }
 
-        /**
-         * 🔧 修正: スクリーン座標 → レイヤーローカル座標変換
-         * canvas.getBoundingClientRect() でブラウザ座標を相対化
-         */
         screenToLayer(screenX, screenY) {
             const canvas = this._getSafeCanvas();
             if (!canvas) {
@@ -563,9 +598,6 @@
             return this.worldContainer.toGlobal({ x: centerX, y: centerY });
         }
 
-        /**
-         * ✅ Phase 2修正: リサイズ時にサムネイル再生成イベントを発火
-         */
         resizeCanvas(newWidth, newHeight) {
             this.updateGuideLinesForCanvasResize();
             
@@ -576,6 +608,11 @@
                     this.eventBus.emit('animation:thumbnails-need-update');
                 }, 100);
             }
+        }
+
+        // 🔥 改修1: キャンバス移動モード状態取得API
+        isCanvasMoveMode() {
+            return this.canvasMoveMode;
         }
 
         setLayerManager(layerManager) {
@@ -591,4 +628,4 @@
 
 })();
 
-console.log('✅ camera-system.js (Phase2: イベント強化版) loaded');
+console.log('✅ camera-system.js (Space+ドラッグ修正版) loaded');
