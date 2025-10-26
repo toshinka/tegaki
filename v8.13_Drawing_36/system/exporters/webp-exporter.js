@@ -1,14 +1,14 @@
 // ==================================================
-// system/exporters/apng-exporter.js
-// APNGアニメーションエクスポーター - PixiJS v8.13完全対応版
+// system/exporters/webp-exporter.js
+// WebPエクスポーター - 静止画・動画自動判定対応版
 // ==================================================
-window.APNGExporter = (function() {
+window.WebPExporter = (function() {
     'use strict';
     
-    class APNGExporter {
+    class WebPExporter {
         constructor(exportManager) {
             if (!exportManager) {
-                throw new Error('APNGExporter: exportManager is required');
+                throw new Error('WebPExporter: exportManager is required');
             }
             this.manager = exportManager;
             this.isExporting = false;
@@ -19,19 +19,8 @@ window.APNGExporter = (function() {
                 throw new Error('Export already in progress');
             }
             
-            this._checkUPNGAvailability();
-            
-            if (!this.manager || !this.manager.animationSystem) {
-                throw new Error('AnimationSystem not available');
-            }
-            
-            const animData = this.manager.animationSystem.getAnimationData();
-            if (!animData || !animData.cuts || animData.cuts.length < 2) {
-                throw new Error('APNGには2つ以上のCUTが必要です');
-            }
-            
             if (window.TegakiEventBus) {
-                window.TegakiEventBus.emit('export:started', { format: 'apng' });
+                window.TegakiEventBus.emit('export:started', { format: 'webp' });
             }
             
             this.isExporting = true;
@@ -40,24 +29,28 @@ window.APNGExporter = (function() {
                 const blob = await this.generateBlob(options);
                 
                 const timestamp = new Date().toISOString().replace(/[:.]/g, '-').slice(0, -5);
-                const filename = options.filename || ('tegaki_animation_' + timestamp + '.png');
+                const filename = options.filename || ('tegaki_' + timestamp + '.webp');
                 
                 this.manager.downloadFile(blob, filename);
                 
+                const frameCount = this._getFrameCount();
+                const formatType = frameCount >= 2 ? 'animated' : 'static';
+                
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('export:completed', {
-                        format: 'apng',
+                        format: 'webp',
+                        type: formatType,
                         size: blob.size,
-                        cuts: animData.cuts.length,
+                        frames: frameCount,
                         filename: filename
                     });
                 }
                 
-                return { blob: blob, filename: filename, format: 'apng' };
+                return { blob: blob, filename: filename, format: 'webp', type: formatType };
             } catch (error) {
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('export:failed', { 
-                        format: 'apng',
+                        format: 'webp',
                         error: error.message
                     });
                 }
@@ -68,16 +61,26 @@ window.APNGExporter = (function() {
         }
         
         async generateBlob(options = {}) {
+            const frameCount = this._getFrameCount();
+            
+            if (frameCount >= 2) {
+                return await this._generateAnimatedWebPAsFallback(options);
+            }
+            
+            return await this._generateStaticWebP(options);
+        }
+        
+        async _generateAnimatedWebPAsFallback(options = {}) {
             const CONFIG = window.TEGAKI_CONFIG;
             const animData = this.manager.animationSystem.getAnimationData();
             
             const settings = {
                 width: options.width || CONFIG.canvas.width,
                 height: options.height || CONFIG.canvas.height,
-                fps: options.fps || 12
+                quality: (options.quality !== undefined ? options.quality : 80) / 100
             };
             
-            const maxSize = CONFIG.animation.exportSettings || { maxWidth: 1920, maxHeight: 1080 };
+            const maxSize = CONFIG.animation?.exportSettings || { maxWidth: 1920, maxHeight: 1080 };
             if (settings.width > maxSize.maxWidth) {
                 const ratio = maxSize.maxWidth / settings.width;
                 settings.width = maxSize.maxWidth;
@@ -89,55 +92,59 @@ window.APNGExporter = (function() {
                 settings.width = Math.round(settings.width * ratio);
             }
             
-            const frames = [];
-            const delays = [];
+            const gridCols = Math.ceil(Math.sqrt(animData.frames.length));
+            const gridRows = Math.ceil(animData.frames.length / gridCols);
+            
+            const finalCanvas = document.createElement('canvas');
+            finalCanvas.width = settings.width * gridCols;
+            finalCanvas.height = settings.height * gridRows;
+            const ctx = finalCanvas.getContext('2d');
             
             const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
             
-            for (let i = 0; i < animData.cuts.length; i++) {
-                const cut = animData.cuts[i];
-                
-                this.manager.animationSystem.applyCutToLayers(i);
+            for (let i = 0; i < animData.frames.length; i++) {
+                this.manager.animationSystem.applyFrameToLayers(i);
                 await this._waitFrame();
                 
-                const canvas = await this._renderCutToCanvas(settings);
-                if (!canvas) {
-                    throw new Error('Failed to render cut ' + i);
-                }
+                const frameCanvas = await this._renderFrameToCanvas(settings);
                 
-                const ctx = canvas.getContext('2d', { willReadFrequently: true });
-                const imageData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+                const gridX = i % gridCols;
+                const gridY = Math.floor(i / gridCols);
                 
-                frames.push(imageData.data.buffer);
-                
-                const durationMs = cut.duration !== undefined && cut.duration !== null 
-                    ? Math.round(cut.duration * 1000)
-                    : Math.round(1000 / settings.fps);
-                
-                delays.push(durationMs);
+                ctx.drawImage(
+                    frameCanvas,
+                    gridX * settings.width,
+                    gridY * settings.height,
+                    settings.width,
+                    settings.height
+                );
                 
                 if (window.TegakiEventBus) {
                     window.TegakiEventBus.emit('export:frame-rendered', { 
                         frame: i + 1, 
-                        total: animData.cuts.length 
+                        total: animData.frames.length 
                     });
                 }
             }
             
             this.manager.animationSystem.restoreFromSnapshots(backupSnapshots);
             
-            const apngBuffer = UPNG.encode(
-                frames,
-                settings.width,
-                settings.height,
-                0,
-                delays
-            );
-            
-            return new Blob([apngBuffer], { type: 'image/png' });
+            return new Promise((resolve, reject) => {
+                finalCanvas.toBlob(
+                    (blob) => {
+                        if (blob) {
+                            resolve(blob);
+                        } else {
+                            reject(new Error('WebP スプライトシート生成失敗'));
+                        }
+                    },
+                    'image/webp',
+                    settings.quality
+                );
+            });
         }
         
-        async _renderCutToCanvas(settings) {
+        async _renderFrameToCanvas(settings) {
             const CONFIG = window.TEGAKI_CONFIG;
             
             const renderTexture = PIXI.RenderTexture.create({
@@ -148,9 +155,9 @@ window.APNGExporter = (function() {
             
             const tempContainer = new PIXI.Container();
             
-            const layersContainer = this.manager.animationSystem.layerSystem.currentCutContainer;
+            const layersContainer = this.manager.animationSystem.layerSystem.currentFrameContainer;
             if (!layersContainer) {
-                throw new Error('currentCutContainer not found');
+                throw new Error('currentFrameContainer not found');
             }
             
             const originalParent = layersContainer.parent;
@@ -215,12 +222,6 @@ window.APNGExporter = (function() {
             return canvas;
         }
         
-        _checkUPNGAvailability() {
-            if (typeof UPNG === 'undefined') {
-                throw new Error('UPNG.js not loaded');
-            }
-        }
-        
         _waitFrame() {
             return new Promise(resolve => {
                 requestAnimationFrame(() => {
@@ -228,9 +229,61 @@ window.APNGExporter = (function() {
                 });
             });
         }
+        
+        async _generateStaticWebP(options = {}) {
+            const CONFIG = window.TEGAKI_CONFIG;
+            
+            const settings = {
+                width: options.width || CONFIG.canvas.width,
+                height: options.height || CONFIG.canvas.height,
+                quality: (options.quality !== undefined ? options.quality : 80) / 100
+            };
+            
+            const maxSize = CONFIG.animation?.exportSettings || { maxWidth: 1920, maxHeight: 1080 };
+            if (settings.width > maxSize.maxWidth) {
+                const ratio = maxSize.maxWidth / settings.width;
+                settings.width = maxSize.maxWidth;
+                settings.height = Math.round(settings.height * ratio);
+            }
+            if (settings.height > maxSize.maxHeight) {
+                const ratio = maxSize.maxHeight / settings.height;
+                settings.height = maxSize.maxHeight;
+                settings.width = Math.round(settings.width * ratio);
+            }
+            
+            const canvas = this.manager.renderToCanvas({
+                width: settings.width,
+                height: settings.height,
+                resolution: 1
+            });
+            
+            return new Promise((resolve, reject) => {
+                canvas.toBlob(
+                    (blob) => {
+                        if (blob) {
+                            resolve(blob);
+                        } else {
+                            reject(new Error('WebP blob generation failed'));
+                        }
+                    },
+                    'image/webp',
+                    settings.quality
+                );
+            });
+        }
+        
+        _getFrameCount() {
+            if (this.manager?.animationSystem?.getAnimationData) {
+                const animData = this.manager.animationSystem.getAnimationData();
+                if (animData?.frames) {
+                    return animData.frames.length;
+                }
+            }
+            return 1;
+        }
     }
     
-    return APNGExporter;
+    return WebPExporter;
 })();
 
-console.log('✅ apng-exporter.js (PixiJS v8.13完全対応版) loaded');
+console.log('✅ webp-exporter.js (静止画・動画自動判定対応版) loaded');

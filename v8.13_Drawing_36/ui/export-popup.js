@@ -1,5 +1,4 @@
-// ===== ui/export-popup.js - CUT→FRAME完全修正版 =====
-// 🔥 改修: getCutCount() → getFrameCount(), "CUT" → "FRAME" 表記統一
+// ===== ui/export-popup.js - WEBP追加＋CUT→FRAME完全修正版 =====
 
 window.TegakiExportPopup = class ExportPopup {
     constructor(dependencies) {
@@ -40,7 +39,7 @@ window.TegakiExportPopup = class ExportPopup {
             '<div class="format-selection">' +
                 '<button class="format-btn selected" data-format="png">PNG</button>' +
                 '<button class="format-btn" data-format="gif">GIF</button>' +
-                '<button class="format-btn disabled" data-format="pdf">PDF</button>' +
+                '<button class="format-btn" data-format="pdf">PDF</button>' +
             '</div>' +
             '<div class="export-options" id="export-options"></div>' +
             '<div class="export-progress" id="export-progress" style="display: none;">' +
@@ -116,7 +115,6 @@ window.TegakiExportPopup = class ExportPopup {
         this.hidePreview();
     }
     
-    // 🔥 修正: getCutCount() → getFrameCount()
     getFrameCount() {
         if (this.manager?.animationSystem?.getAnimationData) {
             const animData = this.manager.animationSystem.getAnimationData();
@@ -131,11 +129,10 @@ window.TegakiExportPopup = class ExportPopup {
         const previewBtn = document.getElementById('export-preview');
         if (!previewBtn) return;
         
-        const showPreview = this.selectedFormat === 'png' || this.selectedFormat === 'gif';
+        const showPreview = ['png', 'gif'].includes(this.selectedFormat);
         previewBtn.style.display = showPreview ? 'block' : 'none';
     }
     
-    // 🔥 修正: "CUT" → "FRAME" 表記統一
     updateOptionsUI(format) {
         const optionsEl = document.getElementById('export-options');
         if (!optionsEl) return;
@@ -157,8 +154,6 @@ window.TegakiExportPopup = class ExportPopup {
             ? '全' + frameCount + 'フレームをAPNG（アニメーションPNG）として出力します。'
             : '現在のキャンバスをPNG画像として出力します。';
         
-        const frameInfo = frameCount >= 2 ? (' / フレーム数: ' + frameCount) : '';
-        
         const optionsMap = {
             'png': '<div class="setting-label">PNG出力（Frame数でAPNG自動判定）</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
@@ -170,9 +165,10 @@ window.TegakiExportPopup = class ExportPopup {
                     '全' + frameCount + 'フレームをGIFアニメーションとして出力します。<br>' +
                     '品質: ' + quality + ' / フレーム数: ' + frameCount +
                 '</div>',
-            'pdf': '<div class="setting-label">PDF出力</div>' +
+            'pdf': '<div class="setting-label">PDF出力（全フレームを複数ページ）</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
-                    '準備中 - 将来実装予定' +
+                    '全' + frameCount + 'フレームをPDFの各ページとして出力します。<br>' +
+                    'サイズ: ' + canvasWidth + '×' + canvasHeight + 'px' + frameInfo +
                 '</div>'
         };
         
@@ -243,12 +239,6 @@ window.TegakiExportPopup = class ExportPopup {
             return;
         }
         
-        const disabledFormats = ['pdf'];
-        if (disabledFormats.includes(this.selectedFormat)) {
-            this.showStatus(this.selectedFormat.toUpperCase() + '出力は準備中です', true);
-            return;
-        }
-        
         const progressEl = document.getElementById('export-progress');
         const executeBtn = document.getElementById('export-execute');
         const previewBtn = document.getElementById('export-preview');
@@ -275,12 +265,6 @@ window.TegakiExportPopup = class ExportPopup {
             return;
         }
         
-        const disabledFormats = ['pdf'];
-        if (disabledFormats.includes(this.selectedFormat)) {
-            this.showStatus(this.selectedFormat.toUpperCase() + 'のプレビューは準備中です', true);
-            return;
-        }
-        
         const previewBtn = document.getElementById('export-preview');
         const executeBtn = document.getElementById('export-execute');
         const progressEl = document.getElementById('export-progress');
@@ -295,7 +279,8 @@ window.TegakiExportPopup = class ExportPopup {
         if (executeBtn) executeBtn.disabled = true;
         
         const frameCount = this.getFrameCount();
-        const isAnimation = this.selectedFormat === 'gif' || (this.selectedFormat === 'png' && frameCount >= 2);
+        const isAnimation = ['gif'].includes(this.selectedFormat) || 
+                          (this.selectedFormat === 'png' && frameCount >= 2);
         
         if (isAnimation && progressEl) {
             progressEl.style.display = 'block';
@@ -306,7 +291,11 @@ window.TegakiExportPopup = class ExportPopup {
             
             if (progressEl) progressEl.style.display = 'none';
             
-            const formatName = result.format === 'apng' ? 'APNG' : result.format.toUpperCase();
+            let formatName = this.selectedFormat.toUpperCase();
+            if (result.format === 'apng') {
+                formatName = 'APNG';
+            }
+            
             this.showPreview(result.blob, formatName + 'プレビューを表示しました。右クリックでコピーできます');
             
             if (previewBtn) {
@@ -355,7 +344,13 @@ window.TegakiExportPopup = class ExportPopup {
         
         this.resetProgress();
         
-        const formatName = data.format === 'apng' ? 'APNG' : (data.format ? data.format.toUpperCase() : 'PNG');
+        let formatName = 'PNG';
+        if (data.format === 'apng') {
+            formatName = 'APNG';
+        } else if (data.format) {
+            formatName = data.format.toUpperCase();
+        }
+        
         this.showStatus(formatName + 'ダウンロード完了', false);
         setTimeout(() => this.hideStatus(), 2000);
     }
@@ -423,4 +418,4 @@ window.TegakiExportPopup = class ExportPopup {
 
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js (CUT→FRAME完全修正版) loaded');
+console.log('✅ export-popup.js (PDF対応＋CUT→FRAME完全修正版) loaded');
