@@ -1,7 +1,7 @@
-// ===== ui/timeline-ui.js - FRAME改修版 =====
+// ===== ui/timeline-ui.js - FRAME改修完全版 =====
 // ✅ サムネイル自動更新: layer:modified, stroke:endリスナー追加
 // ✅ UI改善: CUT→Frame表記、アクティブ枠#ff8c42、リピート色#aa5a56
-// ✅ CUT→FRAME変換完了
+// ✅ CUT→FRAME変換完了、データプロパティ名統一
 
 (function() {
     'use strict';
@@ -53,7 +53,7 @@
                 const animData = this.animationSystem.getAnimationData();
                 const totalFramesInDOM = this.framesContainer.querySelectorAll('.frame-item').length;
                 
-                if (animData.cuts.length !== totalFramesInDOM) {
+                if (animData.frames.length !== totalFramesInDOM) {
                     this.updateFramesListImmediate();
                 }
                 
@@ -88,7 +88,7 @@
                 const animData = this.animationSystem.getAnimationData();
                 this.framesContainer.innerHTML = '';
                 
-                animData.cuts.forEach((frame, index) => {
+                animData.frames.forEach((frame, index) => {
                     const frameItem = this.createImprovedFrameItem(frame, index);
                     this.framesContainer.appendChild(frameItem);
                 });
@@ -101,7 +101,7 @@
                     this.sortable = Sortable.create(this.framesContainer, {
                         animation: 150,
                         onEnd: (evt) => {
-                            this.animationSystem.reorderCuts(evt.oldIndex, evt.newIndex);
+                            this.animationSystem.reorderFrames(evt.oldIndex, evt.newIndex);
                         }
                     });
                 }
@@ -136,15 +136,15 @@
         
         async updateAllFrameThumbnails() {
             if (this.thumbnailUpdateInProgress) return;
-            if (!this.animationSystem?.animationData?.cuts) return;
+            if (!this.animationSystem?.animationData?.frames) return;
             
             this.thumbnailUpdateInProgress = true;
             
             try {
-                const frames = this.animationSystem.animationData.cuts;
+                const frames = this.animationSystem.animationData.frames;
                 
                 for (let i = 0; i < frames.length; i++) {
-                    await this.animationSystem.generateCutThumbnailOptimized(i);
+                    await this.animationSystem.generateFrameThumbnailOptimized(i);
                     this.updateSingleFrameThumbnail(i);
                     
                     if (i < frames.length - 1) {
@@ -208,16 +208,16 @@
         async updateCurrentFrameThumbnail() {
             if (this.thumbnailUpdateInProgress) return;
             
-            const currentFrameIndex = this.animationSystem.animationData.playback.currentCutIndex;
+            const currentFrameIndex = this.animationSystem.animationData.playback.currentFrameIndex;
             
-            if (currentFrameIndex < 0 || currentFrameIndex >= this.animationSystem.animationData.cuts.length) {
+            if (currentFrameIndex < 0 || currentFrameIndex >= this.animationSystem.animationData.frames.length) {
                 return;
             }
             
             this.thumbnailUpdateInProgress = true;
             
             try {
-                await this.animationSystem.generateCutThumbnailOptimized(currentFrameIndex);
+                await this.animationSystem.generateFrameThumbnailOptimized(currentFrameIndex);
                 this.updateSingleFrameThumbnail(currentFrameIndex);
             } catch (error) {
             } finally {
@@ -489,7 +489,7 @@
         ensureInitialFrame() {
             const animData = this.animationSystem.getAnimationData();
             
-            if (animData.cuts.length > 0) {
+            if (animData.frames.length > 0) {
                 this.updateLayerPanelIndicator();
                 return;
             }
@@ -508,9 +508,9 @@
             }
             
             if (hasDrawnContent) {
-                this.animationSystem.createNewCutFromCurrentLayers();
+                this.animationSystem.createNewFrameFromCurrentLayers();
             } else {
-                this.animationSystem.createNewBlankCut();
+                this.animationSystem.createNewBlankFrame();
             }
             
             this.updateLayerPanelIndicator();
@@ -530,7 +530,7 @@
             document.getElementById('repeat-btn')?.addEventListener('click', () => this.toggleRepeat());
             document.getElementById('play-btn')?.addEventListener('click', () => this.togglePlayStop());
             document.getElementById('add-frame-btn')?.addEventListener('click', () => {
-                this.animationSystem.createNewEmptyCut();
+                this.animationSystem.createNewEmptyFrame();
             });
             document.getElementById('copy-paste-frame-btn')?.addEventListener('click', () => this.executeFrameCopyPaste());
             document.getElementById('rename-frames-btn')?.addEventListener('click', () => this.executeRenameFrames());
@@ -552,7 +552,7 @@
         
         executeRenameFrames() {
             if (!this.animationSystem) return;
-            this.animationSystem.renameCutsSequentially();
+            this.animationSystem.renameFramesSequentially();
             this.updateFramesListImmediate();
             this.updateLayerPanelIndicator();
         }
@@ -566,7 +566,7 @@
             const newDuration = parseFloat(retimeInput.value);
             if (isNaN(newDuration) || newDuration <= 0) return;
             
-            this.animationSystem.retimeAllCuts(newDuration);
+            this.animationSystem.retimeAllFrames(newDuration);
             this.updateFramesListImmediate();
         }
         
@@ -668,14 +668,14 @@
         
         goToPreviousFrameSafe() {
             const animData = this.animationSystem.getAnimationData();
-            if (animData.cuts.length === 0) return;
+            if (animData.frames.length === 0) return;
             
             let newIndex = this.currentFrameIndex - 1;
-            if (newIndex < 0) newIndex = animData.cuts.length - 1;
+            if (newIndex < 0) newIndex = animData.frames.length - 1;
             
             this.currentFrameIndex = newIndex;
-            this.animationSystem.animationData.playback.currentCutIndex = newIndex;
-            this.animationSystem.switchToActiveCutSafely(newIndex, false);
+            this.animationSystem.animationData.playback.currentFrameIndex = newIndex;
+            this.animationSystem.switchToActiveFrameSafely(newIndex, false);
             this.setActiveFrame(newIndex);
             this.updateLayerPanelIndicator();
             
@@ -686,14 +686,14 @@
         
         goToNextFrameSafe() {
             const animData = this.animationSystem.getAnimationData();
-            if (animData.cuts.length === 0) return;
+            if (animData.frames.length === 0) return;
             
             let newIndex = this.currentFrameIndex + 1;
-            if (newIndex >= animData.cuts.length) newIndex = 0;
+            if (newIndex >= animData.frames.length) newIndex = 0;
             
             this.currentFrameIndex = newIndex;
-            this.animationSystem.animationData.playback.currentCutIndex = newIndex;
-            this.animationSystem.switchToActiveCutSafely(newIndex, false);
+            this.animationSystem.animationData.playback.currentFrameIndex = newIndex;
+            this.animationSystem.switchToActiveFrameSafely(newIndex, false);
             this.setActiveFrame(newIndex);
             this.updateLayerPanelIndicator();
             
@@ -711,16 +711,16 @@
                 this.updateLayerPanelIndicator();
             });
             this.eventBus.on('animation:frame-applied', (data) => {
-                this.setActiveFrame(data.cutIndex);
+                this.setActiveFrame(data.frameIndex);
                 this.updateLayerPanelIndicator();
             });
             this.eventBus.on('frame:pasted-right-adjacent', (data) => {
-                this.currentFrameIndex = data.cutIndex;
+                this.currentFrameIndex = data.frameIndex;
                 this.updateFramesListImmediate();
                 this.updateLayerPanelIndicator();
             });
             this.eventBus.on('animation:thumbnail-generated', (data) => {
-                this.updateSingleFrameThumbnail(data.cutIndex);
+                this.updateSingleFrameThumbnail(data.frameIndex);
             });
             this.eventBus.on('animation:playback-started', () => {
                 this.isPlaying = true;
@@ -740,8 +740,8 @@
                 this.updateLayerPanelIndicator();
             });
             this.eventBus.on('animation:frame-changed', (data) => {
-                this.currentFrameIndex = data.cutIndex;
-                this.setActiveFrame(data.cutIndex);
+                this.currentFrameIndex = data.frameIndex;
+                this.setActiveFrame(data.frameIndex);
                 this.updateLayerPanelIndicator();
             });
             this.eventBus.on('animation:frames-renamed-sequentially', () => {
@@ -778,7 +778,7 @@
             if (!frameDisplay) return;
             
             const animData = this.animationSystem.getAnimationData();
-            const totalFrames = animData.cuts.length;
+            const totalFrames = animData.frames.length;
             
             if (totalFrames === 0) {
                 frameDisplay.textContent = 'NO FRAME';
@@ -787,7 +787,7 @@
                 return;
             }
             
-            const currentFrameName = animData.cuts[this.currentFrameIndex]?.name || `FRAME${this.currentFrameIndex + 1}`;
+            const currentFrameName = animData.frames[this.currentFrameIndex]?.name || `FRAME${this.currentFrameIndex + 1}`;
             frameDisplay.textContent = currentFrameName;
             
             document.getElementById('frame-prev-btn')?.removeAttribute('disabled');
@@ -836,7 +836,7 @@
                     const currentValue = parseFloat(durationInput.value);
                     const newValue = Math.max(0.01, currentValue - 0.01);
                     durationInput.value = newValue.toFixed(2);
-                    this.animationSystem.updateCutDuration(index, newValue);
+                    this.animationSystem.updateFrameDuration(index, newValue);
                 });
             }
             
@@ -846,7 +846,7 @@
                     const currentValue = parseFloat(durationInput.value);
                     const newValue = Math.min(10, currentValue + 0.01);
                     durationInput.value = newValue.toFixed(2);
-                    this.animationSystem.updateCutDuration(index, newValue);
+                    this.animationSystem.updateFrameDuration(index, newValue);
                 });
             }
             
@@ -854,7 +854,7 @@
                 durationInput.addEventListener('change', (e) => {
                     const newDuration = parseFloat(e.target.value);
                     if (!isNaN(newDuration) && newDuration > 0) {
-                        this.animationSystem.updateCutDuration(index, newDuration);
+                        this.animationSystem.updateFrameDuration(index, newDuration);
                         e.target.value = newDuration.toFixed(2);
                     }
                     e.stopPropagation();
@@ -878,8 +878,8 @@
         
         selectFrameSafely(index) {
             this.currentFrameIndex = index;
-            this.animationSystem.animationData.playback.currentCutIndex = index;
-            this.animationSystem.switchToActiveCutSafely(index, false);
+            this.animationSystem.animationData.playback.currentFrameIndex = index;
+            this.animationSystem.switchToActiveFrameSafely(index, false);
             this.setActiveFrame(index);
             this.updateLayerPanelIndicator();
         }
@@ -922,7 +922,7 @@
         }
         
         deleteFrameImmediate(index) {
-            this.animationSystem.deleteCut(index);
+            this.animationSystem.deleteFrame(index);
             this.updateFramesListImmediate();
             this.updateLayerPanelIndicator();
         }
@@ -943,7 +943,7 @@
             if (!thumbnail) return;
             
             const animData = this.animationSystem.getAnimationData();
-            const frame = animData.cuts[frameIndex];
+            const frame = animData.frames[frameIndex];
             
             if (frame && frame.thumbnailCanvas) {
                 try {
@@ -972,4 +972,4 @@
     window.TegakiUI.TimelineUI = TimelineUI;
 })();
 
-console.log('✅ timeline-ui.js (FRAME改修版) loaded');
+console.log('✅ timeline-ui.js (FRAME改修完全版) loaded');

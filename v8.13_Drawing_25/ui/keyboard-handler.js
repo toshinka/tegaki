@@ -1,4 +1,4 @@
-// ===== keyboard-handler.js - FRAME改修版 =====
+// ===== keyboard-handler.js - FRAME改修完全版 =====
 // 改修2: Delete/Backspaceキーでレイヤー内容消去機能の復活 ✅
 // 改修3: 消しゴムツール透明化対応 ✅
 // ✅ CUT→FRAME変換完了
@@ -85,7 +85,6 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            // ✅ 改修2: Delete/Backspaceでレイヤー内容消去（復活）
             case 'LAYER_DELETE_DRAWINGS':
                 deleteActiveLayerDrawings();
                 event.preventDefault();
@@ -109,7 +108,7 @@ window.KeyboardHandler = (function() {
             case 'GIF_CREATE_FRAME':
                 const animationSystem = window.animationSystem;
                 if (animationSystem) {
-                    animationSystem.createNewEmptyCut();
+                    animationSystem.createNewEmptyFrame();
                     eventBus.emit('frame:created-by-shortcut');
                 }
                 event.preventDefault();
@@ -163,7 +162,6 @@ window.KeyboardHandler = (function() {
         }
     }
 
-    // ✅ 改修2: Delete/Backspaceキーでレイヤー描画内容を削除
     function deleteActiveLayerDrawings() {
         const layerSystem = window.drawingApp?.layerManager;
         if (!layerSystem) return;
@@ -171,7 +169,6 @@ window.KeyboardHandler = (function() {
         const activeLayer = layerSystem.getActiveLayer();
         if (!activeLayer || !activeLayer.layerData) return;
         
-        // 背景レイヤーは削除不可
         if (activeLayer.layerData.isBackground) return;
         
         const paths = activeLayer.layerData.paths;
@@ -273,7 +270,6 @@ window.KeyboardHandler = (function() {
         document.addEventListener('keydown', handleKeyDown, { capture: true });
         document.addEventListener('keyup', handleKeyUp);
         
-        // ウィンドウフォーカス喪失時にVキー状態をリセット
         window.addEventListener('blur', () => {
             if (vKeyPressed) {
                 vKeyPressed = false;
@@ -313,4 +309,4 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js (FRAME改修版) loaded');
+console.log('✅ keyboard-handler.js (FRAME改修完全版) loaded');

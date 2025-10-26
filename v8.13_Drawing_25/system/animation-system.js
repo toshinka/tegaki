@@ -1,10 +1,10 @@
 // ================================================================================
-// system/animation-system.js - LayerModel統合版 (FRAME改修)
+// system/animation-system.js - LayerModel統合版 (FRAME改修完全版)
 // ================================================================================
 // 【Phase 1根本修正】
 // - _deserializeLayer()でLayerModelインスタンスを作成
 // - マスク機能が完全に動作するようになる
-// - Phase 4.1のFRAME自動採番機能は維持
+// - CUT→FRAME変換完了
 
 (function() {
     'use strict';
@@ -99,12 +99,10 @@
             return frame;
         }
         
-        // ===== Phase 1根本修正: LayerModelインスタンス化 =====
         _deserializeLayer(layerData) {
             const layer = new PIXI.Container();
             layer.label = layerData.id;
             
-            // 🔥 LayerModelインスタンスを作成
             const layerModel = new window.TegakiDataModels.LayerModel({
                 id: layerData.id,
                 name: layerData.name,
@@ -484,7 +482,6 @@
             return this.createNewBlankFrame();
         }
         
-        // ===== LayerModelインスタンス化 =====
         _createBackgroundLayer(frameId) {
             const layer = new PIXI.Container();
             const layerModel = new window.TegakiDataModels.LayerModel({
@@ -509,7 +506,6 @@
             return layer;
         }
         
-        // ===== LayerModelインスタンス化 =====
         _createBlankLayer(frameId, name) {
             const layer = new PIXI.Container();
             const layerModel = new window.TegakiDataModels.LayerModel({
@@ -527,7 +523,6 @@
             return layer;
         }
         
-        // ===== LayerModelインスタンス化 =====
         _deepCopyLayer(originalLayer) {
             const layer = new PIXI.Container();
             const layerModel = new window.TegakiDataModels.LayerModel({
@@ -659,7 +654,6 @@
             
             this.layerSystem.setCurrentFrameContainer(targetFrame.container);
             
-            // 🔥 フレーム切替後にマスク初期化チェック
             if (this.app && this.app.renderer) {
                 setTimeout(() => {
                     this._ensureMasksInitialized(targetFrame.container);
@@ -675,7 +669,6 @@
             this.frameSwitchInProgress = false;
         }
         
-        // 🔥 マスク初期化保証メソッド
         _ensureMasksInitialized(container) {
             if (!container || !this.app?.renderer || !this.config) return;
             
@@ -683,10 +676,8 @@
             for (const layer of layers) {
                 if (!layer.layerData) continue;
                 
-                // LayerModelインスタンスでない場合はスキップ
                 if (!(layer.layerData instanceof window.TegakiDataModels.LayerModel)) continue;
                 
-                // マスクが未初期化の場合のみ初期化
                 if (!layer.layerData.hasMask()) {
                     const success = layer.layerData.initializeMask(
                         this.config.canvas.width,
@@ -695,17 +686,13 @@
                     );
                     
                     if (success && layer.layerData.maskSprite) {
-                        // maskSpriteを最初の子として追加
                         layer.addChildAt(layer.layerData.maskSprite, 0);
-                        
-                        // 既存Graphicsにマスク適用
                         this._applyMaskToLayerGraphics(layer);
                     }
                 }
             }
         }
         
-        // 🔥 レイヤー内のGraphicsにマスク適用
         _applyMaskToLayerGraphics(layer) {
             if (!layer.layerData || !layer.layerData.maskSprite) return;
             
@@ -750,6 +737,40 @@
                     sourceCanvas, 
                     thumbDisplayW, 
                     thumbDisplayH
+                );
+                
+                frame.thumbnailCanvas = thumbCanvas;
+            } else {
+                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
+                
+                const thumbCanvas = document.createElement('canvas');
+                thumbCanvas.width = thumbDisplayW;
+                thumbCanvas.height = thumbDisplayH;
+                
+                const ctx = thumbCanvas.getContext('2d');
+                ctx.imageSmoothingEnabled = true;
+                ctx.imageSmoothingQuality = 'high';
+                
+                const srcAspect = sourceCanvas.width / sourceCanvas.height;
+                const dstAspect = thumbDisplayW / thumbDisplayH;
+                
+                let drawW, drawH, offsetX = 0, offsetY = 0;
+                
+                if (srcAspect > dstAspect) {
+                    drawW = thumbDisplayW;
+                    drawH = thumbDisplayW / srcAspect;
+                    offsetY = (thumbDisplayH - drawH) / 2;
+                } else {
+                    drawH = thumbDisplayH;
+                    drawW = thumbDisplayH * srcAspect;
+                    offsetX = (thumbDisplayW - drawW) / 2;
+                }
+                
+                ctx.clearRect(0, 0, thumbDisplayW, thumbDisplayH);
+                ctx.drawImage(
+                    sourceCanvas, 
+                    0, 0, sourceCanvas.width, sourceCanvas.height,
+                    offsetX, offsetY, drawW, drawH
                 );
                 
                 frame.thumbnailCanvas = thumbCanvas;
@@ -1426,38 +1447,4 @@
 
 })();
 
-console.log('✅ animation-system.js (LayerModel統合版・FRAME改修) loaded');;
-            } else {
-                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
-                
-                const thumbCanvas = document.createElement('canvas');
-                thumbCanvas.width = thumbDisplayW;
-                thumbCanvas.height = thumbDisplayH;
-                
-                const ctx = thumbCanvas.getContext('2d');
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
-                
-                const srcAspect = sourceCanvas.width / sourceCanvas.height;
-                const dstAspect = thumbDisplayW / thumbDisplayH;
-                
-                let drawW, drawH, offsetX = 0, offsetY = 0;
-                
-                if (srcAspect > dstAspect) {
-                    drawW = thumbDisplayW;
-                    drawH = thumbDisplayW / srcAspect;
-                    offsetY = (thumbDisplayH - drawH) / 2;
-                } else {
-                    drawH = thumbDisplayH;
-                    drawW = thumbDisplayH * srcAspect;
-                    offsetX = (thumbDisplayW - drawW) / 2;
-                }
-                
-                ctx.clearRect(0, 0, thumbDisplayW, thumbDisplayH);
-                ctx.drawImage(
-                    sourceCanvas, 
-                    0, 0, sourceCanvas.width, sourceCanvas.height,
-                    offsetX, offsetY, drawW, drawH
-                );
-                
-                frame.thumbnailCanvas = thumbCanvas
+console.log('✅ animation-system.js (LayerModel統合版・FRAME改修完全版) loaded');
