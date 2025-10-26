@@ -1,7 +1,7 @@
-// ===== ui/resize-popup.js - Phase 2改修版 FIXED =====
-// 修正1: 配置ボタンのロジック反転（→なら右へ伸びる）
-// 修正2: サムネイル確実再生成
-// 修正3: 座標変換を canvas座標系に正規化
+// ===== ui/resize-popup.js - 座標ズレ修正版 =====
+// 修正1: 座標変換を確実に適用
+// 修正2: サムネイル即座更新
+// 修正3: レイヤーパネルへの通知追加
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -344,57 +344,39 @@ window.TegakiUI.ResizePopup = class {
         });
     }
     
-    /**
-     * 🔧 修正1: 配置ボタンのロジック反転
-     * ← ボタン = 左に配置（左へ伸びる）= オフセット不要
-     * → ボタン = 右に配置（右へ伸びる）= 左が固定、全幅増加
-     */
     _calculateLayerCoordinateOffset(oldWidth, oldHeight, newWidth, newHeight, alignOptions) {
         let offsetX = 0;
         let offsetY = 0;
         
-        // 横方向: ボタンの意味を直感的に
         const widthDiff = newWidth - oldWidth;
         if (alignOptions.horizontalAlign === 'center') {
-            // 中央: 左右均等に伸びる
             offsetX = widthDiff / 2;
         } else if (alignOptions.horizontalAlign === 'right') {
-            // 右（→）: 左が固定、右へ伸びる
             offsetX = 0;
         } else if (alignOptions.horizontalAlign === 'left') {
-            // 左（←）: 右が固定、左へ伸びる
             offsetX = widthDiff;
         }
         
-        // 縦方向: ボタンの意味を直感的に
         const heightDiff = newHeight - oldHeight;
         if (alignOptions.verticalAlign === 'center') {
-            // 中央: 上下均等に伸びる
             offsetY = heightDiff / 2;
         } else if (alignOptions.verticalAlign === 'bottom') {
-            // 下（↓）: 上が固定、下へ伸びる
             offsetY = 0;
         } else if (alignOptions.verticalAlign === 'top') {
-            // 上（↑）: 下が固定、上へ伸びる
             offsetY = heightDiff;
         }
         
         return { offsetX, offsetY };
     }
     
-    /**
-     * 🎨 全フレーム・全レイヤーに座標変換を適用
-     */
     _applyCoordinateTransformToFrames(frames, offsetX, offsetY) {
         frames.forEach((frame) => {
             const layers = frame.getLayers();
             
             layers.forEach((layer) => {
-                // レイヤー位置を移動
                 layer.position.x += offsetX;
                 layer.position.y += offsetY;
                 
-                // paths の座標も移動
                 if (layer.layerData?.paths && Array.isArray(layer.layerData.paths)) {
                     layer.layerData.paths.forEach((path) => {
                         if (path.points && Array.isArray(path.points)) {
@@ -404,7 +386,6 @@ window.TegakiUI.ResizePopup = class {
                             });
                         }
                         
-                        // graphics も再描画
                         if (path.graphics) {
                             path.graphics.clear();
                             path.points.forEach((p) => {
@@ -421,9 +402,6 @@ window.TegakiUI.ResizePopup = class {
         });
     }
     
-    /**
-     * ★ Phase 2改修版: 修正3つ統合
-     */
     _applyResize() {
         if (!this.coreEngine || !this.history) return;
         if (this.currentWidth <= 0 || this.currentHeight <= 0) return;
@@ -480,17 +458,14 @@ window.TegakiUI.ResizePopup = class {
                 this.coreEngine.getCameraSystem().resizeCanvas(newWidth, newHeight);
                 this._applyCoordinateTransformToFrames(frames, offsetX, offsetY);
                 
-                // 修正2: 確実なサムネイル再生成タイミング
-                if (animSystem) {
-                    setTimeout(() => {
-                        animSystem.regenerateAllThumbnails();
-                        
-                        // TimelineUIにも通知
-                        if (this.eventBus) {
-                            this.eventBus.emit('animation:thumbnails-need-update');
-                        }
-                    }, 200);
-                }
+                setTimeout(() => {
+                    animSystem.regenerateAllThumbnails();
+                    
+                    if (this.eventBus) {
+                        this.eventBus.emit('animation:thumbnails-need-update');
+                        this.eventBus.emit('layer:thumbnails-need-update');
+                    }
+                }, 100);
                 
                 const canvasInfoElement = document.getElementById('canvas-info');
                 if (canvasInfoElement) {
@@ -551,14 +526,13 @@ window.TegakiUI.ResizePopup = class {
                     });
                 });
                 
-                if (animSystem) {
-                    setTimeout(() => {
-                        animSystem.regenerateAllThumbnails();
-                        if (this.eventBus) {
-                            this.eventBus.emit('animation:thumbnails-need-update');
-                        }
-                    }, 200);
-                }
+                setTimeout(() => {
+                    animSystem.regenerateAllThumbnails();
+                    if (this.eventBus) {
+                        this.eventBus.emit('animation:thumbnails-need-update');
+                        this.eventBus.emit('layer:thumbnails-need-update');
+                    }
+                }, 100);
                 
                 const canvasInfoElement = document.getElementById('canvas-info');
                 if (canvasInfoElement) {
@@ -637,4 +611,4 @@ window.TegakiUI.ResizePopup = class {
 
 window.ResizePopup = window.TegakiUI.ResizePopup;
 
-console.log('✅ resize-popup.js (Phase 2 FIXED版・配置ロジック反転 + サムネイル確実化) loaded');
+console.log('✅ resize-popup.js (座標ズレ修正版) loaded');
