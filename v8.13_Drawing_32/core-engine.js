@@ -1,7 +1,5 @@
-// ===== core-engine.js - 元ファイル完全継承 + Phase 1改修 =====
-// 改修: UnifiedKeyHandler.switchTool() で drawingEngine.setTool() を呼び出し
-//       initialize() で グローバル参照を設定
-// 元ファイルの全機能継承 + DrawingEngine初期化追加
+// ===== core-engine.js - Phase2 完全修正版 =====
+// Phase2改修: リサイズ時のレイヤー座標シフト実装 + 背景色修正
 
 (function() {
     'use strict';
@@ -297,7 +295,6 @@
         }
         
         switchTool(tool) {
-            // ✅改修Phase 1: drawingEngine.setTool() を呼び出し
             if (this.drawingEngine) {
                 this.drawingEngine.setTool(tool);
             }
@@ -330,10 +327,8 @@
             this.layerSystem = new window.TegakiLayerSystem();
             this.clipboardSystem = new window.TegakiDrawingClipboard();
             
-            // BrushSettings初期化
             this.brushSettings = new BrushSettings(CONFIG, this.eventBus);
             
-            // DrawingEngine初期化
             this.drawingEngine = new DrawingEngine(
                 this.app,
                 this.layerSystem,
@@ -341,7 +336,6 @@
                 window.History
             );
             
-            // BrushSettingsをDrawingEngineに設定
             this.drawingEngine.setBrushSettings(this.brushSettings);
             
             this.animationSystem = null;
@@ -522,6 +516,8 @@
             this.layerSystem.processThumbnailUpdates();
         }
         
+        // ★★★ Phase2-A: レイヤー座標シフト実装 ★★★
+        // ★★★ Phase2-B: 背景色修正（単色） ★★★
         resizeCanvas(newWidth, newHeight, options = {}) {
             const oldWidth = CONFIG.canvas.width;
             const oldHeight = CONFIG.canvas.height;
@@ -556,24 +552,51 @@
             
             this.cameraSystem.resizeCanvas(newWidth, newHeight);
             
+            // ★★★ Phase2-A修正: paths座標のみシフト（レイヤーpositionはシフトしない） ★★★
+            const frames = this.animationSystem?.animationData?.frames || [];
+            frames.forEach(frame => {
+                const layers = frame.getLayers();
+                layers.forEach(layer => {
+                    if (layer.layerData?.isBackground) return;
+                    
+                    // レイヤーposition自体は変更しない（キャンバス座標系）
+                    
+                    // paths内の点座標をシフト
+                    if (layer.layerData?.paths) {
+                        layer.layerData.paths.forEach(path => {
+                            if (path.points) {
+                                path.points.forEach(point => {
+                                    point.x += offsetX;
+                                    point.y += offsetY;
+                                });
+                            }
+                            
+                            // Graphics再描画
+                            if (path.graphics) {
+                                path.graphics.clear();
+                                path.points.forEach(p => {
+                                    path.graphics.circle(p.x, p.y, path.size / 2);
+                                    path.graphics.fill({
+                                        color: path.color,
+                                        alpha: path.opacity
+                                    });
+                                });
+                            }
+                        });
+                    }
+                });
+            });
+            
+            // ★★★ Phase2-B: 背景レイヤー再描画（単色に修正） ★★★
             const layers = this.layerSystem.getLayers();
             layers.forEach(layer => {
                 if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
                     layer.layerData.backgroundGraphics.clear();
                     
-                    const color1 = 0xe9c2ba;
-                    const color2 = 0xf0e0d6;
-                    const squareSize = 16;
-                    
-                    for (let y = 0; y < newHeight; y += squareSize) {
-                        for (let x = 0; x < newWidth; x += squareSize) {
-                            const isEvenX = (x / squareSize) % 2 === 0;
-                            const isEvenY = (y / squareSize) % 2 === 0;
-                            const color = (isEvenX === isEvenY) ? color1 : color2;
-                            layer.layerData.backgroundGraphics.rect(x, y, squareSize, squareSize);
-                            layer.layerData.backgroundGraphics.fill({ color: color });
-                        }
-                    }
+                    layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
+                    layer.layerData.backgroundGraphics.fill({
+                        color: CONFIG.background.color
+                    });
                 }
             });
             
@@ -673,7 +696,6 @@
                 this.processThumbnailUpdates();
             });
             
-            // ✅改修Phase 1: グローバル参照を設定
             window.drawingEngine = this.drawingEngine;
             window.layerManager = this.layerSystem;
             window.cameraSystem = this.cameraSystem;
@@ -699,4 +721,5 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
+    console.log('✅ core-engine.js (Phase2完全修正版) loaded');
 })();
