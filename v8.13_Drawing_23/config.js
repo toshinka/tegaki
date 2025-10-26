@@ -1,4 +1,5 @@
-// ===== config.js - Phase 1: ペン高精度化設定追加版 =====
+// ===== config.js - FRAME改修版 =====
+// ✅ CUT→FRAME変換完了
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -9,12 +10,11 @@ window.TEGAKI_CONFIG = {
         size: 10, 
         opacity: 0.85, 
         color: 0x800000,
-        // 🆕 Phase 1: ペン高精度化設定
         pressure: {
-            baselineCalibration: true,      // ベースラインキャリブレーション有効化
-            baselineSampleCount: 5,         // キャリブレーション用サンプル数
-            minPhysicalWidth: 1.0,          // 最小物理幅（ピクセル）
-            enableDevicePixelRatio: true    // DPR対応有効化
+            baselineCalibration: true,
+            baselineSampleCount: 5,
+            minPhysicalWidth: 1.0,
+            enableDevicePixelRatio: true
         }
     },
     camera: {
@@ -74,7 +74,7 @@ window.TEGAKI_CONFIG = {
     debug: false
 };
 
-// キーマッピング（既存のまま維持）
+// キーマッピング
 window.TEGAKI_KEYMAP = {
     actions: {
         UNDO: {
@@ -287,19 +287,19 @@ window.TEGAKI_KEYMAP = {
             alt: false,
             description: 'タイムライン表示切替'
         },
-        GIF_CREATE_CUT: {
+        GIF_CREATE_FRAME: {
             key: 'KeyN',
             ctrl: false,
             shift: true,
             alt: false,
-            description: '新規CUT作成'
+            description: '新規フレーム作成'
         },
-        GIF_COPY_CUT: {
+        GIF_COPY_FRAME: {
             key: 'KeyC',
             ctrl: false,
             shift: true,
             alt: false,
-            description: 'CUTコピー&ペースト'
+            description: 'フレームコピー&ペースト'
         }
     },
     
@@ -398,7 +398,7 @@ window.TEGAKI_KEYMAP = {
             'レイヤー変形': ['LAYER_SCALE_UP', 'LAYER_SCALE_DOWN', 'LAYER_ROTATE_LEFT', 'LAYER_ROTATE_RIGHT'],
             'カメラ反転': ['CAMERA_FLIP_HORIZONTAL', 'CAMERA_FLIP_VERTICAL'],
             'レイヤー反転': ['LAYER_FLIP_HORIZONTAL', 'LAYER_FLIP_VERTICAL'],
-            'GIF/アニメーション': ['GIF_PREV_FRAME', 'GIF_NEXT_FRAME', 'GIF_PLAY_PAUSE', 'GIF_TOGGLE_TIMELINE', 'GIF_CREATE_CUT', 'GIF_COPY_CUT']
+            'GIF/アニメーション': ['GIF_PREV_FRAME', 'GIF_NEXT_FRAME', 'GIF_PLAY_PAUSE', 'GIF_TOGGLE_TIMELINE', 'GIF_CREATE_FRAME', 'GIF_COPY_FRAME']
         };
         
         return Object.entries(categories).map(([category, actions]) => ({
@@ -511,6 +511,4 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js (Phase 1: ペン高精度化設定追加版) loaded');
-console.log('   🆕 Phase 1: ベースラインキャリブレーション設定追加');
-console.log('   🆕 Phase 1: devicePixelRatio対応設定追加');
+console.log('✅ config.js (FRAME改修版) loaded');

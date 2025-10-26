@@ -1,6 +1,7 @@
-// ===== keyboard-handler.js - 改修版 =====
+// ===== keyboard-handler.js - FRAME改修版 =====
 // 改修2: Delete/Backspaceキーでレイヤー内容消去機能の復活 ✅
 // 改修3: 消しゴムツール透明化対応 ✅
+// ✅ CUT→FRAME変換完了
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -105,11 +106,11 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            case 'GIF_CREATE_CUT':
+            case 'GIF_CREATE_FRAME':
                 const animationSystem = window.animationSystem;
                 if (animationSystem) {
                     animationSystem.createNewEmptyCut();
-                    eventBus.emit('cut:created-by-shortcut');
+                    eventBus.emit('frame:created-by-shortcut');
                 }
                 event.preventDefault();
                 break;
@@ -127,10 +128,10 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
-            case 'GIF_COPY_CUT':
-                eventBus.emit('cut:copy-current');
+            case 'GIF_COPY_FRAME':
+                eventBus.emit('frame:copy-current');
                 setTimeout(() => {
-                    eventBus.emit('cut:paste-right-adjacent');
+                    eventBus.emit('frame:paste-right-adjacent');
                 }, 10);
                 event.preventDefault();
                 break;
@@ -293,10 +294,10 @@ window.KeyboardHandler = (function() {
             { action: 'LAYER_DELETE_DRAWINGS', keys: ['Delete', 'Backspace'], description: 'レイヤーの絵を削除' },
             { action: 'LAYER_CLEAR', keys: ['Ctrl+Delete'], description: 'レイヤークリア' },
             { action: 'LAYER_CREATE', keys: ['Ctrl+L'], description: 'レイヤー追加' },
-            { action: 'GIF_CREATE_CUT', keys: ['Ctrl+N'], description: 'カット追加' },
+            { action: 'GIF_CREATE_FRAME', keys: ['Ctrl+N'], description: 'フレーム追加' },
             { action: 'GIF_TOGGLE_TIMELINE', keys: ['Ctrl+T'], description: 'タイムライン表示切替' },
             { action: 'GIF_PLAY_PAUSE', keys: ['Space'], description: '再生/停止' },
-            { action: 'GIF_COPY_CUT', keys: ['Ctrl+D'], description: 'カット複製' },
+            { action: 'GIF_COPY_FRAME', keys: ['Ctrl+D'], description: 'フレーム複製' },
             { action: 'TOOL_PEN', keys: ['P', 'B'], description: 'ペンツール' },
             { action: 'TOOL_ERASER', keys: ['E'], description: '消しゴム' },
             { action: 'SETTINGS_OPEN', keys: ['Ctrl+,'], description: '設定を開く' },
@@ -311,3 +312,5 @@ window.KeyboardHandler = (function() {
         getShortcutList
     };
 })();
+
+console.log('✅ keyboard-handler.js (FRAME改修版) loaded');
