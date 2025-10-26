@@ -25,7 +25,6 @@ window.TegakiUI.AlbumPopup = class {
         if (!this.popup) {
             this._createPopupElement();
         } else {
-            // 既存要素の初期化（初期状態は非表示）
             this.popup.classList.remove('show');
             this.popup.style.display = 'none';
         }
@@ -95,8 +94,8 @@ window.TegakiUI.AlbumPopup = class {
             return null;
         }
 
-        const currentFrameIndex = this.animationSystem.getCurrentCutIndex();
-        const frames = this.animationSystem.animationData.cuts || [];
+        const currentFrameIndex = this.animationSystem.getCurrentFrameIndex();
+        const frames = this.animationSystem.animationData.frames || [];
         const currentFrame = frames[currentFrameIndex];
         
         if (!currentFrame?.container) {
@@ -136,6 +135,77 @@ window.TegakiUI.AlbumPopup = class {
                         };
 
                         if (layerState.isBackground) {
+                            layerState.backgroundColor = CONFIG.background.color || 0xF0E0D6;
+                        } else if (layer.layerData.paths) {
+                            layerState.paths = layer.layerData.paths.map(p => ({
+                                id: p.id,
+                                points: structuredClone(p.points),
+                                color: p.color,
+                                size: p.size,
+                                opacity: p.opacity,
+                                tool: p.tool
+                            }));
+                        }
+
+                        layerStates.push(layerState);
+                    }
+                });
+            }
+            frameStates.push({ index, layerStates });
+        });
+
+        return {
+            id: Date.now(),
+            timestamp: Date.now(),
+            thumbnail,
+            currentFrame: currentFrameIndex,
+            frameStates
+        };
+    }
+
+    async _loadSnapshot(snapshot) {
+        if (!this.animationSystem) return;
+
+        const frames = this.animationSystem.animationData.frames;
+        
+        while (frames.length < snapshot.frameStates.length) {
+            if (this.animationSystem.createNewEmptyFrame) {
+                this.animationSystem.createNewEmptyFrame();
+            } else if (this.animationSystem.addFrame) {
+                this.animationSystem.addFrame();
+            }
+        }
+
+        snapshot.frameStates.forEach((frameState, frameIndex) => {
+            if (frameIndex >= frames.length) return;
+            
+            const frame = frames[frameIndex];
+            if (!frame.container) return;
+
+            while (frame.container.children.length > 0) {
+                const child = frame.container.children[0];
+                frame.container.removeChild(child);
+                if (child.destroy) child.destroy({ children: true });
+            }
+
+            frameState.layerStates.forEach(layerState => {
+                const layerContainer = new PIXI.Container();
+                layerContainer.label = layerState.name;
+                
+                const isVisible = layerState.visible !== false;
+                layerContainer.visible = isVisible;
+                layerContainer.alpha = layerState.opacity;
+                
+                layerContainer.layerData = {
+                    id: layerState.id,
+                    name: layerState.name,
+                    visible: isVisible,
+                    opacity: layerState.opacity,
+                    isBackground: layerState.isBackground || false,
+                    paths: []
+                };
+
+                if (layerState.isBackground) {
                     const bg = new PIXI.Graphics();
                     const CONFIG = window.TEGAKI_CONFIG;
                     const bgColor = layerState.backgroundColor || CONFIG.background.color || 0xF0E0D6;
@@ -170,15 +240,15 @@ window.TegakiUI.AlbumPopup = class {
                 frame.container.addChild(layerContainer);
             });
 
-            if (this.animationSystem.generateCutThumbnail) {
+            if (this.animationSystem.generateFrameThumbnail) {
                 setTimeout(() => {
-                    this.animationSystem.generateCutThumbnail(frameIndex);
+                    this.animationSystem.generateFrameThumbnail(frameIndex);
                 }, 50 + frameIndex * 20);
             }
         });
 
-        if (this.animationSystem.setCutIndex) {
-            this.animationSystem.setCutIndex(snapshot.currentFrame);
+        if (this.animationSystem.switchToActiveFrame) {
+            this.animationSystem.switchToActiveFrame(snapshot.currentFrame);
         }
 
         setTimeout(() => {
@@ -401,74 +471,3 @@ window.TegakiUI.AlbumPopup = class {
 window.AlbumPopup = window.TegakiUI.AlbumPopup;
 
 console.log('✅ album-popup.js (FRAME改修版) loaded');
-                            layerState.backgroundColor = CONFIG.background.color || 0xF0E0D6;
-                        } else if (layer.layerData.paths) {
-                            layerState.paths = layer.layerData.paths.map(p => ({
-                                id: p.id,
-                                points: structuredClone(p.points),
-                                color: p.color,
-                                size: p.size,
-                                opacity: p.opacity,
-                                tool: p.tool
-                            }));
-                        }
-
-                        layerStates.push(layerState);
-                    }
-                });
-            }
-            frameStates.push({ index, layerStates });
-        });
-
-        return {
-            id: Date.now(),
-            timestamp: Date.now(),
-            thumbnail,
-            currentFrame: currentFrameIndex,
-            frameStates
-        };
-    }
-
-    async _loadSnapshot(snapshot) {
-        if (!this.animationSystem) return;
-
-        const frames = this.animationSystem.animationData.cuts;
-        
-        while (frames.length < snapshot.frameStates.length) {
-            if (this.animationSystem.createNewEmptyCut) {
-                this.animationSystem.createNewEmptyCut();
-            } else if (this.animationSystem.addCut) {
-                this.animationSystem.addCut();
-            }
-        }
-
-        snapshot.frameStates.forEach((frameState, frameIndex) => {
-            if (frameIndex >= frames.length) return;
-            
-            const frame = frames[frameIndex];
-            if (!frame.container) return;
-
-            while (frame.container.children.length > 0) {
-                const child = frame.container.children[0];
-                frame.container.removeChild(child);
-                if (child.destroy) child.destroy({ children: true });
-            }
-
-            frameState.layerStates.forEach(layerState => {
-                const layerContainer = new PIXI.Container();
-                layerContainer.label = layerState.name;
-                
-                const isVisible = layerState.visible !== false;
-                layerContainer.visible = isVisible;
-                layerContainer.alpha = layerState.opacity;
-                
-                layerContainer.layerData = {
-                    id: layerState.id,
-                    name: layerState.name,
-                    visible: isVisible,
-                    opacity: layerState.opacity,
-                    isBackground: layerState.isBackground || false,
-                    paths: []
-                };
-
-                if (layerState.isBackground) {
