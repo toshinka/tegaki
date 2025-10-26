@@ -727,47 +727,52 @@
         isInitialized() { return this.internal.initialized; }
     };
     
-    CoreRuntime.initializeExportSystem = function(pixiApp, onSuccess) {
-        if (window.TEGAKI_EXPORT_MANAGER) {
-            return true;
-        }
-        
-        if (!window.ExportManager || !window.PNGExporter || !window.APNGExporter || !window.GIFExporter) {
-            return false;
-        }
-        
-        if (!pixiApp || !this.internal.layerManager || !this.internal.cameraSystem) {
-            return false;
-        }
-        
-        if (!window.animationSystem) {
-            return false;
-        }
-        
-        window.TEGAKI_EXPORT_MANAGER = new window.ExportManager(
-            pixiApp,
-            this.internal.layerManager,
-            window.animationSystem,
-            this.internal.cameraSystem
-        );
-        
-        const mgr = window.TEGAKI_EXPORT_MANAGER;
-        
-        mgr.registerExporter('png', new window.PNGExporter(mgr));
-        mgr.registerExporter('apng', new window.APNGExporter(mgr));
-        mgr.registerExporter('gif', new window.GIFExporter(mgr));
-        
-        if (window.WebPExporter) {
-            mgr.registerExporter('webp', new window.WebPExporter(mgr));
-        }
-        
-        if (window.TegakiEventBus) {
-            window.TegakiEventBus.emit('export:manager:initialized', { timestamp: Date.now() });
-        }
-        
-        if (onSuccess) onSuccess();
+CoreRuntime.initializeExportSystem = function(pixiApp, onSuccess) {
+    if (window.TEGAKI_EXPORT_MANAGER) {
         return true;
-    };
+    }
+    
+    if (!window.ExportManager || !window.PNGExporter || !window.APNGExporter || !window.GIFExporter) {
+        return false;
+    }
+    
+    if (!pixiApp || !this.internal.layerManager || !this.internal.cameraSystem) {
+        return false;
+    }
+    
+    if (!window.animationSystem) {
+        return false;
+    }
+    
+    window.TEGAKI_EXPORT_MANAGER = new window.ExportManager(
+        pixiApp,
+        this.internal.layerManager,
+        window.animationSystem,
+        this.internal.cameraSystem
+    );
+    
+    const mgr = window.TEGAKI_EXPORT_MANAGER;
+    
+    mgr.registerExporter('png', new window.PNGExporter(mgr));
+    mgr.registerExporter('apng', new window.APNGExporter(mgr));
+    mgr.registerExporter('gif', new window.GIFExporter(mgr));
+    
+    // PDFエクスポーター登録を追加
+    if (window.PDFExporter) {
+        mgr.registerExporter('pdf', new window.PDFExporter(mgr));
+    }
+    
+    if (window.WebPExporter) {
+        mgr.registerExporter('webp', new window.WebPExporter(mgr));
+    }
+    
+    if (window.TegakiEventBus) {
+        window.TegakiEventBus.emit('export:manager:initialized', { timestamp: Date.now() });
+    }
+    
+    if (onSuccess) onSuccess();
+    return true;
+};
     
     window.CoreRuntime = CoreRuntime;
     

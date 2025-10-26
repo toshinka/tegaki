@@ -5,38 +5,30 @@
 
 class QuickExportUI {
     constructor() {
-        this.container = null;
-        this.isGenerating = false;
-        this.initialized = false;
-        
-        // ★ Phase 1改修: ExportManager初期化待機
-        this.waitForExportManager();
+        // 機能を無効化し、初期化しない
+        this.disabled = true;
+        console.log('⚠️ QuickExportUI は無効化されています (ExportPopup に機能統合済み)');
     }
 
-    waitForExportManager() {
-        // EventBus経由で初期化完了を待つ
-        if (window.TegakiEventBus) {
-            window.TegakiEventBus.on('export:manager:initialized', () => {
-                this.init();
-            });
-        }
-        
-        // タイマーでも確認（フォールバック）
-        const checkInterval = setInterval(() => {
-            if (window.TEGAKI_EXPORT_MANAGER && !this.initialized) {
-                clearInterval(checkInterval);
-                this.init();
-            }
-        }, 500);
-        
-        // 10秒後にタイムアウト
-        setTimeout(() => {
-            clearInterval(checkInterval);
-            if (!this.initialized) {
-                console.warn('[QuickExportUI] ExportManager initialization timeout');
-            }
-        }, 10000);
-    }
+    // 互換性のためのダミーメソッド
+    init() {}
+    createUI() {}
+    setupEventListeners() {}
+    exportPNG() {}
+    previewGIF() {}
+    previewAPNG() {}
+    getExportManager() { return null; }
+    showPreview() {}
+    downloadBlob() {}
+    setButtonsEnabled() {}
+}
+
+// グローバルインスタンス作成（互換性維持）
+if (typeof window !== 'undefined') {
+    window.QuickExportUI = new QuickExportUI();
+}
+
+console.log('✅ quick-export-ui.js (無効化版) loaded');
 
     init() {
         if (this.initialized) return;

@@ -1,6 +1,6 @@
 // ==================================================
 // system/exporters/gif-exporter.js
-// GIFアニメーションエクスポーター - PixiJS v8.13完全対応版
+// GIFアニメーションエクスポーター - CUT→FRAME完全修正版
 // ==================================================
 window.GIFExporter = (function() {
     'use strict';
@@ -25,8 +25,8 @@ window.GIFExporter = (function() {
             }
             
             const animData = this.manager.animationSystem.getAnimationData();
-            if (!animData?.cuts || animData.cuts.length === 0) {
-                throw new Error('アニメーションにCUTが含まれていません');
+            if (!animData?.frames || animData.frames.length === 0) {
+                throw new Error('アニメーションにフレームが含まれていません');
             }
             
             const settings = {
@@ -72,17 +72,17 @@ window.GIFExporter = (function() {
                 
                 const backupSnapshots = this.manager.animationSystem.captureAllLayerStates();
                 
-                for (let i = 0; i < animData.cuts.length; i++) {
-                    const cut = animData.cuts[i];
+                for (let i = 0; i < animData.frames.length; i++) {
+                    const frame = animData.frames[i];
                     
-                    this.manager.animationSystem.applyCutToLayers(i);
+                    this.manager.animationSystem.applyFrameToLayers(i);
                     await this.waitFrame();
                     
-                    const canvas = await this.renderCutToCanvas(settings);
+                    const canvas = await this.renderFrameToCanvas(settings);
                     
                     if (canvas) {
-                        const delayMs = cut.duration !== undefined && cut.duration !== null
-                            ? Math.round(cut.duration * 1000)
+                        const delayMs = frame.duration !== undefined && frame.duration !== null
+                            ? Math.round(frame.duration * 1000)
                             : 100;
                         
                         gif.addFrame(canvas, { delay: delayMs });
@@ -90,7 +90,7 @@ window.GIFExporter = (function() {
                     
                     window.TegakiEventBus?.emit('export:frame-rendered', { 
                         frame: i + 1, 
-                        total: animData.cuts.length 
+                        total: animData.frames.length 
                     });
                 }
                 
@@ -122,7 +122,7 @@ window.GIFExporter = (function() {
                 window.TegakiEventBus?.emit('export:completed', {
                     format: 'gif',
                     size: blob.size,
-                    cuts: animData.cuts.length,
+                    frames: animData.frames.length,
                     filename: filename
                 });
                 
@@ -210,7 +210,7 @@ window.GIFExporter = (function() {
             });
         }
         
-        async renderCutToCanvas(settings) {
+        async renderFrameToCanvas(settings) {
             const renderTexture = PIXI.RenderTexture.create({
                 width: settings.width,
                 height: settings.height,
@@ -219,9 +219,9 @@ window.GIFExporter = (function() {
             
             const tempContainer = new PIXI.Container();
             
-            const layersContainer = this.manager.animationSystem.layerSystem.currentCutContainer;
+            const layersContainer = this.manager.animationSystem.layerSystem.currentFrameContainer;
             if (!layersContainer) {
-                throw new Error('currentCutContainer not found');
+                throw new Error('currentFrameContainer not found');
             }
             
             const originalParent = layersContainer.parent;
@@ -297,4 +297,4 @@ window.GIFExporter = (function() {
     return GIFExporter;
 })();
 
-console.log('✅ gif-exporter.js (PixiJS v8.13完全対応版) loaded');
+console.log('✅ gif-exporter.js (CUT→FRAME完全修正版) loaded');
