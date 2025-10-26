@@ -1,6 +1,7 @@
-// ===== ui/layer-panel-renderer.js - Phase4 =====
+// ===== ui/layer-panel-renderer.js - サムネイル即座更新対応版 =====
 // 責務: レイヤーパネルのDOM操作専用
 // 規則: ロジック(layerSystem)とUI(DOM)を完全分離
+// 修正: リアルタイムサムネイル更新機能追加
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -9,6 +10,9 @@ window.TegakiUI.LayerPanelRenderer = class {
         this.container = null;
         this.animationSystem = null;
         this.layerSystem = null;
+        this.eventBus = window.TegakiEventBus;
+        
+        this._setupEventListeners();
     }
 
     init(container, layerSystem, animationSystem) {
@@ -20,10 +24,21 @@ window.TegakiUI.LayerPanelRenderer = class {
             throw new Error('Layer panel container not found');
         }
     }
+    
+    _setupEventListeners() {
+        if (!this.eventBus) return;
+        
+        this.eventBus.on('layer:thumbnails-need-update', () => {
+            this.updateAllThumbnails();
+        });
+        
+        this.eventBus.on('layer:path-added', () => {
+            setTimeout(() => {
+                this.updateAllThumbnails();
+            }, 50);
+        });
+    }
 
-    /**
-     * レイヤーパネル全体をレンダリング
-     */
     render(layers, activeIndex, animationSystem = null) {
         if (!this.container) return;
         if (!layers || layers.length === 0) return;
@@ -43,15 +58,11 @@ window.TegakiUI.LayerPanelRenderer = class {
         this.initializeSortable();
     }
 
-    /**
-     * 個別レイヤーアイテムを作成
-     */
     createLayerElement(layer, index, isActive, animationSystem) {
         const layerDiv = document.createElement('div');
         layerDiv.className = isActive ? 'layer-item active' : 'layer-item';
         layerDiv.dataset.layerId = layer.layerData?.id || `layer-${index}`;
 
-        // チェックボックス（表示/非表示）
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
         checkbox.className = 'layer-visibility-toggle';
@@ -60,7 +71,6 @@ window.TegakiUI.LayerPanelRenderer = class {
         checkbox.style.gridRow = '1 / 3';
         layerDiv.appendChild(checkbox);
 
-        // レイヤー名
         const nameSpan = document.createElement('span');
         nameSpan.className = 'layer-name';
         nameSpan.textContent = layer.layerData?.name || `Layer ${index}`;
@@ -68,11 +78,9 @@ window.TegakiUI.LayerPanelRenderer = class {
         nameSpan.style.gridRow = '2';
         layerDiv.appendChild(nameSpan);
 
-        // サムネイル
         const thumbnail = this.createThumbnail(layer, animationSystem);
         layerDiv.appendChild(thumbnail);
 
-        // アクティブレイヤーの選択リスナー
         layerDiv.addEventListener('click', (e) => {
             if (e.target !== checkbox) {
                 if (window.TegakiEventBus) {
@@ -84,7 +92,6 @@ window.TegakiUI.LayerPanelRenderer = class {
             }
         });
 
-        // 表示/非表示トグル
         checkbox.addEventListener('change', (e) => {
             layer.visible = e.target.checked;
             if (window.TegakiEventBus) {
@@ -99,37 +106,109 @@ window.TegakiUI.LayerPanelRenderer = class {
         return layerDiv;
     }
 
-    /**
-     * レイヤーサムネイルを作成
-     */
     createThumbnail(layer, animationSystem) {
         const thumbnail = document.createElement('div');
         thumbnail.className = 'layer-thumbnail';
         thumbnail.style.gridColumn = '3';
         thumbnail.style.gridRow = '1 / 3';
 
-        if (layer.layerData?.renderTexture) {
-            const canvas = this.getCanvasFromTexture(layer.layerData.renderTexture);
-            if (canvas) {
-                const img = document.createElement('img');
-                img.src = canvas.toDataURL('image/png');
-                img.alt = 'Layer thumbnail';
-                thumbnail.appendChild(img);
-            }
-        } else if (layer.layerData?.isBackground) {
+        if (layer.layerData?.isBackground) {
             const swatch = document.createElement('div');
             swatch.style.width = '100%';
             swatch.style.height = '100%';
             swatch.style.backgroundColor = '#F0E0D6';
             thumbnail.appendChild(swatch);
+            return thumbnail;
+        }
+
+        const canvas = this.generateLayerThumbnailCanvas(layer);
+        if (canvas) {
+            const img = document.createElement('img');
+            img.src = canvas.toDataURL('image/png');
+            img.alt = 'Layer thumbnail';
+            img.style.width = '100%';
+            img.style.height = '100%';
+            img.style.objectFit = 'contain';
+            thumbnail.appendChild(img);
         }
 
         return thumbnail;
     }
 
-    /**
-     * Textureからcanvasを抽出
-     */
+    generateLayerThumbnailCanvas(layer) {
+        if (!layer || !layer.layerData) return null;
+        
+        const paths = layer.layerData.paths;
+        if (!paths || paths.length === 0) return null;
+        
+        const canvasWidth = window.TEGAKI_CONFIG?.canvas?.width || 800;
+        const canvasHeight = window.TEGAKI_CONFIG?.canvas?.height || 600;
+        
+        let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+        
+        paths.forEach(path => {
+            if (!path.points || path.points.length === 0) return;
+            path.points.forEach(point => {
+                if (point.x < minX) minX = point.x;
+                if (point.y < minY) minY = point.y;
+                if (point.x > maxX) maxX = point.x;
+                if (point.y > maxY) maxY = point.y;
+            });
+        });
+        
+        if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+            return null;
+        }
+        
+        const padding = 10;
+        minX = Math.max(0, minX - padding);
+        minY = Math.max(0, minY - padding);
+        maxX = Math.min(canvasWidth, maxX + padding);
+        maxY = Math.min(canvasHeight, maxY + padding);
+        
+        const contentWidth = maxX - minX;
+        const contentHeight = maxY - minY;
+        
+        if (contentWidth <= 0 || contentHeight <= 0) return null;
+        
+        const thumbSize = 64;
+        const scale = Math.min(thumbSize / contentWidth, thumbSize / contentHeight);
+        
+        const canvas = document.createElement('canvas');
+        canvas.width = thumbSize;
+        canvas.height = thumbSize;
+        const ctx = canvas.getContext('2d');
+        
+        ctx.clearRect(0, 0, thumbSize, thumbSize);
+        
+        const offsetX = (thumbSize - contentWidth * scale) / 2;
+        const offsetY = (thumbSize - contentHeight * scale) / 2;
+        
+        paths.forEach(path => {
+            if (!path.points || path.points.length === 0) return;
+            
+            const color = path.color || 0x800000;
+            const r = (color >> 16) & 0xFF;
+            const g = (color >> 8) & 0xFF;
+            const b = color & 0xFF;
+            const opacity = path.opacity || 1.0;
+            
+            ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
+            
+            path.points.forEach(point => {
+                const x = (point.x - minX) * scale + offsetX;
+                const y = (point.y - minY) * scale + offsetY;
+                const radius = (path.size || 16) * scale / 2;
+                
+                ctx.beginPath();
+                ctx.arc(x, y, Math.max(1, radius), 0, Math.PI * 2);
+                ctx.fill();
+            });
+        });
+        
+        return canvas;
+    }
+
     getCanvasFromTexture(renderTexture) {
         try {
             if (!window.coreEngine?.app?.renderer) return null;
@@ -141,9 +220,6 @@ window.TegakiUI.LayerPanelRenderer = class {
         }
     }
 
-    /**
-     * Sortable.jsの初期化
-     */
     initializeSortable() {
         if (!this.container || typeof Sortable === 'undefined') return;
         
@@ -170,9 +246,6 @@ window.TegakiUI.LayerPanelRenderer = class {
         });
     }
 
-    /**
-     * 指定インデックスのレイヤーをアクティブ化
-     */
     setActiveLayer(index) {
         if (!this.container) return;
 
@@ -181,9 +254,6 @@ window.TegakiUI.LayerPanelRenderer = class {
         });
     }
 
-    /**
-     * レイヤーサムネイル更新
-     */
     updateThumbnail(index) {
         if (!this.container || !this.layerSystem) return;
 
@@ -195,25 +265,42 @@ window.TegakiUI.LayerPanelRenderer = class {
                 if (thumbnail) {
                     thumbnail.innerHTML = '';
                     const newThumb = this.createThumbnail(layer, this.animationSystem);
-                    const img = newThumb.querySelector('img');
-                    if (img) {
-                        thumbnail.appendChild(img);
+                    const content = newThumb.firstChild;
+                    if (content) {
+                        thumbnail.appendChild(content);
                     }
                 }
             }
         }
     }
 
-    /**
-     * 全レイヤー情報更新
-     */
+    updateAllThumbnails() {
+        if (!this.container || !this.layerSystem) return;
+
+        const items = this.container.querySelectorAll('.layer-item');
+        const layers = this.layerSystem.getLayers();
+        
+        items.forEach((item, index) => {
+            if (index >= layers.length) return;
+            
+            const layer = layers[index];
+            const thumbnail = item.querySelector('.layer-thumbnail');
+            
+            if (thumbnail && layer) {
+                thumbnail.innerHTML = '';
+                const newThumb = this.createThumbnail(layer, this.animationSystem);
+                const content = newThumb.firstChild;
+                if (content) {
+                    thumbnail.appendChild(content);
+                }
+            }
+        });
+    }
+
     updateAll(layers, activeIndex, animationSystem = null) {
         this.render(layers, activeIndex, animationSystem || this.animationSystem);
     }
 
-    /**
-     * レイヤー追加時のDOM更新
-     */
     addLayer(layer, index, isActive) {
         if (!this.container) return;
 
@@ -228,9 +315,6 @@ window.TegakiUI.LayerPanelRenderer = class {
         this.initializeSortable();
     }
 
-    /**
-     * レイヤー削除時のDOM更新
-     */
     removeLayer(index) {
         if (!this.container) return;
 
@@ -242,9 +326,6 @@ window.TegakiUI.LayerPanelRenderer = class {
         this.initializeSortable();
     }
 
-    /**
-     * レイヤー名更新
-     */
     updateLayerName(index, newName) {
         if (!this.container) return;
 
@@ -257,3 +338,5 @@ window.TegakiUI.LayerPanelRenderer = class {
         }
     }
 };
+
+console.log('✅ layer-panel-renderer.js (サムネイル即座更新対応版) loaded');

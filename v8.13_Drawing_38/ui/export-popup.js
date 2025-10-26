@@ -1,4 +1,4 @@
-// ===== ui/export-popup.js - WEBP追加＋CUT→FRAME完全修正版 =====
+// ===== ui/export-popup.js - frameInfo修正版＋PDF有効化 =====
 
 window.TegakiExportPopup = class ExportPopup {
     constructor(dependencies) {
@@ -149,6 +149,8 @@ window.TegakiExportPopup = class ExportPopup {
         if (window.TEGAKI_CONFIG?.animation?.exportSettings) {
             quality = window.TEGAKI_CONFIG.animation.exportSettings.quality;
         }
+        
+        const frameInfo = frameCount >= 2 ? ` / ${frameCount}フレーム` : '';
         
         const pngDescription = frameCount >= 2 
             ? '全' + frameCount + 'フレームをAPNG（アニメーションPNG）として出力します。'
@@ -418,4 +420,4 @@ window.TegakiExportPopup = class ExportPopup {
 
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js (PDF対応＋CUT→FRAME完全修正版) loaded');
+console.log('✅ export-popup.js (frameInfo修正版＋PDF有効化) loaded');
