@@ -1,5 +1,6 @@
-// ===== config.js - FRAME改修版 =====
+// ===== config.js - Phase 2完全版 (BRUSH_DEFAULTS追加) =====
 // ✅ CUT→FRAME変換完了
+// ✅ Phase 2: BRUSH_DEFAULTS追加
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -16,6 +17,14 @@ window.TEGAKI_CONFIG = {
             minPhysicalWidth: 1.0,
             enableDevicePixelRatio: true
         }
+    },
+    // ✅ Phase 2: BRUSH_DEFAULTS追加
+    BRUSH_DEFAULTS: {
+        color: 0x800000,    // futaba-maroon
+        size: 3,            // デフォルトサイズ 3px
+        opacity: 1.0,       // 100%
+        minWidth: 1,        // 最小幅
+        maxWidth: 10        // 最大幅
     },
     camera: {
         minScale: 0.1,
@@ -511,4 +520,5 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js (FRAME改修版) loaded');
+console.log('✅ config.js (Phase 2完全版) loaded');
+console.log('   - BRUSH_DEFAULTS追加完了');
