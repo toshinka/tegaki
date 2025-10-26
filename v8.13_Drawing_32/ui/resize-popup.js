@@ -1,6 +1,5 @@
-// ===== ui/resize-popup.js - イベントリスナー参照修正版 =====
-// 責務: キャンバスリサイズUI表示、ユーザー入力受付、History統合
-// 🔥 修正: イベントハンドラーのthis参照をbindで固定
+// ===== ui/resize-popup.js - Phase2 完全修正版 =====
+// Phase2-C: Historyコマンド改善（レイヤー座標復元対応）
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -19,7 +18,6 @@ window.TegakiUI.ResizePopup = class {
         
         this.elements = {};
         
-        // 🔥 修正: アロー関数でthisを固定
         this.mouseMoveHandler = (e) => {
             if (this.isDraggingWidth) {
                 const rect = this.elements.widthSlider.getBoundingClientRect();
@@ -344,6 +342,7 @@ window.TegakiUI.ResizePopup = class {
         });
     }
     
+    // ★★★ Phase2-C: Historyコマンド改善（座標復元対応） ★★★
     _applyResize() {
         if (!this.coreEngine || !this.history) return;
         if (this.currentWidth <= 0 || this.currentHeight <= 0) return;
@@ -360,14 +359,35 @@ window.TegakiUI.ResizePopup = class {
         
         const oldWidth = window.TEGAKI_CONFIG.canvas.width;
         const oldHeight = window.TEGAKI_CONFIG.canvas.height;
-        const layerManager = this.coreEngine.getLayerManager();
-        const layers = layerManager.getLayers();
         
-        const layerSnapshots = layers.map(layer => ({
-            id: layer.layerData.id,
-            paths: layer.layerData.paths.map(this._serializePathForSnapshot.bind(this)),
-            isBackground: layer.layerData.isBackground
-        }));
+        // ★ レイヤー座標スナップショット取得（全フレーム対応）
+        const frames = this.coreEngine.getAnimationSystem()?.animationData?.frames || [];
+        const frameSnapshots = [];
+        
+        frames.forEach((frame, frameIndex) => {
+            const layers = frame.getLayers();
+            const layerSnapshots = layers.map(layer => ({
+                id: layer.layerData.id,
+                x: layer.position.x,
+                y: layer.position.y,
+                paths: layer.layerData?.paths ? 
+                    layer.layerData.paths.map(p => ({
+                        id: p.id,
+                        points: p.points.map(pt => ({x: pt.x, y: pt.y, pressure: pt.pressure || 1})),
+                        color: p.color,
+                        size: p.size,
+                        opacity: p.opacity,
+                        tool: p.tool,
+                        isComplete: p.isComplete
+                    })) : [],
+                isBackground: layer.layerData.isBackground
+            }));
+            
+            frameSnapshots.push({
+                frameIndex: frameIndex,
+                layers: layerSnapshots
+            });
+        });
         
         const command = {
             name: 'resize-canvas',
@@ -377,50 +397,63 @@ window.TegakiUI.ResizePopup = class {
             undo: () => {
                 window.TEGAKI_CONFIG.canvas.width = oldWidth;
                 window.TEGAKI_CONFIG.canvas.height = oldHeight;
+                
                 this.coreEngine.getCameraSystem().resizeCanvas(oldWidth, oldHeight);
                 
-                const currentLayers = layerManager.getLayers();
-                
-                layerSnapshots.forEach(snapshot => {
-                    const layer = currentLayers.find(l => l.layerData.id === snapshot.id);
-                    if (!layer) return;
+                // ★ レイヤー座標を復元
+                const currentFrames = this.coreEngine.getAnimationSystem()?.animationData?.frames || [];
+                frameSnapshots.forEach(frameSnap => {
+                    const frame = currentFrames[frameSnap.frameIndex];
+                    if (!frame) return;
                     
-                    layer.layerData.paths.forEach(path => {
-                        if (path.graphics) {
-                            layer.removeChild(path.graphics);
-                            path.graphics.destroy();
-                        }
-                    });
-                    
-                    if (snapshot.isBackground && layer.layerData.backgroundGraphics) {
-                        layer.layerData.backgroundGraphics.clear();
-                        layer.layerData.backgroundGraphics.rect(0, 0, oldWidth, oldHeight);
-                        layer.layerData.backgroundGraphics.fill(window.TEGAKI_CONFIG.background.color);
-                    }
-                    
-                    layer.layerData.paths = snapshot.paths.map(pathData => {
-                        const restoredPath = {
-                            id: pathData.id,
-                            points: pathData.points.map(p => ({ x: p.x, y: p.y, pressure: p.pressure })),
-                            color: pathData.color,
-                            size: pathData.size,
-                            opacity: pathData.opacity,
-                            tool: pathData.tool,
-                            isComplete: pathData.isComplete,
-                            graphics: null
-                        };
+                    const layers = frame.getLayers();
+                    frameSnap.layers.forEach(layerSnap => {
+                        const layer = layers.find(l => l.layerData.id === layerSnap.id);
+                        if (!layer) return;
                         
-                        if (layerManager.rebuildPathGraphics) {
-                            layerManager.rebuildPathGraphics(restoredPath);
-                            if (restoredPath.graphics) {
-                                layer.addChild(restoredPath.graphics);
-                            }
+                        layer.position.x = layerSnap.x;
+                        layer.position.y = layerSnap.y;
+                        
+                        // 背景レイヤー再描画
+                        if (layerSnap.isBackground && layer.layerData.backgroundGraphics) {
+                            layer.layerData.backgroundGraphics.clear();
+                            layer.layerData.backgroundGraphics.rect(0, 0, oldWidth, oldHeight);
+                            layer.layerData.backgroundGraphics.fill({
+                                color: window.TEGAKI_CONFIG.background.color
+                            });
                         }
                         
-                        return restoredPath;
+                        // paths座標復元
+                        if (layer.layerData?.paths) {
+                            layer.layerData.paths.forEach((path, pathIdx) => {
+                                const pathSnap = layerSnap.paths[pathIdx];
+                                if (!pathSnap) return;
+                                
+                                path.points.forEach((point, idx) => {
+                                    if (pathSnap.points[idx]) {
+                                        point.x = pathSnap.points[idx].x;
+                                        point.y = pathSnap.points[idx].y;
+                                    }
+                                });
+                                
+                                if (path.graphics) {
+                                    path.graphics.clear();
+                                    path.points.forEach(p => {
+                                        path.graphics.circle(p.x, p.y, path.size / 2);
+                                        path.graphics.fill({
+                                            color: path.color, 
+                                            alpha: path.opacity
+                                        });
+                                    });
+                                }
+                            });
+                        }
                     });
                 });
                 
+                // サムネイル更新
+                const layerManager = this.coreEngine.getLayerManager();
+                const currentLayers = layerManager.getLayers();
                 for (let i = 0; i < currentLayers.length; i++) {
                     layerManager.requestThumbnailUpdate(i);
                 }
@@ -454,18 +487,6 @@ window.TegakiUI.ResizePopup = class {
         
         this.history.push(command);
         this.hide();
-    }
-    
-    _serializePathForSnapshot(path) {
-        return {
-            id: path.id,
-            points: path.points ? path.points.map(p => ({ x: p.x, y: p.y, pressure: p.pressure })) : [],
-            color: path.color,
-            size: path.size,
-            opacity: path.opacity,
-            tool: path.tool,
-            isComplete: path.isComplete
-        };
     }
     
     _updateUI() {
@@ -528,4 +549,4 @@ window.TegakiUI.ResizePopup = class {
 
 window.ResizePopup = window.TegakiUI.ResizePopup;
 
-console.log('✅ resize-popup.js (イベントリスナー参照修正版) loaded');
+console.log('✅ resize-popup.js (Phase2完全修正版) loaded');
