@@ -1,0 +1,187 @@
+# TEGAKI 段階的改修計画書
+
+## 問題概要
+1. リサイズ反映時の描画内容とサムネイルの不整合
+2. フレーム名表記のFRAME→1F表記への統一
+3. エクスポートポップアップのPopupManagerトリガー不成功
+
+---
+
+## Phase 1: フレーム名表記統一（FRAME→1F形式）
+
+### 対象ファイル
+- **ui/timeline-ui.js**: フレーム表示名の変更
+- **ui/layer-panel-renderer.js**: レイヤーパネル内フレーム表記
+
+### 処理内容
+
+#### 1A. animation-system.js - renameFramesSequentially()修正
+```
+現在: frame.name = `FRAME${index + 1}`
+修正: frame.name = `${index + 1}F`
+位置: AnimationSystemクラス > renameFramesSequentially()メソッド
+```
+
+#### 1B. timeline-ui.js - フレーム名表示更新
+```
+現在の箇所:
+- createImprovedFrameItem(): frame.name表示
+- layer-panel-frameIndicator更新時
+
+修正: 数字のみを抽出後「XF」形式で表示
+型: フレームデータのname属性を変更すれば自動反映
+```
+
+#### 1C. CUT残存問題の確認
+```
+検索対象: "CUT" 文字列全置換
+確認対象: animation-system.js内の名前参照
+  - _createBackgroundLayer(): layerModel名 → "背景"のまま（非対象）
+  - frameClipboard関連 → フレーム操作のみ（非対象）
+
+結論: CUT→FRAME変換は完全済みのため追加対応なし
+```
+
+### 改修ファイル出力
+- animation-system.js（修正版）
+- timeline-ui.js（修正版）
+
+---
+
+## Phase 2: リサイズ反映時の描画・サムネイル同期
+
+### 根本原因
+- canvasリサイズ時、描画内容（paths座標）が更新されない
+- サムネイルのアスペクト比は変更だが中身は前フレームのまま
+
+### 対象ファイル
+- **system/camera-system.js**: resizeCanvas()内イベント発火点
+- **ui/resize-popup.js**: 座標変換計算の追加
+- **system/animation-system.js**: サムネイル再生成トリガー
+
+### 処理内容
+
+#### 2A. resizeCanvas()メソッド追加（camera-system.js）
+```
+位置: CameraSystem クラス内
+責務: キャンバスリサイズ実行
+実装:
+  1. 旧サイズ保存
+  2. config.canvas更新
+  3. mask再描画
+  4. guideLines更新
+  5. EventBus emit('camera:resized', {width, height})
+```
+
+#### 2B. リサイズポップアップの座標変換（resize-popup.js）
+```
+現在の_applyResize()内で:
+  - スナップショット保存 ✓ (既存)
+  - Historyコマンド作成 ✓ (既存)
+
+追加実装（alignOptionsによる座標計算）:
+  - horizontalAlign === 'left' → x座標そのまま
+  - horizontalAlign === 'center' → x += (新幅 - 旧幅) / 2
+  - horizontalAlign === 'right' → x += (新幅 - 旧幅)
+  
+  - verticalAlign同様y座標を計算
+  - 全フレーム・全レイヤーのpaths座標に適用
+```
+
+#### 2C. サムネイル再生成トリガー（animation-system.js）
+```
+位置: handleCanvasResize()メソッド内
+実装: regenerateAllThumbnails() 呼び出し
+  - 各フレームのサムネイル再生成
+  - LayerSystem.renderFrameToTexture()呼び出し
+  - 新キャンバスサイズで計算したアスペクト比を適用
+```
+
+### 改修ファイル出力
+- camera-system.js（resizeCanvas()追加版）
+- resize-popup.js（座標計算追加版）
+- animation-system.js（handleCanvasResize()強化版）
+
+---
+
+## Phase 3: エクスポートポップアップのPopupManager統合
+
+### 根本原因
+- ExportPopupのshow()がPopupManager.show()から呼ばれない
+- キーボードショートカット・UIボタンのトリガーが機能していない
+
+### 対象ファイル
+- **system/popup-manager.js**: ExportPopup登録タイミング確認
+- **core-initializer.js**: ExportPopup登録・初期化順序
+- **ui/export-popup.js**: PopupManager標準インターフェース確認
+
+### 処理内容
+
+#### 3A. ExportPopup登録タイミング修正（core-initializer.js）
+```
+現在の問題:
+  - ExportManager初期化完了前にExportPopup登録試行
+  - 依存関係エラーで登録失敗
+
+修正: initializeExportSystem()内で:
+  1. ExportManager完全初期化待機
+  2. CoreRuntime.initializeExportSystem() 完了コールバック内で登録
+  3. PopupManager.register('export', ..., {priority: 5})
+  4. 即座に PopupManager.initialize('export')
+  5. EventBus emit('export:manager:initialized')
+```
+
+#### 3B. ショートカットハンドラ追加（ui/keyboard-handler.js該当箇所）
+```
+既存: Ctrl+E または E キー処理
+修正: PopupManager.toggle('export') をトリガー
+  - KeyboardHandler.register()で登録
+  - EventBus経由でpopupManager.show('export')に接続
+```
+
+#### 3C. UIパネルボタン追加（ui/ui-panels.js該当箇所）
+```
+サイドバー ボタン機能:
+  - onclick → PopupManager.toggle('export')
+  - または PopupManager.show('export')
+```
+
+### 改修ファイル出力
+- core-initializer.js（ExportPopup登録タイミング修正版）
+- keyboard-handler.js（ショートカット追加版）
+- ui-panels.js（UIボタン追加版）
+
+---
+
+## 実装優先度
+
+1. **Phase 1: フレーム名表記統一** ← UI改修のみで低リスク
+2. **Phase 2: リサイズ座標同期** ← 根本修正で高優先度
+3. **Phase 3: エクスポートポップアップ** ← 別機能問題
+
+---
+
+## テスト確認項目
+
+### Phase 1完了後
+- [ ] フレーム名が「1F」「2F」表記になっているか確認
+- [ ] タイムラインとレイヤーパネルで表記が統一されているか確認
+
+### Phase 2完了後
+- [ ] リサイズ実行後、描画内容がキャンバス中央に移動するか確認（center選択時）
+- [ ] サムネイルが新しいアスペクト比で表示されるか確認
+- [ ] Undo実行後、元のサイズ・座標に復元されるか確認
+
+### Phase 3完了後
+- [ ] Eキーでエクスポートポップアップが開くか確認
+- [ ] 「全Frame時間」ボタンが動作するか確認
+- [ ] サイドバーボタンでエクスポートUIがトグルされるか確認
+
+---
+
+## 注意事項
+
+- 各Phase改修後、Historyコマンド (Ctrl+Z/Y) の動作確認必須
+- エクスポート時の一時的なフレーム表示処理への影響確認
+- 複数フレーム存在時のパフォーマンス測定（Phase 2）
+- 座標系の混在確認（canvas座標 vs world座標 vs screen座標）
