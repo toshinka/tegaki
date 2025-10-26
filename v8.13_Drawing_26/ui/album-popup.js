@@ -1,7 +1,7 @@
-// ===== album-popup.js - PopupManager対応改修版 + display修正 =====
+// ===== album-popup.js - FRAME改修版 =====
 // 責務: アルバムUI表示・スナップショット管理
 // 🔥 改修: PopupManager統合、共通インターフェース適用、初期状態の明確化
-// 🔧 修正: display:flex が常に表示される問題を解決
+// ✅ CUT→FRAME変換完了
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -25,7 +25,6 @@ window.TegakiUI.AlbumPopup = class {
         if (!this.popup) {
             this._createPopupElement();
         } else {
-            // 既存要素の初期化（初期状態は非表示）
             this.popup.classList.remove('show');
             this.popup.style.display = 'none';
         }
@@ -45,7 +44,6 @@ window.TegakiUI.AlbumPopup = class {
         popupDiv.style.height = '80vh';
         popupDiv.style.maxHeight = '700px';
         popupDiv.style.flexDirection = 'column';
-        // 🔧 修正: display: flex を削除し、初期状態を none に
         popupDiv.style.display = 'none';
         
         popupDiv.innerHTML = `
@@ -96,12 +94,12 @@ window.TegakiUI.AlbumPopup = class {
             return null;
         }
 
-        const currentCutIndex = this.animationSystem.getCurrentCutIndex();
-        const cuts = this.animationSystem.animationData.cuts || [];
-        const currentCut = cuts[currentCutIndex];
+        const currentFrameIndex = this.animationSystem.getCurrentFrameIndex();
+        const frames = this.animationSystem.animationData.frames || [];
+        const currentFrame = frames[currentFrameIndex];
         
-        if (!currentCut?.container) {
-            alert('現在のカットが見つかりません');
+        if (!currentFrame?.container) {
+            alert('現在のフレームが見つかりません');
             return null;
         }
 
@@ -112,7 +110,7 @@ window.TegakiUI.AlbumPopup = class {
         });
 
         this.app.renderer.render({
-            container: currentCut.container,
+            container: currentFrame.container,
             target: renderTexture
         });
 
@@ -121,11 +119,11 @@ window.TegakiUI.AlbumPopup = class {
         
         renderTexture.destroy(true);
 
-        const cutStates = [];
-        cuts.forEach((cut, index) => {
+        const frameStates = [];
+        frames.forEach((frame, index) => {
             const layerStates = [];
-            if (cut.container?.children) {
-                cut.container.children.forEach(layer => {
+            if (frame.container?.children) {
+                frame.container.children.forEach(layer => {
                     if (layer.layerData) {
                         const layerState = {
                             id: layer.layerData.id,
@@ -153,44 +151,44 @@ window.TegakiUI.AlbumPopup = class {
                     }
                 });
             }
-            cutStates.push({ index, layerStates });
+            frameStates.push({ index, layerStates });
         });
 
         return {
             id: Date.now(),
             timestamp: Date.now(),
             thumbnail,
-            currentCut: currentCutIndex,
-            cutStates
+            currentFrame: currentFrameIndex,
+            frameStates
         };
     }
 
     async _loadSnapshot(snapshot) {
         if (!this.animationSystem) return;
 
-        const cuts = this.animationSystem.animationData.cuts;
+        const frames = this.animationSystem.animationData.frames;
         
-        while (cuts.length < snapshot.cutStates.length) {
-            if (this.animationSystem.createNewEmptyCut) {
-                this.animationSystem.createNewEmptyCut();
-            } else if (this.animationSystem.addCut) {
-                this.animationSystem.addCut();
+        while (frames.length < snapshot.frameStates.length) {
+            if (this.animationSystem.createNewEmptyFrame) {
+                this.animationSystem.createNewEmptyFrame();
+            } else if (this.animationSystem.addFrame) {
+                this.animationSystem.addFrame();
             }
         }
 
-        snapshot.cutStates.forEach((cutState, cutIndex) => {
-            if (cutIndex >= cuts.length) return;
+        snapshot.frameStates.forEach((frameState, frameIndex) => {
+            if (frameIndex >= frames.length) return;
             
-            const cut = cuts[cutIndex];
-            if (!cut.container) return;
+            const frame = frames[frameIndex];
+            if (!frame.container) return;
 
-            while (cut.container.children.length > 0) {
-                const child = cut.container.children[0];
-                cut.container.removeChild(child);
+            while (frame.container.children.length > 0) {
+                const child = frame.container.children[0];
+                frame.container.removeChild(child);
                 if (child.destroy) child.destroy({ children: true });
             }
 
-            cutState.layerStates.forEach(layerState => {
+            frameState.layerStates.forEach(layerState => {
                 const layerContainer = new PIXI.Container();
                 layerContainer.label = layerState.name;
                 
@@ -239,18 +237,18 @@ window.TegakiUI.AlbumPopup = class {
                     });
                 }
 
-                cut.container.addChild(layerContainer);
+                frame.container.addChild(layerContainer);
             });
 
-            if (this.animationSystem.generateCutThumbnail) {
+            if (this.animationSystem.generateFrameThumbnail) {
                 setTimeout(() => {
-                    this.animationSystem.generateCutThumbnail(cutIndex);
-                }, 50 + cutIndex * 20);
+                    this.animationSystem.generateFrameThumbnail(frameIndex);
+                }, 50 + frameIndex * 20);
             }
         });
 
-        if (this.animationSystem.setCutIndex) {
-            this.animationSystem.setCutIndex(snapshot.currentCut);
+        if (this.animationSystem.switchToActiveFrame) {
+            this.animationSystem.switchToActiveFrame(snapshot.currentFrame);
         }
 
         setTimeout(() => {
@@ -412,8 +410,8 @@ window.TegakiUI.AlbumPopup = class {
             id: s.id,
             timestamp: s.timestamp,
             thumbnail: s.thumbnail,
-            currentCut: s.currentCut,
-            cutStates: s.cutStates
+            currentFrame: s.currentFrame,
+            frameStates: s.frameStates
         }));
         localStorage.setItem('tegaki_album', JSON.stringify(data));
     }
@@ -438,7 +436,6 @@ window.TegakiUI.AlbumPopup = class {
         
         if (!this.popup) return;
         
-        // 🔧 修正: display を flex に設定してから show クラスを追加
         this.popup.style.display = 'flex';
         this.popup.classList.add('show');
         this.isVisible = true;
@@ -449,7 +446,6 @@ window.TegakiUI.AlbumPopup = class {
         if (!this.popup) return;
         
         this.popup.classList.remove('show');
-        // 🔧 修正: display を none に設定
         this.popup.style.display = 'none';
         this.isVisible = false;
     }
@@ -474,4 +470,4 @@ window.TegakiUI.AlbumPopup = class {
 // グローバル公開
 window.AlbumPopup = window.TegakiUI.AlbumPopup;
 
-console.log('✅ album-popup.js (PopupManager対応版 + display修正) loaded');
+console.log('✅ album-popup.js (FRAME改修版) loaded');

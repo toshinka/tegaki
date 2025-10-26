@@ -1,6 +1,7 @@
 /**
- * timeline-thumbnail-utils.js
+ * timeline-thumbnail-utils.js - FRAME改修版
  * タイムラインサムネイル管理ユーティリティ
+ * ✅ CUT→FRAME変換完了
  */
 
 class TimelineThumbnailUtils {
@@ -11,8 +12,8 @@ class TimelineThumbnailUtils {
     this.thumbnailCache = new Map();
   }
 
-  generateThumbnail(cut) {
-    const cacheKey = `${cut.id}_${cut.canvasWidth}_${cut.canvasHeight}`;
+  generateThumbnail(frame) {
+    const cacheKey = `${frame.id}_${frame.canvasWidth}_${frame.canvasHeight}`;
     
     if (this.thumbnailCache.has(cacheKey)) {
       return this.thumbnailCache.get(cacheKey);
@@ -24,8 +25,8 @@ class TimelineThumbnailUtils {
       alpha: true 
     });
 
-    const canvasW = cut.canvasWidth;
-    const canvasH = cut.canvasHeight;
+    const canvasW = frame.canvasWidth;
+    const canvasH = frame.canvasHeight;
     const aspectRatio = canvasW / canvasH;
 
     const maxThumbW = 150;
@@ -45,7 +46,7 @@ class TimelineThumbnailUtils {
 
     const tempContainer = new PIXI.Container();
 
-    cut.layers.forEach(layerData => {
+    frame.layers.forEach(layerData => {
       if (!layerData.visible) return;
       
       const layerCopy = new PIXI.Container();
@@ -151,21 +152,21 @@ class TimelineThumbnailUtils {
     return cloned;
   }
 
-  updateThumbnailForCut(cutId) {
-    const cut = this.animationSystem.cuts.find(c => c.id === cutId);
-    if (!cut) return null;
+  updateThumbnailForFrame(frameId) {
+    const frame = this.animationSystem.cuts.find(c => c.id === frameId);
+    if (!frame) return null;
 
     const oldCacheKeys = Array.from(this.thumbnailCache.keys()).filter(key => 
-      key.startsWith(`${cutId}_`)
+      key.startsWith(`${frameId}_`)
     );
     oldCacheKeys.forEach(key => this.thumbnailCache.delete(key));
 
-    return this.generateThumbnail(cut);
+    return this.generateThumbnail(frame);
   }
 
   updateAllThumbnails() {
-    this.animationSystem.cuts.forEach(cut => {
-      this.updateThumbnailForCut(cut.id);
+    this.animationSystem.cuts.forEach(frame => {
+      this.updateThumbnailForFrame(frame.id);
     });
   }
 
@@ -173,12 +174,50 @@ class TimelineThumbnailUtils {
     this.thumbnailCache.clear();
   }
 
-  invalidateCutCache(cutId) {
+  invalidateFrameCache(frameId) {
     const keysToDelete = Array.from(this.thumbnailCache.keys()).filter(key => 
-      key.startsWith(`${cutId}_`)
+      key.startsWith(`${frameId}_`)
     );
     keysToDelete.forEach(key => this.thumbnailCache.delete(key));
+  }
+
+  // 下位互換メソッド（animation-system.jsから呼ばれる可能性があるため）
+  static resizeCanvasWithAspect(sourceCanvas, targetWidth, targetHeight) {
+    const resultCanvas = document.createElement('canvas');
+    resultCanvas.width = targetWidth;
+    resultCanvas.height = targetHeight;
+    
+    const ctx = resultCanvas.getContext('2d');
+    ctx.imageSmoothingEnabled = true;
+    ctx.imageSmoothingQuality = 'high';
+    
+    const srcAspect = sourceCanvas.width / sourceCanvas.height;
+    const dstAspect = targetWidth / targetHeight;
+    
+    let drawW, drawH, offsetX = 0, offsetY = 0;
+    
+    if (srcAspect > dstAspect) {
+      drawW = targetWidth;
+      drawH = targetWidth / srcAspect;
+      offsetY = (targetHeight - drawH) / 2;
+    } else {
+      drawH = targetHeight;
+      drawW = targetHeight * srcAspect;
+      offsetX = (targetWidth - drawW) / 2;
+    }
+    
+    ctx.clearRect(0, 0, targetWidth, targetHeight);
+    ctx.drawImage(
+      sourceCanvas,
+      0, 0, sourceCanvas.width, sourceCanvas.height,
+      offsetX, offsetY, drawW, drawH
+    );
+    
+    return resultCanvas;
   }
 }
 
 window.TimelineThumbnailUtils = TimelineThumbnailUtils;
+window.TegakiThumbnailUtils = TimelineThumbnailUtils;
+
+console.log('✅ timeline-thumbnail-utils.js (FRAME改修版) loaded');

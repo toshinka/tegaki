@@ -1,5 +1,5 @@
-// ===== system/layer-system.js - サムネイル自動更新対応版 =====
-// ✅ 改修: layer:modifiedイベントリスナー追加で自動サムネイル更新
+// ===== system/layer-system.js - マスク統合完全版 + FRAME修正 =====
+// Drawing_20ベース + currentFrameContainer統一
 
 (function() {
     'use strict';
@@ -9,10 +9,10 @@
             this.app = null;
             this.config = null;
             this.eventBus = null;
-            this.currentCutContainer = null;
+            this.currentFrameContainer = null; // ✅ FRAME修正
             this.activeLayerIndex = -1;
-            this.cutRenderTextures = new Map();
-            this.cutThumbnailDirty = new Map();
+            this.frameRenderTextures = new Map(); // ✅ FRAME修正
+            this.frameThumbnailDirty = new Map(); // ✅ FRAME修正
             this.thumbnailUpdateQueue = new Set();
             this.thumbnailUpdateTimer = null;
             this.cameraSystem = null;
@@ -33,8 +33,8 @@
                 this.transform = null;
             }
             
-            this.currentCutContainer = new PIXI.Container();
-            this.currentCutContainer.label = 'temporary_cut_container';
+            this.currentFrameContainer = new PIXI.Container(); // ✅ FRAME修正
+            this.currentFrameContainer.label = 'temporary_frame_container'; // ✅ FRAME修正
             
             const bgLayer = new PIXI.Container();
             const bgLayerModel = new window.TegakiDataModels.LayerModel({
@@ -47,7 +47,7 @@
             const bg = this._createCheckerPatternBackground(this.config.canvas.width, this.config.canvas.height);
             bgLayer.addChild(bg);
             bgLayer.layerData.backgroundGraphics = bg;
-            this.currentCutContainer.addChild(bgLayer);
+            this.currentFrameContainer.addChild(bgLayer); // ✅ FRAME修正
             
             const layer1 = new PIXI.Container();
             const layer1Model = new window.TegakiDataModels.LayerModel({
@@ -59,14 +59,13 @@
             if (this.transform) {
                 this.transform.setTransform(layer1Model.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
             }
-            this.currentCutContainer.addChild(layer1);
+            this.currentFrameContainer.addChild(layer1); // ✅ FRAME修正
             this.activeLayerIndex = 1;
             
             this._setupLayerOperations();
             this._setupAnimationSystemIntegration();
             this._setupVKeyEvents();
             this._startThumbnailUpdateProcess();
-            this._setupThumbnailAutoUpdate();
             this.isInitialized = true;
         }
 
@@ -86,15 +85,6 @@
                 }
             }
             return g;
-        }
-        
-        _setupThumbnailAutoUpdate() {
-            if (!this.eventBus) return;
-            
-            this.eventBus.on('layer:modified', (data) => {
-                const layerIndex = data.layerIndex !== undefined ? data.layerIndex : this.activeLayerIndex;
-                this.requestThumbnailUpdate(layerIndex);
-            });
         }
         
         _setupVKeyEvents() {
@@ -124,10 +114,10 @@
             this.transform.onTransformComplete = (layer) => {
                 this.requestThumbnailUpdate(this.getLayerIndex(layer));
                 this.eventBus.emit('layer:transform-confirmed', {layerId: layer.layerData.id});
-                if (this.animationSystem?.generateCutThumbnail) {
-                    const cutIndex = this.animationSystem.getCurrentCutIndex();
+                if (this.animationSystem?.generateFrameThumbnail) { // ✅ FRAME修正
+                    const frameIndex = this.animationSystem.getCurrentFrameIndex(); // ✅ FRAME修正
                     setTimeout(() => {
-                        this.animationSystem.generateCutThumbnail(cutIndex);
+                        this.animationSystem.generateFrameThumbnail(frameIndex); // ✅ FRAME修正
                     }, 100);
                 }
             };
@@ -204,6 +194,21 @@
             }
         }
 
+        _applyMaskToLayerGraphics(layer) {
+            if (!layer.layerData || !layer.layerData.maskSprite) return;
+            
+            for (const child of layer.children) {
+                if (child === layer.layerData.maskSprite || 
+                    child === layer.layerData.backgroundGraphics) {
+                    continue;
+                }
+                
+                if (child instanceof PIXI.Graphics) {
+                    child.mask = layer.layerData.maskSprite;
+                }
+            }
+        }
+
         addPathToActiveLayer(path) {
             if (!this.getActiveLayer()) return;
             const activeLayer = this.getActiveLayer();
@@ -217,6 +222,9 @@
             }
             this.rebuildPathGraphics(path);
             if (path.graphics) {
+                if (activeLayer.layerData && activeLayer.layerData.maskSprite) {
+                    path.graphics.mask = activeLayer.layerData.maskSprite;
+                }
                 activeLayer.addChild(path.graphics);
             }
             this.requestThumbnailUpdate(layerIndex);
@@ -232,10 +240,10 @@
                 layer.layerData.paths.push(path);
                 layer.addChild(path.graphics);
                 this.requestThumbnailUpdate(layerIndex);
-                if (this.animationSystem?.generateCutThumbnail) {
-                    const cutIndex = this.animationSystem.getCurrentCutIndex();
+                if (this.animationSystem?.generateFrameThumbnail) { // ✅ FRAME修正
+                    const frameIndex = this.animationSystem.getCurrentFrameIndex(); // ✅ FRAME修正
                     setTimeout(() => {
-                        this.animationSystem.generateCutThumbnail(cutIndex);
+                        this.animationSystem.generateFrameThumbnail(frameIndex); // ✅ FRAME修正
                     }, 100);
                 }
                 if (this.eventBus) {
@@ -406,7 +414,8 @@
             try {
                 const childrenToRemove = [];
                 for (let child of layer.children) {
-                    if (child !== layer.layerData.backgroundGraphics) {
+                    if (child !== layer.layerData.backgroundGraphics &&
+                        child !== layer.layerData.maskSprite) {
                         childrenToRemove.push(child);
                     }
                 }
@@ -425,6 +434,9 @@
                     try {
                         const rebuildSuccess = this.rebuildPathGraphics(path);
                         if (rebuildSuccess && path.graphics) {
+                            if (layer.layerData && layer.layerData.maskSprite) {
+                                path.graphics.mask = layer.layerData.maskSprite;
+                            }
                             layer.layerData.paths.push(path);
                             layer.addChild(path.graphics);
                             addedCount++;
@@ -452,8 +464,8 @@
                             const layers = this.getLayers();
                             const [layer] = layers.splice(fromIndex, 1);
                             layers.splice(toIndex, 0, layer);
-                            this.currentCutContainer.removeChild(layer);
-                            this.currentCutContainer.addChildAt(layer, toIndex);
+                            this.currentFrameContainer.removeChild(layer); // ✅ FRAME修正
+                            this.currentFrameContainer.addChildAt(layer, toIndex); // ✅ FRAME修正
                             if (this.activeLayerIndex === fromIndex) {
                                 this.activeLayerIndex = toIndex;
                             } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
@@ -470,8 +482,8 @@
                             const layers = this.getLayers();
                             const [layer] = layers.splice(toIndex, 1);
                             layers.splice(fromIndex, 0, layer);
-                            this.currentCutContainer.removeChild(layer);
-                            this.currentCutContainer.addChildAt(layer, fromIndex);
+                            this.currentFrameContainer.removeChild(layer); // ✅ FRAME修正
+                            this.currentFrameContainer.addChildAt(layer, fromIndex); // ✅ FRAME修正
                             this.activeLayerIndex = oldActiveIndex;
                             this.updateLayerPanelUI();
                             if (this.eventBus) {
@@ -484,8 +496,8 @@
                 } else {
                     const [layer] = layers.splice(fromIndex, 1);
                     layers.splice(toIndex, 0, layer);
-                    this.currentCutContainer.removeChild(layer);
-                    this.currentCutContainer.addChildAt(layer, toIndex);
+                    this.currentFrameContainer.removeChild(layer); // ✅ FRAME修正
+                    this.currentFrameContainer.addChildAt(layer, toIndex); // ✅ FRAME修正
                     if (this.activeLayerIndex === fromIndex) {
                         this.activeLayerIndex = toIndex;
                     } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
@@ -504,8 +516,8 @@
             }
         }
 
-        setCurrentCutContainer(cutContainer) {
-            this.currentCutContainer = cutContainer;
+        setCurrentFrameContainer(frameContainer) { // ✅ FRAME修正
+            this.currentFrameContainer = frameContainer; // ✅ FRAME修正
             const layers = this.getLayers();
             if (layers.length > 0) {
                 this.activeLayerIndex = layers.length - 1;
@@ -517,62 +529,61 @@
             }
         }
         
-        createCutRenderTexture(cutId) {
+        createFrameRenderTexture(frameId) { // ✅ FRAME修正
             if (!this.app?.renderer) return null;
             const renderTexture = PIXI.RenderTexture.create({
                 width: this.config.canvas.width,
-                height: this.config.canvas.height,
-                alphaMode: 'no-premultiply'
+                height: this.config.canvas.height
             });
-            this.cutRenderTextures.set(cutId, renderTexture);
-            this.cutThumbnailDirty.set(cutId, true);
+            this.frameRenderTextures.set(frameId, renderTexture); // ✅ FRAME修正
+            this.frameThumbnailDirty.set(frameId, true); // ✅ FRAME修正
             return renderTexture;
         }
         
-        renderCutToTexture(cutId, cutContainer) {
+        renderFrameToTexture(frameId, frameContainer) { // ✅ FRAME修正
             if (!this.app?.renderer) return;
-            const renderTexture = this.cutRenderTextures.get(cutId);
+            const renderTexture = this.frameRenderTextures.get(frameId); // ✅ FRAME修正
             if (!renderTexture) return;
-            const container = cutContainer || this.currentCutContainer;
+            const container = frameContainer || this.currentFrameContainer; // ✅ FRAME修正
             if (!container) return;
             this.app.renderer.render({
                 container: container,
                 target: renderTexture,
                 clear: true
             });
-            this.markCutThumbnailDirty(cutId);
+            this.markFrameThumbnailDirty(frameId); // ✅ FRAME修正
         }
         
-        markCutThumbnailDirty(cutId) {
-            this.cutThumbnailDirty.set(cutId, true);
+        markFrameThumbnailDirty(frameId) { // ✅ FRAME修正
+            this.frameThumbnailDirty.set(frameId, true); // ✅ FRAME修正
             if (this.eventBus) {
-                this.eventBus.emit('cut:updated', { cutId: cutId });
+                this.eventBus.emit('frame:updated', { frameId: frameId }); // ✅ FRAME修正
             }
         }
         
-        getCutRenderTexture(cutId) {
-            return this.cutRenderTextures.get(cutId);
+        getFrameRenderTexture(frameId) { // ✅ FRAME修正
+            return this.frameRenderTextures.get(frameId); // ✅ FRAME修正
         }
         
-        destroyCutRenderTexture(cutId) {
-            const renderTexture = this.cutRenderTextures.get(cutId);
+        destroyFrameRenderTexture(frameId) { // ✅ FRAME修正
+            const renderTexture = this.frameRenderTextures.get(frameId); // ✅ FRAME修正
             if (renderTexture) {
                 renderTexture.destroy(true);
-                this.cutRenderTextures.delete(cutId);
-                this.cutThumbnailDirty.delete(cutId);
+                this.frameRenderTextures.delete(frameId); // ✅ FRAME修正
+                this.frameThumbnailDirty.delete(frameId); // ✅ FRAME修正
             }
         }
         
-        isCutThumbnailDirty(cutId) {
-            return this.cutThumbnailDirty.get(cutId) || false;
+        isFrameThumbnailDirty(frameId) { // ✅ FRAME修正
+            return this.frameThumbnailDirty.get(frameId) || false; // ✅ FRAME修正
         }
         
-        clearCutThumbnailDirty(cutId) {
-            this.cutThumbnailDirty.set(cutId, false);
+        clearFrameThumbnailDirty(frameId) { // ✅ FRAME修正
+            this.frameThumbnailDirty.set(frameId, false); // ✅ FRAME修正
         }
         
         getLayers() {
-            return this.currentCutContainer ? this.currentCutContainer.children : [];
+            return this.currentFrameContainer ? this.currentFrameContainer.children : []; // ✅ FRAME修正
         }
         
         getActiveLayer() {
@@ -585,7 +596,8 @@
             this.eventBus.on('animation:system-ready', () => {
                 this._establishAnimationSystemConnection();
             });
-            this.eventBus.on('animation:cut-applied', () => {
+            // ✅ FRAME修正: イベント名統一
+            this.eventBus.on('animation:frame-applied', () => {
                 setTimeout(() => {
                     this.updateLayerPanelUI();
                     this.updateStatusDisplay();
@@ -594,12 +606,12 @@
                     }
                 }, 100);
             });
-            this.eventBus.on('animation:cut-created', () => {
+            this.eventBus.on('animation:frame-created', () => {
                 setTimeout(() => {
                     this.updateLayerPanelUI();
                 }, 100);
             });
-            this.eventBus.on('animation:cut-deleted', () => {
+            this.eventBus.on('animation:frame-deleted', () => {
                 setTimeout(() => {
                     this.updateLayerPanelUI();
                 }, 100);
@@ -614,7 +626,7 @@
                     window.TegakiCoreEngine?.animationSystem
                 ];
                 for (let instance of possibleInstances) {
-                    if (instance && typeof instance.getCurrentCut === 'function') {
+                    if (instance && typeof instance.getCurrentFrame === 'function') { // ✅ FRAME修正
                         this.animationSystem = instance;
                         break;
                     }
@@ -744,8 +756,8 @@
                     do: () => {
                         const layers = this.getLayers();
                         const layer = layers[oldIndex];
-                        this.currentCutContainer.removeChildAt(oldIndex);
-                        this.currentCutContainer.addChildAt(layer, newIndex);
+                        this.currentFrameContainer.removeChildAt(oldIndex); // ✅ FRAME修正
+                        this.currentFrameContainer.addChildAt(layer, newIndex); // ✅ FRAME修正
                         this.activeLayerIndex = newIndex;
                         this.updateLayerPanelUI();
                         if (this.eventBus) {
@@ -755,8 +767,8 @@
                     undo: () => {
                         const layers = this.getLayers();
                         const layer = layers[newIndex];
-                        this.currentCutContainer.removeChildAt(newIndex);
-                        this.currentCutContainer.addChildAt(layer, oldIndex);
+                        this.currentFrameContainer.removeChildAt(newIndex); // ✅ FRAME修正
+                        this.currentFrameContainer.addChildAt(layer, oldIndex); // ✅ FRAME修正
                         this.activeLayerIndex = oldIndex;
                         this.updateLayerPanelUI();
                         if (this.eventBus) {
@@ -767,8 +779,8 @@
                 };
                 window.History.push(entry);
             } else {
-                this.currentCutContainer.removeChildAt(currentIndex);
-                this.currentCutContainer.addChildAt(activeLayer, newIndex);
+                this.currentFrameContainer.removeChildAt(currentIndex); // ✅ FRAME修正
+                this.currentFrameContainer.addChildAt(activeLayer, newIndex); // ✅ FRAME修正
                 this.activeLayerIndex = newIndex;
                 this.updateLayerPanelUI();
                 if (this.eventBus) {
@@ -778,14 +790,26 @@
         }
 
         createLayer(name, isBackground = false) {
-            if (!this.currentCutContainer) return null;
+            if (!this.currentFrameContainer) return null; // ✅ FRAME修正
             const layerModel = new window.TegakiDataModels.LayerModel({
-                name: name || `レイヤー${this.currentCutContainer.children.length + 1}`,
+                name: name || `レイヤー${this.currentFrameContainer.children.length + 1}`, // ✅ FRAME修正
                 isBackground: isBackground
             });
             const layer = new PIXI.Container();
             layer.label = layerModel.id;
             layer.layerData = layerModel;
+            
+            if (this.app && this.app.renderer) {
+                const success = layerModel.initializeMask(
+                    this.config.canvas.width,
+                    this.config.canvas.height,
+                    this.app.renderer
+                );
+                if (success && layerModel.maskSprite) {
+                    layer.addChild(layerModel.maskSprite);
+                }
+            }
+            
             if (this.transform) {
                 this.transform.setTransform(layerModel.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
             }
@@ -800,14 +824,17 @@
                 const entry = {
                     name: 'layer-create',
                     do: () => {
-                        this.currentCutContainer.addChild(layer);
+                        this.currentFrameContainer.addChild(layer); // ✅ FRAME修正
                         const layers = this.getLayers();
                         this.setActiveLayer(layers.length - 1);
                         this.updateLayerPanelUI();
                         this.updateStatusDisplay();
                     },
                     undo: () => {
-                        this.currentCutContainer.removeChild(layer);
+                        if (layer.layerData) {
+                            layer.layerData.destroyMask();
+                        }
+                        this.currentFrameContainer.removeChild(layer); // ✅ FRAME修正
                         const layers = this.getLayers();
                         if (this.activeLayerIndex >= layers.length) {
                             this.activeLayerIndex = Math.max(0, layers.length - 1);
@@ -819,7 +846,7 @@
                 };
                 window.History.push(entry);
             } else {
-                this.currentCutContainer.addChild(layer);
+                this.currentFrameContainer.addChild(layer); // ✅ FRAME修正
                 const layers = this.getLayers();
                 this.setActiveLayer(layers.length - 1);
                 this.updateLayerPanelUI();
@@ -929,14 +956,11 @@
                 thumbnail.style.width = Math.round(thumbnailWidth) + 'px';
                 thumbnail.style.height = Math.round(thumbnailHeight) + 'px';
                 const renderScale = this.config.thumbnail?.RENDER_SCALE || 2;
-                
                 const renderTexture = PIXI.RenderTexture.create({
                     width: this.config.canvas.width * renderScale,
                     height: this.config.canvas.height * renderScale,
-                    resolution: renderScale,
-                    alphaMode: 'no-premultiply'
+                    resolution: renderScale
                 });
-                
                 const tempContainer = new PIXI.Container();
                 const originalState = {
                     pos: { x: layer.position.x, y: layer.position.y },
@@ -959,7 +983,7 @@
                 layer.rotation = originalState.rotation;
                 layer.pivot.set(originalState.pivot.x, originalState.pivot.y);
                 tempContainer.removeChild(layer);
-                this.currentCutContainer.addChildAt(layer, layerIndex);
+                this.currentFrameContainer.addChildAt(layer, layerIndex); // ✅ FRAME修正
                 const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
                 const targetCanvas = document.createElement('canvas');
                 targetCanvas.width = Math.round(thumbnailWidth);
@@ -1073,6 +1097,23 @@
                     this.initTransform();
                 }
             }
+            
+            if (app && app.renderer) {
+                const layers = this.getLayers();
+                for (const layer of layers) {
+                    if (layer.layerData && !layer.layerData.hasMask()) {
+                        const success = layer.layerData.initializeMask(
+                            this.config.canvas.width,
+                            this.config.canvas.height,
+                            app.renderer
+                        );
+                        if (success && layer.layerData.maskSprite) {
+                            layer.addChildAt(layer.layerData.maskSprite, 0);
+                            this._applyMaskToLayerGraphics(layer);
+                        }
+                    }
+                }
+            }
         }
 
         setAnimationSystem(animationSystem) {
@@ -1098,7 +1139,10 @@
                     const entry = {
                         name: 'layer-delete',
                         do: () => {
-                            this.currentCutContainer.removeChild(layer);
+                            if (layer.layerData) {
+                                layer.layerData.destroyMask();
+                            }
+                            this.currentFrameContainer.removeChild(layer); // ✅ FRAME修正
                             if (layerId && this.transform) {
                                 this.transform.deleteTransform(layerId);
                             }
@@ -1115,7 +1159,18 @@
                             }
                         },
                         undo: () => {
-                            this.currentCutContainer.addChildAt(layer, layerIndex);
+                            if (layer.layerData && this.app && this.app.renderer) {
+                                layer.layerData.initializeMask(
+                                    this.config.canvas.width,
+                                    this.config.canvas.height,
+                                    this.app.renderer
+                                );
+                                if (layer.layerData.maskSprite) {
+                                    layer.addChildAt(layer.layerData.maskSprite, 0);
+                                    this._applyMaskToLayerGraphics(layer);
+                                }
+                            }
+                            this.currentFrameContainer.addChildAt(layer, layerIndex); // ✅ FRAME修正
                             this.activeLayerIndex = previousActiveIndex;
                             this.updateLayerPanelUI();
                             this.updateStatusDisplay();
@@ -1124,7 +1179,10 @@
                     };
                     window.History.push(entry);
                 } else {
-                    this.currentCutContainer.removeChild(layer);
+                    if (layer.layerData) {
+                        layer.layerData.destroyMask();
+                    }
+                    this.currentFrameContainer.removeChild(layer); // ✅ FRAME修正
                     if (layerId && this.transform) {
                         this.transform.deleteTransform(layerId);
                     }
@@ -1140,10 +1198,10 @@
                         this.eventBus.emit('layer:deleted', { layerId, layerIndex });
                     }
                 }
-                if (this.animationSystem?.generateCutThumbnail) {
-                    const cutIndex = this.animationSystem.getCurrentCutIndex();
+                if (this.animationSystem?.generateFrameThumbnail) { // ✅ FRAME修正
+                    const frameIndex = this.animationSystem.getCurrentFrameIndex(); // ✅ FRAME修正
                     setTimeout(() => {
-                        this.animationSystem.generateCutThumbnail(cutIndex);
+                        this.animationSystem.generateFrameThumbnail(frameIndex); // ✅ FRAME修正
                     }, 100);
                 }
                 return true;
@@ -1157,4 +1215,4 @@
 
 })();
 
-console.log('✅ layer-system.js (サムネイル自動更新対応版) loaded');
+console.log('✅ layer-system.js (FRAME修正版) loaded');
