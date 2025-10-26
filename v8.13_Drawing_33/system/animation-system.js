@@ -1,10 +1,11 @@
 // ================================================================================
-// system/animation-system.js - LayerModel統合版 (FRAME改修完全版)
+// system/animation-system.js - Phase 1改修版
 // ================================================================================
-// 【Phase 1根本修正】
-// - _deserializeLayer()でLayerModelインスタンスを作成
-// - マスク機能が完全に動作するようになる
-// - CUT→FRAME変換完了
+// 【Phase 1改修】フレーム名表記をFRAMEx → xF形式に統一
+// - renameFramesSequentially(): FRAME形式 → xF形式
+// - createNewBlankFrame(): 初期名表記を修正
+// - createInitialFrameIfNeeded(): 初期フレーム名を修正
+// - CUT→FRAME変換完了状態を継承
 
 (function() {
     'use strict';
@@ -12,7 +13,7 @@
     class Frame {
         constructor(id, name, config) {
             this.id = id;
-            this.name = name || `FRAME${Date.now()}`;
+            this.name = name || `${Date.now()}F`;
             this.duration = config?.animation?.defaultCutDuration || 0.5;
             
             this.container = new PIXI.Container();
@@ -215,17 +216,25 @@
             });
         }
         
-        handleCanvasResize(newWidth, newHeight) {
-            if (!this.animationData?.frames || this.animationData.frames.length === 0) return;
-            
-            setTimeout(() => {
-                this.regenerateAllThumbnails();
-            }, 200);
-            
-            if (this.eventBus) {
-                this.eventBus.emit('animation:thumbnails-need-update');
-            }
+handleCanvasResize(newWidth, newHeight) {
+    if (!this.animationData?.frames || this.animationData.frames.length === 0) return;
+    
+    // ★ Phase 2修正: リサイズ時に全フレームの古いテクスチャを削除
+    this.animationData.frames.forEach(frame => {
+        if (this.layerSystem?.destroyFrameRenderTexture) {
+            this.layerSystem.destroyFrameRenderTexture(frame.id);
         }
+    });
+    
+    // ★ その後、新しいサイズで再生成
+    setTimeout(() => {
+        this.regenerateAllThumbnails();
+    }, 200);
+    
+    if (this.eventBus) {
+        this.eventBus.emit('animation:thumbnails-need-update');
+    }
+}
         
         async regenerateAllThumbnails() {
             if (!this.animationData?.frames) return;
@@ -347,7 +356,7 @@
         
         createNewFrameFromCurrentLayers() {
             const frameId = 'frame_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            const frame = new Frame(frameId, `FRAME${this.animationData.frames.length + 1}`, this.config);
+            const frame = new Frame(frameId, `${this.animationData.frames.length + 1}F`, this.config);
             
             if (this.layerSystem?.currentFrameContainer) {
                 const currentLayers = this.layerSystem.currentFrameContainer.children;
@@ -387,7 +396,7 @@
         
         createNewBlankFrame() {
             const frameId = 'frame_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            const frame = new Frame(frameId, `FRAME_TEMP_${frameId}`, this.config);
+            const frame = new Frame(frameId, `TEMP_${frameId}`, this.config);
             
             const bgLayer = this._createBackgroundLayer(frameId);
             const layer1 = this._createBlankLayer(frameId, 'レイヤー1');
@@ -874,7 +883,7 @@
         createFrameFromClipboard(clipboardData) {
             if (!clipboardData) return null;
             
-            const baseName = clipboardData.name.replace(/_copy$/, '').replace(/\(\d+\)$/, '');
+            const baseName = clipboardData.name.replace(/\(\d+\)$/, '');
             
             let copyCount = 0;
             for (const frame of this.animationData.frames) {
@@ -920,7 +929,7 @@
             this.isInitializing = true;
             
             const frameId = 'frame_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9);
-            const frame = new Frame(frameId, 'FRAME1', this.config);
+            const frame = new Frame(frameId, '1F', this.config);
             
             const tempLayers = this.layerSystem.currentFrameContainer.children.slice();
             tempLayers.forEach(tempLayer => {
@@ -1141,7 +1150,7 @@
             if (!this.animationData.frames || this.animationData.frames.length === 0) return;
             
             this.animationData.frames.forEach((frame, index) => {
-                frame.name = `FRAME${index + 1}`;
+                frame.name = `${index + 1}F`;
             });
             
             if (this.eventBus) {
@@ -1447,4 +1456,4 @@
 
 })();
 
-console.log('✅ animation-system.js (LayerModel統合版・FRAME改修完全版) loaded');
+console.log('✅ animation-system.js (Phase 1改修版・フレーム名統一: xF形式) loaded');

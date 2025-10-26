@@ -1,5 +1,6 @@
-// ===== system/layer-system.js - マスク統合完全版 + FRAME修正 =====
-// Drawing_20ベース + currentFrameContainer統一
+// ===== system/layer-system.js - Phase 2修正版 =====
+// 修正: renderFrameToTexture()でcanvasサイズを現在値から取得・テクスチャ再作成
+// 修正: リサイズ時のテクスチャ管理を強化
 
 (function() {
     'use strict';
@@ -9,10 +10,10 @@
             this.app = null;
             this.config = null;
             this.eventBus = null;
-            this.currentFrameContainer = null; // ✅ FRAME修正
+            this.currentFrameContainer = null;
             this.activeLayerIndex = -1;
-            this.frameRenderTextures = new Map(); // ✅ FRAME修正
-            this.frameThumbnailDirty = new Map(); // ✅ FRAME修正
+            this.frameRenderTextures = new Map();
+            this.frameThumbnailDirty = new Map();
             this.thumbnailUpdateQueue = new Set();
             this.thumbnailUpdateTimer = null;
             this.cameraSystem = null;
@@ -33,8 +34,8 @@
                 this.transform = null;
             }
             
-            this.currentFrameContainer = new PIXI.Container(); // ✅ FRAME修正
-            this.currentFrameContainer.label = 'temporary_frame_container'; // ✅ FRAME修正
+            this.currentFrameContainer = new PIXI.Container();
+            this.currentFrameContainer.label = 'temporary_frame_container';
             
             const bgLayer = new PIXI.Container();
             const bgLayerModel = new window.TegakiDataModels.LayerModel({
@@ -47,7 +48,7 @@
             const bg = this._createCheckerPatternBackground(this.config.canvas.width, this.config.canvas.height);
             bgLayer.addChild(bg);
             bgLayer.layerData.backgroundGraphics = bg;
-            this.currentFrameContainer.addChild(bgLayer); // ✅ FRAME修正
+            this.currentFrameContainer.addChild(bgLayer);
             
             const layer1 = new PIXI.Container();
             const layer1Model = new window.TegakiDataModels.LayerModel({
@@ -59,7 +60,7 @@
             if (this.transform) {
                 this.transform.setTransform(layer1Model.id, { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 });
             }
-            this.currentFrameContainer.addChild(layer1); // ✅ FRAME修正
+            this.currentFrameContainer.addChild(layer1);
             this.activeLayerIndex = 1;
             
             this._setupLayerOperations();
@@ -114,10 +115,10 @@
             this.transform.onTransformComplete = (layer) => {
                 this.requestThumbnailUpdate(this.getLayerIndex(layer));
                 this.eventBus.emit('layer:transform-confirmed', {layerId: layer.layerData.id});
-                if (this.animationSystem?.generateFrameThumbnail) { // ✅ FRAME修正
-                    const frameIndex = this.animationSystem.getCurrentFrameIndex(); // ✅ FRAME修正
+                if (this.animationSystem?.generateFrameThumbnail) {
+                    const frameIndex = this.animationSystem.getCurrentFrameIndex();
                     setTimeout(() => {
-                        this.animationSystem.generateFrameThumbnail(frameIndex); // ✅ FRAME修正
+                        this.animationSystem.generateFrameThumbnail(frameIndex);
                     }, 100);
                 }
             };
@@ -240,10 +241,10 @@
                 layer.layerData.paths.push(path);
                 layer.addChild(path.graphics);
                 this.requestThumbnailUpdate(layerIndex);
-                if (this.animationSystem?.generateFrameThumbnail) { // ✅ FRAME修正
-                    const frameIndex = this.animationSystem.getCurrentFrameIndex(); // ✅ FRAME修正
+                if (this.animationSystem?.generateFrameThumbnail) {
+                    const frameIndex = this.animationSystem.getCurrentFrameIndex();
                     setTimeout(() => {
-                        this.animationSystem.generateFrameThumbnail(frameIndex); // ✅ FRAME修正
+                        this.animationSystem.generateFrameThumbnail(frameIndex);
                     }, 100);
                 }
                 if (this.eventBus) {
@@ -464,8 +465,8 @@
                             const layers = this.getLayers();
                             const [layer] = layers.splice(fromIndex, 1);
                             layers.splice(toIndex, 0, layer);
-                            this.currentFrameContainer.removeChild(layer); // ✅ FRAME修正
-                            this.currentFrameContainer.addChildAt(layer, toIndex); // ✅ FRAME修正
+                            this.currentFrameContainer.removeChild(layer);
+                            this.currentFrameContainer.addChildAt(layer, toIndex);
                             if (this.activeLayerIndex === fromIndex) {
                                 this.activeLayerIndex = toIndex;
                             } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
@@ -482,8 +483,8 @@
                             const layers = this.getLayers();
                             const [layer] = layers.splice(toIndex, 1);
                             layers.splice(fromIndex, 0, layer);
-                            this.currentFrameContainer.removeChild(layer); // ✅ FRAME修正
-                            this.currentFrameContainer.addChildAt(layer, fromIndex); // ✅ FRAME修正
+                            this.currentFrameContainer.removeChild(layer);
+                            this.currentFrameContainer.addChildAt(layer, fromIndex);
                             this.activeLayerIndex = oldActiveIndex;
                             this.updateLayerPanelUI();
                             if (this.eventBus) {
@@ -496,8 +497,8 @@
                 } else {
                     const [layer] = layers.splice(fromIndex, 1);
                     layers.splice(toIndex, 0, layer);
-                    this.currentFrameContainer.removeChild(layer); // ✅ FRAME修正
-                    this.currentFrameContainer.addChildAt(layer, toIndex); // ✅ FRAME修正
+                    this.currentFrameContainer.removeChild(layer);
+                    this.currentFrameContainer.addChildAt(layer, toIndex);
                     if (this.activeLayerIndex === fromIndex) {
                         this.activeLayerIndex = toIndex;
                     } else if (this.activeLayerIndex > fromIndex && this.activeLayerIndex <= toIndex) {
@@ -516,8 +517,8 @@
             }
         }
 
-        setCurrentFrameContainer(frameContainer) { // ✅ FRAME修正
-            this.currentFrameContainer = frameContainer; // ✅ FRAME修正
+        setCurrentFrameContainer(frameContainer) {
+            this.currentFrameContainer = frameContainer;
             const layers = this.getLayers();
             if (layers.length > 0) {
                 this.activeLayerIndex = layers.length - 1;
@@ -529,61 +530,83 @@
             }
         }
         
-        createFrameRenderTexture(frameId) { // ✅ FRAME修正
+        createFrameRenderTexture(frameId) {
             if (!this.app?.renderer) return null;
             const renderTexture = PIXI.RenderTexture.create({
                 width: this.config.canvas.width,
                 height: this.config.canvas.height
             });
-            this.frameRenderTextures.set(frameId, renderTexture); // ✅ FRAME修正
-            this.frameThumbnailDirty.set(frameId, true); // ✅ FRAME修正
+            this.frameRenderTextures.set(frameId, renderTexture);
+            this.frameThumbnailDirty.set(frameId, true);
             return renderTexture;
         }
         
-        renderFrameToTexture(frameId, frameContainer) { // ✅ FRAME修正
+        /**
+         * ★ Phase 2修正: RenderTexture再作成＆現在のcanvasサイズで更新
+         */
+        renderFrameToTexture(frameId, frameContainer) {
             if (!this.app?.renderer) return;
-            const renderTexture = this.frameRenderTextures.get(frameId); // ✅ FRAME修正
-            if (!renderTexture) return;
-            const container = frameContainer || this.currentFrameContainer; // ✅ FRAME修正
+            
+            // ★重要: 現在のcanvasサイズを取得（リサイズ後のサイズ）
+            const currentWidth = this.config.canvas.width;
+            const currentHeight = this.config.canvas.height;
+            
+            // ★古いテクスチャを破棄
+            const oldTexture = this.frameRenderTextures.get(frameId);
+            if (oldTexture) {
+                oldTexture.destroy(true);
+            }
+            
+            // ★新しいサイズでテクスチャを再作成
+            const renderTexture = PIXI.RenderTexture.create({
+                width: currentWidth,
+                height: currentHeight
+            });
+            
+            this.frameRenderTextures.set(frameId, renderTexture);
+            
+            const container = frameContainer || this.currentFrameContainer;
             if (!container) return;
+            
             this.app.renderer.render({
                 container: container,
                 target: renderTexture,
                 clear: true
             });
-            this.markFrameThumbnailDirty(frameId); // ✅ FRAME修正
+            
+            this.markFrameThumbnailDirty(frameId);
         }
         
-        markFrameThumbnailDirty(frameId) { // ✅ FRAME修正
-            this.frameThumbnailDirty.set(frameId, true); // ✅ FRAME修正
+        markFrameThumbnailDirty(frameId) {
+            this.frameThumbnailDirty.set(frameId, true);
             if (this.eventBus) {
-                this.eventBus.emit('frame:updated', { frameId: frameId }); // ✅ FRAME修正
+                this.eventBus.emit('frame:updated', { frameId: frameId });
             }
         }
         
-        getFrameRenderTexture(frameId) { // ✅ FRAME修正
-            return this.frameRenderTextures.get(frameId); // ✅ FRAME修正
+        getFrameRenderTexture(frameId) {
+            return this.frameRenderTextures.get(frameId);
         }
         
-        destroyFrameRenderTexture(frameId) { // ✅ FRAME修正
-            const renderTexture = this.frameRenderTextures.get(frameId); // ✅ FRAME修正
+        destroyFrameRenderTexture(frameId) {
+            const renderTexture = this.frameRenderTextures.get(frameId);
             if (renderTexture) {
                 renderTexture.destroy(true);
-                this.frameRenderTextures.delete(frameId); // ✅ FRAME修正
-                this.frameThumbnailDirty.delete(frameId); // ✅ FRAME修正
+                this.frameRenderTextures.delete(frameId);
+                this.frameThumbnailDirty.delete(frameId);
             }
         }
         
-        isFrameThumbnailDirty(frameId) { // ✅ FRAME修正
-            return this.frameThumbnailDirty.get(frameId) || false; // ✅ FRAME修正
+        isFrameThumbnailDirty(frameId) {
+            return this.frameThumbnailDirty.get(frameId) || false;
         }
         
-        clearFrameThumbnailDirty(frameId) { // ✅ FRAME修正
-            this.frameThumbnailDirty.set(frameId, false); // ✅ FRAME修正
+        clearFrameThumbnailDirty(frameId) {
+            this.frameThumbnailDirty.set(frameId, false);
         }
         
         getLayers() {
-            return this.currentFrameContainer ? this.currentFrameContainer.children : []; // ✅ FRAME修正
+            return this.currentFrameContainer ? this.currentFrameContainer.children : [];
         }
         
         getActiveLayer() {
@@ -596,7 +619,6 @@
             this.eventBus.on('animation:system-ready', () => {
                 this._establishAnimationSystemConnection();
             });
-            // ✅ FRAME修正: イベント名統一
             this.eventBus.on('animation:frame-applied', () => {
                 setTimeout(() => {
                     this.updateLayerPanelUI();
@@ -626,7 +648,7 @@
                     window.TegakiCoreEngine?.animationSystem
                 ];
                 for (let instance of possibleInstances) {
-                    if (instance && typeof instance.getCurrentFrame === 'function') { // ✅ FRAME修正
+                    if (instance && typeof instance.getCurrentFrame === 'function') {
                         this.animationSystem = instance;
                         break;
                     }
@@ -756,8 +778,8 @@
                     do: () => {
                         const layers = this.getLayers();
                         const layer = layers[oldIndex];
-                        this.currentFrameContainer.removeChildAt(oldIndex); // ✅ FRAME修正
-                        this.currentFrameContainer.addChildAt(layer, newIndex); // ✅ FRAME修正
+                        this.currentFrameContainer.removeChildAt(oldIndex);
+                        this.currentFrameContainer.addChildAt(layer, newIndex);
                         this.activeLayerIndex = newIndex;
                         this.updateLayerPanelUI();
                         if (this.eventBus) {
@@ -767,8 +789,8 @@
                     undo: () => {
                         const layers = this.getLayers();
                         const layer = layers[newIndex];
-                        this.currentFrameContainer.removeChildAt(newIndex); // ✅ FRAME修正
-                        this.currentFrameContainer.addChildAt(layer, oldIndex); // ✅ FRAME修正
+                        this.currentFrameContainer.removeChildAt(newIndex);
+                        this.currentFrameContainer.addChildAt(layer, oldIndex);
                         this.activeLayerIndex = oldIndex;
                         this.updateLayerPanelUI();
                         if (this.eventBus) {
@@ -779,8 +801,8 @@
                 };
                 window.History.push(entry);
             } else {
-                this.currentFrameContainer.removeChildAt(currentIndex); // ✅ FRAME修正
-                this.currentFrameContainer.addChildAt(activeLayer, newIndex); // ✅ FRAME修正
+                this.currentFrameContainer.removeChildAt(currentIndex);
+                this.currentFrameContainer.addChildAt(activeLayer, newIndex);
                 this.activeLayerIndex = newIndex;
                 this.updateLayerPanelUI();
                 if (this.eventBus) {
@@ -790,9 +812,9 @@
         }
 
         createLayer(name, isBackground = false) {
-            if (!this.currentFrameContainer) return null; // ✅ FRAME修正
+            if (!this.currentFrameContainer) return null;
             const layerModel = new window.TegakiDataModels.LayerModel({
-                name: name || `レイヤー${this.currentFrameContainer.children.length + 1}`, // ✅ FRAME修正
+                name: name || `レイヤー${this.currentFrameContainer.children.length + 1}`,
                 isBackground: isBackground
             });
             const layer = new PIXI.Container();
@@ -824,7 +846,7 @@
                 const entry = {
                     name: 'layer-create',
                     do: () => {
-                        this.currentFrameContainer.addChild(layer); // ✅ FRAME修正
+                        this.currentFrameContainer.addChild(layer);
                         const layers = this.getLayers();
                         this.setActiveLayer(layers.length - 1);
                         this.updateLayerPanelUI();
@@ -834,7 +856,7 @@
                         if (layer.layerData) {
                             layer.layerData.destroyMask();
                         }
-                        this.currentFrameContainer.removeChild(layer); // ✅ FRAME修正
+                        this.currentFrameContainer.removeChild(layer);
                         const layers = this.getLayers();
                         if (this.activeLayerIndex >= layers.length) {
                             this.activeLayerIndex = Math.max(0, layers.length - 1);
@@ -846,7 +868,7 @@
                 };
                 window.History.push(entry);
             } else {
-                this.currentFrameContainer.addChild(layer); // ✅ FRAME修正
+                this.currentFrameContainer.addChild(layer);
                 const layers = this.getLayers();
                 this.setActiveLayer(layers.length - 1);
                 this.updateLayerPanelUI();
@@ -983,7 +1005,7 @@
                 layer.rotation = originalState.rotation;
                 layer.pivot.set(originalState.pivot.x, originalState.pivot.y);
                 tempContainer.removeChild(layer);
-                this.currentFrameContainer.addChildAt(layer, layerIndex); // ✅ FRAME修正
+                this.currentFrameContainer.addChildAt(layer, layerIndex);
                 const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
                 const targetCanvas = document.createElement('canvas');
                 targetCanvas.width = Math.round(thumbnailWidth);
@@ -1142,7 +1164,7 @@
                             if (layer.layerData) {
                                 layer.layerData.destroyMask();
                             }
-                            this.currentFrameContainer.removeChild(layer); // ✅ FRAME修正
+                            this.currentFrameContainer.removeChild(layer);
                             if (layerId && this.transform) {
                                 this.transform.deleteTransform(layerId);
                             }
@@ -1170,7 +1192,7 @@
                                     this._applyMaskToLayerGraphics(layer);
                                 }
                             }
-                            this.currentFrameContainer.addChildAt(layer, layerIndex); // ✅ FRAME修正
+                            this.currentFrameContainer.addChildAt(layer, layerIndex);
                             this.activeLayerIndex = previousActiveIndex;
                             this.updateLayerPanelUI();
                             this.updateStatusDisplay();
@@ -1182,7 +1204,7 @@
                     if (layer.layerData) {
                         layer.layerData.destroyMask();
                     }
-                    this.currentFrameContainer.removeChild(layer); // ✅ FRAME修正
+                    this.currentFrameContainer.removeChild(layer);
                     if (layerId && this.transform) {
                         this.transform.deleteTransform(layerId);
                     }
@@ -1198,10 +1220,10 @@
                         this.eventBus.emit('layer:deleted', { layerId, layerIndex });
                     }
                 }
-                if (this.animationSystem?.generateFrameThumbnail) { // ✅ FRAME修正
-                    const frameIndex = this.animationSystem.getCurrentFrameIndex(); // ✅ FRAME修正
+                if (this.animationSystem?.generateFrameThumbnail) {
+                    const frameIndex = this.animationSystem.getCurrentFrameIndex();
                     setTimeout(() => {
-                        this.animationSystem.generateFrameThumbnail(frameIndex); // ✅ FRAME修正
+                        this.animationSystem.generateFrameThumbnail(frameIndex);
                     }, 100);
                 }
                 return true;
@@ -1215,4 +1237,4 @@
 
 })();
 
-console.log('✅ layer-system.js (FRAME修正版) loaded');
+console.log('✅ layer-system.js (Phase 2修正版・RenderTexture動的更新) loaded');
