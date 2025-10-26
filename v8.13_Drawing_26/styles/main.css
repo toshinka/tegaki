@@ -204,11 +204,11 @@ body {
     width: 170px; 
     height: 56px; 
     background: rgba(240, 224, 214, 0.5);
-    border: 2px solid var(--futaba-light-medium); 
+    border: 2px solid var(--futaba-cream); 
     border-radius: 4px; 
     padding: 4px 6px; 
     cursor: pointer; 
-    display: grid;  
+    display: grid; 
     grid-template-columns: 18px 1fr auto; 
     grid-template-rows: 1fr 1fr; 
     gap: 3px 6px; 
