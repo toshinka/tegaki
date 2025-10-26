@@ -1,18 +1,50 @@
 // ========================================
-// quick-export-ui.js
-// クイックエクスポートUI - 修正版
+// quick-export-ui.js - Phase 1改修版
+// 改修内容: ExportManager初期化完了後のみUI作成
 // ========================================
 
 class QuickExportUI {
     constructor() {
         this.container = null;
         this.isGenerating = false;
-        this.init();
+        this.initialized = false;
+        
+        // ★ Phase 1改修: ExportManager初期化待機
+        this.waitForExportManager();
+    }
+
+    waitForExportManager() {
+        // EventBus経由で初期化完了を待つ
+        if (window.TegakiEventBus) {
+            window.TegakiEventBus.on('export:manager:initialized', () => {
+                this.init();
+            });
+        }
+        
+        // タイマーでも確認（フォールバック）
+        const checkInterval = setInterval(() => {
+            if (window.TEGAKI_EXPORT_MANAGER && !this.initialized) {
+                clearInterval(checkInterval);
+                this.init();
+            }
+        }, 500);
+        
+        // 10秒後にタイムアウト
+        setTimeout(() => {
+            clearInterval(checkInterval);
+            if (!this.initialized) {
+                console.warn('[QuickExportUI] ExportManager initialization timeout');
+            }
+        }, 10000);
     }
 
     init() {
+        if (this.initialized) return;
+        
+        this.initialized = true;
         this.createUI();
         this.setupEventListeners();
+        console.log('✅ QuickExportUI initialized');
     }
 
     createUI() {
@@ -40,7 +72,7 @@ class QuickExportUI {
             }
             .quick-export-buttons button {
                 padding: 8px 16px;
-                background: #2196F3;
+                background: #800000;
                 color: white;
                 border: none;
                 border-radius: 4px;
@@ -49,7 +81,7 @@ class QuickExportUI {
                 transition: background 0.2s;
             }
             .quick-export-buttons button:hover {
-                background: #1976D2;
+                background: #aa5a56;
             }
             .quick-export-buttons button:disabled {
                 background: #ccc;
@@ -89,7 +121,6 @@ class QuickExportUI {
         });
     }
 
-    // ========== 修正: window.TEGAKI_EXPORT_MANAGER を使用 ==========
     getExportManager() {
         if (!window.TEGAKI_EXPORT_MANAGER) {
             console.error('[QuickExportUI] TEGAKI_EXPORT_MANAGER not initialized');
@@ -204,7 +235,7 @@ class QuickExportUI {
         closeBtn.style.cssText = `
             margin-top: 20px;
             padding: 10px 20px;
-            background: #2196F3;
+            background: #800000;
             color: white;
             border: none;
             border-radius: 4px;
@@ -217,7 +248,7 @@ class QuickExportUI {
         downloadBtn.style.cssText = `
             margin-top: 10px;
             padding: 10px 20px;
-            background: #4CAF50;
+            background: #aa5a56;
             color: white;
             border: none;
             border-radius: 4px;
@@ -274,9 +305,9 @@ class QuickExportUI {
     }
 }
 
-// 初期化
+// ★ Phase 1改修: 即座に初期化せず、インスタンスのみ作成
 if (typeof window !== 'undefined') {
     window.QuickExportUI = new QuickExportUI();
 }
 
-console.log('✅ quick-export-ui.js loaded');
+console.log('✅ quick-export-ui.js (Phase 1改修版) loaded');

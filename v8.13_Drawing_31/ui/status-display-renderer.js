@@ -1,6 +1,8 @@
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-// Status Display Renderer - ステータス表示レンダラー
+// Status Display Renderer - ステータス表示レンダラー (Phase 1改修版)
 // ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+// 改修内容: Phase 1-A
+// - getAllSettings() → get() に修正
 
 (function() {
   'use strict';
@@ -8,7 +10,7 @@
   class StatusDisplayRenderer {
     constructor(eventBus, settingsManager) {
       this.eventBus = eventBus || window.TegakiEventBus;
-      this.settingsManager = settingsManager || window.TegakiSettingsManager;
+      this.settingsManager = settingsManager || window.settingsManager;
       this.container = null;
       this.frameDisplay = null;
       this._initialize();
@@ -89,7 +91,8 @@
     _updateBrushInfo() {
       if (!this.settingsManager) return;
       
-      const settings = this.settingsManager.getAllSettings();
+      // ★ Phase 1-A: getAllSettings() → get() に修正
+      const settings = this.settingsManager.get();
       const tool = settings.currentTool || 'pen';
       const size = settings.brushSize || 5;
       const color = settings.strokeColor || '#000000';
@@ -132,6 +135,5 @@
   }
   window.TegakiUI.StatusDisplayRenderer = StatusDisplayRenderer;
 
-  console.log('✅ status-display-renderer.js loaded');
-  console.log('   - window.TegakiUI.StatusDisplayRenderer 登録完了');
+  console.log('✅ status-display-renderer.js (Phase 1改修版) loaded');
 })();
