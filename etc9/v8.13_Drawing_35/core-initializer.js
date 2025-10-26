@@ -1,7 +1,6 @@
-// ===== core-initializer.js - Phase 1改修版（修正2） =====
-// 改修内容:
-// - Phase 1-A: SettingsManager統合修正（クラス名修正）
-// - Phase 1-B: ExportManager初期化順序修正
+// ===== core-initializer.js - 完全修正版 =====
+// 修正1: SettingsManager初期化をpopup登録前に移動
+// 修正2: ExportPopup登録をExportManager完全初期化後に実行
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -48,6 +47,23 @@ window.CoreInitializer = (function() {
         document.body.appendChild(statusPanel);
     }
 
+    // ★ 修正1: SettingsManagerを先に初期化してグローバルに配置
+    function initializeSettingsManager() {
+        if (window.settingsManager) {
+            return window.settingsManager;
+        }
+        
+        const settingsManager = new window.TegakiSettingsManager(
+            window.TegakiEventBus,
+            window.TEGAKI_CONFIG
+        );
+        window.settingsManager = settingsManager;
+        window.TegakiSettingsManager = settingsManager;
+        
+        console.log('✅ SettingsManager initialized');
+        return settingsManager;
+    }
+
     function initializePopupManager(app, coreEngine) {
         const popupManager = new window.TegakiPopupManager(window.TegakiEventBus);
         
@@ -77,7 +93,7 @@ window.CoreInitializer = (function() {
             history: window.History
         }, { priority: 4 });
         
-        // ★ Phase 1-B: export popup登録を削除（ExportManager初期化後に登録）
+        // exportは後で登録（ExportManager初期化後）
         
         popupManager.initializeAll();
         window.PopupManager = popupManager;
@@ -85,22 +101,14 @@ window.CoreInitializer = (function() {
         return popupManager;
     }
 
-    function setupEventBusListeners(coreEngine) {
+    function setupEventBusListeners() {
         const eventBus = window.TegakiEventBus;
         if (!eventBus) return;
 
-        // ★ Phase 1-A: SettingsManagerインスタンス作成（クラスから生成）
-        const SettingsManagerClass = window.TegakiSettingsManager;
-        const settingsManager = new SettingsManagerClass(
-            window.TegakiEventBus,
-            window.TEGAKI_CONFIG
-        );
-        window.settingsManager = settingsManager;
-
-        // ★ Phase 1-A: StatusDisplayRendererに引数を渡す
+        // StatusDisplayRendererに引数を渡す
         const statusDisplay = new window.TegakiUI.StatusDisplayRenderer(
             window.TegakiEventBus,
-            settingsManager
+            window.settingsManager
         );
         statusDisplay.setupEventListeners();
         window.StatusDisplayRenderer = statusDisplay;
@@ -112,6 +120,7 @@ window.CoreInitializer = (function() {
             this.coreEngine = null;
             this.uiController = null;
             this.popupManager = null;
+            this.exportInitialized = false;
         }
         
         async initialize() {
@@ -160,6 +169,9 @@ window.CoreInitializer = (function() {
                 drawingEngine: this.coreEngine.getDrawingEngine()
             });
             
+            // ★ 修正1: SettingsManagerを先に初期化
+            initializeSettingsManager();
+            
             this.uiController = new UIController(
                 this.coreEngine.getDrawingEngine(), 
                 this.coreEngine.getLayerManager(), 
@@ -168,8 +180,9 @@ window.CoreInitializer = (function() {
 
             this.popupManager = initializePopupManager(this, this.coreEngine);
             
-            setupEventBusListeners(this.coreEngine);
+            setupEventBusListeners();
             
+            // ★ 修正2: ExportSystem初期化
             this.initializeExportSystem();
             
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
@@ -184,36 +197,53 @@ window.CoreInitializer = (function() {
             return true;
         }
         
-        // ★ Phase 1-B: ExportManager初期化順序修正
+        // ★ 修正2: ExportManager初期化完了後にExportPopupを登録
         initializeExportSystem() {
+            let retryCount = 0;
+            const maxRetries = 30;
+            
             const tryInit = () => {
+                retryCount++;
+                
+                // 依存関係チェック
                 if (!window.animationSystem || !window.CoreRuntime) {
-                    setTimeout(tryInit, 200);
+                    if (retryCount < maxRetries) {
+                        setTimeout(tryInit, 200);
+                    }
                     return;
                 }
                 
                 if (!window.ExportManager || !window.PNGExporter || 
                     !window.APNGExporter || !window.GIFExporter) {
-                    setTimeout(tryInit, 200);
+                    if (retryCount < maxRetries) {
+                        setTimeout(tryInit, 200);
+                    }
                     return;
                 }
                 
+                // ExportManagerを初期化
                 const success = window.CoreRuntime.initializeExportSystem(
                     this.pixiApp,
                     () => {
-                        // ★ ExportManager初期化成功後にExportPopup登録
-                        if (window.PopupManager && window.TEGAKI_EXPORT_MANAGER) {
+                        // ★ コールバック: ExportManager初期化成功後にExportPopupを登録
+                        if (!this.exportInitialized && 
+                            window.PopupManager && 
+                            window.TEGAKI_EXPORT_MANAGER &&
+                            window.TegakiExportPopup) {
+                            
                             window.PopupManager.register('export', window.TegakiExportPopup, {
                                 exportManager: window.TEGAKI_EXPORT_MANAGER
                             }, { 
                                 priority: 5,
-                                waitFor: [] // 依存関係なし（既に作成済み）
+                                waitFor: []
                             });
                             
                             // 即座に初期化
-                            window.PopupManager.initialize('export');
-                            
-                            console.log('✅ Export popup registered and initialized');
+                            setTimeout(() => {
+                                window.PopupManager.initialize('export');
+                                this.exportInitialized = true;
+                                console.log('✅ ExportPopup registered and initialized');
+                            }, 100);
                         }
                         
                         if (window.TegakiEventBus) {
@@ -222,14 +252,18 @@ window.CoreInitializer = (function() {
                     }
                 );
                 
-                if (!success) setTimeout(tryInit, 200);
+                if (!success && retryCount < maxRetries) {
+                    setTimeout(tryInit, 200);
+                }
             };
             
+            // EventBusリスナー登録
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.on('animation:system-ready', tryInit);
                 window.TegakiEventBus.on('animation:initialized', tryInit);
             }
             
+            // 初回トライ
             setTimeout(tryInit, 300);
         }
         
@@ -310,4 +344,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (Phase 1改修版・修正2) loaded');
+console.log('✅ core-initializer.js (完全修正版・SettingsManager＋ExportPopup対応) loaded');

@@ -1,6 +1,6 @@
-// ===== ui/ui-panels.js - 完全改修版 =====
-// 改修1: quick-access-popup画面外クリック防止
-// 改修5: Sortable初期化関数追加
+// ===== ui/ui-panels.js - サイドバー同期・色調整版 =====
+// 🔥 改修1: P/Eショートカット時のサイドバーボタン同期
+// 🔥 改修2: 点灯色をmaroon→light-maroon、hover色をlight-mediumに変更
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -88,6 +88,11 @@ window.TegakiUI.UIController = class {
         eventBus.on('ui:toggle-export', () => {
             this.togglePopup('export');
         });
+        
+        // 🔥 改修1: ショートカットキーからのツール切り替え時、サイドバー同期
+        eventBus.on('ui:sidebar:sync-tool', ({ tool }) => {
+            this.updateToolUI(tool);
+        });
     }
     
     setupEventDelegation() {
@@ -114,7 +119,6 @@ window.TegakiUI.UIController = class {
                 return;
             }
 
-            // ✅改修1: quick-access-popup以外を閉じる（quick-accessは残す）
             if (!e.target.closest('.popup-panel') && 
                 !e.target.closest('.album-overlay') &&
                 !e.target.closest('.layer-transform-panel') &&
@@ -235,14 +239,12 @@ window.TegakiUI.UIController = class {
     }
 };
 
-// ✅改修5: Sortable初期化関数
 window.TegakiUI.initializeSortable = function(layerSystem) {
     const layerList = document.getElementById('layer-list');
     if (!layerList || !window.Sortable) {
         return;
     }
     
-    // 既存のSortableインスタンスを削除
     if (layerList._sortable) {
         layerList._sortable.destroy();
     }
@@ -258,7 +260,6 @@ window.TegakiUI.initializeSortable = function(layerSystem) {
             const toIndex = evt.newIndex;
             
             if (fromIndex !== toIndex) {
-                // UIとデータの逆順に注意
                 const layers = layerSystem.getLayers();
                 const actualFromIndex = layers.length - 1 - fromIndex;
                 const actualToIndex = layers.length - 1 - toIndex;
@@ -318,6 +319,7 @@ window.TegakiUI.createSlider = function(sliderId, min, max, initial, callback) {
     update(initial);
 };
 
+// 🔥 改修2: サイドバーボタンの色をlight-maroonに、hover色をlight-mediumに変更
 window.TegakiUI.setupPanelStyles = function() {
     const style = document.createElement('style');
     style.textContent = `
@@ -385,6 +387,16 @@ window.TegakiUI.setupPanelStyles = function() {
         .layer-drag {
             opacity: 0.8;
         }
+        
+        /* 🔥 改修2: サイドバーツールボタンの色調整 */
+        .tool-button.active {
+            background-color: var(--futaba-light-maroon) !important;
+            border-color: var(--futaba-maroon) !important;
+        }
+        
+        .tool-button:hover:not(.active) {
+            background-color: var(--futaba-light-medium) !important;
+        }
     `;
     
     if (!document.querySelector('style[data-tegaki-panels]')) {
@@ -393,4 +405,4 @@ window.TegakiUI.setupPanelStyles = function() {
     }
 };
 
-console.log('✅ ui-panels.js (完全改修版) loaded');
+console.log('✅ ui-panels.js (サイドバー同期・色調整版) loaded');

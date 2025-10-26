@@ -1,5 +1,5 @@
-// ===== keyboard-handler.js - Phase 3完全版 =====
-// 改修: Eキーでエクスポートポップアップ表示機能追加
+// ===== keyboard-handler.js - P/Eサイドバー同期版 =====
+// 🔥 改修: P/Eキーでのツール切り替え時、サイドバーのボタンも同期
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -26,21 +26,18 @@ window.KeyboardHandler = (function() {
         
         if (isInputFocused()) return;
         
-        // Qキーでクイックアクセスポップアップをトグル
         if ((e.key === 'q' || e.key === 'Q') && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             eventBus.emit('ui:toggle-quick-access');
             e.preventDefault();
             return;
         }
         
-        // ★ Phase 3追加: Eキーでエクスポートポップアップをトグル（消しゴムと競合しない）
         if ((e.key === 'e' || e.key === 'E') && e.ctrlKey && !e.shiftKey && !e.altKey) {
             eventBus.emit('ui:toggle-export');
             e.preventDefault();
             return;
         }
         
-        // Vキー押下をEventBusで通知
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             if (!vKeyPressed) {
                 vKeyPressed = true;
@@ -62,7 +59,6 @@ window.KeyboardHandler = (function() {
     }
 
     function handleKeyUp(e) {
-        // Vキー解放をEventBusで通知
         if (e.code === 'KeyV') {
             if (vKeyPressed) {
                 vKeyPressed = false;
@@ -140,13 +136,17 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            // 🔥 改修: ペンツール切り替え時にサイドバー同期イベント発火
             case 'TOOL_PEN':
                 eventBus.emit('tool:select', { tool: 'pen' });
+                eventBus.emit('ui:sidebar:sync-tool', { tool: 'pen' });
                 event.preventDefault();
                 break;
             
+            // 🔥 改修: 消しゴムツール切り替え時にサイドバー同期イベント発火
             case 'TOOL_ERASER':
                 eventBus.emit('tool:select', { tool: 'eraser' });
+                eventBus.emit('ui:sidebar:sync-tool', { tool: 'eraser' });
                 event.preventDefault();
                 break;
             
@@ -315,4 +315,4 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js (Phase 3完全版・Ctrl+Eエクスポート対応) loaded');
+console.log('✅ keyboard-handler.js (P/Eサイドバー同期版) loaded');

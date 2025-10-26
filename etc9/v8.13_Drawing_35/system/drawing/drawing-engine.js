@@ -1,7 +1,6 @@
 /**
- * DrawingEngine - ペン描画統合制御クラス (マスク消しゴム対応完全版)
- * Phase 1: RenderTextureマスクベース消しゴム実装完了
- * 🔥 Undo/Redo時のGraphics破壊問題を修正
+ * DrawingEngine - ペン描画統合制御クラス
+ * 🔥 改修: Space+ドラッグでキャンバス移動中はペン描画を無効化
  */
 
 class DrawingEngine {
@@ -27,8 +26,12 @@ class DrawingEngine {
         this.eraserPreviewGraphics = null;
         this.lastProcessedPointIndex = 0;
         
+        // 🔥 改修: キャンバス移動モード監視
+        this.canvasMoveMode = false;
+        
         this._syncBrushSettingsToRuntime();
         this._syncToolSelection();
+        this._setupCanvasMoveModeListener();
     }
 
     setBrushSettings(brushSettings) {
@@ -50,7 +53,25 @@ class DrawingEngine {
         });
     }
 
+    // 🔥 改修: キャンバス移動モード監視
+    _setupCanvasMoveModeListener() {
+        if (!this.eventBus) return;
+        this.eventBus.on('camera:canvas-move-mode', ({ active }) => {
+            this.canvasMoveMode = active;
+            // キャンバス移動モード開始時、描画中なら中断
+            if (active && this.isDrawing) {
+                this.cancelStroke();
+            }
+        });
+    }
+
+    // 🔥 改修: キャンバス移動中は描画開始しない
     startDrawing(x, y, event) {
+        // キャンバス移動モード中は描画しない
+        if (this.canvasMoveMode) {
+            return;
+        }
+        
         this.currentLayer = this.layerSystem.getActiveLayer();
         if (!this.currentLayer || this.currentLayer.layerData?.locked) {
             return;
@@ -86,8 +107,15 @@ class DrawingEngine {
         }
     }
 
+    // 🔥 改修: キャンバス移動開始時は描画を中断
     continueDrawing(x, y, event) {
         if (!this.isDrawing) return;
+        
+        // キャンバス移動モードになったら描画中断
+        if (this.canvasMoveMode) {
+            this.cancelStroke();
+            return;
+        }
 
         if (event && event.pointerType) {
             const pressure = event.pressure || 0.5;
@@ -125,7 +153,6 @@ class DrawingEngine {
         this.clearEraserPreview();
         const tool = this.currentTool;
 
-        // ===== Phase 1: 消しゴムツール処理 =====
         if (tool === 'eraser' && this.currentLayer && strokeData.points.length > 0) {
             const layerData = this.currentLayer.layerData;
             
@@ -244,7 +271,6 @@ class DrawingEngine {
         const strokeObject = this.strokeRenderer.renderFinalStroke(strokeData, this.currentSettings);
         this.strokeRenderer.setTool(originalTool);
 
-        // ===== Phase 1: 新規ストロークへのマスク適用 =====
         const layerData = this.currentLayer.layerData;
         if (layerData && typeof layerData.hasMask === 'function' && layerData.hasMask() && layerData.maskSprite) {
             strokeObject.mask = layerData.maskSprite;
@@ -270,7 +296,6 @@ class DrawingEngine {
         const targetLayer = this.currentLayer;
         const layerId = targetLayer.layerData?.id || targetLayer.label;
 
-        // 🔥 Undo時に再マスク適用するための参照保持
         const layerIndex = this.layerSystem.activeLayerIndex;
         
         const addStrokeCommand = {
@@ -279,14 +304,12 @@ class DrawingEngine {
                 if (targetLayer && targetLayer.addChild) {
                     targetLayer.addChild(strokeObject);
                     
-                    // 🔥 do実行時にもマスク再適用
                     const currentLayerData = targetLayer.layerData;
                     if (currentLayerData && typeof currentLayerData.hasMask === 'function' && 
                         currentLayerData.hasMask() && currentLayerData.maskSprite) {
                         strokeObject.mask = currentLayerData.maskSprite;
                     }
                     
-                    // 🔥 サムネイル更新
                     if (this.layerSystem && typeof layerIndex === 'number') {
                         this.layerSystem.requestThumbnailUpdate(layerIndex);
                     }
@@ -295,9 +318,7 @@ class DrawingEngine {
             undo: () => {
                 if (targetLayer && targetLayer.removeChild && strokeObject.parent === targetLayer) {
                     targetLayer.removeChild(strokeObject);
-                    // 🔥 destroy()を呼ばない（再利用のため）
                     
-                    // 🔥 サムネイル更新
                     if (this.layerSystem && typeof layerIndex === 'number') {
                         this.layerSystem.requestThumbnailUpdate(layerIndex);
                     }
@@ -314,7 +335,6 @@ class DrawingEngine {
             this.history.push(addStrokeCommand);
         }
         
-        // 🔥 初回描画時もサムネイル更新
         if (this.layerSystem && typeof layerIndex === 'number') {
             this.layerSystem.requestThumbnailUpdate(layerIndex);
         }
@@ -390,3 +410,5 @@ class DrawingEngine {
         this.clearEraserPreview();
     }
 }
+
+console.log('✅ drawing-engine.js (キャンバス移動時ペン無効化版) loaded');

@@ -1,7 +1,5 @@
-// ===== keyboard-handler.js - FRAME改修完全版 =====
-// 改修2: Delete/Backspaceキーでレイヤー内容消去機能の復活 ✅
-// 改修3: 消しゴムツール透明化対応 ✅
-// ✅ CUT→FRAME変換完了
+// ===== keyboard-handler.js - P/Eサイドバー同期版 =====
+// 🔥 改修: P/Eキーでのツール切り替え時、サイドバーのボタンも同期
 
 window.KeyboardHandler = (function() {
     'use strict';
@@ -28,14 +26,18 @@ window.KeyboardHandler = (function() {
         
         if (isInputFocused()) return;
         
-        // Qキーでクイックアクセスポップアップをトグル
         if ((e.key === 'q' || e.key === 'Q') && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             eventBus.emit('ui:toggle-quick-access');
             e.preventDefault();
             return;
         }
         
-        // Vキー押下をEventBusで通知
+        if ((e.key === 'e' || e.key === 'E') && e.ctrlKey && !e.shiftKey && !e.altKey) {
+            eventBus.emit('ui:toggle-export');
+            e.preventDefault();
+            return;
+        }
+        
         if (e.code === 'KeyV' && !e.ctrlKey && !e.shiftKey && !e.altKey) {
             if (!vKeyPressed) {
                 vKeyPressed = true;
@@ -57,7 +59,6 @@ window.KeyboardHandler = (function() {
     }
 
     function handleKeyUp(e) {
-        // Vキー解放をEventBusで通知
         if (e.code === 'KeyV') {
             if (vKeyPressed) {
                 vKeyPressed = false;
@@ -135,13 +136,17 @@ window.KeyboardHandler = (function() {
                 event.preventDefault();
                 break;
             
+            // 🔥 改修: ペンツール切り替え時にサイドバー同期イベント発火
             case 'TOOL_PEN':
                 eventBus.emit('tool:select', { tool: 'pen' });
+                eventBus.emit('ui:sidebar:sync-tool', { tool: 'pen' });
                 event.preventDefault();
                 break;
             
+            // 🔥 改修: 消しゴムツール切り替え時にサイドバー同期イベント発火
             case 'TOOL_ERASER':
                 eventBus.emit('tool:select', { tool: 'eraser' });
+                eventBus.emit('ui:sidebar:sync-tool', { tool: 'eraser' });
                 event.preventDefault();
                 break;
             
@@ -296,6 +301,7 @@ window.KeyboardHandler = (function() {
             { action: 'GIF_COPY_FRAME', keys: ['Ctrl+D'], description: 'フレーム複製' },
             { action: 'TOOL_PEN', keys: ['P', 'B'], description: 'ペンツール' },
             { action: 'TOOL_ERASER', keys: ['E'], description: '消しゴム' },
+            { action: 'EXPORT_TOGGLE', keys: ['Ctrl+E'], description: 'エクスポート' },
             { action: 'SETTINGS_OPEN', keys: ['Ctrl+,'], description: '設定を開く' },
             { action: 'QUICK_ACCESS', keys: ['Q'], description: 'クイックアクセス' },
             { action: 'LAYER_MOVE_MODE', keys: ['V'], description: 'レイヤー移動モード' }
@@ -309,4 +315,4 @@ window.KeyboardHandler = (function() {
     };
 })();
 
-console.log('✅ keyboard-handler.js (FRAME改修完全版) loaded');
+console.log('✅ keyboard-handler.js (P/Eサイドバー同期版) loaded');

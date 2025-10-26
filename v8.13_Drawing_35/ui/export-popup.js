@@ -1,6 +1,5 @@
-// ===== ui/export-popup.js - PopupManager対応改修版 =====
-// 責務: エクスポートUI管理、プレビュー表示
-// 🔥 改修: PopupManager統合、共通インターフェース適用、DOM操作の統一
+// ===== ui/export-popup.js - CUT→FRAME完全修正版 =====
+// 🔥 改修: getCutCount() → getFrameCount(), "CUT" → "FRAME" 表記統一
 
 window.TegakiExportPopup = class ExportPopup {
     constructor(dependencies) {
@@ -21,7 +20,6 @@ window.TegakiExportPopup = class ExportPopup {
         if (!this.popup) {
             this._createPopupElement();
         } else {
-            // 既存要素の初期化
             this.popup.classList.remove('show');
             this.popup.style.display = '';
         }
@@ -118,11 +116,12 @@ window.TegakiExportPopup = class ExportPopup {
         this.hidePreview();
     }
     
-    getCutCount() {
+    // 🔥 修正: getCutCount() → getFrameCount()
+    getFrameCount() {
         if (this.manager?.animationSystem?.getAnimationData) {
             const animData = this.manager.animationSystem.getAnimationData();
-            if (animData?.cuts) {
-                return animData.cuts.length;
+            if (animData?.frames) {
+                return animData.frames.length;
             }
         }
         return 1;
@@ -136,6 +135,7 @@ window.TegakiExportPopup = class ExportPopup {
         previewBtn.style.display = showPreview ? 'block' : 'none';
     }
     
+    // 🔥 修正: "CUT" → "FRAME" 表記統一
     updateOptionsUI(format) {
         const optionsEl = document.getElementById('export-options');
         if (!optionsEl) return;
@@ -147,28 +147,28 @@ window.TegakiExportPopup = class ExportPopup {
             canvasHeight = window.TEGAKI_CONFIG.canvas.height;
         }
         
-        const cutCount = this.getCutCount();
+        const frameCount = this.getFrameCount();
         let quality = 10;
         if (window.TEGAKI_CONFIG?.animation?.exportSettings) {
             quality = window.TEGAKI_CONFIG.animation.exportSettings.quality;
         }
         
-        const pngDescription = cutCount >= 2 
-            ? '全' + cutCount + '個のCUTをAPNG（アニメーションPNG）として出力します。'
+        const pngDescription = frameCount >= 2 
+            ? '全' + frameCount + 'フレームをAPNG（アニメーションPNG）として出力します。'
             : '現在のキャンバスをPNG画像として出力します。';
         
-        const cutInfo = cutCount >= 2 ? (' / CUT数: ' + cutCount) : '';
+        const frameInfo = frameCount >= 2 ? (' / フレーム数: ' + frameCount) : '';
         
         const optionsMap = {
-            'png': '<div class="setting-label">PNG出力（CUT数で自動判定）</div>' +
+            'png': '<div class="setting-label">PNG出力（Frame数でAPNG自動判定）</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
                     pngDescription + '<br>' +
-                    'サイズ: ' + canvasWidth + '×' + canvasHeight + 'px' + cutInfo +
+                    'サイズ: ' + canvasWidth + '×' + canvasHeight + 'px' + frameInfo +
                 '</div>',
             'gif': '<div class="setting-label">GIFアニメーション出力</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
-                    '全' + cutCount + '個のCUTをGIFアニメーションとして出力します。<br>' +
-                    '品質: ' + quality + ' / フレーム数: ' + cutCount +
+                    '全' + frameCount + 'フレームをGIFアニメーションとして出力します。<br>' +
+                    '品質: ' + quality + ' / フレーム数: ' + frameCount +
                 '</div>',
             'pdf': '<div class="setting-label">PDF出力</div>' +
                 '<div style="font-size: 12px; color: var(--text-secondary); margin-top: 8px;">' +
@@ -294,8 +294,8 @@ window.TegakiExportPopup = class ExportPopup {
         }
         if (executeBtn) executeBtn.disabled = true;
         
-        const cutCount = this.getCutCount();
-        const isAnimation = this.selectedFormat === 'gif' || (this.selectedFormat === 'png' && cutCount >= 2);
+        const frameCount = this.getFrameCount();
+        const isAnimation = this.selectedFormat === 'gif' || (this.selectedFormat === 'png' && frameCount >= 2);
         
         if (isAnimation && progressEl) {
             progressEl.style.display = 'block';
@@ -381,8 +381,6 @@ window.TegakiExportPopup = class ExportPopup {
         if (progressText) progressText.textContent = '0%';
     }
     
-    // ===== 必須インターフェース =====
-    
     show() {
         if (!this.popup) {
             this._ensurePopupElement();
@@ -423,7 +421,6 @@ window.TegakiExportPopup = class ExportPopup {
     }
 };
 
-// グローバル公開（複数パターン対応）
 window.ExportPopup = window.TegakiExportPopup;
 
-console.log('✅ export-popup.js (PopupManager対応版) loaded');
+console.log('✅ export-popup.js (CUT→FRAME完全修正版) loaded');

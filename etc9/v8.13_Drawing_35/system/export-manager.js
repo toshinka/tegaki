@@ -1,6 +1,6 @@
 // ==================================================
-// system/export-manager.js
-// エクスポート統合管理 - PNG/APNG自動判定対応 + Blob API
+// system/export-manager.js - CUT→FRAME完全修正版
+// ★ 修正: cuts → frames に変更
 // ==================================================
 window.ExportManager = (function() {
     'use strict';
@@ -29,12 +29,13 @@ window.ExportManager = (function() {
             this.exporters[format] = exporter;
         }
         
+        // ★ 修正: cuts → frames
         _shouldUseAPNG() {
             const animData = this.animationSystem && this.animationSystem.getAnimationData 
                 ? this.animationSystem.getAnimationData() 
                 : null;
-            const cutCount = animData && animData.cuts ? animData.cuts.length : 0;
-            return cutCount >= 2;
+            const frameCount = animData && animData.frames ? animData.frames.length : 0;
+            return frameCount >= 2;
         }
         
         async export(format, options = {}) {
@@ -60,7 +61,6 @@ window.ExportManager = (function() {
             }
         }
         
-        // ===== [追加] プレビュー生成 (Blob返却) =====
         async generatePreview(format, options = {}) {
             let targetFormat = format;
             if (format === 'png' && this._shouldUseAPNG()) {
@@ -76,13 +76,6 @@ window.ExportManager = (function() {
             return { blob: blob, format: targetFormat };
         }
         
-        // ===== [追加] 直接Blob取得API群 =====
-        
-        /**
-         * PNG形式でBlobを取得
-         * @param {Object} options - エクスポートオプション
-         * @returns {Promise<Blob>}
-         */
         async exportAsPNGBlob(options = {}) {
             const exporter = this.exporters['png'];
             if (!exporter || !exporter.generateBlob) {
@@ -91,11 +84,6 @@ window.ExportManager = (function() {
             return await exporter.generateBlob(options);
         }
         
-        /**
-         * APNG形式でBlobを取得
-         * @param {Object} options - エクスポートオプション
-         * @returns {Promise<Blob>}
-         */
         async exportAsAPNGBlob(options = {}) {
             const exporter = this.exporters['apng'];
             if (!exporter || !exporter.generateBlob) {
@@ -104,11 +92,6 @@ window.ExportManager = (function() {
             return await exporter.generateBlob(options);
         }
         
-        /**
-         * GIF形式でBlobを取得
-         * @param {Object} options - エクスポートオプション
-         * @returns {Promise<Blob>}
-         */
         async exportAsGIFBlob(options = {}) {
             const exporter = this.exporters['gif'];
             if (!exporter || !exporter.generateBlob) {
@@ -117,11 +100,6 @@ window.ExportManager = (function() {
             return await exporter.generateBlob(options);
         }
         
-        /**
-         * WebP形式でBlobを取得
-         * @param {Object} options - エクスポートオプション
-         * @returns {Promise<Blob>}
-         */
         async exportAsWebPBlob(options = {}) {
             const exporter = this.exporters['webp'];
             if (!exporter || !exporter.generateBlob) {
@@ -130,18 +108,10 @@ window.ExportManager = (function() {
             return await exporter.generateBlob(options);
         }
         
-        /**
-         * 自動判定でBlobを取得 (PNG/APNG)
-         * カット数が2以上ならAPNG、1ならPNG
-         * @param {Object} options - エクスポートオプション
-         * @returns {Promise<Blob>}
-         */
         async exportAsAutoBlob(options = {}) {
             const format = this._shouldUseAPNG() ? 'apng' : 'png';
             return await this.generatePreview(format, options).then(r => r.blob);
         }
-        
-        // ===== ユーティリティ =====
         
         arrayBufferToBase64(buffer) {
             const bytes = new Uint8Array(buffer);
@@ -162,11 +132,6 @@ window.ExportManager = (function() {
             return 'data:' + blob.type + ';base64,' + base64;
         }
         
-        /**
-         * DataURLからBlobに変換
-         * @param {string} dataURL - data:image/...形式の文字列
-         * @returns {Blob}
-         */
         dataURLToBlob(dataURL) {
             const arr = dataURL.split(',');
             const mime = arr[0].match(/:(.*?);/)[1];
@@ -186,7 +151,7 @@ window.ExportManager = (function() {
             
             const container = options.container || 
                              this.layerSystem.layersContainer || 
-                             this.layerSystem.currentCutContainer;
+                             this.layerSystem.currentFrameContainer;
             
             if (!container) {
                 throw new Error('layers container is not available');
@@ -256,4 +221,4 @@ window.ExportManager = (function() {
     return ExportManager;
 })();
 
-console.log('✅ export-manager.js loaded');
+console.log('✅ export-manager.js (CUT→FRAME完全修正版) loaded');
