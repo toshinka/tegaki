@@ -1,5 +1,7 @@
-// ===== core-initializer.js - Phase 1: DrawingEngine初期化確保版 =====
-// 修正: coreEngine.initialize() を明示的に呼び出し
+// ===== core-initializer.js - Phase 1改修版（修正2） =====
+// 改修内容:
+// - Phase 1-A: SettingsManager統合修正（クラス名修正）
+// - Phase 1-B: ExportManager初期化順序修正
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -10,6 +12,7 @@ window.CoreInitializer = (function() {
             { name: 'TEGAKI_CONFIG', obj: window.TEGAKI_CONFIG },
             { name: 'TegakiEventBus', obj: window.TegakiEventBus },
             { name: 'TegakiPopupManager', obj: window.TegakiPopupManager },
+            { name: 'TegakiSettingsManager', obj: window.TegakiSettingsManager },
             { name: 'Sortable', obj: window.Sortable },
             { name: 'pako', obj: window.pako },
             { name: 'UPNG', obj: window.UPNG },
@@ -48,14 +51,12 @@ window.CoreInitializer = (function() {
     function initializePopupManager(app, coreEngine) {
         const popupManager = new window.TegakiPopupManager(window.TegakiEventBus);
         
-        // ✅ BrushSettings取得
         const brushSettings = coreEngine.getBrushSettings();
         
         popupManager.register('settings', window.TegakiUI.SettingsPopup, {
             drawingEngine: coreEngine.getDrawingEngine()
         }, { priority: 1 });
         
-        // ✅ QuickAccessPopup に brushSettings を渡す
         popupManager.register('quickAccess', window.TegakiUI.QuickAccessPopup, {
             drawingEngine: coreEngine.getDrawingEngine(),
             eventBus: window.TegakiEventBus,
@@ -71,18 +72,12 @@ window.CoreInitializer = (function() {
             waitFor: ['animationSystem']
         });
         
-        // ✅ 追加: ResizePopup 登録
         popupManager.register('resize', window.TegakiUI.ResizePopup, {
             coreEngine: coreEngine,
             history: window.History
         }, { priority: 4 });
         
-        popupManager.register('export', window.TegakiExportPopup, {
-            exportManager: null
-        }, { 
-            priority: 5,
-            waitFor: ['TEGAKI_EXPORT_MANAGER']
-        });
+        // ★ Phase 1-B: export popup登録を削除（ExportManager初期化後に登録）
         
         popupManager.initializeAll();
         window.PopupManager = popupManager;
@@ -94,7 +89,19 @@ window.CoreInitializer = (function() {
         const eventBus = window.TegakiEventBus;
         if (!eventBus) return;
 
-        const statusDisplay = new window.TegakiUI.StatusDisplayRenderer();
+        // ★ Phase 1-A: SettingsManagerインスタンス作成（クラスから生成）
+        const SettingsManagerClass = window.TegakiSettingsManager;
+        const settingsManager = new SettingsManagerClass(
+            window.TegakiEventBus,
+            window.TEGAKI_CONFIG
+        );
+        window.settingsManager = settingsManager;
+
+        // ★ Phase 1-A: StatusDisplayRendererに引数を渡す
+        const statusDisplay = new window.TegakiUI.StatusDisplayRenderer(
+            window.TegakiEventBus,
+            settingsManager
+        );
         statusDisplay.setupEventListeners();
         window.StatusDisplayRenderer = statusDisplay;
     }
@@ -137,21 +144,12 @@ window.CoreInitializer = (function() {
             
             this.coreEngine = new CoreEngine(this.pixiApp);
             
-            // ✅ Phase 1: initialize() を明示的に呼び出し
             const drawingApp = this.coreEngine.initialize();
             
             window.coreEngine = this.coreEngine;
             
-            // ✅ BrushSettings をグローバル公開
             const brushSettings = this.coreEngine.getBrushSettings();
             window.BrushSettings = brushSettings;
-            console.log('✅ window.BrushSettings 公開完了');
-            
-            // ✅ Phase 1: グローバル参照を確認
-            console.log('✅ グローバル参照確認:');
-            console.log('   window.drawingEngine:', !!window.drawingEngine);
-            console.log('   window.layerManager:', !!window.layerManager);
-            console.log('   window.cameraSystem:', !!window.cameraSystem);
             
             window.CoreRuntime.init({
                 app: this.pixiApp,
@@ -186,6 +184,7 @@ window.CoreInitializer = (function() {
             return true;
         }
         
+        // ★ Phase 1-B: ExportManager初期化順序修正
         initializeExportSystem() {
             const tryInit = () => {
                 if (!window.animationSystem || !window.CoreRuntime) {
@@ -202,12 +201,19 @@ window.CoreInitializer = (function() {
                 const success = window.CoreRuntime.initializeExportSystem(
                     this.pixiApp,
                     () => {
+                        // ★ ExportManager初期化成功後にExportPopup登録
                         if (window.PopupManager && window.TEGAKI_EXPORT_MANAGER) {
-                            const exportPopupData = window.PopupManager.popups.get('export');
-                            if (exportPopupData) {
-                                exportPopupData.dependencies.exportManager = window.TEGAKI_EXPORT_MANAGER;
-                                window.PopupManager.initialize('export');
-                            }
+                            window.PopupManager.register('export', window.TegakiExportPopup, {
+                                exportManager: window.TEGAKI_EXPORT_MANAGER
+                            }, { 
+                                priority: 5,
+                                waitFor: [] // 依存関係なし（既に作成済み）
+                            });
+                            
+                            // 即座に初期化
+                            window.PopupManager.initialize('export');
+                            
+                            console.log('✅ Export popup registered and initialized');
                         }
                         
                         if (window.TegakiEventBus) {
@@ -224,7 +230,7 @@ window.CoreInitializer = (function() {
                 window.TegakiEventBus.on('animation:initialized', tryInit);
             }
             
-            setTimeout(tryInit, 500);
+            setTimeout(tryInit, 300);
         }
         
         setupEventListeners() {
@@ -304,4 +310,4 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (Phase 1修正版) loaded');
+console.log('✅ core-initializer.js (Phase 1改修版・修正2) loaded');
