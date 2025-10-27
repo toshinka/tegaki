@@ -1,12 +1,18 @@
 /**
  * DrawingEngine - ペン描画統合制御クラス
- * Phase 1完全版 + 階層デバッグ
+ * Phase 1完全版: 正確なLocal座標変換
  */
 
 class DrawingEngine {
     constructor(app, layerSystem, cameraSystem, history) {
         this.app = app;
-        this.layerSystem = layerSystem;
+        
+        // 修正: layerSystem の正体は window.layerManager
+        this.layerSystem = layerSystem || window.layerManager;
+        if (!this.layerSystem) {
+            console.warn('⚠️ layerSystem未初期化。アクティブレイヤー取得時に null になります');
+        }
+        
         this.cameraSystem = cameraSystem;
         this.history = history;
         this.eventBus = window.TegakiEventBus;
@@ -143,15 +149,16 @@ class DrawingEngine {
         this.clearEraserPreview();
     }
 
-    // ========== 階層デバッグ版 ==========
+    // ========== Phase 1完全版: 正確なLocal座標変換 ==========
 
     startDrawing(x, y, event) {
         if (this.canvasMoveMode) {
             return;
         }
         
-        this.currentLayer = this.layerSystem.getActiveLayer();
-        if (!this.currentLayer || this.currentLayer.layerData?.locked) {
+        // 修正: getActiveLayer() の呼び出し
+        this.currentLayer = this.layerSystem?.getActiveLayer?.();
+        if (!this.currentLayer || this.currentLayer?.layerData?.locked) {
             return;
         }
 
@@ -160,70 +167,20 @@ class DrawingEngine {
         let localX, localY, pressure;
         
         if (event && event.clientX !== undefined && event.clientY !== undefined && this.coordinateSystem) {
-            console.group('🎯 DrawingEngine.startDrawing - 階層デバッグ');
-            console.log('1. Input clientX/Y:', event.clientX, event.clientY);
+            // ========== Phase 1完全版: 正確な座標変換パイプライン ==========
+            // Screen → Canvas → World → Local
             
-            // 階層構造を確認
-            let parent = this.currentLayer.parent;
-            let hierarchy = [];
-            while (parent) {
-                hierarchy.push({
-                    label: parent.label || parent.constructor.name,
-                    position: parent.position ? { x: parent.position.x, y: parent.position.y } : null,
-                    scale: parent.scale ? { x: parent.scale.x, y: parent.scale.y } : null
-                });
-                parent = parent.parent;
-            }
-            console.log('2. Layer階層:', hierarchy);
-            
-            // Canvas座標
             const canvas = this.coordinateSystem.screenClientToCanvas(event.clientX, event.clientY);
-            console.log('3. Canvas座標:', canvas);
-            
-            // World座標
             const world = this.coordinateSystem.canvasToWorld(canvas.x, canvas.y);
-            console.log('4. World座標:', world);
             
-            // 直接canvasContainerのtoLocalを使用してテスト
-            const canvasContainer = this.cameraSystem?.canvasContainer;
-            if (canvasContainer && canvasContainer.toLocal) {
-                try {
-                    const canvasLocal = canvasContainer.toLocal(new PIXI.Point(canvas.x, canvas.y));
-                    console.log('5. CanvasContainer.toLocal結果:', canvasLocal);
-                } catch (e) {
-                    console.log('5. CanvasContainer.toLocal エラー:', e);
-                }
-            }
-            
-            // currentLayerのtoLocalを使用
-            if (this.currentLayer.toLocal) {
-                try {
-                    const layerLocal = this.currentLayer.toLocal(new PIXI.Point(world.x, world.y));
-                    console.log('6. CurrentLayer.toLocal(world)結果:', layerLocal);
-                } catch (e) {
-                    console.log('6. CurrentLayer.toLocal エラー:', e);
-                }
-                
-                // canvasContainerからの相対座標もテスト
-                try {
-                    const layerFromCanvas = this.currentLayer.toLocal(new PIXI.Point(canvas.x, canvas.y));
-                    console.log('7. CurrentLayer.toLocal(canvas)結果:', layerFromCanvas);
-                } catch (e) {
-                    console.log('7. CurrentLayer.toLocal(canvas) エラー:', e);
-                }
-            }
-            
-            // CoordinateSystemのworldToLocal
+            // 修正: Local座標を正しく取得（worldToLocal()を使用）
             const local = this.coordinateSystem.worldToLocal(world.x, world.y, this.currentLayer);
-            console.log('8. CoordinateSystem.worldToLocal結果:', local);
             
-            console.groupEnd();
-            
-            // とりあえずworld座標を使用してみる（デバッグ用）
-            localX = world.x;
-            localY = world.y;
+            localX = local.x;
+            localY = local.y;
             pressure = event.pressure || 0.5;
         } else {
+            // フォールバック: 直接座標指定
             localX = x;
             localY = y;
             pressure = event?.pressure || 0.5;
@@ -268,12 +225,15 @@ class DrawingEngine {
         let localX, localY, pressure;
         
         if (event && event.clientX !== undefined && event.clientY !== undefined && this.coordinateSystem) {
+            // ========== Phase 1完全版: 正確な座標変換パイプライン ==========
             const canvas = this.coordinateSystem.screenClientToCanvas(event.clientX, event.clientY);
             const world = this.coordinateSystem.canvasToWorld(canvas.x, canvas.y);
             
-            // とりあえずworld座標を使用（デバッグ用）
-            localX = world.x;
-            localY = world.y;
+            // 修正: Local座標を正しく取得
+            const local = this.coordinateSystem.worldToLocal(world.x, world.y, this.currentLayer);
+            
+            localX = local.x;
+            localY = local.y;
             pressure = event.pressure || 0.5;
         } else {
             localX = x;
@@ -394,7 +354,7 @@ class DrawingEngine {
         }
     }
 
-    updateEraserPreview(worldPos) {
+    updateEraserPreview(localPos) {
         if (!this.currentLayer) return;
         
         if (!this.eraserPreviewGraphics) {
@@ -405,7 +365,7 @@ class DrawingEngine {
         const radius = this.currentSettings.size / 2;
         
         this.eraserPreviewGraphics.clear();
-        this.eraserPreviewGraphics.circle(worldPos.x, worldPos.y, radius);
+        this.eraserPreviewGraphics.circle(localPos.x, localPos.y, radius);
         this.eraserPreviewGraphics.stroke({ width: 1, color: 0xFF0000, alpha: 0.5 });
     }
     
@@ -453,7 +413,7 @@ class DrawingEngine {
         const targetLayer = this.currentLayer;
         const layerId = targetLayer.layerData?.id || targetLayer.label;
 
-        const layerIndex = this.layerSystem.activeLayerIndex;
+        const layerIndex = this.layerSystem?.activeLayerIndex;
         
         const addStrokeCommand = {
             name: activeTool === 'eraser' ? 'Erase' : 'Add Stroke',
@@ -504,5 +464,3 @@ class DrawingEngine {
         }
     }
 }
-
-console.log('✅ drawing-engine.js (階層デバッグ版 + world座標直接使用) loaded');

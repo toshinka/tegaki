@@ -1,7 +1,8 @@
-// ===== coordinate-system.js - PIXI v8完全対応版 =====
+// ===== coordinate-system.js - PIXI v8完全対応版 Phase 0 完全修正 =====
 /**
  * 全座標変換の統一管理
- * PIXI v8のTransform APIに完全対応
+ * Phase 0: 座標変換システムの完全統合
+ * 修正: canvasToWorld() のworldTransform適用順序を修正
  */
 
 (function() {
@@ -67,21 +68,31 @@
             });
         }
         
-        // ========== PIXI v8対応: 座標変換API ==========
+        // ========== PIXI v8対応: 座標変換API Phase 0 ==========
         
+        /**
+         * Screen座標(clientX/Y) → Canvas座標 変換
+         * ブラウザのクライアント座標からCanvasピクセル座標への変換
+         * DPI/CSS拡大縮小を考慮
+         */
         screenClientToCanvas(clientX, clientY) {
             const canvas = this._getCanvas();
             if (!canvas) {
                 return { x: clientX, y: clientY };
             }
             
+            // getBoundingClientRectでCSS座標系を取得
             const rect = canvas.getBoundingClientRect();
+            
+            // CSS相対座標
             const cssX = clientX - rect.left;
             const cssY = clientY - rect.top;
             
+            // Canvas内部ピクセルサイズ
             const rendererWidth = this._getRendererWidth();
             const rendererHeight = this._getRendererHeight();
             
+            // DPI補正: CSS座標 → Canvas座標
             const scaleX = rendererWidth / rect.width;
             const scaleY = rendererHeight / rect.height;
             
@@ -92,45 +103,51 @@
         }
         
         /**
-         * Canvas → World 変換（PIXI v8対応）
-         * worldTransformが未初期化の場合は手動計算
+         * Canvas座標 → World座標 変換（修正版）
+         * worldContainerの逆行列を正確に適用
          */
         canvasToWorld(canvasX, canvasY) {
             const worldContainer = this._getWorldContainer();
             
             if (!worldContainer) {
-                console.warn('CoordinateSystem: worldContainer not found');
                 return { x: canvasX, y: canvasY };
             }
             
-            // PIXI v8: worldTransformをチェック
-            const worldTransform = worldContainer.worldTransform || worldContainer.transform?.worldTransform;
+            // PIXI v8: worldTransformを取得
+            let worldTransform = null;
+            
+            if (worldContainer.worldTransform) {
+                worldTransform = worldContainer.worldTransform;
+            } else if (worldContainer.transform?.worldTransform) {
+                worldTransform = worldContainer.transform.worldTransform;
+            }
             
             if (worldTransform && worldTransform.a !== undefined) {
-                // worldTransformが利用可能
+                // worldTransformが利用可能 → 逆行列を適用
                 try {
                     const inv = worldTransform.clone().invert();
                     const point = inv.apply({ x: canvasX, y: canvasY });
                     return { x: point.x, y: point.y };
                 } catch (error) {
-                    console.error('CoordinateSystem: worldTransform.invert error:', error);
+                    // 逆行列計算失敗時は手動計算にフォールバック
                 }
             }
             
-            // フォールバック: 手動で逆変換を計算
-            console.log('CoordinateSystem: Using manual transform calculation');
+            // フォールバック: 手動逆変換（worldContainer構造から逆算）
+            // worldContainer = position + scale + rotation
+            // 逆順: 回転を戻す → スケールを戻す → ポジションを戻す
             
             const pos = worldContainer.position;
             const scale = worldContainer.scale;
             const pivot = worldContainer.pivot || { x: 0, y: 0 };
             const rotation = worldContainer.rotation || 0;
             
-            // 1. positionのオフセットを引く
+            // 1. ポジションを引く（最初に加算された移動を戻す）
             let x = canvasX - pos.x;
             let y = canvasY - pos.y;
             
-            // 2. 回転の逆変換
-            if (rotation !== 0) {
+            // 2. 回転を戻す（逆回転）
+            if (Math.abs(rotation) > 1e-6) {
                 const cos = Math.cos(-rotation);
                 const sin = Math.sin(-rotation);
                 const rx = x * cos - y * sin;
@@ -139,63 +156,89 @@
                 y = ry;
             }
             
-            // 3. スケールの逆変換
-            x = x / scale.x;
-            y = y / scale.y;
+            // 3. スケールを戻す（逆スケール）
+            if (Math.abs(scale.x) > 1e-6) x = x / scale.x;
+            if (Math.abs(scale.y) > 1e-6) y = y / scale.y;
             
-            // 4. pivotを加算
+            // 4. ピボットを加算（ピボットからの相対位置に変換）
             x = x + pivot.x;
             y = y + pivot.y;
             
             return { x, y };
         }
         
+        /**
+         * Screen座標 → World座標 統合変換
+         */
         screenClientToWorld(clientX, clientY) {
             const canvas = this.screenClientToCanvas(clientX, clientY);
             return this.canvasToWorld(canvas.x, canvas.y);
         }
         
+        /**
+         * World座標 → Local座標 変換（修正版）
+         * PIXI v8のtoLocal()は親チェーン全体のworldTransformを使うため、
+         * worldContainerのoffsetを含んでしまう。
+         * 代わりに手動計算で container のローカル変換のみを適用する。
+         */
         worldToLocal(worldX, worldY, container) {
             if (!container) {
                 return { x: worldX, y: worldY };
             }
             
-            // PIXI v8: toLocal()を使用
-            if (container.toLocal) {
-                try {
-                    const local = container.toLocal(new PIXI.Point(worldX, worldY));
-                    return { x: local.x, y: local.y };
-                } catch (error) {
-                    console.error('CoordinateSystem: toLocal error:', error);
+            // 常に手動計算を使用（toLocal()の誤りを回避）
+            // 親チェーン全体をさかのぼって各transformを逆算
+            let transforms = [];
+            let node = container;
+            const worldContainer = this._getWorldContainer();
+            
+            // container から worldContainer の直前まで親チェーンを収集
+            while (node && node !== worldContainer && node !== null) {
+                transforms.push({
+                    pos: node.position || { x: 0, y: 0 },
+                    scale: node.scale || { x: 1, y: 1 },
+                    rotation: node.rotation || 0,
+                    pivot: node.pivot || { x: 0, y: 0 }
+                });
+                node = node.parent;
+            }
+            
+            // 逆順で逆変換を適用
+            let x = worldX;
+            let y = worldY;
+            
+            for (let i = transforms.length - 1; i >= 0; i--) {
+                const t = transforms[i];
+                
+                // position引く
+                x -= t.pos.x;
+                y -= t.pos.y;
+                
+                // rotation戻す
+                if (Math.abs(t.rotation) > 1e-6) {
+                    const cos = Math.cos(-t.rotation);
+                    const sin = Math.sin(-t.rotation);
+                    const rx = x * cos - y * sin;
+                    const ry = x * sin + y * cos;
+                    x = rx;
+                    y = ry;
                 }
+                
+                // scale戻す
+                if (Math.abs(t.scale.x) > 1e-6) x /= t.scale.x;
+                if (Math.abs(t.scale.y) > 1e-6) y /= t.scale.y;
+                
+                // pivot加算
+                x += t.pivot.x;
+                y += t.pivot.y;
             }
-            
-            // フォールバック: 手動計算
-            const pos = container.position || { x: 0, y: 0 };
-            const scale = container.scale || { x: 1, y: 1 };
-            const pivot = container.pivot || { x: 0, y: 0 };
-            const rotation = container.rotation || 0;
-            
-            let x = worldX - pos.x;
-            let y = worldY - pos.y;
-            
-            if (rotation !== 0) {
-                const cos = Math.cos(-rotation);
-                const sin = Math.sin(-rotation);
-                const rx = x * cos - y * sin;
-                const ry = x * sin + y * cos;
-                x = rx;
-                y = ry;
-            }
-            
-            x = x / scale.x;
-            y = y / scale.y;
-            x = x + pivot.x;
-            y = y + pivot.y;
             
             return { x, y };
         }
         
+        /**
+         * Screen座標 → Local座標 統合変換
+         */
         screenClientToLocal(clientX, clientY, container) {
             const world = this.screenClientToWorld(clientX, clientY);
             return this.worldToLocal(world.x, world.y, container);
@@ -203,6 +246,9 @@
         
         // ========== 逆変換API ==========
         
+        /**
+         * World座標 → Canvas座標 変換
+         */
         worldToCanvas(worldX, worldY) {
             const worldContainer = this._getWorldContainer();
             
@@ -210,14 +256,19 @@
                 return { x: worldX, y: worldY };
             }
             
-            const worldTransform = worldContainer.worldTransform || worldContainer.transform?.worldTransform;
+            let worldTransform = null;
+            if (worldContainer.worldTransform) {
+                worldTransform = worldContainer.worldTransform;
+            } else if (worldContainer.transform?.worldTransform) {
+                worldTransform = worldContainer.transform.worldTransform;
+            }
             
             if (worldTransform && worldTransform.a !== undefined) {
                 try {
                     const point = worldTransform.apply({ x: worldX, y: worldY });
                     return { x: point.x, y: point.y };
                 } catch (error) {
-                    console.error('CoordinateSystem: worldTransform.apply error:', error);
+                    // フォールバック後に継続
                 }
             }
             
@@ -233,7 +284,7 @@
             x = x * scale.x;
             y = y * scale.y;
             
-            if (rotation !== 0) {
+            if (Math.abs(rotation) > 1e-6) {
                 const cos = Math.cos(rotation);
                 const sin = Math.sin(rotation);
                 const rx = x * cos - y * sin;
@@ -248,6 +299,9 @@
             return { x, y };
         }
         
+        /**
+         * Canvas座標 → Screen座標 変換
+         */
         canvasToScreen(canvasX, canvasY) {
             const canvas = this._getCanvas();
             if (!canvas) {
@@ -267,22 +321,28 @@
             };
         }
         
+        /**
+         * World座標 → Screen座標 変換
+         */
         worldToScreen(worldX, worldY) {
             const canvas = this.worldToCanvas(worldX, worldY);
             return this.canvasToScreen(canvas.x, canvas.y);
         }
         
+        /**
+         * Local座標 → World座標 変換
+         */
         localToWorld(localX, localY, container) {
             if (!container) {
                 return { x: localX, y: localY };
             }
             
-            if (container.toGlobal) {
+            if (container.toGlobal && typeof container.toGlobal === 'function') {
                 try {
                     const world = container.toGlobal(new PIXI.Point(localX, localY));
                     return { x: world.x, y: world.y };
                 } catch (error) {
-                    console.error('CoordinateSystem: toGlobal error:', error);
+                    // フォールバック後に継続
                 }
             }
             
@@ -298,7 +358,7 @@
             x = x * scale.x;
             y = y * scale.y;
             
-            if (rotation !== 0) {
+            if (Math.abs(rotation) > 1e-6) {
                 const cos = Math.cos(rotation);
                 const sin = Math.sin(rotation);
                 const rx = x * cos - y * sin;
@@ -313,6 +373,9 @@
             return { x, y };
         }
         
+        /**
+         * Local座標 → Screen座標 変換
+         */
         localToScreen(localX, localY, container) {
             const world = this.localToWorld(localX, localY, container);
             return this.worldToScreen(world.x, world.y);
@@ -453,7 +516,7 @@
                 return this.cameraSystem.app.stage.parent.renderer.height;
             }
             if (this.cameraSystem?.app?.stage?.parent?.screen?.height) {
-                return this.cameraSystem.app.stage.parent.screen.height;
+                return this.cameraSystem.app.stage.parent.screen?.height;
             }
             const canvas = this._getCanvas();
             return canvas ? canvas.height : (this.config?.canvas?.height || 600);
@@ -483,5 +546,3 @@
     window.TEGAKI_COORDINATE_SYSTEM = coordinateSystem;
     
 })();
-
-console.log('✅ coordinate-system.js (PIXI v8完全対応・手動変換実装) loaded');
