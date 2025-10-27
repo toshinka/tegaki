@@ -1,0 +1,855 @@
+================================================================================
+段階的改修計画書 v2.0 - 消しゴム＋ペン描画改善
+PixiJS v8.13 Drawing Tool - Incremental Implementation Plan
+================================================================================
+
+【設計方針】
+- Phase 1: 消しゴム基盤（RenderTextureマスク）- 最優先
+- Phase 2: ペン描画基盤（圧力補正・UIスライダー）
+- Phase 3: ペン描画滑らか化（Catmull-Rom補間）
+- 高度な機能（GPU最適化・SDF・Mesh方式）は保留
+
+【技術スタック】
+- PixiJS v8.13（RenderTexture, Graphics, BlendMode.ERASE）
+- ES2023（class構文、非モジュール）
+- 既存システム活用（pressure-handler.js, stroke-recorder.js等）
+
+【禁止事項】
+- perfect-freehand導入（既存システムで対応）
+- Canvas2D直接操作（サムネイル除く）
+- 二重実装・過剰な最適化
+
+
+================================================================================
+Phase 1: 消しゴム基盤実装【Week 1-2】
+================================================================================
+
+目的: RenderTextureマスクによる動作する消しゴム機能
+期間: 1-2週間
+難易度: ★☆☆
+
+────────────────────────────────────────
+実装ファイル構成
+────────────────────────────────────────
+
+【改修】system/data-models.js
+役割: LayerModelにマスク管理機能追加
+処理位置: データモデル層（最下層）
+参照: 既存 destroyMask() (行53-60)
+
+【改修】system/layer-system.js
+役割: レイヤー作成・削除・初期化時のマスク統合
+処理位置: レイヤー管理層（中間層）
+参照: init() (行623-677), createLayer() (行686-738), deleteLayer() (行887-954)
+
+【改修】system/drawing/drawing-engine.js
+役割: 消しゴムツール選択時の描画処理分岐
+処理位置: 描画エンジン層（上位層）
+参照: stopDrawing() (行134-165), finalizeStroke() (行241-258)
+
+【参照】system/drawing/eraser-mask-renderer.js
+役割: 既存の消しゴム描画処理（完全実装済み）
+処理位置: レンダリング層
+メソッド: renderEraserToMask(), captureMaskSnapshot(), restoreMaskSnapshot()
+
+
+────────────────────────────────────────
+Step 1.1: LayerModel.initializeMask()
+────────────────────────────────────────
+ファイル: system/data-models.js
+行: 55付近（destroyMask()の上）
+
+実装内容:
+- RenderTexture.create() でマスクテクスチャ生成
+- 白矩形(0xFFFFFF)で全体塗りつぶし（全表示状態）
+- PIXI.Sprite(maskTexture) 生成
+- プロパティ設定: maskTexture, maskSprite, _maskInitialized
+
+キーポイント:
+```javascript
+initializeMask(width, height, renderer) {
+    if (this._maskInitialized) this.destroyMask();
+    
+    this.maskTexture = PIXI.RenderTexture.create({ width, height });
+    
+    const whiteRect = new PIXI.Graphics();
+    whiteRect.rect(0, 0, width, height).fill({ color: 0xFFFFFF });
+    
+    renderer.render({ container: whiteRect, target: this.maskTexture, clear: true });
+    whiteRect.destroy();
+    
+    this.maskSprite = new PIXI.Sprite(this.maskTexture);
+    this.maskSprite.label = 'mask_sprite';
+    this._maskInitialized = true;
+    
+    return true;
+}
+```
+
+注意:
+- PixiJS v8.13構文使用（renderer.render({ container, target })）
+- clear: true で確実初期化
+- 白=表示、黒=非表示の規約
+
+
+────────────────────────────────────────
+Step 1.2: LayerSystem.setApp() マスク初期化
+────────────────────────────────────────
+ファイル: system/layer-system.js
+行: 873-882 setApp()
+参照: init() (既存レイヤー生成パターン)
+
+処理フロー:
+1. app.renderer取得確認
+2. 全レイヤー走査してhasMask()チェック
+3. 未初期化レイヤーにinitializeMask()実行
+4. maskSpriteをレイヤーの最初の子として追加（index 0）
+5. _applyMaskToLayerGraphics()でGraphicsにマスク適用
+
+新規メソッド追加:
+```javascript
+_applyMaskToLayerGraphics(layer) {
+    if (!layer.layerData?.maskSprite) return;
+    for (const child of layer.children) {
+        if (child === layer.layerData.maskSprite || 
+            child === layer.layerData.backgroundGraphics) continue;
+        if (child instanceof PIXI.Graphics) {
+            child.mask = layer.layerData.maskSprite;
+        }
+    }
+}
+```
+
+注意:
+- maskSpriteは必ずindex 0に配置
+- backgroundGraphicsはマスク対象外
+- maskSprite自身にはマスク設定しない
+
+
+────────────────────────────────────────
+Step 1.3: LayerSystem.createLayer() 統合
+────────────────────────────────────────
+ファイル: system/layer-system.js
+行: 686-738 createLayer()
+参照: init()のレイヤー作成パターン
+
+追加処理:
+- LayerModel作成後にinitializeMask()実行
+- maskSpriteをlayer.addChild()
+- History記録のundo時にdestroyMask()追加
+
+キーポイント:
+```javascript
+// レイヤー作成後
+if (this.app?.renderer) {
+    const ok = layerModel.initializeMask(
+        this.config.canvas.width,
+        this.config.canvas.height,
+        this.app.renderer
+    );
+    if (ok && layerModel.maskSprite) {
+        layer.addChild(layerModel.maskSprite);
+    }
+}
+
+// History記録
+entry.undo = () => {
+    this.currentCutContainer.removeChild(layer);
+    layer.layerData?.destroyMask(); // 追加
+    // 既存処理...
+};
+```
+
+
+────────────────────────────────────────
+Step 1.4: LayerSystem.deleteLayer() マスク破棄
+────────────────────────────────────────
+ファイル: system/layer-system.js
+行: 887-954 deleteLayer()
+参照: destroyMask() (data-models.js)
+
+追加処理:
+- do実行時にdestroyMask()呼び出し
+- undo実行時にマスク再初期化
+
+キーポイント:
+```javascript
+entry.do = () => {
+    layer.layerData?.destroyMask(); // 追加
+    this.currentCutContainer.removeChild(layer);
+    // 既存処理...
+};
+
+entry.undo = () => {
+    if (layer.layerData && this.app?.renderer) {
+        layer.layerData.initializeMask(
+            this.config.canvas.width,
+            this.config.canvas.height,
+            this.app.renderer
+        );
+        if (layer.layerData.maskSprite) {
+            layer.addChildAt(layer.layerData.maskSprite, 0);
+            this._applyMaskToLayerGraphics(layer);
+        }
+    }
+    // 既存処理...
+};
+```
+
+
+────────────────────────────────────────
+Step 1.5: DrawingEngine 消しゴム統合
+────────────────────────────────────────
+ファイル: system/drawing/drawing-engine.js
+行: 16-30 constructor, 134-165 stopDrawing(), 241-258 finalizeStroke()
+参照: eraser-mask-renderer.js（既存実装）
+
+処理フロー:
+1. constructor: eraserRendererインスタンス化
+2. stopDrawing: tool === 'eraser' 判定で分岐
+3. eraserRenderer.renderEraserToMask()実行
+4. History記録（before/after snapshot）
+5. finalizeStroke: ペン描画時にマスク適用
+
+キーポイント:
+```javascript
+// constructor
+constructor(app, layerSystem, cameraSystem, history) {
+    // 既存初期化...
+    this.eraserRenderer = new EraserMaskRenderer(app);
+}
+
+// stopDrawing
+stopDrawing() {
+    if (!this.isDrawing) return;
+    
+    const strokeData = this.strokeRecorder.endStroke();
+    const tool = this.currentTool;
+    
+    if (tool === 'eraser' && this.currentLayer && strokeData.points.length > 0) {
+        const layerData = this.currentLayer.layerData;
+        
+        if (layerData?.hasMask?.()) {
+            const radius = this.currentSettings.size / 2;
+            const beforeSnapshot = this.eraserRenderer.captureMaskSnapshot(layerData);
+            
+            const ok = this.eraserRenderer.renderEraserToMask(
+                layerData,
+                strokeData.points,
+                radius
+            );
+            
+            if (ok) {
+                const afterSnapshot = this.eraserRenderer.captureMaskSnapshot(layerData);
+                
+                const entry = {
+                    name: 'Erase',
+                    do: async () => {
+                        await this.eraserRenderer.restoreMaskSnapshot(layerData, afterSnapshot);
+                        this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                    },
+                    undo: async () => {
+                        await this.eraserRenderer.restoreMaskSnapshot(layerData, beforeSnapshot);
+                        this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                    }
+                };
+                
+                this.history?.push(entry);
+                this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+            }
+        }
+    } else {
+        this.finalizeStroke(strokeData, tool);
+    }
+    
+    this.clearPreview();
+    this.isDrawing = false;
+}
+
+// finalizeStroke
+finalizeStroke(strokeData, tool = null) {
+    // 既存ストローク生成...
+    const strokeObject = this.strokeRenderer.renderFinalStroke(strokeData, this.currentSettings);
+    
+    // マスク適用追加
+    const layerData = this.currentLayer.layerData;
+    if (layerData?.hasMask?.() && layerData.maskSprite) {
+        strokeObject.mask = layerData.maskSprite;
+    }
+    
+    // 既存History記録...
+}
+```
+
+
+────────────────────────────────────────
+Phase 1 完了条件
+────────────────────────────────────────
+□ ページリロード後、エラーなく起動
+□ 既存レイヤーにマスクが存在
+□ 新規レイヤー作成時にマスク自動作成
+□ ペンツールで描画できる
+□ 消しゴムツールで描画した部分が消える
+□ 消した部分から下のレイヤーが透けて見える
+□ Undo/Redoで消しゴムが復元・再消去される
+□ レイヤー削除時にメモリリークなし
+□ 複数回の描画・消去を繰り返しても安定動作
+
+
+================================================================================
+Phase 2: ペン描画基盤改善【Week 3】
+================================================================================
+
+目的: 圧力補正・UIスライダー・色変更
+期間: 1週間
+難易度: ★☆☆
+
+────────────────────────────────────────
+実装ファイル構成
+────────────────────────────────────────
+
+【改修】config.js
+役割: ペンデフォルト設定変更
+処理位置: 設定層（最下層）
+
+【改修】system/drawing/brush-settings.js
+役割: ブラシサイズ・透明度管理とEventBus連携
+処理位置: 描画設定層（中間層）
+
+【改修】system/drawing/pressure-handler.js
+役割: 圧力キャリブレーション機構追加
+処理位置: 入力処理層（中間層）
+
+【改修】ui/quick-access-popup.js
+役割: ペンスライダーUI追加
+処理位置: UI層（上位層）
+
+
+────────────────────────────────────────
+Step 2.1: ペン色変更 + デフォルト設定
+────────────────────────────────────────
+ファイル: config.js
+行: BRUSH_DEFAULTS付近
+
+変更内容:
+```javascript
+BRUSH_DEFAULTS: {
+    color: 0x800000, // futaba-maroon
+    size: 3,
+    opacity: 1.0,
+    minWidth: 1,
+    maxWidth: 10
+}
+```
+
+
+────────────────────────────────────────
+Step 2.2: 圧力キャリブレーション機構
+────────────────────────────────────────
+ファイル: system/drawing/pressure-handler.js
+参照: 既存 getPressure(), onPointerDown()
+
+追加プロパティ:
+- baseline: number（初期圧力基準値）
+- calibrationSamples: number[]（キャリブレーション用サンプル）
+- tiltX, tiltY, twist: number（傾き情報）
+
+追加メソッド:
+```javascript
+// onPointerDown内で呼び出し
+_calibrateBaseline(rawPressure) {
+    if (!this.calibrationSamples) this.calibrationSamples = [];
+    this.calibrationSamples.push(rawPressure);
+    
+    if (this.calibrationSamples.length >= 5) {
+        this.baseline = Math.min(...this.calibrationSamples);
+        this.calibrationSamples = [];
+    }
+}
+
+// 既存getPressure()を拡張
+getAdjustedPressure(rawPressure) {
+    if (this.baseline === undefined) return rawPressure;
+    return Math.max(0, (rawPressure - this.baseline) / (1 - this.baseline));
+}
+
+// 傾き情報取得
+getTiltData(event) {
+    return {
+        x: event.tiltX || 0,
+        y: event.tiltY || 0,
+        twist: event.twist || 0
+    };
+}
+```
+
+注意:
+- onPointerDown時にbaseline初期化
+- EventBus 'stroke:start' で連携
+
+
+────────────────────────────────────────
+Step 2.3: ペンスライダーUI追加
+────────────────────────────────────────
+ファイル: ui/quick-access-popup.js
+参照: 既存UI生成パターン
+
+追加メソッド:
+```javascript
+createPenControls() {
+    const container = this.domBuilder.create('div', {
+        class: 'pen-controls'
+    });
+    
+    // サイズスライダー
+    const sizeSlider = this.domBuilder.create('input', {
+        type: 'range',
+        min: '1',
+        max: '50',
+        value: '3',
+        class: 'pen-size-slider'
+    });
+    
+    sizeSlider.addEventListener('input', (e) => {
+        EventBus.emit('brush:size-changed', parseFloat(e.target.value));
+    });
+    
+    // 透明度スライダー
+    const opacitySlider = this.domBuilder.create('input', {
+        type: 'range',
+        min: '0',
+        max: '1',
+        step: '0.01',
+        value: '1.0',
+        class: 'pen-opacity-slider'
+    });
+    
+    opacitySlider.addEventListener('input', (e) => {
+        EventBus.emit('brush:opacity-changed', parseFloat(e.target.value));
+    });
+    
+    container.appendChild(sizeSlider);
+    container.appendChild(opacitySlider);
+    
+    return container;
+}
+```
+
+注意:
+- ペンツール選択中のみ表示
+- StateManager.currentToolと連携
+
+
+────────────────────────────────────────
+Step 2.4: BrushSettings EventBus連携
+────────────────────────────────────────
+ファイル: system/drawing/brush-settings.js
+参照: 既存プロパティ設定
+
+追加処理:
+```javascript
+constructor(config) {
+    this.size = config.BRUSH_DEFAULTS.size;
+    this.opacity = config.BRUSH_DEFAULTS.opacity;
+    
+    // EventBus購読
+    EventBus.on('brush:size-changed', (size) => this.setSize(size));
+    EventBus.on('brush:opacity-changed', (opacity) => this.setOpacity(opacity));
+}
+
+setSize(size) {
+    this.size = Math.max(1, Math.min(50, size));
+}
+
+setOpacity(opacity) {
+    this.opacity = Math.max(0, Math.min(1, opacity));
+}
+```
+
+
+────────────────────────────────────────
+Phase 2 完了条件
+────────────────────────────────────────
+□ ペン色が#800000で描画される
+□ 圧力0.01で1px点が描画される
+□ ペンサイズスライダーで1-50px変更可能
+□ 透明度スライダーで0-1.0調整可能
+□ スライダー変更が即座に反映される
+□ ペンツール切替時のみスライダー表示
+
+
+================================================================================
+Phase 3: ペン描画滑らか化【Week 4】
+================================================================================
+
+目的: Catmull-Rom補間による滑らかなストローク
+期間: 1週間
+難易度: ★★☆
+
+────────────────────────────────────────
+実装ファイル構成
+────────────────────────────────────────
+
+【新規】system/drawing/curve-interpolator.js
+役割: Catmull-Rom補間クラス
+処理位置: 描画処理層（中間層）
+
+【改修】system/drawing/stroke-recorder.js
+役割: 補間統合
+処理位置: ストローク記録層（中間層）
+参照: finalizePath() (既存)
+
+【改修】system/drawing/pressure-handler.js
+役割: 距離ベース適応フィルタ
+処理位置: 入力処理層（中間層）
+
+【改修】system/data-models.js
+役割: StrokeDataにoriginalPoints追加
+処理位置: データモデル層（最下層）
+
+
+────────────────────────────────────────
+Step 3.1: Catmull-Rom補間クラス作成
+────────────────────────────────────────
+ファイル: 新規 system/drawing/curve-interpolator.js
+
+実装内容:
+```javascript
+class CurveInterpolator {
+    static catmullRom(points, tension = 0.5) {
+        if (points.length < 2) return points;
+        
+        const result = [];
+        const segmentPoints = 10; // 各区間の補間点数
+        
+        for (let i = 0; i < points.length - 1; i++) {
+            const p0 = points[Math.max(0, i - 1)];
+            const p1 = points[i];
+            const p2 = points[i + 1];
+            const p3 = points[Math.min(points.length - 1, i + 2)];
+            
+            for (let t = 0; t < segmentPoints; t++) {
+                const s = t / segmentPoints;
+                const interpolated = this._interpolatePoint(p0, p1, p2, p3, s, tension);
+                result.push(interpolated);
+            }
+        }
+        
+        result.push(points[points.length - 1]);
+        return result;
+    }
+    
+    static _interpolatePoint(p0, p1, p2, p3, t, tension) {
+        const t2 = t * t;
+        const t3 = t2 * t;
+        
+        const v0 = (p2.x - p0.x) * tension;
+        const v1 = (p3.x - p1.x) * tension;
+        
+        const x = (2 * p1.x - 2 * p2.x + v0 + v1) * t3 +
+                  (-3 * p1.x + 3 * p2.x - 2 * v0 - v1) * t2 +
+                  v0 * t + p1.x;
+        
+        const v0y = (p2.y - p0.y) * tension;
+        const v1y = (p3.y - p1.y) * tension;
+        
+        const y = (2 * p1.y - 2 * p2.y + v0y + v1y) * t3 +
+                  (-3 * p1.y + 3 * p2.y - 2 * v0y - v1y) * t2 +
+                  v0y * t + p1.y;
+        
+        const pressure = p1.pressure + (p2.pressure - p1.pressure) * t;
+        
+        return { x, y, pressure };
+    }
+    
+    static adaptiveSample(points, maxDistance = 5) {
+        const result = [points[0]];
+        
+        for (let i = 1; i < points.length; i++) {
+            const prev = result[result.length - 1];
+            const curr = points[i];
+            const dist = Math.sqrt(
+                (curr.x - prev.x) ** 2 + (curr.y - prev.y) ** 2
+            );
+            
+            if (dist > maxDistance) {
+                const steps = Math.ceil(dist / maxDistance);
+                for (let j = 1; j < steps; j++) {
+                    const t = j / steps;
+                    result.push({
+                        x: prev.x + (curr.x - prev.x) * t,
+                        y: prev.y + (curr.y - prev.y) * t,
+                        pressure: prev.pressure + (curr.pressure - prev.pressure) * t
+                    });
+                }
+            }
+            
+            result.push(curr);
+        }
+        
+        return result;
+    }
+}
+
+window.CurveInterpolator = CurveInterpolator;
+```
+
+
+────────────────────────────────────────
+Step 3.2: StrokeRecorder統合
+────────────────────────────────────────
+ファイル: system/drawing/stroke-recorder.js
+参照: finalizePath()
+
+変更内容:
+```javascript
+finalizePath() {
+    if (this.samples.length < 2) return null;
+    
+    // 生座標保存
+    const originalPoints = [...this.samples];
+    
+    // Catmull-Rom補間適用
+    const interpolated = window.CurveInterpolator.catmullRom(this.samples, 0.5);
+    
+    // StrokeDataに格納
+    this.strokeData.points = interpolated;
+    this.strokeData.originalPoints = originalPoints;
+    
+    return this.strokeData;
+}
+```
+
+
+────────────────────────────────────────
+Step 3.3: StrokeData拡張
+────────────────────────────────────────
+ファイル: system/data-models.js
+参照: StrokeData定義
+
+追加プロパティ:
+```javascript
+class StrokeData {
+    constructor(data) {
+        // 既存プロパティ...
+        this.points = data.points || [];
+        this.originalPoints = data.originalPoints || []; // 補間前の生座標
+    }
+}
+```
+
+
+────────────────────────────────────────
+Step 3.4: 距離ベース適応フィルタ
+────────────────────────────────────────
+ファイル: system/drawing/pressure-handler.js
+参照: 既存 getAdjustedPressure()
+
+追加メソッド:
+```javascript
+applyDistanceFilter(currentPressure, prevPressure, distance) {
+    // 短距離（< 5px）→ alpha=0.9（即座反映）
+    // 長距離（> 20px）→ alpha=0.3（スムージング強）
+    const alpha = this._calculateAlpha(distance);
+    return prevPressure * (1 - alpha) + currentPressure * alpha;
+}
+
+_calculateAlpha(distance) {
+    if (distance < 5) return 0.9;
+    if (distance > 20) return 0.3;
+    return 0.9 - ((distance - 5) / 15) * 0.6;
+}
+```
+
+統合箇所:
+- stroke-recorder.js の recordPoint() 内で使用
+- 前サンプルとの2Dユークリッド距離計算後に適用
+
+
+────────────────────────────────────────
+Phase 3 完了条件
+────────────────────────────────────────
+□ Catmull-Rom補間でストロークが滑らか
+□ 短距離区間で圧力が即座に反映
+□ 長距離区間でスムージング適用
+□ 補間前の生座標がoriginalPointsに保存
+□ Undo/Redoで補間済みストロークが復元
+□ パフォーマンス劣化なし（60fps維持）
+
+
+================================================================================
+Phase 4: 統合テスト【Week 5】
+================================================================================
+
+────────────────────────────────────────
+総合テストシナリオ
+────────────────────────────────────────
+
+機能テスト:
+□ レイヤー作成/削除でマスク正常動作
+□ ペン→消しゴム→ペン の切り替え
+□ 複数レイヤー間での消しゴム独立動作
+□ Undo/Redo 50回以上の連続動作
+□ ブラシサイズ変更（1px〜50px）
+□ 透明度変更（0〜1.0）
+□ 筆圧対応（Wacomタブレット）
+□ ストローク補間の滑らかさ
+□ レイヤー不透明度との併用
+
+パフォーマンステスト:
+□ 1080p解像度で60fps
+□ 500ストローク描画後も安定
+□ メモリ使用量: 300MB以内
+□ Undo履歴50個でも快適
+□ CPU使用率: 20%以下（アイドル時）
+
+コンソール確認コマンド:
+```javascript
+// システム初期化確認
+const ls = window.layerSystem || window.coreEngine?.layerSystem;
+console.log('LayerSystem:', ls);
+
+// レイヤーマスク確認
+ls.getLayers().forEach((layer, i) => {
+    console.log(`Layer ${i}:`, {
+        hasMask: layer.layerData?.hasMask(),
+        maskTexture: !!layer.layerData?.maskTexture,
+        maskSprite: !!layer.layerData?.maskSprite
+    });
+});
+
+// 消しゴムツール選択
+window.TegakiEventBus?.emit('tool:select', { tool: 'eraser' });
+
+// DrawingEngine確認
+const de = window.drawingEngine || window.coreEngine?.drawingEngine;
+console.log('Current Tool:', de?.currentTool);
+console.log('Eraser Renderer:', de?.eraserRenderer);
+```
+
+
+────────────────────────────────────────
+最適化チェックリスト
+────────────────────────────────────────
+
+メモリ最適化:
+□ RenderTexture再利用
+□ Graphics.destroy()の徹底
+□ スナップショット自動クリーンアップ
+□ WeakMapでの参照管理
+
+描画最適化:
+□ BlendMode.ERASE活用
+□ clear: false で増分描画
+□ 不要な再描画の削減
+
+コード品質:
+□ コンソールエラーゼロ
+□ 命名規則統一
+□ EventBus経由の疎結合
+□ 依存関係の明確化
+
+
+================================================================================
+トラブルシューティング
+================================================================================
+
+問題: マスクが表示されない
+→ setApp()でaddChildAt(maskSprite, 0)確認
+
+問題: 消しゴムで全体が消える
+→ initializeMask()で白矩形(0xFFFFFF)塗りつぶし確認
+
+問題: Undo/Redoでエラー
+→ History.apply()をasync関数に変更
+
+問題: メモリリーク
+→ destroyMask()でdestroy(true)呼び出し確認
+
+問題: 描画が遅い
+→ clear: false で増分描画に変更
+
+問題: 補間がカクカク
+→ CurveInterpolator.catmullRomのsegmentPoints調整（10→20）
+
+問題: 圧力反応が鈍い
+→ pressure-handler.jsのalphaパラメータ調整
+
+
+================================================================================
+EventBus イベント定義
+================================================================================
+
+発行イベント:
+- 'layer:erased' { layerId, pointCount }
+- 'layer:mask-initialized' { layerId }
+- 'brush:size-changed' { size }
+- 'brush:opacity-changed' { opacity }
+
+購読イベント:
+- 'tool:select' { tool }
+- 'stroke:start'
+- 'stroke:point' { x, y, pressure }
+- 'stroke:end' { strokeData }
+
+
+================================================================================
+ファイル改修一覧
+================================================================================
+
+Phase 1（消しゴム）:
+- system/data-models.js: LayerModel.initializeMask() 追加
+- system/layer-system.js: setApp(), createLayer(), deleteLayer() 拡張
+- system/drawing/drawing-engine.js: stopDrawing(), finalizeStroke() 拡張
+
+Phase 2（ペン基盤）:
+- config.js: BRUSH_DEFAULTS変更
+- system/drawing/brush-settings.js: EventBus連携追加
+- system/drawing/pressure-handler.js: キャリブレーション機構追加
+- ui/quick-access-popup.js: createPenControls() 追加
+
+Phase 3（ペン滑らか化）:
+- system/drawing/curve-interpolator.js: 新規作成
+- system/drawing/stroke-recorder.js: finalizePath() 拡張
+- system/data-models.js: StrokeData.originalPoints 追加
+- system/drawing/pressure-handler.js: applyDistanceFilter() 追加
+
+
+================================================================================
+完了基準
+================================================================================
+
+Phase 1:
+□ 消しゴムが動作する
+□ マスク自動作成・破棄
+□ Undo/Redo安定動作
+□ メモリリークなし
+
+Phase 2:
+□ ペン色が#800000
+□ 圧力0.01で1px描画
+□ スライダーで設定変更可能
+□ UI連携正常動作
+
+Phase 3:
+□ ストローク滑らか化
+□ 補間品質良好
+□ パフォーマンス維持（60fps）
+□ 生座標保存
+
+Phase 4:
+□ 全機能テスト通過
+□ パフォーマンステスト通過
+□ コンソールエラーゼロ
+□ メモリ使用量正常
+
+
+================================================================================
+以上
+================================================================================
+
+【重要】
+- Phase 1から順次実装し、各Phase完了後に動作確認必須
+- 問題があれば該当Stepのみ修正
+- 高度な機能（GPU最適化・SDF・Mesh方式）は保留
+- 初心者向け推奨: Phase 1-3の完全完了を優先
