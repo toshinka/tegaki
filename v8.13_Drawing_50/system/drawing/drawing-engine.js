@@ -1,7 +1,6 @@
 /**
  * DrawingEngine - ペン描画統合制御クラス
- * Phase 1改修: CoordinateSystem統一API使用
- * 座標変換を完全にCoordinateSystemに委譲
+ * Phase 2改修: CameraSystem.screenClientToWorld() 使用
  */
 
 class DrawingEngine {
@@ -9,7 +8,6 @@ class DrawingEngine {
         this.app = app;
         this.layerSystem = layerSystem;
         this.cameraSystem = cameraSystem;
-        this.coordinateSystem = window.CoordinateSystem; // Phase 1: 追加
         this.history = history;
         this.eventBus = window.TegakiEventBus;
 
@@ -69,12 +67,11 @@ class DrawingEngine {
     _setupLayerTransformListener() {
         if (!this.eventBus) return;
         this.eventBus.on('layer:transform-updated', ({ layerId }) => {
-            if (this.eventBus) {
-            this.eventBus.emit('layer:modified', {
-                layerId: layerId,
-                tool: activeTool
-            });
-        }
+            if (this.isDrawing && this.currentLayer?.layerData?.id === layerId) {
+                this.cancelStroke();
+            }
+            this.layerTransformDirty = true;
+        });
     }
 
     getBrushSettings() {
@@ -139,20 +136,12 @@ class DrawingEngine {
         this.clearPreview();
         this.clearEraserPreview();
     }
-}
 
-console.log('✅ drawing-engine.js (Phase 1: CoordinateSystem統一API使用) loaded');.isDrawing && this.currentLayer?.layerData?.id === layerId) {
-                this.cancelStroke();
-            }
-            this.layerTransformDirty = true;
-        });
-    }
-
-    // ========== Phase 1改修: CoordinateSystem統一API使用 ==========
+    // ========== Phase 2改修: CameraSystem.screenClientToWorld() 使用 ==========
 
     /**
      * 描画開始
-     * Phase 1: coordinateSystem.screenClientToLocal() を使用
+     * Phase 2: cameraSystem.screenClientToWorld() → container.toLocal()
      */
     startDrawing(x, y, event) {
         if (this.canvasMoveMode) {
@@ -166,19 +155,15 @@ console.log('✅ drawing-engine.js (Phase 1: CoordinateSystem統一API使用) lo
 
         this.currentSettings = this.getBrushSettings();
 
-        // Phase 1: CoordinateSystem統一API使用
+        // Phase 2: CameraSystem.screenClientToWorld() 使用
         if (event && event.clientX !== undefined && event.clientY !== undefined) {
-            // Screen → Local の直接変換
-            const local = this.coordinateSystem.screenClientToLocal(
-                event.clientX,
-                event.clientY,
-                this.currentLayer
-            );
+            const world = this.cameraSystem.screenClientToWorld(this.app, event.clientX, event.clientY);
+            const container = this.currentLayer;
+            const local = container.toLocal(new PIXI.Point(world.x, world.y));
             
             const pressure = event.pressure || 0.5;
             this.strokeRecorder.startStroke(local.x, local.y, pressure);
         } else {
-            // フォールバック（旧形式の引数）
             const pressure = event?.pressure || 0.5;
             this.strokeRecorder.startStroke(x, y, pressure);
         }
@@ -207,7 +192,7 @@ console.log('✅ drawing-engine.js (Phase 1: CoordinateSystem統一API使用) lo
 
     /**
      * 描画継続
-     * Phase 1: coordinateSystem.screenClientToLocal() を使用
+     * Phase 2: cameraSystem.screenClientToWorld() 使用
      */
     continueDrawing(x, y, event) {
         if (!this.isDrawing) return;
@@ -222,19 +207,15 @@ console.log('✅ drawing-engine.js (Phase 1: CoordinateSystem統一API使用) lo
             return;
         }
 
-        // Phase 1: CoordinateSystem統一API使用
+        // Phase 2: CameraSystem.screenClientToWorld() 使用
         if (event && event.clientX !== undefined && event.clientY !== undefined) {
-            // Screen → Local の直接変換
-            const local = this.coordinateSystem.screenClientToLocal(
-                event.clientX,
-                event.clientY,
-                this.currentLayer
-            );
+            const world = this.cameraSystem.screenClientToWorld(this.app, event.clientX, event.clientY);
+            const container = this.currentLayer;
+            const local = container.toLocal(new PIXI.Point(world.x, world.y));
             
             const pressure = event.pressure || 0.5;
             this.strokeRecorder.addPoint(local.x, local.y, pressure);
         } else {
-            // フォールバック
             const pressure = event?.pressure || 0.5;
             this.strokeRecorder.addPoint(x, y, pressure);
         }
@@ -258,8 +239,6 @@ console.log('✅ drawing-engine.js (Phase 1: CoordinateSystem統一API使用) lo
             });
         }
     }
-
-    // ========== 以下は変更なし ==========
 
     stopDrawing() {
         if (!this.isDrawing) return;
@@ -455,4 +434,13 @@ console.log('✅ drawing-engine.js (Phase 1: CoordinateSystem統一API使用) lo
             this.layerSystem.requestThumbnailUpdate(layerIndex);
         }
 
-        if (this
+        if (this.eventBus) {
+            this.eventBus.emit('layer:modified', {
+                layerId: layerId,
+                tool: activeTool
+            });
+        }
+    }
+}
+
+console.log('✅ drawing-engine.js (Phase 2: CameraSystem統一API使用) loaded');

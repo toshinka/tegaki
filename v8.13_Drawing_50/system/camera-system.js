@@ -1,6 +1,5 @@
-// ===== system/camera-system.js - Phase 0-2: 座標系完全統合版 =====
-// Phase 0: CoordinateSystem統合
-// Phase 1: screenClientToWorld削除（CoordinateSystemに委譲）
+// ===== system/camera-system.js - Phase 1-2: 座標変換API統合版 =====
+// Phase 1: screenClientToWorld/worldToScreen 実装
 // Phase 2: resizeCanvas厳密実装
 
 (function() {
@@ -11,7 +10,6 @@
             this.app = null;
             this.config = null;
             this.eventBus = null;
-            this.coordinateSystem = null; // Phase 0: 追加
             
             this.isDragging = false;
             this.isScaleRotateDragging = false;
@@ -46,7 +44,6 @@
         init(stage, eventBus, config) {
             this.eventBus = eventBus;
             this.config = config || window.TEGAKI_CONFIG;
-            this.coordinateSystem = window.CoordinateSystem; // Phase 0: 参照取得
             
             if (stage && stage.addChild) {
                 this.app = { stage: stage };
@@ -152,6 +149,45 @@
             this._emitTransformChanged();
         }
 
+        // ========== Phase 1: 座標変換API実装 ==========
+        
+        /**
+         * Screen座標(clientX/Y) → World座標 変換
+         * @param {Object} app - PIXIアプリケーション（renderer, viewを持つ）
+         * @param {number} clientX - ブラウザのclientX
+         * @param {number} clientY - ブラウザのclientY
+         * @returns {{x: number, y: number}} World座標
+         */
+        screenClientToWorld(app, clientX, clientY) {
+            // 簡易版: 直接worldContainerのtoLocalを使用
+            if (!this.worldContainer) {
+                return { x: clientX, y: clientY };
+            }
+            
+            // PIXIのグローバル座標系からWorld座標系への変換
+            const worldPoint = this.worldContainer.toLocal({ x: clientX, y: clientY });
+            
+            return { x: worldPoint.x, y: worldPoint.y };
+        }
+        
+        /**
+         * World座標 → Screen座標 変換
+         * @param {Object} app - PIXIアプリケーション
+         * @param {number} worldX - World座標X
+         * @param {number} worldY - World座標Y
+         * @returns {{x: number, y: number}} Screen座標(renderer座標)
+         */
+        worldToScreen(app, worldX, worldY) {
+            if (!this.worldContainer) {
+                return { x: worldX, y: worldY };
+            }
+            
+            const worldTransform = this.worldContainer.transform.worldTransform;
+            const screenPoint = worldTransform.apply({ x: worldX, y: worldY });
+            
+            return { x: screenPoint.x, y: screenPoint.y };
+        }
+
         // ========== Phase 2: resizeCanvas厳密実装 ==========
         
         /**
@@ -180,7 +216,6 @@
             this.updateGuideLinesForCanvasResize();
             
             // Phase 2: alignOptionsに基づいてworldContainerの位置を調整
-            // これにより「見た目の位置」が保持される
             const widthDiff = newWidth - oldWidth;
             const heightDiff = newHeight - oldHeight;
             
@@ -193,7 +228,6 @@
             } else if (alignOptions.horizontal === 'right') {
                 offsetX = widthDiff;
             }
-            // 'left' の場合は offsetX = 0 (デフォルト)
             
             // 縦方向のオフセット計算
             if (alignOptions.vertical === 'center') {
@@ -201,13 +235,12 @@
             } else if (alignOptions.vertical === 'bottom') {
                 offsetY = heightDiff;
             }
-            // 'top' の場合は offsetY = 0 (デフォルト)
             
-            // worldContainerの位置を調整（カメラの見た目位置を維持）
+            // worldContainerの位置を調整
             this.worldContainer.position.x += offsetX;
             this.worldContainer.position.y += offsetY;
             
-            // Phase 0-2: イベント発火（CoordinateSystemのキャッシュクリア含む）
+            // イベント発火
             if (this.eventBus) {
                 this.eventBus.emit('camera:transform-changed');
                 this.eventBus.emit('camera:resized', { 
@@ -217,12 +250,6 @@
                     oldHeight,
                     align: alignOptions
                 });
-                
-                // サムネイル更新を遅延実行
-                setTimeout(() => {
-                    this.eventBus.emit('animation:thumbnails-need-update');
-                    this.eventBus.emit('layer:thumbnails-need-update');
-                }, 100);
             }
         }
 
@@ -580,10 +607,9 @@
             }
         }
 
-        // ========== 互換性API（レガシー・削除予定） ==========
+        // ========== 互換性API ==========
         
         screenToLayer(screenX, screenY) {
-            // Phase 0-1: CoordinateSystemに委譲推奨
             return this.canvasContainer.toLocal({ x: screenX, y: screenY });
         }
 
@@ -591,9 +617,7 @@
             return this.screenToLayer(screenX, screenY);
         }
 
-        updateCoordinates(x, y) {
-            // 廃止予定
-        }
+        updateCoordinates(x, y) {}
 
         setZoom(level) {
             const clampedLevel = Math.max(this.config.camera.minScale, Math.min(this.config.camera.maxScale, level));
@@ -675,4 +699,4 @@
 
 })();
 
-console.log('✅ camera-system.js (Phase 0-2: 座標系完全統合版) loaded');
+console.log('✅ camera-system.js (Phase 1-2: 座標変換API統合版) loaded');

@@ -1,5 +1,5 @@
-// ===== core-runtime.js - ツール切り替え強化版 =====
-// 改修3: 消しゴムツール切り替えを確実に伝播
+// ===== core-runtime.js - Phase 2改修版 =====
+// Phase 2: DrawingEngineへevent.data (nativeイベント)を渡す
 
 (function() {
     'use strict';
@@ -50,6 +50,7 @@
             return this;
         },
         
+        // ========== Phase 2改修: event.dataを渡す ==========
         setupPointerEvents() {
             if (!this.internal.app?.stage || this.internal.pointerEventsSetup) return;
             
@@ -84,13 +85,20 @@
             if (this.internal.drawingEngine && 
                 !this.internal.layerManager?.isLayerMoveMode && 
                 isDrawingTool) {
-                this.internal.drawingEngine.startDrawing(event.global.x, event.global.y, event);
+                // Phase 2修正: nativeイベントを直接渡す（clientX/Yが必要）
+                const nativeEvent = event.data?.originalEvent || event.data || event;
+                
+                // drawing-engineは clientX/clientY を使うので、そのまま渡す
+                this.internal.drawingEngine.startDrawing(0, 0, nativeEvent);
             }
         },
         
         handlePointerMove(event) {
             if (this.internal.drawingEngine?.isDrawing) {
-                this.internal.drawingEngine.continueDrawing(event.global.x, event.global.y, event);
+                // Phase 2修正: nativeイベントを直接渡す（clientX/Yが必要）
+                const nativeEvent = event.data?.originalEvent || event.data || event;
+                
+                this.internal.drawingEngine.continueDrawing(0, 0, nativeEvent);
             }
         },
         
@@ -207,7 +215,6 @@
             if (!layer.layerData.backgroundGraphics) return false;
             
             const bg = layer.layerData.backgroundGraphics;
-            
             bg.clear();
             
             const color1 = 0xe9c2ba;
@@ -332,7 +339,6 @@
                     }
                     return false;
                 },
-                
                 undo: () => {
                     if (window.History) {
                         window.History.undo();
@@ -340,7 +346,6 @@
                     }
                     return false;
                 },
-                
                 redo: () => {
                     if (window.History) {
                         window.History.redo();
@@ -349,51 +354,22 @@
                     return false;
                 }
             },
-            
             tool: {
-                // ✅改修3: ツール切り替えを確実に伝播
                 set: (toolName) => {
                     const engine = CoreRuntime.internal.drawingEngine;
                     if (!engine) return false;
                     
-                    // 1. DrawingEngineに直接設定
-                    if (engine.setTool) {
-                        engine.setTool(toolName);
-                    }
-                    
-                    // 2. StrokeRendererに伝播
-                    if (engine.strokeRenderer && engine.strokeRenderer.setTool) {
-                        engine.strokeRenderer.setTool(toolName);
-                    }
-                    
-                    // 3. カーソル更新
-                    if (CoreRuntime.internal.cameraSystem?.updateCursor) {
-                        CoreRuntime.internal.cameraSystem.updateCursor();
-                    }
-                    
-                    // 4. EventBus通知
-                    if (window.TegakiEventBus) {
-                        window.TegakiEventBus.emit('tool:select', { tool: toolName });
-                    }
-                    
-                    console.log(`🔧 Tool set to: ${toolName}`);
+                    if (engine.setTool) engine.setTool(toolName);
+                    if (engine.strokeRenderer?.setTool) engine.strokeRenderer.setTool(toolName);
+                    if (CoreRuntime.internal.cameraSystem?.updateCursor) CoreRuntime.internal.cameraSystem.updateCursor();
+                    if (window.TegakiEventBus) window.TegakiEventBus.emit('tool:select', { tool: toolName });
                     
                     return true;
                 },
-                
-                get: () => {
-                    return CoreRuntime.internal.drawingEngine?.currentTool || null;
-                },
-                
-                setPen: () => {
-                    return CoreRuntime.api.tool.set('pen');
-                },
-                
-                setEraser: () => {
-                    return CoreRuntime.api.tool.set('eraser');
-                }
+                get: () => CoreRuntime.internal.drawingEngine?.currentTool || null,
+                setPen: () => CoreRuntime.api.tool.set('pen'),
+                setEraser: () => CoreRuntime.api.tool.set('eraser')
             },
-            
             brush: {
                 setSize: (size) => {
                     if (window.TegakiEventBus) {
@@ -402,12 +378,10 @@
                     }
                     return false;
                 },
-                
                 getSize: () => {
                     const brushSettings = CoreRuntime.internal.drawingEngine?.brushSettings;
                     return brushSettings?.getSize() || CONFIG.pen.size || 3;
                 },
-                
                 setColor: (color) => {
                     if (window.TegakiEventBus) {
                         window.TegakiEventBus.emit('brush:color-changed', { color });
@@ -415,12 +389,10 @@
                     }
                     return false;
                 },
-                
                 getColor: () => {
                     const brushSettings = CoreRuntime.internal.drawingEngine?.brushSettings;
                     return brushSettings?.getColor() || CONFIG.pen.color || 0x800000;
                 },
-                
                 setOpacity: (opacity) => {
                     if (window.TegakiEventBus) {
                         window.TegakiEventBus.emit('brush:alpha-changed', { alpha: opacity });
@@ -428,13 +400,11 @@
                     }
                     return false;
                 },
-                
                 getOpacity: () => {
                     const brushSettings = CoreRuntime.internal.drawingEngine?.brushSettings;
                     return brushSettings?.getAlpha() || CONFIG.pen.opacity || 1.0;
                 }
             },
-            
             camera: {
                 pan: (dx, dy) => {
                     if (CoreRuntime.internal.cameraSystem) {
@@ -445,7 +415,6 @@
                     }
                     return false;
                 },
-                
                 zoom: (factor, centerX = null, centerY = null) => {
                     if (!CoreRuntime.internal.cameraSystem) return false;
                     
@@ -474,7 +443,6 @@
                     }
                     return false;
                 },
-                
                 reset: () => {
                     if (CoreRuntime.internal.cameraSystem?.resetView) {
                         CoreRuntime.internal.cameraSystem.resetView();
@@ -482,11 +450,7 @@
                     }
                     return false;
                 },
-                
-                getZoom: () => {
-                    return CoreRuntime.internal.cameraSystem?.worldContainer?.scale?.x || 1;
-                },
-                
+                getZoom: () => CoreRuntime.internal.cameraSystem?.worldContainer?.scale?.x || 1,
                 getPosition: () => {
                     if (!CoreRuntime.internal.cameraSystem?.worldContainer) return { x: 0, y: 0 };
                     return {
@@ -494,29 +458,13 @@
                         y: CoreRuntime.internal.cameraSystem.worldContainer.y
                     };
                 },
-                
-                resize: (w, h) => {
-                    return CoreRuntime.updateCanvasSize(w, h);
-                }
+                resize: (w, h) => CoreRuntime.updateCanvasSize(w, h)
             },
-            
             layer: {
-                getActive: () => {
-                    return CoreRuntime.internal.layerManager?.getActiveLayer() || null;
-                },
-                
-                getActiveIndex: () => {
-                    return CoreRuntime.internal.layerManager?.activeLayerIndex ?? -1;
-                },
-                
-                getAll: () => {
-                    return CoreRuntime.internal.layerManager?.getLayers() || [];
-                },
-                
-                getCount: () => {
-                    return CoreRuntime.internal.layerManager?.getLayers()?.length || 0;
-                },
-                
+                getActive: () => CoreRuntime.internal.layerManager?.getActiveLayer() || null,
+                getActiveIndex: () => CoreRuntime.internal.layerManager?.activeLayerIndex ?? -1,
+                getAll: () => CoreRuntime.internal.layerManager?.getLayers() || [],
+                getCount: () => CoreRuntime.internal.layerManager?.getLayers()?.length || 0,
                 create: (name, isBackground = false) => {
                     if (CoreRuntime.internal.layerManager) {
                         const result = CoreRuntime.internal.layerManager.createLayer(name, isBackground);
@@ -528,14 +476,7 @@
                     }
                     return null;
                 },
-                
-                delete: (index) => {
-                    if (CoreRuntime.internal.layerManager?.deleteLayer) {
-                        return CoreRuntime.internal.layerManager.deleteLayer(index);
-                    }
-                    return false;
-                },
-                
+                delete: (index) => CoreRuntime.internal.layerManager?.deleteLayer(index) || false,
                 setActive: (index) => {
                     if (CoreRuntime.internal.layerManager) {
                         CoreRuntime.internal.layerManager.setActiveLayer(index);
@@ -543,7 +484,6 @@
                     }
                     return false;
                 },
-                
                 setVisible: (index, visible) => {
                     const layers = CoreRuntime.internal.layerManager?.getLayers();
                     if (layers && layers[index]) {
@@ -553,7 +493,6 @@
                     }
                     return false;
                 },
-                
                 setOpacity: (index, opacity) => {
                     const layers = CoreRuntime.internal.layerManager?.getLayers();
                     if (layers && layers[index]) {
@@ -563,24 +502,9 @@
                     }
                     return false;
                 },
-                
-                enterMoveMode: () => {
-                    if (CoreRuntime.internal.layerManager?.enterLayerMoveMode) {
-                        CoreRuntime.internal.layerManager.enterLayerMoveMode();
-                        return true;
-                    }
-                    return false;
-                },
-                
-                exitMoveMode: () => {
-                    if (CoreRuntime.internal.layerManager?.exitLayerMoveMode) {
-                        CoreRuntime.internal.layerManager.exitLayerMoveMode();
-                        return true;
-                    }
-                    return true;
-                }
+                enterMoveMode: () => CoreRuntime.internal.layerManager?.enterLayerMoveMode() || false,
+                exitMoveMode: () => CoreRuntime.internal.layerManager?.exitLayerMoveMode() || true
             },
-            
             settings: {
                 get: (key) => {
                     if (!key) {
@@ -588,83 +512,40 @@
                         return bs?.getCurrentSettings() || {};
                     }
                     
-                    if (key === 'pen.size') {
-                        return CoreRuntime.api.brush.getSize();
-                    } else if (key === 'pen.color') {
-                        return CoreRuntime.api.brush.getColor();
-                    } else if (key === 'pen.opacity') {
-                        return CoreRuntime.api.brush.getOpacity();
-                    }
+                    if (key === 'pen.size') return CoreRuntime.api.brush.getSize();
+                    else if (key === 'pen.color') return CoreRuntime.api.brush.getColor();
+                    else if (key === 'pen.opacity') return CoreRuntime.api.brush.getOpacity();
                     return null;
                 },
-                
                 set: (key, value) => {
-                    if (key === 'pen.size') {
-                        return CoreRuntime.api.brush.setSize(value);
-                    } else if (key === 'pen.color') {
-                        return CoreRuntime.api.brush.setColor(value);
-                    } else if (key === 'pen.opacity') {
-                        return CoreRuntime.api.brush.setOpacity(value);
-                    }
+                    if (key === 'pen.size') return CoreRuntime.api.brush.setSize(value);
+                    else if (key === 'pen.color') return CoreRuntime.api.brush.setColor(value);
+                    else if (key === 'pen.opacity') return CoreRuntime.api.brush.setOpacity(value);
                     return false;
                 },
-                
                 update: (updates) => {
                     for (const [key, value] of Object.entries(updates)) {
                         CoreRuntime.api.settings.set(key, value);
                     }
                     return true;
                 },
-                
                 reset: () => {
                     const bs = CoreRuntime.internal.drawingEngine?.brushSettings;
-                    if (bs?.resetToDefaults) {
-                        bs.resetToDefaults();
-                    }
+                    if (bs?.resetToDefaults) bs.resetToDefaults();
                     return true;
                 },
-                
-                getAll: () => {
-                    return CoreRuntime.api.settings.get();
-                }
+                getAll: () => CoreRuntime.api.settings.get()
             },
-            
             popup: {
-                show: (name) => {
-                    if (!window.PopupManager) return false;
-                    return window.PopupManager.show(name);
-                },
-                
-                hide: (name) => {
-                    if (!window.PopupManager) return false;
-                    return window.PopupManager.hide(name);
-                },
-                
-                toggle: (name) => {
-                    if (!window.PopupManager) return false;
-                    return window.PopupManager.toggle(name);
-                },
-                
-                hideAll: (exceptName = null) => {
-                    if (!window.PopupManager) return;
-                    window.PopupManager.hideAll(exceptName);
-                },
-                
-                isVisible: (name) => {
-                    if (!window.PopupManager) return false;
-                    return window.PopupManager.isVisible(name);
-                }
+                show: (name) => window.PopupManager?.show(name) || false,
+                hide: (name) => window.PopupManager?.hide(name) || false,
+                toggle: (name) => window.PopupManager?.toggle(name) || false,
+                hideAll: (exceptName = null) => window.PopupManager?.hideAll(exceptName),
+                isVisible: (name) => window.PopupManager?.isVisible(name) || false
             },
-            
             animation: {
-                getCutCount: () => {
-                    return window.animationSystem?.getAnimationData()?.cuts?.length || 0;
-                },
-                
-                getCurrentCutIndex: () => {
-                    return window.animationSystem?.getCurrentCutIndex?.() ?? -1;
-                },
-                
+                getCutCount: () => window.animationSystem?.getAnimationData()?.cuts?.length || 0,
+                getCurrentCutIndex: () => window.animationSystem?.getCurrentCutIndex?.() ?? -1,
                 createCut: () => {
                     if (window.animationSystem?.createCutFromCurrentState) {
                         window.animationSystem.createCutFromCurrentState();
@@ -672,14 +553,7 @@
                     }
                     return false;
                 },
-                
-                deleteCut: (index) => {
-                    if (window.animationSystem?.deleteCut) {
-                        return window.animationSystem.deleteCut(index);
-                    }
-                    return false;
-                },
-                
+                deleteCut: (index) => window.animationSystem?.deleteCut(index) || false,
                 goToCut: (index) => {
                     if (window.animationSystem?.switchToCut) {
                         window.animationSystem.switchToCut(index);
@@ -687,26 +561,9 @@
                     }
                     return false;
                 },
-                
-                play: () => {
-                    if (window.timelineUI?.playAnimation) {
-                        window.timelineUI.playAnimation();
-                        return true;
-                    }
-                    return false;
-                },
-                
-                stop: () => {
-                    if (window.timelineUI?.stopAnimation) {
-                        window.timelineUI.stopAnimation();
-                        return true;
-                    }
-                    return false;
-                },
-                
-                isPlaying: () => {
-                    return window.timelineUI?.isPlaying || false;
-                }
+                play: () => window.timelineUI?.playAnimation() || false,
+                stop: () => window.timelineUI?.stopAnimation() || false,
+                isPlaying: () => window.timelineUI?.isPlaying || false
             }
         },
         
@@ -727,52 +584,36 @@
         isInitialized() { return this.internal.initialized; }
     };
     
-CoreRuntime.initializeExportSystem = function(pixiApp, onSuccess) {
-    if (window.TEGAKI_EXPORT_MANAGER) {
+    CoreRuntime.initializeExportSystem = function(pixiApp, onSuccess) {
+        if (window.TEGAKI_EXPORT_MANAGER) return true;
+        
+        if (!window.ExportManager || !window.PNGExporter || !window.APNGExporter || !window.GIFExporter) return false;
+        if (!pixiApp || !this.internal.layerManager || !this.internal.cameraSystem) return false;
+        if (!window.animationSystem) return false;
+        
+        window.TEGAKI_EXPORT_MANAGER = new window.ExportManager(
+            pixiApp,
+            this.internal.layerManager,
+            window.animationSystem,
+            this.internal.cameraSystem
+        );
+        
+        const mgr = window.TEGAKI_EXPORT_MANAGER;
+        
+        mgr.registerExporter('png', new window.PNGExporter(mgr));
+        mgr.registerExporter('apng', new window.APNGExporter(mgr));
+        mgr.registerExporter('gif', new window.GIFExporter(mgr));
+        
+        if (window.PDFExporter) mgr.registerExporter('pdf', new window.PDFExporter(mgr));
+        if (window.WebPExporter) mgr.registerExporter('webp', new window.WebPExporter(mgr));
+        
+        if (window.TegakiEventBus) {
+            window.TegakiEventBus.emit('export:manager:initialized', { timestamp: Date.now() });
+        }
+        
+        if (onSuccess) onSuccess();
         return true;
-    }
-    
-    if (!window.ExportManager || !window.PNGExporter || !window.APNGExporter || !window.GIFExporter) {
-        return false;
-    }
-    
-    if (!pixiApp || !this.internal.layerManager || !this.internal.cameraSystem) {
-        return false;
-    }
-    
-    if (!window.animationSystem) {
-        return false;
-    }
-    
-    window.TEGAKI_EXPORT_MANAGER = new window.ExportManager(
-        pixiApp,
-        this.internal.layerManager,
-        window.animationSystem,
-        this.internal.cameraSystem
-    );
-    
-    const mgr = window.TEGAKI_EXPORT_MANAGER;
-    
-    mgr.registerExporter('png', new window.PNGExporter(mgr));
-    mgr.registerExporter('apng', new window.APNGExporter(mgr));
-    mgr.registerExporter('gif', new window.GIFExporter(mgr));
-    
-    // PDFエクスポーター登録を追加
-    if (window.PDFExporter) {
-        mgr.registerExporter('pdf', new window.PDFExporter(mgr));
-    }
-    
-    if (window.WebPExporter) {
-        mgr.registerExporter('webp', new window.WebPExporter(mgr));
-    }
-    
-    if (window.TegakiEventBus) {
-        window.TegakiEventBus.emit('export:manager:initialized', { timestamp: Date.now() });
-    }
-    
-    if (onSuccess) onSuccess();
-    return true;
-};
+    };
     
     window.CoreRuntime = CoreRuntime;
     
@@ -781,9 +622,7 @@ CoreRuntime.initializeExportSystem = function(pixiApp, onSuccess) {
         window._isBookmarkletMode = isBookmarkletMode;
         
         const container = config.container || document.getElementById('canvas-container');
-        if (!container) {
-            throw new Error('Canvas container not found');
-        }
+        if (!container) throw new Error('Canvas container not found');
         
         const app = new PIXI.Application();
         
@@ -813,25 +652,12 @@ CoreRuntime.initializeExportSystem = function(pixiApp, onSuccess) {
         
         let exportManager = null;
         if (window.ExportManager && animationSystem) {
-            exportManager = new window.ExportManager(
-                app,
-                layerSystem,
-                animationSystem,
-                cameraSystem
-            );
+            exportManager = new window.ExportManager(app, layerSystem, animationSystem, cameraSystem);
             
-            if (window.PNGExporter) {
-                exportManager.registerExporter('png', new window.PNGExporter(exportManager));
-            }
-            if (window.APNGExporter) {
-                exportManager.registerExporter('apng', new window.APNGExporter(exportManager));
-            }
-            if (window.GIFExporter) {
-                exportManager.registerExporter('gif', new window.GIFExporter(exportManager));
-            }
-            if (window.WebPExporter) {
-                exportManager.registerExporter('webp', new window.WebPExporter(exportManager));
-            }
+            if (window.PNGExporter) exportManager.registerExporter('png', new window.PNGExporter(exportManager));
+            if (window.APNGExporter) exportManager.registerExporter('apng', new window.APNGExporter(exportManager));
+            if (window.GIFExporter) exportManager.registerExporter('gif', new window.GIFExporter(exportManager));
+            if (window.WebPExporter) exportManager.registerExporter('webp', new window.WebPExporter(exportManager));
         }
         
         return {
@@ -843,4 +669,4 @@ CoreRuntime.initializeExportSystem = function(pixiApp, onSuccess) {
     
 })();
 
-console.log('✅ core-runtime.js (ツール切り替え強化版) loaded');
+console.log('✅ core-runtime.js (Phase 2改修版) loaded');
