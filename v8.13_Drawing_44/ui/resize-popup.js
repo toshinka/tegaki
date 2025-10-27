@@ -1,6 +1,4 @@
-// ===== ui/resize-popup.js - 座標ズレ完全修正版 =====
-// 🔥 修正: パスのpoints座標は変換せず、layer.positionのみ変更
-// パスのpointsはレイヤーのローカル座標系なので、リサイズ時に変換不要
+// ===== ui/resize-popup.js - Phase 4: CameraSystem.resizeCanvas()連携完了版 =====
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -343,49 +341,45 @@ window.TegakiUI.ResizePopup = class {
         });
     }
     
-    // 🔥 修正: レイヤーposition用のオフセット計算（表示位置調整）
+    // Phase 4: レイヤーposition用のオフセット計算（表示位置調整）
     _calculateLayerPositionOffset(oldWidth, oldHeight, newWidth, newHeight, alignOptions) {
         let offsetX = 0;
         let offsetY = 0;
         
         const widthDiff = newWidth - oldWidth;
-        if (alignOptions.horizontalAlign === 'center') {
+        if (alignOptions.horizontal === 'center') {
             offsetX = widthDiff / 2;
-        } else if (alignOptions.horizontalAlign === 'right') {
+        } else if (alignOptions.horizontal === 'right') {
             offsetX = widthDiff;
-        } else if (alignOptions.horizontalAlign === 'left') {
+        } else if (alignOptions.horizontal === 'left') {
             offsetX = 0;
         }
         
         const heightDiff = newHeight - oldHeight;
-        if (alignOptions.verticalAlign === 'center') {
+        if (alignOptions.vertical === 'center') {
             offsetY = heightDiff / 2;
-        } else if (alignOptions.verticalAlign === 'bottom') {
+        } else if (alignOptions.vertical === 'bottom') {
             offsetY = heightDiff;
-        } else if (alignOptions.verticalAlign === 'top') {
+        } else if (alignOptions.vertical === 'top') {
             offsetY = 0;
         }
         
         return { offsetX, offsetY };
     }
     
-    // 🔥 修正: レイヤーのpositionのみ変更（パスのpointsは変換しない）
+    // Phase 4: レイヤーのpositionのみ変更（パスのpointsは変換しない）
     _applyPositionOffsetToFrames(frames, offsetX, offsetY) {
         frames.forEach((frame) => {
             const layers = frame.getLayers();
             
             layers.forEach((layer) => {
-                // レイヤーの表示位置のみ変更
                 layer.position.x += offsetX;
                 layer.position.y += offsetY;
-                
-                // 🔥 重要: パスのpointsは変換しない
-                // パスのpointsはレイヤーのローカル座標系なので、
-                // レイヤーのpositionが変わっても座標変換は不要
             });
         });
     }
     
+    // Phase 4: CameraSystem.resizeCanvas()を使用した簡潔な実装
     _applyResize() {
         if (!this.coreEngine || !this.history) return;
         if (this.currentWidth <= 0 || this.currentHeight <= 0) return;
@@ -394,14 +388,13 @@ window.TegakiUI.ResizePopup = class {
         const newHeight = this.currentHeight;
         
         const alignOptions = {
-            horizontalAlign: this.horizontalAlign,
-            verticalAlign: this.verticalAlign
+            horizontal: this.horizontalAlign,
+            vertical: this.verticalAlign
         };
         
         const oldWidth = window.TEGAKI_CONFIG.canvas.width;
         const oldHeight = window.TEGAKI_CONFIG.canvas.height;
         
-        // 🔥 修正: レイヤー表示位置用のオフセット計算
         const { offsetX, offsetY } = this._calculateLayerPositionOffset(
             oldWidth, oldHeight, newWidth, newHeight, alignOptions
         );
@@ -410,7 +403,6 @@ window.TegakiUI.ResizePopup = class {
         const frames = animSystem?.animationData?.frames || [];
         const frameSnapshots = [];
         
-        // バックアップ: レイヤーのposition情報のみ保存
         frames.forEach((frame, frameIndex) => {
             const layers = frame.getLayers();
             const layerSnapshots = layers.map(layer => ({
@@ -429,12 +421,9 @@ window.TegakiUI.ResizePopup = class {
         const command = {
             name: 'resize-canvas',
             do: () => {
-                window.TEGAKI_CONFIG.canvas.width = newWidth;
-                window.TEGAKI_CONFIG.canvas.height = newHeight;
+                // Phase 4: CameraSystem.resizeCanvas()に委譲
+                this.coreEngine.getCameraSystem().resizeCanvas(newWidth, newHeight, alignOptions);
                 
-                this.coreEngine.getCameraSystem().resizeCanvas(newWidth, newHeight);
-                
-                // 🔥 修正: レイヤーのpositionのみ変更
                 this._applyPositionOffsetToFrames(frames, offsetX, offsetY);
                 
                 setTimeout(() => {
@@ -452,12 +441,9 @@ window.TegakiUI.ResizePopup = class {
                 }
             },
             undo: () => {
-                window.TEGAKI_CONFIG.canvas.width = oldWidth;
-                window.TEGAKI_CONFIG.canvas.height = oldHeight;
+                // Phase 4: CameraSystem.resizeCanvas()に委譲
+                this.coreEngine.getCameraSystem().resizeCanvas(oldWidth, oldHeight, alignOptions);
                 
-                this.coreEngine.getCameraSystem().resizeCanvas(oldWidth, oldHeight);
-                
-                // バックアップからレイヤーのposition復元
                 const currentFrames = animSystem?.animationData?.frames || [];
                 frameSnapshots.forEach(frameSnap => {
                     const frame = currentFrames[frameSnap.frameIndex];
@@ -566,4 +552,4 @@ window.TegakiUI.ResizePopup = class {
 
 window.ResizePopup = window.TegakiUI.ResizePopup;
 
-console.log('✅ resize-popup.js (座標ズレ完全修正版) loaded');
+console.log('✅ resize-popup.js (Phase 4完了: CameraSystem.resizeCanvas()連携) loaded');
