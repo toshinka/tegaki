@@ -1,7 +1,7 @@
 /**
- * timeline-thumbnail-utils.js - FRAME改修版
+ * timeline-thumbnail-utils.js - Phase 6完了版
  * タイムラインサムネイル管理ユーティリティ
- * ✅ CUT→FRAME変換完了
+ * ✅ Phase 6: camera:transform-changed イベント購読で自動更新
  */
 
 class TimelineThumbnailUtils {
@@ -10,6 +10,33 @@ class TimelineThumbnailUtils {
     this.coordinateSystem = coordinateSystem;
     this.animationSystem = animationSystem;
     this.thumbnailCache = new Map();
+    this.eventBus = window.TegakiEventBus;
+    
+    // Phase 6: カメラ変形イベント購読
+    this._setupCameraTransformListener();
+  }
+
+  // Phase 6: カメラ変形時の自動サムネイル更新
+  _setupCameraTransformListener() {
+    if (!this.eventBus) return;
+    
+    this.eventBus.on('camera:transform-changed', () => {
+      // カメラ変形時（リサイズ含む）にサムネイルキャッシュをクリア
+      this._invalidateCache();
+      
+      // アニメーションシステムが存在する場合は全サムネイルを再生成
+      if (this.animationSystem && typeof this.animationSystem.regenerateAllThumbnails === 'function') {
+        // 非同期で再生成（UIのブロッキングを防ぐ）
+        setTimeout(() => {
+          this.animationSystem.regenerateAllThumbnails();
+        }, 50);
+      }
+    });
+    
+    // リサイズイベントも購読（camera:transform-changedと重複するが安全のため）
+    this.eventBus.on('camera:resized', ({ width, height }) => {
+      this._invalidateCache();
+    });
   }
 
   generateThumbnail(frame) {
@@ -220,4 +247,4 @@ class TimelineThumbnailUtils {
 window.TimelineThumbnailUtils = TimelineThumbnailUtils;
 window.TegakiThumbnailUtils = TimelineThumbnailUtils;
 
-console.log('✅ timeline-thumbnail-utils.js (FRAME改修版) loaded');
+console.log('✅ timeline-thumbnail-utils.js (Phase 6完了: camera:transform-changed購読) loaded');
