@@ -1,40 +1,30 @@
-// ===== system/layer-transform.js - Phase 6完了: レイヤー移動後イベント発火 =====
+// ===== system/layer-transform.js - Phase 3: CoordinateSystem統合版 =====
 
 (function() {
     'use strict';
 
     /**
      * LayerTransform - レイヤー変形機能を管理
-     * 
-     * 責務:
-     * - レイヤー移動・回転・拡大縮小・反転
-     * - Vキーモード管理
-     * - 変形パネル制御
-     * - ドラッグ操作
-     * - 変形確定・座標変換
-     * 
-     * Phase 6完了: レイヤー移動後に layer:transform-updated イベント発火
+     * Phase 3改修: CoordinateSystemを使用した正確なドラッグ処理
      */
     class LayerTransform {
         constructor(config, coordAPI) {
             this.config = config;
             this.coordAPI = coordAPI;
+            this.coordinateSystem = window.CoordinateSystem; // Phase 3: 追加
             
-            // 変形状態管理
-            this.transforms = new Map(); // layerId -> {x, y, rotation, scaleX, scaleY}
+            this.transforms = new Map();
             this.isVKeyPressed = false;
             this.isDragging = false;
-            this.dragLastPoint = { x: 0, y: 0 };
+            this.dragLastPoint = { x: 0, y: 0 }; // ワールド座標で保持
+            this.dragStartPoint = { x: 0, y: 0 };
             
-            // UI要素
             this.transformPanel = null;
             
-            // 依存関係
             this.app = null;
             this.cameraSystem = null;
-            this.eventBus = window.TegakiEventBus; // Phase 6
+            this.eventBus = window.TegakiEventBus;
             
-            // コールバック
             this.onTransformComplete = null;
             this.onTransformUpdate = null;
             this.onFlipRequest = null;
@@ -44,8 +34,6 @@
             this.onGetActiveLayer = null;
         }
 
-        // ========== 初期化 ==========
-        
         init(app, cameraSystem) {
             this.app = app;
             this.cameraSystem = cameraSystem;
@@ -137,8 +125,6 @@
             }
             
             this.applyTransform(layer, transform, centerX, centerY);
-            
-            // Phase 6: 変形更新イベント発火
             this._emitTransformUpdated(layerId);
             
             if (this.onTransformUpdate) {
@@ -197,8 +183,6 @@
             
             this.applyTransform(layer, transform, centerX, centerY);
             this.updateFlipButtons(layer);
-            
-            // Phase 6: 変形更新イベント発火
             this._emitTransformUpdated(layerId);
             
             if (this.onTransformUpdate) {
@@ -231,8 +215,6 @@
             
             this.applyTransform(layer, transform, centerX, centerY);
             this.updateTransformPanelValues(layer);
-            
-            // Phase 6: 変形更新イベント発火
             this._emitTransformUpdated(layerId);
             
             if (this.onTransformUpdate) {
@@ -273,8 +255,6 @@
             
             this.applyTransform(layer, transform, centerX, centerY);
             this.updateTransformPanelValues(layer);
-            
-            // Phase 6: 変形更新イベント発火
             this._emitTransformUpdated(layerId);
             
             if (this.onTransformUpdate) {
@@ -309,8 +289,6 @@
             
             this.applyTransform(layer, transform, centerX, centerY);
             this.updateTransformPanelValues(layer);
-            
-            // Phase 6: 変形更新イベント発火
             this._emitTransformUpdated(layerId);
             
             if (this.onTransformUpdate) {
@@ -401,9 +379,137 @@
             }
         }
 
+        // ========== Phase 3: CoordinateSystem統合ドラッグ処理 ==========
+        
+        _setupDragEvents() {
+            const canvas = this._getSafeCanvas();
+            if (!canvas) return;
+            
+            canvas.addEventListener('pointerdown', (e) => {
+                if (this.isVKeyPressed && e.button === 0) {
+                    // Phase 3: CoordinateSystemで正確な座標取得
+                    const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
+                    
+                    this.isDragging = true;
+                    this.dragStartPoint = { x: world.x, y: world.y };
+                    this.dragLastPoint = { x: world.x, y: world.y };
+                    canvas.style.cursor = 'move';
+                    e.preventDefault();
+                }
+            });
+            
+            canvas.addEventListener('pointermove', (e) => {
+                if (this.isDragging && this.isVKeyPressed) {
+                    this._handleDrag(e);
+                }
+            });
+            
+            canvas.addEventListener('pointerup', () => {
+                if (this.isDragging) {
+                    this.isDragging = false;
+                    this._updateCursor();
+                }
+            });
+        }
+
+        _handleDrag(e) {
+            if (!this.coordinateSystem) return;
+            
+            // Phase 3: CoordinateSystemで正確な座標変換
+            const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
+            
+            const dx = world.x - this.dragLastPoint.x;
+            const dy = world.y - this.dragLastPoint.y;
+            
+            this.dragLastPoint = { x: world.x, y: world.y };
+            
+            if (this.onDragRequest) {
+                this.onDragRequest(dx, dy, e.shiftKey);
+            }
+        }
+
+        _setupFlipKeyEvents() {
+            document.addEventListener('keydown', (e) => {
+                if (!this.isVKeyPressed) return;
+                
+                const activeElement = document.activeElement;
+                if (activeElement && (
+                    activeElement.tagName === 'INPUT' ||
+                    activeElement.tagName === 'TEXTAREA' ||
+                    activeElement.isContentEditable
+                )) {
+                    return;
+                }
+                
+                if (e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
+                    if (e.shiftKey) {
+                        if (this.onFlipRequest) {
+                            this.onFlipRequest('vertical');
+                        }
+                    } else {
+                        if (this.onFlipRequest) {
+                            this.onFlipRequest('horizontal');
+                        }
+                    }
+                    e.preventDefault();
+                }
+            });
+        }
+
+        _setupWheelEvents() {
+            const canvas = this._getSafeCanvas();
+            if (!canvas) return;
+            
+            canvas.addEventListener('wheel', (e) => {
+                if (!this.isVKeyPressed) return;
+                
+                if (!this.onGetActiveLayer) return;
+                const activeLayer = this.onGetActiveLayer();
+                if (!activeLayer?.layerData) return;
+                
+                const layerId = activeLayer.layerData.id;
+                
+                if (!this.transforms.has(layerId)) {
+                    this.transforms.set(layerId, {
+                        x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+                    });
+                }
+                
+                const transform = this.transforms.get(layerId);
+                const centerX = this.config.canvas.width / 2;
+                const centerY = this.config.canvas.height / 2;
+                
+                if (e.shiftKey) {
+                    const rotationDelta = e.deltaY > 0 ? 0.05 : -0.05;
+                    transform.rotation += rotationDelta;
+                } else {
+                    const scaleDelta = e.deltaY > 0 ? 0.95 : 1.05;
+                    const currentScale = Math.abs(transform.scaleX);
+                    const newScale = Math.max(
+                        this.config.layer.minScale,
+                        Math.min(this.config.layer.maxScale, currentScale * scaleDelta)
+                    );
+                    
+                    const hFlipped = transform.scaleX < 0;
+                    const vFlipped = transform.scaleY < 0;
+                    transform.scaleX = hFlipped ? -newScale : newScale;
+                    transform.scaleY = vFlipped ? -newScale : newScale;
+                }
+                
+                this.applyTransform(activeLayer, transform, centerX, centerY);
+                this.updateTransformPanelValues(activeLayer);
+                this._emitTransformUpdated(layerId);
+                
+                if (this.onTransformUpdate) {
+                    this.onTransformUpdate(activeLayer, transform);
+                }
+                
+                e.preventDefault();
+            }, { passive: false });
+        }
+
         // ========== 内部処理 ==========
         
-        // Phase 6: 変形更新イベント発火
         _emitTransformUpdated(layerId) {
             if (this.eventBus) {
                 this.eventBus.emit('layer:transform-updated', { layerId });
@@ -513,125 +619,6 @@
             };
 
             update(initial);
-        }
-        
-        _setupDragEvents() {
-            const canvas = this._getSafeCanvas();
-            if (!canvas) return;
-            
-            canvas.addEventListener('pointerdown', (e) => {
-                if (this.isVKeyPressed && e.button === 0) {
-                    this.isDragging = true;
-                    this.dragLastPoint = { x: e.clientX, y: e.clientY };
-                    canvas.style.cursor = 'move';
-                    e.preventDefault();
-                }
-            });
-            
-            canvas.addEventListener('pointermove', (e) => {
-                if (this.isDragging && this.isVKeyPressed) {
-                    this._handleDrag(e);
-                }
-            });
-            
-            canvas.addEventListener('pointerup', () => {
-                if (this.isDragging) {
-                    this.isDragging = false;
-                    this._updateCursor();
-                }
-            });
-        }
-
-        _setupFlipKeyEvents() {
-            document.addEventListener('keydown', (e) => {
-                if (!this.isVKeyPressed) return;
-                
-                const activeElement = document.activeElement;
-                if (activeElement && (
-                    activeElement.tagName === 'INPUT' ||
-                    activeElement.tagName === 'TEXTAREA' ||
-                    activeElement.isContentEditable
-                )) {
-                    return;
-                }
-                
-                if (e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
-                    if (e.shiftKey) {
-                        if (this.onFlipRequest) {
-                            this.onFlipRequest('vertical');
-                        }
-                    } else {
-                        if (this.onFlipRequest) {
-                            this.onFlipRequest('horizontal');
-                        }
-                    }
-                    e.preventDefault();
-                }
-            });
-        }
-
-        _setupWheelEvents() {
-            const canvas = this._getSafeCanvas();
-            if (!canvas) return;
-            
-            canvas.addEventListener('wheel', (e) => {
-                if (!this.isVKeyPressed) return;
-                
-                if (!this.onGetActiveLayer) return;
-                const activeLayer = this.onGetActiveLayer();
-                if (!activeLayer?.layerData) return;
-                
-                const layerId = activeLayer.layerData.id;
-                
-                if (!this.transforms.has(layerId)) {
-                    this.transforms.set(layerId, {
-                        x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
-                    });
-                }
-                
-                const transform = this.transforms.get(layerId);
-                const centerX = this.config.canvas.width / 2;
-                const centerY = this.config.canvas.height / 2;
-                
-                if (e.shiftKey) {
-                    const rotationDelta = e.deltaY > 0 ? 0.05 : -0.05;
-                    transform.rotation += rotationDelta;
-                } else {
-                    const scaleDelta = e.deltaY > 0 ? 0.95 : 1.05;
-                    const currentScale = Math.abs(transform.scaleX);
-                    const newScale = Math.max(
-                        this.config.layer.minScale,
-                        Math.min(this.config.layer.maxScale, currentScale * scaleDelta)
-                    );
-                    
-                    const hFlipped = transform.scaleX < 0;
-                    const vFlipped = transform.scaleY < 0;
-                    transform.scaleX = hFlipped ? -newScale : newScale;
-                    transform.scaleY = vFlipped ? -newScale : newScale;
-                }
-                
-                this.applyTransform(activeLayer, transform, centerX, centerY);
-                this.updateTransformPanelValues(activeLayer);
-                
-                // Phase 6: 変形更新イベント発火
-                this._emitTransformUpdated(layerId);
-                
-                if (this.onTransformUpdate) {
-                    this.onTransformUpdate(activeLayer, transform);
-                }
-                
-                e.preventDefault();
-            }, { passive: false });
-        }
-
-        _handleDrag(e) {
-            if (this.onDragRequest) {
-                const dx = e.clientX - this.dragLastPoint.x;
-                const dy = e.clientY - this.dragLastPoint.y;
-                this.dragLastPoint = { x: e.clientX, y: e.clientY };
-                
-                this.onDragRequest(dx, dy, e.shiftKey);
-            }
         }
 
         _getSafeCanvas() {
@@ -766,4 +753,4 @@
 
 })();
 
-console.log('✅ layer-transform.js (Phase 6完了: レイヤー移動後イベント発火) loaded');
+console.log('✅ layer-transform.js (Phase 3: CoordinateSystem統合版) loaded');

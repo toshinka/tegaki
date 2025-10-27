@@ -1,7 +1,7 @@
-// ===== system/camera-system.js - Phase 1-3 完全修正版 =====
-// Phase 1: CameraSystem.screenClientToWorld() 実装（座標変換統一入口）
-// Phase 3: resizeCanvas() 厳密実装（座標系一貫性確保）
-// 修正: renderer解像度取得・DPI補正・worldTransform逆行列適用
+// ===== system/camera-system.js - Phase 0-2: 座標系完全統合版 =====
+// Phase 0: CoordinateSystem統合
+// Phase 1: screenClientToWorld削除（CoordinateSystemに委譲）
+// Phase 2: resizeCanvas厳密実装
 
 (function() {
     'use strict';
@@ -11,6 +11,7 @@
             this.app = null;
             this.config = null;
             this.eventBus = null;
+            this.coordinateSystem = null; // Phase 0: 追加
             
             this.isDragging = false;
             this.isScaleRotateDragging = false;
@@ -45,6 +46,7 @@
         init(stage, eventBus, config) {
             this.eventBus = eventBus;
             this.config = config || window.TEGAKI_CONFIG;
+            this.coordinateSystem = window.CoordinateSystem; // Phase 0: 参照取得
             
             if (stage && stage.addChild) {
                 this.app = { stage: stage };
@@ -150,114 +152,76 @@
             this._emitTransformChanged();
         }
 
-        // ========== Phase 1: 統一座標変換API（修正版） ==========
+        // ========== Phase 2: resizeCanvas厳密実装 ==========
         
         /**
-         * screen座標（clientX/Y）をworld座標に変換
-         * 修正: renderer解像度取得・DPI補正・worldTransform逆行列適用
-         */
-        screenClientToWorld(app, clientX, clientY) {
-            const canvas = this._getSafeCanvas();
-            if (!canvas) {
-                return { x: clientX, y: clientY };
-            }
-            
-            const rect = canvas.getBoundingClientRect();
-            
-            // DOM (CSS) 内の相対位置
-            const canvasCssX = clientX - rect.left;
-            const canvasCssY = clientY - rect.top;
-            
-            // ★修正: renderer解像度の正しい取得
-            // app.stage.parent が実際の PIXI.Application インスタンス
-            let rendererWidth = rect.width;
-            let rendererHeight = rect.height;
-            
-            if (app?.stage?.parent) {
-                const parent = app.stage.parent;
-                // renderer.screen または renderer自体のwidth/heightを使用
-                if (parent.renderer?.screen) {
-                    rendererWidth = parent.renderer.screen.width;
-                    rendererHeight = parent.renderer.screen.height;
-                } else if (parent.screen) {
-                    rendererWidth = parent.screen.width;
-                    rendererHeight = parent.screen.height;
-                } else if (parent.renderer) {
-                    rendererWidth = parent.renderer.width || rect.width;
-                    rendererHeight = parent.renderer.height || rect.height;
-                }
-            }
-            
-            // 内部ピクセルスケール（高DPI対応）
-            const pixelScaleX = rendererWidth / rect.width;
-            const pixelScaleY = rendererHeight / rect.height;
-            const canvasPxX = canvasCssX * pixelScaleX;
-            const canvasPxY = canvasCssY * pixelScaleY;
-
-            // worldContainerのワールド変換の逆行列でworld座標に変換
-            if (!this.worldContainer || !this.worldContainer.transform) {
-                return { x: canvasPxX, y: canvasPxY };
-            }
-            
-            const inv = this.worldContainer.transform.worldTransform.clone().invert();
-            const p = inv.apply({ x: canvasPxX, y: canvasPxY });
-            
-            return { x: p.x, y: p.y };
-        }
-
-        // ========== Phase 3: resizeCanvas厳密実装 ==========
-        
-        /**
-         * キャンバスサイズ変更とCONFIG更新
-         * Phase 3: align optionsに基づいて worldContainer を調整
+         * キャンバスリサイズ（Phase 2完全版）
+         * - CONFIG更新
+         * - renderer.resize()
+         * - alignOptionsに基づいたworldContainer位置調整
+         * - 座標系変更イベント発火
          */
         resizeCanvas(newWidth, newHeight, alignOptions = { horizontal: 'center', vertical: 'center' }) {
             if (!this.app) return;
             
-            const oldWidth = window.TEGAKI_CONFIG.canvas.width;
-            const oldHeight = window.TEGAKI_CONFIG.canvas.height;
+            const oldWidth = this.config.canvas.width;
+            const oldHeight = this.config.canvas.height;
             
-            window.TEGAKI_CONFIG.canvas.width = newWidth;
-            window.TEGAKI_CONFIG.canvas.height = newHeight;
-
-            if (this.app.stage && this.app.stage.parent && this.app.stage.parent.resize) {
+            // CONFIG更新
+            this.config.canvas.width = newWidth;
+            this.config.canvas.height = newHeight;
+            
+            // renderer.resize()
+            if (this.app.stage?.parent?.resize) {
                 this.app.stage.parent.resize(newWidth, newHeight);
             }
-
+            
+            // カメラフレーム・ガイドライン・マスク更新
             this.updateGuideLinesForCanvasResize();
-
-            // Phase 3: align optionsに基づいてworldContainerを調整
-            if (alignOptions) {
-                const widthDiff = newWidth - oldWidth;
-                const heightDiff = newHeight - oldHeight;
-                
-                let offsetX = 0;
-                let offsetY = 0;
-                
-                if (alignOptions.horizontal === 'center') {
-                    offsetX = widthDiff / 2;
-                } else if (alignOptions.horizontal === 'right') {
-                    offsetX = widthDiff;
-                }
-                
-                if (alignOptions.vertical === 'center') {
-                    offsetY = heightDiff / 2;
-                } else if (alignOptions.vertical === 'bottom') {
-                    offsetY = heightDiff;
-                }
-                
-                // 見た目の位置を調整
-                this.worldContainer.position.x += offsetX;
-                this.worldContainer.position.y += offsetY;
+            
+            // Phase 2: alignOptionsに基づいてworldContainerの位置を調整
+            // これにより「見た目の位置」が保持される
+            const widthDiff = newWidth - oldWidth;
+            const heightDiff = newHeight - oldHeight;
+            
+            let offsetX = 0;
+            let offsetY = 0;
+            
+            // 横方向のオフセット計算
+            if (alignOptions.horizontal === 'center') {
+                offsetX = widthDiff / 2;
+            } else if (alignOptions.horizontal === 'right') {
+                offsetX = widthDiff;
             }
-
-            // Phase 1+3: イベント発火（座標系変更を全システムに通知）
+            // 'left' の場合は offsetX = 0 (デフォルト)
+            
+            // 縦方向のオフセット計算
+            if (alignOptions.vertical === 'center') {
+                offsetY = heightDiff / 2;
+            } else if (alignOptions.vertical === 'bottom') {
+                offsetY = heightDiff;
+            }
+            // 'top' の場合は offsetY = 0 (デフォルト)
+            
+            // worldContainerの位置を調整（カメラの見た目位置を維持）
+            this.worldContainer.position.x += offsetX;
+            this.worldContainer.position.y += offsetY;
+            
+            // Phase 0-2: イベント発火（CoordinateSystemのキャッシュクリア含む）
             if (this.eventBus) {
                 this.eventBus.emit('camera:transform-changed');
-                this.eventBus.emit('camera:resized', { width: newWidth, height: newHeight });
+                this.eventBus.emit('camera:resized', { 
+                    width: newWidth, 
+                    height: newHeight,
+                    oldWidth,
+                    oldHeight,
+                    align: alignOptions
+                });
                 
+                // サムネイル更新を遅延実行
                 setTimeout(() => {
                     this.eventBus.emit('animation:thumbnails-need-update');
+                    this.eventBus.emit('layer:thumbnails-need-update');
                 }, 100);
             }
         }
@@ -616,17 +580,11 @@
             }
         }
 
+        // ========== 互換性API（レガシー・削除予定） ==========
+        
         screenToLayer(screenX, screenY) {
-            const canvas = this._getSafeCanvas();
-            if (!canvas) {
-                return this.canvasContainer.toLocal({ x: screenX, y: screenY });
-            }
-            
-            const rect = canvas.getBoundingClientRect();
-            const relativeX = screenX - rect.left;
-            const relativeY = screenY - rect.top;
-            
-            return this.canvasContainer.toLocal({ x: relativeX, y: relativeY });
+            // Phase 0-1: CoordinateSystemに委譲推奨
+            return this.canvasContainer.toLocal({ x: screenX, y: screenY });
         }
 
         screenToCanvas(screenX, screenY) {
@@ -634,6 +592,7 @@
         }
 
         updateCoordinates(x, y) {
+            // 廃止予定
         }
 
         setZoom(level) {
@@ -716,4 +675,4 @@
 
 })();
 
-console.log('✅ camera-system.js (Phase 1-3 + 座標変換修正版) loaded');
+console.log('✅ camera-system.js (Phase 0-2: 座標系完全統合版) loaded');
