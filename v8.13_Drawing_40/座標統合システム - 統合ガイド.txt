@@ -1,0 +1,319 @@
+問題分析
+
+リサイズ時の座標ズレ：LayerTransformで中央基準のリサイズを適用しても、実描画位置（paths座標）は変換されず、PixiJSの表示とデータの乖離が発生
+Vモード移動後のズレ：confirmTransformでpaths座標を変換後、PixiJS層の変形をリセットしますが、描画判定がレイヤーローカル座標（canvasContainer.toLocal()）を基準にしており、変形中は二重座標系になる
+
+統合座標管理システムの提案
+描画座標を統一的に管理する CoordinateUnification 層を新規作成し、描画と判定の座標ズレを根本解決します。
+
+
+# 座標統合システム - 統合ガイド
+
+## 概要
+
+座標システムの問題を根本解決する統合座標管理システムです。以下の3ファイルを**追加**して、既存ファイルを最小限の改修で統合します。
+
+### 新規ファイル（追加）
+1. **coordinate-unification.js** - 統合座標API（新規作成）
+2. **layer-transform-unified.js** - LayerTransform改修版（置換）
+3. **stroke-recorder-unified.js** - StrokeRecorder改修版（置換）
+
+---
+
+## 統合手順
+
+### Step 1: HTMLに新スクリプト読み込みを追加
+
+**index.html内の`<head>`または`<script>`セクション** に以下を追加：
+
+```html
+<!-- 座標統合システム（新規） -->
+<script src="system/coordinate-unification.js"></script>
+
+<!-- LayerTransform改修版（置換前に新規スクリプトとして追加） -->
+<script src="system/layer-transform-unified.js"></script>
+
+<!-- StrokeRecorder改修版（既存を置換） -->
+<script src="system/drawing/stroke-recorder-unified.js"></script>
+```
+
+**スクリプト読み込み順序（重要）**：
+1. config.js
+2. system/event-bus.js
+3. system/coordinate-unification.js ← **新規**
+4. system/layer-transform-unified.js ← **新規**
+5. system/drawing/stroke-recorder-unified.js ← **置換版**
+6. その他既存スクリプト
+
+---
+
+### Step 2: core-runtime.js の改修
+
+既存の `core-runtime.js` を以下のポイントで改修：
+
+#### 2a. CoordinateUnification インスタンス生成
+
+```javascript
+// core-runtime.js の初期化セクション内
+
+class CoreRuntime {
+    constructor() {
+        // ... 既存コード ...
+        
+        // ✅ 新規: 統合座標API
+        this.coordinateUnification = null;
+    }
+    
+    async initializeCore() {
+        // ... 既存の初期化処理 ...
+        
+        // ✅ Step 2a: CoordinateUnification初期化
+        this.coordinateUnification = new window.TegakiCoordinateUnification(
+            this.config,
+            this.eventBus
+        );
+        
+        this.coordinateUnification.init(
+            this.layerSystem,
+            this.cameraSystem,
+            this.cameraSystem.canvasContainer
+        );
+    }
+}
+```
+
+#### 2b. LayerTransform の置換
+
+```javascript
+// 既存の LayerTransform 初期化を以下に置換：
+
+// ❌ 削除（従来版）
+// this.layerTransform = new window.TegakiLayerTransform(this.config, this.coordinateSystem);
+
+// ✅ 追加（統合版）
+this.layerTransform = new window.TegakiLayerTransform(
+    this.config,
+    this.coordinateUnification  // CoordinateUnification を渡す
+);
+
+this.layerTransform.init(this.app, this.cameraSystem);
+```
+
+#### 2c. LayerTransform のコールバック設定
+
+```javascript
+// 既存のコールバック設定内で：
+
+this.layerTransform.onDragRequest = (dx, dy, isShiftKey) => {
+    if (isShiftKey) {
+        // Shift+ドラッグ: 回転
+        const activeLayer = this.layerSystem.getActiveLayer();
+        if (activeLayer) {
+            const rotationDelta = (dx * 0.01);
+            this.coordinateUnification.rotateLayer(activeLayer, rotationDelta, true);
+            this.layerTransform.updateTransformPanelValues(activeLayer);
+        }
+    } else {
+        // 通常ドラッグ: 移動
+        const activeLayer = this.layerSystem.getActiveLayer();
+        if (activeLayer) {
+            this.coordinateUnification.moveLayer(activeLayer, dx, dy);
+            this.layerTransform.updateTransformPanelValues(activeLayer);
+        }
+    }
+};
+
+this.layerTransform.onFlipRequest = (direction) => {
+    const activeLayer = this.layerSystem.getActiveLayer();
+    if (activeLayer) {
+        this.layerTransform.flipLayer(activeLayer, direction);
+    }
+};
+
+this.layerTransform.onGetActiveLayer = () => {
+    return this.layerSystem.getActiveLayer();
+};
+```
+
+#### 2d. StrokeRecorder の更新
+
+```javascript
+// 既存のDrawingEngine初期化内で：
+
+// ✅ CoordinateUnificationをStrokeRecorderに提供（オプション）
+this.drawingEngine.strokeRecorder.setCoordinateUnification(this.coordinateUnification);
+```
+
+---
+
+### Step 3: CameraSystem の微調整
+
+既存の `camera-system.js` は**変更不要**です。ただし以下を確認：
+
+```javascript
+// camera-system.js の screenToLayer() メソッドが存在すること
+screenToLayer(screenX, screenY) {
+    const canvas = this._getSafeCanvas();
+    if (!canvas) {
+        return this.canvasContainer.toLocal({ x: screenX, y: screenY });
+    }
+    
+    const rect = canvas.getBoundingClientRect();
+    const relativeX = screenX - rect.left;
+    const relativeY = screenY - rect.top;
+    
+    return this.canvasContainer.toLocal({ x: relativeX, y: relativeY });
+}
+```
+
+---
+
+### Step 4: EventBus イベント確認
+
+既存のイベント発行は**維持**し、新規イベントを追加します：
+
+```javascript
+// eventBus が以下のイベントをサポートすることを確認：
+
+// 既存（維持）
+'layer:transform-updated'
+'canvas:resize'
+'camera:transform-changed'
+
+// 新規（CoordinateUnification内で自動発行）
+'coordinate:layer-transform-synced'
+'layer:transform-confirmed'
+```
+
+---
+
+## 既存ファイルの置換 vs 追加方針
+
+### 置換すべきファイル
+- **layer-transform.js** → **layer-transform-unified.js** に置換
+- **stroke-recorder.js** → **stroke-recorder-unified.js** に置換（推奨）
+
+### 追加すべきファイル
+- **coordinate-unification.js** （新規追加 - 既存と共存可能）
+
+### 変更不要
+- camera-system.js（既に正しい座標変換を実装）
+- coordinate-system.js（診断用のため、本番コードでは不使用）
+- その他全システム
+
+---
+
+## 動作原理
+
+### 従来システム（問題）
+
+```
+ペン入力
+  ↓
+StrokeRecorder (スクリーン座標)
+  ↓
+CameraSystem.screenToLayer() (レイヤーローカル座標)
+  ↓
+描画データに記録 (paths)
+  ↓
+LayerTransform 変形操作
+  ├→ PixiJS層に変形適用 ✅
+  └→ paths座標は変更されない ❌ ← 乖離発生！
+  ↓
+Vモード終了
+  ├→ PixiJS層変形リセット ✅
+  └→ paths座標は変わったまま ❌ ← ズレ続く
+```
+
+### 新システム（解決）
+
+```
+ペン入力
+  ↓
+StrokeRecorder (スクリーン座標)
+  ↓
+CameraSystem.screenToLayer() (レイヤーローカル座標)
+  ↓
+描画データに記録 (paths)
+  ↓
+LayerTransform 変形操作
+  ├→ PixiJS層に変形適用 ✅
+  ├→ paths座標も即座に変形 ✅ ← 完全同期！
+  └→ CoordinateUnification管理
+  ↓
+Vモード終了（confirmTransform）
+  ├→ PixiJS層変形リセット ✅
+  ├→ paths座標は既に変形済み ✅ ← 同期継続
+  └→ 以降の操作に支障なし ✅
+```
+
+---
+
+## テスト項目
+
+統合後は以下をテストしてください：
+
+### Test 1: リサイズテスト
+1. キャンバスにペン描画
+2. Vキー → リサイズスライダーで拡大縮小
+3. ペン位置と描画が一致することを確認
+4. リサイズ確定後、描画がズレていないことを確認
+
+### Test 2: 移動テスト
+1. Vキー → ドラッグでレイヤー移動
+2. ペン位置と描画が常に一致
+3. 移動確定後、さらにペン描画可能
+
+### Test 3: 回転テスト
+1. Vキー → 矢印キーまたはShift+ホイールで回転
+2. 回転中のペン位置と描画が一致
+3. 回転確定後、新規描画位置正確
+
+### Test 4: 反転テスト
+1. Vキー → Hキーで反転
+2. Vモード内で追加描画
+3. 描画位置が正確なことを確認
+
+---
+
+## トラブルシューティング
+
+### Issue: "CoordinateUnification is not defined"
+→ HTMLのスクリプト読み込み順序を確認（coordinate-unification.js がlayer-transform前）
+
+### Issue: 変形後に描画位置がズレ続く
+→ LayerTransformのunifiedバージョンが使用されていることを確認
+→ core-runtime.js でCoordinateUnificationが初期化されていることを確認
+
+### Issue: Vモード操作が反応しない
+→ onDragRequest、onFlipRequest、onGetActiveLayerコールバックが設定されていることを確認
+→ console.logで eventBus イベント発行を確認
+
+### Issue: パフォーマンス低下
+→ CoordinateUnification の clearCoordinateCache() が呼ばれていることを確認
+→ 座標キャッシュサイズがデフォルト（100項目）を超えていないことを確認
+
+---
+
+## 設計原則の維持
+
+### "Single Source of Truth"
+- paths座標が主、PixiJS層は投影
+- 変形操作は常にpaths座標も更新
+
+### "No Double Transformation"
+- screenToLayer()で一度だけ変換
+- CameraSystem と CoordinateUnification の責務を明確化
+
+### "Real-time Synchronization"
+- 変形確定不要（常時同期）
+- Vモード中も操作後も座標ズレなし
+
+---
+
+## 次のステップ（オプション）
+
+### 拡張可能性
+- 複数レイヤー同時変形操作（CoordinateUnificationを複数層にスケール）
+- Undo/Redo統合（変形操作の履歴化）
+- キーボードショートカット統一（各変形操作の自動記録）
