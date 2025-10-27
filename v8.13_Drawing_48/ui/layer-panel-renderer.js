@@ -1,7 +1,7 @@
-// ===== ui/layer-panel-renderer.js - サムネイル即座更新対応版 =====
+// ===== ui/layer-panel-renderer.js - Phase 6完了版 =====
 // 責務: レイヤーパネルのDOM操作専用
 // 規則: ロジック(layerSystem)とUI(DOM)を完全分離
-// 修正: リアルタイムサムネイル更新機能追加
+// ✅ Phase 6: camera:transform-changed購読でサムネイル自動更新
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -36,6 +36,21 @@ window.TegakiUI.LayerPanelRenderer = class {
             setTimeout(() => {
                 this.updateAllThumbnails();
             }, 50);
+        });
+        
+        // Phase 6: カメラ変形時の自動サムネイル更新
+        this.eventBus.on('camera:transform-changed', () => {
+            // レイヤーサムネイルは即座に更新
+            setTimeout(() => {
+                this.updateAllThumbnails();
+            }, 100);
+        });
+        
+        // リサイズ時も明示的に更新
+        this.eventBus.on('camera:resized', ({ width, height }) => {
+            setTimeout(() => {
+                this.updateAllThumbnails();
+            }, 150);
         });
     }
 
@@ -339,4 +354,4 @@ window.TegakiUI.LayerPanelRenderer = class {
     }
 };
 
-console.log('✅ layer-panel-renderer.js (サムネイル即座更新対応版) loaded');
+console.log('✅ layer-panel-renderer.js (Phase 6完了: camera:transform-changed購読) loaded');
