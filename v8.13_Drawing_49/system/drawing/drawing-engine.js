@@ -1,6 +1,7 @@
 /**
  * DrawingEngine - ペン描画統合制御クラス
- * Phase 6完了: Vモードレイヤー移動後の描画ズレ解消
+ * Phase 1改修: CoordinateSystem統一API使用
+ * 座標変換を完全にCoordinateSystemに委譲
  */
 
 class DrawingEngine {
@@ -8,6 +9,7 @@ class DrawingEngine {
         this.app = app;
         this.layerSystem = layerSystem;
         this.cameraSystem = cameraSystem;
+        this.coordinateSystem = window.CoordinateSystem; // Phase 1: 追加
         this.history = history;
         this.eventBus = window.TegakiEventBus;
 
@@ -27,14 +29,12 @@ class DrawingEngine {
         this.lastProcessedPointIndex = 0;
         
         this.canvasMoveMode = false;
-        
-        // Phase 6: レイヤー変形認識フラグ
         this.layerTransformDirty = false;
         
         this._syncBrushSettingsToRuntime();
         this._syncToolSelection();
         this._setupCanvasMoveModeListener();
-        this._setupLayerTransformListener(); // Phase 6
+        this._setupLayerTransformListener();
     }
 
     setBrushSettings(brushSettings) {
@@ -66,20 +66,94 @@ class DrawingEngine {
         });
     }
 
-    // Phase 6: レイヤー変形更新監視
     _setupLayerTransformListener() {
         if (!this.eventBus) return;
         this.eventBus.on('layer:transform-updated', ({ layerId }) => {
-            // 現在描画中のレイヤーが変形された場合は描画キャンセル
-            if (this.isDrawing && this.currentLayer?.layerData?.id === layerId) {
+            if (this.eventBus) {
+            this.eventBus.emit('layer:modified', {
+                layerId: layerId,
+                tool: activeTool
+            });
+        }
+    }
+
+    getBrushSettings() {
+        if (this.brushSettings) {
+            return this.brushSettings.getCurrentSettings();
+        }
+
+        if (window.brushSettings) {
+            return {
+                color: window.brushSettings.getColor(),
+                size: window.brushSettings.getSize(),
+                alpha: window.brushSettings.getAlpha ? window.brushSettings.getAlpha() : 1.0
+            };
+        }
+
+        if (window.TegakiSettingsManager) {
+            return {
+                color: window.TegakiSettingsManager.get('pen.color') || 0x800000,
+                size: window.TegakiSettingsManager.get('pen.size') || 3,
+                alpha: window.TegakiSettingsManager.get('pen.opacity') || 1.0
+            };
+        }
+
+        return {
+            color: 0x800000,
+            size: 3,
+            alpha: 1.0
+        };
+    }
+
+    setTool(toolName) {
+        this.currentTool = toolName;
+        if (this.strokeRenderer) {
+            this.strokeRenderer.setTool(toolName);
+        }
+        
+        if (toolName !== 'eraser') {
+            this.clearEraserPreview();
+        }
+    }
+
+    cancelStroke() {
+        if (!this.isDrawing) return;
+
+        this.clearPreview();
+        this.clearEraserPreview();
+        this.isDrawing = false;
+        this.currentLayer = null;
+        this.currentSettings = null;
+        this.lastProcessedPointIndex = 0;
+
+        if (this.eventBus) {
+            this.eventBus.emit('stroke:cancel');
+        }
+    }
+
+    updateResolution() {
+        this.strokeRenderer.updateResolution();
+    }
+
+    destroy() {
+        this.clearPreview();
+        this.clearEraserPreview();
+    }
+}
+
+console.log('✅ drawing-engine.js (Phase 1: CoordinateSystem統一API使用) loaded');.isDrawing && this.currentLayer?.layerData?.id === layerId) {
                 this.cancelStroke();
             }
-            // 変形フラグ立て（次回描画時に座標変換を再実行）
             this.layerTransformDirty = true;
         });
     }
 
-    // Phase 2+6: CameraSystem統一座標変換使用 + レイヤー変形対応
+    // ========== Phase 1改修: CoordinateSystem統一API使用 ==========
+
+    /**
+     * 描画開始
+     * Phase 1: coordinateSystem.screenClientToLocal() を使用
+     */
     startDrawing(x, y, event) {
         if (this.canvasMoveMode) {
             return;
@@ -92,31 +166,26 @@ class DrawingEngine {
 
         this.currentSettings = this.getBrushSettings();
 
-        // Phase 2+6: 統一座標変換API使用
+        // Phase 1: CoordinateSystem統一API使用
         if (event && event.clientX !== undefined && event.clientY !== undefined) {
-            const world = this.cameraSystem.screenClientToWorld(this.app, event.clientX, event.clientY);
-            
-            // Phase 6: レイヤー変形がある場合はworldToLocalで変換
-            let localX = world.x;
-            let localY = world.y;
-            if (this.currentLayer.transform && 
-                (this.currentLayer.position.x !== 0 || this.currentLayer.position.y !== 0 ||
-                 this.currentLayer.rotation !== 0 || this.currentLayer.scale.x !== 1 || this.currentLayer.scale.y !== 1)) {
-                const local = this.currentLayer.worldToLocal(world);
-                localX = local.x;
-                localY = local.y;
-            }
+            // Screen → Local の直接変換
+            const local = this.coordinateSystem.screenClientToLocal(
+                event.clientX,
+                event.clientY,
+                this.currentLayer
+            );
             
             const pressure = event.pressure || 0.5;
-            this.strokeRecorder.startStroke(localX, localY, pressure);
+            this.strokeRecorder.startStroke(local.x, local.y, pressure);
         } else {
+            // フォールバック（旧形式の引数）
             const pressure = event?.pressure || 0.5;
             this.strokeRecorder.startStroke(x, y, pressure);
         }
 
         this.isDrawing = true;
         this.lastProcessedPointIndex = 0;
-        this.layerTransformDirty = false; // 描画開始時にリセット
+        this.layerTransformDirty = false;
 
         if (this.eventBus) {
             this.eventBus.emit('stroke:start', {
@@ -136,7 +205,10 @@ class DrawingEngine {
         }
     }
 
-    // Phase 2+6: CameraSystem統一座標変換使用 + レイヤー変形対応
+    /**
+     * 描画継続
+     * Phase 1: coordinateSystem.screenClientToLocal() を使用
+     */
     continueDrawing(x, y, event) {
         if (!this.isDrawing) return;
         
@@ -145,30 +217,24 @@ class DrawingEngine {
             return;
         }
 
-        // Phase 6: レイヤー変形検知でキャンセル
         if (this.layerTransformDirty) {
             this.cancelStroke();
             return;
         }
 
-        // Phase 2+6: 統一座標変換API使用
+        // Phase 1: CoordinateSystem統一API使用
         if (event && event.clientX !== undefined && event.clientY !== undefined) {
-            const world = this.cameraSystem.screenClientToWorld(this.app, event.clientX, event.clientY);
-            
-            // Phase 6: レイヤー変形対応
-            let localX = world.x;
-            let localY = world.y;
-            if (this.currentLayer && this.currentLayer.transform &&
-                (this.currentLayer.position.x !== 0 || this.currentLayer.position.y !== 0 ||
-                 this.currentLayer.rotation !== 0 || this.currentLayer.scale.x !== 1 || this.currentLayer.scale.y !== 1)) {
-                const local = this.currentLayer.worldToLocal(world);
-                localX = local.x;
-                localY = local.y;
-            }
+            // Screen → Local の直接変換
+            const local = this.coordinateSystem.screenClientToLocal(
+                event.clientX,
+                event.clientY,
+                this.currentLayer
+            );
             
             const pressure = event.pressure || 0.5;
-            this.strokeRecorder.addPoint(localX, localY, pressure);
+            this.strokeRecorder.addPoint(local.x, local.y, pressure);
         } else {
+            // フォールバック
             const pressure = event?.pressure || 0.5;
             this.strokeRecorder.addPoint(x, y, pressure);
         }
@@ -192,6 +258,8 @@ class DrawingEngine {
             });
         }
     }
+
+    // ========== 以下は変更なし ==========
 
     stopDrawing() {
         if (!this.isDrawing) return;
@@ -387,76 +455,4 @@ class DrawingEngine {
             this.layerSystem.requestThumbnailUpdate(layerIndex);
         }
 
-        if (this.eventBus) {
-            this.eventBus.emit('layer:modified', {
-                layerId: layerId,
-                tool: activeTool
-            });
-        }
-    }
-
-    getBrushSettings() {
-        if (this.brushSettings) {
-            return this.brushSettings.getCurrentSettings();
-        }
-
-        if (window.brushSettings) {
-            return {
-                color: window.brushSettings.getColor(),
-                size: window.brushSettings.getSize(),
-                alpha: window.brushSettings.getAlpha ? window.brushSettings.getAlpha() : 1.0
-            };
-        }
-
-        if (window.TegakiSettingsManager) {
-            return {
-                color: window.TegakiSettingsManager.get('pen.color') || 0x800000,
-                size: window.TegakiSettingsManager.get('pen.size') || 3,
-                alpha: window.TegakiSettingsManager.get('pen.opacity') || 1.0
-            };
-        }
-
-        return {
-            color: 0x800000,
-            size: 3,
-            alpha: 1.0
-        };
-    }
-
-    setTool(toolName) {
-        this.currentTool = toolName;
-        if (this.strokeRenderer) {
-            this.strokeRenderer.setTool(toolName);
-        }
-        
-        if (toolName !== 'eraser') {
-            this.clearEraserPreview();
-        }
-    }
-
-    cancelStroke() {
-        if (!this.isDrawing) return;
-
-        this.clearPreview();
-        this.clearEraserPreview();
-        this.isDrawing = false;
-        this.currentLayer = null;
-        this.currentSettings = null;
-        this.lastProcessedPointIndex = 0;
-
-        if (this.eventBus) {
-            this.eventBus.emit('stroke:cancel');
-        }
-    }
-
-    updateResolution() {
-        this.strokeRenderer.updateResolution();
-    }
-
-    destroy() {
-        this.clearPreview();
-        this.clearEraserPreview();
-    }
-}
-
-console.log('✅ drawing-engine.js (Phase 6完了: Vモードレイヤー移動後描画ズレ解消) loaded');
+        if (this
