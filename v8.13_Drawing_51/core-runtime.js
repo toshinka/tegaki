@@ -1,5 +1,5 @@
-// ===== core-runtime.js - Phase 2改修版 =====
-// Phase 2: DrawingEngineへevent.data (nativeイベント)を渡す
+// ===== core-runtime.js - Phase 1完全版: 座標修正 =====
+// Phase 1: PointerEventからclientX/Yを正しく取得してDrawingEngineに渡す
 
 (function() {
     'use strict';
@@ -50,7 +50,7 @@
             return this;
         },
         
-        // ========== Phase 2改修: event.dataを渡す ==========
+        // ========== Phase 1完全修正: clientX/Yを正しく取得 ==========
         setupPointerEvents() {
             if (!this.internal.app?.stage || this.internal.pointerEventsSetup) return;
             
@@ -78,6 +78,38 @@
             this.internal.pointerEventsSetup = true;
         },
         
+        /**
+         * Phase 1完全修正: PointerEventからclientX/Yを抽出
+         * PIXI v8のFederatedPointerEventは以下の構造:
+         * - event.clientX/clientY (推奨)
+         * - event.nativeEvent.clientX/clientY (フォールバック)
+         * - event.data.originalEvent.clientX/clientY (v7互換)
+         */
+        extractNativeEvent(pixiEvent) {
+            // PIXI v8: FederatedPointerEventは直接clientX/Yを持つ
+            if (pixiEvent.clientX !== undefined && pixiEvent.clientY !== undefined) {
+                return pixiEvent;
+            }
+            
+            // フォールバック1: nativeEvent
+            if (pixiEvent.nativeEvent?.clientX !== undefined) {
+                return pixiEvent.nativeEvent;
+            }
+            
+            // フォールバック2: data.originalEvent (v7互換)
+            if (pixiEvent.data?.originalEvent?.clientX !== undefined) {
+                return pixiEvent.data.originalEvent;
+            }
+            
+            // フォールバック3: data自体
+            if (pixiEvent.data?.clientX !== undefined) {
+                return pixiEvent.data;
+            }
+            
+            // 最終フォールバック: pixiEvent自体
+            return pixiEvent;
+        },
+        
         handlePointerDown(event) {
             const currentTool = this.internal.drawingEngine?.currentTool || 'pen';
             const isDrawingTool = currentTool === 'pen' || currentTool === 'eraser';
@@ -85,18 +117,19 @@
             if (this.internal.drawingEngine && 
                 !this.internal.layerManager?.isLayerMoveMode && 
                 isDrawingTool) {
-                // Phase 2修正: nativeイベントを直接渡す（clientX/Yが必要）
-                const nativeEvent = event.data?.originalEvent || event.data || event;
                 
-                // drawing-engineは clientX/clientY を使うので、そのまま渡す
+                // Phase 1修正: 正しいネイティブイベント取得
+                const nativeEvent = this.extractNativeEvent(event);
+                
+                // DrawingEngineはclientX/Yを使ってCoordinateSystem経由で変換
                 this.internal.drawingEngine.startDrawing(0, 0, nativeEvent);
             }
         },
         
         handlePointerMove(event) {
             if (this.internal.drawingEngine?.isDrawing) {
-                // Phase 2修正: nativeイベントを直接渡す（clientX/Yが必要）
-                const nativeEvent = event.data?.originalEvent || event.data || event;
+                // Phase 1修正: 正しいネイティブイベント取得
+                const nativeEvent = this.extractNativeEvent(event);
                 
                 this.internal.drawingEngine.continueDrawing(0, 0, nativeEvent);
             }
@@ -669,4 +702,4 @@
     
 })();
 
-console.log('✅ core-runtime.js (Phase 2改修版) loaded');
+console.log('✅ core-runtime.js (Phase 1完全版: 座標修正) loaded');
