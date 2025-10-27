@@ -1,4 +1,5 @@
-// ===== ui/resize-popup.js - Phase 4: CameraSystem.resizeCanvas()連携完了版 =====
+// ===== ui/resize-popup.js - Phase 4: ロジック削減完了版 =====
+// CameraSystem.resizeCanvas()に完全委譲、レイヤー個別調整削除
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -151,9 +152,6 @@ window.TegakiUI.ResizePopup = class {
             </div>
             
             <button class="resize-apply-btn" id="apply-resize">適用</button>
-            
-            <input type="number" class="resize-hidden-input" id="canvas-width-input">
-            <input type="number" class="resize-hidden-input" id="canvas-height-input">
         `;
     }
     
@@ -341,45 +339,7 @@ window.TegakiUI.ResizePopup = class {
         });
     }
     
-    // Phase 4: レイヤーposition用のオフセット計算（表示位置調整）
-    _calculateLayerPositionOffset(oldWidth, oldHeight, newWidth, newHeight, alignOptions) {
-        let offsetX = 0;
-        let offsetY = 0;
-        
-        const widthDiff = newWidth - oldWidth;
-        if (alignOptions.horizontal === 'center') {
-            offsetX = widthDiff / 2;
-        } else if (alignOptions.horizontal === 'right') {
-            offsetX = widthDiff;
-        } else if (alignOptions.horizontal === 'left') {
-            offsetX = 0;
-        }
-        
-        const heightDiff = newHeight - oldHeight;
-        if (alignOptions.vertical === 'center') {
-            offsetY = heightDiff / 2;
-        } else if (alignOptions.vertical === 'bottom') {
-            offsetY = heightDiff;
-        } else if (alignOptions.vertical === 'top') {
-            offsetY = 0;
-        }
-        
-        return { offsetX, offsetY };
-    }
-    
-    // Phase 4: レイヤーのpositionのみ変更（パスのpointsは変換しない）
-    _applyPositionOffsetToFrames(frames, offsetX, offsetY) {
-        frames.forEach((frame) => {
-            const layers = frame.getLayers();
-            
-            layers.forEach((layer) => {
-                layer.position.x += offsetX;
-                layer.position.y += offsetY;
-            });
-        });
-    }
-    
-    // Phase 4: CameraSystem.resizeCanvas()を使用した簡潔な実装
+    // Phase 4: CameraSystem.resizeCanvas()に完全委譲
     _applyResize() {
         if (!this.coreEngine || !this.history) return;
         if (this.currentWidth <= 0 || this.currentHeight <= 0) return;
@@ -395,45 +355,13 @@ window.TegakiUI.ResizePopup = class {
         const oldWidth = window.TEGAKI_CONFIG.canvas.width;
         const oldHeight = window.TEGAKI_CONFIG.canvas.height;
         
-        const { offsetX, offsetY } = this._calculateLayerPositionOffset(
-            oldWidth, oldHeight, newWidth, newHeight, alignOptions
-        );
-        
-        const animSystem = this.coreEngine.getAnimationSystem();
-        const frames = animSystem?.animationData?.frames || [];
-        const frameSnapshots = [];
-        
-        frames.forEach((frame, frameIndex) => {
-            const layers = frame.getLayers();
-            const layerSnapshots = layers.map(layer => ({
-                id: layer.layerData.id,
-                x: layer.position.x,
-                y: layer.position.y,
-                isBackground: layer.layerData.isBackground
-            }));
-            
-            frameSnapshots.push({
-                frameIndex: frameIndex,
-                layers: layerSnapshots
-            });
-        });
-        
         const command = {
             name: 'resize-canvas',
             do: () => {
-                // Phase 4: CameraSystem.resizeCanvas()に委譲
+                // Phase 4: CameraSystem.resizeCanvas()に完全委譲
                 this.coreEngine.getCameraSystem().resizeCanvas(newWidth, newHeight, alignOptions);
                 
-                this._applyPositionOffsetToFrames(frames, offsetX, offsetY);
-                
-                setTimeout(() => {
-                    animSystem.regenerateAllThumbnails();
-                    
-                    if (this.eventBus) {
-                        this.eventBus.emit('animation:thumbnails-need-update');
-                        this.eventBus.emit('layer:thumbnails-need-update');
-                    }
-                }, 100);
+                // canvas:resizedイベントでサムネイル再生成が自動実行される
                 
                 const canvasInfoElement = document.getElementById('canvas-info');
                 if (canvasInfoElement) {
@@ -441,39 +369,8 @@ window.TegakiUI.ResizePopup = class {
                 }
             },
             undo: () => {
-                // Phase 4: CameraSystem.resizeCanvas()に委譲
+                // Phase 4: CameraSystem.resizeCanvas()に完全委譲
                 this.coreEngine.getCameraSystem().resizeCanvas(oldWidth, oldHeight, alignOptions);
-                
-                const currentFrames = animSystem?.animationData?.frames || [];
-                frameSnapshots.forEach(frameSnap => {
-                    const frame = currentFrames[frameSnap.frameIndex];
-                    if (!frame) return;
-                    
-                    const layers = frame.getLayers();
-                    frameSnap.layers.forEach(layerSnap => {
-                        const layer = layers.find(l => l.layerData.id === layerSnap.id);
-                        if (!layer) return;
-                        
-                        layer.position.x = layerSnap.x;
-                        layer.position.y = layerSnap.y;
-                        
-                        if (layerSnap.isBackground && layer.layerData.backgroundGraphics) {
-                            layer.layerData.backgroundGraphics.clear();
-                            layer.layerData.backgroundGraphics.rect(0, 0, oldWidth, oldHeight);
-                            layer.layerData.backgroundGraphics.fill({
-                                color: window.TEGAKI_CONFIG.background.color
-                            });
-                        }
-                    });
-                });
-                
-                setTimeout(() => {
-                    animSystem.regenerateAllThumbnails();
-                    if (this.eventBus) {
-                        this.eventBus.emit('animation:thumbnails-need-update');
-                        this.eventBus.emit('layer:thumbnails-need-update');
-                    }
-                }, 100);
                 
                 const canvasInfoElement = document.getElementById('canvas-info');
                 if (canvasInfoElement) {
@@ -552,4 +449,4 @@ window.TegakiUI.ResizePopup = class {
 
 window.ResizePopup = window.TegakiUI.ResizePopup;
 
-console.log('✅ resize-popup.js (Phase 4完了: CameraSystem.resizeCanvas()連携) loaded');
+console.log('✅ resize-popup.js (Phase 4完了: ロジック削減版) loaded');

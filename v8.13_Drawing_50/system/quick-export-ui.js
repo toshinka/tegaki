@@ -1,45 +1,28 @@
-// ========================================
-// quick-export-ui.js - Phase 1改修版
-// 改修内容: ExportManager初期化完了後のみUI作成
-// ========================================
+/**
+ * QuickExportUI - クイックエクスポートUI
+ * ExportPopupに機能統合済みのため無効化
+ */
 
 class QuickExportUI {
     constructor() {
-        // 機能を無効化し、初期化しない
         this.disabled = true;
-        console.log('⚠️ QuickExportUI は無効化されています (ExportPopup に機能統合済み)');
+        this.initialized = false;
+        this.isGenerating = false;
+        this.container = null;
     }
 
-    // 互換性のためのダミーメソッド
-    init() {}
-    createUI() {}
-    setupEventListeners() {}
-    exportPNG() {}
-    previewGIF() {}
-    previewAPNG() {}
-    getExportManager() { return null; }
-    showPreview() {}
-    downloadBlob() {}
-    setButtonsEnabled() {}
-}
-
-// グローバルインスタンス作成（互換性維持）
-if (typeof window !== 'undefined') {
-    window.QuickExportUI = new QuickExportUI();
-}
-
-console.log('✅ quick-export-ui.js (無効化版) loaded');
-
     init() {
+        if (this.disabled) return;
         if (this.initialized) return;
         
         this.initialized = true;
         this.createUI();
         this.setupEventListeners();
-        console.log('✅ QuickExportUI initialized');
     }
 
     createUI() {
+        if (this.disabled) return;
+        
         this.container = document.createElement('div');
         this.container.id = 'quick-export-ui';
         this.container.innerHTML = `
@@ -85,17 +68,21 @@ console.log('✅ quick-export-ui.js (無効化版) loaded');
     }
 
     setupEventListeners() {
-        document.getElementById('quick-export-png').addEventListener('click', () => {
-            this.exportPNG();
-        });
+        if (this.disabled) return;
+        
+        const pngBtn = document.getElementById('quick-export-png');
+        const gifBtn = document.getElementById('quick-export-gif');
+        const apngBtn = document.getElementById('quick-export-apng');
 
-        document.getElementById('quick-export-gif').addEventListener('click', () => {
-            this.previewGIF();
-        });
-
-        document.getElementById('quick-export-apng').addEventListener('click', () => {
-            this.previewAPNG();
-        });
+        if (pngBtn) {
+            pngBtn.addEventListener('click', () => this.exportPNG());
+        }
+        if (gifBtn) {
+            gifBtn.addEventListener('click', () => this.previewGIF());
+        }
+        if (apngBtn) {
+            apngBtn.addEventListener('click', () => this.previewAPNG());
+        }
 
         document.addEventListener('keydown', (e) => {
             if (e.ctrlKey || e.metaKey) return;
@@ -115,14 +102,14 @@ console.log('✅ quick-export-ui.js (無効化版) loaded');
 
     getExportManager() {
         if (!window.TEGAKI_EXPORT_MANAGER) {
-            console.error('[QuickExportUI] TEGAKI_EXPORT_MANAGER not initialized');
-            alert('エクスポートシステムが初期化されていません。\nページをリロードしてください。');
             return null;
         }
         return window.TEGAKI_EXPORT_MANAGER;
     }
 
     async exportPNG() {
+        if (this.disabled) return;
+        
         const manager = this.getExportManager();
         if (!manager || this.isGenerating) return;
 
@@ -136,7 +123,6 @@ console.log('✅ quick-export-ui.js (無効化版) loaded');
             }
         } catch (error) {
             console.error('[QuickExportUI] PNG export failed:', error);
-            alert('PNG出力に失敗しました: ' + error.message);
         } finally {
             this.isGenerating = false;
             this.setButtonsEnabled(true);
@@ -144,6 +130,8 @@ console.log('✅ quick-export-ui.js (無効化版) loaded');
     }
 
     async previewGIF() {
+        if (this.disabled) return;
+        
         const manager = this.getExportManager();
         if (!manager || this.isGenerating) return;
 
@@ -158,7 +146,6 @@ console.log('✅ quick-export-ui.js (無効化版) loaded');
             }
         } catch (error) {
             console.error('[QuickExportUI] GIF preview failed:', error);
-            alert('GIFプレビュー生成に失敗しました: ' + error.message);
         } finally {
             this.isGenerating = false;
             this.setButtonsEnabled(true);
@@ -166,6 +153,8 @@ console.log('✅ quick-export-ui.js (無効化版) loaded');
     }
 
     async previewAPNG() {
+        if (this.disabled) return;
+        
         const manager = this.getExportManager();
         if (!manager || this.isGenerating) return;
 
@@ -181,7 +170,6 @@ console.log('✅ quick-export-ui.js (無効化版) loaded');
             }
         } catch (error) {
             console.error('[QuickExportUI] APNG preview failed:', error);
-            alert('APNGプレビュー生成に失敗しました: ' + error.message);
         } finally {
             this.isGenerating = false;
             this.setButtonsEnabled(true);
@@ -297,9 +285,8 @@ console.log('✅ quick-export-ui.js (無効化版) loaded');
     }
 }
 
-// ★ Phase 1改修: 即座に初期化せず、インスタンスのみ作成
 if (typeof window !== 'undefined') {
     window.QuickExportUI = new QuickExportUI();
 }
 
-console.log('✅ quick-export-ui.js (Phase 1改修版) loaded');
+console.log('✅ quick-export-ui.js (無効化版) loaded');
