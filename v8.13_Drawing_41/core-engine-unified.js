@@ -1,5 +1,4 @@
-// ===== core-engine.js - Phase2 完全修正版 =====
-// Phase2改修: リサイズ時のレイヤー座標シフト実装 + 背景色修正
+// ===== core-engine.js - CoordinateUnification統合完全版 =====
 
 (function() {
     'use strict';
@@ -8,6 +7,7 @@
     if (!window.TegakiLayerSystem) throw new Error('system/layer-system.js required');
     if (!window.TegakiDrawingClipboard) throw new Error('system/drawing-clipboard.js required');
     if (!window.TegakiEventBus) throw new Error('system/event-bus.js required');
+    if (!window.TegakiCoordinateUnification) throw new Error('system/coordinate-unification.js required');
     
     const CONFIG = window.TEGAKI_CONFIG;
     if (!CONFIG) throw new Error('config.js required');
@@ -223,8 +223,8 @@
                         const targetLayer = layers[activeIndex + 1];
                         
                         if (!layer?.layerData?.isBackground && !targetLayer?.layerData?.isBackground) {
-                            this.layerSystem.currentCutContainer.removeChildAt(activeIndex);
-                            this.layerSystem.currentCutContainer.addChildAt(layer, activeIndex + 1);
+                            this.layerSystem.currentFrameContainer.removeChildAt(activeIndex);
+                            this.layerSystem.currentFrameContainer.addChildAt(layer, activeIndex + 1);
                             this.layerSystem.activeLayerIndex = activeIndex + 1;
                             this.layerSystem.updateLayerPanelUI();
                             
@@ -241,8 +241,8 @@
                         const targetLayer = layers[activeIndex - 1];
                         
                         if (!layer?.layerData?.isBackground && !targetLayer?.layerData?.isBackground) {
-                            this.layerSystem.currentCutContainer.removeChildAt(activeIndex);
-                            this.layerSystem.currentCutContainer.addChildAt(layer, activeIndex - 1);
+                            this.layerSystem.currentFrameContainer.removeChildAt(activeIndex);
+                            this.layerSystem.currentFrameContainer.addChildAt(layer, activeIndex - 1);
                             this.layerSystem.activeLayerIndex = activeIndex - 1;
                             this.layerSystem.updateLayerPanelUI();
                             
@@ -323,6 +323,12 @@
             this.eventBus = window.TegakiEventBus;
             if (!this.eventBus) throw new Error('window.TegakiEventBus required');
             
+            // ✅ CoordinateUnification インスタンス作成
+            this.coordinateUnification = new window.TegakiCoordinateUnification(
+                CONFIG,
+                this.eventBus
+            );
+            
             this.cameraSystem = new window.TegakiCameraSystem();
             this.layerSystem = new window.TegakiLayerSystem();
             this.clipboardSystem = new window.TegakiDrawingClipboard();
@@ -355,10 +361,12 @@
             this.layerSystem.setCameraSystem(this.cameraSystem);
             this.layerSystem.setApp(this.app);
             
-            if (this.layerSystem.transform && !this.layerSystem.transform.app) {
-                if (this.layerSystem.initTransform) {
-                    this.layerSystem.initTransform();
-                }
+            // ✅ CoordinateUnificationを LayerSystem に設定
+            this.layerSystem.coordinateUnification = this.coordinateUnification;
+            
+            // ✅ LayerSystem初期化時にCoordinateUnificationが準備される
+            if (this.layerSystem.initTransform) {
+                this.layerSystem.initTransform();
             }
             
             this.clipboardSystem.setLayerManager(this.layerSystem);
@@ -433,18 +441,13 @@
         }
         
         setupCoordinateSystemReferences() {
-            if (!window.CoordinateSystem) return;
-            
-            if (typeof window.CoordinateSystem.setCameraSystem === 'function') {
-                window.CoordinateSystem.setCameraSystem(this.cameraSystem);
-            }
-            
-            if (typeof window.CoordinateSystem.setLayerSystem === 'function') {
-                window.CoordinateSystem.setLayerSystem(this.layerSystem);
-            }
-            
-            if (typeof window.CoordinateSystem.setAnimationSystem === 'function' && this.animationSystem) {
-                window.CoordinateSystem.setAnimationSystem(this.animationSystem);
+            // ✅ CoordinateUnification を各システムに提供
+            if (this.coordinateUnification) {
+                this.coordinateUnification.init(
+                    this.layerSystem,
+                    this.cameraSystem,
+                    this.cameraSystem.canvasContainer
+                );
             }
         }
         
@@ -468,204 +471,32 @@
         getTimelineUI() { return this.timelineUI; }
         getKeyHandler() { return this.keyHandler; }
         getEventBus() { return this.eventBus; }
+        getCoordinateUnification() { return this.coordinateUnification; }
         getExportManager() { return this.exportManager; }
-        getBatchAPI() { return this.batchAPI; }
-        getBrushSettings() { return this.brushSettings; }
         
-        undo() {
-            if (window.History) {
-                window.History.undo();
-                this.eventBus.emit('history:undo', { timestamp: Date.now() });
-            }
-        }
-        
-        redo() {
-            if (window.History) {
-                window.History.redo();
-                this.eventBus.emit('history:redo', { timestamp: Date.now() });
-            }
-        }
-        
-        setupCanvasEvents() {
-            const canvas = this.app.canvas || this.app.view;
-            if (!canvas) return;
-            
-            canvas.addEventListener('pointermove', (e) => {
-                const rect = canvas.getBoundingClientRect();
-                const x = e.clientX - rect.left;
-                const y = e.clientY - rect.top;
-                this.updateCoordinates(x, y);
-                this.eventBus.emit('ui:mouse-move', { x, y });
-            }, true);
-        }
-        
-        switchTool(tool) {
-            if (this.keyHandler) {
-                this.keyHandler.switchTool(tool);
-            } else {
-                this.cameraSystem.updateCursor();
-                this.eventBus.emit('tool:changed', { newTool: tool });
-            }
-        }
-        
-        updateCoordinates(x, y) {
-            this.cameraSystem.updateCoordinates(x, y);
-        }
-        
-        processThumbnailUpdates() {
-            this.layerSystem.processThumbnailUpdates();
-        }
-        
-        // ★★★ Phase2-A: レイヤー座標シフト実装 ★★★
-        // ★★★ Phase2-B: 背景色修正（単色） ★★★
-        resizeCanvas(newWidth, newHeight, options = {}) {
-            const oldWidth = CONFIG.canvas.width;
-            const oldHeight = CONFIG.canvas.height;
-            
-            const horizontalAlign = options.horizontalAlign || 'center';
-            const verticalAlign = options.verticalAlign || 'center';
-            
-            let offsetX = 0;
-            let offsetY = 0;
-            
-            const widthDiff = newWidth - oldWidth;
-            const heightDiff = newHeight - oldHeight;
-            
-            if (horizontalAlign === 'left') {
-                offsetX = 0;
-            } else if (horizontalAlign === 'center') {
-                offsetX = widthDiff / 2;
-            } else if (horizontalAlign === 'right') {
-                offsetX = widthDiff;
+        async initialize() {
+            if (!this.app?.stage || !this.app.stage.parent) {
+                throw new Error('PIXI App not properly initialized');
             }
             
-            if (verticalAlign === 'top') {
-                offsetY = 0;
-            } else if (verticalAlign === 'center') {
-                offsetY = heightDiff / 2;
-            } else if (verticalAlign === 'bottom') {
-                offsetY = heightDiff;
-            }
+            const cameraContainer = this.app.stage.parent;
             
-            CONFIG.canvas.width = newWidth;
-            CONFIG.canvas.height = newHeight;
-            
-            this.cameraSystem.resizeCanvas(newWidth, newHeight);
-            
-            // ★★★ Phase2-A修正: paths座標のみシフト（レイヤーpositionはシフトしない） ★★★
-            const frames = this.animationSystem?.animationData?.frames || [];
-            frames.forEach(frame => {
-                const layers = frame.getLayers();
-                layers.forEach(layer => {
-                    if (layer.layerData?.isBackground) return;
-                    
-                    // レイヤーposition自体は変更しない（キャンバス座標系）
-                    
-                    // paths内の点座標をシフト
-                    if (layer.layerData?.paths) {
-                        layer.layerData.paths.forEach(path => {
-                            if (path.points) {
-                                path.points.forEach(point => {
-                                    point.x += offsetX;
-                                    point.y += offsetY;
-                                });
-                            }
-                            
-                            // Graphics再描画
-                            if (path.graphics) {
-                                path.graphics.clear();
-                                path.points.forEach(p => {
-                                    path.graphics.circle(p.x, p.y, path.size / 2);
-                                    path.graphics.fill({
-                                        color: path.color,
-                                        alpha: path.opacity
-                                    });
-                                });
-                            }
-                        });
-                    }
-                });
-            });
-            
-            // ★★★ Phase2-B: 背景レイヤー再描画（単色に修正） ★★★
-            const layers = this.layerSystem.getLayers();
-            layers.forEach(layer => {
-                if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
-                    layer.layerData.backgroundGraphics.clear();
-                    
-                    layer.layerData.backgroundGraphics.rect(0, 0, newWidth, newHeight);
-                    layer.layerData.backgroundGraphics.fill({
-                        color: CONFIG.background.color
-                    });
-                }
-            });
-            
-            for (let i = 0; i < layers.length; i++) {
-                this.layerSystem.requestThumbnailUpdate(i);
-            }
-            
-            if (this.animationSystem) {
-                setTimeout(() => {
-                    const animData = this.animationSystem.getAnimationData();
-                    if (animData && animData.cuts) {
-                        for (let i = 0; i < animData.cuts.length; i++) {
-                            if (this.animationSystem.generateCutThumbnail) {
-                                this.animationSystem.generateCutThumbnail(i);
-                            } else if (this.animationSystem.generateCutThumbnailOptimized) {
-                                this.animationSystem.generateCutThumbnailOptimized(i);
-                            }
-                        }
-                    }
-                }, 500);
-            }
-            
-            const canvasInfoElement = document.getElementById('canvas-info');
-            if (canvasInfoElement) {
-                canvasInfoElement.textContent = `${newWidth}×${newHeight}px`;
-            }
-            
-            const resizeSettings = document.getElementById('resize-settings');
-            if (resizeSettings) resizeSettings.classList.remove('show');
-            
-            this.eventBus.emit('canvas:resized', { 
-                width: newWidth, 
-                height: newHeight,
-                oldWidth,
-                oldHeight,
-                offsetX,
-                offsetY,
-                horizontalAlign,
-                verticalAlign
-            });
-        }
-        
-        initialize() {
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
             this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
-            this.clipboardSystem.init(this.eventBus, CONFIG);
             
-            if (window.History && typeof window.History.setLayerSystem === 'function') {
-                window.History.setLayerSystem(this.layerSystem);
+            // ✅ CoordinateUnification初期化
+            this.setupCoordinateSystemReferences();
+            
+            if (window.TegakiExportManager) {
+                this.exportManager = new window.TegakiExportManager(
+                    this.app,
+                    this.layerSystem,
+                    this.cameraSystem
+                );
+                this.exportManager.init();
             }
             
             this.initializeAnimationSystem();
-            
-            if (window.TegakiBatchAPI && this.animationSystem) {
-                this.batchAPI = new window.TegakiBatchAPI(
-                    this.layerSystem,
-                    this.animationSystem
-                );
-                window.batchAPI = this.batchAPI;
-            }
-            
-            if (window.ExportManager && this.animationSystem) {
-                this.exportManager = new window.ExportManager(
-                    this.app,
-                    this.layerSystem,
-                    this.animationSystem,
-                    this.cameraSystem
-                );
-            }
             
             this.keyHandler = new UnifiedKeyHandler(
                 this.cameraSystem,
@@ -679,47 +510,43 @@
                 this.keyHandler.setTimelineUI(this.timelineUI);
             }
             
-            this.eventBus.on('animation:initial-cut-created', () => {
-                this.layerSystem.updateLayerPanelUI();
-                this.layerSystem.updateStatusDisplay();
-            });
-            
-            if (window.TegakiUI && window.TegakiUI.initializeSortable) {
-                setTimeout(() => {
-                    window.TegakiUI.initializeSortable(this.layerSystem);
-                }, 100);
+            if (window.CoreRuntime) {
+                window.CoreRuntime.init({
+                    app: this.app,
+                    worldContainer: this.cameraSystem.worldContainer,
+                    canvasContainer: this.cameraSystem.canvasContainer,
+                    cameraSystem: this.cameraSystem,
+                    layerManager: this.layerSystem,
+                    drawingEngine: this.drawingEngine
+                });
             }
             
-            this.setupCanvasEvents();
-            
-            this.app.ticker.add(() => {
-                this.processThumbnailUpdates();
-            });
-            
-            window.drawingEngine = this.drawingEngine;
-            window.layerManager = this.layerSystem;
-            window.cameraSystem = this.cameraSystem;
-            
-            this.eventBus.emit('core:initialized', {
-                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export']
+            this.eventBus.emit('engine:initialized', {
+                cameraSystem: this.cameraSystem,
+                layerSystem: this.layerSystem,
+                drawingEngine: this.drawingEngine,
+                coordinateUnification: this.coordinateUnification
             });
             
             return this;
         }
+
+        destroy() {
+            if (this.animationSystem) {
+                this.animationSystem.destroy();
+            }
+            if (this.layerSystem) {
+                this.layerSystem.destroy();
+            }
+            if (this.coordinateUnification) {
+                this.coordinateUnification.destroy();
+            }
+            if (this.drawingEngine) {
+                this.drawingEngine.destroy();
+            }
+        }
     }
 
-    window.TegakiCore = {
-        CoreEngine: CoreEngine,
-        CameraSystem: window.TegakiCameraSystem,
-        LayerManager: window.TegakiLayerSystem,
-        LayerSystem: window.TegakiLayerSystem,
-        DrawingEngine: DrawingEngine,
-        ClipboardSystem: window.TegakiDrawingClipboard,
-        DrawingClipboard: window.TegakiDrawingClipboard,
-        AnimationSystem: window.TegakiAnimationSystem,
-        TimelineUI: window.TegakiTimelineUI,
-        UnifiedKeyHandler: UnifiedKeyHandler
-    };
+    window.TegakiCoreEngine = CoreEngine;
 
-    console.log('✅ core-engine.js (Phase2完全修正版) loaded');
 })();
