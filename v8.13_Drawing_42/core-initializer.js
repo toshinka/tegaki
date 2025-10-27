@@ -1,6 +1,4 @@
-// ===== core-initializer.js - 完全修正版 =====
-// 修正1: SettingsManager初期化をpopup登録前に移動
-// 修正2: ExportPopup登録をExportManager完全初期化後に実行
+// ===== core-initializer.js - 座標統合版 完全修正版 =====
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -17,7 +15,12 @@ window.CoreInitializer = (function() {
             { name: 'UPNG', obj: window.UPNG },
             { name: 'GIF', obj: window.GIF },
             { name: 'DOMBuilder', obj: window.DOMBuilder },
-            { name: 'KeyboardHandler', obj: window.KeyboardHandler }
+            { name: 'KeyboardHandler', obj: window.KeyboardHandler },
+            // ✅ 統合座標システム依存性
+            { name: 'TegakiCoordinateUnification', obj: window.TegakiCoordinateUnification },
+            { name: 'TegakiLayerTransform', obj: window.TegakiLayerTransform },
+            { name: 'TegakiCameraSystem', obj: window.TegakiCameraSystem },
+            { name: 'TegakiLayerSystem', obj: window.TegakiLayerSystem },
         ];
         
         const missing = dependencies.filter(dep => !dep.obj);
@@ -29,8 +32,13 @@ window.CoreInitializer = (function() {
             throw new Error('Animation configuration not found');
         }
         
-        if (!window.CoreRuntime || !window.TegakiCore?.CoreEngine) {
-            throw new Error('CoreRuntime or CoreEngine not loaded');
+        // ✅ 修正: CoreEngine の登録パスを修正
+        if (!window.CoreRuntime) {
+            throw new Error('CoreRuntime not loaded');
+        }
+        
+        if (!window.TegakiCoreEngine) {
+            throw new Error('CoreEngine not loaded (TegakiCoreEngine)');
         }
         
         return true;
@@ -47,7 +55,6 @@ window.CoreInitializer = (function() {
         document.body.appendChild(statusPanel);
     }
 
-    // ★ 修正1: SettingsManagerを先に初期化してグローバルに配置
     function initializeSettingsManager() {
         if (window.settingsManager) {
             return window.settingsManager;
@@ -67,21 +74,21 @@ window.CoreInitializer = (function() {
     function initializePopupManager(app, coreEngine) {
         const popupManager = new window.TegakiPopupManager(window.TegakiEventBus);
         
-        const brushSettings = coreEngine.getBrushSettings();
+        const brushSettings = coreEngine.brushSettings;
         
         popupManager.register('settings', window.TegakiUI.SettingsPopup, {
-            drawingEngine: coreEngine.getDrawingEngine()
+            drawingEngine: coreEngine.drawingEngine
         }, { priority: 1 });
         
         popupManager.register('quickAccess', window.TegakiUI.QuickAccessPopup, {
-            drawingEngine: coreEngine.getDrawingEngine(),
+            drawingEngine: coreEngine.drawingEngine,
             eventBus: window.TegakiEventBus,
             brushSettings: brushSettings
         }, { priority: 2 });
         
         popupManager.register('album', window.TegakiUI.AlbumPopup, {
             app: app.pixiApp,
-            layerSystem: coreEngine.getLayerManager(),
+            layerSystem: coreEngine.layerSystem,
             animationSystem: coreEngine.animationSystem
         }, { 
             priority: 3,
@@ -93,8 +100,6 @@ window.CoreInitializer = (function() {
             history: window.History
         }, { priority: 4 });
         
-        // exportは後で登録（ExportManager初期化後）
-        
         popupManager.initializeAll();
         window.PopupManager = popupManager;
         
@@ -105,7 +110,6 @@ window.CoreInitializer = (function() {
         const eventBus = window.TegakiEventBus;
         if (!eventBus) return;
 
-        // StatusDisplayRendererに引数を渡す
         const statusDisplay = new window.TegakiUI.StatusDisplayRenderer(
             window.TegakiEventBus,
             window.settingsManager
@@ -125,10 +129,12 @@ window.CoreInitializer = (function() {
         
         async initialize() {
             const CONFIG = window.TEGAKI_CONFIG;
-            const CoreEngine = window.TegakiCore.CoreEngine;
+            // ✅ 修正: CoreEngine の登録パスを修正
+            const CoreEngine = window.TegakiCoreEngine;
             const UIController = window.TegakiUI.UIController;
             
             if (!UIController) throw new Error('UIController not found');
+            if (!CoreEngine) throw new Error('CoreEngine not found');
             
             const containerEl = document.getElementById('drawing-canvas');
             if (!containerEl) throw new Error('Canvas container not found');
@@ -151,30 +157,32 @@ window.CoreInitializer = (function() {
             this.pixiApp.canvas.style.width = `${screenWidth}px`;
             this.pixiApp.canvas.style.height = `${screenHeight}px`;
             
+            // ✅ CoreEngine (統合版) をインスタンス化
             this.coreEngine = new CoreEngine(this.pixiApp);
             
-            const drawingApp = this.coreEngine.initialize();
+            // ✅ CoreEngine 初期化（非同期）
+            await this.coreEngine.initialize();
             
             window.coreEngine = this.coreEngine;
             
-            const brushSettings = this.coreEngine.getBrushSettings();
+            const brushSettings = this.coreEngine.brushSettings;
             window.BrushSettings = brushSettings;
             
+            // ✅ CoreRuntime 初期化
             window.CoreRuntime.init({
                 app: this.pixiApp,
-                worldContainer: this.coreEngine.getCameraSystem().worldContainer,
-                canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
-                cameraSystem: this.coreEngine.getCameraSystem(),
-                layerManager: this.coreEngine.getLayerManager(),
-                drawingEngine: this.coreEngine.getDrawingEngine()
+                worldContainer: this.coreEngine.cameraSystem.worldContainer,
+                canvasContainer: this.coreEngine.cameraSystem.canvasContainer,
+                cameraSystem: this.coreEngine.cameraSystem,
+                layerManager: this.coreEngine.layerSystem,
+                drawingEngine: this.coreEngine.drawingEngine
             });
             
-            // ★ 修正1: SettingsManagerを先に初期化
             initializeSettingsManager();
             
             this.uiController = new UIController(
-                this.coreEngine.getDrawingEngine(), 
-                this.coreEngine.getLayerManager(), 
+                this.coreEngine.drawingEngine, 
+                this.coreEngine.layerSystem, 
                 this.pixiApp
             );
 
@@ -182,11 +190,10 @@ window.CoreInitializer = (function() {
             
             setupEventBusListeners();
             
-            // ★ 修正2: ExportSystem初期化
             this.initializeExportSystem();
             
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
-                return window.CoreRuntime.api.resizeCanvas(newWidth, newHeight);
+                return window.CoreRuntime.updateCanvasSize(newWidth, newHeight);
             };
             
             this.setupEventListeners();
@@ -194,10 +201,11 @@ window.CoreInitializer = (function() {
             this.updateDPRInfo();
             this.startFPSMonitor();
             
+            console.log('✅ DrawingApp initialization complete');
+            
             return true;
         }
         
-        // ★ 修正2: ExportManager初期化完了後にExportPopupを登録
         initializeExportSystem() {
             let retryCount = 0;
             const maxRetries = 30;
@@ -205,7 +213,6 @@ window.CoreInitializer = (function() {
             const tryInit = () => {
                 retryCount++;
                 
-                // 依存関係チェック
                 if (!window.animationSystem || !window.CoreRuntime) {
                     if (retryCount < maxRetries) {
                         setTimeout(tryInit, 200);
@@ -221,11 +228,9 @@ window.CoreInitializer = (function() {
                     return;
                 }
                 
-                // ExportManagerを初期化
                 const success = window.CoreRuntime.initializeExportSystem(
                     this.pixiApp,
                     () => {
-                        // ★ コールバック: ExportManager初期化成功後にExportPopupを登録
                         if (!this.exportInitialized && 
                             window.PopupManager && 
                             window.TEGAKI_EXPORT_MANAGER &&
@@ -238,7 +243,6 @@ window.CoreInitializer = (function() {
                                 waitFor: []
                             });
                             
-                            // 即座に初期化
                             setTimeout(() => {
                                 window.PopupManager.initialize('export');
                                 this.exportInitialized = true;
@@ -257,13 +261,11 @@ window.CoreInitializer = (function() {
                 }
             };
             
-            // EventBusリスナー登録
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.on('animation:system-ready', tryInit);
                 window.TegakiEventBus.on('animation:initialized', tryInit);
             }
             
-            // 初回トライ
             setTimeout(tryInit, 300);
         }
         
@@ -274,7 +276,7 @@ window.CoreInitializer = (function() {
                 this.pixiApp.renderer.resize(newWidth, newHeight);
                 this.pixiApp.canvas.style.width = `${newWidth}px`;
                 this.pixiApp.canvas.style.height = `${newHeight}px`;
-                const cameraSystem = this.coreEngine.getCameraSystem();
+                const cameraSystem = this.coreEngine.cameraSystem;
                 cameraSystem.initializeCamera();
                 cameraSystem.updateGuideLinesForCanvasResize();
             });
@@ -296,52 +298,50 @@ window.CoreInitializer = (function() {
         }
         
         startFPSMonitor() {
-            let frameCount = 0;
+            const fpsElement = document.getElementById('fps-monitor');
+            if (!fpsElement) return;
+            
             let lastTime = performance.now();
+            let frameCount = 0;
+            let fps = 0;
             
             const updateFPS = () => {
                 frameCount++;
                 const currentTime = performance.now();
+                const deltaTime = currentTime - lastTime;
                 
-                if (currentTime - lastTime >= 1000) {
-                    const fps = Math.round((frameCount * 1000) / (currentTime - lastTime));
-                    const element = document.getElementById('fps');
-                    if (element) element.textContent = fps;
+                if (deltaTime >= 1000) {
+                    fps = Math.round((frameCount * 1000) / deltaTime);
+                    fpsElement.textContent = `${fps} FPS`;
                     frameCount = 0;
                     lastTime = currentTime;
                 }
+                
                 requestAnimationFrame(updateFPS);
             };
+            
             updateFPS();
         }
     }
 
-    async function initialize() {
-        checkDependencies();
-        buildDOM();
-        
-        if (window.KeyboardHandler && window.KeyboardHandler.init) {
-            window.KeyboardHandler.init();
-            document._keyboardHandlerInitialized = true;
-        }
-        
-        const app = new DrawingApp();
-        await app.initialize();
-        
-        window.drawingAppInstance = app;
-        
-        if (window.ResizeSlider) {
-            setTimeout(() => window.ResizeSlider.init(), 100);
-        }
-        
-        return true;
-    }
-
     return {
-        initialize,
-        checkDependencies,
-        DrawingApp
+        async initialize() {
+            try {
+                checkDependencies();
+                buildDOM();
+                
+                const app = new DrawingApp();
+                const result = await app.initialize();
+                
+                window.DrawingApp = app;
+                
+                return result;
+            } catch (error) {
+                console.error('❌ CoreInitializer Error:', error);
+                throw error;
+            }
+        }
     };
 })();
 
-console.log('✅ core-initializer.js (完全修正版・SettingsManager＋ExportPopup対応) loaded');
+console.log('✅ core-initializer.js (座標統合版) loaded');

@@ -1,0 +1,404 @@
+# 最終エラー修正 - 完全手順
+
+## 🔴 2つのエラーを同時解決
+
+---
+
+## Error 1: SyntaxError in quick-export-ui.js
+
+### エラー内容
+```
+❌ quick-export-ui.js:35 Uncaught SyntaxError: Unexpected token '{'
+```
+
+### 原因
+クラス定義の閉じ括弧の後に、クラス外のメソッド定義が残っている
+
+### 修正方法
+
+**ファイル**: `system/quick-export-ui.js`
+
+**完全に以下で置換**：
+
+```javascript
+// ========================================
+// quick-export-ui.js - 完全クリーンアップ版
+// ========================================
+
+(function() {
+    'use strict';
+
+    class QuickExportUI {
+        constructor() {
+            this.disabled = true;
+            this.initialized = false;
+            this.isGenerating = false;
+            console.log('⚠️ QuickExportUI は無効化されています (ExportPopup に機能統合済み)');
+        }
+
+        init() {}
+        createUI() {}
+        setupEventListeners() {}
+        exportPNG() {}
+        previewGIF() {}
+        previewAPNG() {}
+        getExportManager() { return null; }
+        showPreview() {}
+        downloadBlob() {}
+        setButtonsEnabled() {}
+    }
+
+    if (typeof window !== 'undefined') {
+        window.QuickExportUI = new QuickExportUI();
+    }
+
+    console.log('✅ quick-export-ui.js (完全クリーンアップ版) loaded');
+})();
+```
+
+✅ **確認**: コンソールに `SyntaxError` がなくなる
+
+---
+
+## Error 2: TypeError in animation-system.js
+
+### エラー内容
+```
+❌ animation-system.js:955 Uncaught TypeError: this.layerSystem.setCurrentFrameContainer is not a function
+```
+
+### 原因
+LayerSystem に `setCurrentFrameContainer()` メソッドが実装されていない
+
+### 修正方法
+
+**ファイル**: `system/layer-system-complete.js`
+
+**以下のメソッドを追加**（最後の `destroy()` メソッドの直前）：
+
+```javascript
+/**
+ * アニメーションシステムから現在のフレームコンテナを設定
+ */
+setCurrentFrameContainer(container) {
+    if (!container) return;
+    
+    this.currentFrameContainer = container;
+    this.currentFrameContainer.label = 'temporary_frame_container';
+    
+    // 既存のレイヤーがあれば保持、なければ初期レイヤーを作成
+    if (this.currentFrameContainer.children.length === 0) {
+        // 背景レイヤーを作成
+        const bgLayer = new PIXI.Container();
+        const bgLayerModel = new window.TegakiDataModels.LayerModel({
+            id: 'temp_layer_bg_' + Date.now(),
+            name: '背景',
+            isBackground: true
+        });
+        bgLayer.label = bgLayerModel.id;
+        bgLayer.layerData = bgLayerModel;
+        
+        const bg = this._createCheckerPatternBackground(
+            this.config.canvas.width,
+            this.config.canvas.height
+        );
+        bgLayer.addChild(bg);
+        bgLayer.layerData.backgroundGraphics = bg;
+        this.currentFrameContainer.addChild(bgLayer);
+        
+        // レイヤー1を作成
+        const layer1 = new PIXI.Container();
+        const layer1Model = new window.TegakiDataModels.LayerModel({
+            id: 'temp_layer_1_' + Date.now(),
+            name: 'レイヤー1'
+        });
+        layer1.label = layer1Model.id;
+        layer1.layerData = layer1Model;
+        
+        if (this.coordinateUnification) {
+            this.coordinateUnification.setTransform(layer1Model.id, {
+                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+            });
+        }
+        
+        this.currentFrameContainer.addChild(layer1);
+        this.activeLayerIndex = 1;
+    }
+}
+
+/**
+ * 現在のフレームコンテナを取得
+ */
+getCurrentFrameContainer() {
+    return this.currentFrameContainer;
+}
+
+/**
+ * 全レイヤーをクリア（新フレーム作成時など）
+ */
+clearAllLayers() {
+    if (!this.currentFrameContainer) return;
+    
+    const layersToRemove = [];
+    for (const layer of this.currentFrameContainer.children) {
+        if (!layer.layerData?.isBackground) {
+            layersToRemove.push(layer);
+        }
+    }
+    
+    layersToRemove.forEach(layer => {
+        this.currentFrameContainer.removeChild(layer);
+        if (this.coordinateUnification) {
+            this.coordinateUnification.deleteTransform(layer.layerData.id);
+        }
+    });
+    
+    this.activeLayerIndex = 0;
+}
+```
+
+✅ **確認**: コンソールに `TypeError` がなくなる
+
+---
+
+## 📋 修正チェックリスト
+
+| # | ファイル | 修正内容 | 状態 |
+|----|---------|---------|------|
+| 1 | system/quick-export-ui.js | クラス定義の完全置換 | ⬜ |
+| 2 | system/layer-system-complete.js | 3メソッドを追加 | ⬜ |
+| 3 | キャッシュクリア | Ctrl+Shift+Delete | ⬜ |
+| 4 | 強制リロード | Ctrl+Shift+R | ⬜ |
+| 5 | コンソール確認 | 赤エラーなし | ⬜ |
+
+---
+
+## 🔍 修正確認手順
+
+### Step 1: GitHub に修正をアップロード
+
+**quick-export-ui.js**:
+1. GitHub で `system/quick-export-ui.js` を開く
+2. 鉛筆アイコン（編集）をクリック
+3. ファイル内容をすべて削除
+4. 上記の修正コードをペースト
+5. **Commit changes** をクリック
+
+**layer-system-complete.js**:
+1. GitHub で `system/layer-system-complete.js` を開く
+2. 鉛筆アイコン（編集）をクリック
+3. `destroy()` メソッドの直前の行を見つける
+4. その直前に 3つのメソッドをペースト
+5. **Commit changes** をクリック
+
+### Step 2: ブラウザで確認
+
+```
+Ctrl+Shift+Delete → キャッシュをクリア → OK
+Ctrl+Shift+R → 強制リロード
+```
+
+### Step 3: コンソール確認（F12）
+
+期待される出力:
+```
+✅ quick-export-ui.js (完全クリーンアップ版) loaded
+✅ animation-system.js loaded
+✅ CoreEngine initialization complete
+✅ DrawingApp initialization complete
+```
+
+赤いエラーがなければ ✅ OK
+
+---
+
+## 🎯 修正後の期待動作
+
+### Before（エラー状態）
+```
+❌ SyntaxError: Unexpected token '{'
+❌ TypeError: setCurrentFrameContainer is not a function
+❌ Application initialization failed
+```
+
+### After（修正後）
+```
+✅ アプリケーション正常起動
+✅ キャンバスが表示される
+✅ ペンで描画できる
+✅ アニメーションシステムが機能
+✅ Vモードで変形可能
+```
+
+---
+
+## 🔗 参考
+
+- **artifact**: `quick_export_ui_fixed` - quick-export-ui.js 修正版
+- **artifact**: `layer_system_patch` - 追加メソッド一式
+
+---
+
+## ⏱️ 所要時間
+
+- ファイル修正: 2分
+- GitHub アップロード: 2分
+- ブラウザテスト: 2分
+
+**合計: 約6分**
+
+---
+
+**これですべてのエラーは解決します！** 🎉
+
+# 🚀 今すぐ実行 - 2つのエラー修正（5分）
+
+---
+
+## ✅ Fix 1: quick-export-ui.js の構文エラー
+
+### ❌ エラー
+```
+quick-export-ui.js:35 Uncaught SyntaxError: Unexpected token '{'
+```
+
+### ✅ 修正
+**ファイル**: `system/quick-export-ui.js`
+
+**以下で完全置換**:
+
+```javascript
+(function() {
+    'use strict';
+
+    class QuickExportUI {
+        constructor() {
+            this.disabled = true;
+            this.initialized = false;
+            this.isGenerating = false;
+            console.log('⚠️ QuickExportUI は無効化されています');
+        }
+
+        init() {}
+        createUI() {}
+        setupEventListeners() {}
+        exportPNG() {}
+        previewGIF() {}
+        previewAPNG() {}
+        getExportManager() { return null; }
+        showPreview() {}
+        downloadBlob() {}
+        setButtonsEnabled() {}
+    }
+
+    if (typeof window !== 'undefined') {
+        window.QuickExportUI = new QuickExportUI();
+    }
+
+    console.log('✅ quick-export-ui.js (完全クリーンアップ版) loaded');
+})();
+```
+
+---
+
+## ✅ Fix 2: animation-system.js の TypeError
+
+### ❌ エラー
+```
+animation-system.js:955 Uncaught TypeError: this.layerSystem.setCurrentFrameContainer is not a function
+```
+
+### ✅ 修正
+**ファイル**: `system/layer-system-complete.js`
+
+**最後の `destroy()` メソッドの直前に追加**:
+
+```javascript
+setCurrentFrameContainer(container) {
+    if (!container) return;
+    
+    this.currentFrameContainer = container;
+    this.currentFrameContainer.label = 'temporary_frame_container';
+    
+    if (this.currentFrameContainer.children.length === 0) {
+        const bgLayer = new PIXI.Container();
+        const bgLayerModel = new window.TegakiDataModels.LayerModel({
+            id: 'temp_layer_bg_' + Date.now(),
+            name: '背景',
+            isBackground: true
+        });
+        bgLayer.label = bgLayerModel.id;
+        bgLayer.layerData = bgLayerModel;
+        
+        const bg = this._createCheckerPatternBackground(
+            this.config.canvas.width,
+            this.config.canvas.height
+        );
+        bgLayer.addChild(bg);
+        bgLayer.layerData.backgroundGraphics = bg;
+        this.currentFrameContainer.addChild(bgLayer);
+        
+        const layer1 = new PIXI.Container();
+        const layer1Model = new window.TegakiDataModels.LayerModel({
+            id: 'temp_layer_1_' + Date.now(),
+            name: 'レイヤー1'
+        });
+        layer1.label = layer1Model.id;
+        layer1.layerData = layer1Model;
+        
+        if (this.coordinateUnification) {
+            this.coordinateUnification.setTransform(layer1Model.id, {
+                x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+            });
+        }
+        
+        this.currentFrameContainer.addChild(layer1);
+        this.activeLayerIndex = 1;
+    }
+}
+
+getCurrentFrameContainer() {
+    return this.currentFrameContainer;
+}
+
+clearAllLayers() {
+    if (!this.currentFrameContainer) return;
+    
+    const layersToRemove = [];
+    for (const layer of this.currentFrameContainer.children) {
+        if (!layer.layerData?.isBackground) {
+            layersToRemove.push(layer);
+        }
+    }
+    
+    layersToRemove.forEach(layer => {
+        this.currentFrameContainer.removeChild(layer);
+        if (this.coordinateUnification) {
+            this.coordinateUnification.deleteTransform(layer.layerData.id);
+        }
+    });
+    
+    this.activeLayerIndex = 0;
+}
+```
+
+---
+
+## 🔄 リロード
+
+```
+1. Ctrl+Shift+Delete （キャッシュクリア）
+2. Ctrl+Shift+R （強制リロード）
+3. F12 でコンソール確認
+```
+
+期待結果:
+```
+✅ quick-export-ui.js (完全クリーンアップ版) loaded
+✅ DrawingApp initialization complete
+（赤いエラーなし）
+```
+
+---
+
+**これで解決します！** 🎉

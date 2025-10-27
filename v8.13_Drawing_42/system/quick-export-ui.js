@@ -3,32 +3,35 @@
 // 改修内容: ExportManager初期化完了後のみUI作成
 // ========================================
 
-class QuickExportUI {
-    constructor() {
-        // 機能を無効化し、初期化しない
-        this.disabled = true;
-        console.log('⚠️ QuickExportUI は無効化されています (ExportPopup に機能統合済み)');
+(function() {
+    'use strict';
+
+    class QuickExportUI {
+        constructor() {
+            this.disabled = true;
+            this.initialized = false;
+            this.isGenerating = false;
+            console.log('⚠️ QuickExportUI は無効化されています');
+        }
+
+        init() {}
+        createUI() {}
+        setupEventListeners() {}
+        exportPNG() {}
+        previewGIF() {}
+        previewAPNG() {}
+        getExportManager() { return null; }
+        showPreview() {}
+        downloadBlob() {}
+        setButtonsEnabled() {}
     }
 
-    // 互換性のためのダミーメソッド
-    init() {}
-    createUI() {}
-    setupEventListeners() {}
-    exportPNG() {}
-    previewGIF() {}
-    previewAPNG() {}
-    getExportManager() { return null; }
-    showPreview() {}
-    downloadBlob() {}
-    setButtonsEnabled() {}
-}
+    if (typeof window !== 'undefined') {
+        window.QuickExportUI = new QuickExportUI();
+    }
 
-// グローバルインスタンス作成（互換性維持）
-if (typeof window !== 'undefined') {
-    window.QuickExportUI = new QuickExportUI();
-}
-
-console.log('✅ quick-export-ui.js (無効化版) loaded');
+    console.log('✅ quick-export-ui.js (完全クリーンアップ版) loaded');
+})();
 
     init() {
         if (this.initialized) return;
