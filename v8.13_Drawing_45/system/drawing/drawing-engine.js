@@ -1,6 +1,6 @@
 /**
  * DrawingEngine - ペン描画統合制御クラス
- * Phase 6完了: Vモードレイヤー移動後の描画ズレ解消
+ * Phase 2完了: CameraSystem.screenClientToWorld()による統一座標変換
  */
 
 class DrawingEngine {
@@ -28,13 +28,9 @@ class DrawingEngine {
         
         this.canvasMoveMode = false;
         
-        // Phase 6: レイヤー変形認識フラグ
-        this.layerTransformDirty = false;
-        
         this._syncBrushSettingsToRuntime();
         this._syncToolSelection();
         this._setupCanvasMoveModeListener();
-        this._setupLayerTransformListener(); // Phase 6
     }
 
     setBrushSettings(brushSettings) {
@@ -66,20 +62,7 @@ class DrawingEngine {
         });
     }
 
-    // Phase 6: レイヤー変形更新監視
-    _setupLayerTransformListener() {
-        if (!this.eventBus) return;
-        this.eventBus.on('layer:transform-updated', ({ layerId }) => {
-            // 現在描画中のレイヤーが変形された場合は描画キャンセル
-            if (this.isDrawing && this.currentLayer?.layerData?.id === layerId) {
-                this.cancelStroke();
-            }
-            // 変形フラグ立て（次回描画時に座標変換を再実行）
-            this.layerTransformDirty = true;
-        });
-    }
-
-    // Phase 2+6: CameraSystem統一座標変換使用 + レイヤー変形対応
+    // Phase 2: CameraSystem統一座標変換使用
     startDrawing(x, y, event) {
         if (this.canvasMoveMode) {
             return;
@@ -92,23 +75,11 @@ class DrawingEngine {
 
         this.currentSettings = this.getBrushSettings();
 
-        // Phase 2+6: 統一座標変換API使用
+        // Phase 2: 統一座標変換API使用
         if (event && event.clientX !== undefined && event.clientY !== undefined) {
             const world = this.cameraSystem.screenClientToWorld(this.app, event.clientX, event.clientY);
-            
-            // Phase 6: レイヤー変形がある場合はworldToLocalで変換
-            let localX = world.x;
-            let localY = world.y;
-            if (this.currentLayer.transform && 
-                (this.currentLayer.position.x !== 0 || this.currentLayer.position.y !== 0 ||
-                 this.currentLayer.rotation !== 0 || this.currentLayer.scale.x !== 1 || this.currentLayer.scale.y !== 1)) {
-                const local = this.currentLayer.worldToLocal(world);
-                localX = local.x;
-                localY = local.y;
-            }
-            
             const pressure = event.pressure || 0.5;
-            this.strokeRecorder.startStroke(localX, localY, pressure);
+            this.strokeRecorder.startStroke(world.x, world.y, pressure);
         } else {
             const pressure = event?.pressure || 0.5;
             this.strokeRecorder.startStroke(x, y, pressure);
@@ -116,7 +87,6 @@ class DrawingEngine {
 
         this.isDrawing = true;
         this.lastProcessedPointIndex = 0;
-        this.layerTransformDirty = false; // 描画開始時にリセット
 
         if (this.eventBus) {
             this.eventBus.emit('stroke:start', {
@@ -136,7 +106,7 @@ class DrawingEngine {
         }
     }
 
-    // Phase 2+6: CameraSystem統一座標変換使用 + レイヤー変形対応
+    // Phase 2: CameraSystem統一座標変換使用
     continueDrawing(x, y, event) {
         if (!this.isDrawing) return;
         
@@ -145,29 +115,11 @@ class DrawingEngine {
             return;
         }
 
-        // Phase 6: レイヤー変形検知でキャンセル
-        if (this.layerTransformDirty) {
-            this.cancelStroke();
-            return;
-        }
-
-        // Phase 2+6: 統一座標変換API使用
+        // Phase 2: 統一座標変換API使用
         if (event && event.clientX !== undefined && event.clientY !== undefined) {
             const world = this.cameraSystem.screenClientToWorld(this.app, event.clientX, event.clientY);
-            
-            // Phase 6: レイヤー変形対応
-            let localX = world.x;
-            let localY = world.y;
-            if (this.currentLayer && this.currentLayer.transform &&
-                (this.currentLayer.position.x !== 0 || this.currentLayer.position.y !== 0 ||
-                 this.currentLayer.rotation !== 0 || this.currentLayer.scale.x !== 1 || this.currentLayer.scale.y !== 1)) {
-                const local = this.currentLayer.worldToLocal(world);
-                localX = local.x;
-                localY = local.y;
-            }
-            
             const pressure = event.pressure || 0.5;
-            this.strokeRecorder.addPoint(localX, localY, pressure);
+            this.strokeRecorder.addPoint(world.x, world.y, pressure);
         } else {
             const pressure = event?.pressure || 0.5;
             this.strokeRecorder.addPoint(x, y, pressure);
@@ -459,4 +411,4 @@ class DrawingEngine {
     }
 }
 
-console.log('✅ drawing-engine.js (Phase 6完了: Vモードレイヤー移動後描画ズレ解消) loaded');
+console.log('✅ drawing-engine.js (Phase 2完了: CameraSystem統一座標変換) loaded');
