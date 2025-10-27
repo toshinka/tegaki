@@ -1,8 +1,7 @@
-// ===== coordinate-system.js - Phase 0: 座標変換完全統合版 =====
+// ===== coordinate-system.js - PIXI v8完全対応版 =====
 /**
  * 全座標変換の統一管理
- * Screen(clientX/Y) ↔ Canvas(内部px) ↔ World ↔ Local
- * DPI/DPR/CSS変形を正確に考慮
+ * PIXI v8のTransform APIに完全対応
  */
 
 (function() {
@@ -15,16 +14,12 @@
             this.eventBus = null;
             this.cameraSystem = null;
             
-            // キャッシュ（パフォーマンス用）
             this.transformCache = new Map();
             this.cacheVersion = 0;
-            this.cacheEnabled = false; // 初期は無効（正確性優先）
+            this.cacheEnabled = false;
             this.cacheMaxSize = 100;
         }
         
-        /**
-         * 初期化
-         */
         init(app, config, eventBus) {
             this.app = app;
             this.config = config || window.TEGAKI_CONFIG;
@@ -37,16 +32,29 @@
             this.setupEventListeners();
         }
         
-        /**
-         * CameraSystemへの参照設定
-         */
         setCameraSystem(cameraSystem) {
             this.cameraSystem = cameraSystem;
         }
         
-        /**
-         * イベント購読
-         */
+        _getWorldContainer() {
+            if (this.cameraSystem?.worldContainer) {
+                return this.cameraSystem.worldContainer;
+            }
+            
+            if (window.cameraSystem?.worldContainer) {
+                return window.cameraSystem.worldContainer;
+            }
+            
+            if (this.app?.stage?.children) {
+                const worldContainer = this.app.stage.children.find(
+                    child => child.label === 'worldContainer'
+                );
+                if (worldContainer) return worldContainer;
+            }
+            
+            return null;
+        }
+        
         setupEventListeners() {
             if (!this.eventBus) return;
             
@@ -59,12 +67,8 @@
             });
         }
         
-        // ========== Phase 0: 座標変換API（完全実装） ==========
+        // ========== PIXI v8対応: 座標変換API ==========
         
-        /**
-         * Screen座標（clientX/Y）→ Canvas内部ピクセル座標
-         * DPI/DPR/CSSスケールを考慮
-         */
         screenClientToCanvas(clientX, clientY) {
             const canvas = this._getCanvas();
             if (!canvas) {
@@ -72,16 +76,12 @@
             }
             
             const rect = canvas.getBoundingClientRect();
-            
-            // CSS空間での相対位置
             const cssX = clientX - rect.left;
             const cssY = clientY - rect.top;
             
-            // レンダラーの内部解像度を取得
             const rendererWidth = this._getRendererWidth();
             const rendererHeight = this._getRendererHeight();
             
-            // DPI補正スケール
             const scaleX = rendererWidth / rect.width;
             const scaleY = rendererHeight / rect.height;
             
@@ -92,51 +92,110 @@
         }
         
         /**
-         * Canvas内部ピクセル座標 → World座標
-         * worldContainerの逆変換を適用
+         * Canvas → World 変換（PIXI v8対応）
+         * worldTransformが未初期化の場合は手動計算
          */
         canvasToWorld(canvasX, canvasY) {
-            if (!this.cameraSystem?.worldContainer) {
+            const worldContainer = this._getWorldContainer();
+            
+            if (!worldContainer) {
+                console.warn('CoordinateSystem: worldContainer not found');
                 return { x: canvasX, y: canvasY };
             }
             
-            const worldContainer = this.cameraSystem.worldContainer;
-            const inv = worldContainer.transform.worldTransform.clone().invert();
-            const point = inv.apply({ x: canvasX, y: canvasY });
+            // PIXI v8: worldTransformをチェック
+            const worldTransform = worldContainer.worldTransform || worldContainer.transform?.worldTransform;
             
-            return { x: point.x, y: point.y };
+            if (worldTransform && worldTransform.a !== undefined) {
+                // worldTransformが利用可能
+                try {
+                    const inv = worldTransform.clone().invert();
+                    const point = inv.apply({ x: canvasX, y: canvasY });
+                    return { x: point.x, y: point.y };
+                } catch (error) {
+                    console.error('CoordinateSystem: worldTransform.invert error:', error);
+                }
+            }
+            
+            // フォールバック: 手動で逆変換を計算
+            console.log('CoordinateSystem: Using manual transform calculation');
+            
+            const pos = worldContainer.position;
+            const scale = worldContainer.scale;
+            const pivot = worldContainer.pivot || { x: 0, y: 0 };
+            const rotation = worldContainer.rotation || 0;
+            
+            // 1. positionのオフセットを引く
+            let x = canvasX - pos.x;
+            let y = canvasY - pos.y;
+            
+            // 2. 回転の逆変換
+            if (rotation !== 0) {
+                const cos = Math.cos(-rotation);
+                const sin = Math.sin(-rotation);
+                const rx = x * cos - y * sin;
+                const ry = x * sin + y * cos;
+                x = rx;
+                y = ry;
+            }
+            
+            // 3. スケールの逆変換
+            x = x / scale.x;
+            y = y / scale.y;
+            
+            // 4. pivotを加算
+            x = x + pivot.x;
+            y = y + pivot.y;
+            
+            return { x, y };
         }
         
-        /**
-         * Screen座標 → World座標（統合版）
-         * screenClientToCanvas() + canvasToWorld() の統合
-         */
         screenClientToWorld(clientX, clientY) {
             const canvas = this.screenClientToCanvas(clientX, clientY);
             return this.canvasToWorld(canvas.x, canvas.y);
         }
         
-        /**
-         * World座標 → Local座標（コンテナ内相対座標）
-         * container.toLocal() のラッパー
-         */
         worldToLocal(worldX, worldY, container) {
-            if (!container || !container.toLocal) {
+            if (!container) {
                 return { x: worldX, y: worldY };
             }
             
-            try {
-                const local = container.toLocal(new PIXI.Point(worldX, worldY));
-                return { x: local.x, y: local.y };
-            } catch (error) {
-                return { x: worldX, y: worldY };
+            // PIXI v8: toLocal()を使用
+            if (container.toLocal) {
+                try {
+                    const local = container.toLocal(new PIXI.Point(worldX, worldY));
+                    return { x: local.x, y: local.y };
+                } catch (error) {
+                    console.error('CoordinateSystem: toLocal error:', error);
+                }
             }
+            
+            // フォールバック: 手動計算
+            const pos = container.position || { x: 0, y: 0 };
+            const scale = container.scale || { x: 1, y: 1 };
+            const pivot = container.pivot || { x: 0, y: 0 };
+            const rotation = container.rotation || 0;
+            
+            let x = worldX - pos.x;
+            let y = worldY - pos.y;
+            
+            if (rotation !== 0) {
+                const cos = Math.cos(-rotation);
+                const sin = Math.sin(-rotation);
+                const rx = x * cos - y * sin;
+                const ry = x * sin + y * cos;
+                x = rx;
+                y = ry;
+            }
+            
+            x = x / scale.x;
+            y = y / scale.y;
+            x = x + pivot.x;
+            y = y + pivot.y;
+            
+            return { x, y };
         }
         
-        /**
-         * Screen座標 → Local座標（統合版・最頻出）
-         * screenClientToWorld() + worldToLocal() の統合
-         */
         screenClientToLocal(clientX, clientY, container) {
             const world = this.screenClientToWorld(clientX, clientY);
             return this.worldToLocal(world.x, world.y, container);
@@ -144,23 +203,51 @@
         
         // ========== 逆変換API ==========
         
-        /**
-         * World座標 → Canvas内部ピクセル座標
-         */
         worldToCanvas(worldX, worldY) {
-            if (!this.cameraSystem?.worldContainer) {
+            const worldContainer = this._getWorldContainer();
+            
+            if (!worldContainer) {
                 return { x: worldX, y: worldY };
             }
             
-            const worldContainer = this.cameraSystem.worldContainer;
-            const point = worldContainer.transform.worldTransform.apply({ x: worldX, y: worldY });
+            const worldTransform = worldContainer.worldTransform || worldContainer.transform?.worldTransform;
             
-            return { x: point.x, y: point.y };
+            if (worldTransform && worldTransform.a !== undefined) {
+                try {
+                    const point = worldTransform.apply({ x: worldX, y: worldY });
+                    return { x: point.x, y: point.y };
+                } catch (error) {
+                    console.error('CoordinateSystem: worldTransform.apply error:', error);
+                }
+            }
+            
+            // フォールバック: 手動計算
+            const pos = worldContainer.position;
+            const scale = worldContainer.scale;
+            const pivot = worldContainer.pivot || { x: 0, y: 0 };
+            const rotation = worldContainer.rotation || 0;
+            
+            let x = worldX - pivot.x;
+            let y = worldY - pivot.y;
+            
+            x = x * scale.x;
+            y = y * scale.y;
+            
+            if (rotation !== 0) {
+                const cos = Math.cos(rotation);
+                const sin = Math.sin(rotation);
+                const rx = x * cos - y * sin;
+                const ry = x * sin + y * cos;
+                x = rx;
+                y = ry;
+            }
+            
+            x = x + pos.x;
+            y = y + pos.y;
+            
+            return { x, y };
         }
         
-        /**
-         * Canvas内部ピクセル座標 → Screen座標
-         */
         canvasToScreen(canvasX, canvasY) {
             const canvas = this._getCanvas();
             if (!canvas) {
@@ -180,33 +267,52 @@
             };
         }
         
-        /**
-         * World座標 → Screen座標
-         */
         worldToScreen(worldX, worldY) {
             const canvas = this.worldToCanvas(worldX, worldY);
             return this.canvasToScreen(canvas.x, canvas.y);
         }
         
-        /**
-         * Local座標 → World座標
-         */
         localToWorld(localX, localY, container) {
-            if (!container || !container.toGlobal) {
+            if (!container) {
                 return { x: localX, y: localY };
             }
             
-            try {
-                const world = container.toGlobal(new PIXI.Point(localX, localY));
-                return { x: world.x, y: world.y };
-            } catch (error) {
-                return { x: localX, y: localY };
+            if (container.toGlobal) {
+                try {
+                    const world = container.toGlobal(new PIXI.Point(localX, localY));
+                    return { x: world.x, y: world.y };
+                } catch (error) {
+                    console.error('CoordinateSystem: toGlobal error:', error);
+                }
             }
+            
+            // フォールバック: 手動計算
+            const pos = container.position || { x: 0, y: 0 };
+            const scale = container.scale || { x: 1, y: 1 };
+            const pivot = container.pivot || { x: 0, y: 0 };
+            const rotation = container.rotation || 0;
+            
+            let x = localX - pivot.x;
+            let y = localY - pivot.y;
+            
+            x = x * scale.x;
+            y = y * scale.y;
+            
+            if (rotation !== 0) {
+                const cos = Math.cos(rotation);
+                const sin = Math.sin(rotation);
+                const rx = x * cos - y * sin;
+                const ry = x * sin + y * cos;
+                x = rx;
+                y = ry;
+            }
+            
+            x = x + pos.x;
+            y = y + pos.y;
+            
+            return { x, y };
         }
         
-        /**
-         * Local座標 → Screen座標
-         */
         localToScreen(localX, localY, container) {
             const world = this.localToWorld(localX, localY, container);
             return this.worldToScreen(world.x, world.y);
@@ -214,9 +320,6 @@
         
         // ========== ユーティリティ ==========
         
-        /**
-         * レイヤーの境界取得
-         */
         getLayerBounds(layer, includeTransform = true) {
             if (!layer) {
                 return { x: 0, y: 0, width: 0, height: 0 };
@@ -235,9 +338,6 @@
             }
         }
         
-        /**
-         * Canvas内判定
-         */
         isInsideCanvas(x, y, margin = 0) {
             return (x >= -margin && 
                     y >= -margin && 
@@ -245,9 +345,6 @@
                     y < this.config.canvas.height + margin);
         }
         
-        /**
-         * 矩形重なり判定
-         */
         rectanglesOverlap(rect1, rect2) {
             if (!rect1 || !rect2) return false;
             
@@ -257,48 +354,30 @@
                      rect2.y + rect2.height <= rect1.y);
         }
         
-        /**
-         * 2点間距離
-         */
         distance(x1, y1, x2, y2) {
             const dx = x2 - x1;
             const dy = y2 - y1;
             return Math.sqrt(dx * dx + dy * dy);
         }
         
-        /**
-         * 2点間角度
-         */
         angle(x1, y1, x2, y2) {
             return Math.atan2(y2 - y1, x2 - x1);
         }
         
-        /**
-         * 角度正規化
-         */
         normalizeAngle(angle) {
             while (angle > Math.PI) angle -= 2 * Math.PI;
             while (angle < -Math.PI) angle += 2 * Math.PI;
             return angle;
         }
         
-        /**
-         * 度→ラジアン
-         */
         degreesToRadians(degrees) {
             return degrees * Math.PI / 180;
         }
         
-        /**
-         * ラジアン→度
-         */
         radiansToDegrees(radians) {
             return radians * 180 / Math.PI;
         }
         
-        /**
-         * ベクトル正規化
-         */
         normalizeVector(x, y) {
             const length = Math.sqrt(x * x + y * y);
             
@@ -313,25 +392,16 @@
             };
         }
         
-        /**
-         * 内積
-         */
         dotProduct(x1, y1, x2, y2) {
             return x1 * x2 + y1 * y2;
         }
         
-        /**
-         * 外積
-         */
         crossProduct(x1, y1, x2, y2) {
             return x1 * y2 - y1 * x2;
         }
         
         // ========== 内部ヘルパー ==========
         
-        /**
-         * Canvasエレメント取得
-         */
         _getCanvas() {
             if (this.app?.view) {
                 return this.app.view;
@@ -339,16 +409,22 @@
             if (this.app?.renderer?.view) {
                 return this.app.renderer.view;
             }
+            if (this.app?.canvas) {
+                return this.app.canvas;
+            }
+            if (this.cameraSystem?.app?.stage?.parent?.canvas) {
+                return this.cameraSystem.app.stage.parent.canvas;
+            }
             if (this.cameraSystem?.app?.stage?.parent?.view) {
                 return this.cameraSystem.app.stage.parent.view;
+            }
+            if (window.cameraSystem?.app?.stage?.parent?.canvas) {
+                return window.cameraSystem.app.stage.parent.canvas;
             }
             const canvases = document.querySelectorAll('canvas');
             return canvases.length > 0 ? canvases[0] : null;
         }
         
-        /**
-         * レンダラー内部幅取得
-         */
         _getRendererWidth() {
             if (this.app?.renderer?.width) {
                 return this.app.renderer.width;
@@ -359,13 +435,13 @@
             if (this.cameraSystem?.app?.stage?.parent?.renderer?.width) {
                 return this.cameraSystem.app.stage.parent.renderer.width;
             }
+            if (this.cameraSystem?.app?.stage?.parent?.screen?.width) {
+                return this.cameraSystem.app.stage.parent.screen.width;
+            }
             const canvas = this._getCanvas();
-            return canvas ? canvas.width : 800;
+            return canvas ? canvas.width : (this.config?.canvas?.width || 800);
         }
         
-        /**
-         * レンダラー内部高さ取得
-         */
         _getRendererHeight() {
             if (this.app?.renderer?.height) {
                 return this.app.renderer.height;
@@ -376,21 +452,18 @@
             if (this.cameraSystem?.app?.stage?.parent?.renderer?.height) {
                 return this.cameraSystem.app.stage.parent.renderer.height;
             }
+            if (this.cameraSystem?.app?.stage?.parent?.screen?.height) {
+                return this.cameraSystem.app.stage.parent.screen.height;
+            }
             const canvas = this._getCanvas();
-            return canvas ? canvas.height : 600;
+            return canvas ? canvas.height : (this.config?.canvas?.height || 600);
         }
         
-        /**
-         * キャッシュクリア
-         */
         clearCache() {
             this.transformCache.clear();
             this.cacheVersion++;
         }
         
-        /**
-         * キャッシュ設定更新
-         */
         updateCacheSettings(settings) {
             if (settings.enabled !== undefined) {
                 this.cacheEnabled = settings.enabled;
@@ -411,4 +484,4 @@
     
 })();
 
-console.log('✅ coordinate-system.js (Phase 0: 完全統合版) loaded');
+console.log('✅ coordinate-system.js (PIXI v8完全対応・手動変換実装) loaded');

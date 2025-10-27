@@ -1,6 +1,6 @@
 /**
  * DrawingEngine - ペン描画統合制御クラス
- * Phase 2改修: CameraSystem.screenClientToWorld() 使用
+ * Phase 1完全版 + 階層デバッグ
  */
 
 class DrawingEngine {
@@ -10,6 +10,12 @@ class DrawingEngine {
         this.cameraSystem = cameraSystem;
         this.history = history;
         this.eventBus = window.TegakiEventBus;
+        this.coordinateSystem = window.CoordinateSystem || window.TEGAKI_COORDINATE_SYSTEM;
+
+        if (this.coordinateSystem && this.coordinateSystem.init) {
+            this.coordinateSystem.init(app, window.TEGAKI_CONFIG, this.eventBus);
+            this.coordinateSystem.setCameraSystem(cameraSystem);
+        }
 
         this.pressureHandler = new PressureHandler();
         this.strokeRecorder = new StrokeRecorder(this.pressureHandler, this.cameraSystem);
@@ -137,12 +143,8 @@ class DrawingEngine {
         this.clearEraserPreview();
     }
 
-    // ========== Phase 2改修: CameraSystem.screenClientToWorld() 使用 ==========
+    // ========== 階層デバッグ版 ==========
 
-    /**
-     * 描画開始
-     * Phase 2: cameraSystem.screenClientToWorld() → container.toLocal()
-     */
     startDrawing(x, y, event) {
         if (this.canvasMoveMode) {
             return;
@@ -155,19 +157,79 @@ class DrawingEngine {
 
         this.currentSettings = this.getBrushSettings();
 
-        // Phase 2: CameraSystem.screenClientToWorld() 使用
-        if (event && event.clientX !== undefined && event.clientY !== undefined) {
-            const world = this.cameraSystem.screenClientToWorld(this.app, event.clientX, event.clientY);
-            const container = this.currentLayer;
-            const local = container.toLocal(new PIXI.Point(world.x, world.y));
+        let localX, localY, pressure;
+        
+        if (event && event.clientX !== undefined && event.clientY !== undefined && this.coordinateSystem) {
+            console.group('🎯 DrawingEngine.startDrawing - 階層デバッグ');
+            console.log('1. Input clientX/Y:', event.clientX, event.clientY);
             
-            const pressure = event.pressure || 0.5;
-            this.strokeRecorder.startStroke(local.x, local.y, pressure);
+            // 階層構造を確認
+            let parent = this.currentLayer.parent;
+            let hierarchy = [];
+            while (parent) {
+                hierarchy.push({
+                    label: parent.label || parent.constructor.name,
+                    position: parent.position ? { x: parent.position.x, y: parent.position.y } : null,
+                    scale: parent.scale ? { x: parent.scale.x, y: parent.scale.y } : null
+                });
+                parent = parent.parent;
+            }
+            console.log('2. Layer階層:', hierarchy);
+            
+            // Canvas座標
+            const canvas = this.coordinateSystem.screenClientToCanvas(event.clientX, event.clientY);
+            console.log('3. Canvas座標:', canvas);
+            
+            // World座標
+            const world = this.coordinateSystem.canvasToWorld(canvas.x, canvas.y);
+            console.log('4. World座標:', world);
+            
+            // 直接canvasContainerのtoLocalを使用してテスト
+            const canvasContainer = this.cameraSystem?.canvasContainer;
+            if (canvasContainer && canvasContainer.toLocal) {
+                try {
+                    const canvasLocal = canvasContainer.toLocal(new PIXI.Point(canvas.x, canvas.y));
+                    console.log('5. CanvasContainer.toLocal結果:', canvasLocal);
+                } catch (e) {
+                    console.log('5. CanvasContainer.toLocal エラー:', e);
+                }
+            }
+            
+            // currentLayerのtoLocalを使用
+            if (this.currentLayer.toLocal) {
+                try {
+                    const layerLocal = this.currentLayer.toLocal(new PIXI.Point(world.x, world.y));
+                    console.log('6. CurrentLayer.toLocal(world)結果:', layerLocal);
+                } catch (e) {
+                    console.log('6. CurrentLayer.toLocal エラー:', e);
+                }
+                
+                // canvasContainerからの相対座標もテスト
+                try {
+                    const layerFromCanvas = this.currentLayer.toLocal(new PIXI.Point(canvas.x, canvas.y));
+                    console.log('7. CurrentLayer.toLocal(canvas)結果:', layerFromCanvas);
+                } catch (e) {
+                    console.log('7. CurrentLayer.toLocal(canvas) エラー:', e);
+                }
+            }
+            
+            // CoordinateSystemのworldToLocal
+            const local = this.coordinateSystem.worldToLocal(world.x, world.y, this.currentLayer);
+            console.log('8. CoordinateSystem.worldToLocal結果:', local);
+            
+            console.groupEnd();
+            
+            // とりあえずworld座標を使用してみる（デバッグ用）
+            localX = world.x;
+            localY = world.y;
+            pressure = event.pressure || 0.5;
         } else {
-            const pressure = event?.pressure || 0.5;
-            this.strokeRecorder.startStroke(x, y, pressure);
+            localX = x;
+            localY = y;
+            pressure = event?.pressure || 0.5;
         }
 
+        this.strokeRecorder.startStroke(localX, localY, pressure);
         this.isDrawing = true;
         this.lastProcessedPointIndex = 0;
         this.layerTransformDirty = false;
@@ -190,10 +252,6 @@ class DrawingEngine {
         }
     }
 
-    /**
-     * 描画継続
-     * Phase 2: cameraSystem.screenClientToWorld() 使用
-     */
     continueDrawing(x, y, event) {
         if (!this.isDrawing) return;
         
@@ -207,19 +265,23 @@ class DrawingEngine {
             return;
         }
 
-        // Phase 2: CameraSystem.screenClientToWorld() 使用
-        if (event && event.clientX !== undefined && event.clientY !== undefined) {
-            const world = this.cameraSystem.screenClientToWorld(this.app, event.clientX, event.clientY);
-            const container = this.currentLayer;
-            const local = container.toLocal(new PIXI.Point(world.x, world.y));
+        let localX, localY, pressure;
+        
+        if (event && event.clientX !== undefined && event.clientY !== undefined && this.coordinateSystem) {
+            const canvas = this.coordinateSystem.screenClientToCanvas(event.clientX, event.clientY);
+            const world = this.coordinateSystem.canvasToWorld(canvas.x, canvas.y);
             
-            const pressure = event.pressure || 0.5;
-            this.strokeRecorder.addPoint(local.x, local.y, pressure);
+            // とりあえずworld座標を使用（デバッグ用）
+            localX = world.x;
+            localY = world.y;
+            pressure = event.pressure || 0.5;
         } else {
-            const pressure = event?.pressure || 0.5;
-            this.strokeRecorder.addPoint(x, y, pressure);
+            localX = x;
+            localY = y;
+            pressure = event?.pressure || 0.5;
         }
 
+        this.strokeRecorder.addPoint(localX, localY, pressure);
         this.currentSettings = this.getBrushSettings();
         this.updatePreview();
 
@@ -443,4 +505,4 @@ class DrawingEngine {
     }
 }
 
-console.log('✅ drawing-engine.js (Phase 2: CameraSystem統一API使用) loaded');
+console.log('✅ drawing-engine.js (階層デバッグ版 + world座標直接使用) loaded');

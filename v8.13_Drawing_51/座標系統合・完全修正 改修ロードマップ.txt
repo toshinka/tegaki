@@ -1,0 +1,420 @@
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+座標系統合・完全修正 改修ロードマップ
+v8.13_Drawing_48 → 座標系統合版
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+■ 現状の問題点
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. ペン入力位置と描画出力位置のズレ（初期状態から）
+2. リサイズ時：キャンバスは正しいが内容は左上原点で強制リサイズ、ペン位置がさらにズレる
+3. レイヤーサムネイル反応遅延、Vキーによるレイヤー変形が反映されない
+4. Vキーでのアクティブレイヤー移動でペン座標がズレる
+5. スライダーが青系（maroon系に統一したい）
+
+根本原因：Screen→Canvas→World→Local の座標変換が統一されていない
+
+
+■ 改修方針
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+- 座標変換を coordinate-system.js に完全統合
+- DPI/DPR/CSSスケールを考慮した変換関数を一元化
+- drawing-engine.js は座標変換に依存せずワールド座標で動作
+- camera-system.js は表示変換のみ担当
+- すべてのpointerイベントは統一された変換パイプラインを通す
+
+
+■ ファイル責務の再定義
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+coordinate-system.js : Screen↔Canvas↔World↔Local 変換の完全統合
+camera-system.js     : worldContainerのtransform管理、リサイズ、ズーム・パン
+drawing-engine.js    : ワールド座標でのペン描画ロジック（座標変換依存を排除）
+layer-transform.js   : レイヤー単位のtransform、Vキー操作
+stroke-recorder.js   : ローカル座標でのストローク記録
+resize-popup.js      : リサイズUI、座標系を意識した中心保持処理
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 0: 座標変換システムの完全統合【最優先・基盤】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+目的：
+すべての座標変換を coordinate-system.js に集約し、
+DPI/DPR/CSS変形を正確に考慮した変換を提供する。
+
+対象ファイル：
+- coordinate-system.js （大幅拡張）
+
+参考ファイル：
+- camera-system.js （worldContainer参照）
+- core-engine.js （app/renderer参照）
+
+処理フロー内の位置：
+PointerEvent → CoordinateSystem変換 → DrawingEngine → StrokeRecorder → Renderer
+
+実装内容：
+1. 既存の screenToWorld() を完全書き換え
+   - getBoundingClientRect()でCSS位置取得
+   - renderer.width/heightとrect.width/heightの比率でDPI補正
+   - worldContainer.transform.worldTransformの逆行列適用
+
+2. 新規API追加
+   screenClientToCanvas(app, clientX, clientY)
+     → {x, y} // Canvas内部ピクセル座標
+   
+   canvasToWorld(app, canvasX, canvasY)
+     → {x, y} // ワールド座標（カメラ補正済み）
+   
+   screenClientToWorld(app, clientX, clientY)
+     → {x, y} // Screen→Canvas→World の統合版
+   
+   worldToLocal(worldPoint, container)
+     → {x, y} // container.toLocal()のラッパー
+   
+   screenClientToLocal(app, clientX, clientY, container)
+     → {x, y} // Screen→World→Local の統合版
+
+3. 逆変換も実装
+   worldToCanvas(app, worldX, worldY)
+   canvasToScreen(app, canvasX, canvasY)
+   localToWorld(localPoint, container)
+   localToScreen(app, localPoint, container)
+
+主要メソッド定義：
+```
+CoordinateSystem.prototype.screenClientToCanvas(app, clientX, clientY)
+CoordinateSystem.prototype.canvasToWorld(app, canvasX, canvasY) 
+CoordinateSystem.prototype.screenClientToWorld(app, clientX, clientY)
+CoordinateSystem.prototype.worldToLocal(worldPoint, container)
+CoordinateSystem.prototype.screenClientToLocal(app, clientX, clientY, container)
+```
+
+検証項目：
+□ Retina環境でDPR補正が正確か
+□ CSSでcanvasを拡大縮小してもズレないか
+□ worldContainerをズーム・移動してもマウス位置が正確か
+□ レイヤー移動後もtoLocal変換が正確か
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 1: 描画エンジンの座標変換適用
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+目的：
+drawing-engine.js のすべてのpointerイベントで
+Phase 0の統一変換APIを使用する。
+
+対象ファイル：
+- drawing-engine.js
+- stroke-recorder.js
+
+参考ファイル：
+- coordinate-system.js （Phase 0で実装したAPI）
+- pressure-handler.js
+
+処理フロー内の位置：
+[PointerEvent] 
+  → DrawingEngine.onPointerDown/Move/Up 
+  → CoordinateSystem.screenClientToLocal(app, e.clientX, e.clientY, activeLayer)
+  → StrokeRecorder.addPoint(localX, localY, pressure)
+  → StrokeRenderer.render()
+
+実装内容：
+1. drawing-engine.js 内のすべてのpointer処理を書き換え
+   - 既存：event.offsetX/offsetY や layerX/layerY を直接使用
+   - 新規：coordinateSystem.screenClientToLocal() 経由
+
+2. stroke-recorder.js での座標記録確認
+   - points配列がローカル座標で統一されているか確認
+   - ワールド座標やスクリーン座標が混入していないか確認
+
+3. pressure-handler.js の座標も同様に変換適用
+
+主要変更箇所：
+```
+// drawing-engine.js
+onPointerDown(e) {
+  const local = this.coordinateSystem.screenClientToLocal(
+    this.app, e.clientX, e.clientY, this.activeLayer.container
+  );
+  this.strokeRecorder.startStroke(local.x, local.y, e.pressure);
+}
+```
+
+検証項目：
+□ ペン入力位置と描画位置が完全に一致するか
+□ カメラズーム・パン後も描画位置が正確か
+□ レイヤー移動後も描画位置が正確か
+□ 筆圧が正しく適用されているか
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 2: リサイズ処理の座標系統合
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+目的：
+リサイズ時の座標系破綻を修正。
+中心保持・等間隔保持などの基準点を正確に適用。
+
+対象ファイル：
+- resize-popup.js
+- camera-system.js
+- core-runtime.js （リサイズイベント）
+
+参考ファイル：
+- coordinate-system.js
+- layer-system-complete.js
+
+処理フロー内の位置：
+[ResizePopup: ユーザー操作] 
+  → CameraSystem.resizeCanvas(newW, newH, anchorOptions)
+  → renderer.resize()
+  → worldContainer.scale/position 再計算
+  → EventBus: 'canvas:resized'
+  → 各システムが座標系を再同期
+
+実装内容：
+1. camera-system.js にリサイズメソッド追加
+   resizeCanvas(newWidth, newHeight, options)
+     options: { anchor: 'center' | 'top-left' | 'top-right' ... }
+   
+   処理内容：
+   - 現在のワールド座標での中心点を取得
+   - renderer.resize(newWidth, newHeight)
+   - anchor指定に応じてworldContainer.position/scaleを再計算
+   - 中心点が維持されるように逆算
+
+2. resize-popup.js の実行ボタン処理を修正
+   - 既存：直接renderer操作
+   - 新規：cameraSystem.resizeCanvas() 経由
+
+3. core-runtime.js のwindowリサイズハンドラも同様に修正
+
+主要メソッド定義：
+```
+CameraSystem.prototype.resizeCanvas(width, height, options = {})
+CameraSystem.prototype.getWorldBounds()
+CameraSystem.prototype.maintainViewCenter(oldBounds, newBounds)
+```
+
+検証項目：
+□ リサイズ後も描画位置がズレないか
+□ 中心保持が正確に動作するか
+□ 等間隔保持（上下左右等間隔）が動作するか
+□ リサイズ後の描画もズレないか
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 3: レイヤーシステムの座標同期
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+目的：
+Vキーでのレイヤー移動・変形時の座標ズレ解消。
+サムネイル更新の遅延解消。
+
+対象ファイル：
+- layer-transform.js
+- layer-system-complete.js
+- layer-panel-renderer.js
+- timeline-thumbnail-utils.js
+
+参考ファイル：
+- coordinate-system.js
+- camera-system.js
+
+処理フロー内の位置：
+[Vキー押下] 
+  → KeyboardHandler 
+  → LayerTransform.enableTransform()
+  → [ドラッグ] CoordinateSystem.screenClientToWorld()
+  → layer.container.position更新
+  → EventBus: 'layer:transform-changed'
+  → ThumbnailUtils.updateThumbnail()
+
+実装内容：
+1. layer-transform.js のドラッグ処理を座標系統合
+   - 既存：pointer座標を直接使用
+   - 新規：coordinateSystem.screenClientToWorld() で変換
+   - レイヤーのlocalへの変換も考慮
+
+2. layer-system-complete.js のtransform反映
+   - レイヤー移動後のstroke座標を再計算しない（ローカル座標なので不要）
+   - worldContainer経由での表示のみ更新
+
+3. timeline-thumbnail-utils.js のサムネイル更新最適化
+   - transform変更時に即座に再生成
+   - 既存：遅延バッチ処理
+   - 新規：EventBus: 'layer:transform-changed' に即応答
+
+4. layer-panel-renderer.js のサムネイル表示同期
+   - Vキー変形が即座に反映されるようイベント購読
+
+主要変更箇所：
+```
+// layer-transform.js
+onDrag(e) {
+  const world = this.coordinateSystem.screenClientToWorld(
+    this.app, e.clientX, e.clientY
+  );
+  const delta = { x: world.x - this.startWorld.x, y: world.y - this.startWorld.y };
+  this.activeLayer.container.position.set(
+    this.startPosition.x + delta.x,
+    this.startPosition.y + delta.y
+  );
+  EventBus.emit('layer:transform-changed', { layerId: this.activeLayer.id });
+}
+```
+
+検証項目：
+□ Vキーでのレイヤー移動が正確か
+□ 移動後の描画位置がズレないか
+□ サムネイルが即座に更新されるか
+□ Vキー変形がサムネイルに反映されるか
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 4: UI調整（スライダー色統一）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+目的：
+resize-popup.js のスライダー色をmaroon系に統一。
+他のポップアップUIと一貫性を持たせる。
+
+対象ファイル：
+- resize-popup.js
+- ui/slider-utils.js （あれば）
+- styles/main.css
+
+参考ファイル：
+- settings-popup.js （maroon系スライダーの参考）
+- quick-access-popup.js
+
+処理フロー内の位置：
+UIレンダリング時の色指定
+
+実装内容：
+1. resize-popup.js のスライダー生成部分
+   - 既存：color指定なし or 青系
+   - 新規：trackColor: '#8b4545', thumbColor: '#a0522d' など
+
+2. styles/main.css でのスタイル統一
+   - .resize-popup input[type="range"] のカスタムスタイル
+   - maroon系に統一
+
+3. slider-utils.js が存在する場合は共通化
+   - createSlider() のデフォルト色をmaroonに
+
+主要変更箇所：
+```
+// resize-popup.js
+const widthSlider = SliderUtils.createSlider({
+  trackColor: '#8b4545',
+  thumbColor: '#a0522d',
+  // ...
+});
+```
+
+検証項目：
+□ スライダーがmaroon系で表示されるか
+□ 他のポップアップと色調が統一されているか
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+Phase 5: 統合テスト・検証
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+目的：
+すべての改修が正しく統合され、座標ズレが完全に解消されたか確認。
+
+テストシナリオ：
+1. 初期描画テスト
+   □ ツール起動直後、ペン描画位置とカーソル位置が一致
+   □ Retina/非Retina環境で動作確認
+
+2. カメラ操作後の描画テスト
+   □ ズームイン・アウト後も描画位置が正確
+   □ パン（移動）後も描画位置が正確
+
+3. リサイズテスト
+   □ 中心保持でリサイズ後、既存描画が正しい位置
+   □ 左上基準でリサイズ後、既存描画が正しい位置
+   □ リサイズ後の新規描画も正確
+
+4. レイヤー操作テスト
+   □ Vキーでレイヤー移動後、そのレイヤーへの描画が正確
+   □ レイヤー移動直後もペン位置がズレない
+   □ サムネイルが即座に更新される
+
+5. 複合操作テスト
+   □ ズーム→リサイズ→レイヤー移動→描画 が正確
+   □ 長時間使用でも座標ズレが発生しない
+
+6. UI動作確認
+   □ スライダーがmaroon系で統一されている
+   □ 全ポップアップの色調が一貫している
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+将来拡張への準備
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+この座標系統合により以下が実装可能になる：
+
+1. ベクター消しゴム
+   - ストロークがローカル座標で統一されているため
+     ブーリアン演算が正確に適用できる
+
+2. MSDF消しゴム
+   - SDF生成時の座標変換が明確になる
+   - シェーダでのUV変換が正確になる
+
+3. レイヤー回転・変形
+   - transformが正確に適用される基盤ができる
+
+4. パスアニメーション
+   - ローカル座標での移動・変形が正確になる
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+改修優先度と依存関係
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Phase 0 → Phase 1 → Phase 2 → Phase 3 → Phase 4 → Phase 5
+  ↓         ↓         ↓         ↓         ↓         ↓
+ 必須     必須     必須     必須     任意     必須
+
+Phase 0 を完了しないと他のPhaseは意味を成さない。
+Phase 1-3 は座標系の実運用部分なので必須。
+Phase 4 は見た目の統一なので優先度は低い。
+Phase 5 は全体検証なので最後に必須。
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+改修時の注意事項
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. 座標変換は必ず coordinate-system.js 経由
+   - 直接 event.offsetX や layerX を使わない
+   - 直接 container.toLocal/toGlobal を呼ばない
+
+2. DPI/DPRは常に考慮
+   - getBoundingClientRect() と renderer.width/height の比率
+   - window.devicePixelRatio
+
+3. worldContainer の transform は camera-system.js が管理
+   - 他のコードから直接操作しない
+
+4. ストロークはローカル座標で記録
+   - ワールド座標やスクリーン座標での記録は禁止
+
+5. EventBus でシステム間連携
+   - 'camera:transform-changed'
+   - 'layer:transform-changed'
+   - 'canvas:resized'
+
+6. コンソールログは最小限
+   - 不具合時はエラーを throw して検索可能にする
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+END
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
