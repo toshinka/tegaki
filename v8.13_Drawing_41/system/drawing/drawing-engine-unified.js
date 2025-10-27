@@ -1,6 +1,6 @@
 /**
- * DrawingEngine - ペン描画統合制御クラス
- * 🔥 改修: Space+ドラッグでキャンバス移動中はペン描画を無効化
+ * DrawingEngine - ペン描画統合制御（統合座標版）
+ * ✅ 改修: StrokeRecorderに activeLayer を渡し、CoordinateUnification対応座標を取得
  */
 
 class DrawingEngine {
@@ -26,7 +26,6 @@ class DrawingEngine {
         this.eraserPreviewGraphics = null;
         this.lastProcessedPointIndex = 0;
         
-        // 🔥 改修: キャンバス移動モード監視
         this.canvasMoveMode = false;
         
         this._syncBrushSettingsToRuntime();
@@ -37,6 +36,13 @@ class DrawingEngine {
     setBrushSettings(brushSettings) {
         this.brushSettings = brushSettings;
         this._syncBrushSettingsToRuntime();
+    }
+
+    setCoordinateUnification(coordUnification) {
+        // ✅ CoordinateUnificationをStrokeRecorderに渡す
+        if (this.strokeRecorder && coordUnification) {
+            this.strokeRecorder.setCoordinateUnification(coordUnification);
+        }
     }
 
     _syncBrushSettingsToRuntime() {
@@ -53,21 +59,17 @@ class DrawingEngine {
         });
     }
 
-    // 🔥 改修: キャンバス移動モード監視
     _setupCanvasMoveModeListener() {
         if (!this.eventBus) return;
         this.eventBus.on('camera:canvas-move-mode', ({ active }) => {
             this.canvasMoveMode = active;
-            // キャンバス移動モード開始時、描画中なら中断
             if (active && this.isDrawing) {
                 this.cancelStroke();
             }
         });
     }
 
-    // 🔥 改修: キャンバス移動中は描画開始しない
     startDrawing(x, y, event) {
-        // キャンバス移動モード中は描画しない
         if (this.canvasMoveMode) {
             return;
         }
@@ -79,11 +81,12 @@ class DrawingEngine {
 
         this.currentSettings = this.getBrushSettings();
 
+        // ✅ アクティブレイヤーを StrokeRecorder に渡す
         if (event && event.pointerType) {
-            this.strokeRecorder.startStrokeFromEvent(event);
+            this.strokeRecorder.startStrokeFromEvent(event, this.currentLayer);
         } else {
             const pressure = event?.pressure || 0.5;
-            this.strokeRecorder.startStroke(x, y, pressure);
+            this.strokeRecorder.startStroke(x, y, pressure, this.currentLayer);
         }
 
         this.isDrawing = true;
@@ -107,22 +110,21 @@ class DrawingEngine {
         }
     }
 
-    // 🔥 改修: キャンバス移動開始時は描画を中断
     continueDrawing(x, y, event) {
         if (!this.isDrawing) return;
         
-        // キャンバス移動モードになったら描画中断
         if (this.canvasMoveMode) {
             this.cancelStroke();
             return;
         }
 
+        // ✅ アクティブレイヤーを StrokeRecorder に渡す
         if (event && event.pointerType) {
             const pressure = event.pressure || 0.5;
-            this.strokeRecorder.addPointFromEvent(event, pressure);
+            this.strokeRecorder.addPointFromEvent(event, pressure, this.currentLayer);
         } else {
             const pressure = event?.pressure || 0.5;
-            this.strokeRecorder.addPoint(x, y, pressure);
+            this.strokeRecorder.addPoint(x, y, pressure, this.currentLayer);
         }
 
         this.currentSettings = this.getBrushSettings();
@@ -410,5 +412,3 @@ class DrawingEngine {
         this.clearEraserPreview();
     }
 }
-
-console.log('✅ drawing-engine.js (キャンバス移動時ペン無効化版) loaded');

@@ -1,0 +1,713 @@
+# 座標統合システム - 実装完全チェックリスト
+
+## ✅ ファイル配置と置換
+
+### 新規ファイル（追加）
+- ✅ `system/coordinate-unification.js` → **コード例に含む（artifacts）**
+
+### 置換すべきファイル
+- ⚠️ `system/layer-system.js` → **layer-system-complete.js** で置換
+- ⚠️ `system/drawing/stroke-recorder-unified.js` → **ファイル40に追加済み**
+- ⚠️ `system/layer-transform-unified.js` → **ファイル40に追加済み**
+- ⚠️ `core-engine.js` → **core-engine-unified.js** で置換
+- ⚠️ `system/drawing/drawing-engine.js` → **drawing-engine-unified.js** で置換
+
+### 変更不要
+- ✅ `camera-system.js` （既に正しい実装）
+- ✅ `coordinate-system.js` （診断用のため不変）
+- ✅ その他全ファイル
+
+---
+
+## 📋 HTML スクリプト読み込み順序（index.html）
+
+以下の順序でスクリプトを読み込んでください：
+
+```html
+<!-- 基本設定 -->
+<script src="config.js"></script>
+
+<!-- イベントシステム -->
+<script src="system/event-bus.js"></script>
+
+<!-- ✅ 統合座標システム（新規） -->
+<script src="system/coordinate-unification.js"></script>
+
+<!-- ✅ レイヤートランスフォーム（統合版） -->
+<script src="system/layer-transform-unified.js"></script>
+
+<!-- ✅ ストロークレコーダー（統合版） -->
+<script src="system/drawing/stroke-recorder-unified.js"></script>
+
+<!-- データモデル -->
+<script src="system/data-models.js"></script>
+
+<!-- UI -->
+<script src="ui/dom-builder.js"></script>
+
+<!-- キャメラシステム -->
+<script src="system/camera-system.js"></script>
+
+<!-- ✅ ドローイングエンジン（統合版） -->
+<script src="system/drawing/pressure-handler.js"></script>
+<script src="system/drawing/curve-interpolator.js"></script>
+<script src="system/drawing/processing/vector-operations.js"></script>
+<script src="system/drawing/stroke-renderer.js"></script>
+<script src="system/drawing/brush-settings.js"></script>
+<script src="system/drawing/stroke-transformer.js"></script>
+<script src="system/drawing/eraser-mask-renderer.js"></script>
+<script src="system/drawing/drawing-engine.js"></script>
+
+<!-- ✅ レイヤーシステム（統合版） -->
+<script src="system/layer-system.js"></script>
+
+<!-- その他システム -->
+<script src="system/popup-manager.js"></script>
+<script src="system/state-manager.js"></script>
+<script src="system/settings-manager.js"></script>
+<script src="system/drawing-clipboard.js"></script>
+<script src="system/history.js"></script>
+<script src="system/virtual-album.js"></script>
+<script src="system/animation-system.js"></script>
+
+<!-- エクスポート -->
+<script src="system/export-manager.js"></script>
+<script src="system/exporters/png-exporter.js"></script>
+<script src="system/exporters/apng-exporter.js"></script>
+<script src="system/exporters/gif-exporter.js"></script>
+<script src="system/exporters/webp-exporter.js"></script>
+<script src="system/exporters/mp4-exporter.js"></script>
+<script src="system/exporters/pdf-exporter.js"></script>
+<script src="system/quick-export-ui.js"></script>
+
+<!-- UI パネル -->
+<script src="ui/keyboard-handler.js"></script>
+<script src="ui/resize-popup.js"></script>
+<script src="ui/layer-panel-renderer.js"></script>
+<script src="ui/status-display-renderer.js"></script>
+<script src="ui/timeline-thumbnail-utils.js"></script>
+<script src="ui/timeline-ui.js"></script>
+<script src="ui/slider-utils.js"></script>
+<script src="ui/album-popup.js"></script>
+<script src="ui/settings-popup.js"></script>
+<script src="ui/quick-access-popup.js"></script>
+<script src="ui/ui-panels.js"></script>
+<script src="ui/export-popup.js"></script>
+
+<!-- コア -->
+<script src="coordinate-system.js"></script>
+<script src="system/batch-api.js"></script>
+<script src="core-runtime.js"></script>
+<script src="core-engine.js"></script>
+
+<!-- 初期化 -->
+<script src="core-initializer.js"></script>
+```
+
+---
+
+## 🔍 インテグレーション検証
+
+### Step 1: CoordinateUnification の初期化確認
+
+**core-engine.js** の `constructor()` で以下が実行されているか確認：
+
+```javascript
+this.coordinateUnification = new window.TegakiCoordinateUnification(
+    CONFIG,
+    this.eventBus
+);
+```
+
+✅ **確認項目**:
+- `TegakiCoordinateUnification` がグローバル空間に存在
+- `CONFIG` と `eventBus` が正しく渡されている
+
+---
+
+### Step 2: LayerSystem の統合確認
+
+**core-engine.js** の `setupCrossReferences()` で以下が実行されているか確認：
+
+```javascript
+this.layerSystem.coordinateUnification = this.coordinateUnification;
+```
+
+✅ **確認項目**:
+- LayerSystem が CoordinateUnification への参照を持つ
+- LayerSystem.init() 内で CoordinateUnification が使用されている
+
+---
+
+### Step 3: LayerTransform の統合確認
+
+**layer-system-complete.js** の `init()` メソッドで：
+
+```javascript
+if (window.TegakiLayerTransform) {
+    this.layerTransform = new window.TegakiLayerTransform(
+        this.config,
+        this.coordinateUnification  // ✅ 統合版
+    );
+}
+```
+
+✅ **確認項目**:
+- LayerTransform が CoordinateUnification を受け取っている
+- 古い `coordAPI` ではなく新しい `coordinateUnification` を使用
+
+---
+
+### Step 4: StrokeRecorder の統合確認
+
+**drawing-engine.js** の `startDrawing()` と `continueDrawing()` で：
+
+```javascript
+// ✅ アクティブレイヤーを StrokeRecorder に渡す
+this.strokeRecorder.startStrokeFromEvent(event, this.currentLayer);
+```
+
+✅ **確認項目**:
+- StrokeRecorder に `activeLayer` が渡されている
+- StrokeRecorder が CoordinateUnification を使用可能
+
+---
+
+## 🧪 テスト実行手順
+
+### Test 1: 初期化エラーチェック
+
+ブラウザコンソールで以下のコマンドを実行：
+
+```javascript
+// CoordinateUnification が存在するか
+console.log(window.TegakiCoordinateUnification ? '✅ OK' : '❌ NG');
+
+// LayerSystem が存在するか
+console.log(window.TegakiLayerSystem ? '✅ OK' : '❌ NG');
+
+// LayerTransform が存在するか
+console.log(window.TegakiLayerTransform ? '✅ OK' : '❌ NG');
+
+// CoreEngine が存在するか
+console.log(window.TegakiCoreEngine ? '✅ OK' : '❌ NG');
+```
+
+期待結果: すべて `✅ OK`
+
+---
+
+### Test 2: ペン描画テスト（リサイズなし）
+
+1. ツールを「ペン」に設定
+2. キャンバス上に数本の線を描画
+3. 線が正確に描画されることを確認
+
+期待結果: 線が描画位置と一致
+
+---
+
+### Test 3: リサイズテスト（中央基準）
+
+1. Vキーで Vモード に入る
+2. リサイズスライダーで 1.5倍に拡大
+3. ペンを動かしてプレビューを確認
+4. 描画してレイヤーサムネイルを確認
+5. リサイズを確定（Enter または confirmButton）
+6. リサイズ後、新規描画がズレていないことを確認
+
+期待結果: 
+- リサイズ中: ペン位置と描画プレビューが一致
+- リサイズ後: 新規描画が正確
+
+---
+
+### Test 4: 移動テスト（ドラッグ）
+
+1. Vキー で Vモード に入る
+2. ドラッグでレイヤーを任意の位置に移動
+3. 移動確定
+4. レイヤーサムネイルで位置が正確なことを確認
+5. 移動後、新規描画テスト
+
+期待結果: 移動後の描画が正確
+
+---
+
+### Test 5: 回転テスト
+
+1. Vキー で Vモード に入る
+2. 回転スライダー または Shift+ホイール で回転
+3. 回転確定
+4. 新規描画がズレていないこと確認
+
+期待結果: 回転後の描画が正確
+
+---
+
+### Test 6: 反転テスト
+
+1. Vキー で Vモード に入る
+2. H キー（または反転ボタン）で水平反転
+3. Shift+H で垂直反転
+4. 反転を確定
+5. レイヤーサムネイルで反転が正確なことを確認
+
+期待結果: 反転後のサムネイルが正確
+
+---
+
+## 🐛 トラブルシューティング
+
+### Issue: "TegakiCoordinateUnification is not defined"
+
+**原因**: coordinate-unification.js が読み込まれていない
+
+**解決**:
+1. HTMLで `coordinate-unification.js` を読み込んでいるか確認
+2. スクリプト順序を確認（event-bus.js より後、layer-transform-unified.js より前）
+3. ファイルパスが正しいか確認
+
+```html
+<!-- ✅ 正しい順序 -->
+<script src="system/event-bus.js"></script>
+<script src="system/coordinate-unification.js"></script>  <!-- ここ -->
+<script src="system/layer-transform-unified.js"></script>
+```
+
+---
+
+### Issue: "this.transform.setTransform is not a function"
+
+**原因**: LayerSystem が古い layer-transform.js を使用している
+
+**解決**:
+1. `system/layer-system.js` を `layer-system-complete.js` で置換したか確認
+2. LayerTransform の引数が `coordinateUnification` であることを確認
+
+```javascript
+// ✅ 正しい初期化
+this.layerTransform = new window.TegakiLayerTransform(
+    this.config,
+    this.coordinateUnification  // 古い coordAPI ではなく
+);
+```
+
+---
+
+### Issue: Vモード操作が反応しない
+
+**原因**: LayerTransform のコールバックが設定されていない
+
+**解決**:
+1. LayerSystem.initTransform() が呼び出されているか確認
+2. onDragRequest, onFlipRequest, onGetActiveLayer が設定されているか確認
+
+```javascript
+// ✅ core-engine.js の setupCrossReferences() 内
+if (this.layerSystem.initTransform) {
+    this.layerSystem.initTransform();
+}
+```
+
+---
+
+### Issue: リサイズ後にペン位置がズレる
+
+**原因**: CoordinateUnification が確定時に paths 座標を変更していない
+
+**解決**:
+1. LayerTransform.confirmTransform() が呼び出されているか確認
+2. coordinateUnification.confirmTransform() が成功しているか確認
+
+```javascript
+// ✅ LayerTransform.confirmTransform()
+const success = this.coordUnification.confirmTransform(layer);
+if (!success) {
+    console.error('❌ confirmTransform failed');
+}
+```
+
+---
+
+### Issue: パフォーマンス低下
+
+**原因**: 座標キャッシュが肥大化
+
+**解決**:
+1. CoordinateUnification.clearCoordinateCache() が定期的に呼ばれているか確認
+2. リサイズやカメラ変形イベントでキャッシュが無効化されているか確認
+
+```javascript
+// EventBus イベント確認
+this.eventBus.on('camera:transform-changed', () => {
+    this.clearCoordinateCache();  // ✅ これが呼ばれているか
+});
+```
+
+---
+
+## 📊 実装チェックシート
+
+| 項目 | ファイル | 状態 | 備考 |
+|------|---------|------|------|
+| coordinate-unification.js 追加 | システム | ⬜ | 新規ファイル |
+| layer-system.js 置換 | システム | ⬜ | layer-system-complete.js |
+| layer-transform-unified.js 追加 | システム | ⬜ | ファイル40に存在 |
+| stroke-recorder-unified.js 追加 | system/drawing | ⬜ | ファイル40に存在 |
+| drawing-engine.js 置換 | system/drawing | ⬜ | drawing-engine-unified.js |
+| core-engine.js 置換 | Core | ⬜ | core-engine-unified.js |
+| HTML スクリプト順序修正 | index.html | ⬜ | 上記参照 |
+| Test 1: 初期化チェック | ブラウザ | ⬜ | コンソール実行 |
+| Test 2: ペン描画 | 機能 | ⬜ | 手動テスト |
+| Test 3: リサイズ | 機能 | ⬜ | 手動テスト |
+| Test 4: 移動 | 機能 | ⬜ | 手動テスト |
+| Test 5: 回転 | 機能 | ⬜ | 手動テスト |
+| Test 6: 反転 | 機能 | ⬜ | 手動テスト |
+
+---
+
+## 📝 実装完了後の確認
+
+実装完了時、以下をコンソールで実行して検証：
+
+```javascript
+// 全システムの初期化確認
+const engine = window.CoreEngine;
+console.log('🎯 Coordinate Unification System', {
+    coordinateUnification: !!engine?.coordinateUnification,
+    layerSystem: !!engine?.layerSystem,
+    cameraSystem: !!engine?.cameraSystem,
+    drawingEngine: !!engine?.drawingEngine,
+    layerTransform: !!engine?.layerSystem?.layerTransform,
+    eventBus: !!engine?.eventBus
+});
+```
+
+期待出力: すべて `true`
+
+---
+
+## 🚀 デプロイ前チェック
+
+- [ ] すべてのテストが緑（合格）
+- [ ] コンソールエラーが 0 個
+- [ ] リサイズ→描画→確定→描画のサイクルで座標ズレなし
+- [ ] Vモード移動→確定→描画で座標ズレなし
+- [ ] 回転・反転・スケール全てで座標ズレなし
+- [ ] サムネイル表示が正確
+- [ ] アニメーション再生で座標ズレなし
+
+すべてチェック完了後、本番環境にデプロイしてください。
+
+
+# 座標統合システム - 実装サマリー
+
+## 問題の根本原因
+
+### 従来システムの課題
+```
+描画データ（paths） ← ← → ← ← → PixiJS層（表示）
+           ❌ 乖離発生！
+```
+
+1. **リサイズ時**: PixiJS層に変形適用 ✅ → paths座標は変更されない ❌
+2. **Vモード移動後**: 表示はリセット ✅ → paths座標のズレは残る ❌
+3. **描画判定**: レイヤーローカル座標で判定 → 変形中は二重座標系
+
+---
+
+## 解決策：統合座標管理
+
+### 新システムの原則
+```
+Single Source of Truth: paths座標が主体
+   ↓
+リアルタイム同期: 変形操作 → paths座標も即座に反映
+   ↓
+完全同期: ペン位置と描画、常に一致
+```
+
+---
+
+## 実装構成図
+
+```
+┌─────────────────────────────────────────────────────┐
+│                  CoreEngine                         │
+│                                                     │
+│  ✅ new CoordinateUnification(CONFIG, eventBus)    │
+└─────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────┐
+│            LayerSystem (統合版)                    │
+│                                                     │
+│  • coordinateUnification: CoordinateUnification    │
+│  • layerTransform: LayerTransform(config, coord)  │
+└─────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────┐
+│          CoordinateUnification                      │
+│                                                     │
+│  ✅ screenToLayerLocal(x, y, layer)               │
+│  ✅ moveLayer(layer, dx, dy)                      │
+│  ✅ scaleLayer(layer, scale, centerBased)        │
+│  ✅ rotateLayer(layer, rotation, centerBased)    │
+│  ✅ flipLayer(layer, direction)                  │
+│  ✅ confirmTransform(layer)                       │
+│                                                     │
+│  → paths座標を変更 + PixiJS層も同期更新           │
+└─────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────┐
+│     LayerTransform (統合版)                        │
+│                                                     │
+│  • coordinateUnification を利用                    │
+│  • updateTransform() → coord.moveLayer() など     │
+│  • confirmTransform() → coord.confirmTransform()   │
+└─────────────────────────────────────────────────────┘
+        ↓
+┌─────────────────────────────────────────────────────┐
+│      StrokeRecorder (統合版)                       │
+│                                                     │
+│  • activeLayer を受け取る                         │
+│  • CoordinateUnification.screenToLayerLocal()     │
+│  → レイヤー変形中も正確な座標を記録               │
+└─────────────────────────────────────────────────────┘
+```
+
+---
+
+## ファイル対応表
+
+| 役割 | ファイル | 動作 |
+|------|---------|------|
+| **統合座標API** | `coordinate-unification.js` | paths座標とPixiJS層を同期管理 |
+| **レイヤー変形UI** | `layer-transform-unified.js` | CoordinateUnification経由で操作 |
+| **ペン座標記録** | `stroke-recorder-unified.js` | activeLayerを受け取り、正確な座標を取得 |
+| **ペン描画制御** | `drawing-engine-unified.js` | StrokeRecorderに activeLayer を渡す |
+| **レイヤー管理** | `layer-system-complete.js` | CoordinateUnification を初期化・管理 |
+| **エンジン統合** | `core-engine-unified.js` | CoordinateUnification を作成・初期化 |
+
+---
+
+## 動作フロー
+
+### リサイズ → 描画 → 確定 のサイクル
+
+```
+1️⃣ Vキー入力
+   └→ LayerTransform.enterMoveMode()
+   
+2️⃣ リサイズスライダー操作 (2倍)
+   └→ LayerTransform.updateTransform('scale', 2.0)
+   └→ CoordinateUnification.scaleLayer(layer, 2.0, true)
+      ├→ PixiJS層を2倍に変形 ✅
+      └→ paths座標を2倍に変換 ✅
+   
+3️⃣ ペン描画
+   └→ DrawingEngine.startDrawing(x, y, event)
+   └→ StrokeRecorder.startStrokeFromEvent(event, activeLayer)
+   └→ CoordinateUnification.screenToLayerLocal(x, y, layer)
+      → 変形中のレイヤーで正確なローカル座標を取得 ✅
+   
+4️⃣ リサイズ確定 (Enter または Confirm)
+   └→ LayerTransform.confirmTransform(layer)
+   └→ CoordinateUnification.confirmTransform(layer)
+      ├→ paths座標に変形を焼き込み ✅
+      ├→ PixiJS層をリセット ✅
+      └→ 変形状態を初期化 ✅
+   
+5️⃣ 確定後ペン描画
+   └→ 新しいpaths座標（既に変形済み）に描画 ✅
+   └→ ペン位置と描画が一致 ✅
+```
+
+---
+
+## 座標変換の秘密
+
+### 従来（問題あり）
+```javascript
+// リサイズ中
+PixiJS layer.scale = 2.0
+paths座標 = [100, 100]  // ← 変わらない❌
+
+// リサイズ確定
+PixiJS layer.scale = 1.0
+paths座標 = [100, 100]  // ← 表示が縮小❌
+```
+
+### 新システム（完全同期）
+```javascript
+// リサイズ中
+PixiJS layer.scale = 2.0
+paths座標 = [100, 100]  // ← 変形不要（表示は PixiJS層で対応）
+
+// リサイズ確定
+CoordinateUnification.confirmTransform()
+  ├→ paths座標を変形: [100, 100] → [200, 200] ✅
+  └→ PixiJS layer.scale = 1.0 にリセット ✅
+
+結果: paths座標 [200, 200] = 新しい描画位置
+```
+
+---
+
+## 座標系の統一
+
+### 三層構造
+
+```
+レイヤー (layer.scale, layer.rotation, layer.position)
+   ↑
+   │ CoordinateUnification.layerLocalToCanvasLocal()
+   │
+キャンバス (canvasContainer.toLocal())
+   ↑
+   │ CameraSystem.screenToLayer()
+   │
+スクリーン (clientX, clientY)
+```
+
+### 記録フロー
+
+```
+スクリーン座標 (event.clientX, event.clientY)
+  ↓ CameraSystem.screenToLayer()
+キャンバス座標
+  ↓ CoordinateUnification.canvasLocalToLayerLocal()
+レイヤーローカル座標 ← ✅ ここに記録！
+  ↓
+paths データ
+```
+
+---
+
+## 確認事項（実装前）
+
+- [ ] `coordinate-unification.js` が `artifacts` に存在
+- [ ] `layer-system-complete.js` で `layer-system.js` を置換予定
+- [ ] `drawing-engine-unified.js` で `drawing-engine.js` を置換予定
+- [ ] `core-engine-unified.js` で `core-engine.js` を置換予定
+- [ ] HTML のスクリプト読み込み順序チェック確認書を保存
+
+---
+
+## 実装手順（要点）
+
+### 1. ファイル配置
+```bash
+# 新規ファイル追加
+cp coordinate-unification.js -> system/
+
+# 置換ファイル
+cp layer-system-complete.js -> system/layer-system.js
+cp drawing-engine-unified.js -> system/drawing/drawing-engine.js
+cp core-engine-unified.js -> core-engine.js
+```
+
+### 2. HTML スクリプト順序修正
+- event-bus.js
+- **coordinate-unification.js** ← 新規
+- **layer-transform-unified.js** ← 新規
+- **stroke-recorder-unified.js** ← 新規
+- その他
+
+### 3. 初期化確認
+```javascript
+// コンソールで確認
+console.log(window.TegakiCoordinateUnification);  // Function
+console.log(window.TegakiLayerTransform);         // Function
+console.log(window.TegakiCoreEngine);             // Function
+```
+
+### 4. テスト実行
+- リサイズ → 描画 → 確定 → 新描画
+- 移動 → 描画 → 確定 → 新描画
+- 回転 → 描画 → 確定 → 新描画
+
+---
+
+## 主要な改修ポイント
+
+### CoreEngine
+```javascript
+// 🆕 CoordinateUnification 初期化
+this.coordinateUnification = new window.TegakiCoordinateUnification(
+    CONFIG,
+    this.eventBus
+);
+
+// LayerSystem に統合
+this.layerSystem.coordinateUnification = this.coordinateUnification;
+```
+
+### LayerSystem
+```javascript
+// 🆕 CoordinateUnification統合版LayerTransform
+this.layerTransform = new window.TegakiLayerTransform(
+    this.config,
+    this.coordinateUnification  // ← 統合
+);
+```
+
+### DrawingEngine
+```javascript
+// 🆕 activeLayer を StrokeRecorder に渡す
+this.strokeRecorder.startStrokeFromEvent(
+    event, 
+    this.currentLayer  // ← これ重要！
+);
+```
+
+### StrokeRecorder
+```javascript
+// 🆕 activeLayer で正確な座標変換
+_getLayerLocalCoordinate(screenX, screenY, activeLayer) {
+    if (this.coordinateUnification && activeLayer) {
+        return this.coordinateUnification.screenToLayerLocal(
+            screenX, screenY, activeLayer
+        );
+    }
+}
+```
+
+---
+
+## 期待される効果
+
+| 問題 | 従来 | 新システム |
+|------|------|----------|
+| リサイズ後のズレ | ❌ あり | ✅ なし |
+| 移動後のズレ | ❌ あり | ✅ なし |
+| 回転後のズレ | ❌ あり | ✅ なし |
+| ペン位置と描画の乖離 | ❌ あり | ✅ なし |
+| 変形確定の必要性 | ❌ 必須 | ✅ 自動 |
+| コード複雑性 | ❌ 高 | ✅ 低 |
+
+---
+
+## トラブルシューティング早見表
+
+| エラー | 原因 | 解決策 |
+|--------|------|-------|
+| "not defined" | ファイル未読込 | HTML スクリプト順序確認 |
+| "is not a function" | 古いコード残存 | ファイル置換確認 |
+| Vモード無反応 | コールバック未設定 | LayerSystem.initTransform() 呼出確認 |
+| ペン位置ズレ | 座標変換失敗 | CoordinateUnification 初期化確認 |
+
+---
+
+## 完成度チェック
+
+実装完了時、以下が可能になるはず：
+
+- ✅ Vモード → リサイズ 2倍 → 描画 → 確定 → 新描画 **完璧に同期**
+- ✅ Vモード → ドラッグ移動 → 描画 → 確定 → 新描画 **完璧に同期**
+- ✅ Vモード → 回転 → 描画 → 確定 → 新描画 **完璧に同期**
+- ✅ Vモード → 反転 → 描画 → 確定 → 新描画 **完璧に同期**
+- ✅ サムネイル表示 **正確**
+- ✅ アニメーション再生 **座標ズレなし**
+
+すべてが実現できれば、座標統合システムの実装は成功です。🎉
