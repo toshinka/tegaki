@@ -17,7 +17,6 @@
             this.cameraSystem = null;
             this.animationSystem = null;
             
-            // ✅ CoordinateUnification統合
             this.coordinateUnification = null;
             this.layerTransform = null;
             
@@ -29,7 +28,6 @@
             this.config = config || window.TEGAKI_CONFIG;
             if (!this.eventBus) throw new Error('EventBus required for LayerSystem');
             
-            // ✅ CoordinateUnificationが利用可能か確認
             if (window.TegakiCoordinateUnification) {
                 this.coordinateUnification = new window.TegakiCoordinateUnification(
                     this.config,
@@ -37,7 +35,6 @@
                 );
             }
             
-            // ✅ LayerTransform（統合版）の初期化
             if (window.TegakiLayerTransform) {
                 this.layerTransform = new window.TegakiLayerTransform(
                     this.config,
@@ -69,7 +66,6 @@
             layer1.label = layer1Model.id;
             layer1.layerData = layer1Model;
             
-            // ✅ CoordinateUnificationに変形状態を初期化
             if (this.coordinateUnification) {
                 this.coordinateUnification.setTransform(layer1Model.id, {
                     x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
@@ -180,11 +176,9 @@
             if (!activeLayer?.layerData) return;
             
             if (shiftKey) {
-                // Shift+ドラッグ: 回転
                 const rotationDelta = dx * 0.01;
                 this.coordinateUnification.rotateLayer(activeLayer, rotationDelta, true);
             } else {
-                // 通常ドラッグ: 移動
                 this.coordinateUnification.moveLayer(activeLayer, dx, dy);
             }
             
@@ -361,11 +355,21 @@
             newLayer.label = newLayerModel.id;
             newLayer.layerData = newLayerModel;
             
-            // ✅ CoordinateUnificationに変形状態を初期化
             if (this.coordinateUnification) {
                 this.coordinateUnification.setTransform(newLayerModel.id, {
                     x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
                 });
+            }
+            
+            if (this.app && this.app.renderer) {
+                const success = newLayerModel.initializeMask(
+                    this.config.canvas.width,
+                    this.config.canvas.height,
+                    this.app.renderer
+                );
+                if (success && newLayerModel.maskSprite) {
+                    newLayer.addChild(newLayerModel.maskSprite);
+                }
             }
             
             this.currentFrameContainer.addChild(newLayer);
@@ -393,7 +397,6 @@
             const layerToDelete = layers[index];
             this.currentFrameContainer.removeChild(layerToDelete);
             
-            // ✅ CoordinateUnificationから変形状態を削除
             if (this.coordinateUnification) {
                 this.coordinateUnification.deleteTransform(layerToDelete.layerData.id);
             }
@@ -422,6 +425,52 @@
                 return layers[this.activeLayerIndex];
             }
             return null;
+        }
+
+        setActiveLayer(index) {
+            const layers = this.getLayers();
+            if (index >= 0 && index < layers.length) {
+                const oldIndex = this.activeLayerIndex;
+                this.activeLayerIndex = index;
+                this.updateLayerPanelUI();
+                this.updateStatusDisplay();
+                if (this.isLayerMoveMode) {
+                    this.updateLayerTransformPanelValues();
+                }
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:activated', { 
+                        layerIndex: index, 
+                        oldIndex: oldIndex, 
+                        layerId: layers[index]?.layerData?.id 
+                    });
+                }
+            }
+        }
+
+        updateLayerTransformPanelValues() {
+            if (!this.layerTransform) return;
+            const activeLayer = this.getActiveLayer();
+            if (activeLayer) {
+                this.layerTransform.updateTransformPanelValues(activeLayer);
+            }
+        }
+
+        toggleLayerVisibility(layerIndex) {
+            const layers = this.getLayers();
+            if (layerIndex >= 0 && layerIndex < layers.length) {
+                const layer = layers[layerIndex];
+                layer.layerData.visible = !layer.layerData.visible;
+                layer.visible = layer.layerData.visible;
+                this.updateLayerPanelUI();
+                this.requestThumbnailUpdate(layerIndex);
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:visibility-changed', { 
+                        layerIndex, 
+                        visible: layer.layerData.visible, 
+                        layerId: layer.layerData.id 
+                    });
+                }
+            }
         }
 
         setApp(app) {
@@ -483,6 +532,73 @@
             if (this.eventBus) {
                 this.eventBus.emit('cut:render-to-texture', { cutId, container });
             }
+        }
+
+        setCurrentFrameContainer(container) {
+            if (!container) return;
+            
+            this.currentFrameContainer = container;
+            this.currentFrameContainer.label = 'temporary_frame_container';
+            
+            if (this.currentFrameContainer.children.length === 0) {
+                const bgLayer = new PIXI.Container();
+                const bgLayerModel = new window.TegakiDataModels.LayerModel({
+                    id: 'temp_layer_bg_' + Date.now(),
+                    name: '背景',
+                    isBackground: true
+                });
+                bgLayer.label = bgLayerModel.id;
+                bgLayer.layerData = bgLayerModel;
+                
+                const bg = this._createCheckerPatternBackground(
+                    this.config.canvas.width,
+                    this.config.canvas.height
+                );
+                bgLayer.addChild(bg);
+                bgLayer.layerData.backgroundGraphics = bg;
+                this.currentFrameContainer.addChild(bgLayer);
+                
+                const layer1 = new PIXI.Container();
+                const layer1Model = new window.TegakiDataModels.LayerModel({
+                    id: 'temp_layer_1_' + Date.now(),
+                    name: 'レイヤー1'
+                });
+                layer1.label = layer1Model.id;
+                layer1.layerData = layer1Model;
+                
+                if (this.coordinateUnification) {
+                    this.coordinateUnification.setTransform(layer1Model.id, {
+                        x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
+                    });
+                }
+                
+                this.currentFrameContainer.addChild(layer1);
+                this.activeLayerIndex = 1;
+            }
+        }
+
+        getCurrentFrameContainer() {
+            return this.currentFrameContainer;
+        }
+
+        clearAllLayers() {
+            if (!this.currentFrameContainer) return;
+            
+            const layersToRemove = [];
+            for (const layer of this.currentFrameContainer.children) {
+                if (!layer.layerData?.isBackground) {
+                    layersToRemove.push(layer);
+                }
+            }
+            
+            layersToRemove.forEach(layer => {
+                this.currentFrameContainer.removeChild(layer);
+                if (this.coordinateUnification) {
+                    this.coordinateUnification.deleteTransform(layer.layerData.id);
+                }
+            });
+            
+            this.activeLayerIndex = 0;
         }
 
         destroy() {
