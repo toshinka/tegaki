@@ -1,4 +1,7 @@
-// ===== system/camera-system.js - Phase 1-3 + 座標変換修正版 =====
+// ===== system/camera-system.js - Phase 1-3 完全修正版 =====
+// Phase 1: CameraSystem.screenClientToWorld() 実装（座標変換統一入口）
+// Phase 3: resizeCanvas() 厳密実装（座標系一貫性確保）
+// 修正: renderer解像度取得・DPI補正・worldTransform逆行列適用
 
 (function() {
     'use strict';
@@ -151,7 +154,7 @@
         
         /**
          * screen座標（clientX/Y）をworld座標に変換
-         * 修正: renderer解像度取得方法を改善
+         * 修正: renderer解像度取得・DPI補正・worldTransform逆行列適用
          */
         screenClientToWorld(app, clientX, clientY) {
             const canvas = this._getSafeCanvas();
@@ -204,8 +207,15 @@
 
         // ========== Phase 3: resizeCanvas厳密実装 ==========
         
+        /**
+         * キャンバスサイズ変更とCONFIG更新
+         * Phase 3: align optionsに基づいて worldContainer を調整
+         */
         resizeCanvas(newWidth, newHeight, alignOptions = { horizontal: 'center', vertical: 'center' }) {
             if (!this.app) return;
+            
+            const oldWidth = window.TEGAKI_CONFIG.canvas.width;
+            const oldHeight = window.TEGAKI_CONFIG.canvas.height;
             
             window.TEGAKI_CONFIG.canvas.width = newWidth;
             window.TEGAKI_CONFIG.canvas.height = newHeight;
@@ -216,6 +226,32 @@
 
             this.updateGuideLinesForCanvasResize();
 
+            // Phase 3: align optionsに基づいてworldContainerを調整
+            if (alignOptions) {
+                const widthDiff = newWidth - oldWidth;
+                const heightDiff = newHeight - oldHeight;
+                
+                let offsetX = 0;
+                let offsetY = 0;
+                
+                if (alignOptions.horizontal === 'center') {
+                    offsetX = widthDiff / 2;
+                } else if (alignOptions.horizontal === 'right') {
+                    offsetX = widthDiff;
+                }
+                
+                if (alignOptions.vertical === 'center') {
+                    offsetY = heightDiff / 2;
+                } else if (alignOptions.vertical === 'bottom') {
+                    offsetY = heightDiff;
+                }
+                
+                // 見た目の位置を調整
+                this.worldContainer.position.x += offsetX;
+                this.worldContainer.position.y += offsetY;
+            }
+
+            // Phase 1+3: イベント発火（座標系変更を全システムに通知）
             if (this.eventBus) {
                 this.eventBus.emit('camera:transform-changed');
                 this.eventBus.emit('camera:resized', { width: newWidth, height: newHeight });
