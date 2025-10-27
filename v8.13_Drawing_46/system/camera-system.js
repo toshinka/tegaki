@@ -1,4 +1,4 @@
-// ===== system/camera-system.js - Phase 1-3: 座標変換API + resizeCanvas厳密実装 完了版 =====
+// ===== system/camera-system.js - Phase 1-3 + 座標変換修正版 =====
 
 (function() {
     'use strict';
@@ -147,72 +147,75 @@
             this._emitTransformChanged();
         }
 
-        // ========== Phase 1: 統一座標変換API ==========
+        // ========== Phase 1: 統一座標変換API（修正版） ==========
         
         /**
          * screen座標（clientX/Y）をworld座標に変換
-         * DOM表示サイズとrenderer内部解像度の差を考慮した正確な変換
-         * @param {Object} app - PIXI.Application（renderer情報取得用）
-         * @param {number} clientX - マウスイベントのclientX
-         * @param {number} clientY - マウスイベントのclientY
-         * @returns {{x: number, y: number}} world座標
+         * 修正: renderer解像度取得方法を改善
          */
         screenClientToWorld(app, clientX, clientY) {
-            // canvas DOM と renderer 内ピクセルのスケールを計算
-            const rect = app.view.getBoundingClientRect();
+            const canvas = this._getSafeCanvas();
+            if (!canvas) {
+                return { x: clientX, y: clientY };
+            }
             
-            // DOM (css) 内の相対位置
+            const rect = canvas.getBoundingClientRect();
+            
+            // DOM (CSS) 内の相対位置
             const canvasCssX = clientX - rect.left;
             const canvasCssY = clientY - rect.top;
             
-            // 内部ピクセルスケール（高DPI 対応）
-            const pixelScaleX = app.renderer.width / rect.width;
-            const pixelScaleY = app.renderer.height / rect.height;
+            // ★修正: renderer解像度の正しい取得
+            // app.stage.parent が実際の PIXI.Application インスタンス
+            let rendererWidth = rect.width;
+            let rendererHeight = rect.height;
+            
+            if (app?.stage?.parent) {
+                const parent = app.stage.parent;
+                // renderer.screen または renderer自体のwidth/heightを使用
+                if (parent.renderer?.screen) {
+                    rendererWidth = parent.renderer.screen.width;
+                    rendererHeight = parent.renderer.screen.height;
+                } else if (parent.screen) {
+                    rendererWidth = parent.screen.width;
+                    rendererHeight = parent.screen.height;
+                } else if (parent.renderer) {
+                    rendererWidth = parent.renderer.width || rect.width;
+                    rendererHeight = parent.renderer.height || rect.height;
+                }
+            }
+            
+            // 内部ピクセルスケール（高DPI対応）
+            const pixelScaleX = rendererWidth / rect.width;
+            const pixelScaleY = rendererHeight / rect.height;
             const canvasPxX = canvasCssX * pixelScaleX;
             const canvasPxY = canvasCssY * pixelScaleY;
 
-            // worldContainer のワールド変換の逆行列で world に変換
+            // worldContainerのワールド変換の逆行列でworld座標に変換
             if (!this.worldContainer || !this.worldContainer.transform) {
                 return { x: canvasPxX, y: canvasPxY };
             }
             
             const inv = this.worldContainer.transform.worldTransform.clone().invert();
             const p = inv.apply({ x: canvasPxX, y: canvasPxY });
+            
             return { x: p.x, y: p.y };
         }
 
         // ========== Phase 3: resizeCanvas厳密実装 ==========
         
-        /**
-         * キャンバスリサイズの厳密実装
-         * renderer解像度とworldContainerを正しく同期
-         * @param {number} newWidth - 新しい幅
-         * @param {number} newHeight - 新しい高さ
-         * @param {Object} alignOptions - アラインオプション {horizontal, vertical}
-         */
         resizeCanvas(newWidth, newHeight, alignOptions = { horizontal: 'center', vertical: 'center' }) {
             if (!this.app) return;
             
-            // 1) update config
             window.TEGAKI_CONFIG.canvas.width = newWidth;
             window.TEGAKI_CONFIG.canvas.height = newHeight;
 
-            // 2) resize renderer (内部ピクセル解像度)
             if (this.app.stage && this.app.stage.parent && this.app.stage.parent.resize) {
                 this.app.stage.parent.resize(newWidth, newHeight);
             }
 
-            // 3) worldContainer の位置調整（アンカーに応じて）
-            const wc = this.worldContainer;
-            if (wc) {
-                // pivot/positionはリセットしない（既存の位置を維持）
-                // アラインオプションは将来的な拡張用として保持
-            }
-
-            // 4) canvas関連の更新
             this.updateGuideLinesForCanvasResize();
 
-            // 5) 通知
             if (this.eventBus) {
                 this.eventBus.emit('camera:transform-changed');
                 this.eventBus.emit('camera:resized', { width: newWidth, height: newHeight });
@@ -677,4 +680,4 @@
 
 })();
 
-console.log('✅ camera-system.js (Phase 1-3完了: 座標変換API + resizeCanvas厳密実装) loaded');
+console.log('✅ camera-system.js (Phase 1-3 + 座標変換修正版) loaded');
