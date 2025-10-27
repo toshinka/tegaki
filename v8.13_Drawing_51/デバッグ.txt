@@ -1,0 +1,32 @@
+// 詳細版モニタリング
+const originalStartDrawing = window.drawingEngine?.startDrawing;
+if (originalStartDrawing) {
+    window.drawingEngine.startDrawing = function(x, y, event) {
+        if (event?.clientX) {
+            const cs = window.CoordinateSystem;
+            const lm = window.layerManager;
+            const layer = lm?.getActiveLayer?.();
+            
+            if (cs && layer) {
+                const canvas = cs.screenClientToCanvas(event.clientX, event.clientY);
+                const world = cs.canvasToWorld(canvas.x, canvas.y);
+                const local = cs.worldToLocal(world.x, world.y, layer);
+                
+                console.log('📊 Drawing Engine座標チェック');
+                console.table({
+                    'clientX/Y': [event.clientX, event.clientY],
+                    'Canvas': [canvas.x.toFixed(1), canvas.y.toFixed(1)],
+                    'World': [world.x.toFixed(1), world.y.toFixed(1)],
+                    'Local': [local.x.toFixed(1), local.y.toFixed(1)]
+                });
+                
+                // strokeRecorder に実際に記録される値
+                console.log('strokeRecorder.points:', 
+                    window.drawingEngine.strokeRecorder.getCurrentPoints());
+            }
+        }
+        return originalStartDrawing.call(this, x, y, event);
+    };
+    
+    console.log('✅ 詳細モニタリング開始。ペンで描画してください');
+}
