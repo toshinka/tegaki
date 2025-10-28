@@ -1,5 +1,6 @@
-// ===== core-runtime.js - Phase 1完全版: 座標修正 =====
+// ===== core-runtime.js - Phase 1-3完全版: ThumbnailSystem統合 =====
 // Phase 1: PointerEventからclientX/Yを正しく取得してDrawingEngineに渡す
+// Phase 1-3: ThumbnailSystem初期化を統合
 
 (function() {
     'use strict';
@@ -33,29 +34,29 @@
             pointerEventsSetup: false
         },
         
-init(options) {
-    Object.assign(this.internal, options);
-    this.project.renderer = options.app?.renderer;
-    this.project.stage = options.app?.stage;
-    this.internal.initialized = true;
-    
-    this.setupCoordinateSystem();
-    
-    const defaultCut = this.createCut({ name: 'CUT1' });
-    this.switchCut(defaultCut.id);
-    
-    // ========== Phase 1: ThumbnailSystem 初期化 ==========
-    if (window.ThumbnailSystem && options.app) {
-        window.ThumbnailSystem.app = options.app;
-        window.ThumbnailSystem.init(options.eventBus || window.TegakiEventBus);
-    }
-    // ========== END Phase 1 ==========
-    
-    this.setupLegacyCompatibility();
-    this.setupPointerEvents();
-    
-    return this;
-},
+        init(options) {
+            Object.assign(this.internal, options);
+            this.project.renderer = options.app?.renderer;
+            this.project.stage = options.app?.stage;
+            this.internal.initialized = true;
+            
+            this.setupCoordinateSystem();
+            
+            const defaultCut = this.createCut({ name: 'CUT1' });
+            this.switchCut(defaultCut.id);
+            
+            // ========== Phase 1-3: ThumbnailSystem初期化 ==========
+            if (window.ThumbnailSystem && options.app) {
+                window.ThumbnailSystem.app = options.app;
+                window.ThumbnailSystem.init(options.eventBus || window.TegakiEventBus);
+            }
+            // ========== END Phase 1-3 ==========
+            
+            this.setupLegacyCompatibility();
+            this.setupPointerEvents();
+            
+            return this;
+        },
         
         // ========== Phase 1完全修正: clientX/Yを正しく取得 ==========
         setupPointerEvents() {
@@ -709,4 +710,4 @@ init(options) {
     
 })();
 
-console.log('✅ core-runtime.js (Phase 1完全版: 座標修正) loaded');
+console.log('✅ core-runtime.js (Phase 1-3完全版: ThumbnailSystem統合) loaded');
