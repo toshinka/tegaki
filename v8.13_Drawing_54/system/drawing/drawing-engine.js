@@ -1,0 +1,466 @@
+/**
+ * DrawingEngine - ペン描画統合制御クラス
+ * Phase 1完全版: 正確なLocal座標変換
+ */
+
+class DrawingEngine {
+    constructor(app, layerSystem, cameraSystem, history) {
+        this.app = app;
+        
+        // 修正: layerSystem の正体は window.layerManager
+        this.layerSystem = layerSystem || window.layerManager;
+        if (!this.layerSystem) {
+            console.warn('⚠️ layerSystem未初期化。アクティブレイヤー取得時に null になります');
+        }
+        
+        this.cameraSystem = cameraSystem;
+        this.history = history;
+        this.eventBus = window.TegakiEventBus;
+        this.coordinateSystem = window.CoordinateSystem || window.TEGAKI_COORDINATE_SYSTEM;
+
+        if (this.coordinateSystem && this.coordinateSystem.init) {
+            this.coordinateSystem.init(app, window.TEGAKI_CONFIG, this.eventBus);
+            this.coordinateSystem.setCameraSystem(cameraSystem);
+        }
+
+        this.pressureHandler = new PressureHandler();
+        this.strokeRecorder = new StrokeRecorder(this.pressureHandler, this.cameraSystem);
+        this.strokeRenderer = new StrokeRenderer(app);
+        this.eraserRenderer = new EraserMaskRenderer(app);
+
+        this.brushSettings = null;
+        this.isDrawing = false;
+        this.currentPreview = null;
+        this.currentLayer = null;
+        this.currentSettings = null;
+        this.currentTool = 'pen';
+        
+        this.eraserPreviewGraphics = null;
+        this.lastProcessedPointIndex = 0;
+        
+        this.canvasMoveMode = false;
+        this.layerTransformDirty = false;
+        
+        this._syncBrushSettingsToRuntime();
+        this._syncToolSelection();
+        this._setupCanvasMoveModeListener();
+        this._setupLayerTransformListener();
+    }
+
+    setBrushSettings(brushSettings) {
+        this.brushSettings = brushSettings;
+        this._syncBrushSettingsToRuntime();
+    }
+
+    _syncBrushSettingsToRuntime() {
+        if (!this.eventBus) return;
+        this.eventBus.on('brush:size-changed', ({ size }) => {});
+        this.eventBus.on('brush:alpha-changed', ({ alpha }) => {});
+        this.eventBus.on('brush:color-changed', ({ color }) => {});
+    }
+
+    _syncToolSelection() {
+        if (!this.eventBus) return;
+        this.eventBus.on('tool:select', ({ tool }) => {
+            this.setTool(tool);
+        });
+    }
+
+    _setupCanvasMoveModeListener() {
+        if (!this.eventBus) return;
+        this.eventBus.on('camera:canvas-move-mode', ({ active }) => {
+            this.canvasMoveMode = active;
+            if (active && this.isDrawing) {
+                this.cancelStroke();
+            }
+        });
+    }
+
+    _setupLayerTransformListener() {
+        if (!this.eventBus) return;
+        this.eventBus.on('layer:transform-updated', ({ layerId }) => {
+            if (this.isDrawing && this.currentLayer?.layerData?.id === layerId) {
+                this.cancelStroke();
+            }
+            this.layerTransformDirty = true;
+        });
+    }
+
+    getBrushSettings() {
+        if (this.brushSettings) {
+            return this.brushSettings.getCurrentSettings();
+        }
+
+        if (window.brushSettings) {
+            return {
+                color: window.brushSettings.getColor(),
+                size: window.brushSettings.getSize(),
+                alpha: window.brushSettings.getAlpha ? window.brushSettings.getAlpha() : 1.0
+            };
+        }
+
+        if (window.TegakiSettingsManager) {
+            return {
+                color: window.TegakiSettingsManager.get('pen.color') || 0x800000,
+                size: window.TegakiSettingsManager.get('pen.size') || 3,
+                alpha: window.TegakiSettingsManager.get('pen.opacity') || 1.0
+            };
+        }
+
+        return {
+            color: 0x800000,
+            size: 3,
+            alpha: 1.0
+        };
+    }
+
+    setTool(toolName) {
+        this.currentTool = toolName;
+        if (this.strokeRenderer) {
+            this.strokeRenderer.setTool(toolName);
+        }
+        
+        if (toolName !== 'eraser') {
+            this.clearEraserPreview();
+        }
+    }
+
+    cancelStroke() {
+        if (!this.isDrawing) return;
+
+        this.clearPreview();
+        this.clearEraserPreview();
+        this.isDrawing = false;
+        this.currentLayer = null;
+        this.currentSettings = null;
+        this.lastProcessedPointIndex = 0;
+
+        if (this.eventBus) {
+            this.eventBus.emit('stroke:cancel');
+        }
+    }
+
+    updateResolution() {
+        this.strokeRenderer.updateResolution();
+    }
+
+    destroy() {
+        this.clearPreview();
+        this.clearEraserPreview();
+    }
+
+    // ========== Phase 1完全版: 正確なLocal座標変換 ==========
+
+    startDrawing(x, y, event) {
+        if (this.canvasMoveMode) {
+            return;
+        }
+        
+        // 修正: getActiveLayer() の呼び出し
+        this.currentLayer = this.layerSystem?.getActiveLayer?.();
+        if (!this.currentLayer || this.currentLayer?.layerData?.locked) {
+            return;
+        }
+
+        this.currentSettings = this.getBrushSettings();
+
+        let localX, localY, pressure;
+        
+        if (event && event.clientX !== undefined && event.clientY !== undefined && this.coordinateSystem) {
+            // ========== Phase 1完全版: 正確な座標変換パイプライン ==========
+            // Screen → Canvas → World → Local
+            
+            const canvas = this.coordinateSystem.screenClientToCanvas(event.clientX, event.clientY);
+            const world = this.coordinateSystem.canvasToWorld(canvas.x, canvas.y);
+            
+            // 修正: Local座標を正しく取得（worldToLocal()を使用）
+            const local = this.coordinateSystem.worldToLocal(world.x, world.y, this.currentLayer);
+            
+            localX = local.x;
+            localY = local.y;
+            pressure = event.pressure || 0.5;
+        } else {
+            // フォールバック: 直接座標指定
+            localX = x;
+            localY = y;
+            pressure = event?.pressure || 0.5;
+        }
+
+        this.strokeRecorder.startStroke(localX, localY, pressure);
+        this.isDrawing = true;
+        this.lastProcessedPointIndex = 0;
+        this.layerTransformDirty = false;
+
+        if (this.eventBus) {
+            this.eventBus.emit('stroke:start', {
+                layerId: this.currentLayer.layerData?.id || this.currentLayer.label,
+                settings: this.currentSettings,
+                tool: this.currentTool
+            });
+        }
+
+        this.updatePreview();
+        
+        if (this.currentTool === 'eraser') {
+            const points = this.strokeRecorder.getCurrentPoints();
+            if (points.length > 0) {
+                this.updateEraserPreview(points[0]);
+            }
+        }
+    }
+
+    continueDrawing(x, y, event) {
+        if (!this.isDrawing) return;
+        
+        if (this.canvasMoveMode) {
+            this.cancelStroke();
+            return;
+        }
+
+        if (this.layerTransformDirty) {
+            this.cancelStroke();
+            return;
+        }
+
+        let localX, localY, pressure;
+        
+        if (event && event.clientX !== undefined && event.clientY !== undefined && this.coordinateSystem) {
+            // ========== Phase 1完全版: 正確な座標変換パイプライン ==========
+            const canvas = this.coordinateSystem.screenClientToCanvas(event.clientX, event.clientY);
+            const world = this.coordinateSystem.canvasToWorld(canvas.x, canvas.y);
+            
+            // 修正: Local座標を正しく取得
+            const local = this.coordinateSystem.worldToLocal(world.x, world.y, this.currentLayer);
+            
+            localX = local.x;
+            localY = local.y;
+            pressure = event.pressure || 0.5;
+        } else {
+            localX = x;
+            localY = y;
+            pressure = event?.pressure || 0.5;
+        }
+
+        this.strokeRecorder.addPoint(localX, localY, pressure);
+        this.currentSettings = this.getBrushSettings();
+        this.updatePreview();
+
+        if (this.currentTool === 'eraser') {
+            const currentPoints = this.strokeRecorder.getCurrentPoints();
+            
+            if (currentPoints.length > 0) {
+                this.updateEraserPreview(currentPoints[currentPoints.length - 1]);
+            }
+        }
+
+        if (this.eventBus) {
+            this.eventBus.emit('stroke:point', {
+                points: this.strokeRecorder.getCurrentPoints(),
+                settings: this.currentSettings,
+                tool: this.currentTool
+            });
+        }
+    }
+
+    stopDrawing() {
+        if (!this.isDrawing) return;
+
+        const strokeData = this.strokeRecorder.endStroke();
+        this.clearPreview();
+        this.clearEraserPreview();
+        const tool = this.currentTool;
+
+        if (tool === 'eraser' && this.currentLayer && strokeData.points.length > 0) {
+            const layerData = this.currentLayer.layerData;
+            
+            if (layerData && typeof layerData.hasMask === 'function' && layerData.hasMask()) {
+                const radius = this.currentSettings.size / 2;
+                
+                const beforeSnapshot = this.eraserRenderer.captureMaskSnapshot(layerData);
+                
+                const ok = this.eraserRenderer.renderEraserToMask(
+                    layerData,
+                    strokeData.points,
+                    radius
+                );
+                
+                if (ok) {
+                    const afterSnapshot = this.eraserRenderer.captureMaskSnapshot(layerData);
+                    
+                    const entry = {
+                        name: 'Erase',
+                        do: async () => {
+                            if (afterSnapshot) {
+                                await this.eraserRenderer.restoreMaskSnapshot(layerData, afterSnapshot);
+                            }
+                            this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                        },
+                        undo: async () => {
+                            if (beforeSnapshot) {
+                                await this.eraserRenderer.restoreMaskSnapshot(layerData, beforeSnapshot);
+                            }
+                            this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                        },
+                        meta: { 
+                            type: 'erase', 
+                            layerId: layerData.id, 
+                            tool: 'eraser' 
+                        }
+                    };
+                    
+                    if (this.history) {
+                        this.history.push(entry);
+                    }
+                    
+                    if (this.eventBus) {
+                        this.eventBus.emit('layer:erased', { layerId: layerData.id });
+                    }
+                    
+                    this.layerSystem.requestThumbnailUpdate(this.layerSystem.activeLayerIndex);
+                }
+            }
+        } else {
+            this.finalizeStroke(strokeData, tool);
+        }
+
+        this.isDrawing = false;
+        this.currentLayer = null;
+        this.currentSettings = null;
+        this.lastProcessedPointIndex = 0;
+
+        if (this.eventBus) {
+            this.eventBus.emit('stroke:end', {
+                strokeData: strokeData,
+                tool: tool
+            });
+        }
+    }
+
+    updatePreview() {
+        if (!this.currentLayer) return;
+        this.clearPreview();
+
+        const points = this.strokeRecorder.getCurrentPoints();
+        if (points.length === 0) return;
+
+        this.currentPreview = this.strokeRenderer.renderPreview(points, this.currentSettings);
+        this.currentLayer.addChild(this.currentPreview);
+    }
+
+    clearPreview() {
+        if (this.currentPreview) {
+            this.currentPreview.destroy({ children: true });
+            this.currentPreview = null;
+        }
+    }
+
+    updateEraserPreview(localPos) {
+        if (!this.currentLayer) return;
+        
+        if (!this.eraserPreviewGraphics) {
+            this.eraserPreviewGraphics = new PIXI.Graphics();
+            this.currentLayer.addChild(this.eraserPreviewGraphics);
+        }
+        
+        const radius = this.currentSettings.size / 2;
+        
+        this.eraserPreviewGraphics.clear();
+        this.eraserPreviewGraphics.circle(localPos.x, localPos.y, radius);
+        this.eraserPreviewGraphics.stroke({ width: 1, color: 0xFF0000, alpha: 0.5 });
+    }
+    
+    clearEraserPreview() {
+        if (this.eraserPreviewGraphics) {
+            this.eraserPreviewGraphics.destroy({ children: true });
+            this.eraserPreviewGraphics = null;
+        }
+    }
+
+    finalizeStroke(strokeData, tool = null) {
+        if (!this.currentLayer || strokeData.points.length === 0) {
+            return;
+        }
+
+        const activeTool = tool || this.currentTool || 'pen';
+        const originalTool = this.strokeRenderer.currentTool;
+        this.strokeRenderer.setTool(activeTool);
+
+        const strokeObject = this.strokeRenderer.renderFinalStroke(strokeData, this.currentSettings);
+        this.strokeRenderer.setTool(originalTool);
+
+        const layerData = this.currentLayer.layerData;
+        if (layerData && typeof layerData.hasMask === 'function' && layerData.hasMask() && layerData.maskSprite) {
+            strokeObject.mask = layerData.maskSprite;
+        }
+
+        strokeObject._strokePoints = strokeData.points;
+        strokeObject._strokeOptions = {
+            color: this.currentSettings.color,
+            size: this.currentSettings.size,
+            alpha: this.currentSettings.alpha
+        };
+
+        const strokeModel = new window.TegakiDataModels.StrokeData({
+            points: strokeData.points,
+            isSingleDot: strokeData.isSingleDot,
+            color: this.currentSettings.color,
+            size: this.currentSettings.size,
+            alpha: this.currentSettings.alpha,
+            layerId: this.currentLayer.layerData?.id || this.currentLayer.label,
+            tool: activeTool
+        });
+
+        const targetLayer = this.currentLayer;
+        const layerId = targetLayer.layerData?.id || targetLayer.label;
+
+        const layerIndex = this.layerSystem?.activeLayerIndex;
+        
+        const addStrokeCommand = {
+            name: activeTool === 'eraser' ? 'Erase' : 'Add Stroke',
+            do: () => {
+                if (targetLayer && targetLayer.addChild) {
+                    targetLayer.addChild(strokeObject);
+                    
+                    const currentLayerData = targetLayer.layerData;
+                    if (currentLayerData && typeof currentLayerData.hasMask === 'function' && 
+                        currentLayerData.hasMask() && currentLayerData.maskSprite) {
+                        strokeObject.mask = currentLayerData.maskSprite;
+                    }
+                    
+                    if (this.layerSystem && typeof layerIndex === 'number') {
+                        this.layerSystem.requestThumbnailUpdate(layerIndex);
+                    }
+                }
+            },
+            undo: () => {
+                if (targetLayer && targetLayer.removeChild && strokeObject.parent === targetLayer) {
+                    targetLayer.removeChild(strokeObject);
+                    
+                    if (this.layerSystem && typeof layerIndex === 'number') {
+                        this.layerSystem.requestThumbnailUpdate(layerIndex);
+                    }
+                }
+            },
+            meta: {
+                type: activeTool === 'eraser' ? 'erase' : 'stroke',
+                layerId: layerId,
+                strokeData: strokeModel
+            }
+        };
+
+        if (this.history && this.history.push) {
+            this.history.push(addStrokeCommand);
+        }
+        
+        if (this.layerSystem && typeof layerIndex === 'number') {
+            this.layerSystem.requestThumbnailUpdate(layerIndex);
+        }
+
+        if (this.eventBus) {
+            this.eventBus.emit('layer:modified', {
+                layerId: layerId,
+                tool: activeTool
+            });
+        }
+    }
+}
