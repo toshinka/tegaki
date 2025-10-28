@@ -1,6 +1,6 @@
-// ===== ui/layer-panel-renderer.js - v2.0改修完了版 =====
-// 責務: レイヤーパネルのDOM操作専用
-// 改修: layer:transform-updated購読を追加
+// ===== ui/layer-panel-renderer.js - Phase 1-2: サムネイル即時更新版 =====
+// Phase 1: サムネイル生成に変形適用
+// Phase 2: イベント購読の最適化（requestAnimationFrame使用）
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -10,6 +10,7 @@ window.TegakiUI.LayerPanelRenderer = class {
         this.animationSystem = null;
         this.layerSystem = null;
         this.eventBus = window.TegakiEventBus;
+        this.thumbnailUpdateScheduled = false; // Phase 2: 更新フラグ追加
         
         this._setupEventListeners();
     }
@@ -32,30 +33,46 @@ window.TegakiUI.LayerPanelRenderer = class {
         });
         
         this.eventBus.on('layer:path-added', () => {
-            setTimeout(() => {
+            if (this.thumbnailUpdateScheduled) return;
+            this.thumbnailUpdateScheduled = true;
+            
+            requestAnimationFrame(() => {
                 this.updateAllThumbnails();
-            }, 50);
+                this.thumbnailUpdateScheduled = false;
+            });
         });
         
-        // カメラ変形時の自動サムネイル更新
+        // Phase 2: カメラ変形時の最適化
         this.eventBus.on('camera:transform-changed', () => {
-            setTimeout(() => {
+            if (this.thumbnailUpdateScheduled) return;
+            this.thumbnailUpdateScheduled = true;
+            
+            requestAnimationFrame(() => {
                 this.updateAllThumbnails();
-            }, 100);
+                this.thumbnailUpdateScheduled = false;
+            });
         });
         
-        // リサイズ時の自動サムネイル更新
+        // Phase 2: リサイズ時の最適化
         this.eventBus.on('camera:resized', ({ width, height }) => {
-            setTimeout(() => {
+            if (this.thumbnailUpdateScheduled) return;
+            this.thumbnailUpdateScheduled = true;
+            
+            requestAnimationFrame(() => {
                 this.updateAllThumbnails();
-            }, 150);
+                this.thumbnailUpdateScheduled = false;
+            });
         });
         
-        // v2.0: レイヤー変形時の自動サムネイル更新（Vキー移動モード対応）
+        // Phase 2: レイヤー変形時の即時更新（Vキー移動モード対応）
         this.eventBus.on('layer:transform-updated', ({ layerId }) => {
-            setTimeout(() => {
+            if (this.thumbnailUpdateScheduled) return;
+            this.thumbnailUpdateScheduled = true;
+            
+            requestAnimationFrame(() => {
                 this.updateAllThumbnails();
-            }, 100);
+                this.thumbnailUpdateScheduled = false;
+            });
         });
     }
 
@@ -155,6 +172,7 @@ window.TegakiUI.LayerPanelRenderer = class {
         return thumbnail;
     }
 
+    // Phase 1: サムネイル生成に変形適用
     generateLayerThumbnailCanvas(layer) {
         if (!layer || !layer.layerData) return null;
         
@@ -164,15 +182,51 @@ window.TegakiUI.LayerPanelRenderer = class {
         const canvasWidth = window.TEGAKI_CONFIG?.canvas?.width || 800;
         const canvasHeight = window.TEGAKI_CONFIG?.canvas?.height || 600;
         
+        // Phase 1: 変形データ取得
+        const layerId = layer.layerData.id;
+        const transform = window.layerTransform?.getTransform(layerId);
+        
         let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
         
+        // Phase 1: 変形適用してバウンディングボックス計算
         paths.forEach(path => {
             if (!path.points || path.points.length === 0) return;
             path.points.forEach(point => {
-                if (point.x < minX) minX = point.x;
-                if (point.y < minY) minY = point.y;
-                if (point.x > maxX) maxX = point.x;
-                if (point.y > maxY) maxY = point.y;
+                let x = point.x;
+                let y = point.y;
+                
+                // 変形がある場合は適用
+                if (transform) {
+                    const centerX = canvasWidth / 2;
+                    const centerY = canvasHeight / 2;
+                    
+                    // 中心からの相対座標
+                    let dx = x - centerX;
+                    let dy = y - centerY;
+                    
+                    // 回転適用
+                    if (transform.rotation !== 0) {
+                        const cos = Math.cos(transform.rotation);
+                        const sin = Math.sin(transform.rotation);
+                        const rotX = dx * cos - dy * sin;
+                        const rotY = dx * sin + dy * cos;
+                        dx = rotX;
+                        dy = rotY;
+                    }
+                    
+                    // スケール適用
+                    dx *= transform.scaleX;
+                    dy *= transform.scaleY;
+                    
+                    // 移動適用
+                    x = centerX + dx + transform.x;
+                    y = centerY + dy + transform.y;
+                }
+                
+                if (x < minX) minX = x;
+                if (y < minY) minY = y;
+                if (x > maxX) maxX = x;
+                if (y > maxY) maxY = y;
             });
         });
         
@@ -204,6 +258,7 @@ window.TegakiUI.LayerPanelRenderer = class {
         const offsetX = (thumbSize - contentWidth * scale) / 2;
         const offsetY = (thumbSize - contentHeight * scale) / 2;
         
+        // Phase 1: 変形を考慮してパス描画
         paths.forEach(path => {
             if (!path.points || path.points.length === 0) return;
             
@@ -216,12 +271,39 @@ window.TegakiUI.LayerPanelRenderer = class {
             ctx.fillStyle = `rgba(${r}, ${g}, ${b}, ${opacity})`;
             
             path.points.forEach(point => {
-                const x = (point.x - minX) * scale + offsetX;
-                const y = (point.y - minY) * scale + offsetY;
+                let x = point.x;
+                let y = point.y;
+                
+                // 変形適用
+                if (transform) {
+                    const centerX = canvasWidth / 2;
+                    const centerY = canvasHeight / 2;
+                    
+                    let dx = x - centerX;
+                    let dy = y - centerY;
+                    
+                    if (transform.rotation !== 0) {
+                        const cos = Math.cos(transform.rotation);
+                        const sin = Math.sin(transform.rotation);
+                        const rotX = dx * cos - dy * sin;
+                        const rotY = dx * sin + dy * cos;
+                        dx = rotX;
+                        dy = rotY;
+                    }
+                    
+                    dx *= transform.scaleX;
+                    dy *= transform.scaleY;
+                    
+                    x = centerX + dx + transform.x;
+                    y = centerY + dy + transform.y;
+                }
+                
+                const thumbX = (x - minX) * scale + offsetX;
+                const thumbY = (y - minY) * scale + offsetY;
                 const radius = (path.size || 16) * scale / 2;
                 
                 ctx.beginPath();
-                ctx.arc(x, y, Math.max(1, radius), 0, Math.PI * 2);
+                ctx.arc(thumbX, thumbY, Math.max(1, radius), 0, Math.PI * 2);
                 ctx.fill();
             });
         });
@@ -284,16 +366,21 @@ window.TegakiUI.LayerPanelRenderer = class {
                 const thumbnail = items[index].querySelector('.layer-thumbnail');
                 if (thumbnail) {
                     thumbnail.innerHTML = '';
-                    const newThumb = this.createThumbnail(layer, this.animationSystem);
-                    const content = newThumb.firstChild;
-                    if (content) {
-                        thumbnail.appendChild(content);
+                    const canvas = this.generateLayerThumbnailCanvas(layer);
+                    if (canvas) {
+                        const img = document.createElement('img');
+                        img.src = canvas.toDataURL('image/png');
+                        img.style.width = '100%';
+                        img.style.height = '100%';
+                        img.style.objectFit = 'contain';
+                        thumbnail.appendChild(img);
                     }
                 }
             }
         }
     }
 
+    // Phase 3: 全レイヤーサムネイル即時更新
     updateAllThumbnails() {
         if (!this.container || !this.layerSystem) return;
 
@@ -307,11 +394,18 @@ window.TegakiUI.LayerPanelRenderer = class {
             const thumbnail = item.querySelector('.layer-thumbnail');
             
             if (thumbnail && layer) {
-                thumbnail.innerHTML = '';
-                const newThumb = this.createThumbnail(layer, this.animationSystem);
-                const content = newThumb.firstChild;
-                if (content) {
-                    thumbnail.appendChild(content);
+                const canvas = this.generateLayerThumbnailCanvas(layer);
+                if (canvas) {
+                    let img = thumbnail.querySelector('img');
+                    if (!img) {
+                        img = document.createElement('img');
+                        img.style.width = '100%';
+                        img.style.height = '100%';
+                        img.style.objectFit = 'contain';
+                        thumbnail.innerHTML = '';
+                        thumbnail.appendChild(img);
+                    }
+                    img.src = canvas.toDataURL('image/png');
                 }
             }
         });
@@ -359,4 +453,4 @@ window.TegakiUI.LayerPanelRenderer = class {
     }
 };
 
-console.log('✅ layer-panel-renderer.js (v2.0: layer:transform-updated購読追加) loaded');
+console.log('✅ layer-panel-renderer.js (Phase 1-3完了: サムネイル変形対応+即時更新) loaded');

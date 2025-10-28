@@ -1,7 +1,6 @@
-// ===== ui/timeline-ui.js - FRAME改修完全版 =====
-// ✅ サムネイル自動更新: layer:modified, stroke:endリスナー追加
-// ✅ UI改善: CUT→Frame表記、アクティブ枠#ff8c42、リピート色#aa5a56
-// ✅ CUT→FRAME変換完了、データプロパティ名統一
+// ===== ui/timeline-ui.js - Phase 4: レイヤー変形連携完全版 =====
+// Phase 4: layer:transform-updated イベント購読追加
+// Vモード編集がタイムラインサムネイルに即座に反映
 
 (function() {
     'use strict';
@@ -157,6 +156,7 @@
             }
         }
         
+        // Phase 4: レイヤー変形イベント購読追加
         setupThumbnailAutoUpdate() {
             if (!this.eventBus) return;
             
@@ -191,8 +191,14 @@
             this.eventBus.on('drawing:erase-completed', () => {
                 this.requestThumbnailUpdate();
             });
+            
+            // Phase 4: レイヤー変形時の即時更新（Vモード対応）
+            this.eventBus.on('layer:transform-updated', ({ layerId }) => {
+                this.requestThumbnailUpdate();
+            });
         }
         
+        // Phase 4: 即時更新に変更（150ms → 0ms）
         requestThumbnailUpdate() {
             if (this.thumbnailUpdateInProgress) return;
             
@@ -202,7 +208,7 @@
             
             this.thumbnailUpdateTimer = setTimeout(() => {
                 this.updateCurrentFrameThumbnail();
-            }, 150);
+            }, 0);
         }
         
         async updateCurrentFrameThumbnail() {
@@ -972,4 +978,4 @@
     window.TegakiUI.TimelineUI = TimelineUI;
 })();
 
-console.log('✅ timeline-ui.js (FRAME改修完全版) loaded');
+console.log('✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded')
