@@ -70,6 +70,15 @@
             this.eventBus.on('camera:transform-changed', () => {
                 this.clearCache();
             });
+            
+            // Phase 3: レイヤー変形時の座標キャッシュクリア
+            this.eventBus.on('layer:transform-updated', () => {
+                this.clearCache();
+            });
+            
+            this.eventBus.on('layer:transform-changed', () => {
+                this.clearCache();
+            });
         }
         
         // ========== PIXI v8対応: 座標変換API Phase 0 ==========
