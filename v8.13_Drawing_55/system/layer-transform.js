@@ -1,22 +1,19 @@
-// ===== system/layer-transform.js - Phase 3: CoordinateSystem統合版 =====
+// ===== system/layer-transform.js - Vモード反転機能完全版 =====
+// Phase 4改修: Vモード時の反転ボタンとショートカット機能を完全修正
 
 (function() {
     'use strict';
 
-    /**
-     * LayerTransform - レイヤー変形機能を管理
-     * Phase 3改修: CoordinateSystemを使用した正確なドラッグ処理
-     */
     class LayerTransform {
         constructor(config, coordAPI) {
             this.config = config;
             this.coordAPI = coordAPI;
-            this.coordinateSystem = window.CoordinateSystem; // Phase 3: 追加
+            this.coordinateSystem = window.CoordinateSystem;
             
             this.transforms = new Map();
             this.isVKeyPressed = false;
             this.isDragging = false;
-            this.dragLastPoint = { x: 0, y: 0 }; // ワールド座標で保持
+            this.dragLastPoint = { x: 0, y: 0 };
             this.dragStartPoint = { x: 0, y: 0 };
             
             this.transformPanel = null;
@@ -44,8 +41,6 @@
             this._setupWheelEvents();
         }
 
-        // ========== モード制御 ==========
-        
         enterMoveMode() {
             if (this.isVKeyPressed) return;
             
@@ -61,6 +56,7 @@
             }
             
             this._updateCursor();
+            this._updateFlipButtonsAvailability(true);
         }
         
         exitMoveMode(activeLayer) {
@@ -79,6 +75,7 @@
             }
             
             this._updateCursor();
+            this._updateFlipButtonsAvailability(false);
         }
         
         toggleMoveMode(activeLayer) {
@@ -89,8 +86,6 @@
             }
         }
 
-        // ========== 変形操作 ==========
-        
         updateTransform(layer, property, value) {
             if (!layer?.layerData) return;
             
@@ -160,8 +155,10 @@
             }
         }
 
+        // Phase 4改修: Vモード時のみ反転を許可
         flipLayer(layer, direction) {
             if (!layer?.layerData) return;
+            if (!this.isVKeyPressed) return; // Vモード時のみ反転可能
             
             const layerId = layer.layerData.id;
             
@@ -296,8 +293,6 @@
             }
         }
 
-        // ========== 変形確定 ==========
-        
         confirmTransform(layer) {
             if (!layer?.layerData) return false;
             
@@ -379,15 +374,12 @@
             }
         }
 
-        // ========== Phase 3: CoordinateSystem統合ドラッグ処理 ==========
-        
         _setupDragEvents() {
             const canvas = this._getSafeCanvas();
             if (!canvas) return;
             
             canvas.addEventListener('pointerdown', (e) => {
                 if (this.isVKeyPressed && e.button === 0) {
-                    // Phase 3: CoordinateSystemで正確な座標取得
                     const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
                     
                     this.isDragging = true;
@@ -415,7 +407,6 @@
         _handleDrag(e) {
             if (!this.coordinateSystem) return;
             
-            // Phase 3: CoordinateSystemで正確な座標変換
             const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
             
             const dx = world.x - this.dragLastPoint.x;
@@ -428,8 +419,10 @@
             }
         }
 
+        // Phase 4改修: Vモード時のみHキーを受け付ける
         _setupFlipKeyEvents() {
             document.addEventListener('keydown', (e) => {
+                // Vモード中のみ反転キーを受け付ける
                 if (!this.isVKeyPressed) return;
                 
                 const activeElement = document.activeElement;
@@ -508,11 +501,39 @@
             }, { passive: false });
         }
 
-        // ========== 内部処理 ==========
-        
         _emitTransformUpdated(layerId) {
             if (this.eventBus) {
                 this.eventBus.emit('layer:transform-updated', { layerId });
+            }
+        }
+        
+        // Phase 4改修: 反転ボタンの有効/無効切り替え
+        _updateFlipButtonsAvailability(isVMode) {
+            const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
+            const flipVerticalBtn = document.getElementById('flip-vertical-btn');
+            
+            if (flipHorizontalBtn) {
+                if (isVMode) {
+                    flipHorizontalBtn.removeAttribute('disabled');
+                    flipHorizontalBtn.style.opacity = '1';
+                    flipHorizontalBtn.style.cursor = 'pointer';
+                } else {
+                    flipHorizontalBtn.setAttribute('disabled', 'true');
+                    flipHorizontalBtn.style.opacity = '0.4';
+                    flipHorizontalBtn.style.cursor = 'not-allowed';
+                }
+            }
+            
+            if (flipVerticalBtn) {
+                if (isVMode) {
+                    flipVerticalBtn.removeAttribute('disabled');
+                    flipVerticalBtn.style.opacity = '1';
+                    flipVerticalBtn.style.cursor = 'pointer';
+                } else {
+                    flipVerticalBtn.setAttribute('disabled', 'true');
+                    flipVerticalBtn.style.opacity = '0.4';
+                    flipVerticalBtn.style.cursor = 'not-allowed';
+                }
             }
         }
         
@@ -542,20 +563,29 @@
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
             
+            // Phase 4改修: Vモード時のみクリック可能にする
             if (flipHorizontalBtn) {
                 flipHorizontalBtn.addEventListener('click', () => {
-                    if (this.onFlipRequest) {
+                    if (this.isVKeyPressed && this.onFlipRequest) {
                         this.onFlipRequest('horizontal');
                     }
                 });
+                // 初期状態では無効化
+                flipHorizontalBtn.setAttribute('disabled', 'true');
+                flipHorizontalBtn.style.opacity = '0.4';
+                flipHorizontalBtn.style.cursor = 'not-allowed';
             }
             
             if (flipVerticalBtn) {
                 flipVerticalBtn.addEventListener('click', () => {
-                    if (this.onFlipRequest) {
+                    if (this.isVKeyPressed && this.onFlipRequest) {
                         this.onFlipRequest('vertical');
                     }
                 });
+                // 初期状態では無効化
+                flipVerticalBtn.setAttribute('disabled', 'true');
+                flipVerticalBtn.style.opacity = '0.4';
+                flipVerticalBtn.style.cursor = 'not-allowed';
             }
         }
 
@@ -696,8 +726,6 @@
             }
         }
 
-        // ========== UI更新 ==========
-        
         updateTransformPanelValues(layer) {
             if (!layer?.layerData) return;
             
@@ -734,8 +762,6 @@
             }
         }
 
-        // ========== アクセサ ==========
-        
         getTransform(layerId) {
             return this.transforms.get(layerId) || null;
         }
@@ -753,4 +779,4 @@
 
 })();
 
-console.log('✅ layer-transform.js (Phase 3: CoordinateSystem統合版) loaded');
+console.log('✅ layer-transform.js (Phase 4完了: Vモード反転機能完全版) loaded');
