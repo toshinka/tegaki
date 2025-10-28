@@ -1,6 +1,7 @@
-// ===== system/layer-system.js - Phase 2修正版 =====
-// 修正: renderFrameToTexture()でcanvasサイズを現在値から取得・テクスチャ再作成
-// 修正: リサイズ時のテクスチャ管理を強化
+// ===== system/layer-system.js - v2.0.1: 反転機能修復版 =====
+// 修正1: renderFrameToTexture()でcanvasサイズを現在値から取得・テクスチャ再作成
+// 修正2: リサイズ時のテクスチャ管理を強化
+// ★修正3: flipActiveLayer()とonFlipRequestコールバック接続を修正
 
 (function() {
     'use strict';
@@ -137,11 +138,16 @@
                 }
                 this.transform.updateTransform(activeLayer, property, value);
             };
+            // ★修正: onFlipRequestコールバックを正しく接続
             this.transform.onFlipRequest = (direction) => {
                 this.flipActiveLayer(direction);
             };
             this.transform.onDragRequest = (dx, dy, shiftKey) => {
                 this._handleLayerDrag(dx, dy, shiftKey);
+            };
+            // ★追加: onGetActiveLayerコールバックを設定（ホイール操作用）
+            this.transform.onGetActiveLayer = () => {
+                return this.getActiveLayer();
             };
         }
 
@@ -285,12 +291,19 @@
             }
         }
         
+        // ★修正: flipActiveLayer()の実装を確認・修正
         flipActiveLayer(direction) {
             if (!this.transform) return;
             const activeLayer = this.getActiveLayer();
             if (activeLayer) {
                 this.transform.flipLayer(activeLayer, direction);
                 this.requestThumbnailUpdate(this.activeLayerIndex);
+                // ★追加: サムネイル更新イベント発火
+                if (this.eventBus) {
+                    this.eventBus.emit('layer:transform-updated', { 
+                        layerId: activeLayer.layerData.id 
+                    });
+                }
             }
         }
         
@@ -541,23 +554,17 @@
             return renderTexture;
         }
         
-        /**
-         * ★ Phase 2修正: RenderTexture再作成＆現在のcanvasサイズで更新
-         */
         renderFrameToTexture(frameId, frameContainer) {
             if (!this.app?.renderer) return;
             
-            // ★重要: 現在のcanvasサイズを取得（リサイズ後のサイズ）
             const currentWidth = this.config.canvas.width;
             const currentHeight = this.config.canvas.height;
             
-            // ★古いテクスチャを破棄
             const oldTexture = this.frameRenderTextures.get(frameId);
             if (oldTexture) {
                 oldTexture.destroy(true);
             }
             
-            // ★新しいサイズでテクスチャを再作成
             const renderTexture = PIXI.RenderTexture.create({
                 width: currentWidth,
                 height: currentHeight
@@ -1237,4 +1244,4 @@
 
 })();
 
-console.log('✅ layer-system.js (Phase 2修正版・RenderTexture動的更新) loaded');
+console.log('✅ layer-system.js (v2.0.1: 反転機能修復版) loaded');
