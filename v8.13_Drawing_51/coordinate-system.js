@@ -63,6 +63,10 @@
                 this.clearCache();
             });
             
+            this.eventBus.on('camera:resized', () => {
+                this.clearCache();
+            });
+            
             this.eventBus.on('camera:transform-changed', () => {
                 this.clearCache();
             });
