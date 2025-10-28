@@ -1,7 +1,6 @@
-// ===== ui/layer-panel-renderer.js - Phase 6完了版 =====
+// ===== ui/layer-panel-renderer.js - v2.0改修完了版 =====
 // 責務: レイヤーパネルのDOM操作専用
-// 規則: ロジック(layerSystem)とUI(DOM)を完全分離
-// ✅ Phase 6: camera:transform-changed購読でサムネイル自動更新
+// 改修: layer:transform-updated購読を追加
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -38,19 +37,25 @@ window.TegakiUI.LayerPanelRenderer = class {
             }, 50);
         });
         
-        // Phase 6: カメラ変形時の自動サムネイル更新
+        // カメラ変形時の自動サムネイル更新
         this.eventBus.on('camera:transform-changed', () => {
-            // レイヤーサムネイルは即座に更新
             setTimeout(() => {
                 this.updateAllThumbnails();
             }, 100);
         });
         
-        // リサイズ時も明示的に更新
+        // リサイズ時の自動サムネイル更新
         this.eventBus.on('camera:resized', ({ width, height }) => {
             setTimeout(() => {
                 this.updateAllThumbnails();
             }, 150);
+        });
+        
+        // v2.0: レイヤー変形時の自動サムネイル更新（Vキー移動モード対応）
+        this.eventBus.on('layer:transform-updated', ({ layerId }) => {
+            setTimeout(() => {
+                this.updateAllThumbnails();
+            }, 100);
         });
     }
 
@@ -354,4 +359,4 @@ window.TegakiUI.LayerPanelRenderer = class {
     }
 };
 
-console.log('✅ layer-panel-renderer.js (Phase 6完了: camera:transform-changed購読) loaded');
+console.log('✅ layer-panel-renderer.js (v2.0: layer:transform-updated購読追加) loaded');
