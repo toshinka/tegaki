@@ -1,6 +1,6 @@
-/* Tegaki Tool - Main Stylesheet (UI改善版 + FRAME修正完全版) */
+/* Tegaki Tool - Main Stylesheet (v2.0: Vキースライダー色統一版) */
 /* ✅ レイヤー: アクティブ枠#ff8c42、背景半透明#f0e0d6、hover演出 */
-/* ✅ Phase 1: CUT→FRAME表記修正完了 */
+/* ✅ v2.0: layer-transform-panel スライダー色をmaroon系に統一 */
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -719,6 +719,20 @@ body {
     } 
 }
 
+/* v2.0: layer-transform-panel スライダー色をmaroon系に統一 */
+.layer-transform-panel .slider-track {
+    background: #8b4545;
+}
+
+.layer-transform-panel .slider-handle {
+    background: #a0522d;
+    border-color: var(--futaba-background);
+}
+
+.layer-transform-panel .slider {
+    background: var(--futaba-light-medium);
+}
+
 .panel-sections { 
     display: grid; 
     grid-template-columns: 1fr 1fr auto; 
@@ -952,57 +966,4 @@ body {
     padding-bottom: 0;
 }
 
-#settings-popup .setting-label {
-    font-size: 13px;
-    color: var(--futaba-maroon);
-    margin-bottom: 10px;
-    font-weight: 600;
-    letter-spacing: 0.3px;
-}
-
-#status-panel-toggle {
-    background: var(--futaba-background);
-    border: 2px solid var(--futaba-light-medium);
-    color: var(--futaba-maroon);
-    padding: 8px 12px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    border-radius: 6px;
-    transition: all 0.2s;
-}
-
-#status-panel-toggle:hover {
-    background: var(--futaba-medium);
-    border-color: var(--futaba-maroon);
-}
-
-#status-panel-state {
-    font-size: 11px;
-    color: var(--text-secondary);
-    min-width: 60px;
-    text-align: right;
-}
-
-#quick-access-popup {
-    cursor: default;
-}
-
-#quick-access-popup:active {
-    cursor: grabbing;
-}
-
-#quick-access-popup .color-button,
-#quick-access-popup .resize-arrow-btn,
-#quick-access-popup .resize-slider,
-#quick-access-popup .quick-access-close-btn {
-    cursor: pointer;
-}
-
-#quick-access-popup .resize-slider-handle {
-    cursor: grab;
-}
-
-#quick-access-popup .resize-slider-handle:active {
-    cursor: grabbing;
-}
+#settings-popup .setting

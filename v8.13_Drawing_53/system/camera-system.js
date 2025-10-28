@@ -1,6 +1,5 @@
-// ===== system/camera-system.js - Phase 2完全版: 座標系統合対応 =====
-// Phase 1: screenClientToWorld/worldToScreen 実装
-// Phase 2: resizeCanvas完全実装 + 座標系統合対応
+// ===== system/camera-system.js - v2.0: リサイズ修正版 =====
+// 修正: resizeCanvas()のworldContainer位置調整ロジック
 
 (function() {
     'use strict';
@@ -151,8 +150,6 @@
             this._emitTransformChanged();
         }
 
-        // ========== Phase 1: 座標変換API実装 ==========
-        
         screenClientToWorld(app, clientX, clientY) {
             if (!this.worldContainer) {
                 return { x: clientX, y: clientY };
@@ -173,17 +170,10 @@
             return { x: screenPoint.x, y: screenPoint.y };
         }
 
-        // ========== Phase 2: resizeCanvas完全実装 + 座標系統合対応 ==========
-        
         /**
-         * キャンバスリサイズ（Phase 2完全版）
-         * 
-         * 処理フロー:
-         * 1. CONFIG更新
-         * 2. renderer.resize()
-         * 3. worldContainer位置調整（alignOptions基づき）
-         * 4. 座標系キャッシュクリア（CoordinateSystem）
-         * 5. イベント発火
+         * v2.0: リサイズ処理修正版
+         * 問題: worldContainer位置調整が不正確
+         * 修正: キャンバス中心を基準とした正確な位置調整
          */
         resizeCanvas(newWidth, newHeight, alignOptions = { horizontal: 'center', vertical: 'center' }) {
             if (!this.app) return;
@@ -200,25 +190,43 @@
                 this.app.stage.parent.resize(newWidth, newHeight);
             }
             
-            // Step 3: worldContainer位置調整
+            // Step 3: worldContainer位置調整（修正版）
             const widthDiff = newWidth - oldWidth;
             const heightDiff = newHeight - oldHeight;
             
             let offsetX = 0;
             let offsetY = 0;
             
-            // 横方向オフセット計算
-            if (alignOptions.horizontal === 'center') {
-                offsetX = widthDiff / 2;
-            } else if (alignOptions.horizontal === 'right') {
-                offsetX = widthDiff;
+            // 横方向オフセット計算（修正）
+            switch(alignOptions.horizontal) {
+                case 'left':
+                    // 左端基準：オフセットなし
+                    offsetX = 0;
+                    break;
+                case 'center':
+                    // 中央基準：差分の半分を加算
+                    offsetX = widthDiff / 2;
+                    break;
+                case 'right':
+                    // 右端基準：差分全体を加算
+                    offsetX = widthDiff;
+                    break;
             }
             
-            // 縦方向オフセット計算
-            if (alignOptions.vertical === 'center') {
-                offsetY = heightDiff / 2;
-            } else if (alignOptions.vertical === 'bottom') {
-                offsetY = heightDiff;
+            // 縦方向オフセット計算（修正）
+            switch(alignOptions.vertical) {
+                case 'top':
+                    // 上端基準：オフセットなし
+                    offsetY = 0;
+                    break;
+                case 'center':
+                    // 中央基準：差分の半分を加算
+                    offsetY = heightDiff / 2;
+                    break;
+                case 'bottom':
+                    // 下端基準：差分全体を加算
+                    offsetY = heightDiff;
+                    break;
             }
             
             // worldContainerの位置を調整
@@ -228,7 +236,7 @@
             // Step 4: ビジュアル更新
             this.updateGuideLinesForCanvasResize();
             
-            // Step 5: 座標系キャッシュクリア（Phase 2新規）
+            // Step 5: 座標系キャッシュクリア
             if (this.coordinateSystem && typeof this.coordinateSystem.clearCache === 'function') {
                 this.coordinateSystem.clearCache();
             }
@@ -603,8 +611,6 @@
             }
         }
 
-        // ========== 互換性API ==========
-        
         screenToLayer(screenX, screenY) {
             return this.canvasContainer.toLocal({ x: screenX, y: screenY });
         }
@@ -694,3 +700,5 @@
     window.TegakiCameraSystem = CameraSystem;
 
 })();
+
+console.log('✅ camera-system.js (v2.0: リサイズ修正版) loaded');
