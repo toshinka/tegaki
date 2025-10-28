@@ -1,3 +1,394 @@
+# 座標系統合・完全修正 改修ロードマップ v1.1
+
+## 前置き
+
+v1.0の改修実施により、多くの実装上の落とし穴が判明しました。
+このドキュメントは v1.0 を補完し、今後の同様プロジェクトで同じ問題を避けるための記録です。
+
+---
+
+## ■ 改修後に判明した実装上の落とし穴
+
+### 1. worldTransform の親チェーン問題
+
+**問題:**
+```
+Layer.toLocal(worldPoint) が期待と異なる結果を返す
+理由: toLocal()は親チェーン全体の worldTransform を使用するため、
+      worldContainer のoffset (position) が含まれてしまう
+```
+
+**症状:**
+- Local座標が負数になる
+- worldContainer.position = (228, 232.5) がそのまま逆変換に含まれる
+- Layer.toLocal() ≠ 手動逆算
+
+**根本原因:**
+```
+PIXI v8のtoLocal()は「グローバル座標 → ローカル座標」の変換
+= 親チェーン全体の worldTransform を適用する
+
+図示:
+Screen座標 
+  → PIXI worldTransform (stage→worldContainer→...→Layer)
+  → Layer.toLocal() ❌ この時点で worldContainer.offset が含まれる
+```
+
+**解決方法:**
+```javascript
+// ❌ 使ってはいけない:
+const local = layer.toLocal(worldPoint);
+
+// ✓ 正しい:
+// 親チェーンを手動で逆算（worldContainer の直前まで）
+// 各コンテナの position/scale/rotation を逆順に適用
+```
+
+**対策:**
+- worldToLocal() は手動逆算実装のみ
+- PIXI の toLocal() は参考にするが使用しない
+- 親チェーンを明示的に走査する
+
+---
+
+### 2. 二重変換の陥阱
+
+**問題:**
+```
+drawing-engine.js で Local座標に変換 → strokeRecorder.startStroke()
+strokeRecorder.addPoint() でさらに screenToLayer() を呼ぶ
+結果: 座標が二重に変換されて誤った値になる
+```
+
+**症状:**
+```
+期待値: Local (32, 44)
+実際: Points (-195, -180) ← screenToLayer()による誤り
+```
+
+**根本原因:**
+```
+インターフェース設計の曖昧性
+- startStroke(x, y) のパラメータが「何座標か」明示されていない
+- 歴史的に screenToLayer() を内部で呼んでいた
+- drawing-engine側で座標変換後に呼んだのに、内部でも変換された
+```
+
+**解決方法:**
+```javascript
+// ❌ 曖昧な設計:
+startStroke(x, y)  // x, y が何座標か不明確
+
+// ✓ 明確な設計:
+startStroke(localX, localY)  // ローカル座標であることを明示
+// または
+startStrokeFromEvent(event)  // イベントから内部で変換
+```
+
+**対策:**
+- パラメータ名に座標系を明示（localX, worldX, screenX など）
+- メソッド名でも座標系を区別（startStrokeLocal, startStrokeFromEvent など）
+- ドキュメント化: メソッドの入力座標系を@paramで明記
+
+---
+
+### 3. layerSystem / layerManager の命名混乱
+
+**問題:**
+```
+drawing-engine.js は window.layerSystem を参照
+実装は window.layerManager オブジェクト
+結果: getActiveLayer() が呼ばれず、ペン描画ができない
+```
+
+**症状:**
+```
+window.layerSystem: undefined ❌
+window.layerManager: object ✓
+drawingEngine.currentLayer = null ← 常に null
+```
+
+**根本原因:**
+```
+ファイルの責務分担が不明確
+- layerSystem: クラス定義（TegakiLayerSystem）
+- layerManager: インスタンス（実際に使う object）
+- drawing-engine側はどちらを使うべきか不明瞭
+```
+
+**解決方法:**
+```javascript
+// drawing-engine.js constructor:
+this.layerSystem = layerSystem || window.layerManager;
+// フォールバックを準備するしかない
+```
+
+**対策:**
+- グローバルオブジェクトの命名を統一
+  - `window.layerManager` 一択にするか
+  - `window.TegakiLayerSystem` クラス、`window.layerSystem` インスタンスにするか
+- core-runtime.js で明示的に割り当て
+  ```javascript
+  window.layerSystem = window.layerManager;  // 明示的な統一
+  ```
+- ドキュメント: 「何がグローバルに公開されるか」リストを作成
+
+---
+
+### 4. CoordinateSystem の初期化タイミング
+
+**問題:**
+```
+CoordinateSystem.init() のタイミングが遅い/曖昧
+デバッグコンソールから呼び出す際に未初期化状態になる
+```
+
+**症状:**
+```
+const cs = window.CoordinateSystem;
+cs.screenClientToCanvas()  // ❌ app/config/eventBus が null のため失敗
+```
+
+**根本原因:**
+```
+init() が複数箇所で呼ばれる可能性
+- drawing-engine.js constructor
+- core-runtime.js setupCoordinateSystem()
+- 重複初期化またはタイミングズレ
+```
+
+**解決方法:**
+```javascript
+// 初期化状態を確認:
+if (!CoordinateSystem.app) {
+    throw new Error('CoordinateSystem not initialized');
+}
+```
+
+**対策:**
+- init()を1回限りに
+  ```javascript
+  init() {
+      if (this.app) return;  // 2回目以降は何もしない
+      // 初期化処理
+  }
+  ```
+- 初期化完了フラグを用意
+  ```javascript
+  this.isInitialized = false;
+  ```
+
+---
+
+## ■ 改修ロードマップ v1.1 修正版
+
+### Phase 0: 座標変換システムの完全統合【修正版】
+
+**追加実装:**
+
+1. **worldToLocal() は手動逆算のみ**
+   ```javascript
+   // ❌ 使わない:
+   // if (container.toLocal) {
+   //     return container.toLocal(...);
+   // }
+   
+   // ✓ 常に手動計算:
+   // 親チェーンを逆順で適用
+   ```
+
+2. **worldContainer の直前まで遡る**
+   ```javascript
+   while (node && node !== worldContainer) {
+       // 各 node の position/scale/rotation を逆算
+   }
+   ```
+
+3. **エラーハンドリング**
+   ```javascript
+   if (Math.abs(scale.x) < 1e-6) {
+       throw new Error('特異行列: スケール0');
+   }
+   ```
+
+---
+
+### Phase 1: 描画エンジンの座標変換適用【修正版】
+
+**修正点:**
+
+1. **layerSystem の正体を明確に**
+   ```javascript
+   this.layerSystem = layerSystem || window.layerManager;
+   // フォールバック必須
+   ```
+
+2. **Local座標変換を明示**
+   ```javascript
+   const local = coordinateSystem.worldToLocal(world.x, world.y, activeLayer);
+   localX = local.x;  // パラメータ名で座標系を明記
+   localY = local.y;
+   ```
+
+3. **strokeRecorder への入力は Local座標**
+   ```javascript
+   this.strokeRecorder.startStroke(localX, localY, pressure);
+   // startStroke(localX, localY) は二重変換しない
+   ```
+
+---
+
+### Phase 1-2: StrokeRecorder の座標系統一【新規】
+
+**責務の明確化:**
+
+```
+❌ 古い責務:
+startStroke(screenX, screenY)
+  → 内部で screenToLayer() 呼んで Local座標に変換
+
+✓ 新しい責務:
+startStroke(localX, localY)
+  → 受け取った Local座標をそのまま記録
+  → 座標変換は drawing-engine側で完結
+```
+
+**実装:**
+```javascript
+startStroke(localX, localY, rawPressure) {
+    // 二重変換しない
+    // そのまま記録
+    this.addPoint(localX, localY, rawPressure);
+}
+
+addPoint(localX, localY, rawPressure) {
+    // screenToLayer() を呼ばない
+    this.points.push({
+        x: localX,
+        y: localY,
+        // ...
+    });
+}
+```
+
+---
+
+## ■ 座標系統合の完全フロー（確定版）
+
+```
+PointerEvent (clientX, clientY)
+  ↓
+[Core-Runtime]
+  ↓
+DrawingEngine.startDrawing(x, y, nativeEvent)
+  ↓
+[座標変換パイプライン]
+  screenClientToCanvas()  ← DPI補正
+  ↓
+  canvasToWorld()  ← worldContainer逆行列
+  ↓
+  worldToLocal()  ← 手動逆算（親チェーン遡査）
+  ↓
+[ローカル座標確定]
+  ↓
+StrokeRecorder.startStroke(localX, localY, pressure)
+  ↓ (二重変換しない)
+  ↓
+points: [{x, y, pressure, time, ...}]
+  ↓
+StrokeRenderer.renderPreview(points)
+  ↓
+Layer.addChild(preview)  ← ローカル座標で描画
+```
+
+---
+
+## ■ 今後の実装チェックリスト
+
+### 座標系を扱うコード追加時
+
+- [ ] パラメータ名に座標系を明示（localX, worldX, screenX）
+- [ ] メソッド名でも座標系を区別可能に
+- [ ] @param, @returns でドキュメント化
+- [ ] 二重変換がないか確認
+- [ ] 手動逆算の場合、親チェーンスキャン範囲を明示
+- [ ] worldContainer のoffset が含まれていないか確認
+
+### デバッグ時
+
+- [ ] 各段階の座標値を確認（Screen → Canvas → World → Local）
+- [ ] worldTransform.tx/ty に worldContainer.position が含まれているか確認
+- [ ] 親階層の構造を確認
+- [ ] 二重変換していないか確認
+
+### テスト項目
+
+- [ ] 初期状態で座標が一致するか
+- [ ] ズーム/パン後も座標が一致するか
+- [ ] レイヤー移動後も座標が一致するか
+- [ ] Retina/DPI補正環境で座標が一致するか
+- [ ] Canvas resize後も座標が一致するか
+
+---
+
+## ■ グローバルオブジェクト統一提案
+
+**現状:**
+```
+window.CoordinateSystem        (✓ 統一)
+window.TEGAKI_COORDINATE_SYSTEM (重複)
+window.cameraSystem             (✓ 統一)
+window.layerSystem              (未定義)
+window.layerManager             (✓ 実装)
+window.TegakiLayerSystem        (クラス)
+```
+
+**提案:**
+```javascript
+// core-runtime.js で明示的に統一
+window.CoordinateSystem = window.CoordinateSystem;  // 既存
+window.CameraSystem = window.cameraSystem;           // 昇格
+window.LayerSystem = window.layerManager;            // 統一
+window.DrawingEngine = window.drawingEngine;         // 明示化
+
+// 削除候補:
+// window.TEGAKI_COORDINATE_SYSTEM (重複)
+// window.TegakiLayerSystem (クラス定義の副作用)
+```
+
+---
+
+## ■ 今後の Phase 計画
+
+### Phase 2: リサイズ処理の座標系統合
+- canvas resize時の worldContainer 位置調整
+- 中心保持・等間隔保持のアルゴリズム
+
+### Phase 3: レイヤーシステムの座標同期
+- Vキーレイヤー移動時の座標正確性
+- サムネイル即時更新
+
+### Phase 4: UI調整
+- スライダー色統一（maroon系）
+
+### Phase 5: 統合テスト・検証
+- すべてのシナリオを検証
+
+---
+
+## ■ まとめ
+
+**v1.0実装の知見:**
+
+1. **PIXI v8の toLocal() は信頼できない** → 手動逆算が必須
+2. **二重変換は命名で防ぐ** → パラメータ名に座標系を明示
+3. **グローバルオブジェクトは統一** → window.layerManager に一本化
+4. **初期化タイミングは明確に** → init()は1回限り
+5. **座標変換の境界を明確に** → 各レイヤーの責務を分離
+
+これらを遵守することで、座標系の問題は未然に防げます。
+
+
 ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 座標系統合・完全修正 改修ロードマップ
 v8.13_Drawing_48 → 座標系統合版

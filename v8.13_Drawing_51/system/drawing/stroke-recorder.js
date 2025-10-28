@@ -1,13 +1,11 @@
 /**
- * StrokeRecorder - ストローク座標記録専用クラス (Phase 1: 座標変換修正版)
+ * StrokeRecorder - ストローク座標記録専用クラス
+ * Phase 1完全版: 二重変換を削除
  * 
- * 責務: ポインターイベントから座標・筆圧・時刻を記録
- *       + tiltX/Y, twistデータの取得と記録
+ * 責務: ローカル座標のポイントを直接記録
  * 
- * 座標系: レイヤーローカル座標（camera-system.screenToLayer()で直接取得）
- * 
- * 修正: cameraSystem.screenToLayer()の戻り値が既にレイヤーローカル座標のため
- *      二重変換を削除
+ * 修正: drawing-engine.js から既にLocal座標で受け取るため、
+ *      screenToLayer()を呼ばない
  */
 
 class StrokeRecorder {
@@ -19,43 +17,55 @@ class StrokeRecorder {
     }
 
     /**
-     * ストローク記録開始（PointerEvent対応）
-     * @param {PointerEvent} event - ポインターイベント
-     */
-    startStrokeFromEvent(event) {
-        this.points = [];
-        this.isRecording = true;
-        
-        // tilt/twistデータを更新
-        this.pressureHandler.updateTiltData(event);
-        
-        // 圧力ハンドラー初期化
-        this.pressureHandler.startStroke();
-        
-        // 初回ポイント追加
-        const pressure = event.pressure || 0.5;
-        this.addPointFromEvent(event, pressure);
-    }
-
-    /**
-     * ストローク記録開始（レガシー互換）
-     * @param {number} screenX - スクリーン座標X
-     * @param {number} screenY - スクリーン座標Y
+     * ストローク記録開始（ローカル座標版）
+     * drawing-engine.js から直接Local座標を受け取る
+     * @param {number} localX - ローカル座標X
+     * @param {number} localY - ローカル座標Y
      * @param {number} rawPressure - 生筆圧値
      */
-    startStroke(screenX, screenY, rawPressure) {
+    startStroke(localX, localY, rawPressure) {
         this.points = [];
         this.isRecording = true;
         
         // 圧力ハンドラー初期化
         this.pressureHandler.startStroke();
         
-        // 初回ポイント追加
-        this.addPoint(screenX, screenY, rawPressure);
+        // 初回ポイント追加（ローカル座標で直接記録）
+        this.addPoint(localX, localY, rawPressure);
     }
 
     /**
-     * PointerEventからポイント追加
+     * ポイント追加（ローカル座標版）
+     * @param {number} localX - ローカル座標X
+     * @param {number} localY - ローカル座標Y
+     * @param {number} rawPressure - 生筆圧値
+     */
+    addPoint(localX, localY, rawPressure) {
+        if (!this.isRecording) return;
+
+        // 筆圧補正
+        const pressure = this.pressureHandler.getCalibratedPressure(rawPressure);
+
+        // tiltデータも取得（将来の高度な筆圧表現用）
+        const tiltData = this.pressureHandler.getTiltData ? 
+            this.pressureHandler.getTiltData() : 
+            { tiltX: 0, tiltY: 0, twist: 0 };
+
+        // ローカル座標をそのまま記録（二重変換しない）
+        this.points.push({
+            x: localX,
+            y: localY,
+            pressure: pressure,
+            time: performance.now(),
+            tiltX: tiltData.tiltX || 0,
+            tiltY: tiltData.tiltY || 0,
+            twist: tiltData.twist || 0
+        });
+    }
+
+    /**
+     * PointerEventからポイント追加（レガシー互換・非推奨）
+     * 新しいコードはdrawing-engine側で座標変換してaddPoint()を呼ぶこと
      * @param {PointerEvent} event - ポインターイベント
      * @param {number} rawPressure - 生筆圧値
      */
@@ -63,52 +73,16 @@ class StrokeRecorder {
         if (!this.isRecording) return;
 
         // tilt/twistデータを更新
-        this.pressureHandler.updateTiltData(event);
+        if (this.pressureHandler.updateTiltData) {
+            this.pressureHandler.updateTiltData(event);
+        }
 
-        // スクリーン座標 → レイヤーローカル座標（cameraSystem内で変換済み）
-        const layerLocalPoint = this.cameraSystem.screenToLayer(event.clientX, event.clientY);
-        
-        // 筆圧補正
-        const pressure = this.pressureHandler.getCalibratedPressure(rawPressure);
-
-        // tiltデータも記録（将来の高度な筆圧表現用）
-        const tiltData = this.pressureHandler.getTiltData();
-
-        this.points.push({
-            x: layerLocalPoint.x,
-            y: layerLocalPoint.y,
-            pressure: pressure,
-            time: performance.now(),
-            tiltX: tiltData.tiltX,
-            tiltY: tiltData.tiltY,
-            twist: tiltData.twist
-        });
-    }
-
-    /**
-     * ポイント追加（レガシー互換）
-     * @param {number} screenX - スクリーン座標X
-     * @param {number} screenY - スクリーン座標Y
-     * @param {number} rawPressure - 生筆圧値
-     */
-    addPoint(screenX, screenY, rawPressure) {
-        if (!this.isRecording) return;
-
-        // スクリーン座標 → レイヤーローカル座標
-        const layerLocalPoint = this.cameraSystem.screenToLayer(screenX, screenY);
-        
-        // 筆圧補正
-        const pressure = this.pressureHandler.getCalibratedPressure(rawPressure);
-
-        this.points.push({
-            x: layerLocalPoint.x,
-            y: layerLocalPoint.y,
-            pressure: pressure,
-            time: performance.now(),
-            tiltX: 0,
-            tiltY: 0,
-            twist: 0
-        });
+        // 警告: screenToLayer()は古い実装。
+        // drawing-engine.js で座標変換してからaddPoint()を呼ぶこと
+        if (this.cameraSystem?.screenToLayer) {
+            const layerLocalPoint = this.cameraSystem.screenToLayer(event.clientX, event.clientY);
+            this.addPoint(layerLocalPoint.x, layerLocalPoint.y, rawPressure);
+        }
     }
 
     /**
