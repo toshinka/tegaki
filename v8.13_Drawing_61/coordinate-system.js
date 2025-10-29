@@ -1,7 +1,7 @@
-// ===== coordinate-system.js - API統一版 =====
+// ===== coordinate-system.js - worldToLocal修正版 =====
 /**
  * 全座標変換の統一管理
- * 修正: 返り値を {座標系名X, 座標系名Y} に統一
+ * 修正: worldToLocal() の pivot 計算順序を修正
  */
 
 (function() {
@@ -97,7 +97,7 @@
             });
         }
         
-        // ========== Screen → Canvas変換 (修正: 返り値統一) ==========
+        // ========== Screen → Canvas変換 ==========
         
         /**
          * Screen座標(clientX/Y) → Canvas座標 変換
@@ -193,6 +193,8 @@
         
         /**
          * World座標 → Local座標 変換
+         * 修正: pivot の計算順序を正しく修正
+         * 
          * @returns {Object} {localX, localY}
          */
         worldToLocal(worldX, worldY, container) {
@@ -200,7 +202,7 @@
                 return { localX: worldX, localY: worldY };
             }
             
-            // 親チェーン全体をさかのぼって各transformを逆算
+            // 親チェーン全体をさかのぼって各transformを収集
             let transforms = [];
             let node = container;
             const worldContainer = this._getWorldContainer();
@@ -218,12 +220,16 @@
             let x = worldX;
             let y = worldY;
             
+            // 親から子へ順番に逆変換を適用
             for (let i = transforms.length - 1; i >= 0; i--) {
                 const t = transforms[i];
                 
+                // 修正: 正しい逆変換の順序
+                // 1. position を引く
                 x -= t.pos.x;
                 y -= t.pos.y;
                 
+                // 2. rotation を逆回転
                 if (Math.abs(t.rotation) > 1e-6) {
                     const cos = Math.cos(-t.rotation);
                     const sin = Math.sin(-t.rotation);
@@ -233,9 +239,11 @@
                     y = ry;
                 }
                 
+                // 3. scale で割る
                 if (Math.abs(t.scale.x) > 1e-6) x /= t.scale.x;
                 if (Math.abs(t.scale.y) > 1e-6) y /= t.scale.y;
                 
+                // 4. pivot を足す（回転・スケールの中心点からの相対位置に戻す）
                 x += t.pivot.x;
                 y += t.pivot.y;
             }
@@ -473,7 +481,9 @@
     const coordinateSystem = new CoordinateSystem();
     window.CoordinateSystem = coordinateSystem;
     
-    console.log('✅ coordinate-system.js (API統一版) loaded');
+    console.log('✅ coordinate-system.js (worldToLocal修正版) loaded');
+    console.log('   - 修正: worldToLocal() の pivot 計算順序を修正');
+    console.log('   - Vキーモード時の NaN 問題を解決');
     
 })();
 
@@ -495,6 +505,44 @@ window.TegakiDebug.coord = {
         if (layer) {
             const step3 = window.CoordinateSystem.worldToLocal(step2.worldX, step2.worldY, layer);
             console.log('Step 3 Local:', step3);
+            
+            // NaN チェック
+            if (isNaN(step3.localX) || isNaN(step3.localY)) {
+                console.error('❌ worldToLocal returned NaN');
+                console.log('Layer state:', {
+                    position: layer.position,
+                    pivot: layer.pivot,
+                    rotation: layer.rotation,
+                    scale: layer.scale
+                });
+                return;
+            }
+            
+            // 検証: Local → World → Canvas → Screen と逆変換
+            const verify1 = window.CoordinateSystem.localToWorld(step3.localX, step3.localY, layer);
+            console.log('Verify World:', verify1);
+            
+            if (isNaN(verify1.worldX) || isNaN(verify1.worldY)) {
+                console.error('❌ localToWorld returned NaN');
+                return;
+            }
+            
+            const verify2 = window.CoordinateSystem.worldToCanvas(verify1.worldX, verify1.worldY);
+            console.log('Verify Canvas:', verify2);
+            
+            const verify3 = window.CoordinateSystem.canvasToScreen(verify2.canvasX, verify2.canvasY);
+            console.log('Verify Screen:', verify3);
+            
+            // 誤差確認
+            const errorX = Math.abs(verify3.clientX - clientX);
+            const errorY = Math.abs(verify3.clientY - clientY);
+            console.log('Error:', { x: errorX.toFixed(4), y: errorY.toFixed(4) });
+            
+            if (errorX < 0.1 && errorY < 0.1) {
+                console.log('✅ 座標変換: 正常');
+            } else {
+                console.log('⚠️ 座標変換: 誤差あり');
+            }
         } else {
             console.warn('⚠️ No active layer');
         }

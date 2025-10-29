@@ -1,7 +1,7 @@
 /**
- * timeline-thumbnail-utils.js - Phase 1改修版
+ * timeline-thumbnail-utils.js - Phase 1完全版
  * Canvas2D廃止、ThumbnailSystem 統合
- * PixiJS renderer.extract.imageBitmap() でサムネイル統一
+ * Phase 1追加: layer:transform-updated 購読でタイムライン更新
  */
 
 class TimelineThumbnailUtils {
@@ -18,6 +18,7 @@ class TimelineThumbnailUtils {
 
   /**
    * カメラ変形時の自動サムネイル更新
+   * Phase 1: layer:transform-updated 購読追加
    */
   _setupCameraTransformListener() {
     if (!this.eventBus) return;
@@ -40,11 +41,26 @@ class TimelineThumbnailUtils {
     this.eventBus.on('camera:resized', ({ width, height }) => {
       this._invalidateCache();
     });
+    
+    // Phase 1: layer:transform-updated 購読追加
+    // レイヤー変形時にタイムラインサムネイルも更新
+    this.eventBus.on('layer:transform-updated', ({ layerId }) => {
+      // 全フレームのキャッシュをクリア（レイヤーは全フレームに影響）
+      this._invalidateCache();
+      
+      // 非同期で再生成（throttle を考慮して遅延）
+      if (this.animationSystem && 
+          typeof this.animationSystem.regenerateAllThumbnails === 'function') {
+        setTimeout(() => {
+          this.animationSystem.regenerateAllThumbnails();
+        }, 150); // thumbnail-system の throttle (100ms) より後に実行
+      }
+    });
   }
 
   /**
    * フレームサムネイル生成
-   * Phase 1: ThumbnailSystem から ImageBitmap を取得
+   * ThumbnailSystem から Canvas を取得
    * 
    * @param {PIXI.Container} frame - フレームコンテナ
    * @returns {Promise<string|null>} DataURL
@@ -60,32 +76,23 @@ class TimelineThumbnailUtils {
     }
 
     try {
-      // ThumbnailSystem から ImageBitmap を取得
+      // ThumbnailSystem から Canvas を取得
       if (!window.ThumbnailSystem) {
         console.warn('ThumbnailSystem not initialized');
         return null;
       }
 
-      const bitmap = await window.ThumbnailSystem.generateFrameThumbnail(
+      const canvas = await window.ThumbnailSystem.generateFrameThumbnail(
         frame,
         150,  // maxWidth
         150   // maxHeight
       );
 
-      if (!bitmap) {
+      if (!canvas) {
         return null;
       }
 
-      // ImageBitmap から DataURL に変換
-      const canvas = document.createElement('canvas');
-      const ctx = canvas.getContext('2d');
-      
-      if (!ctx) return null;
-
-      canvas.width = bitmap.width;
-      canvas.height = bitmap.height;
-      ctx.drawImage(bitmap, 0, 0);
-
+      // Canvas から DataURL に変換
       const dataURL = canvas.toDataURL('image/png');
       
       // DataURL をキャッシュに保存
@@ -173,4 +180,8 @@ class TimelineThumbnailUtils {
   clearCache() {
     this._invalidateCache();
   }
-};
+}
+
+console.log('✅ ui/timeline-thumbnail-utils.js (Phase 1完全版) loaded');
+console.log('   - Phase 1: layer:transform-updated 購読追加');
+console.log('   - タイムラインサムネイルがレイヤー変形に追従');

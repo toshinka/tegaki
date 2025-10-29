@@ -1,6 +1,7 @@
-// ===== system/drawing/thumbnail-system.js - キャッシュキー修正版 =====
-// 修正1: レイヤーサムネイルのキャッシュキーを layer.transform から取得
-// 修正2: Vキーモード中のキャッシュ無効化オプション追加
+// ===== system/drawing/thumbnail-system.js - Phase 1-2完全版 =====
+// Phase 1: イベントフロー確立（layer:transform-updated → thumbnail:layer-updated 連携）
+// Phase 2: イベント過多抑制（throttle 実装）
+// Phase 5: デバッグコマンド追加
 
 (function() {
     'use strict';
@@ -29,6 +30,9 @@
             // RenderTexture の再利用プール
             this.renderTexturePool = [];
             this.poolMaxSize = 10;
+            
+            // Phase 2: throttle 用タイマー
+            this.thumbnailUpdateTimer = null;
         }
 
         init(eventBus) {
@@ -41,7 +45,7 @@
             }
             
             this.isInitialized = true;
-            console.log('✅ ThumbnailSystem initialized');
+            console.log('✅ ThumbnailSystem initialized (Phase 1-2)');
         }
 
         _setupEventListeners() {
@@ -54,9 +58,35 @@
                 this.vKeyModeActive = false;
             });
             
-            // レイヤーサムネイル更新トリガー
+            // Phase 1 + Phase 2: レイヤー変形時のサムネイル更新（throttle 付き）
             this.eventBus.on('layer:transform-updated', ({ layerId }) => {
                 this._invalidateLayerCacheByLayerId(layerId);
+                
+                // Phase 2: throttle - 100ms 以内の連続呼び出しは最後の1回のみ実行
+                if (this.thumbnailUpdateTimer) {
+                    clearTimeout(this.thumbnailUpdateTimer);
+                }
+                
+                this.thumbnailUpdateTimer = setTimeout(() => {
+                    // Phase 1: layerId から layerIndex を取得して thumbnail:layer-updated 発火
+                    const layerMgr = window.CoreRuntime?.internal?.layerManager;
+                    if (layerMgr) {
+                        const layers = layerMgr.getLayers();
+                        const layerIndex = layers.findIndex(l => l.layerData?.id === layerId);
+                        
+                        if (layerIndex >= 0) {
+                            this.eventBus.emit('thumbnail:layer-updated', {
+                                component: 'thumbnail-system',
+                                action: 'transform-invalidated',
+                                data: {
+                                    layerIndex: layerIndex,
+                                    layerId: layerId
+                                }
+                            });
+                        }
+                    }
+                    this.thumbnailUpdateTimer = null;
+                }, 100);
             });
             
             this.eventBus.on('layer:stroke-added', ({ layerIndex }) => {
@@ -93,7 +123,7 @@
 
         /**
          * レイヤーサムネイル生成
-         * 修正: キャッシュキーを layer.position/rotation/scale から生成
+         * キャッシュキーを layer.position/rotation/scale から生成
          * 
          * @param {PIXI.Container} layer - レイヤーコンテナ
          * @param {number} width - サムネイル幅（デフォルト64）
@@ -115,7 +145,7 @@
                 return await this._renderLayerThumbnail(layer, width, height);
             }
 
-            // 修正: キャッシュキーを layer.position/rotation/scale から生成
+            // キャッシュキーを layer.position/rotation/scale から生成
             const layerId = layer.layerData?.id || layer.label;
             const pos = layer.position;
             const rot = layer.rotation;
@@ -180,7 +210,7 @@
 
         /**
          * フレームサムネイル生成
-         * 修正: キャッシュキーを config.canvas から取得
+         * キャッシュキーを config.canvas から取得
          * 
          * @param {PIXI.Container} frame - フレームコンテナ
          * @param {number} maxWidth - 最大幅（デフォルト150）
@@ -194,7 +224,7 @@
 
             const frameId = frame.id || frame.label;
             
-            // 修正: config.canvas から取得
+            // config.canvas から取得
             const canvasWidth = this.config?.canvas?.width || 800;
             const canvasHeight = this.config?.canvas?.height || 600;
 
@@ -213,7 +243,7 @@
             thumbWidth = Math.round(thumbWidth);
             thumbHeight = Math.round(thumbHeight);
 
-            // 修正: キャッシュキーを config.canvas から生成
+            // キャッシュキーを config.canvas から生成
             const cacheKey = `frame_${frameId}_${canvasWidth}_${canvasHeight}_${thumbWidth}_${thumbHeight}`;
             
             if (this.frameThumbnailCache.has(cacheKey)) {
@@ -435,6 +465,75 @@
         window.TEGAKI_CONFIG
     );
 
-    console.log('✅ system/drawing/thumbnail-system.js (キャッシュキー修正版) loaded');
+    // ========== Phase 5: デバッグコマンド ==========
+    window.TegakiDebug = window.TegakiDebug || {};
+    
+    // サムネイル更新監視
+    window.TegakiDebug.monitorThumbnails = function() {
+        console.log('=== Thumbnail Update Monitor Started ===');
+        
+        let updateCount = 0;
+        let lastUpdate = 0;
+        
+        window.TegakiEventBus.on('thumbnail:layer-updated', (data) => {
+            updateCount++;
+            const now = performance.now();
+            const delta = lastUpdate ? (now - lastUpdate).toFixed(0) : '-';
+            lastUpdate = now;
+            
+            console.log(`📸 Thumbnail Update #${updateCount} (Δ${delta}ms)`, data);
+        });
+        
+        window.TegakiEventBus.on('layer:transform-updated', (data) => {
+            console.log(`🔄 Transform Updated`, data);
+        });
+    };
+    
+    // キャッシュ状態監視
+    window.TegakiDebug.inspectThumbnailCache = function() {
+        const info = window.ThumbnailSystem?.getDebugInfo();
+        console.log('=== Thumbnail Cache Status ===');
+        console.log(info);
+        
+        // キャッシュキーの一覧
+        if (window.ThumbnailSystem?.layerThumbnailCache) {
+            console.log('Layer Cache Keys:');
+            for (const key of window.ThumbnailSystem.layerThumbnailCache.keys()) {
+                console.log(`  - ${key}`);
+            }
+        }
+    };
+    
+    // 強制全サムネイル再生成
+    window.TegakiDebug.regenerateAllThumbnails = async function() {
+        console.log('=== Regenerating All Thumbnails ===');
+        
+        // キャッシュクリア
+        if (window.ThumbnailSystem) {
+            window.ThumbnailSystem.clearAllCache();
+        }
+        
+        // レイヤーパネル更新
+        const layerPanel = window.CoreRuntime?.internal?.layerPanelRenderer;
+        if (layerPanel) {
+            await layerPanel.updateAllThumbnails();
+        }
+        
+        // タイムライン更新
+        const animSys = window.CoreRuntime?.internal?.animationSystem;
+        if (animSys?.regenerateAllThumbnails) {
+            await animSys.regenerateAllThumbnails();
+        }
+        
+        console.log('✅ All thumbnails regenerated');
+    };
+
+    console.log('✅ system/drawing/thumbnail-system.js (Phase 1-2完全版) loaded');
+    console.log('   - Phase 1: イベントフロー確立 (layer:transform-updated → thumbnail:layer-updated)');
+    console.log('   - Phase 2: throttle 実装 (100ms間隔)');
+    console.log('   - Phase 5: デバッグコマンド追加');
+    console.log('   - Debug: window.TegakiDebug.monitorThumbnails()');
+    console.log('   - Debug: window.TegakiDebug.inspectThumbnailCache()');
+    console.log('   - Debug: window.TegakiDebug.regenerateAllThumbnails()');
 
 })();

@@ -1,0 +1,507 @@
+================================================================================
+サムネイル問題修正計画 v8.13_Drawing_60
+診断日時: 2025-10-29
+================================================================================
+
+【診断結果サマリ】
+
+✅ 正常動作:
+- ThumbnailSystem 初期化完了
+- data-layer-index 属性正しく設定
+- EventBus イベント発火確認 (layer:transform-updated, thumbnail:layer-updated)
+- Vキー押下/解放イベント正常
+- ペン描画時のサムネイル更新イベント発火
+
+⚠️ 確認された問題:
+1. layer:transform-updated が大量発火 (Vキードラッグ中に12回連続)
+2. thumbnail:layer-updated が layer:transform-updated に連動していない
+3. Vキーモード中のサムネイル更新が視覚的に反映されていない可能性
+4. 座標系のズレ (Expected: 172, 67.5 vs Actual: 126.5, 72)
+5. リロード時の描画/判定問題（未検証）
+
+【根本原因分析】
+
+問題A: Vキーモード中のサムネイル更新タイミング
+- layer:transform-updated は発火している
+- しかし thumbnail-system.js が layer:transform-updated を購読しても、
+  thumbnail:layer-updated イベントを発火していない
+- layer-panel-renderer.js は thumbnail:layer-updated を購読しているが、
+  イベントが来ないため更新されない
+
+問題B: イベント過多による更新遅延
+- layer-transform.js の各メソッド (moveLayer, scaleLayer, rotateLayer等) が
+  個別に layer:transform-updated を発火
+- ドラッグ中に毎フレーム発火するため、サムネイル更新が追いつかない
+
+問題C: timeline-thumbnail-utils.js のイベント未購読
+- layer:transform-updated を購読していない
+- タイムラインサムネイルが更新されない
+
+問題D: 座標系のズレ
+- worldContainer の position が想定と異なる
+- カメラのパン/ズーム状態が座標変換に影響
+
+================================================================================
+Phase 1: イベントフロー修正（最優先）
+================================================================================
+
+【目的】
+layer:transform-updated → thumbnail:layer-updated の連携を確立
+
+【改修ファイル】
+
+1. system/drawing/thumbnail-system.js
+   位置: _setupEventListeners() メソッド内
+   
+   修正内容:
+   ```
+   // 既存
+   this.eventBus.on('layer:transform-updated', ({ layerId }) => {
+       this._invalidateLayerCacheByLayerId(layerId);
+   });
+   
+   // 追加: サムネイル更新リクエストを発火
+   this.eventBus.on('layer:transform-updated', ({ layerId }) => {
+       this._invalidateLayerCacheByLayerId(layerId);
+       
+       // layerId から layerIndex を取得
+       const layerMgr = window.CoreRuntime?.internal?.layerManager;
+       if (layerMgr) {
+           const layers = layerMgr.getLayers();
+           const layerIndex = layers.findIndex(l => l.layerData?.id === layerId);
+           
+           if (layerIndex >= 0) {
+               this.eventBus.emit('thumbnail:layer-updated', {
+                   component: 'thumbnail-system',
+                   action: 'transform-invalidated',
+                   data: {
+                       layerIndex: layerIndex,
+                       layerId: layerId
+                   }
+               });
+           }
+       }
+   });
+   ```
+
+2. ui/layer-panel-renderer.js
+   位置: _setupEventListeners() メソッド内
+   
+   確認事項:
+   - thumbnail:layer-updated 購読が正しく動作しているか
+   - requestAnimationFrame でスケジュール済み
+   - thumbnailUpdateScheduled フラグで多重実行防止済み
+   
+   修正不要（既に正しい実装）
+
+3. ui/timeline-thumbnail-utils.js
+   位置: _setupCameraTransformListener() メソッド内
+   
+   修正内容:
+   ```
+   // 追加: layer:transform-updated 購読
+   this.eventBus.on('layer:transform-updated', ({ layerId }) => {
+       // 全フレームのキャッシュをクリア（レイヤーは全フレームに影響）
+       this._invalidateCache();
+       
+       // 非同期で再生成
+       if (this.animationSystem && 
+           typeof this.animationSystem.regenerateAllThumbnails === 'function') {
+           setTimeout(() => {
+               this.animationSystem.regenerateAllThumbnails();
+           }, 100);
+       }
+   });
+   ```
+
+【検証方法】
+1. Vキー → ドラッグで移動
+2. コンソールで thumbnail:layer-updated イベント発火確認
+3. レイヤーパネルのサムネイルがリアルタイム更新されることを確認
+
+================================================================================
+Phase 2: イベント発火頻度の最適化
+================================================================================
+
+【目的】
+Vキーモード中の過剰なイベント発火を抑制し、更新を間引く
+
+【改修ファイル】
+
+1. system/layer-transform.js
+   位置: _emitTransformUpdated() メソッド
+   
+   修正内容:
+   ```
+   // 既存の _emitTransformUpdated を throttle 対応に変更
+   _emitTransformUpdated(layerId) {
+       // throttle: 最後の呼び出しから 100ms 以内は発火しない
+       const now = performance.now();
+       if (this._lastEmitTime && (now - this._lastEmitTime) < 100) {
+           // throttle 中: タイマーで遅延発火
+           if (this._emitTimer) {
+               clearTimeout(this._emitTimer);
+           }
+           this._emitTimer = setTimeout(() => {
+               if (this.eventBus) {
+                   this.eventBus.emit('layer:transform-updated', { layerId });
+               }
+               this._lastEmitTime = performance.now();
+           }, 100);
+           return;
+       }
+       
+       // 即座発火
+       if (this.eventBus) {
+           this.eventBus.emit('layer:transform-updated', { layerId });
+       }
+       this._lastEmitTime = now;
+   }
+   
+   // constructor に追加
+   constructor(config, coordAPI) {
+       // ... 既存コード ...
+       this._lastEmitTime = 0;
+       this._emitTimer = null;
+   }
+   ```
+
+2. system/drawing/thumbnail-system.js
+   位置: _setupEventListeners() 内の layer:transform-updated 購読
+   
+   修正内容:
+   ```
+   // throttle 追加（二重 throttle 防止）
+   let thumbnailUpdateTimer = null;
+   
+   this.eventBus.on('layer:transform-updated', ({ layerId }) => {
+       this._invalidateLayerCacheByLayerId(layerId);
+       
+       // 100ms 以内の連続呼び出しは最後の1回のみ実行
+       if (thumbnailUpdateTimer) {
+           clearTimeout(thumbnailUpdateTimer);
+       }
+       
+       thumbnailUpdateTimer = setTimeout(() => {
+           const layerMgr = window.CoreRuntime?.internal?.layerManager;
+           if (layerMgr) {
+               const layers = layerMgr.getLayers();
+               const layerIndex = layers.findIndex(l => l.layerData?.id === layerId);
+               
+               if (layerIndex >= 0) {
+                   this.eventBus.emit('thumbnail:layer-updated', {
+                       component: 'thumbnail-system',
+                       action: 'transform-invalidated',
+                       data: {
+                           layerIndex: layerIndex,
+                           layerId: layerId
+                       }
+                   });
+               }
+           }
+           thumbnailUpdateTimer = null;
+       }, 100);
+   });
+   ```
+
+【検証方法】
+1. Vキー → ドラッグで移動
+2. コンソールで layer:transform-updated の発火回数確認（100ms間隔に制限）
+3. サムネイル更新が滑らかに動作することを確認
+
+================================================================================
+Phase 3: Vキー確定時の強制更新
+================================================================================
+
+【目的】
+Enter/Esc キーでのVキー確定時に、確実にサムネイル更新
+
+【改修ファイル】
+
+1. system/layer-system.js
+   位置: onTransformComplete() メソッド（layer-transform からコールバック）
+   
+   確認事項:
+   - 既に thumbnail:layer-updated を発火している
+   - animationSystem.generateFrameThumbnail() も呼び出し済み
+   
+   修正不要（既に正しい実装）
+
+2. system/layer-transform.js
+   位置: confirmTransform() メソッド
+   
+   追加内容:
+   ```
+   confirmTransform(layer) {
+       // ... 既存の変形確定ロジック ...
+       
+       if (!success) return false;
+       
+       // 追加: 確定時の強制サムネイル更新
+       if (this.eventBus) {
+           const layerMgr = window.CoreRuntime?.internal?.layerManager;
+           if (layerMgr) {
+               const layerIndex = layerMgr.getLayerIndex(layer);
+               
+               // 即座にサムネイル更新を要求（throttle バイパス）
+               this.eventBus.emit('thumbnail:layer-updated', {
+                   component: 'layer-transform',
+                   action: 'transform-confirmed',
+                   data: {
+                       layerIndex: layerIndex,
+                       layerId: layer.layerData?.id,
+                       immediate: true
+                   }
+               });
+           }
+       }
+       
+       // ... 既存の後処理 ...
+   }
+   ```
+
+【検証方法】
+1. Vキー → 変形 → Enter
+2. サムネイルが即座に更新されることを確認
+
+================================================================================
+Phase 4: 座標系ズレの修正（低優先度）
+================================================================================
+
+【診断結果】
+- Expected Canvas Center: 172, 67.5
+- Actual Local: 126.5, 72
+- ズレ量: (-45.5, +4.5)
+
+【原因推定】
+- worldContainer の position が (228, 232) にズレている
+- カメラのパン操作が worldContainer を移動させている
+- 座標変換時に worldContainer.position が正しく考慮されていない可能性
+
+【改修対象外の理由】
+- 現状の診断では描画自体は正常動作している
+- サムネイル問題とは直接関係なし
+- カメラシステムの設計変更が必要（影響範囲大）
+
+【備考】
+もし描画位置のズレが実際に問題となる場合は、別 Phase で対応
+
+================================================================================
+Phase 5: デバッグコマンド拡張
+================================================================================
+
+【目的】
+サムネイル更新状況をリアルタイム監視
+
+【新規追加】
+
+1. グローバルデバッグコマンド（console 直接実行可能）
+   
+   ```javascript
+   window.TegakiDebug = window.TegakiDebug || {};
+   
+   // サムネイル更新監視
+   window.TegakiDebug.monitorThumbnails = function() {
+       console.log('=== Thumbnail Update Monitor Started ===');
+       
+       let updateCount = 0;
+       let lastUpdate = 0;
+       
+       window.TegakiEventBus.on('thumbnail:layer-updated', (data) => {
+           updateCount++;
+           const now = performance.now();
+           const delta = lastUpdate ? (now - lastUpdate).toFixed(0) : '-';
+           lastUpdate = now;
+           
+           console.log(`📸 Thumbnail Update #${updateCount} (Δ${delta}ms)`, data);
+       });
+       
+       window.TegakiEventBus.on('layer:transform-updated', (data) => {
+           console.log(`🔄 Transform Updated`, data);
+       });
+   };
+   
+   // キャッシュ状態監視
+   window.TegakiDebug.inspectThumbnailCache = function() {
+       const info = window.ThumbnailSystem?.getDebugInfo();
+       console.log('=== Thumbnail Cache Status ===');
+       console.log(info);
+       
+       // キャッシュキーの一覧
+       if (window.ThumbnailSystem?.layerThumbnailCache) {
+           console.log('Layer Cache Keys:');
+           for (const key of window.ThumbnailSystem.layerThumbnailCache.keys()) {
+               console.log(`  - ${key}`);
+           }
+       }
+   };
+   
+   // 強制全サムネイル再生成
+   window.TegakiDebug.regenerateAllThumbnails = async function() {
+       console.log('=== Regenerating All Thumbnails ===');
+       
+       // キャッシュクリア
+       if (window.ThumbnailSystem) {
+           window.ThumbnailSystem.clearAllCache();
+       }
+       
+       // レイヤーパネル更新
+       const layerPanel = window.CoreRuntime?.internal?.layerPanelRenderer;
+       if (layerPanel) {
+           await layerPanel.updateAllThumbnails();
+       }
+       
+       // タイムライン更新
+       const animSys = window.CoreRuntime?.internal?.animationSystem;
+       if (animSys?.regenerateAllThumbnails) {
+           await animSys.regenerateAllThumbnails();
+       }
+       
+       console.log('✅ All thumbnails regenerated');
+   };
+   ```
+
+2. 配置場所
+   - system/drawing/thumbnail-system.js の末尾に追加
+   - または独立ファイル debug/thumbnail-debug.js を作成
+
+【検証方法】
+1. コンソールで window.TegakiDebug.monitorThumbnails() 実行
+2. Vキー操作しながら更新頻度を確認
+3. window.TegakiDebug.inspectThumbnailCache() でキャッシュ状態確認
+
+================================================================================
+修正ファイル一覧（Phase順）
+================================================================================
+
+Phase 1 (最優先):
+  ✏️ system/drawing/thumbnail-system.js
+     - _setupEventListeners() 内、layer:transform-updated 購読を修正
+     - thumbnail:layer-updated イベント発火を追加
+  
+  ✏️ ui/timeline-thumbnail-utils.js
+     - _setupCameraTransformListener() 内
+     - layer:transform-updated 購読を追加
+
+Phase 2 (高優先):
+  ✏️ system/layer-transform.js
+     - _emitTransformUpdated() メソッドに throttle 実装
+     - constructor に _lastEmitTime, _emitTimer プロパティ追加
+  
+  ✏️ system/drawing/thumbnail-system.js
+     - layer:transform-updated 購読内に throttle 追加
+
+Phase 3 (中優先):
+  ✏️ system/layer-transform.js
+     - confirmTransform() メソッド内
+     - thumbnail:layer-updated 即座発火を追加
+
+Phase 4 (低優先・保留):
+  - 座標系修正は現時点では対応不要
+
+Phase 5 (推奨):
+  ✏️ system/drawing/thumbnail-system.js または debug/thumbnail-debug.js
+     - デバッグコマンド追加
+
+================================================================================
+実装チェックリスト
+================================================================================
+
+Phase 1:
+  [ ] thumbnail-system.js: layer:transform-updated 購読内で thumbnail:layer-updated 発火
+  [ ] timeline-thumbnail-utils.js: layer:transform-updated 購読追加
+  [ ] 検証: Vキードラッグ中にサムネイル更新イベント発火確認
+
+Phase 2:
+  [ ] layer-transform.js: _emitTransformUpdated に throttle 実装
+  [ ] layer-transform.js: constructor に _lastEmitTime, _emitTimer 追加
+  [ ] thumbnail-system.js: layer:transform-updated 購読に throttle 追加
+  [ ] 検証: イベント発火回数が 100ms 間隔に制限されていることを確認
+
+Phase 3:
+  [ ] layer-transform.js: confirmTransform() に thumbnail:layer-updated 発火追加
+  [ ] 検証: Enter キー確定時にサムネイル即座更新確認
+
+Phase 5:
+  [ ] デバッグコマンド追加
+  [ ] 検証: window.TegakiDebug.monitorThumbnails() 実行確認
+
+================================================================================
+検証項目（全Phase完了後）
+================================================================================
+
+基本動作:
+  [ ] ペン描画 → サムネイル更新（既存動作）
+  [ ] Vキー → ドラッグ移動 → サムネイルリアルタイム更新
+  [ ] Vキー → ホイール回転/拡大 → サムネイルリアルタイム更新
+  [ ] Vキー → Hキー反転 → サムネイルリアルタイム更新
+  [ ] Vキー → Enter確定 → サムネイル即座更新
+  [ ] Vキー → Esc取消 → サムネイル元に戻る
+
+パフォーマンス:
+  [ ] Vキードラッグ中のイベント発火が過剰でない（100ms間隔）
+  [ ] サムネイル更新が滑らか（カクつかない）
+  [ ] キャッシュが正常動作（同一状態で再生成しない）
+
+タイムライン:
+  [ ] タイムラインサムネイルがレイヤー変形に追従
+  [ ] フレーム切替時にサムネイル表示
+
+非アクティブレイヤー:
+  [ ] 非アクティブレイヤーのサムネイルも更新（全レイヤー更新）
+
+================================================================================
+備考・注意事項
+================================================================================
+
+1. リロード時の描画/判定問題について
+   - 現状の診断では未検証
+   - 座標系ズレが原因の可能性
+   - Phase 4（座標系修正）が必要な場合は、別途調査が必要
+
+2. Vキーモード中のキャッシュ無効化設定
+   - thumbnail-system.js に disableCacheDuringVMode: true が設定済み
+   - これによりVモード中はキャッシュをバイパス
+   - パフォーマンスとのトレードオフに注意
+
+3. イベントペイロード形式
+   - component/action/data 形式を維持
+   - 既存イベントとの互換性確保
+
+4. throttle 実装の注意
+   - requestAnimationFrame ではなく setTimeout を使用
+   - 理由: RAF は描画フレームに同期するが、イベント発火は非同期で良い
+
+================================================================================
+参考: イベントフロー図（修正後）
+================================================================================
+
+[Vキードラッグ]
+  ↓
+[layer-transform.js: _handleDrag()]
+  ↓
+[layer-transform.js: updateTransform()]
+  ↓
+[layer-transform.js: _emitTransformUpdated()] ← throttle 100ms
+  ↓
+[EventBus: 'layer:transform-updated']
+  ↓
+┌─────────────────────┬─────────────────────┐
+│                     │                     │
+[thumbnail-system.js] [timeline-thumbnail-  │
+                       utils.js]            │
+│                     │                     │
+invalidateCache()     _invalidateCache()   │
+  ↓                     ↓                   │
+emit('thumbnail:      regenerateAll-       │
+  layer-updated')     Thumbnails()         │
+  ↓                                         │
+[layer-panel-renderer.js]                  │
+  ↓                                         │
+updateLayerThumbnail()                     │
+  ↓                                         │
+[サムネイル表示更新]                         │
+
+================================================================================
+EOF
+================================================================================
