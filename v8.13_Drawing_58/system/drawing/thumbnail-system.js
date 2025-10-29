@@ -1,6 +1,6 @@
 // ===== system/drawing/thumbnail-system.js - Phase 1完全版 =====
 // 統一されたサムネイル生成システム
-// Canvas2D廃止、PixiJS renderer.extract.imageBitmap() を標準採用
+// Canvas2D廃止、PixiJS renderer.extract.image() を標準採用
 // 責務: サムネイル生成、キャッシュ管理、座標系完全同期
 
 (function() {
@@ -40,6 +40,7 @@
             }
             
             this.isInitialized = true;
+            console.log('✅ ThumbnailSystem initialized');
         }
 
         _setupEventListeners() {
@@ -54,6 +55,14 @@
             
             this.eventBus.on('layer:path-added', ({ layerIndex }) => {
                 this.invalidateLayerCache(layerIndex);
+            });
+            
+            this.eventBus.on('layer:flip-horizontal', ({ layerId }) => {
+                this._invalidateLayerCacheByLayerId(layerId);
+            });
+            
+            this.eventBus.on('layer:flip-vertical', ({ layerId }) => {
+                this._invalidateLayerCacheByLayerId(layerId);
             });
             
             // フレームサムネイル更新トリガー
@@ -79,16 +88,17 @@
          * @param {PIXI.Container} layer - レイヤーコンテナ
          * @param {number} width - サムネイル幅（デフォルト64）
          * @param {number} height - サムネイル高さ（デフォルト64）
-         * @returns {Promise<ImageBitmap|null>}
+         * @returns {Promise<HTMLCanvasElement|null>}
          */
         async generateLayerThumbnail(layer, width = this.defaultLayerThumbSize, height = this.defaultLayerThumbSize) {
             if (!layer || !this.app?.renderer) {
                 return null;
             }
 
-            // キャッシュキー生成（レイヤーID + サイズ）
+            // キャッシュキー生成（レイヤーID + サイズ + 変形パラメータ）
             const layerId = layer.layerData?.id || layer.label;
-            const cacheKey = `layer_${layerId}_${width}_${height}`;
+            const transform = `${layer.position.x}_${layer.position.y}_${layer.rotation}_${layer.scale.x}_${layer.scale.y}`;
+            const cacheKey = `layer_${layerId}_${width}_${height}_${transform}`;
             
             if (this.layerThumbnailCache.has(cacheKey)) {
                 return this.layerThumbnailCache.get(cacheKey);
@@ -111,23 +121,16 @@
                     clear: true
                 });
 
-                // GPU → ImageBitmap（DPI/色空間完全同期）
-                let bitmap = null;
-                try {
-                    bitmap = await this.app.renderer.extract.imageBitmap(rt);
-                } catch (e) {
-                    // フォールバック: Canvas を使用（古いブラウザ対応）
-                    const canvas = this.app.renderer.extract.canvas(rt);
-                    bitmap = await createImageBitmap(canvas);
-                }
+                // GPU → Canvas（DPI/色空間完全同期）
+                const canvas = this.app.renderer.extract.canvas(rt);
 
                 // キャッシュに保存
-                this.layerThumbnailCache.set(cacheKey, bitmap);
+                this.layerThumbnailCache.set(cacheKey, canvas);
                 
                 // RenderTexture をプールに戻す
                 this._releaseRenderTexture(rt);
 
-                return bitmap;
+                return canvas;
 
             } catch (error) {
                 console.error('Layer thumbnail generation failed:', error);
@@ -142,7 +145,7 @@
          * @param {PIXI.Container} frame - フレームコンテナ
          * @param {number} maxWidth - 最大幅（デフォルト150）
          * @param {number} maxHeight - 最大高さ（デフォルト150）
-         * @returns {Promise<ImageBitmap|null>}
+         * @returns {Promise<HTMLCanvasElement|null>}
          */
         async generateFrameThumbnail(frame, maxWidth = this.defaultFrameThumbSize, maxHeight = this.defaultFrameThumbSize) {
             if (!frame || !this.app?.renderer) {
@@ -186,22 +189,28 @@
                     clear: true
                 });
 
-                // ImageBitmap を取得
-                let bitmap = null;
-                try {
-                    bitmap = await this.app.renderer.extract.imageBitmap(fullRT);
-                } catch (e) {
-                    const canvas = this.app.renderer.extract.canvas(fullRT);
-                    bitmap = await createImageBitmap(canvas);
+                // Canvas を取得してリサイズ
+                const fullCanvas = this.app.renderer.extract.canvas(fullRT);
+                
+                // サムネイルサイズにリサイズ
+                const thumbCanvas = document.createElement('canvas');
+                thumbCanvas.width = thumbWidth;
+                thumbCanvas.height = thumbHeight;
+                const ctx = thumbCanvas.getContext('2d');
+                
+                if (ctx) {
+                    ctx.imageSmoothingEnabled = true;
+                    ctx.imageSmoothingQuality = 'high';
+                    ctx.drawImage(fullCanvas, 0, 0, thumbWidth, thumbHeight);
                 }
 
                 // キャッシュに保存
-                this.frameThumbnailCache.set(cacheKey, bitmap);
+                this.frameThumbnailCache.set(cacheKey, thumbCanvas);
                 
                 // RenderTexture をプール戻す
                 this._releaseRenderTexture(fullRT);
 
-                return bitmap;
+                return thumbCanvas;
 
             } catch (error) {
                 console.error('Frame thumbnail generation failed:', error);
@@ -210,67 +219,20 @@
         }
 
         /**
-         * ImageBitmap → DataURL 変換
+         * Canvas → DataURL 変換
          * UI に表示するための処理
          * 
-         * @param {ImageBitmap} bitmap
-         * @param {HTMLCanvasElement} canvas - 変換用Canvas
-         * @returns {Promise<string>} DataURL
+         * @param {HTMLCanvasElement} canvas
+         * @returns {string} DataURL
          */
-        async _convertImageBitmapToDataURL(bitmap, canvas = null) {
-            if (!bitmap) return null;
-
+        canvasToDataURL(canvas) {
+            if (!canvas) return null;
+            
             try {
-                // Canvas を準備
-                const targetCanvas = canvas || document.createElement('canvas');
-                const ctx = targetCanvas.getContext('2d');
-                
-                if (!ctx) return null;
-
-                targetCanvas.width = bitmap.width;
-                targetCanvas.height = bitmap.height;
-
-                // bitmap を Canvas に描画
-                ctx.drawImage(bitmap, 0, 0);
-
-                // DataURL に変換
-                const dataURL = targetCanvas.toDataURL('image/png');
-                
-                return dataURL;
-
+                return canvas.toDataURL('image/png');
             } catch (error) {
-                console.error('ImageBitmap conversion failed:', error);
+                console.error('Canvas to DataURL conversion failed:', error);
                 return null;
-            }
-        }
-
-        /**
-         * レイヤーサムネイル → Canvas要素へ描画
-         * UI コンポーネント用
-         * 
-         * @param {ImageBitmap} bitmap
-         * @param {HTMLCanvasElement} targetCanvas
-         * @returns {Promise<boolean>}
-         */
-        async drawBitmapToCanvas(bitmap, targetCanvas) {
-            if (!bitmap || !targetCanvas) {
-                return false;
-            }
-
-            try {
-                const ctx = targetCanvas.getContext('2d');
-                if (!ctx) return false;
-
-                targetCanvas.width = bitmap.width;
-                targetCanvas.height = bitmap.height;
-                
-                ctx.drawImage(bitmap, 0, 0);
-                
-                return true;
-
-            } catch (error) {
-                console.error('Bitmap draw failed:', error);
-                return false;
             }
         }
 
@@ -283,9 +245,12 @@
             if (layerIndex < 0) return;
             
             // 該当レイヤーのキャッシュをクリア
-            const keysToDelete = Array.from(this.layerThumbnailCache.keys()).filter(key =>
-                key.includes(`layer_`)
-            );
+            const keysToDelete = [];
+            for (const key of this.layerThumbnailCache.keys()) {
+                if (key.includes(`layer_`)) {
+                    keysToDelete.push(key);
+                }
+            }
             
             keysToDelete.forEach(key => {
                 this.layerThumbnailCache.delete(key);
@@ -299,9 +264,12 @@
          * @param {string} layerId
          */
         _invalidateLayerCacheByLayerId(layerId) {
-            const keysToDelete = Array.from(this.layerThumbnailCache.keys()).filter(key =>
-                key.includes(`layer_${layerId}_`)
-            );
+            const keysToDelete = [];
+            for (const key of this.layerThumbnailCache.keys()) {
+                if (key.includes(`layer_${layerId}_`)) {
+                    keysToDelete.push(key);
+                }
+            }
             
             keysToDelete.forEach(key => {
                 this.layerThumbnailCache.delete(key);
@@ -316,9 +284,12 @@
         invalidateFrameCache(frameIndex) {
             if (frameIndex < 0) return;
             
-            const keysToDelete = Array.from(this.frameThumbnailCache.keys()).filter(key =>
-                key.startsWith(`frame_`)
-            );
+            const keysToDelete = [];
+            for (const key of this.frameThumbnailCache.keys()) {
+                if (key.startsWith(`frame_`)) {
+                    keysToDelete.push(key);
+                }
+            }
             
             keysToDelete.forEach(key => {
                 this.frameThumbnailCache.delete(key);
@@ -375,15 +346,6 @@
             if (!rt) return;
 
             try {
-                // クリア状態にリセット
-                if (this.app?.renderer) {
-                    this.app.renderer.render({
-                        container: new PIXI.Container(),
-                        target: rt,
-                        clear: true
-                    });
-                }
-
                 // プール内がいっぱいなら削除
                 if (this.renderTexturePool.length < this.poolMaxSize) {
                     this.renderTexturePool.push(rt);
