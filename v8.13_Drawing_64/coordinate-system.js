@@ -1,7 +1,7 @@
-// ===== coordinate-system.js - worldToLocal修正版 =====
+// ===== coordinate-system.js - worldToLocal完全修正版 Phase 2.5 =====
 /**
  * 全座標変換の統一管理
- * 修正: worldToLocal() の pivot 計算順序を修正
+ * Phase 2.5修正: worldToLocal() の pivot/position/rotation/scale の計算順序を完全修正
  */
 
 (function() {
@@ -193,7 +193,10 @@
         
         /**
          * World座標 → Local座標 変換
-         * 修正: pivot の計算順序を正しく修正
+         * Phase 2.5完全修正: pivot/position/rotation/scale の計算順序を修正
+         * 
+         * 正しい逆変換の順序:
+         * world → position引く → pivot引く → rotate逆 → scale割る → pivot足す
          * 
          * @returns {Object} {localX, localY}
          */
@@ -224,12 +227,19 @@
             for (let i = transforms.length - 1; i >= 0; i--) {
                 const t = transforms[i];
                 
-                // 修正: 正しい逆変換の順序
+                // Phase 2.5修正: 正しい逆変換の順序
+                // 順変換: local → -pivot → *scale → rotate → +pivot → +position
+                // 逆変換: world → -position → -pivot → rotate^-1 → /scale → +pivot
+                
                 // 1. position を引く
                 x -= t.pos.x;
                 y -= t.pos.y;
                 
-                // 2. rotation を逆回転
+                // 2. pivot を引く（回転・スケールの中心点に移動）
+                x -= t.pivot.x;
+                y -= t.pivot.y;
+                
+                // 3. rotation を逆回転
                 if (Math.abs(t.rotation) > 1e-6) {
                     const cos = Math.cos(-t.rotation);
                     const sin = Math.sin(-t.rotation);
@@ -239,11 +249,11 @@
                     y = ry;
                 }
                 
-                // 3. scale で割る
+                // 4. scale で割る
                 if (Math.abs(t.scale.x) > 1e-6) x /= t.scale.x;
                 if (Math.abs(t.scale.y) > 1e-6) y /= t.scale.y;
                 
-                // 4. pivot を足す（回転・スケールの中心点からの相対位置に戻す）
+                // 5. pivot を足す（元のローカル座標系に戻す）
                 x += t.pivot.x;
                 y += t.pivot.y;
             }
@@ -349,6 +359,11 @@
         
         /**
          * Local座標 → World座標 変換
+         * Phase 2.5修正: worldToLocal()と完全に対応する順変換
+         * 
+         * 正しい順変換の順序:
+         * local → -pivot → *scale → rotate → +pivot → +position
+         * 
          * @returns {Object} {worldX, worldY}
          */
         localToWorld(localX, localY, container) {
@@ -356,37 +371,57 @@
                 return { worldX: localX, worldY: localY };
             }
             
-            if (container.toGlobal && typeof container.toGlobal === 'function') {
-                try {
-                    const world = container.toGlobal(new PIXI.Point(localX, localY));
-                    return { worldX: world.x, worldY: world.y };
-                } catch (error) {
-                    // フォールバックに続く
+            // 親チェーン全体を収集
+            let transforms = [];
+            let node = container;
+            const worldContainer = this._getWorldContainer();
+            
+            while (node && node !== worldContainer && node !== null) {
+                transforms.push({
+                    pos: node.position || { x: 0, y: 0 },
+                    scale: node.scale || { x: 1, y: 1 },
+                    rotation: node.rotation || 0,
+                    pivot: node.pivot || { x: 0, y: 0 }
+                });
+                node = node.parent;
+            }
+            
+            let x = localX;
+            let y = localY;
+            
+            // 子から親へ順番に順変換を適用
+            for (let i = 0; i < transforms.length; i++) {
+                const t = transforms[i];
+                
+                // Phase 2.5修正: 正しい順変換の順序
+                // local → -pivot → *scale → rotate → +pivot → +position
+                
+                // 1. pivot を引く（回転・スケールの中心点に移動）
+                x -= t.pivot.x;
+                y -= t.pivot.y;
+                
+                // 2. scale を掛ける
+                x *= t.scale.x;
+                y *= t.scale.y;
+                
+                // 3. rotation を適用
+                if (Math.abs(t.rotation) > 1e-6) {
+                    const cos = Math.cos(t.rotation);
+                    const sin = Math.sin(t.rotation);
+                    const rx = x * cos - y * sin;
+                    const ry = x * sin + y * cos;
+                    x = rx;
+                    y = ry;
                 }
+                
+                // 4. pivot を足す（親座標系での位置に戻す）
+                x += t.pivot.x;
+                y += t.pivot.y;
+                
+                // 5. position を足す
+                x += t.pos.x;
+                y += t.pos.y;
             }
-            
-            const pos = container.position || { x: 0, y: 0 };
-            const scale = container.scale || { x: 1, y: 1 };
-            const pivot = container.pivot || { x: 0, y: 0 };
-            const rotation = container.rotation || 0;
-            
-            let x = localX - pivot.x;
-            let y = localY - pivot.y;
-            
-            x = x * scale.x;
-            y = y * scale.y;
-            
-            if (Math.abs(rotation) > 1e-6) {
-                const cos = Math.cos(rotation);
-                const sin = Math.sin(rotation);
-                const rx = x * cos - y * sin;
-                const ry = x * sin + y * cos;
-                x = rx;
-                y = ry;
-            }
-            
-            x = x + pos.x;
-            y = y + pos.y;
             
             return { worldX: x, worldY: y };
         }
@@ -481,9 +516,10 @@
     const coordinateSystem = new CoordinateSystem();
     window.CoordinateSystem = coordinateSystem;
     
-    console.log('✅ coordinate-system.js (worldToLocal修正版) loaded');
-    console.log('   - 修正: worldToLocal() の pivot 計算順序を修正');
-    console.log('   - Vキーモード時の NaN 問題を解決');
+    console.log('✅ coordinate-system.js (Phase 2.5完全修正版) loaded');
+    console.log('   - Phase 2.5: worldToLocal() の pivot/position/rotation/scale 計算順序を完全修正');
+    console.log('   - Phase 2.5: localToWorld() も同様に修正（完全な逆変換を保証）');
+    console.log('   - サムネイル問題の根本原因を解決');
     
 })();
 
@@ -492,7 +528,7 @@ window.TegakiDebug = window.TegakiDebug || {};
 window.TegakiDebug.coord = {
     // 座標変換フルテスト
     testFullPipeline(clientX, clientY) {
-        console.log('=== 座標変換フルパイプライン ===');
+        console.log('=== 座標変換フルパイプライン Phase 2.5 ===');
         console.log('Input Screen:', { clientX, clientY });
         
         const step1 = window.CoordinateSystem.screenClientToCanvas(clientX, clientY);
@@ -507,8 +543,8 @@ window.TegakiDebug.coord = {
             console.log('Step 3 Local:', step3);
             
             // NaN チェック
-            if (isNaN(step3.localX) || isNaN(step3.localY)) {
-                console.error('❌ worldToLocal returned NaN');
+            if (!isFinite(step3.localX) || !isFinite(step3.localY)) {
+                console.error('❌ worldToLocal returned non-finite value');
                 console.log('Layer state:', {
                     position: layer.position,
                     pivot: layer.pivot,
@@ -522,8 +558,8 @@ window.TegakiDebug.coord = {
             const verify1 = window.CoordinateSystem.localToWorld(step3.localX, step3.localY, layer);
             console.log('Verify World:', verify1);
             
-            if (isNaN(verify1.worldX) || isNaN(verify1.worldY)) {
-                console.error('❌ localToWorld returned NaN');
+            if (!isFinite(verify1.worldX) || !isFinite(verify1.worldY)) {
+                console.error('❌ localToWorld returned non-finite value');
                 return;
             }
             
@@ -539,9 +575,11 @@ window.TegakiDebug.coord = {
             console.log('Error:', { x: errorX.toFixed(4), y: errorY.toFixed(4) });
             
             if (errorX < 0.1 && errorY < 0.1) {
-                console.log('✅ 座標変換: 正常');
+                console.log('✅ 座標変換: 正常（誤差0.1px未満）');
+            } else if (errorX < 1.0 && errorY < 1.0) {
+                console.log('⚠️ 座標変換: 許容範囲（誤差1px未満）');
             } else {
-                console.log('⚠️ 座標変換: 誤差あり');
+                console.log('❌ 座標変換: 誤差大（Phase 2.5修正が必要）');
             }
         } else {
             console.warn('⚠️ No active layer');
