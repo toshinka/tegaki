@@ -1,0 +1,685 @@
+ ✅ config.js (Phase 2完全版) loaded
+    - BRUSH_DEFAULTS追加完了
+ ✅ system/event-bus.js Phase 2: 優先度機能追加版 loaded
+ ✅ data-models.js (マスクスプライト不可視版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ camera-system.js (v2.0: リサイズ修正版) loaded
+ ✅ layer-transform.js (Phase 4完了: Vモード反転機能完全版) loaded
+ ✅ layer-system.js (v2.0.1: 反転機能修復版) loaded
+ ✅ drawing-clipboard.js Phase4改修版+確定イベント loaded
+    - ✅ CTRL+V behavior: overwrite active layer
+    - ✅ Commit events: paste:commit, operation:commit
+    - ✅ Thumbnail auto-update on paste
+ ✅ history.js (Phase 3: Redo null参照修正版) loaded
+ ✅ animation-system.js (Phase 1改修版・フレーム名統一: xF形式) loaded
+ ✅ pressure-handler.js (Phase 3: 距離ベースフィルタ追加版) loaded
+    - applyDistanceFilter() 追加
+    - 短距離: alpha=0.9 (即座反映)
+    - 長距離: alpha=0.3 (スムージング強)
+ ✅ curve-interpolator.js (Phase 3) loaded
+    - Catmull-Rom スプライン補間
+    - 適応的サンプリング対応
+    - tiltX/Y/twist データ補間対応
+ ✅ system/drawing/stroke-renderer.js loaded (PixiJS v8完全対応版)
+ ✅ system/drawing/thumbnail-system.js Phase 1完全版 loaded
+ ✅ brush-settings.js (API統一版) loaded
+    - ✅ getOpacity() / setOpacity() 追加
+    - ✅ brush:opacity-changed イベント購読追加
+ ✅ drawing-engine.js (プレビュー累積描画修正版) loaded
+ ✅ quick-export-ui.js (無効化版) loaded
+ ✅ export-manager.js (CUT→FRAME完全修正版) loaded
+ ✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded
+ ✅ apng-exporter.js (CUT→FRAME完全修正版) loaded
+ ✅ gif-exporter.js (CUT→FRAME完全修正版) loaded
+ ✅ webp-exporter.js (静止画・動画自動判定対応版) loaded
+ ✅ mp4-exporter.js (Phase 8完成版) loaded
+pdf-exporter.js:225 ✅ pdf-exporter.js (CUT→FRAME完全対応版) loaded
+dom-builder.js:494 ✅ dom-builder.js (ID重複解消版) loaded
+dom-builder.js:495    - #pen-settings → #legacy-pen-settings に変更
+dom-builder.js:496    - pen-size-slider → legacy-pen-size-slider に変更
+dom-builder.js:497    - quick-access-popup.jsとのID競合を完全解消
+slider-utils.js:197 ✅ ui/slider-utils.js loaded
+slider-utils.js:198    - 責務: スライダーUIの統一実装
+slider-utils.js:199    - DRY原則: settings-popup.js と ui-panels.js で共有
+slider-utils.js:200    - API: createSlider() / createSimpleSlider()
+keyboard-handler.js:318 ✅ keyboard-handler.js (P/Eサイドバー同期版) loaded
+resize-popup.js:452 ✅ resize-popup.js (Phase 4完了: ロジック削減版) loaded
+status-display-renderer.js:138 ✅ status-display-renderer.js (Phase 1改修版) loaded
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:583 ✅ settings-popup.js (即応性完全修正版) loaded
+settings-popup.js:584    - CSS transition完全除去（!important付き）
+settings-popup.js:585    - DOM更新を同期的に即座実行
+settings-popup.js:586    - quick-access/resize-popupと完全同等の動作
+quick-access-popup.js:538 ✅ quick-access-popup.js (背景ドラッグ + 閉じるボタン版) loaded
+quick-access-popup.js:539    - 背景ドラッグで移動可能（スライダー/ボタン以外）
+quick-access-popup.js:540    - 右上×ボタンで閉じる
+quick-access-popup.js:541    - 画面外クリックで閉じない（常時開きっぱなし可能）
+export-popup.js:423 ✅ export-popup.js (frameInfo修正版＋PDF有効化) loaded
+ui-panels.js:408 ✅ ui-panels.js (サイドバー同期・色調整版) loaded
+core-runtime.js:713 ✅ core-runtime.js (Phase 1-3完全版: ThumbnailSystem統合) loaded
+core-engine.js:724 ✅ core-engine.js (Phase2完全修正版) loaded
+core-initializer.js:347 ✅ core-initializer.js (完全修正版・SettingsManager＋ExportPopup対応) loaded
+drawing-clipboard.js:19 DrawingClipboard: Initializing...
+drawing-clipboard.js:26 ✅ DrawingClipboard initialized (Phase4改修版 + 確定イベント)
+thumbnail-system.js:43 ✅ ThumbnailSystem initialized
+core-initializer.js:63 ✅ SettingsManager initialized
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+core-initializer.js:245 ✅ ExportPopup registered and initialized
+// ===== 完全なシンボル辞典の作成 =====
+
+const symbolDict = {
+    timestamp: new Date().toISOString(),
+    
+    // グローバルオブジェクト
+    globals: {
+        PIXI: {
+            version: PIXI.VERSION,
+            Graphics: typeof PIXI.Graphics,
+            Container: typeof PIXI.Container,
+            Application: typeof PIXI.Application
+        },
+        CoordinateSystem: typeof window.CoordinateSystem,
+        TegakiEventBus: typeof window.TegakiEventBus,
+        CoreRuntime: typeof window.CoreRuntime,
+        DrawingEngine: typeof window.DrawingEngine,
+        StrokeRenderer: typeof window.StrokeRenderer,
+        StrokeRecorder: typeof window.StrokeRecorder,
+        PressureHandler: typeof window.PressureHandler,
+        CurveInterpolator: typeof window.CurveInterpolator
+    },
+    
+    // CoreRuntime内部構造
+    coreRuntime: {
+        initialized: window.CoreRuntime?.internal?.initialized,
+        pointerEventsSetup: window.CoreRuntime?.internal?.pointerEventsSetup,
+        app: !!window.CoreRuntime?.internal?.app,
+        stage: !!window.CoreRuntime?.internal?.app?.stage,
+        worldContainer: !!window.CoreRuntime?.internal?.worldContainer,
+        cameraSystem: !!window.CoreRuntime?.internal?.cameraSystem,
+        layerManager: !!window.CoreRuntime?.internal?.layerManager,
+        drawingEngine: !!window.CoreRuntime?.internal?.drawingEngine
+    },
+    
+    // DrawingEngine構造
+    drawingEngine: null,
+    
+    // StrokeRenderer構造
+    strokeRenderer: null,
+    
+    // レイヤー構造
+    layers: null,
+    
+    // イベントリスナー
+    eventListeners: null
+};
+
+// DrawingEngine詳細
+const engine = window.CoreRuntime?.internal?.drawingEngine;
+if (engine) {
+    symbolDict.drawingEngine = {
+        className: engine.constructor.name,
+        isDrawing: engine.isDrawing,
+        currentTool: engine.currentTool,
+        currentLayer: !!engine.currentLayer,
+        currentStrokeGraphics: !!engine.currentStrokeGraphics,
+        strokeRenderer: !!engine.strokeRenderer,
+        strokeRecorder: !!engine.strokeRecorder,
+        pressureHandler: !!engine.pressureHandler,
+        brushSettings: !!engine.brushSettings,
+        methods: Object.getOwnPropertyNames(Object.getPrototypeOf(engine)).filter(m => typeof engine[m] === 'function')
+    };
+}
+
+// StrokeRenderer詳細
+const renderer = engine?.strokeRenderer;
+if (renderer) {
+    symbolDict.strokeRenderer = {
+        className: renderer.constructor.name,
+        currentTool: renderer.currentTool,
+        resolution: renderer.resolution,
+        minPhysicalWidth: renderer.minPhysicalWidth,
+        methods: Object.getOwnPropertyNames(Object.getPrototypeOf(renderer)).filter(m => typeof renderer[m] === 'function')
+    };
+}
+
+// レイヤー構造
+const layerMgr = window.CoreRuntime?.internal?.layerManager;
+if (layerMgr) {
+    const layers = layerMgr.getLayers();
+    symbolDict.layers = {
+        count: layers?.length || 0,
+        activeIndex: layerMgr.activeLayerIndex,
+        layers: layers?.map((layer, idx) => ({
+            index: idx,
+            id: layer.layerData?.id,
+            isBackground: layer.layerData?.isBackground,
+            visible: layer.visible,
+            alpha: layer.alpha,
+            childrenCount: layer.children?.length || 0,
+            pathsCount: layer.layerData?.paths?.length || 0,
+            position: { x: layer.x, y: layer.y },
+            scale: { x: layer.scale?.x, y: layer.scale?.y }
+        }))
+    };
+}
+
+// Stage上のイベントリスナー
+const stage = window.CoreRuntime?.internal?.app?.stage;
+if (stage && stage._events) {
+    symbolDict.eventListeners = {
+        pointerdown: stage._events.pointerdown?.length || 0,
+        pointermove: stage._events.pointermove?.length || 0,
+        pointerup: stage._events.pointerup?.length || 0,
+        pointerupoutside: stage._events.pointerupoutside?.length || 0
+    };
+}
+
+console.log('===== シンボル辞典 =====');
+console.log(JSON.stringify(symbolDict, null, 2));
+
+// ファイル保存用
+console.log('\n===== コピー用JSON =====');
+console.log(JSON.stringify(symbolDict, null, 2));
+VM285:110 ===== シンボル辞典 =====
+VM285:111 {
+  "timestamp": "2025-10-29T05:15:10.931Z",
+  "globals": {
+    "PIXI": {
+      "version": "8.13.0",
+      "Graphics": "function",
+      "Container": "function",
+      "Application": "function"
+    },
+    "CoordinateSystem": "object",
+    "TegakiEventBus": "object",
+    "CoreRuntime": "object",
+    "DrawingEngine": "function",
+    "StrokeRenderer": "function",
+    "StrokeRecorder": "undefined",
+    "PressureHandler": "undefined",
+    "CurveInterpolator": "function"
+  },
+  "coreRuntime": {
+    "initialized": true,
+    "pointerEventsSetup": true,
+    "app": true,
+    "stage": true,
+    "worldContainer": true,
+    "cameraSystem": true,
+    "layerManager": true,
+    "drawingEngine": true
+  },
+  "drawingEngine": {
+    "className": "DrawingEngine",
+    "isDrawing": false,
+    "currentTool": "pen",
+    "currentLayer": false,
+    "currentStrokeGraphics": false,
+    "strokeRenderer": true,
+    "strokeRecorder": true,
+    "pressureHandler": true,
+    "brushSettings": true,
+    "methods": [
+      "constructor",
+      "initializeRenderers",
+      "setBrushSettings",
+      "setTool",
+      "getCurrentSettings",
+      "startDrawing",
+      "continueDrawing",
+      "stopDrawing",
+      "getLocalCoordinates",
+      "clearPreview",
+      "clearEraserPreview",
+      "updatePreview",
+      "updatePenPreview",
+      "updateEraserPreview",
+      "destroy"
+    ]
+  },
+  "strokeRenderer": {
+    "className": "StrokeRenderer",
+    "currentTool": "pen",
+    "resolution": 2,
+    "minPhysicalWidth": 0.5,
+    "methods": [
+      "constructor",
+      "setTool",
+      "calculateWidth",
+      "renderPreview",
+      "renderStroke",
+      "renderFinalStroke",
+      "renderDot",
+      "updateResolution"
+    ]
+  },
+  "layers": {
+    "count": 2,
+    "activeIndex": 1,
+    "layers": [
+      {
+        "index": 0,
+        "id": "layer_1761714904987_327vsai8i",
+        "isBackground": true,
+        "visible": true,
+        "alpha": 1,
+        "childrenCount": 1,
+        "pathsCount": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1
+        }
+      },
+      {
+        "index": 1,
+        "id": "layer_1761714904987_nq9o41z2e",
+        "isBackground": false,
+        "visible": true,
+        "alpha": 1,
+        "childrenCount": 1,
+        "pathsCount": 1,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1
+        }
+      }
+    ]
+  },
+  "eventListeners": {
+    "pointerdown": 0,
+    "pointermove": 0,
+    "pointerup": 0,
+    "pointerupoutside": 0
+  }
+}
+VM285:114 
+===== コピー用JSON =====
+VM285:115 {
+  "timestamp": "2025-10-29T05:15:10.931Z",
+  "globals": {
+    "PIXI": {
+      "version": "8.13.0",
+      "Graphics": "function",
+      "Container": "function",
+      "Application": "function"
+    },
+    "CoordinateSystem": "object",
+    "TegakiEventBus": "object",
+    "CoreRuntime": "object",
+    "DrawingEngine": "function",
+    "StrokeRenderer": "function",
+    "StrokeRecorder": "undefined",
+    "PressureHandler": "undefined",
+    "CurveInterpolator": "function"
+  },
+  "coreRuntime": {
+    "initialized": true,
+    "pointerEventsSetup": true,
+    "app": true,
+    "stage": true,
+    "worldContainer": true,
+    "cameraSystem": true,
+    "layerManager": true,
+    "drawingEngine": true
+  },
+  "drawingEngine": {
+    "className": "DrawingEngine",
+    "isDrawing": false,
+    "currentTool": "pen",
+    "currentLayer": false,
+    "currentStrokeGraphics": false,
+    "strokeRenderer": true,
+    "strokeRecorder": true,
+    "pressureHandler": true,
+    "brushSettings": true,
+    "methods": [
+      "constructor",
+      "initializeRenderers",
+      "setBrushSettings",
+      "setTool",
+      "getCurrentSettings",
+      "startDrawing",
+      "continueDrawing",
+      "stopDrawing",
+      "getLocalCoordinates",
+      "clearPreview",
+      "clearEraserPreview",
+      "updatePreview",
+      "updatePenPreview",
+      "updateEraserPreview",
+      "destroy"
+    ]
+  },
+  "strokeRenderer": {
+    "className": "StrokeRenderer",
+    "currentTool": "pen",
+    "resolution": 2,
+    "minPhysicalWidth": 0.5,
+    "methods": [
+      "constructor",
+      "setTool",
+      "calculateWidth",
+      "renderPreview",
+      "renderStroke",
+      "renderFinalStroke",
+      "renderDot",
+      "updateResolution"
+    ]
+  },
+  "layers": {
+    "count": 2,
+    "activeIndex": 1,
+    "layers": [
+      {
+        "index": 0,
+        "id": "layer_1761714904987_327vsai8i",
+        "isBackground": true,
+        "visible": true,
+        "alpha": 1,
+        "childrenCount": 1,
+        "pathsCount": 0,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1
+        }
+      },
+      {
+        "index": 1,
+        "id": "layer_1761714904987_nq9o41z2e",
+        "isBackground": false,
+        "visible": true,
+        "alpha": 1,
+        "childrenCount": 1,
+        "pathsCount": 1,
+        "position": {
+          "x": 0,
+          "y": 0
+        },
+        "scale": {
+          "x": 1,
+          "y": 1
+        }
+      }
+    ]
+  },
+  "eventListeners": {
+    "pointerdown": 0,
+    "pointermove": 0,
+    "pointerup": 0,
+    "pointerupoutside": 0
+  }
+}
+undefined
+// ===== Stage イベントリスナーの詳細確認 =====
+
+const stage = window.CoreRuntime.internal.app.stage;
+
+console.log('=== Stage イベント詳細 ===');
+console.log('stage:', stage);
+console.log('stage.eventMode:', stage.eventMode);
+console.log('stage.hitArea:', stage.hitArea);
+console.log('stage.interactive:', stage.interactive);
+console.log('stage.interactiveChildren:', stage.interactiveChildren);
+
+// _events の内部構造を確認
+console.log('\n=== _events 構造 ===');
+if (stage._events) {
+    console.log('_events:', stage._events);
+    console.log('_events keys:', Object.keys(stage._events));
+    
+    for (const key of Object.keys(stage._events)) {
+        const listeners = stage._events[key];
+        console.log(`${key}:`, Array.isArray(listeners) ? listeners.length : typeof listeners);
+    }
+}
+
+// PixiJS v8 ではイベントが別の場所に保存されている可能性
+console.log('\n=== その他のイベント関連プロパティ ===');
+console.log('stage.listeners:', stage.listeners);
+console.log('stage._eventsCount:', stage._eventsCount);
+
+// EventEmitter の構造確認
+if (stage.eventNames) {
+    console.log('stage.eventNames():', stage.eventNames());
+}
+
+if (stage.listenerCount) {
+    console.log('pointerdown listeners:', stage.listenerCount('pointerdown'));
+    console.log('pointermove listeners:', stage.listenerCount('pointermove'));
+    console.log('pointerup listeners:', stage.listenerCount('pointerup'));
+}
+VM292:5 === Stage イベント詳細 ===
+VM292:6 stage: Z {_events: i, _eventsCount: 4, uid: 1, _updateFlags: 15, renderGroup: Pi, …}
+VM292:7 stage.eventMode: static
+VM292:8 stage.hitArea: z {type: 'rectangle', x: 0, y: 0, width: 486, height: 605}
+VM292:9 stage.interactive: true
+VM292:10 stage.interactiveChildren: true
+VM292:13 
+=== _events 構造 ===
+VM292:15 _events: i {pointerdown: s, pointermove: s, pointerup: s, pointerupoutside: s}
+VM292:16 _events keys: (4) ['pointerdown', 'pointermove', 'pointerup', 'pointerupoutside']
+VM292:20 pointerdown: object
+VM292:20 pointermove: object
+VM292:20 pointerup: object
+VM292:20 pointerupoutside: object
+VM292:25 
+=== その他のイベント関連プロパティ ===
+VM292:26 stage.listeners: ƒ (u){var c=e?e+u:u,d=this._events[c];if(!d)return[];if(d.fn)return[d.fn];for(var p=0,f=d.length,m=new Array(f);p<f;p++)m[p]=d[p].fn;return m}
+VM292:27 stage._eventsCount: 4
+VM292:31 stage.eventNames(): (4) ['pointerdown', 'pointermove', 'pointerup', 'pointerupoutside']
+VM292:35 pointerdown listeners: 1
+VM292:36 pointermove listeners: 1
+VM292:37 pointerup listeners: 1
+undefined
+// ===== レイヤー1の子オブジェクトを詳細確認 =====
+
+const layerMgr = window.CoreRuntime.internal.layerManager;
+const activeLayer = layerMgr.getActiveLayer();
+
+console.log('=== アクティブレイヤーの子オブジェクト ===');
+console.log('children count:', activeLayer.children.length);
+
+activeLayer.children.forEach((child, idx) => {
+    console.log(`\n--- Child ${idx} ---`);
+    console.log('type:', child.constructor.name);
+    console.log('visible:', child.visible);
+    console.log('alpha:', child.alpha);
+    console.log('blendMode:', child.blendMode);
+    
+    const bounds = child.getBounds();
+    console.log('bounds:', {
+        x: bounds.x,
+        y: bounds.y,
+        width: bounds.width,
+        height: bounds.height,
+        isEmpty: bounds.width === 0 && bounds.height === 0
+    });
+    
+    // Graphicsの場合、内部構造を確認
+    if (child.constructor.name.includes('raphics') || child.constructor.name === 'or') {
+        console.log('geometry:', child.geometry);
+        console.log('_didGraphicsUpdate:', child._didGraphicsUpdate);
+        
+        // batches確認
+        if (child.geometry?.batches) {
+            console.log('batches.length:', child.geometry.batches.length);
+        }
+        
+        // contextを確認（PixiJS v8の内部API）
+        if (child.context) {
+            console.log('context:', child.context);
+            console.log('context.instructions:', child.context.instructions);
+        }
+    }
+});
+
+// pathsデータも確認
+console.log('\n=== paths データ ===');
+if (activeLayer.layerData?.paths) {
+    console.log('paths count:', activeLayer.layerData.paths.length);
+    
+    activeLayer.layerData.paths.forEach((path, idx) => {
+        console.log(`\nPath ${idx}:`);
+        console.log('  id:', path.id);
+        console.log('  points:', path.points.length);
+        console.log('  color:', path.color.toString(16));
+        console.log('  size:', path.size);
+        console.log('  graphics:', path.graphics);
+        
+        if (path.graphics) {
+            const gb = path.graphics.getBounds();
+            console.log('  graphics bounds:', { x: gb.x, y: gb.y, w: gb.width, h: gb.height });
+        }
+    });
+}
+VM295:6 === アクティブレイヤーの子オブジェクト ===
+VM295:7 children count: 2
+VM295:10 
+--- Child 0 ---
+VM295:11 type: or
+VM295:12 visible: true
+VM295:13 alpha: 1
+VM295:14 blendMode: inherit
+VM295:17 bounds: {x: 0, y: 0, width: 0, height: 0, isEmpty: true}
+VM295:27 geometry: undefined
+VM295:28 _didGraphicsUpdate: undefined
+VM295:37 context: Jt {_events: i, _eventsCount: 2, uid: 8, dirty: false, batchMode: 'auto', …}
+VM295:38 context.instructions: []
+VM295:10 
+--- Child 1 ---
+VM295:11 type: or
+VM295:12 visible: true
+VM295:13 alpha: 1
+VM295:14 blendMode: inherit
+VM295:17 bounds: {x: 0, y: 0, width: 0, height: 0, isEmpty: true}
+VM295:27 geometry: undefined
+VM295:28 _didGraphicsUpdate: undefined
+VM295:37 context: Jt {_events: i, _eventsCount: 2, uid: 11, dirty: false, batchMode: 'auto', …}
+VM295:38 context.instructions: []
+VM295:44 
+=== paths データ ===
+VM295:46 paths count: 2
+VM295:49 
+Path 0:
+VM295:50   id: path_1761714907828_afnip2ey2
+VM295:51   points: 2
+VM295:52   color: 800000
+VM295:53   size: 10
+VM295:54   graphics: or {_events: i, _eventsCount: 0, uid: 22, _updateFlags: 0, renderGroup: null, …}
+VM295:58   graphics bounds: {x: 0, y: 0, w: 0, h: 0}
+VM295:49 
+Path 1:
+VM295:50   id: path_1761714976168_3a8vmwxk7
+VM295:51   points: 2
+VM295:52   color: 800000
+VM295:53   size: 10
+VM295:54   graphics: or {_events: i, _eventsCount: 0, uid: 26, _updateFlags: 0, renderGroup: null, …}
+VM295:58   graphics bounds: {x: 0, y: 0, w: 0, h: 0}
+undefined
+// ===== 解決策: Graphics APIの正しい使い方をテスト =====
+
+const layerMgr = window.CoreRuntime.internal.layerManager;
+const activeLayer = layerMgr.getActiveLayer();
+
+console.log('=== Graphics API テスト ===');
+
+// テスト1: 新しいGraphicsに直接描画
+const test1 = new PIXI.Graphics();
+test1.circle(100, 200, 25);
+test1.fill({ color: 0xFF00FF, alpha: 1.0 });
+activeLayer.addChild(test1);
+
+console.log('Test1 (新規Graphics + circle + fill):');
+console.log('  instructions:', test1.context.instructions.length);
+console.log('  bounds:', test1.getBounds());
+
+// テスト2: 関数内で新規Graphics作成して返す
+function createGraphics2() {
+    const g = new PIXI.Graphics();
+    g.circle(200, 200, 25);
+    g.fill({ color: 0x00FFFF, alpha: 1.0 });
+    return g;
+}
+
+const test2 = createGraphics2();
+activeLayer.addChild(test2);
+
+console.log('\nTest2 (関数内で作成):');
+console.log('  instructions:', test2.context.instructions.length);
+console.log('  bounds:', test2.getBounds());
+
+// テスト3: 既存Graphicsを引数で受け取って描画
+function drawOnExisting(g) {
+    g.circle(300, 200, 25);
+    g.fill({ color: 0xFFFF00, alpha: 1.0 });
+    return g;
+}
+
+const test3 = new PIXI.Graphics();
+activeLayer.addChild(test3);
+drawOnExisting(test3);
+
+console.log('\nTest3 (既存Graphicsに関数内で描画):');
+console.log('  instructions:', test3.context.instructions.length);
+console.log('  bounds:', test3.getBounds());
+
+// テスト4: レイヤーに追加した後に描画
+const test4 = new PIXI.Graphics();
+activeLayer.addChild(test4);
+
+setTimeout(() => {
+    test4.circle(400, 200, 25);
+    test4.fill({ color: 0xFF8800, alpha: 1.0 });
+    
+    console.log('\nTest4 (追加後に描画):');
+    console.log('  instructions:', test4.context.instructions.length);
+    console.log('  bounds:', test4.getBounds());
+}, 100);
+
+console.log('\n画面を確認してください。マゼンタ、シアン、黄色、オレンジの円が見えますか？');
+VM299:6 === Graphics API テスト ===
+VM299:14 Test1 (新規Graphics + circle + fill):
+VM299:15   instructions: 1
+VM299:16   bounds: ot {minX: 303, minY: 407.5, maxX: 353, maxY: 457.5, matrix: M}
+VM299:29 
+Test2 (関数内で作成):
+VM299:30   instructions: 1
+VM299:31   bounds: ot {minX: 403, minY: 407.5, maxX: 453, maxY: 457.5, matrix: M}
+VM299:44 
+Test3 (既存Graphicsに関数内で描画):
+VM299:45   instructions: 1
+VM299:46   bounds: ot {minX: 503, minY: 407.5, maxX: 553, maxY: 457.5, matrix: M}
+VM299:61 
+画面を確認してください。マゼンタ、シアン、黄色、オレンジの円が見えますか？
+undefined
+VM299:56 
+Test4 (追加後に描画):
+VM299:57   instructions: 1
+VM299:58   bounds: ot {minX: 603, minY: 407.5, maxX: 653, maxY: 457.5, matrix: M}
+popup-manager.js:192 👁️ Popup "resize" shown
