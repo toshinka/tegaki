@@ -1,5 +1,5 @@
-// ===== drawing-engine.js - プレビュー累積描画修正版 =====
-// PixiJS v8対応: プレビューGraphicsを累積描画に変更
+// ===== drawing-engine.js - 座標系完全修正版 =====
+// 修正内容: currentStrokeGraphics を Layer に正しく配置
 
 class DrawingEngine {
     constructor(app, layerSystem, cameraSystem, historyManager) {
@@ -36,7 +36,7 @@ class DrawingEngine {
         this.eraserRenderer = null;
         this.brushSettings = null;
         
-        // プレビュー用Graphics（累積描画用）
+        // プレビュー用Graphics（使用しない - 削除予定）
         this.previewGraphics = null;
         this.eraserPreviewGraphics = null;
         
@@ -62,17 +62,6 @@ class DrawingEngine {
                 this.app,
                 this.layerSystem
             );
-        }
-        
-        // プレビューGraphics初期化
-        if (!this.previewGraphics && this.cameraSystem?.worldContainer) {
-            this.previewGraphics = new PIXI.Graphics();
-            this.cameraSystem.worldContainer.addChild(this.previewGraphics);
-        }
-        
-        if (!this.eraserPreviewGraphics && this.cameraSystem?.worldContainer) {
-            this.eraserPreviewGraphics = new PIXI.Graphics();
-            this.cameraSystem.worldContainer.addChild(this.eraserPreviewGraphics);
         }
     }
     
@@ -145,7 +134,7 @@ class DrawingEngine {
         this.lastProcessedPointIndex = 0;
         this.currentStrokeStartTime = performance.now();
         
-        // 現在のストローク用Graphicsを新規作成
+        // 現在のストローク用Graphicsを新規作成し、レイヤーに追加
         this.currentStrokeGraphics = new PIXI.Graphics();
         this.currentLayer.addChild(this.currentStrokeGraphics);
         
@@ -167,7 +156,7 @@ class DrawingEngine {
             this.pressureHandler.updateTiltData(nativeEvent);
         }
         
-        // ストローク記録開始
+        // ストローク記録開始（Local座標で記録）
         if (this.strokeRecorder && typeof this.strokeRecorder.startStroke === 'function') {
             this.strokeRecorder.startStroke(localX, localY, rawPressure);
         }
@@ -209,7 +198,7 @@ class DrawingEngine {
             this.pressureHandler.updateTiltData(nativeEvent);
         }
         
-        // ストローク記録
+        // ストローク記録（Local座標で記録）
         if (this.strokeRecorder && typeof this.strokeRecorder.addPoint === 'function') {
             this.strokeRecorder.addPoint(localX, localY, rawPressure);
         }
@@ -220,7 +209,7 @@ class DrawingEngine {
             const newPoints = currentPoints.slice(this.lastProcessedPointIndex);
             
             if (newPoints.length > 0 && this.strokeRenderer && typeof this.strokeRenderer.renderPreview === 'function') {
-                // 既存のGraphicsに累積描画（重要！）
+                // 既存のGraphicsに累積描画（Local座標で描画）
                 this.strokeRenderer.renderPreview(newPoints, this.currentSettings, this.currentStrokeGraphics);
                 
                 this.lastProcessedPointIndex = currentPoints.length;
@@ -268,7 +257,7 @@ class DrawingEngine {
                 }
             }
         } else if (tool === 'pen' && this.currentLayer && strokeData.points.length > 0) {
-            // ペン処理
+            // ペン処理：確定Graphics作成
             if (this.strokeRenderer && typeof this.strokeRenderer.renderStroke === 'function') {
                 const pathData = this.strokeRenderer.renderStroke(
                     this.currentLayer,
@@ -347,52 +336,23 @@ class DrawingEngine {
     }
     
     clearPreview() {
-        if (this.previewGraphics) {
-            this.previewGraphics.clear();
-        }
+        // 未使用（削除予定）
     }
     
     clearEraserPreview() {
-        if (this.eraserPreviewGraphics) {
-            this.eraserPreviewGraphics.clear();
-        }
+        // 未使用（削除予定）
     }
     
     updatePreview(nativeEvent) {
-        const activeLayer = this.layerSystem?.getActiveLayer?.();
-        if (!activeLayer) return;
-        
-        const { localX, localY } = this.getLocalCoordinates(nativeEvent, activeLayer);
-        const settings = this.getCurrentSettings();
-        
-        if (this.currentTool === 'pen') {
-            this.updatePenPreview(localX, localY, settings);
-        } else if (this.currentTool === 'eraser') {
-            this.updateEraserPreview(localX, localY, settings);
-        }
+        // 現在は未使用（カーソル表示用に後で実装可能）
     }
     
     updatePenPreview(localX, localY, settings) {
-        if (!this.previewGraphics) return;
-        
-        this.previewGraphics.clear();
-        this.previewGraphics.circle(localX, localY, settings.size / 2);
-        this.previewGraphics.fill({
-            color: settings.color,
-            alpha: settings.opacity * 0.3
-        });
+        // 現在は未使用
     }
     
     updateEraserPreview(localX, localY, settings) {
-        if (!this.eraserPreviewGraphics) return;
-        
-        this.eraserPreviewGraphics.clear();
-        this.eraserPreviewGraphics.circle(localX, localY, settings.size / 2);
-        this.eraserPreviewGraphics.stroke({
-            color: 0xFF0000,
-            width: 2,
-            alpha: 0.5
-        });
+        // 現在は未使用
     }
     
     destroy() {
@@ -413,4 +373,87 @@ class DrawingEngine {
 
 // グローバル登録
 window.DrawingEngine = DrawingEngine;
-console.log('✅ drawing-engine.js (プレビュー累積描画修正版) loaded');
+console.log('✅ drawing-engine.js (座標系完全修正版) loaded');
+
+// ========== デバッグコマンド ==========
+window.TegakiDebug = window.TegakiDebug || {};
+window.TegakiDebug.drawing = {
+    // 座標系テスト: 画面中央に円を描画
+    testDrawAtCenter() {
+        const engine = window.CoreRuntime?.internal?.drawingEngine;
+        const layer = engine?.layerSystem?.getActiveLayer?.();
+        if (!layer) {
+            console.error('❌ No active layer');
+            return;
+        }
+        
+        const testGraphics = new PIXI.Graphics();
+        testGraphics.circle(200, 200, 25);
+        testGraphics.fill({ color: 0xFF0000, alpha: 1.0 });
+        layer.addChild(testGraphics);
+        console.log('✅ Test circle added at (200, 200) in local coordinates');
+    },
+    
+    // 現在の描画エンジン状態確認
+    inspectEngine() {
+        const engine = window.CoreRuntime?.internal?.drawingEngine;
+        if (!engine) {
+            console.error('❌ DrawingEngine not found');
+            return;
+        }
+        
+        console.log('=== DrawingEngine Status ===');
+        console.log('isDrawing:', engine.isDrawing);
+        console.log('currentTool:', engine.currentTool);
+        console.log('currentLayer:', engine.currentLayer?.layerData?.id);
+        console.log('strokeRenderer:', !!engine.strokeRenderer);
+        console.log('strokeRecorder:', !!engine.strokeRecorder);
+        console.log('currentStrokeGraphics:', !!engine.currentStrokeGraphics);
+    },
+    
+    // レイヤー構造確認
+    inspectLayers() {
+        const layerMgr = window.CoreRuntime?.internal?.layerManager;
+        if (!layerMgr) {
+            console.error('❌ LayerManager not found');
+            return;
+        }
+        
+        const layers = layerMgr.getLayers();
+        console.log('=== Layer Structure ===');
+        layers.forEach((layer, idx) => {
+            console.log(`Layer ${idx}:`, {
+                id: layer.layerData?.id,
+                visible: layer.visible,
+                children: layer.children?.length,
+                paths: layer.layerData?.paths?.length
+            });
+        });
+    },
+    
+    // 座標変換テスト
+    testCoordinates(clientX, clientY) {
+        if (!window.CoordinateSystem) {
+            console.error('❌ CoordinateSystem not found');
+            return;
+        }
+        
+        const layer = window.CoreRuntime?.internal?.layerManager?.getActiveLayer?.();
+        if (!layer) {
+            console.error('❌ No active layer');
+            return;
+        }
+        
+        const { canvasX, canvasY } = window.CoordinateSystem.screenClientToCanvas(clientX, clientY);
+        const { worldX, worldY } = window.CoordinateSystem.canvasToWorld(canvasX, canvasY);
+        const { localX, localY } = window.CoordinateSystem.worldToLocal(worldX, worldY, layer);
+        
+        console.log('=== Coordinate Conversion ===');
+        console.log('Screen:', { clientX, clientY });
+        console.log('Canvas:', { canvasX, canvasY });
+        console.log('World:', { worldX, worldY });
+        console.log('Local:', { localX, localY });
+    }
+};
+
+console.log('✅ Debug commands: TegakiDebug.drawing.*');
