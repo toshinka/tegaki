@@ -1,5 +1,5 @@
-// ===== drawing-engine.js - Phase 2完全修正版 =====
-// 既存コードベース完全互換 + Phase 2イベント統合
+// ===== drawing-engine.js - プレビュー累積描画修正版 =====
+// PixiJS v8対応: プレビューGraphicsを累積描画に変更
 
 class DrawingEngine {
     constructor(app, layerSystem, cameraSystem, historyManager) {
@@ -17,7 +17,7 @@ class DrawingEngine {
         this.lastProcessedPointIndex = 0;
         this.currentStrokeStartTime = 0;
         
-        // サブシステム初期化（既存互換）
+        // サブシステム初期化
         this.pressureHandler = new PressureHandler();
         
         // PressureHandlerに getPressure メソッドを追加（互換性対応）
@@ -36,9 +36,12 @@ class DrawingEngine {
         this.eraserRenderer = null;
         this.brushSettings = null;
         
-        // プレビュー用Graphics（既存互換）
+        // プレビュー用Graphics（累積描画用）
         this.previewGraphics = null;
         this.eraserPreviewGraphics = null;
+        
+        // 現在のストローク用プレビューGraphics
+        this.currentStrokeGraphics = null;
         
         this.initializeRenderers();
     }
@@ -80,7 +83,6 @@ class DrawingEngine {
     setTool(toolName) {
         this.currentTool = toolName;
         
-        // 既存のロジック
         if (this.strokeRenderer) {
             this.strokeRenderer.setTool(toolName);
         }
@@ -89,7 +91,7 @@ class DrawingEngine {
             this.clearEraserPreview();
         }
         
-        // Phase 2追加: ツール切替通知
+        // ツール切替通知
         if (this.eventBus) {
             this.eventBus.emit('tool:changed', { 
                 component: 'drawing',
@@ -103,7 +105,6 @@ class DrawingEngine {
                 if (activeLayer) {
                     const layerIndex = this.layerSystem?.getLayerIndex?.(activeLayer);
                     
-                    // Phase 2: サムネイル更新トリガー（ツール切替）
                     this.eventBus.emit('thumbnail:layer-updated', {
                         component: 'drawing',
                         action: 'tool-switched',
@@ -132,7 +133,6 @@ class DrawingEngine {
         };
     }
     
-    // 既存互換: startDrawing(x, y, nativeEvent)
     startDrawing(x, y, nativeEvent) {
         if (this.layerSystem?.isLayerMoveMode) return;
         
@@ -145,14 +145,17 @@ class DrawingEngine {
         this.lastProcessedPointIndex = 0;
         this.currentStrokeStartTime = performance.now();
         
+        // 現在のストローク用Graphicsを新規作成
+        this.currentStrokeGraphics = new PIXI.Graphics();
+        this.currentLayer.addChild(this.currentStrokeGraphics);
+        
         // 座標変換: clientX/Y → localX/Y
         const { localX, localY } = this.getLocalCoordinates(nativeEvent, activeLayer);
         
-        // 筆圧取得（既存互換 - 安全な呼び出し）
+        // 筆圧取得
         const rawPressure = nativeEvent.pressure || 0.5;
         let pressure = rawPressure;
         
-        // getPressureメソッドの存在確認
         if (this.pressureHandler && typeof this.pressureHandler.getPressure === 'function') {
             pressure = this.pressureHandler.getPressure(rawPressure);
         } else if (this.pressureHandler && typeof this.pressureHandler.getCalibratedPressure === 'function') {
@@ -185,14 +188,13 @@ class DrawingEngine {
         }
     }
     
-    // 既存互換: continueDrawing(x, y, nativeEvent)
     continueDrawing(x, y, nativeEvent) {
-        if (!this.isDrawing || !this.currentLayer) return;
+        if (!this.isDrawing || !this.currentLayer || !this.currentStrokeGraphics) return;
         
         // 座標変換
         const { localX, localY } = this.getLocalCoordinates(nativeEvent, this.currentLayer);
         
-        // 筆圧取得（安全な呼び出し）
+        // 筆圧取得
         const rawPressure = nativeEvent.pressure || 0.5;
         let pressure = rawPressure;
         
@@ -212,24 +214,14 @@ class DrawingEngine {
             this.strokeRecorder.addPoint(localX, localY, rawPressure);
         }
         
-        // リアルタイムプレビュー更新
+        // リアルタイムプレビュー更新（累積描画）
         if (this.strokeRecorder && typeof this.strokeRecorder.getCurrentPoints === 'function') {
             const currentPoints = this.strokeRecorder.getCurrentPoints();
             const newPoints = currentPoints.slice(this.lastProcessedPointIndex);
             
             if (newPoints.length > 0 && this.strokeRenderer && typeof this.strokeRenderer.renderPreview === 'function') {
-                // StrokeRendererは (points, settings) を期待
-                const previewGraphics = this.strokeRenderer.renderPreview(newPoints, this.currentSettings);
-                
-                // プレビューGraphicsをレイヤーに追加（一時的）
-                if (previewGraphics && this.currentLayer) {
-                    // 既存のプレビューをクリア
-                    this.clearPreview();
-                    
-                    // 新しいプレビューを設定
-                    this.previewGraphics = previewGraphics;
-                    this.currentLayer.addChild(this.previewGraphics);
-                }
+                // 既存のGraphicsに累積描画（重要！）
+                this.strokeRenderer.renderPreview(newPoints, this.currentSettings, this.currentStrokeGraphics);
                 
                 this.lastProcessedPointIndex = currentPoints.length;
             }
@@ -243,6 +235,12 @@ class DrawingEngine {
         let strokeData = { points: [], isSingleDot: false };
         if (this.strokeRecorder && typeof this.strokeRecorder.endStroke === 'function') {
             strokeData = this.strokeRecorder.endStroke();
+        }
+        
+        // 一時プレビューGraphicsをクリア
+        if (this.currentStrokeGraphics) {
+            this.currentStrokeGraphics.destroy();
+            this.currentStrokeGraphics = null;
         }
         
         this.clearPreview();
@@ -292,9 +290,8 @@ class DrawingEngine {
         this.currentSettings = null;
         this.lastProcessedPointIndex = 0;
 
-        // Phase 2追加: イベント統一
+        // イベント統一
         if (finalizingLayer && strokeData.points.length > 0 && this.eventBus) {
-            // 既存イベント
             this.eventBus.emit('stroke:finalized', {
                 component: 'drawing',
                 action: 'stroke-finalized',
@@ -306,7 +303,7 @@ class DrawingEngine {
                 }
             });
             
-            // Phase 2: サムネイル更新トリガー（イベント統一）
+            // サムネイル更新トリガー
             this.eventBus.emit('thumbnail:layer-updated', {
                 component: 'drawing',
                 action: 'stroke-finalized',
@@ -408,9 +405,12 @@ class DrawingEngine {
         if (this.eraserPreviewGraphics) {
             this.eraserPreviewGraphics.destroy();
         }
+        if (this.currentStrokeGraphics) {
+            this.currentStrokeGraphics.destroy();
+        }
     }
 }
 
 // グローバル登録
 window.DrawingEngine = DrawingEngine;
-console.log('✅ drawing-engine.js (Phase 2完全修正版 - 安全な互換実装) loaded');
+console.log('✅ drawing-engine.js (プレビュー累積描画修正版) loaded');
