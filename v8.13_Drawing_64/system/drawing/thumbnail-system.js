@@ -1,6 +1,7 @@
-// ===== system/drawing/thumbnail-system.js - Phase 1-2完全版 =====
-// Phase 1: イベントフロー確立（layer:transform-updated → thumbnail:layer-updated 連携）
-// Phase 2: イベント過多抑制（throttle 実装）
+// ===== system/drawing/thumbnail-system.js - Phase 1-3完全版 =====
+// Phase 1: Vモード終了時のキャッシュ再生成
+// Phase 2: キャッシュキー戦略変更（layerIdのみ）
+// Phase 3: Canvas2D完全撲滅（PixiJS RenderTexture使用）
 // Phase 5: デバッグコマンド追加
 
 (function() {
@@ -21,18 +22,21 @@
             this.defaultLayerThumbSize = 64;
             this.defaultFrameThumbSize = 150;
             this.maxCacheSize = 200;
-            this.disableCacheDuringVMode = true; // Vキーモード中はキャッシュ無効
+            this.disableCacheDuringVMode = false; // Phase 1: Vモード中もキャッシュ有効化
             
             this.eventBus = null;
             this.isInitialized = false;
-            this.vKeyModeActive = false; // Vキーモード状態
+            this.vKeyModeActive = false;
             
             // RenderTexture の再利用プール
             this.renderTexturePool = [];
             this.poolMaxSize = 10;
             
-            // Phase 2: throttle 用タイマー
+            // throttle 用タイマー
             this.thumbnailUpdateTimer = null;
+            
+            // Phase 1: Vモード終了時の再生成待ちリスト
+            this.pendingVModeRefresh = new Set();
         }
 
         init(eventBus) {
@@ -45,55 +49,59 @@
             }
             
             this.isInitialized = true;
-            console.log('✅ ThumbnailSystem initialized (Phase 1-2)');
+            console.log('✅ ThumbnailSystem initialized (Phase 1-3)');
         }
 
         _setupEventListeners() {
-            // Vキーモード検知
+            // Phase 1: Vキーモード検知と再生成
             this.eventBus.on('keyboard:vkey-pressed', () => {
                 this.vKeyModeActive = true;
             });
             
             this.eventBus.on('keyboard:vkey-released', () => {
                 this.vKeyModeActive = false;
+                
+                // Phase 1: Vモード終了時に全レイヤーサムネイル再生成
+                this._refreshAllLayerThumbnailsAfterVMode();
             });
             
-            // Phase 1 + Phase 2: レイヤー変形時のサムネイル更新（throttle 付き）
-            this.eventBus.on('layer:transform-updated', ({ layerId }) => {
-                this._invalidateLayerCacheByLayerId(layerId);
+            // レイヤー変形時のサムネイル更新
+            this.eventBus.on('layer:transform-updated', ({ data }) => {
+                const { layerId, layerIndex } = data || {};
                 
-                // Phase 2: throttle - 100ms 以内の連続呼び出しは最後の1回のみ実行
+                if (layerId) {
+                    // Phase 2: layerIdでキャッシュ無効化
+                    this._invalidateLayerCacheByLayerId(layerId);
+                    
+                    // Phase 1: Vモード中は待機リストに追加
+                    if (this.vKeyModeActive) {
+                        this.pendingVModeRefresh.add(layerId);
+                        return;
+                    }
+                }
+                
+                // throttle付き更新リクエスト
                 if (this.thumbnailUpdateTimer) {
                     clearTimeout(this.thumbnailUpdateTimer);
                 }
                 
                 this.thumbnailUpdateTimer = setTimeout(() => {
-                    // Phase 1: layerId から layerIndex を取得して thumbnail:layer-updated 発火
-                    const layerMgr = window.CoreRuntime?.internal?.layerManager;
-                    if (layerMgr) {
-                        const layers = layerMgr.getLayers();
-                        const layerIndex = layers.findIndex(l => l.layerData?.id === layerId);
-                        
-                        if (layerIndex >= 0) {
-                            this.eventBus.emit('thumbnail:layer-updated', {
-                                component: 'thumbnail-system',
-                                action: 'transform-invalidated',
-                                data: {
-                                    layerIndex: layerIndex,
-                                    layerId: layerId
-                                }
-                            });
-                        }
+                    if (layerIndex !== undefined) {
+                        this.eventBus.emit('thumbnail:layer-updated', {
+                            component: 'thumbnail-system',
+                            action: 'transform-invalidated',
+                            data: { layerIndex, layerId }
+                        });
                     }
                     this.thumbnailUpdateTimer = null;
                 }, 100);
             });
             
-            this.eventBus.on('layer:stroke-added', ({ layerIndex }) => {
+            this.eventBus.on('layer:stroke-added', ({ layerIndex, layerId }) => {
                 this.invalidateLayerCache(layerIndex);
             });
             
-            this.eventBus.on('layer:path-added', ({ layerIndex }) => {
+            this.eventBus.on('layer:path-added', ({ layerIndex, layerId }) => {
                 this.invalidateLayerCache(layerIndex);
             });
             
@@ -115,15 +123,49 @@
                 this.clearAllCache();
             });
             
-            // 全サムネイル再生成トリガー（ズーム等）
+            // 全サムネイル再生成トリガー
             this.eventBus.on('camera:transform-changed', () => {
                 this.clearAllCache();
             });
         }
 
+        // Phase 1: Vモード終了時の全レイヤーサムネイル再生成
+        async _refreshAllLayerThumbnailsAfterVMode() {
+            if (this.pendingVModeRefresh.size === 0) return;
+            
+            const layerMgr = window.CoreRuntime?.internal?.layerManager;
+            if (!layerMgr) return;
+            
+            const layers = layerMgr.getLayers();
+            
+            // 待機リストのレイヤーIDを配列化
+            const layerIdsToRefresh = Array.from(this.pendingVModeRefresh);
+            this.pendingVModeRefresh.clear();
+            
+            // 各レイヤーのサムネイルを再生成
+            for (const layerId of layerIdsToRefresh) {
+                const layerIndex = layers.findIndex(l => l.layerData?.id === layerId);
+                
+                if (layerIndex >= 0) {
+                    // キャッシュクリア
+                    this._invalidateLayerCacheByLayerId(layerId);
+                    
+                    // 即座更新トリガー
+                    this.eventBus.emit('thumbnail:layer-updated', {
+                        component: 'thumbnail-system',
+                        action: 'vmode-exit-refresh',
+                        data: { layerIndex, layerId, immediate: true }
+                    });
+                }
+                
+                // 次のレイヤーまで少し待機（負荷分散）
+                await new Promise(resolve => setTimeout(resolve, 10));
+            }
+        }
+
         /**
          * レイヤーサムネイル生成
-         * キャッシュキーを layer.position/rotation/scale から生成
+         * Phase 2: キャッシュキーを layerId のみに変更
          * 
          * @param {PIXI.Container} layer - レイヤーコンテナ
          * @param {number} width - サムネイル幅（デフォルト64）
@@ -137,21 +179,12 @@
 
             // 背景レイヤーは特別扱い
             if (layer.layerData?.isBackground) {
-                return null; // UI側で背景色パッチを表示
+                return null;
             }
 
-            // Vキーモード中でキャッシュ無効化が有効な場合、キャッシュをスキップ
-            if (this.disableCacheDuringVMode && this.vKeyModeActive) {
-                return await this._renderLayerThumbnail(layer, width, height);
-            }
-
-            // キャッシュキーを layer.position/rotation/scale から生成
+            // Phase 2: キャッシュキーを layerId + サイズのみに変更
             const layerId = layer.layerData?.id || layer.label;
-            const pos = layer.position;
-            const rot = layer.rotation;
-            const scale = layer.scale;
-            const transform = `${pos.x.toFixed(2)}_${pos.y.toFixed(2)}_${rot.toFixed(4)}_${scale.x.toFixed(3)}_${scale.y.toFixed(3)}`;
-            const cacheKey = `layer_${layerId}_${width}_${height}_${transform}`;
+            const cacheKey = `layer_${layerId}_${width}_${height}`;
             
             if (this.layerThumbnailCache.has(cacheKey)) {
                 return this.layerThumbnailCache.get(cacheKey);
@@ -175,6 +208,7 @@
 
         /**
          * 内部: レイヤーサムネイルレンダリング実行
+         * Phase 3: Canvas2D不使用（PixiJS extract.canvas()のみ）
          * 
          * @param {PIXI.Container} layer
          * @param {number} width
@@ -194,7 +228,7 @@
                     clear: true
                 });
 
-                // GPU → Canvas（DPI/色空間完全同期）
+                // GPU → Canvas（PixiJS内部処理のみ）
                 const canvas = this.app.renderer.extract.canvas(rt);
 
                 // RenderTexture をプールに戻す
@@ -210,7 +244,7 @@
 
         /**
          * フレームサムネイル生成
-         * キャッシュキーを config.canvas から取得
+         * Phase 3: Canvas2D撲滅（PixiJS RenderTextureでリサイズ）
          * 
          * @param {PIXI.Container} frame - フレームコンテナ
          * @param {number} maxWidth - 最大幅（デフォルト150）
@@ -243,38 +277,24 @@
             thumbWidth = Math.round(thumbWidth);
             thumbHeight = Math.round(thumbHeight);
 
-            // キャッシュキーを config.canvas から生成
-            const cacheKey = `frame_${frameId}_${canvasWidth}_${canvasHeight}_${thumbWidth}_${thumbHeight}`;
+            // Phase 2: キャッシュキーを frameId + サイズのみに変更
+            const cacheKey = `frame_${frameId}_${thumbWidth}_${thumbHeight}`;
             
             if (this.frameThumbnailCache.has(cacheKey)) {
                 return this.frameThumbnailCache.get(cacheKey);
             }
 
             try {
-                // フルサイズで一度レンダリング
-                const fullRT = this._acquireRenderTexture(canvasWidth, canvasHeight);
-                if (!fullRT) return null;
-
-                this.app.renderer.render({
-                    container: frame,
-                    target: fullRT,
-                    clear: true
-                });
-
-                // Canvas を取得してリサイズ
-                const fullCanvas = this.app.renderer.extract.canvas(fullRT);
+                // Phase 3: PixiJS RenderTextureでリサイズ（Canvas2D不使用）
+                const thumbCanvas = await this._renderFrameThumbnailPixiJS(
+                    frame, 
+                    canvasWidth, 
+                    canvasHeight, 
+                    thumbWidth, 
+                    thumbHeight
+                );
                 
-                // サムネイルサイズにリサイズ
-                const thumbCanvas = document.createElement('canvas');
-                thumbCanvas.width = thumbWidth;
-                thumbCanvas.height = thumbHeight;
-                const ctx = thumbCanvas.getContext('2d');
-                
-                if (ctx) {
-                    ctx.imageSmoothingEnabled = true;
-                    ctx.imageSmoothingQuality = 'high';
-                    ctx.drawImage(fullCanvas, 0, 0, thumbWidth, thumbHeight);
-                }
+                if (!thumbCanvas) return null;
 
                 // キャッシュに保存
                 this.frameThumbnailCache.set(cacheKey, thumbCanvas);
@@ -284,14 +304,87 @@
                     const firstKey = this.frameThumbnailCache.keys().next().value;
                     this.frameThumbnailCache.delete(firstKey);
                 }
-                
-                // RenderTexture をプール戻す
-                this._releaseRenderTexture(fullRT);
 
                 return thumbCanvas;
 
             } catch (error) {
                 console.error('Frame thumbnail generation failed:', error);
+                return null;
+            }
+        }
+
+        /**
+         * Phase 3: PixiJS RenderTextureでフレームサムネイル生成（Canvas2D不使用）
+         * 
+         * @param {PIXI.Container} frame
+         * @param {number} canvasWidth
+         * @param {number} canvasHeight
+         * @param {number} thumbWidth
+         * @param {number} thumbHeight
+         * @returns {Promise<HTMLCanvasElement|null>}
+         */
+        async _renderFrameThumbnailPixiJS(frame, canvasWidth, canvasHeight, thumbWidth, thumbHeight) {
+            let fullRT = null;
+            let thumbRT = null;
+            let tempSprite = null;
+            
+            try {
+                // 1. フルサイズでレンダリング
+                fullRT = this._acquireRenderTexture(canvasWidth, canvasHeight);
+                if (!fullRT) return null;
+
+                this.app.renderer.render({
+                    container: frame,
+                    target: fullRT,
+                    clear: true
+                });
+
+                // 2. リサイズ用RenderTexture作成
+                thumbRT = PIXI.RenderTexture.create({
+                    width: thumbWidth,
+                    height: thumbHeight,
+                    resolution: 1
+                });
+
+                // 3. スプライト作成とスケール設定
+                tempSprite = PIXI.Sprite.from(fullRT);
+                
+                // アスペクト比を保持したスケール計算
+                const scaleX = thumbWidth / canvasWidth;
+                const scaleY = thumbHeight / canvasHeight;
+                const scale = Math.min(scaleX, scaleY);
+                
+                tempSprite.scale.set(scale, scale);
+                
+                // 中央配置
+                tempSprite.x = (thumbWidth - canvasWidth * scale) / 2;
+                tempSprite.y = (thumbHeight - canvasHeight * scale) / 2;
+
+                // 4. サムネイルサイズでレンダリング
+                this.app.renderer.render({
+                    container: tempSprite,
+                    target: thumbRT,
+                    clear: true
+                });
+
+                // 5. Canvas取得
+                const thumbCanvas = this.app.renderer.extract.canvas(thumbRT);
+
+                // 6. クリーンアップ
+                tempSprite.destroy();
+                this._releaseRenderTexture(fullRT);
+                thumbRT.destroy(true);
+
+                return thumbCanvas;
+
+            } catch (error) {
+                console.error('PixiJS frame thumbnail generation failed:', error);
+                
+                // クリーンアップ
+                if (tempSprite) tempSprite.destroy();
+                if (fullRT) this._releaseRenderTexture(fullRT);
+                if (thumbRT) thumbRT.destroy(true);
+                
                 return null;
             }
         }
@@ -321,7 +414,7 @@
         invalidateLayerCache(layerIndex) {
             if (layerIndex < 0) return;
             
-            // 該当レイヤーのキャッシュをクリア
+            // 全レイヤーキャッシュをクリア（Phase 2でキャッシュキーが変わったため）
             const keysToDelete = [];
             for (const key of this.layerThumbnailCache.keys()) {
                 if (key.includes(`layer_`)) {
@@ -336,13 +429,14 @@
 
         /**
          * LayerId でレイヤーキャッシュをクリア
+         * Phase 2: layerIdベースのキャッシュキーに対応
          * 
          * @param {string} layerId
          */
         _invalidateLayerCacheByLayerId(layerId) {
             const keysToDelete = [];
             for (const key of this.layerThumbnailCache.keys()) {
-                if (key.includes(`layer_${layerId}_`)) {
+                if (key.startsWith(`layer_${layerId}_`)) {
                     keysToDelete.push(key);
                 }
             }
@@ -379,6 +473,7 @@
             this.layerThumbnailCache.clear();
             this.frameThumbnailCache.clear();
             this.dataURLCache.clear();
+            this.pendingVModeRefresh.clear();
         }
 
         /**
@@ -437,7 +532,8 @@
                 poolSize: this.renderTexturePool.length,
                 isInitialized: this.isInitialized,
                 vKeyModeActive: this.vKeyModeActive,
-                disableCacheDuringVMode: this.disableCacheDuringVMode
+                disableCacheDuringVMode: this.disableCacheDuringVMode,
+                pendingVModeRefreshCount: this.pendingVModeRefresh.size
             };
         }
 
@@ -502,6 +598,13 @@
                 console.log(`  - ${key}`);
             }
         }
+        
+        if (window.ThumbnailSystem?.frameThumbnailCache) {
+            console.log('Frame Cache Keys:');
+            for (const key of window.ThumbnailSystem.frameThumbnailCache.keys()) {
+                console.log(`  - ${key}`);
+            }
+        }
     };
     
     // 強制全サムネイル再生成
@@ -528,10 +631,10 @@
         console.log('✅ All thumbnails regenerated');
     };
 
-    console.log('✅ system/drawing/thumbnail-system.js (Phase 1-2完全版) loaded');
-    console.log('   - Phase 1: イベントフロー確立 (layer:transform-updated → thumbnail:layer-updated)');
-    console.log('   - Phase 2: throttle 実装 (100ms間隔)');
-    console.log('   - Phase 5: デバッグコマンド追加');
+    console.log('✅ system/drawing/thumbnail-system.js (Phase 1-3完全版) loaded');
+    console.log('   - Phase 1: Vモード終了時のキャッシュ再生成');
+    console.log('   - Phase 2: キャッシュキー戦略変更（layerId/frameIdのみ）');
+    console.log('   - Phase 3: Canvas2D完全撲滅（PixiJS RenderTexture使用）');
     console.log('   - Debug: window.TegakiDebug.monitorThumbnails()');
     console.log('   - Debug: window.TegakiDebug.inspectThumbnailCache()');
     console.log('   - Debug: window.TegakiDebug.regenerateAllThumbnails()');
