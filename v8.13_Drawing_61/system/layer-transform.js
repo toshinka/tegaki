@@ -1,5 +1,7 @@
-// ===== system/layer-transform.js - Vモード反転機能完全版 =====
-// Phase 4改修: Vモード時の反転ボタンとショートカット機能を完全修正
+// ===== system/layer-transform.js - Phase 2-3完全版 =====
+// Phase 2: イベント発火頻度の最適化（throttle 実装）
+// Phase 3: Vキー確定時の強制更新
+// 既存機能: Vモード反転機能完全版
 
 (function() {
     'use strict';
@@ -29,6 +31,10 @@
             this.onSliderChange = null;
             this.onRebuildRequired = null;
             this.onGetActiveLayer = null;
+            
+            // Phase 2: throttle 用プロパティ
+            this._lastEmitTime = 0;
+            this._emitTimer = null;
         }
 
         init(app, cameraSystem) {
@@ -155,10 +161,9 @@
             }
         }
 
-        // Phase 4改修: Vモード時のみ反転を許可
         flipLayer(layer, direction) {
             if (!layer?.layerData) return;
-            if (!this.isVKeyPressed) return; // Vモード時のみ反転可能
+            if (!this.isVKeyPressed) return;
             
             const layerId = layer.layerData.id;
             
@@ -293,6 +298,7 @@
             }
         }
 
+        // Phase 3: Vキー確定時の強制サムネイル更新
         confirmTransform(layer) {
             if (!layer?.layerData) return false;
             
@@ -326,6 +332,25 @@
             }
             
             this.updateFlipButtons(layer);
+            
+            // Phase 3: 確定時の強制サムネイル更新（throttle バイパス）
+            if (this.eventBus) {
+                const layerMgr = window.CoreRuntime?.internal?.layerManager;
+                if (layerMgr) {
+                    const layerIndex = layerMgr.getLayerIndex(layer);
+                    
+                    // 即座にサムネイル更新を要求
+                    this.eventBus.emit('thumbnail:layer-updated', {
+                        component: 'layer-transform',
+                        action: 'transform-confirmed',
+                        data: {
+                            layerIndex: layerIndex,
+                            layerId: layer.layerData.id,
+                            immediate: true  // 即座更新フラグ
+                        }
+                    });
+                }
+            }
             
             return true;
         }
@@ -419,10 +444,8 @@
             }
         }
 
-        // Phase 4改修: Vモード時のみHキーを受け付ける
         _setupFlipKeyEvents() {
             document.addEventListener('keydown', (e) => {
-                // Vモード中のみ反転キーを受け付ける
                 if (!this.isVKeyPressed) return;
                 
                 const activeElement = document.activeElement;
@@ -501,13 +524,31 @@
             }, { passive: false });
         }
 
+        // Phase 2: throttle 実装
         _emitTransformUpdated(layerId) {
+            // throttle: 最後の呼び出しから 100ms 以内は発火しない
+            const now = performance.now();
+            if (this._lastEmitTime && (now - this._lastEmitTime) < 100) {
+                // throttle 中: タイマーで遅延発火
+                if (this._emitTimer) {
+                    clearTimeout(this._emitTimer);
+                }
+                this._emitTimer = setTimeout(() => {
+                    if (this.eventBus) {
+                        this.eventBus.emit('layer:transform-updated', { layerId });
+                    }
+                    this._lastEmitTime = performance.now();
+                }, 100);
+                return;
+            }
+            
+            // 即座発火
             if (this.eventBus) {
                 this.eventBus.emit('layer:transform-updated', { layerId });
             }
+            this._lastEmitTime = now;
         }
         
-        // Phase 4改修: 反転ボタンの有効/無効切り替え
         _updateFlipButtonsAvailability(isVMode) {
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
@@ -563,14 +604,12 @@
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
             
-            // Phase 4改修: Vモード時のみクリック可能にする
             if (flipHorizontalBtn) {
                 flipHorizontalBtn.addEventListener('click', () => {
                     if (this.isVKeyPressed && this.onFlipRequest) {
                         this.onFlipRequest('horizontal');
                     }
                 });
-                // 初期状態では無効化
                 flipHorizontalBtn.setAttribute('disabled', 'true');
                 flipHorizontalBtn.style.opacity = '0.4';
                 flipHorizontalBtn.style.cursor = 'not-allowed';
@@ -582,7 +621,6 @@
                         this.onFlipRequest('vertical');
                     }
                 });
-                // 初期状態では無効化
                 flipVerticalBtn.setAttribute('disabled', 'true');
                 flipVerticalBtn.style.opacity = '0.4';
                 flipVerticalBtn.style.cursor = 'not-allowed';
@@ -779,4 +817,7 @@
 
 })();
 
-console.log('✅ layer-transform.js (Phase 4完了: Vモード反転機能完全版) loaded');
+console.log('✅ layer-transform.js (Phase 2-3完全版) loaded');
+console.log('   - Phase 2: throttle 実装 (100ms間隔)');
+console.log('   - Phase 3: Vキー確定時の強制サムネイル更新');
+console.log('   - Vモード反転機能完全版');
