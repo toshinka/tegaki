@@ -1,7 +1,6 @@
-// ===== system/drawing/thumbnail-system.js - Phase 1完全版 =====
-// 統一されたサムネイル生成システム
-// Canvas2D廃止、PixiJS renderer.extract.image() を標準採用
-// 責務: サムネイル生成、キャッシュ管理、座標系完全同期
+// ===== system/drawing/thumbnail-system.js - キャッシュキー修正版 =====
+// 修正1: レイヤーサムネイルのキャッシュキーを layer.transform から取得
+// 修正2: Vキーモード中のキャッシュ無効化オプション追加
 
 (function() {
     'use strict';
@@ -21,9 +20,11 @@
             this.defaultLayerThumbSize = 64;
             this.defaultFrameThumbSize = 150;
             this.maxCacheSize = 200;
+            this.disableCacheDuringVMode = true; // Vキーモード中はキャッシュ無効
             
             this.eventBus = null;
             this.isInitialized = false;
+            this.vKeyModeActive = false; // Vキーモード状態
             
             // RenderTexture の再利用プール
             this.renderTexturePool = [];
@@ -44,6 +45,15 @@
         }
 
         _setupEventListeners() {
+            // Vキーモード検知
+            this.eventBus.on('keyboard:vkey-pressed', () => {
+                this.vKeyModeActive = true;
+            });
+            
+            this.eventBus.on('keyboard:vkey-released', () => {
+                this.vKeyModeActive = false;
+            });
+            
             // レイヤーサムネイル更新トリガー
             this.eventBus.on('layer:transform-updated', ({ layerId }) => {
                 this._invalidateLayerCacheByLayerId(layerId);
@@ -83,7 +93,7 @@
 
         /**
          * レイヤーサムネイル生成
-         * 用途：レイヤーパネル個別サムネイル
+         * 修正: キャッシュキーを layer.position/rotation/scale から生成
          * 
          * @param {PIXI.Container} layer - レイヤーコンテナ
          * @param {number} width - サムネイル幅（デフォルト64）
@@ -95,21 +105,54 @@
                 return null;
             }
 
-            // キャッシュキー生成（レイヤーID + サイズ + 変形パラメータ）
+            // 背景レイヤーは特別扱い
+            if (layer.layerData?.isBackground) {
+                return null; // UI側で背景色パッチを表示
+            }
+
+            // Vキーモード中でキャッシュ無効化が有効な場合、キャッシュをスキップ
+            if (this.disableCacheDuringVMode && this.vKeyModeActive) {
+                return await this._renderLayerThumbnail(layer, width, height);
+            }
+
+            // 修正: キャッシュキーを layer.position/rotation/scale から生成
             const layerId = layer.layerData?.id || layer.label;
-            const transform = `${layer.position.x}_${layer.position.y}_${layer.rotation}_${layer.scale.x}_${layer.scale.y}`;
+            const pos = layer.position;
+            const rot = layer.rotation;
+            const scale = layer.scale;
+            const transform = `${pos.x.toFixed(2)}_${pos.y.toFixed(2)}_${rot.toFixed(4)}_${scale.x.toFixed(3)}_${scale.y.toFixed(3)}`;
             const cacheKey = `layer_${layerId}_${width}_${height}_${transform}`;
             
             if (this.layerThumbnailCache.has(cacheKey)) {
                 return this.layerThumbnailCache.get(cacheKey);
             }
 
-            try {
-                // 背景レイヤーは特別扱い
-                if (layer.layerData?.isBackground) {
-                    return null; // UI側で背景色パッチを表示
+            const canvas = await this._renderLayerThumbnail(layer, width, height);
+            
+            if (canvas) {
+                // キャッシュに保存
+                this.layerThumbnailCache.set(cacheKey, canvas);
+                
+                // キャッシュサイズ制限
+                if (this.layerThumbnailCache.size > this.maxCacheSize) {
+                    const firstKey = this.layerThumbnailCache.keys().next().value;
+                    this.layerThumbnailCache.delete(firstKey);
                 }
+            }
 
+            return canvas;
+        }
+
+        /**
+         * 内部: レイヤーサムネイルレンダリング実行
+         * 
+         * @param {PIXI.Container} layer
+         * @param {number} width
+         * @param {number} height
+         * @returns {Promise<HTMLCanvasElement|null>}
+         */
+        async _renderLayerThumbnail(layer, width, height) {
+            try {
                 // RenderTexture を取得（プール再利用）
                 const rt = this._acquireRenderTexture(width, height);
                 if (!rt) return null;
@@ -124,9 +167,6 @@
                 // GPU → Canvas（DPI/色空間完全同期）
                 const canvas = this.app.renderer.extract.canvas(rt);
 
-                // キャッシュに保存
-                this.layerThumbnailCache.set(cacheKey, canvas);
-                
                 // RenderTexture をプールに戻す
                 this._releaseRenderTexture(rt);
 
@@ -140,7 +180,7 @@
 
         /**
          * フレームサムネイル生成
-         * 用途：タイムラインサムネイル
+         * 修正: キャッシュキーを config.canvas から取得
          * 
          * @param {PIXI.Container} frame - フレームコンテナ
          * @param {number} maxWidth - 最大幅（デフォルト150）
@@ -153,8 +193,10 @@
             }
 
             const frameId = frame.id || frame.label;
-            const canvasWidth = this.config.canvas?.width || 800;
-            const canvasHeight = this.config.canvas?.height || 600;
+            
+            // 修正: config.canvas から取得
+            const canvasWidth = this.config?.canvas?.width || 800;
+            const canvasHeight = this.config?.canvas?.height || 600;
 
             // アスペクト比を保持してリサイズ
             const aspectRatio = canvasWidth / canvasHeight;
@@ -171,8 +213,8 @@
             thumbWidth = Math.round(thumbWidth);
             thumbHeight = Math.round(thumbHeight);
 
-            // キャッシュキー生成
-            const cacheKey = `frame_${frameId}_${thumbWidth}_${thumbHeight}`;
+            // 修正: キャッシュキーを config.canvas から生成
+            const cacheKey = `frame_${frameId}_${canvasWidth}_${canvasHeight}_${thumbWidth}_${thumbHeight}`;
             
             if (this.frameThumbnailCache.has(cacheKey)) {
                 return this.frameThumbnailCache.get(cacheKey);
@@ -207,6 +249,12 @@
                 // キャッシュに保存
                 this.frameThumbnailCache.set(cacheKey, thumbCanvas);
                 
+                // キャッシュサイズ制限
+                if (this.frameThumbnailCache.size > this.maxCacheSize) {
+                    const firstKey = this.frameThumbnailCache.keys().next().value;
+                    this.frameThumbnailCache.delete(firstKey);
+                }
+                
                 // RenderTexture をプール戻す
                 this._releaseRenderTexture(fullRT);
 
@@ -220,7 +268,6 @@
 
         /**
          * Canvas → DataURL 変換
-         * UI に表示するための処理
          * 
          * @param {HTMLCanvasElement} canvas
          * @returns {string} DataURL
@@ -259,7 +306,6 @@
 
         /**
          * LayerId でレイヤーキャッシュをクリア
-         * 内部用
          * 
          * @param {string} layerId
          */
@@ -298,7 +344,6 @@
 
         /**
          * 全キャッシュをクリア
-         * リサイズ・ズーム時に呼び出し
          */
         clearAllCache() {
             this.layerThumbnailCache.clear();
@@ -308,10 +353,6 @@
 
         /**
          * RenderTexture の取得（プール再利用）
-         * 
-         * @param {number} width
-         * @param {number} height
-         * @returns {PIXI.RenderTexture}
          */
         _acquireRenderTexture(width, height) {
             try {
@@ -339,14 +380,11 @@
 
         /**
          * RenderTexture をプールに戻す
-         * 
-         * @param {PIXI.RenderTexture} rt
          */
         _releaseRenderTexture(rt) {
             if (!rt) return;
 
             try {
-                // プール内がいっぱいなら削除
                 if (this.renderTexturePool.length < this.poolMaxSize) {
                     this.renderTexturePool.push(rt);
                 } else {
@@ -360,8 +398,6 @@
 
         /**
          * デバッグ情報取得
-         * 
-         * @returns {object}
          */
         getDebugInfo() {
             return {
@@ -369,7 +405,9 @@
                 frameCacheSize: this.frameThumbnailCache.size,
                 dataURLCacheSize: this.dataURLCache.size,
                 poolSize: this.renderTexturePool.length,
-                isInitialized: this.isInitialized
+                isInitialized: this.isInitialized,
+                vKeyModeActive: this.vKeyModeActive,
+                disableCacheDuringVMode: this.disableCacheDuringVMode
             };
         }
 
@@ -397,6 +435,6 @@
         window.TEGAKI_CONFIG
     );
 
-    console.log('✅ system/drawing/thumbnail-system.js Phase 1完全版 loaded');
+    console.log('✅ system/drawing/thumbnail-system.js (キャッシュキー修正版) loaded');
 
 })();
