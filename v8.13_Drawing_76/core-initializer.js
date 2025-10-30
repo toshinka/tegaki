@@ -1,4 +1,5 @@
-// ===== core-initializer.js - LayerPanelRenderer統合版 =====
+// ===== core-initializer.js - Phase 2統合版: BrushCore対応 =====
+// Phase 2改修: DrawingEngine → BrushCore統合
 // Phase 2完全修正: LayerPanelRenderer初期化追加
 // 修正1: SettingsManager初期化をpopup登録前に移動
 // 修正2: ExportPopup登録をExportManager完全初期化後に実行
@@ -33,6 +34,11 @@ window.CoreInitializer = (function() {
         
         if (!window.CoreRuntime || !window.TegakiCore?.CoreEngine) {
             throw new Error('CoreRuntime or CoreEngine not loaded');
+        }
+        
+        // Phase 2: BrushCore依存確認
+        if (!window.BrushCore) {
+            throw new Error('BrushCore not loaded - check script load order');
         }
         
         return true;
@@ -102,12 +108,17 @@ window.CoreInitializer = (function() {
         
         const brushSettings = coreEngine.getBrushSettings();
         
+        // Phase 2: BrushCoreを渡す（DrawingEngine廃止）
+        const brushCore = coreEngine.getBrushCore();
+        
         popupManager.register('settings', window.TegakiUI.SettingsPopup, {
-            drawingEngine: coreEngine.getDrawingEngine()
+            brushCore: brushCore, // Phase 2: 追加
+            drawingEngine: brushCore // Phase 2: 互換性維持
         }, { priority: 1 });
         
         popupManager.register('quickAccess', window.TegakiUI.QuickAccessPopup, {
-            drawingEngine: coreEngine.getDrawingEngine(),
+            brushCore: brushCore, // Phase 2: 追加
+            drawingEngine: brushCore, // Phase 2: 互換性維持
             eventBus: window.TegakiEventBus,
             brushSettings: brushSettings
         }, { priority: 2 });
@@ -194,20 +205,25 @@ window.CoreInitializer = (function() {
             const brushSettings = this.coreEngine.getBrushSettings();
             window.BrushSettings = brushSettings;
             
+            // Phase 2: BrushCore参照を追加
+            const brushCore = this.coreEngine.getBrushCore();
+            
             window.CoreRuntime.init({
                 app: this.pixiApp,
                 worldContainer: this.coreEngine.getCameraSystem().worldContainer,
                 canvasContainer: this.coreEngine.getCameraSystem().canvasContainer,
                 cameraSystem: this.coreEngine.getCameraSystem(),
                 layerManager: this.coreEngine.getLayerManager(),
-                drawingEngine: this.coreEngine.getDrawingEngine()
+                brushCore: brushCore, // Phase 2: 追加
+                drawingEngine: brushCore // Phase 2: 互換性維持
             });
             
             // ★ 修正1: SettingsManagerを先に初期化
             initializeSettingsManager();
             
+            // Phase 2: UIControllerにもBrushCoreを渡す
             this.uiController = new UIController(
-                this.coreEngine.getDrawingEngine(), 
+                brushCore, // Phase 2: BrushCore
                 this.coreEngine.getLayerManager(), 
                 this.pixiApp
             );
@@ -398,7 +414,8 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (LayerPanelRenderer統合版) loaded');
+console.log('✅ core-initializer.js (Phase 2統合版: BrushCore対応) loaded');
+console.log('   ✓ Phase 2: DrawingEngine → BrushCore統合');
 console.log('   ✓ Phase 2: LayerPanelRenderer初期化追加');
 console.log('   ✓ グローバル参照: TegakiUI.layerPanelRenderer');
 console.log('   ✓ グローバル参照: CoreRuntime.internal.layerPanelRenderer');

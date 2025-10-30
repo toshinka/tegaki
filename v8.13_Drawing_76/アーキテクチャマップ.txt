@@ -1,0 +1,319 @@
+# Phase 2 アーキテクチャマップ - ブラウザお絵かきツール
+
+## 1. ファイル構成と責務
+
+### コアシステム（Phase 1: 基盤）
+```
+config.js
+├─ window.TEGAKI_CONFIG
+└─ 全システムの設定値
+
+event-bus.js
+├─ window.TegakiEventBus (クラス)
+└─ イベント通信基盤
+
+coordinate-system.js
+├─ window.CoordinateSystem (インスタンス)
+└─ Screen→Canvas→World→Local 座標変換
+```
+
+### 描画システム（Phase 2: 統合対象）
+
+#### ✅ 継続使用ファイル
+```
+pressure-handler.js
+├─ window.pressureHandler (インスタンス？要確認)
+└─ 筆圧補正処理
+
+curve-interpolator.js
+├─ window.curveInterpolator (インスタンス？要確認)
+└─ ストローク補間処理
+
+stroke-recorder.js
+├─ window.StrokeRecorder (クラス)
+├─ window.strokeRecorder (インスタンス - 要生成)
+└─ Local座標ポイント記録
+
+stroke-renderer.js (Phase 2統合版)
+├─ window.StrokeRenderer (クラス)
+├─ window.strokeRenderer (インスタンス - 要生成)
+└─ ペン/消しゴム描画（blendMode切替）
+
+brush-settings.js (Phase 2統合版)
+├─ window.BrushSettings (クラス)
+└─ ブラシ設定管理
+```
+
+#### ✅ Phase 2新規ファイル
+```
+brush-core.js (新規)
+├─ window.BrushCore (インスタンス - シングルトン)
+└─ ペン/消しゴム統合コア
+   - startStroke(clientX, clientY, pressure)
+   - updateStroke(clientX, clientY, pressure)
+   - finalizeStroke()
+   - setMode('pen' | 'eraser')
+```
+
+#### ❌ Phase 2廃止ファイル
+```
+drawing-engine.js → brush-core.js に統合済み
+eraser-mask-renderer.js → stroke-renderer.js に統合済み
+```
+
+### Coreファイル（Phase 2: 修正対象）
+```
+core-engine.js (Phase 2統合版)
+├─ window.TegakiCore.CoreEngine (クラス)
+├─ UnifiedKeyHandler (クラス)
+└─ システム全体の初期化・統合
+
+core-runtime.js (Phase 2統合版)
+├─ window.CoreRuntime (オブジェクト)
+└─ PointerEvent処理・API層
+
+core-initializer.js (Phase 2統合版)
+├─ window.CoreInitializer (オブジェクト)
+└─ アプリケーション起動
+```
+
+---
+
+## 2. 初期化フローチャート（Phase 2完全版）
+
+```
+┌─────────────────────────────────────────────┐
+│ index.html: ページ読み込み                    │
+└─────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────┐
+│ 1. スクリプト読み込み（順序重要）              │
+│   config.js                                 │
+│   event-bus.js                              │
+│   coordinate-system.js                      │
+│   ...                                       │
+│   pressure-handler.js                       │
+│   curve-interpolator.js                     │
+│   stroke-recorder.js (クラス定義のみ)         │
+│   stroke-renderer.js (クラス定義のみ)         │
+│   brush-settings.js (クラス定義のみ)          │
+│   brush-core.js (シングルトン生成)            │
+│   ...                                       │
+│   core-engine.js                            │
+│   core-runtime.js                           │
+│   core-initializer.js                       │
+└─────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────┐
+│ 2. CoreInitializer.initialize()             │
+│   - checkDependencies()                     │
+│   - buildDOM()                              │
+│   - DrawingApp.initialize()                 │
+└─────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────┐
+│ 3. DrawingApp.initialize()                  │
+│   - PIXI.Application 初期化                  │
+│   - CoreEngine 生成                          │
+│   - CoreEngine.initialize() 呼び出し         │
+└─────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────┐
+│ 4. CoreEngine.initialize()                  │
+│                                             │
+│   4-1. CameraSystem.init()                  │
+│   4-2. LayerSystem.init()                   │
+│   4-3. ClipboardSystem.init()               │
+│                                             │
+│   4-4. グローバル参照設定                     │
+│        window.layerManager = layerSystem    │
+│        window.cameraSystem = cameraSystem   │
+│                                             │
+│   4-5. StrokeRecorder インスタンス生成 ★      │
+│        window.strokeRecorder = new ...      │
+│                                             │
+│   4-6. StrokeRenderer インスタンス生成 ★      │
+│        window.strokeRenderer = new ...      │
+│                                             │
+│   4-7. BrushCore.init() ★★★                 │
+│        (依存: strokeRecorder, strokeRenderer)│
+│                                             │
+│   4-8. ThumbnailSystem.init()               │
+│   4-9. AnimationSystem 初期化                │
+│   4-10. KeyHandler 初期化                    │
+│   4-11. UI更新                               │
+│        layerSystem.updateLayerPanelUI()     │
+│        layerSystem.updateStatusDisplay()    │
+└─────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────┐
+│ 5. CoreRuntime.init()                       │
+│   - PointerEvent設定                         │
+│   - レガシー互換設定                          │
+└─────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────┐
+│ 6. UI初期化                                  │
+│   - SettingsManager                         │
+│   - PopupManager                            │
+│   - LayerPanelRenderer                      │
+└─────────────────────────────────────────────┘
+                    ↓
+┌─────────────────────────────────────────────┐
+│ 7. アプリケーション起動完了                    │
+└─────────────────────────────────────────────┘
+```
+
+---
+
+## 3. グローバルシンボル辞典（Phase 2版）
+
+### Phase 2で追加されたシンボル
+| シンボル | 型 | 生成タイミング | 生成場所 |
+|---------|-----|--------------|---------|
+| `window.BrushCore` | インスタンス | スクリプト読み込み時 | brush-core.js (IIFE末尾) |
+| `window.brushCore` | インスタンス | CoreEngine.initialize() | core-engine.js:813 |
+| `window.strokeRecorder` | インスタンス | CoreEngine.initialize() | core-engine.js:799 ★要追加 |
+| `window.strokeRenderer` | インスタンス | CoreEngine.initialize() | core-engine.js:805 ★要追加 |
+
+### Phase 2で廃止されたシンボル
+| シンボル | 代替 | 備考 |
+|---------|-----|------|
+| `window.DrawingEngine` | `window.BrushCore` | クラス定義自体が廃止 |
+| `window.drawingEngine` | `window.brushCore` | 互換性維持のため別名で存在 |
+| `window.EraserMaskRenderer` | `window.StrokeRenderer` | stroke-renderer.jsに統合 |
+
+### 既存シンボル（確認必要）
+| シンボル | 型 | 期待される生成場所 | 現状 |
+|---------|-----|------------------|------|
+| `window.pressureHandler` | インスタンス？ | pressure-handler.js | ❓要確認 |
+| `window.curveInterpolator` | インスタンス？ | curve-interpolator.js | ❓要確認 |
+| `window.StrokeRecorder` | クラス | stroke-recorder.js | ✅確認済み |
+| `window.StrokeRenderer` | クラス | stroke-renderer.js | ✅確認済み |
+| `window.BrushSettings` | クラス | brush-settings.js | ✅Phase 2で修正済み |
+
+---
+
+## 4. 依存関係ツリー（Phase 2版）
+
+```
+BrushCore
+├─ window.CoordinateSystem (必須)
+├─ window.layerManager (必須)
+├─ window.strokeRecorder (必須) ★★★
+├─ window.strokeRenderer (必須) ★★★
+├─ window.pressureHandler (任意)
+├─ window.curveInterpolator (任意)
+└─ window.eventBus (任意)
+
+StrokeRecorder (インスタンス生成時)
+├─ pressureHandler (コンストラクタ引数)
+└─ cameraSystem (コンストラクタ引数)
+
+StrokeRenderer (インスタンス生成時)
+├─ app (コンストラクタ引数)
+├─ layerSystem (コンストラクタ引数)
+└─ cameraSystem (コンストラクタ引数)
+```
+
+---
+
+## 5. 現在のエラー原因分析
+
+### エラー: `window.StrokeRecorder is not a constructor`
+
+**原因:**
+1. `stroke-recorder.js`がクラス定義をグローバルに公開していない
+2. または、クラス定義のフォーマットが間違っている
+
+**確認項目:**
+```javascript
+// stroke-recorder.js の末尾に以下があるか？
+window.StrokeRecorder = StrokeRecorder;
+```
+
+**調査必要ファイル:**
+- `stroke-recorder.js` (提供されたバージョン)
+- `pressure-handler.js` (グローバル公開形式)
+- `curve-interpolator.js` (グローバル公開形式)
+
+---
+
+## 6. 修正方針（Phase 2完全版）
+
+### Step 1: 既存ファイルのグローバル公開確認
+```
+✅ stroke-recorder.js が window.StrokeRecorder を公開しているか
+✅ stroke-renderer.js が window.StrokeRenderer を公開しているか
+✅ pressure-handler.js が window.pressureHandler を公開しているか
+✅ curve-interpolator.js が window.curveInterpolator を公開しているか
+```
+
+### Step 2: core-engine.js の初期化順序修正
+```javascript
+// 4-5. StrokeRecorder インスタンス生成
+if (!window.strokeRecorder) {
+    if (!window.StrokeRecorder) {
+        throw new Error('StrokeRecorder class not loaded');
+    }
+    window.strokeRecorder = new window.StrokeRecorder(
+        window.pressureHandler,
+        this.cameraSystem
+    );
+}
+
+// 4-6. StrokeRenderer インスタンス生成
+if (!window.strokeRenderer) {
+    if (!window.StrokeRenderer) {
+        throw new Error('StrokeRenderer class not loaded');
+    }
+    window.strokeRenderer = new window.StrokeRenderer(
+        this.app,
+        this.layerSystem,
+        this.cameraSystem
+    );
+}
+
+// 4-7. BrushCore.init() (依存が全て揃った状態)
+this.brushCore.init();
+```
+
+### Step 3: brush-core.js のフォールバック削除
+```javascript
+// フォールバック生成は削除
+// 代わりに明確なエラーメッセージを表示
+if (!this.strokeRecorder) {
+    throw new Error('BrushCore: strokeRecorder not initialized - check CoreEngine initialization order');
+}
+```
+
+---
+
+## 7. Phase 2完了チェックリスト
+
+- [ ] stroke-recorder.js が `window.StrokeRecorder` を公開
+- [ ] stroke-renderer.js が `window.StrokeRenderer` を公開  
+- [ ] pressure-handler.js が `window.pressureHandler` を公開
+- [ ] curve-interpolator.js が `window.curveInterpolator` を公開
+- [ ] core-engine.js で StrokeRecorder/Renderer インスタンス生成
+- [ ] BrushCore.init() が全依存を確認
+- [ ] LayerPanel/Timeline が表示される
+- [ ] ペン描画が動作
+- [ ] 消しゴム描画が動作
+- [ ] Undo/Redo が動作
+
+---
+
+## 8. 次のアクション
+
+1. **stroke-recorder.js の実ファイル確認**
+   - グローバル公開形式の確認
+   
+2. **pressure-handler.js / curve-interpolator.js の確認**
+   - インスタンス公開形式の確認
+
+3. **core-engine.js の修正**
+   - StrokeRecorder/Renderer インスタンス生成ロジック追加
+
+4. **brush-core.js の修正**
+   - フォールバック削除、明確なエラー表示
