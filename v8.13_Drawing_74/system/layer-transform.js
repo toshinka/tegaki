@@ -1,11 +1,7 @@
-// ===== system/layer-transform.js - Phase 1-5 GSAP統合完全版 =====
-// Phase 1-4: イベント発火・NaN対策・UI整備・反転機能（既存実装継承）
+// ===== system/layer-transform.js - Phase 4: Vモード反転機能修復版 =====
+// Phase 1-3: イベント発火・NaN対策・UI整備・反転機能（既存実装継承）
+// Phase 4: Vモード時の反転機能修復
 // Phase 5: GSAP統合（Transform同期制御・Ticker管理）
-//
-// 【GSAP統合内容】
-// - applyTransform(): gsap.killTweensOf()で古いTween中止
-// - _emitTransformUpdated(): gsap.delayedCall()で1フレーム遅延発火
-// - GPU反映を保証してサムネイル生成タイミング同期
 
 (function() {
     'use strict';
@@ -36,11 +32,9 @@
             this.onRebuildRequired = null;
             this.onGetActiveLayer = null;
             
-            // throttle 用プロパティ
             this._lastEmitTime = 0;
             this._emitTimer = null;
             
-            // Phase 5: GSAP統合チェック
             this.gsapAvailable = typeof gsap !== 'undefined';
             if (this.gsapAvailable) {
                 console.log('[LayerTransform] GSAP detected - using synchronized updates');
@@ -63,6 +57,8 @@
             this._setupDragEvents();
             this._setupFlipKeyEvents();
             this._setupWheelEvents();
+            
+            console.log('✅ [LayerTransform] Initialized with flip key support');
         }
 
         enterMoveMode() {
@@ -81,6 +77,8 @@
             
             this._updateCursor();
             this._updateFlipButtonsAvailability(true);
+            
+            console.log('🔵 [LayerTransform] Vkey mode entered - flip buttons enabled');
         }
         
         exitMoveMode(activeLayer) {
@@ -100,6 +98,8 @@
             
             this._updateCursor();
             this._updateFlipButtonsAvailability(false);
+            
+            console.log('🔴 [LayerTransform] Vkey mode exited - flip buttons disabled');
         }
         
         toggleMoveMode(activeLayer) {
@@ -150,27 +150,22 @@
             }
         }
         
-        // Phase 5: GSAP統合 - Transform適用時に古いTween中止+GPU反映保証
         applyTransform(layer, transform, centerX, centerY) {
-            // Phase 5: 既存のTweenを中止（重複アニメーション防止）
             if (this.gsapAvailable) {
                 gsap.killTweensOf(layer);
             }
             
-            // Transform適用
             if (this.coordAPI?.applyLayerTransform) {
                 this.coordAPI.applyLayerTransform(layer, transform, centerX, centerY);
             } else {
                 this._applyTransformDirect(layer, transform, centerX, centerY);
             }
             
-            // Phase 5: GPU反映を保証するため1フレーム後にイベント発火
             if (this.gsapAvailable) {
                 gsap.delayedCall(0.016, () => {
                     this._emitTransformUpdated(layer.layerData.id, layer);
                 });
             } else {
-                // フォールバック: requestAnimationFrameで次フレーム
                 requestAnimationFrame(() => {
                     this._emitTransformUpdated(layer.layerData.id, layer);
                 });
@@ -227,8 +222,10 @@
             
             if (direction === 'horizontal') {
                 transform.scaleX *= -1;
+                console.log(`↔️ [LayerTransform] Horizontal flip: scaleX=${transform.scaleX}`);
             } else if (direction === 'vertical') {
                 transform.scaleY *= -1;
+                console.log(`↕️ [LayerTransform] Vertical flip: scaleY=${transform.scaleY}`);
             }
             
             this.applyTransform(layer, transform, centerX, centerY);
@@ -498,8 +495,10 @@
             }
         }
 
+        // ★★★ Phase 4修正: Vモードチェックを追加 ★★★
         _setupFlipKeyEvents() {
             document.addEventListener('keydown', (e) => {
+                // ★★★ Phase 4: Vモード中のみ反転キーを有効化 ★★★
                 if (!this.isVKeyPressed) return;
                 
                 const activeElement = document.activeElement;
@@ -513,10 +512,12 @@
                 
                 if (e.code === 'KeyH' && !e.ctrlKey && !e.altKey && !e.metaKey) {
                     if (e.shiftKey) {
+                        console.log('⌨️ [LayerTransform] Shift+H pressed - vertical flip');
                         if (this.onFlipRequest) {
                             this.onFlipRequest('vertical');
                         }
                     } else {
+                        console.log('⌨️ [LayerTransform] H pressed - horizontal flip');
                         if (this.onFlipRequest) {
                             this.onFlipRequest('horizontal');
                         }
@@ -639,20 +640,29 @@
             this._lastEmitTime = performance.now();
         }
         
+        // ★★★ Phase 4修正: デバッグログ追加 ★★★
         _updateFlipButtonsAvailability(isVMode) {
             const flipHorizontalBtn = document.getElementById('flip-horizontal-btn');
             const flipVerticalBtn = document.getElementById('flip-vertical-btn');
+            
+            console.log(`🔧 [LayerTransform] Update flip buttons: isVMode=${isVMode}`);
+            console.log(`   H-btn found: ${!!flipHorizontalBtn}`);
+            console.log(`   V-btn found: ${!!flipVerticalBtn}`);
             
             if (flipHorizontalBtn) {
                 if (isVMode) {
                     flipHorizontalBtn.removeAttribute('disabled');
                     flipHorizontalBtn.style.opacity = '1';
                     flipHorizontalBtn.style.cursor = 'pointer';
+                    console.log('   ✓ H-btn enabled');
                 } else {
                     flipHorizontalBtn.setAttribute('disabled', 'true');
                     flipHorizontalBtn.style.opacity = '0.4';
                     flipHorizontalBtn.style.cursor = 'not-allowed';
+                    console.log('   ✓ H-btn disabled');
                 }
+            } else {
+                console.warn('   ⚠️ flip-horizontal-btn not found in DOM');
             }
             
             if (flipVerticalBtn) {
@@ -660,11 +670,15 @@
                     flipVerticalBtn.removeAttribute('disabled');
                     flipVerticalBtn.style.opacity = '1';
                     flipVerticalBtn.style.cursor = 'pointer';
+                    console.log('   ✓ V-btn enabled');
                 } else {
                     flipVerticalBtn.setAttribute('disabled', 'true');
                     flipVerticalBtn.style.opacity = '0.4';
                     flipVerticalBtn.style.cursor = 'not-allowed';
+                    console.log('   ✓ V-btn disabled');
                 }
+            } else {
+                console.warn('   ⚠️ flip-vertical-btn not found in DOM');
             }
         }
         
@@ -672,6 +686,7 @@
             this.transformPanel = document.getElementById('layer-transform-panel');
             
             if (!this.transformPanel) {
+                console.warn('[LayerTransform] Transform panel not found');
                 return;
             }
             
@@ -697,23 +712,31 @@
             if (flipHorizontalBtn) {
                 flipHorizontalBtn.addEventListener('click', () => {
                     if (this.isVKeyPressed && this.onFlipRequest) {
+                        console.log('🖱️ [LayerTransform] H-btn clicked');
                         this.onFlipRequest('horizontal');
                     }
                 });
                 flipHorizontalBtn.setAttribute('disabled', 'true');
                 flipHorizontalBtn.style.opacity = '0.4';
                 flipHorizontalBtn.style.cursor = 'not-allowed';
+                console.log('✓ [LayerTransform] H-btn initialized (disabled)');
+            } else {
+                console.warn('⚠️ [LayerTransform] flip-horizontal-btn not found in DOM');
             }
             
             if (flipVerticalBtn) {
                 flipVerticalBtn.addEventListener('click', () => {
                     if (this.isVKeyPressed && this.onFlipRequest) {
+                        console.log('🖱️ [LayerTransform] V-btn clicked');
                         this.onFlipRequest('vertical');
                     }
                 });
                 flipVerticalBtn.setAttribute('disabled', 'true');
                 flipVerticalBtn.style.opacity = '0.4';
                 flipVerticalBtn.style.cursor = 'not-allowed';
+                console.log('✓ [LayerTransform] V-btn initialized (disabled)');
+            } else {
+                console.warn('⚠️ [LayerTransform] flip-vertical-btn not found in DOM');
             }
         }
 
@@ -907,8 +930,9 @@
 
 })();
 
-console.log('✅ layer-transform.js (Phase 1-5 GSAP統合完全版) loaded');
-console.log('   ✓ Phase 1-4: イベント発火・NaN対策・UI整備・反転機能');
+console.log('✅ layer-transform.js (Phase 4: Vモード反転機能修復版) loaded');
+console.log('   ✓ Phase 1-3: イベント発火・NaN対策・UI整備');
+console.log('   ✓ Phase 4: Vモードチェック追加 (_setupFlipKeyEvents)');
+console.log('   ✓ Phase 4: デバッグログ追加 (_updateFlipButtonsAvailability)');
+console.log('   ✓ Phase 4: ボタンクリックイベント確認');
 console.log('   ✓ Phase 5: GSAP統合（killTweensOf + delayedCall）');
-console.log('   ✓ GPU反映保証: Transform適用から1フレーム後にイベント発火');
-console.log('   ✓ サムネイル同期: layer:transform-updated + thumbnail:layer-updated');
