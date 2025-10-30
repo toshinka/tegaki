@@ -1,5 +1,5 @@
-// ===== system/camera-system.js - v2.0: リサイズ修正版 =====
-// 修正: resizeCanvas()のworldContainer位置調整ロジック
+// ===== camera-system.js - Phase 2改修: 座標変換委譲版 =====
+// 変更点: screenClientToWorld/screenToLayer を削除、CoordinateSystemに完全委譲
 
 (function() {
     'use strict';
@@ -44,7 +44,11 @@
         init(stage, eventBus, config) {
             this.eventBus = eventBus;
             this.config = config || window.TEGAKI_CONFIG;
-            this.coordinateSystem = window.CoordinateSystem || window.TEGAKI_COORDINATE_SYSTEM;
+            this.coordinateSystem = window.CoordinateSystem;
+            
+            if (!this.coordinateSystem) {
+                throw new Error('CoordinateSystem must be initialized before CameraSystem');
+            }
             
             if (stage && stage.addChild) {
                 this.app = { stage: stage };
@@ -55,6 +59,15 @@
             this.initialState.scale = this.config.camera.initialScale;
             
             this._createContainers();
+            
+            // CoordinateSystemにcontainerを登録
+            this.coordinateSystem.setContainers({
+                worldContainer: this.worldContainer,
+                canvasContainer: this.canvasContainer,
+                app: this.app
+            });
+            this.coordinateSystem.setCameraSystem(this);
+            
             this._setupEvents();
             this.initializeCamera();
             this._drawCameraFrame();
@@ -150,30 +163,14 @@
             this._emitTransformChanged();
         }
 
-        screenClientToWorld(app, clientX, clientY) {
-            if (!this.worldContainer) {
-                return { x: clientX, y: clientY };
-            }
-            
-            const worldPoint = this.worldContainer.toLocal({ x: clientX, y: clientY });
-            return { x: worldPoint.x, y: worldPoint.y };
-        }
-        
-        worldToScreen(app, worldX, worldY) {
-            if (!this.worldContainer) {
-                return { x: worldX, y: worldY };
-            }
-            
-            const worldTransform = this.worldContainer.transform.worldTransform;
-            const screenPoint = worldTransform.apply({ x: worldX, y: worldY });
-            
-            return { x: screenPoint.x, y: screenPoint.y };
-        }
+        // ========== Phase 2改修: 座標変換メソッド削除 ==========
+        // ❌ 削除: screenClientToWorld() → CoordinateSystem.screenClientToWorld() を使用
+        // ❌ 削除: worldToScreen() → CoordinateSystem.worldToScreen() を使用
+        // ❌ 削除: screenToLayer() → CoordinateSystem.screenClientToLocal() を使用
+        // ❌ 削除: screenToCanvas() → 上記と同義のため削除
 
         /**
          * v2.0: リサイズ処理修正版
-         * 問題: worldContainer位置調整が不正確
-         * 修正: キャンバス中心を基準とした正確な位置調整
          */
         resizeCanvas(newWidth, newHeight, alignOptions = { horizontal: 'center', vertical: 'center' }) {
             if (!this.app) return;
@@ -181,69 +178,53 @@
             const oldWidth = this.config.canvas.width;
             const oldHeight = this.config.canvas.height;
             
-            // Step 1: CONFIG更新
             this.config.canvas.width = newWidth;
             this.config.canvas.height = newHeight;
             
-            // Step 2: renderer.resize()
             if (this.app.stage?.parent?.resize) {
                 this.app.stage.parent.resize(newWidth, newHeight);
             }
             
-            // Step 3: worldContainer位置調整（修正版）
             const widthDiff = newWidth - oldWidth;
             const heightDiff = newHeight - oldHeight;
             
             let offsetX = 0;
             let offsetY = 0;
             
-            // 横方向オフセット計算（修正）
             switch(alignOptions.horizontal) {
                 case 'left':
-                    // 左端基準：オフセットなし
                     offsetX = 0;
                     break;
                 case 'center':
-                    // 中央基準：差分の半分を加算
                     offsetX = widthDiff / 2;
                     break;
                 case 'right':
-                    // 右端基準：差分全体を加算
                     offsetX = widthDiff;
                     break;
             }
             
-            // 縦方向オフセット計算（修正）
             switch(alignOptions.vertical) {
                 case 'top':
-                    // 上端基準：オフセットなし
                     offsetY = 0;
                     break;
                 case 'center':
-                    // 中央基準：差分の半分を加算
                     offsetY = heightDiff / 2;
                     break;
                 case 'bottom':
-                    // 下端基準：差分全体を加算
                     offsetY = heightDiff;
                     break;
             }
             
-            // worldContainerの位置を調整
             this.worldContainer.position.x += offsetX;
             this.worldContainer.position.y += offsetY;
             
-            // Step 4: ビジュアル更新
             this.updateGuideLinesForCanvasResize();
             
-            // Step 5: 座標系キャッシュクリア
             if (this.coordinateSystem && typeof this.coordinateSystem.clearCache === 'function') {
                 this.coordinateSystem.clearCache();
             }
             
-            // Step 6: イベント発火
             if (this.eventBus) {
-                // camera:resized イベント（座標系クリアトリガー）
                 this.eventBus.emit('camera:resized', { 
                     width: newWidth, 
                     height: newHeight,
@@ -252,7 +233,6 @@
                     align: alignOptions
                 });
                 
-                // camera:transform-changed イベント
                 this.eventBus.emit('camera:transform-changed');
             }
         }
@@ -611,14 +591,6 @@
             }
         }
 
-        screenToLayer(screenX, screenY) {
-            return this.canvasContainer.toLocal({ x: screenX, y: screenY });
-        }
-
-        screenToCanvas(screenX, screenY) {
-            return this.screenToLayer(screenX, screenY);
-        }
-
         updateCoordinates(x, y) {}
 
         setZoom(level) {
@@ -638,7 +610,14 @@
             this._emitCursorUpdate();
         }
 
+        /**
+         * Phase 2改修: CoordinateSystemに委譲
+         * @deprecated Use CoordinateSystem.localToScreen() instead
+         */
         toScreenCoords(worldX, worldY) {
+            if (this.coordinateSystem) {
+                return this.coordinateSystem.worldToScreen(worldX, worldY);
+            }
             const canvasPoint = { x: worldX, y: worldY };
             return this.canvasContainer.toGlobal(canvasPoint);
         }
@@ -701,4 +680,6 @@
 
 })();
 
-console.log('✅ camera-system.js (v2.0: リサイズ修正版) loaded');
+console.log('✅ camera-system.js (Phase 2: 座標変換委譲版) loaded');
+console.log('   - screenClientToWorld/worldToScreen/screenToLayer を削除');
+console.log('   - すべて CoordinateSystem に委譲');
