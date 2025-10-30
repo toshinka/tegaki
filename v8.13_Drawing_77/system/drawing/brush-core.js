@@ -1,24 +1,28 @@
 /**
  * BrushCore - ペン/消しゴム共通コアロジック
- * Phase 2: drawing-engine.js統合版
+ * Phase 2完全修正版: Container参照誤り + CurveInterpolator不整合を解消
  * 
  * 責務:
  * - PointerEvent → Local座標変換（coordinate-system.js経由）
  * - 筆圧処理（pressure-handler統合）
- * - 補間処理（curve-interpolator統合）
+ * - 補間処理（線形補間実装）
  * - ストローク記録制御（stroke-recorder呼び出し）
  * - ペン/消しゴムモード管理
  * 
  * 依存:
  * - window.CoordinateSystem
  * - window.pressureHandler
- * - window.curveInterpolator
  * - window.strokeRecorder
+ * - window.strokeRenderer
  * - window.layerManager
  * 
  * 禁止:
  * - レンダリングロジック（stroke-renderer.jsに分離済み）
  * - 座標変換の二重実装
+ * 
+ * Phase 2修正内容:
+ * 1. activeLayer.container → activeLayer（Container参照誤り修正）
+ * 2. CurveInterpolator.interpolate() → 線形補間実装（存在しないメソッド対策）
  */
 
 (function() {
@@ -36,7 +40,6 @@
             // 依存オブジェクト（初期化時に設定）
             this.coordinateSystem = null;
             this.pressureHandler = null;
-            this.curveInterpolator = null;
             this.strokeRecorder = null;
             this.layerManager = null;
             this.strokeRenderer = null;
@@ -67,7 +70,6 @@
             // グローバル依存の取得
             this.coordinateSystem = window.CoordinateSystem;
             this.pressureHandler = window.pressureHandler;
-            this.curveInterpolator = window.CurveInterpolator;
             this.strokeRecorder = window.strokeRecorder;
             this.layerManager = window.layerManager;
             this.strokeRenderer = window.strokeRenderer;
@@ -91,17 +93,13 @@
             if (!this.pressureHandler) {
                 console.warn('BrushCore: window.pressureHandler not found - pressure sensitivity disabled');
             }
-            if (!this.curveInterpolator) {
-                console.warn('BrushCore: window.CurveInterpolator not found - curve interpolation disabled');
-            }
             
-            console.log('✅ BrushCore initialized (Phase 2)');
+            console.log('✅ BrushCore initialized (Phase 2完全修正版)');
             console.log('   - CoordinateSystem:', !!this.coordinateSystem);
             console.log('   - LayerManager:', !!this.layerManager);
             console.log('   - StrokeRecorder:', !!this.strokeRecorder);
             console.log('   - StrokeRenderer:', !!this.strokeRenderer);
             console.log('   - PressureHandler:', !!this.pressureHandler);
-            console.log('   - CurveInterpolator:', !!this.curveInterpolator);
         }
         
         /**
@@ -157,10 +155,13 @@
             // 座標変換パイプライン: Screen → Canvas → World → Local
             const { canvasX, canvasY } = this.coordinateSystem.screenClientToCanvas(clientX, clientY);
             const { worldX, worldY } = this.coordinateSystem.canvasToWorld(canvasX, canvasY);
+            
+            // ★★★ 修正1: activeLayer.container → activeLayer ★★★
+            // activeLayerは既にPIXI.Containerなので、.containerプロパティは存在しない
             const { localX, localY } = this.coordinateSystem.worldToLocal(
                 worldX, 
                 worldY, 
-                activeLayer.container
+                activeLayer  // ← 修正: .containerを削除
             );
             
             // 筆圧処理（既に補正済みの値として受け取る想定）
@@ -177,7 +178,9 @@
             // プレビューGraphics初期化
             this.previewGraphics = new PIXI.Graphics();
             this.previewGraphics.label = 'strokePreview';
-            activeLayer.container.addChild(this.previewGraphics);
+            
+            // ★★★ 修正2: activeLayer.container.addChild → activeLayer.addChild ★★★
+            activeLayer.addChild(this.previewGraphics);
             
             // 初回点を描画
             this.strokeRenderer.renderPreview(
@@ -192,7 +195,7 @@
                 action: 'stroke-started',
                 data: {
                     mode: this.currentMode,
-                    layerId: activeLayer.id,
+                    layerId: activeLayer.layerData?.id,
                     localX,
                     localY,
                     pressure: processedPressure
@@ -218,31 +221,35 @@
             const { localX, localY } = this.coordinateSystem.worldToLocal(
                 worldX, 
                 worldY, 
-                activeLayer.container
+                activeLayer  // ← 修正: .containerを削除
             );
             
             // 筆圧処理
             const processedPressure = pressure;
             
-            // 補間処理（curve-interpolatorがあれば使用）
-            if (this.curveInterpolator) {
-                const interpolatedPoints = this.curveInterpolator.interpolate(
-                    this.lastLocalX,
-                    this.lastLocalY,
-                    localX,
-                    localY,
-                    this.lastPressure,
-                    processedPressure
-                );
+            // ★★★ 修正3: CurveInterpolator.interpolate()を線形補間に置き換え ★★★
+            // 理由: CurveInterpolatorには interpolate(x1,y1,x2,y2,p1,p2) メソッドが存在しない
+            //       実装されているのは catmullRom(points[], tension, segmentPoints) のみ
+            
+            // 線形補間実装: 2点間を補間
+            const dx = localX - this.lastLocalX;
+            const dy = localY - this.lastLocalY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+            
+            // 距離ベースで補間ステップ数を決定（5px間隔）
+            const steps = Math.max(1, Math.floor(distance / 5));
+            
+            for (let i = 1; i <= steps; i++) {
+                const t = i / (steps + 1);
+                const interpX = this.lastLocalX + dx * t;
+                const interpY = this.lastLocalY + dy * t;
+                const interpPressure = this.lastPressure + (processedPressure - this.lastPressure) * t;
                 
-                // 補間点を全て記録
-                interpolatedPoints.forEach(pt => {
-                    this.strokeRecorder.addPoint(pt.x, pt.y, pt.pressure);
-                });
-            } else {
-                // 補間なし、直接記録
-                this.strokeRecorder.addPoint(localX, localY, processedPressure);
+                this.strokeRecorder.addPoint(interpX, interpY, interpPressure);
             }
+            
+            // 最終点を追加
+            this.strokeRecorder.addPoint(localX, localY, processedPressure);
             
             // プレビュー更新
             if (this.previewGraphics) {
@@ -280,27 +287,31 @@
             }
             
             // 確定描画（stroke-renderer.jsに委譲）
+            // ★★★ 修正4: activeLayer.container → activeLayer ★★★
             const pathData = this.strokeRenderer.renderStroke(
-                activeLayer.container,
+                activeLayer,  // ← 修正: .containerを削除
                 strokeData,
                 this.brushSettings
             );
             
             if (pathData && pathData.graphics) {
                 // レイヤーに追加
-                activeLayer.container.addChild(pathData.graphics);
+                // ★★★ 修正5: activeLayer.container.addChild → activeLayer.addChild ★★★
+                activeLayer.addChild(pathData.graphics);
                 
-                // pathsDataに記録
-                if (!activeLayer.pathsData) {
-                    activeLayer.pathsData = [];
+                // pathsDataに記録（layerDataが存在する場合）
+                if (activeLayer.layerData) {
+                    if (!activeLayer.layerData.pathsData) {
+                        activeLayer.layerData.pathsData = [];
+                    }
+                    activeLayer.layerData.pathsData.push(pathData);
                 }
-                activeLayer.pathsData.push(pathData);
                 
                 // 履歴に登録
                 if (window.historyManager) {
                     window.historyManager.recordAction({
                         type: 'stroke',
-                        layerId: activeLayer.id,
+                        layerId: activeLayer.layerData?.id,
                         pathData: pathData
                     });
                 }
@@ -314,7 +325,7 @@
                 action: 'stroke-completed',
                 data: {
                     mode: this.currentMode,
-                    layerId: activeLayer.id,
+                    layerId: activeLayer.layerData?.id,
                     pointCount: strokeData.points.length
                 }
             });
@@ -361,6 +372,9 @@
     // グローバル登録
     window.BrushCore = new BrushCore();
     
-    console.log('✅ system/drawing/brush-core.js loaded (Phase 2)');
+    console.log('✅ system/drawing/brush-core.js loaded (Phase 2完全修正版)');
+    console.log('   ✓ Container参照誤り修正（activeLayer.container → activeLayer）');
+    console.log('   ✓ CurveInterpolator不整合解消（線形補間実装）');
+    console.log('   ✓ 二重実装なし、DRY原則準拠');
 
 })();
