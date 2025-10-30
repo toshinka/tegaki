@@ -1,7 +1,87 @@
-// ===== system/drawing/thumbnail-system.js - Phase 1-3完全版（構文エラー修正）=====
+// ★★★ Phase 4完全修正: レイヤー完全非破壊レンダリング ★★★
+        async _renderLayerThumbnail(layer, width, height) {
+            try {
+                // 背景レイヤーは専用処理
+                if (layer.layerData?.isBackground) {
+                    return this._generateBackgroundThumbnail(layer, width, height);
+                }
+
+                // Step 1: レイヤーの親（フレームコンテナ）を取得
+                const frameContainer = layer.parent;
+                if (!frameContainer) {
+                    console.warn('[ThumbnailSystem] Layer has no parent container');
+                    return this._createEmptyCanvas(width, height);
+                }
+
+                // Step 2: キャンバスサイズ取得
+                const canvasWidth = this.config?.canvas?.width || 800;
+                const canvasHeight = this.config?.canvas?.height || 600;
+
+                // Step 3: フレーム全体をRenderTextureに描画
+                const frameRT = PIXI.RenderTexture.create({
+                    width: canvasWidth,
+                    height: canvasHeight,
+                    resolution: 1
+                });
+
+                if (!frameRT) {
+                    console.error('[ThumbnailSystem] RenderTexture creation failed');
+                    return this._createEmptyCanvas(width, height);
+                }
+
+                // 一時的に他のレイヤーを非表示化（対象レイヤーのみ表示）
+                const siblingVisibility = new Map();
+                frameContainer.children.forEach(sibling => {
+                    if (sibling !== layer) {
+                        siblingVisibility.set(sibling, sibling.visible);
+                        sibling.visible = false;
+                    }
+                });
+
+                // レイヤーの元の可視性を保存
+                const originalVisibility = layer.visible;
+                layer.visible = true;
+
+                // Step 4: レンダリング（レイヤーは元の位置のまま）
+                this.app.renderer.render({
+                    container: frameContainer,
+                    target: frameRT,
+                    clear: true
+                });
+
+                // Step 5: 可視性を復元
+                layer.visible = originalVisibility;
+                siblingVisibility.forEach((vis, sibling) => {
+                    sibling.visible = vis;
+                });
+
+                // Step 6: サムネイルサイズにリサイズ
+                const canvas = await this._resizeRenderTextureToCanvas(frameRT, width, height);
+
+                // クリーンアップ
+                frameRT.destroy(true);
+
+                return canvas;
+
+            } catch (error) {
+                console.error('[ThumbnailSystem] Layer thumbnail failed:', error);
+                
+                // エラー時も可視性を復元
+                if (layer && layer.parent) {
+                    layer.parent.children.forEach(sibling => {
+                        if (sibling.visible === false && sibling !== layer) {
+                            sibling.visible = true;
+                        }
+                    });
+                }
+                
+                return this._createEmptyCanvas(width, height);
+            }
+        }// ===== system/drawing/thumbnail-system.js - Phase 1-4完全版 =====
 // Phase 1: Vモード終了時のキャッシュ再生成
 // Phase 2: キャッシュキー戦略の統一（layerId/frameId + サイズのみ）
 // Phase 3: Canvas2D撲滅（PixiJS RenderTexture統一）
+// Phase 4完全修正: レイヤーバウンディングボックス対応・座標変換考慮
 
 (function() {
     'use strict';
@@ -47,8 +127,9 @@
             }
             
             this.isInitialized = true;
-            console.log('✅ ThumbnailSystem initialized (Phase 1-3)');
+            console.log('✅ ThumbnailSystem initialized (Phase 1-4完全版)');
             console.log('   ✓ RenderTexture pool: max size ' + this.poolMaxSize);
+            console.log('   ✓ Layer bounding box support enabled');
         }
 
         _setupEventListeners() {
@@ -63,30 +144,37 @@
                 this._refreshAllLayerThumbnailsAfterVMode();
             });
             
+            // ★★★ Phase 4: layer:transform-updated の優先度高い処理 ★★★
             this.eventBus.on('layer:transform-updated', ({ data }) => {
                 const { layerId, layerIndex } = data || {};
                 
                 if (!layerId && layerIndex === undefined) return;
                 
+                // Vモード中は pendingVModeRefresh に追加
                 if (this.vKeyModeActive && layerId) {
                     this.pendingVModeRefresh.add(layerId);
+                    console.log(`📌 [ThumbnailSystem] Pending VMode refresh: ${layerId}`);
                     return;
                 }
                 
+                // Vモード外: 即座にキャッシュクリア
                 if (layerId) {
                     this._invalidateLayerCacheByLayerId(layerId);
+                    console.log(`🗑️ [ThumbnailSystem] Cache cleared: ${layerId}`);
                 }
                 
+                // throttle処理（100ms）
                 if (this.thumbnailUpdateTimer) {
                     clearTimeout(this.thumbnailUpdateTimer);
                 }
                 
                 this.thumbnailUpdateTimer = setTimeout(() => {
                     if (layerIndex !== undefined) {
+                        console.log(`📢 [ThumbnailSystem] Emit thumbnail:layer-updated for layer ${layerIndex}`);
                         this.eventBus.emit('thumbnail:layer-updated', {
                             component: 'thumbnail-system',
                             action: 'transform-invalidated',
-                            data: { layerIndex, layerId }
+                            data: { layerIndex, layerId, immediate: false }
                         });
                     }
                     this.thumbnailUpdateTimer = null;
@@ -114,7 +202,17 @@
             });
             
             this.eventBus.on('camera:resized', () => {
+                console.log('📐 [ThumbnailSystem] Canvas resized - clearing all cache');
                 this.clearAllCache();
+                
+                // 全レイヤーサムネイル更新トリガー
+                setTimeout(() => {
+                    this.eventBus.emit('thumbnail:layer-updated', {
+                        component: 'thumbnail-system',
+                        action: 'resize-triggered',
+                        data: { immediate: true }
+                    });
+                }, 50);
             });
             
             this.eventBus.on('camera:transform-changed', () => {
@@ -150,6 +248,7 @@
                 this._invalidateLayerCacheByLayerId(layerId);
                 
                 if (this.eventBus) {
+                    console.log(`📢 [ThumbnailSystem] Emit immediate update for layer ${layerIndex}`);
                     this.eventBus.emit('thumbnail:layer-updated', {
                         component: 'thumbnail-system',
                         action: 'vmode-exit-refresh',
@@ -163,27 +262,33 @@
             console.log('✅ All pending thumbnails refreshed');
         }
 
+        // ★★★ Phase 4完全修正: レイヤーバウンディングボックス対応 ★★★
         async generateLayerThumbnail(layer, width = this.defaultLayerThumbSize, height = this.defaultLayerThumbSize) {
             if (!layer || !this.app?.renderer) {
+                console.warn('[ThumbnailSystem] Invalid layer or renderer');
                 return null;
             }
 
+            // 背景レイヤーは専用処理
             if (layer.layerData?.isBackground) {
-                return null;
+                return this._generateBackgroundThumbnail(layer, width, height);
             }
 
             const layerId = layer.layerData?.id || layer.label;
             const cacheKey = `layer_${layerId}_${width}_${height}`;
             
+            // キャッシュチェック
             if (this.layerThumbnailCache.has(cacheKey)) {
                 return this.layerThumbnailCache.get(cacheKey);
             }
 
+            // レンダリング
             const canvas = await this._renderLayerThumbnail(layer, width, height);
             
             if (canvas) {
                 this.layerThumbnailCache.set(cacheKey, canvas);
                 
+                // キャッシュサイズ制限
                 if (this.layerThumbnailCache.size > this.maxCacheSize) {
                     const firstKey = this.layerThumbnailCache.keys().next().value;
                     this.layerThumbnailCache.delete(firstKey);
@@ -193,31 +298,159 @@
             return canvas;
         }
 
+        // ★★★ Phase 4完全修正: 背景レイヤー専用サムネイル ★★★
+        async _generateBackgroundThumbnail(layer, width, height) {
+            try {
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+                
+                // 背景色描画
+                const bgColor = this.config?.background?.color || 0xF0E0D6;
+                const r = (bgColor >> 16) & 0xFF;
+                const g = (bgColor >> 8) & 0xFF;
+                const b = bgColor & 0xFF;
+                
+                ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+                ctx.fillRect(0, 0, width, height);
+                
+                return canvas;
+                
+            } catch (error) {
+                console.error('[ThumbnailSystem] Background thumbnail failed:', error);
+                return null;
+            }
+        }
+
+        // ★★★ Phase 4完全修正: レイヤーバウンディングボックス考慮 ★★★
         async _renderLayerThumbnail(layer, width, height) {
             try {
+                // Step 1: レイヤーのローカルバウンディングボックス取得
+                const bounds = layer.getLocalBounds();
+                
+                // 空のレイヤー対策
+                if (bounds.width === 0 || bounds.height === 0) {
+                    console.log(`[ThumbnailSystem] Empty layer: ${layer.layerData?.id}`);
+                    return this._createEmptyCanvas(width, height);
+                }
+
+                // Step 2: バウンディングボックスに基づく一時コンテナ作成
+                const tempContainer = new PIXI.Container();
+                
+                // レイヤーの全子要素を一時コンテナにコピー
+                const originalTransform = {
+                    x: layer.position.x,
+                    y: layer.position.y,
+                    scaleX: layer.scale.x,
+                    scaleY: layer.scale.y,
+                    rotation: layer.rotation,
+                    pivotX: layer.pivot.x,
+                    pivotY: layer.pivot.y
+                };
+                
+                // 一時的にレイヤーをtempContainerに追加（Transform適用済み）
+                tempContainer.addChild(layer);
+                
+                // Step 3: RenderTexture作成（バウンディングボックスサイズ）
+                const paddingRatio = 1.1; // 10%のパディング
+                const renderWidth = Math.max(1, Math.ceil(bounds.width * paddingRatio));
+                const renderHeight = Math.max(1, Math.ceil(bounds.height * paddingRatio));
+                
                 const rt = PIXI.RenderTexture.create({
-                    width: width,
-                    height: height,
+                    width: renderWidth,
+                    height: renderHeight,
                     resolution: window.devicePixelRatio || 1
                 });
 
-                if (!rt) return null;
+                if (!rt) {
+                    tempContainer.removeChild(layer);
+                    return null;
+                }
+
+                // Step 4: レンダリング（バウンディングボックスの中心を原点に）
+                const offsetX = -bounds.x + (renderWidth - bounds.width) / 2;
+                const offsetY = -bounds.y + (renderHeight - bounds.height) / 2;
+                
+                tempContainer.position.set(offsetX, offsetY);
 
                 this.app.renderer.render({
-                    container: layer,
+                    container: tempContainer,
                     target: rt,
                     clear: true
                 });
 
-                const canvas = this.app.renderer.extract.canvas(rt);
+                // Step 5: サムネイルサイズにリサイズ
+                const canvas = await this._resizeRenderTextureToCanvas(rt, width, height);
+
+                // クリーンアップ
+                tempContainer.removeChild(layer);
                 rt.destroy(true);
 
                 return canvas;
 
             } catch (error) {
-                console.error('Layer thumbnail failed:', error);
+                console.error('[ThumbnailSystem] Layer thumbnail failed:', error);
                 return null;
             }
+        }
+
+        // ★★★ Phase 4新規: RenderTextureをキャンバスにリサイズ ★★★
+        async _resizeRenderTextureToCanvas(renderTexture, targetWidth, targetHeight) {
+            try {
+                // RenderTextureからSpriteを作成
+                const sprite = PIXI.Sprite.from(renderTexture);
+                
+                // アスペクト比を保ってスケール計算
+                const scaleX = targetWidth / renderTexture.width;
+                const scaleY = targetHeight / renderTexture.height;
+                const scale = Math.min(scaleX, scaleY);
+                
+                sprite.scale.set(scale, scale);
+                
+                // 中央配置
+                sprite.x = (targetWidth - renderTexture.width * scale) / 2;
+                sprite.y = (targetHeight - renderTexture.height * scale) / 2;
+                
+                // 最終サムネイル用RenderTexture
+                const finalRT = PIXI.RenderTexture.create({
+                    width: targetWidth,
+                    height: targetHeight,
+                    resolution: 1
+                });
+                
+                this.app.renderer.render({
+                    container: sprite,
+                    target: finalRT,
+                    clear: true
+                });
+                
+                // Canvas抽出
+                const canvas = this.app.renderer.extract.canvas(finalRT);
+                
+                // クリーンアップ
+                sprite.destroy();
+                finalRT.destroy(true);
+                
+                return canvas;
+                
+            } catch (error) {
+                console.error('[ThumbnailSystem] Resize failed:', error);
+                return null;
+            }
+        }
+
+        // ★★★ Phase 4新規: 空のキャンバス作成 ★★★
+        _createEmptyCanvas(width, height) {
+            const canvas = document.createElement('canvas');
+            canvas.width = width;
+            canvas.height = height;
+            const ctx = canvas.getContext('2d');
+            
+            // 透明背景
+            ctx.clearRect(0, 0, width, height);
+            
+            return canvas;
         }
 
         async generateFrameThumbnail(frame, maxWidth = this.defaultFrameThumbSize, maxHeight = this.defaultFrameThumbSize) {
@@ -502,6 +735,9 @@
         window.TEGAKI_CONFIG
     );
 
-    console.log('✅ thumbnail-system.js loaded (Phase 1-3)');
+    console.log('✅ thumbnail-system.js loaded (Phase 1-4完全版)');
+    console.log('   ✓ Layer bounding box support');
+    console.log('   ✓ Transform-aware rendering');
+    console.log('   ✓ Empty layer detection');
 
 })();
