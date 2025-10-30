@@ -1,14 +1,20 @@
 /**
- * StrokeRenderer - ストローク描画専用クラス (PixiJS v8完全対応版)
+ * StrokeRenderer - ストローク描画専用クラス (Phase 2統合版)
  * 
  * 責務: ストロークデータ → PIXI描画オブジェクト変換
- * 改修: PixiJS v8準拠の描画API使用（各セグメントごとにstroke()呼び出し）
+ * 改修: ペン/消しゴム統合、blendMode切替のみで両モード実現
  * 
  * 描画方式:
  * - プレビュー: 筆圧対応Graphics（累積描画）
  * - 確定描画: 筆圧対応Graphics（同じ計算式）
- * - 消しゴム: blendMode='erase' で透明化
+ * - ペン: blendMode='normal', 通常描画
+ * - 消しゴム: blendMode='erase', maskTextureへ描画
  * - 各線分ごとに stroke() 呼び出し（PixiJS v8要件）
+ * 
+ * Phase 2変更点:
+ * - setTool()でペン/消しゴム切替
+ * - renderStroke()で消しゴム時はmaskTextureに描画
+ * - eraser-mask-renderer.jsの機能を完全統合
  */
 
 (function() {
@@ -26,8 +32,13 @@
 
         /**
          * 現在のツールを設定
+         * @param {'pen'|'eraser'} tool
          */
         setTool(tool) {
+            if (tool !== 'pen' && tool !== 'eraser') {
+                console.warn(`Invalid tool: ${tool}, defaulting to pen`);
+                tool = 'pen';
+            }
             this.currentTool = tool;
         }
 
@@ -57,6 +68,8 @@
             // 消しゴムモードの場合はblendModeを変更
             if (this.currentTool === 'eraser') {
                 graphics.blendMode = 'erase';
+            } else {
+                graphics.blendMode = 'normal';
             }
 
             // 単独点の場合は円
@@ -97,23 +110,29 @@
         }
 
         /**
-         * 確定ストローク描画
-         * @param {PIXI.Container} layer - 描画先レイヤー
+         * 確定ストローク描画（Phase 2統合版）
+         * 
+         * ペンモード: 通常レイヤーに描画
+         * 消しゴムモード: maskTextureに描画（自動生成）
+         * 
+         * @param {PIXI.Container} layerContainer - 描画先レイヤーContainer
          * @param {Object} strokeData - {points, isSingleDot}
          * @param {Object} settings - {color, size, opacity}
          * @returns {Object} pathData
          */
-        renderStroke(layer, strokeData, settings) {
-            if (!layer || !strokeData || strokeData.points.length === 0) {
+        renderStroke(layerContainer, strokeData, settings) {
+            if (!layerContainer || !strokeData || strokeData.points.length === 0) {
                 return null;
             }
 
-            const graphics = new PIXI.Graphics();
-            
-            // 消しゴムモードの場合はblendModeを設定
+            // 消しゴムモードの場合はmaskTextureに描画
             if (this.currentTool === 'eraser') {
-                graphics.blendMode = 'erase';
+                return this._renderEraserStroke(layerContainer, strokeData, settings);
             }
+
+            // ペンモード: 通常描画
+            const graphics = new PIXI.Graphics();
+            graphics.blendMode = 'normal';
 
             // 単独点の場合
             if (strokeData.isSingleDot || strokeData.points.length === 1) {
@@ -122,8 +141,8 @@
                 
                 graphics.circle(p.x, p.y, width / 2);
                 graphics.fill({
-                    color: this.currentTool === 'eraser' ? 0xFFFFFF : settings.color,
-                    alpha: this.currentTool === 'eraser' ? 1.0 : (settings.opacity || 1.0)
+                    color: settings.color,
+                    alpha: settings.opacity || 1.0
                 });
             } else {
                 // PixiJS v8: 各線分ごとに stroke() を呼ぶ
@@ -139,8 +158,8 @@
                     graphics.lineTo(p2.x, p2.y);
                     graphics.stroke({
                         width: avgWidth,
-                        color: this.currentTool === 'eraser' ? 0xFFFFFF : settings.color,
-                        alpha: this.currentTool === 'eraser' ? 1.0 : (settings.opacity || 1.0),
+                        color: settings.color,
+                        alpha: settings.opacity || 1.0,
                         cap: 'round',
                         join: 'round'
                     });
@@ -163,6 +182,128 @@
         }
 
         /**
+         * 消しゴムストローク描画（内部メソッド）
+         * @private
+         */
+        _renderEraserStroke(layerContainer, strokeData, settings) {
+            // LayerSystemからlayerDataを取得
+            const layerData = this._getLayerDataFromContainer(layerContainer);
+            if (!layerData) {
+                console.warn('LayerData not found for eraser stroke');
+                return null;
+            }
+
+            // maskTextureを自動生成（未作成の場合）
+            if (!layerData.maskTexture) {
+                this._ensureMaskTexture(layerData);
+            }
+
+            // 消しゴム用Graphics作成
+            const graphics = new PIXI.Graphics();
+            graphics.blendMode = 'erase'; // CRITICAL: 消しゴムモード
+
+            // 単独点の場合
+            if (strokeData.isSingleDot || strokeData.points.length === 1) {
+                const p = strokeData.points[0];
+                const width = this.calculateWidth(p.pressure || 0.5, settings.size);
+                
+                graphics.circle(p.x, p.y, width / 2);
+                graphics.fill({ color: 0xFFFFFF, alpha: 1.0 });
+            } else {
+                // 各線分を描画
+                for (let i = 0; i < strokeData.points.length - 1; i++) {
+                    const p1 = strokeData.points[i];
+                    const p2 = strokeData.points[i + 1];
+                    
+                    const w1 = this.calculateWidth(p1.pressure || 0.5, settings.size);
+                    const w2 = this.calculateWidth(p2.pressure || 0.5, settings.size);
+                    const avgWidth = (w1 + w2) / 2;
+
+                    graphics.moveTo(p1.x, p1.y);
+                    graphics.lineTo(p2.x, p2.y);
+                    graphics.stroke({
+                        width: avgWidth,
+                        color: 0xFFFFFF,
+                        alpha: 1.0,
+                        cap: 'round',
+                        join: 'round'
+                    });
+                }
+            }
+
+            // maskTextureに描画
+            this.app.renderer.render({
+                container: graphics,
+                target: layerData.maskTexture,
+                clear: false
+            });
+
+            // Graphicsを破棄（maskTextureに転写済み）
+            graphics.destroy();
+
+            // pathDataオブジェクト作成（履歴用）
+            const pathData = {
+                id: 'eraser_' + Date.now() + '_' + Math.random().toString(36).substr(2, 9),
+                points: strokeData.points,
+                color: 0xFFFFFF,
+                size: settings.size,
+                opacity: 1.0,
+                tool: 'eraser',
+                isComplete: true,
+                graphics: null // maskTextureに転写済みのためnull
+            };
+
+            return pathData;
+        }
+
+        /**
+         * maskTextureの自動生成（Phase 2新規）
+         * @private
+         */
+        _ensureMaskTexture(layerData) {
+            if (layerData.maskTexture) return;
+
+            const config = window.TEGAKI_CONFIG || { canvas: { width: 800, height: 600 } };
+            
+            layerData.maskTexture = PIXI.RenderTexture.create({
+                width: config.canvas.width,
+                height: config.canvas.height,
+                resolution: this.resolution
+            });
+
+            // 初期値: 完全不透明（白）
+            const whiteFill = new PIXI.Graphics();
+            whiteFill.rect(0, 0, config.canvas.width, config.canvas.height);
+            whiteFill.fill({ color: 0xFFFFFF, alpha: 1.0 });
+
+            this.app.renderer.render({
+                container: whiteFill,
+                target: layerData.maskTexture
+            });
+
+            whiteFill.destroy();
+
+            // layerContainerにマスク適用
+            if (layerData.container) {
+                layerData.container.mask = new PIXI.Sprite(layerData.maskTexture);
+                layerData.container.addChild(layerData.container.mask);
+            }
+
+            console.log(`✅ MaskTexture created for layer: ${layerData.id}`);
+        }
+
+        /**
+         * ContainerからLayerDataを取得
+         * @private
+         */
+        _getLayerDataFromContainer(container) {
+            if (!this.layerSystem) return null;
+
+            const layers = this.layerSystem.layers || [];
+            return layers.find(layer => layer.container === container);
+        }
+
+        /**
          * 確定ストローク描画（筆圧反映版・プレビュー同一）
          * @param {Object} strokeData - {points, isSingleDot}
          * @param {Object} settings - {color, size, alpha}
@@ -174,6 +315,8 @@
 
             if (this.currentTool === 'eraser') {
                 graphics.blendMode = 'erase';
+            } else {
+                graphics.blendMode = 'normal';
             }
 
             if (strokeData.isSingleDot || strokeData.points.length === 1) {
@@ -221,6 +364,8 @@
 
             if (this.currentTool === 'eraser') {
                 graphics.blendMode = 'erase';
+            } else {
+                graphics.blendMode = 'normal';
             }
 
             graphics.circle(point.x, point.y, width / 2);
@@ -244,6 +389,6 @@
     // グローバル登録
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ system/drawing/stroke-renderer.js loaded (PixiJS v8完全対応版)');
+    console.log('✅ system/drawing/stroke-renderer.js loaded (Phase 2統合版)');
 
 })();
