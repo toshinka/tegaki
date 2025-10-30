@@ -1,0 +1,562 @@
+================================================================================
+Tegaki v8.13 - GSAP統合・サムネイル修正 段階的改修計画書
+================================================================================
+
+【現状問題分析】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+1. レイヤーサムネイルが古い
+   - Vモードでの変形が反映されない（回転・スケール）
+   - 非アクティブレイヤーはサイズ変更も反映しない
+
+2. Vモード編集がレイヤーパネルに反映されない
+   - タイムラインUIは正常
+   - layer-panel-renderer.jsがlayer:transform-updatedを購読していない
+
+3. タイムラインサムネイルの初回更新遅延
+   - Vモードやリサイズまで何も反映しない
+   - 一度反映すればリニアに動作
+
+4. Vモード時の反転ボタン無効
+   - パネル内反転ボタンが効かない
+   - ショートカット（H/Shift+H）も無効
+
+【原因分析】
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+■ イベント伝播の断絶
+- layer-transform.js → layer:transform-updated発火済み
+- layer-panel-renderer.js → 購読なし（既存実装）
+- timeline-thumbnail-utils.js → 購読あり（Phase3実装済み）
+
+■ サムネイル生成タイミング
+- thumbnail-system.js: Vモード終了時のキャッシュ再生成は実装済み
+- layer-panel-renderer.js: キャッシュクリア→再生成の流れが不足
+
+■ 反転機能の統合不足
+- layer-transform.js: flipLayer()実装済み、イベント発火あり
+- keyboard-handler.js: H/Shift+Hで onFlipRequest 呼び出し
+- パネルボタン: Vモード時の有効化/無効化は実装済み
+→ onFlipRequest コールバックの接続が不足
+
+【GSAP導入の根拠】（GPT5案参照）
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+■ 導入効果
+1. Transform更新とサムネイル生成の同期制御
+2. Ticker統一によるレンダリング競合回避
+3. アニメーション中のリロード安定化
+4. 状態リセットのタイミング保証
+
+■ 配置方法
+- npm install gsap
+- node_modules/gsap/dist/gsap.min.js → libs/gsap.min.js
+- index.htmlで <script src="libs/gsap.min.js"></script>
+
+================================================================================
+Phase 1: GSAP導入・基盤整備
+================================================================================
+
+【目的】
+- GSAPライブラリの導入
+- 座標変換・Transform更新の同期制御基盤構築
+- 既存機能への影響を最小化
+
+【対象ファイル】
+・index.html
+・system/layer-transform.js
+・libs/gsap.min.js（新規）
+
+【改修内容】
+
+■ 1-1. GSAPライブラリ配置
+ファイル: (手動作業)
+内容:
+  - npm install gsap
+  - node_modules/gsap/dist/gsap.min.js をコピー
+  - → libs/gsap.min.js に配置
+
+■ 1-2. index.html更新
+ファイル: index.html
+参照: ライブラリ読み込み順序に注意
+内容:
+  - <script src="libs/gsap.min.js"></script> を追加
+  - PixiJS読み込み後、config.js読み込み前に配置
+  - 読み込み順序: PixiJS → GSAP → config.js → event-bus.js
+
+■ 1-3. layer-transform.jsへのGSAP統合
+ファイル: system/layer-transform.js
+参照: _emitTransformUpdated(), applyTransform()
+使用メソッド: gsap.delayedCall(), gsap.killTweensOf()
+内容:
+  (1) GSAPのdelayedCallでTransform反映を1フレーム遅延
+      → GPU反映を保証
+  (2) Transform更新時の古いTweenをキャンセル
+      → gsap.killTweensOf(layer)で重複アニメーション防止
+  (3) _emitTransformUpdated()をdelayedCall内で実行
+      → サムネイル生成タイミングを同期
+
+実装パターン:
+```javascript
+applyTransform(layer, transform, centerX, centerY) {
+    // 既存Tween中止
+    gsap.killTweensOf(layer);
+    
+    // Transform適用
+    if (this.coordAPI?.applyLayerTransform) {
+        this.coordAPI.applyLayerTransform(layer, transform, centerX, centerY);
+    } else {
+        this._applyTransformDirect(layer, transform, centerX, centerY);
+    }
+    
+    // 1フレーム後にイベント発火（GPU反映保証）
+    gsap.delayedCall(0.016, () => {
+        this._emitTransformUpdated(layer.layerData.id, layer);
+    });
+}
+```
+
+【検証方法】
+1. index.htmlでgsap.min.jsが読み込まれるか確認
+2. console.log(gsap)でGSAPオブジェクト存在確認
+3. Vモードでレイヤー移動→Transform反映遅延が16ms以内か確認
+
+
+================================================================================
+Phase 2: サムネイル更新パイプライン統合
+================================================================================
+
+【目的】
+- レイヤーパネルのサムネイル更新をリアルタイム化
+- thumbnail-system.jsとlayer-panel-renderer.jsの連携強化
+
+【対象ファイル】
+・ui/layer-panel-renderer.js
+・system/drawing/thumbnail-system.js
+
+【改修内容】
+
+■ 2-1. layer-panel-renderer.jsイベント購読追加
+ファイル: ui/layer-panel-renderer.js
+参照: _setupEventListeners(), updateLayerThumbnail()
+使用メソッド: eventBus.on('layer:transform-updated')
+内容:
+  (1) layer:transform-updated イベント購読追加
+      → layer-transform.jsから発火されるイベントを受信
+  (2) throttle機能追加（layerUpdateTimers Map使用）
+      → 50ms間隔で連続更新を制限
+  (3) immediate フラグ対応
+      → Vモード終了時など優先度高い更新を即座実行
+
+実装パターン:
+```javascript
+_setupEventListeners() {
+    this.eventBus.on('layer:transform-updated', ({ data }) => {
+        const { layerIndex, layerId } = data || {};
+        
+        if (layerIndex === undefined && !layerId) return;
+        
+        const throttleKey = layerId || `index-${layerIndex}`;
+        
+        if (this.layerUpdateTimers.has(throttleKey)) {
+            clearTimeout(this.layerUpdateTimers.get(throttleKey));
+        }
+        
+        const timer = setTimeout(() => {
+            gsap.delayedCall(0.016, () => {
+                if (layerIndex !== undefined) {
+                    this.updateLayerThumbnail(layerIndex);
+                }
+            });
+            this.layerUpdateTimers.delete(throttleKey);
+        }, 50);
+        
+        this.layerUpdateTimers.set(throttleKey, timer);
+    });
+}
+```
+
+■ 2-2. キャッシュ強制クリア実装
+ファイル: ui/layer-panel-renderer.js
+参照: updateLayerThumbnail()
+使用メソッド: ThumbnailSystem._invalidateLayerCacheByLayerId()
+内容:
+  - サムネイル更新前にキャッシュを強制削除
+  - 古いサムネイルが表示される問題を防止
+
+■ 2-3. thumbnail-system.js Vモード連携強化
+ファイル: system/drawing/thumbnail-system.js
+参照: _refreshAllLayerThumbnailsAfterVMode()
+内容:
+  - 既存実装の動作確認
+  - pendingVModeRefresh Setの正常動作確認
+  - keyboard:vkey-released イベントでの再生成実行確認
+
+【検証方法】
+1. Vモードでレイヤー回転→レイヤーパネルサムネイル更新確認
+2. console.log でthrottle動作確認（50ms間隔）
+3. window.TegakiDebug.monitorThumbnails() でイベント監視
+
+
+================================================================================
+Phase 3: タイムラインサムネイル初回更新修正
+================================================================================
+
+【目的】
+- タイムラインサムネイルの初回生成遅延を解消
+- レイヤー変形に即座追従
+
+【対象ファイル】
+・ui/timeline-thumbnail-utils.js
+・system/animation-system.js
+
+【改修内容】
+
+■ 3-1. timeline-thumbnail-utils.js初期化強化
+ファイル: ui/timeline-thumbnail-utils.js
+参照: _setupCameraTransformListener()
+使用メソッド: eventBus.on('layer:transform-updated')
+内容:
+  - layer:transform-updated イベント購読（既存実装確認）
+  - immediate フラグでthrottle バイパス実装
+  - ThumbnailSystem.clearAllCache()連携
+
+■ 3-2. 初回サムネイル生成タイミング修正
+ファイル: system/animation-system.js
+参照: init(), regenerateAllThumbnails()
+内容:
+  (1) init()完了時に全フレームサムネイル生成
+  (2) GSAP.delayedCall()で描画完了後に実行
+      → PixiJSレンダリング完了を保証
+
+実装パターン:
+```javascript
+init(app, coordinateSystem) {
+    // ... 既存初期化処理 ...
+    
+    // 初回サムネイル生成（描画完了後）
+    gsap.delayedCall(0.1, () => {
+        this.regenerateAllThumbnails();
+    });
+}
+```
+
+【検証方法】
+1. ツール起動→タイムラインサムネイル即座生成確認
+2. Vモード変形→タイムライン即座更新確認
+3. window.TegakiDebug.inspectThumbnailCache()でキャッシュ状態確認
+
+
+================================================================================
+Phase 4: Vモード反転機能修復
+================================================================================
+
+【目的】
+- Vモード時のパネル反転ボタン有効化
+- ショートカット（H/Shift+H）機能修復
+
+【対象ファイル】
+・system/layer-transform.js
+・ui/keyboard-handler.js
+・core-engine.js または core-runtime.js
+
+【改修内容】
+
+■ 4-1. layer-transform.js コールバック接続確認
+ファイル: system/layer-transform.js
+参照: _setupTransformPanel(), flipLayer()
+内容:
+  - flipLayer()メソッドの動作確認（実装済み）
+  - _updateFlipButtonsAvailability()の動作確認（実装済み）
+  - onFlipRequest コールバックの設定状況確認
+
+■ 4-2. core-engine.jsでのコールバック設定
+ファイル: core-engine.js
+参照: _initializeLayerTransform()
+内容:
+  - layerTransform.onFlipRequest の設定
+  - アクティブレイヤー取得処理の接続
+
+実装パターン:
+```javascript
+_initializeLayerTransform() {
+    // ... 既存初期化 ...
+    
+    this.layerTransform.onFlipRequest = (direction) => {
+        const activeLayer = this.layerManager.getActiveLayer();
+        if (!activeLayer) return;
+        
+        this.layerTransform.flipLayer(activeLayer, direction);
+        
+        // サムネイル更新トリガー
+        const layerIndex = this.layerManager.activeLayerIndex;
+        if (this.eventBus) {
+            this.eventBus.emit('thumbnail:layer-updated', {
+                component: 'layer-transform',
+                action: 'flip-applied',
+                data: { layerIndex, layerId: activeLayer.layerData.id, immediate: true }
+            });
+        }
+    };
+}
+```
+
+■ 4-3. keyboard-handler.js連携確認
+ファイル: ui/keyboard-handler.js
+参照: _setupFlipKeyEvents()
+内容:
+  - H/Shift+H キー処理の動作確認（実装済み）
+  - onFlipRequest呼び出し確認
+
+【検証方法】
+1. Vモード起動→パネル反転ボタンが有効化されるか確認
+2. パネルボタンクリック→反転動作確認
+3. H/Shift+Hキー→反転動作確認
+4. サムネイル即座更新確認
+
+
+================================================================================
+Phase 5: GSAP Ticker統合・安定化
+================================================================================
+
+【目的】
+- PixiJSとGSAPのTicker統合
+- レンダリング競合回避
+- リロード時の安定化
+
+【対象ファイル】
+・core-runtime.js
+・core-engine.js
+
+【改修内容】
+
+■ 5-1. GSAP Ticker統合
+ファイル: core-runtime.js
+参照: _setupTicker()
+使用メソッド: gsap.ticker.add()
+内容:
+  (1) PixiJS app.tickerの代わりにGSAP tickerを使用
+  (2) レンダリングループをGSAP管理下に置く
+  (3) リロード時のクリーンアップ処理追加
+
+実装パターン:
+```javascript
+_setupTicker() {
+    // PixiJS tickerは無効化
+    this.app.ticker.stop();
+    
+    // GSAP tickerで統一
+    this.gsapTicker = gsap.ticker.add(() => {
+        if (this.app?.renderer && this.app?.stage) {
+            this.app.renderer.render(this.app.stage);
+        }
+    });
+}
+```
+
+■ 5-2. クリーンアップ処理追加
+ファイル: core-runtime.js
+参照: destroy()
+内容:
+  (1) gsap.ticker.removeAll()でTicker停止
+  (2) gsap.killTweensOf("*")で全Tween停止
+  (3) gsap.globalTimeline.clear()でタイムラインクリア
+
+実装パターン:
+```javascript
+destroy() {
+    // GSAP完全停止
+    gsap.killTweensOf("*");
+    gsap.globalTimeline.clear();
+    gsap.ticker.removeAll();
+    
+    // PixiJS破棄
+    if (this.app) {
+        this.app.destroy(true, { children: true });
+    }
+    
+    // イベントバスクリア
+    if (window.TegakiEventBus) {
+        window.TegakiEventBus.removeAllListeners();
+    }
+}
+```
+
+【検証方法】
+1. 描画動作確認→フレームレート安定確認
+2. リロード動作確認→白画面にならないか確認
+3. 複数回リロード→メモリリーク確認
+
+
+================================================================================
+Phase 6: 総合検証・デバッグコマンド整備
+================================================================================
+
+【目的】
+- 全Phase統合後の動作確認
+- デバッグ機能の整備
+
+【対象ファイル】
+・全ファイル（統合テスト）
+
+【検証項目】
+
+■ 6-1. レイヤーサムネイル更新
+テスト手順:
+1. Vモードでレイヤー回転
+2. レイヤーパネルサムネイルが即座更新されるか確認
+3. 非アクティブレイヤーも更新されるか確認
+
+■ 6-2. タイムラインサムネイル
+テスト手順:
+1. ツール起動直後にタイムラインサムネイル表示確認
+2. Vモード変形→即座更新確認
+3. リサイズ→全サムネイル再生成確認
+
+■ 6-3. 反転機能
+テスト手順:
+1. Vモード起動→パネル反転ボタン有効化確認
+2. パネルボタンクリック→反転確認
+3. H/Shift+Hキー→反転確認
+4. サムネイル即座更新確認
+
+■ 6-4. デバッグコマンド
+使用可能コマンド:
+- window.TegakiDebug.monitorThumbnails()
+- window.TegakiDebug.inspectThumbnailCache()
+- window.TegakiDebug.verifyCanvas2DElimination()
+- window.TegakiDebug.testRenderTexturePool()
+- window.TegakiDebug.testCacheHitRate()
+
+【最終確認】
+□ レイヤーサムネイル（アクティブ・非アクティブ）即座更新
+□ タイムラインサムネイル初回生成・即座更新
+□ Vモード反転ボタン・ショートカット動作
+□ リロード安定性
+□ メモリリーク無し
+□ フレームレート安定
+
+
+================================================================================
+実装優先度
+================================================================================
+
+必須: Phase 1, 2, 4
+推奨: Phase 3, 5
+任意: Phase 6（検証のみ）
+
+Phase 1 → Phase 2 → Phase 4 の順で実装すれば、
+主要な問題（レイヤーサムネイル更新・反転機能）は解決します。
+
+Phase 3, 5 は安定性向上・最適化のため、
+余裕があれば実装推奨。
+
+
+================================================================================
+補足: Canvas2D撲滅について
+================================================================================
+
+thumbnail-system.js は既にPhase 3完全版として
+Canvas2D撲滅が完了しています。
+
+_renderFrameThumbnailPixiJS() メソッドで：
+- PixiJS RenderTexture使用
+- RenderTexture プール管理
+- GPU処理によるリサイズ
+
+Canvas2D (ctx.drawImage) は一切使用していません。
+
+検証: window.TegakiDebug.verifyCanvas2DElimination()
+
+
+================================================================================
+ファイル間依存関係マップ
+================================================================================
+
+index.html
+  ├─ libs/gsap.min.js (新規)
+  ├─ config.js
+  ├─ system/event-bus.js
+  ├─ coordinate-system.js
+  ├─ system/layer-transform.js
+  │   └─ 使用: GSAP delayedCall, killTweensOf
+  ├─ system/drawing/thumbnail-system.js
+  │   └─ 使用: PixiJS RenderTexture, プール管理
+  ├─ ui/layer-panel-renderer.js
+  │   └─ 依存: ThumbnailSystem, EventBus, layerManager
+  ├─ ui/timeline-thumbnail-utils.js
+  │   └─ 依存: ThumbnailSystem, EventBus, animationSystem
+  ├─ ui/keyboard-handler.js
+  │   └─ 依存: EventBus, keymap
+  ├─ core-runtime.js
+  │   └─ 使用: GSAP ticker, killTweensOf, globalTimeline
+  └─ core-engine.js
+      └─ 統合: layerTransform.onFlipRequest 設定
+
+
+================================================================================
+メソッド・シンボル辞典
+================================================================================
+
+【GSAP】
+- gsap.delayedCall(delay, callback) : 遅延実行
+- gsap.killTweensOf(target) : Tween停止
+- gsap.ticker.add(callback) : Ticker追加
+- gsap.ticker.removeAll() : Ticker全停止
+- gsap.globalTimeline.clear() : Timeline クリア
+
+【ThumbnailSystem】
+- generateLayerThumbnail(layer, w, h) : レイヤーサムネイル生成
+- generateFrameThumbnail(frame, w, h) : フレームサムネイル生成
+- _invalidateLayerCacheByLayerId(layerId) : キャッシュクリア
+- clearAllCache() : 全キャッシュクリア
+- canvasToDataURL(canvas) : Canvas→DataURL変換
+
+【LayerTransform】
+- applyTransform(layer, transform, cx, cy) : Transform適用
+- flipLayer(layer, direction) : レイヤー反転
+- _emitTransformUpdated(layerId, layer) : イベント発火
+- confirmTransform(layer) : Transform確定
+
+【LayerPanelRenderer】
+- updateLayerThumbnail(layerIndex) : サムネイル更新
+- updateAllThumbnails() : 全サムネイル更新
+- _generateAndDisplayThumbnail(layer, index, img) : 生成・表示
+
+【EventBus】
+- layer:transform-updated : Transform更新イベント
+- thumbnail:layer-updated : サムネイル更新リクエスト
+- keyboard:vkey-pressed : Vキー押下
+- keyboard:vkey-released : Vキー解放
+
+
+================================================================================
+改修時の注意事項
+================================================================================
+
+【必須ルール】
+1. 座標変換の二重実行禁止
+   - coordinate-system.js で変換完結
+   - stroke-recorder.js では変換しない
+
+2. Canvas2D使用禁止
+   - PixiJS RenderTexture のみ使用
+
+3. グローバルオブジェクト重複禁止
+   - window.CoordinateSystem
+   - window.TegakiEventBus
+   - window.ThumbnailSystem
+
+4. イベント名規則
+   - component:action 形式統一
+
+5. throttle/debounce適切使用
+   - サムネイル更新: 50-100ms
+   - Transform更新: 16ms (1フレーム)
+
+【推奨事項】
+- コメント必須（改修理由・Phase番号明記）
+- console.log でデバッグ情報出力
+- TegakiDebug 名前空間でデバッグコマンド提供
+- 既存機能破壊しない（互換性維持）
+
+================================================================================
+EOF
+================================================================================
