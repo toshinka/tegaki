@@ -1,0 +1,205 @@
+ ✅ config.js (Phase 2完全版) loaded
+    - BRUSH_DEFAULTS追加完了
+ ✅ system/event-bus.js Phase 2: 優先度機能追加版 loaded
+ ✅ coordinate-system.js (Phase 1: グローバル統一版) loaded
+    - window.CoordinateSystem に統一
+    - 旧 TEGAKI_COORDINATE_SYSTEM は廃止
+ ✅ data-models.js (マスクスプライト不可視版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ camera-system.js (Phase 2: 座標変換委譲版) loaded
+    - screenClientToWorld/worldToScreen/screenToLayer を削除
+    - すべて CoordinateSystem に委譲
+ ✅ layer-transform.js (Phase 4: Vモード反転機能修復版) loaded
+    ✓ Phase 1-3: イベント発火・NaN対策・UI整備
+    ✓ Phase 4: Vモードチェック追加 (_setupFlipKeyEvents)
+    ✓ Phase 4: デバッグログ追加 (_updateFlipButtonsAvailability)
+    ✓ Phase 4: ボタンクリックイベント確認
+    ✓ Phase 5: GSAP統合（killTweensOf + delayedCall）
+ ✅ layer-system.js (Phase 2+3: ThumbnailSystem統一+イベント統合版) loaded
+    ✓ updateThumbnail() 独自実装を削除
+    ✓ requestThumbnailUpdate() を EventBus 経由に変更
+    ✓ processThumbnailUpdates() 削除
+    ✓ _startThumbnailUpdateProcess() 削除
+    ✓ layer:transform-updated 購読追加 (Phase 3)
+ ✅ drawing-clipboard.js Phase4改修版+確定イベント loaded
+    - ✅ CTRL+V behavior: overwrite active layer
+    - ✅ Commit events: paste:commit, operation:commit
+    - ✅ Thumbnail auto-update on paste
+ ✅ history.js (Phase 3: Redo null参照修正版) loaded
+ [AnimationSystem] GSAP detected - using synchronized thumbnail generation
+ ✅ animation-system.js (GSAP統合完全版) loaded
+    ✓ Phase 1: フレーム名統一（xF形式）
+    ✓ Phase 3: Canvas2D廃止 → ThumbnailSystem統一
+    ✓ Phase 3-2: init()時にGSAP.delayedCall()で初回サムネイル生成
+    ✓ generateFrameThumbnail(): PixiJS RenderTexture使用
+    ✓ frame.thumbnailDataURL保存で UI層連携
+ ✅ system/drawing/pressure-handler.js (Phase 2対応版) loaded
+    - window.PressureHandler (クラス)
+    - window.pressureHandler (インスタンス)
+ ✅ curve-interpolator.js (Phase 3) loaded
+    - Catmull-Rom スプライン補間
+    - 適応的サンプリング対応
+    - tiltX/Y/twist データ補間対応
+ ✅ system/drawing/stroke-recorder.js (Phase 2対応版) loaded
+    - window.StrokeRecorder (クラス)
+ ✅ system/drawing/stroke-renderer.js loaded (Phase 2統合版)
+ ✅ thumbnail-system.js loaded (Phase 1: 二重実装撲滅版)
+    ✓ Single _renderLayerThumbnail() implementation
+    ✓ Bounding box rendering method
+    ✓ Parent restoration on cleanup
+ ✅ system/drawing/brush-settings.js (Phase 2統合版) loaded
+    - window.BrushSettings として公開
+    - getOpacity() / setOpacity() API提供
+ ✅ system/drawing/brush-core.js loaded (Phase 2完全修正版)
+    ✓ Container参照誤り修正（activeLayer.container → activeLayer）
+    ✓ CurveInterpolator不整合解消（線形補間実装）
+    ✓ 二重実装なし、DRY原則準拠
+ ✅ subpixel-precision-test.js loaded
+ ✅ Debug commands: TegakiDebug.precision.*
+ ✅ quick-export-ui.js (無効化版) loaded
+ ✅ export-manager.js (CUT→FRAME完全修正版) loaded
+ ✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded
+ ✅ apng-exporter.js (CUT→FRAME完全修正版) loaded
+ ✅ gif-exporter.js (CUT→FRAME完全修正版) loaded
+ ✅ webp-exporter.js (静止画・動画自動判定対応版) loaded
+ ✅ mp4-exporter.js (Phase 8完成版) loaded
+ ✅ pdf-exporter.js (CUT→FRAME完全対応版) loaded
+ ✅ dom-builder.js (ID重複解消版) loaded
+    - #pen-settings → #legacy-pen-settings に変更
+    - pen-size-slider → legacy-pen-size-slider に変更
+    - quick-access-popup.jsとのID競合を完全解消
+ ✅ ui/slider-utils.js loaded
+    - 責務: スライダーUIの統一実装
+    - DRY原則: settings-popup.js と ui-panels.js で共有
+    - API: createSlider() / createSimpleSlider()
+ ✅ keyboard-handler.js (P/Eサイドバー同期版) loaded
+ ✅ resize-popup.js (Phase 4完了: ロジック削減版) loaded
+ ✅ ui/layer-panel-renderer.js (Step 1: エラー警告撲滅版) loaded
+    ✓ console.warn() → 再試行メカニズム（最大3回）
+    ✓ 指数バックオフ（100ms, 200ms, 300ms）
+    ✓ ノイズ削減（サイレント失敗）
+ ✅ status-display-renderer.js (Phase 1改修版) loaded
+ ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+    ✓ Phase 1: layer:transform-updated 購読追加
+    ✓ Phase 3: throttle最適化（100ms）
+    ✓ Phase 3: immediate フラグ対応
+    ✓ タイムラインサムネイルがレイヤー変形に即座追従
+ ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+ ✅ album-popup.js (FRAME改修版) loaded
+ ✅ settings-popup.js (即応性完全修正版) loaded
+    - CSS transition完全除去（!important付き）
+    - DOM更新を同期的に即座実行
+    - quick-access/resize-popupと完全同等の動作
+ ✅ quick-access-popup.js (背景ドラッグ + 閉じるボタン版) loaded
+    - 背景ドラッグで移動可能（スライダー/ボタン以外）
+    - 右上×ボタンで閉じる
+    - 画面外クリックで閉じない（常時開きっぱなし可能）
+ ✅ export-popup.js (frameInfo修正版＋PDF有効化) loaded
+ ✅ ui-panels.js (サイドバー同期・色調整版) loaded
+ ✅ core-runtime.js (Phase 2統合版: BrushCore対応) loaded
+ ✅ core-engine.js (Phase 2統合版) loaded
+    ✓ Phase 2: DrawingEngine → BrushCore統合完了
+    ✓ Phase 3: processThumbnailUpdates() 削除（ThumbnailSystemに統一）
+    ✓ Phase 4: onFlipRequest再試行メカニズム実装（確実接続）
+    ✓ Phase 5: GSAP Ticker統合準備完了
+    ✓ destroy()メソッド追加（リロード安定化）
+ ✅ core-initializer.js (Phase 2統合版: BrushCore対応) loaded
+    ✓ Phase 2: DrawingEngine → BrushCore統合
+    ✓ Phase 2: LayerPanelRenderer初期化追加
+    ✓ グローバル参照: TegakiUI.layerPanelRenderer
+    ✓ グローバル参照: CoreRuntime.internal.layerPanelRenderer
+ ✅ subpixel-precision-test.js loaded
+ ✅ Debug commands: TegakiDebug.precision.*
+ [CoreEngine] GSAP detected - Ticker統合 available
+ [LayerTransform] GSAP detected - using synchronized updates
+ ✅ LayerSystem initialized (Phase 2+3: ThumbnailSystem統一+イベント統合版)
+ DrawingClipboard: Initializing...
+ ✅ DrawingClipboard initialized (Phase4改修版 + 確定イベント)
+ ✅ StrokeRecorder instance created
+ ✅ StrokeRenderer instance created
+ ✅ BrushCore initialized (Phase 2完全修正版)
+    - CoordinateSystem: true
+    - LayerManager: true
+    - StrokeRecorder: true
+    - StrokeRenderer: true
+    - PressureHandler: true
+ ✅ BrushCore initialized in CoreEngine
+ ✅ ThumbnailSystem initialized (Phase 1: 二重実装撲滅版)
+    ✓ RenderTexture pool: max size 10
+    ✓ Single _renderLayerThumbnail() implementation
+ ✅ ThumbnailSystem initialized in CoreEngine
+ [AnimationSystem] GSAP detected - using synchronized thumbnail generation
+ ✅ LayerSystem has 2 layer(s)
+ ✅ CoreEngine.initialize() completed
+    - LayerSystem initialized: true
+    - CameraSystem initialized: true
+    - BrushCore initialized: true
+    - AnimationSystem initialized: true
+ ✅ SettingsManager initialized
+ ✅ PopupManager initialized
+ 📋 Popup "settings" registered (priority: 1)
+ 📋 Popup "quickAccess" registered (priority: 2)
+ 📋 Popup "album" registered (priority: 3)
+ 📋 Popup "resize" registered (priority: 4)
+ 🔧 Initializing all popups...
+ ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+animation-system.js:255 🎬 Regenerating 0 frame thumbnails...
+animation-system.js:265 ✅ All frame thumbnails regenerated
+layer-panel-renderer.js:28 [LayerPanelRenderer] GSAP detected - using synchronized thumbnail updates
+layer-panel-renderer.js:138 ✓ Event listeners configured (transform-updated, thumbnail-updated, etc.)
+layer-panel-renderer.js:42 ✅ LayerPanelRenderer initialized (Step 1: エラー警告撲滅版)
+core-initializer.js:99 ✅ LayerPanelRenderer initialized and registered
+core-initializer.js:100    - window.TegakiUI.layerPanelRenderer
+core-initializer.js:101    - window.CoreRuntime.internal.layerPanelRenderer
+thumbnail-system.js:255 [ThumbnailSystem] Empty layer: temp_layer_1_1761865323719
+layer-panel-renderer.js:322 ✓ [Panel] Layer 1 thumbnail displayed
+layer-panel-renderer.js:80 📸 [Panel] Thumbnail update request - immediate=false
+layer-panel-renderer.js:80 📸 [Panel] Thumbnail update request - immediate=false
+layer-panel-renderer.js:353 ✓ [Panel] Layer 0 cache invalidated
+layer-panel-renderer.js:396 [Panel] Thumbnail img not found for layer 0, retrying... (1/3)
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+core-engine.js:543 ✅ [CoreEngine] onFlipRequest callback configured (retry: 0)
+layer-panel-renderer.js:353 ✓ [Panel] Layer 0 cache invalidated
+layer-panel-renderer.js:396 [Panel] Thumbnail img not found for layer 0, retrying... (2/3)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+core-initializer.js:315 ✅ ExportPopup registered and initialized
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761865323901_srb7v1ut0
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761865323901_srb7v1ut0
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+layer-panel-renderer.js:353 ✓ [Panel] Layer 0 cache invalidated
+layer-panel-renderer.js:396 [Panel] Thumbnail img not found for layer 0, retrying... (3/3)
+layer-panel-renderer.js:353 ✓ [Panel] Layer 0 cache invalidated
+layer-panel-renderer.js:406 [Panel] Thumbnail img unavailable for layer 0 after 3 retries - skipping
+// コンソールで実行
+console.log('=== Step 1 Results ===');
+
+// 1. エラー確認
+console.log('Console errors:', 'Check manually - should be ZERO');
+
+// 2. サムネイル表示確認
+const layerItems = document.querySelectorAll('.layer-item');
+console.log('Layer items:', layerItems.length);
+
+layerItems.forEach((item, i) => {
+    const img = item.querySelector('.layer-thumbnail img');
+    console.log(`Layer ${i}:`, {
+        hasImg: !!img,
+        displayed: img?.style.display !== 'none',
+        hasSrc: !!img?.src
+    });
+});
+
+// 3. 再試行カウンター確認（デバッグ用）
+// ※ LayerPanelRendererインスタンスへのアクセスが必要
+VM79:2 === Step 1 Results ===
+VM79:5 Console errors: Check manually - should be ZERO
+VM79:9 Layer items: 2
+VM79:13 Layer 0: {hasImg: false, displayed: true, hasSrc: false}
+VM79:13 Layer 1: {hasImg: false, displayed: true, hasSrc: false}
+undefined

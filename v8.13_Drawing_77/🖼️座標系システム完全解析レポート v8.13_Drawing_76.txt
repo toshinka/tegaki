@@ -1,0 +1,533 @@
+# 座標系システム完全解析レポート v8.13_Drawing_76
+
+## 🚨 致命的エラー分析
+
+### エラー1: `Cannot read properties of undefined (reading 'addChild')` (brush-core.js:180)
+
+**原因:**
+```javascript
+// brush-core.js:180行目（誤り）
+activeLayer.container.addChild(this.previewGraphics);
+```
+
+**問題:**
+- `activeLayer` は既に `PIXI.Container` インスタンス
+- `activeLayer.container` プロパティは存在しない（`undefined`）
+- LayerSystemの `getActiveLayer()` が返すのは Container そのもの
+
+**修正:**
+```javascript
+// 正しい記述
+activeLayer.addChild(this.previewGraphics);
+```
+
+**影響箇所:**
+- brush-core.js:180行目 - プレビューGraphics追加
+- brush-core.js:270行目 - 確定Graphics追加
+
+---
+
+### エラー2: `this.curveInterpolator.interpolate is not a function` (brush-core.js:229)
+
+**原因:**
+```javascript
+// brush-core.js:61行目 - 正しいクラス参照
+this.curveInterpolator = window.CurveInterpolator;
+
+// brush-core.js:229行目 - 存在しないメソッド呼び出し
+const interpolatedPoints = this.curveInterpolator.interpolate(
+    this.lastLocalX,
+    this.lastLocalY,
+    localX,
+    localY,
+    this.lastPressure,
+    processedPressure
+);
+```
+
+**問題:**
+- CurveInterpolatorには `interpolate()` メソッドが存在しない
+- 実際のメソッド: `catmullRom(points, tension, segmentPoints)`
+- 配列形式の引数を要求（2点間補間用APIではない）
+
+**修正:**
+```javascript
+// 2点間の補間は線形補間で実装
+const interpolatedPoints = [];
+const steps = 5; // 補間ステップ数
+for (let i = 1; i <= steps; i++) {
+    const t = i / (steps + 1);
+    interpolatedPoints.push({
+        x: this.lastLocalX + (localX - this.lastLocalX) * t,
+        y: this.lastLocalY + (localY - this.lastLocalY) * t,
+        pressure: this.lastPressure + (processedPressure - this.lastPressure) * t
+    });
+}
+```
+
+---
+
+### エラー3: `[Panel] Thumbnail image element not found for layer 0` (layer-panel-renderer.js:424)
+
+**問題:**
+- レイヤーサムネイル要素が DOM に存在しない
+- LayerPanelRenderer と LayerSystem の初期化タイミングの問題
+
+**影響:**
+- 軽微（サムネイル表示のみに影響、描画機能には無関係）
+
+---
+
+## 📊 座標系フローチャート
+
+```
+PointerEvent (clientX, clientY)
+    ↓
+CoordinateSystem.screenClientToCanvas()
+    ├─ DPI/DPR補正
+    ├─ getBoundingClientRect()
+    └─ CSS → Canvas座標変換
+    ↓
+CoordinateSystem.canvasToWorld()
+    ├─ worldContainer.worldTransform取得
+    ├─ 逆行列適用
+    └─ world座標確定
+    ↓
+CoordinateSystem.worldToLocal()
+    ├─ 親チェーン遡査
+    ├─ position/rotation/scale逆適用
+    └─ Local座標確定
+    ↓
+BrushCore.startStroke(clientX, clientY, pressure)
+    ├─ 座標変換実行
+    └─ StrokeRecorder.startStroke(localX, localY, pressure)
+        ↓
+    StrokeRecorder.addPoint(localX, localY, pressure)
+        └─ points配列に直接記録
+        ↓
+BrushCore.updateStroke(clientX, clientY, pressure)
+    ├─ 座標変換実行
+    ├─ 補間処理（CurveInterpolator使用不可 → 線形補間）
+    └─ StrokeRecorder.addPoint() 繰り返し
+        ↓
+BrushCore.finalizeStroke()
+    ├─ StrokeRecorder.endStroke() → strokeData取得
+    └─ StrokeRenderer.renderStroke(activeLayer, strokeData, settings)
+        ├─ ペンモード: normal blendMode
+        └─ 消しゴムモード: erase blendMode → maskTexture
+```
+
+---
+
+## 🔧 メソッド辞典
+
+### CoordinateSystem (coordinate-system.js)
+
+| メソッド | 責務 | 入力 | 出力 |
+|---------|------|------|------|
+| `screenClientToCanvas(clientX, clientY)` | Screen→Canvas座標変換 | PointerEvent座標 | `{canvasX, canvasY}` |
+| `canvasToWorld(canvasX, canvasY)` | Canvas→World座標変換 | Canvas座標 | `{worldX, worldY}` |
+| `worldToLocal(worldX, worldY, container)` | World→Local座標変換 | World座標+Container | `{localX, localY}` |
+| `localToWorld(localX, localY, container)` | Local→World座標変換 | Local座標+Container | `{worldX, worldY}` |
+| `screenClientToWorld(clientX, clientY)` | Screen→World統合変換 | PointerEvent座標 | `{worldX, worldY}` |
+| `screenClientToLocal(clientX, clientY, container)` | Screen→Local統合変換 | PointerEvent座標+Container | `{localX, localY}` |
+
+**依存関係:**
+- window.TEGAKI_CONFIG
+- window.TegakiEventBus
+- window.cameraSystem.worldContainer
+
+**禁止事項:**
+- ❌ PIXI.toLocal() の使用（worldContainer offsetが含まれる）
+- ✅ 手動逆算のみ使用
+
+---
+
+### BrushCore (system/drawing/brush-core.js)
+
+| メソッド | 責務 | 入力 | 出力 |
+|---------|------|------|------|
+| `init()` | 依存オブジェクト初期化 | なし | なし |
+| `setMode(mode)` | ペン/消しゴム切替 | `'pen'|'eraser'` | なし |
+| `updateSettings(settings)` | ブラシ設定更新 | `{size, opacity, color}` | なし |
+| `startStroke(clientX, clientY, pressure)` | ストローク開始 | Screen座標+筆圧 | なし |
+| `updateStroke(clientX, clientY, pressure)` | ストローク更新 | Screen座標+筆圧 | なし |
+| `finalizeStroke()` | ストローク確定 | なし | なし |
+| `cancelStroke()` | ストロークキャンセル | なし | なし |
+
+**依存関係:**
+- window.CoordinateSystem ✅
+- window.layerManager ✅
+- window.strokeRecorder ✅
+- window.strokeRenderer ✅
+- window.pressureHandler ⚠️（任意）
+- window.CurveInterpolator ⚠️（任意・使用不可）
+
+**致命的問題:**
+1. **229行目**: `this.curveInterpolator.interpolate()` が存在しない
+2. **180行目**: `activeLayer.container.addChild()` → `activeLayer.addChild()`
+3. **270行目**: `activeLayer.container.addChild()` → `activeLayer.addChild()`
+
+---
+
+### StrokeRecorder (system/drawing/stroke-recorder.js)
+
+| メソッド | 責務 | 入力 | 出力 |
+|---------|------|------|------|
+| `startStroke(localX, localY, rawPressure)` | 記録開始 | Local座標+筆圧 | なし |
+| `addPoint(localX, localY, rawPressure)` | ポイント追加 | Local座標+筆圧 | なし |
+| `endStroke()` | 記録終了 | なし | `{points, isSingleDot}` |
+| `getCurrentPoints()` | 現在の点群取得 | なし | `Array<{x,y,pressure}>` |
+| `getTotalDistance()` | 総距離計算 | なし | `number` |
+
+**座標系責務:**
+- ✅ Local座標のみを記録
+- ❌ 座標変換は一切行わない（二重変換防止）
+
+---
+
+### StrokeRenderer (system/drawing/stroke-renderer.js)
+
+| メソッド | 責務 | 入力 | 出力 |
+|---------|------|------|------|
+| `setTool(tool)` | ツール設定 | `'pen'|'eraser'` | なし |
+| `calculateWidth(pressure, brushSize)` | 幅計算 | 筆圧+サイズ | `number` |
+| `renderPreview(points, settings, targetGraphics)` | プレビュー描画 | 点群+設定 | `PIXI.Graphics` |
+| `renderStroke(layerContainer, strokeData, settings)` | 確定描画 | Container+strokeData | `pathData` |
+| `_renderEraserStroke(layerContainer, strokeData, settings)` | 消しゴム描画 | Container+strokeData | `pathData` |
+| `_ensureMaskTexture(layerData)` | maskTexture生成 | layerData | なし |
+
+**ペン/消しゴム統合:**
+- ペン: `blendMode='normal'`, 通常レイヤーに描画
+- 消しゴム: `blendMode='erase'`, maskTextureに描画
+
+---
+
+### LayerSystem (system/layer-system.js)
+
+| メソッド | 責務 | 入力 | 出力 |
+|---------|------|------|------|
+| `getLayers()` | レイヤー配列取得 | なし | `Array<PIXI.Container>` |
+| `getActiveLayer()` | アクティブレイヤー取得 | なし | `PIXI.Container` または `null` |
+| `createLayer(name, isBackground)` | レイヤー作成 | 名前+背景フラグ | `PIXI.Container` |
+| `setActiveLayer(index)` | アクティブレイヤー設定 | インデックス | なし |
+
+**重要:**
+- `getActiveLayer()` の戻り値は `PIXI.Container` 直接
+- `.container` プロパティは存在しない
+
+---
+
+### CurveInterpolator (system/drawing/curve-interpolator.js)
+
+| メソッド | 責務 | 入力 | 出力 |
+|---------|------|------|------|
+| `catmullRom(points, tension, segmentPoints)` | Catmull-Rom補間 | 点群配列 | 補間済み配列 |
+| `adaptiveSample(points, maxDistance)` | 適応サンプリング | 点群配列 | サンプリング済み配列 |
+
+**使用不可:**
+- ❌ `interpolate()` メソッドは存在しない
+- ❌ 2点間補間用APIは未実装
+
+**代替策:**
+- 線形補間を手動実装
+- または単純にポイントを直接記録
+
+---
+
+## 🔄 初期化順序フロー (core-engine.js)
+
+```
+CoreEngine.constructor()
+    ├─ CameraSystem インスタンス化
+    ├─ LayerSystem インスタンス化
+    ├─ BrushSettings インスタンス化
+    └─ BrushCore = window.BrushCore（グローバル参照）
+
+CoreEngine.initialize()
+    ├─ Phase 1: CameraSystem.init()
+    ├─ Phase 2: LayerSystem.init()
+    │   ├─ 初期レイヤー作成
+    │   └─ activeLayerIndex = 1
+    ├─ Phase 3: グローバル参照設定
+    │   ├─ window.layerManager = this.layerSystem
+    │   └─ window.cameraSystem = this.cameraSystem
+    ├─ Phase 4: StrokeRecorder インスタンス化
+    │   └─ window.strokeRecorder = new StrokeRecorder()
+    ├─ Phase 5: StrokeRenderer インスタンス化
+    │   └─ window.strokeRenderer = new StrokeRenderer()
+    ├─ Phase 6: BrushCore.init()  ← ★ ここで依存解決
+    │   ├─ window.CoordinateSystem 取得
+    │   ├─ window.layerManager 取得
+    │   ├─ window.strokeRecorder 取得
+    │   └─ window.strokeRenderer 取得
+    └─ Phase 7: PointerEvent設定（CoreRuntime）
+```
+
+**初期化完了条件:**
+- ✅ LayerSystem.isInitialized = true
+- ✅ window.strokeRecorder が存在
+- ✅ window.strokeRenderer が存在
+- ✅ BrushCore.coordinateSystem !== null
+
+---
+
+## 🐛 二重実装検出リスト
+
+### ❌ 検出された二重実装
+
+1. **座標変換の二重化（解消済み）**
+   - ✅ CoordinateSystemに完全統合済み
+   - ✅ StrokeRecorderは座標変換しない
+
+2. **CurveInterpolatorの不整合**
+   - ❌ BrushCoreが存在しないメソッドを呼び出し
+   - ✅ 修正必要: 線形補間に置き換え
+
+3. **Container参照の誤り**
+   - ❌ `activeLayer.container` は存在しない
+   - ✅ 修正必要: `activeLayer` 直接使用
+
+---
+
+## 📋 改修チェックリスト
+
+### 最優先修正（即時対応必要）
+
+- [ ] brush-core.js:180 - `activeLayer.addChild(this.previewGraphics)`
+- [ ] brush-core.js:270 - `activeLayer.addChild(pathData.graphics)`
+- [ ] brush-core.js:229 - CurveInterpolator.interpolate()を線形補間に置き換え
+
+### 中優先修正（機能改善）
+
+- [ ] CurveInterpolatorに2点間補間メソッド追加（将来対応）
+- [ ] LayerPanelRendererの初期化タイミング調整
+
+### 低優先修正（最適化）
+
+- [ ] サムネイル生成の非同期化
+- [ ] エラーハンドリング強化
+
+---
+
+## 💉 修正パッチ適用ガイド
+
+### パッチ1: brush-core.js - Container参照修正
+
+**行180付近:**
+```javascript
+// 変更前
+activeLayer.container.addChild(this.previewGraphics);
+
+// 変更後
+activeLayer.addChild(this.previewGraphics);
+```
+
+**行220-240付近（CurveInterpolator使用箇所）:**
+```javascript
+// 変更前
+if (this.curveInterpolator) {
+    const interpolatedPoints = this.curveInterpolator.interpolate(
+        this.lastLocalX,
+        this.lastLocalY,
+        localX,
+        localY,
+        this.lastPressure,
+        processedPressure
+    );
+    
+    interpolatedPoints.forEach(pt => {
+        this.strokeRecorder.addPoint(pt.x, pt.y, pt.pressure);
+    });
+} else {
+    this.strokeRecorder.addPoint(localX, localY, processedPressure);
+}
+
+// 変更後
+// 線形補間実装
+const steps = Math.max(1, Math.floor(
+    Math.sqrt((localX - this.lastLocalX) ** 2 + (localY - this.lastLocalY) ** 2) / 5
+));
+
+for (let i = 1; i <= steps; i++) {
+    const t = i / (steps + 1);
+    const interpX = this.lastLocalX + (localX - this.lastLocalX) * t;
+    const interpY = this.lastLocalY + (localY - this.lastLocalY) * t;
+    const interpPressure = this.lastPressure + (processedPressure - this.lastPressure) * t;
+    
+    this.strokeRecorder.addPoint(interpX, interpY, interpPressure);
+}
+
+// 最終点を追加
+this.strokeRecorder.addPoint(localX, localY, processedPressure);
+```
+
+**行268-272付近:**
+```javascript
+// 変更前
+activeLayer.container.addChild(pathData.graphics);
+
+// 変更後
+activeLayer.addChild(pathData.graphics);
+```
+
+---
+
+## 🧪 検証テストケース
+
+### テスト1: 座標変換の精度検証
+
+```javascript
+// コンソールで実行
+const testX = 400, testY = 300;
+const canvas = window.CoordinateSystem.screenClientToCanvas(testX, testY);
+console.log('Canvas:', canvas);
+
+const world = window.CoordinateSystem.canvasToWorld(canvas.canvasX, canvas.canvasY);
+console.log('World:', world);
+
+const activeLayer = window.layerManager.getActiveLayer();
+const local = window.CoordinateSystem.worldToLocal(world.worldX, world.worldY, activeLayer);
+console.log('Local:', local);
+
+// 逆変換検証
+const worldBack = window.CoordinateSystem.localToWorld(local.localX, local.localY, activeLayer);
+console.log('World (back):', worldBack);
+console.log('Δ:', Math.abs(world.worldX - worldBack.worldX), Math.abs(world.worldY - worldBack.worldY));
+```
+
+**合格基準:** Δ < 0.5px
+
+---
+
+### テスト2: ストローク描画
+
+```javascript
+// コンソールで実行
+window.BrushCore.setMode('pen');
+window.BrushCore.updateSettings({ size: 10, opacity: 1.0, color: 0xFF0000 });
+
+// 仮想ストローク
+const mockEvent = { clientX: 400, clientY: 300, pressure: 0.5 };
+window.BrushCore.startStroke(mockEvent.clientX, mockEvent.clientY, mockEvent.pressure);
+
+setTimeout(() => {
+    window.BrushCore.updateStroke(450, 350, 0.7);
+}, 50);
+
+setTimeout(() => {
+    window.BrushCore.finalizeStroke();
+}, 100);
+```
+
+**合格基準:** エラーなく赤線が描画される
+
+---
+
+## 📚 シンボル依存グラフ
+
+```
+window.CoordinateSystem (最下層・依存なし)
+    ↑
+window.cameraSystem.worldContainer
+    ↑
+window.layerManager
+    ↑
+    ├─ window.strokeRecorder
+    ├─ window.strokeRenderer
+    └─ window.BrushCore ← ★ 全てに依存
+        ↑
+    CoreRuntime.handlePointerDown/Move/Up
+```
+
+**循環依存チェック:** ✅ なし
+
+---
+
+## 🎯 修正優先度マトリクス
+
+| 問題 | 影響度 | 修正難易度 | 優先度 |
+|------|--------|-----------|--------|
+| Container参照誤り | 🔴 致命的 | 🟢 簡単 | ⚡ 最高 |
+| CurveInterpolator不整合 | 🟡 高 | 🟢 簡単 | ⚡ 最高 |
+| サムネイル要素不在 | 🟢 低 | 🟡 中 | 🔵 低 |
+
+---
+
+## 🚀 修正後の動作フロー（期待値）
+
+```
+1. ユーザーがキャンバスをクリック
+    ↓
+2. CoreRuntime.handlePointerDown() 実行
+    ↓
+3. BrushCore.startStroke(clientX, clientY, pressure)
+    ├─ CoordinateSystem.screenClientToCanvas()
+    ├─ CoordinateSystem.canvasToWorld()
+    ├─ CoordinateSystem.worldToLocal(activeLayer)
+    └─ StrokeRecorder.startStroke(localX, localY, pressure)
+    ↓
+4. activeLayer.addChild(previewGraphics) ← ★ 修正済み
+    ↓
+5. ユーザーがマウス移動
+    ↓
+6. BrushCore.updateStroke(clientX, clientY, pressure)
+    ├─ 座標変換
+    ├─ 線形補間 ← ★ 修正済み
+    └─ StrokeRecorder.addPoint() 繰り返し
+    ↓
+7. ユーザーがマウスアップ
+    ↓
+8. BrushCore.finalizeStroke()
+    ├─ StrokeRecorder.endStroke() → strokeData
+    ├─ StrokeRenderer.renderStroke(activeLayer, strokeData, settings)
+    └─ activeLayer.addChild(pathData.graphics) ← ★ 修正済み
+    ↓
+9. 描画完了 ✅
+```
+
+---
+
+## 📖 用語集
+
+- **Screen座標**: ブラウザウィンドウ基準（clientX/Y）
+- **Canvas座標**: PixiJS Canvas内部座標（DPI補正済み）
+- **World座標**: worldContainer基準（カメラ変換前）
+- **Local座標**: レイヤーContainer直下（ストローク記録座標）
+- **DPR**: Device Pixel Ratio（Retina対応）
+- **blendMode**: PixiJS描画合成モード（normal/erase）
+- **maskTexture**: 消しゴム用マスクテクスチャ
+
+---
+
+## 🔍 デバッグコマンド集
+
+```javascript
+// 現在のBrushCore状態確認
+console.log('BrushCore:', window.BrushCore);
+console.log('Is Drawing:', window.BrushCore.isDrawing);
+console.log('Mode:', window.BrushCore.currentMode);
+
+// 座標系確認
+console.log('CoordinateSystem:', window.CoordinateSystem);
+console.log('LayerManager:', window.layerManager);
+console.log('Active Layer:', window.layerManager.getActiveLayer());
+
+// StrokeRecorder確認
+console.log('StrokeRecorder:', window.strokeRecorder);
+console.log('Current Points:', window.strokeRecorder.getCurrentPoints());
+
+// 依存オブジェクト確認
+console.log('Dependencies:', {
+    coordinateSystem: !!window.BrushCore.coordinateSystem,
+    layerManager: !!window.BrushCore.layerManager,
+    strokeRecorder: !!window.BrushCore.strokeRecorder,
+    strokeRenderer: !!window.BrushCore.strokeRenderer
+});
+```
+
+---
+
+**生成日時:** 2025-10-31  
+**ガイドライン準拠バージョン:** v2.2  
+**Phase:** Phase 2 統合後のバグ修正
