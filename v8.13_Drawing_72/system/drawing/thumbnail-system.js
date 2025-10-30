@@ -1,84 +1,5 @@
-// ★★★ Phase 4完全修正: レイヤー完全非破壊レンダリング ★★★
-        async _renderLayerThumbnail(layer, width, height) {
-            try {
-                // 背景レイヤーは専用処理
-                if (layer.layerData?.isBackground) {
-                    return this._generateBackgroundThumbnail(layer, width, height);
-                }
-
-                // Step 1: レイヤーの親（フレームコンテナ）を取得
-                const frameContainer = layer.parent;
-                if (!frameContainer) {
-                    console.warn('[ThumbnailSystem] Layer has no parent container');
-                    return this._createEmptyCanvas(width, height);
-                }
-
-                // Step 2: キャンバスサイズ取得
-                const canvasWidth = this.config?.canvas?.width || 800;
-                const canvasHeight = this.config?.canvas?.height || 600;
-
-                // Step 3: フレーム全体をRenderTextureに描画
-                const frameRT = PIXI.RenderTexture.create({
-                    width: canvasWidth,
-                    height: canvasHeight,
-                    resolution: 1
-                });
-
-                if (!frameRT) {
-                    console.error('[ThumbnailSystem] RenderTexture creation failed');
-                    return this._createEmptyCanvas(width, height);
-                }
-
-                // 一時的に他のレイヤーを非表示化（対象レイヤーのみ表示）
-                const siblingVisibility = new Map();
-                frameContainer.children.forEach(sibling => {
-                    if (sibling !== layer) {
-                        siblingVisibility.set(sibling, sibling.visible);
-                        sibling.visible = false;
-                    }
-                });
-
-                // レイヤーの元の可視性を保存
-                const originalVisibility = layer.visible;
-                layer.visible = true;
-
-                // Step 4: レンダリング（レイヤーは元の位置のまま）
-                this.app.renderer.render({
-                    container: frameContainer,
-                    target: frameRT,
-                    clear: true
-                });
-
-                // Step 5: 可視性を復元
-                layer.visible = originalVisibility;
-                siblingVisibility.forEach((vis, sibling) => {
-                    sibling.visible = vis;
-                });
-
-                // Step 6: サムネイルサイズにリサイズ
-                const canvas = await this._resizeRenderTextureToCanvas(frameRT, width, height);
-
-                // クリーンアップ
-                frameRT.destroy(true);
-
-                return canvas;
-
-            } catch (error) {
-                console.error('[ThumbnailSystem] Layer thumbnail failed:', error);
-                
-                // エラー時も可視性を復元
-                if (layer && layer.parent) {
-                    layer.parent.children.forEach(sibling => {
-                        if (sibling.visible === false && sibling !== layer) {
-                            sibling.visible = true;
-                        }
-                    });
-                }
-                
-                return this._createEmptyCanvas(width, height);
-            }
-        }// ===== system/drawing/thumbnail-system.js - Phase 1-4完全版 =====
-// Phase 1: Vモード終了時のキャッシュ再生成
+// ===== system/drawing/thumbnail-system.js - Phase 1: 二重実装撲滅版 =====
+// Phase 1: _renderLayerThumbnail() 二重実装を削除
 // Phase 2: キャッシュキー戦略の統一（layerId/frameId + サイズのみ）
 // Phase 3: Canvas2D撲滅（PixiJS RenderTexture統一）
 // Phase 4完全修正: レイヤーバウンディングボックス対応・座標変換考慮
@@ -127,9 +48,9 @@
             }
             
             this.isInitialized = true;
-            console.log('✅ ThumbnailSystem initialized (Phase 1-4完全版)');
+            console.log('✅ ThumbnailSystem initialized (Phase 1: 二重実装撲滅版)');
             console.log('   ✓ RenderTexture pool: max size ' + this.poolMaxSize);
-            console.log('   ✓ Layer bounding box support enabled');
+            console.log('   ✓ Single _renderLayerThumbnail() implementation');
         }
 
         _setupEventListeners() {
@@ -262,7 +183,7 @@
             console.log('✅ All pending thumbnails refreshed');
         }
 
-        // ★★★ Phase 4完全修正: レイヤーバウンディングボックス対応 ★★★
+        // ★★★ Phase 1: generateLayerThumbnail() - エントリポイント ★★★
         async generateLayerThumbnail(layer, width = this.defaultLayerThumbSize, height = this.defaultLayerThumbSize) {
             if (!layer || !this.app?.renderer) {
                 console.warn('[ThumbnailSystem] Invalid layer or renderer');
@@ -298,7 +219,7 @@
             return canvas;
         }
 
-        // ★★★ Phase 4完全修正: 背景レイヤー専用サムネイル ★★★
+        // ★★★ Phase 1: 背景レイヤー専用サムネイル ★★★
         async _generateBackgroundThumbnail(layer, width, height) {
             try {
                 const canvas = document.createElement('canvas');
@@ -323,7 +244,7 @@
             }
         }
 
-        // ★★★ Phase 4完全修正: レイヤーバウンディングボックス考慮 ★★★
+        // ★★★ Phase 1修正: _renderLayerThumbnail() - バウンディングボックス方式のみ残す ★★★
         async _renderLayerThumbnail(layer, width, height) {
             try {
                 // Step 1: レイヤーのローカルバウンディングボックス取得
@@ -338,7 +259,11 @@
                 // Step 2: バウンディングボックスに基づく一時コンテナ作成
                 const tempContainer = new PIXI.Container();
                 
-                // レイヤーの全子要素を一時コンテナにコピー
+                // レイヤーの元の親を保存
+                const originalParent = layer.parent;
+                const originalIndex = originalParent ? originalParent.getChildIndex(layer) : -1;
+                
+                // レイヤーのTransform状態を保存
                 const originalTransform = {
                     x: layer.position.x,
                     y: layer.position.y,
@@ -364,8 +289,12 @@
                 });
 
                 if (!rt) {
+                    // 元の親に戻す
                     tempContainer.removeChild(layer);
-                    return null;
+                    if (originalParent && originalIndex >= 0) {
+                        originalParent.addChildAt(layer, originalIndex);
+                    }
+                    return this._createEmptyCanvas(width, height);
                 }
 
                 // Step 4: レンダリング（バウンディングボックスの中心を原点に）
@@ -383,19 +312,38 @@
                 // Step 5: サムネイルサイズにリサイズ
                 const canvas = await this._resizeRenderTextureToCanvas(rt, width, height);
 
-                // クリーンアップ
+                // Step 6: クリーンアップ - レイヤーを元の親に戻す
                 tempContainer.removeChild(layer);
+                if (originalParent && originalIndex >= 0) {
+                    originalParent.addChildAt(layer, originalIndex);
+                }
+                
+                // RenderTextureを破棄
                 rt.destroy(true);
 
                 return canvas;
 
             } catch (error) {
                 console.error('[ThumbnailSystem] Layer thumbnail failed:', error);
-                return null;
+                
+                // エラー時もレイヤーを元の位置に戻す努力
+                try {
+                    const tempContainer = layer.parent;
+                    if (tempContainer && tempContainer !== window.layerManager?.currentFrameContainer) {
+                        tempContainer.removeChild(layer);
+                        if (window.layerManager?.currentFrameContainer) {
+                            window.layerManager.currentFrameContainer.addChild(layer);
+                        }
+                    }
+                } catch (recoveryError) {
+                    console.error('[ThumbnailSystem] Recovery failed:', recoveryError);
+                }
+                
+                return this._createEmptyCanvas(width, height);
             }
         }
 
-        // ★★★ Phase 4新規: RenderTextureをキャンバスにリサイズ ★★★
+        // ★★★ Phase 1: RenderTextureをキャンバスにリサイズ ★★★
         async _resizeRenderTextureToCanvas(renderTexture, targetWidth, targetHeight) {
             try {
                 // RenderTextureからSpriteを作成
@@ -440,7 +388,7 @@
             }
         }
 
-        // ★★★ Phase 4新規: 空のキャンバス作成 ★★★
+        // ★★★ Phase 1: 空のキャンバス作成 ★★★
         _createEmptyCanvas(width, height) {
             const canvas = document.createElement('canvas');
             canvas.width = width;
@@ -735,9 +683,9 @@
         window.TEGAKI_CONFIG
     );
 
-    console.log('✅ thumbnail-system.js loaded (Phase 1-4完全版)');
-    console.log('   ✓ Layer bounding box support');
-    console.log('   ✓ Transform-aware rendering');
-    console.log('   ✓ Empty layer detection');
+    console.log('✅ thumbnail-system.js loaded (Phase 1: 二重実装撲滅版)');
+    console.log('   ✓ Single _renderLayerThumbnail() implementation');
+    console.log('   ✓ Bounding box rendering method');
+    console.log('   ✓ Parent restoration on cleanup');
 
 })();
