@@ -1,0 +1,636 @@
+config.js:523 ✅ config.js (Phase 2完全版) loaded
+config.js:524    - BRUSH_DEFAULTS追加完了
+event-bus.js:143 ✅ system/event-bus.js Phase 2: 優先度機能追加版 loaded
+coordinate-system.js:519 ✅ coordinate-system.js (Phase 2.5完全修正版) loaded
+coordinate-system.js:520    - Phase 2.5: worldToLocal() の pivot/position/rotation/scale 計算順序を完全修正
+coordinate-system.js:521    - Phase 2.5: localToWorld() も同様に修正（完全な逆変換を保証）
+coordinate-system.js:522    - サムネイル問題の根本原因を解決
+coordinate-system.js:601 ✅ Debug commands: TegakiDebug.coord.*
+data-models.js:276 ✅ data-models.js (マスクスプライト不可視版) loaded
+batch-api.js:382 ✅ batch-api.js (Phase 6: History統合版) loaded
+popup-manager.js:357 ✅ popup-manager.js (quick-access除外対応版) loaded
+camera-system.js:704 ✅ camera-system.js (v2.0: リサイズ修正版) loaded
+layer-transform.js:910 ✅ layer-transform.js (Phase 1-5 GSAP統合完全版) loaded
+layer-transform.js:911    ✓ Phase 1-4: イベント発火・NaN対策・UI整備・反転機能
+layer-transform.js:912    ✓ Phase 5: GSAP統合（killTweensOf + delayedCall）
+layer-transform.js:913    ✓ GPU反映保証: Transform適用から1フレーム後にイベント発火
+layer-transform.js:914    ✓ サムネイル同期: layer:transform-updated + thumbnail:layer-updated
+layer-system.js:1247 ✅ layer-system.js (v2.0.1: 反転機能修復版) loaded
+drawing-clipboard.js:603 ✅ drawing-clipboard.js Phase4改修版+確定イベント loaded
+drawing-clipboard.js:604    - ✅ CTRL+V behavior: overwrite active layer
+drawing-clipboard.js:605    - ✅ Commit events: paste:commit, operation:commit
+drawing-clipboard.js:606    - ✅ Thumbnail auto-update on paste
+history.js:217 ✅ history.js (Phase 3: Redo null参照修正版) loaded
+animation-system.js:218 [AnimationSystem] GSAP detected - using synchronized thumbnail generation
+animation-system.js:1484 ✅ animation-system.js (GSAP統合完全版) loaded
+animation-system.js:1485    ✓ Phase 1: フレーム名統一（xF形式）
+animation-system.js:1486    ✓ Phase 3: Canvas2D廃止 → ThumbnailSystem統一
+animation-system.js:1487    ✓ Phase 3-2: init()時にGSAP.delayedCall()で初回サムネイル生成
+animation-system.js:1488    ✓ generateFrameThumbnail(): PixiJS RenderTexture使用
+animation-system.js:1489    ✓ frame.thumbnailDataURL保存で UI層連携
+pressure-handler.js:183 ✅ pressure-handler.js (Phase 3: 距離ベースフィルタ追加版) loaded
+pressure-handler.js:184    - applyDistanceFilter() 追加
+pressure-handler.js:185    - 短距離: alpha=0.9 (即座反映)
+pressure-handler.js:186    - 長距離: alpha=0.3 (スムージング強)
+curve-interpolator.js:205 ✅ curve-interpolator.js (Phase 3) loaded
+curve-interpolator.js:206    - Catmull-Rom スプライン補間
+curve-interpolator.js:207    - 適応的サンプリング対応
+curve-interpolator.js:208    - tiltX/Y/twist データ補間対応
+stroke-renderer.js:247 ✅ system/drawing/stroke-renderer.js loaded (PixiJS v8完全対応版)
+thumbnail-system.js:505 ✅ thumbnail-system.js loaded (Phase 1-3)
+brush-settings.js:183 ✅ brush-settings.js (API統一版) loaded
+brush-settings.js:184    - ✅ getOpacity() / setOpacity() 追加
+brush-settings.js:185    - ✅ brush:opacity-changed イベント購読追加
+drawing-engine.js:376 ✅ drawing-engine.js (座標系完全修正版) loaded
+drawing-engine.js:459 ✅ Debug commands: TegakiDebug.drawing.*
+quick-export-ui.js:292 ✅ quick-export-ui.js (無効化版) loaded
+export-manager.js:224 ✅ export-manager.js (CUT→FRAME完全修正版) loaded
+png-exporter.js:85 ✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded
+apng-exporter.js:236 ✅ apng-exporter.js (CUT→FRAME完全修正版) loaded
+gif-exporter.js:300 ✅ gif-exporter.js (CUT→FRAME完全修正版) loaded
+webp-exporter.js:289 ✅ webp-exporter.js (静止画・動画自動判定対応版) loaded
+mp4-exporter.js:30 ✅ mp4-exporter.js (Phase 8完成版) loaded
+pdf-exporter.js:225 ✅ pdf-exporter.js (CUT→FRAME完全対応版) loaded
+dom-builder.js:494 ✅ dom-builder.js (ID重複解消版) loaded
+dom-builder.js:495    - #pen-settings → #legacy-pen-settings に変更
+dom-builder.js:496    - pen-size-slider → legacy-pen-size-slider に変更
+dom-builder.js:497    - quick-access-popup.jsとのID競合を完全解消
+slider-utils.js:197 ✅ ui/slider-utils.js loaded
+slider-utils.js:198    - 責務: スライダーUIの統一実装
+slider-utils.js:199    - DRY原則: settings-popup.js と ui-panels.js で共有
+slider-utils.js:200    - API: createSlider() / createSimpleSlider()
+keyboard-handler.js:318 ✅ keyboard-handler.js (P/Eサイドバー同期版) loaded
+resize-popup.js:452 ✅ resize-popup.js (Phase 4完了: ロジック削減版) loaded
+layer-panel-renderer.js:550 ✅ ui/layer-panel-renderer.js (Phase 2完全修正版) loaded
+layer-panel-renderer.js:551    ✓ イベント優先度設定・throttle最適化
+layer-panel-renderer.js:552    ✓ DOM検索の堅牢化（3つの方法で試行）
+layer-panel-renderer.js:553    ✓ ThumbnailSystem初期化確認強化
+layer-panel-renderer.js:554    ✓ immediate フラグ対応・GSAP delayedCall 同期
+status-display-renderer.js:138 ✅ status-display-renderer.js (Phase 1改修版) loaded
+timeline-thumbnail-utils.js:258 ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+timeline-thumbnail-utils.js:259    ✓ Phase 1: layer:transform-updated 購読追加
+timeline-thumbnail-utils.js:260    ✓ Phase 3: throttle最適化（100ms）
+timeline-thumbnail-utils.js:261    ✓ Phase 3: immediate フラグ対応
+timeline-thumbnail-utils.js:262    ✓ タイムラインサムネイルがレイヤー変形に即座追従
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:583 ✅ settings-popup.js (即応性完全修正版) loaded
+settings-popup.js:584    - CSS transition完全除去（!important付き）
+settings-popup.js:585    - DOM更新を同期的に即座実行
+settings-popup.js:586    - quick-access/resize-popupと完全同等の動作
+quick-access-popup.js:538 ✅ quick-access-popup.js (背景ドラッグ + 閉じるボタン版) loaded
+quick-access-popup.js:539    - 背景ドラッグで移動可能（スライダー/ボタン以外）
+quick-access-popup.js:540    - 右上×ボタンで閉じる
+quick-access-popup.js:541    - 画面外クリックで閉じない（常時開きっぱなし可能）
+export-popup.js:423 ✅ export-popup.js (frameInfo修正版＋PDF有効化) loaded
+ui-panels.js:408 ✅ ui-panels.js (サイドバー同期・色調整版) loaded
+core-runtime.js:713 ✅ core-runtime.js (Phase 1-3完全版: ThumbnailSystem統合) loaded
+core-engine.js:847 ✅ core-engine.js (Phase 4完全修正版) loaded
+core-engine.js:848    ✓ Phase 2: リサイズ時レイヤー座標シフト + 背景色修正
+core-engine.js:849    ✓ Phase 4: onFlipRequest再試行メカニズム実装（確実接続）
+core-engine.js:850    ✓ Phase 5: GSAP Ticker統合準備完了
+core-engine.js:851    ✓ destroy()メソッド追加（リロード安定化）
+core-initializer.js:347 ✅ core-initializer.js (完全修正版・SettingsManager＋ExportPopup対応) loaded
+core-engine.js:352 [CoreEngine] GSAP detected - Ticker統合 available
+layer-transform.js:46 [LayerTransform] GSAP detected - using synchronized updates
+drawing-clipboard.js:19 DrawingClipboard: Initializing...
+drawing-clipboard.js:26 ✅ DrawingClipboard initialized (Phase4改修版 + 確定イベント)
+thumbnail-system.js:50 ✅ ThumbnailSystem initialized (Phase 1-3)
+thumbnail-system.js:51    ✓ RenderTexture pool: max size 10
+core-engine.js:758 ✅ ThumbnailSystem initialized in CoreEngine
+animation-system.js:218 [AnimationSystem] GSAP detected - using synchronized thumbnail generation
+core-initializer.js:63 ✅ SettingsManager initialized
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+animation-system.js:255 🎬 Regenerating 0 frame thumbnails...
+animation-system.js:265 ✅ All frame thumbnails regenerated
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+core-engine.js:509 ✅ [CoreEngine] onFlipRequest callback configured (retry: 0)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+core-initializer.js:245 ✅ ExportPopup registered and initialized
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+// ================================================================================
+// デバッグコマンド v2 - EventBus診断強化版
+// ================================================================================
+
+console.log('=== システム診断開始 ===\n');
+
+// ========== 1. 基本システム確認 ==========
+console.log('📋 基本システム状態:');
+console.log('  ThumbnailSystem:', typeof window.ThumbnailSystem, window.ThumbnailSystem?.isInitialized);
+console.log('  AnimationSystem:', typeof window.animationSystem);
+console.log('  LayerManager:', typeof window.layerManager);
+console.log('  GSAP:', typeof gsap);
+console.log('  EventBus:', typeof window.TegakiEventBus);
+console.log('');
+
+// ========== 2. EventBus 詳細診断 ==========
+console.log('🔍 EventBus 診断:');
+if (window.TegakiEventBus) {
+    console.log('  Type:', typeof window.TegakiEventBus);
+    console.log('  Methods:', Object.keys(window.TegakiEventBus).filter(k => typeof window.TegakiEventBus[k] === 'function'));
+    
+    // イベントリスナー確認（複数の構造に対応）
+    const possibleEventKeys = ['_events', 'events', 'listeners', '_listeners'];
+    let eventStore = null;
+    
+    for (const key of possibleEventKeys) {
+        if (window.TegakiEventBus[key]) {
+            eventStore = window.TegakiEventBus[key];
+            console.log(`  Event storage found: ${key}`);
+            break;
+        }
+    }
+    
+    if (eventStore) {
+        const eventNames = Object.keys(eventStore);
+        console.log(`  Total event types: ${eventNames.length}`);
+        console.log('  Event types:', eventNames.slice(0, 10).join(', ') + (eventNames.length > 10 ? '...' : ''));
+        
+        // 重要イベントのリスナー数確認
+        const criticalEvents = [
+            'layer:transform-updated',
+            'thumbnail:layer-updated',
+            'keyboard:vkey-pressed',
+            'keyboard:vkey-released'
+        ];
+        
+        console.log('\n  重要イベントのリスナー数:');
+        criticalEvents.forEach(eventName => {
+            const listeners = eventStore[eventName];
+            if (listeners) {
+                const count = Array.isArray(listeners) ? listeners.length : 1;
+                console.log(`    ${eventName}: ${count} listeners`);
+            } else {
+                console.log(`    ${eventName}: ❌ NO LISTENERS`);
+            }
+        });
+    } else {
+        console.warn('  ⚠️ Event storage not found - EventBus may not be initialized');
+    }
+} else {
+    console.error('  ❌ TegakiEventBus not found!');
+}
+console.log('');
+
+// ========== 3. LayerTransform 診断 ==========
+console.log('🔧 LayerTransform 診断:');
+const layerMgr = window.layerManager;
+if (layerMgr) {
+    console.log('  LayerManager: ✅');
+    console.log('  transform:', !!layerMgr.transform);
+    
+    if (layerMgr.transform) {
+        console.log('  transform.app:', !!layerMgr.transform.app);
+        console.log('  transform.gsapAvailable:', layerMgr.transform.gsapAvailable);
+        console.log('  transform.onFlipRequest:', typeof layerMgr.transform.onFlipRequest);
+        console.log('  transform.isVKeyPressed:', layerMgr.transform.isVKeyPressed);
+        
+        // flipLayer メソッド確認
+        console.log('  transform.flipLayer:', typeof layerMgr.transform.flipLayer);
+    } else {
+        console.error('  ❌ transform not initialized');
+    }
+} else {
+    console.error('  ❌ LayerManager not found');
+}
+console.log('');
+
+// ========== 4. ThumbnailSystem 診断 ==========
+console.log('📸 ThumbnailSystem 診断:');
+if (window.ThumbnailSystem) {
+    const info = window.ThumbnailSystem.getDebugInfo();
+    console.log('  initialized:', info.isInitialized);
+    console.log('  layer cache:', info.layerCacheSize);
+    console.log('  frame cache:', info.frameCacheSize);
+    console.log('  vKeyModeActive:', info.vKeyModeActive);
+    console.log('  pendingVModeRefresh:', info.pendingVModeRefreshCount);
+    
+    if (info.pendingLayerIds && info.pendingLayerIds.length > 0) {
+        console.log('  pending layer IDs:', info.pendingLayerIds);
+    }
+} else {
+    console.error('  ❌ ThumbnailSystem not found');
+}
+console.log('');
+
+// ========== 5. LayerPanelRenderer 診断 ==========
+console.log('🎨 LayerPanelRenderer 診断:');
+const layerPanel = window.TegakiUI?.layerPanelRenderer || 
+                   window.CoreRuntime?.internal?.layerPanelRenderer;
+
+if (layerPanel) {
+    console.log('  LayerPanelRenderer: ✅');
+    console.log('  gsapAvailable:', layerPanel.gsapAvailable);
+    console.log('  layerUpdateTimers size:', layerPanel.layerUpdateTimers?.size);
+    console.log('  updateThrottle:', layerPanel.layerUpdateThrottle + 'ms');
+} else {
+    console.warn('  ⚠️ LayerPanelRenderer not found');
+}
+console.log('');
+
+// ========== 6. レイヤー状態確認 ==========
+console.log('📋 レイヤー状態:');
+if (layerMgr) {
+    const layers = layerMgr.getLayers();
+    console.log('  Total layers:', layers.length);
+    console.log('  Active index:', layerMgr.activeLayerIndex);
+    
+    layers.forEach((layer, i) => {
+        const isActive = i === layerMgr.activeLayerIndex;
+        const marker = isActive ? '→' : ' ';
+        console.log(`  ${marker} Layer ${i}: ${layer.layerData?.name}, id=${layer.layerData?.id}, visible=${layer.visible}`);
+    });
+}
+console.log('');
+
+// ========== デバッグ関数定義 ==========
+console.log('🛠️ デバッグ関数を定義中...\n');
+
+// Vモードテスト
+window.testVMode = function() {
+    console.log('\n=== Vモードテスト開始 ===');
+    
+    const transform = window.layerManager?.transform;
+    if (!transform) {
+        console.error('❌ LayerTransform not found');
+        return;
+    }
+    
+    console.log('1. Vモード開始（enterMoveMode）...');
+    transform.enterMoveMode();
+    
+    setTimeout(() => {
+        console.log('2. Vモード状態確認...');
+        console.log('   isVKeyPressed:', transform.isVKeyPressed);
+        console.log('   vKeyModeActive:', window.ThumbnailSystem?.vKeyModeActive);
+        
+        setTimeout(() => {
+            console.log('3. Vモード終了（exitMoveMode）...');
+            transform.exitMoveMode();
+            
+            setTimeout(() => {
+                console.log('4. Vモード終了後の状態確認...');
+                console.log('   isVKeyPressed:', transform.isVKeyPressed);
+                console.log('   vKeyModeActive:', window.ThumbnailSystem?.vKeyModeActive);
+                console.log('\n✅ Vモードテスト完了');
+            }, 100);
+        }, 1000);
+    }, 100);
+};
+
+// 反転テスト
+window.testFlip = function(direction = 'horizontal') {
+    console.log(`\n=== 反転テスト開始 (${direction}) ===`);
+    
+    const layerMgr = window.layerManager;
+    if (!layerMgr) {
+        console.error('❌ LayerManager not found');
+        return;
+    }
+    
+    const transform = layerMgr.transform;
+    if (!transform) {
+        console.error('❌ LayerTransform not found');
+        return;
+    }
+    
+    const activeLayer = layerMgr.getActiveLayer();
+    if (!activeLayer) {
+        console.error('❌ No active layer');
+        return;
+    }
+    
+    console.log('Active layer:', activeLayer.layerData?.name);
+    console.log('Before flip - scale:', activeLayer.scale.x, activeLayer.scale.y);
+    
+    // onFlipRequest 経由で実行
+    if (transform.onFlipRequest) {
+        console.log('✓ onFlipRequest callback found - calling...');
+        transform.onFlipRequest(direction);
+    } else {
+        console.warn('⚠️ onFlipRequest not set - calling flipLayer directly...');
+        transform.flipLayer(activeLayer, direction);
+    }
+    
+    setTimeout(() => {
+        console.log('After flip - scale:', activeLayer.scale.x, activeLayer.scale.y);
+        console.log('✅ 反転テスト完了');
+    }, 100);
+};
+
+// イベント監視
+window.monitorEvents = function() {
+    console.log('\n=== イベント監視開始 ===');
+    console.log('監視中のイベント: layer:transform-updated, thumbnail:layer-updated');
+    
+    const eventBus = window.TegakiEventBus;
+    if (!eventBus) {
+        console.error('❌ EventBus not found');
+        return;
+    }
+    
+    // リスナー追加
+    const transformListener = ({ data }) => {
+        console.log('🔔 layer:transform-updated:', data);
+    };
+    
+    const thumbnailListener = ({ data }) => {
+        console.log('🔔 thumbnail:layer-updated:', data);
+    };
+    
+    eventBus.on('layer:transform-updated', transformListener);
+    eventBus.on('thumbnail:layer-updated', thumbnailListener);
+    
+    console.log('✅ 監視開始。停止するには window.stopMonitor() を実行');
+    
+    // 停止関数を保存
+    window.stopMonitor = function() {
+        eventBus.off('layer:transform-updated', transformListener);
+        eventBus.off('thumbnail:layer-updated', thumbnailListener);
+        console.log('✅ イベント監視停止');
+    };
+};
+
+// レイヤーサムネイル強制更新
+window.forceUpdateLayerThumb = function(layerIndex) {
+    console.log(`\n=== レイヤー${layerIndex}サムネイル強制更新 ===`);
+    
+    const layerMgr = window.layerManager;
+    if (!layerMgr) {
+        console.error('❌ LayerManager not found');
+        return;
+    }
+    
+    const layers = layerMgr.getLayers();
+    const layer = layers[layerIndex];
+    
+    if (!layer) {
+        console.error(`❌ Layer ${layerIndex} not found`);
+        return;
+    }
+    
+    console.log('Layer:', layer.layerData?.name, 'ID:', layer.layerData?.id);
+    
+    // キャッシュクリア
+    if (window.ThumbnailSystem) {
+        window.ThumbnailSystem._invalidateLayerCacheByLayerId(layer.layerData?.id);
+        console.log('✓ Cache invalidated');
+    }
+    
+    // イベント発行
+    if (window.TegakiEventBus) {
+        window.TegakiEventBus.emit('thumbnail:layer-updated', {
+            component: 'manual',
+            action: 'force-update',
+            data: { layerIndex, layerId: layer.layerData?.id, immediate: true }
+        });
+        console.log('✓ Event emitted');
+    }
+    
+    console.log('✅ 強制更新完了');
+};
+
+// 全レイヤーサムネイル強制更新
+window.forceUpdateAllThumbs = function() {
+    console.log('\n=== 全レイヤーサムネイル強制更新 ===');
+    
+    const layerPanel = window.TegakiUI?.layerPanelRenderer || 
+                      window.CoreRuntime?.internal?.layerPanelRenderer;
+    
+    if (!layerPanel) {
+        console.error('❌ LayerPanelRenderer not found');
+        return;
+    }
+    
+    layerPanel.updateAllThumbnails();
+    console.log('✅ 全サムネイル更新開始');
+};
+
+// onFlipRequest 修復
+window.fixFlipCallback = function() {
+    console.log('\n=== onFlipRequest修復 ===');
+    
+    const layerMgr = window.layerManager;
+    if (!layerMgr?.transform) {
+        console.error('❌ LayerTransform not found');
+        return;
+    }
+    
+    const transform = layerMgr.transform;
+    const eventBus = window.TegakiEventBus;
+    
+    transform.onFlipRequest = (direction) => {
+        console.log(`🔄 Flip: ${direction}`);
+        const layer = layerMgr.getActiveLayer();
+        if (!layer) return;
+        
+        transform.flipLayer(layer, direction);
+        
+        if (eventBus) {
+            eventBus.emit('thumbnail:layer-updated', {
+                component: 'fix',
+                action: 'flip',
+                data: { 
+                    layerIndex: layerMgr.activeLayerIndex, 
+                    layerId: layer.layerData.id, 
+                    immediate: true 
+                }
+            });
+        }
+    };
+    
+    console.log('✅ onFlipRequest callback 修復完了');
+    console.log('   Type:', typeof transform.onFlipRequest);
+};
+
+console.log('✅ デバッグ関数準備完了\n');
+
+// ========== 使い方 ==========
+console.log('📖 使い方:');
+console.log('  window.testVMode()                - Vモード動作テスト');
+console.log('  window.testFlip("horizontal")     - 水平反転テスト');
+console.log('  window.testFlip("vertical")       - 垂直反転テスト');
+console.log('  window.monitorEvents()            - イベント監視開始');
+console.log('  window.stopMonitor()              - イベント監視停止');
+console.log('  window.forceUpdateLayerThumb(0)   - レイヤー0サムネイル更新');
+console.log('  window.forceUpdateAllThumbs()     - 全サムネイル更新');
+console.log('  window.fixFlipCallback()          - onFlipRequest修復');
+console.log('\n=== 診断完了 ===\n');
+ === システム診断開始 ===
+
+ 📋 基本システム状態:
+   ThumbnailSystem: object true
+   AnimationSystem: object
+   LayerManager: object
+   GSAP: object
+   EventBus: object
+ 
+ 🔍 EventBus 診断:
+   Type: object
+   Methods: []
+   Event storage found: events
+   Total event types: 69
+   Event types: camera:resized, brush:size-changed, brush:color-changed, brush:alpha-changed, brush:opacity-changed, layer:clear-active, layer:activated, drawing:completed, animation:system-ready, animation:frame-applied...
+ 
+  重要イベントのリスナー数:
+     layer:transform-updated: 2 listeners
+     thumbnail:layer-updated: ❌ NO LISTENERS
+     keyboard:vkey-pressed: 2 listeners
+     keyboard:vkey-released: 2 listeners
+VM803:63 
+VM803:66 🔧 LayerTransform 診断:
+VM803:69   LayerManager: ✅
+VM803:70   transform: true
+VM803:73   transform.app: false
+VM803:74   transform.gsapAvailable: true
+VM803:75   transform.onFlipRequest: function
+VM803:76   transform.isVKeyPressed: false
+VM803:79   transform.flipLayer: function
+VM803:86 
+VM803:89 📸 ThumbnailSystem 診断:
+VM803:92   initialized: true
+VM803:93   layer cache: 0
+VM803:94   frame cache: 1
+VM803:95   vKeyModeActive: false
+VM803:96   pendingVModeRefresh: 0
+VM803:104 
+VM803:107 🎨 LayerPanelRenderer 診断:
+VM803:117   ⚠️ LayerPanelRenderer not found
+(anonymous) @ VM803:117
+VM803:119 
+VM803:122 📋 レイヤー状態:
+VM803:125   Total layers: 2
+VM803:126   Active index: 1
+VM803:131     Layer 0: 背景, id=layer_1761801164539_tap43lrqq, visible=true
+VM803:131   → Layer 1: レイヤー1, id=layer_1761801164539_vxdedfuie, visible=true
+VM803:134 
+VM803:137 🛠️ デバッグ関数を定義中...
+
+VM803:336 ✅ デバッグ関数準備完了
+
+VM803:339 📖 使い方:
+VM803:340   window.testVMode()                - Vモード動作テスト
+VM803:341   window.testFlip("horizontal")     - 水平反転テスト
+VM803:342   window.testFlip("vertical")       - 垂直反転テスト
+VM803:343   window.monitorEvents()            - イベント監視開始
+VM803:344   window.stopMonitor()              - イベント監視停止
+VM803:345   window.forceUpdateLayerThumb(0)   - レイヤー0サムネイル更新
+VM803:346   window.forceUpdateAllThumbs()     - 全サムネイル更新
+VM803:347   window.fixFlipCallback()          - onFlipRequest修復
+VM803:348 
+=== 診断完了 ===
+
+undefined
+thumbnail-system.js:57 🔵 Vkey mode activated
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+thumbnail-system.js:62 🔴 Vkey mode deactivated - refreshing...
+thumbnail-system.js:131 🔄 Refreshing 1 layers
+thumbnail-system.js:163 ✅ All pending thumbnails refreshed
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+// 1. イベント監視開始
+window.monitorEvents();
+
+// 2. Vモードテスト
+window.testVMode();
+
+// 3. 反転テスト
+window.testFlip('horizontal');
+
+// 4. サムネイル強制更新
+window.forceUpdateAllThumbs();
+VM803:213 
+=== イベント監視開始 ===
+VM803:214 監視中のイベント: layer:transform-updated, thumbnail:layer-updated
+VM803:234 ✅ 監視開始。停止するには window.stopMonitor() を実行
+VM803:141 
+=== Vモードテスト開始 ===
+VM803:149 1. Vモード開始（enterMoveMode）...
+VM803:173 
+=== 反転テスト開始 (horizontal) ===
+VM803:193 Active layer: レイヤー1
+VM803:194 Before flip - scale: 1.1373076923076924 1.1373076923076924
+VM803:198 ✓ onFlipRequest callback found - calling...
+VM803:224 🔔 layer:transform-updated: undefined
+VM803:285 
+=== 全レイヤーサムネイル強制更新 ===
+VM803:291 ❌ LayerPanelRenderer not found
+window.forceUpdateAllThumbs @ VM803:291
+(anonymous) @ VM823:11
+undefined
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+VM803:224 🔔 layer:transform-updated: {layerIndex: 1, layerId: 'layer_1761801164539_vxdedfuie', transform: {…}}
+VM803:228 🔔 thumbnail:layer-updated: {layerIndex: 1, layerId: 'layer_1761801164539_vxdedfuie'}
+animation-system.js:777 🎬 Generating frame thumbnail: index=0, id=frame_1761801164539_pqwagkh5s
+animation-system.js:794 ✓ Frame thumbnail saved: frame_1761801164539_pqwagkh5s
+animation-system.js:800 ✓ Frame thumbnail dataURL generated
+animation-system.js:812 ✅ Frame 0 thumbnail generation complete
+VM803:153 2. Vモード状態確認...
+VM803:154    isVKeyPressed: true
+VM803:155    vKeyModeActive: false
+VM803:206 After flip - scale: -1.1373076923076924 1.1373076923076924
+VM803:207 ✅ 反転テスト完了
+VM803:228 🔔 thumbnail:layer-updated: {layerIndex: 1, layerId: 'layer_1761801164539_vxdedfuie'}
+VM803:158 3. Vモード終了（exitMoveMode）...
+VM803:162 4. Vモード終了後の状態確認...
+VM803:163    isVKeyPressed: false
+VM803:164    vKeyModeActive: false
+VM803:165 
+✅ Vモードテスト完了

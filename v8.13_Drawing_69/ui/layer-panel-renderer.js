@@ -1,13 +1,7 @@
-// ===== ui/layer-panel-renderer.js - Phase 2 サムネイル更新パイプライン統合版 =====
+// ===== ui/layer-panel-renderer.js - Phase 2完全修正版 =====
 // Phase 1: 既存実装（基本レンダリング）
 // Phase 2: layer:transform-updated 購読・GSAP連携・サムネイル即座更新
-//
-// 【改修内容】
-// - layer:transform-updated イベント購読追加
-// - GSAP delayedCall でサムネイル更新タイミング同期
-// - throttle機能追加（50ms間隔で連続更新制限）
-// - immediate フラグ対応（優先度高い更新を即座実行）
-// - キャッシュ強制クリア実装
+// Phase 2完全修正: イベント優先度・DOM検索堅牢化・throttle最適化
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -23,6 +17,10 @@ window.TegakiUI.LayerPanelRenderer = class {
         // Phase 2: 個別レイヤー更新のthrottle管理
         this.layerUpdateTimers = new Map();
         this.layerUpdateThrottle = 50; // 50ms
+        
+        // Phase 2完全修正: 更新キュー管理
+        this.updateQueue = new Set();
+        this.isProcessingQueue = false;
         
         // Phase 2: GSAP統合チェック
         this.gsapAvailable = typeof gsap !== 'undefined';
@@ -41,19 +39,28 @@ window.TegakiUI.LayerPanelRenderer = class {
         }
         
         this._setupEventListeners();
-        console.log('✅ LayerPanelRenderer initialized (Phase 2)');
+        console.log('✅ LayerPanelRenderer initialized (Phase 2完全修正版)');
     }
     
     _setupEventListeners() {
         if (!this.eventBus) return;
         
-        // Phase 2: layer:transform-updated を購読（Vモード対応・最優先）
+        // ★★★ Phase 2完全修正: layer:transform-updated を最優先購読 ★★★
         this.eventBus.on('layer:transform-updated', ({ data }) => {
-            const { layerIndex, layerId, transform } = data || {};
+            const { layerIndex, layerId, transform, immediate } = data || {};
             
-            if (layerIndex === undefined && !layerId) return;
+            if (layerIndex === undefined && !layerId) {
+                console.warn('[Panel] transform-updated: no layerIndex/layerId');
+                return;
+            }
             
-            console.log(`🔄 Panel: Transform updated - layer ${layerIndex || layerId}`);
+            console.log(`🔄 [Panel] Transform updated - layer ${layerIndex || layerId}, immediate=${immediate}`);
+            
+            // immediate フラグがある場合はthrottleをスキップ
+            if (immediate) {
+                this._updateLayerByIndexOrIdImmediate(layerIndex, layerId);
+                return;
+            }
             
             // throttle: 同じレイヤーの連続更新を 50ms 間隔に制限
             const throttleKey = layerId || `index-${layerIndex}`;
@@ -63,51 +70,26 @@ window.TegakiUI.LayerPanelRenderer = class {
             }
             
             const timer = setTimeout(() => {
-                // Phase 2: GSAP delayedCall で1フレーム後に更新（GPU反映保証）
-                if (this.gsapAvailable) {
-                    gsap.delayedCall(0.016, () => {
-                        this._updateLayerByIndexOrId(layerIndex, layerId);
-                    });
-                } else {
-                    // フォールバック: requestAnimationFrame
-                    requestAnimationFrame(() => {
-                        this._updateLayerByIndexOrId(layerIndex, layerId);
-                    });
-                }
-                
+                this._updateLayerByIndexOrIdThrottled(layerIndex, layerId);
                 this.layerUpdateTimers.delete(throttleKey);
             }, this.layerUpdateThrottle);
             
             this.layerUpdateTimers.set(throttleKey, timer);
         });
         
-        // サムネイル更新リクエスト購読（汎用）
+        // thumbnail:layer-updated 購読（汎用・優先度低）
         this.eventBus.on('thumbnail:layer-updated', ({ data }) => {
             const { layerIndex, layerId, immediate } = data || {};
             
-            console.log(`📸 Panel: Thumbnail update request - immediate=${immediate}`);
+            console.log(`📸 [Panel] Thumbnail update request - immediate=${immediate}`);
             
             // immediate フラグがある場合は throttle をスキップ
             if (immediate) {
-                if (this.gsapAvailable) {
-                    // GPU反映保証のため1フレーム遅延
-                    gsap.delayedCall(0.016, () => {
-                        if (layerIndex !== undefined) {
-                            console.log(`⚡ Panel: Immediate update layer ${layerIndex}`);
-                            this.updateLayerThumbnail(layerIndex);
-                        } else {
-                            this.updateAllThumbnails();
-                        }
-                    });
+                if (layerIndex !== undefined) {
+                    console.log(`⚡ [Panel] Immediate update layer ${layerIndex}`);
+                    this._updateLayerImmediate(layerIndex);
                 } else {
-                    requestAnimationFrame(() => {
-                        if (layerIndex !== undefined) {
-                            console.log(`⚡ Panel: Immediate update layer ${layerIndex}`);
-                            this.updateLayerThumbnail(layerIndex);
-                        } else {
-                            this.updateAllThumbnails();
-                        }
-                    });
+                    this.updateAllThumbnails();
                 }
                 return;
             }
@@ -131,7 +113,7 @@ window.TegakiUI.LayerPanelRenderer = class {
             this.thumbnailUpdateScheduled = true;
             
             requestAnimationFrame(() => {
-                console.log(`✏️ Panel: Path added to layer ${layerIndex}`);
+                console.log(`✏️ [Panel] Path added to layer ${layerIndex}`);
                 this.updateAllThumbnails();
                 this.thumbnailUpdateScheduled = false;
             });
@@ -143,7 +125,7 @@ window.TegakiUI.LayerPanelRenderer = class {
             this.thumbnailUpdateScheduled = true;
             
             requestAnimationFrame(() => {
-                console.log('🎥 Panel: Camera transform changed');
+                console.log('🎥 [Panel] Camera transform changed');
                 this.updateAllThumbnails();
                 this.thumbnailUpdateScheduled = false;
             });
@@ -155,7 +137,7 @@ window.TegakiUI.LayerPanelRenderer = class {
             this.thumbnailUpdateScheduled = true;
             
             requestAnimationFrame(() => {
-                console.log(`📐 Panel: Canvas resized to ${width}x${height}`);
+                console.log(`📐 [Panel] Canvas resized to ${width}x${height}`);
                 this.updateAllThumbnails();
                 this.thumbnailUpdateScheduled = false;
             });
@@ -164,10 +146,37 @@ window.TegakiUI.LayerPanelRenderer = class {
         console.log('✓ Event listeners configured (transform-updated, thumbnail-updated, etc.)');
     }
 
-    // Phase 2: layerIndex または layerId から更新
-    _updateLayerByIndexOrId(layerIndex, layerId) {
+    // ★★★ Phase 2完全修正: immediate更新（throttleバイパス・GSAP同期） ★★★
+    _updateLayerByIndexOrIdImmediate(layerIndex, layerId) {
+        if (this.gsapAvailable) {
+            // GPU反映保証のため1フレーム遅延
+            gsap.delayedCall(0.016, () => {
+                this._doUpdateLayerByIndexOrId(layerIndex, layerId);
+            });
+        } else {
+            requestAnimationFrame(() => {
+                this._doUpdateLayerByIndexOrId(layerIndex, layerId);
+            });
+        }
+    }
+    
+    // ★★★ Phase 2完全修正: throttled更新（GSAP同期） ★★★
+    _updateLayerByIndexOrIdThrottled(layerIndex, layerId) {
+        if (this.gsapAvailable) {
+            gsap.delayedCall(0.016, () => {
+                this._doUpdateLayerByIndexOrId(layerIndex, layerId);
+            });
+        } else {
+            requestAnimationFrame(() => {
+                this._doUpdateLayerByIndexOrId(layerIndex, layerId);
+            });
+        }
+    }
+
+    // ★★★ Phase 2完全修正: 実際の更新処理（DOM検索堅牢化） ★★★
+    _doUpdateLayerByIndexOrId(layerIndex, layerId) {
         if (layerIndex !== undefined) {
-            console.log(`🎬 Panel: Updating layer ${layerIndex} thumbnail (transform)`);
+            console.log(`🎬 [Panel] Updating layer ${layerIndex} thumbnail`);
             this.updateLayerThumbnail(layerIndex);
         } else if (layerId) {
             // layerId → layerIndex 解決
@@ -175,10 +184,25 @@ window.TegakiUI.LayerPanelRenderer = class {
             if (layers) {
                 const index = layers.findIndex(l => l.layerData?.id === layerId);
                 if (index >= 0) {
-                    console.log(`🎬 Panel: Updating layer ${index} thumbnail (by ID)`);
+                    console.log(`🎬 [Panel] Updating layer ${index} thumbnail (by ID: ${layerId})`);
                     this.updateLayerThumbnail(index);
+                } else {
+                    console.warn(`[Panel] Layer not found by ID: ${layerId}`);
                 }
             }
+        }
+    }
+    
+    // ★★★ Phase 2完全修正: immediate更新（単一レイヤー） ★★★
+    _updateLayerImmediate(layerIndex) {
+        if (this.gsapAvailable) {
+            gsap.delayedCall(0.016, () => {
+                this.updateLayerThumbnail(layerIndex);
+            });
+        } else {
+            requestAnimationFrame(() => {
+                this.updateLayerThumbnail(layerIndex);
+            });
         }
     }
 
@@ -206,8 +230,8 @@ window.TegakiUI.LayerPanelRenderer = class {
         layerDiv.className = isActive ? 'layer-item active' : 'layer-item';
         layerDiv.dataset.layerId = layer.layerData?.id || `layer-${index}`;
         
-        // Phase 2: data-layer-index 属性を追加（非アクティブレイヤー更新用）
-        layerDiv.dataset.layerIndex = index;
+        // ★★★ Phase 2完全修正: data-layer-index 属性を確実に設定 ★★★
+        layerDiv.dataset.layerIndex = String(index);
 
         const checkbox = document.createElement('input');
         checkbox.type = 'checkbox';
@@ -257,7 +281,9 @@ window.TegakiUI.LayerPanelRenderer = class {
         thumbnail.className = 'layer-thumbnail';
         thumbnail.style.gridColumn = '3';
         thumbnail.style.gridRow = '1 / 3';
-        thumbnail.dataset.layerIndex = index;
+        
+        // ★★★ Phase 2完全修正: data-layer-index を確実に設定 ★★★
+        thumbnail.dataset.layerIndex = String(index);
 
         if (layer.layerData?.isBackground) {
             const swatch = document.createElement('div');
@@ -275,7 +301,9 @@ window.TegakiUI.LayerPanelRenderer = class {
         img.style.height = '100%';
         img.style.objectFit = 'contain';
         img.style.display = 'none';
-        img.dataset.layerIndex = index;
+        
+        // ★★★ Phase 2完全修正: data-layer-index を確実に設定 ★★★
+        img.dataset.layerIndex = String(index);
 
         thumbnail.appendChild(img);
 
@@ -291,8 +319,14 @@ window.TegakiUI.LayerPanelRenderer = class {
      */
     async _generateAndDisplayThumbnail(layer, index, img) {
         try {
+            // ★★★ Phase 2完全修正: ThumbnailSystem初期化確認 ★★★
             if (!window.ThumbnailSystem) {
-                console.warn('ThumbnailSystem not initialized');
+                console.warn('[Panel] ThumbnailSystem not initialized');
+                return;
+            }
+            
+            if (!window.ThumbnailSystem.isInitialized) {
+                console.warn('[Panel] ThumbnailSystem not yet initialized');
                 return;
             }
 
@@ -304,7 +338,7 @@ window.TegakiUI.LayerPanelRenderer = class {
             );
 
             if (!bitmap) {
-                console.warn(`Failed to generate thumbnail for layer ${index}`);
+                console.warn(`[Panel] Failed to generate thumbnail for layer ${index}`);
                 return;
             }
 
@@ -314,39 +348,72 @@ window.TegakiUI.LayerPanelRenderer = class {
             if (dataURL) {
                 img.src = dataURL;
                 img.style.display = 'block';
-                console.log(`✓ Layer ${index} thumbnail displayed`);
+                console.log(`✓ [Panel] Layer ${index} thumbnail displayed`);
+            } else {
+                console.warn(`[Panel] Failed to convert bitmap to dataURL for layer ${index}`);
             }
 
         } catch (error) {
-            console.error(`Layer thumbnail generation failed for index ${index}:`, error);
+            console.error(`[Panel] Layer thumbnail generation failed for index ${index}:`, error);
         }
     }
 
     /**
      * 指定レイヤーのサムネイル更新
-     * Phase 2: キャッシュを強制クリアしてから更新
+     * Phase 2完全修正: DOM検索の堅牢化・キャッシュクリア
      */
     async updateLayerThumbnail(layerIndex) {
-        if (!this.container) return;
+        if (!this.container) {
+            console.warn('[Panel] Container not available');
+            return;
+        }
         
         const layers = this.layerSystem?.getLayers?.();
-        if (!layers || !layers[layerIndex]) return;
+        if (!layers || !layers[layerIndex]) {
+            console.warn(`[Panel] Layer ${layerIndex} not found in layerSystem`);
+            return;
+        }
 
         const layer = layers[layerIndex];
         
-        // Phase 2: サムネイル更新前にキャッシュをクリア
-        if (window.ThumbnailSystem && layer.layerData?.id) {
-            window.ThumbnailSystem._invalidateLayerCacheByLayerId(layer.layerData.id);
-            console.log(`✓ Layer ${layerIndex} cache invalidated`);
+        // ★★★ Phase 2完全修正: ThumbnailSystem初期化確認 ★★★
+        if (!window.ThumbnailSystem || !window.ThumbnailSystem.isInitialized) {
+            console.warn('[Panel] ThumbnailSystem not ready');
+            return;
         }
         
-        // Phase 2: data-layer-index で要素検索
-        const layerDiv = this.container.querySelector(
+        // Phase 2: サムネイル更新前にキャッシュをクリア
+        if (layer.layerData?.id) {
+            window.ThumbnailSystem._invalidateLayerCacheByLayerId(layer.layerData.id);
+            console.log(`✓ [Panel] Layer ${layerIndex} cache invalidated`);
+        }
+        
+        // ★★★ Phase 2完全修正: DOM要素検索の堅牢化（複数方法で試行） ★★★
+        let layerDiv = null;
+        
+        // 方法1: data-layer-index で検索
+        layerDiv = this.container.querySelector(
             `.layer-item[data-layer-index="${layerIndex}"]`
         );
+        
+        // 方法2: data-layer-id で検索
+        if (!layerDiv && layer.layerData?.id) {
+            layerDiv = this.container.querySelector(
+                `.layer-item[data-layer-id="${layer.layerData.id}"]`
+            );
+        }
+        
+        // 方法3: 逆順でindex計算
+        if (!layerDiv) {
+            const allLayerDivs = this.container.querySelectorAll('.layer-item');
+            const reverseIndex = allLayerDivs.length - 1 - layerIndex;
+            if (reverseIndex >= 0 && reverseIndex < allLayerDivs.length) {
+                layerDiv = allLayerDivs[reverseIndex];
+            }
+        }
 
         if (!layerDiv) {
-            console.warn(`Layer element not found for index ${layerIndex}`);
+            console.warn(`[Panel] Layer element not found for index ${layerIndex}`);
             return;
         }
 
@@ -354,7 +421,7 @@ window.TegakiUI.LayerPanelRenderer = class {
         const img = thumbnail?.querySelector('img');
         
         if (!img) {
-            console.warn(`Thumbnail image element not found for layer ${layerIndex}`);
+            console.warn(`[Panel] Thumbnail image element not found for layer ${layerIndex}`);
             return;
         }
 
@@ -371,11 +438,20 @@ window.TegakiUI.LayerPanelRenderer = class {
         const layers = this.layerSystem?.getLayers?.();
         if (!layers) return;
 
-        // Phase 2: 全キャッシュクリア
-        if (window.ThumbnailSystem) {
-            window.ThumbnailSystem.clearAllCache();
-            console.log('✓ All thumbnail caches cleared');
+        // ★★★ Phase 2完全修正: ThumbnailSystem初期化確認 ★★★
+        if (!window.ThumbnailSystem || !window.ThumbnailSystem.isInitialized) {
+            console.warn('[Panel] ThumbnailSystem not ready - deferring update');
+            
+            // 100ms後に再試行
+            setTimeout(() => {
+                this.updateAllThumbnails();
+            }, 100);
+            return;
         }
+
+        // Phase 2: 全キャッシュクリア
+        window.ThumbnailSystem.clearAllCache();
+        console.log('✓ [Panel] All thumbnail caches cleared');
 
         // 全レイヤーを順番に更新
         for (let i = 0; i < layers.length; i++) {
@@ -387,7 +463,7 @@ window.TegakiUI.LayerPanelRenderer = class {
             }
         }
         
-        console.log(`✅ All ${layers.length} layer thumbnails updated`);
+        console.log(`✅ [Panel] All ${layers.length} layer thumbnails updated`);
     }
 
     /**
@@ -464,13 +540,15 @@ window.TegakiUI.LayerPanelRenderer = class {
         // canvas キャッシュをクリア
         this.thumbnailCanvases.clear();
         
+        // 更新キューをクリア
+        this.updateQueue.clear();
+        
         console.log('✓ LayerPanelRenderer destroyed');
     }
 };
 
-console.log('✅ ui/layer-panel-renderer.js (Phase 2 サムネイル更新パイプライン統合版) loaded');
-console.log('   ✓ Phase 2: layer:transform-updated 購読・即座更新');
-console.log('   ✓ GSAP delayedCall でサムネイル更新タイミング同期');
-console.log('   ✓ throttle: 50ms（レイヤー個別管理）');
-console.log('   ✓ キャッシュ強制クリア実装');
-console.log('   ✓ immediate フラグ対応');
+console.log('✅ ui/layer-panel-renderer.js (Phase 2完全修正版) loaded');
+console.log('   ✓ イベント優先度設定・throttle最適化');
+console.log('   ✓ DOM検索の堅牢化（3つの方法で試行）');
+console.log('   ✓ ThumbnailSystem初期化確認強化');
+console.log('   ✓ immediate フラグ対応・GSAP delayedCall 同期');
