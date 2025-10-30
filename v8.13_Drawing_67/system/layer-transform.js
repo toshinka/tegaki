@@ -1,9 +1,11 @@
-// ===== system/layer-transform.js - Phase 1-4完全改修版 + NaN誤検知修正 =====
-// Phase 1: イベント発火の修正（layer:transform-updated 追加）
-// Phase 2: 座標系 NaN 対策（isFinite チェック追加・誤検知修正）
-// Phase 3: UI受信側の整備（イベントペイロード最適化）
-// Phase 4: ショートカット整合性（反転機能修復）
-// 追加修正: coordinateSystem 初期化・NaN誤検知問題修正
+// ===== system/layer-transform.js - Phase 1-5 GSAP統合完全版 =====
+// Phase 1-4: イベント発火・NaN対策・UI整備・反転機能（既存実装継承）
+// Phase 5: GSAP統合（Transform同期制御・Ticker管理）
+//
+// 【GSAP統合内容】
+// - applyTransform(): gsap.killTweensOf()で古いTween中止
+// - _emitTransformUpdated(): gsap.delayedCall()で1フレーム遅延発火
+// - GPU反映を保証してサムネイル生成タイミング同期
 
 (function() {
     'use strict';
@@ -12,7 +14,6 @@
         constructor(config, coordAPI) {
             this.config = config;
             this.coordAPI = coordAPI;
-            // Phase 修正: coordinateSystem は init() で設定
             this.coordinateSystem = null;
             
             this.transforms = new Map();
@@ -35,16 +36,23 @@
             this.onRebuildRequired = null;
             this.onGetActiveLayer = null;
             
-            // Phase 2: throttle 用プロパティ
+            // throttle 用プロパティ
             this._lastEmitTime = 0;
             this._emitTimer = null;
+            
+            // Phase 5: GSAP統合チェック
+            this.gsapAvailable = typeof gsap !== 'undefined';
+            if (this.gsapAvailable) {
+                console.log('[LayerTransform] GSAP detected - using synchronized updates');
+            } else {
+                console.warn('[LayerTransform] GSAP not found - falling back to direct updates');
+            }
         }
 
         init(app, cameraSystem) {
             this.app = app;
             this.cameraSystem = cameraSystem;
             
-            // Phase 修正: coordinateSystem を正しく取得
             this.coordinateSystem = window.CoordinateSystem;
             
             if (!this.coordinateSystem) {
@@ -136,30 +144,46 @@
             }
             
             this.applyTransform(layer, transform, centerX, centerY);
-            this._emitTransformUpdated(layerId, layer);
             
             if (this.onTransformUpdate) {
                 this.onTransformUpdate(layer, transform);
             }
         }
         
+        // Phase 5: GSAP統合 - Transform適用時に古いTween中止+GPU反映保証
         applyTransform(layer, transform, centerX, centerY) {
+            // Phase 5: 既存のTweenを中止（重複アニメーション防止）
+            if (this.gsapAvailable) {
+                gsap.killTweensOf(layer);
+            }
+            
+            // Transform適用
             if (this.coordAPI?.applyLayerTransform) {
                 this.coordAPI.applyLayerTransform(layer, transform, centerX, centerY);
             } else {
                 this._applyTransformDirect(layer, transform, centerX, centerY);
             }
+            
+            // Phase 5: GPU反映を保証するため1フレーム後にイベント発火
+            if (this.gsapAvailable) {
+                gsap.delayedCall(0.016, () => {
+                    this._emitTransformUpdated(layer.layerData.id, layer);
+                });
+            } else {
+                // フォールバック: requestAnimationFrameで次フレーム
+                requestAnimationFrame(() => {
+                    this._emitTransformUpdated(layer.layerData.id, layer);
+                });
+            }
         }
         
         _applyTransformDirect(layer, transform, centerX, centerY) {
-            // Phase 2: 数値型検証
             const x = Number(transform.x) || 0;
             const y = Number(transform.y) || 0;
             const rotation = Number(transform.rotation) || 0;
             const scaleX = Number(transform.scaleX) || 1;
             const scaleY = Number(transform.scaleY) || 1;
             
-            // 有限性確認
             if (!isFinite(x) || !isFinite(y) || !isFinite(rotation) || 
                 !isFinite(scaleX) || !isFinite(scaleY)) {
                 console.warn('[LayerTransform] Invalid transform values detected', {
@@ -209,7 +233,6 @@
             
             this.applyTransform(layer, transform, centerX, centerY);
             this.updateFlipButtons(layer);
-            this._emitTransformUpdated(layerId, layer);
             
             if (this.onTransformUpdate) {
                 this.onTransformUpdate(layer, transform);
@@ -241,7 +264,6 @@
             
             this.applyTransform(layer, transform, centerX, centerY);
             this.updateTransformPanelValues(layer);
-            this._emitTransformUpdated(layerId, layer);
             
             if (this.onTransformUpdate) {
                 this.onTransformUpdate(layer, transform);
@@ -281,7 +303,6 @@
             
             this.applyTransform(layer, transform, centerX, centerY);
             this.updateTransformPanelValues(layer);
-            this._emitTransformUpdated(layerId, layer);
             
             if (this.onTransformUpdate) {
                 this.onTransformUpdate(layer, transform);
@@ -315,7 +336,6 @@
             
             this.applyTransform(layer, transform, centerX, centerY);
             this.updateTransformPanelValues(layer);
-            this._emitTransformUpdated(layerId, layer);
             
             if (this.onTransformUpdate) {
                 this.onTransformUpdate(layer, transform);
@@ -356,7 +376,6 @@
             
             this.updateFlipButtons(layer);
             
-            // Phase 3: 確定時の強制サムネイル更新（throttle バイパス）
             if (this.eventBus) {
                 const layerMgr = window.CoreRuntime?.internal?.layerManager;
                 if (layerMgr) {
@@ -464,8 +483,6 @@
             
             const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
             
-            // Phase 2 修正: screenClientToWorld は {worldX, worldY} を返すので正しいプロパティ名を使用
-            // NaN チェックも正しいプロパティで行う
             if (!isFinite(world.worldX) || !isFinite(world.worldY)) {
                 console.warn('[LayerTransform] screenClientToWorld returned non-finite values', world);
                 return;
@@ -551,7 +568,6 @@
                 
                 this.applyTransform(activeLayer, transform, centerX, centerY);
                 this.updateTransformPanelValues(activeLayer);
-                this._emitTransformUpdated(layerId, activeLayer);
                 
                 if (this.onTransformUpdate) {
                     this.onTransformUpdate(activeLayer, transform);
@@ -561,15 +577,12 @@
             }, { passive: false });
         }
 
-        // Phase 1: イベント発火を強化（layerオブジェクトも受け取る）
         _emitTransformUpdated(layerId, layer) {
-            // Phase 1: layer:updated も発火（既存システムとの互換性）
             if (this.eventBus) {
                 const layerMgr = window.CoreRuntime?.internal?.layerManager;
                 if (layerMgr && layer) {
                     const layerIndex = layerMgr.getLayerIndex(layer);
                     
-                    // 汎用更新イベント
                     this.eventBus.emit('layer:updated', {
                         component: 'layer',
                         action: 'transform-changed',
@@ -578,7 +591,6 @@
                 }
             }
             
-            // Phase 2: throttle 処理
             const now = performance.now();
             if (this._lastEmitTime && (now - this._lastEmitTime) < 100) {
                 if (this._emitTimer) {
@@ -593,7 +605,6 @@
             this._emitTransformUpdateImmediate(layerId, layer);
         }
         
-        // Phase 1: 実際のイベント発火処理
         _emitTransformUpdateImmediate(layerId, layer) {
             if (!this.eventBus) return;
             
@@ -605,7 +616,6 @@
             
             if (!transform) return;
             
-            // Phase 1: transform値を数値型で確実に取得
             const transformPayload = {
                 x: Number(transform.x) || 0,
                 y: Number(transform.y) || 0,
@@ -614,14 +624,12 @@
                 rotation: Number(transform.rotation) || 0
             };
             
-            // Phase 1: Transform専用イベント（UI更新用）
             this.eventBus.emit('layer:transform-updated', {
                 component: 'layer',
                 action: 'transform-updated',
                 data: { layerIndex, layerId, transform: transformPayload }
             });
             
-            // Phase 1: サムネイル更新イベント（回転・スケール反映用）
             this.eventBus.emit('thumbnail:layer-updated', {
                 component: 'drawing',
                 action: 'transform-applied',
@@ -899,9 +907,8 @@
 
 })();
 
-console.log('✅ layer-transform.js (Phase 1-4完全改修版 + NaN誤検知修正) loaded');
-console.log('   ✓ Phase 1: イベント発火の修正 (layer:transform-updated 発火)');
-console.log('   ✓ Phase 2: 座標系 NaN 対策 (isFinite チェック + 誤検知修正)');
-console.log('   ✓ Phase 3: UI受信側の整備 (イベントペイロード最適化)');
-console.log('   ✓ Phase 4: ショートカット整合性 (反転機能修復)');
-console.log('   ✓ 追加修正: coordinateSystem初期化・world座標プロパティ名修正');
+console.log('✅ layer-transform.js (Phase 1-5 GSAP統合完全版) loaded');
+console.log('   ✓ Phase 1-4: イベント発火・NaN対策・UI整備・反転機能');
+console.log('   ✓ Phase 5: GSAP統合（killTweensOf + delayedCall）');
+console.log('   ✓ GPU反映保証: Transform適用から1フレーム後にイベント発火');
+console.log('   ✓ サムネイル同期: layer:transform-updated + thumbnail:layer-updated');
