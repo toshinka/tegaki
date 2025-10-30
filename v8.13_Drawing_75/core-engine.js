@@ -1,5 +1,6 @@
-// ===== core-engine.js - Phase 4完全修正版: 反転機能確実接続 =====
+// ===== core-engine.js - Phase 2+3修正版: processThumbnailUpdates削除 =====
 // Phase2改修: リサイズ時のレイヤー座標シフト実装 + 背景色修正
+// Phase3改修: processThumbnailUpdates() 呼び出し削除（ThumbnailSystemに統一）
 // Phase4改修: onFlipRequestコールバック設定（タイミング修正・確実接続）
 // Phase5改修: GSAP Ticker統合（レンダリング競合回避・リロード安定化）
 
@@ -576,10 +577,6 @@
             this.cameraSystem.updateCoordinates(x, y);
         }
         
-        processThumbnailUpdates() {
-            this.layerSystem.processThumbnailUpdates();
-        }
-        
         resizeCanvas(newWidth, newHeight, options = {}) {
             const oldWidth = CONFIG.canvas.width;
             const oldHeight = CONFIG.canvas.height;
@@ -814,10 +811,8 @@
             
             this.setupCanvasEvents();
             
-            // PixiJS Ticker使用（標準）
-            this.app.ticker.add(() => {
-                this.processThumbnailUpdates();
-            });
+            // ★★★ Phase 3修正: processThumbnailUpdates()削除 - ThumbnailSystemに統一 ★★★
+            // PixiJS Tickerは標準レンダリングのみ使用（サムネイル更新はEventBus経由）
             
             window.drawingEngine = this.drawingEngine;
             window.layerManager = this.layerSystem;
@@ -844,8 +839,9 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (Phase 4完全修正版) loaded');
+    console.log('✅ core-engine.js (Phase 2+3修正版) loaded');
     console.log('   ✓ Phase 2: リサイズ時レイヤー座標シフト + 背景色修正');
+    console.log('   ✓ Phase 3: processThumbnailUpdates() 削除（ThumbnailSystemに統一）');
     console.log('   ✓ Phase 4: onFlipRequest再試行メカニズム実装（確実接続）');
     console.log('   ✓ Phase 5: GSAP Ticker統合準備完了');
     console.log('   ✓ destroy()メソッド追加（リロード安定化）');
