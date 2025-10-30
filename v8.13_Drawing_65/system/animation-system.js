@@ -1,11 +1,15 @@
 // ================================================================================
-// system/animation-system.js - Phase 1改修版
+// system/animation-system.js - Phase 1-3 完全版
 // ================================================================================
-// 【Phase 1改修】フレーム名表記をFRAMEx → xF形式に統一
-// - renameFramesSequentially(): FRAME形式 → xF形式
-// - createNewBlankFrame(): 初期名表記を修正
-// - createInitialFrameIfNeeded(): 初期フレーム名を修正
-// - CUT→FRAME変換完了状態を継承
+// 【Phase 1】フレーム名表記をFRAMEx → xF形式に統一
+// 【Phase 3】generateFrameThumbnail() - Canvas2D廃止 → ThumbnailSystem統一
+// 
+// 改修内容:
+// - Canvas2D APIを完全削除（document.createElement('canvas'), getContext('2d'), ctx.drawImage()等）
+// - ThumbnailSystem.generateFrameThumbnail() に統一
+// - PixiJS RenderTexture でリサイズ（GPU処理）
+// - frame.thumbnailDataURL 保存
+// - イベント emit で UI層を更新トリガー
 
 (function() {
     'use strict';
@@ -21,6 +25,7 @@
             this.container.sortableChildren = true;
             
             this.thumbnailCanvas = null;
+            this.thumbnailDataURL = null;  // Phase 3: DataURL 保存用
             this.createdAt = Date.now();
             this.config = config;
         }
@@ -216,28 +221,28 @@
             });
         }
         
-handleCanvasResize(newWidth, newHeight) {
-    if (!this.animationData?.frames || this.animationData.frames.length === 0) return;
-    
-    // ★ Phase 2修正: リサイズ時に全フレームの古いテクスチャを削除
-    this.animationData.frames.forEach(frame => {
-        if (this.layerSystem?.destroyFrameRenderTexture) {
-            this.layerSystem.destroyFrameRenderTexture(frame.id);
+        handleCanvasResize(newWidth, newHeight) {
+            if (!this.animationData?.frames || this.animationData.frames.length === 0) return;
+            
+            this.animationData.frames.forEach(frame => {
+                if (this.layerSystem?.destroyFrameRenderTexture) {
+                    this.layerSystem.destroyFrameRenderTexture(frame.id);
+                }
+            });
+            
+            setTimeout(() => {
+                this.regenerateAllThumbnails();
+            }, 200);
+            
+            if (this.eventBus) {
+                this.eventBus.emit('animation:thumbnails-need-update');
+            }
         }
-    });
-    
-    // ★ その後、新しいサイズで再生成
-    setTimeout(() => {
-        this.regenerateAllThumbnails();
-    }, 200);
-    
-    if (this.eventBus) {
-        this.eventBus.emit('animation:thumbnails-need-update');
-    }
-}
         
         async regenerateAllThumbnails() {
             if (!this.animationData?.frames) return;
+            
+            console.log(`🎬 Regenerating ${this.animationData.frames.length} frame thumbnails...`);
             
             for (let i = 0; i < this.animationData.frames.length; i++) {
                 await this.generateFrameThumbnail(i);
@@ -246,6 +251,8 @@ handleCanvasResize(newWidth, newHeight) {
                     await new Promise(resolve => setTimeout(resolve, 50));
                 }
             }
+            
+            console.log('✅ All frame thumbnails regenerated');
         }
         
         init(layerSystem, app, cameraSystem) {
@@ -721,84 +728,79 @@ handleCanvasResize(newWidth, newHeight) {
             this.switchToActiveFrame(frameIndex);
         }
         
+        /**
+         * Phase 3: generateFrameThumbnail() - Canvas2D廃止版
+         * 【改修】ThumbnailSystem に統一（GPU処理）
+         */
         async generateFrameThumbnail(frameIndex) {
+            if (frameIndex < 0 || frameIndex >= this.animationData.frames.length) {
+                console.warn(`Invalid frame index: ${frameIndex}`);
+                return null;
+            }
+
             const frame = this.animationData.frames[frameIndex];
-            if (!frame || !this.layerSystem || !this.app?.renderer) return;
-            
-            if (this.layerSystem.renderFrameToTexture) {
-                this.layerSystem.renderFrameToTexture(frame.id, frame.container);
+            if (!frame) {
+                console.warn(`Frame not found at index: ${frameIndex}`);
+                return null;
             }
-            
-            const renderTexture = this.layerSystem?.getFrameRenderTexture?.(frame.id);
-            if (!renderTexture) return;
-            
-            const canvasSize = this.getCurrentCanvasSize();
-            
-            const { thumbDisplayW, thumbDisplayH } = this.calculateThumbnailSize(
-                canvasSize.width, 
-                canvasSize.height
-            );
-            
-            if (window.TegakiThumbnailUtils?.resizeCanvasWithAspect) {
-                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
-                
-                const thumbCanvas = window.TegakiThumbnailUtils.resizeCanvasWithAspect(
-                    sourceCanvas, 
-                    thumbDisplayW, 
-                    thumbDisplayH
-                );
-                
-                frame.thumbnailCanvas = thumbCanvas;
-            } else {
-                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
-                
-                const thumbCanvas = document.createElement('canvas');
-                thumbCanvas.width = thumbDisplayW;
-                thumbCanvas.height = thumbDisplayH;
-                
-                const ctx = thumbCanvas.getContext('2d');
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = 'high';
-                
-                const srcAspect = sourceCanvas.width / sourceCanvas.height;
-                const dstAspect = thumbDisplayW / thumbDisplayH;
-                
-                let drawW, drawH, offsetX = 0, offsetY = 0;
-                
-                if (srcAspect > dstAspect) {
-                    drawW = thumbDisplayW;
-                    drawH = thumbDisplayW / srcAspect;
-                    offsetY = (thumbDisplayH - drawH) / 2;
-                } else {
-                    drawH = thumbDisplayH;
-                    drawW = thumbDisplayH * srcAspect;
-                    offsetX = (thumbDisplayW - drawW) / 2;
+
+            try {
+                // Phase 3: ThumbnailSystem に統一（Canvas2D廃止）
+                if (!window.ThumbnailSystem) {
+                    console.warn('⚠️ ThumbnailSystem not available - cannot generate thumbnail');
+                    return null;
                 }
-                
-                ctx.clearRect(0, 0, thumbDisplayW, thumbDisplayH);
-                ctx.drawImage(
-                    sourceCanvas, 
-                    0, 0, sourceCanvas.width, sourceCanvas.height,
-                    offsetX, offsetY, drawW, drawH
+
+                console.log(`🎬 Generating frame thumbnail: index=${frameIndex}, id=${frame.id}`);
+
+                // フレームコンテナから サムネイル生成
+                // ThumbnailSystem が PixiJS RenderTexture でリサイズ（GPU処理）
+                const thumbCanvas = await window.ThumbnailSystem.generateFrameThumbnail(
+                    frame.container,
+                    150,
+                    150
                 );
-                
+
+                if (!thumbCanvas) {
+                    console.warn(`Failed to generate thumbnail for frame ${frameIndex}`);
+                    return null;
+                }
+
+                // フレームに保存
                 frame.thumbnailCanvas = thumbCanvas;
-            }
-            
-            if (this.layerSystem.clearFrameThumbnailDirty) {
-                this.layerSystem.clearFrameThumbnailDirty(frame.id);
-            }
-            
-            if (this.eventBus) {
-                this.eventBus.emit('animation:thumbnail-generated', { 
-                    frameIndex,
-                    thumbSize: { width: thumbDisplayW, height: thumbDisplayH }
-                });
+                console.log(`✓ Frame thumbnail saved: ${frame.id}`);
+
+                // DataURL 変換（UI表示用）
+                const dataURL = window.ThumbnailSystem.canvasToDataURL(thumbCanvas);
+                if (dataURL) {
+                    frame.thumbnailDataURL = dataURL;
+                    console.log(`✓ Frame thumbnail dataURL generated`);
+                }
+
+                // イベント emit で UI層を更新トリガー
+                if (this.eventBus) {
+                    this.eventBus.emit('animation:frame-thumbnail-updated', {
+                        component: 'animation-system',
+                        action: 'frame-thumbnail-generated',
+                        data: { frameIndex, frameId: frame.id }
+                    });
+                }
+
+                console.log(`✅ Frame ${frameIndex} thumbnail generation complete`);
+
+                return thumbCanvas;
+
+            } catch (error) {
+                console.error(`Frame thumbnail generation failed for index ${frameIndex}:`, error);
+                return null;
             }
         }
         
+        /**
+         * 補助メソッド: 最適化版（タイムラインUI用）
+         */
         async generateFrameThumbnailOptimized(frameIndex) {
-            return this.generateFrameThumbnail(frameIndex);
+            return await this.generateFrameThumbnail(frameIndex);
         }
         
         copyCurrent() {
@@ -1456,4 +1458,8 @@ handleCanvasResize(newWidth, newHeight) {
 
 })();
 
-console.log('✅ animation-system.js (Phase 1改修版・フレーム名統一: xF形式) loaded');
+console.log('✅ animation-system.js (Phase 1-3 完全版) loaded');
+console.log('   ✓ Phase 1: フレーム名統一（xF形式）');
+console.log('   ✓ Phase 3: Canvas2D廃止 → ThumbnailSystem統一');
+console.log('   ✓ generateFrameThumbnail(): PixiJS RenderTexture使用');
+console.log('   ✓ frame.thumbnailDataURL保存で UI層連携');
