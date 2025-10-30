@@ -1,8 +1,9 @@
 // ================================================================================
-// system/animation-system.js - Phase 1-3 完全版
+// system/animation-system.js - GSAP統合完全版（Phase 1-3 + 初回生成修正）
 // ================================================================================
 // 【Phase 1】フレーム名表記をFRAMEx → xF形式に統一
 // 【Phase 3】generateFrameThumbnail() - Canvas2D廃止 → ThumbnailSystem統一
+// 【Phase 3-2】init()完了時に全フレームサムネイル生成（GSAP.delayedCall使用）
 // 
 // 改修内容:
 // - Canvas2D APIを完全削除（document.createElement('canvas'), getContext('2d'), ctx.drawImage()等）
@@ -10,6 +11,7 @@
 // - PixiJS RenderTexture でリサイズ（GPU処理）
 // - frame.thumbnailDataURL 保存
 // - イベント emit で UI層を更新トリガー
+// - init()時にGSAP.delayedCall()で描画完了後にサムネイル生成
 
 (function() {
     'use strict';
@@ -210,6 +212,14 @@
             
             this.coordAPI = window.CoordinateSystem;
             
+            // GSAP availability check
+            this.gsapAvailable = typeof gsap !== 'undefined';
+            if (this.gsapAvailable) {
+                console.log('[AnimationSystem] GSAP detected - using synchronized thumbnail generation');
+            } else {
+                console.warn('[AnimationSystem] GSAP not found - falling back to setTimeout');
+            }
+            
             this.setupCanvasResizeListener();
         }
         
@@ -255,6 +265,7 @@
             console.log('✅ All frame thumbnails regenerated');
         }
         
+        // ★★★ Phase 3-2: init()完了時にGSAP.delayedCallで全フレームサムネイル生成 ★★★
         init(layerSystem, app, cameraSystem) {
             if (this.hasInitialized) return;
             
@@ -291,6 +302,18 @@
                     this.eventBus.emit('animation:initialized');
                 }
             }, 200);
+            
+            // ★★★ Phase 3-2: 初回サムネイル生成（描画完了後）★★★
+            // GSAP.delayedCall()で0.1秒後に実行 → PixiJSレンダリング完了を保証
+            if (this.gsapAvailable) {
+                gsap.delayedCall(0.1, () => {
+                    this.regenerateAllThumbnails();
+                });
+            } else {
+                setTimeout(() => {
+                    this.regenerateAllThumbnails();
+                }, 100);
+            }
         }
         
         setupLayerChangeListener() {
@@ -1458,8 +1481,9 @@
 
 })();
 
-console.log('✅ animation-system.js (Phase 1-3 完全版) loaded');
+console.log('✅ animation-system.js (GSAP統合完全版) loaded');
 console.log('   ✓ Phase 1: フレーム名統一（xF形式）');
 console.log('   ✓ Phase 3: Canvas2D廃止 → ThumbnailSystem統一');
+console.log('   ✓ Phase 3-2: init()時にGSAP.delayedCall()で初回サムネイル生成');
 console.log('   ✓ generateFrameThumbnail(): PixiJS RenderTexture使用');
 console.log('   ✓ frame.thumbnailDataURL保存で UI層連携');
