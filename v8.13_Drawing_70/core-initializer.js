@@ -1,6 +1,8 @@
-// ===== core-initializer.js - 完全修正版 =====
+// ===== core-initializer.js - LayerPanelRenderer統合版 =====
+// Phase 2完全修正: LayerPanelRenderer初期化追加
 // 修正1: SettingsManager初期化をpopup登録前に移動
 // 修正2: ExportPopup登録をExportManager完全初期化後に実行
+// 修正3: LayerPanelRenderer初期化追加（Phase 2対応）
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -64,6 +66,37 @@ window.CoreInitializer = (function() {
         return settingsManager;
     }
 
+    // ★★★ Phase 2完全修正: LayerPanelRenderer初期化 ★★★
+    function initializeLayerPanelRenderer(layerSystem, animationSystem) {
+        if (!window.TegakiUI?.LayerPanelRenderer) {
+            console.warn('⚠️ LayerPanelRenderer not found - skipping initialization');
+            return null;
+        }
+        
+        const container = document.getElementById('layer-list');
+        if (!container) {
+            console.warn('⚠️ #layer-list container not found');
+            return null;
+        }
+        
+        const layerPanelRenderer = new window.TegakiUI.LayerPanelRenderer();
+        layerPanelRenderer.init(container, layerSystem, animationSystem);
+        
+        // グローバル参照を複数箇所に設定（診断コマンド対応）
+        window.TegakiUI.layerPanelRenderer = layerPanelRenderer;
+        
+        if (!window.CoreRuntime.internal) {
+            window.CoreRuntime.internal = {};
+        }
+        window.CoreRuntime.internal.layerPanelRenderer = layerPanelRenderer;
+        
+        console.log('✅ LayerPanelRenderer initialized and registered');
+        console.log('   - window.TegakiUI.layerPanelRenderer');
+        console.log('   - window.CoreRuntime.internal.layerPanelRenderer');
+        
+        return layerPanelRenderer;
+    }
+
     function initializePopupManager(app, coreEngine) {
         const popupManager = new window.TegakiPopupManager(window.TegakiEventBus);
         
@@ -120,6 +153,7 @@ window.CoreInitializer = (function() {
             this.coreEngine = null;
             this.uiController = null;
             this.popupManager = null;
+            this.layerPanelRenderer = null;
             this.exportInitialized = false;
         }
         
@@ -181,6 +215,26 @@ window.CoreInitializer = (function() {
             this.popupManager = initializePopupManager(this, this.coreEngine);
             
             setupEventBusListeners();
+            
+            // ★★★ Phase 2完全修正: LayerPanelRenderer初期化 ★★★
+            // AnimationSystem初期化後に実行（依存関係考慮）
+            setTimeout(() => {
+                this.layerPanelRenderer = initializeLayerPanelRenderer(
+                    this.coreEngine.getLayerManager(),
+                    this.coreEngine.getAnimationSystem()
+                );
+                
+                // 初回レンダリング
+                if (this.layerPanelRenderer) {
+                    const layers = this.coreEngine.getLayerManager().getLayers();
+                    const activeIndex = this.coreEngine.getLayerManager().activeLayerIndex;
+                    this.layerPanelRenderer.render(
+                        layers, 
+                        activeIndex, 
+                        this.coreEngine.getAnimationSystem()
+                    );
+                }
+            }, 100);
             
             // ★ 修正2: ExportSystem初期化
             this.initializeExportSystem();
@@ -344,4 +398,7 @@ window.CoreInitializer = (function() {
     };
 })();
 
-console.log('✅ core-initializer.js (完全修正版・SettingsManager＋ExportPopup対応) loaded');
+console.log('✅ core-initializer.js (LayerPanelRenderer統合版) loaded');
+console.log('   ✓ Phase 2: LayerPanelRenderer初期化追加');
+console.log('   ✓ グローバル参照: TegakiUI.layerPanelRenderer');
+console.log('   ✓ グローバル参照: CoreRuntime.internal.layerPanelRenderer');

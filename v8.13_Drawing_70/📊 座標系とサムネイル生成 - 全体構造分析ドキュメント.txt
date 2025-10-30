@@ -1,0 +1,148 @@
+📊 座標系とサムネイル生成 - 全体構造分析ドキュメント
+🗺️ 座標系の5層構造
+座標系定義用途変換メソッドScreen座標clientX/Y (DOMイベント)マウス・タッチ入力screenClientToCanvas()Canvas座標DPI補正後のPixelピクセル座標レンダラー基準canvasToWorld()World座標worldContainer基準の座標カメラ・ズーム適用後worldToLocal()Local座標レイヤーコンテナ基準の座標レイヤー内の描画ポイント-Texture座標RenderTexture内のピクセル座標サムネイル生成時専用処理
+
+🔄 座標変換フロー図
+PointerEvent (clientX, clientY)
+  ↓ screenClientToCanvas()  [DPI補正]
+Canvas座標 (canvasX, canvasY)
+  ↓ canvasToWorld()  [worldContainer逆行列]
+World座標 (worldX, worldY)
+  ↓ worldToLocal()  [親チェーン遡査・手動逆算]
+Local座標 (localX, localY)
+  → stroke-recorder.js に記録
+
+📁 ファイル責務マップ
+🎯 座標系管理
+
+coordinate-system.js: 全座標変換の統一API
+
+worldToLocal(): Phase 2.5完全修正版（pivot→position→rotate→scale順序）
+localToWorld(): 対応する順変換
+キャッシュ機構
+
+
+
+🖼️ サムネイル生成
+
+thumbnail-system.js: サムネイル生成の中核
+
+generateLayerThumbnail(): レイヤーサムネイル
+generateFrameThumbnail(): フレームサムネイル
+_renderLayerThumbnail(): ❌ 問題箇所（後述）
+
+
+
+🎭 レイヤー管理
+
+layer-system.js: レイヤー操作・Transform管理
+
+updateThumbnail(): レイヤーサムネイル更新（独自実装）
+flipActiveLayer(): 反転機能
+
+
+
+⚙️ Transform制御
+
+layer-transform.js: Transform適用・GSAP統合
+
+applyTransform(): GSAP killTweensOf() + delayedCall()
+flipLayer(): 反転処理
+_emitTransformUpdated(): イベント発火（throttle付き）
+
+
+
+🖼️ UI層
+
+layer-panel-renderer.js: レイヤーパネルUI
+
+updateLayerThumbnail(): サムネイル更新トリガー
+_generateAndDisplayThumbnail(): ThumbnailSystemから取得→表示
+
+
+timeline-thumbnail-utils.js: タイムラインサムネイル
+
+generateThumbnail(): ThumbnailSystemから取得
+Phase 3: layer:transform-updated 購読
+
+
+
+
+🔥 問題の根本原因
+❌ 問題1: layer-system.jsの独自サムネイル実装
+javascript// layer-system.js:1143-1200
+updateThumbnail(layerIndex) {
+    // ❌ ThumbnailSystemを使わず独自実装
+    const renderTexture = PIXI.RenderTexture.create({...});
+    
+    // ❌ レイヤーをtempContainerに移動（破壊的）
+    tempContainer.addChild(layer);
+    
+    // ❌ Transform状態を一時リセット
+    layer.position.set(0, 0);
+    layer.scale.set(1, 1);
+    layer.rotation = 0;
+    
+    //レンダリング
+    this.app.renderer.render({...});
+    
+    // ❌ 元に戻す処理が不完全
+    layer.position.set(originalState.pos.x, originalState.pos.y);
+    this.currentFrameContainer.addChildAt(layer, layerIndex);
+}
+```
+
+**問題点:**
+1. `layer-system.js` が**ThumbnailSystemを無視**して独自実装
+2. レイヤーを親から切り離す→**座標系破壊**
+3. Transform一時リセット→**元に戻す際にズレ**発生
+
+#### ❌ 問題2: イベントフロー断絶
+```
+layer-transform.js
+  → gsap.delayedCall(0.016) で layer:transform-updated 発火
+  
+timeline-thumbnail-utils.js
+  → layer:transform-updated 購読 ✅
+  
+layer-panel-renderer.js
+  → layer:transform-updated 購読 ✅
+  
+layer-system.js  
+  → ❌ 購読なし！独自のupdateThumbnail()を使用
+❌ 問題3: サムネイル生成の二重実装
+ファイルメソッド実装方式thumbnail-system.js_renderLayerThumbnail()❌ クローン方式（Phase 4で追加・失敗）layer-system.jsupdateThumbnail()❌ 一時移動方式（元からある・破壊的）layer-panel-renderer.js_generateAndDisplayThumbnail()✅ ThumbnailSystem呼び出し（正しい）
+
+📋 メソッド・シンボル辞典
+CoordinateSystem
+メソッド引数戻り値用途screenClientToCanvas(clientX, clientY)Screen座標{canvasX, canvasY}DPI補正canvasToWorld(canvasX, canvasY)Canvas座標{worldX, worldY}World変換worldToLocal(worldX, worldY, container)World座標+Container{localX, localY}Local変換localToWorld(localX, localY, container)Local座標+Container{worldX, worldY}逆変換
+ThumbnailSystem
+メソッド引数戻り値用途generateLayerThumbnail(layer, w, h)Layer+サイズPromise<Canvas>レイヤーサムネイルgenerateFrameThumbnail(frame, w, h)Frame+サイズPromise<Canvas>フレームサムネイル_invalidateLayerCacheByLayerId(layerId)LayerIDvoidキャッシュクリアcanvasToDataURL(canvas)CanvasstringDataURL変換
+LayerTransform
+メソッド引数戻り値用途applyTransform(layer, transform, cx, cy)Layer+TransformvoidTransform適用+GSAP同期flipLayer(layer, direction)Layer+方向void反転_emitTransformUpdated(layerId, layer)ID+Layervoidイベント発火（throttle）
+EventBus主要イベント
+イベント名発火元データ用途layer:transform-updatedlayer-transform.js{layerIndex, layerId, transform}Transform更新通知thumbnail:layer-updated複数{layerIndex, layerId, immediate}サムネイル更新リクエストkeyboard:vkey-pressedkeyboard-handler.js-Vモード開始keyboard:vkey-releasedkeyboard-handler.js-Vモード終了
+
+🎯 解決方針（改修前の確認完了）
+✅ 必須修正
+
+layer-system.jsのupdateThumbnail()を削除
+
+ThumbnailSystemに完全統一
+
+
+thumbnail-system.jsの_renderLayerThumbnail()を修正
+
+クローン方式→非破壊レンダリング方式
+
+
+layer-system.jsにイベント購読追加
+
+layer:transform-updated → ThumbnailSystem呼び出し
+
+
+
+⚠️ 検討事項
+
+PICA導入は不要: 問題は画質ではなく座標系破壊
+GSAP統合は完了: Phase 5で実装済み・正常動作中
