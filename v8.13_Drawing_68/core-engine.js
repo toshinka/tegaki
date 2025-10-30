@@ -1,5 +1,7 @@
-// ===== core-engine.js - Phase2 完全修正版 =====
+// ===== core-engine.js - GSAP統合・反転機能修正完全版 =====
 // Phase2改修: リサイズ時のレイヤー座標シフト実装 + 背景色修正
+// Phase4改修: onFlipRequestコールバック設定（Vモード反転機能修復）
+// Phase5改修: GSAP Ticker統合（レンダリング競合回避・リロード安定化）
 
 (function() {
     'use strict';
@@ -344,6 +346,14 @@
             this.exportManager = null;
             this.batchAPI = null;
             
+            // Phase 5: GSAP availability check
+            this.gsapAvailable = typeof gsap !== 'undefined';
+            if (this.gsapAvailable) {
+                console.log('[CoreEngine] GSAP detected - Ticker統合 available');
+            } else {
+                console.warn('[CoreEngine] GSAP not found - using PixiJS Ticker');
+            }
+            
             this.setupCrossReferences();
             this.setupSystemEventIntegration();
         }
@@ -446,6 +456,44 @@
             if (typeof window.CoordinateSystem.setAnimationSystem === 'function' && this.animationSystem) {
                 window.CoordinateSystem.setAnimationSystem(this.animationSystem);
             }
+        }
+        
+        // ★★★ Phase 4: onFlipRequestコールバック設定（Vモード反転機能修復）★★★
+        _initializeLayerTransform() {
+            if (!this.layerSystem?.transform) {
+                console.warn('[CoreEngine] layerSystem.transform not available');
+                return;
+            }
+            
+            const layerTransform = this.layerSystem.transform;
+            
+            // Phase 4: onFlipRequest コールバック設定
+            layerTransform.onFlipRequest = (direction) => {
+                const activeLayer = this.layerSystem.getActiveLayer();
+                if (!activeLayer) {
+                    console.warn('[CoreEngine] No active layer for flip request');
+                    return;
+                }
+                
+                console.log(`[CoreEngine] Flip request: ${direction}, layer:`, activeLayer.layerData?.id);
+                
+                // Transform反転実行
+                layerTransform.flipLayer(activeLayer, direction);
+                
+                // サムネイル更新トリガー（immediate=trueで即座更新）
+                const layerIndex = this.layerSystem.activeLayerIndex;
+                if (this.eventBus) {
+                    this.eventBus.emit('thumbnail:layer-updated', {
+                        component: 'layer-transform',
+                        action: 'flip-applied',
+                        data: { layerIndex, layerId: activeLayer.layerData.id, immediate: true }
+                    });
+                }
+                
+                console.log(`✓ Flip applied: ${direction}, layerIndex=${layerIndex}`);
+            };
+            
+            console.log('✅ [CoreEngine] onFlipRequest callback configured');
         }
         
         async exportForBookmarklet(format = 'gif', options = {}) {
@@ -639,16 +687,86 @@
             });
         }
         
+        // ★★★ Phase 5: GSAP Ticker統合（オプション） ★★★
+        _setupGSAPTicker() {
+            if (!this.gsapAvailable) {
+                console.log('[CoreEngine] GSAP Ticker統合 skipped - using PixiJS Ticker');
+                return;
+            }
+            
+            console.log('[CoreEngine] Setting up GSAP Ticker integration...');
+            
+            // PixiJS Tickerを停止
+            if (this.app.ticker) {
+                this.app.ticker.stop();
+                console.log('  ✓ PixiJS Ticker stopped');
+            }
+            
+            // GSAP Tickerで統一
+            this.gsapTickerCallback = () => {
+                if (this.app?.renderer && this.app?.stage) {
+                    this.app.renderer.render(this.app.stage);
+                }
+            };
+            
+            gsap.ticker.add(this.gsapTickerCallback);
+            console.log('  ✓ GSAP Ticker registered');
+            console.log('✅ GSAP Ticker integration complete');
+        }
+        
+        // ★★★ Phase 5: クリーンアップ処理追加 ★★★
+        destroy() {
+            console.log('[CoreEngine] Destroying...');
+            
+            // Phase 5: GSAP完全停止
+            if (this.gsapAvailable) {
+                if (this.gsapTickerCallback) {
+                    gsap.ticker.remove(this.gsapTickerCallback);
+                    console.log('  ✓ GSAP Ticker removed');
+                }
+                
+                gsap.killTweensOf("*");
+                gsap.globalTimeline.clear();
+                console.log('  ✓ GSAP Tweens cleared');
+            }
+            
+            // PixiJS破棄
+            if (this.app) {
+                this.app.destroy(true, { children: true });
+                console.log('  ✓ PixiJS app destroyed');
+            }
+            
+            // EventBusクリア
+            if (this.eventBus && this.eventBus.removeAllListeners) {
+                this.eventBus.removeAllListeners();
+                console.log('  ✓ EventBus cleared');
+            }
+            
+            console.log('✅ CoreEngine destroyed');
+        }
+        
         initialize() {
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
             this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
             this.clipboardSystem.init(this.eventBus, CONFIG);
+            
+            // ★★★ ThumbnailSystem初期化（重要）★★★
+            if (window.ThumbnailSystem) {
+                window.ThumbnailSystem.app = this.app;
+                window.ThumbnailSystem.init(this.eventBus);
+                console.log('✅ ThumbnailSystem initialized in CoreEngine');
+            } else {
+                console.warn('⚠️ ThumbnailSystem not found');
+            }
             
             if (window.History && typeof window.History.setLayerSystem === 'function') {
                 window.History.setLayerSystem(this.layerSystem);
             }
             
             this.initializeAnimationSystem();
+            
+            // ★★★ Phase 4: onFlipRequestコールバック設定 ★★★
+            this._initializeLayerTransform();
             
             if (window.TegakiBatchAPI && this.animationSystem) {
                 this.batchAPI = new window.TegakiBatchAPI(
@@ -692,6 +810,11 @@
             
             this.setupCanvasEvents();
             
+            // ★★★ Phase 5: GSAP Ticker統合（オプション・コメントアウト可能）★★★
+            // NOTE: 必要に応じて有効化。デフォルトはPixiJS Tickerを使用
+            // this._setupGSAPTicker();
+            
+            // PixiJS Ticker使用（標準）
             this.app.ticker.add(() => {
                 this.processThumbnailUpdates();
             });
@@ -721,5 +844,9 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (Phase2完全修正版) loaded');
+    console.log('✅ core-engine.js (GSAP統合・反転機能修正完全版) loaded');
+    console.log('   ✓ Phase 2: リサイズ時レイヤー座標シフト + 背景色修正');
+    console.log('   ✓ Phase 4: onFlipRequestコールバック設定（Vモード反転機能修復）');
+    console.log('   ✓ Phase 5: GSAP Ticker統合準備完了（_setupGSAPTicker）');
+    console.log('   ✓ destroy()メソッド追加（GSAP完全停止・リロード安定化）');
 })();
