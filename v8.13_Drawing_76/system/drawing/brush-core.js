@@ -59,31 +59,49 @@
          * 初期化
          */
         init() {
-            if (this.coordinateSystem) return; // 二重初期化防止
+            if (this.coordinateSystem) {
+                console.warn('BrushCore: Already initialized');
+                return; // 二重初期化防止
+            }
             
             // グローバル依存の取得
             this.coordinateSystem = window.CoordinateSystem;
             this.pressureHandler = window.pressureHandler;
-            this.curveInterpolator = window.curveInterpolator;
+            this.curveInterpolator = window.CurveInterpolator;
             this.strokeRecorder = window.strokeRecorder;
             this.layerManager = window.layerManager;
             this.strokeRenderer = window.strokeRenderer;
-            this.eventBus = window.eventBus;
+            this.eventBus = window.eventBus || window.TegakiEventBus;
             
+            // 必須依存チェック（明確なエラーメッセージ）
             if (!this.coordinateSystem) {
-                throw new Error('BrushCore: CoordinateSystem not initialized');
+                throw new Error('BrushCore: window.CoordinateSystem not initialized - check coordinate-system.js');
             }
             if (!this.layerManager) {
-                throw new Error('BrushCore: LayerManager not initialized');
+                throw new Error('BrushCore: window.layerManager not initialized - check CoreEngine initialization order');
             }
             if (!this.strokeRecorder) {
-                throw new Error('BrushCore: StrokeRecorder not initialized');
+                throw new Error('BrushCore: window.strokeRecorder not initialized - check CoreEngine.initialize() StrokeRecorder instantiation');
             }
             if (!this.strokeRenderer) {
-                throw new Error('BrushCore: StrokeRenderer not initialized');
+                throw new Error('BrushCore: window.strokeRenderer not initialized - check CoreEngine.initialize() StrokeRenderer instantiation');
+            }
+            
+            // 任意依存の警告
+            if (!this.pressureHandler) {
+                console.warn('BrushCore: window.pressureHandler not found - pressure sensitivity disabled');
+            }
+            if (!this.curveInterpolator) {
+                console.warn('BrushCore: window.CurveInterpolator not found - curve interpolation disabled');
             }
             
             console.log('✅ BrushCore initialized (Phase 2)');
+            console.log('   - CoordinateSystem:', !!this.coordinateSystem);
+            console.log('   - LayerManager:', !!this.layerManager);
+            console.log('   - StrokeRecorder:', !!this.strokeRecorder);
+            console.log('   - StrokeRenderer:', !!this.strokeRenderer);
+            console.log('   - PressureHandler:', !!this.pressureHandler);
+            console.log('   - CurveInterpolator:', !!this.curveInterpolator);
         }
         
         /**

@@ -1,6 +1,7 @@
-// ===== core-runtime.js - Phase 1-3完全版: ThumbnailSystem統合 =====
-// Phase 1: PointerEventからclientX/Yを正しく取得してDrawingEngineに渡す
+// ===== core-runtime.js - Phase 2統合版: BrushCore対応 =====
+// Phase 1: PointerEventからclientX/Yを正しく取得してBrushCoreに渡す
 // Phase 1-3: ThumbnailSystem初期化を統合
+// Phase 2: DrawingEngine → BrushCore統合
 
 (function() {
     'use strict';
@@ -29,7 +30,7 @@
             canvasContainer: null,
             cameraSystem: null,
             layerManager: null,
-            drawingEngine: null,
+            brushCore: null, // Phase 2: drawingEngine → brushCore
             initialized: false,
             pointerEventsSetup: false
         },
@@ -119,33 +120,46 @@
         },
         
         handlePointerDown(event) {
-            const currentTool = this.internal.drawingEngine?.currentTool || 'pen';
+            // Phase 2: BrushCoreのモードを確認
+            const currentTool = this.internal.brushCore?.currentMode || 'pen';
             const isDrawingTool = currentTool === 'pen' || currentTool === 'eraser';
             
-            if (this.internal.drawingEngine && 
+            if (this.internal.brushCore && 
                 !this.internal.layerManager?.isLayerMoveMode && 
                 isDrawingTool) {
                 
                 // Phase 1修正: 正しいネイティブイベント取得
                 const nativeEvent = this.extractNativeEvent(event);
                 
-                // DrawingEngineはclientX/Yを使ってCoordinateSystem経由で変換
-                this.internal.drawingEngine.startDrawing(0, 0, nativeEvent);
+                // Phase 2: BrushCore.startStroke()を呼び出し
+                const pressure = nativeEvent.pressure !== undefined ? nativeEvent.pressure : 0.5;
+                this.internal.brushCore.startStroke(
+                    nativeEvent.clientX,
+                    nativeEvent.clientY,
+                    pressure
+                );
             }
         },
         
         handlePointerMove(event) {
-            if (this.internal.drawingEngine?.isDrawing) {
+            // Phase 2: BrushCore.isDrawingを確認
+            if (this.internal.brushCore?.isDrawing) {
                 // Phase 1修正: 正しいネイティブイベント取得
                 const nativeEvent = this.extractNativeEvent(event);
                 
-                this.internal.drawingEngine.continueDrawing(0, 0, nativeEvent);
+                const pressure = nativeEvent.pressure !== undefined ? nativeEvent.pressure : 0.5;
+                this.internal.brushCore.updateStroke(
+                    nativeEvent.clientX,
+                    nativeEvent.clientY,
+                    pressure
+                );
             }
         },
         
         handlePointerUp(event) {
-            if (this.internal.drawingEngine?.isDrawing) {
-                this.internal.drawingEngine.stopDrawing();
+            // Phase 2: BrushCore.finalizeStroke()を呼び出し
+            if (this.internal.brushCore?.isDrawing) {
+                this.internal.brushCore.finalizeStroke();
             }
         },
         
@@ -164,7 +178,8 @@
                 pixiApp: this.internal.app,
                 cameraSystem: this.internal.cameraSystem,
                 layerManager: this.internal.layerManager,
-                drawingEngine: this.internal.drawingEngine,
+                brushCore: this.internal.brushCore, // Phase 2: 追加
+                drawingEngine: this.internal.brushCore, // Phase 2: 互換性維持
                 app: this.internal.app
             };
             
@@ -397,17 +412,17 @@
             },
             tool: {
                 set: (toolName) => {
-                    const engine = CoreRuntime.internal.drawingEngine;
-                    if (!engine) return false;
+                    // Phase 2: BrushCore.setMode()を呼び出し
+                    const brushCore = CoreRuntime.internal.brushCore;
+                    if (!brushCore) return false;
                     
-                    if (engine.setTool) engine.setTool(toolName);
-                    if (engine.strokeRenderer?.setTool) engine.strokeRenderer.setTool(toolName);
+                    if (brushCore.setMode) brushCore.setMode(toolName);
                     if (CoreRuntime.internal.cameraSystem?.updateCursor) CoreRuntime.internal.cameraSystem.updateCursor();
                     if (window.TegakiEventBus) window.TegakiEventBus.emit('tool:select', { tool: toolName });
                     
                     return true;
                 },
-                get: () => CoreRuntime.internal.drawingEngine?.currentTool || null,
+                get: () => CoreRuntime.internal.brushCore?.currentMode || null,
                 setPen: () => CoreRuntime.api.tool.set('pen'),
                 setEraser: () => CoreRuntime.api.tool.set('eraser')
             },
@@ -420,8 +435,8 @@
                     return false;
                 },
                 getSize: () => {
-                    const brushSettings = CoreRuntime.internal.drawingEngine?.brushSettings;
-                    return brushSettings?.getSize() || CONFIG.pen.size || 3;
+                    const brushSettings = CoreRuntime.internal.brushCore?.brushSettings;
+                    return brushSettings?.size || CONFIG.pen.size || 3;
                 },
                 setColor: (color) => {
                     if (window.TegakiEventBus) {
@@ -431,8 +446,8 @@
                     return false;
                 },
                 getColor: () => {
-                    const brushSettings = CoreRuntime.internal.drawingEngine?.brushSettings;
-                    return brushSettings?.getColor() || CONFIG.pen.color || 0x800000;
+                    const brushSettings = CoreRuntime.internal.brushCore?.brushSettings;
+                    return brushSettings?.color || CONFIG.pen.color || 0x800000;
                 },
                 setOpacity: (opacity) => {
                     if (window.TegakiEventBus) {
@@ -442,8 +457,8 @@
                     return false;
                 },
                 getOpacity: () => {
-                    const brushSettings = CoreRuntime.internal.drawingEngine?.brushSettings;
-                    return brushSettings?.getAlpha() || CONFIG.pen.opacity || 1.0;
+                    const brushSettings = CoreRuntime.internal.brushCore?.brushSettings;
+                    return brushSettings?.opacity || CONFIG.pen.opacity || 1.0;
                 }
             },
             camera: {
@@ -549,8 +564,8 @@
             settings: {
                 get: (key) => {
                     if (!key) {
-                        const bs = CoreRuntime.internal.drawingEngine?.brushSettings;
-                        return bs?.getCurrentSettings() || {};
+                        const bs = CoreRuntime.internal.brushCore?.brushSettings;
+                        return bs || {};
                     }
                     
                     if (key === 'pen.size') return CoreRuntime.api.brush.getSize();
@@ -571,8 +586,15 @@
                     return true;
                 },
                 reset: () => {
-                    const bs = CoreRuntime.internal.drawingEngine?.brushSettings;
-                    if (bs?.resetToDefaults) bs.resetToDefaults();
+                    // Phase 2: BrushCore設定リセット
+                    const brushCore = CoreRuntime.internal.brushCore;
+                    if (brushCore) {
+                        brushCore.updateSettings({
+                            size: CONFIG.pen.size,
+                            opacity: CONFIG.pen.opacity,
+                            color: CONFIG.pen.color
+                        });
+                    }
                     return true;
                 },
                 getAll: () => CoreRuntime.api.settings.get()
@@ -614,13 +636,15 @@
             return {
                 camera: this.internal.cameraSystem,
                 layer: this.internal.layerManager,
-                drawing: this.internal.drawingEngine
+                drawing: this.internal.brushCore, // Phase 2: drawingEngine → brushCore
+                brushCore: this.internal.brushCore // Phase 2: 追加
             };
         },
         
         getCameraSystem() { return this.internal.cameraSystem; },
         getLayerManager() { return this.internal.layerManager; },
-        getDrawingEngine() { return this.internal.drawingEngine; },
+        getBrushCore() { return this.internal.brushCore; }, // Phase 2: 追加
+        getDrawingEngine() { return this.internal.brushCore; }, // Phase 2: 互換性維持
         
         isInitialized() { return this.internal.initialized; }
     };
@@ -710,4 +734,4 @@
     
 })();
 
-console.log('✅ core-runtime.js (Phase 1-3完全版: ThumbnailSystem統合) loaded');
+console.log('✅ core-runtime.js (Phase 2統合版: BrushCore対応) loaded');

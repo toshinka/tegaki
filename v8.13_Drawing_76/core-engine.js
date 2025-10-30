@@ -1,8 +1,8 @@
-// ===== core-engine.js - Phase 2+3修正版: processThumbnailUpdates削除 =====
-// Phase2改修: リサイズ時のレイヤー座標シフト実装 + 背景色修正
-// Phase3改修: processThumbnailUpdates() 呼び出し削除（ThumbnailSystemに統一）
-// Phase4改修: onFlipRequestコールバック設定（タイミング修正・確実接続）
-// Phase5改修: GSAP Ticker統合（レンダリング競合回避・リロード安定化）
+// ===== core-engine.js - Phase 2統合版: BrushCore対応 =====
+// Phase 2改修: DrawingEngine → BrushCore統合
+// Phase 3改修: processThumbnailUpdates() 削除（ThumbnailSystemに統一）
+// Phase 4改修: onFlipRequestコールバック設定（タイミング修正・確実接続）
+// Phase 5改修: GSAP Ticker統合（レンダリング競合回避・リロード安定化）
 
 (function() {
     'use strict';
@@ -18,10 +18,10 @@
     if (!window.TEGAKI_KEYCONFIG_MANAGER) throw new Error('KeyConfig manager required');
 
     class UnifiedKeyHandler {
-        constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
+        constructor(cameraSystem, layerSystem, brushCore, eventBus, animationSystem) {
             this.cameraSystem = cameraSystem;
             this.layerSystem = layerSystem;
-            this.drawingEngine = drawingEngine;
+            this.brushCore = brushCore; // Phase 2: DrawingEngine → BrushCore
             this.eventBus = eventBus || window.TegakiEventBus;
             this.animationSystem = animationSystem;
             this.timelineUI = null;
@@ -298,8 +298,9 @@
         }
         
         switchTool(tool) {
-            if (this.drawingEngine) {
-                this.drawingEngine.setTool(tool);
+            // Phase 2: BrushCore.setMode()を呼び出し
+            if (this.brushCore && this.brushCore.setMode) {
+                this.brushCore.setMode(tool);
             }
             
             this.cameraSystem.updateCursor();
@@ -330,16 +331,17 @@
             this.layerSystem = new window.TegakiLayerSystem();
             this.clipboardSystem = new window.TegakiDrawingClipboard();
             
-            this.brushSettings = new BrushSettings(CONFIG, this.eventBus);
+            // Phase 2: BrushSettings初期化
+            if (!window.BrushSettings) {
+                throw new Error('BrushSettings not loaded');
+            }
+            this.brushSettings = new window.BrushSettings(CONFIG, this.eventBus);
             
-            this.drawingEngine = new DrawingEngine(
-                this.app,
-                this.layerSystem,
-                this.cameraSystem,
-                window.History
-            );
-            
-            this.drawingEngine.setBrushSettings(this.brushSettings);
+            // Phase 2: BrushCore初期化（DrawingEngine廃止）
+            if (!window.BrushCore) {
+                throw new Error('BrushCore not loaded - check script load order');
+            }
+            this.brushCore = window.BrushCore;
             
             this.animationSystem = null;
             this.timelineUI = null;
@@ -360,8 +362,20 @@
         }
         
         setupCrossReferences() {
+            // Phase 2: BrushCoreにブラシ設定を渡す
+            if (this.brushCore && this.brushSettings) {
+                this.brushCore.updateSettings({
+                    size: this.brushSettings.getSize(),
+                    opacity: this.brushSettings.getAlpha(),
+                    color: this.brushSettings.getColor()
+                });
+            }
+            
             this.cameraSystem.setLayerManager(this.layerSystem);
-            this.cameraSystem.setDrawingEngine(this.drawingEngine);
+            // Phase 2: BrushCore参照を渡す（DrawingEngine→BrushCore）
+            if (this.cameraSystem.setBrushCore) {
+                this.cameraSystem.setBrushCore(this.brushCore);
+            }
             
             this.layerSystem.setCameraSystem(this.cameraSystem);
             this.layerSystem.setApp(this.app);
@@ -426,6 +440,25 @@
             
             this.eventBus.on('drawing:completed', (data) => {
                 this.eventBus.emit('ui:drawing-completed', data);
+            });
+            
+            // Phase 2: ブラシ設定変更イベント
+            this.eventBus.on('brush:size-changed', (data) => {
+                if (this.brushCore && data.data?.size) {
+                    this.brushCore.updateSettings({ size: data.data.size });
+                }
+            });
+            
+            this.eventBus.on('brush:color-changed', (data) => {
+                if (this.brushCore && data.data?.color !== undefined) {
+                    this.brushCore.updateSettings({ color: data.data.color });
+                }
+            });
+            
+            this.eventBus.on('brush:alpha-changed', (data) => {
+                if (this.brushCore && data.data?.alpha !== undefined) {
+                    this.brushCore.updateSettings({ opacity: data.data.alpha });
+                }
             });
         }
         
@@ -527,7 +560,8 @@
         
         getCameraSystem() { return this.cameraSystem; }
         getLayerManager() { return this.layerSystem; }
-        getDrawingEngine() { return this.drawingEngine; }
+        getBrushCore() { return this.brushCore; } // Phase 2: 追加
+        getDrawingEngine() { return this.brushCore; } // Phase 2: 互換性維持
         getClipboardSystem() { return this.clipboardSystem; }
         getAnimationSystem() { return this.animationSystem; }
         getTimelineUI() { return this.timelineUI; }
@@ -568,6 +602,10 @@
             if (this.keyHandler) {
                 this.keyHandler.switchTool(tool);
             } else {
+                // Phase 2: BrushCore.setMode()を呼び出し
+                if (this.brushCore && this.brushCore.setMode) {
+                    this.brushCore.setMode(tool);
+                }
                 this.cameraSystem.updateCursor();
                 this.eventBus.emit('tool:changed', { newTool: tool });
             }
@@ -748,6 +786,42 @@
             this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
             this.clipboardSystem.init(this.eventBus, CONFIG);
             
+            // ★★★ グローバル参照を設定（BrushCore初期化前に必要）★★★
+            window.layerManager = this.layerSystem;
+            window.cameraSystem = this.cameraSystem;
+            
+            // ★★★ Phase 2: StrokeRecorder/StrokeRendererをグローバル初期化 ★★★
+            if (!window.strokeRecorder) {
+                if (!window.StrokeRecorder) {
+                    throw new Error('StrokeRecorder class not loaded - check script load order');
+                }
+                window.strokeRecorder = new window.StrokeRecorder(
+                    window.pressureHandler,
+                    this.cameraSystem
+                );
+                console.log('✅ StrokeRecorder instance created');
+            }
+            
+            if (!window.strokeRenderer) {
+                if (!window.StrokeRenderer) {
+                    throw new Error('StrokeRenderer class not loaded - check script load order');
+                }
+                window.strokeRenderer = new window.StrokeRenderer(
+                    this.app,
+                    this.layerSystem,
+                    this.cameraSystem
+                );
+                console.log('✅ StrokeRenderer instance created');
+            }
+            
+            // ★★★ Phase 2: BrushCore初期化（依存初期化後）★★★
+            if (this.brushCore && this.brushCore.init) {
+                this.brushCore.init();
+                console.log('✅ BrushCore initialized in CoreEngine');
+            } else {
+                throw new Error('BrushCore not found - check script load order');
+            }
+            
             // ★★★ ThumbnailSystem初期化（重要）★★★
             if (window.ThumbnailSystem) {
                 window.ThumbnailSystem.app = this.app;
@@ -762,6 +836,14 @@
             }
             
             this.initializeAnimationSystem();
+            
+            // ★★★ 初期レイヤー作成確認 ★★★
+            const layers = this.layerSystem.getLayers();
+            if (layers.length === 0) {
+                console.warn('⚠️ No layers found - LayerSystem may not be properly initialized');
+            } else {
+                console.log(`✅ LayerSystem has ${layers.length} layer(s)`);
+            }
             
             // ★★★ Phase 4完全修正: onFlipRequestコールバック設定（初期化後に実行）★★★
             // LayerSystem初期化完了後、200ms後に再試行メカニズムで設定
@@ -786,10 +868,11 @@
                 );
             }
             
+            // Phase 2: UnifiedKeyHandlerにBrushCoreを渡す
             this.keyHandler = new UnifiedKeyHandler(
                 this.cameraSystem,
                 this.layerSystem,
-                this.drawingEngine,
+                this.brushCore, // DrawingEngine → BrushCore
                 this.eventBus,
                 this.animationSystem
             );
@@ -814,24 +897,36 @@
             // ★★★ Phase 3修正: processThumbnailUpdates()削除 - ThumbnailSystemに統一 ★★★
             // PixiJS Tickerは標準レンダリングのみ使用（サムネイル更新はEventBus経由）
             
-            window.drawingEngine = this.drawingEngine;
-            window.layerManager = this.layerSystem;
-            window.cameraSystem = this.cameraSystem;
+            // Phase 2: グローバル参照を更新（初期化完了後）
+            window.brushCore = this.brushCore;
+            window.drawingEngine = this.brushCore; // 互換性維持
+            
+            // LayerSystem初期化直後にUI更新
+            this.layerSystem.updateLayerPanelUI();
+            this.layerSystem.updateStatusDisplay();
             
             this.eventBus.emit('core:initialized', {
-                systems: ['camera', 'layer', 'clipboard', 'drawing', 'keyhandler', 'animation', 'history', 'batchapi', 'export']
+                systems: ['camera', 'layer', 'clipboard', 'drawing', 'brush-core', 'keyhandler', 'animation', 'history', 'batchapi', 'export']
             });
+            
+            console.log('✅ CoreEngine.initialize() completed');
+            console.log('   - LayerSystem initialized:', !!this.layerSystem);
+            console.log('   - CameraSystem initialized:', !!this.cameraSystem);
+            console.log('   - BrushCore initialized:', !!this.brushCore);
+            console.log('   - AnimationSystem initialized:', !!this.animationSystem);
             
             return this;
         }
     }
 
+    // Phase 2: TegakiCore公開API更新
     window.TegakiCore = {
         CoreEngine: CoreEngine,
         CameraSystem: window.TegakiCameraSystem,
         LayerManager: window.TegakiLayerSystem,
         LayerSystem: window.TegakiLayerSystem,
-        DrawingEngine: DrawingEngine,
+        BrushCore: window.BrushCore, // Phase 2: 追加
+        DrawingEngine: window.BrushCore, // Phase 2: 互換性維持（廃止予定）
         ClipboardSystem: window.TegakiDrawingClipboard,
         DrawingClipboard: window.TegakiDrawingClipboard,
         AnimationSystem: window.TegakiAnimationSystem,
@@ -839,8 +934,8 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (Phase 2+3修正版) loaded');
-    console.log('   ✓ Phase 2: リサイズ時レイヤー座標シフト + 背景色修正');
+    console.log('✅ core-engine.js (Phase 2統合版) loaded');
+    console.log('   ✓ Phase 2: DrawingEngine → BrushCore統合完了');
     console.log('   ✓ Phase 3: processThumbnailUpdates() 削除（ThumbnailSystemに統一）');
     console.log('   ✓ Phase 4: onFlipRequest再試行メカニズム実装（確実接続）');
     console.log('   ✓ Phase 5: GSAP Ticker統合準備完了');
