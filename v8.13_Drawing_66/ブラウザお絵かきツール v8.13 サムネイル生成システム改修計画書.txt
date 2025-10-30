@@ -1,0 +1,576 @@
+================================================================================
+ブラウザお絵かきツール v8.13 - サムネイル生成システム 段階的改修計画書
+================================================================================
+
+【改修目標】
+1. レイヤーサムネイルの常時更新（Vモード対応）
+2. タイムラインサムネイルの即座反応
+3. Canvas2D完全撲滅（PixiJS RenderTexture統一）
+4. キャッシュ戦略の統一・安定化
+5. ガイドライン完全準拠
+
+【推定工数】
+全Phase合計: 約6-8時間（Claude改修）
+
+================================================================================
+Phase 0: 事前準備・理解（実施済み）
+================================================================================
+
+【完了項目】
+✅ サムネイル生成方式の完全比較
+✅ Canvas2D使用箇所の特定（thumbnail-system.js L263-268, animation-system.js L754-783）
+✅ キャッシュ戦略の分析（Transform値をキーに含む問題）
+✅ Vモードフロー分析（disableCacheDuringVMode + 再生成なし）
+
+【成果物】
+- サムネイル生成方式の完全比較表.txt（既存）
+- GPT5案.txt（ThumbnailRenderer + ThumbnailCache実装案）
+
+【次ステップ】
+→ Phase 1 開始（Vモード終了時のキャッシュ再生成）
+
+================================================================================
+Phase 1: Vモード終了時のキャッシュ再生成機構
+================================================================================
+
+【目的】
+Vキー動作後もレイヤーサムネイルが古いまま → Vモード終了イベント時に待機中のレイヤーを再生成
+
+【改修ファイル】
+- 対象: system/drawing/thumbnail-system.js
+- 修正メソッド:
+  * _setupEventListeners() - keyboard:vkey-released購読を追加
+  * _refreshAllLayerThumbnailsAfterVMode() - 新規実装
+  * constructor() - pendingVModeRefresh Set追加
+
+【参考ファイル】
+- system/animation-system.js（イベント発火タイミング参考）
+- coordinate-system.js（不要）
+
+【フロー内の位置】
+UI層: keyboard handler
+  → event bus: keyboard:vkey-released
+  → thumbnail-system: _refreshAllLayerThumbnailsAfterVMode()
+  → layer-manager: getLayers()
+  → emit thumbnail:layer-updated
+  → UI層: layer-panel-renderer, timeline-ui更新
+
+【具体的な実装内容】
+
+1. constructor に以下を追加:
+   - this.pendingVModeRefresh = new Set()（Vモード中に変化したレイヤーID格納）
+   - this.disableCacheDuringVMode = false（キャッシュをVモード中も有効に）
+
+2. _setupEventListeners() 内:
+   keyboard:vkey-pressed イベント:
+     → this.vKeyModeActive = true
+
+   keyboard:vkey-released イベント:
+     → this.vKeyModeActive = false
+     → _refreshAllLayerThumbnailsAfterVMode() 呼び出し
+
+   layer:transform-updated イベント:
+     → if (vKeyModeActive) → pendingVModeRefresh.add(layerId)
+     → else → 通常の invalidateCache()
+
+3. _refreshAllLayerThumbnailsAfterVMode() 新規実装:
+   - pendingVModeRefresh の全レイヤーID取得
+   - layerId → layerIndex 解決
+   - _invalidateLayerCacheByLayerId() でキャッシュクリア
+   - thumbnail:layer-updated イベント emit（immediate: true フラグ付き）
+   - 10ms間隔で順次処理（負荷分散）
+
+【テスト項目】
+- Vキー押下→ドラッグ→Vキー解放で、サムネイルが即更新される
+- window.TegakiDebug.inspectThumbnailCache() で pendingVModeRefreshCount === 0
+- レイヤーパネルのサムネイル画像が変化を反映
+
+【所要時間】
+30-40分
+
+================================================================================
+Phase 2: キャッシュキー戦略の統一
+================================================================================
+
+【目的】
+Transform値（position, rotation, scale）をキャッシュキーから外す
+→ layerId/frameId + サイズのみをキーに
+→ キャッシュヒット率向上・無限増殖防止
+
+【改修ファイル】
+- 対象: system/drawing/thumbnail-system.js
+- 修正メソッド:
+  * generateLayerThumbnail() - キャッシュキー生成ロジック
+  * generateFrameThumbnail() - キャッシュキー生成ロジック
+
+【参考ファイル】
+- system/drawing/thumbnail-system.js（内部参照）
+
+【フロー内の位置】
+サムネイル キャッシュ管理フロー:
+  Layer/Frame コンテナ入力
+  → cacheKey生成（Phase 2: ここで改修）
+  → キャッシュ検索
+  → ヒット → Canvas返却
+  → ミス → レンダリング → キャッシュ保存
+
+【具体的な実装内容】
+
+1. generateLayerThumbnail() 内のキャッシュキー生成:
+
+   【現状（Phase 2前）】
+   const transform = `${pos.x.toFixed(2)}_${pos.y}_${rot}_${scale.x}_${scale.y}`;
+   const cacheKey = `layer_${layerId}_${width}_${height}_${transform}`;
+
+   【改修後】
+   const cacheKey = `layer_${layerId}_${width}_${height}`;
+
+   理由:
+   - Transform値は layer:transform-updated で明示的に無効化
+   - キャッシュキー固定化 → ヒット率向上
+   - キャッシュサイズ制限（maxCacheSize: 200）が有効に
+
+2. generateFrameThumbnail() 内のキャッシュキー生成:
+
+   【現状（Phase 2前）】
+   const cacheKey = `frame_${frameId}_${canvasWidth}_${canvasHeight}_${thumbWidth}_${thumbHeight}`;
+
+   【改修後】
+   const cacheKey = `frame_${frameId}_${thumbWidth}_${thumbHeight}`;
+
+   理由:
+   - frameId は固定（フレーム削除まで不変）
+   - canvasWidth/Height は別途 camera:resized イベントで全キャッシュクリア
+   - 冗長性排除
+
+3. invalidateLayerCache(layerIndex) 拡張:
+   - layerIndex → layer.layerData.id 解決
+   - _invalidateLayerCacheByLayerId(layerId) 呼び出し
+
+4. _invalidateLayerCacheByLayerId(layerId) 新規実装:
+   - layerThumbnailCache を走査
+   - key.startsWith(`layer_${layerId}_`) でマッチするキーを削除
+
+【テスト項目】
+- window.TegakiDebug.inspectThumbnailCache() でキャッシュキーが`layer_${id}_64_64` 形式
+- 同じレイヤーに2回サムネイル生成要求 → 2回目はキャッシュヒット
+- layer:transform-updated発火 → キャッシュクリア → 次回生成時に新規作成
+
+【所要時間】
+20-30分
+
+================================================================================
+Phase 3: Canvas2D撲滅（PixiJS RenderTexture統一）
+================================================================================
+
+【目的】
+Canvas2D API（ctx.drawImage() でのリサイズ）をPixiJS RenderTextureに置換
+→ ガイドライン完全準拠・パフォーマンス向上
+
+【改修ファイル】
+- 対象1: system/drawing/thumbnail-system.js
+  * generateFrameThumbnail() - リサイズ処理
+  * 新規実装: _renderFrameThumbnailPixiJS()
+  * 新規実装: _acquireRenderTexture()
+  * 新規実装: _releaseRenderTexture()
+
+- 対象2: system/animation-system.js
+  * generateFrameThumbnail() - リサイズ処理
+
+【参考ファイル】
+- PIXI RenderTexture ドキュメント（CDN PixiJS v8.13）
+
+【フロー内の位置】
+フレームサムネイル生成フロー:
+  Frame コンテナ入力
+  → RenderTexture作成（フルサイズ）
+  → render(frame → fullRT)【GPU処理】
+  → リサイズ RenderTexture作成
+  → Sprite作成・スケール設定
+  → render(sprite → thumbRT)【GPU処理 / Phase 3でここが変更】
+  → extract.canvas(thumbRT)【GPU→CPU転送】
+  → Canvas返却
+
+【具体的な実装内容】
+
+1. thumbnail-system.js: _acquireRenderTexture(width, height) 新規実装:
+   - RenderTexture プール（renderTexturePool配列）から再利用可能なものを検索
+   - サイズマッチしない → 新規作成
+   - PIXI.RenderTexture.create({ width, height, resolution: devicePixelRatio })
+   - 戻り値: RenderTexture
+
+2. thumbnail-system.js: _releaseRenderTexture(rt) 新規実装:
+   - プールサイズ < poolMaxSize（10）なら再利用のため追加
+   - else → rt.destroy(true) で破棄
+
+3. thumbnail-system.js: _renderFrameThumbnailPixiJS() 新規実装:
+   フルサイズレンダリング:
+     fullRT = _acquireRenderTexture(canvasWidth, canvasHeight)
+     app.renderer.render({ container: frame, target: fullRT, clear: true })
+
+   リサイズレンダリング:
+     thumbRT = PIXI.RenderTexture.create({ width: thumbWidth, height: thumbHeight })
+     tempSprite = PIXI.Sprite.from(fullRT)
+     scale計算: scaleX = thumbWidth/canvasWidth, scaleY = thumbHeight/canvasHeight
+     scale = Math.min(scaleX, scaleY)【アスペクト比保持】
+     tempSprite.scale.set(scale, scale)
+     centeringオフセット計算
+     app.renderer.render({ container: tempSprite, target: thumbRT, clear: true })
+
+   Canvas取得:
+     thumbCanvas = app.renderer.extract.canvas(thumbRT)
+
+   クリーンアップ:
+     tempSprite.destroy()
+     _releaseRenderTexture(fullRT)
+     thumbRT.destroy(true)
+
+4. animation-system.js: generateFrameThumbnail() 修正:
+   現状のCanvas2D リサイズコード（L754-783）を削除
+   → thumbnail-system の _renderFrameThumbnailPixiJS() 呼び出しに統一
+
+【削除すべきコード】
+thumbnail-system.js L263-268:
+  const thumbCanvas = document.createElement('canvas');
+  ctx = thumbCanvas.getContext('2d');
+  ctx.drawImage(fullCanvas, ...);
+
+animation-system.js L754-783: 同様のCanvas2Dコード
+
+【テスト項目】
+- codebase全体で canvas.getContext('2d') が thumbnail-system内に存在しないこと確認
+- タイムラインサムネイル生成時にGPU使用率が上昇
+- フレームサムネイルが正常に表示される
+- devicePixelRatio高い環境（DPI 200%等）で品質低下しない
+
+【所要時間】
+60-90分
+
+================================================================================
+Phase 4: UI層の連携修正
+================================================================================
+
+【目的】
+レイヤーパネル・タイムラインUI が即座にサムネイル更新をリクエスト
+→ 即座反応（throttle削減）実装
+
+【改修ファイル】
+- 対象1: ui/layer-panel-renderer.js
+  * _setupEventListeners() - layer:transform-updated 購読
+  * updateLayerThumbnail() - 即座更新ロジック
+  
+- 対象2: ui/timeline-ui.js
+  * setupThumbnailAutoUpdate() - layer:transform-updated 購読
+  * requestThumbnailUpdate() - throttle値調整
+
+【参考ファイル】
+- system/drawing/thumbnail-system.js（キャッシュ無効化 API）
+
+【フロー内の位置】
+Vモード操作フロー:
+  User: Vキー押下 + ドラッグ
+  → drawing-engine: layer.position更新
+  → emit layer:transform-updated
+  → layer-panel-renderer: updateLayerThumbnail()【Phase 4】
+  → ThumbnailSystem.generateLayerThumbnail()
+  → _generateAndDisplayThumbnail() で canvas→img.src
+  → UI表示更新
+
+【具体的な実装内容】
+
+1. layer-panel-renderer.js: _setupEventListeners() に追加:
+   eventBus.on('layer:transform-updated', ({ data }) => {
+     const { layerIndex, layerId } = data;
+     throttleKey = layerId || `index-${layerIndex}`;
+     
+     // 同一キー連続更新時のthrottle（50ms）
+     if (layerUpdateTimers.has(throttleKey)) {
+       clearTimeout(layerUpdateTimers.get(throttleKey));
+     }
+     
+     timer = setTimeout(() => {
+       updateLayerThumbnail(layerIndex);
+       layerUpdateTimers.delete(throttleKey);
+     }, 50);
+     
+     layerUpdateTimers.set(throttleKey, timer);
+   });
+
+2. layer-panel-renderer.js: updateLayerThumbnail(layerIndex) 修正:
+   - window.ThumbnailSystem.invalidateLayerCache(layerIndex) 呼び出し
+   - 以降の処理は既存ロジック（_generateAndDisplayThumbnail）
+
+3. timeline-ui.js: setupThumbnailAutoUpdate() 修正:
+   layer:transform-updated イベント購読を追加:
+   eventBus.on('layer:transform-updated', ({ layerId }) => {
+     requestThumbnailUpdate();  // 0ms throttle（即座）
+   });
+
+4. timeline-ui.js: requestThumbnailUpdate() 修正:
+   現状: 150ms setTimeout
+   改修: 0ms setTimeout 或いは requestAnimationFrame
+
+【制御フロー】
+layer:transform-updated イベント
+  ├─ layer-panel-renderer: throttle 50ms
+  └─ timeline-ui: throttle 0ms（即座）
+  
+理由:
+- レイヤーパネル: 画面内の1つのサムネイル更新 → throttle可能
+- タイムライン: 複数フレーム同時表示 → 可能限り即座
+
+【テスト項目】
+- Vキー押下状態でレイヤードラッグ → レイヤーパネルサムネイルが滑らかに更新
+- タイムラインサムネイルも同期して更新
+- CPU使用率が異常上昇していない（throttleが機能）
+
+【所要時間】
+30-40分
+
+================================================================================
+Phase 5: イベント駆動・デバッグ統合
+================================================================================
+
+【目的】
+thumbnail:layer-updated, thumbnail:frame-updated イベントの標準化
+デバッグコマンドで動作確認を可能に
+
+【改修ファイル】
+- 対象: system/drawing/thumbnail-system.js
+  * イベント emit ポイント整理
+  * window.TegakiDebug 配下にデバッグコマンド追加
+
+【参考ファイル】
+- system/event-bus.js（イベント定義確認）
+
+【フロー内の位置】
+デバッグコマンド:
+  → window.TegakiDebug.monitorThumbnails()【ログ出力】
+  → window.TegakiDebug.inspectThumbnailCache()【キャッシュ状態確認】
+  → window.TegakiDebug.regenerateAllThumbnails()【強制再生成】
+
+【具体的な実装内容】
+
+1. thumbnail-system.js: getDebugInfo() 新規実装:
+   戻り値: {
+     layerCacheSize,
+     frameCacheSize,
+     dataURLCacheSize,
+     poolSize,
+     isInitialized,
+     vKeyModeActive,
+     disableCacheDuringVMode,
+     pendingVModeRefreshCount
+   }
+
+2. window.TegakiDebug.monitorThumbnails():
+   - thumbnail:layer-updated イベント購読
+   - thumbnail:frame-updated イベント購読
+   - 更新回数・タイムスタンプ・Δ時間をログ出力
+
+3. window.TegakiDebug.inspectThumbnailCache():
+   - getDebugInfo() 呼び出し
+   - layerThumbnailCache, frameThumbnailCache のキー一覧出力
+
+4. window.TegakiDebug.regenerateAllThumbnails():
+   - clearAllCache()
+   - layerPanelRenderer.updateAllThumbnails()
+   - animationSystem.regenerateAllThumbnails()
+
+【テスト項目】
+- console.log(window.TegakiDebug.inspectThumbnailCache()) で正常なキャッシュサイズ
+- monitorThumbnails() 実行中に Vモード操作 → 更新イベントログが出力
+- regenerateAllThumbnails() 実行 → 全サムネイル再生成完了
+
+【所要時間】
+20-30分
+
+================================================================================
+Phase 6: 統合テスト・最適化
+================================================================================
+
+【目的】
+全Phase統合後の動作確認・パフォーマンス検証
+
+【テスト項目】
+
+1. Vモード操作テスト:
+   ✅ Vキー押下 → ドラッグ（4秒間） → 解放
+   ✅ レイヤーパネルサムネイル即座更新
+   ✅ タイムラインサムネイル同期更新
+   ✅ window.TegakiDebug.inspectThumbnailCache() で layerCacheSize > 0
+
+2. キャッシュ効率テスト:
+   ✅ 同一レイヤー複数回描画 → サムネイル生成1回のみ
+   ✅ キャッシュキーが `layer_${id}_64_64` 形式
+   ✅ キャッシュサイズが maxCacheSize（200）超過しない
+
+3. Canvas2D消滅確認:
+   ✅ Grep: canvas.getContext('2d') → 0件（thumbnail-system内除く）
+   ✅ フレームサムネイル生成でGPU使用
+
+4. パフォーマンス:
+   ✅ Vモード中のCPU使用率 < 30%
+   ✅ フレームレート 60fps 維持
+   ✅ メモリ増殖なし（renderTexturePool再利用確認）
+
+5. ガイドライン準拠:
+   ✅ Canvas2D完全撲滅
+   ✅ 二重変換なし
+   ✅ グローバルオブジェクト重複なし
+   ✅ 循環依存なし
+
+【トラブルシューティング】
+
+問題: タイムラインサムネイル反応が遅い
+原因候補:
+  - requestThumbnailUpdate() のthrottle値が大きい
+  - renderTexturePool が枯渇している
+対処:
+  - throttle値を 0ms に調整
+  - poolMaxSize を 20 に増加
+
+問題: メモリ使用量が増加し続ける
+原因候補:
+  - RenderTexture が destroy されていない
+  - キャッシュサイズ制限が機能していない
+対処:
+  - _releaseRenderTexture() の destroy フラグを確認
+  - maxCacheSize ロジックをデバッグ
+
+問題: 古いサムネイルがまだ表示される
+原因候補:
+  - layer:transform-updated が emit されていない
+  - キャッシュクリアが実行されていない
+対処:
+  - window.TegakiDebug.monitorThumbnails() で イベント購読確認
+  - drawing-engine で layer.position 更新時の emit 確認
+
+【所要時間】
+60-90分（不具合対応含む）
+
+================================================================================
+全体実施順序・依存関係
+================================================================================
+
+実施順序:
+  Phase 0（理解）
+  ↓
+  Phase 1（Vモード終了時再生成） ← Phase 2の基盤
+  ↓
+  Phase 2（キャッシュキー統一） ← Phase 1で意味化
+  ↓
+  Phase 3（Canvas2D撲滅） ← Phase 1-2後に実装（副次的）
+  ↓
+  Phase 4（UI連携） ← Phase 1-3で基盤整備後
+  ↓
+  Phase 5（デバッグ統合） ← Phase 1-4で動作確認用
+  ↓
+  Phase 6（統合テスト） ← 最終検証
+
+注意: 順序変更は不可（依存関係あり）
+
+================================================================================
+実装時の留意事項
+================================================================================
+
+1. イベント発火タイミング:
+   - layer:transform-updated: drawing-engine で layer.position 更新時
+   - keyboard:vkey-released: keyboard-handler で Vキー解放時
+   - 確認: system/event-bus.js で既知イベント一覧
+
+2. グローバルオブジェクト参照順序:
+   - window.ThumbnailSystem（Phase 1で初期化）
+   - window.CoreRuntime.internal.layerManager（Phase 1-2で使用）
+   - window.TEGAKI_CONFIG（全Phase で参照）
+
+3. RenderTexture メモリ管理:
+   - 明示的な destroy() 必須（ガイドライン準拠）
+   - プール再利用でメモリ効率化
+   - device.pixelRatio × 2 の頻度でレンダリング
+
+4. エラーハンドリング:
+   - ThumbnailSystem 未初期化時の早期リターン
+   - RenderTexture 作成失敗時の null チェック
+   - 非同期処理での try-catch
+
+5. 後方互換性:
+   - 既存の canvas.toDataURL() は layer-panel-renderer で継続使用（UI側の必要性）
+   - 破壊的変更なし
+
+================================================================================
+その他: 推奨補助手段
+================================================================================
+
+1. ログ出力の強化:
+   console.log(`📸 Thumbnail Update #${count} Δ${time}ms`);
+   console.log(`🔄 Transform Invalidated: ${layerId}`);
+
+2. Performance API 活用:
+   performance.now() でフェーズ実行時間測定
+   Performance Timeline で ボトルネック特定
+
+3. Chrome DevTools:
+   - Performance タブで フレームレート確認
+   - Memory タブで メモリ増殖確認
+   - Console でテストコマンド実行
+
+================================================================================
+完了チェックリスト
+================================================================================
+
+Phase 1:
+  ☐ keyboard:vkey-released イベント購読実装
+  ☐ _refreshAllLayerThumbnailsAfterVMode() 実装
+  ☐ pendingVModeRefresh 待機リスト機能
+  ☐ immediate: true フラグ伝播
+
+Phase 2:
+  ☐ キャッシュキーから Transform値削除
+  ☐ _invalidateLayerCacheByLayerId() 実装
+  ☐ キャッシュキーサイズ削減
+
+Phase 3:
+  ☐ RenderTexture プール実装
+  ☐ _renderFrameThumbnailPixiJS() 実装
+  ☐ Canvas2D コード削除確認（grep検証）
+
+Phase 4:
+  ☐ layer:transform-updated 購読追加
+  ☐ updateLayerThumbnail() 即座更新化
+  ☐ throttle値調整（50ms, 0ms）
+
+Phase 5:
+  ☐ getDebugInfo() 実装
+  ☐ 3つのデバッグコマンド実装
+  ☐ イベント emit 統一
+
+Phase 6:
+  ☐ Vモード統合テスト
+  ☐ キャッシュ効率テスト
+  ☐ Canvas2D消滅確認
+  ☐ パフォーマンス検証
+  ☐ トラブルシューティング完了
+
+================================================================================
+参考資料リンク
+================================================================================
+
+実装参考:
+- thumbnail-system.js Phase 1-3 完全版
+- layer-panel-renderer.js Phase 3 実装
+- animation-system.js Phase 1-2 改修
+- timeline-ui.js Phase 4 実装
+
+サムネイル生成方式の完全比較表.txt
+  → Canvas2D使用箇所・キャッシュ戦略の詳細分析
+
+GPT5案.txt
+  → ThumbnailRenderer + ThumbnailCache の代替実装案
+
+設計ガイドライン:
+  ブラウザお絵かきツール v8.13 - ガイドライン短版
+  → Canvas2D禁止・RenderTexture使用・二重変換防止
+
+================================================================================
+終了
