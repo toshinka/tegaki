@@ -1,0 +1,2712 @@
+ ✅ config.js (Phase 2完全版) loaded
+    - BRUSH_DEFAULTS追加完了
+ ✅ system/event-bus.js Phase 2: 優先度機能追加版 loaded
+ ✅ coordinate-system.js (Phase 2.5完全修正版) loaded
+    - Phase 2.5: worldToLocal() の pivot/position/rotation/scale 計算順序を完全修正
+    - Phase 2.5: localToWorld() も同様に修正（完全な逆変換を保証）
+    - サムネイル問題の根本原因を解決
+ ✅ Debug commands: TegakiDebug.coord.*
+ ✅ data-models.js (マスクスプライト不可視版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ camera-system.js (v2.0: リサイズ修正版) loaded
+ ✅ layer-transform.js (Phase 1-5 GSAP統合完全版) loaded
+    ✓ Phase 1-4: イベント発火・NaN対策・UI整備・反転機能
+    ✓ Phase 5: GSAP統合（killTweensOf + delayedCall）
+    ✓ GPU反映保証: Transform適用から1フレーム後にイベント発火
+    ✓ サムネイル同期: layer:transform-updated + thumbnail:layer-updated
+ ✅ layer-system.js (v2.0.1: 反転機能修復版) loaded
+ ✅ drawing-clipboard.js Phase4改修版+確定イベント loaded
+    - ✅ CTRL+V behavior: overwrite active layer
+    - ✅ Commit events: paste:commit, operation:commit
+    - ✅ Thumbnail auto-update on paste
+ ✅ history.js (Phase 3: Redo null参照修正版) loaded
+ [AnimationSystem] GSAP detected - using synchronized thumbnail generation
+ ✅ animation-system.js (GSAP統合完全版) loaded
+    ✓ Phase 1: フレーム名統一（xF形式）
+    ✓ Phase 3: Canvas2D廃止 → ThumbnailSystem統一
+    ✓ Phase 3-2: init()時にGSAP.delayedCall()で初回サムネイル生成
+    ✓ generateFrameThumbnail(): PixiJS RenderTexture使用
+    ✓ frame.thumbnailDataURL保存で UI層連携
+ ✅ pressure-handler.js (Phase 3: 距離ベースフィルタ追加版) loaded
+    - applyDistanceFilter() 追加
+    - 短距離: alpha=0.9 (即座反映)
+    - 長距離: alpha=0.3 (スムージング強)
+ ✅ curve-interpolator.js (Phase 3) loaded
+    - Catmull-Rom スプライン補間
+    - 適応的サンプリング対応
+    - tiltX/Y/twist データ補間対応
+ ✅ system/drawing/stroke-renderer.js loaded (PixiJS v8完全対応版)
+thumbnail-system.js:2 Uncaught SyntaxError: Unexpected identifier '_renderLayerThumbnail'
+ ✅ brush-settings.js (API統一版) loaded
+    - ✅ getOpacity() / setOpacity() 追加
+    - ✅ brush:opacity-changed イベント購読追加
+ ✅ drawing-engine.js (座標系完全修正版) loaded
+ ✅ Debug commands: TegakiDebug.drawing.*
+ ✅ quick-export-ui.js (無効化版) loaded
+ ✅ export-manager.js (CUT→FRAME完全修正版) loaded
+ ✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded
+ ✅ apng-exporter.js (CUT→FRAME完全修正版) loaded
+ ✅ gif-exporter.js (CUT→FRAME完全修正版) loaded
+ ✅ webp-exporter.js (静止画・動画自動判定対応版) loaded
+ ✅ mp4-exporter.js (Phase 8完成版) loaded
+ ✅ pdf-exporter.js (CUT→FRAME完全対応版) loaded
+ ✅ dom-builder.js (ID重複解消版) loaded
+    - #pen-settings → #legacy-pen-settings に変更
+    - pen-size-slider → legacy-pen-size-slider に変更
+    - quick-access-popup.jsとのID競合を完全解消
+ ✅ ui/slider-utils.js loaded
+    - 責務: スライダーUIの統一実装
+    - DRY原則: settings-popup.js と ui-panels.js で共有
+    - API: createSlider() / createSimpleSlider()
+ ✅ keyboard-handler.js (P/Eサイドバー同期版) loaded
+ ✅ resize-popup.js (Phase 4完了: ロジック削減版) loaded
+ ✅ ui/layer-panel-renderer.js (Phase 2完全修正版) loaded
+    ✓ イベント優先度設定・throttle最適化
+    ✓ DOM検索の堅牢化（3つの方法で試行）
+    ✓ ThumbnailSystem初期化確認強化
+    ✓ immediate フラグ対応・GSAP delayedCall 同期
+ ✅ status-display-renderer.js (Phase 1改修版) loaded
+ ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+    ✓ Phase 1: layer:transform-updated 購読追加
+    ✓ Phase 3: throttle最適化（100ms）
+    ✓ Phase 3: immediate フラグ対応
+    ✓ タイムラインサムネイルがレイヤー変形に即座追従
+ ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+ ✅ album-popup.js (FRAME改修版) loaded
+ ✅ settings-popup.js (即応性完全修正版) loaded
+    - CSS transition完全除去（!important付き）
+    - DOM更新を同期的に即座実行
+    - quick-access/resize-popupと完全同等の動作
+ ✅ quick-access-popup.js (背景ドラッグ + 閉じるボタン版) loaded
+    - 背景ドラッグで移動可能（スライダー/ボタン以外）
+    - 右上×ボタンで閉じる
+    - 画面外クリックで閉じない（常時開きっぱなし可能）
+ ✅ export-popup.js (frameInfo修正版＋PDF有効化) loaded
+ ✅ ui-panels.js (サイドバー同期・色調整版) loaded
+ ✅ core-runtime.js (Phase 1-3完全版: ThumbnailSystem統合) loaded
+ ✅ core-engine.js (Phase 4完全修正版) loaded
+    ✓ Phase 2: リサイズ時レイヤー座標シフト + 背景色修正
+    ✓ Phase 4: onFlipRequest再試行メカニズム実装（確実接続）
+    ✓ Phase 5: GSAP Ticker統合準備完了
+core-engine.js:851    ✓ destroy()メソッド追加（リロード安定化）
+core-initializer.js:401 ✅ core-initializer.js (LayerPanelRenderer統合版) loaded
+core-initializer.js:402    ✓ Phase 2: LayerPanelRenderer初期化追加
+core-initializer.js:403    ✓ グローバル参照: TegakiUI.layerPanelRenderer
+core-initializer.js:404    ✓ グローバル参照: CoreRuntime.internal.layerPanelRenderer
+core-engine.js:352 [CoreEngine] GSAP detected - Ticker統合 available
+layer-transform.js:46 [LayerTransform] GSAP detected - using synchronized updates
+drawing-clipboard.js:19 DrawingClipboard: Initializing...
+drawing-clipboard.js:26 ✅ DrawingClipboard initialized (Phase4改修版 + 確定イベント)
+core-engine.js:760 ⚠️ ThumbnailSystem not found
+initialize @ core-engine.js:760
+animation-system.js:218 [AnimationSystem] GSAP detected - using synchronized thumbnail generation
+core-initializer.js:65 ✅ SettingsManager initialized
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+animation-system.js:255 🎬 Regenerating 0 frame thumbnails...
+animation-system.js:265 ✅ All frame thumbnails regenerated
+layer-panel-renderer.js:28 [LayerPanelRenderer] GSAP detected - using synchronized thumbnail updates
+layer-panel-renderer.js:146 ✓ Event listeners configured (transform-updated, thumbnail-updated, etc.)
+layer-panel-renderer.js:42 ✅ LayerPanelRenderer initialized (Phase 2完全修正版)
+core-initializer.js:93 ✅ LayerPanelRenderer initialized and registered
+core-initializer.js:94    - window.TegakiUI.layerPanelRenderer
+core-initializer.js:95    - window.CoreRuntime.internal.layerPanelRenderer
+layer-panel-renderer.js:324 [Panel] ThumbnailSystem not initialized
+_generateAndDisplayThumbnail @ layer-panel-renderer.js:324
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+core-engine.js:509 ✅ [CoreEngine] onFlipRequest callback configured (retry: 0)
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+core-initializer.js:299 ✅ ExportPopup registered and initialized
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+console.log('=== System Initialized ===');
+console.log('ThumbnailSystem:', typeof window.ThumbnailSystem);
+console.log('ThumbnailSystem.isInitialized:', window.ThumbnailSystem?.isInitialized);
+console.log('LayerManager:', typeof window.layerManager);
+console.log('EventBus:', typeof window.TegakiEventBus);
+console.log('CoordinateSystem:', typeof window.CoordinateSystem);
+VM82:1 === System Initialized ===
+VM82:2 ThumbnailSystem: undefined
+VM82:3 ThumbnailSystem.isInitialized: undefined
+VM82:4 LayerManager: object
+VM82:5 EventBus: object
+VM82:6 CoordinateSystem: object
+undefined
+const events = window.TegakiEventBus?.events || {};
+console.log('=== Event Listeners ===');
+console.log('layer:transform-updated:', events['layer:transform-updated']?.length || 0);
+console.log('thumbnail:layer-updated:', events['thumbnail:layer-updated']?.length || 0);
+console.log('keyboard:vkey-pressed:', events['keyboard:vkey-pressed']?.length || 0);
+console.log('layer:stroke-added:', events['layer:stroke-added']?.length || 0);
+VM86:2 === Event Listeners ===
+VM86:3 layer:transform-updated: 2
+VM86:4 thumbnail:layer-updated: 1
+VM86:5 keyboard:vkey-pressed: 1
+VM86:6 layer:stroke-added: 0
+undefined
+const layerMgr = window.layerManager;
+const layers = layerMgr?.getLayers?.();
+console.log('=== Layer State ===');
+console.log('Total layers:', layers?.length || 0);
+console.log('Active index:', layerMgr?.activeLayerIndex);
+layers?.forEach((l, i) => {
+  console.log(`  ${i}: ${l.layerData?.name} (id=${l.layerData?.id})`);
+});
+VM90:3 === Layer State ===
+VM90:4 Total layers: 2
+VM90:5 Active index: 1
+VM90:7   0: 背景 (id=layer_1761808552900_p000f9hij)
+VM90:7   1: レイヤー1 (id=layer_1761808552901_mmmc7xiix)
+undefined
+window.TegakiDebug = window.TegakiDebug || {};
+window.TegakiDebug.phase2 = {};
+
+window.TegakiDebug.phase2.monitorTransformEvents = function(duration = 5000) {
+  console.log(`\n=== Transform Event Monitor (${duration}ms) ===\n`);
+  
+  const eventBus = window.TegakiEventBus;
+  const listeners = [];
+  let eventCount = 0;
+  
+  const events = ['layer:transform-updated', 'thumbnail:layer-updated', 'layer:stroke-added'];
+  
+  events.forEach(eventName => {
+    eventBus.on(eventName, (payload) => {
+      eventCount++;
+      const time = new Date().toLocaleTimeString();
+      console.log(`[${time}] ${eventCount}. ${eventName}`, payload.data || payload);
+    });
+  });
+  
+  setTimeout(() => {
+    console.log(`\n✅ Monitor ended (${eventCount} events received)\n`);
+  }, duration);
+};
+ƒ (duration = 5000) {
+  console.log(`\n=== Transform Event Monitor (${duration}ms) ===\n`);
+  
+  const eventBus = window.TegakiEventBus;
+  const listeners = [];
+  let eventCount = 0;
+  
+  const events …
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+stopDrawing @ drawing-engine.js:296
+handlePointerUp @ core-runtime.js:148
+(anonymous) @ core-runtime.js:79
+_notifyListeners @ EventBoundary.ts:1472
+notifyTarget @ EventBoundary.ts:667
+propagate @ EventBoundary.ts:302
+dispatchEvent @ EventBoundary.ts:211
+mapPointerUp @ EventBoundary.ts:977
+mapEvent @ EventBoundary.ts:232
+_onPointerUp @ EventSystem.ts:709
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+stopDrawing @ drawing-engine.js:296
+handlePointerUp @ core-runtime.js:148
+(anonymous) @ core-runtime.js:79
+_notifyListeners @ EventBoundary.ts:1472
+notifyTarget @ EventBoundary.ts:663
+propagate @ EventBoundary.ts:313
+dispatchEvent @ EventBoundary.ts:211
+mapPointerUp @ EventBoundary.ts:977
+mapEvent @ EventBoundary.ts:232
+_onPointerUp @ EventSystem.ts:709
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+_emitTransformUpdated @ layer-transform.js:605
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+updateTransform @ layer-transform.js:146
+transform.onSliderChange @ layer-system.js:139
+(anonymous) @ layer-transform.js:754
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:172
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdated @ layer-transform.js:586
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+updateTransform @ layer-transform.js:146
+transform.onSliderChange @ layer-system.js:139
+(anonymous) @ layer-transform.js:754
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:172
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+transform.onTransformUpdate @ layer-system.js:130
+updateTransform @ layer-transform.js:149
+transform.onSliderChange @ layer-system.js:139
+(anonymous) @ layer-transform.js:766
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+updateTransform @ layer-transform.js:146
+transform.onSliderChange @ layer-system.js:139
+(anonymous) @ layer-transform.js:754
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+_emitTransformUpdated @ layer-transform.js:605
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+updateTransform @ layer-transform.js:146
+transform.onSliderChange @ layer-system.js:139
+(anonymous) @ layer-transform.js:754
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:197
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:627
+_emitTransformUpdated @ layer-transform.js:605
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+updateTransform @ layer-transform.js:146
+transform.onSliderChange @ layer-system.js:139
+(anonymous) @ layer-transform.js:754
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:197
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:627
+(anonymous) @ layer-transform.js:600
+setTimeout
+_emitTransformUpdated @ layer-transform.js:599
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+updateTransform @ layer-transform.js:146
+transform.onSliderChange @ layer-system.js:139
+(anonymous) @ layer-transform.js:754
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+updateTransform @ layer-transform.js:146
+transform.onSliderChange @ layer-system.js:139
+(anonymous) @ layer-transform.js:754
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+(anonymous) @ layer-transform.js:600
+setTimeout
+_emitTransformUpdated @ layer-transform.js:599
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+updateTransform @ layer-transform.js:146
+transform.onSliderChange @ layer-system.js:139
+(anonymous) @ layer-transform.js:754
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+updateTransform @ layer-transform.js:146
+transform.onSliderChange @ layer-system.js:139
+(anonymous) @ layer-transform.js:754
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+_emitTransformUpdated @ layer-transform.js:605
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+_emitTransformUpdated @ layer-transform.js:605
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:172
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdated @ layer-transform.js:586
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:197
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:627
+(anonymous) @ layer-transform.js:600
+setTimeout
+_emitTransformUpdated @ layer-transform.js:599
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+(anonymous) @ layer-transform.js:600
+setTimeout
+_emitTransformUpdated @ layer-transform.js:599
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+window.TegakiDebug.phase2.testFlipInVMode = async function() {
+  console.log('\n=== Flip in VMode Test ===\n');
+  
+  const layerMgr = window.layerManager;
+  const activeLayer = layerMgr?.getActiveLayer?.();
+  
+  if (!activeLayer) {
+    console.error('❌ No active layer');
+    return;
+  }
+  
+  console.log(`Active layer: ${activeLayer.layerData?.name}`);
+  console.log(`Transform before: x=${activeLayer.position.x}, scale=${activeLayer.scale.x}`);
+  
+  // Vモード開始
+  window.TegakiEventBus.emit('keyboard:vkey-pressed', {});
+  await new Promise(r => setTimeout(r, 100));
+  
+  // 水平反転（H キー相当）
+  if (layerMgr.transform) {
+    layerMgr.transform.flipLayer(activeLayer, 'horizontal');
+    await new Promise(r => setTimeout(r, 200));
+  }
+  
+  console.log(`Transform after flip: scale=${activeLayer.scale.x}`);
+  console.log('✅ Test complete');
+};
+async ƒ () {
+  console.log('\n=== Flip in VMode Test ===\n');
+  
+  const layerMgr = window.layerManager;
+  const activeLayer = layerMgr?.getActiveLayer?.();
+  
+  if (!activeLayer) {
+    console.error('❌ No a…
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+stopDrawing @ drawing-engine.js:296
+handlePointerUp @ core-runtime.js:148
+(anonymous) @ core-runtime.js:79
+_notifyListeners @ EventBoundary.ts:1472
+notifyTarget @ EventBoundary.ts:667
+propagate @ EventBoundary.ts:302
+dispatchEvent @ EventBoundary.ts:211
+mapPointerUp @ EventBoundary.ts:977
+mapEvent @ EventBoundary.ts:232
+_onPointerUp @ EventSystem.ts:709
+layer-panel-renderer.js:53 [Panel] transform-updated: no layerIndex/layerId
+(anonymous) @ layer-panel-renderer.js:53
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+flipActiveLayer @ layer-system.js:303
+(anonymous) @ ui-panels.js:227
+layer-panel-renderer.js:53 [Panel] transform-updated: no layerIndex/layerId
+(anonymous) @ layer-panel-renderer.js:53
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+flipActiveLayer @ layer-system.js:303
+transform.onFlipRequest @ layer-system.js:143
+(anonymous) @ layer-transform.js:700
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:172
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdated @ layer-transform.js:586
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+flipLayer @ layer-transform.js:234
+flipActiveLayer @ layer-system.js:299
+(anonymous) @ ui-panels.js:227
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+_emitTransformUpdated @ layer-transform.js:605
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+flipLayer @ layer-transform.js:234
+flipActiveLayer @ layer-system.js:299
+(anonymous) @ ui-panels.js:227
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+flipLayer @ layer-transform.js:234
+flipActiveLayer @ layer-system.js:299
+(anonymous) @ ui-panels.js:227
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:197
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:627
+(anonymous) @ layer-transform.js:600
+setTimeout
+_emitTransformUpdated @ layer-transform.js:599
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+flipLayer @ layer-transform.js:234
+flipActiveLayer @ layer-system.js:299
+(anonymous) @ ui-panels.js:227
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+(anonymous) @ layer-transform.js:600
+setTimeout
+_emitTransformUpdated @ layer-transform.js:599
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+flipLayer @ layer-transform.js:234
+flipActiveLayer @ layer-system.js:299
+(anonymous) @ ui-panels.js:227
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+flipLayer @ layer-transform.js:234
+flipActiveLayer @ layer-system.js:299
+(anonymous) @ ui-panels.js:227
+layer-panel-renderer.js:53 [Panel] transform-updated: no layerIndex/layerId
+(anonymous) @ layer-panel-renderer.js:53
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+flipActiveLayer @ layer-system.js:303
+(anonymous) @ ui-panels.js:235
+layer-panel-renderer.js:53 [Panel] transform-updated: no layerIndex/layerId
+(anonymous) @ layer-panel-renderer.js:53
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+flipActiveLayer @ layer-system.js:303
+transform.onFlipRequest @ layer-system.js:143
+(anonymous) @ layer-transform.js:711
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:172
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdated @ layer-transform.js:586
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+_emitTransformUpdated @ layer-transform.js:605
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:197
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:627
+(anonymous) @ layer-transform.js:600
+setTimeout
+_emitTransformUpdated @ layer-transform.js:599
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+(anonymous) @ layer-transform.js:600
+setTimeout
+_emitTransformUpdated @ layer-transform.js:599
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:53 [Panel] transform-updated: no layerIndex/layerId
+(anonymous) @ layer-panel-renderer.js:53
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+flipActiveLayer @ layer-system.js:303
+(anonymous) @ layer-system.js:747
+layer-panel-renderer.js:53 [Panel] transform-updated: no layerIndex/layerId
+(anonymous) @ layer-panel-renderer.js:53
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+flipActiveLayer @ layer-system.js:303
+transform.onFlipRequest @ layer-system.js:143
+(anonymous) @ layer-transform.js:521
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:172
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdated @ layer-transform.js:586
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+flipLayer @ layer-transform.js:234
+flipActiveLayer @ layer-system.js:299
+(anonymous) @ layer-system.js:747
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+_emitTransformUpdated @ layer-transform.js:605
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+flipLayer @ layer-transform.js:234
+flipActiveLayer @ layer-system.js:299
+(anonymous) @ layer-system.js:747
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+flipLayer @ layer-transform.js:234
+flipActiveLayer @ layer-system.js:299
+(anonymous) @ layer-system.js:747
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+(anonymous) @ layer-transform.js:600
+setTimeout
+_emitTransformUpdated @ layer-transform.js:599
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+flipLayer @ layer-transform.js:234
+flipActiveLayer @ layer-system.js:299
+(anonymous) @ layer-system.js:747
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:197
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:627
+(anonymous) @ layer-transform.js:600
+setTimeout
+_emitTransformUpdated @ layer-transform.js:599
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+flipLayer @ layer-transform.js:234
+flipActiveLayer @ layer-system.js:299
+(anonymous) @ layer-system.js:747
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+wake @ gsap.min.js:10
+Animation @ gsap.min.js:10
+Tween @ gsap.min.js:10
+delayedCall @ gsap.min.js:10
+applyTransform @ layer-transform.js:169
+flipLayer @ layer-transform.js:234
+flipActiveLayer @ layer-system.js:299
+(anonymous) @ layer-system.js:747
+layer-panel-renderer.js:53 [Panel] transform-updated: no layerIndex/layerId
+(anonymous) @ layer-panel-renderer.js:53
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+flipActiveLayer @ layer-system.js:303
+(anonymous) @ layer-system.js:751
+layer-panel-renderer.js:53 [Panel] transform-updated: no layerIndex/layerId
+(anonymous) @ layer-panel-renderer.js:53
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+flipActiveLayer @ layer-system.js:303
+transform.onFlipRequest @ layer-system.js:143
+(anonymous) @ layer-transform.js:517
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:172
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdated @ layer-transform.js:586
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+_emitTransformUpdated @ layer-transform.js:605
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:57 🔄 [Panel] Transform updated - layer 1, immediate=undefined
+layer-panel-renderer.js:84 📸 [Panel] Thumbnail update request - immediate=undefined
+animation-system.js:773 ⚠️ ThumbnailSystem not available - cannot generate thumbnail
+generateFrameThumbnail @ animation-system.js:773
+generateFrameThumbnailOptimized @ animation-system.js:826
+updateCurrentFrameThumbnail @ timeline-ui.js:226
+(anonymous) @ timeline-ui.js:210
+setTimeout
+requestThumbnailUpdate @ timeline-ui.js:209
+(anonymous) @ timeline-ui.js:197
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:627
+(anonymous) @ layer-transform.js:600
+setTimeout
+_emitTransformUpdated @ layer-transform.js:599
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+(anonymous) @ layer-panel-renderer.js:102
+
+(anonymous) @ layer-panel-renderer.js:100
+(anonymous) @ event-bus.js:68
+emit @ event-bus.js:66
+_emitTransformUpdateImmediate @ layer-transform.js:633
+(anonymous) @ layer-transform.js:600
+setTimeout
+_emitTransformUpdated @ layer-transform.js:599
+(anonymous) @ layer-transform.js:170
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+layer-panel-renderer.js:179 🎬 [Panel] Updating layer 1 thumbnail
+layer-panel-renderer.js:381 [Panel] ThumbnailSystem not ready
+updateLayerThumbnail @ layer-panel-renderer.js:381
+_doUpdateLayerByIndexOrId @ layer-panel-renderer.js:180
+(anonymous) @ layer-panel-renderer.js:167
+_callback @ gsap.min.js:10
+_renderZeroDurationTween @ gsap.min.js:10
+render @ gsap.min.js:10
+render @ gsap.min.js:10
+oa @ gsap.min.js:10
+updateRoot @ gsap.min.js:10
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+console.log('GSAP loaded:', typeof gsap);
+console.log('GSAP version:', gsap?.version);
+VM141:1 GSAP loaded: object
+VM141:2 GSAP version: 3.13.0
+undefined
+// layer-panel-renderer のイベント購読状況をダイレクト確認
+const events = window.TegakiEventBus.events || {};
+const transformListeners = events['layer:transform-updated'] || [];
+console.log('layer:transform-updated リスナー数:', transformListeners.length);
+console.log('リスナー:', transformListeners.map(l => l.name || 'anonymous'));
+VM145:4 layer:transform-updated リスナー数: 2
+VM145:5 リスナー: (2) ['anonymous', 'anonymous']
+undefined
+window.TegakiDebug.phase4 = {};
+
+window.TegakiDebug.phase4.traceSathumbnailUpdate = async function() {
+  console.log('\n=== Thumbnail Update Trace ===\n');
+  
+  const layerMgr = window.layerManager;
+  const activeLayer = layerMgr?.getActiveLayer?.();
+  
+  if (!activeLayer?.layerData) {
+    console.error('❌ No active layer');
+    return;
+  }
+  
+  console.log(`Layer: ${activeLayer.layerData.name}`);
+  
+  // Transform適用前のサムネイル
+  console.log('1️⃣ Generating thumbnail before transform...');
+  const before = await window.ThumbnailSystem.generateLayerThumbnail(activeLayer, 64, 64);
+  console.log(`   Before URL length: ${before?.toDataURL().length || 0}`);
+  
+  // キャッシュクリア
+  window.ThumbnailSystem._invalidateLayerCacheByLayerId(activeLayer.layerData.id);
+  
+  // Transform変更（回転30度）
+  console.log('2️⃣ Applying rotation (30°)...');
+  if (layerMgr.transform) {
+    const transform = layerMgr.transform.getTransform(activeLayer.layerData.id) || 
+                     { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
+    transform.rotation = Math.PI / 6;
+    layerMgr.transform.applyTransform(activeLayer, transform, 400, 300);
+    
+    // GPU反映待ち
+    await new Promise(r => setTimeout(r, 100));
+  }
+  
+  // Transform適用後のサムネイル
+  console.log('3️⃣ Generating thumbnail after transform...');
+  const after = await window.ThumbnailSystem.generateLayerThumbnail(activeLayer, 64, 64);
+  console.log(`   After URL length: ${after?.toDataURL().length || 0}`);
+  
+  // 比較
+  if (before?.toDataURL() !== after?.toDataURL()) {
+    console.log('✅ Thumbnail changed (cache properly invalidated)');
+  } else {
+    console.log('❌ Thumbnail unchanged (cache issue?)');
+  }
+};
+async ƒ () {
+  console.log('\n=== Thumbnail Update Trace ===\n');
+  
+  const layerMgr = window.layerManager;
+  const activeLayer = layerMgr?.getActiveLayer?.();
+  
+  if (!activeLayer?.layerData) {
+    consol…
+window.TegakiDebug.phase5 = {};
+
+window.TegakiDebug.phase5.testTimelineThumbnailInit = async function() {
+  console.log('\n=== Timeline Thumbnail Initial Generation ===\n');
+  
+  if (!window.animationSystem) {
+    console.error('❌ AnimationSystem not found');
+    return;
+  }
+  
+  const frameIndex = window.animationSystem.getCurrentFrameIndex?.();
+  console.log(`Current frame: ${frameIndex}`);
+  
+  if (!window.timelineUI?.isVisible) {
+    console.warn('⚠️ Timeline not visible');
+  }
+  
+  // フレーム直後のサムネイル確認
+  console.log('1️⃣ Checking current frame thumbnail...');
+  const frameData = window.animationSystem.getFrame?.(frameIndex);
+  
+  if (frameData?.thumbnail) {
+    console.log('✅ Frame thumbnail exists');
+  } else {
+    console.log('❌ Frame thumbnail missing (generate triggered)');
+    
+    // 生成リクエスト
+    if (window.ThumbnailSystem) {
+      const layers = window.layerManager?.getLayers?.();
+      if (layers) {
+        console.log('2️⃣ Generating frame thumbnail...');
+        const frameThumbnail = await window.ThumbnailSystem.generateFrameThumbnail(
+          frameData, 150, 150
+        );
+        console.log(`   Generated: ${!!frameThumbnail}`);
+      }
+    }
+  }
+};
+async ƒ () {
+  console.log('\n=== Timeline Thumbnail Initial Generation ===\n');
+  
+  if (!window.animationSystem) {
+    console.error('❌ AnimationSystem not found');
+    return;
+  }
+  
+  const frameIndex = …

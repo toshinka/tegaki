@@ -1,7 +1,8 @@
-// ===== system/layer-system.js - v2.0.1: 反転機能修復版 =====
+// ===== system/layer-system.js - Phase 2: ThumbnailSystem統一版 =====
+// Phase 2修正: updateThumbnail()独自実装を削除、ThumbnailSystemに完全統一
 // 修正1: renderFrameToTexture()でcanvasサイズを現在値から取得・テクスチャ再作成
 // 修正2: リサイズ時のテクスチャ管理を強化
-// ★修正3: flipActiveLayer()とonFlipRequestコールバック接続を修正
+// 修正3: flipActiveLayer()とonFlipRequestコールバック接続を修正
 
 (function() {
     'use strict';
@@ -15,8 +16,6 @@
             this.activeLayerIndex = -1;
             this.frameRenderTextures = new Map();
             this.frameThumbnailDirty = new Map();
-            this.thumbnailUpdateQueue = new Set();
-            this.thumbnailUpdateTimer = null;
             this.cameraSystem = null;
             this.animationSystem = null;
             this.coordAPI = window.CoordinateSystem;
@@ -67,8 +66,10 @@
             this._setupLayerOperations();
             this._setupAnimationSystemIntegration();
             this._setupVKeyEvents();
-            this._startThumbnailUpdateProcess();
+            this._setupTransformEventListeners(); // Phase 3追加
             this.isInitialized = true;
+            
+            console.log('✅ LayerSystem initialized (Phase 2+3: ThumbnailSystem統一+イベント統合版)');
         }
 
         _createCheckerPatternBackground(width, height) {
@@ -110,6 +111,29 @@
             this.eventBus.on('keyboard:vkey-released', function() {}.bind(this));
         }
         
+        // ★★★ Phase 3追加: Transform更新イベントを購読 ★★★
+        _setupTransformEventListeners() {
+            if (!this.eventBus) return;
+            
+            // layer:transform-updated を購読してサムネイル更新
+            this.eventBus.on('layer:transform-updated', ({ data }) => {
+                const { layerIndex, layerId } = data || {};
+                
+                if (layerIndex !== undefined) {
+                    console.log(`🔄 [LayerSystem] Transform updated for layer ${layerIndex}`);
+                    this.requestThumbnailUpdate(layerIndex);
+                } else if (layerId) {
+                    // layerId → layerIndex 解決
+                    const layers = this.getLayers();
+                    const index = layers.findIndex(l => l.layerData?.id === layerId);
+                    if (index >= 0) {
+                        console.log(`🔄 [LayerSystem] Transform updated for layer ${index} (by ID: ${layerId})`);
+                        this.requestThumbnailUpdate(index);
+                    }
+                }
+            });
+        }
+        
         initTransform() {
             if (!this.transform || !this.app) return;
             this.transform.init(this.app, this.cameraSystem);
@@ -138,14 +162,12 @@
                 }
                 this.transform.updateTransform(activeLayer, property, value);
             };
-            // ★修正: onFlipRequestコールバックを正しく接続
             this.transform.onFlipRequest = (direction) => {
                 this.flipActiveLayer(direction);
             };
             this.transform.onDragRequest = (dx, dy, shiftKey) => {
                 this._handleLayerDrag(dx, dy, shiftKey);
             };
-            // ★追加: onGetActiveLayerコールバックを設定（ホイール操作用）
             this.transform.onGetActiveLayer = () => {
                 return this.getActiveLayer();
             };
@@ -291,14 +313,12 @@
             }
         }
         
-        // ★修正: flipActiveLayer()の実装を確認・修正
         flipActiveLayer(direction) {
             if (!this.transform) return;
             const activeLayer = this.getActiveLayer();
             if (activeLayer) {
                 this.transform.flipLayer(activeLayer, direction);
                 this.requestThumbnailUpdate(this.activeLayerIndex);
-                // ★追加: サムネイル更新イベント発火
                 if (this.eventBus) {
                     this.eventBus.emit('layer:transform-updated', { 
                         layerId: activeLayer.layerData.id 
@@ -924,116 +944,26 @@
             }
         }
 
+        // ★★★ Phase 2修正: requestThumbnailUpdate() - ThumbnailSystemに委譲 ★★★
         requestThumbnailUpdate(layerIndex) {
             const layers = this.getLayers();
-            if (layerIndex >= 0 && layerIndex < layers.length) {
-                this.thumbnailUpdateQueue.add(layerIndex);
-                if (this.thumbnailUpdateTimer) {
-                    clearTimeout(this.thumbnailUpdateTimer);
-                }
-                this.thumbnailUpdateTimer = setTimeout(() => {
-                    this.processThumbnailUpdates();
-                    this.thumbnailUpdateTimer = null;
-                }, 500);
-            }
-        }
-
-        _startThumbnailUpdateProcess() {
-            setInterval(() => {
-                if (this.thumbnailUpdateQueue.size > 0) {
-                    this.processThumbnailUpdates();
-                }
-            }, 500);
-        }
-
-        processThumbnailUpdates() {
-            if (this.thumbnailUpdateQueue.size === 0) return;
-            const toUpdate = Array.from(this.thumbnailUpdateQueue);
-            toUpdate.forEach(layerIndex => {
-                this.updateThumbnail(layerIndex);
-                this.thumbnailUpdateQueue.delete(layerIndex);
-            });
-        }
-
-        updateThumbnail(layerIndex) {
-            if (!this.app?.renderer) return;
-            const layers = this.getLayers();
             if (layerIndex < 0 || layerIndex >= layers.length) return;
+            
             const layer = layers[layerIndex];
-            const layerItems = document.querySelectorAll('.layer-item');
-            const panelIndex = layers.length - 1 - layerIndex;
-            if (panelIndex < 0 || panelIndex >= layerItems.length) return;
-            const thumbnail = layerItems[panelIndex].querySelector('.layer-thumbnail');
-            if (!thumbnail) return;
-            try {
-                const canvasAspectRatio = this.config.canvas.width / this.config.canvas.height;
-                let thumbnailWidth, thumbnailHeight;
-                const maxHeight = 48;
-                const maxWidth = 72;
-                if (canvasAspectRatio >= 1) {
-                    if (maxHeight * canvasAspectRatio <= maxWidth) {
-                        thumbnailWidth = maxHeight * canvasAspectRatio;
-                        thumbnailHeight = maxHeight;
-                    } else {
-                        thumbnailWidth = maxWidth;
-                        thumbnailHeight = maxWidth / canvasAspectRatio;
+            const layerId = layer.layerData?.id;
+            
+            if (this.eventBus) {
+                // ThumbnailSystemに更新を依頼
+                this.eventBus.emit('thumbnail:layer-updated', {
+                    component: 'layer-system',
+                    action: 'update-requested',
+                    data: { 
+                        layerIndex, 
+                        layerId,
+                        immediate: false 
                     }
-                } else {
-                    thumbnailWidth = Math.max(24, maxHeight * canvasAspectRatio);
-                    thumbnailHeight = maxHeight;
-                }
-                thumbnail.style.width = Math.round(thumbnailWidth) + 'px';
-                thumbnail.style.height = Math.round(thumbnailHeight) + 'px';
-                const renderScale = this.config.thumbnail?.RENDER_SCALE || 2;
-                const renderTexture = PIXI.RenderTexture.create({
-                    width: this.config.canvas.width * renderScale,
-                    height: this.config.canvas.height * renderScale,
-                    resolution: renderScale
                 });
-                const tempContainer = new PIXI.Container();
-                const originalState = {
-                    pos: { x: layer.position.x, y: layer.position.y },
-                    scale: { x: layer.scale.x, y: layer.scale.y },
-                    rotation: layer.rotation,
-                    pivot: { x: layer.pivot.x, y: layer.pivot.y }
-                };
-                layer.position.set(0, 0);
-                layer.scale.set(1, 1);
-                layer.rotation = 0;
-                layer.pivot.set(0, 0);
-                tempContainer.addChild(layer);
-                tempContainer.scale.set(renderScale);
-                this.app.renderer.render({
-                    container: tempContainer,
-                    target: renderTexture
-                });
-                layer.position.set(originalState.pos.x, originalState.pos.y);
-                layer.scale.set(originalState.scale.x, originalState.scale.y);
-                layer.rotation = originalState.rotation;
-                layer.pivot.set(originalState.pivot.x, originalState.pivot.y);
-                tempContainer.removeChild(layer);
-                this.currentFrameContainer.addChildAt(layer, layerIndex);
-                const sourceCanvas = this.app.renderer.extract.canvas(renderTexture);
-                const targetCanvas = document.createElement('canvas');
-                targetCanvas.width = Math.round(thumbnailWidth);
-                targetCanvas.height = Math.round(thumbnailHeight);
-                const ctx = targetCanvas.getContext('2d');
-                ctx.imageSmoothingEnabled = true;
-                ctx.imageSmoothingQuality = this.config.thumbnail?.QUALITY || 'high';
-                ctx.drawImage(sourceCanvas, 0, 0, Math.round(thumbnailWidth), Math.round(thumbnailHeight));
-                let img = thumbnail.querySelector('img');
-                if (!img) {
-                    img = document.createElement('img');
-                    thumbnail.innerHTML = '';
-                    thumbnail.appendChild(img);
-                }
-                img.src = targetCanvas.toDataURL();
-                img.style.width = '100%';
-                img.style.height = '100%';
-                img.style.objectFit = 'cover';
-                renderTexture.destroy();
-                tempContainer.destroy();
-            } catch (error) {}
+            }
         }
 
         updateLayerPanelUI() {
@@ -1086,9 +1016,12 @@
                 });
                 layerList.appendChild(layerItem);
             }
+            
+            // ★★★ Phase 2修正: サムネイル更新はThumbnailSystemに委譲 ★★★
             for (let i = 0; i < layers.length; i++) {
                 this.requestThumbnailUpdate(i);
             }
+            
             if (window.TegakiUI?.initializeSortable) {
                 setTimeout(() => {
                     window.TegakiUI.initializeSortable(this);
@@ -1244,4 +1177,9 @@
 
 })();
 
-console.log('✅ layer-system.js (v2.0.1: 反転機能修復版) loaded');
+console.log('✅ layer-system.js (Phase 2+3: ThumbnailSystem統一+イベント統合版) loaded');
+console.log('   ✓ updateThumbnail() 独自実装を削除');
+console.log('   ✓ requestThumbnailUpdate() を EventBus 経由に変更');
+console.log('   ✓ processThumbnailUpdates() 削除');
+console.log('   ✓ _startThumbnailUpdateProcess() 削除');
+console.log('   ✓ layer:transform-updated 購読追加 (Phase 3)');
