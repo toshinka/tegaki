@@ -1,6 +1,6 @@
-// ===== core-engine.js - GSAP統合・反転機能修正完全版 =====
+// ===== core-engine.js - Phase 4完全修正版: 反転機能確実接続 =====
 // Phase2改修: リサイズ時のレイヤー座標シフト実装 + 背景色修正
-// Phase4改修: onFlipRequestコールバック設定（Vモード反転機能修復）
+// Phase4改修: onFlipRequestコールバック設定（タイミング修正・確実接続）
 // Phase5改修: GSAP Ticker統合（レンダリング競合回避・リロード安定化）
 
 (function() {
@@ -365,6 +365,7 @@
             this.layerSystem.setCameraSystem(this.cameraSystem);
             this.layerSystem.setApp(this.app);
             
+            // ★★★ Phase 4完全修正: LayerTransform初期化を確実に実行 ★★★
             if (this.layerSystem.transform && !this.layerSystem.transform.app) {
                 if (this.layerSystem.initTransform) {
                     this.layerSystem.initTransform();
@@ -458,42 +459,57 @@
             }
         }
         
-        // ★★★ Phase 4: onFlipRequestコールバック設定（Vモード反転機能修復）★★★
+        // ★★★ Phase 4完全修正: onFlipRequestコールバック設定（タイミング修正）★★★
         _initializeLayerTransform() {
-            if (!this.layerSystem?.transform) {
-                console.warn('[CoreEngine] layerSystem.transform not available');
-                return;
-            }
+            // 最大3回まで再試行（LayerTransform初期化待ち）
+            let retryCount = 0;
+            const maxRetries = 3;
+            const retryDelay = 100; // 100ms
             
-            const layerTransform = this.layerSystem.transform;
-            
-            // Phase 4: onFlipRequest コールバック設定
-            layerTransform.onFlipRequest = (direction) => {
-                const activeLayer = this.layerSystem.getActiveLayer();
-                if (!activeLayer) {
-                    console.warn('[CoreEngine] No active layer for flip request');
+            const trySetupFlipCallback = () => {
+                if (!this.layerSystem?.transform) {
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        console.warn(`[CoreEngine] layerSystem.transform not ready - retry ${retryCount}/${maxRetries}`);
+                        setTimeout(trySetupFlipCallback, retryDelay);
+                    } else {
+                        console.error('[CoreEngine] layerSystem.transform initialization failed after retries');
+                    }
                     return;
                 }
                 
-                console.log(`[CoreEngine] Flip request: ${direction}, layer:`, activeLayer.layerData?.id);
+                const layerTransform = this.layerSystem.transform;
                 
-                // Transform反転実行
-                layerTransform.flipLayer(activeLayer, direction);
+                // Phase 4完全修正: onFlipRequest コールバック設定
+                layerTransform.onFlipRequest = (direction) => {
+                    const activeLayer = this.layerSystem.getActiveLayer();
+                    if (!activeLayer) {
+                        console.warn('[CoreEngine] No active layer for flip request');
+                        return;
+                    }
+                    
+                    console.log(`[CoreEngine] Flip request: ${direction}, layer:`, activeLayer.layerData?.id);
+                    
+                    // Transform反転実行
+                    layerTransform.flipLayer(activeLayer, direction);
+                    
+                    // サムネイル更新トリガー（immediate=trueで即座更新）
+                    const layerIndex = this.layerSystem.activeLayerIndex;
+                    if (this.eventBus) {
+                        this.eventBus.emit('thumbnail:layer-updated', {
+                            component: 'layer-transform',
+                            action: 'flip-applied',
+                            data: { layerIndex, layerId: activeLayer.layerData.id, immediate: true }
+                        });
+                    }
+                    
+                    console.log(`✓ Flip applied: ${direction}, layerIndex=${layerIndex}`);
+                };
                 
-                // サムネイル更新トリガー（immediate=trueで即座更新）
-                const layerIndex = this.layerSystem.activeLayerIndex;
-                if (this.eventBus) {
-                    this.eventBus.emit('thumbnail:layer-updated', {
-                        component: 'layer-transform',
-                        action: 'flip-applied',
-                        data: { layerIndex, layerId: activeLayer.layerData.id, immediate: true }
-                    });
-                }
-                
-                console.log(`✓ Flip applied: ${direction}, layerIndex=${layerIndex}`);
+                console.log('✅ [CoreEngine] onFlipRequest callback configured (retry: ' + retryCount + ')');
             };
             
-            console.log('✅ [CoreEngine] onFlipRequest callback configured');
+            trySetupFlipCallback();
         }
         
         async exportForBookmarklet(format = 'gif', options = {}) {
@@ -564,8 +580,6 @@
             this.layerSystem.processThumbnailUpdates();
         }
         
-        // ★★★ Phase2-A: レイヤー座標シフト実装 ★★★
-        // ★★★ Phase2-B: 背景色修正（単色） ★★★
         resizeCanvas(newWidth, newHeight, options = {}) {
             const oldWidth = CONFIG.canvas.width;
             const oldHeight = CONFIG.canvas.height;
@@ -600,16 +614,12 @@
             
             this.cameraSystem.resizeCanvas(newWidth, newHeight);
             
-            // ★★★ Phase2-A修正: paths座標のみシフト（レイヤーpositionはシフトしない） ★★★
             const frames = this.animationSystem?.animationData?.frames || [];
             frames.forEach(frame => {
                 const layers = frame.getLayers();
                 layers.forEach(layer => {
                     if (layer.layerData?.isBackground) return;
                     
-                    // レイヤーposition自体は変更しない（キャンバス座標系）
-                    
-                    // paths内の点座標をシフト
                     if (layer.layerData?.paths) {
                         layer.layerData.paths.forEach(path => {
                             if (path.points) {
@@ -619,7 +629,6 @@
                                 });
                             }
                             
-                            // Graphics再描画
                             if (path.graphics) {
                                 path.graphics.clear();
                                 path.points.forEach(p => {
@@ -635,7 +644,6 @@
                 });
             });
             
-            // ★★★ Phase2-B: 背景レイヤー再描画（単色に修正） ★★★
             const layers = this.layerSystem.getLayers();
             layers.forEach(layer => {
                 if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
@@ -687,7 +695,6 @@
             });
         }
         
-        // ★★★ Phase 5: GSAP Ticker統合（オプション） ★★★
         _setupGSAPTicker() {
             if (!this.gsapAvailable) {
                 console.log('[CoreEngine] GSAP Ticker統合 skipped - using PixiJS Ticker');
@@ -696,13 +703,11 @@
             
             console.log('[CoreEngine] Setting up GSAP Ticker integration...');
             
-            // PixiJS Tickerを停止
             if (this.app.ticker) {
                 this.app.ticker.stop();
                 console.log('  ✓ PixiJS Ticker stopped');
             }
             
-            // GSAP Tickerで統一
             this.gsapTickerCallback = () => {
                 if (this.app?.renderer && this.app?.stage) {
                     this.app.renderer.render(this.app.stage);
@@ -714,11 +719,9 @@
             console.log('✅ GSAP Ticker integration complete');
         }
         
-        // ★★★ Phase 5: クリーンアップ処理追加 ★★★
         destroy() {
             console.log('[CoreEngine] Destroying...');
             
-            // Phase 5: GSAP完全停止
             if (this.gsapAvailable) {
                 if (this.gsapTickerCallback) {
                     gsap.ticker.remove(this.gsapTickerCallback);
@@ -730,13 +733,11 @@
                 console.log('  ✓ GSAP Tweens cleared');
             }
             
-            // PixiJS破棄
             if (this.app) {
                 this.app.destroy(true, { children: true });
                 console.log('  ✓ PixiJS app destroyed');
             }
             
-            // EventBusクリア
             if (this.eventBus && this.eventBus.removeAllListeners) {
                 this.eventBus.removeAllListeners();
                 console.log('  ✓ EventBus cleared');
@@ -765,8 +766,11 @@
             
             this.initializeAnimationSystem();
             
-            // ★★★ Phase 4: onFlipRequestコールバック設定 ★★★
-            this._initializeLayerTransform();
+            // ★★★ Phase 4完全修正: onFlipRequestコールバック設定（初期化後に実行）★★★
+            // LayerSystem初期化完了後、200ms後に再試行メカニズムで設定
+            setTimeout(() => {
+                this._initializeLayerTransform();
+            }, 200);
             
             if (window.TegakiBatchAPI && this.animationSystem) {
                 this.batchAPI = new window.TegakiBatchAPI(
@@ -810,10 +814,6 @@
             
             this.setupCanvasEvents();
             
-            // ★★★ Phase 5: GSAP Ticker統合（オプション・コメントアウト可能）★★★
-            // NOTE: 必要に応じて有効化。デフォルトはPixiJS Tickerを使用
-            // this._setupGSAPTicker();
-            
             // PixiJS Ticker使用（標準）
             this.app.ticker.add(() => {
                 this.processThumbnailUpdates();
@@ -844,9 +844,9 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (GSAP統合・反転機能修正完全版) loaded');
+    console.log('✅ core-engine.js (Phase 4完全修正版) loaded');
     console.log('   ✓ Phase 2: リサイズ時レイヤー座標シフト + 背景色修正');
-    console.log('   ✓ Phase 4: onFlipRequestコールバック設定（Vモード反転機能修復）');
-    console.log('   ✓ Phase 5: GSAP Ticker統合準備完了（_setupGSAPTicker）');
-    console.log('   ✓ destroy()メソッド追加（GSAP完全停止・リロード安定化）');
+    console.log('   ✓ Phase 4: onFlipRequest再試行メカニズム実装（確実接続）');
+    console.log('   ✓ Phase 5: GSAP Ticker統合準備完了');
+    console.log('   ✓ destroy()メソッド追加（リロード安定化）');
 })();
