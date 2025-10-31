@@ -1,6 +1,7 @@
-// ===== system/layer-transform.js - Phase 1: TransformStack統合完全版 =====
-// Phase 1: TransformStack導入 + レイヤー変形時の自動登録・更新
+// ===== system/layer-transform.js - Phase 1完全版 + Vキー座標ずれ修正 =====
+// Phase 1: TransformStack統合完全版
 // Phase 7: 座標同期完全版
+// 🔧 Vキーモードでの拡大縮小時の座標ずれを修正
 
 (function() {
     'use strict';
@@ -20,6 +21,9 @@
             this.isDragging = false;
             this.dragLastPoint = { x: 0, y: 0 };
             this.dragStartPoint = { x: 0, y: 0 };
+            
+            // 🔧 拡大縮小時の座標補正用
+            this.dragStartLayerPos = { x: 0, y: 0 };
             
             this.transformPanel = null;
             
@@ -57,7 +61,7 @@
             this._setupFlipKeyEvents();
             this._setupWheelEvents();
             
-            console.log('✅ LayerTransform Phase 1: TransformStack統合完了');
+            console.log('✅ LayerTransform Phase 1完全版 + Vキー座標ずれ修正');
         }
 
         enterMoveMode() {
@@ -505,6 +509,7 @@
             }
         }
 
+        // 🔧 ドラッグイベント設定（座標ずれ修正版）
         _setupDragEvents() {
             const canvas = this._getSafeCanvas();
             if (!canvas) return;
@@ -521,6 +526,21 @@
                     this.isDragging = true;
                     this.dragStartPoint = { x: world.worldX, y: world.worldY };
                     this.dragLastPoint = { x: world.worldX, y: world.worldY };
+                    
+                    // 🔧 ドラッグ開始時のレイヤー位置を記録
+                    if (this.onGetActiveLayer) {
+                        const activeLayer = this.onGetActiveLayer();
+                        if (activeLayer?.layerData) {
+                            const layerId = activeLayer.layerData.id;
+                            const transform = this.transforms.get(layerId);
+                            if (transform) {
+                                this.dragStartLayerPos = { x: transform.x, y: transform.y };
+                            } else {
+                                this.dragStartLayerPos = { x: 0, y: 0 };
+                            }
+                        }
+                    }
+                    
                     canvas.style.cursor = 'move';
                     e.preventDefault();
                 }
@@ -540,22 +560,63 @@
             });
         }
 
+        // 🔧 ドラッグハンドラ（座標ずれ修正版）
         _handleDrag(e) {
             if (!this.coordinateSystem) return;
+            if (!this.onGetActiveLayer) return;
             
-            const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
+            const activeLayer = this.onGetActiveLayer();
+            if (!activeLayer?.layerData) return;
             
-            if (!isFinite(world.worldX) || !isFinite(world.worldY)) {
+            const layerId = activeLayer.layerData.id;
+            const transform = this.transforms.get(layerId);
+            if (!transform) return;
+            
+            // 🔧 修正: 現在のWorld座標を取得
+            const currentWorld = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
+            
+            if (!isFinite(currentWorld.worldX) || !isFinite(currentWorld.worldY)) {
                 return;
             }
             
-            const dx = world.worldX - this.dragLastPoint.x;
-            const dy = world.worldY - this.dragLastPoint.y;
+            // 🔧 修正: ドラッグ開始点からの移動量を計算（World座標空間で）
+            const worldDx = currentWorld.worldX - this.dragStartPoint.x;
+            const worldDy = currentWorld.worldY - this.dragStartPoint.y;
             
-            this.dragLastPoint = { x: world.worldX, y: world.worldY };
+            // 🔧 修正: レイヤーのスケール・回転を考慮して移動量を補正
+            const currentScale = Math.abs(transform.scaleX);
+            const rotation = transform.rotation;
             
-            if (this.onDragRequest) {
-                this.onDragRequest(dx, dy, e.shiftKey);
+            // 回転を考慮した移動量の逆変換
+            let correctedDx = worldDx;
+            let correctedDy = worldDy;
+            
+            if (Math.abs(rotation) > 1e-6) {
+                const cos = Math.cos(-rotation);
+                const sin = Math.sin(-rotation);
+                correctedDx = worldDx * cos - worldDy * sin;
+                correctedDy = worldDx * sin + worldDy * cos;
+            }
+            
+            // スケールで補正（拡大されている場合は移動量を小さく）
+            correctedDx /= currentScale;
+            correctedDy /= currentScale;
+            
+            // 🔧 修正: ドラッグ開始時の位置に補正後の移動量を加算
+            const newX = this.dragStartLayerPos.x + correctedDx;
+            const newY = this.dragStartLayerPos.y + correctedDy;
+            
+            transform.x = newX;
+            transform.y = newY;
+            
+            const centerX = this.config.canvas.width / 2;
+            const centerY = this.config.canvas.height / 2;
+            
+            this.applyTransform(activeLayer, transform, centerX, centerY);
+            this.updateTransformPanelValues(activeLayer);
+            
+            if (this.onTransformUpdate) {
+                this.onTransformUpdate(activeLayer, transform);
             }
         }
 
@@ -954,6 +1015,7 @@
 
 })();
 
-console.log('✅ layer-transform.js (Phase 1: TransformStack統合完全版) loaded');
-console.log('   - Phase 1: TransformStack導入 + レイヤー変形時の自動登録・更新');
+console.log('✅ layer-transform.js (Phase 1完全版 + Vキー座標ずれ修正) loaded');
+console.log('   🔧 Vキーモード拡大縮小時の座標ずれを修正');
+console.log('   - Phase 1: TransformStack統合完全版');
 console.log('   - Phase 7: 座標同期完全版');
