@@ -1,0 +1,2187 @@
+===================================================================================
+ブラウザお絵かきツール v8.13 - サムネイルシステム全面改修計画書 v1.0
+===================================================================================
+
+【改修目的】
+1. TransformStackベースの座標変換統一
+2. レイヤー/タイムラインサムネイルの同期改善
+3. アスペクト比・キャッシュ管理・イベントフローの整合性確保
+4. DRY/SOLID原則に基づく二重実装の撲滅
+
+【全体方針】
+- C案: TransformStackを核とした全面改修
+- 既存コードの後方互換性を維持しながら段階的に移行
+- 各Phaseで動作確認可能な状態を保つ
+
+===================================================================================
+Phase 1: TransformStackクラスの導入と基盤整備
+===================================================================================
+
+【目的】
+- coordinate-system.jsにTransformStack実装
+- worldContainerとlayerContainerで共通のtransform管理基盤を構築
+
+【改修ファイル】
+- coordinate-system.js (主要改修)
+- camera-system.js (TransformStack連携)
+- system/layer-transform.js (TransformStack連携)
+
+【参考ファイル】
+- config.js (canvas/camera/layer設定)
+- system/event-bus.js (イベント定義)
+
+---
+
+■ coordinate-system.js 改修内容
+
+【追加クラス: TransformStack】
+
+```
+class TransformStack {
+  constructor(id, initialTransform = null)
+  
+  プロパティ:
+    - id: string (識別用)
+    - position: {x, y}
+    - scale: {x, y}
+    - rotation: number (radian)
+    - pivot: {x, y}
+    - parent: TransformStack | null
+    - matrix: PIXI.Matrix
+    - inverseMatrix: PIXI.Matrix
+    - isDirty: boolean
+  
+  メソッド:
+    - updateMatrix(): void
+      親チェーンを遡ってmatrixを再計算
+      
+    - getWorldMatrix(): PIXI.Matrix
+      親との合成行列を返す
+      
+    - worldToLocal(worldX, worldY): {localX, localY}
+      World座標 → Local座標変換
+      
+    - localToWorld(localX, localY): {worldX, worldY}
+      Local座標 → World座標変換
+      
+    - setTransform(transform): void
+      {x, y, rotation, scaleX, scaleY} を一括設定
+      
+    - getTransform(): object
+      現在のtransformを取得
+      
+    - applyToContainer(container): void
+      PIXIコンテナに変形を適用
+      
+    - clone(): TransformStack
+      TransformStackのコピー生成
+}
+```
+
+【配置場所】
+coordinate-system.js内、CoordinateSystemクラスの後に配置
+
+【CoordinateSystemクラスへの統合】
+
+```
+class CoordinateSystem {
+  // 既存プロパティ
+  transformStacks: Map<string, TransformStack>
+  
+  // 新規メソッド
+  createTransformStack(id, initialTransform): TransformStack
+  getTransformStack(id): TransformStack | null
+  removeTransformStack(id): void
+  
+  // 既存メソッド改修
+  worldToLocal(worldX, worldY, container) {
+    // TransformStackが存在する場合はそちらを優先
+    // なければ既存の手動逆算ロジックにフォールバック
+  }
+}
+```
+
+【グローバル公開】
+window.TransformStack = TransformStack;
+
+---
+
+■ camera-system.js 改修内容
+
+【CameraSystemクラス改修】
+
+```
+class CameraSystem {
+  // 新規プロパティ
+  transformStack: TransformStack
+  
+  init(stage, eventBus, config) {
+    // 既存初期化処理
+    
+    // TransformStack生成
+    this.transformStack = CoordinateSystem.createTransformStack(
+      'camera-world',
+      { x: initialX, y: initialY, rotation: 0, scaleX: scale, scaleY: scale }
+    );
+    
+    // worldContainerに適用
+    this._syncWorldContainerFromStack();
+  }
+  
+  _syncWorldContainerFromStack(): void {
+    this.transformStack.applyToContainer(this.worldContainer);
+  }
+  
+  _syncStackFromWorldContainer(): void {
+    // 既存のworldContainer変更をTransformStackに反映
+    this.transformStack.setTransform({
+      x: this.worldContainer.x,
+      y: this.worldContainer.y,
+      rotation: this.worldContainer.rotation,
+      scaleX: this.worldContainer.scale.x,
+      scaleY: this.worldContainer.scale.y
+    });
+  }
+  
+  // 既存メソッド改修
+  _handleWheelZoom(e, centerX, centerY) {
+    // 既存ロジック実行後
+    this._syncStackFromWorldContainer();
+  }
+  
+  _handleScaleRotateDrag(e) {
+    // 既存ロジック実行後
+    this._syncStackFromWorldContainer();
+  }
+  
+  // 他のtransform変更メソッドも同様
+}
+```
+
+【フロー位置】
+- PointerEventハンドラ → worldContainer変形 → _syncStackFromWorldContainer()
+- CoordinateSystem経由の座標変換 → transformStack.worldToLocal()使用
+
+---
+
+■ system/layer-transform.js 改修内容
+
+【LayerTransformクラス改修】
+
+```
+class LayerTransform {
+  // 新規プロパティ
+  layerTransformStacks: Map<string, TransformStack>
+  
+  setTransform(layerId, transform) {
+    // 既存のthis.transformsに加えて
+    let stack = this.layerTransformStacks.get(layerId);
+    if (!stack) {
+      stack = CoordinateSystem.createTransformStack(
+        `layer-${layerId}`,
+        transform
+      );
+      this.layerTransformStacks.set(layerId, stack);
+    } else {
+      stack.setTransform(transform);
+    }
+  }
+  
+  applyTransform(layer, transform, centerX, centerY) {
+    // 既存ロジック実行
+    
+    // TransformStackにも反映
+    const layerId = layer.layerData?.id;
+    if (layerId) {
+      const stack = this.layerTransformStacks.get(layerId);
+      if (stack) {
+        stack.setTransform(transform);
+      }
+    }
+  }
+  
+  getLayerWorldMatrix(layerId): PIXI.Matrix | null {
+    const stack = this.layerTransformStacks.get(layerId);
+    return stack ? stack.getWorldMatrix() : null;
+  }
+}
+```
+
+【フロー位置】
+- Vキーモード変形 → applyTransform() → TransformStack更新
+- サムネイル生成時 → getLayerWorldMatrix()でtransform取得
+
+---
+
+【Phase 1 動作確認項目】
+1. TransformStackがwindowオブジェクトに登録されている
+2. CameraSystemのworldContainer変形がTransformStackに同期される
+3. LayerTransformの変形がTransformStackに反映される
+4. console.log(CoordinateSystem.transformStacks)で状態確認可能
+
+===================================================================================
+Phase 2: ThumbnailSystemのTransformStack対応
+===================================================================================
+
+【目的】
+- サムネイル生成時にTransformStackから正確なtransformを取得
+- アスペクト比計算の統一
+- キャッシュキー生成の一元化
+
+【改修ファイル】
+- system/drawing/thumbnail-system.js (主要改修)
+
+【参考ファイル】
+- coordinate-system.js (TransformStack取得)
+- camera-system.js (cameraTransformStack参照)
+- system/layer-transform.js (layerTransformStacks参照)
+- config.js (canvas設定)
+
+---
+
+■ thumbnail-system.js 改修内容
+
+【ThumbnailSystemクラス改修】
+
+```
+class ThumbnailSystem {
+  // 新規メソッド
+  _calculateThumbnailSize(maxWidth, maxHeight) {
+    const canvasWidth = this.config.canvas.width;
+    const canvasHeight = this.config.canvas.height;
+    const aspectRatio = canvasWidth / canvasHeight;
+    
+    if (aspectRatio > 1) {
+      return {
+        width: maxWidth,
+        height: Math.round(maxWidth / aspectRatio)
+      };
+    } else {
+      return {
+        width: Math.round(maxHeight * aspectRatio),
+        height: maxHeight
+      };
+    }
+  }
+  
+  _generateCacheKey(type, id, size, transformHash) {
+    // type: 'layer' | 'frame'
+    // transformHash: TransformStackから生成したハッシュ
+    return `${type}_${id}_${size.width}_${size.height}_${transformHash}`;
+  }
+  
+  _getTransformHash() {
+    const cameraStack = window.cameraSystem?.transformStack;
+    if (!cameraStack) return 'no-transform';
+    
+    const t = cameraStack.getTransform();
+    return `${t.x.toFixed(1)}_${t.y.toFixed(1)}_${t.scaleX.toFixed(2)}_${t.rotation.toFixed(2)}`;
+  }
+  
+  _getLayerTransformHash(layerId) {
+    const layerTransform = window.layerManager?.transform;
+    if (!layerTransform?.layerTransformStacks) return 'no-layer-transform';
+    
+    const stack = layerTransform.layerTransformStacks.get(layerId);
+    if (!stack) return 'no-layer-transform';
+    
+    const t = stack.getTransform();
+    return `${t.x.toFixed(1)}_${t.y.toFixed(1)}_${t.scaleX.toFixed(2)}_${t.rotation.toFixed(2)}`;
+  }
+  
+  // generateLayerThumbnail() 改修
+  async generateLayerThumbnail(layer, maxWidth, maxHeight) {
+    const size = this._calculateThumbnailSize(maxWidth, maxHeight);
+    const layerId = layer.layerData?.id || layer.label;
+    
+    // キャッシュキー生成
+    const cameraHash = this._getTransformHash();
+    const layerHash = this._getLayerTransformHash(layerId);
+    const transformHash = `${cameraHash}_${layerHash}`;
+    const cacheKey = this._generateCacheKey('layer', layerId, size, transformHash);
+    
+    if (this.layerThumbnailCache.has(cacheKey)) {
+      return this.layerThumbnailCache.get(cacheKey);
+    }
+    
+    // レンダリング処理（既存ロジック）
+    const canvas = await this._renderLayerThumbnail(layer, size.width, size.height);
+    
+    if (canvas) {
+      this.layerThumbnailCache.set(cacheKey, canvas);
+      this._pruneCache(this.layerThumbnailCache);
+    }
+    
+    return canvas;
+  }
+  
+  // generateFrameThumbnail() 改修
+  async generateFrameThumbnail(frame, maxWidth, maxHeight) {
+    const size = this._calculateThumbnailSize(maxWidth, maxHeight);
+    const frameId = frame.id || frame.label;
+    
+    // フレームはカメラtransformのみ考慮
+    const transformHash = this._getTransformHash();
+    const cacheKey = this._generateCacheKey('frame', frameId, size, transformHash);
+    
+    if (this.frameThumbnailCache.has(cacheKey)) {
+      return this.frameThumbnailCache.get(cacheKey);
+    }
+    
+    // レンダリング処理（既存ロジック）
+    const canvas = await this._renderFrameThumbnailPixiJS(
+      frame,
+      this.config.canvas.width,
+      this.config.canvas.height,
+      size.width,
+      size.height
+    );
+    
+    if (canvas) {
+      this.frameThumbnailCache.set(cacheKey, canvas);
+      this._pruneCache(this.frameThumbnailCache);
+    }
+    
+    return canvas;
+  }
+  
+  _pruneCache(cache) {
+    if (cache.size > this.maxCacheSize) {
+      const deleteCount = cache.size - this.maxCacheSize;
+      const keys = Array.from(cache.keys());
+      for (let i = 0; i < deleteCount; i++) {
+        cache.delete(keys[i]);
+      }
+    }
+  }
+}
+```
+
+【フロー位置】
+1. UI/Timelineからサムネイル要求
+2. generateLayerThumbnail/generateFrameThumbnail呼び出し
+3. TransformStackから現在のtransform取得
+4. transformHashを含むキャッシュキー生成
+5. キャッシュヒット確認
+6. 必要ならレンダリング実行
+
+---
+
+【Phase 2 動作確認項目】
+1. サムネイルのアスペクト比が正しい（config.canvas依存）
+2. カメラ変形（回転/反転/スケール）がサムネイルに反映される
+3. レイヤー変形（Vモード）がサムネイルに反映される
+4. キャッシュキーにtransformHashが含まれている（console確認）
+5. 同一状態で複数回呼び出してもキャッシュヒットする
+
+===================================================================================
+Phase 3: LayerPanelRendererとTimelineUIの統合
+===================================================================================
+
+【目的】
+- サムネイル表示のCSS統一
+- イベントフローの最適化
+- 更新リクエストのバッチ処理
+
+【改修ファイル】
+- ui/layer-panel-renderer.js (主要改修)
+- ui/timeline-ui.js (主要改修)
+
+【参考ファイル】
+- system/drawing/thumbnail-system.js (サムネイル生成API)
+- system/event-bus.js (イベント定義)
+- config.js (サムネイルサイズ設定)
+
+---
+
+■ layer-panel-renderer.js 改修内容
+
+【LayerPanelRendererクラス改修】
+
+```
+class LayerPanelRenderer {
+  // 新規プロパティ
+  thumbnailUpdateQueue: Set<number>
+  isProcessingQueue: boolean
+  rafId: number | null
+  
+  constructor() {
+    this.thumbnailUpdateQueue = new Set();
+    this.isProcessingQueue = false;
+    this.rafId = null;
+  }
+  
+  // createThumbnail() 改修
+  createThumbnail(layer, index) {
+    const thumbnail = document.createElement('div');
+    thumbnail.className = 'layer-thumbnail';
+    thumbnail.style.gridColumn = '3';
+    thumbnail.style.gridRow = '1 / 3';
+    thumbnail.dataset.layerIndex = String(index);
+    thumbnail.style.borderRadius = '0'; // 真四角
+    
+    // アスペクト比をconfig依存で計算
+    const size = this._calculateThumbnailDOMSize();
+    thumbnail.style.width = size.width + 'px';
+    thumbnail.style.height = size.height + 'px';
+    
+    if (layer.layerData?.isBackground) {
+      // 背景色見本
+      const swatch = document.createElement('div');
+      swatch.style.width = '100%';
+      swatch.style.height = '100%';
+      swatch.style.backgroundColor = '#F0E0D6';
+      thumbnail.appendChild(swatch);
+      return thumbnail;
+    }
+    
+    // <img>要素
+    const img = document.createElement('img');
+    img.alt = `Layer ${index} thumbnail`;
+    img.style.width = '100%';
+    img.style.height = '100%';
+    img.style.objectFit = 'contain';
+    img.style.display = 'none';
+    img.dataset.layerIndex = String(index);
+    img.dataset.layerId = layer.layerData?.id || `layer-${index}`;
+    
+    thumbnail.appendChild(img);
+    
+    // 非同期生成
+    requestAnimationFrame(() => {
+      this._generateAndDisplayThumbnail(layer, index, img);
+    });
+    
+    return thumbnail;
+  }
+  
+  _calculateThumbnailDOMSize() {
+    const config = window.TEGAKI_CONFIG;
+    const maxSize = 64;
+    const aspectRatio = config.canvas.width / config.canvas.height;
+    
+    if (aspectRatio > 1) {
+      return {
+        width: maxSize,
+        height: Math.round(maxSize / aspectRatio)
+      };
+    } else {
+      return {
+        width: Math.round(maxSize * aspectRatio),
+        height: maxSize
+      };
+    }
+  }
+  
+  // updateLayerThumbnail() 改修
+  updateLayerThumbnail(layerIndex) {
+    this.thumbnailUpdateQueue.add(layerIndex);
+    this._scheduleQueueProcessing();
+  }
+  
+  _scheduleQueueProcessing() {
+    if (this.isProcessingQueue) return;
+    if (this.rafId !== null) return;
+    
+    this.rafId = requestAnimationFrame(() => {
+      this._processUpdateQueue();
+    });
+  }
+  
+  async _processUpdateQueue() {
+    if (this.thumbnailUpdateQueue.size === 0) {
+      this.rafId = null;
+      return;
+    }
+    
+    this.isProcessingQueue = true;
+    
+    const indices = Array.from(this.thumbnailUpdateQueue);
+    this.thumbnailUpdateQueue.clear();
+    
+    for (const index of indices) {
+      await this._updateSingleLayerThumbnail(index);
+      // 次のフレームまで待機（UI blocking回避）
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    
+    this.isProcessingQueue = false;
+    this.rafId = null;
+    
+    // キューに新規追加があれば再処理
+    if (this.thumbnailUpdateQueue.size > 0) {
+      this._scheduleQueueProcessing();
+    }
+  }
+  
+  async _updateSingleLayerThumbnail(layerIndex) {
+    // 既存のupdateLayerThumbnail()のロジック
+    // ただしキュー処理用に切り出し
+  }
+}
+```
+
+【フロー位置】
+1. layer:transform-updated イベント受信
+2. updateLayerThumbnail(index) 呼び出し
+3. thumbnailUpdateQueueに追加
+4. requestAnimationFrameでバッチ処理
+5. ThumbnailSystem.generateLayerThumbnail()呼び出し
+6. DOM反映
+
+---
+
+■ timeline-ui.js 改修内容
+
+【TimelineUIクラス改修】
+
+```
+class TimelineUI {
+  // 新規プロパティ
+  frameThumbnailUpdateQueue: Set<number>
+  isProcessingFrameQueue: boolean
+  frameRafId: number | null
+  
+  constructor(animationSystem) {
+    this.frameThumbnailUpdateQueue = new Set();
+    this.isProcessingFrameQueue = false;
+    this.frameRafId = null;
+  }
+  
+  // createImprovedFrameItem() 改修
+  createImprovedFrameItem(frame, index) {
+    const frameItem = document.createElement('div');
+    frameItem.className = 'frame-item';
+    frameItem.dataset.frameIndex = index;
+    
+    // サムネイルのアスペクト比計算
+    const thumbnailSize = this._calculateFrameThumbnailDOMSize();
+    
+    const thumbnailHtml = this.generateFrameThumbnailHTML(frame, index);
+    
+    frameItem.innerHTML = `
+      <div class="frame-thumbnail" 
+           data-frame-index="${index}"
+           style="width: ${thumbnailSize.width}px; height: ${thumbnailSize.height}px;">
+        ${thumbnailHtml}
+      </div>
+      <div class="frame-name">${frame.name}</div>
+      <div class="frame-duration-container">
+        <button class="duration-nav-btn duration-decrease" data-index="${index}">◀</button>
+        <input type="number" class="frame-duration-input" value="${frame.duration.toFixed(2)}" min="0.01" max="10" step="0.01" data-index="${index}">
+        <button class="duration-nav-btn duration-increase" data-index="${index}">▶</button>
+      </div>
+      <button class="delete-frame-btn" data-index="${index}">×</button>
+    `;
+    
+    // イベントリスナー設定（既存コード）
+    
+    return frameItem;
+  }
+  
+  _calculateFrameThumbnailDOMSize() {
+    const config = window.TEGAKI_CONFIG || { canvas: { width: 800, height: 600 } };
+    const maxWidth = 72;
+    const maxHeight = 54;
+    const aspectRatio = config.canvas.width / config.canvas.height;
+    
+    if (aspectRatio >= maxWidth / maxHeight) {
+      return {
+        width: maxWidth,
+        height: Math.round(maxWidth / aspectRatio)
+      };
+    } else {
+      return {
+        width: Math.round(maxHeight * aspectRatio),
+        height: maxHeight
+      };
+    }
+  }
+  
+  // requestThumbnailUpdate() 改修
+  requestThumbnailUpdate() {
+    const currentFrameIndex = this.animationSystem.animationData.playback.currentFrameIndex;
+    this.frameThumbnailUpdateQueue.add(currentFrameIndex);
+    this._scheduleFrameQueueProcessing();
+  }
+  
+  _scheduleFrameQueueProcessing() {
+    if (this.isProcessingFrameQueue) return;
+    if (this.frameRafId !== null) return;
+    
+    this.frameRafId = requestAnimationFrame(() => {
+      this._processFrameUpdateQueue();
+    });
+  }
+  
+  async _processFrameUpdateQueue() {
+    if (this.frameThumbnailUpdateQueue.size === 0) {
+      this.frameRafId = null;
+      return;
+    }
+    
+    this.isProcessingFrameQueue = true;
+    
+    const indices = Array.from(this.frameThumbnailUpdateQueue);
+    this.frameThumbnailUpdateQueue.clear();
+    
+    for (const index of indices) {
+      await this.animationSystem.generateFrameThumbnailOptimized(index);
+      this.updateSingleFrameThumbnail(index);
+      await new Promise(resolve => setTimeout(resolve, 0));
+    }
+    
+    this.isProcessingFrameQueue = false;
+    this.frameRafId = null;
+    
+    if (this.frameThumbnailUpdateQueue.size > 0) {
+      this._scheduleFrameQueueProcessing();
+    }
+  }
+}
+```
+
+【フロー位置】
+1. layer:transform-updated / stroke:end イベント受信
+2. requestThumbnailUpdate() 呼び出し
+3. frameThumbnailUpdateQueueに追加
+4. requestAnimationFrameでバッチ処理
+5. AnimationSystem.generateFrameThumbnailOptimized()経由でThumbnailSystem呼び出し
+6. DOM反映
+
+---
+
+【Phase 3 動作確認項目】
+1. レイヤーパネルのサムネイルが正しいアスペクト比で表示
+2. タイムラインのサムネイルが正しいアスペクト比で表示
+3. 複数レイヤー/フレーム変更時にバッチ処理される（console確認）
+4. レイヤー変形後、レイヤーパネルとタイムライン両方が更新される
+5. カメラ変形後、両方のサムネイルが更新される
+
+===================================================================================
+Phase 4: LayerSystemの統合と背景レイヤー対応
+===================================================================================
+
+【目的】
+- createLayer()の自動連番化
+- 背景レイヤーのtransform対応（オプション）
+- TransformStackとの完全統合
+
+【改修ファイル】
+- system/layer-system.js (主要改修)
+- system/layer-transform.js (背景レイヤー対応)
+
+【参考ファイル】
+- coordinate-system.js (TransformStack)
+- system/data-models.js (LayerModel定義)
+- config.js (layer設定)
+
+---
+
+■ layer-system.js 改修内容
+
+【LayerSystemクラス改修】
+
+```
+class LayerSystem {
+  // createLayer() 改修
+  createLayer(name = null, isBackground = false) {
+    const layers = this.getLayers();
+    
+    // レイヤー名の自動連番
+    let layerName;
+    if (name) {
+      layerName = name;
+    } else {
+      const normalLayers = layers.filter(l => !l.layerData?.isBackground);
+      const nextNumber = normalLayers.length + 1;
+      layerName = `レイヤー${nextNumber}`;
+    }
+    
+    const newLayer = new PIXI.Container();
+    const layerModel = new window.TegakiDataModels.LayerModel({
+      id: `layer_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`,
+      name: layerName,
+      isBackground: isBackground
+    });
+    
+    newLayer.label = layerModel.id;
+    newLayer.layerData = layerModel;
+    
+    // TransformStack生成
+    if (this.transform) {
+      const initialTransform = { x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1 };
+      this.transform.setTransform(layerModel.id, initialTransform);
+      
+      // CoordinateSystemのTransformStackにも登録
+      const stack = window.CoordinateSystem.createTransformStack(
+        `layer-${layerModel.id}`,
+        initialTransform
+      );
+      
+      if (this.transform.layerTransformStacks) {
+        this.transform.layerTransformStacks.set(layerModel.id, stack);
+      }
+    }
+    
+    // 背景レイヤーの場合
+    if (isBackground) {
+      const bg = this._createCheckerPatternBackground(
+        this.config.canvas.width,
+        this.config.canvas.height
+      );
+      newLayer.addChild(bg);
+      newLayer.layerData.backgroundGraphics = bg;
+    }
+    
+    this.currentFrameContainer.addChild(newLayer);
+    
+    // アクティブレイヤー設定
+    this.activeLayerIndex = this.getLayers().indexOf(newLayer);
+    
+    // UI更新
+    this.updateLayerPanelUI();
+    
+    if (this.eventBus) {
+      this.eventBus.emit('layer:created', {
+        layerId: layerModel.id,
+        layerIndex: this.activeLayerIndex,
+        layerName: layerName
+      });
+    }
+    
+    return newLayer;
+  }
+  
+  // deleteLayer() 改修
+  deleteLayer(layerIndex) {
+    const layers = this.getLayers();
+    if (layerIndex < 0 || layerIndex >= layers.length) return false;
+    
+    const layer = layers[layerIndex];
+    const layerId = layer.layerData?.id;
+    
+    // TransformStackクリーンアップ
+    if (layerId && this.transform?.layerTransformStacks) {
+      const stack = this.transform.layerTransformStacks.get(layerId);
+      if (stack) {
+        window.CoordinateSystem.removeTransformStack(`layer-${layerId}`);
+        this.transform.layerTransformStacks.delete(layerId);
+      }
+    }
+    
+    // 既存の削除処理
+    // ...
+  }
+}
+```
+
+---
+
+■ layer-transform.js 改修内容
+
+【LayerTransformクラス改修】
+
+```
+class LayerTransform {
+  // _shouldSkipLayer() 改修
+  _shouldSkipLayer(layer) {
+    // 背景レイヤーもtransform可能にする場合
+    if (this.config.layer?.allowBackgroundTransform === true) {
+      return false;
+    }
+    
+    // デフォルトは背景レイヤーをスキップ
+    return layer.layerData?.isBackground === true;
+  }
+  
+  // moveLayer() 改修
+  moveLayer(layer, keyCode) {
+    if (this._shouldSkipLayer(layer)) {
+      // 背景レイヤーでも矢印キーでの移動を許可する場合
+      if (this.config.layer?.allowBackgroundMove === true) {
+        // 通常のレイヤーと同じ処理
+      } else {
+        return; // スキップ
+      }
+    }
+    
+    // 既存のmoveロジック
+    // ...
+  }
+}
+```
+
+【config.js への追加設定】
+
+```
+layer: {
+  allowBackgroundTransform: false,  // 背景レイヤーのtransform許可
+  allowBackgroundMove: false,       // 背景レイヤーの移動許可
+  // 既存設定
+  minScale: 0.1,
+  maxScale: 10,
+  // ...
+}
+```
+
+---
+
+【Phase 4 動作確認項目】
+1. 新規レイヤー作成時に自動連番（レイヤー2, レイヤー3...）
+2. TransformStackがレイヤー削除時にクリーンアップされる
+3. 背景レイヤーの扱いがconfig設定で制御可能
+4. window.CoordinateSystem.transformStacks.size がレイヤー数+1（camera）
+5. console.log(layerManager.transform.layerTransformStacks) でレイヤーごとのTransformStack確認可能
+
+===================================================================================
+Phase 5: イベントフローの最適化と統合
+===================================================================================
+
+【目的】
+- サムネイル更新イベントの統合
+- 重複イベント発火の防止
+- デバウンス/スロットル処理の統一
+
+【改修ファイル】
+- system/event-bus.js (イベント定義追加)
+- system/drawing/thumbnail-system.js (イベント統合)
+- ui/layer-panel-renderer.js (イベント購読整理)
+- ui/timeline-ui.js (イベント購読整理)
+
+【参考ファイル】
+- coordinate-system.js (座標変換イベント)
+- system/camera-system.js (カメライベント)
+
+---
+
+■ event-bus.js 改修内容
+
+【新規イベント定義】
+
+```
+// サムネイル更新系イベント統合
+'thumbnail:update-requested'
+  data: {
+    target: 'layer' | 'frame' | 'all',
+    indices: number[] | null,  // null = all
+    immediate: boolean,         // true = RAF不使用
+    priority: 'low' | 'normal' | 'high'
+  }
+
+'thumbnail:update-completed'
+  data: {
+    target: 'layer' | 'frame',
+    index: number,
+    success: boolean
+  }
+
+'thumbnail:batch-update-completed'
+  data: {
+    target: 'layer' | 'frame' | 'all',
+    count: number,
+    duration: number  // ms
+  }
+
+// Transform更新系イベント統合
+'transform:changed'
+  data: {
+    type: 'camera' | 'layer',
+    id: string,  // camera-world or layer-{layerId}
+    transform: object,
+    affectsLayer: number[] | null  // 影響を受けるレイヤーインデックス
+  }
+```
+
+【既存イベントの廃止/統合】
+
+```
+廃止:
+- thumbnail:layer-updated → thumbnail:update-requested
+- thumbnail:regenerate-all → thumbnail:update-requested
+- camera:transform-changed → transform:changed (type: 'camera')
+- layer:transform-updated → transform:changed (type: 'layer')
+
+維持（後方互換）:
+- layer:stroke-added
+- layer:path-added
+- animation:frame-updated
+```
+
+---
+
+■ thumbnail-system.js 改修内容
+
+【ThumbnailSystemクラス改修】
+
+```
+class ThumbnailSystem {
+  // 新規プロパティ
+  updateScheduler: {
+    layerQueue: Set<number>,
+    frameQueue: Set<number>,
+    rafId: number | null,
+    isProcessing: boolean,
+    lastUpdateTime: number
+  }
+  
+  init(eventBus) {
+    this.eventBus = eventBus;
+    this.updateScheduler = {
+      layerQueue: new Set(),
+      frameQueue: new Set(),
+      rafId: null,
+      isProcessing: false,
+      lastUpdateTime: 0
+    };
+    
+    this._setupUnifiedEventListeners();
+  }
+  
+  _setupUnifiedEventListeners() {
+    // 統合イベント購読
+    this.eventBus.on('thumbnail:update-requested', ({ data }) => {
+      this._handleUpdateRequest(data);
+    });
+    
+    // Transform変更イベント購読
+    this.eventBus.on('transform:changed', ({ data }) => {
+      this._handleTransformChange(data);
+    });
+    
+    // 描画完了イベント購読（既存）
+    this.eventBus.on('layer:stroke-added', ({ layerIndex }) => {
+      this._scheduleLayerUpdate(layerIndex, 'normal');
+    });
+    
+    this.eventBus.on('layer:path-added', ({ layerIndex }) => {
+      this._scheduleLayerUpdate(layerIndex, 'normal');
+    });
+  }
+  
+  _handleUpdateRequest({ target, indices, immediate, priority }) {
+    if (target === 'layer') {
+      if (indices === null) {
+        // 全レイヤー更新
+        const layerMgr = window.layerManager;
+        if (layerMgr) {
+          const layers = layerMgr.getLayers();
+          layers.forEach((_, i) => this._scheduleLayerUpdate(i, priority));
+        }
+      } else {
+        indices.forEach(i => this._scheduleLayerUpdate(i, priority));
+      }
+    } else if (target === 'frame') {
+      if (indices === null) {
+        // 全フレーム更新
+        const animSys = window.animationSystem;
+        if (animSys?.animationData?.frames) {
+          const frames = animSys.animationData.frames;
+          frames.forEach((_, i) => this._scheduleFrameUpdate(i, priority));
+        }
+      } else {
+        indices.forEach(i => this._scheduleFrameUpdate(i, priority));
+      }
+    } else if (target === 'all') {
+      this.clearAllCache();
+      this._scheduleFullUpdate(priority);
+    }
+    
+    if (immediate) {
+      this._processUpdateQueueImmediate();
+    } else {
+      this._scheduleUpdateProcessing();
+    }
+  }
+  
+  _handleTransformChange({ type, id, transform, affectsLayer }) {
+    if (type === 'camera') {
+      // カメラ変形：全サムネイル無効化
+      this.clearAllCache();
+      this._scheduleFullUpdate('low');
+    } else if (type === 'layer' && affectsLayer) {
+      // レイヤー変形：該当レイヤーとフレームのみ
+      affectsLayer.forEach(i => {
+        this._invalidateLayerCacheByIndex(i);
+        this._scheduleLayerUpdate(i, 'normal');
+      });
+      
+      // 現在フレームのサムネイルも更新
+      const currentFrameIndex = window.animationSystem?.getCurrentFrameIndex?.();
+      if (currentFrameIndex !== undefined) {
+        this._scheduleFrameUpdate(currentFrameIndex, 'normal');
+      }
+    }
+  }
+  
+  _scheduleLayerUpdate(index, priority = 'normal') {
+    this.updateScheduler.layerQueue.add(index);
+    if (priority === 'high') {
+      this._scheduleUpdateProcessing(0);
+    } else {
+      this._scheduleUpdateProcessing();
+    }
+  }
+  
+  _scheduleFrameUpdate(index, priority = 'normal') {
+    this.updateScheduler.frameQueue.add(index);
+    if (priority === 'high') {
+      this._scheduleUpdateProcessing(0);
+    } else {
+      this._scheduleUpdateProcessing();
+    }
+  }
+  
+  _scheduleFullUpdate(priority = 'low') {
+    const layerMgr = window.layerManager;
+    if (layerMgr) {
+      const layers = layerMgr.getLayers();
+      layers.forEach((_, i) => this.updateScheduler.layerQueue.add(i));
+    }
+    
+    const animSys = window.animationSystem;
+    if (animSys?.animationData?.frames) {
+      const frames = animSys.animationData.frames;
+      frames.forEach((_, i) => this.updateScheduler.frameQueue.add(i));
+    }
+    
+    this._scheduleUpdateProcessing(priority === 'high' ? 0 : 300);
+  }
+  
+  _scheduleUpdateProcessing(delay = 150) {
+    if (this.updateScheduler.rafId !== null) {
+      cancelAnimationFrame(this.updateScheduler.rafId);
+    }
+    
+    if (delay === 0) {
+      this.updateScheduler.rafId = requestAnimationFrame(() => {
+        this._processUpdateQueue();
+      });
+    } else {
+      setTimeout(() => {
+        this.updateScheduler.rafId = requestAnimationFrame(() => {
+          this._processUpdateQueue();
+        });
+      }, delay);
+    }
+  }
+  
+  async _processUpdateQueue() {
+    if (this.updateScheduler.isProcessing) return;
+    
+    this.updateScheduler.isProcessing = true;
+    const startTime = performance.now();
+    
+    const layerIndices = Array.from(this.updateScheduler.layerQueue);
+    const frameIndices = Array.from(this.updateScheduler.frameQueue);
+    
+    this.updateScheduler.layerQueue.clear();
+    this.updateScheduler.frameQueue.clear();
+    
+    let processedCount = 0;
+    
+    // レイヤーサムネイル更新
+    for (const index of layerIndices) {
+      await this._updateLayerThumbnailInternal(index);
+      processedCount++;
+      
+      // 1フレームごとに処理を区切る
+      if (processedCount % 5 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    
+    // フレームサムネイル更新
+    for (const index of frameIndices) {
+      await this._updateFrameThumbnailInternal(index);
+      processedCount++;
+      
+      if (processedCount % 3 === 0) {
+        await new Promise(resolve => setTimeout(resolve, 0));
+      }
+    }
+    
+    const duration = performance.now() - startTime;
+    
+    // 完了イベント発火
+    if (this.eventBus) {
+      this.eventBus.emit('thumbnail:batch-update-completed', {
+        data: {
+          target: layerIndices.length > 0 && frameIndices.length > 0 ? 'all' : 
+                  layerIndices.length > 0 ? 'layer' : 'frame',
+          count: processedCount,
+          duration: duration
+        }
+      });
+    }
+    
+    this.updateScheduler.isProcessing = false;
+    this.updateScheduler.lastUpdateTime = Date.now();
+    this.updateScheduler.rafId = null;
+    
+    // キューに新規追加があれば再処理
+    if (this.updateScheduler.layerQueue.size > 0 || 
+        this.updateScheduler.frameQueue.size > 0) {
+      this._scheduleUpdateProcessing(50);
+    }
+  }
+  
+  async _updateLayerThumbnailInternal(layerIndex) {
+    const layerMgr = window.layerManager;
+    if (!layerMgr) return;
+    
+    const layers = layerMgr.getLayers();
+    const layer = layers[layerIndex];
+    if (!layer) return;
+    
+    try {
+      const canvas = await this.generateLayerThumbnail(layer, 64, 64);
+      
+      if (this.eventBus) {
+        this.eventBus.emit('thumbnail:update-completed', {
+          data: {
+            target: 'layer',
+            index: layerIndex,
+            success: canvas !== null,
+            canvas: canvas
+          }
+        });
+      }
+    } catch (error) {
+      if (this.eventBus) {
+        this.eventBus.emit('thumbnail:update-completed', {
+          data: {
+            target: 'layer',
+            index: layerIndex,
+            success: false
+          }
+        });
+      }
+    }
+  }
+  
+  async _updateFrameThumbnailInternal(frameIndex) {
+    const animSys = window.animationSystem;
+    if (!animSys?.animationData?.frames) return;
+    
+    const frame = animSys.animationData.frames[frameIndex];
+    if (!frame) return;
+    
+    try {
+      const canvas = await this.generateFrameThumbnail(frame, 150, 150);
+      
+      if (this.eventBus) {
+        this.eventBus.emit('thumbnail:update-completed', {
+          data: {
+            target: 'frame',
+            index: frameIndex,
+            success: canvas !== null,
+            canvas: canvas
+          }
+        });
+      }
+    } catch (error) {
+      if (this.eventBus) {
+        this.eventBus.emit('thumbnail:update-completed', {
+          data: {
+            target: 'frame',
+            index: frameIndex,
+            success: false
+          }
+        });
+      }
+    }
+  }
+  
+  _invalidateLayerCacheByIndex(layerIndex) {
+    const layerMgr = window.layerManager;
+    if (!layerMgr) return;
+    
+    const layers = layerMgr.getLayers();
+    const layer = layers[layerIndex];
+    if (!layer?.layerData?.id) return;
+    
+    this._invalidateLayerCacheByLayerId(layer.layerData.id);
+  }
+}
+```
+
+【フロー位置】
+1. 各種イベント発火（描画/変形/カメラ操作）
+2. ThumbnailSystem._handleUpdateRequest() / _handleTransformChange()
+3. updateScheduler.layerQueue / frameQueue に追加
+4. _scheduleUpdateProcessing()でRAF登録
+5. _processUpdateQueue()でバッチ処理
+6. thumbnail:update-completed イベント発火
+
+---
+
+■ layer-panel-renderer.js 改修内容
+
+【LayerPanelRendererクラス改修】
+
+```
+class LayerPanelRenderer {
+  _setupEventListeners() {
+    if (!this.eventBus) return;
+    
+    // 統合イベント購読
+    this.eventBus.on('thumbnail:update-completed', ({ data }) => {
+      if (data.target === 'layer' && data.success) {
+        this._updateLayerThumbnailDOM(data.index, data.canvas);
+      }
+    });
+    
+    // 旧イベントは削除
+    // ❌ this.eventBus.on('thumbnail:layer-updated', ...)
+    // ❌ this.eventBus.on('layer:transform-updated', ...)
+  }
+  
+  _updateLayerThumbnailDOM(layerIndex, canvas) {
+    if (!this.container) return;
+    
+    const layerDiv = this._findLayerDivByIndex(layerIndex);
+    if (!layerDiv) return;
+    
+    const img = layerDiv.querySelector('.layer-thumbnail img');
+    if (!img) return;
+    
+    if (canvas) {
+      const dataURL = canvas.toDataURL('image/png');
+      img.src = dataURL;
+      img.style.display = 'block';
+    }
+  }
+  
+  _findLayerDivByIndex(layerIndex) {
+    const allLayerDivs = this.container.querySelectorAll('.layer-item');
+    const reverseIndex = allLayerDivs.length - 1 - layerIndex;
+    return allLayerDivs[reverseIndex] || null;
+  }
+  
+  // updateLayerThumbnail()は統合イベント発火のみ
+  updateLayerThumbnail(layerIndex) {
+    if (this.eventBus) {
+      this.eventBus.emit('thumbnail:update-requested', {
+        data: {
+          target: 'layer',
+          indices: [layerIndex],
+          immediate: false,
+          priority: 'normal'
+        }
+      });
+    }
+  }
+  
+  updateAllThumbnails() {
+    if (this.eventBus) {
+      this.eventBus.emit('thumbnail:update-requested', {
+        data: {
+          target: 'layer',
+          indices: null,  // all
+          immediate: false,
+          priority: 'low'
+        }
+      });
+    }
+  }
+}
+```
+
+---
+
+■ timeline-ui.js 改修内容
+
+【TimelineUIクラス改修】
+
+```
+class TimelineUI {
+  setupThumbnailAutoUpdate() {
+    if (!this.eventBus) return;
+    
+    // 統合イベント購読
+    this.eventBus.on('thumbnail:update-completed', ({ data }) => {
+      if (data.target === 'frame' && data.success) {
+        this.updateSingleFrameThumbnailDOM(data.index, data.canvas);
+      }
+    });
+    
+    // 描画完了時は統合イベント発火
+    this.eventBus.on('layer:modified', () => {
+      this.requestThumbnailUpdateViaEvent();
+    });
+    
+    this.eventBus.on('stroke:end', () => {
+      this.requestThumbnailUpdateViaEvent();
+    });
+    
+    // Transform変更時も統合イベント経由
+    this.eventBus.on('transform:changed', ({ data }) => {
+      if (data.type === 'layer' || data.type === 'camera') {
+        this.requestThumbnailUpdateViaEvent();
+      }
+    });
+    
+    // 旧イベントは削除
+    // ❌ this.eventBus.on('layer:transform-updated', ...)
+  }
+  
+  requestThumbnailUpdateViaEvent() {
+    const currentFrameIndex = this.animationSystem.animationData.playback.currentFrameIndex;
+    
+    if (this.eventBus) {
+      this.eventBus.emit('thumbnail:update-requested', {
+        data: {
+          target: 'frame',
+          indices: [currentFrameIndex],
+          immediate: false,
+          priority: 'normal'
+        }
+      });
+    }
+  }
+  
+  updateSingleFrameThumbnailDOM(frameIndex, canvas) {
+    const frameItem = this.framesContainer.querySelector(`[data-frame-index="${frameIndex}"]`);
+    if (!frameItem) return;
+    
+    const thumbnail = frameItem.querySelector('.frame-thumbnail');
+    if (!thumbnail) return;
+    
+    if (canvas) {
+      try {
+        const dataUrl = canvas.toDataURL('image/png');
+        thumbnail.innerHTML = `<img src="${dataUrl}" alt="F${frameIndex + 1}" />`;
+      } catch (error) {
+        console.error('[Timeline] Frame thumbnail update failed:', error);
+      }
+    }
+  }
+  
+  async updateAllFrameThumbnails() {
+    if (this.eventBus) {
+      this.eventBus.emit('thumbnail:update-requested', {
+        data: {
+          target: 'frame',
+          indices: null,  // all
+          immediate: false,
+          priority: 'low'
+        }
+      });
+    }
+  }
+}
+```
+
+---
+
+【Phase 5 動作確認項目】
+1. thumbnail:update-requested イベントが正しく発火される（console確認）
+2. バッチ処理により複数更新が1回のRAFでまとめられる
+3. thumbnail:batch-update-completed で処理時間が確認できる
+4. 旧イベント（thumbnail:layer-updated等）が発火されない
+5. transform:changed イベントでカメラ/レイヤー変形が統一的に扱われる
+
+===================================================================================
+Phase 6: 入力デバイス対応とデバッグ機能強化
+===================================================================================
+
+【目的】
+- ペン/マウス/タッチの統一的な扱い
+- 背景レイヤーのドラッグ移動対応
+- デバッグモードの実装
+
+【改修ファイル】
+- system/layer-transform.js (入力処理統一)
+- system/camera-system.js (Pointer Events確認)
+- coordinate-system.js (デバッグ機能)
+- system/drawing/thumbnail-system.js (デバッグ機能)
+
+【参考ファイル】
+- system/drawing/pressure-handler.js (Pointer Events実装参考)
+
+---
+
+■ layer-transform.js 改修内容
+
+【LayerTransformクラス改修】
+
+```
+class LayerTransform {
+  // 新規プロパティ
+  pointerDownPos: { x: number, y: number } | null
+  lastPointerType: string | null
+  
+  _setupDragEvents() {
+    const canvas = this._getCanvas();
+    if (!canvas) return;
+    
+    // PointerEventsで統一
+    canvas.addEventListener('pointerdown', (e) => {
+      if (!this.isVKeyPressed) return;
+      
+      this.pointerDownPos = { x: e.clientX, y: e.clientY };
+      this.lastPointerType = e.pointerType;  // 'mouse' | 'pen' | 'touch'
+      this.isDragging = true;
+      
+      // 背景レイヤーでもドラッグ開始を許可
+      const activeLayer = this.onGetActiveLayer?.();
+      if (!activeLayer) {
+        this.isDragging = false;
+        return;
+      }
+      
+      // 背景レイヤーの特殊処理
+      if (activeLayer.layerData?.isBackground) {
+        if (!this.config.layer?.allowBackgroundMove) {
+          this.isDragging = false;
+          return;
+        }
+      }
+      
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    
+    canvas.addEventListener('pointermove', (e) => {
+      if (!this.isDragging || !this.pointerDownPos) return;
+      
+      const dx = e.clientX - this.pointerDownPos.x;
+      const dy = e.clientY - this.pointerDownPos.y;
+      
+      // デバイスタイプを考慮した感度調整
+      let sensitivity = 1.0;
+      if (this.lastPointerType === 'pen') {
+        sensitivity = this.config.layer?.penSensitivity || 1.0;
+      } else if (this.lastPointerType === 'touch') {
+        sensitivity = this.config.layer?.touchSensitivity || 0.8;
+      }
+      
+      const adjustedDx = dx * sensitivity;
+      const adjustedDy = dy * sensitivity;
+      
+      this.pointerDownPos = { x: e.clientX, y: e.clientY };
+      
+      if (this.onDragRequest) {
+        this.onDragRequest(adjustedDx, adjustedDy, e.shiftKey);
+      }
+      
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    
+    canvas.addEventListener('pointerup', (e) => {
+      if (!this.isDragging) return;
+      
+      this.isDragging = false;
+      this.pointerDownPos = null;
+      this.lastPointerType = null;
+      
+      const activeLayer = this.onGetActiveLayer?.();
+      if (activeLayer) {
+        this._emitTransformComplete(activeLayer);
+      }
+      
+      e.preventDefault();
+      e.stopPropagation();
+    });
+    
+    canvas.addEventListener('pointercancel', (e) => {
+      this.isDragging = false;
+      this.pointerDownPos = null;
+      this.lastPointerType = null;
+    });
+  }
+  
+  _emitTransformComplete(layer) {
+    const layerId = layer.layerData?.id;
+    if (!layerId) return;
+    
+    const stack = this.layerTransformStacks?.get(layerId);
+    if (!stack) return;
+    
+    const transform = stack.getTransform();
+    
+    if (window.TegakiEventBus) {
+      window.TegakiEventBus.emit('transform:changed', {
+        data: {
+          type: 'layer',
+          id: layerId,
+          transform: transform,
+          affectsLayer: [this._getLayerIndex(layer)]
+        }
+      });
+    }
+  }
+  
+  _getLayerIndex(layer) {
+    const layerMgr = window.layerManager;
+    if (!layerMgr) return -1;
+    
+    const layers = layerMgr.getLayers();
+    return layers.indexOf(layer);
+  }
+}
+```
+
+【config.js への追加設定】
+
+```
+layer: {
+  allowBackgroundMove: true,         // 背景レイヤーの移動許可（Vモード時）
+  allowBackgroundTransform: false,   // 背景レイヤーの回転/スケール許可
+  penSensitivity: 1.0,               // ペン入力感度
+  touchSensitivity: 0.8,             // タッチ入力感度
+  mouseSensitivity: 1.0,             // マウス入力感度
+  // ...
+}
+```
+
+---
+
+■ coordinate-system.js 改修内容
+
+【CoordinateSystemクラス改修】
+
+```
+class CoordinateSystem {
+  // デバッグモード
+  debugMode: boolean
+  debugStats: {
+    transformCacheHits: number,
+    transformCacheMisses: number,
+    worldToLocalCalls: number,
+    screenToWorldCalls: number
+  }
+  
+  constructor() {
+    // 既存初期化
+    this.debugMode = false;
+    this.debugStats = {
+      transformCacheHits: 0,
+      transformCacheMisses: 0,
+      worldToLocalCalls: 0,
+      screenToWorldCalls: 0
+    };
+  }
+  
+  enableDebugMode() {
+    this.debugMode = true;
+    console.log('[CoordinateSystem] Debug mode enabled');
+    this._startDebugMonitoring();
+  }
+  
+  disableDebugMode() {
+    this.debugMode = false;
+    console.log('[CoordinateSystem] Debug mode disabled');
+  }
+  
+  _startDebugMonitoring() {
+    if (!this.debugMode) return;
+    
+    // 1秒ごとに統計出力
+    setInterval(() => {
+      if (!this.debugMode) return;
+      
+      console.log('[CoordinateSystem Stats]', {
+        transformStacks: this.transformStacks.size,
+        cacheHits: this.debugStats.transformCacheHits,
+        cacheMisses: this.debugStats.transformCacheMisses,
+        hitRate: this.debugStats.transformCacheHits / 
+                 (this.debugStats.transformCacheHits + this.debugStats.transformCacheMisses) * 100,
+        worldToLocalCalls: this.debugStats.worldToLocalCalls,
+        screenToWorldCalls: this.debugStats.screenToWorldCalls
+      });
+    }, 1000);
+  }
+  
+  worldToLocal(worldX, worldY, container) {
+    if (this.debugMode) {
+      this.debugStats.worldToLocalCalls++;
+    }
+    
+    // 既存ロジック
+    // ...
+  }
+  
+  screenClientToWorld(clientX, clientY) {
+    if (this.debugMode) {
+      this.debugStats.screenToWorldCalls++;
+    }
+    
+    // 既存ロジック
+    // ...
+  }
+  
+  getDebugInfo() {
+    return {
+      debugMode: this.debugMode,
+      stats: { ...this.debugStats },
+      transformStacks: Array.from(this.transformStacks.keys()),
+      cacheSize: this.transformCache.size,
+      cacheVersion: this.cacheVersion
+    };
+  }
+}
+```
+
+【グローバルデバッグコマンド追加】
+
+```
+// console から使用可能
+window.debugCoordinateSystem = () => {
+  window.CoordinateSystem.enableDebugMode();
+};
+
+window.debugThumbnailSystem = () => {
+  if (window.ThumbnailSystem) {
+    window.ThumbnailSystem.setDebugMode(true);
+    console.log(window.ThumbnailSystem.getDebugInfo());
+  }
+};
+
+window.debugTransformStacks = () => {
+  const stacks = window.CoordinateSystem.transformStacks;
+  console.log('[TransformStacks]', stacks.size);
+  stacks.forEach((stack, id) => {
+    console.log(`  ${id}:`, stack.getTransform());
+  });
+};
+```
+
+---
+
+【Phase 6 動作確認項目】
+1. ペン/マウス/タッチすべてでVモードのレイヤードラッグが動作
+2. 背景レイヤーがconfig設定で移動可能（allowBackgroundMove: true時）
+3. window.debugCoordinateSystem()でデバッグ情報が表示される
+4. window.debugTransformStacks()で全TransformStackの状態確認可能
+5. console統計出力で座標変換の呼び出し回数が確認できる
+
+===================================================================================
+Phase 7: 最終統合とテスト
+===================================================================================
+
+【目的】
+- 全Phase統合後の動作確認
+- パフォーマンス測定
+- エッジケース対応
+
+【改修ファイル】
+- なし（テスト・検証のみ）
+
+【テスト項目】
+
+■ 機能テスト
+
+1. サムネイル表示
+   - [ ] レイヤーパネルのサムネイルが正しいアスペクト比
+   - [ ] タイムラインのサムネイルが正しいアスペクト比
+   - [ ] 背景レイヤーの色見本が表示される
+   - [ ] カメラ回転/反転がサムネイルに反映される
+
+2. レイヤー変形
+   - [ ] Vモードでレイヤーをマウスドラッグ移動
+   - [ ] Vモードでレイヤーをペンドラッグ移動
+   - [ ] Vモードでレイヤーをタッチドラッグ移動
+   - [ ] Shift+ドラッグで回転/スケール
+   - [ ] 背景レイヤーのドラッグ移動（config有効時）
+
+3. サムネイル更新
+   - [ ] 描画後にレイヤーサムネイル更新
+   - [ ] 描画後にタイムラインサムネイル更新
+   - [ ] カメラ変形後に全サムネイル更新
+   - [ ] レイヤー変形後にレイヤー+フレームサムネイル更新
+   - [ ] 複数レイヤー変更時にバッチ処理される
+
+4. レイヤー管理
+   - [ ] 新規レイヤー作成時に自動連番（レイヤー2, 3, ...）
+   - [ ] レイヤー削除時にTransformStackクリーンアップ
+   - [ ] レイヤー並び替えでサムネイル保持
+
+5. 座標変換
+   - [ ] TransformStackが正しく機能
+   - [ ] worldToLocal()が正確
+   - [ ] カメラ変形とレイヤー変形が独立して動作
+   - [ ] 親子関係のあるtransformが正しく合成される
+
+■ パフォーマンステスト
+
+1. サムネイル生成速度
+   - [ ] レイヤー10枚で全更新が500ms以内
+   - [ ] フレーム20個で全更新が1000ms以内
+   - [ ] キャッシュヒット時は即座に返る（<5ms）
+
+2. TransformStack効率
+   - [ ] 座標変換キャッシュヒット率が80%以上
+   - [ ] updateMatrix()呼び出しが最小限（dirty時のみ）
+
+3. イベント処理
+   - [ ] バッチ処理により重複イベントが削減される
+   - [ ] RAF内で処理がまとめられている（console確認）
+
+4. メモリ使用量
+   - [ ] TransformStackがレイヤー削除時に解放される
+   - [ ] サムネイルキャッシュが上限を超えない
+   - [ ] RenderTextureプールが正常に動作
+
+■ エッジケーステスト
+
+1. 極端なcanvasサイズ
+   - [ ] 正方形キャンバス（800x800）でサムネイル正常
+   - [ ] 横長キャンバス（1600x600）でサムネイル正常
+   - [ ] 縦長キャンバス（600x1200）でサムネイル正常
+
+2. 極端なtransform
+   - [ ] 最大スケール（10.0）でサムネイル表示
+   - [ ] 最小スケール（0.1）でサムネイル表示
+   - [ ] 360度回転でサムネイル正常
+   - [ ] 水平/垂直反転でサムネイル正常
+
+3. レイヤー数上限
+   - [ ] レイヤー50枚でも動作
+   - [ ] レイヤー100枚でパフォーマンス劣化が許容範囲
+
+4. フレーム数上限
+   - [ ] フレーム100個でも動作
+   - [ ] タイムラインスクロールがスムーズ
+
+5. 高速操作
+   - [ ] 連続レイヤー作成でメモリリークなし
+   - [ ] 連続Undo/Redoでサムネイル同期
+   - [ ] 高速カメラ操作でイベント溢れなし
+
+■ デバッグ機能テスト
+
+1. デバッグコマンド
+   - [ ] window.debugCoordinateSystem()が動作
+   - [ ] window.debugThumbnailSystem()が動作
+   - [ ] window.debugTransformStacks()が動作
+
+2. デバッグ情報
+   - [ ] TransformStack一覧が確認できる
+   - [ ] キャッシュ統計が正確
+   - [ ] 座標変換呼び出し回数が記録される
+
+3. エラーハンドリング
+   - [ ] サムネイル生成失敗時にフォールバック
+   - [ ] TransformStack取得失敗時に既存ロジックにフォールバック
+   - [ ] イベント発火失敗時にエラーログ出力
+
+---
+
+【Phase 7 最終確認項目】
+
+1. コード品質
+   - [ ] DRY原則違反がない
+   - [ ] SOLID原則に従っている
+   - [ ] 二重実装が撲滅されている
+   - [ ] 命名規則が統一されている
+
+2. 後方互換性
+   - [ ] 既存のsaveData読み込みが動作
+   - [ ] 既存の操作フローが保持される
+   - [ ] 既存のショートカットキーが動作
+
+3. ドキュメント
+   - [ ] 各Phaseのコメントが明確
+   - [ ] TransformStack使用例が記述されている
+   - [ ] イベントフロー図が更新されている
+
+4. Claude可読性
+   - [ ] ファイル責務が明確
+   - [ ] メソッド名が説明的
+   - [ ] フロー追跡が容易
+
+===================================================================================
+Phase 8: 最適化とクリーンアップ（オプション）
+===================================================================================
+
+【目的】
+- パフォーマンスのさらなる改善
+- 不要コードの削除
+- 将来拡張への準備
+
+【改修ファイル】
+- 全ファイル（レビューとクリーンアップ）
+
+---
+
+■ パフォーマンス最適化
+
+1. TransformStack高速化
+   - [ ] Matrix計算の最適化（不要な再計算削減）
+   - [ ] dirty flagの効率化
+   - [ ] 親チェーン探索のキャッシュ
+
+2. サムネイル生成最適化
+   - [ ] RenderTextureプールサイズの調整
+   - [ ] 非表示レイヤーのスキップ
+   - [ ] LOD（Level of Detail）導入検討
+
+3. イベント処理最適化
+   - [ ] デバウンス時間の最適値調整
+   - [ ] 優先度キューの実装
+   - [ ] WebWorker検討（重い処理の分離）
+
+---
+
+■ コードクリーンアップ
+
+1. 不要コード削除
+   - [ ] 旧座標変換メソッドの完全削除
+   - [ ] 使用されていないイベントリスナー削除
+   - [ ] 重複したユーティリティ関数統合
+
+2. コメント整理
+   - [ ] 古いPhaseコメントの削除
+   - [ ] 最新アーキテクチャ説明の追加
+   - [ ] TODO/FIXMEの解消
+
+3. 定数の一元化
+   - [ ] マジックナンバーの排除
+   - [ ] config.jsへの集約
+   - [ ] デフォルト値の明確化
+
+---
+
+■ 将来拡張への準備
+
+1. プラグインシステム基盤
+   - [ ] TransformStack拡張ポイント定義
+   - [ ] サムネイル生成カスタマイズAPI
+   - [ ] 座標変換フック追加
+
+2. AI連携準備
+   - [ ] TransformStack JSON化
+   - [ ] サムネイル生成パイプライン外部化
+   - [ ] 座標系情報のエクスポート
+
+3. MSDF対応準備
+   - [ ] GPU Compute統合ポイント確保
+   - [ ] RenderTexture管理の拡張性向上
+
+===================================================================================
+補足資料
+===================================================================================
+
+■ TransformStackクラス完全仕様
+
+```javascript
+class TransformStack {
+  // コンストラクタ
+  constructor(id, initialTransform = null)
+  
+  // プロパティ
+  id: string                    // 識別子
+  position: {x: number, y: number}
+  scale: {x: number, y: number}
+  rotation: number             // radian
+  pivot: {x: number, y: number}
+  parent: TransformStack | null
+  matrix: PIXI.Matrix
+  inverseMatrix: PIXI.Matrix
+  isDirty: boolean
+  
+  // 行列更新
+  updateMatrix(): void
+    - 親チェーンを遡ってmatrixを再計算
+    - isDirtyフラグをfalseに設定
+    - inversMatrixも同時に更新
+  
+  // ワールド行列取得
+  getWorldMatrix(): PIXI.Matrix
+    - 親との合成行列を返す
+    - キャッシュが有効ならキャッシュを返す
+  
+  // 座標変換
+  worldToLocal(worldX, worldY): {localX, localY}
+    - World座標をLocal座標に変換
+    - inverseMatrixを使用
+  
+  localToWorld(localX, localY): {worldX, worldY}
+    - Local座標をWorld座標に変換
+    - matrixを使用
+  
+  // Transform設定
+  setTransform(transform: object): void
+    - {x, y, rotation, scaleX, scaleY}を一括設定
+    - isDirtyフラグをtrueに設定
+  
+  getTransform(): object
+    - 現在のtransformを取得
+    - {x, y, rotation, scaleX, scaleY}形式
+  
+  // PIXIコンテナ連携
+  applyToContainer(container: PIXI.Container): void
+    - PIXIコンテナにtransformを適用
+    - position, scale, rotation, pivotを設定
+  
+  syncFromContainer(container: PIXI.Container): void
+    - PIXIコンテナからtransformを取得
+    - setTransform()を呼び出し
+  
+  // ユーティリティ
+  clone(): TransformStack
+    - TransformStackの完全コピー生成
+  
+  reset(): void
+    - transformを初期状態にリセット
+  
+  destroy(): void
+    - リソース解放
+    - 親子関係解除
+}
+```
+
+---
+
+■ イベントフロー図
+
+```
+[ユーザー操作]
+    ↓
+[PointerEvent]
+    ↓
+┌─────────────────────────────┐
+│ 座標変換パイプライン         │
+│  Screen → Canvas → World     │
+│  → Local (TransformStack)    │
+└─────────────────────────────┘
+    ↓
+[描画/変形実行]
+    ↓
+[transform:changed イベント]
+    ↓
+┌─────────────────────────────┐
+│ ThumbnailSystem              │
+│  - キャッシュ無効化           │
+│  - updateSchedulerに追加      │
+└─────────────────────────────┘
+    ↓
+[RAF: _processUpdateQueue]
+    ↓
+┌─────────────────────────────┐
+│ サムネイル生成（バッチ）      │
+│  - TransformStack参照         │
+│  - RenderTexture生成          │
+│  - Canvas変換                 │
+└─────────────────────────────┘
+    ↓
+[thumbnail:update-completed]
+    ↓
+┌─────────────────────────────┐
+│ UI更新                       │
+│  - LayerPanelRenderer        │
+│  - TimelineUI                │
+└─────────────────────────────┘
+```
+
+---
+
+■ キャッシュキー生成ロジック
+
+```
+レイヤーサムネイル:
+  layer_{layerId}_{width}_{height}_{cameraHash}_{layerHash}
+  
+  cameraHash = {x}_{y}_{scaleX}_{rotation}
+  layerHash = {x}_{y}_{scaleX}_{rotation}
+
+フレームサムネイル:
+  frame_{frameId}_{width}_{height}_{cameraHash}
+  
+  cameraHash = {x}_{y}_{scaleX}_{rotation}
+
+注意:
+- 小数点以下は1桁または2桁に丸める
+- 負数の扱いに注意（-0と0の区別）
+- スケールはMath.abs()で絶対値化
+```
+
+---
+
+■ ファイル責務マトリクス
+
+| ファイル | 責務 | TransformStack関連 | サムネイル関連 |
+|---------|------|-------------------|---------------|
+| coordinate-system.js | 座標変換、TransformStack管理 | ◎ 定義/管理 | - |
+| camera-system.js | カメラ操作、worldContainer制御 | ○ 使用 | - |
+| layer-system.js | レイヤー管理、CRUD操作 | ○ 使用 | △ 更新要求 |
+| layer-transform.js | レイヤー変形、Vモード処理 | ◎ レイヤーStack管理 | △ 更新要求 |
+| thumbnail-system.js | サムネイル生成、キャッシュ管理 | ○ transform取得 | ◎ 生成/管理 |
+| layer-panel-renderer.js | レイヤーパネルDOM管理 | - | ○ 表示 |
+| timeline-ui.js | タイムラインDOM管理 | - | ○ 表示 |
+| event-bus.js | イベント仲介 | - | - |
+
+◎: 主要責務, ○: 使用, △: 間接的関与, -: 無関係
+
+---
+
+■ デバッグコマンド一覧
+
+```javascript
+// 座標系デバッグ
+window.debugCoordinateSystem()          // デバッグモード有効化
+window.CoordinateSystem.getDebugInfo()  // 統計情報取得
+
+// TransformStackデバッグ
+window.debugTransformStacks()           // 全Stack一覧表示
+window.CoordinateSystem.transformStacks // Map直接参照
+
+// サムネイルデバッグ
+window.debugThumbnailSystem()           // デバッグモード有効化
+window.ThumbnailSystem.getDebugInfo()   // キャッシュ情報取得
+
+// レイヤーデバッグ
+window.layerManager.getLayers()         // レイヤー一覧
+window.layerManager.transform.layerTransformStacks  // レイヤーStack一覧
+
+// カメラデバッグ
+window.cameraSystem.transformStack      // カメラStack参照
+window.cameraSystem.worldContainer      // worldContainer参照
+
+// イベントデバッグ
+window.TegakiEventBus._listeners        // イベントリスナー一覧
+```
+
+---
+
+■ パフォーマンス目標値
+
+| 項目 | 目標値 | 測定方法 |
+|-----|--------|---------|
+| レイヤーサムネイル生成 | <50ms/枚 | performance.now() |
+| フレームサムネイル生成 | <100ms/枚 | performance.now() |
+| TransformStack.updateMatrix() | <1ms | performance.now() |
+| 座標変換キャッシュヒット率 | >80% | debugStats |
+| サムネイルキャッシュヒット率 | >90% | debugStats |
+| イベント処理遅延 | <16ms (60fps) | RAF計測 |
+| メモリ使用量増加 | <100MB/session | performance.memory |
+
+---
+
+■ トラブルシューティング
+
+【サムネイルが更新されない】
+1. キャッシュキー生成を確認
+   - console.log(ThumbnailSystem._getTransformHash())
+2. イベント発火を確認
+   - TegakiEventBus._listeners['transform:changed']
+3. TransformStackの状態確認
+   - debugTransformStacks()
+
+【座標変換がずれる】
+1. TransformStack.matrix確認
+   - stack.matrix.toArray()
+2. 親子関係確認
+   - stack.parent
+3. worldContainerとの同期確認
+   - cameraSystem._syncStackFromWorldContainer()
+
+【パフォーマンス劣化】
+1. キャッシュヒット率確認
+   - CoordinateSystem.getDebugInfo()
+2. バッチ処理状況確認
+   - ThumbnailSystem.updateScheduler
+3. メモリリーク確認
+   - performance.memory.usedJSHeapSize
+
+【レイヤー操作が効かない】
+1. Vモード状態確認
+   - layerManager.isLayerMoveMode
+2. TransformStack存在確認
+   - layerManager.transform.layerTransformStacks.has(layerId)
+3. イベント購読確認
+   - TegakiEventBus._listeners['keyboard:vkey-pressed']
+
+===================================================================================
+改修完了チェックリスト
+===================================================================================
+
+【Phase 1: TransformStack導入】
+- [ ] TransformStackクラス実装完了
+- [ ] CoordinateSystemへの統合完了
+- [ ] CameraSystemでの使用開始
+- [ ] LayerTransformでの使用開始
+- [ ] 動作確認完了
+
+【Phase 2: ThumbnailSystem対応】
+- [ ] アスペクト比計算統一
+- [ ] キャッシュキー生成統一
+- [ ] TransformHash実装
+- [ ] generateLayerThumbnail改修完了
+- [ ] generateFrameThumbnail改修完了
+- [ ] 動作確認完了
+
+【Phase 3: UI統合】
+- [ ] LayerPanelRenderer改修完了
+- [ ] TimelineUI改修完了
+- [ ] DOM表示アスペクト比修正
+- [ ] バッチ処理実装完了
+- [ ] 動作確認完了
+
+【Phase 4: LayerSystem統合】
+- [ ] createLayer()連番化完了
+- [ ] TransformStackライフサイクル管理完了
+- [ ] 背景レイヤー対応完了
+- [ ] 動作確認完了
+
+【Phase 5: イベント統合】
+- [ ] 新規イベント定義完了
+- [ ] ThumbnailSystem統合完了
+- [ ] UI側イベント購読変更完了
+- [ ] 旧イベント削除完了
+- [ ] 動作確認完了
+
+【Phase 6: 入力デバイス対応】
+- [ ] PointerEvents統一完了
+- [ ] 感度設定実装完了
+- [ ] 背景レイヤードラッグ対応完了
+- [ ] デバッグ機能実装完了
+- [ ] 動作確認完了
+
+【Phase 7: 最終統合テスト】
+- [ ] 全機能テスト完了
+- [ ] パフォーマンステスト完了
+- [ ] エッジケーステスト完了
+- [ ] デバッグ機能テスト完了
+- [ ] 最終確認完了
+
+【Phase 8: 最適化（オプション）】
+- [ ] パフォーマンス最適化完了
+- [ ] コードクリーンアップ完了
+- [ ] 将来拡張準備完了
+
+===================================================================================
+改修担当Claude向け注意事項
+===================================================================================
+
+1. **段階的実装を厳守**
+   - 各Phaseごとに動作確認を行う
+   - 次Phaseに進む前に必ず前Phaseの完全動作を確認
+   - 問題があれば次に進まず修正を優先
+
+2. **後方互換性の維持**
+   - 既存機能を壊さない
+   - フォールバック処理を必ず実装
+   - 旧コードは段階的に削除（Phase 5以降）
+
+3. **DRY/SOLID原則の徹底**
+   - 二重実装を発見したら即座に統合
+   - 責務の明確化を常に意識
+   - 命名規則の統一を守る
+
+4. **デバッグ可能性の確保**
+   - console.logは適切に残す
+   - デバッグコマンドを活用可能にする
+   - エラーハンドリングを確実に実装
+
+5. **Claude可読性の優先**
+   - コメントは簡潔かつ明確に
+   - メソッド名は説明的に
+   - フロー追跡が容易な構造を維持
+
+===================================================================================
+End of Document
+===================================================================================
