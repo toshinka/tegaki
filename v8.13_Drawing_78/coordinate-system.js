@@ -1,4 +1,6 @@
-// ===== coordinate-system.js - Phase 1改修: グローバル統一 =====
+// ===== coordinate-system.js - Phase 2: リサイズ対応版 =====
+// Phase 1: グローバル統一
+// Phase 2: canvas resize 検知 + getBoundingClientRect() キャッシュ無効化
 
 (function() {
     'use strict';
@@ -12,13 +14,16 @@
             this.worldContainer = null;
             this.canvasContainer = null;
             
-            // キャッシュ機構（Phase 2で有効化）
+            // Phase 2追加: getBoundingClientRect() キャッシュ
+            this.cachedRect = null;
+            this.rectCacheVersion = 0;
+            
+            // 既存キャッシュ機構
             this.transformCache = new Map();
             this.cacheVersion = 0;
             this.cacheEnabled = false;
             this.cacheMaxSize = 100;
             
-            // 精度検証フラグ
             this.precisionVerified = false;
             this.subpixelAccuracy = null;
         }
@@ -74,15 +79,19 @@
             return null;
         }
         
+        // Phase 2: イベントリスナー強化
         setupEventListeners() {
             if (!this.eventBus) return;
             
             this.eventBus.on('canvas:resize', () => {
                 this.clearCache();
+                this._invalidateRectCache(); // Phase 2追加
             });
             
-            this.eventBus.on('camera:resized', () => {
+            this.eventBus.on('camera:resized', ({ width, height }) => {
+                console.log(`[CoordinateSystem] Canvas resized to ${width}x${height} - invalidating rect cache`);
                 this.clearCache();
+                this._invalidateRectCache(); // Phase 2追加
             });
             
             this.eventBus.on('camera:transform-changed', () => {
@@ -98,14 +107,40 @@
             });
         }
         
+        // Phase 2追加: Rectキャッシュ無効化
+        _invalidateRectCache() {
+            this.cachedRect = null;
+            this.rectCacheVersion++;
+            console.log(`[CoordinateSystem] Rect cache invalidated (version: ${this.rectCacheVersion})`);
+        }
+        
+        // Phase 2追加: Rect取得（キャッシュ付き）
+        _getBoundingClientRect() {
+            if (this.cachedRect) {
+                return this.cachedRect;
+            }
+            
+            const canvas = this._getCanvas();
+            if (!canvas) {
+                return { left: 0, top: 0, width: 800, height: 600 };
+            }
+            
+            const rect = canvas.getBoundingClientRect();
+            this.cachedRect = {
+                left: rect.left,
+                top: rect.top,
+                width: rect.width,
+                height: rect.height
+            };
+            
+            return this.cachedRect;
+        }
+        
         // ========== Screen → Canvas変換 ==========
         
         /**
          * Screen座標(clientX/Y) → Canvas座標 変換
-         * DPI/DPR/CSSスケール補正を適用
-         * @param {number} clientX - PointerEvent.clientX
-         * @param {number} clientY - PointerEvent.clientY
-         * @returns {Object} {canvasX, canvasY}
+         * Phase 2: getBoundingClientRect() キャッシュ対応
          */
         screenClientToCanvas(clientX, clientY) {
             const canvas = this._getCanvas();
@@ -113,7 +148,8 @@
                 return { canvasX: clientX, canvasY: clientY };
             }
             
-            const rect = canvas.getBoundingClientRect();
+            // Phase 2: キャッシュ付き rect 取得
+            const rect = this._getBoundingClientRect();
             const cssX = clientX - rect.left;
             const cssY = clientY - rect.top;
             
@@ -132,9 +168,6 @@
         /**
          * Canvas座標 → World座標 変換
          * worldContainer の transform を逆適用
-         * @param {number} canvasX
-         * @param {number} canvasY
-         * @returns {Object} {worldX, worldY}
          */
         canvasToWorld(canvasX, canvasY) {
             const worldContainer = this._getWorldContainer();
@@ -143,7 +176,6 @@
                 return { worldX: canvasX, worldY: canvasY };
             }
             
-            // PIXI v8: worldTransformを取得
             let worldTransform = null;
             
             if (worldContainer.worldTransform) {
@@ -191,9 +223,6 @@
         
         /**
          * Screen座標 → World座標 統合変換
-         * @param {number} clientX - PointerEvent.clientX
-         * @param {number} clientY - PointerEvent.clientY
-         * @returns {Object} {worldX, worldY}
          */
         screenClientToWorld(clientX, clientY) {
             const canvas = this.screenClientToCanvas(clientX, clientY);
@@ -203,21 +232,12 @@
         /**
          * World座標 → Local座標 変換
          * Phase 2.5完全修正版: pivot/position/rotation/scale の計算順序を修正
-         * 
-         * 正しい逆変換の順序:
-         * world → -position → -pivot → rotate^-1 → /scale → +pivot
-         * 
-         * @param {number} worldX
-         * @param {number} worldY
-         * @param {PIXI.Container} container - 変換先のコンテナ
-         * @returns {Object} {localX, localY}
          */
         worldToLocal(worldX, worldY, container) {
             if (!container) {
                 return { localX: worldX, localY: worldY };
             }
             
-            // 親チェーン全体をさかのぼって各transformを収集
             let transforms = [];
             let node = container;
             const worldContainer = this._getWorldContainer();
@@ -235,19 +255,15 @@
             let x = worldX;
             let y = worldY;
             
-            // 親から子へ順番に逆変換を適用
             for (let i = transforms.length - 1; i >= 0; i--) {
                 const t = transforms[i];
                 
-                // 1. position を引く
                 x -= t.pos.x;
                 y -= t.pos.y;
                 
-                // 2. pivot を引く（回転・スケールの中心点に移動）
                 x -= t.pivot.x;
                 y -= t.pivot.y;
                 
-                // 3. rotation を逆回転
                 if (Math.abs(t.rotation) > 1e-6) {
                     const cos = Math.cos(-t.rotation);
                     const sin = Math.sin(-t.rotation);
@@ -257,11 +273,9 @@
                     y = ry;
                 }
                 
-                // 4. scale で割る
                 if (Math.abs(t.scale.x) > 1e-6) x /= t.scale.x;
                 if (Math.abs(t.scale.y) > 1e-6) y /= t.scale.y;
                 
-                // 5. pivot を足す（元のローカル座標系に戻す）
                 x += t.pivot.x;
                 y += t.pivot.y;
             }
@@ -271,10 +285,6 @@
         
         /**
          * Screen座標 → Local座標 統合変換
-         * @param {number} clientX - PointerEvent.clientX
-         * @param {number} clientY - PointerEvent.clientY
-         * @param {PIXI.Container} container
-         * @returns {Object} {localX, localY}
          */
         screenClientToLocal(clientX, clientY, container) {
             const world = this.screenClientToWorld(clientX, clientY);
@@ -283,12 +293,6 @@
         
         // ========== 逆変換API ==========
         
-        /**
-         * World座標 → Canvas座標 変換
-         * @param {number} worldX
-         * @param {number} worldY
-         * @returns {Object} {canvasX, canvasY}
-         */
         worldToCanvas(worldX, worldY) {
             const worldContainer = this._getWorldContainer();
             
@@ -338,19 +342,13 @@
             return { canvasX: x, canvasY: y };
         }
         
-        /**
-         * Canvas座標 → Screen座標 変換
-         * @param {number} canvasX
-         * @param {number} canvasY
-         * @returns {Object} {clientX, clientY}
-         */
         canvasToScreen(canvasX, canvasY) {
             const canvas = this._getCanvas();
             if (!canvas) {
                 return { clientX: canvasX, clientY: canvasY };
             }
             
-            const rect = canvas.getBoundingClientRect();
+            const rect = this._getBoundingClientRect(); // Phase 2: キャッシュ対応
             const rendererWidth = this._getRendererWidth();
             const rendererHeight = this._getRendererHeight();
             
@@ -363,35 +361,16 @@
             };
         }
         
-        /**
-         * World座標 → Screen座標 変換
-         * @param {number} worldX
-         * @param {number} worldY
-         * @returns {Object} {clientX, clientY}
-         */
         worldToScreen(worldX, worldY) {
             const canvas = this.worldToCanvas(worldX, worldY);
             return this.canvasToScreen(canvas.canvasX, canvas.canvasY);
         }
         
-        /**
-         * Local座標 → World座標 変換
-         * Phase 2.5修正版: worldToLocal()と完全に対応する順変換
-         * 
-         * 正しい順変換の順序:
-         * local → -pivot → *scale → rotate → +pivot → +position
-         * 
-         * @param {number} localX
-         * @param {number} localY
-         * @param {PIXI.Container} container
-         * @returns {Object} {worldX, worldY}
-         */
         localToWorld(localX, localY, container) {
             if (!container) {
                 return { worldX: localX, worldY: localY };
             }
             
-            // 親チェーン全体を収集
             let transforms = [];
             let node = container;
             const worldContainer = this._getWorldContainer();
@@ -409,19 +388,15 @@
             let x = localX;
             let y = localY;
             
-            // 子から親へ順番に順変換を適用
             for (let i = 0; i < transforms.length; i++) {
                 const t = transforms[i];
                 
-                // 1. pivot を引く
                 x -= t.pivot.x;
                 y -= t.pivot.y;
                 
-                // 2. scale を掛ける
                 x *= t.scale.x;
                 y *= t.scale.y;
                 
-                // 3. rotation を適用
                 if (Math.abs(t.rotation) > 1e-6) {
                     const cos = Math.cos(t.rotation);
                     const sin = Math.sin(t.rotation);
@@ -431,11 +406,9 @@
                     y = ry;
                 }
                 
-                // 4. pivot を足す
                 x += t.pivot.x;
                 y += t.pivot.y;
                 
-                // 5. position を足す
                 x += t.pos.x;
                 y += t.pos.y;
             }
@@ -443,13 +416,6 @@
             return { worldX: x, worldY: y };
         }
         
-        /**
-         * Local座標 → Screen座標 変換
-         * @param {number} localX
-         * @param {number} localY
-         * @param {PIXI.Container} container
-         * @returns {Object} {clientX, clientY}
-         */
         localToScreen(localX, localY, container) {
             const world = this.localToWorld(localX, localY, container);
             return this.worldToScreen(world.worldX, world.worldY);
@@ -534,15 +500,11 @@
     
     // ========== グローバル統一 ==========
     const coordinateSystem = new CoordinateSystem();
-    
-    // ✅ 統一グローバル名（Phase 1改修）
     window.CoordinateSystem = coordinateSystem;
     
-    // ❌ 旧グローバル名を削除
-    // delete window.TEGAKI_COORDINATE_SYSTEM; // もし存在すれば
-    
-    console.log('✅ coordinate-system.js (Phase 1: グローバル統一版) loaded');
-    console.log('   - window.CoordinateSystem に統一');
-    console.log('   - 旧 TEGAKI_COORDINATE_SYSTEM は廃止');
+    console.log('✅ coordinate-system.js (Phase 2: リサイズ対応版) loaded');
+    console.log('   ✓ Phase 1: グローバル統一 (window.CoordinateSystem)');
+    console.log('   ✓ Phase 2: getBoundingClientRect() キャッシュ + 無効化');
+    console.log('   ✓ Phase 2: camera:resized イベントで自動キャッシュクリア');
     
 })();
