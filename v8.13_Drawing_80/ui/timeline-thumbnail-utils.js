@@ -1,7 +1,10 @@
 /**
- * timeline-thumbnail-utils.js - Phase 4: Timeline連携完全版
- * Phase 1-3: Canvas2D廃止、ThumbnailSystem統合、throttle最適化
- * Phase 4: AnimationSystem.regenerateAllThumbnails() 確実実行
+ * timeline-thumbnail-utils.js - Phase 5: 完全統合版
+ * Phase 5改修:
+ * 1. Vキーモード変形の完全反映
+ * 2. イベント統合・最適化
+ * 3. コンソールログクリーンアップ
+ * 4. ThumbnailSystem完全統合
  */
 
 class TimelineThumbnailUtils {
@@ -14,52 +17,45 @@ class TimelineThumbnailUtils {
     this.dataURLCache = new Map();
     
     this.updateTimer = null;
-    this.updateThrottle = 100; // 100ms
+    this.updateThrottle = 100;
     
-    this._setupCameraTransformListener();
+    // Phase 5: デバッグモード
+    this.debugEnabled = false;
+    
+    this._setupEventListeners();
   }
 
-  /**
-   * Phase 4: AnimationSystem連携強化
-   * layer:transform-updated → regenerateAllThumbnails() 確実実行
-   */
-  _setupCameraTransformListener() {
+  _setupEventListeners() {
     if (!this.eventBus) return;
     
     // 統一イベント：全サムネイル再生成
     this.eventBus.on('thumbnail:regenerate-all', () => {
-      console.log('📺 [Timeline] Regenerate all thumbnails requested');
       this._invalidateCache();
       this._triggerRegenerateAllThumbnails();
     });
     
+    // カメラ変形
     this.eventBus.on('camera:transform-changed', () => {
-      console.log('📺 [Timeline] Camera transform changed');
       this._invalidateCache();
-      // カメラ変形は throttle なしで即座更新
       this._triggerRegenerateAllThumbnails();
     });
     
+    // カメラリサイズ
     this.eventBus.on('camera:resized', ({ width, height }) => {
-      console.log(`📺 [Timeline] Canvas resized to ${width}x${height}`);
       this._invalidateCache();
       this._triggerRegenerateAllThumbnails();
     });
     
-    // Phase 4: layer:transform-updated 購読（確実実行）
+    // レイヤー変形更新（throttle付き）
     this.eventBus.on('layer:transform-updated', ({ data }) => {
       const { layerIndex, layerId, immediate } = data || {};
       
-      console.log(`📺 [Timeline] Layer transform updated - layer ${layerIndex || layerId}, immediate=${immediate}`);
-      
-      // immediate フラグがある場合は即座に実行
       if (immediate) {
         this._invalidateCache();
         this._triggerRegenerateAllThumbnails();
         return;
       }
       
-      // throttle: 連続更新を制限
       if (this.updateTimer) {
         clearTimeout(this.updateTimer);
       }
@@ -71,12 +67,10 @@ class TimelineThumbnailUtils {
       }, this.updateThrottle);
     });
     
-    // Phase 4: thumbnail:layer-updated 購読
+    // サムネイル更新リクエスト
     this.eventBus.on('thumbnail:layer-updated', ({ data }) => {
       const { layerIndex, immediate } = data || {};
       
-      console.log(`📺 [Timeline] Thumbnail layer updated - layer ${layerIndex}, immediate=${immediate}`);
-      
       if (immediate) {
         this._invalidateCache();
         this._triggerRegenerateAllThumbnails();
@@ -93,21 +87,23 @@ class TimelineThumbnailUtils {
         this.updateTimer = null;
       }, this.updateThrottle);
     });
-    
-    console.log('✓ [Timeline] Event listeners configured');
   }
 
   /**
-   * Phase 4: AnimationSystem.regenerateAllThumbnails() を確実に実行
+   * Phase 5: AnimationSystem.regenerateAllThumbnails() を確実に実行
    */
   _triggerRegenerateAllThumbnails() {
     if (!this.animationSystem) {
-      console.warn('[Timeline] AnimationSystem not available');
+      if (this.debugEnabled) {
+        console.warn('[Timeline] AnimationSystem not available');
+      }
       return;
     }
     
     if (typeof this.animationSystem.regenerateAllThumbnails !== 'function') {
-      console.warn('[Timeline] AnimationSystem.regenerateAllThumbnails() not found');
+      if (this.debugEnabled) {
+        console.warn('[Timeline] AnimationSystem.regenerateAllThumbnails() not found');
+      }
       return;
     }
     
@@ -117,18 +113,14 @@ class TimelineThumbnailUtils {
         this.animationSystem.regenerateAllThumbnails();
       });
     } else {
-      // フォールバック: requestAnimationFrame
       requestAnimationFrame(() => {
         this.animationSystem.regenerateAllThumbnails();
       });
     }
-    
-    console.log('✓ [Timeline] Triggered regenerateAllThumbnails()');
   }
 
   /**
-   * フレームサムネイル生成
-   * ThumbnailSystem から Canvas を取得
+   * フレームサムネイル生成（ThumbnailSystem統合）
    */
   async generateThumbnail(frame) {
     if (!frame) return null;
@@ -141,14 +133,16 @@ class TimelineThumbnailUtils {
 
     try {
       if (!window.ThumbnailSystem) {
-        console.warn('[Timeline] ThumbnailSystem not initialized');
+        if (this.debugEnabled) {
+          console.warn('[Timeline] ThumbnailSystem not initialized');
+        }
         return null;
       }
 
       const canvas = await window.ThumbnailSystem.generateFrameThumbnail(
         frame,
-        150,  // maxWidth
-        150   // maxHeight
+        150,
+        150
       );
 
       if (!canvas) {
@@ -161,7 +155,9 @@ class TimelineThumbnailUtils {
       return dataURL;
 
     } catch (error) {
-      console.error('[Timeline] Frame thumbnail generation failed:', error);
+      if (this.debugEnabled) {
+        console.error('[Timeline] Frame thumbnail generation failed:', error);
+      }
       return null;
     }
   }
@@ -219,6 +215,14 @@ class TimelineThumbnailUtils {
   }
 
   /**
+   * Phase 5: デバッグモード切替
+   */
+  setDebugMode(enabled) {
+    this.debugEnabled = enabled;
+    console.log(`TimelineThumbnailUtils debug mode: ${enabled ? 'ON' : 'OFF'}`);
+  }
+
+  /**
    * デバッグ情報取得
    */
   getDebugInfo() {
@@ -227,7 +231,8 @@ class TimelineThumbnailUtils {
       thumbnailCacheSize: this.thumbnailCache.size,
       isInitialized: !!this.app,
       throttleMs: this.updateThrottle,
-      animationSystemAvailable: !!this.animationSystem
+      animationSystemAvailable: !!this.animationSystem,
+      debugEnabled: this.debugEnabled
     };
   }
 
@@ -251,8 +256,4 @@ class TimelineThumbnailUtils {
   }
 }
 
-console.log('✅ ui/timeline-thumbnail-utils.js (Phase 4: Timeline連携完全版) loaded');
-console.log('   ✓ Phase 1-3: Canvas2D廃止、ThumbnailSystem統合、throttle最適化');
-console.log('   ✓ Phase 4: AnimationSystem.regenerateAllThumbnails() 確実実行');
-console.log('   ✓ Phase 4: layer:transform-updated → Timeline更新連携');
-console.log('   ✓ Phase 4: GSAP統合対応（delayedCall）');
+console.log('✅ ui/timeline-thumbnail-utils.js Phase 5 loaded');

@@ -1,8 +1,5 @@
-// ===== system/layer-system.js - Phase 2: ThumbnailSystem統一版 =====
-// Phase 2修正: updateThumbnail()独自実装を削除、ThumbnailSystemに完全統一
-// 修正1: renderFrameToTexture()でcanvasサイズを現在値から取得・テクスチャ再作成
-// 修正2: リサイズ時のテクスチャ管理を強化
-// 修正3: flipActiveLayer()とonFlipRequestコールバック接続を修正
+// ===== system/layer-system.js - Phase 4: レイヤー名連番対応完全版 =====
+// Phase 4改修: createLayer()でレイヤー名を自動連番化
 
 (function() {
     'use strict';
@@ -66,10 +63,10 @@
             this._setupLayerOperations();
             this._setupAnimationSystemIntegration();
             this._setupVKeyEvents();
-            this._setupTransformEventListeners(); // Phase 3追加
+            this._setupTransformEventListeners();
             this.isInitialized = true;
             
-            console.log('✅ LayerSystem initialized (Phase 2+3: ThumbnailSystem統一+イベント統合版)');
+            console.log('✅ LayerSystem Phase 4 initialized');
         }
 
         _createCheckerPatternBackground(width, height) {
@@ -111,23 +108,18 @@
             this.eventBus.on('keyboard:vkey-released', function() {}.bind(this));
         }
         
-        // ★★★ Phase 3追加: Transform更新イベントを購読 ★★★
         _setupTransformEventListeners() {
             if (!this.eventBus) return;
             
-            // layer:transform-updated を購読してサムネイル更新
             this.eventBus.on('layer:transform-updated', ({ data }) => {
                 const { layerIndex, layerId } = data || {};
                 
                 if (layerIndex !== undefined) {
-                    console.log(`🔄 [LayerSystem] Transform updated for layer ${layerIndex}`);
                     this.requestThumbnailUpdate(layerIndex);
                 } else if (layerId) {
-                    // layerId → layerIndex 解決
                     const layers = this.getLayers();
                     const index = layers.findIndex(l => l.layerData?.id === layerId);
                     if (index >= 0) {
-                        console.log(`🔄 [LayerSystem] Transform updated for layer ${index} (by ID: ${layerId})`);
                         this.requestThumbnailUpdate(index);
                     }
                 }
@@ -838,12 +830,19 @@
             }
         }
 
+        // ★★★ Phase 4改修: レイヤー名自動連番化 ★★★
         createLayer(name, isBackground = false) {
             if (!this.currentFrameContainer) return null;
+            
+            const layers = this.getLayers();
+            const nonBackgroundCount = layers.filter(l => !l.layerData?.isBackground).length;
+            const layerName = name || (isBackground ? '背景' : `レイヤー${nonBackgroundCount + 1}`);
+            
             const layerModel = new window.TegakiDataModels.LayerModel({
-                name: name || `レイヤー${this.currentFrameContainer.children.length + 1}`,
+                name: layerName,
                 isBackground: isBackground
             });
+            
             const layer = new PIXI.Container();
             layer.label = layerModel.id;
             layer.layerData = layerModel;
@@ -904,8 +903,8 @@
             if (this.eventBus) {
                 this.eventBus.emit('layer:created', { layerId: layerModel.id, name: layerModel.name, isBackground });
             }
-            const layers = this.getLayers();
-            return { layer, index: layers.length - 1 };
+            const finalLayers = this.getLayers();
+            return { layer, index: finalLayers.length - 1 };
         }
         
         setActiveLayer(index) {
@@ -944,7 +943,6 @@
             }
         }
 
-        // ★★★ Phase 2修正: requestThumbnailUpdate() - ThumbnailSystemに委譲 ★★★
         requestThumbnailUpdate(layerIndex) {
             const layers = this.getLayers();
             if (layerIndex < 0 || layerIndex >= layers.length) return;
@@ -953,7 +951,6 @@
             const layerId = layer.layerData?.id;
             
             if (this.eventBus) {
-                // ThumbnailSystemに更新を依頼
                 this.eventBus.emit('thumbnail:layer-updated', {
                     component: 'layer-system',
                     action: 'update-requested',
@@ -1017,7 +1014,6 @@
                 layerList.appendChild(layerItem);
             }
             
-            // ★★★ Phase 2修正: サムネイル更新はThumbnailSystemに委譲 ★★★
             for (let i = 0; i < layers.length; i++) {
                 this.requestThumbnailUpdate(i);
             }
@@ -1177,9 +1173,4 @@
 
 })();
 
-console.log('✅ layer-system.js (Phase 2+3: ThumbnailSystem統一+イベント統合版) loaded');
-console.log('   ✓ updateThumbnail() 独自実装を削除');
-console.log('   ✓ requestThumbnailUpdate() を EventBus 経由に変更');
-console.log('   ✓ processThumbnailUpdates() 削除');
-console.log('   ✓ _startThumbnailUpdateProcess() 削除');
-console.log('   ✓ layer:transform-updated 購読追加 (Phase 3)');
+console.log('✅ layer-system.js Phase 4 loaded - レイヤー名自動連番対応');
