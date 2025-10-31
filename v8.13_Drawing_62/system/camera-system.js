@@ -1,10 +1,5 @@
-// ===== camera-system.js - Phase 1完全版: TransformStack統合 =====
-// Phase 1改修:
-// 1. transformStack プロパティ追加
-// 2. init() で 'camera-world' TransformStack 生成
-// 3. _syncWorldContainerFromStack() / _syncStackFromWorldContainer() 実装
-// 4. worldContainer変更時にTransformStack同期
-// 5. デバッグログ抑制（debugEnabled フラグ制御）
+// ===== system/camera-system.js - v2.0: リサイズ修正版 =====
+// 修正: resizeCanvas()のworldContainer位置調整ロジック
 
 (function() {
     'use strict';
@@ -15,9 +10,6 @@
             this.config = null;
             this.eventBus = null;
             this.coordinateSystem = null;
-            
-            // Phase 1追加: TransformStack
-            this.transformStack = null;
             
             this.isDragging = false;
             this.isScaleRotateDragging = false;
@@ -47,19 +39,12 @@
             
             this.layerManager = null;
             this.drawingEngine = null;
-            
-            // Phase 1: デバッグフラグ
-            this.debugEnabled = false;
         }
 
         init(stage, eventBus, config) {
             this.eventBus = eventBus;
             this.config = config || window.TEGAKI_CONFIG;
-            this.coordinateSystem = window.CoordinateSystem;
-            
-            if (!this.coordinateSystem) {
-                throw new Error('CoordinateSystem must be initialized before CameraSystem');
-            }
+            this.coordinateSystem = window.CoordinateSystem || window.TEGAKI_COORDINATE_SYSTEM;
             
             if (stage && stage.addChild) {
                 this.app = { stage: stage };
@@ -70,43 +55,9 @@
             this.initialState.scale = this.config.camera.initialScale;
             
             this._createContainers();
-            
-            // CoordinateSystemにcontainerを登録
-            this.coordinateSystem.setContainers({
-                worldContainer: this.worldContainer,
-                canvasContainer: this.canvasContainer,
-                app: this.app
-            });
-            this.coordinateSystem.setCameraSystem(this);
-            
-            // Phase 1: TransformStack生成
-            const screen = this.app.stage?.parent?.screen || { width: 800, height: 600 };
-            const centerX = screen.width / 2;
-            const centerY = screen.height / 2;
-            const initialX = centerX - this.config.canvas.width / 2;
-            const initialY = centerY - this.config.canvas.height / 2;
-            
-            this.transformStack = this.coordinateSystem.createTransformStack(
-                'camera-world',
-                { 
-                    x: initialX, 
-                    y: initialY, 
-                    rotation: 0, 
-                    scaleX: this.config.camera.initialScale, 
-                    scaleY: this.config.camera.initialScale 
-                }
-            );
-            
             this._setupEvents();
             this.initializeCamera();
             this._drawCameraFrame();
-            
-            // Phase 1: グローバル参照設定
-            window.cameraSystem = this;
-            
-            if (this.debugEnabled) {
-                console.log('[CameraSystem] Phase 1: TransformStack統合完了');
-            }
         }
 
         _createContainers() {
@@ -182,45 +133,6 @@
             this.worldContainer.scale.set(this.config.camera.initialScale);
             
             this.initialState.position = { x: initialX, y: initialY };
-            
-            // Phase 1: TransformStackにも反映
-            if (this.transformStack) {
-                this._syncStackFromWorldContainer();
-            }
-        }
-
-        // ========== Phase 1: TransformStack同期メソッド ==========
-        
-        /**
-         * TransformStack → worldContainer 同期
-         */
-        _syncWorldContainerFromStack() {
-            if (!this.transformStack) return;
-            
-            this.transformStack.applyToContainer(this.worldContainer);
-            
-            if (this.debugEnabled) {
-                console.log('[CameraSystem] Synced worldContainer from TransformStack');
-            }
-        }
-        
-        /**
-         * worldContainer → TransformStack 同期
-         */
-        _syncStackFromWorldContainer() {
-            if (!this.transformStack) return;
-            
-            this.transformStack.setTransform({
-                x: this.worldContainer.x,
-                y: this.worldContainer.y,
-                rotation: this.worldContainer.rotation,
-                scaleX: this.worldContainer.scale.x,
-                scaleY: this.worldContainer.scale.y
-            });
-            
-            if (this.debugEnabled) {
-                console.log('[CameraSystem] Synced TransformStack from worldContainer');
-            }
         }
 
         resetCanvas() {
@@ -235,14 +147,33 @@
             this.horizontalFlipped = false;
             this.verticalFlipped = false;
             
-            // Phase 1: TransformStack同期
-            this._syncStackFromWorldContainer();
-            
             this._emitTransformChanged();
+        }
+
+        screenClientToWorld(app, clientX, clientY) {
+            if (!this.worldContainer) {
+                return { x: clientX, y: clientY };
+            }
+            
+            const worldPoint = this.worldContainer.toLocal({ x: clientX, y: clientY });
+            return { x: worldPoint.x, y: worldPoint.y };
+        }
+        
+        worldToScreen(app, worldX, worldY) {
+            if (!this.worldContainer) {
+                return { x: worldX, y: worldY };
+            }
+            
+            const worldTransform = this.worldContainer.transform.worldTransform;
+            const screenPoint = worldTransform.apply({ x: worldX, y: worldY });
+            
+            return { x: screenPoint.x, y: screenPoint.y };
         }
 
         /**
          * v2.0: リサイズ処理修正版
+         * 問題: worldContainer位置調整が不正確
+         * 修正: キャンバス中心を基準とした正確な位置調整
          */
         resizeCanvas(newWidth, newHeight, alignOptions = { horizontal: 'center', vertical: 'center' }) {
             if (!this.app) return;
@@ -250,56 +181,69 @@
             const oldWidth = this.config.canvas.width;
             const oldHeight = this.config.canvas.height;
             
+            // Step 1: CONFIG更新
             this.config.canvas.width = newWidth;
             this.config.canvas.height = newHeight;
             
+            // Step 2: renderer.resize()
             if (this.app.stage?.parent?.resize) {
                 this.app.stage.parent.resize(newWidth, newHeight);
             }
             
+            // Step 3: worldContainer位置調整（修正版）
             const widthDiff = newWidth - oldWidth;
             const heightDiff = newHeight - oldHeight;
             
             let offsetX = 0;
             let offsetY = 0;
             
+            // 横方向オフセット計算（修正）
             switch(alignOptions.horizontal) {
                 case 'left':
+                    // 左端基準：オフセットなし
                     offsetX = 0;
                     break;
                 case 'center':
+                    // 中央基準：差分の半分を加算
                     offsetX = widthDiff / 2;
                     break;
                 case 'right':
+                    // 右端基準：差分全体を加算
                     offsetX = widthDiff;
                     break;
             }
             
+            // 縦方向オフセット計算（修正）
             switch(alignOptions.vertical) {
                 case 'top':
+                    // 上端基準：オフセットなし
                     offsetY = 0;
                     break;
                 case 'center':
+                    // 中央基準：差分の半分を加算
                     offsetY = heightDiff / 2;
                     break;
                 case 'bottom':
+                    // 下端基準：差分全体を加算
                     offsetY = heightDiff;
                     break;
             }
             
+            // worldContainerの位置を調整
             this.worldContainer.position.x += offsetX;
             this.worldContainer.position.y += offsetY;
             
-            // Phase 1: TransformStack同期
-            this._syncStackFromWorldContainer();
-            
+            // Step 4: ビジュアル更新
             this.updateGuideLinesForCanvasResize();
             
+            // Step 5: 座標系キャッシュクリア
             if (this.coordinateSystem && typeof this.coordinateSystem.clearCache === 'function') {
                 this.coordinateSystem.clearCache();
             }
             
+            // Step 6: イベント発火
             if (this.eventBus) {
+                // camera:resized イベント（座標系クリアトリガー）
                 this.eventBus.emit('camera:resized', { 
                     width: newWidth, 
                     height: newHeight,
@@ -308,6 +252,7 @@
                     align: alignOptions
                 });
                 
+                // camera:transform-changed イベント
                 this.eventBus.emit('camera:transform-changed');
             }
         }
@@ -366,10 +311,6 @@
                     this.worldContainer.y += dy;
                     
                     this.lastPoint = { x: e.clientX, y: e.clientY };
-                    
-                    // Phase 1: TransformStack同期
-                    this._syncStackFromWorldContainer();
-                    
                     this._emitTransformChanged();
                 } else if (this.isScaleRotateDragging) {
                     this._handleScaleRotateDrag(e);
@@ -409,9 +350,6 @@
                     this._handleWheelZoom(e, centerX, centerY);
                 }
                 
-                // Phase 1: TransformStack同期
-                this._syncStackFromWorldContainer();
-                
                 this._emitTransformChanged();
             });
         }
@@ -444,10 +382,6 @@
             }
             
             this.lastPoint = { x: e.clientX, y: e.clientY };
-            
-            // Phase 1: TransformStack同期
-            this._syncStackFromWorldContainer();
-            
             this._emitTransformChanged();
         }
 
@@ -563,10 +497,6 @@
                     case 'ArrowRight':   this.worldContainer.x += moveAmount; break;
                     case 'ArrowLeft':    this.worldContainer.x -= moveAmount; break;
                 }
-                
-                // Phase 1: TransformStack同期
-                this._syncStackFromWorldContainer();
-                
                 this._emitTransformChanged();
                 e.preventDefault();
             }
@@ -593,9 +523,6 @@
                         break;
                 }
                 
-                // Phase 1: TransformStack同期
-                this._syncStackFromWorldContainer();
-                
                 this._emitTransformChanged();
                 e.preventDefault();
             }
@@ -618,9 +545,6 @@
                 const newWorldCenter = this.worldContainer.toGlobal({ x: centerX, y: centerY });
                 this.worldContainer.x += worldCenter.x - newWorldCenter.x;
                 this.worldContainer.y += worldCenter.y - newWorldCenter.y;
-                
-                // Phase 1: TransformStack同期
-                this._syncStackFromWorldContainer();
                 
                 this._emitTransformChanged();
                 e.preventDefault();
@@ -687,25 +611,25 @@
             }
         }
 
+        screenToLayer(screenX, screenY) {
+            return this.canvasContainer.toLocal({ x: screenX, y: screenY });
+        }
+
+        screenToCanvas(screenX, screenY) {
+            return this.screenToLayer(screenX, screenY);
+        }
+
         updateCoordinates(x, y) {}
 
         setZoom(level) {
             const clampedLevel = Math.max(this.config.camera.minScale, Math.min(this.config.camera.maxScale, level));
             this.worldContainer.scale.set(clampedLevel);
-            
-            // Phase 1: TransformStack同期
-            this._syncStackFromWorldContainer();
-            
             this._emitTransformChanged();
         }
 
         pan(dx, dy) {
             this.worldContainer.x += dx;
             this.worldContainer.y += dy;
-            
-            // Phase 1: TransformStack同期
-            this._syncStackFromWorldContainer();
-            
             this._emitTransformChanged();
         }
 
@@ -714,13 +638,7 @@
             this._emitCursorUpdate();
         }
 
-        /**
-         * @deprecated Use CoordinateSystem.localToScreen() instead
-         */
         toScreenCoords(worldX, worldY) {
-            if (this.coordinateSystem) {
-                return this.coordinateSystem.worldToScreen(worldX, worldY);
-            }
             const canvasPoint = { x: worldX, y: worldY };
             return this.canvasContainer.toGlobal(canvasPoint);
         }
@@ -777,20 +695,10 @@
         setDrawingEngine(drawingEngine) {
             this.drawingEngine = drawingEngine;
         }
-        
-        // Phase 1: デバッグモード切替
-        setDebugMode(enabled) {
-            this.debugEnabled = enabled;
-            console.log(`CameraSystem debug mode: ${enabled ? 'ON' : 'OFF'}`);
-        }
     }
 
     window.TegakiCameraSystem = CameraSystem;
 
 })();
 
-console.log('✅ camera-system.js Phase 1完全版 loaded');
-console.log('   ✓ TransformStack統合完了');
-console.log('   ✓ _syncWorldContainerFromStack / _syncStackFromWorldContainer 実装');
-console.log('   ✓ worldContainer変更時にTransformStack同期');
-console.log('   ✓ debugEnabled フラグでログ抑制');
+console.log('✅ camera-system.js (v2.0: リサイズ修正版) loaded');
