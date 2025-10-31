@@ -1,5 +1,9 @@
 // ===== system/drawing/thumbnail-system.js - Phase 2完全版 =====
 // Phase 2: TransformStack対応 + アスペクト比統一 + キャッシュキー生成一元化
+// ✅ 全既存機能を継承
+// ✅ TransformStackからtransform取得
+// ✅ アスペクト比計算統一（config.canvas依存）
+// ✅ キャッシュキー生成一元化（transformHash含む）
 
 (function() {
     'use strict';
@@ -207,17 +211,25 @@
         }
 
         // ========== Phase 2: アスペクト比計算統一 ==========
+        /**
+         * サムネイルサイズ計算（config.canvas基準）
+         * @param {number} maxWidth - 最大幅
+         * @param {number} maxHeight - 最大高さ
+         * @returns {{width: number, height: number}}
+         */
         _calculateThumbnailSize(maxWidth, maxHeight) {
             const canvasWidth = this.config.canvas.width;
             const canvasHeight = this.config.canvas.height;
             const aspectRatio = canvasWidth / canvasHeight;
             
             if (aspectRatio > 1) {
+                // 横長
                 return {
                     width: maxWidth,
                     height: Math.round(maxWidth / aspectRatio)
                 };
             } else {
+                // 縦長または正方形
                 return {
                     width: Math.round(maxHeight * aspectRatio),
                     height: maxHeight
@@ -226,6 +238,10 @@
         }
 
         // ========== Phase 2: TransformHash生成 ==========
+        /**
+         * カメラTransformハッシュ取得
+         * @returns {string}
+         */
         _getTransformHash() {
             const cameraStack = window.cameraSystem?.transformStack;
             if (!cameraStack) {
@@ -244,6 +260,11 @@
             return `${t.x.toFixed(1)}_${t.y.toFixed(1)}_${Math.abs(t.scaleX).toFixed(2)}_${(t.rotation * 180 / Math.PI).toFixed(0)}`;
         }
 
+        /**
+         * レイヤーTransformハッシュ取得
+         * @param {string} layerId - レイヤーID
+         * @returns {string}
+         */
         _getLayerTransformHash(layerId) {
             const layerTransform = window.layerManager?.transform;
             if (!layerTransform?.layerTransformStacks) return 'no-layer-transform';
@@ -256,11 +277,26 @@
         }
 
         // ========== Phase 2: キャッシュキー生成統一 ==========
+        /**
+         * キャッシュキー生成
+         * @param {string} type - 'layer' | 'frame'
+         * @param {string} id - レイヤーIDまたはフレームID
+         * @param {{width: number, height: number}} size - サムネイルサイズ
+         * @param {string} transformHash - TransformStackから生成したハッシュ
+         * @returns {string}
+         */
         _generateCacheKey(type, id, size, transformHash) {
             return `${type}_${id}_${size.width}_${size.height}_${transformHash}`;
         }
 
         // ========== Phase 2: レイヤーサムネイル生成（TransformStack対応） ==========
+        /**
+         * レイヤーサムネイル生成
+         * @param {PIXI.Container} layer - レイヤーコンテナ
+         * @param {number} maxWidth - 最大幅
+         * @param {number} maxHeight - 最大高さ
+         * @returns {Promise<HTMLCanvasElement|null>}
+         */
         async generateLayerThumbnail(layer, maxWidth = this.defaultLayerThumbSize, maxHeight = this.defaultLayerThumbSize) {
             if (!layer || !this.app?.renderer) return null;
             
@@ -285,7 +321,14 @@
                 const transformHash = `${cameraHash}_${layerHash}`;
                 const cacheKey = this._generateCacheKey('layer', layerId, size, transformHash);
                 
+                if (this.debugEnabled) {
+                    console.log('[Thumb] Layer cache key:', cacheKey);
+                }
+                
                 if (this.layerThumbnailCache.has(cacheKey)) {
+                    if (this.debugEnabled) {
+                        console.log('[Thumb] Cache hit:', cacheKey);
+                    }
                     return this.layerThumbnailCache.get(cacheKey);
                 }
 
@@ -380,6 +423,13 @@
         }
 
         // ========== Phase 2: フレームサムネイル生成（TransformStack対応） ==========
+        /**
+         * フレームサムネイル生成
+         * @param {object} frame - フレームデータ
+         * @param {number} maxWidth - 最大幅
+         * @param {number} maxHeight - 最大高さ
+         * @returns {Promise<HTMLCanvasElement|null>}
+         */
         async generateFrameThumbnail(frame, maxWidth = this.defaultFrameThumbSize, maxHeight = this.defaultFrameThumbSize) {
             if (!frame || !this.app?.renderer) return null;
 
@@ -390,7 +440,14 @@
             const transformHash = this._getTransformHash();
             const cacheKey = this._generateCacheKey('frame', frameId, size, transformHash);
             
+            if (this.debugEnabled) {
+                console.log('[Thumb] Frame cache key:', cacheKey);
+            }
+            
             if (this.frameThumbnailCache.has(cacheKey)) {
+                if (this.debugEnabled) {
+                    console.log('[Thumb] Cache hit:', cacheKey);
+                }
                 return this.frameThumbnailCache.get(cacheKey);
             }
 
@@ -535,13 +592,17 @@
             return canvas;
         }
 
-        // ========== Phase 2: キャッシュ管理 ==========
+        // ========== キャッシュ管理 ==========
         _pruneCache(cache) {
             if (cache.size > this.maxCacheSize) {
                 const deleteCount = cache.size - this.maxCacheSize;
                 const keys = Array.from(cache.keys());
                 for (let i = 0; i < deleteCount; i++) {
                     cache.delete(keys[i]);
+                }
+                
+                if (this.debugEnabled) {
+                    console.log(`[Thumb] Pruned ${deleteCount} cache entries`);
                 }
             }
         }
@@ -635,6 +696,10 @@
             keysToDelete.forEach(key => {
                 this.layerThumbnailCache.delete(key);
             });
+            
+            if (this.debugEnabled && keysToDelete.length > 0) {
+                console.log(`[Thumb] Invalidated ${keysToDelete.length} layer cache entries for ${layerId}`);
+            }
         }
 
         _invalidateFrameCacheByFrameId(frameId) {
@@ -649,6 +714,10 @@
             keysToDelete.forEach(key => {
                 this.frameThumbnailCache.delete(key);
             });
+            
+            if (this.debugEnabled && keysToDelete.length > 0) {
+                console.log(`[Thumb] Invalidated ${keysToDelete.length} frame cache entries for ${frameId}`);
+            }
         }
 
         invalidateFrameCache(frameIndex) {
@@ -671,6 +740,10 @@
             this.frameThumbnailCache.clear();
             this.dataURLCache.clear();
             this.pendingVModeRefresh.clear();
+            
+            if (this.debugEnabled) {
+                console.log('[Thumb] All cache cleared');
+            }
         }
 
         setDebugMode(enabled) {
@@ -709,6 +782,8 @@
             
             this.renderTexturePool = [];
             this.isInitialized = false;
+            
+            console.log('[ThumbnailSystem] Destroyed');
         }
     }
 
@@ -727,8 +802,8 @@
 
     console.log('✅ thumbnail-system.js Phase 2完全版 loaded');
     console.log('   ✓ TransformStackからtransform取得');
-    console.log('   ✓ アスペクト比計算統一');
-    console.log('   ✓ キャッシュキー生成一元化');
-    console.log('   ✓ transformHash実装');
+    console.log('   ✓ アスペクト比計算統一 (config.canvas基準)');
+    console.log('   ✓ キャッシュキー生成一元化 (transformHash含む)');
+    console.log('   ✓ 全既存機能継承完了');
 
 })();
