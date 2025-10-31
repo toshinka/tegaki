@@ -1,4 +1,10 @@
-// ===== system/drawing/thumbnail-system.js - Phase 9: アスペクト比対応完全版 =====
+// ===== system/drawing/thumbnail-system.js - Phase 10: 統合修正完全版 =====
+// Phase 10改修:
+// 1. レイヤーサムネイルのカメラ変形対応（回転・反転を含む）
+// 2. アクティブレイヤー変更時の全サムネイル保持
+// 3. Vキーモード変形のタイムライン反映
+// 4. コンソールログクリーンアップ
+// 5. イベント統合・最適化
 
 (function() {
     'use strict';
@@ -34,6 +40,9 @@
             this.thumbnailUpdateTimer = null;
             this.isGenerating = false;
             this.suppressEvents = false;
+            
+            // Phase 10: デバッグログ制御
+            this.debugEnabled = false;
         }
 
         init(eventBus) {
@@ -46,10 +55,11 @@
             }
             
             this.isInitialized = true;
-            console.log('✅ ThumbnailSystem Phase 9 initialized');
+            console.log('✅ ThumbnailSystem Phase 10 initialized');
         }
 
         _setupEventListeners() {
+            // Vキーモード管理
             this.eventBus.on('keyboard:vkey-pressed', () => {
                 this.vKeyModeActive = true;
             });
@@ -57,13 +67,17 @@
             this.eventBus.on('keyboard:vkey-released', () => {
                 this.vKeyModeActive = false;
                 this._refreshAllLayerThumbnailsAfterVMode();
+                // Phase 10: Vキーリリース時にタイムラインも更新
+                this._triggerTimelineUpdate();
             });
             
+            // レイヤー変形イベント
             this.eventBus.on('layer:transform-updated', ({ data }) => {
                 const { layerId, layerIndex, immediate } = data || {};
                 
                 if (!layerId && layerIndex === undefined) return;
                 
+                // Vキーモード中は保留
                 if (this.vKeyModeActive && layerId) {
                     this.pendingVModeRefresh.add(layerId);
                     return;
@@ -91,6 +105,7 @@
                 }, delay);
             });
             
+            // 描画イベント
             this.eventBus.on('layer:stroke-added', ({ layerIndex }) => {
                 this.invalidateLayerCache(layerIndex);
             });
@@ -99,6 +114,7 @@
                 this.invalidateLayerCache(layerIndex);
             });
             
+            // 反転イベント
             this.eventBus.on('layer:flip-horizontal', ({ layerId }) => {
                 this._invalidateLayerCacheByLayerId(layerId);
             });
@@ -107,10 +123,12 @@
                 this._invalidateLayerCacheByLayerId(layerId);
             });
             
+            // フレーム更新
             this.eventBus.on('animation:frame-updated', ({ frameIndex }) => {
                 this.invalidateFrameCache(frameIndex);
             });
             
+            // カメラリサイズ - throttle付き
             let cameraResizeTimer = null;
             this.eventBus.on('camera:resized', () => {
                 this.clearAllCache();
@@ -130,6 +148,7 @@
                 }, 500);
             });
             
+            // カメラ変形 - throttle付き
             let cameraTransformTimer = null;
             this.eventBus.on('camera:transform-changed', () => {
                 if (cameraTransformTimer) {
@@ -138,6 +157,14 @@
                 
                 cameraTransformTimer = setTimeout(() => {
                     this.clearAllCache();
+                    // Phase 10: レイヤーパネルとタイムライン両方を更新
+                    if (!this.suppressEvents) {
+                        this.eventBus.emit('thumbnail:layer-updated', {
+                            component: 'thumbnail-system',
+                            action: 'camera-transform',
+                            data: { immediate: true }
+                        });
+                    }
                 }, 300);
             });
         }
@@ -173,7 +200,22 @@
             }
         }
 
-        // ★★★ Phase 9: アスペクト比を考慮したサムネイル生成 ★★★
+        // Phase 10: タイムライン更新トリガー
+        _triggerTimelineUpdate() {
+            if (!this.eventBus) return;
+            
+            if (typeof gsap !== 'undefined') {
+                gsap.delayedCall(0.05, () => {
+                    this.eventBus.emit('thumbnail:regenerate-all');
+                });
+            } else {
+                setTimeout(() => {
+                    this.eventBus.emit('thumbnail:regenerate-all');
+                }, 50);
+            }
+        }
+
+        // ★★★ Phase 10: カメラ変形対応レイヤーサムネイル生成 ★★★
         async generateLayerThumbnail(layer, maxWidth = this.defaultLayerThumbSize, maxHeight = this.defaultLayerThumbSize) {
             if (!layer || !this.app?.renderer) return null;
             
@@ -189,7 +231,7 @@
                     return await this._generateBackgroundThumbnail(layer, maxWidth, maxHeight);
                 }
 
-                // Phase 9: キャンバスのアスペクト比を計算
+                // キャンバスのアスペクト比を計算
                 const canvasWidth = this.config?.canvas?.width || 800;
                 const canvasHeight = this.config?.canvas?.height || 600;
                 const aspectRatio = canvasWidth / canvasHeight;
@@ -197,17 +239,25 @@
                 // サムネイルサイズをアスペクト比に合わせて調整
                 let thumbWidth, thumbHeight;
                 if (aspectRatio > 1) {
-                    // 横長キャンバス
                     thumbWidth = maxWidth;
                     thumbHeight = Math.round(maxWidth / aspectRatio);
                 } else {
-                    // 縦長キャンバス
                     thumbHeight = maxHeight;
                     thumbWidth = Math.round(maxHeight * aspectRatio);
                 }
 
                 const layerId = layer.layerData?.id || layer.label;
-                const cacheKey = `layer_${layerId}_${thumbWidth}_${thumbHeight}`;
+                
+                // Phase 10: カメラ変形もキャッシュキーに含める
+                const cameraSystem = window.cameraSystem;
+                const cameraState = cameraSystem ? {
+                    scale: Math.abs(cameraSystem.worldContainer.scale.x).toFixed(2),
+                    rotation: Math.round(cameraSystem.rotation % 360),
+                    flipH: cameraSystem.horizontalFlipped,
+                    flipV: cameraSystem.verticalFlipped
+                } : { scale: 1, rotation: 0, flipH: false, flipV: false };
+                
+                const cacheKey = `layer_${layerId}_${thumbWidth}_${thumbHeight}_${cameraState.scale}_${cameraState.rotation}_${cameraState.flipH}_${cameraState.flipV}`;
                 
                 if (this.layerThumbnailCache.has(cacheKey)) {
                     return this.layerThumbnailCache.get(cacheKey);
@@ -233,7 +283,6 @@
 
         async _generateBackgroundThumbnail(layer, maxWidth, maxHeight) {
             try {
-                // Phase 9: 背景もアスペクト比対応
                 const canvasWidth = this.config?.canvas?.width || 800;
                 const canvasHeight = this.config?.canvas?.height || 600;
                 const aspectRatio = canvasWidth / canvasHeight;
@@ -263,11 +312,14 @@
                 return canvas;
                 
             } catch (error) {
-                console.error('[Thumb] Background thumbnail failed:', error);
+                if (this.debugEnabled) {
+                    console.error('[Thumb] Background thumbnail failed:', error);
+                }
                 return null;
             }
         }
 
+        // Phase 10: フレームコンテナ全体をカメラ変形込みでレンダリング
         async _renderLayerThumbnail(layer, width, height) {
             try {
                 const canvasWidth = this.config?.canvas?.width || 800;
@@ -279,6 +331,14 @@
                     return this._createEmptyCanvas(width, height);
                 }
 
+                // フレームコンテナ全体を取得（カメラ変形が適用されている）
+                const frameContainer = layer.parent;
+                
+                if (!frameContainer) {
+                    return this._createEmptyCanvas(width, height);
+                }
+
+                // Phase 10: カメラ変形を含めてレンダリング
                 const fullRT = PIXI.RenderTexture.create({
                     width: canvasWidth,
                     height: canvasHeight,
@@ -289,13 +349,7 @@
                     return this._createEmptyCanvas(width, height);
                 }
 
-                const frameContainer = layer.parent;
-                
-                if (!frameContainer) {
-                    fullRT.destroy(true);
-                    return this._createEmptyCanvas(width, height);
-                }
-
+                // フレームコンテナ全体をレンダリング
                 this.app.renderer.render({
                     container: frameContainer,
                     target: fullRT,
@@ -309,7 +363,9 @@
                 return canvas;
 
             } catch (error) {
-                console.error('[Thumb] Layer thumbnail failed:', error);
+                if (this.debugEnabled) {
+                    console.error('[Thumb] Layer thumbnail failed:', error);
+                }
                 return this._createEmptyCanvas(width, height);
             }
         }
@@ -346,7 +402,9 @@
                 return canvas;
                 
             } catch (error) {
-                console.error('[Thumb] Resize failed:', error);
+                if (this.debugEnabled) {
+                    console.error('[Thumb] Resize failed:', error);
+                }
                 return null;
             }
         }
@@ -409,7 +467,9 @@
                 return thumbCanvas;
 
             } catch (error) {
-                console.error('[Thumb] Frame thumbnail failed:', error);
+                if (this.debugEnabled) {
+                    console.error('[Thumb] Frame thumbnail failed:', error);
+                }
                 return null;
             }
         }
@@ -465,7 +525,9 @@
                 return thumbCanvas;
 
             } catch (error) {
-                console.error('[Thumb] PixiJS frame thumbnail failed:', error);
+                if (this.debugEnabled) {
+                    console.error('[Thumb] PixiJS frame thumbnail failed:', error);
+                }
                 
                 if (tempSprite) {
                     try { tempSprite.destroy(); } catch (e) {}
@@ -502,7 +564,9 @@
                 return newRT;
 
             } catch (error) {
-                console.error('[Thumb] RenderTexture acquire failed:', error);
+                if (this.debugEnabled) {
+                    console.error('[Thumb] RenderTexture acquire failed:', error);
+                }
                 return null;
             }
         }
@@ -519,7 +583,9 @@
                 }
 
             } catch (error) {
-                console.error('[Thumb] RenderTexture release failed:', error);
+                if (this.debugEnabled) {
+                    console.error('[Thumb] RenderTexture release failed:', error);
+                }
                 try {
                     rt.destroy(true);
                 } catch (e) {}
@@ -532,7 +598,9 @@
             try {
                 return canvas.toDataURL('image/png');
             } catch (error) {
-                console.error('[Thumb] Canvas to DataURL failed:', error);
+                if (this.debugEnabled) {
+                    console.error('[Thumb] Canvas to DataURL failed:', error);
+                }
                 return null;
             }
         }
@@ -602,6 +670,12 @@
             this.pendingVModeRefresh.clear();
         }
 
+        // Phase 10: デバッグモード切替
+        setDebugMode(enabled) {
+            this.debugEnabled = enabled;
+            console.log(`ThumbnailSystem debug mode: ${enabled ? 'ON' : 'OFF'}`);
+        }
+
         getDebugInfo() {
             return {
                 layerCacheSize: this.layerThumbnailCache.size,
@@ -617,7 +691,8 @@
                     stats: this.poolStats
                 },
                 isGenerating: this.isGenerating,
-                suppressEvents: this.suppressEvents
+                suppressEvents: this.suppressEvents,
+                debugEnabled: this.debugEnabled
             };
         }
 
@@ -641,6 +716,6 @@
         window.TEGAKI_CONFIG
     );
 
-    console.log('✅ thumbnail-system.js Phase 9 loaded');
+    console.log('✅ thumbnail-system.js Phase 10 loaded');
 
 })();
