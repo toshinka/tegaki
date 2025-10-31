@@ -1,6 +1,6 @@
-// ===== ui/layer-panel-renderer.js - Step 1: エラー警告撲滅版 =====
-// Step 1修正: console.warn() → 再試行メカニズム実装
-// 修正箇所: 424行目付近の警告をサイレント化・自動再試行追加
+// ===== ui/layer-panel-renderer.js - Step 2: DOM生成完全版 =====
+// Step 2修正: <img>要素生成の確実化 + 初回サムネイル生成保証
+// 修正箇所: createThumbnail()で必ず<img>を生成、再試行メカニズム継続
 
 window.TegakiUI = window.TegakiUI || {};
 
@@ -19,7 +19,6 @@ window.TegakiUI.LayerPanelRenderer = class {
         this.updateQueue = new Set();
         this.isProcessingQueue = false;
         
-        // ★★★ Step 1追加: 再試行カウンター（警告撲滅） ★★★
         this._retryCounters = new Map();
         this._maxRetries = 3;
         
@@ -39,7 +38,7 @@ window.TegakiUI.LayerPanelRenderer = class {
         }
         
         this._setupEventListeners();
-        console.log('✅ LayerPanelRenderer initialized (Step 1: エラー警告撲滅版)');
+        console.log('✅ LayerPanelRenderer initialized (Step 2: DOM生成完全版)');
     }
     
     _setupEventListeners() {
@@ -232,6 +231,7 @@ window.TegakiUI.LayerPanelRenderer = class {
         nameSpan.style.gridRow = '2';
         layerDiv.appendChild(nameSpan);
 
+        // ★★★ Step 2修正: サムネイル生成を確実に実行 ★★★
         const thumbnail = this.createThumbnail(layer, index);
         layerDiv.appendChild(thumbnail);
 
@@ -260,6 +260,7 @@ window.TegakiUI.LayerPanelRenderer = class {
         return layerDiv;
     }
 
+    // ★★★ Step 2修正: 必ず<img>を生成し、非同期でサムネイルを設定 ★★★
     createThumbnail(layer, index) {
         const thumbnail = document.createElement('div');
         thumbnail.className = 'layer-thumbnail';
@@ -267,27 +268,35 @@ window.TegakiUI.LayerPanelRenderer = class {
         thumbnail.style.gridRow = '1 / 3';
         thumbnail.dataset.layerIndex = String(index);
 
+        // 背景レイヤーの場合は色見本を表示
         if (layer.layerData?.isBackground) {
             const swatch = document.createElement('div');
             swatch.style.width = '100%';
             swatch.style.height = '100%';
             swatch.style.backgroundColor = '#F0E0D6';
             thumbnail.appendChild(swatch);
+            console.log(`✓ [Panel] Background layer ${index} swatch created`);
             return thumbnail;
         }
 
+        // 通常レイヤー: 必ず<img>要素を作成
         const img = document.createElement('img');
-        img.alt = 'Layer thumbnail';
+        img.alt = `Layer ${index} thumbnail`;
         img.style.width = '100%';
         img.style.height = '100%';
         img.style.objectFit = 'contain';
-        img.style.display = 'none';
+        img.style.display = 'none'; // 初期状態は非表示
         img.dataset.layerIndex = String(index);
+        img.dataset.layerId = layer.layerData?.id || `layer-${index}`;
 
         thumbnail.appendChild(img);
 
-        this._generateAndDisplayThumbnail(layer, index, img);
+        // 非同期でサムネイル生成・表示（DOM追加後に実行）
+        requestAnimationFrame(() => {
+            this._generateAndDisplayThumbnail(layer, index, img);
+        });
 
+        console.log(`✓ [Panel] Layer ${index} thumbnail DOM created`);
         return thumbnail;
     }
 
@@ -299,7 +308,11 @@ window.TegakiUI.LayerPanelRenderer = class {
             }
             
             if (!window.ThumbnailSystem.isInitialized) {
-                console.warn('[Panel] ThumbnailSystem not yet initialized');
+                console.warn('[Panel] ThumbnailSystem not yet initialized, retrying...');
+                // ThumbnailSystemの初期化を待つ
+                setTimeout(() => {
+                    this._generateAndDisplayThumbnail(layer, index, img);
+                }, 100);
                 return;
             }
 
@@ -353,10 +366,8 @@ window.TegakiUI.LayerPanelRenderer = class {
             console.log(`✓ [Panel] Layer ${layerIndex} cache invalidated`);
         }
         
-        // ★★★ Step 1修正: DOM要素検索の堅牢化 + 再試行メカニズム ★★★
-        let layerDiv = null;
-        
-        layerDiv = this.container.querySelector(
+        // DOM要素検索（堅牢化）
+        let layerDiv = this.container.querySelector(
             `.layer-item[data-layer-index="${layerIndex}"]`
         );
         
@@ -380,29 +391,37 @@ window.TegakiUI.LayerPanelRenderer = class {
         }
 
         const thumbnail = layerDiv.querySelector('.layer-thumbnail');
-        const img = thumbnail?.querySelector('img');
+        let img = thumbnail?.querySelector('img');
         
-        // ★★★ Step 1修正: console.warn() → 再試行メカニズム ★★★
+        // ★★★ Step 2修正: <img>が無い場合は作成 ★★★
+        if (!img && thumbnail) {
+            img = document.createElement('img');
+            img.alt = `Layer ${layerIndex} thumbnail`;
+            img.style.width = '100%';
+            img.style.height = '100%';
+            img.style.objectFit = 'contain';
+            img.style.display = 'none';
+            img.dataset.layerIndex = String(layerIndex);
+            img.dataset.layerId = layer.layerData?.id || `layer-${layerIndex}`;
+            thumbnail.appendChild(img);
+            console.log(`✓ [Panel] Created missing <img> for layer ${layerIndex}`);
+        }
+
         if (!img) {
-            // 再試行カウンター取得
+            // 再試行メカニズム
             const retryKey = `layer_${layerIndex}`;
             const retryCount = this._retryCounters.get(retryKey) || 0;
             
             if (retryCount < this._maxRetries) {
-                // 再試行カウンターを更新
                 this._retryCounters.set(retryKey, retryCount + 1);
-                
-                // ログレベルを下げる（ノイズ削減）
                 console.log(`[Panel] Thumbnail img not found for layer ${layerIndex}, retrying... (${retryCount + 1}/${this._maxRetries})`);
                 
-                // 指数バックオフで再試行（100ms, 200ms, 300ms）
                 setTimeout(() => {
                     this.updateLayerThumbnail(layerIndex);
                 }, 100 * (retryCount + 1));
                 
                 return;
             } else {
-                // 最大試行回数到達 - サイレントに無視（エラーではない）
                 console.log(`[Panel] Thumbnail img unavailable for layer ${layerIndex} after ${this._maxRetries} retries - skipping`);
                 this._retryCounters.delete(retryKey);
                 return;
@@ -504,15 +523,13 @@ window.TegakiUI.LayerPanelRenderer = class {
         
         this.thumbnailCanvases.clear();
         this.updateQueue.clear();
-        
-        // ★★★ Step 1追加: 再試行カウンターをクリア ★★★
         this._retryCounters.clear();
         
         console.log('✓ LayerPanelRenderer destroyed');
     }
 };
 
-console.log('✅ ui/layer-panel-renderer.js (Step 1: エラー警告撲滅版) loaded');
-console.log('   ✓ console.warn() → 再試行メカニズム（最大3回）');
-console.log('   ✓ 指数バックオフ（100ms, 200ms, 300ms）');
-console.log('   ✓ ノイズ削減（サイレント失敗）');
+console.log('✅ ui/layer-panel-renderer.js (Step 2: DOM生成完全版) loaded');
+console.log('   ✓ createThumbnail() で必ず<img>要素を生成');
+console.log('   ✓ 非同期サムネイル生成を requestAnimationFrame で保証');
+console.log('   ✓ updateLayerThumbnail() で<img>欠損時に自動作成');
