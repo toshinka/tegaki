@@ -1,6 +1,5 @@
-// ===== system/layer-transform.js - Phase 6: 座標同期完全版 =====
-// Phase 1-5: イベント発火・NaN対策・UI整備・Vモード・GSAP統合
-// Phase 6: CoordinateSystem キャッシュクリア + 座標ずれ解消
+// ===== system/layer-transform.js - Phase 7: 座標同期完全版 =====
+// Phase 7: applyTransform時の座標キャッシュクリア強化
 
 (function() {
     'use strict';
@@ -35,22 +34,17 @@
             this._emitTimer = null;
             
             this.gsapAvailable = typeof gsap !== 'undefined';
-            if (this.gsapAvailable) {
-                console.log('[LayerTransform] GSAP detected - using synchronized updates');
-            }
+            this.debugMode = false;
         }
 
         init(app, cameraSystem) {
             this.app = app;
             this.cameraSystem = cameraSystem;
             
-            // Phase 6: CoordinateSystem 参照を確実に取得
             this.coordinateSystem = window.CoordinateSystem;
             
             if (!this.coordinateSystem) {
-                console.error('[LayerTransform] window.CoordinateSystem not found - coordinate updates will fail');
-            } else {
-                console.log('[LayerTransform] ✓ CoordinateSystem reference acquired');
+                console.error('[Transform] CoordinateSystem not found');
             }
             
             this._setupTransformPanel();
@@ -58,7 +52,7 @@
             this._setupFlipKeyEvents();
             this._setupWheelEvents();
             
-            console.log('✅ [LayerTransform] Initialized (Phase 6: 座標同期完全版)');
+            console.log('✅ LayerTransform Phase 7 initialized');
         }
 
         enterMoveMode() {
@@ -77,8 +71,6 @@
             
             this._updateCursor();
             this._updateFlipButtonsAvailability(true);
-            
-            console.log('🔵 [LayerTransform] Vkey mode entered');
         }
         
         exitMoveMode(activeLayer) {
@@ -98,8 +90,6 @@
             
             this._updateCursor();
             this._updateFlipButtonsAvailability(false);
-            
-            console.log('🔴 [LayerTransform] Vkey mode exited');
         }
         
         toggleMoveMode(activeLayer) {
@@ -150,7 +140,7 @@
             }
         }
         
-        // ★★★ Phase 6修正: CoordinateSystem.clearCache() 追加 ★★★
+        // ★★★ Phase 7: 座標キャッシュクリアの確実化 ★★★
         applyTransform(layer, transform, centerX, centerY) {
             if (this.gsapAvailable) {
                 gsap.killTweensOf(layer);
@@ -162,12 +152,18 @@
                 this._applyTransformDirect(layer, transform, centerX, centerY);
             }
             
-            // ★★★ Phase 6追加: CoordinateSystem キャッシュをクリア ★★★
-            if (this.coordinateSystem && typeof this.coordinateSystem.clearCache === 'function') {
-                this.coordinateSystem.clearCache();
-                console.log('[LayerTransform] ✓ CoordinateSystem cache cleared');
+            // ★★★ CoordinateSystemキャッシュクリア（Phase 7強化） ★★★
+            if (this.coordinateSystem) {
+                if (typeof this.coordinateSystem.clearCache === 'function') {
+                    this.coordinateSystem.clearCache();
+                }
+                // Rectキャッシュも強制クリア
+                if (typeof this.coordinateSystem._invalidateRectCache === 'function') {
+                    this.coordinateSystem._invalidateRectCache();
+                }
             }
             
+            // イベント発火
             if (this.gsapAvailable) {
                 gsap.delayedCall(0.016, () => {
                     this._emitTransformUpdated(layer.layerData.id, layer);
@@ -188,9 +184,7 @@
             
             if (!isFinite(x) || !isFinite(y) || !isFinite(rotation) || 
                 !isFinite(scaleX) || !isFinite(scaleY)) {
-                console.warn('[LayerTransform] Invalid transform values', {
-                    x, y, rotation, scaleX, scaleY
-                });
+                console.warn('[Transform] Invalid values', { x, y, rotation, scaleX, scaleY });
                 return;
             }
             
@@ -229,10 +223,8 @@
             
             if (direction === 'horizontal') {
                 transform.scaleX *= -1;
-                console.log(`↔️ [LayerTransform] Horizontal flip: scaleX=${transform.scaleX}`);
             } else if (direction === 'vertical') {
                 transform.scaleY *= -1;
-                console.log(`↕️ [LayerTransform] Vertical flip: scaleY=${transform.scaleY}`);
             }
             
             this.applyTransform(layer, transform, centerX, centerY);
@@ -370,9 +362,14 @@
                 x: 0, y: 0, rotation: 0, scaleX: 1, scaleY: 1
             });
             
-            // Phase 6: 確定時にもキャッシュクリア
-            if (this.coordinateSystem && typeof this.coordinateSystem.clearCache === 'function') {
-                this.coordinateSystem.clearCache();
+            // Phase 7: 確定時もキャッシュクリア
+            if (this.coordinateSystem) {
+                if (typeof this.coordinateSystem.clearCache === 'function') {
+                    this.coordinateSystem.clearCache();
+                }
+                if (typeof this.coordinateSystem._invalidateRectCache === 'function') {
+                    this.coordinateSystem._invalidateRectCache();
+                }
             }
             
             if (this.onRebuildRequired) {
@@ -456,7 +453,7 @@
             canvas.addEventListener('pointerdown', (e) => {
                 if (this.isVKeyPressed && e.button === 0) {
                     if (!this.coordinateSystem) {
-                        console.warn('[LayerTransform] coordinateSystem not available');
+                        console.warn('[Transform] coordinateSystem unavailable');
                         return;
                     }
                     
@@ -485,15 +482,11 @@
         }
 
         _handleDrag(e) {
-            if (!this.coordinateSystem) {
-                console.warn('[LayerTransform] coordinateSystem not available in _handleDrag');
-                return;
-            }
+            if (!this.coordinateSystem) return;
             
             const world = this.coordinateSystem.screenClientToWorld(e.clientX, e.clientY);
             
             if (!isFinite(world.worldX) || !isFinite(world.worldY)) {
-                console.warn('[LayerTransform] screenClientToWorld returned non-finite values', world);
                 return;
             }
             
@@ -680,10 +673,7 @@
         _setupTransformPanel() {
             this.transformPanel = document.getElementById('layer-transform-panel');
             
-            if (!this.transformPanel) {
-                console.warn('[LayerTransform] Transform panel not found');
-                return;
-            }
+            if (!this.transformPanel) return;
             
             this._setupSlider('layer-x-slider', this.config.layer.minX, this.config.layer.maxX, 0, (value) => {
                 return Math.round(value) + 'px';
@@ -917,8 +907,4 @@
 
 })();
 
-console.log('✅ layer-transform.js (Phase 6: 座標同期完全版) loaded');
-console.log('   ✓ Phase 1-5: イベント発火・NaN対策・UI整備・Vモード・GSAP統合');
-console.log('   ✓ Phase 6: applyTransform() → CoordinateSystem.clearCache() 追加');
-console.log('   ✓ Phase 6: confirmTransform() → キャッシュクリア追加');
-console.log('   ✓ Phase 6: 変形時の座標ずれ完全解消');
+console.log('✅ layer-transform.js Phase 7 loaded');
