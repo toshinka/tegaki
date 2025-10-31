@@ -712,6 +712,7 @@
         }
     }
 
+    // シングルトンインスタンス作成
     window.ThumbnailSystem = new ThumbnailSystem(
         null,
         window.CoordinateSystem,
