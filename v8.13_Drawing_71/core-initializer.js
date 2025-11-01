@@ -1,6 +1,4 @@
-// ===== core-initializer.js - 完全修正版 =====
-// 修正1: SettingsManager初期化をpopup登録前に移動
-// 修正2: ExportPopup登録をExportManager完全初期化後に実行
+// ===== core-initializer.js - Phase 4-A: WebGPU初期化追加版 =====
 
 window.CoreInitializer = (function() {
     'use strict';
@@ -47,7 +45,6 @@ window.CoreInitializer = (function() {
         document.body.appendChild(statusPanel);
     }
 
-    // ★ 修正1: SettingsManagerを先に初期化してグローバルに配置
     function initializeSettingsManager() {
         if (window.settingsManager) {
             return window.settingsManager;
@@ -93,8 +90,6 @@ window.CoreInitializer = (function() {
             history: window.History
         }, { priority: 4 });
         
-        // exportは後で登録（ExportManager初期化後）
-        
         popupManager.initializeAll();
         window.PopupManager = popupManager;
         
@@ -105,13 +100,73 @@ window.CoreInitializer = (function() {
         const eventBus = window.TegakiEventBus;
         if (!eventBus) return;
 
-        // StatusDisplayRendererに引数を渡す
         const statusDisplay = new window.TegakiUI.StatusDisplayRenderer(
             window.TegakiEventBus,
             window.settingsManager
         );
         statusDisplay.setupEventListeners();
         window.StatusDisplayRenderer = statusDisplay;
+    }
+
+    /**
+     * Phase 4-A: WebGPU初期化
+     */
+    async function initializeWebGPU(canvas, strokeRenderer) {
+        const config = window.TEGAKI_CONFIG;
+        
+        // WebGPU無効化設定の場合はスキップ
+        if (!config.webgpu?.enabled) {
+            console.log('[WebGPU] Disabled by config');
+            return false;
+        }
+
+        // WebGPUCapabilitiesチェック
+        if (!window.WebGPUCapabilities) {
+            console.warn('[WebGPU] WebGPUCapabilities not loaded');
+            return false;
+        }
+
+        try {
+            // WebGPU対応チェック
+            const capabilities = await window.WebGPUCapabilities.checkSupport();
+            
+            if (!capabilities.supported) {
+                console.warn('[WebGPU] Not supported:', capabilities.error);
+                return false;
+            }
+
+            // WebGPUDrawingLayer初期化
+            if (!window.WebGPUDrawingLayer) {
+                console.warn('[WebGPU] WebGPUDrawingLayer not loaded');
+                return false;
+            }
+
+            const webgpuLayer = new window.WebGPUDrawingLayer(canvas);
+            const initialized = await webgpuLayer.initialize();
+
+            if (!initialized) {
+                console.warn('[WebGPU] Initialization failed');
+                return false;
+            }
+
+            // StrokeRendererにWebGPUレイヤーを設定
+            if (strokeRenderer && strokeRenderer.setWebGPULayer) {
+                await strokeRenderer.setWebGPULayer(webgpuLayer);
+                console.log('[WebGPU] Integration completed:', {
+                    features: capabilities.features,
+                    limits: capabilities.limits
+                });
+            }
+
+            // グローバル参照保存
+            window.webgpuLayer = webgpuLayer;
+
+            return true;
+
+        } catch (error) {
+            console.error('[WebGPU] Initialization error:', error);
+            return false;
+        }
     }
 
     class DrawingApp {
@@ -121,6 +176,7 @@ window.CoreInitializer = (function() {
             this.uiController = null;
             this.popupManager = null;
             this.exportInitialized = false;
+            this.webgpuEnabled = false;
         }
         
         async initialize() {
@@ -169,7 +225,6 @@ window.CoreInitializer = (function() {
                 drawingEngine: this.coreEngine.getDrawingEngine()
             });
             
-            // ★ 修正1: SettingsManagerを先に初期化
             initializeSettingsManager();
             
             this.uiController = new UIController(
@@ -182,7 +237,21 @@ window.CoreInitializer = (function() {
             
             setupEventBusListeners();
             
-            // ★ 修正2: ExportSystem初期化
+            // ✅ Phase 4-A: WebGPU初期化
+            const strokeRenderer = this.coreEngine.getDrawingEngine()?.strokeRenderer;
+            if (strokeRenderer) {
+                this.webgpuEnabled = await initializeWebGPU(
+                    this.pixiApp.canvas,
+                    strokeRenderer
+                );
+                
+                if (this.webgpuEnabled) {
+                    console.log('✅ WebGPU enabled for SDF generation');
+                } else {
+                    console.log('⚠️ WebGPU not available, using legacy rendering');
+                }
+            }
+            
             this.initializeExportSystem();
             
             window.drawingAppResizeCanvas = (newWidth, newHeight) => {
@@ -197,7 +266,6 @@ window.CoreInitializer = (function() {
             return true;
         }
         
-        // ★ 修正2: ExportManager初期化完了後にExportPopupを登録
         initializeExportSystem() {
             let retryCount = 0;
             const maxRetries = 30;
@@ -205,7 +273,6 @@ window.CoreInitializer = (function() {
             const tryInit = () => {
                 retryCount++;
                 
-                // 依存関係チェック
                 if (!window.animationSystem || !window.CoreRuntime) {
                     if (retryCount < maxRetries) {
                         setTimeout(tryInit, 200);
@@ -221,11 +288,9 @@ window.CoreInitializer = (function() {
                     return;
                 }
                 
-                // ExportManagerを初期化
                 const success = window.CoreRuntime.initializeExportSystem(
                     this.pixiApp,
                     () => {
-                        // ★ コールバック: ExportManager初期化成功後にExportPopupを登録
                         if (!this.exportInitialized && 
                             window.PopupManager && 
                             window.TEGAKI_EXPORT_MANAGER &&
@@ -238,11 +303,9 @@ window.CoreInitializer = (function() {
                                 waitFor: []
                             });
                             
-                            // 即座に初期化
                             setTimeout(() => {
                                 window.PopupManager.initialize('export');
                                 this.exportInitialized = true;
-                                console.log('✅ ExportPopup registered and initialized');
                             }, 100);
                         }
                         
@@ -257,13 +320,11 @@ window.CoreInitializer = (function() {
                 }
             };
             
-            // EventBusリスナー登録
             if (window.TegakiEventBus) {
                 window.TegakiEventBus.on('animation:system-ready', tryInit);
                 window.TegakiEventBus.on('animation:initialized', tryInit);
             }
             
-            // 初回トライ
             setTimeout(tryInit, 300);
         }
         
@@ -340,8 +401,9 @@ window.CoreInitializer = (function() {
     return {
         initialize,
         checkDependencies,
-        DrawingApp
+        DrawingApp,
+        initializeWebGPU
     };
 })();
 
-console.log('✅ core-initializer.js (完全修正版・SettingsManager＋ExportPopup対応) loaded');
+console.log('✅ core-initializer.js (Phase 4-A: WebGPU初期化追加版) loaded');

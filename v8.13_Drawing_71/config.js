@@ -1,6 +1,4 @@
-// ===== config.js - Phase 2完全版 (BRUSH_DEFAULTS追加) =====
-// ✅ CUT→FRAME変換完了
-// ✅ Phase 2: BRUSH_DEFAULTS追加
+// ===== config.js - Phase 4-A完全版 (WebGPU設定追加) =====
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -18,13 +16,31 @@ window.TEGAKI_CONFIG = {
             enableDevicePixelRatio: true
         }
     },
-    // ✅ Phase 2: BRUSH_DEFAULTS追加
     BRUSH_DEFAULTS: {
-        color: 0x800000,    // futaba-maroon
-        size: 3,            // デフォルトサイズ 3px
-        opacity: 1.0,       // 100%
-        minWidth: 1,        // 最小幅
-        maxWidth: 10        // 最大幅
+        color: 0x800000,
+        size: 3,
+        opacity: 1.0,
+        minWidth: 1,
+        maxWidth: 10
+    },
+    // ✅ Phase 4-A: WebGPU設定追加
+    webgpu: {
+        enabled: true,
+        fallbackToLegacy: true,
+        computeWorkgroupSize: [8, 8, 1],
+        maxBufferSize: 256 * 1024 * 1024,
+        sdf: {
+            enabled: true,
+            minPointsForGPU: 5,
+            maxDistance: 100
+        },
+        // ✅ Phase 4-B: MSDF設定追加
+        msdf: {
+            enabled: true,
+            range: 4.0,
+            threshold: 0.5,
+            smoothness: 0.05
+        }
     },
     camera: {
         minScale: 0.1,
@@ -335,125 +351,36 @@ window.TEGAKI_KEYMAP = {
         return null;
     },
     
-    debugShowMapping() {
-        const mappings = [];
-        
-        for (const [actionName, config] of Object.entries(this.actions)) {
-            const configs = Array.isArray(config) ? config : [config];
-            
-            configs.forEach(cfg => {
-                const modifiers = [];
-                if (cfg.ctrl) modifiers.push('Ctrl');
-                if (cfg.shift) modifiers.push('Shift');
-                if (cfg.alt) modifiers.push('Alt');
-                if (cfg.vMode) modifiers.push('V');
-                
-                mappings.push({
-                    Action: actionName,
-                    Key: this.getKeyDisplayName(cfg.key),
-                    Modifiers: modifiers.join('+') || 'none',
-                    Description: cfg.description || ''
-                });
-            });
-        }
-        
-        console.table(mappings);
-    },
-    
     getKeyDisplayName(keyCode) {
         const displayNames = {
-            'KeyP': 'P',
-            'KeyE': 'E',
-            'KeyV': 'V',
-            'KeyH': 'H',
-            'KeyA': 'A',
-            'KeyN': 'N',
-            'KeyC': 'C',
-            'KeyL': 'L',
-            'KeyZ': 'Z',
-            'KeyY': 'Y',
-            'Comma': ',',
-            'Digit0': '0',
-            'Plus': '+',
-            'ArrowUp': '↑',
-            'ArrowDown': '↓',
-            'ArrowLeft': '←',
-            'ArrowRight': '→',
-            'Space': 'Space',
-            'Delete': 'Delete',
-            'Backspace': 'Backspace'
+            'KeyP': 'P', 'KeyE': 'E', 'KeyV': 'V', 'KeyH': 'H',
+            'KeyA': 'A', 'KeyN': 'N', 'KeyC': 'C', 'KeyL': 'L',
+            'KeyZ': 'Z', 'KeyY': 'Y', 'Comma': ',', 'Digit0': '0',
+            'Plus': '+', 'ArrowUp': '↑', 'ArrowDown': '↓',
+            'ArrowLeft': '←', 'ArrowRight': '→',
+            'Space': 'Space', 'Delete': 'Delete', 'Backspace': 'Backspace'
         };
-        
         return displayNames[keyCode] || keyCode;
-    },
-    
-    getActionDescription(actionName) {
-        const config = this.actions[actionName];
-        if (!config) return null;
-        
-        const cfg = Array.isArray(config) ? config[0] : config;
-        return cfg.description || actionName;
-    },
-    
-    getUIConfigData() {
-        const categories = {
-            'History操作': ['UNDO', 'REDO'],
-            'ツール': ['TOOL_PEN', 'TOOL_ERASER'],
-            '設定': ['SETTINGS_OPEN'],
-            'レイヤー基本': ['LAYER_CREATE', 'LAYER_DELETE_DRAWINGS', 'LAYER_CLEAR', 'LAYER_COPY', 'LAYER_PASTE'],
-            'レイヤー階層': ['LAYER_HIERARCHY_UP', 'LAYER_HIERARCHY_DOWN'],
-            'レイヤー移動モード': ['LAYER_MOVE_MODE_TOGGLE'],
-            'レイヤー移動': ['LAYER_MOVE_UP', 'LAYER_MOVE_DOWN', 'LAYER_MOVE_LEFT', 'LAYER_MOVE_RIGHT'],
-            'レイヤー変形': ['LAYER_SCALE_UP', 'LAYER_SCALE_DOWN', 'LAYER_ROTATE_LEFT', 'LAYER_ROTATE_RIGHT'],
-            'カメラ反転': ['CAMERA_FLIP_HORIZONTAL', 'CAMERA_FLIP_VERTICAL'],
-            'レイヤー反転': ['LAYER_FLIP_HORIZONTAL', 'LAYER_FLIP_VERTICAL'],
-            'GIF/アニメーション': ['GIF_PREV_FRAME', 'GIF_NEXT_FRAME', 'GIF_PLAY_PAUSE', 'GIF_TOGGLE_TIMELINE', 'GIF_CREATE_FRAME', 'GIF_COPY_FRAME']
-        };
-        
-        return Object.entries(categories).map(([category, actions]) => ({
-            category,
-            actions: actions.map(action => {
-                const config = this.actions[action];
-                const cfg = Array.isArray(config) ? config[0] : config;
-                
-                return {
-                    action,
-                    description: cfg.description,
-                    key: this.getKeyDisplayName(cfg.key),
-                    modifiers: [
-                        cfg.ctrl && 'Ctrl',
-                        cfg.shift && 'Shift',
-                        cfg.alt && 'Alt',
-                        cfg.vMode && 'V'
-                    ].filter(Boolean)
-                };
-            })
-        }));
     }
 };
 
-// レガシー互換性維持
+// レガシー互換性
 window.TEGAKI_KEYCONFIG = {
-    pen: 'KeyP',
-    eraser: 'KeyE',
-    layerMode: 'KeyV',
-    canvasReset: 'Digit0',
-    horizontalFlip: 'KeyH',
-    layerUp: 'ArrowUp',
-    layerDown: 'ArrowDown',
-    gifPrevFrame: 'ArrowLeft',
-    gifNextFrame: 'ArrowRight',
-    gifToggleAnimation: 'KeyA',
-    gifAddCut: 'Plus',
-    gifPlayPause: 'Space',
-    layerMoveUp: 'ArrowUp',
-    layerMoveDown: 'ArrowDown',
-    layerMoveLeft: 'ArrowLeft',
-    layerMoveRight: 'ArrowRight',
-    layerScaleUp: 'ArrowUp',
-    layerScaleDown: 'ArrowDown',
-    layerRotateLeft: 'ArrowLeft',
-    layerRotateRight: 'ArrowRight'
+    pen: 'KeyP', eraser: 'KeyE', layerMode: 'KeyV',
+    canvasReset: 'Digit0', horizontalFlip: 'KeyH',
+    layerUp: 'ArrowUp', layerDown: 'ArrowDown',
+    gifPrevFrame: 'ArrowLeft', gifNextFrame: 'ArrowRight',
+    gifToggleAnimation: 'KeyA', gifAddCut: 'Plus', gifPlayPause: 'Space',
+    layerMoveUp: 'ArrowUp', layerMoveDown: 'ArrowDown',
+    layerMoveLeft: 'ArrowLeft', layerMoveRight: 'ArrowRight',
+    layerScaleUp: 'ArrowUp', layerScaleDown: 'ArrowDown',
+    layerRotateLeft: 'ArrowLeft', layerRotateRight: 'ArrowRight'
+};
+
+window.TEGAKI_COLORS = {
+    futabaMaroon: '#800000', futabaLightMaroon: '#aa5a56',
+    futabaMedium: '#cf9c97', futabaLightMedium: '#e9c2ba',
+    futabaCream: '#f0e0d6', futabaBackground: '#ffffee'
 };
 
 window.TEGAKI_KEYCONFIG_MANAGER = {
@@ -490,28 +417,12 @@ window.TEGAKI_KEYCONFIG_MANAGER = {
             'LAYER_ROTATE_LEFT': 'layerRotateLeft',
             'LAYER_ROTATE_RIGHT': 'layerRotateRight',
             'CAMERA_FLIP_HORIZONTAL': 'horizontalFlip',
-            'LAYER_FLIP_HORIZONTAL': 'horizontalFlip'
+            'LAYER_FLIP_HORIZONTAL': 'horizontalFlip',
+            'LAYER_DELETE_DRAWINGS': 'delete'
         };
         
         return legacyMap[action] || action;
     }
-};
-
-window.TEGAKI_SHORTCUTS = {
-    pen: 'KeyP',
-    eraser: 'KeyE',
-    layerMode: 'KeyV',
-    canvasReset: 'Digit0',
-    horizontalFlip: 'KeyH'
-};
-
-window.TEGAKI_COLORS = {
-    futabaMaroon: '#800000',
-    futabaLightMaroon: '#aa5a56',
-    futabaMedium: '#cf9c97',
-    futabaLightMedium: '#e9c2ba',
-    futabaCream: '#f0e0d6',
-    futabaBackground: '#ffffee'
 };
 
 window.TEGAKI_UTILS = {
@@ -520,5 +431,4 @@ window.TEGAKI_UTILS = {
     }
 };
 
-console.log('✅ config.js (Phase 2完全版) loaded');
-console.log('   - BRUSH_DEFAULTS追加完了');
+console.log('✅ config.js (Phase 4-A: WebGPU設定追加版) loaded');

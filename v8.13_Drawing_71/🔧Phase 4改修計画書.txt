@@ -1,0 +1,572 @@
+================================================================================
+Phase 4改修計画書 - WebGPU/MSDF統合ロードマップ
+================================================================================
+プロジェクト: PixiJS v8.13 ブラウザお絵かきツール
+対象: Phase 3-B完了後 → Phase 4-A, 4-B実装
+作成日: 2025-11-01
+================================================================================
+
+【全体方針】
+- PixiJS v8のWebGPU対応を待たずに独自WebGPUレイヤーを実装
+- PixiJS v8: UI/レイヤー管理/イベント処理（維持）
+- WebGPU: 描画/距離場計算（新規追加）
+- ハイブリッド方式で段階的移行
+- 既存機能の完全後方互換を維持
+
+================================================================================
+Phase 4-A: WebGPUハイブリッド実装
+================================================================================
+【目的】
+PixiJS v8と共存するWebGPU描画レイヤーを実装し、Compute ShaderでSDF生成を実現
+
+【実装期間】2-3週間
+【優先度】高
+
+--------------------------------------------------------------------------------
+■ Phase 4-A-1: WebGPU基盤構築
+--------------------------------------------------------------------------------
+
+【新規ファイル】
+1. system/drawing/webgpu/webgpu-drawing-layer.js
+   役割: WebGPU初期化・デバイス管理・コンテキスト設定
+   実装内容:
+   - navigator.gpu.requestAdapter()
+   - device.requestDevice()
+   - canvas.getContext('webgpu')
+   - format設定（navigator.gpu.getPreferredCanvasFormat()）
+   
+   主要メソッド:
+   - async initialize()
+   - createRenderPipeline()
+   - createComputePipeline()
+   - destroy()
+   
+   参考:
+   - WebGPU仕様: https://www.w3.org/TR/webgpu/
+   - 初期化パターン: Chrome WebGPU samples
+
+2. system/drawing/webgpu/webgpu-capabilities.js
+   役割: WebGPU対応チェック・機能検出
+   実装内容:
+   - navigator.gpu存在確認
+   - adapter.features確認
+   - device.limits確認
+   - フォールバック判定
+   
+   主要メソッド:
+   - static async checkSupport()
+   - static getDeviceLimits()
+   - static isFeatureSupported(feature)
+
+【更新ファイル】
+1. config.js
+   追加設定:
+   ```
+   webgpu: {
+       enabled: true,
+       fallbackToWebGL: true,
+       computeWorkgroupSize: [8, 8, 1],
+       maxBufferSize: 256 * 1024 * 1024
+   }
+   ```
+
+2. index.html
+   追加スクリプト:
+   ```
+   <script src="system/drawing/webgpu/webgpu-capabilities.js"></script>
+   <script src="system/drawing/webgpu/webgpu-drawing-layer.js"></script>
+   ```
+
+--------------------------------------------------------------------------------
+■ Phase 4-A-2: Compute ShaderによるSDF生成
+--------------------------------------------------------------------------------
+
+【新規ファイル】
+1. system/drawing/webgpu/shaders/sdf-compute.wgsl
+   役割: WebGPU Compute ShaderでSDF距離場を生成
+   実装内容:
+   ```wgsl
+   @group(0) @binding(0) var<storage, read> strokePoints: array<vec2f>;
+   @group(0) @binding(1) var<storage, read_write> sdfOutput: array<f32>;
+   @group(0) @binding(2) var<uniform> params: SDFParams;
+   
+   @compute @workgroup_size(8, 8, 1)
+   fn computeSDF(@builtin(global_invocation_id) id: vec3u) {
+       let pixelCoord = vec2f(f32(id.x), f32(id.y));
+       var minDist = 999999.0;
+       
+       for (var i = 0u; i < arrayLength(&strokePoints); i++) {
+           let dist = distance(pixelCoord, strokePoints[i]);
+           minDist = min(minDist, dist);
+       }
+       
+       let normalized = minDist / params.maxDistance;
+       let idx = id.y * params.width + id.x;
+       sdfOutput[idx] = normalized;
+   }
+   ```
+
+2. system/drawing/webgpu/webgpu-compute-sdf.js
+   役割: Compute Shaderのセットアップ・実行・結果取得
+   実装内容:
+   - シェーダーモジュール作成
+   - バッファ作成（strokePoints, sdfOutput, params）
+   - Compute Pipeline作成
+   - Dispatch実行
+   - 結果読み取り
+   
+   主要メソッド:
+   - async initialize(device, shaderCode)
+   - async generateSDF(points, width, height)
+   - createBuffers(pointCount, outputSize)
+   - executeCompute(commandEncoder)
+   - async readResult()
+   
+   参考実装:
+   - 既存: system/drawing/sdf-texture-generator.js（CPU版）
+   - 移行: Canvas2D距離計算 → Compute Shader
+
+3. system/drawing/webgpu/webgpu-texture-bridge.js
+   役割: WebGPU Texture ↔ PixiJS Texture変換
+   実装内容:
+   - WebGPU GPUTexture → ImageBitmap → PixiJS Texture
+   - copyTextureToBuffer → mapAsync → データ取得
+   
+   主要メソッド:
+   - async webgpuToPixi(gpuTexture)
+   - async pixiToWebGPU(pixiTexture)
+   - createImageBitmapFromGPUTexture(gpuTexture)
+
+【フロー図】
+```
+ストロークポイント配列
+    ↓
+webgpu-compute-sdf.js
+    ↓ Compute Shader実行
+SDF距離場データ（Float32Array）
+    ↓
+webgpu-texture-bridge.js
+    ↓ WebGPU Texture作成
+GPUTexture
+    ↓ ImageBitmap経由
+PixiJS Texture
+    ↓
+stroke-renderer.js（既存のSDF描画パス）
+```
+
+--------------------------------------------------------------------------------
+■ Phase 4-A-3: PixiJS統合
+--------------------------------------------------------------------------------
+
+【更新ファイル】
+1. system/drawing/stroke-renderer.js
+   追加機能: WebGPU SDF生成パス
+   実装内容:
+   - WebGPUDrawingLayer初期化チェック
+   - generateSDF呼び出し
+   - 結果をブラシテクスチャとして使用
+   
+   追加メソッド:
+   - async _renderFinalStrokeWebGPU(strokeData, settings)
+   - async _generateWebGPUSDF(points)
+   
+   既存メソッド修正:
+   - renderFinalStroke()
+     WebGPU有効時 → _renderFinalStrokeWebGPU()
+     無効時 → _renderFinalStrokeSDF()（Phase 3-B）
+
+2. system/drawing/brush-core.js
+   追加機能: WebGPU統合
+   実装内容:
+   - strokeRenderer.webgpuLayer参照
+   - 非同期描画対応（await処理）
+   
+   修正メソッド:
+   - async _renderPenStroke(layer, strokeData)
+     await this.strokeRenderer.renderFinalStroke(...)
+
+3. core-initializer.js
+   追加初期化:
+   ```javascript
+   // WebGPU初期化
+   if (config.webgpu?.enabled) {
+       const capabilities = await WebGPUCapabilities.checkSupport();
+       if (capabilities.supported) {
+           const webgpuLayer = new WebGPUDrawingLayer(canvas);
+           await webgpuLayer.initialize();
+           drawingEngine.strokeRenderer.setWebGPULayer(webgpuLayer);
+       }
+   }
+   ```
+
+【参照ファイル】
+- system/drawing/sdf-texture-generator.js（CPU版SDF生成ロジック）
+- system/drawing/sdf-brush-shader.js（Fragment Shaderパターン）
+- system/drawing/stroke-renderer.js（Phase 3-B版）
+
+--------------------------------------------------------------------------------
+■ Phase 4-A-4: エラーハンドリング・フォールバック
+--------------------------------------------------------------------------------
+
+【実装内容】
+1. WebGPU初期化失敗 → Phase 3-B SDF継続
+2. Compute Shader実行失敗 → CPU版SDF生成（sdf-texture-generator.js）
+3. メモリ不足 → 解像度自動削減
+4. タイムアウト → Legacy Graphics描画
+
+【更新ファイル】
+1. system/drawing/stroke-renderer.js
+   追加:
+   - _handleWebGPUError(error)
+   - _fallbackToCPUSDF(points)
+   - _fallbackToLegacy(strokeData, settings)
+
+2. system/drawing/webgpu/webgpu-drawing-layer.js
+   追加:
+   - errorCallback設定
+   - retry機構
+   - timeout設定
+
+【デバッグ用】
+- console.log統一フォーマット: [WebGPU] メッセージ
+- エラー分類: INIT_FAILED, COMPUTE_FAILED, MEMORY_ERROR, TIMEOUT
+
+================================================================================
+Phase 4-B: MSDF統合実装
+================================================================================
+【目的】
+RGB 3チャンネル距離場でエッジ精度を向上、角・交差部を完璧に表現
+
+【実装期間】1-2週間
+【優先度】中
+【前提条件】Phase 4-A完了
+
+--------------------------------------------------------------------------------
+■ Phase 4-B-1: msdfgen WebAssembly統合
+--------------------------------------------------------------------------------
+
+【新規ファイル】
+1. libs/msdfgen.wasm
+   取得元: https://github.com/Chlumsky/msdfgen
+   ビルド方法: Emscripten使用
+   ```bash
+   emcc msdfgen.cpp -o msdfgen.js \
+       -s WASM=1 \
+       -s EXPORTED_FUNCTIONS='["_generateMSDF"]' \
+       -s MODULARIZE=1
+   ```
+
+2. system/drawing/msdf/msdfgen-wrapper.js
+   役割: msdfgen.wasmのJavaScriptラッパー
+   実装内容:
+   - wasm読み込み
+   - メモリ管理（malloc/free）
+   - ベクターパス → MSDF変換
+   
+   主要メソッド:
+   - async initialize()
+   - async generateMSDF(vectorPath, width, height, range)
+   - vectorPathToC(points)
+   - cBufferToRGBData(buffer, size)
+   
+   参考:
+   - msdfgen API仕様
+   - Emscripten メモリ管理パターン
+
+【更新ファイル】
+1. index.html
+   追加:
+   ```html
+   <script src="libs/msdfgen.js"></script>
+   <script src="system/drawing/msdf/msdfgen-wrapper.js"></script>
+   ```
+
+--------------------------------------------------------------------------------
+■ Phase 4-B-2: MSDFシェーダー実装
+--------------------------------------------------------------------------------
+
+【新規ファイル】
+1. system/drawing/msdf/msdf-fragment-shader.glsl
+   役割: RGB 3チャンネルからmedian()計算
+   実装内容:
+   ```glsl
+   precision highp float;
+   
+   varying vec2 vTextureCoord;
+   varying vec4 vColor;
+   
+   uniform sampler2D uSampler;
+   uniform float uThreshold;
+   uniform float uSmoothness;
+   
+   float median(float r, float g, float b) {
+       return max(min(r, g), min(max(r, g), b));
+   }
+   
+   void main(void) {
+       vec3 msdf = texture2D(uSampler, vTextureCoord).rgb;
+       float sd = median(msdf.r, msdf.g, msdf.b);
+       float alpha = smoothstep(uThreshold - uSmoothness, 
+                                uThreshold + uSmoothness, sd);
+       gl_FragColor = vec4(vColor.rgb, vColor.a * alpha);
+   }
+   ```
+
+2. system/drawing/msdf/msdf-brush-shader.js
+   役割: MSDFシェーダー管理（sdf-brush-shader.jsの拡張）
+   実装内容:
+   - Fragment Shader読み込み
+   - Uniform設定
+   - PixiJS Shader作成
+   
+   主要メソッド:
+   - initialize(renderer)
+   - getMSDFShader(params)
+   - updateUniforms(shader, threshold, smoothness)
+   
+   参考:
+   - system/drawing/sdf-brush-shader.js（Phase 3-A）
+
+--------------------------------------------------------------------------------
+■ Phase 4-B-3: ベクター→MSDF変換パイプライン
+--------------------------------------------------------------------------------
+
+【新規ファイル】
+1. system/drawing/msdf/vector-to-msdf.js
+   役割: ストロークポイント → MSDF変換
+   実装内容:
+   - ポイント配列 → ベクターパス構築
+   - msdfgen呼び出し
+   - RGB画像データ → PixiJS Texture
+   
+   主要メソッド:
+   - async convertStrokeToMSDF(points, size)
+   - buildVectorPath(points)
+   - createMSDFTexture(rgbData, width, height)
+   
+   フロー:
+   ```
+   strokeData.points
+       ↓
+   buildVectorPath()
+       ↓ Bezier補間
+   ベクターパス（SVGライク）
+       ↓
+   msdfgen.generateMSDF()
+       ↓
+   RGB画像データ（Uint8Array）
+       ↓
+   createMSDFTexture()
+       ↓
+   PixiJS Texture（RGB）
+   ```
+
+【更新ファイル】
+1. system/drawing/stroke-renderer.js
+   追加機能: MSDFパス
+   実装内容:
+   - msdfEnabled フラグ
+   - _renderFinalStrokeMSDF()
+   - WebGPU MSDF生成統合
+   
+   追加メソッド:
+   - async _renderFinalStrokeMSDF(strokeData, settings)
+   - async _generateMSDFTexture(points)
+   
+   優先順位:
+   1. MSDF（最高品質）
+   2. WebGPU SDF（高品質）
+   3. CPU SDF（中品質）
+   4. Legacy Graphics（互換性）
+
+2. system/drawing/sdf-mesh-builder.js
+   追加: MSDF Mesh対応
+   - RGBテクスチャ対応
+   - シェーダー切り替え
+
+--------------------------------------------------------------------------------
+■ Phase 4-B-4: WebGPU MSDF Compute Shader（オプション）
+--------------------------------------------------------------------------------
+
+【新規ファイル】
+1. system/drawing/webgpu/shaders/msdf-compute.wgsl
+   役割: WebGPUでMSDF生成（msdfgenの代替）
+   実装内容:
+   - 各ピクセルで3つの最近接エッジを検出
+   - RGB各チャンネルに距離を格納
+   - Compute Shaderで並列実行
+   
+   擬似コード:
+   ```wgsl
+   @compute @workgroup_size(8, 8, 1)
+   fn computeMSDF(@builtin(global_invocation_id) id: vec3u) {
+       let pixel = vec2f(f32(id.x), f32(id.y));
+       
+       // 3つの最近接エッジを検出
+       var edges = findNearestEdges(pixel, strokePoints, 3);
+       
+       // RGB各チャンネルに距離を格納
+       let r = distance(pixel, edges[0]);
+       let g = distance(pixel, edges[1]);
+       let b = distance(pixel, edges[2]);
+       
+       let idx = id.y * params.width + id.x;
+       msdfOutput[idx] = vec4f(r, g, b, 1.0);
+   }
+   ```
+
+【実装優先度】低（msdfgen.wasmで十分な場合はスキップ可）
+
+================================================================================
+Phase 4-C: パフォーマンス最適化（オプション）
+================================================================================
+【実装期間】1週間
+【優先度】低
+
+【最適化項目】
+1. Compute Shader最適化
+   - Workgroup サイズ調整
+   - Shared Memory使用
+   - 早期リターン最適化
+
+2. テクスチャキャッシュ強化
+   - LRUキャッシュ実装
+   - 圧縮テクスチャ対応
+
+3. 非同期処理最適化
+   - Web Worker活用
+   - OffscreenCanvas使用
+
+4. メモリ管理
+   - Buffer pool実装
+   - 定期的なGC実行
+
+================================================================================
+検証・テスト計画
+================================================================================
+
+【Phase 4-A検証項目】
+1. WebGPU初期化成功率
+2. Compute Shader実行時間（1000点ストローク）
+3. メモリ使用量
+4. フォールバック動作確認
+5. ブラウザ互換性（Chrome, Edge, Safari Technology Preview）
+
+【Phase 4-B検証項目】
+1. MSDF生成品質（エッジ精度）
+2. 角・交差部の表現精度
+3. スケーリング時の品質維持
+4. 生成時間（SDFとの比較）
+
+【パフォーマンス目標】
+- Compute Shader実行: < 16ms（60fps維持）
+- MSDF生成: < 100ms（ユーザー体感許容範囲）
+- メモリ使用: < 256MB（テクスチャキャッシュ含む）
+
+================================================================================
+依存関係・前提条件
+================================================================================
+
+【Phase 4-A依存】
+- Phase 3-B完了（SDF Mesh描画システム）
+- WebGPU対応ブラウザ（Chrome 113+, Edge 113+）
+- PixiJS v8.13（継続使用）
+
+【Phase 4-B依存】
+- Phase 4-A完了（WebGPU基盤）
+- msdfgen.wasm（Emscriptenビルド必要）
+- WebAssembly対応ブラウザ（全モダンブラウザ）
+
+【開発環境】
+- Node.js 18+ （msdfgenビルド用）
+- Emscripten 3.1.x （WebAssemblyコンパイル用）
+- Chrome Canary （WebGPU最新機能検証用）
+
+================================================================================
+ファイル構成（Phase 4完了時）
+================================================================================
+
+system/drawing/
+├── webgpu/
+│   ├── webgpu-capabilities.js          # WebGPU機能検出
+│   ├── webgpu-drawing-layer.js         # WebGPU基盤
+│   ├── webgpu-compute-sdf.js           # SDF Compute Shader
+│   ├── webgpu-texture-bridge.js        # Texture変換
+│   └── shaders/
+│       ├── sdf-compute.wgsl            # SDF Compute Shader
+│       └── msdf-compute.wgsl           # MSDF Compute Shader（オプション）
+├── msdf/
+│   ├── msdfgen-wrapper.js              # msdfgen.wasm wrapper
+│   ├── msdf-brush-shader.js            # MSDFシェーダー管理
+│   ├── msdf-fragment-shader.glsl       # MSDF Fragment Shader
+│   └── vector-to-msdf.js               # ベクター→MSDF変換
+├── sdf-brush-shader.js                 # Phase 3-A（継続使用）
+├── sdf-texture-generator.js            # Phase 3-A（CPU版SDF）
+├── sdf-mesh-builder.js                 # Phase 3-B（継続使用）
+├── stroke-renderer.js                  # Phase 4対応版（統合）
+├── brush-core.js                       # Phase 4対応版（統合）
+└── drawing-engine.js                   # Phase 3-B（継続使用）
+
+libs/
+├── msdfgen.js                          # msdfgen WebAssembly
+└── msdfgen.wasm                        # msdfgen バイナリ
+
+================================================================================
+改修担当Claude向けの重要ポイント
+================================================================================
+
+【DRY/SOLID原則遵守】
+- WebGPU処理はwebgpu/配下に集約
+- MSDF処理はmsdf/配下に集約
+- stroke-renderer.jsは描画パス選択のみ（実装は各モジュール）
+
+【後方互換性維持】
+- 既存のLegacy Graphics描画は削除しない
+- 各Phase完了時点で動作可能な状態を維持
+- フォールバック機構を必ず実装
+
+【エラーハンドリング】
+- try-catch必須（WebGPU/WebAssembly関連）
+- フォールバック先を明確化
+- エラーログは[WebGPU], [MSDF]などプレフィックス付き
+
+【非同期処理】
+- WebGPU初期化: async/await
+- Compute Shader実行: Promise対応
+- MSDF生成: Web Worker推奨（重い処理）
+
+【命名規則】
+- WebGPU関連: webgpu* プレフィックス
+- MSDF関連: msdf* プレフィックス
+- 内部メソッド: _アンダースコアプレフィックス
+
+【テスト方法】
+- WebGPU非対応ブラウザでフォールバック確認
+- 大量ストローク（1000点以上）でパフォーマンス確認
+- メモリリーク確認（DevTools Memory Profiler）
+
+================================================================================
+参考資料
+================================================================================
+
+【WebGPU】
+- 公式仕様: https://www.w3.org/TR/webgpu/
+- MDN: https://developer.mozilla.org/en-US/docs/Web/API/WebGPU_API
+- Chrome samples: https://github.com/austinEng/webgpu-samples
+
+【MSDF】
+- msdfgen: https://github.com/Chlumsky/msdfgen
+- 論文: "Shape Decomposition for Multi-channel Distance Fields"
+- Valve SDF論文: "Improved Alpha-Tested Magnification for Vector Textures"
+
+【PixiJS v8】
+- 公式ドキュメント: https://pixijs.com/8.x/guides
+- WebGPU統合計画: https://github.com/pixijs/pixijs/discussions/9000
+
+【Emscripten】
+- 公式ドキュメント: https://emscripten.org/docs/
+- WebAssembly最適化: https://emscripten.org/docs/optimizing/
+
+================================================================================
+END OF DOCUMENT
+================================================================================
