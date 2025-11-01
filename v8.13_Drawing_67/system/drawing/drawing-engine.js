@@ -1,6 +1,6 @@
-// ===== system/drawing/drawing-engine.js - BrushCore統合版 =====
+// ===== system/drawing/drawing-engine.js - 座標変換修正版 =====
 // 役割：PointerEvent → 座標変換 → BrushCore呼び出し
-// 描画ロジックはBrushCoreに委譲
+// 修正：coordinate-system.jsの戻り値 {localX, localY} に対応
 
 class DrawingEngine {
     constructor(app, layerSystem, cameraSystem, history) {
@@ -125,6 +125,7 @@ class DrawingEngine {
     /**
      * 座標変換：Screen → Local
      * ガイドライン準拠：screenClientToCanvas → canvasToWorld → worldToLocal
+     * 🔧 修正：coordinate-system.js が返す {localX, localY} に対応
      */
     _screenToLocal(clientX, clientY) {
         if (!this.coordSystem) {
@@ -132,28 +133,50 @@ class DrawingEngine {
             return null;
         }
 
+        // アクティブレイヤー取得
+        const activeLayer = this.layerSystem.getActiveLayer();
+        if (!activeLayer) {
+            console.warn('[DrawingEngine] No active layer');
+            return null;
+        }
+
         // 1. Screen → Canvas (DPI補正)
         const canvasCoords = this.coordSystem.screenClientToCanvas(clientX, clientY);
-        if (!canvasCoords) return null;
+        if (!canvasCoords || canvasCoords.canvasX === undefined) {
+            console.error('[DrawingEngine] screenClientToCanvas failed');
+            return null;
+        }
 
         // 2. Canvas → World (worldContainer逆行列)
-        const worldCoords = this.coordSystem.canvasToWorld(canvasCoords.x, canvasCoords.y);
-        if (!worldCoords) return null;
+        const worldCoords = this.coordSystem.canvasToWorld(canvasCoords.canvasX, canvasCoords.canvasY);
+        if (!worldCoords || worldCoords.worldX === undefined) {
+            console.error('[DrawingEngine] canvasToWorld failed');
+            return null;
+        }
 
         // 3. World → Local (アクティブレイヤーのローカル座標)
-        const activeLayer = this.layerSystem.getActiveLayer();
-        if (!activeLayer) return null;
-
+        // 🔧 修正：coordinate-system.js が {localX, localY} を返すため、そのまま使用
         const localCoords = this.coordSystem.worldToLocal(
-            worldCoords.x,
-            worldCoords.y,
+            worldCoords.worldX,
+            worldCoords.worldY,
             activeLayer
         );
-        if (!localCoords) return null;
+        
+        if (!localCoords || localCoords.localX === undefined || localCoords.localY === undefined) {
+            console.error('[DrawingEngine] worldToLocal failed or returned invalid values');
+            return null;
+        }
 
+        // NaN チェック（デバッグ用）
+        if (isNaN(localCoords.localX) || isNaN(localCoords.localY)) {
+            console.error('[DrawingEngine] worldToLocal returned NaN:', localCoords);
+            return null;
+        }
+
+        // 🔧 修正：そのまま返す（x/y への変換は不要）
         return {
-            localX: localCoords.x,
-            localY: localCoords.y
+            localX: localCoords.localX,
+            localY: localCoords.localY
         };
     }
 
@@ -270,8 +293,9 @@ class DrawingEngine {
 // グローバル公開（後方互換性）
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js (BrushCore統合版) loaded');
+console.log('✅ drawing-engine.js (座標変換修正版) loaded');
 console.log('   ✓ PointerEvent unified');
 console.log('   ✓ Coordinate pipeline: Screen → Canvas → World → Local');
+console.log('   ✓ 修正: coordinate-system.js の {localX, localY} に対応');
 console.log('   ✓ Pen/Eraser via BrushCore');
 console.log('   ✓ Legacy API support: startDrawing/continueDrawing/stopDrawing');

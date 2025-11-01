@@ -1,6 +1,6 @@
-// ===== system/drawing/brush-core.js =====
+// ===== system/drawing/brush-core.js - 描画修正版 =====
 // BrushCore - ペン/消しゴム統合処理
-// 将来のSDF/MSDF移行を見据えた設計
+// 修正: StrokeRenderer.renderFinalStroke() の呼び出しパラメータ修正
 
 (function() {
     'use strict';
@@ -28,11 +28,27 @@
             this.currentPointerId = null;
 
             // レンダラー参照
-            this.strokeRecorder = window.StrokeRecorder ? new window.StrokeRecorder() : null;
-            this.strokeRenderer = window.StrokeRenderer ? new window.StrokeRenderer() : null;
+            this.strokeRecorder = null;
+            this.strokeRenderer = null;
+            
+            // StrokeRecorder初期化
+            if (window.StrokeRecorder && window.PressureHandler) {
+                const pressureHandler = new window.PressureHandler();
+                this.strokeRecorder = new window.StrokeRecorder(pressureHandler, this.cameraSystem);
+            }
+            
+            // StrokeRenderer初期化
+            if (window.StrokeRenderer) {
+                this.strokeRenderer = new window.StrokeRenderer(this.app, this.layerSystem, this.cameraSystem);
+            }
             
             // CoordinateSystem参照
             this.coordSystem = window.CoordinateSystem;
+            
+            console.log('[BrushCore] Initialized:', {
+                hasRecorder: !!this.strokeRecorder,
+                hasRenderer: !!this.strokeRenderer
+            });
         }
 
         /**
@@ -52,6 +68,12 @@
             }
             
             this.currentTool = tool;
+            
+            // StrokeRendererにもツールを伝える
+            if (this.strokeRenderer) {
+                this.strokeRenderer.setTool(tool);
+            }
+            
             console.log(`[BrushCore] Tool changed: ${tool}`);
             
             // イベント発行
@@ -81,11 +103,17 @@
                 return;
             }
 
+            // NaNチェック
+            if (isNaN(localX) || isNaN(localY)) {
+                console.error('[BrushCore] Invalid coordinates:', { localX, localY });
+                return;
+            }
+
             this.isDrawing = true;
             this.currentPointerId = pointerId;
 
             // ブラシ設定取得（完全なフォールバック）
-            let size = 3; // デフォルト
+            let size = 10; // デフォルト
             let color = 0x800000; // デフォルト
             let opacity = 1.0; // デフォルト
 
@@ -125,6 +153,8 @@
                     opacity = this.brushSettings.opacity;
                 } else if (typeof this.brushSettings.getAlpha === 'function') {
                     opacity = this.brushSettings.getAlpha();
+                } else if (typeof this.brushSettings.alpha === 'number') {
+                    opacity = this.brushSettings.alpha;
                 }
             }
             if (this.config) {
@@ -132,18 +162,21 @@
                 else if (this.config.pen?.opacity) opacity = this.config.pen.opacity;
             }
 
+            // 現在のストローク情報を保存
+            this.currentStroke = {
+                size,
+                color,
+                opacity,
+                tool: this.currentTool
+            };
+
             // StrokeRecorder初期化
             if (this.strokeRecorder) {
-                this.strokeRecorder.startStroke(localX, localY, pressure, {
-                    size,
-                    color,
-                    opacity,
-                    tool: this.currentTool
-                });
+                this.strokeRecorder.startStroke(localX, localY, pressure);
             }
 
             console.log(`[BrushCore] Stroke started:`, {
-                position: `(${localX}, ${localY})`,
+                position: `(${localX.toFixed(2)}, ${localY.toFixed(2)})`,
                 tool: this.currentTool,
                 size,
                 color: `0x${color.toString(16)}`,
@@ -159,6 +192,12 @@
             if (!this.isDrawing) return;
             if (pointerId !== undefined && pointerId !== this.currentPointerId) return;
 
+            // NaNチェック
+            if (isNaN(localX) || isNaN(localY)) {
+                console.error('[BrushCore] Invalid coordinates in addPoint:', { localX, localY });
+                return;
+            }
+
             if (this.strokeRecorder) {
                 this.strokeRecorder.addPoint(localX, localY, pressure);
             }
@@ -173,22 +212,42 @@
 
             const activeLayer = this.layerSystem.getActiveLayer();
             if (!activeLayer || !activeLayer.layerData) {
+                console.warn('[BrushCore] endStroke: No active layer');
                 this.isDrawing = false;
                 return;
             }
 
             // ストローク確定
-            if (this.strokeRecorder) {
-                const strokeData = this.strokeRecorder.finalizeStroke();
+            if (!this.strokeRecorder) {
+                console.error('[BrushCore] endStroke: strokeRecorder not available');
+                this.isDrawing = false;
+                return;
+            }
+
+            const strokeData = this.strokeRecorder.endStroke();
+            
+            console.log('[BrushCore] endStroke: strokeData received:', {
+                hasData: !!strokeData,
+                pointCount: strokeData?.points?.length || 0,
+                isSingleDot: strokeData?.isSingleDot,
+                firstPoint: strokeData?.points?.[0]
+            });
+            
+            if (strokeData && strokeData.points && strokeData.points.length > 0) {
+                console.log('[BrushCore] Finalizing stroke:', {
+                    pointCount: strokeData.points.length,
+                    isSingleDot: strokeData.isSingleDot
+                });
                 
-                if (strokeData && strokeData.points && strokeData.points.length > 0) {
-                    // ★重要：ここでペン/消しゴムを統一的に描画
-                    this._renderStroke(activeLayer, strokeData);
-                }
+                // ★重要：ここでペン/消しゴムを統一的に描画
+                this._renderStroke(activeLayer, strokeData);
+            } else {
+                console.warn('[BrushCore] endStroke: No valid stroke data to render');
             }
 
             this.isDrawing = false;
             this.currentPointerId = null;
+            this.currentStroke = null;
 
             console.log('[BrushCore] Stroke ended');
         }
@@ -200,18 +259,22 @@
             if (!this.isDrawing) return;
             if (pointerId !== undefined && pointerId !== this.currentPointerId) return;
 
-            if (this.strokeRecorder) {
-                this.strokeRecorder.cancelStroke();
+            if (this.strokeRecorder && this.strokeRecorder.isActive && this.strokeRecorder.isActive()) {
+                // 記録を強制終了（描画はしない）
+                this.strokeRecorder.isRecording = false;
+                this.strokeRecorder.points = [];
             }
 
             this.isDrawing = false;
             this.currentPointerId = null;
+            this.currentStroke = null;
 
             console.log('[BrushCore] Stroke cancelled');
         }
 
         /**
          * ストローク描画（内部処理）
+         * 修正: StrokeRenderer.renderFinalStroke() の正しい引数渡し
          */
         _renderStroke(layer, strokeData) {
             if (!this.strokeRenderer) {
@@ -219,26 +282,30 @@
                 return;
             }
 
+            if (!this.currentStroke) {
+                console.error('[BrushCore] No current stroke settings');
+                return;
+            }
+
             console.log('[BrushCore] Rendering stroke:', {
                 pointCount: strokeData.points?.length,
                 tool: this.currentTool,
-                hasRenderer: !!this.strokeRenderer,
-                rendererType: this.strokeRenderer.constructor.name
+                settings: this.currentStroke
             });
 
-            // ★ツールに応じてブレンドモード切替
-            const blendMode = this.currentTool === 'pen' 
-                ? PIXI.BLEND_MODES.NORMAL 
-                : PIXI.BLEND_MODES.ERASE;
+            // 🔧 修正: StrokeRenderer.renderFinalStroke() の正しい呼び出し方
+            // renderFinalStroke(strokeData, settings, targetGraphics)
+            // settings = { color, size, alpha }
+            const settings = {
+                color: this.currentStroke.color,
+                size: this.currentStroke.size,
+                alpha: this.currentStroke.opacity // ★重要: alpha という名前で渡す
+            };
 
-            // StrokeRendererで描画
             const strokeGraphics = this.strokeRenderer.renderFinalStroke(
                 strokeData,
-                layer,
-                {
-                    blendMode: blendMode,
-                    applyMask: true // レイヤーマスク適用
-                }
+                settings,
+                null // 新しいGraphicsを作成
             );
 
             if (!strokeGraphics) {
@@ -248,25 +315,28 @@
 
             console.log('[BrushCore] Stroke rendered successfully:', {
                 graphicsType: strokeGraphics.constructor.name,
-                childCount: strokeGraphics.children?.length
+                childCount: strokeGraphics.children?.length,
+                blendMode: strokeGraphics.blendMode
             });
 
             // レイヤーに追加
             layer.addChild(strokeGraphics);
 
             // パスデータをレイヤーに保存
-            if (layer.layerData.paths) {
-                layer.layerData.paths.push({
-                    id: `path_${Date.now()}_${Math.random()}`,
-                    points: strokeData.points,
-                    size: strokeData.size,
-                    color: strokeData.color,
-                    opacity: strokeData.opacity,
-                    tool: this.currentTool,
-                    graphics: strokeGraphics,
-                    timestamp: Date.now()
-                });
+            if (!layer.layerData.paths) {
+                layer.layerData.paths = [];
             }
+            
+            layer.layerData.paths.push({
+                id: `path_${Date.now()}_${Math.random()}`,
+                points: strokeData.points,
+                size: this.currentStroke.size,
+                color: this.currentStroke.color,
+                opacity: this.currentStroke.opacity,
+                tool: this.currentTool,
+                graphics: strokeGraphics,
+                timestamp: Date.now()
+            });
 
             // サムネイル更新リクエスト
             const layerIndex = this.layerSystem.getLayerIndex(layer);
@@ -284,7 +354,7 @@
             }
 
             // History記録
-            if (window.History && !window.History._manager?.isApplying) {
+            if (window.History && (!window.History._manager || !window.History._manager.isApplying)) {
                 this._recordHistory(layer, strokeGraphics, strokeData);
             }
         }
@@ -341,7 +411,9 @@
     // グローバル公開
     window.BrushCore = BrushCore;
 
-    console.log('✅ brush-core.js loaded');
+    console.log('✅ brush-core.js (描画修正版) loaded');
     console.log('   ✓ Pen/Eraser unified pipeline');
+    console.log('   ✓ StrokeRenderer.renderFinalStroke() 引数修正');
+    console.log('   ✓ NaN チェック追加');
     console.log('   ✓ SDF/MSDF-ready architecture');
 })();

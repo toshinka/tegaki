@@ -1,0 +1,354 @@
+config.js:523 ✅ config.js (Phase 2完全版) loaded
+config.js:524    - BRUSH_DEFAULTS追加完了
+event-bus.js:143 ✅ system/event-bus.js Phase 2: 優先度機能追加版 loaded
+ ✅ coordinate-system.js (worldToLocal修正版) loaded
+    - 修正: worldToLocal() の pivot 計算順序を修正
+    - Vキーモード時の NaN 問題を解決
+ ✅ Debug commands: TegakiDebug.coord.*
+ ✅ data-models.js (マスクスプライト不可視版) loaded
+ ✅ batch-api.js (Phase 6: History統合版) loaded
+ ✅ popup-manager.js (quick-access除外対応版) loaded
+ ✅ camera-system.js (v2.0: リサイズ修正版) loaded
+ ✅ layer-transform.js (Phase 1-4完全改修版 + NaN誤検知修正) loaded
+    ✓ Phase 1: イベント発火の修正 (layer:transform-updated 発火)
+    ✓ Phase 2: 座標系 NaN 対策 (isFinite チェック + 誤検知修正)
+    ✓ Phase 3: UI受信側の整備 (イベントペイロード最適化)
+    ✓ Phase 4: ショートカット整合性 (反転機能修復)
+    ✓ 追加修正: coordinateSystem初期化・world座標プロパティ名修正
+ ✅ layer-system.js (v2.1: レイヤーナンバリング修正版) loaded
+ ✅ drawing-clipboard.js Phase4改修版+確定イベント loaded
+    - ✅ CTRL+V behavior: overwrite active layer
+    - ✅ Commit events: paste:commit, operation:commit
+    - ✅ Thumbnail auto-update on paste
+ ✅ history.js (Phase 3: Redo null参照修正版) loaded
+ ✅ animation-system.js (Phase 1改修版・フレーム名統一: xF形式) loaded
+ ✅ pointer-handler.js loaded
+ ✅ pressure-handler.js (Phase 4: グローバル公開版) loaded
+    ✓ 距離ベースフィルタ対応
+    ✓ window.PressureHandler として公開
+ ✅ curve-interpolator.js (Phase 3) loaded
+    - Catmull-Rom スプライン補間
+    - 適応的サンプリング対応
+    - tiltX/Y/twist データ補間対応
+ ✅ stroke-recorder.js (Phase 2: グローバル公開版) loaded
+    ✓ 二重座標変換を削除
+    ✓ Local座標を直接記録
+    ✓ window.StrokeRecorder として公開
+ ✅ system/drawing/stroke-renderer.js loaded (PixiJS v8完全対応版)
+ ✅ system/drawing/thumbnail-system.js (Phase 1-2完全版) loaded
+    - Phase 1: イベントフロー確立 (layer:transform-updated → thumbnail:layer-updated)
+    - Phase 2: throttle 実装 (100ms間隔)
+    - Phase 5: デバッグコマンド追加
+    - Debug: window.TegakiDebug.monitorThumbnails()
+    - Debug: window.TegakiDebug.inspectThumbnailCache()
+    - Debug: window.TegakiDebug.regenerateAllThumbnails()
+ ✅ brush-settings.js (API統一版) loaded
+    - ✅ getOpacity() / setOpacity() 追加
+    - ✅ brush:opacity-changed イベント購読追加
+ ✅ brush-core.js (描画修正版) loaded
+    ✓ Pen/Eraser unified pipeline
+    ✓ StrokeRenderer.renderFinalStroke() 引数修正
+    ✓ NaN チェック追加
+    ✓ SDF/MSDF-ready architecture
+ ✅ drawing-engine.js (座標変換修正版) loaded
+    ✓ PointerEvent unified
+    ✓ Coordinate pipeline: Screen → Canvas → World → Local
+    ✓ 修正: coordinate-system.js の {localX, localY} に対応
+    ✓ Pen/Eraser via BrushCore
+    ✓ Legacy API support: startDrawing/continueDrawing/stopDrawing
+ ✅ quick-export-ui.js (無効化版) loaded
+ ✅ export-manager.js (CUT→FRAME完全修正版) loaded
+ ✅ png-exporter.js (単一フレーム専用・プレビュー対応) loaded
+ ✅ apng-exporter.js (CUT→FRAME完全修正版) loaded
+ ✅ gif-exporter.js (CUT→FRAME完全修正版) loaded
+ ✅ webp-exporter.js (静止画・動画自動判定対応版) loaded
+ ✅ mp4-exporter.js (Phase 8完成版) loaded
+ ✅ dom-builder.js (ID重複解消版) loaded
+dom-builder.js:495    - #pen-settings → #legacy-pen-settings に変更
+dom-builder.js:496    - pen-size-slider → legacy-pen-size-slider に変更
+dom-builder.js:497    - quick-access-popup.jsとのID競合を完全解消
+slider-utils.js:197 ✅ ui/slider-utils.js loaded
+slider-utils.js:198    - 責務: スライダーUIの統一実装
+slider-utils.js:199    - DRY原則: settings-popup.js と ui-panels.js で共有
+slider-utils.js:200    - API: createSlider() / createSimpleSlider()
+keyboard-handler.js:318 ✅ keyboard-handler.js (P/Eサイドバー同期版) loaded
+resize-popup.js:452 ✅ resize-popup.js (Phase 4完了: ロジック削減版) loaded
+layer-panel-renderer.js:668 ✅ ui/layer-panel-renderer.js (Phase 5: タブレットペン完全対応版) loaded
+layer-panel-renderer.js:669    ✓ PointerEvent ベース実装（Sortable.js 不要）
+layer-panel-renderer.js:670    ✓ タブレットペン・タッチ・マウス全対応
+layer-panel-renderer.js:671    ✓ setPointerCapture/releasePointerCapture 実装
+layer-panel-renderer.js:672    ✓ ドラッグ中のビジュアルフィードバック
+layer-panel-renderer.js:673    ✓ 背景レイヤードラッグ防止
+status-display-renderer.js:138 ✅ status-display-renderer.js (Phase 1改修版) loaded
+timeline-thumbnail-utils.js:258 ✅ ui/timeline-thumbnail-utils.js (Phase 3完全版) loaded
+timeline-thumbnail-utils.js:259    ✓ Phase 1: layer:transform-updated 購読追加
+timeline-thumbnail-utils.js:260    ✓ Phase 3: throttle最適化（100ms）
+timeline-thumbnail-utils.js:261    ✓ Phase 3: immediate フラグ対応
+timeline-thumbnail-utils.js:262    ✓ タイムラインサムネイルがレイヤー変形に即座追従
+timeline-ui.js:981 ✅ timeline-ui.js (Phase 4完了: レイヤー変形連携版) loaded
+album-popup.js:473 ✅ album-popup.js (FRAME改修版) loaded
+settings-popup.js:583 ✅ settings-popup.js (即応性完全修正版) loaded
+settings-popup.js:584    - CSS transition完全除去（!important付き）
+settings-popup.js:585    - DOM更新を同期的に即座実行
+settings-popup.js:586    - quick-access/resize-popupと完全同等の動作
+quick-access-popup.js:538 ✅ quick-access-popup.js (背景ドラッグ + 閉じるボタン版) loaded
+quick-access-popup.js:539    - 背景ドラッグで移動可能（スライダー/ボタン以外）
+quick-access-popup.js:540    - 右上×ボタンで閉じる
+quick-access-popup.js:541    - 画面外クリックで閉じない（常時開きっぱなし可能）
+export-popup.js:423 ✅ export-popup.js (frameInfo修正版＋PDF有効化) loaded
+ui-panels.js:408 ✅ ui-panels.js (サイドバー同期・色調整版) loaded
+core-runtime.js:713 ✅ core-runtime.js (Phase 1-3完全版: ThumbnailSystem統合) loaded
+core-engine.js:724 ✅ core-engine.js (Phase2完全修正版) loaded
+core-initializer.js:347 ✅ core-initializer.js (完全修正版・SettingsManager＋ExportPopup対応) loaded
+brush-core.js:48 [BrushCore] Initialized: {hasRecorder: true, hasRenderer: true}
+drawing-engine.js:51 [DrawingEngine] Canvas pointer events initialized
+drawing-engine.js:191 [DrawingEngine] Brush settings applied: BrushSettings {config: {…}, eventBus: EventBus, size: 10, color: 8388608, alpha: 0.85, …}
+drawing-clipboard.js:19 DrawingClipboard: Initializing...
+drawing-clipboard.js:26 ✅ DrawingClipboard initialized (Phase4改修版 + 確定イベント)
+thumbnail-system.js:48 ✅ ThumbnailSystem initialized (Phase 1-2)
+core-initializer.js:63 ✅ SettingsManager initialized
+popup-manager.js:16 ✅ PopupManager initialized
+popup-manager.js:42 📋 Popup "settings" registered (priority: 1)
+popup-manager.js:42 📋 Popup "quickAccess" registered (priority: 2)
+popup-manager.js:42 📋 Popup "album" registered (priority: 3)
+popup-manager.js:42 📋 Popup "resize" registered (priority: 4)
+popup-manager.js:102 🔧 Initializing all popups...
+popup-manager.js:87 ✅ Popup "settings" initialized successfully
+popup-manager.js:87 ✅ Popup "quickAccess" initialized successfully
+popup-manager.js:87 ✅ Popup "album" initialized successfully
+popup-manager.js:87 ✅ Popup "resize" initialized successfully
+popup-manager.js:118 📊 Popup initialization: 4 ready, 0 deferred
+index.html:97 ✅ Application initialized with BrushCore unified system
+popup-manager.js:42 📋 Popup "export" registered (priority: 5)
+popup-manager.js:87 ✅ Popup "export" initialized successfully
+core-initializer.js:245 ✅ ExportPopup registered and initialized
+// ===== デバッグコマンド集 =====
+// ブラウザコンソールで以下を実行してください
+
+// 1. 必要なコンポーネントが存在するか確認
+console.log('=== コンポーネント存在チェック ===');
+console.log('CoordinateSystem:', !!window.CoordinateSystem);
+console.log('PressureHandler:', !!window.PressureHandler);
+console.log('StrokeRecorder:', !!window.StrokeRecorder);
+console.log('StrokeRenderer:', !!window.StrokeRenderer);
+console.log('BrushCore:', !!window.BrushCore);
+console.log('DrawingEngine:', !!window.DrawingEngine);
+
+// 2. DrawingEngine の状態確認
+console.log('\n=== DrawingEngine 状態 ===');
+const runtime = window.CoreRuntime?.internal;
+if (runtime?.drawingEngine) {
+    const engine = runtime.drawingEngine;
+    console.log('DrawingEngine exists:', !!engine);
+    console.log('BrushCore exists:', !!engine.brushCore);
+    console.log('StrokeRecorder exists:', !!engine.brushCore?.strokeRecorder);
+    console.log('StrokeRenderer exists:', !!engine.brushCore?.strokeRenderer);
+    console.log('Current tool:', engine.brushCore?.currentTool);
+    console.log('Is drawing:', engine.brushCore?.isDrawing);
+} else {
+    console.log('DrawingEngine not found in CoreRuntime');
+}
+
+// 3. 手動でストロークをテスト
+window.testStroke = function() {
+    console.log('\n=== 手動ストロークテスト ===');
+    
+    const engine = window.CoreRuntime?.internal?.drawingEngine;
+    if (!engine || !engine.brushCore) {
+        console.error('DrawingEngine または BrushCore が見つかりません');
+        return;
+    }
+    
+    const brushCore = engine.brushCore;
+    
+    // ストローク開始
+    console.log('1. ストローク開始...');
+    brushCore.startStroke(100, 100, 0.5, 'test-pointer-1');
+    
+    // いくつかポイント追加
+    console.log('2. ポイント追加...');
+    brushCore.addPoint(110, 110, 0.6, 'test-pointer-1');
+    brushCore.addPoint(120, 120, 0.7, 'test-pointer-1');
+    brushCore.addPoint(130, 130, 0.8, 'test-pointer-1');
+    
+    // StrokeRecorderの状態確認
+    if (brushCore.strokeRecorder) {
+        console.log('3. StrokeRecorder 状態:');
+        console.log('   - Point count:', brushCore.strokeRecorder.getPointCount());
+        console.log('   - Is recording:', brushCore.strokeRecorder.isRecording);
+        console.log('   - Points:', brushCore.strokeRecorder.points);
+    }
+    
+    // ストローク終了
+    console.log('4. ストローク終了...');
+    brushCore.endStroke('test-pointer-1');
+    
+    console.log('5. テスト完了！キャンバスに線が表示されているか確認してください。');
+};
+
+// 4. BrushCore の詳細デバッグ
+window.debugBrushCore = function() {
+    console.log('\n=== BrushCore 詳細デバッグ ===');
+    
+    const engine = window.CoreRuntime?.internal?.drawingEngine;
+    if (!engine?.brushCore) {
+        console.error('BrushCore not found');
+        return;
+    }
+    
+    const brushCore = engine.brushCore;
+    
+    console.log('BrushCore:');
+    console.log('  - currentTool:', brushCore.currentTool);
+    console.log('  - isDrawing:', brushCore.isDrawing);
+    console.log('  - currentStroke:', brushCore.currentStroke);
+    console.log('  - strokeRecorder:', !!brushCore.strokeRecorder);
+    console.log('  - strokeRenderer:', !!brushCore.strokeRenderer);
+    
+    if (brushCore.strokeRecorder) {
+        console.log('\nStrokeRecorder:');
+        console.log('  - isRecording:', brushCore.strokeRecorder.isRecording);
+        console.log('  - pointCount:', brushCore.strokeRecorder.points?.length || 0);
+        console.log('  - pressureHandler:', !!brushCore.strokeRecorder.pressureHandler);
+    }
+    
+    if (brushCore.strokeRenderer) {
+        console.log('\nStrokeRenderer:');
+        console.log('  - currentTool:', brushCore.strokeRenderer.currentTool);
+        console.log('  - resolution:', brushCore.strokeRenderer.resolution);
+    }
+    
+    console.log('\nLayerSystem:');
+    const activeLayer = brushCore.layerSystem?.getActiveLayer();
+    console.log('  - activeLayer:', !!activeLayer);
+    if (activeLayer) {
+        console.log('  - layer name:', activeLayer.layerData?.name);
+        console.log('  - layer visible:', activeLayer.visible);
+        console.log('  - paths count:', activeLayer.layerData?.paths?.length || 0);
+        console.log('  - children count:', activeLayer.children?.length || 0);
+    }
+};
+
+// 5. アクティブレイヤーのパス情報を表示
+window.debugLayerPaths = function() {
+    console.log('\n=== アクティブレイヤーのパス情報 ===');
+    
+    const layerSystem = window.CoreRuntime?.internal?.layerManager;
+    if (!layerSystem) {
+        console.error('LayerSystem not found');
+        return;
+    }
+    
+    const activeLayer = layerSystem.getActiveLayer();
+    if (!activeLayer) {
+        console.error('No active layer');
+        return;
+    }
+    
+    console.log('Layer:', activeLayer.layerData?.name);
+    console.log('Paths:', activeLayer.layerData?.paths?.length || 0);
+    console.log('Children:', activeLayer.children?.length || 0);
+    
+    if (activeLayer.layerData?.paths) {
+        activeLayer.layerData.paths.forEach((path, index) => {
+            console.log(`\nPath ${index}:`);
+            console.log('  - id:', path.id);
+            console.log('  - tool:', path.tool);
+            console.log('  - points:', path.points?.length || 0);
+            console.log('  - color:', path.color?.toString(16));
+            console.log('  - size:', path.size);
+            console.log('  - opacity:', path.opacity);
+            console.log('  - graphics:', !!path.graphics);
+        });
+    }
+};
+
+// 使用方法を表示
+console.log('\n=== 使用可能なデバッグコマンド ===');
+console.log('testStroke()         - 手動でストロークをテスト');
+console.log('debugBrushCore()     - BrushCoreの詳細情報を表示');
+console.log('debugLayerPaths()    - アクティブレイヤーのパス情報を表示');
+console.log('\n例: testStroke() を実行してください');
+VM570:5 === コンポーネント存在チェック ===
+VM570:6 CoordinateSystem: true
+VM570:7 PressureHandler: true
+VM570:8 StrokeRecorder: true
+VM570:9 StrokeRenderer: true
+VM570:10 BrushCore: true
+VM570:11 DrawingEngine: true
+VM570:14 
+=== DrawingEngine 状態 ===
+VM570:18 DrawingEngine exists: true
+VM570:19 BrushCore exists: true
+VM570:20 StrokeRecorder exists: true
+VM570:21 StrokeRenderer exists: true
+VM570:22 Current tool: pen
+VM570:23 Is drawing: false
+VM570:143 
+=== 使用可能なデバッグコマンド ===
+VM570:144 testStroke()         - 手動でストロークをテスト
+VM570:145 debugBrushCore()     - BrushCoreの詳細情報を表示
+VM570:146 debugLayerPaths()    - アクティブレイヤーのパス情報を表示
+VM570:147 
+例: testStroke() を実行してください
+undefined
+testStroke()
+VM570:30 
+=== 手動ストロークテスト ===
+VM570:41 1. ストローク開始...
+brush-core.js:178 [BrushCore] Stroke started: {position: '(100.00, 100.00)', tool: 'pen', size: 10, color: '0x800000', opacity: 0.85, …}
+VM570:45 2. ポイント追加...
+VM570:52 3. StrokeRecorder 状態:
+VM570:53    - Point count: 4
+VM570:54    - Is recording: true
+VM570:55    - Points: (4) [{…}, {…}, {…}, {…}]
+VM570:59 4. ストローク終了...
+brush-core.js:229 [BrushCore] endStroke: strokeData received: {hasData: true, pointCount: 4, isSingleDot: false, firstPoint: {…}}
+brush-core.js:237 [BrushCore] Finalizing stroke: {pointCount: 4, isSingleDot: false}
+brush-core.js:290 [BrushCore] Rendering stroke: {pointCount: 4, tool: 'pen', settings: {…}}
+brush-core.js:316 [BrushCore] Stroke rendered successfully: {graphicsType: 'or', childCount: 0, blendMode: 'inherit'}
+brush-core.js:252 [BrushCore] Stroke ended
+VM570:62 5. テスト完了！キャンバスに線が表示されているか確認してください。
+undefined
+debugBrushCore()
+VM570:67 
+=== BrushCore 詳細デバッグ ===
+VM570:77 BrushCore:
+VM570:78   - currentTool: pen
+VM570:79   - isDrawing: false
+VM570:80   - currentStroke: null
+VM570:81   - strokeRecorder: true
+VM570:82   - strokeRenderer: true
+VM570:85 
+StrokeRecorder:
+VM570:86   - isRecording: false
+VM570:87   - pointCount: 4
+VM570:88   - pressureHandler: true
+VM570:92 
+StrokeRenderer:
+VM570:93   - currentTool: pen
+VM570:94   - resolution: 2
+VM570:97 
+LayerSystem:
+VM570:99   - activeLayer: true
+VM570:101   - layer name: レイヤー1
+VM570:102   - layer visible: true
+VM570:103   - paths count: 1
+VM570:104   - children count: 1
+undefined
+debugLayerPaths()
+VM570:110 
+=== アクティブレイヤーのパス情報 ===
+VM570:124 Layer: レイヤー1
+VM570:125 Paths: 1
+VM570:126 Children: 1
+VM570:130 
+Path 0:
+VM570:131   - id: path_1761959567154_0.9824562081422594
+VM570:132   - tool: pen
+VM570:133   - points: 4
+VM570:134   - color: 800000
+VM570:135   - size: 10
+VM570:136   - opacity: 0.85
+VM570:137   - graphics: true
+undefined
