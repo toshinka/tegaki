@@ -1,9 +1,7 @@
 /**
- * StrokeRenderer - ストローク描画専用クラス (Phase 4-B: MSDF統合版)
+ * StrokeRenderer - ストローク描画専用クラス (Phase 4-B-4: MSDF完全統合版)
  * 
  * 責務: ストロークデータ → PIXI描画オブジェクト変換
- * Phase 4-A改修: WebGPU Compute ShaderによるSDF生成統合
- * Phase 4-B改修: MSDF (Multi-channel SDF) 統合
  * 
  * 描画方式優先順位:
  * 1. WebGPU MSDF（最高品質・RGB 3チャンネル）
@@ -26,39 +24,61 @@
             // WebGPU関連
             this.webgpuLayer = null;
             this.webgpuComputeSDF = null;
+            this.webgpuComputeMSDF = null;
             this.textureBridge = null;
             this.webgpuEnabled = false;
+            
+            // MSDF関連
+            this.msdfBrushShader = null;
+            this.msdfEnabled = false;
+            
+            // 設定
+            this.config = window.TEGAKI_CONFIG?.webgpu || {};
         }
 
         /**
          * WebGPUレイヤー設定
-         * @param {WebGPUDrawingLayer} webgpuLayer
          */
         async setWebGPULayer(webgpuLayer) {
             this.webgpuLayer = webgpuLayer;
             
             if (webgpuLayer && webgpuLayer.isInitialized()) {
                 // WebGPU Compute SDF初期化
-                this.webgpuComputeSDF = new window.WebGPUComputeSDF(webgpuLayer);
-                await this.webgpuComputeSDF.initialize();
+                if (this.config.sdf?.enabled !== false) {
+                    this.webgpuComputeSDF = new window.WebGPUComputeSDF(webgpuLayer);
+                    await this.webgpuComputeSDF.initialize();
+                }
+                
+                // WebGPU Compute MSDF初期化
+                if (this.config.msdf?.enabled !== false) {
+                    this.webgpuComputeMSDF = new window.WebGPUComputeMSDF(webgpuLayer);
+                    await this.webgpuComputeMSDF.initialize();
+                    this.msdfEnabled = true;
+                }
                 
                 // Texture Bridge初期化
                 this.textureBridge = new window.WebGPUTextureBridge(webgpuLayer);
                 
+                // MSDF Shader初期化
+                if (this.msdfEnabled) {
+                    this.msdfBrushShader = new window.MSDFBrushShader();
+                    this.msdfBrushShader.initialize(this.app.renderer);
+                }
+                
                 this.webgpuEnabled = true;
-                console.log('[StrokeRenderer] WebGPU integration enabled');
+                console.log('[StrokeRenderer] WebGPU + MSDF integration enabled');
             }
         }
 
         /**
-         * 現在のツールを設定
+         * ツール設定
          */
         setTool(tool) {
             this.currentTool = tool;
         }
 
         /**
-         * 幅計算（プレビュー・確定共通）
+         * 幅計算（共通）
          */
         calculateWidth(pressure, brushSize) {
             const minRatio = Math.max(0.3, this.minPhysicalWidth);
@@ -67,7 +87,7 @@
         }
 
         /**
-         * リアルタイムプレビュー描画（筆圧対応・累積描画）
+         * リアルタイムプレビュー描画
          */
         renderPreview(points, settings, targetGraphics = null) {
             const graphics = targetGraphics || new PIXI.Graphics();
@@ -116,11 +136,22 @@
         }
 
         /**
-         * 確定ストローク描画（WebGPU/Legacy自動選択）
+         * 確定ストローク描画（優先順位: MSDF → SDF → Legacy）
          */
         async renderFinalStroke(strokeData, settings, targetGraphics = null) {
-            // WebGPU SDF有効時
-            if (this.webgpuEnabled && this.webgpuComputeSDF && strokeData.points.length > 5) {
+            const minPoints = this.config.sdf?.minPointsForGPU || 5;
+
+            // 1. WebGPU MSDF（最優先）
+            if (this.msdfEnabled && this.webgpuComputeMSDF && strokeData.points.length > minPoints) {
+                try {
+                    return await this._renderFinalStrokeMSDF(strokeData, settings, targetGraphics);
+                } catch (error) {
+                    console.warn('[StrokeRenderer] WebGPU MSDF failed, fallback to SDF:', error);
+                }
+            }
+
+            // 2. WebGPU SDF（次点）
+            if (this.webgpuEnabled && this.webgpuComputeSDF && strokeData.points.length > minPoints) {
                 try {
                     return await this._renderFinalStrokeWebGPU(strokeData, settings, targetGraphics);
                 } catch (error) {
@@ -128,8 +159,87 @@
                 }
             }
 
-            // Legacy Graphics描画
+            // 3. Legacy Graphics（フォールバック）
             return this._renderFinalStrokeLegacy(strokeData, settings, targetGraphics);
+        }
+
+        /**
+         * WebGPU MSDF描画（Phase 4-B-4新規実装）
+         */
+        async _renderFinalStrokeMSDF(strokeData, settings, targetGraphics = null) {
+            const points = strokeData.points;
+            
+            // Bounding Box計算
+            let minX = Infinity, minY = Infinity;
+            let maxX = -Infinity, maxY = -Infinity;
+            
+            for (const p of points) {
+                minX = Math.min(minX, p.x);
+                minY = Math.min(minY, p.y);
+                maxX = Math.max(maxX, p.x);
+                maxY = Math.max(maxY, p.y);
+            }
+
+            const padding = settings.size * 3;
+            minX -= padding;
+            minY -= padding;
+            maxX += padding;
+            maxY += padding;
+
+            const width = Math.ceil(maxX - minX);
+            const height = Math.ceil(maxY - minY);
+
+            // ローカル座標に変換
+            const localPoints = points.map(p => ({
+                x: p.x - minX,
+                y: p.y - minY
+            }));
+
+            // WebGPU Compute ShaderでMSDF生成
+            const msdfConfig = this.config.msdf || {};
+            const msdfData = await this.webgpuComputeMSDF.generateMSDF(
+                localPoints,
+                width,
+                height,
+                settings.size * 2,
+                msdfConfig.range || 4.0
+            );
+
+            if (!msdfData) {
+                throw new Error('MSDF generation failed');
+            }
+
+            // MSDF → PixiJS Texture
+            const msdfTexture = await this.textureBridge.msdfToPixiTexture(
+                msdfData,
+                width,
+                height
+            );
+
+            if (!msdfTexture) {
+                throw new Error('MSDF texture conversion failed');
+            }
+
+            // MSDF Sprite作成
+            const sprite = new PIXI.Sprite(msdfTexture);
+            sprite.position.set(minX, minY);
+
+            // MSDF Shader適用
+            const msdfShader = this.msdfBrushShader.getMSDFShader({
+                threshold: msdfConfig.threshold || 0.5,
+                smoothness: msdfConfig.smoothness || 0.05
+            });
+            sprite.shader = msdfShader;
+
+            // ブレンドモード・色設定
+            if (this.currentTool === 'eraser') {
+                sprite.blendMode = 'erase';
+            } else {
+                sprite.tint = settings.color;
+                sprite.alpha = settings.alpha || 1.0;
+            }
+
+            return sprite;
         }
 
         /**
@@ -184,7 +294,7 @@
             );
 
             if (!sdfTexture) {
-                throw new Error('Texture conversion failed');
+                throw new Error('SDF texture conversion failed');
             }
 
             // SDF Sprite作成
@@ -194,16 +304,9 @@
             if (this.currentTool === 'eraser') {
                 sprite.blendMode = 'erase';
             } else {
-                // 色適用（Tint）
                 sprite.tint = settings.color;
                 sprite.alpha = settings.alpha || 1.0;
             }
-
-            console.log('[StrokeRenderer] WebGPU SDF rendered:', {
-                points: points.length,
-                resolution: `${width}x${height}`,
-                tool: this.currentTool
-            });
 
             return sprite;
         }
@@ -250,7 +353,7 @@
         }
 
         /**
-         * 単独点描画（円）
+         * 単独点描画
          */
         renderDot(point, settings, targetGraphics = null) {
             const graphics = targetGraphics || new PIXI.Graphics();
@@ -270,15 +373,7 @@
         }
 
         /**
-         * エラーハンドリング（WebGPU失敗時）
-         */
-        _handleWebGPUError(error) {
-            console.error('[StrokeRenderer] WebGPU error:', error);
-            this.webgpuEnabled = false;
-        }
-
-        /**
-         * 解像度更新（ウィンドウリサイズ時）
+         * 解像度更新
          */
         updateResolution() {
             this.resolution = window.devicePixelRatio || 1;
@@ -286,9 +381,8 @@
         }
     }
 
-    // グローバル登録
     window.StrokeRenderer = StrokeRenderer;
 
-    console.log('✅ system/drawing/stroke-renderer.js (Phase 4-A: WebGPU統合版) loaded');
+    console.log('✅ system/drawing/stroke-renderer.js (Phase 4-B-4: MSDF完全統合版) loaded');
 
 })();
