@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 PixiJS v8.13 お絵かきツール - BrushCore統合版</title>
+    <title>🎨 PixiJS v8.13 お絵かきツール</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
@@ -17,6 +17,7 @@
     <script src="https://unpkg.com/upng-js@2.1.0/UPNG.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/gif.js@0.2.0/dist/gif.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="libs/gsap.min.js"></script>
 
     <!-- Core Config -->
     <script src="config.js"></script>
@@ -26,6 +27,7 @@
     <!-- System -->
     <script src="system/data-models.js"></script>
     <script src="system/batch-api.js"></script>
+
     <script src="system/popup-manager.js"></script>
     <script src="system/state-manager.js"></script>
     <script src="system/settings-manager.js"></script>
@@ -37,11 +39,9 @@
     <script src="system/virtual-album.js"></script>
     <script src="system/animation-system.js"></script>
 
-    <!-- Drawing System - 順序重要！ -->
-    <!-- ★新規追加：PointerHandler（最優先） -->
+
+    <!-- Drawing System - Phase 1改修: pointer-handler.js追加、brush-core.js追加、eraser-mask-renderer.js削除 -->
     <script src="system/drawing/pointer-handler.js"></script>
-    
-    <!-- 既存の描画システム -->
     <script src="system/drawing/pressure-handler.js"></script>
     <script src="system/drawing/curve-interpolator.js"></script>
     <script src="system/drawing/stroke-recorder.js"></script>
@@ -49,16 +49,10 @@
     <script src="system/drawing/thumbnail-system.js"></script>
     <script src="system/drawing/brush-settings.js"></script>
     <script src="system/drawing/stroke-transformer.js"></script>
+    <!-- ★削除: eraser-mask-renderer.js（BrushCoreに統合） -->
     <script src="system/drawing/processing/vector-operations.js"></script>
-    
-    <!-- ★新規追加：BrushCore（StrokeRendererの後、DrawingEngineの前） -->
     <script src="system/drawing/brush-core.js"></script>
-    
-    <!-- ★修正版：DrawingEngine -->
     <script src="system/drawing/drawing-engine.js"></script>
-    
-    <!-- ★削除候補：eraser-mask-renderer.js は使用しない -->
-    <!-- <script src="system/drawing/eraser-mask-renderer.js"></script> -->
 
     <!-- Export System -->
     <script src="system/quick-export-ui.js"></script>
@@ -68,6 +62,7 @@
     <script src="system/exporters/gif-exporter.js"></script>
     <script src="system/exporters/webp-exporter.js"></script>
     <script src="system/exporters/mp4-exporter.js"></script>
+    <script src="system/exporters/pdf-exporter.js"></script>
 
     <!-- UI -->
     <script src="ui/dom-builder.js"></script>
