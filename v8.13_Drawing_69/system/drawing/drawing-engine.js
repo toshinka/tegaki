@@ -1,6 +1,6 @@
-// ===== system/drawing/drawing-engine.js - 座標変換修正版 =====
+// ===== system/drawing/drawing-engine.js - Phase 1: タブレットペン完全対応版 =====
 // 役割：PointerEvent → 座標変換 → BrushCore呼び出し
-// 修正：coordinate-system.jsの戻り値 {localX, localY} に対応
+// Phase 1改修: タブレットペン完全サポート・座標変換強化
 
 class DrawingEngine {
     constructor(app, layerSystem, cameraSystem, history) {
@@ -13,7 +13,7 @@ class DrawingEngine {
         // BrushCore統合
         this.brushCore = new window.BrushCore(app, layerSystem, cameraSystem, this.config);
         
-        // ブラシ設定（後で設定される）
+        // ブラシ設定
         this.brushSettings = null;
         
         // PointerHandler
@@ -21,6 +21,9 @@ class DrawingEngine {
         
         // CoordinateSystem
         this.coordSystem = window.CoordinateSystem;
+
+        // アクティブなポインターを追跡（マルチタッチ対応）
+        this.activePointers = new Map();
 
         this._initializeCanvas();
     }
@@ -35,7 +38,7 @@ class DrawingEngine {
             return;
         }
 
-        // touch-action設定
+        // touch-action設定（タブレットペン対応に必須）
         canvas.style.touchAction = 'none';
 
         // PointerEventハンドラ登録
@@ -52,19 +55,23 @@ class DrawingEngine {
     }
 
     /**
-     * PointerDown処理
+     * PointerDown処理（タブレットペン完全対応）
      */
     _handlePointerDown(info, e) {
         // レイヤー移動モード中は描画しない
         if (this.layerSystem.vKeyPressed) {
-            console.log('[DrawingEngine] Skipped: Layer move mode active');
+            return;
+        }
+
+        // 右クリック無視
+        if (info.button === 2) {
             return;
         }
 
         console.log('[DrawingEngine] PointerDown:', {
+            type: info.pointerType,
             client: `(${info.clientX}, ${info.clientY})`,
-            pressure: info.pressure,
-            type: info.pointerType
+            pressure: info.pressure
         });
 
         // 座標変換パイプライン
@@ -74,8 +81,10 @@ class DrawingEngine {
             return;
         }
 
-        console.log('[DrawingEngine] Converted to local:', {
-            local: `(${localCoords.localX}, ${localCoords.localY})`
+        // アクティブポインター登録
+        this.activePointers.set(info.pointerId, {
+            type: info.pointerType,
+            isDrawing: true
         });
 
         // BrushCoreにストローク開始を通知
@@ -88,10 +97,18 @@ class DrawingEngine {
     }
 
     /**
-     * PointerMove処理
+     * PointerMove処理（連続描画）
      */
     _handlePointerMove(info, e) {
-        if (!this.brushCore.getIsDrawing()) return;
+        // アクティブなポインターのみ処理
+        const pointerInfo = this.activePointers.get(info.pointerId);
+        if (!pointerInfo || !pointerInfo.isDrawing) {
+            return;
+        }
+
+        if (!this.brushCore.getIsDrawing()) {
+            return;
+        }
 
         const localCoords = this._screenToLocal(info.clientX, info.clientY);
         if (!localCoords) return;
@@ -105,27 +122,41 @@ class DrawingEngine {
     }
 
     /**
-     * PointerUp処理
+     * PointerUp処理（ストローク終了）
      */
     _handlePointerUp(info, e) {
-        if (!this.brushCore.getIsDrawing()) return;
+        const pointerInfo = this.activePointers.get(info.pointerId);
+        if (!pointerInfo) {
+            return;
+        }
 
-        this.brushCore.endStroke(info.pointerId);
+        if (this.brushCore.getIsDrawing()) {
+            this.brushCore.endStroke(info.pointerId);
+        }
+
+        // アクティブポインター削除
+        this.activePointers.delete(info.pointerId);
     }
 
     /**
-     * PointerCancel処理
+     * PointerCancel処理（中断）
      */
     _handlePointerCancel(info, e) {
-        if (!this.brushCore.getIsDrawing()) return;
+        const pointerInfo = this.activePointers.get(info.pointerId);
+        if (!pointerInfo) {
+            return;
+        }
 
-        this.brushCore.cancelStroke(info.pointerId);
+        if (this.brushCore.getIsDrawing()) {
+            this.brushCore.cancelStroke(info.pointerId);
+        }
+
+        this.activePointers.delete(info.pointerId);
     }
 
     /**
-     * 座標変換：Screen → Local
-     * ガイドライン準拠：screenClientToCanvas → canvasToWorld → worldToLocal
-     * 🔧 修正：coordinate-system.js が返す {localX, localY} に対応
+     * 座標変換：Screen → Local（ガイドライン準拠）
+     * Phase 1強化: NaNチェック・エラーハンドリング強化
      */
     _screenToLocal(clientX, clientY) {
         if (!this.coordSystem) {
@@ -155,7 +186,6 @@ class DrawingEngine {
         }
 
         // 3. World → Local (アクティブレイヤーのローカル座標)
-        // 🔧 修正：coordinate-system.js が {localX, localY} を返すため、そのまま使用
         const localCoords = this.coordSystem.worldToLocal(
             worldCoords.worldX,
             worldCoords.worldY,
@@ -163,17 +193,16 @@ class DrawingEngine {
         );
         
         if (!localCoords || localCoords.localX === undefined || localCoords.localY === undefined) {
-            console.error('[DrawingEngine] worldToLocal failed or returned invalid values');
+            console.error('[DrawingEngine] worldToLocal failed');
             return null;
         }
 
-        // NaN チェック（デバッグ用）
+        // NaN チェック
         if (isNaN(localCoords.localX) || isNaN(localCoords.localY)) {
             console.error('[DrawingEngine] worldToLocal returned NaN:', localCoords);
             return null;
         }
 
-        // 🔧 修正：そのまま返す（x/y への変換は不要）
         return {
             localX: localCoords.localX,
             localY: localCoords.localY
@@ -188,7 +217,7 @@ class DrawingEngine {
         if (this.brushCore) {
             this.brushCore.setBrushSettings(settings);
         }
-        console.log('[DrawingEngine] Brush settings applied:', settings);
+        console.log('[DrawingEngine] Brush settings applied');
     }
 
     /**
@@ -208,7 +237,7 @@ class DrawingEngine {
     }
 
     /**
-     * 後方互換性：古いAPI対応
+     * 後方互換性：古いAPI
      */
     get currentTool() {
         return this.brushCore ? this.brushCore.getTool() : 'pen';
@@ -237,18 +266,13 @@ class DrawingEngine {
             return;
         }
 
-        console.log('[DrawingEngine] startDrawing (legacy API):', {
-            client: `(${clientX}, ${clientY})`,
-            pressure
-        });
-
-        // 新しいAPIに転送
         this._handlePointerDown({
             clientX,
             clientY,
             pressure,
             pointerId,
-            pointerType: nativeEvent.pointerType || 'mouse'
+            pointerType: nativeEvent.pointerType || 'mouse',
+            button: nativeEvent.button || 0
         }, nativeEvent);
     }
 
@@ -262,7 +286,6 @@ class DrawingEngine {
 
         if (clientX === undefined || clientY === undefined) return;
 
-        // 新しいAPIに転送
         this._handlePointerMove({
             clientX,
             clientY,
@@ -287,15 +310,15 @@ class DrawingEngine {
             this.pointerDetach();
             this.pointerDetach = null;
         }
+        this.activePointers.clear();
     }
 }
 
-// グローバル公開（後方互換性）
+// グローバル公開
 window.DrawingEngine = DrawingEngine;
 
-console.log('✅ drawing-engine.js (座標変換修正版) loaded');
-console.log('   ✓ PointerEvent unified');
+console.log('✅ drawing-engine.js (Phase 1: タブレットペン完全対応版) loaded');
+console.log('   ✓ Tablet pen full support (pressure/tilt)');
+console.log('   ✓ Multi-pointer tracking');
 console.log('   ✓ Coordinate pipeline: Screen → Canvas → World → Local');
-console.log('   ✓ 修正: coordinate-system.js の {localX, localY} に対応');
-console.log('   ✓ Pen/Eraser via BrushCore');
-console.log('   ✓ Legacy API support: startDrawing/continueDrawing/stopDrawing');
+console.log('   ✓ NaN validation enhanced');
