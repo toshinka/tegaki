@@ -1,13 +1,13 @@
-// ===== system/drawing/brush-core.js - Phase 1: リアルタイムプレビュー対応版 =====
-// BrushCore - ペン/消しゴム統合処理（SDF/MSDF準備完了）
-// Phase 1改修: リアルタイムプレビュー・タブレットペン完全対応・即座反映
+// ===== system/drawing/brush-core.js - Phase 3-B: SDF完全統合版 =====
+// BrushCore - ペン/消しゴム統合処理（SDF/MSDF完全対応）
+// Phase 3-B改修: SDFプレビュー・Mesh描画完全統合
 
 (function() {
     'use strict';
 
     /**
      * BrushCore - ペンと消しゴムの共通処理
-     * Phase 1: リアルタイムプレビュー + 即座設定反映
+     * Phase 3-B: SDF完全統合 + リアルタイムプレビュー
      */
     class BrushCore {
         constructor(app, layerSystem, cameraSystem, config) {
@@ -27,9 +27,10 @@
             this.currentStroke = null;
             this.currentPointerId = null;
 
-            // プレビュー用Graphics
-            this.previewGraphics = null;
+            // Phase 3-B: プレビュー用Container（GraphicsからContainerへ）
             this.previewContainer = null;
+            this.previewObject = null; // Graphics または Mesh/Container
+            this.previewParent = null;
 
             // レンダラー参照
             this.strokeRecorder = null;
@@ -52,9 +53,11 @@
             // イベントバス購読（設定変更の即座反映）
             this._subscribeToEvents();
             
-            console.log('[BrushCore] Phase 1 Initialized:', {
+            console.log('[BrushCore] Phase 3-B Initialized:', {
                 hasRecorder: !!this.strokeRecorder,
                 hasRenderer: !!this.strokeRenderer,
+                hasMaskSupport: true,
+                sdfEnabled: this.strokeRenderer?.sdfEnabled || false,
                 previewEnabled: true
             });
         }
@@ -65,28 +68,40 @@
         _subscribeToEvents() {
             if (!window.TegakiEventBus) return;
 
-            // ブラシサイズ変更
+            // ブラシサイズ変更（即座反映）
             window.TegakiEventBus.on('brush:size-changed', (data) => {
                 if (this.currentStroke) {
                     this.currentStroke.size = data.size;
-                    this._updatePreview();
+                    console.log('[BrushCore] Size updated during stroke:', data.size);
                 }
+                if (this.brushSettings && typeof this.brushSettings.setSize === 'function') {
+                    this.brushSettings.setSize(data.size);
+                }
+                this._updatePreview();
             });
 
-            // ブラシ色変更
+            // ブラシ色変更（即座反映）
             window.TegakiEventBus.on('brush:color-changed', (data) => {
                 if (this.currentStroke && this.currentTool === 'pen') {
                     this.currentStroke.color = data.color;
-                    this._updatePreview();
+                    console.log('[BrushCore] Color updated during stroke:', `0x${data.color.toString(16)}`);
                 }
+                if (this.brushSettings && typeof this.brushSettings.setColor === 'function') {
+                    this.brushSettings.setColor(data.color);
+                }
+                this._updatePreview();
             });
 
-            // 不透明度変更
+            // 不透明度変更（即座反映）
             window.TegakiEventBus.on('brush:opacity-changed', (data) => {
                 if (this.currentStroke) {
                     this.currentStroke.opacity = data.opacity;
-                    this._updatePreview();
+                    console.log('[BrushCore] Opacity updated during stroke:', data.opacity);
                 }
+                if (this.brushSettings && typeof this.brushSettings.setAlpha === 'function') {
+                    this.brushSettings.setAlpha(data.opacity);
+                }
+                this._updatePreview();
             });
         }
 
@@ -144,7 +159,7 @@
                         color = this.brushSettings.getColor();
                     }
                 } else {
-                    color = 0x000000;
+                    color = 0x000000; // 消しゴムは黒（マスク用）
                 }
 
                 if (typeof this.brushSettings.opacity === 'number') {
@@ -193,6 +208,9 @@
                 return;
             }
 
+            // マスク確保
+            this._ensureLayerMask(activeLayer);
+
             this.isDrawing = true;
             this.currentPointerId = pointerId;
 
@@ -200,10 +218,11 @@
             const settings = this._getCurrentSettings();
             this.currentStroke = {
                 ...settings,
-                tool: this.currentTool
+                tool: this.currentTool,
+                layerId: activeLayer.layerData.id
             };
 
-            // プレビューコンテナ初期化
+            // Phase 3-B: プレビューコンテナ初期化
             this._initPreviewContainer(activeLayer);
 
             // StrokeRecorder初期化
@@ -217,23 +236,56 @@
                 size: settings.size,
                 color: `0x${settings.color.toString(16)}`,
                 opacity: settings.opacity,
-                pressure
+                pressure,
+                sdfEnabled: this.strokeRenderer?.sdfEnabled || false
             });
         }
 
         /**
-         * プレビューコンテナ初期化
+         * レイヤーマスクを確保（自動生成）
+         */
+        _ensureLayerMask(layer) {
+            if (layer.layerData.hasMask()) {
+                return; // 既に存在
+            }
+
+            console.log('[BrushCore] Initializing layer mask for:', layer.layerData.name);
+
+            const success = layer.layerData.initializeMask(
+                this.config.canvas.width,
+                this.config.canvas.height,
+                this.app.renderer
+            );
+
+            if (success && layer.layerData.maskSprite) {
+                // maskSpriteはrenderable=falseなので表示されない
+                if (!layer.children.includes(layer.layerData.maskSprite)) {
+                    layer.addChildAt(layer.layerData.maskSprite, 0);
+                }
+                console.log('[BrushCore] Mask initialized successfully');
+            } else {
+                console.error('[BrushCore] Failed to initialize mask');
+            }
+        }
+
+        /**
+         * Phase 3-B: プレビューコンテナ初期化（Container対応）
          */
         _initPreviewContainer(layer) {
             // 既存のプレビューをクリア
             this._clearPreview();
 
-            // 新しいプレビューGraphics作成
-            this.previewGraphics = new PIXI.Graphics();
+            // Phase 3-B: GraphicsまたはContainerを作成
+            // SDFの場合はContainer、レガシーの場合はGraphics
+            if (this.strokeRenderer?.sdfEnabled && this.currentTool === 'pen') {
+                this.previewObject = new PIXI.Container();
+            } else {
+                this.previewObject = new PIXI.Graphics();
+            }
             
-            // プレビューコンテナをレイヤーに追加
-            layer.addChild(this.previewGraphics);
-            this.previewContainer = layer;
+            // プレビューをレイヤーに追加
+            layer.addChild(this.previewObject);
+            this.previewParent = layer;
         }
 
         /**
@@ -258,17 +310,28 @@
         }
 
         /**
-         * プレビュー更新（即座描画）
+         * Phase 3-B: プレビュー更新（SDF対応）
          */
         _updatePreview() {
-            if (!this.previewGraphics || !this.strokeRecorder) return;
+            if (!this.previewObject || !this.strokeRecorder || !this.isDrawing) return;
 
             // 現在の記録点を取得
             const points = this.strokeRecorder.points || [];
             if (points.length === 0) return;
 
-            // Graphicsをクリアして再描画
-            this.previewGraphics.clear();
+            // 既存のプレビューをクリア
+            if (this.previewObject instanceof PIXI.Graphics) {
+                this.previewObject.clear();
+            } else if (this.previewObject instanceof PIXI.Container) {
+                // Container内の子要素を削除
+                while (this.previewObject.children.length > 0) {
+                    const child = this.previewObject.children[0];
+                    this.previewObject.removeChild(child);
+                    if (child.destroy) {
+                        child.destroy({ children: true });
+                    }
+                }
+            }
 
             // StrokeRendererでプレビュー描画
             if (this.strokeRenderer && this.currentStroke) {
@@ -278,11 +341,25 @@
                     alpha: this.currentStroke.opacity
                 };
 
-                this.strokeRenderer.renderPreview(
+                const result = this.strokeRenderer.renderPreview(
                     points,
                     settings,
-                    this.previewGraphics
+                    this.previewObject
                 );
+
+                // renderPreviewが新しいオブジェクトを返す場合は置き換え
+                if (result && result !== this.previewObject) {
+                    if (this.previewParent && this.previewParent.children.includes(this.previewObject)) {
+                        this.previewParent.removeChild(this.previewObject);
+                    }
+                    if (this.previewObject.destroy) {
+                        this.previewObject.destroy({ children: true });
+                    }
+                    this.previewObject = result;
+                    if (this.previewParent) {
+                        this.previewParent.addChild(this.previewObject);
+                    }
+                }
             }
         }
 
@@ -290,14 +367,14 @@
          * プレビューをクリア
          */
         _clearPreview() {
-            if (this.previewGraphics) {
-                if (this.previewContainer && this.previewContainer.children.includes(this.previewGraphics)) {
-                    this.previewContainer.removeChild(this.previewGraphics);
+            if (this.previewObject) {
+                if (this.previewParent && this.previewParent.children.includes(this.previewObject)) {
+                    this.previewParent.removeChild(this.previewObject);
                 }
-                this.previewGraphics.destroy({ children: true });
-                this.previewGraphics = null;
+                this.previewObject.destroy({ children: true });
+                this.previewObject = null;
             }
-            this.previewContainer = null;
+            this.previewParent = null;
         }
 
         /**
@@ -327,11 +404,16 @@
             if (strokeData && strokeData.points && strokeData.points.length > 0) {
                 console.log('[BrushCore] Finalizing stroke:', {
                     pointCount: strokeData.points.length,
-                    isSingleDot: strokeData.isSingleDot
+                    isSingleDot: strokeData.isSingleDot,
+                    tool: this.currentTool
                 });
                 
-                // 確定ストロークを描画
-                this._renderStroke(activeLayer, strokeData);
+                // ツール別の確定処理
+                if (this.currentTool === 'eraser') {
+                    this._renderEraserStroke(activeLayer, strokeData);
+                } else {
+                    this._renderPenStroke(activeLayer, strokeData);
+                }
             }
 
             // プレビューをクリア
@@ -342,6 +424,227 @@
             this.currentStroke = null;
 
             console.log('[BrushCore] Stroke ended');
+        }
+
+        /**
+         * ペンストローク描画
+         */
+        _renderPenStroke(layer, strokeData) {
+            if (!this.strokeRenderer || !this.currentStroke) {
+                console.error('[BrushCore] Cannot render pen stroke');
+                return;
+            }
+
+            const settings = {
+                color: this.currentStroke.color,
+                size: this.currentStroke.size,
+                alpha: this.currentStroke.opacity
+            };
+
+            const strokeObject = this.strokeRenderer.renderFinalStroke(
+                strokeData,
+                settings,
+                null
+            );
+
+            if (!strokeObject) {
+                console.error('[BrushCore] Failed to render pen stroke');
+                return;
+            }
+
+            // レイヤーに追加
+            layer.addChild(strokeObject);
+
+            // パスデータをレイヤーに保存
+            if (!layer.layerData.paths) {
+                layer.layerData.paths = [];
+            }
+            
+            layer.layerData.paths.push({
+                id: `path_${Date.now()}_${Math.random()}`,
+                points: strokeData.points,
+                size: this.currentStroke.size,
+                color: this.currentStroke.color,
+                opacity: this.currentStroke.opacity,
+                tool: 'pen',
+                graphics: strokeObject,
+                timestamp: Date.now()
+            });
+
+            // サムネイル更新リクエスト
+            const layerIndex = this.layerSystem.getLayerIndex(layer);
+            if (layerIndex >= 0) {
+                this.layerSystem.requestThumbnailUpdate(layerIndex);
+            }
+
+            // イベント発行
+            if (window.TegakiEventBus) {
+                window.TegakiEventBus.emit('layer:stroke-added', {
+                    layerIndex,
+                    layerId: layer.layerData.id,
+                    tool: 'pen'
+                });
+            }
+
+            // History記録
+            if (window.History && (!window.History._manager || !window.History._manager.isApplying)) {
+                this._recordPenHistory(layer, strokeObject);
+            }
+        }
+
+        /**
+         * 消しゴムストローク描画（マスクテクスチャへ）
+         */
+        _renderEraserStroke(layer, strokeData) {
+            if (!this.strokeRenderer || !this.currentStroke) {
+                console.error('[BrushCore] Cannot render eraser stroke');
+                return;
+            }
+
+            if (!layer.layerData.hasMask()) {
+                console.error('[BrushCore] Layer mask not available');
+                return;
+            }
+
+            const settings = {
+                color: 0xFFFFFF, // 白（マスク用）
+                size: this.currentStroke.size,
+                alpha: 1.0 // 完全不透明
+            };
+
+            // maskTextureに直接描画
+            const success = this.strokeRenderer.renderToMask(
+                layer.layerData.maskTexture,
+                strokeData,
+                settings
+            );
+
+            if (!success) {
+                console.error('[BrushCore] Failed to render eraser stroke to mask');
+                return;
+            }
+
+            console.log('[BrushCore] Eraser stroke rendered to mask');
+
+            // サムネイル更新リクエスト
+            const layerIndex = this.layerSystem.getLayerIndex(layer);
+            if (layerIndex >= 0) {
+                this.layerSystem.requestThumbnailUpdate(layerIndex);
+            }
+
+            // イベント発行
+            if (window.TegakiEventBus) {
+                window.TegakiEventBus.emit('layer:eraser-applied', {
+                    layerIndex,
+                    layerId: layer.layerData.id
+                });
+            }
+
+            // History記録（マスクスナップショット）
+            if (window.History && (!window.History._manager || !window.History._manager.isApplying)) {
+                this._recordEraserHistory(layer);
+            }
+        }
+
+        /**
+         * ペンHistory記録
+         */
+        _recordPenHistory(layer, graphics) {
+            const layerIndex = this.layerSystem.getLayerIndex(layer);
+            
+            const command = {
+                name: 'draw-stroke',
+                do: () => {
+                    if (!layer.children.includes(graphics)) {
+                        layer.addChild(graphics);
+                    }
+                    this.layerSystem.requestThumbnailUpdate(layerIndex);
+                },
+                undo: () => {
+                    if (layer.children.includes(graphics)) {
+                        layer.removeChild(graphics);
+                    }
+                    if (graphics.destroy) {
+                        graphics.destroy({ children: true });
+                    }
+                    this.layerSystem.requestThumbnailUpdate(layerIndex);
+                },
+                meta: {
+                    type: 'stroke',
+                    tool: 'pen',
+                    layerId: layer.layerData.id,
+                    timestamp: Date.now()
+                }
+            };
+
+            window.History.push(command);
+        }
+
+        /**
+         * 消しゴムHistory記録（マスクスナップショット方式）
+         */
+        _recordEraserHistory(layer) {
+            const layerIndex = this.layerSystem.getLayerIndex(layer);
+            
+            // 現在のマスクテクスチャをスナップショット
+            const maskSnapshot = this._captureMaskSnapshot(layer.layerData.maskTexture);
+            
+            const command = {
+                name: 'erase-stroke',
+                do: () => {
+                    // 既に適用済み（何もしない）
+                    this.layerSystem.requestThumbnailUpdate(layerIndex);
+                },
+                undo: () => {
+                    // スナップショットから復元
+                    if (maskSnapshot) {
+                        this._restoreMaskSnapshot(layer.layerData.maskTexture, maskSnapshot);
+                    }
+                    this.layerSystem.requestThumbnailUpdate(layerIndex);
+                },
+                meta: {
+                    type: 'erase',
+                    tool: 'eraser',
+                    layerId: layer.layerData.id,
+                    timestamp: Date.now()
+                }
+            };
+
+            window.History.push(command);
+        }
+
+        /**
+         * マスクスナップショット作成
+         */
+        _captureMaskSnapshot(maskTexture) {
+            try {
+                const canvas = this.app.renderer.extract.canvas(maskTexture);
+                return canvas.toDataURL();
+            } catch (error) {
+                console.error('[BrushCore] Failed to capture mask snapshot:', error);
+                return null;
+            }
+        }
+
+        /**
+         * マスクスナップショット復元
+         */
+        _restoreMaskSnapshot(maskTexture, snapshotDataURL) {
+            try {
+                const img = new Image();
+                img.onload = () => {
+                    const tempSprite = PIXI.Sprite.from(img);
+                    this.app.renderer.render({
+                        container: tempSprite,
+                        target: maskTexture,
+                        clear: true
+                    });
+                    tempSprite.destroy();
+                };
+                img.src = snapshotDataURL;
+            } catch (error) {
+                console.error('[BrushCore] Failed to restore mask snapshot:', error);
+            }
         }
 
         /**
@@ -366,106 +669,6 @@
         }
 
         /**
-         * ストローク描画（内部処理）
-         */
-        _renderStroke(layer, strokeData) {
-            if (!this.strokeRenderer || !this.currentStroke) {
-                console.error('[BrushCore] Cannot render stroke');
-                return;
-            }
-
-            const settings = {
-                color: this.currentStroke.color,
-                size: this.currentStroke.size,
-                alpha: this.currentStroke.opacity
-            };
-
-            const strokeGraphics = this.strokeRenderer.renderFinalStroke(
-                strokeData,
-                settings,
-                null
-            );
-
-            if (!strokeGraphics) {
-                console.error('[BrushCore] Failed to render stroke');
-                return;
-            }
-
-            // レイヤーに追加
-            layer.addChild(strokeGraphics);
-
-            // パスデータをレイヤーに保存
-            if (!layer.layerData.paths) {
-                layer.layerData.paths = [];
-            }
-            
-            layer.layerData.paths.push({
-                id: `path_${Date.now()}_${Math.random()}`,
-                points: strokeData.points,
-                size: this.currentStroke.size,
-                color: this.currentStroke.color,
-                opacity: this.currentStroke.opacity,
-                tool: this.currentTool,
-                graphics: strokeGraphics,
-                timestamp: Date.now()
-            });
-
-            // サムネイル更新リクエスト
-            const layerIndex = this.layerSystem.getLayerIndex(layer);
-            if (layerIndex >= 0) {
-                this.layerSystem.requestThumbnailUpdate(layerIndex);
-            }
-
-            // イベント発行
-            if (window.TegakiEventBus) {
-                window.TegakiEventBus.emit('layer:stroke-added', {
-                    layerIndex,
-                    layerId: layer.layerData.id,
-                    tool: this.currentTool
-                });
-            }
-
-            // History記録
-            if (window.History && (!window.History._manager || !window.History._manager.isApplying)) {
-                this._recordHistory(layer, strokeGraphics);
-            }
-        }
-
-        /**
-         * History記録
-         */
-        _recordHistory(layer, graphics) {
-            const layerIndex = this.layerSystem.getLayerIndex(layer);
-            
-            const command = {
-                name: 'draw-stroke',
-                do: () => {
-                    if (!layer.children.includes(graphics)) {
-                        layer.addChild(graphics);
-                    }
-                    this.layerSystem.requestThumbnailUpdate(layerIndex);
-                },
-                undo: () => {
-                    if (layer.children.includes(graphics)) {
-                        layer.removeChild(graphics);
-                    }
-                    if (graphics.destroy) {
-                        graphics.destroy({ children: true });
-                    }
-                    this.layerSystem.requestThumbnailUpdate(layerIndex);
-                },
-                meta: {
-                    type: 'stroke',
-                    tool: this.currentTool,
-                    layerId: layer.layerData.id,
-                    timestamp: Date.now()
-                }
-            };
-
-            window.History.push(command);
-        }
-
-        /**
          * 現在のツールを取得
          */
         getTool() {
@@ -483,9 +686,11 @@
     // グローバル公開
     window.BrushCore = BrushCore;
 
-    console.log('✅ brush-core.js (Phase 1: リアルタイムプレビュー対応版) loaded');
-    console.log('   ✓ Real-time preview during stroke');
-    console.log('   ✓ Immediate settings reflection (size/color/opacity)');
-    console.log('   ✓ Pen/Eraser unified pipeline');
-    console.log('   ✓ SDF/MSDF-ready architecture');
+    console.log('✅ brush-core.js (Phase 3-B: SDF完全統合版) loaded');
+    console.log('   ✓ SDF preview with Container support');
+    console.log('   ✓ Mesh-based final stroke rendering');
+    console.log('   ✓ Automatic fallback to legacy Graphics');
+    console.log('   ✓ Real-time settings reflection');
+    console.log('   ✓ Mask-based eraser support');
+    console.log('   ✓ Complete history support');
 })();
