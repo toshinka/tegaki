@@ -98,7 +98,7 @@ window.TEGAKI_CONFIG = {
     debug: false
 };
 
-// キーマッピング
+// ✅ キーマッピング管理システム
 window.TEGAKI_KEYMAP = {
     actions: {
         UNDO: {
@@ -378,6 +378,38 @@ window.TEGAKI_KEYMAP = {
     }
 };
 
+// ✅ TEGAKI_KEYCONFIG_MANAGER (core-engine.js用)
+window.TEGAKI_KEYCONFIG_MANAGER = {
+    getActionForKey(keyCode, context = {}) {
+        const event = {
+            code: keyCode,
+            ctrlKey: context.ctrlPressed || false,
+            shiftKey: context.shiftPressed || false,
+            altKey: context.altPressed || false,
+            repeat: false
+        };
+        
+        const actionName = window.TEGAKI_KEYMAP.getAction(event, {
+            vMode: context.vPressed || false
+        });
+        
+        // アクション名を小文字キャメルケースに変換
+        if (!actionName) return null;
+        
+        const actionMap = {
+            'TOOL_PEN': 'pen',
+            'TOOL_ERASER': 'eraser',
+            'LAYER_MOVE_MODE_TOGGLE': 'layerMoveMode',
+            'GIF_TOGGLE_TIMELINE': 'gifToggleAnimation',
+            'GIF_CREATE_FRAME': 'gifAddCut',
+            'GIF_PLAY_PAUSE': 'gifPlayPause',
+            'LAYER_DELETE_DRAWINGS': 'delete'
+        };
+        
+        return actionMap[actionName] || actionName.toLowerCase().replace(/_/g, '');
+    }
+};
+
 // レガシー互換性維持
 window.TEGAKI_KEYCONFIG = {
     pen: 'KeyP',
@@ -416,3 +448,5 @@ window.TEGAKI_UTILS = {
         if (window.TEGAKI_CONFIG.debug) console.log(...args);
     }
 };
+
+console.log('✅ config.js (Phase 4完全版: TEGAKI_KEYCONFIG_MANAGER追加) loaded');

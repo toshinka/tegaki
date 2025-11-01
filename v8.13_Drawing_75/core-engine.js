@@ -1,9 +1,9 @@
-// ===== core-engine.js - Phase2 完全修正版 =====
-// Phase2改修: リサイズ時のレイヤー座標シフト実装 + 背景色修正
+// ===== core-engine.js - Phase 4完全修正版 =====
 
 (function() {
     'use strict';
     
+    // 依存関係チェック（エラー修正版）
     if (!window.TegakiCameraSystem) throw new Error('system/camera-system.js required');
     if (!window.TegakiLayerSystem) throw new Error('system/layer-system.js required');
     if (!window.TegakiDrawingClipboard) throw new Error('system/drawing-clipboard.js required');
@@ -12,7 +12,6 @@
     const CONFIG = window.TEGAKI_CONFIG;
     if (!CONFIG) throw new Error('config.js required');
     if (!CONFIG.animation) throw new Error('Animation configuration required');
-    if (!window.TEGAKI_KEYCONFIG_MANAGER) throw new Error('KeyConfig manager required');
 
     class UnifiedKeyHandler {
         constructor(cameraSystem, layerSystem, drawingEngine, eventBus, animationSystem) {
@@ -448,6 +447,42 @@
             }
         }
         
+        _initializeLayerTransform() {
+            let retryCount = 0;
+            const maxRetries = 3;
+            const retryDelay = 100;
+            
+            const trySetupFlipCallback = () => {
+                if (!this.layerSystem?.transform) {
+                    retryCount++;
+                    if (retryCount < maxRetries) {
+                        setTimeout(trySetupFlipCallback, retryDelay);
+                    }
+                    return;
+                }
+                
+                const layerTransform = this.layerSystem.transform;
+                
+                layerTransform.onFlipRequest = (direction) => {
+                    const activeLayer = this.layerSystem.getActiveLayer();
+                    if (!activeLayer) return;
+                    
+                    layerTransform.flipLayer(activeLayer, direction);
+                    
+                    const layerIndex = this.layerSystem.activeLayerIndex;
+                    if (this.eventBus) {
+                        this.eventBus.emit('thumbnail:layer-updated', {
+                            component: 'layer-transform',
+                            action: 'flip-applied',
+                            data: { layerIndex, layerId: activeLayer.layerData.id, immediate: true }
+                        });
+                    }
+                };
+            };
+            
+            trySetupFlipCallback();
+        }
+        
         async exportForBookmarklet(format = 'gif', options = {}) {
             if (!this.exportManager) throw new Error('ExportManager not initialized');
             
@@ -516,8 +551,6 @@
             this.layerSystem.processThumbnailUpdates();
         }
         
-        // ★★★ Phase2-A: レイヤー座標シフト実装 ★★★
-        // ★★★ Phase2-B: 背景色修正（単色） ★★★
         resizeCanvas(newWidth, newHeight, options = {}) {
             const oldWidth = CONFIG.canvas.width;
             const oldHeight = CONFIG.canvas.height;
@@ -552,16 +585,12 @@
             
             this.cameraSystem.resizeCanvas(newWidth, newHeight);
             
-            // ★★★ Phase2-A修正: paths座標のみシフト（レイヤーpositionはシフトしない） ★★★
             const frames = this.animationSystem?.animationData?.frames || [];
             frames.forEach(frame => {
                 const layers = frame.getLayers();
                 layers.forEach(layer => {
                     if (layer.layerData?.isBackground) return;
                     
-                    // レイヤーposition自体は変更しない（キャンバス座標系）
-                    
-                    // paths内の点座標をシフト
                     if (layer.layerData?.paths) {
                         layer.layerData.paths.forEach(path => {
                             if (path.points) {
@@ -571,7 +600,6 @@
                                 });
                             }
                             
-                            // Graphics再描画
                             if (path.graphics) {
                                 path.graphics.clear();
                                 path.points.forEach(p => {
@@ -587,7 +615,6 @@
                 });
             });
             
-            // ★★★ Phase2-B: 背景レイヤー再描画（単色に修正） ★★★
             const layers = this.layerSystem.getLayers();
             layers.forEach(layer => {
                 if (layer.layerData.isBackground && layer.layerData.backgroundGraphics) {
@@ -639,16 +666,35 @@
             });
         }
         
+        destroy() {
+            if (this.app) {
+                this.app.destroy(true, { children: true });
+            }
+            
+            if (this.eventBus && this.eventBus.removeAllListeners) {
+                this.eventBus.removeAllListeners();
+            }
+        }
+        
         initialize() {
             this.cameraSystem.init(this.app.stage, this.eventBus, CONFIG);
             this.layerSystem.init(this.cameraSystem.canvasContainer, this.eventBus, CONFIG);
             this.clipboardSystem.init(this.eventBus, CONFIG);
+            
+            if (window.ThumbnailSystem) {
+                window.ThumbnailSystem.app = this.app;
+                window.ThumbnailSystem.init(this.eventBus);
+            }
             
             if (window.History && typeof window.History.setLayerSystem === 'function') {
                 window.History.setLayerSystem(this.layerSystem);
             }
             
             this.initializeAnimationSystem();
+            
+            setTimeout(() => {
+                this._initializeLayerTransform();
+            }, 200);
             
             if (window.TegakiBatchAPI && this.animationSystem) {
                 this.batchAPI = new window.TegakiBatchAPI(
@@ -721,5 +767,5 @@
         UnifiedKeyHandler: UnifiedKeyHandler
     };
 
-    console.log('✅ core-engine.js (Phase2完全修正版) loaded');
+    console.log('✅ core-engine.js (Phase 4完全修正版) loaded');
 })();
