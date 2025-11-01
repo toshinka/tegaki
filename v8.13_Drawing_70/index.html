@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 PixiJS v8.13 お絵かきツール</title>
+    <title>🎨 PixiJS v8.13 お絵かきツール - Phase 3</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
@@ -40,16 +40,20 @@
     <script src="system/animation-system.js"></script>
 
 
-    <!-- Drawing System - Phase 1改修: pointer-handler.js追加、brush-core.js追加、eraser-mask-renderer.js削除 -->
+    <!-- Drawing System - Phase 3: SDF対応 -->
     <script src="system/drawing/pointer-handler.js"></script>
     <script src="system/drawing/pressure-handler.js"></script>
     <script src="system/drawing/curve-interpolator.js"></script>
     <script src="system/drawing/stroke-recorder.js"></script>
+    
+    <!-- ✨ Phase 3: SDF関連ファイル追加 -->
+    <script src="system/drawing/sdf-brush-shader.js"></script>
+    <script src="system/drawing/sdf-texture-generator.js"></script>
+    
     <script src="system/drawing/stroke-renderer.js"></script>
     <script src="system/drawing/thumbnail-system.js"></script>
     <script src="system/drawing/brush-settings.js"></script>
     <script src="system/drawing/stroke-transformer.js"></script>
-    <!-- ★削除: eraser-mask-renderer.js（BrushCoreに統合） -->
     <script src="system/drawing/processing/vector-operations.js"></script>
     <script src="system/drawing/brush-core.js"></script>
     <script src="system/drawing/drawing-engine.js"></script>
@@ -89,7 +93,19 @@
         window.addEventListener('DOMContentLoaded', async () => {
             try {
                 await window.CoreInitializer.initialize();
-                console.log('✅ Application initialized with BrushCore unified system');
+                console.log('✅ Application initialized with Phase 3: SDF rendering support');
+                
+                // Phase 3: SDF状態確認
+                if (window.coreEngine?.drawingEngine?.strokeRenderer) {
+                    const sdfStatus = window.coreEngine.drawingEngine.strokeRenderer.getSDFStatus();
+                    console.log('📊 SDF Status:', sdfStatus);
+                    
+                    if (sdfStatus.enabled) {
+                        console.log('🎨 High-quality SDF rendering enabled');
+                    } else {
+                        console.log('📝 Using legacy Graphics rendering');
+                    }
+                }
             } catch (error) {
                 console.error('❌ Application initialization failed:', error);
             }
