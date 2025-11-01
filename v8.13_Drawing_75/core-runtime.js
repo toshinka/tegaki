@@ -1,6 +1,5 @@
-// ===== core-runtime.js - Phase 1-3完全版: ThumbnailSystem統合 =====
-// Phase 1: PointerEventからclientX/Yを正しく取得してDrawingEngineに渡す
-// Phase 1-3: ThumbnailSystem初期化を統合
+// ===== core-runtime.js - ポインターイベント修正版 =====
+// 修正: PixiJS Stageへのイベント登録を削除（DrawingEngineに一本化）
 
 (function() {
     'use strict';
@@ -45,109 +44,26 @@
             const defaultCut = this.createCut({ name: 'CUT1' });
             this.switchCut(defaultCut.id);
             
-            // ========== Phase 1-3: ThumbnailSystem初期化 ==========
             if (window.ThumbnailSystem && options.app) {
                 window.ThumbnailSystem.app = options.app;
                 window.ThumbnailSystem.init(options.eventBus || window.TegakiEventBus);
             }
-            // ========== END Phase 1-3 ==========
             
             this.setupLegacyCompatibility();
-            this.setupPointerEvents();
+            
+            // ✅ 修正: setupPointerEvents() を削除
+            // DrawingEngine が canvas に直接イベント登録するため不要
+            // this.setupPointerEvents(); // ← 削除
             
             return this;
         },
         
-        // ========== Phase 1完全修正: clientX/Yを正しく取得 ==========
-        setupPointerEvents() {
-            if (!this.internal.app?.stage || this.internal.pointerEventsSetup) return;
-            
-            const stage = this.internal.app.stage;
-            
-            stage.eventMode = 'static';
-            stage.hitArea = this.internal.app.screen;
-            
-            stage.on('pointerdown', (event) => {
-                this.handlePointerDown(event);
-            });
-            
-            stage.on('pointermove', (event) => {
-                this.handlePointerMove(event);
-            });
-            
-            stage.on('pointerup', (event) => {
-                this.handlePointerUp(event);
-            });
-            
-            stage.on('pointerupoutside', (event) => {
-                this.handlePointerUp(event);
-            });
-            
-            this.internal.pointerEventsSetup = true;
-        },
-        
-        /**
-         * Phase 1完全修正: PointerEventからclientX/Yを抽出
-         * PIXI v8のFederatedPointerEventは以下の構造:
-         * - event.clientX/clientY (推奨)
-         * - event.nativeEvent.clientX/clientY (フォールバック)
-         * - event.data.originalEvent.clientX/clientY (v7互換)
-         */
-        extractNativeEvent(pixiEvent) {
-            // PIXI v8: FederatedPointerEventは直接clientX/Yを持つ
-            if (pixiEvent.clientX !== undefined && pixiEvent.clientY !== undefined) {
-                return pixiEvent;
-            }
-            
-            // フォールバック1: nativeEvent
-            if (pixiEvent.nativeEvent?.clientX !== undefined) {
-                return pixiEvent.nativeEvent;
-            }
-            
-            // フォールバック2: data.originalEvent (v7互換)
-            if (pixiEvent.data?.originalEvent?.clientX !== undefined) {
-                return pixiEvent.data.originalEvent;
-            }
-            
-            // フォールバック3: data自体
-            if (pixiEvent.data?.clientX !== undefined) {
-                return pixiEvent.data;
-            }
-            
-            // 最終フォールバック: pixiEvent自体
-            return pixiEvent;
-        },
-        
-        handlePointerDown(event) {
-            const currentTool = this.internal.drawingEngine?.currentTool || 'pen';
-            const isDrawingTool = currentTool === 'pen' || currentTool === 'eraser';
-            
-            if (this.internal.drawingEngine && 
-                !this.internal.layerManager?.isLayerMoveMode && 
-                isDrawingTool) {
-                
-                // Phase 1修正: 正しいネイティブイベント取得
-                const nativeEvent = this.extractNativeEvent(event);
-                
-                // DrawingEngineはclientX/Yを使ってCoordinateSystem経由で変換
-                this.internal.drawingEngine.startDrawing(0, 0, nativeEvent);
-            }
-        },
-        
-        handlePointerMove(event) {
-            if (this.internal.drawingEngine?.isDrawing) {
-                // Phase 1修正: 正しいネイティブイベント取得
-                const nativeEvent = this.extractNativeEvent(event);
-                
-                this.internal.drawingEngine.continueDrawing(0, 0, nativeEvent);
-            }
-        },
-        
-        handlePointerUp(event) {
-            if (this.internal.drawingEngine?.isDrawing) {
-                this.internal.drawingEngine.stopDrawing();
-            }
-        },
+        // ✅ 修正: setupPointerEvents() メソッド自体を削除
+        // 以下のメソッドもすべて削除:
+        // - extractNativeEvent()
+        // - handlePointerDown()
+        // - handlePointerMove()
+        // - handlePointerUp()
         
         setupCoordinateSystem() {
             if (window.CoordinateSystem.setContainers) {
@@ -710,4 +626,5 @@
     
 })();
 
-console.log('✅ core-runtime.js (Phase 1-3完全版: ThumbnailSystem統合) loaded');
+console.log('✅ core-runtime.js (ポインターイベント修正版) loaded');
+console.log('   ✓ Removed PixiJS Stage event handlers (DrawingEngine handles all)');
