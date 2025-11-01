@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🎨 PixiJS v8.13 お絵かきツール - Phase 4-B WebGPU/MSDF統合</title>
+    <title>🎨 PixiJS v8.13 お絵かきツール - Phase 4-B MSDF完全統合</title>
     <link rel="stylesheet" href="styles/main.css">
 </head>
 <body>
@@ -38,36 +38,33 @@
     <script src="system/virtual-album.js"></script>
     <script src="system/animation-system.js"></script>
 
-    <!-- ✅ Phase 4-A: WebGPU基盤 -->
+    <!-- Phase 4-A: WebGPU基盤 -->
     <script src="system/drawing/webgpu/webgpu-capabilities.js"></script>
     <script src="system/drawing/webgpu/webgpu-drawing-layer.js"></script>
     <script src="system/drawing/webgpu/webgpu-compute-sdf.js"></script>
     <script src="system/drawing/webgpu/webgpu-compute-msdf.js"></script>
     <script src="system/drawing/webgpu/webgpu-texture-bridge.js"></script>
-    <!-- ✅ Phase 4-B: MSDF統合 -->
+    
+    <!-- Phase 4-B: MSDF統合 -->
     <script src="system/drawing/msdf/msdf-brush-shader.js"></script>
-    <script src="system/drawing/webgpu/shaders/msdf-compute.wgsl"></script>
-    <script src="system/drawing/webgpu/shaders/sdf-compute.wgsl"></script>
-    <!-- Drawing System - Phase 4-A: WebGPU統合 -->
+
+    <!-- Drawing System - 基盤処理 -->
     <script src="system/drawing/pointer-handler.js"></script>
     <script src="system/drawing/pressure-handler.js"></script>
     <script src="system/drawing/curve-interpolator.js"></script>
     <script src="system/drawing/stroke-recorder.js"></script>
 
-    <!-- ✅ Phase 3-A,3-B: SDF継続使用 -->
+    <!-- Phase 3-A/3-B: SDF継続使用 -->
     <script src="system/drawing/sdf-brush-shader.js"></script>
     <script src="system/drawing/sdf-texture-generator.js"></script>
     <script src="system/drawing/sdf-mesh-builder.js"></script>
 
+    <!-- Drawing System - 統合 -->
     <script src="system/drawing/stroke-renderer.js"></script>
     <script src="system/drawing/thumbnail-system.js"></script>
     <script src="system/drawing/stroke-transformer.js"></script>
     <script src="system/drawing/processing/vector-operations.js"></script>
-    <script src="system/drawing/drawing-engine.js"></script>
-    
-    <!-- ✅ Phase 4-A: BrushSettings（core-engine.js依存解決） -->
     <script src="system/drawing/brush-settings.js"></script>
-    
     <script src="system/drawing/brush-core.js"></script>
     <script src="system/drawing/drawing-engine.js"></script>
 
@@ -101,12 +98,12 @@
     <script src="core-engine.js"></script>
     <script src="core-initializer.js"></script>
 
-    <!-- Entry Point: Phase 4-A WebGPU統合初期化 -->
+    <!-- Entry Point: Phase 4-B MSDF完全統合初期化 -->
     <script>
         window.addEventListener('DOMContentLoaded', async () => {
             try {
                 await window.CoreInitializer.initialize();
-                console.log('✅ Application initialized (Phase 4-A: WebGPU統合版)');
+                console.log('✅ Application initialized (Phase 4-B: MSDF完全統合版)');
             } catch (error) {
                 console.error('❌ Application initialization failed:', error);
             }

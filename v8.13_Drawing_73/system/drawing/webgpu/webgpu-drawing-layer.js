@@ -1,12 +1,11 @@
 /**
- * WebGPUDrawingLayer - WebGPU初期化・デバイス管理・コンテキスト設定
- * Phase 4-A-1: WebGPU基盤構築
+ * WebGPUDrawingLayer - WebGPU基盤・SDF/MSDF Compute統合
+ * Phase 4-A-1 + 4-B-4: WebGPU基盤構築 + MSDF統合
  * 
  * 責務:
- * - WebGPUデバイス/アダプターの取得
- * - Canvas WebGPUコンテキスト設定
- * - Render/Compute Pipeline管理
- * - リソース破棄
+ * - WebGPUデバイス/アダプター管理
+ * - SDF/MSDF Compute Shader統合
+ * - リソース管理
  */
 
 (function() {
@@ -20,44 +19,36 @@
             this.context = null;
             this.format = null;
             this.initialized = false;
-            this.pipelines = new Map();
+            
+            // Compute Shader管理
+            this.sdfCompute = null;
+            this.msdfCompute = null;
         }
 
         /**
          * WebGPU初期化
-         * @returns {Promise<boolean>}
          */
         async initialize() {
             if (this.initialized) {
-                console.warn('[WebGPU] Already initialized');
                 return true;
             }
 
             if (!navigator.gpu) {
-                console.error('[WebGPU] WebGPU not supported');
+                console.error('[WebGPU] Not supported');
                 return false;
             }
 
             try {
-                // Adapter取得
                 this.adapter = await navigator.gpu.requestAdapter({
                     powerPreference: 'high-performance'
                 });
 
                 if (!this.adapter) {
-                    console.error('[WebGPU] Failed to get adapter');
-                    return false;
+                    throw new Error('Adapter not available');
                 }
 
-                // Device取得
                 this.device = await this.adapter.requestDevice();
                 
-                if (!this.device) {
-                    console.error('[WebGPU] Failed to get device');
-                    return false;
-                }
-
-                // デバイスロストハンドリング
                 this.device.lost.then((info) => {
                     console.error('[WebGPU] Device lost:', info.message);
                     this.initialized = false;
@@ -75,31 +66,54 @@
                     });
                 }
 
+                // SDF Compute初期化
+                if (window.WebGPUComputeSDF) {
+                    this.sdfCompute = new WebGPUComputeSDF(this);
+                    await this.sdfCompute.initialize();
+                }
+
+                // MSDF Compute初期化
+                if (window.WebGPUComputeMSDF) {
+                    this.msdfCompute = new WebGPUComputeMSDF(this);
+                    await this.msdfCompute.initialize();
+                }
+
                 this.initialized = true;
-                console.log('[WebGPU] Initialized successfully', {
-                    adapter: this.adapter.info || 'info not available',
-                    limits: this.device.limits,
-                    features: Array.from(this.adapter.features)
-                });
 
                 return true;
 
             } catch (error) {
-                console.error('[WebGPU] Initialization failed:', error);
+                console.error('[WebGPU] Init failed:', error);
                 return false;
             }
         }
 
         /**
+         * SDF生成（シングルチャンネル）
+         */
+        async generateSDF(points, width, height, maxDistance = 64) {
+            if (!this.sdfCompute) {
+                throw new Error('SDF Compute not initialized');
+            }
+            return await this.sdfCompute.generateSDF(points, width, height, maxDistance);
+        }
+
+        /**
+         * MSDF生成（マルチチャンネル）
+         */
+        async generateMSDF(points, width, height, maxDistance = 64, range = 4.0) {
+            if (!this.msdfCompute) {
+                throw new Error('MSDF Compute not initialized');
+            }
+            return await this.msdfCompute.generateMSDF(points, width, height, maxDistance, range);
+        }
+
+        /**
          * Compute Pipeline作成
-         * @param {string} shaderCode - WGSL shader code
-         * @param {string} entryPoint - エントリーポイント名
-         * @param {Array} bindGroupLayouts - Bind Group Layouts
-         * @returns {GPUComputePipeline}
          */
         createComputePipeline(shaderCode, entryPoint = 'main', bindGroupLayouts = []) {
             if (!this.device) {
-                throw new Error('[WebGPU] Device not initialized');
+                throw new Error('Device not initialized');
             }
 
             const shaderModule = this.device.createShaderModule({
@@ -110,28 +124,21 @@
                 bindGroupLayouts: bindGroupLayouts
             });
 
-            const pipeline = this.device.createComputePipeline({
+            return this.device.createComputePipeline({
                 layout: pipelineLayout,
                 compute: {
                     module: shaderModule,
                     entryPoint: entryPoint
                 }
             });
-
-            return pipeline;
         }
 
         /**
-         * Render Pipeline作成（将来の拡張用）
-         * @param {string} vertexShader - Vertex shader WGSL
-         * @param {string} fragmentShader - Fragment shader WGSL
-         * @param {GPUVertexBufferLayout[]} vertexBuffers
-         * @param {GPUTextureFormat} format
-         * @returns {GPURenderPipeline}
+         * Render Pipeline作成
          */
         createRenderPipeline(vertexShader, fragmentShader, vertexBuffers = [], format = null) {
             if (!this.device) {
-                throw new Error('[WebGPU] Device not initialized');
+                throw new Error('Device not initialized');
             }
 
             const targetFormat = format || this.format || 'bgra8unorm';
@@ -139,7 +146,7 @@
             const vertexModule = this.device.createShaderModule({ code: vertexShader });
             const fragmentModule = this.device.createShaderModule({ code: fragmentShader });
 
-            const pipeline = this.device.createRenderPipeline({
+            return this.device.createRenderPipeline({
                 layout: 'auto',
                 vertex: {
                     module: vertexModule,
@@ -157,87 +164,70 @@
                     topology: 'triangle-list'
                 }
             });
-
-            return pipeline;
         }
 
         /**
          * Buffer作成
-         * @param {number} size - バイトサイズ
-         * @param {GPUBufferUsageFlags} usage - 使用方法
-         * @returns {GPUBuffer}
          */
         createBuffer(size, usage) {
             if (!this.device) {
-                throw new Error('[WebGPU] Device not initialized');
+                throw new Error('Device not initialized');
             }
-
-            return this.device.createBuffer({
-                size: size,
-                usage: usage,
-                mappedAtCreation: false
-            });
+            return this.device.createBuffer({ size, usage });
         }
 
         /**
          * Texture作成
-         * @param {number} width
-         * @param {number} height
-         * @param {GPUTextureFormat} format
-         * @param {GPUTextureUsageFlags} usage
-         * @returns {GPUTexture}
          */
         createTexture(width, height, format = 'rgba8unorm', usage = GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST) {
             if (!this.device) {
-                throw new Error('[WebGPU] Device not initialized');
+                throw new Error('Device not initialized');
             }
-
             return this.device.createTexture({
                 size: { width, height },
-                format: format,
-                usage: usage
+                format,
+                usage
             });
         }
 
         /**
          * Command Encoder作成
-         * @returns {GPUCommandEncoder}
          */
         createCommandEncoder() {
             if (!this.device) {
-                throw new Error('[WebGPU] Device not initialized');
+                throw new Error('Device not initialized');
             }
             return this.device.createCommandEncoder();
         }
 
         /**
          * 初期化状態チェック
-         * @returns {boolean}
          */
         isInitialized() {
             return this.initialized && this.device !== null;
         }
 
         /**
-         * デバイス取得
-         * @returns {GPUDevice}
+         * MSDF対応チェック
          */
-        getDevice() {
-            return this.device;
-        }
-
-        /**
-         * Adapter取得
-         * @returns {GPUAdapter}
-         */
-        getAdapter() {
-            return this.adapter;
+        isMSDFSupported() {
+            return this.initialized && this.msdfCompute !== null;
         }
 
         /**
          * リソース破棄
          */
         destroy() {
+            if (this.sdfCompute) {
+                this.sdfCompute.destroy();
+                this.sdfCompute = null;
+            }
+
+            if (this.msdfCompute) {
+                this.msdfCompute.destroy();
+                this.msdfCompute = null;
+            }
+
             if (this.device) {
                 this.device.destroy();
                 this.device = null;
@@ -246,15 +236,9 @@
             this.adapter = null;
             this.context = null;
             this.initialized = false;
-            this.pipelines.clear();
-
-            console.log('[WebGPU] Resources destroyed');
         }
     }
 
-    // グローバル登録
     window.WebGPUDrawingLayer = WebGPUDrawingLayer;
-
-    console.log('✅ system/drawing/webgpu/webgpu-drawing-layer.js loaded');
 
 })();

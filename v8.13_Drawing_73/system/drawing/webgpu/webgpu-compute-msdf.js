@@ -1,14 +1,11 @@
 /**
  * WebGPUComputeMSDF - Multi-channel SDF Compute Shader管理
- * 
- * Phase 4-B-4: WebGPUでMSDF生成（msdfgen.wasmの代替）
- * RGB 3チャンネルで距離場を並列計算
+ * Phase 4-B-4: WebGPUでMSDF生成（完全版）
  * 
  * 責務:
- * - MSDF Compute Shaderのセットアップ
- * - バッファ管理（ポイント、出力、パラメータ）
- * - Compute Pipeline実行
- * - 結果読み取り
+ * - RGB 3チャンネル距離場の並列計算
+ * - エッジ精度向上（角・交差部の完璧な表現）
+ * - Compute Pipeline管理
  */
 
 (function() {
@@ -29,16 +26,13 @@
          */
         async initialize() {
             try {
-                // Shader読み込み
                 const shaderCode = await this._loadShaderCode();
                 
-                // Shader Module作成
                 this.shaderModule = this.device.createShaderModule({
                     label: 'MSDF Compute Shader',
                     code: shaderCode
                 });
 
-                // Bind Group Layout作成
                 this.bindGroupLayout = this.device.createBindGroupLayout({
                     label: 'MSDF Bind Group Layout',
                     entries: [
@@ -60,13 +54,11 @@
                     ]
                 });
 
-                // Pipeline Layout作成
                 const pipelineLayout = this.device.createPipelineLayout({
                     label: 'MSDF Pipeline Layout',
                     bindGroupLayouts: [this.bindGroupLayout]
                 });
 
-                // Compute Pipeline作成
                 this.computePipeline = this.device.createComputePipeline({
                     label: 'MSDF Compute Pipeline',
                     layout: pipelineLayout,
@@ -77,37 +69,35 @@
                 });
 
                 this.initialized = true;
-                console.log('[WebGPUComputeMSDF] Initialized');
+
             } catch (error) {
-                console.error('[WebGPUComputeMSDF] Initialization failed:', error);
+                console.error('[MSDF] Init failed:', error);
                 throw error;
             }
         }
 
         /**
          * MSDF生成
-         * @param {Array} points - ストロークポイント [{x, y}]
+         * @param {Array} points - [{x, y}]
          * @param {number} width - 出力幅
          * @param {number} height - 出力高さ
          * @param {number} maxDistance - 最大距離
          * @param {number} range - MSDF range (default: 4.0)
-         * @returns {Promise<Float32Array>} - RGBA データ
+         * @returns {Promise<Float32Array>} RGBA データ
          */
-        async generateMSDF(points, width, height, maxDistance, range = 4.0) {
+        async generateMSDF(points, width, height, maxDistance = 64, range = 4.0) {
             if (!this.initialized) {
                 throw new Error('WebGPUComputeMSDF not initialized');
             }
 
             if (points.length < 2) {
-                console.warn('[WebGPUComputeMSDF] Not enough points');
+                console.warn('[MSDF] Insufficient points');
                 return null;
             }
 
             try {
-                // バッファ作成
                 const buffers = this._createBuffers(points, width, height, maxDistance, range);
 
-                // Compute実行
                 const commandEncoder = this.device.createCommandEncoder({
                     label: 'MSDF Compute Encoder'
                 });
@@ -119,20 +109,24 @@
                 computePass.setPipeline(this.computePipeline);
                 computePass.setBindGroup(0, buffers.bindGroup);
 
-                // Workgroup数計算
-                const workgroupSizeX = 8;
-                const workgroupSizeY = 8;
-                const workgroupCountX = Math.ceil(width / workgroupSizeX);
-                const workgroupCountY = Math.ceil(height / workgroupSizeY);
-
+                const workgroupCountX = Math.ceil(width / 8);
+                const workgroupCountY = Math.ceil(height / 8);
                 computePass.dispatchWorkgroups(workgroupCountX, workgroupCountY, 1);
                 computePass.end();
 
-                // コマンド送信
+                // Staging bufferへコピー
+                commandEncoder.copyBufferToBuffer(
+                    buffers.outputBuffer, 0,
+                    buffers.stagingBuffer, 0,
+                    buffers.outputBuffer.size
+                );
+
                 this.device.queue.submit([commandEncoder.finish()]);
 
                 // 結果読み取り
-                const result = await this._readResult(buffers.outputBuffer, width * height * 4);
+                await buffers.stagingBuffer.mapAsync(GPUMapMode.READ);
+                const data = new Float32Array(buffers.stagingBuffer.getMappedRange()).slice();
+                buffers.stagingBuffer.unmap();
 
                 // クリーンアップ
                 buffers.pointsBuffer.destroy();
@@ -140,9 +134,10 @@
                 buffers.paramsBuffer.destroy();
                 buffers.stagingBuffer.destroy();
 
-                return result;
+                return data;
+
             } catch (error) {
-                console.error('[WebGPUComputeMSDF] Generation failed:', error);
+                console.error('[MSDF] Generation failed:', error);
                 return null;
             }
         }
@@ -159,8 +154,8 @@
             });
 
             const pointsBuffer = this.device.createBuffer({
-                label: 'MSDF Points Buffer',
-                size: pointsData.byteLength,
+                label: 'MSDF Points',
+                size: Math.max(pointsData.byteLength, 16),
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST
             });
             this.device.queue.writeBuffer(pointsBuffer, 0, pointsData);
@@ -168,27 +163,28 @@
             // Output Buffer
             const outputSize = width * height * 4 * Float32Array.BYTES_PER_ELEMENT;
             const outputBuffer = this.device.createBuffer({
-                label: 'MSDF Output Buffer',
+                label: 'MSDF Output',
                 size: outputSize,
                 usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC
             });
 
-            // Params Buffer
-            const paramsData = new Float32Array(8);
-            paramsData[0] = width;
-            paramsData[1] = height;
-            paramsData[2] = points.length;
+            // Params Buffer (32バイト境界アライン)
+            const paramsData = new Float32Array(16);
+            const view = new Uint32Array(paramsData.buffer);
+            view[0] = width;
+            view[1] = height;
+            view[2] = points.length;
             paramsData[3] = maxDistance;
             paramsData[4] = range;
 
             const paramsBuffer = this.device.createBuffer({
-                label: 'MSDF Params Buffer',
+                label: 'MSDF Params',
                 size: paramsData.byteLength,
                 usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST
             });
             this.device.queue.writeBuffer(paramsBuffer, 0, paramsData);
 
-            // Bind Group作成
+            // Bind Group
             const bindGroup = this.device.createBindGroup({
                 label: 'MSDF Bind Group',
                 layout: this.bindGroupLayout,
@@ -199,9 +195,9 @@
                 ]
             });
 
-            // Staging Buffer（結果読み取り用）
+            // Staging Buffer
             const stagingBuffer = this.device.createBuffer({
-                label: 'MSDF Staging Buffer',
+                label: 'MSDF Staging',
                 size: outputSize,
                 usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
             });
@@ -216,50 +212,17 @@
         }
 
         /**
-         * 結果読み取り
-         */
-        async _readResult(outputBuffer, size) {
-            // Staging Bufferにコピー
-            const commandEncoder = this.device.createCommandEncoder({
-                label: 'MSDF Copy Encoder'
-            });
-
-            const stagingBuffer = this.device.createBuffer({
-                label: 'MSDF Staging Buffer',
-                size: size * Float32Array.BYTES_PER_ELEMENT,
-                usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST
-            });
-
-            commandEncoder.copyBufferToBuffer(
-                outputBuffer, 0,
-                stagingBuffer, 0,
-                size * Float32Array.BYTES_PER_ELEMENT
-            );
-
-            this.device.queue.submit([commandEncoder.finish()]);
-
-            // Map & Read
-            await stagingBuffer.mapAsync(GPUMapMode.READ);
-            const copyArrayBuffer = stagingBuffer.getMappedRange();
-            const data = new Float32Array(copyArrayBuffer).slice();
-            stagingBuffer.unmap();
-            stagingBuffer.destroy();
-
-            return data;
-        }
-
-        /**
-         * Shader Code読み込み
+         * Shader読み込み
          */
         async _loadShaderCode() {
             try {
-                const response = await fetch('system/drawing/webgpu/processing/msdf-compute.wgsl');
+                const response = await fetch('system/drawing/webgpu/shaders/msdf-compute.wgsl');
                 if (!response.ok) {
                     throw new Error(`Shader load failed: ${response.status}`);
                 }
                 return await response.text();
             } catch (error) {
-                console.error('[WebGPUComputeMSDF] Shader load failed:', error);
+                console.error('[MSDF] Shader load failed:', error);
                 throw error;
             }
         }
@@ -276,7 +239,5 @@
     }
 
     window.WebGPUComputeMSDF = WebGPUComputeMSDF;
-
-    console.log('✅ system/drawing/webgpu/webgpu-compute-msdf.js loaded');
 
 })();

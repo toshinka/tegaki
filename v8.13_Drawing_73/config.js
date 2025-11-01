@@ -1,4 +1,4 @@
-// ===== config.js - Phase 4-A完全版 (WebGPU設定追加) =====
+// ===== config.js - Phase 4-B-4完全版 (WebGPU/MSDF設定追加) =====
 
 window.TEGAKI_CONFIG = {
     canvas: { 
@@ -23,18 +23,17 @@ window.TEGAKI_CONFIG = {
         minWidth: 1,
         maxWidth: 10
     },
-    // ✅ Phase 4-A: WebGPU設定追加
+    // ✅ Phase 4-A/4-B: WebGPU/MSDF設定追加
     webgpu: {
         enabled: true,
-        fallbackToLegacy: true,
+        fallbackToWebGL: true,
         computeWorkgroupSize: [8, 8, 1],
         maxBufferSize: 256 * 1024 * 1024,
         sdf: {
             enabled: true,
             minPointsForGPU: 5,
-            maxDistance: 100
+            maxDistance: 64
         },
-        // ✅ Phase 4-B: MSDF設定追加
         msdf: {
             enabled: true,
             range: 4.0,
@@ -353,76 +352,63 @@ window.TEGAKI_KEYMAP = {
     
     getKeyDisplayName(keyCode) {
         const displayNames = {
-            'KeyP': 'P', 'KeyE': 'E', 'KeyV': 'V', 'KeyH': 'H',
-            'KeyA': 'A', 'KeyN': 'N', 'KeyC': 'C', 'KeyL': 'L',
-            'KeyZ': 'Z', 'KeyY': 'Y', 'Comma': ',', 'Digit0': '0',
-            'Plus': '+', 'ArrowUp': '↑', 'ArrowDown': '↓',
-            'ArrowLeft': '←', 'ArrowRight': '→',
-            'Space': 'Space', 'Delete': 'Delete', 'Backspace': 'Backspace'
+            'KeyP': 'P',
+            'KeyE': 'E',
+            'KeyV': 'V',
+            'KeyH': 'H',
+            'KeyA': 'A',
+            'KeyN': 'N',
+            'KeyC': 'C',
+            'KeyL': 'L',
+            'KeyZ': 'Z',
+            'KeyY': 'Y',
+            'Comma': ',',
+            'Digit0': '0',
+            'Plus': '+',
+            'ArrowUp': '↑',
+            'ArrowDown': '↓',
+            'ArrowLeft': '←',
+            'ArrowRight': '→',
+            'Space': 'Space',
+            'Delete': 'Delete',
+            'Backspace': 'Backspace'
         };
+        
         return displayNames[keyCode] || keyCode;
     }
 };
 
-// レガシー互換性
+// レガシー互換性維持
 window.TEGAKI_KEYCONFIG = {
-    pen: 'KeyP', eraser: 'KeyE', layerMode: 'KeyV',
-    canvasReset: 'Digit0', horizontalFlip: 'KeyH',
-    layerUp: 'ArrowUp', layerDown: 'ArrowDown',
-    gifPrevFrame: 'ArrowLeft', gifNextFrame: 'ArrowRight',
-    gifToggleAnimation: 'KeyA', gifAddCut: 'Plus', gifPlayPause: 'Space',
-    layerMoveUp: 'ArrowUp', layerMoveDown: 'ArrowDown',
-    layerMoveLeft: 'ArrowLeft', layerMoveRight: 'ArrowRight',
-    layerScaleUp: 'ArrowUp', layerScaleDown: 'ArrowDown',
-    layerRotateLeft: 'ArrowLeft', layerRotateRight: 'ArrowRight'
+    pen: 'KeyP',
+    eraser: 'KeyE',
+    layerMode: 'KeyV',
+    canvasReset: 'Digit0',
+    horizontalFlip: 'KeyH',
+    layerUp: 'ArrowUp',
+    layerDown: 'ArrowDown',
+    gifPrevFrame: 'ArrowLeft',
+    gifNextFrame: 'ArrowRight',
+    gifToggleAnimation: 'KeyA',
+    gifAddCut: 'Plus',
+    gifPlayPause: 'Space',
+    layerMoveUp: 'ArrowUp',
+    layerMoveDown: 'ArrowDown',
+    layerMoveLeft: 'ArrowLeft',
+    layerMoveRight: 'ArrowRight',
+    layerScaleUp: 'ArrowUp',
+    layerScaleDown: 'ArrowDown',
+    layerRotateLeft: 'ArrowLeft',
+    layerRotateRight: 'ArrowRight'
 };
 
 window.TEGAKI_COLORS = {
-    futabaMaroon: '#800000', futabaLightMaroon: '#aa5a56',
-    futabaMedium: '#cf9c97', futabaLightMedium: '#e9c2ba',
-    futabaCream: '#f0e0d6', futabaBackground: '#ffffee'
-};
-
-window.TEGAKI_KEYCONFIG_MANAGER = {
-    getActionForKey(keyCode, modifiers = {}) {
-        const event = {
-            code: keyCode,
-            ctrlKey: modifiers.ctrlPressed || false,
-            metaKey: false,
-            shiftKey: modifiers.shiftPressed || false,
-            altKey: modifiers.altPressed || false,
-            repeat: false
-        };
-        
-        const context = {
-            vMode: modifiers.vPressed || false
-        };
-        
-        const action = window.TEGAKI_KEYMAP.getAction(event, context);
-        
-        const legacyMap = {
-            'TOOL_PEN': 'pen',
-            'TOOL_ERASER': 'eraser',
-            'LAYER_MOVE_MODE_TOGGLE': 'layerMode',
-            'LAYER_HIERARCHY_UP': 'layerUp',
-            'LAYER_HIERARCHY_DOWN': 'layerDown',
-            'GIF_PREV_FRAME': 'gifPrevFrame',
-            'GIF_NEXT_FRAME': 'gifNextFrame',
-            'LAYER_MOVE_UP': 'layerMoveUp',
-            'LAYER_MOVE_DOWN': 'layerMoveDown',
-            'LAYER_MOVE_LEFT': 'layerMoveLeft',
-            'LAYER_MOVE_RIGHT': 'layerMoveRight',
-            'LAYER_SCALE_UP': 'layerScaleUp',
-            'LAYER_SCALE_DOWN': 'layerScaleDown',
-            'LAYER_ROTATE_LEFT': 'layerRotateLeft',
-            'LAYER_ROTATE_RIGHT': 'layerRotateRight',
-            'CAMERA_FLIP_HORIZONTAL': 'horizontalFlip',
-            'LAYER_FLIP_HORIZONTAL': 'horizontalFlip',
-            'LAYER_DELETE_DRAWINGS': 'delete'
-        };
-        
-        return legacyMap[action] || action;
-    }
+    futabaMaroon: '#800000',
+    futabaLightMaroon: '#aa5a56',
+    futabaMedium: '#cf9c97',
+    futabaLightMedium: '#e9c2ba',
+    futabaCream: '#f0e0d6',
+    futabaBackground: '#ffffee'
 };
 
 window.TEGAKI_UTILS = {
@@ -430,5 +416,3 @@ window.TEGAKI_UTILS = {
         if (window.TEGAKI_CONFIG.debug) console.log(...args);
     }
 };
-
-console.log('✅ config.js (Phase 4-A: WebGPU設定追加版) loaded');
